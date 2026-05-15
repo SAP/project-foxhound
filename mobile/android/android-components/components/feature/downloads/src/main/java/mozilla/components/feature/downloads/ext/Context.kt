@@ -7,7 +7,6 @@ package mozilla.components.feature.downloads.ext
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import androidx.core.content.getSystemService
 
 /**
@@ -28,7 +27,6 @@ internal fun Context.addCompletedDownload(
     uri: Uri?,
     referer: Uri?,
 ) = getSystemService<DownloadManager>()!!.run {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
         addCompletedDownload(
             title,
             description,
@@ -40,15 +38,4 @@ internal fun Context.addCompletedDownload(
             uri,
             referer,
         )
-    } else {
-        addCompletedDownload(
-            title,
-            description,
-            isMediaScannerScannable,
-            mimeType,
-            path,
-            length,
-            showNotification,
-        )
-    }
 }

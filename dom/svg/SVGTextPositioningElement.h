@@ -7,9 +7,9 @@
 #ifndef DOM_SVG_SVGTEXTPOSITIONINGELEMENT_H_
 #define DOM_SVG_SVGTEXTPOSITIONINGELEMENT_H_
 
-#include "mozilla/dom/SVGTextContentElement.h"
 #include "SVGAnimatedLengthList.h"
 #include "SVGAnimatedNumberList.h"
+#include "mozilla/dom/SVGTextContentElement.h"
 
 namespace mozilla {
 class SVGAnimatedLengthList;

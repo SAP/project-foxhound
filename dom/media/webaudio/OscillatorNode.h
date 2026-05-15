@@ -7,8 +7,8 @@
 #ifndef OscillatorNode_h_
 #define OscillatorNode_h_
 
-#include "AudioScheduledSourceNode.h"
 #include "AudioParam.h"
+#include "AudioScheduledSourceNode.h"
 #include "PeriodicWave.h"
 #include "mozilla/dom/OscillatorNodeBinding.h"
 

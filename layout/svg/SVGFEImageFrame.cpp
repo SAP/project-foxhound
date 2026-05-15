@@ -7,7 +7,6 @@
 // Keep in (case-insensitive) order:
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGObserverUtils.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGFEImageElement.h"
 #include "nsContainerFrame.h"
 #include "nsGkAtoms.h"
@@ -51,7 +50,7 @@ class SVGFEImageFrame final : public nsIFrame {
 #endif
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void OnVisibilityChange(
       Visibility aNewVisibility,
@@ -112,7 +111,7 @@ void SVGFEImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 nsresult SVGFEImageFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
-                                           int32_t aModType) {
+                                           AttrModType aModType) {
   SVGFEImageElement* element = static_cast<SVGFEImageElement*>(GetContent());
   if (element->AttributeAffectsRendering(aNameSpaceID, aAttribute)) {
     MOZ_ASSERT(

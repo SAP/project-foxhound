@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GeckoViewInputStream_h__
-#define GeckoViewInputStream_h__
+#ifndef GeckoViewInputStream_h_
+#define GeckoViewInputStream_h_
 
 #include "mozilla/java/GeckoViewInputStreamWrappers.h"
 #include "mozilla/java/ContentInputStreamWrappers.h"
@@ -49,4 +49,4 @@ class GeckoViewContentInputStream final : public GeckoViewInputStream {
             mozilla::jni::StringParam(aUri), aPDFOnly)) {}
 };
 
-#endif  // !GeckoViewInputStream_h__
+#endif  // !GeckoViewInputStream_h_

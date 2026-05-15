@@ -13,7 +13,6 @@ import {
   isSourceBlackBoxed,
 } from "../../selectors/index";
 import actions from "../../actions/index";
-import { markerTypes } from "../../constants";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 
 const breakpointButton = document.createElement("button");
@@ -55,12 +54,14 @@ class ColumnBreakpoints extends Component {
     }
 
     if (!columnBreakpoints.length) {
-      editor.removePositionContentMarker(markerTypes.COLUMN_BREAKPOINT_MARKER);
+      editor.removePositionContentMarker(
+        editor.markerTypes.COLUMN_BREAKPOINT_MARKER
+      );
       return;
     }
 
     editor.setPositionContentMarker({
-      id: markerTypes.COLUMN_BREAKPOINT_MARKER,
+      id: editor.markerTypes.COLUMN_BREAKPOINT_MARKER,
       positions: columnBreakpoints.map(cbp => {
         return {
           line: cbp.location.line,

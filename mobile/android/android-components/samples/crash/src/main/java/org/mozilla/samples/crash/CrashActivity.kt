@@ -11,11 +11,13 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.view.View
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.snackbar.Snackbar
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.lib.crash.Crash
+import mozilla.components.support.ktx.android.view.setupPersistentInsets
 import mozilla.components.support.utils.ext.registerReceiverCompat
 import org.mozilla.samples.crash.databinding.ActivityCrashBinding
 
@@ -43,6 +45,8 @@ class CrashActivity : AppCompatActivity(), View.OnClickListener {
         super.onCreate(savedInstanceState)
         binding = ActivityCrashBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        enableEdgeToEdge()
+        window.setupPersistentInsets(true)
 
         binding.fatalCrashButton.setOnClickListener(this)
         binding.crashButton.setOnClickListener(this)

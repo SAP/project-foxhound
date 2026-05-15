@@ -5,13 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MerchantValidationEvent.h"
-#include "nsNetCID.h"
+
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/PaymentRequest.h"
 #include "mozilla/dom/Location.h"
+#include "mozilla/dom/PaymentRequest.h"
 #include "mozilla/dom/URL.h"
-#include "mozilla/ResultExtensions.h"
 #include "nsIURI.h"
+#include "nsNetCID.h"
 #include "nsNetUtil.h"
 
 namespace mozilla::dom {
@@ -168,7 +168,7 @@ void MerchantValidationEvent::GetValidationURL(nsAString& aValidationURL) {
   nsAutoCString utf8href;
   nsresult rv = mValidationURL->GetSpec(utf8href);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
   aValidationURL.Assign(NS_ConvertUTF8toUTF16(utf8href));
 }
 

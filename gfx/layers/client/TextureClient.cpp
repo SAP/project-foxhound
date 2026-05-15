@@ -285,19 +285,7 @@ static TextureType ChooseTextureType(gfx::SurfaceFormat aFormat,
   LayersBackend layersBackend = aKnowsCompositor->GetCompositorBackendType();
   gfx::BackendType moz2DBackend =
       BackendTypeForBackendSelector(layersBackend, aSelector);
-  Unused << moz2DBackend;
-
-#ifdef XP_WIN
-  int32_t maxTextureSize = aKnowsCompositor->GetMaxTextureSize();
-  if ((layersBackend == LayersBackend::LAYERS_WR &&
-       !aKnowsCompositor->UsingSoftwareWebRender()) &&
-      (moz2DBackend == gfx::BackendType::DIRECT2D ||
-       moz2DBackend == gfx::BackendType::DIRECT2D1_1) &&
-      aSize.width <= maxTextureSize && aSize.height <= maxTextureSize &&
-      !(aAllocFlags & (ALLOC_UPDATE_FROM_SURFACE | ALLOC_DO_NOT_ACCELERATE))) {
-    return TextureType::D3D11;
-  }
-#endif
+  (void)moz2DBackend;
 
 #ifdef XP_MACOSX
   if (StaticPrefs::gfx_use_iosurface_textures_AtStartup() &&
@@ -792,18 +780,11 @@ void TextureClient::Unlock() {
   }
 
   if (mBorrowedDrawTarget) {
-    if (!(mOpenMode & OpenMode::OPEN_ASYNC)) {
-      if (mOpenMode & OpenMode::OPEN_WRITE) {
-        mBorrowedDrawTarget->Flush();
-      }
-
-      mBorrowedDrawTarget->DetachAllSnapshots();
-      // If this assertion is hit, it means something is holding a strong
-      // reference to our DrawTarget externally, which is not allowed.
-      MOZ_ASSERT(mBorrowedDrawTarget->refCount() <= mExpectedDtRefs);
+    if (mOpenMode & OpenMode::OPEN_WRITE) {
+      mBorrowedDrawTarget->Flush();
     }
 
-    mBorrowedDrawTarget = nullptr;
+    mData->ReturnDrawTarget(mBorrowedDrawTarget.forget());
   }
   mBorrowedSnapshot = false;
 
@@ -977,9 +958,6 @@ gfx::DrawTarget* TextureClient::BorrowDrawTarget() {
 
   if (!mBorrowedDrawTarget) {
     mBorrowedDrawTarget = mData->BorrowDrawTarget();
-#ifdef DEBUG
-    mExpectedDtRefs = mBorrowedDrawTarget ? mBorrowedDrawTarget->refCount() : 0;
-#endif
   }
 
   return mBorrowedDrawTarget;
@@ -992,12 +970,15 @@ void TextureClient::EndDraw() {
   // end of a transaction, we need to Flush and DetachAllSnapshots to ensure any
   // dependents are updated.
   mBorrowedDrawTarget->Flush();
-  mBorrowedDrawTarget->DetachAllSnapshots();
-  MOZ_ASSERT(mBorrowedDrawTarget->refCount() <= mExpectedDtRefs);
+  mData->ReturnDrawTarget(mBorrowedDrawTarget.forget());
 
-  mBorrowedDrawTarget = nullptr;
   mBorrowedSnapshot = false;
   mData->EndDraw();
+}
+
+void TextureData::ReturnDrawTarget(already_AddRefed<gfx::DrawTarget> aDT) {
+  RefPtr<gfx::DrawTarget> dt(aDT);
+  dt->DetachAllSnapshots();
 }
 
 already_AddRefed<gfx::SourceSurface> TextureClient::BorrowSnapshot() {
@@ -1015,6 +996,11 @@ already_AddRefed<gfx::SourceSurface> TextureClient::BorrowSnapshot() {
   }
 
   return surface.forget();
+}
+
+void TextureData::ReturnSnapshot(
+    already_AddRefed<gfx::SourceSurface> aSnapshot) {
+  RefPtr<gfx::SourceSurface> snapshot(aSnapshot);
 }
 
 void TextureClient::ReturnSnapshot(
@@ -1398,27 +1384,6 @@ already_AddRefed<TextureClient> TextureClient::CreateFromSurface(
     return nullptr;
   }
 
-  TextureData* data = nullptr;
-#if defined(XP_WIN)
-  LayersBackend layersBackend = aAllocator->GetCompositorBackendType();
-  gfx::BackendType moz2DBackend =
-      BackendTypeForBackendSelector(layersBackend, aSelector);
-
-  int32_t maxTextureSize = aAllocator->GetMaxTextureSize();
-
-  if (layersBackend == LayersBackend::LAYERS_WR &&
-      (moz2DBackend == gfx::BackendType::DIRECT2D ||
-       moz2DBackend == gfx::BackendType::DIRECT2D1_1) &&
-      size.width <= maxTextureSize && size.height <= maxTextureSize) {
-    data = D3D11TextureData::Create(aSurface, aAllocFlags);
-  }
-#endif
-
-  if (data) {
-    return MakeAndAddRef<TextureClient>(data, aTextureFlags,
-                                        aAllocator->GetTextureForwarder());
-  }
-
   // Fall back to using UpdateFromSurface
 
   TextureAllocationFlags allocFlags =
@@ -1470,12 +1435,9 @@ already_AddRefed<TextureClient> TextureClient::CreateForRawBufferAccess(
     aAllocFlags = TextureAllocationFlags(aAllocFlags | ALLOC_CLEAR_BUFFER);
   }
 
-  // Note that we ignore the backend type if we get here. It should only be D2D
-  // or Skia, and D2D does not support data surfaces. Therefore it is safe to
-  // force the buffer to be Skia.
-  NS_WARNING_ASSERTION(aMoz2DBackend == gfx::BackendType::SKIA ||
-                           aMoz2DBackend == gfx::BackendType::DIRECT2D ||
-                           aMoz2DBackend == gfx::BackendType::DIRECT2D1_1,
+  // We ignore the backend type if we get here. It should only be Skia.
+  // Therefore it is safe to force the buffer to be Skia.
+  NS_WARNING_ASSERTION(aMoz2DBackend == gfx::BackendType::SKIA,
                        "Unsupported TextureClient backend type");
 
   // For future changes, check aAllocFlags aAllocFlags & ALLOC_DO_NOT_ACCELERATE
@@ -1525,12 +1487,7 @@ TextureClient::TextureClient(TextureData* aData, TextureFlags aFlags,
       mActor(nullptr),
       mData(aData),
       mFlags(aFlags),
-      mOpenMode(OpenMode::OPEN_NONE)
-#ifdef DEBUG
-      ,
-      mExpectedDtRefs(0)
-#endif
-      ,
+      mOpenMode(OpenMode::OPEN_NONE),
       mIsLocked(false),
       mIsReadLocked(false),
       mUpdated(false),

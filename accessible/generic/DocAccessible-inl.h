@@ -73,6 +73,7 @@ inline void DocAccessible::HandleNotification(
 
 inline void DocAccessible::UpdateText(nsIContent* aTextNode) {
   NS_ASSERTION(mNotificationController, "The document was shut down!");
+  MOZ_ASSERT(aTextNode->IsText());
 
   // Ignore the notification if initial tree construction hasn't been done yet.
   if (mNotificationController && HasLoadState(eTreeConstructed)) {
@@ -95,7 +96,8 @@ inline void DocAccessible::NotifyOfLoad(uint32_t aLoadEventType) {
 
 inline void DocAccessible::MaybeNotifyOfValueChange(
     LocalAccessible* aAccessible) {
-  if (aAccessible->IsCombobox() || aAccessible->Role() == roles::ENTRY ||
+  if (aAccessible->IsCombobox() || aAccessible->IsPassword() ||
+      aAccessible->Role() == roles::ENTRY ||
       aAccessible->Role() == roles::SPINBUTTON) {
     FireDelayedEvent(nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE, aAccessible);
   }
@@ -131,7 +133,7 @@ inline void DocAccessible::CreateSubtree(LocalAccessible* aChild) {
 }
 
 inline DocAccessible::AttrRelProviders* DocAccessible::GetRelProviders(
-    dom::Element* aElement, const nsAString& aID) const {
+    dom::Element* aElement, nsAtom* aID) const {
   DependentIDsHashtable* hash = mDependentIDsHashes.Get(
       aElement->GetUncomposedDocOrConnectedShadowRoot());
   if (hash) {
@@ -141,7 +143,8 @@ inline DocAccessible::AttrRelProviders* DocAccessible::GetRelProviders(
 }
 
 inline DocAccessible::AttrRelProviders* DocAccessible::GetOrCreateRelProviders(
-    dom::Element* aElement, const nsAString& aID) {
+    dom::Element* aElement, nsAtom* aID) {
+  // TODO (bug 1983819): need to update when reference targets change
   dom::DocumentOrShadowRoot* docOrShadowRoot =
       aElement->GetUncomposedDocOrConnectedShadowRoot();
   DependentIDsHashtable* hash =
@@ -151,7 +154,7 @@ inline DocAccessible::AttrRelProviders* DocAccessible::GetOrCreateRelProviders(
 }
 
 inline void DocAccessible::RemoveRelProvidersIfEmpty(dom::Element* aElement,
-                                                     const nsAString& aID) {
+                                                     nsAtom* aID) {
   dom::DocumentOrShadowRoot* docOrShadowRoot =
       aElement->GetUncomposedDocOrConnectedShadowRoot();
   DependentIDsHashtable* hash = mDependentIDsHashes.Get(docOrShadowRoot);

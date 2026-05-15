@@ -10,21 +10,21 @@
  * loading functionality (eg <img>, <object>, etc).
  */
 
-#ifndef nsImageLoadingContent_h__
-#define nsImageLoadingContent_h__
+#ifndef nsImageLoadingContent_h_
+#define nsImageLoadingContent_h_
 
+#include "Units.h"
 #include "imgINotificationObserver.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/TimeStamp.h"
-#include "nsCOMPtr.h"
-#include "nsIContentPolicy.h"
-#include "nsIImageLoadingContent.h"
-#include "nsIRequest.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RustTypes.h"
 #include "nsAttrValue.h"
-#include "Units.h"
+#include "nsCOMPtr.h"
+#include "nsIContentPolicy.h"
+#include "nsIImageLoadingContent.h"
+#include "nsIRequest.h"
 
 class nsINode;
 class nsIURI;
@@ -455,26 +455,6 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
 
   nsLoadFlags LoadFlags();
 
-  /* MEMBERS */
-  RefPtr<imgRequestProxy> mCurrentRequest;
-  RefPtr<imgRequestProxy> mPendingRequest;
-  uint8_t mCurrentRequestFlags = 0;
-  uint8_t mPendingRequestFlags = 0;
-
-  enum {
-    // Set if the request is currently tracked with the document.
-    REQUEST_IS_TRACKED = 1 << 0,
-    // Set if this is an imageset request, such as from <img srcset> or
-    // <picture>
-    REQUEST_IS_IMAGESET = 1 << 1,
-  };
-
-  // If the image was blocked or if there was an error loading, it's nice to
-  // still keep track of what the URI was despite not having an imgIRequest.
-  // We only maintain this in those situations (in the common case, this is
-  // always null).
-  nsCOMPtr<nsIURI> mCurrentURI;
-
  private:
   /**
    * Clones the given "current" or "pending" request for each scripted observer.
@@ -507,6 +487,23 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
   void MaybeForceSyncDecoding(bool aPrepareNextRequest,
                               nsIFrame* aFrame = nullptr);
 
+ protected:
+  void QueueImageTask(nsIURI* aURI, nsIPrincipal* aSrcTriggeringPrincipal,
+                      bool aForceAsync, bool aAlwaysLoad, bool aNotify);
+  void QueueImageTask(nsIURI* aURI, bool aAlwaysLoad, bool aNotify) {
+    QueueImageTask(aURI, nullptr, false, aAlwaysLoad, aNotify);
+  }
+
+  void ClearImageLoadTask();
+
+  virtual void LoadSelectedImage(bool aAlwaysLoad, bool aStopLazyLoading) = 0;
+
+  RefPtr<ImageLoadTask> mPendingImageLoadTask;
+
+  RefPtr<imgRequestProxy> mCurrentRequest;
+  RefPtr<imgRequestProxy> mPendingRequest;
+
+ private:
   /**
    * Typically we will have only one observer (our frame in the screen
    * prescontext), so we want to only make space for one and to
@@ -524,13 +521,19 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
    */
   nsTArray<RefPtr<ScriptedImageObserver>> mScriptedObservers;
 
+  // If the image was blocked or if there was an error loading, it's nice to
+  // still keep track of what the URI was despite not having an imgIRequest.
+  // We only maintain this in those situations (in the common case, this is
+  // always null).
+  nsCOMPtr<nsIURI> mCurrentURI;
+
+  mozilla::TimeStamp mMostRecentRequestChange;
+
   /**
    * Promises created by QueueDecodeAsync that are still waiting to be
    * fulfilled by the image being fully decoded.
    */
   nsTArray<RefPtr<mozilla::dom::Promise>> mDecodePromises;
-
-  mozilla::TimeStamp mMostRecentRequestChange;
 
   /**
    * Total number of outstanding decode promises, including those stored in
@@ -538,7 +541,7 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
    * This is used to determine whether we need to register as an observer for
    * document activity notifications.
    */
-  size_t mOutstandingDecodePromises;
+  size_t mOutstandingDecodePromises = 0;
 
   /**
    * An incrementing counter representing the current request generation;
@@ -547,44 +550,42 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
    * of the current request so that when it is processed, it knows if it
    * should have rejected because the request changed.
    */
-  uint32_t mRequestGeneration;
+  uint32_t mRequestGeneration = 0;
 
  protected:
-  void QueueImageTask(nsIURI* aURI, nsIPrincipal* aSrcTriggeringPrincipal,
-                      bool aForceAsync, bool aAlwaysLoad, bool aNotify);
-  void QueueImageTask(nsIURI* aURI, bool aAlwaysLoad, bool aNotify) {
-    QueueImageTask(aURI, nullptr, false, aAlwaysLoad, aNotify);
-  }
-
-  void ClearImageLoadTask();
-
-  virtual void LoadSelectedImage(bool aAlwaysLoad, bool aStopLazyLoading) = 0;
-
-  RefPtr<ImageLoadTask> mPendingImageLoadTask;
-
-  bool mLoadingEnabled : 1;
+  bool mLoadingEnabled : 1 = true;
   /**
    * Flag to indicate whether the channel should be mark as urgent-start.
    * It should be set in *Element and passed to nsContentUtils::LoadImage.
    * True if we want to set nsIClassOfService::UrgentStart to the channel to
    * get the response ASAP for better user responsiveness.
    */
-  bool mUseUrgentStartForChannel : 1;
+  bool mUseUrgentStartForChannel : 1 = false;
 
   // Represents the image is deferred loading until this element gets visible.
-  bool mLazyLoading : 1;
+  bool mLazyLoading : 1 = false;
 
   // If true, force frames to synchronously decode images on draw.
-  bool mSyncDecodingHint : 1;
+  bool mSyncDecodingHint : 1 = false;
 
   // Whether we're in the doc responsive content set (HTMLImageElement only).
-  bool mInDocResponsiveContent : 1;
+  bool mInDocResponsiveContent : 1 = false;
 
  private:
   // Flags to indicate whether each of the current and pending requests are
   // registered with the refresh driver.
-  bool mCurrentRequestRegistered;
-  bool mPendingRequestRegistered;
+  bool mCurrentRequestRegistered = false;
+  bool mPendingRequestRegistered = false;
+
+  enum {
+    // Set if the request is currently tracked with the document.
+    REQUEST_IS_TRACKED = 1 << 0,
+    // Set if this is an imageset request, such as from <img srcset> or
+    // <picture>
+    REQUEST_IS_IMAGESET = 1 << 1,
+  };
+  uint8_t mCurrentRequestFlags = 0;
+  uint8_t mPendingRequestFlags = 0;
 };
 
-#endif  // nsImageLoadingContent_h__
+#endif  // nsImageLoadingContent_h_

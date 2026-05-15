@@ -3,8 +3,6 @@
  * See pwmgr_common.js for the content process companion.
  */
 
-/* eslint-env mozilla/chrome-script */
-
 "use strict";
 
 var { AppConstants } = ChromeUtils.importESModule(
@@ -140,8 +138,8 @@ addMessageListener("promptShown", async function () {
   });
 });
 
-addMessageListener("cleanup", () => {
-  Services.logins.removeAllUserFacingLogins();
+addMessageListener("cleanup", async () => {
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });
 
 // Begin message listeners

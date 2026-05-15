@@ -10,6 +10,6 @@ function run_test() {
 
   Assert.ok(
     has_pref_from_manifest_file_section(),
-    "Should have pref set for file in xpcshell.ini"
+    "Should have pref set for file in xpcshell.toml"
   );
 }

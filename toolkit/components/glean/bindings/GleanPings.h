@@ -8,6 +8,9 @@
 #define mozilla_glean_GleanPings_h
 
 #include "mozilla/dom/BindingDeclarations.h"
+// The following include provides GleanWebidlEnabled(), used by generated
+// GleanPingsBinding.cpp
+#include "mozilla/glean/bindings/GleanWebIDL.h"
 #include "mozilla/glean/bindings/Ping.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"

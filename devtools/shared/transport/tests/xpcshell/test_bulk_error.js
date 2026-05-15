@@ -16,7 +16,7 @@ function run_test() {
   run_next_test();
 }
 
-/** * Sample Bulk Actor ***/
+/*** Sample Bulk Actor ***/
 const protocol = require("resource://devtools/shared/protocol.js");
 const { Arg, RetVal } = protocol;
 const { Actor } = require("resource://devtools/shared/protocol/Actor.js");
@@ -74,7 +74,7 @@ function add_test_bulk_actor() {
   );
 }
 
-/** * Tests ***/
+/*** Tests ***/
 
 var test_string_error = async function (transportFactory) {
   const transport = await transportFactory();

@@ -21,16 +21,16 @@ function doe() {
 function doe2() {
   // Add some iframes/docshells. Session history should still work.
   var ifr1 = document.createElement("iframe");
-  document.body.insertBefore(ifr1, document.body.firstChild);
   ifr1.onload = soon(doe3);
+  document.body.insertBefore(ifr1, document.body.firstChild);
 
   var ifr2 = document.createElement("iframe");
-  document.body.insertBefore(ifr2, document.body.firstChild);
   ifr2.onload = soon(doe3);
+  document.body.insertBefore(ifr2, document.body.firstChild);
 
   var ifr3 = document.createElement("iframe");
-  document.body.insertBefore(ifr3, document.body.firstChild);
   ifr3.onload = soon(doe3);
+  document.body.insertBefore(ifr3, document.body.firstChild);
 }
 
 var doe3_count = 0;

@@ -8,7 +8,6 @@
 #include "nsDeque.h"
 #include "nsCRT.h"
 #include "mozilla/RefPtr.h"
-#include <stdio.h>
 #include <functional>
 #include <type_traits>
 #include <utility>

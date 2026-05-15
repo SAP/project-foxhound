@@ -165,7 +165,7 @@ NS_IMETHODIMP ParentProcessDocumentChannel::AsyncOpen(
 
   if (isDocumentLoad) {
     // Return value of setting synced field should be checked. See bug 1656492.
-    Unused << GetDocShell()->GetBrowsingContext()->SetCurrentLoadIdentifier(
+    (void)GetDocShell()->GetBrowsingContext()->SetCurrentLoadIdentifier(
         Some(mLoadState->GetLoadIdentifier()));
   }
 

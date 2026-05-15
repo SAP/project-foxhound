@@ -124,6 +124,8 @@ class App extends Component {
     };
   }
 
+  #abortController = new AbortController();
+
   constructor(props) {
     super(props);
 
@@ -134,7 +136,13 @@ class App extends Component {
   }
 
   componentDidMount() {
-    window.addEventListener("blur", this.onBlur);
+    window.addEventListener("blur", this.onBlur, {
+      signal: this.#abortController.signal,
+    });
+  }
+
+  componentWillUnmount() {
+    this.#abortController.abort();
   }
 
   onBlur() {
@@ -274,7 +282,9 @@ class App extends Component {
       }
     };
 
-    input.addEventListener("keyup", pasteKeyUpHandler);
+    input.addEventListener("keyup", pasteKeyUpHandler, {
+      signal: this.#abortController.signal,
+    });
   }
 
   renderChromeDebugToolbar() {

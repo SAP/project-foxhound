@@ -13,11 +13,11 @@
 
 // Global includes
 #include <utility>
+
 #include "MainThreadUtils.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
@@ -26,7 +26,6 @@
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StorageAccess.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/LocalStorageCommon.h"
@@ -493,7 +492,7 @@ void LSObject::Disconnect() {
     AssertExplicitSnapshotInvariants(*this);
 
     nsresult rv = mDatabase->EndExplicitSnapshot();
-    Unused << NS_WARN_IF(NS_FAILED(rv));
+    (void)NS_WARN_IF(NS_FAILED(rv));
 
     mInExplicitSnapshot = false;
   }

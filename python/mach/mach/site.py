@@ -155,7 +155,7 @@ class SitePackagesSource(enum.Enum):
         )
 
 
-class MozSiteMetadata:
+class MozSiteMetadata:  # noqa PLW1641
     """Details about a Moz-managed python site
 
     When a Moz-managed site is active, its associated metadata is available
@@ -342,9 +342,9 @@ class MachSiteManager:
         # yet, and the system isn't guaranteed to have the packages we need. For example,
         # "./mach bootstrap" can't have any dependencies.
         # So, all external dependencies of Mach's must be optional.
-        assert (
-            not requirements.pypi_requirements
-        ), "Mach pip package requirements must be optional."
+        assert not requirements.pypi_requirements, (
+            "Mach pip package requirements must be optional."
+        )
 
         # external_python is the Python interpreter that invoked Mach for this process.
         external_python = ExternalPythonSite(sys.executable)
@@ -607,9 +607,9 @@ class CommandSiteManager:
             should be created
         """
         active_metadata = MozSiteMetadata.from_runtime()
-        assert (
-            active_metadata
-        ), "A Mach-managed site must be active before doing work with command sites"
+        assert active_metadata, (
+            "A Mach-managed site must be active before doing work with command sites"
+        )
 
         mach_site_packages_source = active_metadata.mach_site_packages_source
         pip_restricted_site = site_name in PIP_NETWORK_INSTALL_RESTRICTED_VIRTUALENVS
@@ -761,8 +761,10 @@ class CommandSiteManager:
                 f'Failed to install "{path}" into the "{self._site_name}" site.'
             )
 
+        check_errors: str = "\n"  # save output when check fails
         check_result = subprocess.run(
             pip_command(python_executable=self.python_path, subcommand="check"),
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -770,6 +772,8 @@ class CommandSiteManager:
 
         if not check_result.returncode:
             return
+        else:
+            check_errors += "\n" + check_result.stdout
 
         """
         Some commands may use the "setup.py" script of first-party modules. This causes
@@ -822,12 +826,15 @@ class CommandSiteManager:
 
         check_result = subprocess.run(
             pip_command(python_executable=self.python_path, subcommand="check"),
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
         )
 
         if check_result.returncode:
+            if check_result.stdout not in check_errors:
+                check_errors += "\n" + check_result.stdout
             if quiet:
                 # If "quiet" was specified, then the "pip install" output wasn't printed
                 # earlier, and was buffered instead. Print that buffer so that debugging
@@ -846,13 +853,14 @@ class CommandSiteManager:
             raise InstallPipRequirementsException(
                 f'As part of validation after installing "{path}" into the '
                 f'"{self._site_name}" site, the site appears to contain installed '
-                "packages that are incompatible with each other."
+                "packages that are incompatible with each other." + check_errors
             )
 
     def _pthfile_lines(self):
         """Generate the prioritized import scope to encode in the venv's pthfile
 
         The import priority looks like this:
+
         1. Mach's vendored/first-party modules
         2. Mach's site-package source (the Mach virtualenv, the system Python, or neither)
         3. The command's vendored/first-party modules
@@ -870,6 +878,7 @@ class CommandSiteManager:
 
         Mach doesn't know the command being run when it's preparing its import scope,
         so it has to be defensive. Therefore:
+
         1. If Mach needs a system package: system packages are higher priority.
         2. If Mach doesn't need a system package, but the current command does: system
            packages are still be in the list, albeit at a lower priority.
@@ -1037,12 +1046,10 @@ class PythonVirtualenv:
                 constraints_path = os.path.join(tempdir, "site-constraints.txt")
                 with open(constraints_path, "w") as file:
                     file.write(
-                        "\n".join(
-                            [
-                                f"{name}=={version}"
-                                for name, version in existing_packages.items()
-                            ]
-                        )
+                        "\n".join([
+                            f"{name}=={version}"
+                            for name, version in existing_packages.items()
+                        ])
                     )
 
                 self.pip_install(["--constraint", constraints_path] + pip_args)
@@ -1061,8 +1068,8 @@ class PythonVirtualenv:
         kwargs.setdefault("check", True)
         kwargs.setdefault("stdout", None if show_pip_output() else subprocess.PIPE)
         kwargs.setdefault("stderr", None if show_pip_output() else subprocess.PIPE)
-        kwargs.setdefault("universal_newlines", True)
         kwargs.setdefault("text", True)
+        kwargs.setdefault("encoding", "utf-8")
 
         # It's tempting to call pip natively via pip.main(). However,
         # the current Python interpreter may not be the virtualenv python.
@@ -1073,12 +1080,13 @@ class PythonVirtualenv:
         # self.python_path. However, this seems more risk than it's worth.
 
         try:
-            install_result = subprocess.run(
+            install_result = subprocess.run(  # noqa PLW1510
                 pip_command(
                     python_executable=self.python_path,
                     subcommand="install",
                     args=pip_install_args,
                 ),
+                check=kwargs.pop("check", True),
                 **kwargs,
             )
         except subprocess.CalledProcessError as cpe:
@@ -1295,7 +1303,7 @@ def resolve_requirements(topsrcdir, site_name):
             f"https://docs.astral.sh/uv/guides/install-python/"
         )
 
-        exit(1)
+        sys.exit(1)
 
     return requirements
 
@@ -1376,6 +1384,7 @@ def _assert_pip_check(pthfile_lines, virtualenv_name, requirements):
         # changes recently).
         process = subprocess.run(
             [sys.executable, "-m", "venv", "--without-pip", check_env_path],
+            check=False,
             capture_output=True,
             encoding="UTF-8",
         )
@@ -1422,6 +1431,7 @@ def _assert_pip_check(pthfile_lines, virtualenv_name, requirements):
 
         check_result = subprocess.run(
             pip + ["check"],
+            check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -1487,6 +1497,7 @@ def _create_venv_with_pthfile(
 
     process = subprocess.run(
         [sys.executable, "-m", "venv", "--without-pip", virtualenv_root],
+        check=False,
         capture_output=True,
         encoding="UTF-8",
     )
@@ -1524,6 +1535,12 @@ def _create_venv_with_pthfile(
     os.environ["VIRTUAL_ENV"] = virtualenv_root
 
     if populate_with_pip:
+        for requirements_txt_file in requirements.requirements_txt_files:
+            target_venv.pip_install([
+                "--requirement",
+                requirements_txt_file.path,
+                "--require-hashes",
+            ])
         if requirements.pypi_requirements:
             requirements_list = [
                 str(req.requirement) for req in requirements.pypi_requirements
@@ -1556,6 +1573,16 @@ def _is_venv_up_to_date(
         if os.path.getmtime(dep_file) > metadata_mtime:
             return SiteUpToDateResult(
                 False, f'"{dep_file}" has changed since the virtualenv was created'
+            )
+
+    for requirements_txt_file in requirements.requirements_txt_files:
+        req_txt_path = requirements_txt_file.path
+        if (
+            os.path.exists(req_txt_path)
+            and os.path.getmtime(req_txt_path) > metadata_mtime
+        ):
+            return SiteUpToDateResult(
+                False, f'"{req_txt_path}" has changed since the virtualenv was created'
             )
 
     try:

@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsDBusRemoteServer_h__
-#define __nsDBusRemoteServer_h__
+#ifndef _nsDBusRemoteServer_h_
+#define _nsDBusRemoteServer_h_
 
 #include "nsRemoteServer.h"
 #include "nsUnixRemoteServer.h"
@@ -42,4 +42,4 @@ class nsDBusRemoteServer final : public nsRemoteServer,
   nsCString mPathName;
 };
 
-#endif  // __nsDBusRemoteServer_h__
+#endif  // _nsDBusRemoteServer_h_

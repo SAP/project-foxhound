@@ -291,7 +291,7 @@ add_task(async function () {
   info(
     "Check that registered properties from new regular stylesheets are displayed"
   );
-  let onRuleViewRefreshed = view.once("ruleview-refreshed");
+  let onRuleViewRefreshed = inspector.once("rule-view-refreshed");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     const s = content.wrappedJSObject.document.createElement("style");
     s.id = "added";
@@ -350,7 +350,7 @@ add_task(async function () {
   });
 
   info("Check that updating property does update rules view");
-  onRuleViewRefreshed = view.once("ruleview-refreshed");
+  onRuleViewRefreshed = inspector.once("rule-view-refreshed");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.document.querySelector("style#added").textContent =
       `
@@ -437,7 +437,7 @@ add_task(async function () {
     "The --constructed variable is set as unmatched since it's not defined nor registered"
   );
 
-  onRuleViewRefreshed = view.once("ruleview-refreshed");
+  onRuleViewRefreshed = inspector.once("rule-view-refreshed");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     const s = new content.wrappedJSObject.CSSStyleSheet();
     s.replaceSync(`

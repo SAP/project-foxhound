@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -175,6 +173,9 @@ document.addEventListener(
         case "context-pdfjs-highlight-selection":
           gContextMenu.pdfJSCmd("highlightSelection");
           break;
+        case "context-pdfjs-comment-selection":
+          gContextMenu.pdfJSCmd("commentSelection");
+          break;
         case "context-reveal-password":
           gContextMenu.toggleRevealPassword();
           break;
@@ -205,41 +206,24 @@ document.addEventListener(
         case "context-take-screenshot":
           gContextMenu.takeScreenshot();
           break;
-        case "context-keywordfield":
-          if (!gContextMenu) {
-            throw new Error("Context menu doesn't seem to be open.");
-          }
-          gContextMenu.addKeywordForSearchField();
-          break;
         case "context-add-engine":
           if (!gContextMenu) {
             throw new Error("Context menu doesn't seem to be open.");
           }
           gContextMenu.addSearchFieldAsEngine().catch(console.error);
           break;
-        case "context-searchselect": {
-          let { searchTerms, usePrivate, principal, policyContainer } =
-            event.target;
-          SearchUIUtils.loadSearchFromContext(
-            window,
-            searchTerms,
-            usePrivate,
-            principal,
-            policyContainer,
-            event
-          );
+        case "context-searchselect":
+        case "context-searchselect-private":
+          gContextMenu.loadSearch({ event });
           break;
-        }
-        case "context-searchselect-private": {
-          let { searchTerms, principal, policyContainer } = event.target;
-          SearchUIUtils.loadSearchFromContext(
-            window,
-            searchTerms,
-            true,
-            principal,
-            policyContainer,
-            event
+        case "context-visual-search": {
+          let { SearchUtils } = ChromeUtils.importESModule(
+            "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"
           );
+          gContextMenu.loadSearch({
+            event,
+            searchUrlType: SearchUtils.URL_TYPE.VISUAL_SEARCH,
+          });
           break;
         }
         case "context-translate-selection":
@@ -325,7 +309,7 @@ document.addEventListener(
           // attempts to generate the text fragment directive of selected text
           // Note: This is kicking off an async operation that might update
           // the context menu while it's open (enables an entry).
-          if (gContextMenu.isContentSelected) {
+          if (gContextMenu.isContentSelected || gContextMenu.hasTextFragments) {
             gContextMenu.getTextDirective();
           }
           break;
@@ -337,14 +321,20 @@ document.addEventListener(
           gSync.populateSendTabToDevicesMenu(
             event.target,
             gContextMenu.linkURI,
-            gContextMenu.linkTextStr
+            gContextMenu.linkTextStr,
+            {
+              contextMenuType: "link",
+            }
           );
           break;
         case "context-sendpagetodevice-popup":
           gSync.populateSendTabToDevicesMenu(
             event.target,
             gBrowser.currentURI,
-            gBrowser.contentTitle
+            gBrowser.contentTitle,
+            {
+              contextMenuType: "page",
+            }
           );
           break;
       }
@@ -360,6 +350,8 @@ document.addEventListener(
       if (!IS_WEBEXT_PANELS) {
         updateEditUIVisibility();
       }
+      // Reset Send Tab exposure tracking when context menu closes
+      gSync._resetSendTabExposureTracking();
     });
 
     // The command events bubble up to the popup element.

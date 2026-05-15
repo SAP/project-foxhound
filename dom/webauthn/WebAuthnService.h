@@ -5,9 +5,11 @@
 #ifndef mozilla_dom_WebAuthnService_h_
 #define mozilla_dom_WebAuthnService_h_
 
-#include "nsIWebAuthnService.h"
 #include "AuthrsBridge_ffi.h"
+#include "mozilla/DataMutex.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/dom/WebAuthnPromiseHolder.h"
+#include "nsIWebAuthnService.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "AndroidWebAuthnService.h"
@@ -32,7 +34,7 @@ class WebAuthnService final : public nsIWebAuthnService {
 
   WebAuthnService()
       : mTransactionState(Nothing(), "WebAuthnService::mTransactionState") {
-    Unused << authrs_service_constructor(getter_AddRefs(mAuthrsService));
+    (void)authrs_service_constructor(getter_AddRefs(mAuthrsService));
 #if defined(XP_WIN)
     if (WinWebAuthnService::AreWebAuthNApisAvailable()) {
       mPlatformService = new WinWebAuthnService();

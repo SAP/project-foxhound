@@ -4,10 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddb_scripterrorhelper_h__
-#define mozilla_dom_indexeddb_scripterrorhelper_h__
+#ifndef mozilla_dom_indexeddb_scripterrorhelper_h_
+#define mozilla_dom_indexeddb_scripterrorhelper_h_
 
 #include <inttypes.h>
+
 #include "nsStringFwd.h"
 
 namespace mozilla {
@@ -31,4 +32,4 @@ class ScriptErrorHelper {
 
 }  // namespace mozilla::dom::indexedDB
 
-#endif  // mozilla_dom_indexeddb_scripterrorhelper_h__
+#endif  // mozilla_dom_indexeddb_scripterrorhelper_h_

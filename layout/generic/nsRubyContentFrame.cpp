@@ -9,7 +9,6 @@
 #include "nsRubyContentFrame.h"
 
 #include "mozilla/ComputedStyle.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsPresContext.h"
 
 using namespace mozilla;
@@ -21,8 +20,8 @@ using namespace mozilla;
 
 bool nsRubyContentFrame::IsIntraLevelWhitespace() const {
   auto pseudoType = Style()->GetPseudoType();
-  if (pseudoType != PseudoStyleType::rubyBase &&
-      pseudoType != PseudoStyleType::rubyText) {
+  if (pseudoType != PseudoStyleType::MozRubyBase &&
+      pseudoType != PseudoStyleType::MozRubyText) {
     return false;
   }
 

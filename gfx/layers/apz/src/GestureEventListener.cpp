@@ -84,6 +84,17 @@ GestureEventListener::GestureEventListener(
 
 GestureEventListener::~GestureEventListener() = default;
 
+void GestureEventListener::Destroy() {
+  if (mLongTapTimeoutTask) {
+    mLongTapTimeoutTask->Cancel();
+    mLongTapTimeoutTask = nullptr;
+  }
+  if (mMaxTapTimeoutTask) {
+    mMaxTapTimeoutTask->Cancel();
+    mMaxTapTimeoutTask = nullptr;
+  }
+}
+
 nsEventStatus GestureEventListener::HandleInputEvent(
     const MultiTouchInput& aEvent) {
   GEL_LOG("Receiving event type %d with %zu touches in state %s\n",

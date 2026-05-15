@@ -10,6 +10,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     description: release bouncer submission job
     worker-type: bouncer
     worker:
@@ -32,27 +33,18 @@ task-defaults:
 
 tasks:
     devedition:
-        bouncer-platforms: ['linux', 'linux64', 'linux64-aarch64', 'osx', 'win', 'win64', 'win64-aarch64']
+        bouncer-platforms: ['linux64', 'linux64-aarch64', 'osx', 'win', 'win64', 'win64-aarch64']
         bouncer-products: ['complete-mar', 'installer', 'installer-ssl', 'partial-mar', 'stub-installer', 'msi', 'msix']
         shipping-product: devedition
         treeherder:
             platform: devedition-release/opt
 
     firefox:
-        bouncer-platforms: ['linux', 'linux64', 'linux64-aarch64', 'osx', 'win', 'win64', 'win64-aarch64']
+        bouncer-platforms: ['linux64', 'linux64-aarch64', 'osx', 'win', 'win64', 'win64-aarch64']
         bouncer-products:
             by-release-type:
                 default: ['complete-mar', 'installer', 'installer-ssl', 'partial-mar', 'stub-installer', 'msi', 'msix', 'pkg', 'langpack']
                 esr.*: ['complete-mar', 'installer', 'installer-ssl', 'partial-mar', 'msi', 'msix', 'pkg', 'langpack']
         shipping-product: firefox
         treeherder:
-            platform: firefox-release/opt
-
-    firefox-rc:
-        bouncer-platforms: ['linux', 'linux64', 'linux64-aarch64', 'osx', 'win', 'win64', 'win64-aarch64']
-        bouncer-products: ['complete-mar-candidates', 'partial-mar-candidates']
-        shipping-product: firefox
-        run-on-releases: ['release-rc']
-        treeherder:
-            symbol: Rel(BncSub-RC)
             platform: firefox-release/opt

@@ -16,7 +16,7 @@
   background-color: var(--theme-selection-background);
 }
 
-.close-btn .img {
+.close-btn .dbg-img {
   display: block;
   width: 12px;
   height: 12px;
@@ -29,7 +29,7 @@
   height: 20px;
 }
 
-.close-btn.big .img {
+.close-btn.big .dbg-img {
   width: 16px;
   height: 16px;
 }

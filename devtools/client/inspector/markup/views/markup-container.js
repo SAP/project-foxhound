@@ -23,6 +23,13 @@ const TYPES = {
 };
 
 /**
+ * Unique identifier used to set markup container node id.
+ *
+ * @type {number}
+ */
+let markupContainerID = 0;
+
+/**
  * The main structure for storing a document node in the markup
  * tree.  Manages creation of the editor for the node and
  * a <ul> for placing child elements, and expansion/collapsing
@@ -33,22 +40,14 @@ const TYPES = {
  *    MarkupTextContainer
  *    MarkupElementContainer
  */
-function MarkupContainer() {}
-
-/**
- * Unique identifier used to set markup container node id.
- * @type {Number}
- */
-let markupContainerID = 0;
-
-MarkupContainer.prototype = {
+class MarkupContainer {
   // Get the UndoStack from the MarkupView.
   get undo() {
     // undo is a lazy getter in the MarkupView.
     return this.markup.undo;
-  },
+  }
 
-  /*
+  /**
    * Initialize the MarkupContainer.  Should be called while one
    * of the other contain classes is instantiated.
    *
@@ -56,7 +55,7 @@ MarkupContainer.prototype = {
    *         The markup view that owns this container.
    * @param  {NodeFront} node
    *         The node to display.
-   * @param  {String} type
+   * @param  {string} type
    *         The type of container to build. One of TYPES.TEXT_CONTAINER,
    *         TYPES.ELEMENT_CONTAINER, TYPES.READ_ONLY_CONTAINER
    */
@@ -93,7 +92,7 @@ MarkupContainer.prototype = {
     if (node.isShadowRoot) {
       Glean.devtoolsShadowdom.shadowRootDisplayed.set(true);
     }
-  },
+  }
 
   buildMarkup() {
     this.elt = this.win.document.createElement("li");
@@ -129,11 +128,11 @@ MarkupContainer.prototype = {
     this.children.classList.add("children");
     this.children.setAttribute("role", "group");
     this.elt.appendChild(this.children);
-  },
+  }
 
   toString() {
     return "[MarkupContainer for " + this.node + "]";
-  },
+  }
 
   isPreviewable() {
     if (this.node.tagName && !this.node.isPseudoElement) {
@@ -146,7 +145,7 @@ MarkupContainer.prototype = {
     }
 
     return false;
-  },
+  }
 
   /**
    * Show whether the element is displayed or not
@@ -159,36 +158,36 @@ MarkupContainer.prototype = {
     if (!this.node.isDisplayed || this.node.hidden) {
       this.elt.classList.add("not-displayed");
     }
-  },
+  }
 
   /**
    * True if the current node has children. The MarkupView
    * will set this attribute for the MarkupContainer.
    */
-  _hasChildren: false,
+  _hasChildren = false;
 
   get hasChildren() {
     return this._hasChildren;
-  },
+  }
 
   set hasChildren(value) {
     this._hasChildren = value;
     this.updateExpander();
-  },
+  }
 
   /**
    * A list of all elements with tabindex that are not in container's children.
    */
   get focusableElms() {
     return [...this.tagLine.querySelectorAll("[tabindex]")];
-  },
+  }
 
   /**
    * An indicator that the container internals are focusable.
    */
   get canFocus() {
     return this._canFocus;
-  },
+  }
 
   /**
    * Toggle focusable state for container internals.
@@ -208,7 +207,7 @@ MarkupContainer.prototype = {
       // Exclude from tab order.
       this.focusableElms.forEach(elm => elm.setAttribute("tabindex", "-1"));
     }
-  },
+  }
 
   /**
    * If conatiner and its contents are focusable, exclude them from tab order,
@@ -235,28 +234,28 @@ MarkupContainer.prototype = {
     if (parent) {
       doc.activeElement.blur();
     }
-  },
+  }
 
   /**
    * True if the current node can be expanded.
    */
   get canExpand() {
     return this._hasChildren && !this.node.inlineTextChild;
-  },
+  }
 
   /**
    * True if this is the root <html> element and can't be collapsed.
    */
   get mustExpand() {
     return this.node._parent === this.markup.walker.rootNode;
-  },
+  }
 
   /**
    * True if current node can be expanded and collapsed.
    */
   get showExpander() {
     return this.canExpand && !this.mustExpand;
-  },
+  }
 
   updateExpander() {
     if (!this.expander) {
@@ -275,7 +274,7 @@ MarkupContainer.prototype = {
       // shown.
       this.tagLine.removeAttribute("aria-expanded");
     }
-  },
+  }
 
   /**
    * If current node has no children, ignore them. Otherwise, consider them a
@@ -286,7 +285,7 @@ MarkupContainer.prototype = {
       "role",
       this.hasChildren ? "group" : "presentation"
     );
-  },
+  }
 
   /**
    * Set an appropriate DOM tree depth level for a node and its subtree.
@@ -305,7 +304,7 @@ MarkupContainer.prototype = {
     if (childContainers) {
       childContainers.forEach(container => container.updateLevel());
     }
-  },
+  }
 
   /**
    * If the node has children, return the list of containers for all these
@@ -319,14 +318,14 @@ MarkupContainer.prototype = {
     return [...this.children.children]
       .filter(node => node.container)
       .map(node => node.container);
-  },
+  }
 
   /**
    * True if the node has been visually expanded in the tree.
    */
   get expanded() {
     return !this.elt.classList.contains("collapsed");
-  },
+  }
 
   setExpanded(value) {
     if (!this.expander) {
@@ -363,7 +362,7 @@ MarkupContainer.prototype = {
     if (this.node.isShadowRoot) {
       Glean.devtoolsShadowdom.shadowRootExpanded.set(true);
     }
-  },
+  }
 
   /**
    * Expanding a node means cloning its "inline" closing tag into a new
@@ -398,7 +397,7 @@ MarkupContainer.prototype = {
       this.closeTagLine = line;
     }
     this.elt.appendChild(this.closeTagLine);
-  },
+  }
 
   /**
    * Hide the closing tag-line element which should only be displayed when the container
@@ -411,11 +410,11 @@ MarkupContainer.prototype = {
 
     this.elt.removeChild(this.closeTagLine);
     this.closeTagLine = undefined;
-  },
+  }
 
   parentContainer() {
     return this.elt.parentNode ? this.elt.parentNode.container : null;
-  },
+  }
 
   /**
    * Determine tree depth level of a given node. This is used to specify ARIA
@@ -429,10 +428,10 @@ MarkupContainer.prototype = {
       parent = parent.parentNode();
     }
     return level;
-  },
+  }
 
-  _isDragging: false,
-  _dragStartY: 0,
+  _isDragging = false;
+  _dragStartY = 0;
 
   set isDragging(isDragging) {
     const rootElt = this.markup.getContainer(this.markup._rootNode).elt;
@@ -451,11 +450,11 @@ MarkupContainer.prototype = {
       this.markup.doc.body.classList.remove("dragging");
       rootElt.setAttribute("aria-dropeffect", "none");
     }
-  },
+  }
 
   get isDragging() {
     return this._isDragging;
-  },
+  }
 
   /**
    * Check if element is draggable.
@@ -465,7 +464,7 @@ MarkupContainer.prototype = {
 
     return (
       !this.node.isPseudoElement &&
-      !this.node.isAnonymous &&
+      !this.node.isNativeAnonymous &&
       !this.node.isDocumentElement &&
       tagName !== "body" &&
       tagName !== "head" &&
@@ -473,15 +472,15 @@ MarkupContainer.prototype = {
       this.node.parentNode() &&
       this.node.parentNode().tagName !== null
     );
-  },
+  }
 
   isSlotted() {
     return false;
-  },
+  }
 
   _onKeyDown(event) {
     const { target, keyCode, shiftKey } = event;
-    const isInput = this.markup._isInputOrTextarea(target);
+    const isInput = this.markup.isInputOrTextareaOrInCodeMirrorEditor(target);
 
     // Ignore all keystrokes that originated in editors except for when 'Tab' is
     // pressed.
@@ -528,7 +527,7 @@ MarkupContainer.prototype = {
         return;
     }
     event.stopPropagation();
-  },
+  }
 
   _onMouseDown(event) {
     const { target, button, metaKey, ctrlKey } = event;
@@ -584,7 +583,7 @@ MarkupContainer.prototype = {
       this._dragStartY = event.pageY;
       this.markup._draggedContainer = this;
     }
-  },
+  }
 
   _onClick(event) {
     const { target } = event;
@@ -604,13 +603,13 @@ MarkupContainer.prototype = {
       closestLinkEl.dataset.link
     );
     event.stopPropagation();
-  },
+  }
 
   /**
    * Open a "link" found in a node's attribute in the markup-view
    *
-   * @param {String} type: A node-attribute-parser.js ATTRIBUTE_TYPES
-   * @param {String} link: A "link" as returned by the `parseAttribute` function from
+   * @param {string} type: A node-attribute-parser.js ATTRIBUTE_TYPES
+   * @param {string} link: A "link" as returned by the `parseAttribute` function from
    *                 node-attribute-parser.js . This can be an actual URL, but could be
    *                 something else (e.g. an element id).
    */
@@ -618,7 +617,7 @@ MarkupContainer.prototype = {
     // Make container tabbable descendants not tabbable (by default).
     this.canFocus = false;
     this.markup.followAttributeLink(type, link);
-  },
+  }
 
   /**
    * On mouse up, stop dragging.
@@ -640,7 +639,7 @@ MarkupContainer.prototype = {
       await walkerFront.insertBefore(this.node, parent, nextSibling);
       this.markup.emit("drop-completed");
     }
-  },
+  }
 
   /**
    * On mouse move, move the dragged element and indicate the drop target.
@@ -679,7 +678,7 @@ MarkupContainer.prototype = {
       const el = this.markup.doc.elementFromPoint(x, y);
       this.markup.indicateDropTarget(el);
     }
-  },
+  }
 
   cancelDragging() {
     if (!this.isDragging) {
@@ -689,7 +688,7 @@ MarkupContainer.prototype = {
     this._isPreDragging = false;
     this.isDragging = false;
     this.elt.style.removeProperty("top");
-  },
+  }
 
   /**
    * Temporarily flash the container to attract attention.
@@ -712,9 +711,9 @@ MarkupContainer.prototype = {
         });
       }, this.markup.CONTAINER_FLASHING_DURATION);
     }
-  },
+  }
 
-  _hovered: false,
+  _hovered = false;
 
   /**
    * Highlight the currently hovered tag + its closing tag if necessary
@@ -740,23 +739,23 @@ MarkupContainer.prototype = {
           .classList.remove("tag-hover");
       }
     }
-  },
+  }
 
   /**
    * True if the container is visible in the markup tree.
    */
   get visible() {
     return this.elt.getBoundingClientRect().height > 0;
-  },
+  }
 
   /**
    * True if the container is currently selected.
    */
-  _selected: false,
+  _selected = false;
 
   get selected() {
     return this._selected;
-  },
+  }
 
   set selected(value) {
     this.tagState.classList.remove("flash-out");
@@ -775,7 +774,7 @@ MarkupContainer.prototype = {
       this.tagLine.removeAttribute("selected");
       this.tagState.classList.remove("theme-selected");
     }
-  },
+  }
 
   /**
    * Update the container's editor to the current state of the
@@ -809,13 +808,13 @@ MarkupContainer.prototype = {
     if (this.editor.update) {
       this.editor.update();
     }
-  },
+  }
 
   /**
    * Try to put keyboard focus on the current editor.
    *
-   * @param {Object} options
-   * @param {Boolean} options.fromMouseEvent: Set to true if this is called from a mouse event.
+   * @param {object} options
+   * @param {boolean} options.fromMouseEvent: Set to true if this is called from a mouse event.
    */
   focus({ fromMouseEvent = false } = {}) {
     // Elements with tabindex of -1 are not focusable.
@@ -830,7 +829,7 @@ MarkupContainer.prototype = {
         focusVisible: !fromMouseEvent,
       });
     }
-  },
+  }
 
   _onToggle(event) {
     event.stopPropagation();
@@ -846,12 +845,12 @@ MarkupContainer.prototype = {
     }
 
     this.expandContainer(event.altKey);
-  },
+  }
 
   /**
    * Expands the markup container if it has children.
    *
-   * @param  {Boolean} applyToDescendants
+   * @param  {boolean} applyToDescendants
    *         Whether all descendants should also be expanded/collapsed
    */
   expandContainer(applyToDescendants) {
@@ -862,7 +861,7 @@ MarkupContainer.prototype = {
         applyToDescendants
       );
     }
-  },
+  }
 
   /**
    * Get rid of event listeners and references, when the container is no longer
@@ -896,7 +895,7 @@ MarkupContainer.prototype = {
     }
 
     this.editor.destroy();
-  },
-};
+  }
+}
 
 module.exports = MarkupContainer;

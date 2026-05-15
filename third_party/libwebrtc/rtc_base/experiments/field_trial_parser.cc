@@ -9,11 +9,14 @@
  */
 #include "rtc_base/experiments/field_trial_parser.h"
 
-#include <inttypes.h>
-
-#include <algorithm>
+#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <initializer_list>
 #include <map>
-#include <type_traits>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "absl/strings/string_view.h"
@@ -193,7 +196,7 @@ bool FieldTrialFlag::Get() const {
   return value_;
 }
 
-webrtc::FieldTrialFlag::operator bool() const {
+FieldTrialFlag::operator bool() const {
   return value_;
 }
 

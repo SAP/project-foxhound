@@ -14,7 +14,7 @@ export class AboutLoginsTestUtils {
    *        The content object.
    * @param {ContentTaskUtils} ContentTaskUtils
    *        The ContentTaskUtils object.
-   * @returns {Promise<Object>} A promise that contains added, modified, noChange and errors count.
+   * @returns {Promise<object>} A promise that contains added, modified, noChange and errors count.
    */
   static async getCsvImportSuccessDialogData(content, ContentTaskUtils) {
     let dialog = Cu.waiveXrays(
@@ -51,7 +51,7 @@ export class AboutLoginsTestUtils {
    *
    * @param {content} content
    *        The content object.
-   * @returns {Promise<Object>} A promise that contains the hidden state and l10n id for title, description and focused element.
+   * @returns {Promise<object>} A promise that contains the hidden state and l10n id for title, description and focused element.
    */
   static async getCsvImportErrorDialogData(content) {
     const dialog = Cu.waiveXrays(
@@ -77,7 +77,7 @@ export class AboutLoginsTestUtils {
    *
    * @param {content} content
    *        The content object.
-   * @returns {Promise<Object>} A promise that contains the detailed report data like added, modified, noChange, errors and rows.
+   * @returns {Promise<object>} A promise that contains the detailed report data like added, modified, noChange, errors and rows.
    */
   static async getCsvImportReportData(content) {
     const rows = [];

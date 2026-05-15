@@ -4,12 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_saferefptr_h__
-#define mozilla_saferefptr_h__
+#ifndef mozilla_saferefptr_h_
+#define mozilla_saferefptr_h_
 
 #include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
@@ -122,15 +121,6 @@ class AtomicSafeRefCounted
 };
 
 struct AcquireStrongRefFromRawPtr {};
-
-// XXX for Apple, clang::trivial_abi is probably also supported, but we need to
-// find out the correct version number
-#if defined(__clang__) && !defined(__apple_build_version__) && \
-    __clang_major__ >= 7
-#  define MOZ_TRIVIAL_ABI [[clang::trivial_abi]]
-#else
-#  define MOZ_TRIVIAL_ABI
-#endif
 
 // A restricted variant of mozilla::RefPtr<T>, which prohibits some unsafe or
 // unperformant misuses, in particular:

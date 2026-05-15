@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.toArgb
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.feature.customtabs.getConfiguredColorSchemeParams
 import mozilla.components.feature.customtabs.getToolbarContrastColor
+import mozilla.components.feature.customtabs.getToolbarSecondaryContrastColor
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import org.mozilla.fenix.browser.store.BrowserScreenAction.CustomTabColorsUpdated
 import org.mozilla.fenix.browser.store.BrowserScreenStore
@@ -63,13 +64,21 @@ fun BrowserScreenStore.updateCustomTabsColors(
         fallbackColor = Color(context.getColorFromAttr(android.R.attr.textColorPrimary)).toArgb(),
     )
 
+    val secondaryReadableColor = colorSchemeParams.getToolbarSecondaryContrastColor(
+        context = context,
+        shouldUpdateTheme = true,
+        fallbackColor = Color(context.getColorFromAttr(android.R.attr.textColorSecondary)).toArgb(),
+    )
+
     dispatch(
         CustomTabColorsUpdated(
             CustomTabColors(
                 toolbarColor = colorSchemeParams.toolbarColor,
-                systemBarsColor = colorSchemeParams.navigationBarColor,
+                statusBarColor = colorSchemeParams.toolbarColor,
+                navigationBarColor = colorSchemeParams.navigationBarColor ?: colorSchemeParams.toolbarColor,
                 navigationBarDividerColor = colorSchemeParams.navigationBarDividerColor,
                 readableColor = readableColor,
+                secondaryReadableColor = secondaryReadableColor,
             ),
         ),
     )

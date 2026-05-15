@@ -5,16 +5,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MediaKeyMessageEvent.h"
-#include "mozilla/dom/MediaKeyMessageEventBinding.h"
+
 #include "js/ArrayBuffer.h"
 #include "js/RootingAPI.h"
 #include "jsfriendapi.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/MediaKeyMessageEventBinding.h"
+#include "mozilla/dom/MediaKeys.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrimitiveConversions.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsContentUtils.h"
-#include "mozilla/dom/MediaKeys.h"
 
 namespace mozilla::dom {
 

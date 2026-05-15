@@ -12,11 +12,6 @@ function newPrincipal(origin) {
 
 // This tests the key used to store the URI -> permission map on a tab.
 add_task(async function testTemporaryPermissionTabURLs() {
-  // Prevent showing a dialog for https://name:password@example.com
-  SpecialPowers.pushPrefEnv({
-    set: [["network.http.phishy-userpass-length", 2048]],
-  });
-
   // This usually takes about 60 seconds on 32bit Linux debug,
   // due to the combinatory nature of the test that is hard to fix.
   requestLongerTimeout(2);

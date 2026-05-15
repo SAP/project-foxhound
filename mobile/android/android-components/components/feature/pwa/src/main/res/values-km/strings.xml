@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Default shortcut label used if website has no title -->
+  <string name="mozac_feature_pwa_default_shortcut_label">វិបសាយ</string>
+  <!-- Name of the "notification channel" used for displaying site controls notification. See https://developer.android.com/training/notify-user/channels -->
+  <string name="mozac_feature_pwa_site_controls_notification_channel">ការគ្រប់គ្រងគេហទំព័រពេញអេក្រង់</string>
+  <!-- Text shown on the second row of the site controls notification. -->
+  <string name="mozac_feature_pwa_site_controls_notification_text">ចុចដើម្បីចម្លង URL សម្រាប់កម្មវិធីនេះ</string>
+  <!-- Refresh button in site controls notification. -->
+  <string name="mozac_feature_pwa_site_controls_refresh">ផ្ទុក​ឡើងវិញ</string>
+  <!-- Toast displayed when the website URL is copied. -->
+  <string name="mozac_feature_pwa_copy_success">បានចម្លង URL ។</string>
+</resources>

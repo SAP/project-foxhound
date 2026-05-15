@@ -186,17 +186,22 @@ addAsyncAnimTest(async function() {
   // sure Bug 1776077 is reproducible.
   let utils = SpecialPowers.wrap(window).windowUtils;
   utils.setAsyncScrollOffset(scroller, 0, -50);
-  utils.advanceTimeAndRefresh(16);
-  utils.restoreNormalRefresh();
-  await waitForPaints();
 
   // NOTE: setAsyncScrollOffset() doesn't update main thread, so we check the
   // OMTA style directly.
   let compositorStr =
     SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "transform");
   ok(compositorStr === "matrix(1, 0, 0, 1, 25, 0)",
-     "scroll animations is in delay phase before calling main thread style " +
-     "udpate");
+     "scroll animations is in delay phase before advancing time to next tick");
+
+  utils.advanceTimeAndRefresh(16);
+  utils.restoreNormalRefresh();
+  await waitForPaints();
+
+  // We update the OMTA in the following tick, so the OMTA style gets cleared.
+  compositorStr = SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "transform");
+  ok(compositorStr === "",
+     "scroll animation in delay phase clears its OMTA style");
 
   scroller.scrollTop = 25;
   await waitForPaintsFlushed();
@@ -235,17 +240,22 @@ addAsyncAnimTest(async function() {
   // sure Bug 1776077 is reproducible.
   let utils = SpecialPowers.wrap(window).windowUtils;
   utils.setAsyncScrollOffset(scroller, 0, -50);
-  utils.advanceTimeAndRefresh(16);
-  utils.restoreNormalRefresh();
-  await waitForPaints();
 
   // NOTE: setAsyncScrollOffset() doesn't update main thread, so we check the
   // OMTA style directly.
   let compositorStr =
     SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "transform");
   ok(compositorStr === "matrix(1, 0, 0, 1, 0, 0)",
-     "scroll animations is in delay phase before calling main thread style " +
-     "udpate");
+     "scroll animations is in delay phase before advancing time to next tick");
+
+  utils.advanceTimeAndRefresh(16);
+  utils.restoreNormalRefresh();
+  await waitForPaints();
+
+  // We update the OMTA in the following tick, so the OMTA style gets cleared.
+  compositorStr = SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "transform");
+  ok(compositorStr === "",
+     "scroll animation in delay phase clears its OMTA style");
 
   done_div();
   done_scroller();

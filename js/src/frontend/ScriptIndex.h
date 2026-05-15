@@ -7,8 +7,6 @@
 #ifndef frontend_ScriptIndex_h
 #define frontend_ScriptIndex_h
 
-#include <utility>
-
 #include "frontend/TypedIndex.h"  // TypedIndex
 #include "js/GCPolicyAPI.h"       // JS::GCPolicy, JS::IgnoreGCPolicy
 

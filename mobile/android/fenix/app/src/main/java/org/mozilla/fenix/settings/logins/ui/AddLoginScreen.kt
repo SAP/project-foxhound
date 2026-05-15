@@ -5,11 +5,10 @@
 package org.mozilla.fenix.settings.logins.ui
 
 import android.util.Patterns
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -19,31 +18,36 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import kotlinx.coroutines.flow.map
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.compose.base.button.IconButton
+import mozilla.components.compose.base.text.Text
 import mozilla.components.compose.base.textfield.TextField
-import mozilla.components.compose.base.textfield.TextFieldColors
-import mozilla.components.compose.base.textfield.TextFieldStyle
-import mozilla.components.lib.state.ext.observeAsState
 import mozilla.components.support.ktx.util.URLStringUtils.isHttpOrHttps
 import mozilla.components.support.ktx.util.URLStringUtils.isValidHost
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
-
-private val IconButtonHeight = 48.dp
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
+import mozilla.components.ui.icons.R as iconsR
 
 @Composable
 internal fun AddLoginScreen(store: LoginsStore) {
@@ -51,12 +55,15 @@ internal fun AddLoginScreen(store: LoginsStore) {
         topBar = {
             AddLoginTopBar(store)
         },
-        containerColor = FirefoxTheme.colors.layer1,
+        modifier = Modifier.semantics {
+            testTagsAsResourceId = true
+        },
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .padding(paddingValues)
-                .width(FirefoxTheme.layout.size.containerMaxWidth),
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.static200))
             AddLoginHost(store = store)
@@ -71,14 +78,18 @@ internal fun AddLoginScreen(store: LoginsStore) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddLoginTopBar(store: LoginsStore) {
-    val state by store.observeAsState(store.state.loginsAddLoginState) { it.loginsAddLoginState }
+    val state by remember { store.stateFlow.map { it.loginsAddLoginState } }
+        .collectAsState(store.state.loginsAddLoginState)
+    val newLoginState by remember {
+        store.stateFlow.map { it.newLoginState }
+    }.collectAsState(initial = store.state.newLoginState)
     val host = state?.host ?: ""
     val username = state?.username ?: ""
     val password = state?.password ?: ""
-    val isLoginValid = isValidHost(host) && username.isNotBlank() && password.isNotBlank()
+    val isLoginValid =
+        isValidHost(host) && username.isNotBlank() && newLoginState != NewLoginState.Duplicate && password.isNotBlank()
 
     TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = FirefoxTheme.colors.layer1),
         windowInsets = WindowInsets(
             top = 0.dp,
             bottom = 0.dp,
@@ -86,51 +97,38 @@ private fun AddLoginTopBar(store: LoginsStore) {
         title = {
             Text(
                 text = stringResource(R.string.add_login_2),
-                color = FirefoxTheme.colors.textPrimary,
-                style = FirefoxTheme.typography.headline6,
+                style = FirefoxTheme.typography.headline5,
             )
         },
         navigationIcon = {
             IconButton(
-                modifier = Modifier
-                    .padding(horizontal = FirefoxTheme.layout.space.static50),
                 onClick = { store.dispatch(AddLoginBackClicked) },
                 contentDescription = stringResource(
                     R.string.add_login_navigate_back_button_content_description,
                 ),
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.mozac_ic_back_24),
+                    painter = painterResource(iconsR.drawable.mozac_ic_back_24),
                     contentDescription = null,
-                    tint = FirefoxTheme.colors.iconPrimary,
                 )
             }
         },
         actions = {
-            Box {
-                IconButton(
-                    modifier = Modifier
-                        .padding(horizontal = FirefoxTheme.layout.space.static50),
-                    onClick = {
-                        store.dispatch(
-                            AddLoginAction.AddLoginSaveClicked,
-                        )
-                    },
-                    contentDescription = stringResource(
-                        R.string.add_login_save_new_login_button_content_description,
-                    ),
-                    enabled = isLoginValid,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.mozac_ic_checkmark_24),
-                        contentDescription = null,
-                        tint = if (isLoginValid) {
-                            FirefoxTheme.colors.textPrimary
-                        } else {
-                            FirefoxTheme.colors.textDisabled
-                        },
+            IconButton(
+                onClick = {
+                    store.dispatch(
+                        AddLoginAction.AddLoginSaveClicked,
                     )
-                }
+                },
+                contentDescription = stringResource(
+                    R.string.add_login_save_new_login_button_content_description,
+                ),
+                enabled = isLoginValid,
+            ) {
+                Icon(
+                    painter = painterResource(iconsR.drawable.mozac_ic_checkmark_24),
+                    contentDescription = null,
+                )
             }
         },
     )
@@ -138,7 +136,8 @@ private fun AddLoginTopBar(store: LoginsStore) {
 
 @Composable
 private fun AddLoginHost(store: LoginsStore) {
-    val state by store.observeAsState(store.state.loginsAddLoginState) { it.loginsAddLoginState }
+    val state by remember { store.stateFlow.map { it.loginsAddLoginState } }
+        .collectAsState(initial = store.state.loginsAddLoginState)
     val host = state?.host ?: ""
     var isFocused by remember { mutableStateOf(false) }
 
@@ -155,12 +154,17 @@ private fun AddLoginHost(store: LoginsStore) {
             .padding(
                 horizontal = FirefoxTheme.layout.space.static200,
                 vertical = FirefoxTheme.layout.space.static100,
-            ),
+            )
+            .width(FirefoxTheme.layout.size.containerMaxWidth)
+            .semantics {
+                testTag = LoginsTestingTags.ADD_LOGIN_HOST_NAME_TEXT_FIELD
+            },
         label = stringResource(R.string.preferences_passwords_saved_logins_site),
-        minHeight = IconButtonHeight,
-        trailingIcons = {
+        trailingIcon = {
             if (isFocused && isValidHost(host)) {
-                CrossTextFieldButton { store.dispatch(AddLoginAction.HostChanged("")) }
+                CrossTextFieldButton(
+                    contentDescription = Text.Resource(R.string.saved_login_clear_hostname),
+                ) { store.dispatch(AddLoginAction.HostChanged("")) }
             }
         },
     )
@@ -170,17 +174,21 @@ private fun AddLoginHost(store: LoginsStore) {
 
         Text(
             text = stringResource(R.string.add_login_hostname_invalid_text_3),
-            modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.static200),
-            style = TextFieldStyle.default().labelStyle,
-            color = TextFieldColors.default().placeholderColor,
+            modifier = Modifier
+                .padding(horizontal = FirefoxTheme.layout.space.static200)
+                .width(FirefoxTheme.layout.size.containerMaxWidth),
         )
     }
 }
 
 @Composable
 private fun AddLoginUsername(store: LoginsStore) {
-    val addLoginState by store.observeAsState(store.state.loginsAddLoginState) { it.loginsAddLoginState }
-    val newLoginState by store.observeAsState(store.state.newLoginState) { it.newLoginState }
+    val addLoginState by remember {
+        store.stateFlow.map { it.loginsAddLoginState }
+    }.collectAsState(initial = store.state.loginsAddLoginState)
+    val newLoginState by remember {
+        store.stateFlow.map { it.newLoginState }
+    }.collectAsState(initial = store.state.newLoginState)
     val username = addLoginState?.username ?: ""
     var isFocused by remember { mutableStateOf(false) }
 
@@ -197,23 +205,29 @@ private fun AddLoginUsername(store: LoginsStore) {
             .padding(
                 horizontal = FirefoxTheme.layout.space.static200,
                 vertical = FirefoxTheme.layout.space.static100,
-            ),
+            )
+            .width(FirefoxTheme.layout.size.containerMaxWidth)
+            .semantics {
+                testTag = LoginsTestingTags.ADD_LOGIN_USER_NAME_TEXT_FIELD
+            },
         label = stringResource(R.string.preferences_passwords_saved_logins_username),
-        minHeight = IconButtonHeight,
-        trailingIcons = {
+        trailingIcon = {
             if (isFocused && addLoginState?.username?.isNotEmpty() == true) {
-                CrossTextFieldButton { store.dispatch(AddLoginAction.UsernameChanged("")) }
+                CrossTextFieldButton(contentDescription = Text.Resource(R.string.saved_login_clear_username)) {
+                    store.dispatch(
+                        AddLoginAction.UsernameChanged(""),
+                    )
+                }
             }
         },
-        colors = TextFieldColors.default(
-            placeholderColor = FirefoxTheme.colors.textPrimary,
-        ),
     )
 }
 
 @Composable
 private fun AddLoginPassword(store: LoginsStore) {
-    val state by store.observeAsState(store.state.loginsAddLoginState) { it.loginsAddLoginState }
+    val state by remember {
+        store.stateFlow.map { it.loginsAddLoginState }
+    }.collectAsState(initial = store.state.loginsAddLoginState)
     val password = state?.password ?: ""
     var isFocused by remember { mutableStateOf(false) }
 
@@ -230,42 +244,35 @@ private fun AddLoginPassword(store: LoginsStore) {
             .padding(
                 horizontal = FirefoxTheme.layout.space.static200,
                 vertical = FirefoxTheme.layout.space.static100,
-            ),
+            )
+            .width(FirefoxTheme.layout.size.containerMaxWidth)
+            .semantics {
+                testTag = LoginsTestingTags.ADD_LOGIN_PASSWORD_TEXT_FIELD
+            },
         label = stringResource(R.string.preferences_passwords_saved_logins_password),
-        minHeight = IconButtonHeight,
-        trailingIcons = {
+        trailingIcon = {
             if (isFocused && state?.password?.isNotEmpty() == true) {
-                CrossTextFieldButton { store.dispatch(AddLoginAction.PasswordChanged("")) }
+                CrossTextFieldButton(contentDescription = Text.Resource(R.string.saved_logins_clear_password)) {
+                    store.dispatch(
+                        AddLoginAction.PasswordChanged(""),
+                    )
+                }
             }
         },
-        colors = TextFieldColors.default(
-            placeholderColor = FirefoxTheme.colors.textPrimary,
-        ),
         visualTransformation = PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
     )
 }
 
+@FlexibleWindowPreview
 @Composable
-@FlexibleWindowLightDarkPreview
-private fun AddLoginScreenPreview() {
+private fun AddLoginScreenPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
     val store = LoginsStore(
-        initialState = LoginsState(
-            loginItems = listOf(),
-            searchText = "",
-            sortOrder = LoginsSortOrder.default,
-            biometricAuthenticationDialogState = null,
-            loginsListState = null,
-            loginsAddLoginState = null,
-            loginsEditLoginState = null,
-            loginsLoginDetailState = null,
-            loginsDeletionState = null,
-        ),
+        initialState = LoginsState.default,
     )
-
-    FirefoxTheme {
-        Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
-            AddLoginScreen(store)
-        }
+    FirefoxTheme(theme) {
+        AddLoginScreen(store)
     }
 }

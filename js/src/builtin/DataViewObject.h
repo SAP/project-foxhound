@@ -81,14 +81,6 @@ class DataViewObject : public ArrayBufferViewObject {
     return endOffset.isValid() && endOffset.value() <= byteLength;
   }
 
-  static bool isOriginalByteOffsetGetter(Native native) {
-    return native == byteOffsetGetter;
-  }
-
-  static bool isOriginalByteLengthGetter(Native native) {
-    return native == byteLengthGetter;
-  }
-
   static bool construct(JSContext* cx, unsigned argc, Value* vp);
 
   static bool getInt8Impl(JSContext* cx, const CallArgs& args);

@@ -6,7 +6,6 @@
 
 #include "base/pickle.h"
 
-#include "mozilla/Alignment.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Telemetry.h"

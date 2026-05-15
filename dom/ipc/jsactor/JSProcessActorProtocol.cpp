@@ -6,15 +6,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/JSProcessActorProtocol.h"
-#include "mozilla/dom/InProcessChild.h"
-#include "mozilla/dom/JSProcessActorBinding.h"
+
+#include "JSActorProtocolUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/InProcessChild.h"
 #include "mozilla/dom/JSActorBinding.h"
+#include "mozilla/dom/JSProcessActorBinding.h"
 #include "mozilla/dom/PContent.h"
-
 #include "nsContentUtils.h"
-#include "JSActorProtocolUtils.h"
 
 namespace mozilla::dom {
 
@@ -117,16 +117,6 @@ void JSProcessActorProtocol::RemoveObservers() {
   }
 }
 
-bool JSProcessActorProtocol::RemoteTypePrefixMatches(
-    const nsDependentCSubstring& aRemoteType) {
-  for (auto& remoteType : mRemoteTypes) {
-    if (StringBeginsWith(aRemoteType, remoteType)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool JSProcessActorProtocol::Matches(const nsACString& aRemoteType,
                                      ErrorResult& aRv) {
   if (!mIncludeParent && aRemoteType.IsEmpty()) {
@@ -135,8 +125,7 @@ bool JSProcessActorProtocol::Matches(const nsACString& aRemoteType,
     return false;
   }
 
-  if (!mRemoteTypes.IsEmpty() &&
-      !RemoteTypePrefixMatches(RemoteTypePrefix(aRemoteType))) {
+  if (!RemoteTypePrefixMatches(aRemoteType)) {
     aRv.ThrowNotSupportedError(nsPrintfCString(
         "Process protocol '%s' doesn't support remote type '%s'", mName.get(),
         PromiseFlatCString(aRemoteType).get()));

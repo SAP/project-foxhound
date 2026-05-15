@@ -12,13 +12,11 @@ from marionette_harness import MarionetteTestCase
 class PurgeHTTPCacheAtShutdownTestCase(MarionetteTestCase):
     def setUp(self):
         super().setUp()
-        self.marionette.enforce_gecko_prefs(
-            {
-                "privacy.sanitize.sanitizeOnShutdown": True,
-                "privacy.clearOnShutdown.cache": True,
-                "network.cache.shutdown_purge_in_background_task": True,
-            }
-        )
+        self.marionette.enforce_gecko_prefs({
+            "privacy.sanitize.sanitizeOnShutdown": True,
+            "privacy.clearOnShutdown.cache": True,
+            "network.cache.shutdown_purge_in_background_task": True,
+        })
 
         self.profile_path = Path(self.marionette.profile_path)
         self.cache_path = self.profile_path.joinpath("cache2")

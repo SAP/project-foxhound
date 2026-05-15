@@ -10,17 +10,17 @@ const gCertDb = Cc["@mozilla.org/security/x509certdb;1"].getService(
   Ci.nsIX509CertDB
 );
 
-add_setup(function load_nssckbi_testlib() {
+add_setup(async function load_nssckbi_testlib() {
   let moduleName = "Mock Builtins";
   let libraryName = "test_trust_anchors";
 
-  checkPKCS11ModuleNotPresent(moduleName, libraryName);
+  await checkPKCS11ModuleNotPresent(moduleName, libraryName);
 
   let libraryFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
   libraryFile.append("test_trust_anchors");
   libraryFile.append(ctypes.libraryName(libraryName));
-  loadPKCS11Module(libraryFile, moduleName, true);
-  let testModule = checkPKCS11ModuleExists(moduleName, libraryName);
+  await loadPKCS11Module(libraryFile, moduleName, false);
+  let testModule = await checkPKCS11ModuleExists(moduleName, libraryName);
 
   // Check that listing the slots for the test module works.
   let testModuleSlotNames = Array.from(

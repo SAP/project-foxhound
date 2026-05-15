@@ -10,7 +10,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
-  PREF_LAST_FXA_USER: "resource://gre/modules/FxAccountsCommon.sys.mjs",
+  PREF_LAST_FXA_USER_EMAIL: "resource://gre/modules/FxAccountsCommon.sys.mjs",
+  PREF_LAST_FXA_USER_UID: "resource://gre/modules/FxAccountsCommon.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   Utils: "resource://services-sync/util.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -100,7 +101,8 @@ export const SyncDisconnectInternal = {
       // Reset the pref which is used to show a warning when a different user
       // signs in - this is no longer a concern now that we've removed the
       // data from the profile.
-      Services.prefs.clearUserPref(lazy.PREF_LAST_FXA_USER);
+      Services.prefs.clearUserPref(lazy.PREF_LAST_FXA_USER_EMAIL);
+      Services.prefs.clearUserPref(lazy.PREF_LAST_FXA_USER_UID);
 
       log.info("Finished wiping sync data");
     } catch (ex) {

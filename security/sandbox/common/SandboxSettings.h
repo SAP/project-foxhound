@@ -39,6 +39,8 @@ bool GetLlvmProfileDir(std::string& parentPath);
 // Checks whether the effective content sandbox level is > 0.
 bool IsContentSandboxEnabled();
 
+bool IsGPUSandboxEnabled();
+
 const char* ContentWin32kLockdownStateToString(
     nsIXULRuntime::ContentWin32kLockdownState aValue);
 

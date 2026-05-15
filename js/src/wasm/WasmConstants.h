@@ -218,6 +218,12 @@ enum class DefinitionKind {
   Tag = 0x04,
 };
 
+// The values here must not intersect with the values of DefinitionKind.
+enum class CompactImportKind {
+  ModuleName = 0x7F,
+  ModuleNameAndExternType = 0x7E,
+};
+
 enum class GlobalTypeImmediate { IsMutable = 0x1, AllowedMask = 0x1 };
 
 enum class LimitsFlags {
@@ -225,12 +231,21 @@ enum class LimitsFlags {
   HasMaximum = 0x1,
   IsShared = 0x2,
   IsI64 = 0x4,
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  HasCustomPageSize = 0x8,
+#endif
 };
 
 enum class LimitsMask {
   Table = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsI64),
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared) |
+           uint8_t(LimitsFlags::IsI64) |
+           uint8_t(LimitsFlags::HasCustomPageSize),
+#else
   Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared) |
            uint8_t(LimitsFlags::IsI64),
+#endif
 };
 
 enum class DataSegmentKind {
@@ -1074,9 +1089,13 @@ struct OpBytes {
   OpBytes(uint16_t b0, uint16_t b1) : b0(b0), b1(b1) {}
   OpBytes() = default;
 
-  uint32_t toPacked() const {
+  bool canBePacked() const {
     // In practice all of our secondary bytecodes are actually 16-bit right now.
-    MOZ_RELEASE_ASSERT(b1 <= UINT16_MAX);
+    return b1 <= UINT16_MAX;
+  }
+
+  uint32_t toPacked() const {
+    MOZ_RELEASE_ASSERT(canBePacked());
     return b0 | (b1 << 16);
   }
 
@@ -1130,14 +1149,14 @@ enum class FieldFlags { Mutable = 0x01, AllowedMask = 0x01 };
 
 enum class FieldWideningOp { None, Signed, Unsigned };
 
-// The WebAssembly spec hard-codes the virtual page size to be 64KiB and
-// requires the size of linear memory to always be a multiple of 64KiB.
-
-static const unsigned PageSize = 64 * 1024;
-static const unsigned PageBits = 16;
-static_assert(PageSize == (1u << PageBits));
-
-static const unsigned PageMask = ((1u << PageBits) - 1);
+// The WebAssembly custom page sizes proposal allows for a virtual page size of
+// either 64KiB, or 1 byte.  We call these Standard and Tiny, respectively.
+enum class PageSize {
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  Tiny = 0,
+#endif
+  Standard = 16
+};
 
 // These limits are agreed upon with other engines for consistency.
 
@@ -1147,7 +1166,7 @@ static const unsigned MaxSubTypingDepth = 63;
 static const unsigned MaxTags = 1000000;
 static const unsigned MaxFuncs = 1000000;
 static const unsigned MaxTables = 100000;
-static const unsigned MaxMemories = 100000;
+static const unsigned MaxMemories = 100;
 static const unsigned MaxImports = 1000000;
 static const unsigned MaxExports = 1000000;
 static const unsigned MaxGlobals = 1000000;
@@ -1162,9 +1181,13 @@ static const unsigned MaxLocals = 50000;
 static const unsigned MaxParams = 1000;
 static const unsigned MaxResults = 1000;
 static const unsigned MaxStructFields = 10000;
-static const uint64_t MaxMemory32PagesValidation = uint64_t(1) << 16;
-static const uint64_t MaxMemory64PagesValidation = uint64_t(1) << 48;
-static const unsigned MaxStringBytes = 100000;
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+static const uint64_t MaxMemory32TinyPagesValidation = UINT32_MAX;
+static const uint64_t MaxMemory64TinyPagesValidation = (uint64_t(1) << 53) - 1;
+#endif
+static const uint64_t MaxMemory32StandardPagesValidation = uint64_t(1) << 16;
+static const uint64_t MaxMemory64StandardPagesValidation =
+    (uint64_t(1) << 37) - 1;
 static const unsigned MaxModuleBytes = 1024 * 1024 * 1024;
 static const unsigned MaxFunctionBytes = 7654321;
 static const unsigned MaxArrayNewFixedElements = 10000;

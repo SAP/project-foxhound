@@ -1,0 +1,12 @@
+<body onload="window.close();">
+<form id="a" target="b">
+<textarea onfocus="go()" autofocus="">
+</textarea>
+<script>
+function go() {
+  document.onreadystatechange = () => {
+    a.submit()
+  }
+  window.stop()
+}
+</script>

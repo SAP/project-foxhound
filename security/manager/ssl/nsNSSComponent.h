@@ -17,6 +17,7 @@
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
+#include "nsISerialEventTarget.h"
 #include "nsNSSCallbacks.h"
 #include "nsServiceManagerUtils.h"
 #include "prerror.h"
@@ -29,7 +30,6 @@
 
 class nsIDOMWindow;
 class nsIPrompt;
-class nsISerialEventTarget;
 class nsITimer;
 
 namespace mozilla {
@@ -148,6 +148,10 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
 
   // The following members are accessed only on the main thread:
   static int mInstanceCount;
+  // A serial event target used primarily for operations that modify the NSS
+  // module DB. Using this queue for all such tasks avoids threading issues in
+  // NSS.
+  nsCOMPtr<nsISerialEventTarget> mNSSTaskQueue;
 };
 
 inline nsresult BlockUntilLoadableCertsLoaded() {

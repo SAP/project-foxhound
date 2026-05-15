@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -28,13 +29,13 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import mozilla.components.feature.tab.collections.Tab
-import org.mozilla.fenix.R.drawable
 import org.mozilla.fenix.R.string
 import org.mozilla.fenix.compose.DismissibleItemBackground
 import org.mozilla.fenix.compose.list.FaviconListItem
 import org.mozilla.fenix.ext.toShortUrl
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Rectangular shape with only right angles used to display a middle tab.
@@ -55,6 +56,7 @@ private val BOTTOM_TAB_SHAPE = RoundedCornerShape(bottomStart = 8.dp, bottomEnd 
  * @param onRemove Invoked when the user removes the tab informing also if the tab was swiped to be removed.
  */
 @Composable
+@Suppress("CognitiveComplexMethod")
 fun CollectionItem(
     tab: Tab,
     isLastInCollection: Boolean,
@@ -102,7 +104,7 @@ fun CollectionItem(
             modifier = clippingModifier
                 .fillMaxWidth(),
             shape = if (isLastInCollection) BOTTOM_TAB_SHAPE else MIDDLE_TAB_SHAPE,
-            colors = CardDefaults.cardColors(containerColor = FirefoxTheme.colors.layer2),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
             elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
         ) {
             FaviconListItem(
@@ -110,7 +112,7 @@ fun CollectionItem(
                 url = tab.url,
                 description = tab.url.toShortUrl(),
                 onClick = onClick,
-                iconPainter = painterResource(drawable.ic_close),
+                iconPainter = painterResource(iconsR.drawable.mozac_ic_cross_24),
                 iconDescription = stringResource(string.remove_tab_from_collection),
                 onIconClick = { onRemove(false) },
             )

@@ -11,7 +11,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "Elfxx.h"
 #include "Mappable.h"
 

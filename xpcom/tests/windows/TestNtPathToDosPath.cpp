@@ -8,7 +8,6 @@
 #include <winnetwk.h>
 
 #include "mozilla/FileUtilsWin.h"
-#include "mozilla/DebugOnly.h"
 #include "nsCRTGlue.h"
 
 #include "gtest/gtest.h"

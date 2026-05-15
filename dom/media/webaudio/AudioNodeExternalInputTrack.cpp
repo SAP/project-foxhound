@@ -3,16 +3,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "AudioNodeExternalInputTrack.h"
+
 #include "AlignedTArray.h"
 #include "AlignmentUtils.h"
-#include "AudioNodeEngine.h"
-#include "AudioNodeExternalInputTrack.h"
 #include "AudioChannelFormat.h"
+#include "AudioNodeEngine.h"
 #include "mozilla/dom/MediaStreamAudioSourceNode.h"
 
 using namespace mozilla::dom;
 
 namespace mozilla {
+
+extern LazyLogModule gMediaDecoderLog;
+
+#define LOG(msg, ...)                        \
+  MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, \
+          ("AudioNodeExternalInputTrack=%p " msg, this, ##__VA_ARGS__))
 
 AudioNodeExternalInputTrack::AudioNodeExternalInputTrack(
     AudioNodeEngine* aEngine, TrackRate aSampleRate)
@@ -132,6 +139,7 @@ static void ConvertSegmentToAudioBlock(AudioSegment* aSegment,
 
 void AudioNodeExternalInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
                                                uint32_t aFlags) {
+  AssertOnGraphThread();
   // According to spec, number of outputs is always 1.
   MOZ_ASSERT(mLastChunks.Length() == 1);
 
@@ -188,6 +196,7 @@ void AudioNodeExternalInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
         segment.AppendNullData(ticks - (inputEnd - inputStart));
       }
     }
+    segment.ApplyVolume(mVolume);
 
     for (AudioSegment::ChunkIterator iter(segment); !iter.IsEnded();
          iter.Next()) {
@@ -221,5 +230,16 @@ void AudioNodeExternalInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
 bool AudioNodeExternalInputTrack::IsEnabled() {
   return ((MediaStreamAudioSourceNodeEngine*)Engine())->IsEnabled();
 }
+
+void AudioNodeExternalInputTrack::SetVolume(float aVolume) {
+  MOZ_ASSERT(NS_IsMainThread());
+  LOG("Set volume %f", aVolume);
+  QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aVolume] {
+    LOG("Apply volume %f", aVolume);
+    mVolume = aVolume;
+  });
+}
+
+#undef LOG
 
 }  // namespace mozilla

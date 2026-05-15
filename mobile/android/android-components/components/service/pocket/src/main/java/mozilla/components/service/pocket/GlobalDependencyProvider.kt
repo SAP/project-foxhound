@@ -7,7 +7,6 @@ package mozilla.components.service.pocket
 import android.annotation.SuppressLint
 import mozilla.components.service.pocket.mars.SponsoredContentsUseCases
 import mozilla.components.service.pocket.recommendations.ContentRecommendationsUseCases
-import mozilla.components.service.pocket.spocs.SpocsUseCases
 import mozilla.components.service.pocket.stories.PocketStoriesUseCases
 
 /**
@@ -39,33 +38,6 @@ internal object GlobalDependencyProvider {
          */
         internal fun reset() {
             this.useCases = null
-        }
-    }
-
-    internal object SponsoredStories {
-        /**
-         * Possible actions regarding the list of sponsored stories.
-         */
-        @SuppressLint("StaticFieldLeak")
-        internal var useCases: SpocsUseCases? = null
-            private set
-
-        /**
-         * Convenience method for setting all details used when communicating with the Pocket server.
-         *
-         * @param useCases [SpocsUseCases] containing all possible actions regarding the list of sponsored stories.
-         */
-        internal fun initialize(
-            useCases: SpocsUseCases,
-        ) {
-            this.useCases = useCases
-        }
-
-        /**
-         * Convenience method for cleaning up any resources held for communicating with the Pocket server.
-         */
-        internal fun reset() {
-            useCases = null
         }
     }
 

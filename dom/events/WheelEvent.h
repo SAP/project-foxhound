@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_WheelEvent_h_
 #define mozilla_dom_WheelEvent_h_
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/WheelEventBinding.h"
-#include "mozilla/EventForwards.h"
 
 namespace mozilla::dom {
 

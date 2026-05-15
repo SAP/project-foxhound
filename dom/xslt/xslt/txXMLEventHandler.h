@@ -6,8 +6,8 @@
 #ifndef TRANSFRMX_XML_EVENT_HANDLER_H
 #define TRANSFRMX_XML_EVENT_HANDLER_H
 
-#include "txCore.h"
 #include "nsAtom.h"
+#include "txCore.h"
 
 #define kTXNameSpaceURI u"http://www.mozilla.org/TransforMiix"
 #define kTXWrapper "transformiix:result"

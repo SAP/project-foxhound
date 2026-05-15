@@ -469,6 +469,12 @@ let AVAILABLE_PIP_OVERRIDES;
       "https://*.vimeo.com/*": {
         showHiddenTextTracks: true,
       },
+      "https://embed.vhx.tv/*": {
+        showHiddenTextTracks: true,
+      },
+      "https://embed.criterionchannel.com/*": {
+        showHiddenTextTracks: true,
+      },
     },
 
     voot: {
@@ -491,12 +497,13 @@ let AVAILABLE_PIP_OVERRIDES;
 
     youtube: {
       /**
-       * The threshold of 0.7 is so that users can click on the "Skip Ads"
+       * The threshold of 0.6 is so that users can click on the "Skip Ads"
        * button on the YouTube site player without accidentally triggering
-       * PiP.
+       * PiP, and so that the video player's semi-transparent gear menu can be
+       * used without accidentally triggering PiP.
        */
       "https://*.youtube.com/*": {
-        visibilityThreshold: 0.7,
+        visibilityThreshold: 0.6,
         videoWrapperScriptPath: "video-wrappers/youtube.js",
       },
       "https://*.youtube-nocookie.com/*": {

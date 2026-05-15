@@ -8,17 +8,20 @@ import android.content.Context
 import androidx.annotation.GuardedBy
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import mozilla.appservices.fxaclient.FxaStateCheckerEvent
-import mozilla.appservices.fxaclient.FxaStateCheckerState
+import mozilla.appservices.fxaclient.FxaEvent
+import mozilla.appservices.fxaclient.FxaException
+import mozilla.appservices.fxaclient.FxaState
 import mozilla.appservices.syncmanager.DeviceSettings
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.base.crash.CrashReporting
+import mozilla.components.concept.sync.AccountEvent
 import mozilla.components.concept.sync.AccountEventsObserver
 import mozilla.components.concept.sync.AccountObserver
 import mozilla.components.concept.sync.AuthFlowError
@@ -27,16 +30,13 @@ import mozilla.components.concept.sync.DeviceConfig
 import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
-import mozilla.components.concept.sync.ServiceResult
 import mozilla.components.concept.sync.UserData
 import mozilla.components.service.fxa.AccessTokenUnexpectedlyWithoutKey
 import mozilla.components.service.fxa.AccountManagerException
-import mozilla.components.service.fxa.AccountOnDisk
 import mozilla.components.service.fxa.AccountStorage
 import mozilla.components.service.fxa.FxaAuthData
 import mozilla.components.service.fxa.FxaDeviceSettingsCache
 import mozilla.components.service.fxa.FxaSyncScopedKeyMissingException
-import mozilla.components.service.fxa.Result
 import mozilla.components.service.fxa.SecureAbove22AccountStorage
 import mozilla.components.service.fxa.ServerConfig
 import mozilla.components.service.fxa.SharedPrefAccountStorage
@@ -44,7 +44,6 @@ import mozilla.components.service.fxa.StorageWrapper
 import mozilla.components.service.fxa.SyncAuthInfoCache
 import mozilla.components.service.fxa.SyncConfig
 import mozilla.components.service.fxa.SyncEngine
-import mozilla.components.service.fxa.asAuthFlowUrl
 import mozilla.components.service.fxa.asSyncAuthInfo
 import mozilla.components.service.fxa.emitSyncFailedFact
 import mozilla.components.service.fxa.into
@@ -53,17 +52,14 @@ import mozilla.components.service.fxa.sync.SyncReason
 import mozilla.components.service.fxa.sync.SyncStatusObserver
 import mozilla.components.service.fxa.sync.WorkManagerSyncManager
 import mozilla.components.service.fxa.sync.clearSyncState
-import mozilla.components.service.fxa.withRetries
-import mozilla.components.service.fxa.withServiceRetries
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
 import mozilla.components.support.base.utils.NamedThreadFactory
 import java.io.Closeable
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
+import mozilla.appservices.fxaclient.DeviceConfig as ASDeviceConfig
 
 // Necessary to fetch a profile.
 const val SCOPE_PROFILE = "profile"
@@ -115,28 +111,13 @@ open class FxaAccountManager(
 ) : Closeable, Observable<AccountObserver> by ObserverRegistry() {
     private val logger = Logger("FirefoxAccountStateMachine")
 
-    @Volatile
-    private var latestAuthState: String? = null
-
-    // Used to detect multiple auth recovery attempts at once
-    // (https://bugzilla.mozilla.org/show_bug.cgi?id=1864994)
-    private var authRecoveryScheduled = AtomicBoolean(false)
-    private fun checkForMultipleRequiveryCalls() {
-        val alreadyScheduled = authRecoveryScheduled.getAndSet(true)
-        if (alreadyScheduled) {
-            crashReporter?.recordCrashBreadcrumb(Breadcrumb("multiple fxa recoveries scheduled at once"))
-        }
-    }
-    private fun finishedAuthRecovery() {
-        authRecoveryScheduled.set(false)
-    }
-
     init {
         GlobalAccountManager.setInstance(this)
     }
 
     private val accountOnDisk by lazy { getStorageWrapper().account() }
     private val account by lazy { accountOnDisk.account() }
+    private val accountStateEventsObserver = AccountStateEventsObserver(this::queueEvent)
 
     // Note on threading: we use a single-threaded executor, so there's no concurrent access possible.
     // However, that executor doesn't guarantee that it'll always use the same thread, and so vars
@@ -144,13 +125,9 @@ open class FxaAccountManager(
     // list, although that's probably an overkill.
     @Volatile private var profile: Profile? = null
 
-    // We'd like to persist this state, so that we can short-circuit transition to AuthenticationProblem on
-    // initialization, instead of triggering the full state machine knowing in advance we'll hit auth problems.
-    // See https://github.com/mozilla-mobile/android-components/issues/5102
-    @Volatile private var state: State = State.Idle(AccountState.NotAuthenticated)
+    @Volatile private var state: FxaState = FxaState.Uninitialized
 
     @Volatile private var isAccountManagerReady: Boolean = false
-    private val eventQueue = ConcurrentLinkedQueue<Event>()
 
     @VisibleForTesting
     val accountEventObserverRegistry = ObserverRegistry<AccountEventsObserver>()
@@ -175,6 +152,8 @@ open class FxaAccountManager(
     private var syncManager: SyncManager? = null
 
     init {
+        registerForAccountEvents(accountStateEventsObserver, ProcessLifecycleOwner.get(), false)
+
         syncConfig?.let {
             // Initialize sync manager with the passed-in config.
             require(syncConfig.supportedEngines.isNotEmpty()) {
@@ -237,33 +216,29 @@ open class FxaAccountManager(
             "Custom engines for sync must be a subset of supported engines."
         }
         when (val s = state) {
-            // Can't sync while we're still doing stuff.
-            is State.Active -> Unit
-            is State.Idle -> when (s.accountState) {
-                // All good, request a sync.
-                AccountState.Authenticated -> {
-                    // Make sure auth cache is populated before we try to sync.
-                    try {
-                        maybeUpdateSyncAuthInfoCache()
-                    } catch (e: AccessTokenUnexpectedlyWithoutKey) {
-                        crashReporter?.submitCaughtException(
-                            AccountManagerException.MissingKeyFromSyncScopedAccessToken("syncNow"),
-                        )
-                        processQueue(Event.Account.AccessTokenKeyError)
-                        // No point in trying to sync now.
-                        return@withContext
-                    }
-
-                    // Access to syncManager is guarded by `this`.
-                    synchronized(this@FxaAccountManager) {
-                        checkNotNull(syncManager == null) {
-                            "Sync is not configured. Construct this class with a 'syncConfig' or use 'setSyncConfig'"
-                        }
-                        syncManager?.now(reason, debounce, customEngineSubset)
-                    }
+            // All good, request a sync.
+            FxaState.Connected -> {
+                // Make sure auth cache is populated before we try to sync.
+                try {
+                    maybeUpdateSyncAuthInfoCache()
+                } catch (e: AccessTokenUnexpectedlyWithoutKey) {
+                    crashReporter?.submitCaughtException(
+                        AccountManagerException.MissingKeyFromSyncScopedAccessToken("syncNow"),
+                    )
+                    processQueue(Event.Account.AccessTokenKeyError)
+                    // No point in trying to sync now.
+                    return@withContext
                 }
-                else -> logger.info("Ignoring syncNow request, not in the right state: $s")
+
+                // Access to syncManager is guarded by `this`.
+                synchronized(this@FxaAccountManager) {
+                    checkNotNull(syncManager == null) {
+                        "Sync is not configured. Construct this class with a 'syncConfig' or use 'setSyncConfig'"
+                    }
+                    syncManager?.now(reason, debounce, customEngineSubset)
+                }
             }
+            else -> logger.info("Ignoring syncNow request, not in the right state: $s")
         }
     }
 
@@ -289,13 +264,8 @@ open class FxaAccountManager(
      * @return [OAuthAccount] if we're in an authenticated state, null otherwise. Returned [OAuthAccount]
      * may need to be re-authenticated; consumers are expected to check [accountNeedsReauth].
      */
-    fun authenticatedAccount(): OAuthAccount? = when (val s = state) {
-        is State.Idle -> when (s.accountState) {
-            AccountState.Authenticated,
-            AccountState.AuthenticationProblem,
-            -> account
-            else -> null
-        }
+    fun authenticatedAccount(): OAuthAccount? = when (state) {
+        FxaState.Connected, FxaState.AuthIssues -> account
         else -> null
     }
 
@@ -308,25 +278,14 @@ open class FxaAccountManager(
      *
      * @return A boolean flag indicating if account needs to be re-authenticated.
      */
-    fun accountNeedsReauth() = when (val s = state) {
-        is State.Idle -> when (s.accountState) {
-            AccountState.AuthenticationProblem -> true
-            else -> false
-        }
-        else -> false
-    }
+    fun accountNeedsReauth() = (state == FxaState.AuthIssues)
 
     /**
      * Returns a [Profile] for an account, attempting to fetch it if necessary.
      * @return [Profile] if one is available and account is an authenticated state.
      */
-    fun accountProfile(): Profile? = when (val s = state) {
-        is State.Idle -> when (s.accountState) {
-            AccountState.Authenticated,
-            AccountState.AuthenticationProblem,
-            -> profile
-            else -> null
-        }
+    fun accountProfile(): Profile? = when (state) {
+        FxaState.Connected, FxaState.AuthIssues -> profile
         else -> null
     }
 
@@ -356,12 +315,6 @@ open class FxaAccountManager(
         entrypoint: FxAEntryPoint,
         authScopes: Set<String> = scopes,
     ): String? = withContext(coroutineContext) {
-        // It's possible that at this point authentication is considered to be "in-progress".
-        // For example, if user started authentication flow, but cancelled it (closing a custom tab)
-        // without finishing.
-        // In a clean scenario (no prior auth attempts), this event will be ignored by the state machine.
-        processQueue(Event.Progress.CancelAuth)
-
         val event = if (pairingUrl != null) {
             Event.Account.BeginPairingFlow(pairingUrl, entrypoint, authScopes)
         } else {
@@ -370,8 +323,8 @@ open class FxaAccountManager(
 
         // Process the event, then use the new state to check the result of the operation
         processQueue(event)
-        when (val state = state) {
-            is State.Idle -> (state.accountState as? AccountState.Authenticating)?.oAuthUrl
+        when (val s = state) {
+            is FxaState.Authenticating -> s.oauthUrl
             else -> null
         }.also { result ->
             if (result == null) {
@@ -402,22 +355,9 @@ open class FxaAccountManager(
      * channel via [WebChannelFeature].
      */
     suspend fun finishAuthentication(authData: FxaAuthData) = withContext(coroutineContext) {
-        when {
-            latestAuthState == null -> {
-                logger.warn("Trying to finish authentication that was never started.")
-                false
-            }
-            authData.state != latestAuthState -> {
-                logger.warn("Trying to finish authentication for an invalid auth state; ignoring.")
-                false
-            }
-            authData.state == latestAuthState -> {
-                authData.declinedEngines?.let { persistDeclinedEngines(it) }
-                processQueue(Event.Progress.AuthData(authData))
-                true
-            }
-            else -> throw IllegalStateException("Unexpected finishAuthentication state")
-        }
+        authData.declinedEngines?.let { persistDeclinedEngines(it) }
+        processQueue(Event.Progress.AuthData(authData))
+        true
     }
 
     /**
@@ -457,7 +397,6 @@ open class FxaAccountManager(
         operation: String,
         errorCountWithinTheTimeWindow: Int = 1,
     ) {
-        checkForMultipleRequiveryCalls()
         return withContext(coroutineContext) {
             processQueue(
                 Event.Account.AuthenticationError(operation, errorCountWithinTheTimeWindow),
@@ -469,49 +408,63 @@ open class FxaAccountManager(
      * Pumps the state machine until all events are processed and their side-effects resolve.
      */
     private suspend fun processQueue(event: Event) {
-        crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("fxa-state-machine-checker: a-c transition started (event: ${event.breadcrumbDisplay()})"),
+        logger.debug("processQueue: event: '$event'")
+        var fxaEvent = calcFxaEvent(event)
+        if (fxaEvent == null) {
+            logger.warn("processQueue: Got invalid event '$event'")
+            return
+        }
+        logger.debug("processQueue: fxaEvent '$fxaEvent'")
+        state = try {
+            account.processEvent(fxaEvent)
+        } catch (e: FxaException) {
+            logger.warn("processQueue: Error in processEvent: $e")
+            return
+        }
+        logger.debug("processQueue: new FxaState '$state'")
+        try {
+            accountStateSideEffects(state, event)
+        } catch (_: AccountManagerException.AuthenticationSideEffectsFailed) {
+            logger.debug("processQueue: handling AuthenticationSideEffectsFailed")
+            account.processEvent(FxaEvent.Disconnect)
+            accountStateSideEffects(FxaState.Disconnected, Event.Account.Logout)
+        }
+        logger.debug("processQueue: finished")
+    }
+
+    internal fun queueEvent(event: Event) {
+        CoroutineScope(coroutineContext).launch {
+            processQueue(event)
+        }
+    }
+
+    private fun calcFxaEvent(event: Event): FxaEvent? = when (event) {
+        Event.Account.Start -> FxaEvent.Initialize(
+            ASDeviceConfig(
+                name = deviceConfig.name,
+                deviceType = deviceConfig.type.into(),
+                capabilities = ArrayList(deviceConfig.capabilities.map { it.into() }),
+            ),
         )
-        eventQueue.add(event)
-        do {
-            val toProcess: Event = eventQueue.poll()!!
-            val transitionInto = state.next(toProcess)
-
-            crashReporter?.recordCrashBreadcrumb(
-                Breadcrumb(
-                    "fxa-state-machine-checker: a-c transition " +
-                        "(event: ${toProcess.breadcrumbDisplay()}, into: ${transitionInto?.breadcrumbDisplay()})",
-                ),
-            )
-
-            if (transitionInto == null) {
-                logger.warn("Got invalid event '$toProcess' for state $state.")
-                continue
+        is Event.Account.BeginEmailFlow -> FxaEvent.BeginOAuthFlow(ArrayList(scopes), event.entrypoint.entryName)
+        is Event.Account.BeginPairingFlow -> {
+            if (event.pairingUrl != null) {
+                FxaEvent.BeginPairingFlow(event.pairingUrl, ArrayList(scopes), event.entrypoint.entryName)
+            } else {
+                crashReporter?.recordCrashBreadcrumb(Breadcrumb("event.pairingUrl is null"))
+                null
             }
-
-            AppServicesStateMachineChecker.handleEvent(toProcess, deviceConfig, scopes)
-            if (transitionInto is State.Idle) {
-                AppServicesStateMachineChecker.checkAccountState(transitionInto.accountState)
-            }
-
-            logger.info("Processing event '$toProcess' for state $state. Next state is $transitionInto")
-
-            state = transitionInto
-
-            stateActions(state, toProcess)?.let { successiveEvent ->
-                logger.info("Ran '$toProcess' side-effects for state $state, got successive event $successiveEvent")
-                if (successiveEvent is Event.Progress) {
-                    // Note: stateActions should only return progress events, so this captures all
-                    // possibilities.
-                    AppServicesStateMachineChecker.validateProgressEvent(successiveEvent, toProcess, scopes)
-                }
-                eventQueue.add(successiveEvent)
-            }
-        } while (!eventQueue.isEmpty())
+        }
+        is Event.Account.AuthenticationError -> FxaEvent.CheckAuthorizationStatus
+        Event.Account.AccessTokenKeyError -> FxaEvent.CheckAuthorizationStatus
+        Event.Account.Logout -> FxaEvent.Disconnect
+        // This is the one ProgressEvent that's considered a "public event" in app-services
+        is Event.Progress.AuthData -> FxaEvent.CompleteOAuthFlow(event.authData.code, event.authData.state)
+        else -> null
     }
 
     /**
-     * Side-effects of entering [AccountState] type states
+     * Side-effects of entering a new FxaState
      *
      * Upon entering these states, observers are typically notified. The sole exception occurs
      * during the completion of authentication, where it is necessary to populate the
@@ -521,251 +474,62 @@ open class FxaAccountManager(
      * run the side effects for a newly authenticated account.
      */
     private suspend fun accountStateSideEffects(
-        forState: State.Idle,
+        forState: FxaState,
         via: Event,
-    ): Unit = when (forState.accountState) {
-        AccountState.NotAuthenticated -> when (via) {
-            Event.Progress.LoggedOut -> {
-                resetAccount()
-                notifyObservers { onLoggedOut() }
-            }
-            Event.Progress.FailedToBeginAuth -> {
-                resetAccount()
-                notifyObservers { onFlowError(AuthFlowError.FailedToBeginAuth) }
-            }
-            Event.Progress.FailedToCompleteAuth -> {
-                resetAccount()
-                notifyObservers { onFlowError(AuthFlowError.FailedToCompleteAuth) }
-            }
-            Event.Progress.FailedToRecoverFromAuthenticationProblem -> {
-                finishedAuthRecovery()
-            }
-            else -> Unit
-        }
-        AccountState.Authenticated -> when (via) {
-            is Event.Progress.CompletedAuthentication -> {
-                val ignoreCache = when (via.authType) {
-                    AuthType.Existing -> false
-                    else -> true
+    ) {
+        when (forState) {
+            FxaState.Disconnected -> when (via) {
+                Event.Account.Logout -> {
+                    resetAccount()
+                    notifyObservers { onLoggedOut() }
                 }
-                val operation = when (via.authType) {
-                    AuthType.Existing -> "CompletingAuthentication:accountRestored"
-                    else -> "CompletingAuthentication:AuthData"
+                is Event.Account.BeginEmailFlow, is Event.Account.BeginPairingFlow -> {
+                    resetAccount()
+                    notifyObservers { onFlowError(AuthFlowError.FailedToBeginAuth) }
                 }
-                if (authenticationSideEffects(operation)) {
-                    notifyObservers { onAuthenticated(account, via.authType) }
-                    refreshProfile(ignoreCache = ignoreCache)
-                    Unit
-                } else {
-                    throw AccountManagerException.AuthenticationSideEffectsFailed()
+                is Event.Progress.AuthData -> {
+                    resetAccount()
+                    notifyObservers { onFlowError(AuthFlowError.FailedToCompleteAuth) }
                 }
+                else -> Unit
             }
-            Event.Progress.RecoveredFromAuthenticationProblem -> {
-                finishedAuthRecovery()
-                // Clear our access token cache; it'll be re-populated as part of the
-                // regular state machine flow.
+            FxaState.Connected -> when (via) {
+                is Event.Account.Start -> {
+                    if (authenticationSideEffects("CompletingAuthentication:accountRestored")) {
+                        notifyObservers { onAuthenticated(account, AuthType.Existing) }
+                        refreshProfile(ignoreCache = false)
+                    } else {
+                        throw AccountManagerException.AuthenticationSideEffectsFailed()
+                    }
+                }
+                is Event.Progress.AuthData -> {
+                    if (authenticationSideEffects("CompletingAuthentication:AuthData")) {
+                        notifyObservers { onAuthenticated(account, via.authData.authType) }
+                        refreshProfile(ignoreCache = false)
+                    } else {
+                        throw AccountManagerException.AuthenticationSideEffectsFailed()
+                    }
+                }
+                is Event.Account.AuthenticationError, Event.Account.AccessTokenKeyError -> {
+                    // Clear our access token cache; it'll be re-populated as part of the
+                    // regular state machine flow.
+                    SyncAuthInfoCache(context).clear()
+                    // Should we also call authenticationSideEffects here?
+                    // (https://bugzilla.mozilla.org/show_bug.cgi?id=1865086)
+                    notifyObservers { onAuthenticated(account, AuthType.Recovered) }
+                    refreshProfile(ignoreCache = true)
+                }
+                else -> Unit
+            }
+            FxaState.AuthIssues -> {
                 SyncAuthInfoCache(context).clear()
-                // Should we also call authenticationSideEffects here?
-                // (https://bugzilla.mozilla.org/show_bug.cgi?id=1865086)
-                notifyObservers { onAuthenticated(account, AuthType.Recovered) }
-                refreshProfile(ignoreCache = true)
-                Unit
+                notifyObservers { onAuthenticationProblems() }
             }
             else -> Unit
         }
-        AccountState.AuthenticationProblem -> {
-            SyncAuthInfoCache(context).clear()
-            notifyObservers { onAuthenticationProblems() }
-        }
-        else -> Unit
-    }
-
-    /**
-     * Side-effects of entering [ProgressState] states. These side-effects are actions we need to take
-     * to perform a state transition. For example, we wipe local state while entering a [ProgressState.LoggingOut].
-     *
-     * @return An optional follow-up [Event] that we'd like state machine to process after entering [forState]
-     * and processing its side-effects.
-     */
-    @Suppress("NestedBlockDepth", "LongMethod")
-    private suspend fun internalStateSideEffects(
-        forState: State.Active,
-        via: Event,
-    ): Event? = when (forState.progressState) {
-        ProgressState.Initializing -> {
-            when (accountOnDisk) {
-                is AccountOnDisk.New -> Event.Progress.AccountNotFound
-                is AccountOnDisk.Restored -> {
-                    Event.Progress.AccountRestored
-                }
-            }
-        }
-        ProgressState.LoggingOut -> {
-            Event.Progress.LoggedOut
-        }
-        ProgressState.BeginningAuthentication -> when (via) {
-            is Event.Account.BeginPairingFlow, is Event.Account.BeginEmailFlow -> {
-                val pairingUrl = if (via is Event.Account.BeginPairingFlow) {
-                    via.pairingUrl
-                } else {
-                    null
-                }
-                val (entrypoint, authScopes) = if (via is Event.Account.BeginEmailFlow) {
-                    Pair(via.entrypoint, via.scopes)
-                } else if (via is Event.Account.BeginPairingFlow) {
-                    Pair(via.entrypoint, via.scopes)
-                } else {
-                    // This should be impossible, both `BeginPairingFlow` and `BeginEmailFlow`
-                    // have a required `entrypoint` and we are matching against only instances
-                    // of those data classes.
-                    throw IllegalStateException("BeginningAuthentication with a flow that is neither email nor pairing")
-                }
-                val result = withRetries(logger, MAX_NETWORK_RETRIES) {
-                    pairingUrl.asAuthFlowUrl(account, authScopes, entrypoint = entrypoint)
-                }
-                when (result) {
-                    is Result.Success -> {
-                        latestAuthState = result.value!!.state
-                        Event.Progress.StartedOAuthFlow(result.value.url)
-                    }
-                    Result.Failure -> {
-                        Event.Progress.FailedToBeginAuth
-                    }
-                }
-            }
-            else -> null
-        }
-        ProgressState.CompletingAuthentication -> when (via) {
-            Event.Progress.AccountRestored -> {
-                val authType = AuthType.Existing
-                when (withServiceRetries(logger, MAX_NETWORK_RETRIES) { finalizeDevice(authType) }) {
-                    ServiceResult.Ok -> {
-                        Event.Progress.CompletedAuthentication(authType)
-                    }
-                    ServiceResult.AuthError -> {
-                        checkForMultipleRequiveryCalls()
-                        Event.Account.AuthenticationError("finalizeDevice")
-                    }
-                    ServiceResult.OtherError -> {
-                        AppServicesStateMachineChecker.handleInternalEvent(FxaStateCheckerEvent.CallError)
-                        Event.Progress.FailedToCompleteAuthRestore
-                    }
-                }
-            }
-            is Event.Progress.AuthData -> {
-                val completeAuth = suspend {
-                    AppServicesStateMachineChecker.checkInternalState(
-                        FxaStateCheckerState.CompleteOAuthFlow(via.authData.code, via.authData.state),
-                    )
-                    withRetries(logger, MAX_NETWORK_RETRIES) {
-                        account.completeOAuthFlow(via.authData.code, via.authData.state)
-                    }.also {
-                        if (it is Result.Failure) {
-                            AppServicesStateMachineChecker.handleInternalEvent(FxaStateCheckerEvent.CallError)
-                        } else {
-                            AppServicesStateMachineChecker.handleInternalEvent(
-                                FxaStateCheckerEvent.CompleteOAuthFlowSuccess,
-                            )
-                        }
-                    }
-                }
-                val finalize = suspend {
-                    // Note: finalizeDevice state checking happens in the DeviceConstellation.kt
-                    withServiceRetries(logger, MAX_NETWORK_RETRIES) { finalizeDevice(via.authData.authType) }.also {
-                        if (it is ServiceResult.OtherError) {
-                            AppServicesStateMachineChecker.handleInternalEvent(FxaStateCheckerEvent.CallError)
-                        }
-                    }
-                }
-                // If we can't 'complete', we won't run 'finalize' due to short-circuiting.
-                if (completeAuth() is Result.Failure || finalize() !is ServiceResult.Ok) {
-                    Event.Progress.FailedToCompleteAuth
-                } else {
-                    Event.Progress.CompletedAuthentication(via.authData.authType)
-                }
-            }
-            else -> null
-        }
-        ProgressState.RecoveringFromAuthProblem -> {
-            via as Event.Account.AuthenticationError
-            // Somewhere in the system, we've just hit an authentication problem.
-            // There are two main causes:
-            // 1) an access token we've obtain from fxalib via 'getAccessToken' expired
-            // 2) password was changed, or device was revoked
-            // We can recover from (1) and test if we're in (2) by asking the fxalib
-            // to give us a new access token. If it succeeds, then we can go back to whatever
-            // state we were in before. Future operations that involve access tokens should
-            // succeed.
-            // If we fail with a 401, then we know we have a legitimate authentication problem.
-            logger.info("Hit auth problem. Trying to recover.")
-
-            // Ensure we clear any auth-relevant internal state, such as access tokens.
-            account.authErrorDetected()
-
-            // Circuit-breaker logic to protect ourselves from getting into endless authorization
-            // check loops. If we determine that application is trying to check auth status too
-            // frequently, drive the state machine into an unauthorized state.
-            if (via.errorCountWithinTheTimeWindow >= AUTH_CHECK_CIRCUIT_BREAKER_COUNT) {
-                crashReporter?.submitCaughtException(
-                    AccountManagerException.AuthRecoveryCircuitBreakerException(via.operation),
-                )
-                logger.warn("Unable to recover from an auth problem, triggered a circuit breaker.")
-
-                Event.Progress.FailedToRecoverFromAuthenticationProblem
-            } else {
-                // Since we haven't hit the circuit-breaker above, perform an authorization check.
-                // We request an access token for a "profile" scope since that's the only
-                // scope we're guaranteed to have at this point. That is, we don't rely on
-                // passed-in application-specific scopes.
-                when (account.checkAuthorizationStatus(SCOPE_PROFILE)) {
-                    true -> {
-                        logger.info("Able to recover from an auth problem.")
-
-                        // And now we can go back to our regular programming.
-                        Event.Progress.RecoveredFromAuthenticationProblem
-                    }
-                    null, false -> {
-                        // We are either certainly in the scenario (2), or were unable to determine
-                        // our connectivity state. Let's assume we need to re-authenticate.
-                        // This uncertainty about real state means that, hopefully rarely,
-                        // we will disconnect users that hit transient network errors during
-                        // an authorization check.
-                        // See https://github.com/mozilla-mobile/android-components/issues/3347
-                        logger.info("Unable to recover from an auth problem, notifying observers.")
-
-                        Event.Progress.FailedToRecoverFromAuthenticationProblem
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Side-effects matrix. Defines non-pure operations that must take place for state+event combinations.
-     */
-    @Suppress("ComplexMethod", "ReturnCount", "ThrowsCount", "NestedBlockDepth", "LongMethod")
-    private suspend fun stateActions(forState: State, via: Event): Event? = when (forState) {
-        // We're about to enter a new state ('forState') via some event ('via').
-        // States will have certain side-effects associated with different event transitions.
-        // In other words, the same state may have different side-effects depending on the event
-        // which caused a transition.
-        // For example, a "NotAuthenticated" state may be entered after a logout, and its side-effects
-        // will include clean-up and re-initialization of an account. Alternatively, it may be entered
-        // after we've checked local disk, and didn't find a persisted authenticated account.
-        is State.Idle -> try {
-            accountStateSideEffects(forState, via)
-            null
-        } catch (_: AccountManagerException.AuthenticationSideEffectsFailed) {
-            Event.Account.Logout
-        }
-        is State.Active -> internalStateSideEffects(forState, via)
     }
 
     private suspend fun resetAccount() {
-        // Clean up internal account state and destroy the current FxA device record (if one exists).
-        // This can fail (network issues, auth problems, etc), but nothing we can do at this point.
-        account.disconnect()
-
         // Clean up resources.
         profile = null
         // Delete persisted state.
@@ -1009,6 +773,28 @@ open class FxaAccountManager(
         SyncAuthInfoCache(context).clear()
         CoroutineScope(coroutineContext).launch {
             refreshProfile(true)
+        }
+    }
+}
+
+internal class AccountStateEventsObserver(
+    internal val queueEvent: (Event) -> Unit,
+) : AccountEventsObserver {
+    private val logger = Logger("FxA AccountStateEventsObserver")
+
+    override fun onEvents(events: List<AccountEvent>) {
+        for (event in events) {
+            when (event) {
+                AccountEvent.AccountAuthStateChanged -> {
+                    logger.info("Saw AccountAuthStateChanged")
+                    queueEvent(Event.Account.AuthenticationError("AccountAuthStateChanged event"))
+                }
+                AccountEvent.AccountDestroyed -> {
+                    logger.info("Saw AccountDestroyed")
+                    queueEvent(Event.Account.Logout)
+                }
+                else -> Unit
+            }
         }
     }
 }

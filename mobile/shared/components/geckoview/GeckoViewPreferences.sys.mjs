@@ -31,37 +31,18 @@ export const GeckoViewPreferences = {
         return;
       }
       case "GeckoView:Preferences:SetPref": {
-        const branch =
-          aData.branch == "user"
-            ? Services.prefs
-            : Services.prefs.getDefaultBranch(null);
-
-        try {
-          switch (aData.type) {
-            case PREF_STRING:
-              branch.setStringPref(aData.pref, aData.value);
-              aCallback.onSuccess();
-              return;
-
-            case PREF_BOOL:
-              branch.setBoolPref(aData.pref, aData.value);
-              aCallback.onSuccess();
-              return;
-
-            case PREF_INT:
-              branch.setIntPref(aData.pref, aData.value);
-              aCallback.onSuccess();
-              return;
-
-            default:
-              warn`Attempted to set against an unknown type of: ${aData.type}`;
-              aCallback.onError(`Unable to set preference.`);
-          }
-        } catch (e) {
-          warn`There was an issue with the preference: ${e}`;
-          aCallback.onError(`There was an issue with the preference.`);
-        }
-        break;
+        aCallback.onSuccess({
+          prefs: aData.prefs.map(pref => ({
+            pref: pref.pref,
+            isSet: this.setPreference(
+              pref.pref,
+              pref.type,
+              pref.value,
+              pref.branch
+            ),
+          })),
+        });
+        return;
       }
       case "GeckoView:Preferences:ClearPref": {
         Services.prefs.clearUserPref(aData.pref);
@@ -131,6 +112,44 @@ export const GeckoViewPreferences = {
       pref.userValue = this.readBranch(Services.prefs, pref.type, prefName);
     }
     return pref;
+  },
+
+  /**
+   * Sets the Gecko preference with the associated information.
+   *
+   * @param {string} pref - The name of the preference. (e.g. "some.preference.item")
+   * @param {long} type - The nsIPrefBranch type of preference. (e.g. PREF_STRING)
+   * @param {string | integer | boolean} value - The value of the preference. (e.g. "hello-world")
+   * @param {"user" | "default"} setBranch - The branch to operate on.
+   * @return {boolean} Will return true if the preference set as requested or else false.
+   */
+  setPreference(pref, type, value, setBranch) {
+    const branch =
+      setBranch == "user"
+        ? Services.prefs
+        : Services.prefs.getDefaultBranch(null);
+    try {
+      switch (type) {
+        case PREF_STRING:
+          branch.setStringPref(pref, value);
+          return true;
+
+        case PREF_BOOL:
+          branch.setBoolPref(pref, value);
+          return true;
+
+        case PREF_INT:
+          branch.setIntPref(pref, value);
+          return true;
+
+        default:
+          warn`Attempted to set against an unknown type of: ${type}`;
+          return false;
+      }
+    } catch (e) {
+      warn`There was an issue with the preference: ${e}`;
+      return false;
+    }
   },
 
   /** nsIObserver */

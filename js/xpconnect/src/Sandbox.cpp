@@ -42,7 +42,9 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/cache/CacheStorage.h"
+#include "mozilla/dom/ChromeUtilsBinding.h"
 #include "mozilla/dom/CSSBinding.h"
+#include "mozilla/dom/CSSPositionTryDescriptorsBinding.h"
 #include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/DocumentBinding.h"
@@ -377,6 +379,31 @@ static bool SandboxCreateStorage(JSContext* cx, JS::HandleObject obj) {
   return JS_DefineProperty(cx, obj, "storage", wrapped, JSPROP_ENUMERATE);
 }
 
+// Prior to bug 2013389, the following DOM objects would be structured-cloned
+// into the inner window's realm when `structuredClone` is called from an
+// extension content script. All other objects would remain within the content
+// script's realm. This method is used to retain this historic behaviour.
+//
+// See bug 2017797 for discussion about this behaviour.
+static bool LegacyShouldCloneIntoWindow(JS::Handle<JSObject*> obj) {
+  return IS_INSTANCE_OF(Blob, obj) || IS_INSTANCE_OF(Directory, obj) ||
+         IS_INSTANCE_OF(FileList, obj) || IS_INSTANCE_OF(FormData, obj) ||
+         IS_INSTANCE_OF(ImageBitmap, obj) || IS_INSTANCE_OF(VideoFrame, obj) ||
+         IS_INSTANCE_OF(EncodedVideoChunk, obj) ||
+         IS_INSTANCE_OF(AudioData, obj) ||
+         IS_INSTANCE_OF(EncodedAudioChunk, obj) ||
+#ifdef MOZ_WEBRTC
+         IS_INSTANCE_OF(RTCEncodedVideoFrame, obj) ||
+         IS_INSTANCE_OF(RTCEncodedAudioFrame, obj) ||
+         IS_INSTANCE_OF(RTCDataChannel, obj) ||
+#endif
+         IS_INSTANCE_OF(MessagePort, obj) ||
+         IS_INSTANCE_OF(OffscreenCanvas, obj) ||
+         IS_INSTANCE_OF(ReadableStream, obj) ||
+         IS_INSTANCE_OF(WritableStream, obj) ||
+         IS_INSTANCE_OF(TransformStream, obj);
+}
+
 static bool SandboxStructuredClone(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -385,22 +412,44 @@ static bool SandboxStructuredClone(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   RootedDictionary<dom::StructuredSerializeOptions> options(cx);
-  BindingCallContext callCx(cx, "structuredClone");
   if (!options.Init(cx, args.hasDefined(1) ? args[1] : JS::NullHandleValue,
                     "Argument 2", false)) {
     return false;
   }
 
-  nsIGlobalObject* global = CurrentNativeGlobal(cx);
+  // NOTE: A spec-compliant structuredClone should determine & use the relevant
+  // global instead of the current global.
+  nsCOMPtr<nsIGlobalObject> global = CurrentNativeGlobal(cx);
   if (!global) {
     JS_ReportErrorASCII(cx, "structuredClone: Missing global");
     return false;
+  }
+
+  // If this is a content script, we may want to clone into that window instead.
+  // See the comment on LegacyShouldCloneIntoWindow for details.
+  if (IsWebExtensionContentScriptSandbox(global->GetGlobalJSObject()) &&
+      StaticPrefs::extensions_webextensions_legacyStructuredCloneBehavior() &&
+      args[0].isObject()) {
+    JS::Rooted<JSObject*> obj(cx, &args[0].toObject());
+    if (LegacyShouldCloneIntoWindow(obj)) {
+      RefPtr<nsGlobalWindowInner> window =
+          SandboxWindowOrNull(global->GetGlobalJSObject(), cx);
+      if (window) {
+        global = window;
+      }
+    }
   }
 
   JS::Rooted<JS::Value> result(cx);
   ErrorResult rv;
   nsContentUtils::StructuredClone(cx, global, args[0], options, &result, rv);
   if (rv.MaybeSetPendingException(cx)) {
+    return false;
+  }
+
+  // Because we specified a custom `global`, the returned value may not be in
+  // our realm.
+  if (!mozilla::dom::MaybeWrapValue(cx, &result)) {
     return false;
   }
 
@@ -921,6 +970,9 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       ChromeUtils = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "CSS")) {
       CSS = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr,
+                                            "CSSPositionTryDescriptors")) {
+      CSSPositionTryDescriptors = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "CSSRule")) {
       CSSRule = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "CustomStateSet")) {
@@ -1052,6 +1104,7 @@ bool xpc::GlobalProperties::Define(JSContext* cx, JS::HandleObject obj) {
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(ChromeUtils)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(Blob)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CSS)
+  DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CSSPositionTryDescriptors)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CSSRule)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CustomStateSet)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(Directory)
@@ -1297,6 +1350,26 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
 
   if (isSystemPrincipal) {
     realmOptions.behaviors().setClampAndJitterTime(false);
+  }
+
+  if (obj) {
+    nsGlobalWindowInner* window =
+        WindowOrNull(js::UncheckedUnwrap(obj->GetGlobalJSObject(), false));
+    if (window) {
+      const nsCString& localeOverride =
+          window->GetBrowsingContext()->Top()->GetLanguageOverride();
+      if (!localeOverride.IsEmpty()) {
+        realmOptions.behaviors().setLocaleOverride(
+            PromiseFlatCString(localeOverride).get());
+      }
+
+      const nsAString& timezoneOverride =
+          window->GetBrowsingContext()->Top()->GetTimezoneOverride();
+      if (!timezoneOverride.IsEmpty()) {
+        realmOptions.behaviors().setTimeZoneOverride(
+            NS_ConvertUTF16toUTF8(timezoneOverride).get());
+      }
+    }
   }
 
   const JSClass* clasp = &SandboxClass;
@@ -2197,6 +2270,26 @@ nsresult xpc::GetSandboxMetadata(JSContext* cx, HandleObject sandbox,
   }
 
   rval.set(metadata);
+  return NS_OK;
+}
+
+nsresult xpc::SetSandboxLocaleOverride(JSContext* cx, HandleObject sandbox,
+                                       const char* locale) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(IsSandbox(sandbox));
+
+  JS::SetRealmLocaleOverride(JS::GetObjectRealmOrNull(sandbox), locale);
+
+  return NS_OK;
+}
+
+nsresult xpc::SetSandboxTimezoneOverride(JSContext* cx, HandleObject sandbox,
+                                         const char* timezone) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(IsSandbox(sandbox));
+
+  JS::SetRealmTimezoneOverride(JS::GetObjectRealmOrNull(sandbox), timezone);
+
   return NS_OK;
 }
 

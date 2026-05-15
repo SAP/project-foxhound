@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">ખાનગી %s</string>
@@ -10,16 +17,12 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">વધુ વિકલ્પ</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">ખાનગી બ્રાઉઝિંગ સક્ષમ કરો</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">ખાનગી બ્રાઉઝિંગ નિષ્ક્રિય કરો</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">શોધ અથવા સરનામું દાખલ કરો</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">તમારા ખુલ્લા ટેબ અહીં બતાવવામાં આવશે.</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">તમારા ખુલ્લા ટેબ અહીં બતાવવામાં આવશે.</string>
   <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description">તમારા ખાનગી ટૅબ્સ અહીં બતાવવામાં આવશે.</string>
+  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">તમારા ખાનગી ટૅબ્સ અહીં બતાવવામાં આવશે.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d પસંદ કરેલ</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -31,8 +34,11 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">મલ્ટિસિલેક્ટ મોડમાંથી બહાર નીકળો</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description">પસંદ કરેલા ટૅબ્સને સંગ્રહમાં સાચવો</string>
+  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">પસંદ કરેલા ટૅબ્સને સંગ્રહમાં સાચવો</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">ખાનગી બ્રાઉઝિંગ વિશે સામાન્ય માન્યતાઓ</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!--
     Home screen icons - Long press shortcuts
 
@@ -54,9 +60,9 @@
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">અટકાવો</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">મદદ</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">મદદ</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">નવું શું છે</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">નવું શું છે</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">સેટિંગ્સ</string>
   <!-- Browser menu toggle that requests a desktop site -->
@@ -78,7 +84,7 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by">%1$s દ્વારા સંચાલિત</string>
+  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">%1$s દ્વારા સંચાલિત</string>
   <!--
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
@@ -110,6 +116,10 @@
   <string name="search_suggestions_onboarding_title">ખાનગી સત્રોમાં શોધ સૂચનોને મંજૂરી આપીએ?</string>
   <!-- Search suggestion onboarding hint description text, %s is the name of the app (for example "Firefox"). -->
   <string name="search_suggestions_onboarding_text">%s એ એડ્રેસ બારમાં તમે લખો છો તે બધું તમારા ડિફોલ્ટ શોધ એંજિનથી શેર કરશે.</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!-- Text preview for smaller sized widgets -->
   <string name="search_widget_text_short">શોધો</string>
   <!-- Text preview for larger sized widgets -->
@@ -159,8 +169,6 @@
   <string name="preferences_account_sync_error">સમન્વયન ફરી શરૂ કરવા માટે ફરીથી કનેક્ટ કરો</string>
   <!-- Preference for language -->
   <string name="preferences_language">ભાષા</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">માહિતી વિકલ્પો</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">માહિતી સંગ્રહ</string>
   <!-- Preference for developers -->
@@ -278,7 +286,7 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">ખાનગી ટેબ ઉમેરો</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">ખાનગી</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">ખાનગી</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">બધી ટૅબ્સ બંધ કરો</string>
   <!-- Content description (not visible, for screen readers etc.): Close tab button. Closes the current session when pressed -->
@@ -300,7 +308,7 @@
   <!-- Text for the button to clear all history -->
   <string name="history_delete_all">ઇતિહાસ કાઢી નાખો</string>
   <!-- Text for the snackbar to confirm that a single browsing history item has been deleted. %1$s is the shortened URL of the deleted history item. -->
-  <string name="history_delete_single_item_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">%1$s કાઢી નાખ્યું</string>
+  <string name="history_delete_single_item_snackbar">%1$s કાઢી નાખ્યું</string>
   <!-- Context description text for the button to delete a single history item -->
   <string name="history_delete_item">કાઢો</string>
   <!--
@@ -328,12 +336,6 @@
   <string name="tab_crash_close">ટૅબ બંધ કરો</string>
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">ટૅબ પુનઃસ્થાપિત કરો</string>
-  <!--
-    Bookmarks
-
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
-  -->
-  <string name="bookmark_delete_folder_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">શું તમે ખરેખર આ ફોલ્ડરને કાઢવા માંગો છો?</string>
   <!-- Screen title for adding a bookmarks folder -->
   <string name="bookmark_add_folder">ફોલ્ડર ઉમેરો</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
@@ -341,7 +343,7 @@
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">સંપાદિત</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">નકલ કરો</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">નકલ કરો</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">વહેંચો</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -350,8 +352,6 @@
   <string name="bookmark_menu_open_in_private_tab_button">ખાનગી ટૅબમાં ખોલો</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">કાઢી નાખો</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">સાચવો</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -361,31 +361,23 @@
   <string name="edit_bookmark_fragment_title">બુકમાર્કમાં ફેરફાર કરો</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">ફોલ્ડર સંપાદિત કરો</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button" tools:ignore="UnusedResources" moz:removedIn="143">સમન્વયિત બુકમાર્ક્સ જોવા માટે સાઇન ઇન કરો</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">ફોલ્ડર</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">નામ</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label" tools:ignore="UnusedResources" moz:removedIn="143">ફોલ્ડર ઉમેરો</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">ફોલ્ડર પસંદ કરો</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error" tools:ignore="UnusedResources" moz:removedIn="143">શીર્ષક હોવું આવશ્યક છે</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">અમાન્ય URL</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message" tools:ignore="UnusedResources" moz:removedIn="143">અહીં કોઈ બુકમાર્ક્સ નથી</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">%1$s કાઢી નાખ્યું</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">પૂર્વવત્ કરો</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">પૂર્વવત્ કરો</string>
   <!--
     Site Permissions
 
@@ -464,10 +456,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d ટેબ્સ પસંદ કરેલ</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved" tools:ignore="UnusedResources" moz:removedIn="142">ટેબ્સ સાચવ્યા!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">ટેબ સાચવી!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">બંધ કરો</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -526,23 +514,15 @@
   <!--
     Snackbar
 
-    Text shown in snackbar when user deletes a collection
+    Text shown in snackbar when user closes a tab
   -->
-  <string name="snackbar_collection_deleted" tools:ignore="UnusedResources" moz:removedIn="143">સંગ્રહ કાઢી નાખ્યા</string>
-  <!-- Text shown in snackbar when user renames a collection -->
-  <string name="snackbar_collection_renamed" moz:removedIn="141" tools:ignore="UnusedResources">સંગ્રહનું નામ બદલ્યું</string>
-  <!-- Text shown in snackbar when user closes a tab -->
   <string name="snackbar_tab_closed">ટેબ બંધ કર્યું</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">ટેબ્સ બંધ કર્યા</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">ખાનગી ટેબ બંધ કર્યું</string>
-  <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed" moz:removedIn="141" tools:ignore="UnusedResources">ખાનગી ટેબ્સ બંધ કર્યા</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">પૂર્વવત્ કરો</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed">સાઇટ દૂર કરી</string>
   <!--
     QR code scanner prompt which appears after scanning a code, but before navigating to it
     %1$s is the name of the app (for example "Firefox"), %2$s is the URL or text scanned
@@ -554,10 +534,6 @@
   <string name="qr_scanner_dialog_negative">નકારો</string>
   <!-- Tab collection deletion prompt dialog message. %1$s is the collection name. -->
   <string name="tab_collection_dialog_message">શું તમે ખરેખર %1$s ને કાઢી નાખવા માંગો છો?</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive" tools:ignore="UnusedResources" moz:removedIn="143">કાઢી નાખો</string>
-  <!-- Message for copying the URL via long press on the toolbar -->
-  <string name="url_copied" tools:ignore="UnusedResources" moz:removedIn="142">URL નકલ કરી</string>
   <!-- Summary for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_text_size_summary">વેબસાઇટ્સ પર ટેક્સ્ટ મોટા અથવા નાનાં બનાવો</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
@@ -596,7 +572,7 @@
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">જ્યારે તમે મુખ્ય મેનૂમાંથી \"Quit\" પસંદ કરો છો ત્યારે બ્રાઉઝિંગ ડેટા આપમેળે કાઢી નાખે છે</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">બંધ કરો</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">બંધ કરો</string>
   <!-- Dialog message to the user asking to delete browsing data. %s is the name of the app (for example "Firefox"). -->
   <string name="delete_browsing_data_prompt_message_3">%s પસંદ કરેલી બ્રાઉઝિંગ માહિતીને કાઢી નાખશે.</string>
   <!-- Text for the cancel button for the data deletion dialog -->
@@ -613,14 +589,6 @@
     text to display in the snackbar once account is signed-in
   -->
   <string name="onboarding_firefox_account_sync_is_on">સમન્વયન ચાલુ છે</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar">ટેબ્સ મોકલી!</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">ટેબ મોકલી!</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">મોકલવામાં અસમર્થ</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -782,12 +750,6 @@
   <string name="search_add_custom_engine_error_empty_search_string">શોધ શબ્દમાળા દાખલ કરો</string>
   <!-- Text shown when a user leaves out the required template string -->
   <string name="search_add_custom_engine_error_missing_template">તે તપાસણી કરો કે શોધ શબ્દમાળા ઉદાહરણ ફોર્મેટ સાથે મેળ ખાય છે</string>
-  <!-- Text shown when a user creates a new search engine. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s બનાવ્યું</string>
-  <!-- Text shown when a user successfully edits a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_edit_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s સાચવ્યું</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s કાઢી નાખ્યું</string>
   <!-- Heading for the instructions to allow a permission -->
   <string name="phone_feature_blocked_intro">તેને મંજૂરી આપવા માટે:</string>
   <!--
@@ -796,8 +758,14 @@
   -->
   <string name="certificate_info_verified_by">દ્વારા ચકાસાયેલ: %1$s</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">કાઢી નાંખો</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">કાઢી નાંખો</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

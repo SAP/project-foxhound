@@ -9,9 +9,7 @@
 
 #include <algorithm>
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"
 #include "nsDisplayList.h"
 #include "nsTHashSet.h"

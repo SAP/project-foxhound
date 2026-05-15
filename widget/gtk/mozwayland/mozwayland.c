@@ -5,7 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <stdlib.h>
 #include "mozilla/Types.h"
 #include <gtk/gtk.h>
 #include <gtk/gtkx.h>
@@ -35,6 +34,7 @@ const struct wl_interface wl_shm_pool_interface;
 const struct wl_interface wl_subcompositor_interface;
 const struct wl_interface wl_subsurface_interface;
 const struct wl_interface wl_surface_interface;
+const struct wl_interface wl_touch_interface;
 const struct wl_interface xdg_popup_interface;
 const struct wl_interface xdg_positioner_interface;
 const struct wl_interface xdg_surface_interface;

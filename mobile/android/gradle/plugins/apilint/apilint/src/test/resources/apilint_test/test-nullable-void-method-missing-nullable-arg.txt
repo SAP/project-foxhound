@@ -1,0 +1,5 @@
+package test {
+  public class TestClass {
+    method @android.support.annotation.UiThread public void testMethod(java.lang.String);
+  }
+}

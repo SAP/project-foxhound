@@ -18,7 +18,8 @@ const constants = require("resource://devtools/client/dom/content/constants.js")
 
 /**
  * Add a new test tab in the browser and load the given url.
- * @param {String} url
+ *
+ * @param {string} url
  *        The url to be loaded in the new tab
  * @return a promise that resolves to the tab object when
  *        the url is loaded
@@ -143,9 +144,9 @@ function getAllRowsForLabel(panel, text) {
  * Strings in the tree are in the form ""a"" and numbers in the form "1". We
  * normalize these values by converting ""a"" to "a" and "1" to 1.
  *
- * @param  {String} value
+ * @param  {string} value
  *         The value to normalize.
- * @return {String|Number}
+ * @return {string | number}
  *         The normalized value.
  */
 function normalizeTreeValue(value) {

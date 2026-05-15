@@ -5,9 +5,9 @@
 #ifndef MP3_DEMUXER_H_
 #define MP3_DEMUXER_H_
 
+#include "MP3FrameParser.h"
 #include "MediaDataDemuxer.h"
 #include "MediaResource.h"
-#include "MP3FrameParser.h"
 
 namespace mozilla {
 

@@ -7,7 +7,7 @@
 
 #include "mozilla/gfx/Logging.h"
 
-NS_IMPL_ISUPPORTS_INHERITED0(MockWinWidget, nsBaseWidget)
+NS_IMPL_ISUPPORTS_INHERITED0(MockWinWidget, nsIWidget)
 
 // static
 RefPtr<MockWinWidget> MockWinWidget::Create(DWORD aStyle, DWORD aExStyle,

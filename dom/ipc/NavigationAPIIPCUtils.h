@@ -4,9 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_navigation_api_ipc_utils_h__
-#define mozilla_dom_navigation_api_ipc_utils_h__
+#ifndef mozilla_dom_navigation_api_ipc_utils_h_
+#define mozilla_dom_navigation_api_ipc_utils_h_
 #include "ipc/EnumSerializer.h"
+#include "mozilla/dom/BindingIPCUtils.h"
+#include "mozilla/dom/NavigationBinding.h"
 #include "mozilla/dom/UserNavigationInvolvement.h"
 
 namespace IPC {
@@ -16,5 +18,15 @@ struct ParamTraits<mozilla::dom::UserNavigationInvolvement>
           mozilla::dom::UserNavigationInvolvement,
           mozilla::dom::UserNavigationInvolvement::None,
           mozilla::dom::UserNavigationInvolvement::BrowserUI> {};
+
+template <>
+struct ParamTraits<mozilla::dom::NavigationType>
+    : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::NavigationType> {
+};
+
+template <>
+struct ParamTraits<mozilla::dom::NavigationHistoryBehavior>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::NavigationHistoryBehavior> {};
 }  // namespace IPC
 #endif

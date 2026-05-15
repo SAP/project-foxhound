@@ -52,13 +52,13 @@ class TelemetryHelpers {
   /**
    * Check the value of a given telemetry histogram.
    *
-   * @param  {String} histId
+   * @param  {string} histId
    *         Histogram id
-   * @param  {String} key
+   * @param  {string} key
    *         Keyed histogram key
-   * @param  {Array|Number} expected
+   * @param  {Array | number} expected
    *         Expected value
-   * @param  {String} checkType
+   * @param  {string} checkType
    *         "array" (default) - Check that an array matches the histogram data.
    *         "hasentries"  - For non-enumerated linear and exponential
    *                             histograms. This checks for at least one entry.
@@ -92,7 +92,7 @@ class TelemetryHelpers {
         msg = key ? `${histId}["${key}"] correct.` : `${histId} correct.`;
         is(JSON.stringify(actual), JSON.stringify(expected), msg);
         break;
-      case "hasentries":
+      case "hasentries": {
         const hasEntry = Object.values(actual).some(num => num > 0);
         if (key) {
           ok(hasEntry, `${histId}["${key}"] has at least one entry.`);
@@ -100,7 +100,8 @@ class TelemetryHelpers {
           ok(hasEntry, `${histId} has at least one entry.`);
         }
         break;
-      case "scalar":
+      }
+      case "scalar": {
         const scalars = Services.telemetry.getSnapshotForScalars(
           "main",
           false
@@ -108,7 +109,8 @@ class TelemetryHelpers {
 
         is(scalars[histId], expected, `${histId} correct`);
         break;
-      case "keyedscalar":
+      }
+      case "keyedscalar": {
         const keyedScalars = Services.telemetry.getSnapshotForKeyedScalars(
           "main",
           false
@@ -118,6 +120,7 @@ class TelemetryHelpers {
         msg = key ? `${histId}["${key}"] correct.` : `${histId} correct.`;
         is(value, expected, msg);
         break;
+      }
     }
   }
 
@@ -126,7 +129,7 @@ class TelemetryHelpers {
    * from your result checking code in telemetry tests. It logs checkTelemetry
    * calls for all changed telemetry values.
    *
-   * @param  {String} prefix
+   * @param  {string} prefix
    *         Optionally limits results to histogram ids starting with prefix.
    */
   generateTelemetryTests(prefix = "") {
@@ -208,12 +211,12 @@ class TelemetryHelpers {
    * @param {HistogramSnapshot} snapshot
    *        A snapshot of a telemetry chart obtained via getSnapshotForHistograms or
    *        similar.
-   * @param {String} key
+   * @param {string} key
    *        Only used for keyed histograms. This is the key we are interested in
    *        checking.
-   * @param {String} histId
+   * @param {string} histId
    *        The histogram ID.
-   * @param {Array|String|Boolean} actual
+   * @param {Array | string | boolean} actual
    *        The value of the histogram data.
    */
   displayDataFromHistogramSnapshot(snapshot, key, histId, actual) {
@@ -221,7 +224,7 @@ class TelemetryHelpers {
 
     switch (snapshot.histogram_type) {
       case Services.telemetry.HISTOGRAM_EXPONENTIAL:
-      case Services.telemetry.HISTOGRAM_LINEAR:
+      case Services.telemetry.HISTOGRAM_LINEAR: {
         let total = 0;
         for (const val of Object.values(actual)) {
           total += val;
@@ -237,6 +240,7 @@ class TelemetryHelpers {
 
         dump(`checkTelemetry("${histId}", ${key}, null, "hasentries");\n`);
         break;
+      }
       case Services.telemetry.HISTOGRAM_BOOLEAN:
         actual = actual.toSource();
 

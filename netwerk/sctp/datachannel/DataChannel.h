@@ -14,8 +14,10 @@
 #include <errno.h>
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/StopGapEventTarget.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsTArray.h"
@@ -23,7 +25,6 @@
 #include "mozilla/dom/Blob.h"
 #include "mozilla/Mutex.h"
 #include "DataChannelProtocol.h"
-#include "DataChannelListener.h"
 #include "mozilla/net/NeckoTargetHolder.h"
 #include "MediaEventSource.h"
 
@@ -33,14 +34,13 @@ namespace mozilla {
 
 class DataChannelConnection;
 class DataChannel;
-class DataChannelOnMessageAvailable;
 class MediaPacket;
 class MediaTransportHandler;
 namespace dom {
+class RTCDataChannel;
 struct RTCStatsCollection;
-};
+};  // namespace dom
 
-enum class DataChannelState { Connecting, Open, Closing, Closed };
 enum class DataChannelConnectionState { Connecting, Open, Closed };
 enum class DataChannelReliabilityPolicy {
   Reliable,
@@ -123,10 +123,13 @@ class IncomingMsg {
   uint16_t mStreamId;
 };
 
+// Would be nice if this were DataChannel::StatsPromise, but no big deal.
+typedef MozPromise<dom::RTCDataChannelStats, nsresult, true>
+    DataChannelStatsPromise;
+
 // One per PeerConnection
 class DataChannelConnection : public net::NeckoTargetHolder {
   friend class DataChannel;
-  friend class DataChannelOnMessageAvailable;
   friend class DataChannelConnectRunnable;
   friend class DataChannelConnectionUsrsctp;
 
@@ -170,7 +173,7 @@ class DataChannelConnection : public net::NeckoTargetHolder {
   static Maybe<RefPtr<DataChannelConnection>> Create(
       DataConnectionListener* aListener, nsISerialEventTarget* aTarget,
       MediaTransportHandler* aHandler, const uint16_t aLocalPort,
-      const uint16_t aNumStreams, const Maybe<uint64_t>& aMaxMessageSize);
+      const uint16_t aNumStreams);
 
   DataChannelConnection(const DataChannelConnection&) = delete;
   DataChannelConnection(DataChannelConnection&&) = delete;
@@ -180,8 +183,7 @@ class DataChannelConnection : public net::NeckoTargetHolder {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DataChannelConnection)
 
   // Called immediately after construction
-  virtual bool Init(const uint16_t aLocalPort, const uint16_t aNumStreams,
-                    const Maybe<uint64_t>& aMaxMessageSize) = 0;
+  virtual bool Init(const uint16_t aLocalPort, const uint16_t aNumStreams) = 0;
   // Called when our transport is ready to send and recv
   virtual void OnTransportReady() = 0;
   // This is called after an ACK comes in, to prompt subclasses to deliver
@@ -196,19 +198,21 @@ class DataChannelConnection : public net::NeckoTargetHolder {
   // Called when the base class receives a packet from the transport
   virtual void OnSctpPacketReceived(const MediaPacket& packet) = 0;
   // Called when the base class is closing streams
-  virtual void ResetStreams(nsTArray<uint16_t>& aStreams) = 0;
+  virtual bool ResetStreams(nsTArray<uint16_t>& aStreams) = 0;
   // Called when the SCTP connection is being shut down
   virtual void Destroy();
 
-  void SetMaxMessageSize(bool aMaxMessageSizeSet, uint64_t aMaxMessageSize);
-  uint64_t GetMaxMessageSize();
+  // Call only when the remote SDP has a=max-message-size
+  void SetMaxMessageSize(uint64_t aMaxMessageSize);
+  double GetMaxMessageSize();
   void HandleDataMessage(IncomingMsg&& aMsg);
   void HandleDCEPMessage(IncomingMsg&& aMsg);
   void ProcessQueuedOpens();
   void OnStreamsReset(std::vector<uint16_t>&& aStreams);
+  void OnStreamsResetComplete(std::vector<uint16_t>&& aStreams);
 
-  void AppendStatsToReport(const UniquePtr<dom::RTCStatsCollection>& aReport,
-                           const DOMHighResTimeStamp aTimestamp) const;
+  typedef DataChannelStatsPromise::AllPromiseType StatsPromise;
+  RefPtr<StatsPromise> GetStats(const DOMHighResTimeStamp aTimestamp) const;
 
   bool ConnectToTransport(const std::string& aTransportId, const bool aClient,
                           const uint16_t aLocalPort,
@@ -222,28 +226,13 @@ class DataChannelConnection : public net::NeckoTargetHolder {
       DataChannelReliabilityPolicy prPolicy, bool inOrder, uint32_t prValue,
       bool aExternalNegotiated, uint16_t aStream);
 
-  void Stop();
-  void Close(DataChannel* aChannel);
-  void GracefulClose(DataChannel* aChannel);
-  void FinishClose(DataChannel* aChannel);
-  void FinishClose_s(DataChannel* aChannel);
+  void EndOfStream(const RefPtr<DataChannel>& aChannel);
+  void FinishClose_s(const RefPtr<DataChannel>& aChannel);
   void CloseAll();
+  void CloseAll_s();
+  void MarkStreamAvailable(uint16_t aStream);
 
-  // Returns a POSIX error code.
-  int SendMessage(uint16_t stream, nsACString&& aMsg) {
-    return SendDataMessage(stream, std::move(aMsg), false);
-  }
-
-  // Returns a POSIX error code.
-  int SendBinaryMessage(uint16_t stream, nsACString&& aMsg) {
-    return SendDataMessage(stream, std::move(aMsg), true);
-  }
-
-  // Returns a POSIX error code.
-  int SendBlob(uint16_t stream, nsIInputStream* aBlob);
-
-  void ReadBlob(already_AddRefed<DataChannelConnection> aThis, uint16_t aStream,
-                nsIInputStream* aBlob);
+  nsISerialEventTarget* GetIOThread();
 
   bool InShutdown() const {
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -290,7 +279,8 @@ class DataChannelConnection : public net::NeckoTargetHolder {
                         nsISerialEventTarget* aTarget,
                         MediaTransportHandler* aHandler);
 
-  int SendDataMessage(uint16_t aStream, nsACString&& aMsg, bool aIsBinary);
+  void SendDataMessage(DataChannel& aChannel, nsACString&& aMsg,
+                       bool aIsBinary);
 
   DataChannelConnectionState GetState() const {
     MOZ_ASSERT(mSTS->IsOnCurrentThread());
@@ -312,8 +302,6 @@ class DataChannelConnection : public net::NeckoTargetHolder {
 
   void OpenFinish(RefPtr<DataChannel> aChannel);
 
-  void ClearResets();
-  void MarkStreamForReset(DataChannel& aChannel);
   void HandleUnknownMessage(uint32_t ppid, uint32_t length, uint16_t stream);
   void HandleOpenRequestMessage(
       const struct rtcweb_datachannel_open_request* req, uint32_t length,
@@ -327,31 +315,21 @@ class DataChannelConnection : public net::NeckoTargetHolder {
   // Avoid cycles with PeerConnectionImpl
   // Use from main thread only as WeakPtr is not threadsafe
   WeakPtr<DataConnectionListener> mListener;
-  bool mMaxMessageSizeSet = false;
-  uint64_t mMaxMessageSize = 0;
+  uint64_t mMaxMessageSize = WEBRTC_DATACHANNEL_MAX_MESSAGE_SIZE_REMOTE_DEFAULT;
   nsTArray<uint16_t> mStreamIds;
   Maybe<bool> mAllocateEven;
   nsCOMPtr<nsIThread> mInternalIOThread = nullptr;
   /***********************************************************/
 
   /*********************** STS only **************************/
-  bool mSendInterleaved = false;
-  uint32_t mCurrentStream = 0;
   std::set<RefPtr<DataChannel>> mPending;
   uint16_t mNegotiatedIdLimit = 0;
   PendingType mPendingType = PendingType::None;
-  // holds outgoing control messages
-  nsTArray<OutgoingMsg> mBufferedControl;
-  // For partial DCEP messages (should be _really_ rare, since they're small)
-  Maybe<IncomingMsg> mRecvBuffer;
-  bool mSctpConfigured = false;
   std::string mTransportId;
   bool mConnectedToTransportHandler = false;
   RefPtr<MediaTransportHandler> mTransportHandler;
   MediaEventListener mPacketReceivedListener;
   MediaEventListener mStateChangeListener;
-  // Streams pending reset.
-  AutoTArray<uint16_t, 4> mStreamsResetting;
   DataChannelConnectionState mState = DataChannelConnectionState::Closed;
   /***********************************************************/
 
@@ -376,22 +354,14 @@ class DataChannelConnection : public net::NeckoTargetHolder {
 };
 
 class DataChannel {
-  friend class DataChannelOnMessageAvailable;
   friend class DataChannelConnection;
   friend class DataChannelConnectionUsrsctp;
 
  public:
-  struct TrafficCounters {
-    uint32_t mMessagesSent = 0;
-    uint64_t mBytesSent = 0;
-    uint32_t mMessagesReceived = 0;
-    uint64_t mBytesReceived = 0;
-  };
-
   DataChannel(DataChannelConnection* connection, uint16_t stream,
-              DataChannelState state, const nsACString& label,
-              const nsACString& protocol, DataChannelReliabilityPolicy policy,
-              uint32_t value, bool ordered, bool negotiated);
+              const nsACString& label, const nsACString& protocol,
+              DataChannelReliabilityPolicy policy, uint32_t value, bool ordered,
+              bool negotiated);
   DataChannel(const DataChannel&) = delete;
   DataChannel(DataChannel&&) = delete;
   DataChannel& operator=(const DataChannel&) = delete;
@@ -403,162 +373,126 @@ class DataChannel {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DataChannel)
 
-  // Complete dropping of the link between DataChannel and the connection.
-  // After this, except for a few methods below listed to be safe, you can't
-  // call into DataChannel.
-  void ReleaseConnection();
+  // The transfer dance here is somewhat complex because we can be dispatching
+  // events while the transfer is in progress, and even before we know whether a
+  // transfer might occur.
+  //
+  // Called when the mainthread RTCDataChannel is created
+  void SetMainthreadDomDataChannel(dom::RTCDataChannel* aChannel);
 
-  // Close this DataChannel.  Can be called multiple times.  MUST be called
-  // before destroying the DataChannel (state must be CLOSED or CLOSING).
-  void Close();
+  // Called when the mainthread RTCDataChannel has started the transfer steps.
+  // This is important, because it means that certain updates (particularly
+  // things like stream id and max message size) that are ordinarily set
+  // synchronously should now be dispatched.
+  void OnWorkerTransferStarted();
 
-  // Set the listener (especially for channels created from the other side)
-  void SetListener(DataChannelListener* aListener);
+  // Called when the worker thread RTCDataChannel is created. This is where we
+  // learn about the worker thread, and we can start dispatching events to it.
+  void OnWorkerTransferComplete(dom::RTCDataChannel* aChannel);
+
+  // Called when the window of opportunity to start a transfer has closed. This
+  // is where we know that main is our event target, and we can start
+  // dispatching events to it.
+  void OnWorkerTransferDisabled();
+
+  // Unsets our (weak) ref to the mainthread RTCDataChannel. If we *also* have a
+  // worker-thread RTCDataChannel, we must notify it about this, because it
+  // means that there's one less reason for it to keep a self-ref.
+  void UnsetMainthreadDomDataChannel();
+
+  // Unsets our (weak) ref to a worker thread RTCDataChannel, if one exists.
+  void UnsetWorkerDomDataChannel();
 
   // Helper for send methods that converts POSIX error codes to an ErrorResult.
   static void SendErrnoToErrorResult(int error, size_t aMessageSize,
                                      ErrorResult& aRv);
 
   // Send a string
-  void SendMsg(nsACString&& aMsg, ErrorResult& aRv);
+  void SendMsg(nsCString&& aMsg);
 
   // Send a binary message (TypedArray)
-  void SendBinaryMsg(nsACString&& aMsg, ErrorResult& aRv);
+  void SendBinaryMsg(nsCString&& aMsg);
 
   // Send a binary blob
-  void SendBinaryBlob(dom::Blob& aBlob, ErrorResult& aRv);
+  void SendBinaryBlob(nsIInputStream* aBlob);
 
-  void IncrementBufferedAmount(uint32_t aSize, ErrorResult& aRv);
-  void DecrementBufferedAmount(uint32_t aSize);
-
-  // Amount of data buffered to send
-  uint32_t GetBufferedAmount() const {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mBufferedAmount;
-  }
-
-  // Trigger amount for generating BufferedAmountLow events
-  uint32_t GetBufferedAmountLowThreshold() const;
-  void SetBufferedAmountLowThreshold(uint32_t aThreshold);
-
+  void DecrementBufferedAmount(size_t aSize);
   void AnnounceOpen();
   void AnnounceClosed();
+  void GracefulClose();
 
-  // Find out state
-  DataChannelState GetReadyState() const {
+  Maybe<uint16_t> GetStream() const {
     MOZ_ASSERT(NS_IsMainThread());
-    return mReadyState;
+    if (mStream == INVALID_STREAM) {
+      return Nothing();
+    }
+    return Some(mStream);
   }
 
-  // Set ready state
-  void SetReadyState(DataChannelState aState);
+  void SetStream(uint16_t aId);
+  void SetMaxMessageSize(double aMaxMessageSize);
+  double GetMaxMessageSize() const { return mConnection->GetMaxMessageSize(); }
 
-  void GetLabel(nsAString& aLabel) { CopyUTF8toUTF16(mLabel, aLabel); }
-  void GetProtocol(nsAString& aProtocol) {
-    CopyUTF8toUTF16(mProtocol, aProtocol);
+  void OnMessageReceived(nsCString&& aMsg, bool aIsBinary);
+
+  RefPtr<DataChannelStatsPromise> GetStats(
+      const DOMHighResTimeStamp aTimestamp);
+
+  // Called when there will be no more data sent
+  void EndOfStream();
+
+  dom::RTCDataChannel* GetDomDataChannel() const {
+    MOZ_ASSERT(mDomEventTarget->IsOnCurrentThread());
+    if (NS_IsMainThread()) {
+      return mMainthreadDomDataChannel;
+    }
+    return mWorkerDomDataChannel;
   }
-  uint16_t GetStream() const {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mStream;
-  }
-
-  void SendOrQueue(DataChannelOnMessageAvailable* aMessage);
-
-  TrafficCounters GetTrafficCounters() const;
 
  private:
   nsresult AddDataToBinaryMsg(const char* data, uint32_t size);
-  bool EnsureValidStream(ErrorResult& aRv);
-  void WithTrafficCounters(const std::function<void(TrafficCounters&)>&);
+  void SendBuffer(nsCString&& aMsg, bool aBinary);
+  void UnsetMessagesSentPromiseWhenSettled();
 
-  // Mainthread only
-  DataChannelListener* mListener = nullptr;
-  bool mEverOpened = false;
   const nsCString mLabel;
   const nsCString mProtocol;
-  DataChannelState mReadyState;
-  uint16_t mStream;
   const DataChannelReliabilityPolicy mPrPolicy;
   const uint32_t mPrValue;
-  size_t mBufferedThreshold;
-  size_t mBufferedAmount;
+  const bool mNegotiated;
+  const bool mOrdered;
+
+  // DOM Thread only; wherever the RTCDataChannel lives.
+  dom::RTCDataChannel* mMainthreadDomDataChannel = nullptr;
+  bool mHasWorkerDomDataChannel = false;
+  bool mEverOpened = false;
+  bool mAnnouncedOpen = false;
+  bool mAnnouncedClosed = false;
+  uint16_t mStream;
+  RefPtr<GenericNonExclusivePromise> mMessagesSentPromise;
   RefPtr<DataChannelConnection> mConnection;
-  TrafficCounters mTrafficCounters;
 
   // STS only
   // The channel has been opened, but the peer has not yet acked - ensures that
   // the messages are sent ordered until this is cleared.
   bool mWaitingForAck = false;
+  bool mSendStreamNeedsReset = false;
+  bool mRecvStreamNeedsReset = false;
+  bool mEndOfStreamCalled = false;
   nsTArray<OutgoingMsg> mBufferedData;
   std::map<uint16_t, IncomingMsg> mRecvBuffers;
 
-  // Accessed on main and STS
-  const bool mNegotiated;
-  const bool mOrdered;
+  // At first, this is not hooked to any real event target, and just buffers
+  // events. Later on, when we know what event target we should use, we hook it
+  // in here, this dispatches the buffered events, and then acts as a
+  // passthrough.
+  const RefPtr<StopGapEventTarget> mDomEventTarget;
 
-  nsCOMPtr<nsISerialEventTarget> mMainThreadEventTarget;
-};
-
-// used to dispatch notifications of incoming data to the main thread
-// Patterned on CallOnMessageAvailable in WebSockets
-// Also used to proxy other items to MainThread
-class DataChannelOnMessageAvailable : public Runnable {
- public:
-  enum class EventType {
-    OnConnection,
-    OnDisconnected,
-    OnDataString,
-    OnDataBinary,
-  };
-
-  DataChannelOnMessageAvailable(EventType aType,
-                                DataChannelConnection* aConnection,
-                                DataChannel* aChannel, nsCString&& aData)
-      : Runnable("DataChannelOnMessageAvailable"),
-        mType(aType),
-        mChannel(aChannel),
-        mConnection(aConnection),
-        mData(std::move(aData)) {}
-
-  DataChannelOnMessageAvailable(EventType aType, DataChannel* aChannel)
-      : Runnable("DataChannelOnMessageAvailable"),
-        mType(aType),
-        mChannel(aChannel) {}
-  // XXX is it safe to leave mData uninitialized?  This should only be
-  // used for notifications that don't use them, but I'd like more
-  // bulletproof compile-time checking.
-
-  DataChannelOnMessageAvailable(EventType aType,
-                                DataChannelConnection* aConnection,
-                                DataChannel* aChannel)
-      : Runnable("DataChannelOnMessageAvailable"),
-        mType(aType),
-        mChannel(aChannel),
-        mConnection(aConnection) {}
-
-  // for ON_CONNECTION/ON_DISCONNECTED
-  DataChannelOnMessageAvailable(EventType aType,
-                                DataChannelConnection* aConnection)
-      : Runnable("DataChannelOnMessageAvailable"),
-        mType(aType),
-        mConnection(aConnection) {}
-  DataChannelOnMessageAvailable(const DataChannelOnMessageAvailable&) = delete;
-  DataChannelOnMessageAvailable(DataChannelOnMessageAvailable&&) = delete;
-  DataChannelOnMessageAvailable& operator=(
-      const DataChannelOnMessageAvailable&) = delete;
-  DataChannelOnMessageAvailable& operator=(DataChannelOnMessageAvailable&&) =
-      delete;
-
-  NS_IMETHOD Run() override;
-
- private:
-  ~DataChannelOnMessageAvailable() = default;
-
-  EventType mType;
-  // XXX should use union
-  RefPtr<DataChannel> mChannel;
-  RefPtr<DataChannelConnection> mConnection;
-  nsCString mData;
+  // Worker thread only. We keep this separately because the spec requires it to
+  // have a strong ref (from the worker global scope) as long as the *original*
+  // mainthread RTCDataChannel is still alive. When the mainthread
+  // RTCDataChannel goes away, we will notice, and then let the worker
+  // RTCDataChannel know about it.
+  dom::RTCDataChannel* mWorkerDomDataChannel = nullptr;
 };
 
 static constexpr const char* ToString(DataChannelConnectionState state) {

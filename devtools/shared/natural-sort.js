@@ -68,16 +68,16 @@ function tryParseDate(str) {
  * Sort numbers, strings, IP Addresses, Dates, Filenames, version numbers etc.
  * "the way humans do."
  *
- * @param  {Object} a
+ * @param  {object} a
  *         Passed in by Array.sort(a, b)
- * @param  {Object} b
+ * @param  {object} b
  *         Passed in by Array.sort(a, b)
- * @param  {String} sessionString
+ * @param  {string} sessionString
  *         Client-side value of storage-expires-session l10n string.
  *         Since this function can be called from both the client and the server,
  *         and given that client and server might have different locale, we can't compute
  *         the localized string directly from here.
- * @param  {Boolean} insensitive
+ * @param  {boolean} insensitive
  *         Should the search be case insensitive?
  */
 // eslint-disable-next-line complexity

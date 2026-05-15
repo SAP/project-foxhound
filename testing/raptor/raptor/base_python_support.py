@@ -273,9 +273,9 @@ class BasePythonSupport:
                 power_usage_measurements.setdefault(
                     "powerUsage", dict(default_power_settings)
                 ).setdefault("replicates", []).extend(
-                    __convert_from_pico_to_micro(
-                        [vals["powerUsage"] for vals in power_vals]
-                    )
+                    __convert_from_pico_to_micro([
+                        vals["powerUsage"] for vals in power_vals
+                    ])
                 )
 
         return power_usage_measurements

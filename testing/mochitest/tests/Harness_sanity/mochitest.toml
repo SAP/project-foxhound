@@ -24,8 +24,12 @@ support-files = "file_spawn.html"
 
 ["test_SpecialPowersSpawnChrome.html"]
 
+["test_SpecialPowersStructuredClone.html"]
+
 ["test_TestsRunningAfterSimpleTestFinish.html"]
-skip-if = ["true"] #depends on fix for bug 1048446
+skip-if = [
+  "true", # depends on fix for bug 1048446
+]
 
 ["test_bug649012.html"]
 
@@ -38,7 +42,6 @@ skip-if = ["true"] #depends on fix for bug 1048446
 ["test_sanityEventUtils.html"]
 skip-if = [
   "fission && xorigin", # Bug 1716411 - New fission platform triage
-  "os == 'android' && android_version == '24' && processor == 'x86_64' && opt", # Bug 1704064
 ]
 
 ["test_sanityException.html"]
@@ -49,10 +52,15 @@ skip-if = [
 
 ["test_sanityRegisteredServiceWorker.html"]
 support-files = "empty.js"
+skip-if = [
+  "verify-standalone",
+]
 
 ["test_sanityRegisteredServiceWorker2.html"]
 support-files = "empty.js"
-skip-if = ["verify"]
+skip-if = [
+  "verify",
+]
 
 ["test_sanitySimpletest.html"]
 
@@ -63,9 +71,13 @@ skip-if = ["verify"]
 ["test_sanity_cleanup2.html"]
 
 ["test_sanity_manifest.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["test_sanity_manifest_pf.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["test_sanity_waitForCondition.html"]

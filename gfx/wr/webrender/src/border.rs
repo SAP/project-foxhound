@@ -15,7 +15,7 @@ use crate::prim_store::{BorderSegmentInfo, BrushSegment, NinePatchDescriptor};
 use crate::prim_store::borders::{NormalBorderPrim, NormalBorderData};
 use crate::util::{lerp, RectHelpers};
 use crate::internal_types::LayoutPrimitiveInfo;
-use crate::segment::EdgeAaSegmentMask;
+use crate::segment::EdgeMask;
 
 // Using 2048 as the maximum radius in device space before which we
 // start stretching is up for debate.
@@ -721,7 +721,7 @@ pub fn create_border_segments(
         border.left,
         non_overlapping_widths.left,
         BorderSegment::Left,
-        EdgeAaSegmentMask::LEFT | EdgeAaSegmentMask::RIGHT,
+        EdgeMask::LEFT | EdgeMask::RIGHT,
         brush_segments,
         border_segments,
         border.do_aa,
@@ -737,7 +737,7 @@ pub fn create_border_segments(
         border.top,
         non_overlapping_widths.top,
         BorderSegment::Top,
-        EdgeAaSegmentMask::TOP | EdgeAaSegmentMask::BOTTOM,
+        EdgeMask::TOP | EdgeMask::BOTTOM,
         brush_segments,
         border_segments,
         border.do_aa,
@@ -753,7 +753,7 @@ pub fn create_border_segments(
         border.right,
         non_overlapping_widths.right,
         BorderSegment::Right,
-        EdgeAaSegmentMask::RIGHT | EdgeAaSegmentMask::LEFT,
+        EdgeMask::RIGHT | EdgeMask::LEFT,
         brush_segments,
         border_segments,
         border.do_aa,
@@ -769,7 +769,7 @@ pub fn create_border_segments(
         border.bottom,
         non_overlapping_widths.bottom,
         BorderSegment::Bottom,
-        EdgeAaSegmentMask::BOTTOM | EdgeAaSegmentMask::TOP,
+        EdgeMask::BOTTOM | EdgeMask::TOP,
         brush_segments,
         border_segments,
         border.do_aa,
@@ -793,7 +793,7 @@ pub fn create_border_segments(
         LayoutSize::new(widths.left, widths.top),
         border.radius.top_left,
         BorderSegment::TopLeft,
-        EdgeAaSegmentMask::TOP | EdgeAaSegmentMask::LEFT,
+        EdgeMask::TOP | EdgeMask::LEFT,
         rect.top_right(),
         border.radius.top_right,
         rect.bottom_left(),
@@ -820,7 +820,7 @@ pub fn create_border_segments(
         LayoutSize::new(widths.right, widths.top),
         border.radius.top_right,
         BorderSegment::TopRight,
-        EdgeAaSegmentMask::TOP | EdgeAaSegmentMask::RIGHT,
+        EdgeMask::TOP | EdgeMask::RIGHT,
         rect.min,
         border.radius.top_left,
         rect.max,
@@ -847,7 +847,7 @@ pub fn create_border_segments(
         LayoutSize::new(widths.right, widths.bottom),
         border.radius.bottom_right,
         BorderSegment::BottomRight,
-        EdgeAaSegmentMask::BOTTOM | EdgeAaSegmentMask::RIGHT,
+        EdgeMask::BOTTOM | EdgeMask::RIGHT,
         rect.bottom_left(),
         border.radius.bottom_left,
         rect.top_right(),
@@ -874,7 +874,7 @@ pub fn create_border_segments(
         LayoutSize::new(widths.left, widths.bottom),
         border.radius.bottom_left,
         BorderSegment::BottomLeft,
-        EdgeAaSegmentMask::BOTTOM | EdgeAaSegmentMask::LEFT,
+        EdgeMask::BOTTOM | EdgeMask::LEFT,
         rect.max,
         border.radius.bottom_right,
         rect.min,
@@ -1049,7 +1049,7 @@ fn add_corner_segment(
     widths: LayoutSize,
     radius: LayoutSize,
     segment: BorderSegment,
-    edge_flags: EdgeAaSegmentMask,
+    edge_flags: EdgeMask,
     h_adjacent_corner_outer: LayoutPoint,
     h_adjacent_corner_radius: LayoutSize,
     v_adjacent_corner_outer: LayoutPoint,
@@ -1184,7 +1184,7 @@ fn add_edge_segment(
     side: BorderSide,
     width: f32,
     segment: BorderSegment,
-    edge_flags: EdgeAaSegmentMask,
+    edge_flags: EdgeMask,
     brush_segments: &mut Vec<BrushSegment>,
     border_segments: &mut Vec<BorderSegmentInfo>,
     do_aa: bool,
@@ -1369,7 +1369,7 @@ impl NinePatchDescriptor {
             let segment = BrushSegment::new(
                 rect,
                 true,
-                EdgeAaSegmentMask::empty(),
+                EdgeMask::empty(),
                 [
                     uv_rect.uv0.x,
                     uv_rect.uv0.y,

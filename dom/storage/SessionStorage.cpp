@@ -11,9 +11,8 @@
 
 #include "SessionStorageCache.h"
 #include "SessionStorageManager.h"
-
-#include "mozilla/dom/StorageBinding.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/StorageBinding.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsPIDOMWindow.h"

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_serviceworkerevents_h__
-#define mozilla_dom_serviceworkerevents_h__
+#ifndef mozilla_dom_serviceworkerevents_h_
+#define mozilla_dom_serviceworkerevents_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Event.h"
@@ -17,9 +17,8 @@
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerCommon.h"
-
-#include "nsProxyRelease.h"
 #include "nsContentUtils.h"
+#include "nsProxyRelease.h"
 
 class nsIInterceptedChannel;
 
@@ -224,6 +223,7 @@ class PushMessageData final : public nsISupports, public nsWrapperCache {
 
   nsresult EnsureDecodedText();
   uint8_t* GetContentsCopy();
+  void SetUseCounterIfDeclarative(JSContext* aCx);
 };
 
 class PushEvent final : public ExtendableEvent {
@@ -304,4 +304,4 @@ class ExtendableMessageEvent final : public ExtendableEvent {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_serviceworkerevents_h__ */
+#endif /* mozilla_dom_serviceworkerevents_h_ */

@@ -21,7 +21,7 @@ import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
-import org.mozilla.focus.helpers.TestAssetHelper
+import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
 import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.pressHomeKey
 import org.mozilla.focus.helpers.TestHelper.waitingTime
@@ -66,7 +66,7 @@ class SwitchContextTest : TestSetup() {
     @SmokeTest
     @Test
     fun notificationOpenButtonTest() {
-        val testPage = TestAssetHelper.getGenericAsset(webServer)
+        val testPage = webServer.genericAsset
 
         searchScreen {
         }.loadPage(testPage.url) {
@@ -99,7 +99,7 @@ class SwitchContextTest : TestSetup() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
         val intent = context.packageManager
             .getLaunchIntentForPackage(settingsPackage)
-        val testPage = TestAssetHelper.getGenericAsset(webServer)
+        val testPage = webServer.genericAsset
 
         // Open a webpage
         searchScreen {

@@ -7,10 +7,17 @@ A collection of helpers for integrating native Application Services' components.
 During Application initialization (typically in `Application#onCreate`), add the following line:
 
 ```kotlin
-AppServicesInitializer.init(crashReporter)
+val configuration = Config(
+    crashReporting = CustomCrashReporter(),
+    logLevel = Log.Priority.WARN,
+)
+AppServicesInitializer.init(configuration)
 ```
 
-You may also need to initialize the networking layer with a concept-fetch implementation:
+You may also desire to initialize the networking layer with a concept-fetch implementation
+separately. Although this is not part of the initialization order that is required, doing so as
+soon as possible means that any code in your native layer would be able to use
+the shared network stack ASAP.
 
 ```kotlin
 RustHttpConfig.setClient(lazy { HttpClient() })

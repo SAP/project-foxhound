@@ -12,6 +12,8 @@
 #include "MediaCodecsSupport.h"
 #include "mozilla/RemoteMediaManagerParent.h"
 
+#include "mozilla/gfx/gfxVars.h"
+
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
 #  include "WMF.h"
 #  include "WMFDecoderModule.h"
@@ -30,9 +32,8 @@
 #include "mozilla/RemoteDecodeUtils.h"
 
 #ifdef MOZ_WMF_MEDIA_ENGINE
-#  include "mozilla/gfx/DeviceManagerDx.h"
-#  include "mozilla/gfx/gfxVars.h"
 #  include "gfxConfig.h"
+#  include "mozilla/gfx/DeviceManagerDx.h"
 #endif
 
 #ifdef MOZ_WMF_CDM
@@ -45,31 +46,36 @@ namespace mozilla::ipc {
 UtilityMediaServiceParent::UtilityMediaServiceParent(
     nsTArray<gfx::GfxVarUpdate>&& aUpdates)
     : mKind(GetCurrentSandboxingKind()),
-      mAudioDecoderParentStart(TimeStamp::Now()) {
+      mUtilityMediaServiceParentStart(TimeStamp::Now()) {
+  switch (mKind) {
+#ifdef MOZ_WMF_MEDIA_ENGINE
+    case SandboxingKind::MF_MEDIA_ENGINE_CDM:
+      nsDebugImpl::SetMultiprocessMode("MF Media Engine CDM");
+      profiler_set_process_name(nsCString("MF Media Engine CDM"));
+      break;
+#endif
+    case SandboxingKind::GENERIC_UTILITY:
+      break;
+    default:
+      nsDebugImpl::SetMultiprocessMode("Utility AudioDecoder");
+      profiler_set_process_name(nsCString("Utility AudioDecoder"));
+      break;
+  }
+  gfx::gfxVars::Initialize();
+  gfx::gfxVars::ApplyUpdate(aUpdates);
 #ifdef MOZ_WMF_MEDIA_ENGINE
   if (mKind == SandboxingKind::MF_MEDIA_ENGINE_CDM) {
-    nsDebugImpl::SetMultiprocessMode("MF Media Engine CDM");
-    profiler_set_process_name(nsCString("MF Media Engine CDM"));
     gfx::gfxConfig::Init();
-    gfx::gfxVars::Initialize();
-    for (auto& update : aUpdates) {
-      gfx::gfxVars::ApplyUpdate(update);
-    }
     gfx::DeviceManagerDx::Init();
-    return;
   }
 #endif
-  if (GetCurrentSandboxingKind() != SandboxingKind::GENERIC_UTILITY) {
-    nsDebugImpl::SetMultiprocessMode("Utility AudioDecoder");
-    profiler_set_process_name(nsCString("Utility AudioDecoder"));
-  }
 }
 
 UtilityMediaServiceParent::~UtilityMediaServiceParent() {
+  gfx::gfxVars::Shutdown();
 #ifdef MOZ_WMF_MEDIA_ENGINE
   if (mKind == SandboxingKind::MF_MEDIA_ENGINE_CDM) {
     gfx::gfxConfig::Shutdown();
-    gfx::gfxVars::Shutdown();
     gfx::DeviceManagerDx::Shutdown();
   }
 #endif
@@ -123,11 +129,11 @@ void UtilityMediaServiceParent::Start(
 #endif
 
   auto supported = media::MCSInfo::GetSupportFromFactory();
-  Unused << SendUpdateMediaCodecsSupported(GetRemoteMediaInFromKind(mKind),
-                                           supported);
+  (void)SendUpdateMediaCodecsSupported(GetRemoteMediaInFromKind(mKind),
+                                       supported);
   PROFILER_MARKER_UNTYPED("UtilityMediaServiceParent::Start", IPC,
                           MarkerOptions(MarkerTiming::IntervalUntilNowFrom(
-                              mAudioDecoderParentStart)));
+                              mUtilityMediaServiceParentStart)));
 }
 
 mozilla::ipc::IPCResult
@@ -157,7 +163,6 @@ mozilla::ipc::IPCResult UtilityMediaServiceParent::RecvInitVideoBridge(
           gfx::Feature::HW_COMPOSITING,
           gfx::Feature::D3D11_COMPOSITING,
           gfx::Feature::OPENGL_COMPOSITING,
-          gfx::Feature::DIRECT2D,
       },
       aContentDeviceData.prefs());
 
@@ -167,29 +172,30 @@ mozilla::ipc::IPCResult UtilityMediaServiceParent::RecvInitVideoBridge(
     }
   }
 
-  Unused << SendCompleteCreatedVideoBridge();
-  return IPC_OK();
-}
-
-IPCResult UtilityMediaServiceParent::RecvUpdateVar(
-    const GfxVarUpdate& aUpdate) {
-  MOZ_ASSERT(mKind == SandboxingKind::MF_MEDIA_ENGINE_CDM);
-  auto scopeExit = MakeScopeExit(
-      [self = RefPtr<UtilityMediaServiceParent>{this},
-       location = GetRemoteMediaInFromKind(mKind),
-       couldUseHWDecoder = gfx::gfxVars::CanUseHardwareVideoDecoding()] {
-        if (couldUseHWDecoder != gfx::gfxVars::CanUseHardwareVideoDecoding()) {
-          // The capabilities of the system may have changed, force a refresh by
-          // re-initializing the PDM.
-          Unused << self->SendUpdateMediaCodecsSupported(
-              location,
-              media::MCSInfo::GetSupportFromFactory(true /* force refresh */));
-        }
-      });
-  gfx::gfxVars::ApplyUpdate(aUpdate);
+  (void)SendCompleteCreatedVideoBridge();
   return IPC_OK();
 }
 #endif
+
+IPCResult UtilityMediaServiceParent::RecvUpdateVar(
+    const nsTArray<GfxVarUpdate>& aUpdate) {
+  gfx::gfxVars::ApplyUpdate(aUpdate);
+
+  MOZ_ALWAYS_SUCCEEDS(NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction(
+          "UtilityMediaServiceParent::RecvUpdateVar",
+          [self = RefPtr{this}]() {
+            NS_DispatchToMainThread(NS_NewRunnableFunction(
+                "UtilityMediaServiceParent::UpdateMediaCodecsSupported",
+                [self, supported = media::MCSInfo::GetSupportFromFactory(
+                           true /* force refresh */)]() {
+                  (void)self->SendUpdateMediaCodecsSupported(
+                      GetRemoteMediaInFromKind(self->mKind), supported);
+                }));
+          }),
+      nsIEventTarget::DISPATCH_NORMAL));
+  return IPC_OK();
+}
 
 #ifdef MOZ_WMF_CDM
 IPCResult UtilityMediaServiceParent::RecvGetKeySystemCapabilities(

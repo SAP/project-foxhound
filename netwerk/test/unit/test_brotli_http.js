@@ -13,6 +13,14 @@ const { HttpServer } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
 );
 
+const { NodeHTTPSServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
 ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpServer.identity.primaryPort + "/content";
 });
@@ -81,10 +89,6 @@ add_task(
       "network.http.encoding.trustworthy_is_https",
       true
     );
-    let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-      Ci.nsIX509CertDB
-    );
-    addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
 
     let server = new NodeHTTPSServer();
     await server.start();

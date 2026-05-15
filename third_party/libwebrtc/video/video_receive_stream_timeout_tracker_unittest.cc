@@ -10,10 +10,10 @@
 
 #include "video/video_receive_stream_timeout_tracker.h"
 
-#include <utility>
 #include <vector>
 
-#include "api/task_queue/task_queue_base.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/time_controller/simulated_time_controller.h"
@@ -25,7 +25,8 @@ namespace {
 constexpr auto kMaxWaitForKeyframe = TimeDelta::Millis(500);
 constexpr auto kMaxWaitForFrame = TimeDelta::Millis(1500);
 constexpr VideoReceiveStreamTimeoutTracker::Timeouts config = {
-    kMaxWaitForKeyframe, kMaxWaitForFrame};
+    .max_wait_for_keyframe = kMaxWaitForKeyframe,
+    .max_wait_for_frame = kMaxWaitForFrame};
 }  // namespace
 
 class VideoReceiveStreamTimeoutTrackerTest : public ::testing::Test {

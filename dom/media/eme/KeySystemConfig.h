@@ -8,11 +8,11 @@
 #define DOM_MEDIA_EME_KEYSYSTEMCONFIG_H_
 
 #include "MediaData.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/MediaKeySystemAccessBinding.h"
+#include "mozilla/dom/MediaKeysBinding.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/dom/MediaKeysBinding.h"
-#include "mozilla/dom/MediaKeySystemAccessBinding.h"
 
 namespace mozilla {
 
@@ -236,7 +236,6 @@ struct KeySystemConfig {
   nsTArray<nsString> mAudioRobustness;
   ContainerSupport mMP4;
   ContainerSupport mWebM;
-  bool mIsHDCP22Compatible = false;
 
  private:
   static void CreateClearKeyKeySystemConfigs(

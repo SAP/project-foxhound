@@ -9,8 +9,6 @@
 #include "xpcprivate.h"
 #include "nsError.h"
 
-#include <iterator>
-
 /***************************************************************************/
 /* Quick and dirty mapping of well known result codes to strings. We only
  *  call this when building an exception object, so iterating the short array

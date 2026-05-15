@@ -76,7 +76,9 @@ add_task(async function () {
         );
         for (let i = 0; i < highlighter._highlighters.size; i++) {
           const nodeHighlighter = [...highlighter._highlighters.values()][i];
-          const infoBarText = nodeHighlighter.getElement("infobar-text");
+          const infoBarText = nodeHighlighter.getElement(
+            "tabbing-order-infobar-text"
+          );
 
           is(
             parseInt(infoBarText.getTextContent(), 10),
@@ -89,7 +91,7 @@ add_task(async function () {
         const input = content.document.getElementById("input");
         highlighter.updateFocus({ node: input, focused: true });
         const nodeHighlighter = highlighter._highlighters.get(input);
-        const { classList } = nodeHighlighter.getElement("root");
+        const { classList } = nodeHighlighter.getElement("tabbing-order-root");
         ok(classList.contains("focused"), "Focus styling is applied");
         highlighter.updateFocus({ node: input, focused: false });
         ok(!classList.contains("focused"), "Focus styling is removed");

@@ -41,6 +41,7 @@ class ChannelSuspendAgent {
   void Delegate(nsIChannel* aChannel);
   // Stop the management of the suspend status of the channel.
   void Revoke();
+  void RevokeIfManaged(nsIChannel* aChannel);
 
  private:
   // Only suspends channel but not changes the suspend count.

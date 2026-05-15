@@ -6,16 +6,14 @@ use api::{NormalBorder, PremultipliedColorF, Shadow, RasterSpace};
 use api::units::*;
 use crate::border::create_border_segments;
 use crate::border::NormalBorderAu;
+use crate::gpu_types::ImageBrushPrimitiveData;
+use crate::renderer::GpuBufferWriterF;
 use crate::scene_building::{CreateShadow, IsVisible};
 use crate::frame_builder::FrameBuildingState;
-use crate::gpu_cache::GpuDataRequest;
 use crate::intern;
 use crate::internal_types::{LayoutPrimitiveInfo, FrameId};
 use crate::prim_store::{
-    BorderSegmentInfo, BrushSegment, NinePatchDescriptor, PrimKey,
-    PrimTemplate, PrimTemplateCommonData,
-    PrimitiveInstanceKind, PrimitiveOpacity,
-    PrimitiveStore, InternablePrimitive,
+    BorderSegmentInfo, BrushSegment, InternablePrimitive, NinePatchDescriptor, PrimKey, PrimTemplate, PrimTemplateCommonData, PrimitiveInstanceKind, PrimitiveOpacity, PrimitiveStore, VECS_PER_SEGMENT
 };
 use crate::resource_cache::ImageRequest;
 use crate::render_task::RenderTask;
@@ -67,44 +65,36 @@ impl NormalBorderData {
         common: &mut PrimTemplateCommonData,
         frame_state: &mut FrameBuildingState,
     ) {
-        if let Some(ref mut request) = frame_state.gpu_cache.request(&mut common.gpu_cache_handle) {
-            self.write_prim_gpu_blocks(request, common.prim_rect.size());
-            self.write_segment_gpu_blocks(request);
-        }
-
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3 + self.brush_segments.len() * VECS_PER_SEGMENT);
+        self.write_prim_gpu_blocks(&mut writer, common.prim_rect.size());
+        self.write_segment_gpu_blocks(&mut writer);
+        common.gpu_buffer_address = writer.finish();
         common.opacity = PrimitiveOpacity::translucent();
     }
 
     fn write_prim_gpu_blocks(
         &self,
-        request: &mut GpuDataRequest,
+        writer: &mut GpuBufferWriterF,
         prim_size: LayoutSize
     ) {
         // Border primitives currently used for
         // image borders, and run through the
         // normal brush_image shader.
-        request.push(PremultipliedColorF::WHITE);
-        request.push(PremultipliedColorF::WHITE);
-        request.push([
-            prim_size.width,
-            prim_size.height,
-            0.0,
-            0.0,
-        ]);
+        writer.push(&ImageBrushPrimitiveData {
+            color: PremultipliedColorF::WHITE,
+            background_color: PremultipliedColorF::WHITE,
+            stretch_size: prim_size,
+        });
     }
 
     fn write_segment_gpu_blocks(
         &self,
-        request: &mut GpuDataRequest,
+        writer: &mut GpuBufferWriterF,
     ) {
         for segment in &self.brush_segments {
-            // has to match VECS_PER_SEGMENT
-            request.write_segment(
-                segment.local_rect,
-                segment.extra_data,
-            );
+            segment.write_gpu_blocks(writer);
         }
-    }
+   }
 }
 
 pub type NormalBorderTemplate = PrimTemplate<NormalBorderData>;
@@ -245,10 +235,10 @@ impl ImageBorderData {
         common: &mut PrimTemplateCommonData,
         frame_state: &mut FrameBuildingState,
     ) {
-        if let Some(ref mut request) = frame_state.gpu_cache.request(&mut common.gpu_cache_handle) {
-            self.write_prim_gpu_blocks(request, &common.prim_rect.size());
-            self.write_segment_gpu_blocks(request);
-        }
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3 + self.brush_segments.len() * VECS_PER_SEGMENT);
+        self.write_prim_gpu_blocks(&mut writer, &common.prim_rect.size());
+        self.write_segment_gpu_blocks(&mut writer);
+        common.gpu_buffer_address = writer.finish();
 
         let frame_id = frame_state.rg_builder.frame_id();
         if self.frame_id != frame_id {
@@ -256,11 +246,11 @@ impl ImageBorderData {
 
             let size = frame_state.resource_cache.request_image(
                 self.request,
-                frame_state.gpu_cache,
+                &mut frame_state.frame_gpu_data.f32,
             );
 
             let task_id = frame_state.rg_builder.add().init(
-                RenderTask::new_image(size, self.request)
+                RenderTask::new_image(size, self.request, false)
             );
 
             self.src_color = Some(task_id);
@@ -279,32 +269,25 @@ impl ImageBorderData {
 
     fn write_prim_gpu_blocks(
         &self,
-        request: &mut GpuDataRequest,
+        writer: &mut GpuBufferWriterF,
         prim_size: &LayoutSize,
     ) {
         // Border primitives currently used for
         // image borders, and run through the
         // normal brush_image shader.
-        request.push(PremultipliedColorF::WHITE);
-        request.push(PremultipliedColorF::WHITE);
-        request.push([
-            prim_size.width,
-            prim_size.height,
-            0.0,
-            0.0,
-        ]);
+        writer.push(&ImageBrushPrimitiveData {
+            color: PremultipliedColorF::WHITE,
+            background_color: PremultipliedColorF::WHITE,
+            stretch_size: *prim_size,
+        });
     }
 
     fn write_segment_gpu_blocks(
         &self,
-        request: &mut GpuDataRequest,
+        writer: &mut GpuBufferWriterF,
     ) {
         for segment in &self.brush_segments {
-            // has to match VECS_PER_SEGMENT
-            request.write_segment(
-                segment.local_rect,
-                segment.extra_data,
-            );
+            segment.write_gpu_blocks(writer);
         }
     }
 }

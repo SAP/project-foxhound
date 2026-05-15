@@ -6,6 +6,7 @@
 //!
 //! [font-palette-values]: https://drafts.csswg.org/css-fonts/#font-palette-values
 
+use crate::derives::*;
 use crate::error_reporting::ContextualParseError;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::{
@@ -17,20 +18,19 @@ use crate::gecko_bindings::{
 };
 use crate::parser::{Parse, ParserContext};
 use crate::shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
-use crate::str::CssStringWriter;
 use crate::stylesheets::font_feature_values_rule::parse_family_name_list;
 use crate::values::computed::font::FamilyName;
 use crate::values::specified::Color as SpecifiedColor;
 use crate::values::specified::NonNegativeInteger;
 use crate::values::DashedIdent;
 use cssparser::{
-    AtRuleParser, CowRcStr, DeclarationParser, Parser, ParserState, QualifiedRuleParser,
-    RuleBodyItemParser, RuleBodyParser, SourceLocation,
+    match_ignore_ascii_case, AtRuleParser, CowRcStr, DeclarationParser, Parser, ParserState,
+    QualifiedRuleParser, RuleBodyItemParser, RuleBodyParser, SourceLocation,
 };
 use selectors::parser::SelectorParseErrorKind;
 use std::fmt::{self, Write};
 use style_traits::{Comma, OneOrMoreSeparated};
-use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
+use style_traits::{CssStringWriter, CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 #[allow(missing_docs)]
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]

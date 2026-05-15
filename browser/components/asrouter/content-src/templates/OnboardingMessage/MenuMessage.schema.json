@@ -15,8 +15,8 @@
       "properties": {
         "messageType": {
           "type": "string",
-          "description": "The subtype of the message.",
-          "enum": ["fxa_cta"]
+          "description": "The subtype of the message. 'fxa_cta' is used for Firefox Accounts messaging and is only visible when signed out, unless 'allowWhenSignedIn' property is provided. It replaces the fxa menu item when displayed. 'default_cta' is used for general messages, regardless of sign in state and only visible within the App Menu.",
+          "enum": ["fxa_cta", "default_cta"]
         },
         "primaryText": {
           "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
@@ -24,7 +24,7 @@
         },
         "secondaryText": {
           "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
-          "description": "The second text for the message, which offers more detail on the value proposition to the user."
+          "description": "The secondary text for the message, which offers more detail on the value proposition to the user. Not displayed when layout is 'simple'."
         },
         "closeAction": {
           "type": "object",
@@ -60,6 +60,11 @@
           "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText",
           "description": "The label for the primary action."
         },
+        "primaryButtonSize": {
+          "type": "string",
+          "enum": ["default", "small"],
+          "description": "The size of the primary button, default is 'default'."
+        },
         "imageURL": {
           "type": "string",
           "description": "URL for image to use with the content."
@@ -68,9 +73,17 @@
           "type": "number",
           "description": "The image width in pixels. Default is 120px."
         },
+        "logoURL": {
+          "type": "string",
+          "description": "URL for logo to use with the content."
+        },
+        "logoWidth": {
+          "type": "number",
+          "description": "The logo width in pixels. Default is 18px."
+        },
         "imageVerticalTopOffset": {
           "type": "number",
-          "description": "The margin-block-start value to apply to the image in pixels, used in 'column' layouts."
+          "description": "The margin-block-start value to apply to the image in pixels."
         },
         "imageVerticalBottomOffset": {
           "type": "number",
@@ -80,10 +93,18 @@
           "type": "number",
           "description": "The container's margin-block-end value in pixels. Used to visually offset the image in 'row' layouts when 'imageVerticalBottomOffset' is applied."
         },
+        "containerPaddingBottom": {
+          "type": "number",
+          "description": "The container's padding-block-end value in pixels."
+        },
         "layout": {
           "type": "string",
-          "description": "The layout of the message content and illustration. Row displays the image to the inline to the right of the text, column displays the image above the text.",
-          "enum": ["row", "column"]
+          "description": "The layout of the message content and illustration. Row displays the image inline to the right of the text, column displays the image above the text. Simple layout only displays primary text and primary button on one row.",
+          "enum": ["row", "column", "simple"]
+        },
+        "allowWhenSignedIn": {
+          "type": "boolean",
+          "description": "If true, the message will be shown even when the user is signed in. For 'fxa_cta' messages. Defaults to false."
         }
       }
     },

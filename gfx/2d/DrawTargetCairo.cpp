@@ -11,7 +11,6 @@
 #include "HelpersCairo.h"
 #include "BorrowedContext.h"
 #include "FilterNodeSoftware.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_print.h"
@@ -42,8 +41,6 @@
 
 #define PIXMAN_DONT_DEFINE_STDINT
 #include "pixman.h"
-
-#include <algorithm>
 
 // 2^23
 #define CAIRO_COORD_MAX (Float(0x7fffff))
@@ -199,6 +196,7 @@ static void ReleaseData(void* aData) {
 }
 
 static cairo_surface_t* CopyToImageSurface(unsigned char* aData,
+                                           const IntSize& aSize,
                                            const IntRect& aRect,
                                            int32_t aStride,
                                            SurfaceFormat aFormat) {
@@ -219,15 +217,23 @@ static cairo_surface_t* CopyToImageSurface(unsigned char* aData,
   }
 
   unsigned char* surfData = cairo_image_surface_get_data(surf);
-  int surfStride = cairo_image_surface_get_stride(surf);
-  int32_t pixelWidth = BytesPerPixel(aFormat);
+  size_t surfStride = cairo_image_surface_get_stride(surf);
+  size_t pixelWidth = BytesPerPixel(aFormat);
+  size_t rowDataWidth = size_t(aRectWidth) * pixelWidth;
+  if (rowDataWidth > surfStride || rowDataWidth > size_t(aStride) ||
+      !IntRect(IntPoint(), aSize).Contains(aRect)) {
+    cairo_surface_destroy(surf);
+    return nullptr;
+  }
 
-  unsigned char* source = aData + aRect.Y() * aStride + aRect.X() * pixelWidth;
+  const unsigned char* sourceRow = aData + size_t(aRect.Y()) * size_t(aStride) +
+                                   size_t(aRect.X()) * pixelWidth;
+  unsigned char* destRow = surfData;
 
-  MOZ_ASSERT(aStride >= aRectWidth * pixelWidth);
   for (int32_t y = 0; y < aRectHeight; ++y) {
-    memcpy(surfData + y * surfStride, source + y * aStride,
-           aRectWidth * pixelWidth);
+    memcpy(destRow, sourceRow, rowDataWidth);
+    sourceRow += aStride;
+    destRow += surfStride;
   }
   cairo_surface_mark_dirty(surf);
   return surf;
@@ -251,14 +257,15 @@ static cairo_surface_t* GetAsImageSurface(cairo_surface_t* aSurface) {
 }
 
 static cairo_surface_t* CreateSubImageForData(unsigned char* aData,
+                                              const IntSize& aSize,
                                               const IntRect& aRect, int aStride,
                                               SurfaceFormat aFormat) {
-  if (!aData) {
+  if (!aData || aStride < 0 || !IntRect(IntPoint(), aSize).Contains(aRect)) {
     gfxWarning() << "DrawTargetCairo.CreateSubImageForData null aData";
     return nullptr;
   }
-  unsigned char* data =
-      aData + aRect.Y() * aStride + aRect.X() * BytesPerPixel(aFormat);
+  unsigned char* data = aData + size_t(aRect.Y()) * size_t(aStride) +
+                        size_t(aRect.X()) * size_t(BytesPerPixel(aFormat));
 
   cairo_surface_t* image = cairo_image_surface_create_for_data(
       data, GfxFormatToCairoFormat(aFormat), aRect.Width(), aRect.Height(),
@@ -282,9 +289,11 @@ static cairo_surface_t* ExtractSubImage(cairo_surface_t* aSurface,
 
   cairo_surface_t* image = GetAsImageSurface(aSurface);
   if (image) {
-    image =
-        CreateSubImageForData(cairo_image_surface_get_data(image), aSubImage,
-                              cairo_image_surface_get_stride(image), aFormat);
+    image = CreateSubImageForData(
+        cairo_image_surface_get_data(image),
+        IntSize(cairo_image_surface_get_width(image),
+                cairo_image_surface_get_height(image)),
+        aSubImage, cairo_image_surface_get_stride(image), aFormat);
     return image;
   }
 
@@ -359,8 +368,8 @@ static cairo_surface_t* GetCairoSurfaceForSourceSurface(
     return nullptr;
   }
 
-  cairo_surface_t* surf = CreateSubImageForData(map.mData, subimage,
-                                                map.mStride, data->GetFormat());
+  cairo_surface_t* surf = CreateSubImageForData(
+      map.mData, data->GetSize(), subimage, map.mStride, data->GetFormat());
 
   // In certain scenarios, requesting larger than 8k image fails.  Bug 803568
   // covers the details of how to run into it, but the full detailed
@@ -373,7 +382,7 @@ static cairo_surface_t* GetCairoSurfaceForSourceSurface(
       // set user data since we're not dependent on the original
       // data.
       cairo_surface_t* result = CopyToImageSurface(
-          map.mData, subimage, map.mStride, data->GetFormat());
+          map.mData, data->GetSize(), subimage, map.mStride, data->GetFormat());
       data->Unmap();
       return result;
     }
@@ -968,8 +977,9 @@ void DrawTargetCairo::DrawSurfaceWithShadow(SourceSurface* aSurface,
 
   AutoClearDeviceOffset clear(aSurface);
 
-  Float width = Float(aSurface->GetSize().width);
-  Float height = Float(aSurface->GetSize().height);
+  IntSize size = aSurface->GetSize();
+  Float width = Float(size.width);
+  Float height = Float(size.height);
 
   SourceSurfaceCairo* source = static_cast<SourceSurfaceCairo*>(aSurface);
   cairo_surface_t* sourcesurf = source->GetSurface();
@@ -988,10 +998,10 @@ void DrawTargetCairo::DrawSurfaceWithShadow(SourceSurface* aSurface,
 
   if (aShadow.mSigma != 0.0f) {
     MOZ_ASSERT(cairo_surface_get_type(blursurf) == CAIRO_SURFACE_TYPE_IMAGE);
-    Rect extents(0, 0, width, height);
-    AlphaBoxBlur blur(extents, cairo_image_surface_get_stride(blursurf),
-                      aShadow.mSigma, aShadow.mSigma);
-    blur.Blur(cairo_image_surface_get_data(blursurf));
+    GaussianBlur blur(Point(aShadow.mSigma, aShadow.mSigma));
+    blur.Blur(cairo_image_surface_get_data(blursurf),
+              cairo_image_surface_get_stride(blursurf), size,
+              aSurface->GetFormat());
   }
 
   WillChange();
@@ -1862,8 +1872,8 @@ already_AddRefed<SourceSurface> DrawTargetCairo::CreateSourceSurfaceFromData(
     return nullptr;
   }
 
-  cairo_surface_t* surf =
-      CopyToImageSurface(aData, IntRect(IntPoint(), aSize), aStride, aFormat);
+  cairo_surface_t* surf = CopyToImageSurface(
+      aData, aSize, IntRect(IntPoint(), aSize), aStride, aFormat);
   if (!surf) {
     return nullptr;
   }
@@ -2115,54 +2125,6 @@ Rect DrawTargetCairo::GetUserSpaceClip() const {
   return Rect(clipX1, clipY1, clipX2 - clipX1,
               clipY2 - clipY1);  // Narrowing of doubles to floats
 }
-
-#ifdef MOZ_X11
-bool BorrowedXlibDrawable::Init(DrawTarget* aDT) {
-  MOZ_ASSERT(aDT, "Caller should check for nullptr");
-  MOZ_ASSERT(!mDT, "Can't initialize twice!");
-  mDT = aDT;
-  mDrawable = X11None;
-
-#  ifdef CAIRO_HAS_XLIB_SURFACE
-  if (aDT->GetBackendType() != BackendType::CAIRO || aDT->IsTiledDrawTarget()) {
-    return false;
-  }
-
-  DrawTargetCairo* cairoDT = static_cast<DrawTargetCairo*>(aDT);
-  cairo_surface_t* surf = cairo_get_group_target(cairoDT->mContext);
-  if (cairo_surface_get_type(surf) != CAIRO_SURFACE_TYPE_XLIB) {
-    return false;
-  }
-  cairo_surface_flush(surf);
-
-  cairoDT->WillChange();
-
-  mDisplay = cairo_xlib_surface_get_display(surf);
-  mDrawable = cairo_xlib_surface_get_drawable(surf);
-  mScreen = cairo_xlib_surface_get_screen(surf);
-  mVisual = cairo_xlib_surface_get_visual(surf);
-  mSize.width = cairo_xlib_surface_get_width(surf);
-  mSize.height = cairo_xlib_surface_get_height(surf);
-
-  double x = 0, y = 0;
-  cairo_surface_get_device_offset(surf, &x, &y);
-  mOffset = Point(x, y);
-
-  return true;
-#  else
-  return false;
-#  endif
-}
-
-void BorrowedXlibDrawable::Finish() {
-  DrawTargetCairo* cairoDT = static_cast<DrawTargetCairo*>(mDT);
-  cairo_surface_t* surf = cairo_get_group_target(cairoDT->mContext);
-  cairo_surface_mark_dirty(surf);
-  if (mDrawable) {
-    mDrawable = X11None;
-  }
-}
-#endif
 
 }  // namespace gfx
 }  // namespace mozilla

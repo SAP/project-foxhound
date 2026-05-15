@@ -4,23 +4,14 @@
 
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.feature.session'
 }
 
@@ -32,7 +23,6 @@ dependencies {
     implementation project(':components:support-utils')
     implementation project(':components:support-ktx')
 
-
     implementation libs.androidx.core.ktx
     implementation libs.androidx.swiperefreshlayout
     implementation libs.google.material
@@ -40,13 +30,14 @@ dependencies {
     testImplementation project(':components:support-test')
     testImplementation project(':components:support-test-fakes')
     testImplementation project(':components:support-test-libstate')
+
+    testImplementation libs.androidx.browser
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
-    testImplementation libs.androidx.browser
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

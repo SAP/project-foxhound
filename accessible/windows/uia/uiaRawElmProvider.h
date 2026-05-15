@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_uiaRawElmProvider_h__
-#define mozilla_a11y_uiaRawElmProvider_h__
+#ifndef mozilla_a11y_uiaRawElmProvider_h_
+#define mozilla_a11y_uiaRawElmProvider_h_
 
 #include <objbase.h>
 #include <stdint.h>
@@ -25,6 +25,10 @@ namespace a11y {
 
 class Accessible;
 enum class RelationType;
+
+struct UiaRegistrations {
+  PROPERTYID mAccessibleActions = 0;
+};
 
 /**
  * IRawElementProviderSimple implementation (maintains IAccessibleEx approach).
@@ -51,6 +55,9 @@ class uiaRawElmProvider : public IAccessibleEx,
                                          uint32_t aGeckoEvent);
   static void RaiseUiaEventForStateChange(Accessible* aAcc, uint64_t aState,
                                           bool aEnabled);
+  static void RaiseUiaNotificationEvent(Accessible* aAcc,
+                                        const nsAString& aAnnouncement,
+                                        uint16_t aPriority);
 
   // IUnknown
   STDMETHODIMP QueryInterface(REFIID aIid, void** aInterface);
@@ -209,6 +216,15 @@ class uiaRawElmProvider : public IAccessibleEx,
 };
 
 SAFEARRAY* AccessibleArrayToUiaArray(const nsTArray<Accessible*>& aAccs);
+
+/**
+ * Get ids for custom UI Automation properties and events which are not defined
+ * by Windows and therefore need to be registered at runtime. This function will
+ * register the properties and events the first time it is called. Thereafter,
+ * cached ids will be returned, since they are valid for the lifetime of the
+ * process.
+ */
+const UiaRegistrations& GetUiaRegistrations();
 
 }  // namespace a11y
 }  // namespace mozilla

@@ -17,8 +17,6 @@
 //    This class encapsulates the parameters for basic history queries for
 //    building UI, trees, lists, etc.
 
-#include "mozilla/Attributes.h"
-
 #define NS_NAVHISTORYQUERY_IID \
   {0xb10185e0, 0x86eb, 0x4612, {0x95, 0x7c, 0x09, 0x34, 0xf2, 0xb1, 0xce, 0xd7}}
 

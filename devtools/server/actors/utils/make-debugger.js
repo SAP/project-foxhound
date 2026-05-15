@@ -95,8 +95,8 @@ module.exports = function makeDebugger({
     dbg.addDebuggees();
     dbg.onNewGlobalObject = onNewGlobalObject;
   };
-  dbg.findDebuggees = function () {
-    return findDebuggees(dbg);
+  dbg.findDebuggees = function (includeAllSameProcessGlobals) {
+    return findDebuggees(dbg, includeAllSameProcessGlobals);
   };
 
   return dbg;

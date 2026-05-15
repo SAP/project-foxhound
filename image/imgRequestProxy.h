@@ -245,7 +245,6 @@ class imgRequestProxy : public mozilla::PreloaderBase,
   // interfaces as image loads proceed.
   bool mPendingNotify : 1;
   bool mValidating : 1;
-  bool mHadListener : 1;
 };
 
 inline nsISupports* ToSupports(imgRequestProxy* p) {

@@ -10,7 +10,6 @@
 #include <cstdint>
 
 #include "mozilla/MozPromise.h"
-#include "mozilla/RefPtr.h"
 
 #include "mozilla/dom/BrowsingContext.h"
 

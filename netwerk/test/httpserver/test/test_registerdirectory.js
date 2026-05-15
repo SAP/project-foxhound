@@ -49,12 +49,12 @@ function checkFile(ch, status, data) {
 
 ChromeUtils.defineLazyGetter(this, "tests", function () {
   return [
-    /** *********************
+    /***********************
      * without a base path *
      ***********************/
     new Test(BASE + "/test_registerdirectory.js", nocache, notFound, null),
 
-    /** ******************
+    /********************
      * with a base path *
      ********************/
     new Test(
@@ -68,7 +68,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       checkFile
     ),
 
-    /** ***************************
+    /*****************************
      * without a base path again *
      *****************************/
     new Test(
@@ -82,7 +82,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** *************************
+    /***************************
      * registered path handler *
      ***************************/
     new Test(
@@ -98,7 +98,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** **********************
+    /************************
      * removed path handler *
      ************************/
     new Test(
@@ -111,7 +111,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** ******************
+    /********************
      * with a base path *
      ********************/
     new Test(
@@ -127,7 +127,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       checkFile
     ),
 
-    /** ***********************
+    /*************************
      * ...and a path handler *
      *************************/
     new Test(
@@ -143,7 +143,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** **********************
+    /************************
      * removed base handler *
      ************************/
     new Test(
@@ -157,7 +157,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** **********************
+    /************************
      * removed path handler *
      ************************/
     new Test(
@@ -170,7 +170,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** ***********************
+    /*************************
      * mapping set up, works *
      *************************/
     new Test(
@@ -184,7 +184,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** *******************
+    /*********************
      * no mapping, fails *
      *********************/
     new Test(
@@ -194,7 +194,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** ****************
+    /******************
      * mapping, works *
      ******************/
     new Test(
@@ -210,12 +210,12 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       checkFile
     ),
 
-    /** **********************************
+    /************************************
      * two mappings set up, still works *
      ************************************/
     new Test(BASE + "/foo/test_registerdirectory.js", nocache, null, checkFile),
 
-    /** ************************
+    /**************************
      * remove topmost mapping *
      **************************/
     new Test(
@@ -228,7 +228,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       null
     ),
 
-    /** ************************************
+    /**************************************
      * lower mapping still present, works *
      **************************************/
     new Test(
@@ -238,7 +238,7 @@ ChromeUtils.defineLazyGetter(this, "tests", function () {
       checkFile
     ),
 
-    /** *****************
+    /*******************
      * mapping removed *
      *******************/
     new Test(

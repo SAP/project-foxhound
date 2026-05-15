@@ -8,6 +8,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.AbstractComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import mozilla.components.concept.toolbar.ScrollableToolbar
 import org.mozilla.fenix.R
 
@@ -26,6 +27,7 @@ class ScrollableToolbarComposeView(
 ) : ScrollableToolbar, AbstractComposeView(context) {
     init {
         id = R.id.composable_toolbar
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
     }
 
     override fun enableScrolling() = scrollableToolbarDelegate.enableScrolling()

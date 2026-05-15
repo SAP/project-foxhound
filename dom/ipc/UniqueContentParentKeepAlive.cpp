@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/UniqueContentParentKeepAlive.h"
+
 #include "mozilla/dom/ContentParent.h"
 
 namespace mozilla::dom {
@@ -40,7 +41,7 @@ void ContentParentKeepAliveDeleter::operator()(
 }
 
 UniqueContentParentKeepAlive UniqueContentParentKeepAliveFromThreadsafe(
-    UniqueThreadsafeContentParentKeepAlive aKeepAlive) {
+    UniqueThreadsafeContentParentKeepAlive&& aKeepAlive) {
   AssertIsOnMainThread();
   if (aKeepAlive) {
     uint64_t browserId = aKeepAlive.get_deleter().mBrowserId;
@@ -54,7 +55,7 @@ UniqueContentParentKeepAlive UniqueContentParentKeepAliveFromThreadsafe(
 }
 
 UniqueThreadsafeContentParentKeepAlive UniqueContentParentKeepAliveToThreadsafe(
-    UniqueContentParentKeepAlive aKeepAlive) {
+    UniqueContentParentKeepAlive&& aKeepAlive) {
   AssertIsOnMainThread();
   if (aKeepAlive) {
     uint64_t browserId = aKeepAlive.get_deleter().mBrowserId;
@@ -115,7 +116,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 }  // namespace
 
 already_AddRefed<nsIContentParentKeepAlive> WrapContentParentKeepAliveForJS(
-    UniqueContentParentKeepAlive aKeepAlive) {
+    UniqueContentParentKeepAlive&& aKeepAlive) {
   if (!aKeepAlive) {
     return nullptr;
   }

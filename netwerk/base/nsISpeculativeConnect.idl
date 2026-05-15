@@ -85,12 +85,6 @@ interface nsISpeculativeConnectionOverrider : nsISupports
      */
     [infallible] readonly attribute boolean ignoreIdle;
 
-    /*
-     * Used by the Predictor to gather telemetry data on speculative connection
-     * usage.
-     */
-    [infallible] readonly attribute boolean isFromPredictor;
-
     /**
      * by default speculative connections are not made to RFC 1918 addresses
      */

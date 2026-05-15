@@ -27,7 +27,7 @@ It is recommended that consumers rely as much as possible on observing State upd
 
 There are several global stores like `AppStore` and `BrowserStore`, as well as Stores scoped to individual screens. Screen-based Stores can be persisted across configuration changes, but are generally created and destroyed during fragment transactions. This means that data that must be shared across Stores should be lifted to a global Store or should be passed as arguments to the new fragment.
 
-Screen-based Stores should be created using [StoreProvider.get](https://searchfox.org/mozilla-central/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/components/StoreProvider.kt).
+Screen-based Stores should be created using [StoreProvider APIs](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/lib/state/src/main/java/mozilla/components/lib/state/helpers/StoreProvider.kt).
 
 -------
 
@@ -106,7 +106,7 @@ In some cases, it can be appropriate to initiate side-effects from the view when
 ## Important notes
 - Unlike other common implementations of unidirectional data flow, which typically have one global Store of data, we maintain smaller Stores for each screen and several global Stores.
   - There is often no need to maintain UI state for views that are destroyed, and this allows us to to operate within the physical hardware constraints presented by Android development, such as having more limited memory resources.
-- Stores that are local to a feature or screen should usually be persisted across configuration changes in a ViewModel by using [StoreProvider.get](https://searchfox.org/mozilla-central/source/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/components/StoreProvider.kt).
+- Stores that are local to a feature or screen should usually be persisted across configuration changes in a ViewModel by using [StoreProvider APIs](https://searchfox.org/firefox-main/source/mobile/android/android-components/components/lib/state/src/main/java/mozilla/components/lib/state/helpers/StoreProvider.kt).
 
 -------
 

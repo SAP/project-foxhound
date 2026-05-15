@@ -31,7 +31,7 @@ const Localized = createFactory(
 );
 
 /**
- * @typedef {Object} PresetProps
+ * @typedef {object} PresetProps
  * @property {string} presetName
  * @property {boolean} selected
  * @property {import("../../@types/perf").PresetDefinition | null} preset
@@ -42,11 +42,12 @@ const Localized = createFactory(
  * Switch between various profiler presets, which will override the individualized
  * settings for the profiler.
  *
- * @extends {React.PureComponent<PresetProps>}
+ * @augments {React.PureComponent<PresetProps>}
  */
 class Preset extends PureComponent {
   /**
    * Handle the checkbox change.
+   *
    * @param {React.ChangeEvent<HTMLInputElement>} event
    */
   onChange = event => {
@@ -89,13 +90,13 @@ class Preset extends PureComponent {
 }
 
 /**
- * @typedef {Object} StateProps
+ * @typedef {object} StateProps
  * @property {string} selectedPresetName
  * @property {import("../../@types/perf").Presets} presets
  */
 
 /**
- * @typedef {Object} ThunkDispatchProps
+ * @typedef {object} ThunkDispatchProps
  * @property {typeof actions.changePreset} changePreset
  */
 
@@ -109,11 +110,12 @@ class Preset extends PureComponent {
  * Switch between various profiler presets, which will override the individualized
  * settings for the profiler.
  *
- * @extends {React.PureComponent<Props>}
+ * @augments {React.PureComponent<Props>}
  */
 class Presets extends PureComponent {
   /**
    * Handle the checkbox change.
+   *
    * @param {string} presetName
    */
   onChange = presetName => {

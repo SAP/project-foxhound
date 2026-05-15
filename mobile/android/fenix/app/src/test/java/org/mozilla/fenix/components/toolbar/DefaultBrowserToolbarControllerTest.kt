@@ -29,8 +29,6 @@ import mozilla.components.feature.search.SearchUseCases
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.feature.top.sites.TopSitesUseCases
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.ui.tabcounter.TabCounterMenu
@@ -47,6 +45,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.ReaderMode
+import org.mozilla.fenix.GleanMetrics.Toolbar
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
@@ -64,6 +63,10 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.directionsEq
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeScreenViewModel
+import org.mozilla.fenix.telemetry.ACTION_ADD_NEW_TAB
+import org.mozilla.fenix.telemetry.ACTION_ADD_NEW_TAB_LONG_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_HOME_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
 
@@ -190,8 +193,6 @@ class DefaultBrowserToolbarControllerTest {
             searchUseCases.defaultSearch.invoke(pastedText, "1")
         }
 
-        store.waitUntilIdle()
-
         captureMiddleware.assertFirstAction(ContentAction.UpdateSearchTermsAction::class) { action ->
             assertEquals("1", action.sessionId)
             assertEquals(pastedText, action.searchTerms)
@@ -208,8 +209,6 @@ class DefaultBrowserToolbarControllerTest {
         verify {
             sessionUseCases.loadUrl(pastedText)
         }
-
-        store.waitUntilIdle()
 
         captureMiddleware.assertFirstAction(ContentAction.UpdateSearchTermsAction::class) { action ->
             assertEquals("1", action.sessionId)
@@ -278,7 +277,7 @@ class DefaultBrowserToolbarControllerTest {
     @Test
     fun handleToolbackClickWithSearchTerms() {
         val searchResultsTab = createTab("https://google.com?q=mozilla+website", searchTerms = "mozilla website")
-        store.dispatch(TabListAction.AddTabAction(searchResultsTab, select = true)).joinBlocking()
+        store.dispatch(TabListAction.AddTabAction(searchResultsTab, select = true))
 
         assertNull(Events.searchBarTapped.testGetValue())
 
@@ -321,8 +320,8 @@ class DefaultBrowserToolbarControllerTest {
         val item = TabCounterMenu.Item.CloseTab
 
         val testTab = createTab("https://www.firefox.com")
-        store.dispatch(TabListAction.AddTabAction(testTab)).joinBlocking()
-        store.dispatch(TabListAction.SelectTabAction(testTab.id)).joinBlocking()
+        store.dispatch(TabListAction.AddTabAction(testTab))
+        store.dispatch(TabListAction.SelectTabAction(testTab.id))
 
         val controller = createController()
         controller.handleTabCounterItemInteraction(item)
@@ -377,26 +376,26 @@ class DefaultBrowserToolbarControllerTest {
 
     @Test
     fun handleHomeButtonClick() {
-        assertNull(Events.browserToolbarHomeTapped.testGetValue())
+        assertNull(Toolbar.buttonTapped.testGetValue())
 
         val controller = createController()
         controller.handleHomeButtonClick()
 
         verify { navController.navigate(BrowserFragmentDirections.actionGlobalHome()) }
-        assertNotNull(Events.browserToolbarHomeTapped.testGetValue())
+        assertToolbarTapped(ACTION_HOME_CLICKED)
     }
 
     @Test
     fun `GIVEN homepage as a new tab is enabled WHEN home button is clicked THEN navigate to ABOUT_HOME`() {
         every { settings.enableHomepageAsNewTab } returns true
 
-        assertNull(Events.browserToolbarHomeTapped.testGetValue())
+        assertNull(Toolbar.buttonTapped.testGetValue())
 
         val controller = createController()
         controller.handleHomeButtonClick()
 
         verify { fenixBrowserUseCases.navigateToHomepage() }
-        assertNotNull(Events.browserToolbarHomeTapped.testGetValue())
+        assertToolbarTapped(ACTION_HOME_CLICKED)
     }
 
     @Test
@@ -427,12 +426,7 @@ class DefaultBrowserToolbarControllerTest {
             )
         }
 
-        assertNotNull(Events.browserToolbarAction.testGetValue())
-        val recordedEvents = Events.browserToolbarAction.testGetValue()!!
-        val eventExtra = recordedEvents.single().extra
-        assertEquals(1, recordedEvents.size)
-        assertNotNull(eventExtra)
-        assertEquals(eventExtra?.get("item"), "new_tab")
+        assertToolbarTapped(ACTION_ADD_NEW_TAB)
     }
 
     @Test
@@ -456,14 +450,11 @@ class DefaultBrowserToolbarControllerTest {
     @Test
     fun `WHEN new tab button is long clicked THEN record the navigation bar telemetry event`() {
         val controller = createController()
+        assertNull(Toolbar.buttonTapped.testGetValue())
+
         controller.handleNewTabButtonLongClick()
 
-        assertNotNull(Events.browserToolbarAction.testGetValue())
-        val recordedEvents = Events.browserToolbarAction.testGetValue()!!
-        val eventExtra = recordedEvents.single().extra
-        assertEquals(1, recordedEvents.size)
-        assertNotNull(eventExtra)
-        assertEquals(eventExtra?.get("item"), "new_tab_long_press")
+        assertToolbarTapped(ACTION_ADD_NEW_TAB_LONG_CLICKED)
     }
 
     @Test
@@ -577,4 +568,12 @@ class DefaultBrowserToolbarControllerTest {
         },
         onCloseTab = {},
     )
+
+    private fun assertToolbarTapped(expectedItem: String, expectedSource: String = SOURCE_ADDRESS_BAR) {
+        val values = Toolbar.buttonTapped.testGetValue()
+        assertNotNull(values)
+        val last = values!!.last()
+        assertEquals(expectedItem, last.extra?.get("item"))
+        assertEquals(expectedSource, last.extra?.get("source"))
+    }
 }

@@ -18,9 +18,6 @@ GfxInfo::GfxInfo() {}
 GfxInfo::~GfxInfo() {}
 
 NS_IMETHODIMP
-GfxInfo::GetD2DEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
-
-NS_IMETHODIMP
 GfxInfo::GetDWriteEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
 NS_IMETHODIMP

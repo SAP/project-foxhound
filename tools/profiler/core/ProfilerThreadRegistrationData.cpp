@@ -7,6 +7,7 @@
 #include "mozilla/ProfilerThreadRegistrationData.h"
 
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/FlowMarkers.h"
 #include "mozilla/FOGIPC.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "js/AllocationRecording.h"
@@ -41,9 +42,10 @@ struct ThreadCpuUseMarker {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
     schema.AddKeyLabelFormat("time", "CPU Time", MS::Format::Milliseconds);
     schema.AddKeyLabelFormat("wakeups", "Wake ups", MS::Format::Integer);
+    schema.AddKeyFormat("label", MS::Format::String, MS::PayloadFlags::Hidden);
     schema.SetTooltipLabel("{marker.name} - {marker.data.label}");
     schema.SetTableLabel(
-        "{marker.name} - {marker.data.label}: {marker.data.time} of CPU time, "
+        "{marker.data.label}: {marker.data.time} of CPU time, "
         "{marker.data.wakeups} wake ups");
     return schema;
   }
@@ -99,6 +101,35 @@ static void profiler_add_js_interval(mozilla::MarkerCategory aCategory,
       aCategory, mozilla::MarkerTiming::IntervalUntilNowFrom(aStartTime),
       ::geckoprofiler::markers::TextMarker{},
       mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerText));
+#endif
+}
+
+static void profiler_add_js_flow(mozilla::MarkerCategory aCategory,
+                                 const char* aMarkerName, uint64_t aFlowId) {
+#ifdef MOZ_GECKO_PROFILER
+  if (!profiler_feature_active(ProfilerFeature::Flows)) {
+    return;
+  }
+  AUTO_PROFILER_STATS(js_flow);
+  profiler_add_marker(
+      mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerName),
+      aCategory, {}, ::geckoprofiler::markers::FlowMarker{},
+      Flow::ProcessScoped(aFlowId));
+#endif
+}
+
+static void profiler_add_js_terminating_flow(mozilla::MarkerCategory aCategory,
+                                             const char* aMarkerName,
+                                             uint64_t aFlowId) {
+#ifdef MOZ_GECKO_PROFILER
+  if (!profiler_feature_active(ProfilerFeature::Flows)) {
+    return;
+  }
+  AUTO_PROFILER_STATS(js_terminating_flow);
+  profiler_add_marker(
+      mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerName),
+      aCategory, {}, ::geckoprofiler::markers::TerminatingFlowMarker{},
+      Flow::ProcessScoped(aFlowId));
 #endif
 }
 
@@ -261,8 +292,9 @@ void ThreadRegistrationLockedRWOnThread::PollJSSampling() {
         JS::EnableRecordingAllocations(cx, profiler_add_js_allocation_marker,
                                        0.01);
       }
-      js::RegisterContextProfilingEventMarker(cx, profiler_add_js_marker,
-                                              profiler_add_js_interval);
+      js::RegisterContextProfilerMarkers(
+          cx, profiler_add_js_marker, profiler_add_js_interval,
+          profiler_add_js_flow, profiler_add_js_terminating_flow);
 
     } else if (mJSSampling == INACTIVE_REQUESTED) {
       mJSSampling = INACTIVE;

@@ -687,7 +687,7 @@ nsresult AbstractOSKeyStore::DoCipher(const UniquePK11SymKey& aSymKey,
                        &outLen, inBytes.size() + blockLength, inBytes.data(),
                        inBytes.size());
     // Prepend the used IV to the ciphertext.
-    Unused << outBytes.insert(outBytes.begin(), ivp, ivp + mIVLength);
+    (void)outBytes.insert(outBytes.begin(), ivp, ivp + mIVLength);
     outLen += mIVLength;
   } else {
     // Remove the IV from the input.

@@ -71,7 +71,7 @@ it is needed.
 
 ## Profiles Datastore Service
 
-The [`ProfilesDatastoreService`](https://searchfox.org/mozilla-central/rev/fccab99f5b400b33b9ad16e7f066a5020119fbdc/browser/components/profiles/ProfilesDatastoreService.sys.mjs)
+The {searchfox}`ProfilesDataStoreService.sys.mjs <toolkit/profile/ProfilesDatastoreService.sys.mjs>`
 manages a unique SQLite database for each `storeID`. This means that when there are a group of
 profiles using the same `storeID` then they all use the same SQLite database allowing for persisting
 data that can be used by every profile in the group. It provides direct access to a SQLite
@@ -79,7 +79,11 @@ connection and a mechanism for notifying running instances that are using the sa
 
 This `storeID` is used to construct a filename for the database file. For development and temporary
 profiles with no associated `nsIToolkitProfile` the database is stored in the profile root
-directory. Otherwise this file is stored in a directory shared by all profiles.
+directory. Otherwise this file is stored in the `Profile Groups` directory shared by all profiles:
+
+* Windows: `%APPDATA%\Mozilla\Firefox\Profile Groups`
+* Linux: `~/.mozilla/firefox/Profile Groups`
+* macOS: `~/Library/Application Support/Firefox/Profile Groups`
 
 The database is created the first time a component requests a connection to it.
 
@@ -116,15 +120,17 @@ Service's selection UI is displayed on startup.
 
 ## Selectable Profile Service
 
-The Selectable Profile Service manages a list of profiles in the Profiles Datastore Service. These
-profiles all share a `storeID` and are linked by a single `nsIToolkitProfile`. When new profiles are
+The Selectable Profile Service manages a list of profiles in the [Profiles Datastore Service](#profiles-datastore-service). These
+profiles all share a `storeID` and are linked by a single `nsIToolkitProfile`. When new selectable profiles are
 created this service is responsible for initializing the new profile with the same `storeID` so that
 relevant data is shared across all profiles in the group. The `storeID` is stored in the
-`nsIToolkitProfile` section in `profiles.ini` and the `Path` property is used to represent the most
-recently used profile in the group. This will be changed frequently as the user switches between
-running instances.
+`nsIToolkitProfile` section in `profiles.ini`, and in the `toolkit.profiles.storeID` preference.
+Each selectable profile will get its own profile root and profile local directories as usual.
+The `nsIToolkitProfile`'s entry in `profiles.ini` will have its `Path` property updated to represent the most
+recently used profile in the group. When the user has multiple profiles in a group open simultaneously,
+these updates can happen frequently: any time the user switches between running instances.
 
-Users can create additional Selectable Profiles using the Profiles menu and menuitems (see
-https://support.mozilla.org/en-US/kb/profile-management for details). The about:newprofile,
-about:editprofile, about:deleteprofile, and about:profilemanager pages are used to manage Selectable
-Profiles.
+Users can create additional Selectable Profiles [using the Profiles menu and
+menuitems](https://support.mozilla.org/kb/profile-management). The `about:newprofile`,
+`about:editprofile`, `about:deleteprofile`, and `about:profilemanager` pages are used to manage
+Selectable Profiles.

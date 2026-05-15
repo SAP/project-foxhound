@@ -55,6 +55,9 @@ This section describes the process for adding new words to the dictionary:
    Copy and paste the full list of words, then save and quit the editor. It’s
    not necessary to put the words in alphabetical order, as it will be corrected
    by the script.
+
+   Note: you might need to install ``aspell`` on your system (e.g. via
+   ``brew install aspell`` on macOS).
 #. Run the script ``sh make-new-dict.sh`` to generate a new dictionary and make
    sure it runs without errors. For more details on this script, see the
    `make-new-dict.sh`_ section.

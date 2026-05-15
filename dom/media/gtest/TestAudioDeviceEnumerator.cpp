@@ -1,21 +1,37 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#define ENABLE_SET_CUBEB_BACKEND 1
+#include "AudioDeviceInfo.h"
 #include "CubebDeviceEnumerator.h"
+#include "MockCubeb.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest-printers.h"
 #include "gtest/gtest.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/media/MediaUtils.h"
 #include "nsTArray.h"
 
-#include "MockCubeb.h"
-
 using namespace mozilla;
 using AudioDeviceSet = CubebDeviceEnumerator::AudioDeviceSet;
+using ::testing::ElementsAre;
+using ::testing::Eq;
+using ::testing::Pointwise;
+
+// Custom matcher for comparing AudioDeviceInfo by device ID
+MATCHER(DeviceIdEq, "") {
+  const auto& [actual, expected_devid] = arg;
+  return actual->DeviceID() == expected_devid;
+}
+
+// Custom matcher for checking device preferences
+MATCHER(PreferredEq, "") {
+  const auto& [actual, expected_pref] = arg;
+  uint16_t pref;
+  nsresult rv = actual->GetPreferred(&pref);
+  return NS_SUCCEEDED(rv) && pref == expected_pref;
+}
 
 const bool DEBUG_PRINTS = false;
 
@@ -267,6 +283,156 @@ TEST(CubebDeviceEnumerator, DeviceInfoFromName)
     }
   }
   // Shutdown for `supports` to take effect
+  CubebDeviceEnumerator::Shutdown();
+}
+
+TEST(CubebDeviceEnumerator, PreferredDeviceFirst)
+{
+  MockCubeb* mock = new MockCubeb();
+  mozilla::CubebUtils::ForceSetCubebContext(mock->AsCubebContext());
+
+  // Add multiple devices where the preferred one is not first
+  cubeb_device_info dev1 = DeviceTemplate(reinterpret_cast<cubeb_devid>(1),
+                                          CUBEB_DEVICE_TYPE_INPUT, "dev 1");
+  dev1.preferred = CUBEB_DEVICE_PREF_NONE;
+  mock->AddDevice(dev1);
+
+  cubeb_device_info dev2 = DeviceTemplate(reinterpret_cast<cubeb_devid>(2),
+                                          CUBEB_DEVICE_TYPE_INPUT, "dev 2");
+  dev2.preferred = CUBEB_DEVICE_PREF_NONE;
+  mock->AddDevice(dev2);
+
+  cubeb_device_info dev3 = DeviceTemplate(reinterpret_cast<cubeb_devid>(3),
+                                          CUBEB_DEVICE_TYPE_INPUT, "dev 3");
+  dev3.preferred = CUBEB_DEVICE_PREF_ALL;
+  mock->AddDevice(dev3);
+
+  RefPtr<CubebDeviceEnumerator> enumerator =
+      CubebDeviceEnumerator::GetInstance();
+
+  RefPtr<const AudioDeviceSet> inputDevices =
+      enumerator->EnumerateAudioInputDevices();
+  EXPECT_EQ(inputDevices->Length(), 3U) << "Should have 3 devices";
+
+  EXPECT_TRUE((*inputDevices)[0]->Preferred())
+      << "First device should be the default device";
+  EXPECT_EQ((*inputDevices)[0]->DeviceID(), dev3.devid)
+      << "First device should be dev3";
+
+  EXPECT_FALSE((*inputDevices)[1]->Preferred())
+      << "Second device should not be marked as default";
+  EXPECT_FALSE((*inputDevices)[2]->Preferred())
+      << "Third device should not be marked as default";
+
+  CubebDeviceEnumerator::Shutdown();
+}
+
+TEST(CubebDeviceEnumerator, MultiplePreferredDeviceOrdering)
+{
+  MockCubeb* mock = new MockCubeb();
+  mozilla::CubebUtils::ForceSetCubebContext(mock->AsCubebContext());
+
+  // Add devices in mixed order to test proper sorting
+  cubeb_device_info dev1 =
+      DeviceTemplate(reinterpret_cast<cubeb_devid>(1), CUBEB_DEVICE_TYPE_OUTPUT,
+                     "non-preferred");
+  dev1.preferred = CUBEB_DEVICE_PREF_NONE;
+  mock->AddDevice(dev1);
+
+  cubeb_device_info dev2 =
+      DeviceTemplate(reinterpret_cast<cubeb_devid>(2), CUBEB_DEVICE_TYPE_OUTPUT,
+                     "notification");
+  dev2.preferred = CUBEB_DEVICE_PREF_NOTIFICATION;
+  mock->AddDevice(dev2);
+
+  cubeb_device_info dev3 = DeviceTemplate(
+      reinterpret_cast<cubeb_devid>(3), CUBEB_DEVICE_TYPE_OUTPUT, "multimedia");
+  dev3.preferred = CUBEB_DEVICE_PREF_MULTIMEDIA;
+  mock->AddDevice(dev3);
+
+  cubeb_device_info dev4 = DeviceTemplate(reinterpret_cast<cubeb_devid>(4),
+                                          CUBEB_DEVICE_TYPE_OUTPUT, "voice");
+  dev4.preferred = CUBEB_DEVICE_PREF_VOICE;
+  mock->AddDevice(dev4);
+
+  cubeb_device_info dev5 =
+      DeviceTemplate(reinterpret_cast<cubeb_devid>(5), CUBEB_DEVICE_TYPE_OUTPUT,
+                     "non-preferred2");
+  dev5.preferred = CUBEB_DEVICE_PREF_NONE;
+  mock->AddDevice(dev5);
+
+  RefPtr<CubebDeviceEnumerator> enumerator =
+      CubebDeviceEnumerator::GetInstance();
+
+  RefPtr<const AudioDeviceSet> outputDevices =
+      enumerator->EnumerateAudioOutputDevices();
+
+  // Casting to the non-refcountable type for the pointwise assertion below,
+  // that matches on nsTArray
+  const nsTArray<RefPtr<AudioDeviceInfo>>& outputDevicesCasted = *outputDevices;
+
+  // We expect multimedia -> voice -> notification -> non-preferred devices
+  EXPECT_THAT(outputDevicesCasted,
+              Pointwise(DeviceIdEq(), {dev3.devid, dev4.devid, dev2.devid,
+                                       dev1.devid, dev5.devid}));
+
+  EXPECT_THAT(outputDevicesCasted,
+              Pointwise(PreferredEq(), {nsIAudioDeviceInfo::PREF_MULTIMEDIA,
+                                        nsIAudioDeviceInfo::PREF_VOICE,
+                                        nsIAudioDeviceInfo::PREF_NOTIFICATION,
+                                        nsIAudioDeviceInfo::PREF_NONE,
+                                        nsIAudioDeviceInfo::PREF_NONE}));
+
+  CubebDeviceEnumerator::Shutdown();
+}
+
+TEST(CubebDeviceEnumerator, MultiplePreferencesPerDevice)
+{
+  MockCubeb* mock = new MockCubeb();
+  mozilla::CubebUtils::ForceSetCubebContext(mock->AsCubebContext());
+
+  // Add a device with multiple preferences
+  cubeb_device_info dev1 =
+      DeviceTemplate(reinterpret_cast<cubeb_devid>(1), CUBEB_DEVICE_TYPE_OUTPUT,
+                     "multimedia-notification");
+  dev1.preferred = static_cast<cubeb_device_pref>(
+      CUBEB_DEVICE_PREF_MULTIMEDIA | CUBEB_DEVICE_PREF_NOTIFICATION);
+  mock->AddDevice(dev1);
+
+  // Add a device with single preference
+  cubeb_device_info dev2 = DeviceTemplate(reinterpret_cast<cubeb_devid>(2),
+                                          CUBEB_DEVICE_TYPE_OUTPUT, "voice");
+  dev2.preferred = CUBEB_DEVICE_PREF_VOICE;
+  mock->AddDevice(dev2);
+
+  // Add a non-preferred device
+  cubeb_device_info dev3 =
+      DeviceTemplate(reinterpret_cast<cubeb_devid>(3), CUBEB_DEVICE_TYPE_OUTPUT,
+                     "non-preferred");
+  dev3.preferred = CUBEB_DEVICE_PREF_NONE;
+  mock->AddDevice(dev3);
+
+  RefPtr<CubebDeviceEnumerator> enumerator =
+      CubebDeviceEnumerator::GetInstance();
+
+  RefPtr<const AudioDeviceSet> outputDevices =
+      enumerator->EnumerateAudioOutputDevices();
+
+  // Casting to the non-refcountable type for the pointwise assertion below,
+  // that matches on nsTArray
+  const nsTArray<RefPtr<AudioDeviceInfo>>& outputDevicesCasted = *outputDevices;
+
+  // Device with multimedia preference should come first
+  EXPECT_THAT(outputDevicesCasted,
+              Pointwise(DeviceIdEq(), {dev1.devid, dev2.devid, dev3.devid}));
+
+  // Check device preferences - dev1 has both multimedia and notification
+  EXPECT_THAT(outputDevicesCasted,
+              Pointwise(PreferredEq(),
+                        (uint16_t[]){nsIAudioDeviceInfo::PREF_MULTIMEDIA |
+                                         nsIAudioDeviceInfo::PREF_NOTIFICATION,
+                                     nsIAudioDeviceInfo::PREF_VOICE, 0}));
+
   CubebDeviceEnumerator::Shutdown();
 }
 #undef ENABLE_SET_CUBEB_BACKEND

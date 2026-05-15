@@ -6,10 +6,10 @@
 #ifndef DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_WEBRTCVIDEOCODECFACTORY_H_
 #define DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_WEBRTCVIDEOCODECFACTORY_H_
 
-#include "api/video_codecs/video_decoder_factory.h"
-#include "api/video_codecs/video_encoder_factory.h"
 #include "MediaEventSource.h"
 #include "PerformanceRecorder.h"
+#include "api/video_codecs/video_decoder_factory.h"
+#include "api/video_codecs/video_encoder_factory.h"
 
 namespace mozilla {
 class GmpPluginNotifierInterface {

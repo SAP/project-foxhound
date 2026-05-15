@@ -10,7 +10,8 @@
 
 #include "modules/rtp_rtcp/source/source_tracker.h"
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <list>
 #include <optional>
 #include <random>
@@ -22,6 +23,10 @@
 #include "api/rtp_headers.h"
 #include "api/rtp_packet_info.h"
 #include "api/rtp_packet_infos.h"
+#include "api/transport/rtp/rtp_source.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/ntp_time.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -50,8 +55,10 @@ class ExpectedSourceTracker {
 
     for (const auto& packet_info : packet_infos) {
       RtpSource::Extensions extensions = {
-          packet_info.audio_level(), packet_info.absolute_capture_time(),
-          packet_info.local_capture_clock_offset()};
+          .audio_level = packet_info.audio_level(),
+          .absolute_capture_time = packet_info.absolute_capture_time(),
+          .local_capture_clock_offset =
+              packet_info.local_capture_clock_offset()};
 
       for (const auto& csrc : packet_info.csrcs()) {
         entries_.emplace_front(now, csrc, RtpSourceType::CSRC,
@@ -266,8 +273,8 @@ TEST(SourceTrackerTest, OnFrameDeliveredRecordsSourcesDistinctSsrcs) {
   constexpr std::optional<uint8_t> kAudioLevel0 = 50;
   constexpr std::optional<uint8_t> kAudioLevel1 = 20;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime =
-      AbsoluteCaptureTime{/*absolute_capture_timestamp=*/12,
-                          /*estimated_capture_clock_offset=*/std::nullopt};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = std::nullopt};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset = std::nullopt;
   constexpr Timestamp kReceiveTime0 = Timestamp::Millis(60);
   constexpr Timestamp kReceiveTime1 = Timestamp::Millis(70);
@@ -322,8 +329,8 @@ TEST(SourceTrackerTest, OnFrameDeliveredRecordsSourcesSameSsrc) {
   constexpr std::optional<uint8_t> kAudioLevel1 = 20;
   constexpr std::optional<uint8_t> kAudioLevel2 = 10;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime =
-      AbsoluteCaptureTime{/*absolute_capture_timestamp=*/12,
-                          /*estimated_capture_clock_offset=*/std::nullopt};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = std::nullopt};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset = std::nullopt;
   constexpr Timestamp kReceiveTime0 = Timestamp::Millis(60);
   constexpr Timestamp kReceiveTime1 = Timestamp::Millis(70);
@@ -386,11 +393,14 @@ TEST(SourceTrackerTest, OnFrameDeliveredUpdatesSources) {
   constexpr std::optional<uint8_t> kAudioLevel1 = std::nullopt;
   constexpr std::optional<uint8_t> kAudioLevel2 = 10;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime0 =
-      AbsoluteCaptureTime{12, 34};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = 34};
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime1 =
-      AbsoluteCaptureTime{56, 78};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 56,
+                          .estimated_capture_clock_offset = 78};
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime2 =
-      AbsoluteCaptureTime{89, 90};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 89,
+                          .estimated_capture_clock_offset = 90};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset0 =
       TimeDelta::Millis(123);
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset1 =
@@ -490,9 +500,11 @@ TEST(SourceTrackerTest, TimedOutSourcesAreRemoved) {
   constexpr std::optional<uint8_t> kAudioLevel0 = 50;
   constexpr std::optional<uint8_t> kAudioLevel1 = std::nullopt;
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime0 =
-      AbsoluteCaptureTime{12, 34};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 12,
+                          .estimated_capture_clock_offset = 34};
   constexpr std::optional<AbsoluteCaptureTime> kAbsoluteCaptureTime1 =
-      AbsoluteCaptureTime{56, 78};
+      AbsoluteCaptureTime{.absolute_capture_timestamp = 56,
+                          .estimated_capture_clock_offset = 78};
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset0 =
       TimeDelta::Millis(123);
   constexpr std::optional<TimeDelta> kLocalCaptureClockOffset1 =

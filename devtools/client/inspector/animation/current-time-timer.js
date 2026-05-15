@@ -14,7 +14,7 @@ class CurrentTimeTimer {
   /**
    * Constructor.
    *
-   * @param {Object} timeScale
+   * @param {object} timeScale
    * @param {Bool} shouldStopAfterEndTime
    *               If need to stop the timer after animation end time, set true.
    * @param {window} win

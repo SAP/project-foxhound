@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_JSProcessActorChild_h
 #define mozilla_dom_JSProcessActorChild_h
 
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/JSActor.h"
 #include "nsIDOMProcessChild.h"
 
@@ -38,10 +39,9 @@ class JSProcessActorChild final : public JSActor {
   // Send the message described by the structured clone data |aData|, and the
   // message metadata |aMetadata|. The underlying transport should call the
   // |ReceiveMessage| method on the other side asynchronously.
-  virtual void SendRawMessage(const JSActorMessageMeta& aMetadata,
-                              Maybe<ipc::StructuredCloneData>&& aData,
-                              Maybe<ipc::StructuredCloneData>&& aStack,
-                              ErrorResult& aRv) override;
+  void SendRawMessage(const JSActorMessageMeta& aMetadata, JSIPCValue&& aData,
+                      ipc::StructuredCloneData* aStack,
+                      ErrorResult& aRv) override;
 
  private:
   ~JSProcessActorChild() { MOZ_ASSERT(!mManager); }

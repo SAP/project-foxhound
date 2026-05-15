@@ -38,9 +38,9 @@ class TestNoExpiredProbes(unittest.TestCase):
 
         app_version_major = app_version.split(".", 1)[0]
 
-        hgrams = parse_histograms.from_files(
-            [path.join(TELEMETRY_ROOT_PATH, "Histograms.json")]
-        )
+        hgrams = parse_histograms.from_files([
+            path.join(TELEMETRY_ROOT_PATH, "Histograms.json")
+        ])
         for hgram in hgrams:
             if hgram.name().startswith("TELEMETRY_TEST_"):
                 # We ignore test histograms which are permitted to be expired.

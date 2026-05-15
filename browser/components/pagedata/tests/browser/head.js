@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ChromeUtils.defineESModuleGetters(this, {
-  PageDataSchema: "resource:///modules/pagedata/PageDataSchema.sys.mjs",
-  PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
+  PageDataSchema:
+    "moz-src:///browser/components/pagedata/PageDataSchema.sys.mjs",
+  PageDataService:
+    "moz-src:///browser/components/pagedata/PageDataService.sys.mjs",
 });

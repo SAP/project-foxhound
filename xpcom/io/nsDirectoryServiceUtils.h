@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDirectoryServiceUtils_h___
-#define nsDirectoryServiceUtils_h___
+#ifndef nsDirectoryServiceUtils_h_
+#define nsDirectoryServiceUtils_h_
 
 #include "nsIProperties.h"
 #include "nsServiceManagerUtils.h"

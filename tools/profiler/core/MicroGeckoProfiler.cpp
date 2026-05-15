@@ -112,30 +112,18 @@ struct TraceMarker {
         "{marker.data.name4} {marker.data.val4}"
         "{marker.data.name5} {marker.data.val5}"
         "{marker.data.name6} {marker.data.val6}");
-    schema.AddKeyLabelFormatSearchable("name1", "Key 1", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val1", "Value 1", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("name2", "Key 2", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val2", "Value 2", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("name3", "Key 3", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val3", "Value 3", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("name4", "Key 4", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val4", "Value 4", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("name5", "Key 5", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val5", "Value 5", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("name6", "Key 6", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val6", "Value 6", MS::Format::String,
-                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("name1", "Key 1", MS::Format::String);
+    schema.AddKeyLabelFormat("val1", "Value 1", MS::Format::String);
+    schema.AddKeyLabelFormat("name2", "Key 2", MS::Format::String);
+    schema.AddKeyLabelFormat("val2", "Value 2", MS::Format::String);
+    schema.AddKeyLabelFormat("name3", "Key 3", MS::Format::String);
+    schema.AddKeyLabelFormat("val3", "Value 3", MS::Format::String);
+    schema.AddKeyLabelFormat("name4", "Key 4", MS::Format::String);
+    schema.AddKeyLabelFormat("val4", "Value 4", MS::Format::String);
+    schema.AddKeyLabelFormat("name5", "Key 5", MS::Format::String);
+    schema.AddKeyLabelFormat("val5", "Value 5", MS::Format::String);
+    schema.AddKeyLabelFormat("name6", "Key 6", MS::Format::String);
+    schema.AddKeyLabelFormat("val6", "Value 6", MS::Format::String);
     return schema;
   }
 };

@@ -33,10 +33,9 @@ def test_ambiguous_stub_mappings(write_jsonschema_fixtures):
     - mapped to "AsyncAmbiguous" stub per WEBEXT_STUBS_MAPPING python script config
     """
 
-    schema_dir = write_jsonschema_fixtures(
-        {
-            "test_api.json": dedent(
-                """
+    schema_dir = write_jsonschema_fixtures({
+        "test_api.json": dedent(
+            """
       [
         {
           "namespace": "testAPINamespace",
@@ -65,9 +64,8 @@ def test_ambiguous_stub_mappings(write_jsonschema_fixtures):
         }
       ]
       """
-            )
-        }
-    )
+        )
+    })
 
     assert "testAPINamespace.configuredAsAmbiguousMethod" not in WEBEXT_STUBS_MAPPING
     # NOTE: mocked config reverted in the teardown_method pytest hook.
@@ -86,23 +84,19 @@ def test_ambiguous_stub_mappings(write_jsonschema_fixtures):
 
     assert isinstance(fnAmbiguousBySchema, APIFunction)
     generated_webidl = WebIDLHelpers.to_webidl_definition(fnAmbiguousBySchema, None)
-    expected_webidl = "\n".join(
-        [
-            '  [Throws, WebExtensionStub="AsyncAmbiguous"]',
-            "  any jsonSchemaAmbiguousMethod(any... args);",
-        ]
-    )
+    expected_webidl = "\n".join([
+        '  [Throws, WebExtensionStub="AsyncAmbiguous"]',
+        "  any jsonSchemaAmbiguousMethod(any... args);",
+    ])
     assert generated_webidl == expected_webidl
 
     fnAmbiguousByConfig = apiNs.functions.get("configuredAsAmbiguousMethod")
     assert isinstance(fnAmbiguousByConfig, APIFunction)
     generated_webidl = WebIDLHelpers.to_webidl_definition(fnAmbiguousByConfig, None)
-    expected_webidl = "\n".join(
-        [
-            '  [Throws, WebExtensionStub="AsyncAmbiguous"]',
-            "  any configuredAsAmbiguousMethod(any... args);",
-        ]
-    )
+    expected_webidl = "\n".join([
+        '  [Throws, WebExtensionStub="AsyncAmbiguous"]',
+        "  any configuredAsAmbiguousMethod(any... args);",
+    ])
     assert generated_webidl == expected_webidl
 
 

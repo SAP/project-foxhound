@@ -196,7 +196,7 @@ function doSimpleUpdate(updateText, success, failure) {
     },
   };
 
-  dbservice.beginUpdate(listener, allTables);
+  dbservice.beginUpdate(listener, allTables, "");
   dbservice.beginStream("", "");
   dbservice.updateStream(updateText);
   dbservice.finishStream();
@@ -220,7 +220,7 @@ function doErrorUpdate(tables, success, failure) {
     },
   };
 
-  dbservice.beginUpdate(listener, tables, null);
+  dbservice.beginUpdate(listener, tables, "");
   dbservice.beginStream("", "");
   dbservice.cancelUpdate();
 }
@@ -239,7 +239,9 @@ function doStreamUpdate(updateText, success, failure, downloadFailure) {
   streamUpdater.downloadUpdates(
     allTables,
     "",
+    "",
     true,
+    "test",
     dataUpdate,
     success,
     failure,

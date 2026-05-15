@@ -28,6 +28,20 @@ export class GeckoViewContentParent extends GeckoViewActorParent {
     return this.sendQuery("ContainsFormData");
   }
 
+  async receiveMessage(aMsg) {
+    switch (aMsg.name) {
+      case "GeckoView:PinOnScreen": {
+        return this.eventDispatcher.sendRequest({
+          ...aMsg.data,
+          type: "GeckoView:PinOnScreen",
+        });
+      }
+      default: {
+        return super.receiveMessage(aMsg);
+      }
+    }
+  }
+
   restoreState({ history, switchId, formdata, scrolldata }) {
     if (Services.appinfo.sessionHistoryInParent) {
       const { browsingContext } = this.browser;

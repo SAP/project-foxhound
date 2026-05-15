@@ -10,10 +10,10 @@
 #include <cstdint>
 #include <functional>
 
-#include "nsStringFwd.h"
-#include "nsTArrayForwardDeclare.h"
 #include "mozilla/dom/quota/CommonMetadataArrayFwd.h"
 #include "mozilla/dom/quota/Config.h"
+#include "nsStringFwd.h"
+#include "nsTArrayForwardDeclare.h"
 
 enum class nsresult : uint32_t;
 template <class T>

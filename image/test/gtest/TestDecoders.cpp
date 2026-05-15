@@ -206,8 +206,7 @@ void WithSingleChunkDecode(const ImageTestCase& aTestCase,
   // Create a decoder.
   DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
   DecoderFlags decoderFlags =
-      DecoderFactory::GetDefaultDecoderFlagsForType(decoderType) |
-      DecoderFlags::FIRST_FRAME_ONLY;
+      DefaultDecoderFlags() | DecoderFlags::FIRST_FRAME_ONLY;
   RefPtr<image::Decoder> decoder = DecoderFactory::CreateAnonymousDecoder(
       decoderType, sourceBuffer, aOutputSize, decoderFlags,
       aTestCase.mSurfaceFlags);
@@ -297,8 +296,7 @@ static void CheckDecoderMultiChunk(const ImageTestCase& aTestCase,
   sourceBuffer->ExpectLength(length);
   DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
   DecoderFlags decoderFlags =
-      DecoderFactory::GetDefaultDecoderFlagsForType(decoderType) |
-      DecoderFlags::FIRST_FRAME_ONLY;
+      DefaultDecoderFlags() | DecoderFlags::FIRST_FRAME_ONLY;
   RefPtr<image::Decoder> decoder = DecoderFactory::CreateAnonymousDecoder(
       decoderType, sourceBuffer, Nothing(), decoderFlags,
       aTestCase.mSurfaceFlags);
@@ -447,8 +445,7 @@ static void WithSingleChunkAnimationDecode(const ImageTestCase& aTestCase,
   // Create a metadata decoder first, because otherwise RasterImage will get
   // unhappy about finding out the image is animated during a full decode.
   DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
-  DecoderFlags decoderFlags =
-      DecoderFactory::GetDefaultDecoderFlagsForType(decoderType);
+  DecoderFlags decoderFlags = DefaultDecoderFlags();
   RefPtr<IDecodingTask> task = DecoderFactory::CreateMetadataDecoder(
       decoderType, rasterImage, decoderFlags, sourceBuffer);
   ASSERT_TRUE(task != nullptr);
@@ -538,8 +535,12 @@ static void CheckDecoderFrameFirst(const ImageTestCase& aTestCase) {
 
   Progress imageProgress = tracker->GetProgress();
 
-  EXPECT_TRUE(bool(imageProgress & FLAG_HAS_TRANSPARENCY) == false);
   EXPECT_TRUE(bool(imageProgress & FLAG_IS_ANIMATED) == true);
+
+  EXPECT_EQ(bool(aTestCase.mFlags & TEST_CASE_IS_TRANSPARENT),
+            bool(imageProgress & FLAG_HAS_TRANSPARENCY));
+  EXPECT_EQ(bool(aTestCase.mFlags & TEST_CASE_IS_ANIMATED),
+            bool(imageProgress & FLAG_IS_ANIMATED));
 
   // Ensure that we decoded the static version of the image.
   {
@@ -646,8 +647,12 @@ static void CheckDecoderFrameCurrent(const ImageTestCase& aTestCase) {
 
   Progress imageProgress = tracker->GetProgress();
 
-  EXPECT_TRUE(bool(imageProgress & FLAG_HAS_TRANSPARENCY) == false);
   EXPECT_TRUE(bool(imageProgress & FLAG_IS_ANIMATED) == true);
+
+  EXPECT_EQ(bool(aTestCase.mFlags & TEST_CASE_IS_TRANSPARENT),
+            bool(imageProgress & FLAG_HAS_TRANSPARENCY));
+  EXPECT_EQ(bool(aTestCase.mFlags & TEST_CASE_IS_ANIMATED),
+            bool(imageProgress & FLAG_IS_ANIMATED));
 
   // Ensure that we decoded both frames of the animated version of the image.
   {
@@ -747,6 +752,7 @@ IMAGE_GTEST_DECODER_BASE_F(BMP)
 IMAGE_GTEST_DECODER_BASE_F(ICO)
 IMAGE_GTEST_DECODER_BASE_F(Icon)
 IMAGE_GTEST_DECODER_BASE_F(WebP)
+IMAGE_GTEST_DECODER_BASE_F(AVIF)
 #ifdef MOZ_JXL
 IMAGE_GTEST_DECODER_BASE_F(JXL)
 #endif
@@ -769,10 +775,6 @@ TEST_F(ImageDecoders, WebPTransparentSingleChunk) {
 
 TEST_F(ImageDecoders, WebPTransparentNoAlphaHeaderSingleChunk) {
   CheckDecoderSingleChunk(TransparentNoAlphaHeaderWebPTestCase());
-}
-
-TEST_F(ImageDecoders, AVIFSingleChunk) {
-  CheckDecoderSingleChunk(GreenAVIFTestCase());
 }
 
 TEST_F(ImageDecoders, AVIFSingleChunkNonzeroReserved) {
@@ -926,20 +928,8 @@ TEST_F(ImageDecoders, AVIFStackCheck) {
   CheckDecoderSingleChunk(StackCheckAVIFTestCase(), /* aUseDecodePool */ true);
 }
 
-TEST_F(ImageDecoders, AVIFDelayedChunk) {
-  CheckDecoderDelayedChunk(GreenAVIFTestCase());
-}
-
-TEST_F(ImageDecoders, AVIFMultiChunk) {
-  CheckDecoderMultiChunk(GreenAVIFTestCase());
-}
-
 TEST_F(ImageDecoders, AVIFLargeMultiChunk) {
   CheckDecoderMultiChunk(LargeAVIFTestCase(), /* aChunkSize */ 64);
-}
-
-TEST_F(ImageDecoders, AVIFDownscaleDuringDecode) {
-  CheckDownscaleDuringDecode(DownscaledAVIFTestCase());
 }
 
 #ifdef MOZ_JXL
@@ -996,6 +986,20 @@ TEST_F(ImageDecoders, AnimatedAVIFWithBlendedFrames) {
   CheckAnimationDecoderSingleChunk(GreenFirstFrameAnimatedAVIFTestCase());
 }
 
+#ifdef MOZ_JXL
+TEST_F(ImageDecoders, AnimatedJXLSingleChunk) {
+  CheckDecoderSingleChunk(GreenFirstFrameAnimatedJXLTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedJXLMultiChunk) {
+  CheckDecoderMultiChunk(GreenFirstFrameAnimatedJXLTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedJXLWithBlendedFrames) {
+  CheckAnimationDecoderSingleChunk(GreenFirstFrameAnimatedJXLTestCase());
+}
+#endif
+
 TEST_F(ImageDecoders, CorruptSingleChunk) {
   CheckDecoderSingleChunk(CorruptTestCase());
 }
@@ -1050,6 +1054,40 @@ TEST_F(ImageDecoders, AnimatedGIFWithFRAME_CURRENT) {
   CheckDecoderFrameCurrent(GreenFirstFrameAnimatedGIFTestCase());
 }
 
+TEST_F(ImageDecoders, AnimatedWebPWithFRAME_FIRST) {
+  CheckDecoderFrameFirst(GreenFirstFrameAnimatedWebPTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedWebPWithFRAME_CURRENT) {
+  CheckDecoderFrameCurrent(GreenFirstFrameAnimatedWebPTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedPNGWithFRAME_FIRST) {
+  CheckDecoderFrameFirst(GreenFirstFrameAnimatedPNGTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedPNGWithFRAME_CURRENT) {
+  CheckDecoderFrameCurrent(GreenFirstFrameAnimatedPNGTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedAVIFWithFRAME_FIRST) {
+  CheckDecoderFrameFirst(GreenFirstFrameAnimatedAVIFTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedAVIFWithFRAME_CURRENT) {
+  CheckDecoderFrameCurrent(GreenFirstFrameAnimatedAVIFTestCase());
+}
+
+#ifdef MOZ_JXL
+TEST_F(ImageDecoders, AnimatedJXLWithFRAME_FIRST) {
+  CheckDecoderFrameFirst(GreenFirstFrameAnimatedJXLTestCase());
+}
+
+TEST_F(ImageDecoders, AnimatedJXLWithFRAME_CURRENT) {
+  CheckDecoderFrameCurrent(GreenFirstFrameAnimatedJXLTestCase());
+}
+#endif
+
 TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
   ImageTestCase testCase = ExtraImageSubBlocksAnimatedGIFTestCase();
 
@@ -1073,8 +1111,12 @@ TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
   RefPtr<ProgressTracker> tracker = image->GetProgressTracker();
   Progress imageProgress = tracker->GetProgress();
 
-  EXPECT_TRUE(bool(imageProgress & FLAG_HAS_TRANSPARENCY) == false);
   EXPECT_TRUE(bool(imageProgress & FLAG_IS_ANIMATED) == true);
+
+  EXPECT_EQ(bool(testCase.mFlags & TEST_CASE_IS_TRANSPARENT),
+            bool(imageProgress & FLAG_HAS_TRANSPARENCY));
+  EXPECT_EQ(bool(testCase.mFlags & TEST_CASE_IS_ANIMATED),
+            bool(imageProgress & FLAG_IS_ANIMATED));
 
   // Ensure that we decoded both frames of the image.
   LookupResult result =
@@ -1089,14 +1131,6 @@ TEST_F(ImageDecoders, AnimatedGIFWithExtraImageSubBlocks) {
 
   RefPtr<imgFrame> partialFrame = result.Surface().GetFrame(1);
   EXPECT_TRUE(bool(partialFrame));
-}
-
-TEST_F(ImageDecoders, AnimatedWebPWithFRAME_FIRST) {
-  CheckDecoderFrameFirst(GreenFirstFrameAnimatedWebPTestCase());
-}
-
-TEST_F(ImageDecoders, AnimatedWebPWithFRAME_CURRENT) {
-  CheckDecoderFrameCurrent(GreenFirstFrameAnimatedWebPTestCase());
 }
 
 TEST_F(ImageDecoders, TruncatedSmallGIFSingleChunk) {

@@ -255,18 +255,6 @@ interface nsITelemetry : nsISupports
    * will result in an empty array. */
   readonly attribute boolean areUntrustedModuleLoadEventsReady;
 
-  /*
-   * An object with two fields: memoryMap and stacks.
-   * * memoryMap is a list of loaded libraries.
-   * * stacks is a list of stacks. Each stack is a list of pairs of the form
-   *   [moduleIndex, offset]. The moduleIndex is an index into the memoryMap and
-   *   offset is an offset in the library at memoryMap[moduleIndex].
-   * This format is used to make it easier to send the stacks to the
-   * symbolication server.
-   */
-  [implicit_jscontext]
-  readonly attribute jsval lateWrites;
-
   /**
    * Create and return a histogram registered in TelemetryHistograms.h.
    *
@@ -363,8 +351,7 @@ interface nsITelemetry : nsISupports
 
   /**
    * Read data from the previous run. After the callback is called, the last
-   * shutdown time is available in lastShutdownDuration and any late
-   * writes in lateWrites.
+   * shutdown time is available in lastShutdownDuration.
    */
   void asyncFetchTelemetryData(in nsIFetchTelemetryDataCallback aCallback);
 

@@ -5,7 +5,6 @@
 package mozilla.components.feature.syncedtabs
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.storage.sync.SyncedDeviceTabs
 import mozilla.components.feature.syncedtabs.helper.getDevice1Tabs
@@ -19,7 +18,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
 
-@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class SyncedTabsAutocompleteProviderKtTest {
     private val syncedTabs: SyncedTabsStorage = mock()

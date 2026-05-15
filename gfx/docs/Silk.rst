@@ -105,9 +105,9 @@ scheduled or required. Every ``CompositorBridgeParent`` is associated
 and tied to one ``CompositorVsyncScheduler::Observer``, which is
 associated with the ``CompositorVsyncDispatcher``. Each
 ``CompositorBridgeParent`` is associated with one widget and is created
-when a new platform window or ``nsBaseWidget`` is created. The
+when a new platform window or ``nsIWidget`` is created. The
 ``CompositorBridgeParent``, ``CompositorVsyncDispatcher``,
-``CompositorVsyncScheduler::Observer``, and ``nsBaseWidget`` all have
+``CompositorVsyncScheduler::Observer``, and ``nsIWidget`` all have
 the same lifetimes, which are created and destroyed together.
 
 Out-of-process Compositors
@@ -142,8 +142,8 @@ CompositorVsyncDispatcher
 -------------------------
 
 The ``CompositorVsyncDispatcher`` executes on the *Hardware Vsync
-Thread*. It contains references to the ``nsBaseWidget`` it is associated
-with and has a lifetime equal to the ``nsBaseWidget``. The
+Thread*. It contains references to the ``nsIWidget`` it is associated
+with and has a lifetime equal to the ``nsIWidget``. The
 ``CompositorVsyncDispatcher`` is responsible for notifying the
 ``CompositorBridgeParent`` that a vsync event has occurred. There can be
 multiple ``CompositorVsyncDispatchers`` per ``Display``, one
@@ -241,10 +241,10 @@ occurring.
 Widget, Compositor, CompositorVsyncDispatcher, GeckoTouchDispatcher Shutdown Procedure
 --------------------------------------------------------------------------------------
 
-When the `nsBaseWidget shuts
-down <https://hg.mozilla.org/mozilla-central/file/0df249a0e4d3/widget/nsBaseWidget.cpp#l182>`__
-- It calls nsBaseWidget::DestroyCompositor on the *Gecko Main Thread*.
-During nsBaseWidget::DestroyCompositor, it first destroys the
+When the `nsIWidget shuts
+down <https://hg.mozilla.org/mozilla-central/file/0df249a0e4d3/widget/nsIWidget.cpp#l182>`__
+- It calls nsIWidget::DestroyCompositor on the *Gecko Main Thread*.
+During nsIWidget::DestroyCompositor, it first destroys the
 CompositorBridgeChild. CompositorBridgeChild sends a sync IPC call to
 CompositorBridgeParent::RecvStop, which calls
 `CompositorBridgeParent::Destroy <https://hg.mozilla.org/mozilla-central/file/ab0490972e1e/gfx/layers/ipc/CompositorParent.cpp#l509>`__.
@@ -259,11 +259,11 @@ all ipdl code can finish executing. The
 ``CompositorVsyncScheduler::Observer`` also unobserves from vsync and
 cancels any pending composite tasks. Once
 CompositorBridgeParent::RecvStop finishes, the *main thread* in the
-parent process continues shutting down the nsBaseWidget.
+parent process continues shutting down the nsIWidget.
 
 At the same time, the *Compositor thread* is executing tasks until
 CompositorBridgeParent::DeferredDestroy runs, which flushes the
-compositor message loop. Now we have two tasks as both the nsBaseWidget
+compositor message loop. Now we have two tasks as both the nsIWidget
 releases a reference to the Compositor on the *main thread* during
 destruction and the CompositorBridgeParent::DeferredDestroy releases a
 reference to the CompositorBridgeParent on the *Compositor Thread*.
@@ -272,9 +272,9 @@ thread* once both references are gone due to explicit `main thread
 destruction <https://hg.mozilla.org/mozilla-central/file/50b95032152c/gfx/layers/ipc/CompositorParent.h#l148>`__.
 
 With the ``CompositorVsyncScheduler::Observer``, any accesses to the
-widget after nsBaseWidget::DestroyCompositor executes are invalid. Any
+widget after nsIWidget::DestroyCompositor executes are invalid. Any
 accesses to the compositor between the time the
-nsBaseWidget::DestroyCompositor runs and the
+nsIWidget::DestroyCompositor runs and the
 CompositorVsyncScheduler::Observer’s destructor runs aren’t safe yet a
 hardware vsync event could occur between these times. Since any tasks
 posted on the Compositor loop after
@@ -290,14 +290,14 @@ notification executes on the *hardware vsync thread*, it would post a
 task to the Compositor loop and may execute after
 CompositorBridgeParent::DeferredDestroy. Thus, we explicitly shut down
 vsync events in the ``CompositorVsyncDispatcher`` and
-``CompositorVsyncScheduler::Observer`` during nsBaseWidget::Shutdown to
+``CompositorVsyncScheduler::Observer`` during nsIWidget::Shutdown to
 prevent any vsync tasks from executing after
 CompositorBridgeParent::DeferredDestroy.
 
 The ``CompositorVsyncDispatcher`` may be destroyed on either the *main
-thread* or *Compositor Thread*, since both the nsBaseWidget and
+thread* or *Compositor Thread*, since both the nsIWidget and
 ``CompositorVsyncScheduler::Observer`` race to destroy on different
-threads. nsBaseWidget is destroyed on the *main thread* and releases a
+threads. nsIWidget is destroyed on the *main thread* and releases a
 reference to the ``CompositorVsyncDispatcher`` during destruction. The
 ``CompositorVsyncScheduler::Observer`` has a race to be destroyed either
 during CompositorBridgeParent shutdown or from the
@@ -440,7 +440,7 @@ to the correct ``RefreshTimer``.
 Object Lifetime
 ---------------
 
-1. CompositorVsyncDispatcher - Lives as long as the nsBaseWidget
+1. CompositorVsyncDispatcher - Lives as long as the nsIWidget
    associated with the VsyncDispatcher
 2. CompositorVsyncScheduler::Observer - Lives and dies the same time as
    the CompositorBridgeParent.

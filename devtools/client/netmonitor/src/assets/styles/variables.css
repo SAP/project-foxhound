@@ -7,9 +7,9 @@
   /* HTTP status codes */
   --status-code-color-1xx: var(--theme-highlight-blue);
   --status-code-color-2xx: var(--theme-highlight-green);
-  --status-code-color-3xx: transparent;
   --status-code-color-4xx: var(--theme-highlight-pink);
   --status-code-color-5xx: var(--theme-highlight-red);
+  --status-code-color-redirect-or-cache: transparent;
 
   /* Colors for timing markers */
   --timing-marker-color-opacity: 0.75;
@@ -22,7 +22,6 @@
   --timing-marker-load-color: rgb(from var(--theme-highlight-red) r g b / var(--timing-marker-color-opacity));
 
   --table-splitter-color: light-dark(var(--grey-20), var(--grey-70));
-  --table-zebra-background: light-dark(rgba(247, 247, 247, 0.8), rgba(255, 255, 255, 0.05));
   --table-zebra-inline-icons-background: light-dark(rgba(247, 247, 247), rgb(49, 47, 47));
   --table-selection-background-hover: light-dark(rgba(209, 232, 255, 0.8), rgba(53, 59, 72, 1));
   --table-selection-inline-icons-background-hover: light-dark(rgba(209, 232, 255), rgba(53, 59, 72, 1));

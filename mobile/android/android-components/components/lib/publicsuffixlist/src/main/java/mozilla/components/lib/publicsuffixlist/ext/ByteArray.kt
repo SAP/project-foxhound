@@ -14,7 +14,7 @@ private const val BITMASK = 0xff.toByte()
  * This algorithm is based on OkHttp's PublicSuffixDatabase class:
  * https://github.com/square/okhttp/blob/master/okhttp/src/main/java/okhttp3/internal/publicsuffix/PublicSuffixDatabase.java
  */
-@Suppress("ComplexMethod", "NestedBlockDepth")
+@Suppress("NestedBlockDepth", "CognitiveComplexMethod")
 internal fun ByteArray.binarySearch(labels: List<ByteArray>, labelIndex: Int): String? {
     var low = 0
     var high = size
@@ -45,7 +45,6 @@ internal fun ByteArray.binarySearch(labels: List<ByteArray>, labelIndex: Int): S
 
             // Compare the bytes. Note that the file stores UTF-8 encoded bytes, so we must compare the
             // unsigned bytes.
-            @Suppress("EXPERIMENTAL_API_USAGE")
             compareResult = (byte0.toUByte() - byte1.toUByte()).toInt()
             if (compareResult != 0) {
                 break

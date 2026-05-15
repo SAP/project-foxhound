@@ -27,7 +27,7 @@ object MockWebServerHelper {
         messages.forEach { message ->
             val response = MockResponse().setBody("<html><body>$message</body></html>")
             mockServer.enqueue(response)
-            val endpoint = mockServer.url(uniquePath++.toString()).toString().toUri()!!
+            val endpoint = mockServer.url(uniquePath++.toString()).toString().toUri()
             uris += endpoint
         }
         return uris

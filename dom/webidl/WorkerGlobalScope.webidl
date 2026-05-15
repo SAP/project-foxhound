@@ -19,7 +19,7 @@ interface WorkerGlobalScope : EventTarget {
   readonly attribute WorkerLocation location;
   readonly attribute WorkerNavigator navigator;
 
-  [Throws]
+  [Throws, NeedsSubjectPrincipal=NonSystem]
   undefined importScripts((TrustedScriptURL or DOMString)... urls);
 
   attribute OnErrorEventHandler onerror;

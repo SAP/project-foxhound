@@ -262,4 +262,45 @@ add_task(async function () {
 
     await findVariableViewProperties(ruleArray, parsed);
   }
+
+  info(
+    `Check that the "Copy" context menu entry in the VariableView works as expected`
+  );
+  await selectTreeItem(["cookies", "https://test1.example.org"]);
+  await selectTableItem(getCookieId("cs2", ".example.org", "/"));
+
+  const contextMenu = gPanelWindow.document.querySelector(
+    "#variable-view-popup"
+  );
+  const contextMenuCopyItem = contextMenu.querySelector(
+    "#variable-view-popup-copy"
+  );
+
+  const variableViewRootNodeValueEl = await waitFor(() => {
+    const el = gUI.sidebar.querySelector("label.value.token-string");
+    if (!el || el.value !== `"sessionCookie"`) {
+      return false;
+    }
+
+    return el;
+  });
+
+  // Focus the row so the context menu is enabled
+  variableViewRootNodeValueEl.closest(".variable-or-property").focus();
+
+  const onContextMenuShown = once(contextMenu, "popupshown");
+  synthesizeContextMenuEvent(variableViewRootNodeValueEl);
+  await onContextMenuShown;
+  ok(true, "Context menu is shown");
+
+  info("Click on the Copy entry");
+  await waitForClipboardPromise(
+    () => contextMenuCopyItem.click(),
+    `cs2:"sessionCookie"`
+  );
+
+  info("Close context menu");
+  const onContextMenuHidden = once(contextMenu, "popuphidden");
+  DevToolsUtils.executeSoon(() => contextMenu.hidePopup());
+  await onContextMenuHidden;
 });

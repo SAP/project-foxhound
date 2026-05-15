@@ -6,12 +6,13 @@
 #include "ObjectModel.h"
 
 #include "Adapter.h"
-#include "ShaderModule.h"
+#include "CommandEncoder.h"
 #include "CompilationInfo.h"
 #include "Device.h"
-#include "CommandEncoder.h"
 #include "Instance.h"
+#include "ShaderModule.h"
 #include "Texture.h"
+#include "ipc/WebGPUChild.h"
 #include "nsIGlobalObject.h"
 
 namespace mozilla::webgpu {
@@ -29,6 +30,18 @@ nsIGlobalObject* ChildOf<T>::GetParentObject() const {
 
 void ObjectBase::GetLabel(nsAString& aValue) const { aValue = mLabel; }
 void ObjectBase::SetLabel(const nsAString& aLabel) { mLabel = aLabel; }
+
+WebGPUChild* ObjectBase::GetChild() const { return mChild; }
+ffi::WGPUClient* ObjectBase::GetClient() const { return mChild->GetClient(); }
+
+ObjectBase::ObjectBase(WebGPUChild* const aChild, RawId aId,
+                       void (*aDropFnPtr)(const struct ffi::WGPUClient* aClient,
+                                          RawId aId))
+    : mChild(aChild), mId(aId), mDropFnPtr(aDropFnPtr) {
+  MOZ_RELEASE_ASSERT(aId);
+}
+
+ObjectBase::~ObjectBase() { mDropFnPtr(GetClient(), mId); }
 
 template class ChildOf<Adapter>;
 template class ChildOf<ShaderModule>;

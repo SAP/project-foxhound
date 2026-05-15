@@ -7,8 +7,16 @@
 /* import-globals-from head_cache.js */
 /* import-globals-from head_cookies.js */
 /* import-globals-from head_channels.js */
-/* import-globals-from head_servers.js */
 /* import-globals-from head_websocket.js */
+
+const {
+  NodeWebSocketServer,
+  NodeWebSocketHttp2Server,
+  WebSocketConnection,
+  NodeHTTPSProxyServer,
+  NodeHTTPProxyServer,
+  NodeHTTP2ProxyServer,
+} = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
 
 // These test should basically match the ones in test_websocket_server.js,
 // but with multiple websocket clients making requests on the same server

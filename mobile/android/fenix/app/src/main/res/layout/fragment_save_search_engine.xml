@@ -14,7 +14,7 @@
         android:id="@+id/search_engine_wrapper"
         android:orientation="vertical"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
         android:paddingTop="16dp"
@@ -43,7 +43,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/accessibility_min_height"
                 android:hint="@string/search_add_custom_engine_name_hint_2"
-                android:inputType="text" />
+                android:inputType="text"
+                android:textColorHint="?attr/colorOnSurfaceVariant"/>
         </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
@@ -71,7 +72,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/accessibility_min_height"
                 android:hint="@string/search_add_custom_engine_search_string_hint_2"
-                android:inputType="text"/>
+                android:inputType="text"
+                android:textColorHint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <LinearLayout
@@ -123,7 +125,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/accessibility_min_height"
                 android:hint="@string/search_add_custom_engine_suggest_string_hint"
-                android:inputType="text"/>
+                android:inputType="text"
+                android:textColorHint="?attr/colorOnSurfaceVariant"/>
         </com.google.android.material.textfield.TextInputLayout>
 
         <LinearLayout

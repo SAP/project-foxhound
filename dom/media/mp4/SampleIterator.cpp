@@ -8,10 +8,11 @@
 #include <limits>
 
 #include "BufferReader.h"
-#include "mozilla/RefPtr.h"
 #include "MP4Interval.h"
 #include "MP4Metadata.h"
+#include "MediaDataDemuxer.h"
 #include "SinfParser.h"
+#include "mozilla/RefPtr.h"
 
 using namespace mozilla::media;
 
@@ -78,13 +79,14 @@ SampleIterator::SampleIterator(MP4SampleIndex* aIndex)
 
 SampleIterator::~SampleIterator() { mIndex->UnregisterIterator(this); }
 
-bool SampleIterator::HasNext() { return !!Get(); }
+bool SampleIterator::HasNext() { return Get().isOk(); }
 
 already_AddRefed<MediaRawData> SampleIterator::GetNextHeader() {
-  Sample* s(Get());
-  if (!s) {
+  auto current = Get();
+  if (current.isErr()) {
     return nullptr;
   }
+  Sample* s = current.unwrap();
 
   int64_t length = std::numeric_limits<int64_t>::max();
   mIndex->mSource->Length(&length);
@@ -103,17 +105,20 @@ already_AddRefed<MediaRawData> SampleIterator::GetNextHeader() {
   return sample.forget();
 }
 
-already_AddRefed<MediaRawData> SampleIterator::GetNext() {
-  Sample* s(Get());
-  if (!s) {
-    return nullptr;
+Result<already_AddRefed<MediaRawData>, MediaResult> SampleIterator::GetNext() {
+  auto current = Get();
+  if (current.isErr()) {
+    return current.propagateErr();
   }
+  Sample* s = current.unwrap();
 
   int64_t length = std::numeric_limits<int64_t>::max();
   mIndex->mSource->Length(&length);
   if (s->mByteRange.mEnd > length) {
-    // We don't have this complete sample.
-    return nullptr;
+    return Err(MediaResult::Logged(
+        NS_ERROR_DOM_MEDIA_RANGE_ERR,
+        RESULT_DETAIL("Sample data byte range beyond end of resource"),
+        gMediaDemuxerLog));
   }
 
   RefPtr<MediaRawData> sample = new MediaRawData();
@@ -126,14 +131,20 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext() {
   UniquePtr<MediaRawDataWriter> writer(sample->CreateWriter());
   // Do the blocking read
   if (!writer->SetSize(s->mByteRange.Length())) {
-    return nullptr;
+    return Err(MediaResult::Logged(NS_ERROR_OUT_OF_MEMORY, __func__,
+                                   gMediaDemuxerLog));
   }
 
   size_t bytesRead;
-  if (!mIndex->mSource->ReadAt(sample->mOffset, writer->Data(), sample->Size(),
-                               &bytesRead) ||
-      bytesRead != sample->Size()) {
-    return nullptr;
+  nsresult rv = mIndex->mSource->ReadAt(sample->mOffset, writer->Data(),
+                                        sample->Size(), &bytesRead);
+  if (NS_FAILED(rv) || bytesRead != sample->Size()) {
+    return Err(MediaResult::Logged(
+        // Fewer bytes read means end of stream, or the bytes are not
+        // available because a network error has occurred.
+        // A sample range extending past the end of stream is a bad range.
+        NS_FAILED(rv) ? rv : NS_ERROR_DOM_MEDIA_RANGE_ERR,
+        RESULT_DETAIL("Sample data read failed"), gMediaDemuxerLog));
   }
 
   MoofParser* moofParser = mIndex->mMoofParser.get();
@@ -143,12 +154,12 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext() {
     return sample.forget();
   }
 
+  const nsTArray<Moof>& moofs = moofParser->Moofs();
+  const Moof* currentMoof = &moofs[mCurrentMoof];
   // We need to check if this moof has init data the CDM expects us to surface.
   // This should happen when handling the first sample, even if that sample
   // isn't encrypted (samples later in the moof may be).
   if (mCurrentSample == 0) {
-    const nsTArray<Moof>& moofs = moofParser->Moofs();
-    const Moof* currentMoof = &moofs[mCurrentMoof];
     if (!currentMoof->mPsshes.IsEmpty()) {
       // This Moof contained crypto init data. Report that. We only report
       // the init data on the Moof's first sample, to avoid reporting it more
@@ -160,8 +171,9 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext() {
 
   auto cryptoSchemeResult = GetEncryptionScheme();
   if (cryptoSchemeResult.isErr()) {
-    // Log the error here in future.
-    return nullptr;
+    return Err(MediaResult::Logged(NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+                                   cryptoSchemeResult.unwrapErr(),
+                                   gMediaDemuxerLog));
   }
   CryptoScheme cryptoScheme = cryptoSchemeResult.unwrap();
   if (cryptoScheme == CryptoScheme::None) {
@@ -177,7 +189,7 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext() {
              "Sample should not already have a key ID");
   MOZ_ASSERT(writer->mCrypto.mConstantIV.IsEmpty(),
              "Sample should not already have a constant IV");
-  CencSampleEncryptionInfoEntry* sampleInfo = GetSampleEncryptionEntry();
+  const CencSampleEncryptionInfoEntry* sampleInfo = GetSampleEncryptionEntry();
   if (sampleInfo) {
     // Use sample group information if present, this supersedes track level
     // information.
@@ -197,27 +209,55 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext() {
   }
 
   if ((writer->mCrypto.mIVSize == 0 && writer->mCrypto.mConstantIV.IsEmpty()) ||
-      (writer->mCrypto.mIVSize != 0 && s->mCencRange.IsEmpty())) {
+      (writer->mCrypto.mIVSize != 0 &&
+       (s->mCencRange.IsEmpty() && !currentMoof->SencIsValid()))) {
     // If mIVSize == 0, this indicates that a constant IV is in use, thus we
     // should have a non empty constant IV. Alternatively if IV size is non
     // zero, we should have an IV for this sample, which we need to look up
     // in mCencRange (which must then be non empty). If neither of these are
     // true we have bad crypto data, so bail.
-    return nullptr;
+    return Err(MediaResult::Logged(NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+                                   RESULT_DETAIL("Crypto IV size inconsistent"),
+                                   gMediaDemuxerLog));
   }
-  // Parse auxiliary information if present
-  if (!s->mCencRange.IsEmpty()) {
+  // Retrieve encryption information
+  // This information might come from two places: the senc box, or the
+  // auxiliary data (indicated by saio and saiz boxes)
+  // Try to use senc information first, and fallback to auxiliary data if not
+  // present
+  if (currentMoof->SencIsValid()) {
+    if (writer->mCrypto.mIVSize != s->mIV.Length()) {
+      return Err(MediaResult::Logged(
+          NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+          RESULT_DETAIL("Inconsistent crypto IV size"), gMediaDemuxerLog));
+    }
+    writer->mCrypto.mIV = s->mIV;
+    writer->mCrypto.mPlainSizes = s->mPlainSizes;
+    writer->mCrypto.mEncryptedSizes = s->mEncryptedSizes;
+  } else if (!s->mCencRange.IsEmpty()) {
     // The size comes from an 8 bit field
     AutoTArray<uint8_t, 256> cencAuxInfo;
     cencAuxInfo.SetLength(s->mCencRange.Length());
-    if (!mIndex->mSource->ReadAt(s->mCencRange.mStart, cencAuxInfo.Elements(),
-                                 cencAuxInfo.Length(), &bytesRead) ||
-        bytesRead != cencAuxInfo.Length()) {
-      return nullptr;
+    // Sample Auxiliary Information may be stored anywhere in the file, but
+    // encryption is supported in only fragmented mp4, so the offsets are
+    // assumed in the traf or a subsequent box.
+    rv = mIndex->mSource->ReadAt(s->mCencRange.mStart, cencAuxInfo.Elements(),
+                                 cencAuxInfo.Length(), &bytesRead);
+    if (NS_FAILED(rv) || bytesRead != cencAuxInfo.Length()) {
+      return Err(MediaResult::Logged(
+          // Unless pref "eme.mse-only" is set to false, encryption is supported
+          // only in MSE, where fewer bytes means end of stream.  mCencRange
+          // extending past the end of stream means an error with the range.
+          NS_FAILED(rv) ? rv : NS_ERROR_DOM_MEDIA_RANGE_ERR,
+          RESULT_DETAIL("cenc Sample Auxiliary Information read failed"),
+          gMediaDemuxerLog));
     }
     BufferReader reader(cencAuxInfo);
     if (!reader.ReadArray(writer->mCrypto.mIV, writer->mCrypto.mIVSize)) {
-      return nullptr;
+      return Err(MediaResult::Logged(
+          NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+          RESULT_DETAIL("sample InitializationVector error"),
+          gMediaDemuxerLog));
     }
 
     // Parse the auxiliary information for subsample information
@@ -225,15 +265,15 @@ already_AddRefed<MediaRawData> SampleIterator::GetNext() {
     if (res.isOk() && res.unwrap() > 0) {
       uint16_t count = res.unwrap();
 
-      if (reader.Remaining() < count * 6) {
-        return nullptr;
-      }
-
       for (size_t i = 0; i < count; i++) {
         auto res_16 = reader.ReadU16();
         auto res_32 = reader.ReadU32();
         if (res_16.isErr() || res_32.isErr()) {
-          return nullptr;
+          return Err(MediaResult::Logged(
+              NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+              RESULT_DETAIL("cenc subsample_count too large for"
+                            "CencSampleAuxiliaryDataFormat"),
+              gMediaDemuxerLog));
         }
         writer->mCrypto.mPlainSizes.AppendElement(res_16.unwrap());
         writer->mCrypto.mEncryptedSizes.AppendElement(res_32.unwrap());
@@ -266,61 +306,10 @@ SampleDescriptionEntry* SampleIterator::GetSampleDescriptionEntry() {
   return &sampleDescriptions[sampleDescriptionIndex];
 }
 
-CencSampleEncryptionInfoEntry* SampleIterator::GetSampleEncryptionEntry() {
-  nsTArray<Moof>& moofs = mIndex->mMoofParser->Moofs();
-  Moof* currentMoof = &moofs[mCurrentMoof];
-  SampleToGroupEntry* sampleToGroupEntry = nullptr;
-
-  // Default to using the sample to group entries for the fragment, otherwise
-  // fall back to the sample to group entries for the track.
-  FallibleTArray<SampleToGroupEntry>* sampleToGroupEntries =
-      currentMoof->mFragmentSampleToGroupEntries.Length() != 0
-          ? &currentMoof->mFragmentSampleToGroupEntries
-          : &mIndex->mMoofParser->mTrackSampleToGroupEntries;
-
-  uint32_t seen = 0;
-
-  for (SampleToGroupEntry& entry : *sampleToGroupEntries) {
-    if (seen + entry.mSampleCount > mCurrentSample) {
-      sampleToGroupEntry = &entry;
-      break;
-    }
-    seen += entry.mSampleCount;
-  }
-
-  // ISO-14496-12 Section 8.9.2.3 and 8.9.4 : group description index
-  // (1) ranges from 1 to the number of sample group entries in the track
-  // level SampleGroupDescription Box, or (2) takes the value 0 to
-  // indicate that this sample is a member of no group, in this case, the
-  // sample is associated with the default values specified in
-  // TrackEncryption Box, or (3) starts at 0x10001, i.e. the index value
-  // 1, with the value 1 in the top 16 bits, to reference fragment-local
-  // SampleGroupDescription Box.
-
-  // According to the spec, ISO-14496-12, the sum of the sample counts in this
-  // box should be equal to the total number of samples, and, if less, the
-  // reader should behave as if an extra SampleToGroupEntry existed, with
-  // groupDescriptionIndex 0.
-
-  if (!sampleToGroupEntry || sampleToGroupEntry->mGroupDescriptionIndex == 0) {
-    return nullptr;
-  }
-
-  FallibleTArray<CencSampleEncryptionInfoEntry>* entries =
-      &mIndex->mMoofParser->mTrackSampleEncryptionInfoEntries;
-
-  uint32_t groupIndex = sampleToGroupEntry->mGroupDescriptionIndex;
-
-  // If the first bit is set to a one, then we should use the sample group
-  // descriptions from the fragment.
-  if (groupIndex > SampleToGroupEntry::kFragmentGroupDescriptionIndexBase) {
-    groupIndex -= SampleToGroupEntry::kFragmentGroupDescriptionIndexBase;
-    entries = &currentMoof->mFragmentSampleEncryptionInfoEntries;
-  }
-
-  // The group_index is one based.
-  return groupIndex > entries->Length() ? nullptr
-                                        : &entries->ElementAt(groupIndex - 1);
+const CencSampleEncryptionInfoEntry* SampleIterator::GetSampleEncryptionEntry()
+    const {
+  return mIndex->mMoofParser->GetSampleEncryptionEntry(mCurrentMoof,
+                                                       mCurrentSample);
 }
 
 Result<CryptoScheme, nsCString> SampleIterator::GetEncryptionScheme() {
@@ -337,7 +326,7 @@ Result<CryptoScheme, nsCString> SampleIterator::GetEncryptionScheme() {
     // entry.
     // If we encounter this error often, we may consider using the first
     // sample description entry if the index is out of bounds.
-    return mozilla::Err(nsLiteralCString(
+    return mozilla::Err(RESULT_DETAIL(
         "Could not determine encryption scheme due to bad index for sample "
         "description entry."));
   }
@@ -350,16 +339,16 @@ Result<CryptoScheme, nsCString> SampleIterator::GetEncryptionScheme() {
     // The sample description entry says this sample is encrypted, but we
     // don't have a valid sinf box. This shouldn't happen as the sinf box is
     // part of the sample description entry. Suggests a malformed file, bail.
-    return mozilla::Err(nsLiteralCString(
+    return mozilla::Err(RESULT_DETAIL(
         "Could not determine encryption scheme. Sample description entry "
         "indicates encryption, but could not find associated sinf box."));
   }
 
-  CencSampleEncryptionInfoEntry* sampleInfo = GetSampleEncryptionEntry();
+  const CencSampleEncryptionInfoEntry* sampleInfo = GetSampleEncryptionEntry();
   if (sampleInfo && !sampleInfo->mIsEncrypted) {
     // May not have sample encryption info, but if we do, it should match other
     // metadata.
-    return mozilla::Err(nsLiteralCString(
+    return mozilla::Err(RESULT_DETAIL(
         "Could not determine encryption scheme. Sample description entry "
         "indicates encryption, but sample encryption entry indicates sample is "
         "not encrypted. These should be consistent."));
@@ -370,25 +359,27 @@ Result<CryptoScheme, nsCString> SampleIterator::GetEncryptionScheme() {
   } else if (moofParser->mSinf.mDefaultEncryptionType == AtomType("cbcs")) {
     return CryptoScheme::Cbcs;
   }
-  return mozilla::Err(nsLiteralCString(
+  return mozilla::Err(RESULT_DETAIL(
       "Could not determine encryption scheme. Sample description entry "
       "reports sample is encrypted, but no scheme, or an unsupported scheme "
       "is in use."));
 }
 
-Sample* SampleIterator::Get() {
+Result<Sample*, nsresult> SampleIterator::Get() {
   if (!mIndex->mMoofParser) {
     MOZ_ASSERT(!mCurrentMoof);
-    return mCurrentSample < mIndex->mIndex.Length()
-               ? &mIndex->mIndex[mCurrentSample]
-               : nullptr;
+    if (mCurrentSample >= mIndex->mIndex.Length()) {
+      return Err(NS_ERROR_DOM_MEDIA_END_OF_STREAM);
+    }
+    return &mIndex->mIndex[mCurrentSample];
   }
 
   nsTArray<Moof>& moofs = mIndex->mMoofParser->Moofs();
   while (true) {
     if (mCurrentMoof == moofs.Length()) {
-      if (!mIndex->mMoofParser->BlockingReadNextMoof()) {
-        return nullptr;
+      nsresult rv = mIndex->mMoofParser->BlockingReadNextMoof();
+      if (NS_FAILED(rv)) {
+        return Err(rv);
       }
       MOZ_ASSERT(mCurrentMoof < moofs.Length());
     }
@@ -403,19 +394,21 @@ Sample* SampleIterator::Get() {
 
 void SampleIterator::Next() { ++mCurrentSample; }
 
-void SampleIterator::Seek(const TimeUnit& aTime) {
+void SampleIterator::Seek(const TimeUnit& aTime, SyncSampleMode aMode) {
   size_t syncMoof = 0;
   size_t syncSample = 0;
   mCurrentMoof = 0;
   mCurrentSample = 0;
-  Sample* sample;
-  while (!!(sample = Get())) {
+  while (Sample* sample = Get().unwrapOr(nullptr)) {
     if (sample->mCompositionRange.start > aTime) {
       break;
     }
     if (sample->mSync) {
       syncMoof = mCurrentMoof;
       syncSample = mCurrentSample;
+      if (aMode == SyncSampleMode::First) {
+        break;
+      }
     }
     if (sample->mCompositionRange.start == aTime) {
       break;
@@ -428,8 +421,7 @@ void SampleIterator::Seek(const TimeUnit& aTime) {
 
 TimeUnit SampleIterator::GetNextKeyframeTime() {
   SampleIterator itr(*this);
-  Sample* sample;
-  while (!!(sample = itr.Get())) {
+  while (Sample* sample = itr.Get().unwrapOr(nullptr)) {
     if (sample->mSync) {
       return sample->mCompositionRange.start;
     }
@@ -557,35 +549,6 @@ void MP4SampleIndex::UpdateMoofIndex(const MediaByteRangeSet& aByteRanges,
       iterator->mCurrentMoof -= moofs - 1;
     }
   }
-}
-
-TimeUnit MP4SampleIndex::GetEndCompositionIfBuffered(
-    const MediaByteRangeSet& aByteRanges) {
-  FallibleTArray<Sample>* index;
-  if (mMoofParser) {
-    int64_t base = mMoofParser->mMdhd.mTimescale;
-    if (!mMoofParser->ReachedEnd() || mMoofParser->Moofs().IsEmpty()) {
-      return TimeUnit::Zero(base);
-    }
-    index = &mMoofParser->Moofs().LastElement().mIndex;
-  } else {
-    index = &mIndex;
-  }
-
-  int64_t base = mMoofParser->mMdhd.mTimescale;
-  media::TimeUnit lastComposition = TimeUnit::Zero(base);
-  RangeFinder rangeFinder(aByteRanges);
-  for (size_t i = index->Length(); i--;) {
-    const Sample& sample = (*index)[i];
-    if (!rangeFinder.Contains(sample.mByteRange)) {
-      return TimeUnit::Zero(base);
-    }
-    lastComposition = std::max(lastComposition, sample.mCompositionRange.end);
-    if (sample.mSync) {
-      return lastComposition;
-    }
-  }
-  return TimeUnit::Zero(base);
 }
 
 TimeIntervals MP4SampleIndex::ConvertByteRangesToTimeRanges(

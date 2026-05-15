@@ -32,8 +32,14 @@ add_task(async function test_contentscript_storage_local_idb_backend() {
   );
 });
 
-add_task(async function test_contentscript_storage_local_idb_no_bytes_in_use() {
+add_task(async function test_contentscript_storage_local_file_getBytesInUse() {
+  return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, false]], () =>
+    test_contentscript_storage_area_getBytesInUse("local")
+  );
+});
+
+add_task(async function test_contentscript_storage_local_idb_getBytesInUse() {
   return runWithPrefs([[ExtensionStorageIDB.BACKEND_ENABLED_PREF, true]], () =>
-    test_contentscript_storage_area_no_bytes_in_use("local")
+    test_contentscript_storage_area_getBytesInUse("local")
   );
 });

@@ -22,9 +22,9 @@ namespace mozilla::uniffi {
 struct UniFFIPointerType {
   nsLiteralCString typeName;
   // Rust FFI function to clone for the pointer
-  void* (*clone)(void*, RustCallStatus*);
+  uint64_t (*clone)(uint64_t, RustCallStatus*);
   // Rust FFI function to destroy for the pointer
-  void (*destructor)(void*, RustCallStatus*);
+  void (*destructor)(uint64_t, RustCallStatus*);
 };
 }  // namespace mozilla::uniffi
 

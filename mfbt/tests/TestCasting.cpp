@@ -5,7 +5,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Casting.h"
-#include "mozilla/ThreadSafety.h"
 
 #include <stdint.h>
 #include <cstdint>

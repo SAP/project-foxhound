@@ -40,13 +40,13 @@ To run UI tests, you can either use the built-in test runner in Android Studio o
 
 ## Gradle
 
-To run UI tests under `androidTest` using Gradle, you can utilize the `connectedFenixDebugAndroidTest` task, which is specifically tailored for running instrumented tests on the `FenixDebug` build variant. This task is part of the Android Gradle Plugin’s suite of commands that allow for the execution of tests directly from the command line. For instance, to run a specific test class, such as `org.mozilla.fenix.ui.ComposeSearchTest`, you would navigate to Fenix’s root directory in the terminal and execute the following command:
+To run UI tests under `androidTest` using Gradle, you can utilize the `connectedDebugAndroidTest` task, which is specifically tailored for running instrumented tests on the `debug` build variant. This task is part of the Android Gradle Plugin's suite of commands that allow for the execution of tests directly from the command line. For instance, to run a specific test class, such as `org.mozilla.fenix.ui.ComposeSearchTest`, you would navigate to Fenix's root directory in the terminal and execute the following command:
 
 ```
-./gradlew connectedFenixDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.mozilla.fenix.ui.ComposeSearchTest
+./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.mozilla.fenix.ui.ComposeSearchTest
 ```
 
-This command targets the `FenixDebug` build variant and runs only the tests within the `ComposeSearchTest` class.
+This command targets the `debug` build variant and runs only the tests within the `ComposeSearchTest` class.
 
 Similarly, to run a single test within the `ComposeSearchTest` class, you can append the test method name to the class using the `#` symbol. This syntax allows you to specify a particular test method to execute.
 

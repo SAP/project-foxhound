@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/quota/CachingDatabaseConnection.h"
 
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ipc/BackgroundParent.h"
 
@@ -30,6 +31,9 @@ void CachingDatabaseConnection::LazyInit(
 
 Result<CachingDatabaseConnection::CachedStatement, nsresult>
 CachingDatabaseConnection::GetCachedStatement(const nsACString& aQuery) {
+  GECKO_TRACE_SCOPE("dom::quota",
+                    "CachingDatabaseConnection::GetCachedStatement");
+
   AssertIsOnConnectionThread();
   MOZ_ASSERT(!aQuery.IsEmpty());
   MOZ_ASSERT(mStorageConnection);

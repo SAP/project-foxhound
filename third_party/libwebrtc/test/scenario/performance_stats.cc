@@ -11,14 +11,21 @@
 
 #include <algorithm>
 
+#include "api/units/timestamp.h"
+#include "api/video/video_frame_buffer.h"
+#include "rtc_base/checks.h"
+
 namespace webrtc {
 namespace test {
 void VideoFramesStats::AddFrameInfo(const VideoFrameBuffer& frame,
                                     Timestamp at_time) {
   ++count;
   RTC_DCHECK(at_time.IsFinite());
-  pixels.AddSample(frame.width() * frame.height());
-  resolution.AddSample(std::max(frame.width(), frame.height()));
+  pixels.AddSample(
+      {.value = 1. * frame.width() * frame.height(), .time = at_time});
+  resolution.AddSample(
+      {.value = static_cast<double>(std::max(frame.width(), frame.height())),
+       .time = at_time});
   frames.AddEvent(at_time);
 }
 

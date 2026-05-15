@@ -14,8 +14,6 @@
 
 #include <dlfcn.h>
 
-#include "mozilla/ArrayUtils.h"
-
 namespace mozilla {
 
 struct udev;

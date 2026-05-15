@@ -179,6 +179,10 @@ impl<F, T> SpaceMapper<F, T> where F: fmt::Debug {
             }
         }
     }
+
+    pub fn as_2d_scale_offset(&self) -> Option<ScaleOffset> {
+        self.kind.as_2d_scale_offset()
+    }
 }
 
 

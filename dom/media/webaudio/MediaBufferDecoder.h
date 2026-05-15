@@ -8,13 +8,13 @@
 #define MediaBufferDecoder_h_
 
 #include "AudioSegment.h"
-#include "nsWrapperCache.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/MemoryReporting.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 

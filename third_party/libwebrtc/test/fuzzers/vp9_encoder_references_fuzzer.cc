@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/base/macros.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
@@ -131,8 +130,9 @@ class FrameValidator : public EncodedImageCallback {
     }
   }
 
-  void CheckGenericReferences(rtc::ArrayView<const int64_t> frame_dependencies,
-                              const GenericFrameInfo& generic_info) const {
+  void CheckGenericReferences(
+      webrtc::ArrayView<const int64_t> frame_dependencies,
+      const GenericFrameInfo& generic_info) const {
     for (int64_t dependency_frame_id : frame_dependencies) {
       RTC_CHECK_GE(dependency_frame_id, 0);
       const LayerFrame& dependency = Frame(dependency_frame_id);
@@ -142,7 +142,7 @@ class FrameValidator : public EncodedImageCallback {
   }
 
   void CheckGenericAndCodecSpecificReferencesAreConsistent(
-      rtc::ArrayView<const int64_t> frame_dependencies,
+      webrtc::ArrayView<const int64_t> frame_dependencies,
       const CodecSpecificInfo& info,
       const LayerFrame& layer_frame) const {
     const CodecSpecificInfoVP9& vp9_info = info.codecSpecific.VP9;
@@ -151,7 +151,7 @@ class FrameValidator : public EncodedImageCallback {
     RTC_CHECK_EQ(generic_info.spatial_id, layer_frame.spatial_id);
     RTC_CHECK_EQ(generic_info.temporal_id, layer_frame.temporal_id);
     auto picture_id_diffs =
-        rtc::MakeArrayView(vp9_info.p_diff, vp9_info.num_ref_pics);
+        webrtc::MakeArrayView(vp9_info.p_diff, vp9_info.num_ref_pics);
     RTC_CHECK_EQ(
         frame_dependencies.size(),
         picture_id_diffs.size() + (vp9_info.inter_layer_predicted ? 1 : 0));
@@ -194,7 +194,7 @@ class FieldTrials : public FieldTrialsView {
     static constexpr absl::string_view kBinaryFieldTrials[] = {
         "WebRTC-Vp9IssueKeyFrameOnLayerDeactivation",
     };
-    for (size_t i = 0; i < ABSL_ARRAYSIZE(kBinaryFieldTrials); ++i) {
+    for (size_t i = 0; i < std::size(kBinaryFieldTrials); ++i) {
       if (key == kBinaryFieldTrials[i]) {
         return (flags_ & (1u << i)) ? "Enabled" : "Disabled";
       }
@@ -204,17 +204,13 @@ class FieldTrials : public FieldTrialsView {
     if (key == "WebRTC-CongestionWindow" ||
         key == "WebRTC-UseBaseHeavyVP8TL3RateAllocation" ||
         key == "WebRTC-VideoRateControl" ||
+        key == "WebRTC-Video-CalculatePsnr" ||
         key == "WebRTC-GetEncoderInfoOverride" ||
         key == "WebRTC-VP9-GetEncoderInfoOverride" ||
         key == "WebRTC-VP9-PerformanceFlags" ||
         key == "WebRTC-VP9QualityScaler" ||
         key == "WebRTC-VP9-SvcForSimulcast" ||
         key == "WebRTC-StableTargetRate") {
-      return "";
-    }
-
-    // TODO: bugs.webrtc.org/15827 - Fuzz frame drop config.
-    if (key == "WebRTC-LibvpxVp9Encoder-SvcFrameDropConfig") {
       return "";
     }
 
@@ -312,7 +308,7 @@ struct LibvpxState {
   LibvpxState() {
     pkt.kind = VPX_CODEC_CX_FRAME_PKT;
     pkt.data.frame.buf = pkt_buffer;
-    pkt.data.frame.sz = ABSL_ARRAYSIZE(pkt_buffer);
+    pkt.data.frame.sz = std::size(pkt_buffer);
     layer_id.spatial_layer_id = -1;
   }
 
@@ -547,7 +543,7 @@ static_assert(DropBelow(0b1101, /*sid=*/3, 4) == false, "");
 }  // namespace
 
 void FuzzOneInput(const uint8_t* data, size_t size) {
-  FuzzDataHelper helper(rtc::MakeArrayView(data, size));
+  FuzzDataHelper helper(webrtc::MakeArrayView(data, size));
 
   FrameValidator validator;
   FieldTrials field_trials(helper);
@@ -601,7 +597,7 @@ void FuzzOneInput(const uint8_t* data, size_t size) {
           }
           bool drop = false;
           // Never drop keyframe.
-          if (frame_types[0] != VideoFrameType::kVideoFrameKey) {
+          if ((state.pkt.data.frame.flags & VPX_FRAME_IS_KEY) == 0) {
             switch (state.frame_drop.framedrop_mode) {
               case FULL_SUPERFRAME_DROP:
                 drop = encode_spatial_layers == 0;

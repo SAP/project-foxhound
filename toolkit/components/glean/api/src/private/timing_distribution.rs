@@ -89,32 +89,12 @@ impl<MetricT: MetricMetadataGetter + MetricNamer + 'static> gecko_profiler::Prof
         schema.set_tooltip_label(
             "{marker.data.cat}.{marker.data.id} {marker.data.label} {marker.data.duration}{marker.data.sample}",
         );
-        schema.set_table_label("{marker.name} - {marker.data.cat}.{marker.data.id} {marker.data.label}: {marker.data.duration}{marker.data.sample}{marker.data.samples}");
+        schema.set_table_label("{marker.data.cat}.{marker.data.id} {marker.data.label}: {marker.data.duration}{marker.data.sample}{marker.data.samples}");
         schema.set_chart_label("{marker.data.cat}.{marker.data.id} {marker.data.label}");
-        schema.add_key_label_format_searchable(
-            "cat",
-            "Category",
-            Format::UniqueString,
-            Searchable::Searchable,
-        );
-        schema.add_key_label_format_searchable(
-            "id",
-            "Metric",
-            Format::UniqueString,
-            Searchable::Searchable,
-        );
-        schema.add_key_label_format_searchable(
-            "label",
-            "Label",
-            Format::UniqueString,
-            Searchable::Searchable,
-        );
-        schema.add_key_label_format_searchable(
-            "timer_id",
-            "TimerId",
-            Format::Integer,
-            Searchable::Searchable,
-        );
+        schema.add_key_label_format("cat", "Category", Format::UniqueString);
+        schema.add_key_label_format("id", "Metric", Format::UniqueString);
+        schema.add_key_label_format("label", "Label", Format::UniqueString);
+        schema.add_key_label_format("timer_id", "TimerId", Format::Integer);
         schema.add_key_label_format("duration", "Duration", Format::String);
         schema.add_key_label_format("sample", "Sample", Format::String);
         schema.add_key_label_format("samples", "Samples", Format::String);
@@ -783,29 +763,6 @@ impl TimingDistribution for TimingDistributionMetric {
 
     /// **Exported for test purposes.**
     ///
-    /// Gets the currently stored value of the metric.
-    ///
-    /// This doesn't clear the stored value.
-    ///
-    /// # Arguments
-    ///
-    /// * `ping_name` - represents the optional name of the ping to retrieve the
-    ///   metric for. Defaults to the first value in `send_in_pings`.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<DistributionData> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            TimingDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            TimingDistributionMetric::Child(c) => {
-                panic!("Cannot get test value for {:?} in non-parent process!", c)
-            }
-        }
-    }
-
-    /// **Exported for test purposes.**
-    ///
     /// Gets the number of recorded errors for the given error type.
     ///
     /// # Arguments
@@ -826,6 +783,30 @@ impl TimingDistribution for TimingDistributionMetric {
                 "Cannot get number of recorded errors for {:?} in non-parent process!",
                 c
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for TimingDistributionMetric {
+    type Output = DistributionData;
+
+    /// **Exported for test purposes.**
+    ///
+    /// Gets the currently stored value of the metric.
+    ///
+    /// This doesn't clear the stored value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ping_name` - represents the optional name of the ping to retrieve the
+    ///   metric for. Defaults to the first value in `send_in_pings`.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        match self {
+            TimingDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            TimingDistributionMetric::Child(c) => {
+                panic!("Cannot get test value for {:?} in non-parent process!", c)
+            }
         }
     }
 }
@@ -856,7 +837,9 @@ mod test {
         metric.cancel(id);
 
         // We can't inspect the values yet.
-        assert!(metric.test_get_value("test-ping").is_none());
+        assert!(metric
+            .test_get_value(Some("test-ping".to_string()))
+            .is_none());
     }
 
     #[test]
@@ -888,7 +871,7 @@ mod test {
         assert!(ipc::replay_from_buf(&buf).is_ok());
 
         let data = parent_metric
-            .test_get_value("test-ping")
+            .test_get_value(Some("test-ping".to_string()))
             .expect("should have some data");
 
         // No guarantees from timers means no guarantees on buckets.

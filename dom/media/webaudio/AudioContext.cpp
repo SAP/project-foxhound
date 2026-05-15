@@ -6,45 +6,6 @@
 
 #include "AudioContext.h"
 
-#include "blink/PeriodicWave.h"
-
-#include "mozilla/ErrorResult.h"
-#include "mozilla/NotNull.h"
-#include "mozilla/OwningNonNull.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_media.h"
-
-#include "mozilla/dom/AnalyserNode.h"
-#include "mozilla/dom/AnalyserNodeBinding.h"
-#include "mozilla/dom/AudioBufferSourceNodeBinding.h"
-#include "mozilla/dom/AudioContextBinding.h"
-#include "mozilla/dom/AudioWorklet.h"
-#include "mozilla/dom/BaseAudioContextBinding.h"
-#include "mozilla/dom/BiquadFilterNodeBinding.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/dom/ChannelMergerNodeBinding.h"
-#include "mozilla/dom/ChannelSplitterNodeBinding.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/ConvolverNodeBinding.h"
-#include "mozilla/dom/DelayNodeBinding.h"
-#include "mozilla/dom/DynamicsCompressorNodeBinding.h"
-#include "mozilla/dom/GainNodeBinding.h"
-#include "mozilla/dom/IIRFilterNodeBinding.h"
-#include "mozilla/dom/HTMLMediaElement.h"
-#include "mozilla/dom/MediaElementAudioSourceNodeBinding.h"
-#include "mozilla/dom/MediaStreamAudioSourceNodeBinding.h"
-#include "mozilla/dom/MediaStreamTrackAudioSourceNodeBinding.h"
-#include "mozilla/dom/OfflineAudioContextBinding.h"
-#include "mozilla/dom/OscillatorNodeBinding.h"
-#include "mozilla/dom/PannerNodeBinding.h"
-#include "mozilla/dom/PeriodicWaveBinding.h"
-#include "mozilla/dom/Performance.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/StereoPannerNodeBinding.h"
-#include "mozilla/dom/WaveShaperNodeBinding.h"
-
 #include "AudioBuffer.h"
 #include "AudioBufferSourceNode.h"
 #include "AudioChannelService.h"
@@ -63,26 +24,62 @@
 #include "DynamicsCompressorNode.h"
 #include "GainNode.h"
 #include "IIRFilterNode.h"
-#include "js/ArrayBuffer.h"  // JS::StealArrayBufferContents
 #include "MediaElementAudioSourceNode.h"
 #include "MediaStreamAudioDestinationNode.h"
 #include "MediaStreamAudioSourceNode.h"
-#include "MediaTrackGraph.h"
 #include "MediaStreamTrackAudioSourceNode.h"
+#include "MediaTrackGraph.h"
+#include "OscillatorNode.h"
+#include "PannerNode.h"
+#include "PeriodicWave.h"
+#include "ScriptProcessorNode.h"
+#include "StereoPannerNode.h"
+#include "Tracing.h"
+#include "WaveShaperNode.h"
+#include "blink/PeriodicWave.h"
+#include "js/ArrayBuffer.h"  // JS::StealArrayBufferContents
+#include "mozilla/ErrorResult.h"
+#include "mozilla/OwningNonNull.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/AnalyserNode.h"
+#include "mozilla/dom/AnalyserNodeBinding.h"
+#include "mozilla/dom/AudioBufferSourceNodeBinding.h"
+#include "mozilla/dom/AudioContextBinding.h"
+#include "mozilla/dom/AudioWorklet.h"
+#include "mozilla/dom/BaseAudioContextBinding.h"
+#include "mozilla/dom/BiquadFilterNodeBinding.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/ChannelMergerNodeBinding.h"
+#include "mozilla/dom/ChannelSplitterNodeBinding.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ConvolverNodeBinding.h"
+#include "mozilla/dom/DelayNodeBinding.h"
+#include "mozilla/dom/DynamicsCompressorNodeBinding.h"
+#include "mozilla/dom/GainNodeBinding.h"
+#include "mozilla/dom/HTMLMediaElement.h"
+#include "mozilla/dom/IIRFilterNodeBinding.h"
+#include "mozilla/dom/MediaElementAudioSourceNodeBinding.h"
+#include "mozilla/dom/MediaStreamAudioSourceNodeBinding.h"
+#include "mozilla/dom/MediaStreamTrackAudioSourceNodeBinding.h"
+#include "mozilla/dom/OfflineAudioContextBinding.h"
+#include "mozilla/dom/OscillatorNodeBinding.h"
+#include "mozilla/dom/PannerNodeBinding.h"
+#include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PeriodicWaveBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/StereoPannerNodeBinding.h"
+#include "mozilla/dom/WaveShaperNodeBinding.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIScriptError.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsPrintfCString.h"
 #include "nsRFPService.h"
-#include "OscillatorNode.h"
-#include "PannerNode.h"
-#include "PeriodicWave.h"
-#include "ScriptProcessorNode.h"
-#include "StereoPannerNode.h"
-#include "WaveShaperNode.h"
-#include "Tracing.h"
 
 extern mozilla::LazyLogModule gAutoplayPermissionLog;
 
@@ -285,6 +282,7 @@ already_AddRefed<AudioContext> AudioContext::Constructor(
                          ? aOptions.mSampleRate.Value()
                          : MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE;
 
+  WEB_AUDIO_API_LOG("AudioContext sampleRate={}", sampleRate);
   RefPtr<AudioContext> object =
       new AudioContext(window, false, 2, 0, sampleRate);
 
@@ -319,6 +317,9 @@ already_AddRefed<AudioContext> AudioContext::Constructor(
     return nullptr;
   }
 
+  WEB_AUDIO_API_LOG(
+      "OfflineAudioContext numberOfChannels={} length={} sampleRate={}",
+      aNumberOfChannels, aLength, aSampleRate);
   if (aNumberOfChannels == 0 ||
       aNumberOfChannels > WebAudioUtils::MaxChannelCount) {
     aRv.ThrowNotSupportedError(
@@ -928,7 +929,7 @@ void AudioContext::SetPageAwakeRequest(bool aShouldSet) {
   }
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendAddOrRemovePageAwakeRequest(bc, aShouldSet);
+    (void)contentChild->SendAddOrRemovePageAwakeRequest(bc, aShouldSet);
     return;
   }
   if (aShouldSet) {
@@ -1256,8 +1257,8 @@ void AudioContext::Unmute() const {
 void AudioContext::SetParamMapForWorkletName(
     const nsAString& aName, AudioParamDescriptorMap* aParamMap) {
   MOZ_ASSERT(!mWorkletParamDescriptors.Contains(aName));
-  Unused << mWorkletParamDescriptors.InsertOrUpdate(
-      aName, std::move(*aParamMap), fallible);
+  (void)mWorkletParamDescriptors.InsertOrUpdate(aName, std::move(*aParamMap),
+                                                fallible);
 }
 
 size_t AudioContext::SizeOfIncludingThis(

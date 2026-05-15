@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MOZ_DMABUF_LIB_WRAPPER_H__
-#define __MOZ_DMABUF_LIB_WRAPPER_H__
+#ifndef MOZ_DMABUF_LIB_WRAPPER_H_
+#define MOZ_DMABUF_LIB_WRAPPER_H_
 
 #include "mozilla/StaticMutex.h"
 #include "mozilla/widget/DMABufFormats.h"
@@ -283,4 +283,4 @@ class MOZ_RAII DMABufDeviceLock final {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // __MOZ_DMABUF_LIB_WRAPPER_H__
+#endif  // MOZ_DMABUF_LIB_WRAPPER_H_

@@ -7,6 +7,7 @@ package mozilla.components.feature.prompts.creditcard
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.annotation.LayoutRes
 import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.concept.storage.CreditCardEntry
 import mozilla.components.feature.prompts.R
@@ -43,6 +44,7 @@ class CreditCardItemViewHolder(
     }
 
     companion object {
+        @LayoutRes
         val LAYOUT_ID = R.layout.mozac_feature_prompts_credit_card_list_item
     }
 }

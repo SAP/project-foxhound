@@ -30,14 +30,9 @@ gcloud:
     - class org.mozilla.fenix.ui.TabbedBrowsingTest#closeAllTabsTest
     - class org.mozilla.fenix.ui.TopSitesTest#openTopSiteInANewTabTest
     - class org.mozilla.fenix.ui.BookmarksTest#verifyAddBookmarkButtonTest
+    - class org.mozilla.fenix.ui.LoginsTest#verifyCopyLoginCredentialsToClipboardTest
 
   device:
-    - model: MediumPhone.arm
-      version: 26
-      locale: en_US
-    - model: MediumPhone.arm
-      version: 28
-      locale: en_US
     - model: MediumPhone.arm
       version: 30
       locale: en_US

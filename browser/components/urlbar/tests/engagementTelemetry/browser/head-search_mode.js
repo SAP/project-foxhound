@@ -70,7 +70,7 @@ async function doTabTest({ trigger, assert }) {
     await UrlbarTestUtils.enterSearchMode(window, {
       source: UrlbarUtils.RESULT_SOURCE.TABS,
     });
-    await selectRowByProvider("Places");
+    await selectRowByProvider("UrlbarProviderPlaces");
 
     await trigger();
     await assert();

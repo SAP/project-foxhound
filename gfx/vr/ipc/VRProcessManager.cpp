@@ -130,7 +130,7 @@ void VRProcessManager::OnProcessLaunchComplete(VRProcessParent* aParent) {
   // Flush any pref updates that happened during launch and weren't
   // included in the blobs set up in LaunchGPUProcess.
   for (const mozilla::dom::Pref& pref : mQueuedPrefs) {
-    Unused << NS_WARN_IF(!mVRChild->SendPreferenceUpdate(pref));
+    (void)NS_WARN_IF(!mVRChild->SendPreferenceUpdate(pref));
   }
   mQueuedPrefs.Clear();
 

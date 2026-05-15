@@ -9,7 +9,6 @@
 
 #include "2D.h"
 #include "Tools.h"
-#include "mozilla/Atomics.h"
 
 namespace mozilla {
 namespace gfx {

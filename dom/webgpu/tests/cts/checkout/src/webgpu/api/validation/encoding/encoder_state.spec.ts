@@ -17,7 +17,6 @@ TODO:
 `;
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
-import { objectEquals } from '../../../../common/util/util.js';
 import { AllFeaturesMaxLimitsGPUTest } from '../../../gpu_test.js';
 
 class F extends AllFeaturesMaxLimitsGPUTest {
@@ -60,8 +59,6 @@ g.test('pass_end_invalid_order')
       .beginSubcases()
       .combine('firstPassEnd', [true, false])
       .combine('endPasses', [[], [0], [1], [0, 1], [1, 0]])
-      // Don't end the first pass multiple times (that generates a validation error but doesn't invalidate the encoder)
-      .unless(p => p.firstPassEnd && p.endPasses.includes(0))
   )
   .fn(t => {
     const { pass0Type, pass1Type, firstPassEnd, endPasses } = t.params;
@@ -80,22 +77,29 @@ g.test('pass_end_invalid_order')
 
     const passes = [firstPass, secondPass];
     for (const index of endPasses) {
-      passes[index].end();
+      const validEnd = (index === 0 && !firstPassEnd) || (index === 1 && firstPassEnd);
+      t.expectValidationError(() => {
+        passes[index].end();
+      }, !validEnd);
     }
 
-    // If {endPasses} is '[1]' and {firstPass} ends, it's a control case.
-    const valid = firstPassEnd && objectEquals(endPasses, [1]);
-
+    const validFinish = firstPassEnd && endPasses.includes(1);
     t.expectValidationError(() => {
       encoder.finish();
-    }, !valid);
+    }, !validFinish);
   });
 
 g.test('call_after_successful_finish')
   .desc(`Test that encoding command after a successful finish generates a validation error.`)
   .params(u =>
     u
-      .combine('callCmd', ['beginComputePass', 'beginRenderPass', 'insertDebugMarker'])
+      .combine('callCmd', [
+        'beginComputePass',
+        'beginRenderPass',
+        'finishAndSubmitFirst',
+        'finishAndSubmitSecond',
+        'insertDebugMarker',
+      ])
       .beginSubcases()
       .combine('prePassType', ['compute', 'render', 'no-op'])
       .combine('IsEncoderFinished', [false, true])
@@ -112,8 +116,9 @@ g.test('call_after_successful_finish')
       pass.end();
     }
 
+    let buffer;
     if (IsEncoderFinished) {
-      encoder.finish();
+      buffer = encoder.finish();
     }
 
     switch (callCmd) {
@@ -126,6 +131,9 @@ g.test('call_after_successful_finish')
           t.expectValidationError(() => {
             pass.end();
           }, IsEncoderFinished);
+          if (buffer) {
+            t.device.queue.submit([buffer]);
+          }
         }
         break;
       case 'beginRenderPass':
@@ -137,16 +145,41 @@ g.test('call_after_successful_finish')
           t.expectValidationError(() => {
             pass.end();
           }, IsEncoderFinished);
+          if (buffer) {
+            t.device.queue.submit([buffer]);
+          }
+        }
+        break;
+      case 'finishAndSubmitFirst':
+        t.expectValidationError(() => {
+          encoder.finish();
+        }, IsEncoderFinished);
+        if (buffer) {
+          t.device.queue.submit([buffer]);
+        }
+        break;
+      case 'finishAndSubmitSecond':
+        {
+          let secondBuffer: GPUCommandBuffer;
+          t.expectValidationError(() => {
+            secondBuffer = encoder.finish();
+          }, IsEncoderFinished);
+          t.expectValidationError(() => {
+            t.device.queue.submit([secondBuffer]);
+          }, IsEncoderFinished);
         }
         break;
       case 'insertDebugMarker':
         t.expectValidationError(() => {
           encoder.insertDebugMarker('');
         }, IsEncoderFinished);
+        if (buffer) {
+          t.device.queue.submit([buffer]);
+        }
         break;
     }
 
-    if (!IsEncoderFinished) {
+    if (!IsEncoderFinished && !callCmd.startsWith('finish')) {
       encoder.finish();
     }
   });
@@ -154,7 +187,7 @@ g.test('call_after_successful_finish')
 g.test('pass_end_none')
   .desc(
     `
-  Test that ending a {compute,render} pass without ending the passes generates a validation error.
+  Test that finishing an encoder without ending a child {compute,render} pass generates a validation error.
   `
   )
   .paramsSubcasesOnly(u => u.combine('passType', ['compute', 'render']).combine('endCount', [0, 1]))
@@ -246,4 +279,50 @@ g.test('pass_end_twice,render_pass_invalid')
     t.expectValidationError(() => {
       encoder.finish();
     });
+  });
+
+g.test('pass_begin_invalid_encoder')
+  .desc(
+    `
+  Test that {compute,render} passes can still be opened on an invalid encoder.
+  `
+  )
+  .params(u =>
+    u
+      .combine('pass0Type', ['compute', 'render'])
+      .combine('pass1Type', ['compute', 'render'])
+      .beginSubcases()
+      .combine('firstPassInvalid', [false, true])
+  )
+  .fn(t => {
+    const { pass0Type, pass1Type, firstPassInvalid } = t.params;
+
+    const view = t.createAttachmentTextureView();
+
+    const encoder = t.device.createCommandEncoder();
+
+    let firstPass;
+    if (pass0Type === 'compute') {
+      firstPass = encoder.beginComputePass();
+    } else {
+      firstPass = t.beginRenderPass(encoder, view);
+    }
+
+    if (firstPassInvalid) {
+      // Popping an empty debug group stack invalidates the pass.
+      firstPass.popDebugGroup();
+    }
+
+    // Ending an invalid pass invalidates the encoder
+    firstPass.end();
+
+    // Passes can still be opened on an invalid encoder
+    const secondPass =
+      pass1Type === 'compute' ? encoder.beginComputePass() : t.beginRenderPass(encoder, view);
+
+    secondPass.end();
+
+    t.expectValidationError(() => {
+      encoder.finish();
+    }, firstPassInvalid);
   });

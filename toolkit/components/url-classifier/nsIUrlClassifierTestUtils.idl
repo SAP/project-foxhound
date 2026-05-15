@@ -1,0 +1,66 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+/**
+ * Some utility methods used by the url classifier test suite.
+ */
+
+[scriptable, uuid(d63d6302-05fe-4b0e-aff9-f6b118f91ada)]
+interface nsIUrlClassifierTestUtils : nsISupports {
+  /**
+   * Make update response for the V5 protocol with 4-byte hashes. The update
+   * response only contains a single hash. This is used for testing.
+   *
+   * @param aName The name of the list.
+   * @param aSingleHash The single hash (4 bytes).
+   *
+   * @returns A string that contains the update response.
+   */
+  ACString makeUpdateResponseV5(in ACString aName, in uint32_t aSingleHash);
+
+  /**
+   * Make update response for the V5 protocol with 32-byte hashes. The update
+   * response only contains a single hash. This is used for testing.
+   *
+   * @param aName The name of the list.
+   * @param aFullHash The full hash (32 bytes).
+   *
+   * @returns A string that contains the update response.
+   */
+  ACString makeUpdateResponseV5_32b(in ACString aName, in ACString aFullHash);
+
+  /**
+   * Make find full hash response for the V5 protocol. This is used for testing.
+   *
+   * @param aFullHash The full hash.
+   *
+   * @returns A string that contains the find full hash response.
+   */
+  ACString makeFindFullHashResponseV5(in ACString aFullHash);
+
+  /**
+   * Generate lookup hash(4 bytes) from the given fragment.
+   * @param aFragment The fragment.
+   *
+   * @returns A uint32_t that contains the lookup hash.
+   */
+  uint32_t generateLookupHash(in ACString aFragment);
+
+  /**
+   * Generate full hash(32 bytes) from the given fragment.
+   * @param aFragment The fragment.
+   *
+   * @returns A base64 encoded string that contains the full hash.
+   */
+  ACString generateFullHash(in ACString aFragment);
+
+  /**
+   * Generate full hash(32 bytes) from the given fragment as raw bytes.
+   * @param aFragment The fragment.
+   *
+   * @returns A string containing the raw 32-byte hash.
+   */
+  ACString generateFullHashRaw(in ACString aFragment);
+};

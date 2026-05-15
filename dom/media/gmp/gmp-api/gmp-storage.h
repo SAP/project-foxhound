@@ -17,8 +17,9 @@
 #ifndef GMP_STORAGE_h_
 #define GMP_STORAGE_h_
 
-#include "gmp-errors.h"
 #include <stdint.h>
+
+#include "gmp-errors.h"
 
 // Maximum size of a record, in bytes; 10 megabytes.
 #define GMP_MAX_RECORD_SIZE (10 * 1024 * 1024)

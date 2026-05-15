@@ -12,7 +12,6 @@
 #include "mozilla/mscom/ProcessRuntimeShared.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
 #include "mozilla/WindowsProcessMitigations.h"
 
@@ -428,21 +427,21 @@ ProcessRuntime::InitializeSecurity(const ProcessCategory aProcessCategory) {
   const size_t kMaxInlineEntries = 5;
   mozilla::Vector<EXPLICIT_ACCESS_W, kMaxInlineEntries> entries;
 
-  Unused << entries.append(EXPLICIT_ACCESS_W{
+  (void)entries.append(EXPLICIT_ACCESS_W{
       COM_RIGHTS_EXECUTE,
       GRANT_ACCESS,
       NO_INHERITANCE,
       {nullptr, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_SID, TRUSTEE_IS_USER,
        reinterpret_cast<LPWSTR>(systemSid)}});
 
-  Unused << entries.append(EXPLICIT_ACCESS_W{
+  (void)entries.append(EXPLICIT_ACCESS_W{
       COM_RIGHTS_EXECUTE,
       GRANT_ACCESS,
       NO_INHERITANCE,
       {nullptr, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_SID,
        TRUSTEE_IS_WELL_KNOWN_GROUP, reinterpret_cast<LPWSTR>(adminSid)}});
 
-  Unused << entries.append(EXPLICIT_ACCESS_W{
+  (void)entries.append(EXPLICIT_ACCESS_W{
       COM_RIGHTS_EXECUTE,
       GRANT_ACCESS,
       NO_INHERITANCE,
@@ -450,7 +449,7 @@ ProcessRuntime::InitializeSecurity(const ProcessCategory aProcessCategory) {
        reinterpret_cast<LPWSTR>(tokenUser.User.Sid)}});
 
   if (allowAllNonRestrictedAppContainers) {
-    Unused << entries.append(
+    (void)entries.append(
         EXPLICIT_ACCESS_W{COM_RIGHTS_EXECUTE,
                           GRANT_ACCESS,
                           NO_INHERITANCE,
@@ -466,7 +465,7 @@ ProcessRuntime::InitializeSecurity(const ProcessCategory aProcessCategory) {
 
     // TokenAppContainer will be null if we are not in an app container.
     if (tokenAppContainerInf.TokenAppContainer) {
-      Unused << entries.append(EXPLICIT_ACCESS_W{
+      (void)entries.append(EXPLICIT_ACCESS_W{
           COM_RIGHTS_EXECUTE,
           GRANT_ACCESS,
           NO_INHERITANCE,

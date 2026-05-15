@@ -31,7 +31,7 @@ RUN /usr/local/sbin/setup_packages.sh $TASKCLUSTER_ROOT_URL $DOCKER_IMAGE_PACKAG
     --arch=amd64 \
     --variant=buildd \
     --include=debhelper,binutils-multiarch,binutils-aarch64-linux-gnu \
-    --keyring=/usr/share/keyrings/debian-archive-buster-stable.gpg \
+    --keyring=/usr/share/keyrings/debian-archive-$(if test -f /usr/share/keyrings/debian-archive-buster-stable.gpg; then echo buster-stable.gpg; else echo removed-keys.gpg; fi) \
     --verbose \
     buster \
     /srv/buster-amd64 \

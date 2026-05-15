@@ -24,10 +24,14 @@ class WebPushEngineIntegration(
     private val engine: Engine,
     private val pushFeature: AutoPushFeature,
     private val coroutineScope: CoroutineScope = MainScope(),
+    stringDecoder: (String) -> ByteArray =
+        { s -> Base64.decode(s.toByteArray(), Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP) },
+    byteArrayEncoder: (ByteArray) -> String =
+        { ba -> Base64.encodeToString(ba, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP) },
 ) : AutoPushFeature.Observer {
 
     private var handler: WebPushHandler? = null
-    private val delegate = WebPushEngineDelegate(pushFeature)
+    private val delegate = WebPushEngineDelegate(pushFeature, stringDecoder, byteArrayEncoder)
 
     fun start() {
         handler = engine.registerWebPushDelegate(delegate)
@@ -54,12 +58,14 @@ class WebPushEngineIntegration(
 
 internal class WebPushEngineDelegate(
     private val pushFeature: AutoPushFeature,
+    private val stringDecoder: (String) -> ByteArray,
+    private val byteArrayEncoder: (ByteArray) -> String,
 ) : WebPushDelegate {
     private val logger = Logger("WebPushEngineDelegate")
 
     override fun onGetSubscription(scope: String, onSubscription: (WebPushSubscription?) -> Unit) {
         pushFeature.getSubscription(scope) {
-            onSubscription(it?.toEnginePushSubscription())
+            onSubscription(it?.toEnginePushSubscription(stringDecoder))
         }
     }
 
@@ -70,13 +76,13 @@ internal class WebPushEngineDelegate(
     ) {
         pushFeature.subscribe(
             scope = scope,
-            appServerKey = serverKey?.toEncodedBase64String(),
+            appServerKey = serverKey?.let { byteArrayEncoder(it) },
             onSubscribeError = {
                 logger.error("Error on push onSubscribe.")
                 onSubscribe(null)
             },
             onSubscribe = { subscription ->
-                onSubscribe(subscription.toEnginePushSubscription())
+                onSubscribe(subscription.toEnginePushSubscription(stringDecoder))
             },
         )
     }
@@ -95,17 +101,12 @@ internal class WebPushEngineDelegate(
     }
 }
 
-internal fun AutoPushSubscription.toEnginePushSubscription() = WebPushSubscription(
+internal fun AutoPushSubscription.toEnginePushSubscription(stringDecoder: (String) -> ByteArray) = WebPushSubscription(
     scope = this.scope,
-    publicKey = this.publicKey.toDecodedByteArray(),
+    publicKey = stringDecoder(this.publicKey),
     endpoint = this.endpoint,
-    authSecret = this.authKey.toDecodedByteArray(),
+    authSecret = stringDecoder(this.authKey),
     // We don't have the appServerKey unless an app is creating a new subscription so we
     // allow the key to be null since it won't be overridden from a previous subscription.
     appServerKey = null,
 )
-
-private fun String.toDecodedByteArray() =
-    Base64.decode(this.toByteArray(), Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
-private fun ByteArray.toEncodedBase64String() =
-    Base64.encodeToString(this, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)

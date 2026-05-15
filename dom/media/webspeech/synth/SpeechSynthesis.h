@@ -7,16 +7,15 @@
 #ifndef mozilla_dom_SpeechSynthesis_h
 #define mozilla_dom_SpeechSynthesis_h
 
+#include "SpeechSynthesisUtterance.h"
+#include "SpeechSynthesisVoice.h"
+#include "js/TypeDecls.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "nsRefPtrHashtable.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
-#include "js/TypeDecls.h"
-
-#include "SpeechSynthesisUtterance.h"
-#include "SpeechSynthesisVoice.h"
 
 class nsIDOMWindow;
 

@@ -9,7 +9,6 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/HashTable.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/fuzzing/Nyx.h"
 #include "mozilla/ipc/MessageLink.h"

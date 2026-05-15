@@ -188,6 +188,7 @@ add_setup(async () => {
 /**
  * Promise wrapper to listen for Services.cookieBanners.insertRule calls from
  * the CookieBannerListService.
+ *
  * @param {function} checkFn - Function which returns true or false to indicate
  * if this is the insert the caller is looking for.
  * @returns {Promise} - Promise which resolves when checkFn matches after

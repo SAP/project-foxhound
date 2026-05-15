@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGAngle.h"
+
 #include "SVGAnimatedOrient.h"
 #include "mozilla/dom/SVGAngleBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"

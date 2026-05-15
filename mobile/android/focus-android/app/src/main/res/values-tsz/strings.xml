@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -83,6 +90,7 @@
     sharing an URL.
   -->
   <string name="share_dialog_title">Ixusï kwankurhini</string>
+  <string name="notification_erase_title_android_14">Jirinhantskwa ampe mirikurhini?</string>
   <string name="notification_erase_text">Jirinhantskwa ampe mirikurhini</string>
   <!-- Notification action to open Focus and resume the current browsing session. -->
   <string name="notification_action_open">Inchani</string>

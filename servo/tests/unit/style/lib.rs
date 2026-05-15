@@ -8,16 +8,18 @@
 extern crate app_units;
 extern crate cssparser;
 extern crate euclid;
-#[macro_use] extern crate html5ever;
+#[macro_use]
+extern crate html5ever;
 extern crate parking_lot;
 extern crate rayon;
 extern crate selectors;
 extern crate serde_json;
 extern crate servo_arc;
-extern crate stylo_atoms;
 extern crate servo_config;
 extern crate servo_url;
-#[macro_use] extern crate style;
+extern crate stylo_atoms;
+#[macro_use]
+extern crate style;
 extern crate style_traits;
 extern crate test;
 
@@ -29,7 +31,6 @@ mod parsing;
 mod properties;
 mod rule_tree;
 mod size_of;
-mod specified_values;
 mod str;
 mod stylesheets;
 mod stylist;

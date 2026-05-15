@@ -5,7 +5,7 @@
 
 add_setup(async function () {
   registerCleanupFunction(async () => {
-    UrlbarPrefs.clear("quicksuggest.dataCollection.enabled");
+    UrlbarPrefs.clear("quicksuggest.online.enabled");
     UrlbarPrefs.clear("quicksuggest.contextualOptIn");
     UrlbarPrefs.clear("quicksuggest.contextualOptIn.lastDismissedTime");
     UrlbarPrefs.clear("quicksuggest.contextualOptIn.dismissedCount");
@@ -27,7 +27,7 @@ add_setup(async function () {
 
 add_task(async function accept() {
   info("Setup");
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
   UrlbarPrefs.set("quicksuggest.contextualOptIn", true);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.dismissedCount", 0);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.lastDismissedTime", 0);
@@ -56,7 +56,7 @@ add_task(async function accept() {
       window
     );
   });
-  Assert.ok(UrlbarPrefs.get("quicksuggest.dataCollection.enabled"));
+  Assert.ok(UrlbarPrefs.get("quicksuggest.online.enabled"));
 
   info(
     "Check whether the contextual opt-in result was removed from last query"
@@ -71,7 +71,7 @@ add_task(async function accept() {
 
 add_task(async function dismiss() {
   info("Setup");
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
   UrlbarPrefs.set("quicksuggest.contextualOptIn", true);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.lastDismissedTime", 0);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.dismissedCount", 0);
@@ -164,7 +164,7 @@ add_task(async function dismiss_by_impressions_count_fisrt() {
   info("Setup");
   const IMPRESSION_LIMIT = 5;
   const IMPRESSION_DAYS_LIMIT = 10;
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
   UrlbarPrefs.set("quicksuggest.contextualOptIn", true);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.dismissedCount", 0);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.lastDismissedTime", 0);
@@ -222,7 +222,7 @@ add_task(async function dismiss_by_impressions_elapsed_days_fisrt() {
   info("Setup");
   const IMPRESSION_LIMIT = 5;
   const IMPRESSION_DAYS_LIMIT = 10;
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
   UrlbarPrefs.set("quicksuggest.contextualOptIn", true);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.dismissedCount", 0);
   UrlbarPrefs.set("quicksuggest.contextualOptIn.lastDismissedTime", 0);

@@ -29,11 +29,10 @@
 #ifndef HRTFDatabaseLoader_h
 #define HRTFDatabaseLoader_h
 
-#include "nsHashKeys.h"
-#include "mozilla/RefPtr.h"
+#include "HRTFDatabase.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
-#include "HRTFDatabase.h"
+#include "nsHashKeys.h"
 
 template <class EntryType>
 class nsTHashtable;

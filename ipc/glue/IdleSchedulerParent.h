@@ -4,14 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_ipc_IdleSchedulerParent_h__
-#define mozilla_ipc_IdleSchedulerParent_h__
+#ifndef mozilla_ipc_IdleSchedulerParent_h_
+#define mozilla_ipc_IdleSchedulerParent_h_
 
-#include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/LinkedList.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/ipc/PIdleSchedulerParent.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include <bitset>
@@ -121,4 +117,4 @@ class IdleSchedulerParent final
 }  // namespace ipc
 }  // namespace mozilla
 
-#endif  // mozilla_ipc_IdleSchedulerParent_h__
+#endif  // mozilla_ipc_IdleSchedulerParent_h_

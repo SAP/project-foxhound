@@ -3,7 +3,6 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import sys
-from unittest import skipIf
 
 from urllib.parse import quote
 
@@ -99,10 +98,6 @@ class TestSwitchToWindowContent(WindowManagerMixin, MarionetteTestCase):
         self.assertEqual(self.marionette.current_window_handle, self.start_tab)
         self.assertEqual(self.get_selected_tab_index(), self.selected_tab_index)
 
-    @skipIf(
-        sys.platform.startswith("linux"),
-        "Bug 1557232 - Original window sometimes doesn't receive focus",
-    )
     def test_switch_tabs_in_different_windows_with_focus_change(self):
         new_tab1 = self.open_tab(focus=True)
         self.assertEqual(self.marionette.current_window_handle, self.start_tab)

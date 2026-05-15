@@ -4,9 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLAtoms_h___
-#define nsMathMLAtoms_h___
+#ifndef nsMathMLAtoms_h_
+#define nsMathMLAtoms_h_
 
 #include "nsGkAtoms.h"
 
-#endif /* nsMathMLAtoms_h___ */
+#endif /* nsMathMLAtoms_h_ */

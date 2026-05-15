@@ -7,10 +7,9 @@
 #ifndef DOM_SVG_SVGPOINT_H_
 #define DOM_SVG_SVGPOINT_H_
 
-#include "nsDebug.h"
 #include "gfxPoint.h"
 #include "mozilla/gfx/Point.h"
-#include "mozilla/FloatingPoint.h"
+#include "nsDebug.h"
 
 namespace mozilla {
 

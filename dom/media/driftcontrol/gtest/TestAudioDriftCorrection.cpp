@@ -3,11 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include "AudioDriftCorrection.h"
 #include "AudioGenerator.h"
 #include "AudioVerifier.h"
+#include "gtest/gtest.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla;

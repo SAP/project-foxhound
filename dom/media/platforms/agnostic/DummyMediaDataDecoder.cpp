@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DummyMediaDataDecoder.h"
+
 #include "AnnexB.h"
 #include "H264.h"
 #include "MP4Decoder.h"

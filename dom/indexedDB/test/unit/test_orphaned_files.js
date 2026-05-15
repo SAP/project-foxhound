@@ -32,7 +32,7 @@ async function testSteps() {
   // - create_db.js
   // - storage.sqlite
   // The file create_db.js in the package was run locally, specifically it was
-  // temporarily added to xpcshell.ini and then executed:
+  // temporarily added to xpcshell.toml and then executed:
   //   mach xpcshell-test --interactive dom/indexedDB/test/unit/create_db.js
   // Note: to make it become the profile in the test, additional manual steps
   // are needed.

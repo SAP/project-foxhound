@@ -11,16 +11,17 @@ ARG DOCKER_IMAGE_PACKAGES
 ARG TASKCLUSTER_ROOT_URL
 RUN /usr/local/sbin/setup_packages.sh $TASKCLUSTER_ROOT_URL $DOCKER_IMAGE_PACKAGES
 
+ARG CLANG_VER=13
+
 RUN apt-get update && \
     apt-get install \
       autoconf \
-      autoconf2.13 \
       automake \
       bison \
       build-essential \
       cabextract \
       curl \
-      clang-13 \
+      clang-${CLANG_VER} \
       cmake \
       flex \
       gawk \
@@ -37,7 +38,7 @@ RUN apt-get update && \
       libtool \
       libucl-dev \
       libxml2-dev \
-      lld-13 \
+      lld-${CLANG_VER} \
       msitools \
       ninja-build \
       openssh-client \

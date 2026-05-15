@@ -9,7 +9,6 @@
 #include "nsZipWriter.h"
 #include "nsIOutputStream.h"
 #include "nsIStreamListener.h"
-#include "mozilla/Attributes.h"
 
 class nsZipDataStream final : public nsIStreamListener {
  public:

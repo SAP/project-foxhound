@@ -94,11 +94,11 @@ class SVGTransformSMILData {
  public:
   // Number of float-params required in constructor, if constructing one of the
   // 'simple' transform types (all but matrix type)
-  static const uint32_t NUM_SIMPLE_PARAMS = 3;
+  static constexpr uint32_t NUM_SIMPLE_PARAMS = 3;
 
   // Number of float-params required in constructor for matrix type.
   // This is also the number of params we actually store, regardless of type.
-  static const uint32_t NUM_STORED_PARAMS = 6;
+  static constexpr uint32_t NUM_STORED_PARAMS = 6;
 
   explicit SVGTransformSMILData(uint16_t aType) : mTransformType(aType) {
     MOZ_ASSERT(aType >= dom::SVGTransform_Binding::SVG_TRANSFORM_MATRIX &&
@@ -142,8 +142,8 @@ class SVGTransformSMILData {
     return !(*this == aOther);
   }
 
-  uint16_t mTransformType;
   float mParams[NUM_STORED_PARAMS];
+  uint16_t mTransformType;
 };
 
 }  // namespace mozilla

@@ -1,9 +1,8 @@
 use crate::limits::*;
 use crate::prelude::*;
-use crate::RecGroup;
 use crate::{
     BinaryReader, ComponentAlias, ComponentExportName, ComponentImport, ComponentTypeRef,
-    FromReader, Import, Result, SectionLimited, TypeRef, ValType,
+    FromReader, Import, RecGroup, Result, SectionLimited, TypeRef, ValType,
 };
 use core::fmt;
 
@@ -185,6 +184,9 @@ pub enum PrimitiveValType {
     Char,
     /// The type is a string.
     String,
+    /// The error-context type. (added with the async proposal for the component
+    /// model)
+    ErrorContext,
 }
 
 impl PrimitiveValType {
@@ -203,6 +205,7 @@ impl PrimitiveValType {
             0x75 => PrimitiveValType::F64,
             0x74 => PrimitiveValType::Char,
             0x73 => PrimitiveValType::String,
+            0x64 => PrimitiveValType::ErrorContext,
             _ => return None,
         })
     }
@@ -241,6 +244,7 @@ impl fmt::Display for PrimitiveValType {
             F64 => "f64",
             Char => "char",
             String => "string",
+            ErrorContext => "error-context",
         };
         s.fmt(f)
     }
@@ -278,12 +282,16 @@ impl<'a> FromReader<'a> for ComponentType<'a> {
                     b => return reader.invalid_leading_byte(b, "resource destructor"),
                 },
             },
-            0x40 => {
+            byte @ (0x40 | 0x43) => {
                 let params = reader
                     .read_iter(MAX_WASM_FUNCTION_PARAMS, "component function parameters")?
                     .collect::<Result<_>>()?;
-                let results = reader.read()?;
-                ComponentType::Func(ComponentFuncType { params, results })
+                let result = read_resultlist(reader)?;
+                ComponentType::Func(ComponentFuncType {
+                    async_: byte == 0x43,
+                    params,
+                    result,
+                })
             }
             0x41 => ComponentType::Component(
                 reader
@@ -380,74 +388,26 @@ impl<'a> FromReader<'a> for InstanceTypeDeclaration<'a> {
     }
 }
 
-/// Represents the result type of a component function.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum ComponentFuncResult<'a> {
-    /// The function returns a singular, unnamed type.
-    Unnamed(ComponentValType),
-    /// The function returns zero or more named types.
-    Named(Box<[(&'a str, ComponentValType)]>),
-}
-
-impl<'a> FromReader<'a> for ComponentFuncResult<'a> {
-    fn from_reader(reader: &mut BinaryReader<'a>) -> Result<Self> {
-        Ok(match reader.read_u8()? {
-            0x00 => ComponentFuncResult::Unnamed(reader.read()?),
-            0x01 => ComponentFuncResult::Named(
-                reader
-                    .read_iter(MAX_WASM_FUNCTION_RETURNS, "component function results")?
-                    .collect::<Result<_>>()?,
-            ),
-            x => return reader.invalid_leading_byte(x, "component function results"),
-        })
-    }
-}
-
-impl ComponentFuncResult<'_> {
-    /// Gets the count of types returned by the function.
-    pub fn type_count(&self) -> usize {
-        match self {
-            Self::Unnamed(_) => 1,
-            Self::Named(vec) => vec.len(),
-        }
-    }
-
-    /// Iterates over the types returned by the function.
-    pub fn iter(&self) -> impl Iterator<Item = (Option<&str>, &ComponentValType)> {
-        enum Either<L, R> {
-            Left(L),
-            Right(R),
-        }
-
-        impl<L, R> Iterator for Either<L, R>
-        where
-            L: Iterator,
-            R: Iterator<Item = L::Item>,
-        {
-            type Item = L::Item;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                match self {
-                    Either::Left(l) => l.next(),
-                    Either::Right(r) => r.next(),
-                }
-            }
-        }
-
-        match self {
-            Self::Unnamed(ty) => Either::Left(core::iter::once(ty).map(|ty| (None, ty))),
-            Self::Named(vec) => Either::Right(vec.iter().map(|(n, ty)| (Some(*n), ty))),
-        }
-    }
-}
-
 /// Represents a type of a function in a WebAssembly component.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ComponentFuncType<'a> {
+    /// Whether or not this is an async function.
+    pub async_: bool,
     /// The function parameters.
     pub params: Box<[(&'a str, ComponentValType)]>,
     /// The function result.
-    pub results: ComponentFuncResult<'a>,
+    pub result: Option<ComponentValType>,
+}
+
+pub(crate) fn read_resultlist(reader: &mut BinaryReader<'_>) -> Result<Option<ComponentValType>> {
+    match reader.read_u8()? {
+        0x00 => Ok(Some(reader.read()?)),
+        0x01 => match reader.read_u8()? {
+            0x00 => Ok(None),
+            x => return reader.invalid_leading_byte(x, "number of results"),
+        },
+        x => return reader.invalid_leading_byte(x, "component function results"),
+    }
 }
 
 /// Represents a case in a variant type.
@@ -486,6 +446,10 @@ pub enum ComponentDefinedType<'a> {
     Variant(Box<[VariantCase<'a>]>),
     /// The type is a list of the given value type.
     List(ComponentValType),
+    /// The type is a map of the given key and value types.
+    Map(ComponentValType, ComponentValType),
+    /// The type is a fixed size list of the given value type.
+    FixedSizeList(ComponentValType, u32),
     /// The type is a tuple of the given value types.
     Tuple(Box<[ComponentValType]>),
     /// The type is flags with the given names.
@@ -505,6 +469,10 @@ pub enum ComponentDefinedType<'a> {
     Own(u32),
     /// A borrowed handle to a resource.
     Borrow(u32),
+    /// A future type with the specified payload type.
+    Future(Option<ComponentValType>),
+    /// A stream type with the specified payload type.
+    Stream(Option<ComponentValType>),
 }
 
 impl<'a> ComponentDefinedType<'a> {
@@ -521,6 +489,7 @@ impl<'a> ComponentDefinedType<'a> {
                     .collect::<Result<_>>()?,
             ),
             0x70 => ComponentDefinedType::List(reader.read()?),
+            0x63 => ComponentDefinedType::Map(reader.read()?, reader.read()?),
             0x6f => ComponentDefinedType::Tuple(
                 reader
                     .read_iter(MAX_WASM_TUPLE_TYPES, "tuple types")?
@@ -544,6 +513,9 @@ impl<'a> ComponentDefinedType<'a> {
             },
             0x69 => ComponentDefinedType::Own(reader.read()?),
             0x68 => ComponentDefinedType::Borrow(reader.read()?),
+            0x67 => ComponentDefinedType::FixedSizeList(reader.read()?, reader.read_var_u32()?),
+            0x66 => ComponentDefinedType::Stream(reader.read()?),
+            0x65 => ComponentDefinedType::Future(reader.read()?),
             x => return reader.invalid_leading_byte(x, "component defined type"),
         })
     }

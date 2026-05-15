@@ -9,7 +9,6 @@
 #include "ClientSource.h"
 #include "ClientSourceOpChild.h"
 #include "mozilla/dom/ClientIPCTypes.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -73,7 +72,7 @@ void ClientSourceChild::MaybeStartTeardown() {
     return;
   }
   mTeardownStarted = true;
-  Unused << SendTeardown();
+  (void)SendTeardown();
 }
 
 }  // namespace mozilla::dom

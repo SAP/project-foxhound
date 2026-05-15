@@ -7,21 +7,21 @@
 #ifndef mozilla_dom_cache_CacheOpChild_h
 #define mozilla_dom_cache_CacheOpChild_h
 
+#include "mozilla/InitializedOnce.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/cache/ActorChild.h"
+#include "mozilla/dom/cache/BoundStorageKey.h"
 #include "mozilla/dom/cache/PCacheOpChild.h"
 #include "mozilla/dom/cache/TypeUtils.h"
-#include "mozilla/RefPtr.h"
 
 class nsIGlobalObject;
 
 namespace mozilla::dom {
-
 class Promise;
 
 namespace cache {
-
 class CacheOpChild final : public PCacheOpChild,
-                           public ActorChild,
+                           public CacheActorChild,
                            public TypeUtils {
   friend class CacheChild;
   friend class CacheStorageChild;
@@ -31,11 +31,28 @@ class CacheOpChild final : public PCacheOpChild,
   NS_INLINE_DECL_REFCOUNTING(CacheOpChild, override)
 
  private:
+  // CacheOpChild can be used by Cache, CacheStorage and BoundStorageKey APIs.
+  // It can handle two promise types; where Cache works with dom::Promise,
+  // BoundStorageKey APIs works with MozPromise (represented by
+  // CacheStoragePromise below)
+  using PromiseType =
+      Variant<RefPtr<mozilla::dom::Promise>, RefPtr<CacheStoragePromise>>;
+
+  template <typename T>
+  struct PromiseTrait;
+
   // This class must be constructed by CacheChild or CacheStorageChild using
   // their ExecuteOp() factory method.
   CacheOpChild(SafeRefPtr<CacheWorkerRef> aWorkerRef, nsIGlobalObject* aGlobal,
-               nsISupports* aParent, Promise* aPromise,
+               nsISupports* aParent, RefPtr<Promise>& aPromise,
                ActorChild* aParentActor);
+
+  // Below overload is used by BoundStorageKey APIs; passing in
+  // CacheStoragePromise
+  CacheOpChild(SafeRefPtr<CacheWorkerRef> aWorkerRef, nsIGlobalObject* aGlobal,
+               nsISupports* aParent, RefPtr<CacheStoragePromise>& aPromise,
+               ActorChild* aParentActor);
+
   ~CacheOpChild();
 
   // PCacheOpChild methods
@@ -54,20 +71,35 @@ class CacheOpChild final : public PCacheOpChild,
   virtual void AssertOwningThread() const override;
 #endif
 
-  virtual mozilla::ipc::PBackgroundChild* GetIPCManager() override;
-
   // Utility methods
-  void HandleResponse(const Maybe<CacheResponse>& aMaybeResponse);
 
-  void HandleResponseList(const nsTArray<CacheResponse>& aResponseList);
+  /* Generic method to handle all response types, formats responses before
+   * resolving for the underlying promises */
+  template <CacheOpResult::Type OP_TYPE, typename TResponse>
+  void HandleAndSettle(TResponse&& aRes);
 
-  void HandleRequestList(const nsTArray<CacheRequest>& aRequestList);
+  // generic settle overload which routes the control to one of two
+  // SettlePromise method overloads below depending if we are resolving for
+  // native JS promise vs MozPromise
+  template <CacheOpResult::Type OP_TYPE, typename ResultType>
+  void Settle(ResultType&& aRes, ErrorResult&& aRv = ErrorResult(NS_OK));
+
+  // settles promise for BoundStorageKeyCache; which is of type MozPromise
+  template <CacheOpResult::Type OP_TYPE, typename ResultType>
+  void SettlePromise(ResultType&& aRes, ErrorResult&& aRv,
+                     const RefPtr<CacheStoragePromise>& aThePromise);
+
+  // settles promise for cache, which is of type dom::Promise
+  template <typename CacheOpResult::Type OP_TYPE, typename ResultType>
+  void SettlePromise(ResultType&& aRes, ErrorResult&& aRv,
+                     const RefPtr<Promise>& aThePromise);
 
   nsCOMPtr<nsIGlobalObject> mGlobal;
+
   // Hold the parent Cache or CacheStorage object alive until this async
   // operation completes.
   nsCOMPtr<nsISupports> mParent;
-  RefPtr<Promise> mPromise;
+  LazyInitializedOnceEarlyDestructible<const PromiseType> mPromise;
   ActorChild* mParentActor;
 };
 

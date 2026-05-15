@@ -12,6 +12,8 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.LastMediaAccessState
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.browser.state.state.TabGroup
+import mozilla.components.browser.state.state.TabPartition
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.browser.state.state.recover.TabState
@@ -70,7 +72,6 @@ class BrowserStateReader {
     }
 }
 
-@Suppress("ComplexMethod")
 private fun JsonReader.browsingSession(
     engine: Engine,
     restoreSessionId: Boolean = true,
@@ -81,6 +82,7 @@ private fun JsonReader.browsingSession(
 
     var version = 1 // Initially we didn't save a version. If there's none then we assume it is version 1.
     var tabs: List<RecoverableTab>? = null
+    var tabPartitions: Map<String, TabPartition> = emptyMap()
     var selectedIndex: Int? = null
     var selectedTabId: String? = null
 
@@ -90,6 +92,7 @@ private fun JsonReader.browsingSession(
             Keys.SELECTED_SESSION_INDEX_KEY -> selectedIndex = nextInt()
             Keys.SELECTED_TAB_ID_KEY -> selectedTabId = nextStringOrNull()
             Keys.SESSION_STATE_TUPLES_KEY -> tabs = tabs(engine, restoreSessionId, restoreParentId, predicate)
+            Keys.TAB_PARTITIONS_KEY -> tabPartitions = tabPartitions()
         }
     }
 
@@ -102,14 +105,14 @@ private fun JsonReader.browsingSession(
         selectedTabId = tabs?.getOrNull(selectedIndex)?.state?.id
     }
 
-    return if (tabs != null && tabs.isNotEmpty()) {
+    return if (!tabs.isNullOrEmpty()) {
         // Check if selected tab still exists after restoring/filtering and
         // use most recently accessed tab otherwise.
         if (tabs.find { it.state.id == selectedTabId } == null) {
             selectedTabId = tabs.sortedByDescending { it.state.lastAccess }.first().state.id
         }
 
-        RecoverableBrowserState(tabs, selectedTabId)
+        RecoverableBrowserState(tabs, selectedTabId, tabPartitions)
     } else {
         null
     }
@@ -164,7 +167,7 @@ private fun JsonReader.tab(
     )
 }
 
-@Suppress("ComplexMethod", "LongMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 private fun JsonReader.tabSession(): RecoverableTab {
     var id: String? = null
     var parentId: String? = null
@@ -258,5 +261,80 @@ private fun JsonReader.tabSession(): RecoverableTab {
             source = SessionState.Source.restore(sourceId, externalSourcePackageId, externalSourceCategory),
             desktopMode = desktopMode ?: false,
         ),
+    )
+}
+
+private fun JsonReader.tabPartitions(): Map<String, TabPartition> {
+    beginArray()
+
+    val tabPartitions = mutableMapOf<String, TabPartition>()
+    while (peek() != JsonToken.END_ARRAY) {
+        val tabPartition = tabPartition()
+        tabPartitions[tabPartition.id] = tabPartition
+    }
+
+    endArray()
+
+    return tabPartitions
+}
+
+private fun JsonReader.tabPartition(): TabPartition {
+    beginObject()
+
+    var id: String? = null
+    var tabGroups: List<TabGroup> = emptyList()
+
+    while (hasNext()) {
+        when (nextName()) {
+            Keys.TAB_PARTITION_ID_KEY -> id = nextString()
+            Keys.TAB_PARTITION_GROUPS_KEY -> {
+                val groups = mutableListOf<TabGroup>()
+                beginArray()
+                while (peek() != JsonToken.END_ARRAY) {
+                    groups.add(group())
+                }
+                endArray()
+                tabGroups = groups
+            }
+        }
+    }
+
+    endObject()
+
+    return TabPartition(
+        id = requireNotNull(id),
+        tabGroups = tabGroups,
+    )
+}
+
+private fun JsonReader.group(): TabGroup {
+    beginObject()
+
+    var id: String? = null
+    var name: String? = null
+    val tabIds = mutableSetOf<String>()
+
+    while (hasNext()) {
+        when (nextName()) {
+            Keys.TAB_GROUP_ID_KEY -> id = nextString()
+            Keys.TAB_GROUP_NAME_KEY -> name = nextString()
+            Keys.TAB_GROUP_TAB_IDS_KEY -> {
+                beginArray()
+
+                while (peek() != JsonToken.END_ARRAY) {
+                    tabIds.add(nextString())
+                }
+
+                endArray()
+            }
+        }
+    }
+
+    endObject()
+
+    return TabGroup(
+        id = requireNotNull(id),
+        name = requireNotNull(name),
+        tabIds = tabIds,
     )
 }

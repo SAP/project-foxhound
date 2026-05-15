@@ -1,0 +1,36 @@
+<!doctype html>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1,interactive-widget=resizes-visual"
+/>
+<style>
+  body {
+    margin: 0px;
+  }
+  input {
+    width: 100%;
+    height: calc(100lvh - 100svh);
+    position: fixed;
+    bottom: 0px;
+    padding: 0px;
+    border: none;
+  }
+  .ruler {
+    width: 100vw;
+    height: 100px;
+    font-size: 70px;
+    box-sizing: border-box;
+    border: solid black 1px;
+    background-color: gray;
+  }
+</style>
+<input type="text" value="text" size="10" />
+<script>
+  for (let i = 0; i < 20; i++) {
+    const div = document.createElement("div");
+    div.classList.add("ruler");
+    div.innerText = `${i}`;
+    document.body.appendChild(div);
+  }
+</script>

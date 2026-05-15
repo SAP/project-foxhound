@@ -45,7 +45,7 @@ class SVGStopFrame : public nsIFrame {
                         const nsDisplayListSet& aLists) override {}
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {
@@ -73,7 +73,8 @@ void SVGStopFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 #endif /* DEBUG */
 
 nsresult SVGStopFrame::AttributeChanged(int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType) {
+                                        nsAtom* aAttribute,
+                                        AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::offset) {
     MOZ_ASSERT(
         static_cast<SVGGradientFrame*>(do_QueryFrame(GetParent())),

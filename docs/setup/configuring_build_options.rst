@@ -11,6 +11,8 @@ including options not usable from the command-line, may appear in
 "``confvars.sh``" files in the source tree.
 
 
+.. _setting_up_a_mozconfig:
+
 Using a ``mozconfig`` configuration file
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -428,4 +430,4 @@ will make all compilation units at or under those three paths have no
 optimization.
 
 Another useful thing to set per directory is ``FILES_PER_UNIFIED_FILE=1`` to
-disable :ref:`unified builds<unified_builds>`.
+disable :ref:`unified builds<unified-builds>`.

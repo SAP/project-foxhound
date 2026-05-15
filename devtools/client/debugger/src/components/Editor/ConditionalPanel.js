@@ -16,7 +16,6 @@ import { connect } from "devtools/client/shared/vendor/react-redux";
 import { toEditorLine } from "../../utils/editor/index";
 import { createEditor } from "../../utils/editor/create-editor";
 import actions from "../../actions/index";
-import { markerTypes } from "../../constants";
 
 import {
   getClosestBreakpoint,
@@ -102,9 +101,9 @@ export class ConditionalPanel extends PureComponent {
   /**
    * Set the breakpoint/logpoint if expression isn't empty, and close the panel.
    *
-   * @param {String} expression: The expression that will be used for setting the
+   * @param {string} expression: The expression that will be used for setting the
    *        conditional breakpoint/logpoint
-   * @param {Boolean} showStacktrace: Whether to show the stacktrace for the logpoint
+   * @param {boolean} showStacktrace: Whether to show the stacktrace for the logpoint
    */
   saveAndClose = (expression = null, showStacktrace = false) => {
     if (typeof expression === "string") {
@@ -207,18 +206,18 @@ export class ConditionalPanel extends PureComponent {
     }
     // When breakpoint is removed
     if (prevProps?.breakpoint && !breakpoint) {
-      editor.removeLineContentMarker(markerTypes.CONDITIONAL_BP_MARKER);
+      editor.removeLineContentMarker(editor.markerTypes.CONDITIONAL_BP_MARKER);
       this.removeBreakpointPanelEditor();
       return;
     }
     if (selectedSource.id !== location.source.id) {
-      editor.removeLineContentMarker(markerTypes.CONDITIONAL_BP_MARKER);
+      editor.removeLineContentMarker(editor.markerTypes.CONDITIONAL_BP_MARKER);
       this.removeBreakpointPanelEditor();
       return;
     }
     const line = toEditorLine(location.source, location.line || 0);
     editor.setLineContentMarker({
-      id: markerTypes.CONDITIONAL_BP_MARKER,
+      id: editor.markerTypes.CONDITIONAL_BP_MARKER,
       lines: [{ line }],
       renderAsBlock: true,
       createLineElementNode: () => {
@@ -279,7 +278,7 @@ export class ConditionalPanel extends PureComponent {
     // user closes the conditional panel. Clear the widget, and re-render it
     // as soon as this component gets remounted
     const { editor } = this.props;
-    editor.removeLineContentMarker(markerTypes.CONDITIONAL_BP_MARKER);
+    editor.removeLineContentMarker(editor.markerTypes.CONDITIONAL_BP_MARKER);
     this.removeBreakpointPanelEditor();
   }
 

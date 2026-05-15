@@ -10,9 +10,10 @@
 #include <cmath>
 #include <limits>
 #include <type_traits>
+
+#include "MediaSegment.h"
 #include "fdlibm.h"
 #include "mozilla/Logging.h"
-#include "MediaSegment.h"
 
 // Forward declaration
 typedef struct SpeexResamplerState_ SpeexResamplerState;
@@ -21,7 +22,7 @@ namespace mozilla {
 
 extern LazyLogModule gWebAudioAPILog;
 #define WEB_AUDIO_API_LOG(...) \
-  MOZ_LOG(gWebAudioAPILog, LogLevel::Debug, (__VA_ARGS__))
+  MOZ_LOG_FMT(gWebAudioAPILog, LogLevel::Debug, __VA_ARGS__)
 #define WEB_AUDIO_API_LOG_TEST(...) \
   MOZ_LOG_TEST(gWebAudioAPILog, LogLevel::Debug)
 
@@ -56,9 +57,9 @@ inline float ConvertDecibelsToLinear(float aDecibels) {
   return fdlibm_powf(10.0f, 0.05f * aDecibels);
 }
 
-inline void FixNaN(double& aDouble) {
-  if (std::isnan(aDouble) || std::isinf(aDouble)) {
-    aDouble = 0.0;
+inline void FixNaN(float& aFloat) {
+  if (std::isnan(aFloat) || std::isinf(aFloat)) {
+    aFloat = 0.0f;
   }
 }
 

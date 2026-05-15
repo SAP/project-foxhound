@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VRDisplayEvent.h"
+
 #include "js/RootingAPI.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrimitiveConversions.h"

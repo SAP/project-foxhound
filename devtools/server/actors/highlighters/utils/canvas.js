@@ -51,13 +51,13 @@ const DEFAULT_COLOR = "#9400FF";
  *
  * @param  {CanvasRenderingContext2D} ctx
  *         The 2D canvas context.
- * @param  {Number} x1
+ * @param  {number} x1
  *         The x-axis coordinate of the rectangle's diagonal start point.
- * @param  {Number} y1
+ * @param  {number} y1
  *         The y-axis coordinate of the rectangle's diagonal start point.
- * @param  {Number} x2
+ * @param  {number} x2
  *         The x-axis coordinate of the rectangle's diagonal end point.
- * @param  {Number} y2
+ * @param  {number} y2
  *         The y-axis coordinate of the rectangle's diagonal end point.
  * @param  {Array} [matrix=identity()]
  *         The transformation matrix to apply.
@@ -97,21 +97,21 @@ function clearRect(ctx, x1, y1, x2, y2, matrix = identity()) {
  *
  * @param  {CanvasRenderingContext2D} ctx
  *         The 2D canvas context.
- * @param  {Number} x
+ * @param  {number} x
  *         The x-axis origin of the rectangle.
- * @param  {Number} y
+ * @param  {number} y
  *         The y-axis origin of the rectangle.
- * @param  {Number} width
+ * @param  {number} width
  *         The width of the rectangle.
- * @param  {Number} height
+ * @param  {number} height
  *         The height of the rectangle.
- * @param  {Number} radius
+ * @param  {number} radius
  *         The radius of the rounding.
- * @param  {Number} margin
+ * @param  {number} margin
  *         The distance of the origin point from the pointer.
- * @param  {Number} arrowSize
+ * @param  {number} arrowSize
  *         The size of the arrow.
- * @param  {String} alignment
+ * @param  {string} alignment
  *         The alignment of the rectangle in relation to its position to the grid.
  */
 function drawBubbleRect(
@@ -178,15 +178,15 @@ function drawBubbleRect(
  *
  * @param  {CanvasRenderingContext2D} ctx
  *         The 2D canvas context.
- * @param  {Number} x1
+ * @param  {number} x1
  *         The x-axis of the coordinate for the begin of the line.
- * @param  {Number} y1
+ * @param  {number} y1
  *         The y-axis of the coordinate for the begin of the line.
- * @param  {Number} x2
+ * @param  {number} x2
  *         The x-axis of the coordinate for the end of the line.
- * @param  {Number} y2
+ * @param  {number} y2
  *         The y-axis of the coordinate for the end of the line.
- * @param  {Object} [options]
+ * @param  {object} [options]
  *         The options object.
  * @param  {Array} [options.matrix=identity()]
  *         The transformation matrix to apply.
@@ -227,13 +227,13 @@ function drawLine(ctx, x1, y1, x2, y2, options) {
  *
  * @param  {CanvasRenderingContext2D} ctx
  *         The 2D canvas context.
- * @param  {Number} x1
+ * @param  {number} x1
  *         The x-axis coordinate of the rectangle's diagonal start point.
- * @param  {Number} y1
+ * @param  {number} y1
  *         The y-axis coordinate of the rectangle's diagonal start point.
- * @param  {Number} x2
+ * @param  {number} x2
  *         The x-axis coordinate of the rectangle's diagonal end point.
- * @param  {Number} y2
+ * @param  {number} y2
  *         The y-axis coordinate of the rectangle's diagonal end point.
  * @param  {Array} [matrix=identity()]
  *         The transformation matrix to apply.
@@ -254,15 +254,15 @@ function drawRect(ctx, x1, y1, x2, y2, matrix = identity()) {
  *
  * @param  {CanvasRenderingContext2D} ctx
  *         The 2D canvas context.
- * @param  {Number} x
+ * @param  {number} x
  *         The x-axis origin of the rectangle.
- * @param  {Number} y
+ * @param  {number} y
  *         The y-axis origin of the rectangle.
- * @param  {Number} width
+ * @param  {number} width
  *         The width of the rectangle.
- * @param  {Number} height
+ * @param  {number} height
  *         The height of the rectangle.
- * @param  {Number} radius
+ * @param  {number} radius
  *         The radius of the rounding.
  */
 function drawRoundedRect(ctx, x, y, width, height, radius) {
@@ -286,7 +286,7 @@ function drawRoundedRect(ctx, x, y, width, height, radius) {
  *
  * @param  {Array} points
  *         An array with 4 pointer objects {x, y} representing the box quads.
- * @return {Object} DOMRect-like object of the 4 points.
+ * @return {object} DOMRect-like object of the 4 points.
  */
 function getBoundsFromPoints(points) {
   const bounds = {};
@@ -324,10 +324,10 @@ function getBoundsFromPoints(points) {
  *         The current element.
  * @param  {Window} window
  *         The window object.
- * @param  {Object} [options.ignoreWritingModeAndTextDirection=false]
+ * @param  {object} [options.ignoreWritingModeAndTextDirection=false]
  *                  Avoid transforming the current matrix to match the text direction
  *                  and writing mode.
- * @return {Object} An object with the following properties:
+ * @return {object} An object with the following properties:
  *         - {Array} currentMatrix
  *           The current matrix.
  *         - {Boolean} hasNodeTransformations
@@ -406,7 +406,7 @@ function getCurrentMatrix(
  *
  * @param  {Array} points
  *         An array with 4 pointer objects {x, y} representing the box quads.
- * @return {String} a Path Description that can be used in svg's <path> element.
+ * @return {string} a Path Description that can be used in svg's <path> element.
  */
 function getPathDescriptionFromPoints(points) {
   return (
@@ -437,13 +437,13 @@ function getPathDescriptionFromPoints(points) {
  * the four coordinates of a rectangle. If a matrix is provided, applies the matrix
  * function to each of the coordinates' value.
  *
- * @param  {Number} x1
+ * @param  {number} x1
  *         The x-axis coordinate of the rectangle's diagonal start point.
- * @param  {Number} y1
+ * @param  {number} y1
  *         The y-axis coordinate of the rectangle's diagonal start point.
- * @param  {Number} x2
+ * @param  {number} x2
  *         The x-axis coordinate of the rectangle's diagonal end point.
- * @param  {Number} y2
+ * @param  {number} y2
  *         The y-axis coordinate of the rectangle's diagonal end point.
  * @param  {Array} [matrix=identity()]
  *         A transformation matrix to apply.
@@ -471,10 +471,10 @@ function getPointsFromDiagonal(x1, y1, x2, y2, matrix = identity()) {
  *
  * @param  {Canvas} canvas
  *         The <canvas> element.
- * @param  {Object} canvasPosition
+ * @param  {object} canvasPosition
  *         A pointer object {x, y} representing the <canvas> position to the top left
  *         corner of the page.
- * @param  {Number} devicePixelRatio
+ * @param  {number} devicePixelRatio
  *         The device pixel ratio.
  * @param  {Window} [options.zoomWindow]
  *         Optional window object used to calculate zoom (default = undefined).
@@ -508,17 +508,17 @@ function updateCanvasElement(
  * document's size, canvas size, and viewport's size. This is called when a page's scroll
  * is detected.
  *
- * @param  {Object} canvasPosition
+ * @param  {object} canvasPosition
  *         A pointer object {x, y} representing the <canvas> position to the top left
  *         corner of the page.
- * @param  {Object} scrollPosition
+ * @param  {object} scrollPosition
  *         A pointer object {x, y} representing the window's pageXOffset and pageYOffset.
  * @param  {Window} window
  *         The window object.
- * @param  {Object} windowDimensions
+ * @param  {object} windowDimensions
  *         An object {width, height} representing the window's dimensions for the
  *         `window` given.
- * @return {Boolean} true if the <canvas> position was updated and false otherwise.
+ * @return {boolean} true if the <canvas> position was updated and false otherwise.
  */
 function updateCanvasPosition(
   canvasPosition,

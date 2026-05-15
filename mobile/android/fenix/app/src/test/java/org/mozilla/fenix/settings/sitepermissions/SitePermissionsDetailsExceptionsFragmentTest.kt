@@ -5,6 +5,7 @@
 package org.mozilla.fenix.settings.sitepermissions
 
 import android.content.Context
+import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.Preference
 import io.mockk.MockKAnnotations
 import io.mockk.every
@@ -12,13 +13,17 @@ import io.mockk.impl.annotations.MockK
 import io.mockk.spyk
 import io.mockk.verify
 import mozilla.components.concept.engine.permission.SitePermissions
+import mozilla.components.support.test.robolectric.createAddedTestFragmentWithActivity
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.settings.PhoneFeature
+import org.mozilla.fenix.settings.requirePreference
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
 
@@ -37,11 +42,22 @@ class SitePermissionsDetailsExceptionsFragmentTest {
     fun setup() {
         MockKAnnotations.init(this)
         context = spyk(testContext)
-        fragment = spyk(SitePermissionsDetailsExceptionsFragment())
+        val realFragment =
+            createAddedTestFragmentWithActivity<SitePermissionsDetailsExceptionsFragment, AppCompatActivity>(
+                fragmentFactory = {
+                    SitePermissionsDetailsExceptionsFragment().apply {
+                        arguments = SitePermissionsDetailsExceptionsFragmentArgs(
+                            sitePermissions = permissions,
+                        ).toBundle()
+                    }
+                },
+            )
+        fragment = spyk(realFragment)
 
         fragment.sitePermissions = permissions
 
         every { permissions.origin } returns "mozilla.org"
+        every { settings.isLnaFeatureEnabled } returns false
         every { fragment.provideContext() } returns context
         every { fragment.provideSettings() } returns settings
     }
@@ -49,6 +65,7 @@ class SitePermissionsDetailsExceptionsFragmentTest {
     @Test
     fun `WHEN bindCategoryPhoneFeatures is called THEN all categories must be initialized`() {
         every { fragment.initPhoneFeature(any()) } returns Unit
+        every { fragment.initPhoneFeature(any(), any()) } returns Unit
         every { fragment.initAutoplayFeature() } returns Unit
         every { fragment.bindClearPermissionsButton() } returns Unit
 
@@ -64,6 +81,46 @@ class SitePermissionsDetailsExceptionsFragmentTest {
             fragment.initAutoplayFeature()
             fragment.bindClearPermissionsButton()
         }
+    }
+
+    @Test
+    fun `WHEN bindCategoryPhoneFeatures is called AND LNA is not enabled THEN LNA preference is hidden`() {
+        every { settings.isLnaFeatureEnabled } returns false
+
+        fragment.bindCategoryPhoneFeatures()
+
+        assertFalse(
+            "Expected Local Network Access preference to be invisible",
+            fragment.requirePreference<Preference>(
+                PhoneFeature.LOCAL_NETWORK_ACCESS.getPreferenceId(),
+            ).isVisible,
+        )
+        assertFalse(
+            "Expected Local Device Access preference to be invisible",
+            fragment.requirePreference<Preference>(
+                PhoneFeature.LOCAL_DEVICE_ACCESS.getPreferenceId(),
+            ).isVisible,
+        )
+    }
+
+    @Test
+    fun `WHEN bindCategoryPhoneFeatures is called AND LNA is enabled THEN LNA preference is shown`() {
+        every { settings.isLnaFeatureEnabled } returns true
+
+        fragment.bindCategoryPhoneFeatures()
+
+        assertTrue(
+            "Expected Local Network Access preference to be visible",
+            fragment.requirePreference<Preference>(
+                PhoneFeature.LOCAL_NETWORK_ACCESS.getPreferenceId(),
+            ).isVisible,
+        )
+        assertTrue(
+            "Expected Local Device Access preference to be visible",
+            fragment.requirePreference<Preference>(
+                PhoneFeature.LOCAL_DEVICE_ACCESS.getPreferenceId(),
+            ).isVisible,
+        )
     }
 
     @Test

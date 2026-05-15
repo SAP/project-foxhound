@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_StorageActivityService_h
 #define mozilla_dom_StorageActivityService_h
 
-#include "nsTHashMap.h"
 #include "nsIObserver.h"
 #include "nsIStorageActivityService.h"
+#include "nsTHashMap.h"
 #include "nsWeakReference.h"
 
 namespace mozilla {

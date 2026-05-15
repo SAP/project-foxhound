@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>PreferencesBindings Setting Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script
+      type="application/javascript"
+      src="chrome://global/content/preferencesBindings.js"
+    ></script>
+    <script>
+      /* import-globals-from /toolkit/content/preferencesBindings.js */
+      function waitForSettingChange(setting) {
+        return new Promise(resolve => {
+          setting.on("change", function handler() {
+            setting.off("change", handler);
+            resolve();
+          });
+        });
+      }
+
+      add_task(async function testSettingSetupAndDestroy() {
+        const PREF_ID = "test.setting.lifecycle";
+        const SETTING_ID = "testSettingLifecycle";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF_ID, false]],
+        });
+
+        Preferences.add({
+          id: PREF_ID,
+          type: "bool",
+        });
+
+        let setupCalled = false;
+        let destroyCalled = false;
+
+        function mockTeardown() {
+          destroyCalled = true;
+        }
+
+        Preferences.addSetting({
+          id: SETTING_ID,
+          pref: PREF_ID,
+          setup(onChange) {
+            setupCalled = true;
+            setTimeout(onChange, 0);
+
+            return () => {
+              mockTeardown();
+            };
+          },
+        });
+
+        let setting = Preferences.getSetting(SETTING_ID);
+        ok(setting, "Got setting instance");
+        ok(setupCalled, "setup() was called");
+
+        let settingChanged = waitForSettingChange(setting);
+        await settingChanged;
+        ok(true, "Setting emitted change from setup");
+
+        Preferences.onUnload();
+        ok(destroyCalled, "destroy() method was called");
+      });
+
+      // NOTE: Preferences have been unloaded, tests added here will likely fail
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

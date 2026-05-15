@@ -204,7 +204,9 @@ include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
 
-if CONFIG["MOZ_SANDBOX"] and (CONFIG["OS_TARGET"] in ["Darwin", "Linux"]):
+if CONFIG["MOZ_SANDBOX"] and (
+    CONFIG["OS_ARCH"] == "Linux" or CONFIG["TARGET_OS"] == "OSX"
+):
     USE_LIBS += [
         "mozsandbox",
     ]

@@ -7801,7 +7801,7 @@ For the sample commands found below, note that the capitalization used is import
       * Slowdown in rasterization of content
       * Slowdown in composite times
    * gecko_profile_interval: 2
-   * preferences: {'layout.frame_rate': 0, 'docshell.event_starvation_delay_hint': 1, 'dom.send_after_paint_to_content': True, 'apz.paint_skipping.enabled': False, 'layout.css.scroll-behavior.spring-constant': "'10'", 'toolkit.framesRecording.bufferSize': 10000}
+   * preferences: {'layout.frame_rate': 0, 'docshell.event_starvation_delay_hint': 1, 'dom.send_after_paint_to_content': True, 'apz.paint_skipping.enabled': False, 'layout.css.scroll-snap.spring-constant': "'10'", 'layout.css.scroll-behavior.same-physics-as-user-input': False, 'toolkit.framesRecording.bufferSize': 10000}
    * tpcycles: 1
    * tpmanifest: ${talos}/tests/tp5n/tp5o.manifest
    * tpmozafterpaint: False
@@ -8591,7 +8591,7 @@ For the sample commands found below, note that the capitalization used is import
 
    * gecko_profile_interval: 1
    * pine: False
-   * preferences: {'layout.frame_rate': 0, 'docshell.event_starvation_delay_hint': 1, 'dom.send_after_paint_to_content': True, 'apz.paint_skipping.enabled': False, 'layout.css.scroll-behavior.spring-constant': "'10'", 'toolkit.framesRecording.bufferSize': 10000}
+   * preferences: {'layout.frame_rate': 0, 'docshell.event_starvation_delay_hint': 1, 'dom.send_after_paint_to_content': True, 'apz.paint_skipping.enabled': False, 'layout.css.scroll-snap.spring-constant': "'10'", 'layout.css.scroll-behavior.same-physics-as-user-input': False, 'toolkit.framesRecording.bufferSize': 10000}
    * timeout: 600
    * tpchrome: False
    * tpcycles: 1

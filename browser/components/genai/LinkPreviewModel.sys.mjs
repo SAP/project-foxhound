@@ -26,9 +26,12 @@ const BOS_TOKEN = 1;
 // Token id for end of sequence
 const EOS_TOKEN = 2;
 
+const FEATURE_ID = "link-preview";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   createEngine: "chrome://global/content/ml/EngineProcess.sys.mjs",
+  FEATURES: "chrome://global/content/ml/EngineProcess.sys.mjs",
   Progress: "chrome://global/content/ml/Utils.sys.mjs",
   BlockListManager: "chrome://global/content/ml/Utils.sys.mjs",
   RemoteSettingsManager: "chrome://global/content/ml/Utils.sys.mjs",
@@ -131,6 +134,14 @@ export const LinkPreviewModel = {
    * @type {BlockListManager}
    */
   blockListManager: null,
+
+  get id() {
+    return FEATURE_ID;
+  },
+
+  get engineId() {
+    return lazy.FEATURES[this.id].engineId;
+  },
 
   /**
    * Blocked token list
@@ -297,8 +308,11 @@ export const LinkPreviewModel = {
     text,
     maxNumSentences = lazy.inputSentences ?? DEFAULT_INPUT_SENTENCES
   ) {
+    // Filter out emoji characters. The `u` flag is for unicode and `g` for global.
+    // Use `Emoji_Presentation` to avoid removing numbers and other symbols.
+    const textWithoutEmoji = text.replace(/\p{Emoji_Presentation}/gu, "");
     return (
-      this.getSentences(text)
+      this.getSentences(textWithoutEmoji)
         .map(s =>
           // trim and replace consecutive blank by a single one.
           s.trim().replace(
@@ -332,10 +346,11 @@ export const LinkPreviewModel = {
    *
    * @param {object} options - Configuration options for the ML engine.
    * @param {?function(ProgressAndStatusCallbackParams):void} notificationsCallback A function to call to indicate notifications.
+   * @param {AbortSignal} abortSignal - The signal to abort the download.
    * @returns {Promise<MLEngine>} - A promise that resolves to the ML engine instance.
    */
-  async createEngine(options, notificationsCallback = null) {
-    return lazy.createEngine(options, notificationsCallback);
+  async createEngine(options, notificationsCallback = null, abortSignal) {
+    return lazy.createEngine(options, notificationsCallback, abortSignal);
   },
 
   /**
@@ -343,11 +358,15 @@ export const LinkPreviewModel = {
    *
    * @param {string} inputText
    * @param {object} callbacks for progress and error
+   * @param {AbortSignal} callbacks.abortSignal - The signal to abort the download.
    * @param {Function} callbacks.onDownload optional for download active
    * @param {Function} callbacks.onText optional for text chunks
    * @param {Function} callbacks.onError optional for error
    */
-  async generateTextAI(inputText, { onDownload, onText, onError } = {}) {
+  async generateTextAI(
+    inputText,
+    { onDownload, onText, onError, abortSignal } = {}
+  ) {
     // Get updated options from remote settings. No failure if no record exists
     const remoteRequestRecord = await lazy.RemoteSettingsManager.getRemoteData({
       collectionName: "ml-inference-request-options",
@@ -397,8 +416,9 @@ export const LinkPreviewModel = {
     try {
       engine = await this.createEngine(
         {
-          backend: "wllama",
-          engineId: "wllamapreview",
+          backend: "best-llama",
+          engineId: this.engineId,
+          featureId: this.id,
           kvCacheDtype: "q8_0",
           modelFile: "smollm2-360m-instruct-q8_0.gguf",
           modelHubRootUrl: "https://model-hub.mozilla.org",
@@ -420,7 +440,8 @@ export const LinkPreviewModel = {
               Math.round((100 * data.totalLoaded) / data.total)
             );
           }
-        }
+        },
+        abortSignal
       );
 
       const postProcessor = await SentencePostProcessor.initialize();

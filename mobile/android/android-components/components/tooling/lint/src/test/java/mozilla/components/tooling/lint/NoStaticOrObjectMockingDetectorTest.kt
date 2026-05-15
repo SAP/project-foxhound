@@ -315,24 +315,7 @@ class NoStaticOrObjectMockingDetectorTest : LintDetectorTest() {
     fun `Mockito mockConstruction usage reports NoStaticMocking`() {
         lint()
             .allowMissingSdk()
-            .files(
-                mockitoStubs,
-                TestFiles.kotlin(
-                    """
-                    package com.example.test
-                    import org.mockito.Mockito
-
-                    class SomeDependency { // Define SomeDependency here for self-containment
-                        fun getValue() = "real"
-                    }
-                    class MyMockitoConstructorTest {
-                        fun setup() {
-                            Mockito.mockConstruction(SomeDependency::class.java) // VIOLATION
-                        }
-                    }
-                """,
-                ).indented(),
-            )
+            .files(mockitoStubs, mockitoMockConstructionUsage)
             .run()
             .expectErrorCount(1)
             .expectContains("Usage of Mockito's 'mockConstruction' for static/constructor mocking is discouraged.")

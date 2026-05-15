@@ -66,16 +66,19 @@ class TestClickScrolling(MarionetteTestCase):
         for s in ["top", "right", "bottom", "left"]:
             for p in ["50", "30"]:
                 self.marionette.navigate(test_html)
-                scroll = self.marionette.execute_script(
+                [scroll_x, scroll_y] = self.marionette.execute_script(
                     "return [window.scrollX, window.scrollY];"
                 )
                 self.marionette.find_element(By.ID, "{0}-{1}".format(s, p)).click()
-                self.assertEqual(
-                    scroll,
-                    self.marionette.execute_script(
-                        "return [window.scrollX, window.scrollY];"
-                    ),
+                [new_scroll_x, new_scroll_y] = self.marionette.execute_script(
+                    "return [window.scrollX, window.scrollY];"
                 )
+
+                # Account for potential rounding errors.
+                # TODO It may be possible to remove the fuzzy check once
+                # bug 1852884 and bug 1774315 are fixed.
+                assert (scroll_x - 1) <= new_scroll_x <= (scroll_x + 1)
+                assert (scroll_y - 1) <= new_scroll_y <= (scroll_y + 1)
 
     def test_do_not_scroll_again_if_element_is_already_in_view(self):
         self.marionette.navigate(
@@ -95,10 +98,13 @@ class TestClickScrolling(MarionetteTestCase):
         scroll_top = self.marionette.execute_script("return document.body.scrollTop;")
         button1.click()
 
-        self.assertEqual(
-            scroll_top,
-            self.marionette.execute_script("return document.body.scrollTop;"),
+        new_scroll_top = self.marionette.execute_script(
+            "return document.body.scrollTop;"
         )
+        # Account for potential rounding errors.
+        # TODO It may be possible to remove the fuzzy check once
+        # bug 1852884 and bug 1774315 are fixed.
+        assert (scroll_top - 1) <= new_scroll_top <= (scroll_top + 1)
 
     def test_scroll_radio_button_into_view(self):
         self.marionette.navigate(
@@ -135,7 +141,10 @@ class TestClickScrolling(MarionetteTestCase):
         y_offset = self.marionette.execute_script(
             "return arguments[0].scrollTop;", script_args=(list_el,)
         )
-        self.assertEqual(expected_y_offset, y_offset)
+        # Account for potential rounding errors.
+        # TODO It may be possible to remove the fuzzy check once
+        # bug 1852884 and bug 1774315 are fixed.
+        assert (expected_y_offset - 1) <= y_offset <= (expected_y_offset + 1)
 
     def test_overflow_scroll_click_on_hidden_element(self):
         self.marionette.navigate(

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsContainerFrameInlines_h___
-#define nsContainerFrameInlines_h___
+#ifndef nsContainerFrameInlines_h_
+#define nsContainerFrameInlines_h_
 
 #include "nsContainerFrame.h"
 
@@ -104,4 +104,4 @@ void nsContainerFrame::DoInlineIntrinsicISize(ISizeData* aData,
   }
 }
 
-#endif  // nsContainerFrameInlines_h___
+#endif  // nsContainerFrameInlines_h_

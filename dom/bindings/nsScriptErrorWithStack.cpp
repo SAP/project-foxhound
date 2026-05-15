@@ -10,15 +10,15 @@
  * that can store a SavedFrame stack trace object.
  */
 
-#include "nsScriptError.h"
 #include "MainThreadUtils.h"
+#include "js/Wrapper.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "js/Wrapper.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsGlobalWindowInner.h"
 #include "nsJSUtils.h"
+#include "nsScriptError.h"
 
 using namespace mozilla::dom;
 

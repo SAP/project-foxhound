@@ -9,7 +9,6 @@
 #include "DecoderFactory.h"
 #include "IDecodingTask.h"
 #include "mozilla/AppShutdown.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Logging.h"
 #include "nsNetUtil.h"
@@ -292,6 +291,8 @@ class AnonymousDecoderImpl final : public AnonymousDecoder {
       DestroyLocked(NS_ERROR_FAILURE);
       return;
     }
+
+    mMetadataResult.mNativeSizes = aMetadata->GetNativeSizes().Clone();
 
     const auto size = aMetadata->GetSize();
     mMetadataResult.mWidth = size.width;

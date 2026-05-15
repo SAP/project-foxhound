@@ -14,7 +14,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/webdriver-bidi/modules/root/network.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
-  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   UserContextManager:
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
 });
@@ -629,7 +628,7 @@ class StorageModule extends RootBiDiModule {
 
     if (partitionSpec.type === PartitionType.Context) {
       const { context: contextId } = partitionSpec;
-      const browsingContext = this.#getBrowsingContext(contextId);
+      const browsingContext = this._getNavigable(contextId);
       const principal = Services.scriptSecurityManager.createContentPrincipal(
         browsingContext.currentURI,
         {}
@@ -694,27 +693,6 @@ class StorageModule extends RootBiDiModule {
     delete partitionKey.isThirdPartyURI;
 
     return partitionKey;
-  }
-
-  /**
-   * Retrieves a browsing context based on its id.
-   *
-   * @param {number} contextId
-   *     Id of the browsing context.
-   * @returns {BrowsingContext}
-   *     The browsing context.
-   * @throws {NoSuchFrameError}
-   *     If the browsing context cannot be found.
-   */
-  #getBrowsingContext(contextId) {
-    const context = lazy.TabManager.getBrowsingContextById(contextId);
-    if (context === null) {
-      throw new lazy.error.NoSuchFrameError(
-        `Browsing Context with id ${contextId} not found`
-      );
-    }
-
-    return context;
   }
 
   /**
@@ -900,7 +878,7 @@ class StorageModule extends RootBiDiModule {
 
       let storedCookieValue = storedCookie[fieldName];
 
-      // The platform represantation of cookie doesn't contain a size field,
+      // The platform representation of cookie doesn't contain a size field,
       // so we have to calculate it to match.
       if (fieldName === "size") {
         storedCookieValue = this.#getCookieSize(storedCookie);

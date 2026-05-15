@@ -8,13 +8,14 @@
  */
 
 #include "txXMLUtils.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsGkAtoms.h"
-#include "txStringUtils.h"
-#include "txNamespaceMap.h"
-#include "txXPathTreeWalker.h"
+
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "txNamespaceMap.h"
+#include "txStringUtils.h"
+#include "txXPathTreeWalker.h"
 
 //------------------------------/
 //- Implementation of XMLUtils -/

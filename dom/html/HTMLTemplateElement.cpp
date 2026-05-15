@@ -5,15 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLTemplateElement.h"
-#include "mozilla/dom/HTMLTemplateElementBinding.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLTemplateElementBinding.h"
 #include "mozilla/dom/NameSpaceConstants.h"
 #include "mozilla/dom/ShadowRootBinding.h"
+#include "nsAtom.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
-#include "nsAtom.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Template)
 

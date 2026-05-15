@@ -32,9 +32,12 @@ add_setup(async function () {
     gBrowser,
     url: "about:logins",
   });
-  registerCleanupFunction(() => {
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
+  registerCleanupFunction(async () => {
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   });
 });
 

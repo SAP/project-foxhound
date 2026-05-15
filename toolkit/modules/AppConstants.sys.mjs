@@ -31,6 +31,13 @@ export var AppConstants = Object.freeze({
 
   MOZ_OFFICIAL_BRANDING: @MOZ_OFFICIAL_BRANDING_BOOL@,
 
+  BUILT_BY_MOZILLA:
+#ifdef BUILT_BY_MOZILLA
+  true,
+#else
+  false,
+#endif
+
   MOZ_DEV_EDITION: @MOZ_DEV_EDITION_BOOL@,
 
   MOZ_SERVICES_SYNC: @MOZ_SERVICES_SYNC_BOOL@,
@@ -152,8 +159,6 @@ export var AppConstants = Object.freeze({
 
   MOZ_GECKO_PROFILER: @MOZ_GECKO_PROFILER_BOOL@,
 
-  BROWSER_NEWTAB_AS_ADDON: @BROWSER_NEWTAB_AS_ADDON_BOOL@,
-
   DLL_PREFIX: "@DLL_PREFIX@",
   DLL_SUFFIX: "@DLL_SUFFIX@",
 
@@ -176,7 +181,9 @@ export var AppConstants = Object.freeze({
 
   MOZ_BING_API_CLIENTID: "@MOZ_BING_API_CLIENTID@",
   MOZ_BING_API_KEY: "@MOZ_BING_API_KEY@",
+#ifndef MOZ_WIDGET_ANDROID
   MOZ_GOOGLE_LOCATION_SERVICE_API_KEY: "@MOZ_GOOGLE_LOCATION_SERVICE_API_KEY@",
+#endif
   MOZ_GOOGLE_SAFEBROWSING_API_KEY: "@MOZ_GOOGLE_SAFEBROWSING_API_KEY@",
   MOZ_MOZILLA_API_KEY: "@MOZ_MOZILLA_API_KEY@",
 
@@ -207,11 +214,11 @@ export var AppConstants = Object.freeze({
 
   ENABLE_WEBDRIVER: @ENABLE_WEBDRIVER_BOOL@,
 
-  REMOTE_SETTINGS_SERVER_URL:
+  REMOTE_SETTINGS_SERVER_URLS:
 #ifdef MOZ_THUNDERBIRD
-    "https://thunderbird-settings.thunderbird.net/v1",
+    [ "https://thunderbird-settings.thunderbird.net/v1" ],
 #else
-    "https://firefox.settings.services.mozilla.com/v1",
+    [ "https://firefox.settings.services.mozilla.com/v1", "https://firefox.settings.services.mozilla.com/v2" ],
 #endif
 
   REMOTE_SETTINGS_VERIFY_SIGNATURE:

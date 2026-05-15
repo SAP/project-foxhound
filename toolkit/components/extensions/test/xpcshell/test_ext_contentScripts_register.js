@@ -533,6 +533,7 @@ add_task(async function test_contentscripts_register_all_options() {
       matchAboutBlank: true,
       runAt: "document_start",
       world: "MAIN",
+      cssOrigin: "USER",
     });
 
     browser.test.sendMessage("background-ready", window.location.origin);
@@ -574,6 +575,7 @@ add_task(async function test_contentscripts_register_all_options() {
     matchOriginAsFallback,
     runAt,
     world,
+    cssOrigin,
     originAttributesPatterns,
   } = script;
 
@@ -586,6 +588,7 @@ add_task(async function test_contentscripts_register_all_options() {
       matchOriginAsFallback,
       runAt,
       world,
+      cssOrigin,
       originAttributesPatterns,
     },
     {
@@ -596,6 +599,7 @@ add_task(async function test_contentscripts_register_all_options() {
       matchOriginAsFallback: false, // Default value when not specified.
       runAt: "document_start",
       world: "MAIN",
+      cssOrigin: "user", // preprocess should set cssOrigin to lower case.
       originAttributesPatterns: null,
     },
     "Got the expected content script properties"

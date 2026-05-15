@@ -15,7 +15,6 @@ MOZ_SRC_FILES += [
 
 BROWSER_CHROME_MANIFESTS += [
     "test/browser/browser.toml",
-    "test/browser/google_codes/browser.toml",
     "test/browser/telemetry/browser.toml",
 ]
 

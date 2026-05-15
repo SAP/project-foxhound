@@ -61,7 +61,7 @@
     function onLoad() {
       document.getElementById("input").focus();
       var deleteDisabled = document.getElementById("cmd_delete")
-                                   .getAttribute("disabled") == "true";
+                                   .hasAttribute("disabled");
       ok(deleteDisabled,
          "cmd_delete should be disabled when the empty input is focused");
       finish();

@@ -136,6 +136,8 @@ parent:
   // https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/ipc.html
   async FOGData(ByteBuf buf);
 
+  async GeckoTraceExport(ByteBuf aBuf);
+
 #if defined(XP_WIN)
   async GetModulesTrust(ModulePaths aModPaths, bool aRunAtNormalPriority)
       returns (ModulesMapResult? modMapResult);

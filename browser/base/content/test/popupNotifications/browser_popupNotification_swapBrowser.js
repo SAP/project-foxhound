@@ -88,7 +88,7 @@ add_task(async function transferPopupNotificationToNewWindowAndResolve() {
   });
   await waitForWindowReadyForPopupNotifications(newWindow);
   await popupShownPromise;
-  let timeNow = Cu.now();
+  let timeNow = ChromeUtils.now();
 
   // Ensure security delay is completed
   await ensureSecurityDelayReady(timeNow);

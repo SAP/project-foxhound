@@ -25,6 +25,7 @@ describe("ASRouterTriggerListeners", () => {
     "cookieBannerHandled"
   );
   const hosts = ["www.mozilla.com", "www.mozilla.org"];
+  const regexPatterns = ["mozilla"];
 
   const regionFake = {
     _home: "cn",
@@ -44,7 +45,7 @@ describe("ASRouterTriggerListeners", () => {
       gBrowser: {
         addTabsProgressListener: sandbox.stub(),
         removeTabsProgressListener: sandbox.stub(),
-        currentURI: { host: "" },
+        currentURI: { host: "", regexPattern: "" },
       },
       addEventListener: sinon.stub(),
       removeEventListener: sinon.stub(),
@@ -210,6 +211,24 @@ describe("ASRouterTriggerListeners", () => {
           param: { host: null, url: hosts[1] },
         });
       });
+      it("should match URL using regexPatterns", () => {
+        const stub = sandbox.stub();
+
+        const target = { currentURI: { host: null, spec: hosts[1] } };
+
+        // match exactly the string "mozilla"
+        openArticleURLListener.init(stub, [], [], ["mozilla"]);
+
+        const [, { receiveMessage }] =
+          global.AboutReaderParent.addMessageListener.firstCall.args;
+        receiveMessage({ data: { isArticle: true }, target });
+
+        assert.calledOnce(stub);
+        assert.calledWithExactly(stub, target, {
+          id: openArticleURLListener.id,
+          param: { host: null, url: hosts[1] },
+        });
+      });
       it("should remove the message listener", () => {
         openArticleURLListener.init(sandbox.stub(), hosts, hosts);
         openArticleURLListener.uninit();
@@ -222,9 +241,17 @@ describe("ASRouterTriggerListeners", () => {
   describe("frequentVisits", () => {
     let _triggerHandler;
     beforeEach(() => {
+      globals.set(
+        "MatchPatternSet",
+        sandbox.stub().callsFake(patterns => ({
+          patterns,
+          matches: url => patterns.has(url),
+        }))
+      );
+
       _triggerHandler = sandbox.stub();
       sandbox.useFakeTimers();
-      frequentVisitsListener.init(_triggerHandler, hosts);
+      frequentVisitsListener.init(_triggerHandler, hosts, [], regexPatterns);
     });
     afterEach(() => {
       sandbox.clock.restore();
@@ -279,6 +306,21 @@ describe("ASRouterTriggerListeners", () => {
 
       assert.notCalled(stub);
     });
+    it("should call triggerHandler when regexPatterns match", () => {
+      const stub = sandbox.stub(frequentVisitsListener, "triggerHandler");
+
+      existingWindow.gBrowser.currentURI = {
+        host: "www.example.com",
+        spec: "https://www.mozilla.org",
+      };
+
+      frequentVisitsListener.onTabSwitch({
+        target: { ownerGlobal: existingWindow },
+      });
+
+      assert.calledOnce(stub);
+    });
+
     describe("MatchPattern", () => {
       beforeEach(() => {
         globals.set(
@@ -502,6 +544,16 @@ describe("ASRouterTriggerListeners", () => {
 
     describe("#init", () => {
       beforeEach(() => {
+        globals.set(
+          "MatchPatternSet",
+          sandbox.stub().callsFake(patterns => ({
+            patterns,
+            matches: url => patterns.has(url),
+          }))
+        );
+        sandbox.stub(global.AboutReaderParent, "addMessageListener");
+        sandbox.stub(global.AboutReaderParent, "removeMessageListener");
+
         openURLListener.init(triggerHandler, hosts);
       });
       afterEach(() => {
@@ -568,6 +620,15 @@ describe("ASRouterTriggerListeners", () => {
     });
 
     describe("#onLocationChange", () => {
+      beforeEach(() => {
+        globals.set(
+          "MatchPatternSet",
+          sandbox.stub().callsFake(patterns => ({
+            patterns,
+            matches: url => patterns.has(url),
+          }))
+        );
+      });
       afterEach(() => {
         openURLListener.uninit();
         frequentVisitsListener.uninit();
@@ -723,6 +784,38 @@ describe("ASRouterTriggerListeners", () => {
         );
         assert.calledOnce(aRequest.QueryInterface);
         assert.notCalled(newTriggerHandler);
+      });
+      it("should call triggerHandler when regexPatterns match the URL", () => {
+        const newTriggerHandler = sinon.stub();
+        openURLListener.init(newTriggerHandler, [], [], ["mozilla"]);
+
+        const browser = {};
+        const webProgress = { isTopLevel: true };
+        const aLocationURI = {
+          host: "www.mozilla.org",
+          spec: "www.mozilla.org",
+        };
+        const aRequest = {
+          QueryInterface: sandbox.stub().returns({
+            originalURI: { spec: "www.mozilla.org", host: "www.mozilla.org" },
+          }),
+        };
+        openURLListener.onLocationChange(
+          browser,
+          webProgress,
+          aRequest,
+          aLocationURI
+        );
+
+        assert.calledOnce(newTriggerHandler);
+        assert.calledWithExactly(newTriggerHandler, browser, {
+          id: "openURL",
+          param: {
+            host: "www.mozilla.org",
+            url: "www.mozilla.org",
+          },
+          context: { visitsCount: 1 },
+        });
       });
     });
   });

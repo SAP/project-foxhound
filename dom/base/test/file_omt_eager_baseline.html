@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <script type="application/javascript">
+    // Forward all relevant events to parent
+    function forwardEventToParent(event) {
+      if (parent && parent !== window) {
+        parent.postMessage({type: event.type, received: true}, "*");
+      }
+    }
+
+    const eventTypes = [
+      "omt_eager_baseline_function: fun1",
+      "omt_eager_baseline_function: fun2", 
+      "omt_eager_baseline_function: fun3",
+      "omt_eager_baseline_dispatch"
+    ];
+
+    eventTypes.forEach(function(eventType) {
+      document.addEventListener(eventType, forwardEventToParent);
+    });
+  </script>
+  <script type="application/javascript" src="file_omt_eager_baseline.js">
+  </script>
+</body>
+</html>

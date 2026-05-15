@@ -7,8 +7,8 @@
 #ifndef mozilla_ipc_URIUtils_h
 #define mozilla_ipc_URIUtils_h
 
+#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/ipc/URIParams.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
 
@@ -23,27 +23,29 @@ already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams);
 
 already_AddRefed<nsIURI> DeserializeURI(const Maybe<URIParams>& aParams);
 
+}  // namespace ipc
+}  // namespace mozilla
+
+namespace IPC {
+
 template <>
-struct IPDLParamTraits<nsIURI*> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    nsIURI* aParam) {
-    Maybe<URIParams> params;
-    SerializeURI(aParam, params);
-    WriteIPDLParam(aWriter, aActor, params);
+struct ParamTraits<nsIURI*> {
+  static void Write(IPC::MessageWriter* aWriter, nsIURI* aParam) {
+    mozilla::Maybe<mozilla::ipc::URIParams> params;
+    mozilla::ipc::SerializeURI(aParam, params);
+    WriteParam(aWriter, params);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   RefPtr<nsIURI>* aResult) {
-    Maybe<URIParams> params;
-    if (!ReadIPDLParam(aReader, aActor, &params)) {
+  static bool Read(IPC::MessageReader* aReader, RefPtr<nsIURI>* aResult) {
+    mozilla::Maybe<mozilla::ipc::URIParams> params;
+    if (!ReadParam(aReader, &params)) {
       return false;
     }
-    *aResult = DeserializeURI(params);
+    *aResult = mozilla::ipc::DeserializeURI(params);
     return true;
   }
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
 #endif  // mozilla_ipc_URIUtils_h

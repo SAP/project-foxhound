@@ -1,0 +1,133 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tests for the principal of initial about:blank documents</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<p id="display"></p>
+<div id="content"></div>
+<pre id="test"></pre>
+</body>
+
+<script>
+  function waitForEvent(name, target, checkFn = null) {
+    return new Promise(resolve => {
+      function listener(event) {
+        if (!checkFn || checkFn(event)) {
+          resolve(event);
+          if (checkFn) {
+            target.removeEventListener(name, listener);
+          }
+        }
+      }
+      target.addEventListener(name, listener, { once: !checkFn });
+    });
+  }
+
+  const testContent = document.getElementById("content");
+
+  async function createSandboxedIframe(options = {}) {
+    const { srcdoc = "", waitLoad = true, extraSandbox = "" } = options;
+
+    const ifr = document.createElement("iframe");
+    ifr.sandbox = `allow-scripts ${extraSandbox}`;
+    if (srcdoc) {
+      ifr.srcdoc = srcdoc;
+    }
+
+    const loaded = waitLoad ? waitForEvent("load", ifr) : null;
+    testContent.appendChild(ifr);
+    if (waitLoad) {
+      await loaded;
+    }
+
+    return { ifr, doc: SpecialPowers.wrap(ifr).contentDocument };
+  }
+
+  // Tests
+
+  // We want to check that
+  // - initial about:blank documents load synchronously
+  // - without failing assertions in nsDocShell::IsAboutBlankLoadOntoInitialAboutBlank
+  // - while ending up with the right principal
+
+  async function test_sandboxed_iframe() {
+    // basic case: <iframe sandbox>
+    const { ifr, doc } = await createSandboxedIframe({ waitLoad: false });
+    is(doc.readyState, "complete", "Sandboxed iframe loaded initial document synchronously");
+    ok(doc.nodePrincipal.isNullPrincipal, "Sandboxed ifame has null principal");
+    ifr.remove();
+  }
+
+  async function test_nested_iframes() {
+    // Iframes nested in an isolated iframe
+    const { ifr } = await createSandboxedIframe({
+      srcdoc: "<iframe id=first></iframe><iframe id=second sandbox>"
+    });
+
+    await SpecialPowers.spawn(ifr, [], () => {
+      const origin = content.document.nodePrincipal.siteOrigin;
+      const first = content.document.getElementById("first");
+      const second = content.document.getElementById("second");
+      const firstPrincipal = SpecialPowers.wrap(first).contentDocument.nodePrincipal;
+      const secondPrincipal = SpecialPowers.wrap(second).contentDocument.nodePrincipal;
+      ok(secondPrincipal.siteOrigin != origin, "<iframe> is implicitly isolated");
+      ok(secondPrincipal.siteOrigin != origin, "<iframe sandbox> is explicitly isolated");
+      ok(firstPrincipal.siteOrigin != secondPrincipal.siteOrigin, 'nested iframes are isolated from each other');
+    });
+
+    ifr.remove();
+  }
+
+  async function test_nested_iframes_crash() {
+    // This caused an assertion failure during development
+    // due to nsFrameLoader::Show being called for the nested frames before ReallyStartLoading
+    // and so they end up with the wrong principal on the initial document.
+    const { ifr } = await createSandboxedIframe({
+      srcdoc: "<iframe id=first></iframe><iframe id=second sandbox>",
+      extraSandbox: "allow-same-origin"
+    });
+    ok(true, "did not crash");
+    ifr.remove();
+  }
+
+  async function test_sandboxed_iframe_opens_window() {
+    // <iframe sandboxed> does window.open() which inherits the same principal
+    const { ifr } = await createSandboxedIframe({ extraSandbox: "allow-popups" });
+
+    await SpecialPowers.spawn(ifr, [], () => {
+      const origin = content.document.nodePrincipal.siteOrigin;
+
+      const popup = content.open();
+      is(popup.document.readyState, "complete", "Popup from sandbox loaded synchronously");
+      const popupOrigin = SpecialPowers.wrap(popup.document).nodePrincipal.siteOrigin;
+      ok(popupOrigin != origin, "Popup from sandboxed iframe is isolated from it.");
+
+      popup.close();
+    });
+
+    ifr.remove();
+  }
+
+  // Running
+
+  async function tests() {
+    SimpleTest.waitForExplicitFinish();
+
+
+    await Promise.all([
+      test_sandboxed_iframe(),
+      test_nested_iframes(),
+      test_nested_iframes_crash(),
+      test_sandboxed_iframe_opens_window(),
+    ]);
+
+    SimpleTest.finish();
+  }
+
+  tests();
+</script>
+</html>

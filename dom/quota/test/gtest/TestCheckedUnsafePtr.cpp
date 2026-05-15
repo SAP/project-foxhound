@@ -2,24 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/quota/CheckedUnsafePtr.h"
+#include <type_traits>
 
 #include "gtest/gtest.h"
-
-#include <memory>
-#include <type_traits>
-#include <utility>
-#include "mozilla/fallible.h"
+#include "mozilla/dom/quota/CheckedUnsafePtr.h"
 
 using namespace mozilla;
 
 class NoCheckTestType
     : public SupportsCheckedUnsafePtr<DoNotCheckCheckedUnsafePtrs> {};
 
-#if __cplusplus < 202002L
-static_assert(std::is_literal_type_v<CheckedUnsafePtr<NoCheckTestType>>);
-#endif
-
+static_assert(__is_literal_type(CheckedUnsafePtr<NoCheckTestType>));
 static_assert(
     std::is_trivially_copy_constructible_v<CheckedUnsafePtr<NoCheckTestType>>);
 static_assert(

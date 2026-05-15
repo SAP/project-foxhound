@@ -65,7 +65,7 @@ function convertTextPropsToString(textProps) {
 
 async function getKeyframeRules(selector, inspector, view) {
   await selectNode(selector, inspector);
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
 
   const rules = {
     elementRules: elementStyle.rules.filter(rule => !rule.keyframes),

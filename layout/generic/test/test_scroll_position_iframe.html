@@ -12,26 +12,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1305579
 </head>
 <body>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1305579">Mozilla Bug 1305579</a>
-<p id="display"></p>
-<style>
-.off {
-  display:none;
-}
-</style>
 <script>
 SimpleTest.waitForExplicitFinish();
 
-function runtest() {
-  var iframe = document.getElementById("iframe");
-  iframe.contentDocument.scrollingElement.scrollTop = 50;
-  iframe.classList.toggle("off");
-  waitForAllPaintsFlushed(function() {
-    iframe.classList.toggle("off");
-    is(iframe.contentDocument.scrollingElement.scrollTop, 50, "scroll position restored");
-    SimpleTest.finish();
-  });
-}
+window.open("file_scroll_position_iframe.html", "_blank");
 </script>
-<iframe onload="runtest()" id="iframe" class="" srcdoc="<p>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br>bla<br></p>"></iframe><br>
 </body>
 </html>

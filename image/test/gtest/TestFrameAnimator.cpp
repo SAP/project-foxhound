@@ -75,8 +75,7 @@ static void WithFrameAnimatorDecode(const ImageTestCase& aTestCase,
   // Create a metadata decoder first, because otherwise RasterImage will get
   // unhappy about finding out the image is animated during a full decode.
   DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
-  DecoderFlags decoderFlags =
-      DecoderFactory::GetDefaultDecoderFlagsForType(decoderType);
+  DecoderFlags decoderFlags = DefaultDecoderFlags();
   RefPtr<IDecodingTask> task = DecoderFactory::CreateMetadataDecoder(
       decoderType, rasterImage, decoderFlags, sourceBuffer);
   ASSERT_TRUE(task != nullptr);

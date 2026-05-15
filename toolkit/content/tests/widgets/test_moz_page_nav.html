@@ -445,6 +445,51 @@
           "The search input is in the subheading slot."
         );
       });
+
+      /**
+       * Tests that the right button is selected when the children change
+       */
+      add_task(async function test_children_change() {
+        const container = document.createElement("div");
+        container.classList.add("container");
+        document.body.append(container);
+
+        const mozPageNav = document.createElement("moz-page-nav");
+        container.append(mozPageNav);
+        await mozPageNav.updateComplete;
+
+        // Now add children to moz-page-nav
+        const firstPageNavButton = document.createElement(
+          "moz-page-nav-button"
+        );
+        firstPageNavButton.setAttribute("view", "view-one");
+        firstPageNavButton.setAttribute(
+          "iconSrc",
+          "chrome://mozapps/skin/extensions/category-extensions.svg"
+        );
+        firstPageNavButton.innerHTML = `<span class="view-name">View 1</span>`;
+
+        const secondPageNavButton = document.createElement(
+          "moz-page-nav-button"
+        );
+        secondPageNavButton.setAttribute("view", "view-two");
+        secondPageNavButton.setAttribute(
+          "iconSrc",
+          "chrome://mozapps/skin/extensions/category-extensions.svg"
+        );
+        secondPageNavButton.innerHTML = `<span class="view-name">View 2</span>`;
+
+        mozPageNav.append(firstPageNavButton, secondPageNavButton);
+        await mozPageNav.updateComplete;
+
+        is(
+          mozPageNav.currentView,
+          firstPageNavButton.view,
+          "The first page nav button is selected"
+        );
+
+        container.remove();
+      });
     </script>
   </body>
 </html>

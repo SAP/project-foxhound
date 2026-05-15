@@ -227,7 +227,7 @@ public final class EventDispatcher extends JNIObject {
     }
   }
 
-  public class QueryException extends Exception {
+  public static class QueryException extends Exception {
     public final Object data;
 
     public QueryException(final Object data) {

@@ -99,6 +99,16 @@ smollm2-360-instruct-gguf:
         path-prefix: "onnx-models/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/main/"
         artifact-name: smollm2-360-instruct-gguf.tar.zst
 
+Qwen3-0.6B-GGUF:
+    description: Qwen3-0.6B summarization model GGUF
+    fetch:
+        type: git
+        repo: https://huggingface.co/unsloth/Qwen3-0.6B-GGUF
+        revision: 233b3855f89029f46416b3e8fe5970c79b2ad25d
+        path-prefix: "onnx-models/unsloth/Qwen3-0.6B-GGUF/main/"
+        artifact-name: Qwen3-0.6B-GGUF.tar.zst
+
+
 speecht5-tts:
     description: microsoft/speecht5_tts with ONNX weights to be compatible with Transformers.js
     fetch:

@@ -72,7 +72,7 @@ export default class MozBoxButton extends MozBoxBase {
         <img
           class="icon nav-icon"
           src="chrome://global/skin/icons/arrow-right.svg"
-          role="presentation"
+          alt=""
         />
       </button>
     `;

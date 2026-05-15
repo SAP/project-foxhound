@@ -7,12 +7,13 @@
 #ifndef PortalLocationProvider_h
 #define PortalLocationProvider_h
 
-#include "nsCOMPtr.h"
+#include <gio/gio.h>
+
+#include "Geolocation.h"
 #include "mozilla/GRefPtr.h"
 #include "mozilla/GUniquePtr.h"
-#include "Geolocation.h"
+#include "nsCOMPtr.h"
 #include "nsIGeolocationProvider.h"
-#include <gio/gio.h>
 
 class MLSFallback;
 

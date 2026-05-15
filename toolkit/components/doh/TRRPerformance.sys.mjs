@@ -23,14 +23,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
-  "nsINetworkLinkService"
+  Ci.nsINetworkLinkService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gCaptivePortalService",
   "@mozilla.org/network/captive-portal-service;1",
-  "nsICaptivePortalService"
+  Ci.nsICaptivePortalService
 );
 
 // The canonical domain whose subdomains we will be resolving.
@@ -280,14 +280,17 @@ export class TRRRacer {
     );
   }
 
-  /*
+  /**
    * Given an array of { trr, time }, returns the trr with smallest mean time.
    * Separate from _getFastestTRR for easy unit-testing.
    *
-   * @returns The TRR with the fastest average time.
-   *          If returnRandomDefault is false-y, returns undefined if no valid
-   *          times were present in the results. Otherwise, returns one of the
-   *          present TRRs at random.
+   * @param {{trr: string[], time: number}[]} results
+   * @param {boolean} returnRandomDefault
+   * @returns {string}
+   *   The TRR with the fastest average time.
+   *   If returnRandomDefault is false-y, returns undefined if no valid
+   *   times were present in the results. Otherwise, returns one of the
+   *   present TRRs at random.
    */
   _getFastestTRRFromResults(results, returnRandomDefault = false) {
     // First, organize the results into a map of TRR -> array of times

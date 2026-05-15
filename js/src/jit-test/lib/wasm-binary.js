@@ -566,29 +566,57 @@ function bodySection(bodies) {
     return { name: codeId, body };
 }
 
-function importSection(imports) {
+/**
+ * Encode an import section:
+ * https://webassembly.github.io/spec/core/binary/modules.html#binary-importsec
+ *
+ *     importSection([
+ *         // Normal encoding
+ *         { module: "a", item: "b", type: externtype({ funcTypeIndex: 123 }) },
+ *
+ *         // Compact encoding 1
+ *         { module: "a", items: [
+ *             { item: "c", type: externtype({ globalType: globalType({ valType: I32Code, mut: true }) }) },
+ *             { item: "d", type: externtype({ memType: limits({ min: 0 }) }) },
+ *         ]},
+ *
+ *         // Compact encoding 2
+ *         {
+ *             module: "a",
+ *             type: externtype({ globalType: globalType({ valType: [RefCode, ExternRefCode] }) }),
+ *             items: ["e", "f", "g"],
+ *         },
+ *     ]);
+ */
+function importSection(importGroups) {
     var body = [];
-    body.push(...varU32(imports.length));
-    for (let imp of imports) {
-        body.push(...string(imp.module));
-        body.push(...string(imp.item));
-        if (imp.hasOwnProperty("funcTypeIndex")) {
-            body.push(ExternFuncCode);
-            body.push(...varU32(imp.funcTypeIndex));
-        } else if (imp.hasOwnProperty("tableType")) {
-            body.push(ExternTableCode);
-            body.push(...imp.tableType);
-        } else if (imp.hasOwnProperty("memType")) {
-            body.push(ExternMemCode);
-            body.push(...imp.memType);
-        } else if (imp.hasOwnProperty("globalType")) {
-            body.push(ExternGlobalCode);
-            body.push(...imp.globalType);
-        } else if (imp.hasOwnProperty("tagType")) {
-            body.push(ExternTagCode);
-            body.push(...imp.tagType);
+    body.push(...varU32(importGroups.length));
+    for (let group of importGroups) {
+        body.push(...string(group.module));
+        if (group.items) {
+            if (group.type) {
+                // Compact encoding (one module/type, many item names)
+                body.push(...string(""));
+                body.push(0x7E);
+                body.push(...group.type);
+                body.push(...varU32(group.numItems ?? group.items.length));
+                for (const item of group.items) {
+                    body.push(...string(item));
+                }
+            } else {
+                // Compact encoding (one module, many name/type pairs)
+                body.push(...string(""));
+                body.push(0x7F);
+                body.push(...varU32(group.numItems ?? group.items.length));
+                for (const item of group.items) {
+                    body.push(...string(item.item));
+                    body.push(...item.type);
+                }
+            }
         } else {
-            throw new Error(`unknown import type for "${imp.module}" "${imp.name}"`);
+            // Single-item encoding
+            body.push(...string(group.item));
+            body.push(...group.type);
         }
     }
     return { name: importId, body };
@@ -753,57 +781,118 @@ function globalSection(globalArray) {
     return { name: globalId, body };
 }
 
-function elemSection(elemArrays) {
+/**
+ * Encode a global type:
+ *
+ *     globalType({ valType: I32Code, mut: true });
+ *     globalType({ valType: FuncRefCode, mut: false });
+ *     globalType({ valType: [RefCode, FuncRefCode], mut: false });
+ *     globalType({ valType: [RefCode, ...varS32(123)], mut: true });
+ */
+function globalType(global) {
     var body = [];
-    body.push(...varU32(elemArrays.length));
-    for (let array of elemArrays) {
-        body.push(...varU32(0)); // table index
-        body.push(...varU32(I32ConstCode));
-        body.push(...varS32(array.offset));
-        body.push(...varU32(EndCode));
-        body.push(...varU32(array.elems.length));
-        for (let elem of array.elems)
-            body.push(...varU32(elem));
-    }
-    return { name: elemId, body };
+    body.push(...(Array.isArray(global.valType) ? global.valType : varU32(global.valType)));
+    body.push(global.mut ? 0x01 : 0x00);
+    return body;
 }
 
-const ActiveFuncIdxTable0 = 0;
-const PassiveFuncIdx = 1;
-const ActiveFuncIdx = 2;
-const DeclaredFuncIdx = 3;
-const ActiveElemExprTable0 = 4;
-const PassiveElemExpr = 5;
-const ActiveElemExpr = 6;
-const DeclaredElemExpr = 7;
+/**
+ * Encode an externtype:
+ * https://webassembly.github.io/spec/core/binary/types.html#external-types
+ *
+ *     externtype({ funcTypeIndex: 1 });
+ *     externtype({ tableType: tableType(FuncRefCode, limits({ min: 0 })) });
+ *     externtype({ memType: limits({ min: 0 }) });
+ *     externtype({ globalType: globalType({ valType: I32Code, mut: true }) });
+ */
+function externtype(t) {
+    if (t.hasOwnProperty("funcTypeIndex")) {
+        return [ExternFuncCode, ...varU32(t.funcTypeIndex)];
+    } else if (t.hasOwnProperty("tableType")) {
+        return [ExternTableCode, ...t.tableType];
+    } else if (t.hasOwnProperty("memType")) {
+        return [ExternMemCode, ...t.memType];
+    } else if (t.hasOwnProperty("globalType")) {
+        return [ExternGlobalCode, ...t.globalType];
+    } else if (t.hasOwnProperty("tagType")) {
+        return [ExternTagCode, ...t.tagType];
+    } else {
+        throw new Error("unknown externtype");
+    }
+}
 
-function generalElemSection(elemObjs) {
-    let body = [];
-    body.push(...varU32(elemObjs.length));
-    for (let elemObj of elemObjs) {
-        body.push(elemObj.flag);
-        if ((elemObj.flag & 3) == 2)
-            body.push(...varU32(elemObj.table));
-        // TODO: This is not very flexible
-        if ((elemObj.flag & 1) == 0) {
+/**
+ * Encode an element section:
+ * https://webassembly.github.io/spec/core/binary/modules.html#element-section
+ *
+ * This is complicated because the encoding is
+ * complicated: active/passive/declarative, explicit table index or no, indices
+ * vs. expressions.
+ *
+ * The eight variants defined by the spec can be expressed like so:
+ *
+ *     elemSection([{ mode: "active", offset: 0, indices: [1, 2, 3] }]);
+ *     elemSection([{ mode: "passive", indices: [1, 2, 3] }]);
+ *     elemSection([{ mode: "active", table: 1, offset: 0, indices: [1, 2, 3] }]);
+ *     elemSection([{ mode: "declarative", indices: [1, 2, 3] }]);
+ *     elemSection([{ mode: "active", offset: 0, exprs: [[RefFuncCode, ...varU32(123), EndCode]] }]);
+ *     elemSection([{ mode: "passive", elemType: [FuncRefCode], exprs: [[RefFuncCode, ...varU32(123), EndCode]] }]);
+ *     elemSection([{ mode: "active", table: 1, offset: 0, exprs: [[RefFuncCode, ...varU32(123), EndCode]] }]);
+ *     elemSection([{ mode: "declarative", elemType: [FuncRefCode], exprs: [[RefFuncCode, ...varU32(123), EndCode]] }]);
+ */
+function elemSection(elemSegments) {
+    const body = [];
+    body.push(...varU32(elemSegments.length));
+    for (const segment of elemSegments) {
+        if (!["active", "passive", "declarative"].includes(segment.mode)) {
+            throw new Error(`segment mode must be "active", "passive", or "declarative", but got ${segment.mode}`);
+        }
+        if (!segment.indices && !segment.exprs) {
+            throw new Error("segment must have either .indices or .exprs");
+        }
+        if (segment.mode === "active" && segment.offset === undefined) {
+            throw new Error("active element segment must have .offset");
+        }
+        if (segment.mode !== "active" && segment.exprs && segment.elemType === undefined) {
+            throw new Error("non-active element segment with expression encoding must have .elemType");
+        }
+
+        const b0 = segment.mode === "active" ? 0 : 1;
+        const b1 = (
+            segment.mode === "active"
+            ? (segment.table === undefined ? 0 : 1)
+            : (segment.mode === "passive" ? 0 : 1)
+        );
+        const b2 = segment.exprs === undefined ? 0 : 1;
+        const flag = (b0 << 0) | (b1 << 1) | (b2 << 2);
+
+        body.push(flag);
+        if (segment.table !== undefined) {
+            body.push(...varU32(segment.table));
+        }
+        if (segment.mode === "active") {
             body.push(...varU32(I32ConstCode));
-            body.push(...varS32(elemObj.offset));
+            body.push(...varS32(segment.offset));
             body.push(...varU32(EndCode));
         }
-        if (elemObj.flag & 4) {
-            if (elemObj.flag & 3)
-                body.push(elemObj.typeCode & 255);
-            // Each element is an array of bytes
-            body.push(...varU32(elemObj.elems.length));
-            for (let elemBytes of elemObj.elems)
-                body.push(...elemBytes);
+        if (segment.exprs === undefined) {
+            // Function index encoding
+            if (segment.mode !== "active" || segment.table !== undefined) {
+                body.push(0x00); // elemkind
+            }
+            body.push(...varU32(segment.indices.length));
+            for (const idx of segment.indices) {
+                body.push(...varU32(idx));
+            }
         } else {
-            if (elemObj.flag & 3)
-                body.push(elemObj.externKind & 255);
-            // Each element is a putative function index
-            body.push(...varU32(elemObj.elems.length));
-            for (let elem of elemObj.elems)
-                body.push(...varU32(elem));
+            // Elem expression encoding
+            if (segment.mode !== "active") {
+                body.push(...segment.elemType);
+            }
+            body.push(...varU32(segment.exprs.length));
+            for (const elemExpr of segment.exprs) {
+                body.push(...elemExpr);
+            }
         }
     }
     return { name: elemId, body };

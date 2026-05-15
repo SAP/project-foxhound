@@ -7,9 +7,9 @@ add_task(clear_state);
 
 add_task(async function test_entries_are_stored_by_source() {
   const history = new SyncHistory();
-  await history.store("42", "success", { pi: "3.14" });
+  await history.store(42, "success", { pi: "3.14" });
   // Check that history is isolated by source.
-  await new SyncHistory("main/cfr").store("88", "error");
+  await new SyncHistory("main/cfr").store(88, "error");
 
   const l = await history.list();
 
@@ -29,15 +29,15 @@ add_task(
     const history = new SyncHistory("settings-sync", { size: 3 });
     const anotherHistory = await new SyncHistory("main/cfr");
 
-    await history.store("42", "success");
-    await history.store("41", "sync_error");
-    await history.store("43", "up_to_date");
+    await history.store(42, "success");
+    await history.store(41, "sync_error");
+    await history.store(43, "up_to_date");
 
     let l = await history.list();
     Assert.equal(l.length, 3);
 
-    await history.store("44", "success");
-    await anotherHistory.store("44", "success");
+    await history.store(44, "success");
+    await anotherHistory.store(44, "success");
 
     l = await history.list();
     Assert.equal(l.length, 3);
@@ -51,9 +51,9 @@ add_task(clear_state);
 
 add_task(async function test_entries_are_sorted_by_timestamp_desc() {
   const history = new SyncHistory("settings-sync");
-  await history.store("42", "success");
-  await history.store("41", "sync_error");
-  await history.store("44", "up_to_date");
+  await history.store(42, "success");
+  await history.store(41, "sync_error");
+  await history.store(44, "up_to_date");
 
   const l = await history.list();
 

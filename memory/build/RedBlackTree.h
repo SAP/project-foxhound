@@ -98,8 +98,11 @@ class RedBlackTreeNode {
   }
 
   NodeColor Color() {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wuninitialized"
     return static_cast<NodeColor>(reinterpret_cast<uintptr_t>(mRightAndColor) &
                                   1);
+#pragma GCC diagnostic pop
   }
 
   bool IsBlack() { return Color() == NodeColor::Black; }
@@ -116,7 +119,7 @@ class RedBlackTreeNode {
 template <typename T, typename Trait>
 class RedBlackTree {
  public:
-  void Init() { mRoot = nullptr; }
+  constexpr RedBlackTree() : mRoot(nullptr) {}
 
   T* First(T* aStart = nullptr) { return First(TreeNode(aStart)).Get(); }
 
@@ -672,6 +675,10 @@ class RedBlackTree {
  public:
   class Iterator {
     TreeNode mPath[3 * ((sizeof(void*) << 3) - (LOG2(sizeof(void*)) + 1))];
+
+    // Depth always points to the next empty place in mPath.  Therefore
+    // mDepth == 0 means there are no items in mPath,
+    // mDepth != 0 means that mPath[mDepth-1] is safe to dereference.
     unsigned mDepth;
 
    public:
@@ -707,10 +714,7 @@ class RedBlackTree {
       }
     };
 
-    Item<Iterator> begin() {
-      return Item<Iterator>(this,
-                            mDepth > 0 ? mPath[mDepth - 1].Get() : nullptr);
-    }
+    Item<Iterator> begin() { return Item<Iterator>(this, Current()); }
 
     Item<Iterator> end() { return Item<Iterator>(this, nullptr); }
 
@@ -731,8 +735,12 @@ class RedBlackTree {
           }
         }
       }
-      return mDepth > 0 ? mPath[mDepth - 1].Get() : nullptr;
+      return Current();
     }
+
+    T* Current() { return mDepth > 0 ? mPath[mDepth - 1].Get() : nullptr; }
+
+    bool NotDone() { return !!mDepth; }
   };
 
   Iterator iter() { return Iterator(this); }

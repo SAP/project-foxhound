@@ -67,9 +67,9 @@ add_task(async function () {
         ok(false, "Unknown message");
       });
 
-      document.body.appendChild(ifr);
       ifr.src =
         "https://tracking.example.org/browser/toolkit/components/antitracking/test/browser/3rdParty.html";
+      document.body.appendChild(ifr);
     });
   }
 
@@ -110,8 +110,8 @@ add_task(async function () {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
     }
   );

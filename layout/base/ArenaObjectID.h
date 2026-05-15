@@ -15,7 +15,7 @@ namespace mozilla {
 
 enum ArenaObjectID {
 #define PRES_ARENA_OBJECT(name_) eArenaObjectID_##name_,
-#include "nsPresArenaObjectList.h"
+#include "nsPresArenaObjectList.inc"
 #undef PRES_ARENA_OBJECT
   eArenaObjectID_COUNT
 };

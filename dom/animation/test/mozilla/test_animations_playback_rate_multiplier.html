@@ -1,0 +1,57 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for animationsPlayBackRateMultiplier</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<style>
+#target {
+  width: 100px;
+  height: 100px;
+}
+</style>
+<body>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<pre id="test"></pre>
+<div id="target"></div>
+<script>
+add_setup(async () => {
+  await SpecialPowers.spawnChrome([], () => {
+    browsingContext.top.animationsPlayBackRateMultiplier = 0;
+  });
+
+  // Need to reset the multiplier to 1.0 since the top browsing context might
+  // be persist.
+  SimpleTest.registerCleanupFunction(async () => {
+    await SpecialPowers.spawnChrome([], () => {
+      browsingContext.top.animationsPlayBackRateMultiplier = 1.0;
+    });
+  });
+});
+
+add_task(async () => {
+  const multiplier =
+    SpecialPowers.wrap(window).browsingContext.animationsPlayBackRateMultiplier;
+  is(multiplier, 0, "The animation playback multiplier should be now zero");
+
+  const anim = target.animate(
+    { marginLeft: [ "0px", "100px" ] },
+    { fill: "forwards", duration: 10 }
+  );
+  is(anim.playbackRate, 1.0,
+     "The animation playback rate should not be affected by the multiplier");
+  is(getComputedStyle(target).marginLeft, "0px");
+
+  await promiseAllPaintsDone(null, true);
+
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  is(getComputedStyle(target).marginLeft, "0px");
+});
+</script>
+</body>
+</html>

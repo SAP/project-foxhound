@@ -14,7 +14,7 @@
 #  include "mozilla/layers/UiCompositorControllerChild.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
-class nsBaseWidget;
+class nsIWidget;
 
 namespace mozilla {
 namespace widget {
@@ -73,8 +73,8 @@ class CompositorSession {
   // Set the UiCompositorControllerChild after Session creation so the Session
   // constructor doesn't get mucked up for other platforms.
   void SetUiCompositorControllerChild(
-      RefPtr<UiCompositorControllerChild> aUiController) {
-    mUiCompositorControllerChild = aUiController;
+      RefPtr<UiCompositorControllerChild>&& aUiController) {
+    mUiCompositorControllerChild = std::move(aUiController);
   }
 
   RefPtr<UiCompositorControllerChild> GetUiCompositorControllerChild() {
@@ -82,13 +82,13 @@ class CompositorSession {
   }
 #endif  // defined(MOZ_WIDGET_ANDROID)
  protected:
-  CompositorSession(nsBaseWidget* aWidget, CompositorWidgetDelegate* aDelegate,
+  CompositorSession(nsIWidget* aWidget, CompositorWidgetDelegate* aDelegate,
                     CompositorBridgeChild* aChild,
                     const LayersId& aRootLayerTreeId);
   virtual ~CompositorSession();
 
  protected:
-  nsBaseWidget* mWidget;
+  nsIWidget* mWidget;
   CompositorWidgetDelegate* mCompositorWidgetDelegate;
   RefPtr<CompositorBridgeChild> mCompositorBridgeChild;
   LayersId mRootLayerTreeId;

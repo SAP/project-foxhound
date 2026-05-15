@@ -25,7 +25,7 @@ let censusTreeNodeIdCounter = 0;
  * Return true if the given object is a SavedFrame stack object, false otherwise.
  *
  * @param {any} obj
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isSavedFrame(obj) {
   return Object.prototype.toString.call(obj) === "[object SavedFrame]";
@@ -38,113 +38,109 @@ function isSavedFrame(obj) {
  * this sharing when converting to CensusTreeNode, so before creating a new
  * CensusTreeNode, we look for an existing one in one of our CensusTreeNodeCaches.
  */
-function CensusTreeNodeCache() {}
-CensusTreeNodeCache.prototype = null;
+class CensusTreeNodeCache {
+  /**
+   * Create a unique string for the given SavedFrame (ignoring the frame's parent
+   * chain) that can be used as a hash to key this frame within a CensusTreeNodeCache.
+   *
+   * NB: We manually hash rather than using an ES6 Map because we are purposely
+   * ignoring the parent chain and wish to consider frames with everything the
+   * same except their parents as the same.
+   *
+   * @param {SavedFrame} frame
+   *        The SavedFrame object we would like to lookup in or insert into a
+   *        CensusTreeNodeCache.
+   *
+   * @returns {string}
+   *          The unique string that can be used as a key in a CensusTreeNodeCache.
+   */
+  static hashFrame(frame) {
+    // eslint-disable-next-line max-len
+    return `FRAME,${frame.functionDisplayName},${frame.source},${frame.line},${frame.column},${frame.asyncCause}`;
+  }
+
+  /**
+   * Create a unique string for the given CensusTreeNode **with regards to
+   * siblings at the current depth of the tree, not within the whole tree.** It
+   * can be used as a hash to key this node within a CensusTreeNodeCache.
+   *
+   * @param {CensusTreeNode} node
+   *        The node we would like to lookup in or insert into a cache.
+   *
+   * @returns {string}
+   *          The unique string that can be used as a key in a CensusTreeNodeCache.
+   */
+  static hashNode(node) {
+    return isSavedFrame(node.name)
+      ? this.hashFrame(node.name)
+      : `NODE,${node.name}`;
+  }
+
+  /**
+   * Insert the given CensusTreeNodeCacheValue whose node.name is a SavedFrame
+   * object in the given cache.
+   *
+   * @param {CensusTreeNodeCache} cache
+   * @param {CensusTreeNodeCacheValue} value
+   */
+  static insertFrame(cache, value) {
+    cache[this.hashFrame(value.node.name)] = value;
+  }
+
+  /**
+   * Insert the given value in the cache.
+   *
+   * @param {CensusTreeNodeCache} cache
+   * @param {CensusTreeNodeCacheValue} value
+   */
+  static insertNode(cache, value) {
+    if (isSavedFrame(value.node.name)) {
+      this.insertFrame(cache, value);
+    } else {
+      cache[this.hashNode(value.node)] = value;
+    }
+  }
+
+  /**
+   * Lookup `frame` in `cache` and return its value if it exists.
+   *
+   * @param {CensusTreeNodeCache} cache
+   * @param {SavedFrame} frame
+   *
+   * @returns {undefined|CensusTreeNodeCacheValue}
+   */
+  static lookupFrame(cache, frame) {
+    return cache[this.hashFrame(frame)];
+  }
+
+  /**
+   * Lookup `node` in `cache` and return its value if it exists.
+   *
+   * @param {CensusTreeNodeCache} cache
+   * @param {CensusTreeNode} node
+   *
+   * @returns {undefined|CensusTreeNodeCacheValue}
+   */
+  static lookupNode(cache, node) {
+    return isSavedFrame(node.name)
+      ? this.lookupFrame(cache, node.name)
+      : cache[this.hashNode(node)];
+  }
+}
 
 /**
  * The value of a single entry stored in a CensusTreeNodeCache. It is a pair of
  * the CensusTreeNode for this cache value, and the subsequent
  * CensusTreeNodeCache for this node's children.
- *
- * @param {SavedFrame} frame
- *        The frame being cached.
  */
-function CensusTreeNodeCacheValue() {
-  // The CensusTreeNode for this cache value.
-  this.node = undefined;
-  // The CensusTreeNodeCache for this frame's children.
-  this.children = undefined;
-}
-
-CensusTreeNodeCacheValue.prototype = null;
-
-/**
- * Create a unique string for the given SavedFrame (ignoring the frame's parent
- * chain) that can be used as a hash to key this frame within a CensusTreeNodeCache.
- *
- * NB: We manually hash rather than using an ES6 Map because we are purposely
- * ignoring the parent chain and wish to consider frames with everything the
- * same except their parents as the same.
- *
- * @param {SavedFrame} frame
- *        The SavedFrame object we would like to lookup in or insert into a
- *        CensusTreeNodeCache.
- *
- * @returns {String}
- *          The unique string that can be used as a key in a CensusTreeNodeCache.
- */
-CensusTreeNodeCache.hashFrame = function (frame) {
-  // eslint-disable-next-line max-len
-  return `FRAME,${frame.functionDisplayName},${frame.source},${frame.line},${frame.column},${frame.asyncCause}`;
-};
-
-/**
- * Create a unique string for the given CensusTreeNode **with regards to
- * siblings at the current depth of the tree, not within the whole tree.** It
- * can be used as a hash to key this node within a CensusTreeNodeCache.
- *
- * @param {CensusTreeNode} node
- *        The node we would like to lookup in or insert into a cache.
- *
- * @returns {String}
- *          The unique string that can be used as a key in a CensusTreeNodeCache.
- */
-CensusTreeNodeCache.hashNode = function (node) {
-  return isSavedFrame(node.name)
-    ? CensusTreeNodeCache.hashFrame(node.name)
-    : `NODE,${node.name}`;
-};
-
-/**
- * Insert the given CensusTreeNodeCacheValue whose node.name is a SavedFrame
- * object in the given cache.
- *
- * @param {CensusTreeNodeCache} cache
- * @param {CensusTreeNodeCacheValue} value
- */
-CensusTreeNodeCache.insertFrame = function (cache, value) {
-  cache[CensusTreeNodeCache.hashFrame(value.node.name)] = value;
-};
-
-/**
- * Insert the given value in the cache.
- *
- * @param {CensusTreeNodeCache} cache
- * @param {CensusTreeNodeCacheValue} value
- */
-CensusTreeNodeCache.insertNode = function (cache, value) {
-  if (isSavedFrame(value.node.name)) {
-    CensusTreeNodeCache.insertFrame(cache, value);
-  } else {
-    cache[CensusTreeNodeCache.hashNode(value.node)] = value;
+class CensusTreeNodeCacheValue {
+  constructor() {
+    // The CensusTreeNode for this cache value.
+    this.node = undefined;
+    // The CensusTreeNodeCache for this frame's children.
+    this.children = undefined;
   }
-};
-
-/**
- * Lookup `frame` in `cache` and return its value if it exists.
- *
- * @param {CensusTreeNodeCache} cache
- * @param {SavedFrame} frame
- *
- * @returns {undefined|CensusTreeNodeCacheValue}
- */
-CensusTreeNodeCache.lookupFrame = function (cache, frame) {
-  return cache[CensusTreeNodeCache.hashFrame(frame)];
-};
-
-/**
- * Lookup `node` in `cache` and return its value if it exists.
- *
- * @param {CensusTreeNodeCache} cache
- * @param {CensusTreeNode} node
- *
- * @returns {undefined|CensusTreeNodeCacheValue}
- */
-CensusTreeNodeCache.lookupNode = function (cache, node) {
-  return isSavedFrame(node.name)
-    ? CensusTreeNodeCache.lookupFrame(cache, node.name)
-    : cache[CensusTreeNodeCache.hashNode(node)];
-};
+}
 
 /**
  * Add `child` to `parent`'s set of children and store the parent ID
@@ -182,20 +178,20 @@ function getArrayOfFrames(stack) {
  * Given an `edge` to a sub-`report` whose structure is described by
  * `breakdown`, create a CensusTreeNode tree.
  *
- * @param {Object} breakdown
+ * @param {object} breakdown
  *        The breakdown specifying the structure of the given report.
  *
- * @param {Object} report
+ * @param {object} report
  *        The census report.
  *
- * @param {null|String|SavedFrame} edge
+ * @param {null | string | SavedFrame} edge
  *        The edge leading to this report from the parent report.
  *
  * @param {CensusTreeNodeCache} cache
  *        The cache of CensusTreeNodes we have already made for the siblings of
  *        the node being created. The existing nodes are reused when possible.
  *
- * @param {Object} outParams
+ * @param {object} outParams
  *        The return values are attached to this object after this function
  *        returns. Because we create a CensusTreeNode for each frame in a
  *        SavedFrame stack edge, there may multiple nodes per sub-report.
@@ -265,53 +261,133 @@ function makeCensusTreeNodeSubTree(breakdown, report, edge, cache, outParams) {
  * A Visitor that walks a census report and creates the corresponding
  * CensusTreeNode tree.
  */
-function CensusTreeNodeVisitor() {
-  // The root of the resulting CensusTreeNode tree.
-  this._root = null;
+class CensusTreeNodeVisitor extends Visitor {
+  constructor() {
+    super();
+    // The root of the resulting CensusTreeNode tree.
+    this._root = null;
 
-  // The stack of CensusTreeNodes that we are in the process of building while
-  // walking the census report.
-  this._nodeStack = [];
+    // The stack of CensusTreeNodes that we are in the process of building while
+    // walking the census report.
+    this._nodeStack = [];
 
-  // To avoid unnecessary allocations, we reuse the same out parameter object
-  // passed to `makeCensusTreeNodeSubTree` every time we call it.
-  this._outParams = {
-    top: null,
-    bottom: null,
-  };
+    // To avoid unnecessary allocations, we reuse the same out parameter object
+    // passed to `makeCensusTreeNodeSubTree` every time we call it.
+    this._outParams = {
+      top: null,
+      bottom: null,
+    };
 
-  // The stack of `CensusTreeNodeCache`s that we use to aggregate many
-  // SavedFrame stacks into a single CensusTreeNode tree.
-  this._cacheStack = [new CensusTreeNodeCache()];
+    // The stack of `CensusTreeNodeCache`s that we use to aggregate many
+    // SavedFrame stacks into a single CensusTreeNode tree.
+    this._cacheStack = [new CensusTreeNodeCache()];
 
-  // The current index in the DFS of the census report tree.
-  this._index = -1;
-}
-
-CensusTreeNodeVisitor.prototype = Object.create(Visitor);
-
-/**
- * Create the CensusTreeNode subtree for this sub-report and link it to the
- * parent CensusTreeNode.
- *
- * @overrides Visitor.prototype.enter
- */
-CensusTreeNodeVisitor.prototype.enter = function (breakdown, report, edge) {
-  this._index++;
-
-  const cache = this._cacheStack[this._cacheStack.length - 1];
-  makeCensusTreeNodeSubTree(breakdown, report, edge, cache, this._outParams);
-  const { top, bottom } = this._outParams;
-
-  if (!this._root) {
-    this._root = bottom;
-  } else if (bottom) {
-    addChild(this._nodeStack[this._nodeStack.length - 1], bottom);
+    // The current index in the DFS of the census report tree.
+    this._index = -1;
   }
 
-  this._cacheStack.push(new CensusTreeNodeCache());
-  this._nodeStack.push(top);
-};
+  /**
+   * Create the CensusTreeNode subtree for this sub-report and link it to the
+   * parent CensusTreeNode.
+   *
+   * @override
+   */
+  enter(breakdown, report, edge) {
+    this._index++;
+
+    const cache = this._cacheStack[this._cacheStack.length - 1];
+    makeCensusTreeNodeSubTree(breakdown, report, edge, cache, this._outParams);
+    const { top, bottom } = this._outParams;
+
+    if (!this._root) {
+      this._root = bottom;
+    } else if (bottom) {
+      addChild(this._nodeStack[this._nodeStack.length - 1], bottom);
+    }
+
+    this._cacheStack.push(new CensusTreeNodeCache());
+    this._nodeStack.push(top);
+  }
+
+  /**
+   * We have finished adding children to the CensusTreeNode subtree for the
+   * current sub-report. Make sure that the children are sorted for every node in
+   * the subtree.
+   *
+   * @override
+   */
+  exit() {
+    // Ensure all children are sorted and have their counts/bytes aggregated. We
+    // only need to consider cache children here, because other children
+    // correspond to other sub-reports and we already fixed them up in an earlier
+    // invocation of `exit`.
+
+    function dfs(node, childrenCache) {
+      if (childrenCache) {
+        const childValues = values(childrenCache);
+        for (let i = 0, length = childValues.length; i < length; i++) {
+          dfs(childValues[i].node, childValues[i].children);
+        }
+      }
+
+      node.totalCount = node.count;
+      node.totalBytes = node.bytes;
+
+      if (node.children) {
+        // Prune empty leaves.
+        node.children = node.children.filter(isNonEmpty);
+
+        node.children.sort(compareByTotal);
+
+        for (let i = 0, length = node.children.length; i < length; i++) {
+          node.totalCount += node.children[i].totalCount;
+          node.totalBytes += node.children[i].totalBytes;
+        }
+      }
+    }
+
+    const top = this._nodeStack.pop();
+    const cache = this._cacheStack.pop();
+    dfs(top, cache);
+  }
+
+  /**
+   * @override
+   */
+  count(breakdown, report) {
+    const node = this._nodeStack[this._nodeStack.length - 1];
+    node.reportLeafIndex = this._index;
+
+    if (breakdown.count) {
+      node.count = report.count;
+    }
+
+    if (breakdown.bytes) {
+      node.bytes = report.bytes;
+    }
+  }
+
+  /**
+   * Get the root of the resulting CensusTreeNode tree.
+   *
+   * @returns {CensusTreeNode}
+   */
+  root() {
+    if (!this._root) {
+      throw new Error(
+        "Attempt to get the root before walking the census report!"
+      );
+    }
+
+    if (this._nodeStack.length) {
+      throw new Error(
+        "Attempt to get the root while walking the census report!"
+      );
+    }
+
+    return this._root;
+  }
+}
 
 function values(cache) {
   return Object.keys(cache).map(k => cache[k]);
@@ -326,140 +402,65 @@ function isNonEmpty(node) {
 }
 
 /**
- * We have finished adding children to the CensusTreeNode subtree for the
- * current sub-report. Make sure that the children are sorted for every node in
- * the subtree.
- *
- * @overrides Visitor.prototype.exit
- */
-CensusTreeNodeVisitor.prototype.exit = function () {
-  // Ensure all children are sorted and have their counts/bytes aggregated. We
-  // only need to consider cache children here, because other children
-  // correspond to other sub-reports and we already fixed them up in an earlier
-  // invocation of `exit`.
-
-  function dfs(node, childrenCache) {
-    if (childrenCache) {
-      const childValues = values(childrenCache);
-      for (let i = 0, length = childValues.length; i < length; i++) {
-        dfs(childValues[i].node, childValues[i].children);
-      }
-    }
-
-    node.totalCount = node.count;
-    node.totalBytes = node.bytes;
-
-    if (node.children) {
-      // Prune empty leaves.
-      node.children = node.children.filter(isNonEmpty);
-
-      node.children.sort(compareByTotal);
-
-      for (let i = 0, length = node.children.length; i < length; i++) {
-        node.totalCount += node.children[i].totalCount;
-        node.totalBytes += node.children[i].totalBytes;
-      }
-    }
-  }
-
-  const top = this._nodeStack.pop();
-  const cache = this._cacheStack.pop();
-  dfs(top, cache);
-};
-
-/**
- * @overrides Visitor.prototype.count
- */
-CensusTreeNodeVisitor.prototype.count = function (breakdown, report) {
-  const node = this._nodeStack[this._nodeStack.length - 1];
-  node.reportLeafIndex = this._index;
-
-  if (breakdown.count) {
-    node.count = report.count;
-  }
-
-  if (breakdown.bytes) {
-    node.bytes = report.bytes;
-  }
-};
-
-/**
- * Get the root of the resulting CensusTreeNode tree.
- *
- * @returns {CensusTreeNode}
- */
-CensusTreeNodeVisitor.prototype.root = function () {
-  if (!this._root) {
-    throw new Error(
-      "Attempt to get the root before walking the census report!"
-    );
-  }
-
-  if (this._nodeStack.length) {
-    throw new Error("Attempt to get the root while walking the census report!");
-  }
-
-  return this._root;
-};
-
-/**
  * Create a single, uninitialized CensusTreeNode.
- *
- * @param {null|String|SavedFrame} name
  */
-function CensusTreeNode(name) {
-  // Display name for this CensusTreeNode. Either null, a string, or a
-  // SavedFrame.
-  this.name = name;
+class CensusTreeNode {
+  /**
+   *
+   * @param {null | string | SavedFrame} name
+   */
+  constructor(name) {
+    // Display name for this CensusTreeNode. Either null, a string, or a
+    // SavedFrame.
+    this.name = name;
 
-  // The number of bytes occupied by matching things in the heap snapshot.
-  this.bytes = 0;
+    // The number of bytes occupied by matching things in the heap snapshot.
+    this.bytes = 0;
 
-  // The sum of `this.bytes` and `child.totalBytes` for each child in
-  // `this.children`.
-  this.totalBytes = 0;
+    // The sum of `this.bytes` and `child.totalBytes` for each child in
+    // `this.children`.
+    this.totalBytes = 0;
 
-  // The number of things in the heap snapshot that match this node in the
-  // census tree.
-  this.count = 0;
+    // The number of things in the heap snapshot that match this node in the
+    // census tree.
+    this.count = 0;
 
-  // The sum of `this.count` and `child.totalCount` for each child in
-  // `this.children`.
-  this.totalCount = 0;
+    // The sum of `this.count` and `child.totalCount` for each child in
+    // `this.children`.
+    this.totalCount = 0;
 
-  // An array of this node's children, or undefined if it has no children.
-  this.children = undefined;
+    // An array of this node's children, or undefined if it has no children.
+    this.children = undefined;
 
-  // The unique ID of this node.
-  this.id = ++censusTreeNodeIdCounter;
+    // The unique ID of this node.
+    this.id = ++censusTreeNodeIdCounter;
 
-  // If present, the unique ID of this node's parent. If this node does not have
-  // a parent, then undefined.
-  this.parent = undefined;
+    // If present, the unique ID of this node's parent. If this node does not have
+    // a parent, then undefined.
+    this.parent = undefined;
 
-  // The `reportLeafIndex` property allows mapping a CensusTreeNode node back to
-  // a leaf in the census report it was generated from. It is always one of the
-  // following variants:
-  //
-  // * A `Number` index pointing a leaf report in a pre-order DFS traversal of
-  //   this CensusTreeNode's census report.
-  //
-  // * A `Set` object containing such indices, when this is part of an inverted
-  //   CensusTreeNode tree and multiple leaves in the report map onto this node.
-  //
-  // * Finally, `undefined` when no leaves in the census report correspond with
-  //   this node.
-  //
-  // The first and third cases are the common cases. The second case is rather
-  // uncommon, and to avoid doubling the number of allocations when creating
-  // CensusTreeNode trees, and objects that get structured cloned when sending
-  // such trees from the HeapAnalysesWorker to the main thread, we only allocate
-  // a Set object once a node actually does have multiple leaves it corresponds
-  // to.
-  this.reportLeafIndex = undefined;
+    // The `reportLeafIndex` property allows mapping a CensusTreeNode node back to
+    // a leaf in the census report it was generated from. It is always one of the
+    // following variants:
+    //
+    // * A `Number` index pointing a leaf report in a pre-order DFS traversal of
+    //   this CensusTreeNode's census report.
+    //
+    // * A `Set` object containing such indices, when this is part of an inverted
+    //   CensusTreeNode tree and multiple leaves in the report map onto this node.
+    //
+    // * Finally, `undefined` when no leaves in the census report correspond with
+    //   this node.
+    //
+    // The first and third cases are the common cases. The second case is rather
+    // uncommon, and to avoid doubling the number of allocations when creating
+    // CensusTreeNode trees, and objects that get structured cloned when sending
+    // such trees from the HeapAnalysesWorker to the main thread, we only allocate
+    // a Set object once a node actually does have multiple leaves it corresponds
+    // to.
+    this.reportLeafIndex = undefined;
+  }
 }
-
-CensusTreeNode.prototype = null;
 
 /**
  * Compare the given nodes by their `totalBytes` properties, and breaking ties
@@ -468,7 +469,7 @@ CensusTreeNode.prototype = null;
  * @param {CensusTreeNode} node1
  * @param {CensusTreeNode} node2
  *
- * @returns {Number}
+ * @returns {number}
  *          A number suitable for using with Array.prototype.sort.
  */
 function compareByTotal(node1, node2) {
@@ -487,7 +488,7 @@ function compareByTotal(node1, node2) {
  * @param {CensusTreeNode} node1
  * @param {CensusTreeNode} node2
  *
- * @returns {Number}
+ * @returns {number}
  *          A number suitable for using with Array.prototype.sort.
  */
 function compareBySelf(node1, node2) {
@@ -665,7 +666,7 @@ function filter(tree, predicate) {
  * Given a filter string, return a predicate function that takes a node and
  * returns true iff the node matches the filter.
  *
- * @param {String} filterString
+ * @param {string} filterString
  * @returns {Function}
  */
 function makeFilterPredicate(filterString) {
@@ -703,13 +704,13 @@ function makeFilterPredicate(filterString) {
  *   parent: <?Number>
  * }
  *
- * @param {Object} breakdown
+ * @param {object} breakdown
  *        The breakdown used to generate the census report.
  *
- * @param {Object} report
+ * @param {object} report
  *        The census report generated with the specified breakdown.
  *
- * @param {Object} options
+ * @param {object} options
  *        Configuration options.
  *          - invert: Whether to invert the resulting tree or not. Defaults to
  *                    false, ie uninverted.

@@ -34,6 +34,20 @@ let alpn = process.argv[4].split("=")[1];
 let server = http2.createSecureServer(
   options,
   function handleRequest(req, res) {
+    let method = req.headers[http2.constants.HTTP2_HEADER_METHOD];
+    if (method == "GET") {
+      let searchParams = new URL(req.url, "http://example.com").searchParams;
+      if (!searchParams.get("dns")) {
+        res.writeHead(400);
+        res.end("Missing dns parameter");
+        return;
+      }
+
+      let requestBody = Buffer.from(searchParams.get("dns"), "base64");
+      processRequest(req, res, requestBody);
+      return;
+    }
+
     let u = "";
     if (req.url != undefined) {
       u = url.parse(req.url, true);
@@ -45,49 +59,53 @@ let server = http2.createSecureServer(
         payload = Buffer.concat([payload, chunk]);
       });
       req.on("end", function finishedData() {
-        let packet = dnsPacket.decode(payload);
-        let answers = [];
-        // Return the HTTPS RR to let Firefox connect to the HTTP/3 server
-        if (packet.questions[0].type === "HTTPS") {
-          answers.push({
-            name: packet.questions[0].name,
-            type: "HTTPS",
-            ttl: 55,
-            class: "IN",
-            flush: false,
-            data: {
-              priority: 1,
-              name: packet.questions[0].name,
-              values: [
-                { key: "alpn", value: [alpn] },
-                { key: "port", value: serverPort },
-              ],
-            },
-          });
-        } else if (packet.questions[0].type === "A") {
-          answers.push({
-            name: packet.questions[0].name,
-            type: "A",
-            ttl: 55,
-            flush: false,
-            data: "127.0.0.1",
-          });
-        }
-
-        let buf = dnsPacket.encode({
-          type: "response",
-          id: packet.id,
-          flags: dnsPacket.RECURSION_DESIRED,
-          questions: packet.questions,
-          answers,
-        });
-
-        res.setHeader("Content-Type", "application/dns-message");
-        res.setHeader("Content-Length", buf.length);
-        res.writeHead(200);
-        res.write(buf);
-        res.end("");
+        processRequest(req, res, payload);
       });
+    }
+
+    function processRequest(req, res, payload) {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      // Return the HTTPS RR to let Firefox connect to the HTTP/3 server
+      if (packet.questions[0].type === "HTTPS") {
+        answers.push({
+          name: packet.questions[0].name,
+          type: "HTTPS",
+          ttl: 55,
+          class: "IN",
+          flush: false,
+          data: {
+            priority: 1,
+            name: packet.questions[0].name,
+            values: [
+              { key: "alpn", value: [alpn] },
+              { key: "port", value: serverPort },
+            ],
+          },
+        });
+      } else if (packet.questions[0].type === "A") {
+        answers.push({
+          name: packet.questions[0].name,
+          type: "A",
+          ttl: 55,
+          flush: false,
+          data: "127.0.0.1",
+        });
+      }
+
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
     }
   }
 );

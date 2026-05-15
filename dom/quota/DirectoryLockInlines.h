@@ -11,8 +11,8 @@
 #  error Must include DirectoryLock.h first
 #endif
 
-#include "mozilla/dom/quota/DirectoryLockImpl.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/quota/DirectoryLockImpl.h"
 
 namespace mozilla::dom::quota {
 

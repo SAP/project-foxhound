@@ -10,9 +10,9 @@
 // This defines only what's necessary to create RTCDataChannels, since this
 // gets used with MOZ_INTERNAL_API not set for media/webrtc/signaling/testing
 
+#include "mozilla/dom/Nullable.h"
 #include "nsCOMPtr.h"
 #include "nsStringFwd.h"
-#include "mozilla/dom/Nullable.h"
 
 class nsPIDOMWindowInner;
 
@@ -23,7 +23,8 @@ namespace dom {
 class RTCDataChannel;
 
 nsresult NS_NewDOMDataChannel(already_AddRefed<DataChannel>&& aDataChannel,
-                              const nsACString& aLabel, bool aOrdered,
+                              const nsACString& aLabel,
+                              const nsAString& aOrigin, bool aOrdered,
                               Nullable<uint16_t> aMaxLifeTime,
                               Nullable<uint16_t> aMaxRetransmits,
                               const nsACString& aProtocol, bool aNegotiated,

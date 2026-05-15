@@ -1,6 +1,9 @@
 import("//third_party/libaom/options.gni")
 import("../../webrtc.gni")
 
+source_set("opus") {
+}
+
 config("opus_config") {
   include_dirs = [ "/media/libopus/include" ]
 }

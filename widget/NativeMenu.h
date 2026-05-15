@@ -9,30 +9,48 @@
 #include "nsISupportsImpl.h"
 #include "Units.h"
 
+class nsIURI;
 class nsIFrame;
 class nsPresContext;
 
 namespace mozilla {
 using Modifiers = uint16_t;
 class ErrorResult;
-}  // namespace mozilla
+class ComputedStyle;
 
-namespace mozilla::dom {
+namespace dom {
 class Element;
 }
 
-namespace mozilla::widget {
+namespace widget {
+
+struct NativeMenuIcon {
+  RefPtr<nsIURI> mURI;
+  RefPtr<const ComputedStyle> mStyle;
+
+  explicit operator bool() const { return !!mURI; }
+};
 
 class NativeMenu {
  public:
   NS_INLINE_DECL_REFCOUNTING(NativeMenu)
 
-  // Show this menu as a context menu at the specified position.
+  // Given a <menu> or <menuitem> element, get the relevant icon's URI.
+  static NativeMenuIcon GetIcon(dom::Element&);
+
+  // Show this menu anchored to the specified rect and position.
   // This call assumes that the popupshowing event for the root popup has
   // already been sent and "approved", i.e. preventDefault() was not called.
-  virtual void ShowAsContextMenu(nsIFrame* aClickedFrame,
-                                 const CSSIntPoint& aPosition,
-                                 bool aIsContextMenu) = 0;
+  virtual void ShowMenuAnchored(nsIFrame* aClickedFrame,
+                                const CSSIntRect& aRect,
+                                const nsAString& aPosition) = 0;
+
+  // Show this menu at the specified position.
+  // This call assumes that the popupshowing event for the root popup has
+  // already been sent and "approved", i.e. preventDefault() was not called.
+  virtual void ShowMenuAtPosition(nsIFrame* aClickedFrame,
+                                  const CSSIntPoint& aPosition,
+                                  bool aIsContextMenu) = 0;
 
   // Close the menu and synchronously fire popuphiding / popuphidden events.
   // Returns false if the menu wasn't open.
@@ -96,6 +114,7 @@ class NativeMenu {
   virtual ~NativeMenu() = default;
 };
 
-}  // namespace mozilla::widget
+}  // namespace widget
+}  // namespace mozilla
 
 #endif  // mozilla_widget_NativeMenu_h

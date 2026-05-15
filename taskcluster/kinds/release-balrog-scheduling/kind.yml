@@ -14,6 +14,7 @@ kind-dependencies:
     - release-push-langpacks
 
 task-defaults:
+    run-on-repo-type: [hg]
     run-on-projects: []
     shipping-phase: ship
     worker-type: balrog
@@ -46,9 +47,8 @@ tasks:
                 by-release-type:
                     beta:
                         by-beta-number:
-                            '1': 25
-                            '2': 50
-                            '3': 100
+                            '1': 50
+                            '2': 100
                             default: null
                     default: null
             force-fallback-mapping-update:

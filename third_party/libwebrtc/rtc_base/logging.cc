@@ -10,35 +10,15 @@
 
 #include "rtc_base/logging.h"
 
-#include <string.h>
-
-#if RTC_LOG_ENABLED()
-
-#if defined(WEBRTC_WIN)
-#include <windows.h>
-#if _MSC_VER < 1900
-#define snprintf _snprintf
-#endif
-#undef ERROR  // wingdi.h
-#endif
-
-#if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
-#include <CoreServices/CoreServices.h>
-#elif defined(WEBRTC_ANDROID)
-#include <android/log.h>
-
-// Android has a 1024 limit on log inputs. We use 60 chars as an
-// approx for the header/tag portion.
-// See android/system/core/liblog/logd_write.c
-static const int kMaxLogLineSize = 1024 - 60;
-#endif  // WEBRTC_MAC && !defined(WEBRTC_IOS) || WEBRTC_ANDROID
-
-#include <inttypes.h>
-#include <stdio.h>
-#include <time.h>
-
 #include <algorithm>
+#include <atomic>
+#include <cinttypes>
 #include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include <string>
 #include <vector>
 
 #include "absl/base/attributes.h"
@@ -53,6 +33,24 @@ static const int kMaxLogLineSize = 1024 - 60;
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
+
+#if RTC_LOG_ENABLED()
+
+#if defined(WEBRTC_WIN)
+#include <windows.h>
+#undef ERROR  // wingdi.h
+#endif
+
+#if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS)
+#include <CoreServices/CoreServices.h>
+#elif defined(WEBRTC_ANDROID)
+#include <android/log.h>
+
+// Android has a 1024 limit on log inputs. We use 60 chars as an
+// approx for the header/tag portion.
+// See android/system/core/liblog/logd_write.c
+static const int kMaxLogLineSize = 1024 - 60;
+#endif  // WEBRTC_MAC && !defined(WEBRTC_IOS) || WEBRTC_ANDROID
 
 namespace webrtc {
 
@@ -168,7 +166,7 @@ LogMessage::LogMessage(const char* file,
   }
 
   if (log_thread_) {
-    log_line_.set_thread_id(rtc::CurrentThreadId());
+    log_line_.set_thread_id(CurrentThreadId());
   }
 
   if (file != nullptr) {
@@ -275,8 +273,8 @@ void LogMessage::LogTimestamps(bool on) {
 }
 
 void LogMessage::LogToDebug(LoggingSeverity min_sev) {
-  MutexLock lock(&GetLoggingLock());
   g_dbg_sev = min_sev;
+  MutexLock lock(&GetLoggingLock());
   UpdateMinLogSeverity();
 }
 
@@ -322,7 +320,7 @@ void LogMessage::ConfigureLogging(absl::string_view params) {
   LoggingSeverity debug_level = GetLogToDebug();
 
   std::vector<std::string> tokens;
-  rtc::tokenize(params, ' ', &tokens);
+  tokenize(params, ' ', &tokens);
 
   for (const std::string& token : tokens) {
     if (token.empty())
@@ -460,9 +458,6 @@ void LogMessage::OutputToDebug(const LogLineRef& log_line) {
 
 // static
 bool LogMessage::IsNoop(LoggingSeverity severity) {
-  // Added MutexLock to fix tsan warnings on accessing g_dbg_sev. (mjf)
-  // See https://bugs.chromium.org/p/chromium/issues/detail?id=1228729
-  webrtc::MutexLock lock(&GetLoggingLock());
   if (severity >= g_dbg_sev || severity >= g_min_sev)
     return false;
   return streams_empty_.load(std::memory_order_relaxed);
@@ -484,7 +479,8 @@ void Log(const LogArgType* fmt, ...) {
   const char* tag = nullptr;
   switch (*fmt) {
     case LogArgType::kLogMetadata: {
-      meta = {va_arg(args, LogMetadata), ERRCTX_NONE, 0};
+      meta = {
+          .meta = va_arg(args, LogMetadata), .err_ctx = ERRCTX_NONE, .err = 0};
       break;
     }
     case LogArgType::kLogMetadataErr: {
@@ -535,9 +531,6 @@ void Log(const LogArgType* fmt, ...) {
       case LogArgType::kDouble:
         log_message.stream() << va_arg(args, double);
         break;
-      case LogArgType::kLongDouble:
-        log_message.stream() << va_arg(args, long double);
-        break;
       case LogArgType::kCharP: {
         const char* s = va_arg(args, const char*);
         log_message.stream() << (s ? s : "(null)");
@@ -550,8 +543,8 @@ void Log(const LogArgType* fmt, ...) {
         log_message.stream() << *va_arg(args, const absl::string_view*);
         break;
       case LogArgType::kVoidP:
-        log_message.stream() << rtc::ToHex(
-            reinterpret_cast<uintptr_t>(va_arg(args, const void*)));
+        log_message.stream()
+            << ToHex(reinterpret_cast<uintptr_t>(va_arg(args, const void*)));
         break;
       default:
         RTC_DCHECK_NOTREACHED();

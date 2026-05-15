@@ -5,16 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-
-#include "mozilla/dom/IntegrityPolicy.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
-#include "nsNetUtil.h"
-
+#include "mozilla/dom/IntegrityPolicy.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "nsCOMPtr.h"
 #include "nsLiteralString.h"
+#include "nsNetUtil.h"
 #include "nsSerializationHelper.h"
 
 using namespace mozilla;
@@ -78,9 +76,6 @@ void AssertSerializationForHeadersForPolicyContainer(
 
 TEST(PolicyContainer, Serialization)
 {
-  const auto* prefKey = "security.integrity_policy.enabled";
-  Preferences::SetBool(prefKey, true);
-
   // Test serialization with no headers
   AssertSerializationForHeadersForPolicyContainer(
       VoidCString(), VoidCString(),
@@ -95,6 +90,4 @@ TEST(PolicyContainer, Serialization)
   AssertSerializationForHeadersForPolicyContainer(
       "default-src 'self'"_ns, "blocked-destinations=(script)"_ns,
       "ydqGXsPXSqGicQ9XHwE8MAAAAAAAAAAAwAAAAAAAAEYAAAABAQnZ7Rrl1EAEv+Anzrkj2awdYyAIbJdIrqUcFuLaoPT2Ad6UctCANBHTk5kAEEug/UCSBzpUbXhPMJE6uHGBMgjGAAAAAv////8AAABQAQAAABNodHRwOi8vZXhhbXBsZS5jb20vAAAAAAAAAAQAAAAHAAAACwAAAAf/////AAAAB/////8AAAAHAAAACwAAABIAAAABAAAAEgAAAAEAAAASAAAAAQAAABMAAAAAAAAAAP////8AAAAA/////wAAAAD/////AAAAAP////8BAAAAAAAAAAAACHsiMyI6e319AAAAAQAAABIAZABlAGYAYQB1AGwAdAAtAHMAcgBjACAAJwBzAGUAbABmACcAAQABSBL/Mhv/QjuX/EClaW2tIkgS/zIb/0I7l/xApWltrSIAAAABAQAAAAEAAAABAAAAAAA="_ns);
-
-  Preferences::ClearUser(prefKey);
 }

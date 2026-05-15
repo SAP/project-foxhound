@@ -18,74 +18,136 @@ prefs = [
 ]
 
 ["test_bug1969341.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_abort_signal.html"]
-fail-if = ["xorigin"]
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
-skip-if = ["os == 'android'"] # Test sets security.webauth.webauthn_enable_usbtoken to true, which isn't applicable to android
+fail-if = [
+  "xorigin",
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
+skip-if = [
+  "os == 'android'", # Test sets security.webauth.webauthn_enable_usbtoken to true, which isn't applicable to android
+]
 
 ["test_webauthn_attestation_conveyance.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_authenticator_selection.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_authenticator_transports.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_crossorigin_featurepolicy.html"]
-fail-if = ["xorigin"] # Cross-origin use of WebAuthn requires a feature policy.
+fail-if = [
+  "xorigin", # Cross-origin use of WebAuthn requires a feature policy.
+]
 
 ["test_webauthn_ctap2_omitted_credential_id.html"]
-fail-if = ["xorigin"] # NotAllowedError
+fail-if = [
+  "xorigin", # NotAllowedError
+]
 
 ["test_webauthn_get_assertion.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
-skip-if = ["os == 'android'"] # Test sets security.webauth.webauthn_enable_usbtoken to true, which isn't applicable to android
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
+skip-if = [
+  "os == 'android'", # Test sets security.webauth.webauthn_enable_usbtoken to true, which isn't applicable to android
+]
 
 ["test_webauthn_get_assertion_dead_object.html"]
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_in_xhtml.xhtml"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_webauthn_isplatformauthenticatoravailable.html"]
 
 ["test_webauthn_loopback.html"]
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
-skip-if = ["xorigin"] # Hangs, JavaScript error: https://example.org/tests/SimpleTest/SimpleTest.js, line 76: DataCloneError: The object could not be cloned.
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
+skip-if = [
+  "xorigin", # Hangs, JavaScript error: https://example.org/tests/SimpleTest/SimpleTest.js, line 76: DataCloneError: The object could not be cloned.
+]
 
 ["test_webauthn_make_credential.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_no_token.html"]
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 skip-if = [
-  "xorigin", # JavaScript error: https://example.org/tests/SimpleTest/SimpleTest.js, line 76: DataCloneError: The object could not be cloned.
   "os == 'android'", # Test disables all tokens, which is an unsupported configuration on android.
+  "xorigin", # JavaScript error: https://example.org/tests/SimpleTest/SimpleTest.js, line 76: DataCloneError: The object could not be cloned.
 ]
 
 ["test_webauthn_sameorigin.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_sameoriginwithancestors.html"]
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
-skip-if = ["xorigin"] # this test has its own cross-origin setup
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
+skip-if = [
+  "xorigin", # this test has its own cross-origin setup
+]
 
 ["test_webauthn_serialization.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_webauthn_store_credential.html"]
-fail-if = ["xorigin"] # NotAllowedError
-run-if = ["os != 'win'"] # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+fail-if = [
+  "xorigin", # NotAllowedError
+]
+run-if = [
+  "os != 'win'", # Bug 1718296 (Windows 10 1903+ has its own window and U2F that we cannot control with tests.)
+]
 
 ["test_webauthn_webdriver_virtual_authenticator.html"]
-fail-if = ["xorigin"] # Cross-origin use of WebAuthn requires a feature policy.
+fail-if = [
+  "xorigin", # Cross-origin use of WebAuthn requires a feature policy.
+]

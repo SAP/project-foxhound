@@ -58,14 +58,10 @@ def test_update(repo):
     elif repo.vcs == "git":
         vcs.update("HEAD~1")
     elif repo.vcs == "jj":
-        vcs.edit("@-")
+        vcs.update("@--")
     assert vcs.head_ref == rev0
 
-    if repo.vcs != "jj":
-        vcs.update(rev1)
-    else:
-        vcs.update(rev0)
-        rev1 = vcs.head_ref
+    vcs.update(rev1)
     assert vcs.head_ref == rev1
 
     # Modify `foo` and update. Should fail with dirty working directory.

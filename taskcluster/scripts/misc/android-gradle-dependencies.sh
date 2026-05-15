@@ -12,8 +12,11 @@ cd $GECKO_PATH
 
 export MOZCONFIG=mobile/android/config/mozconfigs/android-arm-gradle-dependencies/nightly
 ./mach build
-./mach gradle downloadDependencies --no-configuration-cache
-./mach android gradle-dependencies --no-configuration-cache
+
+# After the `mach build` invocation!
+export GRADLE_FLAGS="--no-configuration-cache --write-verification-metadata sha256 --dry-run"
+
+./mach android gradle-dependencies
 ./mach gradle -p mobile/android/fenix lint :benchmark:assembleBenchmark
 ./mach gradle -p mobile/android/focus-android lint
 ./mach gradle -p mobile/android/android-components -Pcoverage detekt lint :components:tooling-lint:test :components:lib-auth:assemble :components:lib-auth:assembleAndroidTest :components:lib-auth:testRelease :components:lib-auth:lintRelease :components:lib-auth:publish

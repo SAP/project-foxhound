@@ -14,7 +14,6 @@
 #include "nsISupports.h"
 #include "nsUnicharUtils.h"
 #include "nscore.h"  // for char16_t
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/gfx/2D.h"
 
 using namespace mozilla;

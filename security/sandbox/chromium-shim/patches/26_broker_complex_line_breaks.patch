@@ -84,7 +84,7 @@ diff --git a/sandbox/win/src/crosscall_client.h b/sandbox/win/src/crosscall_clie
  template <>
  class CopyHelper<InOutCountedBuffer> {
   public:
-   CopyHelper(const InOutCountedBuffer t) : t_(t) {}
+   explicit CopyHelper(const InOutCountedBuffer t) : t_(t) {}
  
    // Returns the pointer to the start of the string.
    const void* GetStart() const { return t_.Buffer(); }
@@ -113,13 +113,13 @@ diff --git a/sandbox/win/src/crosscall_params.h b/sandbox/win/src/crosscall_para
  // alignment. Returns the increased value.
  inline uint32_t Align(uint32_t value) {
 @@ -216,16 +220,21 @@ class ActualCallParams : public CrossCal
-   // Testing-only constructor. Allows setting the |number_params| to a
-   // wrong value.
-   ActualCallParams(IpcTag tag, uint32_t number_params)
        : CrossCallParams(tag, number_params) {
      param_info_[0].offset_ =
          static_cast<uint32_t>(parameters_ - reinterpret_cast<char*>(this));
    }
+ 
+   ActualCallParams(const ActualCallParams&) = delete;
+   ActualCallParams& operator=(const ActualCallParams&) = delete;
  
 +  static constexpr size_t MaxParamsSize() {
 +    return sizeof(
@@ -199,15 +199,16 @@ diff --git a/sandbox/win/src/ipc_tags.h b/sandbox/win/src/ipc_tags.h
 --- a/sandbox/win/src/ipc_tags.h
 +++ b/sandbox/win/src/ipc_tags.h
 @@ -41,16 +41,17 @@ enum class IpcTag {
-   GDI_GETCERTIFICATESIZE,
-   GDI_DESTROYOPMPROTECTEDOUTPUT,
-   GDI_CONFIGUREOPMPROTECTEDOUTPUT,
-   GDI_GETOPMINFORMATION,
-   GDI_GETOPMRANDOMNUMBER,
-   GDI_GETSUGGESTEDOPMPROTECTEDOUTPUTARRAYSIZE,
-   GDI_SETOPMSIGNINGKEYANDSEQUENCENUMBERS,
-   NTCREATESECTION,
+   NTQUERYFULLATTRIBUTESFILE,
+   NTSETINFO_RENAME,
+   NTOPENTHREAD,
+   NTOPENPROCESSTOKENEX,
+   GDI_GDIDLLINITIALIZE,
+   GDI_GETSTOCKOBJECT,
+   USER_REGISTERCLASSW,
+   CREATETHREAD,
 +  GETCOMPLEXLINEBREAKS,
+   NTCREATESECTION,
    LAST
  };
  
@@ -215,7 +216,6 @@ diff --git a/sandbox/win/src/ipc_tags.h b/sandbox/win/src/ipc_tags.h
  constexpr size_t kMaxIpcTag = static_cast<size_t>(IpcTag::LAST);
  static_assert(kMaxIpcTag <= kMaxServiceCount, "kMaxServiceCount is too low");
  
- }  // namespace sandbox
 diff --git a/sandbox/win/src/policy_engine_opcodes.cc b/sandbox/win/src/policy_engine_opcodes.cc
 --- a/sandbox/win/src/policy_engine_opcodes.cc
 +++ b/sandbox/win/src/policy_engine_opcodes.cc
@@ -229,7 +229,7 @@ diff --git a/sandbox/win/src/policy_engine_opcodes.cc b/sandbox/win/src/policy_e
  
  PolicyOpcode* OpcodeFactory::MakeOpAction(EvalResult action, uint32_t options) {
 -  PolicyOpcode* opcode = MakeBase(OP_ACTION, options, 0);
-+  PolicyOpcode* opcode = MakeBase(OP_ACTION, options, -1);
++  PolicyOpcode* opcode = MakeBase(OP_ACTION, options);
    if (!opcode)
      return nullptr;
    opcode->SetArgument(0, action);
@@ -241,7 +241,7 @@ diff --git a/sandbox/win/src/policy_engine_opcodes.cc b/sandbox/win/src/policy_e
 diff --git a/sandbox/win/src/policy_params.h b/sandbox/win/src/policy_params.h
 --- a/sandbox/win/src/policy_params.h
 +++ b/sandbox/win/src/policy_params.h
-@@ -56,11 +56,15 @@ POLPARAMS_BEGIN(OpenKey)
+@@ -43,11 +43,15 @@ POLPARAMS_BEGIN(OpenKey)
  POLPARAMS_END(OpenKey)
  
  // Policy parameter for name-based policies.
@@ -256,7 +256,7 @@ diff --git a/sandbox/win/src/policy_params.h b/sandbox/win/src/policy_params.h
 +
  }  // namespace sandbox
  
- #endif  // SANDBOX_SRC_POLICY_PARAMS_H__
+ #endif  // SANDBOX_WIN_SRC_POLICY_PARAMS_H_
 diff --git a/sandbox/win/src/sandbox.h b/sandbox/win/src/sandbox.h
 --- a/sandbox/win/src/sandbox.h
 +++ b/sandbox/win/src/sandbox.h
@@ -276,62 +276,42 @@ diff --git a/sandbox/win/src/sandbox.h b/sandbox/win/src/sandbox.h
    ~TargetServices() {}
  };
  
- class PolicyInfo {
+ class [[clang::lto_visibility_public]] PolicyInfo {
   public:
    // Returns a JSON representation of the policy snapshot.
    // This pointer has the same lifetime as this PolicyInfo object.
 diff --git a/sandbox/win/src/sandbox_policy.h b/sandbox/win/src/sandbox_policy.h
 --- a/sandbox/win/src/sandbox_policy.h
 +++ b/sandbox/win/src/sandbox_policy.h
-@@ -27,17 +27,18 @@ class TargetPolicy {
-   // process_thread_dispatcher.cc for more details.
-   enum SubSystem {
-     SUBSYS_FILES,            // Creation and opening of files and pipes.
-     SUBSYS_NAMED_PIPES,      // Creation of named pipes.
-     SUBSYS_PROCESS,          // Creation of child processes.
-     SUBSYS_REGISTRY,         // Creation and opening of registry keys.
-     SUBSYS_SYNC,             // Creation of named sync objects.
-     SUBSYS_WIN32K_LOCKDOWN,  // Win32K Lockdown related policy.
--    SUBSYS_SIGNED_BINARY     // Signed binary policy.
-+    SUBSYS_SIGNED_BINARY,    // Signed binary policy.
-+    SUBSYS_LINE_BREAK        // Complex line break policy.
-   };
+@@ -169,16 +169,19 @@ class TargetPolicy {
+   // Modules patching `pattern` (see AllowFileAccess) can still be loaded under
+   // Code-Integrity Guard (MITIGATION_FORCE_MS_SIGNED_BINS).
+   [[nodiscard]] virtual ResultCode AllowExtraDlls(const wchar_t* pattern) = 0;
  
-   // Allowable semantics when a rule is matched.
-   enum Semantics {
-     FILES_ALLOW_ANY,       // Allows open or create for any kind of access that
-                            // the file system supports.
-     FILES_ALLOW_READONLY,  // Allows open or create with read access only.
-     FILES_ALLOW_QUERY,     // Allows access to query the attributes of a file.
-@@ -60,17 +61,18 @@ class TargetPolicy {
-     REG_ALLOW_READONLY,     // Allows readonly access to a registry key.
-     REG_ALLOW_ANY,          // Allows read and write access to a registry key.
-     FAKE_USER_GDI_INIT,     // Fakes user32 and gdi32 initialization. This can
-                             // be used to allow the DLLs to load and initialize
-                             // even if the process cannot access that subsystem.
-     IMPLEMENT_OPM_APIS,     // Implements FAKE_USER_GDI_INIT and also exposes
-                             // IPC calls to handle Output Protection Manager
-                             // APIs.
--    SIGNED_ALLOW_LOAD       // Allows loading the module when CIG is enabled.
-+    SIGNED_ALLOW_LOAD,      // Allows loading the module when CIG is enabled.
-+    LINE_BREAK_ALLOW        // Allow complex line break brokering.
-   };
+   // Adds a policy rule effective for processes spawned using this policy.
+   // Fake gdi init to allow user32 and gdi32 to initialize under Win32 Lockdown.
+   [[nodiscard]] virtual ResultCode SetFakeGdiInit() = 0;
  
-   // Increments the reference count of this object. The reference count must
-   // be incremented if this interface is given to another component.
-   virtual void AddRef() = 0;
++  // Adds a policy rule to allow complex line break brokering.
++  [[nodiscard]] virtual ResultCode AllowLineBreaking() = 0;
++
+   // Adds a dll that will be unloaded in the target process before it gets
+   // a chance to initialize itself. Typically, dlls that cause the target
+   // to crash go here.
+   virtual void AddDllToUnload(const wchar_t* dll_name) = 0;
  
-   // Decrements the reference count of this object. When the reference count
-   // is zero the object is automatically destroyed.
+   // Sets the integrity level of the process in the sandbox. Both the initial
+   // token and the main token will be affected by this. If the integrity level
+   // is set to a level higher than the current level, the sandbox will fail
 diff --git a/sandbox/win/src/sandbox_policy_base.cc b/sandbox/win/src/sandbox_policy_base.cc
 --- a/sandbox/win/src/sandbox_policy_base.cc
 +++ b/sandbox/win/src/sandbox_policy_base.cc
-@@ -15,16 +15,17 @@
- #include "base/stl_util.h"
- #include "base/strings/stringprintf.h"
+@@ -26,16 +26,17 @@
  #include "base/win/win_util.h"
  #include "base/win/windows_version.h"
+ #include "sandbox/features.h"
  #include "sandbox/win/src/acl.h"
+ #include "sandbox/win/src/crosscall_server.h"
  #include "sandbox/win/src/filesystem_policy.h"
  #include "sandbox/win/src/interception.h"
  #include "sandbox/win/src/job.h"
@@ -343,44 +323,67 @@ diff --git a/sandbox/win/src/sandbox_policy_base.cc b/sandbox/win/src/sandbox_po
  #include "sandbox/win/src/process_mitigations.h"
  #include "sandbox/win/src/process_mitigations_win32k_policy.h"
  #include "sandbox/win/src/process_thread_policy.h"
- #include "sandbox/win/src/registry_policy.h"
-@@ -809,16 +810,23 @@ ResultCode PolicyBase::AddRuleInternal(S
-                "policy rules.";
-         if (!SignedPolicy::GenerateRules(pattern, semantics, policy_maker_)) {
-           NOTREACHED();
-           return SBOX_ERROR_BAD_PARAMS;
-         }
-       }
-       break;
+ #include "sandbox/win/src/restricted_token_utils.h"
+@@ -281,16 +281,24 @@ ResultCode PolicyBase::AddRuleInternal(S
+     if (!SignedPolicy::GenerateRules(pattern, PolicyMaker())) {
+       NOTREACHED();
+       return SBOX_ERROR_BAD_PARAMS;
      }
-+    case SUBSYS_LINE_BREAK: {
-+      if (!LineBreakPolicy::GenerateRules(pattern, semantics, policy_maker_)) {
-+        NOTREACHED();
-+        return SBOX_ERROR_BAD_PARAMS;
-+      }
-+      break;
-+    }
- 
-     default: { return SBOX_ERROR_UNSUPPORTED; }
    }
- 
    return SBOX_ALL_OK;
  }
  
- }  // namespace sandbox
++ResultCode ConfigBase::AllowLineBreaking() {
++  if (!LineBreakPolicy::GenerateRules(PolicyMaker())) {
++    NOTREACHED();
++    return SBOX_ERROR_BAD_PARAMS;
++  }
++  return SBOX_ALL_OK;
++}
++
+ void ConfigBase::AddDllToUnload(const wchar_t* dll_name) {
+   blocklisted_dlls_.push_back(dll_name);
+ }
+ 
+ ResultCode ConfigBase::SetIntegrityLevel(IntegrityLevel integrity_level) {
+   if (app_container_)
+     return SBOX_ERROR_BAD_PARAMS;
+   integrity_level_ = integrity_level;
+diff --git a/sandbox/win/src/sandbox_policy_base.h b/sandbox/win/src/sandbox_policy_base.h
+--- a/sandbox/win/src/sandbox_policy_base.h
++++ b/sandbox/win/src/sandbox_policy_base.h
+@@ -63,16 +63,17 @@ class ConfigBase final : public TargetCo
+   ResultCode SetJobLevel(JobLevel job_level, uint32_t ui_exceptions) override;
+   JobLevel GetJobLevel() const override;
+   void SetJobMemoryLimit(size_t memory_limit) override;
+   ResultCode AllowFileAccess(FileSemantics semantics,
+                              const wchar_t* pattern) override;
+   ResultCode AllowNamedPipes(const wchar_t* pattern) override;
+   ResultCode AllowExtraDlls(const wchar_t* pattern) override;
+   ResultCode SetFakeGdiInit() override;
++  ResultCode AllowLineBreaking() final;
+   void AddDllToUnload(const wchar_t* dll_name) override;
+   ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) override;
+   IntegrityLevel GetIntegrityLevel() const override;
+   void SetDelayedIntegrityLevel(IntegrityLevel integrity_level) override;
+   ResultCode SetLowBox(const wchar_t* sid) override;
+   ResultCode SetProcessMitigations(MitigationFlags flags) override;
+   MitigationFlags GetProcessMitigations() override;
+   ResultCode SetDelayedProcessMitigations(MitigationFlags flags) override;
 diff --git a/sandbox/win/src/target_services.cc b/sandbox/win/src/target_services.cc
 --- a/sandbox/win/src/target_services.cc
 +++ b/sandbox/win/src/target_services.cc
-@@ -9,16 +9,17 @@
+@@ -14,16 +14,17 @@
  
- #include <process.h>
- #include <stdint.h>
- 
- #include "base/win/windows_version.h"
+ #include <optional>
+ #include "base/containers/span.h"
+ #include "base/logging.h"
+ #include "base/win/access_token.h"
+ #include "sandbox/win/src/acl.h"
  #include "sandbox/win/src/crosscall_client.h"
  #include "sandbox/win/src/handle_closer_agent.h"
- #include "sandbox/win/src/heap_helper.h"
 +#include "sandbox/win/src/line_break_interception.h"
+ #include "sandbox/win/src/heap_helper.h"
  #include "sandbox/win/src/ipc_tags.h"
  #include "sandbox/win/src/process_mitigations.h"
  #include "sandbox/win/src/restricted_token_utils.h"
@@ -388,7 +391,6 @@ diff --git a/sandbox/win/src/target_services.cc b/sandbox/win/src/target_service
  #include "sandbox/win/src/sandbox_nt_util.h"
  #include "sandbox/win/src/sandbox_types.h"
  #include "sandbox/win/src/sharedmem_ipc_client.h"
- 
 @@ -240,9 +241,15 @@ void ProcessState::SetRevertedToSelf() {
    if (process_state_ < ProcessStateInternal::REVERTED_TO_SELF)
      process_state_ = ProcessStateInternal::REVERTED_TO_SELF;
@@ -408,13 +410,13 @@ diff --git a/sandbox/win/src/target_services.cc b/sandbox/win/src/target_service
 diff --git a/sandbox/win/src/target_services.h b/sandbox/win/src/target_services.h
 --- a/sandbox/win/src/target_services.h
 +++ b/sandbox/win/src/target_services.h
-@@ -40,16 +40,18 @@ class TargetServicesBase : public Target
- class TargetServicesBase : public TargetServices {
-  public:
-   TargetServicesBase();
+@@ -48,16 +48,18 @@ class TargetServicesBase : public Target
+   TargetServicesBase(const TargetServicesBase&) = delete;
+   TargetServicesBase& operator=(const TargetServicesBase&) = delete;
  
-   // Public interface of TargetServices.
+   // Public interface of TargetServices. See comments in sandbox.h.
    ResultCode Init() override;
+   absl::optional<base::span<const uint8_t>> GetDelegateData() override;
    void LowerToken() override;
    ProcessState* GetState() override;
 +  ResultCode GetComplexLineBreaks(const WCHAR* text, uint32_t length,
@@ -430,10 +432,10 @@ diff --git a/sandbox/win/src/target_services.h b/sandbox/win/src/target_services
 diff --git a/sandbox/win/src/top_level_dispatcher.cc b/sandbox/win/src/top_level_dispatcher.cc
 --- a/sandbox/win/src/top_level_dispatcher.cc
 +++ b/sandbox/win/src/top_level_dispatcher.cc
-@@ -8,16 +8,17 @@
- #include <string.h>
+@@ -14,16 +14,17 @@
  
- #include "base/logging.h"
+ #include "base/check.h"
+ #include "base/notreached.h"
  #include "sandbox/win/src/crosscall_server.h"
  #include "sandbox/win/src/filesystem_dispatcher.h"
  #include "sandbox/win/src/interception.h"
@@ -443,15 +445,15 @@ diff --git a/sandbox/win/src/top_level_dispatcher.cc b/sandbox/win/src/top_level
  #include "sandbox/win/src/named_pipe_dispatcher.h"
  #include "sandbox/win/src/process_mitigations_win32k_dispatcher.h"
  #include "sandbox/win/src/process_thread_dispatcher.h"
- #include "sandbox/win/src/registry_dispatcher.h"
  #include "sandbox/win/src/sandbox_policy_base.h"
  #include "sandbox/win/src/signed_dispatcher.h"
- #include "sandbox/win/src/sync_dispatcher.h"
  
-@@ -90,16 +91,20 @@ TopLevelDispatcher::TopLevelDispatcher(P
-       IpcTag::GDI_GETSUGGESTEDOPMPROTECTEDOUTPUTARRAYSIZE)] = dispatcher;
-   ipc_targets_[static_cast<size_t>(
-       IpcTag::GDI_SETOPMSIGNINGKEYANDSEQUENCENUMBERS)] = dispatcher;
+ namespace sandbox {
+ 
+@@ -46,16 +47,20 @@ TopLevelDispatcher::TopLevelDispatcher(P
+   ipc_targets_[static_cast<size_t>(IpcTag::GDI_GDIDLLINITIALIZE)] = dispatcher;
+   ipc_targets_[static_cast<size_t>(IpcTag::GDI_GETSTOCKOBJECT)] = dispatcher;
+   ipc_targets_[static_cast<size_t>(IpcTag::USER_REGISTERCLASSW)] = dispatcher;
    process_mitigations_win32k_dispatcher_.reset(dispatcher);
  
    dispatcher = new SignedDispatcher(policy_);
@@ -467,26 +469,24 @@ diff --git a/sandbox/win/src/top_level_dispatcher.cc b/sandbox/win/src/top_level
  
  // When an IPC is ready in any of the targets we get called. We manage an array
  // of IPC dispatchers which are keyed on the IPC tag so we normally delegate
- // to the appropriate dispatcher unless we can handle the IPC call ourselves.
+ // to the appropriate dispatcher unless we can handle the IPC call ourselves.     }
  Dispatcher* TopLevelDispatcher::OnMessageReady(IPCParams* ipc,
 diff --git a/sandbox/win/src/top_level_dispatcher.h b/sandbox/win/src/top_level_dispatcher.h
 --- a/sandbox/win/src/top_level_dispatcher.h
 +++ b/sandbox/win/src/top_level_dispatcher.h
-@@ -38,16 +38,17 @@ class TopLevelDispatcher : public Dispat
+@@ -40,14 +40,15 @@ class TopLevelDispatcher : public Dispat
+ 
+   raw_ptr<PolicyBase> policy_;
    std::unique_ptr<Dispatcher> filesystem_dispatcher_;
    std::unique_ptr<Dispatcher> named_pipe_dispatcher_;
    std::unique_ptr<Dispatcher> thread_process_dispatcher_;
-   std::unique_ptr<Dispatcher> sync_dispatcher_;
-   std::unique_ptr<Dispatcher> registry_dispatcher_;
    std::unique_ptr<Dispatcher> handle_dispatcher_;
    std::unique_ptr<Dispatcher> process_mitigations_win32k_dispatcher_;
    std::unique_ptr<Dispatcher> signed_dispatcher_;
 +  std::unique_ptr<Dispatcher> line_break_dispatcher_;
    Dispatcher* ipc_targets_[kMaxIpcTag];
- 
-   DISALLOW_COPY_AND_ASSIGN(TopLevelDispatcher);
  };
  
  }  // namespace sandbox
  
- #endif  // SANDBOX_SRC_TOP_LEVEL_DISPATCHER_H__
+ #endif  // SANDBOX_WIN_SRC_TOP_LEVEL_DISPATCHER_H_

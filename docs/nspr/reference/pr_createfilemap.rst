@@ -31,9 +31,9 @@ The function has the following parameters:
    Protection option for read and write accesses of a file mapping. This
    parameter consists of one of the following options:
 
-    - :ref:`PR_PROT_READONLY`. Read-only access.
-    - :ref:`PR_PROT_READWRITE`. Readable, and write is shared.
-    - :ref:`PR_PROT_WRITECOPY`. Readable, and write is private
+    - ``PR_PROT_READONLY``. Read-only access.
+    - ``PR_PROT_READWRITE``. Readable, and write is shared.
+    - ``PR_PROT_WRITECOPY``. Readable, and write is private
       (copy-on-write).
 
 

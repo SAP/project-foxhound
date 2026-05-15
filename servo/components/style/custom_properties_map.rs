@@ -10,6 +10,7 @@ use crate::selector_map::PrecomputedHasher;
 use indexmap::IndexMap;
 use servo_arc::Arc;
 use std::hash::BuildHasherDefault;
+use std::sync::LazyLock;
 
 /// A map for a set of custom properties, which implements copy-on-write behavior on insertion with
 /// cheap copying.
@@ -26,16 +27,14 @@ impl Default for CustomPropertiesMap {
 type OwnMap =
     IndexMap<Name, Option<ComputedRegisteredValue>, BuildHasherDefault<PrecomputedHasher>>;
 
-lazy_static! {
-    static ref EMPTY: Arc<Inner> = {
-        Arc::new_leaked(Inner {
-            own_properties: Default::default(),
-            parent: None,
-            len: 0,
-            ancestor_count: 0,
-        })
-    };
-}
+static EMPTY: LazyLock<Arc<Inner>> = LazyLock::new(|| {
+    Arc::new_leaked(Inner {
+        own_properties: Default::default(),
+        parent: None,
+        len: 0,
+        ancestor_count: 0,
+    })
+});
 
 #[derive(Debug, Clone)]
 struct Inner {
@@ -109,7 +108,7 @@ impl PartialEq for Inner {
 }
 
 impl Inner {
-    fn iter(&self) -> Iter {
+    fn iter(&self) -> Iter<'_> {
         Iter {
             current: self,
             current_iter: self.own_properties.iter(),
@@ -215,7 +214,7 @@ impl CustomPropertiesMap {
     }
 
     /// Return iterator to go through all properties.
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_> {
         self.0.iter()
     }
 }

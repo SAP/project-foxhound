@@ -2398,24 +2398,9 @@ sec_asn1d_absorb_child(sec_asn1d_state *state)
          * consumed should be what was left pending.
          */
         if (state->pending != state->child->consumed) {
-            if (state->pending < state->child->consumed) {
-                PORT_SetError(SEC_ERROR_BAD_DER);
-                state->top->status = decodeError;
-                return;
-            }
-            /*
-             * Okay, this is a hack.  It *should* be an error whether
-             * pending is too big or too small, but it turns out that
-             * we had a bug in our *old* DER encoder that ended up
-             * counting an explicit header twice in the case where
-             * the underlying type was an ANY.  So, because we cannot
-             * prevent receiving these (our own certificate server can
-             * send them to us), we need to be lenient and accept them.
-             * To do so, we need to pretend as if we read all of the
-             * bytes that the header said we would find, even though
-             * we actually came up short.
-             */
-            state->consumed += (state->pending - state->child->consumed);
+            PORT_SetError(SEC_ERROR_BAD_DER);
+            state->top->status = decodeError;
+            return;
         }
         state->pending = 0;
     }
@@ -2548,8 +2533,10 @@ sec_asn1d_before_choice(sec_asn1d_state *state)
         state->dest = (char *)dest + state->theTemplate->offset;
     }
 
+    char *dest = state->dest ? (char *)state->dest - state->theTemplate->offset : NULL;
+
     child = sec_asn1d_push_state(state->top, state->theTemplate + 1,
-                                 (char *)state->dest - state->theTemplate->offset,
+                                 dest,
                                  PR_FALSE);
     if ((sec_asn1d_state *)NULL == child) {
         return (sec_asn1d_state *)NULL;
@@ -2600,7 +2587,7 @@ sec_asn1d_during_choice(sec_asn1d_state *state)
             return NULL;
         }
 
-        dest = (char *)child->dest - child->theTemplate->offset;
+        dest = child->dest ? (char *)child->dest - child->theTemplate->offset : NULL;
         child->theTemplate++;
 
         if (0 == child->theTemplate->kind) {
@@ -2609,7 +2596,7 @@ sec_asn1d_during_choice(sec_asn1d_state *state)
             state->top->status = decodeError;
             return (sec_asn1d_state *)NULL;
         }
-        child->dest = (char *)dest + child->theTemplate->offset;
+        child->dest = dest ? (char *)dest + child->theTemplate->offset : NULL;
 
         /* cargo'd from next_in_sequence innards */
         if (state->pending) {

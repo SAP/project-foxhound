@@ -145,12 +145,12 @@ if __name__ == "__main__":
         action="store",
         nargs="*",
         default=None,
-        help="Process name filter. " "If not provided all processes will be included.",
+        help="Process name filter. If not provided all processes will be included.",
     )
     parser.add_argument(
         "--mebi",
         action="store_true",
-        help="Output values as mebibytes (instead of bytes)" " to match about:memory.",
+        help="Output values as mebibytes (instead of bytes) to match about:memory.",
     )
 
     args = parser.parse_args()
@@ -159,15 +159,15 @@ if __name__ == "__main__":
     sorted_totals = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
     for k, v in sorted_totals:
         if v:
-            print(f"{k}\t"),
+            (print(f"{k}\t"),)
     print("")
 
     bytes_per_mebibyte = 1024.0 * 1024.0
     for k, v in sorted_totals:
         if v:
             if args.mebi:
-                print(f"{v / bytes_per_mebibyte:.2f} MiB"),
+                (print(f"{v / bytes_per_mebibyte:.2f} MiB"),)
             else:
-                print(f"{v} bytes"),
-            print("\t"),
+                (print(f"{v} bytes"),)
+            (print("\t"),)
     print("")

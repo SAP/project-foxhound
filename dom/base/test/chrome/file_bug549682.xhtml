@@ -89,36 +89,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
     didRunLocal = true;
   }
 
-  var weakMessageReceived = false;
-  var weakListener = {
-    QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
-
-    receiveMessage() {
-      if (weakMessageReceived) {
-        ok(false, 'Weak listener fired twice.');
-        return;
-      }
-
-      ok(true, 'Weak listener fired once.');
-      weakMessageReceived = true;
-      document.getElementById('ifr').messageManager
-              .removeWeakMessageListener('weak', weakListener);
-    }
-  };
-
-  var weakListener2 = {
-    QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
-
-    receiveMessage() {
-      ok(false, 'Should not have received a message.');
-    }
-  };
-
-  function weakDoneListener() {
-    ok(weakMessageReceived, 'Got "weak" message.');
-    finish();
-  }
-
   function finish() {
     window.arguments[0].setTimeout(function() { this.done(); }, 0);
     var i = document.getElementById("ifr");
@@ -131,9 +101,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
     messageManager.loadFrameScript("data:,\
       sendAsyncMessage('async', { data: 1234 });\
       sendSyncMessage('sync', { data: 1234 });\
-      sendAsyncMessage('weak', {});\
-      sendAsyncMessage('weak', {});\
-      sendAsyncMessage('weakdone', {});", false);
+      sendAsyncMessage('done', {});", false);
   }
 
   function run() {
@@ -180,33 +148,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=549682
     is(globalListenerCallCount, oldValue + 1,
                               "Wrong message count");
 
-    localmm.addWeakMessageListener('weak', weakListener);
-    localmm.addMessageListener('weakdone', weakDoneListener);
+    localmm.addMessageListener('done', finish);
 
-    // Add weakListener2 as a weak message listener, then force weakListener2
-    // to be gc'ed.  weakListener2 shouldn't be run.
-    var weakRef = Cu.getWeakReference(weakListener2);
-    localmm.addWeakMessageListener('weak', weakListener2);
-    weakListener2 = null;
-
-    // Force a gc/cc in a loop until weakRef's referent has gone away.
-    function waitForWeakRefToDie() {
-      if (weakRef.get()) {
-        var mgr = Cc["@mozilla.org/memory-reporter-manager;1"]
-                    .getService(Ci.nsIMemoryReporterManager);
-        mgr.minimizeMemoryUsage(waitForWeakRefToDie);
-
-        // Print a message so that if the test hangs in a minimizeMemoryUsage
-        // loop, we'll be able to see it in the log.
-        ok(true, "waitForWeakRefToDie spinning...");
-        return;
-      }
-
-      setTimeout(checkPMMMessages, 0);
-      setTimeout(loadScript, 0);
-    }
-
-    waitForWeakRefToDie();
+    setTimeout(checkPMMMessages, 0);
+    setTimeout(loadScript, 0);
   }
 
   ]]></script>

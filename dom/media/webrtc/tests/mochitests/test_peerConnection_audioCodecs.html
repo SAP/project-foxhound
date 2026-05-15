@@ -26,28 +26,16 @@
     test.chain.insertBefore("PC_LOCAL_SET_LOCAL_DESCRIPTION", [
       function PC_LOCAL_FILTER_OUT_CODECS() {
         let otherCodec = codecs.find(c => c != codec);
+        let id = sdputils.findCodecId(test.originalOffer.sdp, codec);
         let otherId = sdputils.findCodecId(test.originalOffer.sdp, otherCodec);
 
-        let id = sdputils.findCodecId(test.originalOffer.sdp, codec);
         test.originalOffer.sdp =
-          sdputils.removeAllButPayloadType(test.originalOffer.sdp, id);
+          sdputils.removeAllButCodec(test.originalOffer.sdp, codec);
 
         ok(!test.originalOffer.sdp.match(new RegExp(`m=.*UDP/TLS/RTP/SAVPF.* ${otherId}[^0-9]`, "gi")),
           `Other codec ${otherId} should be removed after filtering`);
         ok(test.originalOffer.sdp.match(new RegExp(`m=.*UDP/TLS/RTP/SAVPF.* ${id}[^0-9]`, "gi")),
           `Tested codec ${id} should remain after filtering`);
-
-        for (let c of codecs.filter(c => c != codec)) {
-          // Remove rtpmaps for the other codecs so sdp sanity tests pass.
-          let id = sdputils.findCodecId(test.originalOffer.sdp, c);
-          test.originalOffer.sdp =
-            sdputils.removeRtpMapForPayloadType(test.originalOffer.sdp, id);
-        }
-
-        ok(!test.originalOffer.sdp.match(new RegExp(`a=rtpmap:${otherId}.*\\r\\n`, "gi")),
-           `Rtpmap of other codec ${otherId} should be removed after filtering`);
-        ok(test.originalOffer.sdp.match(new RegExp(`a=rtpmap:${id}.*\\r\\n`, "gi")),
-           `Rtpmap of tested codec should remain after filtering`);
       },
     ]);
 

@@ -14,6 +14,8 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import mozilla.components.concept.push.PushError
 import mozilla.components.concept.push.PushProcessor
@@ -30,6 +32,7 @@ abstract class AbstractFirebasePushService(
     internal val coroutineContext: CoroutineContext = Dispatchers.IO,
 ) : FirebaseMessagingService(), PushService {
 
+    private val scope = CoroutineScope(coroutineContext + SupervisorJob())
     private val logger = Logger("AbstractFirebasePushService")
 
     @VisibleForTesting
@@ -88,9 +91,9 @@ abstract class AbstractFirebasePushService(
      * service hits the Firebase servers.
      */
     override fun deleteToken() {
-        CoroutineScope(coroutineContext).launch {
+        scope.launch {
             try {
-                FirebaseMessaging.getInstance().deleteToken()
+                getFirebaseMessaging().deleteToken()
             } catch (e: IOException) {
                 logger.error("Force registration renewable failed.", e)
             }
@@ -100,4 +103,11 @@ abstract class AbstractFirebasePushService(
     override fun isServiceAvailable(context: Context): Boolean {
         return googleApiAvailability.isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        scope.cancel()
+    }
+
+    protected open fun getFirebaseMessaging(): FirebaseMessaging = FirebaseMessaging.getInstance()
 }

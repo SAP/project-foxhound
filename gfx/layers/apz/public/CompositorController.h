@@ -8,7 +8,6 @@
 #define mozilla_layers_CompositorController_h
 
 #include "nsISupportsImpl.h"  // for NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
-#include "mozilla/Maybe.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 
 namespace mozilla {

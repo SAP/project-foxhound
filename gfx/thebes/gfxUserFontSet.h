@@ -182,17 +182,26 @@ class gfxUserFontFamily : public gfxFontFamily {
 
   virtual ~gfxUserFontFamily();
 
-  // add the given font entry to the end of the family's list
+  // Add the given font entry to the end of the family's list.
   void AddFontEntry(gfxFontEntry* aFontEntry) {
     mozilla::AutoWriteLock lock(mLock);
     MOZ_ASSERT(!mIsSimpleFamily, "not valid for user-font families");
-    // keep ref while removing existing entry
-    RefPtr<gfxFontEntry> fe = aFontEntry;
-    // remove existing entry, if already present
-    mAvailableFonts.RemoveElement(aFontEntry);
-    // insert at the beginning so that the last-defined font is the first
-    // one in the fontlist used for matching, as per CSS Fonts spec
-    mAvailableFonts.InsertElementAt(0, aFontEntry);
+
+    // If this entry is already the last in the list, we can bail out without
+    // doing any work.
+    if (!mAvailableFonts.IsEmpty()) {
+      if (mAvailableFonts.LastElement() == aFontEntry) {
+        return;
+      }
+    }
+
+    // Append new entry: we will search faces from the end, so that the last-
+    // defined font is the first one in the fontlist used for matching, as per
+    // CSS Fonts spec.
+    // (It is possible that the entry is already present earlier in the list,
+    // but duplication is harmless and it's not worth the cost of searching for
+    // an existing entry here.)
+    mAvailableFonts.AppendElement(aFontEntry);
 
     if (aFontEntry->mFamilyName.IsEmpty()) {
       aFontEntry->mFamilyName = Name();
@@ -301,7 +310,7 @@ class gfxUserFontSet {
 
   virtual already_AddRefed<gfxFontSrcPrincipal> GetStandardFontLoadPrincipal()
       const = 0;
-  virtual nsPresContext* GetPresContext() const = 0;
+  virtual FontVisibilityProvider* GetFontVisibilityProvider() const = 0;
 
   // check whether content policies allow the given URI to load.
   virtual bool IsFontLoadAllowed(const gfxFontFaceSrc&) = 0;

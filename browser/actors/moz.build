@@ -4,31 +4,91 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-with Files("**"):
+with Files("AboutNewTab*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "New Tab Page")
+
+with Files("AboutPrivateBrowsing*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Private Browsing")
+
+with Files("AboutProtections*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Protections UI")
+
+with Files("AboutReader*.sys.mjs"):
+    BUG_COMPONENT = ("Toolkit", "Reader Mode")
+
+with Files("AboutTabCrashed*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Session Restore")
+
+with Files("BlockedSite*.sys.mjs"):
+    BUG_COMPONENT = ("Toolkit", "Safe Browsing")
+
+with Files("BrowserProcessChild.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "General")
+
+with Files("BrowserTabChild.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "General")
+
+with Files("ClickHandler*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
 
 with Files("ContentSearch*.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Search")
 
-with Files("AboutReaderParent.sys.mjs"):
-    BUG_COMPONENT = ("Toolkit", "Reader Mode")
-
-with Files("LightweightThemeChild.sys.mjs"):
-    BUG_COMPONENT = ("WebExtensions", "Themes")
-
-with Files("PageInfoChild.sys.mjs"):
-    BUG_COMPONENT = ("Firefox", "Page Info Window")
-
-with Files("PageStyleChild.sys.mjs"):
+with Files("ContextMenu*.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Menus")
 
-with Files("PluginChild.sys.mjs"):
+with Files("DecoderDoctor*.sys.mjs"):
+    BUG_COMPONENT = ("Core", "Audio/Video: Playback")
+
+with Files("DOMFullscreen*.sys.mjs"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
+with Files("EncryptedMedia*.sys.mjs"):
+    BUG_COMPONENT = ("Core", "Audio/Video: Playback")
+
+with Files("FormValidation*.sys.mjs"):
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
+
+with Files("LightweightThemeChild.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Theme")
+
+with Files("LinkHandler*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
+
+with Files("PageInfo*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Page Info Window")
+
+with Files("PageStyle*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Menus")
+
+with Files("Plugin*.sys.mjs"):
     BUG_COMPONENT = ("Core", "Audio/Video: GMP")
+
+with Files("PointerLock*.sys.mjs"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
+
+with Files("PromptParent.sys.mjs"):
+    BUG_COMPONENT = ("Toolkit", "Content Prompts")
+
+with Files("RefreshBlocker*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Security")
 
 with Files("ScreenshotsComponentChild.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Screenshots")
 
-with Files("WebRTCChild.sys.mjs"):
+with Files("SearchSERPTelemetry*.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Search")
+
+with Files("SpeechDispatcher*.sys.mjs"):
+    BUG_COMPONENT = ("Core", "Web Speech")
+
+with Files("SwitchDocumentDirectionChild.sys.mjs"):
+    BUG_COMPONENT = ("Core", "Internationalization")
+
+with Files("TLSCertificateBindingChild.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Security")
+
+with Files("WebRTC*.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Site Permissions")
 
 FINAL_TARGET_FILES.actors += [
@@ -64,6 +124,7 @@ FINAL_TARGET_FILES.actors += [
     "LinkHandlerChild.sys.mjs",
     "LinkHandlerParent.sys.mjs",
     "PageInfoChild.sys.mjs",
+    "PageInfoPreviewChild.sys.mjs",
     "PageStyleChild.sys.mjs",
     "PageStyleParent.sys.mjs",
     "PluginChild.sys.mjs",
@@ -79,6 +140,7 @@ FINAL_TARGET_FILES.actors += [
     "SpeechDispatcherChild.sys.mjs",
     "SpeechDispatcherParent.sys.mjs",
     "SwitchDocumentDirectionChild.sys.mjs",
+    "TLSCertificateBindingChild.sys.mjs",
     "WebRTCChild.sys.mjs",
     "WebRTCParent.sys.mjs",
 ]

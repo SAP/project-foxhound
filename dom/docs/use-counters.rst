@@ -46,7 +46,7 @@ Then run ``./mach gen-use-counter-metrics`` and build as normal.
 Deprecated DOM operations
 -------------------------
 Use counters for deprecated DOM operations are declared in
-:searchfox:`nsDeprecatedOperationList.h <dom/base/nsDeprecatedOperationList.h>`.
+:searchfox:`nsDeprecatedOperationList.inc <dom/base/nsDeprecatedOperationList.h>`.
 To add a use counter for a deprecated DOM operation, you'll add an invocation of the
 ``DEPRECATED_OPERATION(DeprecationReference)`` macro.
 The provided parameter must have the same value of the deprecation note added to the *IDL* file.

@@ -7,12 +7,7 @@
 "use strict";
 requestLongerTimeout(2);
 
-const kBaseUrlForContent = getRootDirectory(gTestPath).replace(
-  "chrome://mochitests/content",
-  "https://example.com"
-);
-const kContentFileName = "file_toplevel.html";
-const kContentFileUrl = kBaseUrlForContent + kContentFileName;
+const kContentFileUrl = kBaseUrlForContent + "file_toplevel.html";
 const kIsMac = navigator.platform.indexOf("Mac") > -1;
 
 async function waitForPasteContextMenu() {
@@ -126,8 +121,6 @@ function testExtensionContentScript(aContentScript, aMessage) {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["dom.events.asyncClipboard.readText", true],
-      ["dom.events.asyncClipboard.clipboardItem", true],
       ["test.events.async.enabled", true],
       // Avoid paste button delay enabling making test too long.
       ["security.dialog_enable_delay", 0],

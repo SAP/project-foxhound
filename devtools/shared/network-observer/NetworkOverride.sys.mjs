@@ -20,7 +20,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "mimeService",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 
 function readFile(file) {
@@ -39,7 +39,7 @@ function readFile(file) {
  *
  * @param {nsIHttpChannel} channel
  *        The request to replace content for.
- * @param {String} path
+ * @param {string} path
  *        The absolute path to the local file to read content from.
  */
 function overrideChannelWithFilePath(channel, path) {

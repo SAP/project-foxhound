@@ -19,18 +19,23 @@ import { LinkParagraph } from "./LinkParagraph";
 import { ContentTiles } from "./ContentTiles";
 import { InstallButton } from "./InstallButton";
 
+const DEFAULT_AUTO_ADVANCE_MS = 20000;
+
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
   useEffect(() => {
     if (autoAdvance) {
+      const value = autoAdvance?.actionEl ?? autoAdvance;
+      const timeout = autoAdvance?.actionTimeMS ?? DEFAULT_AUTO_ADVANCE_MS;
+
       const timer = setTimeout(() => {
         handleAction({
           currentTarget: {
-            value: autoAdvance,
+            value,
           },
           name: "AUTO_ADVANCE",
         });
-      }, 20000);
+      }, timeout);
       return () => clearTimeout(timer);
     }
     return () => {};
@@ -81,6 +86,8 @@ export const MultiStageProtonScreen = props => {
       setActiveMultiSelect={props.setActiveMultiSelect}
       activeSingleSelectSelections={props.activeSingleSelectSelections}
       setActiveSingleSelectSelection={props.setActiveSingleSelectSelection}
+      textInputs={props.textInputs}
+      setTextInput={props.setTextInput}
       totalNumberOfScreens={props.totalNumberOfScreens}
       handleAction={props.handleAction}
       isFirstScreen={props.isFirstScreen}
@@ -96,6 +103,7 @@ export const MultiStageProtonScreen = props => {
       addonIconURL={props.addonIconURL}
       themeScreenshots={props.themeScreenshots}
       messageId={props.messageId}
+      writeInMicrosurvey={props.writeInMicrosurvey}
       negotiatedLanguage={props.negotiatedLanguage}
       langPackInstallPhase={props.langPackInstallPhase}
       forceHideStepsIndicator={props.forceHideStepsIndicator}
@@ -114,6 +122,7 @@ export const ProtonScreenActionButtons = props => {
     addonType,
     addonName,
     activeMultiSelect,
+    textInputs,
     installedAddons,
   } = props;
   const defaultValue = content.checkbox?.defaultValue;
@@ -145,8 +154,8 @@ export const ProtonScreenActionButtons = props => {
 
   // If we have a multi-select screen, we want to disable the primary button
   // until the user has selected at least one item.
-  const isPrimaryDisabled = primaryDisabledValue => {
-    if (primaryDisabledValue === "hasActiveMultiSelect") {
+  const isPrimaryDisabled = disabledValue => {
+    if (disabledValue === "hasActiveMultiSelect") {
       if (!activeMultiSelect) {
         return true;
       }
@@ -159,7 +168,17 @@ export const ProtonScreenActionButtons = props => {
       }
       return true;
     }
-    return primaryDisabledValue;
+    if (disabledValue === "hasTextInput") {
+      // For text input, we check if the user has entered any text in the
+      // textarea(s) present on the screen.
+      if (!textInputs) {
+        return true;
+      }
+      return Object.values(textInputs).every(
+        input => !input.isValid || input.value.trim().length === 0
+      );
+    }
+    return disabledValue;
   };
 
   return (
@@ -207,7 +226,12 @@ export const ProtonScreenActionButtons = props => {
         </Localized>
       )}
       {content.additional_button ? (
-        <AdditionalCTA content={content} handleAction={props.handleAction} />
+        <AdditionalCTA
+          content={content}
+          handleAction={props.handleAction}
+          activeMultiSelect={activeMultiSelect}
+          textInputs={textInputs}
+        />
       ) : null}
       {content.checkbox ? (
         <div className="checkbox-container">
@@ -229,6 +253,7 @@ export const ProtonScreenActionButtons = props => {
           content={content}
           handleAction={props.handleAction}
           activeMultiSelect={activeMultiSelect}
+          textInputs={textInputs}
         />
       ) : null}
     </div>
@@ -237,18 +262,15 @@ export const ProtonScreenActionButtons = props => {
 
 export class ProtonScreen extends React.PureComponent {
   componentDidMount() {
+    // Don't focus on main content if it is a feature callout
+    // See Bug 1985939
+    if (this.props.content?.position === "callout") {
+      return;
+    }
     this.mainContentHeader.focus();
   }
 
-  getScreenClassName(
-    isFirstScreen,
-    isLastScreen,
-    includeNoodles,
-    isVideoOnboarding,
-    isAddonsPicker
-  ) {
-    const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
-
+  getScreenClassName(includeNoodles, isVideoOnboarding, isAddonsPicker) {
     if (isVideoOnboarding) {
       return "with-video";
     }
@@ -257,9 +279,14 @@ export class ProtonScreen extends React.PureComponent {
       return "addons-picker";
     }
 
-    return `${isFirstScreen ? `dialog-initial` : ``} ${
-      isLastScreen ? `dialog-last` : ``
-    } ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
+    const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
+    const dialogInitial =
+      this.props.isFirstScreen && this.props.previousOrder < 0
+        ? `dialog-initial`
+        : ``;
+    const dialogLast = this.props.isLastScreen ? `dialog-last` : ``;
+
+    return `${screenClass} ${dialogInitial} ${dialogLast} ${includeNoodles ? `with-noodles` : ``}`;
   }
 
   renderTitle({ title, title_logo }) {
@@ -365,6 +392,7 @@ export class ProtonScreen extends React.PureComponent {
         negotiatedLanguage={this.props.negotiatedLanguage}
         langPackInstallPhase={this.props.langPackInstallPhase}
         messageId={this.props.messageId}
+        writeInMicrosurvey={this.props.writeInMicrosurvey}
       />
     ) : null;
   }
@@ -468,9 +496,9 @@ export class ProtonScreen extends React.PureComponent {
       typeof hero_text === "string" ||
       (typeof hero_text === "object" &&
         hero_text !== null &&
-        "string_id" in hero_text);
+        ("string_id" in hero_text || "raw" in hero_text));
 
-    const HeroTextWrapper = ({ children, className = "" }) => (
+    const HeroTextWrapper = ({ children, className }) => (
       <React.Fragment>
         <div className={`message-text ${className}`}>
           <div className="spacer-top" />
@@ -482,7 +510,7 @@ export class ProtonScreen extends React.PureComponent {
 
     if (isSimpleText) {
       return (
-        <HeroTextWrapper>
+        <HeroTextWrapper className="simple">
           <Localized text={hero_text}>
             <h1 />
           </Localized>
@@ -550,6 +578,7 @@ export class ProtonScreen extends React.PureComponent {
       </div>
     );
   }
+
   getCombinedInnerStyles(content, isWideScreen) {
     const CONFIGURABLE_STYLES = [
       "overflow",
@@ -578,6 +607,40 @@ export class ProtonScreen extends React.PureComponent {
     };
   }
 
+  getActionButtonsPosition(content) {
+    const VALID_POSITIONS = [
+      "after_subtitle",
+      "after_supporting_content",
+      "end",
+    ];
+
+    if (VALID_POSITIONS.includes(content.action_buttons_position)) {
+      return content.action_buttons_position;
+    }
+    // Legacy mapping
+    if (content.action_buttons_above_content) {
+      return "after_subtitle";
+    }
+    // Default
+    return "end";
+  }
+
+  renderActionButtons(position, content) {
+    return this.getActionButtonsPosition(content) === position ? (
+      <ProtonScreenActionButtons
+        content={content}
+        isRtamo={this.props.isRtamo}
+        installedAddons={this.props.installedAddons}
+        addonId={this.props.addonId}
+        addonName={this.props.addonName}
+        addonType={this.props.addonType}
+        handleAction={this.props.handleAction}
+        activeMultiSelect={this.props.activeMultiSelect}
+        textInputs={this.props.textInputs}
+      />
+    ) : null;
+  }
+
   // eslint-disable-next-line complexity
   render() {
     const {
@@ -585,8 +648,6 @@ export class ProtonScreen extends React.PureComponent {
       content,
       isRtamo,
       addonType,
-      isFirstScreen,
-      isLastScreen,
       isSingleScreen,
       forceHideStepsIndicator,
       ariaRole,
@@ -608,8 +669,6 @@ export class ProtonScreen extends React.PureComponent {
     // by checking if screen order is even or odd.
     const screenClassName = isCenterPosition
       ? this.getScreenClassName(
-          isFirstScreen,
-          isLastScreen,
           includeNoodles,
           content?.video_container,
           content.tiles?.type === "addons-picker"
@@ -618,7 +677,6 @@ export class ProtonScreen extends React.PureComponent {
     const isEmbeddedMigration = content.tiles?.type === "migration-wizard";
     const isSystemPromptStyleSpotlight =
       content.isSystemPromptStyleSpotlight === true;
-
     const combinedStyles = this.getCombinedInnerStyles(content, isWideScreen);
 
     return (
@@ -660,6 +718,7 @@ export class ProtonScreen extends React.PureComponent {
             AboutWelcomeUtils.getValidStyle(content.screen_style, [
               "width",
               "padding",
+              "height",
             ])
           }
         >
@@ -696,7 +755,6 @@ export class ProtonScreen extends React.PureComponent {
             {content.logo && !content.fullscreen
               ? this.renderPicture(content.logo)
               : null}
-
             {isRtamo && !content.fullscreen
               ? this.renderRTAMOIcon(
                   addonType,
@@ -704,7 +762,6 @@ export class ProtonScreen extends React.PureComponent {
                   this.props.addonIconURL
                 )
               : null}
-
             <div className="main-content-inner" style={combinedStyles}>
               {content.logo && content.fullscreen
                 ? this.renderPicture(content.logo)
@@ -739,18 +796,7 @@ export class ProtonScreen extends React.PureComponent {
                       />
                     </Localized>
                   ) : null}
-                  {content.action_buttons_above_content && (
-                    <ProtonScreenActionButtons
-                      content={content}
-                      isRtamo={this.props.isRtamo}
-                      installedAddons={this.props.installedAddons}
-                      addonId={this.props.addonId}
-                      addonName={this.props.addonName}
-                      addonType={this.props.addonType}
-                      handleAction={this.props.handleAction}
-                      activeMultiSelect={this.props.activeMultiSelect}
-                    />
-                  )}
+                  {this.renderActionButtons("after_subtitle", content)}
                   {content.cta_paragraph ? (
                     <CTAParagraph
                       content={content.cta_paragraph}
@@ -765,26 +811,23 @@ export class ProtonScreen extends React.PureComponent {
                   handleAction={this.props.handleAction}
                 />
               ) : null}
-              <ContentTiles {...this.props} />
               {this.renderLanguageSwitcher()}
+              {content?.tiles_container?.position !==
+              "after_supporting_content" ? (
+                <ContentTiles {...this.props} />
+              ) : null}
               {content.above_button_content
                 ? this.renderOrderedContent(content.above_button_content)
                 : null}
+              {this.renderActionButtons("after_supporting_content", content)}
+              {content?.tiles_container?.position ===
+              "after_supporting_content" ? (
+                <ContentTiles {...this.props} />
+              ) : null}
               {!hideStepsIndicator && aboveButtonStepsIndicator
                 ? this.renderStepsIndicator()
                 : null}
-              {!content.action_buttons_above_content && (
-                <ProtonScreenActionButtons
-                  content={content}
-                  isRtamo={this.props.isRtamo}
-                  installedAddons={this.props.installedAddons}
-                  addonId={this.props.addonId}
-                  addonName={this.props.addonName}
-                  addonType={this.props.addonType}
-                  handleAction={this.props.handleAction}
-                  activeMultiSelect={this.props.activeMultiSelect}
-                />
-              )}
+              {this.renderActionButtons("end", content)}
               {
                 /* Fullscreen dot-style step indicator should sit inside the
               main inner content to share its padding, which will be

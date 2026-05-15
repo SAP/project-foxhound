@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 /**
  * The base view implements everything that's common to all the views.
  * It should not be instanced directly, use a derived class instead.
@@ -415,6 +413,7 @@ class PlacesViewBase {
 
         if (!this._nativeView) {
           popup.setAttribute("placespopup", "true");
+          popup.setAttribute("native", "false");
         }
 
         element.appendChild(popup);
@@ -429,7 +428,7 @@ class PlacesViewBase {
 
       let icon = aPlacesNode.icon;
       if (icon) {
-        element.setAttribute("image", icon);
+        element.setAttribute("image", ChromeUtils.encodeURIForSrcset(icon));
       }
     }
 
@@ -496,7 +495,7 @@ class PlacesViewBase {
     }
     // We must remove and reset the attribute to force an update.
     elt.removeAttribute("image");
-    elt.setAttribute("image", aPlacesNode.icon);
+    elt.setAttribute("image", ChromeUtils.encodeURIForSrcset(aPlacesNode.icon));
   }
 
   nodeTitleChanged(aPlacesNode, aNewTitle) {
@@ -797,6 +796,15 @@ class PlacesViewBase {
     }
 
     if (popup._placesNode && PlacesUIUtils.getViewForNode(popup) == this) {
+      if (this.#isPopupForRecursiveFolderShortcut(popup)) {
+        // Show as an empty container for now. We may want to show a better
+        // message in the future, but since we are likely to remove recursive
+        // shortcuts in maintenance at a certain point, this should be enough.
+        this._setEmptyPopupStatus(popup, true);
+        popup._built = true;
+        return;
+      }
+
       if (!popup._placesNode.containerOpen) {
         popup._placesNode.containerOpen = true;
       }
@@ -818,6 +826,33 @@ class PlacesViewBase {
     for (let i = 0; i < aEventNames.length; i++) {
       aObject.removeEventListener(aEventNames[i], this, aCapturing);
     }
+  }
+
+  /**
+   * Walks up the parent chain to detect whether a folder shortcut resolves to
+   * a folder already present in the ancestry.
+   *
+   * @param {DOMElement} popup
+   * @returns {boolean} Whether this popup is for a recursive folder shortcut.
+   */
+  #isPopupForRecursiveFolderShortcut(popup) {
+    if (
+      !popup._placesNode ||
+      !PlacesUtils.nodeIsFolderOrShortcut(popup._placesNode)
+    ) {
+      return false;
+    }
+    let guid = PlacesUtils.getConcreteItemGuid(popup._placesNode);
+    for (
+      let parentView = popup.parentNode?.parentNode;
+      parentView?._placesNode;
+      parentView = parentView.parentNode?.parentNode
+    ) {
+      if (PlacesUtils.getConcreteItemGuid(parentView._placesNode) == guid) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -1075,6 +1110,7 @@ class PlacesToolbar extends PlacesViewBase {
           is: "places-popup",
         });
         popup.setAttribute("placespopup", "true");
+        popup.setAttribute("native", "false");
         popup.classList.add("toolbar-menupopup");
         button.appendChild(popup);
         popup._placesNode = PlacesUtils.asContainer(aChild);
@@ -1338,7 +1374,7 @@ class PlacesToolbar extends PlacesViewBase {
       } else {
         let icon = aPlacesNode.icon;
         if (icon) {
-          button.setAttribute("image", icon);
+          button.setAttribute("image", ChromeUtils.encodeURIForSrcset(icon));
         }
         this.updateNodesVisibility();
       }
@@ -1427,7 +1463,7 @@ class PlacesToolbar extends PlacesViewBase {
         );
         let icon = aPlacesNode.icon;
         if (icon) {
-          elt.setAttribute("image", icon);
+          elt.setAttribute("image", ChromeUtils.encodeURIForSrcset(icon));
         }
       } else {
         this._rootElt.insertBefore(elt, this._rootElt.children[aNewIndex]);
@@ -1785,6 +1821,34 @@ class PlacesToolbar extends PlacesViewBase {
     aEvent.stopPropagation();
   }
 
+  /**
+   * Finds the last visible toolbar widget before the PlacesToolbar container.
+   *
+   * @returns {Element|null}
+   *   The last visible widget element, or null if none found.
+   */
+  #findPrecedingToolbarWidget() {
+    let toolbar = this._rootElt.closest("toolbar");
+    if (!toolbar) {
+      return null;
+    }
+    let placesContainer = this._rootElt.closest("toolbaritem");
+    let lastWidget = null;
+    for (let child of toolbar.children) {
+      if (child == placesContainer) {
+        break;
+      }
+      if (
+        !child.hidden &&
+        !child.collapsed &&
+        child.getBoundingClientRect().width > 0
+      ) {
+        lastWidget = child;
+      }
+    }
+    return lastWidget;
+  }
+
   _onDragOver(aEvent) {
     // Cache the dataTransfer
     PlacesControllerDragHelper.currentDropTarget = aEvent.target;
@@ -1822,6 +1886,7 @@ class PlacesToolbar extends PlacesViewBase {
       ind.parentNode.collapsed = false;
       let halfInd = ind.clientWidth / 2;
       let translateX;
+
       if (this.isRTL) {
         halfInd = Math.ceil(halfInd);
         translateX = 0 - this._rootElt.getBoundingClientRect().right - halfInd;
@@ -1834,6 +1899,14 @@ class PlacesToolbar extends PlacesViewBase {
               this._rootElt.children[
                 dropPoint.beforeIndex
               ].getBoundingClientRect().right;
+          }
+        } else {
+          // When there are no bookmark items, position the indicator at the
+          // edge of any preceding toolbar widgets (e.g., import-bookmarks button)
+          // which appear on the right in RTL layout.
+          let prevWidget = this.#findPrecedingToolbarWidget();
+          if (prevWidget) {
+            translateX += prevWidget.getBoundingClientRect().left;
           }
         }
       } else {
@@ -1848,6 +1921,13 @@ class PlacesToolbar extends PlacesViewBase {
               this._rootElt.children[
                 dropPoint.beforeIndex
               ].getBoundingClientRect().left;
+          }
+        } else {
+          // When there are no bookmark items, position the indicator at the
+          // edge of any preceding toolbar widgets (e.g., import-bookmarks button).
+          let prevWidget = this.#findPrecedingToolbarWidget();
+          if (prevWidget) {
+            translateX += prevWidget.getBoundingClientRect().right;
           }
         }
       }

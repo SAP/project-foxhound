@@ -2,14 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FFmpegLibWrapper_h__
-#define __FFmpegLibWrapper_h__
+#ifndef FFmpegLibWrapper_h_
+#define FFmpegLibWrapper_h_
 
+#include "ffvpx/tx.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DefineEnum.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Types.h"
-#include "ffvpx/tx.h"
 
 struct AVCodec;
 struct AVCodecContext;
@@ -26,6 +25,9 @@ struct AVVAAPIHWConfig;
 struct AVHWFramesConstraints;
 #endif
 struct AVBufferRef;
+#ifdef MOZ_WIDGET_ANDROID
+typedef struct MediaCodecBuffer AVMediaCodecBuffer;
+#endif
 
 namespace mozilla {
 
@@ -55,7 +57,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
 
 #ifdef MOZ_WIDGET_GTK
   // Check if libva and libva-drm are available and we can use HW decode.
-  bool IsVAAPIAvailable();
+  bool IsVAAPIAvailable() const;
 #endif
 
   // Helpers for libavcodec/util logging to integrate with MOZ_LOG.
@@ -153,6 +155,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
 
   // libavutil v55 and later only
   AVFrame* (*av_frame_alloc)();
+  AVFrame* (*av_frame_clone)(const AVFrame* frame);
   void (*av_frame_free)(AVFrame** frame);
   void (*av_frame_unref)(AVFrame* frame);
   int (*av_frame_get_buffer)(AVFrame* frame, int align);
@@ -190,6 +193,11 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
                                         AVBufferRef* src_ctx, int flags);
   const char* (*avcodec_get_name)(int id);
   char* (*av_get_pix_fmt_string)(char* buf, int buf_size, int pix_fmt);
+#endif
+
+#if defined(MOZ_WIDGET_ANDROID)
+  int (*av_mediacodec_release_buffer)(AVMediaCodecBuffer*, int);
+  int (*moz_avcodec_mediacodec_is_eos)(AVCodecContext*);
 #endif
 
   // Only ever used with ffvpx

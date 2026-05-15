@@ -5,10 +5,9 @@
 package mozilla.components.feature.pwa
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.BrowserState
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
@@ -24,7 +23,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.`when`
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class WebAppUseCasesTest {
     @Test
@@ -142,7 +140,7 @@ private fun createTestSession(
 
     return tab.copy(
         content = tab.content.copy(
-            securityInfo = SecurityInfoState(secure = secure),
+            securityInfo = SecurityInfo.from(secure),
             webAppManifest = manifest,
         ),
     )

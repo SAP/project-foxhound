@@ -30,6 +30,7 @@ add_task(async function testNewProfile() {
     id: "provider1",
     uri: "https://example.org/1",
     autoDefault: true,
+    http3First: true,
   };
   let provider2 = {
     id: "provider2",

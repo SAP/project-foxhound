@@ -1,11 +1,7 @@
-// |reftest| shell-option(--enable-iterator-helpers) skip-if(!this.hasOwnProperty('Iterator')||!xulRuntime.shell) -- iterator-helpers is not enabled unconditionally, requires shell-options
 // Copyright (C) 2024 Mozilla Corporation. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 features:
   - iterator-helpers
 info: |
@@ -17,14 +13,14 @@ esid: pending
 
 const iter = [].values();
 
-assertThrowsInstanceOf(() => iter.some(), TypeError);
-assertThrowsInstanceOf(() => iter.some(undefined), TypeError);
-assertThrowsInstanceOf(() => iter.some(null), TypeError);
-assertThrowsInstanceOf(() => iter.some(0), TypeError);
-assertThrowsInstanceOf(() => iter.some(false), TypeError);
-assertThrowsInstanceOf(() => iter.some(''), TypeError);
-assertThrowsInstanceOf(() => iter.some(Symbol('')), TypeError);
-assertThrowsInstanceOf(() => iter.some({}), TypeError);
+assert.throws(TypeError, () => iter.some());
+assert.throws(TypeError, () => iter.some(undefined));
+assert.throws(TypeError, () => iter.some(null));
+assert.throws(TypeError, () => iter.some(0));
+assert.throws(TypeError, () => iter.some(false));
+assert.throws(TypeError, () => iter.some(''));
+assert.throws(TypeError, () => iter.some(Symbol('')));
+assert.throws(TypeError, () => iter.some({}));
 
 
 reportCompare(0, 0);

@@ -17,7 +17,7 @@ const TEST_SJS_URL =
 
 async function testScriptCacheAndPartition({ enableCache, type }) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", enableCache]],
+    set: [["dom.script_loader.experimental.navigation_cache", enableCache]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

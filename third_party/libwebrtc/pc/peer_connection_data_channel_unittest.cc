@@ -14,18 +14,16 @@
 #include <utility>
 #include <vector>
 
+#include "api/create_modular_peer_connection_factory.h"
 #include "api/jsep.h"
 #include "api/media_types.h"
 #include "api/peer_connection_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/sctp_transport_interface.h"
-#include "api/task_queue/default_task_queue_factory.h"
-#include "p2p/base/p2p_constants.h"
 #include "pc/media_session.h"
 #include "pc/peer_connection.h"
 #include "pc/peer_connection_wrapper.h"
 #include "pc/sctp_transport.h"
-#include "pc/sdp_utils.h"
 #include "pc/session_description.h"
 #include "pc/test/enable_fake_media.h"
 #include "pc/test/mock_peer_connection_observers.h"
@@ -43,11 +41,14 @@
 
 namespace webrtc {
 
+using ::testing::HasSubstr;
+using ::testing::IsEmpty;
+using ::testing::Not;
+using ::testing::NotNull;
+using ::testing::Values;
+
 using RTCConfiguration = PeerConnectionInterface::RTCConfiguration;
 using RTCOfferAnswerOptions = PeerConnectionInterface::RTCOfferAnswerOptions;
-using ::testing::HasSubstr;
-using ::testing::Not;
-using ::testing::Values;
 
 namespace {
 
@@ -56,7 +57,6 @@ PeerConnectionFactoryDependencies CreatePeerConnectionFactoryDependencies() {
   deps.network_thread = Thread::Current();
   deps.worker_thread = Thread::Current();
   deps.signaling_thread = Thread::Current();
-  deps.task_queue_factory = CreateDefaultTaskQueueFactory();
   EnableFakeMedia(deps);
   deps.sctp_factory = std::make_unique<FakeSctpTransportFactory>();
   return deps;
@@ -117,7 +117,7 @@ class PeerConnectionDataChannelBaseTest : public ::testing::Test {
     auto factory_deps = CreatePeerConnectionFactoryDependencies();
     FakeSctpTransportFactory* fake_sctp_transport_factory =
         static_cast<FakeSctpTransportFactory*>(factory_deps.sctp_factory.get());
-    rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory =
+    scoped_refptr<PeerConnectionFactoryInterface> pc_factory =
         CreateModularPeerConnectionFactory(std::move(factory_deps));
     pc_factory->SetOptions(factory_options);
     auto observer = std::make_unique<MockPeerConnectionObserver>();
@@ -183,7 +183,7 @@ TEST_P(PeerConnectionDataChannelTest, InternalSctpTransportDeletedOnTeardown) {
   ASSERT_TRUE(caller->SetLocalDescription(caller->CreateOffer()));
   EXPECT_TRUE(caller->sctp_transport_factory()->last_fake_sctp_transport());
 
-  rtc::scoped_refptr<SctpTransportInterface> sctp_transport =
+  scoped_refptr<SctpTransportInterface> sctp_transport =
       caller->GetInternalPeerConnection()->GetSctpTransport();
 
   caller.reset();
@@ -208,17 +208,14 @@ TEST_P(PeerConnectionDataChannelTest, SctpContentAndTransportNameSetCorrectly) {
   caller->AddVideoTrack("v");
   caller->pc()->CreateDataChannelOrError("dc", nullptr);
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   const auto& offer_contents = offer->description()->contents();
-  ASSERT_EQ(webrtc::MediaType::AUDIO,
-            offer_contents[0].media_description()->type());
+  ASSERT_EQ(MediaType::AUDIO, offer_contents[0].media_description()->type());
   auto audio_mid = offer_contents[0].mid();
-  ASSERT_EQ(webrtc::MediaType::DATA,
-            offer_contents[2].media_description()->type());
+  ASSERT_EQ(MediaType::DATA, offer_contents[2].media_description()->type());
   auto data_mid = offer_contents[2].mid();
 
-  ASSERT_TRUE(
-      caller->SetLocalDescription(CloneSessionDescription(offer.get())));
+  ASSERT_TRUE(caller->SetLocalDescription(offer->Clone()));
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
 
   ASSERT_TRUE(caller->sctp_mid());
@@ -242,10 +239,8 @@ TEST_P(PeerConnectionDataChannelTest, SctpContentAndTransportNameSetCorrectly) {
 TEST_P(PeerConnectionDataChannelTest,
        CreateOfferWithNoDataChannelsGivesNoDataSection) {
   auto caller = CreatePeerConnection();
-  auto offer = caller->CreateOffer();
-
-  EXPECT_FALSE(offer->description()->GetContentByName(cricket::CN_DATA));
-  EXPECT_FALSE(offer->description()->GetTransportInfoByName(cricket::CN_DATA));
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
+  EXPECT_THAT(offer->description()->contents(), IsEmpty());
 }
 
 TEST_P(PeerConnectionDataChannelTest,
@@ -255,8 +250,8 @@ TEST_P(PeerConnectionDataChannelTest,
 
   ASSERT_TRUE(callee->SetRemoteDescription(caller->CreateOfferAndSetAsLocal()));
 
-  auto answer = callee->CreateAnswer();
-  ASSERT_TRUE(answer);
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
+  ASSERT_THAT(answer, NotNull());
   auto* data_content = GetFirstDataContent(answer->description());
   ASSERT_TRUE(data_content);
   EXPECT_FALSE(data_content->rejected);
@@ -271,11 +266,11 @@ TEST_P(PeerConnectionDataChannelTest, SctpPortPropagatedFromSdpToTransport) {
   auto caller = CreatePeerConnectionWithDataChannel();
   auto callee = CreatePeerConnectionWithDataChannel();
 
-  auto offer = caller->CreateOffer();
+  std::unique_ptr<SessionDescriptionInterface> offer = caller->CreateOffer();
   ChangeSctpPortOnDescription(offer->description(), kNewSendPort);
   ASSERT_TRUE(callee->SetRemoteDescription(std::move(offer)));
 
-  auto answer = callee->CreateAnswer();
+  std::unique_ptr<SessionDescriptionInterface> answer = callee->CreateAnswer();
   ChangeSctpPortOnDescription(answer->description(), kNewRecvPort);
   std::string sdp;
   answer->ToString(&sdp);
@@ -290,7 +285,8 @@ TEST_P(PeerConnectionDataChannelTest, SctpPortPropagatedFromSdpToTransport) {
 TEST_P(PeerConnectionDataChannelTest, ModernSdpSyntaxByDefault) {
   PeerConnectionInterface::RTCOfferAnswerOptions options;
   auto caller = CreatePeerConnectionWithDataChannel();
-  auto offer = caller->CreateOffer(options);
+  std::unique_ptr<SessionDescriptionInterface> offer =
+      caller->CreateOffer(options);
   EXPECT_FALSE(
       GetFirstSctpDataContentDescription(offer->description())->use_sctpmap());
   std::string sdp;
@@ -304,7 +300,8 @@ TEST_P(PeerConnectionDataChannelTest, ObsoleteSdpSyntaxIfSet) {
   PeerConnectionInterface::RTCOfferAnswerOptions options;
   options.use_obsolete_sctp_sdp = true;
   auto caller = CreatePeerConnectionWithDataChannel();
-  auto offer = caller->CreateOffer(options);
+  std::unique_ptr<SessionDescriptionInterface> offer =
+      caller->CreateOffer(options);
   EXPECT_TRUE(
       GetFirstSctpDataContentDescription(offer->description())->use_sctpmap());
   std::string sdp;

@@ -31,6 +31,7 @@ const EXAMPLE_URL = "https://example.com/";
 const SMATestUtils = {
   /**
    * Checks if an action is valid acording to existing schemas
+   *
    * @param {SpecialMessageAction} action
    */
   async validateAction(action) {
@@ -52,6 +53,7 @@ const SMATestUtils = {
 
   /**
    * Executes a Special Message Action after validating it
+   *
    * @param {SpecialMessageAction} action
    * @param {Browser} browser
    */

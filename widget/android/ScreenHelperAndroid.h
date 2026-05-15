@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ScreenHelperAndroid_h___
-#define ScreenHelperAndroid_h___
+#ifndef ScreenHelperAndroid_h_
+#define ScreenHelperAndroid_h_
 
 #include "mozilla/widget/ScreenManager.h"
 #include "nsTHashMap.h"
@@ -26,4 +26,4 @@ class ScreenHelperAndroid final : public ScreenManager::Helper {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif /* ScreenHelperAndroid_h___ */
+#endif /* ScreenHelperAndroid_h_ */

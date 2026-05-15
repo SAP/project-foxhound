@@ -1,0 +1,42 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+::slotted(moz-breadcrumb-group) {
+  margin-block-end: var(--space-large);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  min-height: var(--button-min-height);
+}
+
+.back-button:dir(rtl) {
+  transform: scaleX(-1);
+}
+
+h1 {
+  margin: 0;
+}
+
+.icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  -moz-context-properties: fill, stroke;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.description {
+  color: var(--text-color-deemphasized);
+
+  &:has(+ .support-link) {
+    margin-inline-end: var(--space-xxsmall);
+  }
+}
+
+.support-link {
+  display: inline-block;
+}

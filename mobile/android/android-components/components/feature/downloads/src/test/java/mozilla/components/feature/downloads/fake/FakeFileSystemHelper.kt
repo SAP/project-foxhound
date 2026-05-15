@@ -9,10 +9,13 @@ import mozilla.components.feature.downloads.FileSystemHelper
 class FakeFileSystemHelper(
     private val availableBitesInDirectory: Long = 0L,
     private val existingDirectories: List<String> = emptyList(),
+    private val existingFiles: List<String> = emptyList(),
 ) : FileSystemHelper {
     override fun createDirectoryIfNotExists(path: String): Boolean = true
 
     override fun isDirectory(path: String): Boolean = path in existingDirectories
 
     override fun availableBytesInDirectory(path: String): Long = availableBitesInDirectory
+
+    override fun fileExists(filePath: String): Boolean = filePath in existingFiles
 }

@@ -1,0 +1,13 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+set_config("MOZ_APP_NAME", "zucchini")
+
+include("../../build/moz.configure/zucchini.configure")
+
+
+@depends(zucchini_is_available)
+def check_zucchini_available(available):
+    if not available:
+        die("Cannot build zucchini for this platform!")

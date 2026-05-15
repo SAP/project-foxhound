@@ -6,7 +6,6 @@ package org.mozilla.fenix.settings.logins.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.os.Build
 import android.os.PersistableBundle
 import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineDispatcher
@@ -18,7 +17,6 @@ import mozilla.appservices.logins.LoginsApiException
 import mozilla.components.concept.storage.LoginEntry
 import mozilla.components.concept.storage.LoginsStorage
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import org.mozilla.fenix.settings.SupportUtils
 
@@ -32,7 +30,6 @@ import org.mozilla.fenix.settings.SupportUtils
  * @param openTab Invoked when opening a tab when a login url is clicked.
  * @param ioDispatcher Coroutine dispatcher for IO operations.
  * @param clipboardManager For copying logins URLs.
- * @param refreshLoginsList Invoked to refresh the logins list.
  */
 @Suppress("LongParameterList")
 internal class LoginsMiddleware(
@@ -43,25 +40,26 @@ internal class LoginsMiddleware(
     private val openTab: (url: String, openInNewTab: Boolean) -> Unit,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val clipboardManager: ClipboardManager?,
-    private val refreshLoginsList: Store<LoginsState, LoginsAction>.() -> Unit = { dispatch(Init) },
 ) : Middleware<LoginsState, LoginsAction> {
 
-    private val scope = CoroutineScope(ioDispatcher)
+    private val ioScope = CoroutineScope(ioDispatcher)
+    private val mainScope = CoroutineScope(Dispatchers.Main)
 
-    @Suppress("LongMethod", "ComplexMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     override fun invoke(
-        context: MiddlewareContext<LoginsState, LoginsAction>,
+        store: Store<LoginsState, LoginsAction>,
         next: (LoginsAction) -> Unit,
         action: LoginsAction,
     ) {
+        val preReductionState = store.state
         next(action)
 
         when (action) {
-            Init -> {
-                context.store.loadLoginsList()
+            is LoginsListAppeared -> {
+                store.loadLoginsList()
             }
             is SearchLogins -> {
-                context.store.loadLoginsList()
+                store.loadLoginsList()
             }
             is LoginsListBackClicked -> {
                 exitLogins()
@@ -72,19 +70,22 @@ internal class LoginsMiddleware(
             is DetailLoginMenuAction.EditLoginMenuItemClicked -> {
                 getNavController().navigate(LoginsDestinations.EDIT_LOGIN)
             }
-            is DetailLoginMenuAction.DeleteLoginMenuItemClicked -> {
-                scope.launch {
-                    loginsStorage.delete(action.item.guid)
-
-                    context.store.refreshLoginsList()
-
-                    withContext(Dispatchers.Main) {
-                        getNavController().navigate(LoginsDestinations.LIST)
+            is LoginDeletionDialogAction.DeleteTapped -> {
+                ioScope.launch {
+                    preReductionState.loginsLoginDetailState?.login?.guid?.let {
+                        loginsStorage.delete(
+                            it,
+                        )
+                    }
+                    if (preReductionState.loginsLoginDetailState != null) {
+                        withContext(Dispatchers.Main) {
+                            getNavController().popBackStack()
+                        }
                     }
                 }
             }
-            is LoginsListSortMenuAction -> scope.launch {
-                persistLoginsSortOrder(context.store.state.sortOrder)
+            is LoginsListSortMenuAction -> ioScope.launch {
+                persistLoginsSortOrder(store.state.sortOrder)
             }
             is LearnMoreAboutSync -> {
                 openTab(
@@ -96,7 +97,7 @@ internal class LoginsMiddleware(
                 openTab(action.url, true)
             }
             is LoginsDetailBackClicked -> {
-                context.store.handleLoginsDetailsBackPressed()
+                handleLoginsDetailsBackPressed()
             }
             is DetailLoginAction.CopyUsernameClicked -> {
                 handleUsernameClicked(action.username)
@@ -111,13 +112,13 @@ internal class LoginsMiddleware(
                 getNavController().navigate(LoginsDestinations.LIST)
             }
             is AddLoginAction.AddLoginSaveClicked -> {
-                context.store.handleAddLogin()
+                store.handleAddLogin()
             }
             is EditLoginBackClicked -> {
                 getNavController().navigate(LoginsDestinations.LOGIN_DETAILS)
             }
             is EditLoginAction.SaveEditClicked -> {
-                context.store.handleEditLogin(loginItem = action.login)
+                store.handleEditLogin(loginItem = action.login)
             }
             is LoginsLoaded,
             is EditLoginAction.UsernameChanged,
@@ -126,12 +127,14 @@ internal class LoginsMiddleware(
             is AddLoginAction.HostChanged,
             is AddLoginAction.UsernameChanged,
             is AddLoginAction.PasswordChanged,
-            is ViewDisposed,
-            -> Unit
+            is DetailLoginAction.PasswordVisibilityChanged,
+            is DetailLoginMenuAction.DeleteLoginMenuItemClicked,
+            is LoginDeletionDialogAction.CancelTapped,
+                -> Unit
         }
     }
 
-    private fun Store<LoginsState, LoginsAction>.loadLoginsList() = scope.launch {
+    private fun Store<LoginsState, LoginsAction>.loadLoginsList() = ioScope.launch {
         val loginItems = arrayListOf<LoginItem>()
 
         loginsStorage.list().forEach { login ->
@@ -152,11 +155,9 @@ internal class LoginsMiddleware(
     private fun handleUsernameClicked(username: String) {
         val usernameClipData = ClipData.newPlainText(username, username)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            usernameClipData.apply {
-                description.extras = PersistableBundle().apply {
-                    putBoolean("android.content.extra.IS_SENSITIVE", false)
-                }
+        usernameClipData.apply {
+            description.extras = PersistableBundle().apply {
+                putBoolean("android.content.extra.IS_SENSITIVE", false)
             }
         }
         clipboardManager?.setPrimaryClip(usernameClipData)
@@ -165,18 +166,16 @@ internal class LoginsMiddleware(
     private fun handlePasswordClicked(password: String) {
         val passwordClipData = ClipData.newPlainText(password, password)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            passwordClipData.apply {
-                description.extras = PersistableBundle().apply {
-                    putBoolean("android.content.extra.IS_SENSITIVE", true)
-                }
+        passwordClipData.apply {
+            description.extras = PersistableBundle().apply {
+                putBoolean("android.content.extra.IS_SENSITIVE", true)
             }
         }
         clipboardManager?.setPrimaryClip(passwordClipData)
     }
 
     private fun Store<LoginsState, LoginsAction>.handleAddLogin() =
-        scope.launch {
+        ioScope.launch {
             val host = state.loginsAddLoginState?.host ?: ""
             val newLoginToAdd = LoginEntry(
                 origin = host,
@@ -188,31 +187,31 @@ internal class LoginsMiddleware(
 
             try {
                 val loginAdded = loginsStorage.add(newLoginToAdd)
-                dispatch(
-                    LoginClicked(
-                        LoginItem(
-                            guid = loginAdded.guid,
-                            url = loginAdded.origin,
-                            username = loginAdded.username,
-                            password = loginAdded.password,
+                mainScope.launch {
+                    dispatch(
+                        LoginClicked(
+                            LoginItem(
+                                guid = loginAdded.guid,
+                                url = loginAdded.origin,
+                                username = loginAdded.username,
+                                password = loginAdded.password,
+                            ),
                         ),
-                    ),
-                )
+                    )
+                }
             } catch (exception: LoginsApiException) {
                 exception.printStackTrace()
             }
         }
 
-    private fun Store<LoginsState, LoginsAction>.handleLoginsDetailsBackPressed() = scope.launch {
-        refreshLoginsList()
-
+    private fun handleLoginsDetailsBackPressed() = ioScope.launch {
         withContext(Dispatchers.Main) {
             getNavController().navigate(LoginsDestinations.LIST)
         }
     }
 
     private fun Store<LoginsState, LoginsAction>.handleEditLogin(loginItem: LoginItem) =
-        scope.launch {
+        ioScope.launch {
             val updatedLogin = LoginEntry(
                 origin = loginItem.url,
                 formActionOrigin = loginItem.url,
@@ -223,16 +222,18 @@ internal class LoginsMiddleware(
 
             try {
                 val loginEdited = loginsStorage.update(loginItem.guid, updatedLogin)
-                dispatch(
-                    LoginClicked(
-                        LoginItem(
-                            guid = loginEdited.guid,
-                            url = loginEdited.origin,
-                            username = loginEdited.username,
-                            password = loginEdited.password,
+                mainScope.launch {
+                    dispatch(
+                        LoginClicked(
+                            LoginItem(
+                                guid = loginEdited.guid,
+                                url = loginEdited.origin,
+                                username = loginEdited.username,
+                                password = loginEdited.password,
+                            ),
                         ),
-                    ),
-                )
+                    )
+                }
             } catch (exception: LoginsApiException) {
                 exception.printStackTrace()
             }

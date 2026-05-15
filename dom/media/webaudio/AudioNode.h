@@ -7,18 +7,18 @@
 #ifndef AudioNode_h_
 #define AudioNode_h_
 
-#include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/AudioNodeBinding.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsTArray.h"
 #include "AudioContext.h"
 #include "MediaTrackGraph.h"
+#include "SelfRef.h"
 #include "WebAudioUtils.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/AudioNodeBinding.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsPrintfCString.h"
+#include "nsTArray.h"
 #include "nsWeakReference.h"
-#include "SelfRef.h"
 
 namespace mozilla {
 

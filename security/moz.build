@@ -169,20 +169,15 @@ if CONFIG["OS_TARGET"] == "WINNT":
         "-Wno-error=unused-function",  # bug 1856445
     ]
     if CONFIG["TARGET_CPU"] == "x86":
-        # This should really be the default.
-        sandbox_vars["ASFLAGS"] = ["-safeseh"]
+        # Only add -safeseh for MSVC builds (clang-cl), not MinGW builds.
+        # MinGW uses GNU as which doesn't recognize the -safeseh flag.
+        if CONFIG["CC_TYPE"] == "clang-cl":
+            sandbox_vars["ASFLAGS"] = ["-safeseh"]
 
     DELAYLOAD_DLLS += [
         "winmm.dll",
     ]
 
-if CONFIG["OS_TARGET"] == "Android":
-    sandbox_vars["CFLAGS"] = [
-        "-include",
-        TOPSRCDIR + "/security/manager/android_stub.h",
-    ]
-    if CONFIG["ANDROID_VERSION"]:
-        sandbox_vars["CFLAGS"] += ["-DANDROID_VERSION=" + CONFIG["ANDROID_VERSION"]]
 if CONFIG["MOZ_SYSTEM_NSS"]:
     sandbox_vars["CXXFLAGS"] = CONFIG["NSS_CFLAGS"]
 GYP_DIRS["nss"].sandbox_vars = sandbox_vars

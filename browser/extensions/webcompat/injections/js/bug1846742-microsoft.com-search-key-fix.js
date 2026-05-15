@@ -12,12 +12,19 @@
  * click the element as a work-around.
  */
 
-console.info(
-  "A simulated click is issued on search suggestions when enter is pressed on them for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1846742 for details."
-);
+if (!window.__firefoxWebCompatFixBug1846742) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1846742", {
+    configurable: false,
+    value: true,
+  });
 
-document.addEventListener("keydown", ({ target, key }) => {
-  if (key == "Enter" && target.matches(".m-auto-suggest a.f-product")) {
-    target.click();
-  }
-});
+  console.info(
+    "A simulated click is issued on search suggestions when enter is pressed on them for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1846742 for details."
+  );
+
+  document.addEventListener("keydown", ({ target, key }) => {
+    if (key == "Enter" && target.matches(".m-auto-suggest a.f-product")) {
+      target.click();
+    }
+  });
+}

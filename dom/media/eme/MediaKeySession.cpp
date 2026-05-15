@@ -509,16 +509,19 @@ already_AddRefed<Promise> MediaKeySession::Close(ErrorResult& aRv) {
   return promise.forget();
 }
 
-void MediaKeySession::OnClosed() {
+void MediaKeySession::OnClosed(MediaKeySessionClosedReason aReason) {
   if (IsClosed()) {
     return;
   }
-  EME_LOG("MediaKeySession[%p,'%s'] session close operation complete.", this,
-          NS_ConvertUTF16toUTF8(mSessionId).get());
+  EME_LOG(
+      "MediaKeySession[%p,'%s'] session close operation complete due to reason "
+      "'%s'.",
+      this, NS_ConvertUTF16toUTF8(mSessionId).get(),
+      GetEnumString(aReason).get());
   mIsClosed = true;
   mKeys->OnSessionClosed(this);
   mKeys = nullptr;
-  mClosed->MaybeResolveWithUndefined();
+  mClosed->MaybeResolve(aReason);
 }
 
 bool MediaKeySession::IsClosed() const { return mIsClosed; }

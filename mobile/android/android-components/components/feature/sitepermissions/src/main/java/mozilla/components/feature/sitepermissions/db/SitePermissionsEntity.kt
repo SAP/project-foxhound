@@ -14,76 +14,72 @@ import mozilla.components.concept.engine.permission.SitePermissions
  */
 @Entity(tableName = "site_permissions")
 internal data class SitePermissionsEntity(
-
     @PrimaryKey
     @ColumnInfo(name = "origin")
     var origin: String,
-
     @ColumnInfo(name = "location")
     var location: SitePermissions.Status,
-
     @ColumnInfo(name = "notification")
     var notification: SitePermissions.Status,
-
     @ColumnInfo(name = "microphone")
     var microphone: SitePermissions.Status,
-
     @ColumnInfo(name = "camera")
     var camera: SitePermissions.Status,
-
     @ColumnInfo(name = "bluetooth")
     var bluetooth: SitePermissions.Status,
-
     @ColumnInfo(name = "local_storage")
     var localStorage: SitePermissions.Status,
-
     @ColumnInfo(name = "autoplay_audible")
     var autoplayAudible: SitePermissions.AutoplayStatus,
-
     @ColumnInfo(name = "autoplay_inaudible")
     var autoplayInaudible: SitePermissions.AutoplayStatus,
-
     @ColumnInfo(name = "media_key_system_access")
     var mediaKeySystemAccess: SitePermissions.Status,
-
     @ColumnInfo(name = "cross_origin_storage_access")
     var crossOriginStorageAccess: SitePermissions.Status,
-
+    @ColumnInfo(name = "local_device_access")
+    var localDeviceAccess: SitePermissions.Status,
+    @ColumnInfo(name = "local_network_access")
+    var localNetworkAccess: SitePermissions.Status,
     @ColumnInfo(name = "saved_at")
     var savedAt: Long,
 ) {
 
     internal fun toSitePermission(): SitePermissions {
         return SitePermissions(
-            origin,
-            location,
-            notification,
-            microphone,
-            camera,
-            bluetooth,
-            localStorage,
-            autoplayAudible,
-            autoplayInaudible,
-            mediaKeySystemAccess,
-            crossOriginStorageAccess,
-            savedAt,
+            origin = origin,
+            location = location,
+            notification = notification,
+            microphone = microphone,
+            camera = camera,
+            bluetooth = bluetooth,
+            localStorage = localStorage,
+            autoplayAudible = autoplayAudible,
+            autoplayInaudible = autoplayInaudible,
+            mediaKeySystemAccess = mediaKeySystemAccess,
+            crossOriginStorageAccess = crossOriginStorageAccess,
+            localDeviceAccess = localDeviceAccess,
+            localNetworkAccess = localNetworkAccess,
+            savedAt = savedAt,
         )
     }
 }
 
 internal fun SitePermissions.toSitePermissionsEntity(): SitePermissionsEntity {
     return SitePermissionsEntity(
-        origin,
-        location,
-        notification,
-        microphone,
-        camera,
-        bluetooth,
-        localStorage,
-        autoplayAudible,
-        autoplayInaudible,
-        mediaKeySystemAccess,
-        crossOriginStorageAccess,
-        savedAt,
+        origin = origin,
+        location = location,
+        notification = notification,
+        microphone = microphone,
+        camera = camera,
+        bluetooth = bluetooth,
+        localStorage = localStorage,
+        autoplayAudible = autoplayAudible,
+        autoplayInaudible = autoplayInaudible,
+        mediaKeySystemAccess = mediaKeySystemAccess,
+        crossOriginStorageAccess = crossOriginStorageAccess,
+        localDeviceAccess = localDeviceAccess,
+        localNetworkAccess = localNetworkAccess,
+        savedAt = savedAt,
     )
 }

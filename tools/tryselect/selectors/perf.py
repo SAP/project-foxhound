@@ -102,6 +102,7 @@ class PerfParser(CompareParser):
     task_configs = [
         "artifact",
         "browsertime",
+        "build-car",
         "disable-pgo",
         "env",
         "gecko-profile",
@@ -206,7 +207,7 @@ class PerfParser(CompareParser):
                 "tests. If the Activity, Binary Path, or Intents required "
                 "change at all relative to the existing GeckoView, and Fenix "
                 "tasks, then you will need to make fixes in the associated "
-                "taskcluster files (e.g. taskcluster/kinds/test/browsertime-mobile.yml). "
+                "taskcluster files (e.g. taskcluster/kinds/browsertime/mobile.yml). "
                 "Alternatively, set MOZ_FIREFOX_ANDROID_APK_OUTPUT to a path to "
                 "an APK, and then run the command with --browsertime-upload-apk "
                 "firefox-android. This option will only copy the APK for browsertime, see "
@@ -563,9 +564,9 @@ class PerfParser(CompareParser):
 
                 # Disable the variant combination if none of them
                 # are found in the suite
-                disable_variant = not any(
-                    [variant.value in suite_variants for variant in variant_combination]
-                )
+                disable_variant = not any([
+                    variant.value in suite_variants for variant in variant_combination
+                ])
 
                 for platform in Platforms:
                     if disable_variant:
@@ -628,20 +629,18 @@ class PerfParser(CompareParser):
                 if BASE_CATEGORY_NAME not in variant_combination:
                     # Make sure that all portions of the variant combination
                     # target at least one of the suites in the category
-                    tmp_variant_combination = set(
-                        [v.value for v in variant_combination]
-                    )
+                    tmp_variant_combination = set([
+                        v.value for v in variant_combination
+                    ])
                     for suite in Suites:
                         if suite.value not in category_info["suites"]:
                             continue
-                        tmp_variant_combination = tmp_variant_combination - set(
-                            [
-                                variant.value
-                                for variant in variant_combination
-                                if variant.value
-                                in PerfParser.suites[suite.value]["variants"]
-                            ]
-                        )
+                        tmp_variant_combination = tmp_variant_combination - set([
+                            variant.value
+                            for variant in variant_combination
+                            if variant.value
+                            in PerfParser.suites[suite.value]["variants"]
+                        ])
                     if tmp_variant_combination:
                         # If it's not empty, then some variants
                         # are non-existent
@@ -1032,8 +1031,7 @@ class PerfParser(CompareParser):
 
         if len(mwu_task) > 1 or len(mwu_task) == 0:
             raise InvalidRegressionDetectorQuery(
-                f"Expected 1 task from change detector "
-                f"query, but found {len(mwu_task)}"
+                f"Expected 1 task from change detector query, but found {len(mwu_task)}"
             )
 
         selected_tasks |= set(mwu_task)
@@ -1219,6 +1217,7 @@ class PerfParser(CompareParser):
         comparator_args,
         alert_summary_id,
         push_to_vcs,
+        metrics,
     ):
         """Perf-specific push to try method.
 
@@ -1299,6 +1298,7 @@ class PerfParser(CompareParser):
                     lando_commit_id = push_to_try(
                         "perf-again",
                         f"{base_commit_message}",
+                        metrics,
                         try_task_config=generate_try_task_config(
                             "fuzzy", selected_tasks, params=base_try_config_params
                         ),
@@ -1317,6 +1317,7 @@ class PerfParser(CompareParser):
                         push_to_try(
                             "perf-again",
                             f"{base_commit_message}",
+                            metrics,
                             try_task_config=generate_try_task_config(
                                 "fuzzy", selected_tasks, params=base_try_config_params
                             ),
@@ -1348,6 +1349,7 @@ class PerfParser(CompareParser):
                 lando_commit_id = push_to_try(
                     "perf",
                     f"{new_commit_message}",
+                    metrics,
                     # XXX Figure out if changing `fuzzy` to `perf` will break something
                     try_task_config=generate_try_task_config(
                         "fuzzy", selected_tasks, params=try_config_params
@@ -1366,6 +1368,7 @@ class PerfParser(CompareParser):
                     push_to_try(
                         "perf",
                         f"{new_commit_message}",
+                        metrics,
                         # XXX Figure out if changing `fuzzy` to `perf` will break something
                         try_task_config=generate_try_task_config(
                             "fuzzy", selected_tasks, params=try_config_params
@@ -1407,7 +1410,7 @@ class PerfParser(CompareParser):
             print(f"Removing cached {cache_file} file")
             cache_file.unlink(missing_ok=True)
 
-        all_tasks, dep_cache, cache_dir = setup_tasks_for_fzf(
+        all_tasks, cache_dir = setup_tasks_for_fzf(
             not dry_run,
             parameters,
             full=True,
@@ -1415,9 +1418,6 @@ class PerfParser(CompareParser):
         )
         base_cmd = build_base_cmd(
             fzf,
-            dep_cache,
-            cache_dir,
-            show_estimates=False,
             preview_script=PREVIEW_SCRIPT,
         )
         full_task_graph = pathlib.Path(cache_dir, "full_task_graph")
@@ -1498,6 +1498,7 @@ class PerfParser(CompareParser):
             kwargs.get("comparator_args", []),
             alert_summary_id,
             push_to_vcs,
+            kwargs.get("metrics"),
         )
 
     def run_category_checks():

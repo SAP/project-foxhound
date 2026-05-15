@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompilationMessage.h"
+
 #include "CompilationInfo.h"
 #include "mozilla/dom/WebGPUBinding.h"
 
@@ -24,5 +25,7 @@ CompilationMessage::CompilationMessage(Device* const aParent,
       mOffset(aOffset),
       mLength(aLength),
       mMessage(std::move(aMessage)) {}
+
+CompilationMessage::~CompilationMessage() = default;
 
 }  // namespace mozilla::webgpu

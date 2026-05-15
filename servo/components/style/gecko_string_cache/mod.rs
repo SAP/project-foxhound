@@ -18,6 +18,7 @@ use crate::gecko_bindings::structs::root::mozilla::detail::GkAtoms_Atoms_AtomsCo
 use crate::gecko_bindings::structs::{nsAtom, nsDynamicAtom, nsStaticAtom};
 use nsstring::{nsAString, nsStr};
 use precomputed_hash::PrecomputedHash;
+use serde::{Deserialize, Serialize};
 use std::borrow::{Borrow, Cow};
 use std::char::{self, DecodeUtf16};
 use std::fmt::{self, Write};
@@ -29,7 +30,6 @@ use std::ops::Deref;
 use std::{slice, str};
 use style_traits::SpecifiedValueInfo;
 use to_shmem::{SharedMemoryBuilder, ToShmem};
-use serde::{Deserialize, Serialize};
 
 #[macro_use]
 #[allow(improper_ctypes, non_camel_case_types, missing_docs)]
@@ -57,7 +57,7 @@ pub struct Atom(NonZeroUsize);
 impl Serialize for Atom {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer
+        S: serde::Serializer,
     {
         // TODO(dshin, Bug 1929015): Optimization for static atoms is possible.
         self.deref().with_str(|s| serializer.serialize_str(s))
@@ -203,7 +203,7 @@ impl WeakAtom {
     }
 
     // NOTE: don't expose this, since it's slow, and easy to be misused.
-    fn chars(&self) -> DecodeUtf16<Cloned<slice::Iter<u16>>> {
+    fn chars(&self) -> DecodeUtf16<Cloned<slice::Iter<'_, u16>>> {
         char::decode_utf16(self.as_slice().iter().cloned())
     }
 
@@ -528,6 +528,6 @@ impl From<String> for Atom {
     }
 }
 
-malloc_size_of_is_0!(Atom);
+malloc_size_of::malloc_size_of_is_0!(Atom);
 
 impl SpecifiedValueInfo for Atom {}

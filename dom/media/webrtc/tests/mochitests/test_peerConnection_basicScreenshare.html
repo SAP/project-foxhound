@@ -32,6 +32,10 @@
              `payload types, like RTX, are removed too.`);
         test.originalOffer.sdp =
           sdputils.removeAllButPayloadType(test.originalOffer.sdp, payloadType);
+        ok(test.originalOffer.sdp.match(new RegExp(`m=.*UDP/TLS/RTP/SAVPF.* ${payloadType}[^0-9]`, "gi")),
+          `Tested codec ${payloadType} should remain after filtering`);
+        ok(test.originalOffer.sdp.match(new RegExp(`a=rtpmap:${payloadType}[^0-9]`, "gi")),
+          `Tested codec ${payloadType} rtpmap should remain after filtering`);
       },
     ]);
     await test.run();

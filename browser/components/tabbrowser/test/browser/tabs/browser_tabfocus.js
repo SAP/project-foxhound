@@ -126,8 +126,14 @@ add_task(async function () {
   tab2 = BrowserTestUtils.addTab(gBrowser);
   browser2 = gBrowser.getBrowserForTab(tab2);
 
-  await promiseTabLoadEvent(tab1, "data:text/html," + escape(testPage1));
-  await promiseTabLoadEvent(tab2, "data:text/html," + escape(testPage2));
+  await BrowserTestUtils.loadURIString({
+    browser: tab1.linkedBrowser,
+    uriString: "data:text/html," + escape(testPage1),
+  });
+  await BrowserTestUtils.loadURIString({
+    browser: tab2.linkedBrowser,
+    uriString: "data:text/html," + escape(testPage2),
+  });
 
   gURLBar.focus();
   await SimpleTest.promiseFocus();
@@ -511,7 +517,10 @@ add_task(async function () {
     "focus button"
   );
 
-  await promiseTabLoadEvent(tab1, "data:text/html," + escape(testPage3));
+  await BrowserTestUtils.loadURIString({
+    browser: tab1.linkedBrowser,
+    uriString: "data:text/html," + escape(testPage3),
+  });
 
   // now go back again
   gURLBar.focus();

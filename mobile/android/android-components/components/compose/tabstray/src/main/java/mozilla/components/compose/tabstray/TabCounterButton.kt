@@ -41,7 +41,7 @@ fun TabCounterButton(
         val backgroundColor = MaterialTheme.colorScheme.primaryContainer
         val foregroundColor = contentColorFor(backgroundColor)
         val tabs = store.observeAsComposableState { state -> state.tabs.filter(tabsFilter) }
-        val count = tabs.value?.size ?: 0
+        val count = tabs.value.size
 
         Image(
             painter = painterResource(R.drawable.mozac_tabcounter_background),

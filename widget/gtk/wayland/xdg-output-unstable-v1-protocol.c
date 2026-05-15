@@ -24,7 +24,6 @@
  */
 
 #include <stdlib.h>
-#include <stdint.h>
 #include <gdk/gdkwayland.h>
 #include "wayland-util.h"
 

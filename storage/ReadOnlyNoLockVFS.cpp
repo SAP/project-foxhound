@@ -18,6 +18,8 @@
 #include "nsDebug.h"
 #include "sqlite3.h"
 
+#include "mozilla/UniquePtr.h"
+
 #define ORIGVFS(p) ((sqlite3_vfs*)((p)->pAppData))
 
 #if defined(XP_WIN)

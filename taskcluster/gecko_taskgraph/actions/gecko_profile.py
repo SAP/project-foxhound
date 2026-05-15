@@ -3,10 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+import json
 import logging
 
 import requests
-from requests.exceptions import HTTPError
+from taskcluster.exceptions import TaskclusterRestFailure
+from taskgraph.taskgraph import TaskGraph
 from taskgraph.util.taskcluster import get_artifact_from_index, get_task_definition
 
 from .registry import register_callback_action
@@ -14,6 +16,42 @@ from .util import combine_task_graph_files, create_tasks, fetch_graph_and_labels
 
 PUSHLOG_TMPL = "{}/json-pushes?version=2&startID={}&endID={}"
 INDEX_TMPL = "gecko.v2.{}.pushlog-id.{}.decision"
+SIMPLEPERF_COMPATIBLE_TESTS = ["-homeview-", "-applink-", "-restore-"]
+
+SIMPLEPERF_DEPENDENCY = {
+    "artifact": "project/gecko/android-simpleperf/android-simpleperf.tar.zst",
+    "extract": True,
+    "task": "<toolchain-linux64-android-simpleperf-linux-repack>",
+}
+SAMPLY_DEPENDENCY = {
+    "artifact": "public/build/samply.tar.zst",
+    "extract": True,
+    "task": "<toolchain-linux64-samply>",
+}
+SYMBOLICATOR_DEPENDENCY = {
+    "artifact": "public/build/symbolicator-cli.tar.zst",
+    "extract": True,
+    "task": "<toolchain-symbolicator-cli>",
+}
+SYMBOLS_DEPENDENCY = {
+    "artifact": "public/build/target.crashreporter-symbols.zip",
+    "extract": False,
+    "task": "<build-android-aarch64-shippable/opt>",
+}
+
+DEPENDANCY_TO_ADD_FOR_TASK_REFERENCE = [
+    SIMPLEPERF_DEPENDENCY,
+    SAMPLY_DEPENDENCY,
+    SYMBOLICATOR_DEPENDENCY,
+    SYMBOLS_DEPENDENCY,
+]
+dependencies_to_add_dict = {
+    "build-android-aarch64-shippable/opt": "build-android-aarch64-shippable/opt",
+    "toolchain-symbolicator-cli": "toolchain-symbolicator-cli",
+    "toolchain-linux64-android-simpleperf-linux-repack": "toolchain-linux64-android-simpleperf-linux-repack",
+    "toolchain-linux64-samply": "toolchain-linux64-samply",
+}
+
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +64,9 @@ logger = logging.getLogger(__name__)
         "Take the label of the current task, "
         "and trigger the task with that label "
         "on previous pushes in the same project "
-        "while adding the --gecko-profile cmd arg."
+        "while adding the --gecko-profile cmd arg. "
+        "Plus optional overrides for threads, "
+        "features, and sampling interval."
     ),
     order=200,
     context=[
@@ -44,6 +84,26 @@ logger = logging.getLogger(__name__)
                 "maximum": 10,
                 "title": "Depth",
                 "description": "How many pushes to backfill the profiling task on.",
+            },
+            "gecko_profile_interval": {
+                "type": "integer",
+                "default": None,
+                "title": "Sampling interval (ms)",
+                "description": "How often to sample the profiler (in ms).",
+            },
+            "gecko_profile_features": {
+                "type": "string",
+                "default": "",
+                "title": "Features",
+                "description": "Comma-separated Gecko profiler features. "
+                "Example: js,stackwalk,cpu,screenshots,memory",
+            },
+            "gecko_profile_threads": {
+                "type": "string",
+                "default": "",
+                "title": "Threads",
+                "description": "Comma-separated thread names to profile. "
+                "Example: GeckoMain,Compositor,Renderer",
             },
         },
     },
@@ -83,7 +143,7 @@ def geckoprofile_action(parameters, graph_config, input, task_group_id, task_id)
             push_decision_task_id, full_task_graph, label_to_taskid, _ = (
                 fetch_graph_and_labels(push_params, graph_config)
             )
-        except HTTPError as e:
+        except TaskclusterRestFailure as e:
             logger.info(f"Skipping {push} due to missing index artifacts! Error: {e}")
             continue
 
@@ -93,23 +153,100 @@ def geckoprofile_action(parameters, graph_config, input, task_group_id, task_id)
                 if task.label != label:
                     return task
 
-                if task.kind == "perftest":
-                    perf_flags = task.task["payload"]["env"].get("PERF_FLAGS")
-                    if perf_flags:
-                        task.task["payload"]["env"][
-                            "PERF_FLAGS"
-                        ] = f"{perf_flags} gecko-profile"
-                    else:
-                        task.task["payload"]["env"]["PERF_FLAGS"] = "gecko-profile"
-                else:
+                interval = input.get("gecko_profile_interval")
+                features = input.get("gecko_profile_features")
+                threads = input.get("gecko_profile_threads")
+
+                task_kind = task.kind
+                env = task.task["payload"]["env"]
+                perf_flags = env.get("PERF_FLAGS", "")
+                test_suite = task.attributes.get("unittest_suite")
+                profiling_command_flags = ["--gecko-profile"]
+
+                if task_kind == "perftest":
+                    # Add "gecko-profile" to PERF_FLAGS if missing and then add remaining
+                    # Gecko Profiler customizations via MOZ_PROFILER_STARTUP_* env overrides.
+                    if "gecko-profile" not in perf_flags:
+                        env["PERF_FLAGS"] = (perf_flags + " gecko-profile").strip()
+
+                    if interval is not None:
+                        env["MOZ_PROFILER_STARTUP_INTERVAL"] = str(interval)
+                    if features is not None:
+                        env["MOZ_PROFILER_STARTUP_FEATURES"] = features
+                    if threads is not None:
+                        env["MOZ_PROFILER_STARTUP_FILTERS"] = threads
+                    if any(test in label for test in SIMPLEPERF_COMPATIBLE_TESTS):
+                        #  We will need to unify the options for enabling gecko_profiling across test harnesses, see bug 2000281
+                        env["PERF_FLAGS"] = (
+                            perf_flags
+                            + " ".join([
+                                "simpleperf",
+                                "simpleperf-path=$MOZ_FETCHES_DIR/android-simpleperf",
+                                "geckoprofiler",
+                            ])
+                        ).strip()
+
+                elif test_suite == "raptor":
+                    # Use PERF_FLAGS env to cusomize profiler settings.
+                    raptor_flags = []
+                    if interval is not None:
+                        raptor_flags.append(f"gecko-profile-interval={interval}")
+                    if features is not None:
+                        raptor_flags.append(f"gecko-profile-features={features}")
+                    if threads is not None:
+                        raptor_flags.append(f"gecko-profile-threads={threads}")
+
+                    env["PERF_FLAGS"] = (
+                        perf_flags + " " + " ".join(raptor_flags)
+                    ).strip()
+
+                elif test_suite == "talos":
+                    # Pass everything through the command directly
+                    # Bug 1979192 will modify Talos to make use of PERF_FLAGS.
+                    if interval is not None:
+                        profiling_command_flags.append(
+                            f"--gecko-profile-interval={interval}"
+                        )
+                    if features is not None:
+                        profiling_command_flags.append(
+                            f"--gecko-profile-features={features}"
+                        )
+                    if threads is not None:
+                        profiling_command_flags.append(
+                            f"--gecko-profile-threads={threads}"
+                        )
+
+                if "command" in task.task["payload"]:
                     cmd = task.task["payload"]["command"]
                     task.task["payload"]["command"] = add_args_to_perf_command(
-                        cmd, ["--gecko-profile"]
+                        cmd, profiling_command_flags
                     )
 
                 task.task["extra"]["treeherder"]["symbol"] += "-p"
                 task.task["extra"]["treeherder"]["groupName"] += " (profiling)"
                 return task
+
+            if any(test in label for test in SIMPLEPERF_COMPATIBLE_TESTS):
+                full_task_graph = full_task_graph.to_json()
+                for key, value in dependencies_to_add_dict.items():
+                    full_task_graph[label]["dependencies"][key] = value
+                full_task_graph = TaskGraph.from_json(full_task_graph)[1]
+
+                full_task_graph[label].task["scopes"].append(
+                    "queue:get-artifact:project/gecko/android-simpleperf/*"
+                )
+
+                task_reference_full_taskgraph = json.loads(
+                    full_task_graph.tasks[label].task["payload"]["env"]["MOZ_FETCHES"][
+                        "task-reference"
+                    ]
+                )
+                task_reference_full_taskgraph.extend(
+                    DEPENDANCY_TO_ADD_FOR_TASK_REFERENCE
+                )
+                full_task_graph.tasks[label].task["payload"]["env"]["MOZ_FETCHES"][
+                    "task-reference"
+                ] = json.dumps(task_reference_full_taskgraph)
 
             create_tasks(
                 graph_config,
@@ -123,7 +260,7 @@ def geckoprofile_action(parameters, graph_config, input, task_group_id, task_id)
             )
             backfill_pushes.append(push)
         else:
-            logging.info(f"Could not find {label} on {push}. Skipping.")
+            logger.info(f"Could not find {label} on {push}. Skipping.")
     combine_task_graph_files(backfill_pushes)
 
 

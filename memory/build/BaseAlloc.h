@@ -7,16 +7,51 @@
 
 #include "Mutex.h"
 
-extern Mutex base_mtx;
+// The base allocator is a simple memory allocator used internally by
+// mozjemalloc for its own structures.
+class BaseAlloc {
+ public:
+  constexpr BaseAlloc() {};
 
-extern size_t base_mapped MOZ_GUARDED_BY(base_mtx);
-extern size_t base_committed MOZ_GUARDED_BY(base_mtx);
+  void Init() MOZ_REQUIRES(gInitLock);
 
-void base_init() MOZ_REQUIRES(gInitLock);
+  void* alloc(size_t aSize);
 
-void* base_alloc(size_t aSize);
+  void* calloc(size_t aNumber, size_t aSize);
 
-void* base_calloc(size_t aNumber, size_t aSize);
+  Mutex mMutex;
+
+  struct Stats {
+    size_t mMapped = 0;
+    size_t mCommitted = 0;
+  };
+  Stats GetStats() MOZ_EXCLUDES(mMutex) {
+    MutexAutoLock lock(mMutex);
+
+    MOZ_ASSERT(mStats.mMapped >= mStats.mCommitted);
+    return mStats;
+  }
+
+ private:
+  // Allocate fresh pages to satsify at least minsize.
+  bool pages_alloc(size_t minsize) MOZ_REQUIRES(mMutex);
+
+  // BaseAlloc uses bump-pointer allocation from mNextAddr.  In general
+  // mNextAddr <= mNextDecommitted <= mPastAddr.
+  //
+  // If an allocation would cause mNextAddr > mPastAddr then a new chunk is
+  // required (from pages_alloc()).  Else-if an allocation would case
+  // mNextAddr > mNextDecommitted then some of the memory is decommitted and
+  // pages_committ() is needed before the memory can be used.
+  uintptr_t mNextAddr MOZ_GUARDED_BY(mMutex) = 0;
+  uintptr_t mNextDecommitted MOZ_GUARDED_BY(mMutex) = 0;
+  // Address immediately past the current chunk of pages.
+  uintptr_t mPastAddr MOZ_GUARDED_BY(mMutex) = 0;
+
+  Stats mStats MOZ_GUARDED_BY(mMutex);
+};
+
+extern BaseAlloc sBaseAlloc;
 
 // A specialization of the base allocator with a free list.
 template <typename T>
@@ -26,23 +61,20 @@ struct TypedBaseAlloc {
   static size_t size_of() { return sizeof(T); }
 
   static T* alloc() {
-    T* ret;
-
-    base_mtx.Lock();
-    if (sFirstFree) {
-      ret = sFirstFree;
-      sFirstFree = *(T**)ret;
-      base_mtx.Unlock();
-    } else {
-      base_mtx.Unlock();
-      ret = (T*)base_alloc(size_of());
+    {
+      MutexAutoLock lock(sBaseAlloc.mMutex);
+      T* ret = sFirstFree;
+      if (ret) {
+        sFirstFree = *(T**)ret;
+        return ret;
+      }
     }
 
-    return ret;
+    return (T*)sBaseAlloc.alloc(size_of());
   }
 
   static void dealloc(T* aNode) {
-    MutexAutoLock lock(base_mtx);
+    MutexAutoLock lock(sBaseAlloc.mMutex);
     *(T**)aNode = sFirstFree;
     sFirstFree = aNode;
   }

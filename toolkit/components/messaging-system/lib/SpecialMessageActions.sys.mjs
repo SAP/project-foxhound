@@ -9,12 +9,18 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  AIWindow:
+    // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   GenAI: "resource:///modules/GenAI.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  ON_SERVICE_ENABLED_NOTIFICATION:
+    "resource://gre/modules/FxAccountsCommon.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
@@ -24,6 +30,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
   Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
+  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+  TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UITour: "moz-src:///browser/components/uitour/UITour.sys.mjs",
 });
@@ -190,24 +198,75 @@ export const SpecialMessageActions = {
   },
 
   /**
+   * Set a target pref's value to the value of a source pref.
+   *
+   * @param {string} targetPref - The name of a pref to be updated.
+   * @param {string} sourcePref - The name of the source pref whose value will be copied to the target pref.
+   */
+  copyPrefValue(targetPref, sourcePref) {
+    const sourceType = Services.prefs.getPrefType(sourcePref);
+    const targetType = Services.prefs.getPrefType(targetPref);
+    if (
+      targetType !== Services.prefs.PREF_INVALID &&
+      targetType !== sourceType
+    ) {
+      throw new Error(
+        `Special message action with type SET_PREF(copyFromPref), target pref "${targetPref}" has type ${targetType} which does not match source pref "${sourcePref}" type ${sourceType}.`
+      );
+    }
+    switch (sourceType) {
+      case Services.prefs.PREF_STRING:
+        Services.prefs.setStringPref(
+          targetPref,
+          Services.prefs.getStringPref(sourcePref)
+        );
+        break;
+      case Services.prefs.PREF_INT:
+        Services.prefs.setIntPref(
+          targetPref,
+          Services.prefs.getIntPref(sourcePref)
+        );
+        break;
+      case Services.prefs.PREF_BOOL:
+        Services.prefs.setBoolPref(
+          targetPref,
+          Services.prefs.getBoolPref(sourcePref)
+        );
+        break;
+      default:
+        throw new Error(
+          `Special message action with type SET_PREF(copyFromPref), pref of "${sourcePref}" is invalid or not a supported type.`
+        );
+    }
+  },
+
+  /**
    * Set prefs with special message actions
    *
-   * @param {Object} pref - A pref to be updated.
+   * @param {object} pref - A pref to be updated.
    * @param {string} pref.name - The name of the pref to be updated
    * @param {string} [pref.value] - The value of the pref to be updated. If not included, the pref will be reset.
+   * @param {boolean} onImpression - Whether the setPref action was triggered on
+   * message impression and not by direct user interaction.
    */
-  setPref(pref) {
+  setPref(pref, onImpression = false) {
     // Array of prefs that are allowed to be edited by SET_PREF
     const allowedPrefs = [
       "browser.aboutwelcome.didSeeFinalScreen",
+      "browser.smartwindow.enabled",
+      "browser.smartwindow.firstrun.hasCompleted",
+      "browser.smartwindow.firstrun.modelChoice",
       "browser.crashReports.unsubmittedCheck.autoSubmit2",
       "browser.dataFeatureRecommendations.enabled",
+      "browser.ipProtection.enabled",
+      "browser.ipProtection.optedOut",
       "browser.migrate.content-modal.about-welcome-behavior",
       "browser.migrate.content-modal.import-all.enabled",
       "browser.migrate.preferences-entrypoint.enabled",
       "browser.shell.checkDefaultBrowser",
       "browser.shell.setDefaultGuidanceNotifications",
       "browser.startup.homepage",
+      "browser.startup.page",
       "browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt",
       "browser.privateWindowSeparation.enabled",
       "browser.firefox-view.feature-tour",
@@ -228,12 +287,29 @@ export const SpecialMessageActions = {
       "sidebar.visibility",
       "termsofuse.acceptedVersion",
       "termsofuse.acceptedDate",
+      "termsofuse.firstAcceptedDate",
       "termsofuse.currentVersion",
       "termsofuse.minimumVersion",
+      "privacy.trackingprotection.allow_list.baseline.enabled",
+      "privacy.trackingprotection.allow_list.convenience.enabled",
     ];
 
+    // Array of prefs that are allowed to be edited when SET_PREF is called on
+    // message impression, rather than by an explicit user action. Currently,
+    // only prefs created on the fly are allowed. This is to ensure that adding
+    // the abililty to set any in-tree prefs with this feature undergoes code
+    // review.
+    const allowedSetOnImpressionPrefs = [
+      "termsofuse.firstAcceptedDate",
+      "termsofuse.acceptedDate",
+    ];
+
+    const allowedPrefsList = onImpression
+      ? allowedSetOnImpressionPrefs
+      : allowedPrefs;
+
     if (
-      !allowedPrefs.includes(pref.name) &&
+      !allowedPrefsList.includes(pref.name) &&
       !pref.name.startsWith("messaging-system-action.")
     ) {
       pref.name = `messaging-system-action.${pref.name}`;
@@ -243,6 +319,8 @@ export const SpecialMessageActions = {
       case "object":
         if (pref.value.timestamp) {
           Services.prefs.setStringPref(pref.name, Date.now().toString());
+        } else if (pref.value.copyFromPref) {
+          this.copyPrefValue(pref.name, pref.value.copyFromPref);
         } else {
           Services.prefs.clearUserPref(pref.name);
         }
@@ -278,6 +356,9 @@ export const SpecialMessageActions = {
     if (!(await lazy.FxAccounts.canConnectAccount())) {
       return false;
     }
+    // In practice, all FxA signin flows will have a "ervice", because that param dictates the
+    // UI shown by FxA. But to be extra cautious, this code treats it as optional.
+    let neededService = data?.extraParams?.service;
     const url = await lazy.FxAccounts.config.promiseConnectAccountURI(
       data?.entrypoint || "activity-stream-firstrun",
       data?.extraParams || {}
@@ -299,13 +380,15 @@ export const SpecialMessageActions = {
     let gBrowser = fxaBrowser.getTabBrowser();
     let fxaTab = gBrowser.getTabForBrowser(fxaBrowser);
 
+    let sawNeededService = false;
     let didSignIn = await new Promise(resolve => {
       // We're going to be setting up a listener and an observer for this
       // mechanism.
       //
       // 1. An event listener for the TabClose event, to detect if the user
       //    closes the tab before completing sign-in
-      // 2. An nsIObserver that listens for the UIState for FxA to reach
+      // 2. An nsIObserver that listens for an FxA "service" being enabled.
+      // 3. An nsIObserver that listens for the UIState for FxA to reach
       //    STATUS_SIGNED_IN.
       //
       // We want to clean up both the listener and observer when all of this
@@ -324,13 +407,27 @@ export const SpecialMessageActions = {
           Ci.nsISupportsWeakReference,
         ]),
 
-        observe() {
-          let state = lazy.UIState.get();
-          if (state.status === lazy.UIState.STATUS_SIGNED_IN) {
-            // We completed sign-in, so tear down our listener / observer and resolve
-            // didSignIn to true.
-            controller.abort();
-            resolve(true);
+        observe(aSubject, aTopic, aData) {
+          switch (aTopic) {
+            case lazy.UIState.ON_UPDATE: {
+              let state = lazy.UIState.get();
+              if (
+                (!neededService || sawNeededService) &&
+                state.status === lazy.UIState.STATUS_SIGNED_IN
+              ) {
+                // We completed sign-in, so tear down our listener / observer and resolve
+                // didSignIn to true.
+                controller.abort();
+                resolve(true);
+              }
+              break;
+            }
+            case lazy.ON_SERVICE_ENABLED_NOTIFICATION: {
+              if (aData === neededService) {
+                sawNeededService = true;
+              }
+              break;
+            }
           }
         },
       };
@@ -359,14 +456,22 @@ export const SpecialMessageActions = {
         resolve(false);
       });
 
+      Services.obs.addObserver(
+        fxaObserver,
+        lazy.ON_SERVICE_ENABLED_NOTIFICATION
+      );
       Services.obs.addObserver(fxaObserver, lazy.UIState.ON_UPDATE);
 
       // Unfortunately, nsIObserverService.addObserver does not accept an
       // AbortController signal as a parameter, so instead we listen for the
-      // abort event on the signal to remove the observer.
+      // abort event on the signal to remove the observers.
       signal.addEventListener(
         "abort",
         () => {
+          Services.obs.removeObserver(
+            fxaObserver,
+            lazy.ON_SERVICE_ENABLED_NOTIFICATION
+          );
           Services.obs.removeObserver(fxaObserver, lazy.UIState.ON_UPDATE);
         },
         { once: true }
@@ -505,9 +610,17 @@ export const SpecialMessageActions = {
 
   async handleMultiAction(actions, browser, orderedExecution) {
     if (orderedExecution) {
+      let hasFailed = false;
       for (const action of actions) {
         try {
-          await this.handleAction(action, browser);
+          // If action requires previous actions to succeed, check to see if a previous action has failed
+          if (action.requiresPrevious && hasFailed) {
+            continue; // Skip this action if previous actions did not succeed
+          }
+          let result = await this.handleAction(action, browser);
+          if (result === false) {
+            hasFailed = true;
+          }
         } catch (err) {
           console.error("Error in MULTI_ACTION event:", err);
           throw err;
@@ -564,7 +677,7 @@ export const SpecialMessageActions = {
           }
         );
         break;
-      case "OPEN_ABOUT_PAGE":
+      case "OPEN_ABOUT_PAGE": {
         let aboutPageURL = new URL(`about:${action.data.args}`);
         if (action.data.entrypoint) {
           aboutPageURL.search = action.data.entrypoint;
@@ -574,9 +687,16 @@ export const SpecialMessageActions = {
           action.data.where || "tab"
         );
         break;
+      }
       case "OPEN_FIREFOX_VIEW":
         window.FirefoxViewHandler.openTab();
         break;
+      case "OPEN_TAB_IN_SPLITVIEW": {
+        Services.prefs.setBoolPref("browser.tabs.splitView.enabled", true);
+        let newTab = window.gBrowser.addTrustedTab("about:opentabs");
+        window.gBrowser.addTabSplitView([window.gBrowser.selectedTab, newTab]);
+        break;
+      }
       case "OPEN_PREFERENCES_PAGE":
         window.openPreferences(
           action.data.category || action.data.args,
@@ -588,7 +708,7 @@ export const SpecialMessageActions = {
       case "OPEN_APPLICATIONS_MENU":
         lazy.UITour.showMenu(window, action.data.args);
         break;
-      case "HIGHLIGHT_FEATURE":
+      case "HIGHLIGHT_FEATURE": {
         const highlight = await lazy.UITour.getTarget(window, action.data.args);
         if (highlight) {
           await lazy.UITour.showHighlight(window, highlight, "none", {
@@ -596,6 +716,7 @@ export const SpecialMessageActions = {
           });
         }
         break;
+      }
       case "INSTALL_ADDON_FROM_URL":
         await this.installAddonFromURL(
           browser,
@@ -633,20 +754,22 @@ export const SpecialMessageActions = {
           true
         );
         break;
-      case "CONFIRM_LAUNCH_ON_LOGIN":
+      case "CONFIRM_LAUNCH_ON_LOGIN": {
         const { WindowsLaunchOnLogin } = ChromeUtils.importESModule(
           "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs"
         );
         await WindowsLaunchOnLogin.createLaunchOnLogin();
         break;
-      case "PIN_CURRENT_TAB":
+      }
+      case "PIN_CURRENT_TAB": {
         let tab = window.gBrowser.selectedTab;
         window.gBrowser.pinTab(tab);
         window.ConfirmationHint.show(tab, "confirmation-hint-pin-tab", {
           descriptionId: "confirmation-hint-pin-tab-description",
         });
         break;
-      case "SHOW_FIREFOX_ACCOUNTS":
+      }
+      case "SHOW_FIREFOX_ACCOUNTS": {
         if (!(await lazy.FxAccounts.canConnectAccount())) {
           break;
         }
@@ -662,13 +785,18 @@ export const SpecialMessageActions = {
             Services.scriptSecurityManager.createNullPrincipal({}),
         });
         break;
+      }
       case "FXA_SIGNIN_FLOW":
         /** @returns {Promise<boolean>} */
         return this.fxaSignInFlow(action.data, browser);
-      case "OPEN_PROTECTION_PANEL":
+      case "FXA_AIWINDOW_SIGNIN_FLOW":
+        /** @returns {Promise<boolean>} */
+        return lazy.AIWindow.launchWindow(browser);
+      case "OPEN_PROTECTION_PANEL": {
         let { gProtectionsHandler } = window;
         gProtectionsHandler.showProtectionsPopup({});
         break;
+      }
       case "OPEN_PROTECTION_REPORT":
         window.gProtectionsHandler.openProtections();
         break;
@@ -706,7 +834,7 @@ export const SpecialMessageActions = {
         await this.blockMessageById(action.data.id);
         break;
       case "SET_PREF":
-        this.setPref(action.data.pref);
+        this.setPref(action.data.pref, action.data.onImpression);
         break;
       case "MULTI_ACTION":
         await this.handleMultiAction(
@@ -719,12 +847,13 @@ export const SpecialMessageActions = {
         throw new Error(
           `Special message action with type ${action.type} is unsupported.`
         );
-      case "CLICK_ELEMENT":
+      case "CLICK_ELEMENT": {
         const clickElement = window.document.querySelector(
           action.data.selector
         );
         clickElement?.click();
         break;
+      }
       case "RELOAD_BROWSER":
         browser.reload();
         break;
@@ -755,10 +884,32 @@ export const SpecialMessageActions = {
         window.gURLBar.searchMode = action.data;
         window.gURLBar.focus();
         break;
-      case "SUMMARIZE_PAGE":
+      case "SUMMARIZE_PAGE": {
         const entry = action.data ?? "message";
         await lazy.GenAI.summarizeCurrentPage(window, entry);
         break;
+      }
+      case "OPEN_PANEL": {
+        let { anchor_id, widget_id, panel_id, fallback_to_app_menu } =
+          action.data;
+        let anchor;
+        if (anchor_id) {
+          anchor = window.document.getElementById(anchor_id);
+        } else if (widget_id) {
+          let widget = lazy.CustomizableUI.getWidget(widget_id);
+          anchor = widget?.forWindow(window)?.anchor;
+        }
+        if (!anchor && fallback_to_app_menu) {
+          anchor = window.document.getElementById("PanelUI-menu-button");
+        }
+        await window.PanelUI.showSubView(panel_id, anchor);
+        break;
+      }
+      case "CREATE_TASKBAR_TAB": {
+        let currentTab = window.gBrowser.selectedTab;
+        await lazy.TaskbarTabs.moveTabIntoTaskbarTab(currentTab);
+        break;
+      }
     }
     return undefined;
   },

@@ -1,0 +1,74 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tests that zoomToFocuedInput doesn't align position:fixed elements at the center of the visual viewport</title>
+  <script src="apz_test_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+</head>
+<style>
+@font-face {
+  font-family: Ahem;
+  src: url("/tests/layout/base/tests/Ahem.ttf");
+}
+body {
+  margin: 0px;
+  padding: 0px;
+}
+input {
+  width: 100%;
+  height: 40px;
+  border: none;
+  padding: 0px;
+  position: fixed;
+  bottom: 0px;
+  /*
+   * Use the same size of the element height to easily calculate expected
+     position since zoom-to-focused-input tries to align the caret position
+     rather than the input element.
+   */
+  font: 40px/1 Ahem;
+}
+</style>
+<body>
+<div style="width: 100vw; height: 100vh; background: blue;"></div>
+<input id="target" type="text"/>
+<div style="width: 100vw; height: 200vh; background: green;"></div>
+<script>
+async function test() {
+  is(window.scrollY, 0, "The initial scroll offset should be 0");
+  is(visualViewport.scale, 2.0, "The document should get scaled by 2.0");
+  is(visualViewport.pageLeft, 0, "The initial visual viewport pageLeft should be 0");
+
+  const input = document.querySelector("#target");
+  const inputRect = input.getBoundingClientRect();
+
+  // Focus to the input element without scrolling.
+  const focusPromise = new Promise(resolve => {
+    input.addEventListener("focus", resolve);
+  });
+  input.focus({ preventScroll: true });
+  await focusPromise;
+
+  // Invoke zoom-to-focused-input.
+  const utils = SpecialPowers.getDOMWindowUtils(window);
+  utils.zoomToFocusedInput();
+
+  await promiseApzFlushedRepaints();
+
+  // Calculate the expected position.
+  const centerOfTarget = inputRect.y + inputRect.height;
+  const expected = centerOfTarget - visualViewport.height;
+
+  isfuzzy(visualViewport.pageTop, expected, 1.0,
+    "The input element is aligned at the bottom of the visual viewport");
+}
+
+SpecialPowers.getDOMWindowUtils(window).setResolutionAndScaleTo(2.0);
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</body>
+</html>

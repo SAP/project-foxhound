@@ -8,8 +8,10 @@
 
 #include <ostream>
 
+#include "AnchorPositioningUtils.h"
 #include "FrameMetrics.h"
 #include "RetainedDisplayListBuilder.h"
+#include "StickyScrollContainer.h"
 #include "WindowRenderer.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
@@ -22,8 +24,10 @@
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/layers/PAPZ.h"
+#include "nsIFrameInlines.h"
 #include "nsLayoutUtils.h"
 #include "nsPlaceholderFrame.h"
+#include "nsRefreshDriver.h"
 #include "nsSubDocumentFrame.h"
 
 namespace mozilla {
@@ -733,6 +737,22 @@ void DisplayPortUtils::RemoveDisplayPort(nsIContent* aContent) {
   aContent->RemoveProperty(nsGkAtoms::DisplayPortMargins);
 }
 
+void DisplayPortUtils::SetMinimalDisplayPortDuringPainting(
+    nsIContent* aContent, PresShell* aPresShell) {
+  // SetDisplayPortMargins calls TriggerDisplayPortExpiration which starts a
+  // display port expiry timer for display ports that do expire. However
+  // minimal display ports do not expire, so the display port has to be
+  // marked before the SetDisplayPortMargins call so the expiry timer
+  // doesn't get started.
+  aContent->SetProperty(nsGkAtoms::MinimalDisplayPort,
+                        reinterpret_cast<void*>(true));
+
+  DisplayPortUtils::SetDisplayPortMargins(
+      aContent, aPresShell, DisplayPortMargins::Empty(aContent),
+      DisplayPortUtils::ClearMinimalDisplayPortProperty::No, 0,
+      DisplayPortUtils::RepaintMode::DoNotRepaint);
+}
+
 bool DisplayPortUtils::ViewportHasDisplayPort(nsPresContext* aPresContext) {
   nsIFrame* rootScrollContainerFrame =
       aPresContext->PresShell()->GetRootScrollContainerFrame();
@@ -830,15 +850,6 @@ bool DisplayPortUtils::MaybeCreateDisplayPort(
     return true;
   }
   return false;
-}
-
-nsIFrame* DisplayPortUtils::OneStepInAsyncScrollableAncestorChain(
-    nsIFrame* aFrame) {
-  if (aFrame->StyleDisplay()->mPosition == StylePositionProperty::Fixed &&
-      nsLayoutUtils::IsReallyFixedPos(aFrame)) {
-    return aFrame->PresShell()->GetRootScrollContainerFrame();
-  }
-  return nsLayoutUtils::GetCrossDocParentFrameInProcess(aFrame);
 }
 
 void DisplayPortUtils::SetZeroMarginDisplayPortOnAsyncScrollableAncestors(
@@ -1003,6 +1014,409 @@ bool DisplayPortUtils::WillUseEmptyDisplayPortMargins(nsIContent* aContent) {
   return aContent->GetProperty(nsGkAtoms::MinimalDisplayPort) ||
          frame->PresShell()->IsDisplayportSuppressed() ||
          nsLayoutUtils::ShouldDisableApzForElement(aContent);
+}
+
+nsIFrame* DisplayPortUtils::OneStepInAsyncScrollableAncestorChain(
+    nsIFrame* aFrame) {
+  // This mirrors one iteration of GetNearestScrollableOrOverflowClipFrame in
+  // nsLayoutUtils.cpp as called by
+  // nsLayoutUtils::GetAsyncScrollableAncestorFrame. They should be kept in
+  // sync. See that function for comments about the structure of this code.
+  if (aFrame->IsMenuPopupFrame()) {
+    return nullptr;
+  }
+  nsIFrame* anchor = nullptr;
+  while ((anchor = AnchorPositioningUtils::GetAnchorThatFrameScrollsWith(
+              aFrame, /* aBuilder */ nullptr))) {
+    aFrame = anchor;
+  }
+  if (aFrame->StyleDisplay()->mPosition == StylePositionProperty::Fixed &&
+      nsLayoutUtils::IsReallyFixedPos(aFrame)) {
+    if (nsIFrame* root = aFrame->PresShell()->GetRootScrollContainerFrame()) {
+      return root;
+    }
+  }
+  return nsLayoutUtils::GetCrossDocParentFrameInProcess(aFrame);
+}
+
+FrameAndASRKind DisplayPortUtils::GetASRAncestorFrame(
+    FrameAndASRKind aFrameAndASRKind, nsDisplayListBuilder* aBuilder) {
+  MOZ_ASSERT(aBuilder->IsPaintingToWindow());
+  // This has different behaviour from
+  // nsLayoutUtils::GetAsyncScrollableAncestorFrame because the ASR tree is
+  // different from the "async scrollable ancestor chain" which is mainly used
+  // for activating display ports. We don't want the
+  // SCROLLABLE_ALWAYS_MATCH_ROOT behaviour because we only want to match the
+  // root if it generates an ASR. We don't want the
+  // SCROLLABLE_FIXEDPOS_FINDS_ROOT behaviour because the ASR tree does not jump
+  // from fixed pos to root (that behaviour exists so that fixed pos in the root
+  // document in the process can find some apzc, ASRs have no such need and that
+  // would be incorrect). This should be kept in sync with
+  // OneStepInAsyncScrollableAncestorChain, OneStepInASRChain,
+  // ShouldAsyncScrollWithAnchorNotCached,
+  // nsLayoutUtils::GetAsyncScrollableAncestorFrame.
+
+  for (nsIFrame* f = aFrameAndASRKind.mFrame; f;
+       f = nsLayoutUtils::GetCrossDocParentFrameInProcess(f)) {
+    if (f->IsMenuPopupFrame()) {
+      break;
+    }
+
+    // Note that the order of checking for a scroll container frame with
+    // IsMaybeAsynchronouslyScrolled, anchors, and sticky pos is significant.
+    // The potential ASR of the scroll container frame is the "inner" one, the
+    // potenial ASR of the sticky is the "outer" one.
+    if (f != aFrameAndASRKind.mFrame ||
+        aFrameAndASRKind.mASRKind == ActiveScrolledRoot::ASRKind::Scroll) {
+      if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(f)) {
+        if (scrollContainerFrame->IsMaybeAsynchronouslyScrolled()) {
+          return {f, ActiveScrolledRoot::ASRKind::Scroll};
+        }
+      }
+    }
+
+    nsIFrame* anchor = nullptr;
+    // This needs to be a while loop because anchors can chain, and we don't
+    // want to consider each frame in this loop separately (as a potential
+    // scrollable ancestor) because they are all equivalent in the scrollable
+    // ancestor chain: they all scroll together. We are not walking up the async
+    // scrollable ancestor chain, but rather we are moving sideways. And when
+    // we exit this loop the last frame might be a sticky asr, after that we
+    // move up (the next iteration of the outer for loop).
+    while ((anchor = AnchorPositioningUtils::GetAnchorThatFrameScrollsWith(
+                f, aBuilder))) {
+      f = anchor;
+    }
+
+    // The ordering of this sticky check and the above anchor loop is
+    // significant, even though a frame can't be both sticky pos and anchored
+    // (because anchoring requires abs pos): if we follow an anchor, the anchor
+    // could be an active sticky pos, so that would generate an ASR and we want
+    // to return that rather than do another iteration of the outer for loop
+    // which moves on to the (crossdoc) parent frame.
+    if (f->StyleDisplay()->mPosition == StylePositionProperty::Sticky) {
+      auto* ssc = StickyScrollContainer::GetOrCreateForFrame(f);
+      if (ssc && ssc->ScrollContainer()->IsMaybeAsynchronouslyScrolled()) {
+        return {f->FirstContinuation(), ActiveScrolledRoot::ASRKind::Sticky};
+      }
+    }
+  }
+  return FrameAndASRKind::default_value();
+}
+
+FrameAndASRKind DisplayPortUtils::OneStepInASRChain(
+    FrameAndASRKind aFrameAndASRKind, nsDisplayListBuilder* aBuilder,
+    nsIFrame* aLimitAncestor /* = nullptr */) {
+  MOZ_ASSERT(aBuilder->IsPaintingToWindow());
+  // This has the same basic structure as GetASRAncestorFrame since they are
+  // meant to be used together. As well as ShouldAsyncScrollWithAnchor, so this
+  // should be kept in sync with GetASRAncestorFrame and
+  // ShouldAsyncScrollWithAnchor. See that function for more comments about the
+  // structure of this code.
+  if (aFrameAndASRKind.mFrame->IsMenuPopupFrame()) {
+    return FrameAndASRKind::default_value();
+  }
+  if (aFrameAndASRKind.mASRKind == ActiveScrolledRoot::ASRKind::Scroll) {
+    nsIFrame* frame = aFrameAndASRKind.mFrame;
+    nsIFrame* anchor = nullptr;
+    while ((anchor = AnchorPositioningUtils::GetAnchorThatFrameScrollsWith(
+                frame, aBuilder))) {
+      MOZ_ASSERT_IF(
+          aLimitAncestor,
+          nsLayoutUtils::IsProperAncestorFrameConsideringContinuations(
+              aLimitAncestor, anchor));
+      frame = anchor;
+    }
+    return {frame, ActiveScrolledRoot::ASRKind::Sticky};
+  }
+  nsIFrame* parent =
+      nsLayoutUtils::GetCrossDocParentFrameInProcess(aFrameAndASRKind.mFrame);
+  if (aLimitAncestor && parent &&
+      (parent == aLimitAncestor ||
+       parent->FirstContinuation() == aLimitAncestor->FirstContinuation())) {
+    return FrameAndASRKind::default_value();
+  }
+  return {parent, ActiveScrolledRoot::ASRKind::Scroll};
+}
+
+// This first checks if aFrame is a scroll frame, if so it then tries to
+// activate it. Then this function returns true if aFrame generates a scroll ASR
+// (ie its an active scroll frame).
+static bool ActivatePotentialScrollASR(nsIFrame* aFrame,
+                                       nsDisplayListBuilder* aBuilder) {
+  ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(aFrame);
+  if (!scrollContainerFrame) {
+    return false;
+  }
+  return scrollContainerFrame->DecideScrollableLayerEnsureDisplayport(aBuilder);
+}
+
+// This first checks if aFrame is sticky pos, if so it then tries to activate
+// the associate scroll frame. Then this function returns true if aFrame
+// generates a sticky ASR (ie its sticky pos and its associated scroll frame is
+// active).
+static bool ActivatePotentialStickyASR(nsIFrame* aFrame,
+                                       nsDisplayListBuilder* aBuilder) {
+  if (aFrame->StyleDisplay()->mPosition != StylePositionProperty::Sticky) {
+    return false;
+  }
+  auto* ssc = StickyScrollContainer::GetOrCreateForFrame(aFrame);
+  if (!ssc) {
+    return false;
+  }
+  return ssc->ScrollContainer()->DecideScrollableLayerEnsureDisplayport(
+      aBuilder);
+}
+
+const ActiveScrolledRoot* DisplayPortUtils::ActivateDisplayportOnASRAncestors(
+    nsIFrame* aAnchor, nsIFrame* aLimitAncestor,
+    const ActiveScrolledRoot* aASRofLimitAncestor,
+    nsDisplayListBuilder* aBuilder) {
+  MOZ_ASSERT(ScrollContainerFrame::ShouldActivateAllScrollFrames(
+      aBuilder, aLimitAncestor));
+
+  MOZ_ASSERT(
+      (aASRofLimitAncestor ? FrameAndASRKind{aASRofLimitAncestor->mFrame,
+                                             aASRofLimitAncestor->mKind}
+                           : FrameAndASRKind::default_value()) ==
+      GetASRAncestorFrame({aLimitAncestor, ActiveScrolledRoot::ASRKind::Scroll},
+                          aBuilder));
+
+  MOZ_ASSERT(nsLayoutUtils::IsProperAncestorFrameConsideringContinuations(
+      aLimitAncestor, aAnchor));
+
+  AutoTArray<FrameAndASRKind, 4> ASRframes;
+
+  // The passed in frame is the anchor, if it is a scroll frame we do not scroll
+  // with that scroll frame (we are "outside" of it) but if it is sticky pos
+  // then we do move with the sticky ASR, so we init our iterator at
+  // ASRKind::Scroll indicating we have completed ASRKind::Scroll for aAnchor.
+  // We call OneStepInASRChain once before the loop, this moves us to the end of
+  // the anchor chain if aAnchor is also anchored, and flips the ASRKind to
+  // sticky to give us our first FrameAndASRKind to consider. (Note that if the
+  // original anchored frame was passed in to this function then calling
+  // OneStepInASRChain on the (first) anchor would be equivalent to calling
+  // OneStepInASRChain on the anchored frame, but this saves
+  // GetAnchorThatFrameScrollsWith call that we've already done.)
+  FrameAndASRKind frameAndASRKind{aAnchor, ActiveScrolledRoot::ASRKind::Scroll};
+  frameAndASRKind =
+      OneStepInASRChain(frameAndASRKind, aBuilder, aLimitAncestor);
+  while (frameAndASRKind.mFrame && frameAndASRKind.mFrame != aLimitAncestor &&
+         (!aLimitAncestor || frameAndASRKind.mFrame->FirstContinuation() !=
+                                 aLimitAncestor->FirstContinuation())) {
+    // We check if each frame encountered generates an ASR. It can either
+    // generate a scroll asr or a sticky asr, or both! If it generates both then
+    // the sticky asr is the outer (parent) asr. So we check for scroll ASRs
+    // first.
+
+    // We intentionally call this on all scroll frames encountered, not just the
+    // ones that WantAsyncScroll. This is because scroll frames with
+    // WantAsyncScroll == false can have a display port (say if they had
+    // non-zero scroll range and had a display port but then their scroll range
+    // shrank to zero then the displayport would still stick around), hence
+    // mWillBuildScrollableLayer would be true on them and we need to make sure
+    // mWillBuildScrollableLayer is up to date (if the scroll frame was
+    // temporarily inside a view transition mWillBuildScrollableLayer would
+    // temporarily get set to false).
+
+    // In this loop we are looking for any scroll frame that will generate an
+    // ASR. This corresponds to scroll frames with mWillBuildScrollableLayer ==
+    // true. This is different from scroll frames that return true from
+    // WantAsyncScroll (both because of what was explained above and because not
+    // every scroll frame that WantAsyncScroll will have a displayport), and
+    // hence it's also different from what GetAsyncScrollableAncestorFrame will
+    // return.
+
+    switch (frameAndASRKind.mASRKind) {
+      case ActiveScrolledRoot::ASRKind::Scroll:
+        if (ActivatePotentialScrollASR(frameAndASRKind.mFrame, aBuilder)) {
+          ASRframes.EmplaceBack(frameAndASRKind);
+        }
+        break;
+
+      case ActiveScrolledRoot::ASRKind::Sticky:
+        if (ActivatePotentialStickyASR(frameAndASRKind.mFrame, aBuilder)) {
+          ASRframes.EmplaceBack(frameAndASRKind);
+        }
+        break;
+    }
+
+    frameAndASRKind =
+        OneStepInASRChain(frameAndASRKind, aBuilder, aLimitAncestor);
+  }
+
+  const ActiveScrolledRoot* asr = aASRofLimitAncestor;
+
+  // Iterate array in reverse order (top down in the frame/asr tree) creating
+  // the asr structs.
+  for (auto asrFrame : Reversed(ASRframes)) {
+    MOZ_ASSERT(nsLayoutUtils::IsProperAncestorFrameConsideringContinuations(
+        aLimitAncestor, asrFrame.mFrame));
+
+    MOZ_ASSERT(
+        (asr ? FrameAndASRKind{asr->mFrame, asr->mKind}
+             : FrameAndASRKind::default_value()) ==
+        GetASRAncestorFrame(OneStepInASRChain(asrFrame, aBuilder), aBuilder));
+
+    asr = (asrFrame.mASRKind == ActiveScrolledRoot::ASRKind::Scroll)
+              ? aBuilder->GetOrCreateActiveScrolledRoot(
+                    asr, static_cast<ScrollContainerFrame*>(
+                             do_QueryFrame(asrFrame.mFrame)))
+              : aBuilder->GetOrCreateActiveScrolledRootForSticky(
+                    asr, asrFrame.mFrame);
+  }
+  return asr;
+}
+
+static bool CheckAxes(ScrollContainerFrame* aScrollFrame, PhysicalAxes aAxes) {
+  if (aAxes == kPhysicalAxesBoth) {
+    return true;
+  }
+  nsRect range = aScrollFrame->GetScrollRangeForUserInputEvents();
+  if (aAxes.contains(PhysicalAxis::Vertical)) {
+    MOZ_ASSERT(!aAxes.contains(PhysicalAxis::Horizontal));
+    if (range.width > 0) {
+      // compensating in vertical axis only, but scroll frame can scroll horz
+      return false;
+    }
+  }
+  if (aAxes.contains(PhysicalAxis::Horizontal)) {
+    MOZ_ASSERT(!aAxes.contains(PhysicalAxis::Vertical));
+    if (range.height > 0) {
+      // compensating in horizontal axis only, but scroll frame can scroll vert
+      return false;
+    }
+  }
+  return true;
+}
+
+static bool CheckForScrollFrameAndAxes(nsIFrame* aFrame, PhysicalAxes aAxes,
+                                       bool* aOutSawPotentialASR) {
+  ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(aFrame);
+  if (!scrollContainerFrame) {
+    return true;
+  }
+  *aOutSawPotentialASR = true;
+  return CheckAxes(scrollContainerFrame, aAxes);
+}
+
+// true is good
+static bool CheckForStickyAndAxes(nsIFrame* aFrame, PhysicalAxes aAxes,
+                                  bool* aOutSawPotentialASR) {
+  if (aFrame->StyleDisplay()->mPosition != StylePositionProperty::Sticky) {
+    return true;
+  }
+  auto* ssc = StickyScrollContainer::GetOrCreateForFrame(aFrame);
+  if (!ssc) {
+    return true;
+  }
+  *aOutSawPotentialASR = true;
+  return CheckAxes(ssc->ScrollContainer(), aAxes);
+}
+
+static bool ShouldAsyncScrollWithAnchorNotCached(nsIFrame* aFrame,
+                                                 nsIFrame* aAnchor,
+                                                 nsDisplayListBuilder* aBuilder,
+                                                 PhysicalAxes aAxes,
+                                                 bool* aReportToDoc) {
+  // This has the same basic structure as GetASRAncestorFrame and
+  // OneStepInASRChain. They should all be kept in sync.
+  if (aFrame->IsMenuPopupFrame()) {
+    *aReportToDoc = false;
+    return false;
+  }
+  *aReportToDoc = true;
+  nsIFrame* limitAncestor = aFrame->GetParent();
+  MOZ_ASSERT(limitAncestor);
+  // Start from aAnchor (not aFrame) so we don't infinite loop.
+  nsIFrame* frame = aAnchor;
+  bool firstIteration = true;
+  // We want to detect if we would assign an ASR to the anchored frame that is
+  // subject to a transform that the anchored frame is not actually under
+  // because doing so would give it the same spatial node and webrender would
+  // incorrectly render it with that transform. So we track when we first see a
+  // potential ASR and then start checking for transforms.
+  bool sawPotentialASR = false;
+  while (frame && !frame->IsMenuPopupFrame() && frame != limitAncestor &&
+         (frame->FirstContinuation() != limitAncestor->FirstContinuation())) {
+    // Note that we purposely check all scroll frames in this loop because we
+    // might not have activated scroll frames yet.
+
+    // On the first iteration we don't check the scroll frame because we don't
+    // scroll with the contents of aAnchor.
+    if (!firstIteration &&
+        !CheckForScrollFrameAndAxes(frame, aAxes, &sawPotentialASR)) {
+      return false;
+    }
+
+    // On the first iteration it's okay if the anchor is transformed, we won't
+    // get rendered as transformed if we take it's ASR (even if it's sticky
+    // pos).
+    if (sawPotentialASR && !firstIteration && frame->IsTransformed()) {
+      return false;
+    }
+
+    nsIFrame* anchor = nullptr;
+    while ((anchor = AnchorPositioningUtils::GetAnchorThatFrameScrollsWith(
+                frame, aBuilder))) {
+      MOZ_ASSERT(nsLayoutUtils::IsProperAncestorFrameConsideringContinuations(
+          limitAncestor, anchor));
+      frame = anchor;
+      // Any of these anchor chain frames are okay if they are transformed, they
+      // won't affect our ASR/spatial node (even the last one, even if it's
+      // sticky).
+    }
+
+    if (!CheckForStickyAndAxes(frame, aAxes, &sawPotentialASR)) {
+      return false;
+    }
+    // If sawPotentialASR flipped from false to true in the
+    // CheckForStickyAndAxes call we don't want to check if frame is transformed
+    // because its transform will not be applied to items with an ASR equal to
+    // {frame, sticky} because the transform is inside the sticky.
+
+    frame = nsLayoutUtils::GetCrossDocParentFrameInProcess(frame);
+    firstIteration = false;
+  }
+  return true;
+}
+
+bool DisplayPortUtils::ShouldAsyncScrollWithAnchor(
+    nsIFrame* aFrame, nsIFrame* aAnchor, nsDisplayListBuilder* aBuilder,
+    PhysicalAxes aAxes) {
+  // Note that this does not recurse because we are passing aBuilder = nullptr,
+  // but we have to skip the asserts related to aBuilder.
+  MOZ_ASSERT(aAnchor ==
+             AnchorPositioningUtils::GetAnchorThatFrameScrollsWith(
+                 aFrame, /* aBuilder */ nullptr, /* aSkipAsserts */ true));
+  MOZ_ASSERT(aFrame->IsAbsolutelyPositioned());
+  MOZ_ASSERT(aBuilder->IsPaintingToWindow());
+  MOZ_ASSERT(!aAxes.isEmpty());
+
+  // ShouldAsyncScrollWithAnchorNotCached can call recursively and modify
+  // AsyncScrollsWithAnchorHashmap, so we have to be careful to not hold an
+  // entry in the hashtable during a call to
+  // ShouldAsyncScrollWithAnchorNotCached. Unfortunately this means that we have
+  // to do two hashtable lookups if the frame is not present in the hashtable.
+  if (auto entry = aBuilder->AsyncScrollsWithAnchorHashmap().Lookup(aFrame)) {
+    return *entry;
+  }
+  bool reportToDoc = false;
+  bool shouldAsyncScrollWithAnchor = ShouldAsyncScrollWithAnchorNotCached(
+      aFrame, aAnchor, aBuilder, aAxes, &reportToDoc);
+  {
+    bool& entry =
+        aBuilder->AsyncScrollsWithAnchorHashmap().LookupOrInsert(aFrame);
+    entry = shouldAsyncScrollWithAnchor;
+  }
+  if (reportToDoc) {
+    auto* pc = aFrame->PresContext();
+    pc->Document()->ReportHasScrollLinkedEffect(
+        pc->RefreshDriver()->MostRecentRefresh(),
+        dom::Document::ReportToConsole::No);
+  }
+
+  return shouldAsyncScrollWithAnchor;
 }
 
 }  // namespace mozilla

@@ -42,6 +42,13 @@ function add_virtual_authenticator(autoremove = true) {
   return id;
 }
 
+function remove_virtual_authenticator(authenticatorId) {
+  let webauthnService = Cc["@mozilla.org/webauthn/service;1"].getService(
+    Ci.nsIWebAuthnService
+  );
+  webauthnService.removeVirtualAuthenticator(authenticatorId);
+}
+
 async function addCredential(authenticatorId, rpId) {
   let keyPair = await crypto.subtle.generateKey(
     {

@@ -22,10 +22,9 @@ js/src/util/UnicodeNonBMP.h
 
 # Ignored because of bug 1506117 & 1342657
 layout/style/nsCSSAnonBoxList.h
-layout/style/nsCSSCounterDescList.h
-layout/style/nsCSSFontDescList.h
-layout/style/nsCSSKeywordList.h
-layout/style/nsCSSPseudoElementList.h
+layout/style/nsCSSCounterDescList.inc
+layout/style/nsCSSFontDescList.inc
+layout/style/nsCSSPseudoElementList.inc
 layout/style/nsCSSVisitedDependentPropList.h
 layout/style/nsDOMCSSValueList.h
 layout/style/nsStyleStructList.h
@@ -41,11 +40,8 @@ intl/components/src/UnicodeScriptCodes.h
 intl/unicharutil/util/nsSpecialCasingData.cpp
 intl/unicharutil/util/nsUnicodePropertyData.cpp
 media/mp4parse-rust/mp4parse.h
+security/ct/CTKnownLogs.h
 security/manager/ssl/StaticHPKPins.h
-widget/gtk/wayland/gtk-primary-selection-client-protocol.h
-widget/gtk/wayland/gtk-primary-selection-protocol.c
-widget/gtk/wayland/primary-selection-unstable-v1-client-protocol.h
-widget/gtk/wayland/primary-selection-unstable-v1-protocol.c
 
 # Ignored because these files are used to generate a windows.h STL wrapper,
 # and reformatting them can break generating that wrapper.
@@ -86,6 +82,7 @@ dom/media/platforms/ffmpeg/ffmpeg58/.*
 dom/media/platforms/ffmpeg/ffmpeg59/.*
 dom/media/platforms/ffmpeg/ffmpeg60/.*
 dom/media/platforms/ffmpeg/ffmpeg61/.*
+dom/media/platforms/ffmpeg/ffmpeg62/.*
 dom/media/platforms/ffmpeg/libav53/.*
 dom/media/platforms/ffmpeg/libav54/.*
 dom/media/platforms/ffmpeg/libav55/.*
@@ -182,7 +179,6 @@ modules/zlib/.*
 mozglue/misc/decimal/.*
 mozglue/static/lz4/.*
 mozglue/tests/glibc_printf_tests/.*
-netwerk/dns/nsIDNKitInterface.h
 netwerk/sctp/src/.*
 netwerk/srtp/src/.*
 nsprpub/.*

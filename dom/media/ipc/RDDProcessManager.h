@@ -6,11 +6,11 @@
 #ifndef _include_dom_media_ipc_RDDProcessManager_h_
 #define _include_dom_media_ipc_RDDProcessManager_h_
 #include "mozilla/MozPromise.h"
+#include "mozilla/PRDDChild.h"
 #include "mozilla/PRemoteMediaManagerChild.h"
 #include "mozilla/RDDProcessHost.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/ipc/TaskFactory.h"
-#include "mozilla/PRDDChild.h"
 #include "nsIObserver.h"
 
 namespace mozilla {
@@ -74,9 +74,8 @@ class RDDProcessManager final : public RDDProcessHost::Listener {
   RefPtr<PRDDChild::TestTriggerMetricsPromise> TestTriggerMetrics();
 
  private:
-  bool IsRDDProcessLaunching();
-  bool IsRDDProcessDestroyed() const;
-  bool CreateVideoBridge();
+  bool IsRDDProcessLaunching() const;
+  bool IsRDDProcessAlive() const;
 
   // Called from our xpcom-shutdown observer.
   void OnXPCOMShutdown();

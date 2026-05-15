@@ -1,0 +1,5 @@
+package test {
+  public class TestClass {
+    method @Deprecated(a=123,b="qwe") @android.support.annotation.UiThread public java.lang.String @G(abc=123,cde="4") testMethod(int a);
+  }
+}

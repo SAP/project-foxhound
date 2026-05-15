@@ -8,7 +8,7 @@ import androidx.annotation.DrawableRes
 import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.service.nimbus.messaging.MicrosurveyAnswer
 import mozilla.components.service.nimbus.messaging.MicrosurveyConfig
-import org.mozilla.fenix.R
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * UI model for [MicrosurveyConfig].
@@ -39,7 +39,7 @@ fun Message.toMicrosurveyUIData() = if (hasValidMicrosurveyConfig()) {
         // title null checked in hasValidMicrosurveyConfig
         promptTitle = title!!,
         // microsurvey null checked in hasValidMicrosurveyConfig
-        icon = microsurvey!!.icon?.resourceId ?: R.drawable.mozac_ic_lightbulb_24,
+        icon = microsurvey!!.icon?.resourceId ?: iconsR.drawable.mozac_ic_lightbulb_24,
         question = text,
         // microsurvey null checked in hasValidMicrosurveyConfig
         answers = microsurvey!!.toSortedAnswers(),

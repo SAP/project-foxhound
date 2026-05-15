@@ -16,7 +16,7 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.concept.engine.window.WindowRequest
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.focus.GleanMetrics.AppOpened
 import org.mozilla.focus.GleanMetrics.Browser
@@ -26,7 +26,7 @@ import kotlin.collections.forEach as withEach
 
 class TelemetryMiddleware : Middleware<BrowserState, BrowserAction> {
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
@@ -34,20 +34,20 @@ class TelemetryMiddleware : Middleware<BrowserState, BrowserAction> {
 
         when (action) {
             is TabListAction.AddTabAction -> {
-                collectTelemetry(action.tab, context)
+                collectTelemetry(action.tab, store)
             }
             is TabListAction.AddMultipleTabsAction -> action.tabs.withEach {
-                collectTelemetry(it, context)
+                collectTelemetry(it, store)
             }
 
             is CustomTabListAction.TurnCustomTabIntoNormalTabAction -> {
                 TabCount.newTabOpened.record(
-                    TabCount.NewTabOpenedExtra(context.state.tabs.size, "custom tab"),
+                    TabCount.NewTabOpenedExtra(store.state.tabs.size, "custom tab"),
                 )
             }
 
             is ContentAction.UpdateLoadingStateAction -> {
-                context.state.findTab(action.sessionId)?.let { tab ->
+                store.state.findTab(action.sessionId)?.let { tab ->
                     // Record UriOpened event when a page finishes loading
                     if (tab.content.loading || action.loading) {
                         // tab is still loading
@@ -72,9 +72,9 @@ class TelemetryMiddleware : Middleware<BrowserState, BrowserAction> {
 
     private fun collectTelemetry(
         tab: SessionState,
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
     ) {
-        val tabCount = context.state.tabs.size
+        val tabCount = store.state.tabs.size
 
         when (tab.source) {
             is SessionState.Source.External.ActionView -> {
@@ -92,7 +92,7 @@ class TelemetryMiddleware : Middleware<BrowserState, BrowserAction> {
                 AppOpened.fromLauncherSiteShortcut.record(NoExtras())
             }
             SessionState.Source.Internal.NewTab -> {
-                val parentTab = (tab as TabSessionState).parentId?.let { context.state.findTab(it) }
+                val parentTab = (tab as TabSessionState).parentId?.let { store.state.findTab(it) }
                 if (parentTab?.content?.windowRequest?.type == WindowRequest.Type.OPEN) {
                     TabCount.newTabOpened.record(
                         TabCount.NewTabOpenedExtra(tabCount, "Window.open()"),

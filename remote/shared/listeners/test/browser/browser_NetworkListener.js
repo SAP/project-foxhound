@@ -6,14 +6,14 @@ const { NetworkDecodedBodySizeMap } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/NetworkDecodedBodySizeMap.sys.mjs"
 );
 
+const { NavigableManager } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/NavigableManager.sys.mjs"
+);
 const { NavigationManager } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/NavigationManager.sys.mjs"
 );
 const { NetworkListener } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/listeners/NetworkListener.sys.mjs"
-);
-const { TabManager } = ChromeUtils.importESModule(
-  "chrome://remote/content/shared/TabManager.sys.mjs"
 );
 
 add_task(async function test_beforeRequestSent() {
@@ -31,14 +31,14 @@ add_task(async function test_beforeRequestSent() {
     "https://example.com/document-builder.sjs?html=tab"
   );
   await BrowserTestUtils.browserLoaded(tab1.linkedBrowser);
-  const contextId1 = TabManager.getIdForBrowser(tab1.linkedBrowser);
+  const contextId1 = NavigableManager.getIdForBrowser(tab1.linkedBrowser);
 
   const tab2 = BrowserTestUtils.addTab(
     gBrowser,
     "https://example.com/document-builder.sjs?html=tab2"
   );
   await BrowserTestUtils.browserLoaded(tab2.linkedBrowser);
-  const contextId2 = TabManager.getIdForBrowser(tab2.linkedBrowser);
+  const contextId2 = NavigableManager.getIdForBrowser(tab2.linkedBrowser);
 
   listener.startListening();
 
@@ -83,7 +83,7 @@ add_task(async function test_beforeRequestSent_newTab() {
     "https://example.com/document-builder.sjs?html=tab"
   );
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  const contextId = TabManager.getIdForBrowser(tab.linkedBrowser);
+  const contextId = NavigableManager.getIdForBrowser(tab.linkedBrowser);
   const event = await onBeforeRequestSent;
 
   assertNetworkEvent(
@@ -108,7 +108,7 @@ add_task(async function test_fetchError() {
   info("Check fetchError event when loading a new tab");
   const tab = BrowserTestUtils.addTab(gBrowser, "https://not_a_valid_url/");
   BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  const contextId = TabManager.getIdForBrowser(tab.linkedBrowser);
+  const contextId = NavigableManager.getIdForBrowser(tab.linkedBrowser);
   const event = await onFetchError;
 
   assertNetworkEvent(event, contextId, "https://not_a_valid_url/");

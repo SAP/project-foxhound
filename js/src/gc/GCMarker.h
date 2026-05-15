@@ -7,11 +7,11 @@
 #ifndef gc_GCMarker_h
 #define gc_GCMarker_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/Variant.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
 #include "gc/Barrier.h"
+#include "gc/Cell.h"
 #include "js/HashTable.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
@@ -48,27 +48,46 @@ enum IncrementalProgress { NotFinished = 0, Finished };
 
 class AutoSetMarkColor;
 class AutoUpdateMarkStackRanges;
-struct Cell;
+class Cell;
 class MarkStackIter;
-class ParallelMarker;
+class ParallelMarkTask;
 class UnmarkGrayTracer;
 
-// Ephemeron edges have two source nodes and one target, and mark the target
-// with the minimum (least-marked) color of the sources. Currently, one of
-// those sources will always be a WeakMapBase, so this will refer to its color
-// at the time the edge is traced through. The other source's color will be
-// given by the current mark color of the GCMarker.
-struct EphemeronEdge {
-  MarkColor color;
-  Cell* target;
+// Ephemerons are edges from a source to a target that are only materialized
+// into a table when the owner is marked. (The owner is something like a
+// WeakMap, which contains a set of ephemerons each going from a WeakMap key to
+// its value.) When marking a ephemeron, only the color of the owner is needed:
+// the target is marked with the minimum (least-marked) color of the owner and
+// source. So an EphemeronEdge need store only the owner color and the target
+// pointer, which can fit into a tagged pointer since targets are aligned Cells.
+//
+// Note: if the owner's color changes, new EphemeronEdges will be created for
+// it.
+class EphemeronEdge {
+  static constexpr uintptr_t ColorMask = 0x3;
+  static_assert(uintptr_t(MarkColor::Gray) <= ColorMask);
+  static_assert(uintptr_t(MarkColor::Black) <= ColorMask);
+  static_assert(ColorMask < CellAlignBytes);
 
-  EphemeronEdge(MarkColor color_, Cell* cell) : color(color_), target(cell) {}
+  uintptr_t taggedTarget;
+
+ public:
+  EphemeronEdge(MarkColor color, TenuredCell* cell)
+      : taggedTarget(uintptr_t(cell) | uintptr_t(color)) {
+    MOZ_ASSERT((uintptr_t(cell) & ColorMask) == 0);
+  }
+
+  MarkColor color() const { return MarkColor(taggedTarget & ColorMask); }
+  TenuredCell* target() const {
+    return reinterpret_cast<TenuredCell*>(taggedTarget & ~ColorMask);
+  }
 };
 
 using EphemeronEdgeVector = Vector<EphemeronEdge, 2, js::SystemAllocPolicy>;
 
-using EphemeronEdgeTable = HashMap<Cell*, EphemeronEdgeVector,
-                                   PointerHasher<Cell*>, js::SystemAllocPolicy>;
+using EphemeronEdgeTable =
+    HashMap<TenuredCell*, EphemeronEdgeVector, PointerHasher<TenuredCell*>,
+            js::SystemAllocPolicy>;
 
 /*
  * The mark stack. Pointers in this stack are "gray" in the GC sense, but
@@ -199,10 +218,14 @@ class MarkStack {
 
   void poisonUnused();
 
+  // Ensuring there is space to push |count| more words, growing the stack if
+  // necessary.
+  template <bool checkMaxCapacity = true>
   [[nodiscard]] bool ensureSpace(size_t count);
 
-  static size_t moveWork(GCMarker* marker, MarkStack& dst, MarkStack& src,
-                         bool allowDistribute);
+  static void moveAllWork(MarkStack& dst, MarkStack& src);
+  static size_t moveSomeWork(GCMarker* marker, MarkStack& dst, MarkStack& src,
+                             bool allowDistribute);
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
@@ -220,9 +243,6 @@ class MarkStack {
 
   // Return a pointer to the first unused word beyond the top of the stack.
   uintptr_t* end() { return ptr(topIndex_); }
-
-  // Grow the stack, ensuring there is space to push |count| more words.
-  [[nodiscard]] bool enlarge(size_t count);
 
   [[nodiscard]] bool resize(size_t newCapacity);
 
@@ -288,18 +308,26 @@ enum : uint32_t {
   // Set the compartment's hasMarkedCells flag for roots.
   MarkRootCompartments = 1,
 
-  // The marking tracer is operating in parallel. Use appropriate atomic
+  // The marking tracer is using multiple threads. Use appropriate atomic
   // accesses to update the mark bits correctly.
-  ParallelMarking = 2,
+  AtomicMarking = 2,
+
+  // The marking tracer is operating concurrently with the main thread. Use
+  // appropriate atomic accesses to update the mark bits correctly. Don't trace
+  // objects that are not safe to access off the main thread.
+  ConcurrentMarking = 4,
 
   // Mark any implicit edges if we are in weak marking mode.
-  MarkImplicitEdges = 4,
+  MarkImplicitEdges = 8,
 };
 }  // namespace MarkingOptions
 
 // A default set of marking options that works during normal marking and weak
 // marking modes. Used for barriers and testing code.
 constexpr uint32_t NormalMarkingOptions = MarkingOptions::MarkImplicitEdges;
+
+constexpr uint32_t ConcurrentMarkingOptions =
+    MarkingOptions::AtomicMarking | MarkingOptions::ConcurrentMarking;
 
 template <uint32_t markingOptions>
 class MarkingTracerT
@@ -318,7 +346,8 @@ class MarkingTracerT
 using MarkingTracer = MarkingTracerT<MarkingOptions::None>;
 using RootMarkingTracer = MarkingTracerT<MarkingOptions::MarkRootCompartments>;
 using WeakMarkingTracer = MarkingTracerT<MarkingOptions::MarkImplicitEdges>;
-using ParallelMarkingTracer = MarkingTracerT<MarkingOptions::ParallelMarking>;
+using ParallelMarkingTracer = MarkingTracerT<MarkingOptions::AtomicMarking>;
+using ConcurrentMarkingTracer = MarkingTracerT<ConcurrentMarkingOptions>;
 
 enum ShouldReportMarkTime : bool {
   ReportMarkTime = true,
@@ -345,6 +374,9 @@ class GCMarker {
     // Like RegularMarking but with multiple threads running in parallel.
     ParallelMarking,
 
+    // Like RegularMarking but with a single thread running in the background.
+    ConcurrentMarking,
+
     // Same as RegularMarking except now every marked obj/script is immediately
     // looked up in the gcEphemeronEdges table to find edges generated by
     // weakmap keys, and traversing them to their values. Transitions back to
@@ -369,10 +401,14 @@ class GCMarker {
   bool isRegularMarking() const { return state == RegularMarking; }
   bool isParallelMarking() const { return state == ParallelMarking; }
   bool isWeakMarking() const { return state == WeakMarking; }
+  bool isConcurrentMarking() const { return state == ConcurrentMarking; }
 
   gc::MarkColor markColor() const { return markColor_; }
 
-  bool isDrained() const { return stack.isEmpty() && otherStack.isEmpty(); }
+  bool isDrained() const;
+  bool isMarkStackEmpty() const {
+    return stack.isEmpty() && otherStack.isEmpty();
+  }
 
   bool hasEntriesForCurrentColor() { return stack.hasEntries(); }
   bool hasBlackEntries() const { return hasEntries(gc::MarkColor::Black); }
@@ -395,8 +431,11 @@ class GCMarker {
   bool enterWeakMarkingMode();
   void leaveWeakMarkingMode();
 
-  void enterParallelMarkingMode(gc::ParallelMarker* pm);
+  void enterParallelMarkingMode();
   void leaveParallelMarkingMode();
+
+  void enterConcurrentMarkingMode();
+  void leaveConcurrentMarkingMode();
 
   // Do not use linear-time weak marking for the rest of this collection.
   // Currently, this will only be triggered by an OOM when updating needed data
@@ -413,12 +452,15 @@ class GCMarker {
   bool markOneObjectForTest(JSObject* obj);
 #endif
 
-  bool markCurrentColorInParallel(JS::SliceBudget& budget);
+  bool markCurrentColorInParallel(gc::ParallelMarkTask* task,
+                                  JS::SliceBudget& budget);
 
   template <uint32_t markingOptions, gc::MarkColor>
   bool markOneColor(JS::SliceBudget& budget);
 
-  static size_t moveWork(GCMarker* dst, GCMarker* src, bool allowDistribute);
+  static void moveAllWork(GCMarker* dst, GCMarker* src);
+  static size_t moveSomeWork(GCMarker* dst, GCMarker* src,
+                             bool allowDistribute);
 
   [[nodiscard]] bool initStack();
   void resetStackCapacity();
@@ -442,6 +484,23 @@ class GCMarker {
 
   template <typename T>
   void markImplicitEdges(T* markedThing);
+
+#ifdef JS_GC_CONCURRENT_MARKING
+
+  using MainThreadBuffer = js::Vector<JS::GCCellPtr, 0, SystemAllocPolicy>;
+
+  bool processMainThreadBuffers(JS::SliceBudget& budget);
+  bool processMainThreadBuffer(MainThreadBuffer& buffer,
+                               JS::SliceBudget& budget);
+
+  bool mainThreadBuffersAreEmpty() const {
+    return blackMainThreadBuffer_.ref().empty() &&
+           grayMainThreadBuffer_.ref().empty();
+  }
+
+  bool addToMainThreadBuffer(JS::GCCellPtr cell);
+
+#endif  // JS_GC_CONCURRENT_MARKING
 
  private:
   /*
@@ -468,6 +527,9 @@ class GCMarker {
   bool processMarkStackTop(JS::SliceBudget& budget);
   friend class gc::GCRuntime;
 
+  template <uint32_t markingOptions>
+  bool callOrDelayTraceHook(JSObject* obj, const JSClass* clasp);
+
   // Helper methods that coerce their second argument to the base pointer
   // type.
   template <uint32_t markingOptions, typename S>
@@ -485,7 +547,7 @@ class GCMarker {
   void markAndTraverseEdge(S* source, const T& target);
 
   template <uint32_t markingOptions>
-  bool markAndTraversePrivateGCThing(JSObject* source, gc::TenuredCell* target);
+  bool markAndTraversePrivateGCThing(JSObject* source, gc::Cell* target);
 
   template <uint32_t markingOptions>
   bool markAndTraverseSymbol(JSObject* source, JS::Symbol* target);
@@ -521,11 +583,11 @@ class GCMarker {
   void pushThing(T* thing);
 
   template <uint32_t markingOptions>
+  void eagerlyMarkChildren(JSString* str);
+  template <uint32_t markingOptions>
   void eagerlyMarkChildren(JSLinearString* str);
   template <uint32_t markingOptions>
   void eagerlyMarkChildren(JSRope* rope);
-  template <uint32_t markingOptions>
-  void eagerlyMarkChildren(JSString* str);
   template <uint32_t markingOptions>
   void eagerlyMarkChildren(Shape* shape);
   template <uint32_t markingOptions>
@@ -547,9 +609,9 @@ class GCMarker {
   friend class JS::Zone;
 
 #ifdef DEBUG
-  void checkZone(void* p);
+  void checkZone(gc::Cell* cell);
 #else
-  void checkZone(void* p) {}
+  void checkZone(gc::Cell* cell) {}
 #endif
 
   template <uint32_t markingOptions>
@@ -562,7 +624,8 @@ class GCMarker {
    * state.
    */
   mozilla::Variant<gc::MarkingTracer, gc::RootMarkingTracer,
-                   gc::WeakMarkingTracer, gc::ParallelMarkingTracer>
+                   gc::WeakMarkingTracer, gc::ParallelMarkingTracer,
+                   gc::ConcurrentMarkingTracer>
       tracer_;
 
   JSRuntime* const runtime_;
@@ -579,7 +642,12 @@ class GCMarker {
   // The current mark stack color.
   MainThreadOrGCTaskData<gc::MarkColor> markColor_;
 
-  MainThreadOrGCTaskData<gc::ParallelMarker*> parallelMarker_;
+#ifdef JS_GC_CONCURRENT_MARKING
+  // List of cells that have tracing work that cannot be performed concurrently
+  // with the main thread.
+  MainThreadOrGCTaskData<MainThreadBuffer> blackMainThreadBuffer_;
+  MainThreadOrGCTaskData<MainThreadBuffer> grayMainThreadBuffer_;
+#endif
 
   Vector<JS::GCCellPtr, 0, SystemAllocPolicy> unmarkGrayStack;
   friend class gc::UnmarkGrayTracer;
@@ -630,6 +698,11 @@ class GCMarker {
 #endif  // DEBUG
 };
 
+inline bool IsConcurrentMarkingTracer(JSTracer* trc) {
+  return trc->isMarkingTracer() &&
+         GCMarker::fromTracer(trc)->isConcurrentMarking();
+}
+
 namespace gc {
 
 /*
@@ -653,6 +726,32 @@ class MOZ_RAII AutoSetMarkColor {
 
   ~AutoSetMarkColor() { marker_.setMarkColor(initialColor_); }
 };
+
+MOZ_ALWAYS_INLINE void MemoryAcquireFence(JSTracer* trc) {
+#ifdef JS_GC_CONCURRENT_MARKING
+  if (trc->isMarkingTracer() &&
+      GCMarker::fromTracer(trc)->isConcurrentMarking()) {
+#  ifdef MOZ_TSAN
+    FullMemoryFence(trc->runtime());
+#  else
+    std::atomic_thread_fence(std::memory_order_acquire);
+#  endif
+  }
+#endif
+}
+
+template <uint32_t markingOptions>
+MOZ_ALWAYS_INLINE void MemoryAcquireFence(JSRuntime* runtime) {
+#ifdef JS_GC_CONCURRENT_MARKING
+  if (bool(markingOptions & MarkingOptions::ConcurrentMarking)) {
+#  ifdef MOZ_TSAN
+    FullMemoryFence(runtime);
+#  else
+    std::atomic_thread_fence(std::memory_order_acquire);
+#  endif
+  }
+#endif
+}
 
 } /* namespace gc */
 

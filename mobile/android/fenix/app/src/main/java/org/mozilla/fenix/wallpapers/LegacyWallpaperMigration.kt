@@ -33,6 +33,7 @@ class LegacyWallpaperMigration(
      *
      * @param wallpaperName Name of the wallpaper to be migrated.
      */
+    @Suppress("CognitiveComplexMethod")
     suspend fun migrateLegacyWallpaper(
         wallpaperName: String,
     ): String = withContext(Dispatchers.IO) {

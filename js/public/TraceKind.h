@@ -22,9 +22,6 @@ class PropMap;
 class RegExpShared;
 class Shape;
 class Scope;
-namespace gc {
-class SmallBuffer;
-}  // namespace gc
 namespace jit {
 class JitCode;
 }  // namespace jit
@@ -49,24 +46,22 @@ enum class TraceKind {
   Object = 0x00,
   BigInt = 0x01,
   String = 0x02,
-  Symbol = 0x03,
+  GetterSetter = 0x03,
+  Symbol = 0x04,
 
   // Shape details are exposed through JS_TraceShapeCycleCollectorChildren.
-  Shape = 0x04,
-
-  BaseShape = 0x05,
+  Shape = 0x05,
 
   // The kind associated with a nullptr.
   Null = 0x06,
 
   // The following kinds do not have an exposed C++ idiom.
+  BaseShape,
   JitCode,
   Script,
   Scope,
   RegExpShared,
-  GetterSetter,
-  PropMap,
-  SmallBuffer
+  PropMap
 };
 
 // GCCellPtr packs the trace kind into the low bits of the pointer for common
@@ -101,12 +96,11 @@ struct MapTypeToTraceKind {
   D(Script,       js::BaseScript,      true,      true)        \
   D(Shape,        js::Shape,           true,      false)       \
   D(String,       JSString,            false,     false)       \
-  D(Symbol,       JS::Symbol,          false,     false)       \
+  D(Symbol,       JS::Symbol,          true,      true)        \
   D(BigInt,       JS::BigInt,          false,     false)       \
   D(RegExpShared, js::RegExpShared,    true,      true)        \
   D(GetterSetter, js::GetterSetter,    true,      true)        \
-  D(PropMap,      js::PropMap,         false,     false)       \
-  D(SmallBuffer,  js::gc::SmallBuffer, false,     false)
+  D(PropMap,      js::PropMap,         true,      false)
 // clang-format on
 
 // Returns true if the JS::TraceKind is represented as a node in cycle collector

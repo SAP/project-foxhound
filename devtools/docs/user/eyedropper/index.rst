@@ -30,7 +30,7 @@ As you move the mouse around the page you'll see the current color value in the 
 Changing a color value in the Rules view
 ****************************************
 
-Color values appearing in the Inspector's Rules view have color samples next to them: clicking the sample shows a :doc:`color picker popup <../page_inspector/how_to/inspect_and_select_colors/index>`. From Firefox 31, the popup contains an eyedropper icon: click this icon to activate the Eyedropper.
+Color values appearing in the Inspector's Rules view have color samples next to them: clicking the sample shows a :doc:`color picker popup <../page_inspector/how_to/inspect_and_select_colors/index>`. The popup contains an eyedropper icon: click this icon to activate the Eyedropper.
 
 Now, when you click the Eyedropper, the color in the Rules view is set to the color you selected.
 

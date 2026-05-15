@@ -156,18 +156,3 @@ locales = [
 [[paths]]
     reference = "devtools/startup/locales/en-US/**"
     l10n = "{l}devtools/startup/**"
-
-# Filters
-# The filters below are evaluated one after the other, in the given order.
-# Enter a combination of path as in the localization, key, and an action,
-# to change the default behavior of compare-locales and l10n merge.
-#
-# For browser/locales/en-US/chrome/browser/foo.properties,
-# path would be {l}browser/chrome/browser/foo.properties
-# key: the key/id of the entity
-# If key isn't specified, the complete file can be missing.
-[[filters]]
-    path = [
-        "{l}browser/firefox-l10n.js",
-    ]
-    action = "ignore"

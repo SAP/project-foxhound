@@ -249,4 +249,60 @@ add_capture_heuristic_tests([
     captureFillValue: CAPTURE_FILL_VALUE,
     captureExpectedRecord: CAPTURE_EXPECTED_RECORD,
   },
+  {
+    description: "Form in a same-origin nested iframe",
+    fixtureData: `
+      <iframe src=\"${SAME_ORIGIN_NESTED_IFRAME}?iframe=${SAME_ORIGIN_ALL_FIELDS}\"></iframe>
+    `,
+    expectedResult: [
+      {
+        fields: [
+          { fieldName: "cc-number" },
+          { fieldName: "cc-name" },
+          { fieldName: "cc-exp" },
+        ],
+      },
+    ],
+    captureFillValue: CAPTURE_FILL_VALUE,
+    captureExpectedRecord: CAPTURE_EXPECTED_RECORD,
+  },
+  {
+    description: "Form in a cross-origin nested iframe",
+    fixtureData: `
+      <iframe src=\"${SAME_ORIGIN_NESTED_IFRAME}?iframe=${CROSS_ORIGIN_ALL_FIELDS}\"></iframe>
+    `,
+    expectedResult: [
+      {
+        fields: [
+          { fieldName: "cc-number" },
+          { fieldName: "cc-name" },
+          { fieldName: "cc-exp" },
+        ],
+      },
+    ],
+    captureFillValue: CAPTURE_FILL_VALUE,
+    captureExpectedRecord: CAPTURE_EXPECTED_RECORD,
+  },
+  {
+    description: "Form in a same-origin nested iframe",
+    fixtureData: `
+      <form>
+        <iframe src=\"${SAME_ORIGIN_NESTED_IFRAME}?iframe=${SAME_ORIGIN_CC_NUMBER}\"></iframe>
+        <iframe src=\"${SAME_ORIGIN_NESTED_IFRAME}?iframe=${SAME_ORIGIN_CC_NAME}\"></iframe>
+        <iframe src=\"${SAME_ORIGIN_NESTED_IFRAME}?iframe=${SAME_ORIGIN_CC_EXP}\"></iframe>
+        <input id="submit" type="submit">
+      </form>
+    `,
+    expectedResult: [
+      {
+        fields: [
+          { fieldName: "cc-number" },
+          { fieldName: "cc-name" },
+          { fieldName: "cc-exp" },
+        ],
+      },
+    ],
+    captureFillValue: CAPTURE_FILL_VALUE,
+    captureExpectedRecord: CAPTURE_EXPECTED_RECORD,
+  },
 ]);

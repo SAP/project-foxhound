@@ -12,6 +12,7 @@
 #include <cmath>
 #include <gio/gio.h>
 #include "mozilla/widget/AsyncDBus.h"
+#include "nsAppShell.h"
 
 using namespace mozilla::widget;
 using namespace mozilla::dom::battery;
@@ -198,6 +199,7 @@ void UPowerClient::StopListening() {
 }
 
 bool UPowerClient::AddTrackedDevice(const char* aDevicePath) {
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GDBusProxy> proxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
       G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, nullptr,
       "org.freedesktop.UPower", aDevicePath, "org.freedesktop.UPower.Device",
@@ -240,6 +242,7 @@ void UPowerClient::UpdateTrackedDevices() {
   mTrackedDevice = nullptr;
   mTrackedDeviceProxy = nullptr;
 
+  nsAppShell::DBusConnectionCheck();
   DBusProxyCall(mUPowerProxy, "EnumerateDevices", nullptr,
                 G_DBUS_CALL_FLAGS_NONE, -1, mCancellable)
       ->Then(

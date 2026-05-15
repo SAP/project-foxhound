@@ -9,6 +9,7 @@
 use std::{
     collections::BTreeMap,
     ops::RangeInclusive,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
@@ -21,7 +22,7 @@ pub struct Packet {
     ack_eliciting: bool,
     time_sent: Instant,
     primary_path: bool,
-    tokens: recovery::Tokens,
+    tokens: Rc<recovery::Tokens>,
 
     time_declared_lost: Option<Instant>,
     /// After a PTO, this is true when the packet has been released.
@@ -32,7 +33,7 @@ pub struct Packet {
 
 impl Packet {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         pt: packet::Type,
         pn: packet::Number,
         time_sent: Instant,
@@ -46,7 +47,7 @@ impl Packet {
             time_sent,
             ack_eliciting,
             primary_path: true,
-            tokens,
+            tokens: Rc::new(tokens),
             time_declared_lost: None,
             pto: false,
             len,
@@ -71,6 +72,14 @@ impl Packet {
         self.tokens
             .iter()
             .any(|t| matches!(t, recovery::Token::EcnEct0))
+    }
+
+    /// Returns `true` if this packet is a PMTUD probe.
+    #[must_use]
+    pub fn is_pmtud_probe(&self) -> bool {
+        self.tokens
+            .iter()
+            .any(|t| matches!(t, recovery::Token::PmtudProbe))
     }
 
     /// The time that this packet was sent.
@@ -104,13 +113,13 @@ impl Packet {
 
     /// Access the recovery tokens that this holds.
     #[must_use]
-    pub const fn tokens(&self) -> &recovery::Tokens {
-        &self.tokens
+    pub fn tokens(&self) -> &recovery::Tokens {
+        self.tokens.as_ref()
     }
 
     /// Clears the flag that had this packet on the primary path.
     /// Used when migrating to clear out state.
-    pub fn clear_primary_path(&mut self) {
+    pub const fn clear_primary_path(&mut self) {
         self.primary_path = false;
     }
 
@@ -144,7 +153,7 @@ impl Packet {
     }
 
     /// Declare the packet as lost.  Returns `true` if this is the first time.
-    pub fn declare_lost(&mut self, now: Instant) -> bool {
+    pub const fn declare_lost(&mut self, now: Instant) -> bool {
         if self.lost() {
             false
         } else {
@@ -170,7 +179,7 @@ impl Packet {
     /// On PTO, we need to get the recovery tokens so that we can ensure that
     /// the frames we sent can be sent again in the PTO packet(s).  Do that just once.
     #[must_use]
-    pub fn pto(&mut self) -> bool {
+    pub const fn pto(&mut self) -> bool {
         if self.pto || self.lost() {
             false
         } else {
@@ -240,7 +249,7 @@ impl Packets {
             // > values in **descending packet number order**.
             //
             // <https://www.rfc-editor.org/rfc/rfc9000.html#section-19.3.1>
-            debug_assert!(previous_range_start.map_or(true, |s| s > *range.end()));
+            debug_assert!(previous_range_start.is_none_or(|s| s > *range.end()));
             previous_range_start = Some(*range.start());
 
             // Thus none of the following ACK ranges will acknowledge packets in
@@ -303,7 +312,22 @@ impl Packets {
     }
 }
 
+/// Test helper to create a sent packet.
 #[cfg(test)]
+#[must_use]
+pub fn make_packet(pn: packet::Number, sent_time: Instant, len: usize) -> Packet {
+    Packet::new(
+        packet::Type::Short,
+        pn,
+        sent_time,
+        true,
+        recovery::Tokens::new(),
+        len,
+    )
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use std::{
         cell::OnceCell,
@@ -343,11 +367,6 @@ mod tests {
         fn pn(&self) -> packet::Number;
     }
     impl HasPacketNumber for Packet {
-        fn pn(&self) -> packet::Number {
-            self.pn
-        }
-    }
-    impl HasPacketNumber for &'_ Packet {
         fn pn(&self) -> packet::Number {
             self.pn
         }
@@ -437,5 +456,21 @@ mod tests {
         let mut pkts = Packets::default();
         pkts.track(pkt(0));
         assert!(pkts.take_ranges([1..=1]).is_empty());
+    }
+
+    #[test]
+    fn pto() {
+        let mut p = pkt(0);
+        assert!(!p.pto_fired());
+        assert!(p.pto()); // First call returns true
+        assert!(p.pto_fired());
+        assert!(!p.pto()); // Second call returns false
+    }
+
+    #[test]
+    fn pto_after_lost() {
+        let mut p = pkt(0);
+        p.declare_lost(start_time());
+        assert!(!p.pto()); // Lost packet returns false
     }
 }

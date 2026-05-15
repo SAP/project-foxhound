@@ -8,7 +8,6 @@
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
-#include "mozilla/ScopeExit.h"
 
 static constexpr uint32_t kSegmentedBufferFreeOMTThreshold = 128;
 

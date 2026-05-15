@@ -14,13 +14,14 @@ set -e
 #   update-icu4x.sh https://github.com/unicode-org/icu4x.git main 45.0.0 release-75-1 1.5.0
 
 # default
-cldr=${3:-47.0.0}
-icuexport=${4:-release-77-1}
-icu4x_version=${5:-2.0.0}
+cldr=${3:-48.0.0}
+icuexport=${4:-release-78.1}
+icu4x_version=${5:-2.1.1}
+icuexport_filename=${6:-icu4x-icuexportdata-78.1.zip}
 
 if [ $# -lt 2 ]; then
-  echo "Usage: update-icu4x.sh <URL of ICU4X GIT> <ICU4X release tag name> <CLDR version> <ICU release tag name> <ICU4X version for icu_capi>"
-  echo "Example: update-icu4x.sh https://github.com/unicode-org/icu4x.git icu@2.0.0 47.0.0 release-77-1 2.0.0"
+  echo "Usage: update-icu4x.sh <URL of ICU4X GIT> <ICU4X release tag name> <CLDR version> <ICU release tag name> <ICU4X version for icu_capi> <icuexport filename>"
+  echo "Example: update-icu4x.sh https://github.com/unicode-org/icu4x.git icu@2.1.0 48.0.0 release-78.1 2.1.1 icu4x-icuexportdata-78.1.zip"
   exit 1
 fi
 
@@ -48,7 +49,6 @@ rm -rf ${segmenter_data_dir}
 
 log "Download icuexportdata"
 tmpicuexportdir=$(mktemp -d)
-icuexport_filename=`echo "icuexportdata_${icuexport}.zip" | sed "s/\//-/g"`
 cd ${tmpicuexportdir}
 wget https://github.com/unicode-org/icu/releases/download/${icuexport}/${icuexport_filename}
 
@@ -81,6 +81,7 @@ rm -rf icu_capi_tar.gz
 log "Patching icu_capi"
 for patch in \
     001-Cargo.toml.patch \
+    002-bug2011393.patch \
 ; do
     patch -d ${top_src_dir} -p1 --no-backup-if-mismatch < ${top_src_dir}/intl/icu4x-patches/$patch
 done

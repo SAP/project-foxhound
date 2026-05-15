@@ -9,7 +9,7 @@ import logging
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from taskgraph.util.taskcluster import get_artifact_prefix
 from voluptuous import Optional, Required
 
@@ -27,20 +27,19 @@ from gecko_taskgraph.util.scriptworker import (
 logger = logging.getLogger(__name__)
 
 
-beetmover_description_schema = Schema(
-    {
-        # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
-        Optional("label"): str,
-        Required("partner-path"): str,
-        Optional("extra"): object,
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-        Required("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("priority"): task_description_schema["priority"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+beetmover_description_schema = LegacySchema({
+    # unique label to describe this beetmover task, defaults to {dep.label}-beetmover
+    Optional("label"): str,
+    Required("partner-path"): str,
+    Optional("extra"): object,
+    Optional("attributes"): task_description_schema["attributes"],
+    Optional("dependencies"): task_description_schema["dependencies"],
+    Required("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Optional("priority"): task_description_schema["priority"],
+    Optional("task-from"): task_description_schema["task-from"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 transforms = TransformSequence()
 
@@ -145,77 +144,59 @@ def generate_upstream_artifacts(
     artifact_prefix = get_artifact_prefix(job)
 
     if "linux" in platform:
-        upstream_artifacts.append(
-            {
-                "taskId": {"task-reference": build_task_ref},
-                "taskType": "build",
-                "paths": [f"{artifact_prefix}/{repack_id}/target.tar.xz"],
-                "locale": partner_path,
-            }
-        )
-        upstream_artifacts.append(
-            {
-                "taskId": {"task-reference": repackage_signing_task_ref},
-                "taskType": "repackage",
-                "paths": [f"{artifact_prefix}/{repack_id}/target.tar.xz.asc"],
-                "locale": partner_path,
-            }
-        )
+        upstream_artifacts.append({
+            "taskId": {"task-reference": build_task_ref},
+            "taskType": "build",
+            "paths": [f"{artifact_prefix}/{repack_id}/target.tar.xz"],
+            "locale": partner_path,
+        })
+        upstream_artifacts.append({
+            "taskId": {"task-reference": repackage_signing_task_ref},
+            "taskType": "repackage",
+            "paths": [f"{artifact_prefix}/{repack_id}/target.tar.xz.asc"],
+            "locale": partner_path,
+        })
     elif "macosx" in platform:
-        upstream_artifacts.append(
-            {
-                "taskId": {"task-reference": repackage_task_ref},
-                "taskType": "repackage",
-                "paths": [f"{artifact_prefix}/{repack_id}/target.dmg"],
-                "locale": partner_path,
-            }
-        )
-        upstream_artifacts.append(
-            {
-                "taskId": {"task-reference": repackage_signing_task_ref},
-                "taskType": "repackage",
-                "paths": [f"{artifact_prefix}/{repack_id}/target.dmg.asc"],
-                "locale": partner_path,
-            }
-        )
+        upstream_artifacts.append({
+            "taskId": {"task-reference": repackage_task_ref},
+            "taskType": "repackage",
+            "paths": [f"{artifact_prefix}/{repack_id}/target.dmg"],
+            "locale": partner_path,
+        })
+        upstream_artifacts.append({
+            "taskId": {"task-reference": repackage_signing_task_ref},
+            "taskType": "repackage",
+            "paths": [f"{artifact_prefix}/{repack_id}/target.dmg.asc"],
+            "locale": partner_path,
+        })
     elif "win" in platform:
-        upstream_artifacts.append(
-            {
-                "taskId": {"task-reference": repackage_signing_task_ref},
-                "taskType": "repackage",
-                "paths": [f"{artifact_prefix}/{repack_id}/target.installer.exe"],
-                "locale": partner_path,
-            }
-        )
-        upstream_artifacts.append(
-            {
-                "taskId": {"task-reference": repackage_signing_task_ref},
-                "taskType": "repackage",
-                "paths": [f"{artifact_prefix}/{repack_id}/target.installer.exe.asc"],
-                "locale": partner_path,
-            }
-        )
+        upstream_artifacts.append({
+            "taskId": {"task-reference": repackage_signing_task_ref},
+            "taskType": "repackage",
+            "paths": [f"{artifact_prefix}/{repack_id}/target.installer.exe"],
+            "locale": partner_path,
+        })
+        upstream_artifacts.append({
+            "taskId": {"task-reference": repackage_signing_task_ref},
+            "taskType": "repackage",
+            "paths": [f"{artifact_prefix}/{repack_id}/target.installer.exe.asc"],
+            "locale": partner_path,
+        })
         if platform.startswith("win32") and repack_stub_installer:
-            upstream_artifacts.append(
-                {
-                    "taskId": {"task-reference": repackage_signing_task_ref},
-                    "taskType": "repackage",
-                    "paths": [
-                        f"{artifact_prefix}/{repack_id}/target.stub-installer.exe"
-                    ],
-                    "locale": partner_path,
-                }
-            )
-            upstream_artifacts.append(
-                {
-                    "taskId": {"task-reference": repackage_signing_task_ref},
-                    "taskType": "repackage",
-                    "paths": [
-                        f"{artifact_prefix}/{repack_id}/target.stub-installer.exe.asc"
-                    ],
-                    "locale": partner_path,
-                }
-            )
+            upstream_artifacts.append({
+                "taskId": {"task-reference": repackage_signing_task_ref},
+                "taskType": "repackage",
+                "paths": [f"{artifact_prefix}/{repack_id}/target.stub-installer.exe"],
+                "locale": partner_path,
+            })
+            upstream_artifacts.append({
+                "taskId": {"task-reference": repackage_signing_task_ref},
+                "taskType": "repackage",
+                "paths": [
+                    f"{artifact_prefix}/{repack_id}/target.stub-installer.exe.asc"
+                ],
+                "locale": partner_path,
+            })
 
     if not upstream_artifacts:
         raise Exception("Couldn't find any upstream artifacts.")

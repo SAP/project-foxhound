@@ -10,22 +10,37 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1126851
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 1126851 **/
+  /** Test for Bug 1126851 */
 
   SimpleTest.waitForExplicitFinish();
 
+  let gotUnload = false;
+
   function runTest() {
-    win = window.open("about:blank", "");
-    win.onload = function() {
-      win.onunload = function() {
+    win = window.open("file_bug1126851_post_unload.html", "");
+    // Reload replaces the inner window so we cannot wait for win.onunload
+    // and instead must rely on messages from the popup.
+    window.onmessage = function() {
+      if (gotUnload) {
+        SimpleTest.finish();
+      } else {
+        gotUnload = true;
         ok(true, "got unload");
         win.close();
-        SimpleTest.finish();
       }
-      win.onresize = function() {
+    }
+    // Bug 543435 caused there to be a resize event after `window.open` which
+    // is also there in other browsers. But now we must ensure to get the right
+    // resize event to avoid races.
+    let evt;
+    win.onresize = function(e) {
+      if (e == evt) {
         win.location.reload();
       }
-      win.document.dispatchEvent(new win.Event("resize", { bubbles: true }));
+    }
+    win.onload = function() {
+      evt = new win.Event("resize", { bubbles: true });
+      win.document.dispatchEvent(evt);
     }
   }
 

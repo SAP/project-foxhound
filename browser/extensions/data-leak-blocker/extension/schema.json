@@ -1,0 +1,6 @@
+// NOTE: api.js doesn't actually expose any experimental WebExtensions API.
+// (This comment is allowed in WebExtensions API schemas JSON, DO NOT remove
+// it unless an exception is added to browser/installer/allowed-dupes.mn to
+// prevent hitting build failure due to other built-in addons with empty
+// schemas.json file).
+[]

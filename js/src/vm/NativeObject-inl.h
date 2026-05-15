@@ -106,7 +106,7 @@ inline void NativeObject::copyDenseElements(uint32_t dstStart, const Value* src,
   if (count == 0) {
     return;
   }
-  if (zone()->needsIncrementalBarrier()) {
+  if (zone()->needsMarkingBarrier()) {
     uint32_t numShifted = getElementsHeader()->numShiftedElements();
     for (uint32_t i = 0; i < count; ++i) {
       elements_[dstStart + i].set(this, HeapSlot::Element,
@@ -162,7 +162,7 @@ inline void NativeObject::initDenseElements(const Value* src, uint32_t count) {
   elementsRangePostWriteBarrier(0, count);
 }
 
-inline void NativeObject::initDenseElements(JSLinearString** src,
+inline void NativeObject::initDenseElements(IteratorProperty* src,
                                             uint32_t count) {
   MOZ_ASSERT(getDenseInitializedLength() == 0);
   MOZ_ASSERT(count <= getDenseCapacity());
@@ -172,7 +172,7 @@ inline void NativeObject::initDenseElements(JSLinearString** src,
   setDenseInitializedLength(count);
   Value* elementsBase = reinterpret_cast<Value*>(elements_);
   for (size_t i = 0; i < count; i++) {
-    elementsBase[i].setString(src[i]);
+    elementsBase[i].setString(src[i].asString());
   }
 
   elementsRangePostWriteBarrier(0, count);
@@ -241,13 +241,23 @@ inline bool NativeObject::initDenseElementsFromRange(JSContext* cx, Iter begin,
   return true;
 }
 
+bool NativeObject::canMoveElementsHeader() const {
+#ifdef JS_GC_CONCURRENT_MARKING
+  // We can't move the elements header when concurrent marking may be marking
+  // the elements on another thread.
+  return !zone()->needsMarkingBarrier(JS::shadow::Zone::Concurrent);
+#else
+  return true;
+#endif
+}
+
 inline bool NativeObject::tryShiftDenseElements(uint32_t count) {
   MOZ_ASSERT(isExtensible());
 
   ObjectElements* header = getElementsHeader();
   if (header->initializedLength == count ||
       count > ObjectElements::MaxShiftedElements ||
-      header->hasNonwritableArrayLength()) {
+      header->hasNonwritableArrayLength() || !canMoveElementsHeader()) {
     return false;
   }
 
@@ -261,6 +271,7 @@ inline void NativeObject::shiftDenseElementsUnchecked(uint32_t count) {
   ObjectElements* header = getElementsHeader();
   MOZ_ASSERT(count > 0);
   MOZ_ASSERT(count < header->initializedLength);
+  MOZ_ASSERT(canMoveElementsHeader());
 
   if (MOZ_UNLIKELY(header->numShiftedElements() + count >
                    ObjectElements::MaxShiftedElements)) {
@@ -294,7 +305,7 @@ inline void NativeObject::moveDenseElements(uint32_t dstStart,
    * write barrier is invoked here on B, despite the fact that it exists in
    * the array before and after the move.
    */
-  if (zone()->needsIncrementalBarrier()) {
+  if (zone()->needsMarkingBarrier()) {
     uint32_t numShifted = getElementsHeader()->numShiftedElements();
     if (dstStart < srcStart) {
       HeapSlot* dst = elements_ + dstStart;
@@ -317,7 +328,7 @@ inline void NativeObject::moveDenseElements(uint32_t dstStart,
 }
 
 inline void NativeObject::reverseDenseElementsNoPreBarrier(uint32_t length) {
-  MOZ_ASSERT(!zone()->needsIncrementalBarrier());
+  MOZ_ASSERT(!zone()->needsMarkingBarrier());
 
   MOZ_ASSERT(isExtensible());
 
@@ -895,6 +906,7 @@ MOZ_ALWAYS_INLINE bool AddDataPropertyToPlainObject(
   obj->initSlot(*resultSlot, v);
 
   MOZ_ASSERT(!obj->getClass()->getAddProperty());
+  MOZ_ASSERT(!obj->getClass()->preservesWrapper());
   return true;
 }
 

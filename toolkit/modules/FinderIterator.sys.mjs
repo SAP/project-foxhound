@@ -63,33 +63,35 @@ export class FinderIterator {
    * the ranges have been found or 3) when `stop()` is called whilst iterating.
    *
    * @param {object}  options
-   * @param {Number}  [options.allowDistance] Allowed edit distance between the
+   * @param {number}  [options.allowDistance] Allowed edit distance between the
    *                                          current word and `options.word`
    *                                          when the iterator is already running
-   * @param {Boolean} options.caseSensitive   Whether to search in case sensitive
+   * @param {boolean} options.caseSensitive   Whether to search in case sensitive
    *                                          mode
-   * @param {Boolean} options.entireWord      Whether to search in entire-word mode
+   * @param {boolean} options.entireWord      Whether to search in entire-word mode
    * @param {Finder}  options.finder          Currently active Finder instance
-   * @param {Number}  [options.limit]         Limit the amount of results to be
+   * @param {number}  [options.limit]         Limit the amount of results to be
    *                                          passed back. Optional, defaults to no
    *                                          limit.
-   * @param {Boolean} [options.linksOnly]     Only yield ranges that are inside a
+   * @param {boolean} [options.linksOnly]     Only yield ranges that are inside a
    *                                          hyperlink (used by QuickFind).
    *                                          Optional, defaults to `false`.
-   * @param {Object}  options.listener        Listener object that implements the
+   * @param {object}  options.listener        Listener object that implements the
    *                                          following callback functions:
-   *                                           - onIteratorRangeFound({Range} range);
+   *                                           - onIteratorRangeFound({Range} range, {Object} extra);
+   *                                             extra.context contains text snippet around the match
    *                                           - onIteratorReset();
    *                                           - onIteratorRestart({Object} iterParams);
    *                                           - onIteratorStart({Object} iterParams);
-   * @param {Boolean} options.matchDiacritics Whether to search in
+   * @param {boolean} options.matchDiacritics Whether to search in
    *                                          diacritic-matching mode
-   * @param {Boolean} [options.useCache]        Whether to allow results already
+   * @param {boolean} [options.useCache]        Whether to allow results already
    *                                            present in the cache or demand fresh.
    *                                            Optional, defaults to `false`.
-   * @param {Boolean} [options.useSubFrames]    Whether to iterate over subframes.
+   * @param {boolean} [options.useSubFrames]    Whether to iterate over subframes.
    *                                            Optional, defaults to `false`.
-   * @param {String}  options.word              Word to search for
+   * @param {string}  options.word              Word to search for
+   * @param {number} contextRange - Number of characters to extract before and after target string
    * @return {Promise}
    */
   start({
@@ -104,6 +106,7 @@ export class FinderIterator {
     useCache,
     word,
     useSubFrames,
+    contextRange,
   }) {
     // Take care of default values for non-required options.
     if (typeof allowDistance != "number") {
@@ -199,7 +202,7 @@ export class FinderIterator {
     // Start!
     this.running = true;
     this._currentParams = iterParams;
-    this._findAllRanges(finder, ++this._spawnId);
+    this._findAllRanges(finder, ++this._spawnId, contextRange);
 
     return promise;
   }
@@ -208,7 +211,7 @@ export class FinderIterator {
    * Stop the currently running iterator as soon as possible and optionally cache
    * the result for later.
    *
-   * @param {Boolean} [cachePrevious] Whether to save the result for later.
+   * @param {boolean} [cachePrevious] Whether to save the result for later.
    *                                  Optional.
    */
   stop(cachePrevious = false) {
@@ -299,16 +302,16 @@ export class FinderIterator {
    * passed through the arguments. When `true`, we can keep it running as-is and
    * the consumer should stop the iterator when `false`.
    *
-   * @param {Boolean}  options.caseSensitive Whether to search in case sensitive
+   * @param {boolean}  options.caseSensitive Whether to search in case sensitive
    *                                         mode
-   * @param {Boolean}  options.entireWord    Whether to search in entire-word mode
-   * @param  {Boolean} options.linksOnly     Whether to search for the word to be
+   * @param {boolean}  options.entireWord    Whether to search in entire-word mode
+   * @param  {boolean} options.linksOnly     Whether to search for the word to be
    *                                         present in links only
-   * @param {Boolean}  options.matchDiacritics Whether to search in
+   * @param {boolean}  options.matchDiacritics Whether to search in
    *                                           diacritic-matching mode
-   * @param  {String}  options.word          The word being searched for
+   * @param  {string}  options.word          The word being searched for
    * @param  (Boolean) options.useSubFrames  Whether to search subframes
-   * @return {Boolean}
+   * @return {boolean}
    */
   continueRunning({
     caseSensitive,
@@ -336,9 +339,9 @@ export class FinderIterator {
    * Consumers may opt-out of this behavior by using this check and not call
    * start().
    *
-   * @param  {Object} paramSet Property bag with the same signature as you would
+   * @param  {object} paramSet Property bag with the same signature as you would
    *                           pass into `start()`
-   * @return {Boolean}
+   * @return {boolean}
    */
   isAlreadyRunning(paramSet) {
     return (
@@ -351,7 +354,7 @@ export class FinderIterator {
   /**
    * Safely notify all registered listeners that an event has occurred.
    *
-   * @param {String}   callback    Name of the callback to invoke
+   * @param {string}   callback    Name of the callback to invoke
    * @param {mixed}    [params]    Optional argument that will be passed to the
    *                               callback
    * @param {Iterable} [listeners] Set of listeners to notify. Optional, defaults
@@ -370,20 +373,98 @@ export class FinderIterator {
   }
 
   /**
+   * Extracts context around a found Range.
+   * Returns normalized text slices so indices are stable with FindBar behavior.
+   *
+   * @param {Range} range - DOM range for a single match.
+   * @param {number} contextRange - Number of characters to extract before and after target string
+   */
+  _extractSnippet(range, contextRange) {
+    const blockSelector =
+      "p,li,dt,dd,td,th,pre,code,h1,h2,h3,h4,h5,h6,article,section,blockquote,div";
+
+    const defaultResult = {
+      before: "",
+      match: "",
+      after: "",
+      start: -1,
+      end: -1,
+    };
+
+    try {
+      const doc = range?.startContainer?.ownerDocument;
+      if (!doc || range.collapsed) {
+        return defaultResult;
+      }
+
+      // Pick a stable block container for context
+      let node = range.commonAncestorContainer;
+      if (node.nodeType === Node.TEXT_NODE) {
+        node = node.parentElement || node.parentNode;
+      }
+
+      // Find the nearest block-level container (p, div, h1, etc.) to anchor our context extraction
+      const block =
+        (node?.closest && node.closest(blockSelector)) || node || doc.body;
+
+      // Build ranges
+      const blockRange = doc.createRange();
+      blockRange.selectNodeContents(block);
+
+      const preRange = blockRange.cloneRange();
+      preRange.setEnd(range.startContainer, range.startOffset);
+
+      const postRange = blockRange.cloneRange();
+      postRange.setStart(range.endContainer, range.endOffset);
+
+      const preRaw = preRange.toString();
+      const matchRaw = range.toString();
+      const postRaw = postRange.toString();
+
+      // Consistent normalization across all three strings
+      const normalizeWhitespace = text => text.replace(/\s+/g, " ");
+      const preNorm = normalizeWhitespace(preRaw);
+      const matchNorm = normalizeWhitespace(matchRaw);
+      const postNorm = normalizeWhitespace(postRaw);
+
+      const start = preNorm.length; // offset in normalized block text
+      const end = start + matchNorm.length;
+      const sliceText = (text, start, end) => text.slice(start, end);
+
+      const beforeStr = sliceText(
+        preNorm,
+        Math.max(0, preNorm.length - contextRange),
+        preNorm.length
+      );
+      const afterStr = sliceText(postNorm, 0, contextRange);
+
+      return {
+        before: beforeStr,
+        match: matchNorm,
+        after: afterStr,
+        start,
+        end,
+      };
+    } catch {
+      return defaultResult;
+    }
+  }
+
+  /**
    * Internal; check if an iteration request is available in the previous result
    * that we cached.
    *
-   * @param  {Boolean} options.caseSensitive Whether to search in case sensitive
+   * @param  {boolean} options.caseSensitive Whether to search in case sensitive
    *                                         mode
-   * @param  {Boolean} options.entireWord    Whether to search in entire-word mode
-   * @param  {Boolean} options.linksOnly     Whether to search for the word to be
+   * @param  {boolean} options.entireWord    Whether to search in entire-word mode
+   * @param  {boolean} options.linksOnly     Whether to search for the word to be
    *                                         present in links only
-   * @param  {Boolean} options.matchDiacritics Whether to search in
+   * @param  {boolean} options.matchDiacritics Whether to search in
    *                                           diacritic-matching mode
-   * @param  {Boolean} options.useCache      Whether the consumer wants to use the
+   * @param  {boolean} options.useCache      Whether the consumer wants to use the
    *                                         cached previous result at all
-   * @param  {String}  options.word          The word being searched for
-   * @return {Boolean}
+   * @param  {string}  options.word          The word being searched for
+   * @return {boolean}
    */
   _previousResultAvailable({
     caseSensitive,
@@ -409,12 +490,12 @@ export class FinderIterator {
   /**
    * Internal; compare if two sets of iterator parameters are equivalent.
    *
-   * @param  {Object} paramSet1       First set of params (left hand side)
-   * @param  {Object} paramSet2       Second set of params (right hand side)
-   * @param  {Number} [allowDistance] Allowed edit distance between the two words.
+   * @param  {object} paramSet1       First set of params (left hand side)
+   * @param  {object} paramSet2       Second set of params (right hand side)
+   * @param  {number} [allowDistance] Allowed edit distance between the two words.
    *                                  Optional, defaults to '0', which means 'no
    *                                  distance'.
-   * @return {Boolean}
+   * @return {boolean}
    */
   _areParamsEqual(paramSet1, paramSet2, allowDistance = 0) {
     return (
@@ -437,11 +518,11 @@ export class FinderIterator {
    * make sure we don't block the host process too long. In the case of a break
    * like this, we yield `undefined`, instead of a range.
    *
-   * @param {Object}       listener    Listener object
+   * @param {object}       listener    Listener object
    * @param {Array}        rangeSource Set of ranges to iterate over
    * @param {nsIDOMWindow} window      The window object is only really used
    *                                   for access to `setTimeout`
-   * @param {Boolean}      [withPause] Whether to pause after each `kIterationSizeMax`
+   * @param {boolean}      [withPause] Whether to pause after each `kIterationSizeMax`
    *                                   number of ranges yielded. Optional, defaults
    *                                   to `true`.
    * @yield {Range}
@@ -494,7 +575,7 @@ export class FinderIterator {
    * mark the listener as 'catching up', meaning it will not receive fresh
    * results from a running iterator.
    *
-   * @param {Object}       listener Listener object
+   * @param {object}       listener Listener object
    * @param {nsIDOMWindow} window   The window object is only really used
    *                                for access to `setTimeout`
    * @yield {Range}
@@ -515,7 +596,7 @@ export class FinderIterator {
    * mark the listener as 'catching up', meaning it will not receive fresh
    * results from the running iterator.
    *
-   * @param {Object}       listener Listener object
+   * @param {object}       listener Listener object
    * @param {nsIDOMWindow} window   The window object is only really used
    *                                for access to `setTimeout`
    * @yield {Range}
@@ -531,12 +612,13 @@ export class FinderIterator {
    * Internal; see the documentation of the start() method above.
    *
    * @param {Finder}       finder  Currently active Finder instance
-   * @param {Number}       spawnId Since `stop()` is synchronous and this method
+   * @param {number}       spawnId Since `stop()` is synchronous and this method
    *                               is not, this identifier is used to learn if
    *                               it's supposed to still continue after a pause.
+   * @param {number} contextRange - Number of characters to extract before and after target string
    * @yield {Range}
    */
-  async _findAllRanges(finder, spawnId) {
+  async _findAllRanges(finder, spawnId, contextRange = 0) {
     if (this._timeout) {
       if (this._timer) {
         clearTimeout(this._timer);
@@ -597,7 +679,13 @@ export class FinderIterator {
             continue;
           }
 
-          listener.onIteratorRangeFound(range);
+          if (contextRange) {
+            listener.onIteratorRangeFound(range, {
+              context: this._extractSnippet(range, contextRange),
+            });
+          } else {
+            listener.onIteratorRangeFound(range);
+          }
 
           if (limit !== -1 && --limit === 0) {
             // We've reached our limit; no need to do more work for this listener.
@@ -629,13 +717,13 @@ export class FinderIterator {
    * Internal; basic wrapper around nsIFind that provides a generator yielding
    * a range each time an occurence of `word` string is found.
    *
-   * @param {Boolean}      options.caseSensitive Whether to search in case
+   * @param {boolean}      options.caseSensitive Whether to search in case
    *                                             sensitive mode
-   * @param {Boolean}      options.entireWord    Whether to search in entire-word
+   * @param {boolean}      options.entireWord    Whether to search in entire-word
    *                                             mode
-   * @param {Boolean}      options.matchDiacritics Whether to search in
+   * @param {boolean}      options.matchDiacritics Whether to search in
    *                                               diacritic-matching mode
-   * @param {String}       options.word          The word to search for
+   * @param {string}       options.word          The word to search for
    * @param {nsIDOMWindow} window                The window to search in
    * @yield {Range}
    */
@@ -733,7 +821,7 @@ export class FinderIterator {
    * Internal; determines whether a range is inside a link.
    *
    * @param  {Range} range the range to check
-   * @return {Boolean}     True if the range starts in a link
+   * @return {boolean}     True if the range starts in a link
    */
   _rangeStartsInLink(range) {
     let isInsideLink = false;

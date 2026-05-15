@@ -7,7 +7,6 @@ package org.mozilla.focus.searchsuggestions.ui
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.material.ContentAlpha
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.remember
@@ -22,12 +21,12 @@ import mozilla.components.compose.browser.awesomebar.AwesomeBar
 import mozilla.components.compose.browser.awesomebar.AwesomeBarDefaults
 import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
-import org.mozilla.focus.R
 import org.mozilla.focus.components
 import org.mozilla.focus.searchsuggestions.SearchSuggestionsViewModel
 import org.mozilla.focus.searchsuggestions.State
 import org.mozilla.focus.topsites.TopSitesOverlay
 import org.mozilla.focus.ui.theme.focusColors
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Composable function that displays the search overlay.
@@ -89,7 +88,7 @@ private fun SearchSuggestions(
     val context = LocalContext.current
     val components = components
 
-    val icon = AppCompatResources.getDrawable(context, R.drawable.mozac_ic_search_24)?.toBitmap()
+    val icon = AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_search_24)?.toBitmap()
     val provider = remember {
         SearchSuggestionProvider(
             components.store,
@@ -120,7 +119,7 @@ private fun SearchSuggestions(
                 background = focusColors.surface,
                 title = focusColors.onBackground,
                 description = focusColors.onBackground.copy(
-                    alpha = ContentAlpha.medium,
+                    alpha = 0.6f,
                 ),
                 autocompleteIcon = focusColors.onSurface,
                 groupTitle = focusColors.onBackground,
@@ -128,6 +127,9 @@ private fun SearchSuggestions(
             providers = listOf(provider),
             onSuggestionClicked = onSuggestionClicked,
             onAutoComplete = onAutoComplete,
+            onRemoveClicked = {
+                // not supported
+            },
         )
     }
 }

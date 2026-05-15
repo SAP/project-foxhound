@@ -11,6 +11,7 @@
 #include "mozilla/UniquePtr.h"
 #include <dwrite_1.h>
 
+#include "gfxDWriteCommon.h"
 #include "gfxFont.h"
 #include "gfxUserFontSet.h"
 #include "nsTHashMap.h"

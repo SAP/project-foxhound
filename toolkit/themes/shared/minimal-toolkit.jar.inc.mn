@@ -50,3 +50,8 @@ toolkit.jar:
 
 # used in about:logging on Android
   skin/classic/global/icons/open-in-new.svg                (../../shared/icons/open-in-new.svg)
+  skin/classic/global/icons/more.svg                       (../../shared/icons/more.svg)
+
+# used in about:certificate on desktop/Android
+  skin/classic/global/icons/error.svg                       (../../shared/icons/error.svg)
+  skin/classic/global/illustrations/error-malformed-url.svg (../../shared/illustrations/error-malformed-url.svg)

@@ -17,7 +17,6 @@
 #include "nsMimeTypes.h"
 #include "nsIHttpChannel.h"
 
-#include "mozilla/Variant.h"
 #include "mozilla/Logging.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 

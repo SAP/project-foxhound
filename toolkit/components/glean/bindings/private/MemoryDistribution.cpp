@@ -25,7 +25,7 @@ namespace mozilla::glean {
 
 namespace impl {
 
-void MemoryDistributionMetric::Accumulate(size_t aSample) const {
+void MemoryDistributionStandalone::Accumulate(size_t aSample) const {
   auto hgramId = HistogramIdForMetric(mId);
   if (hgramId) {
     TelemetryHistogram::Accumulate(hgramId.extract(), aSample);

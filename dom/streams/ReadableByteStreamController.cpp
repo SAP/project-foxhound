@@ -6,6 +6,8 @@
 
 #include "mozilla/dom/ReadableByteStreamController.h"
 
+#include <algorithm>  // std::min
+
 #include "ReadIntoRequest.h"
 #include "js/ArrayBuffer.h"
 #include "js/ErrorReport.h"
@@ -20,8 +22,8 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableByteStreamControllerBinding.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBYOBReader.h"
@@ -30,14 +32,12 @@
 #include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/dom/ReadableStreamGenericReader.h"
-#include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
-
-#include <algorithm>  // std::min
 
 namespace mozilla::dom {
 

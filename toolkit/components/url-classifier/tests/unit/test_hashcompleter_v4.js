@@ -56,7 +56,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gUrlUtil",
   "@mozilla.org/url-classifier/utils;1",
-  "nsIUrlClassifierUtils"
+  Ci.nsIUrlClassifierUtils
 );
 
 // Handles request for TEST_TABLE_DATA_V4.

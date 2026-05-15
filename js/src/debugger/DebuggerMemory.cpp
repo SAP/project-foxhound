@@ -6,12 +6,6 @@
 
 #include "debugger/DebuggerMemory.h"
 
-#include "mozilla/Maybe.h"
-#include "mozilla/Vector.h"
-
-#include <stdlib.h>
-#include <utility>
-
 #include "jsapi.h"
 
 #include "builtin/MapObject.h"

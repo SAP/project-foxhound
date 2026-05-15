@@ -24,6 +24,7 @@
 
 // Classes
 class nsIFrame;
+class nsSubDocumentFrame;
 class nsIPrintSettings;
 class nsPrintData;
 class nsPagePrintTimer;
@@ -34,7 +35,6 @@ class nsPrintObject;
 class nsIDocShell;
 class nsPageSequenceFrame;
 class nsPIDOMWindowOuter;
-class nsView;
 
 namespace mozilla {
 class PresShell;
@@ -223,9 +223,8 @@ class nsPrintJob final : public nsIWebProgressListener,
 
   bool ShouldResumePrint() const;
 
-  nsresult SetRootView(nsPrintObject* aPO, bool& aDoReturn,
-                       bool& aDocumentIsTopLevel, nsSize& aAdjSize);
-  nsView* GetParentViewForRoot();
+  nsresult SetRootView(nsPrintObject* aPO, bool aDocumentIsTopLevel,
+                       bool& aDoReturn, nsSize& aAdjSize);
   void UpdateZoomRatio(nsPrintObject* aPO);
   MOZ_CAN_RUN_SCRIPT nsresult ReconstructAndReflow();
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult UpdateSelectionAndShrinkPrintObject(

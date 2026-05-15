@@ -3,6 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "H264.h"
+
+#include <limits>
+
 #include "AnnexB.h"
 #include "BitReader.h"
 #include "BitWriter.h"
@@ -12,9 +15,7 @@
 #include "MediaInfo.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/Result.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Try.h"
-#include <limits>
 
 #define READSE(var, min, max)     \
   {                               \
@@ -397,17 +398,16 @@ class SPSNALIterator {
   }
   reader.Read(paramSets[i].mOffset);
 
-  uint8_t byte;
-  MOZ_TRY_VAR(byte, reader.ReadU8());
+  uint8_t byte = MOZ_TRY(reader.ReadU8());
   uint8_t nalUnitType = byte & 0x1f;
   if (nalUnitType == H264_NAL_PREFIX || nalUnitType == H264_NAL_SLICE_EXT) {
     bool svcExtensionFlag = false;
-    MOZ_TRY_VAR(byte, reader.ReadU8());
+    byte = MOZ_TRY(reader.ReadU8());
     svcExtensionFlag = byte & 0x80;
     if (svcExtensionFlag) {
       // Discard the first byte, and find the temporal id in the second byte
       MOZ_TRY(reader.ReadU8());
-      MOZ_TRY_VAR(byte, reader.ReadU8());
+      byte = MOZ_TRY(reader.ReadU8());
       int temporalId = (byte & 0xE0) >> 5;
       return temporalId;
     }
@@ -964,7 +964,16 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
       RefPtr<mozilla::MediaByteBuffer> decodedNAL = DecodeNALUnit(p, nalLen);
       SEIRecoveryData data;
       if (DecodeRecoverySEI(decodedNAL, data)) {
-        return FrameType::I_FRAME_OTHER;
+        // When both conditions are true, it means that starting decoding from
+        // an SEI frame will produce the same result as starting from an IDR
+        // frame, with no frame difference. If only one condition is true, it is
+        // not a true IDR substitute and may cause minor visual artifacts.
+        // However, since some video streams are incorrectly muxed without
+        // proper attributes, allowing playback with a few visual imperfections
+        // is preferable to failing to play them at all.
+        return (data.recovery_frame_cnt == 0 || data.exact_match_flag == 0)
+                   ? FrameType::I_FRAME_IDR
+                   : FrameType::I_FRAME_OTHER;
       }
     } else if (nalType == H264_NAL_SLICE) {
       RefPtr<mozilla::MediaByteBuffer> decodedNAL = DecodeNALUnit(p, nalLen);
@@ -1019,19 +1028,19 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
     uint32_t nalLen = 0;
     switch (nalLenSize) {
       case 1:
-        Unused << reader.ReadU8().map(
+        (void)reader.ReadU8().map(
             [&](uint8_t x) mutable { return nalLen = x; });
         break;
       case 2:
-        Unused << reader.ReadU16().map(
+        (void)reader.ReadU16().map(
             [&](uint16_t x) mutable { return nalLen = x; });
         break;
       case 3:
-        Unused << reader.ReadU24().map(
+        (void)reader.ReadU24().map(
             [&](uint32_t x) mutable { return nalLen = x; });
         break;
       case 4:
-        Unused << reader.ReadU32().map(
+        (void)reader.ReadU32().map(
             [&](uint32_t x) mutable { return nalLen = x; });
         break;
       default:
@@ -1143,13 +1152,11 @@ bool H264::CompareExtraData(const mozilla::MediaByteBuffer* aExtraData1,
 
 static inline Result<Ok, nsresult> ReadSEIInt(BufferReader& aBr,
                                               uint32_t& aOutput) {
-  uint8_t tmpByte;
-
   aOutput = 0;
-  MOZ_TRY_VAR(tmpByte, aBr.ReadU8());
+  uint8_t tmpByte = MOZ_TRY(aBr.ReadU8());
   while (tmpByte == 0xFF) {
     aOutput += 255;
-    MOZ_TRY_VAR(tmpByte, aBr.ReadU8());
+    tmpByte = MOZ_TRY(aBr.ReadU8());
   }
   aOutput += tmpByte;  // this is the last byte
   return Ok();
@@ -1263,9 +1270,9 @@ bool H264::DecodeRecoverySEI(const mozilla::MediaByteBuffer* aSEI,
   // skip over original exp-golomb encoded width/height
   br.ReadUE();  // skip width
   br.ReadUE();  // skip height
-  uint32_t width = aSize.width;
+  uint32_t width = std::max<uint32_t>(aSize.width, 16);
   uint32_t widthNeeded = width % 16 != 0 ? (width / 16 + 1) * 16 : width;
-  uint32_t height = aSize.height;
+  uint32_t height = std::max<uint32_t>(aSize.height, 16);
   uint32_t heightNeeded = height % 16 != 0 ? (height / 16 + 1) * 16 : height;
   bw.WriteUE(widthNeeded / 16 - 1);
   bw.WriteUE(heightNeeded / 16 - 1);
@@ -1356,9 +1363,9 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
   avcc.mAVCProfileIndication = reader.ReadBits(8);
   avcc.mProfileCompatibility = reader.ReadBits(8);
   avcc.mAVCLevelIndication = reader.ReadBits(8);
-  Unused << reader.ReadBits(6);  // reserved
+  (void)reader.ReadBits(6);  // reserved
   avcc.mLengthSizeMinusOne = reader.ReadBits(2);
-  Unused << reader.ReadBits(3);  // reserved
+  (void)reader.ReadBits(3);  // reserved
   const uint8_t numSPS = reader.ReadBits(5);
   for (uint8_t idx = 0; idx < numSPS; idx++) {
     if (reader.BitsLeft() < 16) {
@@ -1418,11 +1425,11 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
   // Instead, we will simply clear the incorrect result.
   if (avcc.mAVCProfileIndication != 66 && avcc.mAVCProfileIndication != 77 &&
       avcc.mAVCProfileIndication != 88 && reader.BitsLeft() >= 32) {
-    Unused << reader.ReadBits(6);  // reserved
+    (void)reader.ReadBits(6);  // reserved
     avcc.mChromaFormat = Some(reader.ReadBits(2));
-    Unused << reader.ReadBits(5);  // reserved
+    (void)reader.ReadBits(5);  // reserved
     avcc.mBitDepthLumaMinus8 = Some(reader.ReadBits(3));
-    Unused << reader.ReadBits(5);  // reserved
+    (void)reader.ReadBits(5);  // reserved
     avcc.mBitDepthChromaMinus8 = Some(reader.ReadBits(3));
     const uint8_t numOfSequenceParameterSetExt = reader.ReadBits(8);
     for (uint8_t idx = 0; idx < numOfSequenceParameterSetExt; idx++) {
@@ -1504,8 +1511,8 @@ H264NALU::H264NALU(const uint8_t* aData, uint32_t aByteCount)
     : mNALU(aData, aByteCount) {
   // Per 7.3.1 NAL unit syntax
   BitReader reader(aData, aByteCount * 8);
-  Unused << reader.ReadBit();    // forbidden_zero_bit
-  Unused << reader.ReadBits(2);  // nal_ref_idc
+  (void)reader.ReadBit();    // forbidden_zero_bit
+  (void)reader.ReadBits(2);  // nal_ref_idc
   mNalUnitType = reader.ReadBits(5);
 }
 

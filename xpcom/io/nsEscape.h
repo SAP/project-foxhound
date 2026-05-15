@@ -10,8 +10,8 @@
 /*	First checked in on 98/12/03 by John R. McMullen, derived from
  * net.h/mkparse.c. */
 
-#ifndef _ESCAPE_H_
-#define _ESCAPE_H_
+#ifndef ESCAPE_H_
+#define ESCAPE_H_
 
 #include "nscore.h"
 #include "nsError.h"
@@ -266,4 +266,4 @@ inline nsACString& NS_UnescapeURL(nsACString& aStr) {
   return aStr;
 }
 
-#endif  //  _ESCAPE_H_
+#endif  //  ESCAPE_H_

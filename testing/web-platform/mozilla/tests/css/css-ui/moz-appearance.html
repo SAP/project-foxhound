@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>-moz-appearance should be unsupported in CSSStyleProperties</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<style>
+#input {
+    -moz-appearance: textfield;
+}
+</style>
+<input type="number" id="input"></input>
+<script>
+    test(function() {
+        assert_equals(input.style.MozAppearance, undefined);
+        assert_equals(getComputedStyle(input).getPropertyValue('-moz-appearance'), 'textfield');
+        assert_equals(getComputedStyle(input).getPropertyValue('appearance'), 'textfield');
+    }, '-moz-appearance is not exposed in CSSStyleProperties');
+</script>

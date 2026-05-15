@@ -24,13 +24,13 @@ class JWCrypto {
    * algorithm is enc="A256GCM" [1] and the only supported key encryption algorithm
    * is alg="ECDH-ES" [2].
    *
-   * @param {Object} key Peer Public JWK.
+   * @param {object} key Peer Public JWK.
    * @param {ArrayBuffer} data
    *
    * [1] https://tools.ietf.org/html/rfc7518#section-5.3
    * [2] https://tools.ietf.org/html/rfc7518#section-4.6
    *
-   * @returns {Promise<String>}
+   * @returns {Promise<string>}
    */
   async generateJWE(key, data) {
     // Generate an ephemeral key to use just for this encryption.
@@ -164,9 +164,10 @@ class JWCrypto {
  * JWA RFC.
  * The raw ECDH secret is derived into a key using
  * Concat KDF, as defined in Section 5.8.1 of [NIST.800-56A].
+ *
  * @param {CryptoKey} privateKey
  * @param {CryptoKey} publicKey
- * @param {String[]} keyUsages See `SubtleCrypto.deriveKey` 5th paramater documentation.
+ * @param {string[]} keyUsages See `SubtleCrypto.deriveKey` 5th paramater documentation.
  * @returns {Promise<CryptoKey>}
  */
 async function deriveECDHSharedAESKey(privateKey, publicKey, keyUsages) {

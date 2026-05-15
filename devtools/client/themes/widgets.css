@@ -6,14 +6,12 @@
 
 .theme-dark {
   --table-splitter-color: rgba(255, 255, 255, 0.15);
-  --table-zebra-background: rgba(255, 255, 255, 0.05);
   --sidemenu-selected-arrow: url(images/item-arrow-dark-ltr.svg);
   --sidemenu-selected-arrow-rtl: url(images/item-arrow-dark-rtl.svg);
 }
 
 .theme-light {
   --table-splitter-color: rgba(0, 0, 0, 0.15);
-  --table-zebra-background: rgba(0, 0, 0, 0.05);
   --sidemenu-selected-arrow: url(images/item-arrow-ltr.svg);
   --sidemenu-selected-arrow-rtl: url(images/item-arrow-rtl.svg);
 }

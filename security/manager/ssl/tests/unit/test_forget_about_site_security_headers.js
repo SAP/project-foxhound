@@ -13,7 +13,7 @@ const { ForgetAboutSite } = ChromeUtils.importESModule(
   "resource://gre/modules/ForgetAboutSite.sys.mjs"
 );
 
-do_get_profile(); // must be done before instantiating nsIX509CertDB
+do_get_profile(true); // must be done before instantiating nsIX509CertDB and calling ForgetAboutSite.
 
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("security.cert_pinning.enforcement_level");

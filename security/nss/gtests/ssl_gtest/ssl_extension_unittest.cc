@@ -651,7 +651,10 @@ TEST_P(TlsExtensionTest12, SignatureAlgorithmConfiguration) {
   }
 }
 
+#ifndef NSS_DISABLE_DSA
 // This only works on TLS 1.2, since it relies on DSA.
+// and doesn't work if we've disabled DSA (Reset(TlsAgent:kServerDSA) fail
+// because we don't have a DSA certificate)
 TEST_P(TlsExtensionTest12, SignatureAlgorithmDisableDSA) {
   const std::vector<SSLSignatureScheme> schemes = {
       ssl_sig_dsa_sha1, ssl_sig_dsa_sha256, ssl_sig_dsa_sha384,
@@ -700,6 +703,7 @@ TEST_P(TlsExtensionTest12, SignatureAlgorithmDisableDSA) {
   EXPECT_TRUE(ext2.Read(2, 2, &v));
   EXPECT_EQ(ssl_sig_rsa_pss_rsae_sha256, v);
 }
+#endif
 
 // Temporary test to verify that we choke on an empty ClientKeyShare.
 // This test will fail when we implement HelloRetryRequest.
@@ -1310,6 +1314,9 @@ TEST_P(TlsDisallowedUnadvertisedExtensionTest13,
 
 TEST_P(TlsConnectStream, IncludePadding) {
   EnsureTlsSetup();
+  // filters only work with particular groups
+  client_->ConfigNamedGroups(kNonPQDHEGroups);
+
   SSL_EnableTls13GreaseEch(client_->ssl_fd(), PR_FALSE);  // Don't GREASE
 
   // This needs to be long enough to push a TLS 1.0 ClientHello over 255, but
@@ -1368,7 +1375,7 @@ TEST_F(TlsConnectStreamTls13, ClientHelloExtensionPermutationWithPSK) {
                             PR_TRUE) == SECSuccess);
   Connect();
   SendReceive();
-  CheckKeys(ssl_kea_ecdh, ssl_grp_ec_curve25519, ssl_auth_psk, ssl_sig_none);
+  CheckKeys(ssl_auth_psk, ssl_sig_none);
 }
 
 /* This test checks that the ClientHello extension order is actually permuted

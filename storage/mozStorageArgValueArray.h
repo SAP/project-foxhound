@@ -8,7 +8,6 @@
 #define mozStorageArgValueArray_h
 
 #include "mozIStorageValueArray.h"
-#include "mozilla/Attributes.h"
 
 #include "sqlite3.h"
 

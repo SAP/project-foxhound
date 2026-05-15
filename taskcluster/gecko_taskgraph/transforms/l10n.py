@@ -11,7 +11,7 @@ from taskgraph.util import json
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.dependencies import get_dependencies, get_primary_dependency
 from taskgraph.util.schema import (
-    Schema,
+    LegacySchema,
     optionally_keyed_by,
     resolve_keyed_by,
     taskref_or_string,
@@ -33,93 +33,92 @@ def _by_platform(arg):
     return optionally_keyed_by("build-platform", arg)
 
 
-l10n_description_schema = Schema(
-    {
-        # Name for this job, inferred from the dependent job before validation
-        Required("name"): str,
-        # build-platform, inferred from dependent job before validation
-        Required("build-platform"): str,
-        # max run time of the task
-        Required("run-time"): _by_platform(int),
-        # Locales not to repack for
-        Required("ignore-locales"): _by_platform([str]),
-        # All l10n jobs use mozharness
-        Required("mozharness"): {
-            # Script to invoke for mozharness
-            Required("script"): _by_platform(str),
-            # Config files passed to the mozharness script
-            Required("config"): _by_platform([str]),
-            # Additional paths to look for mozharness configs in. These should be
-            # relative to the base of the source checkout
-            Optional("config-paths"): [str],
-            # Options to pass to the mozharness script
-            Optional("options"): _by_platform([str]),
-            # Action commands to provide to mozharness script
-            Required("actions"): _by_platform([str]),
-            # if true, perform a checkout of a comm-central based branch inside the
-            # gecko checkout
-            Optional("comm-checkout"): bool,
-        },
-        # Items for the taskcluster index
-        Optional("index"): {
-            # Product to identify as in the taskcluster index
-            Required("product"): _by_platform(str),
-            # Job name to identify as in the taskcluster index
-            Required("job-name"): _by_platform(str),
-            # Type of index
-            Optional("type"): _by_platform(str),
-        },
-        # Description of the localized task
-        Required("description"): _by_platform(str),
-        Optional("run-on-projects"): job_description_schema["run-on-projects"],
-        # worker-type to utilize
-        Required("worker-type"): _by_platform(str),
-        # File which contains the used locales
-        Required("locales-file"): _by_platform(str),
-        # Tooltool visibility required for task.
-        Required("tooltool"): _by_platform(Any("internal", "public")),
-        # Docker image required for task.  We accept only in-tree images
-        # -- generally desktop-build or android-build -- for now.
-        Optional("docker-image"): _by_platform(
-            # an in-tree generated docker image (from `taskcluster/docker/<name>`)
-            {"in-tree": str},
-        ),
-        Optional("fetches"): {
-            str: _by_platform([str]),
-        },
-        # The set of secret names to which the task has access; these are prefixed
-        # with `project/releng/gecko/{treeherder.kind}/level-{level}/`.  Setting
-        # this will enable any worker features required and set the task's scopes
-        # appropriately.  `true` here means ['*'], all secrets.  Not supported on
-        # Windows
-        Optional("secrets"): _by_platform(Any(bool, [str])),
-        # Information for treeherder
-        Required("treeherder"): {
-            # Platform to display the task on in treeherder
-            Required("platform"): _by_platform(str),
-            # Symbol to use
-            Required("symbol"): str,
-            # Tier this task is
-            Required("tier"): _by_platform(int),
-        },
-        # Extra environment values to pass to the worker
-        Optional("env"): _by_platform({str: taskref_or_string}),
-        # Max number locales per chunk
-        Optional("locales-per-chunk"): _by_platform(int),
-        # Task deps to chain this task with, added in transforms from primary dependency
-        # if this is a shippable-style build
-        Optional("dependencies"): {str: str},
-        # Run the task when the listed files change (if present).
-        Optional("when"): {"files-changed": [str]},
-        # passed through directly to the job description
-        Optional("attributes"): job_description_schema["attributes"],
-        Optional("extra"): job_description_schema["extra"],
-        # Shipping product and phase
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+l10n_description_schema = LegacySchema({
+    # Name for this job, inferred from the dependent job before validation
+    Required("name"): str,
+    # build-platform, inferred from dependent job before validation
+    Required("build-platform"): str,
+    # max run time of the task
+    Required("run-time"): _by_platform(int),
+    # Locales not to repack for
+    Required("ignore-locales"): _by_platform([str]),
+    # All l10n jobs use mozharness
+    Required("mozharness"): {
+        # Script to invoke for mozharness
+        Required("script"): _by_platform(str),
+        # Config files passed to the mozharness script
+        Required("config"): _by_platform([str]),
+        # Additional paths to look for mozharness configs in. These should be
+        # relative to the base of the source checkout
+        Optional("config-paths"): [str],
+        # Options to pass to the mozharness script
+        Optional("options"): _by_platform([str]),
+        # Action commands to provide to mozharness script
+        Required("actions"): _by_platform([str]),
+        # if true, perform a checkout of a comm-central based branch inside the
+        # gecko checkout
+        Optional("comm-checkout"): bool,
+    },
+    # Items for the taskcluster index
+    Optional("index"): {
+        # Product to identify as in the taskcluster index
+        Required("product"): _by_platform(str),
+        # Job name to identify as in the taskcluster index
+        Required("job-name"): _by_platform(str),
+        # Type of index
+        Optional("type"): _by_platform(str),
+    },
+    # Description of the localized task
+    Required("description"): _by_platform(str),
+    Optional("run-on-projects"): job_description_schema["run-on-projects"],
+    Optional("run-on-repo-type"): job_description_schema["run-on-repo-type"],
+    # worker-type to utilize
+    Required("worker-type"): _by_platform(str),
+    # File which contains the used locales
+    Required("locales-file"): _by_platform(str),
+    # Tooltool visibility required for task.
+    Required("tooltool"): _by_platform(Any("internal", "public")),
+    # Docker image required for task.  We accept only in-tree images
+    # -- generally desktop-build or android-build -- for now.
+    Optional("docker-image"): _by_platform(
+        # an in-tree generated docker image (from `taskcluster/docker/<name>`)
+        {"in-tree": str},
+    ),
+    Optional("fetches"): {
+        str: _by_platform([str]),
+    },
+    # The set of secret names to which the task has access; these are prefixed
+    # with `project/releng/gecko/{treeherder.kind}/level-{level}/`.  Setting
+    # this will enable any worker features required and set the task's scopes
+    # appropriately.  `true` here means ['*'], all secrets.  Not supported on
+    # Windows
+    Optional("secrets"): _by_platform(Any(bool, [str])),
+    # Information for treeherder
+    Required("treeherder"): {
+        # Platform to display the task on in treeherder
+        Required("platform"): _by_platform(str),
+        # Symbol to use
+        Required("symbol"): str,
+        # Tier this task is
+        Required("tier"): _by_platform(int),
+    },
+    # Extra environment values to pass to the worker
+    Optional("env"): _by_platform({str: taskref_or_string}),
+    # Max number locales per chunk
+    Optional("locales-per-chunk"): _by_platform(int),
+    # Task deps to chain this task with, added in transforms from primary dependency
+    # if this is a shippable-style build
+    Optional("dependencies"): {str: str},
+    # Run the task when the listed files change (if present).
+    Optional("when"): {"files-changed": [str]},
+    # passed through directly to the job description
+    Optional("attributes"): job_description_schema["attributes"],
+    Optional("extra"): job_description_schema["extra"],
+    # Shipping product and phase
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Optional("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("task-from"): task_description_schema["task-from"],
+})
 
 transforms = TransformSequence()
 
@@ -295,12 +294,10 @@ def chunk_locales(config, jobs):
                 chunked_locales = chunkify(
                     locales_with_changesets_as_list, this_chunk, chunks
                 )
-                chunked["mozharness"]["options"].extend(
-                    [
-                        f"locale={locale}:{changeset}"
-                        for locale, changeset in chunked_locales
-                    ]
-                )
+                chunked["mozharness"]["options"].extend([
+                    f"locale={locale}:{changeset}"
+                    for locale, changeset in chunked_locales
+                ])
                 chunked["attributes"]["l10n_chunk"] = str(this_chunk)
                 # strip revision
                 chunked["attributes"]["chunk_locales"] = [
@@ -314,12 +311,10 @@ def chunk_locales(config, jobs):
                 yield chunked
         else:
             job["mozharness"]["options"] = job["mozharness"].get("options", [])
-            job["mozharness"]["options"].extend(
-                [
-                    f"locale={locale}:{changeset}"
-                    for locale, changeset in sorted(locales_with_changesets.items())
-                ]
-            )
+            job["mozharness"]["options"].extend([
+                f"locale={locale}:{changeset}"
+                for locale, changeset in sorted(locales_with_changesets.items())
+            ])
             yield job
 
 
@@ -352,13 +347,11 @@ def set_extra_config(config, jobs):
 @transforms.add
 def make_job_description(config, jobs):
     for job in jobs:
-        job["mozharness"].update(
-            {
-                "using": "mozharness",
-                "job-script": "taskcluster/scripts/builder/build-l10n.sh",
-                "secrets": job.get("secrets", False),
-            }
-        )
+        job["mozharness"].update({
+            "using": "mozharness",
+            "job-script": "taskcluster/scripts/builder/build-l10n.sh",
+            "secrets": job.get("secrets", False),
+        })
         job_description = {
             "name": job["name"],
             "worker-type": job["worker-type"],
@@ -374,6 +367,7 @@ def make_job_description(config, jobs):
             "run-on-projects": (
                 job.get("run-on-projects") if job.get("run-on-projects") else []
             ),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
         }
         if job.get("extra"):
             job_description["extra"] = job["extra"]
@@ -419,3 +413,25 @@ def make_job_description(config, jobs):
             job_description["shipping-product"] = job["shipping-product"]
 
         yield job_description
+
+
+@transforms.add
+def add_macos_signing_artifacts(config, jobs):
+    for job in jobs:
+        if "macosx" not in job["name"]:
+            yield job
+            continue
+        build_dep = None
+        for dep_job in get_dependencies(config, job):
+            if dep_job.kind == "build":
+                build_dep = dep_job
+                break
+        assert build_dep, f"l10n job {job['name']} has no build dependency"
+        for path, artifact in build_dep.task["payload"]["artifacts"].items():
+            if path.startswith("public/build/security/"):
+                job["worker"].setdefault("artifacts", []).append({
+                    "name": path,
+                    "path": artifact["path"],
+                    "type": "file",
+                })
+        yield job

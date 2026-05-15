@@ -6,8 +6,8 @@
 #ifndef GMPContentParent_h_
 #define GMPContentParent_h_
 
-#include "mozilla/gmp/PGMPContentParent.h"
 #include "GMPNativeTypes.h"
+#include "mozilla/gmp/PGMPContentParent.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::gmp {

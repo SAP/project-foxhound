@@ -1097,7 +1097,7 @@ class DomainToCategoriesMap {
     }
 
     let fileContents = [];
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     for (let record of recordsMatchingRegion) {
       let fetchedAttachment;
       // Downloading attachments can fail.
@@ -1273,7 +1273,6 @@ export class DomainToCategoriesStore {
     if (this.#init) {
       lazy.logConsole.debug("Un-initializing domain-to-categories store.");
       await this.#closeConnection();
-      this.#asyncShutdownBlocker = null;
       lazy.logConsole.debug("Un-initialized domain-to-categories store.");
     }
   }
@@ -1518,10 +1517,6 @@ export class DomainToCategoriesStore {
   async #closeConnection() {
     this.#init = false;
     this.#empty = true;
-    if (this.#asyncShutdownBlocker) {
-      lazy.Sqlite.shutdown.removeBlocker(this.#asyncShutdownBlocker);
-      this.#asyncShutdownBlocker = null;
-    }
 
     if (this.#connection) {
       lazy.logConsole.debug("Closing connection.");
@@ -1533,6 +1528,11 @@ export class DomainToCategoriesStore {
         lazy.logConsole.error(ex);
       }
       this.#connection = null;
+    }
+
+    if (this.#asyncShutdownBlocker) {
+      lazy.Sqlite.shutdown.removeBlocker(this.#asyncShutdownBlocker);
+      this.#asyncShutdownBlocker = null;
     }
   }
 
@@ -1659,7 +1659,7 @@ export class DomainToCategoriesStore {
    *   something wrong with the file contents.
    */
   async #insert(fileContents, version, isDefault) {
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     await this.#connection.executeTransaction(async () => {
       lazy.logConsole.debug("Insert into domain_to_categories table.");
       for (let fileContent of fileContents) {

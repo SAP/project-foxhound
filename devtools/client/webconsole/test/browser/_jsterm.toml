@@ -25,7 +25,6 @@ support-files = [
   "test-simple-function.js",
   "!/devtools/client/shared/test/shared-head.js",
   "!/devtools/client/debugger/test/mochitest/shared-head.js",
-  "!/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
   "!/devtools/client/shared/test/telemetry-test-helpers.js",
   "!/devtools/client/shared/test/highlighter-test-actor.js",
    "../../../../../toolkit/components/reader/tests/browser/readerModeArticle.html",
@@ -70,7 +69,9 @@ support-files = [
 ["browser_jsterm_autocomplete_getters_confirm.js"]
 
 ["browser_jsterm_autocomplete_getters_learn_more_link.js"]
-fail-if = ["a11y_checks"] # Bug 1849028
+fail-if = [
+  "a11y_checks", # Bug 1849028
+]
 
 ["browser_jsterm_autocomplete_helpers.js"]
 
@@ -145,7 +146,9 @@ fail-if = ["a11y_checks"] # Bug 1849028
 ["browser_jsterm_ctrl_a_select_all.js"]
 
 ["browser_jsterm_ctrl_key_nav.js"]
-run-if = ["os == 'mac'"] # The tested ctrl+key shortcuts are OSX only
+run-if = [
+  "os == 'mac'", # The tested ctrl+key shortcuts are OSX only
+]
 
 ["browser_jsterm_document_no_xray.js"]
 
@@ -174,7 +177,9 @@ run-if = ["os == 'mac'"] # The tested ctrl+key shortcuts are OSX only
 ["browser_jsterm_editor_onboarding.js"]
 
 ["browser_jsterm_editor_resize.js"]
-fail-if = ["a11y_checks"] # Bug 1849028
+fail-if = [
+  "a11y_checks", # Bug 1849028
+]
 
 ["browser_jsterm_editor_reverse_search_button.js"]
 
@@ -221,7 +226,9 @@ fail-if = ["a11y_checks"] # Bug 1849028
 ["browser_jsterm_helpers_no_override.js"]
 
 ["browser_jsterm_hide_when_devtools_chrome_enabled_false.js"]
-fail-if = ["a11y_checks"] # Bug 1849028
+fail-if = [
+  "a11y_checks", # Bug 1849028
+]
 
 ["browser_jsterm_history.js"]
 
@@ -244,7 +251,9 @@ fail-if = ["a11y_checks"] # Bug 1849028
 ["browser_jsterm_instance_of.js"]
 
 ["browser_jsterm_middle_click_paste.js"]
-fail-if = ["a11y_checks"] # Bug 1849028
+fail-if = [
+  "a11y_checks", # Bug 1849028
+]
 
 ["browser_jsterm_multiline.js"]
 

@@ -8,10 +8,10 @@
 
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDocumentEncoder.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
+#include "nsIDocumentEncoder.h"
 #include "nsINode.h"
 
 using namespace mozilla;
@@ -31,7 +31,7 @@ static already_AddRefed<nsIDocumentEncoder> SetUpEncoder(
   bool entireDocument = (doc == &aRoot);
 
   // This method will fail if no document
-  nsresult rv = encoder->NativeInit(
+  nsresult rv = encoder->Init(
       doc, u"application/xhtml+xml"_ns,
       nsIDocumentEncoder::OutputRaw |
           nsIDocumentEncoder::OutputDontRewriteEncodingDeclaration);

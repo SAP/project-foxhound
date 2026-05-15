@@ -4,9 +4,9 @@
 
 #include "MFMediaEngineVideoStream.h"
 
-#include "mozilla/layers/DcompSurfaceImage.h"
 #include "MFMediaEngineUtils.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/layers/DcompSurfaceImage.h"
 
 namespace mozilla {
 
@@ -44,7 +44,7 @@ MFMediaEngineVideoStream* MFMediaEngineVideoStream::Create(
 void MFMediaEngineVideoStream::SetKnowsCompositor(
     layers::KnowsCompositor* aKnowsCompositor) {
   ComPtr<MFMediaEngineVideoStream> self = this;
-  Unused << mTaskQueue->Dispatch(NS_NewRunnableFunction(
+  (void)mTaskQueue->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineStream::SetKnowsCompositor",
       [self, knowCompositor = RefPtr<layers::KnowsCompositor>{aKnowsCompositor},
        this]() {
@@ -57,7 +57,7 @@ void MFMediaEngineVideoStream::SetKnowsCompositor(
 void MFMediaEngineVideoStream::SetDCompSurfaceHandle(HANDLE aDCompSurfaceHandle,
                                                      gfx::IntSize aDisplay) {
   ComPtr<MFMediaEngineVideoStream> self = this;
-  Unused << mTaskQueue->Dispatch(NS_NewRunnableFunction(
+  (void)mTaskQueue->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineStream::SetDCompSurfaceHandle",
       [self, aDCompSurfaceHandle, aDisplay, this]() {
         if (mDCompSurfaceHandle == aDCompSurfaceHandle) {
@@ -357,7 +357,7 @@ MediaDataDecoder::ConversionRequired MFMediaEngineVideoStream::NeedsConversion()
 void MFMediaEngineVideoStream::SetConfig(const TrackInfo& aConfig) {
   MOZ_ASSERT(aConfig.IsVideo());
   ComPtr<MFMediaEngineStream> self = this;
-  Unused << mTaskQueue->Dispatch(
+  (void)mTaskQueue->Dispatch(
       NS_NewRunnableFunction("MFMediaEngineStream::SetConfig",
                              [self, info = *aConfig.GetAsVideoInfo(), this]() {
                                if (mHasReceivedInitialCreateDecoderConfig) {

@@ -8,6 +8,7 @@ import mozilla.components.browser.engine.gecko.GeckoEngineSession
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.Settings
 import mozilla.components.concept.engine.serviceworker.ServiceWorkerDelegate
+import mozilla.components.support.utils.DownloadFileUtils
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
@@ -18,6 +19,7 @@ import org.mozilla.geckoview.GeckoSession
  * @param delegate [ServiceWorkerDelegate] handling service workers requests.
  * @param runtime [GeckoRuntime] current engine's runtime.
  * @param engineSettings [Settings] default settings used when new [EngineSession]s are to be created.
+ * @param downloadFileUtils [DownloadFileUtils] helper for handling download file operations.
  */
 class GeckoServiceWorkerDelegate(
     internal val delegate: ServiceWorkerDelegate,
@@ -25,7 +27,12 @@ class GeckoServiceWorkerDelegate(
     internal val engineSettings: Settings?,
 ) : GeckoRuntime.ServiceWorkerDelegate {
     override fun onOpenWindow(url: String): GeckoResult<GeckoSession> {
-        val newEngineSession = GeckoEngineSession(runtime, false, engineSettings, openGeckoSession = false)
+        val newEngineSession = GeckoEngineSession(
+            runtime = runtime,
+            privateMode = false,
+            defaultSettings = engineSettings,
+            openGeckoSession = false,
+        )
 
         return when (delegate.addNewTab(newEngineSession)) {
             true -> GeckoResult.fromValue(newEngineSession.geckoSession)

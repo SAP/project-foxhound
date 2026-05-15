@@ -81,11 +81,11 @@ add_task(async function () {
     "Browser should be in the right process"
   );
 
-  let local = resolveURI("resource://gre/modules/AppConstants.jsm");
+  let local = resolveURI("resource://gre/modules/AppConstants.sys.mjs");
   let remote = await remoteResolveURI(
-    "resource://gre/modules/AppConstants.jsm"
+    "resource://gre/modules/AppConstants.sys.mjs"
   );
-  is(local, remote, "AppConstants.jsm should resolve in both processes");
+  is(local, remote, "AppConstants.sys.mjs should resolve in both processes");
 
   gBrowser.removeCurrentTab();
 });

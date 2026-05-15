@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_localstorage_LocalStorageManager2_h
 #define mozilla_dom_localstorage_LocalStorageManager2_h
 
-#include <cstdint>
 #include "ErrorList.h"
 #include "nsIDOMStorageManager.h"
 #include "nsILocalStorageManager.h"

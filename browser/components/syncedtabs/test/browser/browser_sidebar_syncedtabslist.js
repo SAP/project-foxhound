@@ -1,5 +1,17 @@
 "use strict";
 
+add_setup(async function () {
+  /*
+     This test is specific to the legacy sidebar which is entirely distinct from the
+     implementation for the new sidebar.
+     Equivalent test coverage for the new synced tabs sidebar are located at
+     browser/components/sidebar/tests/browser/browser_syncedtabs_sidebar.js
+  */
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+});
+
 const { SyncedTabs } = ChromeUtils.importESModule(
   "resource://services-sync/SyncedTabs.sys.mjs"
 );

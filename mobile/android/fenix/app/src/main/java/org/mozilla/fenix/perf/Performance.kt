@@ -38,6 +38,7 @@ object Performance {
         disableTrackingProtectionPopups(context)
         disableFirstTimePWAPopup(context)
         disableOpenInApp(context)
+        disableCFRs(context)
     }
 
     /**
@@ -101,5 +102,12 @@ object Performance {
     private fun disableOpenInApp(context: Context) {
         context.components.settings.openLinksInExternalApp =
             context.getString(R.string.pref_key_open_links_in_apps_never)
+    }
+
+    /**
+     * Disables CFRs.
+     */
+    private fun disableCFRs(context: Context) {
+        context.components.settings.hasSeenBrowserToolbarCFR = true
     }
 }

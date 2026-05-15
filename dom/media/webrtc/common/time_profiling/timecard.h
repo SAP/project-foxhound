@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef timecard_h__
-#define timecard_h__
+#ifndef timecard_h_
+#define timecard_h_
 
 #include "prtime.h"
 

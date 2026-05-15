@@ -351,6 +351,7 @@ struct DebugBreakMarker {
               MS::Location::MarkerTable};
     schema.SetAllLabels("{marker.data.Severity}: {marker.data.name}");
     schema.AddKeyFormat("Message", MS::Format::String);
+    schema.AddKeyFormat("name", MS::Format::String, MS::PayloadFlags::Hidden);
     schema.AddKeyFormat("Severity", MS::Format::String);
     schema.AddKeyFormat("Expression", MS::Format::String);
     schema.AddKeyFormat("File", MS::Format::String);

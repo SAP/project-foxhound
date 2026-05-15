@@ -1,0 +1,154 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for CSSStyleRule::selectorMatchesElement on :host rules</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+  <div id="host"></div>
+  <script>
+    /***** Add Shadow DOM *****/
+    const topLevelHostEl = document.getElementById("host");
+    const topShadow = topLevelHostEl.attachShadow({
+      mode: "open"
+    });
+    const topLevelShadowSectionEl = document.createElement("section");
+    topLevelShadowSectionEl.id = "top-level-shadow-section";
+    const nestedHostEl = document.createElement("div");
+    nestedHostEl.id = "nested-host";
+
+    topLevelShadowSectionEl.append("top shadow dom section",)
+    topShadow.append(topLevelShadowSectionEl, nestedHostEl);
+
+    const sharedStyleSheet  = new CSSStyleSheet();
+    sharedStyleSheet.replaceSync(`
+      section, [test-rule-shared] {
+        color: var(--a);
+      }
+      :host, [test-rule-shared] {
+        --a: red;
+      }`);
+
+    const topLevelStyleSheet  = new CSSStyleSheet();
+    topLevelStyleSheet.replaceSync(`
+      :where(section), [test-rule] {
+        background-color: var(--b);
+      }
+      :host, [test-rule] {
+        --b: gold;
+      }`);
+
+    topShadow.adoptedStyleSheets = [sharedStyleSheet, topLevelStyleSheet];
+
+
+    const nestedShadow = nestedHostEl.attachShadow({
+      mode: "open"
+    });
+    const nestedShadowSectionEl = document.createElement("section");
+    nestedShadowSectionEl.textContent = "nested shadow dom section";
+    nestedShadowSectionEl.id = "nested-shadow-dom-section";
+    nestedShadow.append(nestedShadowSectionEl);
+
+    const nestedStyleSheet  = new CSSStyleSheet();
+    nestedStyleSheet.replaceSync(`
+      :is(section), [test-rule-nested] {
+        border-color: var(--c);
+      }
+      :host, [test-rule-nested] {
+        --c: lime;
+      }`);
+    nestedShadow.adoptedStyleSheets = [sharedStyleSheet, nestedStyleSheet];
+
+    /***** Test *****/
+    add_task(async () => {
+      info("Checking rules on top level shadow section el");
+      checkRulesAndSelectors(topLevelShadowSectionEl, [{
+        selectorText: `:where(section), [test-rule]`,
+        selectorMatches: [true, false]
+      },{
+        selectorText: `section, [test-rule-shared]`,
+        selectorMatches: [true, false]
+      }]);
+
+      info("Checking rules on top level host");
+      checkRulesAndSelectors(topLevelHostEl, [{
+        selectorText: `:host, [test-rule-shared]`,
+        selectorMatches: [true, false]
+      },{
+        selectorText: `:host, [test-rule]`,
+        selectorMatches: [true, false]
+      }]);
+
+      info("Checking rules on nested shadow section el");
+      checkRulesAndSelectors(nestedShadowSectionEl, [{
+        selectorText: `section, [test-rule-shared]`,
+        selectorMatches: [true, false]
+      },{
+        selectorText: `:is(section), [test-rule-nested]`,
+        selectorMatches: [true, false]
+      }]);
+
+      info("Checking rules on nested host");
+      checkRulesAndSelectors(nestedHostEl, [{
+        selectorText: `:host, [test-rule-shared]`,
+        selectorMatches: [true, false]
+      },{
+        selectorText: `:host, [test-rule-nested]`,
+        selectorMatches: [true, false]
+      }]);
+
+      info("Check that non-shared rule selectors don't match for non-matching elements");
+      const nonSharedTopLevelHostRules = getNonUAMatchingRules(topLevelHostEl)
+        .filter(rule => rule.parentStyleSheet !== sharedStyleSheet);
+      is(nonSharedTopLevelHostRules.length, 1, "top level host only has 1 non shared rule");
+      is(
+        nonSharedTopLevelHostRules[0].selectorMatchesElement(0, nestedHostEl),
+        false,
+        "non-shared top level host rule does not match nested host"
+      );
+
+      const nonSharedNestedHostRules = getNonUAMatchingRules(nestedHostEl)
+        .filter(rule => rule.parentStyleSheet !== sharedStyleSheet);
+      is(nonSharedNestedHostRules.length, 1, "nested host only has 1 non shared rule");
+      is(
+        nonSharedNestedHostRules[0].selectorMatchesElement(0, topLevelHostEl),
+        false,
+        "non-shared nested host rule does not match top level host"
+      );
+    });
+
+    function checkRulesAndSelectors (element, expectedData) {
+      const rules = getNonUAMatchingRules(element);
+      is(rules.length, expectedData.length, `Got expected number of rules for #${element.id}`);
+      for (let i = 0; i < expectedData.length; i++) {
+        const rule = rules[i];
+        const expected = expectedData[i];
+        is(rule.selectorText, expected.selectorText, `Got expected rule at index ${i} for #${element.id}`);
+        for (let j = 0; j < expected.selectorMatches.length; j++) {
+          const selectorMatch = expected.selectorMatches[j];
+          is(
+            rule.selectorMatchesElement(j, element),
+            selectorMatch,
+            `"${rule.selectorText}" selector part at index ${j} ${selectorMatch ? "matches": "does not match"} #${element.id}`
+          );
+        }
+      }
+    }
+
+    function getNonUAMatchingRules(element) {
+      return SpecialPowers.InspectorUtils.getMatchingCSSRules(element)
+        .filter(rule => {
+          let selector = "";
+          // Accessing selectorText does throw for some rules (these aren't the ones
+          // we're interested in, so it's fine)
+          try {
+            selector = rule.selectorText;
+          } catch (e) {}
+          return selector.includes("[test-rule");
+        })
+    }
+
+  </script>
+</body>
+</html>

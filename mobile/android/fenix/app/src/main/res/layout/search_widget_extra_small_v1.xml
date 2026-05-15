@@ -14,9 +14,10 @@
         android:id="@+id/button_search_widget_new_tab_icon"
         android:layout_width="50dp"
         android:layout_height="50dp"
+        android:padding="12dp"
         android:layout_gravity="center"
         android:contentDescription="@string/search_widget_content_description_2"
         android:scaleType="centerInside"
-        tools:src="@drawable/ic_launcher_foreground" />
+        tools:src="@drawable/ic_firefox" />
 
 </FrameLayout>

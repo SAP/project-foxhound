@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "MediaTrack.h"
 #include "MediaTrackList.h"
+
+#include "MediaTrack.h"
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/AudioTrack.h"
-#include "mozilla/dom/VideoTrack.h"
+#include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/TrackEvent.h"
+#include "mozilla/dom/VideoTrack.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla::dom {

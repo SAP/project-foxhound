@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef LookupCache_h__
-#define LookupCache_h__
+#ifndef LookupCache_h_
+#define LookupCache_h_
 
 #include "Entries.h"
 #include "nsString.h"
@@ -15,7 +15,6 @@
 #include "nsUrlClassifierPrefixSet.h"
 #include "VariableLengthPrefixSet.h"
 #include "mozilla/Logging.h"
-#include "mozilla/TypedEnumBits.h"
 #include "nsIUrlClassifierInfo.h"
 
 namespace mozilla {

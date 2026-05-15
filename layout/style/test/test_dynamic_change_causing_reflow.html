@@ -30,6 +30,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1131371
     top: 0;
     position: absolute;
   }
+  #flexContainerWithText {
+    display: flex;
+  }
   #tableCell,
   #tableCellWithAbsPosChild {
     display: table-cell;
@@ -97,12 +100,19 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1131371
   <div id="contentVisibilityNode">
     <div></div>
   </div>
+  <div id="flexContainerWithText">
+    abc
+    <div id="flexContainerWithTextInsertionTarget1"></div>
+    <div>Foo</div>
+    def
+    <div id="flexContainerWithTextInsertionTarget2"></div>
+  </div>
 </div>
 <pre id="test">
 <script>
 "use strict";
 
-/** Test for Bug 1131371 **/
+/** Test for Bug 1131371 */
 
 const elemWithAbsPosChild = document.getElementById("elemWithAbsPosChild");
 const elemWithFixedPosChild = document.getElementById("elemWithFixedPosChild");
@@ -115,6 +125,8 @@ const buttonElem = document.getElementById("buttonElem");
 const buttonElemWithAbsPosChild = document.getElementById("buttonElemWithAbsPosChild");
 const tableCell = document.getElementById("tableCell");
 const tableCellWithAbsPosChild = document.getElementById("tableCellWithAbsPosChild");
+const flexContainerWithTextInsertionTarget1 = document.getElementById("flexContainerWithTextInsertionTarget1");
+const flexContainerWithTextInsertionTarget2 = document.getElementById("flexContainerWithTextInsertionTarget2");
 
 for (let scroller of document.querySelectorAll(".flexScrollerWithTransformedItems")) {
   scroller.scrollLeft = 10000;
@@ -930,6 +942,22 @@ const gTestcases = [
     expectConstruction: false,
     expectReflow: true,
   },
+  {
+    elem: flexContainerWithTextInsertionTarget1,
+    beforeStyle: "display: none",
+    afterStyle: "display: block",
+    expectConstruction: true,
+    expectFramesConstructed: 1,
+    expectReflow: true,
+  },
+  {
+    elem: flexContainerWithTextInsertionTarget2,
+    beforeStyle: "display: none",
+    afterStyle: "display: block",
+    expectConstruction: true,
+    expectFramesConstructed: 1,
+    expectReflow: true,
+  }
 ];
 
 // Helper function to let us call either "is" or "isnot" & assemble
@@ -994,6 +1022,10 @@ function runOneTest(aTestcase)
   checkFinalCount(gUtils.framesReflowed, origFramesReflowed,
                   aTestcase.expectReflow, msgPrefix,
                   "reflow");
+
+  if (aTestcase.expectFramesConstructed !== undefined) {
+    is(gUtils.framesConstructed - origFramesConstructed, aTestcase.expectFramesConstructed, `${msgPrefix} should cause ${aTestcase.expectFramesConstructed} frames to be constructed`);
+  }
 
   // Clean up!
   if (oldStyle) {

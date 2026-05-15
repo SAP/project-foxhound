@@ -19,6 +19,11 @@ sealed class PocketStory {
     abstract val url: String
 
     /**
+     * Image URL of the story.
+     */
+    abstract val imageUrl: String
+
+    /**
      * A curated content recommendation.
      *
      * @property corpusItemId A content identifier that corresponds uniquely to the URL.
@@ -45,7 +50,7 @@ sealed class PocketStory {
         val topic: String?,
         val publisher: String,
         val isTimeSensitive: Boolean,
-        val imageUrl: String,
+        override val imageUrl: String,
         val tileId: Long,
         val receivedRank: Int,
         val recommendedAt: Long,
@@ -71,7 +76,7 @@ sealed class PocketStory {
         override val url: String,
         override val title: String,
         val callbacks: SponsoredContentCallbacks,
-        val imageUrl: String,
+        override val imageUrl: String,
         val domain: String,
         val excerpt: String,
         val sponsor: String,
@@ -122,7 +127,7 @@ sealed class PocketStory {
     data class PocketRecommendedStory(
         override val title: String,
         override val url: String,
-        val imageUrl: String,
+        override val imageUrl: String,
         val publisher: String,
         val category: String,
         val timeToRead: Int,
@@ -148,7 +153,7 @@ sealed class PocketStory {
         val id: Int,
         override val title: String,
         override val url: String,
-        val imageUrl: String,
+        override val imageUrl: String,
         val sponsor: String,
         val shim: PocketSponsoredStoryShim,
         val priority: Int,

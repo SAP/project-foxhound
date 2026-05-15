@@ -19,6 +19,7 @@ class WMFClearKeyCDMFactory final
     : public Microsoft::WRL::RuntimeClass<
           Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::WinRtClassicComMix>,
           Microsoft::WRL::CloakedIid<IMFContentDecryptionModuleFactory>,
+          Microsoft::WRL::CloakedIid<IMFExtendedDRMTypeSupport>,
           Microsoft::WRL::FtmBase> {
   InspectableClass(L"org.w3.clearkey", BaseTrust);
 
@@ -38,6 +39,10 @@ class WMFClearKeyCDMFactory final
       LPCWSTR aKeySystem, IPropertyStore** aConfigurations,
       DWORD aNumConfigurations,
       IMFContentDecryptionModuleAccess** aCdmAccess) override;
+
+  // IMFExtendedDRMTypeSupport
+  STDMETHODIMP IsTypeSupportedEx(BSTR aType, BSTR aKeySystem,
+                                 MF_MEDIA_ENGINE_CANPLAY* aPAnswer) override;
 };
 
 }  // namespace mozilla

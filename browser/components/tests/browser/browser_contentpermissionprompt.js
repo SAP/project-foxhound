@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "ContentPermissionPrompt",
   "@mozilla.org/content-permission/prompt;1",
-  "nsIContentPermissionPrompt"
+  Ci.nsIContentPermissionPrompt
 );
 
 /**

@@ -5,7 +5,10 @@
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
+  DEFAULT_FORM_HISTORY_PARAM:
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SearchSuggestionController:
     "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
 });
@@ -296,7 +299,6 @@ class SearchHistoryResult {
 class SuggestAutoComplete {
   constructor() {
     this.#suggestionController = new lazy.SearchSuggestionController();
-    this.#suggestionController.maxLocalResults = this.#historyLimit;
   }
 
   /**
@@ -346,7 +348,7 @@ class SuggestAutoComplete {
 
     // Start search immediately if possible, otherwise once the search
     // service is initialized
-    if (Services.search.isInitialized) {
+    if (lazy.SearchService.isInitialized) {
       this.#triggerSearch(
         searchString,
         formHistorySearchParam,
@@ -356,8 +358,7 @@ class SuggestAutoComplete {
       return;
     }
 
-    Services.search
-      .init()
+    lazy.SearchService.init()
       .then(() => {
         this.#triggerSearch(
           searchString,
@@ -414,16 +415,17 @@ class SuggestAutoComplete {
    * @param {nsIAutoCompleteObserver} listener
    *   object implementing nsIAutoCompleteObserver which we notify when
    *   results are ready.
-   * @param {boolean} privacyMode
+   * @param {boolean} inPrivateBrowsing
    *   True if the search was made from a private browsing mode context.
    */
-  async #triggerSearch(searchString, searchParam, listener, privacyMode) {
+  async #triggerSearch(searchString, searchParam, listener, inPrivateBrowsing) {
     this.#listener = listener;
-    let results = await this.#suggestionController.fetch(
+    let results = await this.#suggestionController.fetch({
       searchString,
-      privacyMode,
-      Services.search.defaultEngine
-    );
+      inPrivateBrowsing,
+      engine: lazy.SearchService.defaultEngine,
+      maxLocalResults: this.#historyLimit,
+    });
 
     let formHistoryEntries = (results?.formHistoryResults ?? []).map(
       historyEntry => ({
@@ -435,7 +437,7 @@ class SuggestAutoComplete {
       })
     );
     let autoCompleteResult = new SearchHistoryResult(
-      this.#suggestionController.formHistoryParam,
+      lazy.DEFAULT_FORM_HISTORY_PARAM,
       searchString,
       formHistoryEntries
     );

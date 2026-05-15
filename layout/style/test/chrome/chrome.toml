@@ -35,7 +35,9 @@ support-files = ["display_mode_reflow.html"]
 tags = "fullscreen"
 
 ["test_hover.html"]
-skip-if = ["true"] # bug 1346353
+skip-if = [
+  "true", # bug 1346353
+]
 
 ["test_moz_document_rules.html"]
 

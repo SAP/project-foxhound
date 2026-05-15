@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsWindowsRegKey_h__
-#define nsWindowsRegKey_h__
+#ifndef nsWindowsRegKey_h_
+#define nsWindowsRegKey_h_
 
 //-----------------------------------------------------------------------------
 
@@ -41,4 +41,4 @@ extern "C" void NS_NewWindowsRegKey(nsIWindowsRegKey** aResult);
 
 //-----------------------------------------------------------------------------
 
-#endif  // nsWindowsRegKey_h__
+#endif  // nsWindowsRegKey_h_

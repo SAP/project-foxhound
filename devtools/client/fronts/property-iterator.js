@@ -63,5 +63,4 @@ class PropertyIteratorFront extends FrontClassWithSpec(propertyIteratorSpec) {
   }
 }
 
-exports.PropertyIteratorFront = PropertyIteratorFront;
 registerFront(PropertyIteratorFront);

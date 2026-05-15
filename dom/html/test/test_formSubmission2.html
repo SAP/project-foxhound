@@ -152,10 +152,7 @@ function clickImage(aTarget, aX, aY)
   aTarget.style.left = "0";
   aTarget.offsetTop;
 
-  var wu = SpecialPowers.getDOMWindowUtils(aTarget.ownerDocument.defaultView);
-
-  wu.sendMouseEvent('mousedown',  aX, aY, 0, 1, 0);
-  wu.sendMouseEvent('mouseup',  aX, aY, 0, 0, 0);
+  synthesizeMouseAtPoint(aX, aY, {}, aTarget.ownerDocument.defaultView);
 
   aTarget.style.position = "";
   aTarget.style.top = "";

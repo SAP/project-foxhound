@@ -5,8 +5,6 @@
 #include "DNSPacket.h"
 
 #include "DNS.h"
-#include "mozilla/EndianUtils.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"

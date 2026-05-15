@@ -10,17 +10,29 @@
 
 #include "modules/video_capture/video_capture_impl.h"
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
 #include "api/video/i420_buffer.h"
-#include "api/video/video_frame_buffer.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_rotation.h"
+#include "api/video/video_sink_interface.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
+#include "modules/video_capture/raw_video_sink_interface.h"
 #include "modules/video_capture/video_capture_config.h"
+#include "modules/video_capture/video_capture_defines.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/race_checker.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
-#include "third_party/libyuv/include/libyuv.h"
+#include "system_wrappers/include/clock.h"
+#include "third_party/libyuv/include/libyuv/convert.h"
+#include "third_party/libyuv/include/libyuv/rotate.h"
 
 namespace webrtc {
 namespace videocapturemodule {
@@ -72,15 +84,16 @@ int32_t VideoCaptureImpl::RotationInDegrees(VideoRotation rotation,
   return -1;
 }
 
-VideoCaptureImpl::VideoCaptureImpl()
-    : _deviceUniqueId(NULL),
+VideoCaptureImpl::VideoCaptureImpl(Clock* clock)
+    : _deviceUniqueId(nullptr),
       _requestedCapability(),
-      _lastProcessTimeNanos(TimeNanos()),
-      _lastFrameRateCallbackTimeNanos(TimeNanos()),
-      _rawDataCallBack(NULL),
-      _lastProcessFrameTimeNanos(TimeNanos()),
+      _lastProcessTimeNanos(clock->TimeInMicroseconds() * 1000),
+      _lastFrameRateCallbackTimeNanos(clock->TimeInMicroseconds() * 1000),
+      _rawDataCallBack(nullptr),
+      _lastProcessFrameTimeNanos(clock->TimeInMicroseconds() * 1000),
       _rotateFrame(kVideoRotation_0),
-      apply_rotation_(false) {
+      apply_rotation_(false),
+      clock_(clock) {
   _requestedCapability.width = kDefaultWidth;
   _requestedCapability.height = kDefaultHeight;
   _requestedCapability.maxFPS = 30;
@@ -95,7 +108,7 @@ VideoCaptureImpl::~VideoCaptureImpl() {
 }
 
 void VideoCaptureImpl::RegisterCaptureDataCallback(
-    rtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
+    VideoSinkInterface<VideoFrame>* dataCallBack) {
   MutexLock lock(&api_lock_);
   RTC_DCHECK(!_rawDataCallBack);
   _dataCallBacks.insert(dataCallBack);
@@ -109,13 +122,13 @@ void VideoCaptureImpl::RegisterCaptureDataCallback(
 }
 
 void VideoCaptureImpl::DeRegisterCaptureDataCallback(
-    rtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
+    webrtc::VideoSinkInterface<VideoFrame>* dataCallBack) {
   MutexLock lock(&api_lock_);
   auto it = _dataCallBacks.find(dataCallBack);
   if (it != _dataCallBacks.end()) {
     _dataCallBacks.erase(it);
   }
-  _rawDataCallBack = NULL;
+  _rawDataCallBack = nullptr;
 }
 
 int32_t VideoCaptureImpl::StopCaptureIfAllClientsClose() {
@@ -201,7 +214,7 @@ int32_t VideoCaptureImpl::IncomingFrame(uint8_t* videoFrame,
   // Setting absolute height (in case it was negative).
   // In Windows, the image starts bottom left, instead of top left.
   // Setting a negative source height, inverts the image (within LibYuv).
-  rtc::scoped_refptr<I420Buffer> buffer = I420Buffer::Create(
+  scoped_refptr<I420Buffer> buffer = I420Buffer::Create(
       target_width, target_height, stride_y, stride_uv, stride_uv);
 
   libyuv::RotationMode rotation_mode = libyuv::kRotate0;
@@ -232,10 +245,9 @@ int32_t VideoCaptureImpl::IncomingFrame(uint8_t* videoFrame,
   }
 
   const int conversionResult = libyuv::ConvertToI420(
-      videoFrame, videoFrameLength, buffer.get()->MutableDataY(),
-      buffer.get()->StrideY(), buffer.get()->MutableDataU(),
-      buffer.get()->StrideU(), buffer.get()->MutableDataV(),
-      buffer.get()->StrideV(), 0, 0,  // No Cropping
+      videoFrame, videoFrameLength, buffer->MutableDataY(), buffer->StrideY(),
+      buffer->MutableDataU(), buffer->StrideU(), buffer->MutableDataV(),
+      buffer->StrideV(), 0, 0,  // No Cropping
       width, height, dst_width, dst_height, rotation_mode,
       ConvertVideoType(frameInfo.videoType));
   if (conversionResult != 0) {
@@ -248,7 +260,7 @@ int32_t VideoCaptureImpl::IncomingFrame(uint8_t* videoFrame,
       VideoFrame::Builder()
           .set_video_frame_buffer(buffer)
           .set_rtp_timestamp(0)
-          .set_timestamp_ms(TimeMillis())
+          .set_timestamp_ms(clock_->TimeInMilliseconds())
           .set_rotation(!apply_rotation_ ? _rotateFrame : kVideoRotation_0)
           .build();
   captureFrame.set_ntp_time_ms(captureTime);
@@ -313,7 +325,7 @@ void VideoCaptureImpl::UpdateFrameCount() {
       _incomingFrameTimesNanos[i + 1] = _incomingFrameTimesNanos[i];
     }
   }
-  _incomingFrameTimesNanos[0] = TimeNanos();
+  _incomingFrameTimesNanos[0] = clock_->TimeInMicroseconds() * 1000;
 }
 
 uint32_t VideoCaptureImpl::CalculateFrameRate(int64_t now_ns) {

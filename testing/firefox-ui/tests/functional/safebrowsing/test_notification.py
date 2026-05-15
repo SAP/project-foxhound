@@ -10,7 +10,7 @@ from marionette_harness import MarionetteTestCase, WindowManagerMixin
 
 class TestSafeBrowsingNotificationBar(WindowManagerMixin, MarionetteTestCase):
     def setUp(self):
-        super(TestSafeBrowsingNotificationBar, self).setUp()
+        super().setUp()
 
         self.test_data = [
             # Unwanted software URL
@@ -43,7 +43,7 @@ class TestSafeBrowsingNotificationBar(WindowManagerMixin, MarionetteTestCase):
             self.remove_permission("https://www.itisatrap.org", "safe-browsing")
             self.close_all_tabs()
         finally:
-            super(TestSafeBrowsingNotificationBar, self).tearDown()
+            super().tearDown()
 
     def test_notification_bar(self):
         for item in self.test_data:

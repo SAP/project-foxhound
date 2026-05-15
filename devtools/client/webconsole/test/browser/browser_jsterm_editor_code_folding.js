@@ -60,9 +60,7 @@ add_task(async function () {
 });
 
 function getCodeLines(hud) {
-  return hud.ui.outputNode.querySelectorAll(
-    ".CodeMirror-code pre.CodeMirror-line"
-  );
+  return hud.ui.outputNode.querySelectorAll(codemirrorSelectors.cmLine);
 }
 
 function getFoldGutterElement(hud) {

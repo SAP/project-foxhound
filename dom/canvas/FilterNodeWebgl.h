@@ -7,10 +7,10 @@
 #ifndef MOZILLA_GFX_FILTERNODEWEBGL_H_
 #define MOZILLA_GFX_FILTERNODEWEBGL_H_
 
+#include <vector>
+
 #include "mozilla/gfx/Filters.h"
 #include "mozilla/gfx/PatternHelpers.h"
-
-#include <vector>
 
 namespace mozilla::gfx {
 
@@ -28,9 +28,11 @@ class FilterNodeWebgl : public FilterNode {
 
   FilterBackend GetBackendType() override { return FILTER_BACKEND_WEBGL; }
 
-  void ReserveInputIndex(uint32_t aIndex);
-  void SetInputAccel(uint32_t aIndex, SourceSurface* aSurface);
-  void SetInputSoftware(uint32_t aIndex, SourceSurface* aSurface);
+  FilterType GetType() const { return mType; }
+
+  bool ReserveInputIndex(uint32_t aIndex);
+  bool SetInputAccel(uint32_t aIndex, SourceSurface* aSurface);
+  bool SetInputSoftware(uint32_t aIndex, SourceSurface* aSurface);
   void SetInput(uint32_t aIndex, SourceSurface* aSurface) override;
   void SetInput(uint32_t aIndex, FilterNode* aFilter) override;
   void SetAttribute(uint32_t aIndex, bool) override;
@@ -46,22 +48,39 @@ class FilterNodeWebgl : public FilterNode {
   void SetAttribute(uint32_t aIndex, const Matrix5x4&) override;
   void SetAttribute(uint32_t aIndex, const Point3D&) override;
   void SetAttribute(uint32_t aIndex, const DeviceColor&) override;
-  void SetAttribute(uint32_t aIndex, const Float* aFloat,
+  void SetAttribute(uint32_t aIndex, const Float* aValues,
                     uint32_t aSize) override;
 
   IntRect MapRectToSource(const IntRect& aRect, const IntRect& aMax,
                           FilterNode* aSourceNode) override;
 
+  // Draw the root of a filter chain. Any filter drawing originates here.
   virtual void Draw(DrawTargetWebgl* aDT, const Rect& aSourceRect,
-                    const Point& aDestPoint, const DrawOptions& aOptions);
+                    const Point& aDestPoint, const DrawOptions& aOptions,
+                    FilterNodeWebgl* aParent = nullptr);
+  // Speculatively draw part of a filter chain, only if it can be accelerated.
+  // On success, it return true. Instead of falling back, nothing is drawn and
+  // it returns false.
+  virtual bool DrawAccel(DrawTargetWebgl* aDT, const Rect& aSourceRect,
+                         const Point& aDestPoint, const DrawOptions& aOptions,
+                         FilterNodeWebgl* aParent = nullptr) {
+    return false;
+  }
+  // Draw a child filter and return a surface that can be processed by a parent
+  // filter. This will try to accelerate the filter if possible, but implements
+  // a fallback if not.
   virtual already_AddRefed<SourceSurface> DrawChild(
-      DrawTargetWebgl* aDT, const Rect& aSourceRect,
-      IntPoint* aSurfaceOffset = nullptr);
-  virtual DeviceColor GetColor() const { return DeviceColor(1, 1, 1, 1); }
+      FilterNodeWebgl* aParent, DrawTargetWebgl* aDT, const Rect& aSourceRect,
+      const DrawOptions& aOptions, Point& aSurfaceOffset, DeviceColor& aColor);
 
-  virtual void ResolveInputs(DrawTargetWebgl* aDT, bool aAccel) {}
+  // This handles deferred filter inputs that should not be resolved to surfaces
+  // until right before drawing. Accelerated filters must ensure they call this
+  // to resolve these inputs before using them for drawing.
+  virtual void ResolveInputs(DrawTargetWebgl* aDT, bool aAccel,
+                             FilterNodeWebgl* aParent = nullptr) {}
 
-  void ResolveAllInputs(DrawTargetWebgl* aDT);
+  // Recursively resolve all inputs in the filter chain.
+  void ResolveAllInputs(DrawTargetWebgl* aDT, FilterNodeWebgl* aParent);
 
  protected:
   std::vector<RefPtr<FilterNodeWebgl>> mInputFilters;
@@ -80,7 +99,7 @@ class FilterNodeWebgl : public FilterNode {
     return std::max(mInputSurfaces.size(), mInputFilters.size());
   }
 
-  virtual int32_t InputIndex(uint32_t aInputEnumIndex) const { return -1; }
+  virtual int32_t InputIndex(uint32_t aInputEnumIndex) const;
 
   IntRect MapInputRectToSource(uint32_t aInputEnumIndex, const IntRect& aRect,
                                const IntRect& aMax, FilterNode* aSourceNode);
@@ -95,7 +114,17 @@ class FilterNodeCropWebgl : public FilterNodeWebgl {
                           FilterNode* aSourceNode) override;
 
   void Draw(DrawTargetWebgl* aDT, const Rect& aSourceRect,
-            const Point& aDestPoint, const DrawOptions& aOptions) override;
+            const Point& aDestPoint, const DrawOptions& aOptions,
+            FilterNodeWebgl* aParent) override;
+  bool DrawAccel(DrawTargetWebgl* aDT, const Rect& aSourceRect,
+                 const Point& aDestPoint, const DrawOptions& aOptions,
+                 FilterNodeWebgl* aParent) override;
+  already_AddRefed<SourceSurface> DrawChild(FilterNodeWebgl* aParent,
+                                            DrawTargetWebgl* aDT,
+                                            const Rect& aSourceRect,
+                                            const DrawOptions& aOptions,
+                                            Point& aSurfaceOffset,
+                                            DeviceColor& aColor) override;
 
  private:
   IntRect mCropRect;
@@ -113,10 +142,14 @@ class FilterNodeTransformWebgl : public FilterNodeWebgl {
                           FilterNode* aSourceNode) override;
 
   void Draw(DrawTargetWebgl* aDT, const Rect& aSourceRect,
-            const Point& aDestPoint, const DrawOptions& aOptions) override;
-  already_AddRefed<SourceSurface> DrawChild(DrawTargetWebgl* aDT,
+            const Point& aDestPoint, const DrawOptions& aOptions,
+            FilterNodeWebgl* aParent) override;
+  already_AddRefed<SourceSurface> DrawChild(FilterNodeWebgl* aParent,
+                                            DrawTargetWebgl* aDT,
                                             const Rect& aSourceRect,
-                                            IntPoint* aSurfaceOffset) override;
+                                            const DrawOptions& aOptions,
+                                            Point& aSurfaceOffset,
+                                            DeviceColor& aColor) override;
 
  protected:
   Matrix mMatrix;
@@ -133,9 +166,18 @@ class FilterNodeDeferInputWebgl : public FilterNodeTransformWebgl {
                             const DrawOptions& aOptions,
                             const StrokeOptions* aStrokeOptions);
 
-  void ResolveInputs(DrawTargetWebgl* aDT, bool aAccel) override;
+  void ResolveInputs(DrawTargetWebgl* aDT, bool aAccel,
+                     FilterNodeWebgl* aParent) override;
 
-  DeviceColor GetColor() const override;
+  void Draw(DrawTargetWebgl* aDT, const Rect& aSourceRect,
+            const Point& aDestPoint, const DrawOptions& aOptions,
+            FilterNodeWebgl* aParent) override;
+  already_AddRefed<SourceSurface> DrawChild(FilterNodeWebgl* aParent,
+                                            DrawTargetWebgl* aDT,
+                                            const Rect& aSourceRect,
+                                            const DrawOptions& aOptions,
+                                            Point& aSurfaceOffset,
+                                            DeviceColor& aColor) override;
 
  private:
   RefPtr<Path> mPath;
@@ -156,10 +198,137 @@ class FilterNodeGaussianBlurWebgl : public FilterNodeWebgl {
                           FilterNode* aSourceNode) override;
 
   void Draw(DrawTargetWebgl* aDT, const Rect& aSourceRect,
-            const Point& aDestPoint, const DrawOptions& aOptions) override;
+            const Point& aDestPoint, const DrawOptions& aOptions,
+            FilterNodeWebgl* aParent) override;
 
  private:
   float mStdDeviation = 0;
+
+  int32_t InputIndex(uint32_t aInputEnumIndex) const override;
+};
+
+class FilterNodeColorMatrixWebgl : public FilterNodeWebgl {
+ public:
+  FilterNodeColorMatrixWebgl() : FilterNodeWebgl(FilterType::COLOR_MATRIX) {}
+
+  void SetAttribute(uint32_t aIndex, const Matrix5x4& aValue) override;
+  void SetAttribute(uint32_t aIndex, uint32_t aValue) override;
+
+  bool DrawAccel(DrawTargetWebgl* aDT, const Rect& aSourceRect,
+                 const Point& aDestPoint, const DrawOptions& aOptions,
+                 FilterNodeWebgl* aParent) override;
+
+ protected:
+  Matrix5x4 mMatrix;
+  AlphaMode mAlphaMode;
+
+  int32_t InputIndex(uint32_t aInputEnumIndex) const override;
+};
+
+class FilterNodeComponentTransferWebgl : public FilterNodeWebgl {
+ public:
+  explicit FilterNodeComponentTransferWebgl(FilterType aType)
+      : FilterNodeWebgl(aType),
+        mDisableR(true),
+        mDisableG(true),
+        mDisableB(true),
+        mDisableA(true) {}
+
+  void SetAttribute(uint32_t aIndex, bool aValue) override;
+
+  bool DrawAccel(DrawTargetWebgl* aDT, const Rect& aSourceRect,
+                 const Point& aDestPoint, const DrawOptions& aOptions,
+                 FilterNodeWebgl* aParent) override;
+
+  virtual bool ToColorMatrix(Matrix5x4& aMatrix) const { return false; }
+
+ protected:
+  bool mDisableR : 1;
+  bool mDisableG : 1;
+  bool mDisableB : 1;
+  bool mDisableA : 1;
+
+  int32_t InputIndex(uint32_t aInputEnumIndex) const override;
+};
+
+class FilterNodeLinearTransferWebgl : public FilterNodeComponentTransferWebgl {
+ public:
+  FilterNodeLinearTransferWebgl()
+      : FilterNodeComponentTransferWebgl(FilterType::LINEAR_TRANSFER) {}
+
+  using FilterNodeComponentTransferWebgl::SetAttribute;
+  void SetAttribute(uint32_t aIndex, Float aValue) override;
+
+  bool ToColorMatrix(Matrix5x4& aMatrix) const override;
+
+ protected:
+  DeviceColor mSlope;
+  DeviceColor mIntercept;
+};
+
+class FilterNodeTableTransferWebgl : public FilterNodeComponentTransferWebgl {
+ public:
+  FilterNodeTableTransferWebgl()
+      : FilterNodeComponentTransferWebgl(FilterType::TABLE_TRANSFER) {}
+
+  using FilterNodeComponentTransferWebgl::SetAttribute;
+  void SetAttribute(uint32_t aIndex, const Float* aValues,
+                    uint32_t aSize) override;
+
+  bool ToColorMatrix(Matrix5x4& aMatrix) const override;
+
+ protected:
+  std::vector<Float> mTableR;
+  std::vector<Float> mTableG;
+  std::vector<Float> mTableB;
+  std::vector<Float> mTableA;
+};
+
+class FilterNodePremultiplyWebgl : public FilterNodeWebgl {
+ public:
+  FilterNodePremultiplyWebgl() : FilterNodeWebgl(FilterType::PREMULTIPLY) {}
+
+  void Draw(DrawTargetWebgl* aDT, const Rect& aSourceRect,
+            const Point& aDestPoint, const DrawOptions& aOptions,
+            FilterNodeWebgl* aParent) override;
+
+ protected:
+  int32_t InputIndex(uint32_t aInputEnumIndex) const override;
+};
+
+class FilterNodeUnpremultiplyWebgl : public FilterNodeWebgl {
+ public:
+  FilterNodeUnpremultiplyWebgl() : FilterNodeWebgl(FilterType::UNPREMULTIPLY) {}
+
+  already_AddRefed<SourceSurface> DrawChild(FilterNodeWebgl* aParent,
+                                            DrawTargetWebgl* aDT,
+                                            const Rect& aSourceRect,
+                                            const DrawOptions& aOptions,
+                                            Point& aSurfaceOffset,
+                                            DeviceColor& aColor) override;
+
+ protected:
+  int32_t InputIndex(uint32_t aInputEnumIndex) const override;
+};
+
+class FilterNodeOpacityWebgl : public FilterNodeWebgl {
+ public:
+  FilterNodeOpacityWebgl() : FilterNodeWebgl(FilterType::OPACITY) {}
+
+  void SetAttribute(uint32_t aIndex, Float aValue) override;
+
+  void Draw(DrawTargetWebgl* aDT, const Rect& aSourceRect,
+            const Point& aDestPoint, const DrawOptions& aOptions,
+            FilterNodeWebgl* aParent) override;
+  already_AddRefed<SourceSurface> DrawChild(FilterNodeWebgl* aParent,
+                                            DrawTargetWebgl* aDT,
+                                            const Rect& aSourceRect,
+                                            const DrawOptions& aOptions,
+                                            Point& aSurfaceOffset,
+                                            DeviceColor& aColor) override;
+
+ protected:
+  Float mValue = 1.0f;
 
   int32_t InputIndex(uint32_t aInputEnumIndex) const override;
 };

@@ -56,21 +56,21 @@ class AddressPickerTest {
 
     @Before
     fun setup() {
-        store = mock()
         state = mock()
+        store = BrowserStore(state)
         addressSelectBar = mock()
         addressPicker = AddressPicker(
             store = store,
             addressSelectBar = addressSelectBar,
         )
-
-        whenever(store.state).thenReturn(state)
     }
 
     @Test
     fun `WHEN onOptionSelect is called with an address THEN selectAddressCallback is invoked and prompt is hidden`() {
-        val content: ContentState = mock()
-        whenever(content.promptRequests).thenReturn(listOf(promptRequest))
+        val content = ContentState(
+            url = "http://mozilla.org",
+            promptRequests = listOf(promptRequest),
+        )
         val selectedTab = TabSessionState("browser-tab", content, mock(), mock())
         whenever(state.selectedTabId).thenReturn(selectedTab.id)
         whenever(state.tabs).thenReturn(listOf(selectedTab))

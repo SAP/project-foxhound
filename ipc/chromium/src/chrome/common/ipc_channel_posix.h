@@ -12,7 +12,6 @@
 #include <sys/socket.h>  // for CMSG macros
 
 #include <atomic>
-#include <string>
 #include <vector>
 #include <list>
 
@@ -32,37 +31,34 @@ namespace IPC {
 
 // An implementation of ChannelImpl for POSIX systems that works via
 // socketpairs.  See the .cc file for an overview of the implementation.
-class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
+class ChannelPosix final : public Channel, public MessageLoopForIO::Watcher {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_EVENT_TARGET(
-      ChannelImpl, IOThread().GetEventTarget());
+  ChannelPosix(mozilla::UniqueFileHandle pipe, Mode mode,
+               base::ProcessId other_pid);
 
-  // Mirror methods of Channel, see ipc_channel.h for description.
-  ChannelImpl(ChannelHandle pipe, Mode mode, base::ProcessId other_pid);
-  bool Connect(Listener* listener) MOZ_EXCLUDES(SendMutex());
-  void Close() MOZ_EXCLUDES(SendMutex());
+  bool Connect(Listener* listener) MOZ_EXCLUDES(SendMutex()) override;
+  void Close() MOZ_EXCLUDES(SendMutex()) override;
 
   // NOTE: `Send` may be called on threads other than the I/O thread.
-  bool Send(mozilla::UniquePtr<Message> message) MOZ_EXCLUDES(SendMutex());
+  bool Send(mozilla::UniquePtr<Message> message)
+      MOZ_EXCLUDES(SendMutex()) override;
 
-  void SetOtherPid(base::ProcessId other_pid);
-
-  // See the comment in ipc_channel.h for info on IsClosed()
-  // NOTE: `IsClosed` may be called on threads other than the I/O thread.
-  bool IsClosed() MOZ_EXCLUDES(SendMutex()) {
-    mozilla::MutexAutoLock lock(SendMutex());
-    chan_cap_.NoteLockHeld();
-    return pipe_ == -1;
-  }
+  void SetOtherPid(base::ProcessId other_pid) override;
 
 #if defined(XP_DARWIN)
-  void SetOtherMachTask(task_t task) MOZ_EXCLUDES(SendMutex());
-
-  void StartAcceptingMachPorts(Mode mode) MOZ_EXCLUDES(SendMutex());
+  void SetOtherMachTask(task_t task) MOZ_EXCLUDES(SendMutex()) override;
 #endif
 
+  const ChannelKind* GetKind() const override { return &sKind; }
+
+  static const ChannelKind sKind;
+
  private:
-  ~ChannelImpl() { Close(); }
+  ~ChannelPosix() { Close(); }
+
+  static bool CreateRawPipe(ChannelHandle* server, ChannelHandle* client);
+  static uint32_t NumRelayedAttachments(const IPC::Message& message);
+  static bool IsValidHandle(const ChannelHandle& handle);
 
   void Init(Mode mode) MOZ_REQUIRES(SendMutex(), IOThread());
   void SetPipe(int fd) MOZ_REQUIRES(SendMutex(), IOThread());
@@ -93,20 +89,7 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
       MOZ_REQUIRES(SendMutex());
   void OutputQueuePop() MOZ_REQUIRES(SendMutex());
 
-  const mozilla::EventTargetCapability<nsISerialEventTarget>& IOThread() const
-      MOZ_RETURN_CAPABILITY(chan_cap_.Target()) {
-    return chan_cap_.Target();
-  }
-
-  mozilla::Mutex& SendMutex() MOZ_RETURN_CAPABILITY(chan_cap_.Lock()) {
-    return chan_cap_.Lock();
-  }
-
-  // Compound capability of the IO thread and a Mutex.
-  mozilla::EventTargetAndLockCapability<nsISerialEventTarget, mozilla::Mutex>
-      chan_cap_;
-
-  Mode mode_ MOZ_GUARDED_BY(IOThread());
+  Mode mode_ MOZ_GUARDED_BY(chan_cap_);
 
   // After accepting one client connection on our server socket we want to
   // stop listening.
@@ -186,17 +169,10 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
   // A generation ID for RECEIVED_FD messages.
   uint32_t last_pending_fd_id_ MOZ_GUARDED_BY(SendMutex()) = 0;
 
-  // Whether or not to accept mach ports from a remote process, and whether this
-  // process is the privileged side of a IPC::Channel which can transfer mach
-  // ports.
-  bool accept_mach_ports_ MOZ_GUARDED_BY(chan_cap_) = false;
-  bool privileged_ MOZ_GUARDED_BY(chan_cap_) = false;
-
   // If available, the task port for the remote process.
+  // Only used if mode_ == MODE_BROKER_SERVER.
   mozilla::UniqueMachSendRight other_task_ MOZ_GUARDED_BY(chan_cap_);
 #endif
-
-  DISALLOW_COPY_AND_ASSIGN(ChannelImpl);
 };
 
 }  // namespace IPC

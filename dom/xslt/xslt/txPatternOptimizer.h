@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txPatternOptimizer_h__
-#define txPatternOptimizer_h__
+#ifndef txPatternOptimizer_h_
+#define txPatternOptimizer_h_
 
 #include "txXPathOptimizer.h"
 
@@ -27,4 +27,4 @@ class txPatternOptimizer {
   txXPathOptimizer mXPathOptimizer;
 };
 
-#endif  // txPatternOptimizer_h__
+#endif  // txPatternOptimizer_h_

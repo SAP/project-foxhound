@@ -7,14 +7,14 @@
 #ifndef DOM_SMIL_SMILCOMPOSITOR_H_
 #define DOM_SMIL_SMILCOMPOSITOR_H_
 
+#include <memory>
 #include <utility>
 
+#include "NonCustomCSSPropertyId.h"
 #include "PLDHashTable.h"
 #include "SMILTargetIdentifier.h"
 #include "mozilla/SMILAnimationFunction.h"
 #include "mozilla/SMILCompositorTable.h"
-#include "mozilla/UniquePtr.h"
-#include "nsCSSPropertyID.h"
 #include "nsString.h"
 #include "nsTHashtable.h"
 
@@ -35,13 +35,11 @@ class SMILCompositor : public PLDHashEntryHdr {
   using KeyTypeRef = const KeyType&;
   using KeyTypePointer = const KeyType*;
 
-  explicit SMILCompositor(KeyTypePointer aKey)
-      : mKey(*aKey), mForceCompositing(false) {}
+  explicit SMILCompositor(KeyTypePointer aKey) : mKey(*aKey) {}
   SMILCompositor(SMILCompositor&& toMove) noexcept
       : PLDHashEntryHdr(std::move(toMove)),
         mKey(std::move(toMove.mKey)),
-        mAnimationFunctions(std::move(toMove.mAnimationFunctions)),
-        mForceCompositing(false) {}
+        mAnimationFunctions(std::move(toMove.mAnimationFunctions)) {}
 
   // PLDHashEntryHdr methods
   KeyTypeRef GetKey() const { return mKey; }
@@ -83,11 +81,12 @@ class SMILCompositor : public PLDHashEntryHdr {
   //
   // @param aBaseComputedStyle  An optional ComputedStyle which, if set, will be
   //                           used when fetching the base style.
-  UniquePtr<SMILAttr> CreateSMILAttr(const ComputedStyle* aBaseComputedStyle);
+  std::unique_ptr<SMILAttr> CreateSMILAttr(
+      const ComputedStyle* aBaseComputedStyle);
 
   // Returns the CSS property this compositor should animate, or
   // eCSSProperty_UNKNOWN if this compositor does not animate a CSS property.
-  nsCSSPropertyID GetCSSPropertyToAnimate() const;
+  NonCustomCSSPropertyId GetCSSPropertyToAnimate() const;
 
   // Returns true if we might need to refer to base styles (i.e. we are
   // targeting a CSS property and have one or more animation functions that
@@ -114,17 +113,17 @@ class SMILCompositor : public PLDHashEntryHdr {
   // Hash Value: List of animation functions that animate the specified attr
   nsTArray<SMILAnimationFunction*> mAnimationFunctions;
 
-  // Member data for detecting when we need to force-recompose
-  // ---------------------------------------------------------
-  // Flag for tracking whether we need to compose. Initialized to false, but
-  // gets flipped to true if we detect that something has changed.
-  bool mForceCompositing;
-
   // Cached base value, so we can detect & force-recompose when it changes
   // from one sample to the next. (SMILAnimationController moves this
   // forward from the previous sample's compositor by calling
   // StealCachedBaseValue.)
   SMILValue mCachedBaseValue;
+
+  // Member data for detecting when we need to force-recompose
+  // ---------------------------------------------------------
+  // Flag for tracking whether we need to compose. Initialized to false, but
+  // gets flipped to true if we detect that something has changed.
+  bool mForceCompositing = false;
 };
 
 }  // namespace mozilla

@@ -8,9 +8,9 @@
 #define mozilla_AppleATDecoder_h
 
 #include <AudioToolbox/AudioToolbox.h>
-#include "PlatformDecoderModule.h"
-#include "mozilla/Vector.h"
+
 #include "AudioConverter.h"
+#include "PlatformDecoderModule.h"
 
 namespace mozilla {
 

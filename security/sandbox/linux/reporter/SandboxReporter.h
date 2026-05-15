@@ -12,7 +12,6 @@
 #include "base/platform_thread.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/Types.h"
 #include "mozilla/UniquePtr.h"
 #include "nsTArray.h"
 

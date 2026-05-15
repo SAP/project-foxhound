@@ -2,46 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.feature.qr'
 }
 
 dependencies {
-    implementation libs.kotlin.coroutines
+    implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
+    implementation project(':components:ui-icons')
 
     implementation libs.androidx.appcompat
     implementation libs.androidx.core.ktx
-
-    implementation project(':components:support-ktx')
-    implementation project(':components:support-base')
-
-    implementation libs.thirdparty.zxing
-    testImplementation libs.thirdparty.zxing
+    implementation libs.androidx.fragment.ktx
+    implementation libs.kotlinx.coroutines
+    implementation libs.zxing
 
     testImplementation project(':components:support-test')
+
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
+    testImplementation libs.androidx.test.rules
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

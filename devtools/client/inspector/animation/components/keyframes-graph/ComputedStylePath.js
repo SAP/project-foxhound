@@ -17,26 +17,29 @@ const {
   toPathString,
 } = require("resource://devtools/client/inspector/animation/utils/graph-helper.js");
 
-/*
+/**
  * This class is an abstraction for computed style path of keyframes.
  * Subclass of this should implement the following methods:
  *
  * getPropertyName()
  *   Returns property name which will be animated.
- *   @return {String}
+ *
+ *   @return {string}
  *           e.g. opacity
  *
  * getPropertyValue(keyframe)
  *   Returns value which uses as animated keyframe value from given parameter.
- *   @param {Object} keyframe
+ *
+ *   @param {object} keyframe
  *   @return {String||Number}
  *           e.g. 0
  *
  * toSegmentValue(computedStyle)
  *   Convert computed style to segment value of graph.
+ *
  *   @param {String||Number}
  *          e.g. 0
- *   @return {Number}
+ *   @return {number}
  *          e.g. 0 (should be 0 - 1.0)
  */
 class ComputedStylePath extends PureComponent {
@@ -55,9 +58,9 @@ class ComputedStylePath extends PureComponent {
    * Return an array containing the path segments between the given start and
    * end keyframe values.
    *
-   * @param {Object} startKeyframe
+   * @param {object} startKeyframe
    *        Starting keyframe.
-   * @param {Object} endKeyframe
+   * @param {object} endKeyframe
    *        Ending keyframe.
    * @return {Array}
    *         Array of path segment.
@@ -206,7 +209,7 @@ class ComputedStylePath extends PureComponent {
    * Return react dom fron given path segments.
    *
    * @param {Array} segments
-   * @param {Object} style
+   * @param {object} style
    * @return {Element}
    */
   renderPathSegments(segments, style) {
@@ -227,9 +230,9 @@ class ComputedStylePath extends PureComponent {
 /**
  * Convert given CSS property name to JavaScript CSS name.
  *
- * @param {String} cssPropertyName
+ * @param {string} cssPropertyName
  *        CSS property name (e.g. background-color).
- * @return {String}
+ * @return {string}
  *         JavaScript CSS property name (e.g. backgroundColor).
  */
 function getJsPropertyName(cssPropertyName) {

@@ -1,8 +1,8 @@
 [DEFAULT]
 # Disable for Http/3 since Http/3 tests require to run with https.
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 prefs = [
   "security.mixed_content.upgrade_display_content=false",
@@ -37,7 +37,9 @@ support-files = [
 ["test_bug329869.html"]
 
 ["test_bug383369.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug455367.html"]
 
@@ -70,7 +72,9 @@ skip-if = ["os == 'android'"]
 ["test_dynUnsecurePicturePreload.html"]
 
 ["test_dynUnsecureRedirect.html"]
-skip-if = ["true"] # Bug 487402 intermitently fails, quite often
+skip-if = [
+  "true", # Bug 487402 intermitently fails, quite often
+]
 
 ["test_innerHtmlDelayedUnsecurePicture.html"]
 
@@ -91,7 +95,9 @@ skip-if = ["true"] # Bug 487402 intermitently fails, quite often
 ["test_unsecureIframe2.html"]
 
 ["test_unsecureIframeMetaRedirect.html"]
-skip-if = ["true"] # Bug 487632 intermitently fails, quite often
+skip-if = [
+  "true", # Bug 487632 intermitently fails, quite often
+]
 
 ["test_unsecureIframeRedirect.html"]
 

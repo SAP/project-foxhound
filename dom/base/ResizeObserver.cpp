@@ -6,14 +6,15 @@
 
 #include "mozilla/dom/ResizeObserver.h"
 
+#include <limits>
+
+#include "mozilla/SVGUtils.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/SVGUtils.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
 #include "nsLayoutUtils.h"
-#include <limits>
 
 namespace mozilla::dom {
 

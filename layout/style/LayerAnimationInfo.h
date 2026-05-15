@@ -7,8 +7,8 @@
 #ifndef mozilla_LayerAnimationInfo_h
 #define mozilla_LayerAnimationInfo_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/Array.h"
-#include "nsCSSPropertyID.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsChangeHint.h"
 #include "nsDisplayItemTypes.h"  // For nsDisplayItem::Type
@@ -21,7 +21,7 @@ struct LayerAnimationInfo {
   // Returns DisplayItemType::TYPE_ZERO if |aProperty| cannot be animated on the
   // compositor.
   static DisplayItemType GetDisplayItemTypeForProperty(
-      nsCSSPropertyID aProperty);
+      NonCustomCSSPropertyId aProperty);
 
   // Returns the corresponding CSS properties for |aDisplayItemType|.
   //

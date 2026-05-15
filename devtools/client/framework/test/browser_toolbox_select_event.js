@@ -46,6 +46,7 @@ add_task(async function () {
 
   /**
    * Assert that selecting the given toolId raises a select event
+   *
    * @param {toolId} Id of the tool to test
    */
   async function testSelectEvent(toolId) {
@@ -58,6 +59,7 @@ add_task(async function () {
   /**
    * Assert that selecting the given toolId raises its corresponding
    * selected event
+   *
    * @param {toolId} Id of the tool to test
    */
   async function testToolSelectEvent(toolId) {

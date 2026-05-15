@@ -6,7 +6,6 @@ package mozilla.components.service.pocket.stories
 
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.fetch.Client
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
@@ -31,7 +30,6 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import kotlin.reflect.KVisibility
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class PocketStoriesUseCasesTest {
     private val fetchClient: Client = mock()

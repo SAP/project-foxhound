@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_MimeType_h
 #define mozilla_dom_MimeType_h
 
-#include "mozilla/TextUtils.h"
-#include "nsTHashMap.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 
 template <typename char_type>
 struct HashKeyType;
@@ -34,9 +33,6 @@ class TMimeType final {
     ParameterValue() : mRequiresQuoting(false) {}
   };
 
-  static nsTArray<nsTDependentSubstring<char_type>> SplitMimetype(
-      const nsTSubstring<char_type>& aMimeType);
-
   bool mIsBase64{false};
   nsTString<char_type> mType;
   nsTString<char_type> mSubtype;
@@ -48,6 +44,9 @@ class TMimeType final {
   TMimeType(const nsTSubstring<char_type>& aType,
             const nsTSubstring<char_type>& aSubtype)
       : mType(aType), mSubtype(aSubtype) {}
+
+  static nsTArray<nsTDependentSubstring<char_type>> SplitMimetype(
+      const nsTSubstring<char_type>& aMimeType);
 
   static RefPtr<TMimeType<char_type>> Parse(
       const nsTSubstring<char_type>& aMimeType);
@@ -88,6 +87,8 @@ class TMimeType final {
   // @param aValue - the value of the parameter
   void SetParameterValue(const nsTSubstring<char_type>& aName,
                          const nsTSubstring<char_type>& aValue);
+
+  size_t GetParameterCount() const { return mParameterNames.Length(); }
 
   NS_INLINE_DECL_REFCOUNTING(TMimeType)
 };

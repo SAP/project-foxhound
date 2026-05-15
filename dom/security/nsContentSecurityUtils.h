@@ -6,10 +6,11 @@
 
 /* A namespace class for static content security utilities. */
 
-#ifndef nsContentSecurityUtils_h___
-#define nsContentSecurityUtils_h___
+#ifndef nsContentSecurityUtils_h_
+#define nsContentSecurityUtils_h_
 
 #include <utility>
+
 #include "mozilla/Maybe.h"
 #include "nsStringFwd.h"
 
@@ -97,8 +98,10 @@ class nsContentSecurityUtils {
 #endif
 
   static bool ValidateScriptFilename(JSContext* cx, const char* aFilename);
+  static nsresult GetVeryFirstUnexpectedScriptFilename(nsACString& aFilename);
+
   // Helper Function to Post a message to the corresponding JS-Console
   static void LogMessageToConsole(nsIHttpChannel* aChannel, const char* aMsg);
 };
 
-#endif /* nsContentSecurityUtils_h___ */
+#endif /* nsContentSecurityUtils_h_ */

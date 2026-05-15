@@ -371,7 +371,7 @@ add_task(async function test_datepicker_reopened_prev_next_month_btn() {
   await ready;
 
   Assert.equal(
-    helper.panel.querySelector("#dateTimePopupFrame").contentDocument
+    helper.panel.querySelector("#DateTimePickerPanelPopupFrame").contentDocument
       .activeElement.textContent,
     "2",
     "Picker is opened with a focus set to the currently selected date"

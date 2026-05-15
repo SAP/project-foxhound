@@ -11,8 +11,8 @@
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientOpenWindowUtils.h"
 #include "mozilla/dom/DOMTypes.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "xpcprivate.h"
@@ -158,7 +158,9 @@ NS_IMETHODIMP NotificationHandler::RespondOnClick(
         return nullptr;
       }));
 
-  result.forget(aResult);
+  if (aResult) {
+    result.forget(aResult);
+  }
 
   return NS_OK;
 }

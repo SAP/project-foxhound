@@ -16,7 +16,6 @@
 
 /* Expose all <stdint.h> types and size_t. */
 #include <stddef.h>
-#include <stdint.h>
 
 /* Implement compiler and linker macros needed for APIs. */
 
@@ -127,14 +126,6 @@
 #else
 #  define MOZ_BEGIN_EXTERN_C
 #  define MOZ_END_EXTERN_C
-#endif
-
-/*
- * GCC's typeof is available when decltype is not.
- */
-#if defined(__GNUC__) && defined(__cplusplus) && \
-    !defined(__GXX_EXPERIMENTAL_CXX0X__) && __cplusplus < 201103L
-#  define decltype __typeof__
 #endif
 
 #endif /* mozilla_Types_h */

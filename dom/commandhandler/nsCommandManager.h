@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCommandManager_h__
-#define nsCommandManager_h__
+#ifndef nsCommandManager_h_
+#define nsCommandManager_h_
 
-#include "nsString.h"
 #include "nsClassHashtable.h"
-#include "nsWeakReference.h"
-
-#include "nsICommandManager.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsICommandManager.h"
+#include "nsString.h"
+#include "nsWeakReference.h"
 
 class nsIController;
 template <class E>
@@ -66,4 +65,4 @@ const nsCommandManager* nsICommandManager::AsCommandManager() const {
   return static_cast<const nsCommandManager*>(this);
 }
 
-#endif  // nsCommandManager_h__
+#endif  // nsCommandManager_h_

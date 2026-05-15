@@ -5,8 +5,7 @@
 Support for running spidermonkey jobs via dedicated scripts
 """
 
-
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_using
@@ -15,24 +14,22 @@ from gecko_taskgraph.transforms.job.common import (
     generic_worker_add_artifacts,
 )
 
-sm_run_schema = Schema(
-    {
-        Required("using"): Any(
-            "spidermonkey",
-            "spidermonkey-package",
-        ),
-        # SPIDERMONKEY_VARIANT and SPIDERMONKEY_PLATFORM
-        Required("spidermonkey-variant"): str,
-        Optional("spidermonkey-platform"): str,
-        # Base work directory used to set up the task.
-        Optional("workdir"): str,
-        Required("tooltool-downloads"): Any(
-            False,
-            "public",
-            "internal",
-        ),
-    }
-)
+sm_run_schema = LegacySchema({
+    Required("using"): Any(
+        "spidermonkey",
+        "spidermonkey-package",
+    ),
+    # SPIDERMONKEY_VARIANT and SPIDERMONKEY_PLATFORM
+    Required("spidermonkey-variant"): str,
+    Optional("spidermonkey-platform"): str,
+    # Base work directory used to set up the task.
+    Optional("workdir"): str,
+    Required("tooltool-downloads"): Any(
+        False,
+        "public",
+        "internal",
+    ),
+})
 
 
 @run_job_using("docker-worker", "spidermonkey", schema=sm_run_schema)
@@ -46,14 +43,12 @@ def docker_worker_spidermonkey(config, job, taskdesc):
     docker_worker_add_artifacts(config, job, taskdesc)
 
     env = worker.setdefault("env", {})
-    env.update(
-        {
-            "MOZHARNESS_DISABLE": "true",
-            "SPIDERMONKEY_VARIANT": run.pop("spidermonkey-variant"),
-            "MOZ_BUILD_DATE": config.params["moz_build_date"],
-            "MOZ_SCM_LEVEL": config.params["level"],
-        }
-    )
+    env.update({
+        "MOZHARNESS_DISABLE": "true",
+        "SPIDERMONKEY_VARIANT": run.pop("spidermonkey-variant"),
+        "MOZ_BUILD_DATE": config.params["moz_build_date"],
+        "MOZ_SCM_LEVEL": config.params["level"],
+    })
     if "spidermonkey-platform" in run:
         env["SPIDERMONKEY_PLATFORM"] = run.pop("spidermonkey-platform")
 
@@ -79,18 +74,16 @@ def generic_worker_spidermonkey(config, job, taskdesc):
     generic_worker_add_artifacts(config, job, taskdesc)
 
     env = worker.setdefault("env", {})
-    env.update(
-        {
-            "MOZHARNESS_DISABLE": "true",
-            "SPIDERMONKEY_VARIANT": run.pop("spidermonkey-variant"),
-            "MOZ_BUILD_DATE": config.params["moz_build_date"],
-            "MOZ_SCM_LEVEL": config.params["level"],
-            "SCCACHE_DISABLE": "1",
-            "WORK": ".",  # Override the defaults in build scripts
-            "GECKO_PATH": "./src",  # with values suiteable for windows generic worker
-            "UPLOAD_DIR": "./public/build",
-        }
-    )
+    env.update({
+        "MOZHARNESS_DISABLE": "true",
+        "SPIDERMONKEY_VARIANT": run.pop("spidermonkey-variant"),
+        "MOZ_BUILD_DATE": config.params["moz_build_date"],
+        "MOZ_SCM_LEVEL": config.params["level"],
+        "SCCACHE_DISABLE": "1",
+        "WORK": ".",  # Override the defaults in build scripts
+        "GECKO_PATH": "./src",  # with values suiteable for windows generic worker
+        "UPLOAD_DIR": "./public/build",
+    })
     if "spidermonkey-platform" in run:
         env["SPIDERMONKEY_PLATFORM"] = run.pop("spidermonkey-platform")
 

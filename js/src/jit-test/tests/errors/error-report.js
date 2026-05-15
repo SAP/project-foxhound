@@ -31,7 +31,19 @@
 }
 
 {
-    // Duck-typed error object
+    setPrefValue("ducktyped_errors", false);
+    // Duck-typed error object (when not supported)
+    let obj = {name: "foo", message: "bar", fileName: "test", lineNumber: 0};
+
+    let report = createErrorReport(obj);
+    assertEq(report.toStringResult, "uncaught exception: [object Object]");
+    assertEq(report.name, "");
+    assertEq(report.message, "uncaught exception: [object Object]");
+}
+
+{
+    setPrefValue("ducktyped_errors", true);
+    // Duck-typed error object (when supported)
     let obj = {name: "foo", message: "bar", fileName: "test", lineNumber: 0};
 
     let report = createErrorReport(obj);

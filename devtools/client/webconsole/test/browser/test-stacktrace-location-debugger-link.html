@@ -17,7 +17,14 @@
 
       function bar() {
         console.log(new Error("myErrorObject"));
+
         console.trace();
+
+        // Test that unresolved URL can still be opened in the debugger
+        // eslint-disable-next-line no-eval
+        eval(`console.log(new Error("customSourceURL")); //# sourceURL=http://example.org/./source.js`);
+
+        atob(-1);
       }
 
       foo();

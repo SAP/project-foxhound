@@ -7,7 +7,6 @@
 #ifndef MOZILLA_LAYERS_RENDEREROGL_H
 #define MOZILLA_LAYERS_RENDEREROGL_H
 
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/webrender/RenderThread.h"
@@ -26,6 +25,7 @@ class GLContext;
 }
 
 namespace layers {
+class AndroidHardwareBuffer;
 class CompositorBridgeParent;
 class Fence;
 class SyncObjectHost;
@@ -94,6 +94,15 @@ class RendererOGL {
 
   Maybe<layers::FrameRecording> EndRecording();
 
+#ifdef MOZ_WIDGET_ANDROID
+  using ScreenPixelsPromise =
+      MozPromise<RefPtr<layers::AndroidHardwareBuffer>, nsresult, true>;
+  // Captures the pixels for the next rendered frame. Returns a promise that
+  // resolves once the pixels are captured.
+  RefPtr<ScreenPixelsPromise> RequestScreenPixels(gfx::IntRect aSourceRect,
+                                                  gfx::IntSize aDestSize);
+#endif
+
   /// This can be called on the render thread only.
   ~RendererOGL();
 
@@ -148,6 +157,14 @@ class RendererOGL {
    */
   bool DidPaintContent(const wr::WebRenderPipelineInfo* aFrameEpochs);
 
+#ifdef MOZ_WIDGET_ANDROID
+  // If mPendingScreenPixelsRequest is set, captures the pixels of the frame
+  // that has just been rendered and resolves the request. Must be called after
+  // the frame has been rendered but before RenderCompositor::EndFrame() (which
+  // swaps buffers).
+  void MaybeCaptureScreenPixels();
+#endif
+
   RefPtr<RenderThread> mThread;
   UniquePtr<RenderCompositor> mCompositor;
   UniquePtr<layers::CompositionRecorder> mCompositionRecorder;  // can be null
@@ -157,6 +174,15 @@ class RendererOGL {
   TimeStamp mFrameStartTime;
 
   bool mDisableNativeCompositor;
+
+#ifdef MOZ_WIDGET_ANDROID
+  struct ScreenPixelsRequest {
+    gfx::IntRect mSourceRect;
+    gfx::IntSize mDestSize;
+    RefPtr<ScreenPixelsPromise::Private> mPromise;
+  };
+  Maybe<ScreenPixelsRequest> mPendingScreenPixelsRequest;
+#endif
 
   RendererScreenshotGrabber mScreenshotGrabber;
 
@@ -172,6 +198,13 @@ class RendererOGL {
   std::unordered_map<uint64_t, wr::Epoch> mContentPipelineEpochs;
 
   RefPtr<WebRenderPipelineInfo> mLastPipelineInfo;
+
+  // Tracks whether the last render rasterized any tiles.
+  // Used by reftest to verify no rasterization occurred.
+  bool mLastFrameDidRasterize = false;
+
+ public:
+  bool CheckAndClearDidRasterize();
 };
 
 }  // namespace wr

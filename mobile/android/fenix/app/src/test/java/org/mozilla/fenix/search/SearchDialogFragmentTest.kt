@@ -152,12 +152,12 @@ internal class SearchDialogFragmentTest {
         val layoutParams = LayoutParams()
         layoutParams.flags = LayoutParams.FLAG_SECURE
 
-        every { activity.browsingModeManager.mode.isPrivate } returns true
         every { activity.window } returns mockk(relaxed = true) {
             every { attributes } returns LayoutParams().apply { flags = LayoutParams.FLAG_SECURE }
         }
         every { fragment.requireActivity() } returns activity
         every { fragment.requireContext() } returns testContext
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
 
         val dialog = fragment.onCreateDialog(null)
 
@@ -171,12 +171,12 @@ internal class SearchDialogFragmentTest {
         val layoutParams = LayoutParams()
         layoutParams.flags = LayoutParams.FLAG_SECURE
 
-        every { activity.browsingModeManager.mode.isPrivate } returns false
         every { activity.window } returns mockk(relaxed = true) {
             every { attributes } returns LayoutParams().apply { flags = LayoutParams.FLAG_SECURE }
         }
         every { fragment.requireActivity() } returns activity
         every { fragment.requireContext() } returns testContext
+        every { testContext.components.appStore.state.mode.isPrivate } returns false
 
         val dialog = fragment.onCreateDialog(null)
 

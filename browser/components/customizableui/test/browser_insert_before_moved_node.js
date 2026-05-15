@@ -21,7 +21,7 @@ add_task(async function () {
     let otherButton = document.createXULElement("toolbarbutton");
     otherButton.id = "moved-button-not-here";
     if (toolbar == "nav-bar") {
-      gURLBar.textbox.parentNode.appendChild(otherButton);
+      gURLBar.parentNode.appendChild(otherButton);
     } else {
       gBrowser.tabContainer.appendChild(otherButton);
     }

@@ -1,0 +1,16 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * www.jal.co.jp - tables are not rendered correctly
+ * Bug #2000558 - https://bugzilla.mozilla.org/show_bug.cgi?id=2000558
+ * WebCompat issue #130020 - https://github.com/webcompat/web-bugs/issues/130020
+ * WebCompat issue #189157 - https://github.com/webcompat/web-bugs/issues/189157
+ *
+ * The site adds min-width:max-content to the tables in quesiton, which other
+ * browsers ignore in different ways. We can just unapply that rule to fix it.
+ */
+.fixed_th1st table {
+  min-width: unset;
+}

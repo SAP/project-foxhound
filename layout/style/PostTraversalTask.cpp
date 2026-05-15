@@ -25,7 +25,8 @@ void PostTraversalTask::Run() {
       break;
 
     case Type::RejectFontFaceLoadedPromise:
-      static_cast<FontFace*>(mTarget)->MaybeReject(mResult);
+      static_cast<FontFace*>(mTarget)->MaybeReject(mResult.extract(),
+                                                   std::move(mMessage));
       break;
 
     case Type::DispatchLoadingEventAndReplaceReadyPromise:
@@ -43,7 +44,7 @@ void PostTraversalTask::Run() {
       break;
 
     case Type::InitializeFamily:
-      Unused << gfxPlatformFontList::PlatformFontList()->InitializeFamily(
+      (void)gfxPlatformFontList::PlatformFontList()->InitializeFamily(
           static_cast<fontlist::Family*>(mTarget));
       break;
 

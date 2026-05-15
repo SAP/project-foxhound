@@ -13,6 +13,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.setToolbarColors
+import com.google.android.material.R as materialR
 
 abstract class LibraryPageFragment<T> : Fragment() {
 
@@ -41,8 +42,8 @@ abstract class LibraryPageFragment<T> : Fragment() {
         context?.let {
             activity?.title = getString(R.string.app_name)
             activity?.findViewById<Toolbar>(R.id.navigationToolbar)?.setToolbarColors(
-                it.getColorFromAttr(R.attr.textPrimary),
-                it.getColorFromAttr(R.attr.layer1),
+                it.getColorFromAttr(materialR.attr.colorOnSurface),
+                it.getColorFromAttr(materialR.attr.colorSurface),
             )
         }
     }

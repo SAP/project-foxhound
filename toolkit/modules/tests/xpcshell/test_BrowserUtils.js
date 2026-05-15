@@ -386,6 +386,9 @@ add_task(async function test_callModulesFromCategory() {
   Assert.equal("Hello", await idlePromise, "Idle calls should run eventually.");
 
   Services.obs.removeObserver(ob, OBSTOPIC1);
+
+  // Now clean up our category for later tests.
+  Services.catMan.deleteCategory(CATEGORY);
 });
 
 // Test that errors are reported but do not throw at the callsite,
@@ -449,4 +452,52 @@ add_task(async function test_callModulesFromCategory_errors() {
     "Uh oh",
     "Exceptions should be handled."
   );
+
+  // Now clean up our category for later tests.
+  Services.catMan.deleteCategory(OTHER_CAT);
+});
+
+/**
+ * Test that callModulesFromCategory returns a Promise that resolves when all
+ * category tasks have settled.
+ */
+add_task(async function test_callModulesFromCategory_returns_promise() {
+  const CATEGORY = "test-modules-from-catman";
+  const MODULE1 = "resource://test/my_catman_1.sys.mjs";
+  const OBSTOPIC1 = CATEGORY + "-notification";
+
+  let catManUpdated = TestUtils.topicObserved("xpcom-category-entry-added");
+  Services.catMan.addCategoryEntry(
+    CATEGORY,
+    MODULE1,
+    `Module1.test`,
+    false,
+    false
+  );
+  await catManUpdated;
+
+  let moduleResult = TestUtils.topicObserved(OBSTOPIC1).then(
+    ([_subj, data]) => data
+  );
+
+  let result = BrowserUtils.callModulesFromCategory(
+    { categoryName: CATEGORY },
+    "Hello"
+  );
+
+  Assert.ok(result.then, "Should return a Promise");
+
+  let settledResults = await result;
+  Assert.ok(Array.isArray(settledResults), "Should return an array of results");
+  Assert.equal(settledResults.length, 1, "Should have one result");
+  Assert.equal(
+    settledResults[0].status,
+    "fulfilled",
+    "Task should have been fulfilled"
+  );
+
+  Assert.equal(await moduleResult, "Hello", "Module should have been called");
+
+  // Now clean up our category for later tests.
+  Services.catMan.deleteCategory(CATEGORY);
 });

@@ -1,4 +1,3 @@
-/* eslint-env mozilla/chrome-script */
 /* eslint-disable mozilla/use-services */
 
 "use strict";

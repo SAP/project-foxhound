@@ -239,6 +239,6 @@
   fill-opacity: var(--breakpoint-skipped-opacity);
 }
 
-.img.column-marker {
+.dbg-img.dbg-img-column-marker {
   background-image: url(chrome://devtools/content/debugger/images/column-marker.svg);
 }

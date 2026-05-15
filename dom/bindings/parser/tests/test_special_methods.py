@@ -6,15 +6,11 @@ def WebIDLTest(parser, harness):
         """
         interface SpecialMethods {
           getter long long (unsigned long index);
-          setter long long (unsigned long index, long long value);
+          setter undefined (unsigned long index, long long value);
           getter boolean (DOMString name);
-          setter boolean (DOMString name, boolean value);
-          deleter boolean (DOMString name);
+          setter undefined (DOMString name, boolean value);
+          deleter undefined (DOMString name);
           readonly attribute unsigned long length;
-        };
-
-        interface SpecialMethodsCombination {
-          getter deleter boolean (DOMString name);
         };
     """
     )
@@ -52,7 +48,7 @@ def WebIDLTest(parser, harness):
             "Method has the correct stringifier value",
         )
 
-    harness.check(len(results), 2, "Expect 2 interfaces")
+    harness.check(len(results), 1, "Expect 1 interface")
 
     iface = results[0]
     harness.check(len(iface.members), 6, "Expect 6 members")
@@ -88,15 +84,23 @@ def WebIDLTest(parser, harness):
         deleter=True,
     )
 
-    iface = results[1]
-    harness.check(len(iface.members), 1, "Expect 1 member")
+    parser = parser.reset()
 
-    checkMethod(
-        iface.members[0],
-        "::SpecialMethodsCombination::__namedgetterdeleter",
-        "__namedgetterdeleter",
-        getter=True,
-        deleter=True,
+    threw = False
+    try:
+        parser.parse(
+            """
+            interface SpecialMethodsCombination {
+              getter deleter boolean (DOMString name);
+            };
+            """
+        )
+        parser.finish()
+    except WebIDL.WebIDLError:
+        threw = True
+
+    harness.ok(
+        threw, "Should not allow combining a getter and a deleter in a single operation"
     )
 
     parser = parser.reset()

@@ -48,11 +48,13 @@ license:
         - security/mac/hardenedruntime/developer/media-plugin-helper.xml
         - security/mac/hardenedruntime/developer/plugin-container.xml
         - security/mac/hardenedruntime/developer/utility.xml
+        - security/mac/hardenedruntime/developer/security-module-helper.xml
         - security/mac/hardenedruntime/production/nightly.browser.xml
         - security/mac/hardenedruntime/production/firefox.browser.xml
         - security/mac/hardenedruntime/production/firefoxdeveloperedition.browser.xml
         - security/mac/hardenedruntime/production/media-plugin-helper.xml
         - security/mac/hardenedruntime/production/plugin-container.xml
+        - security/mac/hardenedruntime/production/security-module-helper.xml
         - testing/marionette/harness/marionette_harness/www/
         # Browsertime can't handle this script when there's a comment at the top
         - testing/raptor/browsertime/browsertime_benchmark.js

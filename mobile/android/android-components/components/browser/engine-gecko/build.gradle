@@ -4,44 +4,24 @@
 
 buildscript {
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
     dependencies {
-        classpath "${ApplicationServicesConfig.groupId}:tooling-nimbus-gradle:${ApplicationServicesConfig.version}"
-        classpath libs.glean.gradle.plugin
+        classpath libs.mozilla.glean.gradle.plugin
     }
 }
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.python.envs.plugin)
+    id 'org.mozilla.nimbus-gradle-plugin'
 }
 
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     packaging {
         resources {
             excludes += ['META-INF/LICENSE.md', 'META-INF/LICENSE-notice.md']
@@ -61,44 +41,47 @@ android {
 ext.allowMetricsFromAAR = true
 
 dependencies {
-    implementation project(':components:concept-engine')
-    implementation project(':components:concept-fetch')
-    implementation project(':components:support-ktx')
-    implementation project(':components:support-utils')
-    implementation(project(':components:service-nimbus')) {
-        exclude group: 'org.mozilla.telemetry', module: 'glean-native'
-    }
-    implementation libs.kotlin.coroutines
-
     if (findProject(":geckoview") != null) {
         api project(':geckoview')
     } else {
         api getGeckoViewDependency()
     }
 
-    implementation libs.androidx.core.ktx
-    implementation libs.androidx.paging
-    implementation libs.androidx.datastore.preferences
-    implementation libs.androidx.lifecycle.livedata
-
-    testImplementation libs.androidx.test.core
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.mockwebserver
-    testImplementation project(':components:support-test')
-    testImplementation project(':components:tooling-fetch-tests')
-
     // We only compile against Glean. It's up to the app to add those dependencies
     // if it wants to collect GeckoView telemetry through the Glean SDK.
     compileOnly libs.mozilla.glean
-    testImplementation libs.mozilla.glean
+
+    implementation project(':components:concept-engine')
+    implementation project(':components:concept-fetch')
+    implementation(project(':components:service-nimbus')) {
+        exclude group: 'org.mozilla.telemetry', module: 'glean-native'
+    }
+    implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
+
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.datastore.preferences
+    implementation libs.androidx.lifecycle.livedata
+    implementation libs.androidx.paging
+    implementation libs.kotlinx.coroutines
+
+    testImplementation project(':components:support-test')
+    testImplementation project(':components:tooling-fetch-tests')
+    testImplementation testFixtures(project(':components:support-utils'))
+
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.junit
     testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.mockwebserver
+    testImplementation libs.mozilla.glean
+    testImplementation libs.robolectric
+
+    androidTestImplementation project(':components:tooling-fetch-tests')
 
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.rules
-    androidTestImplementation project(':components:tooling-fetch-tests')
+    androidTestImplementation libs.androidx.test.runner
 }
 
 ext {
@@ -106,9 +89,8 @@ ext {
     gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
 }
 apply plugin: "org.mozilla.telemetry.glean-gradle-plugin"
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
-apply plugin: "org.mozilla.appservices.nimbus-gradle-plugin"
 nimbus {
     // The path to the Nimbus feature manifest file
     manifestFile = "geckoview.fml.yaml"
@@ -167,7 +149,7 @@ def getArtifactSuffix() {
     return suffix
 }
 
-def getArtifactId() {
+def computeArtifactId() {
     def id = "geckoview" + getArtifactSuffix()
 
     if (!gradle.mozconfig.substs.MOZ_ANDROID_GECKOVIEW_LITE) {
@@ -190,9 +172,9 @@ def getArtifactId() {
 def getGeckoViewDependency() {
     // on try, relax geckoview version pin to allow for --use-existing-task
     if ('https://hg.mozilla.org/try' == System.env.GECKO_HEAD_REPOSITORY) {
-        rootProject.logger.lifecycle("Getting geckoview on try: ${getArtifactId()}:+")
-        return "org.mozilla.geckoview:${getArtifactId()}:+"
+        rootProject.logger.lifecycle("Getting geckoview on try: ${computeArtifactId()}:+")
+        return "org.mozilla.geckoview:${computeArtifactId()}:+"
     }
-    rootProject.logger.lifecycle("Getting geckoview: ${getArtifactId()}:${getVersionNumber()}")
-    return "org.mozilla.geckoview:${getArtifactId()}:${getVersionNumber()}"
+    rootProject.logger.lifecycle("Getting geckoview: ${computeArtifactId()}:${getVersionNumber()}")
+    return "org.mozilla.geckoview:${computeArtifactId()}:${getVersionNumber()}"
 }

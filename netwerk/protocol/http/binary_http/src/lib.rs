@@ -9,7 +9,7 @@ extern crate thin_vec;
 #[macro_use]
 extern crate xpcom;
 
-use bhttp::{Message, Mode};
+use bhttp::{Message, Mode, StatusCode};
 use nserror::{nsresult, NS_ERROR_FAILURE, NS_ERROR_INVALID_ARG, NS_ERROR_UNEXPECTED, NS_OK};
 use nsstring::{nsACString, nsCString};
 use std::io::Cursor;
@@ -180,7 +180,7 @@ impl BinaryHttp {
             .collect();
         let content = decoded.content().to_vec();
         let binary_http_response = BinaryHttpResponse::allocate(InitBinaryHttpResponse {
-            status,
+            status: status.into(),
             headers,
             content,
         });
@@ -232,7 +232,8 @@ impl BinaryHttp {
     fn encode_response(&self, response: &nsIBinaryHttpResponse) -> Result<ThinVec<u8>, nsresult> {
         let mut status = 0;
         unsafe { response.GetStatus(&mut status) }.to_result()?;
-        let mut message = Message::response(status);
+        let mut message =
+            Message::response(StatusCode::try_from(status).map_err(|_| NS_ERROR_FAILURE)?);
         let mut header_names = ThinVec::new();
         unsafe { response.GetHeaderNames(&mut header_names) }.to_result()?;
         let mut header_values = ThinVec::with_capacity(header_names.len());

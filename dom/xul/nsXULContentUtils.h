@@ -9,8 +9,8 @@
 
  */
 
-#ifndef nsXULContentUtils_h__
-#define nsXULContentUtils_h__
+#ifndef nsXULContentUtils_h_
+#define nsXULContentUtils_h_
 
 #include "nsISupports.h"
 
@@ -42,4 +42,4 @@ class nsXULContentUtils {
   static const mozilla::intl::Collator* GetCollator();
 };
 
-#endif  // nsXULContentUtils_h__
+#endif  // nsXULContentUtils_h_

@@ -7,22 +7,21 @@
 #include "MediaFormatReader.h"
 
 #include <algorithm>
-#include <map>
 #include <queue>
 
 #include "AllocationPolicy.h"
 #ifdef MOZ_AV1
 #  include "AOMDecoder.h"
 #endif
+#include "MP4Decoder.h"
 #include "MediaData.h"
 #include "MediaDataDecoderProxy.h"
 #include "MediaInfo.h"
-#include "MP4Decoder.h"
 #include "PDMFactory.h"
 #include "PerformanceRecorder.h"
+#include "VPXDecoder.h"
 #include "VideoFrameContainer.h"
 #include "VideoUtils.h"
-#include "VPXDecoder.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/CDMProxy.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -33,7 +32,6 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Unused.h"
 #include "mozilla/glean/DomMediaMetrics.h"
 #include "nsContentUtils.h"
 #include "nsLiteralString.h"
@@ -43,7 +41,6 @@
 using namespace mozilla::media;
 
 static mozilla::LazyLogModule sFormatDecoderLog("MediaFormatReader");
-mozilla::LazyLogModule gMediaDemuxerLog("MediaDemuxer");
 
 #define LOG(arg, ...)                                                  \
   DDMOZ_LOG(sFormatDecoderLog, mozilla::LogLevel::Debug, "::%s: " arg, \
@@ -727,7 +724,7 @@ class MediaFormatReader::DemuxerProxy::Wrapper : public MediaTrackDemuxer {
         "MediaFormatReader::DemuxerProxy::Wrapper::Reset",
         [self]() { self->mTrackDemuxer->Reset(); }));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 
   nsresult GetNextRandomAccessPoint(TimeUnit* aTime) override {
@@ -785,7 +782,7 @@ class MediaFormatReader::DemuxerProxy::Wrapper : public MediaTrackDemuxer {
         "MediaFormatReader::DemuxerProxy::Wrapper::~Wrapper",
         [trackDemuxer]() { trackDemuxer->BreakCycles(); }));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     DecoderDoctorLogger::LogDestruction(
         "MediaFormatReader::DemuxerProxy::Wrapper", this);
   }
@@ -1836,6 +1833,7 @@ void MediaFormatReader::NotifyNewOutput(
         // update the decoder name again, instead of using the wrong name.
         if (decoder.mNumSamplesOutput == 1) {
           decoder.mDescription = mVideo.mDecoder->GetDescriptionName();
+          decoder.LoadDecodeProperties();
         }
       }
       decoder.mDecodePerfRecorder->Record(
@@ -1939,7 +1937,7 @@ void MediaFormatReader::ScheduleUpdate(TrackType aTrack) {
       "MediaFormatReader::Update", this, &MediaFormatReader::Update, aTrack));
   nsresult rv = OwnerThread()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 bool MediaFormatReader::UpdateReceivedNewData(TrackType aTrack) {
@@ -2110,7 +2108,8 @@ void MediaFormatReader::DecodeDemuxedSamples(TrackType aTrack,
           aSample->mEOS ? " eos" : "");
 
   decoder.StartRecordDecodingPerf(aTrack, aSample);
-  if (mMediaEngineId && aSample->mCrypto.IsEncrypted()) {
+  if (aSample->mCrypto.IsEncrypted() &&
+      (mMediaEngineId || (mCDMProxy && !!mCDMProxy->AsRemoteCDMChild()))) {
     aSample->mShouldCopyCryptoToRemoteRawData = true;
   }
   decoder.mDecoder->Decode(aSample)
@@ -3028,7 +3027,7 @@ void MediaFormatReader::ScheduleSeek() {
   nsresult rv = OwnerThread()->Dispatch(NewRunnableMethod(
       "MediaFormatReader::AttemptSeek", this, &MediaFormatReader::AttemptSeek));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaFormatReader::AttemptSeek() {
@@ -3535,6 +3534,22 @@ void MediaFormatReader::OnFirstDemuxFailed(TrackInfo::TrackType aType,
 void MediaFormatReader::SetEncryptedCustomIdent() {
   LOG("Set mEncryptedCustomIdent");
   mEncryptedCustomIdent = true;
+}
+
+void MediaFormatReader::VideoDecodeProperties::Load(
+    RefPtr<MediaDataDecoder>& aDecoder) {
+  using V = MediaDataDecoder::PropertyValue;
+  aDecoder
+      ->GetDecodeProperty(MediaDataDecoder::PropertyName::MaxNumVideoBuffers)
+      .apply([this](const V& v) { mMaxQueueSize = Some(v.as<uint32_t>()); });
+  aDecoder
+      ->GetDecodeProperty(MediaDataDecoder::PropertyName::MinNumVideoBuffers)
+      .apply([this](const V& v) { mMinQueueSize = Some(v.as<uint32_t>()); });
+  aDecoder
+      ->GetDecodeProperty(MediaDataDecoder::PropertyName::MaxNumCurrentImages)
+      .apply([this](const V& v) {
+        mSendToCompositorSize = Some(v.as<uint32_t>());
+      });
 }
 
 }  // namespace mozilla

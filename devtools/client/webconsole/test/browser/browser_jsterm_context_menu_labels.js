@@ -14,7 +14,7 @@ add_task(async function () {
   const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab);
 
   // Open context menu and wait until it's visible
-  const element = jsterm.node.querySelector(".CodeMirror-wrap");
+  const element = jsterm.node.querySelector(codemirrorSelectors.cmContent);
   const menuPopup = await openTextBoxContextMenu(toolbox, element);
 
   // Check label of the 'undo' menu item.

@@ -170,14 +170,10 @@ add_task(async function () {
   targetCommand.destroy();
   await commands.destroy();
 
-  // XXX: This is needed at the moment since Navigator.cpp retrieve the UserAgent from the
-  // headers (when there's no custom user agent). And here, since we reloaded the page once
-  // we set the custom user agent, the header was set accordingly and still holds the custom
-  // user agent value. This should be fixed by Bug 1705326.
   is(
     await getTopLevelUserAgent(),
-    CUSTOM_USER_AGENT,
-    "The custom user agent is still set on the page after destroying the first commands instance. Bug 1705326 will fix that and make it equal to `initialUserAgent`"
+    initialUserAgent,
+    "The user agent was reset on the page after destroying the first commands instance."
   );
 
   await BrowserTestUtils.reloadTab(tab, {

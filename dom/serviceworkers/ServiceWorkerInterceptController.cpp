@@ -6,6 +6,7 @@
 
 #include "ServiceWorkerInterceptController.h"
 
+#include "ServiceWorkerManager.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -18,7 +19,6 @@
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsICookieJarSettings.h"
-#include "ServiceWorkerManager.h"
 #include "nsIPrincipal.h"
 #include "nsQueryObject.h"
 
@@ -92,14 +92,32 @@ ServiceWorkerInterceptController::ShouldPrepareForIntercept(
 
     RefPtr<net::HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
 
+    RequestMode requestMode =
+        InternalRequest::MapChannelToRequestMode(aChannel);
+
     if (httpChannel &&
         httpChannel->GetRequestHead()->HasHeader(net::nsHttp::Range)) {
-      RequestMode requestMode =
-          InternalRequest::MapChannelToRequestMode(aChannel);
       bool mayLoad = nsContentUtils::CheckMayLoad(
           loadInfo->GetLoadingPrincipal(), aChannel,
           /*allowIfInheritsPrincipal*/ false);
       if (requestMode == RequestMode::No_cors && !mayLoad) {
+        *aShouldIntercept = false;
+      }
+    }
+
+    RequestDestination requestDest =
+        InternalRequest::MapContentPolicyTypeToRequestDestination(
+            loadInfo->GetExternalContentPolicyType());
+    // Skip no_cors Cross-Origin sub-resource request from CSS.
+    if (requestMode == RequestMode::No_cors &&
+        requestDest == RequestDestination::Style) {
+      nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+      (void)loadInfo->GetTriggeringPrincipal(
+          getter_AddRefs(triggeringPrincipal));
+      MOZ_ASSERT(triggeringPrincipal);
+      bool mayLoad = nsContentUtils::CheckMayLoad(
+          triggeringPrincipal, aChannel, /*allowIfInheritsPrincipal*/ false);
+      if (!mayLoad) {
         *aShouldIntercept = false;
       }
     }

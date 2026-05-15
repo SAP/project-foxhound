@@ -68,7 +68,6 @@ void nsPrintObject::DestroyPresentation() {
   }
   mPresShell = nullptr;
   mPresContext = nullptr;
-  mViewManager = nullptr;
 }
 
 void nsPrintObject::EnablePrinting(bool aEnable) {

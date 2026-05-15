@@ -7,16 +7,15 @@
 #ifndef mozilla_dom_AudioEncoder_h
 #define mozilla_dom_AudioEncoder_h
 
+#include "EncoderAgent.h"
+#include "EncoderTypes.h"
 #include "js/TypeDecls.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/AudioData.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/EncoderTemplate.h"
-#include "mozilla/dom/AudioData.h"
 #include "nsCycleCollectionParticipant.h"
-#include "EncoderTypes.h"
-#include "EncoderAgent.h"
 
 class nsIGlobalObject;
 

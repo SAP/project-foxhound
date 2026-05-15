@@ -12,28 +12,29 @@
 
 #include "nsXMLContentSerializer.h"
 
-#include "nsGkAtoms.h"
-#include "nsIContent.h"
-#include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
-#include "nsIDocumentEncoder.h"
-#include "nsElementTable.h"
-#include "nsNameSpaceManager.h"
-#include "nsTextFragment.h"
-#include "nsString.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/Sprintf.h"
-#include "nsUnicharUtils.h"
-#include "nsCRT.h"
-#include "nsContentUtils.h"
-#include "nsAttrName.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Comment.h"
 #include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ProcessingInstruction.h"
+#include "mozilla/dom/Text.h"
 #include "mozilla/intl/Segmenter.h"
+#include "nsAttrName.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsElementTable.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
+#include "nsIDocumentEncoder.h"
+#include "nsNameSpaceManager.h"
 #include "nsParserConstants.h"
-#include "mozilla/Encoding.h"
+#include "nsString.h"
+#include "nsUnicharUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -127,18 +128,17 @@ nsXMLContentSerializer::Init(uint32_t aFlags, uint32_t aWrapColumn,
   return NS_OK;
 }
 
-nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
+nsresult nsXMLContentSerializer::AppendTextData(Text* aText,
                                                 int32_t aStartOffset,
                                                 int32_t aEndOffset,
                                                 nsAString& aStr,
                                                 bool aTranslateEntities) {
-  nsIContent* content = aNode;
-  const nsTextFragment* frag;
-  if (!content || !(frag = content->GetText())) {
+  const CharacterDataBuffer* characterDataBuffer = nullptr;
+  if (!aText || !(characterDataBuffer = aText->GetCharacterDataBuffer())) {
     return NS_ERROR_FAILURE;
   }
 
-  int32_t fragLength = frag->GetLength();
+  int32_t fragLength = characterDataBuffer->GetLength();
   int32_t endoffset =
       (aEndOffset == -1) ? fragLength : std::min(aEndOffset, fragLength);
   int32_t length = endoffset - aStartOffset;
@@ -153,8 +153,8 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
     return NS_OK;
   }
 
-  if (frag->Is2b()) {
-    const char16_t* strStart = frag->Get2b() + aStartOffset;
+  if (characterDataBuffer->Is2b()) {
+    const char16_t* strStart = characterDataBuffer->Get2b() + aStartOffset;
     if (aTranslateEntities) {
       // Foxhound: propagate taint
       aStr.Taint().concat(frag->Taint().safeSubTaint(aStartOffset, endoffset), aStr.Length());
@@ -168,8 +168,9 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
     }
   } else {
     nsAutoString utf16;
-    if (!CopyASCIItoUTF16(Span(frag->Get1b() + aStartOffset, length), utf16,
-                          mozilla::fallible_t())) {
+    if (!CopyASCIItoUTF16(
+            Span(characterDataBuffer->Get1b() + aStartOffset, length), utf16,
+            mozilla::fallible_t())) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
     if (aTranslateEntities) {
@@ -187,7 +188,7 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
 }
 
 NS_IMETHODIMP
-nsXMLContentSerializer::AppendText(nsIContent* aText, int32_t aStartOffset,
+nsXMLContentSerializer::AppendText(Text* aText, int32_t aStartOffset,
                                    int32_t aEndOffset) {
   NS_ENSURE_ARG(aText);
   NS_ENSURE_STATE(mOutput);
@@ -216,11 +217,12 @@ nsXMLContentSerializer::AppendText(nsIContent* aText, int32_t aStartOffset,
 }
 
 NS_IMETHODIMP
-nsXMLContentSerializer::AppendCDATASection(nsIContent* aCDATASection,
+nsXMLContentSerializer::AppendCDATASection(Text* aCDATASection,
                                            int32_t aStartOffset,
                                            int32_t aEndOffset) {
   NS_ENSURE_ARG(aCDATASection);
   NS_ENSURE_STATE(mOutput);
+  MOZ_ASSERT(aCDATASection->NodeType() == nsINode::CDATA_SECTION_NODE);
 
   nsresult rv;
 

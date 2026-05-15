@@ -12,8 +12,9 @@ subtest_unit = "score"
 test_url = "http://<host>:<port>/index.html?raptor"
 type = "benchmark"
 unit = "score"
+sparse_checkout = true
 
 ["jetstream2"]
 repository = "https://github.com/mozilla/perf-automation"
-repository_revision = "61332db584026b73e37066d717a162825408c36b"
+repository_revision = "6acd3f58f12dbd71cf4743666cad305862681630"
 repository_path = "benchmarks/JetStream2"

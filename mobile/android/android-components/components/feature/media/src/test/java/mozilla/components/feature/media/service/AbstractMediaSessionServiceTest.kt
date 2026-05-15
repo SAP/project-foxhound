@@ -94,7 +94,7 @@ class AbstractMediaSessionServiceTest {
 }
 
 class FakeMediaService : AbstractMediaSessionService() {
-    public override val store: BrowserStore = mock()
+    public override val store = BrowserStore()
     public override val crashReporter: CrashReporting = mock()
     public override val notificationsDelegate: NotificationsDelegate = mock()
 }

@@ -5,8 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioConverter.h"
+
 #include <speex/speex_resampler.h>
 #include <string.h>
+
 #include <cmath>
 
 /*

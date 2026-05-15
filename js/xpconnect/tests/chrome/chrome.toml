@@ -213,7 +213,9 @@ support-files = [
 ["test_wrappers.xhtml"]
 
 ["test_xrayLargeTypedArray.html"]
-skip-if = ["bits == 32"] # Large ArrayBuffers not supported on 32-bit.
+skip-if = [
+  "arch == 'x86'", # Large ArrayBuffers not supported on 32-bit.
+]
 
 ["test_xrayToExplicitResourceManagement.html"]
 

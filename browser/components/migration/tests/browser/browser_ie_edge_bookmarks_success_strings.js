@@ -3,6 +3,13 @@
 
 "use strict";
 
+add_setup(async () => {
+  // The IE migrator is disabled by default.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.migrate.ie.enabled", true]],
+  });
+});
+
 /**
  * Tests that the progress strings that the Migration Wizard shows
  * during migrations for IE and Edge uses the term "Favorites" rather

@@ -4,10 +4,12 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-/* Rules required for style caching of anonymous content scrollbar parts */
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("layout.css.cached-scrollbar-styles.enabled") {
-  :is(scrollcorner, resizer, scrollbar, scrollbarbutton, slider):where(:-moz-native-anonymous) {
+scrollcorner,
+resizer,
+scrollbar {
+  /* Rules required for style caching of anonymous content scrollbar parts */
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("layout.css.cached-scrollbar-styles.enabled") {
     /* All scrollbar parts must not inherit any properties from the scrollable
      * element (except for visibility and pointer-events), for the anonymous
      * content style caching system to work.
@@ -46,28 +48,8 @@
      * Reset it to something else.
      */
     justify-items: start;
-
-    /* Avoid `object > *` rule in html.css from setting a useless, non-initial
-     * value of vertical-align.
-     */
-    vertical-align: initial !important;
   }
 
-  /* There are other rules that set the cursor on the scrollbar, expecting them
-   * to inherit into its children. Explicitly inherit it, overriding the
-   * 'all: initial;' declaration above.
-   */
-  :is(scrollbarbutton, slider, thumb):where(:-moz-native-anonymous) {
-    cursor: inherit;
-  }
-}
-
-scrollbar,
-scrollbarbutton,
-scrollcorner,
-slider,
-thumb,
-resizer {
   /* We need a display value that doesn't get blockified to preserve the
    * scrollbar sizing asserts. In practice it doesn't matter since these get
    * special frames */
@@ -94,57 +76,50 @@ resizer {
   cursor: se-resize;
   width: 15px;
   height: 15px;
-}
 
-resizer[dir="bottom"][flip],
-resizer[dir="bottomleft"] {
-  transform: scaleX(-1);
-}
+  @media (-moz-platform: android) {
+    pointer-events: none;
+  }
 
-resizer[dir="bottomleft"] {
-  cursor: sw-resize;
-}
+  &[dir="left"],
+  &[dir="bottom"][flip],
+  &[dir="bottomleft"] {
+    transform: scaleX(-1);
+  }
 
-resizer[dir="top"],
-resizer[dir="bottom"] {
-  cursor: ns-resize;
-}
+  &[dir="bottomleft"] {
+    cursor: sw-resize;
+  }
 
-resizer[dir="left"] {
-  transform: scaleX(-1);
-}
+  &[dir="top"],
+  &[dir="bottom"] {
+    cursor: ns-resize;
+  }
 
-resizer[dir="left"],
-resizer[dir="right"] {
-  cursor: ew-resize;
-}
+  &[dir="left"],
+  &[dir="right"] {
+    cursor: ew-resize;
+  }
 
-resizer[dir="topleft"] {
-  cursor: nw-resize;
-}
+  &[dir="topleft"] {
+    cursor: nw-resize;
+  }
 
-resizer[dir="topright"] {
-  cursor: ne-resize;
+  &[dir="topright"] {
+    cursor: ne-resize;
+  }
 }
 
 thumb {
   appearance: auto;
   -moz-default-appearance: scrollbarthumb-horizontal;
-}
 
-thumb[orient="vertical"] {
-  -moz-default-appearance: scrollbarthumb-vertical;
-}
+  scrollbar[vertical] & {
+    -moz-default-appearance: scrollbarthumb-vertical;
+  }
 
-scrollbar[disabled] thumb {
-  visibility: hidden;
-}
-
-@media (-moz-platform: android) {
-  scrollbar,
-  resizer,
-  scrollcorner {
-    pointer-events: none;
+  scrollbar:disabled & {
+    visibility: hidden;
   }
 }
 
@@ -152,49 +127,53 @@ scrollbar {
   appearance: auto;
   -moz-default-appearance: scrollbar-horizontal;
   cursor: default;
-}
 
-scrollbar[orient="vertical"] {
-  -moz-default-appearance: scrollbar-vertical;
-}
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("layout.testing.scrollbars.always-hidden") {
+    opacity: 0 !important;
+  }
 
-scrollbar[root] {
-  position: relative;
-  z-index: 2147483647; /* largest positive value of a signed 32-bit integer */
-}
+  @media (-moz-platform: android) {
+    pointer-events: none;
+  }
 
-@media (-moz-overlay-scrollbars) {
-  scrollbar {
-    opacity: 1;
+  @media (-moz-overlay-scrollbars) {
     will-change: opacity;
     transition-property: opacity;
     transition-duration: env(-moz-overlay-scrollbar-fade-duration);
+
+    &:not([active]),
+    &:disabled {
+      pointer-events: none;
+      opacity: 0;
+    }
   }
-  scrollbar:not([active]),
-  scrollbar[disabled] {
-    pointer-events: none;
-    opacity: 0;
+
+  &[vertical] {
+    -moz-default-appearance: scrollbar-vertical;
   }
-  scrollcorner {
-    pointer-events: none;
+
+  &[root] {
+    position: relative;
+    z-index: 2147483647; /* largest positive value of a signed 32-bit integer */
   }
 }
 
 scrollbarbutton {
   appearance: auto;
   -moz-default-appearance: scrollbarbutton-right;
-}
 
-scrollbar[orient="vertical"] > scrollbarbutton {
-  -moz-default-appearance: scrollbarbutton-down;
-}
+  scrollbar[vertical] > & {
+    -moz-default-appearance: scrollbarbutton-down;
+  }
 
-scrollbarbutton[type="decrement"] {
-  -moz-default-appearance: scrollbarbutton-left;
-}
+  &[type="decrement"] {
+    -moz-default-appearance: scrollbarbutton-left;
 
-scrollbar[orient="vertical"] > scrollbarbutton[type="decrement"] {
-  -moz-default-appearance: scrollbarbutton-up;
+    scrollbar[vertical] > & {
+      -moz-default-appearance: scrollbarbutton-up;
+    }
+  }
 }
 
 scrollcorner {
@@ -202,35 +181,8 @@ scrollcorner {
   -moz-default-appearance: scrollcorner;
   width: 16px;
   cursor: default;
-}
 
-@media (-moz-scrollbar-start-backward: 0) {
-  scrollbarbutton[sbattr="scrollbar-up-top"] {
-    display: none;
-  }
-}
-
-@media (-moz-scrollbar-start-forward: 0) {
-  scrollbarbutton[sbattr="scrollbar-down-top"] {
-    display: none;
-  }
-}
-
-@media (-moz-scrollbar-end-backward: 0) {
-  scrollbarbutton[sbattr="scrollbar-up-bottom"] {
-    display: none;
-  }
-}
-
-@media (-moz-scrollbar-end-forward: 0) {
-  scrollbarbutton[sbattr="scrollbar-down-bottom"] {
-    display: none;
-  }
-}
-
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("layout.testing.scrollbars.always-hidden") {
-  scrollbar {
-    opacity: 0 !important;
+  @media (-moz-overlay-scrollbars) {
+    pointer-events: none;
   }
 }

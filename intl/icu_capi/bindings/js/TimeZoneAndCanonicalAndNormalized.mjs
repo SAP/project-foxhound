@@ -4,11 +4,10 @@ import wasm from "./diplomat-wasm.mjs";
 import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
 
+
 /**
- * See the [Rust documentation for `TimeZoneAndCanonicalAndNormalized`](https://docs.rs/icu/latest/icu/time/zone/iana/struct.TimeZoneAndCanonicalAndNormalized.html) for more information.
+ * See the [Rust documentation for `TimeZoneAndCanonicalAndNormalized`](https://docs.rs/icu/2.1.1/icu/time/zone/iana/struct.TimeZoneAndCanonicalAndNormalized.html) for more information.
  */
-
-
 export class TimeZoneAndCanonicalAndNormalized {
     #timeZone;
     get timeZone() {
@@ -60,7 +59,13 @@ export class TimeZoneAndCanonicalAndNormalized {
         functionCleanupArena,
         appendArrayMap
     ) {
-        return [this.#timeZone.ffiValue, ...diplomatRuntime.DiplomatBuf.str8(wasm, this.#canonical).splat(), ...diplomatRuntime.DiplomatBuf.str8(wasm, this.#normalized).splat()]
+        let buffer = diplomatRuntime.DiplomatBuf.struct(wasm, 20, 4);
+
+        this._writeToArrayBuffer(wasm.memory.buffer, buffer.ptr, functionCleanupArena, appendArrayMap);
+
+        functionCleanupArena.alloc(buffer);
+
+        return buffer.ptr;
     }
 
     static _fromSuppliedValue(internalConstructor, obj) {

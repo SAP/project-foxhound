@@ -148,9 +148,9 @@ def create_suite(
             totals_uss = parse_about_memory.calculate_memory_report_values(
                 memory_report_path, "resident-unique"
             )
-            value = list(totals_rss.values())[0] + sum(
-                [v for k, v in totals_uss.items() if "Main" not in k]
-            )
+            value = list(totals_rss.values())[0] + sum([
+                v for k, v in totals_uss.items() if "Main" not in k
+            ])
 
         subtest = {
             "name": checkpoint["name"],

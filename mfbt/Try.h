@@ -7,6 +7,7 @@
 #ifndef mozilla_Try_h
 #define mozilla_Try_h
 
+#include "mozilla/Likely.h"
 #include "mozilla/Result.h"
 
 /**
@@ -33,14 +34,5 @@
     }                                                     \
     mozTryVarTempResult.unwrap();                         \
   })
-/**
- * MOZ_TRY_VAR(target, expr) is the C++ equivalent of Rust's `target =
- * try!(expr);`. First, it evaluates expr, which must produce a Result value. On
- * success, the result's success value is assigned to target. On error,
- * immediately returns the error result. |target| must be an lvalue.
- *
- * This macro is obsolete and its usages should be replaced with `MOZ_TRY`.
- */
-#define MOZ_TRY_VAR(target, expr) (target) = MOZ_TRY(expr);
 
 #endif  // mozilla_Try_h

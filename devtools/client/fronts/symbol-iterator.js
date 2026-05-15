@@ -52,5 +52,4 @@ class SymbolIteratorFront extends FrontClassWithSpec(symbolIteratorSpec) {
   }
 }
 
-exports.SymbolIteratorFront = SymbolIteratorFront;
 registerFront(SymbolIteratorFront);

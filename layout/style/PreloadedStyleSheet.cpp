@@ -34,9 +34,8 @@ Result<StyleSheet*, nsresult> PreloadedStyleSheet::GetSheet() {
 
   if (!mSheet) {
     auto loader = MakeRefPtr<css::Loader>();
-    MOZ_TRY_VAR(mSheet,
-                loader->LoadSheetSync(mURI, mParsingMode,
-                                      css::Loader::UseSystemPrincipal::Yes));
+    mSheet = MOZ_TRY(loader->LoadSheetSync(
+        mURI, mParsingMode, css::Loader::UseSystemPrincipal::Yes));
   }
   return {mSheet.get()};
 }

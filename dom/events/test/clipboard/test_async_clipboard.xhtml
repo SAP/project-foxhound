@@ -87,9 +87,6 @@
 
   function runTest() {
     (async function() {
-      await SpecialPowers.pushPrefEnv({"set": [
-        ["dom.events.asyncClipboard.clipboardItem", true],
-      ]});
       await testRead();
       await testReadText();
       await testWrite();

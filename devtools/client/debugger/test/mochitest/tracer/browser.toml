@@ -1,0 +1,50 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "../examples/*",
+  "../head.js",
+  "../shared-head.js",
+  "!/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
+  "!/devtools/client/inspector/test/head.js",
+  "!/devtools/client/inspector/test/shared-head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/telemetry-test-helpers.js",
+  "!/devtools/client/shared/test/highlighter-test-actor.js",
+  "!/devtools/client/webconsole/test/browser/shared-head.js",
+]
+prefs = [
+ "dom.ipc.processPrelaunch.enabled=false", # Disable randomly spawning processes during tests. After enabling windowless service workers, a process spawning will trigger an update of the service workers list which can fail the test if it occurs during shutdown (unhandled promise rejection).
+ "devtools.debugger.features.javascript-tracing=true",
+]
+
+["browser_dbg-javascript-tracer-function-returns.js"]
+
+["browser_dbg-javascript-tracer-next-interaction.js"]
+
+["browser_dbg-javascript-tracer-next-load.js"]
+
+["browser_dbg-javascript-tracer-sidebar-panel.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug The tracer tree isn't yet accessible
+]
+
+["browser_dbg-javascript-tracer-sidebar-toggle.js"]
+
+["browser_dbg-javascript-tracer-sidebar-values-search.js"]
+
+["browser_dbg-javascript-tracer-sidebar.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1924435
+]
+
+["browser_dbg-javascript-tracer-values-preview.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug The tracer tree isn't yet accessible
+]
+
+["browser_dbg-javascript-tracer-values.js"]
+
+["browser_dbg-javascript-tracer-worker.js"]
+
+["browser_dbg-javascript-tracer.js"]

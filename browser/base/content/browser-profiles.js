@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 var gProfiles = {
   async init() {
+    this.copyProfile = this.copyProfile.bind(this);
     this.createNewProfile = this.createNewProfile.bind(this);
     this.handleCommand = this.handleCommand.bind(this);
     this.launchProfile = this.launchProfile.bind(this);
@@ -106,7 +104,7 @@ var gProfiles = {
     );
     let avatarURL =
       await SelectableProfileService.currentProfile.getAvatarURL(16);
-    profilesButton.setAttribute("image", `${avatarURL}`);
+    profilesButton.setAttribute("image", avatarURL);
   },
 
   /**
@@ -114,22 +112,25 @@ var gProfiles = {
    */
   async onPopupShowing() {
     let menuPopup = document.getElementById("menu_ProfilesPopup");
-    while (menuPopup.hasChildNodes()) {
-      menuPopup.firstChild.remove();
-    }
-
     let profiles = await SelectableProfileService.getAllProfiles();
     let currentProfile = SelectableProfileService.currentProfile;
-
+    let insertionPoint = document.getElementById("menu_newProfile");
+    let existingItems = [
+      ...menuPopup.querySelectorAll(":scope > menuitem[profileid]"),
+    ];
     for (let profile of profiles) {
-      let menuitem = document.createXULElement("menuitem");
+      let menuitem = existingItems.shift();
+      let isNewItem = !menuitem;
+      if (isNewItem) {
+        menuitem = document.createXULElement("menuitem");
+        menuitem.classList.add("menuitem-iconic", "menuitem-iconic-profile");
+        menuitem.setAttribute("command", "Profiles:LaunchProfile");
+      }
       let { themeBg, themeFg } = profile.theme;
       menuitem.setAttribute("profileid", profile.id);
-      menuitem.setAttribute("command", "Profiles:LaunchProfile");
+      menuitem.setAttribute("image", await profile.getAvatarURL(48));
       menuitem.style.setProperty("--menu-profiles-theme-bg", themeBg);
       menuitem.style.setProperty("--menu-profiles-theme-fg", themeFg);
-      menuitem.style.listStyleImage = `url(${await profile.getAvatarURL(48)})`;
-      menuitem.classList.add("menuitem-iconic", "menuitem-iconic-profile");
 
       if (profile.id === currentProfile.id) {
         menuitem.classList.add("current");
@@ -139,31 +140,20 @@ var gProfiles = {
           JSON.stringify({ profileName: profile.name })
         );
       } else {
+        menuitem.classList.remove("current");
+        menuitem.removeAttribute("data-l10n-id");
+        menuitem.removeAttribute("data-l10n-args");
         menuitem.setAttribute("label", profile.name);
       }
 
-      menuPopup.appendChild(menuitem);
+      if (isNewItem) {
+        menuPopup.insertBefore(menuitem, insertionPoint);
+      }
     }
-
-    let newProfile = document.createXULElement("menuitem");
-    newProfile.id = "menu_newProfile";
-    newProfile.className = "menuitem-iconic";
-    newProfile.setAttribute("command", "Profiles:CreateProfile");
-    newProfile.setAttribute("data-l10n-id", "menu-profiles-new-profile");
-    menuPopup.appendChild(newProfile);
-
-    let separator = document.createXULElement("menuseparator");
-    separator.id = "profilesSeparator";
-    menuPopup.appendChild(separator);
-
-    let manageProfiles = document.createXULElement("menuitem");
-    manageProfiles.id = "menu_manageProfiles";
-    manageProfiles.setAttribute("command", "Profiles:ManageProfiles");
-    manageProfiles.setAttribute(
-      "data-l10n-id",
-      "menu-profiles-manage-profiles"
-    );
-    menuPopup.appendChild(manageProfiles);
+    // If there's any old item to remove, do so now.
+    for (let remaining of existingItems) {
+      remaining.remove();
+    }
   },
 
   manageProfiles() {
@@ -176,17 +166,23 @@ var gProfiles = {
     });
   },
 
+  copyProfile() {
+    SelectableProfileService.maybeSetupDataStore().then(() => {
+      SelectableProfileService.currentProfile.copyProfile();
+    });
+  },
+
   createNewProfile() {
     SelectableProfileService.createNewProfile();
   },
 
-  async updateView(target) {
-    await this.populateSubView();
+  updateView(target) {
+    this.populateSubView();
     PanelUI.showSubView("PanelUI-profiles", target);
   },
 
-  async updateFxAView(target) {
-    await this.populateSubView();
+  updateFxAView(target) {
+    this.populateSubView();
     PanelUI.showSubView("PanelUI-profiles", target);
   },
 
@@ -196,6 +192,16 @@ var gProfiles = {
     ).then(profile => {
       SelectableProfileService.launchInstance(profile);
     });
+  },
+
+  async openTabsInProfile(aEvent, tabsToOpen) {
+    let profile = await SelectableProfileService.getProfile(
+      aEvent.target.getAttribute("profileid")
+    );
+    SelectableProfileService.launchInstance(
+      profile,
+      tabsToOpen.map(tab => tab.linkedBrowser.currentURI.spec)
+    );
   },
 
   async handleCommand(aEvent) {
@@ -229,6 +235,10 @@ var gProfiles = {
         this.manageProfiles();
         break;
       }
+      case "profiles-copy-profile-button": {
+        this.copyProfile();
+        break;
+      }
       case "profiles-create-profile-button": {
         this.createNewProfile();
         break;
@@ -245,6 +255,16 @@ var gProfiles = {
       }
       case "Profiles:LaunchProfile": {
         this.launchProfile(aEvent.sourceEvent);
+        break;
+      }
+      case "Profiles:MoveTabsToProfile": {
+        let tabs;
+        if (TabContextMenu.contextTab.multiselected) {
+          tabs = gBrowser.selectedTabs;
+        } else {
+          tabs = [TabContextMenu.contextTab];
+        }
+        this.openTabsInProfile(aEvent.sourceEvent, tabs);
         break;
       }
     }
@@ -266,6 +286,8 @@ var gProfiles = {
       profiles = await SelectableProfileService.getAllProfiles();
       currentProfile = SelectableProfileService.currentProfile;
     }
+
+    let subview = PanelMultiView.getViewNode(document, "PanelUI-profiles");
 
     let backButton = PanelMultiView.getViewNode(
       document,
@@ -293,9 +315,75 @@ var gProfiles = {
       "profiles-edit-this-profile-button"
     );
 
+    let profilesList = PanelMultiView.getViewNode(document, "profiles-list");
+    // Automatically created by PanelMultiView.
+    const headerSeparator = profilesHeader.nextElementSibling;
+    let footerSeparator = PanelMultiView.getViewNode(
+      document,
+      "footer-separator"
+    );
+    if (!footerSeparator) {
+      footerSeparator = document.createXULElement("toolbarseparator");
+      footerSeparator.id = "footer-separator";
+    }
+
+    let createProfileButton = PanelMultiView.getViewNode(
+      document,
+      "profiles-create-profile-button"
+    );
+    if (!createProfileButton) {
+      createProfileButton = document.createXULElement("toolbarbutton");
+      createProfileButton.id = "profiles-create-profile-button";
+      createProfileButton.classList.add(
+        "subviewbutton",
+        "subviewbutton-iconic"
+      );
+      createProfileButton.setAttribute(
+        "data-l10n-id",
+        "appmenu-create-profile"
+      );
+    }
+
+    let copyProfileButton = PanelMultiView.getViewNode(
+      document,
+      "profiles-copy-profile-button"
+    );
+
+    if (!copyProfileButton) {
+      copyProfileButton = document.createXULElement("toolbarbutton");
+      copyProfileButton.id = "profiles-copy-profile-button";
+      copyProfileButton.classList.add("subviewbutton", "subviewbutton-iconic");
+      copyProfileButton.setAttribute("data-l10n-id", "appmenu-copy-profile");
+    }
+
+    let manageProfilesButton = PanelMultiView.getViewNode(
+      document,
+      "profiles-manage-profiles-button"
+    );
+
+    if (!manageProfilesButton) {
+      manageProfilesButton = document.createXULElement("toolbarbutton");
+      manageProfilesButton.id = "profiles-manage-profiles-button";
+      manageProfilesButton.classList.add(
+        "subviewbutton",
+        "panel-subview-footer-button"
+      );
+      manageProfilesButton.setAttribute(
+        "data-l10n-id",
+        "appmenu-manage-profiles"
+      );
+    }
+
     if (profiles.length < 2) {
       profilesHeader.removeAttribute("style");
       editButton.hidden = true;
+
+      headerSeparator.hidden = false;
+      footerSeparator.hidden = true;
+      const subviewBody = subview.querySelector(".panel-subview-body");
+      subview.insertBefore(createProfileButton, subviewBody);
+      subview.insertBefore(copyProfileButton, subviewBody);
+      subview.insertBefore(manageProfilesButton, subviewBody);
     } else {
       profilesHeader.style.backgroundColor = "var(--appmenu-profiles-theme-bg)";
       profilesHeader.style.color = "var(--appmenu-profiles-theme-fg)";
@@ -303,10 +391,16 @@ var gProfiles = {
     }
 
     if (currentProfile && profiles.length > 1) {
-      let subview = PanelMultiView.getViewNode(document, "PanelUI-profiles");
       let { themeBg, themeFg } = currentProfile.theme;
       subview.style.setProperty("--appmenu-profiles-theme-bg", themeBg);
       subview.style.setProperty("--appmenu-profiles-theme-fg", themeFg);
+
+      headerSeparator.hidden = true;
+      footerSeparator.hidden = false;
+      subview.appendChild(footerSeparator);
+      subview.appendChild(createProfileButton);
+      subview.appendChild(copyProfileButton);
+      subview.appendChild(manageProfilesButton);
 
       let headerText = PanelMultiView.getViewNode(
         document,
@@ -333,7 +427,6 @@ var gProfiles = {
     let subtitle = PanelMultiView.getViewNode(document, "profiles-subtitle");
     subtitle.hidden = profiles.length < 2;
 
-    let profilesList = PanelMultiView.getViewNode(document, "profiles-list");
     while (profilesList.lastElementChild) {
       profilesList.lastElementChild.remove();
     }
@@ -349,9 +442,55 @@ var gProfiles = {
       let { themeFg, themeBg } = profile.theme;
       button.style.setProperty("--appmenu-profiles-theme-bg", themeBg);
       button.style.setProperty("--appmenu-profiles-theme-fg", themeFg);
-      button.setAttribute("image", `${await profile.getAvatarURL(16)}`);
+      button.setAttribute("image", await profile.getAvatarURL(16));
 
       profilesList.appendChild(button);
+    }
+  },
+
+  async populateMoveTabMenu(menuPopup) {
+    if (!SelectableProfileService.initialized) {
+      return;
+    }
+
+    const profiles = await SelectableProfileService.getAllProfiles();
+    const currentProfile = SelectableProfileService.currentProfile;
+
+    const separator = document.getElementById("moveTabSeparator");
+    separator.hidden = profiles.length < 2;
+
+    let existingItems = [
+      ...menuPopup.querySelectorAll(":scope > menuitem[profileid]"),
+    ];
+
+    for (let profile of profiles) {
+      if (profile.id === currentProfile.id) {
+        continue;
+      }
+
+      let menuitem = existingItems.shift();
+      let isNewItem = !menuitem;
+      if (isNewItem) {
+        menuitem = document.createXULElement("menuitem");
+        menuitem.setAttribute("tbattr", "tabbrowser-multiple-visible");
+        menuitem.setAttribute("data-l10n-id", "move-to-new-profile");
+        menuitem.setAttribute("command", "Profiles:MoveTabsToProfile");
+      }
+
+      menuitem.disabled = false;
+      menuitem.setAttribute("profileid", profile.id);
+      menuitem.setAttribute(
+        "data-l10n-args",
+        JSON.stringify({ profileName: profile.name })
+      );
+
+      if (isNewItem) {
+        menuPopup.appendChild(menuitem);
+      }
+    }
+    // If there's any old item to remove, do so now.
+    for (let remaining of existingItems) {
+      remaining.remove();
     }
   },
 };

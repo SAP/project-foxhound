@@ -7,7 +7,7 @@
 #ifndef mozilla_dom_AnimationUtils_h
 #define mozilla_dom_AnimationUtils_h
 
-#include "mozilla/PseudoStyleType.h"
+#include "mozilla/PseudoStyleRequest.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/Nullable.h"
 #include "nsRFPService.h"
@@ -85,6 +85,13 @@ class AnimationUtils {
                                     const PseudoStyleRequest& aPseudoRequest =
                                         PseudoStyleRequest::NotPseudo());
 
+  static bool StoresAnimationsInParent(PseudoStyleType aType) {
+    return aType == PseudoStyleType::Before ||
+           aType == PseudoStyleType::After ||
+           aType == PseudoStyleType::Marker ||
+           aType == PseudoStyleType::Backdrop;
+  }
+
   /**
    * Returns true if this pseudo style type is supported by animations.
    * Note: This doesn't include PseudoStyleType::NotPseudo.
@@ -92,8 +99,7 @@ class AnimationUtils {
   static bool IsSupportedPseudoForAnimations(PseudoStyleType aType) {
     // FIXME: Bug 1615469: Support first-line and first-letter for Animation.
     return PseudoStyle::IsViewTransitionPseudoElement(aType) ||
-           aType == PseudoStyleType::before ||
-           aType == PseudoStyleType::after || aType == PseudoStyleType::marker;
+           StoresAnimationsInParent(aType);
   }
   static bool IsSupportedPseudoForAnimations(
       const PseudoStyleRequest& aRequest) {

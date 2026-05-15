@@ -3,9 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/BinarySearch.h"
-
 #include "gfxFontUtils.h"
 #include "gfxFontEntry.h"
 #include "gfxFontVariations.h"
@@ -16,7 +13,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/Unused.h"
 
 #include "nsCOMPtr.h"
 #include "nsIUUIDGenerator.h"
@@ -25,8 +21,8 @@
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/dom/WorkerCommon.h"
 
-#include "plbase64.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Base64.h"
 
 #ifdef XP_DARWIN
 #  include <CoreFoundation/CoreFoundation.h>
@@ -89,7 +85,7 @@ void gfxSparseBitSet::Dump(const char* aPrefix, eGfxLog aWhichLog) const {
       }
       if (i + 4 != 32) index += snprintf(&outStr[index], BUFSIZE - index, " ");
     }
-    Unused << snprintf(&outStr[index], BUFSIZE - index, "]");
+    (void)snprintf(&outStr[index], BUFSIZE - index, "]");
     LOG(aWhichLog, ("%s", outStr));
   }
 }
@@ -944,14 +940,11 @@ void gfxFontUtils::ParseFontList(const nsACString& aFamilyList,
 }
 
 void gfxFontUtils::GetPrefsFontList(const char* aPrefName,
-                                    nsTArray<nsCString>& aFontList,
-                                    bool aLocalized) {
+                                    nsTArray<nsCString>& aFontList) {
   aFontList.Clear();
 
   nsAutoCString fontlistValue;
-  nsresult rv = aLocalized
-                    ? Preferences::GetLocalizedCString(aPrefName, fontlistValue)
-                    : Preferences::GetCString(aPrefName, fontlistValue);
+  nsresult rv = Preferences::GetCString(aPrefName, fontlistValue);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -963,7 +956,7 @@ void gfxFontUtils::GetPrefsFontList(const char* aPrefName,
 // than 31 characters in length.  Using AddFontMemResourceEx on Windows fails
 // for names longer than 30 characters in length.
 
-#define MAX_B64_LEN 32
+constexpr uint32_t MAX_B64_LEN = 32;
 
 nsresult gfxFontUtils::MakeUniqueUserFontName(nsAString& aName) {
   nsCOMPtr<nsIUUIDGenerator> uuidgen =
@@ -977,9 +970,10 @@ nsresult gfxFontUtils::MakeUniqueUserFontName(nsAString& aName) {
   nsresult rv = uuidgen->GenerateUUIDInPlace(&guid);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  char guidB64[MAX_B64_LEN] = {0};
+  char guidB64[MAX_B64_LEN];
 
-  if (!PL_Base64Encode(reinterpret_cast<char*>(&guid), sizeof(guid), guidB64))
+  if (NS_FAILED(mozilla::Base64Encode(reinterpret_cast<char*>(&guid),
+                                      sizeof(guid), guidB64)))
     return NS_ERROR_FAILURE;
 
   // all b64 characters except for '/' are allowed in Postscript names, so

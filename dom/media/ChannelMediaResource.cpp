@@ -8,6 +8,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/net/OpaqueResponseUtils.h"
+#include "nsHttp.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsICachingChannel.h"
 #include "nsIClassOfService.h"
@@ -15,7 +16,6 @@
 #include "nsIInputStream.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsITimedChannel.h"
-#include "nsHttp.h"
 #include "nsNetUtil.h"
 
 static const uint32_t HTTP_PARTIAL_RESPONSE_CODE = 206;
@@ -126,7 +126,7 @@ void ChannelMediaResource::Listener::Revoke() {
 
 static bool IsPayloadCompressed(nsIHttpChannel* aChannel) {
   nsAutoCString encoding;
-  Unused << aChannel->GetResponseHeader("Content-Encoding"_ns, encoding);
+  (void)aChannel->GetResponseHeader("Content-Encoding"_ns, encoding);
   return encoding.Length() > 0;
 }
 
@@ -170,9 +170,9 @@ nsresult ChannelMediaResource::OnStartRequest(nsIRequest* aRequest,
 
   if (hc) {
     uint32_t responseStatus = 0;
-    Unused << hc->GetResponseStatus(&responseStatus);
+    (void)hc->GetResponseStatus(&responseStatus);
     bool succeeded = false;
-    Unused << hc->GetRequestSucceeded(&succeeded);
+    (void)hc->GetRequestSucceeded(&succeeded);
 
     if (!succeeded && NS_SUCCEEDED(status)) {
       // HTTP-level error (e.g. 4xx); treat this as a fatal network-level error.
@@ -202,7 +202,7 @@ nsresult ChannelMediaResource::OnStartRequest(nsIRequest* aRequest,
     }
 
     nsAutoCString ranges;
-    Unused << hc->GetResponseHeader("Accept-Ranges"_ns, ranges);
+    (void)hc->GetResponseHeader("Accept-Ranges"_ns, ranges);
     bool acceptsRanges =
         net::nsHttp::FindToken(ranges.get(), "bytes", HTTP_HEADER_VALUE_SEPS);
 
@@ -345,7 +345,7 @@ nsresult ChannelMediaResource::OnStopRequest(nsIRequest* aRequest,
   NS_ASSERTION(NS_SUCCEEDED(rv), "GetLoadFlags() failed!");
 
   if (loadFlags & nsIRequest::LOAD_BACKGROUND) {
-    Unused << NS_WARN_IF(
+    (void)NS_WARN_IF(
         NS_FAILED(ModifyLoadFlags(loadFlags & ~nsIRequest::LOAD_BACKGROUND)));
   }
 
@@ -411,7 +411,16 @@ nsresult ChannelMediaResource::OnChannelRedirect(nsIChannel* aOld,
   // OnChannelRedirect() is followed by OnStartRequest() where we will
   // call mSuspendAgent.Delegate().
   mChannel = aNew;
-  return SetupChannelHeaders(aOffset);
+  nsresult rv = SetupChannelHeaders(aOffset);
+  if (NS_SUCCEEDED(rv)) {
+    mSuspendAgent.RevokeIfManaged(aOld);
+  } else {
+    nsCString err;
+    GetErrorName(rv, err);
+    LOG("Veto redirect: fail to set up new channel: %s", err.get());
+    mChannel = aOld;
+  }
+  return rv;
 }
 
 nsresult ChannelMediaResource::CopySegmentToCache(
@@ -469,7 +478,7 @@ int64_t ChannelMediaResource::CalculateStreamLength() const {
   }
 
   bool succeeded = false;
-  Unused << hc->GetRequestSucceeded(&succeeded);
+  (void)hc->GetRequestSucceeded(&succeeded);
   if (!succeeded) {
     return -1;
   }
@@ -486,7 +495,7 @@ int64_t ChannelMediaResource::CalculateStreamLength() const {
   }
 
   uint32_t responseStatus = 0;
-  Unused << hc->GetResponseStatus(&responseStatus);
+  (void)hc->GetResponseStatus(&responseStatus);
   if (responseStatus != HTTP_PARTIAL_RESPONSE_CODE) {
     return contentLength;
   }
@@ -764,11 +773,11 @@ nsresult ChannelMediaResource::RecreateChannel() {
   nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
   if (setAttrs) {
     // The function simply returns NS_OK, so we ignore the return value.
-    Unused << loadInfo->SetOriginAttributes(
+    (void)loadInfo->SetOriginAttributes(
         triggeringPrincipal->OriginAttributesRef());
   }
 
-  Unused << loadInfo->SetIsMediaRequest(true);
+  (void)loadInfo->SetIsMediaRequest(true);
 
   if (nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(mChannel)) {
     nsString initiatorType =
@@ -1063,6 +1072,15 @@ void ChannelSuspendAgent::Revoke() {
     mIsChannelSuspended = false;
   }
   mChannel = nullptr;
+}
+
+void ChannelSuspendAgent::RevokeIfManaged(nsIChannel* aChannel) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mChannel != aChannel) {
+    NS_WARNING("Not a managed channel");
+    return;
+  }
+  Revoke();
 }
 
 bool ChannelSuspendAgent::IsSuspended() {

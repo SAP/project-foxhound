@@ -7,6 +7,8 @@
 #ifndef jit_InvalidationScriptSet_h
 #define jit_InvalidationScriptSet_h
 
+#include "mozilla/MemoryReporting.h"
+
 #include "gc/Barrier.h"
 #include "jit/Invalidation.h"
 #include "jit/IonTypes.h"
@@ -37,6 +39,10 @@ class DependentIonScriptSet {
     bool res = ionScripts_.traceWeak(trc);
     lengthAfterLastCompaction_ = ionScripts_.length();
     return res;
+  }
+
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+    return ionScripts_.sizeOfExcludingThis(mallocSizeOf);
   }
 };
 

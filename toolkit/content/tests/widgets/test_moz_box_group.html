@@ -17,10 +17,21 @@
     <script src="lit-test-helpers.js"></script>
     <script>
       let html;
+      let MozLitElement;
       let testHelpers = new LitTestHelpers();
+
+      async function keyboardNavigate(direction, boxGroup) {
+        let keyCode = `KEY_Arrow${
+          direction.charAt(0).toUpperCase() + direction.slice(1)
+        }`;
+        synthesizeKey(keyCode);
+        await boxGroup.updateComplete;
+      }
 
       add_setup(async function setup() {
         ({ html } = await testHelpers.setupLit());
+        ({ MozLitElement } =
+          await import("chrome://global/content/lit-utils.mjs"));
         let templateFn = () => html`
           <moz-box-group>
             <moz-box-item label="item"></moz-box-item>
@@ -52,11 +63,11 @@
         }
 
         const FIRST_ITEM_STYLES = {
-          borderStartEndRadius: "8px",
-          borderStartStartRadius: "8px",
+          borderStartEndRadius: "7px",
+          borderStartStartRadius: "7px",
           borderEndEndRadius: "0px",
           borderEndStartRadius: "0px",
-          borderBottomWidth: "0px",
+          borderTopWidth: "0px",
         };
 
         const MIDDLE_ITEM_STYLES = {
@@ -64,15 +75,15 @@
           borderStartStartRadius: "0px",
           borderEndEndRadius: "0px",
           borderEndStartRadius: "0px",
-          borderBottomWidth: "0px",
+          borderTopWidth: "1px",
         };
 
         const LAST_ITEM_STYLES = {
           borderStartEndRadius: "0px",
           borderStartStartRadius: "0px",
-          borderEndEndRadius: "8px",
-          borderEndStartRadius: "8px",
-          borderBottomWidth: "1px",
+          borderEndEndRadius: "7px",
+          borderEndStartRadius: "7px",
+          borderTopWidth: "1px",
         };
 
         // Verify that two items use the first and last item styles.
@@ -105,6 +116,14 @@
 
         verifyStyles(secondItem, FIRST_ITEM_STYLES);
         verifyStyles(boxItem, MIDDLE_ITEM_STYLES);
+        verifyStyles(boxButton, MIDDLE_ITEM_STYLES);
+        verifyStyles(secondButton, LAST_ITEM_STYLES);
+
+        // Verify that hiding items doesn't break the box-group styles.
+        secondItem.hidden = true;
+        await TestUtils.waitForTick();
+
+        verifyStyles(boxItem, FIRST_ITEM_STYLES);
         verifyStyles(boxButton, MIDDLE_ITEM_STYLES);
         verifyStyles(secondButton, LAST_ITEM_STYLES);
       });
@@ -219,14 +238,6 @@
             "moz-box-item, moz-box-button, moz-box-link"
           );
 
-        async function keyboardNavigate(direction) {
-          let keyCode = `KEY_Arrow${
-            direction.charAt(0).toUpperCase() + direction.slice(1)
-          }`;
-          synthesizeKey(keyCode);
-          await boxGroup.updateComplete;
-        }
-
         isnot(document.activeElement, boxGroup, "Box group is not focused.");
         beforeButton.focus();
 
@@ -252,28 +263,28 @@
           "Focus moves to the second button action element in the moz-box-item."
         );
 
-        await keyboardNavigate("left");
+        await keyboardNavigate("left", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
           "Focus moves to the toggle action element in moz-box-item."
         );
 
-        await keyboardNavigate("left");
+        await keyboardNavigate("left", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector(".first-button"),
           "Focus moves to the first button action element in moz-box-item."
         );
 
-        await keyboardNavigate("right");
+        await keyboardNavigate("right", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
           "Focus moves to the toggle action element in the moz-box-item."
         );
 
-        await keyboardNavigate("right");
+        await keyboardNavigate("right", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector(".second-button"),
@@ -383,28 +394,28 @@
           "Focus moves to the second button action element in the moz-box-item."
         );
 
-        await keyboardNavigate("left");
+        await keyboardNavigate("left", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
           "Focus moves to the toggle action element in moz-box-item."
         );
 
-        await keyboardNavigate("left");
+        await keyboardNavigate("left", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector(".first-button"),
           "Focus moves to the first button action element in moz-box-item."
         );
 
-        await keyboardNavigate("right");
+        await keyboardNavigate("right", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
           "Focus moves to the toggle action element in moz-box-item."
         );
 
-        await keyboardNavigate("right");
+        await keyboardNavigate("right", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector(".second-button"),
@@ -432,7 +443,7 @@
           "Focus moves to the last element in the group."
         );
 
-        await keyboardNavigate("up");
+        await keyboardNavigate("up", boxGroup);
         is(
           document.activeElement,
           footerButton,
@@ -446,49 +457,49 @@
           "Focus moves to the last element in the list."
         );
 
-        await keyboardNavigate("up");
+        await keyboardNavigate("up", boxGroup);
         is(
           document.activeElement,
           boxLink,
           "Focus moves to the moz-box-link element."
         );
 
-        await keyboardNavigate("up");
+        await keyboardNavigate("up", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector(".second-button"),
           "Focus moves to the second button action element in the moz-box-item."
         );
 
-        await keyboardNavigate("left");
+        await keyboardNavigate("left", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
           "Focus moves to the toggle action element in the moz-box-item."
         );
 
-        await keyboardNavigate("up");
+        await keyboardNavigate("up", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
           "Up arrow key does not move focus out of the group from the first item."
         );
 
-        await keyboardNavigate("down");
+        await keyboardNavigate("down", boxGroup);
         is(
           document.activeElement,
           boxLink,
           "Focus moves to the moz-box-link element."
         );
 
-        await keyboardNavigate("down");
+        await keyboardNavigate("down", boxGroup);
         is(
           document.activeElement,
           boxButton,
           "Focus moves to the moz-box-button element."
         );
 
-        await keyboardNavigate("down");
+        await keyboardNavigate("down", boxGroup);
         is(
           document.activeElement,
           boxButton,
@@ -501,8 +512,8 @@
         });
 
         // Navigate up to focus moz-box-item
-        await keyboardNavigate("up");
-        await keyboardNavigate("up");
+        await keyboardNavigate("up", boxGroup);
+        await keyboardNavigate("up", boxGroup);
 
         is(
           document.activeElement,
@@ -510,21 +521,21 @@
           "Focus moves to the second button action element in the moz-box-item."
         );
 
-        await keyboardNavigate("right");
+        await keyboardNavigate("right", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
           "Focus moves to the toggle action element in the moz-box-item."
         );
 
-        await keyboardNavigate("right");
+        await keyboardNavigate("right", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector(".first-button"),
           "Focus moves to the first button action element in the moz-box-item."
         );
 
-        await keyboardNavigate("left");
+        await keyboardNavigate("left", boxGroup);
         is(
           document.activeElement,
           boxItem.querySelector("moz-toggle"),
@@ -534,18 +545,108 @@
         await SpecialPowers.popPrefEnv();
       });
 
-      add_task(async function testMozBoxGroupReorderable() {
-        let reorderableTemplate = html`<moz-box-group type="reorderable-list">
+      add_task(async function testMozBoxGroupKeydownOnWhitespace() {
+        // Test bug 2001746 - ignore keypresses that fire on the ul if whitespace
+        // was clicked in moz-box-group
+        let listTemplate = html`<moz-box-group type="list">
           <moz-box-item label="item 1"></moz-box-item>
           <moz-box-item label="item 2"></moz-box-item>
           <moz-box-item label="item 3"></moz-box-item>
-          <moz-box-item label="footer" slot="footer"></moz-box-item>
         </moz-box-group>`;
         let {
           children: [boxGroup],
+        } = await testHelpers.renderTemplate(listTemplate);
+
+        let list = boxGroup.shadowRoot.querySelector("ul");
+        ok(list, "Box group has a list element.");
+
+        // Simulate clicking on the list container (whitespace) by focusing it
+        list.focus();
+        is(
+          boxGroup.shadowRoot.activeElement,
+          list,
+          "The list container can be focused."
+        );
+        is(
+          document.activeElement,
+          boxGroup,
+          "The moz-box-group is the activeElement."
+        );
+
+        // Press arrow keys - this should not throw an error
+        let errorThrown = false;
+        try {
+          synthesizeKey("KEY_ArrowDown");
+          await boxGroup.updateComplete;
+          synthesizeKey("KEY_ArrowUp");
+          await boxGroup.updateComplete;
+        } catch (e) {
+          errorThrown = true;
+          ok(false, `Unexpected error: ${e.message}`);
+        }
+
+        ok(
+          !errorThrown,
+          "No error thrown when pressing keys on whitespace in moz-box-group."
+        );
+        is(
+          document.activeElement,
+          boxGroup,
+          "Focus did not move after arrow key press."
+        );
+      });
+
+      add_task(async function testMozBoxGroupReorderable() {
+        class TestReorderable extends MozLitElement {
+          static properties = { items: { type: Array } };
+          constructor() {
+            super();
+            this.items = [
+              html`<moz-box-item label="item 1"></moz-box-item>`,
+              html`<moz-box-item label="item 2"></moz-box-item>`,
+              html`<moz-box-item label="item 3"></moz-box-item>`,
+              html`<moz-box-item label="footer" slot="footer"></moz-box-item>`,
+            ];
+          }
+          render() {
+            return html`<moz-box-group
+              @reorder=${this.onReorder}
+              type="reorderable-list"
+            >
+              ${this.items}
+            </moz-box-group>`;
+          }
+
+          onReorder(event) {
+            const { draggedIndex, targetIndex } = event.detail;
+            const [draggedItem] = this.items.splice(draggedIndex, 1);
+            this.items.splice(targetIndex, 0, draggedItem);
+            this.requestUpdate();
+          }
+        }
+        customElements.define("test-reorderable", TestReorderable);
+        let reorderableTemplate = html`<test-reorderable></test-reorderable>`;
+        let {
+          children: [boxGroup],
         } = await testHelpers.renderTemplate(reorderableTemplate);
-        let boxItems = boxGroup.querySelectorAll("moz-box-item");
-        let [item1, item2, item3, footer] = boxItems;
+        let reorderableWrapper = boxGroup;
+        boxGroup = boxGroup.shadowRoot.querySelector("moz-box-group");
+
+        /**
+          Since the DOM nodes are destroyed and recreated, we need to
+          get fresh references to the newly created elements. Otherwise,
+          we will send a keydown event to an element that is no longer in
+          the DOM tree. This will cause the test to timeout.
+        */
+        function getNewRefs() {
+          let item1 = boxGroup.querySelector("[label='item 1']");
+          let item2 = boxGroup.querySelector("[label='item 2']");
+          let item3 = boxGroup.querySelector("[label='item 3']");
+          let footer = boxGroup.querySelector("[label='footer']");
+          return [item1, item2, item3, footer];
+        }
+
+        let [item1, item2, item3, footer] = getNewRefs();
 
         async function moveItem(item, direction) {
           let handle = item.handleEl;
@@ -568,52 +669,74 @@
         );
 
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(2)"),
-          item2,
+          boxGroup.querySelector("moz-box-item:nth-of-type(2)").label,
+          item2.label,
           "item2 starts in the second position."
         );
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(3)"),
-          item3,
+          boxGroup.querySelector("moz-box-item:nth-of-type(3)").label,
+          item3.label,
           "item3 starts after item2 in the third position."
         );
 
+        /*
+          Ensure the moz-box-items get the REORDER_PROP so that the
+          reorder event fires as expected.
+        **/
+        boxGroup.reorderableList.getItems();
+        let reordered = BrowserTestUtils.waitForEvent(boxGroup, "reorder");
         await moveItem(item3, "up");
+        await reordered;
+        await reorderableWrapper.updateComplete;
 
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(2)"),
-          item3,
+          boxGroup.querySelector("moz-box-item:nth-of-type(2)").label,
+          item3.label,
           "item3 has been reordered to the second position."
         );
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(3)"),
-          item2,
+          boxGroup.querySelector("moz-box-item:nth-of-type(3)").label,
+          item2.label,
           "item2 has been reordered to the third position."
         );
 
+        reordered = BrowserTestUtils.waitForEvent(boxGroup, "reorder");
         await moveItem(item1, "down");
+        await reordered;
+        await reorderableWrapper.updateComplete;
 
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(1)"),
-          item3,
+          boxGroup.querySelector("moz-box-item:nth-of-type(1)").label,
+          item3.label,
           "item3 has been reordered to the first position."
         );
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(2)"),
-          item1,
+          boxGroup.querySelector("moz-box-item:nth-of-type(2)").label,
+          item1.label,
           "item1 has been reordered to the second position."
         );
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(3)"),
-          item2,
+          boxGroup.querySelector("moz-box-item:nth-of-type(3)").label,
+          item2.label,
           "item2 is still in the third position."
         );
 
+        /*
+          Since item2 was moved when item3 was moved up, item2 no longer
+          exists in our DOM. Therefore we need to get a new reference to
+          item2 before trying to move it down
+        **/
+        [item1, item2, item3, footer] = getNewRefs();
+        /*
+         Item2 is at the bottom of the list, thus trying to move it
+         down will never fire a reorder event.
+        **/
         await moveItem(item2, "down");
+        await reorderableWrapper.updateComplete;
 
         is(
-          boxGroup.querySelector("moz-box-item:nth-of-type(3)"),
-          item2,
+          boxGroup.querySelector("moz-box-item:nth-of-type(3)").label,
+          item2.label,
           "item2 is still in the third position."
         );
 
@@ -623,12 +746,279 @@
           "footer is in the forth position."
         );
 
+        /*
+          The footer element can't be reordered, so no reorder event
+          will fire in this case.
+        **/
         await moveItem(footer, "up");
+        await reorderableWrapper.updateComplete;
 
         is(
           boxGroup.querySelector("moz-box-item:nth-of-type(4)"),
           footer,
           "footer is still in the forth position."
+        );
+      });
+
+      /*
+        Assert that the tabIndex attribute is removed from all list
+        items if the length of the list items changes. Otherwise,
+        there's a possibility that a user will not be able to keyboard
+        navigate back to the list due to the items having tabindex="-1"
+      **/
+      add_task(async function testWhenListItemsChange() {
+        const removeSelf = event => {
+          event.target.closest("moz-box-item").remove();
+        };
+        let listTemplate = html` <moz-button>Focus me!</moz-button>
+          <moz-box-group type="list">
+            <moz-box-item label="item 1">
+              <moz-button slot="actions" label="item 1 action 1"></moz-button>
+            </moz-box-item>
+            <moz-box-item label="item 2">
+              <moz-button slot="actions" label="item 2 action 1"></moz-button>
+            </moz-box-item>
+            <moz-box-item label="item 3">
+              <moz-button
+                slot="actions"
+                label="item 3 action 1"
+                @click=${removeSelf}
+              ></moz-button>
+            </moz-box-item>
+          </moz-box-group>`;
+        let {
+          children: [beforeButton, boxGroup],
+        } = await testHelpers.renderTemplate(listTemplate);
+
+        let list = boxGroup.shadowRoot.querySelector("ul");
+        ok(list, "Box group has a list element.");
+
+        // Focus the button outside of the list so we can easily
+        // move focus via the Tab key.
+        beforeButton.focus();
+        await synthesizeKey("KEY_Tab");
+
+        // Move through the list until we reach the item that can be
+        // removed.
+        await keyboardNavigate("down", boxGroup);
+        await keyboardNavigate("down", boxGroup);
+        await keyboardNavigate("down", boxGroup);
+        is(
+          document.activeElement.label,
+          "item 3 action 1",
+          "The last action in the box group should be focused."
+        );
+        await synthesizeKey("KEY_Enter");
+
+        await boxGroup.updateComplete;
+        await Promise.all(boxGroup.listItems.map(item => item.updateComplete));
+
+        // Ensure the tabindex attribute has been removed from all the
+        // list items.
+        boxGroup.listItems.forEach(item => {
+          ok(
+            !item.getAttribute("tabindex"),
+            "List item should not have tab index due to an item being removed"
+          );
+        });
+
+        // Ensure that we can tab navigate back to the box group
+        beforeButton.focus();
+        await synthesizeKey("KEY_Tab");
+
+        ok(
+          boxGroup.contains(document.activeElement),
+          "Focus should be able to move back into the box group after a list item is removed"
+        );
+      });
+
+      add_task(async function testMozBoxGroupStaticItems() {
+        let staticTemplate = html`<moz-box-group type="reorderable-list">
+          <moz-box-item label="item 1"></moz-box-item>
+          <moz-box-item label="item 2"></moz-box-item>
+          <moz-box-item label="static item 1" slot="static"></moz-box-item>
+          <moz-box-item label="static item 2" slot="static"></moz-box-item>
+        </moz-box-group>`;
+        let {
+          children: [boxGroup],
+        } = await testHelpers.renderTemplate(staticTemplate);
+        await boxGroup.updateComplete;
+
+        is(boxGroup.listItems.length, 2, "Box group has 2 regular items.");
+        is(boxGroup.staticItems.length, 2, "Box group has 2 static items.");
+
+        boxGroup.staticItems.forEach((item, i) => {
+          ok(
+            item.hasAttribute("static"),
+            `Static item ${i} has static attribute.`
+          );
+          is(
+            item.slot,
+            `static-${i}`,
+            `Static item ${i} has slot static-${i}.`
+          );
+          is(
+            item.getAttribute("position"),
+            String(2 + i),
+            `Static item ${i} positioned after regular items.`
+          );
+          ok(!item.handleEl, `Static item ${i} has no handle element.`);
+        });
+      });
+
+      add_task(async function testMozBoxGroupStaticItemsNotReorderable() {
+        class TestStaticReorderable extends MozLitElement {
+          static properties = { items: { type: Array } };
+          constructor() {
+            super();
+            this.items = [];
+          }
+          render() {
+            return html`<moz-box-group
+              @reorder=${this.onReorder}
+              type="reorderable-list"
+            >
+              ${this.items}
+            </moz-box-group>`;
+          }
+
+          onReorder(event) {
+            const { draggedIndex, targetIndex } = event.detail;
+            const regularItems = this.items.filter(
+              item => !item.values?.[0]?.slot
+            );
+            const [draggedItem] = regularItems.splice(draggedIndex, 1);
+            regularItems.splice(targetIndex, 0, draggedItem);
+            const staticItems = this.items.filter(
+              item => item.values?.[0]?.slot === "static"
+            );
+            this.items = [...regularItems, ...staticItems];
+            this.requestUpdate();
+          }
+        }
+        customElements.define("test-static-reorderable", TestStaticReorderable);
+
+        let wrapper = document.createElement("test-static-reorderable");
+        wrapper.items = [
+          html`<moz-box-item label="item 1"></moz-box-item>`,
+          html`<moz-box-item label="item 2"></moz-box-item>`,
+          html`<moz-box-item label="static item" slot="static"></moz-box-item>`,
+        ];
+        document.body.appendChild(wrapper);
+        await wrapper.updateComplete;
+
+        let boxGroup = wrapper.shadowRoot.querySelector("moz-box-group");
+        await boxGroup.updateComplete;
+
+        let staticItem = boxGroup.querySelector("[label='static item']");
+        ok(!staticItem.handleEl, "Static item has no handle element.");
+        ok(
+          staticItem.hasAttribute("static"),
+          "Static item has static attribute."
+        );
+
+        // Verify only non-static items are in the reorderable list.
+        let item1 = boxGroup.querySelector("[label='item 1']");
+        let item2 = boxGroup.querySelector("[label='item 2']");
+        ok(item1.handleEl, "Regular item 1 has handle element.");
+        ok(item2.handleEl, "Regular item 2 has handle element.");
+
+        boxGroup.reorderableList.getItems();
+        item1.handleEl.focus();
+        let reordered = BrowserTestUtils.waitForEvent(boxGroup, "reorder");
+        synthesizeKey("KEY_ArrowDown", { shiftKey: true, ctrlKey: true });
+        await reordered;
+        await wrapper.updateComplete;
+
+        is(
+          boxGroup.querySelector("moz-box-item:nth-of-type(2)").label,
+          "item 1",
+          "Regular items reordered."
+        );
+        is(
+          boxGroup.querySelector("moz-box-item:nth-of-type(3)").label,
+          "static item",
+          "Static item remains in place after reorder."
+        );
+
+        synthesizeKey("KEY_ArrowDown", { shiftKey: true, ctrlKey: true });
+        await wrapper.updateComplete;
+
+        is(
+          boxGroup.querySelector("moz-box-item:nth-of-type(2)").label,
+          "item 1",
+          "Regular items not reordered when the next item is static."
+        );
+
+        wrapper.remove();
+      });
+
+      add_task(async function testMozBoxGroupStaticItemsKeyboardNavigation() {
+        let keyboardTemplate = html`<moz-box-group type="list">
+          <moz-box-item label="item 1">
+            <moz-button slot="actions" label="action 1"></moz-button>
+          </moz-box-item>
+          <moz-box-item label="item 2">
+            <moz-button slot="actions" label="action 2"></moz-button>
+          </moz-box-item>
+          <moz-box-item label="static item 1" slot="static">
+            <moz-button slot="actions" label="static action 1"></moz-button>
+          </moz-box-item>
+          <moz-box-item label="static item 2" slot="static">
+            <moz-button slot="actions" label="static action 2"></moz-button>
+          </moz-box-item>
+        </moz-box-group>`;
+        let {
+          children: [boxGroup],
+        } = await testHelpers.renderTemplate(keyboardTemplate);
+        await boxGroup.updateComplete;
+
+        let allItems = [...boxGroup.listItems, ...boxGroup.staticItems];
+        await Promise.all(allItems.map(item => item.updateComplete));
+
+        // Focus first action button.
+        allItems[0].querySelector("moz-button").focus();
+
+        // Navigate down through all items.
+        for (let i = 1; i < allItems.length; i++) {
+          await keyboardNavigate("down", boxGroup);
+          is(
+            document.activeElement,
+            allItems[i].querySelector("moz-button"),
+            `Down navigates to item ${i}.`
+          );
+        }
+
+        // Navigate up through all items.
+        for (let i = allItems.length - 2; i >= 0; i--) {
+          await keyboardNavigate("up", boxGroup);
+          is(
+            document.activeElement,
+            allItems[i].querySelector("moz-button"),
+            `Up navigates to item ${i}.`
+          );
+        }
+      });
+
+      add_task(async function testMozBoxGroupStaticItemsFirstLastStyles() {
+        let stylesTemplate = html`<moz-box-group>
+          <moz-box-item label="item 1"></moz-box-item>
+          <moz-box-item label="item 2"></moz-box-item>
+          <moz-box-item label="static item" slot="static"></moz-box-item>
+        </moz-box-group>`;
+        let {
+          children: [boxGroup],
+        } = await testHelpers.renderTemplate(stylesTemplate);
+        await boxGroup.updateComplete;
+
+        let [item1, item2] = boxGroup.listItems;
+        let [staticItem] = boxGroup.staticItems;
+
+        ok(item1.classList.contains("first"), "First item has 'first' class.");
+        ok(!item2.classList.contains("last"), "Middle item no 'last' class.");
+        ok(
+          staticItem.classList.contains("last"),
+          "Static item has 'last' class."
         );
       });
     </script>

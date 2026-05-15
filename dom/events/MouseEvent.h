@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_MouseEvent_h_
 #define mozilla_dom_MouseEvent_h_
 
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/UIEvent.h"
-#include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/MouseEventBinding.h"
+#include "mozilla/dom/UIEvent.h"
 
 namespace mozilla::dom {
 

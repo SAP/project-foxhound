@@ -6,7 +6,7 @@ task-defaults:
     description: "fix-stacks toolchain build"
     attributes:
         local-toolchain: true
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     run:

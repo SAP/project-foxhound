@@ -9,6 +9,7 @@
 
 #include "LayoutConstants.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TouchEvents.h"
@@ -17,7 +18,6 @@
 // XXX Avoid including this here by moving function bodies to the cpp file
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-
 #include "mozilla/layers/InputAPZContext.h"
 
 class AutoWeakFrame;
@@ -123,8 +123,8 @@ struct PointerInfo final {
     // FIXME: DragEvent may not be initialized with the proper state.  So,
     // ignore the details of drag events for now.
     if (aMouseOrPointerEvent.mClass != eDragEventClass) {
-      mLastTiltX = aMouseOrPointerEvent.tiltX;
-      mLastTiltY = aMouseOrPointerEvent.tiltY;
+      mLastTiltX = aMouseOrPointerEvent.ComputeTiltX();
+      mLastTiltY = aMouseOrPointerEvent.ComputeTiltY();
       mLastButtons = aMouseOrPointerEvent.mButtons;
       mLastPressure = aMouseOrPointerEvent.mPressure;
     }
@@ -154,6 +154,13 @@ struct PointerInfo final {
     mLastTiltY = 0;
     mLastButtons = 0;
     mLastPressure = 0.0f;
+  }
+
+  [[nodiscard]] bool EqualsBasicPointerData(const PointerInfo& aOther) const {
+    return mInputSource == aOther.mInputSource &&
+           mIsActive == aOther.mIsActive && mIsPrimary == aOther.mIsPrimary &&
+           mFromTouchEvent == aOther.mFromTouchEvent &&
+           mIsSynthesizedForTests == aOther.mIsSynthesizedForTests;
   }
 
   // mLastRefPointInRootDoc stores the event point relative to the root
@@ -364,6 +371,20 @@ class PointerEventHandler final {
   [[nodiscard]] static const PointerInfo* GetLastMouseInfo(
       const PresShell* aRootPresShell = nullptr);
 
+  /**
+   * Return the last pointerId which has not left from any documents managed in
+   * this process.
+   */
+  [[nodiscard]] static Maybe<uint32_t> GetLastPointerId() {
+    return sLastPointerId;
+  }
+  /**
+   * Retrun true if aPointerId is the last pointerId.
+   */
+  [[nodiscard]] static bool IsLastPointerId(uint32_t aPointerId) {
+    return sLastPointerId && *sLastPointerId == aPointerId;
+  }
+
   // CheckPointerCaptureState checks cases, when got/lostpointercapture events
   // should be fired.
   MOZ_CAN_RUN_SCRIPT
@@ -458,7 +479,8 @@ class PointerEventHandler final {
    * content preventDefault on pointerdown
    */
   static void PostHandlePointerEventsPreventDefault(
-      WidgetPointerEvent* aPointerEvent, WidgetGUIEvent* aMouseOrTouchEvent);
+      PresShell* aPresShell, WidgetPointerEvent* aPointerEvent,
+      WidgetGUIEvent* aMouseOrTouchEvent);
 
   /**
    * Dispatch a pointer event for aMouseOrTouchEvent to aEventTargetContent.
@@ -557,6 +579,11 @@ class PointerEventHandler final {
    */
   [[nodiscard]] static LazyLogModule& MouseLocationLogRef();
 
+  /**
+   * Return a log module reference for logging the pointer location.
+   */
+  [[nodiscard]] static LazyLogModule& PointerLocationLogRef();
+
  private:
   // Set pointer capture of the specified pointer by the element.
   static void SetPointerCaptureById(uint32_t aPointerId,
@@ -601,12 +628,42 @@ class PointerEventHandler final {
   static void SetPointerCapturingElementAtLastPointerUp(
       nsWeakPtr&& aPointerCapturingElement);
 
+  /**
+   * Insert/update a pointer to/in sActivePointerIds.
+   */
+  static const UniquePtr<PointerInfo>& InsertOrUpdateActivePointer(
+      uint32_t aPointerId, UniquePtr<PointerInfo>&& aNewPointerInfo,
+      EventMessage aEventMessage, const char* aCallerName);
+
+  /**
+   * Remove a pointer from sActivePointerIds.
+   */
+  static void RemoveActivePointer(uint32_t aPointerId,
+                                  EventMessage aEventMessage,
+                                  const char* aCallerName);
+
+  /**
+   * Called when a new pointer event is bing fired.
+   */
+  static void UpdateLastPointerId(uint32_t aPointerId,
+                                  EventMessage aEventMessage);
+
+  /**
+   * Called when a pointer is leaving from this process.
+   */
+  static void MaybeForgetLastPointerId(uint32_t aPointerId,
+                                       EventMessage aEventMessage);
+
   // Stores the last mouse info to dispatch synthetic eMouseMove in root
   // PresShells.
   static StaticAutoPtr<PointerInfo> sLastMouseInfo;
 
   // Stores the last mouse info setter.
   static StaticRefPtr<nsIWeakReference> sLastMousePresShell;
+
+  // Stores the last pointerId which has not left from all documents managed in
+  // this process.
+  static Maybe<uint32_t> sLastPointerId;
 };
 
 }  // namespace mozilla

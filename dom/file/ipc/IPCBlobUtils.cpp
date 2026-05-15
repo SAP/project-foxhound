@@ -5,19 +5,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IPCBlobUtils.h"
+
 #include "RemoteLazyInputStream.h"
 #include "RemoteLazyInputStreamChild.h"
 #include "RemoteLazyInputStreamParent.h"
-#include "mozilla/dom/IPCBlob.h"
-#include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/ipc/PBackgroundParent.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/ipc/ProtocolUtils.h"
 #include "RemoteLazyInputStreamStorage.h"
 #include "StreamBlobImpl.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/IPCBlob.h"
+#include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundParent.h"
+#include "mozilla/ipc/ProtocolUtils.h"
 #include "prtime.h"
 
 namespace mozilla::dom::IPCBlobUtils {

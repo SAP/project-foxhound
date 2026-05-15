@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DEFAULT_BROWSER_SET_DEFAULT_BROWSER_H__
-#define DEFAULT_BROWSER_SET_DEFAULT_BROWSER_H__
+#ifndef DEFAULT_BROWSER_SET_DEFAULT_BROWSER_H_
+#define DEFAULT_BROWSER_SET_DEFAULT_BROWSER_H_
 
 #include "nsStringFwd.h"
 #include "nsArray.h"
@@ -70,4 +70,4 @@ nsresult SetDefaultExtensionHandlersUserChoice(
 
 }  // namespace mozilla::default_agent
 
-#endif  // DEFAULT_BROWSER_SET_DEFAULT_BROWSER_H__
+#endif  // DEFAULT_BROWSER_SET_DEFAULT_BROWSER_H_

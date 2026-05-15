@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsServerSocket_h__
-#define nsServerSocket_h__
+#ifndef nsServerSocket_h_
+#define nsServerSocket_h_
 
 #include "prio.h"
 #include "nsASocketHandler.h"
@@ -67,4 +67,4 @@ class nsServerSocket : public nsASocketHandler, public nsIServerSocket {
 
 //-----------------------------------------------------------------------------
 
-#endif  // nsServerSocket_h__
+#endif  // nsServerSocket_h_

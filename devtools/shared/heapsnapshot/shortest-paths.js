@@ -14,7 +14,7 @@
  *        An array of paths to `target`, as returned by
  *        `HeapSnapshot.computeShortestPaths`.
  *
- * @returns {Object}
+ * @returns {object}
  *          An object with two properties:
  *          - edges: An array of unique objects of the form:
  *              {

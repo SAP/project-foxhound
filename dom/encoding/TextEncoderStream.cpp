@@ -8,12 +8,12 @@
 
 #include "js/ArrayBuffer.h"
 #include "js/experimental/TypedData.h"
-#include "nsIGlobalObject.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/TextEncoderStreamBinding.h"
-#include "mozilla/dom/TransformerCallbackHelpers.h"
 #include "mozilla/dom/TransformStream.h"
+#include "mozilla/dom/TransformerCallbackHelpers.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla::dom {
 

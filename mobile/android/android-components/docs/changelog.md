@@ -4,7 +4,86 @@ title: Changelog
 permalink: /changelog/
 ---
 
-# 142.0 (In Development)
+# 149.0 (In Development)
+* **lib-state**
+  * ⚠️ **Breaking change**: Removed the composableStore API from `ComposeExtensions.kt` in favor of the newer one from `StoreProvider.kt`. [Bug 2017822](https://bugzilla.mozilla.org/show_bug.cgi?id=2017822)
+* **feature-search**
+  * `RegionMiddleware` will not anymore handle `BrowserStore`'s `InitAction`. If you need the region set when the application starts ensure either of `UpdateDistribution` or `RefreshSearchEnginesAction` is dispatched. [Bug 2012962] (https://bugzilla.mozilla.org/show_bug.cgi?id=2012962)
+
+* **browser-engine-gecko**
+    * 🆕 New Settings API `DownloadDelegate` that used for `getSuggestedFilename` inside `GeckoEngineSession`.[Bug 2014471] (https://bugzilla.mozilla.org/show_bug.cgi?id=2014471)
+* **browser-engine-gecko** and **concept-engine**
+  * 🆕 New Engine Settings API `firefoxRelay` that can be see to different modes with `FirefoxRelayMode`.
+  * Updated GeckoEngine and BrowserPreferencesRuntime to accommodate registering and unregistering multiple browser preferences at a time for observation. [Bug 2006095](https://bugzilla.mozilla.org/show_bug.cgi?id=2006095)
+  * Added `processBackPressed` API to `EngineSession` to handle back navigation events to dismiss some HTML elements such as &lt;dialog&gt;. [Bug 1966467](https://bugzilla.mozilla.org/show_bug.cgi?id=1966467)
+
+* **concept-storage**
+  * Introduced `Login.hint` for context on the login origin that an embedder can use to determine how to handle it.
+
+* **lib-state**
+  * ⚠️ **Breaking change**: Removed flowScoped with the default `coroutineScope` set to `MainScope()`. Always provide your own `CoroutineDispatcher`.
+
+# 148.0
+* **support-utils**
+  * `keyboardAsState` available to use in Jetpack Compose code to know when the IME is shown or hidden. This works more reliably on older Android versions than the frameworks `isImeVisible` API. [Bug 1988730](https://bugzilla.mozilla.org/show_bug.cgi?id=1988730).
+* **browser-engine-gecko** and **concept-engine**
+  * Add optional link text support to HitResult.UNKNOWN to allow getting the text associated with a link in response to a long click
+* **feature-contextmenu**
+  * 🆕 New: "Copy link text" context menu candidate to allow for the ability to copy link text [Bug 1809303](https://bugzilla.mozilla.org/show_bug.cgi?id=1809303)
+* **lib-state**
+  * ⚠️ **Breaking change**: Removed `MiddlewareContext`. You can now pass in a `Store` directly when invoking a `Middleware`. [Bug 2005443](https://bugzilla.mozilla.org/show_bug.cgi?id=2005443).
+* **lib-crash**
+  * 🆕 New `CrashReporter.registerDeferredInitializer()` allows registering a lazy initializer for CrashReporter that is evaluated only when `requireInstance` is accessed, avoiding immediate initialization of dependencies [Bug 2005839](https://bugzilla.mozilla.org/show_bug.cgi?id=2005839)
+
+# 147.0
+* **browser-state**:
+  * ⚠️ **Breaking change**: New `Unknown` third state for the `SecurityStatus` of the connection used in a tab. The `secure` property has been migrated to `isSecure`. [Bug 2000617](https://bugzilla.mozilla.org/show_bug.cgi?id=2000617).
+* **lib-state**
+    * ⚠️ **Breaking change**: Removed thread marshalling from Stores [Bug 1980348](https://bugzilla.mozilla.org/show_bug.cgi?id=1980348).
+        * `Store.dispatch` is now invoked on the calling thread.
+        * `Store.dispatch` no longer spawns a new `Job` (it now returns `Unit`).
+    * ⚠️ **Breaking change**: Removed UIStore [Bug 1980350](https://bugzilla.mozilla.org/show_bug.cgi?id=1980350)
+* **ui-widgets**
+  * 🆕 New `EngineViewScrollingDataBehavior` meant to only be used to animate a bottom toolbar/banner in sync with the current webpage [Bug 1991654](https://bugzilla.mozilla.org/show_bug.cgi?id=1991654).
+* **concept-engine** and **browser-engine-gecko**
+  * 🆕 New `verticalScrollPosition` and `verticalScrollDelta` APIs exposing the current scroll position and delta of the webpage [Bug 1990215](https://bugzilla.mozilla.org/show_bug.cgi?id=1990215).
+* **lib-state**
+  * 🆕 New `fragmentStore`, `activityStore`, `composableStore` and `navBackStackStore` APIs available to build a new Store and persist its State in a ViewModel ensuring that it survives Activity recreations. These APIs supersede the existing ones and avoid the possibility of memory leaks. [Bug 1996676](https://bugzilla.mozilla.org/show_bug.cgi?id=1996676).
+  * ⚠️ **Breaking change**: The `lazyStore` API was removed in favor of the new `fragmentStore`, `activityStore` and `composableStore` APIs. [Bug 1996676](https://bugzilla.mozilla.org/show_bug.cgi?id=1996676).
+
+# 146.0
+
+# 145.0
+* **support-ktx**
+  * 🚒 Bug fixed [Bug 1979064](https://bugzilla.mozilla.org/show_bug.cgi?id=1979064). Added back the API checks for `Window.setupPersistentInsets` and `ImeInsetsSynchronizer.setup` as on Android <13 the insets framework is not reliable.
+* **support-appservices**
+  * ⚠️ **Breaking change**: Updated the `AppServicesInitializer.init` to take in a configuration object instead of individual components.
+* **feature-framebusting**
+  * 🆕 New `GeckoSession.PromptDelegate.RedirectPrompt` prompt that is displayed when a third-party redirect is blocked. [Bug 1988107](https://bugzilla.mozilla.org/show_bug.cgi?id=1988107)
+* **feature-sitepermissions**
+  * 🚒 Bug fixed [Bug 1986429](https://bugzilla.mozilla.org/show_bug.cgi?id=1986429). Ensure that when accepting website notification permission, the user is prompted for system-level notification opt-in, if the system permission was not enabled.
+
+# 144.0
+* **feature-customtabs**
+  * 🚒 Bug fixed [Bug 1983103](https://bugzilla.mozilla.org/show_bug.cgi?id=1983103). Fixed issues with system status bars not being correctly themed for custom tabs and PWAs when used on devices with edge-to-edge enabled.
+* **support-ktx**
+  * 🆕 New `Window.setSystemBarsBackground()` allows to still theme the status bar, navigation bar and other insets background in landscape mode even when edge-to-edge is enabled and Android doesn't theme these anymore. [Bug 1981861](https://bugzilla.mozilla.org/show_bug.cgi?id=1981861)
+* **feature-sitepermissions**
+  * 🆕 New `SitePermissionsLearnMoreUrlProvider` interface that allows customizing whether to show "learn more" links in permission prompts and what URl to link to. [Bug 1985629](https://bugzilla.mozilla.org/show_bug.cgi?id=1985629)
+
+# 143.0
+* **feature-downloads**:
+  * `AbstractFetchDownloadService.onDestroy` will now cancel all non-completed downloads. [Bug 1977393](https://bugzilla.mozilla.org/show_bug.cgi?id=1977393)
+* **concept-engine** and **browser-engine-gecko**
+  * Added methods to get and set multiple browser preferences. [Bug 1974800](https://bugzilla.mozilla.org/show_bug.cgi?id=1974800)
+  * 🌟️ Added a mechanism to observe browser preferences changing. Use `registerPrefObserverDelegate` to register the delegate on the engine and `registerPrefForObservation` to register a specific pref for observation. Alternatively, use `BrowserPrefObserverFeature` which handles registration and broadcasts the events using an `ObserverRegistery`.
+  * Added new LNA content permissions - `ContentLocalDeviceAccess` and `ContentLocalNetworkAccess` and map to respective `GeckoSession.PermissionDelegate` permission. [Bug 1971500](https://bugzilla.mozilla.org/show_bug.cgi?id=1971500)
+  * Added `localDeviceAccess` and `localNetworkAccess` to `SitePermissions`
+* **feature-sitepermissions**
+    * Added two new columns - `local_device_access` and `local_network_access` to `site_permissions` db table
+    * Migrated `SitePermissionsDatabase` to version 9
+
+# 142.0
 * **feature-tabs**:
   * Updated `LastTabFeature` to not close the current tab when there's no history. [Bug 1813413](https://bugzilla.mozilla.org/show_bug.cgi?id=1813413).
 * **feature-downloads**:
@@ -20,6 +99,8 @@ permalink: /changelog/
   * Remove API level check for `ImeInsetsSynchronizer`. [Bug 1977270](https://bugzilla.mozilla.org/show_bug.cgi?id=1977270)
 * **All components**
   * ⚠️ Introduced `@ExperimentalAndroidComponentsApi` to indicate an API requires special care. Opt in via `@OptIn(ExperimentalAndroidComponentsApi::class)`.
+* **service-firefox-accounts**
+  * Renamed `withConstellation` to `withConstellationIfExists` to signify the block execution is dependant on the account being authenticated first. [Bug 1794207](https://bugzilla.mozilla.org/show_bug.cgi?id=1794207)
 
 # 141.0
 =======

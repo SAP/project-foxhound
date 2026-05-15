@@ -2,17 +2,9 @@
 
 A patch for Cargo.toml of icu_capi. Remove weak dependencies of unnecessary crates.
 
-### 002-GH4109.patch
+### 002-bug2011393.patch
 
-A patch for icu_capi for clang and static analysis.
-
-### 003-explicit.patch
-
-A patch for icu_capi to add explicit keyword
-
-### 004-dead-code.patch
-
-A patch for icu_capi to mark the ICU4XDataStruct as dead code as it's never read from Rust.
+A patch for Solaris support. int8_t and char are the same type on Solaris. Guard this definition to avoid conflicts. https://github.com/rust-diplomat/diplomat/issues/1015
 
 ### empty.toml
 

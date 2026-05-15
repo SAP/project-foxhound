@@ -33,5 +33,4 @@ class StyleSheetsFront extends FrontClassWithSpec(styleSheetsSpec) {
   }
 }
 
-exports.StyleSheetsFront = StyleSheetsFront;
 registerFront(StyleSheetsFront);

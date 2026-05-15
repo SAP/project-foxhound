@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHTMLTags_h___
-#define nsHTMLTags_h___
+#ifndef nsHTMLTags_h_
+#define nsHTMLTags_h_
 
 #include "nsAtomHashKeys.h"
 #include "nsString.h"
@@ -15,19 +15,19 @@
    Declare the enum list using the magic of preprocessing
    enum values are "eHTMLTag_foo" (where foo is the tag)
 
-   To change the list of tags, see nsHTMLTagList.h
+   To change the list of tags, see nsHTMLTagList.inc
 
    These enum values are used as the index of array in various places.
    If we change the structure of the enum by adding entries to it or removing
-   entries from it _directly_, not via nsHTMLTagList.h, don't forget to update
-   dom/bindings/BindingUtils.cpp and dom/html/nsHTMLContentSink.cpp as well.
+   entries from it _directly_, not via nsHTMLTagList.inc, don't forget to update
+   dom/bindings/BindingUtils.cpp and dom/html/HTMLElementFactory.cpp as well.
  */
 #define HTML_TAG(_tag, _classname, _interfacename) eHTMLTag_##_tag,
 #define HTML_OTHER(_tag) eHTMLTag_##_tag,
 enum nsHTMLTag {
   /* this enum must be first and must be zero */
   eHTMLTag_unknown = 0,
-#include "nsHTMLTagList.h"
+#include "nsHTMLTagList.inc"
 
   /* can't be moved into nsHTMLTagList since gcc3.4 doesn't like a
      comma at the end of enum list*/
@@ -78,4 +78,4 @@ class nsHTMLTags {
   static TagAtomHash* gTagAtomTable;
 };
 
-#endif /* nsHTMLTags_h___ */
+#endif /* nsHTMLTags_h_ */

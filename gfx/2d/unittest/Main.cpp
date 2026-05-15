@@ -8,9 +8,6 @@
 #include "TestPoint.h"
 #include "TestScaling.h"
 #include "TestBugs.h"
-#ifdef WIN32
-#  include "TestDrawTargetD2D.h"
-#endif
 
 #include <string>
 #include <sstream>
@@ -23,9 +20,6 @@ struct TestObject {
 int main() {
   TestObject tests[] = {
       {new SanityChecks(), "Sanity Checks"},
-#ifdef WIN32
-      {new TestDrawTargetD2D(), "DrawTarget (D2D)"},
-#endif
       {new TestPoint(), "Point Tests"},
       {new TestScaling(), "Scaling Tests"} {new TestBugs(), "Bug Tests"}};
 

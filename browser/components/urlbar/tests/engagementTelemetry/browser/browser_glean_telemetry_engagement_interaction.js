@@ -74,6 +74,15 @@ add_task(async function pasted() {
 
     assertEngagementTelemetry([{ interaction: "pasted" }]);
   });
+
+  await doTest(async () => {
+    // "paste" event will be fired if the string includes control char.
+    // Otherwise, "input" event will be fired.
+    await doPaste("a\nb");
+    await doEnter();
+
+    assertEngagementTelemetry([{ interaction: "pasted" }]);
+  });
 });
 
 add_task(async function topsite_search() {

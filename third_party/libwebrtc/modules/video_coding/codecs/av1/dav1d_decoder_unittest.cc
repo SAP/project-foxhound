@@ -22,7 +22,7 @@
 #include "api/video/video_frame.h"
 #include "api/video_codecs/video_decoder.h"
 #include "modules/video_coding/include/video_error_codes.h"
-#include "test/explicit_key_value_config.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -39,7 +39,7 @@ constexpr uint8_t kAv1FrameWith36x20EncodededAnd32x16RenderResolution[] = {
     0x20, 0x03, 0xe0, 0x01, 0xf2, 0xb0, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00,
     0x00, 0xf2, 0x44, 0xd6, 0xa5, 0x3b, 0x7c, 0x8b, 0x7c, 0x8c, 0x6b, 0x9a};
 
-EncodedImage CreateEncodedImage(rtc::ArrayView<const uint8_t> data) {
+EncodedImage CreateEncodedImage(ArrayView<const uint8_t> data) {
   EncodedImage image;
   image.SetEncodedData(EncodedImageBuffer::Create(data.data(), data.size()));
   return image;
@@ -96,9 +96,8 @@ TEST(Dav1dDecoderTest, KeepsDecodedResolutionByDefault) {
 }
 
 TEST(Dav1dDecoderTest, CropsToRenderResolutionWhenCropIsEnabled) {
-  TestAv1Decoder decoder(
-      CreateEnvironment(std::make_unique<ExplicitKeyValueConfig>(
-          "WebRTC-Dav1dDecoder-CropToRenderResolution/Enabled/")));
+  TestAv1Decoder decoder(CreateEnvironment(CreateTestFieldTrialsPtr(
+      "WebRTC-Dav1dDecoder-CropToRenderResolution/Enabled/")));
   decoder.Decode(
       CreateEncodedImage(kAv1FrameWith36x20EncodededAnd32x16RenderResolution));
   EXPECT_EQ(decoder.decoded_frame().width(), 32);
@@ -106,9 +105,8 @@ TEST(Dav1dDecoderTest, CropsToRenderResolutionWhenCropIsEnabled) {
 }
 
 TEST(Dav1dDecoderTest, DoesNotCropToRenderResolutionWhenCropIsDisabled) {
-  TestAv1Decoder decoder(
-      CreateEnvironment(std::make_unique<ExplicitKeyValueConfig>(
-          "WebRTC-Dav1dDecoder-CropToRenderResolution/Disabled/")));
+  TestAv1Decoder decoder(CreateEnvironment(CreateTestFieldTrialsPtr(
+      "WebRTC-Dav1dDecoder-CropToRenderResolution/Disabled/")));
   decoder.Decode(
       CreateEncodedImage(kAv1FrameWith36x20EncodededAnd32x16RenderResolution));
   EXPECT_EQ(decoder.decoded_frame().width(), 36);

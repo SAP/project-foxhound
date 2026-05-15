@@ -5,19 +5,19 @@
   <title>Tests for the BackupSettings component</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+  <script type="application/javascript" src="head.js"></script>
   <script
   src="chrome://browser/content/backup/backup-settings.mjs"
   type="module"
 ></script>
   <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <link rel="localization" href="branding/brand.ftl"/>
-  <link rel="localization" href="preview/backupSettings.ftl" />
+  <link rel="localization" href="browser/backupSettings.ftl" />
   <script>
 
     const { BrowserTestUtils } = ChromeUtils.importESModule(
       "resource://testing-common/BrowserTestUtils.sys.mjs"
     );
-    const testDefaultName = "test-default-path";
 
     /**
      * Tests that adding a backup-settings element to the DOM causes it to
@@ -42,15 +42,9 @@
     add_task(async function test_turnOnScheduledBackupsDialog() {
       let settings = document.getElementById("test-backup-settings");
 
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        }
-      }
+      settings.backupServiceState = createBackupServiceState();
 
       await settings.updateComplete;
-
       let turnOnButton = settings.scheduledBackupsButtonEl;
       let dialog = settings.turnOnScheduledBackupsDialogEl;
 
@@ -80,13 +74,9 @@
      */
     add_task(async function test_turnOffScheduledBackupsDialog() {
       let settings = document.getElementById("test-backup-settings");
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
-      }
+      });
 
       await settings.updateComplete;
 
@@ -119,14 +109,10 @@
      */
     add_task(async function test_disableBackupEncryptionDialog() {
       let settings = document.getElementById("test-backup-settings");
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
         encryptionEnabled: true,
-      }
+      });
 
       await settings.updateComplete;
 
@@ -160,28 +146,20 @@
     add_task(async function test_lastBackupTimestamp() {
       let settings = document.getElementById("test-backup-settings");
 
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         lastBackupDate: null,
         lastBackupFileName: "",
-      };
+      });
       await settings.updateComplete;
       let backupInfo = settings.shadowRoot.querySelector("#last-backup-info");
       ok(!backupInfo, "Last backup info was not rendered.");
 
       const lastBackupTimestamp = 1719769205;
       const lastBackupFileName = "SomeBackup.html"
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         lastBackupDate: lastBackupTimestamp,
         lastBackupFileName,
-      };
+      });
       await settings.updateComplete;
 
       backupInfo = settings.shadowRoot.querySelector("#last-backup-info");
@@ -208,28 +186,20 @@
     add_task(async function test_backupLocation() {
       let settings = document.getElementById("test-backup-settings");
 
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         lastBackupDate: null,
         lastBackupFileName: "",
         scheduledBackupsEnabled: false,
-      };
+      });
       await settings.updateComplete;
       let backupLocationControl = settings.shadowRoot.querySelector("#last-backup-location-control");
       ok(!backupLocationControl, "Last backup location control was not rendered.");
 
       const backupDirPath = "Some/Expected/Path";
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
         backupDirPath,
-      };
+      });
       await settings.updateComplete;
 
       backupLocationControl = settings.shadowRoot.querySelector("#last-backup-location-control");
@@ -247,14 +217,10 @@
       let content = document.getElementById("content");
 
       const backupDirPath = "Some/Expected/Path";
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
         backupDirPath,
-      };
+      });
 
       let locationShowButton = settings.shadowRoot.querySelector("#backup-location-show");
       ok(locationShowButton, "Backup location show button exists.");
@@ -272,14 +238,10 @@
       let content = document.getElementById("content");
 
       const backupDirPath = "Some/Expected/Path";
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
         backupDirPath,
-      };
+      });
 
       let locationEditButton = settings.shadowRoot.querySelector("#backup-location-edit");
       ok(locationEditButton, "Backup location edit button exists.");
@@ -297,13 +259,9 @@
       let settings = document.getElementById("test-backup-settings");
 
       // First check visibility when scheduled backups are disabled
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: false,
-      }
+      });
       await settings.updateComplete;
 
       ok(
@@ -352,13 +310,9 @@
     add_task(async function test_content_when_scheduled_backups_disabled() {
       let settings = document.getElementById("test-backup-settings");
 
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: false,
-      }
+      });
       await settings.updateComplete;
 
       ok(
@@ -384,13 +338,9 @@
      add_task(async function test_content_when_scheduled_backups_enabled() {
       let settings = document.getElementById("test-backup-settings");
 
-      settings.backupServiceState = {
-        defaultParent: {
-          path: PathUtils.join(PathUtils.tempDir, testDefaultName),
-          fileName: testDefaultName,
-        },
+      settings.backupServiceState = createBackupServiceState({
         scheduledBackupsEnabled: true,
-      }
+      });
       await settings.updateComplete;
 
       ok(

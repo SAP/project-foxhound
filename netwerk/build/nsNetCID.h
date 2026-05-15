@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsNetCID_h__
-#define nsNetCID_h__
+#ifndef nsNetCID_h_
+#define nsNetCID_h_
 
 /******************************************************************************
  * netwerk/base/ classes
@@ -393,15 +393,6 @@
  * phishing and malware sites.
  */
 #define NS_URICLASSIFIERSERVICE_CONTRACTID "@mozilla.org/uriclassifierservice"
-
-// service implementing nsINetworkPredictor
-#define NS_NETWORKPREDICTOR_CONTRACTID "@mozilla.org/network/predictor;1"
-#define NS_NETWORKPREDICTOR_CID                 \
-  {/* {969adfdf-7221-4419-aecf-05f8faf00c9b} */ \
-   0x969adfdf,                                  \
-   0x7221,                                      \
-   0x4419,                                      \
-   {0xae, 0xcf, 0x05, 0xf8, 0xfa, 0xf0, 0x0c, 0x9b}}
 
 // captive portal service implementing nsICaptivePortalService
 #define NS_CAPTIVEPORTAL_CONTRACTID \
@@ -829,4 +820,4 @@
    0x4450,                                    \
    {0xb0, 0x19, 0xd1, 0xc1, 0xfb, 0xa5, 0x60, 0x25}}
 
-#endif  // nsNetCID_h__
+#endif  // nsNetCID_h_

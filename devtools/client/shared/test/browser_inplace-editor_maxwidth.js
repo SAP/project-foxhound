@@ -111,7 +111,7 @@ const testMaxWidth = async function (editor) {
  * Retrieve the current number of lines displayed in the provided textarea.
  *
  * @param {DOMNode} textarea
- * @return {Number} the number of lines
+ * @return {number} the number of lines
  */
 function getLines(textarea) {
   const win = textarea.ownerDocument.defaultView;

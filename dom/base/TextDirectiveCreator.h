@@ -8,12 +8,13 @@
 #define DOM_TEXTDIRECTIVECREATOR_H_
 
 #include <tuple>
+
 #include "RangeBoundary.h"
-#include "mozilla/dom/fragmentdirectives_ffi_generated.h"
 #include "TextDirectiveUtil.h"
-#include "nsStringFwd.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
+#include "mozilla/dom/fragmentdirectives_ffi_generated.h"
+#include "nsStringFwd.h"
 
 class nsRange;
 
@@ -88,8 +89,12 @@ class TextDirectiveCreator {
    * @brief Collects text content surrounding the target range.
    *
    * The context terms are then stored both in normal and fold case form.
+   *
+   * Returns false if the algorithm cannot continue, for example if the text
+   * directive must use range-based matching because of its length, but the
+   * target range only consists of one word.
    */
-  virtual Result<Ok, ErrorResult> CollectContextTerms() = 0;
+  virtual Result<bool, ErrorResult> CollectContextTerms() = 0;
 
   /**
    * @brief Common helper which collects the prefix term of the target range.
@@ -114,14 +119,8 @@ class TextDirectiveCreator {
    *
    * The distances are always sorted, so that the first entry points to the
    * nearest word boundary in search direction.
-   *
-   * This method returns false if collecting context term word boundary
-   * distances failed in a way that it's not considered a failure, but rather
-   * it's not possible to create a text directive for the target range.
-   * This can happen if the target range is too long for exact matching, but
-   * does not contain a word boundary.
    */
-  virtual bool CollectContextTermWordBoundaryDistances() = 0;
+  virtual void CollectContextTermWordBoundaryDistances() = 0;
 
   /**
    * @brief Searches the document for other occurrences of the target range and
@@ -254,9 +253,9 @@ class RangeBasedTextDirectiveCreator : public TextDirectiveCreator {
  private:
   using TextDirectiveCreator::TextDirectiveCreator;
 
-  Result<Ok, ErrorResult> CollectContextTerms() override;
+  Result<bool, ErrorResult> CollectContextTerms() override;
 
-  bool CollectContextTermWordBoundaryDistances() override;
+  void CollectContextTermWordBoundaryDistances() override;
 
   Result<Ok, ErrorResult> FindAllMatchingCandidates() override;
 
@@ -304,9 +303,9 @@ class ExactMatchTextDirectiveCreator : public TextDirectiveCreator {
  private:
   using TextDirectiveCreator::TextDirectiveCreator;
 
-  Result<Ok, ErrorResult> CollectContextTerms() override;
+  Result<bool, ErrorResult> CollectContextTerms() override;
 
-  bool CollectContextTermWordBoundaryDistances() override;
+  void CollectContextTermWordBoundaryDistances() override;
 
   Result<Ok, ErrorResult> FindAllMatchingCandidates() override;
 

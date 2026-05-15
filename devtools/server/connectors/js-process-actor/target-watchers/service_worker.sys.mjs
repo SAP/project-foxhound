@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "wdm",
   "@mozilla.org/dom/workers/workerdebuggermanager;1",
-  "nsIWorkerDebuggerManager"
+  Ci.nsIWorkerDebuggerManager
 );
 
 class ServiceWorkerTargetWatcherClass extends WorkerTargetWatcherClass {
@@ -26,7 +26,7 @@ class ServiceWorkerTargetWatcherClass extends WorkerTargetWatcherClass {
    * This is used to maintain the list of active Service Worker targets
    * based on that host name.
    *
-   * @param {Object} watcherDataObject
+   * @param {object} watcherDataObject
    *        See ContentProcessWatcherRegistry
    */
   async updateBrowserElementHost(watcherDataObject) {

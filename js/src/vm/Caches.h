@@ -11,7 +11,6 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MruCache.h"
-#include "mozilla/TemplateLib.h"
 #include "mozilla/UniquePtr.h"
 
 #include "frontend/ScopeBindingCache.h"
@@ -185,10 +184,9 @@ class MegamorphicCache {
   using Entry = MegamorphicCacheEntry;
 
   static constexpr size_t NumEntries = 1024;
-  static constexpr uint8_t ShapeHashShift1 =
-      mozilla::tl::FloorLog2<alignof(Shape)>::value;
+  static constexpr uint8_t ShapeHashShift1 = mozilla::FloorLog2(alignof(Shape));
   static constexpr uint8_t ShapeHashShift2 =
-      ShapeHashShift1 + mozilla::tl::FloorLog2<NumEntries>::value;
+      ShapeHashShift1 + mozilla::FloorLog2(NumEntries);
 
   static_assert(mozilla::IsPowerOfTwo(alignof(Shape)) &&
                     mozilla::IsPowerOfTwo(NumEntries),
@@ -330,10 +328,9 @@ class MegamorphicSetPropCache {
   // the sweet spot where we are getting most of the hits we would get with
   // an infinitely sized cache
   static constexpr size_t NumEntries = 1024;
-  static constexpr uint8_t ShapeHashShift1 =
-      mozilla::tl::FloorLog2<alignof(Shape)>::value;
+  static constexpr uint8_t ShapeHashShift1 = mozilla::FloorLog2(alignof(Shape));
   static constexpr uint8_t ShapeHashShift2 =
-      ShapeHashShift1 + mozilla::tl::FloorLog2<NumEntries>::value;
+      ShapeHashShift1 + mozilla::FloorLog2(NumEntries);
 
   static_assert(mozilla::IsPowerOfTwo(alignof(Shape)) &&
                     mozilla::IsPowerOfTwo(NumEntries),

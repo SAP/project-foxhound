@@ -10,6 +10,7 @@ const VISIBILITY_SETTING_PREF = "sidebar.visibility";
 const SIDEBAR_TOOLS = "sidebar.main.tools";
 const VERTICAL_TABS_PREF = "sidebar.verticalTabs";
 const INSTALLED_EXTENSIONS = "sidebar.installed.extensions";
+const PINNED_PROMO_PREF = "sidebar.verticalTabs.dragToPinPromo.dismissed";
 
 // New panels that are ready to be introduced to new sidebar users should be added to this list;
 // ensure your feature flag is enabled at the same time you do this and that its the same value as
@@ -18,9 +19,11 @@ const DEFAULT_LAUNCHER_TOOLS = "aichat,syncedtabs,history,bookmarks";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   SidebarState: "moz-src:///browser/components/sidebar/SidebarState.sys.mjs",
 });
 XPCOMUtils.defineLazyPreferenceGetter(lazy, "sidebarNimbus", "sidebar.nimbus");
@@ -37,7 +40,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   VERTICAL_TABS_PREF,
   false,
   (pref, oldVal, newVal) => {
-    SidebarManager.handleVerticalTabsPrefChange(newVal, true);
+    sidebarManager.handleVerticalTabsPrefChange(newVal, true);
   }
 );
 
@@ -47,7 +50,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "sidebar.revamp",
   false,
   (pref, oldVal, newVal) => {
-    SidebarManager.updateDefaultTools();
+    sidebarManager.updateDefaultTools();
 
     if (!newVal) {
       // Disable vertical tabs if revamped sidebar is turned off
@@ -72,54 +75,27 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "newSidebarHasBeenUsed",
   "sidebar.new-sidebar.has-used",
   false,
-  () => SidebarManager.updateDefaultTools()
+  () => sidebarManager.updateDefaultTools()
 );
 
-export const SidebarManager = {
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "dragToPinPromoDismissed",
+  PINNED_PROMO_PREF,
+  false
+);
+
+class SidebarManager extends EventTarget {
   /**
-   * Handle startup tasks like telemetry, adding listeners.
+   * SidebarManager is a singleton that handles startup tasks like telemetry,
+   * adding listeners and updating sidebar-related preferences.
    */
-
+  constructor() {
+    super();
+    this.checkForPinnedTabsComplete = false;
+  }
+  #initialized = false;
   init() {
-    // Handle nimbus feature pref setting updates on init and enrollment
-    const featureId = "sidebar";
-    lazy.NimbusFeatures[featureId].onUpdate(() => {
-      // Set prefs only if we have an enrollment that's new
-      const enrollment = lazy.NimbusFeatures[featureId].getEnrollmentMetadata();
-      if (!enrollment) {
-        return;
-      }
-      const slug = enrollment.slug + ":" + enrollment.branch;
-      if (slug == lazy.sidebarNimbus) {
-        return;
-      }
-
-      // Enforce minimum version by skipping pref changes until Firefox restarts
-      // with the appropriate version
-      if (
-        Services.vc.compare(
-          // Support betas, e.g., 132.0b1, instead of MOZ_APP_VERSION
-          AppConstants.MOZ_APP_VERSION_DISPLAY,
-          // Check configured version or compare with unset handled as 0
-          lazy.NimbusFeatures[featureId].getVariable("minVersion")
-        ) < 0
-      ) {
-        return;
-      }
-
-      // Set/override user prefs to persist after experiment end
-      const setPref = (pref, value) => {
-        // Only set prefs with a value (so no clearing)
-        if (value != null) {
-          lazy.PrefUtils.setPref("sidebar." + pref, value);
-        }
-      };
-      setPref("nimbus", slug);
-      ["revamp", "verticalTabs", "visibility"].forEach(pref =>
-        setPref(pref, lazy.NimbusFeatures[featureId].getVariable(pref))
-      );
-    });
-
     lazy.CustomizableUI.addListener(this);
 
     Services.prefs.addObserver(
@@ -127,6 +103,9 @@ export const SidebarManager = {
       this.updateDefaultTools.bind(this)
     );
     this.updateDefaultTools();
+    lazy.SessionStore.promiseAllWindowsRestored.then(() => {
+      this.checkForPinnedTabs();
+    });
 
     // if there's no user visibility pref, we may need to update it to the default value for the tab orientation
     const shouldResetVisibility = !Services.prefs.prefHasUserValue(
@@ -136,7 +115,72 @@ export const SidebarManager = {
       lazy.verticalTabsEnabled,
       shouldResetVisibility
     );
-  },
+
+    // Handle nimbus feature pref setting updates on init and enrollment
+    lazy.NimbusFeatures.sidebar.onUpdate(() => {
+      if (this.#initialized) {
+        this.onNimbusFeatureUpdate();
+      } else {
+        // Schedule handling the update after this module has finished initializing
+        Promise.resolve().then(() => this.onNimbusFeatureUpdate());
+      }
+    });
+    this.#initialized = true;
+  }
+
+  onNimbusFeatureUpdate() {
+    const featureId = "sidebar";
+    // Set prefs only if we have an enrollment that's new
+    const enrollment = lazy.NimbusFeatures[featureId].getEnrollmentMetadata();
+    if (!enrollment) {
+      return;
+    }
+    const slug = enrollment.slug + ":" + enrollment.branch;
+    if (slug == lazy.sidebarNimbus) {
+      return;
+    }
+
+    // Enforce minimum version by skipping pref changes until Firefox restarts
+    // with the appropriate version
+    if (
+      Services.vc.compare(
+        // Support betas, e.g., 132.0b1, instead of MOZ_APP_VERSION
+        AppConstants.MOZ_APP_VERSION_DISPLAY,
+        // Check configured version or compare with unset handled as 0
+        lazy.NimbusFeatures[featureId].getVariable("minVersion")
+      ) < 0
+    ) {
+      return;
+    }
+
+    // Set/override user prefs to persist after experiment end
+    const setPref = (pref, value) => {
+      // Only set prefs with a value (so no clearing)
+      if (value != null) {
+        lazy.PrefUtils.setPref("sidebar." + pref, value);
+      }
+    };
+    setPref("nimbus", slug);
+    ["revamp", "verticalTabs", "visibility"].forEach(pref =>
+      setPref(pref, lazy.NimbusFeatures[featureId].getVariable(pref))
+    );
+  }
+
+  /**
+   * Ensure the drag-to-pin promo card is not displayed to existing users who already have pinned tabs.
+   */
+  checkForPinnedTabs() {
+    if (!lazy.dragToPinPromoDismissed) {
+      for (let win of lazy.BrowserWindowTracker.getOrderedWindows()) {
+        if (win.gBrowser.pinnedTabCount > 0) {
+          Services.prefs.setBoolPref(PINNED_PROMO_PREF, true);
+          break;
+        }
+      }
+    }
+    this.checkForPinnedTabsComplete = true;
+    this.dispatchEvent(new CustomEvent("checkForPinnedTabsComplete"));
+  }
 
   /**
    * Called when any widget is removed. We're only interested in the sidebar
@@ -157,7 +201,7 @@ export const SidebarManager = {
         this.closeAllSidebars();
       }
     }
-  },
+  }
 
   /**
    * Convenience method to tell all sidebars to close when the toolbar button
@@ -172,7 +216,7 @@ export const SidebarManager = {
         ...lazy.SidebarState.defaultProperties,
       });
     }
-  },
+  }
 
   /**
    * Adjust for a change to the verticalTabs pref.
@@ -185,7 +229,7 @@ export const SidebarManager = {
       // only reset visibility pref when switching to vertical tabs and explictly indicated
       Services.prefs.setStringPref(VISIBILITY_SETTING_PREF, "always-show");
     }
-  },
+  }
 
   /**
    * Has the new sidebar launcher already been visible and "used" in this profile?
@@ -210,7 +254,7 @@ export const SidebarManager = {
       }
     }
     return false;
-  },
+  }
 
   /**
    * Prepopulates default tools for new sidebar users and appends any new tools defined
@@ -265,7 +309,7 @@ export const SidebarManager = {
     if (tools.length > lazy.sidebarTools.length) {
       Services.prefs.setStringPref(SIDEBAR_TOOLS, tools);
     }
-  },
+  }
 
   updateToolsPref(toolName, remove = null) {
     const updatedTools = lazy.sidebarTools ? lazy.sidebarTools.split(",") : [];
@@ -282,7 +326,7 @@ export const SidebarManager = {
     }
 
     Services.prefs.setStringPref(SIDEBAR_TOOLS, updatedTools.join());
-  },
+  }
 
   clearExtensionsPref(toolName) {
     let installedExtensions = lazy.sidebarExtensions
@@ -296,12 +340,12 @@ export const SidebarManager = {
         installedExtensions.join()
       );
     }
-  },
+  }
 
   cleanupPrefs(id) {
     this.clearExtensionsPref(id);
     this.updateToolsPref(id, true);
-  },
+  }
 
   /**
    * Return a list of tool IDs that have registered a badge for notification.
@@ -314,7 +358,7 @@ export const SidebarManager = {
     const badgePrefs = Services.prefs.getChildList(BADGE_PREF_BRANCH);
 
     return badgePrefs.map(pref => pref.slice(BADGE_PREF_BRANCH.length));
-  },
+  }
 
   /**
    * Provide a system-level "backup" state to be stored for those using "Never
@@ -331,7 +375,7 @@ export const SidebarManager = {
       Services.prefs.clearUserPref(BACKUP_STATE_PREF);
       return null;
     }
-  },
+  }
 
   /**
    * Set the backup state.
@@ -343,8 +387,10 @@ export const SidebarManager = {
       return;
     }
     Services.prefs.setStringPref(BACKUP_STATE_PREF, JSON.stringify(state));
-  },
-};
+  }
+}
 
 // Initialize on first import
-SidebarManager.init();
+const sidebarManager = new SidebarManager();
+sidebarManager.init();
+export { sidebarManager as SidebarManager };

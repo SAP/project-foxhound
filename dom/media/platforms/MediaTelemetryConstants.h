@@ -3,8 +3,8 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef dom_media_platforms_MediaTelemetryConstants_h___
-#define dom_media_platforms_MediaTelemetryConstants_h___
+#ifndef dom_media_platforms_MediaTelemetryConstants_h_
+#define dom_media_platforms_MediaTelemetryConstants_h_
 
 namespace mozilla {
 namespace media {
@@ -18,4 +18,4 @@ enum class MediaDecoderBackend : uint32_t {
 }  // namespace media
 }  // namespace mozilla
 
-#endif  // dom_media_platforms_MediaTelemetryConstants_h___
+#endif  // dom_media_platforms_MediaTelemetryConstants_h_

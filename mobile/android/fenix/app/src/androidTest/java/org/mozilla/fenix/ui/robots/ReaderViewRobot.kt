@@ -8,6 +8,7 @@ package org.mozilla.fenix.ui.robots
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers
@@ -15,10 +16,11 @@ import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
-import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.TestHelper.mDevice
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
 import org.mozilla.fenix.helpers.click
+import mozilla.components.feature.readerview.R as readerviewR
 
 /**
  * Implementation of Robot Pattern for Reader View UI.
@@ -28,7 +30,7 @@ class ReaderViewRobot {
     fun verifyAppearanceFontGroup(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceFontGroup: Trying to verify that the font group buttons are visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_font_group),
+            withId(readerviewR.id.mozac_feature_readerview_font_group),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -38,7 +40,7 @@ class ReaderViewRobot {
     fun verifyAppearanceFontSansSerif(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceFontSansSerif: Trying to verify that the sans serif font button is visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_font_sans_serif),
+            withId(readerviewR.id.mozac_feature_readerview_font_sans_serif),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -48,7 +50,7 @@ class ReaderViewRobot {
     fun verifyAppearanceFontSerif(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceFontSerif: Trying to verify that the serif font button is visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_font_serif),
+            withId(readerviewR.id.mozac_feature_readerview_font_serif),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -58,7 +60,7 @@ class ReaderViewRobot {
     fun verifyAppearanceFontDecrease(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceFontDecrease: Trying to verify that the decrease font button is visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_font_size_decrease),
+            withId(readerviewR.id.mozac_feature_readerview_font_size_decrease),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -68,7 +70,7 @@ class ReaderViewRobot {
     fun verifyAppearanceFontIncrease(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceFontIncrease: Trying to verify that the increase font button is visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_font_size_increase),
+            withId(readerviewR.id.mozac_feature_readerview_font_size_increase),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -78,7 +80,7 @@ class ReaderViewRobot {
     fun verifyAppearanceColorGroup(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceColorGroup: Trying to verify that the color group buttons are visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_color_scheme_group),
+            withId(readerviewR.id.mozac_feature_readerview_color_scheme_group),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -88,7 +90,7 @@ class ReaderViewRobot {
     fun verifyAppearanceColorSepia(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceColorSepia: Trying to verify that the sepia color button is visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_color_sepia),
+            withId(readerviewR.id.mozac_feature_readerview_color_sepia),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -98,7 +100,7 @@ class ReaderViewRobot {
     fun verifyAppearanceColorDark(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceColorDark: Trying to verify that the dark color button is visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_color_dark),
+            withId(readerviewR.id.mozac_feature_readerview_color_dark),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -108,7 +110,7 @@ class ReaderViewRobot {
     fun verifyAppearanceColorLight(visible: Boolean = false) {
         Log.i(TAG, "verifyAppearanceColorLight: Trying to verify that the light color button is visible: $visible")
         onView(
-            withId(R.id.mozac_feature_readerview_color_light),
+            withId(readerviewR.id.mozac_feature_readerview_color_light),
         ).check(
             matches(withEffectiveVisibility(visibleOrGone(visible))),
         )
@@ -161,19 +163,20 @@ class ReaderViewRobot {
 
     class Transition {
 
-        fun closeAppearanceMenu(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "closeAppearanceMenu: Trying to click device back button")
+        fun closeReaderViewControlMenu(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            Log.i(TAG, "closeReaderViewControlMenu: Trying to click device back button")
             mDevice.pressBack()
-            Log.i(TAG, "closeAppearanceMenu: Clicked device back button")
+            Log.i(TAG, "closeReaderViewControlMenu: Clicked device back button")
+            waitForAppWindowToBeUpdated()
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun toggleSansSerif(interact: ReaderViewRobot.() -> Unit): Transition {
             fun sansSerifButton() =
                 onView(
-                    withId(R.id.mozac_feature_readerview_font_sans_serif),
+                    withId(readerviewR.id.mozac_feature_readerview_font_sans_serif),
                 )
             Log.i(TAG, "toggleSansSerif: Trying to click sans serif button")
             sansSerifButton().click()
@@ -186,7 +189,7 @@ class ReaderViewRobot {
         fun toggleSerif(interact: ReaderViewRobot.() -> Unit): Transition {
             fun serifButton() =
                 onView(
-                    withId(R.id.mozac_feature_readerview_font_serif),
+                    withId(readerviewR.id.mozac_feature_readerview_font_serif),
                 )
             Log.i(TAG, "toggleSerif: Trying to click serif button")
             serifButton().click()
@@ -199,7 +202,7 @@ class ReaderViewRobot {
         fun toggleFontSizeDecrease(interact: ReaderViewRobot.() -> Unit): Transition {
             fun fontSizeDecrease() =
                 onView(
-                    withId(R.id.mozac_feature_readerview_font_size_decrease),
+                    withId(readerviewR.id.mozac_feature_readerview_font_size_decrease),
                 )
             Log.i(TAG, "toggleFontSizeDecrease: Trying to click the decrease font button")
             fontSizeDecrease().click()
@@ -212,7 +215,7 @@ class ReaderViewRobot {
         fun toggleFontSizeIncrease(interact: ReaderViewRobot.() -> Unit): Transition {
             fun fontSizeIncrease() =
                 onView(
-                    withId(R.id.mozac_feature_readerview_font_size_increase),
+                    withId(readerviewR.id.mozac_feature_readerview_font_size_increase),
                 )
             Log.i(TAG, "toggleFontSizeIncrease: Trying to click the increase font button")
             fontSizeIncrease().click()
@@ -225,7 +228,7 @@ class ReaderViewRobot {
         fun toggleColorSchemeChangeLight(interact: ReaderViewRobot.() -> Unit): Transition {
             fun toggleLightColorSchemeButton() =
                 onView(
-                    withId(R.id.mozac_feature_readerview_color_light),
+                    withId(readerviewR.id.mozac_feature_readerview_color_light),
                 )
             Log.i(TAG, "toggleColorSchemeChangeLight: Trying to click the light color button")
             toggleLightColorSchemeButton().click()
@@ -238,7 +241,7 @@ class ReaderViewRobot {
         fun toggleColorSchemeChangeDark(interact: ReaderViewRobot.() -> Unit): Transition {
             fun toggleDarkColorSchemeButton() =
                 onView(
-                    withId(R.id.mozac_feature_readerview_color_dark),
+                    withId(readerviewR.id.mozac_feature_readerview_color_dark),
                 )
             Log.i(TAG, "toggleColorSchemeChangeDark: Trying to click the dark color button")
             toggleDarkColorSchemeButton().click()
@@ -251,7 +254,7 @@ class ReaderViewRobot {
         fun toggleColorSchemeChangeSepia(interact: ReaderViewRobot.() -> Unit): Transition {
             fun toggleSepiaColorSchemeButton() =
                 onView(
-                    withId(R.id.mozac_feature_readerview_color_sepia),
+                    withId(readerviewR.id.mozac_feature_readerview_color_sepia),
                 )
             Log.i(TAG, "toggleColorSchemeChangeSepia: Trying to click the sepia color button")
             toggleSepiaColorSchemeButton().click()

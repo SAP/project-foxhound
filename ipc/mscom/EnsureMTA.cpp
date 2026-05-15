@@ -83,7 +83,7 @@ EnsureMTA::EnsureMTA() {
   if (SUCCEEDED(hr)) {
     if (NS_SUCCEEDED(rv)) {
       // Start the persistent MTA thread (mostly) asynchronously.
-      Unused << GetPersistentMTAThread();
+      (void)GetPersistentMTAThread();
     }
 
     return;

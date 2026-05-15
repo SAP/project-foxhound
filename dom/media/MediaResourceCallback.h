@@ -8,9 +8,9 @@
 #define MediaResourceCallback_h_
 
 #include "DecoderDoctorLogger.h"
+#include "MediaResult.h"
 #include "nsError.h"
 #include "nsISupportsImpl.h"
-#include "MediaResult.h"
 
 namespace mozilla {
 

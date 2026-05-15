@@ -6,6 +6,7 @@
 
 #include "jit/IonAnalysis.h"
 
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/HashFunctions.h"
 
 #include <algorithm>
@@ -16,7 +17,6 @@
 #include "jit/DominatorTree.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
-#include "util/CheckedArithmetic.h"
 
 #include "vm/BytecodeUtil-inl.h"
 
@@ -568,8 +568,9 @@ static bool BlockIsSingleTest(MBasicBlock* phiBlock, MBasicBlock* testBlock,
   *ptest = nullptr;
 
   if (phiBlock != testBlock) {
-    MOZ_ASSERT(phiBlock->numSuccessors() == 1 &&
-               phiBlock->getSuccessor(0) == testBlock);
+    MOZ_RELEASE_ASSERT(phiBlock->lastIns()->isGoto());
+    MOZ_RELEASE_ASSERT(phiBlock->lastIns()->toGoto()->target() == testBlock);
+    MOZ_RELEASE_ASSERT(testBlock->numPredecessors() == 1);
     if (!phiBlock->begin()->isGoto()) {
       return false;
     }
@@ -686,7 +687,7 @@ static bool IsTestInputMaybeToBool(MTest* test, MDefinition* value) {
   blockResult->setImplicitlyUsedUnchecked();
 
   MInstruction* ins = block->lastIns();
-  MOZ_ASSERT(ins->isGoto());
+  MOZ_RELEASE_ASSERT(ins->isGoto());
   ins->toGoto()->target()->removePredecessor(block);
   block->discardLastIns();
 
@@ -707,15 +708,14 @@ static bool IsTestInputMaybeToBool(MTest* test, MDefinition* value) {
   MInstruction* ins = block->lastIns();
   if (ins->isTest()) {
     MTest* test = ins->toTest();
-    MOZ_ASSERT(test->input() == value);
+    MOZ_RELEASE_ASSERT(test->input() == value);
 
     if (ifTrue != test->ifTrue()) {
       test->ifTrue()->removePredecessor(block);
       if (!ifTrue->addPredecessorSameInputsAs(block, existingPred)) {
         return false;
       }
-      MOZ_ASSERT(test->ifTrue() == test->getSuccessor(0));
-      test->replaceSuccessor(0, ifTrue);
+      test->replaceSuccessor(MTest::TrueBranchIndex, ifTrue);
     }
 
     if (ifFalse != test->ifFalse()) {
@@ -723,14 +723,13 @@ static bool IsTestInputMaybeToBool(MTest* test, MDefinition* value) {
       if (!ifFalse->addPredecessorSameInputsAs(block, existingPred)) {
         return false;
       }
-      MOZ_ASSERT(test->ifFalse() == test->getSuccessor(1));
-      test->replaceSuccessor(1, ifFalse);
+      test->replaceSuccessor(MTest::FalseBranchIndex, ifFalse);
     }
 
     return true;
   }
 
-  MOZ_ASSERT(ins->isGoto());
+  MOZ_RELEASE_ASSERT(ins->isGoto());
   ins->toGoto()->target()->removePredecessor(block);
   block->discardLastIns();
 
@@ -775,8 +774,8 @@ static bool IsDiamondPattern(MBasicBlock* initialBlock) {
     return false;
   }
 
-  MBasicBlock* phiBlock = trueBranch->getSuccessor(0);
-  if (phiBlock != falseBranch->getSuccessor(0)) {
+  MBasicBlock* phiBlock = trueBranch->lastIns()->toGoto()->target();
+  if (phiBlock != falseBranch->lastIns()->toGoto()->target()) {
     return false;
   }
   if (phiBlock->numPredecessors() != 2) {
@@ -820,13 +819,13 @@ static bool IsDiamondPattern(MBasicBlock* initialBlock) {
     return true;
   }
 
-  MBasicBlock* phiBlock = trueBranch->getSuccessor(0);
+  MBasicBlock* phiBlock = trueBranch->lastIns()->toGoto()->target();
   MBasicBlock* testBlock = phiBlock;
-  if (testBlock->numSuccessors() == 1) {
+  if (testBlock->lastIns()->isGoto()) {
     if (testBlock->isLoopBackedge()) {
       return true;
     }
-    testBlock = testBlock->getSuccessor(0);
+    testBlock = testBlock->lastIns()->toGoto()->target();
     if (testBlock->numPredecessors() != 1) {
       return true;
     }
@@ -838,7 +837,7 @@ static bool IsDiamondPattern(MBasicBlock* initialBlock) {
     return true;
   }
 
-  MOZ_ASSERT(phi->numOperands() == 2);
+  MOZ_RELEASE_ASSERT(phi->numOperands() == 2);
 
   // Make sure the test block does not have any outgoing loop backedges.
   if (!SplitCriticalEdgesForBlock(graph, testBlock)) {
@@ -929,8 +928,8 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
   MBasicBlock* trueBranch = initialTest->ifTrue();
   MBasicBlock* falseBranch = initialTest->ifFalse();
 
-  if (trueBranch->numSuccessors() == 1 &&
-      trueBranch->getSuccessor(0) == falseBranch) {
+  if (trueBranch->lastIns()->isGoto() &&
+      trueBranch->lastIns()->toGoto()->target() == falseBranch) {
     if (trueBranch->numPredecessors() != 1) {
       return false;
     }
@@ -940,8 +939,8 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
     return true;
   }
 
-  if (falseBranch->numSuccessors() == 1 &&
-      falseBranch->getSuccessor(0) == trueBranch) {
+  if (falseBranch->lastIns()->isGoto() &&
+      falseBranch->lastIns()->toGoto()->target() == trueBranch) {
     if (trueBranch->numPredecessors() != 2) {
       return false;
     }
@@ -999,19 +998,19 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
   }
 
   MBasicBlock* phiBlock;
-  if (trueBranch->numSuccessors() == 1 &&
-      trueBranch->getSuccessor(0) == falseBranch) {
+  if (trueBranch->lastIns()->isGoto() &&
+      trueBranch->lastIns()->toGoto()->target() == falseBranch) {
     phiBlock = falseBranch;
   } else {
-    MOZ_ASSERT(falseBranch->getSuccessor(0) == trueBranch);
+    MOZ_ASSERT(falseBranch->lastIns()->toGoto()->target() == trueBranch);
     phiBlock = trueBranch;
   }
 
   MBasicBlock* testBlock = phiBlock;
-  if (testBlock->numSuccessors() == 1) {
-    MOZ_ASSERT(!testBlock->isLoopBackedge());
+  if (testBlock->lastIns()->isGoto()) {
+    MOZ_RELEASE_ASSERT(!testBlock->isLoopBackedge());
 
-    testBlock = testBlock->getSuccessor(0);
+    testBlock = testBlock->lastIns()->toGoto()->target();
     if (testBlock->numPredecessors() != 1) {
       return true;
     }
@@ -1023,7 +1022,7 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
     return true;
   }
 
-  MOZ_ASSERT(phi->numOperands() == 2);
+  MOZ_RELEASE_ASSERT(phi->numOperands() == 2);
 
   // If the phi-operand doesn't match the initial input, we can't fold the test.
   auto* phiInputForInitialBlock =
@@ -1194,17 +1193,17 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
   }
 
   MBasicBlock* testBlock = phiBlock;
-  if (testBlock->numSuccessors() == 1) {
+  if (testBlock->lastIns()->isGoto()) {
     if (testBlock->isLoopBackedge()) {
       return true;
     }
-    testBlock = testBlock->getSuccessor(0);
+    testBlock = testBlock->lastIns()->toGoto()->target();
     if (testBlock->numPredecessors() != 1) {
       return true;
     }
   }
 
-  MOZ_ASSERT(!phiBlock->isLoopBackedge());
+  MOZ_RELEASE_ASSERT(!phiBlock->isLoopBackedge());
 
   MPhi* phi = nullptr;
   MTest* finalTest = nullptr;
@@ -1212,7 +1211,7 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
     return true;
   }
 
-  MOZ_ASSERT(phiBlock->numPredecessors() == phi->numOperands());
+  MOZ_RELEASE_ASSERT(phiBlock->numPredecessors() == phi->numOperands());
 
   // If the phi-operand doesn't match the initial input, we can't fold the test.
   auto* phiInputForInitialBlock =
@@ -1243,7 +1242,7 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
       return true;
     }
 
-    MOZ_ASSERT(!pred->isLoopBackedge());
+    MOZ_RELEASE_ASSERT(!pred->isLoopBackedge());
   }
 
   // Ensure we found the single goto block.
@@ -1270,7 +1269,7 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
 
   // Update all test instructions to point to the final target.
   while (phiBlock->numPredecessors()) {
-    mozilla::DebugOnly<size_t> oldNumPred = phiBlock->numPredecessors();
+    size_t oldNumPred = phiBlock->numPredecessors();
 
     auto* pred = phiBlock->getPredecessor(0);
     auto* test = pred->lastIns()->toTest();
@@ -1281,7 +1280,7 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
         return false;
       }
     } else {
-      MOZ_ASSERT(test->ifFalse() == phiBlock);
+      MOZ_RELEASE_ASSERT(test->ifFalse() == phiBlock);
       if (!UpdateTestSuccessors(graph.alloc(), pred, test->input(),
                                 test->ifTrue(), finalTest->ifFalse(),
                                 testBlock)) {
@@ -1290,7 +1289,7 @@ static bool IsTrianglePattern(MBasicBlock* initialBlock) {
     }
 
     // Ensure we've made progress.
-    MOZ_ASSERT(phiBlock->numPredecessors() + 1 == oldNumPred);
+    MOZ_RELEASE_ASSERT(phiBlock->numPredecessors() + 1 == oldNumPred);
   }
 
   // Remove phiBlock, if different from testBlock.
@@ -1548,7 +1547,7 @@ bool jit::EliminateDeadResumePointOperands(const MIRGenerator* mir,
         // interpreter could throw an exception; we avoid this problem
         // by removing dead operands before removing dead code.
         MConstant* constant =
-            MConstant::New(graph.alloc(), MagicValue(JS_OPTIMIZED_OUT));
+            MConstant::NewMagic(graph.alloc(), JS_OPTIMIZED_OUT);
         block->insertBefore(*(block->begin()), constant);
         use->replaceProducer(constant);
       }
@@ -3456,6 +3455,7 @@ static bool IsResumableMIRType(MIRType type) {
     case MIRType::Elements:
     case MIRType::Pointer:
     case MIRType::WasmAnyRef:
+    case MIRType::WasmStructData:
     case MIRType::WasmArrayData:
     case MIRType::StackResults:
       return false;
@@ -3572,20 +3572,8 @@ void jit::AssertExtendedGraphCoherency(MIRGraph& graph, bool underValueNumberer,
       MInstruction* ins = *iter;
       for (size_t i = 0, e = ins->numOperands(); i < e; ++i) {
         MDefinition* op = ins->getOperand(i);
-        MBasicBlock* opBlock = op->block();
-        MOZ_ASSERT(opBlock->dominates(*block),
-                   "Instruction is not dominated by its operands");
-
-        // If the operand is an instruction in the same block, check
-        // that it comes first.
-        if (opBlock == *block && !op->isPhi()) {
-          MInstructionIterator opIter = block->begin(op->toInstruction());
-          do {
-            ++opIter;
-            MOZ_ASSERT(opIter != block->end(),
-                       "Operand in same block as instruction does not precede");
-          } while (*opIter != ins);
-        }
+        MOZ_ASSERT(op->dominates(ins),
+                   "instruction is not dominated by its operands");
       }
       AssertIfResumableInstruction(ins);
       if (MResumePoint* resume = ins->resumePoint()) {
@@ -3726,6 +3714,8 @@ SimpleLinearSum jit::ExtractLinearSum(MDefinition* ins, MathSpace space,
   }
   MOZ_ASSERT(space == MathSpace::Modulo || space == MathSpace::Infinite);
 
+  // Note: support for the Modulo math space is currently disabled due to
+  // security bugs. See bug 1966614.
   if (space == MathSpace::Modulo) {
     return SimpleLinearSum(ins, 0);
   }
@@ -3751,7 +3741,7 @@ SimpleLinearSum jit::ExtractLinearSum(MDefinition* ins, MathSpace space,
     int32_t constant;
     if (space == MathSpace::Modulo) {
       constant = uint32_t(lsum.constant) + uint32_t(rsum.constant);
-    } else if (!SafeAdd(lsum.constant, rsum.constant, &constant) ||
+    } else if (!mozilla::SafeAdd(lsum.constant, rsum.constant, &constant) ||
                !MonotoneAdd(lsum.constant, rsum.constant)) {
       return SimpleLinearSum(ins, 0);
     }
@@ -3764,7 +3754,7 @@ SimpleLinearSum jit::ExtractLinearSum(MDefinition* ins, MathSpace space,
     int32_t constant;
     if (space == MathSpace::Modulo) {
       constant = uint32_t(lsum.constant) - uint32_t(rsum.constant);
-    } else if (!SafeSub(lsum.constant, rsum.constant, &constant) ||
+    } else if (!mozilla::SafeSub(lsum.constant, rsum.constant, &constant) ||
                !MonotoneSub(lsum.constant, rsum.constant)) {
       return SimpleLinearSum(ins, 0);
     }
@@ -3805,7 +3795,7 @@ bool jit::ExtractLinearInequality(const MTest* test, BranchDirection direction,
   SimpleLinearSum lsum = ExtractLinearSum(lhs);
   SimpleLinearSum rsum = ExtractLinearSum(rhs);
 
-  if (!SafeSub(lsum.constant, rsum.constant, &lsum.constant)) {
+  if (!mozilla::SafeSub(lsum.constant, rsum.constant, &lsum.constant)) {
     return false;
   }
 
@@ -3816,7 +3806,7 @@ bool jit::ExtractLinearInequality(const MTest* test, BranchDirection direction,
       break;
     case JSOp::Lt:
       /* x < y ==> x + 1 <= y */
-      if (!SafeAdd(lsum.constant, 1, &lsum.constant)) {
+      if (!mozilla::SafeAdd(lsum.constant, 1, &lsum.constant)) {
         return false;
       }
       *plessEqual = true;
@@ -3826,7 +3816,7 @@ bool jit::ExtractLinearInequality(const MTest* test, BranchDirection direction,
       break;
     case JSOp::Gt:
       /* x > y ==> x - 1 >= y */
-      if (!SafeSub(lsum.constant, 1, &lsum.constant)) {
+      if (!mozilla::SafeSub(lsum.constant, 1, &lsum.constant)) {
         return false;
       }
       *plessEqual = false;
@@ -3890,18 +3880,20 @@ static bool TryEliminateBoundsCheck(BoundsCheckMap& checks, size_t blockIndex,
 
   // Normalize the ranges according to the constant offsets in the two indexes.
   int32_t minimumA, maximumA, minimumB, maximumB;
-  if (!SafeAdd(sumA.constant, dominating->minimum(), &minimumA) ||
-      !SafeAdd(sumA.constant, dominating->maximum(), &maximumA) ||
-      !SafeAdd(sumB.constant, dominated->minimum(), &minimumB) ||
-      !SafeAdd(sumB.constant, dominated->maximum(), &maximumB)) {
+  if (!mozilla::SafeAdd(sumA.constant, dominating->minimum(), &minimumA) ||
+      !mozilla::SafeAdd(sumA.constant, dominating->maximum(), &maximumA) ||
+      !mozilla::SafeAdd(sumB.constant, dominated->minimum(), &minimumB) ||
+      !mozilla::SafeAdd(sumB.constant, dominated->maximum(), &maximumB)) {
     return false;
   }
 
   // Update the dominating check to cover both ranges, denormalizing the
   // result per the constant offset in the index.
   int32_t newMinimum, newMaximum;
-  if (!SafeSub(std::min(minimumA, minimumB), sumA.constant, &newMinimum) ||
-      !SafeSub(std::max(maximumA, maximumB), sumA.constant, &newMaximum)) {
+  if (!mozilla::SafeSub(std::min(minimumA, minimumB), sumA.constant,
+                        &newMinimum) ||
+      !mozilla::SafeSub(std::max(maximumA, maximumB), sumA.constant,
+                        &newMaximum)) {
     return false;
   }
 
@@ -4241,6 +4233,8 @@ bool jit::MarkLoadsUsedAsPropertyKeys(MIRGraph& graph) {
         idVal = ins->toGetPropSuperCache()->idval();
       } else if (ins->isMegamorphicLoadSlotByValue()) {
         idVal = ins->toMegamorphicLoadSlotByValue()->idVal();
+      } else if (ins->isMegamorphicLoadSlotByValuePermissive()) {
+        idVal = ins->toMegamorphicLoadSlotByValuePermissive()->idVal();
       } else if (ins->isMegamorphicHasProp()) {
         idVal = ins->toMegamorphicHasProp()->idVal();
       } else if (ins->isMegamorphicSetElement()) {
@@ -4309,20 +4303,10 @@ bool jit::MarkLoadsUsedAsPropertyKeys(MIRGraph& graph) {
   return true;
 }
 
-// Updates the wasm ref type of a node and verifies that in this pass we only
-// narrow types, and never widen.
+// Updates the wasm ref type of a node.
 static bool UpdateWasmRefType(MDefinition* def) {
   wasm::MaybeRefType newRefType = def->computeWasmRefType();
   bool changed = newRefType != def->wasmRefType();
-
-  // Ensure that we do not regress from Some to Nothing.
-  MOZ_ASSERT(!(def->wasmRefType().isSome() && newRefType.isNothing()));
-  // Ensure that the new ref type is a subtype of the previous one (i.e. we
-  // only narrow ref types).
-  MOZ_ASSERT_IF(def->wasmRefType().isSome(),
-                wasm::RefType::isSubTypeOf(newRefType.value(),
-                                           def->wasmRefType().value()));
-
   def->setWasmRefType(newRefType);
   return changed;
 }
@@ -4399,20 +4383,217 @@ bool jit::TrackWasmRefTypes(MIRGraph& graph) {
   return true;
 }
 
+static bool IsWasmRefTest(MDefinition* def) {
+  return def->isWasmRefTestAbstract() || def->isWasmRefTestConcrete();
+}
+
+static bool IsWasmRefCast(MDefinition* def) {
+  return def->isWasmRefCastAbstract() || def->isWasmRefCastConcrete() ||
+         def->isWasmRefCastInfallible();
+}
+
+static MDefinition* WasmRefCastOrTestSourceRef(MDefinition* refTestOrCast) {
+  switch (refTestOrCast->op()) {
+    case MDefinition::Opcode::WasmRefCastAbstract:
+      return refTestOrCast->toWasmRefCastAbstract()->ref();
+    case MDefinition::Opcode::WasmRefCastConcrete:
+      return refTestOrCast->toWasmRefCastConcrete()->ref();
+    case MDefinition::Opcode::WasmRefCastInfallible:
+      return refTestOrCast->toWasmRefCastInfallible()->ref();
+    case MDefinition::Opcode::WasmRefTestAbstract:
+      return refTestOrCast->toWasmRefTestAbstract()->ref();
+    case MDefinition::Opcode::WasmRefTestConcrete:
+      return refTestOrCast->toWasmRefTestConcrete()->ref();
+    default:
+      MOZ_CRASH();
+  }
+}
+
+static wasm::RefType WasmRefTestOrCastDestType(MDefinition* refTestOrCast) {
+  switch (refTestOrCast->op()) {
+    case MDefinition::Opcode::WasmRefCastAbstract:
+      return refTestOrCast->toWasmRefCastAbstract()->destType();
+    case MDefinition::Opcode::WasmRefCastConcrete:
+      return refTestOrCast->toWasmRefCastConcrete()->destType();
+    case MDefinition::Opcode::WasmRefCastInfallible:
+      return refTestOrCast->toWasmRefCastInfallible()->destType();
+    case MDefinition::Opcode::WasmRefTestAbstract:
+      return refTestOrCast->toWasmRefTestAbstract()->destType();
+    case MDefinition::Opcode::WasmRefTestConcrete:
+      return refTestOrCast->toWasmRefTestConcrete()->destType();
+    default:
+      MOZ_CRASH();
+  }
+}
+
+static void TryOptimizeWasmCast(MDefinition* cast, MIRGraph& graph) {
+  // Find all uses of the ref we are casting
+  MDefinition* ref = WasmRefCastOrTestSourceRef(cast);
+  for (MUseIterator refUse(ref->usesBegin()); refUse != ref->usesEnd();
+       refUse++) {
+    // If the ref we are casting is used in a ref.test instruction...
+    if (IsWasmRefTest(refUse->consumer()->toDefinition())) {
+      MDefinition* refTest = refUse->consumer()->toDefinition();
+      // And that ref.test instruction is used in an MTest instruction...
+      for (MUseIterator testUse(refTest->usesBegin());
+           testUse != refTest->usesEnd(); testUse++) {
+        if (testUse->consumer()->toDefinition()->isTest()) {
+          // And the MTest instruction true block dominates the block of
+          // the cast...
+          MTest* test = testUse->consumer()->toDefinition()->toTest();
+          if (test->ifTrue()->dominates(cast->block())) {
+            // And the type of the dominating ref.test is <: the type of
+            // the current cast...
+            wasm::RefType refTestDestType = WasmRefTestOrCastDestType(refTest);
+            wasm::RefType refCastDestType = WasmRefTestOrCastDestType(cast);
+            if (wasm::RefType::isSubTypeOf(refTestDestType, refCastDestType)) {
+              // Then the cast is redundant because it is dominated by a
+              // tighter ref.test. Replace it with a dummy cast at the top of
+              // the MTest's true block.
+              if (!graph.alloc().ensureBallast()) {
+                return;
+              }
+              auto* dummy = MWasmRefCastInfallible::New(graph.alloc(), ref,
+                                                        refCastDestType);
+              cast->replaceAllUsesWith(dummy);
+              test->ifTrue()->insertBefore(test->ifTrue()->safeInsertTop(),
+                                           dummy->toInstruction());
+              cast->block()->discard(cast->toInstruction());
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // If the ref we are casting is used in a different ref.cast instruction...
+    if (IsWasmRefCast(refUse->consumer()->toDefinition()) &&
+        refUse->consumer() != cast) {
+      MDefinition* otherCast = refUse->consumer()->toDefinition();
+      // And that ref.cast instruction dominates us...
+      if (otherCast->dominates(cast)) {
+        // And the type of the dominating ref.cast is <: the type of the
+        // current cast...
+        wasm::RefType dominatingDestType = WasmRefTestOrCastDestType(otherCast);
+        wasm::RefType currentDestType = WasmRefTestOrCastDestType(cast);
+        if (wasm::RefType::isSubTypeOf(dominatingDestType, currentDestType)) {
+          // Then the cast is redundant because it is dominated by a tighter
+          // ref.cast. Discard the cast and fall back on the other.
+          cast->replaceAllUsesWith(otherCast);
+          cast->block()->discard(cast->toInstruction());
+          return;
+        }
+      }
+    }
+  }
+}
+
+static void TryOptimizeWasmTest(MDefinition* refTest, MIRGraph& graph) {
+  // Find all uses of the ref we are testing
+  MDefinition* ref = WasmRefCastOrTestSourceRef(refTest);
+  for (MUseIterator refUse(ref->usesBegin()); refUse != ref->usesEnd();
+       refUse++) {
+    // If the ref we are testing is used in a different ref.test instruction...
+    if (IsWasmRefTest(refUse->consumer()->toDefinition()) &&
+        refUse->consumer() != refTest) {
+      MDefinition* otherRefTest = refUse->consumer()->toDefinition();
+      // And that ref.test instruction is used in an MTest instruction...
+      for (MUseIterator testUse(otherRefTest->usesBegin());
+           testUse != otherRefTest->usesEnd(); testUse++) {
+        if (testUse->consumer()->toDefinition()->isTest()) {
+          MTest* test = testUse->consumer()->toDefinition()->toTest();
+
+          wasm::RefType otherDestType = WasmRefTestOrCastDestType(otherRefTest);
+          wasm::RefType currentDestType = WasmRefTestOrCastDestType(refTest);
+
+          MInstruction* replacement = nullptr;
+
+          if (!graph.alloc().ensureBallast()) {
+            return;
+          }
+
+          // And the MTest instruction true block dominates the block of the
+          // current test...
+          if (test->ifTrue()->dominates(refTest->block())) {
+            // And the type of the DOMINATING ref.test is <: the type of the
+            // CURRENT ref.test...
+            if (wasm::RefType::isSubTypeOf(otherDestType, currentDestType)) {
+              // Then the ref.test is redundant because it is dominated by the
+              // success of a tighter ref.test. Replace it with a constant 1.
+              replacement = MConstant::NewInt32(graph.alloc(), 1);
+            }
+          }
+
+          // Or the MTest instruction false block dominates the block of the
+          // current test...
+          if (test->ifFalse()->dominates(refTest->block())) {
+            // And the type of the CURRENT ref.test is <: the type of the
+            // DOMINATING ref.test...
+            if (wasm::RefType::isSubTypeOf(currentDestType, otherDestType)) {
+              // Then the ref.test is redundant because it is dominated by the
+              // failure of a looser ref.test. Replace it with a constant 0.
+              replacement = MConstant::NewInt32(graph.alloc(), 0);
+            }
+          }
+
+          if (replacement) {
+            refTest->block()->insertBefore(refTest->toInstruction(),
+                                           replacement);
+            refTest->replaceAllUsesWith(replacement);
+            refTest->block()->discard(refTest->toInstruction());
+            return;
+          }
+        }
+      }
+    }
+
+    // If the ref we are testing is used in a ref.cast instruction...
+    if (IsWasmRefCast(refUse->consumer()->toDefinition())) {
+      MDefinition* refCast = refUse->consumer()->toDefinition();
+      // And that ref.cast instruction dominates us...
+      if (refCast->dominates(refTest)) {
+        // And the type of the dominating ref.cast is <: the type of the
+        // current ref.test...
+        wasm::RefType dominatingDestType = WasmRefTestOrCastDestType(refCast);
+        wasm::RefType currentDestType = WasmRefTestOrCastDestType(refTest);
+        if (wasm::RefType::isSubTypeOf(dominatingDestType, currentDestType)) {
+          // Then the ref.test is redundant because it is dominated by a
+          // tighter ref.cast. Replace with a constant 1.
+          auto* replacement = MConstant::NewInt32(graph.alloc(), 1);
+          refTest->block()->insertBefore(refTest->toInstruction(), replacement);
+          refTest->replaceAllUsesWith(replacement);
+          refTest->block()->discard(refTest->toInstruction());
+          return;
+        }
+      }
+    }
+  }
+}
+
+bool jit::OptimizeWasmCasts(MIRGraph& graph) {
+  for (ReversePostorderIterator blockIter = graph.rpoBegin();
+       blockIter != graph.rpoEnd(); blockIter++) {
+    MBasicBlock* block = *blockIter;
+    for (MDefinitionIterator def(block); def;) {
+      MDefinition* castOrTest = *def;
+      def++;
+
+      if (IsWasmRefCast(castOrTest)) {
+        TryOptimizeWasmCast(castOrTest, graph);
+      } else if (IsWasmRefTest(castOrTest)) {
+        TryOptimizeWasmTest(castOrTest, graph);
+      }
+    }
+  }
+
+  return true;
+}
+
 static bool NeedsKeepAlive(MInstruction* slotsOrElements, MInstruction* use) {
   MOZ_ASSERT(slotsOrElements->type() == MIRType::Elements ||
              slotsOrElements->type() == MIRType::Slots);
 
   if (slotsOrElements->block() != use->block()) {
-    return true;
-  }
-
-  // Allocating a BigInt can GC, so we have to keep the object alive.
-  if (use->type() == MIRType::BigInt) {
-    return true;
-  }
-  if (use->isLoadTypedArrayElementHole() &&
-      Scalar::isBigIntType(use->toLoadTypedArrayElementHole()->arrayType())) {
     return true;
   }
 
@@ -4422,38 +4603,61 @@ static bool NeedsKeepAlive(MInstruction* slotsOrElements, MInstruction* use) {
   ++iter;
 
   while (true) {
-    if (*iter == use) {
-      return false;
-    }
-
-    switch (iter->op()) {
+    MInstruction* ins = *iter;
+    switch (ins->op()) {
       case MDefinition::Opcode::Nop:
       case MDefinition::Opcode::Constant:
       case MDefinition::Opcode::KeepAliveObject:
       case MDefinition::Opcode::Unbox:
       case MDefinition::Opcode::LoadDynamicSlot:
+      case MDefinition::Opcode::LoadDynamicSlotAndUnbox:
       case MDefinition::Opcode::StoreDynamicSlot:
       case MDefinition::Opcode::LoadFixedSlot:
+      case MDefinition::Opcode::LoadFixedSlotAndUnbox:
       case MDefinition::Opcode::StoreFixedSlot:
       case MDefinition::Opcode::LoadElement:
       case MDefinition::Opcode::LoadElementAndUnbox:
       case MDefinition::Opcode::LoadElementHole:
       case MDefinition::Opcode::StoreElement:
       case MDefinition::Opcode::StoreHoleValueElement:
+      case MDefinition::Opcode::LoadUnboxedScalar:
+      case MDefinition::Opcode::StoreUnboxedScalar:
+      case MDefinition::Opcode::StoreTypedArrayElementHole:
+      case MDefinition::Opcode::LoadDataViewElement:
+      case MDefinition::Opcode::StoreDataViewElement:
+      case MDefinition::Opcode::AtomicTypedArrayElementBinop:
+      case MDefinition::Opcode::AtomicExchangeTypedArrayElement:
+      case MDefinition::Opcode::CompareExchangeTypedArrayElement:
       case MDefinition::Opcode::InitializedLength:
+      case MDefinition::Opcode::SetInitializedLength:
       case MDefinition::Opcode::ArrayLength:
       case MDefinition::Opcode::BoundsCheck:
       case MDefinition::Opcode::GuardElementNotHole:
       case MDefinition::Opcode::GuardElementsArePacked:
       case MDefinition::Opcode::InArray:
       case MDefinition::Opcode::SpectreMaskIndex:
+      case MDefinition::Opcode::Add:
       case MDefinition::Opcode::DebugEnterGCUnsafeRegion:
       case MDefinition::Opcode::DebugLeaveGCUnsafeRegion:
-        iter++;
         break;
+      case MDefinition::Opcode::LoadTypedArrayElementHole: {
+        // Allocating a BigInt can GC, so we have to keep the object alive.
+        auto* loadIns = ins->toLoadTypedArrayElementHole();
+        if (Scalar::isBigIntType(loadIns->arrayType())) {
+          return true;
+        }
+        break;
+      }
       default:
         return true;
     }
+
+    if (ins == use) {
+      // We didn't find any instructions in range [slotsOrElements, use] that
+      // can GC.
+      return false;
+    }
+    iter++;
   }
 
   MOZ_CRASH("Unreachable");
@@ -4486,9 +4690,10 @@ bool jit::AddKeepAliveInstructions(MIRGraph& graph) {
 
       MOZ_ASSERT(ownerObject->type() == MIRType::Object);
 
-      if (ownerObject->isConstant()) {
-        // Constants are kept alive by other pointers, for instance
-        // ImmGCPtr in JIT code.
+      const MDefinition* unwrapped = ownerObject->skipObjectGuards();
+      if (unwrapped->isConstant() || unwrapped->isNurseryObject()) {
+        // Constants are kept alive by other pointers, for instance ImmGCPtr in
+        // JIT code. NurseryObjects will be kept alive by the IonScript.
         continue;
       }
 
@@ -4507,13 +4712,6 @@ bool jit::AddKeepAliveInstructions(MIRGraph& graph) {
 
         if (!NeedsKeepAlive(ins, use)) {
 #ifdef DEBUG
-          // These two instructions don't start a GC unsafe region, because they
-          // overwrite their elements register at the very start. This ensures
-          // there's no invalidated elements value kept on the stack.
-          if (use->isApplyArray() || use->isConstructArray()) {
-            continue;
-          }
-
           if (!graph.alloc().ensureBallast()) {
             return false;
           }
@@ -4544,11 +4742,11 @@ bool jit::AddKeepAliveInstructions(MIRGraph& graph) {
 
 bool LinearSum::multiply(int32_t scale) {
   for (size_t i = 0; i < terms_.length(); i++) {
-    if (!SafeMul(scale, terms_[i].scale, &terms_[i].scale)) {
+    if (!mozilla::SafeMul(scale, terms_[i].scale, &terms_[i].scale)) {
       return false;
     }
   }
-  return SafeMul(scale, constant_, &constant_);
+  return mozilla::SafeMul(scale, constant_, &constant_);
 }
 
 bool LinearSum::divide(uint32_t scale) {
@@ -4574,7 +4772,7 @@ bool LinearSum::divide(uint32_t scale) {
 bool LinearSum::add(const LinearSum& other, int32_t scale /* = 1 */) {
   for (size_t i = 0; i < other.terms_.length(); i++) {
     int32_t newScale = scale;
-    if (!SafeMul(scale, other.terms_[i].scale, &newScale)) {
+    if (!mozilla::SafeMul(scale, other.terms_[i].scale, &newScale)) {
       return false;
     }
     if (!add(other.terms_[i].term, newScale)) {
@@ -4582,7 +4780,7 @@ bool LinearSum::add(const LinearSum& other, int32_t scale /* = 1 */) {
     }
   }
   int32_t newConstant = scale;
-  if (!SafeMul(scale, other.constant_, &newConstant)) {
+  if (!mozilla::SafeMul(scale, other.constant_, &newConstant)) {
     return false;
   }
   return add(newConstant);
@@ -4594,7 +4792,7 @@ bool LinearSum::add(SimpleLinearSum other, int32_t scale) {
   }
 
   int32_t constant;
-  if (!SafeMul(other.constant, scale, &constant)) {
+  if (!mozilla::SafeMul(other.constant, scale, &constant)) {
     return false;
   }
 
@@ -4610,7 +4808,7 @@ bool LinearSum::add(MDefinition* term, int32_t scale) {
 
   if (MConstant* termConst = term->maybeConstantValue()) {
     int32_t constant = termConst->toInt32();
-    if (!SafeMul(constant, scale, &constant)) {
+    if (!mozilla::SafeMul(constant, scale, &constant)) {
       return false;
     }
     return add(constant);
@@ -4618,7 +4816,7 @@ bool LinearSum::add(MDefinition* term, int32_t scale) {
 
   for (size_t i = 0; i < terms_.length(); i++) {
     if (term == terms_[i].term) {
-      if (!SafeAdd(scale, terms_[i].scale, &terms_[i].scale)) {
+      if (!mozilla::SafeAdd(scale, terms_[i].scale, &terms_[i].scale)) {
         return false;
       }
       if (terms_[i].scale == 0) {
@@ -4638,7 +4836,7 @@ bool LinearSum::add(MDefinition* term, int32_t scale) {
 }
 
 bool LinearSum::add(int32_t constant) {
-  return SafeAdd(constant, constant_, &constant_);
+  return mozilla::SafeAdd(constant, constant_, &constant_);
 }
 
 void LinearSum::dump(GenericPrinter& out) const {
@@ -4693,7 +4891,7 @@ MDefinition* jit::ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block,
       }
     } else if (term.scale == -1) {
       if (!def) {
-        def = MConstant::New(alloc, Int32Value(0));
+        def = MConstant::NewInt32(alloc, 0);
         block->insertAtEnd(def->toInstruction());
         def->computeRange(alloc);
       }
@@ -4703,7 +4901,7 @@ MDefinition* jit::ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block,
       def->computeRange(alloc);
     } else {
       MOZ_ASSERT(term.scale != 0);
-      MConstant* factor = MConstant::New(alloc, Int32Value(term.scale));
+      MConstant* factor = MConstant::NewInt32(alloc, term.scale);
       block->insertAtEnd(factor);
       MMul* mul = MMul::New(alloc, term.term, factor, MIRType::Int32);
       mul->setBailoutKind(bailoutKind);
@@ -4721,7 +4919,7 @@ MDefinition* jit::ConvertLinearSum(TempAllocator& alloc, MBasicBlock* block,
   }
 
   if (!def) {
-    def = MConstant::New(alloc, Int32Value(0));
+    def = MConstant::NewInt32(alloc, 0);
     block->insertAtEnd(def->toInstruction());
     def->computeRange(alloc);
   }
@@ -4847,8 +5045,10 @@ void jit::UnmarkLoopBlocks(MIRGraph& graph, const MBasicBlock* header) {
 bool jit::FoldLoadsWithUnbox(const MIRGenerator* mir, MIRGraph& graph) {
   // This pass folds MLoadFixedSlot, MLoadDynamicSlot, MLoadElement instructions
   // followed by MUnbox into a single instruction. For LoadElement this allows
-  // us to fuse the hole check with the type check for the unbox.
+  // us to fuse the hole check with the type check for the unbox. It may also
+  // allow us to remove some GuardElementsArePacked nodes.
 
+  Vector<MInstruction*, 16, SystemAllocPolicy> optimizedElements;
   for (MBasicBlockIterator block(graph.begin()); block != graph.end();
        block++) {
     if (mir->shouldCancel("FoldLoadsWithUnbox")) {
@@ -4862,7 +5062,7 @@ bool jit::FoldLoadsWithUnbox(const MIRGenerator* mir, MIRGraph& graph) {
 
       // We're only interested in loads producing a Value.
       if (!ins->isLoadFixedSlot() && !ins->isLoadDynamicSlot() &&
-          !ins->isLoadElement()) {
+          !ins->isLoadElement() && !ins->isSuperFunction()) {
         continue;
       }
       if (ins->type() != MIRType::Value) {
@@ -4908,6 +5108,16 @@ bool jit::FoldLoadsWithUnbox(const MIRGenerator* mir, MIRGraph& graph) {
         continue;
       }
 
+      // If this is a SuperFunction, we only support folding the load when the
+      // unbox is fallible and its type is Object.
+      //
+      // SuperFunction is currently only used for `super()` constructor calls
+      // in classes, which always use fallible unbox to Object.
+      if (load->isSuperFunction() &&
+          !(unbox->type() == MIRType::Object && unbox->fallible())) {
+        continue;
+      }
+
       // Combine the load and unbox into a single MIR instruction.
       if (!graph.alloc().ensureBallast()) {
         return false;
@@ -4937,6 +5147,24 @@ bool jit::FoldLoadsWithUnbox(const MIRGenerator* mir, MIRGraph& graph) {
           MOZ_ASSERT(unbox->fallible());
           replacement = MLoadElementAndUnbox::New(
               graph.alloc(), loadIns->elements(), loadIns->index(), mode, type);
+          MOZ_ASSERT(!IsMagicType(type));
+          // FoldElementAndUnbox will implicitly check for holes by unboxing. We
+          // may be able to remove a GuardElementsArePacked check. Add this
+          // Elements to a list to check later (unless we just added it for
+          // a different load).
+          if ((optimizedElements.empty() ||
+               optimizedElements.back() != loadIns) &&
+              !optimizedElements.append(loadIns->elements()->toInstruction())) {
+            return false;
+          }
+          break;
+        }
+        case MDefinition::Opcode::SuperFunction: {
+          auto* loadIns = load->toSuperFunction();
+          MOZ_ASSERT(unbox->fallible());
+          MOZ_ASSERT(unbox->type() == MIRType::Object);
+          replacement =
+              MSuperFunctionAndUnbox::New(graph.alloc(), loadIns->callee());
           break;
         }
         default:
@@ -4962,6 +5190,50 @@ bool jit::FoldLoadsWithUnbox(const MIRGenerator* mir, MIRGraph& graph) {
         block->discard(lexicalCheck);
       }
       block->discard(load);
+    }
+  }
+
+  // For each Elements that had a load folded with an unbox, check to see if
+  // there is a GuardElementsArePacked node that can be removed. It can't be
+  // removed if:
+  //     1. There is a loadElement/storeElement use that will not emit a
+  //        hole check.
+  //     2. There is another use that has not been allow-listed.
+  // It is safe to add additional operations to the allow list if they don't
+  // require a packed Elements array as input.
+  for (auto* elements : optimizedElements) {
+    bool canRemovePackedChecks = true;
+    Vector<MInstruction*, 4, SystemAllocPolicy> guards;
+    for (MUseDefIterator uses(elements); uses; uses++) {
+      MInstruction* use = uses.def()->toInstruction();
+      if (use->isGuardElementsArePacked()) {
+        if (!guards.append(use)) {
+          return false;
+        }
+      } else if (use->isLoadElement()) {
+        if (!use->toLoadElement()->needsHoleCheck()) {
+          canRemovePackedChecks = false;
+          break;
+        }
+      } else if (use->isStoreElement()) {
+        if (!use->toStoreElement()->needsHoleCheck()) {
+          canRemovePackedChecks = false;
+          break;
+        }
+      } else if (use->isLoadElementAndUnbox() || use->isInitializedLength() ||
+                 use->isArrayLength()) {
+        // These operations are not affected by the packed flag.
+        continue;
+      } else {
+        canRemovePackedChecks = false;
+        break;
+      }
+    }
+    if (!canRemovePackedChecks) {
+      continue;
+    }
+    for (auto* guard : guards) {
+      guard->block()->discard(guard);
     }
   }
 
@@ -5048,11 +5320,45 @@ bool jit::MakeLoopsContiguous(MIRGraph& graph) {
   return true;
 }
 
-static MDefinition* SkipUnbox(MDefinition* ins) {
+static MDefinition* SkipIterObjectUnbox(MDefinition* ins) {
+  if (ins->isGuardIsNotProxy()) {
+    ins = ins->toGuardIsNotProxy()->input();
+  }
   if (ins->isUnbox()) {
-    return ins->toUnbox()->input();
+    ins = ins->toUnbox()->input();
   }
   return ins;
+}
+
+static MDefinition* SkipBox(MDefinition* ins) {
+  if (ins->isBox()) {
+    return ins->toBox()->input();
+  }
+  return ins;
+}
+
+static MObjectToIterator* FindObjectToIteratorUse(MDefinition* ins) {
+  for (MUseIterator use(ins->usesBegin()); use != ins->usesEnd(); use++) {
+    if (!(*use)->consumer()->isDefinition()) {
+      continue;
+    }
+    MDefinition* def = (*use)->consumer()->toDefinition();
+    if (def->isGuardIsNotProxy()) {
+      MObjectToIterator* recursed = FindObjectToIteratorUse(def);
+      if (recursed) {
+        return recursed;
+      }
+    } else if (def->isUnbox()) {
+      MObjectToIterator* recursed = FindObjectToIteratorUse(def);
+      if (recursed) {
+        return recursed;
+      }
+    } else if (def->isObjectToIterator()) {
+      return def->toObjectToIterator();
+    }
+  }
+
+  return nullptr;
 }
 
 bool jit::OptimizeIteratorIndices(const MIRGenerator* mir, MIRGraph& graph) {
@@ -5082,6 +5388,9 @@ bool jit::OptimizeIteratorIndices(const MIRGenerator* mir, MIRGraph& graph) {
       } else if (ins->isMegamorphicLoadSlotByValue()) {
         receiver = ins->toMegamorphicLoadSlotByValue()->object();
         idVal = ins->toMegamorphicLoadSlotByValue()->idVal();
+      } else if (ins->isMegamorphicLoadSlotByValuePermissive()) {
+        receiver = ins->toMegamorphicLoadSlotByValuePermissive()->object();
+        idVal = ins->toMegamorphicLoadSlotByValuePermissive()->idVal();
       } else if (ins->isGetPropertyCache()) {
         receiver = ins->toGetPropertyCache()->value();
         idVal = ins->toGetPropertyCache()->idval();
@@ -5099,11 +5408,12 @@ bool jit::OptimizeIteratorIndices(const MIRGenerator* mir, MIRGraph& graph) {
         continue;
       }
 
-      // Given the following structure (that occurs inside for-in loops):
+      // Given the following structure (that occurs inside for-in loops or
+      // when iterating a scalar-replaced Object.keys result):
       //   obj: some object
       //   iter: ObjectToIterator <obj>
-      //   iterNext: IteratorMore <iter>
-      //   access: HasProp/GetElem <obj> <iterNext>
+      //   iterLoad: IteratorMore <iter> | LoadIteratorElement <iter, index>
+      //   access: HasProp/GetElem <obj> <iterLoad>
       // If the iterator object has an indices array, we can speed up the
       // property access:
       // 1. If the property access is a HasProp looking for own properties,
@@ -5113,36 +5423,108 @@ bool jit::OptimizeIteratorIndices(const MIRGenerator* mir, MIRGraph& graph) {
       // 2. If the property access is a GetProp, then we can use the contents
       //    of the indices array to find the correct property faster than
       //    the megamorphic cache.
-      if (!idVal->isIteratorMore()) {
+      // 3. If the property access is a SetProp, then we can use the contents
+      //    of the indices array to find the correct slots faster than the
+      //    megamorphic cache.
+      //
+      // In some cases involving Object.keys, we can also end up with a pattern
+      // like this:
+      //
+      //   obj1: some object
+      //   obj2: some object
+      //   iter1: ObjectToIterator <obj1>
+      //   iter2: ObjectToIterator <obj2>
+      //   iterLoad: LoadIteratorElement <iter1>
+      //   access: GetElem <obj2> <iterLoad>
+      //
+      // This corresponds to `obj2[Object.keys(obj1)[index]]`. In the general
+      // case we can't do much with this, but if obj1 and obj2 have the same
+      // shape, then we may reuse the iterator, in which case iter1 == iter2.
+      // In that case, we can optimize the access as if it were using iter2,
+      // at the cost of a single comparison to see if iter1 == iter2.
+#ifdef JS_CODEGEN_X86
+      // The ops required for this want more registers than is convenient on
+      // x86
+      bool supportObjectKeys = false;
+#else
+      bool supportObjectKeys = true;
+#endif
+
+      MObjectToIterator* iter = nullptr;
+      MObjectToIterator* otherIter = nullptr;
+      MDefinition* iterElementIndex = nullptr;
+      if (idVal->isIteratorMore()) {
+        auto* iterNext = idVal->toIteratorMore();
+
+        if (!iterNext->iterator()->isObjectToIterator()) {
+          continue;
+        }
+
+        iter = iterNext->iterator()->toObjectToIterator();
+        if (SkipIterObjectUnbox(iter->object()) !=
+            SkipIterObjectUnbox(receiver)) {
+          continue;
+        }
+      } else if (supportObjectKeys && SkipBox(idVal)->isLoadIteratorElement()) {
+        auto* iterLoad = SkipBox(idVal)->toLoadIteratorElement();
+
+        if (!iterLoad->iter()->isObjectToIterator()) {
+          continue;
+        }
+
+        iter = iterLoad->iter()->toObjectToIterator();
+        if (SkipIterObjectUnbox(iter->object()) !=
+            SkipIterObjectUnbox(receiver)) {
+          if (!setValue) {
+            otherIter = FindObjectToIteratorUse(SkipIterObjectUnbox(receiver));
+          }
+
+          if (!otherIter || !otherIter->dominates(ins)) {
+            continue;
+          }
+        }
+        iterElementIndex = iterLoad->index();
+      } else {
         continue;
       }
-      auto* iterNext = idVal->toIteratorMore();
 
-      if (!iterNext->iterator()->isObjectToIterator()) {
-        continue;
+      MOZ_ASSERT_IF(iterElementIndex, supportObjectKeys);
+      MOZ_ASSERT_IF(otherIter, supportObjectKeys);
+
+      MInstruction* indicesCheck = nullptr;
+      if (otherIter) {
+        indicesCheck = MIteratorsMatchAndHaveIndices::New(
+            graph.alloc(), otherIter->object(), iter, otherIter);
+      } else {
+        indicesCheck =
+            MIteratorHasIndices::New(graph.alloc(), iter->object(), iter);
       }
 
-      MObjectToIterator* iter = iterNext->iterator()->toObjectToIterator();
-      if (SkipUnbox(iter->object()) != SkipUnbox(receiver)) {
-        continue;
-      }
-
-      MInstruction* indicesCheck =
-          MIteratorHasIndices::New(graph.alloc(), iter->object(), iter);
       MInstruction* replacement;
       if (ins->isHasOwnCache() || ins->isMegamorphicHasProp()) {
         MOZ_ASSERT(!setValue);
-        replacement = MConstant::New(graph.alloc(), BooleanValue(true));
+        replacement = MConstant::NewBoolean(graph.alloc(), true);
       } else if (ins->isMegamorphicLoadSlotByValue() ||
+                 ins->isMegamorphicLoadSlotByValuePermissive() ||
                  ins->isGetPropertyCache()) {
         MOZ_ASSERT(!setValue);
-        replacement =
-            MLoadSlotByIteratorIndex::New(graph.alloc(), receiver, iter);
+        if (iterElementIndex) {
+          replacement = MLoadSlotByIteratorIndexIndexed::New(
+              graph.alloc(), receiver, iter, iterElementIndex);
+        } else {
+          replacement =
+              MLoadSlotByIteratorIndex::New(graph.alloc(), receiver, iter);
+        }
       } else {
         MOZ_ASSERT(ins->isMegamorphicSetElement() || ins->isSetPropertyCache());
         MOZ_ASSERT(setValue);
-        replacement = MStoreSlotByIteratorIndex::New(graph.alloc(), receiver,
-                                                     iter, setValue);
+        if (iterElementIndex) {
+          replacement = MStoreSlotByIteratorIndexIndexed::New(
+              graph.alloc(), receiver, iter, iterElementIndex, setValue);
+        } else {
+          replacement = MStoreSlotByIteratorIndex::New(graph.alloc(), receiver,
+                                                       iter, setValue);
+        }
       }
 
       if (!block->wrapInstructionInFastpath(ins, replacement, indicesCheck)) {

@@ -6,14 +6,13 @@
 #ifndef TRANSFRMX_MOZILLA_XML_OUTPUT_H
 #define TRANSFRMX_MOZILLA_XML_OUTPUT_H
 
-#include "txXMLEventHandler.h"
-#include "nsIScriptLoaderObserver.h"
-#include "txOutputFormat.h"
-#include "nsTArray.h"
 #include "nsCOMPtr.h"
 #include "nsICSSLoaderObserver.h"
+#include "nsIScriptLoaderObserver.h"
+#include "nsTArray.h"
+#include "txOutputFormat.h"
 #include "txStack.h"
-#include "mozilla/Attributes.h"
+#include "txXMLEventHandler.h"
 
 class nsIContent;
 class nsAtom;

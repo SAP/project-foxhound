@@ -6,12 +6,12 @@
 
 /**
  *
- * @param {String} groupID
- * @param {String} eventType
+ * @param {string} groupID
+ * @param {string} eventType
  * @param {Function} condition: Optional function that takes a Window as parameter. When
  *                   passed, the event will only be included if the result of the function
  *                   call is `true` (See `getAvailableEventBreakpoints`).
- * @returns {Object}
+ * @returns {object}
  */
 function generalEvent(groupID, eventType, condition) {
   return {
@@ -183,15 +183,6 @@ const AVAILABLE_BREAKPOINTS = [
       nodeEvent("dom-mutation", "DOMActivate"),
       nodeEvent("dom-mutation", "DOMFocusIn"),
       nodeEvent("dom-mutation", "DOMFocusOut"),
-
-      // Standard DOM mutation events.
-      nodeEvent("dom-mutation", "DOMAttrModified"),
-      nodeEvent("dom-mutation", "DOMCharacterDataModified"),
-      nodeEvent("dom-mutation", "DOMNodeInserted"),
-      nodeEvent("dom-mutation", "DOMNodeInsertedIntoDocument"),
-      nodeEvent("dom-mutation", "DOMNodeRemoved"),
-      nodeEvent("dom-mutation", "DOMNodeRemovedFromDocument"),
-      nodeEvent("dom-mutation", "DOMSubtreeModified"),
 
       // DOM load events.
       nodeEvent("dom-mutation", "DOMContentLoaded"),
@@ -504,7 +495,7 @@ exports.getAvailableEventBreakpoints = getAvailableEventBreakpoints;
  * Get all available event breakpoints
  *
  * @param {Window|WorkerGlobalScope} global
- * @returns {Array<Object>} An array containing object with a few properties :
+ * @returns {Array<object>} An array containing object with a few properties :
  *    - {String} id: unique identifier
  *    - {String} name: Description for the event to be displayed in UI (no translated)
  *    - {String} type: Either "simple" or "event"

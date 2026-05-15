@@ -351,9 +351,6 @@ enum class EditAction {
   // HTMLInputElement.value.
   eSetText,
 
-  // eSetHTML indicates to set body of HTMLEditor.
-  eSetHTML,
-
   // eInsertHTML indicates to insert HTML source code.
   eInsertHTML,
 
@@ -485,10 +482,6 @@ enum class EditSubAction : int32_t {
   // eInsertHTMLSource indicates to create a document fragment from given HTML
   // source and insert into the DOM tree.  So, this is similar to innerHTML.
   eInsertHTMLSource,
-
-  // eReplaceHeadWithHTMLSource indicates to create a document fragment from
-  // given HTML source and replace content of <head> with it.
-  eReplaceHeadWithHTMLSource,
 
   // eSetPositionToAbsolute and eSetPositionToStatic indicates to set position
   // property to absolute or static.
@@ -828,7 +821,6 @@ inline bool MayEditActionDeleteSelection(const EditAction aEditAction) {
 
     case EditAction::eRewrap:
     case EditAction::eSetText:
-    case EditAction::eSetHTML:
     case EditAction::eInsertHTML:
       return true;
 
@@ -859,6 +851,247 @@ inline bool MayEditActionRequireLayout(const EditAction aEditAction) {
     default:
       return false;
   }
+}
+
+inline std::ostream& operator<<(std::ostream& aStream,
+                                const EditAction& aEditAction) {
+  switch (aEditAction) {
+    case EditAction::eNone:
+      return aStream << "eNone";
+    case EditAction::eNotEditing:
+      return aStream << "eNotEditing";
+    case EditAction::eInitializing:
+      return aStream << "eInitializing";
+    case EditAction::eInsertText:
+      return aStream << "eInsertText";
+    case EditAction::eInsertParagraphSeparator:
+      return aStream << "eInsertParagraphSeparator";
+    case EditAction::eInsertLineBreak:
+      return aStream << "eInsertLineBreak";
+    case EditAction::eDeleteSelection:
+      return aStream << "eDeleteSelection";
+    case EditAction::eDeleteBackward:
+      return aStream << "eDeleteBackward";
+    case EditAction::eDeleteForward:
+      return aStream << "eDeleteForward";
+    case EditAction::eDeleteWordBackward:
+      return aStream << "eDeleteWordBackward";
+    case EditAction::eDeleteWordForward:
+      return aStream << "eDeleteWordForward";
+    case EditAction::eDeleteToBeginningOfSoftLine:
+      return aStream << "eDeleteToBeginningOfSoftLine";
+    case EditAction::eDeleteToEndOfSoftLine:
+      return aStream << "eDeleteToEndOfSoftLine";
+    case EditAction::eDeleteByDrag:
+      return aStream << "eDeleteByDrag";
+    case EditAction::eStartComposition:
+      return aStream << "eStartComposition";
+    case EditAction::eUpdateComposition:
+      return aStream << "eUpdateComposition";
+    case EditAction::eUpdateCompositionToCommit:
+      return aStream << "eUpdateCompositionToCommit";
+    case EditAction::eCommitComposition:
+      return aStream << "eCommitComposition";
+    case EditAction::eCancelComposition:
+      return aStream << "eCancelComposition";
+    case EditAction::eUndo:
+      return aStream << "eUndo";
+    case EditAction::eRedo:
+      return aStream << "eRedo";
+    case EditAction::eSetTextDirection:
+      return aStream << "eSetTextDirection";
+    case EditAction::eCut:
+      return aStream << "eCut";
+    case EditAction::eCopy:
+      return aStream << "eCopy";
+    case EditAction::ePaste:
+      return aStream << "ePaste";
+    case EditAction::ePasteAsQuotation:
+      return aStream << "ePasteAsQuotation";
+    case EditAction::eDrop:
+      return aStream << "eDrop";
+    case EditAction::eIndent:
+      return aStream << "eIndent";
+    case EditAction::eOutdent:
+      return aStream << "eOutdent";
+    case EditAction::eReplaceText:
+      return aStream << "eReplaceText";
+    case EditAction::eInsertTableRowElement:
+      return aStream << "eInsertTableRowElement";
+    case EditAction::eRemoveTableRowElement:
+      return aStream << "eRemoveTableRowElement";
+    case EditAction::eInsertTableColumn:
+      return aStream << "eInsertTableColumn";
+    case EditAction::eRemoveTableColumn:
+      return aStream << "eRemoveTableColumn";
+    case EditAction::eResizingElement:
+      return aStream << "eResizingElement";
+    case EditAction::eResizeElement:
+      return aStream << "eResizeElement";
+    case EditAction::eMovingElement:
+      return aStream << "eMovingElement";
+    case EditAction::eMoveElement:
+      return aStream << "eMoveElement";
+    case EditAction::eUnknown:
+      return aStream << "eUnknown";
+    case EditAction::eSetAttribute:
+      return aStream << "eSetAttribute";
+    case EditAction::eRemoveAttribute:
+      return aStream << "eRemoveAttribute";
+    case EditAction::eInsertNode:
+      return aStream << "eInsertNode";
+    case EditAction::eRemoveNode:
+      return aStream << "eRemoveNode";
+    case EditAction::eInsertBlockElement:
+      return aStream << "eInsertBlockElement";
+    case EditAction::eInsertHorizontalRuleElement:
+      return aStream << "eInsertHorizontalRuleElement";
+    case EditAction::eInsertLinkElement:
+      return aStream << "eInsertLinkElement";
+    case EditAction::eInsertUnorderedListElement:
+      return aStream << "eInsertUnorderedListElement";
+    case EditAction::eInsertOrderedListElement:
+      return aStream << "eInsertOrderedListElement";
+    case EditAction::eRemoveUnorderedListElement:
+      return aStream << "eRemoveUnorderedListElement";
+    case EditAction::eRemoveOrderedListElement:
+      return aStream << "eRemoveOrderedListElement";
+    case EditAction::eRemoveListElement:
+      return aStream << "eRemoveListElement";
+    case EditAction::eInsertBlockquoteElement:
+      return aStream << "eInsertBlockquoteElement";
+    case EditAction::eNormalizeTable:
+      return aStream << "eNormalizeTable";
+    case EditAction::eRemoveTableElement:
+      return aStream << "eRemoveTableElement";
+    case EditAction::eDeleteTableCellContents:
+      return aStream << "eDeleteTableCellContents";
+    case EditAction::eInsertTableCellElement:
+      return aStream << "eInsertTableCellElement";
+    case EditAction::eRemoveTableCellElement:
+      return aStream << "eRemoveTableCellElement";
+    case EditAction::eJoinTableCellElements:
+      return aStream << "eJoinTableCellElements";
+    case EditAction::eSplitTableCellElement:
+      return aStream << "eSplitTableCellElement";
+    case EditAction::eSetTableCellElementType:
+      return aStream << "eSetTableCellElementType";
+    case EditAction::eSelectTableCell:
+      return aStream << "eSelectTableCell";
+    case EditAction::eSelectTableRow:
+      return aStream << "eSelectTableRow";
+    case EditAction::eSelectTableColumn:
+      return aStream << "eSelectTableColumn";
+    case EditAction::eSelectTable:
+      return aStream << "eSelectTable";
+    case EditAction::eSelectAllTableCells:
+      return aStream << "eSelectAllTableCells";
+    case EditAction::eGetCellIndexes:
+      return aStream << "eGetCellIndexes";
+    case EditAction::eGetTableSize:
+      return aStream << "eGetTableSize";
+    case EditAction::eGetCellAt:
+      return aStream << "eGetCellAt";
+    case EditAction::eGetCellDataAt:
+      return aStream << "eGetCellDataAt";
+    case EditAction::eGetFirstRow:
+      return aStream << "eGetFirstRow";
+    case EditAction::eGetSelectedOrParentTableElement:
+      return aStream << "eGetSelectedOrParentTableElement";
+    case EditAction::eGetSelectedCellsType:
+      return aStream << "eGetSelectedCellsType";
+    case EditAction::eGetFirstSelectedCellInTable:
+      return aStream << "eGetFirstSelectedCellInTable";
+    case EditAction::eGetSelectedCells:
+      return aStream << "eGetSelectedCells";
+    case EditAction::eSetInlineStyleProperty:
+      return aStream << "eSetInlineStyleProperty";
+    case EditAction::eRemoveInlineStyleProperty:
+      return aStream << "eRemoveInlineStyleProperty";
+    case EditAction::eSetFontWeightProperty:
+      return aStream << "eSetFontWeightProperty";
+    case EditAction::eRemoveFontWeightProperty:
+      return aStream << "eRemoveFontWeightProperty";
+    case EditAction::eSetTextStyleProperty:
+      return aStream << "eSetTextStyleProperty";
+    case EditAction::eRemoveTextStyleProperty:
+      return aStream << "eRemoveTextStyleProperty";
+    case EditAction::eSetTextDecorationPropertyUnderline:
+      return aStream << "eSetTextDecorationPropertyUnderline";
+    case EditAction::eRemoveTextDecorationPropertyUnderline:
+      return aStream << "eRemoveTextDecorationPropertyUnderline";
+    case EditAction::eSetTextDecorationPropertyLineThrough:
+      return aStream << "eSetTextDecorationPropertyLineThrough";
+    case EditAction::eRemoveTextDecorationPropertyLineThrough:
+      return aStream << "eRemoveTextDecorationPropertyLineThrough";
+    case EditAction::eSetVerticalAlignPropertySuper:
+      return aStream << "eSetVerticalAlignPropertySuper";
+    case EditAction::eRemoveVerticalAlignPropertySuper:
+      return aStream << "eRemoveVerticalAlignPropertySuper";
+    case EditAction::eSetVerticalAlignPropertySub:
+      return aStream << "eSetVerticalAlignPropertySub";
+    case EditAction::eRemoveVerticalAlignPropertySub:
+      return aStream << "eRemoveVerticalAlignPropertySub";
+    case EditAction::eSetFontFamilyProperty:
+      return aStream << "eSetFontFamilyProperty";
+    case EditAction::eRemoveFontFamilyProperty:
+      return aStream << "eRemoveFontFamilyProperty";
+    case EditAction::eSetColorProperty:
+      return aStream << "eSetColorProperty";
+    case EditAction::eRemoveColorProperty:
+      return aStream << "eRemoveColorProperty";
+    case EditAction::eSetBackgroundColorPropertyInline:
+      return aStream << "eSetBackgroundColorPropertyInline";
+    case EditAction::eRemoveBackgroundColorPropertyInline:
+      return aStream << "eRemoveBackgroundColorPropertyInline";
+    case EditAction::eRemoveAllInlineStyleProperties:
+      return aStream << "eRemoveAllInlineStyleProperties";
+    case EditAction::eIncrementFontSize:
+      return aStream << "eIncrementFontSize";
+    case EditAction::eDecrementFontSize:
+      return aStream << "eDecrementFontSize";
+    case EditAction::eSetAlignment:
+      return aStream << "eSetAlignment";
+    case EditAction::eAlignLeft:
+      return aStream << "eAlignLeft";
+    case EditAction::eAlignRight:
+      return aStream << "eAlignRight";
+    case EditAction::eAlignCenter:
+      return aStream << "eAlignCenter";
+    case EditAction::eJustify:
+      return aStream << "eJustify";
+    case EditAction::eSetBackgroundColor:
+      return aStream << "eSetBackgroundColor";
+    case EditAction::eSetPositionToAbsoluteOrStatic:
+      return aStream << "eSetPositionToAbsoluteOrStatic";
+    case EditAction::eIncreaseOrDecreaseZIndex:
+      return aStream << "eIncreaseOrDecreaseZIndex";
+    case EditAction::eEnableOrDisableCSS:
+      return aStream << "eEnableOrDisableCSS";
+    case EditAction::eEnableOrDisableAbsolutePositionEditor:
+      return aStream << "eEnableOrDisableAbsolutePositionEditor";
+    case EditAction::eEnableOrDisableResizer:
+      return aStream << "eEnableOrDisableResizer";
+    case EditAction::eEnableOrDisableInlineTableEditingUI:
+      return aStream << "eEnableOrDisableInlineTableEditingUI";
+    case EditAction::eSetCharacterSet:
+      return aStream << "eSetCharacterSet";
+    case EditAction::eSetWrapWidth:
+      return aStream << "eSetWrapWidth";
+    case EditAction::eRewrap:
+      return aStream << "eRewrap";
+    case EditAction::eSetText:
+      return aStream << "eSetText";
+    case EditAction::eInsertHTML:
+      return aStream << "eInsertHTML";
+    case EditAction::eHidePassword:
+      return aStream << "eHidePassword";
+    case EditAction::eCreatePaddingBRElementForEmptyEditor:
+      return aStream << "eCreatePaddingBRElementForEmptyEditor";
+  }
+  MOZ_ASSERT_UNREACHABLE("Ensure no invalid EditAction!");
+  return aStream << "<invalid value: " << static_cast<uint32_t>(aEditAction)
+                 << ">";
 }
 
 }  // namespace mozilla

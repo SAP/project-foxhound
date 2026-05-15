@@ -398,6 +398,22 @@ sealed class PromptRequest(
     ) : PromptRequest(), Dismissible
 
     /**
+     * Value type that represents a request to redirect a top-level window.
+     * This occurs when a third-party frame attempts redirect the top-level window,
+     * in a way that doesn't appear to be the result of user input.
+     *
+     * @property targetUri the uri that the page is trying to redirect to.
+     * @property onAllow callback to notify that the user wants to redirect to [targetUri].
+     * @property onDeny callback to notify that the user doesn't want to redirect to [targetUri].
+     */
+    data class Redirect(
+        val targetUri: String,
+        val onAllow: () -> Unit,
+        val onDeny: () -> Unit,
+        override val onDismiss: () -> Unit = { onDeny() },
+    ) : PromptRequest(), Dismissible
+
+    /**
      * Value type that represents a request for showing a
      * <a href="https://developer.mozilla.org/en-US/docs/Web/API/Window/confirm>confirm prompt</a>.
      *

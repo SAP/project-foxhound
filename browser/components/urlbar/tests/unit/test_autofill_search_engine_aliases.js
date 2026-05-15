@@ -43,7 +43,7 @@ add_task(async function basic() {
         query: "",
         providesSearchMode: true,
         heuristic: false,
-        providerName: "TokenAliasEngines",
+        providerName: "UrlbarProviderTokenAliasEngines",
       }),
     ],
   });
@@ -79,7 +79,7 @@ add_task(async function preserveCase() {
         query: "",
         providesSearchMode: true,
         heuristic: false,
-        providerName: "TokenAliasEngines",
+        providerName: "UrlbarProviderTokenAliasEngines",
       }),
     ],
   });

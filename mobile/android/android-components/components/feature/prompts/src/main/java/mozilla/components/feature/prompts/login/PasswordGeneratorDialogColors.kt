@@ -4,6 +4,7 @@
 
 package mozilla.components.feature.prompts.login
 
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -39,11 +40,11 @@ data class PasswordGeneratorDialogColors(
         fun default(
             title: Color = MaterialTheme.colorScheme.onSurface,
             description: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-            background: Color = MaterialTheme.colorScheme.primary,
-            cancelText: Color = MaterialTheme.colorScheme.primary,
-            confirmButton: Color = MaterialTheme.colorScheme.primary,
-            passwordBox: Color = MaterialTheme.colorScheme.primary,
-            boxBorder: Color = MaterialTheme.colorScheme.primary,
+            background: Color = MaterialTheme.colorScheme.surface,
+            cancelText: Color = ButtonDefaults.textButtonColors().contentColor,
+            confirmButton: Color = ButtonDefaults.buttonColors().containerColor,
+            passwordBox: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
+            boxBorder: Color = MaterialTheme.colorScheme.outline,
         ) = PasswordGeneratorDialogColors(
             title = title,
             description = description,

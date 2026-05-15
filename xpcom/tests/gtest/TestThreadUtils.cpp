@@ -699,7 +699,8 @@ class IdleObject final {
     CheckExecutedMethods("Method3", 3);
 
     NS_NewTimerWithFuncCallback(getter_AddRefs(mTimer), Method4, this, 10,
-                                nsITimer::TYPE_ONE_SHOT, "IdleObject::Method3");
+                                nsITimer::TYPE_ONE_SHOT,
+                                "IdleObject::Method3"_ns);
     NS_DispatchToCurrentThreadQueue(
         NewIdleRunnableMethodWithTimer("IdleObject::Method5", this,
                                        &IdleObject::Method5),
@@ -809,7 +810,7 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt1++;
         return true;
       },
-      "runner1", 0, TimeDuration::FromMilliseconds(10),
+      "runner1"_ns, 0, TimeDuration::FromMilliseconds(10),
       TimeDuration::FromMilliseconds(3), true, nullptr);
 
   // Non-repeating but callback always return false so it's still repeating.
@@ -819,7 +820,7 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt2++;
         return false;
       },
-      "runner2", 0, TimeDuration::FromMilliseconds(10),
+      "runner2"_ns, 0, TimeDuration::FromMilliseconds(10),
       TimeDuration::FromMilliseconds(3), false, nullptr);
 
   // Repeating until cnt3 >= 2 by returning 'true' in MayStopProcessing
@@ -831,7 +832,7 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt3++;
         return true;
       },
-      "runner3", 0, TimeDuration::FromMilliseconds(10),
+      "runner3"_ns, 0, TimeDuration::FromMilliseconds(10),
       TimeDuration::FromMilliseconds(3), true, [&cnt3] { return cnt3 >= 2; });
 
   // Non-repeating can callback return true so the callback will
@@ -842,7 +843,7 @@ TEST(ThreadUtils, IdleTaskRunner)
         cnt4++;
         return true;
       },
-      "runner4", 0, TimeDuration::FromMilliseconds(10),
+      "runner4"_ns, 0, TimeDuration::FromMilliseconds(10),
       TimeDuration::FromMilliseconds(3), false, nullptr);
 
   // Firstly we wait until the two repeating tasks reach their limits.

@@ -5,7 +5,9 @@ prefs = [
   "extensions.formautofill.addresses.supported=on",
   "extensions.formautofill.addresses.enabled=true",
 ]
-skip-if = ["os == 'android'"] # bug 1730213
+skip-if = [
+  "os == 'android'", # bug 1730213
+]
 support-files = [
   "../../../../../toolkit/components/satchel/test/satchel_common.js",
   "../../../../../toolkit/components/satchel/test/parent_utils.js",
@@ -14,12 +16,16 @@ support-files = [
 ]
 
 ["test_autofill_and_ordinal_forms.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1803644
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1803644
+]
 
 ["test_autofocus_form.html"]
 
 ["test_basic_autocomplete_form.html"]
-skip-if = ["apple_catalina && !debug"] # Bug 1789194
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1789194
+]
 
 ["test_formautofill_preview_highlight.html"]
 

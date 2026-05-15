@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "QueueObject.h"
+
 #include "mozilla/AbstractThread.h"
 #include "mozilla/TaskQueue.h"
 #include "nsThreadUtils.h"

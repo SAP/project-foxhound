@@ -100,6 +100,8 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     this.tooltip.container.addEventListener("keydown", this._onTooltipKeydown);
   }
 
+  static COLOR_MODIFYING_FUNCTIONS = new Set(["color-mix", "contrast-color"]);
+
   /**
    * Fill the tooltip with a new instance of the spectrum color picker widget
    * initialized with the given color, and return the instance of spectrum
@@ -143,7 +145,8 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
     // Only enable contrast if the type of property is color
     // and its value isn't inside a color-modifying function (e.g. color-mix()).
     this.spectrum.contrastEnabled =
-      name === "color" && colorFunction !== "color-mix";
+      name === "color" &&
+      !SwatchColorPickerTooltip.COLOR_MODIFYING_FUNCTIONS.has(colorFunction);
     if (this.spectrum.contrastEnabled) {
       const { nodeFront } = this.inspector.selection;
       const { pageStyle } = nodeFront.inspectorFront;
@@ -186,9 +189,6 @@ class SwatchColorPickerTooltip extends SwatchBasedEditorTooltip {
       learnMoreButton.addEventListener("keydown", e => e.stopPropagation());
     }
 
-    // Add focus to the first focusable element in the tooltip and attach keydown
-    // event listener to tooltip
-    this.focusableElements[0].focus();
     this.tooltip.container.addEventListener(
       "keydown",
       this._onTooltipKeydown,

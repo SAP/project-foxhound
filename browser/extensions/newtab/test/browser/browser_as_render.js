@@ -1,33 +1,25 @@
 "use strict";
 
-test_newtab({
-  async before({ pushPrefs }) {
-    await pushPrefs([
-      "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
-      false,
-    ]);
-  },
-  test: function test_render_search() {
-    let search = content.document.getElementById("newtab-search-text");
-    ok(search, "Got the search box");
-    isnot(
-      search.placeholder,
-      "search_web_placeholder",
-      "Search box is localized"
-    );
-  },
-});
+// test_newtab calls SpecialPowers.spawn, which injects ContentTaskUtils in the
+// scope of the callback. Eslint doesn't know about that.
+/* global ContentTaskUtils */
 
 test_newtab({
-  async before({ pushPrefs }) {
-    await pushPrefs([
-      "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
-      true,
-    ]);
-  },
-  test: function test_render_search_handoff() {
-    let search = content.document.querySelector(".search-handoff-button");
-    ok(search, "Got the search handoff button");
+  test: async function test_render_search_handoff() {
+    const usingHandoffComponent = Services.prefs.getBoolPref(
+      "browser.newtabpage.activity-stream.search.useHandoffComponent",
+      false
+    );
+
+    const selector = usingHandoffComponent
+      ? "content-search-handoff-ui"
+      : ".search-handoff-button";
+
+    let search = await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(selector),
+      "Wait for search handoff component to render"
+    );
+    ok(search, "Got the content search handoff UI");
   },
 });
 

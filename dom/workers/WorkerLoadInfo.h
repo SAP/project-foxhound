@@ -8,15 +8,14 @@
 #define mozilla_dom_workers_WorkerLoadInfo_h
 
 #include "mozilla/OriginAttributes.h"
-#include "mozilla/StorageAccess.h"
 #include "mozilla/OriginTrials.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ChannelInfo.h"
-#include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/dom/ServiceWorkerRegistrationDescriptor.h"
-#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerCSPContext.h"
-
+#include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
 #include "nsIRequest.h"
@@ -141,6 +140,9 @@ struct WorkerLoadInfoData {
   OriginAttributes mOriginAttributes;
   bool mIsThirdPartyContext;
   bool mIsOn3PCBExceptionList;
+
+  // The header the main script was served with.
+  nsCString mReportingEndpointsHeader;
 
   enum {
     eNotSet,

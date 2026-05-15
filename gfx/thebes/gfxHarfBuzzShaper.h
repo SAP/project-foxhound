@@ -95,7 +95,8 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
   // bounds, etc; if not, the built-in hb_ot font functions will be used.
   static hb_font_t* CreateHBFont(gfxFont* aFont,
                                  hb_font_funcs_t* aFontFuncs = nullptr,
-                                 FontCallbackData* aCallbackData = nullptr);
+                                 FontCallbackData* aCallbackData = nullptr,
+                                 bool aCreateSubfont = false);
 
   hb_font_t* GetHBFont() const { return mHBFont; }
   hb_face_t* GetHBFace() const { return hb_font_get_face(mHBFont); }

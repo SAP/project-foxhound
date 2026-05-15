@@ -24,7 +24,7 @@ async function loadAndCheck(file, displayInline, downloadFile = null) {
       await aDownload.finalize(true);
     },
   };
-  await downloadList.addView(downloadView);
+  downloadList.addView(downloadView);
 
   // Open the new URL and perform the load.
   await BrowserTestUtils.withNewTab(
@@ -54,7 +54,7 @@ async function loadAndCheck(file, displayInline, downloadFile = null) {
   );
 
   // Clean up our download observer.
-  await downloadList.removeView(downloadView);
+  downloadList.removeView(downloadView);
   if (downloadFile) {
     is(
       download.source.url,

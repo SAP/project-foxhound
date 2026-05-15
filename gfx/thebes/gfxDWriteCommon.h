@@ -11,7 +11,6 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "nscore.h"
 #include "nsCOMPtr.h"
-#include "cairo-features.h"
 #include "gfxFontConstants.h"
 #include "nsTArray.h"
 #include "gfxWindowsPlatform.h"
@@ -94,6 +93,65 @@ static inline mozilla::FontStretch FontStretchFromDWriteStretch(
   }
 }
 
+class gfxDWriteFontFileStream final : public IDWriteFontFileStream {
+ public:
+  /**
+   * Used by the FontFileLoader to create a new font stream,
+   * this font stream is created from data in memory. The memory
+   * passed may be released after object creation, it will be
+   * copied internally.
+   *
+   * @param aData Font data
+   */
+  gfxDWriteFontFileStream(const uint8_t* aData, uint32_t aLength,
+                          uint64_t aFontFileKey);
+  ~gfxDWriteFontFileStream();
+
+  // IUnknown interface
+  IFACEMETHOD(QueryInterface)(IID const& iid, OUT void** ppObject) {
+    if (iid == __uuidof(IDWriteFontFileStream)) {
+      *ppObject = static_cast<IDWriteFontFileStream*>(this);
+      return S_OK;
+    } else if (iid == __uuidof(IUnknown)) {
+      *ppObject = static_cast<IUnknown*>(this);
+      return S_OK;
+    } else {
+      return E_NOINTERFACE;
+    }
+  }
+
+  IFACEMETHOD_(ULONG, AddRef)() {
+    MOZ_ASSERT(int32_t(mRefCnt) >= 0, "illegal refcnt");
+    return ++mRefCnt;
+  }
+
+  IFACEMETHOD_(ULONG, Release)();
+
+  // IDWriteFontFileStream methods
+  virtual HRESULT STDMETHODCALLTYPE
+  ReadFileFragment(void const** fragmentStart, UINT64 fileOffset,
+                   UINT64 fragmentSize, OUT void** fragmentContext);
+
+  virtual void STDMETHODCALLTYPE ReleaseFileFragment(void* fragmentContext);
+
+  virtual HRESULT STDMETHODCALLTYPE GetFileSize(OUT UINT64* fileSize);
+
+  virtual HRESULT STDMETHODCALLTYPE GetLastWriteTime(OUT UINT64* lastWriteTime);
+
+  size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+    return mData.ShallowSizeOfExcludingThis(mallocSizeOf);
+  }
+
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
+    return mallocSizeOf(this) + SizeOfExcludingThis(mallocSizeOf);
+  }
+
+ private:
+  FallibleTArray<uint8_t> mData;
+  mozilla::Atomic<uint32_t> mRefCnt;
+  uint64_t mFontFileKey;
+};
+
 class gfxDWriteFontFileLoader : public IDWriteFontFileLoader {
  public:
   gfxDWriteFontFileLoader() {}
@@ -147,10 +205,9 @@ class gfxDWriteFontFileLoader : public IDWriteFontFileLoader {
    * @param aFontFileStream out param for the corresponding stream
    * @return HRESULT of internal calls
    */
-  static HRESULT CreateCustomFontFile(const uint8_t* aFontData,
-                                      uint32_t aLength,
-                                      IDWriteFontFile** aFontFile,
-                                      IDWriteFontFileStream** aFontFileStream);
+  static HRESULT CreateCustomFontFile(
+      const uint8_t* aFontData, uint32_t aLength, IDWriteFontFile** aFontFile,
+      gfxDWriteFontFileStream** aFontFileStream);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 

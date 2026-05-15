@@ -9,7 +9,7 @@ const TEST_URL = "data:text/html;charset=utf-8,";
 
 const isMenuCheckedFor = ({ document }) => {
   const menu = document.getElementById("menu_responsiveUI");
-  return menu.getAttribute("checked") === "true";
+  return menu.hasAttribute("checked");
 };
 
 addRDMTask(
@@ -25,7 +25,7 @@ addRDMTask(
 
         is(
           window1,
-          Services.wm.getMostRecentWindow("navigator:browser"),
+          Services.wm.getMostRecentBrowserWindow(),
           "The new window is the active one"
         );
 
@@ -49,7 +49,7 @@ addRDMTask(
 
     is(
       window,
-      Services.wm.getMostRecentWindow("navigator:browser"),
+      Services.wm.getMostRecentBrowserWindow(),
       "The original window is the active one"
     );
 

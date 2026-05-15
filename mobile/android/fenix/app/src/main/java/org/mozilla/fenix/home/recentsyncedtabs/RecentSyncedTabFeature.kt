@@ -18,7 +18,7 @@ import mozilla.components.lib.state.ext.flow
 import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
-import mozilla.components.service.fxa.manager.ext.withConstellation
+import mozilla.components.service.fxa.manager.ext.withConstellationIfExists
 import mozilla.components.service.fxa.store.SyncStatus
 import mozilla.components.service.fxa.store.SyncStore
 import mozilla.components.service.fxa.sync.SyncReason
@@ -71,7 +71,7 @@ class RecentSyncedTabFeature(
                     dispatchLoading()
                     // Sync tabs storage will fail to retrieve tabs aren't refreshed, as that action
                     // is what populates the device constellation state
-                    accountManager.withConstellation { refreshDevices() }
+                    accountManager.withConstellationIfExists { refreshDevices() }
                     accountManager.syncNow(
                         reason = SyncReason.User,
                         debounce = true,

@@ -1,0 +1,185 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MozPageHeader Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-page-header.mjs"
+    ></script>
+    <script src="lit-test-helpers.js"></script>
+    <script>
+      let html;
+      let testHelpers = new LitTestHelpers();
+
+      add_setup(async function setup() {
+        ({ html } = await testHelpers.setupLit());
+        const templateFn = attrs => html`
+          <moz-page-header ${attrs}></moz-page-header>
+        `;
+        testHelpers.setupTests({ templateFn });
+      });
+
+      add_task(async function testMozPageHeaderProperties() {
+        const HEADING = "Page Heading";
+        const DESCRIPTION = "Some description of this page.";
+        const ICON_SRC = "chrome://global/skin/icons/info.svg";
+
+        let template = testHelpers.templateFn({
+          heading: HEADING,
+          description: DESCRIPTION,
+          iconsrc: ICON_SRC,
+        });
+        let renderTarget = await testHelpers.renderTemplate(template);
+        let header = renderTarget.firstElementChild;
+
+        ok(header, "The page header renders.");
+
+        let headingEl = header.shadowRoot.querySelector("h1");
+        is(
+          headingEl?.textContent.trim(),
+          HEADING,
+          "Heading element renders with the expected text."
+        );
+
+        let descriptionEl = header.shadowRoot.querySelector(".description");
+        is(
+          descriptionEl?.textContent.trim(),
+          DESCRIPTION,
+          "Description element renders with the expected text."
+        );
+
+        let iconEl = header.shadowRoot.querySelector(".icon");
+        ok(iconEl, "Icon element is rendered when iconSrc is set.");
+        is(iconEl.getAttribute("src"), ICON_SRC, "Icon has the expected src.");
+
+        let backButton = header.shadowRoot.querySelector(".back-button");
+        ok(!backButton, "Back button is not rendered by default.");
+
+        header.backButton = true;
+        await header.updateComplete;
+
+        backButton = header.shadowRoot.querySelector(".back-button");
+        ok(backButton, "Back button appears when backButton is true.");
+
+        header.backButton = false;
+        await header.updateComplete;
+
+        backButton = header.shadowRoot.querySelector(".back-button");
+        ok(
+          !backButton,
+          "Back button is removed when backButton is set back to false."
+        );
+      });
+
+      add_task(async function testMozPageHeaderBackButtonEvent() {
+        let template = testHelpers.templateFn({
+          heading: "With back button",
+          backbutton: "",
+        });
+        let renderTarget = await testHelpers.renderTemplate(template);
+        let header = renderTarget.firstElementChild;
+
+        let backButton = header.shadowRoot.querySelector(".back-button");
+        ok(backButton, "Back button is present for click test.");
+
+        let eventPromise = new Promise(resolve => {
+          header.addEventListener("navigate-back", resolve, { once: true });
+        });
+
+        backButton.click();
+        let event = await eventPromise;
+
+        ok(event instanceof Event, "Clicking back button dispatches an Event.");
+        is(
+          event.type,
+          "navigate-back",
+          "The event type is a 'navigate-back' event."
+        );
+      });
+
+      add_task(async function testMozPageHeaderBreadcrumbSlot() {
+        const template = html`
+          <moz-page-header
+            heading="With Breadcrumbs"
+            icon-src="chrome://global/skin/icons/info.svg"
+          >
+            <moz-breadcrumb-group slot="breadcrumbs">
+              <moz-breadcrumb href="about#first" label="First"></moz-breadcrumb>
+              <moz-breadcrumb
+                href="about#current"
+                label="Current"
+              ></moz-breadcrumb>
+            </moz-breadcrumb-group>
+          </moz-page-header>
+        `;
+        const renderTarget = await testHelpers.renderTemplate(template);
+        const header = renderTarget.firstElementChild;
+
+        const slot = header.shadowRoot.querySelector(
+          'slot[name="breadcrumbs"]'
+        );
+        ok(slot, "Page header renders a slot for breadcrumbs.");
+
+        const assigned = slot.assignedElements();
+        is(
+          assigned.length,
+          1,
+          "One element is assigned into the breadcrumbs slot."
+        );
+        const group = assigned[0];
+        is(
+          group.localName,
+          "moz-breadcrumb-group",
+          "moz-breadcrumb-group is slotted in the breadcrumbs slot."
+        );
+      });
+
+      add_task(async function testMozPageHeaderSupportPage() {
+        let supportPageTemplate = testHelpers.templateFn({
+          label: "Testing support-page",
+          "support-page": "test",
+        });
+        let renderTarget =
+          await testHelpers.renderTemplate(supportPageTemplate);
+        let header = renderTarget.firstElementChild;
+
+        let supportLink = header.shadowRoot.querySelector(".support-link");
+        ok(
+          supportLink,
+          "moz-page-header renders a support link when supportPage is provided."
+        );
+
+        let adjacentEl = supportLink.previousElementSibling;
+        is(
+          adjacentEl.id,
+          "heading",
+          "support link is placed next to the heading when no description is provided."
+        );
+
+        header.description = "now we have a description.";
+        await header.updateComplete;
+
+        supportLink = header.shadowRoot.querySelector(".support-link");
+        adjacentEl = supportLink.previousElementSibling;
+        is(
+          adjacentEl.id,
+          "description",
+          "support link is placed next to the description when provided."
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

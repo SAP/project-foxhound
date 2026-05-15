@@ -49,7 +49,7 @@ add_task(async function () {
  * Assert that the expected link is displayed and that clicking on it navigates to the
  * expected url.
  *
- * @param {Object} option object containing:
+ * @param {object} option object containing:
  *        - browser (mandatory): the browser the tab will be opened in.
  *        - url (mandatory): The url we should navigate to.
  *        - urlText: The expected displayed text of the url.

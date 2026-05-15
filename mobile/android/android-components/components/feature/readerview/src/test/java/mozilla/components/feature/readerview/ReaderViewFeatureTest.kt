@@ -7,10 +7,14 @@ package mozilla.components.feature.readerview
 import android.content.Context
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
+import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.ReaderAction
 import mozilla.components.browser.state.action.TabListAction
+import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.TabSessionState
@@ -31,10 +35,9 @@ import mozilla.components.feature.readerview.view.ReaderViewControlsView
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.eq
-import mozilla.components.support.test.ext.joinBlocking
+import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
 import mozilla.components.support.webextensions.BuiltInWebExtensionController
 import mozilla.ext.appCompatContext
@@ -45,7 +48,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyInt
@@ -58,8 +60,8 @@ import java.util.Locale
 @RunWith(AndroidJUnit4::class)
 class ReaderViewFeatureTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
+    private val captureActionsMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
 
     @Before
     fun setup() {
@@ -67,18 +69,19 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `start installs webextension`() {
+    fun `start installs webextension`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val store = BrowserStore()
         val readerViewFeature = ReaderViewFeature(testContext, engine, store, mock())
 
         readerViewFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val onSuccess = argumentCaptor<((WebExtension) -> Unit)>()
         val onError = argumentCaptor<((Throwable) -> Unit)>()
         verify(engine, times(1)).installBuiltInWebExtension(
-            eq(ReaderViewFeature.READER_VIEW_EXTENSION_ID),
-            eq(ReaderViewFeature.READER_VIEW_EXTENSION_URL),
+            eq(READER_VIEW_EXTENSION_ID),
+            eq(READER_VIEW_EXTENSION_URL),
             onSuccess.capture(),
             onError.capture(),
         )
@@ -88,15 +91,15 @@ class ReaderViewFeatureTest {
         // Already installed, should not try to install again.
         readerViewFeature.start()
         verify(engine, times(1)).installBuiltInWebExtension(
-            eq(ReaderViewFeature.READER_VIEW_EXTENSION_ID),
-            eq(ReaderViewFeature.READER_VIEW_EXTENSION_URL),
+            eq(READER_VIEW_EXTENSION_ID),
+            eq(READER_VIEW_EXTENSION_URL),
             any(),
             any(),
         )
     }
 
     @Test
-    fun `start registers content message handlers for selected session`() {
+    fun `start registers content message handlers for selected session`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val view: ReaderViewControlsView = mock()
         val engineSession: EngineSession = mock()
@@ -122,12 +125,13 @@ class ReaderViewFeatureTest {
         val readerViewFeature = ReaderViewFeature(testContext, engine, store, view)
         readerViewFeature.extensionController = controller
         readerViewFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val onSuccess = argumentCaptor<((WebExtension) -> Unit)>()
         val onError = argumentCaptor<((Throwable) -> Unit)>()
         verify(engine, times(1)).installBuiltInWebExtension(
-            eq(ReaderViewFeature.READER_VIEW_EXTENSION_ID),
-            eq(ReaderViewFeature.READER_VIEW_EXTENSION_URL),
+            eq(READER_VIEW_EXTENSION_ID),
+            eq(READER_VIEW_EXTENSION_URL),
             onSuccess.capture(),
             onError.capture(),
         )
@@ -137,19 +141,20 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `start also starts controls interactor`() {
+    fun `start also starts controls interactor`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val store = BrowserStore()
         val view: ReaderViewControlsView = ReaderViewControlsBar(appCompatContext)
 
         val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, view))
         readerViewFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertNotNull(view.listener)
     }
 
     @Test
-    fun `stop also stops controls interactor`() {
+    fun `stop also stops controls interactor`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val store = BrowserStore()
         val view: ReaderViewControlsView = ReaderViewControlsBar(appCompatContext)
@@ -161,9 +166,9 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `showControls invokes the controls presenter`() {
+    fun `showControls invokes the controls presenter`() = runTest(testDispatcher) {
         val view: ReaderViewControlsView = mock()
-        val feature = spy(ReaderViewFeature(testContext, mock(), mock(), view))
+        val feature = spy(ReaderViewFeature(testContext, mock(), BrowserStore(), view))
 
         feature.showControls()
 
@@ -174,9 +179,9 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `hideControls invokes the controls presenter`() {
+    fun `hideControls invokes the controls presenter`() = runTest(testDispatcher) {
         val view: ReaderViewControlsView = mock()
-        val feature = spy(ReaderViewFeature(testContext, mock(), mock(), view))
+        val feature = spy(ReaderViewFeature(testContext, mock(), BrowserStore(), view))
 
         feature.hideControls()
 
@@ -184,14 +189,16 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `triggers readerable check when required`() {
+    fun `triggers readerable check when required`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val tab = createTab("https://www.mozilla.org", id = "test-tab")
         val store = BrowserStore(initialState = BrowserState(tabs = listOf(tab)))
-        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, mock()))
+        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, mock(), testDispatcher))
         readerViewFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        store.dispatch(ReaderAction.UpdateReaderableCheckRequiredAction(tab.id, true)).joinBlocking()
+        store.dispatch(ReaderAction.UpdateReaderableCheckRequiredAction(tab.id, true))
+        testDispatcher.scheduler.advanceUntilIdle()
 
         val tabCaptor = argumentCaptor<TabSessionState>()
         verify(readerViewFeature).checkReaderState(tabCaptor.capture())
@@ -199,21 +206,25 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `connects content script port when required`() {
+    fun `connects content script port when required`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val tab = createTab("https://www.mozilla.org", id = "test-tab")
         val store = BrowserStore(initialState = BrowserState(tabs = listOf(tab), selectedTabId = tab.id))
-        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, mock()))
-        readerViewFeature.start()
+        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, mock(), testDispatcher))
 
-        store.dispatch(ReaderAction.UpdateReaderConnectRequiredAction(tab.id, true)).joinBlocking()
+        readerViewFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        store.dispatch(ReaderAction.UpdateReaderConnectRequiredAction(tab.id, true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         val tabCaptor = argumentCaptor<TabSessionState>()
         verify(readerViewFeature).connectReaderViewContentScript(tabCaptor.capture())
         assertEquals(tab.id, tabCaptor.value.id)
     }
 
     @Test
-    fun `notifies readerable state changes of selected tab`() {
+    fun `notifies readerable state changes of selected tab`() = runTest(testDispatcher) {
         val readerViewStatusChanges = mutableListOf<Pair<Boolean, Boolean>>()
         val onReaderViewStatusChange: onReaderViewStatusChange = { readerable, active ->
             readerViewStatusChanges.add(Pair(readerable, active))
@@ -222,34 +233,56 @@ class ReaderViewFeatureTest {
         val engine: Engine = mock()
         val tab = createTab("https://www.mozilla.org", id = "test-tab")
         val store = BrowserStore(initialState = BrowserState(tabs = listOf(tab)))
-        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, mock(), { "test-uuid" }, onReaderViewStatusChange))
+        val readerViewFeature = spy(
+            ReaderViewFeature(
+                testContext,
+                engine,
+                store,
+                mock(),
+                testDispatcher,
+                { "test-uuid" },
+                onReaderViewStatusChange,
+            ),
+        )
         readerViewFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         assertTrue(readerViewStatusChanges.isEmpty())
 
-        store.dispatch(TabListAction.SelectTabAction(tab.id)).joinBlocking()
-        store.dispatch(ReaderAction.UpdateReaderableAction(tab.id, true)).joinBlocking()
+        store.dispatch(TabListAction.SelectTabAction(tab.id))
+        store.dispatch(ReaderAction.UpdateReaderableAction(tab.id, true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         assertEquals(1, readerViewStatusChanges.size)
         assertEquals(Pair(true, false), readerViewStatusChanges[0])
 
-        store.dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, true)).joinBlocking()
+        store.dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         assertEquals(2, readerViewStatusChanges.size)
         assertEquals(Pair(true, true), readerViewStatusChanges[1])
 
-        store.dispatch(ReaderAction.UpdateReaderableAction(tab.id, true)).joinBlocking()
+        store.dispatch(ReaderAction.UpdateReaderableAction(tab.id, true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         // No change -> No notification should have been sent
         assertEquals(2, readerViewStatusChanges.size)
 
-        store.dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, false)).joinBlocking()
+        store.dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, false))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         assertEquals(3, readerViewStatusChanges.size)
         assertEquals(Pair(true, false), readerViewStatusChanges[2])
 
-        store.dispatch(ReaderAction.UpdateReaderableAction(tab.id, false)).joinBlocking()
+        store.dispatch(ReaderAction.UpdateReaderableAction(tab.id, false))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         assertEquals(4, readerViewStatusChanges.size)
         assertEquals(Pair(false, false), readerViewStatusChanges[3])
     }
 
     @Test
-    fun `show reader view sends message to web extension`() {
+    fun `show reader view sends message to web extension`() = runTest(testDispatcher) {
         val port = mock<Port>()
         val message = argumentCaptor<JSONObject>()
         val readerViewFeature = prepareFeatureForTest(port, createUUID = { "test-uuid" })
@@ -261,7 +294,7 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `show reader view dispatches LoadUrlAction and UpdateReaderActiveAction`() {
+    fun `show reader view dispatches LoadUrlAction and UpdateReaderActiveAction`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         val tab = createTab(
@@ -269,24 +302,40 @@ class ReaderViewFeatureTest {
             id = "test-tab",
             engineSession = engineSession,
         )
-        val store = spy(
-            BrowserStore(
-                initialState = BrowserState(
-                    tabs = listOf(tab),
-                    selectedTabId = tab.id,
-                ),
+        val store = BrowserStore(
+            initialState = BrowserState(
+                tabs = listOf(tab),
+                selectedTabId = tab.id,
             ),
+            middleware = listOf(captureActionsMiddleware) + EngineMiddleware.create(engine),
         )
 
-        val readerViewFeature = ReaderViewFeature(testContext, engine, store, mock(), { "bbbbf5ce-3b0f-4f74-8a1f-986d89bffea7" })
+        val readerViewFeature = ReaderViewFeature(
+            testContext,
+            engine,
+            store,
+            mock(),
+            testDispatcher,
+            { "bbbbf5ce-3b0f-4f74-8a1f-986d89bffea7" },
+        )
         readerViewFeature.readerBaseUrl = "moz-extension://012345/"
         readerViewFeature.showReaderView()
-        verify(store).dispatch(EngineAction.LoadUrlAction(tab.id, "moz-extension://012345/readerview.html?url=https%3A%2F%2Fwww.mozilla.org&id=bbbbf5ce-3b0f-4f74-8a1f-986d89bffea7&colorScheme=light"))
-        verify(store).dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, true))
+
+        captureActionsMiddleware.assertFirstAction(EngineAction.LoadUrlAction::class) { action ->
+            assertEquals(tab.id, action.tabId)
+            assertEquals(
+                "moz-extension://012345/readerview.html?url=https%3A%2F%2Fwww.mozilla.org&id=bbbbf5ce-3b0f-4f74-8a1f-986d89bffea7&colorScheme=light",
+                action.url,
+            )
+        }
+        captureActionsMiddleware.assertLastAction(ReaderAction.UpdateReaderActiveAction::class) { action ->
+            assertEquals(tab.id, action.tabId)
+            assertTrue(action.active)
+        }
     }
 
     @Test
-    fun `default values used for showing reader view if no config is present`() {
+    fun `default values used for showing reader view if no config is present`() = runTest(testDispatcher) {
         val message = ReaderViewFeature.createShowReaderMessage(null)
         assertEquals(ReaderViewFeature.ACTION_SHOW, message[ReaderViewFeature.ACTION_MESSAGE_KEY])
         val config = message[ReaderViewFeature.ACTION_VALUE] as JSONObject?
@@ -304,7 +353,7 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `pass scrollY for showing reader view`() {
+    fun `pass scrollY for showing reader view`() = runTest(testDispatcher) {
         val message = ReaderViewFeature.createShowReaderMessage(null, 1234)
         assertEquals(ReaderViewFeature.ACTION_SHOW, message[ReaderViewFeature.ACTION_MESSAGE_KEY])
         val config = message[ReaderViewFeature.ACTION_VALUE] as JSONObject?
@@ -313,22 +362,22 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `hide reader view navigates back if possible`() {
+    fun `hide reader view navigates back if possible`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
         val tab = createTab("https://www.mozilla.org", id = "test-tab", readerState = ReaderState(active = true))
         val store = BrowserStore(initialState = BrowserState(tabs = listOf(tab)))
         val readerViewFeature = ReaderViewFeature(testContext, engine, store, mock())
-        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession)).joinBlocking()
-        store.dispatch(TabListAction.SelectTabAction(tab.id)).joinBlocking()
-        store.dispatch(ContentAction.UpdateBackNavigationStateAction(tab.id, true)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession))
+        store.dispatch(TabListAction.SelectTabAction(tab.id))
+        store.dispatch(ContentAction.UpdateBackNavigationStateAction(tab.id, true))
 
         readerViewFeature.hideReaderView()
         verify(engineSession).goBack(false)
     }
 
     @Test
-    fun `hide reader view sends message to web extension`() {
+    fun `hide reader view sends message to web extension`() = runTest(testDispatcher) {
         val port = mock<Port>()
         val message = argumentCaptor<JSONObject>()
         val readerViewFeature = prepareFeatureForTest(
@@ -342,7 +391,7 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `hide reader view updates state`() {
+    fun `hide reader view updates state`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val tab = createTab(
             url = "https://www.mozilla.org",
@@ -350,23 +399,34 @@ class ReaderViewFeatureTest {
             readerState = ReaderState(active = true),
         )
 
-        val store = spy(
-            BrowserStore(
-                initialState = BrowserState(
-                    tabs = listOf(tab),
-                    selectedTabId = tab.id,
-                ),
+        val store = BrowserStore(
+            initialState = BrowserState(
+                tabs = listOf(tab),
+                selectedTabId = tab.id,
             ),
+            middleware = EngineMiddleware.create(engine) + listOf(captureActionsMiddleware),
         )
+
         val readerViewFeature = ReaderViewFeature(testContext, engine, store, mock())
         readerViewFeature.hideReaderView()
-        verify(store).dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, false))
-        verify(store).dispatch(ReaderAction.UpdateReaderableAction(tab.id, false))
-        verify(store).dispatch(ReaderAction.ClearReaderActiveUrlAction(tab.id))
+
+        captureActionsMiddleware.assertFirstAction(ReaderAction.UpdateReaderActiveAction::class) { action ->
+            assertEquals(tab.id, action.tabId)
+            assertFalse(action.active)
+        }
+
+        captureActionsMiddleware.assertFirstAction(ReaderAction.UpdateReaderableAction::class) {
+            assertEquals(tab.id, it.tabId)
+            assertFalse(it.readerable)
+        }
+
+        captureActionsMiddleware.assertFirstAction(ReaderAction.ClearReaderActiveUrlAction::class) { action ->
+            assertEquals(tab.id, action.tabId)
+        }
     }
 
     @Test
-    fun `reader state check sends message to web extension`() {
+    fun `reader state check sends message to web extension`() = runTest(testDispatcher) {
         val port = mock<Port>()
         val message = argumentCaptor<JSONObject>()
         val readerViewFeature = prepareFeatureForTest(port)
@@ -377,7 +437,7 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `color scheme config change persists and is sent to web extension`() {
+    fun `color scheme config change persists and is sent to web extension`() = runTest(testDispatcher) {
         val port = mock<Port>()
         val message = argumentCaptor<JSONObject>()
 
@@ -397,7 +457,7 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `font type config change persists and is sent to web extension`() {
+    fun `font type config change persists and is sent to web extension`() = runTest(testDispatcher) {
         val port = mock<Port>()
         val message = argumentCaptor<JSONObject>()
 
@@ -417,7 +477,7 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `font size config change persists and is sent to web extension`() {
+    fun `font size config change persists and is sent to web extension`() = runTest(testDispatcher) {
         val port = mock<Port>()
         val message = argumentCaptor<JSONObject>()
 
@@ -437,14 +497,14 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `on back pressed hides controls`() {
+    fun `on back pressed hides controls`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val engineSession: EngineSession = mock()
 
         val tab = createTab("https://www.mozilla.org", id = "test-tab")
         val store = BrowserStore(BrowserState(tabs = listOf(tab)))
-        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession)).joinBlocking()
-        store.dispatch(TabListAction.SelectTabAction(tab.id)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession))
+        store.dispatch(TabListAction.SelectTabAction(tab.id))
 
         val controlsView: ReaderViewControlsView = mock()
         val view: View = mock()
@@ -453,7 +513,7 @@ class ReaderViewFeatureTest {
         val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, controlsView))
         assertFalse(readerViewFeature.onBackPressed())
 
-        store.dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, true)).joinBlocking()
+        store.dispatch(ReaderAction.UpdateReaderActiveAction(tab.id, true))
         whenever(view.visibility).thenReturn(View.VISIBLE)
         assertTrue(readerViewFeature.onBackPressed())
         verify(readerViewFeature, never()).hideReaderView(any())
@@ -466,7 +526,7 @@ class ReaderViewFeatureTest {
     }
 
     @Test
-    fun `state is updated when reader state arrives`() {
+    fun `state is updated when reader state arrives`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val view: ReaderViewControlsView = mock()
         val engineSession: EngineSession = mock()
@@ -477,29 +537,32 @@ class ReaderViewFeatureTest {
             id = "test-tab",
             engineSession = engineSession,
         )
-        val store = spy(
-            BrowserStore(
-                initialState = BrowserState(
-                    tabs = listOf(tab),
-                    selectedTabId = tab.id,
-                ),
+        val store = BrowserStore(
+            initialState = BrowserState(
+                tabs = listOf(tab),
+                selectedTabId = tab.id,
             ),
+            middleware = listOf(captureActionsMiddleware),
         )
 
-        BuiltInWebExtensionController.installedBuiltInExtensions[ReaderViewFeature.READER_VIEW_EXTENSION_ID] = ext
+        BuiltInWebExtensionController.installedBuiltInExtensions[READER_VIEW_EXTENSION_ID] = ext
 
         val port: Port = mock()
         whenever(port.engineSession).thenReturn(engineSession)
         whenever(ext.getConnectedPort(any(), any())).thenReturn(port)
 
         whenever(controller.portConnected(any(), any())).thenReturn(true)
-        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, view))
+        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, view, testDispatcher))
         readerViewFeature.extensionController = controller
 
         val messageHandler = argumentCaptor<MessageHandler>()
         val message = argumentCaptor<JSONObject>()
         readerViewFeature.start()
-        store.dispatch(ReaderAction.UpdateReaderConnectRequiredAction(tab.id, true)).joinBlocking()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        store.dispatch(ReaderAction.UpdateReaderConnectRequiredAction(tab.id, true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         verify(controller).registerContentMessageHandler(
             eq(engineSession),
             messageHandler.capture(),
@@ -515,13 +578,25 @@ class ReaderViewFeatureTest {
             .put("baseUrl", "moz-extension://")
             .put("activeUrl", "http://mozilla.org/article")
         messageHandler.value.onPortMessage(readerStateMessage, port)
-        verify(store).dispatch(ReaderAction.UpdateReaderableAction(tab.id, true))
-        verify(store).dispatch(ReaderAction.UpdateReaderBaseUrlAction(tab.id, "moz-extension://"))
-        verify(store).dispatch(ReaderAction.UpdateReaderActiveUrlAction(tab.id, "http://mozilla.org/article"))
+
+        captureActionsMiddleware.assertFirstAction(ReaderAction.UpdateReaderableAction::class) { action ->
+            assertEquals(tab.id, action.tabId)
+            assertTrue(action.readerable)
+        }
+
+        captureActionsMiddleware.assertFirstAction(ReaderAction.UpdateReaderBaseUrlAction::class) { action ->
+            assertEquals(tab.id, action.tabId)
+            assertEquals("moz-extension://", action.baseUrl)
+        }
+
+        captureActionsMiddleware.assertFirstAction(ReaderAction.UpdateReaderActiveUrlAction::class) { action ->
+            assertEquals(tab.id, action.tabId)
+            assertEquals("http://mozilla.org/article", action.activeUrl)
+        }
     }
 
     @Test
-    fun `reader is shown when state arrives from reader page`() {
+    fun `reader is shown when state arrives from reader page`() = runTest(testDispatcher) {
         val engine: Engine = mock()
         val view: ReaderViewControlsView = mock()
         val engineSession: EngineSession = mock()
@@ -532,12 +607,10 @@ class ReaderViewFeatureTest {
             id = "test-tab",
             engineSession = engineSession,
         )
-        val store = spy(
-            BrowserStore(
-                initialState = BrowserState(
-                    tabs = listOf(tab),
-                    selectedTabId = tab.id,
-                ),
+        val store = BrowserStore(
+            initialState = BrowserState(
+                tabs = listOf(tab),
+                selectedTabId = tab.id,
             ),
         )
 
@@ -548,14 +621,18 @@ class ReaderViewFeatureTest {
         whenever(ext.getConnectedPort(any(), any())).thenReturn(port)
 
         whenever(controller.portConnected(any(), any())).thenReturn(true)
-        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, view))
+        val readerViewFeature = spy(ReaderViewFeature(testContext, engine, store, view, testDispatcher))
         readerViewFeature.extensionController = controller
 
         val messageHandler = argumentCaptor<MessageHandler>()
         val message = argumentCaptor<JSONObject>()
-        readerViewFeature.start()
 
-        store.dispatch(ReaderAction.UpdateReaderConnectRequiredAction(tab.id, true)).joinBlocking()
+        readerViewFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        store.dispatch(ReaderAction.UpdateReaderConnectRequiredAction(tab.id, true))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         verify(controller).registerContentMessageHandler(
             eq(engineSession),
             messageHandler.capture(),
@@ -584,21 +661,21 @@ class ReaderViewFeatureTest {
         val engine: Engine = mock()
 
         val store = BrowserStore(BrowserState(tabs = listOf(tab)))
-        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession)).joinBlocking()
-        store.dispatch(TabListAction.SelectTabAction(tab.id)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession))
+        store.dispatch(TabListAction.SelectTabAction(tab.id))
 
         val ext: WebExtension = mock()
         contentPort?.let {
-            whenever(ext.getConnectedPort(eq(ReaderViewFeature.READER_VIEW_CONTENT_PORT), any()))
+            whenever(ext.getConnectedPort(eq(READER_VIEW_CONTENT_PORT), any()))
                 .thenReturn(contentPort)
         }
         readerActivePort?.let {
-            whenever(ext.getConnectedPort(eq(ReaderViewFeature.READER_VIEW_ACTIVE_CONTENT_PORT), any()))
+            whenever(ext.getConnectedPort(eq(READER_VIEW_ACTIVE_CONTENT_PORT), any()))
                 .thenReturn(readerActivePort)
         }
-        BuiltInWebExtensionController.installedBuiltInExtensions[ReaderViewFeature.READER_VIEW_EXTENSION_ID] = ext
+        BuiltInWebExtensionController.installedBuiltInExtensions[READER_VIEW_EXTENSION_ID] = ext
 
-        val feature = ReaderViewFeature(testContext, engine, store, mock(), createUUID)
+        val feature = ReaderViewFeature(testContext, engine, store, mock(), testDispatcher, createUUID)
         if (controller != null) {
             feature.extensionController = controller
         }

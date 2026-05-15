@@ -14,7 +14,7 @@ LOG = RaptorLogger(component="raptor-browsertime-desktop")
 
 class BrowsertimeDesktop(PerftestDesktop, Browsertime):
     def __init__(self, *args, **kwargs):
-        super(BrowsertimeDesktop, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     @property
     def browsertime_args(self):
@@ -49,9 +49,11 @@ class BrowsertimeDesktop(PerftestDesktop, Browsertime):
 
         # Add this argument here, it's added by mozrunner
         # for raptor
-        chrome_args.extend(
-            ["--no-first-run", "--no-experiments", "--disable-site-isolation-trials"]
-        )
+        chrome_args.extend([
+            "--no-first-run",
+            "--no-experiments",
+            "--disable-site-isolation-trials",
+        ])
 
         # Disable finch experiments
         chrome_args += ["--enable-benchmarking"]

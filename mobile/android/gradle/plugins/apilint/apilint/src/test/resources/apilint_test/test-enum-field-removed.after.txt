@@ -1,0 +1,5 @@
+package test {
+  public static final enum TestEnum {
+    enum_constant public static final TestEnum ConstantOne;
+  }
+}

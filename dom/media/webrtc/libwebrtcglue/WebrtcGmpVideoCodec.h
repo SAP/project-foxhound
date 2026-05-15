@@ -35,26 +35,23 @@
 
 #include <string>
 
-#include "nsThreadUtils.h"
-#include "nsTArray.h"
-#include "mozilla/EventTargetCapability.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/glean/DomMediaWebrtcMetrics.h"
-
-#include "mozIGeckoMediaPluginService.h"
+#include "GMPVideoDecoderProxy.h"
+#include "GMPVideoEncoderProxy.h"
 #include "MediaConduitInterface.h"
 #include "PerformanceRecorder.h"
 #include "VideoConduit.h"
 #include "api/video/video_frame_type.h"
 #include "common_video/h264/h264_bitstream_parser.h"
+#include "gmp-video-host.h"
+#include "jsapi/PeerConnectionImpl.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "modules/video_coding/svc/scalable_video_controller.h"
-
-#include "gmp-video-host.h"
-#include "GMPVideoDecoderProxy.h"
-#include "GMPVideoEncoderProxy.h"
-
-#include "jsapi/PeerConnectionImpl.h"
+#include "mozIGeckoMediaPluginService.h"
+#include "mozilla/EventTargetCapability.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/glean/DomMediaWebrtcMetrics.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::detail {
 struct InputImageData {
@@ -203,6 +200,8 @@ class WebrtcGmpVideoEncoder final : public GMPVideoEncoderCallbackProxy,
 
   void Encoded(GMPVideoEncodedFrame* aEncodedFrame,
                const nsTArray<uint8_t>& aCodecSpecificInfo) override;
+
+  void Dropped(uint64_t aTimestamp) override;
 
   void Error(GMPErr aError) override {}
 

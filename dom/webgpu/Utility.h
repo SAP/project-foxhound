@@ -14,6 +14,7 @@ class ErrorResult;
 
 namespace dom {
 struct GPUComputePassDescriptor;
+enum class PredefinedColorSpace : uint8_t;
 template <typename T>
 class Sequence;
 using GPUExtent3D = RangeEnforcedUnsignedLongSequenceOrGPUExtent3DDict;
@@ -57,6 +58,9 @@ ffi::WGPUStencilFaceState ConvertStencilFaceState(
 
 ffi::WGPUDepthStencilState ConvertDepthStencilState(
     const dom::GPUDepthStencilState& aDesc);
+
+ffi::WGPUPredefinedColorSpace ConvertPredefinedColorSpace(
+    const dom::PredefinedColorSpace& aColorSpace);
 
 mozilla::Maybe<mozilla::Buffer<uint32_t>> GetDynamicOffsetsFromArray(
     const dom::Uint32Array& aDynamicOffsetsData,

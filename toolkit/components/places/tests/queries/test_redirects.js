@@ -11,7 +11,7 @@ var visits = [];
  * them with a custom filtered array of visits, based on the values we are
  * expecting from the query.
  *
- * @param  aSequence
+ * @param {[boolean, number, nsINavHistoryQueryOptions.SortByType]}  aSequence
  *         an array that contains query options in the form:
  *         [includeHidden, maxResults, sortingMode]
  */
@@ -140,12 +140,12 @@ function check_results_callback(aSequence) {
  *   // callback is called 4 times with the following arrays:
  *   // [1], [2], [3], [4]
  *
- * @param  aSequences
- *         an array that contains an arbitrary number of arrays
- * @param  aCallback
- *         a function that is passed each sequence of the product as it's
- *         computed
- * @return the total number of sequences in the product
+ * @param {[][]}  aSequences
+ *   An array that contains an arbitrary number of arrays.
+ * @param {(sequence: []) => void} aCallback
+ *   A function that is passed each sequence of the product as it's computed.
+ * @returns {number}
+ *   The total number of sequences in the product.
  */
 function cartProd(aSequences, aCallback) {
   if (aSequences.length === 0) {

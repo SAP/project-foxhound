@@ -87,10 +87,10 @@ button {
   &[selected] {
     color: var(--color-accent-primary);
     background-color: var(--page-nav-button-background-color-selected);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
 
     @media (prefers-contrast) {
-      border-color: var(--color-accent-primary);
+      border-color: var(--border-color-selected);
     }
 
     &::before {
@@ -124,8 +124,8 @@ button[selected]:focus-visible {
 }
 
 .page-nav-icon {
-  height: var(--icon-size-default);
-  width: var(--icon-size-default);
+  height: var(--icon-size);
+  width: var(--icon-size);
   -moz-context-properties: fill;
   fill: currentColor;
 }

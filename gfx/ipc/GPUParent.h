@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _include_gfx_ipc_GPUParent_h__
-#define _include_gfx_ipc_GPUParent_h__
+#ifndef _include_gfx_ipc_GPUParent_h_
+#define _include_gfx_ipc_GPUParent_h_
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/PGPUParent.h"
@@ -48,11 +48,14 @@ class GPUParent final : public PGPUParent {
   void NotifySwapChainInfo(layers::SwapChainInfo aInfo);
   void NotifyDisableRemoteCanvas();
 
+  void ReportGLStrings(GfxInfoGLStrings&& aStrings);
+
   mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs,
                                    nsTArray<LayerTreeIdMapping>&& mappings,
                                    nsTArray<GfxInfoFeatureStatus>&& features,
-                                   uint32_t wrNamespace);
+                                   uint32_t wrNamespace,
+                                   InitResolver&& aInitResolver);
   mozilla::ipc::IPCResult RecvInitCompositorManager(
       Endpoint<PCompositorManagerParent>&& aEndpoint, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvInitVsyncBridge(
@@ -73,7 +76,7 @@ class GPUParent final : public PGPUParent {
       Endpoint<PAPZInputBridgeParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitProfiler(
       Endpoint<PProfilerChild>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
+  mozilla::ipc::IPCResult RecvUpdateVar(const nsTArray<GfxVarUpdate>& var);
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
   mozilla::ipc::IPCResult RecvScreenInformationChanged();
   mozilla::ipc::IPCResult RecvNotifyBatteryInfo(
@@ -134,4 +137,4 @@ class GPUParent final : public PGPUParent {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _include_gfx_ipc_GPUParent_h__
+#endif  // _include_gfx_ipc_GPUParent_h_

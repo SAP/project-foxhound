@@ -5,14 +5,13 @@
 #ifndef nsTreeSanitizer_h_
 #define nsTreeSanitizer_h_
 
+#include "mozilla/dom/NameSpaceConstants.h"
+#include "mozilla/dom/StaticAtomSet.h"
 #include "nsAtom.h"
 #include "nsHashKeys.h"
 #include "nsHashtablesFwd.h"
 #include "nsIPrincipal.h"
 #include "nsTArray.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/dom/NameSpaceConstants.h"
-#include "mozilla/dom/StaticAtomSet.h"
 
 class nsIContent;
 class nsIGlobalObject;

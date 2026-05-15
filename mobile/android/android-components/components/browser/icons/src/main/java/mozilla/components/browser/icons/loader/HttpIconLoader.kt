@@ -83,6 +83,7 @@ open class HttpIconLoader(
         return resource.url.sanitizeURL().toUri().isHttpOrHttps && !failureCache.hasFailedRecently(resource.url)
     }
 
+    @Suppress("CognitiveComplexMethod")
     private fun Response.toIconLoaderResult(): IconLoader.Result {
         // Compare the Response Content-Length header with the available memory on device
         val contentLengthHeader = headers[Headers.Names.CONTENT_LENGTH]

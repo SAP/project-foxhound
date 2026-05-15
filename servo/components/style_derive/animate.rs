@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use darling::util::PathList;
 use crate::cg;
+use darling::util::PathList;
 use proc_macro2::TokenStream;
 use quote::TokenStreamExt;
 use syn::{DeriveInput, WhereClause};
@@ -37,7 +37,10 @@ pub fn derive(mut input: DeriveInput) -> TokenStream {
     if needs_catchall_branch {
         // This ideally shouldn't be needed, but see
         // https://github.com/rust-lang/rust/issues/68867
-        match_body.append_all(quote! { _ => unsafe { debug_unreachable!() } });
+        match_body.append_all(quote! { _ => unsafe {
+            use ::debug_unreachable::debug_unreachable;
+            debug_unreachable!()
+        } });
     }
 
     let name = &input.ident;

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/JSOracleParent.h"
+
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/PJSOracle.h"

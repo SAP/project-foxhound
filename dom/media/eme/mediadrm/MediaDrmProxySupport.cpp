@@ -5,11 +5,12 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaDrmProxySupport.h"
+
+#include "MediaCodec.h"  // For MediaDrm::KeyStatus
 #include "MediaDrmCDMCallbackProxy.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/java/MediaDrmProxyNatives.h"
 #include "mozilla/java/SessionKeyInfoWrappers.h"
-#include "MediaCodec.h"  // For MediaDrm::KeyStatus
 
 namespace mozilla {
 

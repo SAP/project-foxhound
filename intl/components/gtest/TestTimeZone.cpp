@@ -31,27 +31,27 @@ TEST(IntlTimeZone, SystemDependentTests)
 
 TEST(IntlTimeZone, GetRawOffsetMs)
 {
-  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"GMT+3"))).unwrap();
+  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan("GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetRawOffsetMs().unwrap(), 3 * 60 * 60 * 1000);
 
-  timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"Etc/GMT+3"))).unwrap();
+  timeZone = TimeZone::TryCreate(Some(MakeStringSpan("Etc/GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetRawOffsetMs().unwrap(), -(3 * 60 * 60 * 1000));
 
   timeZone =
-      TimeZone::TryCreate(Some(MakeStringSpan(u"America/New_York"))).unwrap();
+      TimeZone::TryCreate(Some(MakeStringSpan("America/New_York"))).unwrap();
   ASSERT_EQ(timeZone->GetRawOffsetMs().unwrap(), -(5 * 60 * 60 * 1000));
 }
 
 TEST(IntlTimeZone, GetDSTOffsetMs)
 {
-  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"GMT+3"))).unwrap();
+  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan("GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetDSTOffsetMs(0).unwrap(), 0);
 
-  timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"Etc/GMT+3"))).unwrap();
+  timeZone = TimeZone::TryCreate(Some(MakeStringSpan("Etc/GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetDSTOffsetMs(0).unwrap(), 0);
 
   timeZone =
-      TimeZone::TryCreate(Some(MakeStringSpan(u"America/New_York"))).unwrap();
+      TimeZone::TryCreate(Some(MakeStringSpan("America/New_York"))).unwrap();
   ASSERT_EQ(timeZone->GetDSTOffsetMs(0).unwrap(), 0);
   ASSERT_EQ(timeZone->GetDSTOffsetMs(RELEASE_DATE).unwrap(),
             1 * 60 * 60 * 1000);
@@ -61,14 +61,14 @@ TEST(IntlTimeZone, GetDSTOffsetMs)
 
 TEST(IntlTimeZone, GetOffsetMs)
 {
-  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"GMT+3"))).unwrap();
+  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan("GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetOffsetMs(0).unwrap(), 3 * 60 * 60 * 1000);
 
-  timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"Etc/GMT+3"))).unwrap();
+  timeZone = TimeZone::TryCreate(Some(MakeStringSpan("Etc/GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetOffsetMs(0).unwrap(), -(3 * 60 * 60 * 1000));
 
   timeZone =
-      TimeZone::TryCreate(Some(MakeStringSpan(u"America/New_York"))).unwrap();
+      TimeZone::TryCreate(Some(MakeStringSpan("America/New_York"))).unwrap();
   ASSERT_EQ(timeZone->GetOffsetMs(0).unwrap(), -(5 * 60 * 60 * 1000));
   ASSERT_EQ(timeZone->GetOffsetMs(RELEASE_DATE).unwrap(),
             -(4 * 60 * 60 * 1000));
@@ -78,14 +78,14 @@ TEST(IntlTimeZone, GetOffsetMs)
 
 TEST(IntlTimeZone, GetUTCOffsetMs)
 {
-  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"GMT+3"))).unwrap();
+  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan("GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetUTCOffsetMs(0).unwrap(), 3 * 60 * 60 * 1000);
 
-  timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"Etc/GMT+3"))).unwrap();
+  timeZone = TimeZone::TryCreate(Some(MakeStringSpan("Etc/GMT+3"))).unwrap();
   ASSERT_EQ(timeZone->GetUTCOffsetMs(0).unwrap(), -(3 * 60 * 60 * 1000));
 
   timeZone =
-      TimeZone::TryCreate(Some(MakeStringSpan(u"America/New_York"))).unwrap();
+      TimeZone::TryCreate(Some(MakeStringSpan("America/New_York"))).unwrap();
   ASSERT_EQ(timeZone->GetUTCOffsetMs(0).unwrap(), -(5 * 60 * 60 * 1000));
   ASSERT_EQ(timeZone->GetUTCOffsetMs(RELEASE_DATE).unwrap(),
             -(4 * 60 * 60 * 1000));
@@ -99,7 +99,7 @@ TEST(IntlTimeZone, GetDisplayName)
 
   TestBuffer<char16_t> buffer;
 
-  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"GMT+3"))).unwrap();
+  auto timeZone = TimeZone::TryCreate(Some(MakeStringSpan("GMT+3"))).unwrap();
 
   buffer.clear();
   timeZone->GetDisplayName("en", DaylightSavings::No, buffer).unwrap();
@@ -109,7 +109,7 @@ TEST(IntlTimeZone, GetDisplayName)
   timeZone->GetDisplayName("en", DaylightSavings::Yes, buffer).unwrap();
   ASSERT_EQ(buffer.get_string_view(), u"GMT+03:00");
 
-  timeZone = TimeZone::TryCreate(Some(MakeStringSpan(u"Etc/GMT+3"))).unwrap();
+  timeZone = TimeZone::TryCreate(Some(MakeStringSpan("Etc/GMT+3"))).unwrap();
 
   buffer.clear();
   timeZone->GetDisplayName("en", DaylightSavings::No, buffer).unwrap();
@@ -120,7 +120,7 @@ TEST(IntlTimeZone, GetDisplayName)
   ASSERT_EQ(buffer.get_string_view(), u"GMT-03:00");
 
   timeZone =
-      TimeZone::TryCreate(Some(MakeStringSpan(u"America/New_York"))).unwrap();
+      TimeZone::TryCreate(Some(MakeStringSpan("America/New_York"))).unwrap();
 
   buffer.clear();
   timeZone->GetDisplayName("en", DaylightSavings::No, buffer).unwrap();

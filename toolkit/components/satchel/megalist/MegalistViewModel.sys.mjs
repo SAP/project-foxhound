@@ -163,6 +163,14 @@ export class MegalistViewModel {
     }
   }
 
+  async receiveReauthPrimaryPassword() {
+    const isAuthorized = await this.#promptForReauth("ReauthPrimaryPassword");
+
+    if (isAuthorized) {
+      Services.obs.notifyObservers(null, "passwordmgr-crypto-login");
+    }
+  }
+
   setNotification(notification) {
     this.#messageToView("SetNotification", notification);
   }
@@ -173,6 +181,10 @@ export class MegalistViewModel {
 
   discardChangesConfirmed() {
     this.#messageToView("DiscardChangesConfirmed");
+  }
+
+  setPrimaryPasswordAuthenticated(isAuthenticated) {
+    this.#messageToView("PrimaryPasswordAuthenticated", isAuthenticated);
   }
 
   async receiveCommand({ commandId, snapshotId, value } = {}) {
@@ -207,11 +219,14 @@ export class MegalistViewModel {
       Copy: "copy_cpm",
       Reveal: "reveal_cpm",
       Edit: "edit_cpm",
+      ReauthPrimaryPassword: "reauth_cpm",
     };
     const reason = reasonMap[command.id];
     const osAuthForPw = lazy.LoginHelper.getOSAuthEnabled();
     const { isAuthorized } = await lazy.LoginHelper.requestReauth(
-      lazy.BrowserWindowTracker.getTopWindow().gBrowser,
+      lazy.BrowserWindowTracker.getTopWindow({
+        allowFromInactiveWorkspace: true,
+      }).gBrowser,
       osAuthForPw,
       this.#authExpirationTime,
       command.OSAuthPromptMessage,

@@ -160,7 +160,7 @@ function evaluateExpression(expression, from = "input") {
  * The JavaScript evaluation response handler.
  *
  * @private
- * @param {Object} response
+ * @param {object} response
  *        The message received from the server.
  */
 function onExpressionEvaluated(response) {
@@ -211,7 +211,7 @@ function handleHelperResult(response) {
         case "clearHistory":
           dispatch(historyActions.clearHistory());
           break;
-        case "historyOutput":
+        case "historyOutput": {
           const history = getState().history.entries || [];
           const columns = new Map([
             ["_index", "(index)"],
@@ -230,6 +230,7 @@ function handleHelperResult(response) {
             ])
           );
           break;
+        }
         case "inspectObject": {
           const objectActor = helperResult.object;
           if (hud.toolbox && !helperResult.forceExpandInConsole) {
@@ -255,7 +256,7 @@ function handleHelperResult(response) {
             ])
           );
           break;
-        case "screenshotOutput":
+        case "screenshotOutput": {
           const { args, value } = helperResult;
           const targetFront =
             getSelectedTarget(hud.commands.targetCommand.store.getState()) ||
@@ -295,7 +296,8 @@ function handleHelperResult(response) {
             );
           }
           break;
-        case "blockURL":
+        }
+        case "blockURL": {
           const blockURL = helperResult.args.url;
           // The console actor isn't able to block the request as the console actor runs in the content
           // process, while the request has to be blocked from the parent process.
@@ -320,7 +322,8 @@ function handleHelperResult(response) {
             ])
           );
           break;
-        case "unblockURL":
+        }
+        case "unblockURL": {
           const unblockURL = helperResult.args.url;
           await hud.commands.networkCommand.unblockRequestForUrl(unblockURL);
           toolbox
@@ -342,6 +345,7 @@ function handleHelperResult(response) {
           );
           // early return as we already dispatched necessary messages.
           return;
+        }
 
         // Sent when using ":command --help or :command --usage"
         // to help discover command arguments.
@@ -395,8 +399,8 @@ function setInputValue(value) {
 /**
  * Request an eager evaluation from the server.
  *
- * @param {String} expression: The expression to evaluate.
- * @param {Boolean} force: When true, will request an eager evaluation again, even if
+ * @param {string} expression: The expression to evaluate.
+ * @param {boolean} force: When true, will request an eager evaluation again, even if
  *                         the expression is the same one than the one that was used in
  *                         the previous evaluation.
  */
@@ -455,6 +459,13 @@ function terminalInputChanged(expression, force = false) {
       mapped,
       eager: true,
     });
+
+    // If the terminal input changed while the expression was evaluated, don't render
+    // the results of the eager evaluation, it will be handled by the last call to
+    // terminalInputChanged
+    if (expression.trim() !== getState().history?.terminalInput) {
+      return null;
+    }
 
     return dispatch({
       type: SET_TERMINAL_EAGER_RESULT,

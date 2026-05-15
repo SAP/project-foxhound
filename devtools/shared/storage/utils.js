@@ -78,7 +78,7 @@ function _extractKeyValPairs(value) {
  * Check whether the value string represents something that should be
  * displayed as text. If so then it shouldn't be parsed into a tree.
  *
- * @param  {String} value
+ * @param  {string} value
  *         The value to be parsed.
  */
 function _shouldParse(value) {

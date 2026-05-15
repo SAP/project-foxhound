@@ -30,6 +30,24 @@ TEST_P(TlsKeyExchangeTest13, Mlkem768x25519Supported) {
             ssl_sig_rsa_pss_rsae_sha256);
 }
 
+TEST_P(TlsKeyExchangeTest13, Secp256r1Mlkem768Supported) {
+  EnsureKeyShareSetup();
+  ConfigNamedGroups({ssl_grp_kem_secp256r1mlkem768});
+
+  Connect();
+  CheckKeys(ssl_kea_ecdh_hybrid, ssl_grp_kem_secp256r1mlkem768,
+            ssl_auth_rsa_sign, ssl_sig_rsa_pss_rsae_sha256);
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp384r1Mlkem1024Supported) {
+  EnsureKeyShareSetup();
+  ConfigNamedGroups({ssl_grp_kem_secp384r1mlkem1024});
+
+  Connect();
+  CheckKeys(ssl_kea_ecdh_hybrid, ssl_grp_kem_secp384r1mlkem1024,
+            ssl_auth_rsa_sign, ssl_sig_rsa_pss_rsae_sha256);
+}
+
 TEST_P(TlsKeyExchangeTest, Tls12ClientMlkem768x25519NotSupported) {
   EnsureKeyShareSetup();
   client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
@@ -47,6 +65,8 @@ TEST_P(TlsKeyExchangeTest, Tls12ClientMlkem768x25519NotSupported) {
   std::vector<SSLNamedGroup> groups = GetGroupDetails(groups_capture_);
   for (auto group : groups) {
     EXPECT_NE(group, ssl_grp_kem_mlkem768x25519);
+    EXPECT_NE(group, ssl_grp_kem_secp256r1mlkem768);
+    EXPECT_NE(group, ssl_grp_kem_secp384r1mlkem1024);
   }
 }
 
@@ -75,6 +95,31 @@ TEST_P(TlsKeyExchangeTest13, Tls12ServerMlkem768x25519NotSupported) {
             ssl_sig_rsa_pss_rsae_sha256);
 }
 
+TEST_P(TlsKeyExchangeTest13, Tls12ServerSecp256r1Mlkem768NotSupported) {
+  EnsureKeyShareSetup();
+
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
+                           SSL_LIBRARY_VERSION_TLS_1_2);
+
+  client_->DisableAllCiphers();
+  client_->EnableCiphersByKeyExchange(ssl_kea_ecdh);
+  client_->EnableCiphersByKeyExchange(ssl_kea_ecdh_hybrid);
+  client_->ConfigNamedGroups(
+      {ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1});
+  EXPECT_EQ(SECSuccess, SSL_SendAdditionalKeyShares(client_->ssl_fd(), 1));
+
+  server_->EnableCiphersByKeyExchange(ssl_kea_ecdh);
+  server_->EnableCiphersByKeyExchange(ssl_kea_ecdh_hybrid);
+  server_->ConfigNamedGroups(
+      {ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1});
+
+  Connect();
+  CheckKeys(ssl_kea_ecdh, ssl_grp_ec_secp256r1, ssl_auth_rsa_sign,
+            ssl_sig_rsa_pss_rsae_sha256);
+}
+
 TEST_P(TlsKeyExchangeTest13, Mlkem768x25519ClientDisabledByPolicy) {
   EnsureKeyShareSetup();
   client_->SetPolicy(SEC_OID_MLKEM768X25519, 0, NSS_USE_ALG_IN_SSL_KX);
@@ -94,12 +139,57 @@ TEST_P(TlsKeyExchangeTest13, Mlkem768x25519ServerDisabledByPolicy) {
                   {ssl_grp_kem_mlkem768x25519}, ssl_grp_ec_secp256r1);
 }
 
+TEST_P(TlsKeyExchangeTest13, Secp256r1Mlkem768ClientDisabledByPolicy) {
+  EnsureKeyShareSetup();
+  client_->SetPolicy(SEC_OID_SECP256R1MLKEM768, 0, NSS_USE_ALG_IN_SSL_KX);
+  ConfigNamedGroups({ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1});
+
+  Connect();
+  CheckKEXDetails({ssl_grp_ec_secp256r1}, {ssl_grp_ec_secp256r1});
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp256r1Mlkem768ServerDisabledByPolicy) {
+  EnsureKeyShareSetup();
+  server_->SetPolicy(SEC_OID_SECP256R1MLKEM768, 0, NSS_USE_ALG_IN_SSL_KX);
+  ConfigNamedGroups({ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1});
+
+  Connect();
+  CheckKEXDetails({ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1},
+                  {ssl_grp_kem_secp256r1mlkem768}, ssl_grp_ec_secp256r1);
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp384r1Mlkem1024ClientDisabledByPolicy) {
+  EnsureKeyShareSetup();
+  client_->SetPolicy(SEC_OID_SECP384R1MLKEM1024, 0, NSS_USE_ALG_IN_SSL_KX);
+  ConfigNamedGroups({ssl_grp_kem_secp384r1mlkem1024, ssl_grp_ec_secp256r1});
+
+  Connect();
+  CheckKEXDetails({ssl_grp_ec_secp256r1}, {ssl_grp_ec_secp256r1});
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp384r1Mlkem1024ServerDisabledByPolicy) {
+  EnsureKeyShareSetup();
+  server_->SetPolicy(SEC_OID_SECP384R1MLKEM1024, 0, NSS_USE_ALG_IN_SSL_KX);
+  ConfigNamedGroups({ssl_grp_kem_secp384r1mlkem1024, ssl_grp_ec_secp256r1});
+
+  Connect();
+  CheckKEXDetails({ssl_grp_kem_secp384r1mlkem1024, ssl_grp_ec_secp256r1},
+                  {ssl_grp_kem_secp384r1mlkem1024}, ssl_grp_ec_secp256r1);
+}
+
 static void CheckECDHShareReuse(
     const std::shared_ptr<TlsExtensionCapture>& capture) {
   EXPECT_TRUE(capture->captured());
   const DataBuffer& ext = capture->extension();
-  DataBuffer hybrid_share;
-  DataBuffer x25519_share;
+  const int max_count = 4;
+  DataBuffer hybrid_share[max_count];
+  DataBuffer ecdh_share[max_count];
+  int hybrid_offset[max_count];
+  SSLNamedGroup hybrid_ec_type[max_count];
+  SSLNamedGroup ec_type[max_count];
+  int ecdh_index[max_count];
+  int nextHybrid = 0;
+  int nextECDH = 0;
 
   size_t offset = 0;
   uint32_t ext_len;
@@ -112,11 +202,26 @@ static void CheckECDHShareReuse(
   ext.Read(offset, 2, &named_group);
   ext.Read(offset + 2, 2, &named_group_len);
   while (offset < ext.len()) {
-    if (named_group == ssl_grp_kem_mlkem768x25519) {
-      hybrid_share = DataBuffer(ext.data() + offset + 2 + 2, named_group_len);
-    }
-    if (named_group == ssl_grp_ec_curve25519) {
-      x25519_share = DataBuffer(ext.data() + offset + 2 + 2, named_group_len);
+    switch (named_group) {
+      case ssl_grp_kem_mlkem768x25519:
+        hybrid_share[nextHybrid] =
+            DataBuffer(ext.data() + offset + 2 + 2, named_group_len);
+        hybrid_offset[nextHybrid] = KYBER768_PUBLIC_KEY_BYTES;
+        hybrid_ec_type[nextHybrid] = ssl_grp_ec_curve25519;
+        nextHybrid++;
+        break;
+      case ssl_grp_kem_secp256r1mlkem768:
+        hybrid_share[nextHybrid] =
+            DataBuffer(ext.data() + offset + 2 + 2, named_group_len);
+        hybrid_offset[nextHybrid] = 0;
+        hybrid_ec_type[nextHybrid] = ssl_grp_ec_secp256r1;
+        nextHybrid++;
+      case ssl_grp_ec_curve25519:
+      case ssl_grp_ec_secp256r1:
+        ecdh_share[nextECDH] =
+            DataBuffer(ext.data() + offset + 2 + 2, named_group_len);
+        ec_type[nextECDH] = (SSLNamedGroup)named_group;
+        nextECDH++;
     }
     offset += 2 + 2 + named_group_len;
     ext.Read(offset, 2, &named_group);
@@ -124,11 +229,29 @@ static void CheckECDHShareReuse(
   }
   EXPECT_EQ(offset, ext.len());
 
-  ASSERT_TRUE(hybrid_share.data());
-  ASSERT_TRUE(x25519_share.data());
-  ASSERT_GT(hybrid_share.len(), x25519_share.len());
-  EXPECT_EQ(0, memcmp(hybrid_share.data() + KYBER768_PUBLIC_KEY_BYTES,
-                      x25519_share.data(), x25519_share.len()));
+  ASSERT_TRUE(nextECDH <= max_count);
+  ASSERT_TRUE(nextHybrid <= max_count);
+  /* setup the hybrid ecdh indeces */
+  for (int i = 0; i < nextHybrid; i++) {
+    ecdh_index[i] = -1;
+    for (int j = 0; j < nextECDH; j++) {
+      if (hybrid_ec_type[i] == ec_type[j]) {
+        ecdh_index[i] = j;
+        break;
+      }
+    }
+    ASSERT_TRUE(ecdh_index[i] != -1);
+  }
+  for (int i = 0; i < nextECDH; i++) {
+    ASSERT_TRUE(ecdh_share[i].data());
+  }
+  for (int i = 0; i < nextHybrid; i++) {
+    int j = ecdh_index[i];
+    ASSERT_TRUE(hybrid_share[i].data());
+    ASSERT_GT(hybrid_share[i].len(), ecdh_share[j].len());
+    EXPECT_EQ(0, memcmp(hybrid_share[i].data() + hybrid_offset[i],
+                        ecdh_share[j].data(), ecdh_share[j].len()));
+  }
 }
 
 TEST_P(TlsKeyExchangeTest13, Mlkem768x25519ShareReuseFirst) {
@@ -152,6 +275,54 @@ TEST_P(TlsKeyExchangeTest13, Mlkem768x25519ShareReuseSecond) {
 
   CheckKEXDetails({ssl_grp_ec_curve25519, ssl_grp_kem_mlkem768x25519},
                   {ssl_grp_ec_curve25519, ssl_grp_kem_mlkem768x25519});
+  CheckECDHShareReuse(shares_capture_);
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp256r1Mlkem768ShareReuseFirst) {
+  EnsureKeyShareSetup();
+  ConfigNamedGroups({ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1});
+  EXPECT_EQ(SECSuccess, SSL_SendAdditionalKeyShares(client_->ssl_fd(), 1));
+
+  Connect();
+
+  CheckKEXDetails({ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1},
+                  {ssl_grp_kem_secp256r1mlkem768, ssl_grp_ec_secp256r1});
+  CheckECDHShareReuse(shares_capture_);
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp256r1Mlkem768ShareReuseSecond) {
+  EnsureKeyShareSetup();
+  ConfigNamedGroups({ssl_grp_ec_secp256r1, ssl_grp_kem_secp256r1mlkem768});
+  EXPECT_EQ(SECSuccess, SSL_SendAdditionalKeyShares(client_->ssl_fd(), 1));
+
+  Connect();
+
+  CheckKEXDetails({ssl_grp_ec_secp256r1, ssl_grp_kem_secp256r1mlkem768},
+                  {ssl_grp_ec_secp256r1, ssl_grp_kem_secp256r1mlkem768});
+  CheckECDHShareReuse(shares_capture_);
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp384r1Mlkem1024ShareReuseFirst) {
+  EnsureKeyShareSetup();
+  ConfigNamedGroups({ssl_grp_kem_secp384r1mlkem1024, ssl_grp_ec_secp384r1});
+  EXPECT_EQ(SECSuccess, SSL_SendAdditionalKeyShares(client_->ssl_fd(), 1));
+
+  Connect();
+
+  CheckKEXDetails({ssl_grp_kem_secp384r1mlkem1024, ssl_grp_ec_secp384r1},
+                  {ssl_grp_kem_secp384r1mlkem1024, ssl_grp_ec_secp384r1});
+  CheckECDHShareReuse(shares_capture_);
+}
+
+TEST_P(TlsKeyExchangeTest13, Secp384r1Mlkem1024ShareReuseSecond) {
+  EnsureKeyShareSetup();
+  ConfigNamedGroups({ssl_grp_ec_secp384r1, ssl_grp_kem_secp384r1mlkem1024});
+  EXPECT_EQ(SECSuccess, SSL_SendAdditionalKeyShares(client_->ssl_fd(), 1));
+
+  Connect();
+
+  CheckKEXDetails({ssl_grp_ec_secp384r1, ssl_grp_kem_secp384r1mlkem1024},
+                  {ssl_grp_ec_secp384r1, ssl_grp_kem_secp384r1mlkem1024});
   CheckECDHShareReuse(shares_capture_);
 }
 

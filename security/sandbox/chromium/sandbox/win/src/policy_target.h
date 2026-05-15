@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright 2006-2008 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,11 +25,19 @@ SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtImpersonateAnonymousToken(
     NtImpersonateAnonymousTokenFunction orig_ImpersonateAnonymousToken,
     HANDLE thread);
 
+// Interception of NtOpenSection on the child process.
+// It should never be called directly
+SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtOpenSection(
+    NtOpenSectionFunction orig_NtOpenSection, PHANDLE section_handle,
+    ACCESS_MASK desired_access, POBJECT_ATTRIBUTES object_attributes);
+
 // Interception of NtSetInformationThread on the child process.
 // It should never be called directly.
 SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtSetInformationThread(
-    NtSetInformationThreadFunction orig_SetInformationThread, HANDLE thread,
-    NT_THREAD_INFORMATION_CLASS thread_info_class, PVOID thread_information,
+    NtSetInformationThreadFunction orig_SetInformationThread,
+    HANDLE thread,
+    THREADINFOCLASS thread_info_class,
+    PVOID thread_information,
     ULONG thread_information_bytes);
 
 // Interception of NtOpenThreadToken on the child process.

@@ -37,6 +37,8 @@ support-files = ["longerArticle.html"]
 ["browser_preview_print_link_modulepreload.js"]
 support-files = ["file_link_modulepreload.html"]
 
+["browser_preview_tab_unload.js"]
+
 ["browser_print_bcg_id_overflow.js"]
 
 ["browser_print_context_menu.js"]
@@ -56,9 +58,8 @@ support-files = [
 
 ["browser_print_in_container.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan && swgl", # Bug 1683730
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan && swgl", # Bug 1683730
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && swgl", # Bug 1683730
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
   "os == 'win' && os_version == '11.26100' && debug && verify",
 ]
 
@@ -88,6 +89,10 @@ support-files = [
 ["browser_print_selection.js"]
 
 ["browser_print_settings_fallback.js"]
+
+["browser_print_silent_about_config.js"]
+# Times out on non-Linux, needs debugging.
+skip-if = ["os == 'win'", "os == 'mac'"]
 
 ["browser_print_simplified_mode.js"]
 support-files = ["simplifyNonArticleSample.html"]

@@ -38,18 +38,23 @@ class RemoteSettingsService(
  *
  * This is what's used for JEXL filtering.
  */
-private fun generateAppContext(context: Context, channel: String, isLargeScreenSize: Boolean): RemoteSettingsContext {
-    val locale = Locale.getDefault()
+internal fun generateAppContext(
+    context: Context,
+    channel: String,
+    isLargeScreenSize: Boolean,
+    locale: Locale? = null,
+): RemoteSettingsContext {
+    val resolvedLocale = locale ?: Locale.getDefault()
     val formFactor = if (isLargeScreenSize) "tablet" else "phone"
     return RemoteSettingsContext(
         channel = channel,
         appVersion = AcBuild.VERSION,
         appId = context.packageName,
-        locale = locale.toString(),
+        locale = resolvedLocale.toLanguageTag(),
         os = "Android",
         osVersion = Build.VERSION.RELEASE,
         formFactor = formFactor,
-        country = locale.country,
+        country = resolvedLocale.country,
     )
 }
 

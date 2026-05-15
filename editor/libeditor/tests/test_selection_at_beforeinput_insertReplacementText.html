@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Selection should select the target misspelled word before `beforeinput` event</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(async () => {
+  const { maybeOnSpellCheck } = SpecialPowers.ChromeUtils.importESModule(
+    "resource://testing-common/AsyncSpellCheckTestHelper.sys.mjs"
+  );
+
+  function testTextEditor(aTextControl) {
+    const description = aTextControl.localName;
+    aTextControl.setAttribute("spellcheck", "true");
+    aTextControl.value = "abc abx abc";
+    aTextControl.focus();
+
+    const textEditor = SpecialPowers.wrap(aTextControl).editor;
+    const inlineSpellChecker = textEditor.getInlineSpellChecker(true);
+
+    return new Promise(resolve => {
+      maybeOnSpellCheck(aTextControl, () => {
+        aTextControl.addEventListener("beforeinput", event => {
+          is(
+            `${event.type} (inputType=${event.inputType}), selectionStart=${
+              aTextControl.selectionStart
+            }, selectionEnd=${aTextControl.selectionEnd}`,
+            "beforeinput (inputType=insertReplacementText), selectionStart=4, selectionEnd=7",
+            `${description}: Selection should select the replacing word`
+          );
+          resolve();
+        }, {once: true});
+        aTextControl.selectionStart = aTextControl.selectionEnd = 5;
+        const misspelledWord = inlineSpellChecker.getMisspelledWord(textEditor.rootElement.firstChild, 5);
+        is(
+          `${misspelledWord.startOffset}-${misspelledWord.endOffset}`,
+          "4-7",
+          `${description}: misspelled word range should be "abc [abx] abc"`
+        );
+        info(`${description}: Replacing "abx" with "aux"...`);
+        inlineSpellChecker.replaceWord(textEditor.rootElement.firstChild, 5, "aux");
+      });
+    });
+  }
+  await testTextEditor(document.querySelector("input"));
+  await testTextEditor(document.querySelector("textarea"));
+
+  function testContentEditable(aEditingHost) {
+    const description = "contenteditable";
+    aEditingHost.setAttribute("spellcheck", "true");
+    aEditingHost.textContent = "abc abx abc";
+    aEditingHost.focus();
+
+    const htmlEditor = SpecialPowers.wrap(window).docShell.editingSession.getEditorForWindow(window);
+    const inlineSpellChecker = htmlEditor.getInlineSpellChecker(true);
+
+    return new Promise(resolve => {
+      maybeOnSpellCheck(aEditingHost, async () => {
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        function getRangeDescription(range) {
+          function getNodeDescription(node) {
+            if (!node) {
+              return "null";
+            }
+            switch (node.nodeType) {
+              case Node.TEXT_NODE:
+                return `${node.nodeName} "${node.data}"`;
+              case Node.ELEMENT_NODE:
+                return `<${node.nodeName.toLowerCase()}>`;
+              default:
+                return `${node.nodeName}`;
+            }
+          }
+          if (range === null) {
+            return "null";
+          }
+          if (range === undefined) {
+            return "undefined";
+          }
+          return range.startContainer == range.endContainer &&
+            range.startOffset == range.endOffset
+            ? `(${getNodeDescription(range.startContainer)}, ${range.startOffset})`
+            : `(${getNodeDescription(range.startContainer)}, ${
+                range.startOffset
+              }) - (${getNodeDescription(range.endContainer)}, ${range.endOffset})`;
+        }
+        aEditingHost.addEventListener("beforeinput", event => {
+          is(
+            `${event.type} (inputType=${event.inputType}), selection=${getRangeDescription(getSelection().getRangeAt(0))}`,
+            `beforeinput (inputType=insertReplacementText), selection=${getRangeDescription({
+              startContainer: aEditingHost.firstChild,
+              startOffset: 4,
+              endContainer: aEditingHost.firstChild,
+              endOffset: 7,
+            })}`,
+            `${description}: Selection should select the replacing word`
+          );
+          resolve();
+        }, {once: true});
+        getSelection().collapse(aEditingHost.firstChild, 5);
+        const misspelledWord = inlineSpellChecker.getMisspelledWord(aEditingHost.firstChild, 5);
+        is(
+          `${misspelledWord.startOffset}-${misspelledWord.endOffset}`,
+          "4-7",
+          `${description}: misspelled word range should be "abc [abx] abc"`
+        );
+        info(`${description}: Replacing "abx" with "aux"...`);
+        inlineSpellChecker.replaceWord(aEditingHost.firstChild, 5, "aux");
+      });
+    });
+  }
+  await testContentEditable(document.querySelector("div[contenteditable]"));
+
+  SimpleTest.finish();
+});
+</script>
+</head>
+<body>
+<input>
+<textarea></textarea>
+<div contenteditable></div>
+</body>
+</html>

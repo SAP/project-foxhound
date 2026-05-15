@@ -1,0 +1,58 @@
+<html class="reftest-wait">
+<body>
+<script>
+  function checkEvents(test, callback) {
+    const detailsElement = document.getElementById("detailsElement");
+    detailsElement.addEventListener("toggle", callback, { once: true });
+    detailsElement.setAttribute("open", "");
+
+    test();
+
+    detailsElement.removeAttribute("open");
+  }
+
+  const xmlString = `<foo><bar/></foo>`;
+  const xsltString = `
+    <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+      <xsl:param name="p" />
+      <xsl:template match="/">
+        <xsl:for-each select="$p/bar">
+          <xsl:copy-of select="." />
+          <xsl:copy-of select="document('1941002.sjs')/xsl:stylesheet"/>
+        </xsl:for-each>
+      </xsl:template>
+    </xsl:stylesheet>
+  `;
+  const paramString = `
+    <foo>
+      <bar>p1</bar>
+      <bar>p2</bar>
+      <bar>p3</bar>
+      <bar>p4</bar>
+    </foo>
+  `;
+
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlString, "application/xml");
+  const xsltDoc = parser.parseFromString(xsltString, "application/xml");
+  const xsltProcessor = new XSLTProcessor();
+
+  xsltProcessor.setParameter(null, "p", parser.parseFromString(paramString, "application/xml").documentElement);
+
+  addEventListener("load", () => {
+    xsltProcessor.importStylesheet(xsltDoc);
+
+    checkEvents(() => {
+      xsltProcessor.transformToFragment(xmlDoc, document);
+    }, () => {
+      xsltProcessor.clearParameters();
+      SpecialPowers.forceGC();
+      SpecialPowers.forceCC();
+    });
+
+    document.documentElement.classList.remove("reftest-wait");
+  });
+</script>
+<details id="detailsElement"></details>
+</body>
+</html>

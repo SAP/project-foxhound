@@ -30,6 +30,7 @@ diff --git a/sandbox/win/src/crosscall_params.h b/sandbox/win/src/crosscall_para
    uint32_t size_;
  };
 @@ -287,16 +288,18 @@ class ActualCallParams : public CrossCal
+ 
   protected:
    ActualCallParams() : CrossCallParams(IpcTag::UNUSED, NUMBER_PARAMS) {}
  
@@ -37,7 +38,6 @@ diff --git a/sandbox/win/src/crosscall_params.h b/sandbox/win/src/crosscall_para
    ParamInfo param_info_[NUMBER_PARAMS + 1];
    char parameters_[BLOCK_SIZE - sizeof(CrossCallParams) -
                     sizeof(ParamInfo) * (NUMBER_PARAMS + 1)];
-   DISALLOW_COPY_AND_ASSIGN(ActualCallParams);
 +
 +  friend uint32_t GetMinDeclaredActualCallParamsSize(uint32_t param_count);
  };

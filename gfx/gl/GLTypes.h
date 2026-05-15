@@ -5,7 +5,6 @@
 #ifndef GLTYPES_H_
 #define GLTYPES_H_
 
-#include <stddef.h>
 #include <stdint.h>
 
 #ifndef GLAPIENTRY

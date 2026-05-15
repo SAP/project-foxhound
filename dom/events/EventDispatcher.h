@@ -8,10 +8,10 @@
 #  ifndef mozilla_EventDispatcher_h_
 #    define mozilla_EventDispatcher_h_
 
-#    include "mozilla/dom/BindingDeclarations.h"
-#    include "mozilla/dom/Touch.h"
 #    include "mozilla/EventForwards.h"
 #    include "mozilla/Maybe.h"
+#    include "mozilla/dom/BindingDeclarations.h"
+#    include "mozilla/dom/Touch.h"
 #    include "nsCOMPtr.h"
 #    include "nsTArray.h"
 

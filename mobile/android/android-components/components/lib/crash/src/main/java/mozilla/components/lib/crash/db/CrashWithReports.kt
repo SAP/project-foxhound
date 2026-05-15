@@ -13,7 +13,6 @@ import androidx.room.Relation
 internal data class CrashWithReports(
     @Embedded
     val crash: CrashEntity,
-
     @Relation(
         parentColumn = "uuid",
         entityColumn = "crash_uuid",

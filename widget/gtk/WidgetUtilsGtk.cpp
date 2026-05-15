@@ -31,6 +31,7 @@
 #ifdef MOZ_ENABLE_DBUS
 #  include "mozilla/ClearOnShutdown.h"
 #  include "mozilla/widget/AsyncDBus.h"
+#  include "nsAppShell.h"
 #endif  // MOZ_ENABLE_DBUS
 
 #ifdef MOZ_WAYLAND
@@ -103,14 +104,14 @@ bool IsMainWindowTransparent() {
 
 bool GdkIsWaylandDisplay(GdkDisplay* display) {
   static auto sGdkWaylandDisplayGetType =
-      (GType(*)())dlsym(RTLD_DEFAULT, "gdk_wayland_display_get_type");
+      (GType (*)())dlsym(RTLD_DEFAULT, "gdk_wayland_display_get_type");
   return sGdkWaylandDisplayGetType &&
          G_TYPE_CHECK_INSTANCE_TYPE(display, sGdkWaylandDisplayGetType());
 }
 
 bool GdkIsX11Display(GdkDisplay* display) {
   static auto sGdkX11DisplayGetType =
-      (GType(*)())dlsym(RTLD_DEFAULT, "gdk_x11_display_get_type");
+      (GType (*)())dlsym(RTLD_DEFAULT, "gdk_x11_display_get_type");
   return sGdkX11DisplayGetType &&
          G_TYPE_CHECK_INSTANCE_TYPE(display, sGdkX11DisplayGetType());
 }
@@ -170,6 +171,7 @@ bool IsRunningUnderFlatpak() {
 static void DoRegisterHostApp() {
   GUniquePtr<GError> error;
 
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GDBusProxy> proxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
       G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr, sXdpServiceName,
       sXdpDBusPath, sXdpRegistryInterfaceName, nullptr /* cancellable */,
@@ -196,9 +198,7 @@ static void DoRegisterHostApp() {
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [](const DBusCallPromise::ResolveOrRejectValue& aValue) {
                if (aValue.IsReject()) {
-                 NS_WARNING(
-                     "Failed to register host application for "
-                     "portals\n");
+                 NS_WARNING("Failed to register host application for portals");
                }
              });
 }
@@ -294,6 +294,7 @@ bool ShouldUsePortal(PortalKind aPortalKind) {
   const int32_t pref = [&] {
     switch (aPortalKind) {
       case PortalKind::FilePicker:
+        autoBehavior = true;
         return StaticPrefs::widget_use_xdg_desktop_portal_file_picker();
       case PortalKind::MimeHandler:
         // Mime portal breaks default browser handling, see bug 1516290.
@@ -409,23 +410,11 @@ RefPtr<FocusRequestPromise> RequestWaylandFocusPromise() {
     return nullptr;
   }
 
-  wl_surface* focusSurface;
-  uint32_t focusSerial;
-  KeymapWrapper::GetFocusInfo(&focusSurface, &focusSerial);
-  if (!focusSurface) {
-    LOGW("RequestWaylandFocusPromise() missing focusSurface");
-    return nullptr;
-  }
-
   GdkWindow* gdkWindow = sourceWindow->GetToplevelGdkWindow();
   if (!gdkWindow) {
     return nullptr;
   }
   wl_surface* surface = gdk_wayland_window_get_wl_surface(gdkWindow);
-  if (focusSurface != surface) {
-    LOGW("RequestWaylandFocusPromise() missing wl_surface");
-    return nullptr;
-  }
 
   RefPtr<FocusRequestPromise::Private> transferPromise =
       new FocusRequestPromise::Private(__func__);
@@ -435,9 +424,10 @@ RefPtr<FocusRequestPromise> RequestWaylandFocusPromise() {
   xdg_activation_token_v1_add_listener(
       aXdgToken, &token_listener,
       new XDGTokenRequest(aXdgToken, transferPromise));
-  xdg_activation_token_v1_set_serial(aXdgToken, focusSerial,
+  xdg_activation_token_v1_set_serial(aXdgToken,
+                                     nsWaylandDisplay::GetLastEventSerial(),
                                      WaylandDisplayGet()->GetSeat());
-  xdg_activation_token_v1_set_surface(aXdgToken, focusSurface);
+  xdg_activation_token_v1_set_surface(aXdgToken, surface);
   xdg_activation_token_v1_commit(aXdgToken);
 
   LOGW("RequestWaylandFocusPromise() XDG Token sent");

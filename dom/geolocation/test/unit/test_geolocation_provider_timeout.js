@@ -2,6 +2,15 @@ const { HttpServer } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
 );
 
+async function getCurrentMetrics() {
+  // We set geo.provider.network.scan to false, so we know to expect ip-based
+  // location, not wifi-environment-based.
+  return {
+    ipCount:
+      await Glean.geolocation.geolocationService.network_ip.testGetValue(),
+  };
+}
+
 var httpserver = null;
 var geolocation = null;
 
@@ -15,13 +24,20 @@ function successCallback() {
   do_test_finished();
 }
 
-function errorCallback() {
+async function errorCallback() {
   Assert.ok(true);
+  // Even though we timed out, we should have recorded the attempt.
+  let metrics = await getCurrentMetrics();
+  Assert.equal(metrics.ipCount, 1);
   do_test_finished();
 }
 
-function run_test() {
+async function run_test() {
   do_test_pending();
+
+  // Initialize Glean and get current state.
+  do_get_profile();
+  Services.fog.initializeFOG();
 
   httpserver = new HttpServer();
   httpserver.registerPathHandler("/geo", geoHandler);

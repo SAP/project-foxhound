@@ -606,7 +606,7 @@ export var ExtensionPermissions = {
 export var OriginControls = {
   /**
    * @typedef {object} NativeTab
-   * @property {XULBrowserElement} linkedBrowser
+   * @property {MozBrowser} linkedBrowser
    */
 
   /**

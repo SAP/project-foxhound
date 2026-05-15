@@ -75,20 +75,20 @@ async function withNewSearchEngine(taskFn) {
   let suggestionEngine = await SearchTestUtils.installOpenSearchEngine({
     url: getRootDirectory(gTestPath) + "urlbarTelemetrySearchSuggestions.xml",
   });
-  let previousEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
+  let previousEngine = await SearchService.getDefault();
+  await SearchService.setDefault(
     suggestionEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 
   try {
     await taskFn(suggestionEngine);
   } finally {
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       previousEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
-    await Services.search.removeEngine(suggestionEngine);
+    await SearchService.removeEngine(suggestionEngine);
   }
 }
 
@@ -103,8 +103,8 @@ add_setup(async function () {
   );
 
   // Make it the first one-off engine.
-  let engine = Services.search.getEngineByName("MozSearch");
-  await Services.search.moveEngine(engine, 0);
+  let engine = SearchService.getEngineByName("MozSearch");
+  await SearchService.moveEngine(engine, 0);
 
   // Enable search suggestions in the urlbar.
   let suggestionsEnabled = Services.prefs.getBoolPref(SUGGEST_URLBAR_PREF);
@@ -262,11 +262,11 @@ add_task(async function test_oneOff_enter() {
     "This search must only increment one entry in the scalar."
   );
 
-  // SAP counts should be incremented, but only the urlbar-searchmode source
+  // SAP counts should be incremented, but only the urlbar_searchmode source
   // since aliases aren't counted separately in search mode.
   await SearchUITestUtils.assertSAPTelemetry({
     engineName: "MozSearch",
-    source: "urlbar-searchmode",
+    source: "urlbar_searchmode",
     count: 1,
   });
 
@@ -356,7 +356,7 @@ add_task(async function test_searchmode_suggestion_click() {
 
     await SearchUITestUtils.assertSAPTelemetry({
       engineName: engine.name,
-      source: "urlbar-searchmode",
+      source: "urlbar_searchmode",
       count: 1,
     });
 

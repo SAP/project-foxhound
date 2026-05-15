@@ -502,3 +502,59 @@ add_task(async function test_omnibox_event_page() {
   await extension.unload();
   await SpecialPowers.popPrefEnv();
 });
+
+add_task(async function test_omnibox_input_is_user_interaction() {
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "permanent",
+    manifest: {
+      browser_specific_settings: { gecko: { id: "user-interaction@omnibox" } },
+      omnibox: {
+        keyword: keyword,
+      },
+    },
+    async background() {
+      async function checkIsHandlingUserInput() {
+        try {
+          // permissions.request is declared with requireUserInput,
+          // so it would reject if inputHandling is false.
+          let granted = await browser.permissions.request({});
+          // We haven't requested any permissions, so the API call grants the
+          // requested permissions without actually prompting the user.
+          browser.test.assertTrue(granted, "empty permissions granted");
+          return true;
+        } catch (e) {
+          browser.test.assertEq(
+            e?.message,
+            "permissions.request may only be called from a user input handler",
+            "Expected error when permissions.request rejects"
+          );
+          return false;
+        }
+      }
+      browser.omnibox.onInputEntered.addListener(async () => {
+        browser.test.assertTrue(
+          await checkIsHandlingUserInput(),
+          "omnibox.onInputEntered is handling user input"
+        );
+        browser.test.notifyPass("action-clicked");
+      });
+      browser.test.assertFalse(
+        await checkIsHandlingUserInput(),
+        "not handling user input by default"
+      );
+      browser.test.sendMessage("ready");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("ready");
+
+  gURLBar.focus();
+  gURLBar.value = keyword;
+  EventUtils.sendString(" ");
+  EventUtils.synthesizeKey("KEY_Enter");
+
+  await extension.awaitFinish("action-clicked");
+
+  await extension.unload();
+});

@@ -11,7 +11,7 @@
   grid-template-columns: subgrid;
   grid-column: span 9;
   align-items: stretch;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 @media (forced-colors) {
@@ -27,7 +27,7 @@
   grid-template-columns: subgrid;
   grid-column: span 6;
   gap: 16px;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   align-items: center;
   padding: 4px 8px;
   user-select: none;
@@ -38,7 +38,7 @@
     grid-template-columns: min-content auto;
   }
 
-  &[disabled="true"] {
+  &[disabled] {
     pointer-events: none;
     color: var(--text-color-disabled);
   }
@@ -104,7 +104,7 @@
 
 .fxview-tab-row-url,
 .fxview-tab-row-time {
-  font-weight: 400;
+  font-weight: normal;
 }
 
 .fxview-tab-row-button::part(button) {
@@ -121,7 +121,7 @@
 
 .fxview-tab-row-button.undo-button::part(button) {
   font-size: var(--font-size-small);
-  font-weight: 400;
+  font-weight: normal;
 }
 
 .fxview-tab-row-button.dismiss-button,

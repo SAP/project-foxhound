@@ -16,7 +16,6 @@
 class nsComputedDOMStyle;
 class nsAtom;
 class nsIContent;
-class nsICSSDeclaration;
 class nsINode;
 class nsStaticAtom;
 class nsStyledElement;
@@ -93,7 +92,8 @@ class CSSEditUtils final {
                                       nsStyledElement& aStyledElement,
                                       nsAtom& aProperty, int32_t aIntValue);
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT static nsresult
-  SetCSSPropertyPixelsWithoutTransaction(nsStyledElement& aStyledElement,
+  SetCSSPropertyPixelsWithoutTransaction(HTMLEditor& aHTMLEditor,
+                                         nsStyledElement& aStyledElement,
                                          const nsAtom& aProperty,
                                          int32_t aIntValue);
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT static nsresult

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -10,6 +10,9 @@ features: [Temporal]
 
 const arg = {};
 assert.throws(RangeError, () => Temporal.Instant.from(arg), "[object Object] is not a valid ISO string");
+
+const temporalInstant = Temporal.Instant;
+assert.throws(RangeError, () => Temporal.Instant.from(temporalInstant), "Temporal.Instant object is not a valid ISO string");
 
 arg.toString = function() {
   return "1970-01-01T00:00Z";

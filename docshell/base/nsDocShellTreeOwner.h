@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDocShellTreeOwner_h__
-#define nsDocShellTreeOwner_h__
+#ifndef nsDocShellTreeOwner_h_
+#define nsDocShellTreeOwner_h_
 
 // Helper Classes
 #include "nsCOMPtr.h"
@@ -108,4 +108,4 @@ class nsDocShellTreeOwner final : public nsIDocShellTreeOwner,
   nsCOMPtr<nsIRemoteTab> mPrimaryRemoteTab;
 };
 
-#endif /* nsDocShellTreeOwner_h__ */
+#endif /* nsDocShellTreeOwner_h_ */

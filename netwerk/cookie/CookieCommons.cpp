@@ -9,7 +9,6 @@
 #include "CookieParser.h"
 #include "CookieService.h"
 #include "mozilla/ContentBlockingNotifier.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
@@ -19,7 +18,6 @@
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/Unused.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsContentUtils.h"
 #include "nsICookiePermission.h"
@@ -377,7 +375,7 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
   aCookieParser.Parse(baseDomain, requireHostMatch, cookieStatus, cookieString,
                       EmptyCString(), false, isForeignAndNotAddon,
                       mustBePartitioned, aDocument->IsInPrivateBrowsing(),
-                      on3pcbException, PR_Now() / PR_USEC_PER_MSEC);
+                      on3pcbException, PR_Now());
 
   if (!aCookieParser.ContainsCookie()) {
     return nullptr;
@@ -425,9 +423,10 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
       aCookieParser.CookieData(), cookiePrincipal->OriginAttributesRef());
   MOZ_ASSERT(cookie);
 
-  cookie->SetLastAccessed(currentTimeInUsec);
-  cookie->SetCreationTime(
-      Cookie::GenerateUniqueCreationTime(currentTimeInUsec));
+  cookie->SetLastAccessedInUSec(currentTimeInUsec);
+  cookie->SetCreationTimeInUSec(
+      Cookie::GenerateUniqueCreationTimeInUSec(currentTimeInUsec));
+  cookie->SetUpdateTimeInUSec(cookie->CreationTimeInUSec());
 
   aBaseDomain = baseDomain;
   aAttrs = cookiePrincipal->OriginAttributesRef();
@@ -995,13 +994,13 @@ void CookieCommons::GetServerDateHeader(nsIChannel* aChannel,
     return;
   }
 
-  Unused << channel->GetResponseHeader("Date"_ns, aServerDateHeader);
+  (void)channel->GetResponseHeader("Date"_ns, aServerDateHeader);
 }
 
 // static
 int64_t CookieCommons::MaybeCapExpiry(int64_t aCurrentTimeInMSec,
                                       int64_t aExpiryInMSec) {
-  int64_t maxageCap = StaticPrefs::network_cookie_maxageCap();
+  const int64_t maxageCap = StaticPrefs::network_cookie_maxageCap();
 
   if (maxageCap) {
     aExpiryInMSec =
@@ -1009,6 +1008,16 @@ int64_t CookieCommons::MaybeCapExpiry(int64_t aCurrentTimeInMSec,
   }
 
   return aExpiryInMSec;
+}
+
+int64_t CookieCommons::MaybeCapMaxAge(int64_t aCurrentTimeInMSec,
+                                      int64_t aMaxAgeInSec) {
+  const int64_t maxageCap = StaticPrefs::network_cookie_maxageCap();
+  CheckedInt<int64_t> value(aCurrentTimeInMSec);
+
+  value +=
+      (maxageCap ? std::min(aMaxAgeInSec, maxageCap) : aMaxAgeInSec) * 1000;
+  return value.isValid() ? value.value() : INT64_MAX;
 }
 
 // static
@@ -1023,17 +1032,17 @@ bool CookieCommons::IsSubdomainOf(const nsACString& a, const nsACString& b) {
 }
 
 // static
-int64_t CookieCommons::GetCurrentTimeFromChannel(nsIChannel* aChannel) {
+int64_t CookieCommons::GetCurrentTimeInUSecFromChannel(nsIChannel* aChannel) {
   nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(aChannel);
   if (timedChannel) {
     PRTime currentTimeInUSec = 0;
     nsresult rv = timedChannel->GetResponseStartTime(&currentTimeInUSec);
     if (NS_SUCCEEDED(rv) && currentTimeInUSec) {
-      return currentTimeInUSec / PR_USEC_PER_MSEC;
+      return currentTimeInUSec;
     }
   }
 
-  return PR_Now() / PR_USEC_PER_MSEC;
+  return PR_Now();
 }
 
 }  // namespace net

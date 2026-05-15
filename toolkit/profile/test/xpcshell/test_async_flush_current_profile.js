@@ -13,6 +13,10 @@ add_task(
     let hash = xreDirProvider.getInstallHash();
     let defaultProfile = makeRandomProfileDir("default");
     let otherProfile = makeRandomProfileDir("other");
+    let absoluteProfile = gProfD.clone();
+    absoluteProfile.append("absolute");
+    absoluteProfile.createUnique(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
+
     let storeID = "b0bacafe";
     let profilesIni = {
       profiles: [
@@ -67,21 +71,37 @@ add_task(
     // Now, simulate the default profile receiving app focus: asyncFlush would
     // fail, since profiles.ini has been updated since startup, but we should
     // then fall back to asyncFlushCurrentProfile, which should succeed.
-    let asyncRewriteDefault = async () => {
+    let asyncRewriteDefault = async (expectedPath, expectedRelative) => {
       await service.asyncFlushCurrentProfile();
       let profileData = readProfilesIni();
 
       Assert.equal(
         profileData.profiles[0].path,
-        defaultProfile.leafName,
+        expectedPath,
+        "AsyncFlushCurrentProfile should have updated the path to the path of the current managed profile"
+      );
+
+      Assert.equal(
+        profileData.profiles[0].isRelative,
+        expectedRelative,
+        "AsyncFlushCurrentProfile should have updated IsRelative correctly"
+      );
+
+      Assert.equal(
+        profileData.installs[hash].default,
+        expectedPath,
         "AsyncFlushCurrentProfile should have updated the path to the path of the current managed profile"
       );
     };
-    await asyncRewriteDefault();
+    await asyncRewriteDefault(defaultProfile.leafName, true);
 
     // Just to be sure, repeat the other instance setting itself to default,
     // then this instance flushing over top of those changes.
     overwriteProfilesIni();
-    await asyncRewriteDefault();
+    await asyncRewriteDefault(defaultProfile.leafName, true);
+
+    // Now change the root dir and flush.
+    service.currentProfile.rootDir = absoluteProfile;
+    await asyncRewriteDefault(absoluteProfile.path, false);
   }
 );

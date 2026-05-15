@@ -5,6 +5,7 @@
 package org.mozilla.fenix.library.historymetadata.view
 
 import android.view.View
+import androidx.annotation.LayoutRes
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import org.mozilla.fenix.R
@@ -67,6 +68,7 @@ class HistoryMetadataGroupItemViewHolder(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.history_metadata_group_list_item
+        @LayoutRes
+        val LAYOUT_ID = R.layout.history_metadata_group_list_item
     }
 }

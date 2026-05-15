@@ -27,7 +27,7 @@ var HandshakeTelemetryHelpers = {
    * Counts the number of entries in the histogram, ignoring the bucket value.
    * e.g. {0: 1, 1: 2, 3: 3} has 6 entries.
    *
-   * @param {Object} histObject The histogram to count the entries of.
+   * @param {object} histObject The histogram to count the entries of.
    * @returns The count of the number of entries in the histogram.
    */
   countHistogramEntries(histObject) {
@@ -47,9 +47,9 @@ var HandshakeTelemetryHelpers = {
    * Assert that the histogram index is the right value. It expects that
    * other indexes are all zero.
    *
-   * @param {Object} histogram The histogram to check.
-   * @param {Number} index The index to check against the expected value.
-   * @param {Number} expected The expected value of the index.
+   * @param {object} histogram The histogram to check.
+   * @param {number} index The index to check against the expected value.
+   * @param {number} expected The expected value of the index.
    */
   assertHistogramMap(histogram, expectedEntries) {
     Assert.ok(

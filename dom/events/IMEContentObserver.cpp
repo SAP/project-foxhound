@@ -4,8 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ContentEventHandler.h"
 #include "IMEContentObserver.h"
+
+#include "ContentEventHandler.h"
+#include "WritingModes.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoRestore.h"
@@ -23,8 +25,8 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Selection.h"
-#include "nsContentUtils.h"
 #include "nsAtom.h"
+#include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
@@ -37,7 +39,6 @@
 #include "nsPresContext.h"
 #include "nsRange.h"
 #include "nsRefreshDriver.h"
-#include "WritingModes.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -51,6 +52,17 @@ LazyLogModule sIMECOLog("IMEContentObserver");
 LazyLogModule sCacheLog("IMEContentObserverCache");
 
 static const char* ToChar(bool aBool) { return aBool ? "true" : "false"; }
+
+static const char* ShortenFunctionName(const char* aFunctionName) {
+  const nsDependentCString name(aFunctionName);
+  const int32_t startIndexOfIMEContentObserverPrefix =
+      name.Find("IMEContentObserver::", 0);
+  if (startIndexOfIMEContentObserverPrefix >= 0) {
+    return aFunctionName + startIndexOfIMEContentObserverPrefix +
+           strlen("IMEContentObserver::");
+  }
+  return aFunctionName;
+}
 
 /******************************************************************************
  * mozilla::IMEContentObserver
@@ -70,7 +82,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IMEContentObserver)
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSelection)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mRootElement)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mEditableNode)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mRootEditableNodeOrTextControlElement)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocShell)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mEditorBase)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentObserver)
@@ -89,7 +101,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IMEContentObserver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFocusedWidget)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSelection)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRootElement)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEditableNode)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRootEditableNodeOrTextControlElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocShell)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEditorBase)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentObserver)
@@ -213,12 +225,12 @@ void IMEContentObserver::OnIMEReceivedFocus() {
 bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
                                         Element* aElement,
                                         EditorBase& aEditorBase) {
-  // mEditableNode is one of
-  // - Anonymous <div> in <input> or <textarea>
-  // - Editing host if it's not in the design mode
-  // - Document if it's in the design mode
-  mEditableNode = IMEStateManager::GetRootEditableNode(aPresContext, aElement);
-  if (NS_WARN_IF(!mEditableNode)) {
+  mRootEditableNodeOrTextControlElement =
+      aEditorBase.IsTextEditor()
+          ? aEditorBase.GetExposedRoot()
+          : IMEContentObserver::GetMostDistantInclusiveEditableAncestorNode(
+                aPresContext, aElement);
+  if (NS_WARN_IF(!mRootEditableNodeOrTextControlElement)) {
     return false;
   }
 
@@ -228,20 +240,17 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
 
   // get selection and root content
   nsCOMPtr<nsISelectionController> selCon;
-  if (mEditableNode->IsContent()) {
-    nsIFrame* frame = mEditableNode->AsContent()->GetPrimaryFrame();
-    if (NS_WARN_IF(!frame)) {
+  if (mRootEditableNodeOrTextControlElement->IsElement()) {
+    selCon = aEditorBase.GetSelectionController();
+    if (NS_WARN_IF(!selCon)) {
       return false;
     }
-
-    frame->GetSelectionController(&aPresContext, getter_AddRefs(selCon));
   } else {
-    // mEditableNode is a document
+    MOZ_ASSERT(mRootEditableNodeOrTextControlElement->IsDocument());
     selCon = presShell;
-  }
-
-  if (NS_WARN_IF(!selCon)) {
-    return false;
+    if (NS_WARN_IF(!selCon)) {
+      return false;
+    }
   }
 
   mSelection = selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
@@ -271,22 +280,21 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
     nsCOMPtr<nsINode> startContainer = selRange->GetStartContainer();
     mRootElement =
         Element::FromNodeOrNull(startContainer->GetSelectionRootContent(
-            presShell,
-            nsINode::IgnoreOwnIndependentSelection::No,  // XXX "Yes"?
+            presShell, nsINode::IgnoreOwnIndependentSelection::Yes,
             nsINode::AllowCrossShadowBoundary::No));
   } else {
     MOZ_ASSERT(!mIsTextControl);
     // If an editing host has focus, mRootElement is it.
     // Otherwise, if we're in the design mode, mRootElement is the <body> if
     // there is.  Otherwise, the document element is used instead.
-    nsCOMPtr<nsINode> editableNode = mEditableNode;
+    const OwningNonNull<nsINode> rootEditableNode(
+        *mRootEditableNodeOrTextControlElement);
     mRootElement =
-        Element::FromNodeOrNull(editableNode->GetSelectionRootContent(
-            presShell,
-            nsINode::IgnoreOwnIndependentSelection::No,  // XXX "Yes"?
+        Element::FromNodeOrNull(rootEditableNode->GetSelectionRootContent(
+            presShell, nsINode::IgnoreOwnIndependentSelection::Yes,
             nsINode::AllowCrossShadowBoundary::No));
   }
-  if (!mRootElement && mEditableNode->IsDocument()) {
+  if (!mRootElement && mRootEditableNodeOrTextControlElement->IsDocument()) {
     // The document node is editable, but there are no contents, this document
     // is not editable.
     return false;
@@ -309,7 +317,7 @@ bool IMEContentObserver::InitWithEditor(nsPresContext& aPresContext,
 void IMEContentObserver::Clear() {
   mEditorBase = nullptr;
   mSelection = nullptr;
-  mEditableNode = nullptr;
+  mRootEditableNodeOrTextControlElement = nullptr;
   mRootElement = nullptr;
   mDocShell = nullptr;
   // Should be safe to clear mDocumentObserver here even though it grabs
@@ -464,7 +472,7 @@ bool IMEContentObserver::MaybeReinitialize(nsIWidget& aWidget,
                                            nsPresContext& aPresContext,
                                            Element* aElement,
                                            EditorBase& aEditorBase) {
-  if (!IsObservingContent(aPresContext, aElement)) {
+  if (!IsObservingElement(aPresContext, aElement)) {
     return false;
   }
 
@@ -482,9 +490,10 @@ bool IMEContentObserver::IsObserving(const nsPresContext& aPresContext,
   // If aElement is not a text control, aElement is an editing host or entire
   // the document is editable in the design mode.  Therefore, return false if
   // we're observing an anonymous subtree of a text control.
-  if (!aElement || !aElement->IsTextControlElement() ||
-      !static_cast<const TextControlElement*>(aElement)
-           ->IsSingleLineTextControlOrTextArea()) {
+  const auto* const textControlElement =
+      TextControlElement::FromNodeOrNull(aElement);
+  if (!textControlElement ||
+      !textControlElement->IsSingleLineTextControlOrTextArea()) {
     if (mIsTextControl) {
       return false;
     }
@@ -495,14 +504,14 @@ bool IMEContentObserver::IsObserving(const nsPresContext& aPresContext,
   else if (!mIsTextControl) {
     return false;
   }
-  return IsObservingContent(aPresContext, aElement);
+  return IsObservingElement(aPresContext, aElement);
 }
 
 bool IMEContentObserver::IsBeingInitializedFor(
     const nsPresContext& aPresContext, const Element* aElement,
     const EditorBase& aEditorBase) const {
   return GetState() == eState_Initializing && mEditorBase == &aEditorBase &&
-         IsObservingContent(aPresContext, aElement);
+         IsObservingElement(aPresContext, aElement);
 }
 
 bool IMEContentObserver::IsObserving(
@@ -519,7 +528,7 @@ bool IMEContentObserver::IsObserving(
   }
   auto* const elementHavingComposition =
       Element::FromNodeOrNull(aTextComposition.GetEventTargetNode());
-  bool isObserving = IsObservingContent(*presContext, elementHavingComposition);
+  bool isObserving = IsObservingElement(*presContext, elementHavingComposition);
 #ifdef DEBUG
   if (isObserving) {
     if (mIsTextControl) {
@@ -557,7 +566,7 @@ bool IMEContentObserver::IsObserving(
 }
 
 IMEContentObserver::State IMEContentObserver::GetState() const {
-  if (!mSelection || !mRootElement || !mEditableNode) {
+  if (!mSelection || !mRootElement || !mRootEditableNodeOrTextControlElement) {
     return eState_NotObserving;  // failed to initialize or finalized.
   }
   if (!mRootElement->IsInComposedDoc()) {
@@ -567,10 +576,47 @@ IMEContentObserver::State IMEContentObserver::GetState() const {
   return mIsObserving ? eState_Observing : eState_Initializing;
 }
 
-bool IMEContentObserver::IsObservingContent(const nsPresContext& aPresContext,
+bool IMEContentObserver::IsObservingElement(const nsPresContext& aPresContext,
                                             const Element* aElement) const {
-  return mEditableNode ==
-         IMEStateManager::GetRootEditableNode(aPresContext, aElement);
+  MOZ_ASSERT_IF(aElement,
+                aElement->GetPresContext(
+                    Element::PresContextFor::eForComposedDoc) == &aPresContext);
+
+  if (GetPresContext() != &aPresContext) {
+    return false;
+  }
+  // If this is initialized with a TextEditor,
+  // mRootEditableNodeOrTextControlElement is a text control element. Therefore,
+  // aElement should be aElement.
+  if (mIsTextControl) {
+    return !aElement->IsInDesignMode() &&
+           aElement == mRootEditableNodeOrTextControlElement;
+  }
+  // If this is initialized with an HTMLEditor,
+  // mRootEditableNodeOrTextControlElement is an editing host when this is
+  // initialized.  However, its ancestor may become editable.  Therefore, we
+  // need to check whether it's still an editing host.
+  return mRootEditableNodeOrTextControlElement ==
+         IMEContentObserver::GetMostDistantInclusiveEditableAncestorNode(
+             aPresContext, aElement);
+}
+
+// static
+nsINode* IMEContentObserver::GetMostDistantInclusiveEditableAncestorNode(
+    const nsPresContext& aPresContext, const Element* aElement) {
+  if (aElement) {
+    // If the focused content is in design mode, return is composed document
+    // because aElement may be in UA widget shadow tree.
+    if (aElement->IsInDesignMode()) {
+      return aElement->GetComposedDoc();
+    }
+    // Otherwise, return the editing host.
+    return aElement->GetEditingHost();
+  }
+
+  return aPresContext.Document() && aPresContext.Document()->IsInDesignMode()
+             ? aPresContext.Document()
+             : nullptr;
 }
 
 bool IMEContentObserver::IsEditorHandlingEventForComposition() const {
@@ -598,7 +644,7 @@ bool IMEContentObserver::IsEditorComposing() const {
 
 nsresult IMEContentObserver::GetSelectionAndRoot(Selection** aSelection,
                                                  Element** aRootElement) const {
-  if (!mEditableNode || !mSelection) {
+  if (!mRootEditableNodeOrTextControlElement || !mSelection) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -865,19 +911,15 @@ bool IMEContentObserver::OnMouseButtonEvent(nsPresContext& aPresContext,
 
 void IMEContentObserver::CharacterDataWillChange(
     nsIContent* aContent, const CharacterDataChangeInfo& aInfo) {
-  if (!aContent->IsText()) {
-    return;  // Ignore if it's a comment node or something other invisible data
-             // node.
+  if (!NeedsTextChangeNotification() || !aContent->IsText() ||
+      !nsContentUtils::IsInSameAnonymousTree(mRootElement, aContent)) {
+    // Ignore if it's a comment node, a node in a shadow tree or so, or some
+    // other invisible data node.
+    return;
   }
   MOZ_ASSERT(mPreCharacterDataChangeLength < 0,
              "CharacterDataChanged() should've reset "
              "mPreCharacterDataChangeLength");
-
-  if (!NeedsTextChangeNotification() ||
-      !nsContentUtils::IsInSameAnonymousTree(mRootElement, aContent)) {
-    return;
-  }
-
   mEndOfAddedTextCache.Clear(__FUNCTION__);
   mStartOfRemovingTextRangeCache.Clear(__FUNCTION__);
 
@@ -898,9 +940,11 @@ void IMEContentObserver::CharacterDataWillChange(
 
 void IMEContentObserver::CharacterDataChanged(
     nsIContent* aContent, const CharacterDataChangeInfo& aInfo) {
-  if (!aContent->IsText()) {
-    return;  // Ignore if it's a comment node or something other invisible data
-             // node.
+  if (!aContent->IsText() ||
+      !nsContentUtils::IsInSameAnonymousTree(mRootElement, aContent)) {
+    // Ignore if it's a comment node, a node in a shadow tree or so, or some
+    // other invisible data node.
+    return;
   }
 
   // Let TextComposition have a change to update composition string range in
@@ -912,8 +956,7 @@ void IMEContentObserver::CharacterDataChanged(
     }
   }
 
-  if (!NeedsTextChangeNotification() ||
-      !nsContentUtils::IsInSameAnonymousTree(mRootElement, aContent)) {
+  if (!NeedsTextChangeNotification()) {
     return;
   }
 
@@ -1076,10 +1119,11 @@ void IMEContentObserver::NotifyIMEOfCachedConsecutiveNewNodes(
            "IMEContentObserver::NotifyIMEOfCachedConsecutiveNewNodes(), "
            "flushing stored consecutive nodes",
            this));
-  MOZ_LOG(sCacheLog, LogLevel::Info,
-          ("NotifyIMEOfCachedConsecutiveNewNodes: called by %s "
-           "(mAddedContentCache=%s)",
-           aCallerName, ToString(mAddedContentCache).c_str()));
+  MOZ_LOG(
+      sCacheLog, LogLevel::Info,
+      ("NotifyIMEOfCachedConsecutiveNewNodes: called by %s "
+       "(mAddedContentCache=%s)",
+       ShortenFunctionName(aCallerName), ToString(mAddedContentCache).c_str()));
 
   // If 2 <div> elements are inserted into the DOM, we wan't the text length
   // from start of the first <div> (including line break caused by its open
@@ -1190,8 +1234,10 @@ void IMEContentObserver::ContentWillBeRemoved(nsIContent* aChild,
   }
 
   if (mAddedContentCache.HasCache()) {
-    mEndOfAddedTextCache.Clear(__FUNCTION__);
-    mStartOfRemovingTextRangeCache.Clear(__FUNCTION__);
+    mEndOfAddedTextCache.ContentWillBeRemoved(
+        *aChild, textLengthOrError.inspect(), mRootElement);
+    mStartOfRemovingTextRangeCache.ContentWillBeRemoved(
+        *aChild, textLengthOrError.inspect(), mRootElement);
     NotifyIMEOfCachedConsecutiveNewNodes(__FUNCTION__);
     MOZ_DIAGNOSTIC_ASSERT(!mAddedContentCache.HasCache());
   }
@@ -1257,6 +1303,7 @@ void IMEContentObserver::ContentWillBeRemoved(nsIContent* aChild,
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void IMEContentObserver::ParentChainChanged(
     nsIContent* aContent) {
+  MOZ_ASSERT(aContent);
   // When the observing element itself is directly removed from the document
   // without a focus move, i.e., it's the root of the removed document fragment
   // and the editor was handling the design mode, we have already stopped
@@ -1272,7 +1319,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY void IMEContentObserver::ParentChainChanged(
   // content.
   MOZ_ASSERT(mIsObserving);
   OwningNonNull<IMEContentObserver> observer(*this);
-  IMEStateManager::OnParentChainChangedOfObservingElement(observer);
+  IMEStateManager::OnParentChainChangedOfObservingElement(observer, *aContent);
 }
 
 void IMEContentObserver::OnTextControlValueChangedWhileNotObservable(
@@ -1313,7 +1360,6 @@ void IMEContentObserver::UnsuppressNotifyingIME() {
   MOZ_LOG(sIMECOLog, LogLevel::Debug,
           ("0x%p UnsuppressNotifyingIME(), mSuppressNotifications=%u", this,
            mSuppressNotifications));
-
   if (!mSuppressNotifications || --mSuppressNotifications) {
     return;
   }
@@ -2336,8 +2382,8 @@ void IMEContentObserver::FlatTextCache::CacheFlatTextLengthBeforeEndOfContent(
   mFlatTextLength = aFlatTextLength;
   MOZ_ASSERT(IsCachingToEndOfContent());
   MOZ_LOG(sCacheLog, LogLevel::Info,
-          ("%s.%s: called by %s -> %s", mInstanceName, __FUNCTION__,
-           aCallerName, ToString(*this).c_str()));
+          ("%s.%s: called by %s -> %s", mInstanceName, __func__,
+           ShortenFunctionName(aCallerName), ToString(*this).c_str()));
   AssertValidCache(aRootElement);
 }
 
@@ -2372,8 +2418,8 @@ void IMEContentObserver::FlatTextCache::CacheFlatTextLengthBeforeFirstContent(
   mFlatTextLength = aFlatTextLength;
   MOZ_ASSERT(IsCachingToStartOfContainer());
   MOZ_LOG(sCacheLog, LogLevel::Info,
-          ("%s.%s: called by %s -> %s", mInstanceName, __FUNCTION__,
-           aCallerName, ToString(*this).c_str()));
+          ("%s.%s: called by %s -> %s", mInstanceName, __func__,
+           ShortenFunctionName(aCallerName), ToString(*this).c_str()));
   AssertValidCache(aRootElement);
 }
 
@@ -2637,10 +2683,8 @@ void IMEContentObserver::FlatTextCache::ContentAdded(
     const nsIContent& aLastContent, const Maybe<uint32_t>& aAddedFlatTextLength,
     const Element* aRootElement) {
   MOZ_ASSERT(nsContentUtils::ComparePoints(
-                 RawRangeBoundary(aFirstContent.GetParentNode(),
-                                  aFirstContent.GetPreviousSibling()),
-                 RawRangeBoundary(aLastContent.GetParentNode(),
-                                  aLastContent.GetPreviousSibling()))
+                 ConstRawRangeBoundary::FromChild(aFirstContent),
+                 ConstRawRangeBoundary::FromChild(aLastContent))
                  .value() <= 0);
   if (!mContainerNode) {
     return;  // No cache.
@@ -2680,6 +2724,33 @@ void IMEContentObserver::FlatTextCache::ContentAdded(
         aRootElement);
     return;
   }
+
+  // If empty nodes are appended, we can avoid to clear the cache because the
+  // new nodes won't affect to the flattened text content.
+  const bool addingEmptyNode = [&]() {
+    if (aAddedFlatTextLength.isSome()) {
+      return !aAddedFlatTextLength.value();
+    }
+    if (&aFirstContent != &aLastContent) {
+      return false;  // If it's better to check here strictly, please do that.
+    }
+    if (aFirstContent.IsText()) {
+      return !aFirstContent.AsText()->TextDataLength();
+    }
+    if (aFirstContent.IsCharacterData()) {
+      return true;  // Should be invisible.
+    }
+    if (aFirstContent.HasChildren()) {
+      return false;  // If it's better to check here strictly, please do that.
+    }
+    Result<uint32_t, nsresult> lengthOrError =
+        ComputeTextLengthOfContent(aFirstContent, aRootElement, ForRemoval::No);
+    return lengthOrError.isOk() && !lengthOrError.unwrap();
+  }();
+  if (addingEmptyNode) {
+    return;
+  }
+
   // Let's clear the cache for avoiding to do anything expensive for a hot
   // path only for not frequent cases.  Be aware, this is a hot code path here.
   // Therefore, expensive computation would make the DOM mutation slower.
@@ -2712,7 +2783,7 @@ void IMEContentObserver::FlatTextCache::ContentWillBeRemoved(
     // path only for not frequent cases.  Be aware, this is a hot code path
     // here.  Therefore, expensive computation would make the DOM mutation
     // slower.
-    Clear("FlatTextCache::ContentRemoved");
+    Clear(__FUNCTION__);
     return;
   }
 
@@ -2720,7 +2791,7 @@ void IMEContentObserver::FlatTextCache::ContentWillBeRemoved(
   if (&aContent == mContent) {
     MOZ_ASSERT(mFlatTextLength >= aFlatTextLengthOfContent);
     if (NS_WARN_IF(mFlatTextLength < aFlatTextLengthOfContent)) {
-      Clear("FlatTextCache::ContentRemoved");
+      Clear(__FUNCTION__);
       return;
     }
     // We're caching text length before end of aContent.  So, if there is a
@@ -2728,7 +2799,7 @@ void IMEContentObserver::FlatTextCache::ContentWillBeRemoved(
     // subtracting the text length caused by aContent from the cached value.
     if (nsIContent* prevSibling = aContent.GetPreviousSibling()) {
       CacheFlatTextLengthBeforeEndOfContent(
-          "FlatTextCache::ContentRemoved", *prevSibling,
+          __FUNCTION__, *prevSibling,
           mFlatTextLength - aFlatTextLengthOfContent, aRootElement);
       return;
     }
@@ -2736,14 +2807,21 @@ void IMEContentObserver::FlatTextCache::ContentWillBeRemoved(
     // cache text length before first content of mContainerNode with subtracting
     // the text length caused by aContent from the cached value.
     CacheFlatTextLengthBeforeFirstContent(
-        "FlatTextCache::ContentRemoved", *mContainerNode,
+        __FUNCTION__, *mContainerNode,
         mFlatTextLength - aFlatTextLengthOfContent, aRootElement);
     return;
   }
+
+  // If the removing content is empty, removing that won't affect to the
+  // flattened text.  Therefore, we can avoid to clear the cache.
+  if (!aFlatTextLengthOfContent) {
+    return;
+  }
+
   // Let's clear the cache for avoiding to do anything expensive for a hot
   // path only for not frequent cases.  Be aware, this is a hot code path here.
   // Therefore, expensive computation would make the DOM mutation slower.
-  Clear("FlatTextCache::ContentRemoved");
+  Clear(__FUNCTION__);
 }
 
 /******************************************************************************
@@ -2754,7 +2832,8 @@ void IMEContentObserver::AddedContentCache::Clear(const char* aCallerName) {
   mFirst = nullptr;
   mLast = nullptr;
   MOZ_LOG(sCacheLog, LogLevel::Info,
-          ("AddedContentCache::Clear: called by %s", aCallerName));
+          ("AddedContentCache::Clear: called by %s",
+           ShortenFunctionName(aCallerName)));
 }
 
 bool IMEContentObserver::AddedContentCache::IsInRange(
@@ -2917,37 +2996,31 @@ Result<std::pair<uint32_t, uint32_t>, nsresult> IMEContentObserver::
   MOZ_ASSERT(HasCache());
   const Maybe<int32_t> newLastContentComparedWithCachedFirstContent =
       nsContentUtils::ComparePoints(
-          RawRangeBoundary(aNewLastContent.GetParentNode(),
-                           aNewLastContent.GetPreviousSibling()),
-          RawRangeBoundary(mFirst->GetParentNode(),
-                           mFirst->GetPreviousSibling()));
+          ConstRawRangeBoundary::FromChild(aNewLastContent),
+          ConstRawRangeBoundary::FromChild(*mFirst));
   MOZ_RELEASE_ASSERT(newLastContentComparedWithCachedFirstContent.isSome());
   MOZ_ASSERT(*newLastContentComparedWithCachedFirstContent != 0);
   MOZ_ASSERT((*nsContentUtils::ComparePoints(
-                  RawRangeBoundary(aNewFirstContent.GetParentNode(),
-                                   aNewFirstContent.GetPreviousSibling()),
-                  RawRangeBoundary(mFirst->GetParentNode(),
-                                   mFirst->GetPreviousSibling())) > 0) ==
+                  ConstRawRangeBoundary::FromChild(aNewFirstContent),
+                  ConstRawRangeBoundary::FromChild(*mFirst)) > 0) ==
                  (*newLastContentComparedWithCachedFirstContent > 0),
              "New nodes shouldn't contain mFirst");
   const Maybe<int32_t> newFirstContentComparedWithCachedLastContent =
       mLast->GetNextSibling() == &aNewFirstContent
           ? Some(1)
           : nsContentUtils::ComparePoints(
-                RawRangeBoundary(aNewFirstContent.GetParentNode(),
-                                 aNewFirstContent.GetPreviousSibling()),
+                ConstRawRangeBoundary::FromChild(aNewFirstContent),
                 // aNewFirstContent and aNewLastContent may be descendants of
                 // mLast. Then, we need to ignore the new length.  Therefore,
                 // we need to compare aNewFirstContent position with next
                 // sibling of mLast.
-                RawRangeBoundary(mLast->GetParentNode(), mLast));
+                ConstRawRangeBoundary::After(*mLast));
   MOZ_RELEASE_ASSERT(newFirstContentComparedWithCachedLastContent.isSome());
   MOZ_ASSERT(*newFirstContentComparedWithCachedLastContent != 0);
   MOZ_ASSERT((*newFirstContentComparedWithCachedLastContent > 0) ==
                  (*nsContentUtils::ComparePoints(
-                      RawRangeBoundary(aNewLastContent.GetParentNode(),
-                                       aNewLastContent.GetPreviousSibling()),
-                      RawRangeBoundary(mLast->GetParentNode(), mLast)) > 0),
+                      ConstRawRangeBoundary::FromChild(aNewLastContent),
+                      ConstRawRangeBoundary::After(*mLast)) > 0),
              "New nodes shouldn't contain mLast");
 
   Result<uint32_t, nsresult> length =

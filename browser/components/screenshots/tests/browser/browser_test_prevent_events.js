@@ -17,8 +17,10 @@ add_task(async function test_events_prevented() {
     },
     async browser => {
       let helper = new ScreenshotsHelper(browser);
+      helper.triggerUIFromToolbar();
+      await helper.waitForOverlay();
 
-      await ContentTask.spawn(browser, null, async () => {
+      let contentBounds = await ContentTask.spawn(browser, null, async () => {
         let { ScreenshotsComponentChild } = ChromeUtils.importESModule(
           "resource:///actors/ScreenshotsComponentChild.sys.mjs"
         );
@@ -29,16 +31,21 @@ add_task(async function test_events_prevented() {
         content.eventsReceived = [];
 
         function eventListener(event) {
-          content.window.eventsReceived.push(event.type);
+          let target = event.target?.nodeName ?? "";
+          let relatedTarget = event.relatedTarget?.nodeName ?? "";
+          content.window.eventsReceived.push({
+            type: event.type,
+            target,
+            relatedTarget,
+          });
         }
 
         for (let eventName of [...allOverlayEvents, "wheel"]) {
           content.addEventListener(eventName, eventListener, true);
         }
+        return content.document.body.getBoundingClientRect().toJSON();
       });
-
-      helper.triggerUIFromToolbar();
-      await helper.waitForOverlay();
+      const centerX = contentBounds.width / 2;
 
       // key events
       await key.down("s");
@@ -46,22 +53,24 @@ add_task(async function test_events_prevented() {
       await key.press("s");
 
       // touch events
-      await touch.start(10, 10);
-      await touch.move(20, 20);
-      await touch.end(20, 20);
+      await touch.start(centerX + 10, 10);
+      await touch.move(centerX + 20, 20);
+      await touch.end(centerX + 20, 20);
 
       // pointermove/mousemove, pointerdown/mousedown, pointerup/mouseup events
       await helper.clickTestPageElement();
 
       // pointerover/mouseover, pointerout/mouseout
-      await mouse.over(100, 100);
-      await mouse.out(100, 100);
+      await mouse.over(centerX + 100, 100);
+      await mouse.out(centerX + 100, 100);
 
       // click events and contextmenu
-      await mouse.dblclick(100, 100);
-      await mouse.auxclick(100, 100, { button: 1 });
-      await mouse.click(100, 100);
-      await mouse.contextmenu(100, 100);
+      await mouse.dblclick(centerX + 100, 100);
+      await mouse.auxclick(centerX + 100, 100, { button: 1 });
+      await mouse.click(centerX + 100, 100);
+
+      await mouse.contextmenu(centerX + 100, 100);
+      const menu = document.getElementById("contentAreaContextMenu");
 
       let wheelEventPromise = helper.waitForContentEventOnce("wheel");
       await ContentTask.spawn(browser, null, () => {
@@ -76,6 +85,10 @@ add_task(async function test_events_prevented() {
           return content.eventsReceived;
         }
       );
+      info(
+        "contentEventsReceived: " +
+          JSON.stringify(contentEventsReceived, null, 2)
+      );
 
       // Events are synchronous so if we only have 1 wheel at the end,
       // we did not receive any other events
@@ -85,10 +98,18 @@ add_task(async function test_events_prevented() {
         "Only 1 wheel event should reach the content document because everything else was prevent and stopped propagation"
       );
       is(
-        contentEventsReceived[0],
+        contentEventsReceived[0].type,
         "wheel",
         "Only 1 wheel event should reach the content document because everything else was prevent and stopped propagation"
       );
+
+      // Clean up
+      if (!menu.hidden) {
+        // Close context menu
+        let popuphidden = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
+        menu.hidePopup();
+        await popuphidden;
+      }
     }
   );
 });

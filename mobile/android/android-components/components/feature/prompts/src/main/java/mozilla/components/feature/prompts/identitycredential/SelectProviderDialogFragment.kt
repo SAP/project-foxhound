@@ -4,18 +4,16 @@
 
 package mozilla.components.feature.prompts.identitycredential
 
-import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
-import android.view.View
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.ui.platform.ComposeView
+import androidx.fragment.compose.content
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.concept.identitycredential.Provider
 import mozilla.components.feature.prompts.dialog.KEY_PROMPT_UID
 import mozilla.components.feature.prompts.dialog.KEY_SESSION_ID
@@ -38,7 +36,7 @@ internal class SelectProviderDialogFragment : PromptDialogFragment() {
     private var colorsProvider: DialogColorsProvider = DialogColors.defaultProvider()
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog =
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setCancelable(true)
             .setView(createDialogContentView())
             .create()
@@ -48,19 +46,14 @@ internal class SelectProviderDialogFragment : PromptDialogFragment() {
         feature?.onCancel(sessionId, promptRequestUID)
     }
 
-    @SuppressLint("InflateParams")
-    internal fun createDialogContentView(): View {
-        return ComposeView(requireContext()).apply {
-            setContent {
-                val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
-                MaterialTheme(colors) {
-                    SelectProviderDialog(
-                        providers = providers,
-                        onProviderClick = ::onProviderChange,
-                        colors = DialogColors.default(),
-                    )
-                }
-            }
+    internal fun createDialogContentView() = content {
+        val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+        MaterialTheme(colors) {
+            SelectProviderDialog(
+                providers = providers,
+                onProviderClick = ::onProviderChange,
+                colors = DialogColors.default(),
+            )
         }
     }
 

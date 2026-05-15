@@ -26,7 +26,7 @@ static bool IsValidOverflowRect(const nsRect& aRect) {
 nsRect OverflowAreas::GetOverflowClipRect(const nsRect& aRectToClip,
                                           const nsRect& aBounds,
                                           PhysicalAxes aClipAxes,
-                                          const nsSize& aOverflowMargin) {
+                                          const nsMargin& aOverflowMargin) {
   auto inflatedBounds = aBounds;
   inflatedBounds.Inflate(aOverflowMargin);
   auto clip = aRectToClip;
@@ -42,10 +42,9 @@ nsRect OverflowAreas::GetOverflowClipRect(const nsRect& aRectToClip,
 }
 
 /* static */
-void OverflowAreas::ApplyOverflowClippingOnRect(nsRect& aOverflowRect,
-                                                const nsRect& aBounds,
-                                                PhysicalAxes aClipAxes,
-                                                const nsSize& aOverflowMargin) {
+void OverflowAreas::ApplyOverflowClippingOnRect(
+    nsRect& aOverflowRect, const nsRect& aBounds, PhysicalAxes aClipAxes,
+    const nsMargin& aOverflowMargin) {
   aOverflowRect = aOverflowRect.Intersect(
       GetOverflowClipRect(aOverflowRect, aBounds, aClipAxes, aOverflowMargin));
 }

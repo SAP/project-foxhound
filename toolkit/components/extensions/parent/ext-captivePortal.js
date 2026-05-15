@@ -9,7 +9,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gCPS",
   "@mozilla.org/network/captive-portal-service;1",
-  "nsICaptivePortalService"
+  Ci.nsICaptivePortalService
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(

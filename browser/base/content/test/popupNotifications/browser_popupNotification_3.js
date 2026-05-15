@@ -203,8 +203,11 @@ var tests = [
   {
     id: "Test#6",
     async run() {
-      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      await promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
+      await BrowserTestUtils.loadURIString({
+        browser: gBrowser.selectedTab.linkedBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+        uriString: "http://example.com/",
+      });
       let notifyObj = new BasicNotification(this.id);
       notifyObj.options.eventCallback = function (eventName) {
         if (eventName == "removed") {
@@ -252,8 +255,11 @@ var tests = [
   {
     id: "Test#8",
     async run() {
-      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      await promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
+      await BrowserTestUtils.loadURIString({
+        browser: gBrowser.selectedTab.linkedBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+        uriString: "http://example.com/",
+      });
       let originalTab = gBrowser.selectedTab;
       let bgTab = await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
@@ -293,10 +299,11 @@ var tests = [
   {
     id: "Test#9",
     async run() {
-      await promiseTabLoadEvent(
-        gBrowser.selectedTab,
-        "data:text/html;charset=utf8,<iframe%20id='iframe'%20src='http://example.com/'>"
-      );
+      await BrowserTestUtils.loadURIString({
+        browser: gBrowser.selectedTab.linkedBrowser,
+        uriString:
+          "data:text/html;charset=utf8,<iframe%20id='iframe'%20src='http://example.com/'>",
+      });
       this.notifyObj = new BasicNotification(this.id);
       this.notifyObj.options.eventCallback = function (eventName) {
         if (eventName == "removed") {

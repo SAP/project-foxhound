@@ -208,8 +208,38 @@ class IMEContentObserver final : public nsStubMutationObserver,
    */
   void OnTextControlValueChangedWhileNotObservable(const nsAString& aNewValue);
 
+  /**
+   * Return an Element if and only if this instance is observing the element.
+   * The element is the anonymous <div> of a text control element if this is
+   * initialized with a TextEditor.  Otherwise, the focused editing host.
+   * If you want the text control if this is initialized with a TextEditor, use
+   * GetObservingEditingHostOrTextControlElement() instead.
+   */
   dom::Element* GetObservingElement() const {
     return mIsObserving ? mRootElement.get() : nullptr;
+  }
+
+  /**
+   * Return an Element if and only if this instance is observing the element.
+   * The element is a text control element if this is initalized with a
+   * TextEditor.  Otherwise, the focused editing host.
+   * If you want the anonymous <div> in the text control if this is initialized
+   * with TextEditor, use GetObservingElement() instead.
+   */
+  dom::Element* GetObservingEditingHostOrTextControlElement() const {
+    return mIsTextControl ? GetObservingTextControlElement()
+                          : GetObservingElement();
+  }
+
+  /**
+   * Return an element if and only if this instance is initialized with a
+   * TextEditor and observing its anonymous <div>.
+   */
+  dom::Element* GetObservingTextControlElement() const {
+    return mIsObserving && mIsTextControl
+               ? dom::Element::FromNodeOrNull(
+                     mRootEditableNodeOrTextControlElement)
+               : nullptr;
   }
 
  private:
@@ -227,8 +257,13 @@ class IMEContentObserver final : public nsStubMutationObserver,
                                          EditorBase& aEditorBase);
   void OnIMEReceivedFocus();
   void Clear();
-  [[nodiscard]] bool IsObservingContent(const nsPresContext& aPresContext,
+
+  /**
+   * Return true if aElement is observed by this instance.
+   */
+  [[nodiscard]] bool IsObservingElement(const nsPresContext& aPresContext,
                                         const dom::Element* aElement) const;
+
   [[nodiscard]] bool IsReflowLocked() const;
   [[nodiscard]] bool IsSafeToNotifyIME() const;
   [[nodiscard]] bool IsEditorComposing() const;
@@ -356,14 +391,26 @@ class IMEContentObserver final : public nsStubMutationObserver,
    */
   MOZ_CAN_RUN_SCRIPT bool UpdateSelectionCache(bool aRequireFlush = true);
 
+  /**
+   * Return the document node if aNode is in the design mode.  Return the
+   * editing host of aNode if and only if it's editable.  Otherwise, nullptr.
+   */
+  [[nodiscard]] static nsINode* GetMostDistantInclusiveEditableAncestorNode(
+      const nsPresContext& aPresContext, const dom::Element* aElement);
+
   nsCOMPtr<nsIWidget> mWidget;
   // mFocusedWidget has the editor observed by the instance.  E.g., if the
   // focused editor is in XUL panel, this should be the widget of the panel.
   // On the other hand, mWidget is its parent which handles IME.
   nsCOMPtr<nsIWidget> mFocusedWidget;
   RefPtr<dom::Selection> mSelection;
+  // The anonymous <div> element if mEditorBase is a TextEditor or an editing
+  // host if mEditorBase is an HTMLEditor.
   RefPtr<dom::Element> mRootElement;
-  nsCOMPtr<nsINode> mEditableNode;
+  // If it's in the design mode, this is set to the document node.
+  // If it's initialized with a TextEditor, this is the text control element.
+  // Otherwise, this is an editing host element.
+  nsCOMPtr<nsINode> mRootEditableNodeOrTextControlElement;
   nsCOMPtr<nsIDocShell> mDocShell;
   RefPtr<EditorBase> mEditorBase;
 

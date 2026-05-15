@@ -27,6 +27,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
 });
 
 const LINK_BLOCKED_EVENT = "newtab-linkBlocked";
@@ -231,9 +232,10 @@ export class PlacesFeed {
       targetBrowser: action._target.browser,
       forceForeground: false, // This ensure we maintain user preference for how to open new tabs.
       globalHistoryOptions: {
-        triggeringSponsoredURL: action.data.sponsored_tile_id
+        triggeringSponsoredURL: action.data.is_sponsored
           ? action.data.url
           : undefined,
+        triggeringSource: "newtab",
       },
     };
 
@@ -292,6 +294,7 @@ export class PlacesFeed {
 
   /**
    * Sends an attribution request for Top Sites interactions.
+   *
    * @param {object} data
    *   Attribution paramters from a Top Site.
    */
@@ -308,7 +311,10 @@ export class PlacesFeed {
   }
 
   async fillSearchTopSiteTerm({ _target, data }) {
-    const searchEngine = await Services.search.getEngineByAlias(data.label);
+    // @backward-compat { version 149 }
+    // SearchService replaces Services.search in 149.
+    const searchEngine = await (Services.search ?? lazy.SearchService) // eslint-disable-line mozilla/valid-services
+      .getEngineByAlias(data.label);
     _target.browser.ownerGlobal.gURLBar.search(data.label, {
       searchEngine,
       searchModeEntry: "topsites_newtab",
@@ -316,11 +322,21 @@ export class PlacesFeed {
   }
 
   _getDefaultSearchEngine(isPrivateWindow) {
-    return Services.search[
+    // @backward-compat { version 149 }
+    // SearchService replaces Services.search in 149.
+    // eslint-disable-next-line mozilla/valid-services
+    return (Services.search ?? lazy.SearchService)[
       isPrivateWindow ? "defaultPrivateEngine" : "defaultEngine"
     ];
   }
 
+  /**
+   * @backward-compat { version 148 }
+   *
+   * This, and all newtab-specific handoff searchbar handling can be removed
+   * once 147 is released, as all handoff UI and logic will be handled by
+   * contentSearchHandoffUI and the ContentSearch JSWindowActors.
+   */
   handoffSearchToAwesomebar(action) {
     const { _target, data, meta } = action;
     const searchEngine = this._getDefaultSearchEngine(
@@ -392,7 +408,7 @@ export class PlacesFeed {
   /**
    * Add the hostnames of the given urls to the Top Sites sponsor blocklist.
    *
-   * @param {array} urls
+   * @param {Array} urls
    *   An array of the objects structured as `{ url }`
    */
   addToBlockedTopSitesSponsors(urls) {
@@ -415,7 +431,7 @@ export class PlacesFeed {
    * to send back to the ads service when requesting new topsite ads
    * from the unified ads service
    *
-   * @param {array} block_key
+   * @param {Array} block_key
    *   An array of the (string) keys
    */
   addToUnifiedAdsBlockedAdsList(keysArray) {

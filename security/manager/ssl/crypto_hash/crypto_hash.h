@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef crypto_hash_h
+#define crypto_hash_h
+
 #include "nsICryptoHash.h"
 
 extern "C" {
@@ -44,3 +47,5 @@ nsresult NS_NewCryptoHash(const nsACString& aHashType,
 
   return NS_OK;
 }
+
+#endif  // crypto_hash_h

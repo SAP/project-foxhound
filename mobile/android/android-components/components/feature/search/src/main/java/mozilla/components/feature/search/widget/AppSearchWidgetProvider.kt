@@ -11,18 +11,14 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.Dimension
 import androidx.annotation.Dimension.Companion.DP
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.graphics.drawable.toBitmap
 import mozilla.components.feature.search.R
 import mozilla.components.feature.search.widget.BaseVoiceSearchActivity.Companion.SPEECH_PROCESSING
-import mozilla.components.support.utils.PendingIntentUtils
 
 /**
  * An abstract [AppWidgetProvider] that implements core behaviour needed to support a Search Widget
@@ -105,7 +101,7 @@ abstract class AppSearchWidgetProvider : AppWidgetProvider() {
             context,
             REQUEST_CODE_VOICE,
             voiceIntent,
-            PendingIntentUtils.defaultFlags,
+            PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
@@ -139,7 +135,7 @@ abstract class AppSearchWidgetProvider : AppWidgetProvider() {
     ): RemoteViews {
         return RemoteViews(context.packageName, layout).apply {
             setSearchWidgetIcon(context)
-            setMicrophoneIcon(context)
+            setMicrophoneIcon()
             when (layout) {
                 R.layout.mozac_search_widget_extra_small_v1,
                 R.layout.mozac_search_widget_extra_small_v2,
@@ -187,9 +183,8 @@ abstract class AppSearchWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    private fun RemoteViews.setMicrophoneIcon(context: Context) {
+    private fun RemoteViews.setMicrophoneIcon() {
         setImageView(
-            context,
             R.id.mozac_button_search_widget_voice,
             config.searchWidgetMicrophoneResource,
         )
@@ -197,7 +192,6 @@ abstract class AppSearchWidgetProvider : AppWidgetProvider() {
 
     private fun RemoteViews.setSearchWidgetIcon(context: Context) {
         setImageView(
-            context,
             R.id.mozac_button_search_widget_new_tab_icon,
             config.searchWidgetIconResource,
         )
@@ -208,22 +202,11 @@ abstract class AppSearchWidgetProvider : AppWidgetProvider() {
         )
     }
 
-    private fun RemoteViews.setImageView(context: Context, viewId: Int, resourceId: Int) {
-        // gradient color available for android:fillColor only on SDK 24+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            setImageViewResource(
-                viewId,
-                resourceId,
-            )
-        } else {
-            setImageViewBitmap(
-                viewId,
-                AppCompatResources.getDrawable(
-                    context,
-                    resourceId,
-                )?.toBitmap(),
-            )
-        }
+    private fun RemoteViews.setImageView(viewId: Int, resourceId: Int) {
+        setImageViewResource(
+            viewId,
+            resourceId,
+        )
     }
 
     // Cell sizes obtained from the actual dimensions listed in search widget specs.
@@ -256,7 +239,9 @@ abstract class AppSearchWidgetProvider : AppWidgetProvider() {
         }
 
         @VisibleForTesting
-        internal fun getLayoutSize(@Dimension(unit = DP) dp: Int) = when {
+        internal fun getLayoutSize(
+            @Dimension(unit = DP) dp: Int,
+        ) = when {
             dp >= DP_LARGE -> SearchWidgetProviderSize.LARGE
             dp >= DP_MEDIUM -> SearchWidgetProviderSize.MEDIUM
             dp >= DP_SMALL -> SearchWidgetProviderSize.SMALL

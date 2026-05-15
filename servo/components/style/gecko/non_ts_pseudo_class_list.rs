@@ -30,7 +30,7 @@ macro_rules! apply_non_ts_list {
         $apply_macro! {
             [
                 ("-moz-table-border-nonzero", MozTableBorderNonzero, _, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS),
-                ("-moz-select-list-box", MozSelectListBox, _, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS),
+                ("-moz-select-list-box", MozSelectListBox, _, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME),
                 ("link", Link, UNVISITED, _),
                 ("any-link", AnyLink, VISITED_OR_UNVISITED, _),
                 ("visited", Visited, VISITED, _),
@@ -91,6 +91,16 @@ macro_rules! apply_non_ts_list {
                 ("-moz-only-whitespace", MozOnlyWhitespace, _, _),
                 ("-moz-native-anonymous", MozNativeAnonymous, _, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS),
                 ("-moz-placeholder", MozPlaceholder, _, _),
+
+                // Media element pseudo classes
+                ("paused", Paused, PAUSED, _),
+                ("playing", Playing, PAUSED, _),
+                ("seeking", Seeking, SEEKING, _),
+                ("buffering", Buffering, BUFFERING, _),
+                ("stalled", Stalled, STALLED, _),
+                ("muted", Muted, MUTED, _),
+                ("volume-locked", VolumeLocked, _, _),
+
 
                 // NOTE(emilio): Pseudo-classes below only depend on document state, and thus
                 // conceptually they should probably be media queries instead.

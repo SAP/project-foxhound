@@ -195,8 +195,6 @@ const AFTER = [
 ];
 
 add_task(async function () {
-  await pushPref("devtools.inspector.inactive.css.enabled", true);
-
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
@@ -206,7 +204,7 @@ add_task(async function () {
   await toggleDeclaration(view, 0, {
     display: "grid",
   });
-  await view.once("ruleview-refreshed");
+  await inspector.once("rule-view-refreshed");
   await runInactiveCSSTests(view, inspector, AFTER);
 
   info("Toggle `display: grid` to enabled again.");

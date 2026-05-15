@@ -7,9 +7,9 @@
 #include "mozilla/dom/SVGAElement.h"
 
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/SVGAElementBinding.h"
-#include "mozilla/FocusModel.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
@@ -49,7 +49,8 @@ SVGAElement::SVGAElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : SVGAElementBase(std::move(aNodeInfo)), Link(this) {}
 
 already_AddRefed<DOMSVGAnimatedString> SVGAElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }

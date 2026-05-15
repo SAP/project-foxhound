@@ -16,7 +16,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 // from https://developer.mozilla.org/en-US/Add-ons/Add-on_Manager/AddonManager#AddonInstall_errors
 const ERRORS = {
-  [-1]: "ERROR_NETWORK_FAILURE: A network error occured.",
+  [-1]: "ERROR_NETWORK_FAILURE: A network error occurred.",
   [-2]: "ERROR_INCORRECT_HASH: The downloaded file did not match the expected hash.",
   [-3]: "ERROR_CORRUPT_FILE: The file appears to be corrupt.",
   [-4]: "ERROR_FILE_ACCESS: There was an error accessing the filesystem.",

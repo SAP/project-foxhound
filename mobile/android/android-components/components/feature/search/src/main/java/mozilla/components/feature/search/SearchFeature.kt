@@ -4,7 +4,9 @@
 
 package mozilla.components.feature.search
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
@@ -28,13 +30,14 @@ import mozilla.components.support.utils.ext.toNullablePair
 class SearchFeature(
     private val store: BrowserStore,
     private val tabId: String? = null,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val performSearch: (SearchRequest, tabId: String) -> Unit,
 ) : LifecycleAwareFeature {
 
     private var scope: CoroutineScope? = null
 
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
                 .distinctUntilChangedBy { it?.content?.searchRequest }
                 // Do nothing if searchRequest or sessionId is null

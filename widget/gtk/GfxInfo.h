@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WIDGET_GTK_GFXINFO_h__
-#define WIDGET_GTK_GFXINFO_h__
+#ifndef WIDGET_GTK_GFXINFO_h_
+#define WIDGET_GTK_GFXINFO_h_
 
 #include "GfxInfoBase.h"
 #include "nsString.h"
@@ -18,7 +18,6 @@ class GfxInfo final : public GfxInfoBase {
  public:
   // We only declare the subset of nsIGfxInfo that we actually implement. The
   // rest is brought forward from GfxInfoBase.
-  NS_IMETHOD GetD2DEnabled(bool* aD2DEnabled) override;
   NS_IMETHOD GetDWriteEnabled(bool* aDWriteEnabled) override;
   NS_IMETHOD GetDWriteVersion(nsAString& aDwriteVersion) override;
   NS_IMETHOD GetEmbeddedInFirefoxReality(
@@ -146,4 +145,4 @@ class GfxInfo final : public GfxInfoBase {
 }  // namespace widget
 }  // namespace mozilla
 
-#endif /* WIDGET_GTK_GFXINFO_h__ */
+#endif /* WIDGET_GTK_GFXINFO_h_ */

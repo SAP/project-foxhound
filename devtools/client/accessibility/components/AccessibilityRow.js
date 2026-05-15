@@ -106,6 +106,8 @@ class AccessibilityRow extends Component {
     };
   }
 
+  #flashMutationTimer = null;
+
   componentDidMount() {
     const {
       member: { selected, object },
@@ -190,18 +192,19 @@ class AccessibilityRow extends Component {
     const value = row.querySelector(".objectBox");
 
     flashElementOn(value);
-    if (this._flashMutationTimer) {
-      clearTimeout(this._flashMutationTimer);
-      this._flashMutationTimer = null;
+    if (this.#flashMutationTimer) {
+      clearTimeout(this.#flashMutationTimer);
+      this.#flashMutationTimer = null;
     }
-    this._flashMutationTimer = setTimeout(() => {
+    this.#flashMutationTimer = setTimeout(() => {
       flashElementOff(value);
     }, VALUE_FLASHING_DURATION);
   }
 
   /**
    * Scroll the node that corresponds to a current accessible object into view.
-   * @param   {Object}
+   *
+   * @param   {object}
    *          Accessible front that is rendered for this node.
    *
    * @returns {Promise}
@@ -288,6 +291,7 @@ class AccessibilityRow extends Component {
 
   /**
    * Render accessible row component.
+   *
    * @returns acecssible-row React component.
    */
   render() {

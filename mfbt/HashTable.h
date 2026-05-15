@@ -81,6 +81,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Casting.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
@@ -139,7 +140,7 @@ using Generation = Opaque<uint64_t>;
 //
 template <class Key, class Value, class HashPolicy = DefaultHasher<Key>,
           class AllocPolicy = MallocAllocPolicy>
-class HashMap {
+class MOZ_STANDALONE_DEBUG HashMap {
   // -- Implementation details -----------------------------------------------
 
   // HashMap is not copyable or assignable.
@@ -424,6 +425,35 @@ class HashMap {
   using Range = typename Impl::Range;
   using Enum = typename Impl::Enum;
   Range all() const { return mImpl.all(); }
+
+  // -- Alloc policy ---------------------------------------------------------
+
+  // Get the alloc policy.
+  const AllocPolicy& allocPolicy() const { return mImpl.allocPolicy(); }
+  AllocPolicy& allocPolicy() { return mImpl.allocPolicy(); }
+
+  // For internal use by allocation policies that provide garbage collected
+  // memory.
+  //
+  // Trace any allocations owned by this object that were made with AllocPolicy.
+  // Call the supplied closure |aTraceFunc| for each of them, passing a double
+  // pointer to the memory held (e.g. a void** pointer).
+  template <typename F>
+  void traceOwnedAllocs(F&& aTraceFunc) {
+    mImpl.traceOwnedAllocs(std::forward<F>(aTraceFunc));
+  }
+
+  // -- Layout information for JIT access ------------------------------------
+
+  static size_t offsetOfHashShift() {
+    return offsetof(HashMap, mImpl) + Impl::offsetOfHashShift();
+  }
+  static size_t offsetOfTable() {
+    return offsetof(HashMap, mImpl) + Impl::offsetOfTable();
+  }
+  static size_t offsetOfEntryCount() {
+    return offsetof(HashMap, mImpl) + Impl::offsetOfEntryCount();
+  }
 };
 
 //---------------------------------------------------------------------------
@@ -721,6 +751,23 @@ class HashSet {
   using Range = typename Impl::Range;
   using Enum = typename Impl::Enum;
   Range all() const { return mImpl.all(); }
+
+  // -- Alloc policy ---------------------------------------------------------
+
+  // Get the alloc policy.
+  const AllocPolicy& allocPolicy() const { return mImpl.allocPolicy(); }
+  AllocPolicy& allocPolicy() { return mImpl.allocPolicy(); }
+
+  // For internal use by allocation policies that provide garbage collected
+  // memory.
+  //
+  // Trace any allocations owned by this object that were made with AllocPolicy.
+  // Call the supplied closure |aTraceFunc| for each of them, passing a double
+  // pointer to the memory held (e.g. a void** pointer).
+  template <typename F>
+  void traceOwnedAllocs(F&& aTraceFunc) {
+    mImpl.traceOwnedAllocs(std::forward<F>(aTraceFunc));
+  }
 };
 
 //---------------------------------------------------------------------------
@@ -975,12 +1022,19 @@ class HashMapEntry {
   const Value& value() const { return value_; }
   Value& value() { return value_; }
 
+  static size_t offsetOfKey() { return offsetof(HashMapEntry, key_); }
+  static size_t offsetOfValue() { return offsetof(HashMapEntry, value_); }
+
  private:
   HashMapEntry(const HashMapEntry&) = delete;
   void operator=(const HashMapEntry&) = delete;
 };
 
 namespace detail {
+
+static const HashNumber kHashTableFreeKey = 0;
+static const HashNumber kHashTableRemovedKey = 1;
+static const HashNumber kHashTableCollisionBit = 1;
 
 template <class T, class HashPolicy, class AllocPolicy>
 class HashTable;
@@ -1057,9 +1111,9 @@ class HashTableEntry {
                 "subsequent N*2 T values must not require more than an even "
                 "number of HashNumbers provides");
 
-  static const HashNumber sFreeKey = 0;
-  static const HashNumber sRemovedKey = 1;
-  static const HashNumber sCollisionBit = 1;
+  static const HashNumber sFreeKey = kHashTableFreeKey;
+  static const HashNumber sRemovedKey = kHashTableRemovedKey;
+  static const HashNumber sCollisionBit = kHashTableCollisionBit;
 
   alignas(NonConstT) unsigned char mValueData[sizeof(NonConstT)];
 
@@ -1095,7 +1149,7 @@ class HashTableEntry {
 
   void destroy() { destroyStoredT(); }
 
-  void swap(HashTableEntry* aOther, bool aIsLive) {
+  void swap(HashTableEntry* aOther, bool aOtherIsLive) {
     // This allows types to use Argument-Dependent-Lookup, and thus use a custom
     // std::swap, which is needed by types like JS::Heap and such.
     using std::swap;
@@ -1103,10 +1157,10 @@ class HashTableEntry {
     if (this == aOther) {
       return;
     }
-    if (aIsLive) {
+    if (aOtherIsLive) {
       swap(*valuePtr(), *aOther->valuePtr());
     } else {
-      *aOther->valuePtr() = std::move(*valuePtr());
+      new (KnownNotNull, aOther->valuePtr()) NonConstT(std::move(*valuePtr()));
       destroy();
     }
   }
@@ -1212,7 +1266,7 @@ class EntrySlot {
 };
 
 template <class T, class HashPolicy, class AllocPolicy>
-class HashTable : private AllocPolicy {
+class MOZ_STANDALONE_DEBUG HashTable : private AllocPolicy {
   friend class mozilla::ReentrancyGuard;
 
   using NonConstT = std::remove_const_t<T>;
@@ -1456,8 +1510,11 @@ class HashTable : private AllocPolicy {
       aOther.mRemoved = false;
     }
 
-    // Removes the current element from the table, leaving |get()|
-    // invalid until the next call to |next()|.
+    // Removes the current element from the table, leaving |get()| invalid until
+    // the next call to |next()|.
+    //
+    // See the comments on ~ModIterator about table resizing after removing
+    // entries.
     void remove() {
       mTable.remove(this->mCur);
       mRemoved = true;
@@ -1491,15 +1548,20 @@ class HashTable : private AllocPolicy {
 
     void rekey(const Key& k) { rekey(k, k); }
 
-    // Potentially rehashes the table.
+    // This can rehash the table or resize it if entries were removed.
+    //
+    // This does not go as far as freeing the table if it is now empty, as that
+    // can lead to repeatedly allocating and freeing the table when a small
+    // number of entries are repeatedly added and removed. If callers require
+    // memory to be minimised after removing entries they should call compact().
     ~ModIterator() {
       if (mRekeyed) {
-        mTable.mGen++;
+        mTable.incrementGeneration();
         mTable.infallibleRehashIfOverloaded();
       }
 
       if (mRemoved) {
-        mTable.compact();
+        mTable.shrinkToBestCapacity();
       }
     }
   };
@@ -1541,6 +1603,8 @@ class HashTable : private AllocPolicy {
 
     void popFront() { return mIter.next(); }
 
+    // See the comments on ~ModIterator about table resizing after removing
+    // entries.
     void removeFront() { mIter.remove(); }
 
     NonConstT& mutableFront() { return mIter.getMutable(); }
@@ -1568,16 +1632,7 @@ class HashTable : private AllocPolicy {
     ReentrancyGuard g1(*this);
     ReentrancyGuard g2(aOther);
 
-    // Manual swap of generation because it's a bitfield
-    uint64_t generation = mGen;
-    mGen = aOther.mGen;
-    aOther.mGen = generation;
-
-    // Manual swap of hashShift because it's a bitfield
-    uint64_t hashShift = mHashShift;
-    mHashShift = aOther.mHashShift;
-    aOther.mHashShift = hashShift;
-
+    std::swap(mGenAndHashShift, aOther.mGenAndHashShift);
     std::swap(mTable, aOther.mTable);
     std::swap(mEntryCount, aOther.mEntryCount);
     std::swap(mRemovedCount, aOther.mRemovedCount);
@@ -1587,10 +1642,19 @@ class HashTable : private AllocPolicy {
 #endif
   }
 
+  AllocPolicy& allocPolicy() { return *this; }
+  const AllocPolicy& allocPolicy() const { return *this; }
+
+  template <typename F>
+  void traceOwnedAllocs(F&& aTraceFunc) {
+    if (mTable) {
+      aTraceFunc(&mTable);
+    }
+  }
+
  private:
   void moveFrom(HashTable& aRhs) {
-    mGen = aRhs.mGen;
-    mHashShift = aRhs.mHashShift;
+    mGenAndHashShift = aRhs.mGenAndHashShift;
     mTable = aRhs.mTable;
     mEntryCount = aRhs.mEntryCount;
     mRemovedCount = aRhs.mRemovedCount;
@@ -1609,11 +1673,11 @@ class HashTable : private AllocPolicy {
   static const uint32_t CAP_BITS = 30;
 
  public:
-  uint64_t mGen : 56;       // entry storage generation number
-  uint64_t mHashShift : 8;  // multiplicative hash shift
-  char* mTable;             // entry storage
-  uint32_t mEntryCount;     // number of entries in mTable
-  uint32_t mRemovedCount;   // removed entry sentinels in mTable
+  uint64_t mGenAndHashShift;  // entry storage generation number (56 bits)
+                              // and multiplicative hash shift (8 bits)
+  char* mTable;               // entry storage
+  uint32_t mEntryCount;       // number of entries in mTable
+  uint32_t mRemovedCount;     // removed entry sentinels in mTable
 
 #ifdef DEBUG
   uint64_t mMutationCount;
@@ -1639,6 +1703,29 @@ class HashTable : private AllocPolicy {
   static const HashNumber sRemovedKey = Entry::sRemovedKey;
   static const HashNumber sCollisionBit = Entry::sCollisionBit;
 
+  static const uint64_t sHashShiftBits = 8;
+  static const uint64_t sHashShiftMask = (1 << sHashShiftBits) - 1;
+  static const uint64_t sGenerationShift = sHashShiftBits;
+
+  MOZ_ALWAYS_INLINE uint8_t hashShift() const {
+    return uint8_t(mGenAndHashShift & sHashShiftMask);
+  }
+  MOZ_ALWAYS_INLINE uint64_t gen() const {
+    return mGenAndHashShift >> sGenerationShift;
+  }
+
+ private:
+  void setGenAndHashShift(uint64_t aGeneration, uint8_t aHashShift) {
+    mGenAndHashShift = aGeneration << sGenerationShift | aHashShift;
+  }
+
+ public:
+  void incrementGeneration() { setGenAndHashShift(gen() + 1, hashShift()); }
+  void setHashShift(uint32_t aHashShift) {
+    MOZ_ASSERT((aHashShift & sHashShiftMask) == aHashShift);
+    mGenAndHashShift = (mGenAndHashShift & ~sHashShiftMask) | aHashShift;
+  }
+
   static uint32_t bestCapacity(uint32_t aLen) {
     static_assert(
         (sMaxInit * sAlphaDenominator) / sAlphaDenominator == sMaxInit,
@@ -1663,7 +1750,7 @@ class HashTable : private AllocPolicy {
     return capacity;
   }
 
-  static uint32_t hashShift(uint32_t aLen) {
+  static uint32_t hashShiftForLength(uint32_t aLen) {
     // Reject all lengths whose initial computed capacity would exceed
     // sMaxCapacity. Round that maximum aLen down to the nearest power of two
     // for speedier code.
@@ -1733,8 +1820,7 @@ class HashTable : private AllocPolicy {
  public:
   HashTable(AllocPolicy aAllocPolicy, uint32_t aLen)
       : AllocPolicy(std::move(aAllocPolicy)),
-        mGen(0),
-        mHashShift(hashShift(aLen)),
+        mGenAndHashShift(hashShiftForLength(aLen)),
         mTable(nullptr),
         mEntryCount(0),
         mRemovedCount(0)
@@ -1756,7 +1842,7 @@ class HashTable : private AllocPolicy {
   }
 
  private:
-  HashNumber hash1(HashNumber aHash0) const { return aHash0 >> mHashShift; }
+  HashNumber hash1(HashNumber aHash0) const { return aHash0 >> hashShift(); }
 
   struct DoubleHash {
     HashNumber mHash2;
@@ -1764,8 +1850,8 @@ class HashTable : private AllocPolicy {
   };
 
   DoubleHash hash2(HashNumber aCurKeyHash) const {
-    uint32_t sizeLog2 = kHashNumberBits - mHashShift;
-    DoubleHash dh = {((aCurKeyHash << sizeLog2) >> mHashShift) | 1,
+    uint32_t sizeLog2 = kHashNumberBits - hashShift();
+    DoubleHash dh = {((aCurKeyHash << sizeLog2) >> hashShift()) | 1,
                      (HashNumber(1) << sizeLog2) - 1};
     return dh;
   }
@@ -1896,9 +1982,9 @@ class HashTable : private AllocPolicy {
     }
 
     // We can't fail from here on, so update table parameters.
-    mHashShift = kHashNumberBits - newLog2;
     mRemovedCount = 0;
-    mGen++;
+    incrementGeneration();
+    setHashShift(kHashNumberBits - newLog2);
     mTable = newTable;
 
     // Copy only live entries, leaving removed ones behind.
@@ -1980,7 +2066,7 @@ class HashTable : private AllocPolicy {
   // would have gotten through random insertion order.
   void rehashTableInPlace() {
     mRemovedCount = 0;
-    mGen++;
+    incrementGeneration();
     forEachSlot(mTable, capacity(), [&](Slot& slot) { slot.unsetCollision(); });
     for (uint32_t i = 0; i < capacity();) {
       Slot src = slotForIndex(i);
@@ -2043,23 +2129,29 @@ class HashTable : private AllocPolicy {
 #endif
   }
 
-  // Resize the table down to the smallest capacity that doesn't overload the
-  // table. Since we call shrinkIfUnderloaded() on every remove, you only need
-  // to call this after a bulk removal of items done without calling remove().
+  // Minimise the memory used. If there are no entries the table is freed,
+  // otherwise the table is resized to the smallest capacity that doesn't
+  // overload the table and that is at least sMinCapacity entries.
+  //
+  // Since we shrink the table after every remove, you only need to call this if
+  // you want to free the table when it's empty.
   void compact() {
     if (empty()) {
       // Free the entry storage.
       freeTable(*this, mTable, capacity());
-      mGen++;
-      mHashShift = hashShift(0);  // gives minimum capacity on regrowth
+      incrementGeneration();
+      setHashShift(
+          hashShiftForLength(0));  // gives minimum capacity on regrowth
       mTable = nullptr;
       mRemovedCount = 0;
       return;
     }
 
-    uint32_t bestCapacity = this->bestCapacity(mEntryCount);
-    MOZ_ASSERT(bestCapacity <= capacity());
+    shrinkToBestCapacity();
+  }
 
+  void shrinkToBestCapacity() {
+    uint32_t bestCapacity = this->bestCapacity(mEntryCount);
     if (bestCapacity < capacity()) {
       (void)changeTableSize(bestCapacity, DontReportFailure);
     }
@@ -2100,11 +2192,11 @@ class HashTable : private AllocPolicy {
 
   uint32_t count() const { return mEntryCount; }
 
-  uint32_t rawCapacity() const { return 1u << (kHashNumberBits - mHashShift); }
+  uint32_t rawCapacity() const { return 1u << (kHashNumberBits - hashShift()); }
 
   uint32_t capacity() const { return mTable ? rawCapacity() : 0; }
 
-  Generation generation() const { return Generation(mGen); }
+  Generation generation() const { return Generation(gen()); }
 
   size_t shallowSizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(mTable);
@@ -2298,6 +2390,26 @@ class HashTable : private AllocPolicy {
   void rekeyAndMaybeRehash(Ptr aPtr, const Lookup& aLookup, const Key& aKey) {
     rekeyWithoutRehash(aPtr, aLookup, aKey);
     infallibleRehashIfOverloaded();
+  }
+
+  static size_t offsetOfHashShift() {
+    static_assert(sHashShiftBits == 8,
+                  "callers assume hash shift is stored in a byte");
+    // The hash shift is stored in the least significant bits of
+    // mGenAndHashShift. On little-endian platforms, this is the
+    // same offset as mGenAndHashShift itself. On big-endian platforms,
+    // we have to add an additional offset to point to the last byte.
+    // (Or we would if we had JIT support for any big-endian platforms.)
+#if MOZ_BIG_ENDIAN()
+    return offsetof(HashTable, mGenAndHashShift) + sizeof(mGenAndHashShift) -
+           sizeof(uint8_t);
+#else
+    return offsetof(HashTable, mGenAndHashShift);
+#endif
+  }
+  static size_t offsetOfTable() { return offsetof(HashTable, mTable); }
+  static size_t offsetOfEntryCount() {
+    return offsetof(HashTable, mEntryCount);
   }
 };
 

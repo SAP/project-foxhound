@@ -50,6 +50,9 @@ newtab-topsites-add-shortcut-header = نواں شارٹ کٹ
 newtab-topsites-edit-topsites-header = بہترین سائٹ دی تدوین کرو
 newtab-topsites-edit-shortcut-header = شارٹ کٹ وِچ ترمیم کرو
 newtab-topsites-add-shortcut-label = شارٹ کٹ شامل کرو
+newtab-topsites-add-shortcut-title =
+    .title = شارٹ کٹ شامل کرو
+    .aria-label = شارٹ کٹ شامل کرو
 newtab-topsites-title-label = عنوان
 newtab-topsites-title-input =
     .placeholder = ہک عنوان درج کرو
@@ -114,9 +117,6 @@ newtab-menu-delete-pocket = { -pocket-brand-name } کنوں مٹاؤ
 newtab-menu-archive-pocket = { -pocket-brand-name } وِچ سوگھا کرو
 newtab-menu-show-privacy-info = ساݙے سپانسر تے تہاݙی رازداری
 newtab-menu-about-fakespot = { -fakespot-brand-name } بارے
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -293,9 +293,6 @@ newtab-custom-pocket-sponsored = سپانسر تھیاں کہاݨیاں
 newtab-custom-pocket-show-recent-saves = حالیہ ہتھیکڑیاں ظاہر کرو
 newtab-custom-recent-title = حالیہ سرگرمی
 newtab-custom-recent-subtitle = حالیہ سائٹاں تے مواد دی ہک چوݨ
-newtab-custom-recent-toggle =
-    .label = حالیہ سرگرمی
-    .description = حالیہ سائٹاں تے مواد دی ہک چوݨ
 newtab-custom-weather-toggle =
     .label = موسم
     .description = اڄ دی پیش گوئی تے ہک نظر
@@ -348,7 +345,7 @@ newtab-wallpaper-abstract-orange = مالٹا شکلاں
 newtab-wallpaper-gradient-orange = میلان نارنجی تے غلابی
 newtab-wallpaper-abstract-blue-purple = نیلے تے جامنی رنگ دیاں شکلاں
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = فوٹو
 newtab-wallpaper-beach-at-sunrise = ݙین٘ہ ابھرݨ ویلے ساحل
@@ -372,9 +369,6 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
-## Celestial
-
-
 ## New Tab Weather
 
 # Variables:
@@ -388,7 +382,6 @@ newtab-weather-menu-change-location = مقام وٹاؤ
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = مقام ڳولو
     .aria-label = مقام ڳولو
-newtab-weather-change-location-search-input = مقام ڳولو
 newtab-weather-menu-weather-display = موسم دا ڈسپلے
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -406,6 +399,11 @@ newtab-weather-menu-hide-weather = نویں ٹیب تے موسم لکاؤ
 newtab-weather-menu-learn-more = ٻیا سِکھو
 # This message is shown if user is working offline
 newtab-weather-error-not-available = عیں ایں ویلے موسم ڈیٹا دستیاب کائنی۔
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = { $provider } وچ پیش گوئی ݙیکھو
+    .aria-description = { $provider } ∙سپانسر تھیا
 
 ## Topic Labels
 
@@ -443,31 +441,3 @@ newtab-topic-selection-button-maybe-later = شاید بعد وچ
 newtab-topic-selection-privacy-link = سکھو جو اساں ڈیٹا دی حفاظت تے منیج کین٘ویں کریندے ہیں۔
 newtab-topic-selection-button-update-interests = آپݨیاں دلچسپیاں اپ ڈیٹ کرو
 newtab-topic-selection-button-pick-interests = آپݨیاں دلچسپیاں چݨو
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

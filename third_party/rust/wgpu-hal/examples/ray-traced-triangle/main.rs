@@ -181,7 +181,7 @@ struct ExecutionContext<A: hal::Api> {
 
 impl<A: hal::Api> ExecutionContext<A> {
     unsafe fn wait_and_clear(&mut self, device: &A::Device) {
-        device.wait(&self.fence, self.fence_value, !0).unwrap();
+        device.wait(&self.fence, self.fence_value, None).unwrap();
         self.encoder.reset_all(self.used_cmd_bufs.drain(..));
         for view in self.used_views.drain(..) {
             device.destroy_texture_view(view);
@@ -235,6 +235,9 @@ impl<A: hal::Api> Example<A> {
             log::info!("using index buffer")
         }
 
+        // The Instance can be initialized with the DisplayHandle from the EventLoop as well
+        let raw_display_handle = window.display_handle()?;
+
         let instance_desc = hal::InstanceDescriptor {
             name: "example",
             flags: wgpu_types::InstanceFlags::default(),
@@ -242,18 +245,20 @@ impl<A: hal::Api> Example<A> {
             backend_options: wgpu_types::BackendOptions {
                 dx12: Dx12BackendOptions {
                     shader_compiler: wgpu_types::Dx12Compiler::default_dynamic_dxc(),
+                    ..Default::default()
                 },
                 ..Default::default()
             },
+            telemetry: None,
+            display: Some(raw_display_handle),
         };
         let instance = unsafe { A::Instance::init(&instance_desc)? };
         let surface = {
             let raw_window_handle = window.window_handle()?.as_raw();
-            let raw_display_handle = window.display_handle()?.as_raw();
 
             unsafe {
                 instance
-                    .create_surface(raw_display_handle, raw_window_handle)
+                    .create_surface(raw_display_handle.as_raw(), raw_window_handle)
                     .unwrap()
             }
         };
@@ -269,7 +274,7 @@ impl<A: hal::Api> Example<A> {
         };
         let surface_caps = unsafe { adapter.surface_capabilities(&surface) }
             .expect("Surface doesn't support presentation");
-        log::info!("Surface caps: {:#?}", surface_caps);
+        log::info!("Surface caps: {surface_caps:#?}");
 
         let hal::OpenDevice { device, queue } = unsafe {
             adapter
@@ -386,7 +391,7 @@ impl<A: hal::Api> Example<A> {
             label: None,
             flags: hal::PipelineLayoutFlags::empty(),
             bind_group_layouts: &[&bgl],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         };
         let pipeline_layout = unsafe {
             device
@@ -622,6 +627,7 @@ impl<A: hal::Api> Example<A> {
                 samplers: &[],
                 textures: &[texture_binding],
                 acceleration_structures: &[&tlas],
+                external_textures: &[],
                 entries: &[
                     hal::BindGroupEntry {
                         binding: 0,
@@ -814,7 +820,7 @@ impl<A: hal::Api> Example<A> {
             queue
                 .submit(&[&init_cmd], &[], (&mut fence, init_fence_value))
                 .unwrap();
-            device.wait(&fence, init_fence_value, !0).unwrap();
+            device.wait(&fence, init_fence_value, None).unwrap();
             cmd_encoder.reset_all(iter::once(init_cmd));
             fence
         };

@@ -7,11 +7,10 @@
 #ifndef PeriodicWave_h_
 #define PeriodicWave_h_
 
-#include "nsWrapperCache.h"
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
 #include "AudioContext.h"
 #include "AudioNodeEngine.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

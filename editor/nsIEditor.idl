@@ -8,10 +8,6 @@
 #include "nsIClipboard.idl"
 #include "domstubs.idl"
 
-%{C++
-#include "mozilla/Debug.h"
-%}
-
 interface nsISelectionController;
 interface nsIDocumentStateListener;
 interface nsIEditActionListener;

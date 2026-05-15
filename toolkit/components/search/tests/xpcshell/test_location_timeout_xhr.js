@@ -44,7 +44,7 @@ add_task(async function test_location_timeout_xhr() {
   let promiseXHRStarted = SearchTestUtils.promiseSearchNotification(
     "geoip-lookup-xhr-starting"
   );
-  await Services.search.init();
+  await SearchService.init();
   ok(
     !Services.prefs.prefHasUserValue("browser.search.region"),
     "should be no region pref"

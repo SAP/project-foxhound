@@ -121,9 +121,9 @@ def test_commit(repo):
         ]
 
         assert matches, f"No diff marker found for '{filename}'"
-        assert (
-            len(matches) == 1
-        ), f"More than one diff marker for '{filename}': {matches}"
+        assert len(matches) == 1, (
+            f"More than one diff marker for '{filename}': {matches}"
+        )
 
         return matches[0]
 

@@ -303,6 +303,7 @@ Submitter.prototype = {
         break;
       case FAILED:
         this.rejectSubmitStatusPromise(`${FAILED}: ${ret}`);
+        Glean.crashSubmission.failureEvent.record({ id: this.id, reason: ret });
         Glean.crashSubmission.failure.add(1);
         break;
       default:
@@ -487,6 +488,7 @@ export var CrashSubmit = {
 
   /**
    * Get the list of pending crash IDs, excluding those marked to be ignored
+   *
    * @param minFileDate
    *     A Date object. Any files last modified before that date will be ignored
    *

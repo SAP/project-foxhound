@@ -100,7 +100,7 @@ async function test_post_message_between_service_workers() {
   is(bSWInfo.launchCount, 1, "SW B did run once, though.");
 
   info("## Beginning PostMessage Checks");
-  let testStart = Cu.now();
+  let testStart = ChromeUtils.now();
 
   const { closeHelperTab, postMessageScopeAndWaitFor, broadcastAndWaitFor } =
     await createMessagingHelperTab(TEST_ORIGIN, "inter-sw-postmessage");
@@ -200,7 +200,7 @@ async function test_eternally_updating_service_worker() {
     await clear_qm_origin_group_via_clearData(TEST_ORIGIN);
   });
 
-  let testStart = Cu.now();
+  let testStart = ChromeUtils.now();
 
   const reg = await install_sw(swDesc);
   const firstInfo = reg.activeWorker;
@@ -274,7 +274,7 @@ async function test_service_worker_creating_new_registrations() {
     await clear_qm_origin_group_via_clearData(TEST_ORIGIN);
   });
 
-  let testStart = Cu.now();
+  let testStart = ChromeUtils.now();
 
   const cReg = await install_sw(cSwDesc);
   const cSWInfo = cReg.activeWorker;

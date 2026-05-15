@@ -1,0 +1,14 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * configuraraparelhos.claro.com.br - phone description text is not shown
+ * Bug #1999770 - https://bugzilla.mozilla.org/show_bug.cgi?id=1999770
+ * WebCompat issue #188458 - https://github.com/webcompat/web-bugs/issues/188458
+ *
+ * We can drop a flex-grow declaration to un-hide the "missing" text.
+ */
+.qelp-step.usecase-step .step-card .text-content-wrapper {
+  flex-grow: unset;
+}

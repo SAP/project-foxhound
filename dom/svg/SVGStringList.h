@@ -8,8 +8,8 @@
 #define DOM_SVG_SVGSTRINGLIST_H_
 
 #include "nsDebug.h"
-#include "nsTArray.h"
 #include "nsString.h"  // IWYU pragma: keep
+#include "nsTArray.h"
 
 namespace mozilla {
 

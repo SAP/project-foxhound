@@ -3,11 +3,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "base/basictypes.h"
-
 #include "CoalescedMouseData.h"
-#include "BrowserChild.h"
 
+#include "BrowserChild.h"
+#include "base/basictypes.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsRefreshDriver.h"
@@ -20,10 +19,12 @@ void CoalescedMouseData::Coalesce(const WidgetMouseEvent& aEvent,
                                   const uint64_t& aInputBlockId) {
   if (IsEmpty()) {
     mCoalescedInputEvent = MakeUnique<WidgetMouseEvent>(aEvent);
+    mCoalescedInputEvent->mCallbackId = std::move(aEvent.mCallbackId);
     mGuid = aGuid;
     mInputBlockId = aInputBlockId;
     MOZ_ASSERT(!mCoalescedInputEvent->mCoalescedWidgetEvents);
   } else {
+    MOZ_ASSERT(aEvent.mCallbackId.isNothing());
     MOZ_ASSERT(mGuid == aGuid);
     MOZ_ASSERT(mInputBlockId == aInputBlockId);
     MOZ_ASSERT(mCoalescedInputEvent->mModifiers == aEvent.mModifiers);

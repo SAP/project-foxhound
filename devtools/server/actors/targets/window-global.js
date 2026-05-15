@@ -86,7 +86,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "StyleSheetsManager",
-  "resource://devtools/server/actors/utils/stylesheets-manager.js",
+  "resource://devtools/server/actors/stylesheets/stylesheets-manager.js",
   true
 );
 loader.lazyRequireGetter(
@@ -135,6 +135,34 @@ function getChildDocShells(parentDocShell) {
 }
 
 exports.getChildDocShells = getChildDocShells;
+
+/**
+ * Helper to retrieve all the windows (parent, children, or browsing context own window)
+ * that exists in the same process than the given browsing context.
+ *
+ * @param {BrowsingContext} browsingContext
+ * @returns {Array<Window>}
+ */
+function getAllSameProcessGlobalsFromBrowsingContext(browsingContext) {
+  const windows = [];
+  const topBrowsingContext = browsingContext.top;
+  for (const bc of topBrowsingContext.getAllBrowsingContextsInSubtree()) {
+    // Filter out browsingContext which don't expose any docshell (e.g. remote frame)
+    if (!bc.docShell) {
+      continue;
+    }
+    try {
+      windows.push(bc.docShell.domWindow);
+    } catch (e) {
+      // docShell.domWindow may throw when the docshell is being destroyed.
+      // Ignore them. We can't use docShell.isBeingDestroyed as it
+      // is flagging too early. e.g it's already true when hitting a breakpoint
+      // in the unload event.
+    }
+  }
+
+  return windows;
+}
 
 /**
  * Browser-specific actors.
@@ -300,13 +328,16 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       this._shouldAddNewGlobalAsDebuggee.bind(this);
 
     this.makeDebugger = makeDebugger.bind(null, {
-      findDebuggees: () => {
+      findDebuggees: (dbg, includeAllSameProcessGlobals) => {
         const result = [];
         const inspectUAWidgets = Services.prefs.getBoolPref(
           "devtools.inspector.showAllAnonymousContent",
           false
         );
-        for (const win of this.windows) {
+        const windows = includeAllSameProcessGlobals
+          ? getAllSameProcessGlobalsFromBrowsingContext(this.browsingContext)
+          : this.windows;
+        for (const win of windows) {
           result.push(win);
           // Only expose User Agent internal (like <video controls>) when the
           // related pref is set.
@@ -373,11 +404,21 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       writable: true,
     });
 
-    // When this target tracks only one WindowGlobal, set a fixed innerWindowId,
+    // When this target tracks only one WindowGlobal, set a fixed innerWindowId and window,
     // so that it can easily be read safely while the related WindowGlobal is being destroyed.
     if (this.followWindowGlobalLifeCycle) {
       Object.defineProperty(this, "innerWindowId", {
         value: this.innerWindowId,
+        configurable: false,
+        writable: false,
+      });
+      Object.defineProperty(this, "window", {
+        value: this.window,
+        configurable: true,
+        writable: false,
+      });
+      Object.defineProperty(this, "chromeEventHandler", {
+        value: this.chromeEventHandler,
         configurable: false,
         writable: false,
       });
@@ -461,27 +502,15 @@ class WindowGlobalTargetActor extends BaseTargetActor {
   _targetScopedActorPool = null;
 
   /**
-   * An object on which listen for DOMWindowCreated and pageshow events.
+   * A EventTarget object on which to listen for 'DOMWindowCreated' and 'pageshow' events.
    */
   get chromeEventHandler() {
     return getDocShellChromeEventHandler(this.docShell);
   }
 
   /**
-   * Getter for the nsIMessageManager associated to the window global.
-   */
-  get messageManager() {
-    try {
-      return this.docShell.messageManager;
-    } catch (e) {
-      // In some cases we can't get a docshell.  We just have no message manager
-      // then,
-      return null;
-    }
-  }
-
-  /**
    * Getter for the list of all `docShell`s in the window global.
+   *
    * @return {Array}
    */
   get docShells() {
@@ -538,6 +567,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
 
   /**
    * Getter for the list of all content DOM windows in the window global.
+   *
    * @return {Array}
    */
   get windows() {
@@ -762,10 +792,10 @@ class WindowGlobalTargetActor extends BaseTargetActor {
   /**
    * Called when the actor is removed from the connection.
    *
-   * @params {Object} options
-   * @params {Boolean} options.isTargetSwitching: Set to true when this is called during
+   * @param {object} options
+   * @param {boolean} options.isTargetSwitching: Set to true when this is called during
    *         a target switch.
-   * @params {Boolean} options.isModeSwitching: Set to true true when this is called as the
+   * @param {boolean} options.isModeSwitching: Set to true true when this is called as the
    *         result of a change to the devtools.browsertoolbox.scope pref.
    */
   destroy({ isTargetSwitching = false, isModeSwitching = false } = {}) {
@@ -775,6 +805,17 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       return;
     }
     this.destroying = true;
+
+    // In case the window already navigated to another origin,
+    // which is possibly in another process, nullify window
+    // as most, if not all attributes would throw.
+    if (Cu.isRemoteProxy(this.window)) {
+      Object.defineProperty(this, "window", {
+        value: null,
+        configurable: true,
+        writable: false,
+      });
+    }
 
     // Force flushing pending resources if the actor isn't already destroyed.
     // This helps notify the client about pending resources on navigation.
@@ -1177,7 +1218,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
         docShell.QueryInterface(Ci.nsIWebNavigation);
 
         // don't include transient about:blank documents
-        if (docShell.document.isInitialDocument) {
+        if (docShell.document.isUncommittedInitialDocument) {
           return false;
         }
 

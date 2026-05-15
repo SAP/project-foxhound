@@ -12,7 +12,8 @@ import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.RetryTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.audioPageAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.videoPageAsset
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
 import org.mozilla.fenix.helpers.TestSetup
@@ -47,12 +48,12 @@ class MediaNotificationTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyVideoPlaybackSystemNotificationTest() {
-        val videoTestPage = TestAssetHelper.getVideoPageAsset(mockWebServer)
+        val videoTestPage = mockWebServer.videoPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(videoTestPage.url) {
             mDevice.waitForIdle()
-            clickPageObject(MatcherHelper.itemWithText("Play"))
+            clickPageObject(composeTestRule, MatcherHelper.itemWithText("Play"))
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
         }.openNotificationShade {
             verifySystemNotificationExists(videoTestPage.title)
@@ -62,7 +63,7 @@ class MediaNotificationTest : TestSetup() {
 
         mDevice.pressBack()
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PAUSED)
         }.openTabDrawer(composeTestRule) {
             closeTab()
@@ -82,12 +83,12 @@ class MediaNotificationTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyAudioPlaybackSystemNotificationTest() {
-        val audioTestPage = TestAssetHelper.getAudioPageAsset(mockWebServer)
+        val audioTestPage = mockWebServer.audioPageAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(audioTestPage.url) {
             mDevice.waitForIdle()
-            clickPageObject(MatcherHelper.itemWithText("Play"))
+            clickPageObject(composeTestRule, MatcherHelper.itemWithText("Play"))
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
         }.openNotificationShade {
             verifySystemNotificationExists(audioTestPage.title)
@@ -97,7 +98,7 @@ class MediaNotificationTest : TestSetup() {
 
         mDevice.pressBack()
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PAUSED)
         }.openTabDrawer(composeTestRule) {
             closeTab()
@@ -116,15 +117,15 @@ class MediaNotificationTest : TestSetup() {
     // TestRail: https://mozilla.testrail.io/index.php?/cases/view/903595
     @Test
     fun mediaSystemNotificationInPrivateModeTest() {
-        val audioTestPage = TestAssetHelper.getAudioPageAsset(mockWebServer)
+        val audioTestPage = mockWebServer.audioPageAsset
 
-        homeScreen {
-        }.openTabDrawer(composeTestRule) {
+        homeScreen(composeTestRule) {
+        }.openTabDrawer {
         }.toggleToPrivateTabs {
         }.openNewTab {
         }.submitQuery(audioTestPage.url.toString()) {
             mDevice.waitForIdle()
-            clickPageObject(MatcherHelper.itemWithText("Play"))
+            clickPageObject(composeTestRule, MatcherHelper.itemWithText("Play"))
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PLAYING)
         }.openNotificationShade {
             verifySystemNotificationExists("A site is playing media")
@@ -134,7 +135,7 @@ class MediaNotificationTest : TestSetup() {
 
         mDevice.pressBack()
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             assertPlaybackState(browserStore, MediaSession.PlaybackState.PAUSED)
         }.openTabDrawer(composeTestRule) {
             closeTab()
@@ -149,6 +150,7 @@ class MediaNotificationTest : TestSetup() {
 
         // close notification shade before and go back to regular mode before the next test
         mDevice.pressBack()
-        homeScreen { }.togglePrivateBrowsingMode()
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode()
     }
 }

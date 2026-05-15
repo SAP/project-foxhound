@@ -4,17 +4,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFileChannel_h__
-#define nsFileChannel_h__
+#ifndef nsFileChannel_h_
+#define nsFileChannel_h_
 
 #include "nsBaseChannel.h"
+#include "nsIChildChannel.h"
 #include "nsIFileChannel.h"
 #include "nsIUploadChannel.h"
+
+namespace mozilla::net {
+class FileChannelInfo;
+}
 
 class nsFileChannel : public nsBaseChannel,
                       public nsIFileChannel,
                       public nsIUploadChannel,
-                      public nsIIdentChannel {
+                      public nsIIdentChannel,
+                      public nsIChildChannel {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIFILECHANNEL
@@ -22,10 +28,15 @@ class nsFileChannel : public nsBaseChannel,
   NS_FORWARD_NSIREQUEST(nsBaseChannel::)
   NS_FORWARD_NSICHANNEL(nsBaseChannel::)
   NS_DECL_NSIIDENTCHANNEL
+  NS_DECL_NSICHILDCHANNEL
 
   explicit nsFileChannel(nsIURI* uri);
 
   nsresult Init();
+
+  static nsresult DoNotifyFileChannelOpened(
+      const nsACString& aRemoteType,
+      const mozilla::net::FileChannelInfo& aFileChannelInfo);
 
  protected:
   ~nsFileChannel() = default;
@@ -45,7 +56,6 @@ class nsFileChannel : public nsBaseChannel,
   // Implementing the pump blocking promise to fixup content length on a
   // background thread prior to calling on mListener
   nsresult ListenerBlockingPromise(BlockingPromise** promise) override;
-  virtual nsresult NotifyListeners();
   uint64_t mChannelId = 0;
 
  private:
@@ -57,4 +67,4 @@ class nsFileChannel : public nsBaseChannel,
   nsCOMPtr<nsIURI> mFileURI;
 };
 
-#endif  // !nsFileChannel_h__
+#endif  // !nsFileChannel_h_

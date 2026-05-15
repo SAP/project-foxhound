@@ -27,6 +27,14 @@ const L10N = new LocalizationHelper(
   "devtools/client/locales/toolbox.properties"
 );
 
+// When an extension with sidebar_action gets installed, the sidebar launcher may open.
+// Ensure it gets closed to avoid side-effects in later tests.
+const initialSidebarState = { ...SidebarController.getUIState(), command: "" };
+registerCleanupFunction(async function () {
+  info("Restoring to initial sidebar state");
+  await SidebarController.initializeUIState(initialSidebarState);
+});
+
 // Check that addon browsers can be reloaded via the toolbox reload shortcuts
 add_task(async function testWebExtensionToolboxReload() {
   await enableExtensionDebugging();

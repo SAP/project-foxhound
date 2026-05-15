@@ -14,6 +14,7 @@
 #include "nsTHashMap.h"
 #include "nsTArray.h"
 #include "nsISupports.h"
+#include "fmt/format.h"
 
 namespace mozilla {
 
@@ -99,9 +100,6 @@ class BounceTrackingStateGlobal final {
     return mRecentPurges;
   }
 
-  // Create a string that describes this object. Used for logging.
-  nsCString Describe();
-
  private:
   ~BounceTrackingStateGlobal() = default;
 
@@ -133,11 +131,43 @@ class BounceTrackingStateGlobal final {
   nsTHashMap<nsCStringHashKey, nsTArray<RefPtr<BounceTrackingPurgeEntry>>>
       mRecentPurges;
 
-  // Helper to create a string representation of a siteHost -> timestamp map.
-  static nsCString DescribeMap(
-      const nsTHashMap<nsCStringHashKey, PRTime>& aMap);
+  friend struct fmt::formatter<BounceTrackingStateGlobal>;
 };
 
 }  // namespace mozilla
+
+template <>
+struct fmt::formatter<mozilla::BounceTrackingStateGlobal>
+    : fmt::formatter<std::string_view> {
+  auto format(const mozilla::BounceTrackingStateGlobal& aGlobal,
+              fmt::format_context& aCtx) const {
+    nsAutoCString originAttributeSuffix;
+    aGlobal.mOriginAttributes.CreateSuffix(originAttributeSuffix);
+
+    auto out = aCtx.out();
+    out = fmt::format_to(out, "{{ mOriginAttributes: {}, mUserActivation: {{",
+                         originAttributeSuffix);
+    bool first = true;
+    for (auto iter = aGlobal.mUserActivation.ConstIter(); !iter.Done();
+         iter.Next()) {
+      if (!first) {
+        out = fmt::format_to(out, ", ");
+      }
+      out = fmt::format_to(out, "{}: {}", iter.Key(), iter.Data());
+      first = false;
+    }
+    out = fmt::format_to(out, "}}, mBounceTrackers: {{");
+    first = true;
+    for (auto iter = aGlobal.mBounceTrackers.ConstIter(); !iter.Done();
+         iter.Next()) {
+      if (!first) {
+        out = fmt::format_to(out, ", ");
+      }
+      out = fmt::format_to(out, "{}: {}", iter.Key(), iter.Data());
+      first = false;
+    }
+    return fmt::format_to(out, "}} }}");
+  }
+};
 
 #endif

@@ -104,6 +104,7 @@ add_task(async function () {
 
 /**
  * Call savePreset on widget and wait for the specified event to emit
+ *
  * @param {CSSFilterWidget} widget
  * @param {string} expectEvent="render" The event to listen on
  * @return {Promise}

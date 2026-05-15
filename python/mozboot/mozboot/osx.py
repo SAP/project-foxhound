@@ -38,7 +38,7 @@ NO_BREW_INSTALLED = "It seems you don't have Homebrew installed."
 class OSXAndroidBootstrapper:
     def install_mobile_android_packages(self, mozconfig_builder, artifact_mode=False):
         os_arch = platform.machine()
-        if os_arch != "x86_64" and os_arch != "arm64":
+        if os_arch not in {"x86_64", "arm64"}:
             raise Exception(
                 "You need a 64-bit version of Mac OS X to build "
                 "GeckoView/Firefox for Android."
@@ -46,7 +46,7 @@ class OSXAndroidBootstrapper:
 
         from mozboot import android
 
-        if os_arch == "x86_64" or os_arch == "x86":
+        if os_arch in {"x86_64", "x86"}:
             avd_manifest_path = android.AVD_MANIFEST_X86_64
         else:
             avd_manifest_path = android.AVD_MANIFEST_ARM64
@@ -65,7 +65,7 @@ class OSXAndroidBootstrapper:
         arch = platform.machine()
         android.ensure_java("macosx", arch)
 
-        if arch == "x86_64" or arch == "x86":
+        if arch in {"x86_64", "x86"}:
             self.install_toolchain_artifact(android.X86_64_ANDROID_AVD)
         elif arch == "arm64":
             self.install_toolchain_artifact(android.ARM64_ANDROID_AVD)
@@ -108,6 +108,7 @@ def ensure_command_line_tools():
     # (via `xcode-select --install`).
     proc = subprocess.run(
         ["xcode-select", "--print-path"],
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
@@ -214,18 +215,22 @@ class OSXBootstrapper(OSXAndroidBootstrapper, BaseBootstrapper):
 
         # Ensure that we can access old versions of packages.
         if b"homebrew/cask-versions" not in known_taps:
-            subprocess.check_output(
-                [to_optional_str(self.brew), "tap", "homebrew/cask-versions"]
-            )
+            subprocess.check_output([
+                to_optional_str(self.brew),
+                "tap",
+                "homebrew/cask-versions",
+            ])
 
         # "caskroom/versions" has been renamed to "homebrew/cask-versions", so
         # it is safe to remove the old tap. Removing the old tap is necessary
         # to avoid the error "Cask [name of cask] exists in multiple taps".
         # See https://bugzilla.mozilla.org/show_bug.cgi?id=1544981
         if b"caskroom/versions" in known_taps:
-            subprocess.check_output(
-                [to_optional_str(self.brew), "untap", "caskroom/versions"]
-            )
+            subprocess.check_output([
+                to_optional_str(self.brew),
+                "untap",
+                "caskroom/versions",
+            ])
 
         self._ensure_homebrew_packages(casks, is_for_cask=True)
 

@@ -5,8 +5,8 @@
 
 /* Public declarations for xptcall. */
 
-#ifndef xptcall_h___
-#define xptcall_h___
+#ifndef xptcall_h_
+#define xptcall_h_
 
 #include "nscore.h"
 #include "nsISupports.h"
@@ -170,4 +170,4 @@ extern "C" nsresult NS_InvokeByIndex(nsISupports* that, uint32_t methodIndex,
                                      uint32_t paramCount,
                                      nsXPTCVariant* params);
 
-#endif /* xptcall_h___ */
+#endif /* xptcall_h_ */

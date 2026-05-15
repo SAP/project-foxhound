@@ -7,18 +7,16 @@
 #ifndef mozilla_dom_StorageManager_h
 #define mozilla_dom_StorageManager_h
 
-#include "nsIDOMStorageManager.h"
-#include "nsILocalStorageManager.h"
-#include "StorageObserver.h"
-
 #include "LocalStorage.h"
 #include "LocalStorageCache.h"
+#include "StorageObserver.h"
 #include "mozilla/dom/Storage.h"
-
-#include "nsTHashtable.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "nsIDOMStorageManager.h"
+#include "nsILocalStorageManager.h"
 #include "nsTHashMap.h"
+#include "nsTHashtable.h"
 
 namespace mozilla {
 

@@ -97,7 +97,7 @@ class FlexboxInspector {
   /**
    * Returns an object containing the custom flexbox colors for different hosts.
    *
-   * @return {Object} that maps a host name to a custom flexbox color for a given host.
+   * @return {object} that maps a host name to a custom flexbox color for a given host.
    */
   async getCustomHostColors() {
     if (this._customHostColors) {
@@ -116,9 +116,9 @@ class FlexboxInspector {
    *
    * @param  {NodeFront} nodeFront
    *         The NodeFront to fetch the flex container properties.
-   * @param  {Boolean} onlyLookAtParents
+   * @param  {boolean} onlyLookAtParents
    *         Whether or not to only consider the parent node of the given node.
-   * @return {Object} consisting of the given node's flex container's properties.
+   * @return {object} consisting of the given node's flex container's properties.
    */
   async getFlexContainerProps(nodeFront, onlyLookAtParents = false) {
     const layoutFront = await nodeFront.walkerFront.getLayoutInspector();
@@ -204,7 +204,7 @@ class FlexboxInspector {
   /**
    * Returns the custom overlay color for the current host or the default flexbox color.
    *
-   * @return {String} overlay color.
+   * @return {string} overlay color.
    */
   async getOverlayColor() {
     if (this._overlayColor) {
@@ -243,7 +243,7 @@ class FlexboxInspector {
    * If the event is dispatched on behalf of a flex highlighter, toggle the
    * corresponding flex container's highlighted state in the Redux store.
    *
-   * @param {Object} data
+   * @param {object} data
    *        Object with data associated with the highlighter event.
    *        {NodeFront} data.nodeFront
    *        The NodeFront of the flex container element for which the flexbox
@@ -262,7 +262,7 @@ class FlexboxInspector {
    * If the event is dispatched on behalf of a flex highlighter, toggle the
    * corresponding flex container's highlighted state in the Redux store.
    *
-   * @param {Object} data
+   * @param {object} data
    *        Object with data associated with the highlighter event.
    *        {NodeFront} data.nodeFront
    *        The NodeFront of the flex container element for which the flexbox
@@ -280,7 +280,7 @@ class FlexboxInspector {
    * Updates the flex container highlighted state in the Redux store if the provided
    * NodeFront is the current selected flex container.
    *
-   * @param  {Boolean} highlighted
+   * @param  {boolean} highlighted
    *         Whether the change is to highlight or hide the overlay.
    * @param  {NodeFront} nodeFront
    *         The NodeFront of the flex container element for which the flexbox
@@ -367,7 +367,7 @@ class FlexboxInspector {
   /**
    * Handler for a change in the flexbox overlay color picker for a flex container.
    *
-   * @param  {String} color
+   * @param  {string} color
    *         A hex string representing the color to use.
    */
   async onSetFlexboxOverlayColor(color) {
@@ -417,10 +417,10 @@ class FlexboxInspector {
    * Handler for "new-root" event fired by the inspector and "new-node-front" event fired
    * by the inspector selection. Updates the flexbox panel if it is visible.
    *
-   * @param  {Object}
+   * @param  {object}
    *         This callback is sometimes executed on "new-node-front" events which means
    *         that a first param is passed here (the nodeFront), which we don't care about.
-   * @param  {String} reason
+   * @param  {string} reason
    *         On "new-node-front" events, a reason is passed here, and we need it to detect
    *         if this update was caused by a node selection from the markup-view.
    */
@@ -437,13 +437,13 @@ class FlexboxInspector {
    * the layout view becomes visible or a new node is selected and needs to be update
    * with new flexbox data.
    *
-   * @param  {Object|null} flexContainer
+   * @param  {object | null} flexContainer
    *         An object consisting of the current flex container's flex items and
    *         properties.
-   * @param  {Object|null} flexItemContainer
+   * @param  {object | null} flexItemContainer
    *         An object consisting of the parent flex container's flex items and
    *         properties.
-   * @param  {Boolean} initiatedByMarkupViewSelection
+   * @param  {boolean} initiatedByMarkupViewSelection
    *         True if the update was due to a node selection in the markup-view.
    */
   async update(
@@ -515,9 +515,9 @@ class FlexboxInspector {
  * For a given flex container object, returns the flex container properties that can be
  * used to check if 2 flex container objects are the same.
  *
- * @param  {Object|null} flexContainer
+ * @param  {object | null} flexContainer
  *         Object consisting of the flex container's properties.
- * @return {Object|null} consisting of the comparable flex container's properties.
+ * @return {object | null} consisting of the comparable flex container's properties.
  */
 function getComparableFlexContainerProperties(flexContainer) {
   if (!flexContainer) {
@@ -553,11 +553,11 @@ function getComparableFlexItemsProperties(flexItems) {
 /**
  * Compares the old and new flex container properties
  *
- * @param  {Object} oldFlexContainer
+ * @param  {object} oldFlexContainer
  *         Object consisting of the old flex container's properties.
- * @param  {Object} newFlexContainer
+ * @param  {object} newFlexContainer
  *         Object consisting of the new flex container's properties.
- * @return {Boolean} true if the flex container properties are the same, false otherwise.
+ * @return {boolean} true if the flex container properties are the same, false otherwise.
  */
 function hasFlexContainerChanged(oldFlexContainer, newFlexContainer) {
   return (

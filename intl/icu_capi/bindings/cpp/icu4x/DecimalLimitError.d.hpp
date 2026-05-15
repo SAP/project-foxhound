@@ -1,5 +1,5 @@
-#ifndef icu4x_DecimalLimitError_D_HPP
-#define icu4x_DecimalLimitError_D_HPP
+#ifndef ICU4X_DecimalLimitError_D_HPP
+#define ICU4X_DecimalLimitError_D_HPP
 
 #include <stdio.h>
 #include <stdint.h>
@@ -9,7 +9,7 @@
 #include <functional>
 #include <optional>
 #include <cstdlib>
-#include "../diplomat_runtime.hpp"
+#include "diplomat_runtime.hpp"
 
 
 namespace icu4x {
@@ -21,11 +21,11 @@ namespace capi {
 
 namespace icu4x {
 /**
- * Additional information: [1](https://docs.rs/fixed_decimal/latest/fixed_decimal/struct.LimitError.html)
+ * Additional information: [1](https://docs.rs/fixed_decimal/0.7.0/fixed_decimal/struct.LimitError.html)
  */
 struct DecimalLimitError {
 
 };
 
 } // namespace
-#endif // icu4x_DecimalLimitError_D_HPP
+#endif // ICU4X_DecimalLimitError_D_HPP

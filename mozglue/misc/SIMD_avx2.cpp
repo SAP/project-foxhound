@@ -18,8 +18,6 @@
 #  include <stdint.h>
 #  include <type_traits>
 
-#  include "mozilla/EndianUtils.h"
-
 namespace mozilla {
 
 const __m256i* Cast256(uintptr_t ptr) {

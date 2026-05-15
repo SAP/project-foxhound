@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 "use strict";
 
 const { AppConstants } = ChromeUtils.importESModule(

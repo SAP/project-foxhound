@@ -5,12 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FFmpegVideoFramePool.h"
-#include "PlatformDecoderModule.h"
+
 #include "FFmpegLog.h"
-#include "mozilla/widget/DMABufDevice.h"
+#include "PlatformDecoderModule.h"
 #include "libavutil/pixfmt.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/widget/DMABufDevice.h"
 #include "mozilla/widget/va_drmcommon.h"
 
 // DMABufLibWrapper defines its own version of this which collides with the
@@ -78,7 +79,7 @@ void VideoFrameSurface<LIBAV_VER>::DisableRecycle() {
 
 void VideoFrameSurface<LIBAV_VER>::LockVAAPIData(
     AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
-    FFmpegLibWrapper* aLib) {
+    const FFmpegLibWrapper* aLib) {
   mLib = aLib;
   mHoldByFFmpeg = true;
 
@@ -289,7 +290,7 @@ RefPtr<VideoFrameSurface<LIBAV_VER>>
 VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(
     VADRMPRIMESurfaceDescriptor& aVaDesc, int aWidth, int aHeight,
     AVCodecContext* aAVCodecContext, AVFrame* aAVFrame,
-    FFmpegLibWrapper* aLib) {
+    const FFmpegLibWrapper* aLib) {
   if (aVaDesc.fourcc != VA_FOURCC_NV12 && aVaDesc.fourcc != VA_FOURCC_YV12 &&
       aVaDesc.fourcc != VA_FOURCC_P010 && aVaDesc.fourcc != VA_FOURCC_P016) {
     DMABUF_LOG("Unsupported VA-API surface format %d", aVaDesc.fourcc);
@@ -493,7 +494,7 @@ VideoFramePool<LIBAV_VER>::GetVideoFrameSurface(AVDRMFrameDescriptor& aDesc,
                                                 int aWidth, int aHeight,
                                                 AVCodecContext* aAVCodecContext,
                                                 AVFrame* aAVFrame,
-                                                FFmpegLibWrapper* aLib) {
+                                                const FFmpegLibWrapper* aLib) {
   MOZ_ASSERT(aDesc.nb_layers > 0);
 
   auto layerDesc = FFmpegDescToVA(aDesc, aAVFrame);

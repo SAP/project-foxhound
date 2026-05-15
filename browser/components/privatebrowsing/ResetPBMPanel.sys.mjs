@@ -21,7 +21,8 @@ const SHOW_CONFIRM_DIALOG_PREF =
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
 });
@@ -111,6 +112,7 @@ export const ResetPBMPanel = {
 
   /**
    * Handles the confirmation panel cancel button.
+   *
    * @param {MozButton} button - Cancel button that triggered the action.
    */
   onCancel(button) {
@@ -128,6 +130,7 @@ export const ResetPBMPanel = {
   /**
    * Handles the confirmation panel confirm button which triggers the clear
    * action.
+   *
    * @param {MozButton} button - Confirm button that triggered the action.
    */
   async onConfirm(button) {
@@ -219,11 +222,17 @@ export const ResetPBMPanel = {
     lazy.SessionStore.purgeDataForPrivateWindow(triggeringWindow);
 
     // 4. Clear private browsing data.
-    //    TODO: this doesn't wait for data to be cleared. This is probably
-    //    fine since PBM data is stored in memory and can be cleared quick
-    //    enough. The mechanism is brittle though, some callers still
-    //    perform clearing async. Bug 1846494 will address this.
-    Services.obs.notifyObservers(null, "last-pb-context-exited");
+    //    Wait for async cleanup to complete before showing confirmation.
+    await new Promise(resolve => {
+      Services.clearData.clearPrivateBrowsingData({
+        onDataDeleted(aFailedFlags) {
+          if (aFailedFlags) {
+            console.error("PBM cleanup failed with flags:", aFailedFlags);
+          }
+          resolve();
+        },
+      });
+    });
 
     // Once clearing is complete show a toast message.
 

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -9,9 +9,20 @@ description: >
 features: [Temporal]
 ---*/
 
-var duration = Temporal.Duration.from({
-  seconds: Number.MAX_SAFE_INTEGER,
-});
+const maxMs = 9_007_199_254_740_991_487;
+const maxUs = 9_007_199_254_740_991_475_711;
+const maxNs = 9_007_199_254_740_991_463_129_087;
+
+const durations = [
+  Temporal.Duration.from({ seconds: Number.MAX_SAFE_INTEGER }),
+  Temporal.Duration.from({ milliseconds: maxMs }),
+  Temporal.Duration.from({ microseconds: maxUs }),
+  Temporal.Duration.from({ nanoseconds: maxNs }),
+  Temporal.Duration.from({ seconds: -Number.MAX_SAFE_INTEGER }),
+  Temporal.Duration.from({ milliseconds: -maxMs }),
+  Temporal.Duration.from({ microseconds: -maxUs }),
+  Temporal.Duration.from({ nanoseconds: -maxNs }),
+];
 
 var zonedDateTime = new Temporal.ZonedDateTime(0n, "UTC");
 
@@ -21,6 +32,8 @@ var options = {
   relativeTo: zonedDateTime,
 };
 
-assert.throws(RangeError, () => duration.round(options));
+for (let duration of durations) {
+  assert.throws(RangeError, () => duration.round(options));
+}
 
 reportCompare(0, 0);

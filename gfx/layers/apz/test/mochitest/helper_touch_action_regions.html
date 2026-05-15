@@ -32,7 +32,6 @@ function listener(callback) {
 // at the end to clean up. Returns true on success, false on failure.
 function chromeTouchEventCounter(operation) {
   function chromeProcessCounter() {
-    /* eslint-env mozilla/chrome-script */
     const PREFIX = "apz:ctec:";
 
     const LISTENERS = {

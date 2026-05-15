@@ -7,13 +7,12 @@
  * This is the popup listener implementation for popup menus and context menus.
  */
 
-#ifndef nsXULPopupListener_h___
-#define nsXULPopupListener_h___
+#ifndef nsXULPopupListener_h_
+#define nsXULPopupListener_h_
 
 #include "nsCOMPtr.h"
-
-#include "nsIDOMEventListener.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIDOMEventListener.h"
 
 class nsIContent;
 
@@ -56,4 +55,4 @@ class nsXULPopupListener : public nsIDOMEventListener {
   bool mIsContext;
 };
 
-#endif  // nsXULPopupListener_h___
+#endif  // nsXULPopupListener_h_

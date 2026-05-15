@@ -12,6 +12,7 @@
 -->
 
 <script>
+  // eslint-disable-next-line no-unused-vars
   let loaded = false;  // Set by module_chain_2.mjs.
 </script>
 
@@ -27,6 +28,7 @@
 <script src="module_chain_1.mjs" type="module"></script>
 
 <script type="module">
+  /* global loaded */
   ok(loaded, "Expected all modules loaded");
 </script>
 

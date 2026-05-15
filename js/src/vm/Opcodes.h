@@ -211,9 +211,6 @@
  *
  * [Index]
  *   [Constants]
- *   [Compound primitives]
- *     Record literals
- *     Tuple literals
  *   [Expressions]
  *     Unary operators
  *     Binary operators
@@ -412,8 +409,11 @@
     MACRO(Typeof, typeof_, NULL, 1, 1, 1, JOF_BYTE|JOF_IC) \
     MACRO(TypeofExpr, typeof_expr, NULL, 1, 1, 1, JOF_BYTE|JOF_IC) \
     /*
-     * A compound opcode for `typeof val === "type"` or `typeof val !== "type"`,
-     * where `val` is single identifier.
+     * A compound opcode for the following, where `val` is single identifier:
+     *   * typeof val === "type"
+     *   * typeof val !== "type"
+     *   * typeof val > "u"      # minified `typeof val === "undefined"`
+     *   * typeof val < "u"      # minified `typeof val !== "undefined"`
      *
      * Infallible. The result is always a boolean that depends on the type of
      * `val` and `"type"` string, and the comparison operator.
@@ -852,6 +852,20 @@
      *   Stack: moduleId, options => promise
      */ \
     MACRO(DynamicImport, dynamic_import, NULL, 1, 2, 1, JOF_BYTE) \
+    /*
+     * Dynamic import.source of the module specified by the string value on the
+     * top of the stack.
+     *
+     * Implements: [Import Calls][1].
+     *
+     * [1]: https://tc39.es/proposal-source-phase-imports/#sec-import-calls
+     *
+     *   Category: Expressions
+     *   Type: Other expressions
+     *   Operands:
+     *   Stack: moduleId => promise
+     */ \
+    IF_SOURCE_PHASE_IMPORTS(MACRO(DynamicImportSource, dynamic_import_source, NULL, 1, 1, 1, JOF_BYTE)) \
     /*
      * Push the `import.meta` object.
      *
@@ -2726,10 +2740,10 @@
      *
      *   Category: Variables and scopes
      *   Type: Initialization
-     *   Operands: uint8_t hops, uint24_t slot
+     *   Operands: uint16_t hops, uint24_t slot
      *   Stack: v => v
      */ \
-    MACRO(InitAliasedLexical, init_aliased_lexical, NULL, 5, 1, 1, JOF_ENVCOORD|JOF_PROPINIT) \
+    MACRO(InitAliasedLexical, init_aliased_lexical, NULL, 6, 1, 1, JOF_ENVCOORD|JOF_PROPINIT) \
     /*
      * Throw a ReferenceError if the value on top of the stack is uninitialized.
      *
@@ -2758,10 +2772,10 @@
      *
      *   Category: Variables and scopes
      *   Type: Initialization
-     *   Operands: uint8_t hops, uint24_t slot
+     *   Operands: uint16_t hops, uint24_t slot
      *   Stack: v => v
      */ \
-    MACRO(CheckAliasedLexical, check_aliased_lexical, NULL, 5, 1, 1, JOF_ENVCOORD) \
+    MACRO(CheckAliasedLexical, check_aliased_lexical, NULL, 6, 1, 1, JOF_ENVCOORD) \
     /*
      * Throw a ReferenceError if the value on top of the stack is
      * `MagicValue(JS_UNINITIALIZED_LEXICAL)`. Used in derived class
@@ -2937,20 +2951,20 @@
      *
      *   Category: Variables and scopes
      *   Type: Getting binding values
-     *   Operands: uint8_t hops, uint24_t slot
+     *   Operands: uint16_t hops, uint24_t slot
      *   Stack: => aliasedVar
      */ \
-    MACRO(GetAliasedVar, get_aliased_var, NULL, 5, 0, 1, JOF_ENVCOORD|JOF_USES_ENV) \
+    MACRO(GetAliasedVar, get_aliased_var, NULL, 6, 0, 1, JOF_ENVCOORD|JOF_USES_ENV) \
     /*
      * Push the value of an aliased binding, which may have to bypass a DebugEnvironmentProxy
      * on the environment chain.
      *
      *   Category: Variables and scopes
      *   Type: Getting binding values
-     *   Operands: uint8_t hops, uint24_t slot
+     *   Operands: uint16_t hops, uint24_t slot
      *   Stack: => aliasedVar
      */ \
-    MACRO(GetAliasedDebugVar, get_aliased_debug_var, NULL, 5, 0, 1, JOF_DEBUGCOORD) \
+    MACRO(GetAliasedDebugVar, get_aliased_debug_var, NULL, 6, 0, 1, JOF_DEBUGCOORD) \
     /*
      * Get the value of a module import by name and pushes it onto the stack.
      *
@@ -3029,10 +3043,10 @@
      *
      *   Category: Variables and scopes
      *   Type: Getting binding values
-     *   Operands: uint8_t numHops
+     *   Operands: uint16_t numHops
      *   Stack: => callee
      */ \
-    MACRO(EnvCallee, env_callee, NULL, 2, 0, 1, JOF_UINT8) \
+    MACRO(EnvCallee, env_callee, NULL, 3, 0, 1, JOF_UINT16) \
     /*
      * Assign `val` to the binding in `env` with the name given by `nameIndex`.
      * Throw a ReferenceError if the binding is an uninitialized lexical.
@@ -3126,10 +3140,10 @@
      *
      *   Category: Variables and scopes
      *   Type: Setting binding values
-     *   Operands: uint8_t hops, uint24_t slot
+     *   Operands: uint16_t hops, uint24_t slot
      *   Stack: val => val
      */ \
-    MACRO(SetAliasedVar, set_aliased_var, NULL, 5, 1, 1, JOF_ENVCOORD|JOF_PROPSET|JOF_USES_ENV) \
+    MACRO(SetAliasedVar, set_aliased_var, NULL, 6, 1, 1, JOF_ENVCOORD|JOF_PROPSET|JOF_USES_ENV) \
     /*
      * Assign to an intrinsic.
      *
@@ -3626,40 +3640,77 @@
  */
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-    MACRO(242)                                   \
-    MACRO(243)                                   \
-    MACRO(244)                                   \
-    MACRO(245)                                   \
-    MACRO(246)                                   \
-    MACRO(247)                                   \
-    MACRO(248)                                   \
-    MACRO(249)                                   \
-    MACRO(250)                                   \
-    MACRO(251)                                   \
-    MACRO(252)                                   \
-    MACRO(253)                                   \
-    MACRO(254)                                   \
-    MACRO(255)
+#  ifdef ENABLE_SOURCE_PHASE_IMPORTS
+#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
+      MACRO(243)                                   \
+      MACRO(244)                                   \
+      MACRO(245)                                   \
+      MACRO(246)                                   \
+      MACRO(247)                                   \
+      MACRO(248)                                   \
+      MACRO(249)                                   \
+      MACRO(250)                                   \
+      MACRO(251)                                   \
+      MACRO(252)                                   \
+      MACRO(253)                                   \
+      MACRO(254)                                   \
+      MACRO(255)
+#  else
+#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
+      MACRO(242)                                   \
+      MACRO(243)                                   \
+      MACRO(244)                                   \
+      MACRO(245)                                   \
+      MACRO(246)                                   \
+      MACRO(247)                                   \
+      MACRO(248)                                   \
+      MACRO(249)                                   \
+      MACRO(250)                                   \
+      MACRO(251)                                   \
+      MACRO(252)                                   \
+      MACRO(253)                                   \
+      MACRO(254)                                   \
+      MACRO(255)
+#  endif
 #else
-#  define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-    MACRO(239)                                   \
-    MACRO(240)                                   \
-    MACRO(241)                                   \
-    MACRO(242)                                   \
-    MACRO(243)                                   \
-    MACRO(244)                                   \
-    MACRO(245)                                   \
-    MACRO(246)                                   \
-    MACRO(247)                                   \
-    MACRO(248)                                   \
-    MACRO(249)                                   \
-    MACRO(250)                                   \
-    MACRO(251)                                   \
-    MACRO(252)                                   \
-    MACRO(253)                                   \
-    MACRO(254)                                   \
-    MACRO(255)
+#  ifdef ENABLE_SOURCE_PHASE_IMPORTS
+#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
+      MACRO(240)                                   \
+      MACRO(241)                                   \
+      MACRO(242)                                   \
+      MACRO(243)                                   \
+      MACRO(244)                                   \
+      MACRO(245)                                   \
+      MACRO(246)                                   \
+      MACRO(247)                                   \
+      MACRO(248)                                   \
+      MACRO(249)                                   \
+      MACRO(250)                                   \
+      MACRO(251)                                   \
+      MACRO(252)                                   \
+      MACRO(253)                                   \
+      MACRO(254)                                   \
+      MACRO(255)
+#  else
+#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
+      MACRO(239)                                   \
+      MACRO(240)                                   \
+      MACRO(241)                                   \
+      MACRO(242)                                   \
+      MACRO(243)                                   \
+      MACRO(244)                                   \
+      MACRO(245)                                   \
+      MACRO(246)                                   \
+      MACRO(247)                                   \
+      MACRO(248)                                   \
+      MACRO(249)                                   \
+      MACRO(250)                                   \
+      MACRO(251)                                   \
+      MACRO(252)                                   \
+      MACRO(253)                                   \
+      MACRO(254)                                   \
+      MACRO(255)
+#  endif
 #endif
 
 namespace js {

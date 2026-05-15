@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SVGAnimatedRect.h"
+
+#include "SVGAnimatedViewBox.h"
 #include "mozilla/dom/SVGAnimatedRectBinding.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGRect.h"
-#include "SVGAnimatedViewBox.h"
 
 namespace mozilla::dom {
 

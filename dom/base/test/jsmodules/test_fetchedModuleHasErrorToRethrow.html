@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Test an imported module has an error to rethrow</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script>
+  SimpleTest.waitForExplicitFinish();
+
+  let count = 0;
+  let hasErrorToRethrow = false;
+  window.onerror = (e) => {
+    hasErrorToRethrow = true;
+    count++;
+  };
+
+  function testLoaded() {
+    is(hasErrorToRethrow, true, "hasErrorToRethrow should be set to true");
+    is(count, 2, "window.onerror should be called twice");
+    SimpleTest.finish();
+  }
+</script>
+<script type="module" src="./import_parse_error.mjs"></script>
+<script type="module" src="./import_parse_error_1.mjs"></script>
+<body onload='testLoaded()'></body>

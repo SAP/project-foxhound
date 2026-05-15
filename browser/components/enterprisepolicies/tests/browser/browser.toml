@@ -26,13 +26,19 @@ support-files = [
 ["browser_policy_allowfileselectiondialogs.js"]
 
 ["browser_policy_app_auto_update.js"]
-run-if = ["!msix"] # Updater is disabled in MSIX builds
+run-if = [
+  "!msix", # Updater is disabled in MSIX builds
+]
 
 ["browser_policy_app_update.js"]
-run-if = ["!msix"] # Updater is disabled in MSIX builds
+run-if = [
+  "!msix", # Updater is disabled in MSIX builds
+]
 
 ["browser_policy_background_app_update.js"]
-run-if = ["!msix"] # Updater is disabled in MSIX builds
+run-if = [
+  "!msix", # Updater is disabled in MSIX builds
+]
 
 ["browser_policy_block_about.js"]
 
@@ -108,6 +114,8 @@ https_first_disabled = true
 ["browser_policy_pdfviewer.js"]
 
 ["browser_policy_privatebrowsingmodeavailability.js"]
+
+["browser_policy_privatebrowsingmodeavailability_srd.js"]
 
 ["browser_policy_search_engine.js"]
 

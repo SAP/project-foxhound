@@ -17,12 +17,17 @@ and even in non-e10s mode, does not start the main process directly, it
 starts it via a Launcher Process. This means that Visual Studio will
 only attach to the first process it finds, and will not hit any
 break-point (and even notifies you that it cannot find their location).
-`Microsoft Child Process Debugging Power
-Tool <https://marketplace.visualstudio.com/items?itemName=vsdbgplat.MicrosoftChildProcessDebuggingPowerTool>`__
+
+For Visual Studio 2022 and above,
+`Microsoft Child Process Debugging Power Tool 2022+
+<https://marketplace.visualstudio.com/items?itemName=vsdbgplat.MicrosoftChildProcessDebuggingPowerTool2022>`__
 allows automatically attaching to child processes, such as Web Content
 process, GPU process, etc. Enable it by going its configuration menu in
 "Debug > Other debugging targets > Child process debugging settings",
-and ticking the box.
+and ticking the box. The same extension exists for older versions of Visual
+Studio as
+`Microsoft Child Process Debugging Power Tool
+<https://marketplace.visualstudio.com/items?itemName=vsdbgplat.MicrosoftChildProcessDebuggingPowerTool>`__.
 
 If you have followed the steps in :ref:`Building Firefox for
 Windows <Building Firefox On Windows>`

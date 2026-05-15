@@ -6,13 +6,13 @@
 #define DOM_MEDIA_MP4_SAMPLE_ITERATOR_H_
 
 #include "ByteStream.h"
+#include "MP4Interval.h"
 #include "MediaData.h"
 #include "MediaResource.h"
 #include "MoofParser.h"
-#include "mozilla/ResultVariant.h"
-#include "MP4Interval.h"
-#include "nsISupportsImpl.h"
 #include "TimeUnits.h"
+#include "mozilla/ResultVariant.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 
@@ -27,17 +27,24 @@ class SampleIterator {
   ~SampleIterator();
   bool HasNext();
   already_AddRefed<mozilla::MediaRawData> GetNextHeader();
-  already_AddRefed<mozilla::MediaRawData> GetNext();
-  void Seek(const media::TimeUnit& aTime);
+  Result<already_AddRefed<mozilla::MediaRawData>, MediaResult> GetNext();
+
+  // The default seek mode finds the closest sync sample at or before the target
+  // time. Setting the mode to `First` allows seeking to the earliest sync
+  // sample instead, which is only used in a specific case.
+  enum class SyncSampleMode { Closest, First };
+  void Seek(const media::TimeUnit& aTime,
+            SyncSampleMode aMode = SyncSampleMode::Closest);
+
   media::TimeUnit GetNextKeyframeTime();
 
  private:
-  Sample* Get();
+  Result<Sample*, nsresult> Get();
 
   // Gets the sample description entry for the current moof, or nullptr if
   // called without a valid current moof.
   SampleDescriptionEntry* GetSampleDescriptionEntry();
-  CencSampleEncryptionInfoEntry* GetSampleEncryptionEntry();
+  const CencSampleEncryptionInfoEntry* GetSampleEncryptionEntry() const;
 
   // Determines the encryption scheme in use for the current sample. If the
   // the scheme cannot be unambiguously determined, will return an error with
@@ -105,8 +112,6 @@ class MP4SampleIndex {
   void UpdateMoofIndex(const mozilla::MediaByteRangeSet& aByteRanges,
                        bool aCanEvict);
   void UpdateMoofIndex(const mozilla::MediaByteRangeSet& aByteRanges);
-  media::TimeUnit GetEndCompositionIfBuffered(
-      const mozilla::MediaByteRangeSet& aByteRanges);
   mozilla::media::TimeIntervals ConvertByteRangesToTimeRanges(
       const mozilla::MediaByteRangeSet& aByteRanges);
   uint64_t GetEvictionOffset(const media::TimeUnit& aTime);

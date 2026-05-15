@@ -20,7 +20,7 @@ add_setup(async function () {
  *
  * To prevent to use the preloaded browser, a simple trick is open a window
  * first.
- **/
+ */
 add_task(async function test_aboutNewTab() {
   // In Fission, we cannot open a non-remote window.
   let win = await BrowserTestUtils.openNewBrowserWindow({

@@ -14,6 +14,7 @@
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/dom/quota/QuotaManagerService.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/IOThread.h"
 #include "nsContentDLF.h"
 #include "nsContentPolicyUtils.h"
 #include "nsDOMCID.h"
@@ -86,6 +87,8 @@ void nsLayoutModuleInitialize() {
                 "size of a pointer on your platform.");
 
   gInitialized = true;
+
+  mozilla::ipc::IOThread::Startup();
 
   if (NS_FAILED(xpcModuleCtor())) {
     MOZ_CRASH("xpcModuleCtor failed");

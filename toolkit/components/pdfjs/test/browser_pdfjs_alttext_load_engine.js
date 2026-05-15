@@ -13,6 +13,7 @@ const altTextPref = "pdfjs.enableAltText";
 const guessAltTextPref = "pdfjs.enableGuessAltText";
 const browserMLPref = "browser.ml.enable";
 const annotationEditorModePref = "pdfjs.annotationEditorMode";
+const altTextModelDownloadPref = "pdfjs.enableAltTextModelDownload";
 
 async function setupRemoteClient() {
   const { removeMocks, remoteClients } = await createAndMockMLRemoteSettings({
@@ -67,6 +68,7 @@ add_task(async function test() {
           [altTextPref, true],
           [browserMLPref, true],
           [guessAltTextPref, true],
+          [altTextModelDownloadPref, true],
           [annotationEditorModePref, 0],
         ],
       });

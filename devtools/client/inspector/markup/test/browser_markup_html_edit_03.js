@@ -28,6 +28,9 @@ add_task(async function () {
   info("Check that pressing escape cancels edits");
   await testEscapeCancels(inspector);
 
+  info("Check that copying seletected text in editor works as expected");
+  await testCopyTextSelection(inspector);
+
   info("Check that pressing F2 commits edits");
   await testF2Commits(inspector);
 
@@ -50,7 +53,7 @@ async function testEscapeCancels(inspector) {
   const onHtmlEditorCreated = once(inspector.markup, "begin-editing");
   EventUtils.sendKey("F2", inspector.markup._frame.contentWindow);
   await onHtmlEditorCreated;
-  ok(inspector.markup.htmlEditor._visible, "HTML Editor is visible");
+  ok(inspector.markup.htmlEditor.isVisible, "HTML Editor is visible");
 
   is(
     await getContentPageElementProperty(SELECTOR, "outerHTML"),
@@ -58,12 +61,13 @@ async function testEscapeCancels(inspector) {
     "The node is starting with old HTML."
   );
 
+  info("Check that copying from the editor does work as expected");
   inspector.markup.htmlEditor.editor.setText(NEW_HTML);
 
   const onEditorHiddem = once(inspector.markup.htmlEditor, "popuphidden");
   EventUtils.sendKey("ESCAPE", inspector.markup.htmlEditor.doc.defaultView);
   await onEditorHiddem;
-  ok(!inspector.markup.htmlEditor._visible, "HTML Editor is not visible");
+  ok(!inspector.markup.htmlEditor.isVisible, "HTML Editor is not visible");
 
   is(
     await getContentPageElementProperty(SELECTOR, "outerHTML"),
@@ -72,12 +76,38 @@ async function testEscapeCancels(inspector) {
   );
 }
 
+async function testCopyTextSelection(inspector) {
+  await selectNode(SELECTOR, inspector);
+
+  const onHtmlEditorCreated = once(inspector.markup, "begin-editing");
+  EventUtils.sendKey("F2", inspector.markup._frame.contentWindow);
+  await onHtmlEditorCreated;
+  ok(inspector.markup.htmlEditor.isVisible, "HTML Editor is visible");
+
+  info("Check that copying from the editor does work as expected");
+  inspector.markup.htmlEditor.editor.setText(NEW_HTML);
+  // Select the "div" word in the editor
+  inspector.markup.htmlEditor.editor.setSelectionAt(
+    { line: 1, column: 1 },
+    { line: 1, column: 4 }
+  );
+  await waitForClipboardPromise(() => {
+    EventUtils.synthesizeKey("c", { accelKey: true });
+  }, `div`);
+  ok(true, "Expected text was copied to clipboard");
+
+  // Close the editor
+  const onEditorHiddem = once(inspector.markup.htmlEditor, "popuphidden");
+  EventUtils.sendKey("ESCAPE", inspector.markup.htmlEditor.doc.defaultView);
+  await onEditorHiddem;
+}
+
 async function testF2Commits(inspector) {
   const onEditorShown = once(inspector.markup.htmlEditor, "popupshown");
   inspector.markup._frame.contentDocument.documentElement.focus();
   EventUtils.sendKey("F2", inspector.markup._frame.contentWindow);
   await onEditorShown;
-  ok(inspector.markup.htmlEditor._visible, "HTML Editor is visible");
+  ok(inspector.markup.htmlEditor.isVisible, "HTML Editor is visible");
 
   is(
     await getContentPageElementProperty(SELECTOR, "outerHTML"),
@@ -90,7 +120,7 @@ async function testF2Commits(inspector) {
   EventUtils.sendKey("F2", inspector.markup._frame.contentWindow);
   await onMutations;
 
-  ok(!inspector.markup.htmlEditor._visible, "HTML Editor is not visible");
+  ok(!inspector.markup.htmlEditor.isVisible, "HTML Editor is not visible");
 
   is(
     await getContentPageElementProperty(SELECTOR, "outerHTML"),

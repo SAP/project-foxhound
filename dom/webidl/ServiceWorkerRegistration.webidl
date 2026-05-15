@@ -55,6 +55,6 @@ partial interface ServiceWorkerRegistration {
 };
 
 partial interface ServiceWorkerRegistration {
-  [Throws, SameObject, Exposed=(ServiceWorker,Window), Pref="dom.cookieStore.manager.enabled"]
+  [Throws, SameObject, Exposed=(ServiceWorker,Window), Pref="dom.cookieStore.enabled"]
   readonly attribute CookieStoreManager cookies;
 };

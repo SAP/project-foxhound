@@ -20,7 +20,9 @@ function handlerCount(path) {
   return handlerCallbacks[path] || 0;
 }
 
-ChromeUtils.importESModule("resource://gre/modules/AppConstants.sys.mjs");
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 
 // Bug 1805371: Tests that require FaultyServer can't currently be built
 // with system NSS.

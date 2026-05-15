@@ -10,7 +10,6 @@ import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -212,7 +211,6 @@ class GridReorderState internal constructor(
  * @param swipingActive Whether the container is being swiped.
  * @param content Content of the item to be displayed.
  */
-@ExperimentalFoundationApi
 @Composable
 @Suppress("MagicNumber")
 fun LazyGridItemScope.DragItemContainer(

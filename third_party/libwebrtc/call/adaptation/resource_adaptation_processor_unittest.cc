@@ -29,9 +29,9 @@
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
@@ -40,8 +40,8 @@ namespace {
 
 using ::testing::Eq;
 
-const int kDefaultFrameRate = 30;
-const int kDefaultFrameSize = 1280 * 720;
+constexpr int kDefaultFrameRate = 30;
+constexpr int kDefaultFrameSize = 1280 * 720;
 constexpr TimeDelta kDefaultTimeout = TimeDelta::Seconds(5);
 
 class VideoSourceRestrictionsListenerForTesting
@@ -66,7 +66,7 @@ class VideoSourceRestrictionsListenerForTesting
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     return adaptation_counters_;
   }
-  rtc::scoped_refptr<Resource> reason() const {
+  scoped_refptr<Resource> reason() const {
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     return reason_;
   }
@@ -75,7 +75,7 @@ class VideoSourceRestrictionsListenerForTesting
   void OnVideoSourceRestrictionsUpdated(
       VideoSourceRestrictions restrictions,
       const VideoAdaptationCounters& adaptation_counters,
-      rtc::scoped_refptr<Resource> reason,
+      scoped_refptr<Resource> reason,
       const VideoSourceRestrictions& /* unfiltered_restrictions */) override {
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     ++restrictions_updated_count_;
@@ -90,7 +90,7 @@ class VideoSourceRestrictionsListenerForTesting
   VideoSourceRestrictions restrictions_ RTC_GUARDED_BY(&sequence_checker_);
   VideoAdaptationCounters adaptation_counters_
       RTC_GUARDED_BY(&sequence_checker_);
-  rtc::scoped_refptr<Resource> reason_ RTC_GUARDED_BY(&sequence_checker_);
+  scoped_refptr<Resource> reason_ RTC_GUARDED_BY(&sequence_checker_);
 };
 
 class ResourceAdaptationProcessorTest : public ::testing::Test {
@@ -103,7 +103,7 @@ class ResourceAdaptationProcessorTest : public ::testing::Test {
         video_stream_adapter_(
             std::make_unique<VideoStreamAdapter>(&input_state_provider_,
                                                  &frame_rate_provider_,
-                                                 field_trials_)),
+                                                 CreateTestFieldTrials())),
         processor_(std::make_unique<ResourceAdaptationProcessor>(
             video_stream_adapter_.get())) {
     video_stream_adapter_->AddRestrictionsListener(&restrictions_listener_);
@@ -147,11 +147,10 @@ class ResourceAdaptationProcessorTest : public ::testing::Test {
 
  protected:
   AutoThread main_thread_;
-  webrtc::test::ScopedKeyValueConfig field_trials_;
   FakeFrameRateProvider frame_rate_provider_;
   VideoStreamInputStateProvider input_state_provider_;
-  rtc::scoped_refptr<FakeResource> resource_;
-  rtc::scoped_refptr<FakeResource> other_resource_;
+  scoped_refptr<FakeResource> resource_;
+  scoped_refptr<FakeResource> other_resource_;
   std::unique_ptr<VideoStreamAdapter> video_stream_adapter_;
   std::unique_ptr<ResourceAdaptationProcessor> processor_;
   VideoSourceRestrictionsListenerForTesting restrictions_listener_;
@@ -668,7 +667,7 @@ TEST_F(ResourceAdaptationProcessorTest,
   EXPECT_EQ(2, restrictions_listener_.adaptation_counters().Total());
 
   video_stream_adapter_->SetDegradationPreference(
-      DegradationPreference::DISABLED);
+      DegradationPreference::MAINTAIN_FRAMERATE_AND_RESOLUTION);
 
   // Revert to `other_resource_` when removing `resource_` even though the
   // current degradataion preference is disabled.

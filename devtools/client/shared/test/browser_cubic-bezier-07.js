@@ -23,7 +23,7 @@ add_task(async function () {
   const { host, doc } = await createHost("bottom", TEST_URI);
   // Unset "prefers reduced motion", otherwise the dot animation preview won't be created.
   // See Bug 1637842
-  // https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion
+  // https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion
   await pushPref("ui.prefersReducedMotion", 0);
 
   const container = doc.querySelector("#cubic-bezier-container");

@@ -25,6 +25,7 @@ import mozilla.components.concept.fetch.Response
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
 import org.json.JSONObject
+import java.security.cert.X509Certificate
 
 /**
  * Class representing a single engine session.
@@ -60,7 +61,22 @@ abstract class EngineSession(
         fun onProgress(progress: Int) = Unit
         fun onLoadingStateChange(loading: Boolean) = Unit
         fun onNavigationStateChange(canGoBack: Boolean? = null, canGoForward: Boolean? = null) = Unit
-        fun onSecurityChange(secure: Boolean, host: String? = null, issuer: String? = null) = Unit
+
+        /**
+         * Event to indicate the top-level connection security has changed.
+         *
+         * @param secure If true, the connection is considered secure (e.g. delivered over TLS with no errors).
+         * @param host The domain name of the server that was connected to.
+         * @param issuer The name of the organization that issued the server certificate, if present.
+         * @param certificate The certificate presented by the server, if any.
+         */
+        fun onSecurityChange(
+            secure: Boolean,
+            host: String? = null,
+            issuer: String? = null,
+            certificate: X509Certificate? = null,
+        ) = Unit
+
         fun onTrackerBlockingEnabledChange(enabled: Boolean) = Unit
 
         /**
@@ -390,7 +406,6 @@ abstract class EngineSession(
      * Represents a safe browsing policy, which is indicates with type of site should be alerted
      * to user as possible harmful.
      */
-    @Suppress("MagicNumber")
     enum class SafeBrowsingPolicy(val id: Int) {
         NONE(0),
 
@@ -415,9 +430,14 @@ abstract class EngineSession(
         PHISHING(1 shl 13),
 
         /**
+         * Blocks harmful add-on sites.
+         */
+        HARMFULADDON(1 shl 14),
+
+        /**
          * Blocks all unsafe sites.
          */
-        RECOMMENDED(MALWARE.id + UNWANTED.id + HARMFUL.id + PHISHING.id),
+        RECOMMENDED(MALWARE.id + UNWANTED.id + HARMFUL.id + PHISHING.id + HARMFULADDON.id),
     }
 
     /**
@@ -482,7 +502,6 @@ abstract class EngineSession(
             ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS(5),
         }
 
-        @Suppress("MagicNumber")
         enum class TrackingCategory(val id: Int) {
 
             NONE(0),
@@ -699,7 +718,6 @@ abstract class EngineSession(
     /**
      * Represents settings options for bounce tracking protection.
      */
-    @Suppress("MagicNumber")
     enum class BounceTrackingProtectionMode(val mode: Int) {
         /**
          * Fully disabled.
@@ -807,6 +825,12 @@ abstract class EngineSession(
             const val LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE: Int = 1 shl 7
             const val ALLOW_ADDITIONAL_HEADERS: Int = 1 shl 15
             const val ALLOW_JAVASCRIPT_URL: Int = 1 shl 16
+
+            const val APP_LINK_LAUNCH_TYPE_COLD: Int = 1 shl 8
+            const val APP_LINK_LAUNCH_TYPE_WARM: Int = 1 shl 9
+            const val APP_LINK_LAUNCH_TYPE_HOT: Int = 1 shl 10
+            const val APP_LINK_LAUNCH_TYPE_UNKNOWN: Int = 0
+
             internal const val ALL = BYPASS_CACHE + BYPASS_PROXY + EXTERNAL + ALLOW_POPUPS +
                 BYPASS_CLASSIFIER + LOAD_FLAGS_FORCE_ALLOW_DATA_URI + LOAD_FLAGS_REPLACE_HISTORY +
                 LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE + ALLOW_ADDITIONAL_HEADERS + ALLOW_JAVASCRIPT_URL
@@ -945,6 +969,20 @@ abstract class EngineSession(
      * false otherwise.
      */
     abstract fun restoreState(state: EngineSessionState): Boolean
+
+    /**
+     * Flushes the session state of the engine session.
+     *
+     * This method triggers an asynchronous flush of the current
+     * session state. The most recent state is not returned directly
+     * by this call. Instead, the updated session state will be
+     * delivered asynchronously through the observer callbacks:
+     *
+     * [EngineSession.Observer.onStateUpdated]
+     *
+     * [EngineSession.Observer.onHistoryStateChanged]
+     */
+    abstract fun flushSessionState()
 
     /**
      * Updates the tracking protection [policy] for this engine session.
@@ -1114,4 +1152,16 @@ abstract class EngineSession(
      * @param enabled True if the activity is in picture-in-picture mode.
      */
     open fun onPipModeChanged(enabled: Boolean) = Unit
+
+    /**
+     * Gets the page text content of this session
+     */
+    open fun getPageContent(onResult: (String) -> Unit, onException: (Throwable) -> Unit) = Unit
+
+    /**
+     * Allow the Engine to handle back navigation events to dismiss some HTML elements such as &lt;dialog&gt;.
+     *
+     * @param onResult callback invoked if the engine API returned a valid response.
+     */
+    abstract fun processBackPressed(onResult: (Boolean) -> Unit)
 }

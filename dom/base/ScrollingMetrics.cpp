@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScrollingMetrics.h"
-#include "mozilla/dom/ContentParent.h"
+
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/dom/ContentParent.h"
 
 namespace mozilla {
 

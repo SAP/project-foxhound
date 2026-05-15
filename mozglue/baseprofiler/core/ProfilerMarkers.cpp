@@ -254,10 +254,10 @@ void MarkerSchema::Stream(JSONWriter& aWriter,
                 }
                 aWriter.StringProperty("format",
                                        FormatToStringSpan(aData.mFormat));
-                if (aData.mSearchable) {
-                  aWriter.BoolProperty(
-                      "searchable",
-                      *aData.mSearchable == Searchable::Searchable);
+
+                if (uint32_t(aData.mPayloadFlags) &
+                    uint32_t(PayloadFlags::Hidden)) {
+                  aWriter.BoolProperty("hidden", true);
                 }
               },
               [&aWriter](const StaticData& aStaticData) {

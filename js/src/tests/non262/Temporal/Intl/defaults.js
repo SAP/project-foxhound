@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty("Temporal")||!this.hasOwnProperty("Intl"))
+// |reftest| skip-if(!this.hasOwnProperty("Temporal")||!this.hasOwnProperty("Intl"))
 
 // Test default formatting for Temporal types using different locales and all
 // supported calendars.

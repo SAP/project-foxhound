@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsStringBundleService_h__
-#define nsStringBundleService_h__
+#ifndef nsStringBundleService_h_
+#define nsStringBundleService_h_
 
 #include "nsCOMPtr.h"
 #include "nsTHashMap.h"

@@ -36,6 +36,10 @@ add_task(async function test_expand_minimal_and_full() {
             base: "https://example.com/3",
             searchTermParamName: "trending",
           },
+          visualSearch: {
+            base: "https://example.com/4",
+            searchTermParamName: "visual",
+          },
         },
       },
       variants: [{ environment: { allRegionsAndLocales: true } }],

@@ -99,7 +99,9 @@ add_test(function test_update() {
   streamUpdater.downloadUpdates(
     "goog-downloadwhite-digest256",
     "goog-downloadwhite-digest256;\n",
+    "",
     true,
+    "test",
     "http://localhost:4444/downloads",
     updateSuccess,
     handleError,

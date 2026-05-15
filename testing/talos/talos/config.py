@@ -251,7 +251,7 @@ def setup_pdfpaint_test(config, test_instance):
         raise ConfigurationError(
             f"Chunk {chunk_number} contains no PDFs to test. "
             f"For {len(pdf_files)} PDFs, the max chunk is "
-            f"{int((len(pdf_files)-1)/pdfs_per_chunk)+1}."
+            f"{int((len(pdf_files) - 1) / pdfs_per_chunk) + 1}."
         )
 
     with pdfpaint_manifest_path.open("w") as f:
@@ -354,9 +354,9 @@ def get_test(config, global_overrides, counters, test_instance):
             if not isinstance(getattr(test_instance, key, None), list):
                 setattr(test_instance, key, [])
             _counters = getattr(test_instance, key)
-            _counters.extend(
-                [counter for counter in counters if counter not in _counters]
-            )
+            _counters.extend([
+                counter for counter in counters if counter not in _counters
+            ])
 
     return dict(test_instance.items())
 

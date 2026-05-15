@@ -10,13 +10,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+
 #include "js/StructuredClone.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/ProcessType.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/ipc/EagerIPCStream.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -114,27 +116,39 @@ class StructuredCloneHolderBase {
 
   // Execute the serialization of aValue using the Structured Clone Algorithm.
   // The data can read back using Read().
-  bool Write(JSContext* aCx, JS::Handle<JS::Value> aValue);
+  void Write(JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv);
 
   // Like Write() but it supports the transferring of objects and handling
   // of cloning policy.
-  bool Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
+  void Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
              JS::Handle<JS::Value> aTransfer,
-             const JS::CloneDataPolicy& aCloneDataPolicy);
+             const JS::CloneDataPolicy& aCloneDataPolicy, ErrorResult& aRv);
 
   // If Write() has been called, this method retrieves data and stores it into
   // aValue.
-  bool Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue);
+  void Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
+            ErrorResult& aRv);
 
   // Like Read() but it supports handling of clone policy.
-  bool Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
-            const JS::CloneDataPolicy& aCloneDataPolicy);
+  void Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
+            const JS::CloneDataPolicy& aCloneDataPolicy, ErrorResult& aRv);
+
+  // Directly adopt a pre-existing data buffer which was previously serialized
+  // elsewhere using this data structure.
+  // The StructuredCloneScope of this holder must match the passed-in data.
+  void Adopt(JSStructuredCloneData&& aData,
+             uint32_t aVersion = JS_STRUCTURED_CLONE_VERSION);
 
   bool HasData() const { return !!mBuffer; }
 
   JSStructuredCloneData& BufferData() const {
     MOZ_ASSERT(mBuffer, "Write() has never been called.");
     return mBuffer->data();
+  }
+
+  uint32_t BufferVersion() const {
+    MOZ_ASSERT(mBuffer, "Write() has never been called.");
+    return mBuffer->version();
   }
 
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
@@ -145,19 +159,10 @@ class StructuredCloneHolderBase {
     return size;
   }
 
-  void SetErrorMessage(const char* aErrorMessage) {
-    mErrorMessage.Assign(aErrorMessage);
-  }
-
  protected:
   UniquePtr<JSAutoStructuredCloneBuffer> mBuffer;
 
   StructuredCloneScope mStructuredCloneScope;
-
-  // Error message when a data clone error is about to throw. It's held while
-  // the error callback is fired and it will be throw with a data clone error
-  // later.
-  nsCString mErrorMessage;
 
 #ifdef DEBUG
   bool mClearCalled;
@@ -171,6 +176,10 @@ class MessagePort;
 class MessagePortIdentifier;
 struct VideoFrameSerializedData;
 struct AudioDataSerializedData;
+#ifdef MOZ_WEBRTC
+struct RTCEncodedVideoFrameData;
+struct RTCEncodedAudioFrameData;
+#endif
 
 class StructuredCloneHolder : public StructuredCloneHolderBase {
  public:
@@ -203,21 +212,22 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
                      const JS::CloneDataPolicy& aCloneDataPolicy,
                      ErrorResult& aRv);
 
-  void Read(nsIGlobalObject* aGlobal, JSContext* aCx,
-            JS::MutableHandle<JS::Value> aValue, ErrorResult& aRv);
+  void Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
+            ErrorResult& aRv);
 
-  void Read(nsIGlobalObject* aGlobal, JSContext* aCx,
-            JS::MutableHandle<JS::Value> aValue,
+  void Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
             const JS::CloneDataPolicy& aCloneDataPolicy, ErrorResult& aRv);
 
-  // Call this method to know if this object is keeping some DOM object alive.
-  bool HasClonedDOMObjects() const {
-    return !mBlobImplArray.IsEmpty() || !mWasmModuleArray.IsEmpty() ||
-           !mClonedSurfaces.IsEmpty() || !mInputStreamArray.IsEmpty() ||
-           !mVideoFrames.IsEmpty() || !mEncodedVideoChunks.IsEmpty();
-  }
+  void Adopt(JSStructuredCloneData&& aData,
+             uint32_t aVersion = JS_STRUCTURED_CLONE_VERSION,
+             GeckoChildID aOriginChildID = kInvalidGeckoChildID);
 
-  nsTArray<RefPtr<BlobImpl>>& BlobImpls() {
+  // Call this method to know if this object is keeping some DOM object alive.
+  bool HasClonedDOMObjects();
+
+  GeckoChildID GetOriginChildID() const { return mOriginChildID; }
+
+  nsTArray<NotNull<RefPtr<BlobImpl>>>& BlobImpls() {
     MOZ_ASSERT(mSupportsCloning,
                "Blobs cannot be taken/set if cloning is not supported.");
     return mBlobImplArray;
@@ -229,7 +239,7 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
     return mWasmModuleArray;
   }
 
-  nsTArray<nsCOMPtr<nsIInputStream>>& InputStreams() {
+  nsTArray<mozilla::ipc::EagerIPCStream>& InputStreams() {
     MOZ_ASSERT(mSupportsCloning,
                "InputStreams cannot be taken/set if cloning is not supported.");
     return mInputStreamArray;
@@ -243,10 +253,6 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
     }
     return mStructuredCloneScope;
   }
-
-  // The global object is set internally just during the Read(). This method
-  // can be used by read functions to retrieve it.
-  nsIGlobalObject* GlobalDuringRead() const { return mGlobal; }
 
   // This must be called if the transferring has ports generated by Read().
   // MessagePorts are not thread-safe and they must be retrieved in the thread
@@ -281,6 +287,16 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   nsTArray<EncodedAudioChunkData>& EncodedAudioChunks() {
     return mEncodedAudioChunks;
   }
+
+#ifdef MOZ_WEBRTC
+  nsTArray<RTCEncodedVideoFrameData>& RtcEncodedVideoFrames() {
+    return mRtcEncodedVideoFrames;
+  }
+
+  nsTArray<RTCEncodedAudioFrameData>& RtcEncodedAudioFrames() {
+    return mRtcEncodedAudioFrames;
+  }
+#endif
 
   // Implementations of the virtual methods to allow cloning of objects which
   // JS engine itself doesn't clone.
@@ -340,28 +356,56 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   static const JSStructuredCloneCallbacks sCallbacks;
 
  protected:
-  // If you receive a buffer from IPC, you can use this method to retrieve a
-  // JS::Value. It can happen that you want to pre-populate the array of Blobs
-  // and/or the PortIdentifiers.
-  void ReadFromBuffer(nsIGlobalObject* aGlobal, JSContext* aCx,
-                      JSStructuredCloneData& aBuffer,
-                      JS::MutableHandle<JS::Value> aValue,
-                      const JS::CloneDataPolicy& aCloneDataPolicy,
-                      ErrorResult& aRv);
-
-  void ReadFromBuffer(nsIGlobalObject* aGlobal, JSContext* aCx,
-                      JSStructuredCloneData& aBuffer,
-                      uint32_t aAlgorithmVersion,
-                      JS::MutableHandle<JS::Value> aValue,
-                      const JS::CloneDataPolicy& aCloneDataPolicy,
-                      ErrorResult& aRv);
-
   void SameProcessScopeRequired(bool* aSameProcessScopeRequired);
 
-  already_AddRefed<MessagePort> ReceiveMessagePort(uint64_t aIndex);
+  already_AddRefed<MessagePort> ReceiveMessagePort(nsIGlobalObject* aGlobal,
+                                                   uint64_t aIndex);
+
+#ifdef DEBUG
+  // Asserts that all of the attachment members of this StructuredCloneHolder
+  // match the SupportsTransferring and CloneScope flags.
+  void AssertAttachmentsMatchFlags();
+#else
+  void AssertAttachmentsMatchFlags() {}
+#endif
+
+  // If you add a new array for attachments below, make sure to add it to the
+  // appropriate tuple below. This is used for generic checks or operations
+  // which need to be performed over all attachment arrays.
+  auto CloneableAttachmentArrays() {
+    return std::tie(mBlobImplArray, mInputStreamArray);
+  }
+  auto InProcessCloneableAttachmentArrays() {
+    return std::tie(mWasmModuleArray, mClonedSurfaces, mVideoFrames, mAudioData,
+                    mEncodedVideoChunks, mEncodedAudioChunks
+#ifdef MOZ_WEBRTC
+                    ,
+                    mRtcEncodedVideoFrames, mRtcEncodedAudioFrames
+#endif
+    );
+  }
+  auto TransferableAttachmentArrays() {
+    // NOTE: mTransferredPorts is intentionally skipped, as it it not part of
+    // the serialized state (it is used as an extra return value from `Read`).
+    return std::tie(mPortIdentifiers);
+  }
+  auto AttachmentArrays() {
+    return std::tuple_cat(CloneableAttachmentArrays(),
+                          InProcessCloneableAttachmentArrays(),
+                          TransferableAttachmentArrays());
+  }
 
   bool mSupportsCloning;
   bool mSupportsTransferring;
+
+  // In the case where this StructuredCloneHolder was received over IPC, this
+  // should be set to the GeckoChildID which created the message. In the case of
+  // an in-process serialized data structure, it will be set to the current
+  // ChildID.
+  //
+  // This value is _not_ preserved if the object is sent across multiple process
+  // boundaries. It only tracks the most recent IPC hop.
+  GeckoChildID mOriginChildID = kInvalidGeckoChildID;
 
   // SizeOfExcludingThis is inherited from StructuredCloneHolderBase. It doesn't
   // account for objects in the following arrays because a) they're not expected
@@ -370,13 +414,13 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // and the other types do not hold significant amounts of memory alive.
 
   // Used for cloning blobs in the structured cloning algorithm.
-  nsTArray<RefPtr<BlobImpl>> mBlobImplArray;
+  nsTArray<NotNull<RefPtr<BlobImpl>>> mBlobImplArray;
 
   // Used for cloning JS::WasmModules in the structured cloning algorithm.
   nsTArray<RefPtr<JS::WasmModule>> mWasmModuleArray;
 
   // Used for cloning InputStream in the structured cloning algorithm.
-  nsTArray<nsCOMPtr<nsIInputStream>> mInputStreamArray;
+  nsTArray<mozilla::ipc::EagerIPCStream> mInputStreamArray;
 
   // This is used for sharing the backend of ImageBitmaps.
   // The DataSourceSurface object must be thread-safely reference-counted.
@@ -396,8 +440,13 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // Used for cloning EncodedAudioChunk in the structured cloning algorithm.
   nsTArray<EncodedAudioChunkData> mEncodedAudioChunks;
 
-  // This raw pointer is only set within ::Read() and is unset by the end.
-  nsIGlobalObject* MOZ_NON_OWNING_REF mGlobal;
+#ifdef MOZ_WEBRTC
+  // Used for cloning RTCEncodedVideoFrame in the structured cloning algorithm.
+  nsTArray<RTCEncodedVideoFrameData> mRtcEncodedVideoFrames;
+
+  // Used for cloning RTCEncodedAudioFrame in the structured cloning algorithm.
+  nsTArray<RTCEncodedAudioFrameData> mRtcEncodedAudioFrames;
+#endif
 
   // This array contains the ports once we've finished the reading. It's
   // generated from the mPortIdentifiers array.
@@ -407,10 +456,6 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // are able to reconnect the new transferred ports with the other
   // MessageChannel ports.
   mutable nsTArray<MessagePortIdentifier> mPortIdentifiers;
-
-#ifdef DEBUG
-  nsCOMPtr<nsIEventTarget> mCreationEventTarget;
-#endif
 };
 
 }  // namespace dom

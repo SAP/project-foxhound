@@ -31,7 +31,6 @@ add_task(async function () {
 async function testOpenExpanderAndAddTextInFilter(inspector, view) {
   const rule = getRuleViewRuleEditor(view, 1).rule;
   const ruleEditor = getTextProperty(view, 1, { margin: "4px 0px" }).editor;
-  const computed = ruleEditor.computed;
 
   info("Opening the computed list of margin property");
   ruleEditor.expander.click();
@@ -56,6 +55,8 @@ async function testOpenExpanderAndAddTextInFilter(inspector, view) {
     ruleEditor.container.classList.contains("ruleview-highlight"),
     "margin text property is correctly highlighted."
   );
+
+  const computed = ruleEditor.computed;
   ok(
     !computed.hasAttribute("filter-open"),
     "margin computed list does not contain filter-open class."

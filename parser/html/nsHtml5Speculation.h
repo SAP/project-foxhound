@@ -10,7 +10,6 @@
 #include "nsHtml5TreeOperation.h"
 #include "nsAHtml5TreeOpSink.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
 
 class nsHtml5Speculation final : public nsAHtml5TreeOpSink {

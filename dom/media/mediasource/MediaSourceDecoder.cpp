@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "MediaSourceDecoder.h"
 
-#include "base/process_util.h"
-#include "mozilla/Logging.h"
+#include <algorithm>
+
 #include "ExternalEngineStateMachine.h"
 #include "MediaDecoder.h"
 #include "MediaDecoderStateMachine.h"
@@ -17,7 +17,8 @@
 #include "SourceBuffer.h"
 #include "SourceBufferList.h"
 #include "VideoUtils.h"
-#include <algorithm>
+#include "base/process_util.h"
+#include "mozilla/Logging.h"
 
 extern mozilla::LogModule* GetMediaSourceLog();
 

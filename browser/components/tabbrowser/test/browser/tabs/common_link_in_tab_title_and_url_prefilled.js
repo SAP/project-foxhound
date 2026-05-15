@@ -65,7 +65,12 @@ async function doTestInSameWindow({
     Assert.equal(target.textLabel.textContent, loadingState.tab);
 
     await actionWhileLoading(
-      BrowserTestUtils.browserLoaded(target.linkedBrowser, false, href)
+      // if href empty, i.e. link has no href, we'll wait for any load (including about:blank)
+      BrowserTestUtils.browserLoaded(
+        target.linkedBrowser,
+        false,
+        href || (() => true)
+      )
     );
 
     info("Check the final result");
@@ -83,7 +88,11 @@ async function doTestInSameWindow({
   });
 }
 
-async function doTestWithNewWindow({ link, expectedSetURICalled }) {
+async function doTestWithNewWindow({
+  link,
+  expectedSetURICalled,
+  actionWhileLoading = async p => await p,
+}) {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.link.open_newwindow", 2]],
   });
@@ -116,10 +125,10 @@ async function doTestWithNewWindow({ link, expectedSetURICalled }) {
         isSetURIWhileLoading = true;
       }
     });
-    await BrowserTestUtils.browserLoaded(
-      win.gBrowser.selectedBrowser,
-      false,
-      href
+    await actionWhileLoading(
+      BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser, {
+        wantLoad: href || (() => true),
+      })
     );
     sandbox.restore();
 

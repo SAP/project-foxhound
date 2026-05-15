@@ -660,7 +660,6 @@ function BuildConditionSandbox(aURL) {
   // Do we *not* have a dedicated gpu process.
   sandbox.nogpu =
     sandbox.wayland ||
-    sandbox.cocoaWidget ||
     !(
       Services.prefs.getBoolPref("layers.gpu-process.enabled") &&
       Services.prefs.getBoolPref("layers.gpu-process.force-enabled")

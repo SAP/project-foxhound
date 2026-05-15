@@ -4,38 +4,35 @@
 
 package org.mozilla.fenix.bindings
 
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.FindInPageAction
 
 class FindInPageBindingTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Test
-    fun `WHEN find in page started action is dispatched THEN launch find in page feature`() = runTestOnMain {
+    fun `WHEN find in page started action is dispatched THEN launch find in page feature`() = runTest(testDispatcher) {
         val appStore = AppStore()
         var onFindInPageLaunchCalled = false
 
         val binding = FindInPageBinding(
             appStore = appStore,
             onFindInPageLaunch = { onFindInPageLaunchCalled = true },
+            mainDispatcher = testDispatcher,
         )
         binding.start()
 
         appStore.dispatch(FindInPageAction.FindInPageStarted)
 
         // Wait for FindInPageAction.FindInPageStarted
-        appStore.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
         // Wait for FindInPageAction.FindInPageShown
-        appStore.waitUntilIdle()
 
         assertFalse(appStore.state.showFindInPage)
 

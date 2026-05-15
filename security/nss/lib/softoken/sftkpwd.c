@@ -42,7 +42,7 @@ getPBEIterationCount(void)
     int c = NSS_MP_PBE_ITERATION_COUNT;
 
     char *val = getenv("NSS_MIN_MP_PBE_ITERATION_COUNT");
-    if (val) {
+    if (val && *val) {
         int minimum = atoi(val);
         if (c < minimum) {
             c = minimum;
@@ -50,13 +50,17 @@ getPBEIterationCount(void)
     }
 
     val = getenv("NSS_MAX_MP_PBE_ITERATION_COUNT");
-    if (val) {
+    if (val && *val) {
         int maximum = atoi(val);
         if (c > maximum) {
             c = maximum;
         }
     }
-
+    /* never let c be less than one, no matter what the environment
+     * variable is set to */
+    if (c < 1) {
+        c = 1;
+    }
     return c;
 }
 
@@ -89,35 +93,40 @@ static SECStatus
 sftkdb_passwordToKey(SFTKDBHandle *keydb, SECItem *salt,
                      const char *pw, SECItem *key)
 {
-    SHA1Context *cx = NULL;
+    HASH_HashType hType;
+    const SECHashObject *hashObj;
+    void *ctx = NULL;
     SECStatus rv = SECFailure;
+
+    hType = salt->len == SHA384_LENGTH ? HASH_AlgSHA384 : HASH_AlgSHA1;
+    hashObj = HASH_GetRawHashObject(hType);
 
     if (!pw) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
 
-    key->data = PORT_Alloc(SHA1_LENGTH);
+    key->data = PORT_Alloc(hashObj->length);
     if (key->data == NULL) {
         goto loser;
     }
-    key->len = SHA1_LENGTH;
+    key->len = hashObj->length;
 
-    cx = SHA1_NewContext();
-    if (cx == NULL) {
+    ctx = hashObj->create();
+    if (ctx == NULL) {
         goto loser;
     }
-    SHA1_Begin(cx);
+    hashObj->begin(ctx);
     if (salt && salt->data) {
-        SHA1_Update(cx, salt->data, salt->len);
+        hashObj->update(ctx, salt->data, salt->len);
     }
-    SHA1_Update(cx, (unsigned char *)pw, PORT_Strlen(pw));
-    SHA1_End(cx, key->data, &key->len, key->len);
+    hashObj->update(ctx, (unsigned char *)pw, PORT_Strlen(pw));
+    hashObj->end(ctx, key->data, &key->len, key->len);
     rv = SECSuccess;
 
 loser:
-    if (cx) {
-        SHA1_DestroyContext(cx, PR_TRUE);
+    if (ctx) {
+        hashObj->destroy(ctx, PR_TRUE);
     }
     if (rv != SECSuccess) {
         if (key->data != NULL) {
@@ -464,7 +473,6 @@ sftkdb_pbehash(SECOidTag sigOid, SECItem *passKey,
     HASH_HashType hashType = HASH_AlgNULL;
     const SECHashObject *hashObj;
     unsigned char addressData[SDB_ULONG_SIZE];
-
     hashType = HASH_FromHMACOid(param->encAlg);
     if (hashType == HASH_AlgNULL) {
         PORT_SetError(SEC_ERROR_INVALID_ALGORITHM);
@@ -1210,6 +1218,7 @@ sftk_updateEncrypted(PLArenaPool *arena, SFTKDBHandle *keydb,
 {
     CK_ATTRIBUTE_TYPE privAttrTypes[] = {
         CKA_VALUE,
+        CKA_SEED,
         CKA_PRIVATE_EXPONENT,
         CKA_PRIME_1,
         CKA_PRIME_2,
@@ -1358,6 +1367,7 @@ sftkdb_ChangePassword(SFTKDBHandle *keydb,
     unsigned char saltData[SDB_MAX_META_DATA_LEN];
     unsigned char valueData[SDB_MAX_META_DATA_LEN];
     int iterationCount = getPBEIterationCount();
+    int preferred_salt_length;
     CK_RV crv;
     SDB *db;
 
@@ -1389,7 +1399,18 @@ sftkdb_ChangePassword(SFTKDBHandle *keydb,
             goto loser;
         }
     } else {
-        salt.len = SHA1_LENGTH;
+        salt.len = 0;
+    }
+
+    preferred_salt_length = SHA384_LENGTH;
+
+    /* Prefer SHA-1 if the password is NULL */
+    if (!newPin || *newPin == 0) {
+        preferred_salt_length = SHA1_LENGTH;
+    }
+
+    if (salt.len != preferred_salt_length) {
+        salt.len = preferred_salt_length;
         RNG_GenerateGlobalRandomBytes(salt.data, salt.len);
     }
 
@@ -1426,6 +1447,14 @@ sftkdb_ChangePassword(SFTKDBHandle *keydb,
             goto loser;
         }
         myClass = CKO_PUBLIC_KEY;
+        crv = sftkdb_convertObjects(certdb, &objectType, 1, &newKey,
+                                    iterationCount);
+        if (crv != CKR_OK) {
+            rv = SECFailure;
+            goto loser;
+        }
+
+        myClass = CKO_TRUST;
         crv = sftkdb_convertObjects(certdb, &objectType, 1, &newKey,
                                     iterationCount);
         if (crv != CKR_OK) {

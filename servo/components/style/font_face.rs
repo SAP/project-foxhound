@@ -6,27 +6,26 @@
 //!
 //! [ff]: https://drafts.csswg.org/css-fonts/#at-font-face-rule
 
+use crate::derives::*;
 use crate::error_reporting::ContextualParseError;
 use crate::parser::{Parse, ParserContext};
 use crate::properties::longhands::font_language_override;
 use crate::shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
-use crate::str::CssStringWriter;
 use crate::values::computed::font::{FamilyName, FontStretch};
 use crate::values::generics::font::FontStyle as GenericFontStyle;
 use crate::values::specified::font::{
-    AbsoluteFontWeight, FontStretch as SpecifiedFontStretch, FontFeatureSettings,
+    AbsoluteFontWeight, FontFeatureSettings, FontStretch as SpecifiedFontStretch,
     FontVariationSettings, MetricsOverride, SpecifiedFontStyle,
 };
 use crate::values::specified::url::SpecifiedUrl;
 use crate::values::specified::{Angle, NonNegativePercentage};
-use cssparser::UnicodeRange;
 use cssparser::{
-    AtRuleParser, CowRcStr, DeclarationParser, Parser, ParserState, QualifiedRuleParser,
-    RuleBodyItemParser, RuleBodyParser, SourceLocation,
+    match_ignore_ascii_case, AtRuleParser, CowRcStr, DeclarationParser, Parser, ParserState,
+    QualifiedRuleParser, RuleBodyItemParser, RuleBodyParser, SourceLocation, UnicodeRange,
 };
 use selectors::parser::SelectorParseErrorKind;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError};
+use style_traits::{CssStringWriter, CssWriter, ParseError};
 use style_traits::{StyleParseErrorKind, ToCss};
 
 /// A source for a font-face rule.
@@ -399,7 +398,10 @@ impl Parse for FontStyle {
     ) -> Result<Self, ParseError<'i>> {
         // We parse 'normal' explicitly here to distinguish it from 'oblique 0deg',
         // because we must not accept a following angle.
-        if input.try_parse(|i| i.expect_ident_matching("normal")).is_ok() {
+        if input
+            .try_parse(|i| i.expect_ident_matching("normal"))
+            .is_ok()
+        {
             return Ok(FontStyle::Oblique(Angle::zero(), Angle::zero()));
         }
 
@@ -554,8 +556,8 @@ impl Parse for Source {
         };
 
         // Parse optional tech()
-        let tech_flags = if static_prefs::pref!("layout.css.font-tech.enabled") &&
-            input
+        let tech_flags = if static_prefs::pref!("layout.css.font-tech.enabled")
+            && input
                 .try_parse(|input| input.expect_function_matching("tech"))
                 .is_ok()
         {
@@ -577,7 +579,7 @@ macro_rules! is_descriptor_enabled {
         static_prefs::pref!("layout.css.font-variations.enabled")
     };
     ("size-adjust") => {
-        static_prefs::pref!("layout.css.size-adjust.enabled")
+        cfg!(feature = "gecko")
     };
     ($name:tt) => {
         true
@@ -684,7 +686,7 @@ macro_rules! font_face_descriptors {
             ///
             /// However both are required for the rule to represent an actual font face.
             #[cfg(feature = "servo")]
-            pub fn font_face(&self) -> Option<FontFace> {
+            pub fn font_face(&self) -> Option<FontFace<'_>> {
                 if $( self.$m_ident.is_some() )&&* {
                     Some(FontFace(self))
                 } else {

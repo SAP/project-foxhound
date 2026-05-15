@@ -41,7 +41,7 @@ mozilla::ipc::IPCResult WebSocketConnectionParent::RecvOnTransportAvailable(
   }
 
   if (mUpgradeListener) {
-    Unused << mUpgradeListener->OnWebSocketConnectionAvailable(this);
+    (void)mUpgradeListener->OnWebSocketConnectionAvailable(this);
     mUpgradeListener = nullptr;
   }
   return IPC_OK();
@@ -62,7 +62,7 @@ mozilla::ipc::IPCResult WebSocketConnectionParent::RecvOnUpgradeFailed(
   MOZ_ASSERT(mBackgroundThread->IsOnCurrentThread());
 
   if (mUpgradeListener) {
-    Unused << mUpgradeListener->OnUpgradeFailed(aReason);
+    (void)mUpgradeListener->OnUpgradeFailed(aReason);
     mUpgradeListener = nullptr;
   }
   return IPC_OK();
@@ -167,7 +167,7 @@ nsresult WebSocketConnectionParent::StartReading() {
       return;
     }
 
-    Unused << self->SendStartReading();
+    (void)self->SendStartReading();
   };
 
   if (mBackgroundThread->IsOnCurrentThread()) {
@@ -191,7 +191,7 @@ void WebSocketConnectionParent::DrainSocketData() {
     return;
   }
 
-  Unused << SendDrainSocketData();
+  (void)SendDrainSocketData();
 }
 
 nsresult WebSocketConnectionParent::GetSecurityInfo(

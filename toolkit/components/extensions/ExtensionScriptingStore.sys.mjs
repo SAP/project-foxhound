@@ -179,6 +179,7 @@ export const makeInternalContentScript = (
       // upfront.
       checkPermissions: true,
       cssPaths,
+      cssOrigin: options.cssOrigin || "author",
       excludeMatches: options.excludeMatches,
       jsPaths,
       matches: options.matches,
@@ -214,6 +215,7 @@ export const makePublicContentScript = (extension, internalScript) => {
     runAt: internalScript.runAt,
     world: internalScript.world,
     persistAcrossSessions: internalScript.persistAcrossSessions,
+    cssOrigin: internalScript.cssOrigin,
   };
 
   if (internalScript.cssPaths.length) {

@@ -7,7 +7,6 @@
 #ifndef ReportDecodeResultTask_h_
 #define ReportDecodeResultTask_h_
 
-#include "mozilla/Attributes.h"
 #include "MediaBufferDecoder.h"
 
 namespace mozilla {

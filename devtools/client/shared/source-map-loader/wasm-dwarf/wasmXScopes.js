@@ -90,11 +90,12 @@ function getVariables(scope, pc) {
               expr: item.location ? decodeExprAt(item.location, pc) : null,
             });
             break;
-          case "lexical_block":
+          case "lexical_block": {
             // FIXME build scope blocks (instead of combining)
             const tmp = getVariables(item, pc);
             result = [...tmp.vars, ...result];
             break;
+          }
         }
         return result;
       }, [])

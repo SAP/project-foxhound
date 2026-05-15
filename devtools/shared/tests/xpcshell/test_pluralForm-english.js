@@ -5,9 +5,7 @@
 "use strict";
 
 /**
- * This unit test makes sure the plural form for Irish Gaeilge is working by
- * using the makeGetter method instead of using the default language (by
- * development), English.
+ * This unit test uses the default language (for development), English.
  */
 
 const { PluralForm } = require("resource://devtools/shared/plural-form.js");

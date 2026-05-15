@@ -26,7 +26,14 @@ add_task(async function testInvalidCapabilityIgnored() {
   let promiseSubDialogLoaded = promiseLoadSubDialog(
     "chrome://browser/content/preferences/dialogs/permissions.xhtml"
   );
-  doc.getElementById("cookieExceptions").doCommand();
+
+  let cookieExceptionsButton = doc.getElementById("cookieExceptions");
+  cookieExceptionsButton.scrollIntoView();
+  EventUtils.synthesizeMouseAtCenter(
+    cookieExceptionsButton,
+    {},
+    doc.ownerGlobal
+  );
 
   let win = await promiseSubDialogLoaded;
   doc = win.document;

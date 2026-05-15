@@ -9,24 +9,26 @@
  */
 
 #include "nsSyncLoadService.h"
+
+#include <algorithm>
+
+#include "ReferrerInfo.h"
+#include "mozilla/dom/Document.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"  // for kLoadAsData
+#include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIHttpChannel.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsIPrincipal.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
-#include "nsString.h"
-#include "nsWeakReference.h"
-#include "mozilla/dom/Document.h"
-#include "nsIHttpChannel.h"
-#include "nsIPrincipal.h"
-#include "nsContentUtils.h"  // for kLoadAsData
-#include "nsThreadUtils.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
-#include "ReferrerInfo.h"
-#include <algorithm>
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "nsWeakReference.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -159,7 +161,8 @@ nsresult nsSyncLoader::LoadDocument(nsIChannel* aChannel, bool aChannelIsSync,
 
   // Create document
   nsCOMPtr<Document> document;
-  rv = NS_NewXMLDocument(getter_AddRefs(document), nullptr, nullptr);
+  rv = NS_NewXMLDocument(getter_AddRefs(document), nullptr, nullptr,
+                         LoadedAsData::AsData);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Start the document load. Do this before we attach the load listener

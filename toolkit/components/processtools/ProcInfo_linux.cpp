@@ -22,6 +22,26 @@
 
 namespace mozilla {
 
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  if (!aResult) {
+    return NS_ERROR_INVALID_ARG;
+  }
+  FILE* f = fopen("/proc/self/statm", "r");
+  if (!f) {
+    return NS_ERROR_FAILURE;
+  }
+  size_t vmSize = 0, resident = 0, shared = 0;
+  const int kExpected = 3;
+  int nread = fscanf(f, "%zu %zu %zu", &vmSize, &resident, &shared);
+  fclose(f);
+
+  if (nread != kExpected) {
+    return NS_ERROR_FAILURE;
+  }
+  *aResult = uint64_t(resident - shared) * getpagesize();
+  return NS_OK;
+}
+
 int GetCycleTimeFrequencyMHz() { return 0; }
 
 // StatReader can parse and tokenize a POSIX stat file.

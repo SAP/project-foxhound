@@ -5,11 +5,6 @@
 
 requestLongerTimeout(4);
 
-const { EnterprisePolicyTesting, PoliciesPrefTracker } =
-  ChromeUtils.importESModule(
-    "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
-  );
-
 ChromeUtils.defineESModuleGetters(this, {
   DoHConfigController: "moz-src:///toolkit/components/doh/DoHConfig.sys.mjs",
   DoHController: "moz-src:///toolkit/components/doh/DoHController.sys.mjs",

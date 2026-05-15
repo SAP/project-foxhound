@@ -7,7 +7,6 @@
 #ifndef mozilla_StoragePrincipalHelper_h
 #define mozilla_StoragePrincipalHelper_h
 
-#include <cstdint>
 #include "ErrorList.h"
 #include "nsStringFwd.h"
 

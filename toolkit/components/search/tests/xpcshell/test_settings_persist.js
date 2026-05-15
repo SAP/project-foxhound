@@ -15,15 +15,15 @@ const CONF_WITH_TEMP = [
 const CONF_WITHOUT_TEMP = [{ identifier: "permanent_engine" }];
 
 async function startup() {
+  SearchService.reset();
+
   let settingsFileWritten = promiseAfterSettings();
-  let ss = new SearchService();
-  await ss.init(false);
+  await SearchService.init(false);
   await settingsFileWritten;
-  return ss;
 }
 
-async function visibleEngines(ss) {
-  return (await ss.getVisibleEngines()).map(e => e._name);
+async function visibleEngines() {
+  return (await SearchService.getVisibleEngines()).map(e => e._name);
 }
 
 add_setup(async function () {
@@ -31,44 +31,40 @@ add_setup(async function () {
   // This is only needed as otherwise events will not be properly notified
   // due to https://searchfox.org/mozilla-central/rev/5f0a7ca8968ac5cef8846e1d970ef178b8b76dcc/toolkit/components/search/SearchSettings.sys.mjs#41-42
   let settingsFileWritten = promiseAfterSettings();
-  await Services.search.init(false);
-  Services.search.wrappedJSObject._removeObservers();
+  await SearchService.init(false);
   await settingsFileWritten;
 });
 
 add_task(async function () {
-  let ss = await startup();
+  await startup();
   Assert.ok(
-    (await visibleEngines(ss)).includes("temp_engine"),
+    (await visibleEngines()).includes("temp_engine"),
     "Should have both engines on first startup"
   );
 
   let settingsFileWritten = promiseAfterSettings();
-  let engine = await ss.getEngineByName("temp_engine");
-  await ss.removeEngine(engine);
+  let engine = await SearchService.getEngineByName("temp_engine");
+  await SearchService.removeEngine(engine);
   await settingsFileWritten;
 
   Assert.ok(
-    !(await visibleEngines(ss)).includes("temp_engine"),
+    !(await visibleEngines()).includes("temp_engine"),
     "temp_engine has been removed, only permanent_engine should remain"
   );
 
-  ss._removeObservers();
   SearchTestUtils.setRemoteSettingsConfig(CONF_WITHOUT_TEMP);
-  ss = await startup();
+  await startup();
 
   Assert.ok(
-    !(await visibleEngines(ss)).includes("temp_engine"),
+    !(await visibleEngines(SearchService)).includes("temp_engine"),
     "Updated to new configuration that doesnt have temp_engine"
   );
 
-  ss._removeObservers();
   SearchTestUtils.setRemoteSettingsConfig(CONF_WITH_TEMP);
-
-  ss = await startup();
+  await startup();
 
   Assert.ok(
-    !(await visibleEngines(ss)).includes("temp_engine"),
+    !(await visibleEngines()).includes("temp_engine"),
     "Configuration now includes temp_engine but we should remember its removal"
   );
 });

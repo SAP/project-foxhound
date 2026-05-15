@@ -17,6 +17,12 @@
                 <menuitem id="menu_newNavigator"
                           key="key_newNavigator"
                           command="cmd_newNavigator" data-l10n-id="menu-file-new-window"/>
+                <menuitem id="menu_newAIWindow"
+                          command="Tools:AIWindow"
+                          data-l10n-id="menu-file-new-ai-window"/>
+                <menuitem id="menu_newClassicWindow"
+                          command="Tools:ClassicWindow"
+                          data-l10n-id="menu-file-new-classic-window"/>
                 <menuitem id="menu_newPrivateWindow"
                           command="Tools:PrivateBrowsing"
                           key="key_privatebrowsing" data-l10n-id="menu-file-new-private-window"/>
@@ -148,7 +154,7 @@
                     <menuitem id="toggle_zoom"
                               type="checkbox"
                               command="cmd_fullZoomToggle"
-                              checked="false" data-l10n-id="menu-view-full-zoom-toggle"/>
+                              data-l10n-id="menu-view-full-zoom-toggle"/>
                   </menupopup>
                 </menu>
                 <menu id="pageStyleMenu" data-l10n-id="menu-view-page-style-menu">
@@ -208,6 +214,11 @@
                 <menuitem id="menu_showAllHistory"
                           key="showAllHistoryKb"
                           command="Browser:ShowAllHistory" data-l10n-id="menu-history-show-all-history"/>
+
+                <menuitem id="chatsHistoryMenu" class="chats-history-menuitem"
+                          data-l10n-id="menu-history-chats"
+                          disabled="true" hidden="true" command="Tools:ChatsHistory"/>
+
                 <menuitem id="sanitizeItem"
                           key="key_sanitize"
                           command="Tools:Sanitize" data-l10n-id="menu-history-clear-recent-history"/>
@@ -249,8 +260,16 @@
 #endif
                   </menupopup>
                 </menu>
+
+                <menuseparator id="startChatHistorySeparator" hidden="true"/>
+                <menuitem id="recentChatsHeader" class="recent-chats-header"
+                          data-l10n-id="menu-history-chats-recent"
+                          disabled="true" hidden="true"/>
+                <!-- Chat history menu items -->
+
                 <menuseparator id="startHistorySeparator"
                                class="hide-if-empty-places-result"/>
+
               </menupopup>
             </menu>
 
@@ -322,8 +341,12 @@
     </menupopup>
   </menu>
 
-  <menu id="profiles-menu" data-l10n-id="menu-profiles" hidden="true">
+  <menu id="profiles-menu" data-l10n-id="menu-profiles-menu" hidden="true">
     <menupopup id="menu_ProfilesPopup">
+      <!-- Profile list gets inserted here -->
+      <menuitem id="menu_newProfile" class="menuitem-iconic" command="Profiles:CreateProfile" data-l10n-id="menu-profiles-new-profile" />
+      <menuseparator id="profilesSeparator" />
+      <menuitem id="menu_manageProfiles" command="Profiles:ManageProfiles" data-l10n-id="menu-profiles-manage-profiles" />
     </menupopup>
   </menu>
 

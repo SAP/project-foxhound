@@ -7,8 +7,8 @@
 #ifndef ConstantSourceNode_h_
 #define ConstantSourceNode_h_
 
-#include "AudioScheduledSourceNode.h"
 #include "AudioParam.h"
+#include "AudioScheduledSourceNode.h"
 #include "mozilla/dom/ConstantSourceNodeBinding.h"
 
 namespace mozilla::dom {

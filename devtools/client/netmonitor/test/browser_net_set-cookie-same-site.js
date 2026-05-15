@@ -18,7 +18,7 @@ add_task(async function () {
   store.dispatch(Actions.batchEnable(false));
 
   let wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   wait = waitForDOM(document, ".headers-overview");

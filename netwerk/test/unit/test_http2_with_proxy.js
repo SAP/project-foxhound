@@ -3,7 +3,9 @@
 "use strict";
 
 /* import-globals-from http2_test_common.js */
-/* import-globals-from head_servers.js */
+
+const { NodeHTTP2ProxyServer, NodeHTTPSProxyServer } =
+  ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
 
 // We don't normally allow localhost channels to be proxied, but this
 // is easier than updating all the certs and/or domains.
@@ -233,6 +235,12 @@ add_task(async function do_test_http2_folded_header() {
 add_task(async function do_test_http2_empty_data() {
   const { httpProxyConnectResponseCode } =
     await test_http2_empty_data(serverPort);
+  Assert.equal(httpProxyConnectResponseCode, 200);
+});
+
+add_task(async function do_test_http2_continuation_stream_zero() {
+  const { httpProxyConnectResponseCode } =
+    await test_http2_continuation_stream_zero(serverPort);
   Assert.equal(httpProxyConnectResponseCode, 200);
 });
 

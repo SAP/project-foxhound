@@ -46,16 +46,9 @@ def search_path(paths, path):
 # Filter-out -std= flag from the preprocessor command, as we're not preprocessing
 # C or C++, and the command would fail with the flag.
 def filter_preprocessor(cmd):
-    prev = None
     for arg in cmd:
-        if arg == "-Xclang":
-            prev = arg
-            continue
-        if not arg.startswith("-std="):
-            if prev:
-                yield prev
+        if not arg.startswith(("-std=", "-std:")):
             yield arg
-        prev = None
 
 
 # Preprocess all the direct and indirect inputs of midl, and put all the
@@ -164,7 +157,7 @@ def midl(out, input, *flags):
         command.append("-Oicf")
         command.append(relativize(input, base))
         print("Executing:", " ".join(command))
-        result = subprocess.run(command, cwd=base)
+        result = subprocess.run(command, check=False, cwd=base)
         return result.returncode
     finally:
         if tmpdir:

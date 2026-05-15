@@ -16,10 +16,10 @@
 #include "mozilla/Variant.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 
 struct nsID;
 

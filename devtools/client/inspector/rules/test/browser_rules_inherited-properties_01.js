@@ -24,7 +24,7 @@ add_task(async function () {
 });
 
 function simpleInherit(inspector, view) {
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
   is(elementStyle.rules.length, 2, "Should have 2 rules.");
 
   const elementRule = elementStyle.rules[0];

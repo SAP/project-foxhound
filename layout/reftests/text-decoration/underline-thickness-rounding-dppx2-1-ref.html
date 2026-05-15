@@ -1,0 +1,23 @@
+<!doctype html>
+<html reftest-zoom="2.0">
+<meta charset="utf-8">
+<title>Reference: Underline thickness 1px at effective 2x zoom (2 device px)</title>
+<style>
+  html, body { margin: 0; background: white; }
+  .test {
+    font: 40px/1 sans-serif;
+    color: black;
+    text-decoration-line: underline;
+    text-decoration-style: solid;
+    text-decoration-color: black;
+    text-decoration-skip-ink: none;
+    /* 0.5 CSS px -> 1 device px at 2x zoom */
+    text-decoration-thickness: 0.5px;
+  }
+  .pad { height: 40px; }
+</style>
+<div style="width:240px">
+  <div class="pad"></div>
+  <div class="test">TEST TEST TEST</div>
+</div>
+</html>

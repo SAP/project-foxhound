@@ -10,18 +10,17 @@
 
  */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/intl/LocaleService.h"
-#include "mozilla/intl/Collator.h"
+#include "nsXULContentUtils.h"
 
-#include "nsCOMPtr.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "nsXULContentUtils.h"
-#include "nsString.h"
+#include "mozilla/intl/Collator.h"
+#include "mozilla/intl/LocaleService.h"
+#include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsString.h"
 
 using namespace mozilla;
 

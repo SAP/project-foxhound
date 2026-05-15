@@ -139,12 +139,16 @@ function background(events) {
     );
 
     let deletedAny = false;
+    dump(`*** headers = ${JSON.stringify(headers)}\n`);
     for (let j = headers.length; j-- > 0; ) {
       if (remove.includes(headers[j].name.toLowerCase())) {
         headers.splice(j, 1);
         deletedAny = true;
       }
     }
+    dump(
+      `*** headers(after) = ${JSON.stringify(headers)}, deletedAny=${deletedAny}\n`
+    );
     browser.test.assertTrue(
       deletedAny,
       `at least one ${phase}Headers element to delete`

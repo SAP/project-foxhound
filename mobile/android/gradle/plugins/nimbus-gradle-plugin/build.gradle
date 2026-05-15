@@ -1,0 +1,22 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+import org.apache.tools.ant.filters.ReplaceTokens
+
+plugins {
+    id 'groovy'
+    id 'maven-publish'
+    id 'groovy-gradle-plugin'
+}
+
+gradlePlugin {
+    plugins.register("org.mozilla.nimbus-gradle-plugin") {
+        id = "org.mozilla.nimbus-gradle-plugin"
+        implementationClass = "org.mozilla.tooling.nimbus.NimbusPlugin"
+    }
+}
+
+dependencies {
+    implementation gradleApi()
+    implementation localGroovy()
+}

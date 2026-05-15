@@ -4,6 +4,8 @@
 
 package mozilla.components.feature.downloads
 
+import mozilla.components.support.utils.DateTimeProvider
+
 private const val NUM_MS_IN_SEC = 1000f
 
 /**

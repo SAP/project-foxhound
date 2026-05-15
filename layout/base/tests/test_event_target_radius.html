@@ -3,6 +3,8 @@
 <!--
 https://bugzilla.mozilla.org/show_bug.cgi?id=780847
 https://bugzilla.mozilla.org/show_bug.cgi?id=1733509
+https://bugzilla.mozilla.org/show_bug.cgi?id=1957321
+https://bugzilla.mozilla.org/show_bug.cgi?id=1983191
 -->
 <head>
   <title>Test radii for mouse events</title>
@@ -40,9 +42,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1733509
 
   <div class="target" style="transform:translate(-80px,0);" id="t4" onmousedown="x=1" hidden></div>
 
-  <div class="target" style="left:0; z-index:1" id="t5_left" onmousedown="x=1" hidden></div>
-  <div class="target" style="left:106px;" id="t5_right" onmousedown="x=1" hidden></div>
-  <div class="target" style="left:0; top:210px;" id="t5_below" onmousedown="x=1" hidden></div>
+  <div class="target" style="left:0; top:0; z-index:1" id="t5_left" onmousedown="x=1" hidden></div>
+  <div class="target" style="left:111px; top:0" id="t5_right" onmousedown="x=1" hidden></div>
+  <div class="target" style="left:0; top:111px" id="t5_below" onmousedown="x=1" hidden></div>
 
   <div class="target" id="t6" onmousedown="x=1" style="width: 300px" hidden>
     <div id="t6_inner" style="position:absolute; left:-40px; top:20px; width:60px; height:60px; background:yellow;"></div>
@@ -88,6 +90,29 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1733509
   <div id="t16" class="target" ontouchend="x=1" style="padding: 50px" hidden>
     <div id="t16_mouseListener" onmousedown="x=1" style="width: 50px; height: 50px; background: lightcyan;"></div>
   </div>
+  <div id="t17" class="target" style="width: 100px; position: absolute; padding: 0" hidden>
+    <div id="t17_container" style="height: 20px; margin: 0; padding: 0; overflow: hidden; white-space: nowrap">
+      <span id="t17_clickable_partially_overlapped" onclick="x=1">overlapped or clipped by t17_clickable_cover</span>
+    </div>
+    <!-- overlaps the right half of t17_container -->
+    <span id="t17_clickable_cover" onclick="x=1" style="width: 50px; height: 20px; position: absolute; right: 0; top: 1px">cover</span>
+  </div>
+  <!-- t18 is the counter case of t17, unrealistic use case, though -->
+  <div id="t18" class="target" style="width: 100px; position: absolute; padding: 0" hidden>
+    <div id="t18_container" style="height: 20px; margin: 0; padding: 0; overflow: hidden; white-space: nowrap">
+      <span id="t18_clickable_bigger_z_index_but_clipped" style="position:relative; z-index: 99" onclick="x=1">topmost frame, but clipped by t18_container due to its long text</span>
+    </div>
+    <span id="t18_clickable_partially_overlapped" onclick="x=1" style="width: 120px; height: 20px; position: absolute; right: 0; top: 1px">cover</span>
+  </div>
+  <div id="t19" class="target" onclick="x=1" style="padding: 10px" hidden>
+    <span id="t19_child">foo</span>
+  </div>
+  <div id="t20" class="target" onclick="x=1" style="padding: 10px; cursor: pointer" hidden>
+    <span id="t20_child">foo</span>
+  </div>
+  <div id="t21" class="target" onclick="x=1" style="padding: 10px;" hidden>
+    <span id="t21_child" style="cursor: pointer">foo</span>
+  </div>
 </div>
 <pre id="test">
 <script type="application/javascript">
@@ -103,15 +128,20 @@ function startTest() {
 
 
 SimpleTest.waitForExplicitFinish();
+// SimpleTest.requestCompleteLog();
 
-let oldResolution = 1.0;
+const kIsAndroid = navigator.appVersion.includes("Android");
+
+function stringifyBoundingClientRect(aId) {
+  const rect = document.getElementById(aId).getBoundingClientRect();
+  return `x: ${rect.x}, y: ${rect.y}, right: ${rect.right}, bottom: ${rect.bottom} (${aId})`;
+}
+
+function stringifyPoint(aPoint) {
+  return `x: ${aPoint.x}, y: ${aPoint.y}`;
+}
 
 function endTest() {
-  if (navigator.appVersion.includes("Android")) {
-    // Restore any resolution that was changed at the end of the test.
-    let topUtils = SpecialPowers.getDOMWindowUtils(window.top);
-    topUtils.setResolutionAndScaleTo(oldResolution);
-  }
   SimpleTest.finish();
 }
 
@@ -136,8 +166,25 @@ function testTouch(idPosition, dx, dy, idTarget, msg, options) {
   touchTarget = null;
   synthesizeTouch(document.getElementById(idPosition), dx, dy, options || {});
   try {
-    is(touchTarget.id, idTarget,
-       "checking '" + idPosition + "' offset " + dx + "," + dy + " [" + msg + "]");
+    if (Array.isArray(idTarget)) {
+      if (touchTarget === null) {
+        ok(
+          idTarget.includes(null),
+          `checking '${idPosition}' offset ${dx},${dy} [${msg}]: null is not allowed`
+        );
+      } else {
+        ok(
+          idTarget.includes(touchTarget.id),
+          `checking '${idPosition}' offset ${dx},${dy} [${msg}]: "${idTarget.id}" is not allowed`
+        );
+      }
+    } else {
+      is(
+        touchTarget.id,
+        idTarget,
+        `checking '${idPosition}' offset ${dx},${dy} [${msg}]`
+      );
+    }
   } catch (ex) {
     ok(false, "checking '" + idPosition + "' offset " + dx + "," + dy + " [" + msg + "]; got " + touchTarget);
   }
@@ -148,23 +195,52 @@ function setShowing(id, show) {
   e.hidden = !show;
 }
 
+function getTopWindowResolution() {
+  return SpecialPowers.getDOMWindowUtils(window.top).getResolution();
+}
+
+function getTopWindowDevicePixelRatio() {
+  return window.top.devicePixelRatio;
+}
+
+function getTopWindowDesktopToDeviceScale() {
+  return SpecialPowers.wrap(window.top).desktopToDeviceScale;
+}
+
+function maybeGetWindowInnerPointInUnscaledCSSPixels() {
+  // See _getScreenXInUnscaledCSSPixels and _getScreenYInUnscaledCSSPixels in EventUtils.js
+  const point = {
+    x: window.mozInnerScreenX,
+    y: window.mozInnerScreenX,
+  };
+  try {
+    const resolution = getTopWindowResolution();
+    point.x = window.top.mozInnerScreenX + (window.mozInnerScreenX - window.top.mozInnerScreenX) * resolution;
+    point.y = window.top.mozInnerScreenY + (window.mozInnerScreenY - window.top.mozInnerScreenY) * resolution;
+  } catch (e) {
+    // XXX fission+xorigin test throws permission denied since win.top is
+    //     cross-origin.
+  }
+  return point;
+}
+
 var mm;
 function runTest() {
+  info(
+    `Starting tests within the top window whose values are:\n  resolution: ${
+      getTopWindowResolution()
+    }\n  devicePixelRatio: ${getTopWindowDevicePixelRatio()}\n  desktopToDeviceScale: ${
+      getTopWindowDesktopToDeviceScale()
+    }\n  window inner position: ${stringifyPoint(maybeGetWindowInnerPointInUnscaledCSSPixels())}`
+  );
+
   let resolution = 1;
-  if (navigator.appVersion.includes("Android")) {
-    // Choose a roundish number for the resolution so that the "midpoint" test below
-    // doesn't mis-target an element due to rounding error.
-    let desiredResolution = 0.75;
-    let topUtils = SpecialPowers.getDOMWindowUtils(window.top);
-    // Save the old resolution for restoration at the end of the test.
-    oldResolution = topUtils.getResolution();
-    topUtils.setResolutionAndScaleTo(desiredResolution);
+  if (kIsAndroid) {
     // This test runs on Android, zoomed out. Therefore we need to account
     // for the resolution as well, because the fluff area is relative to screen
     // pixels rather than CSS pixels.
-    resolution = topUtils.getResolution();
-    // Make sure we were actually able to zoom out to the desired level.
-    ok(resolution == desiredResolution, "Resolution is " + resolution);
+    resolution = getTopWindowResolution();
+    ok(resolution <= 1, "Resolution is " + resolution);
   }
   mm = SpecialPowers.getDOMWindowUtils(window.top).physicalMillimeterInCSSPixels / resolution;
   ok(4*mm >= 10, "WARNING: mm " + mm + " too small in this configuration. Test results will be bogus");
@@ -249,17 +325,28 @@ function test3() {
 
   // Test the prioritization of multiple targets based on distance to
   // the target.
-  setShowing("t5_left", true);
-  setShowing("t5_right", true);
-  setShowing("t5_below", true);
+  setShowing("t5_left", true);   // 0-99    - 0-99
+  setShowing("t5_right", true);  // 111-210 - 0-99
+  setShowing("t5_below", true);  // 0-99    - 111-210
+  info(
+    `t5:\n${stringifyBoundingClientRect("t5_left")}\n${
+      stringifyBoundingClientRect("t5_right")
+    }\n${stringifyBoundingClientRect("t5_below")}`
+  );
+
   testMouseClick("t5_left", 102, 10, "t5_left", "closest DIV is left");
-  testMouseClick("t5_left", 102.5, 10, "t5_left",
-    "closest DIV to midpoint is left because of its higher z-index");
-  testMouseClick("t5_left", 104, 10, "t5_right", "closest DIV is right");
-  testMouseClick("t5_left", 10, 104, "t5_left", "closest DIV is left");
-  testMouseClick("t5_left", 10, 105, "t5_left",
-    "closest DIV to midpoint is left because of its higher z-index");
-  testMouseClick("t5_left", 10, 106, "t5_below", "closest DIV is below");
+  testMouseClick("t5_left", 107, 10, "t5_right", "closest DIV is right");
+  testMouseClick("t5_left", 10, 102, "t5_left", "closest DIV is left");
+  testMouseClick("t5_left", 10, 107, "t5_below", "closest DIV is below");
+  // We'd like to check the behavior when clicking exactly center of 2 elements.
+  // However, it may be impossible if the resolution is not 1.0 because
+  // PositionedEventTargeting rounds border-box to device pixels.
+  if (!kIsAndroid || getTopWindowResolution() == 1.0) {
+    testMouseClick("t5_left", 105, 10, "t5_left",
+      "closest DIV to midpoint is left because of its higher z-index");
+    testMouseClick("t5_left", 10, 105, "t5_left",
+      "closest DIV to midpoint is left because of its higher z-index");
+  }
   setShowing("t5_left", false);
   setShowing("t5_right", false);
   setShowing("t5_below", false);
@@ -268,19 +355,31 @@ function test3() {
   // The following behaviors are questionable and may need to be changed.
   setShowing("t6", true);
   setShowing("t6_outer", true);
-  testMouseClick("t6_inner", -1, 10, "t6_inner",
+  info(
+    `t6:\n${stringifyBoundingClientRect("t6")}\n${
+      stringifyBoundingClientRect("t6_inner")
+    }\n${stringifyBoundingClientRect("t6_outer")}\n${
+      stringifyBoundingClientRect("t6_inner_clickable")
+    }`
+  );
+  testMouseClick("t6_inner", -2, 10, "t6_inner",
     "inner element is clickable because its parent is, even when it sticks outside parent");
-  testMouseClick("t6_inner", 39, -1, "t6_inner",
-    "when outside both inner and parent, but in range of both, the inner is selected");
-  testMouseClick("t6_inner", 45, -1, "t6_inner",
-    "clicking in clickable parent close to inner activates inner, not parent");
-  testMouseClick("t6_inner_clickable", 1, -1, "t6_inner",
+  // FIXME: This test or PositionedEventTargeting or its caller is broken.
+  // This tries to click a position where the same distance from both t6 and t6_inner.
+  // However, the axis is not same, along x-axis for t6 but along y-axis for t6_inner.
+  // This may cause clicking unexpected position which may be near t6 due to the
+  // rounding issue.
+  // testMouseClick("t6_inner", 38, -2, "t6_inner",
+  //   "when outside both inner and parent, but in range of both, the inner is selected");
+  testMouseClick("t6_inner", 45, -2, "t6",
+    "clicking in clickable parent close to inner shouldn't get retargeted to the inner because of not clickable");
+  testMouseClick("t6_inner_clickable", 2, -2, "t6_inner",
     "clicking on inner doesn't get redirected to inner_clickable because they are both clickable");
-  testMouseClick("t6_inner_clickable", 1, 1, "t6_inner_clickable",
+  testMouseClick("t6_inner_clickable", 2, 2, "t6_inner_clickable",
     "clicking on inner_clickable doesn't get redirected to inner because they are both clickable");
-  testMouseClick("t6_inner_clickable", 45, -1, "t6_inner",
+  testMouseClick("t6_inner_clickable", 45, -2, "t6_inner",
     "clicking on inner while backed by its parent still doesn't get redirected to inner_clickable");
-  testMouseClick("t6_inner_clickable", 45, 1, "t6_inner_clickable",
+  testMouseClick("t6_inner_clickable", 45, 2, "t6_inner_clickable",
     "clicking on inner_clickable while backed by its parent still doesn't get redirected to inner");
   testMouseClick("t6_inner_clickable", 45, 6, "t6_inner_clickable",
     "clicking on parent near inner_clickable gets redirected to inner_clickable rather than inner because it is closer");
@@ -289,9 +388,9 @@ function test3() {
   // we want to click on t6, but at least 13mm away from t6_inner, so that
   // t6_inner doesn't steal the click.
   ok(13*mm < 280, "no point inside t6 that's not within radius of t6_inner; adjust layout of t6/inner/outer as needed");
-  testMouseClick("t6_outer", -240 + 13*mm, -1, "t6",
+  testMouseClick("t6_outer", -240 + 13*mm, -2, "t6",
     "clicking in clickable container close to outer activates parent, not outer");
-  testMouseClick("t6_outer", 1, 1, "t6_outer",
+  testMouseClick("t6_outer", 2, 2, "t6_outer",
     "clicking directly on the outer activates it");
   setShowing("t6", false);
   setShowing("t6_outer", false);
@@ -398,7 +497,7 @@ function test3() {
                                      ["ui.touch.radius.visitedweight", 50]]}, testTouchable);
 }
 
-function testTouchable() {
+async function testTouchable() {
   const kClickableIsTouchableForSingleTap =
     SpecialPowers.getBoolPref("ui.touch.radius.single_touch.treat_clickable_as_touchable");
   // Element "t" has a mousedown listener but no touch listener.  However, the
@@ -491,39 +590,118 @@ function testTouchable() {
   testTouch("t16", 10, -1, "t16", "touch outside t16 top edge");
   setShowing("t16", false);
 
-  test4();
-}
+  // t17_clickable_cover is on top of t17_clickable_partially_overlapped except its left side.
+  // Therefore, when its right side space is tapped, t17_clickable_partially_overlapped should not
+  // be clicked because the web app tries to prevent to work it as clickable at least over
+  // t17_clickable_cover.  However, when t17_clickable_partially_overlapped is directly tapped,
+  // it should be clickable, of course.
+  setShowing("t17", true);
+  rect = document.getElementById("t17_clickable_cover").getBoundingClientRect();
+  info(
+    `t17:\n${stringifyBoundingClientRect("t17_clickable_cover")}\n${
+      stringifyBoundingClientRect("t17_clickable_partially_overlapped")
+    }`
+  );
+  testTouch("t17_clickable_cover", rect.width + 2, 10, "t17_clickable_cover",
+            "touch right side of the cover should cause a click on the cover");
+  testTouch("t17_clickable_cover", -2, 10, "t17_clickable_partially_overlapped",
+            "touch left side of the cover should cause a click on the overlapped content");
+  setShowing("t17", false);
 
-// https://bugzilla.mozilla.org/show_bug.cgi?id=1733509
-function test4() {
+  // The counter testcase against t17.  This is not a realistic case at least this DOM structure and
+  // the styling.  However, let's check whether the basic strategy of GetClosest() in
+  // PositionedEventTargeting.cpp is not broken.  When the former frame,
+  // t18_clickable_bigger_z_index_but_clipped, has big `z-index` and clipped text frame, the text
+  // frame is checked before t18_clickable_partially_overlapped.  At this time, the text frame is
+  // ignored because the nearest point from the tapped position (right side of the container rect).
+  // However, the rect should not be subtracted from the region because the container element is
+  // still clickable, i.e., should be tested later.  With current logic, it won't be targeted later.
+  // However, t18_clickable_partially_overlapped should not be clicked because it's overlapped by
+  // t18_clickable_bigger_z_index_but_clipped.
+  setShowing("t18", true);
+  rect = document.getElementById("t18_clickable_bigger_z_index_but_clipped").getBoundingClientRect();
+  testTouch("t18_clickable_bigger_z_index_but_clipped", rect.width + 1, 10,
+            // We should not acceptable "t18_clickable_partially_overlapped" because the web app
+            // tries to hide it with "t18_clickable_bigger_z_index_but_clipped".
+            ["body", null],
+            "touch right side of the cover should cause a click on the cover");
+  testTouch("t18_clickable_bigger_z_index_but_clipped", -1, 10, "t18_clickable_partially_overlapped",
+            "touch left side of the cover should cause a click on the overlapped content");
+  setShowing("t18", false);
+
+  // If the user taps around a child element which is a clickable/touchable descendant of the
+  // directly tapped element, we should not redirect to the inner element because the event listener
+  // may work with the event target strictly. See bug 1978818.
+  // On the other hand, if the child is another clickable/touchable element, it should be preferred
+  // to make it easier to tap/click the smaller element.  Perhaps, the user does not tap there to
+  // do something with the outer element.  This case is tested in t6 and t15.
+  setShowing("t19", true);
+  rect = document.getElementById("t19_child").getBoundingClientRect();
+  testTouch("t19_child", -1, 10, "t19", "tap left of the span should not cause a click on the span");
+  testTouch("t19_child", 10, -1, "t19", "tap above of the span should not cause a click on the span");
+  testTouch("t19_child", rect.width + 1, 10, "t19", "tap right of the span should not cause a click on the span");
+  testTouch("t19_child", 10, rect.height + 1, "t19", "tap bottom of the span should not cause a click on the span");
+  testTouch("t19_child", 10, 10, "t19_child", "tap in the child span should cause a click on the span");
+  setShowing("t19", false);
+
+  // A variant of t19. `cursor: pointer` implies that it's clickable.  However, we should consider
+  // whether it's an independent clickable element or not in an clickable element only with the
+  // element type and the event listener.
+  setShowing("t20", true);
+  rect = document.getElementById("t20_child").getBoundingClientRect();
+  testTouch("t20_child", -1, 10, "t20", "tap left of the span should not cause a click on the span");
+  testTouch("t20_child", 10, -1, "t20", "tap above of the span should not cause a click on the span");
+  testTouch("t20_child", rect.width + 1, 10, "t20", "tap right of the span should not cause a click on the span");
+  testTouch("t20_child", 10, rect.height + 1, "t20", "tap bottom of the span should not cause a click on the span");
+  testTouch("t20_child", 10, 10, "t20_child", "tap in the child span should cause a click on the span");
+  setShowing("t20", false);
+
+  // A variant of t19 and t20. `cursor: pointer` is set to t21_child and t21 itself is a clickable
+  // element.  Then, t21_child might be different target from t21.  Therefore, tapping around
+  // t21_child should be retargeted to t21_child.
+  setShowing("t21", true);
+  rect = document.getElementById("t21_child").getBoundingClientRect();
+  testTouch("t21_child", -1, 10, "t21_child", "tap left of the span should cause a click on the span");
+  testTouch("t21_child", 10, -1, "t21_child", "tap above of the span should cause a click on the span");
+  testTouch("t21_child", rect.width + 1, 10, "t21_child", "tap right of the span should cause a click on the span");
+  testTouch("t21_child", 10, rect.height + 1, "t21_child", "tap bottom of the span should cause a click on the span");
+  testTouch("t21_child", 10, 10, "t21_child", "tap in the child span should cause a click on the span");
+  setShowing("t21", false);
+
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1733509
+  await waitUntilApzStable();
+  setShowing("t14", true);
   // Skip non-Fission for now because of bug 1890522
   if (SpecialPowers.Services.appinfo.fissionAutostart) {
-    waitUntilApzStable().then(async () => doTest4()).then(endTest);
-  } else {
-    endTest();
+    let iframeURL = SimpleTest.getTestFileURL("helper_bug1733509.html");
+    const iframe = document.querySelector("#t14iframe");
+    iframeURL = iframeURL.replace(window.location.origin, "https://example.com");
+    await setupIframe(iframe, iframeURL);
+    // todo: Also perform this test for an in-process iframe
+    // once bug 1890522 is fixed.
+    if (SpecialPowers.wrap(iframe).frameLoader.isRemoteFrame) {
+      const result = await SpecialPowers.spawn(iframe, [], async () => {
+        await content.wrappedJSObject.waitUntilApzStable();
+        var iframeEventTarget = null;
+        content.window.onmousedown = function (event) { iframeEventTarget = event.target; };
+        content.wrappedJSObject.synthesizeMouse(content.document.documentElement, 2, 2, {});
+        if (!iframeEventTarget) {
+          return nullptr;
+        }
+        return `<${iframeEventTarget.localName}${
+          iframeEventTarget.id ? ` id="${iframeEventTarget.id}"` : ""
+        }>`;
+      });
+      is(
+        result,
+        `<button id="btn">`,
+        "Failed to target button inside iframe"
+      );
+    }
   }
-}
-
-async function doTest4() {
-  setShowing("t14", true);
-
-  let iframeURL = SimpleTest.getTestFileURL("helper_bug1733509.html");
-  // todo: Also perform this test for an in-process iframe
-  // once bug 1890522 is fixed.
-  const iframe = document.querySelector("#t14iframe");
-  iframeURL = iframeURL.replace(window.location.origin, "https://example.com");
-  await setupIframe(iframe, iframeURL);
-
-  var result = await SpecialPowers.spawn(iframe, [], async () => {
-    await content.wrappedJSObject.waitUntilApzStable();
-    var iframeEventTarget = null;
-    content.window.onmousedown = function (event) { iframeEventTarget = event.target; };
-    content.wrappedJSObject.synthesizeMouse(content.document.documentElement, 2, 2, {});
-    return iframeEventTarget && iframeEventTarget.id === "btn";
-  });
-
-  ok(result, "Failed to target button inside iframe");
   setShowing("t14", false);
+
+  endTest();
 }
 
 async function setupIframe(aIFrame, aURL) {

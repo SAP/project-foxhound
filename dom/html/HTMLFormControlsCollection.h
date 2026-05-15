@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_HTMLFormControlsCollection_h
 #define mozilla_dom_HTMLFormControlsCollection_h
 
+#include "mozilla/dom/TreeOrderedArray.h"
 #include "nsIHTMLCollection.h"
 #include "nsInterfaceHashtable.h"
-#include "mozilla/dom/TreeOrderedArray.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 
@@ -99,13 +99,15 @@ class HTMLFormControlsCollection final : public nsIHTMLCollection,
   // Holds WEAK references - bug 36639
   // NOTE(emilio): These are not guaranteed to be descendants of mForm, because
   // of the form attribute, though that's likely.
-  TreeOrderedArray<nsGenericHTMLFormElement*> mElements;
+  TreeOrderedArray<nsGenericHTMLFormElement*, TreeKind::ShadowIncludingDOM>
+      mElements;
 
   // This array holds on to all form controls that are not contained
   // in mElements (form.elements in JS, see ShouldBeInFormControl()).
   // This is needed to properly clean up the bi-directional references
   // (both weak and strong) between the form and its form controls.
-  TreeOrderedArray<nsGenericHTMLFormElement*> mNotInElements;
+  TreeOrderedArray<nsGenericHTMLFormElement*, TreeKind::ShadowIncludingDOM>
+      mNotInElements;
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(HTMLFormControlsCollection)
 

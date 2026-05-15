@@ -1,0 +1,146 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Test line breaks for plaintext serializer</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1650720">Mozilla Bug 1650720</a>
+<p id="display"></p>
+<div id="content" style="display: none">
+</div>
+<pre id="preformatted"></pre>
+<div id="container"></div>
+<script>
+
+const de = SpecialPowers.Ci.nsIDocumentEncoder;
+const platformLineBreak = navigator.platform.indexOf("Win") == 0 ? "\r\n" : "\n";
+const CASES = [
+  "\r",
+  "\n",
+  "\r\r",
+  "\r\n",
+  "\n\r",
+  "\n\n",
+  "\r\r\r",
+  "\r\r\n",
+  "\r\n\r",
+  "\r\n\n",
+  "\n\r\r",
+  "\n\r\n",
+  "\n\n\r",
+  "\n\n\n",
+  "\r \n",
+  "\n \r",
+];
+
+function convertLineBreaksForTestResult(aText) {
+  return aText.replace(/\r?\n|\r(?!\n)/g, platformLineBreak);
+}
+
+function convertLineBreaksForClipboardTestResult(aText) {
+  return aText.replace(/(?<!\r)\n/g, platformLineBreak);
+}
+
+function selectAndEncode(aElement, aEncoderFlags = 0) {
+  // Select the element.
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.selectAllChildren(aElement);
+
+  const encoder = SpecialPowers.Cu.createHTMLCopyEncoder();
+  encoder.init(document, "text/plain", de.OutputSelectionOnly | aEncoderFlags);
+  encoder.setSelection(selection);
+  return encoder.encodeToString();
+}
+
+CASES.forEach((lineBreaks) => {
+  const text = `${lineBreaks}First${lineBreaks}Second${lineBreaks}`;
+
+  add_task(async function test_pre_text() {
+    info(`Testing line breaks: ${JSON.stringify(lineBreaks)}`);
+
+    const pre = document.getElementById("preformatted");
+    pre.textContent = text;
+
+    is(selectAndEncode(pre), text.replace(/\r|\n/g, platformLineBreak),
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)}`);
+    is(selectAndEncode(pre, de.OutputForPlainTextClipboardCopy), convertLineBreaksForClipboardTestResult(text),
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)} (OutputForPlainTextClipboardCopy)`);
+  });
+
+  add_task(async function test_pre_img_alt() {
+    info(`Testing line breaks: ${JSON.stringify(lineBreaks)}`);
+
+    const pre = document.getElementById("preformatted");
+    const img = document.createElement("img");
+    img.alt = text;
+    pre.replaceChildren(img);
+
+    is(selectAndEncode(pre), convertLineBreaksForTestResult(text),
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)}`);
+    is(selectAndEncode(pre, de.OutputForPlainTextClipboardCopy), convertLineBreaksForClipboardTestResult(text),
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)} (OutputForPlainTextClipboardCopy)`);
+  });
+
+  add_task(async function test_pre_img_title() {
+    info(`Testing line breaks: ${JSON.stringify(lineBreaks)}`);
+
+    const pre = document.getElementById("preformatted");
+    const img = document.createElement("img");
+    img.title = text;
+    pre.replaceChildren(img);
+
+    is(selectAndEncode(pre), ` [${convertLineBreaksForTestResult(text)}] `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)}`);
+    is(selectAndEncode(pre, de.OutputForPlainTextClipboardCopy), ` [${convertLineBreaksForClipboardTestResult(text)}] `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)} (OutputForPlainTextClipboardCopy)`);
+  });
+
+  add_task(async function test_div_text() {
+    info(`Testing line breaks: ${JSON.stringify(lineBreaks)}`);
+
+    const div = document.getElementById("container");
+    div.textContent = text;
+
+    is(selectAndEncode(div), ` First Second `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)}`);
+    is(selectAndEncode(div, de.OutputForPlainTextClipboardCopy), ` First Second `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)} (OutputForPlainTextClipboardCopy)`);
+  });
+
+  add_task(async function test_div_img_alt() {
+    info(`Testing line breaks: ${JSON.stringify(lineBreaks)}`);
+
+    const div = document.getElementById("container");
+    const img = document.createElement("img");
+    img.alt = text;
+    div.replaceChildren(img);
+
+    // Our plain text serializer keep the first CR/LF.
+    is(selectAndEncode(div), `${lineBreaks[0]}First Second `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)}`);
+    is(selectAndEncode(div, de.OutputForPlainTextClipboardCopy), ` First Second `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)} (OutputForPlainTextClipboardCopy)`);
+  });
+
+  add_task(async function test_div_img_title() {
+    info(`Testing line breaks: ${JSON.stringify(lineBreaks)}`);
+
+    const div = document.getElementById("container");
+    const img = document.createElement("img");
+    img.title = text;
+    div.replaceChildren(img);
+
+    is(selectAndEncode(div), ` [ First Second ] `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)}`);
+    is(selectAndEncode(div, de.OutputForPlainTextClipboardCopy), ` [ First Second ] `,
+       `Encoded data for line breaks: ${JSON.stringify(lineBreaks)} (OutputForPlainTextClipboardCopy)`);
+  });
+});
+
+</script>
+</body>
+</html>

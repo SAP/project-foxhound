@@ -7,15 +7,57 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <string>
-#include <vector>
-#include <utility>
 #include <set>
 #include <string>
 #include <tuple>
+#include <utility>
+#include <vector>
 
+#include "ErrorList.h"
+#include "MainThreadUtils.h"
+#include "MediaEventSource.h"
+#include "MediaTrackGraph.h"
+#include "MediaTransportHandler.h"
+#include "PeerConnectionImpl.h"
+#include "PrincipalHandle.h"
+#include "RTCDTMFSender.h"
+#include "RTCDtlsTransport.h"
+#include "RTCRtpReceiver.h"
+#include "RTCRtpSender.h"
+#include "RTCStatsIdGenerator.h"
+#include "RTCStatsReport.h"
+#include "RemoteTrackSource.h"
 #include "api/video_codecs/video_codec.h"
-
+#include "js/RootingAPI.h"
+#include "jsep/JsepCodecDescription.h"
+#include "jsep/JsepSession.h"
+#include "jsep/JsepTrack.h"
+#include "jsep/JsepTrackEncoding.h"
+#include "libwebrtcglue/AudioConduit.h"
+#include "libwebrtcglue/CodecConfig.h"
+#include "libwebrtcglue/FrameTransformerProxy.h"
+#include "libwebrtcglue/MediaConduitControl.h"
+#include "libwebrtcglue/MediaConduitInterface.h"
+#include "libwebrtcglue/RtpRtcpConfig.h"
+#include "libwebrtcglue/VideoConduit.h"
+#include "libwebrtcglue/WebrtcCallWrapper.h"
+#include "mozilla/AbstractThread.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StateMirroring.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/RTCRtpReceiverBinding.h"
+#include "mozilla/dom/RTCRtpSenderBinding.h"
+#include "mozilla/dom/RTCRtpTransceiverBinding.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "mozilla/fallible.h"
+#include "mozilla/mozalloc_oom.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
@@ -23,64 +65,20 @@
 #include "nsISerialEventTarget.h"
 #include "nsISupports.h"
 #include "nsProxyRelease.h"
-#include "nsStringFwd.h"
 #include "nsString.h"
+#include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 #include "nsWrapperCache.h"
-#include "PrincipalHandle.h"
-#include "ErrorList.h"
-#include "MainThreadUtils.h"
-#include "MediaEventSource.h"
-#include "mozilla/AbstractThread.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/fallible.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/mozalloc_oom.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/StateMirroring.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/dom/Nullable.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"
-#include "mozilla/dom/RTCRtpReceiverBinding.h"
-#include "mozilla/dom/RTCRtpSenderBinding.h"
-#include "mozilla/dom/RTCRtpTransceiverBinding.h"
-#include "mozilla/dom/Promise.h"
-#include "utils/PerformanceRecorder.h"
-#include "systemservices/MediaUtils.h"
-#include "MediaTrackGraph.h"
-#include "js/RootingAPI.h"
-#include "libwebrtcglue/AudioConduit.h"
-#include "libwebrtcglue/VideoConduit.h"
-#include "transportbridge/MediaPipeline.h"
-#include "jsep/JsepTrack.h"
-#include "sdp/SdpHelper.h"
-#include "transport/logging.h"
-#include "RemoteTrackSource.h"
-#include "libwebrtcglue/RtpRtcpConfig.h"
-#include "MediaTransportHandler.h"
-#include "RTCDtlsTransport.h"
-#include "RTCRtpReceiver.h"
-#include "RTCRtpSender.h"
-#include "RTCDTMFSender.h"
-#include "PeerConnectionImpl.h"
-#include "RTCStatsIdGenerator.h"
-#include "libwebrtcglue/WebrtcCallWrapper.h"
-#include "libwebrtcglue/FrameTransformerProxy.h"
-#include "jsep/JsepCodecDescription.h"
-#include "jsep/JsepSession.h"
-#include "jsep/JsepTrackEncoding.h"
-#include "libwebrtcglue/CodecConfig.h"
-#include "libwebrtcglue/MediaConduitControl.h"
-#include "libwebrtcglue/MediaConduitInterface.h"
-#include "RTCStatsReport.h"
 #include "sdp/SdpAttribute.h"
 #include "sdp/SdpEnum.h"
+#include "sdp/SdpHelper.h"
 #include "sdp/SdpMediaSection.h"
+#include "systemservices/MediaUtils.h"
+#include "transport/logging.h"
 #include "transport/transportlayer.h"
+#include "transportbridge/MediaPipeline.h"
+#include "utils/PerformanceRecorder.h"
 
 namespace mozilla {
 
@@ -753,21 +751,22 @@ void RTCRtpTransceiver::NegotiatedDetailsToAudioCodecConfigs(
     std::vector<AudioCodecConfig>* aConfigs) {
   Maybe<AudioCodecConfig> telephoneEvent;
 
-  if (aDetails.GetEncodingCount()) {
-    for (const auto& codec : aDetails.GetEncoding(0).GetCodecs()) {
-      if (NS_WARN_IF(codec->Type() != SdpMediaSection::kAudio)) {
-        MOZ_ASSERT(false, "Codec is not audio! This is a JSEP bug.");
-        return;
-      }
-      Maybe<AudioCodecConfig> config;
-      const JsepAudioCodecDescription& audio =
-          static_cast<const JsepAudioCodecDescription&>(*codec);
-      JsepCodecDescToAudioCodecConfig(audio, &config);
-      if (config->mName == "telephone-event") {
-        telephoneEvent = std::move(config);
-      } else {
-        aConfigs->push_back(std::move(*config));
-      }
+  const std::decay_t<decltype(aDetails.GetEncoding(0).GetCodecs())> empty;
+  const auto& codecs =
+      aDetails.GetEncodingCount() ? aDetails.GetEncoding(0).GetCodecs() : empty;
+  for (const auto& codec : codecs) {
+    if (NS_WARN_IF(codec->Type() != SdpMediaSection::kAudio)) {
+      MOZ_ASSERT(false, "Codec is not audio! This is a JSEP bug.");
+      return;
+    }
+    Maybe<AudioCodecConfig> config;
+    const JsepAudioCodecDescription& audio =
+        static_cast<const JsepAudioCodecDescription&>(*codec);
+    JsepCodecDescToAudioCodecConfig(audio, &config);
+    if (config->mName == "telephone-event") {
+      telephoneEvent = std::move(config);
+    } else {
+      aConfigs->push_back(std::move(*config));
     }
   }
 
@@ -872,30 +871,30 @@ static auto JsepCodecDescToVideoCodecConfig(
 void RTCRtpTransceiver::NegotiatedDetailsToVideoCodecConfigs(
     const JsepTrackNegotiatedDetails& aDetails,
     std::vector<VideoCodecConfig>* aConfigs) {
-  if (aDetails.GetEncodingCount()) {
-    for (const auto& codec : aDetails.GetEncoding(0).GetCodecs()) {
-      if (NS_WARN_IF(codec->Type() != SdpMediaSection::kVideo)) {
-        MOZ_ASSERT(false, "Codec is not video! This is a JSEP bug.");
-        return;
-      }
-      const JsepVideoCodecDescription& video =
-          static_cast<const JsepVideoCodecDescription&>(*codec);
-
-      JsepCodecDescToVideoCodecConfig(video).apply(
-          [&](VideoCodecConfig config) {
-            config.mTias = aDetails.GetTias();
-            for (size_t i = 0; i < aDetails.GetEncodingCount(); ++i) {
-              const JsepTrackEncoding& jsepEncoding(aDetails.GetEncoding(i));
-              if (jsepEncoding.HasFormat(video.mDefaultPt)) {
-                VideoCodecConfig::Encoding encoding;
-                encoding.rid = jsepEncoding.mRid;
-                config.mEncodings.push_back(encoding);
-              }
-            }
-
-            aConfigs->push_back(std::move(config));
-          });
+  const std::decay_t<decltype(aDetails.GetEncoding(0).GetCodecs())> empty;
+  const auto& codecs =
+      aDetails.GetEncodingCount() ? aDetails.GetEncoding(0).GetCodecs() : empty;
+  for (const auto& codec : codecs) {
+    if (NS_WARN_IF(codec->Type() != SdpMediaSection::kVideo)) {
+      MOZ_ASSERT(false, "Codec is not video! This is a JSEP bug.");
+      return;
     }
+    const JsepVideoCodecDescription& video =
+        static_cast<const JsepVideoCodecDescription&>(*codec);
+
+    JsepCodecDescToVideoCodecConfig(video).apply([&](VideoCodecConfig config) {
+      config.mTias = aDetails.GetTias();
+      for (size_t i = 0; i < aDetails.GetEncodingCount(); ++i) {
+        const JsepTrackEncoding& jsepEncoding(aDetails.GetEncoding(i));
+        if (jsepEncoding.HasFormat(video.mDefaultPt)) {
+          VideoCodecConfig::Encoding encoding;
+          encoding.rid = jsepEncoding.mRid;
+          config.mEncodings.push_back(encoding);
+        }
+      }
+
+      aConfigs->push_back(std::move(config));
+    });
   }
 }
 

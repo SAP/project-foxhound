@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "chrome_helpers.js",
   "empty.js",
@@ -19,7 +21,9 @@ support-files = [
 ["test_privateBrowsing.html"]
 
 ["test_serviceworkerinfo.xhtml"]
-skip-if = ["true"] # nsIWorkerDebugger attribute not implemented
+skip-if = [
+  "true", # nsIWorkerDebugger attribute not implemented
+]
 
 ["test_serviceworkermanager.xhtml"]
 

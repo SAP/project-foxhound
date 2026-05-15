@@ -11,58 +11,55 @@
  */
 
 #include "nsImageLoadingContent.h"
-#include "nsError.h"
-#include "nsIContent.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsServiceManagerUtils.h"
-#include "nsContentList.h"
-#include "nsContentPolicyUtils.h"
-#include "nsIURI.h"
+
+#include "Orientation.h"
 #include "imgIContainer.h"
 #include "imgLoader.h"
 #include "imgRequestProxy.h"
-#include "nsThreadUtils.h"
-#include "nsNetUtil.h"
-#include "nsImageFrame.h"
-
-#include "nsIChannel.h"
-#include "nsIStreamListener.h"
-
-#include "nsIFrame.h"
-
-#include "nsContentUtils.h"
-#include "nsLayoutUtils.h"
-#include "nsIContentPolicy.h"
-
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/PageloadEvent.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_image.h"
-#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGImageFrame.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "mozilla/StaticPrefs_image.h"
+#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FetchPriority.h"
-#include "mozilla/dom/PContent.h"  // For TextRecognitionResult
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/ImageTextBinding.h"
+#include "mozilla/dom/LargestContentfulPaint.h"
+#include "mozilla/dom/PContent.h"  // For TextRecognitionResult
 #include "mozilla/dom/PageLoadEventUtils.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ResponsiveImageSelector.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/Locale.h"
-#include "mozilla/dom/LargestContentfulPaint.h"
+#include "mozilla/intl/LocaleService.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/widget/TextRecognition.h"
-
-#include "Orientation.h"
+#include "nsContentList.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsIChannel.h"
+#include "nsIContent.h"
+#include "nsIContentPolicy.h"
+#include "nsIFrame.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIStreamListener.h"
+#include "nsIURI.h"
+#include "nsImageFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsNetUtil.h"
+#include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
 
 #ifdef LoadImage
 // Undefine LoadImage to prevent naming conflict with Windows.
@@ -131,17 +128,7 @@ class ImageLoadTask : public MicroTaskRunnable {
   const bool mUseUrgentStartForChannel;
 };
 
-nsImageLoadingContent::nsImageLoadingContent()
-    : mObserverList(nullptr),
-      mOutstandingDecodePromises(0),
-      mRequestGeneration(0),
-      mLoadingEnabled(true),
-      mUseUrgentStartForChannel(false),
-      mLazyLoading(false),
-      mSyncDecodingHint(false),
-      mInDocResponsiveContent(false),
-      mCurrentRequestRegistered(false),
-      mPendingRequestRegistered(false) {
+nsImageLoadingContent::nsImageLoadingContent() : mObserverList(nullptr) {
   if (!nsContentUtils::GetImgLoaderForChannel(nullptr, nullptr)) {
     mLoadingEnabled = false;
   }
@@ -867,7 +854,7 @@ void nsImageLoadingContent::CloneScriptedRequests(imgRequestProxy* aRequest) {
 
     nsresult rv =
         aRequest->Clone(observer->mObserver, nullptr, getter_AddRefs(req));
-    Unused << NS_WARN_IF(NS_FAILED(rv));
+    (void)NS_WARN_IF(NS_FAILED(rv));
   } while (i > 0);
 }
 
@@ -1110,7 +1097,7 @@ nsresult nsImageLoadingContent::LoadImage(const nsAString& aNewURI, bool aForce,
   // Parse the URI string to get image URI
   nsCOMPtr<nsIURI> imageURI;
   if (!aNewURI.IsEmpty()) {
-    Unused << StringToURI(aNewURI, doc, getter_AddRefs(imageURI));
+    (void)StringToURI(aNewURI, doc, getter_AddRefs(imageURI));
   }
 
   return LoadImage(imageURI, aForce, aNotify, aImageLoadType, LoadFlags(), doc,
@@ -1224,7 +1211,7 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
 
   if (fetchPriority != FetchPriority::Auto) {
     aDocument->SetPageloadEventFeature(
-        pageload_event::FeatureBits::FETCH_PRIORITY_IMAGES);
+        performance::pageload_event::DocumentFeature::FETCH_PRIORITY_IMAGES);
   }
 
   // Reset the flag to avoid loading from XPCOM or somewhere again else without

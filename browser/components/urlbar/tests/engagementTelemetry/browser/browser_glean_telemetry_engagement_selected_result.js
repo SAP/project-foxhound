@@ -11,8 +11,6 @@
 // - actions
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarProviderClipboard:
-    "resource:///modules/UrlbarProviderClipboard.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
 });
 
@@ -32,7 +30,7 @@ add_task(async function selected_result_autofill_about() {
       {
         selected_result: "autofill_about",
         selected_position: 1,
-        provider: "Autofill",
+        provider: "UrlbarProviderAutofill",
         results: "autofill_about",
       },
     ]);
@@ -45,7 +43,10 @@ add_task(async function selected_result_autofill_adaptive() {
   });
 
   await doTest(async () => {
-    await PlacesTestUtils.addVisits("https://example.com/test");
+    await PlacesTestUtils.addVisits({
+      url: "https://example.com/test",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
     await UrlbarUtils.addToInputHistory("https://example.com/test", "exa");
     await openPopup("exa");
     await doEnter();
@@ -54,7 +55,7 @@ add_task(async function selected_result_autofill_adaptive() {
       {
         selected_result: "autofill_adaptive",
         selected_position: 1,
-        provider: "Autofill",
+        provider: "UrlbarProviderAutofill",
         results: "autofill_adaptive",
       },
     ]);
@@ -65,7 +66,10 @@ add_task(async function selected_result_autofill_adaptive() {
 
 add_task(async function selected_result_autofill_origin() {
   await doTest(async () => {
-    await PlacesTestUtils.addVisits("https://example.com/test");
+    await PlacesTestUtils.addVisits({
+      url: "https://example.com/test",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     await openPopup("exa");
     await doEnter();
@@ -74,7 +78,7 @@ add_task(async function selected_result_autofill_origin() {
       {
         selected_result: "autofill_origin",
         selected_position: 1,
-        provider: "Autofill",
+        provider: "UrlbarProviderAutofill",
         results: "autofill_origin,history",
       },
     ]);
@@ -83,7 +87,10 @@ add_task(async function selected_result_autofill_origin() {
 
 add_task(async function selected_result_autofill_url() {
   await doTest(async () => {
-    await PlacesTestUtils.addVisits("https://example.com/test");
+    await PlacesTestUtils.addVisits({
+      url: "https://example.com/test",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    });
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     await openPopup("https://example.com/test");
     await doEnter();
@@ -92,7 +99,7 @@ add_task(async function selected_result_autofill_url() {
       {
         selected_result: "autofill_url",
         selected_position: 1,
-        provider: "Autofill",
+        provider: "UrlbarProviderAutofill",
         results: "autofill_url",
       },
     ]);
@@ -118,8 +125,103 @@ add_task(async function selected_result_bookmark() {
       {
         selected_result: "bookmark",
         selected_position: 2,
-        provider: "Places",
+        provider: "UrlbarProviderPlaces",
         results: "search_engine,bookmark",
+      },
+    ]);
+  });
+});
+
+add_task(async function selected_result_bookmark_adaptive() {
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits("https://example.com/test");
+
+    await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+      url: "https://example.com/test",
+      title: "bookmark",
+    });
+
+    await UrlbarUtils.addToInputHistory("https://example.com/test", "test");
+
+    await openPopup("test");
+    await selectRowByProvider("UrlbarProviderInputHistory");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "bookmark_adaptive",
+        selected_position: 2,
+        provider: "UrlbarProviderInputHistory",
+        results: "search_engine,bookmark_adaptive",
+      },
+    ]);
+  });
+});
+
+add_task(async function selected_result_bookmark_serp() {
+  await doTest(async () => {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["browser.urlbar.autoFill", false],
+        ["browser.urlbar.secondaryActions.featureGate", false],
+      ],
+    });
+
+    let defaultEngine = await SearchService.getDefault();
+    let serpUrl = defaultEngine.getSubmission("test search", null).uri.spec;
+
+    await PlacesTestUtils.addVisits(serpUrl);
+
+    await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+      url: serpUrl,
+      title: "bookmark",
+    });
+
+    await openPopup("test");
+    await selectRowByURL(serpUrl);
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "bookmark_serp",
+        selected_position: 2,
+        provider: "UrlbarProviderPlaces",
+        results: "search_engine,bookmark_serp",
+      },
+    ]);
+  });
+});
+
+add_task(async function selected_result_bookmark_adaptive_serp() {
+  await doTest(async () => {
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.urlbar.autoFill", false]],
+    });
+
+    let defaultEngine = await SearchService.getDefault();
+    let serpUrl = defaultEngine.getSubmission("test search", null).uri.spec;
+
+    await PlacesUtils.bookmarks.insert({
+      parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+      url: serpUrl,
+      title: "bookmark",
+    });
+
+    await PlacesTestUtils.addVisits(serpUrl);
+    await UrlbarUtils.addToInputHistory(serpUrl, "test");
+
+    await openPopup("test");
+    await selectRowByProvider("UrlbarProviderInputHistory");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "bookmark_adaptive_serp",
+        selected_position: 2,
+        provider: "UrlbarProviderInputHistory",
+        results: "search_engine,bookmark_adaptive_serp",
       },
     ]);
   });
@@ -141,13 +243,56 @@ add_task(async function selected_result_history() {
       {
         selected_result: "history",
         selected_position: 2,
-        provider: "Places",
+        provider: "UrlbarProviderPlaces",
         results: "search_engine,history",
       },
     ]);
   });
 
   await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function selected_result_history_adaptive() {
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits("https://example.com/test");
+    await UrlbarUtils.addToInputHistory("https://example.com/test", "exa");
+
+    await openPopup("exa");
+    await selectRowByProvider("UrlbarProviderInputHistory");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "history_adaptive",
+        selected_position: 2,
+        provider: "UrlbarProviderInputHistory",
+        results: "search_engine,history_adaptive",
+      },
+    ]);
+  });
+});
+
+add_task(async function selected_result_history_adaptive_serp() {
+  await doTest(async () => {
+    let defaultEngine = await SearchService.getDefault();
+    let serpUrl = defaultEngine.getSubmission("test search", null).uri.spec;
+
+    await PlacesTestUtils.addVisits(serpUrl);
+    await UrlbarUtils.addToInputHistory(serpUrl, "test sea");
+
+    await openPopup("test sea");
+    await selectRowByProvider("UrlbarProviderInputHistory");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "history_adaptive_serp",
+        selected_position: 2,
+        provider: "UrlbarProviderInputHistory",
+        results: "search_engine,history_adaptive_serp",
+      },
+    ]);
+  });
 });
 
 add_task(async function selected_result_keyword() {
@@ -164,7 +309,7 @@ add_task(async function selected_result_keyword() {
       {
         selected_result: "keyword",
         selected_position: 1,
-        provider: "BookmarkKeywords",
+        provider: "UrlbarProviderBookmarkKeywords",
         results: "keyword",
       },
     ]);
@@ -182,7 +327,7 @@ add_task(async function selected_result_search_engine() {
       {
         selected_result: "search_engine",
         selected_position: 1,
-        provider: "HeuristicFallback",
+        provider: "UrlbarProviderHeuristicFallback",
         results: "search_engine",
       },
     ]);
@@ -206,7 +351,7 @@ add_task(async function selected_result_search_suggest() {
       {
         selected_result: "search_suggest",
         selected_position: 2,
-        provider: "SearchSuggestions",
+        provider: "UrlbarProviderSearchSuggestions",
         results: "search_engine,search_suggest,search_suggest",
       },
     ]);
@@ -234,7 +379,7 @@ add_task(async function selected_result_search_history() {
       {
         selected_result: "search_history",
         selected_position: 3,
-        provider: "SearchSuggestions",
+        provider: "UrlbarProviderSearchSuggestions",
         results: "search_engine,search_history,search_history",
       },
     ]);
@@ -252,7 +397,7 @@ add_task(async function selected_result_url() {
       {
         selected_result: "url",
         selected_position: 1,
-        provider: "HeuristicFallback",
+        provider: "UrlbarProviderHeuristicFallback",
         results: "url",
       },
     ]);
@@ -264,7 +409,7 @@ add_task(async function selected_result_tab() {
 
   await doTest(async () => {
     await openPopup("example");
-    await selectRowByProvider("Places");
+    await selectRowByProvider("UrlbarProviderPlaces");
     EventUtils.synthesizeKey("KEY_Enter");
     await BrowserTestUtils.waitForCondition(() => gBrowser.selectedTab === tab);
 
@@ -272,8 +417,120 @@ add_task(async function selected_result_tab() {
       {
         selected_result: "tab",
         selected_position: 4,
-        provider: "Places",
+        provider: "UrlbarProviderPlaces",
         results: "search_engine,search_suggest,search_suggest,tab",
+      },
+    ]);
+  });
+
+  await SpecialPowers.popPrefEnv();
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function selected_result_tab_adaptive() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.searches", false]],
+  });
+
+  const tab = BrowserTestUtils.addTab(gBrowser, "https://example.com/");
+
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits("https://example.com/");
+    await UrlbarUtils.addToInputHistory("https://example.com/", "exa");
+
+    // TODO - Bug 2011291: When this test is run in verify mode, it will
+    // regularly fail to select a switch to tab result. Adding a warm up
+    // "solves" the issue.
+    await openPopup("warmup");
+    await UrlbarTestUtils.promisePopupClose(window);
+
+    await openPopup("exa");
+    await selectRowByProvider("UrlbarProviderInputHistory");
+    EventUtils.synthesizeKey("KEY_Enter");
+    await BrowserTestUtils.waitForCondition(
+      () => gBrowser.selectedTab === tab,
+      "Waiting for selected tab to be the tab we opened."
+    );
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "tab_adaptive",
+        selected_position: 2,
+        provider: "UrlbarProviderInputHistory",
+        results: "search_engine,tab_adaptive",
+      },
+    ]);
+  });
+
+  await SpecialPowers.popPrefEnv();
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function selected_result_tab_adaptive_serp() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.searches", false]],
+  });
+
+  let defaultEngine = await SearchService.getDefault();
+  let serpUrl = defaultEngine.getSubmission("test search", null).uri.spec;
+  let tab = BrowserTestUtils.addTab(gBrowser, serpUrl);
+
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits(serpUrl);
+    await UrlbarUtils.addToInputHistory(serpUrl, "test sea");
+
+    // TODO - Bug 2011291: When this test is run in verify mode, it will
+    // regularly fail to select a switch to tab result. Adding a warm up
+    // "solves" the issue.
+    await openPopup("warmup");
+    await UrlbarTestUtils.promisePopupClose(window);
+
+    await openPopup("test sea");
+    await selectRowByProvider("UrlbarProviderInputHistory");
+
+    EventUtils.synthesizeKey("KEY_Enter");
+    await BrowserTestUtils.waitForCondition(
+      () => gBrowser.selectedTab === tab,
+      "Waiting for selected tab to be the tab we opened."
+    );
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "tab_adaptive_serp",
+        selected_position: 2,
+        provider: "UrlbarProviderInputHistory",
+        results: "search_engine,tab_adaptive_serp",
+      },
+    ]);
+  });
+
+  await SpecialPowers.popPrefEnv();
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function selected_result_tab_serp() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.searches", false]],
+  });
+
+  let defaultEngine = await SearchService.getDefault();
+  let serpUrl = defaultEngine.getSubmission("test search", null).uri.spec;
+  let tab = BrowserTestUtils.addTab(gBrowser, serpUrl);
+
+  await doTest(async () => {
+    await PlacesTestUtils.addVisits(serpUrl);
+
+    await openPopup("test sea");
+    await selectRowByProvider("UrlbarProviderPlaces");
+    EventUtils.synthesizeKey("KEY_Enter");
+    await BrowserTestUtils.waitForCondition(() => gBrowser.selectedTab === tab);
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "tab_serp",
+        selected_position: 2,
+        provider: "UrlbarProviderPlaces",
+        results: "search_engine,tab_serp",
       },
     ]);
   });
@@ -287,14 +544,14 @@ add_task(async function selected_result_remote_tab() {
 
   await doTest(async () => {
     await openPopup("example");
-    await selectRowByProvider("RemoteTabs");
+    await selectRowByProvider("UrlbarProviderRemoteTabs");
     await doEnter();
 
     assertEngagementTelemetry([
       {
         selected_result: "remote_tab",
         selected_position: 2,
-        provider: "RemoteTabs",
+        provider: "UrlbarProviderRemoteTabs",
         results: "search_engine,remote_tab",
       },
     ]);
@@ -315,7 +572,7 @@ add_task(async function selected_result_addon() {
       {
         selected_result: "addon",
         selected_position: 1,
-        provider: "Omnibox",
+        provider: "UrlbarProviderOmnibox",
         results: "addon",
       },
     ]);
@@ -340,7 +597,7 @@ add_task(async function selected_result_tab_to_search() {
     }
 
     await openPopup("moze");
-    await selectRowByProvider("TabToSearch");
+    await selectRowByProvider("UrlbarProviderTabToSearch");
     const onComplete = UrlbarTestUtils.promiseSearchComplete(window);
     EventUtils.synthesizeKey("KEY_Enter");
     await onComplete;
@@ -349,7 +606,7 @@ add_task(async function selected_result_tab_to_search() {
       {
         selected_result: "tab_to_search",
         selected_position: 2,
-        provider: "TabToSearch",
+        provider: "UrlbarProviderTabToSearch",
         results: "search_engine,tab_to_search,history",
       },
     ]);
@@ -383,7 +640,7 @@ add_task(async function selected_result_calc() {
 
   await doTest(async () => {
     await openPopup("8*8");
-    await selectRowByProvider("calculator");
+    await selectRowByProvider("UrlbarProviderCalculator");
     await SimpleTest.promiseClipboardChange("64", () => {
       EventUtils.synthesizeKey("KEY_Enter");
     });
@@ -392,7 +649,7 @@ add_task(async function selected_result_calc() {
       {
         selected_result: "calc",
         selected_position: 2,
-        provider: "calculator",
+        provider: "UrlbarProviderCalculator",
         results: "search_engine,calc",
       },
     ]);
@@ -428,7 +685,10 @@ add_task(async function selected_result_clipboard() {
   });
 
   SpecialPowers.clipboardCopyString("");
-  UrlbarProviderClipboard.setPreviousClipboardValue("");
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager
+    .getProvider("UrlbarProviderClipboard")
+    .setPreviousClipboardValue("");
   await SpecialPowers.popPrefEnv();
 });
 
@@ -439,7 +699,7 @@ add_task(async function selected_result_unit() {
 
   await doTest(async () => {
     await openPopup("1m to cm");
-    await selectRowByProvider("UnitConversion");
+    await selectRowByProvider("UrlbarProviderUnitConversion");
     await SimpleTest.promiseClipboardChange("100 cm", () => {
       EventUtils.synthesizeKey("KEY_Enter");
     });
@@ -448,7 +708,7 @@ add_task(async function selected_result_unit() {
       {
         selected_result: "unit",
         selected_position: 2,
-        provider: "UnitConversion",
+        provider: "UrlbarProviderUnitConversion",
         results: "search_engine,unit",
       },
     ]);
@@ -487,9 +747,13 @@ add_task(async function selected_result_weather() {
 
   const cleanupQuickSuggest = await ensureQuickSuggestInit();
   await MerinoTestUtils.initWeather();
+  const cleanupGeolocation = GeolocationTestUtils.stubGeolocation(
+    GeolocationTestUtils.SAN_FRANCISCO
+  );
 
-  let provider = "UrlbarProviderQuickSuggest";
   await doTest(async () => {
+    let provider = "UrlbarProviderQuickSuggest";
+
     await openPopup("weather");
     await selectRowByProvider(provider);
     await doEnter();
@@ -504,6 +768,7 @@ add_task(async function selected_result_weather() {
     ]);
   });
 
+  await cleanupGeolocation();
   await cleanupQuickSuggest();
   await SpecialPowers.popPrefEnv();
 });
@@ -575,6 +840,33 @@ add_task(async function selected_result_dynamic_wikipedia() {
   await cleanupQuickSuggest();
 });
 
+add_task(async function selected_result_important_dates() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.quickactions.enabled", false]],
+  });
+
+  const cleanupQuickSuggest = await ensureQuickSuggestInit();
+
+  let provider = "UrlbarProviderQuickSuggest";
+  await doTest(async () => {
+    await openPopup("important dates");
+    await selectRowByProvider(provider);
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "rust_important_dates",
+        selected_position: 2,
+        provider,
+        results: "search_engine,rust_important_dates",
+      },
+    ]);
+  });
+
+  await cleanupQuickSuggest();
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function selected_result_search_shortcut_button() {
   await doTest(async () => {
     const oneOffSearchButtons = UrlbarTestUtils.getOneOffSearchButtons(window);
@@ -622,7 +914,7 @@ add_task(async function selected_result_trending() {
     ],
   });
 
-  let defaultEngine = await Services.search.getDefault();
+  let defaultEngine = await SearchService.getDefault();
 
   await SearchTestUtils.updateRemoteSettingsConfig([
     {
@@ -658,32 +950,29 @@ add_task(async function selected_result_trending() {
     },
   ]);
 
-  let engine = Services.search.getEngineByName("mozengine");
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  let engine = SearchService.getEngineByName("mozengine");
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
   await doTest(async () => {
     await openPopup("");
-    await selectRowByProvider("SearchSuggestions");
+    await selectRowByProvider("UrlbarProviderSearchSuggestions");
     await doEnter();
 
     assertEngagementTelemetry([
       {
         selected_result: "trending_search",
         selected_position: 1,
-        provider: "SearchSuggestions",
+        provider: "UrlbarProviderSearchSuggestions",
         results: "trending_search",
       },
     ]);
   });
 
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     defaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   let settingsWritten = SearchTestUtils.promiseSearchNotification(
     "write-settings-to-disk-complete"
@@ -706,7 +995,7 @@ add_task(async function selected_result_trending_rich() {
     ],
   });
 
-  let defaultEngine = await Services.search.getDefault();
+  let defaultEngine = await SearchService.getDefault();
 
   await SearchTestUtils.updateRemoteSettingsConfig([
     {
@@ -748,32 +1037,29 @@ add_task(async function selected_result_trending_rich() {
     },
   ]);
 
-  let engine = Services.search.getEngineByName("mozengine");
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  let engine = SearchService.getEngineByName("mozengine");
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
   await doTest(async () => {
     await openPopup("");
-    await selectRowByProvider("SearchSuggestions");
+    await selectRowByProvider("UrlbarProviderSearchSuggestions");
     await doEnter();
 
     assertEngagementTelemetry([
       {
         selected_result: "trending_search_rich",
         selected_position: 1,
-        provider: "SearchSuggestions",
+        provider: "UrlbarProviderSearchSuggestions",
         results: "trending_search_rich",
       },
     ]);
   });
 
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     defaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
   let settingsWritten = SearchTestUtils.promiseSearchNotification(
     "write-settings-to-disk-complete"
@@ -902,7 +1188,7 @@ add_task(async function selected_result_action() {
 
 add_task(async function selected_result_semantic() {
   const historyUrl = "https://www.example.com/semantic/";
-  let defaultEngine = await Services.search.getDefault();
+  let defaultEngine = await SearchService.getDefault();
   const searchUrl = defaultEngine.getSubmission("semantic", null).uri.spec;
   await doTestWithSemantic(
     [
@@ -929,7 +1215,7 @@ add_task(async function selected_result_semantic() {
         {
           selected_result: "history_semantic",
           selected_position: 2,
-          provider: "SemanticHistorySearch",
+          provider: "UrlbarProviderSemanticHistorySearch",
           results: "search_engine,history_semantic,history_semantic_serp",
         },
       ]);

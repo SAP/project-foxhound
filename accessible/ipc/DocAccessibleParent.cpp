@@ -145,7 +145,9 @@ mozilla::ipc::IPCResult DocAccessibleParent::ProcessShowEvent(
     // Otherwise, clients might crawl the incomplete subtree and they won't get
     // mutation events for the remaining pieces.
     if (aComplete || root != child) {
-      AttachChild(parent, childIdx, child);
+      if (!AttachChild(parent, childIdx, child)) {
+        return IPC_FAIL(this, "failed to attach child");
+      }
     }
   }
 
@@ -174,7 +176,9 @@ mozilla::ipc::IPCResult DocAccessibleParent::ProcessShowEvent(
     MOZ_ASSERT(rootParent);
     root = GetAccessible(mPendingShowChild);
     MOZ_ASSERT(root);
-    AttachChild(rootParent, mPendingShowIndex, root);
+    if (!AttachChild(rootParent, mPendingShowIndex, root)) {
+      return IPC_FAIL(this, "failed to attach pending show child");
+    }
     mPendingShowChild = 0;
     mPendingShowParent = 0;
     mPendingShowIndex = 0;
@@ -234,6 +238,11 @@ RemoteAccessible* DocAccessibleParent::CreateAcc(
     return nullptr;
   }
 
+  if (aAccData.GenericTypes() & eDocument) {
+    MOZ_ASSERT_UNREACHABLE("Invalid acc type");
+    return nullptr;
+  }
+
   newProxy = new RemoteAccessible(aAccData.ID(), this, aAccData.Role(),
                                   aAccData.Type(), aAccData.GenericTypes(),
                                   aAccData.RoleMapEntryIndex());
@@ -246,9 +255,20 @@ RemoteAccessible* DocAccessibleParent::CreateAcc(
   return newProxy;
 }
 
-void DocAccessibleParent::AttachChild(RemoteAccessible* aParent,
+bool DocAccessibleParent::AttachChild(RemoteAccessible* aParent,
                                       uint32_t aIndex,
                                       RemoteAccessible* aChild) {
+  if (aChild->RemoteParent()) {
+    MOZ_ASSERT_UNREACHABLE(
+        "Attempt to attach child which already has a parent!");
+    return false;
+  }
+
+  if (aParent == aChild) {
+    MOZ_ASSERT_UNREACHABLE("Attempt to make an accessible its own child!");
+    return false;
+  }
+
   aParent->AddChildAt(aIndex, aChild);
   aChild->SetParent(aParent);
   // ProxyCreated might have already been called if aChild is being moved.
@@ -269,11 +289,16 @@ void DocAccessibleParent::AttachChild(RemoteAccessible* aParent,
       }
       MOZ_ASSERT(bridge->GetEmbedderAccessibleDoc() == this);
       if (DocAccessibleParent* childDoc = bridge->GetDocAccessibleParent()) {
+        MOZ_DIAGNOSTIC_ASSERT(!childDoc->RemoteParent(),
+                              "Pending OOP child doc shouldn't have parent "
+                              "once new OuterDoc is attached");
         AddChildDoc(childDoc, aChild->ID(), false);
       }
       return true;
     });
   }
+
+  return true;
 }
 
 void DocAccessibleParent::ShutdownOrPrepareForMove(RemoteAccessible* aAcc) {
@@ -286,6 +311,10 @@ void DocAccessibleParent::ShutdownOrPrepareForMove(RemoteAccessible* aAcc) {
     // the show event. For now, clear all of them by moving them to a temporary.
     auto children{std::move(aAcc->mChildren)};
     for (RemoteAccessible* child : children) {
+      if (child == aAcc) {
+        MOZ_ASSERT_UNREACHABLE(
+            "Somehow an accessible got added as a child of itself!");
+      }
       ShutdownOrPrepareForMove(child);
     }
   }
@@ -476,7 +505,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvCaretMoveEvent(
     const uint64_t& aID, const LayoutDeviceIntRect& aCaretRect,
     const int32_t& aOffset, const bool& aIsSelectionCollapsed,
     const bool& aIsAtEndOfLine, const int32_t& aGranularity,
-    const bool& aFromUser) {
+    const bool& aFromUser, const bool& aSuppressEvent) {
   ACQUIRE_ANDROID_LOCK
   if (mShutdown) {
     return IPC_OK();
@@ -500,8 +529,13 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvCaretMoveEvent(
     mTextSelections.AppendElement(TextRangeData(aID, aID, aOffset, aOffset));
   }
 
+  if (aSuppressEvent) {
+    // We're just updating the cached caret, not notifying clients.
+    return IPC_OK();
+  }
+
   PlatformCaretMoveEvent(proxy, aOffset, aIsSelectionCollapsed, aGranularity,
-                         aCaretRect, aFromUser);
+                         aFromUser);
 
   if (!nsCoreUtils::AccEventObserversExist()) {
     return IPC_OK();
@@ -604,7 +638,19 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvMutationEvents(
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvRequestAckMutationEvents() {
   if (!mShutdown) {
-    Unused << SendAckMutationEvents();
+    if (!mIsInitialTreeDone) {
+      // This is the first request for an ACK, which means we now have the
+      // initial tree.
+      mIsInitialTreeDone = true;
+      // If this document is already bound to its embedder, fire a reorder event
+      // to notify the client that the embedded document is available. If not,
+      // this will be handled when this document is bound in AddChildDoc.
+      if (RemoteAccessible* parent = RemoteParent()) {
+        parent->Document()->FireEvent(parent,
+                                      nsIAccessibleEvent::EVENT_REORDER);
+      }
+    }
+    (void)SendAckMutationEvents();
   }
   return IPC_OK();
 }
@@ -756,7 +802,6 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvAccessiblesWillMove(
   return IPC_OK();
 }
 
-#if !defined(XP_WIN)
 mozilla::ipc::IPCResult DocAccessibleParent::RecvAnnouncementEvent(
     const uint64_t& aID, const nsAString& aAnnouncement,
     const uint16_t& aPriority) {
@@ -771,9 +816,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvAnnouncementEvent(
     return IPC_OK();
   }
 
-#  if defined(ANDROID)
   PlatformAnnouncementEvent(target, aAnnouncement, aPriority);
-#  endif
 
   if (!nsCoreUtils::AccEventObserversExist()) {
     return IPC_OK();
@@ -788,7 +831,6 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvAnnouncementEvent(
 
   return IPC_OK();
 }
-#endif  // !defined(XP_WIN)
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvTextSelectionChangeEvent(
     const uint64_t& aID, nsTArray<TextRangeData>&& aSelection) {
@@ -840,7 +882,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvRoleChangedEvent(
     return IPC_FAIL(this, "Invalid role map entry index");
   }
 
-  mRole = aRole;
+  mNativeRole = aRole;
   mRoleMapEntryIndex = aRoleMapEntryIndex;
 
 #ifdef MOZ_WIDGET_COCOA
@@ -883,6 +925,11 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvBindChildDoc(
 ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
                                                 uint64_t aParentID,
                                                 bool aCreating) {
+  if (aChildDoc->RemoteParent()) {
+    return IPC_FAIL(this,
+                    "Attempt to add child doc which already has a parent");
+  }
+
   // We do not use GetAccessible here because we want to be sure to not get the
   // document it self.
   ProxyEntry* e = mAccessibles.GetEntry(aParentID);
@@ -931,11 +978,20 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
       aChildDoc->SetEmulatedWindowHandle(mEmulatedWindowHandle);
     }
 #endif  // defined(XP_WIN)
-    // We need to fire a reorder event on the outer doc accessible.
-    // For same-process documents, this is fired by the content process, but
-    // this isn't possible when the document is in a different process to its
-    // embedder.
-    // FireEvent fires both OS and XPCOM events.
+  }
+  // We need to fire a reorder event on the embedder. We do this here rather
+  // than in the content process for two reasons:
+  // 1. It isn't possible for the content process to fire a reorder event on the
+  // embedder when the embedded document is in a different process to its
+  // embedder.
+  // 2. Doing it here ensures that the event is fired after the child document
+  // is bound. Otherwise, there could be a short period where the content
+  // process has fired the reorder event, but the child document isn't bound
+  // yet.
+  // However, if the initial tree hasn't been received yet, we don't want to
+  // fire the reorder event yet. That gets handled in
+  // RecvRequestAckMutationEvents.
+  if (aChildDoc->mIsInitialTreeDone) {
     FireEvent(outerDoc, nsIAccessibleEvent::EVENT_REORDER);
   }
 
@@ -1164,7 +1220,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvFocusEvent(
 
   mFocus = aID;
   mCaretRect = aCaretRect;
-  PlatformFocusEvent(proxy, aCaretRect);
+  PlatformFocusEvent(proxy);
 
   if (!nsCoreUtils::AccEventObserversExist()) {
     return IPC_OK();

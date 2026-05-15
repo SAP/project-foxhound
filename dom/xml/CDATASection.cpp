@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CDATASection.h"
-#include "mozilla/dom/CDATASectionBinding.h"
+
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/dom/CDATASectionBinding.h"
 
 namespace mozilla::dom {
 
@@ -23,7 +24,7 @@ already_AddRefed<CharacterData> CDATASection::CloneDataNode(
   auto* nim = ni->NodeInfoManager();
   RefPtr<CDATASection> it = new (nim) CDATASection(ni.forget());
   if (aCloneText) {
-    it->mText = mText;
+    it->mBuffer = mBuffer;
   }
 
   return it.forget();
@@ -37,7 +38,7 @@ void CDATASection::List(FILE* out, int32_t aIndent) const {
   fprintf(out, "CDATASection refcount=%" PRIuPTR "<", mRefCnt.get());
 
   nsAutoString tmp;
-  ToCString(tmp, 0, mText.GetLength());
+  ToCString(tmp, 0, mBuffer.GetLength());
   fputs(NS_LossyConvertUTF16toASCII(tmp).get(), out);
 
   fputs(">\n", out);

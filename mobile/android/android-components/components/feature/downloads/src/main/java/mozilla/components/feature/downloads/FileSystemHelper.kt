@@ -36,6 +36,15 @@ interface FileSystemHelper {
      * @return The number of available bytes, or 0 if the path does not exist or is not a directory.
      */
     fun availableBytesInDirectory(path: String): Long
+
+    /**
+     * Checks if the given file path exists.
+     *
+     * @param filePath the path of the file to check
+     * @return <code>true</code> if and only if the file denoted by this abstract pathname exists;
+     *          <code>false</code> otherwise
+     */
+    fun fileExists(filePath: String): Boolean
 }
 
 /**
@@ -79,4 +88,14 @@ class DefaultFileSystemHelper : FileSystemHelper {
         val file = File(path)
         return file.exists() && file.isDirectory
     }
+
+    /**
+     * Checks if the given file path exists.
+     *
+     * @param filePath the path of the file to check
+     * @return <code>true</code> if and only if the file denoted by this abstract pathname exists;
+     *          <code>false</code> otherwise
+     */
+    override fun fileExists(filePath: String) =
+        File(filePath).exists()
 }

@@ -12,7 +12,6 @@
 #include "LSSnapshot.h"
 #include "LocalStorageCommon.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Result.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/LSValue.h"
 #include "mozilla/dom/Storage.h"

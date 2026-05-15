@@ -4,7 +4,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompositorWidgetParent.h"
-#include "mozilla/Unused.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
 #include "nsWindow.h"
 
@@ -22,9 +21,9 @@ CompositorWidgetParent::~CompositorWidgetParent() = default;
 
 void CompositorWidgetParent::ObserveVsync(VsyncObserver* aObserver) {
   if (aObserver) {
-    Unused << SendObserveVsync();
+    (void)SendObserveVsync();
   } else {
-    Unused << SendUnobserveVsync();
+    (void)SendUnobserveVsync();
   }
   mVsyncObserver = aObserver;
 }
@@ -42,12 +41,6 @@ mozilla::ipc::IPCResult CompositorWidgetParent::RecvNotifyClientSizeChanged(
 
 mozilla::ipc::IPCResult CompositorWidgetParent::RecvCleanupResources() {
   CleanupResources();
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult CompositorWidgetParent::RecvSetRenderingSurface(
-    const uintptr_t& aXWindow) {
-  SetRenderingSurface(aXWindow);
   return IPC_OK();
 }
 

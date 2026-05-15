@@ -14,8 +14,10 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gDNSOverride",
   "@mozilla.org/network/native-dns-override;1",
-  "nsINativeDNSResolverOverride"
+  Ci.nsINativeDNSResolverOverride
 );
+
+const DES_PREF = "security.ssl3.deprecated.rsa_des_ede3_sha";
 
 // This includes all the cipher suite prefs we have.
 function resetPrefs() {
@@ -23,6 +25,7 @@ function resetPrefs() {
   Services.prefs.clearUserPref("security.tls.version.max");
   Services.prefs.clearUserPref("security.tls.version.enable-deprecated");
   Services.prefs.clearUserPref("browser.fixup.alternate.enabled");
+  Services.prefs.clearUserPref(DES_PREF);
 }
 
 const SSL_ERROR_BASE = -0x3000;
@@ -113,19 +116,34 @@ add_task(async function resetToDefaultConfig() {
       "Should be showing error page"
     );
 
-    const prefResetButton = doc.getElementById("prefResetButton");
+    const netErrorCard = await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector("net-error-card")?.wrappedJSObject
+    );
+    netErrorCard.advancedButton.scrollIntoView(true);
+    EventUtils.synthesizeMouseAtCenter(
+      netErrorCard.advancedButton,
+      {},
+      content
+    );
     await ContentTaskUtils.waitForCondition(
-      () => ContentTaskUtils.isVisible(prefResetButton),
+      () => ContentTaskUtils.isVisible(netErrorCard.prefResetButton),
       "prefResetButton is visible"
     );
 
-    if (!Services.focus.focusedElement == prefResetButton) {
-      await ContentTaskUtils.waitForEvent(prefResetButton, "focus");
+    if (!Services.focus.focusedElement == netErrorCard.prefResetButton) {
+      await ContentTaskUtils.waitForEvent(
+        netErrorCard.prefResetButton,
+        "focus"
+      );
     }
 
     Assert.ok(true, "prefResetButton has focus");
 
-    prefResetButton.click();
+    EventUtils.synthesizeMouseAtCenter(
+      netErrorCard.prefResetButton,
+      {},
+      content
+    );
   });
 
   info("Waiting for the page to load after the click");
@@ -166,24 +184,35 @@ add_task(async function checkLearnMoreLink() {
 
   const baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
 
-  await SpecialPowers.spawn(browser, [baseURL], function (_baseURL) {
+  await SpecialPowers.spawn(browser, [baseURL], async function (_baseURL) {
     const doc = content.document;
     ok(
       doc.documentURI.startsWith("about:neterror"),
       "Should be showing error page"
     );
 
-    const tlsVersionNotice = doc.getElementById("tlsVersionNotice");
+    const netErrorCard = await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector("net-error-card")?.wrappedJSObject
+    );
+    netErrorCard.advancedButton.scrollIntoView(true);
+    EventUtils.synthesizeMouseAtCenter(
+      netErrorCard.advancedButton,
+      {},
+      content
+    );
+    const tlsVersionNotice = await ContentTaskUtils.waitForCondition(
+      () => netErrorCard.tlsNotice
+    );
     ok(
       ContentTaskUtils.isVisible(tlsVersionNotice),
       "TLS version notice is visible"
     );
 
-    const learnMoreLink = doc.getElementById("learnMoreLink");
+    const learnMoreLink = netErrorCard.learnMoreLink;
     ok(ContentTaskUtils.isVisible(learnMoreLink), "Learn More link is visible");
     is(learnMoreLink.getAttribute("href"), _baseURL + "connection-not-secure");
 
-    const titleEl = doc.querySelector(".title-text");
+    const titleEl = netErrorCard.certErrorBodyTitle;
     const actualDataL10nID = titleEl.getAttribute("data-l10n-id");
     is(
       actualDataL10nID,
@@ -191,10 +220,10 @@ add_task(async function checkLearnMoreLink() {
       "Correct error page title is set"
     );
 
-    const errorCodeEl = doc.querySelector("#errorShortDesc2");
-    const actualDataL10Args = errorCodeEl.getAttribute("data-l10n-args");
-    ok(
-      actualDataL10Args.includes("SSL_ERROR_PROTOCOL_VERSION_ALERT"),
+    const errorCodeEl = netErrorCard.netErrorIntro.children[0];
+    is(
+      errorCodeEl.getAttribute("data-l10n-id"),
+      "cert-error-ssl-connection-error",
       "Correct error code is set"
     );
   });
@@ -207,7 +236,7 @@ add_task(async function checkLearnMoreLink() {
 // and the term doesn't match a host and we are able to suggest a
 // valid correction, the page should show the correction.
 // e.g. http://example/example2 -> https://www.example.com/example2
-add_task(async function checkDomainCorrection() {
+add_task(async function checkDomainCorrectionReplacesLearnMoreLink() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.fixup.alternate.enabled", false]],
   });
@@ -235,28 +264,77 @@ add_task(async function checkDomainCorrection() {
       "Should be showing error page"
     );
 
-    const errorNotice = doc.getElementById("errorShortDesc");
+    const netErrorCard = await ContentTaskUtils.waitForCondition(
+      () => doc.querySelector("net-error-card")?.wrappedJSObject
+    );
+    const errorNotice =
+      netErrorCard.netErrorIntro ?? netErrorCard.certErrorIntro;
     ok(ContentTaskUtils.isVisible(errorNotice), "Error text is visible");
 
-    // Wait for the domain suggestion to be resolved and for the text to update
+    // Wait for the domain suggestion to be resolved and for the link href to be updated
     let link;
     await ContentTaskUtils.waitForCondition(() => {
-      link = errorNotice.querySelector("a");
-      return link && link.textContent != "";
-    }, "Helper link has been set");
+      link = netErrorCard.learnMoreLink ?? netErrorCard.netErrorLearnMoreLink;
+      return (
+        link &&
+        link.textContent != "" &&
+        link.getAttribute("href") === "https://www.example.com/example2/"
+      );
+    }, "Helper link has been set to corrected domain");
 
     is(
       link.getAttribute("href"),
       "https://www.example.com/example2/",
-      "Link was corrected"
+      "Link points to corrected domain instead of SUMO page"
     );
-
-    const actualDataL10nID = link.getAttribute("data-l10n-name");
-    is(actualDataL10nID, "website", "Correct name is set");
   });
 
   lazy.gDNSOverride.clearHostOverride("www.example.com");
   resetPrefs();
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});
+
+// When a user tries to access a non-existent domain and no domain
+// suggestion is available, the learn more link should point to the
+// SUMO support page for DNS troubleshooting.
+add_task(async function checkDnsNotFoundLearnMoreLink() {
+  info("Load a non-existent domain and check the learn more link");
+
+  BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    "http://thisdomaindoesnotexist123456.test/",
+    false
+  );
+  let browser = gBrowser.selectedBrowser;
+  let pageLoaded = BrowserTestUtils.waitForErrorPage(browser);
+  await pageLoaded;
+
+  const baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
+
+  await SpecialPowers.spawn(browser, [baseURL], async function (_baseURL) {
+    const doc = content.document;
+
+    const netErrorCard = await ContentTaskUtils.waitForCondition(
+      () => doc.querySelector("net-error-card")?.wrappedJSObject
+    );
+
+    let learnMoreLink;
+    await ContentTaskUtils.waitForCondition(() => {
+      learnMoreLink =
+        netErrorCard.learnMoreLink ?? netErrorCard.netErrorLearnMoreLink;
+      return learnMoreLink && learnMoreLink.textContent != "";
+    }, "Learn more link has been set");
+
+    ok(ContentTaskUtils.isVisible(learnMoreLink), "Learn More link is visible");
+
+    is(
+      learnMoreLink.getAttribute("href"),
+      _baseURL + "server-not-found-connection-problem",
+      "Link points to SUMO DNS troubleshooting page"
+    );
+  });
+
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -289,18 +367,76 @@ add_task(async function onlyAllow3DESWithDeprecatedTLS() {
     }
   );
 
-  // 3DES can be disabled separately.
-  Services.prefs.setBoolPref(
-    "security.ssl3.deprecated.rsa_des_ede3_sha",
-    false
-  );
-  await BrowserTestUtils.withNewTab(
-    { gBrowser, url: "about:blank" },
-    async browser => {
-      BrowserTestUtils.startLoadingURIString(browser, TRIPLEDES_PAGE);
-      await BrowserTestUtils.waitForErrorPage(browser);
-    }
-  );
+  for (let feltPrivacy of [true, false]) {
+    // 3DES can be disabled separately.
+    Services.prefs.setBoolPref(DES_PREF, false);
+    await SpecialPowers.pushPrefEnv({
+      set: [["security.certerrors.felt-privacy-v1", feltPrivacy]],
+    });
+
+    await BrowserTestUtils.withNewTab(
+      { gBrowser, url: "about:blank" },
+      async browser => {
+        BrowserTestUtils.startLoadingURIString(browser, TRIPLEDES_PAGE);
+        await BrowserTestUtils.waitForErrorPage(browser);
+        let prefWasReset = TestUtils.waitForPrefChange(DES_PREF);
+
+        if (feltPrivacy) {
+          await SpecialPowers.spawn(browser, [], async function () {
+            const doc = content.document;
+            const netErrorCard =
+              doc.querySelector("net-error-card")?.wrappedJSObject;
+            Assert.ok(netErrorCard, "netErrorCard is rendered.");
+
+            netErrorCard.advancedButton.scrollIntoView();
+            EventUtils.synthesizeMouseAtCenter(
+              netErrorCard.advancedButton,
+              {},
+              content
+            );
+            await ContentTaskUtils.waitForCondition(
+              () => ContentTaskUtils.isVisible(netErrorCard.advancedContainer),
+              "Advanced container is visible"
+            );
+
+            const prefResetButton = netErrorCard.prefResetButton;
+            Assert.ok(prefResetButton, "prefResetButton exists in the DOM.");
+            netErrorCard.prefResetButton.scrollIntoView();
+            await ContentTaskUtils.waitForCondition(
+              () => ContentTaskUtils.isVisible(netErrorCard.prefResetButton),
+              "Pref reset button is visible"
+            );
+            ok(
+              ContentTaskUtils.isVisible(prefResetButton),
+              "prefResetButton is visible"
+            );
+
+            prefResetButton.click();
+          });
+        } else {
+          await SpecialPowers.spawn(browser, [], async function () {
+            const doc = content.document;
+
+            const prefResetButton = doc.getElementById("prefResetButton");
+            Assert.ok(prefResetButton, "prefResetButton exists in the DOM.");
+
+            await ContentTaskUtils.waitForCondition(
+              () => ContentTaskUtils.isVisible(prefResetButton),
+              "Pref reset button is visible"
+            );
+            ok(
+              ContentTaskUtils.isVisible(prefResetButton),
+              "prefResetButton is visible"
+            );
+
+            prefResetButton.click();
+          });
+        }
+
+        await prefWasReset;
+      }
+    );
+  }
 
   resetPrefs();
 });

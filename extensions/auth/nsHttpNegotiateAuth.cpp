@@ -31,7 +31,6 @@
 #include "plbase64.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Tokenizer.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/Sprintf.h"
 #include "nsIChannel.h"
 #include "nsNetUtil.h"

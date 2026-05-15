@@ -5,44 +5,46 @@
 
 #include "txMozillaXMLOutput.h"
 
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/FeaturePolicy.h"
-#include "nsIDocShell.h"
-#include "nsIScriptElement.h"
-#include "nsCharsetSource.h"
-#include "nsIRefreshURI.h"
-#include "nsPIDOMWindow.h"
-#include "nsIContent.h"
-#include "nsUnicharUtils.h"
-#include "nsGkAtoms.h"
-#include "txLog.h"
-#include "nsNameSpaceManager.h"
-#include "txStringUtils.h"
-#include "txURIUtils.h"
-#include "nsIDocumentTransformer.h"
-#include "mozilla/StyleSheetInlines.h"
-#include "mozilla/css/Loader.h"
-#include "mozilla/dom/DocumentType.h"
-#include "mozilla/dom/DocumentFragment.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ScriptLoader.h"
+#include <algorithm>
+
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Try.h"
+#include "mozilla/css/Loader.h"
+#include "mozilla/dom/Comment.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentFragment.h"
+#include "mozilla/dom/DocumentType.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/FeaturePolicy.h"
+#include "mozilla/dom/ProcessingInstruction.h"
+#include "mozilla/dom/ScriptLoader.h"
+#include "nsCharsetSource.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentSink.h"
 #include "nsContentUtils.h"
 #include "nsDocElementCreatedNotificationRunner.h"
-#include "txXMLUtils.h"
-#include "nsContentSink.h"
-#include "nsINode.h"
-#include "nsContentCreatorFunctions.h"
+#include "nsDocShell.h"
 #include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIDocShell.h"
+#include "nsIDocumentTransformer.h"
+#include "nsIFrame.h"
+#include "nsINode.h"
+#include "nsIRefreshURI.h"
+#include "nsIScriptElement.h"
+#include "nsNameSpaceManager.h"
+#include "nsPIDOMWindow.h"
 #include "nsStringFlags.h"
 #include "nsStyleUtil.h"
-#include "nsIFrame.h"
-#include <algorithm>
 #include "nsTextNode.h"
-#include "nsDocShell.h"
-#include "mozilla/dom/Comment.h"
-#include "mozilla/dom/ProcessingInstruction.h"
+#include "nsUnicharUtils.h"
+#include "txLog.h"
+#include "txStringUtils.h"
+#include "txURIUtils.h"
+#include "txXMLUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -214,7 +216,7 @@ nsresult txMozillaXMLOutput::endDocument(nsresult aResult) {
     MOZ_ASSERT(mDocument->GetReadyStateEnum() == Document::READYSTATE_LOADING,
                "Bad readyState");
     mDocument->SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);
-    if (ScriptLoader* loader = mDocument->ScriptLoader()) {
+    if (ScriptLoader* loader = mDocument->GetScriptLoader()) {
       loader->ParsingComplete(false);
     }
   }
@@ -261,7 +263,14 @@ nsresult txMozillaXMLOutput::endElement() {
                element->IsHTMLElement(nsGkAtoms::script)) {
       nsCOMPtr<nsIScriptElement> sele = do_QueryInterface(element);
       if (sele) {
-        bool block = sele->AttemptToExecute();
+        // https://html.spec.whatwg.org/#parsing-xhtml-documents
+        // When the element's end tag is subsequently parsed, the user agent
+        // must perform a microtask checkpoint, and then prepare the script
+        // element.
+        {
+          nsAutoMicroTask mt;
+        }
+        bool block = sele->AttemptToExecute(nullptr /* aParser */);
         // If the act of insertion evaluated the script, we're fine.
         // Else, add this script element to the array of loading scripts.
         if (block) {
@@ -373,7 +382,7 @@ nsresult txMozillaXMLOutput::startDocument() {
   }
 
   if (mCreatingNewDocument) {
-    ScriptLoader* loader = mDocument->ScriptLoader();
+    ScriptLoader* loader = mDocument->GetScriptLoader();
     if (loader) {
       loader->BeginDeferringScripts();
     }
@@ -681,13 +690,15 @@ nsresult txMozillaXMLOutput::createResultDocument(const nsAString& aName,
                                                   bool aLoadedAsData) {
   // Create the document
   if (mOutputFormat.mMethod == eHTMLOutput) {
-    MOZ_TRY(NS_NewHTMLDocument(getter_AddRefs(mDocument), nullptr, nullptr,
-                               aLoadedAsData));
+    MOZ_TRY(NS_NewHTMLDocument(
+        getter_AddRefs(mDocument), nullptr, nullptr,
+        aLoadedAsData ? LoadedAsData::AsData : LoadedAsData::No));
   } else {
     // We should check the root name/namespace here and create the
     // appropriate document
-    MOZ_TRY(NS_NewXMLDocument(getter_AddRefs(mDocument), nullptr, nullptr,
-                              aLoadedAsData));
+    MOZ_TRY(NS_NewXMLDocument(
+        getter_AddRefs(mDocument), nullptr, nullptr,
+        aLoadedAsData ? LoadedAsData::AsData : LoadedAsData::No));
   }
   // This should really be handled by Document::BeginLoad
   MOZ_ASSERT(
@@ -749,12 +760,14 @@ nsresult txMozillaXMLOutput::createResultDocument(const nsAString& aName,
   }
 
   // Set up script loader of the result document.
-  ScriptLoader* loader = mDocument->ScriptLoader();
-  if (mNotifier) {
-    loader->AddObserver(mNotifier);
-  } else {
-    // Don't load scripts, we can't notify the caller when they're loaded.
-    loader->SetEnabled(false);
+  ScriptLoader* loader = mDocument->GetScriptLoader();
+  if (loader) {
+    if (mNotifier) {
+      loader->AddObserver(mNotifier);
+    } else {
+      // Don't load scripts, we can't notify the caller when they're loaded.
+      loader->SetEnabled(false);
+    }
   }
 
   if (mNotifier) {
@@ -911,12 +924,15 @@ void txTransformNotifier::SignalTransformEnd(nsresult aResult) {
   nsCOMPtr<nsIScriptLoaderObserver> kungFuDeathGrip(this);
 
   if (mDocument) {
-    mDocument->ScriptLoader()->DeferCheckpointReached();
-    mDocument->ScriptLoader()->RemoveObserver(this);
-    // XXX Maybe we want to cancel script loads if NS_FAILED(rv)?
-
+    if (dom::ScriptLoader* scriptLoader = mDocument->GetScriptLoader()) {
+      scriptLoader->DeferCheckpointReached();
+      scriptLoader->RemoveObserver(this);
+      // XXX Maybe we want to cancel script loads if NS_FAILED(rv)?
+    }
     if (NS_FAILED(aResult)) {
-      mDocument->CSSLoader()->Stop();
+      if (css::Loader* cssLoader = mDocument->GetExistingCSSLoader()) {
+        cssLoader->Stop();
+      }
     }
   }
 

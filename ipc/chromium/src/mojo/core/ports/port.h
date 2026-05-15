@@ -6,7 +6,6 @@
 #define MOJO_CORE_PORTS_PORT_H_
 
 #include <map>
-#include <memory>
 #include <utility>
 #include <vector>
 

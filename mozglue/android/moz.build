@@ -16,8 +16,7 @@ SOURCES += [
 
 FINAL_LIBRARY = "mozglue"
 
-for var in ("ANDROID_PACKAGE_NAME", "ANDROID_CPU_ARCH"):
-    DEFINES[var] = '"%s"' % CONFIG[var]
+DEFINES["ANDROID_CPU_ARCH"] = '"%s"' % CONFIG["ANDROID_CPU_ARCH"]
 
 if CONFIG["MOZ_FOLD_LIBS"]:
     DEFINES["MOZ_FOLD_LIBS"] = True

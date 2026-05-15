@@ -930,7 +930,7 @@ class RulesetsStore {
         continue;
       }
 
-      const readJSONStartTime = Cu.now();
+      const readJSONStartTime = ChromeUtils.now();
       const rawRules =
         enabled &&
         (await fetch(path)
@@ -1020,7 +1020,7 @@ class RulesetsStore {
     rawRules,
     { logRuleValidationError = err => Cu.reportError(err) } = {}
   ) {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     const validatedRulesTimerId =
       Glean.extensionsApisDnr.validateRulesTime.start();
     try {
@@ -1174,6 +1174,7 @@ class RulesetsStore {
       let storeData = this.#getDefaults(extension);
       this._data.set(extension.uuid, storeData);
       this._dataPromises.set(extension.uuid, Promise.resolve(storeData));
+      this._startupCacheData.delete(extension.uuid);
       this.unloadOnShutdown(extension);
     }
   }
@@ -1199,15 +1200,7 @@ class RulesetsStore {
 
   #promiseStartupCacheLoaded() {
     if (!this._ensureCacheLoaded) {
-      if (this._data.size) {
-        return Promise.reject(
-          new Error(
-            "Unexpected non-empty DNRStore data. DNR startupCache data load aborted."
-          )
-        );
-      }
-
-      const startTime = Cu.now();
+      const startTime = ChromeUtils.now();
       const timerId = Glean.extensionsApisDnr.startupCacheReadTime.start();
       this._ensureCacheLoaded = (async () => {
         const cacheFilePath = this.#getCacheFilePath();
@@ -1224,16 +1217,16 @@ class RulesetsStore {
           await IOUtils.remove(cacheFilePath, { ignoreAbsent: true });
           return;
         }
-        if (this._data.size) {
-          Cu.reportError(
-            `Unexpected non-empty DNRStore data. DNR startupCache data load dropped.`
-          );
-          return;
-        }
         for (const [
           extUUID,
           cacheStoreData,
         ] of decodedData.cacheData.entries()) {
+          if (this._data.has(extUUID)) {
+            // Already initialized elsewhere (#initExtension), initially with
+            // empty data, but potentially already expanded with more data by
+            // now. Ignore this startupcache entry.
+            continue;
+          }
           if (StoreData.isStaleCacheEntry(extUUID, cacheStoreData)) {
             StoreData.clearLastUpdateTagPref(extUUID);
             continue;
@@ -1284,7 +1277,7 @@ class RulesetsStore {
     return this._readData(extension);
   }
   async _readData(extension) {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     try {
       let result;
       // Try to load data from the startupCache.
@@ -1363,7 +1356,21 @@ class RulesetsStore {
   // (because the StoreData instances get converted into plain objects when
   // serialized into the startupCache structured clone blobs).
   async #readStoreDataFromStartupCache(extension) {
+    if (this._data.has(extension.uuid)) {
+      // This should be unreachable.
+      Cu.reportError(
+        `Unexpected non-empty DNRStore data. DNR startupCache data load aborted for ${extension.id}.`
+      );
+      return;
+    }
     await this.#promiseStartupCacheLoaded();
+    if (this._data.has(extension.uuid)) {
+      // This should be unreachable.
+      Cu.reportError(
+        `Unexpected non-empty DNRStore data. DNR startupCache data load dropped for ${extension.id}.`
+      );
+      return;
+    }
 
     if (!this._startupCacheData.has(extension.uuid)) {
       Glean.extensionsApisDnr.startupCacheEntries.miss.add(1);
@@ -1579,7 +1586,7 @@ class RulesetsStore {
   }
 
   async #saveCacheDataNow() {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     const timerId = Glean.extensionsApisDnr.startupCacheWriteTime.start();
     try {
       const cacheFilePath = this.#getCacheFilePath();
@@ -1616,7 +1623,7 @@ class RulesetsStore {
    * @returns {Promise<void>}
    */
   async #saveNow(extensionUUID, extensionId) {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     try {
       if (
         !this._dataPromises.has(extensionUUID) ||

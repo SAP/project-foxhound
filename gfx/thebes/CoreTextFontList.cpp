@@ -256,7 +256,7 @@ nsresult CTFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
     rv = NS_OK;
   } else {
     uint32_t kCMAP = TRUETYPE_TAG('c', 'm', 'a', 'p');
-    charmap = new gfxCharacterMap();
+    charmap = new gfxCharacterMap(256);
     AutoTable cmapTable(this, kCMAP);
 
     if (cmapTable) {
@@ -353,7 +353,7 @@ nsresult CTFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
     mHasCmapTable = true;
   } else {
     // if error occurred, initialize to null cmap
-    charmap = new gfxCharacterMap();
+    charmap = new gfxCharacterMap(0);
     mHasCmapTable = false;
   }
   if (setCharMap) {
@@ -1316,8 +1316,9 @@ void CoreTextFontList::RegisteredFontsChangedNotificationCallback(
 }
 
 gfxFontEntry* CoreTextFontList::PlatformGlobalFontFallback(
-    nsPresContext* aPresContext, const uint32_t aCh, Script aRunScript,
-    const gfxFontStyle* aMatchStyle, FontFamily& aMatchedFamily) {
+    FontVisibilityProvider* aFontVisibilityProvider, const uint32_t aCh,
+    Script aRunScript, const gfxFontStyle* aMatchStyle,
+    FontFamily& aMatchedFamily) {
   CFStringRef str;
   UniChar ch[2];
   CFIndex length = 1;
@@ -1368,7 +1369,7 @@ gfxFontEntry* CoreTextFontList::PlatformGlobalFontFallback(
 
       if (SharedFontList()) {
         fontlist::Family* family =
-            FindSharedFamily(aPresContext, familyNameString);
+            FindSharedFamily(aFontVisibilityProvider, familyNameString);
         if (family) {
           fontlist::Face* face =
               family->FindFaceForStyle(SharedFontList(), *aMatchStyle);
@@ -1419,9 +1420,9 @@ gfxFontEntry* CoreTextFontList::PlatformGlobalFontFallback(
 }
 
 gfxFontEntry* CoreTextFontList::LookupLocalFont(
-    nsPresContext* aPresContext, const nsACString& aFontName,
-    WeightRange aWeightForEntry, StretchRange aStretchForEntry,
-    SlantStyleRange aStyleForEntry) {
+    FontVisibilityProvider* aFontVisibilityProvider,
+    const nsACString& aFontName, WeightRange aWeightForEntry,
+    StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) {
   if (aFontName.IsEmpty() || aFontName[0] == '.') {
     return nullptr;
   }
@@ -1477,7 +1478,7 @@ gfxFontEntry* CoreTextFontList::LookupLocalFont(
   key.Truncate(strlen(key.get()));
   ToLowerCase(key);
   // If the family can't be looked up, this font is not available for use.
-  FontFamily family = FindFamily(aPresContext, key);
+  FontFamily family = FindFamily(aFontVisibilityProvider, key);
   if (family.IsNull()) {
     return nullptr;
   }
@@ -1489,6 +1490,8 @@ gfxFontEntry* CoreTextFontList::LookupLocalFont(
 static void ReleaseData(void* info, const void* data, size_t size) {
   free((void*)data);
 }
+
+MOZ_DEFINE_MALLOC_SIZE_OF_ON_ALLOC(UserFontMallocSizeOfOnAlloc)
 
 gfxFontEntry* CoreTextFontList::MakePlatformFont(const nsACString& aFontName,
                                                  WeightRange aWeightForEntry,
@@ -1519,6 +1522,13 @@ gfxFontEntry* CoreTextFontList::MakePlatformFont(const nsACString& aFontName,
   auto newFontEntry = MakeUnique<CTFontEntry>(
       NS_ConvertUTF16toUTF8(uniqueName), fontRef, aWeightForEntry,
       aStretchForEntry, aStyleForEntry, true, false);
+
+  // Record size for memory reporting purposes.
+  // The *OnAlloc function will also tell DMD about this block, as the
+  // OS font code may hold on to it for an extended period.
+  newFontEntry->mComputedSizeOfUserFont =
+      UserFontMallocSizeOfOnAlloc(aFontData);
+
   return newFontEntry.release();
 }
 
@@ -1527,10 +1537,10 @@ gfxFontEntry* CoreTextFontList::MakePlatformFont(const nsACString& aFontName,
 static const char kSystemFont_system[] = "-apple-system";
 
 bool CoreTextFontList::FindAndAddFamiliesLocked(
-    nsPresContext* aPresContext, StyleGenericFontFamily aGeneric,
-    const nsACString& aFamily, nsTArray<FamilyAndGeneric>* aOutput,
-    FindFamiliesFlags aFlags, gfxFontStyle* aStyle, nsAtom* aLanguage,
-    gfxFloat aDevToCssSize) {
+    FontVisibilityProvider* aFontVisibilityProvider,
+    StyleGenericFontFamily aGeneric, const nsACString& aFamily,
+    nsTArray<FamilyAndGeneric>* aOutput, FindFamiliesFlags aFlags,
+    gfxFontStyle* aStyle, nsAtom* aLanguage, gfxFloat aDevToCssSize) {
   if (aFamily.EqualsLiteral(kSystemFont_system)) {
     // Search for special system font name, -apple-system. This is not done via
     // the shared fontlist because the hidden system font may not be included
@@ -1543,8 +1553,8 @@ bool CoreTextFontList::FindAndAddFamiliesLocked(
   }
 
   return gfxPlatformFontList::FindAndAddFamiliesLocked(
-      aPresContext, aGeneric, aFamily, aOutput, aFlags, aStyle, aLanguage,
-      aDevToCssSize);
+      aFontVisibilityProvider, aGeneric, aFamily, aOutput, aFlags, aStyle,
+      aLanguage, aDevToCssSize);
 }
 
 // used to load system-wide font info on off-main thread
@@ -1638,7 +1648,7 @@ void CTFontInfo::LoadFontFamilyData(const nsACString& aFamilyName) {
       if (cmapTable) {
         const uint8_t* cmapData = (const uint8_t*)CFDataGetBytePtr(cmapTable);
         uint32_t cmapLen = CFDataGetLength(cmapTable);
-        RefPtr<gfxCharacterMap> charmap = new gfxCharacterMap();
+        RefPtr<gfxCharacterMap> charmap = new gfxCharacterMap(256);
         uint32_t offset;
         nsresult rv;
 
@@ -1757,7 +1767,7 @@ void CoreTextFontList::AddFaceInitData(
       AutoCFTypeRef<CFDataRef> data(CGFontCopyTableForTag(font, kCMAP));
       if (data) {
         uint32_t offset;
-        charmap = new gfxCharacterMap();
+        charmap = new gfxCharacterMap(256);
         gfxFontUtils::ReadCMAP(CFDataGetBytePtr(data), CFDataGetLength(data),
                                *charmap, offset);
       }
@@ -1904,7 +1914,7 @@ void CoreTextFontList::InitSystemFontNames() {
 }
 
 FontFamily CoreTextFontList::GetDefaultFontForPlatform(
-    nsPresContext* aPresContext, const gfxFontStyle* aStyle,
+    FontVisibilityProvider* aFontVisibilityProvider, const gfxFontStyle* aStyle,
     nsAtom* aLanguage) {
   AutoCFTypeRef<CTFontRef> font(CTFontCreateUIFontForLanguage(
       kCTFontUIFontUser, 0.0, nullptr));  // TODO: language
@@ -1913,7 +1923,7 @@ FontFamily CoreTextFontList::GetDefaultFontForPlatform(
   nsAutoString familyName;
   GetStringForCFString(name, familyName);
 
-  return FindFamily(aPresContext, NS_ConvertUTF16toUTF8(familyName));
+  return FindFamily(aFontVisibilityProvider, NS_ConvertUTF16toUTF8(familyName));
 }
 
 #ifdef MOZ_BUNDLED_FONTS

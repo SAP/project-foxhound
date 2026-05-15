@@ -5,7 +5,6 @@
 #include "AndroidEncoderModule.h"
 
 #include "AndroidDataEncoder.h"
-
 #include "mozilla/Logging.h"
 #include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
 
@@ -52,6 +51,7 @@ EncodeSupportSet AndroidEncoderModule::Supports(
   if (aConfig.mScalabilityMode != ScalabilityMode::None) {
     return EncodeSupportSet{};
   }
+  // Only hardware encoder are supported for now.
   return SupportsCodec(aConfig.mCodec);
 }
 
@@ -59,7 +59,7 @@ already_AddRefed<MediaDataEncoder> AndroidEncoderModule::CreateVideoEncoder(
     const EncoderConfig& aConfig, const RefPtr<TaskQueue>& aTaskQueue) const {
   if (Supports(aConfig).isEmpty()) {
     AND_PEM_LOG("Unsupported codec type: %s",
-                GetCodecTypeString(aConfig.mCodec));
+                EnumValueToString(aConfig.mCodec));
     return nullptr;
   }
   return MakeRefPtr<AndroidDataEncoder>(aConfig, aTaskQueue).forget();

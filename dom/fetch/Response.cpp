@@ -6,28 +6,25 @@
 
 #include "Response.h"
 
-#include "nsISupportsImpl.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
-#include "nsPIDOMWindow.h"
+#include "BodyExtractor.h"
+#include "FetchStreamReader.h"
+#include "InternalResponse.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchBinding.h"
-#include "mozilla/dom/ResponseBinding.h"
 #include "mozilla/dom/Headers.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/ReadableStreamDefaultReader.h"
+#include "mozilla/dom/ResponseBinding.h"
 #include "mozilla/dom/URL.h"
 #include "mozilla/dom/WorkerPrivate.h"
-
 #include "nsDOMString.h"
-
-#include "BodyExtractor.h"
-#include "FetchStreamReader.h"
-#include "InternalResponse.h"
-
-#include "mozilla/dom/ReadableStreamDefaultReader.h"
+#include "nsISupportsImpl.h"
+#include "nsIURI.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
 

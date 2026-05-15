@@ -13,8 +13,10 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <set>
 
+#include "api/environment/environment.h"
 #include "p2p/test/nat_types.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/async_udp_socket.h"
@@ -64,7 +66,8 @@ const int NAT_SERVER_TCP_PORT = 4238;
 
 class NATServer {
  public:
-  NATServer(NATType type,
+  NATServer(const Environment& env,
+            NATType type,
             Thread& internal_socket_thread,
             SocketFactory* internal,
             const SocketAddress& internal_udp_addr,
@@ -87,24 +90,23 @@ class NATServer {
 
   // Packets received on one of the networks.
   void OnInternalUDPPacket(AsyncPacketSocket* socket,
-                           const rtc::ReceivedPacket& packet);
+                           const ReceivedIpPacket& packet);
   void OnExternalUDPPacket(AsyncPacketSocket* socket,
-                           const rtc::ReceivedPacket& packet);
+                           const ReceivedIpPacket& packet);
 
  private:
-  typedef std::set<SocketAddress, AddrCmp> AddressSet;
-
   /* Records a translation and the associated external socket. */
   struct TransEntry {
-    TransEntry(const SocketAddressPair& r, AsyncUDPSocket* s, NAT* nat);
-    ~TransEntry();
+    TransEntry(const SocketAddressPair& r,
+               std::unique_ptr<AsyncUDPSocket> s,
+               NAT* nat);
 
     void AllowlistInsert(const SocketAddress& addr);
-    bool AllowlistContains(const SocketAddress& ext_addr);
+    bool ShouldFilterOut(const SocketAddress& ext_addr);
 
     SocketAddressPair route;
-    AsyncUDPSocket* socket;
-    AddressSet* allowlist;
+    std::unique_ptr<AsyncUDPSocket> socket;
+    std::set<SocketAddress, AddrCmp> allowlist;
     Mutex mutex_;
   };
 
@@ -117,27 +119,19 @@ class NATServer {
   /* Determines whether the NAT would filter out a packet from this address. */
   bool ShouldFilterOut(TransEntry* entry, const SocketAddress& ext_addr);
 
+  const Environment env_;
   NAT* nat_;
   Thread& internal_socket_thread_;
   Thread& external_socket_thread_;
   SocketFactory* external_;
   SocketAddress external_ip_;
-  AsyncUDPSocket* udp_server_socket_;
-  rtc::ProxyServer* tcp_proxy_server_;
+  std::unique_ptr<AsyncUDPSocket> udp_server_socket_;
+  ProxyServer* tcp_proxy_server_;
   InternalMap* int_map_;
   ExternalMap* ext_map_;
 };
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::AddrCmp;
-using ::webrtc::NAT_SERVER_TCP_PORT;
-using ::webrtc::NAT_SERVER_UDP_PORT;
-using ::webrtc::NATServer;
-using ::webrtc::RouteCmp;
-}  // namespace rtc
 
 #endif  // P2P_TEST_NAT_SERVER_H_

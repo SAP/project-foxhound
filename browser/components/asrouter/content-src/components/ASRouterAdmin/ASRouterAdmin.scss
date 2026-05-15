@@ -33,15 +33,15 @@
       padding: 10px 14px;
       border-radius: 4px;
       margin-inline-start: 20px;
-      color: var(--in-content-page-color);
+      color: var(--text-color);
       text-decoration: none;
       user-select: none;
 
       &:hover {
-        background-color: var(--in-content-button-background-hover);
+        background-color: var(--button-background-color-hover);
 
         &:active {
-          background-color: var(--in-content-button-background-active);
+          background-color: var(--button-background-color-active);
         }
       }
 
@@ -158,7 +158,7 @@
 
   h1 {
     font-size: 2rem;
-    font-weight: 200;
+    font-weight: normal;
   }
 
   h2 button,
@@ -181,14 +181,14 @@
 
     &.errorReporting {
       tr {
-        border: 1px solid var(--in-content-box-border-color);
+        border: 1px solid var(--border-color);
       }
 
       td {
         padding: 4px;
 
         &[rowspan] {
-          border: 1px solid var(--in-content-box-border-color);
+          border: 1px solid var(--border-color);
         }
       }
     }
@@ -197,13 +197,13 @@
       min-width: 100%;
 
       tr:first-child td {
-        border-top: 1px solid var(--in-content-box-border-color);
+        border-top: 1px solid var(--border-color);
       }
 
       td {
         vertical-align: top;
         padding: 8px;
-        border-bottom: 1px solid var(--in-content-box-border-color);
+        border-bottom: 1px solid var(--border-color);
 
         &.no-wrap {
           white-space: nowrap;
@@ -214,11 +214,11 @@
         }
 
         &:first-child {
-          border-inline-start: 1px solid var(--in-content-box-border-color);
+          border-inline-start: 1px solid var(--border-color);
         }
 
         &:last-child {
-          border-inline-end: 1px solid var(--in-content-box-border-color);
+          border-inline-end: 1px solid var(--border-color);
         }
       }
     }
@@ -237,8 +237,8 @@
     border-radius: 3px;
 
     &.isDisabled {
-      background: rgba(215, 0, 34, 30%);
-      color: var(--dialog-warning-text-color);
+      background: var(--background-color-critical);
+      color: var(--text-color);
     }
   }
 
@@ -300,7 +300,7 @@
   .helpLink {
     padding: 10px;
     display: flex;
-    background: var(--in-content-box-info-background);
+    background: var(--background-color-box-info);
     border-radius: 3px;
     align-items: center;
     width: fit-content;
@@ -397,7 +397,7 @@
 
   textarea[readonly] {
     color: var(--text-color-deemphasized);
-    border-color: var(--in-content-border-color);
+    border-color: var(--border-color);
   }
 
   .monospace {
@@ -432,7 +432,7 @@
       display: flex;
       flex-flow: column nowrap;
       padding: 8px;
-      border: 1px solid var(--in-content-box-border-color);
+      border: 1px solid var(--border-color);
       border-radius: 5px;
 
       .impressions-inner-box {
@@ -443,7 +443,7 @@
 
       .impressions-category {
         font-size: var(--font-size-large);
-        font-weight: var(--font-weight-bold);
+        font-weight: var(--font-weight-semibold);
         white-space: nowrap;
         flex-grow: 0.1;
       }

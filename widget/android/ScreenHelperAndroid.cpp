@@ -11,7 +11,6 @@
 #include <mozilla/jni/Refs.h>
 
 #include "AndroidVsync.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/java/GeckoAppShellWrappers.h"
 #include "mozilla/java/ScreenManagerHelperNatives.h"
 #include "mozilla/widget/ScreenManager.h"

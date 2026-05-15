@@ -1,19 +1,22 @@
 [DEFAULT]
 subsuite = "webgpu"
 
-# This test suite should run when WebGPU is enabled by the preprocessor
-# conditionals in `gfxPlatform::InitWebGPUConfig`.
+# This file's tests should run when WebGPU is enabled by the default
+# value of `dom.webgpu.enabled` in `modules/libpref/init/StaticPrefList.yaml`.
 #
-# This condition should be the exact complement of the `run-if`
-# condition in `mochitest-disabled.html`.
+# These conditions should be the same as the `skip-if` conditions in
+# `mochitest-no-pref.html`, except for `verify`.
 run-if = [
-  "nightly_build",
+  "early_beta_or_earlier",
+  "os == 'mac' && arch == 'aarch64'",
   "os == 'win'",
 ]
 
 prefs = [
-  "dom.webgpu.enabled=true",
   "dom.webgpu.service-workers.enabled=true",
+  # Ignoring the blocklist is necessary to run tests in CI on old Mesa versions
+  # (https://bugzilla.mozilla.org/show_bug.cgi?id=1985348).
+  "gfx.webgpu.ignore-blocklist=true",
 ]
 support-files = [
   "worker_wrapper.js",

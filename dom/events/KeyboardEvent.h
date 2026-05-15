@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_KeyboardEvent_h_
 #define mozilla_dom_KeyboardEvent_h_
 
-#include "mozilla/dom/UIEvent.h"
-#include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/KeyboardEventBinding.h"
+#include "mozilla/dom/UIEvent.h"
 
 namespace mozilla::dom {
 

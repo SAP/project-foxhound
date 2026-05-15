@@ -35,8 +35,8 @@ option(
 
 @dependable
 def min_android_version():
-    # Sync with android_sdk_version
-    return "21"
+    # Sync with android_sdk_version.min_sdk_version
+    return "26"
 
 
 option(
@@ -130,7 +130,7 @@ set_config("ANDROID_NDK_MINOR_VERSION", ndk_version.minor)
 
 
 @imports(_from="os.path", _import="isdir")
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def host_dir(host, base_dir):
     dir_format = "%s/%s-%s"
     host_kernel = "windows" if host.kernel == "WINNT" else host.kernel.lower()
@@ -187,7 +187,7 @@ def android_sysroot(target, android_toolchain):
 @imports(_from="os", _import="listdir")
 @imports(_from="os.path", _import="isdir")
 @imports(_from="os.path", _import="isfile")
-@imports(_from="mozbuild.shellutil", _import="quote")
+@imports(_from="mozshellutil", _import="quote")
 def android_lldb_server(target, host, ndk, lldb):
     if not ndk:
         return

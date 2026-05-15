@@ -14,6 +14,7 @@
 #include <type_traits>
 
 #include "api/task_queue/task_queue_base.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/platform_thread_types.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/rtc_export.h"
@@ -32,6 +33,7 @@ class RTC_EXPORT SequenceCheckerImpl {
  public:
   explicit SequenceCheckerImpl(bool attach_to_current_thread);
   explicit SequenceCheckerImpl(TaskQueueBase* attached_queue);
+  SequenceCheckerImpl(SequenceCheckerImpl&& o);
   ~SequenceCheckerImpl() = default;
 
   bool IsCurrent() const;
@@ -49,7 +51,7 @@ class RTC_EXPORT SequenceCheckerImpl {
   mutable Mutex lock_;
   // These are mutable so that IsCurrent can set them.
   mutable bool attached_ RTC_GUARDED_BY(lock_);
-  mutable rtc::PlatformThreadRef valid_thread_ RTC_GUARDED_BY(lock_);
+  mutable PlatformThreadRef valid_thread_ RTC_GUARDED_BY(lock_);
   mutable const TaskQueueBase* valid_queue_ RTC_GUARDED_BY(lock_);
 };
 

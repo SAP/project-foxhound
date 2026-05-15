@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">Torra a proare</string>
@@ -9,29 +16,45 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">Faddina in sa connessione segura</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>Sa pàgina chi ses intentende de abèrrere non podet èssere ammustrada ca non podet èssere verificada s’autentitzidade de is datos retzidos.</li> <li>Cuntata is meres de su situ pro informare de custu problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>Sa pàgina chi ses intentende de abèrrere non podet èssere ammustrada ca non podet èssere verificada s’autentitzidade de is datos retzidos.</li>\n<li>Cuntata is meres de su situ pro informare de custu problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Faddina in sa connessione segura</string>
+  <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>Diat pòdere èssere unu problema de cunfiguratzione de su serbidore, o mancari sunt proende a si sostituire a su serbidore.</li>\n<li>Si in passadu sa connessione a su serbidore t’est andada bene, podet dare chi s’errore siat temporàneu, e podes torrare a proare prus a tardu.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">Avantzadu…</string>
+  <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Mancari sunt proende a si sostituire a su situ e non dias dèpere sighire.</label> <br><br>\n<label>Is sitos dimustrant s’identidade issoro cun is tzertificatziones. %1$s non si fidat de <b>%2$s</b> ca s’emitente de su tzertificadu suo est disconnotu, ca su tzertificadu est firmadu dae isse etotu o ca su serbidore no est imbiende is tzertificados intermèdios giustos.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_back">A coa (cussigiadu)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_accept_temporary">Atzeta s’arriscu e sighi</string>
   <!-- The document title and heading of the error page shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">Custu situ rechedet una connessione segura.</string>
+  <!-- The error message shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>Sa pàgina chi ses proende a abèrrere non podet èssere ammustrada, ca custu situ rechedet una connessione segura.</li>\n<li>Est probàbile meda chi sa faddina siat de su situ, e chi non potzas fàghere nudda pro dd’acontzare.</li>\n<li>Podes notificare su problema a s’amministratzione de su situ.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">Avantzadu…</string>
+  <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_techInfo2"><![CDATA[<label> <b>%1$s</b> tenet una polìtica de seguresa numenada HTTP Strict Transport Security (HSTS), su chi bolet nàrrere chi <b>%2$s</b> si podet connètere isceti de manera segura. Non podes agiùnghere nissuna etzetzione pro bisitare custu situ. </label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_back">A coa</string>
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
   <string name="mozac_browser_errorpages_net_interrupt_title">Connessione interrùmpida</string>
+  <!-- The error message shown when the user's network connection is interrupted while connecting to a website. -->
+  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>Su navigadore s’est connètidu, ma sa connessione s’est interrùmpida in su mentras chi fiat trasferende informatziones. Torra a proare.</p>\n<ul>\n<li>Podet èssere chi su situ non siat a disponimentu in manera temporànea o tropu ocupadu. Torra a proare a pustis.</li>\n<li>Si non podes carrigare nissuna pàgina, controlla sa connessione de rete de su dispositivu o sa connessione Wi-Fi.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website takes too long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_title">Tempus pro sa connessione iscadidu</string>
+  <!-- The error message shown when a website took long to load. -->
+  <string name="mozac_browser_errorpages_net_timeout_message"><![CDATA[<p>Su situ rechèdidu no at rispostu a una rechesta de connessione e su navigadore at tzessadu de abetare una risposta.</p>\n<ul>\n<li>Mancari su serbidore est tenende rechestas medas o s’est firmadu de manera temporànea. Torra a proare a pustis.</li>\n<li>Non podes navigare in àteros sitos? Controlla sa connessione de rete de su dispositivu.</li>\n<li>Su dispositivu tuo est amparadu dae unu firewall o una connessione intermèdia? Cunfiguratziones isballiadas podent tènnere efetu in sa navigatzione.</li>\n<li>Ancora tenende problemas? Consulta s’amministratzione de rete o su frunidore de internet pro chi t’agiudent.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_title">Impossìbile connètere</string>
+  <!-- The error message shown when a website could not be reached. -->
+  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul>\n<li>Podet èssere chi su situ non siat a disponimentu in manera temporànea o tropu ocupadu. Torra a proare a pustis.</li>\n<li>Si non podes carrigare nissuna pàgina, controlla sa connessione de rete de su dispositivu o sa connessione Wi-Fi.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website responds in an unexpected way and the browser cannot continue. -->
   <string name="mozac_browser_errorpages_unknown_socket_type_title">Risposta imprevista de su serbidore</string>
+  <!-- The error message shown when a website responds in an unexpected way and the browser cannot continue. -->
+  <string name="mozac_browser_errorpages_unknown_socket_type_message"><![CDATA[<p>Su situ at rispostu a sa rechesta de sa rete de manera imprevista e su navigadore non podet sighire.</p>]]></string>
   <!-- The document title and heading of the error page shown when the browser gets stuck in an infinite loop when loading a website. -->
   <string name="mozac_browser_errorpages_redirect_loop_title">Sa pàgina no est torrende a indiritzare in manera curreta</string>
   <!-- The document title and heading of the error page shown when a website cannot be loaded because the browser is in offline mode. -->
@@ -43,14 +66,14 @@
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">Genia de archìviu non segura</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>Informa s’amministratzione de su situ web de custu problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>Informa s’amministratzione de su situ web de custu problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">Faddina de cuntenutu corrotu</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
-  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>Sa pàgina chi ses proende a abèrrere non podet èssere ammustrada, ca est istada agatada una faddina in sa trasmissione de is datos.</p> <ul> <li>Cuntata is meres de su situ pro informare de custu problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_corrupted_content_message"><![CDATA[<p>Sa pàgina chi ses proende a abèrrere non podet èssere ammustrada, ca est istada agatada una faddina in sa trasmissione de is datos.</p>\n<ul>\n<li>Cuntata is meres de su situ pro informare de custu problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_content_crashed_title">Cuntenutu faddidu</string>
-  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>Sa pàgina chi ses proende a abèrrere non podet èssere ammustrada, ca est istada agatada una faddina in sa trasmissione de is datos.</p> <ul> <li>Cuntata is meres de su situ pro informare de custu problema.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>Sa pàgina chi ses proende a abèrrere non podet èssere ammustrada, ca est istada agatada una faddina in sa trasmissione de is datos.</p>\n<ul>\n<li>Cuntata is meres de su situ pro informare de custu problema.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_invalid_content_encoding_title">Faddina de codìfica de su cuntenutu</string>
   <!-- The document title and heading of an error page. -->
@@ -69,14 +92,14 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">S’indiritzu no est vàlidu</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>Is indiritzos web in generale s’iscrient in custa manera: <strong>http://www.esempru.com/</strong></li> <li>Assegura·ti chi ses impreende is barras curretas (<strong>/</strong>).</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>Is indiritzos web in generale s’iscrient in custa manera: <strong>http://www.esempru.com/</strong></li>\n<li>Assegura·ti chi ses impreende is barras curretas (<strong>/</strong>).</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">Protocollu disconnotu</string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_file_not_found_title">Archìviu no agatadu</string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_file_access_denied_title">Atzessu denegadu a s’archìviu</string>
-  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul> <li>Podet dare chi siat istadu cantzelladu o mòvidu, o chi is permissos de archìviu bi siant blochende s’atzessu.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul>\n<li>Podet dare chi siat istadu cantzelladu o mòvidu, o chi is permissos de archìviu bi siant blochende s’atzessu.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_proxy_connection_refused_title">Connessione cun su serbidore intermediàriu refudada</string>
   <!-- The document title and heading of an error page. -->

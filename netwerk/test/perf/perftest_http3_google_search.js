@@ -1,7 +1,6 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-/* eslint-env node */
 
 /*
 Ensure the `--firefox.preference=network.http.http3.enable:true` is
@@ -15,14 +14,19 @@ async function test(context, commands) {
   const webdriver = context.selenium.webdriver;
 
   if (
-    (typeof context.options.browsertime !== "undefined") &
-    (typeof context.options.browsertime.waitTime !== "undefined")
+    typeof context.options.browsertime !== "undefined" &&
+    typeof context.options.browsertime.waitTime !== "undefined"
   ) {
     waitTime = context.options.browsertime.waitTime;
   }
 
   // Make firefox learn of HTTP/3 server
   await commands.navigate(rootUrl);
+
+  await commands.js.runAndWait(`
+    document.cookie =
+      'SOCS=CAESHAgBEhJnd3NfMjAyNjAxMDgtMF9SQzEaAmVuIAEaBgiAlpbLBg; path=/; domain=.google.com; Secure; SameSite=None';
+  `);
 
   let cycles = 1;
   for (let cycle = 0; cycle < cycles; cycle++) {

@@ -192,8 +192,8 @@ bool CompileBuiltinModule(JSContext* cx,
       ReportOutOfMemory(cx);
       return false;
     }
-    if (!codeMeta->memories.append(
-            MemoryDesc(Limits(0, Nothing(), memory->shared)))) {
+    if (!codeMeta->memories.append(MemoryDesc(
+            Limits(0, Nothing(), memory->shared, PageSize::Standard)))) {
       ReportOutOfMemory(cx);
       return false;
     }
@@ -353,7 +353,8 @@ static BuiltinModuleFuncId JSStringFuncs[] = {
 static const char* JSStringModuleName = "wasm:js-string";
 
 Maybe<BuiltinModuleId> wasm::ImportMatchesBuiltinModule(
-    mozilla::Span<const char> importName, const BuiltinModuleIds& enabledBuiltins) {
+    mozilla::Span<const char> importName,
+    const BuiltinModuleIds& enabledBuiltins) {
   if (enabledBuiltins.jsString &&
       importName == mozilla::MakeStringSpan(JSStringModuleName)) {
     return Some(BuiltinModuleId::JSString);
@@ -444,7 +445,8 @@ bool wasm::InstantiateBuiltinModule(JSContext* cx, BuiltinModuleId module,
     return false;
   }
   Rooted<ImportValues> imports(cx);
-  if (!wasm::GetImports(cx, moduleObj->module(), importObj, imports.address())) {
+  if (!wasm::GetImports(cx, moduleObj->module(), importObj,
+                        imports.address())) {
     return false;
   }
 

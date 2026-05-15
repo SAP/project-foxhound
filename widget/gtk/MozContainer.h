@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MOZ_CONTAINER_H__
-#define __MOZ_CONTAINER_H__
+#ifndef MOZ_CONTAINER_H_
+#define MOZ_CONTAINER_H_
 
 #ifdef MOZ_WAYLAND
 #  include "mozilla/widget/MozContainerWayland.h"
@@ -46,7 +46,7 @@ typedef struct _MozContainer MozContainer;
 typedef struct _MozContainerClass MozContainerClass;
 
 struct _MozContainer {
-  GtkContainer container;
+  GtkWidget widget;
   gboolean destroyed;
 #ifdef MOZ_WAYLAND
   MozContainerWayland* wl;
@@ -54,7 +54,7 @@ struct _MozContainer {
 };
 
 struct _MozContainerClass {
-  GtkContainerClass parent_class;
+  GtkWidgetClass parent_class;
 };
 
 namespace mozilla::widget {
@@ -70,4 +70,4 @@ void moz_container_class_init(MozContainerClass* klass);
 class nsWindow;
 nsWindow* moz_container_get_nsWindow(MozContainer* container);
 
-#endif /* __MOZ_CONTAINER_H__ */
+#endif /* MOZ_CONTAINER_H_ */

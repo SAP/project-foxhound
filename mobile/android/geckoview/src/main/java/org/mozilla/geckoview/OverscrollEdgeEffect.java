@@ -21,6 +21,7 @@ import androidx.annotation.UiThread;
 import java.lang.reflect.Field;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Edge effect implementation for overscroll behavior. */
 @UiThread
 public final class OverscrollEdgeEffect {
   // Used to index particular edges in the edges array

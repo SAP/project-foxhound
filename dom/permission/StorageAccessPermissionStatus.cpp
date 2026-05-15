@@ -6,17 +6,17 @@
 
 #include "mozilla/dom/StorageAccessPermissionStatus.h"
 
+#include "PermissionStatusSink.h"
 #include "mozilla/AntiTrackingUtils.h"
-#include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/PermissionStatus.h"
 #include "mozilla/dom/PermissionStatusBinding.h"
+#include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIPermissionManager.h"
-#include "PermissionStatusSink.h"
 
 namespace mozilla::dom {
 

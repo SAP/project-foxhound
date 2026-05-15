@@ -14,7 +14,7 @@ import mozilla.components.ui.widgets.DefaultSnackbarDelegate
 import mozilla.components.ui.widgets.SnackbarDelegate
 
 object ContextMenuCandidates {
-    @Suppress("LongParameterList", "UndocumentedPublicFunction")
+    @Suppress("UndocumentedPublicFunction")
     fun get(
         context: Context,
         tabsUseCases: TabsUseCases,

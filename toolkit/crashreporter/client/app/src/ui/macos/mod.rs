@@ -27,10 +27,10 @@ use self::objc::*;
 use super::model::{self, Alignment, Application, Element, TypedElement};
 use crate::data::Property;
 use cocoa::{
-    INSApplication, INSBox, INSButton, INSColor, INSControl, INSFont, INSLayoutAnchor,
+    INSApplication, INSBox, INSButton, INSColor, INSControl, INSEvent, INSFont, INSLayoutAnchor,
     INSLayoutConstraint, INSLayoutDimension, INSMenu, INSMenuItem, INSObject, INSProcessInfo,
     INSProgressIndicator, INSRunLoop, INSScrollView, INSStackView, INSText, INSTextContainer,
-    INSTextField, INSTextView, INSView, INSWindow, NSArray_NSArrayCreation,
+    INSTextField, INSTextView, INSView, INSWindow, NSApplication_NSEvent, NSArray_NSArrayCreation,
     NSAttributedString_NSExtendedAttributedString, NSDictionary_NSDictionaryCreation,
     NSMutableParagraphStyle_, NSRunLoop_NSRunLoopConveniences, NSStackView_NSStackViewGravityAreas,
     NSString_NSStringExtensionMethods, NSTextField_NSTextFieldConvenience,
@@ -170,7 +170,7 @@ fn enqueue<F: Fn() + 'static>(f: F) {
                     cocoa::NSArray(<cocoa::NSArray as NSArray_NSArrayCreation<
                         cocoa::NSRunLoopMode,
                     >>::arrayWithObjects_count_(
-                        objects.as_slice().as_ptr() as *const *mut u64,
+                        objects.as_slice().as_ptr() as *const *mut _,
                         objects
                             .as_slice()
                             .len()
@@ -262,19 +262,11 @@ objc_class! {
             // Activate the application (bringing windows to the active foreground later)
             unsafe { cocoa::NSApplication::sharedApplication().activateIgnoringOtherApps_(runtime::YES) };
 
-            let mut first = true;
             let mut windows = WindowRenderer::default();
             let app = self.app.take().unwrap();
             windows.rtl = app.rtl;
             for window in app.windows {
-                let w = windows.render(window);
-                unsafe {
-                    if first {
-                        w.makeKeyAndOrderFront_(self.instance);
-                        w.makeMainWindow();
-                        first = false;
-                    }
-                }
+                windows.render(window);
             }
             self.windows = windows.unwrap();
 
@@ -282,8 +274,15 @@ objc_class! {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum WindowType {
+    Main { make_main: bool },
+    Normal,
+    Modal,
+}
+
 struct Window {
-    modal: bool,
+    window_type: WindowType,
     title: String,
     style: model::ElementStyle,
 }
@@ -328,15 +327,45 @@ objc_class! {
             self.instance
         }
 
+        #[sel(windowDidBecomeKey:)]
+        fn window_did_become_key(&mut self, _notification: Ptr<cocoa::NSNotification>) {
+            if matches!(self.window_type, WindowType::Main { make_main: true }) {
+                let w = cocoa::NSWindow(self.instance);
+                // In newer versions of macos, makeMainWindow doesn't seem to work reliably when
+                // called from applicationDidFinishLaunching, so we call it here from
+                // windowDidBecomeKey.
+                unsafe { w.makeMainWindow() };
+                self.window_type = WindowType::Main { make_main: false };
+            }
+        }
+
         #[sel(windowWillClose:)]
         fn window_will_close(&mut self, _notification: Ptr<cocoa::NSNotification>) {
             unsafe {
                 let nsapp = cocoa::NSApplication::sharedApplication();
-                if self.modal {
+                if matches!(self.window_type, WindowType::Modal) {
                     nsapp.stopModal();
-                } else if self.instance == nsapp.mainWindow().0 {
+                }
+                // We used to compare with NSApp.mainWindow (or check NSWindow.isMainWindow), but in
+                // newer versions of macos this has become flaky in windowWillClose. We track the
+                // main window ourselves, now.
+                else if matches!(self.window_type, WindowType::Main {..}) {
                     // Stop the application, causing run_loop to exit.
                     nsapp.stop_(self.instance);
+                    // Send a dummy event to ensure the stop is witnessed. This is necessary because
+                    // we may be closing as a result of an `invoke()` rather than another event.
+                    let event = cocoa::NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+                        cocoa::NSEventTypeApplicationDefined,
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                        cocoa::NSGraphicsContext(std::ptr::null_mut()),
+                        Default::default(),
+                        0,
+                        0
+                    );
+                    nsapp.postEvent_atStart_(event, runtime::YES);
                 }
             }
         }
@@ -541,14 +570,27 @@ impl WindowRenderer {
             title,
         } = window.element_type;
 
+        // If there are no windows, the first window is always treated as the main window.
+        let is_main = self.windows_to_retain.is_empty();
+        if is_main {
+            assert!(!modal, "main window cannot be modal");
+        }
+
         let w = Window {
-            modal,
+            window_type: if is_main {
+                WindowType::Main { make_main: true }
+            } else if modal {
+                WindowType::Modal
+            } else {
+                WindowType::Normal
+            },
             title,
             style,
         }
         .into_object();
 
         let nswindow: StrongRef<cocoa::NSWindow> = w.clone().cast();
+        self.windows_to_retain.push(nswindow.clone());
 
         unsafe {
             // Don't release windows when closed: we retain windows at the top-level.
@@ -637,8 +679,11 @@ impl WindowRenderer {
                     Property::ReadOnly(_) => panic!("window visibility cannot be ReadOnly"),
                 }
             }
+
+            if is_main {
+                nswindow.makeKeyAndOrderFront_(std::ptr::null_mut());
+            }
         }
-        self.windows_to_retain.push(nswindow.clone());
         nswindow
     }
 }
@@ -1082,8 +1127,8 @@ fn render_element(
                             cocoa::NSAttributedStringKey,
                             cocoa::id,
                         >>::dictionaryWithObject_forKey_(
-                            cocoa::NSColor::placeholderTextColor().0 as u64,
-                            cocoa::NSForegroundColorAttributeName.0 as u64,
+                            std::mem::transmute(cocoa::NSColor::placeholderTextColor().0),
+                            std::mem::transmute(cocoa::NSForegroundColorAttributeName.0),
                         ),
                     );
                     let string = StrongRef::new(cocoa::NSAttributedString(

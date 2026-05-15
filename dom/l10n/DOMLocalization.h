@@ -7,15 +7,15 @@
 #ifndef mozilla_dom_l10n_DOMLocalization_h
 #define mozilla_dom_l10n_DOMLocalization_h
 
-#include "nsTHashSet.h"
-#include "nsXULPrototypeDocument.h"
-#include "mozilla/intl/Localization.h"
 #include "mozilla/dom/DOMLocalizationBinding.h"
 #include "mozilla/dom/L10nMutations.h"
 #include "mozilla/dom/L10nOverlaysBinding.h"
 #include "mozilla/dom/LocalizationBinding.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/intl/L10nRegistry.h"
+#include "mozilla/intl/Localization.h"
+#include "nsTHashSet.h"
+#include "nsXULPrototypeDocument.h"
 
 // XXX Avoid including this here by moving function bodies to the cpp file
 #include "nsINode.h"
@@ -118,6 +118,8 @@ class DOMLocalization : public intl::Localization {
   DOMLocalization(nsIGlobalObject* aGlobal, bool aSync);
   DOMLocalization(nsIGlobalObject* aGlobal, bool aIsSync,
                   const intl::ffi::LocalizationRc* aRaw);
+  DOMLocalization(nsIGlobalObject* aGlobal, bool aSync,
+                  const nsTArray<nsCString>& aLocales);
 
  protected:
   virtual ~DOMLocalization();
@@ -125,8 +127,8 @@ class DOMLocalization : public intl::Localization {
   void DisconnectMutations();
   void DisconnectRoots();
   void ReportL10nOverlaysErrors(nsTArray<L10nOverlaysError>& aErrors);
-  void ConvertStringToL10nArgs(const nsString& aInput, intl::L10nArgs& aRetVal,
-                               ErrorResult& aRv);
+  void ConvertStringToL10nArgs(const nsCString& aL10nId, const nsString& aInput,
+                               intl::L10nArgs& aRetVal, ErrorResult& aRv);
 
   RefPtr<L10nMutations> mMutations;
   nsTHashSet<RefPtr<nsINode>> mRoots;

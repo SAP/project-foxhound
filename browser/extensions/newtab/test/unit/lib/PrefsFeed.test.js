@@ -9,6 +9,7 @@ describe("PrefsFeed", () => {
   let FAKE_PREFS;
   let sandbox;
   let ServicesStub;
+  let SelectableProfileServiceStub;
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     FAKE_PREFS = new Map([
@@ -28,6 +29,11 @@ describe("PrefsFeed", () => {
       obs: {
         removeObserver: sinon.spy(),
         addObserver: sinon.spy(),
+      },
+    };
+    SelectableProfileServiceStub = {
+      hasCreatedSelectableProfiles() {
+        return false;
       },
     };
     sinon.spy(feed, "_setPref");
@@ -51,6 +57,7 @@ describe("PrefsFeed", () => {
     overrider.set({
       PrivateBrowsingUtils: { enabled: true },
       Services: ServicesStub,
+      SelectableProfileService: SelectableProfileServiceStub,
     });
   });
   afterEach(() => {
@@ -89,6 +96,29 @@ describe("PrefsFeed", () => {
     );
     const [{ data }] = feed.store.dispatch.firstCall.args;
     assert.deepEqual(data.featureConfig, { prefsButtonIcon: "icon-foo" });
+  });
+  it("should dispatch PREFS_INITIAL_VALUES with trainhopConfig", () => {
+    const testObject = {
+      meta: { isRollout: false },
+      value: {
+        type: "testExperiment",
+        payload: { enabled: true },
+      },
+    };
+    sandbox
+      .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+      .returns([testObject]);
+
+    feed.onAction({ type: at.INIT });
+
+    assert.equal(
+      feed.store.dispatch.firstCall.args[0].type,
+      at.PREFS_INITIAL_VALUES
+    );
+    const [{ data }] = feed.store.dispatch.firstCall.args;
+    assert.deepEqual(data.trainhopConfig, {
+      testExperiment: { enabled: true },
+    });
   });
   it("should dispatch PREFS_INITIAL_VALUES with an empty object if no experiment is returned", () => {
     sandbox.stub(global.NimbusFeatures.newtab, "getAllVariables").returns(null);
@@ -192,10 +222,243 @@ describe("PrefsFeed", () => {
       })
     );
   });
+  describe("newtabTrainhop", () => {
+    it("should send a PREF_CHANGED actions when onTrainhopExperimentUpdated is called", () => {
+      const testObject = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment",
+          payload: {
+            enabled: true,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment: testObject.value.payload,
+            },
+          },
+        })
+      );
+    });
+    it("should handle and dedupe multiple experiments and rollouts", () => {
+      const testObject1 = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment1",
+          payload: {
+            enabled: true,
+          },
+        },
+      };
+      const testObject2 = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment1",
+          payload: {
+            enabled: false,
+          },
+        },
+      };
+      const testObject3 = {
+        meta: {
+          isRollout: true,
+        },
+        value: {
+          type: "testExperiment2",
+          payload: {
+            enabled: true,
+          },
+        },
+      };
+      const testObject4 = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment2",
+          payload: {
+            enabled: false,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject1, testObject2, testObject3, testObject4]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment1: testObject1.value.payload,
+              testExperiment2: testObject4.value.payload,
+            },
+          },
+        })
+      );
+    });
+    it("should handle multi-payload format with single enrollment", () => {
+      const testObject = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment",
+              payload: {
+                enabled: true,
+                name: "test-name",
+              },
+            },
+          ],
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment: {
+                enabled: true,
+                name: "test-name",
+              },
+            },
+          },
+        })
+      );
+    });
+    it("should handle multi-payload format with multiple items in single enrollment", () => {
+      const testObject = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment1",
+              payload: {
+                enabled: true,
+              },
+            },
+            {
+              type: "testExperiment2",
+              payload: {
+                enabled: false,
+              },
+            },
+          ],
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment1: {
+                enabled: true,
+              },
+              testExperiment2: {
+                enabled: false,
+              },
+            },
+          },
+        })
+      );
+    });
+    it("should dedupe multi-payload format with experiment taking precedence over rollout", () => {
+      const rollout = {
+        meta: {
+          isRollout: true,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment",
+              payload: {
+                enabled: false,
+                name: "rollout-name",
+              },
+            },
+          ],
+        },
+      };
+      const experiment = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment",
+              payload: {
+                enabled: true,
+                name: "experiment-name",
+              },
+            },
+          ],
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([rollout, experiment]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment: {
+                enabled: true,
+                name: "experiment-name",
+              },
+            },
+          },
+        })
+      );
+    });
+  });
   it("should dispatch PREF_CHANGED when onWidgetsUpdated is called", () => {
     sandbox
       .stub(global.NimbusFeatures.newtabWidgets, "getAllVariables")
       .returns({
+        enabled: true,
         listsEnabled: true,
         timerEnabled: false,
       });
@@ -209,6 +472,7 @@ describe("PrefsFeed", () => {
         data: {
           name: "widgetsConfig",
           value: {
+            enabled: true,
             listsEnabled: true,
             timerEnabled: false,
           },
@@ -220,6 +484,7 @@ describe("PrefsFeed", () => {
     feed.geo = "";
     sandbox.spy(global.NimbusFeatures.pocketNewtab, "offUpdate");
     sandbox.spy(global.NimbusFeatures.newtab, "offUpdate");
+    sandbox.spy(global.NimbusFeatures.newtabTrainhop, "offUpdate");
     feed.removeListeners();
     assert.calledWith(
       global.NimbusFeatures.pocketNewtab.offUpdate,
@@ -228,6 +493,10 @@ describe("PrefsFeed", () => {
     assert.calledWith(
       global.NimbusFeatures.newtab.offUpdate,
       feed.onExperimentUpdated
+    );
+    assert.calledWith(
+      global.NimbusFeatures.newtabTrainhop.offUpdate,
+      feed.onTrainhopExperimentUpdated
     );
     assert.calledWith(
       ServicesStub.obs.removeObserver,
@@ -334,6 +603,782 @@ describe("PrefsFeed", () => {
         "browser.newtabpage.activity-stream.fake.pref",
         "default"
       );
+    });
+  });
+
+  describe("Activation Window Evaluation", () => {
+    let mockCreatedInstant;
+    let mockNowInstant;
+    let defaultBranch;
+
+    const TEST_VARIANT = "a";
+
+    beforeEach(() => {
+      // Mock Temporal.Instant for time control
+      // Create a mock instant representing profile creation time (Jan 1, 2024)
+      mockCreatedInstant = {
+        toString: () => "2024-01-01T00:00:00Z",
+      };
+
+      // Mock "now" as 24 hours after creation
+      mockNowInstant = {
+        toString: () => "2024-01-02T00:00:00Z",
+        subtract: sinon.stub().returns({
+          toString: () => "2023-12-30T00:00:00Z",
+        }),
+      };
+
+      global.Temporal = {
+        Instant: {
+          compare: sinon.stub(),
+        },
+        Now: {
+          instant: sinon.stub().returns(mockNowInstant),
+        },
+      };
+
+      global.AboutNewTab = {
+        activityStream: {
+          createdInstant: mockCreatedInstant,
+        },
+      };
+
+      defaultBranch = {
+        setBoolPref: sinon.spy(),
+      };
+      ServicesStub.prefs.getDefaultBranch = sinon.stub().returns(defaultBranch);
+
+      // Setup store state with a fake activation window config
+      feed.store.state = {
+        Prefs: {
+          values: {
+            trainhopConfig: {
+              activationWindowBehavior: {
+                enabled: true,
+                maxProfileAgeInHours: 48,
+                disableTopSites: true,
+                disableTopStories: true,
+                variant: TEST_VARIANT,
+                enterActivationWindowMessageID: "",
+                exitActivationWindowMessageID: "",
+              },
+            },
+          },
+        },
+      };
+
+      sinon.spy(feed, "enterActivationWindowState");
+      sinon.spy(feed, "exitActivationWindowState");
+    });
+
+    afterEach(() => {
+      delete global.Temporal;
+      delete global.AboutNewTab;
+    });
+
+    describe("#checkForActivationWindow", () => {
+      it("should enter activation window state when profile is within window", () => {
+        // First call: createdInstant < now (comparison returns -1)
+        // Second call: createdInstant > (now - 48 hours) (comparison returns 1)
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(1);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.calledOnce(feed.enterActivationWindowState);
+        assert.calledWith(
+          feed.enterActivationWindowState,
+          TEST_VARIANT,
+          true,
+          true
+        );
+      });
+
+      it("should exit activation window state when profile is outside window", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+        feed._prefs.isSet = sinon.stub().returns(false);
+
+        // First call: createdInstant < now (comparison returns -1)
+        // Second call: createdInstant < (now - 48 hours) (comparison returns -1, meaning too old)
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(-1);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.calledOnce(feed.exitActivationWindowState);
+      });
+
+      it("should not enter activation window when profile is in the future", () => {
+        // First call: createdInstant > now (comparison returns 1)
+        global.Temporal.Instant.compare.onFirstCall().returns(1);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should not enter activation window when profile is exactly at boundary", () => {
+        // First call: createdInstant < now (comparison returns -1)
+        // Second call: createdInstant === (now - 48 hours) (comparison returns 0)
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(0);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+      });
+
+      it("should not evaluate when config is disabled", () => {
+        feed.store.state.Prefs.values.trainhopConfig.activationWindowBehavior.enabled = false;
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should not enter the activation window if 1 or more selectable profiles have been created", () => {
+        // First call: createdInstant < now (comparison returns -1)
+        // Second call: createdInstant > (now - 48 hours) (comparison returns 1)
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(1);
+
+        sandbox
+          .stub(SelectableProfileServiceStub, "hasCreatedSelectableProfiles")
+          .returns(true);
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should exit activation window state when config is disabled but currently in state", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+        feed.store.state.Prefs.values.trainhopConfig.activationWindowBehavior.enabled = false;
+        feed._prefs.isSet = sinon.stub().returns(false);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.calledOnce(feed.exitActivationWindowState);
+      });
+
+      it("should not evaluate when createdInstant is missing", () => {
+        global.AboutNewTab.activityStream.createdInstant = null;
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should exit activation window state when createdInstant is missing but currently in state", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+        global.AboutNewTab.activityStream.createdInstant = null;
+        feed._prefs.isSet = sinon.stub().returns(false);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.calledOnce(feed.exitActivationWindowState);
+      });
+
+      it("should not evaluate when variant is missing", () => {
+        feed.store.state.Prefs.values.trainhopConfig.activationWindowBehavior.variant =
+          "";
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should exit activation window state when variant is missing but currently in state", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+        feed.store.state.Prefs.values.trainhopConfig.activationWindowBehavior.variant =
+          "";
+        feed._prefs.isSet = sinon.stub().returns(false);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.calledOnce(feed.exitActivationWindowState);
+      });
+
+      it("should return early when store state is missing", () => {
+        feed.store.state = null;
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should return early when Prefs state is missing", () => {
+        feed.store.state = { Prefs: null };
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.notCalled(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should call enterActivationWindowState even if already in state", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+
+        // First call: createdInstant < now (comparison returns -1)
+        // Second call: createdInstant > (now - 48 hours) (comparison returns 1)
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(1);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.calledOnce(feed.enterActivationWindowState);
+        assert.notCalled(feed.exitActivationWindowState);
+      });
+
+      it("should use default now instant when not provided", () => {
+        // Set up for within window
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(1);
+
+        feed.checkForActivationWindow();
+
+        assert.calledOnce(global.Temporal.Now.instant);
+        assert.calledOnce(feed.enterActivationWindowState);
+      });
+
+      it("should pass isStartup=true to enterActivationWindowState when called with isStartup=true", () => {
+        // Set up for within window
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(1);
+
+        feed.checkForActivationWindow(mockNowInstant, /* isStartup */ true);
+
+        assert.calledOnce(feed.enterActivationWindowState);
+        assert.calledWith(
+          feed.enterActivationWindowState,
+          TEST_VARIANT,
+          true,
+          true,
+          "",
+          true
+        );
+      });
+
+      it("should pass isStartup=false to enterActivationWindowState when called without isStartup", () => {
+        // Set up for within window
+        global.Temporal.Instant.compare.onFirstCall().returns(-1);
+        global.Temporal.Instant.compare.onSecondCall().returns(1);
+
+        feed.checkForActivationWindow(mockNowInstant);
+
+        assert.calledOnce(feed.enterActivationWindowState);
+        assert.calledWith(
+          feed.enterActivationWindowState,
+          TEST_VARIANT,
+          true,
+          true,
+          "",
+          false
+        );
+      });
+    });
+  });
+
+  describe("Activation Window Broadcasting", () => {
+    const TEST_VARIANT = "a";
+
+    let defaultBranch;
+    beforeEach(() => {
+      defaultBranch = {
+        setBoolPref: sinon.spy(),
+      };
+      ServicesStub.prefs.getDefaultBranch = sinon.stub().returns(defaultBranch);
+      sinon.spy(feed, "onPrefChanged");
+    });
+
+    describe("#enterActivationWindowState", () => {
+      it("should broadcast pref changes when entering activation window", () => {
+        feed.inActivationWindowState = "";
+
+        feed.enterActivationWindowState(TEST_VARIANT, true, true, "");
+
+        assert.calledTwice(feed.onPrefChanged);
+        assert.calledWith(feed.onPrefChanged, "feeds.topsites", false);
+        assert.calledWith(
+          feed.onPrefChanged,
+          "feeds.section.topstories",
+          false
+        );
+      });
+
+      it("should not broadcast when already in the same variant", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+
+        feed.enterActivationWindowState(TEST_VARIANT, true, true, "");
+
+        assert.notCalled(feed.onPrefChanged);
+        assert.notCalled(defaultBranch.setBoolPref);
+      });
+
+      it("should broadcast when entering with different variant", () => {
+        feed.inActivationWindowState = "variant-a";
+
+        feed.enterActivationWindowState("variant-b", true, true, "");
+
+        assert.calledTwice(feed.onPrefChanged);
+      });
+
+      it("should only broadcast for top sites if only disabling top sites", () => {
+        feed.inActivationWindowState = "";
+
+        feed.enterActivationWindowState(TEST_VARIANT, true, false, "");
+
+        assert.calledOnce(feed.onPrefChanged);
+        assert.calledWith(feed.onPrefChanged, "feeds.topsites", false);
+      });
+
+      it("should only broadcast for top stories if only disabling top stories", () => {
+        feed.inActivationWindowState = "";
+
+        feed.enterActivationWindowState(TEST_VARIANT, false, true, "");
+
+        assert.calledOnce(feed.onPrefChanged);
+        assert.calledWith(
+          feed.onPrefChanged,
+          "feeds.section.topstories",
+          false
+        );
+      });
+
+      it("should not broadcast if not disabling anything", () => {
+        feed.inActivationWindowState = "";
+
+        feed.enterActivationWindowState(TEST_VARIANT, false, false, "");
+
+        assert.notCalled(feed.onPrefChanged);
+      });
+
+      it("should reapply prefs on startup even when already in the same variant", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+
+        feed.enterActivationWindowState(
+          TEST_VARIANT,
+          true,
+          true,
+          "",
+          /* isStartup */ true
+        );
+
+        assert.calledTwice(defaultBranch.setBoolPref);
+        assert.calledWith(defaultBranch.setBoolPref, "feeds.topsites", false);
+        assert.calledWith(
+          defaultBranch.setBoolPref,
+          "feeds.section.topstories",
+          false
+        );
+      });
+
+      it("should broadcast on startup even when already in the same variant", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+
+        feed.enterActivationWindowState(
+          TEST_VARIANT,
+          true,
+          true,
+          "",
+          /* isStartup */ true
+        );
+
+        assert.calledTwice(feed.onPrefChanged);
+        assert.calledWith(feed.onPrefChanged, "feeds.topsites", false);
+        assert.calledWith(
+          feed.onPrefChanged,
+          "feeds.section.topstories",
+          false
+        );
+      });
+
+      it("should skip idempotent check when isStartup=true", () => {
+        feed.inActivationWindowState = TEST_VARIANT;
+
+        feed.enterActivationWindowState(
+          TEST_VARIANT,
+          true,
+          false,
+          "",
+          /* isStartup */ true
+        );
+
+        assert.calledOnce(feed.onPrefChanged);
+        assert.calledWith(feed.onPrefChanged, "feeds.topsites", false);
+      });
+
+      it("should set enter message ID pref when provided", () => {
+        feed.inActivationWindowState = "";
+
+        feed.enterActivationWindowState(
+          "test-variant",
+          true,
+          true,
+          "ENTER_MESSAGE_ID"
+        );
+
+        assert.calledWith(
+          feed._prefs.set,
+          "activationWindow.enterMessageID",
+          "ENTER_MESSAGE_ID"
+        );
+      });
+
+      it("should not set enter message ID pref when empty string", () => {
+        feed.inActivationWindowState = "";
+
+        feed.enterActivationWindowState("test-variant", true, true, "");
+
+        assert.neverCalledWith(
+          feed._prefs.set,
+          "activationWindow.enterMessageID"
+        );
+      });
+    });
+
+    describe("#exitActivationWindowState", () => {
+      beforeEach(() => {
+        feed._prefs.isSet = sinon.stub();
+      });
+
+      it("should broadcast pref changes when no user values were set", () => {
+        feed._prefs.isSet.returns(false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledTwice(feed.onPrefChanged);
+        assert.calledWith(feed.onPrefChanged, "feeds.topsites", true);
+        assert.calledWith(feed.onPrefChanged, "feeds.section.topstories", true);
+      });
+
+      it("should only broadcast for top stories if top sites had user value", () => {
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topSitesUserValue")
+          .returns(true);
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topStoriesUserValue")
+          .returns(false);
+        FAKE_PREFS.set("activationWindow.temp.topSitesUserValue", false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledOnce(feed.onPrefChanged);
+        assert.calledWith(feed.onPrefChanged, "feeds.section.topstories", true);
+        assert.neverCalledWith(feed.onPrefChanged, "feeds.topsites", true);
+      });
+
+      it("should only broadcast for top sites if top stories had user value", () => {
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topSitesUserValue")
+          .returns(false);
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topStoriesUserValue")
+          .returns(true);
+        FAKE_PREFS.set("activationWindow.temp.topStoriesUserValue", true);
+
+        feed.exitActivationWindowState();
+
+        assert.calledOnce(feed.onPrefChanged);
+        assert.calledWith(feed.onPrefChanged, "feeds.topsites", true);
+        assert.neverCalledWith(
+          feed.onPrefChanged,
+          "feeds.section.topstories",
+          true
+        );
+      });
+
+      it("should not broadcast if both prefs had user values", () => {
+        feed._prefs.isSet.returns(true);
+        FAKE_PREFS.set("activationWindow.temp.topSitesUserValue", false);
+        FAKE_PREFS.set("activationWindow.temp.topStoriesUserValue", true);
+
+        feed.exitActivationWindowState();
+
+        assert.notCalled(feed.onPrefChanged);
+      });
+
+      it("should clear enter message ID pref on exit", () => {
+        feed._prefs.isSet.returns(false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(
+          feed._prefs.set,
+          "activationWindow.enterMessageID",
+          ""
+        );
+      });
+
+      it("should set exit message ID pref when provided", () => {
+        feed._prefs.isSet.returns(false);
+
+        feed.exitActivationWindowState("EXIT_MESSAGE_ID");
+
+        assert.calledWith(
+          feed._prefs.set,
+          "activationWindow.exitMessageID",
+          "EXIT_MESSAGE_ID"
+        );
+      });
+
+      it("should clear exit message ID pref when not provided", () => {
+        feed._prefs.isSet.returns(false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(
+          feed._prefs.set,
+          "activationWindow.exitMessageID",
+          ""
+        );
+      });
+    });
+
+    describe("store.dispatch integration", () => {
+      beforeEach(() => {
+        feed.inActivationWindowState = "";
+        FAKE_PREFS.set("feeds.topsites", { value: true });
+        FAKE_PREFS.set("feeds.section.topstories", { value: true });
+      });
+
+      it("should dispatch PREF_CHANGED actions when entering activation window", () => {
+        feed.enterActivationWindowState(TEST_VARIANT, true, true);
+
+        assert.calledWith(
+          feed.store.dispatch,
+          sinon.match({
+            type: at.PREF_CHANGED,
+            data: { name: "feeds.topsites", value: false },
+          })
+        );
+        assert.calledWith(
+          feed.store.dispatch,
+          sinon.match({
+            type: at.PREF_CHANGED,
+            data: { name: "feeds.section.topstories", value: false },
+          })
+        );
+      });
+
+      it("should dispatch PREF_CHANGED actions when exiting activation window", () => {
+        feed._prefs.isSet = sinon.stub().returns(false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(
+          feed.store.dispatch,
+          sinon.match({
+            type: at.PREF_CHANGED,
+            data: { name: "feeds.topsites", value: true },
+          })
+        );
+        assert.calledWith(
+          feed.store.dispatch,
+          sinon.match({
+            type: at.PREF_CHANGED,
+            data: { name: "feeds.section.topstories", value: true },
+          })
+        );
+      });
+    });
+  });
+
+  describe("Activation Window User Preference Tracking", () => {
+    describe("#trackActivationWindowPrefChange", () => {
+      it("should track top sites user value when changed during activation window", () => {
+        feed.trackActivationWindowPrefChange("feeds.topsites", false);
+        assert.calledWith(
+          feed._prefs.set,
+          "activationWindow.temp.topSitesUserValue",
+          false
+        );
+      });
+
+      it("should track top stories user value when changed during activation window", () => {
+        feed.trackActivationWindowPrefChange("feeds.section.topstories", true);
+        assert.calledWith(
+          feed._prefs.set,
+          "activationWindow.temp.topStoriesUserValue",
+          true
+        );
+      });
+
+      it("should not track changes for other prefs", () => {
+        feed.trackActivationWindowPrefChange("some.other.pref", false);
+        assert.neverCalledWith(
+          feed._prefs.set,
+          "activationWindow.temp.topSitesUserValue"
+        );
+        assert.neverCalledWith(
+          feed._prefs.set,
+          "activationWindow.temp.topStoriesUserValue"
+        );
+      });
+    });
+
+    describe("#onPrefChanged with activation window tracking", () => {
+      beforeEach(() => {
+        feed.inActivationWindowState = "variant-a";
+        sinon.spy(feed, "trackActivationWindowPrefChange");
+      });
+
+      it("should call trackActivationWindowPrefChange when in activation window", () => {
+        feed.onPrefChanged("feeds.topsites", false);
+        assert.calledOnce(feed.trackActivationWindowPrefChange);
+        assert.calledWith(
+          feed.trackActivationWindowPrefChange,
+          "feeds.topsites",
+          false
+        );
+      });
+
+      it("should not call trackActivationWindowPrefChange when not in activation window", () => {
+        feed.inActivationWindowState = "";
+        feed.onPrefChanged("feeds.topsites", false);
+        assert.notCalled(feed.trackActivationWindowPrefChange);
+      });
+
+      it("should not track when isUserChange=false even if in activation window", () => {
+        feed.onPrefChanged("feeds.topsites", false, /* isUserChange */ false);
+        assert.notCalled(feed.trackActivationWindowPrefChange);
+      });
+
+      it("should track when isUserChange=true (default) and in activation window", () => {
+        feed.onPrefChanged("feeds.topsites", false, /* isUserChange */ true);
+        assert.calledOnce(feed.trackActivationWindowPrefChange);
+      });
+
+      it("should track when isUserChange not specified and in activation window", () => {
+        feed.onPrefChanged("feeds.topsites", false);
+        assert.calledOnce(feed.trackActivationWindowPrefChange);
+      });
+    });
+
+    describe("#exitActivationWindowState", () => {
+      let defaultBranch;
+      beforeEach(() => {
+        defaultBranch = {
+          setBoolPref: sinon.spy(),
+        };
+        ServicesStub.prefs.getDefaultBranch = sinon
+          .stub()
+          .returns(defaultBranch);
+      });
+
+      it("should reset defaults to true and restore user's top sites value", () => {
+        feed._prefs.isSet = sinon.stub();
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topSitesUserValue")
+          .returns(true);
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topStoriesUserValue")
+          .returns(false);
+        FAKE_PREFS.set("activationWindow.temp.topSitesUserValue", false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(defaultBranch.setBoolPref, "feeds.topsites", true);
+        assert.calledWith(
+          defaultBranch.setBoolPref,
+          "feeds.section.topstories",
+          true
+        );
+        assert.calledWith(feed._prefs.set, "feeds.topsites", false);
+        assert.calledWith(
+          feed._prefs.reset,
+          "activationWindow.temp.topSitesUserValue"
+        );
+      });
+
+      it("should reset defaults to true and restore user's top stories value", () => {
+        feed._prefs.isSet = sinon.stub();
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topSitesUserValue")
+          .returns(false);
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topStoriesUserValue")
+          .returns(true);
+        FAKE_PREFS.set("activationWindow.temp.topStoriesUserValue", true);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(defaultBranch.setBoolPref, "feeds.topsites", true);
+        assert.calledWith(
+          defaultBranch.setBoolPref,
+          "feeds.section.topstories",
+          true
+        );
+        assert.calledWith(feed._prefs.set, "feeds.section.topstories", true);
+        assert.calledWith(
+          feed._prefs.reset,
+          "activationWindow.temp.topStoriesUserValue"
+        );
+      });
+
+      it("should only reset defaults when no user changes were made", () => {
+        feed._prefs.isSet = sinon.stub().returns(false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(defaultBranch.setBoolPref, "feeds.topsites", true);
+        assert.calledWith(
+          defaultBranch.setBoolPref,
+          "feeds.section.topstories",
+          true
+        );
+        assert.neverCalledWith(feed._prefs.set, "feeds.topsites");
+        assert.neverCalledWith(feed._prefs.set, "feeds.section.topstories");
+      });
+
+      it("should clear activation window variant pref", () => {
+        feed._prefs.isSet = sinon.stub().returns(false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(feed._prefs.reset, "activationWindow.variant");
+      });
+
+      it("should handle user disabling top sites during activation window", () => {
+        feed._prefs.isSet = sinon.stub();
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topSitesUserValue")
+          .returns(true);
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topStoriesUserValue")
+          .returns(false);
+        FAKE_PREFS.set("activationWindow.temp.topSitesUserValue", false);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(defaultBranch.setBoolPref, "feeds.topsites", true);
+        assert.calledWith(feed._prefs.set, "feeds.topsites", false);
+      });
+
+      it("should handle user enabling top sites during activation window", () => {
+        feed._prefs.isSet = sinon.stub();
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topSitesUserValue")
+          .returns(true);
+        feed._prefs.isSet
+          .withArgs("activationWindow.temp.topStoriesUserValue")
+          .returns(false);
+        FAKE_PREFS.set("activationWindow.temp.topSitesUserValue", true);
+
+        feed.exitActivationWindowState();
+
+        assert.calledWith(defaultBranch.setBoolPref, "feeds.topsites", true);
+        assert.calledWith(feed._prefs.set, "feeds.topsites", true);
+      });
     });
   });
 });

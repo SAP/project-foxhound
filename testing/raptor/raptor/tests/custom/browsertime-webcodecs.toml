@@ -14,6 +14,7 @@ unit = "score"
 repository = "https://github.com/mozilla/perf-automation"
 repository_revision = "d34775ba6b6cef6068005c05b570d6c79eb0f7d8"
 repository_path = "benchmarks/webcodecs"
+sparse_checkout = true
 
 ["ve-av1-rt"]
 test_url = "http://<host>:<port>/index.html?raptor&codecs=av01.0.04M.08&latencyModes=realtime&width=1920&height=1080&framerate=30"

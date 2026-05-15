@@ -9,7 +9,6 @@ const {
   getWindowDimensions,
   getViewportDimensions,
 } = require("resource://devtools/shared/layout/utils.js");
-const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
 const lazyContainer = {};
 
@@ -47,71 +46,11 @@ const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 const STYLESHEET_URI =
   "resource://devtools-highlighter-styles/highlighters.css";
 
-const _tokens = Symbol("classList/tokens");
-
-/**
- * Shims the element's `classList` for anonymous content elements; used
- * internally by `CanvasFrameAnonymousContentHelper.getElement()` method.
- */
-function ClassList(className) {
-  const trimmed = (className || "").trim();
-  this[_tokens] = trimmed ? trimmed.split(/\s+/) : [];
-}
-
-ClassList.prototype = {
-  item(index) {
-    return this[_tokens][index];
-  },
-  contains(token) {
-    return this[_tokens].includes(token);
-  },
-  add(token) {
-    if (!this.contains(token)) {
-      this[_tokens].push(token);
-    }
-    EventEmitter.emit(this, "update");
-  },
-  remove(token) {
-    const index = this[_tokens].indexOf(token);
-
-    if (index > -1) {
-      this[_tokens].splice(index, 1);
-    }
-    EventEmitter.emit(this, "update");
-  },
-  toggle(token, force) {
-    // If force parameter undefined retain the toggle behavior
-    if (force === undefined) {
-      if (this.contains(token)) {
-        this.remove(token);
-      } else {
-        this.add(token);
-      }
-    } else if (force) {
-      // If force is true, enforce token addition
-      this.add(token);
-    } else {
-      // If force is falsy value, enforce token removal
-      this.remove(token);
-    }
-  },
-  get length() {
-    return this[_tokens].length;
-  },
-  *[Symbol.iterator]() {
-    for (let i = 0; i < this.tokens.length; i++) {
-      yield this[_tokens][i];
-    }
-  },
-  toString() {
-    return this[_tokens].join(" ");
-  },
-};
-
 /**
  * Is this content window a XUL window?
+ *
  * @param {Window} window
- * @return {Boolean}
+ * @return {boolean}
  */
 function isXUL(window) {
   return window.document.documentElement?.namespaceURI === XUL_NS;
@@ -121,9 +60,10 @@ exports.isXUL = isXUL;
 /**
  * Returns true if a DOM node is "valid", where "valid" means that the node isn't a dead
  * object wrapper, is still attached to a document, and is of a given type.
+ *
  * @param {DOMNode} node
- * @param {Number} nodeType Optional, defaults to ELEMENT_NODE
- * @return {Boolean}
+ * @param {number} nodeType Optional, defaults to ELEMENT_NODE
+ * @return {boolean}
  */
 function isNodeValid(node, nodeType = Node.ELEMENT_NODE) {
   // Is it still alive?
@@ -158,85 +98,90 @@ exports.isNodeValid = isNodeValid;
  * Since this container gets cleared when the document navigates, highlighters
  * should use this helper to have their markup content automatically re-inserted
  * in the new document.
- *
- * Since the markup content is inserted in the canvasFrame using
- * insertAnonymousContent, this means that it can be modified using the API
- * described in AnonymousContent.webidl.
  * To retrieve the AnonymousContent instance, use the content getter.
- *
- * @param {HighlighterEnv} highlighterEnv
- *        The environemnt which windows will be used to insert the node.
- * @param {Function} nodeBuilder
- *        A function that, when executed, returns a DOM node to be inserted into
- *        the canvasFrame.
- * @param {Object} options
- * @param {Boolean} options.waitForDocumentToLoad
- *        Set to false to try to insert the anonymous content even if the document
- *        isn't loaded yet. Defaults to true.
  */
-function CanvasFrameAnonymousContentHelper(
-  highlighterEnv,
-  nodeBuilder,
-  { waitForDocumentToLoad = true } = {}
-) {
-  this.highlighterEnv = highlighterEnv;
-  this.nodeBuilder = nodeBuilder;
-  this.waitForDocumentToLoad = !!waitForDocumentToLoad;
+class CanvasFrameAnonymousContentHelper {
+  /**
+   * @param {HighlighterEnv} highlighterEnv
+   *        The environemnt which windows will be used to insert the node.
+   * @param {Function} nodeBuilder
+   *        A function that, when executed, returns a DOM node to be inserted into
+   *        the canvasFrame.
+   * @param {object} options
+   * @param {string | undefined} options.contentRootHostClassName
+   *        An optional class to add to the AnonymousContent root's host.
+   * @param {boolean} options.waitForDocumentToLoad
+   *        Set to false to try to insert the anonymous content even if the document
+   *        isn't loaded yet. Defaults to true.
+   */
+  constructor(
+    highlighterEnv,
+    nodeBuilder,
+    { contentRootHostClassName, waitForDocumentToLoad = true } = {}
+  ) {
+    this.#highlighterEnv = highlighterEnv;
+    this.#nodeBuilder = nodeBuilder;
+    this.#waitForDocumentToLoad = !!waitForDocumentToLoad;
+    this.#contentRootHostClassName = contentRootHostClassName;
 
-  this._onWindowReady = this._onWindowReady.bind(this);
-  this.highlighterEnv.on("window-ready", this._onWindowReady);
+    this.#highlighterEnv.on("window-ready", this.#onWindowReady);
+  }
 
-  this.listeners = new Map();
-  this.elements = new Map();
-}
+  #content;
+  #initialized;
+  #highlighterEnv;
+  #nodeBuilder;
+  #waitForDocumentToLoad;
+  #contentRootHostClassName;
+  #listeners = new Map();
+  #elements = new Map();
 
-CanvasFrameAnonymousContentHelper.prototype = {
   initialize() {
-    // _insert will resolve this promise once the markup is displayed
-    const onInitialized = new Promise(resolve => {
-      this._initialized = resolve;
-    });
+    // #insert will resolve this promise once the markup is displayed
+    const { promise: onInitialized, resolve } = Promise.withResolvers();
+    this.#initialized = resolve;
+
     // Only try to create the highlighter when the document is loaded,
     // otherwise, wait for the window-ready event to fire.
-    const doc = this.highlighterEnv.document;
+    const doc = this.#highlighterEnv.document;
     if (
-      !this.waitForDocumentToLoad ||
+      !this.#waitForDocumentToLoad ||
       isDocumentReady(doc) ||
       doc.readyState !== "uninitialized"
     ) {
-      this._insert();
+      this.#insert();
     }
 
     return onInitialized;
-  },
+  }
 
   destroy() {
-    this._remove();
+    this.#remove();
 
-    this.highlighterEnv.off("window-ready", this._onWindowReady);
-    this.highlighterEnv = this.nodeBuilder = this._content = null;
+    this.#highlighterEnv.off("window-ready", this.#onWindowReady);
+    this.#highlighterEnv = this.#nodeBuilder = this.#content = null;
     this.anonymousContentDocument = null;
     this.anonymousContentWindow = null;
     this.pageListenerTarget = null;
 
-    this._removeAllListeners();
-    this.elements.clear();
-  },
+    this.#removeAllListeners();
+    this.#elements.clear();
+  }
 
-  async _insert() {
-    if (this.waitForDocumentToLoad) {
-      await waitForContentLoaded(this.highlighterEnv.window);
+  async #insert() {
+    if (this.#waitForDocumentToLoad) {
+      await waitForContentLoaded(this.#highlighterEnv.window);
     }
-    if (!this.highlighterEnv) {
+    if (!this.#highlighterEnv) {
       // CanvasFrameAnonymousContentHelper was already destroyed.
       return;
     }
 
     // Highlighters are drawn inside the anonymous content of the
     // highlighter environment document.
-    this.anonymousContentDocument = this.highlighterEnv.document;
-    this.anonymousContentWindow = this.highlighterEnv.window;
-    this.pageListenerTarget = this.highlighterEnv.pageListenerTarget;
+    this.anonymousContentDocument = this.#highlighterEnv.document;
+    this.anonymousContentWindow = this.#highlighterEnv.window;
+    this.pageListenerTarget = this.#highlighterEnv.pageListenerTarget;
 
     // It was stated that hidden documents don't accept
     // `insertAnonymousContent` calls yet. That doesn't seems the case anymore,
@@ -244,7 +189,7 @@ CanvasFrameAnonymousContentHelper.prototype = {
     // that scenario, fixes when we're adding anonymous content in a tab that
     // is not the active one (see bug 1260043 and bug 1260044)
     try {
-      this._content = this.anonymousContentDocument.insertAnonymousContent();
+      this.#content = this.anonymousContentDocument.insertAnonymousContent();
     } catch (e) {
       // If the `insertAnonymousContent` fails throwing a `NS_ERROR_UNEXPECTED`, it means
       // we don't have access to a `CustomContentContainer` yet (see bug 1365075).
@@ -263,7 +208,7 @@ CanvasFrameAnonymousContentHelper.prototype = {
             { once: true }
           );
         });
-        this._content = this.anonymousContentDocument.insertAnonymousContent();
+        this.#content = this.anonymousContentDocument.insertAnonymousContent();
       } else {
         throw e;
       }
@@ -278,20 +223,24 @@ CanvasFrameAnonymousContentHelper.prototype = {
     );
     link.href = STYLESHEET_URI;
     link.rel = "stylesheet";
-    this._content.root.appendChild(link);
-    this._content.root.appendChild(this.nodeBuilder());
+    this.#content.root.appendChild(link);
+    this.#content.root.appendChild(this.#nodeBuilder());
 
-    this._initialized();
-  },
+    if (this.#contentRootHostClassName) {
+      this.#content.root.host.classList.add(this.#contentRootHostClassName);
+    }
 
-  _remove() {
+    this.#initialized();
+  }
+
+  #remove() {
     try {
-      this.anonymousContentDocument.removeAnonymousContent(this._content);
+      this.anonymousContentDocument.removeAnonymousContent(this.#content);
     } catch (e) {
       // If the current window isn't the one the content was inserted into, this
       // will fail, but that's fine.
     }
-  },
+  }
 
   /**
    * The "window-ready" event can be triggered when:
@@ -300,67 +249,67 @@ CanvasFrameAnonymousContentHelper.prototype = {
    *   - when first attaching to a page
    *   - when swapping frame loaders (moving tabs, toggling RDM)
    */
-  _onWindowReady({ isTopLevel }) {
+  #onWindowReady = ({ isTopLevel }) => {
     if (isTopLevel) {
-      this._removeAllListeners();
-      this.elements.clear();
-      this._insert();
+      this.#removeAllListeners();
+      this.#elements.clear();
+      this.#insert();
     }
-  },
+  };
 
-  _getNodeById(id) {
+  #getNodeById(id) {
     return this.content?.root.getElementById(id);
-  },
+  }
 
   getBoundingClientRect(id) {
-    const node = this._getNodeById(id);
+    const node = this.#getNodeById(id);
     if (!node) {
       return null;
     }
     return node.getBoundingClientRect();
-  },
+  }
 
   getComputedStylePropertyValue(id, property) {
-    const node = this._getNodeById(id);
+    const node = this.#getNodeById(id);
     if (!node) {
       return null;
     }
     return this.anonymousContentWindow
       .getComputedStyle(node)
       .getPropertyValue(property);
-  },
+  }
 
   getTextContentForElement(id) {
-    return this._getNodeById(id)?.textContent;
-  },
+    return this.#getNodeById(id)?.textContent;
+  }
 
   setTextContentForElement(id, text) {
-    const node = this._getNodeById(id);
+    const node = this.#getNodeById(id);
     if (!node) {
       return;
     }
     node.textContent = text;
-  },
+  }
 
   setAttributeForElement(id, name, value) {
-    this._getNodeById(id)?.setAttribute(name, value);
-  },
+    this.#getNodeById(id)?.setAttribute(name, value);
+  }
 
   getAttributeForElement(id, name) {
-    return this._getNodeById(id)?.getAttribute(name);
-  },
+    return this.#getNodeById(id)?.getAttribute(name);
+  }
 
   removeAttributeForElement(id, name) {
-    this._getNodeById(id)?.removeAttribute(name);
-  },
+    this.#getNodeById(id)?.removeAttribute(name);
+  }
 
   hasAttributeForElement(id, name) {
     return typeof this.getAttributeForElement(id, name) === "string";
-  },
+  }
 
   getCanvasContext(id, type = "2d") {
-    return this._getNodeById(id)?.getContext(type);
-  },
+    return this.#getNodeById(id)?.getContext(type);
+  }
 
   /**
    * Add an event listener to one of the elements inserted in the canvasFrame
@@ -394,8 +343,8 @@ CanvasFrameAnonymousContentHelper.prototype = {
    * ID, the callback is executed (and then IDs of parent nodes of the
    * originalTarget are checked too).
    *
-   * @param {String} id
-   * @param {String} type
+   * @param {string} id
+   * @param {string} type
    * @param {Function} handler
    */
   addEventListenerForElement(id, type, handler) {
@@ -406,39 +355,40 @@ CanvasFrameAnonymousContentHelper.prototype = {
     }
 
     // If no one is listening for this type of event yet, add one listener.
-    if (!this.listeners.has(type)) {
+    if (!this.#listeners.has(type)) {
       const target = this.pageListenerTarget;
       target.addEventListener(type, this, true);
       // Each type entry in the map is a map of ids:handlers.
-      this.listeners.set(type, new Map());
+      this.#listeners.set(type, new Map());
     }
 
-    const listeners = this.listeners.get(type);
+    const listeners = this.#listeners.get(type);
     listeners.set(id, handler);
-  },
+  }
 
   /**
    * Remove an event listener from one of the elements inserted in the
    * canvasFrame native anonymous container.
-   * @param {String} id
-   * @param {String} type
+   *
+   * @param {string} id
+   * @param {string} type
    */
   removeEventListenerForElement(id, type) {
-    const listeners = this.listeners.get(type);
+    const listeners = this.#listeners.get(type);
     if (!listeners) {
       return;
     }
     listeners.delete(id);
 
     // If no one is listening for event type anymore, remove the listener.
-    if (!this.listeners.has(type)) {
+    if (!this.#listeners.has(type)) {
       const target = this.pageListenerTarget;
       target.removeEventListener(type, this, true);
     }
-  },
+  }
 
   handleEvent(event) {
-    const listeners = this.listeners.get(event.type);
+    const listeners = this.#listeners.get(event.type);
     if (!listeners) {
       return;
     }
@@ -472,28 +422,22 @@ CanvasFrameAnonymousContentHelper.prototype = {
       }
       node = node.parentNode;
     }
-  },
+  }
 
-  _removeAllListeners() {
+  #removeAllListeners() {
     if (this.pageListenerTarget) {
       const target = this.pageListenerTarget;
-      for (const [type] of this.listeners) {
+      for (const [type] of this.#listeners) {
         target.removeEventListener(type, this, true);
       }
     }
-    this.listeners.clear();
-  },
+    this.#listeners.clear();
+  }
 
   getElement(id) {
-    if (this.elements.has(id)) {
-      return this.elements.get(id);
+    if (this.#elements.has(id)) {
+      return this.#elements.get(id);
     }
-
-    const classList = new ClassList(this.getAttributeForElement(id, "class"));
-
-    EventEmitter.on(classList, "update", () => {
-      this.setAttributeForElement(id, "class", classList.toString());
-    });
 
     const element = {
       getTextContent: () => this.getTextContentForElement(id),
@@ -513,20 +457,20 @@ CanvasFrameAnonymousContentHelper.prototype = {
         getPropertyValue: property =>
           this.getComputedStylePropertyValue(id, property),
       },
-      classList,
+      classList: this.#getNodeById(id)?.classList,
     };
 
-    this.elements.set(id, element);
+    this.#elements.set(id, element);
 
     return element;
-  },
+  }
 
   get content() {
-    if (!this._content || Cu.isDeadWrapper(this._content)) {
+    if (!this.#content || Cu.isDeadWrapper(this.#content)) {
       return null;
     }
-    return this._content;
-  },
+    return this.#content;
+  }
 
   /**
    * The canvasFrame anonymous content container gets zoomed in/out with the
@@ -547,14 +491,14 @@ CanvasFrameAnonymousContentHelper.prototype = {
    *
    * @param {DOMNode} node This node is used to determine which container window
    * should be used to read the current zoom value.
-   * @param {String} id The ID of the root element inserted with this API.
+   * @param {string} id The ID of the root element inserted with this API.
    */
   scaleRootElement(node, id) {
-    const boundaryWindow = this.highlighterEnv.window;
+    const boundaryWindow = this.#highlighterEnv.window;
     const zoom = getCurrentZoom(node);
     // Hide the root element and force the reflow in order to get the proper window's
     // dimensions without increasing them.
-    const root = this._getNodeById(id);
+    const root = this.#getNodeById(id);
     root.style.display = "none";
     node.offsetWidth;
 
@@ -569,15 +513,14 @@ CanvasFrameAnonymousContentHelper.prototype = {
 
     value += `position:absolute; width:${width}px;height:${height}px; overflow:hidden;`;
     root.style = value;
-  },
+  }
 
   /**
    * Helper function that creates SVG DOM nodes.
-   * @param {Object} Options for the node include:
+   *
+   * @param {object} Options for the node include:
    * - nodeType: the type of node, defaults to "box".
    * - attributes: a {name:value} object to be used as attributes for the node.
-   * - prefix: a string that will be used to prefix the values of the id and class
-   *   attributes.
    * - parent: if provided, the newly created element will be appended to this
    *   node.
    */
@@ -589,16 +532,15 @@ CanvasFrameAnonymousContentHelper.prototype = {
     options.namespace = SVG_NS;
 
     return this.createNode(options);
-  },
+  }
 
   /**
    * Helper function that creates DOM nodes.
-   * @param {Object} Options for the node include:
+   *
+   * @param {object} Options for the node include:
    * - nodeType: the type of node, defaults to "div".
    * - namespace: the namespace to use to create the node, defaults to XHTML namespace.
    * - attributes: a {name:value} object to be used as attributes for the node.
-   * - prefix: a string that will be used to prefix the values of the id and class
-   *   attributes.
    * - parent: if provided, the newly created element will be appended to this
    *   node.
    * - text: if provided, set the text content of the element.
@@ -611,11 +553,7 @@ CanvasFrameAnonymousContentHelper.prototype = {
     const node = doc.createElementNS(namespace, type);
 
     for (const name in options.attributes || {}) {
-      let value = options.attributes[name];
-      if (options.prefix && (name === "class" || name === "id")) {
-        value = options.prefix + value;
-      }
-      node.setAttribute(name, value);
+      node.setAttribute(name, options.attributes[name]);
     }
 
     if (options.parent) {
@@ -623,17 +561,19 @@ CanvasFrameAnonymousContentHelper.prototype = {
     }
 
     if (options.text) {
-      node.appendChild(doc.createTextNode(options.text));
+      node.append(options.text);
     }
 
     return node;
-  },
-};
+  }
+}
+
 exports.CanvasFrameAnonymousContentHelper = CanvasFrameAnonymousContentHelper;
 
 /**
  * Wait for document readyness.
- * @param {Object} iframeOrWindow
+ *
+ * @param {object} iframeOrWindow
  *        IFrame or Window for which the content should be loaded.
  */
 function waitForContentLoaded(iframeOrWindow) {
@@ -670,13 +610,13 @@ function waitForContentLoaded(iframeOrWindow) {
  *
  * @param  {DOMNode} container
  *         The container element which will be used to position the infobar.
- * @param  {Object} bounds
+ * @param  {object} bounds
  *         The content bounds of the container element.
  * @param  {Window} win
  *         The window object.
- * @param  {Object} [options={}]
+ * @param  {object} [options={}]
  *         Advanced options for the infobar.
- * @param  {String} options.position
+ * @param  {string} options.position
  *         Force the infobar to be displayed either on "top" or "bottom". Any other value
  *         will be ingnored.
  */

@@ -10,6 +10,11 @@
 
 #include "audio/utility/audio_frame_operations.h"
 
+#include <cstddef>
+#include <cstdint>
+
+#include "api/audio/audio_frame.h"
+#include "api/audio/audio_view.h"
 #include "rtc_base/checks.h"
 #include "test/gtest.h"
 
@@ -21,7 +26,7 @@ class AudioFrameOperationsTest : public ::testing::Test {
   AudioFrameOperationsTest() = default;
 
   // Set typical values.
-  AudioFrame frame_{/*sample_rate=*/32000, /*num_channels*/ 2};
+  AudioFrame frame_{/*sample_rate_hz=*/32000, /*num_channels=*/2};
 };
 
 class AudioFrameOperationsDeathTest : public AudioFrameOperationsTest {};

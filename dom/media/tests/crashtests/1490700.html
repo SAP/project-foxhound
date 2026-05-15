@@ -7,19 +7,22 @@
 <script type="application/javascript">
 async function test() {
   SpecialPowers.wrap(document).notifyUserGestureActivation();
-  await window.navigator.mediaDevices.getUserMedia({
-    video: {
-      mediaSource: 'screen',
-      height: {max: 0},
-    },
-  });
-  await window.navigator.mediaDevices.getUserMedia({
-    video: {
-      mediaSource: 'screen',
-      advanced: [{height: 0}],
-    },
-  });
-  document.documentElement.removeAttribute("class");
+  try {
+    await window.navigator.mediaDevices.getUserMedia({
+      video: {
+        mediaSource: 'screen',
+        height: {max: 0},
+      },
+    });
+    await window.navigator.mediaDevices.getUserMedia({
+      video: {
+        mediaSource: 'screen',
+        advanced: [{height: 0}],
+      },
+    });
+  } finally {
+    document.documentElement.removeAttribute("class");
+  }
 }
 
 test();

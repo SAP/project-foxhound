@@ -16,6 +16,7 @@ kind-dependencies:
     - signing-apk
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         build_platform: android
         build-type: debug
@@ -23,7 +24,9 @@ task-defaults:
     fetches:
         toolchain:
             - android-sdk-linux
-    worker-type: b-linux-medium-gcp
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
+    worker-type: b-linux-medium
     worker:
         docker-image: {in-tree: android-ui-tests}
         max-run-time: 7200
@@ -58,53 +61,138 @@ task-defaults:
         notify:
             by-level:
                 '3':
-                    slackText: 'https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId} | ${task.metadata.name} | ${task.metadata.source}'
-                    slackBlocks: |
-                        [
-                          {
-                            "type": "header",
-                            "text": {
-                              "type": "plain_text",
-                              "text": "firefox-android :firefox: ${task.metadata.name} :x:\n "
-                            }
-                          },
-                          {
-                            "type": "divider"
-                          },
-                          {
-                             "type": "section",
-                             "text": {
-                                 "type": "mrkdwn",
-                                 "text": "*Task*: <https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}|Taskcluster>"
-                            }
-                          },
-                          {
-                            "type": "section",
-                            "text": {
-                              "type": "mrkdwn",
-                              "text": "*Owner*: ${task.metadata.owner}"
-                            }
-                          },
-                          {
-                            "type": "section",
-                            "text": {
-                              "type": "mrkdwn",
-                              "text": "*Source*: <${task.payload.env.GECKO_BASE_REPOSITORY}/rev/${task.payload.env.GECKO_HEAD_REV}|Commit> :hg:"
-                            }
-                          },
-                          {
-                            "type": "divider"
-                          },
-                          {
-                            "type": "context",
-                            "elements": [
-                                {
-                                    "type": "mrkdwn",
-                                    "text": ":testops-notify: created by <https://mozilla-hub.atlassian.net/wiki/spaces/MTE/overview|Mobile Test Engineering>"
-                                }
-                            ]
-                          }
-                        ]
+                    by-shipping-product:
+                        fenix:
+                            slackText: '<https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}|${task.metadata.name}>'
+                            slackAttachments: |
+                              [
+                                    {
+                                        "color": "#FF0000",
+                                        "blocks": [
+                                        {
+                                            "type": "header",
+                                            "text": {
+                                                "type": "plain_text",
+                                                "text": "Firefox for Android :firefox:"
+                                            }
+                                        },
+                                        {
+                                            "type": "header",
+                                            "text": {
+                                            "type": "plain_text",
+                                            "text": "${task.metadata.name}"
+                                            }
+                                        },
+                                        {
+                                            "type": "section",
+                                            "fields": [
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Task:*\n<https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}|Taskcluster>"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Owner:*\n${task.metadata.owner}"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Project:*\n${task.tags.project}"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Treeherder:*\n<https://treeherder.mozilla.org/jobs?repo=${task.tags.project}&revision=${task.payload.env.GECKO_HEAD_REV}|View Jobs>"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Source:*\n<${task.payload.env.GECKO_BASE_REPOSITORY}/rev/${task.payload.env.GECKO_HEAD_REV}|Commit> :hg:"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Report:*\n<https://firefoxci.taskcluster-artifacts.net/${status.taskId}/0/public/results/HtmlErrorReport.html|View Report>"
+                                            }
+                                            ]
+                                        },
+                                        {
+                                            "type": "divider"
+                                        },
+                                        {
+                                            "type": "context",
+                                            "elements": [
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": ":testops-notify: Mobile Test Engineering"
+                                            }
+                                            ]
+                                        }
+                                        ]
+                                    }
+                              ]
+                        focus:
+                            slackText: '<https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}|${task.metadata.name}>'
+                            slackAttachments: |
+                                [
+                                    {
+                                        "color": "#FF0000",
+                                        "blocks": [
+                                        {
+                                            "type": "header",
+                                            "text": {
+                                                "type": "plain_text",
+                                                "text": "Focus for Android :focusandroid:"
+                                            }
+                                        },
+                                        {
+                                            "type": "header",
+                                            "text": {
+                                            "type": "plain_text",
+                                            "text": "${task.metadata.name}"
+                                            }
+                                        },
+                                        {
+                                            "type": "section",
+                                            "fields": [
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Task:*\n<https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}|Taskcluster>"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Owner:*\n${task.metadata.owner}"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Project:*\n${task.tags.project}"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Treeherder:*\n<https://treeherder.mozilla.org/jobs?repo=${task.tags.project}&revision=${task.payload.env.GECKO_HEAD_REV}|View Jobs>"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Source:*\n<${task.payload.env.GECKO_BASE_REPOSITORY}/rev/${task.payload.env.GECKO_HEAD_REV}|Commit> :hg:"
+                                            },
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": "*Report:*\n<https://firefoxci.taskcluster-artifacts.net/${status.taskId}/0/public/results/HtmlErrorReport.html|View Report>"
+                                            }
+                                            ]
+                                        },
+                                        {
+                                            "type": "divider"
+                                        },
+                                        {
+                                            "type": "context",
+                                            "elements": [
+                                            {
+                                                "type": "mrkdwn",
+                                                "text": ":testops-notify: Mobile Test Engineering"
+                                            }
+                                            ]
+                                        }
+                                        ]
+                                    }
+                                ]
+                        default: {}
                 'default': {}
 
 tasks:
@@ -113,6 +201,16 @@ tasks:
             build-type: focus-debug-firebase
             shipping-product: focus
         description: 'Focus UI tests with firebase'
+        dependencies:
+            signed-apk-debug-apk: signing-apk-focus-debug
+            signed-apk-android-test: signing-apk-focus-android-test-debug
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run:
@@ -122,13 +220,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, focus/arm64-v8a.yml, app.apk, --apk_test, android-test.apk]
-        dependencies:
-            # key is arbitrary, the value corresponds to <kind name>-<build-name>
-            signed-apk-debug-apk: signing-apk-focus-debug
-            signed-apk-android-test: signing-apk-focus-android-test-debug
+                - [python3, taskcluster/scripts/tests/test-lab.py, focus/arm64-v8a.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         treeherder:
             platform: 'focus-android-all/opt'
             symbol: focus-debug(ui-test-arm)
@@ -144,6 +236,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-focus-nightly-firebase
             signed-apk-android-test: signing-apk-focus-android-test-nightly
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run-on-projects: [trunk]
@@ -154,9 +253,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, focus/arm-start-test.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, focus/arm-start-test.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         treeherder:
             platform: 'focus-android-all/opt'
             symbol: focus-nightly(ui-test-arm-nightly)
@@ -172,6 +269,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-focus-beta-firebase
             signed-apk-android-test: signing-apk-focus-android-test-beta
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run-on-projects: [release]
@@ -182,9 +286,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, focus/arm-beta.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, focus/arm-beta.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         treeherder:
             platform: 'focus-android-all/opt'
             symbol: focus-beta(ui-test-arm-beta)
@@ -200,6 +302,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-debug
             signed-apk-android-test: signing-apk-fenix-android-test-debug
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run:
@@ -209,9 +318,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm64-v8a.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm64-v8a.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         treeherder:
             platform: 'fenix-android-all/opt'
             symbol: fenix-debug(ui-test-arm)
@@ -227,6 +334,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-debug
             signed-apk-android-test: signing-apk-fenix-android-test-debug
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run-on-projects: [trunk]
@@ -237,9 +351,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm64-v8a-detect-leaks.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm64-v8a-detect-leaks.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk, --artifact_type, "memory_leaks"]
         treeherder:
             platform: 'fenix-android-all/opt'
             symbol: fenix-debug(detect-leaks-arm)
@@ -255,6 +367,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-beta-firebase
             signed-apk-android-test: signing-apk-fenix-android-test-beta
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run-on-projects: [release]
@@ -265,9 +384,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-beta.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-beta.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         treeherder:
             platform: 'fenix-android-all/opt'
             symbol: fenix-beta(ui-test-arm-beta)
@@ -283,6 +400,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-nightly-firebase
             signed-apk-android-test: signing-apk-fenix-android-test-nightly
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run-on-projects: [trunk]
@@ -293,9 +417,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-start-test.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-start-test.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         treeherder:
             platform: 'fenix-android-all/opt'
             symbol: fenix-nightly(ui-test-arm-nightly)
@@ -312,6 +434,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-debug
             signed-apk-android-test: signing-apk-fenix-android-test-debug
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run:
@@ -321,9 +450,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-legacy-api-tests.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-legacy-api-tests.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         treeherder:
             platform: 'fenix-android-all/opt'
             symbol: fenix-debug(legacy-arm)
@@ -338,6 +465,10 @@ tasks:
         description: Run Robo test on ARM devices
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-debug
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run:
@@ -347,8 +478,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-robo-test.yml, app.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-robo-test.yml, /builds/worker/fetches/target.arm64-v8a.apk]
         treeherder:
             platform: 'fenix-android-all/opt'
             symbol: fenix-debug(robo-arm)
@@ -364,6 +494,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-debug
             signed-apk-android-test: signing-apk-fenix-android-test-debug
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization:
             skip-unless-backstop: null
         run:
@@ -373,9 +510,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-experimental-api-tests.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-experimental-api-tests.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         run-on-projects: [trunk]
         treeherder:
             platform: 'fenix-android-all/opt'
@@ -392,6 +527,13 @@ tasks:
         dependencies:
             signed-apk-debug-apk: signing-apk-fenix-debug
             signed-apk-android-test: signing-apk-fenix-android-test-debug
+        fetches:
+            signed-apk-debug-apk:
+                - artifact: target.arm64-v8a.apk
+                  extract: false
+            signed-apk-android-test:
+                - artifact: target.noarch.apk
+                  extract: false
         optimization: {"test": ["android", "fenix"]}
         run:
             secrets:
@@ -400,9 +542,7 @@ tasks:
                   path: mobile/android/test_infra/.firebase_token.json
                   json: true
             commands:
-                - [wget, {artifact-reference: '<signed-apk-debug-apk/public/build/target.arm64-v8a.apk>'}, '-O', app.apk]
-                - [wget, {artifact-reference: '<signed-apk-android-test/public/build/target.noarch.apk>'}, '-O', android-test.apk]
-                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-smoke-tests.yml, app.apk, --apk_test, android-test.apk]
+                - [python3, taskcluster/scripts/tests/test-lab.py, fenix/arm-smoke-tests.yml, /builds/worker/fetches/target.arm64-v8a.apk, --apk_test, /builds/worker/fetches/target.noarch.apk]
         run-on-projects: ['autoland', 'mozilla-central']
         treeherder:
             platform: 'fenix-android-all/opt'

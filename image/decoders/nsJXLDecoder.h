@@ -8,44 +8,57 @@
 #define mozilla_image_decoders_nsJXLDecoder_h
 
 #include "Decoder.h"
-#include "mp4parse.h"
-#include "SurfacePipe.h"
-
-#include "jxl/decode_cxx.h"
-#include "jxl/thread_parallel_runner_cxx.h"
+#include "StreamingLexer.h"
+#include "mozilla/Vector.h"
+#include "mozilla/image/jxl_decoder_ffi.h"
 
 namespace mozilla::image {
-class RasterImage;
+
+struct JxlDecoderDeleter {
+  void operator()(JxlApiDecoder* ptr) { jxl_decoder_destroy(ptr); }
+};
 
 class nsJXLDecoder final : public Decoder {
  public:
-  virtual ~nsJXLDecoder();
+  ~nsJXLDecoder() override;
 
   DecoderType GetType() const override { return DecoderType::JXL; }
 
  protected:
+  nsresult InitInternal() override;
   LexerResult DoDecode(SourceBufferIterator& aIterator,
                        IResumable* aOnResume) override;
 
  private:
   friend class DecoderFactory;
 
-  // Decoders should only be instantiated via DecoderFactory.
   explicit nsJXLDecoder(RasterImage* aImage);
 
-  size_t PreferredThreadCount();
+  std::unique_ptr<JxlApiDecoder, JxlDecoderDeleter> mDecoder;
 
-  enum class State { JXL_DATA, FINISHED_JXL_DATA };
+  enum class State { JXL_DATA, DRAIN_FRAMES, FINISHED_JXL_DATA };
+
+  enum class FrameOutputResult {
+    BufferAllocated,
+    FrameAdvanced,
+    DecodeComplete,
+    NoOutput,
+    Error
+  };
+
+  JxlDecoderStatus ProcessInput(const uint8_t** aData, size_t* aLength);
+  nsresult ProcessFrame(Vector<uint8_t>& aPixelBuffer);
+  FrameOutputResult HandleFrameOutput();
 
   LexerTransition<State> ReadJXLData(const char* aData, size_t aLength);
+  LexerTransition<State> DrainFrames();
   LexerTransition<State> FinishedJXLData();
 
   StreamingLexer<State> mLexer;
-  JxlDecoderPtr mDecoder;
-  JxlThreadParallelRunnerPtr mParallelRunner;
-  Vector<uint8_t> mBuffer;
-  Vector<uint8_t> mOutBuffer;
-  JxlBasicInfo mInfo{};
+
+  uint32_t mFrameIndex = 0;
+
+  Vector<uint8_t> mPixelBuffer;
 };
 
 }  // namespace mozilla::image

@@ -86,11 +86,14 @@ class Speedometer3Support(BasePythonSupport):
         suite["subtests"].sort(key=lambda subtest: subtest["name"])
 
         score = 0
+        replicates = []
         for subtest in suite["subtests"]:
             if subtest["name"] == "score":
                 score = subtest["value"]
+                replicates = subtest.get("replicates", [])
                 break
         suite["value"] = score
+        suite["replicates"] = replicates
 
     def modify_command(self, cmd, test):
         """Modify the browsertime command for speedometer 3.

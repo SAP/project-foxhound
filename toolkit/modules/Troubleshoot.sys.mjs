@@ -41,6 +41,7 @@ const PREFS_FOR_DISPLAY = [
   "browser.places.",
   "browser.privatebrowsing.",
   "browser.search.context.loadInBackground",
+  "browser.search.lastEngineIgnored",
   "browser.search.lastSettingsCorruptTime",
   "browser.search.log",
   "browser.search.openintab",
@@ -53,6 +54,7 @@ const PREFS_FOR_DISPLAY = [
   "browser.startup.homepage",
   "browser.startup.page",
   "browser.tabs.",
+  "browser.theme.",
   "browser.toolbars.",
   "browser.urlbar.",
   "browser.zoom.",
@@ -63,10 +65,8 @@ const PREFS_FOR_DISPLAY = [
   "extensions.eventPages.enabled",
   "extensions.formautofill.",
   "extensions.lastAppVersion",
-  "extensions.manifestV3.enabled",
   "extensions.quarantinedDomains.enabled",
   "extensions.InstallTrigger.enabled",
-  "extensions.InstallTriggerImpl.enabled",
   "fission.autostart",
   "font.",
   "general.autoScroll",
@@ -79,7 +79,7 @@ const PREFS_FOR_DISPLAY = [
   "javascript.",
   "keyword.",
   "layers.",
-  "layout.css.dpi",
+  "layout.css.",
   "layout.display-list.",
   "layout.frame_rate",
   "media.",
@@ -512,9 +512,30 @@ var dataProviders = {
   },
 
   places: async function places(done) {
-    const data = AppConstants.MOZ_PLACES
-      ? await lazy.PlacesDBUtils.getEntitiesStatsAndCounts()
-      : [];
+    const data = {};
+
+    if (AppConstants.MOZ_PLACES) {
+      data.prefs = await lazy.PlacesDBUtils.getEntitiesStatsAndCounts();
+
+      data.lastMaintenanceDate =
+        Services.prefs.getIntPref("places.database.lastMaintenance", 0) * 1000;
+      data.lastVacuumDate =
+        Services.prefs.getIntPref("storage.vacuum.last.places.sqlite", 0) *
+        1000;
+
+      try {
+        const corruptFilePath = PathUtils.join(
+          PathUtils.profileDir,
+          "places.sqlite.corrupt"
+        );
+        const fileInfo = await IOUtils.stat(corruptFilePath);
+        data.lastIntegrityCorruptionDate = fileInfo.lastModified;
+      } catch (e) {
+        // Set 0 if failed such the file not found error.
+        data.lastIntegrityCorruptionDate = 0;
+      }
+    }
+
     done(data);
   },
 
@@ -642,7 +663,6 @@ var dataProviders = {
         adapterDriverDate2: "driverDate2",
         isGPU2Active: null,
 
-        D2DEnabled: "direct2DEnabled",
         DWriteEnabled: "directWriteEnabled",
         DWriteVersion: "directWriteVersion",
         cleartypeParameters: "clearTypeParameters",
@@ -655,10 +675,6 @@ var dataProviders = {
         try {
           data[gfxInfoProps[prop] || prop] = gfxInfo[prop];
         } catch (e) {}
-      }
-
-      if ("direct2DEnabled" in data && !data.direct2DEnabled) {
-        data.direct2DEnabledMessage = statusMsgForFeature("DIRECT2D");
       }
     }
 

@@ -9,6 +9,12 @@ LOCAL_INCLUDES += [
     "/ipc/chromium/src",
 ]
 
+if CONFIG["OS_TARGET"] == "Linux":
+    LOCAL_INCLUDES += [
+        "/toolkit/components/telemetry",
+        "/xpcom/base",
+    ]
+
 if CONFIG["OS_ARCH"] == "WINNT":
     OS_LIBS += [
         "shell32",

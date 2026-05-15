@@ -16,16 +16,22 @@ support-files = [
 ["browser_thumbnails_bg_bad_url.js"]
 
 ["browser_thumbnails_bg_basic.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && verify-standalone",
+]
 
 ["browser_thumbnails_bg_captureIfMissing.js"]
 
 ["browser_thumbnails_bg_crash_during_capture.js"]
-run-if = ["crashreporter"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+run-if = [
+  "crashreporter",
+]
 tags = "bleedover"
 
 ["browser_thumbnails_bg_crash_while_idle.js"]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 
 ["browser_thumbnails_bg_destroy_browser.js"]
 
@@ -76,6 +82,8 @@ run-if = ["crashreporter"]
 ["browser_thumbnails_storage.js"]
 
 ["browser_thumbnails_storage_migrate3.js"]
-skip-if = ["true"] # Bug 1592079
+skip-if = [
+  "true", # Bug 1592079
+]
 
 ["browser_thumbnails_update.js"]

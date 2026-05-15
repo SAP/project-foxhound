@@ -1,0 +1,22 @@
+From: Jan-Ivar Bruaroey <jib@mozilla.com>
+Date: Wed, 8 Oct 2025 17:05:00 +0000
+Subject: Bug 1868223 - Add api:frame_transformer_factory to BUILD.gn r=mjf
+
+Differential Revision: https://phabricator.services.mozilla.com/D267541
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/8e7778c59894c284b8bddd39b731e999fe2e807c
+---
+ BUILD.gn | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/BUILD.gn b/BUILD.gn
+index 9e8e1260fe..c24f5c186e 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -630,6 +630,7 @@ if (!build_with_chromium) {
+ 
+     if (build_with_mozilla) {
+       deps += [
++        "api:frame_transformer_factory",
+         "api/audio:builtin_audio_processing_builder",
+         "api/environment:environment_factory",
+         "api/video:video_frame",

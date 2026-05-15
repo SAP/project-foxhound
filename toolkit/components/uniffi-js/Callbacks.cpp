@@ -12,13 +12,57 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UniFFIBinding.h"
 #include "mozilla/uniffi/Callbacks.h"
-#include "mozilla/Maybe.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla::uniffi {
 extern mozilla::LazyLogModule gUniffiLogger;
+
+// Type we'll be using to store callback handle ref counts
+//
+// 32-bits should never overflow and ReleaseAcquire is the recommended memory
+// ordering for reference counts:
+// https://searchfox.org/firefox-main/rev/f26084f2dfc00c1e10377d4433cfea594f7ea8c2/mfbt/Atomics.h#114-119
+using HandleRefCount = Atomic<uint32_t, MemoryOrdering::ReleaseAcquire>;
+
+uint64_t CallbackHandleCreate() {
+  // This allocates an atomic u32 that stores the ref count.
+  // We cast the address to a `u64`, which will be the handle.
+  //
+  // Another approach would be to create a HashMap that maps handles to their
+  // refcounts. However, that would require a lock and global initialization.
+  // This works in a similar way, but instead of generating a handle and
+  // inserting it into the map, we call `new` to allocate a memory location and
+  // use the address as the handle.
+  //
+  // This will safely fit in a JS integer as long as pointers only set the lower
+  // 53 bits or so. This is okay since the JS code itself assumes only the lower
+  // 48 bits of the pointer are set:
+  // https://searchfox.org/firefox-main/rev/20a1fb35a4d5c2f2ea6c865ecebc8e4bee6f86c9/js/public/Value.h#61-66
+  //
+  // Finally, we always set the lowest bit on the handle.  This allows UniFFI to
+  // tell if trait interface handles came from JS or Rust.
+  HandleRefCount* handlePointer = new HandleRefCount(1);
+  return reinterpret_cast<uint64_t>(handlePointer) | 1;
+}
+
+uint32_t CallbackHandleAddRef(uint64_t aHandle) {
+  HandleRefCount* handlePointer =
+      reinterpret_cast<HandleRefCount*>(aHandle & ~1);
+  return ++(*handlePointer);
+}
+
+uint32_t CallbackHandleRelease(uint64_t aHandle) {
+  HandleRefCount* handlePointer =
+      reinterpret_cast<HandleRefCount*>(aHandle & ~1);
+  auto refCount = --(*handlePointer);
+  if (refCount == 0) {
+    delete handlePointer;
+  }
+  return refCount;
+}
 
 void AsyncCallbackMethodHandlerBase::ScheduleAsyncCall(
     UniquePtr<AsyncCallbackMethodHandlerBase> aHandler,

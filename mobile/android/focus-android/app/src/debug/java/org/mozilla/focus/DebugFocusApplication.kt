@@ -5,17 +5,19 @@
 package org.mozilla.focus
 
 import androidx.preference.PreferenceManager
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import leakcanary.AppWatcher
 import leakcanary.LeakCanary
 import org.mozilla.focus.ext.application
 
+/**
+ * Debug-specific implementation of the [FocusApplication] class.
+ *
+ * This class provides additional functionality for debug builds, such as
+ * initializing and managing the LeakCanary memory leak detection library
+ * based on user preferences.
+ */
 class DebugFocusApplication : FocusApplication() {
 
-    @OptIn(DelicateCoroutinesApi::class)
     override fun setupLeakCanary() {
         if (!AppWatcher.isInstalled) {
             AppWatcher.manualInstall(
@@ -23,18 +25,13 @@ class DebugFocusApplication : FocusApplication() {
                 watchersToInstall = AppWatcher.appDefaultWatchers(application),
             )
         }
-        GlobalScope.launch(Dispatchers.IO) {
-            val isEnabled = PreferenceManager.getDefaultSharedPreferences(applicationContext)
-                .getBoolean(getString(R.string.pref_key_leakcanary), true)
-            updateLeakCanaryState(isEnabled)
-        }
+        val isEnabled = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+            .getBoolean(getString(R.string.pref_key_leakcanary), true)
+        updateLeakCanaryState(isEnabled)
     }
 
-    @OptIn(DelicateCoroutinesApi::class)
     override fun updateLeakCanaryState(isEnabled: Boolean) {
-        GlobalScope.launch(Dispatchers.IO) {
-            LeakCanary.showLeakDisplayActivityLauncherIcon(isEnabled)
-            LeakCanary.config = LeakCanary.config.copy(dumpHeap = isEnabled)
-        }
+        LeakCanary.showLeakDisplayActivityLauncherIcon(isEnabled)
+        LeakCanary.config = LeakCanary.config.copy(dumpHeap = isEnabled)
     }
 }

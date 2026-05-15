@@ -37,8 +37,9 @@
 #ifdef LOG
 #  undef LOG
 #endif
-#include "base/thread.h"
 #include <atomic>
+
+#include "base/thread.h"
 
 namespace WebCore {
 

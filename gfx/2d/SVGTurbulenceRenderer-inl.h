@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef GFX_2D_SVGTURBULENCERENDERER_INL_H_
+#define GFX_2D_SVGTURBULENCERENDERER_INL_H_
+
 #include "2D.h"
 #include "Filters.h"
 #include "SIMD.h"
@@ -360,3 +363,5 @@ SVGTurbulenceRenderer<Type, Stitch, f32x4_t, i32x4_t, u8x16_t>::Render(
 
 }  // namespace gfx
 }  // namespace mozilla
+
+#endif  // GFX_2D_SVGTURBULENCERENDERER_INL_H_

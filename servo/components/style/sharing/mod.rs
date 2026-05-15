@@ -68,7 +68,7 @@ use crate::applicable_declarations::ApplicableDeclarationBlock;
 use crate::bloom::StyleBloom;
 use crate::computed_value_flags::ComputedValueFlags;
 use crate::context::{SharedStyleContext, StyleContext};
-use crate::dom::{SendElement, TElement};
+use crate::dom::{SendElement, TElement, TShadowRoot};
 use crate::properties::ComputedValues;
 use crate::rule_tree::StrongRuleNode;
 use crate::selector_map::RelevantAttributes;
@@ -654,16 +654,6 @@ impl<E: TElement> StyleSharingCache<E> {
             return;
         }
 
-        // We can't share style across shadow hosts right now, because they may
-        // match different :host rules.
-        //
-        // TODO(emilio): We could share across the ones that don't have :host
-        // rules or have the same.
-        if element.shadow_root().is_some() {
-            debug!("Failing to insert into the cache: Shadow Host");
-            return;
-        }
-
         // If the element has running animations, we can't share style.
         //
         // This is distinct from the specifies_{animations,transitions} check below,
@@ -698,7 +688,10 @@ impl<E: TElement> StyleSharingCache<E> {
         self.cache_mut().insert(
             *element,
             validation_data_holder,
-            style.style().flags.intersects(ComputedValueFlags::CONSIDERED_NONTRIVIAL_SCOPED_STYLE),
+            style
+                .style()
+                .flags
+                .intersects(ComputedValueFlags::CONSIDERED_NONTRIVIAL_SCOPED_STYLE),
         );
     }
 
@@ -814,12 +807,23 @@ impl<E: TElement> StyleSharingCache<E> {
             return None;
         }
 
-        if target.element.shadow_root().is_some() {
-            trace!("Miss: Shadow host");
-            return None;
+        // Shadow hosts can share style when they have matching CascadeData pointers, which
+        // ensures they match the same :host rules.
+        match (
+            target.element.shadow_root().and_then(|s| s.style_data()),
+            candidate.element.shadow_root().and_then(|s| s.style_data()),
+        ) {
+            (Some(td), Some(cd)) if std::ptr::eq(td, cd) => {},
+            (None, None) => {},
+            _ => {
+                trace!("Miss: Different shadow root style data");
+                return None;
+            },
         }
 
-        if target.element.has_animations(shared_context) || candidate.element.has_animations(shared_context) {
+        if target.element.has_animations(shared_context)
+            || candidate.element.has_animations(shared_context)
+        {
             trace!("Miss: Has Animations");
             return None;
         }
@@ -829,8 +833,8 @@ impl<E: TElement> StyleSharingCache<E> {
             return None;
         }
 
-        if target.matches_user_and_content_rules() !=
-            candidate.element.matches_user_and_content_rules()
+        if target.matches_user_and_content_rules()
+            != candidate.element.matches_user_and_content_rules()
         {
             trace!("Miss: User and Author Rules");
             return None;
@@ -842,7 +846,7 @@ impl<E: TElement> StyleSharingCache<E> {
             return None;
         }
 
-        if !checks::have_same_style_attribute(target, candidate) {
+        if !checks::have_same_style_attribute(target, candidate, shared_context) {
             trace!("Miss: Style Attr");
             return None;
         }
@@ -862,6 +866,11 @@ impl<E: TElement> StyleSharingCache<E> {
             return None;
         }
 
+        if !checks::have_same_referenced_attrs(target, candidate) {
+            trace!("Miss: Attr references");
+            return None;
+        }
+
         if !checks::revalidate(target, candidate, shared, bloom, selector_caches) {
             trace!("Miss: Revalidation");
             return None;
@@ -869,7 +878,9 @@ impl<E: TElement> StyleSharingCache<E> {
 
         // While the scoped style rules may be different (e.g. `@scope { .foo + .foo { /* .. */} }`),
         // we rely on revalidation to handle that.
-        if candidate.considered_nontrivial_scoped_style && !checks::revalidate_scope(target, candidate, shared, selector_caches) {
+        if candidate.considered_nontrivial_scoped_style
+            && !checks::revalidate_scope(target, candidate, shared, selector_caches)
+        {
             trace!("Miss: Active Scopes");
             return None;
         }
@@ -903,6 +914,9 @@ impl<E: TElement> StyleSharingCache<E> {
             if !candidate.parent_style_identity().eq(inherited) {
                 return None;
             }
+            if !checks::have_same_referenced_attrs(&StyleSharingTarget::new(target), candidate) {
+                return None;
+            }
             let data = candidate.element.borrow_data().unwrap();
             let style = data.styles.primary();
             if style.rules.as_ref() != Some(&rules) {
@@ -914,8 +928,8 @@ impl<E: TElement> StyleSharingCache<E> {
             // NOTE(emilio): We only need to check name / namespace because we
             // do name-dependent style adjustments, like the display: contents
             // to display: none adjustment.
-            if target.namespace() != candidate.element.namespace() ||
-                target.local_name() != candidate.element.local_name()
+            if target.namespace() != candidate.element.namespace()
+                || target.local_name() != candidate.element.local_name()
             {
                 return None;
             }
@@ -926,8 +940,8 @@ impl<E: TElement> StyleSharingCache<E> {
                 .styles
                 .primary()
                 .flags
-                .intersects(ComputedValueFlags::USES_CONTAINER_UNITS) &&
-                candidate.element.traversal_parent() != target.traversal_parent()
+                .intersects(ComputedValueFlags::USES_CONTAINER_UNITS)
+                && candidate.element.traversal_parent() != target.traversal_parent()
             {
                 return None;
             }

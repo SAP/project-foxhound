@@ -106,7 +106,7 @@ interface TestInterfaceAsyncIterableSingle {
   [Throws]
   constructor(optional TestInterfaceAsyncIterableSingleOptions options = {});
 
-  async iterable<long>;
+  async_iterable<long>;
 };
 
 callback TestThrowingCallback = undefined();
@@ -126,7 +126,7 @@ interface TestInterfaceAsyncIterableSingleWithArgs {
   constructor();
 
   [GenerateReturnMethod]
-  async iterable<long>(optional TestInterfaceAsyncIteratorOptions options = {});
+  async_iterable<long>(optional TestInterfaceAsyncIteratorOptions options = {});
 
   readonly attribute long returnCallCount;
 
@@ -139,7 +139,7 @@ interface TestInterfaceAsyncIterableDouble {
   [Throws]
   constructor();
 
-  async iterable<DOMString, DOMString>;
+  async_iterable<DOMString, DOMString>;
 };
 
 [Pref="dom.expose_test_interfaces",
@@ -148,5 +148,5 @@ interface TestInterfaceAsyncIterableDoubleUnion {
   [Throws]
   constructor();
 
-  async iterable<DOMString, (DOMString or long)>;
+  async_iterable<DOMString, (DOMString or long)>;
 };

@@ -6,7 +6,10 @@ support-files = [
   "FAIL.html",
   "PASS.html",
 ]
-prefs = ["formhelper.autozoom.force-disable.test-only=true"]
+prefs = [
+  "formhelper.autozoom.force-disable.test-only=true",
+  "dom.forms.html_color_picker.enabled=false",
+]
 
 ["test_MozEditableElement_setUserInput.html"]
 
@@ -46,7 +49,9 @@ support-files = ["file_double_submit.html"]
 ["test_input_attributes_reflection.html"]
 
 ["test_input_color_input_change_events.html"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1929441
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929441
+]
 
 ["test_input_color_picker_datalist.html"]
 
@@ -104,8 +109,12 @@ support-files = ["file_login_fields.html"]
 ["test_input_number_l10n.html"]
 
 ["test_input_number_mouse_events.html"]
-run-if = ["os != 'android'"] # Not run on Firefox for Android where the spin buttons are hidden:
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug 1484442
+run-if = [
+  "os != 'android'", # Not run on Firefox for Android where the spin buttons are hidden:
+]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1484442
+]
 
 ["test_input_number_placeholder_shown.html"]
 
@@ -134,6 +143,11 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && deb
 ["test_input_sanitization.html"]
 
 ["test_input_setting_value.html"]
+
+["test_input_text_show_picker.html"]
+skip-if = [
+  "os == 'android'", # Bug 1535985
+]
 
 ["test_input_textarea_set_value_no_scroll.html"]
 
@@ -202,14 +216,14 @@ support-files = ["save_restore_custom_elements_sample.html"]
 
 ["test_select_change_event.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929441
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929441
 ]
 
 ["test_select_input_change_event.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929441
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929441
 ]
 
 ["test_select_selectedOptions.html"]

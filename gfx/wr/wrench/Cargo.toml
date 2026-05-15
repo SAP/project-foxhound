@@ -46,9 +46,10 @@ core-foundation = "0.9"
 default = [ "env_logger" ]
 headless = [ "osmesa-sys", "osmesa-src" ]
 software = [ "swgl" ]
+debugger = [ "webrender/debugger" ]
 
 [target.'cfg(target_os = "windows")'.dependencies]
-dwrote = "0.11"
+dwrote = "0.11.5"
 mozangle = { version = "0.5.2", features = ["egl"] }
 
 [target.'cfg(target_os = "android")'.dependencies]

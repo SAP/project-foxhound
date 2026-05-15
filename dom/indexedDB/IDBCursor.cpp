@@ -12,13 +12,13 @@
 #include "IDBRequest.h"
 #include "IDBTransaction.h"
 #include "IndexedDatabaseInlines.h"
+#include "ProfilerHelpers.h"
+#include "ReportInternalError.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "nsString.h"
-#include "ProfilerHelpers.h"
-#include "ReportInternalError.h"
 
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"

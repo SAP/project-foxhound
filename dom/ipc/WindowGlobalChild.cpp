@@ -6,44 +6,45 @@
 
 #include "mozilla/dom/WindowGlobalChild.h"
 
+#include "GeckoProfiler.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/BrowsingContextGroup.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/BrowserBridgeChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/CloseWatcherManager.h"
-#include "mozilla/dom/IdentityCredential.h"
-#include "mozilla/dom/SecurityPolicyViolationEvent.h"
-#include "mozilla/dom/SessionStoreRestoreData.h"
-#include "mozilla/dom/WindowGlobalActorsBinding.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/dom/InProcessChild.h"
-#include "mozilla/dom/InProcessParent.h"
-#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScopeExit.h"
-#include "GeckoProfiler.h"
+#include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/CloseWatcherManager.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/IdentityCredential.h"
+#include "mozilla/dom/InProcessChild.h"
+#include "mozilla/dom/InProcessParent.h"
+#include "mozilla/dom/JSActorService.h"
+#include "mozilla/dom/JSWindowActorBinding.h"
+#include "mozilla/dom/JSWindowActorChild.h"
+#include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/ReportingUtils.h"
+#include "mozilla/dom/SecurityPolicyViolationEvent.h"
+#include "mozilla/dom/SessionStoreRestoreData.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/WindowGlobalActorsBinding.h"
+#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsFocusManager.h"
+#include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsGlobalWindowInner.h"
-#include "nsNetUtil.h"
-#include "nsQueryObject.h"
-#include "nsSerializationHelper.h"
-#include "nsFrameLoader.h"
-#include "nsScriptSecurityManager.h"
-
-#include "mozilla/dom/JSWindowActorBinding.h"
-#include "mozilla/dom/JSWindowActorChild.h"
-#include "mozilla/dom/JSActorService.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIURIMutator.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsScriptSecurityManager.h"
+#include "nsSerializationHelper.h"
 #include "nsURLHelper.h"
 
 using namespace mozilla::ipc;
@@ -59,6 +60,8 @@ WindowGlobalChild::WindowGlobalChild(dom::WindowContext* aWindowContext,
       mDocumentURI(aDocumentURI) {
   MOZ_DIAGNOSTIC_ASSERT(mWindowContext);
   MOZ_DIAGNOSTIC_ASSERT(mDocumentPrincipal);
+  MOZ_DIAGNOSTIC_ASSERT(mDocumentPrincipal->GetIsLocalIpAddress() ==
+                        mWindowContext->IsLocalIP());
 
   if (!mDocumentURI) {
     NS_NewURI(getter_AddRefs(mDocumentURI), "about:blank");
@@ -76,6 +79,20 @@ WindowGlobalChild::WindowGlobalChild(dom::WindowContext* aWindowContext,
       BrowsingContext()->BrowserId(), InnerWindowId(),
       nsContentUtils::TruncatedURLForDisplay(aDocumentURI, 1024),
       embedderInnerWindowID, BrowsingContext()->UsePrivateBrowsing());
+}
+
+void VerifyStoragePrincipalMatchesDocumentPrincipal(WindowGlobalInit aInit) {
+  // WindowGlobalParent::CreateDisconnected performs similar checks in
+  // SetDocumentStoragePrincipal. If they fail, the parent process crashes.
+  // Let's ensure we crash in content instead, and assert each condition
+  // separately to find out what fails. See bug 2003449.
+  nsCString noSuffix, storageNoSuffix;
+  aInit.principal()->GetOriginNoSuffix(noSuffix);
+  aInit.storagePrincipal()->GetOriginNoSuffix(storageNoSuffix);
+  MOZ_RELEASE_ASSERT(noSuffix == storageNoSuffix);
+  MOZ_RELEASE_ASSERT(
+      aInit.principal()->OriginAttributesRef().EqualsIgnoringPartitionKey(
+          aInit.storagePrincipal()->OriginAttributesRef()));
 }
 
 already_AddRefed<WindowGlobalChild> WindowGlobalChild::Create(
@@ -123,6 +140,8 @@ already_AddRefed<WindowGlobalChild> WindowGlobalChild::Create(
 
     MOZ_DIAGNOSTIC_ASSERT(bc->AncestorsAreCurrent());
     MOZ_DIAGNOSTIC_ASSERT(bc->IsInProcess());
+
+    VerifyStoragePrincipalMatchesDocumentPrincipal(init);
 
     ManagedEndpoint<PWindowGlobalParent> endpoint =
         browserChild->OpenPWindowGlobalEndpoint(wgc);
@@ -226,8 +245,12 @@ void WindowGlobalChild::OnNewDocument(Document* aDocument) {
   if (nsCOMPtr<nsIChannel> channel = aDocument->GetChannel()) {
     nsCOMPtr<nsILoadInfo> loadInfo(channel->LoadInfo());
     txn.SetIsOriginalFrameSource(loadInfo->GetOriginalFrameSrcLoad());
-    txn.SetUsingStorageAccess(loadInfo->GetStoragePermission() !=
-                              nsILoadInfo::NoStoragePermission);
+
+    nsILoadInfo::StoragePermissionState storageAccess =
+        loadInfo->GetStoragePermission();
+    txn.SetUsingStorageAccess(
+        storageAccess == nsILoadInfo::HasStoragePermission ||
+        storageAccess == nsILoadInfo::StoragePermissionAllowListed);
   } else {
     txn.SetIsOriginalFrameSource(false);
   }
@@ -315,7 +338,7 @@ bool WindowGlobalChild::IsProcessRoot() {
 void WindowGlobalChild::BeforeUnloadAdded() {
   // Don't bother notifying the parent if we don't have an IPC link open.
   if (mBeforeUnloadListeners == 0 && CanSend()) {
-    Unused << mWindowContext->SetNeedsBeforeUnload(true);
+    (void)mWindowContext->SetNeedsBeforeUnload(true);
   }
 
   mBeforeUnloadListeners++;
@@ -329,7 +352,7 @@ void WindowGlobalChild::BeforeUnloadRemoved() {
   MOZ_ASSERT(mBeforeUnloadListeners >= 0);
 
   if (mBeforeUnloadListeners == 0) {
-    Unused << mWindowContext->SetNeedsBeforeUnload(false);
+    (void)mWindowContext->SetNeedsBeforeUnload(false);
   }
 }
 
@@ -493,7 +516,7 @@ WindowGlobalChild::RecvSaveStorageAccessPermissionGranted() {
 }
 
 mozilla::ipc::IPCResult WindowGlobalChild::RecvDispatchSecurityPolicyViolation(
-    const nsString& aViolationEventJSON) {
+    const nsString& aViolationEventJSON, const nsString& aReportGroupName) {
   nsGlobalWindowInner* window = GetWindowGlobal();
   if (!window) {
     return IPC_OK();
@@ -504,15 +527,10 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvDispatchSecurityPolicyViolation(
     return IPC_OK();
   }
 
-  SecurityPolicyViolationEventInit violationEvent;
-  if (!violationEvent.Init(aViolationEventJSON)) {
-    return IPC_OK();
-  }
+  ReportingUtils::DeserializeSecurityViolationEventAndReport(
+      doc->GetTargetForDOMEvent(), window, aViolationEventJSON,
+      aReportGroupName);
 
-  RefPtr<Event> event = SecurityPolicyViolationEvent::Constructor(
-      doc, u"securitypolicyviolation"_ns, violationEvent);
-  event->SetTrusted(true);
-  doc->DispatchEvent(*event, IgnoreErrors());
   return IPC_OK();
 }
 
@@ -565,20 +583,10 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvRestoreTabContent(
   return IPC_OK();
 }
 
-IPCResult WindowGlobalChild::RecvRawMessage(
-    const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
-    const Maybe<ClonedMessageData>& aStack) {
-  Maybe<StructuredCloneData> data;
-  if (aData) {
-    data.emplace();
-    data->BorrowFromClonedMessageData(*aData);
-  }
-  Maybe<StructuredCloneData> stack;
-  if (aStack) {
-    stack.emplace();
-    stack->BorrowFromClonedMessageData(*aStack);
-  }
-  ReceiveRawMessage(aMeta, std::move(data), std::move(stack));
+IPCResult WindowGlobalChild::RecvRawMessage(const JSActorMessageMeta& aMeta,
+                                            JSIPCValue&& aData,
+                                            StructuredCloneData* aStack) {
+  ReceiveRawMessage(aMeta, std::move(aData), aStack);
   return IPC_OK();
 }
 
@@ -606,7 +614,9 @@ IPCResult WindowGlobalChild::RecvProcessCloseRequest(
   RefPtr<nsFocusManager> focusManager = nsFocusManager::GetFocusManager();
   RefPtr<dom::BrowsingContext> focusedContext =
       focusManager ? focusManager->GetFocusedBrowsingContext() : nullptr;
-  MOZ_ASSERT(focusedContext, "Cannot find focused context");
+  if (!focusedContext) {
+    return IPC_OK();
+  }
   // Only the currently focused context's CloseWatcher should be processed.
   if (RefPtr<Document> doc = focusedContext->GetExtantDocument()) {
     RefPtr<nsPIDOMWindowInner> win = doc->GetInnerWindow();
@@ -658,7 +668,7 @@ void WindowGlobalChild::SetDocumentPrincipal(
                               aNewDocumentStoragePrincipal);
 }
 
-const nsACString& WindowGlobalChild::GetRemoteType() {
+const nsACString& WindowGlobalChild::GetRemoteType() const {
   if (XRE_IsContentProcess()) {
     return ContentChild::GetSingleton()->GetRemoteType();
   }

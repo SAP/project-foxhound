@@ -7,8 +7,8 @@ support-files = ["head.js"]
 
 ["browser_contextmenu_sendpage.js"]
 skip-if = [
-  "os == 'mac' && os_version == '15.00' && processor == 'aarch64'", # Bug 1886299
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1886299
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1886299
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1886299
 ]
 
 ["browser_contextmenu_sendtab.js"]
@@ -18,6 +18,8 @@ skip-if = [
 ["browser_fxa_web_channel.js"]
 https_first_disabled = true
 support-files = ["browser_fxa_web_channel.html"]
+
+["browser_sendtab_telemetry.js"]
 
 ["browser_signed_out_avatar_variants.js"]
 

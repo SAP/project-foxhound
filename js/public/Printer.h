@@ -326,6 +326,28 @@ class JS_PUBLIC_API JSSprinter : public StringPrinter {
   JSString* release(JSContext* cx) { return releaseJS(cx); }
 };
 
+// FixedBufferPrinter, print to a fixed-size buffer. The string in the buffer
+// will always be null-terminated after being passed to the constructor.
+class FixedBufferPrinter final : public GenericPrinter {
+ private:
+  // The first char in the buffer where put will append the next string
+  char* buffer_;
+  // The remaining size available in the buffer
+  size_t size_;
+
+ public:
+  constexpr FixedBufferPrinter(char* buf, size_t size)
+      : buffer_(buf), size_(size) {
+    MOZ_ASSERT(buffer_);
+    memset(buffer_, 0, size_);
+  }
+
+  // Puts |len| characters from |s| at the current position.
+  // If the buffer fills up, this won't do anything.
+  void put(const char* s, size_t len) override;
+  using GenericPrinter::put;  // pick up |put(const char* s);|
+};
+
 // Fprinter, print a string directly into a file.
 class JS_PUBLIC_API Fprinter final : public GenericPrinter {
  private:

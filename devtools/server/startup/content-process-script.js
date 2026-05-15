@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/process-script */
-
 "use strict";
 
 /**
@@ -12,8 +10,8 @@
  * This module is loaded early when a content process is started.
  * Note that (at least) JS XPCOM registered at app-startup, will be running before.
  * It is used by the multiprocess browser toolbox in order to debug privileged resources.
- * When debugging a Web page loaded in a Tab, DevToolsFrame JS Window Actor is used instead
- * (DevToolsFrameParent.jsm and DevToolsFrameChild.jsm).
+ * When debugging a Web page loaded in a Tab, DevToolsProcess JS Window Actor is used instead
+ * (DevToolsProcessParent.sys.mjs and DevToolsProcessChild.sys.mjs).
  *
  * This module won't do anything unless DevTools codebase starts adding some data
  * in `Services.cpmm.sharedData` object or send a message manager message via `Services.cpmm`.
@@ -187,7 +185,7 @@ class ContentProcessStartup {
    *        The prefix of the DevToolsServerConnection of the Watcher Actor.
    *        This is used to compute a unique ID for the target actor.
    * @param Object sessionData
-   *        All data managed by the Watcher Actor and ParentProcessWatcherRegistry.jsm, containing
+   *        All data managed by the Watcher Actor and ParentProcessWatcherRegistry.sys.mjs, containing
    *        target types, resources types to be listened as well as breakpoints and any
    *        other data meant to be shared across processes and threads.
    * @param Object options Dictionary with optional values:
@@ -215,7 +213,7 @@ class ContentProcessStartup {
     // but here, we can't have access to any DevTools connection as we are really early in the content process startup
     const prefix =
       parentConnectionPrefix + "contentProcess" + Services.appinfo.processID;
-    //TODO: probably merge content-process.jsm with this module
+    //TODO: probably merge content-process.sys.mjs with this module
     const { initContentProcessTarget } = ChromeUtils.importESModule(
       "resource://devtools/server/startup/content-process.sys.mjs"
     );

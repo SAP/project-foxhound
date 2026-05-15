@@ -14,7 +14,6 @@ user_pref("extensions.webextensions.warnings-as-errors", true);
 // so we bypass the OSX dialog raised by the corelocation provider
 user_pref("geo.provider.testing", true);
 user_pref("browser.region.network.url", "");
-user_pref("geo.provider.network.compare.url", "");
 user_pref("media.gmp-manager.updateEnabled", false);
 user_pref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
 user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy");
@@ -39,7 +38,7 @@ user_pref("gfx.color_management.mode", 1);
 // Don't enable remote tiles on new-tab pages in xpcshell
 user_pref("browser.topsites.contile.enabled", false);
 // Don't pull weather data from the network
-user_pref("browser.newtabpage.activity-stream.discoverystream.region-weather-config", "");
+user_pref("browser.newtabpage.activity-stream.system.showWeather", false);
 // Don't pull wallpaper content from the network
 user_pref("browser.newtabpage.activity-stream.newtabWallpapers.enabled", false);
 // Don't pull sponsored Top Sites content from the network
@@ -61,5 +60,6 @@ user_pref("nimbus.profilesdatastoreservice.enabled", false);
 // TODO(bug 1972426): Make this the default and remove this.
 user_pref("nimbus.profilesdatastoreservice.read.enabled", false);
 
-// Enable Nimbus debug logging.
-user_pref("messaging-system.log", "all");
+// Turn off semantic history search as it triggers network connections to
+// download ML models.
+user_pref("places.semanticHistory.featureGate", false);

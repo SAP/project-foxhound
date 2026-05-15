@@ -8,7 +8,7 @@ import "chrome://global/content/elements/moz-card.mjs";
 import { ERRORS } from "chrome://browser/content/backup/backup-constants.mjs";
 import "./disable-backup-encryption.mjs";
 
-window.MozXULElement.insertFTLIfNeeded("locales-preview/backupSettings.ftl");
+window.MozXULElement.insertFTLIfNeeded("browser/backupSettings.ftl");
 window.MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
 
 const SELECTABLE_ERRORS = {

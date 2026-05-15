@@ -218,7 +218,7 @@
         }
 
         h1 {
-          font-weight: 600;
+          font-weight: var(--heading-font-weight);
         }
 
         .inline-icon-container {
@@ -307,6 +307,12 @@
           // desired 8px margin, so spacing is the same as for `subtitle`.
           margin: -4px 0 0;
           color: inherit;
+        }
+      }
+
+      .textarea-container {
+        .textarea-char-counter {
+          font-size: 0.813em;
         }
       }
 
@@ -409,6 +415,14 @@
             min-width: 24px;
           }
 
+          &[button-size='x-small'] {
+            background-size: 10px;
+            height: 20px;
+            width: 20px;
+            min-height: 20px;
+            min-width: 20px;
+          }
+
           &.with-background {
             background: url('chrome://global/skin/icons/close.svg') no-repeat center / 16px, var(--fc-dismiss-button-background);
 
@@ -472,7 +486,7 @@
           padding: 4px 16px;
           margin: 0;
           font-size: 0.813em;
-          font-weight: 600;
+          font-weight: var(--font-weight-semibold);
           line-height: 16px;
           min-height: var(--button-min-height);
           text-decoration: none;
@@ -955,5 +969,24 @@
 
   @at-root panel#{&}[arrow-position='inline-start-bottom'] {
     margin-inline-start: calc(-1 * (var(--panel-shadow-margin) + var(--arrow-overlap-magnitude)));
+  }
+
+  /* Smart window feature callout custom styles */
+  @at-root :root[ai-window] #{&} {
+    --smart-window-callout-drop-shadow: none;
+
+    .shadow-arrow {
+      filter: var(--smart-window-callout-drop-shadow);
+    }
+
+    .screen[pos='callout'] .main-content {
+      border-radius: var(--border-radius-medium);
+      filter: var(--smart-window-callout-drop-shadow);
+    }
+  }
+
+  /* dark theme only */
+  @at-root :root[ai-window][lwt-popup='light'] #{&} {
+    --smart-window-callout-drop-shadow: drop-shadow(0px 2px 4px rgba(120, 68, 240, 15%)) drop-shadow(0px 1px 1px rgba(40, 25, 83, 8%));
   }
 }

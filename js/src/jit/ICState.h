@@ -119,13 +119,17 @@ class ICState {
     if (!shouldTransition()) {
       return false;
     }
+    forceTransition();
+    return true;
+  }
+
+  MOZ_ALWAYS_INLINE void forceTransition() {
     if (numFailures_ >= maxFailures() || mode() == Mode::Megamorphic) {
       transition(Mode::Generic);
-      return true;
+    } else {
+      MOZ_ASSERT(mode() == Mode::Specialized);
+      transition(Mode::Megamorphic);
     }
-    MOZ_ASSERT(mode() == Mode::Specialized);
-    transition(Mode::Megamorphic);
-    return true;
   }
 
   void reset() {

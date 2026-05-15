@@ -11,19 +11,24 @@
  * on Firefox. We can undo that here.
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixBug1903480) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1903480", {
+    configurable: false,
+    value: true,
+  });
 
-console.info(
-  "wheel events are being scaled down for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1903480 for details."
-);
+  console.info(
+    "wheel events are being scaled down for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1903480 for details."
+  );
 
-const proto = window.wrappedJSObject.WheelEvent.prototype;
-const descriptor = Object.getOwnPropertyDescriptor(proto, "deltaY");
-const { get } = descriptor;
+  const proto = WheelEvent.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(proto, "deltaY");
+  const { get } = descriptor;
 
-descriptor.get = exportFunction(function () {
-  const value = get.call(this);
-  return value / 30;
-}, window);
+  descriptor.get = function () {
+    const value = get.call(this);
+    return value / 30;
+  };
 
-Object.defineProperty(proto, "deltaY", descriptor);
+  Object.defineProperty(proto, "deltaY", descriptor);
+}

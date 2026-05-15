@@ -12,8 +12,8 @@ support-files = [
 
 ["test_broadcastchannel_basic.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_broadcastchannel_close.html"]

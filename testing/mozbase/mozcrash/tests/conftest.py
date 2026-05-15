@@ -4,7 +4,6 @@ import uuid
 
 import mozcrash
 import pytest
-from py._path.common import fspath
 
 
 @pytest.fixture(scope="session")
@@ -20,9 +19,9 @@ def check_for_crashes(tmpdir, stackwalk, monkeypatch):
     monkeypatch.delenv("MINIDUMP_SAVE_PATH", raising=False)
 
     def wrapper(
-        dump_directory=fspath(tmpdir),
+        dump_directory=str(tmpdir),
         symbols_path="symbols_path",
-        stackwalk_binary=fspath(stackwalk),
+        stackwalk_binary=str(stackwalk),
         dump_save_path=None,
         test_name=None,
         quiet=True,

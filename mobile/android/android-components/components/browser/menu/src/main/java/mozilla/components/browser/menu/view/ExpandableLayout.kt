@@ -125,7 +125,7 @@ internal class ExpandableLayout private constructor(context: Context) : FrameLay
     //
     // Also if this view is collapsed (full height but translated) we want to treat any touch in the
     // invisible space as a dismiss event.
-    @Suppress("ComplexMethod", "ReturnCount")
+    @Suppress("ReturnCount", "CognitiveComplexMethod")
     override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean {
         if (shouldInterceptTouches()) {
             return when (ev?.actionMasked) {
@@ -309,7 +309,7 @@ internal class ExpandableLayout private constructor(context: Context) : FrameLay
     // That distance will be the collapsed height of the ViewGroup used when this will be first shown on the screen.
     // Users will be able to afterwards expand the ViewGroup to the full height.
     @VisibleForTesting
-    @Suppress("ReturnCount")
+    @Suppress("ReturnCount", "CognitiveComplexMethod")
     internal fun calculateCollapsedHeight(): Int {
         val listView = (wrappedView.getChildAt(0) as RecyclerView)
         // Reconcile adapter positions with listView children positions.

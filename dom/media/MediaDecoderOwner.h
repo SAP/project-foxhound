@@ -92,6 +92,10 @@ class MediaDecoderOwner {
   // when the resource has completed seeking.
   virtual void SeekCompleted() = 0;
 
+  // Called by the video decoder object, on the main thread, before a seek
+  // operation to update the played time ranges.
+  virtual void UpdatePlayedRangesBeforeSeek(double aRangeEndTime) = 0;
+
   // Called by the video decoder object, on the main thread,
   // when the resource has aborted seeking.
   virtual void SeekAborted() = 0;

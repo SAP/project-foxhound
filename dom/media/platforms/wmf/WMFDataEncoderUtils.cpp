@@ -51,57 +51,59 @@ static bool CanUseWMFHwEncoder(CodecType aCodec) {
   }
 }
 
-EncodeSupportSet CanCreateWMFEncoder(
-    CodecType aCodec, const gfx::IntSize& aFrameSize,
-    const EncoderConfig::CodecSpecific& aCodecSpecific) {
+EncodeSupportSet CanCreateWMFEncoder(const EncoderConfig& aConfig) {
   EncodeSupportSet supports;
   mscom::EnsureMTA([&]() {
     if (!wmf::MediaFoundationInitializer::HasInitialized()) {
       return;
     }
-    // Try HW encoder if allowed.
-    if (CanUseWMFHwEncoder(aCodec)) {
-      auto hwEnc =
-          MakeRefPtr<MFTEncoder>(MFTEncoder::HWPreference::HardwareOnly);
-      if (SUCCEEDED(hwEnc->Create(CodecToSubtype(aCodec), aFrameSize,
-                                  aCodecSpecific))) {
-        supports += EncodeSupport::HardwareEncode;
+    // Try HW encoder if allowed by graphics and not disallowed by the caller.
+    if (aConfig.mHardwarePreference != HardwarePreference::RequireSoftware) {
+      if (CanUseWMFHwEncoder(aConfig.mCodec)) {
+        auto hwEnc =
+            MakeRefPtr<MFTEncoder>(MFTEncoder::HWPreference::HardwareOnly);
+        if (SUCCEEDED(hwEnc->Create(CodecToSubtype(aConfig.mCodec),
+                                    aConfig.mSize, aConfig.mCodecSpecific))) {
+          supports += EncodeSupport::HardwareEncode;
+        }
+      } else {
+        WMF_ENC_LOG("HW encoder is disabled for %s",
+                    EnumValueToString(aConfig.mCodec));
       }
     }
-    // Try SW encoder.
-    auto swEnc = MakeRefPtr<MFTEncoder>(MFTEncoder::HWPreference::SoftwareOnly);
-    if (SUCCEEDED(swEnc->Create(CodecToSubtype(aCodec), aFrameSize,
-                                aCodecSpecific))) {
-      supports += EncodeSupport::SoftwareEncode;
+    if (aConfig.mHardwarePreference != HardwarePreference::RequireHardware) {
+      // Try SW encoder if not disallowed by the caller.
+      auto swEnc =
+          MakeRefPtr<MFTEncoder>(MFTEncoder::HWPreference::SoftwareOnly);
+      if (SUCCEEDED(swEnc->Create(CodecToSubtype(aConfig.mCodec), aConfig.mSize,
+                                  aConfig.mCodecSpecific))) {
+        supports += EncodeSupport::SoftwareEncode;
+      }
     }
+
+    WMF_ENC_LOG(
+        "%s encoder support for %s",
+        supports.contains(EncodeSupportSet(EncodeSupport::HardwareEncode,
+                                           EncodeSupport::SoftwareEncode))
+            ? "HW | SW"
+        : supports.contains(EncodeSupport::HardwareEncode) ? "HW"
+        : supports.contains(EncodeSupport::SoftwareEncode) ? "SW"
+                                                           : "No",
+        aConfig.ToString().get());
   });
   return supports;
 }
 
 static already_AddRefed<MediaByteBuffer> ParseH264Parameters(
     const nsTArray<uint8_t>& aHeader, const bool aAsAnnexB) {
+  if (!aAsAnnexB) {
+    return AnnexB::ExtractExtraDataForAVCC(aHeader).forget();
+  }
   size_t length = aHeader.Length();
   auto annexB = MakeRefPtr<MediaByteBuffer>(length);
   PodCopy(annexB->Elements(), aHeader.Elements(), length);
   annexB->SetLength(length);
-  if (aAsAnnexB) {
-    return annexB.forget();
-  }
-
-  // Convert to avcC.
-  nsTArray<AnnexB::NALEntry> paramSets;
-  AnnexB::ParseNALEntries(
-      Span<const uint8_t>(annexB->Elements(), annexB->Length()), paramSets);
-
-  auto avcc = MakeRefPtr<MediaByteBuffer>();
-  AnnexB::NALEntry& sps = paramSets.ElementAt(0);
-  AnnexB::NALEntry& pps = paramSets.ElementAt(1);
-  const uint8_t* spsPtr = annexB->Elements() + sps.mOffset;
-  H264::WriteExtraData(
-      avcc, spsPtr[1], spsPtr[2], spsPtr[3],
-      Span<const uint8_t>(spsPtr, sps.mSize),
-      Span<const uint8_t>(annexB->Elements() + pps.mOffset, pps.mSize));
-  return avcc.forget();
+  return annexB.forget();
 }
 
 static uint32_t GetProfile(H264_PROFILE aProfileLevel) {
@@ -220,13 +222,26 @@ already_AddRefed<IMFMediaType> CreateOutputType(EncoderConfig& aConfig) {
 
   if (aConfig.mCodecSpecific.is<H264Specific>()) {
     MOZ_ASSERT(aConfig.mCodec == CodecType::H264);
-    hr = FAILED(type->SetUINT32(
+    hr = type->SetUINT32(
         MF_MT_MPEG2_PROFILE,
-        GetProfile(aConfig.mCodecSpecific.as<H264Specific>().mProfile)));
-    if (hr) {
+        GetProfile(aConfig.mCodecSpecific.as<H264Specific>().mProfile));
+    if (FAILED(hr)) {
       WMF_ENC_LOG("Create output type set profile error: %lx", hr);
       return nullptr;
     }
+  }
+
+  // Set keyframe distance through both media type and codec API for better
+  // compatibility. Some encoders may only support one of these methods.
+  // `AVEncVideoMaxKeyframeDistance` is set in `MFTEncoder::SetModes`.
+  uint32_t interval = SaturatingCast<uint32_t>(aConfig.mKeyframeInterval);
+  if (interval > 0) {
+    hr = type->SetUINT32(MF_MT_MAX_KEYFRAME_SPACING, interval);
+    if (FAILED(hr)) {
+      WMF_ENC_LOG("Create output type set keyframe interval error: %lx", hr);
+      return nullptr;
+    }
+    WMF_ENC_LOG("Set MAX_KEYFRAME_SPACING to %u", interval);
   }
 
   return type.forget();

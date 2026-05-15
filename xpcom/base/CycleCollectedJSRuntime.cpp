@@ -66,10 +66,8 @@
 #include "js/Object.h"  // JS::GetClass, JS::GetCompartment, JS::GetPrivate
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/Warnings.h"            // JS::SetWarningReporter
-#include "js/ShadowRealmCallbacks.h"
 #include "js/SliceBudget.h"
 #include "jsfriendapi.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebuggerOnGCRunnable.h"
@@ -80,7 +78,7 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/glean/XpcomMetrics.h"
-#include "mozilla/Unused.h"
+#include "mozilla/UseCounter.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/JSExecutionManager.h"
@@ -88,8 +86,6 @@
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/ShadowRealmGlobalScope.h"
-#include "mozilla/dom/RegisterShadowRealmBindings.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
@@ -401,9 +397,9 @@ struct TraversalTracer : public JS::CallbackTracer {
 };
 
 void TraversalTracer::onChild(JS::GCCellPtr aThing, const char* name) {
-  // Checking strings and symbols for being gray is rather slow, and we don't
-  // need either of them for the cycle collector.
-  if (aThing.is<JSString>() || aThing.is<JS::Symbol>()) {
+  // Checking strings for being gray is rather slow, and we don't need them for
+  // the cycle collector.
+  if (aThing.is<JSString>()) {
     return;
   }
 
@@ -781,14 +777,6 @@ size_t JSHolderList::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
   return mJSHolders.SizeOfExcludingThis(aMallocSizeOf);
 }
 
-static bool InitializeShadowRealm(JSContext* aCx,
-                                  JS::Handle<JSObject*> aGlobal) {
-  MOZ_ASSERT(StaticPrefs::javascript_options_experimental_shadow_realms());
-
-  JSAutoRealm ar(aCx, aGlobal);
-  return dom::RegisterShadowRealmBindings(aCx, aGlobal);
-}
-
 static bool InstanceClassIsError(const JSClass* clasp) {
   if (clasp->isDOMClass()) {
     const DOMJSClass* domClass = DOMJSClass::FromJSClass(clasp);
@@ -799,6 +787,37 @@ static bool InstanceClassIsError(const JSClass* clasp) {
   }
 
   return false;
+}
+
+static bool ExtractExceptionInfo(JSContext* aCx, JS::Handle<JSObject*> aObj,
+                                 bool* aIsException,
+                                 JS::MutableHandle<JSString*> aFileName,
+                                 uint32_t* aLine, uint32_t* aColumn,
+                                 JS::MutableHandle<JSString*> aMessage) {
+  *aIsException = false;
+
+  nsAutoCString fileName;
+  nsAutoString message;
+  if (!nsContentUtils::ExtractExceptionValues(aCx, aObj, fileName, aLine,
+                                              aColumn, message)) {
+    return true;
+  }
+
+  *aIsException = true;
+
+  aFileName.set(
+      ::JS_NewStringCopyN(aCx, fileName.BeginReading(), fileName.Length()));
+  if (!aFileName) {
+    return false;
+  }
+
+  aMessage.set(
+      ::JS_NewUCStringCopyN(aCx, message.BeginReading(), message.Length()));
+  if (!aMessage) {
+    return false;
+  }
+
+  return true;
 }
 
 CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
@@ -840,14 +859,12 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
   JS::SetWaitCallback(mJSRuntime, BeforeWaitCallback, AfterWaitCallback,
                       sizeof(dom::AutoYieldJSThreadExecution));
   JS::SetWarningReporter(aCx, MozCrashWarningReporter);
-  JS::SetShadowRealmInitializeGlobalCallback(aCx, InitializeShadowRealm);
-  JS::SetShadowRealmGlobalCreationCallback(aCx, dom::NewShadowRealmGlobal);
 
   js::AutoEnterOOMUnsafeRegion::setAnnotateOOMAllocationSizeCallback(
       CrashReporter::AnnotateOOMAllocationSize);
 
-  static js::DOMCallbacks DOMcallbacks = {InstanceClassHasProtoAtDepth,
-                                          InstanceClassIsError};
+  static js::DOMCallbacks DOMcallbacks = {
+      InstanceClassHasProtoAtDepth, InstanceClassIsError, ExtractExceptionInfo};
   SetDOMCallbacks(aCx, &DOMcallbacks);
   js::SetScriptEnvironmentPreparer(aCx, &mEnvironmentPreparer);
 
@@ -1016,11 +1033,6 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
         static_cast<const RemoteObjectProxyBase*>(js::GetProxyHandler(obj));
     return handler->NoteChildren(obj, aCb);
   }
-
-  JS::Value value = js::MaybeGetScriptPrivate(obj);
-  if (!value.isUndefined()) {
-    aCb.NoteXPCOMChild(static_cast<nsISupports*>(value.toPrivate()));
-  }
 }
 
 void CycleCollectedJSRuntime::TraverseGCThing(
@@ -1180,7 +1192,8 @@ struct GCMajorMarker : public BaseMarkerType<GCMajorMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"timings", MS::InputType::CString, "GC timings"}};
+      {"timings", MS::InputType::CString, "GC timings", MS::Format::String,
+       MS::PayloadFlags::Hidden}};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable,
@@ -1253,7 +1266,7 @@ void CycleCollectedJSRuntime::GCSliceCallback(JSContext* aContext,
   if (aProgress == JS::GC_CYCLE_END &&
       JS::dbg::FireOnGarbageCollectionHookRequired(aContext)) {
     JS::GCReason reason = aDesc.reason_;
-    Unused << NS_WARN_IF(
+    (void)NS_WARN_IF(
         NS_FAILED(DebuggerOnGCRunnable::Enqueue(aContext, aDesc)) &&
         reason != JS::GCReason::SHUTDOWN_CC &&
         reason != JS::GCReason::DESTROY_RUNTIME &&
@@ -1264,6 +1277,39 @@ void CycleCollectedJSRuntime::GCSliceCallback(JSContext* aContext,
     self->mPrevGCSliceCallback(aContext, aProgress, aDesc);
   }
 }
+
+struct GCMinorMarker : public BaseMarkerType<GCMinorMarker> {
+  static constexpr const char* Name = "GCMinor";
+
+  using MS = MarkerSchema;
+  static constexpr MS::PayloadField PayloadFields[] = {
+      // This marker has a special handling for its visualization in the
+      // frontend.
+      {"nursery", MS::InputType::CString, "Nursery timings", MS::Format::String,
+       MS::PayloadFlags::Hidden}};
+
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable,
+                                               MS::Location::TimelineMemory};
+  static constexpr bool IsStackBased = true;
+
+  static constexpr const char* Description =
+      "A minor GC (aka nursery collection) to clear out the buffer used "
+      "for recent allocations and move surviving data to the tenured "
+      "(long-lived) heap.";
+
+  static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Memory;
+
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aTimingJSON) {
+    if (aTimingJSON.Length() != 0) {
+      aWriter.SplicedJSONProperty("nursery", aTimingJSON);
+    } else {
+      aWriter.NullProperty("nursery");
+    }
+  }
+};
 
 /* static */
 void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
@@ -1282,34 +1328,6 @@ void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
 
   if (aProgress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END &&
       profiler_thread_is_being_profiled_for_markers()) {
-    struct GCMinorMarker {
-      static constexpr mozilla::Span<const char> MarkerTypeName() {
-        return mozilla::MakeStringSpan("GCMinor");
-      }
-      static void StreamJSONMarkerData(
-          mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
-          const mozilla::ProfilerString8View& aTimingJSON) {
-        if (aTimingJSON.Length() != 0) {
-          aWriter.SplicedJSONProperty("nursery", aTimingJSON);
-        } else {
-          aWriter.NullProperty("nursery");
-        }
-      }
-      static mozilla::MarkerSchema MarkerTypeDisplay() {
-        using MS = mozilla::MarkerSchema;
-        MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable,
-                  MS::Location::TimelineMemory};
-        schema.AddStaticLabelValue(
-            "Description",
-            "A minor GC (aka nursery collection) to clear out the buffer used "
-            "for recent allocations and move surviving data to the tenured "
-            "(long-lived) heap.");
-        // No display instructions here, there is special handling in the
-        // front-end.
-        return schema;
-      }
-    };
-
     profiler_add_marker(
         "GCMinor", baseprofiler::category::GCCC,
         MarkerTiming::Interval(self->mLatestNurseryCollectionStart, now),
@@ -1598,7 +1616,7 @@ bool CycleCollectedJSRuntime::TraceJSHolders(JSTracer* aTracer, IterT& aIter,
       CheckHolderIsSingleZone(holder, tracer, aIter.Zone());
     }
 #else
-    Unused << checkSingleZoneHolders;
+    (void)checkSingleZoneHolders;
 #endif
 
     functor.SetHolder(holder);
@@ -1727,6 +1745,8 @@ bool CycleCollectedJSRuntime::UsefulToMergeZones() const { return false; }
 void CycleCollectedJSRuntime::FixWeakMappingGrayBits() const {
   MOZ_ASSERT(!JS::IsIncrementalGCInProgress(mJSRuntime),
              "Don't call FixWeakMappingGrayBits during a GC.");
+  MOZ_ASSERT(AreGCGrayBitsValid());
+
   FixWeakMappingGrayBitsTracer fixer(mJSRuntime);
   fixer.FixAll();
 }
@@ -2058,7 +2078,7 @@ void CycleCollectedJSRuntime::OnGC(JSContext* aContext, JSGCStatus aStatus,
     case JSGC_BEGIN:
       MOZ_RELEASE_ASSERT(mTraceState.is<Nothing>());
       nsCycleCollector_prepareForGarbageCollection();
-      PrepareWaitingZonesForGC();
+      PrepareWaitingZonesForGC(aReason);
       break;
     case JSGC_END: {
       MOZ_RELEASE_ASSERT(mTraceState.is<Nothing>());
@@ -2118,10 +2138,12 @@ void CycleCollectedJSRuntime::SetLargeAllocationFailure(OOMState aNewState) {
   AnnotateAndSetOutOfMemory(&mLargeAllocationFailureState, aNewState);
 }
 
-void CycleCollectedJSRuntime::PrepareWaitingZonesForGC() {
+void CycleCollectedJSRuntime::PrepareWaitingZonesForGC(JS::GCReason aReason) {
   JSContext* cx = CycleCollectedJSContext::Get()->Context();
   if (mZonesWaitingForGC.Count() == 0) {
-    JS::PrepareForFullGC(cx);
+    if (!JS::InternalGCReason(aReason)) {
+      JS::PrepareForFullGC(cx);
+    }
   } else {
     for (const auto& key : mZonesWaitingForGC) {
       JS::PrepareZoneForGC(cx, key);

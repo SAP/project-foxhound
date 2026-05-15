@@ -13,14 +13,12 @@ class TrackingProtectionAllowListPreferenceTestCase(MarionetteTestCase):
         super().setUp()
         # Simulate the state after ETP Strict user upgrades, and UrlClassifierExceptionsListService
         # has ran to ensure the baseline and convenience preferences are set to False.
-        self.marionette.enforce_gecko_prefs(
-            {
-                "browser.contentblocking.category": "strict",
-                "privacy.trackingprotection.allow_list.baseline.enabled": False,
-                "privacy.trackingprotection.allow_list.convenience.enabled": False,
-                "privacy.trackingprotection.allow_list.hasMigratedCategoryPrefs": True,
-            }
-        )
+        self.marionette.enforce_gecko_prefs({
+            "browser.contentblocking.category": "strict",
+            "privacy.trackingprotection.allow_list.baseline.enabled": False,
+            "privacy.trackingprotection.allow_list.convenience.enabled": False,
+            "privacy.trackingprotection.allow_list.hasMigratedCategoryPrefs": True,
+        })
 
         self.marionette.set_context("chrome")
 

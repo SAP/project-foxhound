@@ -7,8 +7,8 @@
  * see http://lxr.mozilla.org/seamonkey/source/accessible/accessible-docs.html
  */
 
-#ifndef mozilla_a11y_RootAccessibleWrap_h__
-#define mozilla_a11y_RootAccessibleWrap_h__
+#ifndef mozilla_a11y_RootAccessibleWrap_h_
+#define mozilla_a11y_RootAccessibleWrap_h_
 
 #include "RootAccessible.h"
 

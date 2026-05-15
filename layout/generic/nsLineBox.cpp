@@ -600,7 +600,7 @@ Result<nsILineIterator::LineInfo, nsresult> nsLineIterator::GetLine(
   return structure;
 }
 
-int32_t nsLineIterator::FindLineContaining(nsIFrame* aFrame,
+int32_t nsLineIterator::FindLineContaining(const nsIFrame* aFrame,
                                            int32_t aStartLine) {
   const nsLineBox* line = GetLineAt(aStartLine);
   MOZ_ASSERT(line, "aStartLine out of range");

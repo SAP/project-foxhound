@@ -45,7 +45,7 @@ exports.HeapSnapshotFileActor = class HeapSnapshotFileActor extends Actor {
   /**
    * @see MemoryFront.prototype.transferHeapSnapshot
    *
-   * @param {String} snapshotId
+   * @param {string} snapshotId
    *        The ID returned by MemoryActor's saveHeapSnapshot method.
    * @param {Function} startBulkSend
    *        Function provided by protocol.js Actor framework to initiate

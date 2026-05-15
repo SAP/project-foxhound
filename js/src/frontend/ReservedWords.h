@@ -63,7 +63,6 @@
                                                                           \
   /* Contextual keywords. */                                              \
   MACRO(as, as, TokenKind::As)                                            \
-  MACRO(assert, assert_, TokenKind::Assert)                               \
   MACRO(async, async, TokenKind::Async)                                   \
   MACRO(await, await, TokenKind::Await)                                   \
   MACRO(from, from, TokenKind::From)                                      \
@@ -73,6 +72,7 @@
   MACRO(of, of, TokenKind::Of)                                            \
   MACRO(set, set, TokenKind::Set)                                         \
   MACRO(static, static_, TokenKind::Static)                               \
+  IF_SOURCE_PHASE_IMPORTS(MACRO(source, source, TokenKind::Source))       \
   MACRO(target, target, TokenKind::Target)                                \
   MACRO(yield, yield, TokenKind::Yield)
 

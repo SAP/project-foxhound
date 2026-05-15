@@ -164,8 +164,9 @@ async function clearSearchAndCheckRules(view) {
   const computed = textPropEditor.computed;
 
   info("Clearing the search filter");
+  const onRuleViewFiltered = view.inspector.once("ruleview-filtered");
   EventUtils.synthesizeMouseAtCenter(searchClearButton, {}, win);
-  await view.inspector.once("ruleview-filtered");
+  await onRuleViewFiltered;
 
   info("Check the search filter is cleared and no rules are highlighted");
   is(view.element.children.length, 3, "Should have 3 rules.");

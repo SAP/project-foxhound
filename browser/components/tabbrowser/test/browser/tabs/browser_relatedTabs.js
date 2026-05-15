@@ -24,7 +24,9 @@ add_task(async function () {
     );
     let tab = BrowserTestUtils.addTab(gBrowser, aURL, { referrerInfo });
     tabs.push(tab);
-    return BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    return BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+      wantLoad: aURL,
+    });
   }
 
   await addTab("http://mochi.test:8888/#0");
@@ -41,7 +43,7 @@ add_task(async function () {
   await addTab("about:blank", gBrowser.currentURI);
   gBrowser.moveTabTo(gBrowser.selectedTab, { tabIndex: 1 });
   await addTab("http://mochi.test:8888/#6", gBrowser.currentURI);
-  await addTab();
+  await addTab("about:blank");
   await addTab("http://mochi.test:8888/#7");
 
   function testPosition(tabNum, expectedPosition, msg) {

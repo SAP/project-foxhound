@@ -14,6 +14,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     treeherder:
         kind: other
         tier: 2
@@ -48,7 +49,7 @@ tasks:
             - full
         fetches:
             build:
-                - artifact: target.condprof.tests.tar.gz
+                - artifact: target.condprof.tests.tar.zst
                 - artifact: target.zip
             toolchain:
                 - win64-geckodriver
@@ -66,7 +67,7 @@ tasks:
                   path: archive
                   type: directory
     linux64-firefox:
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         description: Creates or updates conditioned profiles on Linux
         run-on-projects: ['mozilla-central']
         treeherder:
@@ -82,7 +83,7 @@ tasks:
             - full
         fetches:
             build:
-                - artifact: target.condprof.tests.tar.gz
+                - artifact: target.condprof.tests.tar.zst
                 - artifact: target.tar.xz
             toolchain:
                 - linux64-geckodriver
@@ -96,7 +97,7 @@ tasks:
                 --scenario ${SCENARIO}
                 ../../archive
         worker:
-            docker-image: {in-tree: condprof}
+            docker-image: {in-tree: ubuntu2404-test}
             artifacts:
                 - name: public/condprof
                   path: /builds/worker/archive
@@ -115,7 +116,7 @@ tasks:
             build: build-macosx64-shippable/opt
         fetches:
             build:
-                - artifact: target.condprof.tests.tar.gz
+                - artifact: target.condprof.tests.tar.zst
                 - artifact: target.dmg
                   extract: false
             toolchain:

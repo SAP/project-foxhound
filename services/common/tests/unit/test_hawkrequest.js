@@ -153,11 +153,8 @@ add_task(async function test_hawk_authenticated_request() {
   Assert.equal(request.response.body, "yay");
 
   Services.prefs.clearUserPref("intl.accept_languages");
-  let pref = Services.prefs.getComplexValue(
-    "intl.accept_languages",
-    Ci.nsIPrefLocalizedString
-  );
-  Assert.notEqual(acceptLanguage, pref.data);
+  let pref = Services.locale.acceptLanguages;
+  Assert.notEqual(acceptLanguage, pref);
 
   await promiseStopServer(server);
 });

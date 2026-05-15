@@ -8,24 +8,46 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <cstddef>
+#include <cstdint>
+#include <map>
 #include <memory>
+#include <optional>
+#include <set>
+#include <string>
+#include <variant>
+#include <vector>
 
+#include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "api/test/simulated_network.h"
 #include "api/test/video/function_video_encoder_factory.h"
-#include "call/fake_network_pipe.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder_factory.h"
 #include "media/engine/internal_encoder_factory.h"
 #include "media/engine/simulcast_encoder_adapter.h"
 #include "modules/rtp_rtcp/source/create_video_rtp_depacketizer.h"
 #include "modules/rtp_rtcp/source/rtp_packet.h"
+#include "modules/rtp_rtcp/source/video_rtp_depacketizer.h"
+#include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
-#include "rtc_base/numerics/safe_conversions.h"
+#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/numerics/mod_ops.h"
 #include "rtc_base/numerics/sequence_number_util.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "rtc_base/thread_annotations.h"
 #include "test/call_test.h"
-#include "test/network/simulated_network.h"
+#include "test/gtest.h"
+#include "test/rtp_rtcp_observer.h"
 #include "test/video_test_constants.h"
+#include "video/config/video_encoder_config.h"
 
 namespace webrtc {
 namespace {
@@ -175,7 +197,7 @@ class PictureIdObserver : public test::RtpRtcpObserver {
     }
   }
 
-  Action OnSendRtp(rtc::ArrayView<const uint8_t> packet) override {
+  Action OnSendRtp(ArrayView<const uint8_t> packet) override {
     MutexLock lock(&mutex_);
 
     ParsedPacket parsed;
@@ -218,7 +240,7 @@ class PictureIdTest : public test::CallTest,
  public:
   PictureIdTest() : num_temporal_layers_(GetParam()) {}
 
-  virtual ~PictureIdTest() {
+  ~PictureIdTest() override {
     SendTask(task_queue(), [this]() {
       send_transport_.reset();
       receive_transport_.reset();
@@ -264,6 +286,7 @@ void PictureIdTest::SetupEncoder(VideoEncoderFactory* encoder_factory,
     GetVideoSendConfig()->rtp.payload_name = payload_name;
     GetVideoEncoderConfig()->codec_type =
         PayloadStringToCodecType(payload_name);
+    GetVideoEncoderConfig()->video_format = SdpVideoFormat(payload_name);
     SetVideoEncoderConfig(/* number_of_streams */ 1);
   });
 }

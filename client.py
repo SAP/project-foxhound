@@ -32,9 +32,13 @@ def do_hg_pull(dir, repository, hg):
         if repository is not None:
             cmd.append(repository)
         check_call_noisy(cmd)
-    check_call(
-        [hg, "parent", "-R", fulldir, "--template=Updated to revision {node}.\n"]
-    )
+    check_call([
+        hg,
+        "parent",
+        "-R",
+        fulldir,
+        "--template=Updated to revision {node}.\n",
+    ])
 
 
 def do_hg_replace(dir, repository, tag, exclusions, hg):

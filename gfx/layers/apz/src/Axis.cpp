@@ -13,7 +13,6 @@
 #include "AsyncPanZoomController.h"         // for AsyncPanZoomController
 #include "FrameMetrics.h"                   // for FrameMetrics
 #include "SimpleVelocityTracker.h"          // for FrameMetrics
-#include "mozilla/Attributes.h"             // for final
 #include "mozilla/Preferences.h"            // for Preferences
 #include "mozilla/gfx/Rect.h"               // for RoundedIn
 #include "mozilla/layers/APZThreadUtils.h"  // for AssertOnControllerThread
@@ -32,6 +31,11 @@ namespace layers {
 bool FuzzyEqualsCoordinate(CSSCoord aValue1, CSSCoord aValue2) {
   return FuzzyEqualsAdditive(aValue1, aValue2, COORDINATE_EPSILON) ||
          FuzzyEqualsMultiplicative(aValue1, aValue2);
+}
+
+bool FuzzyEqualsPoint(const CSSPoint& aValue1, const CSSPoint& aValue2) {
+  return FuzzyEqualsCoordinate(aValue1.x, aValue2.x) &&
+         FuzzyEqualsCoordinate(aValue1.y, aValue2.y);
 }
 
 Axis::Axis(AsyncPanZoomController* aAsyncPanZoomController)

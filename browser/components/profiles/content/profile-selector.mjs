@@ -126,7 +126,7 @@ export class ProfileSelector extends MozLitElement {
       await this.setLaunchArguments(profile, url ? ["-url", url] : []);
       await this.selectableProfileService.uninit();
     } else {
-      this.selectableProfileService.launchInstance(profile, url);
+      this.selectableProfileService.launchInstance(profile, url ? [url] : []);
     }
 
     window.close();

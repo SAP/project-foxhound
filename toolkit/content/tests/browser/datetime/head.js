@@ -18,9 +18,9 @@ class DateTimeTestHelper {
    * Opens a new tab with the URL of the test page, and make sure the picker is
    * ready for testing.
    *
-   * @param  {String} pageUrl
+   * @param  {string} pageUrl
    * @param  {bool} inFrame true if input is in the first child frame
-   * @param  {String} openMethod "click" or "showPicker"
+   * @param  {string} openMethod "click" or "showPicker"
    */
   async openPicker(pageUrl, inFrame, openMethod = "click") {
     this.tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
@@ -44,8 +44,12 @@ class DateTimeTestHelper {
     if (openMethod === "click") {
       await SpecialPowers.spawn(bc, [], () => {
         const input = content.document.querySelector("input");
-        const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
-        shadowRoot.getElementById("calendar-button").click();
+        if (input.type == "time") {
+          input.click();
+        } else {
+          const shadowRoot = SpecialPowers.wrap(input).openOrClosedShadowRoot;
+          shadowRoot.getElementById("calendar-button").click();
+        }
       });
     } else if (openMethod === "showPicker") {
       await SpecialPowers.spawn(bc, [], function () {
@@ -54,7 +58,7 @@ class DateTimeTestHelper {
       });
     }
     this.panel = await shown;
-    this.frame = this.panel.querySelector("#dateTimePopupFrame");
+    this.frame = this.panel.querySelector("#DateTimePickerPanelPopupFrame");
   }
 
   promisePickerClosed() {
@@ -87,7 +91,7 @@ class DateTimeTestHelper {
   /**
    * Find an element on the picker.
    *
-   * @param  {String} selector
+   * @param  {string} selector
    * @return {DOMElement}
    */
   getElement(selector) {
@@ -97,7 +101,7 @@ class DateTimeTestHelper {
   /**
    * Find the children of an element on the picker.
    *
-   * @param  {String} selector
+   * @param  {string} selector
    * @return {Array<DOMElement>}
    */
   getChildren(selector) {
@@ -149,16 +153,27 @@ registerCleanupFunction(() => {
 const BTN_MONTH_YEAR = "#month-year-label",
   BTN_NEXT_MONTH = ".next",
   BTN_PREV_MONTH = ".prev",
+  BTN_NEXT_HOUR = "#spinner-hour-next",
+  BTN_PREV_HOUR = "#spinner-hour-previous",
+  BTN_NEXT_MIN = "#spinner-minute-next",
+  BTN_PREV_MIN = "#spinner-minute-previous",
+  BTN_NEXT_TIME = "#spinner-time-next",
+  BTN_PREV_TIME = "#spinner-time-previous",
   BTN_CLEAR = "#clear-button",
   DAY_SELECTED = ".selection",
   DAY_TODAY = ".today",
   DAYS_VIEW = ".days-view",
   DIALOG_PICKER = "#date-picker",
+  DIALOG_TIME_PICKER = "#time-picker",
   MONTH_YEAR = ".month-year",
   MONTH_YEAR_NAV = ".month-year-nav",
   MONTH_YEAR_VIEW = ".month-year-view",
   SPINNER_MONTH = "#spinner-month",
   SPINNER_YEAR = "#spinner-year",
+  SPINNER_HOUR = "#spinner-hour",
+  SPINNER_MIN = "#spinner-minute",
+  SPINNER_TIME = "#spinner-time",
+  TIMEPICKER = "#time-picker",
   WEEK_HEADER = ".week-header";
 const DATE_FORMAT = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
@@ -200,7 +215,7 @@ function getCalendarClassList() {
  * Helper function to find and return a gridcell element
  * for a specific day of the month
  *
- * @param {Number} day: A day of the month to find in the month grid
+ * @param {number} day: A day of the month to find in the month grid
  *
  * @return {HTMLElement} A gridcell that represents the needed day of the month
  */
@@ -219,7 +234,7 @@ function mergeArrays(a, b) {
  * Helper function to check if a DOM element has a specific attribute
  *
  * @param {DOMElement} el: DOM Element to be tested
- * @param {String} attr: The name of the attribute to be tested
+ * @param {string} attr: The name of the attribute to be tested
  */
 function testAttribute(el, attr) {
   Assert.ok(
@@ -232,9 +247,9 @@ function testAttribute(el, attr) {
  * Helper function to check for l10n of an element's attribute
  *
  * @param {DOMElement} el: DOM Element to be tested
- * @param {String} attr: The name of the attribute to be tested
- * @param {String} id: Value of the "data-l10n-id" attribute of the element
- * @param {Object} args: Args provided by the l10n object of the element
+ * @param {string} attr: The name of the attribute to be tested
+ * @param {string} id: Value of the "data-l10n-id" attribute of the element
+ * @param {object} args: Args provided by the l10n object of the element
  */
 function testAttributeL10n(el, attr, id, args = null) {
   testAttribute(el, attr);
@@ -244,9 +259,9 @@ function testAttributeL10n(el, attr, id, args = null) {
 /**
  * Helper function to check the value of a Calendar button's specific attribute
  *
- * @param {String} attr: The name of the attribute to be tested
- * @param {String} val: Value that is expected to be assigned to the attribute.
- * @param {Boolean} presenceOnly: If "true", test only the presence of the attribute
+ * @param {string} attr: The name of the attribute to be tested
+ * @param {string} val: Value that is expected to be assigned to the attribute.
+ * @param {boolean} presenceOnly: If "true", test only the presence of the attribute
  */
 async function testCalendarBtnAttribute(attr, val, presenceOnly = false) {
   let browser = helper.tab.linkedBrowser;
@@ -279,10 +294,10 @@ async function testCalendarBtnAttribute(attr, val, presenceOnly = false) {
  * Helper function to test if a submission/dismissal keyboard shortcut works
  * on a month or a year selection spinner
  *
- * @param {String} key: A keyboard Event.key that will be synthesized
- * @param {Object} document: Reference to the content document
- *                 of the #dateTimePopupFrame
- * @param {Number} tabs: How many times "Tab" key should be pressed
+ * @param {string} key: A keyboard Event.key that will be synthesized
+ * @param {object} document: Reference to the content document
+ *                 of the #DateTimePickerPanelPopupFrame
+ * @param {number} tabs: How many times "Tab" key should be pressed
  *                 to move a keyboard focus to a needed spinner
  *                 (1 for month/default and 2 for year)
  *
@@ -347,8 +362,8 @@ async function testKeyOnSpinners(key, document, tabs = 1) {
  * Helper function to check for localization attributes of a DOM element
  *
  * @param {DOMElement} el: DOM Element to be tested
- * @param {String} id: Value of the "data-l10n-id" attribute of the element
- * @param {Object} args: Args provided by the l10n object of the element
+ * @param {string} id: Value of the "data-l10n-id" attribute of the element
+ * @param {object} args: Args provided by the l10n object of the element
  */
 function testLocalization(el, id, args = null) {
   const l10nAttrs = document.l10n.getAttributes(el);
@@ -367,10 +382,10 @@ function testLocalization(el, id, args = null) {
  * Helper function to check if a CSS property respects reduced motion mode
  *
  * @param {DOMElement} el: DOM Element to be tested
- * @param {String} prop: The name of the CSS property to be tested
- * @param {Object} valueNotReduced: Default value of the tested CSS property
+ * @param {string} prop: The name of the CSS property to be tested
+ * @param {object} valueNotReduced: Default value of the tested CSS property
  *                 for "prefers-reduced-motion: no-preference"
- * @param {String} valueReduced: Value of the tested CSS property
+ * @param {string} valueReduced: Value of the tested CSS property
  *                 for "prefers-reduced-motion: reduce"
  */
 async function testReducedMotionProp(el, prop, valueNotReduced, valueReduced) {

@@ -3,12 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <csignal>
-#include <cerrno>
+#include <mozilla/Atomics.h>
+#include <mozilla/Sprintf.h>
 #include <pthread.h>
 
-#include <mozilla/Sprintf.h>
-#include <mozilla/Atomics.h>
+#include <cerrno>
+#include <csignal>
+
 #include "audio_thread_priority.h"
 #include "nsDebug.h"
 

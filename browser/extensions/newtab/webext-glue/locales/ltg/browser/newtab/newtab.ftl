@@ -45,9 +45,6 @@ newtab-confirm-delete-history-p1 = Voi gribi dzēst vysus itōs lopys īrokstus 
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Itei ir naatgrīzeniska darbeiba.
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -77,12 +74,6 @@ newtab-menu-delete-history = Nūteireit nu viestures
 newtab-menu-save-to-pocket = Saglobōt { -pocket-brand-name }
 newtab-menu-delete-pocket = Dzēst nu { -pocket-brand-name }
 newtab-menu-archive-pocket = Arhivēt { -pocket-brand-name }
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -173,69 +164,8 @@ newtab-pocket-more-recommendations = Vaira īsacejumu
 newtab-pocket-cta-button = Paraugi { -pocket-brand-name }
 newtab-pocket-cta-text = Sagloboj interesantus stōstus { -pocket-brand-name } un paboroj sovu prōtu ar interesantu losamvīlu.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Naz kas aizgōja škārsu, īlōdejut itū saturu.
 newtab-error-fallback-refresh-link = Porlōdej lopu, kab paraudzēt par jaunu.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

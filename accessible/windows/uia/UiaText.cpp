@@ -35,7 +35,7 @@ static SAFEARRAY* TextLeafRangesToUiaRanges(
 }
 
 // IUnknown
-IMPL_IUNKNOWN1(UiaText, ITextProvider)
+IMPL_IUNKNOWN2(UiaText, ITextProvider2, ITextProvider)
 
 // UiaText
 
@@ -175,6 +175,41 @@ UiaText::get_SupportedTextSelection(
   } else {
     *aRetVal = SupportedTextSelection_None;
   }
+  return S_OK;
+}
+
+// ITextProvider2 methods
+
+STDMETHODIMP
+UiaText::RangeFromAnnotation(
+    __RPC__in_opt IRawElementProviderSimple* aAnnotationElement,
+    __RPC__deref_out_opt ITextRangeProvider** aRetVal) {
+  return E_NOTIMPL;
+}
+
+STDMETHODIMP
+UiaText::GetCaretRange(__RPC__out BOOL* aIsActive,
+                       __RPC__deref_out_opt ITextRangeProvider** aRetVal) {
+  if (!aRetVal) {
+    return E_INVALIDARG;
+  }
+  *aRetVal = nullptr;
+  if (!aIsActive) {
+    return E_INVALIDARG;
+  }
+  *aIsActive = FALSE;
+  Accessible* acc = Acc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  TextLeafPoint caret = TextLeafPoint::GetCaret(acc);
+  if (!caret) {
+    return S_OK;
+  }
+  *aIsActive = !!(acc->State() & states::FOCUSED);
+  TextLeafRange range{caret, caret};
+  RefPtr uiaRange = new UiaTextRange(range);
+  uiaRange.forget(aRetVal);
   return S_OK;
 }
 

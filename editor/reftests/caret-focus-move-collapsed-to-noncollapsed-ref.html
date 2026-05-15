@@ -1,0 +1,16 @@
+<!doctype html>
+<style>
+input, textarea {
+    appearance: none;
+
+    &:focus-visible {
+        outline: 1px solid blue;
+    }
+}
+</style>
+<input value="foo"><textarea></textarea>
+<script>
+onload = () => {
+  document.querySelector("textarea").focus();
+}
+</script>

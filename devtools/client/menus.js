@@ -70,7 +70,10 @@ exports.menuitems = [
     oncommand(event) {
       try {
         const window = event.target.ownerDocument.defaultView;
-        gDevToolsBrowser.toggleToolboxCommand(window.gBrowser, Cu.now());
+        gDevToolsBrowser.toggleToolboxCommand(
+          window.gBrowser,
+          ChromeUtils.now()
+        );
       } catch (e) {
         console.error(`Exception while opening the toolbox: ${e}\n${e.stack}`);
       }
@@ -142,23 +145,14 @@ exports.menuitems = [
         const ui = ResponsiveUIManager.getResponsiveUIForTab(
           commands.descriptorFront.localTab
         );
-        await ui.responsiveFront.setElementPickerState(
-          true,
-          PICKER_TYPES.EYEDROPPER
-        );
+        await ui.setElementPickerState(true, PICKER_TYPES.EYEDROPPER);
 
         inspectorFront.once("color-picked", async () => {
-          await ui.responsiveFront.setElementPickerState(
-            false,
-            PICKER_TYPES.EYEDROPPER
-          );
+          await ui.setElementPickerState(false, PICKER_TYPES.EYEDROPPER);
         });
 
         inspectorFront.once("color-pick-canceled", async () => {
-          await ui.responsiveFront.setElementPickerState(
-            false,
-            PICKER_TYPES.EYEDROPPER
-          );
+          await ui.setElementPickerState(false, PICKER_TYPES.EYEDROPPER);
         });
       }
 

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PreloaderBase_h__
-#define PreloaderBase_h__
+#ifndef PreloaderBase_h_
+#define PreloaderBase_h_
 
 #include "mozilla/Maybe.h"
 #include "mozilla/PreloadHashKey.h"
@@ -192,4 +192,4 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
 
 }  // namespace mozilla
 
-#endif  // !PreloaderBase_h__
+#endif  // !PreloaderBase_h_

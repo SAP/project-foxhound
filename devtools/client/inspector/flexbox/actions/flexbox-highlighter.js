@@ -23,7 +23,7 @@ module.exports = {
    *
    * @param {NodeFront} nodeFront
    *        Node for which the highlighter should be toggled.
-   * @param {String} reason
+   * @param {string} reason
    *        Reason why the highlighter was toggled; used in telemetry.
    */
   toggleFlexboxHighlighter(nodeFront, reason) {

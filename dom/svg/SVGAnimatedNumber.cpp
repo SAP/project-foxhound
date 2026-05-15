@@ -6,12 +6,12 @@
 
 #include "SVGAnimatedNumber.h"
 
+#include "SMILFloatType.h"
+#include "SVGAttrTearoffTable.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
 #include "nsContentUtils.h"
-#include "SMILFloatType.h"
-#include "SVGAttrTearoffTable.h"
 
 using namespace mozilla::dom;
 
@@ -42,8 +42,8 @@ class MOZ_RAII AutoChangeNumberNotifier {
   SVGElement* const mSVGElement;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedNumber,
-                                         SVGAnimatedNumber::DOMAnimatedNumber>
+constinit static SVGAttrTearoffTable<SVGAnimatedNumber,
+                                     SVGAnimatedNumber::DOMAnimatedNumber>
     sSVGAnimatedNumberTearoffTable;
 
 static bool GetValueFromString(const nsAString& aString,
@@ -142,8 +142,9 @@ SVGAnimatedNumber::DOMAnimatedNumber::~DOMAnimatedNumber() {
   sSVGAnimatedNumberTearoffTable.RemoveTearoff(mVal);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedNumber::ToSMILAttr(SVGElement* aSVGElement) {
-  return MakeUnique<SMILNumber>(this, aSVGElement);
+std::unique_ptr<SMILAttr> SVGAnimatedNumber::ToSMILAttr(
+    SVGElement* aSVGElement) {
+  return std::make_unique<SMILNumber>(this, aSVGElement);
 }
 
 nsresult SVGAnimatedNumber::SMILNumber::ValueFromString(

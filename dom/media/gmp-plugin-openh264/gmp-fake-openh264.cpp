@@ -33,18 +33,18 @@
  *************************************************************************************
  */
 
+#include <assert.h>
 #include <stdint.h>
+
 #include <cstring>
 #include <iostream>
-#include <assert.h>
 
 #include "gmp-platform.h"
-#include "gmp-video-host.h"
-#include "gmp-video-encode.h"
 #include "gmp-video-decode.h"
-#include "gmp-video-frame-i420.h"
+#include "gmp-video-encode.h"
 #include "gmp-video-frame-encoded.h"
-
+#include "gmp-video-frame-i420.h"
+#include "gmp-video-host.h"
 #include "mozilla/PodOperations.h"
 
 #if defined(_MSC_VER)

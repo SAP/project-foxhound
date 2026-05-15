@@ -7,9 +7,7 @@ package mozilla.components.feature.privatemode.notification
 import android.content.Context
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.CustomTabListAction
 import mozilla.components.browser.state.action.TabListAction
@@ -20,25 +18,20 @@ import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class PrivateNotificationFeatureTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     private lateinit var context: Context
     private lateinit var store: BrowserStore
@@ -52,18 +45,23 @@ class PrivateNotificationFeatureTest {
 
         store = BrowserStore()
 
-        feature = PrivateNotificationFeature(context, store, AbstractPrivateNotificationService::class)
+        feature = PrivateNotificationFeature(
+            context,
+            store,
+            mainDispatcher = testDispatcher,
+            notificationServiceClass = AbstractPrivateNotificationService::class,
+        )
     }
 
     @Test
-    fun `service should be started if pre-existing private session is present`() = runTest(StandardTestDispatcher()) {
+    fun `service should be started if pre-existing private session is present`() = runTest(testDispatcher) {
         val privateSession = createTab("https://firefox.com", private = true)
         val intent = argumentCaptor<Intent>()
 
-        store.dispatch(TabListAction.AddTabAction(privateSession)).join()
+        store.dispatch(TabListAction.AddTabAction(privateSession))
 
         feature.start()
-        runCurrent()
+        testDispatcher.scheduler.advanceUntilIdle()
         verify(context, times(1)).startService(intent.capture())
 
         val expected = Intent(testContext, AbstractPrivateNotificationService::class.java)
@@ -72,62 +70,68 @@ class PrivateNotificationFeatureTest {
     }
 
     @Test
-    fun `service should be started when private session is added`() = runTestOnMain {
+    fun `service should be started when private session is added`() = runTest(testDispatcher) {
         val privateSession = createTab("https://firefox.com", private = true)
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         verify(context, never()).startService(any())
 
-        store.dispatch(TabListAction.AddTabAction(privateSession)).join()
+        store.dispatch(TabListAction.AddTabAction(privateSession))
+        testDispatcher.scheduler.advanceUntilIdle()
+
         verify(context, times(1)).startService(any())
-        Unit
     }
 
     @Test
-    fun `service should not be started multiple times`() = runTestOnMain {
+    fun `service should not be started multiple times`() = runTest(testDispatcher) {
         val privateSession1 = createTab("https://firefox.com", private = true)
         val privateSession2 = createTab("https://mozilla.org", private = true)
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        store.dispatch(TabListAction.AddTabAction(privateSession1)).join()
-        store.dispatch(TabListAction.AddTabAction(privateSession2)).join()
+        store.dispatch(TabListAction.AddTabAction(privateSession1))
+        store.dispatch(TabListAction.AddTabAction(privateSession2))
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(context, times(1)).startService(any())
-        Unit
     }
 
     @Test
-    fun `notification service should not be started when normal sessions are added`() = runTestOnMain {
+    fun `notification service should not be started when normal sessions are added`() = runTest(testDispatcher) {
         val normalSession = createTab("https://firefox.com")
         val customSession = createCustomTab("https://firefox.com")
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         verify(context, never()).startService(any())
 
-        store.dispatch(TabListAction.AddTabAction(normalSession)).join()
+        store.dispatch(TabListAction.AddTabAction(normalSession))
         verify(context, never()).startService(any())
 
-        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession)).join()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession))
         verify(context, never()).startService(any())
-        Unit
     }
 
     @Test
-    fun `notification service should not be started when custom sessions are added`() = runTestOnMain {
+    fun `notification service should not be started when custom sessions are added`() = runTest(testDispatcher) {
         val privateCustomSession = createCustomTab("https://firefox.com").let {
             it.copy(content = it.content.copy(private = true))
         }
         val customSession = createCustomTab("https://firefox.com")
 
         feature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
+
         verify(context, never()).startService(any())
 
-        store.dispatch(CustomTabListAction.AddCustomTabAction(privateCustomSession)).join()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(privateCustomSession))
         verify(context, never()).startService(any())
 
-        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession)).join()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession))
         verify(context, never()).startService(any())
-        Unit
     }
 }

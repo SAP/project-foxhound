@@ -3,11 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpConnectionMgr_h__
-#define nsHttpConnectionMgr_h__
+#ifndef nsHttpConnectionMgr_h_
+#define nsHttpConnectionMgr_h_
 
 #include "DnsAndConnectSocket.h"
-#include "HttpConnectionBase.h"
 #include "HttpConnectionMgrShell.h"
 #include "nsHttpConnection.h"
 #include "nsHttpTransaction.h"
@@ -16,7 +15,6 @@
 #include "nsClassHashtable.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Attributes.h"
 #include "ARefBase.h"
 #include "nsWeakReference.h"
 #include "ConnectionEntry.h"
@@ -29,6 +27,7 @@ class nsIHttpUpgradeListener;
 
 namespace mozilla::net {
 class EventTokenBucket;
+class HttpConnectionBase;
 class NullHttpTransaction;
 struct HttpRetParams;
 struct Http3ConnectionStatsParams;
@@ -92,7 +91,9 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
   [[nodiscard]] nsresult RemoveIdleConnection(nsHttpConnection*);
 
   // Close a single connection and prevent it from being reused.
-  [[nodiscard]] nsresult DoSingleConnectionCleanup(nsHttpConnectionInfo*);
+  [[nodiscard]] nsresult DoSingleConnectionCleanup(
+      nsHttpConnectionInfo*,
+      uint32_t aPriority = nsIRunnablePriority::PRIORITY_NORMAL);
 
   // The connection manager needs to know when a normal HTTP connection has been
   // upgraded to SPDY because the dispatch and idle semantics are a little
@@ -315,9 +316,10 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
                             ConnectionEntry* ent, HttpConnectionBase* connH2,
                             HttpConnectionBase* connH3);
   // used to marshall events to the socket transport thread.
-  [[nodiscard]] nsresult PostEvent(nsConnEventHandler handler,
-                                   int32_t iparam = 0,
-                                   ARefBase* vparam = nullptr);
+  [[nodiscard]] nsresult PostEvent(
+      nsConnEventHandler handler, int32_t iparam = 0,
+      ARefBase* vparam = nullptr,
+      uint32_t priority = nsIRunnablePriority::PRIORITY_NORMAL);
 
   void OnMsgReclaimConnection(HttpConnectionBase*);
 
@@ -477,4 +479,4 @@ class nsHttpConnectionMgr final : public HttpConnectionMgrShell,
 
 }  // namespace mozilla::net
 
-#endif  // !nsHttpConnectionMgr_h__
+#endif  // !nsHttpConnectionMgr_h_

@@ -344,6 +344,38 @@ places:
       - fx-search-telemetry@mozilla.com
     expires: never
 
+  database_semantic_history_wasted_percentage:
+    type: quantity
+    unit: percent
+    description: >
+      PLACES: Semantic History database wasted space in percentage (0-100)
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1979080
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1979080
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - mak@mozilla.com
+      - fx-search-telemetry@mozilla.com
+    expires: never
+
+  database_semantic_history_defragment_time:
+    type: timing_distribution
+    description: >
+      PLACES: Time to defragment the semantic database (ms)
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1979080
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1979080
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - mak@mozilla.com
+      - fx-search-telemetry@mozilla.com
+    expires: never
+
   expiration_steps_to_clean:
     type: custom_distribution
     description: >

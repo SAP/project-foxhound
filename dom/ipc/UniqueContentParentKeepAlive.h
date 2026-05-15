@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_UniqueContentParentKeepAlive_h
 #define mozilla_dom_UniqueContentParentKeepAlive_h
 
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIDOMProcessParent.h"
 
@@ -34,15 +33,15 @@ using UniqueThreadsafeContentParentKeepAlive =
     UniquePtr<ThreadsafeContentParentHandle, ContentParentKeepAliveDeleter>;
 
 UniqueContentParentKeepAlive UniqueContentParentKeepAliveFromThreadsafe(
-    UniqueThreadsafeContentParentKeepAlive aKeepAlive);
+    UniqueThreadsafeContentParentKeepAlive&& aKeepAlive);
 UniqueThreadsafeContentParentKeepAlive UniqueContentParentKeepAliveToThreadsafe(
-    UniqueContentParentKeepAlive aKeepAlive);
+    UniqueContentParentKeepAlive&& aKeepAlive);
 
 // Wrap a UniqueContentParentKeepAlive to make it usable from JS.
 //
 // Should not be called on a KeepAlive for a still-launching ContentParent.
 already_AddRefed<nsIContentParentKeepAlive> WrapContentParentKeepAliveForJS(
-    UniqueContentParentKeepAlive aKeepAlive);
+    UniqueContentParentKeepAlive&& aKeepAlive);
 
 }  // namespace mozilla::dom
 

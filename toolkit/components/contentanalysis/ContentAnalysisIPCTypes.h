@@ -10,7 +10,6 @@
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "js/PropertyAndElement.h"
-#include "mozilla/Variant.h"
 #include "nsIContentAnalysis.h"
 #include "mozilla/RefPtr.h"
 #include "nsHashtablesFwd.h"

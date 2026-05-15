@@ -23,7 +23,8 @@ namespace mozilla::glean {
 
 namespace impl {
 
-using CallbackMapType = nsTHashMap<uint32_t, FalliblePingTestCallback>;
+using CallbackMapType =
+    nsTHashMap<NoMemMoveKey<nsUint32HashKey>, FalliblePingTestCallback>;
 using MetricIdToCallbackMutex = StaticDataMutex<UniquePtr<CallbackMapType>>;
 static Maybe<MetricIdToCallbackMutex::AutoLock> GetCallbackMapLock() {
   static MetricIdToCallbackMutex sCallbacks("sCallbacks");
@@ -169,49 +170,48 @@ GleanPing::TestSubmission(nsIGleanPingTestCallback* aTestCallback,
   RefPtr<dom::Promise> submitPromise;
   MOZ_TRY(aSubmitCallback->Call(getter_AddRefs(submitPromise)));
 
-  RefPtr<dom::Promise> thenPromise;
-  MOZ_TRY_VAR(thenPromise,
-              submitPromise->ThenWithCycleCollectedArgs(
-                  [aSubmitTimeoutMs](JSContext*, JS::Handle<JS::Value>,
-                                     ErrorResult& aRv,
-                                     RefPtr<dom::Promise> aSubmittedPromise)
-                      -> already_AddRefed<dom::Promise> {
-                    // The submit callback has finished successfully now
-                    // (whether or not it was async).
-                    if (aSubmitTimeoutMs) {
-                      // We have a submit timeout, which means that
-                      // `aSubmitCallback` has triggered the submission through
-                      // some async means that does not complete before it
-                      // returns (e.g., idle dispatch from c++). Reject
-                      // `submittedPromise` after the given timeout to make sure
-                      // we don't hang forever waiting for a submission that
-                      // might not happen.
-                      nsresult rv = NS_DelayedDispatchToCurrentThread(
-                          NS_NewRunnableFunction(
-                              __func__,
-                              [submittedPromise = RefPtr(aSubmittedPromise)]() {
-                                submittedPromise->MaybeRejectWithTimeoutError(
-                                    "Ping was not submitted after timeout");
-                              }),
-                          aSubmitTimeoutMs);
+  RefPtr<dom::Promise> thenPromise =
+      MOZ_TRY(submitPromise->ThenWithCycleCollectedArgs(
+          [aSubmitTimeoutMs](JSContext*, JS::Handle<JS::Value>,
+                             ErrorResult& aRv,
+                             RefPtr<dom::Promise> aSubmittedPromise)
+              -> already_AddRefed<dom::Promise> {
+            // The submit callback has finished successfully now
+            // (whether or not it was async).
+            if (aSubmitTimeoutMs) {
+              // We have a submit timeout, which means that
+              // `aSubmitCallback` has triggered the submission through
+              // some async means that does not complete before it
+              // returns (e.g., idle dispatch from c++). Reject
+              // `submittedPromise` after the given timeout to make sure
+              // we don't hang forever waiting for a submission that
+              // might not happen.
+              nsresult rv = NS_DelayedDispatchToCurrentThread(
+                  NS_NewRunnableFunction(
+                      __func__,
+                      [submittedPromise = RefPtr(aSubmittedPromise)]() {
+                        submittedPromise->MaybeRejectWithTimeoutError(
+                            "Ping was not submitted after timeout");
+                      }),
+                  aSubmitTimeoutMs);
 
-                      if (NS_FAILED(rv)) {
-                        aSubmittedPromise->MaybeReject(rv);
-                      }
-                    } else {
-                      // If there is no timeout then the ping should have been
-                      // submitted already. We attempt to reject the promise,
-                      // which will have no affect if the promise is already
-                      // settled.
-                      aSubmittedPromise->MaybeRejectWithOperationError(
-                          "Ping did not submit immediately");
-                    }
+              if (NS_FAILED(rv)) {
+                aSubmittedPromise->MaybeReject(rv);
+              }
+            } else {
+              // If there is no timeout then the ping should have been
+              // submitted already. We attempt to reject the promise,
+              // which will have no affect if the promise is already
+              // settled.
+              aSubmittedPromise->MaybeRejectWithOperationError(
+                  "Ping did not submit immediately");
+            }
 
-                    // Chain into `submittedPromise` so that we will
-                    // resolve/reject appropriately.
-                    return aSubmittedPromise.forget();
-                  },
-                  std::move(submittedPromise)));
+            // Chain into `submittedPromise` so that we will
+            // resolve/reject appropriately.
+            return aSubmittedPromise.forget();
+          },
+          std::move(submittedPromise)));
 
   thenPromise.forget(aOutPromise);
   return NS_OK;

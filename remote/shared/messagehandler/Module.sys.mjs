@@ -48,11 +48,12 @@ export class Module {
    *     form [module name].[event name].
    * @param {object} data
    *     The event's data.
-   * @param {ContextInfo=} contextInfo
-   *     The event's context info, see MessageHandler:emitEvent. Optional.
+   * @param {Array<ContextInfo>=} relatedContexts
+   *     The related contexts info for the event, see MessageHandler:emitEvent.
+   *     Optional.
    */
-  emitEvent(name, data, contextInfo) {
-    this.messageHandler.emitEvent(name, data, contextInfo);
+  emitEvent(name, data, relatedContexts) {
+    this.messageHandler.emitEvent(name, data, relatedContexts);
   }
 
   /**

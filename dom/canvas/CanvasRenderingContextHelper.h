@@ -13,6 +13,7 @@
 #include "nsSize.h"
 
 class nsICanvasRenderingContextInternal;
+class nsICookieJarSettings;
 class nsIGlobalObject;
 
 namespace mozilla {
@@ -23,6 +24,9 @@ namespace layers {
 class SurfaceDescriptor;
 }  // namespace layers
 
+namespace CanvasUtils {
+enum class ImageExtraction;
+}
 namespace dom {
 
 class BlobCallback;
@@ -60,14 +64,19 @@ class CanvasRenderingContextHelper {
 
   void ToBlob(JSContext* aCx, EncodeCompleteCallback* aCallback,
               const nsAString& aType, JS::Handle<JS::Value> aParams,
-              bool aUsePlaceholder, ErrorResult& aRv);
+              CanvasUtils::ImageExtraction aExtractionBehavior,
+              ErrorResult& aRv);
 
   void ToBlob(EncodeCompleteCallback* aCallback, nsAString& aType,
               const nsAString& aEncodeOptions, bool aUsingCustomOptions,
-              bool aUsePlaceholder, ErrorResult& aRv);
+              CanvasUtils::ImageExtraction aExtractionBehavior,
+              ErrorResult& aRv);
 
-  virtual UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aOutFormat,
-                                              gfx::IntSize* aOutImageSize);
+  virtual UniquePtr<uint8_t[]> GetImageBuffer(
+      CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
+      gfx::IntSize* aOutImageSize);
+
+  nsICookieJarSettings* GetCookieJarSettings() const;
 
   already_AddRefed<nsISupports> GetOrCreateContext(
       JSContext* aCx, const nsAString& aContextId,
@@ -89,8 +98,9 @@ class CanvasRenderingContextHelper {
   nsCOMPtr<nsICanvasRenderingContextInternal> mCurrentContext;
 };
 
-Maybe<layers::SurfaceDescriptor> ValidSurfaceDescriptorForRemoteCanvas2d(
-    const layers::SurfaceDescriptor&);
+bool ValidSurfaceDescriptorForRemoteCanvas2d(
+    const layers::SurfaceDescriptor& aSd,
+    Maybe<layers::SurfaceDescriptor>* aResultSd = nullptr);
 
 }  // namespace dom
 namespace CanvasUtils {

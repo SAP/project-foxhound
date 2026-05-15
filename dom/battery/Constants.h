@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_battery_Constants_h__
-#define mozilla_dom_battery_Constants_h__
+#ifndef mozilla_dom_battery_Constants_h_
+#define mozilla_dom_battery_Constants_h_
 
 /**
  * A set of constants that might need to be used by battery backends.
@@ -20,4 +20,4 @@ static const double kUnknownRemainingTime = -1;
 
 }  // namespace mozilla::dom::battery
 
-#endif  // mozilla_dom_battery_Constants_h__
+#endif  // mozilla_dom_battery_Constants_h_

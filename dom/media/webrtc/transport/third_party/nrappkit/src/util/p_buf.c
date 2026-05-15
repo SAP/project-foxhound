@@ -40,7 +40,9 @@
 
 #include <string.h>
 #include <stddef.h>
-#include "nr_common.h"
+#include <sys/queue.h>
+#include <csi_platform.h>
+#include <r_log.h>
 #include "p_buf.h"
 
 
@@ -52,7 +54,7 @@ int nr_p_buf_ctx_create(int size, nr_p_buf_ctx **ctxp)
     int _status;
     nr_p_buf_ctx *ctx=0;
 
-    if(!(ctx=(nr_p_buf_ctx *)RCALLOC(sizeof(nr_p_buf_ctx))))
+    if(!(ctx=R_NEW(nr_p_buf_ctx)))
       ABORT(R_NO_MEMORY);
 
     ctx->buf_size=size;
@@ -95,7 +97,7 @@ int nr_p_buf_alloc(nr_p_buf_ctx *ctx, nr_p_buf **bufp)
       goto ok;
     }
     else {
-      if(!(buf=(nr_p_buf *)RCALLOC(sizeof(nr_p_buf))))
+      if(!(buf=R_NEW(nr_p_buf)))
         ABORT(R_NO_MEMORY);
       if(!(buf->data=(UCHAR *)RMALLOC(ctx->buf_size)))
         ABORT(R_NO_MEMORY);

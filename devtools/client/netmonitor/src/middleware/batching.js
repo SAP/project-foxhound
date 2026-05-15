@@ -98,28 +98,28 @@ function batchingMiddleware() {
 /**
  * Create a delayed task that calls the specified task function after a delay.
  */
-function DelayedTask(taskFn, delay) {
-  this._promise = new Promise((resolve, reject) => {
-    this.runTask = cancel => {
-      if (cancel) {
-        reject("Task cancelled");
-      } else {
-        taskFn();
-        resolve();
-      }
-      this.runTask = null;
-    };
-    this.timeout = setTimeout(this.runTask, delay);
-  }).catch(console.error);
-}
-
-DelayedTask.prototype = {
+class DelayedTask {
+  #promise;
+  constructor(taskFn, delay) {
+    this.#promise = new Promise((resolve, reject) => {
+      this.runTask = cancel => {
+        if (cancel) {
+          reject("Task cancelled");
+        } else {
+          taskFn();
+          resolve();
+        }
+        this.runTask = null;
+      };
+      this.timeout = setTimeout(this.runTask, delay);
+    }).catch(console.error);
+  }
   /**
    * Return a promise that is resolved after the task is performed or canceled.
    */
   get promise() {
-    return this._promise;
-  },
+    return this.#promise;
+  }
 
   /**
    * Cancel the execution of the task.
@@ -129,7 +129,7 @@ DelayedTask.prototype = {
     if (this.runTask) {
       this.runTask(true);
     }
-  },
+  }
 
   /**
    * Execute the scheduled task immediately, without waiting for the timeout.
@@ -140,7 +140,7 @@ DelayedTask.prototype = {
     if (this.runTask) {
       this.runTask();
     }
-  },
-};
+  }
+}
 
 module.exports = batchingMiddleware;

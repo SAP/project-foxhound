@@ -12,10 +12,10 @@ How Migrations Are Run on l10n Repositories
 ===========================================
 
 Once a patch including new FTL strings and a migration recipe lands in
-mozilla-central, the Localization Team will perform a series of actions to migrate
+`mozilla-firefox`, the Localization Team will perform a series of actions to migrate
 strings for all 100+ localizations:
 
- - New Fluent strings land in `mozilla-central`, together with a migration
+ - New Fluent strings land in `mozilla-firefox`, together with a migration
    recipe.
  - New strings are added to an `update` branch of `firefox-l10n-source`_,
    a unified repository including strings for all shipping versions of Firefox,
@@ -28,15 +28,15 @@ strings for all 100+ localizations:
 Migration recipes could be run multiple times within a release cycle if more
 patches containing migrations land after the first.
 
-Migration recipes are periodically removed from `mozilla-central`. This clean-up
+Migration recipes are periodically removed from `mozilla-firefox`. This clean-up
 process will typically leave recipes from the most recent 2 or 3 cycles. Older
-recipes are stored in `this repository`__ .
+recipes are stored in `this repository`_ .
 
 .. tip::
 
   A script to run migrations on all l10n repositories is available in `this
-  repository`__, automating part of the steps described for manual testing, and
+  repository`_, automating part of the steps described for manual testing, and
   it could be adapted to local testing.
 
-  __ https://github.com/flodolo/fluent-migrations
 .. _firefox-l10n-source: https://github.com/mozilla-l10n/firefox-l10n-source/
+.. _this repository: https://github.com/flodolo/fluent-migrations

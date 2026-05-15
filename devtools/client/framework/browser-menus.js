@@ -50,16 +50,16 @@ function l10n(key) {
  *
  * @param {HTMLDocument} doc
  *        The document to which menus are to be added.
- * @param {String} id
+ * @param {string} id
  *        Element id.
- * @param {String} label
+ * @param {string} label
  *        Menu label.
- * @param {String} accesskey (optional)
+ * @param {string} accesskey (optional)
  *        Access key of the menuitem, used as shortcut while opening the menu.
- * @param {Boolean} isCheckbox (optional)
+ * @param {boolean} isCheckbox (optional)
  *        If true, the menuitem will act as a checkbox and have an optional
  *        tick on its left.
- * @param {String} appMenuL10nId (optional)
+ * @param {string} appMenuL10nId (optional)
  *        A Fluent key to set the appmenu-data-l10n-id attribute of the menuitem
  *        to. This can then be used to show a different string when cloning the
  *        menuitem to show in the AppMenu or panel contexts.
@@ -93,7 +93,7 @@ function createMenuItem({
 /**
  * Add a menu entry for a tool definition
  *
- * @param {Object} toolDefinition
+ * @param {object} toolDefinition
  *        Tool definition of the tool to add a menu entry.
  * @param {HTMLDocument} doc
  *        The document to which the tool menu item is to be added.
@@ -110,7 +110,7 @@ function createToolMenuElements(toolDefinition, doc) {
   const oncommand = async function (id, event) {
     try {
       const window = event.target.ownerDocument.defaultView;
-      await gDevToolsBrowser.selectToolCommand(window, id, Cu.now());
+      await gDevToolsBrowser.selectToolCommand(window, id, ChromeUtils.now());
       sendEntryPointTelemetry(window);
     } catch (e) {
       console.error(`Exception while opening ${id}: ${e}\n${e.stack}`);
@@ -161,9 +161,9 @@ function sendEntryPointTelemetry(window) {
  *
  * @param {HTMLDocument} doc
  *        The document to which the tool is to be registered.
- * @param {Object} toolDefinition
+ * @param {object} toolDefinition
  *        Tool definition of the tool to register.
- * @param {Object} prevDef
+ * @param {object} prevDef
  *        The tool definition after which the tool menu item is to be added.
  */
 function insertToolMenuElements(doc, toolDefinition, prevDef) {

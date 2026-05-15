@@ -6,9 +6,9 @@
 
 #include "mozilla/dom/SVGSwitchElement.h"
 
-#include "nsLayoutUtils.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/dom/SVGSwitchElementBinding.h"
+#include "nsLayoutUtils.h"
 
 class nsIFrame;
 
@@ -68,10 +68,11 @@ NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGSwitchElement)
 //----------------------------------------------------------------------
 // nsINode methods
 
-void SVGSwitchElement::InsertChildBefore(nsIContent* aKid,
-                                         nsIContent* aBeforeThis, bool aNotify,
-                                         ErrorResult& aRv) {
-  SVGSwitchElementBase::InsertChildBefore(aKid, aBeforeThis, aNotify, aRv);
+void SVGSwitchElement::InsertChildBefore(
+    nsIContent* aKid, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
+    nsINode* aOldParent, MutationEffectOnScript aMutationEffectOnScript) {
+  SVGSwitchElementBase::InsertChildBefore(aKid, aBeforeThis, aNotify, aRv,
+                                          aOldParent, aMutationEffectOnScript);
   if (aRv.Failed()) {
     return;
   }
@@ -79,9 +80,11 @@ void SVGSwitchElement::InsertChildBefore(nsIContent* aKid,
   MaybeInvalidate();
 }
 
-void SVGSwitchElement::RemoveChildNode(nsIContent* aKid, bool aNotify,
-                                       const BatchRemovalState* aState) {
-  SVGSwitchElementBase::RemoveChildNode(aKid, aNotify, aState);
+void SVGSwitchElement::RemoveChildNode(
+    nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
+    nsINode* aNewParent, MutationEffectOnScript aMutationEffectOnScript) {
+  SVGSwitchElementBase::RemoveChildNode(aKid, aNotify, aState, aNewParent,
+                                        aMutationEffectOnScript);
   MaybeInvalidate();
 }
 

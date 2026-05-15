@@ -9,7 +9,6 @@
 
 #include "PDMFactory.h"
 #include "PlatformDecoderModule.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 
@@ -78,6 +77,13 @@ class MediaChangeMonitor final
     }
     // Default so no conversion is performed.
     return ConversionRequired::kNeedNone;
+  }
+
+  Maybe<PropertyValue> GetDecodeProperty(PropertyName aName) const override {
+    if (RefPtr<MediaDataDecoder> decoder = GetDecoderOnNonOwnerThread()) {
+      return decoder->GetDecodeProperty(aName);
+    }
+    return MediaDataDecoder::GetDecodeProperty(aName);
   }
 
   class CodecChangeMonitor {

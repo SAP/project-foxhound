@@ -11,12 +11,20 @@
 [Exposed=Window]
 interface CSSStyleRule : CSSGroupingRule {
   attribute UTF8String selectorText;
-  [SameObject, PutForwards=cssText] readonly attribute CSSStyleDeclaration style;
+  [SameObject, PutForwards=cssText] readonly attribute CSSStyleProperties style;
 
   [ChromeOnly] readonly attribute unsigned long selectorCount;
   [ChromeOnly] UTF8String selectorTextAt(unsigned long index, optional boolean desugared = false);
   [ChromeOnly] unsigned long long selectorSpecificityAt(unsigned long index, optional boolean desugared = false);
   [ChromeOnly] boolean selectorMatchesElement(
+    unsigned long selectorIndex,
+    Element element,
+    optional [LegacyNullToEmptyString] DOMString pseudo = "",
+    optional boolean includeVisitedStyle = false);
+  // Get scope root of this style rule's selector. Returns null if the rule is not within a scope rule,
+  // or if this selector does not match this style rule (Whether by not matching the selector, or it
+  // not having a no viable scope root).
+  [ChromeOnly] Element? getScopeRootFor(
     unsigned long selectorIndex,
     Element element,
     optional [LegacyNullToEmptyString] DOMString pseudo = "",
@@ -30,6 +38,7 @@ interface CSSStyleRule : CSSGroupingRule {
 
 enum SelectorWarningKind {
   "UnconstrainedHas",
+  "SiblingCombinatorAfterScope",
 };
 
 dictionary SelectorWarning {

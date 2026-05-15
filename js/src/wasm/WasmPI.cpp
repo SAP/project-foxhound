@@ -21,7 +21,6 @@
 #include "builtin/Promise.h"
 #include "debugger/DebugAPI.h"
 #include "debugger/Debugger.h"
-#include "jit/JitRuntime.h"
 #include "jit/MIRGenerator.h"
 #include "js/CallAndConstruct.h"
 #include "js/Printf.h"
@@ -41,120 +40,21 @@
 #include "wasm/WasmGcObject-inl.h"
 #include "wasm/WasmInstance-inl.h"
 
-#ifdef JS_CODEGEN_ARM
-#  include "jit/arm/Simulator-arm.h"
-#endif
-
-#ifdef JS_CODEGEN_ARM64
-#  include "jit/arm64/vixl/Simulator-vixl.h"
-#endif
-
-#ifdef JS_CODEGEN_RISCV64
-#  include "jit/riscv64/Simulator-riscv64.h"
-#endif
-
-#ifdef XP_WIN
-#  include "util/WindowsWrapper.h"
-#endif
-
 using namespace js;
 using namespace js::jit;
 
 #ifdef ENABLE_WASM_JSPI
 namespace js::wasm {
 
-SuspenderObjectData::SuspenderObjectData(void* stackMemory)
-    : stackMemory_(stackMemory),
-      suspendableFP_(nullptr),
-      suspendableSP_(static_cast<uint8_t*>(stackMemory) +
-                     SuspendableStackPlusRedZoneSize),
-      state_(SuspenderState::Initial),
-      suspendedBy_(nullptr) {}
-
-void SuspenderObjectData::releaseStackMemory() {
-  js_free(stackMemory_);
-  stackMemory_ = nullptr;
+void SuspenderObject::releaseStackMemory() {
+  void* memory = stackMemory();
+  MOZ_ASSERT(isMoribund() == !memory);
+  if (memory) {
+    js_free(memory);
+    setStackMemory(nullptr);
+    setState(SuspenderState::Moribund);
+  }
 }
-
-#  if defined(_WIN32)
-// On WIN64, the Thread Information Block stack limits has to be modified to
-// avoid failures on SP checks.
-void SuspenderObjectData::updateTIBStackFields() {
-  _NT_TIB* tib = reinterpret_cast<_NT_TIB*>(::NtCurrentTeb());
-  savedStackBase_ = tib->StackBase;
-  savedStackLimit_ = tib->StackLimit;
-  uintptr_t stack_limit = (uintptr_t)stackMemory_;
-  uintptr_t stack_base = stack_limit + SuspendableStackPlusRedZoneSize;
-  tib->StackBase = (void*)stack_base;
-  tib->StackLimit = (void*)stack_limit;
-}
-
-void SuspenderObjectData::restoreTIBStackFields() {
-  _NT_TIB* tib = reinterpret_cast<_NT_TIB*>(::NtCurrentTeb());
-  tib->StackBase = savedStackBase_;
-  tib->StackLimit = savedStackLimit_;
-}
-#  endif
-
-#  ifdef JS_SIMULATOR_ARM64
-void SuspenderObjectData::switchSimulatorToMain() {
-  auto* sim = Simulator::Current();
-  suspendableSP_ = (void*)sim->xreg(Registers::sp, vixl::Reg31IsStackPointer);
-  suspendableFP_ = (void*)sim->xreg(Registers::fp);
-  sim->set_xreg(Registers::sp, (int64_t)mainSP_, vixl::Debugger::LogRegWrites,
-                vixl::Reg31IsStackPointer);
-  sim->set_xreg(Registers::fp, (int64_t)mainFP_);
-}
-
-void SuspenderObjectData::switchSimulatorToSuspendable() {
-  auto* sim = Simulator::Current();
-  mainSP_ = (void*)sim->xreg(Registers::sp, vixl::Reg31IsStackPointer);
-  mainFP_ = (void*)sim->xreg(Registers::fp);
-  sim->set_xreg(Registers::sp, (int64_t)suspendableSP_,
-                vixl::Debugger::LogRegWrites, vixl::Reg31IsStackPointer);
-  sim->set_xreg(Registers::fp, (int64_t)suspendableFP_);
-}
-#  endif
-
-#  ifdef JS_SIMULATOR_ARM
-void SuspenderObjectData::switchSimulatorToMain() {
-  suspendableSP_ = (void*)Simulator::Current()->get_register(Simulator::sp);
-  suspendableFP_ = (void*)Simulator::Current()->get_register(Simulator::fp);
-  Simulator::Current()->set_register(Simulator::sp, (int)mainSP_);
-  Simulator::Current()->set_register(Simulator::fp, (int)mainFP_);
-}
-
-void SuspenderObjectData::switchSimulatorToSuspendable() {
-  mainSP_ = (void*)Simulator::Current()->get_register(Simulator::sp);
-  mainFP_ = (void*)Simulator::Current()->get_register(Simulator::fp);
-  Simulator::Current()->set_register(Simulator::sp, (int)suspendableSP_);
-  Simulator::Current()->set_register(Simulator::fp, (int)suspendableFP_);
-}
-#  endif
-
-#  ifdef JS_SIMULATOR_RISCV64
-void SuspenderObjectData::switchSimulatorToMain() {
-  suspendableSP_ = (void*)Simulator::Current()->getRegister(Simulator::sp);
-  suspendableFP_ = (void*)Simulator::Current()->getRegister(Simulator::fp);
-  Simulator::Current()->setRegister(
-      Simulator::sp,
-      static_cast<int64_t>(reinterpret_cast<uintptr_t>(mainSP_)));
-  Simulator::Current()->setRegister(
-      Simulator::fp,
-      static_cast<int64_t>(reinterpret_cast<uintptr_t>(mainFP_)));
-}
-
-void SuspenderObjectData::switchSimulatorToSuspendable() {
-  mainSP_ = (void*)Simulator::Current()->getRegister(Simulator::sp);
-  mainFP_ = (void*)Simulator::Current()->getRegister(Simulator::fp);
-  Simulator::Current()->setRegister(
-      Simulator::sp,
-      static_cast<int64_t>(reinterpret_cast<uintptr_t>(suspendableSP_)));
-  Simulator::Current()->setRegister(
-      Simulator::fp,
-      static_cast<int64_t>(reinterpret_cast<uintptr_t>(suspendableFP_)));
-}
-#  endif
 
 // Slots that used in various JSFunctionExtended below.
 const size_t SUSPENDER_SLOT = 0;
@@ -162,63 +62,45 @@ const size_t WRAPPED_FN_SLOT = 1;
 const size_t CONTINUE_ON_SUSPENDABLE_SLOT = 1;
 const size_t PROMISE_SLOT = 2;
 
-SuspenderContext::SuspenderContext()
-    : activeSuspender_(nullptr), suspendedStacks_() {}
-
-SuspenderContext::~SuspenderContext() {
-  MOZ_ASSERT(activeSuspender_ == nullptr);
-  MOZ_ASSERT(suspendedStacks_.isEmpty());
-}
-
-SuspenderObject* SuspenderContext::activeSuspender() {
-  return activeSuspender_;
-}
-
-void SuspenderContext::setActiveSuspender(SuspenderObject* obj) {
-  activeSuspender_.set(obj);
-}
-
-void SuspenderContext::trace(JSTracer* trc) {
-  if (activeSuspender_) {
-    TraceEdge(trc, &activeSuspender_, "suspender");
-  }
-}
-
 static JitActivation* FindSuspendableStackActivation(
-    JSTracer* trc, const SuspenderObjectData& data) {
+    JSTracer* trc, SuspenderObject* suspender) {
   // The jitActivation.refNoCheck() can be used since during trace/marking
   // the main thread will be paused.
   JitActivation* activation =
       trc->runtime()->mainContextFromAnyThread()->jitActivation.refNoCheck();
   while (activation) {
-    // Scan all JitActivations to find one that starts with suspended stack
-    // frame pointer.
-    WasmFrameIter iter(activation);
-    if (!iter.done() && data.hasFramePointer(iter.frame())) {
-      return activation;
+    // Skip activations without Wasm exit FP -- they are mostly debugger
+    // related.
+    if (activation->hasWasmExitFP()) {
+      // Scan all JitActivations to find one that starts with suspended stack
+      // frame pointer.
+      WasmFrameIter iter(activation);
+      if (!iter.done() && suspender->hasStackAddress(iter.frame())) {
+        return activation;
+      }
     }
     activation = activation->prevJitActivation();
   }
   MOZ_CRASH("Suspendable stack activation not found");
 }
 
-static void TraceSuspendableStack(JSTracer* trc,
-                                  const SuspenderObjectData& data) {
-  void* exitFP = data.suspendableExitFP();
-  MOZ_ASSERT(data.traceable());
+void TraceSuspendableStack(JSTracer* trc, SuspenderObject* suspender) {
+  MOZ_ASSERT(suspender->isTraceable());
+  void* exitFP = suspender->suspendableExitFP();
 
   // Create and iterator for wasm frames:
-  //  - If a stack entry for suspended stack exists, the data.suspendableFP()
-  //    and data.suspendedReturnAddress() provide start of the frames.
+  //  - If a stack entry for suspended stack exists, the
+  //  suspender->suspendableFP()
+  //    and suspender->suspendedReturnAddress() provide start of the frames.
   //  - Otherwise, the stack is the part of the main stack, the context
   //    JitActivation frames will be used to trace.
   WasmFrameIter iter =
-      data.hasStackEntry()
+      suspender->isSuspended()
           ? WasmFrameIter(
-                static_cast<FrameWithInstances*>(data.suspendableFP()),
-                data.suspendedReturnAddress())
-          : WasmFrameIter(FindSuspendableStackActivation(trc, data));
-  MOZ_ASSERT_IF(data.hasStackEntry(), iter.currentFrameStackSwitched());
+                static_cast<FrameWithInstances*>(suspender->suspendableFP()),
+                suspender->suspendedReturnAddress())
+          : WasmFrameIter(FindSuspendableStackActivation(trc, suspender));
+  MOZ_ASSERT_IF(suspender->isSuspended(), iter.currentFrameStackSwitched());
   uintptr_t highestByteVisitedInPrevWasmFrame = 0;
   while (true) {
     MOZ_ASSERT(!iter.done());
@@ -237,150 +119,64 @@ static void TraceSuspendableStack(JSTracer* trc,
   }
 }
 
-void SuspenderContext::traceRoots(JSTracer* trc) {
-  // The suspendedStacks_ contains suspended stacks frames that need to be
-  // traced only during minor GC. The major GC tracing is happening via
-  // SuspenderObject::trace.
-  // Non-suspended stack frames are traced as part of TraceJitActivations.
-  if (!trc->isTenuringTracer()) {
-    return;
-  }
-  gc::AssertRootMarkingPhase(trc);
-  for (const SuspenderObjectData& data : suspendedStacks_) {
-    TraceSuspendableStack(trc, data);
-  }
-}
-
 static_assert(JS_STACK_GROWTH_DIRECTION < 0,
               "JS-PI implemented only for native stacks that grows towards 0");
 
-static void DecrementSuspendableStacksCount(JSContext* cx) {
-  for (;;) {
-    uint32_t currentCount = cx->wasm().suspendableStacksCount;
-    MOZ_ASSERT(currentCount > 0);
-    if (cx->wasm().suspendableStacksCount.compareExchange(currentCount,
-                                                          currentCount - 1)) {
-      break;
-    }
-    // Failed to decrement suspendableStacksCount, repeat.
+SuspenderObject* SuspenderObject::create(JSContext* cx) {
+  if (cx->wasm().suspenders_.count() >= SuspendableStacksMaxCount) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_JSPI_SUSPENDER_LIMIT);
+    return nullptr;
   }
+
+  Rooted<SuspenderObject*> suspender(
+      cx, NewBuiltinClassInstance<SuspenderObject>(cx));
+  if (!suspender) {
+    return nullptr;
+  }
+
+  // Initialize all of the slots
+  suspender->initFixedSlot(StateSlot, Int32Value(SuspenderState::Moribund));
+  suspender->initFixedSlot(PromisingPromiseSlot, NullValue());
+  suspender->initFixedSlot(SuspendingReturnTypeSlot,
+                           Int32Value(int32_t(ReturnType::Unknown)));
+  suspender->initFixedSlot(StackMemorySlot, PrivateValue(nullptr));
+  suspender->initFixedSlot(MainFPSlot, PrivateValue(nullptr));
+  suspender->initFixedSlot(MainSPSlot, PrivateValue(nullptr));
+  suspender->initFixedSlot(SuspendableFPSlot, PrivateValue(nullptr));
+  suspender->initFixedSlot(SuspendableSPSlot, PrivateValue(nullptr));
+  suspender->initFixedSlot(SuspendableExitFPSlot, PrivateValue(nullptr));
+  suspender->initFixedSlot(SuspendedRASlot, PrivateValue(nullptr));
+  suspender->initFixedSlot(MainExitFPSlot, PrivateValue(nullptr));
+
+  void* stackMemory = js_malloc(SuspendableStackPlusRedZoneSize);
+  if (!stackMemory) {
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+
+  if (!cx->wasm().suspenders_.putNew(suspender)) {
+    js_free(stackMemory);
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+
+  // We are now fully constructed and can transition states
+  suspender->setStackMemory(stackMemory);
+  suspender->setFixedSlot(SuspendableSPSlot,
+                          PrivateValue(static_cast<uint8_t*>(stackMemory) +
+                                       SuspendableStackPlusRedZoneSize));
+  suspender->setState(SuspenderState::Initial);
+
+  return suspender;
 }
-
-class SuspenderObject : public NativeObject {
- public:
-  static const JSClass class_;
-
-  enum { DataSlot, PromisingPromiseSlot, SuspendingReturnTypeSlot, SlotCount };
-
-  enum class ReturnType : int32_t { Unknown, Promise, Exception };
-
-  static SuspenderObject* create(JSContext* cx) {
-    for (;;) {
-      uint32_t currentCount = cx->wasm().suspendableStacksCount;
-      if (currentCount >= SuspendableStacksMaxCount) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_JSPI_SUSPENDER_LIMIT);
-        return nullptr;
-      }
-      if (cx->wasm().suspendableStacksCount.compareExchange(currentCount,
-                                                            currentCount + 1)) {
-        break;
-      }
-      // Failed to increment suspendableStacksCount, repeat.
-    }
-
-    Rooted<SuspenderObject*> suspender(
-        cx, NewBuiltinClassInstance<SuspenderObject>(cx));
-    if (!suspender) {
-      DecrementSuspendableStacksCount(cx);
-      return nullptr;
-    }
-
-    void* stackMemory = js_malloc(SuspendableStackPlusRedZoneSize);
-    if (!stackMemory) {
-      DecrementSuspendableStacksCount(cx);
-      ReportOutOfMemory(cx);
-      return nullptr;
-    }
-
-    SuspenderObjectData* data = js_new<SuspenderObjectData>(stackMemory);
-    if (!data) {
-      js_free(stackMemory);
-      DecrementSuspendableStacksCount(cx);
-      ReportOutOfMemory(cx);
-      return nullptr;
-    }
-    MOZ_RELEASE_ASSERT(data->state() != SuspenderState::Moribund);
-
-    suspender->initReservedSlot(DataSlot, PrivateValue(data));
-    suspender->initReservedSlot(PromisingPromiseSlot, NullValue());
-    suspender->initReservedSlot(SuspendingReturnTypeSlot,
-                                Int32Value(int32_t(ReturnType::Unknown)));
-    return suspender;
-  }
-
-  PromiseObject* promisingPromise() const {
-    return &getReservedSlot(PromisingPromiseSlot)
-                .toObject()
-                .as<PromiseObject>();
-  }
-
-  void setPromisingPromise(Handle<PromiseObject*> promise) {
-    setReservedSlot(PromisingPromiseSlot, ObjectOrNullValue(promise));
-  }
-
-  ReturnType suspendingReturnType() const {
-    return ReturnType(getReservedSlot(SuspendingReturnTypeSlot).toInt32());
-  }
-
-  void setSuspendingReturnType(ReturnType type) {
-    // The SuspendingReturnTypeSlot will change after result is defined,
-    // and becomes invalid after GetSuspendingPromiseResult. The assert is
-    // checking if the result was processed by GetSuspendingPromiseResult.
-    MOZ_ASSERT((type == ReturnType::Unknown) !=
-               (suspendingReturnType() == ReturnType::Unknown));
-
-    setReservedSlot(SuspendingReturnTypeSlot, Int32Value(int32_t(type)));
-  }
-
-  JS::NativeStackLimit getStackMemoryLimit() {
-    return JS::NativeStackLimit(data()->stackMemory()) + SuspendableRedZoneSize;
-  }
-
-  SuspenderState state() { return data()->state(); }
-
-  inline bool hasData() { return !getReservedSlot(DataSlot).isUndefined(); }
-
-  inline SuspenderObjectData* data() {
-    return static_cast<SuspenderObjectData*>(
-        getReservedSlot(DataSlot).toPrivate());
-  }
-
-  void setMoribund(JSContext* cx);
-  void setActive(JSContext* cx);
-  void setSuspended(JSContext* cx);
-
-  void enter(JSContext* cx);
-  void suspend(JSContext* cx);
-  void resume(JSContext* cx);
-  void leave(JSContext* cx);
-
-  // Modifies frames to inject the suspendable stack back into the main one.
-  void forwardToSuspendable();
-
- private:
-  static const JSClassOps classOps_;
-
-  static void finalize(JS::GCContext* gcx, JSObject* obj);
-  static void trace(JSTracer* trc, JSObject* obj);
-};
-
-static_assert(SuspenderObjectDataSlot == SuspenderObject::DataSlot);
 
 const JSClass SuspenderObject::class_ = {
     "SuspenderObject",
     JSCLASS_HAS_RESERVED_SLOTS(SlotCount) | JSCLASS_FOREGROUND_FINALIZE,
     &SuspenderObject::classOps_,
+    nullptr,
+    &SuspenderObject::classExt_,
 };
 
 const JSClassOps SuspenderObject::classOps_ = {
@@ -396,90 +192,74 @@ const JSClassOps SuspenderObject::classOps_ = {
     trace,     // trace
 };
 
+const ClassExtension SuspenderObject::classExt_ = {
+    .objectMovedOp = SuspenderObject::moved,
+};
+
 /* static */
 void SuspenderObject::finalize(JS::GCContext* gcx, JSObject* obj) {
   SuspenderObject& suspender = obj->as<SuspenderObject>();
-  if (!suspender.hasData()) {
-    return;
+  if (!suspender.isMoribund()) {
+    gcx->runtime()->mainContextFromOwnThread()->wasm().suspenders_.remove(
+        &suspender);
   }
-  SuspenderObjectData* data = suspender.data();
-  if (data->state() == SuspenderState::Moribund) {
-    MOZ_RELEASE_ASSERT(!data->stackMemory());
-  } else {
-    // Cleaning stack memory and removing from suspendableStacks_.
-    data->releaseStackMemory();
-    if (SuspenderContext* scx = data->suspendedBy()) {
-      scx->suspendedStacks_.remove(data);
-    }
-  }
-  js_free(data);
+  suspender.releaseStackMemory();
+  MOZ_ASSERT(suspender.isMoribund());
 }
 
 /* static */
 void SuspenderObject::trace(JSTracer* trc, JSObject* obj) {
   SuspenderObject& suspender = obj->as<SuspenderObject>();
-  if (!suspender.hasData()) {
-    return;
-  }
-  SuspenderObjectData& data = *suspender.data();
-  // The SuspenderObjectData refers stacks frames that need to be traced
+  // The SuspenderObject refers stacks frames that need to be traced
   // only during major GC to determine if SuspenderObject content is
   // reachable from JS.
-  if (!data.traceable() || trc->isTenuringTracer()) {
+  if (!suspender.isTraceable() || trc->isTenuringTracer()) {
     return;
   }
-  TraceSuspendableStack(trc, data);
+  TraceSuspendableStack(trc, &suspender);
+}
+
+/* static */
+size_t SuspenderObject::moved(JSObject* obj, JSObject* old) {
+  wasm::Context& context =
+      obj->runtimeFromMainThread()->mainContextFromOwnThread()->wasm();
+  context.suspenders_.rekeyIfMoved(&old->as<SuspenderObject>(),
+                                   &obj->as<SuspenderObject>());
+  return 0;
 }
 
 void SuspenderObject::setMoribund(JSContext* cx) {
   MOZ_ASSERT(state() == SuspenderState::Active);
-  ResetInstanceStackLimits(cx);
-#  if defined(_WIN32)
-  data()->restoreTIBStackFields();
-#  endif
-  SuspenderObjectData* data = this->data();
-  data->setState(SuspenderState::Moribund);
-  data->releaseStackMemory();
-  DecrementSuspendableStacksCount(cx);
-  MOZ_ASSERT(
-      !cx->wasm().promiseIntegration.suspendedStacks_.ElementProbablyInList(
-          data));
+  cx->wasm().leaveSuspendableStack(cx);
+  if (!this->isMoribund()) {
+    cx->wasm().suspenders_.remove(this);
+  }
+  this->releaseStackMemory();
+  MOZ_ASSERT(this->isMoribund());
 }
 
 void SuspenderObject::setActive(JSContext* cx) {
-  data()->setState(SuspenderState::Active);
-  UpdateInstanceStackLimitsForSuspendableStack(cx, getStackMemoryLimit());
-#  if defined(_WIN32)
-  data()->updateTIBStackFields();
-#  endif
+  this->setState(SuspenderState::Active);
+  cx->wasm().enterSuspendableStack(cx, this);
 }
 
 void SuspenderObject::setSuspended(JSContext* cx) {
-  data()->setState(SuspenderState::Suspended);
-  ResetInstanceStackLimits(cx);
-#  if defined(_WIN32)
-  data()->restoreTIBStackFields();
-#  endif
+  this->setState(SuspenderState::Suspended);
+  cx->wasm().leaveSuspendableStack(cx);
 }
 
 void SuspenderObject::enter(JSContext* cx) {
-  MOZ_ASSERT(state() == SuspenderState::Initial);
-  cx->wasm().promiseIntegration.setActiveSuspender(this);
+  // We can enter a suspender normally from Initial, or through unwinding when
+  // are in the 'CalledOnMain' or 'Suspended' states.
+  MOZ_ASSERT(state() == SuspenderState::Initial ||
+             state() == SuspenderState::CalledOnMain ||
+             state() == SuspenderState::Suspended);
   setActive(cx);
-#  ifdef DEBUG
-  cx->runtime()->jitRuntime()->disallowArbitraryCode();
-#  endif
 }
 
 void SuspenderObject::suspend(JSContext* cx) {
   MOZ_ASSERT(state() == SuspenderState::Active);
   setSuspended(cx);
-  cx->wasm().promiseIntegration.suspendedStacks_.pushFront(data());
-  data()->setSuspendedBy(&cx->wasm().promiseIntegration);
-  cx->wasm().promiseIntegration.setActiveSuspender(nullptr);
-#  ifdef DEBUG
-  cx->runtime()->jitRuntime()->clearDisallowArbitraryCode();
-#  endif
 
   if (cx->realm()->isDebuggee()) {
     WasmFrameIter iter(cx->activation()->asJit());
@@ -498,16 +278,10 @@ void SuspenderObject::suspend(JSContext* cx) {
 
 void SuspenderObject::resume(JSContext* cx) {
   MOZ_ASSERT(state() == SuspenderState::Suspended);
-  cx->wasm().promiseIntegration.setActiveSuspender(this);
   setActive(cx);
-  data()->setSuspendedBy(nullptr);
   // Use barrier because object is being removed from the suspendable stack
   // from roots.
   gc::PreWriteBarrier(this);
-  cx->wasm().promiseIntegration.suspendedStacks_.remove(data());
-#  ifdef DEBUG
-  cx->runtime()->jitRuntime()->disallowArbitraryCode();
-#  endif
 
   if (cx->realm()->isDebuggee()) {
     for (FrameIter iter(cx);; ++iter) {
@@ -526,18 +300,34 @@ void SuspenderObject::resume(JSContext* cx) {
 }
 
 void SuspenderObject::leave(JSContext* cx) {
-  cx->wasm().promiseIntegration.setActiveSuspender(nullptr);
-#  ifdef DEBUG
-  cx->runtime()->jitRuntime()->clearDisallowArbitraryCode();
-#  endif
-  // We are exiting alternative stack if state is active,
+  // We are exiting suspended stack if state is active,
   // otherwise the stack was just suspended.
   switch (state()) {
-    case SuspenderState::Active:
+    case SuspenderState::Active: {
       setMoribund(cx);
       break;
-    case SuspenderState::Suspended:
+    }
+    case SuspenderState::Suspended: {
+      MOZ_ASSERT(!cx->wasm().onSuspendableStack());
       break;
+    }
+    case SuspenderState::Initial:
+    case SuspenderState::Moribund:
+    case SuspenderState::CalledOnMain:
+      MOZ_CRASH();
+  }
+}
+
+void SuspenderObject::unwind(JSContext* cx) {
+  switch (state()) {
+    case SuspenderState::Suspended:
+    case SuspenderState::CalledOnMain: {
+      cx->wasm().suspenders_.remove(this);
+      this->releaseStackMemory();
+      MOZ_ASSERT(this->isMoribund());
+      break;
+    }
+    case SuspenderState::Active:
     case SuspenderState::Initial:
     case SuspenderState::Moribund:
       MOZ_CRASH();
@@ -546,331 +336,11 @@ void SuspenderObject::leave(JSContext* cx) {
 
 void SuspenderObject::forwardToSuspendable() {
   // Injecting suspendable stack back into main one at the exit frame.
-  SuspenderObjectData* data = this->data();
-  uint8_t* mainExitFP = (uint8_t*)data->mainExitFP();
+  uint8_t* mainExitFP = (uint8_t*)this->mainExitFP();
   *reinterpret_cast<void**>(mainExitFP + Frame::callerFPOffset()) =
-      data->suspendableFP();
+      this->suspendableFP();
   *reinterpret_cast<void**>(mainExitFP + Frame::returnAddressOffset()) =
-      data->suspendedReturnAddress();
-}
-
-bool CallOnMainStack(JSContext* cx, CallOnMainStackFn fn, void* data) {
-  Rooted<SuspenderObject*> suspender(
-      cx, cx->wasm().promiseIntegration.activeSuspender());
-  SuspenderObjectData* stacks = suspender->data();
-
-  cx->wasm().promiseIntegration.setActiveSuspender(nullptr);
-
-  MOZ_ASSERT(suspender->state() == SuspenderState::Active);
-  suspender->setSuspended(cx);
-  // Keep suspendedBy not set -- the stack has no defined entry.
-  // See TraceSuspendableStack for details.
-  MOZ_RELEASE_ASSERT(suspender->data()->suspendedBy() == nullptr);
-
-#  ifdef JS_SIMULATOR
-#    if defined(JS_SIMULATOR_ARM64) || defined(JS_SIMULATOR_ARM) || \
-        defined(JS_SIMULATOR_RISCV64)
-  // The simulator is using its own stack, however switching is needed for
-  // virtual registers.
-  stacks->switchSimulatorToMain();
-  bool res = fn(data);
-  stacks->switchSimulatorToSuspendable();
-#    else
-#      error "not supported"
-#    endif
-#  else
-  // The platform specific code below inserts offsets as strings into inline
-  // assembly. CHECK_OFFSETS verifies the specified literals in macros below.
-#    define CHECK_OFFSETS(MAIN_FP_OFFSET, MAIN_SP_OFFSET,               \
-                          SUSPENDABLE_FP_OFFSET, SUSPENDABLE_SP_OFFSET) \
-      static_assert(                                                    \
-          (MAIN_FP_OFFSET) == SuspenderObjectData::offsetOfMainFP() &&  \
-          (MAIN_SP_OFFSET) == SuspenderObjectData::offsetOfMainSP() &&  \
-          (SUSPENDABLE_FP_OFFSET) ==                                    \
-              SuspenderObjectData::offsetOfSuspendableFP() &&           \
-          (SUSPENDABLE_SP_OFFSET) ==                                    \
-              SuspenderObjectData::offsetOfSuspendableSP());
-
-  // The following assembly code temporarily switches FP/SP pointers to be on
-  // main stack, while maintaining frames linking.  After
-  // `CallImportData::Call` execution suspendable stack FP/SP will be restored.
-  //
-  // Because the assembly sequences contain a call, the trashed-register list
-  // must contain all the caller saved registers.  They must also contain "cc"
-  // and "memory" since both of those state elements could be modified by the
-  // call.  They also need a "volatile" qualifier to ensure that the they don't
-  // get optimised out or otherwise messed with by clang/gcc.
-  //
-  // `Registers::VolatileMask` (in the assembler complex) is useful in that it
-  // lists the caller-saved registers.
-
-  uintptr_t res;
-
-  // clang-format off
-#if defined(_M_ARM64) || defined(__aarch64__)
-#    define CALLER_SAVED_REGS \
-      "x0", "x1", "x2", "x3","x4", "x5", "x6", "x7", "x8", "x9", "x10",   \
-      "x11", "x12", "x13", "x14", "x15", "x16", "x17", /* "x18", */       \
-      "x19", "x20", /* it's unclear who saves these two, so be safe */    \
-      /* claim that all the vector regs are caller-saved, for safety */   \
-      "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10",  \
-      "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19",      \
-      "v20", "v21", "v22", "v23", "v24", "v25", "v26", "v27", "v28",      \
-      "v29", "v30", "v31"
-#    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
-      CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
-      asm volatile(                                                       \
-          "\n   mov     x0, %1"                                           \
-          "\n   mov     x27, sp "                                         \
-          "\n   str     x29, [x0, #" #SUSPENDABLE_FP "] "                 \
-          "\n   str     x27, [x0, #" #SUSPENDABLE_SP "] "                 \
-                                                                          \
-          "\n   ldr     x29, [x0, #" #MAIN_FP "] "                        \
-          "\n   ldr     x27, [x0, #" #MAIN_SP "] "                        \
-          "\n   mov     sp, x27 "                                         \
-                                                                          \
-          "\n   stp     x0, x27, [sp, #-16]! "                            \
-                                                                          \
-          "\n   mov     x0, %3"                                           \
-          "\n   blr     %2 "                                              \
-                                                                          \
-          "\n   ldp     x3, x27, [sp], #16 "                              \
-                                                                          \
-          "\n   mov     x27, sp "                                         \
-          "\n   str     x29, [x3, #" #MAIN_FP "] "                        \
-          "\n   str     x27, [x3, #" #MAIN_SP "] "                        \
-                                                                          \
-          "\n   ldr     x29, [x3, #" #SUSPENDABLE_FP "] "                 \
-          "\n   ldr     x27, [x3, #" #SUSPENDABLE_SP "] "                 \
-          "\n   mov     sp, x27 "                                         \
-          "\n   mov     %0, x0"                                           \
-          : "=r"(res)                                                     \
-          : "r"(stacks), "r"(fn), "r"(data)                               \
-          : "x0", "x3", "x27", CALLER_SAVED_REGS, "cc", "memory")
-  INLINED_ASM(24, 32, 40, 48);
-
-#  elif defined(_WIN64) && defined(_M_X64)
-#    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
-      CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
-      asm("\n   mov     %1, %%rcx"                                        \
-          "\n   mov     %%rbp, " #SUSPENDABLE_FP "(%%rcx)"                \
-          "\n   mov     %%rsp, " #SUSPENDABLE_SP "(%%rcx)"                \
-                                                                          \
-          "\n   mov     " #MAIN_FP "(%%rcx), %%rbp"                       \
-          "\n   mov     " #MAIN_SP "(%%rcx), %%rsp"                       \
-                                                                          \
-          "\n   push    %%rcx"                                            \
-          "\n   push    %%rdx"                                            \
-                                                                          \
-          "\n   mov     %3, %%rcx"                                        \
-          "\n   call    *%2"                                              \
-                                                                          \
-          "\n   pop    %%rdx"                                             \
-          "\n   pop    %%rcx"                                             \
-                                                                          \
-          "\n   mov     %%rbp, " #MAIN_FP "(%%rcx)"                       \
-          "\n   mov     %%rsp, " #MAIN_SP "(%%rcx)"                       \
-                                                                          \
-          "\n   mov     " #SUSPENDABLE_FP "(%%rcx), %%rbp"                \
-          "\n   mov     " #SUSPENDABLE_SP "(%%rcx), %%rsp"                \
-                                                                          \
-          "\n   movq     %%rax, %0"                                       \
-          : "=r"(res)                                                     \
-          : "r"(stacks), "r"(fn), "r"(data)                               \
-          : "rcx", "rax", "cc", "memory")
-  INLINED_ASM(24, 32, 40, 48);
-
-#  elif defined(__x86_64__)
-#    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
-      CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
-      asm("\n   mov     %1, %%rdi"                                        \
-          "\n   mov     %%rbp, " #SUSPENDABLE_FP "(%%rdi)"                \
-          "\n   mov     %%rsp, " #SUSPENDABLE_SP "(%%rdi)"                \
-                                                                          \
-          "\n   mov     " #MAIN_FP "(%%rdi), %%rbp"                       \
-          "\n   mov     " #MAIN_SP "(%%rdi), %%rsp"                       \
-                                                                          \
-          "\n   push    %%rdi"                                            \
-          "\n   push    %%rdx"                                            \
-                                                                          \
-          "\n   mov     %3, %%rdi"                                        \
-          "\n   call    *%2"                                              \
-                                                                          \
-          "\n   pop    %%rdx"                                             \
-          "\n   pop    %%rdi"                                             \
-                                                                          \
-          "\n   mov     %%rbp, " #MAIN_FP "(%%rdi)"                       \
-          "\n   mov     %%rsp, " #MAIN_SP "(%%rdi)"                       \
-                                                                          \
-          "\n   mov     " #SUSPENDABLE_FP "(%%rdi), %%rbp"                \
-          "\n   mov     " #SUSPENDABLE_SP "(%%rdi), %%rsp"                \
-                                                                          \
-          "\n   movq     %%rax, %0"                                       \
-          : "=r"(res)                                                     \
-          : "r"(stacks), "r"(fn), "r"(data)                               \
-          : "rdi", "rax", "cc", "memory")
-  INLINED_ASM(24, 32, 40, 48);
-#  elif defined(__i386__) || defined(_M_IX86)
-#    define CALLER_SAVED_REGS "eax", "ecx", "edx"
-#    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
-      CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
-      asm("\n   mov     %1, %%edx"                                        \
-          "\n   mov     %%ebp, " #SUSPENDABLE_FP "(%%edx)"                \
-          "\n   mov     %%esp, " #SUSPENDABLE_SP "(%%edx)"                \
-                                                                          \
-          "\n   mov     " #MAIN_FP "(%%edx), %%ebp"                       \
-          "\n   mov     " #MAIN_SP "(%%edx), %%esp"                       \
-                                                                          \
-          "\n   push    %%edx"                                            \
-          "\n   sub     $8, %%esp"                                        \
-          "\n   push    %3"                                               \
-          "\n   call    *%2"                                              \
-          "\n   add     $12, %%esp"                                       \
-          "\n   pop     %%edx"                                            \
-                                                                          \
-          "\n   mov     %%ebp, " #MAIN_FP "(%%edx)"                       \
-          "\n   mov     %%esp, " #MAIN_SP "(%%edx)"                       \
-                                                                          \
-          "\n   mov     " #SUSPENDABLE_FP "(%%edx), %%ebp"                \
-          "\n   mov     " #SUSPENDABLE_SP "(%%edx), %%esp"                \
-                                                                          \
-          "\n   mov     %%eax, %0"                                        \
-          : "=r"(res)                                                     \
-          : "r"(stacks), "r"(fn), "r"(data)                               \
-          : CALLER_SAVED_REGS, "cc", "memory")
-  INLINED_ASM(12, 16, 20, 24);
-
-#  elif defined(__arm__)
-#    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
-      CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
-      asm("\n   mov     r0, %1"                                           \
-          "\n   mov     r1, sp"                                           \
-          "\n   str     r11, [r0, #" #SUSPENDABLE_FP "]"                  \
-          "\n   str     r1, [r0, #" #SUSPENDABLE_SP "]"                   \
-                                                                          \
-          "\n   ldr     r11, [r0, #" #MAIN_FP "]"                         \
-          "\n   ldr     r1, [r0, #" #MAIN_SP "]"                          \
-          "\n   mov     sp, r1"                                           \
-                                                                          \
-          "\n   str     r0, [sp, #-8]! "                                  \
-                                                                          \
-          "\n   mov     r0, %3"                                           \
-          "\n   blx     %2"                                               \
-                                                                          \
-          "\n   ldr     r2, [sp], #8 "                                    \
-                                                                          \
-          "\n   mov     r1, sp"                                           \
-          "\n   str     r11, [r2, #" #MAIN_FP "]"                         \
-          "\n   str     r1, [r2, #" #MAIN_SP "]"                          \
-                                                                          \
-          "\n   ldr     r11, [r2, #" #SUSPENDABLE_FP "]"                  \
-          "\n   ldr     r1, [r2, #" #SUSPENDABLE_SP "]"                   \
-          "\n   mov     sp, r1"                                           \
-          "\n   mov     %0, r0"                                           \
-          : "=r"(res)                                                     \
-          : "r"(stacks), "r"(fn), "r"(data)                               \
-          : "r0", "r1", "r2", "r3", "cc", "memory")
-  INLINED_ASM(12, 16, 20, 24);
-
-#elif defined(__loongarch_lp64)
-#    define CALLER_SAVED_REGS \
-      "$ra", "$a0", "$a1", "$a2", "$a3", "$a4", "$a5", "$a6", "$a7",      \
-      "$t0", "$t1", "$t2", "$t3", "$t4", "$t5", "$t6", "$t7", "$t8",      \
-      "$f0", "$f1", "$f2", "$f3", "$f4", "$f5", "$f6", "$f7", "$f8",      \
-      "$f9", "$f10", "$f11", "$f12", "$f13", "$f14", "$f15", "$f16",      \
-      "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23"
-#    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
-      CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
-      asm volatile(                                                       \
-          "\n   move    $a0, %1"                                          \
-          "\n   st.d    $fp, $a0, " #SUSPENDABLE_FP                       \
-          "\n   st.d    $sp, $a0, " #SUSPENDABLE_SP                       \
-                                                                          \
-          "\n   ld.d    $fp, $a0, " #MAIN_FP                              \
-          "\n   ld.d    $sp, $a0, " #MAIN_SP                              \
-                                                                          \
-          "\n   addi.d  $sp, $sp, -16"                                    \
-          "\n   st.d    $a0, $sp, 8"                                      \
-                                                                          \
-          "\n   move    $a0, %3"                                          \
-          "\n   jirl    $ra, %2, 0"                                       \
-                                                                          \
-          "\n   ld.d    $a3, $sp, 8"                                      \
-          "\n   addi.d  $sp, $sp, 16"                                     \
-                                                                          \
-          "\n   st.d    $fp, $a3, " #MAIN_FP                              \
-          "\n   st.d    $sp, $a3, " #MAIN_SP                              \
-                                                                          \
-          "\n   ld.d    $fp, $a3, " #SUSPENDABLE_FP                       \
-          "\n   ld.d    $sp, $a3, " #SUSPENDABLE_SP                       \
-          "\n   move    %0, $a0"                                          \
-          : "=r"(res)                                                     \
-          : "r"(stacks), "r"(fn), "r"(data)                               \
-          : "$a0", "$a3", CALLER_SAVED_REGS, "cc", "memory")
-  INLINED_ASM(24, 32, 40, 48);
-
-#  elif defined(__riscv) && defined(__riscv_xlen) && (__riscv_xlen == 64)
-#    define CALLER_SAVED_REGS                                             \
-        "ra",                                                             \
-        "t0", "t1", "t2", "t3", "t4", "t5", "t6",                         \
-        "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",                   \
-        "ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7",           \
-        "ft8", "ft9", "ft10", "ft11",                                     \
-        "fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7",           \
-        "fs0", "fs1", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",           \
-        "fs8", "fs9", "fs10", "fs11"
-#    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
-      CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
-      asm volatile(                                                       \
-          "\n   mv      a0, %1"                                           \
-          "\n   sd      fp, " #SUSPENDABLE_FP "(a0)"                      \
-          "\n   sd      sp, " #SUSPENDABLE_SP "(a0)"                      \
-                                                                          \
-          "\n   ld      fp, " #MAIN_FP "(a0)"                             \
-          "\n   ld      sp, " #MAIN_SP "(a0)"                             \
-                                                                          \
-          "\n   addi    sp, sp, -16"                                      \
-          "\n   sd      a0, 8(sp)"                                        \
-                                                                          \
-          "\n   mv      a0, %3"                                           \
-          "\n   jalr    ra, 0(%2)"                                        \
-                                                                          \
-          "\n   ld      a3, 8(sp)"                                        \
-          "\n   addi    sp, sp, 16"                                       \
-                                                                          \
-          "\n   sd      fp, " #MAIN_FP "(a3)"                             \
-          "\n   sd      sp, " #MAIN_SP "(a3)"                             \
-                                                                          \
-          "\n   ld      fp, " #SUSPENDABLE_FP "(a3)"                      \
-          "\n   ld      sp, " #SUSPENDABLE_SP "(a3)"                      \
-          "\n   mv      %0, a0"                                           \
-          : "=r"(res)                                                     \
-          : "r"(stacks), "r"(fn), "r"(data)                               \
-          : "ra", "a0", "a3", CALLER_SAVED_REGS, "cc", "memory")
-  INLINED_ASM(24, 32, 40, 48);
-
-#  else
-  MOZ_CRASH("Not supported for this platform");
-#  endif
-  // clang-format on
-#  endif  // JS_SIMULATOR
-
-  bool ok = (res & 255) != 0;  // need only low byte
-  suspender->setActive(cx);
-  cx->wasm().promiseIntegration.setActiveSuspender(suspender);
-
-#  undef INLINED_ASM
-#  undef CHECK_OFFSETS
-#  undef CALLER_SAVED_REGS
-
-  return ok;
-}
-
-static void CleanupActiveSuspender(JSContext* cx) {
-  SuspenderObject* suspender = cx->wasm().promiseIntegration.activeSuspender();
-  MOZ_ASSERT(suspender);
-  cx->wasm().promiseIntegration.setActiveSuspender(nullptr);
-  suspender->setMoribund(cx);
+      this->suspendedReturnAddress();
 }
 
 // Suspending
@@ -1326,8 +796,10 @@ static bool WasmPISuspendTaskContinue(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  // The stack was unwound during exception -- time to release resources.
-  CleanupActiveSuspender(cx);
+  // The stack was unwound during exception.
+  MOZ_RELEASE_ASSERT(!cx->wasm().activeSuspender());
+  MOZ_RELEASE_ASSERT(
+      suspender.toObject().as<wasm::SuspenderObject>().isMoribund());
 
   if (cx->isThrowingOutOfMemory()) {
     return false;
@@ -1359,9 +831,30 @@ static bool WasmPIWrapSuspendingImport(JSContext* cx, unsigned argc,
   return false;
 }
 
+static bool ValidateTypes(JSContext* cx, const ValTypeVector& src) {
+  for (ValType t : src) {
+    if (t.typeDef()) {
+      // Error for internal types defined in the main module.
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_JSPI_ARG_TYPE);
+      return false;
+    }
+  }
+  return true;
+}
+
 JSFunction* WasmSuspendingFunctionCreate(JSContext* cx, HandleObject func,
-                                         ValTypeVector&& params,
-                                         ValTypeVector&& results) {
+                                         const FuncType& type) {
+  if (!ValidateTypes(cx, type.args()) || !ValidateTypes(cx, type.results())) {
+    return nullptr;
+  }
+  ValTypeVector params, results;
+  if (!params.append(type.args().begin(), type.args().end()) ||
+      !results.append(type.results().begin(), type.results().end())) {
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+
   MOZ_ASSERT(IsCallable(ObjectValue(*func)) &&
              !IsCrossCompartmentWrapper(func));
 
@@ -1402,18 +895,6 @@ JSFunction* WasmSuspendingFunctionCreate(JSContext* cx, HandleObject func,
     return nullptr;
   }
   return wasmFunc;
-}
-
-JSFunction* WasmSuspendingFunctionCreate(JSContext* cx, HandleObject func,
-                                         const FuncType& type) {
-  ValTypeVector params, results;
-  if (!params.append(type.args().begin(), type.args().end()) ||
-      !results.append(type.results().begin(), type.results().end())) {
-    ReportOutOfMemory(cx);
-    return nullptr;
-  }
-  return WasmSuspendingFunctionCreate(cx, func, std::move(params),
-                                      std::move(results));
 }
 
 // Promising
@@ -1606,8 +1087,20 @@ class PromisingFunctionModuleFactory {
       return nullptr;
     }
 
+    if (!ValidateTypes(cx, fnType.args()) ||
+        !ValidateTypes(cx, fnType.results())) {
+      return nullptr;
+    }
+    ValTypeVector paramsForWrapper, resultsForWrapper;
+    if (!paramsForWrapper.append(fnType.args().begin(), fnType.args().end()) ||
+        !resultsForWrapper.append(fnType.results().begin(),
+                                  fnType.results().end())) {
+      ReportOutOfMemory(cx);
+      return nullptr;
+    }
+
     StructType boxedResultType;
-    if (!StructType::createImmutable(fnType.results(), &boxedResultType)) {
+    if (!StructType::createImmutable(resultsForWrapper, &boxedResultType)) {
       ReportOutOfMemory(cx);
       return nullptr;
     }
@@ -1616,13 +1109,6 @@ class PromisingFunctionModuleFactory {
       return nullptr;
     }
 
-    ValTypeVector paramsForWrapper, resultsForWrapper;
-    if (!paramsForWrapper.append(fnType.args().begin(), fnType.args().end()) ||
-        !resultsForWrapper.append(fnType.results().begin(),
-                                  fnType.results().end())) {
-      ReportOutOfMemory(cx);
-      return nullptr;
-    }
     MOZ_ASSERT(codeMeta->funcs.length() == WrappedFnIndex);
     if (!moduleMeta->addDefinedFunc(std::move(paramsForWrapper),
                                     std::move(resultsForWrapper))) {
@@ -1713,8 +1199,9 @@ static bool WasmPIPromisingFunction(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  // During an exception the stack was unwound -- time to release resources.
-  CleanupActiveSuspender(cx);
+  // The stack was unwound during exception. There should be no active
+  // suspender.
+  MOZ_RELEASE_ASSERT(!cx->wasm().activeSuspender());
 
   if (cx->isThrowingOutOfMemory()) {
     return false;
@@ -1730,19 +1217,21 @@ static bool WasmPIPromisingFunction(JSContext* cx, unsigned argc, Value* vp) {
   return RejectPromiseWithPendingError(cx, promise);
 }
 
-JSFunction* WasmPromisingFunctionCreate(JSContext* cx, HandleObject func,
-                                        ValTypeVector&& params,
-                                        ValTypeVector&& results) {
+JSFunction* WasmPromisingFunctionCreate(JSContext* cx, HandleObject func) {
   RootedFunction wrappedWasmFunc(cx, &func->as<JSFunction>());
   MOZ_ASSERT(wrappedWasmFunc->isWasm());
   const FuncType& wrappedWasmFuncType =
       wrappedWasmFunc->wasmTypeDef()->funcType();
 
-  MOZ_ASSERT(results.length() == 0 && params.length() == 0);
+  ValTypeVector results;
   if (!results.append(RefType::extern_())) {
     ReportOutOfMemory(cx);
     return nullptr;
   }
+  if (!ValidateTypes(cx, wrappedWasmFuncType.args())) {
+    return nullptr;
+  }
+  ValTypeVector params;
   if (!params.append(wrappedWasmFuncType.args().begin(),
                      wrappedWasmFuncType.args().end())) {
     ReportOutOfMemory(cx);
@@ -1752,6 +1241,10 @@ JSFunction* WasmPromisingFunctionCreate(JSContext* cx, HandleObject func,
   PromisingFunctionModuleFactory moduleFactory;
   SharedModule module = moduleFactory.build(
       cx, wrappedWasmFunc, std::move(params), std::move(results));
+  if (!module) {
+    return nullptr;
+  }
+
   // Instantiate the module.
   Rooted<ImportValues> imports(cx);
 
@@ -1792,7 +1285,7 @@ JSFunction* WasmPromisingFunctionCreate(JSContext* cx, HandleObject func,
 SuspenderObject* CurrentSuspender(Instance* instance, int32_t reserved) {
   MOZ_ASSERT(SASigCurrentSuspender.failureMode == FailureMode::FailOnNullPtr);
   JSContext* cx = instance->cx();
-  SuspenderObject* suspender = cx->wasm().promiseIntegration.activeSuspender();
+  SuspenderObject* suspender = cx->wasm().activeSuspender();
   if (!suspender) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_JSPI_INVALID_STATE);
@@ -1889,8 +1382,8 @@ JSObject* GetSuspendingPromiseResult(Instance* instance, void* result,
       results->storeVal(val, 0);
     } else {
       // The multi-value result is wrapped into ArrayObject/Iterable.
-      Rooted<ArrayObject*> array(cx);
-      if (!IterableToArray(cx, jsValue, &array)) {
+      Rooted<ArrayObject*> array(cx, IterableToArray(cx, jsValue));
+      if (!array) {
         return nullptr;
       }
       if (fields.length() != array->length()) {

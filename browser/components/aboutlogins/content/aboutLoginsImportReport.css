@@ -15,7 +15,7 @@
 }
 
 .import-report-heading {
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
   margin-block: auto;
   margin-inline-start: 48px;
 }
@@ -56,7 +56,7 @@
 
 .result-count {
   font-size: 40px;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .new-logins {
@@ -84,14 +84,14 @@
   grid-row-start: 3;
   display: grid;
   grid-template-columns: auto 1fr;
-  border-top: 1px solid var(--in-content-border-color);
+  border-top: 1px solid var(--border-color);
   grid-auto-rows: 28px;
   overflow-y: auto;
 }
 
 .not-imported {
   font-style: italic;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .error {

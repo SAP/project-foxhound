@@ -11,11 +11,11 @@
 #ifndef mozilla_dom_TreeWalker_h
 #define mozilla_dom_TreeWalker_h
 
-#include "nsISupports.h"
-#include "nsTraversal.h"
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsISupports.h"
+#include "nsTArray.h"
+#include "nsTraversal.h"
 
 class nsINode;
 

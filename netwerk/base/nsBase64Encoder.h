@@ -7,7 +7,6 @@
 
 #include "nsIOutputStream.h"
 #include "nsString.h"
-#include "mozilla/Attributes.h"
 
 /**
  * A base64 encoder. Usage: Instantiate class, write to it using

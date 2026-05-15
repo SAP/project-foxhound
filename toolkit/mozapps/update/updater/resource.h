@@ -6,6 +6,9 @@
 // Microsoft Visual C++ generated include file.
 // Used by updater.rc
 //
+#ifndef TOOLKIT_MOZAPPS_UPDATE_UPDATER_RESOURCE_H_
+#define TOOLKIT_MOZAPPS_UPDATE_UPDATER_RESOURCE_H_
+
 #define IDD_DIALOG 101
 #define IDC_PROGRESS 1000
 #define IDC_INFO 1002
@@ -27,3 +30,5 @@
 #    define _APS_NEXT_SYMED_VALUE 101
 #  endif
 #endif
+
+#endif  // TOOLKIT_MOZAPPS_UPDATE_UPDATER_RESOURCE_H_

@@ -209,6 +209,40 @@ async function test_background_page_storage(testAreaName) {
       );
     }
 
+    // Regression test https://bugzilla.mozilla.org/show_bug.cgi?id=1989840
+    async function testDeeplyNestedObject(areaName) {
+      const obj = {};
+      let current = obj;
+      for (let i = 0; i < 127; i++) {
+        const next = {};
+        current.foo = next;
+        current = next;
+      }
+      let storage = browser.storage[areaName];
+      if (areaName == "sync") {
+        // TODO(bug 1990313)
+        // Storing a deeply nested object currently fails for the Rust sync storage, but not Kinto.
+        // Let's make sure it doesn't crash in any case.
+        let errorMessage = null;
+        try {
+          await storage.set(obj);
+        } catch (e) {
+          errorMessage = e.toString();
+          // The caller expects one storage event. To make sure that the event is
+          // fired, trigger a dummy change.
+          storage.set({ foo: "dummy" });
+        }
+        browser.test.assertTrue(
+          errorMessage === null ||
+            errorMessage.includes("An unexpected error occurred"),
+          `Invalid exception message when storing deeply nested object: ${errorMessage}`
+        );
+      } else {
+        // Storing a deeply nested object should succeed for non-sync engines.
+        await storage.set(obj);
+      }
+    }
+
     async function testFalseyValues(areaName) {
       let storage = browser.storage[areaName];
       const dataInitial = {
@@ -611,6 +645,27 @@ async function test_background_page_storage(testAreaName) {
           obj.nestedArr[1][1],
           "nestedArr[1][1] part correct"
         );
+
+        // test storage.getKeys()
+        clearGlobalChanges();
+        await storage.set({ "test-prop1": "value1", "test-prop2": "value2" });
+        await globalChanges;
+        const keys = await storage.getKeys();
+        browser.test.assertDeepEq(
+          keys,
+          ["test-prop1", "test-prop2"],
+          "getKeys() returns the correct keys"
+        );
+        clearGlobalChanges();
+        await storage.clear();
+        await globalChanges;
+
+        clearGlobalChanges();
+        await testDeeplyNestedObject(areaName);
+        await globalChanges;
+        clearGlobalChanges();
+        await storage.clear();
+        await globalChanges;
       } catch (e) {
         browser.test.fail(`Error: ${e} :: ${e.stack}`);
         browser.test.notifyFail("storage");
@@ -683,38 +738,20 @@ async function test_storage_sync_requires_real_id() {
   return await testFn();
 }
 
-// Test for storage areas which don't support getBytesInUse() nor QUOTA
+// Test for storage areas which support getBytesInUse() but not QUOTA
 // constants.
-async function check_storage_area_no_bytes_in_use(area) {
+async function check_storage_area_getBytesInUse(area) {
   let impl = browser.storage[area];
 
   browser.test.assertEq(
     typeof impl.getBytesInUse,
-    "undefined",
-    "getBytesInUse API method should not be available"
+    "function",
+    "getBytesInUse API method should be available"
   );
   browser.test.sendMessage("test-complete");
 }
 
-async function test_background_storage_area_no_bytes_in_use(area) {
-  const EXT_ID = "test-gbiu@mozilla.org";
-
-  const extensionDef = {
-    manifest: {
-      permissions: ["storage"],
-      browser_specific_settings: { gecko: { id: EXT_ID } },
-    },
-    background: `(${check_storage_area_no_bytes_in_use})("${area}")`,
-  };
-
-  const extension = ExtensionTestUtils.loadExtension(extensionDef);
-
-  await extension.startup();
-  await extension.awaitMessage("test-complete");
-  await extension.unload();
-}
-
-async function test_contentscript_storage_area_no_bytes_in_use(area) {
+async function test_contentscript_storage_area_getBytesInUse(area) {
   let contentPage = await ExtensionTestUtils.loadContentPage(
     "http://example.com/data/file_sample.html"
   );
@@ -749,7 +786,7 @@ async function test_contentscript_storage_area_no_bytes_in_use(area) {
     },
 
     files: {
-      "content_script.js": `(${contentScript})(${check_storage_area_no_bytes_in_use})`,
+      "content_script.js": `(${contentScript})(${check_storage_area_getBytesInUse})`,
     },
   };
 
@@ -765,8 +802,9 @@ async function test_contentscript_storage_area_no_bytes_in_use(area) {
 }
 
 // Test for storage areas which do support getBytesInUse() (but which may or may
-// not support enforcement of the quota)
-async function check_storage_area_with_bytes_in_use(area, expectQuota) {
+// not support enforcement of the quota). Currently only works with `sync`
+// storage.
+async function check_storage_sync_getBytesInUse(area, expectQuota) {
   let impl = browser.storage[area];
 
   // QUOTA_* constants aren't currently exposed - see bug 1396810.
@@ -791,7 +829,7 @@ async function check_storage_area_with_bytes_in_use(area, expectQuota) {
   if (expectQuota) {
     await browser.test.assertRejects(
       impl.set({ x: value + "x" }),
-      /QuotaExceededError/,
+      "QuotaExceededError: storage.sync API call exceeded its quota limitations.",
       "Got a rejection with the expected error message"
     );
     // MAX_ITEMS
@@ -803,7 +841,7 @@ async function check_storage_area_with_bytes_in_use(area, expectQuota) {
     await impl.set(ob); // should work.
     await browser.test.assertRejects(
       impl.set({ straw: "camel's back" }), // exceeds MAX_ITEMS
-      /QuotaExceededError/,
+      "QuotaExceededError: storage.sync API call exceeded its quota limitations.",
       "Got a rejection with the expected error message"
     );
     // QUOTA_BYTES is being already tested for the underlying StorageSyncService
@@ -831,7 +869,7 @@ async function test_background_storage_area_with_bytes_in_use(
       permissions: ["storage"],
       browser_specific_settings: { gecko: { id: EXT_ID } },
     },
-    background: `(${check_storage_area_with_bytes_in_use})("${area}", ${expectQuota})`,
+    background: `(${check_storage_sync_getBytesInUse})("${area}", ${expectQuota})`,
   };
 
   const extension = ExtensionTestUtils.loadExtension(extensionDef);
@@ -841,7 +879,7 @@ async function test_background_storage_area_with_bytes_in_use(
   await extension.unload();
 }
 
-async function test_contentscript_storage_area_with_bytes_in_use(
+async function test_contentscript_storage_sync_getBytesInUse(
   area,
   expectQuota
 ) {
@@ -879,7 +917,7 @@ async function test_contentscript_storage_area_with_bytes_in_use(
     },
 
     files: {
-      "content_script.js": `(${contentScript})(${check_storage_area_with_bytes_in_use})`,
+      "content_script.js": `(${contentScript})(${check_storage_sync_getBytesInUse})`,
     },
   };
 
@@ -1400,4 +1438,105 @@ async function test_storage_sync_telemetry_quota(backend, enforced = false) {
     },
     "Expected event values after setting sync storage"
   );
+}
+
+// This test doesn't support the `managed` storage area or the Kinto
+// implementation of `sync` storage area.
+async function check_get_bytes_in_use(areaName, idbBackend) {
+  const storage = browser.storage[areaName];
+  let expectedKey = areaName;
+  if (areaName === "local") {
+    expectedKey += idbBackend ? "-idb" : "-json";
+  }
+  const tests = [
+    {
+      key: null,
+      expected: {
+        "local-json": 118,
+        "local-idb": 228,
+        session: 228,
+        sync: 118,
+      },
+      message: "getBytesInUse(null) returns correct value for storage",
+    },
+    {
+      key: "key2",
+      expected: { "local-json": 23, "local-idb": 60, session: 60, sync: 23 },
+      message: "getBytesInUse() returns correct value for a single key",
+    },
+    {
+      key: "foo",
+      expected: { "local-json": 0, "local-idb": 0, session: 0, sync: 0 },
+      message: "getBytesInUse() returns 0 for a key not in storage",
+    },
+    {
+      key: [],
+      expected: { "local-json": 0, "local-idb": 0, session: 0, sync: 0 },
+      message: "getBytesInUse() returns 0 for an empty array of keys",
+    },
+    {
+      key: ["key1", "key3"],
+      expected: { "local-json": 21, "local-idb": 48, session: 48, sync: 21 },
+      message: "getBytesInUse() returns correct value for an array of keys",
+    },
+    {
+      key: "",
+      expected: { "local-json": 39, "local-idb": 56, session: 56, sync: 39 },
+      message:
+        'getBytesInUse() returns correct value for an empty string key ("")',
+    },
+  ];
+
+  try {
+    browser.test.assertEq(
+      0,
+      await storage.getBytesInUse(),
+      "getBytesInUse() returns 0 when storage is empty"
+    );
+
+    await storage.set({
+      key1: "value1",
+      key2: { nested: "value2" },
+      key3: 12345,
+      key4: "Привет, мир!",
+      null: null,
+      "": "Value for key that's an empty string.",
+    });
+
+    for (let test of tests) {
+      browser.test.assertEq(
+        test.expected[expectedKey],
+        await storage.getBytesInUse(test.key),
+        test.message
+      );
+    }
+  } catch (e) {
+    browser.test.fail(`Error: ${e} :: ${e.stack}`);
+    browser.test.notifyFail("storage");
+  }
+
+  browser.test.sendMessage("test-finished");
+}
+
+/**
+ *
+ * @param {string} areaName Currently only `local` storage is supported.
+ * @param {boolean} isIdbBackend Applicable for `local` storage only. If true, the
+ *                             test expects the IndexedDB backend to be used.
+ */
+async function test_get_bytes_in_use(areaName, isIdbBackend) {
+  const extensionData = {
+    background: `(${check_get_bytes_in_use})("${areaName}", ${isIdbBackend})`,
+    manifest: {
+      permissions: ["storage"],
+      browser_specific_settings: {
+        gecko: { id: "test-getBytesInUse@mozilla.org" },
+      },
+    },
+  };
+
+  const extension = ExtensionTestUtils.loadExtension(extensionData);
+  await extension.startup();
+  await extension.awaitMessage("test-finished");
+  await extension.unload();
 }

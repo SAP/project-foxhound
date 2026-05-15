@@ -53,7 +53,7 @@ BCCellData::~BCCellData() { MOZ_COUNT_DTOR(BCCellData); }
 // nsTableCellMap
 
 nsTableCellMap::nsTableCellMap(nsTableFrame& aTableFrame, bool aBorderCollapse)
-    : mTableFrame(aTableFrame), mFirstMap(nullptr), mBCInfo(nullptr) {
+    : mTableFrame(aTableFrame) {
   MOZ_COUNT_CTOR(nsTableCellMap);
 
   nsTableFrame::RowGroupArray orderedRowGroups = aTableFrame.OrderedRowGroups();
@@ -65,7 +65,7 @@ nsTableCellMap::nsTableCellMap(nsTableFrame& aTableFrame, bool aBorderCollapse)
     prior = rgFrame;
   }
   if (aBorderCollapse) {
-    mBCInfo = new BCInfo();
+    mBCInfo = MakeUnique<BCInfo>();
   }
 }
 
@@ -77,11 +77,6 @@ nsTableCellMap::~nsTableCellMap() {
     nsCellMap* next = cellMap->GetNextSibling();
     delete cellMap;
     cellMap = next;
-  }
-
-  if (mBCInfo) {
-    DeleteIEndBEndBorders();
-    delete mBCInfo;
   }
 }
 
@@ -109,14 +104,6 @@ BCData* nsTableCellMap::GetBEndMostBorder(int32_t aColIndex) {
 
   mBCInfo->mBEndBorders.SetLength(aColIndex + 1);
   return &mBCInfo->mBEndBorders.ElementAt(aColIndex);
-}
-
-// delete the borders corresponding to the iEnd and bEnd edges of the table
-void nsTableCellMap::DeleteIEndBEndBorders() {
-  if (mBCInfo) {
-    mBCInfo->mBEndBorders.Clear();
-    mBCInfo->mIEndBorders.Clear();
-  }
 }
 
 void nsTableCellMap::InsertGroupCellMap(nsCellMap* aPrevMap,

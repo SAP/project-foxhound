@@ -4,15 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPluginArray_h___
-#define nsPluginArray_h___
+#ifndef nsPluginArray_h_
+#define nsPluginArray_h_
 
-#include "nsWeakReference.h"
-#include "nsWrapperCache.h"
+#include "mozilla/Array.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/Array.h"
+#include "nsWeakReference.h"
+#include "nsWrapperCache.h"
 
 class nsPIDOMWindowInner;
 class nsPluginElement;
@@ -131,4 +131,4 @@ class nsPluginElement final : public nsISupports, public nsWrapperCache {
   nsString mName;
 };
 
-#endif /* nsPluginArray_h___ */
+#endif /* nsPluginArray_h_ */

@@ -1,0 +1,380 @@
+# HG changeset patch
+# User Bob Owen <bobowencode@gmail.com>
+ifdef out unused functions from base/threading to prevent dependencies.
+
+diff --git a/base/threading/platform_thread.cc b/base/threading/platform_thread.cc
+--- a/base/threading/platform_thread.cc
++++ b/base/threading/platform_thread.cc
+@@ -9,18 +9,18 @@
+ #include "third_party/abseil-cpp/absl/base/attributes.h"
+ 
+ #if BUILDFLAG(IS_FUCHSIA)
+ #include "base/fuchsia/scheduler.h"
+ #endif
+ 
+ namespace base {
+ 
++#if !defined(MOZ_SANDBOX)
+ namespace {
+-
+ ABSL_CONST_INIT thread_local ThreadType current_thread_type =
+     ThreadType::kDefault;
+ 
+ }  // namespace
+ 
+ // static
+ void PlatformThreadBase::SetCurrentThreadType(ThreadType thread_type) {
+   MessagePumpType message_pump_type = MessagePumpType::DEFAULT;
+@@ -47,26 +47,29 @@ absl::optional<TimeDelta> PlatformThread
+   // an interval of |kAudioSchedulingPeriod|. Using the default leeway may lead
+   // to some tasks posted to audio threads to be executed too late (see
+   // http://crbug.com/1368858).
+   if (GetCurrentThreadType() == ThreadType::kRealtimeAudio)
+     return kAudioSchedulingPeriod;
+ #endif
+   return absl::nullopt;
+ }
++#endif
+ 
+ // static
+ void PlatformThreadBase::SetNameCommon(const std::string& name) {
+   ThreadIdNameManager::GetInstance()->SetName(name);
+ }
+ 
++#if !defined(MOZ_SANDBOX)
+ namespace internal {
+ 
+ void SetCurrentThreadType(ThreadType thread_type,
+                           MessagePumpType pump_type_hint) {
+   CHECK_LE(thread_type, ThreadType::kMaxValue);
+   SetCurrentThreadTypeImpl(thread_type, pump_type_hint);
+   current_thread_type = thread_type;
+ }
+ 
+ }  // namespace internal
++#endif
+ 
+ }  // namespace base
+diff --git a/base/threading/platform_thread.h b/base/threading/platform_thread.h
+--- a/base/threading/platform_thread.h
++++ b/base/threading/platform_thread.h
+@@ -192,16 +192,17 @@ class BASE_EXPORT PlatformThreadBase {
+ 
+   // Sets the thread name visible to debuggers/tools. This will try to
+   // initialize the context for current thread unless it's a WorkerThread.
+   static void SetName(const std::string& name);
+ 
+   // Gets the thread name, if previously set by SetName.
+   static const char* GetName();
+ 
++#if !defined(MOZ_SANDBOX)
+   // Creates a new thread.  The `stack_size` parameter can be 0 to indicate
+   // that the default stack size should be used.  Upon success,
+   // `*thread_handle` will be assigned a handle to the newly created thread,
+   // and `delegate`'s ThreadMain method will be executed on the newly created
+   // thread.
+   // NOTE: When you are done with the thread handle, you must call Join to
+   // release system resources associated with the thread.  You must ensure that
+   // the Delegate object outlives the thread.
+@@ -233,16 +234,17 @@ class BASE_EXPORT PlatformThreadBase {
+   // except the type of the thread is set based on `type`. `pump_type_hint` must
+   // be provided if the thread will be using a MessagePumpForUI or
+   // MessagePumpForIO as this affects the application of `thread_type`.
+   static bool CreateNonJoinableWithType(
+       size_t stack_size,
+       Delegate* delegate,
+       ThreadType thread_type,
+       MessagePumpType pump_type_hint = MessagePumpType::DEFAULT);
++#endif
+ 
+   // Joins with a thread created via the Create function.  This function blocks
+   // the caller until the designated thread exits.  This will invalidate
+   // `thread_handle`.
+   static void Join(PlatformThreadHandle thread_handle);
+ 
+   // Detaches and releases the thread handle. The thread is no longer joinable
+   // and `thread_handle` is invalidated after this call.
+@@ -375,21 +377,23 @@ using PlatformThread = PlatformThreadApp
+ #elif BUILDFLAG(IS_CHROMEOS)
+ using PlatformThread = PlatformThreadChromeOS;
+ #elif BUILDFLAG(IS_LINUX)
+ using PlatformThread = PlatformThreadLinux;
+ #else
+ using PlatformThread = PlatformThreadBase;
+ #endif
+ 
++#if !defined(MOZ_SANDBOX)
+ namespace internal {
+ 
+ void SetCurrentThreadType(ThreadType thread_type,
+                           MessagePumpType pump_type_hint);
+ 
+ void SetCurrentThreadTypeImpl(ThreadType thread_type,
+                               MessagePumpType pump_type_hint);
+ 
+ }  // namespace internal
++#endif
+ 
+ }  // namespace base
+ 
+ #endif  // BASE_THREADING_PLATFORM_THREAD_H_
+diff --git a/base/threading/platform_thread_posix.cc b/base/threading/platform_thread_posix.cc
+--- a/base/threading/platform_thread_posix.cc
++++ b/base/threading/platform_thread_posix.cc
+@@ -51,16 +51,17 @@
+ namespace base {
+ 
+ void InitThreading();
+ void TerminateOnThread();
+ size_t GetDefaultThreadStackSize(const pthread_attr_t& attributes);
+ 
+ namespace {
+ 
++#if !defined(MOZ_SANDBOX)
+ struct ThreadParams {
+   ThreadParams() = default;
+ 
+   raw_ptr<PlatformThread::Delegate> delegate = nullptr;
+   bool joinable = false;
+   ThreadType thread_type = ThreadType::kDefault;
+   MessagePumpType message_pump_type = MessagePumpType::DEFAULT;
+ };
+@@ -155,16 +156,17 @@ bool CreateThread(size_t stack_size,
+     PLOG(ERROR) << "pthread_create";
+   }
+   *thread_handle = PlatformThreadHandle(handle);
+ 
+   pthread_attr_destroy(&attributes);
+ 
+   return success;
+ }
++#endif
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+ 
+ // Store the thread ids in local storage since calling the SWI can be
+ // expensive and PlatformThread::CurrentId is used liberally.
+ thread_local pid_t g_thread_id = -1;
+ 
+ // A boolean value that indicates that the value stored in |g_thread_id| on the
+@@ -300,16 +302,17 @@ void PlatformThreadBase::Sleep(TimeDelta
+     sleep_time = remaining;
+ }
+ 
+ // static
+ const char* PlatformThreadBase::GetName() {
+   return ThreadIdNameManager::GetInstance()->GetName(CurrentId());
+ }
+ 
++#if !defined(MOZ_SANDBOX)
+ // static
+ bool PlatformThreadBase::CreateWithType(size_t stack_size,
+                                     Delegate* delegate,
+                                     PlatformThreadHandle* thread_handle,
+                                     ThreadType thread_type,
+                                     MessagePumpType pump_type_hint) {
+   return CreateThread(stack_size, true /* joinable thread */, delegate,
+                       thread_handle, thread_type, pump_type_hint);
+@@ -326,16 +329,17 @@ bool PlatformThreadBase::CreateNonJoinab
+                                                ThreadType thread_type,
+                                                MessagePumpType pump_type_hint) {
+   PlatformThreadHandle unused;
+ 
+   bool result = CreateThread(stack_size, false /* non-joinable thread */,
+                              delegate, &unused, thread_type, pump_type_hint);
+   return result;
+ }
++#endif
+ 
+ // static
+ void PlatformThreadBase::Join(PlatformThreadHandle thread_handle) {
+   // Joining another thread may block the current thread for a long time, since
+   // the thread referred to by |thread_handle| may still be running long-lived /
+   // blocking tasks.
+   base::internal::ScopedBlockingCallWithBaseSyncPrimitives scoped_blocking_call(
+       FROM_HERE, base::BlockingType::MAY_BLOCK);
+@@ -346,32 +350,34 @@ void PlatformThreadBase::Join(PlatformTh
+ void PlatformThreadBase::Detach(PlatformThreadHandle thread_handle) {
+   CHECK_EQ(0, pthread_detach(thread_handle.platform_handle()));
+ }
+ 
+ // Mac and Fuchsia have their own SetCurrentThreadType() and
+ // GetCurrentThreadPriorityForTest() implementations.
+ #if !BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_FUCHSIA)
+ 
++#if !defined(MOZ_SANDBOX)
+ // static
+ bool PlatformThreadBase::CanChangeThreadType(ThreadType from, ThreadType to) {
+ #if BUILDFLAG(IS_NACL)
+   return false;
+ #else
+   if (from >= to) {
+     // Decreasing thread priority on POSIX is always allowed.
+     return true;
+   }
+   if (to == ThreadType::kRealtimeAudio) {
+     return internal::CanSetThreadTypeToRealtimeAudio();
+   }
+ 
+   return internal::CanLowerNiceTo(internal::ThreadTypeToNiceValue(to));
+ #endif  // BUILDFLAG(IS_NACL)
+ }
++#endif
+ 
+ namespace internal {
+ 
+ void SetCurrentThreadTypeImpl(ThreadType thread_type,
+                               MessagePumpType pump_type_hint) {
+ #if BUILDFLAG(IS_NACL)
+   NOTIMPLEMENTED();
+ #else
+diff --git a/base/threading/platform_thread_win.cc b/base/threading/platform_thread_win.cc
+--- a/base/threading/platform_thread_win.cc
++++ b/base/threading/platform_thread_win.cc
+@@ -93,16 +93,17 @@ void SetNameInternal(PlatformThreadId th
+   __try {
+     RaiseException(kVCThreadNameException, 0, sizeof(info) / sizeof(ULONG_PTR),
+                    reinterpret_cast<ULONG_PTR*>(&info));
+   } __except (EXCEPTION_EXECUTE_HANDLER) {
+   }
+ #endif
+ }
+ 
++#if !defined(MOZ_SANDBOX)
+ struct ThreadParams {
+   raw_ptr<PlatformThread::Delegate> delegate;
+   bool joinable;
+   ThreadType thread_type;
+   MessagePumpType message_pump_type;
+ };
+ 
+ DWORD __stdcall ThreadFunc(void* params) {
+@@ -230,16 +231,17 @@ bool CreateThreadInternal(size_t stack_s
+   }
+ 
+   if (out_thread_handle)
+     *out_thread_handle = PlatformThreadHandle(thread_handle);
+   else
+     CloseHandle(thread_handle);
+   return true;
+ }
++#endif
+ 
+ }  // namespace
+ 
+ namespace internal {
+ 
+ void AssertMemoryPriority(HANDLE thread, int memory_priority) {
+ #if DCHECK_IS_ON()
+   static const auto get_thread_information_fn =
+@@ -314,16 +316,17 @@ void PlatformThread::SetName(const std::
+   SetNameInternal(CurrentId(), name.c_str());
+ }
+ 
+ // static
+ const char* PlatformThread::GetName() {
+   return ThreadIdNameManager::GetInstance()->GetName(CurrentId());
+ }
+ 
++#if !defined(MOZ_SANDBOX)
+ // static
+ bool PlatformThread::CreateWithType(size_t stack_size,
+                                     Delegate* delegate,
+                                     PlatformThreadHandle* thread_handle,
+                                     ThreadType thread_type,
+                                     MessagePumpType pump_type_hint) {
+   DCHECK(thread_handle);
+   return CreateThreadInternal(stack_size, delegate, thread_handle, thread_type,
+@@ -338,16 +341,17 @@ bool PlatformThread::CreateNonJoinable(s
+ // static
+ bool PlatformThread::CreateNonJoinableWithType(size_t stack_size,
+                                                Delegate* delegate,
+                                                ThreadType thread_type,
+                                                MessagePumpType pump_type_hint) {
+   return CreateThreadInternal(stack_size, delegate, nullptr /* non-joinable */,
+                               thread_type, pump_type_hint);
+ }
++#endif
+ 
+ // static
+ void PlatformThread::Join(PlatformThreadHandle thread_handle) {
+   DCHECK(thread_handle.platform_handle());
+ 
+   DWORD thread_id = 0;
+   thread_id = ::GetThreadId(thread_handle.platform_handle());
+   DWORD last_error = 0;
+@@ -373,16 +377,17 @@ void PlatformThread::Detach(PlatformThre
+   CloseHandle(thread_handle.platform_handle());
+ }
+ 
+ // static
+ bool PlatformThread::CanChangeThreadType(ThreadType from, ThreadType to) {
+   return true;
+ }
+ 
++#if !defined(MOZ_SANDBOX)
+ namespace {
+ 
+ void SetCurrentThreadPriority(ThreadType thread_type,
+                               MessagePumpType pump_type_hint) {
+   if (thread_type == ThreadType::kCompositing &&
+       pump_type_hint == MessagePumpType::UI &&
+       !g_above_normal_compositing_browser) {
+     // Ignore kCompositing thread type for UI thread as Windows has a
+@@ -505,16 +510,17 @@ namespace internal {
+ 
+ void SetCurrentThreadTypeImpl(ThreadType thread_type,
+                               MessagePumpType pump_type_hint) {
+   SetCurrentThreadPriority(thread_type, pump_type_hint);
+   SetCurrentThreadQualityOfService(thread_type);
+ }
+ 
+ }  // namespace internal
++#endif
+ 
+ // static
+ ThreadPriorityForTest PlatformThread::GetCurrentThreadPriorityForTest() {
+   static_assert(
+       THREAD_PRIORITY_IDLE < 0,
+       "THREAD_PRIORITY_IDLE is >= 0 and will incorrectly cause errors.");
+   static_assert(
+       THREAD_PRIORITY_LOWEST < 0,
+diff --git a/base/threading/thread_restrictions.cc b/base/threading/thread_restrictions.cc
+--- a/base/threading/thread_restrictions.cc
++++ b/base/threading/thread_restrictions.cc
+@@ -284,16 +284,17 @@ ScopedAllowBlocking::~ScopedAllowBlockin
+ #if DCHECK_IS_ON()
+   DCHECK(!GetBlockingDisallowedTls())
+       << "~ScopedAllowBlocking() running while surprisingly already no longer "
+          "allowed.\n"
+       << "blocking_disallowed " << GetBlockingDisallowedTls();
+ #endif
+ }
+ 
++#if !defined(MOZ_SANDBOX)
+ ScopedAllowBaseSyncPrimitivesOutsideBlockingScope::
+     ScopedAllowBaseSyncPrimitivesOutsideBlockingScope(const Location& from_here)
+ #if DCHECK_IS_ON()
+     : resetter_(&GetBaseSyncPrimitivesDisallowedTls(), BooleanWithStack(false))
+ #endif
+ {
+   TRACE_EVENT_BEGIN(
+       "base", "ScopedAllowBaseSyncPrimitivesOutsideBlockingScope",
+@@ -302,16 +303,17 @@ ScopedAllowBaseSyncPrimitivesOutsideBloc
+             base::trace_event::InternedSourceLocation::Get(&ctx, from_here));
+       });
+ 
+   // Since this object is used to indicate that sync primitives will be used to
+   // wait for an event ignore the current operation for hang watching purposes
+   // since the wait time duration is unknown.
+   base::HangWatcher::InvalidateActiveExpectations();
+ }
++#endif
+ 
+ ScopedAllowBaseSyncPrimitivesOutsideBlockingScope::
+     ~ScopedAllowBaseSyncPrimitivesOutsideBlockingScope() {
+   TRACE_EVENT_END0("base", "ScopedAllowBaseSyncPrimitivesOutsideBlockingScope");
+ 
+ #if DCHECK_IS_ON()
+   DCHECK(!GetBaseSyncPrimitivesDisallowedTls())
+       << "~ScopedAllowBaseSyncPrimitivesOutsideBlockingScope() running while "

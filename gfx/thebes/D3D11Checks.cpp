@@ -144,8 +144,7 @@ bool D3D11Checks::DoesDeviceWork() {
   if (checked) return result;
   checked = true;
 
-  if (StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
-      gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
+  if (gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
     result = true;
     return true;
   }
@@ -205,8 +204,7 @@ static bool DoesTextureSharingWorkInternal(ID3D11Device* device,
     return false;
   }
 
-  if (StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
-      gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
+  if (gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
     return true;
   }
 

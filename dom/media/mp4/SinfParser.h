@@ -5,7 +5,6 @@
 #ifndef SINF_PARSER_H_
 #define SINF_PARSER_H_
 
-#include "mozilla/ResultExtensions.h"
 #include "Atom.h"
 #include "AtomType.h"
 #include "nsTArray.h"
@@ -21,9 +20,9 @@ class Sinf : public Atom {
 
         mDefaultCryptByteBlock(0),
         mDefaultSkipByteBlock(0) {}
-  explicit Sinf(Box& aBox);
+  explicit Sinf(const Box& aBox);
 
-  bool IsValid() override {
+  bool IsValid() const override {
     return !!mDefaultEncryptionType &&  // Should have an encryption scheme
            (mDefaultIVSize > 0 ||       // and either a default IV size
             mDefaultConstantIV.Length() > 0);  // or a constant IV.
@@ -39,14 +38,14 @@ class Sinf : public Atom {
 
 class SinfParser {
  public:
-  explicit SinfParser(Box& aBox);
+  explicit SinfParser(const Box& aBox);
 
   Sinf& GetSinf() { return mSinf; }
 
  private:
-  Result<Ok, nsresult> ParseSchm(Box& aBox);
-  Result<Ok, nsresult> ParseSchi(Box& aBox);
-  Result<Ok, nsresult> ParseTenc(Box& aBox);
+  Result<Ok, nsresult> ParseSchm(const Box& aBox);
+  Result<Ok, nsresult> ParseSchi(const Box& aBox);
+  Result<Ok, nsresult> ParseTenc(const Box& aBox);
 
   Sinf mSinf;
 };

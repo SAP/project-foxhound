@@ -7,7 +7,6 @@
 #include <gtk/gtkunixprint.h>
 #include <stdlib.h>
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Services.h"
 
 #include "MozContainer.h"

@@ -2,20 +2,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
-# This file contains exhaustive information about all the release artifacs that
-# are needed within a type of release.
+# This file contains information about all the release artifacts that are
+# needed within a type of release.
 #
 # Structure
 # --------
-# `s3_bucket_paths`       -- prefix to be used per product to correctly access our S3 buckets
+# `bucket_paths`          -- prefix to be used per product to correctly access our buckets
 # `default_locales`       -- list of locales to be used when composing upstream artifacts or the list of
 #                      destinations. If given an empty locale, it uses these locales instead.
-# `tasktype_map`          -- mapping between task reference and task type, particularly usefule when
+# `tasktype_map`          -- mapping between task reference and task type, particularly useful when
 #                      composing the upstreamArtifacts for scriptworker.
 # `platform_names`        -- various platform mappings used in reckoning artifacts or other paths
 # `default`               -- a default entry, which the mappings extend and override in such a way that
 #                      final path full-destinations will be a concatenation of the following:
-#                      `s3_bucket_paths`, `destinations`, `locale_prefix`, `pretty_name`
+#                      `bucket_paths`, `destinations`, `locale_prefix`, `pretty_name`
+# `mapping`               -- the main section defining all artifacts to be archived
+#
+# Per-artifact fields (used within `mapping`):
 # `from`                  -- specifies the dependency(ies) from which to expect the particular artifact
 # `all_locales`           -- boolean argument to specify whether that particular artifact is to be expected
 #                      for all locales or just the default one
@@ -23,16 +26,17 @@
 # `locale_prefix`         -- prefix to be used in the final destination paths, whether that's for default locale or not
 # `source_path_modifier`  -- any parent dir that might be used in between artifact prefix and filename at source location
 #                            for example `public/build` vs `public/build/ach/`.
-# `destinations`          -- final list of directories where to push the artifacts in S3
+# `destinations`          -- final list of directories where to push the artifacts
 # `pretty_name`           -- the final name the artifact will have at destination
 # `checksums_path`        -- the name to identify one artifact within the checksums file
+# `not_for_locales`       -- filtering option to avoid associating an artifact if it matches any given locale
 # `not_for_platforms`     -- filtering option to avoid associating an artifact with a specific platform
 # `only_for_platforms`    -- filtering option to exclusively include the association of an artifact for a specific platform
 # `partials_only`         -- filtering option to avoid associating an artifact unless this flag is present
 # `update_balrog_manifest`-- flag needed downstream in beetmover jobs to reckon the balrog manifest
 # `from_buildid`          -- flag needed downstream in beetmover jobs to reckon the balrog manifest
 
-s3_bucket_paths:
+bucket_paths:
     - pub/firefox/nightly
 default_locales:
     - en-US
@@ -44,6 +48,8 @@ tasktype_map:
     repackage: repackage
     repackage-deb: repackage
     repackage-deb-l10n: repackage
+    repackage-rpm: repackage
+    repackage-rpm-signing: signing
     repackage-signing: repackage
     repackage-signing-msi: repackage
     repackage-signing-shippable-l10n-msix: signing
@@ -53,8 +59,6 @@ tasktype_map:
 platform_names:
     filename_platform:
         by-platform:
-            linux-shippable: 'linux-i686'
-            linux-devedition: 'linux-i686'
             linux64-shippable: 'linux-x86_64'
             linux64-devedition: 'linux-x86_64'
             linux64-aarch64-shippable: 'linux-aarch64'
@@ -71,8 +75,6 @@ platform_names:
             win64-asan-reporter-shippable: 'win64-asan-reporter'
     stage_platform:
         by-platform:
-            linux-shippable: 'linux'
-            linux-devedition: 'linux'
             linux64-asan-reporter-shippable: 'linux64-asan-reporter'
             linux64-shippable: 'linux64'
             linux64-devedition: 'linux64'
@@ -184,7 +186,6 @@ mapping:
             - langpack-copy
             - signing
         only_for_platforms:
-            - linux-shippable
             - linux64-shippable
             - linux64-aarch64-shippable
             - macosx64-shippable
@@ -211,11 +212,9 @@ mapping:
         from:
             - repackage-deb-l10n
         only_for_platforms:
-            - linux-shippable
             - linux64-shippable
             - linux64-aarch64-shippable
             - linux64-aarch64-devedition
-            - linux-devedition
             - linux64-devedition
         pretty_name: firefox-${version}.${locale}.langpack.deb
         checksums_path: firefox-${version}.${locale}.langpack.deb
@@ -262,7 +261,6 @@ mapping:
         from:
             - signing
         only_for_platforms:
-            - linux-shippable
             - linux64-shippable
             - linux64-aarch64-shippable
             - linux64-asan-reporter-shippable
@@ -284,7 +282,6 @@ mapping:
         from:
             - signing
         only_for_platforms:
-            - linux-shippable
             - linux64-shippable
             - linux64-aarch64-shippable
             - linux64-asan-reporter-shippable
@@ -463,7 +460,6 @@ mapping:
         from:
             - repackage-deb
         only_for_platforms:
-            - linux-shippable
             - linux64-shippable
             - linux64-aarch64-shippable
         pretty_name: firefox-${version}.${locale}.${filename_platform}.deb
@@ -472,6 +468,41 @@ mapping:
         destinations:
             - ${year}/${month}/${upload_date}-${branch}
             - latest-${branch}
+    target.rpm:
+        <<: *default
+        description: "Firefox as a .rpm package"
+        only_for_platforms:
+            - linux64-shippable
+            - linux64-aarch64-shippable
+            - linux64-devedition
+            - linux64-aarch64-devedition
+        pretty_name: firefox-${version}.${filename_platform}.rpm
+        checksums_path: ${filename_platform}/rpm/firefox-${version}.rpm
+        from:
+            - repackage-rpm-signing
+        destinations:
+            - ${year}/${month}/${upload_date}-${branch}
+            - latest-${branch}
+        update_balrog_manifest: false
+    langpack-${locale}.noarch.rpm:
+        <<: *default
+        description: "langpack.xpi repackaged as a .rpm"
+        all_locales: true
+        locale_prefix: ''
+        source_path_modifier: ''
+        from:
+            - repackage-rpm-signing
+        not_for_locales:
+            - en-US
+        only_for_platforms:
+            - linux64-shippable
+            - linux64-devedition
+        pretty_name: firefox-l10n-${locale}-${version}.noarch.rpm
+        checksums_path: ${filename_platform}/rpm/firefox-l10n-${locale}-${version}.noarch.rpm
+        destinations:
+            - ${year}/${month}/${upload_date}-${branch}-l10n/${filename_platform}/rpm
+            - latest-${branch}-l10n/${filename_platform}/rpm
+        update_balrog_manifest: false
     ${partial}:
         <<: *default
         description: "Partials MAR files to serve as updates"

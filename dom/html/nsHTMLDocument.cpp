@@ -9,86 +9,80 @@
 
 #include "nsHTMLDocument.h"
 
-#include "mozilla/DebugOnly.h"
+#include "DocumentInlines.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_intl.h"
-#include "nsCommandManager.h"
+#include "mozilla/css/Loader.h"
+#include "mozilla/dom/PrototypeDocumentContentSink.h"
+#include "mozilla/parser/PrototypeDocumentParser.h"
+#include "nsArrayUtils.h"
+#include "nsAttrName.h"
 #include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsPrintfCString.h"
-#include "nsReadableUtils.h"
-#include "nsUnicharUtils.h"
-#include "nsIHTMLContentSink.h"
-#include "nsIProtocolHandler.h"
-#include "nsIXMLContentSink.h"
-#include "nsHTMLParts.h"
-#include "nsGkAtoms.h"
-#include "nsPresContext.h"
-#include "nsPIDOMWindow.h"
+#include "nsCommandManager.h"
+#include "nsContentList.h"
+#include "nsContentUtils.h"
 #include "nsDOMString.h"
-#include "nsIStreamListener.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
-#include "nsIDocumentViewer.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadTypes.h"
-#include "nsIScriptContext.h"
-#include "nsContentList.h"
 #include "nsError.h"
-#include "nsIPrincipal.h"
-#include "nsJSPrincipals.h"
-#include "nsAttrName.h"
-
-#include "nsNetCID.h"
-#include "mozilla/parser/PrototypeDocumentParser.h"
-#include "mozilla/dom/PrototypeDocumentContentSink.h"
-#include "nsNameSpaceManager.h"
-#include "nsGenericHTMLElement.h"
-#include "mozilla/css/Loader.h"
 #include "nsFrameSelection.h"
-
-#include "nsContentUtils.h"
-#include "nsJSUtils.h"
-#include "DocumentInlines.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsHTMLParts.h"
 #include "nsICachingChannel.h"
+#include "nsIDocumentViewer.h"
+#include "nsIPrincipal.h"
+#include "nsIProtocolHandler.h"
+#include "nsIScriptContext.h"
 #include "nsIScriptElement.h"
-#include "nsArrayUtils.h"
+#include "nsIStreamListener.h"
+#include "nsIURI.h"
+#include "nsIXMLContentSink.h"
+#include "nsJSPrincipals.h"
+#include "nsJSUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsPresContext.h"
+#include "nsPrintfCString.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsUnicharUtils.h"
 
 // AHMED 12-2
-#include "nsBidiUtils.h"
-
+#include "mozAutoDocUpdate.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/IdentifierMapEntry.h"
 #include "mozilla/LoadInfo.h"
-#include "nsNodeInfoManager.h"
-#include "nsRange.h"
-#include "mozAutoDocUpdate.h"
-#include "nsCCUncollectableMarker.h"
-#include "nsHtml5Module.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/Preferences.h"
-#include "nsMimeTypes.h"
-#include "nsIRequest.h"
-#include "nsHtml5TreeOpExecutor.h"
-#include "nsHtml5Parser.h"
-#include "nsParser.h"
-#include "nsSandboxFlags.h"
-#include "mozilla/dom/HTMLBodyElement.h"
-#include "mozilla/dom/HTMLDocumentBinding.h"
-#include "mozilla/dom/HTMLIFrameElement.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/Selection.h"
-#include "mozilla/dom/ShadowIncludingTreeIterator.h"
-#include "mozilla/glean/DomMetrics.h"
-#include "nsCharsetSource.h"
-#include "nsFocusManager.h"
-#include "nsIFrame.h"
-#include "nsIContent.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
-#include "mozilla/Unused.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLBodyElement.h"
+#include "mozilla/dom/HTMLDocumentBinding.h"
+#include "mozilla/dom/HTMLIFrameElement.h"
+#include "mozilla/dom/Selection.h"
+#include "mozilla/dom/ShadowIncludingTreeIterator.h"
+#include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/glean/DomMetrics.h"
+#include "nsBidiUtils.h"
+#include "nsCCUncollectableMarker.h"
+#include "nsCharsetSource.h"
+#include "nsFocusManager.h"
+#include "nsHtml5Module.h"
+#include "nsHtml5Parser.h"
+#include "nsHtml5TreeOpExecutor.h"
+#include "nsIContent.h"
+#include "nsIFrame.h"
+#include "nsIRequest.h"
+#include "nsMimeTypes.h"
+#include "nsNodeInfoManager.h"
+#include "nsParser.h"
+#include "nsRange.h"
+#include "nsSandboxFlags.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -108,8 +102,8 @@ static bool IsAsciiCompatible(const Encoding* aEncoding) {
 nsresult NS_NewHTMLDocument(Document** aInstancePtrResult,
                             nsIPrincipal* aPrincipal,
                             nsIPrincipal* aPartitionedPrincipal,
-                            bool aLoadedAsData) {
-  RefPtr<nsHTMLDocument> doc = new nsHTMLDocument();
+                            mozilla::dom::LoadedAsData aLoadedAsData) {
+  RefPtr<nsHTMLDocument> doc = new nsHTMLDocument(aLoadedAsData);
 
   nsresult rv = doc->Init(aPrincipal, aPartitionedPrincipal);
 
@@ -118,14 +112,15 @@ nsresult NS_NewHTMLDocument(Document** aInstancePtrResult,
     return rv;
   }
 
-  doc->SetLoadedAsData(aLoadedAsData, /* aConsiderForMemoryReporting */ true);
+  doc->SetLoadedAsData(aLoadedAsData != mozilla::dom::LoadedAsData::No,
+                       /* aConsiderForMemoryReporting */ true);
   doc.forget(aInstancePtrResult);
 
   return NS_OK;
 }
 
-nsHTMLDocument::nsHTMLDocument()
-    : Document("text/html"),
+nsHTMLDocument::nsHTMLDocument(mozilla::dom::LoadedAsData aLoadedAsData)
+    : Document("text/html", aLoadedAsData),
       mContentListHolder(nullptr),
       mNumForms(0),
       mLoadFlags(0),
@@ -151,7 +146,9 @@ nsresult nsHTMLDocument::Init(nsIPrincipal* aPrincipal,
 
   // Now reset the compatibility mode of the CSSLoader
   // to match our compat mode.
-  CSSLoader()->SetCompatibilityMode(mCompatMode);
+  if (mCSSLoader) {
+    mCSSLoader->SetCompatibilityMode(mCompatMode);
+  }
 
   return NS_OK;
 }
@@ -339,16 +336,6 @@ nsresult nsHTMLDocument::StartDocumentLoad(
     loadAsHtml5 = false;
   }
 
-  // TODO: Proper about:blank treatment is bug 543435
-  if (loadAsHtml5 && view) {
-    // mDocumentURI hasn't been set, yet, so get the URI from the channel
-    nsCOMPtr<nsIURI> uri;
-    aChannel->GetURI(getter_AddRefs(uri));
-    if (NS_IsAboutBlankAllowQueryAndFragment(uri)) {
-      loadAsHtml5 = false;
-    }
-  }
-
   nsresult rv = Document::StartDocumentLoad(aCommand, aChannel, aLoadGroup,
                                             aContainer, aDocListener, aReset);
   if (NS_FAILED(rv)) {
@@ -376,6 +363,17 @@ nsresult nsHTMLDocument::StartDocumentLoad(
       }
     } else if (mViewSource && !html) {
       html5Parser->MarkAsNotScriptCreated("view-source-xml");
+    } else if (view && NS_IsAboutBlank(uri)) {
+      // Sadness: There are Chromium-originating WPTs that assume that
+      // as soon as `iframe.contentWindow.location.href == "about:blank"`,
+      // the about:blank DOM exists even for _non-initial_ navigations to
+      // about:blank. Since Chromium-originating WPTs manage to expect this,
+      // chances are that Web content might expect this as well, and the
+      // expectation was valid in Gecko previously. Therefore, let's
+      // special-case even _non-initial_ about:blank.
+      // /content-security-policy/inheritance/history-iframe.sub.html
+      // /content-security-policy/inheritance/window-open-local-after-network-scheme.sub.html
+      html5Parser->MarkAsNotScriptCreated("about-blank");
     } else {
       html5Parser->MarkAsNotScriptCreated(aCommand);
     }
@@ -492,15 +490,8 @@ nsresult nsHTMLDocument::StartDocumentLoad(
       mParser->SetContentSink(xmlsink);
     }
   } else {
-    if (loadAsHtml5) {
-      html5Parser->Initialize(this, uri, docShell, aChannel);
-    } else {
-      // about:blank *only*
-      nsCOMPtr<nsIHTMLContentSink> htmlsink;
-      NS_NewHTMLContentSink(getter_AddRefs(htmlsink), this, uri, docShell,
-                            aChannel);
-      mParser->SetContentSink(htmlsink);
-    }
+    MOZ_ASSERT(loadAsHtml5);
+    html5Parser->Initialize(this, uri, docShell, aChannel);
   }
 
   // parser the content of the URI
@@ -599,6 +590,10 @@ void nsHTMLDocument::NamedGetter(JSContext* aCx, const nsAString& aName,
         aRv.NoteJSContextException(aCx);
         return;
       }
+
+      if (v.isNullOrUndefined()) {
+        return;
+      }
     } else {
       // Step 3. Otherwise, if elements has only one element, return that
       // element.
@@ -620,7 +615,7 @@ void nsHTMLDocument::NamedGetter(JSContext* aCx, const nsAString& aName,
 #ifdef NIGHTLY_BUILD
   bool preventShadowing = false;
   if (StaticPrefs::dom_document_name_getter_prevent_shadowing_enabled()) {
-    if (HTMLDocument_Binding::InterfaceHasNonEventHandlerProperty(aName)) {
+    if (HTMLDocument_Binding::InterfaceHasProperty(aName)) {
       preventShadowing = true;
       collect = mShadowedHTMLDocumentProperties.Length() <= 10;
     }
@@ -630,7 +625,7 @@ void nsHTMLDocument::NamedGetter(JSContext* aCx, const nsAString& aName,
     // To limit the possible performance/memory impact, only collect at most 10
     // properties.
     collect = mShadowedHTMLDocumentProperties.Length() <= 10 &&
-              HTMLDocument_Binding::InterfaceHasNonEventHandlerProperty(aName);
+              HTMLDocument_Binding::InterfaceHasProperty(aName);
   }
 
   if (collect) {
@@ -736,7 +731,7 @@ nsresult nsHTMLDocument::Clone(dom::NodeInfo* aNodeInfo,
   NS_ASSERTION(aNodeInfo->NodeInfoManager() == mNodeInfoManager,
                "Can't import this document into another document!");
 
-  RefPtr<nsHTMLDocument> clone = new nsHTMLDocument();
+  RefPtr<nsHTMLDocument> clone = new nsHTMLDocument(LoadedAsData::AsData);
   nsresult rv = CloneDocHelper(clone.get());
   NS_ENSURE_SUCCESS(rv, rv);
 

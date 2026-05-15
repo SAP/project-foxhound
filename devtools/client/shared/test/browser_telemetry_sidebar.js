@@ -144,10 +144,10 @@ function testSidebar(toolbox) {
 
   return new Promise(resolve => {
     // See TOOL_DELAY for why we need setTimeout here
-    setTimeout(function selectSidebarTab() {
+    setTimeout(async function selectSidebarTab() {
       const tool = sidebarTools.pop();
       if (tool) {
-        inspector.sidebar.select(tool);
+        await inspector.sidebar.select(tool);
         setTimeout(function () {
           setTimeout(selectSidebarTab, TOOL_DELAY);
         }, TOOL_DELAY);

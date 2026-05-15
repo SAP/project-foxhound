@@ -16,6 +16,7 @@ add_task(async function setupTestingPrefs() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["media.eme.hdcp-policy-check.enabled", true],
+      ["media.eme.wmf.clearkey.enabled", false],
     ],
   });
 });

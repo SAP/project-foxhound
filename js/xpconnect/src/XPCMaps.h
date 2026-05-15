@@ -6,8 +6,8 @@
 
 /* Private maps (hashtables). */
 
-#ifndef xpcmaps_h___
-#define xpcmaps_h___
+#ifndef xpcmaps_h_
+#define xpcmaps_h_
 
 #include "mozilla/AllocPolicy.h"
 #include "mozilla/MemoryReporting.h"
@@ -383,4 +383,4 @@ class JSObject2JSObjectMap {
   Map mTable{XPC_WRAPPER_MAP_LENGTH};
 };
 
-#endif /* xpcmaps_h___ */
+#endif /* xpcmaps_h_ */

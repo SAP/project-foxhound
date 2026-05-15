@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.util.AttributeSet
 import android.view.View
+import androidx.annotation.LayoutRes
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.constraintlayout.widget.ConstraintLayout
@@ -173,6 +174,7 @@ class AddressSelectBar @JvmOverloads constructor(
     }
 
     companion object {
+        @LayoutRes
         val LAYOUT_ID = R.layout.mozac_feature_prompts_address_select_prompt
 
         private const val ROTATE_180 = 180F

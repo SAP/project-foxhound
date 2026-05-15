@@ -1,0 +1,5 @@
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const bc = new BroadcastChannel(params.get("token"));
+  bc.postMessage({ msg: "ready" });
+</script>

@@ -326,7 +326,7 @@ nsresult nsBrowserStatusFilter::StartDelayTimer() {
 
   return NS_NewTimerWithFuncCallback(getter_AddRefs(mTimer), TimeoutHandler,
                                      this, 160, nsITimer::TYPE_ONE_SHOT,
-                                     "nsBrowserStatusFilter::TimeoutHandler",
+                                     "nsBrowserStatusFilter::TimeoutHandler"_ns,
                                      mTarget);
 }
 

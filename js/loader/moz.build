@@ -14,6 +14,7 @@ EXPORTS.js.loader += [
     "ScriptFetchOptions.h",
     "ScriptKind.h",
     "ScriptLoadRequest.h",
+    "ScriptLoadRequestList.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -23,6 +24,7 @@ UNIFIED_SOURCES += [
     "ModuleLoaderBase.cpp",
     "ModuleLoadRequest.cpp",
     "ScriptLoadRequest.cpp",
+    "ScriptLoadRequestList.cpp",
 ]
 
 FINAL_LIBRARY = "xul"

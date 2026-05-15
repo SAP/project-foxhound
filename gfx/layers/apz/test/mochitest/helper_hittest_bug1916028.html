@@ -1,0 +1,51 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Hit-testing on a `pointer-events: auto` element in a `pointer-events: none` ancestor</title>
+  <script type="application/javascript" src="apz_test_utils.js"></script>
+  <script type="application/javascript" src="apz_test_native_event_utils.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <meta name="viewport" content="width=device-width"/>
+<style>
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  touch-action: none;
+  pointer-events: none;
+}
+div {
+  font-size: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100vw;
+  height: 100vh;
+}
+</style>
+</head>
+<body>
+<div style="pointer-events: auto;"></div>
+<script type="application/javascript">
+
+async function test() {
+  const config = getHitTestConfig();
+  const utils = config.utils;
+
+  checkHitResult(hitTest(centerOf(document.body)),
+                 APZHitResultFlags.VISIBLE |
+                 APZHitResultFlags.PAN_X_DISABLED |
+                 APZHitResultFlags.PAN_Y_DISABLED |
+                 APZHitResultFlags.PINCH_ZOOM_DISABLED |
+                 APZHitResultFlags.DOUBLE_TAP_ZOOM_DISABLED,
+                 utils.getViewId(document.scrollingElement),
+                 utils.getLayersId(),
+                 "pointer-events: auto");
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+
+</script>
+</html>

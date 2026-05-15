@@ -487,4 +487,9 @@ nsRect ToAppUnits(const mozilla::gfx::IntRectTyped<units>& aRect,
                 NSIntPixelsToAppUnits(aRect.Height(), aAppUnitsPerPixel));
 }
 
+struct nsRectCornerRadii final
+    : public mozilla::gfx::BaseRectCornerRadii<nscoord, nsSize, nsMargin> {
+  using BaseRectCornerRadii::BaseRectCornerRadii;
+};
+
 #endif /* NSRECT_H */

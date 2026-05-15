@@ -48,7 +48,7 @@ add_task(async function () {
   const classRuleEditor = getRuleViewRuleEditor(view, 1);
   const propEditor = classRuleEditor.rule.textProps[0].editor;
   propEditor.enable.click();
-  await classRuleEditor.rule._applyingModifications;
+  await classRuleEditor.rule.applyingModifications;
 
   info("Faking a mousemove on the disabled property");
   ({ valueSpan } = getRuleViewProperty(view, ".test", "transform"));

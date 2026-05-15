@@ -6,8 +6,6 @@
 
 #include "FileSystemMocks.h"
 
-#include <string>
-
 #include "ErrorList.h"
 #include "gtest/gtest-assertion-result.h"
 #include "js/RootingAPI.h"

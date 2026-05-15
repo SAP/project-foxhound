@@ -40,6 +40,9 @@ with Files('js/cfworker/**'):
 with Files('js/PKI.js/**'):
     BUG_COMPONENT = ('Firefox', 'Security')
 
+with Files('js/qrcode/**'):
+    BUG_COMPONENT = ('Firefox', 'General')
+
 with Files('rust/**'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
@@ -111,3 +114,9 @@ with Files("fmt"):
 
 with Files("zucchini/**"):
     BUG_COMPONENT = ("Toolkit", "Application Update")
+
+with Files("llama.cpp"):
+    BUG_COMPONENT = ("Core", "Machine Learning: On Device")
+
+with Files("application-services/**"):
+    BUG_COMPONENT = ("Application Services", "General")

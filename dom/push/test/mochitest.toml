@@ -11,45 +11,71 @@ support-files = [
 
 
 ["test_data.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 scheme = "https"
 
 ["test_error_reporting.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_has_permissions.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_multiple_register.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_multiple_register_different_scope.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_multiple_register_during_service_activation.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_permission_granted.html"]
 scheme = "https"
 
 ["test_permissions.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_register.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_register_key.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 scheme = "https"
 
 ["test_serviceworker_lifetime.html"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["test_subscription_change.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_try_registering_offline_disabled.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_unregister.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]

@@ -418,7 +418,7 @@ const WITH_EXTENSION_CACHE = [
 var gDBFile = gProfD.clone();
 gDBFile.append(FILE_DATABASE);
 
-/*
+/**
  * Check the actual add-on results against the expected add-on results
  *
  * @param  aActualAddons
@@ -444,7 +444,7 @@ function check_results(aActualAddons, aExpectedAddons, aFromRepository) {
   });
 }
 
-/*
+/**
  * Check the add-ons in the cache. This function also tests
  * AddonRepository.getCachedAddonByID()
  *
@@ -489,7 +489,7 @@ function check_cache(aExpectedToFind, aExpectedImmediately) {
   return Promise.all(lookups);
 }
 
-/*
+/**
  * Task to check an initialized cache by checking the cache, then restarting the
  * manager, and checking the cache. This checks that the cache is consistent
  * across manager restarts.

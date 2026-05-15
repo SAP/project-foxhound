@@ -7,9 +7,9 @@
 #ifndef DOM_SVG_SVGTEXTCONTENTELEMENT_H_
 #define DOM_SVG_SVGTEXTCONTENTELEMENT_H_
 
-#include "mozilla/dom/SVGGraphicsElement.h"
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
+#include "mozilla/dom/SVGGraphicsElement.h"
 
 namespace mozilla {
 

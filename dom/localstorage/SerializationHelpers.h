@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_localstorage_SerializationHelpers_h
 #define mozilla_dom_localstorage_SerializationHelpers_h
 
-#include <string>
 #include "chrome/common/ipc_message_utils.h"
 #include "ipc/EnumSerializer.h"
 #include "mozilla/dom/LSSnapshot.h"

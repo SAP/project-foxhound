@@ -1,6 +1,8 @@
 "use strict";
 
-/* import-globals-from head_servers.js */
+const { HTTP3Server } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
 
 let httpsOrigin;
 let h3AltSvc;

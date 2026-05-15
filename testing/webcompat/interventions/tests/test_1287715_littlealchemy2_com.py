@@ -22,7 +22,7 @@ async def did_music_play(client):
     # click somewhere so audio can start playing on Android
     client.apz_click(element=client.await_css("#library", is_displayed=True))
 
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
     return client.execute_script("return window.__musicPlayed")
 
 

@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>nav-notice Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/nav-notice.mjs"
+    ></script>
+    <script>
+      let html, testHelpers;
+
+      const TEST_LABEL = "This goes in the page nav";
+
+      add_setup(async function setup() {
+        testHelpers = new LitTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: () => html`<nav-notice label=${TEST_LABEL}></nav-notice>`,
+        });
+      });
+
+      add_task(async function testNavNotice() {
+        let {
+          children: [navNotice],
+        } = await testHelpers.renderTemplate();
+
+        ok(navNotice, "nav-notice element renders");
+        is(
+          navNotice.boxEl.labelEl.textContent.trim(),
+          TEST_LABEL,
+          "Label text is displayed."
+        );
+
+        const TEST_ICON_SRC = "chrome://global/skin/icons/edit-copy.svg";
+        navNotice.iconSrc = TEST_ICON_SRC;
+        await navNotice.updateComplete;
+
+        let icon = navNotice.boxEl.shadowRoot.querySelector(".icon");
+        ok(icon, "Icon element is rendered when iconSrc is set.");
+        is(icon.src, TEST_ICON_SRC, "Icon element uses the expected src.");
+
+        const TEST_HREF = "about:blank";
+        navNotice.href = TEST_HREF;
+        await navNotice.updateComplete;
+
+        let link = navNotice.boxEl.shadowRoot.querySelector("a");
+        ok(link, "Nav notice renders a link when href is supplied.");
+        is(link.href, TEST_HREF, "Link uses the expected href.");
+
+        const TEST_THEME = {
+          themeBg: "rgb(153, 37, 11)",
+          themeFg: "rgb(255, 255, 255)",
+        };
+
+        let styles = window.getComputedStyle(navNotice.boxEl);
+        let originalBackgroundColor = styles.backgroundColor;
+        let originalTextColor = styles.color;
+        isnot(
+          originalBackgroundColor,
+          TEST_THEME.themeBg,
+          "Nav notice background is not themed by default."
+        );
+        isnot(
+          originalTextColor,
+          TEST_THEME.themeFg,
+          "Nav notice text color is not themed by default."
+        );
+
+        navNotice.theme = TEST_THEME;
+        await navNotice.updateComplete;
+
+        styles = window.getComputedStyle(navNotice.boxEl);
+        is(
+          styles.backgroundColor,
+          TEST_THEME.themeBg,
+          "Nav notice background now uses the theme background color."
+        );
+        is(
+          styles.color,
+          TEST_THEME.themeFg,
+          "Nav notice text color now uses the theme foreground color."
+        );
+
+        navNotice.theme = "";
+        await navNotice.updateComplete;
+
+        styles = window.getComputedStyle(navNotice.boxEl);
+        is(
+          styles.backgroundColor,
+          originalBackgroundColor,
+          "Nav notice background color is reset if theme is removed."
+        );
+        is(
+          styles.color,
+          originalTextColor,
+          "Nav notice text color is reset if theme is removed."
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

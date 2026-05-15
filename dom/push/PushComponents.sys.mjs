@@ -122,7 +122,7 @@ XPCOMUtils.defineLazyServiceGetter(
   PushServiceParent.prototype,
   "_mm",
   "@mozilla.org/parentprocessmessagemanager;1",
-  "nsISupports"
+  Ci.nsISupports
 );
 
 Object.assign(PushServiceParent.prototype, {
@@ -363,7 +363,7 @@ XPCOMUtils.defineLazyServiceGetter(
   PushServiceContent.prototype,
   "_mm",
   "@mozilla.org/childprocessmessagemanager;1",
-  "nsISupports"
+  Ci.nsISupports
 );
 
 Object.assign(PushServiceContent.prototype, {

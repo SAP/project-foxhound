@@ -42,6 +42,7 @@ cd parser/html/java/
 make sync
 # now you have a clone of https://github.com/validator/htmlparser/tree/master in parser/html/java/htmlparser/
 cd htmlparser/src/
+# Open the nu/validator/htmlparser/impl/AttributeName.java file and start editing it
 $EDITOR nu/validator/htmlparser/impl/AttributeName.java
 # Perform case-insensitive searches for "uncomment" and uncomment stuff according to the comments that talk about uncommenting
 # Duplicate the declaration a normal attribute (nothings special in SVG mode, etc.). Let's use "alt", since it's the first one.
@@ -60,12 +61,13 @@ cd ../../..
 
 ## How to add an element
 
-# First, add an entry to parser/htmlparser/nsHTMLTagList.h or dom/svg/SVGTagList.h!
+# First, add an entry to parser/htmlparser/nsHTMLTagList.inc or dom/svg/SVGTagList.inc!
 # Then, starting from the root of a mozilla-central checkout
 cd parser/html/java/
 make sync
 # now you have a clone of https://github.com/validator/htmlparser/tree/master in parser/html/java/htmlparser/
 cd htmlparser/src/
+# Open the nu/validator/htmlparser/impl/ElementName.java file and start editing it
 $EDITOR nu/validator/htmlparser/impl/ElementName.java
 # Perform case-insensitive searches for "uncomment and uncomment stuff according to the comments that talk about uncommenting
 # Duplicate the declaration a normal element. Let's use "bdo", since it's the first normal one.
@@ -73,7 +75,7 @@ $EDITOR nu/validator/htmlparser/impl/ElementName.java
 # Search for "BDO,", duplicate that line and change the duplicate to say the new name in all caps followed by comma.
 # Save.
 javac nu/validator/htmlparser/impl/ElementName.java
-java nu.validator.htmlparser.impl.ElementName ../../../../../parser/htmlparser/nsHTMLTagList.h ../../../../../dom/svg/SVGTagList.h
+java nu.validator.htmlparser.impl.ElementName ../../../../../parser/htmlparser/nsHTMLTagList.inc ../../../../../dom/svg/SVGTagList.inc
 # Copy and paste the output into nu/validator/htmlparser/impl/ElementName.java replacing the text below the comment "START GENERATED CODE" and above the very last "}".
 # Recomment the bits that you uncommented earlier.
 # Save.

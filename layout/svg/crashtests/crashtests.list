@@ -199,6 +199,7 @@ load 1182496-1.html
 load 1209525-1.svg
 load 1223281-1.svg
 load 1234726-1.svg
+load 1258920.html
 load 1322537-1.html
 load 1322537-2.html
 load 1322852.html
@@ -238,6 +239,9 @@ load 1504072.html
 load 1072758.html
 load 1424031.html
 load 1426575.html
+load 1467887-1.html
+load 1467887-2.html
+load 1517945-1.html
 load 1536892.html
 load 1539318-1.svg
 load 1548985-1.html
@@ -259,6 +263,7 @@ HTTP load 1755770-1.html
 HTTP load 1755770-2.html
 load 1764936-1.html
 load 1771538.html
+load 1797417.html
 load 1804958.html
 load 1810260.html
 load 1826444-1.html
@@ -269,3 +274,5 @@ load 1848851.html
 load 1882921-1.html
 asserts(5-20) load 1941838.html
 load 1953296.html
+load 1982067-1.html
+skip-if(isDebugBuild) load 1993379-1.html # bug 1467887

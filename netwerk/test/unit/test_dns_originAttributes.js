@@ -40,6 +40,11 @@ const secondOriginAttributes = { userContextId: 2 };
 function run_test() {
   do_test_pending();
   prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
+  prefs.setBoolPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked",
+    false
+  );
+
   Services.dns.asyncResolve(
     "localhost",
     Ci.nsIDNSService.RESOLVE_TYPE_DEFAULT,
@@ -90,4 +95,7 @@ function test3() {
 
 function cleanup() {
   prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
+  prefs.clearUserPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked"
+  );
 }

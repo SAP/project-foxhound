@@ -27,18 +27,13 @@
 #include "mozilla/mozalloc.h"
 #include "nsDebug.h"
 #include "nsError.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIRunnable.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsMimeTypes.h"
 #include "nsPIDOMWindow.h"
-#include "nsGlobalWindowInner.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
-
-#ifdef MOZ_WIDGET_ANDROID
-#  include "AndroidBridge.h"
-#  include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
-#endif
 
 struct JSContext;
 class JSObject;
@@ -67,20 +62,16 @@ namespace mozilla {
 
 // Returns true if we should enable MSE webm regardless of preferences.
 // 1. If MP4/H264 isn't supported:
-//   * Windows XP
-//   * Windows Vista and Server 2008 without the optional "Platform Update
-//   Supplement"
-//   * N/KN editions (Europe and Korea) of Windows 7/8/8.1/10 without the
-//     optional "Windows Media Feature Pack"
+//   * N/KN editions (Europe and Korea) of Windows 10/11 without the optional
+//     "Windows Media Feature Pack"
+//   * Some Linux Desktop.
 // 2. If H264 hardware acceleration is not available.
-// 3. The CPU is considered to be fast enough
 static bool IsVP9Forced(DecoderDoctorDiagnostics* aDiagnostics) {
   bool mp4supported = MP4Decoder::IsSupportedType(
       MediaContainerType(MEDIAMIMETYPE(VIDEO_MP4)), aDiagnostics);
   bool hwsupported = gfx::gfxVars::CanUseHardwareVideoDecoding();
 #ifdef MOZ_WIDGET_ANDROID
-  return !mp4supported || !hwsupported ||
-         java::HardwareCodecCapabilityUtils::HasHWVP9(false /* aIsEncoder */);
+  return !mp4supported || !hwsupported || gfx::gfxVars::UseVP9HwDecode();
 #else
   return !mp4supported || !hwsupported;
 #endif
@@ -179,12 +170,6 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
   const MediaMIMEType& mimeType = containerType->Type();
   if (mimeType == MEDIAMIMETYPE("video/mp4") ||
       mimeType == MEDIAMIMETYPE("audio/mp4")) {
-    if (!StaticPrefs::media_mediasource_mp4_enabled() &&
-        !shouldResistFingerprinting) {
-      // Don't leak information about the fact that it's pref-disabled; just act
-      // like we can't play it.  Or should this throw "Unknown type"?
-      return aRv.ThrowNotSupportedError("Can't play type");
-    }
     if (!StaticPrefs::media_mediasource_vp9_enabled() && hasVP9 &&
         !IsVP9Forced(aDiagnostics) && !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act
@@ -195,12 +180,6 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
     return;
   }
   if (mimeType == MEDIAMIMETYPE("video/webm")) {
-    if (!StaticPrefs::media_mediasource_webm_enabled() &&
-        !shouldResistFingerprinting) {
-      // Don't leak information about the fact that it's pref-disabled; just act
-      // like we can't play it.  Or should this throw "Unknown type"?
-      return aRv.ThrowNotSupportedError("Can't play type");
-    }
     if (!StaticPrefs::media_mediasource_vp9_enabled() && hasVP9 &&
         !IsVP9Forced(aDiagnostics) && !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act
@@ -210,12 +189,6 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
     return;
   }
   if (mimeType == MEDIAMIMETYPE("audio/webm")) {
-    if (!StaticPrefs::media_mediasource_webm_enabled() &&
-        !shouldResistFingerprinting) {
-      // Don't leak information about the fact that it's pref-disabled; just act
-      // like we can't play it.  Or should this throw "Unknown type"?
-      return aRv.ThrowNotSupportedError("Can't play type");
-    }
     return;
   }
 

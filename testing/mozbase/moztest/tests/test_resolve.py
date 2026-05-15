@@ -95,109 +95,107 @@ def create_tests(topsrcdir):
 
 @pytest.fixture(scope="module")
 def all_tests(create_tests):
-    return create_tests(
-        *[
-            (
-                "apple/test_a11y.html",
-                {
-                    "expected": "pass",
-                    "manifest": "apple/a11y.toml",
-                    "flavor": "a11y",
-                },
-            ),
-            (
-                "banana/currant/test_xpcshell_A.js",
-                {
-                    "firefox-appdir": "browser",
-                    "flavor": "xpcshell",
-                    "head": "head_global.js head_helpers.js head_http.js",
-                },
-            ),
-            (
-                "banana/currant/test_xpcshell_B.js",
-                {
-                    "firefox-appdir": "browser",
-                    "flavor": "xpcshell",
-                    "head": "head_global.js head_helpers.js head_http.js",
-                },
-            ),
-            (
-                "carrot/test_included.js",
-                {
-                    "ancestor_manifest": "carrot/xpcshell-one.toml",
-                    "manifest": "carrot/xpcshell-shared.toml",
-                    "flavor": "xpcshell",
-                    "stick": "one",
-                },
-            ),
-            (
-                "carrot/test_included.js",
-                {
-                    "ancestor_manifest": "carrot/xpcshell-two.toml",
-                    "manifest": "carrot/xpcshell-shared.toml",
-                    "flavor": "xpcshell",
-                    "stick": "two",
-                },
-            ),
-            (
-                "dragonfruit/elderberry/test_xpcshell_C.js",
-                {
-                    "flavor": "xpcshell",
-                    "generated-files": "head_update.js",
-                    "head": "head_update.js",
-                    "manifest": "dragonfruit/xpcshell.toml",
-                    "reason": "busted",
-                    "run-sequentially": "Launches application.",
-                    "skip-if": "os == 'android'",
-                },
-            ),
-            (
-                "dragonfruit/elderberry/test_xpcshell_C.js",
-                {
-                    "flavor": "xpcshell",
-                    "generated-files": "head_update.js",
-                    "head": "head_update.js head2.js",
-                    "manifest": "dragonfruit/elderberry/xpcshell_updater.toml",
-                    "reason": "don't work",
-                    "run-sequentially": "Launches application.",
-                    "skip-if": "os == 'android'",
-                },
-            ),
-            (
-                "fig/grape/src/TestInstrumentationA.java",
-                {
-                    "flavor": "instrumentation",
-                    "manifest": "fig/grape/instrumentation.toml",
-                    "subsuite": "background",
-                },
-            ),
-            (
-                "fig/huckleberry/src/TestInstrumentationB.java",
-                {
-                    "flavor": "instrumentation",
-                    "manifest": "fig/huckleberry/instrumentation.toml",
-                    "subsuite": "browser",
-                },
-            ),
-            (
-                "juniper/browser_chrome.js",
-                {
-                    "flavor": "browser-chrome",
-                    "manifest": "juniper/browser.toml",
-                    "skip-if": "e10s  # broken",
-                },
-            ),
-            (
-                "kiwi/browser_devtools.js",
-                {
-                    "flavor": "browser-chrome",
-                    "manifest": "kiwi/browser.toml",
-                    "subsuite": "devtools",
-                    "tags": "devtools",
-                },
-            ),
-        ]
-    )
+    return create_tests(*[
+        (
+            "apple/test_a11y.html",
+            {
+                "expected": "pass",
+                "manifest": "apple/a11y.toml",
+                "flavor": "a11y",
+            },
+        ),
+        (
+            "banana/currant/test_xpcshell_A.js",
+            {
+                "firefox-appdir": "browser",
+                "flavor": "xpcshell",
+                "head": "head_global.js head_helpers.js head_http.js",
+            },
+        ),
+        (
+            "banana/currant/test_xpcshell_B.js",
+            {
+                "firefox-appdir": "browser",
+                "flavor": "xpcshell",
+                "head": "head_global.js head_helpers.js head_http.js",
+            },
+        ),
+        (
+            "carrot/test_included.js",
+            {
+                "ancestor_manifest": "carrot/xpcshell-one.toml",
+                "manifest": "carrot/xpcshell-shared.toml",
+                "flavor": "xpcshell",
+                "stick": "one",
+            },
+        ),
+        (
+            "carrot/test_included.js",
+            {
+                "ancestor_manifest": "carrot/xpcshell-two.toml",
+                "manifest": "carrot/xpcshell-shared.toml",
+                "flavor": "xpcshell",
+                "stick": "two",
+            },
+        ),
+        (
+            "dragonfruit/elderberry/test_xpcshell_C.js",
+            {
+                "flavor": "xpcshell",
+                "generated-files": "head_update.js",
+                "head": "head_update.js",
+                "manifest": "dragonfruit/xpcshell.toml",
+                "reason": "busted",
+                "run-sequentially": "Launches application.",
+                "skip-if": "os == 'android'",
+            },
+        ),
+        (
+            "dragonfruit/elderberry/test_xpcshell_C.js",
+            {
+                "flavor": "xpcshell",
+                "generated-files": "head_update.js",
+                "head": "head_update.js head2.js",
+                "manifest": "dragonfruit/elderberry/xpcshell_updater.toml",
+                "reason": "don't work",
+                "run-sequentially": "Launches application.",
+                "skip-if": "os == 'android'",
+            },
+        ),
+        (
+            "fig/grape/src/TestInstrumentationA.java",
+            {
+                "flavor": "instrumentation",
+                "manifest": "fig/grape/instrumentation.toml",
+                "subsuite": "background",
+            },
+        ),
+        (
+            "fig/huckleberry/src/TestInstrumentationB.java",
+            {
+                "flavor": "instrumentation",
+                "manifest": "fig/huckleberry/instrumentation.toml",
+                "subsuite": "browser",
+            },
+        ),
+        (
+            "juniper/browser_chrome.js",
+            {
+                "flavor": "browser-chrome",
+                "manifest": "juniper/browser.toml",
+                "skip-if": "e10s  # broken",
+            },
+        ),
+        (
+            "kiwi/browser_devtools.js",
+            {
+                "flavor": "browser-chrome",
+                "manifest": "kiwi/browser.toml",
+                "subsuite": "devtools",
+                "tags": "devtools",
+            },
+        ),
+    ])
 
 
 @pytest.fixture(scope="module")
@@ -446,9 +444,11 @@ def test_resolve_metadata(resolver):
     assert suites == {"mochitest-browser-chrome"}
     assert tests == []
 
-    suites, tests = resolver.resolve_metadata(
-        ["mochitest-a11y", "/browser", "xpcshell"]
-    )
+    suites, tests = resolver.resolve_metadata([
+        "mochitest-a11y",
+        "/browser",
+        "xpcshell",
+    ])
     assert suites == {"mochitest-a11y", "xpcshell"}
     assert sorted(t["file_relpath"] for t in tests) == [
         "juniper/browser_chrome.js",

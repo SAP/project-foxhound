@@ -7,6 +7,8 @@
 :host {
   display: contents;
 
+  --hover-highlight-background-color: var(--color-white-alpha-20);
+
   /* These z-indexes are used to correctly layer elements in the screenshots overlay */
   --screenshots-lowest-layer: 1;
   --screenshots-low-layer: 2;
@@ -56,7 +58,7 @@
   inset-inline: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--background-color-overlay);
 }
 
 #buttons-container {
@@ -69,13 +71,13 @@
 #selection-size,
 #buttons-container {
   padding: 4px;
-  background-color: var(--in-content-page-background);
-  color: var(--in-content-text-color);
-  border-radius: 4px;
+  background-color: var(--background-color-canvas);
+  color: var(--text-color);
+  border-radius: var(--border-radius-small);
 }
 
 #selection-size {
-  border: var(--border-width) solid var(--in-content-border-color);
+  border: var(--border-width) solid var(--border-color);
   box-shadow: var(--box-shadow-popup);
 }
 
@@ -113,20 +115,20 @@
   color: #fff;
 
   @media (forced-colors) {
-    background-color: var(--in-content-button-background);
-    color: var(--in-content-button-text-color);
-    border-color: var(--in-content-button-border-color);
+    background-color: var(--button-background-color);
+    color: var(--button-text-color);
+    border-color: var(--button-border-color);
   }
 }
 
 #screenshots-cancel-button:hover {
-  background-color: #fff;
+  background-color: white;
   color: #000;
 
   @media (forced-colors) {
-    background-color: var(--in-content-button-background-hover);
-    color: var(--in-content-button-text-color-hover);
-    border-color: var(--in-content-button-border-color-hover);
+    background-color: var(--button-background-color-hover);
+    color: var(--button-text-color-hover);
+    border-color: var(--button-border-color-hover);
   }
 }
 
@@ -157,45 +159,16 @@
 #face-container {
   position: relative;
 
-  @media (forced-colors) {
-    display: none;
+  /*
+   * The overlay always darkens the underlying page, regardless of light/dark settings.
+   * So we hard-code these colors to be visible against a dark background.
+   */
+  .face-line-color {
+    fill: #fff;
   }
-}
-
-.face {
-  width: 64px;
-  height: 64px;
-  background-image: url("chrome://browser/content/screenshots/icon-welcome-face-without-eyes.svg");
-}
-
-.eye {
-  background-color: #fff;
-  width: 10px;
-  height: 14px;
-  position: absolute;
-  border-radius: 100%;
-  overflow: hidden;
-  inset-inline-start: 16px;
-  top: 19px;
-}
-
-.eyeball {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  background-color: #000;
-  border-radius: 50%;
-  inset-inline-start: 2px;
-  top: 4px;
-  z-index: var(--screenshots-high-layer);
-}
-
-.left {
-  margin-inline-start: 0;
-}
-
-.right {
-  margin-inline-start: 20px;
+  .face-pupil-color {
+    fill: #000;
+  }
 }
 
 .preview-instructions {
@@ -212,13 +185,15 @@
 
   @media (forced-colors) {
     color: CanvasText;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     background-color: Canvas;
   }
 }
 
 #hover-highlight {
   animation: fade-in 125ms forwards cubic-bezier(0.07, 0.95, 0, 1);
-  background: rgba(255, 255, 255, 0.2);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background: var(--hover-highlight-background-color);
   border: 2px dashed rgba(255, 255, 255, 0.4);
   border-radius: 1px;
   box-sizing: border-box;
@@ -243,7 +218,7 @@
 }
 
 .bghighlight {
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--background-color-overlay);
   position: absolute;
   overflow: clip;
   pointer-events: none;
@@ -344,8 +319,8 @@
 }
 
 .mover {
-  background-color: #fff;
-  border-radius: 50%;
+  background-color: white;
+  border-radius: var(--border-radius-circle);
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
   transition: transform 125ms cubic-bezier(0.07, 0.95, 0, 1);
   position: relative;
@@ -354,6 +329,7 @@
   pointer-events: none;
 
   @media (forced-colors) {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
     background-color: ButtonText;
   }
 }

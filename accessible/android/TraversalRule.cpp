@@ -6,7 +6,6 @@
 
 #include "TraversalRule.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/a11y/Accessible.h"
 
 #include "mozilla/a11y/Role.h"

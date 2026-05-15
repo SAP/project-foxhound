@@ -155,7 +155,7 @@ def convert_zst_archive(zst_archive, tmpdir):
     from mozpack.files import File
     from mozpack.mozjar import Deflater, JarWriter
 
-    def iter_files_from_tar(reader):
+    def iter_files_from_tar(reader, desc="reader"):
         ctx = zstandard.ZstdDecompressor()
         uncompressed = ctx.stream_reader(reader)
         with tarfile.open(mode="r|", fileobj=uncompressed, bufsize=1024 * 1024) as tar:
@@ -163,10 +163,17 @@ def convert_zst_archive(zst_archive, tmpdir):
                 info = tar.next()
                 if info is None:
                     break
-                data = tar.extractfile(info).read()
-                yield (info.name, data)
+                file = tar.extractfile(info)
+                if file:
+                    data = file.read()
+                    yield (info.name, data)
+                else:
+                    log.warning(
+                        "Tarball entry from %s is not a file: `%s`", desc, info.name
+                    )
 
     def prepare_from(archive, tmpdir):
+        reader_desc = None
         if archive.startswith("http"):
             resp = requests.get(archive, allow_redirects=True, stream=True)
             resp.raise_for_status()
@@ -174,8 +181,10 @@ def convert_zst_archive(zst_archive, tmpdir):
             # Work around taskcluster generic-worker possibly gzipping the tar.zst.
             if resp.headers.get("Content-Encoding") == "gzip":
                 reader = gzip.GzipFile(fileobj=reader)
+            reader_desc = f"stream `{archive}`"
         else:
             reader = open(archive, "rb")
+            reader_desc = f"file `{archive}`"
 
         def handle_file(data):
             """
@@ -228,7 +237,9 @@ def convert_zst_archive(zst_archive, tmpdir):
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=os.cpu_count()
         ) as executor:
-            yield from executor.map(handle_file, iter_files_from_tar(reader))
+            yield from executor.map(
+                handle_file, iter_files_from_tar(reader, desc=reader_desc)
+            )
 
         reader.close()
 

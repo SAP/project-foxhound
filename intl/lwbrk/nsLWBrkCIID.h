@@ -2,8 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsLWBrkCIID_h__
-#define nsLWBrkCIID_h__
+#ifndef nsLWBrkCIID_h_
+#define nsLWBrkCIID_h_
 
 // {2BF64764-997F-450D-AF96-3028D1A902B0}
 #define NS_LBRK_CID \

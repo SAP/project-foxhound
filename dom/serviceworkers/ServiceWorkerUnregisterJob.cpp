@@ -6,13 +6,13 @@
 
 #include "ServiceWorkerUnregisterJob.h"
 
+#include "ServiceWorkerManager.h"
 #include "mozilla/dom/CookieStoreSubscriptionService.h"
 #include "mozilla/dom/notification/NotificationUtils.h"
 #include "nsIAlertsService.h"
 #include "nsIPushService.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
-#include "ServiceWorkerManager.h"
 
 using namespace mozilla::dom::notification;
 

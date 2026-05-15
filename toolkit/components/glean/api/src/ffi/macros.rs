@@ -161,9 +161,9 @@ macro_rules! test_has {
         let storage = if $storage.is_empty() {
             None
         } else {
-            Some($storage.to_utf8())
+            Some($storage.to_utf8().into_owned())
         };
-        $metric.test_get_value(storage.as_deref()).is_some()
+        $metric.test_get_value(storage).is_some()
     }};
 }
 
@@ -178,9 +178,9 @@ macro_rules! test_get {
         let storage = if $storage.is_empty() {
             None
         } else {
-            Some($storage.to_utf8())
+            Some($storage.to_utf8().into_owned())
         };
-        $metric.test_get_value(storage.as_deref()).unwrap()
+        $metric.test_get_value(storage).unwrap()
     }};
 }
 
@@ -199,8 +199,46 @@ macro_rules! test_get_errors {
             glean::ErrorType::InvalidOverflow,
         ];
         let mut error_str = None;
+        // Only `events` use this trait right now
+        // Ignoring the unused import simplifies the macro right now.
+        // This might change in the future.
+        #[allow(unused_imports)]
+        use crate::private::TestGetNumErrors;
+
         for &error_type in error_types.iter() {
             let num_errors = $metric.test_get_num_recorded_errors(error_type);
+            if num_errors > 0 {
+                error_str = Some(format!(
+                    "Metric had {} error(s) of type {}!",
+                    num_errors,
+                    error_type.as_str()
+                ));
+                break;
+            }
+        }
+        error_str
+    }};
+}
+
+/// Check the provided method on the metric map in the provided storage for errors.
+/// On finding one, return an error string.
+///
+/// # Arguments
+///
+/// * `$metric_map`  - The metric map to use.
+/// * `$method`      - The `labeled_<type>_test_get_num_recorded_errors` method to use.
+/// * `$metric_id`   - The metric id to find in the metric map.
+macro_rules! test_get_errors_with_method {
+    ($metric_map:ident, $method:ident, $metric_id:path) => {{
+        let error_types = [
+            glean::ErrorType::InvalidValue,
+            glean::ErrorType::InvalidLabel,
+            glean::ErrorType::InvalidState,
+            glean::ErrorType::InvalidOverflow,
+        ];
+        let mut error_str = None;
+        for &error_type in error_types.iter() {
+            let num_errors = $metric_map::$method($metric_id, error_type);
             if num_errors > 0 {
                 error_str = Some(format!(
                     "Metric had {} error(s) of type {}!",

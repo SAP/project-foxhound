@@ -121,7 +121,10 @@ export class ContextMenuChild extends JSWindowActorChild {
                   },
                   this.contentWindow
                 );
-                media.dispatchEvent(event);
+                this.contentWindow.windowUtils.dispatchEventToChromeOnly(
+                  media,
+                  event
+                );
                 break;
               }
             }
@@ -174,50 +177,6 @@ export class ContextMenuChild extends JSWindowActorChild {
           image.forceReload();
         }
         break;
-      }
-
-      case "ContextMenu:SearchFieldBookmarkData": {
-        let node = lazy.ContentDOMReference.resolve(
-          message.data.targetIdentifier
-        );
-        let charset = node.ownerDocument.characterSet;
-        let formBaseURI = Services.io.newURI(node.form.baseURI, charset);
-        let formURI = Services.io.newURI(
-          node.form.getAttribute("action"),
-          charset,
-          formBaseURI
-        );
-        let spec = formURI.spec;
-        let isURLEncoded =
-          node.form.method.toUpperCase() == "POST" &&
-          (node.form.enctype == "application/x-www-form-urlencoded" ||
-            node.form.enctype == "");
-        let title = node.ownerDocument.title;
-
-        function escapeNameValuePair([aName, aValue]) {
-          if (isURLEncoded) {
-            return escape(aName + "=" + aValue);
-          }
-
-          return encodeURIComponent(aName) + "=" + encodeURIComponent(aValue);
-        }
-        let formData = new this.contentWindow.FormData(node.form);
-        formData.delete(node.name);
-        formData = Array.from(formData).map(escapeNameValuePair);
-        formData.push(
-          escape(node.name) + (isURLEncoded ? escape("=%s") : "=%s")
-        );
-
-        let postData;
-
-        if (isURLEncoded) {
-          postData = formData.join("&");
-        } else {
-          let separator = spec.includes("?") ? "&" : "?";
-          spec += separator + formData.join("&");
-        }
-
-        return Promise.resolve({ spec, title, postData, charset });
       }
 
       case "ContextMenu:SearchFieldEngineData": {
@@ -309,20 +268,26 @@ export class ContextMenuChild extends JSWindowActorChild {
       }
 
       case "ContextMenu:GetTextDirective": {
-        return this.contentWindow.document?.fragmentDirective
-          .createTextDirectiveForSelection()
-          .then(textFragment => {
-            if (textFragment) {
-              let url = URL.parse(this.contentWindow.location);
-              url.hash += `:~:${textFragment}`;
-              return url.href;
-            }
-            return null;
-          });
+        const sel = this.contentWindow.getSelection();
+        const ranges = !sel.isCollapsed
+          ? Array.from({ length: sel.rangeCount }, (_, i) => sel.getRangeAt(i))
+          : this.document.fragmentDirective.getTextDirectiveRanges();
+        return ranges
+          ? this.document.fragmentDirective
+              .createTextDirectiveForRanges(ranges)
+              .then(textFragment => {
+                if (textFragment) {
+                  let url = URL.fromURI(this.document?.documentURIObject);
+                  url.hash += `:~:${textFragment}`;
+                  return url.href;
+                }
+                return null;
+              })
+          : null;
       }
       case "ContextMenu:RemoveAllTextFragments": {
-        this.contentWindow?.document?.fragmentDirective.removeAllTextDirectives();
-        this.contentWindow?.history.replaceState(
+        this.document.fragmentDirective.removeAllTextDirectives();
+        this.contentWindow.history.replaceState(
           this.contentWindow.history.state,
           "",
           this.contentWindow.location.href
@@ -337,9 +302,10 @@ export class ContextMenuChild extends JSWindowActorChild {
    * Returns the event target of the context menu, using a locally stored
    * reference if possible. If not, and aMessage.objects is defined,
    * aMessage.objects[aKey] is returned. Otherwise null.
-   * @param  {Object} aMessage Message with a objects property
-   * @param  {String} aKey     Key for the target on aMessage.objects
-   * @return {Object}          Context menu target
+   *
+   * @param  {object} aMessage Message with a objects property
+   * @param  {string} aKey     Key for the target on aMessage.objects
+   * @return {object}          Context menu target
    */
   getTarget(aMessage, aKey = "target") {
     return this.target || (aMessage.objects && aMessage.objects[aKey]);
@@ -435,45 +401,13 @@ export class ContextMenuChild extends JSWindowActorChild {
   }
 
   // Gather all descendent text under given document node.
+  // NOTE: Keep this in sync with gatherTextUnder in
+  // browser/base/content/utilityOverlay.js
   _gatherTextUnder(root) {
-    let text = "";
-    let node = root.firstChild;
-    let depth = 1;
-    while (node && depth > 0) {
-      // See if this node is text.
-      if (node.nodeType == node.TEXT_NODE) {
-        // Add this text to our collection.
-        text += " " + node.data;
-      } else if (this.contentWindow.HTMLImageElement.isInstance(node)) {
-        // If it has an "alt" attribute, add that.
-        let altText = node.getAttribute("alt");
-        if (altText && altText != "") {
-          text += " " + altText;
-        }
-      }
-      // Find next node to test.
-      // First, see if this node has children.
-      if (node.hasChildNodes()) {
-        // Go to first child.
-        node = node.firstChild;
-        depth++;
-      } else {
-        // No children, try next sibling (or parent next sibling).
-        while (depth > 0 && !node.nextSibling) {
-          node = node.parentNode;
-          depth--;
-        }
-        if (node.nextSibling) {
-          node = node.nextSibling;
-        }
-      }
-    }
-
-    // Strip leading and tailing whitespace.
-    text = text.trim();
-    // Compress remaining whitespace.
-    text = text.replace(/\s+/g, " ");
-    return text;
+    const encoder = Cu.createDocumentEncoder("text/plain");
+    encoder.init(root.ownerDocument, "text/plain", 0);
+    encoder.setContainerNode(root);
+    return encoder.encodeToString().trim();
   }
 
   // Returns a "url"-type computed style attribute value, with the url() stripped.
@@ -895,7 +829,6 @@ export class ContextMenuChild extends JSWindowActorChild {
     context.onPiPVideo = false;
     context.onEditable = false;
     context.onImage = false;
-    context.onKeywordField = false;
     context.onLink = false;
     context.onLoadedImage = false;
     context.onMailtoLink = false;
@@ -909,9 +842,11 @@ export class ContextMenuChild extends JSWindowActorChild {
     context.onTextInput = false;
     context.onVideo = false;
     context.inPDFEditor = false;
-    context.hasTextFragments =
-      !!this.contentWindow?.document?.fragmentDirective?.getTextDirectiveRanges()
-        .length;
+
+    const textDirectiveRanges =
+      this.document.fragmentDirective?.getTextDirectiveRanges?.() || [];
+    // .hasTextFragments indicates whether the page will show highlights.
+    context.hasTextFragments = !!textDirectiveRanges.length;
 
     // Remember the node and its owner document that was clicked
     // This may be modifed before sending to nsContextMenu
@@ -1128,7 +1063,6 @@ export class ContextMenuChild extends JSWindowActorChild {
         context.shouldInitInlineSpellCheckerUINoChildren = true;
       }
 
-      context.onKeywordField = editFlags & lazy.SpellCheckHelper.KEYWORD;
       context.onSearchField = editFlags & lazy.SpellCheckHelper.SEARCHENGINE;
     } else if (this.contentWindow.HTMLHtmlElement.isInstance(context.target)) {
       const bodyElt = context.target.ownerDocument.body;
@@ -1256,7 +1190,6 @@ export class ContextMenuChild extends JSWindowActorChild {
         // If this.onEditable is false but editFlags is CONTENTEDITABLE, then
         // the document itself must be editable.
         context.onTextInput = true;
-        context.onKeywordField = false;
         context.onImage = false;
         context.onLoadedImage = false;
         context.onCompletedImage = false;

@@ -215,6 +215,7 @@ data class HistoryFragmentState(
 /**
  * The HistoryState Reducer.
  */
+@Suppress("CognitiveComplexMethod")
 private fun historyStateReducer(
     state: HistoryFragmentState,
     action: HistoryFragmentAction,

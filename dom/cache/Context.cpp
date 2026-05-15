@@ -5,9 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/cache/Context.h"
-#include "CacheCommon.h"
 
+#include "CacheCommon.h"
+#include "NotifyUtils.h"
+#include "QuotaClientImpl.h"
+#include "mozIStorageConnection.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/dom/cache/Action.h"
@@ -22,14 +26,10 @@
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/dom/quota/ThreadUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/Maybe.h"
-#include "mozIStorageConnection.h"
-#include "NotifyUtils.h"
 #include "nsIPrincipal.h"
 #include "nsIRunnable.h"
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
-#include "QuotaClientImpl.h"
 
 namespace {
 

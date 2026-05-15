@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
@@ -10,20 +11,6 @@ plugins {
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     sourceSets {
         androidTest {
             // Use the same resources as the unit tests
@@ -42,6 +29,11 @@ tasks.register("updateBuiltInExtensionVersion", Copy) { task ->
     updateExtensionVersion(task, 'src/main/assets/extensions/browser-icons')
 }
 
+// Make sure DAGP asset-source exploding happens after ExtensionVersion tasks
+tasks.matching { it.name.startsWith("explodeAssetSource") }.configureEach { t ->
+    t.dependsOn(tasks.named("updateBuiltInExtensionVersion"))
+}
+
 dependencies {
     api project(':components:support-images')
 
@@ -51,36 +43,34 @@ dependencies {
     implementation project(':components:concept-fetch')
     implementation project(':components:support-ktx')
 
+    implementation libs.androidsvg
     implementation libs.androidx.annotation
+    implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.material3
     implementation libs.androidx.compose.ui
     implementation libs.androidx.core.ktx
     implementation libs.androidx.palette
+    implementation libs.disklrucache
+    implementation libs.kotlinx.coroutines
 
-    implementation libs.kotlin.coroutines
-
-    implementation libs.thirdparty.disklrucache
-
-    implementation libs.thirdparty.androidsvg
-
-    testImplementation project(':components:support-test')
     testImplementation project(':components:lib-fetch-httpurlconnection')
     testImplementation project(':components:lib-fetch-okhttp')
+    testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
     testImplementation libs.kotlin.reflect
-    testImplementation libs.testing.mockwebserver
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.mockwebserver
+    testImplementation libs.robolectric
 
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.rules
-    androidTestImplementation libs.testing.coroutines
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlinx.coroutines.test
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)
 

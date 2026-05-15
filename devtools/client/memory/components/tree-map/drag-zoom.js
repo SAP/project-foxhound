@@ -16,52 +16,56 @@ const LINE_SCROLL_MODE = 1;
 const SCROLL_LINE_SIZE = 15;
 
 /**
- * DragZoom is a constructor that contains the state of the current dragging and
+ * DragZoom is a class that contains the state of the current dragging and
  * zooming behavior. It sets the scrolling and zooming behaviors.
- *
- * @param  {HTMLElement} container description
- *         The container for the canvases
  */
-function DragZoom(container, debounceRate, requestAnimationFrame) {
-  EventEmitter.decorate(this);
+class DragZoom extends EventEmitter {
+  /**
+   *
+   * @param  {HTMLElement} container description
+   *         The container for the canvases
+   */
+  constructor(container, debounceRate, requestAnimationFrame) {
+    super();
 
-  this.isDragging = false;
+    this.isDragging = false;
 
-  // The current mouse position
-  this.mouseX = container.offsetWidth / 2;
-  this.mouseY = container.offsetHeight / 2;
+    // The current mouse position
+    this.mouseX = container.offsetWidth / 2;
+    this.mouseY = container.offsetHeight / 2;
 
-  // The total size of the visualization after being zoomed, in pixels
-  this.zoomedWidth = container.offsetWidth;
-  this.zoomedHeight = container.offsetHeight;
+    // The total size of the visualization after being zoomed, in pixels
+    this.zoomedWidth = container.offsetWidth;
+    this.zoomedHeight = container.offsetHeight;
 
-  // How much the visualization has been zoomed in
-  this.zoom = 0;
+    // How much the visualization has been zoomed in
+    this.zoom = 0;
 
-  // The offset of visualization from the container. This is applied after
-  // the zoom, and the visualization by default is centered
-  this.translateX = 0;
-  this.translateY = 0;
+    // The offset of visualization from the container. This is applied after
+    // the zoom, and the visualization by default is centered
+    this.translateX = 0;
+    this.translateY = 0;
 
-  // The size of the offset between the top/left of the container, and the
-  // top/left of the containing element. This value takes into account
-  // the device pixel ratio for canvas draws.
-  this.offsetX = 0;
-  this.offsetY = 0;
+    // The size of the offset between the top/left of the container, and the
+    // top/left of the containing element. This value takes into account
+    // the device pixel ratio for canvas draws.
+    this.offsetX = 0;
+    this.offsetY = 0;
 
-  // The smoothed values that are animated and eventually match the target
-  // values. The values are updated by the update loop
-  this.smoothZoom = 0;
-  this.smoothTranslateX = 0;
-  this.smoothTranslateY = 0;
+    // The smoothed values that are animated and eventually match the target
+    // values. The values are updated by the update loop
+    this.smoothZoom = 0;
+    this.smoothTranslateX = 0;
+    this.smoothTranslateY = 0;
 
-  // Add the constant values for testing purposes
-  this.ZOOM_SPEED = ZOOM_SPEED;
-  this.ZOOM_EPSILON = ZOOM_EPSILON;
+    // Add the constant values for testing purposes
+    this.ZOOM_SPEED = ZOOM_SPEED;
+    this.ZOOM_EPSILON = ZOOM_EPSILON;
 
-  const update = createUpdateLoop(container, this, requestAnimationFrame);
+    const update = createUpdateLoop(container, this, requestAnimationFrame);
 
-  this.destroy = setHandlers(this, container, update, debounceRate);
+    this.destroy = setHandlers(this, container, update, debounceRate);
+  }
 }
 
 module.exports = DragZoom;
@@ -80,7 +84,7 @@ module.exports = DragZoom;
  * Only these smoothed values and the container CSS are updated by the loop.
  *
  * @param {HTMLDivElement} container
- * @param {Object} dragZoom
+ * @param {object} dragZoom
  *        The values that represent the current dragZoom state
  * @param {Function} requestAnimationFrame
  */
@@ -147,7 +151,7 @@ function createUpdateLoop(container, dragZoom, requestAnimationFrame) {
 /**
  * Set the various event listeners and return a function to remove them
  *
- * @param  {Object} dragZoom
+ * @param  {object} dragZoom
  * @param  {HTMLElement} container
  * @param  {Function} update
  * @return {Function}  The function to remove the handlers
@@ -179,7 +183,7 @@ function setHandlers(dragZoom, container, update, debounceRate) {
  * object with new translate and offset values.
  *
  * @param  {HTMLElement} container
- * @param  {Object} dragZoom
+ * @param  {object} dragZoom
  * @param  {Function} changed
  * @param  {Function} update
  */
@@ -235,7 +239,7 @@ function setDragHandlers(container, dragZoom, emitChanged, update) {
  * loop is called, and the changed event is emitted.
  *
  * @param  {HTMLDivElement} container
- * @param  {Object} dragZoom
+ * @param  {object} dragZoom
  * @param  {Function} changed
  * @param  {Function} update
  */
@@ -295,7 +299,7 @@ function setScrollHandlers(container, dragZoom, emitChanged, update) {
  * Account for the various mouse wheel event types, per pixel or per line
  *
  * @param  {WheelEvent} event
- * @return {Number} The scroll size in pixels
+ * @return {number} The scroll size in pixels
  */
 function getScrollDelta(event) {
   if (event.deltaMode === LINE_SCROLL_MODE) {
@@ -310,7 +314,7 @@ function getScrollDelta(event) {
  * `dragZoom` object.
  *
  * @param  {HTMLDivElement} container
- * @param  {Object} dragZoom
+ * @param  {object} dragZoom
  */
 function keepInView(container, dragZoom) {
   const { devicePixelRatio } = container.ownerDocument.defaultView;

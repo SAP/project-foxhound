@@ -31,6 +31,6 @@ skip-if(!Android&&isDebugBuild) == svg-glyph-extents.html svg-glyph-extents-ref.
 skip-if(!Android&&isDebugBuild) == svg-glyph-compressed.html svg-glyph-compressed-ref.html
 
 skip-if(!Android&&isDebugBuild) fuzzy(46-77,300-600) == bug1320197-1.html bug1320197-1-ref.html
-skip-if(!Android&&isDebugBuild) fuzzy-if(winWidget,0-137,0-198) fuzzy-if(Android,0-81,0-96) == svg-in-ot-bitmap-1.html svg-in-ot-bitmap-1-ref.html
+skip-if(!Android&&isDebugBuild) fuzzy-if(winWidget,0-137,0-198) fuzzy-if(Android,0-81,0-144) == svg-in-ot-bitmap-1.html svg-in-ot-bitmap-1-ref.html
 
 defaults

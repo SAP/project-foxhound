@@ -6,13 +6,13 @@
 #ifndef GMPStorageChild_h_
 #define GMPStorageChild_h_
 
-#include "mozilla/gmp/PGMPStorageChild.h"
-#include "gmp-storage.h"
-#include "nsTHashtable.h"
-#include "nsRefPtrHashtable.h"
-#include "gmp-platform.h"
-
 #include <queue>
+
+#include "gmp-platform.h"
+#include "gmp-storage.h"
+#include "mozilla/gmp/PGMPStorageChild.h"
+#include "nsRefPtrHashtable.h"
+#include "nsTHashtable.h"
 
 namespace mozilla::gmp {
 

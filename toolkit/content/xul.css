@@ -22,12 +22,12 @@
 }
 
 /* hide the content and destroy the frame */
-[hidden="true"] {
+[hidden] {
   display: none;
 }
 
 /* hide the content, but don't destroy the frames */
-[collapsed="true"] {
+[collapsed] {
   visibility: collapse;
 }
 
@@ -99,7 +99,7 @@ browser,
 editor,
 iframe,
 label:is(.text-link, [onclick]),
-tab[selected="true"]:not([ignorefocus="true"]) {
+tab[selected]:not([ignorefocus]) {
   -moz-user-focus: normal;
 }
 
@@ -225,7 +225,6 @@ html|label.toolbarbutton-badge:empty {
 .toolbarbutton-icon,
 .toolbarbutton-text,
 .toolbarbutton-badge-stack,
-.toolbarbutton-menu-dropmarker,
 .treecol-text,
 .treecol-sortdirection,
 .button-box {
@@ -333,6 +332,12 @@ toolbarspring {
 
 /********* menu ***********/
 
+/* Note that this attribute is added dynamically if needed to menubars by the
+ * native menubar code */
+menubar[native] {
+  display: none !important;
+}
+
 menubar > menu:empty {
   visibility: collapse;
 }
@@ -429,7 +434,7 @@ treecol {
   order: 1;
 }
 
-treecol[hidden="true"] {
+treecol[hidden] {
   visibility: collapse;
   display: flex;
 }
@@ -456,6 +461,8 @@ deck > *|*:not(:-moz-native-anonymous) {
 }
 
 tabpanels > .deck-selected,
+tabpanels > .split-view-panel-active,
+tabpanels > .split-view-splitter,
 deck > .deck-selected {
   -moz-subtree-hidden-only-visually: 0;
   visibility: inherit;
@@ -629,6 +636,12 @@ richlistitem {
 findbar {
   overflow-x: hidden;
   contain: inline-size;
+}
+
+/* Matches legacy behavior and <html:img> */
+image {
+  overflow-clip-margin: content-box;
+  overflow: clip;
 }
 
 /* Some elements that in HTML blocks should be inline-level by default */

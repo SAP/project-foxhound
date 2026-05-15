@@ -7,7 +7,7 @@ Transform the beetmover task into an actual task description.
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from taskgraph.util.treeherder import replace_group
 from voluptuous import Optional, Required
 
@@ -22,23 +22,22 @@ from gecko_taskgraph.util.scriptworker import (
 
 transforms = TransformSequence()
 
-beetmover_description_schema = Schema(
-    {
-        # unique label to describe this beetmover task
-        Required("label"): str,
-        Required("dependencies"): task_description_schema["dependencies"],
-        # treeherder is allowed here to override any defaults we use for beetmover.  See
-        # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
-        # below transforms for defaults of various values.
-        Optional("treeherder"): task_description_schema["treeherder"],
-        # locale is passed only for l10n beetmoving
-        Optional("locale"): str,
-        Required("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("task-from"): task_description_schema["task-from"],
-    }
-)
+beetmover_description_schema = LegacySchema({
+    # unique label to describe this beetmover task
+    Required("label"): str,
+    Required("dependencies"): task_description_schema["dependencies"],
+    # treeherder is allowed here to override any defaults we use for beetmover.  See
+    # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
+    # below transforms for defaults of various values.
+    Optional("treeherder"): task_description_schema["treeherder"],
+    # locale is passed only for l10n beetmoving
+    Optional("locale"): str,
+    Required("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Optional("attributes"): task_description_schema["attributes"],
+    Optional("task-from"): task_description_schema["task-from"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 
 @transforms.add
@@ -106,6 +105,7 @@ def make_task_description(config, jobs):
             "dependencies": dependencies,
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
             "shipping-phase": job["shipping-phase"],
         }
@@ -142,9 +142,9 @@ def craft_release_properties(config, job):
 @transforms.add
 def make_task_worker(config, jobs):
     for job in jobs:
-        valid_beetmover_job = len(job["dependencies"]) == 2 and any(
-            ["signing" in j for j in job["dependencies"]]
-        )
+        valid_beetmover_job = len(job["dependencies"]) == 2 and any([
+            "signing" in j for j in job["dependencies"]
+        ])
         if not valid_beetmover_job:
             raise NotImplementedError("Beetmover must have two dependencies.")
 

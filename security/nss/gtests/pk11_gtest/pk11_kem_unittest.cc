@@ -74,6 +74,9 @@ class Pkcs11KEMTest
         return CKM_NSS_KYBER_KEY_PAIR_GEN;
       case CKP_NSS_ML_KEM_768:
         return CKM_NSS_ML_KEM_KEY_PAIR_GEN;
+      case CKP_ML_KEM_768:
+      case CKP_ML_KEM_1024:
+        return CKM_ML_KEM_KEY_PAIR_GEN;
       default:
         EXPECT_TRUE(false);
         return 0;
@@ -86,6 +89,9 @@ class Pkcs11KEMTest
         return CKM_NSS_KYBER;
       case CKP_NSS_ML_KEM_768:
         return CKM_NSS_ML_KEM;
+      case CKP_ML_KEM_768:
+      case CKP_ML_KEM_1024:
+        return CKM_ML_KEM;
       default:
         EXPECT_TRUE(false);
         return 0;
@@ -99,12 +105,17 @@ TEST_P(Pkcs11KEMTest, KemConsistencyTest) {
   ScopedSECKEYPublicKey pub;
   generator.GenerateKey(&priv, &pub, false);
 
+  ASSERT_NE(nullptr, pub);
+  ASSERT_NE(nullptr, priv);
+
   // Copy the public key to simulate receiving the key as an octet string
   ScopedSECKEYPublicKey pubCopy(SECKEY_CopyPublicKey(pub.get()));
   ASSERT_NE(nullptr, pubCopy);
 
   ScopedPK11SlotInfo slot(PK11_GetBestSlot(encapsMech(), nullptr));
   ASSERT_NE(nullptr, slot);
+  std::string name = PK11_GetSlotName(slot.get());
+  ASSERT_EQ(name, "NSS Internal Cryptographic Services");
 
   ASSERT_NE((unsigned int)CK_INVALID_HANDLE,
             PK11_ImportPublicKey(slot.get(), pubCopy.get(), PR_FALSE));
@@ -139,8 +150,13 @@ TEST_P(Pkcs11KEMTest, KemConsistencyTest) {
   EXPECT_EQ(0, SECITEM_CompareItem(item1, item2));
 }
 
+#ifndef NSS_DISABLE_KYBER
 INSTANTIATE_TEST_SUITE_P(Pkcs11KEMTest, Pkcs11KEMTest,
                          ::testing::Values(CKP_NSS_KYBER_768_ROUND3,
-                                           CKP_NSS_ML_KEM_768));
+                                           CKP_NSS_ML_KEM_768, CKP_ML_KEM_768));
+#else
+INSTANTIATE_TEST_SUITE_P(Pkcs11KEMTest, Pkcs11KEMTest,
+                         ::testing::Values(CKP_NSS_ML_KEM_768, CKP_ML_KEM_768));
+#endif
 
 }  // namespace nss_test

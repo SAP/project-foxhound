@@ -4,12 +4,13 @@
 
 #include "MFCDMSession.h"
 
-#include <limits>
 #include <vcruntime.h>
 #include <winerror.h>
 
-#include "MFMediaEngineUtils.h"
+#include <limits>
+
 #include "GMPUtils.h"  // ToHexString
+#include "MFMediaEngineUtils.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/BindingUtils.h"
@@ -139,7 +140,7 @@ HRESULT MFCDMSession::GenerateRequest(const nsAString& aInitDataType,
       NS_ConvertUTF16toUTF8(aInitDataType).get(), aInitDataSize);
   RETURN_IF_FAILED(mSession->GenerateRequest(
       InitDataTypeToString(aInitDataType), aInitData, aInitDataSize));
-  Unused << RetrieveSessionId();
+  (void)RetrieveSessionId();
   return S_OK;
 }
 
@@ -164,10 +165,16 @@ HRESULT MFCDMSession::Update(const nsTArray<uint8_t>& aMessage) {
   return S_OK;
 }
 
-HRESULT MFCDMSession::Close() {
+HRESULT MFCDMSession::Close(dom::MediaKeySessionClosedReason aReason) {
   AssertOnManagerThread();
+  if (mIsClosed) {
+    LOG("Close, session is already closed");
+    return S_OK;
+  }
   LOG("Close");
   RETURN_IF_FAILED(mSession->Close());
+  mIsClosed = true;
+  mClosedEvent.Notify(MFCDMSessionClosedResult{*mSessionId, aReason});
   return S_OK;
 }
 

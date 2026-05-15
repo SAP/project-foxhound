@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = Personoli
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Cau
+    .aria-label = Cau
 
 ## Search box component.
 
@@ -56,6 +59,9 @@ newtab-topsites-add-shortcut-header = Llwybr Byr Newydd
 newtab-topsites-edit-topsites-header = Golygu'r Hoff Wefan
 newtab-topsites-edit-shortcut-header = Golygu Llwybr Byr
 newtab-topsites-add-shortcut-label = Ychwanegu Llwybr Byr
+newtab-topsites-add-shortcut-title =
+    .title = Ychwanegu Llwybr Byr
+    .aria-label = Ychwanegu Llwybr Byr
 newtab-topsites-title-label = Teitl
 newtab-topsites-title-input =
     .placeholder = Rhoi teitl
@@ -84,6 +90,14 @@ newtab-confirm-delete-history-p2 = Nid oes modd dadwneud y weithred hon.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Noddwyd
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } piniwyd
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -313,19 +327,32 @@ newtab-custom-pocket-subtitle = Cynnwys eithriadol wedi'i guradu gan { -pocket-b
 newtab-custom-stories-toggle =
     .label = Straeon cymeradwy
     .description = Cynnwys eithriadol wedi'i gasglu gan deulu { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Straeon
+newtab-custom-stories-personalized-checkbox-label = Straeon personol ar sail eich gweithgaredd
 newtab-custom-pocket-sponsored = Straeon wedi'u noddi
 newtab-custom-pocket-show-recent-saves = Dangos pethau gadwyd yn ddiweddar
 newtab-custom-recent-title = Gweithgaredd diweddar
 newtab-custom-recent-subtitle = Detholiad o wefannau a chynnwys diweddar
-newtab-custom-recent-toggle =
-    .label = Gweithgaredd diweddar
-    .description = Detholiad o wefannau a chynnwys diweddar
 newtab-custom-weather-toggle =
     .label = Y Tywydd
     .description = Cipolwg ar ragolygon tywydd heddiw
-newtab-custom-trending-search-toggle =
-    .label = Tueddiadau chwilio
-    .description = Pynciau chwilio aml a phoblogaidd
+newtab-custom-widget-weather-toggle =
+    .label = Y Tywydd
+newtab-custom-widget-lists-toggle =
+    .label = Rhestrau
+newtab-custom-widget-timer-toggle =
+    .label = Amserydd
+newtab-custom-widget-section-title = Teclynnau
+newtab-custom-widget-section-toggle =
+    .label = Teclynnau
+newtab-widget-manage-title = Teclynnau
+newtab-widget-manage-widget-button =
+    .label = Rheoli teclynnau
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Cau
+    .aria-label = Cau'r ddewislen
 newtab-custom-close-button = Cau
 newtab-custom-settings = Rheoli rhagor o osodiadau
 
@@ -338,6 +365,7 @@ newtab-wallpaper-custom-color = Dewis lliw
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Mae'r ddelwedd yn fwy na'r terfyn maint ffeil { $file_size }MB. Ceisiwch lwytho ffeil lai.
+newtab-wallpaper-error-upload-file-type = Does dim modd i ni lwytho'ch ffeil. Ceisiwch eto gyda gwahanol fathau o ffeil.
 newtab-wallpaper-error-file-type = Nid oes modd i ni lwytho'ch ffeil. Ceisiwch eto gyda gwahanol fathau o ffeil.
 newtab-wallpaper-light-red-panda = Panda coch
 newtab-wallpaper-light-mountain = Mynydd gwyn
@@ -387,7 +415,7 @@ newtab-wallpaper-abstract-purple-green = Graddiant golau porffor a gwyrdd
 newtab-wallpaper-abstract-blue-purple-waves = Siapiau tonnog glas a phorffor
 newtab-wallpaper-abstract-black-waves = Siapiau tonnog du
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Ffotograffau
 newtab-wallpaper-beach-at-sunrise = Traeth ar godiad haul
@@ -417,6 +445,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -443,8 +475,9 @@ newtab-weather-menu-change-location = Newid lleoliad
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Chwilio am leoliad
     .aria-label = Chwilio am leoliad
-newtab-weather-change-location-search-input = Chwilio am leoliad
 newtab-weather-menu-weather-display = Dangos y tywydd
+newtab-weather-todays-forecast = Rhagolwg heddiw
+newtab-weather-see-full-forecast = Gweld y rhagolwg llawn
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -457,10 +490,24 @@ newtab-weather-menu-temperature-option-fahrenheit = Fahrenheit
 newtab-weather-menu-temperature-option-celsius = Celsius
 newtab-weather-menu-change-temperature-units-fahrenheit = Newid i Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Newid i Celsius
+newtab-weather-menu-hide-weather-v2 = Cuddio'r tywydd
 newtab-weather-menu-hide-weather = Cuddio'r tywydd ar Dab Newydd
 newtab-weather-menu-learn-more = Rhagor
+newtab-weather-menu-detect-my-location = Canfod fy lleoliad
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Nid yw data tywydd ar gael ar hyn o bryd.
+newtab-weather-opt-in-see-weather = Hoffech chi weld weld tywydd eich lleoliad?
+newtab-weather-opt-in-not-now =
+    .label = Nid nawr
+newtab-weather-opt-in-yes =
+    .label = Iawn
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Dinas Efrog Newydd
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Gweld y rhagolygon yn { $provider }
+    .aria-description = { $provider } ∙ Wedi'i noddi
 
 ## Topic Labels
 
@@ -544,6 +591,12 @@ newtab-custom-wallpaper-title = Mae papurau wal cyfaddas yma
 newtab-custom-wallpaper-subtitle = Llwythwch i fyny eich papur wal eich hun neu dewiswch liw cyfaddas i wneud { -brand-product-name } deimlo'n gartrefol.
 newtab-custom-wallpaper-cta = Rhowch gynnig arni
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Dewiswch bapur wal i wneud { -brand-product-name } eich un chi
+newtab-new-user-custom-wallpaper-subtitle = Gwnewch i bob tab newydd deimlo fel adref gyda phapurau wal a lliwiau cyfaddas.
+newtab-new-user-custom-wallpaper-cta = Rhowch gynnig arno
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Llwytho { -brand-product-name } symudol i lawr
@@ -559,10 +612,10 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Eich ffefrynnau ar flaenau eich bysedd
 newtab-shortcuts-highlight-subtitle = Ychwanegwch lwybr byr i gadw'ch hoff wefannau un clic i ffwrdd.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
-    .label = Pam ydych chi'n adrodd ar hyn?
+    .label = Pam ydych chi'n adrodd am hyn?
 newtab-report-ads-reason-not-interested =
     .label = Does gen i ddim diddordeb
 newtab-report-ads-reason-inappropriate =
@@ -577,20 +630,119 @@ newtab-report-content-inappropriate-offensive =
     .label = Anaddas neu sarhaus
 newtab-report-content-spam-misleading =
     .label = Sbam neu gamarweiniol
+newtab-report-content-requires-payment-subscription =
+    .label = Mae angen taliad neu danysgrifiad
+newtab-report-content-requires-payment-subscription-learn-more = Darllen rhagor
 newtab-report-cancel = Diddymu
 newtab-report-submit = Cyflwyno
 newtab-toast-thanks-for-reporting =
-    .message = Diolch am adrodd ar hwn.
+    .message = Diolch am adrodd am hyn.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Y tuedd ar Google
-newtab-trending-searches-show-trending =
-    .title = Dangos y tuedd chwilio
-newtab-trending-searches-hide-trending =
-    .title = Cuddio'r tuedd chwilio
-newtab-trending-searches-learn-more = Dysgu rhagor
-newtab-trending-searches-dismiss = Cuddio'r tuedd chwilio
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Tueddiadau chwilio
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Mae'r posibiliadau'n ddiddiwedd. Ychwanegwch un.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Newydd
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Wedi cwblhau ( { $number })
+newtab-widget-task-list-menu-copy = Copïo
+newtab-widget-lists-menu-edit = Golygu enw'r rhestr
+newtab-widget-lists-menu-create = Creu rhestr newydd
+newtab-widget-lists-menu-delete = Dileu'r rhestr hon
+newtab-widget-lists-menu-copy = Copïo'r rhestr i'r clipfwrdd
+newtab-widget-lists-menu-hide = Cuddio pob rhestr
+newtab-widget-lists-menu-learn-more = Dysgu rhagor
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Ychwanegu eitem
+newtab-widget-lists-input-error = Cynhwyswch destun i ychwanegu eitem.
+newtab-widget-lists-input-menu-open-link = Agor dolen
+newtab-widget-lists-input-menu-move-up = Symud i fyny
+newtab-widget-lists-input-menu-move-down = Symud i lawr
+newtab-widget-lists-input-menu-delete = Dileu
+newtab-widget-lists-input-menu-edit = Golygu
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Creu rhestr newydd
+newtab-widget-lists-name-label-default =
+    .label = Rhestr tasgau
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Rhestr tasgau
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Rhestr newydd
+newtab-widget-section-title = Teclynnau
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Cuddio teclynnau
+    .aria-label = Cuddio pob teclyn
+newtab-widget-section-maximize =
+    .title = Ehangu teclynnau
+    .aria-label = Ehangu pob teclyn i'w faint llawn
+newtab-widget-section-minimize =
+    .title = Lleihau teclynnau
+    .aria-label = Lleihau pob teclyn i faint llai
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Amserydd
+newtab-widget-timer-notification-focus = Mae'r amser canolbwyntio ar ben. Gwaith da. Angen seibiant?
+newtab-widget-timer-notification-break = Mae'ch seibiant drosodd. Barod i ganolbwyntio?
+newtab-widget-timer-notification-warning = Mae hysbysiadau wedi'u diffodd
+newtab-widget-timer-mode-focus =
+    .label = Canolbwyntio
+newtab-widget-timer-mode-break =
+    .label = Seibiant
+newtab-widget-timer-label-play =
+    .label = Chwarae
+newtab-widget-timer-label-pause =
+    .label = Oedi
+newtab-widget-timer-reset =
+    .title = Ailosod
+newtab-widget-timer-menu-notifications = Diffodd hysbysiadau
+newtab-widget-timer-menu-notifications-on = Troi hysbysiadau ymlaen
+newtab-widget-timer-menu-hide = Cuddio'r amserydd
+newtab-widget-timer-menu-learn-more = Dysgu rhagor
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Prif Benawdau
+newtab-daily-briefing-card-menu-dismiss = Cau
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = Diweddarwyd { $minutes }m yn ôl
+newtab-widget-message-title = Canolbwyntio gyda rhestrau a'r amserydd mewnol
+# to-dos stands for "things to do".
+newtab-widget-message-copy = O negeseuon atgoffa cyflym i dasgau bob dydd, sesiynau canolbwyntio i egwyliau ymarfer corff — cadwch i'r dasg ac amser.
+newtab-promo-card-title = Cefnogi { -brand-product-name }
+newtab-promo-card-body = Mae ein noddwyr yn cefnogi ein cenhadaeth i adeiladu gwe well
+newtab-promo-card-cta = Dysgu rhagor
+newtab-promo-card-dismiss-button =
+    .title = Cau
+    .aria-label = Cau
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Cau
+    .aria-label = Cau
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Gwnewch y gofod hwn eich un chi
+newtab-activation-window-message-customization-focus-message = Dewiswch bapur wal newydd, ychwanegu llwybrau byr i'ch hoff wefannau, a chadw'r wybodaeth ddiweddaraf am straeon diddorol.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Cychwyn cyfaddasu
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Mae'r gofod hwn yn chwarae yn ôl eich rheolau chi
+newtab-activation-window-message-values-focus-message = Mae { -brand-product-name } yn gadael i chi bori'r ffordd fyddwch chi'n ei hoffi, gyda dull mwy personol i ddechrau'ch diwrnod ar-lein. Gwnewch { -brand-product-name } yn ddefnyddiol i chi.

@@ -133,9 +133,9 @@ class PrintDelegateTest : BaseSessionTest() {
             mainSession.waitForPageStop()
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
+            val centerPixel = printCenterPixelColor()
             mainSession.printPageContent()
             val orange = rgb(255, 113, 57)
-            val centerPixel = printCenterPixelColor()
             assertTrue(
                 "Android print opened and rendered.",
                 sessionRule.waitForResult(centerPixel) == orange,
@@ -150,9 +150,9 @@ class PrintDelegateTest : BaseSessionTest() {
             mainSession.loadTestPath(FT_FONT_HTML_PATH)
             mainSession.waitForPageStop()
             mainSession.printDelegate = activity.view.printDelegate
+            val centerPixel = printCenterPixelColor()
             mainSession.printPageContent()
             val orange = rgb(255, 113, 57)
-            val centerPixel = printCenterPixelColor()
             assertTrue(
                 "Android print opened and rendered.",
                 sessionRule.waitForResult(centerPixel) == orange,
@@ -169,9 +169,9 @@ class PrintDelegateTest : BaseSessionTest() {
             mainSession.waitForPageStop()
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
+            val centerPixel = printCenterPixelColor()
             val result = mainSession.didPrintPageContent()
             val orange = rgb(255, 113, 57)
-            val centerPixel = printCenterPixelColor()
             assertTrue(
                 "Android print opened and rendered.",
                 sessionRule.waitForResult(centerPixel) == orange,
@@ -216,8 +216,8 @@ class PrintDelegateTest : BaseSessionTest() {
             mainSession.waitForPageStop()
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
-            mainSession.evaluateJS("window.print();")
             val centerPixel = printCenterPixelColor()
+            mainSession.evaluateJS("window.print();")
             val orange = rgb(255, 113, 57)
             assertTrue(
                 "Android print opened and rendered.",
@@ -235,8 +235,8 @@ class PrintDelegateTest : BaseSessionTest() {
             mainSession.waitForPageStop()
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
-            mainSession.evaluateJS("window.print()")
             val centerPixel = printCenterPixelColor()
+            mainSession.evaluateJS("window.print()")
             val orange = rgb(255, 113, 57)
             assertTrue(
                 "Android print opened and rendered.",
@@ -267,8 +267,8 @@ class PrintDelegateTest : BaseSessionTest() {
             mainSession.waitForPageStop()
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
-            mainSession.evaluateJS("document.getElementById('print-button').click();")
             val centerPixel = printCenterPixelColor()
+            mainSession.evaluateJS("document.getElementById('print-button').click();")
             val orange = rgb(255, 113, 57)
             assertTrue(
                 "Android print opened and rendered static page.",
@@ -288,8 +288,8 @@ class PrintDelegateTest : BaseSessionTest() {
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
             // iframe window.print button
-            mainSession.evaluateJS("document.getElementById('iframe').contentDocument.getElementById('print-button').click();")
             val centerPixelIframe = printCenterPixelColor()
+            mainSession.evaluateJS("document.getElementById('iframe').contentDocument.getElementById('print-button').click();")
             val orange = rgb(255, 113, 57)
             sessionRule.waitForResult(centerPixelIframe).let { it ->
                 assertTrue("The iframe should not print green. (Printed containing page instead of iframe.)", it != Color.GREEN)
@@ -309,8 +309,8 @@ class PrintDelegateTest : BaseSessionTest() {
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
             // Main page window.print button
-            mainSession.evaluateJS("document.getElementById('print-button-page').click();")
             val centerPixelContent = printCenterPixelColor()
+            mainSession.evaluateJS("document.getElementById('print-button-page').click();")
             assertTrue("Printed the main content correctly.", sessionRule.waitForResult(centerPixelContent) == Color.GREEN)
         }
     }
@@ -324,8 +324,8 @@ class PrintDelegateTest : BaseSessionTest() {
             mainSession.waitForPageStop()
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
-            mainSession.printPageContent()
             val centerPixel = printCenterPixelColor()
+            mainSession.printPageContent()
             val orange = rgb(255, 113, 57)
             assertTrue(
                 "Android print opened and rendered.",
@@ -344,8 +344,8 @@ class PrintDelegateTest : BaseSessionTest() {
             // Setting to the default delegate (test rules changed it)
             mainSession.printDelegate = activity.view.printDelegate
             mainSession.setFocused(false)
-            mainSession.printPageContent()
             val centerPixel = printCenterPixelColor()
+            mainSession.printPageContent()
             val orange = rgb(255, 113, 57)
             assertTrue(
                 "Android print opened and rendered.",

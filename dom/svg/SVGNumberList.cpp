@@ -6,12 +6,11 @@
 
 #include "SVGNumberList.h"
 
-#include "mozilla/ArrayUtils.h"
+#include "SVGContentUtils.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
 #include "nsString.h"
 #include "nsTextFormatter.h"
-#include "SVGContentUtils.h"
 
 namespace mozilla {
 

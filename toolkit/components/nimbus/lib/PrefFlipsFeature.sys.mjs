@@ -2,12 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/** @import { ExperimentManager } from "./ExperimentManager.sys.mjs" */
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   UnenrollmentCause: "resource://nimbus/lib/ExperimentManager.sys.mjs",
 });
 
@@ -72,6 +74,8 @@ const FEATURE_ID = "prefFlips";
  *
  * This should *only* be instantiated by the active `ExperimentManager` in the
  * parent process.
+ *
+ * @property {ExperimentManager} manager The ExperimentManager that owns this feature.
  */
 export class PrefFlipsFeature {
   /**
@@ -161,11 +165,11 @@ export class PrefFlipsFeature {
    * Return the orginal value of the pref on the specific branch if it is set by
    * this feature.
    *
-   * @params {string} pref
-   *         The pref to get the original value of.
+   * @param {string} pref
+   *        The pref to get the original value of.
    *
-   * @params {PrefBranch} branch
-   *         The requested branch for the pref.
+   * @param {PrefBranch} branch
+   *        The requested branch for the pref.
    *
    * @returns {PrefValue | undefined}
    *          The original value of the pref on the specified branch. If the
@@ -565,31 +569,22 @@ export class PrefFlipsFeature {
     this.#prefs.delete(pref);
     Services.prefs.removeObserver(pref, entry.observer);
 
-    // Compute how the pref changed so we can report it in telemetry.
-    const cause = lazy.UnenrollmentCause.ChangedPref({
-      name: pref,
-      branch: PrefFlipsFeature.determinePrefChangeBranch(
-        pref,
-        entry.branch,
-        entry.value
-      ),
-    });
+    const cause = lazy.UnenrollmentCause.ChangedPref(
+      {
+        name: pref,
+        branch: PrefFlipsFeature.determinePrefChangeBranch(
+          pref,
+          entry.branch,
+          entry.value
+        ),
+      },
+      this.manager.isPrefBeingChangedViaAboutConfig(pref)
+    );
 
     // Now we can trigger unenrollment of these slugs. Every enrollment settings
     // this pref has to stop tracking it.
     for (const slug of entry.slugs) {
       this.#prefsBySlug.get(slug).delete(pref);
-
-      // TODO(bug 1956082): This is an async method that we are not awaiting.
-      //
-      // This function is only ever called inside a nsIPrefObserver callback,
-      // which are invoked without `await`. Awaiting here breaks tests in
-      // test_prefFlips.js, which assert about the values of prefs *after* we
-      // trigger unenrollment.
-      //
-      // There is no good way to synchronize this behaviour yet to satisfy tests and
-      // the only thing that is being deferred are the database writes, which we
-      // and our caller don't care about.
       this.manager.unenroll(slug, cause);
     }
 

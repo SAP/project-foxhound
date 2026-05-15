@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=565541
   <script type="application/javascript">
   <![CDATA[
 
-  /** Test for Bug 565541 **/
+  /** Test for Bug 565541 */
   var previousX, previousY, previousWidth, previousHeight;
 
   function backValues()
@@ -215,7 +215,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=565541
         var w = window.open("file_resize_move_windows_1.html", '',
           'width=170,height=170,screenX=25,screenY=25');
 
-        await SimpleTest.promiseWaitForCondition(() => w.document.readyState == "complete");
+        await SimpleTest.promiseWaitForCondition(() =>
+          w.document.readyState == "complete" && w.location.href != "about:blank"
+        );
         SimpleTest.waitForFocus(function() {
           w.wrappedJSObject.ok = SimpleTest.ok;
           w.wrappedJSObject.check();

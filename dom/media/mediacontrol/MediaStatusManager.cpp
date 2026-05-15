@@ -183,7 +183,7 @@ void MediaStatusManager::StoreMediaSessionContextIdOnWindowContext() {
   RefPtr<CanonicalBrowsingContext> bc =
       CanonicalBrowsingContext::Get(mTopLevelBrowsingContextId);
   if (bc && bc->GetTopWindowContext()) {
-    Unused << bc->GetTopWindowContext()->SetActiveMediaSessionContextId(
+    (void)bc->GetTopWindowContext()->SetActiveMediaSessionContextId(
         mActiveMediaSessionContextId);
   }
 }

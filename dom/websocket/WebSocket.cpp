@@ -8,71 +8,71 @@
  */
 
 #include "WebSocket.h"
-#include "ErrorList.h"
-#include "mozilla/dom/WebSocketBinding.h"
-#include "mozilla/net/WebSocketChannel.h"
 
+#include "ErrorList.h"
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/CloseEvent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/nsHTTPSOnlyUtils.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "mozilla/dom/WebSocketBinding.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/LoadInfo.h"
-#include "mozilla/Unused.h"
-#include "nsIScriptGlobalObject.h"
-#include "mozilla/dom/Document.h"
-#include "nsXPCOM.h"
+#include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/net/WebSocketChannel.h"
+#include "mozilla/net/WebSocketEventService.h"
+#include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
-#include "nsICookieJarSettings.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsIURL.h"
-#include "nsThreadUtils.h"
-#include "nsIPromptFactory.h"
-#include "nsIWindowWatcher.h"
-#include "nsIPrompt.h"
-#include "nsIStringBundle.h"
-#include "nsIConsoleService.h"
-#include "mozilla/dom/CloseEvent.h"
-#include "mozilla/net/WebSocketEventService.h"
-#include "nsJSUtils.h"
 #include "nsTaintingUtils.h"
-#include "nsIScriptError.h"
-#include "nsNetUtil.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
-#include "nsILoadGroup.h"
-#include "mozilla/Preferences.h"
-#include "xpcpublic.h"
-#include "nsContentPolicyUtils.h"
-#include "nsWrapperCacheInlines.h"
+#include "nsIConsoleService.h"
+#include "nsICookieJarSettings.h"
 #include "nsIEventTarget.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsILoadGroup.h"
+#include "nsIPrompt.h"
+#include "nsIPromptFactory.h"
 #include "nsIRequest.h"
+#include "nsIScriptError.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsIStringBundle.h"
 #include "nsIThreadRetargetableRequest.h"
-#include "nsIWebSocketChannel.h"
-#include "nsIWebSocketListener.h"
-#include "nsProxyRelease.h"
-#include "nsIWebSocketImpl.h"
 #include "nsIURIMutator.h"
+#include "nsIURL.h"
+#include "nsIWebSocketChannel.h"
+#include "nsIWebSocketImpl.h"
+#include "nsIWebSocketListener.h"
+#include "nsIWindowWatcher.h"
+#include "nsJSUtils.h"
+#include "nsNetUtil.h"
+#include "nsProxyRelease.h"
+#include "nsThreadUtils.h"
+#include "nsWrapperCacheInlines.h"
+#include "nsXPCOM.h"
+#include "xpcpublic.h"
 
 #define OPEN_EVENT_STRING u"open"_ns
 #define MESSAGE_EVENT_STRING u"message"_ns
@@ -789,7 +789,7 @@ WebSocketImpl::OnStart(nsISupports* aContext) {
     nsCOMPtr<nsISupports> context = aContext;
     return Dispatch(NS_NewRunnableFunction("WebSocketImpl::OnStart",
                                            [self = RefPtr{this}, context]() {
-                                             Unused << self->OnStart(context);
+                                             (void)self->OnStart(context);
                                            }),
                     NS_DISPATCH_NORMAL);
   }
@@ -2829,18 +2829,20 @@ class WorkerRunnableDispatcher final : public WorkerThreadRunnable {
 }  // namespace
 
 NS_IMETHODIMP
-WebSocketImpl::DispatchFromScript(nsIRunnable* aEvent, uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> event(aEvent);
-  return Dispatch(event.forget(), aFlags);
+WebSocketImpl::DispatchFromScript(nsIRunnable* aEvent, DispatchFlags aFlags) {
+  return Dispatch(do_AddRef(aEvent), aFlags);
 }
 
 NS_IMETHODIMP
-WebSocketImpl::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) {
+WebSocketImpl::Dispatch(already_AddRefed<nsIRunnable> aEvent,
+                        DispatchFlags aFlags) {
+  // FIXME: This dispatch implementation is inconsistent about whether or not
+  // failure causes a leak when the `NS_DISPATCH_FALLIBLE` flag is not set.
   nsCOMPtr<nsIRunnable> event_ref(aEvent);
   if (mIsMainThread) {
     nsISerialEventTarget* target = GetMainThreadSerialEventTarget();
     NS_ENSURE_TRUE(target, NS_ERROR_FAILURE);
-    return target->Dispatch(event_ref.forget());
+    return target->Dispatch(event_ref.forget(), aFlags);
   }
 
   MutexAutoLock lock(mMutex);
@@ -2875,6 +2877,12 @@ WebSocketImpl::RegisterShutdownTask(nsITargetShutdownTask*) {
 NS_IMETHODIMP
 WebSocketImpl::UnregisterShutdownTask(nsITargetShutdownTask*) {
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+nsIEventTarget::FeatureFlags WebSocketImpl::GetFeatures() {
+  // If the worker shuts down, we don't support dispatching to it anymore
+  // during CloseConnection.
+  return SUPPORTS_BASE;
 }
 
 NS_IMETHODIMP

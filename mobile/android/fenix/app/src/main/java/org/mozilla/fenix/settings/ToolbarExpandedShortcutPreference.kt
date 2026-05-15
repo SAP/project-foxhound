@@ -1,0 +1,42 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package org.mozilla.fenix.settings
+
+import android.content.Context
+import android.util.AttributeSet
+import android.view.View.GONE
+import android.view.View.VISIBLE
+import android.widget.ImageView
+import androidx.preference.PreferenceViewHolder
+import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.settings
+
+const val EXPANDED_TOOLBAR_TYPE = "expanded"
+
+internal class ToolbarExpandedShortcutPreference @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+) : ToolbarShortcutPreference(context, attrs) {
+
+    override val options: List<ShortcutOption> = expandedShortcutOptions
+
+    override fun readSelectedKey(): String = context.settings().toolbarExpandedShortcutKey
+
+    override fun writeSelectedKey(key: String) {
+        context.settings().toolbarExpandedShortcutKey = key
+    }
+
+    override fun getToolbarType(): String = EXPANDED_TOOLBAR_TYPE
+
+    override fun getSelectedIconImageView(holder: PreferenceViewHolder): ImageView {
+        val simplePreview = holder.findViewById(R.id.toolbar_simple_shortcut_preview)
+        val expandedPreview = holder.findViewById(R.id.toolbar_expanded_shortcut_preview)
+
+        simplePreview.visibility = GONE
+        expandedPreview.visibility = VISIBLE
+
+        return expandedPreview.findViewById(R.id.selected_expanded_shortcut_icon)
+    }
+}

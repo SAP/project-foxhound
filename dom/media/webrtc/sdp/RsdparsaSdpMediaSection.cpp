@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "sdp/SdpMediaSection.h"
 #include "sdp/RsdparsaSdpMediaSection.h"
+
+#include <ostream>
 
 #include "sdp/RsdparsaSdpGlue.h"
 #include "sdp/RsdparsaSdpInc.h"
-
-#include <ostream>
+#include "sdp/SdpMediaSection.h"
 
 #ifdef CRLF
 #  undef CRLF

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBaseHashtable_h__
-#define nsBaseHashtable_h__
+#ifndef nsBaseHashtable_h_
+#define nsBaseHashtable_h_
 
 #include <functional>
 #include <utility>
@@ -1100,4 +1100,4 @@ inline void ImplCycleCollectionTrace(
                            aClosure);
 }
 
-#endif  // nsBaseHashtable_h__
+#endif  // nsBaseHashtable_h_

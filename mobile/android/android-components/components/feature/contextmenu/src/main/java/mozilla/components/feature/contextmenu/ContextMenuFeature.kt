@@ -8,7 +8,9 @@ import android.view.HapticFeedbackConstants
 import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
 import androidx.fragment.app.FragmentManager
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
@@ -43,6 +45,7 @@ internal const val FRAGMENT_TAG = "mozac_feature_contextmenu_dialog"
  * @property engineView The [EngineView]] this feature component should show context menus for.
  * @param tabId Optional id of a tab. Instead of showing context menus for the currently selected tab this feature will
  * show only context menus for this tab if an id is provided.
+ * @param mainDispatcher The [CoroutineDispatcher] used for observing the [BrowserStore].
  * @param additionalNote which it will be attached to the bottom of context menu but for a specific [HitResult]
  */
 class ContextMenuFeature(
@@ -52,6 +55,7 @@ class ContextMenuFeature(
     private val engineView: EngineView,
     private val useCases: ContextMenuUseCases,
     private val tabId: String? = null,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val additionalNote: (HitResult) -> String? = { null },
 ) : LifecycleAwareFeature {
     private var scope: CoroutineScope? = null
@@ -60,7 +64,7 @@ class ContextMenuFeature(
      * Start observing the selected session and when needed show a context menu.
      */
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
                 .distinctUntilChangedBy { it?.content?.hitResult }
                 .collect { state ->

@@ -3,10 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCopySupport_h__
-#define nsCopySupport_h__
+#ifndef nsCopySupport_h_
+#define nsCopySupport_h_
 
 #include <cstdint>
+
 #include "ErrorList.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Attributes.h"
@@ -35,12 +36,14 @@ class nsCopySupport {
  public:
   static nsresult ClearSelectionCache();
 
+  enum class UpdateClipboard : bool { No, Yes };
   /**
    * @param aDoc Needs to be not nullptr.
    */
   static nsresult EncodeDocumentWithContextAndPutToClipboard(
       mozilla::dom::Selection* aSel, mozilla::dom::Document* aDoc,
-      nsIClipboard::ClipboardType aClipboardID, bool aWithRubyAnnotation);
+      nsIClipboard::ClipboardType aClipboardID, bool aWithRubyAnnotation,
+      UpdateClipboard = UpdateClipboard::Yes);
 
   // Get the selection, or entire document, in the format specified by the mime
   // type (text/html or text/plain). If aSel is non-null, use it, otherwise get

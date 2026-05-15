@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// TODO: Bug 1994968 - Fix most TypeScript issues in this file. Currently there
+// are lots of errors that may show up in an editor due to our TypeScript
+// configuration. Skip this for now, until these are resolved.
+
 const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
@@ -16,7 +20,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   Finder: "resource://gre/modules/Finder.sys.mjs",
   FinderParent: "resource://gre/modules/FinderParent.sys.mjs",
-  PopupBlocker: "resource://gre/actors/PopupBlockingParent.sys.mjs",
+  PopupAndRedirectBlocker:
+    "resource://gre/actors/PopupAndRedirectBlockingParent.sys.mjs",
   SelectParentHelper: "resource://gre/actors/SelectParent.sys.mjs",
   RemoteWebNavigation: "resource://gre/modules/RemoteWebNavigation.sys.mjs",
 });
@@ -85,7 +90,7 @@ window.addEventListener(
 /**
  * @implements {nsIBrowser}
  */
-class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
+export class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
   static get observedAttributes() {
     return ["remote"];
   }
@@ -117,8 +122,8 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     this.mIconURL = null;
     this.lastURI = null;
 
-    ChromeUtils.defineLazyGetter(this, "popupBlocker", () => {
-      return new lazy.PopupBlocker(this);
+    ChromeUtils.defineLazyGetter(this, "popupAndRedirectBlocker", () => {
+      return new lazy.PopupAndRedirectBlocker(this);
     });
 
     this.addEventListener(
@@ -263,6 +268,14 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     });
   }
 
+  /**
+   * The browser's permanent key. This was added temporarily for Session Store,
+   * and will be removed in bug 1716788.
+   *
+   * @type {any}
+   */
+  permanentKey;
+
   resetFields() {
     if (this.observer) {
       try {
@@ -390,6 +403,15 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     }
 
     this.construct();
+  }
+
+  connectedMoveCallback() {
+    // No-op: Allows callers to move <browser> element in the DOM tree
+    // without destruct() + construct(). This here is merely an optimization.
+    //
+    // For the content to be available (and not unexpectedly destroyed),
+    // XULFrameElement::BindToTree and XULFrameElement::UnbindToTree skips
+    // frame loader construction/reconstruction on move (bug 2007742).
   }
 
   disconnectedCallback() {
@@ -877,13 +899,6 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     this.webNavigation.stop(flags);
   }
 
-  _fixLoadParamsToLoadURIOptions(params) {
-    let loadFlags =
-      params.loadFlags || params.flags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
-    delete params.flags;
-    params.loadFlags = loadFlags;
-  }
-
   /**
    * throws exception for unknown schemes
    */
@@ -891,7 +906,6 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
     if (!uri) {
       uri = lazy.blankURI;
     }
-    this._fixLoadParamsToLoadURIOptions(params);
     this._wrapURIChangeCall(() => this.webNavigation.loadURI(uri, params));
   }
 
@@ -903,7 +917,6 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
       this.loadURI(null, params);
       return;
     }
-    this._fixLoadParamsToLoadURIOptions(params);
     this._wrapURIChangeCall(() =>
       this.webNavigation.fixupAndLoadURIString(uriString, params)
     );
@@ -1841,29 +1854,28 @@ class MozBrowser extends MozElements.MozElementMixin(XULFrameElement) {
   /**
    * Gets a screenshot of this browser as an ImageBitmap.
    *
-   * @param {Number} x
+   * @param {number} x
    *   The x coordinate of the region from the underlying document to capture
    *   as a screenshot. This is ignored if fullViewport is true.
-   * @param {Number} y
+   * @param {number} y
    *   The y coordinate of the region from the underlying document to capture
    *   as a screenshot. This is ignored if fullViewport is true.
-   * @param {Number} w
+   * @param {number} w
    *   The width of the region from the underlying document to capture as a
    *   screenshot. This is ignored if fullViewport is true.
-   * @param {Number} h
+   * @param {number} h
    *   The height of the region from the underlying document to capture as a
    *   screenshot. This is ignored if fullViewport is true.
-   * @param {Number} scale
+   * @param {number} scale
    *   The scale factor for the captured screenshot. See the documentation for
    *   WindowGlobalParent.drawSnapshot for more detail.
-   * @param {String} backgroundColor
+   * @param {string} backgroundColor
    *   The default background color for the captured screenshot. See the
    *   documentation for WindowGlobalParent.drawSnapshot for more detail.
    * @param {boolean|undefined} fullViewport
    *   True if the viewport rect should be captured. If this is true, the
    *   x, y, w and h parameters are ignored. Defaults to false.
-   * @returns {Promise}
-   * @resolves {ImageBitmap}
+   * @returns {Promise<ImageBitmap>}
    */
   async drawSnapshot(x, y, w, h, scale, backgroundColor, fullViewport = false) {
     let rect = fullViewport ? null : new DOMRect(x, y, w, h);

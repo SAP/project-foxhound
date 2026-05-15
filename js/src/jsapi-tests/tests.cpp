@@ -19,8 +19,8 @@
 #include "js/RootingAPI.h"
 #include "js/SourceText.h"  // JS::Source{Ownership,Text}
 
-JSAPIRuntimeTest* JSAPIRuntimeTest::list;
-JSAPIFrontendTest* JSAPIFrontendTest::list;
+JSAPITestList<JSAPIRuntimeTest> JSAPIRuntimeTest::list;
+JSAPITestList<JSAPIFrontendTest> JSAPIFrontendTest::list;
 
 bool JSAPIRuntimeTest::init(JSContext* maybeReusableContext) {
   if (maybeReusableContext && reuseGlobal) {
@@ -164,16 +164,17 @@ void parseArgs(int argc, char* argv[], CommandOptions& options) {
 }
 
 template <typename TestT>
-void PrintTests(TestT* list) {
-  for (TestT* test = list; test; test = test->next) {
+void PrintTests(JSAPITestList<TestT> list) {
+  for (TestT* test = list.getFirst(); test; test = test->next) {
     printf("%s\n", test->name());
   }
 }
 
 template <typename TestT, typename InitF, typename RunF, typename BeforeUninitF>
-void RunTests(int& total, int& failures, CommandOptions& options, TestT* list,
-              InitF init, RunF run, BeforeUninitF beforeUninit) {
-  for (TestT* test = list; test; test = test->next) {
+void RunTests(int& total, int& failures, CommandOptions& options,
+              JSAPITestList<TestT> list, InitF init, RunF run,
+              BeforeUninitF beforeUninit) {
+  for (TestT* test = list.getFirst(); test; test = test->next) {
     const char* name = test->name();
     if (options.filter && strstr(name, options.filter) == nullptr) {
       continue;
@@ -232,9 +233,7 @@ int main(int argc, char* argv[]) {
 
   // Override prefs for jsapi-tests.
   JS::Prefs::setAtStartup_experimental_weakrefs_expose_cleanupSome(true);
-#ifdef NIGHTLY_BUILD
   JS::Prefs::setAtStartup_experimental_symbols_as_weakmap_keys(true);
-#endif
 
   if (!options.frontendOnly) {
     if (!JS_Init()) {

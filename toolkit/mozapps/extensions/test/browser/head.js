@@ -631,7 +631,7 @@ function addCertOverrides() {
   ]);
 }
 
-/** *** Mock Provider *****/
+/***** Mock Provider *****/
 
 function MockProvider(
   addonTypes,
@@ -683,7 +683,7 @@ MockProvider.prototype = {
     }
   },
 
-  /** *** Utility functions *****/
+  /***** Utility functions *****/
 
   /**
    * Register this provider with the AddonManager
@@ -882,7 +882,7 @@ MockProvider.prototype = {
     return newInstalls;
   },
 
-  /** *** AddonProvider implementation *****/
+  /***** AddonProvider implementation *****/
 
   /**
    * Called to initialize the provider.
@@ -1036,7 +1036,7 @@ MockProvider.prototype = {
   },
 };
 
-/** *** Mock Addon object for the Mock Provider *****/
+/***** Mock Addon object for the Mock Provider *****/
 
 function MockAddon(aId, aName, aType, aOperationsRequiringRestart) {
   // Only set required attributes.
@@ -1294,7 +1294,7 @@ MockAddon.prototype = {
   },
 };
 
-/** *** Mock AddonInstall object for the Mock Provider *****/
+/***** Mock AddonInstall object for the Mock Provider *****/
 
 function MockInstall(aName, aType, aAddonToInstall) {
   this.name = aName || "";

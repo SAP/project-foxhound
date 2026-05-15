@@ -15,8 +15,8 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
-MOZ_RUNINIT static nsCOMPtr<nsIPrincipal> selfURIPrincipal;
-MOZ_RUNINIT static nsCOMPtr<nsIURI> selfURI;
+constinit static nsCOMPtr<nsIPrincipal> selfURIPrincipal;
+constinit static nsCOMPtr<nsIURI> selfURI;
 
 static int LVVMFuzzerInitTest(int* argc, char*** argv) {
   nsresult ret;

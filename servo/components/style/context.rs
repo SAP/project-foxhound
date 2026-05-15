@@ -9,6 +9,7 @@ use crate::animation::DocumentAnimationSet;
 use crate::bloom::StyleBloom;
 use crate::computed_value_flags::ComputedValueFlags;
 use crate::data::{EagerPseudoStyles, ElementData};
+use crate::derives::*;
 use crate::dom::{SendElement, TElement};
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs;
@@ -29,12 +30,10 @@ use app_units::Au;
 use euclid::default::Size2D;
 use euclid::Scale;
 #[cfg(feature = "servo")]
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 use selectors::context::SelectorCaches;
 #[cfg(feature = "gecko")]
 use servo_arc::Arc;
-#[cfg(feature = "servo")]
-use stylo_atoms::Atom;
 use std::fmt;
 use std::ops;
 use std::time::{Duration, Instant};
@@ -42,6 +41,8 @@ use style_traits::CSSPixel;
 use style_traits::DevicePixel;
 #[cfg(feature = "servo")]
 use style_traits::SpeculativePainter;
+#[cfg(feature = "servo")]
+use stylo_atoms::Atom;
 
 pub use selectors::matching::QuirksMode;
 
@@ -358,7 +359,11 @@ impl fmt::Display for TraversalStatistics {
         )?;
         writeln!(f, "[PERF],declarations,{}", self.declarations)?;
         writeln!(f, "[PERF],stylist_rebuilds,{}", self.stylist_rebuilds)?;
-        writeln!(f, "[PERF],traversal_time_ms,{}", self.traversal_time.as_secs_f64() * 1000.)?;
+        writeln!(
+            f,
+            "[PERF],traversal_time_ms,{}",
+            self.traversal_time.as_secs_f64() * 1000.
+        )?;
         writeln!(f, "[PERF] perf block end")
     }
 }
@@ -450,7 +455,7 @@ impl<E: TElement> SequentialTask<E> {
     /// Executes this task.
     pub fn execute(self) {
         use self::SequentialTask::*;
-        debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
+        debug_assert!(thread_state::get().contains(ThreadState::LAYOUT));
         match self {
             Unused(_) => unreachable!(),
             #[cfg(feature = "gecko")]
@@ -511,7 +516,7 @@ where
     E: TElement,
 {
     fn drop(&mut self) {
-        debug_assert_eq!(thread_state::get(), ThreadState::LAYOUT);
+        debug_assert!(thread_state::get().contains(ThreadState::LAYOUT));
         for task in self.0.drain(..) {
             task.execute()
         }

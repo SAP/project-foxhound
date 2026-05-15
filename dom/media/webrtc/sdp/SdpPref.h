@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SDPPREF_H_
-#define _SDPPREF_H_
-
-#include "mozilla/Maybe.h"
-#include "mozilla/Preferences.h"
+#ifndef SDPPREF_H_
+#define SDPPREF_H_
 
 #include <string>
 #include <unordered_map>
+
+#include "mozilla/Maybe.h"
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 

@@ -64,7 +64,7 @@ parent:
 
   async PreferenceUpdate(Pref pref);
 
-  async UpdateVar(GfxVarUpdate var);
+  async UpdateVar(GfxVarUpdate[] var);
 
   async InitVideoBridge(Endpoint<PVideoBridgeChild> endpoint,
                         bool createHardwareDevice,

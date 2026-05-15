@@ -7,23 +7,23 @@
 #ifndef mozilla_dom_StorageDBThread_h
 #define mozilla_dom_StorageDBThread_h
 
-#include "prthread.h"
-#include "prinrval.h"
-#include "nsTArray.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Monitor.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Monitor.h"
 #include "mozilla/OriginAttributes.h"
-#include "mozilla/storage/StatementCache.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "nsString.h"
+#include "mozilla/storage/StatementCache.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIFile.h"
 #include "nsIThreadInternal.h"
-#include "nsThreadUtils.h"
+#include "nsString.h"
+#include "nsTArray.h"
 #include "nsTHashSet.h"
+#include "nsThreadUtils.h"
+#include "prinrval.h"
+#include "prthread.h"
 
 class mozIStorageConnection;
 

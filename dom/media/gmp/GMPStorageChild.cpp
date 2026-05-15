@@ -4,9 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPStorageChild.h"
+
 #include "GMPChild.h"
-#include "gmp-storage.h"
 #include "base/task.h"
+#include "gmp-storage.h"
 
 #define ON_GMP_THREAD() (mPlugin->GMPMessageLoop() == MessageLoop::current())
 

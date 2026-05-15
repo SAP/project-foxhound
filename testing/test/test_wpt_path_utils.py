@@ -58,28 +58,28 @@ def test_parse_wpt_path():
     assert path == "testing/web-platform/tests/css/test.any.js"
     assert manifest == "testing/web-platform/meta/css/test.any.js.ini"
     assert query is None
-    assert anyjs == "testing/web-platform/tests/css/test.any.html"
+    assert anyjs == {"testing/web-platform/tests/css/test.any.html": False}
 
     # Test .window.html transformation
     path, manifest, query, anyjs = parse_wpt_path("/css/test.window.html")
     assert path == "testing/web-platform/tests/css/test.window.js"
     assert manifest == "testing/web-platform/meta/css/test.window.js.ini"
     assert query is None
-    assert anyjs == "testing/web-platform/tests/css/test.window.html"
+    assert anyjs == {"testing/web-platform/tests/css/test.window.html": False}
 
     # Test .worker.html transformation
     path, manifest, query, anyjs = parse_wpt_path("/css/test.worker.html")
     assert path == "testing/web-platform/tests/css/test.worker.js"
     assert manifest == "testing/web-platform/meta/css/test.worker.js.ini"
     assert query is None
-    assert anyjs == "testing/web-platform/tests/css/test.worker.html"
+    assert anyjs == {"testing/web-platform/tests/css/test.worker.html": False}
 
     # Test with query parameters and special file type
     path, manifest, query, anyjs = parse_wpt_path("/css/test.any.html?param=value")
     assert path == "testing/web-platform/tests/css/test.any.js"
     assert manifest == "testing/web-platform/meta/css/test.any.js.ini"
     assert query == "?param=value"
-    assert anyjs == "testing/web-platform/tests/css/test.any.html"
+    assert anyjs == {"testing/web-platform/tests/css/test.any.html": False}
 
     # Test infrastructure path with parse_wpt_path
     path, manifest, query, anyjs = parse_wpt_path("/infrastructure/test.html")

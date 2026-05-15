@@ -36,13 +36,17 @@ namespace detail {
 class NativeThreadHandle {
 #ifdef XP_WIN
   // The native handle to the thread
-  HANDLE mThread;
+  HANDLE mThread = NULL;
 #endif
 
  public:
   // Created and destroyed on the main thread only
-  NativeThreadHandle();
+  NativeThreadHandle() = default;
+#ifdef XP_WIN
   ~NativeThreadHandle();
+#else
+  ~NativeThreadHandle() = default;
+#endif
 
   // Called on the IO thread to grab the platform specific
   // reference to it.
@@ -53,8 +57,6 @@ class NativeThreadHandle {
 };
 
 #ifdef XP_WIN
-
-NativeThreadHandle::NativeThreadHandle() : mThread(NULL) {}
 
 NativeThreadHandle::~NativeThreadHandle() {
   if (mThread) {
@@ -94,8 +96,6 @@ void NativeThreadHandle::CancelBlockingIO(Monitor& aMonitor) {
 
 // Stub code only (we don't implement IO cancelation for this platform)
 
-NativeThreadHandle::NativeThreadHandle() = default;
-NativeThreadHandle::~NativeThreadHandle() = default;
 void NativeThreadHandle::InitThread() {}
 void NativeThreadHandle::CancelBlockingIO(Monitor&) {}
 
@@ -159,7 +159,7 @@ nsresult CacheIOThread::Init() {
   // IMPORTANT: The thread now owns this reference, so it's important that we
   // leak it here, otherwise we'll end up with a bad refcount.
   // See the dont_AddRef in ThreadFunc().
-  Unused << self.forget().take();
+  self.forget().leak();
 
   return NS_OK;
 }
@@ -506,8 +506,7 @@ size_t CacheIOThread::SizeOfExcludingThis(
   for (const auto& event : mEventQueue) {
     n += event.ShallowSizeOfExcludingThis(mallocSizeOf);
     // Events referenced by the queues are arbitrary objects we cannot be sure
-    // are reported elsewhere as well as probably not implementing nsISizeOf
-    // interface.  Deliberatly omitting them from reporting here.
+    // aren't reported elsewhere.  Deliberately omitting them from reporting.
   }
 
   return n;

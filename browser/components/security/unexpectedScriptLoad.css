@@ -1,0 +1,54 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+.dialogBox {
+  overflow: hidden;
+  min-height: 22em;
+  min-width: 66ch;
+}
+
+.dialogTitleBar {
+  display: flex;
+  padding: 0.4em 0.2em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dialogTitle {
+  font-weight: var(--heading-font-weight);
+  text-align: center;
+  user-select: none;
+  flex: 1;
+}
+
+.dialogContent {
+  display: block;
+  margin-inline: 10px;
+  padding-inline: 10px;
+}
+
+.scriptUrl {
+  font-family: monospace;
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+  margin-top: 0.5em;
+}
+
+#actionContainer {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+#actionButtons {
+  align-items: center; /* Centers elements vertically */
+  gap: 5px;
+  padding-block: 10px;
+}
+
+#telemetry-disabled-message {
+  font-style: italic;
+  padding-bottom: 5px;
+}

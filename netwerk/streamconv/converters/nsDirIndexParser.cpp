@@ -7,7 +7,6 @@
 
 #include "nsDirIndexParser.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/StaticPtr.h"

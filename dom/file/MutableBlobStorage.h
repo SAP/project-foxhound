@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_MutableBlobStorage_h
 #define mozilla_dom_MutableBlobStorage_h
 
-#include "mozilla/RefPtr.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "prio.h"

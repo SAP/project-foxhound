@@ -4,22 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <new>
-#include "nscore.h"
-#include "nsCRT.h"
-
 #include "nsCommandParams.h"
-#include "mozilla/HashFunctions.h"
+
+#include <new>
+
+#include "nsCRT.h"
+#include "nscore.h"
 
 using namespace mozilla;
 
-const PLDHashTableOps nsCommandParams::sHashOps = {
-    HashKey, HashMatchEntry, HashMoveEntry, HashClearEntry};
-
 NS_IMPL_ISUPPORTS(nsCommandParams, nsICommandParams)
 
-nsCommandParams::nsCommandParams()
-    : mValuesHash(&sHashOps, sizeof(HashEntry), 2) {}
+nsCommandParams::nsCommandParams() = default;
 
 nsCommandParams::~nsCommandParams() = default;
 
@@ -27,13 +23,29 @@ NS_IMETHODIMP
 nsCommandParams::GetValueType(const char* aName, int16_t* aRetVal) {
   NS_ENSURE_ARG_POINTER(aRetVal);
 
-  HashEntry* foundEntry = GetNamedEntry(aName);
-  if (foundEntry) {
-    *aRetVal = foundEntry->mEntryType;
-    return NS_OK;
+  auto foundEntry = mValuesHash.Lookup(nsDependentCString(aName));
+  if (!foundEntry) {
+    *aRetVal = eNoType;
+    return NS_ERROR_FAILURE;
   }
-  *aRetVal = eNoType;
-  return NS_ERROR_FAILURE;
+
+  if (foundEntry->is<bool>()) {
+    *aRetVal = eBooleanType;
+  } else if (foundEntry->is<int32_t>()) {
+    *aRetVal = eLongType;
+  } else if (foundEntry->is<double>()) {
+    *aRetVal = eDoubleType;
+  } else if (foundEntry->is<nsString>()) {
+    *aRetVal = eWStringType;
+  } else if (foundEntry->is<nsCString>()) {
+    *aRetVal = eStringType;
+  } else if (foundEntry->is<nsCOMPtr<nsISupports>>()) {
+    *aRetVal = eISupportsType;
+  } else {
+    MOZ_ASSERT_UNREACHABLE("unknown type");
+  }
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -46,14 +58,7 @@ nsCommandParams::GetBooleanValue(const char* aName, bool* aRetVal) {
 }
 
 bool nsCommandParams::GetBool(const char* aName, ErrorResult& aRv) const {
-  MOZ_ASSERT(!aRv.Failed());
-
-  HashEntry* foundEntry = GetNamedEntry(aName);
-  if (foundEntry && foundEntry->mEntryType == eBooleanType) {
-    return foundEntry->mData.mBoolean;
-  }
-  aRv.Throw(NS_ERROR_FAILURE);
-  return false;
+  return GenericGet<bool>(aName, aRv);
 }
 
 NS_IMETHODIMP
@@ -66,14 +71,7 @@ nsCommandParams::GetLongValue(const char* aName, int32_t* aRetVal) {
 }
 
 int32_t nsCommandParams::GetInt(const char* aName, ErrorResult& aRv) const {
-  MOZ_ASSERT(!aRv.Failed());
-
-  HashEntry* foundEntry = GetNamedEntry(aName);
-  if (foundEntry && foundEntry->mEntryType == eLongType) {
-    return foundEntry->mData.mLong;
-  }
-  aRv.Throw(NS_ERROR_FAILURE);
-  return 0;
+  return GenericGet<int32_t>(aName, aRv);
 }
 
 NS_IMETHODIMP
@@ -86,14 +84,7 @@ nsCommandParams::GetDoubleValue(const char* aName, double* aRetVal) {
 }
 
 double nsCommandParams::GetDouble(const char* aName, ErrorResult& aRv) const {
-  MOZ_ASSERT(!aRv.Failed());
-
-  HashEntry* foundEntry = GetNamedEntry(aName);
-  if (foundEntry && foundEntry->mEntryType == eDoubleType) {
-    return foundEntry->mData.mDouble;
-  }
-  aRv.Throw(NS_ERROR_FAILURE);
-  return 0.0;
+  return GenericGet<double>(aName, aRv);
 }
 
 NS_IMETHODIMP
@@ -103,14 +94,9 @@ nsCommandParams::GetStringValue(const char* aName, nsAString& aRetVal) {
 
 nsresult nsCommandParams::GetString(const char* aName,
                                     nsAString& aRetVal) const {
-  HashEntry* foundEntry = GetNamedEntry(aName);
-  if (foundEntry && foundEntry->mEntryType == eWStringType) {
-    NS_ASSERTION(foundEntry->mData.mString, "Null string");
-    aRetVal.Assign(*foundEntry->mData.mString);
-    return NS_OK;
-  }
-  aRetVal.Truncate();
-  return NS_ERROR_FAILURE;
+  ErrorResult error;
+  aRetVal = GenericGet<nsString>(aName, error);
+  return error.StealNSResult();
 }
 
 NS_IMETHODIMP
@@ -120,14 +106,9 @@ nsCommandParams::GetCStringValue(const char* aName, nsACString& aRetVal) {
 
 nsresult nsCommandParams::GetCString(const char* aName,
                                      nsACString& aRetVal) const {
-  HashEntry* foundEntry = GetNamedEntry(aName);
-  if (foundEntry && foundEntry->mEntryType == eStringType) {
-    NS_ASSERTION(foundEntry->mData.mCString, "Null string");
-    aRetVal.Assign(*foundEntry->mData.mCString);
-    return NS_OK;
-  }
-  aRetVal.Truncate();
-  return NS_ERROR_FAILURE;
+  ErrorResult error;
+  aRetVal = GenericGet<nsCString>(aName, error);
+  return error.StealNSResult();
 }
 
 NS_IMETHODIMP
@@ -146,15 +127,8 @@ nsCommandParams::GetISupportsValue(const char* aName, nsISupports** aRetVal) {
 
 already_AddRefed<nsISupports> nsCommandParams::GetISupports(
     const char* aName, ErrorResult& aRv) const {
-  MOZ_ASSERT(!aRv.Failed());
-
-  HashEntry* foundEntry = GetNamedEntry(aName);
-  if (foundEntry && foundEntry->mEntryType == eISupportsType) {
-    nsCOMPtr<nsISupports> result = foundEntry->mISupports;
-    return result.forget();
-  }
-  aRv.Throw(NS_ERROR_FAILURE);
-  return nullptr;
+  nsCOMPtr<nsISupports> result = GenericGet<nsCOMPtr<nsISupports>>(aName, aRv);
+  return result.forget();
 }
 
 NS_IMETHODIMP
@@ -163,11 +137,7 @@ nsCommandParams::SetBooleanValue(const char* aName, bool aValue) {
 }
 
 nsresult nsCommandParams::SetBool(const char* aName, bool aValue) {
-  HashEntry* foundEntry = GetOrMakeEntry(aName, eBooleanType);
-  if (!foundEntry) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  foundEntry->mData.mBoolean = aValue;
+  mValuesHash.InsertOrUpdate(nsDependentCString(aName), AsVariant(aValue));
   return NS_OK;
 }
 
@@ -177,11 +147,7 @@ nsCommandParams::SetLongValue(const char* aName, int32_t aValue) {
 }
 
 nsresult nsCommandParams::SetInt(const char* aName, int32_t aValue) {
-  HashEntry* foundEntry = GetOrMakeEntry(aName, eLongType);
-  if (!foundEntry) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  foundEntry->mData.mLong = aValue;
+  mValuesHash.InsertOrUpdate(nsDependentCString(aName), AsVariant(aValue));
   return NS_OK;
 }
 
@@ -191,11 +157,7 @@ nsCommandParams::SetDoubleValue(const char* aName, double aValue) {
 }
 
 nsresult nsCommandParams::SetDouble(const char* aName, double aValue) {
-  HashEntry* foundEntry = GetOrMakeEntry(aName, eDoubleType);
-  if (!foundEntry) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  foundEntry->mData.mDouble = aValue;
+  mValuesHash.InsertOrUpdate(nsDependentCString(aName), AsVariant(aValue));
   return NS_OK;
 }
 
@@ -206,11 +168,8 @@ nsCommandParams::SetStringValue(const char* aName, const nsAString& aValue) {
 
 nsresult nsCommandParams::SetString(const char* aName,
                                     const nsAString& aValue) {
-  HashEntry* foundEntry = GetOrMakeEntry(aName, eWStringType);
-  if (!foundEntry) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  foundEntry->mData.mString = new nsString(aValue);
+  mValuesHash.InsertOrUpdate(nsDependentCString(aName),
+                             AsVariant(nsString{aValue}));
   return NS_OK;
 }
 
@@ -221,11 +180,8 @@ nsCommandParams::SetCStringValue(const char* aName, const nsACString& aValue) {
 
 nsresult nsCommandParams::SetCString(const char* aName,
                                      const nsACString& aValue) {
-  HashEntry* foundEntry = GetOrMakeEntry(aName, eStringType);
-  if (!foundEntry) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  foundEntry->mData.mCString = new nsCString(aValue);
+  mValuesHash.InsertOrUpdate(nsDependentCString(aName),
+                             AsVariant(nsCString{aValue}));
   return NS_OK;
 }
 
@@ -235,68 +191,13 @@ nsCommandParams::SetISupportsValue(const char* aName, nsISupports* aValue) {
 }
 
 nsresult nsCommandParams::SetISupports(const char* aName, nsISupports* aValue) {
-  HashEntry* foundEntry = GetOrMakeEntry(aName, eISupportsType);
-  if (!foundEntry) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  foundEntry->mISupports = aValue;  // addrefs
+  mValuesHash.InsertOrUpdate(nsDependentCString(aName),
+                             AsVariant(nsCOMPtr{aValue}));
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsCommandParams::RemoveValue(const char* aName) {
-  mValuesHash.Remove((void*)aName);
+  mValuesHash.Remove(nsDependentCString(aName));
   return NS_OK;
-}
-
-nsCommandParams::HashEntry* nsCommandParams::GetNamedEntry(
-    const char* aName) const {
-  return static_cast<HashEntry*>(mValuesHash.Search((void*)aName));
-}
-
-nsCommandParams::HashEntry* nsCommandParams::GetOrMakeEntry(
-    const char* aName, uint8_t aEntryType) {
-  auto foundEntry = static_cast<HashEntry*>(mValuesHash.Search((void*)aName));
-  if (foundEntry) {  // reuse existing entry
-    foundEntry->Reset(aEntryType);
-    return foundEntry;
-  }
-
-  foundEntry = static_cast<HashEntry*>(mValuesHash.Add((void*)aName, fallible));
-  if (!foundEntry) {
-    return nullptr;
-  }
-
-  // Use placement new. Our ctor does not clobber keyHash, which is important.
-  new (foundEntry) HashEntry(aEntryType, aName);
-  return foundEntry;
-}
-
-PLDHashNumber nsCommandParams::HashKey(const void* aKey) {
-  return HashString((const char*)aKey);
-}
-
-bool nsCommandParams::HashMatchEntry(const PLDHashEntryHdr* aEntry,
-                                     const void* aKey) {
-  const char* keyString = (const char*)aKey;
-  const HashEntry* thisEntry = static_cast<const HashEntry*>(aEntry);
-  return thisEntry->mEntryName.Equals(keyString);
-}
-
-void nsCommandParams::HashMoveEntry(PLDHashTable* aTable,
-                                    const PLDHashEntryHdr* aFrom,
-                                    PLDHashEntryHdr* aTo) {
-  auto* fromEntry =
-      const_cast<HashEntry*>(static_cast<const HashEntry*>(aFrom));
-  HashEntry* toEntry = static_cast<HashEntry*>(aTo);
-
-  new (KnownNotNull, toEntry) HashEntry(std::move(*fromEntry));
-
-  fromEntry->~HashEntry();
-}
-
-void nsCommandParams::HashClearEntry(PLDHashTable* aTable,
-                                     PLDHashEntryHdr* aEntry) {
-  HashEntry* thisEntry = static_cast<HashEntry*>(aEntry);
-  thisEntry->~HashEntry();
 }

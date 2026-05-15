@@ -8,9 +8,8 @@
 #define DOM_SVG_DOMSVGANIMATEDBOOLEAN_H_
 
 #include "SVGAnimatedBoolean.h"
-#include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGElement.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

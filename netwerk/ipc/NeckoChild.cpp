@@ -12,11 +12,9 @@
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/ChildDNSService.h"
 #include "mozilla/net/CookieServiceChild.h"
-#include "mozilla/net/DataChannelChild.h"
 #ifdef MOZ_WIDGET_GTK
 #  include "mozilla/net/GIOChannelChild.h"
 #endif
-#include "mozilla/net/FileChannelChild.h"
 #include "mozilla/net/WebSocketChannelChild.h"
 #include "mozilla/net/WebSocketEventListenerChild.h"
 #include "mozilla/net/DNSRequestChild.h"
@@ -25,6 +23,7 @@
 #include "mozilla/dom/network/TCPServerSocketChild.h"
 #include "mozilla/dom/network/UDPSocketChild.h"
 #include "mozilla/net/AltDataOutputStreamChild.h"
+#include "mozilla/net/CacheEntryWriteHandleChild.h"
 #include "mozilla/net/SocketProcessBridgeChild.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/net/StunAddrsRequestChild.h"
@@ -34,8 +33,6 @@
 #include "SerializedLoadContext.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIOService.h"
-#include "nsINetworkPredictor.h"
-#include "nsINetworkPredictorVerifier.h"
 #include "nsINetworkLinkService.h"
 #include "nsQueryObject.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -113,9 +110,27 @@ bool NeckoChild::DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor) {
   return true;
 }
 
+PCacheEntryWriteHandleChild* NeckoChild::AllocPCacheEntryWriteHandleChild(
+    PHttpChannelChild* channel) {
+  // We don't allocate here: see HttpChannelChild::GetCacheEntryWriteHandle()
+  MOZ_ASSERT_UNREACHABLE(
+      "AllocPCacheEntryWriteHandleChild should not be called");
+  return nullptr;
+}
+
+bool NeckoChild::DeallocPCacheEntryWriteHandleChild(
+    PCacheEntryWriteHandleChild* aActor) {
+  CacheEntryWriteHandleChild* child =
+      static_cast<CacheEntryWriteHandleChild*>(aActor);
+  child->ReleaseIPDLReference();
+  return true;
+}
+
 PAltDataOutputStreamChild* NeckoChild::AllocPAltDataOutputStreamChild(
     const nsACString& type, const int64_t& predictedSize,
-    PHttpChannelChild* channel) {
+    const mozilla::Maybe<mozilla::NotNull<PHttpChannelChild*>>& channel,
+    const mozilla::Maybe<mozilla::NotNull<PCacheEntryWriteHandleChild*>>&
+        handle) {
   // We don't allocate here: see HttpChannelChild::OpenAlternativeOutputStream()
   MOZ_ASSERT_UNREACHABLE("AllocPAltDataOutputStreamChild should not be called");
   return nullptr;
@@ -190,17 +205,6 @@ bool NeckoChild::DeallocPWebSocketEventListenerChild(
   return true;
 }
 
-PSimpleChannelChild* NeckoChild::AllocPSimpleChannelChild(
-    const uint32_t& channelId) {
-  MOZ_ASSERT_UNREACHABLE("Should never get here");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPSimpleChannelChild(PSimpleChannelChild* child) {
-  static_cast<SimpleChannelChild*>(child)->Release();
-  return true;
-}
-
 PTCPSocketChild* NeckoChild::AllocPTCPSocketChild(const nsAString& host,
                                                   const uint16_t& port) {
   TCPSocketChild* p = new TCPSocketChild(host, port, nullptr);
@@ -250,60 +254,6 @@ PTransportProviderChild* NeckoChild::AllocPTransportProviderChild() {
 bool NeckoChild::DeallocPTransportProviderChild(
     PTransportProviderChild* aActor) {
   return true;
-}
-
-/* Predictor Messages */
-mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPrefetch(
-    nsIURI* aURI, const uint32_t& aHttpStatus) {
-  MOZ_ASSERT(NS_IsMainThread(),
-             "PredictorChild::RecvOnPredictPrefetch "
-             "off main thread.");
-  if (!aURI) {
-    return IPC_FAIL(this, "aURI is null");
-  }
-
-  // Get the current predictor
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsINetworkPredictorVerifier> predictor;
-  predictor = mozilla::components::Predictor::Service(&rv);
-  NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
-
-  predictor->OnPredictPrefetch(aURI, aHttpStatus);
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPreconnect(nsIURI* aURI) {
-  MOZ_ASSERT(NS_IsMainThread(),
-             "PredictorChild::RecvOnPredictPreconnect "
-             "off main thread.");
-  if (!aURI) {
-    return IPC_FAIL(this, "aURI is null");
-  }
-  // Get the current predictor
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsINetworkPredictorVerifier> predictor;
-  predictor = mozilla::components::Predictor::Service(&rv);
-  NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
-
-  predictor->OnPredictPreconnect(aURI);
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictDNS(nsIURI* aURI) {
-  MOZ_ASSERT(NS_IsMainThread(),
-             "PredictorChild::RecvOnPredictDNS off "
-             "main thread.");
-  if (!aURI) {
-    return IPC_FAIL(this, "aURI is null");
-  }
-  // Get the current predictor
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsINetworkPredictorVerifier> predictor;
-  predictor = mozilla::components::Predictor::Service(&rv);
-  NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
-
-  predictor->OnPredictDNS(aURI);
-  return IPC_OK();
 }
 
 mozilla::ipc::IPCResult NeckoChild::RecvSpeculativeConnectRequest() {

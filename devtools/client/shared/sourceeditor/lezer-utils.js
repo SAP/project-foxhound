@@ -86,7 +86,7 @@ const ast = new Map();
 /**
  * Checks if a node has children with any of the node types specified
  *
- * @param {Object} node
+ * @param {object} node
  * @param {Set} types
  * @returns
  */
@@ -104,7 +104,7 @@ function hasChildNodeOfType(node, types) {
 /**
  * Checks if a node has children with any of the node types specified
  *
- * @param {Object} node
+ * @param {object} node
  * @param {Set} types
  * @returns
  */
@@ -122,9 +122,9 @@ function findChildNodeOfType(node, types) {
 /**
  * Gets a cached tree or parses the the source content
  *
- * @param {Object} parserLanguage - The language parser used to parse the source
- * @param {String} id - A unique identifier for the source
- * @param {String} content - The source text
+ * @param {object} parserLanguage - The language parser used to parse the source
+ * @param {string} id - A unique identifier for the source
+ * @param {string} content - The source text
  * @returns {Tree} - https://lezer.codemirror.net/docs/ref/#common.Tree
  */
 function getTree(parserLanguage, id, content) {
@@ -143,10 +143,10 @@ function clear() {
 /**
  * Gets the node and the function name which immediately encloses the node (representing a location)
  *
- * @param {Object} doc - The codemirror document used to retrive the part of content
- * @param {Object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
- * @params {Object} options
- *                  options.includeAnonymousFunctions - if true, allow matching anonymous functions
+ * @param {object} doc - The codemirror document used to retrive the part of content
+ * @param {object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
+ * @param {object} options
+ * @param {boolean} options.includeAnonymousFunctions - if true, allow matching anonymous functions
  * @returns
  */
 function getEnclosingFunction(
@@ -182,10 +182,10 @@ function getEnclosingFunction(
  * Gets the parent scope node for the specified node.
  * If neither is found then we fallback to the script node for the source.
  *
- * @param {Object} node
- * @param {String} scopeType - The scope type specifies what kind of scope node to look for.
+ * @param {object} node
+ * @param {string} scopeType - The scope type specifies what kind of scope node to look for.
  * The types are defined by the platform. See https://firefox-source-docs.mozilla.org/js/Debugger/Debugger.Environment.html#type
- * @returns {Object | null} scope node or null if none is found
+ * @returns {object | null} scope node or null if none is found
  */
 function getParentScopeOfType(node, scopeType) {
   let parentNode = node.parent;
@@ -218,10 +218,10 @@ function getParentScopeOfType(node, scopeType) {
 /**
  * Gets the node at the specified location
  *
- * @param {Object} doc - https://codemirror.net/docs/ref/#state.EditorState.doc
- * @param {Object} tree - https://lezer.codemirror.net/docs/ref/#common.Tree
- * @param {Object} location
- * @returns {Object} node - https://lezer.codemirror.net/docs/ref/#common.SyntaxNodeRef
+ * @param {object} doc - https://codemirror.net/docs/ref/#state.EditorState.doc
+ * @param {object} tree - https://lezer.codemirror.net/docs/ref/#common.Tree
+ * @param {object} location
+ * @returns {object} node - https://lezer.codemirror.net/docs/ref/#common.SyntaxNodeRef
  */
 function getTreeNodeAtLocation(doc, tree, location) {
   try {
@@ -238,8 +238,8 @@ function getTreeNodeAtLocation(doc, tree, location) {
 /**
  * Converts Codemirror position to valid source location. Used only for CM6
  *
- * @param {Object} doc - The Codemirror document used to retrive the part of content
- * @param {Number} pos - Codemirror offset
+ * @param {object} doc - The Codemirror document used to retrive the part of content
+ * @param {number} pos - Codemirror offset
  * @returns
  */
 function positionToLocation(doc, pos) {
@@ -260,9 +260,9 @@ function positionToLocation(doc, pos) {
  * Gets the name of the function if any exists, returns null
  * for anonymous functions.
  *
- * @param {Object} doc - The codemirror document used to retrive the part of content
- * @param {Object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
- * @returns {String|null}
+ * @param {object} doc - The codemirror document used to retrive the part of content
+ * @param {object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
+ * @returns {string | null}
  */
 function getFunctionName(doc, node) {
   /**
@@ -375,8 +375,8 @@ function getFunctionName(doc, node) {
 /**
  * Gets the parameter names of the function as an array
  *
- * @param {Object} doc - The codemirror document used to retrieve the part of content
- * @param {Object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
+ * @param {object} doc - The codemirror document used to retrieve the part of content
+ * @param {object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
  * @returns {Array}
  */
 function getFunctionParameterNames(doc, node) {
@@ -441,8 +441,8 @@ function getFunctionClass(doc, node) {
 /**
  * Gets the meta data for member expression nodes
  *
- * @param {Object} doc - The codemirror document used to retrieve the part of content
- * @param {Object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
+ * @param {object} doc - The codemirror document used to retrieve the part of content
+ * @param {object} node - The parser syntax node https://lezer.codemirror.net/docs/ref/#common.SyntaxNode
  * @returns
  */
 function getMetaBindings(doc, node) {
@@ -463,9 +463,9 @@ function getMetaBindings(doc, node) {
 /**
  * Walk the syntax tree of the langauge provided
  *
- * @param {Object}   view - Codemirror view (https://codemirror.net/docs/ref/#view)
- * @param {Object}   language - Codemirror Language (https://codemirror.net/docs/ref/#language)
- * @param {Object}   options
+ * @param {object}   view - Codemirror view (https://codemirror.net/docs/ref/#view)
+ * @param {object}   language - Codemirror Language (https://codemirror.net/docs/ref/#language)
+ * @param {object}   options
  *        {Boolean}  options.forceParseTo - Force parsing the document up to a certain point
  *        {Function} options.enterVisitor - A function that is called when a node is entered
  *        {Set}      options.filterSet - A set of node types which should be visited, all others should be ignored
@@ -494,8 +494,9 @@ async function walkTree(view, language, options) {
 /**
  * This enables walking a specific part of the syntax tree using the cursor
  * provided by the node (which is the parent)
- * @param {Object} cursor - https://lezer.codemirror.net/docs/ref/#common.TreeCursor
- * @param {Object} options
+ *
+ * @param {object} cursor - https://lezer.codemirror.net/docs/ref/#common.TreeCursor
+ * @param {object} options
  *        {Function} options.enterVisitor - A function that is called when a node is entered
  *        {Set}      options.filterSet - A set of node types which should be visited, all others should be ignored
  */
@@ -511,8 +512,8 @@ async function walkCursor(cursor, options) {
  * Merge variables, arguments and child properties of member expressions
  * into a unique "bindings" objects where arguments overrides variables.
  *
- * @param {Object} scopeBindings
- * @returns {Object} bindings
+ * @param {object} scopeBindings
+ * @returns {object} bindings
  */
 function getScopeBindings(scopeBindings) {
   const bindings = { ...scopeBindings.variables };

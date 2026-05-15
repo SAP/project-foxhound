@@ -41,7 +41,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "swm",
   "@mozilla.org/serviceworkers/manager;1",
-  "nsIServiceWorkerManager"
+  Ci.nsIServiceWorkerManager
 );
 
 class WorkerDescriptorActor extends Actor {

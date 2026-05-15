@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txRtfHandler_h___
-#define txRtfHandler_h___
+#ifndef txRtfHandler_h_
+#define txRtfHandler_h_
 
-#include "mozilla/Attributes.h"
 #include "txBufferingHandler.h"
 #include "txExprResult.h"
 #include "txXPathNode.h"
@@ -39,4 +38,4 @@ class txRtfHandler : public txBufferingHandler {
   nsresult startDocument() override;
 };
 
-#endif /* txRtfHandler_h___ */
+#endif /* txRtfHandler_h_ */

@@ -8,13 +8,13 @@ let originalEngine;
 let originalPrivateEngine;
 
 async function resetEngines() {
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     originalEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
-  await Services.search.setDefaultPrivate(
+  await SearchService.setDefaultPrivate(
     originalPrivateEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 }
 
@@ -28,8 +28,8 @@ add_setup(async function () {
     ],
   });
   await gCUITestUtils.addSearchBar();
-  originalEngine = await Services.search.getDefault();
-  originalPrivateEngine = await Services.search.getDefaultPrivate();
+  originalEngine = await SearchService.getDefault();
+  originalPrivateEngine = await SearchService.getDefaultPrivate();
   registerCleanupFunction(async () => {
     await resetEngines();
     gCUITestUtils.removeSearchBar();
@@ -122,9 +122,8 @@ function promiseDefaultEngineChanged(testPrivate) {
     function observer(aSub, aTopic, aData) {
       if (aData == expectedNotification) {
         Assert.equal(
-          Services.search[
-            testPrivate ? "defaultPrivateEngine" : "defaultEngine"
-          ].name,
+          SearchService[testPrivate ? "defaultPrivateEngine" : "defaultEngine"]
+            .name,
           TEST_ENGINE_NAME,
           "defaultEngine set"
         );

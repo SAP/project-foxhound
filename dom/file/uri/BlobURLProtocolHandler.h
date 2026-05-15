@@ -7,14 +7,14 @@
 #ifndef mozilla_dom_BlobURLProtocolHandler_h
 #define mozilla_dom_BlobURLProtocolHandler_h
 
-#include "mozilla/Attributes.h"
+#include <functional>
+
 #include "mozilla/dom/ipc/IdType.h"
+#include "nsCOMPtr.h"
 #include "nsIProtocolHandler.h"
 #include "nsIURI.h"
-#include "nsCOMPtr.h"
 #include "nsTArray.h"
 #include "nsWeakReference.h"
-#include <functional>
 
 #define BLOBURI_SCHEME "blob"
 

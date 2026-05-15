@@ -412,6 +412,7 @@ enum ThreeByteOpcodeID {
   OP3_VFMADD231PD_VxHxWx = 0xB8,
   OP3_VFNMADD231PS_VxHxWx = 0xBC,
   OP3_VFNMADD231PD_VxHxWx = 0xBC,
+  OP3_ANDN_GyByEy = 0xF2,
   OP3_SHLX_GyEyBy = 0xF7,
   OP3_SARX_GyEyBy = 0xF7,
   OP3_SHRX_GyEyBy = 0xF7,

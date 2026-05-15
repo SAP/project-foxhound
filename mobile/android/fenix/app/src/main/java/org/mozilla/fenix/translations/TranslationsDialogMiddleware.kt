@@ -10,7 +10,7 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.concept.engine.translate.TranslationPageSettingOperation
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.utils.Settings
 
 /**
@@ -23,7 +23,7 @@ class TranslationsDialogMiddleware(
 
     @Suppress("LongMethod", "CyclomaticComplexMethod")
     override fun invoke(
-        context: MiddlewareContext<TranslationsDialogState, TranslationsDialogAction>,
+        store: Store<TranslationsDialogState, TranslationsDialogAction>,
         next: (TranslationsDialogAction) -> Unit,
         action: TranslationsDialogAction,
     ) {
@@ -74,8 +74,8 @@ class TranslationsDialogMiddleware(
             }
 
             is TranslationsDialogAction.TranslateAction -> {
-                context.state.initialFrom?.code?.let { fromLanguage ->
-                    context.state.initialTo?.code?.let { toLanguage ->
+                store.state.initialFrom?.code?.let { fromLanguage ->
+                    store.state.initialTo?.code?.let { toLanguage ->
                         TranslationsAction.TranslateAction(
                             tabId = sessionId,
                             fromLanguage = fromLanguage,

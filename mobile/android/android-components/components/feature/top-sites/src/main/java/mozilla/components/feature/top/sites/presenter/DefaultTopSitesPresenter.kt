@@ -6,7 +6,9 @@ package mozilla.components.feature.top.sites.presenter
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mozilla.components.feature.top.sites.TopSitesConfig
 import mozilla.components.feature.top.sites.TopSitesStorage
 import mozilla.components.feature.top.sites.view.TopSitesView
@@ -21,7 +23,7 @@ import kotlin.coroutines.CoroutineContext
  * @param config Lambda expression that returns [TopSitesConfig] which species the number of top
  * sites to return and whether or not to include frequently visited sites.
  */
-internal class DefaultTopSitesPresenter(
+class DefaultTopSitesPresenter(
     override val view: TopSitesView,
     override val storage: TopSitesStorage,
     private val config: () -> TopSitesConfig,
@@ -29,6 +31,7 @@ internal class DefaultTopSitesPresenter(
 ) : TopSitesPresenter, TopSitesStorage.Observer {
 
     private val scope = CoroutineScope(coroutineContext)
+    private var job: Job? = null
 
     override fun start() {
         onStorageUpdated()
@@ -38,19 +41,24 @@ internal class DefaultTopSitesPresenter(
 
     override fun stop() {
         storage.unregister(this)
+        job?.cancel()
     }
 
     override fun onStorageUpdated() {
         val innerConfig = config.invoke()
 
-        scope.launch {
+        // Cancel any existing job before starting a new one since onStorageUpdated can be called
+        // multiple times in quick succession. Ensure only the latest job is running.
+        job?.cancel()
+
+        job = scope.launch {
             val topSites = storage.getTopSites(
                 totalSites = innerConfig.totalSites,
                 frecencyConfig = innerConfig.frecencyConfig,
                 providerConfig = innerConfig.providerConfig,
             )
 
-            scope.launch(Dispatchers.Main) {
+            withContext(Dispatchers.Main) {
                 view.displayTopSites(topSites)
             }
         }

@@ -40,19 +40,21 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "prio.h"
 #include "mozilla/Assertions.h"
+#include "prio.h"
 
 extern "C" {
+// clang-format off
 #include "async_wait.h"
 #include "async_timer.h"
 #include "nr_resolver.h"
 #include "r_macros.h"
 #include "transport_addr.h"
+// clang-format on
 }
 
-#include "nriceresolverfake.h"
 #include "nr_socket_prsock.h"
+#include "nriceresolverfake.h"
 
 namespace mozilla {
 

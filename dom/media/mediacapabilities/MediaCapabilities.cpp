@@ -12,18 +12,20 @@
 
 #include "AllocationPolicy.h"
 #include "DecoderTraits.h"
+#include "MP4Decoder.h"
+#include "MediaCapabilitiesValidation.h"
 #include "MediaInfo.h"
 #include "MediaRecorder.h"
-#include "MP4Decoder.h"
 #include "PDMFactory.h"
 #include "VPXDecoder.h"
+#include "WindowRenderer.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/MediaCapabilitiesBinding.h"
 #include "mozilla/dom/MediaKeySystemAccess.h"
 #include "mozilla/dom/MediaSource.h"
@@ -34,14 +36,15 @@
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/layers/KnowsCompositor.h"
 #include "nsContentUtils.h"
-#include "WindowRenderer.h"
 
-static mozilla::LazyLogModule sMediaCapabilitiesLog("MediaCapabilities");
+mozilla::LazyLogModule sMediaCapabilitiesLog("MediaCapabilities");
 
 #define LOG(msg, ...) \
   DDMOZ_LOG(sMediaCapabilitiesLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 namespace mozilla::dom {
+using mediacaps::IsValidMediaDecodingConfiguration;
+using mediacaps::IsValidMediaEncodingConfiguration;
 
 static bool
 MediaCapabilitiesKeySystemConfigurationToMediaKeySystemConfiguration(
@@ -68,6 +71,9 @@ MediaCapabilitiesKeySystemConfigurationToMediaKeySystemConfiguration(
       }
     }
   }
+  aOutConfig.mDistinctiveIdentifier = keySystemConfig.mDistinctiveIdentifier;
+  aOutConfig.mPersistentState = keySystemConfig.mPersistentState;
+
   if (aInConfig.mAudio.WasPassed()) {
     auto* capabilitiy = aOutConfig.mAudioCapabilities.AppendElement(fallible);
     if (NS_WARN_IF(!capabilitiy)) {
@@ -181,6 +187,7 @@ MediaCapabilities::MediaCapabilities(nsIGlobalObject* aParent)
     : mParent(aParent) {}
 
 // https://w3c.github.io/media-capabilities/#dom-mediacapabilities-decodinginfo
+// Section 2.5.2 DecodingInfo() Method
 already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
     const MediaDecodingConfiguration& aConfiguration, ErrorResult& aRv) {
   RefPtr<Promise> promise = Promise::Create(mParent, aRv);
@@ -188,29 +195,28 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
     return nullptr;
   }
 
-  // If configuration is not a valid MediaConfiguration, return a Promise
-  // rejected with a TypeError.
-  if (!aConfiguration.mVideo.WasPassed() &&
-      !aConfiguration.mAudio.WasPassed()) {
-    promise->MaybeRejectWithTypeError(
-        "'audio' or 'video' member of argument of "
-        "MediaCapabilities.decodingInfo");
+  // Step 1: If configuration is not a valid MediaDecodingConfiguration,
+  // return a Promise rejected with a newly created TypeError.
+  if (auto configCheck = IsValidMediaDecodingConfiguration(aConfiguration);
+      configCheck.isErr()) {
+    RejectWithValidationResult(promise, configCheck.unwrapErr());
     return promise.forget();
   }
 
-  // If configuration.keySystemConfiguration exists, run the following substeps:
+  // Step 2: If configuration.keySystemConfiguration exists,
+  // run the following substeps:
   if (aConfiguration.mKeySystemConfiguration.WasPassed()) {
-    // If the global object is of type WorkerGlobalScope, return a Promise
-    // rejected with a newly created DOMException whose name is
-    // InvalidStateError.
+    // Step 2.1: If the global object is of type WorkerGlobalScope,
+    //           return a Promise rejected with a newly created DOMException
+    //           whose name is InvalidStateError.
     if (IsWorkerGlobal(mParent->GetGlobalJSObject())) {
       promise->MaybeRejectWithInvalidStateError(
           "key system configuration is not allowed in the worker scope");
       return promise.forget();
     }
-    // If the global object’s relevant settings object is a non-secure context,
-    // return a Promise rejected with a newly created DOMException whose name is
-    // SecurityError.
+    // Step 2.2 If the global object’s relevant settings object is a
+    //          non-secure context, return a Promise rejected with a newly
+    //          created DOMException whose name is SecurityError.
     if (auto* window = mParent->GetAsInnerWindow();
         window && !window->IsSecureContext()) {
       promise->MaybeRejectWithSecurityError(
@@ -219,8 +225,9 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
     }
   }
 
-  // In parallel, run the Create a MediaCapabilitiesDecodingInfo algorithm with
-  // configuration and resolve p with its result.
+  // Step 3: Let p be a new Promise (already have it!)
+  // Step 4: In parallel, run the Create a MediaCapabilitiesDecodingInfo
+  //         algorithm with configuration and resolve p with its result.
   CreateMediaCapabilitiesDecodingInfo(aConfiguration, aRv, promise);
   return promise.forget();
 }
@@ -558,8 +565,7 @@ void MediaCapabilities::CreateMediaCapabilitiesDecodingInfo(
 
   // this is only captured for use with the LOG macro.
   RefPtr<MediaCapabilities> self = this;
-
-  CapabilitiesPromise::All(targetThread, promises)
+  CapabilitiesPromise::All(taskQueue, promises)
       ->Then(targetThread, __func__,
              [promise = RefPtr<Promise>{aPromise}, tracks = std::move(tracks),
               workerRef, holder, aConfiguration, self,
@@ -640,11 +646,9 @@ already_AddRefed<Promise> MediaCapabilities::EncodingInfo(
 
   // If configuration is not a valid MediaConfiguration, return a Promise
   // rejected with a TypeError.
-  if (!aConfiguration.mVideo.WasPassed() &&
-      !aConfiguration.mAudio.WasPassed()) {
-    aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
-        "'audio' or 'video' member of argument of "
-        "MediaCapabilities.encodingInfo");
+  if (auto configCheck = IsValidMediaEncodingConfiguration(aConfiguration);
+      configCheck.isErr()) {
+    ThrowWithValidationResult(aRv, configCheck.unwrapErr());
     return nullptr;
   }
 
@@ -785,3 +789,4 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(MediaCapabilities)
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(MediaCapabilities, mParent)
 
 }  // namespace mozilla::dom
+#undef LOG

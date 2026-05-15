@@ -14,7 +14,7 @@
 
 namespace js::gc {
 
-struct Cell;
+class Cell;
 
 // Gets an existing UID in |uidp| if one exists.
 [[nodiscard]] bool MaybeGetUniqueId(Cell* cell, uint64_t* uidp);

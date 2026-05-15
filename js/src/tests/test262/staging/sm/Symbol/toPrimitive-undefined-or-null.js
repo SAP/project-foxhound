@@ -2,9 +2,6 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js]
-flags:
-  - noStrict
 description: |
   pending
 esid: pending
@@ -22,7 +19,7 @@ for (let method of [true, false, 0, 123, "", "abc", Symbol(), {}]) {
         [Symbol.toPrimitive]: method,
         toString: () => "pass",
     };
-    assertThrowsInstanceOf(() => "" + obj, TypeError);
+    assert.throws(TypeError, () => "" + obj);
 }
 
 

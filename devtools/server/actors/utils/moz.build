@@ -14,6 +14,7 @@ DevToolsModules(
     "dbg-source.js",
     "event-breakpoints.js",
     "event-loop.js",
+    "HTMLSourcesCache.sys.mjs",
     "inactive-property-helper.js",
     "logEvent.js",
     "make-debugger.js",
@@ -22,10 +23,6 @@ DevToolsModules(
     "source-url.js",
     "sources-manager.js",
     "stack.js",
-    "style-utils.js",
-    "stylesheet-utils.js",
-    "stylesheets-manager.js",
-    "track-change-emitter.js",
     "walker-search.js",
     "watchpoint-map.js",
 )

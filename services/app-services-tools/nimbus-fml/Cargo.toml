@@ -1,0 +1,11 @@
+[package]
+name = "toolchain-nimbus-fml"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+
+[[bin]]
+name = "nimbus-fml"
+
+[dependencies]
+mozilla-central-workspace-hack = { version = "0.1", features = ["toolchain-nimbus-fml"], optional = true }

@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLFrameElement_h
 #define mozilla_dom_HTMLFrameElement_h
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLFrameElement.h"
 #include "nsGkAtoms.h"
 

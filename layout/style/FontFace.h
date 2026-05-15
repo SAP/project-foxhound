@@ -30,10 +30,12 @@ class FontFaceSet;
 class FontFaceSetImpl;
 class Promise;
 class UTF8StringOrArrayBufferOrArrayBufferView;
-}  // namespace dom
-}  // namespace mozilla
 
-namespace mozilla::dom {
+enum class FontFaceLoadedRejectReason : uint8_t { Syntax, Network };
+struct FontFaceLoadedRejection {
+  const FontFaceLoadedRejectReason mReason;
+  nsCString mMessage;
+};
 
 class FontFace final : public GlobalTeardownObserver, public nsWrapperCache {
   friend class mozilla::PostTraversalTask;
@@ -92,7 +94,8 @@ class FontFace final : public GlobalTeardownObserver, public nsWrapperCache {
 
   void Destroy();
   void MaybeResolve();
-  void MaybeReject(nsresult aResult);
+
+  void MaybeReject(FontFaceLoadedRejectReason, nsCString&& aRejectMessage);
 
  private:
   explicit FontFace(nsIGlobalObject* aParent);
@@ -115,9 +118,10 @@ class FontFace final : public GlobalTeardownObserver, public nsWrapperCache {
   RefPtr<Promise> mLoaded;
 
   // Saves the rejection code for mLoaded if mLoaded hasn't been created yet.
-  nsresult mLoadedRejection;
+  UniquePtr<FontFaceLoadedRejection> mLoadedRejection;
 };
 
-}  // namespace mozilla::dom
+}  // namespace dom
+}  // namespace mozilla
 
 #endif  // !defined(mozilla_dom_FontFace_h)

@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_AbortSignal_h
 #define mozilla_dom_AbortSignal_h
 
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/AbortFollower.h"
-#include "mozilla/DOMEventTargetHelper.h"
 
 namespace mozilla::dom {
 

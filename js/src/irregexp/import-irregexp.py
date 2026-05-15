@@ -126,7 +126,7 @@ if __name__ == "__main__":
         provided_path = "the command-line"
     elif "TASK_ID" in os.environ:
         src_path = Path("/builds/worker/v8/")
-        subprocess.run("git pull origin master", shell=True, cwd=src_path)
+        subprocess.run("git pull origin master", check=True, shell=True, cwd=src_path)
 
         src_path = Path("/builds/worker/v8/src/regexp")
         provided_path = "the hardcoded path in the taskcluster image"

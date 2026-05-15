@@ -29,6 +29,10 @@
 
 #include "mozilla/GeckoArgs.h"
 
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+#  include "mozilla/psm/PPKCS11ModuleChild.h"
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
+
 namespace mozilla::ipc {
 
 extern LazyLogModule gUtilityProcessLog;
@@ -124,7 +128,7 @@ void UtilityProcessManager::OnPreferenceChange(const char16_t* aData) {
     }
 
     if (p->mProcessParent) {
-      Unused << p->mProcessParent->SendPreferenceUpdate(pref);
+      (void)p->mProcessParent->SendPreferenceUpdate(pref);
     } else if (IsProcessLaunching(p->mSandbox)) {
       p->mQueuedPrefs.AppendElement(pref);
     }
@@ -214,7 +218,7 @@ UtilityProcessManager::LaunchProcess(SandboxingKind aSandbox) {
         // launch and weren't included in the blobs set
         // up in LaunchUtilityProcess.
         for (const mozilla::dom::Pref& pref : p->mQueuedPrefs) {
-          Unused << NS_WARN_IF(!p->mProcessParent->SendPreferenceUpdate(pref));
+          (void)NS_WARN_IF(!p->mProcessParent->SendPreferenceUpdate(pref));
         }
         p->mQueuedPrefs.Clear();
 
@@ -287,6 +291,12 @@ UtilityProcessManager::StartUtility(RefPtr<Actor> aActor,
         // The tests within browser_utility_multipleAudio.js should be able to
         // catch that behavior.
         if (!aActor->CanSend()) {
+          if (!utilityParent->CanSend()) {
+            NS_WARNING("Utility process died before IPC could be established");
+            return RetPromise::CreateAndReject(
+                LaunchError("UPM::UtilityParent died"), __func__);
+          }
+
           nsresult rv = aActor->BindToUtilityProcess(utilityParent);
           if (NS_FAILED(rv)) {
             MOZ_ASSERT(false, "Protocol endpoints failure");
@@ -385,7 +395,7 @@ UtilityProcessManager::StartProcessForRemoteMediaDecoding(
 
 #ifdef MOZ_WMF_MEDIA_ENGINE
             if (aSandbox == SandboxingKind::MF_MEDIA_ENGINE_CDM &&
-                !umsc->CreateVideoBridge()) {
+                !umsc->CreateVideoBridge(process)) {
               MOZ_ASSERT(false, "Failed to create video bridge");
               return RetPromise::CreateAndReject(
                   LaunchError("UMSC::CreateVideoBridge"), __func__);
@@ -513,6 +523,31 @@ UtilityProcessManager::CreateWinFileDialogActor() {
 }
 
 #endif  // XP_WIN
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+RefPtr<UtilityProcessManager::PKCS11ModulePromise>
+UtilityProcessManager::StartPKCS11Module() {
+  using RetPromise = PKCS11ModulePromise;
+  auto parent = MakeRefPtr<psm::PKCS11ModuleParent>();
+  auto startPromise = StartUtility(parent, SandboxingKind::PKCS11_MODULE);
+  return startPromise->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [parent = std::move(parent)]() mutable {
+        if (!parent->CanSend()) {
+          MOZ_ASSERT(false, "PKCS11ModuleParent lost in the middle");
+          return RetPromise::CreateAndReject(
+              LaunchError("StartPKCS11Module: !parent->CanSend()"),
+              __PRETTY_FUNCTION__);
+        }
+        return RetPromise::CreateAndResolve(std::move(parent), __func__);
+      },
+      [](LaunchError&& aError) {
+        MOZ_ASSERT_UNREACHABLE(
+            "StartPKCS11Module: failure when starting actor");
+        return RetPromise::CreateAndReject(std::move(aError), __func__);
+      });
+}
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
 bool UtilityProcessManager::IsProcessLaunching(SandboxingKind aSandbox) {
   MOZ_ASSERT(NS_IsMainThread());

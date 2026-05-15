@@ -2,60 +2,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::{
-    array::TryFromSliceError,
-    ffi::{FromBytesWithNulError, NulError},
-    num::TryFromIntError,
-};
 use thiserror::Error;
 
-#[cfg(not(target_os = "windows"))]
-use nix::errno::Errno as SystemError;
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::WIN32_ERROR as SystemError;
+use crate::{
+    messages::{self, MessageError},
+    platform::PlatformError,
+};
 
 #[derive(Debug, Error)]
 pub enum IPCError {
     #[error("Message error")]
     BadMessage(#[from] MessageError),
-    #[error("Generic system error: {0}")]
-    System(SystemError),
-    #[error("Could not bind socket to an address, error: {0}")]
-    BindFailed(SystemError),
-    #[error("Could not listen on a socket, error: {0}")]
-    ListenFailed(SystemError),
-    #[error("Could not accept an incoming connection, error: {0}")]
-    AcceptFailed(SystemError),
-    #[error("Could not connect to a socket, error: {0}")]
-    ConnectionFailure(SystemError),
-    #[error("Could not send data, error: {0}")]
-    TransmissionFailure(SystemError),
-    #[error("Could not receive data, error: {0}")]
-    ReceptionFailure(SystemError),
-    #[error("Error while waiting for events, error: {0:?}")]
-    WaitingFailure(Option<SystemError>),
-    #[error("Buffer length exceeds a 32-bit integer")]
-    InvalidSize(#[from] TryFromIntError),
-    #[error("Error while parsing a file descriptor string")]
-    ParseError,
-    #[error("Failed to duplicate clone handle")]
-    CloneHandleFailed(#[source] std::io::Error),
-}
-
-#[derive(Debug, Error)]
-pub enum MessageError {
-    #[error("Truncated message")]
-    Truncated,
-    #[error("Message kind is invalid")]
-    InvalidKind,
-    #[error("The message contained an invalid payload")]
-    InvalidData,
-    #[error("Missing ancillary data")]
-    MissingAncillary,
-    #[error("Invalid message size")]
-    InvalidSize(#[from] TryFromSliceError),
-    #[error("Missing nul terminator")]
-    MissingNul(#[from] FromBytesWithNulError),
-    #[error("Missing nul terminator")]
-    InteriorNul(#[from] NulError),
+    #[error("Could not connect to the server: {0}")]
+    ConnectionFailure(PlatformError),
+    #[error("Failed to create a connector: {0}")]
+    CreationFailure(PlatformError),
+    #[error("Failed to deserialize connector: {0}")]
+    Deserialize(PlatformError),
+    #[error("Invalid ancillary data was provided")]
+    InvalidAncillary,
+    #[error("Could not receive data: {0}")]
+    ReceptionFailure(PlatformError),
+    #[error("Could not serialize connector for use in another process: {0}")]
+    Serialize(PlatformError),
+    #[error("An operation timed out")]
+    Timeout,
+    #[error("Could not send data: {0}")]
+    TransmissionFailure(PlatformError),
+    #[error("Unexpected message of kind: {0:?}")]
+    UnexpectedMessage(messages::Kind),
 }

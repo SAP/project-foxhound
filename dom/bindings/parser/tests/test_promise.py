@@ -98,9 +98,7 @@ def WebIDLTest(parser, harness):
     )
     parser.finish()
 
-    harness.ok(
-        True, "Should allow overloads which only have Promise and return " "types."
-    )
+    harness.ok(True, "Should allow overloads which only have Promise and return types.")
 
     parser = parser.reset()
     threw = False

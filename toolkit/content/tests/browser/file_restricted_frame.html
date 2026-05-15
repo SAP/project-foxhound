@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>not restricted</title>
+</head>
+<body>
+  <iframe id="frame"></iframe>
+  <script>
+    const documentURL = URL.parse(document.URL);
+    let frameHost = documentURL.searchParams.get("host");
+    if (!frameHost) {
+      frameHost = documentURL.host;
+    }
+    const frame = document.getElementById("frame");
+    frame.src = `https://${frameHost}/browser/toolkit/content/tests/browser/file_restricted.html`
+  </script>
+</body>
+</html>

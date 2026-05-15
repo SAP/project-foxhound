@@ -7,6 +7,7 @@
 /**
  * Sorts object by keys in alphabetical order
  * If object has nested children, it sorts the child-elements also by keys
+ *
  * @param {object} which should be sorted by keys in alphabetical order
  */
 function sortObjectKeys(object) {

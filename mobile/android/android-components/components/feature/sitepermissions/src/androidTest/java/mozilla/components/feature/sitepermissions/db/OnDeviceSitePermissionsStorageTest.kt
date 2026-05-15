@@ -5,6 +5,7 @@
 package mozilla.components.feature.sitepermissions.db
 
 import android.content.Context
+import android.database.Cursor
 import androidx.core.net.toUri
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
@@ -226,5 +227,98 @@ class OnDeviceSitePermissionsStorageTest {
             assertEquals(-1, audible) // Block audio.
             assertEquals(1, inaudible) // Allow inaudible.
         }
+    }
+
+    @Test
+    fun migrate8to9() {
+        val url = "https://permission.site/"
+
+        helper.createDatabase(MIGRATION_TEST_DB, 8).apply {
+            execSQL(
+                """
+                    INSERT INTO site_permissions (
+                        origin, 
+                        location, 
+                        notification, 
+                        microphone, 
+                        camera, 
+                        bluetooth, 
+                        local_storage, 
+                        autoplay_audible, 
+                        autoplay_inaudible, 
+                        media_key_system_access, 
+                        cross_origin_storage_access, 
+                        saved_at)
+                    VALUES ('${url.tryGetHostFromUrl()}',1,1,1,1,1,1,0,0,1,1,0)
+                """.trimIndent(),
+            )
+        }
+
+        val dbVersion9 =
+            helper.runMigrationsAndValidate(MIGRATION_TEST_DB, 9, true, Migrations.migration_8_9)
+
+        dbVersion9.query("SELECT * FROM site_permissions").use { cursor ->
+            cursor.moveToFirst()
+
+            // verify that old columns are still intact
+            val origin = cursor.getStringValue("origin")
+            val location = cursor.getIntValue("location")
+            val notification = cursor.getIntValue("notification")
+            val microphone = cursor.getIntValue("microphone")
+            val camera = cursor.getIntValue("camera")
+            val bluetooth = cursor.getIntValue("bluetooth")
+            val localStorage = cursor.getIntValue("local_storage")
+            val autoplayAudible = cursor.getIntValue("autoplay_audible")
+            val autoplayInaudible = cursor.getIntValue("autoplay_inaudible")
+            val mediaKeySystemAccess = cursor.getIntValue("media_key_system_access")
+            val crossOriginStorageAccess = cursor.getIntValue("cross_origin_storage_access")
+            val savedAt = cursor.getIntValue("saved_at")
+
+            assertEquals("expected old origin column to be preserved", "permission.site", origin)
+            assertEquals("expected old location column to be preserved", 1, location)
+            assertEquals("expected old notification column to be preserved", 1, notification)
+            assertEquals("expected old microphone column to be preserved", 1, microphone)
+            assertEquals("expected old camera column to be preserved", 1, camera)
+            assertEquals("expected old bluetooth column to be preserved", 1, bluetooth)
+            assertEquals("expected old local_storage column to be preserved", 1, localStorage)
+            assertEquals("expected old autoplay_audible column to be preserved", 0, autoplayAudible)
+            assertEquals(
+                "expected old autoplay_inaudible column to be preserved",
+                0,
+                autoplayInaudible,
+            )
+            assertEquals(
+                "expected old media_key_system_access column to be preserved",
+                1,
+                mediaKeySystemAccess,
+            )
+            assertEquals(
+                "expected old cross_origin_storage_access column to be preserved",
+                1,
+                crossOriginStorageAccess,
+            )
+            assertEquals("expected old saved_at column to be preserved", 0, savedAt)
+
+            // verify that both new columns are set to "no_decision" i.e 0
+            val localDeviceAccess = cursor.getIntValue("local_device_access")
+            val localNetworkAccess = cursor.getIntValue("local_network_access")
+            assertEquals(
+                "Expected local_device_access to default to Status.NO_DECISION",
+                0,
+                localDeviceAccess,
+            )
+            assertEquals(
+                "Expected local_network_access to default to Status.NO_DECISION",
+                0,
+                localNetworkAccess,
+            )
+        }
+    }
+
+    private fun Cursor.getStringValue(columnName: String): String {
+        return getString(getColumnIndexOrThrow(columnName))
+    }
+    private fun Cursor.getIntValue(columnName: String): Int {
+        return getInt(getColumnIndexOrThrow(columnName))
     }
 }

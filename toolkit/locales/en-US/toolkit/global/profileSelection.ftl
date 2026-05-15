@@ -36,3 +36,6 @@ profile-manager-work-offline =
 profile-manager-use-selected =
   .label = Use the selected profile without asking at startup
   .accesskey = s
+
+profile-has-selectable-profiles-title = Can’t delete a profile that is linked to other profiles
+profile-has-selectable-profiles-message = To delete this profile, open it and select ”Manage profiles” from the profiles section of the { -brand-short-name } menu. After deleting any additional profiles you have created here, you can return to about:profiles and delete this profile.

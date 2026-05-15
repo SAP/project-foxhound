@@ -5,6 +5,9 @@ let gCUITestUtils = new CustomizableUITestUtils(window);
 let searchBar;
 
 add_task(async function test_setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
   searchBar = await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();

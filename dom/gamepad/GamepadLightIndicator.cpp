@@ -5,9 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/GamepadLightIndicator.h"
+
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/GamepadManager.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/HoldDropJSObjects.h"
 
 namespace mozilla::dom {
 

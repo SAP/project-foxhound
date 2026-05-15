@@ -1,0 +1,18 @@
+[DEFAULT]
+
+prefs = [
+  # Disable loading artifacts build jogfile for this test
+  # (workaround Bug 1983674).
+  "telemetry.fog.artifact_build=false",
+  # Reduce timeout on the add-on's DeferredTask that submits the custom
+  # ping.
+  "extensions.data-leak-blocker@mozilla.com.gleanSubmitTaskTimeout=500",
+  # Add a test domain to the one expected to be monitored.
+  "extensions.data-leak-blocker@mozilla.com.testDomains=expected.example.org",
+  # Enable test domains from prefs to be monitored and more verbose logging for
+  # the logs emitted by this extension.
+  "extensions.data-leak-blocker@mozilla.com.testing=true"
+]
+
+["browser_detected_requests_telemetry.js"]
+https_first_disabled = true # Disabled on purpose to allow http urls to be loaded from a test http server that doesn't provide https

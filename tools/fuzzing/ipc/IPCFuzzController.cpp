@@ -296,7 +296,8 @@ static bool IsManagedByTargetActor(IProtocol* protocol,
 }
 
 void IPCFuzzController::OnActorConnected(IProtocol* protocol) {
-  if (!XRE_IsParentProcess()) {
+  if (!XRE_IsParentProcess() ||
+      !mozilla::fuzzing::Nyx::instance().is_enabled("IPC_", true)) {
     return;
   }
 
@@ -393,7 +394,8 @@ void IPCFuzzController::OnActorConnected(IProtocol* protocol) {
 }
 
 void IPCFuzzController::OnActorDestroyed(IProtocol* protocol) {
-  if (!XRE_IsParentProcess()) {
+  if (!XRE_IsParentProcess() ||
+      !mozilla::fuzzing::Nyx::instance().is_enabled("IPC_", true)) {
     return;
   }
 

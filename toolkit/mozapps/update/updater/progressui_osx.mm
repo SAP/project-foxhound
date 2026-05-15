@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #import <Cocoa/Cocoa.h>
-#include <stdio.h>
 #include <unistd.h>
 #include "mozilla/Sprintf.h"
 #include "progressui.h"

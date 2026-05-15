@@ -63,7 +63,8 @@ async function testAttributeDeletion(inspector) {
   const attrs = await getAttributesFromEditor("#delattr", inspector);
 
   info("Entering an invalid attribute to delete the attribute");
-  await editAttributeAndTab('"', inspector);
+  // Use > which is still forbidden in attribute names with relaxed rules
+  await editAttributeAndTab(">", inspector);
   checkFocusedAttribute(attrs[2], true);
 
   info("Deleting the last attribute");

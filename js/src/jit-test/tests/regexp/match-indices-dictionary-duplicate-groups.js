@@ -1,4 +1,4 @@
-// |jit-test| --enable-regexp-duplicate-named-groups; skip-if: getBuildConfiguration("wasi")||getBuildConfiguration('release_or_beta')
+// |jit-test| skip-if: getBuildConfiguration("wasi")
 var s = "";
 var input = "";
 for (var i = 0; i < 500; ++i) {

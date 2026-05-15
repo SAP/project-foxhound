@@ -140,7 +140,7 @@ pub type CowString = Cow<'static, str>;
 /// Marker API to add a new simple marker without any payload.
 /// Please see the module documentation on how to add a marker with this API.
 pub fn add_untyped_marker(name: &str, category: ProfilingCategoryPair, mut options: MarkerOptions) {
-    if !crate::profiler_state::can_accept_markers() {
+    if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
         // Nothing to do.
         return;
     }
@@ -164,7 +164,7 @@ pub fn add_text_marker(
     mut options: MarkerOptions,
     text: &str,
 ) {
-    if !crate::profiler_state::can_accept_markers() {
+    if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
         // Nothing to do.
         return;
     }
@@ -205,7 +205,7 @@ impl<'a> AutoProfilerTextMarker<'a> {
         options: MarkerOptions,
         text: &'a str,
     ) -> Option<AutoProfilerTextMarker<'a>> {
-        if !crate::profiler_state::can_accept_markers() {
+        if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
             return None;
         }
         let start = ProfilerTime::now();
@@ -315,7 +315,7 @@ pub fn add_marker<T>(
 ) where
     T: ProfilerMarker + 'static,
 {
-    if !crate::profiler_state::can_accept_markers() {
+    if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
         // Nothing to do.
         return;
     }
@@ -351,7 +351,7 @@ pub fn add_marker<T>(
 /// Record a marker using the Rust `add_marker` API, but delay evaluation of
 /// arguments until we're sure that the profiler can accept markers.
 ///
-/// This macro is equivalent to testing `gecko_profiler::can_accept_markers`
+/// This macro is equivalent to testing `gecko_profiler::current_thread_is_being_profiled_for_markers`
 /// before calling `gecko_profiler::add_marker`. Note that
 /// `gecko_profiler::add_marker` already performs this check, but after
 /// arguments to the function have already been evaluated, which is too late
@@ -376,7 +376,7 @@ pub fn add_marker<T>(
 #[macro_export]
 macro_rules! lazy_add_marker {
     ($name:expr, $category:expr, $options:expr, $payload:expr) => {
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker($name, $category, $options, $payload);
         }
     };
@@ -384,14 +384,14 @@ macro_rules! lazy_add_marker {
     // so take advantage of that to provide a version that drops the
     // `options` argument, and gives a default value instead.
     ($name: expr, $category:expr, $payload:expr) => {
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker($name, $category, Default::default(), $payload);
         }
     };
     // Take advantage of overloading to provide a version that drops the
     // category as well.
     ($name: expr, $payload:expr) => {
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker(
                 $name,
                 gecko_profiler::ProfilingCategoryPair::Other(None),
@@ -455,25 +455,52 @@ impl ProfilerMarker for Tracing {
     }
 }
 
+/// Stack marker type for Rust code.
+/// This must be kept in sync with the `mozilla::baseprofiler::markers::StackMarker`
+/// C++ counterpart.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StackMarker();
+
+impl ProfilerMarker for StackMarker {
+    fn marker_type_name() -> &'static str {
+        "StackMarker"
+    }
+
+    fn stream_json_marker_data(&self, _json_writer: &mut JSONWriter) {}
+
+    // StackMarker is a bit special because we have the same schema in the
+    // C++ side. This function will only get called when no StackMarkers are
+    // generated from the C++ side. But, most of the time, this will not be called
+    // when there is another C++ StackMarker marker.
+    fn marker_type_display() -> MarkerSchema {
+        use crate::marker::schema::*;
+        let mut schema = MarkerSchema::new(&[
+            Location::MarkerChart,
+            Location::MarkerTable,
+            Location::TimelineOverview,
+        ]);
+        schema.set_stack_based();
+        schema
+    }
+}
+
 /// RAII-style scoped tracing marker for Rust code.
-/// This is a Rust-style equivalent of the C++ AUTO_PROFILER_TRACING_MARKER
-/// Profiler markers are emitted at when an AutoProfilerTracingMarker is
+/// This is a Rust-style equivalent of the C++ AUTO_PROFILER_MARKER
+/// Profiler markers are emitted at when an AutoProfilerMarker is
 /// created, and when it is dropped (destroyed).
-pub struct AutoProfilerTracingMarker<'a> {
+pub struct AutoProfilerMarker<'a> {
     name: &'a str,
     category: ProfilingCategoryPair,
     options: MarkerOptions,
-    payload: CowString,
 }
 
-impl<'a> AutoProfilerTracingMarker<'a> {
+impl<'a> AutoProfilerMarker<'a> {
     pub fn new(
         name: &'a str,
         category: ProfilingCategoryPair,
         options: MarkerOptions,
-        payload: CowString,
-    ) -> Option<AutoProfilerTracingMarker<'a>> {
-        if !crate::profiler_state::can_accept_markers() {
+    ) -> Option<AutoProfilerMarker<'a>> {
+        if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
             return None;
         }
         // Record our starting marker.
@@ -481,25 +508,24 @@ impl<'a> AutoProfilerTracingMarker<'a> {
             name,
             category,
             options.with_timing(MarkerTiming::interval_start(ProfilerTime::now())),
-            Tracing(payload.clone()),
+            StackMarker(),
         );
-        Some(AutoProfilerTracingMarker {
+        Some(AutoProfilerMarker {
             name,
             category,
             options,
-            payload,
         })
     }
 }
 
-impl<'a> Drop for AutoProfilerTracingMarker<'a> {
+impl<'a> Drop for AutoProfilerMarker<'a> {
     fn drop(&mut self) {
-        // If we have an AutoProfilerTracingMarker object, then the profiler was
+        // If we have an AutoProfilerMarker object, then the profiler was
         // running + accepting markers when it was *created*. We have no
         // guarantee that it's still running though, so check again! If the
         // profiler has stopped, then there's no point recording the second of a
         // pair of markers.
-        if !crate::profiler_state::can_accept_markers() {
+        if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
             return;
         }
         // record the ending marker
@@ -508,7 +534,7 @@ impl<'a> Drop for AutoProfilerTracingMarker<'a> {
             self.category,
             self.options
                 .with_timing(MarkerTiming::interval_end(ProfilerTime::now())),
-            Tracing(self.payload.clone()),
+            StackMarker(),
         );
     }
 }
@@ -521,26 +547,157 @@ impl<'a> Drop for AutoProfilerTracingMarker<'a> {
 ///
 /// Example usage:
 /// ```rust
-/// auto_profiler_marker_tracing!(
+/// auto_profiler_marker!(
 ///     "BlobRasterization",
 ///     gecko_profiler_category!(Graphics),
 ///     Default::default(),
-///     "Webrender".to_string()
 /// );
 /// ```
 ///
 #[cfg(feature = "enabled")]
 #[macro_export]
-macro_rules! auto_profiler_marker_tracing {
-    ($name:expr, $category:expr,$options:expr, $payload:expr) => {
+macro_rules! auto_profiler_marker {
+    ($name:expr, $category:expr,$options:expr) => {
         let _macro_created_rust_tracing_marker =
-            $crate::AutoProfilerTracingMarker::new($name, $category, $options, $payload);
+            $crate::AutoProfilerMarker::new($name, $category, $options);
     };
 }
 
 #[cfg(not(feature = "enabled"))]
 #[macro_export]
-macro_rules! auto_profiler_marker_tracing {
+macro_rules! auto_profiler_marker {
+    ($name:expr, $category:expr,$options:expr) => {
+        // Do nothing if the profiler is not enabled
+    };
+}
+
+/// Flow marker type for Rust code.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct FlowStackMarker(pub u64);
+
+impl FlowStackMarker {
+    pub fn from_pointer<T>(s: *const T) -> Self {
+        FlowStackMarker(s as usize as u64)
+    }
+}
+
+impl ProfilerMarker for FlowStackMarker {
+    fn marker_type_name() -> &'static str {
+        "FlowStackRust"
+    }
+
+    fn stream_json_marker_data(&self, json_writer: &mut JSONWriter) {
+        fn hex_string(id: u64) -> [u8; 16] {
+            let mut buf = [0; 16];
+            let hex_digits = b"0123456789abcdef";
+            for i in 0..16 {
+                buf[i] = hex_digits[(id >> (60 - i * 4)) as usize & 0xf];
+            }
+            buf
+        }
+
+        json_writer.unique_string_property("flow", unsafe {
+            std::str::from_utf8_unchecked(&hex_string(self.0))
+        });
+    }
+
+    // Flow marker is a bit special because we have the same schema in the C++
+    // side. This function will only get called when no Flow markers are
+    // generated from the C++ side. But, most of the time, this will not be
+    // called when there is another C++ Flow marker.
+    fn marker_type_display() -> MarkerSchema {
+        use crate::marker::schema::*;
+        let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+        schema.add_key_label_format("flow", "Flow", Format::Flow);
+        schema.set_stack_based();
+        schema
+    }
+}
+
+/// RAII-style scoped tracing marker for Rust code.
+/// This is a Rust-style equivalent of the C++ AUTO_PROFILER_FLOW_MARKER
+/// Profiler markers are emitted when an [`AutoProfilerFlowMarker`] is created,
+/// and when it is dropped (destroyed).
+pub struct AutoProfilerFlowMarker<'a> {
+    name: &'a str,
+    category: ProfilingCategoryPair,
+    options: MarkerOptions,
+    flow: FlowStackMarker,
+    // We store the start time separately from the MarkerTiming inside
+    // MarkerOptions, as once we have "put it in" a marker timing, there's
+    // currently no API way to "get it out" again.
+    start: ProfilerTime,
+}
+
+impl<'a> AutoProfilerFlowMarker<'a> {
+    pub fn new(
+        name: &'a str,
+        category: ProfilingCategoryPair,
+        options: MarkerOptions,
+        flow: FlowStackMarker,
+    ) -> Option<AutoProfilerFlowMarker<'a>> {
+        if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
+            return None;
+        }
+        Some(AutoProfilerFlowMarker {
+            name,
+            category,
+            options,
+            flow,
+            start: ProfilerTime::now(),
+        })
+    }
+}
+
+impl<'a> Drop for AutoProfilerFlowMarker<'a> {
+    fn drop(&mut self) {
+        // If we have an AutoProfilerFlowMarker object, then the profiler was
+        // running + accepting markers when it was *created*. We have no
+        // guarantee that it's still running though, so check again! If the
+        // profiler has stopped, then there's no point recording the second of a
+        // pair of markers.
+        if !crate::profiler_state::current_thread_is_being_profiled_for_markers() {
+            return;
+        }
+        // record the ending marker
+        add_marker(
+            self.name,
+            self.category,
+            self.options
+                .with_timing(MarkerTiming::interval_until_now_from(self.start.clone())),
+            self.flow,
+        );
+    }
+}
+
+/// Create an RAII-style tracing marker. See [`AutoProfilerFlowMarker`] for more
+/// details.
+///
+/// The arguments to this macro correspond exactly to the
+/// AutoProfilerFlowMarker::new constructor.
+///
+/// Example usage:
+/// ```rust
+/// auto_profiler_flow_marker!(
+///     "BlobRasterization",
+///     gecko_profiler_category!(Graphics),
+///     Default::default(),
+///     flow
+/// );
+/// ```
+///
+#[cfg(feature = "enabled")]
+#[macro_export]
+macro_rules! auto_profiler_flow_marker {
+    ($name:expr, $category:expr,$options:expr, $payload:expr) => {
+        let _macro_created_rust_tracing_marker =
+            $crate::AutoProfilerFlowMarker::new($name, $category, $options, $payload);
+    };
+}
+
+#[cfg(not(feature = "enabled"))]
+#[macro_export]
+macro_rules! auto_profiler_flow_marker {
     ($name:expr, $category:expr,$options:expr, $payload:expr) => {
         // Do nothing if the profiler is not enabled
     };

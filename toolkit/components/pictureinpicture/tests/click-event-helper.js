@@ -2,13 +2,20 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * This helper script is used to record mouse button events for
- * Picture-in-Picture toggle click tests. Anytime the toggle is
- * clicked, we expect none of the events to be fired. Otherwise,
- * all events should be fired when clicking.
+ * This helper script is used to record events for Picture-in-Picture toggle
+ * click tests. Anytime the toggle is clicked, we expect none of the events to
+ * be fired. Otherwise, all (except MozTogglePictureInPicture) events should be
+ * fired when clicking on web content.
  */
 
-let eventTypes = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+let eventTypes = [
+  "MozTogglePictureInPicture",
+  "pointerdown",
+  "mousedown",
+  "pointerup",
+  "mouseup",
+  "click",
+];
 
 for (let event of eventTypes) {
   addEventListener(event, recordEvent, { capture: true });

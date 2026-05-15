@@ -2,4 +2,7 @@
 head = "head.js"
 
 ["browser_aboutthirdparty.js"]
-skip-if = ["(os == 'win' && asan)"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && asan",
+  "os == 'win' && verify-standalone",
+]

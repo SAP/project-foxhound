@@ -27,11 +27,6 @@
 #
 #     The Unicode data files listed above should be together in one directory.
 #
-#     We also require the file
-#        https://www.unicode.org/Public/security/latest/IdentifierStatus.txt
-#     This file should be in a sub-directory "security" immediately below the
-#        directory containing the other Unicode data files.
-#
 #
 # (2) Run this tool using a command line of the form
 #
@@ -77,7 +72,6 @@ my $ICU = $ARGV[0];
 my $UNICODE = $ARGV[1];
 
 my @scriptCodeToName;
-my @idtype;
 
 my $sc = -1;
 
@@ -103,35 +97,6 @@ sub readIcuHeader
 &readIcuHeader("uscript.h");
 
 die "didn't find ICU script codes\n" if $sc == -1;
-
-# We don't currently store these values; %idType is used only to check that
-# properties listed in the IdentifierType.txt file are recognized. We record
-# only the %mappedIdType values that are used by nsIDNService::isLabelSafe.
-# In practice, it would be sufficient for us to read only the last value in
-# IdentifierType.txt, but we check that all values are known so that we'll get
-# a warning if future updates introduce new ones, and can consider whether
-# they need to be taken into account.
-my %idType = (
-  "Not_Character"     => 0,
-  "Recommended"       => 1,
-  "Inclusion"         => 2,
-  "Uncommon_Use"      => 3,
-  "Technical"         => 4,
-  "Obsolete"          => 5,
-  "Aspirational"      => 6,
-  "Limited_Use"       => 7,
-  "Exclusion"         => 8,
-  "Not_XID"           => 9,
-  "Not_NFKC"          => 10,
-  "Default_Ignorable" => 11,
-  "Deprecated"        => 12
-);
-
-# These match the IdentifierType enum in UnicodeProperties.h.
-my %mappedIdType = (
-  "Restricted"   => 0,
-  "Allowed"      => 1
-);
 
 # initialize default properties
 my @hanVariant;
@@ -190,26 +155,6 @@ while (<FH>) {
           $fullWidthInverse[$usv] = $narrowChar;
         }
     }
-}
-close FH;
-
-# read IdentifierStatus.txt
-open FH, "< $UNICODE/security/IdentifierStatus.txt" or die "can't open UCD file IdentifierStatus.txt\n";
-push @versionInfo, "";
-while (<FH>) {
-  chomp;
-  s/\xef\xbb\xbf//;
-  push @versionInfo, $_;
-  last if /Date:/;
-}
-while (<FH>) {
-  if (m/([0-9A-F]{4,6})(?:\.\.([0-9A-F]{4,6}))*\s+;\s+Allowed/) {
-    my $start = hex "0x$1";
-    my $end = (defined $2) ? hex "0x$2" : $start;
-    for (my $i = $start; $i <= $end; ++$i) {
-      $idtype[$i] = $mappedIdType{'Allowed'};
-    }
-  }
 }
 close FH;
 
@@ -303,14 +248,6 @@ $versionInfo
 __END
 
 our $totalData = 0;
-
-sub sprintCharProps2_short
-{
-  my $usv = shift;
-  return sprintf("{%d},",
-                 $idtype[$usv]);
-}
-&genTables("CharProp2", "", "nsCharProps2", 9, 7, \&sprintCharProps2_short, 16, 1, 1);
 
 sub sprintHanVariants
 {

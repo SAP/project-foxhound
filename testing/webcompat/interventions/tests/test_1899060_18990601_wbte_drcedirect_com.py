@@ -2,7 +2,7 @@ import pytest
 
 URL = "https://wbte.drcedirect.com/GA/portals/ga"
 
-SUPPORTED_CSS = "a[href*='GA/portals/ga/ott1?adminId']"
+SUPPORTED_CSS = "a[href*='GA/portals/ga/ott1']"
 UNSUPPORTED_CSS = "a[href*=chrome]"
 
 

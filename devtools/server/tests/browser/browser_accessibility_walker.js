@@ -162,7 +162,7 @@ add_task(async function () {
     "When targets follow the WindowGlobal lifecycle and handle only one document, " +
       "only check that the panel refreshes correctly and emit its 'reloaded' event"
   );
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await waitForA11yShutdown(parentAccessibility);
   await target.destroy();

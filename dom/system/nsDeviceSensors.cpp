@@ -4,27 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Hal.h"
-#include "mozilla/HalSensor.h"
-
-#include "nsContentUtils.h"
 #include "nsDeviceSensors.h"
 
-#include "nsGlobalWindowInner.h"
-#include "nsPIDOMWindow.h"
-#include "nsIScriptObjectPrincipal.h"
+#include <cmath>
+
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Hal.h"
+#include "mozilla/HalSensor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_device.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DeviceLightEvent.h"
 #include "mozilla/dom/DeviceOrientationEvent.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/UserProximityEvent.h"
-#include "mozilla/ErrorResult.h"
-
-#include <cmath>
+#include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsPIDOMWindow.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

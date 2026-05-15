@@ -25,8 +25,8 @@ NullHttpChannel::NullHttpChannel(nsIHttpChannel* chan)
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
   ssm->GetChannelURIPrincipal(chan, getter_AddRefs(mResourcePrincipal));
 
-  Unused << chan->GetResponseHeader("Timing-Allow-Origin"_ns,
-                                    mTimingAllowOriginHeader);
+  (void)chan->GetResponseHeader("Timing-Allow-Origin"_ns,
+                                mTimingAllowOriginHeader);
   chan->GetURI(getter_AddRefs(mURI));
   chan->GetOriginalURI(getter_AddRefs(mOriginalURI));
 
@@ -234,11 +234,6 @@ NullHttpChannel::IsNoCacheResponse(bool* _retval) {
 }
 
 NS_IMETHODIMP
-NullHttpChannel::IsPrivateResponse(bool* _retval) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 NullHttpChannel::RedirectTo(nsIURI* aNewURI) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -273,6 +268,16 @@ NullHttpChannel::GetProtocolVersion(nsACString& aProtocolVersion) {
 
 NS_IMETHODIMP
 NullHttpChannel::GetEncodedBodySize(uint64_t* aEncodedBodySize) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetIsUserAgentHeaderOutdated(bool* aValue) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetIsUserAgentHeaderOutdated(bool aValue) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -834,6 +839,19 @@ NullHttpChannel::SetRenderBlocking(bool aRenderBlocking) {
 NS_IMETHODIMP
 NullHttpChannel::GetRenderBlocking(bool* aRenderBlocking) {
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetDecompressDictionary(
+    mozilla::net::DictionaryCacheEntry** aDictionary) {
+  *aDictionary = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetDecompressDictionary(
+    mozilla::net::DictionaryCacheEntry* aDictionary) {
+  return NS_OK;
 }
 
 #define IMPL_TIMING_ATTR(name)                                           \

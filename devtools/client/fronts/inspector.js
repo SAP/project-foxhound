@@ -173,7 +173,7 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
    * comes in before that promise is resolved, wait for it to resolve and return the
    * highlighter instance it resolved with instead of creating a new request.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type
    * @return {Promise}
    *         Promise which resolves with a highlighter instance of the given type
@@ -243,7 +243,7 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
   /**
    * Given a node grip, return a NodeFront on the right context.
    *
-   * @param {Object} grip: The node grip.
+   * @param {object} grip: The node grip.
    * @returns {Promise<NodeFront|null>} A promise that resolves with  a NodeFront or null
    *                                    if the NodeFront couldn't be created/retrieved.
    */
@@ -286,5 +286,4 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
   }
 }
 
-exports.InspectorFront = InspectorFront;
 registerFront(InspectorFront);

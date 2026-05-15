@@ -15,7 +15,6 @@
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MoveOnlyFunction.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -24,6 +23,7 @@
 #include "nsFocusManager.h"
 #include "nsIClipboardOwner.h"
 #include "nsIPromptService.h"
+#include "nsISupportsPrimitives.h"
 #include "nsError.h"
 #include "nsXPCOM.h"
 
@@ -389,6 +389,7 @@ NS_IMETHODIMP nsBaseClipboard::SetData(
     mIgnoreEmptyNotification = true;
     // Reject existing pending asyncSetData request if any.
     RejectPendingAsyncSetDataRequestIfAny(aWhichClipboard);
+    SanitizeForClipboard(aTransferable);
     rv = SetNativeClipboardData(aTransferable, aWhichClipboard);
     mIgnoreEmptyNotification = false;
   }
@@ -616,12 +617,6 @@ NS_IMETHODIMP nsBaseClipboard::GetDataSnapshot(
         return NS_OK;
       }
     }
-  }
-
-  // TODO: enable showing the "Paste" button in this case; see bug 1773681.
-  if (aRequestingPrincipal->GetIsAddonOrExpandedAddonPrincipal()) {
-    MOZ_CLIPBOARD_LOG("%s: Addon without read permission.", __FUNCTION__);
-    return aCallback->OnError(NS_ERROR_FAILURE);
   }
 
   RequestUserConfirmation(aWhichClipboard, aFlavorList,
@@ -986,6 +981,42 @@ void nsBaseClipboard::RequestUserConfirmation(
       aClipboardType, chromeDoc, aRequestingPrincipal, this, aWindowContext);
   sUserConfirmationRequest->AddClipboardGetRequest(aFlavorList, aCallback);
   promise->AppendNativeHandler(sUserConfirmationRequest);
+}
+
+/* static */
+nsresult nsBaseClipboard::SanitizeForClipboard(nsITransferable* aTransferable) {
+  NS_ENSURE_ARG(aTransferable);
+
+  nsTArray<nsCString> flavors;
+  nsresult rv = aTransferable->FlavorsTransferableCanImport(flavors);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Remove NULs from text flavors.
+  for (const auto& flavor : flavors) {
+    nsCOMPtr<nsISupports> data;
+    rv = aTransferable->GetTransferData(flavor.get(), getter_AddRefs(data));
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (NS_WARN_IF(MOZ_UNLIKELY(!data))) {
+      continue;
+    }
+    nsCOMPtr<nsISupportsString> stringData = do_QueryInterface(data);
+    if (!stringData) {
+      continue;
+    }
+
+    // Remove NULs from stringData.  If that does anything then the size of the
+    // string will be reduced.
+    nsAutoString newString;
+    rv = stringData->GetData(newString);
+    NS_ENSURE_SUCCESS(rv, rv);
+    auto oldLength = newString.Length();
+    newString.StripChar(L'\0');
+    if (newString.Length() != oldLength) {
+      rv = stringData->SetData(newString);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+  }
+  return NS_OK;
 }
 
 NS_IMPL_ISUPPORTS(nsBaseClipboard::ClipboardDataSnapshot,

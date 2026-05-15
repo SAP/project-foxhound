@@ -3,7 +3,7 @@
 async function createTabWithRandomValue(url) {
   let tab = BrowserTestUtils.addTab(gBrowser, url);
   let browser = tab.linkedBrowser;
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: url });
 
   // Set a random value.
   let r = `rand-${Math.random()}`;
@@ -80,6 +80,17 @@ add_task(async function save_worthy_tabs_remote_final() {
   let { tab, r } = await createTabWithRandomValue("about:blank");
   let browser = tab.linkedBrowser;
   ok(browser.isRemoteBrowser, "browser is remote");
+
+  // The subtest is racy, see bug 1787024. This is added as a sanity check,
+  // but the delay it introduces might also hide the race.
+  await TabStateFlusher.flush(browser);
+  let state = JSON.parse(ss.getTabState(tab));
+  is(state.entries.length, 1, "Should have one SH entry");
+  is(state.entries[0].url, "about:blank", "Should be about:blank SH entry");
+  ok(
+    state.entries[0].transient,
+    "Initial about:blank SH entry should be marked for replacement"
+  );
 
   // Replace about:blank with a new remote page.
   let entryReplaced = promiseOnHistoryReplaceEntry(browser);

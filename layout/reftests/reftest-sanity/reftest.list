@@ -166,6 +166,14 @@ noautofuzz fails fuzzy-if(false,0-2,0-1) == fuzzy.html fuzzy-ref.html
 # Test that reftest-no-paint fails correctly.
 == reftest-no-paint.html reftest-no-paint-ref.html
 
+# Test that reftest-no-wr-raster works correctly.
+# Pass test: no content change after MozReftestInvalidate, so no rasterization.
+skip-if(useDrawSnapshot) == reftest-no-wr-raster-pass.html reftest-no-wr-raster-pass-ref.html
+# Fail test: content changes, triggering rasterization, which fails the check.
+skip-if(useDrawSnapshot) fails == reftest-no-wr-raster-fail.html reftest-no-wr-raster-fail-ref.html
+# Scroll test: scrolling should not cause tile rasterization.
+skip-if(useDrawSnapshot) == reftest-no-wr-raster-scroll.html reftest-no-wr-raster-scroll-ref.html
+
 skip-if(useDrawSnapshot) == async-scroll-1a.html async-scroll-1-ref.html
 
 skip-if(useDrawSnapshot) != async-scroll-1b.html async-scroll-1-ref.html

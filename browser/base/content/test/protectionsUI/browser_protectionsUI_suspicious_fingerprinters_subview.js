@@ -34,8 +34,8 @@ const FINGERPRINT_PROTECTION_PBM_PREF =
 /**
  * A helper function to check whether or not an element has "notFound" class.
  *
- * @param {String} id The id of the testing element.
- * @returns {Boolean} true when the element has "notFound" class.
+ * @param {string} id The id of the testing element.
+ * @returns {boolean} true when the element has "notFound" class.
  */
 function notFound(id) {
   return document.getElementById(id).classList.contains("notFound");
@@ -92,9 +92,9 @@ async function openTestPage(urls, usePrivateWin, testFn) {
           await new content.Promise(resolve => {
             let ifr = content.document.createElement("iframe");
             ifr.onload = resolve;
+            ifr.src = testUrl;
 
             content.document.body.appendChild(ifr);
-            ifr.src = testUrl;
           });
         });
       }
@@ -155,54 +155,6 @@ add_task(async function testFPPDisabled() {
     testCategoryNotShown
   );
 });
-
-// Verify that fingerprinting category is not shown if no fingerprinting
-// activity is detected.
-add_task(async function testFPPEnabledWithoutFingerprintingActivity() {
-  await SpecialPowers.pushPrefEnv({
-    set: [[FINGERPRINT_PROTECTION_PREF, true]],
-  });
-
-  // Test the case where the page doesn't load any fingerprinter.
-  await openTestPage([], false, testCategoryNotShown);
-
-  // Test the case where the page loads only one fingerprinter. We don't treat
-  // this case as suspicious fingerprinting.
-  await openTestPage([TEST_3RD_FONT_FP_PAGE], false, testCategoryNotShown);
-
-  // Test the case where the page loads the same fingerprinter multiple times.
-  // We don't treat this case as suspicious fingerprinting.
-  await openTestPage(
-    [TEST_3RD_FONT_FP_PAGE, TEST_3RD_FONT_FP_PAGE],
-    false,
-    testCategoryNotShown
-  );
-});
-
-// Verify that fingerprinting category is not shown if no fingerprinting
-// activity is detected.
-add_task(
-  async function testFPPEnabledWithoutSuspiciousFingerprintingActivity() {
-    await SpecialPowers.pushPrefEnv({
-      set: [[FINGERPRINT_PROTECTION_PREF, true]],
-    });
-
-    // Test the case where the page doesn't load any fingerprinter.
-    await openTestPage([], false, testCategoryNotShown);
-
-    // Test the case where the page loads only one fingerprinter. We don't treat
-    // this case as suspicious fingerprinting.
-    await openTestPage([TEST_3RD_FONT_FP_PAGE], false, testCategoryNotShown);
-
-    // Test the case where the page loads the same fingerprinter multiple times.
-    // We don't treat this case as suspicious fingerprinting.
-    await openTestPage(
-      [TEST_3RD_FONT_FP_PAGE, TEST_3RD_FONT_FP_PAGE],
-      false,
-      testCategoryNotShown
-    );
-  }
-);
 
 // Verify that fingerprinting category is properly shown and the fingerprinting
 // subview displays the origin of the suspicious fingerprinter.
@@ -356,7 +308,7 @@ add_task(async function testDynamicallyLoadFingerprinter() {
     set: [[FINGERPRINT_PROTECTION_PREF, true]],
   });
 
-  await openTestPage([TEST_3RD_FONT_FP_PAGE], false, async (win, browser) => {
+  await openTestPage([], false, async (win, browser) => {
     await openProtectionsPanel(false, win);
 
     let categoryItem = win.document.getElementById(

@@ -42,10 +42,14 @@ function assertNoCookies() {
 
 /**
  * Loads a list of urls consecutively from the same tab.
+ *
  * @param {string[]} urls - List of urls to load.
  */
 async function visitTestSites(urls = [ORIGIN_A, ORIGIN_B, ORIGIN_C]) {
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
 
   for (let url of urls) {
     BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
@@ -343,6 +347,9 @@ add_task(async function test_pbm() {
     private: true,
   });
   let tab = BrowserTestUtils.addTab(pbmWindow.gBrowser, "about:blank");
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, ORIGIN_A);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
@@ -579,6 +586,9 @@ add_task(async function test_site_preference_pbm() {
     private: true,
   });
   let tab = BrowserTestUtils.addTab(pbmWindow.gBrowser, "about:blank");
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, ORIGIN_B);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 

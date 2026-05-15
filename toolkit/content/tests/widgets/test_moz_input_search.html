@@ -28,7 +28,9 @@
       });
 
       add_task(async function testMozInputSearchProperties() {
-        await testHelpers.testCommonInputProperties("moz-input-search");
+        await testHelpers.testCommonInputProperties("moz-input-search", {
+          type: "search",
+        });
       });
 
       add_task(async function testMozInputSearchEvents() {
@@ -79,6 +81,10 @@
           await searchEvent;
           ok(true, "clear() dispatches the search event if needed");
         }
+      });
+
+      add_task(async function testMozInputTextSync() {
+        await testHelpers.verifyValueSync("moz-input-search");
       });
     </script>
   </head>

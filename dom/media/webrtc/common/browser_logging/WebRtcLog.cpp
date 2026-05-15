@@ -4,18 +4,16 @@
 
 #include "WebRtcLog.h"
 
-#include "nsThreadUtils.h"
 #include "mozilla/Logging.h"
-#include "rtc_base/logging.h"
-
-#include "nscore.h"
-#include "nsStringFwd.h"
-#include "nsXULAppAPI.h"
 #include "mozilla/Preferences.h"
-
-#include "nsIFile.h"
-#include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
+#include "nsIFile.h"
+#include "nsStringFwd.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
+#include "nscore.h"
+#include "rtc_base/logging.h"
 
 #ifdef XP_WIN
 #  include "nsNativeCharsetUtils.h"
@@ -27,35 +25,35 @@ using mozilla::LogLevel;
 #define WEBRTC_LOG_PREF "logging." WEBRTC_LOG_MODULE_NAME
 static mozilla::LazyLogModule sWebRtcLog(WEBRTC_LOG_MODULE_NAME);
 
-static rtc::LoggingSeverity LevelToSeverity(mozilla::LogLevel aLevel) {
+static webrtc::LoggingSeverity LevelToSeverity(mozilla::LogLevel aLevel) {
   switch (aLevel) {
     case mozilla::LogLevel::Verbose:
-      return rtc::LoggingSeverity::LS_VERBOSE;
+      return webrtc::LoggingSeverity::LS_VERBOSE;
     case mozilla::LogLevel::Debug:
     case mozilla::LogLevel::Info:
-      return rtc::LoggingSeverity::LS_INFO;
+      return webrtc::LoggingSeverity::LS_INFO;
     case mozilla::LogLevel::Warning:
-      return rtc::LoggingSeverity::LS_WARNING;
+      return webrtc::LoggingSeverity::LS_WARNING;
     case mozilla::LogLevel::Error:
-      return rtc::LoggingSeverity::LS_ERROR;
+      return webrtc::LoggingSeverity::LS_ERROR;
     case mozilla::LogLevel::Disabled:
-      return rtc::LoggingSeverity::LS_NONE;
+      return webrtc::LoggingSeverity::LS_NONE;
   }
   MOZ_ASSERT_UNREACHABLE("Unexpected log level");
-  return rtc::LoggingSeverity::LS_NONE;
+  return webrtc::LoggingSeverity::LS_NONE;
 }
 
-static LogLevel SeverityToLevel(rtc::LoggingSeverity aSeverity) {
+static LogLevel SeverityToLevel(webrtc::LoggingSeverity aSeverity) {
   switch (aSeverity) {
-    case rtc::LoggingSeverity::LS_VERBOSE:
+    case webrtc::LoggingSeverity::LS_VERBOSE:
       return mozilla::LogLevel::Verbose;
-    case rtc::LoggingSeverity::LS_INFO:
+    case webrtc::LoggingSeverity::LS_INFO:
       return mozilla::LogLevel::Debug;
-    case rtc::LoggingSeverity::LS_WARNING:
+    case webrtc::LoggingSeverity::LS_WARNING:
       return mozilla::LogLevel::Warning;
-    case rtc::LoggingSeverity::LS_ERROR:
+    case webrtc::LoggingSeverity::LS_ERROR:
       return mozilla::LogLevel::Error;
-    case rtc::LoggingSeverity::LS_NONE:
+    case webrtc::LoggingSeverity::LS_NONE:
       return mozilla::LogLevel::Disabled;
   }
   MOZ_ASSERT_UNREACHABLE("Unexpected severity");
@@ -63,9 +61,9 @@ static LogLevel SeverityToLevel(rtc::LoggingSeverity aSeverity) {
 }
 
 /**
- * Implementation of rtc::LogSink that forwards RTC_LOG() to MOZ_LOG().
+ * Implementation of webrtc::LogSink that forwards RTC_LOG() to MOZ_LOG().
  */
-class LogSinkImpl : public WebrtcLogSinkHandle, public rtc::LogSink {
+class LogSinkImpl : public WebrtcLogSinkHandle, public webrtc::LogSink {
   NS_INLINE_DECL_REFCOUNTING(LogSinkImpl, override)
 
  public:
@@ -92,7 +90,7 @@ class LogSinkImpl : public WebrtcLogSinkHandle, public rtc::LogSink {
     mozilla::AssertIsOnMainThread();
     MOZ_RELEASE_ASSERT(!sSingleton);
 
-    rtc::LogMessage::AddLogToStream(this, LevelToSeverity(mLevel));
+    webrtc::LogMessage::AddLogToStream(this, LevelToSeverity(mLevel));
     sSingleton = this;
 
     mozilla::Preferences::RegisterCallbackAndCall(&LogSinkImpl::OnPrefChanged,
@@ -106,7 +104,7 @@ class LogSinkImpl : public WebrtcLogSinkHandle, public rtc::LogSink {
 
     mozilla::Preferences::UnregisterCallback(&LogSinkImpl::OnPrefChanged,
                                              WEBRTC_LOG_PREF, this);
-    rtc::LogMessage::RemoveLogToStream(this);
+    webrtc::LogMessage::RemoveLogToStream(this);
     sSingleton = nullptr;
   }
 
@@ -121,11 +119,11 @@ class LogSinkImpl : public WebrtcLogSinkHandle, public rtc::LogSink {
 
     mLevel = webrtcLevel;
 
-    rtc::LogMessage::RemoveLogToStream(this);
-    rtc::LogMessage::AddLogToStream(this, LevelToSeverity(mLevel));
+    webrtc::LogMessage::RemoveLogToStream(this);
+    webrtc::LogMessage::AddLogToStream(this, LevelToSeverity(mLevel));
   }
 
-  void OnLogMessage(const rtc::LogLineRef& aLogLine) override {
+  void OnLogMessage(const webrtc::LogLineRef& aLogLine) override {
     MOZ_LOG(sWebRtcLog, SeverityToLevel(aLogLine.severity()),
             ("%s", aLogLine.DefaultLogLine().data()));
   }
@@ -149,7 +147,7 @@ already_AddRefed<WebrtcLogSinkHandle> EnsureWebrtcLogging() {
 
 nsCString ConfigAecLog() {
   nsCString aecLogDir;
-  if (rtc::LogMessage::aec_debug()) {
+  if (webrtc::LogMessage::aec_debug()) {
     return ""_ns;
   }
 #if defined(ANDROID)
@@ -169,22 +167,22 @@ nsCString ConfigAecLog() {
 #  endif
   }
 #endif
-  rtc::LogMessage::set_aec_debug_filename(aecLogDir.get());
+  webrtc::LogMessage::set_aec_debug_filename(aecLogDir.get());
 
   return aecLogDir;
 }
 
 nsCString StartAecLog() {
   nsCString aecLogDir;
-  if (rtc::LogMessage::aec_debug()) {
+  if (webrtc::LogMessage::aec_debug()) {
     return ""_ns;
   }
 
   aecLogDir = ConfigAecLog();
 
-  rtc::LogMessage::set_aec_debug(true);
+  webrtc::LogMessage::set_aec_debug(true);
 
   return aecLogDir;
 }
 
-void StopAecLog() { rtc::LogMessage::set_aec_debug(false); }
+void StopAecLog() { webrtc::LogMessage::set_aec_debug(false); }

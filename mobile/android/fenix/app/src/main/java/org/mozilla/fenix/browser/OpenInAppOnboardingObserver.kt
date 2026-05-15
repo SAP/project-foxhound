@@ -9,7 +9,9 @@ import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavController
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.mapNotNull
 import mozilla.components.browser.state.selector.selectedTab
@@ -38,6 +40,7 @@ class OpenInAppOnboardingObserver(
     private val appLinksUseCases: AppLinksUseCases,
     private val container: ViewGroup,
     internal val shouldScrollWithTopToolbar: Boolean = false,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature {
     private var scope: CoroutineScope? = null
     private var currentUrl: String? = null
@@ -47,7 +50,7 @@ class OpenInAppOnboardingObserver(
     internal var infoBanner: InfoBanner? = null
 
     override fun start() {
-        scope = store.flowScoped(lifecycleOwner) { flow ->
+        scope = store.flowScoped(lifecycleOwner, mainDispatcher) { flow ->
             flow.mapNotNull { state ->
                 state.selectedTab
             }

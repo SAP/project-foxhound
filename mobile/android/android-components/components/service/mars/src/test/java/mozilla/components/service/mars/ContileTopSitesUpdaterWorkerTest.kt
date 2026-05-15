@@ -8,7 +8,6 @@ import androidx.concurrent.futures.await
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.service.mars.contile.ContileTopSitesProvider
 import mozilla.components.service.mars.contile.ContileTopSitesUpdaterWorker
@@ -24,7 +23,6 @@ import org.mockito.Mockito.anyBoolean
 import org.mockito.Mockito.spy
 import java.io.IOException
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class ContileTopSitesUpdaterWorkerTest {
 

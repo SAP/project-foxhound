@@ -7,7 +7,6 @@
 #define mozilla_image_ImgDrawResult_h
 
 #include <cstdint>  // for uint8_t
-#include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 
 namespace mozilla {

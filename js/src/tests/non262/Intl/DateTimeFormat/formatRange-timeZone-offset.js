@@ -21,10 +21,10 @@ const tests = {
       options: {hour: "numeric", minute: "numeric", hour12: false},
       timeZoneNames: {
         short: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("GMT")],
-        shortOffset: "short",
+        shortOffset: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("GMT+0")],
         shortGeneric: "short",
         long: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("Greenwich Mean Time")],
-        longOffset: "short",
+        longOffset: [Hour("00"), Literal(":"), Minute("00"), Literal(" – "), Hour("00"), Literal(":"), Minute("02"), Literal(" "), TimeZoneName("GMT+00:00")],
         longGeneric: "long",
       },
     },

@@ -6,19 +6,19 @@
     <androidx.preference.PreferenceCategory
         android:layout="@layout/preference_section_header_layout"
         android:title="@string/preference_advanced_summary">
-        <androidx.preference.SwitchPreferenceCompat
+        <androidx.preference.SwitchPreference
             android:defaultValue="false"
             android:key="@string/pref_key_remote_debugging"
             android:layout="@layout/focus_preference_no_icon"
             android:title="@string/preference_remote_debugging" />
 
-        <androidx.preference.SwitchPreferenceCompat
+        <androidx.preference.SwitchPreference
             android:defaultValue="false"
             android:key="@string/pref_key_open_links_in_external_app"
             android:layout="@layout/focus_preference_no_icon"
             android:title="@string/preferences_open_links_in_apps" />
 
-        <androidx.preference.SwitchPreferenceCompat
+        <androidx.preference.SwitchPreference
             android:defaultValue="true"
             android:key="@string/pref_key_leakcanary"
             android:title="@string/preference_leakcanary"

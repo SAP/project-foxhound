@@ -145,6 +145,7 @@ const MockOHTTPService = {
   lastTargetURI: null,
   lastConfig: null,
   shouldSucceed: true,
+  shouldUseContentTypeHeader: "",
 
   /**
    * Creates a mock channel that simulates OHTTP behavior.
@@ -165,7 +166,11 @@ const MockOHTTPService = {
     this.lastConfig = config;
     this.totalChannels++;
 
-    return this._createMockChannel(targetURI, this.shouldSucceed);
+    return this._createMockChannel(
+      targetURI,
+      this.shouldSucceed,
+      this.shouldUseContentTypeHeader
+    );
   },
 
   /**
@@ -175,10 +180,13 @@ const MockOHTTPService = {
    *   The URI for the channel.
    * @param {boolean} shouldSucceed
    *   Whether the channel should succeed.
+   * @param {string} shouldUseContentTypeHeader
+   *   The Content-Type to have a header value set to, or the empty string
+   *   for no Content-Type.
    * @returns {nsIChannel}
    *   Mock channel implementation.
    */
-  _createMockChannel(targetURI, shouldSucceed) {
+  _createMockChannel(targetURI, shouldSucceed, shouldUseContentTypeHeader) {
     return {
       URI: targetURI,
       loadInfo: null,
@@ -214,6 +222,12 @@ const MockOHTTPService = {
         }
       },
 
+      visitResponseHeaders(visitor) {
+        if (shouldUseContentTypeHeader) {
+          visitor.visitHeader("Content-Type", shouldUseContentTypeHeader);
+        }
+      },
+
       QueryInterface: ChromeUtils.generateQI(["nsIChannel", "nsIRequest"]),
     };
   },
@@ -228,6 +242,7 @@ const MockOHTTPService = {
     this.lastTargetURI = null;
     this.lastConfig = null;
     this.shouldSucceed = true;
+    this.shouldUseContentTypeHeader = "";
   },
 
   QueryInterface: ChromeUtils.generateQI(["nsIObliviousHttpService"]),

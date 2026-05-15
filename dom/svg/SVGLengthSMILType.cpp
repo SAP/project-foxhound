@@ -6,10 +6,11 @@
 
 #include "SVGLengthSMILType.h"
 
-#include "mozilla/SMILValue.h"
-#include "SVGAnimatedLengthList.h"
-#include "nsDebug.h"
 #include <math.h>
+
+#include "mozilla/SMILValue.h"
+#include "mozilla/dom/SVGAnimatedLength.h"
+#include "nsDebug.h"
 
 namespace mozilla {
 
@@ -75,9 +76,9 @@ nsresult SVGLengthSMILType::ComputeDistance(const SMILValue& aFrom,
   dom::SVGElementMetrics metrics(from.Element());
 
   // Normalize both to pixels in case they're different units:
-  aDistance = fabs(to.ValueInPixels(metrics) - from.ValueInPixels(metrics));
+  aDistance = std::abs(to.ValueInPixels(metrics) - from.ValueInPixels(metrics));
 
-  return NS_OK;
+  return std::isfinite(aDistance) ? NS_OK : NS_ERROR_FAILURE;
 }
 
 nsresult SVGLengthSMILType::Interpolate(const SMILValue& aStartVal,

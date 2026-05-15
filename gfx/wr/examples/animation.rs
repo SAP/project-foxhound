@@ -78,7 +78,6 @@ impl App {
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
             &filters,
             &[],
-            &[]
         );
 
         let space_and_clip = SpaceAndClipInfo {

@@ -9,7 +9,6 @@
 #include "HTMLEditor.h"
 #include "SelectionState.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DataTransfer.h"

@@ -26,10 +26,6 @@ existing_tasks:
   build-android-arm/debug: PpUzMEw6R5CLmLE3UBASiw
   build-android-arm/debug-upload-symbols: F2tXVrYmTc-4fv1r2IYKtA
   build-android-arm/opt: fWXftOQtSJCguH6qgQ2m9w
-  build-android-x86-shippable-lite/opt: NKWRrZhtQg-6U2_Mo0ci5g
-  build-android-x86-shippable-lite/opt-upload-symbols: SL9hJAWiSUiNwvJXQMs8zQ
-  build-android-x86-shippable/opt: Hda0K_jgTZCcCftexlUChA
-  build-android-x86-shippable/opt-upload-symbols: NdH6CRbgTJ2Ss0H3sdiz7g
   build-android-x86/opt: fOlgOv3dQZmI4yf_fxlmtA
   build-android-x86_64-asan-fuzzing/opt: eOcjELsYRsm2uyUQvivy3A
   build-android-x86_64-fuzzing/debug: ULFgmfyVQ4iIvt8C3DS1Zw
@@ -260,8 +256,6 @@ existing_tasks:
   build-signing-android-arm-shippable/opt: CzQC4bMjTcOWcA_aU_76gg
   build-signing-android-geckoview-fat-aar-shippable-lite/opt: XTnsOL3YR-KSNO0g0KJYSQ
   build-signing-android-geckoview-fat-aar-shippable/opt: ULsg3XLtSbeoY6Hjb9ckCg
-  build-signing-android-x86-shippable-lite/opt: RXmvOoYbQoSBlZe_I7BKzw
-  build-signing-android-x86-shippable/opt: aGp5NE3MQVK3BJ3GuvXk3A
   build-signing-android-x86_64-shippable-lite/opt: GqyMZ3bNQmScAiHjtrCzMw
   build-signing-android-x86_64-shippable/opt: KAgBSNAuSluo3e6h7pxq-w
   build-signing-linux-aarch64-shippable/opt: f89iEZUiSBCXcKDg74Ih-w
@@ -463,7 +457,6 @@ existing_tasks:
   geckodriver-signing-win64-aarch64-geckodriver/opt: HEIAPYEFQtuVZgyCQWoaZw
   geckodriver-signing-win64-geckodriver/opt: dXxCYJDWS_uspmaiQhF2Lw
   generate-profile-android-aarch64-shippable/opt: eMNZnQtqRlyS7HOn5dm7tQ
-  generate-profile-android-x86-shippable/opt: Mnebo6xdSKWWdxUryghFNg
   generate-profile-android-x86_64-shippable/opt: AJ3IyZ-qRBGCVLjpIQmeLQ
   generate-profile-linux-shippable/opt: dZL_RTCDSJuN4JFXjN9n_g
   generate-profile-linux64-shippable/opt: DTsh1-1rTxyE2QZ4M3dEBA
@@ -474,7 +467,6 @@ existing_tasks:
   generate-profile-win64-shippable/opt: LYIK0yZsQkuhmnPZchcAiA
   hazard-linux64-haz/debug: f_e10FtNSb6CbSIXu3cp4A
   instrumented-build-android-aarch64-shippable/opt: E2Ss8BWkRFS19On8mCwsxQ
-  instrumented-build-android-x86-shippable/opt: DOHHQD1wSVmnqJcb8UVr7g
   instrumented-build-android-x86_64-shippable/opt: cHjIAQuER-WvSxdofqUl5Q
   instrumented-build-linux-aarch64-shippable/opt: ePMbLt5lSIq13G1keASNcg
   instrumented-build-linux-shippable/opt: QWiUTZAXTw2CF5F6UUbX_A
@@ -4421,10 +4413,6 @@ existing_tasks:
   toolchain-android-x64-compiler-rt-18: ROXGeyzKQLmN-Jsinn-B4Q
   toolchain-android-x64-libunwind-17: APb2pTbtT3utF18b4dw4rA
   toolchain-android-x64-libunwind-18: bAkm15nHSw6WciNrRX6kqw
-  toolchain-android-x86-compiler-rt-17: SqZCViS1T3GjZVQIMuwNTA
-  toolchain-android-x86-compiler-rt-18: B5dyS0aUQeS9pjA8vjULuA
-  toolchain-android-x86-libunwind-17: ILPkvbChRCumL46yGTAV8Q
-  toolchain-android-x86-libunwind-18: G2HAD8lUSgaZXvcMqoOqDg
   toolchain-browsertime: WP-AIMjWSL6Ar89V75_XPg
   toolchain-clang-dist-toolchain: KcY-OvhYTKKbyOp5mPoK-A
   toolchain-ios-sdk-17.4: WXdtohuhQDafMw5Jrc-ksg
@@ -4517,8 +4505,6 @@ existing_tasks:
   toolchain-linux64-wine: RfpVmixIRx6PWCfEQ2TZLg
   toolchain-linux64-x64-compiler-rt-17: HzATPWVzQ5qcrachxeYvEw
   toolchain-linux64-x64-compiler-rt-18: D6BYPfBES0uj0WhcWnWB6Q
-  toolchain-linux64-x86-compiler-rt-17: GfYs8u06TfGVcD0itCkcpw
-  toolchain-linux64-x86-compiler-rt-18: XBBnHVDcQnG3uHG6aNxNbw
   toolchain-linux64-xar: P569f0MPT1iNh25p1Be2IQ
   toolchain-macosx64-aarch64-cargo-vet: B0-3cUM_Q-GmEF_oEdhO8g
   toolchain-macosx64-aarch64-cbindgen: OQWQ1-dzS9iImX8lefNaLw
@@ -4629,8 +4615,6 @@ existing_tasks:
   upload-generated-sources-android-aarch64-shippable/opt: VH3HvYorTiW1I34l5uUJew
   upload-generated-sources-android-arm-shippable-lite/opt: M5ulyAMnTzuldKcmKU6Vqg
   upload-generated-sources-android-arm-shippable/opt: W_Yr3SyNSbyZRlKMXwkqLw
-  upload-generated-sources-android-x86-shippable-lite/opt: ZhwIsLLSQ-aPJF22Dc0ZZQ
-  upload-generated-sources-android-x86-shippable/opt: E80VD94gQwGRPtwBDGIE4g
   upload-generated-sources-android-x86_64-shippable-lite/opt: Vp6GaMaRRz-RIZc7zd2zdQ
   upload-generated-sources-android-x86_64-shippable/opt: SGUbWQmxRTSFhlDajRVFDw
   upload-generated-sources-dummy-firefox-macosx64-shippable: J_m73Fg0S5WmOBwEy1UktA

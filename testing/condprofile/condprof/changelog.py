@@ -7,6 +7,7 @@
 """
 Maintains a unique file that lists all artifacts operations.
 """
+
 import json
 import os
 import sys

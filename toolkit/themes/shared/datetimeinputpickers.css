@@ -76,6 +76,10 @@
   }
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font: message-box;
@@ -217,7 +221,7 @@ button.month-year.active {
   order: 2;
 }
 
-.calendar-container > table:not([hidden]) {
+.calendar-container > table {
   display: flex;
   flex-direction: column;
   border-spacing: inherit;
@@ -266,7 +270,7 @@ button.month-year.active {
   background-color: var(--today-background);
   color: var(--today-color);
   border-color: transparent;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .days-view > tr > td.today:hover {
@@ -302,7 +306,7 @@ button.month-year.active {
 }
 
 #time-picker,
-.month-year-view:not([hidden]) {
+.month-year-view {
   display: flex;
   justify-content: center;
 }
@@ -315,14 +319,14 @@ button.month-year.active {
 
 .spinner-container > button {
   height: var(--spinner-button-height);
-}
 
-.spinner-container > button.up {
-  background-image: url("chrome://global/skin/icons/arrow-up.svg");
-}
+  &.prev {
+    background-image: url("chrome://global/skin/icons/arrow-up.svg");
+  }
 
-.spinner-container > button.down {
-  background-image: url("chrome://global/skin/icons/arrow-down.svg");
+  &.next {
+    background-image: url("chrome://global/skin/icons/arrow-down.svg");
+  }
 }
 
 .spinner-container.hide-buttons > button {
@@ -379,4 +383,14 @@ button.month-year.active {
 
 .spacer {
   width: var(--day-period-spacing-width);
+}
+
+#datetime-picker {
+  display: flex;
+  gap: 1em;
+}
+
+#date-picker,
+#time-picker {
+  min-width: 0;
 }

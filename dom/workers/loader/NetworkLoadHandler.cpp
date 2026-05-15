@@ -5,8 +5,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NetworkLoadHandler.h"
-#include "CacheLoadHandler.h"  // CachePromiseHandler
 
+#include "CacheLoadHandler.h"  // CachePromiseHandler
+#include "js/loader/ModuleLoadRequest.h"
+#include "js/loader/ScriptLoadRequest.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/dom/InternalResponse.h"
+#include "mozilla/dom/Response.h"
+#include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/dom/ServiceWorkerBinding.h"
+#include "mozilla/dom/ServiceWorkerManager.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/workerinternals/ScriptLoader.h"  // WorkerScriptLoader
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsIHttpChannel.h"
@@ -14,17 +26,6 @@
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
 #include "nsNetUtil.h"
-
-#include "mozilla/Encoding.h"
-#include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/dom/InternalResponse.h"
-#include "mozilla/dom/ServiceWorkerBinding.h"
-#include "mozilla/dom/ServiceWorkerManager.h"
-#include "mozilla/dom/ScriptLoader.h"
-#include "mozilla/dom/Response.h"
-#include "mozilla/dom/WorkerScope.h"
-
-#include "mozilla/dom/workerinternals/ScriptLoader.h"  // WorkerScriptLoader
 
 using mozilla::ipc::PrincipalInfo;
 
@@ -68,11 +69,43 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
                                                      const uint8_t* aString) {
   AssertIsOnMainThread();
   MOZ_ASSERT(!mRequestHandle->IsEmpty());
+
+  if (aStringLen > GetWorkerScriptMaxSizeInBytes()) {
+    Document* parentDoc = mWorkerRef->Private()->GetDocument();
+    nsContentUtils::ReportToConsole(nsIScriptError::errorFlag, "DOM"_ns,
+                                    parentDoc, nsContentUtils::eDOM_PROPERTIES,
+                                    "WorkerScriptTooLargeError");
+    return NS_ERROR_DOM_ABORT_ERR;
+  }
+
   WorkerLoadContext* loadContext = mRequestHandle->GetContext();
 
   if (!loadContext->mChannel) {
     return NS_BINDING_ABORTED;
   }
+
+#ifdef NIGHTLY_BUILD
+  if (StaticPrefs::javascript_options_experimental_wasm_esm_integration()) {
+    if (mRequestHandle->GetRequest()->IsModuleRequest()) {
+      // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+      // Extract the content-type. If its essence is wasm, we'll attempt to
+      // compile this module as a wasm module. (Steps 13.2, 13.6)
+      nsAutoCString mimeType;
+      if (NS_SUCCEEDED(loadContext->mChannel->GetContentType(mimeType))) {
+        if (nsContentUtils::HasWasmMimeTypeEssence(
+                NS_ConvertUTF8toUTF16(mimeType))) {
+          mRequestHandle->GetRequest()
+              ->AsModuleRequest()
+              ->SetHasWasmMimeTypeEssence();
+          loadContext->mRequest->SetWasmBytes();
+          if (!loadContext->mRequest->WasmBytes().append(aString, aStringLen)) {
+            return NS_ERROR_OUT_OF_MEMORY;
+          }
+        }
+      }
+    }
+  }
+#endif
 
   loadContext->mChannel = nullptr;
 
@@ -144,39 +177,41 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
       return NS_ERROR_NOT_AVAILABLE;
     }
 
-    Unused << httpChannel->GetResponseHeader("content-security-policy"_ns,
-                                             tCspHeaderValue);
+    (void)httpChannel->GetResponseHeader("content-security-policy"_ns,
+                                         tCspHeaderValue);
 
-    Unused << httpChannel->GetResponseHeader(
+    (void)httpChannel->GetResponseHeader(
         "content-security-policy-report-only"_ns, tCspROHeaderValue);
 
-    Unused << httpChannel->GetResponseHeader("referrer-policy"_ns,
-                                             tRPHeaderCValue);
+    (void)httpChannel->GetResponseHeader("referrer-policy"_ns, tRPHeaderCValue);
 
     nsAutoCString sourceMapURL;
     if (nsContentUtils::GetSourceMapURL(httpChannel, sourceMapURL)) {
-      loadContext->mRequest->mSourceMapURL =
-          Some(NS_ConvertUTF8toUTF16(sourceMapURL));
+      loadContext->mRequest->SetSourceMapURL(
+          NS_ConvertUTF8toUTF16(sourceMapURL));
     }
   }
 
   // May be null.
   Document* parentDoc = mWorkerRef->Private()->GetDocument();
 
-  // Set the Source type to "text" for decoding.
-  loadContext->mRequest->SetTextSource(loadContext);
+  // We only decode source text, not wasm bytecode.
+  if (!loadContext->mRequest->IsWasmBytes()) {
+    // Set the Source type to "text" for decoding.
+    loadContext->mRequest->SetTextSource(loadContext);
 
-  // Use the regular ScriptDecoder Decoder for this grunt work! Should be just
-  // fine because we're running on the main thread.
-  // Foxhound(david): Is this sane?
-  rv = mDecoder->DecodeRawData(loadContext->mRequest, aString, aStringLen,
-                               /* aEndOfStream = */ true, EmptyTaint);
-  NS_ENSURE_SUCCESS(rv, rv);
+    // Use the regular ScriptDecoder Decoder for this grunt work! Should be just
+    // fine because we're running on the main thread.
+    // Foxhound(david): Is this sane?
+    rv = mDecoder->DecodeRawData(loadContext->mRequest, aString, aStringLen,
+                                 /* aEndOfStream = */ true, EmptyTaint);
+    NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!loadContext->mRequest->ScriptTextLength()) {
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                                    parentDoc, nsContentUtils::eDOM_PROPERTIES,
-                                    "EmptyWorkerSourceWarning");
+    if (!loadContext->mRequest->ScriptTextLength()) {
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::warningFlag, "DOM"_ns, parentDoc,
+          nsContentUtils::eDOM_PROPERTIES, "EmptyWorkerSourceWarning");
+    }
   }
 
   // For modules, we need to store the base URI on the module request object,
@@ -217,6 +252,14 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
   if (loadContext->IsTopLevel() && !isDynamic) {
     // Take care of the base URI first.
     mWorkerRef->Private()->SetBaseURI(finalURI);
+
+    if (httpChannel) {
+      nsCString reportingEndpoints;
+      if (NS_SUCCEEDED(httpChannel->GetResponseHeader("Reporting-Endpoints"_ns,
+                                                      reportingEndpoints))) {
+        mWorkerRef->Private()->SetReportingEndpointsHeader(reportingEndpoints);
+      }
+    }
 
     // Store the channel info if needed.
     mWorkerRef->Private()->InitChannelInfo(channel);
@@ -311,19 +354,30 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
     nsAutoCString mimeType;
     channel->GetContentType(mimeType);
 
-    if (!nsContentUtils::IsJavascriptMIMEType(
-            NS_ConvertUTF8toUTF16(mimeType))) {
-      const nsCString& scope = mWorkerRef->Private()
-                                   ->GetServiceWorkerRegistrationDescriptor()
-                                   .Scope();
+    auto mimeTypeUTF16 = NS_ConvertUTF8toUTF16(mimeType);
+    if (!nsContentUtils::IsJavascriptMIMEType(mimeTypeUTF16)) {
+      // JSON is allowed as a non-toplevel.
+      if (!((!loadContext->IsTopLevel() &&
+             nsContentUtils::IsJsonMimeType(mimeTypeUTF16))
+#ifdef NIGHTLY_BUILD
+            // Allow wasm modules.
+            || (StaticPrefs::
+                    javascript_options_experimental_wasm_esm_integration() &&
+                nsContentUtils::HasWasmMimeTypeEssence(mimeTypeUTF16))
+#endif
+                )) {
+        const nsCString& scope = mWorkerRef->Private()
+                                     ->GetServiceWorkerRegistrationDescriptor()
+                                     .Scope();
 
-      ServiceWorkerManager::LocalizeAndReportToAllClients(
-          scope, "ServiceWorkerRegisterMimeTypeError2",
-          nsTArray<nsString>{
-              NS_ConvertUTF8toUTF16(scope), NS_ConvertUTF8toUTF16(mimeType),
-              NS_ConvertUTF8toUTF16(loadContext->mRequest->mURL)});
+        ServiceWorkerManager::LocalizeAndReportToAllClients(
+            scope, "ServiceWorkerRegisterMimeTypeError2",
+            nsTArray<nsString>{
+                NS_ConvertUTF8toUTF16(scope), NS_ConvertUTF8toUTF16(mimeType),
+                NS_ConvertUTF8toUTF16(loadContext->mRequest->mURL)});
 
-      return NS_ERROR_DOM_NETWORK_ERR;
+        return NS_ERROR_DOM_NETWORK_ERR;
+      }
     }
   }
 

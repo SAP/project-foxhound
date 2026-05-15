@@ -31,4 +31,4 @@ test262-raw error:SyntaxError script language/directive-prologue/10.1.1-5gs.js
 test262-raw error:SyntaxError script language/directive-prologue/10.1.1-8gs.js
 test262-raw error:SyntaxError script language/directive-prologue/14.1-4gs.js
 test262-raw error:SyntaxError script language/directive-prologue/14.1-5gs.js
-shell-option(--enable-import-attributes) test262-raw skip-if(!xulRuntime.shell) error:SyntaxError module script language/module-code/import-attributes/allow-nlt-before-with.js # requires shell-options
+test262-raw error:SyntaxError module script language/module-code/import-attributes/allow-nlt-before-with.js

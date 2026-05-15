@@ -147,7 +147,7 @@ library, which is reused in the `Firefox MS Schemas CI job
 `CFRMessageProvider`_, `OnboardingMessageProvider`_, and `PanelTestProvider`_
 with the same JSON schema validation library and configuration as Experimenter.
 
-See how to run these tests :ref:`above <run_make_schemas_>`.
+See how to run these tests :ref:`above <run_make_schemas>`.
 
 
 Triggers and actions

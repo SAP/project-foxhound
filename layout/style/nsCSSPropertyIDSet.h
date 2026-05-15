@@ -4,8 +4,8 @@
 
 /* bit vectors for sets of CSS properties */
 
-#ifndef nsCSSPropertyIDSet_h__
-#define nsCSSPropertyIDSet_h__
+#ifndef nsCSSPropertyIDSet_h_
+#define nsCSSPropertyIDSet_h_
 
 #include <limits.h>  // for CHAR_BIT
 
@@ -15,10 +15,10 @@
 #include "mozilla/ArrayUtils.h"
 // For COMPOSITOR_ANIMATABLE_PROPERTY_LIST and
 // COMPOSITOR_ANIMATABLE_PROPERTY_LIST_LENGTH
-#include "mozilla/AnimatedPropertyID.h"
+#include "NonCustomCSSPropertyId.h"
+#include "mozilla/CSSPropertyId.h"
 #include "mozilla/CompositorAnimatableProperties.h"
-#include "nsCSSPropertyID.h"
-#include "nsCSSProps.h"  // For operator<< for nsCSSPropertyID
+#include "nsCSSProps.h"  // For operator<< for NonCustomCSSPropertyId
 
 /**
  * nsCSSPropertyIDSet maintains a set of non-shorthand CSS properties.  In
@@ -31,7 +31,7 @@ class nsCSSPropertyIDSet {
   // auto-generated copy-constructor OK
 
   explicit constexpr nsCSSPropertyIDSet(
-      std::initializer_list<nsCSSPropertyID> aProperties)
+      std::initializer_list<NonCustomCSSPropertyId> aProperties)
       : mProperties{0} {
     for (auto property : aProperties) {
       size_t p = property;
@@ -40,33 +40,33 @@ class nsCSSPropertyIDSet {
     }
   }
 
-  void AssertInSetRange(nsCSSPropertyID aProperty) const {
-    MOZ_DIAGNOSTIC_ASSERT(
-        0 <= aProperty && aProperty < eCSSProperty_COUNT_no_shorthands,
-        "out of bounds");
+  void AssertInSetRange(NonCustomCSSPropertyId aProperty) const {
+    MOZ_DIAGNOSTIC_ASSERT(aProperty != eCSSProperty_UNKNOWN &&
+                              aProperty < eCSSProperty_COUNT_no_shorthands,
+                          "out of bounds");
   }
 
   // Conversion of aProperty to |size_t| after AssertInSetRange
   // lets the compiler generate significantly tighter code.
 
-  void AddProperty(nsCSSPropertyID aProperty) {
+  void AddProperty(NonCustomCSSPropertyId aProperty) {
     AssertInSetRange(aProperty);
     size_t p = aProperty;
     mProperties[p / kBitsInChunk] |= property_set_type(1) << (p % kBitsInChunk);
   }
 
-  void RemoveProperty(nsCSSPropertyID aProperty) {
+  void RemoveProperty(NonCustomCSSPropertyId aProperty) {
     AssertInSetRange(aProperty);
     size_t p = aProperty;
     mProperties[p / kBitsInChunk] &=
         ~(property_set_type(1) << (p % kBitsInChunk));
   }
 
-  bool HasProperty(const mozilla::AnimatedPropertyID& aProperty) const {
-    return !aProperty.IsCustom() && HasProperty(aProperty.mID);
+  bool HasProperty(const mozilla::CSSPropertyId& aProperty) const {
+    return !aProperty.IsCustom() && HasProperty(aProperty.mId);
   }
 
-  bool HasProperty(nsCSSPropertyID aProperty) const {
+  bool HasProperty(NonCustomCSSPropertyId aProperty) const {
     AssertInSetRange(aProperty);
     size_t p = aProperty;
     return (mProperties[p / kBitsInChunk] &
@@ -196,8 +196,8 @@ class nsCSSPropertyIDSet {
   bool HasPropertyAt(size_t aChunk, size_t aBit) const {
     return (mProperties[aChunk] & (property_set_type(1) << aBit)) != 0;
   }
-  static nsCSSPropertyID CSSPropertyAt(size_t aChunk, size_t aBit) {
-    return nsCSSPropertyID(aChunk * kBitsInChunk + aBit);
+  static NonCustomCSSPropertyId CSSPropertyAt(size_t aChunk, size_t aBit) {
+    return NonCustomCSSPropertyId(aChunk * kBitsInChunk + aBit);
   }
 
   // Iterator for use in range-based for loops
@@ -256,7 +256,7 @@ class nsCSSPropertyIDSet {
       return *this;
     }
 
-    nsCSSPropertyID operator*() {
+    NonCustomCSSPropertyId operator*() {
       MOZ_ASSERT(mChunk < kChunkCount, "Should not dereference beyond end");
       return nsCSSPropertyIDSet::CSSPropertyAt(mChunk, mBit);
     }
@@ -286,11 +286,11 @@ class nsCSSPropertyIDSet {
 
 inline std::ostream& operator<<(std::ostream& aOut,
                                 const nsCSSPropertyIDSet& aPropertySet) {
-  AutoTArray<nsCSSPropertyID, 16> properties;
-  for (nsCSSPropertyID property : aPropertySet) {
+  AutoTArray<NonCustomCSSPropertyId, 16> properties;
+  for (NonCustomCSSPropertyId property : aPropertySet) {
     properties.AppendElement(property);
   }
   return aOut << properties;
 }
 
-#endif /* !defined(nsCSSPropertyIDSet_h__) */
+#endif /* !defined(nsCSSPropertyIDSet_h_) */

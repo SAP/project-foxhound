@@ -11,7 +11,6 @@
 #include <stdio.h>               // for FILE
 #include "gfxRect.h"             // for gfxRect
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
-#include "mozilla/Attributes.h"  // for override
 #include "mozilla/RefPtr.h"      // for RefPtr, RefCounted, etc
 // #include "mozilla/gfx/MatrixFwd.h"  // for Matrix4x4
 #include "mozilla/gfx/Polygon.h"  // for Polygon

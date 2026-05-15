@@ -1,0 +1,14 @@
+<html class="reftest-wait">
+<head>
+  <script>
+    document.addEventListener("DOMContentLoaded", async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        "video": {
+          "height": -2147483584
+        }
+      });
+      document.documentElement.removeAttribute("class");
+    });
+  </script>
+</head>
+</html>

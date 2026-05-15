@@ -13,7 +13,6 @@
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/Unused.h"
 #include "nsError.h"
 #include "nsContentSecurityManager.h"
 #include "nsDocShellLoadTypes.h"
@@ -131,7 +130,7 @@ nsDSURIContentListener::DoContent(const nsACString& aContentType,
   nsresult rv;
   NS_ENSURE_ARG_POINTER(aContentHandler);
   NS_ENSURE_TRUE(mDocShell, NS_ERROR_FAILURE);
-  RefPtr<nsDocShell> docShell = mDocShell;
+  RefPtr<nsDocShell> docShell = mDocShell.get();
 
   *aAbortProcess = false;
 

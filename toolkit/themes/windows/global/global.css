@@ -91,10 +91,6 @@ xul|separator.groove[orient="vertical"] {
 
 /* Content select */
 
-.contentSelectDropdown-ingroup > .menu-text {
-  padding-inline-start: 20px;
-}
-
 #ContentSelectDropdown > menupopup {
   font: -moz-list;
 
@@ -111,15 +107,19 @@ xul|separator.groove[orient="vertical"] {
   }
 
   > menucaption > .menu-text {
-    font-weight: bold;
+    font-weight: var(--font-weight-bold);
   }
 
-  > menuitem[_moz-menuactive="true"][disabled="true"] {
+  > menuitem[_moz-menuactive="true"][disabled] {
     color: GrayText;
     background-color: unset;
   }
 
-  > menucaption[disabled="true"] {
+  > menuitem[indented] > .menu-text {
+    padding-inline-start: 20px;
+  }
+
+  > menucaption[disabled] {
     color: GrayText;
   }
 }

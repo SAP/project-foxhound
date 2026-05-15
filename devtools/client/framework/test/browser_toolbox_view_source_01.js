@@ -24,8 +24,8 @@ async function viewSource() {
 }
 
 function test() {
-  viewSource().then(finish, aError => {
-    ok(false, "Got an error: " + aError.message + "\n" + aError.stack);
+  viewSource().then(finish, error => {
+    ok(false, "Got an error: " + error.message + "\n" + error.stack);
     finish();
   });
 }

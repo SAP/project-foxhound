@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CSSScopeRule_h___
-#define CSSScopeRule_h___
+#ifndef CSSScopeRule_h_
+#define CSSScopeRule_h_
 
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/css/GroupRule.h"

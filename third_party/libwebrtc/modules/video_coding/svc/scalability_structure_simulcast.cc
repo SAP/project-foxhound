@@ -9,13 +9,14 @@
  */
 #include "modules/video_coding/svc/scalability_structure_simulcast.h"
 
-#include <utility>
+#include <cstdint>
 #include <vector>
 
-#include "absl/base/macros.h"
 #include "api/transport/rtp/dependency_descriptor.h"
+#include "api/video/video_bitrate_allocation.h"
+#include "common_video/generic_frame_descriptor/generic_frame_info.h"
+#include "modules/video_coding/svc/scalable_video_controller.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace {
@@ -37,9 +38,6 @@ Dti(int sid, int tid, const ScalableVideoController::LayerFrameConfig& config) {
 }
 
 }  // namespace
-
-constexpr int ScalabilityStructureSimulcast::kMaxNumSpatialLayers;
-constexpr int ScalabilityStructureSimulcast::kMaxNumTemporalLayers;
 
 ScalabilityStructureSimulcast::ScalabilityStructureSimulcast(
     int num_spatial_layers,

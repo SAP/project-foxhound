@@ -4,34 +4,44 @@
 
 "use strict";
 
-const BAD_LISTENER =
-  "The event listener must be a function, or an object that has " +
-  "`EventEmitter.handler` Symbol.";
+const BAD_LISTENER = "The event listener must be a function.";
 
 const eventListeners = Symbol("EventEmitter/listeners");
-const onceOriginalListener = Symbol("EventEmitter/once-original-listener");
-const handler = Symbol("EventEmitter/event-handler");
+const onceResolvers = Symbol("EventEmitter/once-resolvers");
 loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
 
 class EventEmitter {
   /**
-   * Registers an event `listener` that is called every time events of
-   * specified `type` is emitted on the given event `target`.
+   * Decorate an object with event emitter functionality; basically using the
+   * class' prototype as mixin.
    *
-   * @param {Object} target
-   *    Event target object.
-   * @param {String} type
+   * @param Object target
+   *    The object to decorate.
+   * @return Object
+   *    The object given, mixed.
+   */
+  static decorate(target) {
+    const descriptors = Object.getOwnPropertyDescriptors(this.prototype);
+    delete descriptors.constructor;
+    return Object.defineProperties(target, descriptors);
+  }
+
+  /**
+   * Registers an event `listener` that is called every time events of
+   * specified `type` is emitted on this instance.
+   *
+   * @param {string} type
    *    The type of event.
-   * @param {Function|Object} listener
+   * @param {Function} listener
    *    The listener that processes the event.
-   * @param {Object} options
+   * @param {object} options
    * @param {AbortSignal} options.signal
    *     The listener will be removed when linked AbortController’s abort() method is called
    * @returns {Function}
    *    A function that removes the listener when called.
    */
-  static on(target, type, listener, { signal } = {}) {
-    if (typeof listener !== "function" && !isEventHandler(listener)) {
+  on(type, listener, { signal } = {}) {
+    if (typeof listener !== "function") {
       throw new Error(BAD_LISTENER);
     }
 
@@ -41,11 +51,11 @@ class EventEmitter {
       return () => {};
     }
 
-    if (!(eventListeners in target)) {
-      target[eventListeners] = new Map();
+    if (!(eventListeners in this)) {
+      this[eventListeners] = new Map();
     }
 
-    const events = target[eventListeners];
+    const events = this[eventListeners];
 
     if (events.has(type)) {
       events.get(type).add(listener);
@@ -53,7 +63,7 @@ class EventEmitter {
       events.set(type, new Set([listener]));
     }
 
-    const offFn = () => EventEmitter.off(target, type, listener);
+    const offFn = () => this.off(type, listener);
 
     if (signal) {
       signal.addEventListener("abort", offFn, { once: true });
@@ -63,28 +73,25 @@ class EventEmitter {
   }
 
   /**
-   * Removes an event `listener` for the given event `type` on the given event
-   * `target`. If no `listener` is passed removes all listeners of the given
-   * `type`. If `type` is not passed removes all the listeners of the given
-   * event `target`.
-   * @param {Object} target
-   *    The event target object.
-   * @param {String} [type]
+   * Removes an event `listener` for the given event `type` on this instance
+   * If no `listener` is passed removes all listeners of the given
+   * `type`. If `type` is not passed removes all the listeners of this instance.
+   *
+   * @param {string} [type]
    *    The type of event.
-   * @param {Function|Object} [listener]
+   * @param {Function} [listener]
    *    The listener that processes the event.
    */
-  static off(target, type, listener) {
+  off(type, listener) {
     const length = arguments.length;
-    const events = target[eventListeners];
+    const events = this[eventListeners];
 
     if (!events) {
       return;
     }
 
-    if (length >= 3) {
-      // Trying to remove from the `target` the `listener` specified for the
-      // event's `type` given.
+    if (length >= 2) {
+      // Trying to remove from `this` the `listener` specified for the event's `type` given.
       const listenersForType = events.get(type);
 
       // If we don't have listeners for the event's type, we bail out.
@@ -95,36 +102,22 @@ class EventEmitter {
       // If the listeners list contains the listener given, we just remove it.
       if (listenersForType.has(listener)) {
         listenersForType.delete(listener);
-      } else {
-        // If it's not present, there is still the possibility that the listener
-        // have been added using `once`, since the method wraps the original listener
-        // in another function.
-        // So we iterate all the listeners to check if any of them is a wrapper to
-        // the `listener` given.
-        for (const value of listenersForType.values()) {
-          if (
-            onceOriginalListener in value &&
-            value[onceOriginalListener] === listener
-          ) {
-            listenersForType.delete(value);
-            break;
-          }
-        }
+        delete listener[onceResolvers];
       }
-    } else if (length === 2) {
+    } else if (length === 1) {
       // No listener was given, it means we're removing all the listeners from
       // the given event's `type`.
       if (events.has(type)) {
         events.delete(type);
       }
-    } else if (length === 1) {
-      // With only the `target` given, we're removing all the listeners from the object.
+    } else if (length === 0) {
+      // With no parameter passed, we're removing all the listeners from this.
       events.clear();
     }
   }
 
-  static clearEvents(target) {
-    const events = target[eventListeners];
+  clearEvents() {
+    const events = this[eventListeners];
     if (!events) {
       return;
     }
@@ -133,71 +126,49 @@ class EventEmitter {
 
   /**
    * Registers an event `listener` that is called only the next time an event
-   * of the specified `type` is emitted on the given event `target`.
+   * of the specified `type` is emitted on this instance.
    * It returns a Promise resolved once the specified event `type` is emitted.
    *
-   * @param {Object} target
-   *    Event target object.
-   * @param {String} type
+   * @param {string} type
    *    The type of the event.
-   * @param {Function|Object} [listener]
+   * @param {Function} [listener]
    *    The listener that processes the event.
-   * @param {Object} options
+   * @param {object} options
    * @param {AbortSignal} options.signal
    *     The listener will be removed when linked AbortController’s abort() method is called
    * @return {Promise}
    *    The promise resolved once the event `type` is emitted.
    */
-  static once(target, type, listener, options) {
-    return new Promise(resolve => {
-      // This is the actual listener that will be added to the target's listener, it wraps
-      // the call to the original `listener` given.
-      const newListener = (first, ...rest) => {
-        // To prevent side effects we're removing the listener upfront.
-        EventEmitter.off(target, type, newListener);
-
-        let rv;
-        if (listener) {
-          if (isEventHandler(listener)) {
-            // if the `listener` given is actually an object that handles the events
-            // using `EventEmitter.handler`, we want to call that function, passing also
-            // the event's type as first argument, and the `listener` (the object) as
-            // contextual object.
-            rv = listener[handler](type, first, ...rest);
-          } else {
-            // Otherwise we'll just call it
-            rv = listener.call(target, first, ...rest);
-          }
-        }
-
-        // We resolve the promise once the listener is called.
-        resolve(first);
-
-        // Listeners may return a promise, so pass it along
-        return rv;
-      };
-
-      newListener[onceOriginalListener] = listener;
-      EventEmitter.on(target, type, newListener, options);
-    });
+  once(type, listener = function () {}, options) {
+    const { promise, resolve } = Promise.withResolvers();
+    if (!listener[onceResolvers]) {
+      listener[onceResolvers] = [];
+    }
+    listener[onceResolvers].push(resolve);
+    this.on(type, listener, options);
+    return promise;
   }
 
-  static emit(target, type, ...rest) {
-    EventEmitter._emit(target, type, false, rest);
+  emit(type, ...rest) {
+    this._emit(type, false, rest);
   }
 
-  static emitAsync(target, type, ...rest) {
-    return EventEmitter._emit(target, type, true, rest);
+  emitAsync(type, ...rest) {
+    return this._emit(type, true, rest);
+  }
+
+  emitForTests(type, ...rest) {
+    if (flags.testing) {
+      this.emit(type, ...rest);
+    }
   }
 
   /**
-   * Emit an event of a given `type` on a given `target` object.
+   * Emit an event of a given `type` on this instance.
    *
-   * @param {Object} target
-   *    Event target object.
-   * @param {String} type
+   * @param {string} type
    *    The type of the event.
-   * @param {Boolean} async
+   * @param {boolean} async
    *    If true, this function will wait for each listener completion.
    *    Each listener has to return a promise, which will be awaited for.
    * @param {Array} args
@@ -206,12 +177,12 @@ class EventEmitter {
    *    If `async` argument is true, returns the promise resolved once all listeners have resolved.
    *    Otherwise, this function returns undefined;
    */
-  static _emit(target, type, async, args) {
+  _emit(type, async, args) {
     if (loggingEnabled) {
       logEvent(type, args);
     }
 
-    const targetEventListeners = target[eventListeners];
+    const targetEventListeners = this[eventListeners];
     if (!targetEventListeners) {
       return undefined;
     }
@@ -227,7 +198,7 @@ class EventEmitter {
     // in emit.
     for (const listener of new Set(listeners)) {
       // If the object was destroyed during event emission, stop emitting.
-      if (!(eventListeners in target)) {
+      if (!(eventListeners in this)) {
         break;
       }
 
@@ -235,11 +206,22 @@ class EventEmitter {
       // event handler we're going to fire wasn't removed.
       if (listeners && listeners.has(listener)) {
         try {
-          let promise;
-          if (isEventHandler(listener)) {
-            promise = listener[handler](type, ...args);
-          } else {
-            promise = listener.apply(target, args);
+          // If this was a one-off listener (add via `EventEmitter#once`), unregister the
+          // listener right away, before firing the listener, to prevent re-entry in case
+          // the listener fires the same event again.
+          const resolvers = listener[onceResolvers];
+          if (resolvers) {
+            this.off(type, listener);
+          }
+          const promise = listener.apply(this, args);
+          // Resolve the promise returned by `EventEmitter#once` only after having called
+          // the listener.
+          if (resolvers) {
+            for (const resolver of resolvers) {
+              // Resolve with the first argument fired on the listened event
+              // (`EventEmitter#once` listeners don't have access to all the other arguments).
+              resolver(args[0]);
+            }
           }
           if (async) {
             // Assert the name instead of `constructor != Promise` in order
@@ -269,19 +251,16 @@ class EventEmitter {
   }
 
   /**
-   * Returns a number of event listeners registered for the given event `type`
-   * on the given event `target`.
+   * Returns a number of event listeners registered for the given event `type` on this instance.
    *
-   * @param {Object} target
-   *    Event target object.
-   * @param {String} type
+   * @param {string} type
    *    The type of event.
-   * @return {Number}
+   * @return {number}
    *    The number of event listeners.
    */
-  static count(target, type) {
-    if (eventListeners in target) {
-      const listenersForType = target[eventListeners].get(type);
+  count(type) {
+    if (eventListeners in this) {
+      const listenersForType = this[eventListeners].get(type);
 
       if (listenersForType) {
         return listenersForType.size;
@@ -290,65 +269,9 @@ class EventEmitter {
 
     return 0;
   }
-
-  /**
-   * Decorate an object with event emitter functionality; basically using the
-   * class' prototype as mixin.
-   *
-   * @param Object target
-   *    The object to decorate.
-   * @return Object
-   *    The object given, mixed.
-   */
-  static decorate(target) {
-    const descriptors = Object.getOwnPropertyDescriptors(this.prototype);
-    delete descriptors.constructor;
-    return Object.defineProperties(target, descriptors);
-  }
-
-  static get handler() {
-    return handler;
-  }
-
-  on(...args) {
-    return EventEmitter.on(this, ...args);
-  }
-
-  off(...args) {
-    EventEmitter.off(this, ...args);
-  }
-
-  clearEvents() {
-    EventEmitter.clearEvents(this);
-  }
-
-  once(...args) {
-    return EventEmitter.once(this, ...args);
-  }
-
-  emit(...args) {
-    EventEmitter.emit(this, ...args);
-  }
-
-  emitAsync(...args) {
-    return EventEmitter.emitAsync(this, ...args);
-  }
-
-  emitForTests(...args) {
-    if (flags.testing) {
-      EventEmitter.emit(this, ...args);
-    }
-  }
-
-  count(...args) {
-    return EventEmitter.count(this, ...args);
-  }
 }
 
 module.exports = EventEmitter;
-
-const isEventHandler = listener =>
-  listener && handler in listener && typeof listener[handler] === "function";
 
 const {
   getNthPathExcluding,

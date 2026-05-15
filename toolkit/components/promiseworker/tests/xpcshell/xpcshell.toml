@@ -1,6 +1,8 @@
 [DEFAULT]
 head = ""
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "data/worker.js",
   "data/worker.mjs",

@@ -14,13 +14,13 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
-import androidx.annotation.WorkerThread
 import androidx.core.view.forEach
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.snackbar.Snackbar
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -41,6 +41,8 @@ import org.mozilla.focus.ext.requireComponents
 import org.mozilla.focus.ext.settings
 import org.mozilla.focus.ext.showToolbar
 import org.mozilla.focus.search.ManualAddSearchEnginePreference
+import org.mozilla.focus.settings.ManualAddSearchEngineSettingsFragment.Companion.SEARCH_QUERY_VALIDATION_TIMEOUT_MILLIS
+import org.mozilla.focus.settings.ManualAddSearchEngineSettingsFragment.Companion.VALID_RESPONSE_CODE_UPPER_BOUND
 import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.utils.SupportUtils
 import org.mozilla.focus.utils.ViewUtils
@@ -49,13 +51,26 @@ import java.net.MalformedURLException
 import java.net.URL
 import java.util.concurrent.TimeUnit
 
-@Suppress("TooManyFunctions")
+/**
+ * A fragment that provides a user interface for manually adding a custom search engine.
+ *
+ * This fragment allows users to input a display name and a search query URL (using `%s` as a placeholder).
+ * It performs validation on the input:
+ * 1. Checks if the engine name is unique and non-empty.
+ * 2. Validates the search query format.
+ * 3. Asynchronously attempts to ping the provided URL to ensure it is reachable and valid.
+ *
+ * If validation is successful, the search engine is saved to the application's search store
+ * and set as the default search engine.
+ *
+ * @see BaseSettingsFragment
+ * @see ManualAddSearchEnginePreference
+ */
 class ManualAddSearchEngineSettingsFragment : BaseSettingsFragment() {
     override fun onCreatePreferences(p0: Bundle?, p1: String?) {
         addPreferencesFromResource(R.xml.manual_add_search_engine)
     }
 
-    private var scope: CoroutineScope? = null
     private var menuItemForActiveAsyncTask: MenuItem? = null
     private var job: Job? = null
 
@@ -103,7 +118,8 @@ class ManualAddSearchEngineSettingsFragment : BaseSettingsFragment() {
                 setUiIsValidatingAsync(true, menuItem)
 
                 menuItemForActiveAsyncTask = menuItem
-                scope?.launch {
+
+                viewLifecycleOwner.lifecycleScope.launch {
                     validateSearchEngine(engineName, searchQuery, requireComponents.client)
                 }
             } else {
@@ -125,12 +141,10 @@ class ManualAddSearchEngineSettingsFragment : BaseSettingsFragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        scope = CoroutineScope(Dispatchers.IO)
         return super.onCreateView(inflater, container, savedInstanceState)
     }
 
     override fun onDestroyView() {
-        scope?.cancel()
         super.onDestroyView()
         view?.hideKeyboard()
     }
@@ -148,7 +162,7 @@ class ManualAddSearchEngineSettingsFragment : BaseSettingsFragment() {
         if (isValidating) {
             view?.alpha = DISABLED_ALPHA
             // Delay showing the loading indicator to prevent it flashing on the screen
-            job = scope?.launch(Dispatchers.Main) {
+            job = viewLifecycleOwner.lifecycleScope.launch {
                 delay(LOADING_INDICATOR_DELAY)
                 pref?.setProgressViewShown(isValidating)
                 updateViews()
@@ -156,7 +170,7 @@ class ManualAddSearchEngineSettingsFragment : BaseSettingsFragment() {
         } else {
             view?.alpha = 1f
             job?.cancel()
-            pref?.setProgressViewShown(isValidating)
+            pref?.setProgressViewShown(false)
             updateViews()
         }
     }
@@ -182,78 +196,98 @@ class ManualAddSearchEngineSettingsFragment : BaseSettingsFragment() {
         private const val DISABLED_ALPHA = 0.5f
         private const val LOADING_INDICATOR_DELAY: Long = 1000
 
-        @WorkerThread
-        @JvmStatic
-        fun isValidSearchQueryURL(client: Client, query: String): Boolean {
-            // we should share the code to substitute and normalize the search string (see SearchEngine.buildSearchUrl).
-            val encodedTestQuery = Uri.encode("testSearchEngineValidation")
+        /**
+         * Checks if a given search query URL is valid.
+         *
+         * A URL is considered valid if the network request is successful and returns a status code
+         * less than [VALID_RESPONSE_CODE_UPPER_BOUND] (typically meaning a success or redirect, but not an error).
+         *
+         * @param client The [Client] to use for making the network request.
+         * @param query The search query URL string to validate.
+         *              This string should contain "%s" as a placeholder for the search term.
+         * @param ioDispatcher The [CoroutineDispatcher] on which to perform the network operation.
+         *        Defaults to [Dispatchers.IO].
+         * @return `true` if the search query URL is valid, `false` otherwise (e.g., malformed URL, network error, etc).
+         *
+         * @see URLStringUtils.toNormalizedURL
+         * @see SEARCH_QUERY_VALIDATION_TIMEOUT_MILLIS
+         * @see VALID_RESPONSE_CODE_UPPER_BOUND
+         */
+        suspend fun isValidSearchQueryURL(
+            client: Client,
+            query: String,
+            ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        ): Boolean =
+            withContext(ioDispatcher) {
+                // we should share the code to substitute and normalize the search string
+                // (see SearchEngine.buildSearchUrl).
+                val encodedTestQuery = Uri.encode("testSearchEngineValidation")
 
-            val normalizedHttpsSearchURLStr = URLStringUtils.toNormalizedURL(query)
-            val searchURLStr = normalizedHttpsSearchURLStr.replace("%s".toRegex(), encodedTestQuery)
+                val normalizedHttpsSearchURLStr = URLStringUtils.toNormalizedURL(query)
+                val searchURLStr = normalizedHttpsSearchURLStr.replace("%s".toRegex(), encodedTestQuery)
 
-            try {
-                URL(searchURLStr)
-            } catch (e: MalformedURLException) {
-                // Don't log exception to avoid leaking URL.
-                Log.d(LOGTAG, "Failure to get response code from server: returning invalid search query")
-                return false
+                try {
+                    URL(searchURLStr)
+                } catch (e: MalformedURLException) {
+                    // Don't log exception to avoid leaking URL.
+                    Log.d(LOGTAG, "Failure to get response code from server: returning invalid search query")
+                    return@withContext false
+                }
+
+                val request = Request(
+                    url = searchURLStr,
+                    connectTimeout = SEARCH_QUERY_VALIDATION_TIMEOUT_MILLIS.toLong() to TimeUnit.MILLISECONDS,
+                    readTimeout = SEARCH_QUERY_VALIDATION_TIMEOUT_MILLIS.toLong() to TimeUnit.MILLISECONDS,
+                    redirect = FOLLOW,
+                    private = true,
+                )
+
+                return@withContext try {
+                    val response = client.fetch(request)
+                    // Close the response stream to ensure the body is closed correctly. See https://bugzilla.mozilla.org/show_bug.cgi?id=1603114.
+                    response.close()
+
+                    response.status < VALID_RESPONSE_CODE_UPPER_BOUND
+                } catch (e: IOException) {
+                    Log.d(LOGTAG, "Failure to get response code from server: returning invalid search query")
+                    false
+                }
             }
-
-            val request = Request(
-                url = searchURLStr,
-                connectTimeout = SEARCH_QUERY_VALIDATION_TIMEOUT_MILLIS.toLong() to TimeUnit.MILLISECONDS,
-                readTimeout = SEARCH_QUERY_VALIDATION_TIMEOUT_MILLIS.toLong() to TimeUnit.MILLISECONDS,
-                redirect = FOLLOW,
-                private = true,
-            )
-
-            return try {
-                val response = client.fetch(request)
-                // Close the response stream to ensure the body is closed correctly. See https://bugzilla.mozilla.org/show_bug.cgi?id=1603114.
-                response.close()
-
-                response.status < VALID_RESPONSE_CODE_UPPER_BOUND
-            } catch (e: IOException) {
-                Log.d(LOGTAG, "Failure to get response code from server: returning invalid search query")
-                false
-            }
-        }
     }
 
     private suspend fun validateSearchEngine(engineName: String, query: String, client: Client) {
         val isValidSearchQuery = isValidSearchQueryURL(client, query)
 
-        withContext(Dispatchers.Main) {
-            if (isActive) {
-                // continue validation
-            } else {
-                return@withContext
-            }
+        if (!currentCoroutineContext().isActive) return
 
-            if (isValidSearchQuery) {
-                requireComponents.searchUseCases.addSearchEngine(
-                    createSearchEngine(
-                        engineName,
-                        query.toSearchUrl(),
-                        requireComponents.icons.loadIcon(IconRequest(query, isPrivate = true)).await().bitmap,
-                    ),
-                )
+        if (isValidSearchQuery) {
+            requireComponents.searchUseCases.addSearchEngine(
+                createSearchEngine(
+                    engineName,
+                    query.toSearchUrl(),
+                    requireComponents.icons.loadIcon(IconRequest(query, isPrivate = true))
+                        .await().bitmap,
+                ),
+            )
 
-                ViewUtils.showBrandedSnackbar(requireView(), R.string.search_add_confirmation, Snackbar.LENGTH_SHORT)
-                requireActivity().settings.setDefaultSearchEngineByName(engineName)
-                SearchEngines.saveEngineTapped.record(SearchEngines.SaveEngineTappedExtra(true))
+            ViewUtils.showBrandedSnackbar(
+                requireView(),
+                R.string.search_add_confirmation,
+                Snackbar.LENGTH_SHORT,
+            )
+            requireActivity().settings.setDefaultSearchEngineByName(engineName)
+            SearchEngines.saveEngineTapped.record(SearchEngines.SaveEngineTappedExtra(true))
 
-                requireComponents.appStore.dispatch(
-                    AppAction.NavigateUp(requireComponents.store.state.selectedTabId),
-                )
-            } else {
-                showServerError()
-                SearchEngines.saveEngineTapped.record(SearchEngines.SaveEngineTappedExtra(false))
-            }
-
-            setUiIsValidatingAsync(false, menuItemForActiveAsyncTask)
-            menuItemForActiveAsyncTask = null
+            requireComponents.appStore.dispatch(
+                AppAction.NavigateUp(requireComponents.store.state.selectedTabId),
+            )
+        } else {
+            showServerError()
+            SearchEngines.saveEngineTapped.record(SearchEngines.SaveEngineTappedExtra(false))
         }
+
+        setUiIsValidatingAsync(false, menuItemForActiveAsyncTask)
+        menuItemForActiveAsyncTask = null
     }
 
     private fun showServerError() {

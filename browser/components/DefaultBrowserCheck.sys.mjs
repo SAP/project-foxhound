@@ -128,7 +128,9 @@ export var DefaultBrowserCheck = {
    * @returns {boolean} True if the default browser check prompt will be shown.
    */
   async willCheckDefaultBrowser(isStartupCheck) {
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     let shellService = win.getShellService();
 
     // Perform default browser checking.

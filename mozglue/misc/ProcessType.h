@@ -10,6 +10,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
+#include <cstdint>
+
 // This enum is not dense.  See GeckoProcessTypes.h for details.
 enum GeckoProcessType {
 #define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, proc_typename, \

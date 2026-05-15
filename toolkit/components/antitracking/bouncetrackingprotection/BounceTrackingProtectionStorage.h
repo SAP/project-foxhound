@@ -1,8 +1,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef mozilla_BounceTrackingProtectionStorage_h__
-#define mozilla_BounceTrackingProtectionStorage_h__
+#ifndef mozilla_BounceTrackingProtectionStorage_h_
+#define mozilla_BounceTrackingProtectionStorage_h_
 
 #include "mozIStorageFunction.h"
 #include "mozilla/Logging.h"
@@ -68,6 +68,16 @@ class BounceTrackingProtectionStorage final : public nsIObserver,
   // The enum values match the database type field. Updating them requires a DB
   // migration.
   enum class EntryType : uint8_t { BounceTracker = 0, UserActivation = 1 };
+
+  static const char* EntryTypeToString(EntryType aType) {
+    switch (aType) {
+      case EntryType::BounceTracker:
+        return "BounceTracker";
+      case EntryType::UserActivation:
+        return "UserActivation";
+    }
+    return "Unknown";
+  }
 
   // Clear all user activation or bounce tracker entries.
   [[nodiscard]] nsresult ClearByType(
@@ -262,6 +272,10 @@ class OriginAttrsPatternMatchOASuffixSQLFunction final
   OriginAttributesPattern mPattern;
 };
 
+inline const char* format_as(BounceTrackingProtectionStorage::EntryType aType) {
+  return BounceTrackingProtectionStorage::EntryTypeToString(aType);
+}
+
 }  // namespace mozilla
 
-#endif  // mozilla_BounceTrackingProtectionStorage_h__
+#endif  // mozilla_BounceTrackingProtectionStorage_h_

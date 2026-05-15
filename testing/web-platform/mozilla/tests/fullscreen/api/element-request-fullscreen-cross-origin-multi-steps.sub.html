@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<title>
+  Element#requestFullscreen() works properly with a tree of cross-origin iframes, with multiple requests
+</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/resources/testdriver.js"></script>
+<script src="/resources/testdriver-vendor.js"></script>
+
+<body>
+  <script>
+    let childFrame = null;
+    function waitFor(action, frameName) {
+      return new Promise((resolve) => {
+        window.addEventListener("message", function listener(e) {
+          if (e.data.action === action && e.data.name === frameName) {
+            window.removeEventListener("message", listener);
+            resolve(event.data);
+          }
+        });
+      });
+    }
+
+    function compare_report(report, frame, expectedIndex) {
+      assert_array_equals(report.events, frame.expectedEvents[expectedIndex], `compare events for ${frame.name}`);
+      assert_equals(report.fullscreenElementIsNull, frame.expectedNullFullscreenElement[expectedIndex], `frame ${frame.name} has expected fullscreen element`);
+    }
+
+    const iframes = [
+      {
+        name: "A",
+        src: "http://{{hosts[][]}}:{{ports[http][0]}}/_mozilla/fullscreen/api/resources/recursive-iframe-fullscreen.html?a",
+        allow_fullscreen: true,
+        expectedEvents: [["fullscreenchange"], []],
+        expectedNullFullscreenElement: [false, false]
+      },
+      { // first check should see its body go fs, 2nd should see it's <iframe> go fs
+        name: "B",
+        src: "http://{{hosts[alt][]}}:{{ports[http][1]}}/_mozilla/fullscreen/api/resources/recursive-iframe-fullscreen.html?b",
+        allow_fullscreen: true,
+        expectedEvents: [["fullscreenchange"], ["fullscreenchange"]],
+        expectedNullFullscreenElement: [false, false]
+      },
+      {
+        name: "C",
+        src: "http://{{hosts[][www]}}:{{ports[http][0]}}/_mozilla/fullscreen/api/resources/recursive-iframe-fullscreen.html?c",
+        allow_fullscreen: true,
+        expectedEvents: [[], ["fullscreenchange"]],
+        expectedNullFullscreenElement: [true, false]
+      },
+      {
+        name: "D",
+        src: "http://{{hosts[][]}}:{{ports[http][1]}}/_mozilla/fullscreen/api/resources/recursive-iframe-fullscreen.html?d",
+        allow_fullscreen: true,
+        expectedEvents: [[],["fullscreenchange"]],
+        expectedNullFullscreenElement: [true, false]
+      },
+      {
+        name: "E",
+        src: "http://{{hosts[][]}}:{{ports[http][0]}}/_mozilla/fullscreen/api/resources/recursive-iframe-fullscreen.html?e",
+        allow_fullscreen: true,
+        expectedEvents: [[],[]],
+        expectedNullFullscreenElement: [true, true]
+      },
+    ];
+
+    promise_setup(async () => {
+      // Add the first iframe.
+      const iframeDetails = iframes[0];
+      childFrame = document.createElement("iframe");
+      childFrame.allow = iframeDetails.allow_fullscreen ? "fullscreen" : "";
+      childFrame.name = iframeDetails.name;
+      childFrame.style.width = "100%";
+      childFrame.style.height = "100%";
+      childFrame.src = iframeDetails.src;
+      await new Promise((resolve) => {
+        childFrame.onload = resolve;
+        document.body.appendChild(childFrame);
+      });
+
+      // Create the nested iframes.
+      for (let i = 1; i < iframes.length; i++) {
+        const parentName = iframes[i - 1].name;
+        const details = iframes[i];
+        childFrame.contentWindow.postMessage(
+          { action: "addIframe", iframe: details, name: parentName },
+          "*"
+        );
+        await waitFor("load", details.name);
+      }
+    });
+
+    promise_test(async (t) => {
+      t.add_cleanup(async () => {
+        if (document.fullscreenElement) {
+          await new Promise((resolve) => {
+             document.addEventListener("fullscreenchange", resolve, { once: true });
+             document.exitFullscreen();
+          });
+        }
+        if (childFrame) {
+          childFrame.remove();
+        }
+      });
+      document.onfullscreenerror = t.unreached_func(
+        "fullscreenerror event fired"
+      );
+
+      const childFrame = document.querySelector("iframe[name=A]");
+
+      // request fullscreen by trusted click in `name`
+      // and wait until we've seen fullscreen events from
+      // `expectedFrames`. This is to handle intermittent failures
+      // where we check results before the request has completed entirely.
+      const requestFullscreenIn = (name, expectedFrames) => {
+        return new Promise((resolve) => {
+          const pending = new Set(expectedFrames);
+
+          function listener(e) {
+            if (e.data.action === "fsEvent" && pending.has(e.data.name)) {
+              pending.delete(e.data.name);
+
+              if (pending.size === 0) {
+                window.removeEventListener("message", listener);
+                resolve();
+              }
+            }
+          }
+
+          window.addEventListener("message", listener);
+          childFrame.contentWindow.postMessage(
+            { action: "requestFullscreen", name },
+            "*"
+          );
+        });
+      };
+
+      const verifyResult = async (expectedResultIndex) => {
+        for (const frame of iframes) {
+          const data = {
+            action: "requestReport",
+            name: frame.name,
+          };
+          childFrame.contentWindow.postMessage(data, "*");
+          const { report } = await waitFor("report", frame.name);
+          compare_report(report, frame, expectedResultIndex);
+        }
+      }
+
+      await requestFullscreenIn("B", ["A", "B"]);
+      await verifyResult(0);
+
+      await requestFullscreenIn("D", ["B", "C", "D"]);
+      await verifyResult(1);
+    }, "Element#requestFullscreen() works properly with a tree of cross-origin iframes");
+  </script>
+</body>

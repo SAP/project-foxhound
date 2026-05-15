@@ -11,7 +11,6 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/TimeStamp.h"
@@ -63,7 +62,7 @@ class AndroidUiThread : public nsThread {
             nsThread::NOT_MAIN_THREAD, {.stackSize = 0}) {}
 
   nsresult Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                    uint32_t aFlags) override;
+                    DispatchFlags aFlags) override;
   nsresult DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
                            uint32_t aDelayMs) override;
 
@@ -73,7 +72,7 @@ class AndroidUiThread : public nsThread {
 
 NS_IMETHODIMP
 AndroidUiThread::Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                          uint32_t aFlags) {
+                          DispatchFlags aFlags) {
   EnqueueTask(std::move(aEvent), 0);
   return NS_OK;
 }
@@ -178,28 +177,11 @@ class CreateOnUiThread : public Runnable {
     // We don't use the PROFILER_REGISTER_THREAD macro here because by this
     // point the Android UI thread is already quite a ways into its stack;
     // the profiler's sampler thread will ignore a lot of frames if we do not
-    // provide a better value for the stack top. We'll manually obtain that
-    // info via pthreads.
-
-    // Fallback address if any pthread calls fail
-    char fallback;
-    char* stackTop = &fallback;
-
-    auto regOnExit = MakeScopeExit(
-        [&stackTop]() { profiler_register_thread("AndroidUI", stackTop); });
-
-    pthread_attr_t attrs;
-    if (pthread_getattr_np(pthread_self(), &attrs)) {
-      return;
-    }
-
-    void* stackBase;
-    size_t stackSize;
-    if (pthread_attr_getstack(&attrs, &stackBase, &stackSize)) {
-      return;
-    }
-
-    stackTop = static_cast<char*>(stackBase) + stackSize - 1;
+    // provide a better value for the stack top. We'll reuse the info already
+    // obtained via pthreads.
+    const char* stackTop = static_cast<const char*>(sThread->StackBase()) +
+                           sThread->StackSize() - 1;
+    profiler_register_thread("AndroidUI", const_cast<char*>(stackTop));
 #endif  // defined(MOZ_GECKO_PROFILER)
   }
 };

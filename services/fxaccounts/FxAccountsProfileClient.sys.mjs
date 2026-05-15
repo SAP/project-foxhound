@@ -28,11 +28,11 @@ import { RESTRequest } from "resource://services-common/rest.sys.mjs";
 /**
  * Create a new FxAccountsProfileClient to be able to fetch Firefox Account profile information.
  *
- * @param {Object} options Options
- *   @param {String} options.serverURL
+ * @param {object} options Options
+ *   @param {string} options.serverURL
  *   The URL of the profile server to query.
  *   Example: https://profile.accounts.firefox.com/v1
- * @constructor
+ * @class
  */
 export var FxAccountsProfileClient = function (options) {
   if (!options?.serverURL) {
@@ -63,13 +63,13 @@ FxAccountsProfileClient.prototype = {
   /**
    * Remote request helper which abstracts authentication away.
    *
-   * @param {String} path
+   * @param {string} path
    *        Profile server path, i.e "/profile".
-   * @param {String} [method]
+   * @param {string} [method]
    *        Type of request, e.g. "GET".
-   * @param {String} [etag]
+   * @param {string} [etag]
    *        Optional ETag used for caching purposes.
-   * @param {Object} [body]
+   * @param {object} [body]
    *        Optional request body, to be sent as application/json.
    * @return Promise
    *         Resolves: {body: Object, etag: Object} Successful response from the Profile server.
@@ -113,7 +113,7 @@ FxAccountsProfileClient.prototype = {
    *
    * OAuth tokens are cached, so it's fine to call this for each request.
    *
-   * @param {String} [method]
+   * @param {string} [method]
    *        Type of request, i.e "GET".
    * @return Promise
    *         Resolves: Object containing "scope", "token" and "key" properties
@@ -131,13 +131,13 @@ FxAccountsProfileClient.prototype = {
   /**
    * Remote "raw" request helper - doesn't handle auth errors and tokens.
    *
-   * @param {String} path
+   * @param {string} path
    *        Profile server path, i.e "/profile".
-   * @param {String} method
+   * @param {string} method
    *        Type of request, i.e "GET".
-   * @param {String} token
-   * @param {String} etag
-   * @param {Object} payload
+   * @param {string} token
+   * @param {string} etag
+   * @param {object} payload
    *        The payload of the request, if any.
    * @return Promise
    *         Resolves: {body: Object, etag: Object} Successful response from the Profile server
@@ -207,7 +207,7 @@ FxAccountsProfileClient.prototype = {
   /**
    * Retrieve user's profile from the server
    *
-   * @param {String} [etag]
+   * @param {string} [etag]
    *        Optional ETag used for caching purposes. (may generate a 304 exception)
    * @return Promise
    *         Resolves: {body: Object, etag: Object} Successful response from the '/profile' endpoint.
@@ -221,17 +221,18 @@ FxAccountsProfileClient.prototype = {
 
 /**
  * Normalized profile client errors
- * @param {Object} [details]
+ *
+ * @param {object} [details]
  *        Error details object
  *   @param {number} [details.code]
  *          Error code
  *   @param {number} [details.errno]
  *          Error number
- *   @param {String} [details.error]
+ *   @param {string} [details.error]
  *          Error description
- *   @param {String|null} [details.message]
+ *   @param {string | null} [details.message]
  *          Error message
- * @constructor
+ * @class
  */
 export var FxAccountsProfileClientError = function (details) {
   details = details || {};
@@ -262,7 +263,7 @@ FxAccountsProfileClientError.prototype._toStringFields = function () {
 /**
  * String representation of a profile client error
  *
- * @returns {String}
+ * @returns {string}
  */
 FxAccountsProfileClientError.prototype.toString = function () {
   return this.name + "(" + JSON.stringify(this._toStringFields()) + ")";

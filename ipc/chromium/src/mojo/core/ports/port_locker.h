@@ -5,8 +5,6 @@
 #ifndef MOJO_CORE_PORTS_PORT_LOCKER_H_
 #define MOJO_CORE_PORTS_PORT_LOCKER_H_
 
-#include <stdint.h>
-
 #include "base/logging.h"
 #include "mojo/core/ports/port_ref.h"
 

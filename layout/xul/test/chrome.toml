@@ -12,8 +12,6 @@ support-files = [
   "windowminmaxsize10.xhtml",
 ]
 
-["test_bug159346.xhtml"]
-
 ["test_bug381167.xhtml"]
 
 ["test_bug398982-1.xhtml"]
@@ -23,8 +21,6 @@ support-files = [
 ["test_bug467442.xhtml"]
 
 ["test_bug477754.xhtml"]
-
-["test_bug703150.xhtml"]
 
 ["test_bug987230.xhtml"]
 

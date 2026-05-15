@@ -122,6 +122,14 @@ interface nsICookie : nsISupports {
     readonly attribute int64_t creationTime;
 
     /**
+     * the update time of the cookie, in microseconds
+     * since midnight (00:00:00), January 1, 1970 UTC.
+     * It is the same as creationTime for a new cookie
+     * or different for a cookie that was replaced.
+     */
+    readonly attribute int64_t updateTime;
+
+    /**
      * the last time the cookie was accessed (i.e. created,
      * modified, or read by the server), in microseconds
      * since midnight (00:00:00), January 1, 1970 UTC.

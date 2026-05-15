@@ -15,20 +15,19 @@ loader.lazyRequireGetter(
  * This object represents DOM panel. It's responsibility is to
  * render Document Object Model of the current debugger target.
  */
-function DomPanel(iframeWindow, toolbox, commands) {
-  this.panelWin = iframeWindow;
-  this._toolbox = toolbox;
-  this._commands = commands;
+class DomPanel extends EventEmitter {
+  constructor(iframeWindow, toolbox, commands) {
+    super();
 
-  this.onContentMessage = this.onContentMessage.bind(this);
-  this.onPanelVisibilityChange = this.onPanelVisibilityChange.bind(this);
+    this.panelWin = iframeWindow;
+    this._toolbox = toolbox;
+    this._commands = commands;
 
-  this.pendingRequests = new Map();
+    this.onContentMessage = this.onContentMessage.bind(this);
+    this.onPanelVisibilityChange = this.onPanelVisibilityChange.bind(this);
 
-  EventEmitter.decorate(this);
-}
-
-DomPanel.prototype = {
+    this.pendingRequests = new Map();
+  }
   /**
    * Open is effectively an asynchronous constructor.
    *
@@ -46,10 +45,9 @@ DomPanel.prototype = {
     await onGetProperties;
 
     return this;
-  },
+  }
 
   // Initialization
-
   async initialize() {
     this.panelWin.addEventListener(
       "devtools/content/message",
@@ -91,7 +89,7 @@ DomPanel.prototype = {
     };
 
     exportIntoContentScope(this.panelWin, provider, "DomProvider");
-  },
+  }
 
   destroy() {
     if (this._destroyed) {
@@ -111,10 +109,9 @@ DomPanel.prototype = {
     this._toolbox.off("select", this.onPanelVisibilityChange);
 
     this.emit("destroyed");
-  },
+  }
 
   // Events
-
   refresh() {
     // Do not refresh if the panel isn't visible.
     if (!this.isPanelVisible()) {
@@ -132,7 +129,7 @@ DomPanel.prototype = {
     this.getRootGrip().then(rootGrip => {
       this.postContentMessage("initialize", rootGrip);
     });
-  },
+  }
 
   /**
    * Make sure the panel is refreshed, either when navigation occurs or when a frame is
@@ -145,11 +142,11 @@ DomPanel.prototype = {
     // This will end up calling scriptCommand execute method to retrieve the `window` grip
     // on targetCommand.selectedTargetFront.
     this.refresh();
-  },
+  }
 
   _onTargetSelected() {
     this.forceRefresh();
-  },
+  }
 
   onResourceAvailable(resources) {
     for (const resource of resources) {
@@ -163,23 +160,22 @@ DomPanel.prototype = {
         this.forceRefresh();
       }
     }
-  },
+  }
 
   /**
    * Make sure the panel is refreshed (if needed) when it's selected.
    */
   onPanelVisibilityChange() {
     this.refresh();
-  },
+  }
 
   // Helpers
-
   /**
    * Return true if the DOM panel is currently selected.
    */
   isPanelVisible() {
     return this._toolbox.currentToolId === "dom";
-  },
+  }
 
   async getPrototypeAndProperties(objectFront) {
     if (!objectFront.actorID) {
@@ -210,11 +206,11 @@ DomPanel.prototype = {
     }
 
     return response;
-  },
+  }
 
   openLink(url) {
     openContentLink(url);
-  },
+  }
 
   async getRootGrip() {
     const { result } = await this._toolbox.commands.scriptCommand.execute(
@@ -224,7 +220,7 @@ DomPanel.prototype = {
       }
     );
     return result;
-  },
+  }
 
   postContentMessage(type, args) {
     const data = {
@@ -239,7 +235,7 @@ DomPanel.prototype = {
     });
 
     this.panelWin.dispatchEvent(event);
-  },
+  }
 
   onContentMessage(event) {
     const data = event.data;
@@ -247,16 +243,16 @@ DomPanel.prototype = {
     if (typeof this[method] == "function") {
       this[method](data.args);
     }
-  },
+  }
 
   getToolbox() {
     return this._toolbox;
-  },
+  }
 
   get currentTarget() {
     return this._toolbox.target;
-  },
-};
+  }
+}
 
 // Helpers
 

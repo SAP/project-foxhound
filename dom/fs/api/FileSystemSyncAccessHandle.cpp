@@ -127,7 +127,7 @@ FileSystemSyncAccessHandle::Create(
         if (result->IsOpen()) {
           // We don't need to use the result, we just need to begin the closing
           // process.
-          Unused << result->BeginClose();
+          (void)result->BeginClose();
         }
       });
   QM_TRY(MOZ_TO_RESULT(workerRef));
@@ -157,7 +157,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FileSystemSyncAccessHandle)
   if (tmp->IsOpen()) {
     // We don't need to use the result, we just need to begin the closing
     // process.
-    Unused << tmp->BeginClose();
+    (void)tmp->BeginClose();
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(FileSystemSyncAccessHandle)

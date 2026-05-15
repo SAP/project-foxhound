@@ -99,6 +99,9 @@ if CONFIG["MOZ_GECKO_PROFILER"]:
                 "core/EHABIStackWalk.cpp",
             ]
     elif CONFIG["OS_TARGET"] == "Darwin":
+        UNIFIED_SOURCES += [
+            "core/ProfilerThermalState-mac.mm",
+        ]
         if CONFIG["TARGET_CPU"] == "aarch64":
             UNIFIED_SOURCES += [
                 "core/PowerCounters-mac-arm64.cpp",
@@ -227,8 +230,7 @@ USE_LIBS += [
 
 FINAL_LIBRARY = "xul"
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 if CONFIG["CC_TYPE"] in ("clang", "gcc"):
     CXXFLAGS += [

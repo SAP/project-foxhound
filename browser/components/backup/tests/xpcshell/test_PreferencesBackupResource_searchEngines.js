@@ -9,6 +9,9 @@ const { PreferencesBackupResource } = ChromeUtils.importESModule(
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
 );
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
 const { SearchUtils } = ChromeUtils.importESModule(
   "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"
 );
@@ -43,7 +46,7 @@ add_setup(async function () {
   Services.locale.availableLocales = ["en-US"];
   Services.locale.requestedLocales = ["en-US"];
 
-  await Services.search.init();
+  await SearchService.init();
 
   await SearchTestUtils.installSearchExtension(
     {

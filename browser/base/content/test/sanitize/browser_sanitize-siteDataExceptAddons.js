@@ -24,12 +24,6 @@ async function createAddon() {
   return extension;
 }
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["privacy.sanitize.useOldClearHistoryDialog", false]],
-  });
-});
-
 async function checkAddonPermissionClearingWithPref(prefs, expectedValue) {
   let extension = await createAddon();
 

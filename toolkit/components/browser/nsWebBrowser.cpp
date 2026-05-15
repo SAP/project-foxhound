@@ -7,6 +7,10 @@
 // Local Includes
 #include "nsWebBrowser.h"
 
+// Hack: nsIOpenWindowInfo depends on this without being able to include it
+#include "mozilla/Assertions.h"
+#include "mozilla/dom/BrowserParent.h"
+
 // Helper Classes
 #include "nsGfxCIID.h"
 #include "nsWidgetsCID.h"
@@ -31,6 +35,7 @@
 #include "nsDocShell.h"
 #include "nsServiceManagerUtils.h"
 #include "WindowRenderer.h"
+#include "nsOpenWindowInfo.h"
 
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -77,23 +82,29 @@ nsIWidget* nsWebBrowser::EnsureWidget() {
 }
 
 /* static */
-already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
-    nsIWebBrowserChrome* aContainerWindow, nsIWidget* aParentWidget,
-    dom::BrowsingContext* aBrowsingContext,
-    dom::WindowGlobalChild* aInitialWindowChild) {
+nsresult nsWebBrowser::Create(nsIWebBrowserChrome* aContainerWindow,
+                              nsIWidget* aParentWidget,
+                              dom::BrowsingContext* aBrowsingContext,
+                              dom::WindowGlobalChild* aInitialWindowChild,
+                              nsIOpenWindowInfo* aOpenWindowInfo,
+                              nsWebBrowser** aWebBrowser) {
+  MOZ_ASSERT(aOpenWindowInfo, "Must have openwindowinfo");
   MOZ_ASSERT_IF(aInitialWindowChild,
                 aInitialWindowChild->BrowsingContext() == aBrowsingContext);
+  MOZ_ASSERT_IF(aInitialWindowChild,
+                aInitialWindowChild->DocumentPrincipal() ==
+                    aOpenWindowInfo->PrincipalToInheritForAboutBlank());
 
   RefPtr<nsWebBrowser> browser = new nsWebBrowser(
       aBrowsingContext->IsContent() ? typeContentWrapper : typeChromeWrapper);
 
   // nsWebBrowser::SetContainer also calls nsWebBrowser::EnsureDocShellTreeOwner
-  NS_ENSURE_SUCCESS(browser->SetContainerWindow(aContainerWindow), nullptr);
-  NS_ENSURE_SUCCESS(browser->SetParentWidget(aParentWidget), nullptr);
+  MOZ_TRY(browser->SetContainerWindow(aContainerWindow));
+  MOZ_TRY(browser->SetParentWidget(aParentWidget));
 
   nsCOMPtr<nsIWidget> docShellParentWidget = browser->EnsureWidget();
   if (NS_WARN_IF(!docShellParentWidget)) {
-    return nullptr;
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   uint64_t outerWindowId =
@@ -102,7 +113,7 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   RefPtr<nsDocShell> docShell =
       nsDocShell::Create(aBrowsingContext, outerWindowId);
   if (NS_WARN_IF(!docShell)) {
-    return nullptr;
+    return NS_ERROR_FAILURE;
   }
   browser->SetDocShell(docShell);
   MOZ_ASSERT(browser->mDocShell == docShell);
@@ -120,8 +131,8 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   // registration can go away, and nsDocShellTreeOwner can stop implementing
   // nsIWebProgressListener.
   RefPtr<nsDocShellTreeOwner> docShellTreeOwner = browser->mDocShellTreeOwner;
-  Unused << docShell->AddProgressListener(docShellTreeOwner,
-                                          nsIWebProgress::NOTIFY_ALL);
+  (void)docShell->AddProgressListener(docShellTreeOwner,
+                                      nsIWebProgress::NOTIFY_ALL);
 
   docShell->SetTreeOwner(docShellTreeOwner);
 
@@ -129,19 +140,14 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   // events from subframes. To solve that we install our own chrome event
   // handler that always gets called (even for subframes) for any bubbling
   // event.
-  nsresult rv = docShell->InitWindow(docShellParentWidget, 0, 0, 0, 0);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
+  MOZ_TRY(docShell->InitWindow(docShellParentWidget, 0, 0, 0, 0,
+                               aOpenWindowInfo, aInitialWindowChild));
 
   docShellTreeOwner->AddToWatcher();  // evil twin of Remove in SetDocShell(0)
   docShellTreeOwner->AddChromeListeners();
 
-  if (aInitialWindowChild) {
-    docShell->CreateDocumentViewerForActor(aInitialWindowChild);
-  }
-
-  return browser.forget();
+  browser.forget(aWebBrowser);
+  return NS_OK;
 }
 
 void nsWebBrowser::InternalDestroy() {
@@ -807,7 +813,7 @@ nsWebBrowser::SaveDocument(nsISupports* aDocumentish, nsISupports* aFile,
   mPersist = do_CreateInstance(NS_WEBBROWSERPERSIST_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
   RefPtr<nsIWebBrowserPersist> localPersist(mPersist);
-  Unused << localPersist;
+  (void)localPersist;
   mPersist->SetProgressListener(this);
   mPersist->SetPersistFlags(mPersistFlags);
   mPersist->GetCurrentState(&mPersistCurrentState);
@@ -838,15 +844,6 @@ nsWebBrowser::Cancel(nsresult aReason) {
 //*****************************************************************************
 // nsWebBrowser::nsIBaseWindow
 //*****************************************************************************
-
-NS_IMETHODIMP
-nsWebBrowser::InitWindow(nsIWidget* aParentWidget, int32_t aX, int32_t aY,
-                         int32_t aCX, int32_t aCY) {
-  // nsIBaseWindow::InitWindow and nsIBaseWindow::Create
-  // implementations have been merged into nsWebBrowser::Create
-  MOZ_DIAGNOSTIC_CRASH("Superceded by nsWebBrowser::Create()");
-  return NS_ERROR_NULL_POINTER;
-}
 
 NS_IMETHODIMP
 nsWebBrowser::Destroy() {
@@ -946,14 +943,6 @@ nsWebBrowser::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
 }
 
 NS_IMETHODIMP
-nsWebBrowser::Repaint(bool aForce) {
-  NS_ENSURE_STATE(mDocShell);
-  // Can directly return this as it is the
-  // same interface, thus same returns.
-  return mDocShell->Repaint(aForce);
-}
-
-NS_IMETHODIMP
 nsWebBrowser::GetParentWidget(nsIWidget** aParentWidget) {
   NS_ENSURE_ARG_POINTER(aParentWidget);
 
@@ -1036,7 +1025,7 @@ void nsWebBrowser::SetDocShell(nsDocShell* aDocShell) {
   // We need to keep the docshell alive while we perform the changes, but we
   // don't need to call any methods on it.
   nsCOMPtr<nsIDocShell> kungFuDeathGrip(mDocShell);
-  mozilla::Unused << kungFuDeathGrip;
+  (void)kungFuDeathGrip;
 
   if (aDocShell) {
     MOZ_ASSERT(!mDocShell, "Should not overwrite an existing value!");

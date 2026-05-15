@@ -1,0 +1,36 @@
+# Non-idiomatic manifest
+[DEFAULT]
+
+["aaa.js"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && verify", # 1
+  "os == 'mac' && os_version == '15.30' && bits == 64", # 2
+  "os == 'mac' && os_version == '15.30' && processor == 'aarch64' && bits == 64", # 3
+  "os == 'android' && android_version == '36' && arch == 'x86_64'", # 4
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'wayland'", # 5
+]
+
+["ccc.js"]
+support-files = ["file_beforeunload_stop.html"]
+fail-if = [
+  "a11y_checks",
+] # Bug 1953248 a11y_checks fails when testing multiple tab prompts
+skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && socketprocess_networking"] # Bug 1970150
+
+["ddd.js"]
+skip-if = [
+  "os == 'linux'", # 1
+  "os == 'mac' && vertical_tab", # 2
+  "os == 'win'", # 3
+]
+
+["eee.js"]
+skip-if = [
+  "os == 'linux' && !debug", # expands linux, except 22.04 && asan, tsan
+]
+
+["fff.js"]
+skip-if = [
+  "debug == false",
+  "http3 == true",
+]

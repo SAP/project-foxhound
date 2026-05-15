@@ -313,11 +313,6 @@ void TSFTextStoreBase::DispatchEvent(WidgetGUIEvent& aEvent) {
   if (NS_WARN_IF(!mWidget) || NS_WARN_IF(mWidget->Destroyed())) {
     return;
   }
-  // If the event isn't a query content event, the event may be handled
-  // asynchronously.  So, we should put off to answer from GetTextExt() etc.
-  if (!aEvent.AsQueryContentEvent()) {
-    mDeferNotifyingTSFUntilNextUpdate = true;
-  }
   mWidget->DispatchWindowEvent(aEvent);
 }
 

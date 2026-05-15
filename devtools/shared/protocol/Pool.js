@@ -18,9 +18,9 @@ var EventEmitter = require("resource://devtools/shared/event-emitter.js");
  *   Either a DevToolsServerConnection or a DevToolsClient. Must have
  *   addActorPool, removeActorPool, and poolFor.
  *   conn can be null if the subclass provides a conn property.
- * @param {String} [label]
+ * @param {string} [label]
  *   An optional label for the Pool.
- * @constructor
+ * @class
  */
 class Pool extends EventEmitter {
   constructor(conn, label) {
@@ -130,7 +130,8 @@ class Pool extends EventEmitter {
 
   /**
    * Search for an actor in this pool, given an actorID
-   * @param {String} actorID
+   *
+   * @param {string} actorID
    * @returns {Actor/null} Returns null if the actor wasn't found
    */
   getActorByID(actorID) {

@@ -365,7 +365,7 @@ add_task(
 
       EventUtils.synthesizeKey(key, {}, dialog);
 
-      let expected = ["-url", "about:editprofile"];
+      let expected = ["-new-tab", "about:editprofile"];
 
       Assert.equal(
         sendCommandLine.callCount,
@@ -456,7 +456,7 @@ add_task(
 
       EventUtils.synthesizeKey(key, {}, dialog);
 
-      let expected = ["-url", "about:deleteprofile"];
+      let expected = ["-new-tab", "about:deleteprofile"];
 
       Assert.equal(
         sendCommandLine.callCount,

@@ -37,12 +37,16 @@
  *
  *     Type* field;
  *
- * with:
+ * with something like:
  *
- *     HeapPtr<Type> field;
+ *     GCPtr<Type> field;
  *
- * All heap-based GC pointers and tagged pointers must use one of these classes,
- * except in a couple of exceptional cases.
+ * All heap-based GC pointers and tagged pointer fields should use one of these
+ * classes, except in a couple of exceptional cases.
+ *
+ * For cases where GC pointers are not stored in class fields (e.g. containers
+ * with dynamically sized memory) some functions are provided to write to an
+ * address while triggering the appropriate GC barriers.
  *
  * These classes are designed to be used by the internals of the JS engine.
  * Barriers designed to be used externally are provided in js/RootingAPI.h.
@@ -53,10 +57,12 @@
  * This file implements the following concrete classes:
  *
  * HeapPtr       General wrapper for heap-based pointers that provides pre- and
- *               post-write barriers. Most clients should use this.
+ *               post-write barriers. Conservative and may trigger more barriers
+ *               than necessary. Intended for fields in non-GC things.
  *
- * GCPtr         An optimisation of HeapPtr for objects which are only destroyed
- *               by GC finalization (this rules out use in Vector, for example).
+ * GCPtr         An optimisation of HeapPtr for use in objects which are only
+ *               destroyed by GC finalization (this rules out use in Vector,
+ *               for example). Intended for fields inside GC things.
  *
  * PreBarriered  Provides a pre-barrier but not a post-barrier. Necessary when
  *               generational GC updates are handled manually, e.g. for hash
@@ -78,8 +84,15 @@
  *               handles cycle collector concerns. Most external clients should
  *               use this.
  *
- * Heap::Tenured   Like Heap but doesn't allow nursery pointers. Allows storing
+ * TenuredHeap   Like Heap but doesn't allow nursery pointers. Allows storing
  *               flags in unused lower bits of the pointer.
+ *
+ * This file implements the following functions:
+ *
+ * BarrieredInit      Initialize a heap-based pointer with appropriate barriers.
+ * BarrieredSet       Update a previously initialized heap-based pointer.
+ * BarrieredCopyRange Copy a non-overlapping memory range with barriers.
+ * BarrieredMoveRange Copy a possibly-overlapping memory range with barriers.
  *
  * Which class to use?
  * -------------------
@@ -362,6 +375,7 @@ struct InternalBarrierMethods<T*> {
 };
 
 namespace gc {
+
 MOZ_ALWAYS_INLINE void ValuePostWriteBarrier(Value* vp, const Value& prev,
                                              const Value& next) {
   MOZ_ASSERT(!CurrentThreadIsOffThreadCompiling());
@@ -385,6 +399,7 @@ MOZ_ALWAYS_INLINE void ValuePostWriteBarrier(Value* vp, const Value& prev,
     sb->unputValue(vp);
   }
 }
+
 }  // namespace gc
 
 template <>
@@ -1050,6 +1065,139 @@ static inline void BarrieredSetPair(Zone* zone, HeapPtr<T1*>& v1, T1* val1,
   }
   v1.postBarrieredSet(val1);
   v2.postBarrieredSet(val2);
+}
+
+// Initialize a field in the heap, with appropriate GC write barriers. This adds
+// a store buffer entry for this specific edge if necessary.
+
+template <typename T>
+MOZ_ALWAYS_INLINE void BarrieredInit(bool nurseryOwned, void* dst, T value) {
+  AssertTargetIsNotGray(value);
+
+  // No pre-barrier necessary for initialization.
+
+  T* ptr = reinterpret_cast<T*>(dst);
+  *ptr = value;
+
+  if (!nurseryOwned) {
+    T prev = JS::SafelyInitialized<T>::create();
+    InternalBarrierMethods<T>::postBarrier(ptr, prev, value);
+  }
+}
+template <typename T>
+MOZ_ALWAYS_INLINE void BarrieredInit(gc::Cell* owner, void* dst, T value) {
+  BarrieredInit(!owner->isTenured(), dst, value);
+}
+
+namespace gc {
+template <typename T, bool PreBarrier = true, bool PostBarrier = true>
+MOZ_ALWAYS_INLINE void BarrieredSetImpl(bool nurseryOwned, void* dst, T value) {
+  AssertTargetIsNotGray(value);
+
+  T* ptr = reinterpret_cast<T*>(dst);
+  T prev = *ptr;
+  if constexpr (PreBarrier) {
+    InternalBarrierMethods<T>::preBarrier(prev);
+  }
+
+  *ptr = value;
+
+  if constexpr (PostBarrier) {
+    if (!nurseryOwned) {
+      InternalBarrierMethods<T>::postBarrier(ptr, prev, value);
+    }
+  }
+}
+}  // namespace gc
+
+// Assign to a field in the heap, with appropriate GC write barriers. This adds
+// a store buffer entry for this specific edge if necessary.
+
+template <typename T>
+MOZ_ALWAYS_INLINE void BarrieredSet(bool nurseryOwned, void* dst, T value) {
+  gc::BarrieredSetImpl(nurseryOwned, dst, value);
+}
+template <typename T>
+MOZ_ALWAYS_INLINE void BarrieredSet(gc::Cell* owner, void* dst, T value) {
+  BarrieredSet(!owner->isTenured(), dst, value);
+}
+
+namespace gc {
+
+template <typename T, bool PreBarrier = true, bool PostBarrier = true>
+MOZ_ALWAYS_INLINE void BarrieredMoveRangeInner(bool nurseryOwned, void* dst,
+                                               const T* src, size_t count) {
+  T* ptr = reinterpret_cast<T*>(dst);
+  if (uintptr_t(dst) - uintptr_t(src) < count * sizeof(T)) {
+    for (size_t i = count; i != 0; i--) {
+      BarrieredSetImpl<T, PreBarrier, PostBarrier>(nurseryOwned, ptr + i - 1,
+                                                   src[i - 1]);
+    }
+    return;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    BarrieredSetImpl<T, PreBarrier, PostBarrier>(nurseryOwned, ptr + i, src[i]);
+  }
+}
+
+template <typename T>
+void BarrieredMoveRangeImpl(gc::Cell* owner, void* dst, const T* src,
+                            size_t count) {
+  // This function is called frequently in some WasmGC benchmarks.
+  //
+  // Most of the time no barriers are required. The most frequent use of the
+  // post barrier is for 12% of calls in Kotlin-compose-wasm. The most frequent
+  // use of the pre barrier is for 1.5% of calls in Dart-flute-complex-wasm.
+
+  bool nurseryOwned = !owner->isTenured();
+  if (owner->shadowZone()->needsMarkingBarrier()) {
+    // Needs pre barrier and maybe post barrier. The less likely case.
+    BarrieredMoveRangeInner<T, true, true>(nurseryOwned, dst, src, count);
+    return;
+  }
+
+  // Needs post barrier only. The most likely case.
+  MOZ_ASSERT(!nurseryOwned);
+  BarrieredMoveRangeInner<T, false, true>(false, dst, src, count);
+}
+
+}  // namespace gc
+
+// Move a range of elements in the heap, with appropriate GC barriers. The
+// destination may overlap the source.
+//
+// TODO: This can add a store buffer entry for every element, which is not very
+// efficient. In future we could consider adding something like the
+// slots/elements buffer for callers of this, so that we can add ranges to the
+// store buffer with a single entry.
+
+template <typename T>
+void BarrieredMoveRange(gc::Cell* owner, void* dst, const T* src,
+                        size_t count) {
+  if (dst == src) {
+    return;
+  }
+
+  if (owner->isTenured() || owner->shadowZone()->needsMarkingBarrier()) {
+    gc::BarrieredMoveRangeImpl(owner, dst, src, count);
+    return;
+  }
+
+  memmove(dst, src, count * sizeof(T));
+}
+
+// Copy a range of elements in the heap, with appropriate GC barriers. The
+// destination may not overlap the source.
+template <typename T>
+void BarrieredCopyRange(gc::Cell* owner, T* dst, T* src, size_t count) {
+  MOZ_ASSERT(uintptr_t(dst) >= uintptr_t(src) + count * sizeof(T) ||
+             uintptr_t(dst) + count * sizeof(T) <= uintptr_t(src));
+
+  bool nurseryOwned = !owner->isTenured();
+  for (size_t i = 0; i < count; i++) {
+    BarrieredSet(nurseryOwned, dst + i, src[i]);
+  }
 }
 
 /*

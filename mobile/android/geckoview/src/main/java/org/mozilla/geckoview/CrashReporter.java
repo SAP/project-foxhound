@@ -27,9 +27,7 @@ import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.zip.GZIPOutputStream;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -42,16 +40,7 @@ import org.mozilla.gecko.util.ProxySelector;
 public class CrashReporter {
   private static final String LOGTAG = "GeckoCrashReporter";
   private static final String MINI_DUMP_PATH_KEY = "upload_file_minidump";
-  private static final String PAGE_URL_KEY = "URL";
-  private static final String MINIDUMP_SHA256_HASH_KEY = "MinidumpSha256Hash";
-  private static final String NOTES_KEY = "Notes";
-  private static final String SERVER_URL_KEY = "ServerURL";
-  private static final String STACK_TRACES_KEY = "StackTraces";
-  private static final String PRODUCT_NAME_KEY = "ProductName";
-  private static final String PRODUCT_ID_KEY = "ProductID";
   private static final String PRODUCT_ID = "{eeb82917-e434-4870-8148-5c03d4caa81b}";
-  private static final List<String> IGNORE_KEYS =
-      Arrays.asList(PAGE_URL_KEY, SERVER_URL_KEY, STACK_TRACES_KEY);
 
   /**
    * Sends a crash report to the Mozilla <a href="https://wiki.mozilla.org/Socorro">Socorro</a>
@@ -134,15 +123,12 @@ public class CrashReporter {
       @NonNull final File extrasFile,
       @NonNull final String appName)
       throws IOException, URISyntaxException {
-    final JSONObject annotations = getCrashAnnotations(context, minidumpFile, extrasFile, appName);
+    final CrashAnnotations annotations =
+        getCrashAnnotations(context, minidumpFile, extrasFile, appName);
 
-    final String url = annotations.optString(SERVER_URL_KEY, null);
+    final String url = annotations.optString(CrashReport.Annotation.ServerURL);
     if (url == null) {
       return GeckoResult.fromException(new Exception("No server url present"));
-    }
-
-    for (final String key : IGNORE_KEYS) {
-      annotations.remove(key);
     }
 
     return sendCrashReport(url, minidumpFile, annotations);
@@ -164,12 +150,14 @@ public class CrashReporter {
    * @see GeckoRuntime#ACTION_CRASHED
    */
   @AnyThread
-  public static @NonNull GeckoResult<String> sendCrashReport(
+  private static @NonNull GeckoResult<String> sendCrashReport(
       @NonNull final String serverURL,
       @NonNull final File minidumpFile,
-      @NonNull final JSONObject extras)
+      @NonNull final CrashAnnotations extras)
       throws IOException, URISyntaxException {
     Log.d(LOGTAG, "Sending crash report: " + minidumpFile.getPath());
+
+    extras.sanitizeForReport();
 
     HttpURLConnection conn = null;
     try {
@@ -279,56 +267,87 @@ public class CrashReporter {
     return map;
   }
 
-  private static JSONObject readExtraFile(final String filePath) throws IOException, JSONException {
-    final byte[] buffer = new byte[4096];
-    final FileInputStream inputStream = new FileInputStream(filePath);
-    final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-    int bytesRead = 0;
+  private static class CrashAnnotations {
+    private final JSONObject mAnnotations;
 
-    while ((bytesRead = inputStream.read(buffer)) != -1) {
-      outputStream.write(buffer, 0, bytesRead);
+    CrashAnnotations(final String filePath) throws IOException, JSONException {
+      final byte[] buffer = new byte[4096];
+      final FileInputStream inputStream = new FileInputStream(filePath);
+      final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+      int bytesRead = 0;
+
+      while ((bytesRead = inputStream.read(buffer)) != -1) {
+        outputStream.write(buffer, 0, bytesRead);
+      }
+
+      final String contents = new String(outputStream.toByteArray(), "UTF-8");
+      mAnnotations = new JSONObject(contents);
     }
 
-    final String contents = new String(outputStream.toByteArray(), "UTF-8");
-    return new JSONObject(contents);
+    public void put(final CrashReport.Annotation annotation, final Object value)
+        throws JSONException {
+      mAnnotations.put(annotation.toString(), value);
+    }
+
+    /**
+     * Returns the string annotation, or null if unset.
+     *
+     * @param annotation The annotation to read.
+     * @return the annotation value, or null if unset.
+     */
+    public String optString(final CrashReport.Annotation annotation) {
+      return mAnnotations.optString(annotation.toString(), null);
+    }
+
+    /** Remove annotations that should not be sent in a crash report. */
+    public void sanitizeForReport() {
+      for (final CrashReport.Annotation annotation : CrashReport.Annotation.values()) {
+        if (!annotation.allowedInReport()) {
+          mAnnotations.remove(annotation.toString());
+        }
+      }
+    }
+
+    /**
+     * Encodes the crash annotations as a compact JSON string.
+     *
+     * @return The JSON representation of the crash annotations.
+     */
+    @Override
+    public String toString() {
+      return mAnnotations.toString();
+    }
   }
 
-  private static JSONObject getCrashAnnotations(
+  private static CrashAnnotations getCrashAnnotations(
       @NonNull final Context context,
       @NonNull final File minidump,
       @NonNull final File extra,
       @NonNull final String appName)
       throws IOException {
     try {
-      final JSONObject annotations = readExtraFile(extra.getPath());
+      final CrashAnnotations annotations = new CrashAnnotations(extra.getPath());
 
-      // Compute the minidump hash and generate the stack traces
+      annotations.put(CrashReport.Annotation.ProductName, appName);
+      annotations.put(CrashReport.Annotation.ProductID, PRODUCT_ID);
+      annotations.put(CrashReport.Annotation.Android_Manufacturer, Build.MANUFACTURER);
+      annotations.put(CrashReport.Annotation.Android_Model, Build.MODEL);
+      annotations.put(CrashReport.Annotation.Android_Board, Build.BOARD);
+      annotations.put(CrashReport.Annotation.Android_Brand, Build.BRAND);
+      annotations.put(CrashReport.Annotation.Android_Device, Build.DEVICE);
+      annotations.put(CrashReport.Annotation.Android_Display, Build.DISPLAY);
+      annotations.put(CrashReport.Annotation.Android_Fingerprint, Build.FINGERPRINT);
+      annotations.put(CrashReport.Annotation.Android_CPU_ABI, Build.CPU_ABI);
+      annotations.put(CrashReport.Annotation.Android_PackageName, context.getPackageName());
       try {
-        final String hash = computeMinidumpHash(minidump);
-        annotations.put(MINIDUMP_SHA256_HASH_KEY, hash);
-      } catch (final Exception e) {
-        Log.e(LOGTAG, "exception while computing the minidump hash: ", e);
-      }
-
-      annotations.put(PRODUCT_NAME_KEY, appName);
-      annotations.put(PRODUCT_ID_KEY, PRODUCT_ID);
-      annotations.put("Android_Manufacturer", Build.MANUFACTURER);
-      annotations.put("Android_Model", Build.MODEL);
-      annotations.put("Android_Board", Build.BOARD);
-      annotations.put("Android_Brand", Build.BRAND);
-      annotations.put("Android_Device", Build.DEVICE);
-      annotations.put("Android_Display", Build.DISPLAY);
-      annotations.put("Android_Fingerprint", Build.FINGERPRINT);
-      annotations.put("Android_CPU_ABI", Build.CPU_ABI);
-      annotations.put("Android_PackageName", context.getPackageName());
-      try {
-        annotations.put("Android_CPU_ABI2", Build.CPU_ABI2);
-        annotations.put("Android_Hardware", Build.HARDWARE);
+        annotations.put(CrashReport.Annotation.Android_CPU_ABI2, Build.CPU_ABI2);
+        annotations.put(CrashReport.Annotation.Android_Hardware, Build.HARDWARE);
       } catch (final Exception ex) {
         Log.e(LOGTAG, "Exception while sending SDK version 8 keys", ex);
       }
       annotations.put(
-          "Android_Version", Build.VERSION.SDK_INT + " (" + Build.VERSION.CODENAME + ")");
+          CrashReport.Annotation.Android_Version,
+          Build.VERSION.SDK_INT + " (" + Build.VERSION.CODENAME + ")");
 
       return annotations;
     } catch (final JSONException e) {
@@ -344,7 +363,8 @@ public class CrashReporter {
   }
 
   private static void sendAnnotations(
-      final OutputStream os, final String boundary, final JSONObject extras) throws IOException {
+      final OutputStream os, final String boundary, final CrashAnnotations extras)
+      throws IOException {
     os.write(
         ("--"
                 + boundary

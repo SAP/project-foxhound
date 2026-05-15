@@ -22,7 +22,7 @@ config = {
         "-memory",
         "3072",
         "-cores",
-        "4",
+        "8",
         "-skin",
         "800x1280",
         "-no-snapstorage",
@@ -42,5 +42,6 @@ config = {
     "bogomips_minimum": 3000,
     # in support of test-verify
     "android_version": 24,
+    "os_version": "7.0",
     "is_emulator": True,
 }

@@ -12,6 +12,7 @@
 #include "nsIClassInfoImpl.h"
 #include "nsCOMPtr.h"
 #include "nsCExternalHandlerService.h"
+#include "nsAppShell.h"
 
 using namespace mozilla;
 
@@ -87,6 +88,7 @@ nsDBusHandlerApp::LaunchWithURI(
   DBusError err;
   dbus_error_init(&err);
 
+  nsAppShell::DBusConnectionCheck();
   mozilla::UniquePtr<DBusConnection, mozilla::DBusConnectionDelete> connection(
       dbus_bus_get_private(DBUS_BUS_SESSION, &err));
 

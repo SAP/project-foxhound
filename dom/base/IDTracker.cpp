@@ -9,14 +9,14 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
-#include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/SVGUseElement.h"
+#include "mozilla/dom/ShadowRoot.h"
 #include "nsAtom.h"
 #include "nsContentUtils.h"
-#include "nsIURI.h"
-#include "nsIReferrerInfo.h"
-#include "nsEscape.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsEscape.h"
+#include "nsIReferrerInfo.h"
+#include "nsIURI.h"
 #include "nsStringFwd.h"
 
 namespace mozilla::dom {

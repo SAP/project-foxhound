@@ -10,8 +10,8 @@
 #include "EditAction.h"
 #include "EditAggregateTransaction.h"
 #include "EditorDOMPoint.h"
+#include "EditorUtils.h"
 #include "HTMLEditor.h"
-#include "HTMLEditUtils.h"
 #include "InternetCiter.h"
 #include "PlaceholderTransaction.h"
 #include "gfxFontUtils.h"
@@ -20,6 +20,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/IMEStateManager.h"
+#include "mozilla/Logging.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/Preferences.h"
@@ -30,6 +31,7 @@
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextServicesDocument.h"
 #include "mozilla/Try.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Selection.h"
@@ -60,7 +62,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsStringFwd.h"
-#include "nsTextFragment.h"
 #include "nsTextNode.h"
 #include "nsUnicharUtils.h"
 #include "nsXPCOM.h"
@@ -70,10 +71,23 @@ class nsISupports;
 
 namespace mozilla {
 
-using namespace dom;
+// This logs the important things for the lifecycle of the TextEditor.
+LazyLogModule gTextEditorLog("TextEditor");
 
-using LeafNodeType = HTMLEditUtils::LeafNodeType;
-using LeafNodeTypes = HTMLEditUtils::LeafNodeTypes;
+static void LogOrWarn(const TextEditor* aTextEditor, LazyLogModule& aLog,
+                      LogLevel aLogLevel, const char* aStr) {
+#ifdef DEBUG
+  if (MOZ_LOG_TEST(aLog, aLogLevel)) {
+    MOZ_LOG(aLog, aLogLevel, ("%p: %s", aTextEditor, aStr));
+  } else {
+    NS_WARNING(aStr);
+  }
+#else
+  MOZ_LOG(aLog, aLogLevel, ("%p: %s", aTextEditor, aStr));
+#endif
+}
+
+using namespace dom;
 
 template EditorDOMPoint TextEditor::FindBetterInsertionPoint(
     const EditorDOMPoint& aPoint) const;
@@ -85,12 +99,16 @@ TextEditor::TextEditor() : EditorBase(EditorBase::EditorType::Text) {
   static_assert(
       sizeof(TextEditor) <= 512,
       "TextEditor instance should be allocatable in the quantum class bins");
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: New instance is created", this));
 }
 
 TextEditor::~TextEditor() {
   // Remove event listeners. Note that if we had an HTML editor,
   //  it installed its own instead of these
   RemoveEventListeners();
+
+  MOZ_LOG(gTextEditorLog, LogLevel::Info, ("%p: Deleted", this));
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(TextEditor)
@@ -153,33 +171,46 @@ nsresult TextEditor::Init(Document& aDocument, Element& aAnonymousDivElement,
   MOZ_ASSERT(!mInitSucceeded,
              "TextEditor::Init() called again without calling PreDestroy()?");
   MOZ_ASSERT(!(aFlags & nsIEditor::eEditorPasswordMask) == !aPasswordMaskData);
+
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: Init(aDocument=%p, aAnonymousDivElement=%s, "
+           "aSelectionController=%p, aPasswordMaskData=%p)",
+           this, &aDocument, ToString(RefPtr{&aAnonymousDivElement}).c_str(),
+           &aSelectionController, aPasswordMaskData.get()));
+
   mPasswordMaskData = std::move(aPasswordMaskData);
 
   // Init the base editor
   nsresult rv = InitInternal(aDocument, &aAnonymousDivElement,
                              aSelectionController, aFlags);
   if (NS_FAILED(rv)) {
-    NS_WARNING("EditorBase::InitInternal() failed");
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "EditorBase::InitInternal() failed");
     return rv;
   }
 
   AutoEditActionDataSetter editActionData(*this, EditAction::eInitializing);
-  if (NS_WARN_IF(!editActionData.CanHandle())) {
+  if (MOZ_UNLIKELY(!editActionData.CanHandle())) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "AutoEditActionDataSetter::CanHandle() failed");
     return NS_ERROR_FAILURE;
   }
 
-  // We set mInitSucceeded here rather than at the end of the function,
+  // We set the initialized state here rather than at the end of the function,
   // since InitEditorContentAndSelection() can perform some transactions
   // and can warn if mInitSucceeded is still false.
   MOZ_ASSERT(!mInitSucceeded, "TextEditor::Init() shouldn't be nested");
   mInitSucceeded = true;
+  editActionData.OnEditorInitialized();
 
   rv = InitEditorContentAndSelection();
   if (NS_FAILED(rv)) {
-    NS_WARNING("TextEditor::InitEditorContentAndSelection() failed");
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "TextEditor::InitEditorContentAndSelection() failed");
     // XXX Shouldn't we expose `NS_ERROR_EDITOR_DESTROYED` even though this
     //     is a public method?
     mInitSucceeded = false;
+    editActionData.OnEditorDestroy();
     return EditorBase::ToGenericNSResult(rv);
   }
 
@@ -200,7 +231,8 @@ nsresult TextEditor::InitEditorContentAndSelection() {
   if (!SelectionRef().RangeCount()) {
     nsresult rv = CollapseSelectionToEndOfTextNode();
     if (NS_FAILED(rv)) {
-      NS_WARNING("EditorBase::CollapseSelectionToEndOfTextNode() failed");
+      LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+                "EditorBase::CollapseSelectionToEndOfTextNode() failed");
       return rv;
     }
   }
@@ -208,8 +240,8 @@ nsresult TextEditor::InitEditorContentAndSelection() {
   if (!IsSingleLineEditor()) {
     nsresult rv = EnsurePaddingBRElementInMultilineEditor();
     if (NS_FAILED(rv)) {
-      NS_WARNING(
-          "EditorBase::EnsurePaddingBRElementInMultilineEditor() failed");
+      LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+                "EditorBase::EnsurePaddingBRElementInMultilineEditor() failed");
       return rv;
     }
   }
@@ -218,8 +250,14 @@ nsresult TextEditor::InitEditorContentAndSelection() {
 }
 
 nsresult TextEditor::PostCreate() {
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: PostCreate(), mDidPostCreate=%s", this,
+           TrueOrFalse(mDidPostCreate)));
+
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
-  if (NS_WARN_IF(!editActionData.CanHandle())) {
+  if (MOZ_UNLIKELY(!editActionData.CanHandle())) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "AutoEditActionDataSetter::CanHandle() failed");
     return NS_ERROR_NOT_INITIALIZED;
   }
 
@@ -233,12 +271,21 @@ nsresult TextEditor::PostCreate() {
                          "TextEditor::SetUnmaskRangeAndNotify() failed to "
                          "restore unmasked range, but ignored");
   }
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::PostCreateInternal() failed");
-  return rv;
+
+  if (NS_FAILED(rv)) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "EditorBase::PostCreateInternal() failed");
+    return rv;
+  }
+
+  return NS_OK;
 }
 
 UniquePtr<PasswordMaskData> TextEditor::PreDestroy() {
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: PreDestroy() mDidPreDestroy=%s", this,
+           TrueOrFalse(mDidPreDestroy)));
+
   if (mDidPreDestroy) {
     return nullptr;
   }
@@ -256,6 +303,43 @@ UniquePtr<PasswordMaskData> TextEditor::PreDestroy() {
   PreDestroyInternal();
 
   return passwordMaskData;
+}
+
+Result<widget::IMEState, nsresult> TextEditor::GetPreferredIMEState() const {
+  using IMEState = widget::IMEState;
+  using IMEEnabled = widget::IMEEnabled;
+
+  if (IsReadonly()) {
+    return IMEState{IMEEnabled::Disabled, IMEState::DONT_CHANGE_OPEN_STATE};
+  }
+
+  Element* const textControlElement = GetExposedRoot();
+  if (NS_WARN_IF(!textControlElement)) {
+    return Err(NS_ERROR_FAILURE);
+  }
+  MOZ_ASSERT(textControlElement->IsTextControlElement());
+
+  nsIFrame* const textControlFrame = textControlElement->GetPrimaryFrame();
+  if (NS_WARN_IF(!textControlFrame)) {
+    return Err(NS_ERROR_FAILURE);
+  }
+
+  switch (textControlFrame->StyleUIReset()->mIMEMode) {
+    case StyleImeMode::Auto:
+    default:
+      return IMEState{
+          IsPasswordEditor() ? IMEEnabled::Password : IMEEnabled::Enabled,
+          IMEState::DONT_CHANGE_OPEN_STATE};
+    case StyleImeMode::Disabled:
+      // we should use password state for |ime-mode: disabled;|.
+      return IMEState{IMEEnabled::Password, IMEState::DONT_CHANGE_OPEN_STATE};
+    case StyleImeMode::Active:
+      return IMEState{IMEEnabled::Enabled, IMEState::OPEN};
+    case StyleImeMode::Inactive:
+      return IMEState{IMEEnabled::Enabled, IMEState::CLOSED};
+    case StyleImeMode::Normal:
+      return IMEState{IMEEnabled::Enabled, IMEState::DONT_CHANGE_OPEN_STATE};
+  }
 }
 
 nsresult TextEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
@@ -372,6 +456,37 @@ NS_IMETHODIMP TextEditor::InsertLineBreak() {
   return EditorBase::ToGenericNSResult(rv);
 }
 
+nsresult TextEditor::ComputeTextValue(nsAString& aString) const {
+  // This is a public method so that anytime this may be called, e.g., before
+  // initialized or after destroyed.  However, GetTextNode() is an internal API
+  // for friend classes and internal use.  Therefore, it asserts the conditions
+  // whether the anonymous subtree is available.  Therefore, this method needs
+  // to get the Text with the anonymous <div>.
+  const Element* const anonymousDivElement = GetRoot();
+  if (MOZ_UNLIKELY(!anonymousDivElement)) {
+    // If we're temporarily destroyed while we're handling something, we can get
+    // the value from the cached text node which was maybe modified by us.  This
+    // helps TextControlState and TextInputListener to notify the text control
+    // element of value changes, etc, at UnbindFromFrame().
+    const Text* const cachedTextNode = GetCachedTextNode();
+    if (NS_WARN_IF(!cachedTextNode)) {
+      return NS_ERROR_NOT_INITIALIZED;
+    }
+    cachedTextNode->GetData(aString);
+    return NS_OK;
+  }
+
+  const auto* const text =
+      Text::FromNodeOrNull(anonymousDivElement->GetFirstChild());
+  if (MOZ_UNLIKELY(!text)) {
+    MOZ_ASSERT_UNREACHABLE("how?");
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  text->GetData(aString);
+  return NS_OK;
+}
+
 nsresult TextEditor::InsertLineBreakAsAction(nsIPrincipal* aPrincipal) {
   AutoEditActionDataSetter editActionData(*this, EditAction::eInsertLineBreak,
                                           aPrincipal);
@@ -480,33 +595,42 @@ already_AddRefed<Element> TextEditor::GetInputEventTargetElement() const {
 }
 
 bool TextEditor::IsEmpty() const {
-  // This is a public method.  Therefore, it might have not been initialized yet
-  // when this is called.  Let's return true in such case, but warn it because
-  // it may return different value than actual value which is stored by the
-  // text control element.
-  MOZ_ASSERT_IF(mInitSucceeded, GetRoot());
-  if (NS_WARN_IF(!GetRoot())) {
-    NS_ASSERTION(false,
-                 "Make the root caller stop doing that before initializing or "
-                 "after destroying the TextEditor");
-    return true;
+  // This is a public method so that anytime this may be called, e.g., before
+  // initialized or after destroyed.  However, GetTextNode() is an internal API
+  // for friend classes and internal use.  Therefore, it asserts the conditions
+  // whether the anonymous subtree is available.  Therefore, this method needs
+  // to get the Text with the anonymous <div>.
+  if (MOZ_UNLIKELY(!mInitSucceeded)) {
+    // If we're temporarily destroyed while we're handling something, we can get
+    // the value from the cached text node which was maybe modified by us.  This
+    // helps TextControlState and TextInputListener to notify the text control
+    // element of value changes, etc, at UnbindFromFrame().
+    const Text* const cachedTextNode = GetCachedTextNode();
+    return NS_WARN_IF(!cachedTextNode) || !cachedTextNode->TextDataLength();
   }
   const Text* const textNode = GetTextNode();
-  MOZ_DIAGNOSTIC_ASSERT_IF(textNode,
-                           !Text::FromNodeOrNull(textNode->GetNextSibling()));
   return !textNode || !textNode->TextDataLength();
 }
 
 NS_IMETHODIMP TextEditor::GetTextLength(uint32_t* aCount) {
   MOZ_ASSERT(aCount);
-
-  if (NS_WARN_IF(!GetRoot())) {
-    return NS_ERROR_FAILURE;
+  // This is a public method so that anytime this may be called, e.g., before
+  // initialized or after destroyed.  However, GetTextNode() is an internal API
+  // for friend classes and internal use.  Therefore, it asserts the conditions
+  // whether the anonymous subtree is available.  Therefore, this method needs
+  // to get the Text with the anonymous <div>.
+  if (MOZ_UNLIKELY(!mInitSucceeded)) {
+    // If we're temporarily destroyed while we're handling something, we can get
+    // the value from the cached text node which was maybe modified by us.
+    const Text* const textNode = GetCachedTextNode();
+    if (NS_WARN_IF(!textNode)) {
+      return NS_ERROR_FAILURE;
+    }
+    *aCount = textNode->TextDataLength();
+    return NS_OK;
   }
 
   const Text* const textNode = GetTextNode();
-  MOZ_DIAGNOSTIC_ASSERT_IF(textNode,
-                           !Text::FromNodeOrNull(textNode->GetNextSibling()));
   *aCount = textNode ? textNode->TextDataLength() : 0u;
   return NS_OK;
 }
@@ -683,12 +807,19 @@ nsresult TextEditor::SelectEntireDocument() {
 EventTarget* TextEditor::GetDOMEventTarget() const { return mEventTarget; }
 
 void TextEditor::ReinitializeSelection(Element& aElement) {
-  if (NS_WARN_IF(Destroyed())) {
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: ReinitializeSelection(aElement=%s)", this,
+           ToString(RefPtr{&aElement}).c_str()));
+
+  if (MOZ_UNLIKELY(Destroyed())) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error, "Destroyed() failed");
     return;
   }
 
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
-  if (NS_WARN_IF(!editActionData.CanHandle())) {
+  if (MOZ_UNLIKELY(!editActionData.CanHandle())) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "AutoEditActionDataSetter::CanHandle() failed");
     return;
   }
 
@@ -703,32 +834,46 @@ void TextEditor::ReinitializeSelection(Element& aElement) {
 }
 
 nsresult TextEditor::OnFocus(const nsINode& aOriginalEventTargetNode) {
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: OnFocus(aOriginalEventTargetNode=%s)", this,
+           ToString(RefPtr{&aOriginalEventTargetNode}).c_str()));
+
   RefPtr<PresShell> presShell = GetPresShell();
-  if (NS_WARN_IF(!presShell)) {
+  if (MOZ_UNLIKELY(!presShell)) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error, "!presShell");
     return NS_ERROR_FAILURE;
   }
   // Let's update the layout information right now because there are some
   // pending notifications and flushing them may cause destroying the editor.
   presShell->FlushPendingNotifications(FlushType::Layout);
   if (MOZ_UNLIKELY(!CanKeepHandlingFocusEvent(aOriginalEventTargetNode))) {
+    MOZ_LOG(gTextEditorLog, LogLevel::Debug,
+            ("%p: CanKeepHandlingFocusEvent() returned false", this));
     return NS_OK;
   }
 
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
-  if (NS_WARN_IF(!editActionData.CanHandle())) {
+  if (MOZ_UNLIKELY(!editActionData.CanHandle())) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "AutoEditActionDataSetter::CanHandle() failed");
     return NS_ERROR_FAILURE;
   }
 
   // Spell check a textarea the first time that it is focused.
   nsresult rv = FlushPendingSpellCheck();
   if (MOZ_UNLIKELY(rv == NS_ERROR_EDITOR_DESTROYED)) {
-    NS_WARNING("EditorBase::FlushPendingSpellCheck() failed");
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "EditorBase::FlushPendingSpellCheck() failed");
     return NS_ERROR_EDITOR_DESTROYED;
   }
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
       "EditorBase::FlushPendingSpellCheck() failed, but ignored");
   if (MOZ_UNLIKELY(!CanKeepHandlingFocusEvent(aOriginalEventTargetNode))) {
+    MOZ_LOG(gTextEditorLog, LogLevel::Debug,
+            ("%p: CanKeepHandlingFocusEvent() returned false after "
+             "FlushPendingSpellCheck()",
+             this));
     return NS_OK;
   }
 
@@ -736,18 +881,30 @@ nsresult TextEditor::OnFocus(const nsINode& aOriginalEventTargetNode) {
 }
 
 nsresult TextEditor::OnBlur(const EventTarget* aEventTarget) {
+  MOZ_LOG(gTextEditorLog, LogLevel::Info,
+          ("%p: OnBlur(aEventTarget=%s)", this,
+           ToString(RefPtr{aEventTarget}).c_str()));
+
   // check if something else is focused. If another element is focused, then
   // we should not change the selection.  If another element already has focus,
   // we should not maintain the selection because we may not have the rights
   // doing it.
-  if (nsFocusManager::GetFocusedElementStatic()) {
+  if ([[maybe_unused]] Element* const focusedElement =
+          nsFocusManager::GetFocusedElementStatic()) {
+    MOZ_LOG(gTextEditorLog, LogLevel::Info,
+            ("%p: OnBlur() is ignored because another element already has "
+             "focus (%s)",
+             this, ToString(RefPtr{focusedElement}).c_str()));
     return NS_OK;
   }
 
   nsresult rv = FinalizeSelection();
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::FinalizeSelection() failed");
-  return rv;
+  if (NS_FAILED(rv)) {
+    LogOrWarn(this, gTextEditorLog, LogLevel::Error,
+              "EditorBase::FinalizeSelection() failed");
+    return rv;
+  }
+  return NS_OK;
 }
 
 nsresult TextEditor::SetAttributeOrEquivalent(Element* aElement,
@@ -942,8 +1099,8 @@ nsresult TextEditor::SetUnmaskRangeInternal(uint32_t aStart, uint32_t aLength,
     // If aStart is middle of a surrogate pair, expand it to include the
     // preceding high surrogate because the caller may want to show a
     // character before the character at `aStart + 1`.
-    const nsTextFragment& textFragment = text->TextFragment();
-    if (textFragment.IsLowSurrogateFollowingHighSurrogateAt(aStart)) {
+    const CharacterDataBuffer& characterDataBuffer = text->DataBuffer();
+    if (characterDataBuffer.IsLowSurrogateFollowingHighSurrogateAt(aStart)) {
       mPasswordMaskData->mUnmaskedStart = aStart - 1;
       // If caller collapses the range, keep it.  Otherwise, expand the length.
       if (aLength > 0) {
@@ -958,7 +1115,8 @@ nsresult TextEditor::SetUnmaskRangeInternal(uint32_t aStart, uint32_t aLength,
     // the following low surrogate because the caller may want to show a
     // character after the character at `aStart + aLength`.
     if (UnmaskedEnd() < valueLength &&
-        textFragment.IsLowSurrogateFollowingHighSurrogateAt(UnmaskedEnd())) {
+        characterDataBuffer.IsLowSurrogateFollowingHighSurrogateAt(
+            UnmaskedEnd())) {
       mPasswordMaskData->mUnmaskedLength++;
     }
     // If it's first time to mask the unmasking characters with timer, create

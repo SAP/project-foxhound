@@ -295,7 +295,7 @@ void FilteredContentIterator::CheckAdvNode(nsINode* aNode, bool& aDidSkip,
       } else {
         if (aNode != currentNode) {
           nsCOMPtr<nsIContent> content(do_QueryInterface(aNode));
-          Unused << mCurrentIterator->PositionAt(content);
+          (void)mCurrentIterator->PositionAt(content);
         }
         return;  // found something
       }

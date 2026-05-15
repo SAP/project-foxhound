@@ -16,6 +16,7 @@ const EXPECTED_VALUES_FILE =
   "browser_webconsole_object_inspector_entries.snapshot.mjs";
 
 add_task(async function () {
+  await pushPref("dom.event.dragexit.enabled", true);
   // nsHttpServer does not support https
   // eslint-disable-next-line @microsoft/sdl/no-insecure-url
   const hud = await openNewTabAndConsole("http://example.com");

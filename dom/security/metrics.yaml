@@ -151,6 +151,143 @@ httpsfirst:
       - seceng-telemetry@mozilla.com
     expires: never
 
+unexpected_script_load:
+  infobar_shown:
+    type: event
+    description: >
+      The infobar has been shown to the user
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  infobar_dismissed:
+    type: event
+    description: >
+      The user clicked the X on the infobar to dismiss it.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  dialog_dismissed:
+    type: event
+    description: >
+      The user clicked the X on the dialog, or hit Escape, to dismiss it.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  script_allowed_opened:
+    type: event
+    description: >
+      The user opened the script allowed dialog.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  script_blocked_opened:
+    type: event
+    description: >
+      The user opened the script blocked dialog.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  more_info_opened:
+    type: event
+    description: >
+      The user opened the more info link to go to the SUMO page.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  script_allowed:
+    type: event
+    description: >
+      The user allowed the script.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  script_blocked:
+    type: event
+    description: >
+      The user blocked the script.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+  script_reported:
+    type: event
+    description: >
+      The user reported the script.
+    bugs:
+      - https://bugzil.la/1979341
+    data_reviews:
+      - https://bugzil.la/1979341
+    notification_emails:
+      - fbraun@mozilla.com
+      - tritter@mozilla.com
+    expires: never
+    send_in_pings:
+      - unexpected-script-load
+    extra_keys:
+      script_url:
+        description: >
+          The URL of the script the user has reported
+        type: string
+      user_email:
+        description: >
+          The email address of the user who reported the script
+        type: string
+
 security:
   unexpected_load:
     type: event
@@ -212,6 +349,7 @@ security:
       Expected values are:
         - chromeuri - chrome:// file
         - resourceuri - resource:// file
+        - mozsrcuri - moz-src:// file
         - datauri - a data URI
         - bloburi - a blob URI
         - abouturi - an about URI
@@ -378,6 +516,7 @@ security:
       security.javascriptLoad#parentProcess.
     bugs:
       - https://bugzil.la/1582512
+      - https://bugzil.la/1983112
     data_reviews:
       - https://bugzil.la/1582512
     notification_emails:
@@ -396,7 +535,10 @@ security:
         description: >
           Information about the filename that was requested to be loaded
         type: string
-    telemetry_mirror: Security_Javascriptload_Parentprocess
+      blocked:
+        description: >
+          Whether the load was blocked using our temporary pref
+        type: boolean
 
   https_only_mode_upgrade_time:
     type: labeled_timing_distribution

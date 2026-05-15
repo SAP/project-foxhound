@@ -11,24 +11,67 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
 
+#include "absl/strings/ascii.h"
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
+#include "api/rtc_error.h"
 #include "api/rtp_transceiver_direction.h"
 #include "media/base/media_constants.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/string_encode.h"
 #include "rtc_base/strings/string_builder.h"
 
 namespace webrtc {
+namespace {
+constexpr char kSdpDelimiterSemicolon[] = ";";
+constexpr char kSdpDelimiterEqualChar = '=';
+constexpr char kSdpDelimiterEqual[] = "=";
+constexpr char kSdpDelimiterSemicolonChar = ';';
+
+void ParseFmtpParam(absl::string_view line,
+                    std::string* parameter,
+                    std::string* value) {
+  if (!tokenize_first(line, kSdpDelimiterEqualChar, parameter, value)) {
+    // Support for non-key-value lines like RFC 2198 or RFC 4733.
+    *parameter = "";
+    *value = std::string(line);
+  }
+  // a=fmtp:<payload_type> <param1>=<value1>; <param2>=<value2>; ...
+}
+
+bool IsFmtpParam(absl::string_view name) {
+  // RFC 4855, section 3 specifies the mapping of media format parameters to SDP
+  // parameters. Only ptime, maxptime, channels and rate are placed outside of
+  // the fmtp line. In WebRTC, channels and rate are already handled separately
+  // and thus not included in the CodecParameterMap.
+  return name != kCodecParamPTime && name != kCodecParamMaxPTime;
+}
+
+void WriteFmtpParameter(absl::string_view parameter_name,
+                        absl::string_view parameter_value,
+                        StringBuilder& os) {
+  if (parameter_name.empty()) {
+    // RFC 2198 and RFC 4733 don't use key-value pairs.
+    os << parameter_value;
+  } else {
+    // fmtp parameters: `parameter_name`=`parameter_value`
+    os << parameter_name << kSdpDelimiterEqual << parameter_value;
+  }
+}
+
+}  // namespace
 
 const char* DegradationPreferenceToString(
     DegradationPreference degradation_preference) {
   switch (degradation_preference) {
-    case DegradationPreference::DISABLED:
-      return "disabled";
+    case DegradationPreference::MAINTAIN_FRAMERATE_AND_RESOLUTION:
+      return "maintain-framerate-and-resolution";
     case DegradationPreference::MAINTAIN_FRAMERATE:
       return "maintain-framerate";
     case DegradationPreference::MAINTAIN_RESOLUTION:
@@ -40,6 +83,43 @@ const char* DegradationPreferenceToString(
 }
 
 const double kDefaultBitratePriority = 1.0;
+
+bool WriteFmtpParameters(const CodecParameterMap& parameters,
+                         StringBuilder& os) {
+  bool empty = true;
+  const char* delimiter = "";  // No delimiter before first parameter.
+  for (const auto& entry : parameters) {
+    const std::string& key = entry.first;
+    const std::string& value = entry.second;
+
+    if (IsFmtpParam(key)) {
+      os << delimiter;
+      // A semicolon before each subsequent parameter.
+      delimiter = kSdpDelimiterSemicolon;
+      WriteFmtpParameter(key, value, os);
+      empty = false;
+    }
+  }
+
+  return !empty;
+}
+
+RTCError ParseFmtpParameterSet(absl::string_view line_params,
+                               CodecParameterMap& codec_params) {
+  // Parse out format specific parameters.
+  for (absl::string_view param :
+       split(line_params, kSdpDelimiterSemicolonChar)) {
+    std::string name;
+    std::string value;
+    ParseFmtpParam(absl::StripAsciiWhitespace(param), &name, &value);
+    if (codec_params.find(name) != codec_params.end()) {
+      RTC_LOG(LS_INFO) << "Overwriting duplicate fmtp parameter with key \""
+                       << name << "\".";
+    }
+    codec_params[name] = value;
+  }
+  return RTCError::OK();
+}
 
 RtcpFeedback::RtcpFeedback() = default;
 RtcpFeedback::RtcpFeedback(RtcpFeedbackType type) : type(type) {}
@@ -53,12 +133,11 @@ RtpCodec::RtpCodec() = default;
 RtpCodec::RtpCodec(const RtpCodec&) = default;
 RtpCodec::~RtpCodec() = default;
 bool RtpCodec::IsResiliencyCodec() const {
-  return name == cricket::kRtxCodecName || name == cricket::kRedCodecName ||
-         name == cricket::kUlpfecCodecName ||
-         name == cricket::kFlexfecCodecName;
+  return name == kRtxCodecName || name == kRedCodecName ||
+         name == kUlpfecCodecName || name == kFlexfecCodecName;
 }
 bool RtpCodec::IsMediaCodec() const {
-  return !IsResiliencyCodec() && name != cricket::kComfortNoiseCodecName;
+  return !IsResiliencyCodec() && name != kComfortNoiseCodecName;
 }
 RtpCodecCapability::RtpCodecCapability() = default;
 RtpCodecCapability::~RtpCodecCapability() = default;
@@ -138,65 +217,34 @@ std::string RtpExtension::ToString() const {
   return sb.str();
 }
 
-constexpr char RtpExtension::kEncryptHeaderExtensionsUri[];
-constexpr char RtpExtension::kAudioLevelUri[];
-constexpr char RtpExtension::kTimestampOffsetUri[];
-constexpr char RtpExtension::kAbsSendTimeUri[];
-constexpr char RtpExtension::kAbsoluteCaptureTimeUri[];
-constexpr char RtpExtension::kVideoRotationUri[];
-constexpr char RtpExtension::kVideoContentTypeUri[];
-constexpr char RtpExtension::kVideoTimingUri[];
-constexpr char RtpExtension::kGenericFrameDescriptorUri00[];
-constexpr char RtpExtension::kDependencyDescriptorUri[];
-constexpr char RtpExtension::kVideoLayersAllocationUri[];
-constexpr char RtpExtension::kTransportSequenceNumberUri[];
-constexpr char RtpExtension::kTransportSequenceNumberV2Uri[];
-constexpr char RtpExtension::kPlayoutDelayUri[];
-constexpr char RtpExtension::kColorSpaceUri[];
-constexpr char RtpExtension::kMidUri[];
-constexpr char RtpExtension::kRidUri[];
-constexpr char RtpExtension::kRepairedRidUri[];
-constexpr char RtpExtension::kVideoFrameTrackingIdUri[];
-constexpr char RtpExtension::kCsrcAudioLevelsUri[];
-constexpr char RtpExtension::kCorruptionDetectionUri[];
-
-constexpr int RtpExtension::kMinId;
-constexpr int RtpExtension::kMaxId;
-constexpr int RtpExtension::kMaxValueSize;
-constexpr int RtpExtension::kOneByteHeaderExtensionMaxId;
-constexpr int RtpExtension::kOneByteHeaderExtensionMaxValueSize;
-
 bool RtpExtension::IsSupportedForAudio(absl::string_view uri) {
-  return uri == webrtc::RtpExtension::kAudioLevelUri ||
-         uri == webrtc::RtpExtension::kAbsSendTimeUri ||
-         uri == webrtc::RtpExtension::kAbsoluteCaptureTimeUri ||
-         uri == webrtc::RtpExtension::kTransportSequenceNumberUri ||
-         uri == webrtc::RtpExtension::kTransportSequenceNumberV2Uri ||
-         uri == webrtc::RtpExtension::kMidUri ||
-         uri == webrtc::RtpExtension::kRidUri ||
-         uri == webrtc::RtpExtension::kRepairedRidUri ||
-         uri == webrtc::RtpExtension::kCsrcAudioLevelsUri;
+  return uri == RtpExtension::kAudioLevelUri ||
+         uri == RtpExtension::kAbsSendTimeUri ||
+         uri == RtpExtension::kAbsoluteCaptureTimeUri ||
+         uri == RtpExtension::kTransportSequenceNumberUri ||
+         uri == RtpExtension::kTransportSequenceNumberV2Uri ||
+         uri == RtpExtension::kMidUri || uri == RtpExtension::kRidUri ||
+         uri == RtpExtension::kRepairedRidUri ||
+         uri == RtpExtension::kCsrcAudioLevelsUri;
 }
 
 bool RtpExtension::IsSupportedForVideo(absl::string_view uri) {
-  return uri == webrtc::RtpExtension::kTimestampOffsetUri ||
-         uri == webrtc::RtpExtension::kAbsSendTimeUri ||
-         uri == webrtc::RtpExtension::kAbsoluteCaptureTimeUri ||
-         uri == webrtc::RtpExtension::kVideoRotationUri ||
-         uri == webrtc::RtpExtension::kTransportSequenceNumberUri ||
-         uri == webrtc::RtpExtension::kTransportSequenceNumberV2Uri ||
-         uri == webrtc::RtpExtension::kPlayoutDelayUri ||
-         uri == webrtc::RtpExtension::kVideoContentTypeUri ||
-         uri == webrtc::RtpExtension::kVideoTimingUri ||
-         uri == webrtc::RtpExtension::kMidUri ||
-         uri == webrtc::RtpExtension::kGenericFrameDescriptorUri00 ||
-         uri == webrtc::RtpExtension::kDependencyDescriptorUri ||
-         uri == webrtc::RtpExtension::kColorSpaceUri ||
-         uri == webrtc::RtpExtension::kRidUri ||
-         uri == webrtc::RtpExtension::kRepairedRidUri ||
-         uri == webrtc::RtpExtension::kVideoLayersAllocationUri ||
-         uri == webrtc::RtpExtension::kVideoFrameTrackingIdUri ||
-         uri == webrtc::RtpExtension::kCorruptionDetectionUri;
+  return uri == RtpExtension::kTimestampOffsetUri ||
+         uri == RtpExtension::kAbsSendTimeUri ||
+         uri == RtpExtension::kAbsoluteCaptureTimeUri ||
+         uri == RtpExtension::kVideoRotationUri ||
+         uri == RtpExtension::kTransportSequenceNumberUri ||
+         uri == RtpExtension::kTransportSequenceNumberV2Uri ||
+         uri == RtpExtension::kPlayoutDelayUri ||
+         uri == RtpExtension::kVideoContentTypeUri ||
+         uri == RtpExtension::kVideoTimingUri || uri == RtpExtension::kMidUri ||
+         uri == RtpExtension::kGenericFrameDescriptorUri00 ||
+         uri == RtpExtension::kDependencyDescriptorUri ||
+         uri == RtpExtension::kColorSpaceUri || uri == RtpExtension::kRidUri ||
+         uri == RtpExtension::kRepairedRidUri ||
+         uri == RtpExtension::kVideoLayersAllocationUri ||
+         uri == RtpExtension::kVideoFrameTrackingIdUri ||
+         uri == RtpExtension::kCorruptionDetectionUri;
 }
 
 bool RtpExtension::IsEncryptionSupported(absl::string_view uri) {
@@ -207,9 +255,9 @@ bool RtpExtension::IsEncryptionSupported(absl::string_view uri) {
       // srtpfilter. External auth is used by Chromium and replaces the
       // extension header value of "kAbsSendTimeUri", so it must not be
       // encrypted (which can't be done by Chromium).
-      uri != webrtc::RtpExtension::kAbsSendTimeUri &&
+      uri != RtpExtension::kAbsSendTimeUri &&
 #endif
-      uri != webrtc::RtpExtension::kEncryptHeaderExtensionsUri;
+      uri != RtpExtension::kEncryptHeaderExtensionsUri;
 }
 
 // Returns whether a header extension with the given URI exists.
@@ -230,7 +278,7 @@ const RtpExtension* RtpExtension::FindHeaderExtensionByUri(
     const std::vector<RtpExtension>& extensions,
     absl::string_view uri,
     Filter filter) {
-  const webrtc::RtpExtension* fallback_extension = nullptr;
+  const RtpExtension* fallback_extension = nullptr;
   for (const auto& extension : extensions) {
     if (extension.uri != uri) {
       continue;
@@ -319,4 +367,22 @@ const std::vector<RtpExtension> RtpExtension::DeduplicateHeaderExtensions(
 
   return filtered;
 }
+
+bool RtpParameters::IsMixedCodec() const {
+  std::optional<std::optional<RtpCodec>> first_codec;
+  for (const RtpEncodingParameters& encoding : encodings) {
+    if (!encoding.active) {
+      continue;
+    }
+    if (!first_codec) {
+      first_codec = encoding.codec;
+      continue;
+    }
+    if (*first_codec != encoding.codec) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace webrtc

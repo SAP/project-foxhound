@@ -12,19 +12,21 @@ $tags:
   - 'Toolkit :: Telemetry'
 
 fog:
-  initialization:
-    type: timespan
+  initializations:
+    type: timing_distribution
     time_unit: nanosecond
     description: |
-      Time the FOG initialization takes.
+      Time the FOG initializations take.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1662123
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797619
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1662123#c3
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1797619
     data_sensitivity:
       - technical
     notification_emails:
-      - jrediger@mozilla.com
+      - chumphreys@mozilla.com
       - glean-team@mozilla.com
     expires: never
 
@@ -53,15 +55,19 @@ fog:
       Counts the number of times init had to be called during shutdown.
       Should never have a value for any session long enough to grow idle.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1839433
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1839426
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2003372
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1839433
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1839426
     data_sensitivity:
       - technical
     notification_emails:
       - chutten@mozilla.com
       - glean-team@mozilla.com
     expires: never
+    send_in_pings:
+      - metrics
+      - health
 
   max_pings_per_minute:
     type: quantity
@@ -76,6 +82,61 @@ fog:
       - technical
     notification_emails:
       - pmcmanis@mozilla.com
+      - glean-team@mozilla.com
+    expires: never
+
+  subdir_err:
+    type: labeled_boolean
+    description: |
+      Which data subdirectories suffered an err between is_dir and read_dir
+      while reporting fog.data_diretory_info.
+      (Potentially because they were removed in the interim).
+    labels: &data_subdir_labels
+      - db
+      - events
+      - pending_pings
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985911
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985911
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+      - glean-team@mozilla.com
+    expires: never
+
+  subdir_entry_err:
+    type: labeled_counter
+    description: |
+      How many dir entries per data subdirectory errored while reporting fog.data_diretory_info.
+      (Potentially because they were removed between `read_dir` and the iteration).
+    labels: *data_subdir_labels
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985911
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985911
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+      - glean-team@mozilla.com
+    expires: never
+
+  subdir_entry_metadata_err:
+    type: labeled_counter
+    description: |
+      How many dir entries per data subdirectory errored while retrieving their metadata
+      while reporting fog.data_diretory_info.
+    labels: *data_subdir_labels
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985911
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985911
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
       - glean-team@mozilla.com
     expires: never
 

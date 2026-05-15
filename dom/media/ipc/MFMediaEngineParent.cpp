@@ -14,9 +14,9 @@
 #endif
 
 #include "MFMediaEngineExtension.h"
-#include "MFMediaEngineVideoStream.h"
-#include "MFMediaEngineUtils.h"
 #include "MFMediaEngineStream.h"
+#include "MFMediaEngineUtils.h"
+#include "MFMediaEngineVideoStream.h"
 #include "MFMediaSource.h"
 #include "RemoteMediaManagerParent.h"
 #include "WMF.h"
@@ -26,10 +26,9 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/WindowsVersion.h"
-#include "mozilla/ipc/UtilityProcessChild.h"
-#include "mozilla/ipc/UtilityMediaServiceParent.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/ipc/UtilityMediaServiceParent.h"
+#include "mozilla/ipc/UtilityProcessChild.h"
 
 namespace mozilla {
 
@@ -117,7 +116,7 @@ void MFMediaEngineParent::DestroyEngineIfExists(
     mDXGIDeviceManager = nullptr;
   }
   if (aError) {
-    Unused << SendNotifyError(*aError);
+    (void)SendNotifyError(*aError);
   }
 }
 
@@ -243,23 +242,23 @@ void MFMediaEngineParent::HandleMediaEngineEvent(
     case MF_MEDIA_ENGINE_EVENT_SEEKED:
     case MF_MEDIA_ENGINE_EVENT_BUFFERINGSTARTED:
     case MF_MEDIA_ENGINE_EVENT_BUFFERINGENDED:
-      Unused << SendNotifyEvent(aEvent.mEvent);
+      (void)SendNotifyEvent(aEvent.mEvent);
       break;
     case MF_MEDIA_ENGINE_EVENT_PLAYING:
       ENSURE_EVENT_DISPATCH_DURING_PLAYING(
           MediaEngineEventToStr(aEvent.mEvent));
-      Unused << SendNotifyEvent(aEvent.mEvent);
+      (void)SendNotifyEvent(aEvent.mEvent);
       break;
     case MF_MEDIA_ENGINE_EVENT_ENDED: {
       ENSURE_EVENT_DISPATCH_DURING_PLAYING(
           MediaEngineEventToStr(aEvent.mEvent));
-      Unused << SendNotifyEvent(aEvent.mEvent);
+      (void)SendNotifyEvent(aEvent.mEvent);
       UpdateStatisticsData();
       break;
     }
     case MF_MEDIA_ENGINE_EVENT_TIMEUPDATE: {
       auto currentTimeInSeconds = mMediaEngine->GetCurrentTime();
-      Unused << SendUpdateCurrentTime(currentTimeInSeconds);
+      (void)SendUpdateCurrentTime(currentTimeInSeconds);
       UpdateStatisticsData();
       break;
     }
@@ -307,7 +306,7 @@ void MFMediaEngineParent::NotifyError(MF_MEDIA_ENGINE_ERR aError,
         NotifyDisableHWDRM();
       }
 #endif
-      Unused << SendNotifyError(error);
+      (void)SendNotifyError(error);
       return;
     }
     case MF_MEDIA_ENGINE_ERR_SRC_NOT_SUPPORTED: {
@@ -315,14 +314,14 @@ void MFMediaEngineParent::NotifyError(MF_MEDIA_ENGINE_ERR aError,
           NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR,
           nsPrintfCString("Source not supported (hr=%lx)", aResult),
           Some(static_cast<int32_t>(aResult)));
-      Unused << SendNotifyError(error);
+      (void)SendNotifyError(error);
       return;
     }
     case MF_MEDIA_ENGINE_ERR_ENCRYPTED: {
       MediaResult error(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                         nsPrintfCString("Encrypted error (hr=%lx)", aResult),
                         Some(static_cast<int32_t>(aResult)));
-      Unused << SendNotifyError(error);
+      (void)SendNotifyError(error);
       return;
     }
     default:
@@ -361,7 +360,7 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvInitMediaEngine(
   // media engine.
   if (aInfo.preload()) {
     // TODO : really need this?
-    Unused << mMediaEngine->SetPreload(MF_MEDIA_ENGINE_PRELOAD_AUTOMATIC);
+    (void)mMediaEngine->SetPreload(MF_MEDIA_ENGINE_PRELOAD_AUTOMATIC);
   }
   RETURN_PARAM_IF_FAILED(
       SetMediaInfo(aInfo.mediaInfo(), aInfo.encryptedCustomIdent()), IPC_OK());
@@ -497,7 +496,7 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvSeek(
   // the target time.
   const auto currentTimeInSeconds = mMediaEngine->GetCurrentTime();
   if (currentTimeInSeconds == aTargetTimeInSecond) {
-    Unused << SendNotifyEvent(MF_MEDIA_ENGINE_EVENT_SEEKED);
+    (void)SendNotifyEvent(MF_MEDIA_ENGINE_EVENT_SEEKED);
     return IPC_OK();
   }
 
@@ -614,7 +613,7 @@ void MFMediaEngineParent::HandleRequestSample(const SampleRequest& aRequest) {
   AssertOnManagerThread();
   MOZ_ASSERT(aRequest.mType == TrackInfo::TrackType::kAudioTrack ||
              aRequest.mType == TrackInfo::TrackType::kVideoTrack);
-  Unused << SendRequestSample(aRequest.mType, aRequest.mIsEnough);
+  (void)SendRequestSample(aRequest.mType, aRequest.mIsEnough);
 }
 
 void MFMediaEngineParent::AssertOnManagerThread() const {
@@ -675,7 +674,7 @@ void MFMediaEngineParent::EnsureDcompSurfaceHandle() {
 void MFMediaEngineParent::NotifyVideoResizing() {
   AssertOnManagerThread();
   if (auto newSize = DetectVideoSizeChange()) {
-    Unused << SendNotifyResizing(newSize->width, newSize->height);
+    (void)SendNotifyResizing(newSize->width, newSize->height);
   }
 }
 
@@ -732,7 +731,7 @@ void MFMediaEngineParent::UpdateStatisticsData() {
         mCurrentPlaybackStatisticData.droppedFrames();
     LOG("Update statistic data, rendered=%" PRIu64 ", dropped=%" PRIu64,
         totalRenderedFrames, totalDroppedFrames);
-    Unused << SendUpdateStatisticData(
+    (void)SendUpdateStatisticData(
         StatisticData{totalRenderedFrames, totalDroppedFrames});
   }
 }
@@ -753,8 +752,8 @@ void MFMediaEngineParent::NotifyDisableHWDRM() {
 
   ENGINE_MARKER("MFMediaEngineParent::NotifyDisableHWDRM");
   NS_DispatchToMainThread(NS_NewRunnableFunction(
-      "MFMediaEngineParent::OnSesNotifyDisableHWDRMsionMessage",
-      [umsp]() { Unused << umsp->SendDisableHardwareDRM(); }));
+      "MFMediaEngineParent::NotifyDisableHWDRM",
+      [umsp]() { (void)umsp->SendDisableHardwareDRM(); }));
 }
 #endif
 

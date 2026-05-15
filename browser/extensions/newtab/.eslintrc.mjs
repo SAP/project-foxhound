@@ -124,7 +124,6 @@ export default [
       "content-src/components/CollapsibleSection/CollapsibleSection.jsx",
       "content-src/components/DiscoveryStreamComponents/DSCard/DSCard.jsx",
       "content-src/components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState.jsx",
-      "content-src/components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal.jsx",
       "content-src/components/CustomizeMenu/**",
       "content-src/components/DiscoveryStreamComponents/TopicSelection/TopicSelection.jsx",
       "content-src/components/DiscoveryStreamComponents/InterestPicker/InterestPicker.jsx",

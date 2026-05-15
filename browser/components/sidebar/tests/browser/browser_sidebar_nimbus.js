@@ -111,6 +111,9 @@ add_task(async function test_nimbus_minimum_version() {
   const revamp = "sidebar.revamp";
   const nimbus = "sidebar.nimbus";
   await SpecialPowers.pushPrefEnv({ clear: [[revamp]] });
+  if (Services.prefs.getBoolPref(revamp, false)) {
+    return;
+  }
   let cleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "sidebar",
     value: {

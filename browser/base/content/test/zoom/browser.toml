@@ -22,7 +22,13 @@ https_first_disabled = true
 
 ["browser_image_zoom_tabswitch.js"]
 https_first_disabled = true
-skip-if = ["os == 'mac'"] #Bug 1526628
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1526628
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1526628
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1526628
+]
+
+["browser_keyboard_mousewheel_zoom_consistency.js"]
 
 ["browser_mousewheel_zoom.js"]
 https_first_disabled = true
@@ -35,15 +41,18 @@ https_first_disabled = true
 ["browser_sitespecific_video_zoom.js"]
 https_first_disabled = true
 support-files = ["../general/video.webm"]
-skip-if = ["os == 'win' && debug"] # Bug 1315042
+skip-if = [
+  "os == 'win' && debug", # Bug 1315042
+]
 
 ["browser_subframe_textzoom.js"]
 
 ["browser_tabswitch_zoom_flicker.js"]
 https_first_disabled = true
 skip-if = [
-  "debug && os == 'linux' && bits == 64", # Bug 1652383
-  "!debug && os == 'win'", # Bug 1652383
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Bug 1652383
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1652383
+  "os == 'win' && opt", # Bug 1652383
 ]
 
 ["browser_tooltip_zoom.js"]

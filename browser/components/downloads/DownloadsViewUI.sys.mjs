@@ -12,19 +12,21 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
-  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  DownloadsCommon:
+    "moz-src:///browser/components/downloads/DownloadsCommon.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "handlerSvc",
   "@mozilla.org/uriloader/handler-service;1",
-  "nsIHandlerService"
+  Ci.nsIHandlerService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -498,7 +500,9 @@ DownloadsViewUI.DownloadElementShell.prototype = {
   },
 
   get browserWindow() {
-    return lazy.BrowserWindowTracker.getTopWindow();
+    return lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
   },
 
   /**
@@ -600,7 +604,13 @@ DownloadsViewUI.DownloadElementShell.prototype = {
       this.showStatus(stateLabel, hoverStatus);
       return;
     }
-    let [displayHost] = lazy.DownloadUtils.getURIHost(this.download.source.url);
+    let uri = URL.parse(this.download.source.url)?.URI;
+    let displayHost = uri
+      ? lazy.BrowserUtils.formatURIForDisplay(uri, {
+          onlyBaseDomain: true,
+        })
+      : "";
+
     let [displayDate] = lazy.DownloadUtils.getReadableDates(
       new Date(this.download.endTime)
     );
@@ -1099,12 +1109,12 @@ DownloadsViewUI.DownloadElementShell.prototype = {
         return this.download.target.exists;
 
       case "downloadsCmd_show":
-      case "downloadsCmd_deleteFile":
+      case "downloadsCmd_deleteFile": {
         let { target } = this.download;
         return (
           !this.download.deleted && (target.exists || target.partFileExists)
         );
-
+      }
       case "downloadsCmd_delete":
       case "cmd_delete":
         // We don't want in-progress downloads to be removed accidentally.

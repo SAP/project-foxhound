@@ -8,8 +8,11 @@ import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+  CrashServiceUtils: "resource://gre/modules/CrashService.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
   TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
+  Subprocess: "resource://gre/modules/Subprocess.sys.mjs",
 });
 
 /**
@@ -29,13 +32,60 @@ export function dateToDays(date) {
   return Math.floor(date.getTime() / MILLISECONDS_IN_DAY);
 }
 
+// sendGleanPing will sequence calls so that we only have one crash reporter
+// spawned at a time.
+let lastSendPing = Promise.resolve();
+function sendGleanPing(reason, annotations) {
+  const doSendPing = async () => {
+    const uAppDataPath = Services.dirsvc.get("UAppData", Ci.nsIFile).path;
+    const crashDataPath = PathUtils.join(uAppDataPath, "Crash Reports");
+
+    const process = await lazy.Subprocess.call({
+      command: lazy.CrashServiceUtils.getCrashReporterPath().path,
+      arguments: ["--send-ping", crashDataPath, reason],
+      stderr: "stdout",
+    });
+
+    await process.stdin.write(JSON.stringify(annotations));
+    await process.stdin.close();
+    const { exitCode } = await process.wait();
+
+    if (exitCode !== 0) {
+      let output = "";
+      let s;
+      while ((s = await process.stdout.readString())) {
+        output += s;
+      }
+      console.error(`failed to send ping: ${output}`);
+    }
+    // Flush stdout so any pending data is consumed. process.stdout.close()
+    // should have the same effect, but it doesn't seem to behave well (reporting
+    // that the file is closed).
+    while ((await process.stdout.read()).byteLength) {
+      // We don't need to do anything, just wait for an empty read
+    }
+  };
+
+  // `Promise.prototype.finally()` will resolve to the prior Promise state, so
+  // we use `.then()`, since we want to sequence calls but return the error
+  // from this `doSendPing()`.
+  lastSendPing = lastSendPing.then(doSendPing, doSendPing);
+  lazy.AsyncShutdown.sendTelemetry.addBlocker(
+    "CrashManager: submitting Glean crash ping(s)",
+    lastSendPing
+  );
+  return (lastSendPing = lastSendPing.finally(() =>
+    lazy.AsyncShutdown.sendTelemetry.removeBlocker(lastSendPing)
+  ));
+}
+
 /**
  * Get a field from the specified object and remove it.
  *
  * @param obj {Object} The object holding the field
- * @param field {String} The name of the field to be parsed and removed
+ * @param field {string} The name of the field to be parsed and removed
  *
- * @returns {String} the field contents as a string, null if none was found
+ * @returns {string} the field contents as a string, null if none was found
  */
 function getAndRemoveField(obj, field) {
   let value = null;
@@ -52,10 +102,10 @@ function getAndRemoveField(obj, field) {
  * Parse the string stored in the specified field as JSON and then remove the
  * field from the object.
  *
- * @param obj {Object} The object holding the field
+ * @param obj {object} The object holding the field
  * @param field {String} The name of the field to be parsed and removed
  *
- * @returns {Object} the parsed object, null if none was found
+ * @returns {object} the parsed object, null if none was found
  */
 function parseAndRemoveField(obj, field) {
   let value = null;
@@ -71,84 +121,6 @@ function parseAndRemoveField(obj, field) {
   }
 
   return value;
-}
-
-/**
- * Convert a legacy Telemetry `StackTraces` layout to that expected by Glean.
- *
- * @param stackTraces {Object} The legacy Telemetry StackTraces object.
- *
- * @returns {Object} The stack traces layout expected by the Glean crash.stackTraces metric.
- */
-function stackTracesLegacyToGlean(stackTraces) {
-  let ret = {};
-  // Change "status" to "error", only populate if an error occurred.
-  if ("status" in stackTraces && stackTraces.status !== "OK") {
-    ret.error = stackTraces.status;
-  }
-
-  // Change "crash_info" to flattened individual fields.
-  ret.crash_type = stackTraces.crash_info?.type;
-  ret.crash_address = stackTraces.crash_info?.address;
-  ret.crash_thread = stackTraces.crash_info?.crashing_thread;
-
-  ret.main_module = stackTraces.main_module;
-
-  // Rename modules[].{base_addr,end_addr}
-  if ("modules" in stackTraces) {
-    ret.modules = stackTraces.modules.map(module => ({
-      base_address: module.base_addr,
-      end_address: module.end_addr,
-      code_id: module.code_id,
-      debug_file: module.debug_file,
-      debug_id: module.debug_id,
-      filename: module.filename,
-      version: module.version,
-    }));
-  }
-
-  if ("threads" in stackTraces) {
-    ret.threads = stackTraces.threads.map(thread => ({
-      frames: thread.frames.map(frame => ({
-        module_index: frame.module_index,
-        ip: frame.ip,
-        trust: frame.trust,
-      })),
-    }));
-  }
-
-  return ret;
-}
-
-/**
- * Convert a legacy Telemetry `AsyncShutdownTimeout` value to that expected by Glean.
- *
- * @param value {String} The legacy Telemetry value.
- *
- * @returns {Object} The object appropriate for being `.set()` on the Glean
- * crash.asyncShutdownTimeout metric.
- */
-function asyncShutdownTimeoutLegacyToGlean(value) {
-  let obj = JSON.parse(value);
-  // The conditions object isn't a consistent shape, so we just store it as a serialized string.
-  obj.conditions = JSON.stringify(obj.conditions);
-  // Change camelCase to snake_case
-  obj.broken_add_blockers = obj.brokenAddBlockers;
-  delete obj.brokenAddBlockers;
-  return obj;
-}
-
-/**
- * Convert a legacy Telemetry `QuotaManagerShutdownTimeout` value to that expected by Glean.
- *
- * @param value {String} The legacy Telemetry value.
- *
- * @returns {Array} The array appropriate for being `.set()` on the Glean
- * crash.quotaManagerShutdownTimeout metric.
- */
-function quotaManagerShutdownTimeoutLegacyToGlean(value) {
-  // The Glean metric is an array of the lines.
-  return value.split("\n");
 }
 
 /**
@@ -203,8 +175,13 @@ export var CrashManager = function (options) {
   // Map of crash ID / promise tuples used to track adding new crashes.
   this._crashPromises = new Map();
 
-  // Promise for the crash ping used only for testing.
+  // Promises for the crash pings used only for testing.
   this._pingPromise = null;
+  this._gleanPingPromise = null;
+
+  // Tests may disable the Glean ping to avoid unnecessary overhead of invoking
+  // the crash reporter client.
+  this._disableGleanPing = false;
 
   // The CrashStore currently attached to this object.
   this._store = null;
@@ -570,7 +547,7 @@ CrashManager.prototype = Object.freeze({
    * @param processType (string) Process type to check for
    *
    * @return boolean True or False depending on whether ping is allowed
-   **/
+   */
   isPingAllowed(processType) {
     // gen_CrashManager.py will input the proper process pings informations.
 
@@ -775,177 +752,6 @@ CrashManager.prototype = Object.freeze({
   },
 
   /**
-   * Submit a Glean crash ping with the given parameters.
-   *
-   * @param {string} reason - the reason for the crash ping, one of: "crash", "event_found"
-   * @param {string} process_type - the process type (from {@link processTypes})
-   * @param {DateTime} date - the time of the crash (or the closest time after it)
-   * @param {string} minidumpHash - the hash of the minidump file, if any
-   * @param {object} stackTraces - the object containing stack trace information
-   * @param {object} metadata - the object of Telemetry crash metadata
-   */
-  _submitGleanCrashPing(
-    reason,
-    process_type,
-    date,
-    minidumpHash,
-    stackTraces,
-    metadata
-  ) {
-    if (stackTraces) {
-      // Glean.crash.stack_traces has a slightly different shape than Telemetry
-      stackTraces = stackTracesLegacyToGlean(stackTraces);
-
-      // FIXME: Glean should probably accept an empty object here. Some tests
-      // pass { status: "OK" }, which ends up being removed by the above logic.
-      if (Object.keys(stackTraces).length) {
-        // FIXME: ?. a temporary workaround for bug 1900442
-        Glean.crash.stackTraces?.set(stackTraces);
-      }
-    }
-
-    Glean.crash.processType.set(process_type);
-    Glean.crash.time.set(date.getTime() * 1000);
-    Glean.crash.minidumpSha256Hash.set(minidumpHash);
-
-    // Convert Telemetry environment values to Glean metrics
-
-    const cap = Symbol("capitalize");
-    // Types such as quantity and string which can simply be `.set()`.
-    const generic = Symbol("generic");
-    const bool = Symbol("bool");
-    const string = Symbol("string");
-    const semicolon_list = Symbol("semicolon-separated string");
-    const comma_list = Symbol("comma-separated string");
-    const seconds = Symbol("seconds (floating)");
-
-    class Typed {
-      constructor(type, metaKey) {
-        this.type = type;
-        this.metaKey = metaKey;
-      }
-    }
-    function t(type, metaKey) {
-      return new Typed(type, metaKey);
-    }
-
-    const fieldMapping = {
-      crash: {
-        appChannel: "ReleaseChannel",
-        appDisplayVersion: "Version",
-        appBuild: "BuildID",
-        asyncShutdownTimeout: t(asyncShutdownTimeoutLegacyToGlean, cap),
-        backgroundTaskName: cap,
-        eventLoopNestingLevel: cap,
-        fontName: cap,
-        gpuProcessLaunch: "GPUProcessLaunchCount",
-        ipcChannelError: "ipc_channel_error",
-        isGarbageCollecting: cap,
-        mainThreadRunnableName: cap,
-        mozCrashReason: cap,
-        profilerChildShutdownPhase: cap,
-        quotaManagerShutdownTimeout: t(
-          quotaManagerShutdownTimeoutLegacyToGlean,
-          cap
-        ),
-        remoteType: cap,
-        utilityActorsName: t(comma_list, "UtilityActorsName"),
-        shutdownProgress: cap,
-        startup: t(bool, "StartupCrash"),
-      },
-      crashWindows: {
-        errorReporting: t(bool, "WindowsErrorReporting"),
-        fileDialogErrorCode: t(string, "WindowsFileDialogErrorCode"),
-      },
-      dllBlocklist: {
-        list: t(semicolon_list, "BlockedDllList"),
-        initFailed: t(bool, "BlocklistInitFailed"),
-        user32LoadedBefore: t(bool, "User32BeforeBlocklist"),
-      },
-      environment: {
-        headlessMode: t(bool, cap),
-        nimbusEnrollments: t(comma_list, cap),
-        uptime: t(seconds, "UptimeTS"),
-      },
-      memory: {
-        availableCommit: "AvailablePageFile",
-        availablePhysical: "AvailablePhysicalMemory",
-        availableSwap: "AvailableSwapMemory",
-        availableVirtual: "AvailableVirtualMemory",
-        jsLargeAllocationFailure: "JSLargeAllocationFailure",
-        jsOutOfMemory: "JSOutOfMemory",
-        lowPhysical: "LowPhysicalMemoryEvents",
-        oomAllocationSize: "OOMAllocationSize",
-        purgeablePhysical: "PurgeablePhysicalMemory",
-        systemUsePercentage: "SystemMemoryUsePercentage",
-        texture: "TextureUsage",
-        totalPageFile: cap,
-        totalPhysical: "TotalPhysicalMemory",
-        totalVirtual: "TotalVirtualMemory",
-      },
-      windows: {
-        packageFamilyName: "WindowsPackageFamilyName",
-      },
-    };
-
-    function gleanSet(root, mapping) {
-      for (const key in mapping) {
-        let value = mapping[key];
-        if (
-          typeof value === "string" ||
-          value === cap ||
-          value instanceof Typed
-        ) {
-          // Get type and metadata key
-          let type = generic;
-          let metadataKey = value;
-          if (value instanceof Typed) {
-            type = value.type;
-            metadataKey = value.metaKey;
-          }
-          // Elaborate metadata key if set to capitilize the Glean key.
-          if (metadataKey === cap) {
-            metadataKey = key.charAt(0).toUpperCase() + key.slice(1);
-          }
-
-          // If the metadata key is set, set the Glean metric.
-          if (metadataKey in metadata) {
-            let metaValue = metadata[metadataKey];
-
-            if (type === seconds) {
-              metaValue = parseFloat(metaValue) * 1e3;
-              root[key].setRaw(metaValue);
-              continue;
-            }
-
-            // Interpret types prior to calling `set`.
-            if (type === bool) {
-              metaValue = metaValue === "1";
-            } else if (type === string) {
-              metaValue = metaValue.toString();
-            } else if (type === semicolon_list) {
-              metaValue = metaValue.split(";").filter(x => x);
-            } else if (type === comma_list) {
-              metaValue = metaValue.split(",").filter(x => x);
-            } else if (typeof type === "function") {
-              // `object` metric transformation
-              metaValue = type(metaValue);
-            }
-            // FIXME: ?. a temporary workaround for bug 1900442
-            root[key]?.set(metaValue);
-          }
-        } else {
-          gleanSet(root[key], value);
-        }
-      }
-    }
-
-    gleanSet(Glean, fieldMapping);
-
-    GleanPings.crash.submit(reason);
-  },
-
-  /**
    * Send a crash ping.
    *
    * @param {string} reason - the reason for the crash ping, one of: "crash", "event_found"
@@ -958,6 +764,7 @@ CrashManager.prototype = Object.freeze({
     // If we have a saved environment, use it. Otherwise report
     // the current environment.
     let reportMeta = Cu.cloneInto(metadata, {});
+
     let crashEnvironment = parseAndRemoveField(
       reportMeta,
       "TelemetryEnvironment"
@@ -978,15 +785,19 @@ CrashManager.prototype = Object.freeze({
     // Glean crash pings should not be sent on Android: they are handled
     // separately in lib-crash for Fenix (and potentially other GeckoView
     // users).
-    if (AppConstants.platform !== "android") {
-      this._submitGleanCrashPing(
-        reason,
-        type,
-        date,
-        minidumpSha256Hash,
-        stackTraces,
-        reportMeta
-      );
+    this._gleanPingPromise = null;
+    if (AppConstants.platform !== "android" && !this._disableGleanPing) {
+      const pingMeta = Cu.cloneInto(metadata, {});
+      // Delete unused fields from legacy telemetry
+      delete pingMeta.TelemetryEnvironment;
+      delete pingMeta.TelemetrySessionId;
+      pingMeta.CrashTime ??= Math.floor(date.getTime() / 1000).toString();
+      pingMeta.ProcessType ??= type;
+
+      this._gleanPingPromise = sendGleanPing(reason, pingMeta).catch(error => {
+        console.error(`failed to send Glean crash ping: ${error}`);
+        throw error;
+      });
     }
 
     if (onlyGlean) {
@@ -1677,6 +1488,7 @@ CrashStore.prototype = Object.freeze({
 
   /**
    * Ensure the submission record is present in storage.
+   *
    * @returns [submission, crash]
    */
   _ensureSubmissionRecord(crashID, submissionID) {

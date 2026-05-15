@@ -5,10 +5,7 @@
 package org.mozilla.fenix.settings
 
 import android.annotation.SuppressLint
-import android.content.ActivityNotFoundException
 import android.content.DialogInterface
-import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -16,13 +13,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.widget.Toast
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.edit
-import androidx.core.net.toUri
 import androidx.fragment.app.activityViewModels
-import androidx.lifecycle.Observer
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavDirections
 import androidx.navigation.findNavController
 import androidx.navigation.fragment.findNavController
@@ -31,6 +27,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreference
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -41,19 +38,19 @@ import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
 import mozilla.components.feature.addons.ui.AddonFilePicker
+import mozilla.components.service.fxrelay.eligibility.Eligible
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.android.view.showKeyboard
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.Addons
 import org.mozilla.fenix.GleanMetrics.CookieBanners
 import org.mozilla.fenix.GleanMetrics.Events
+import org.mozilla.fenix.GleanMetrics.SettingsSearch
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
 import org.mozilla.fenix.GleanMetrics.Translations
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
@@ -66,8 +63,10 @@ import org.mozilla.fenix.ext.openSetDefaultBrowserOption
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
+import org.mozilla.fenix.ext.showToolbarWithIconButton
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.perf.ProfilerViewModel
+import org.mozilla.fenix.perf.ProfilerViewModelFactory
 import org.mozilla.fenix.settings.account.AccountUiView
 import org.mozilla.fenix.snackbar.FenixSnackbarDelegate
 import org.mozilla.fenix.snackbar.SnackbarBinding
@@ -82,7 +81,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
     private lateinit var accountUiView: AccountUiView
     private lateinit var addonFilePicker: AddonFilePicker
     private lateinit var components: Components
-    private val profilerViewModel: ProfilerViewModel by activityViewModels()
+    private val profilerViewModel: ProfilerViewModel by activityViewModels {
+        ProfilerViewModelFactory(requireActivity().application)
+    }
     private val snackbarBinding = ViewBoundFeatureWrapper<SnackbarBinding>()
 
     @VisibleForTesting
@@ -155,7 +156,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 getString(R.string.pref_key_show_search_suggestions_in_private),
                 getString(R.string.pref_key_show_trending_search_suggestions),
                 getString(R.string.pref_key_show_recent_search_suggestions),
-                getString(R.string.pref_key_show_shortcuts_suggestions),
             )
         }
 
@@ -171,13 +171,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }
             }
 
-        profilerViewModel.getProfilerState().observe(
-            this,
-            Observer<Boolean> {
-                updateProfilerUI(it)
-            },
-        )
-
         findPreference<Preference>(
             getPreferenceKey(R.string.pref_key_translation),
         )?.isVisible = FxNimbus.features.translations.value().globalSettingsEnabled &&
@@ -190,6 +183,15 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                profilerViewModel.isProfilerActive.collect { isActive ->
+                    updateProfilerUI(isActive)
+                }
+            }
+        }
+
         snackbarBinding.set(
             feature = SnackbarBinding(
                 context = requireContext(),
@@ -215,8 +217,24 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         val title = nimbusValidation.settingsTitle
         val suffix = nimbusValidation.settingsPunctuation
+        val toolbarTitle = "$title$suffix"
 
-        showToolbar("$title$suffix")
+        val showSearch = requireContext().settings().isSettingsSearchEnabled &&
+                (!args.searchInProgress)
+
+        if (showSearch) {
+            showToolbarWithIconButton(
+                title = toolbarTitle,
+                contentDescription = getString(R.string.settings_search_button_content_description),
+                iconResId = R.drawable.ic_search,
+                onClick = {
+                    SettingsSearch.opened.record()
+                    findNavController().navigate(R.id.action_settingsFragment_to_settingsSearchFragment)
+                },
+            )
+        } else {
+            showToolbar(toolbarTitle)
+        }
 
         // Account UI state is updated as part of `onCreate`. To not do it twice in a row, we only
         // update it here if we're not going through the `onCreate->onStart->onResume` lifecycle chain.
@@ -231,7 +249,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         args.preferenceToScrollTo?.let {
             scrollToPreference(it)
         }
-
         // Consider finish of `onResume` to be the point at which we consider this fragment as 'created'.
         creatingFragment = false
     }
@@ -300,7 +317,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     @SuppressLint("InflateParams")
-    @Suppress("ComplexMethod", "LongMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     override fun onPreferenceTreeClick(preference: Preference): Boolean {
         // Hide the scrollbar so the animation looks smoother
         val recyclerView = requireView().findViewById<RecyclerView>(R.id.recycler_view)
@@ -346,6 +363,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
             resources.getString(R.string.pref_key_passwords) -> {
                 SettingsMetrics.passwords.record()
                 SettingsFragmentDirections.actionSettingsFragmentToSavedLoginsAuthFragment()
+            }
+
+            resources.getString(R.string.pref_key_email_masks) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToEmailMasksSettingsFragment()
             }
 
             resources.getString(R.string.pref_key_credit_cards) -> {
@@ -424,7 +445,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
                     .inflate(R.layout.amo_collection_override_dialog, null)
 
                 val binding = AmoCollectionOverrideDialogBinding.bind(dialogView)
-                AlertDialog.Builder(context).apply {
+                MaterialAlertDialogBuilder(context).apply {
                     setTitle(context.getString(R.string.preferences_customize_extension_collection))
                     setView(dialogView)
                     setNegativeButton(R.string.customize_addon_collection_cancel) { dialog: DialogInterface, _ ->
@@ -464,6 +485,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToLinkSharingFragment()
             }
 
+            resources.getString(R.string.pref_key_remote_improvements) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToRemoteImprovementsFragment()
+            }
+
             resources.getString(R.string.pref_key_open_links_in_apps) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToOpenLinksInAppsFragment()
             }
@@ -472,23 +497,17 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToOpenDownloadsSettingsFragment()
             }
 
+            resources.getString(R.string.pref_key_firefox_labs) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToFirefoxLabsFragment()
+            }
+
             resources.getString(R.string.pref_key_sync_debug) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToSyncDebugFragment()
             }
 
             // About preferences
             resources.getString(R.string.pref_key_rate) -> {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, SupportUtils.RATE_APP_URL.toUri()))
-                } catch (e: ActivityNotFoundException) {
-                    // Device without the play store installed.
-                    // Opening the play store website.
-                    (activity as HomeActivity).openToBrowserAndLoad(
-                        searchTermOrURL = SupportUtils.FENIX_PLAY_STORE_URL,
-                        newTab = true,
-                        from = BrowserDirection.FromSettings,
-                    )
-                }
+                components.playStoreReviewPromptController.tryLaunchPlayStoreReview(requireActivity())
                 null
             }
 
@@ -513,7 +532,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
             // Only displayed when secret settings are enabled
             resources.getString(R.string.pref_key_start_profiler) -> {
-                if (profilerViewModel.getProfilerState().value == true) {
+                if (profilerViewModel.isProfilerActive.value) {
                     SettingsFragmentDirections.actionSettingsFragmentToStopProfilerDialog()
                 } else {
                     SettingsFragmentDirections.actionSettingsFragmentToStartProfilerDialog()
@@ -542,7 +561,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        preferenceRemoteDebugging?.isVisible = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+        preferenceRemoteDebugging?.isVisible = true
         preferenceRemoteDebugging?.setOnPreferenceChangeListener<Boolean> { preference, newValue ->
             settings.preferences.edit { putBoolean(preference.key, newValue) }
             requireComponents.core.engine.settings.remoteDebuggingEnabled = newValue
@@ -571,6 +590,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
             findPreference<Preference>(
                 getPreferenceKey(R.string.pref_key_sync_debug),
             )?.isVisible = showSecretDebugMenuThisSession
+            findPreference<Preference>(
+                getPreferenceKey(R.string.pref_key_firefox_labs),
+            )?.isVisible = enableFirefoxLabs
             preferenceStartProfiler?.isVisible = showSecretDebugMenuThisSession &&
                 (components.core.engine.profiler?.isProfilerActive() != null)
         }
@@ -592,6 +614,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setupHomepagePreference(settings)
         setupTrackingProtectionPreference(settings)
         setupDnsOverHttpsPreference(settings)
+        setupEmailMaskPreference(settings, requireComponents)
     }
 
     /**
@@ -729,6 +752,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 Engine.DohSettingsMode.INCREASED -> getString(R.string.preference_doh_increased_protection)
                 Engine.DohSettingsMode.MAX -> getString(R.string.preference_doh_max_protection)
             }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun setupEmailMaskPreference(settings: Settings, components: Components) {
+        findPreference<Preference>(getPreferenceKey(R.string.pref_key_email_masks))?.let {
+            it.isVisible = settings.isEmailMaskFeatureEnabled &&
+                    components.relayEligibilityStore.state.eligibilityState is Eligible
         }
     }
 

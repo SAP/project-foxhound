@@ -97,6 +97,21 @@ const lookupManagedStorage = async (extensionId, context) => {
   return null;
 };
 
+const getManagedStorageManifestData = async (extension, context) => {
+  let lookup = managedStorage.get(extension);
+
+  if (!lookup) {
+    lookup = await lookupManagedStorage(extension.id, context);
+    managedStorage.set(extension, lookup);
+  }
+
+  if (!lookup) {
+    throw new ExtensionError("Managed storage manifest not found");
+  }
+
+  return lookup;
+};
+
 this.storage = class extends ExtensionAPIPersistent {
   constructor(extension) {
     super(extension);
@@ -293,6 +308,12 @@ this.storage = class extends ExtensionAPIPersistent {
             get(spec) {
               return ExtensionStorage.get(extension.id, spec);
             },
+            getBytesInUse(keys) {
+              return ExtensionStorage.getBytesInUse(extension.id, keys);
+            },
+            getKeys() {
+              return ExtensionStorage.getKeys(extension.id);
+            },
             set(items) {
               return ExtensionStorage.set(extension.id, items);
             },
@@ -325,6 +346,9 @@ this.storage = class extends ExtensionAPIPersistent {
           get(items) {
             return extensionStorageSession.get(extension, items);
           },
+          getKeys() {
+            return extensionStorageSession.getKeys(extension);
+          },
           set(items) {
             extensionStorageSession.set(extension, items);
           },
@@ -350,6 +374,11 @@ this.storage = class extends ExtensionAPIPersistent {
             enforceNoTemporaryAddon(extension.id);
             recordSyncQuotaTelemetry(extension, context);
             return extensionStorageSync.get(extension, spec, context);
+          },
+          getKeys() {
+            enforceNoTemporaryAddon(extension.id);
+            recordSyncQuotaTelemetry(extension, context);
+            return extensionStorageSync.getKeys(extension, context);
           },
           set(items) {
             enforceNoTemporaryAddon(extension.id);
@@ -382,20 +411,19 @@ this.storage = class extends ExtensionAPIPersistent {
         managed: {
           async get(keys) {
             enforceNoTemporaryAddon(extension.id);
-            let lookup = managedStorage.get(extension);
-
-            if (!lookup) {
-              lookup = lookupManagedStorage(extension.id, context);
-              managedStorage.set(extension, lookup);
-            }
-
-            let data = await lookup;
-            if (!data) {
-              return Promise.reject({
-                message: "Managed storage manifest not found",
-              });
-            }
+            let data = await getManagedStorageManifestData(extension, context);
             return ExtensionStorage._filterProperties(extension.id, data, keys);
+          },
+          async getBytesInUse() {
+            enforceNoTemporaryAddon(extension.id);
+            // Always returns 0 for consistency with other browsers. For details
+            // see https://bugzilla.mozilla.org/show_bug.cgi?id=1385832#c27
+            return 0;
+          },
+          async getKeys() {
+            enforceNoTemporaryAddon(extension.id);
+            let data = await getManagedStorageManifestData(extension, context);
+            return data.keys().toArray();
           },
           // managed storage is currently initialized once.
           onChanged: ignoreEvent(context, "storage.managed.onChanged"),

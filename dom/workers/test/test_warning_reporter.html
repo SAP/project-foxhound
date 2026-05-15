@@ -1,0 +1,29 @@
+<!--
+  Any copyright is dedicated to the Public Domain.
+  http://creativecommons.org/publicdomain/zero/1.0/
+-->
+<!DOCTYPE HTML>
+<html>
+<!--
+Test warning reporter's behavior when both an error and a warning are reported.
+-->
+<head>
+  <title>Test warnings and errors in Workers</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<script>
+  SimpleTest.waitForExplicitFinish();
+
+  const worker = new Worker("warning_reporter_worker.js");
+  worker.onmessage = function(e) {
+    if (e.data.type == "finish") {
+      ok(e.data.caught, "An error should be caught");
+      SimpleTest.finish();
+    }
+  }
+</script>
+</pre>
+</body>
+</html>

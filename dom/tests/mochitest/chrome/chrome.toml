@@ -49,11 +49,15 @@ tags = "fullscreen"
 ["test_bug830858.xhtml"]
 
 ["test_bug1224790-1.xhtml"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 tags = "openwindow"
 
 ["test_bug1224790-2.xhtml"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 tags = "openwindow"
 
 ["test_bug1931559.html"]
@@ -73,7 +77,7 @@ tags = "openwindow"
 ["test_first_focusable_in_scope.xhtml"]
 
 ["test_focus.xhtml"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt"] # Bug 1828622
+tags = "os_integration"
 
 ["test_focus_dialog.xhtml"]
 
@@ -111,8 +115,7 @@ support-files = [
   "file_resize_move_windows_2.html",
 ]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug # disabled on linux for timeouts--bug-834716
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 834716
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 834716
 ]
 
 ["test_sandbox_bindings.xhtml"]
@@ -126,11 +129,11 @@ skip-if = [
 ["test_selectAtPoint.html"]
 
 ["test_sizemode_attribute.xhtml"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 tags = "fullscreen"
 
 ["test_subscript_bindings.xhtml"]
-
-["test_window_getRegionalPrefsLocales.html"]
 
 ["test_xray_event_constructor.xhtml"]

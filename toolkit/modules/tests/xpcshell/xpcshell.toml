@@ -14,7 +14,9 @@ support-files = [
 ]
 
 ["test_AllowedAppSources.js"]
-run-if = ["os == 'win'"] # Test of a Windows-specific feature
+run-if = [
+  "os == 'win'", # Test of a Windows-specific feature
+]
 tags = "os_integration"
 
 ["test_BinarySearch.js"]
@@ -24,7 +26,6 @@ support-files = [
   "my_catman_1.sys.mjs",
   "my_catman_2.sys.mjs",
 ]
-
 
 ["test_BrowserUtils_urlFormatting.js"]
 
@@ -37,9 +38,8 @@ support-files = [
 ["test_DeferredTask.js"]
 skip-if = [
   "os == 'android'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # osx: Bug 1550141
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # osx: Bug 1550141
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929423
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # osx: Bug 1550141
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929423
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # osx: Bug 1550141
 ]
 
@@ -48,17 +48,27 @@ skip-if = [
 ["test_EventEmitter.js"]
 
 ["test_FileUtils.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_FinderIterator.js"]
 
 ["test_GMPInstallManager.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "../../../mozapps/extensions/test/xpcshell/data/productaddons/content_signing_aus_ee.pem",
   "../../../mozapps/extensions/test/xpcshell/data/productaddons/content_signing_int.pem",
   "../../../mozapps/extensions/test/xpcshell/data/productaddons/bad.xml",
   "../../../mozapps/extensions/test/xpcshell/data/productaddons/good.xml",
+  "../../../mozapps/extensions/test/xpcshell/data/productaddons/missing.xml",
+  "../../../mozapps/extensions/test/xpcshell/data/productaddons/empty.xml",
+  "../../../mozapps/extensions/test/xpcshell/data/productaddons/singleaddon.xml",
+  "../../../mozapps/extensions/test/xpcshell/data/productaddons/sizedaddon.xml",
+  "../../../mozapps/extensions/test/xpcshell/data/productaddons/invalidaddons.xml",
+  "../../../mozapps/extensions/test/xpcshell/data/productaddons/updatesaddons.xml",
 ]
 
 ["test_IgnoreList.js"]
@@ -83,11 +93,15 @@ tags = "remote-settings"
 ["test_MatchURLFilters.js"]
 
 ["test_NewTabUtils.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_ObjectUtils.js"]
 
 ["test_PermissionsUtils.js"]
+
+["test_PrefUtils.js"]
 
 ["test_Preferences.js"]
 
@@ -98,18 +112,35 @@ skip-if = ["os == 'android'"]
 ["test_Region.js"]
 
 ["test_Region_geocoding.js"]
-run-sequentially = "very high failure rate in parallel"
+requesttimeoutfactor = 4  # Slow and high CPU use on debug builds
+
+["test_RustSharedRemoteSettingsService.js"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_Services.js"]
 
 ["test_UpdateUtils_updatechannel.js"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_UpdateUtils_url.js"]
-skip-if = ["!updater"]
+run-if = [
+  "updater",
+]
 reason = "LOCALE is not defined without MOZ_UPDATER"
 tags = "os_integration"
 
+["test_UrlUtils.js"]
+
 ["test_firstStartup.js"]
+
+["test_firstStartup_categoryTasks.js"]
+support-files = [
+  "FirstStartupCategoryModule.sys.mjs",
+]
 skip-if = [
   "os == 'android'",
 ]
@@ -119,13 +150,14 @@ tags = "os_integration"
 
 ["test_osKeyStore.js"]
 skip-if = [
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # bug 1729538
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # bug 1729538
 ]
 tags = "os_integration"
 
 ["test_propertyListsUtils.js"]
-run-if = ["os == 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 tags = "os_integration"
 
 ["test_readCertPrefs.js"]
@@ -133,10 +165,14 @@ tags = "os_integration"
 ["test_servicerequest_xhr.js"]
 
 ["test_sqlite.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_sqlite_autoVacuum.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_sqlite_shutdown.js"]
 

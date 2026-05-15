@@ -27,7 +27,9 @@
 #include "nsHttp.h"
 #include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
+#include "nsHttpTransaction.h"
 #include "nsIClassOfService.h"
+#include "nsISocketTransport.h"
 #include "prnetdb.h"
 
 namespace mozilla::net {
@@ -73,7 +75,7 @@ void Http2StreamBase::DeleteSelfOnSocketThread() {
   nsCOMPtr<nsIEventTarget> sts =
       mozilla::components::SocketTransport::Service();
   nsCOMPtr<nsIRunnable> event = new DeleteHttp2StreamBase(this);
-  Unused << NS_WARN_IF(
+  (void)NS_WARN_IF(
       NS_FAILED(sts->Dispatch(event.forget(), NS_DISPATCH_NORMAL)));
 }
 
@@ -528,8 +530,6 @@ nsresult Http2StreamBase::GenerateOpen() {
     outputOffset += frameLen;
   }
 
-  glean::spdy::syn_size.Accumulate(compressedData.Length());
-
   mFlatHttpRequestHeaders.Truncate();
 
   return NS_OK;
@@ -835,12 +835,6 @@ nsresult Http2StreamBase::ConvertResponseHeaders(
     // Origin Frame requires 421 to remove this origin from the origin set
     RefPtr<Http2Session> session = Session();
     session->Received421(ConnectionInfo());
-  }
-
-  if (aHeadersIn.Length() && aHeadersOut.Length()) {
-    glean::spdy::syn_reply_size.Accumulate(aHeadersIn.Length());
-    uint32_t ratio = aHeadersIn.Length() * 100 / aHeadersOut.Length();
-    glean::spdy::syn_reply_ratio.AccumulateSingleSample(ratio);
   }
 
   // The decoding went ok. Now we can customize and clean up.

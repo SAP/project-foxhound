@@ -9,15 +9,18 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  DEFAULT_FORM_HISTORY_PARAM:
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
 
 // These prefs are relative to the `browser.urlbar` branch.
@@ -29,14 +32,10 @@ const LASTDEFAULTCHANGED_PREF = "recentsearches.lastDefaultChanged";
 /**
  * A provider that returns the Recent Searches performed by the user.
  */
-class ProviderRecentSearches extends UrlbarProvider {
-  constructor(...args) {
-    super(...args);
+export class UrlbarProviderRecentSearches extends UrlbarProvider {
+  constructor() {
+    super();
     Services.obs.addObserver(this, lazy.SearchUtils.TOPIC_ENGINE_MODIFIED);
-  }
-
-  get name() {
-    return "RecentSearches";
   }
 
   /**
@@ -50,9 +49,11 @@ class ProviderRecentSearches extends UrlbarProvider {
     return (
       lazy.UrlbarPrefs.get(ENABLED_PREF) &&
       lazy.UrlbarPrefs.get(SUGGEST_PREF) &&
-      !queryContext.restrictSource &&
       !queryContext.searchString &&
-      !queryContext.searchMode
+      // On the searchbar, we show recent searches of all engines,
+      // regardless of the searchmode.
+      ((!queryContext.searchMode && !queryContext.restrictSource) ||
+        queryContext.sapName == "searchbar")
     );
   }
 
@@ -68,16 +69,14 @@ class ProviderRecentSearches extends UrlbarProvider {
 
   onEngagement(queryContext, controller, details) {
     let { result } = details;
-    let engine = lazy.UrlbarSearchUtils.getDefaultEngine(
-      queryContext.isPrivate
-    );
 
-    if (details.selType == "dismiss" && queryContext.formHistoryName) {
+    if (details.selType == "dismiss") {
+      // Unlike in startQuery, do not pass the engine as `source`,
+      // otherwise it will only remove the source relation.
       lazy.FormHistory.update({
         op: "remove",
-        fieldname: "searchbar-history",
+        fieldname: lazy.DEFAULT_FORM_HISTORY_PARAM,
         value: result.payload.suggestion,
-        source: engine.name,
       }).catch(error =>
         console.error(`Removing form history failed: ${error}`)
       );
@@ -85,30 +84,49 @@ class ProviderRecentSearches extends UrlbarProvider {
     }
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
-    let engine = lazy.UrlbarSearchUtils.getDefaultEngine(
-      queryContext.isPrivate
-    );
+    let engine;
+    if (queryContext.searchMode?.engineName) {
+      engine = lazy.UrlbarSearchUtils.getEngineByName(
+        queryContext.searchMode.engineName
+      );
+    } else {
+      engine = lazy.UrlbarSearchUtils.getDefaultEngine(queryContext.isPrivate);
+    }
     if (!engine) {
       return;
     }
+
     let results = await lazy.FormHistory.search(["value", "lastUsed"], {
-      fieldname: "searchbar-history",
-      source: engine.name,
+      fieldname: lazy.DEFAULT_FORM_HISTORY_PARAM,
+      // Use undefined to show recent searches of all engines.
+      source: queryContext.sapName == "searchbar" ? undefined : engine.name,
     });
 
-    let expiration = parseInt(lazy.UrlbarPrefs.get(EXPIRATION_PREF), 10);
-    let lastDefaultChanged = parseInt(
-      lazy.UrlbarPrefs.get(LASTDEFAULTCHANGED_PREF),
-      10
-    );
     let now = Date.now();
 
-    // We only want to show searches since the last engine change, if we
-    // havent changed the engine we expire the display of the searches
-    // after a period of time.
-    if (lastDefaultChanged != -1) {
-      expiration = Math.min(expiration, now - lastDefaultChanged);
+    let expiration;
+    if (queryContext.sapName != "searchbar") {
+      expiration = parseInt(lazy.UrlbarPrefs.get(EXPIRATION_PREF), 10);
+      let lastDefaultChanged = parseInt(
+        lazy.UrlbarPrefs.get(LASTDEFAULTCHANGED_PREF),
+        10
+      );
+      // We only want to show searches since the last engine change, if we
+      // havent changed the engine we expire the display of the searches
+      // after a period of time.
+      if (lastDefaultChanged != -1) {
+        expiration = Math.min(expiration, now - lastDefaultChanged);
+      }
+    } else {
+      expiration = Infinity;
     }
 
     results = results.filter(
@@ -121,19 +139,20 @@ class ProviderRecentSearches extends UrlbarProvider {
     }
 
     for (let result of results) {
-      let res = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.SEARCH,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        {
+      let res = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.SEARCH,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: {
           engine: engine.name,
           suggestion: result.value,
+          title: result.value,
           isBlockable: true,
           blockL10n: { id: "urlbar-result-menu-remove-from-history" },
           helpUrl:
             Services.urlFormatter.formatURLPref("app.support.baseURL") +
             "awesome-bar-result-menu",
-        }
-      );
+        },
+      });
       addCallback(this, res);
     }
   }
@@ -146,5 +165,3 @@ class ProviderRecentSearches extends UrlbarProvider {
     }
   }
 }
-
-export var UrlbarProviderRecentSearches = new ProviderRecentSearches();

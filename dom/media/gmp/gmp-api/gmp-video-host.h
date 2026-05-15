@@ -35,9 +35,9 @@
 #define GMP_VIDEO_HOST_h_
 
 #include "gmp-errors.h"
-#include "gmp-video-frame-i420.h"
-#include "gmp-video-frame-encoded.h"
 #include "gmp-video-codec.h"
+#include "gmp-video-frame-encoded.h"
+#include "gmp-video-frame-i420.h"
 
 // This interface must be called on the main thread only.
 class GMPVideoHost {

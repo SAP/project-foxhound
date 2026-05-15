@@ -14,10 +14,10 @@ NSPR provides a public API function, PR_Poll() that is modeled after
 UNIX' ``poll()`` system call.
 
 The implementation of :ref:`PR_Poll` is somewhat complicated. Not only
-does it map the :ref:`PRPollDesc` array into structures needed by the
+does it map the ``PRPollDesc`` array into structures needed by the
 underlying OS, it also must deal with layered I/O. This is done despite
 the fact that :ref:`PR_Poll` itself is *not* layered. For every element
-of the :ref:`PRPollDesc` array that has a non-NULL :ref:`PRFileDesc` and whose
+of the ``PRPollDesc`` array that has a non-NULL :ref:`PRFileDesc` and whose
 ``in_flags`` are not zero, it calls the file descriptor's
 ``poll() method``.
 The ``poll()`` method is one of the vector contained in the

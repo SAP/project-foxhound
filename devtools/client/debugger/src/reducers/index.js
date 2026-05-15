@@ -4,6 +4,7 @@
 
 /**
  * Reducer index
+ *
  * @module reducers/index
  */
 

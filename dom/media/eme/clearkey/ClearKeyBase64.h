@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef __ClearKeyBase64_h__
-#define __ClearKeyBase64_h__
+#ifndef ClearKeyBase64_h_
+#define ClearKeyBase64_h_
 
 #include <stdint.h>
 

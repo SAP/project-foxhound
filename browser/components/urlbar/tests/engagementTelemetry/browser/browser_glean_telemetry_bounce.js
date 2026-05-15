@@ -26,8 +26,6 @@ add_setup(async function () {
     ],
   });
 
-  let oldDefaultEngine = await Services.search.getDefault();
-
   let root = gTestPath;
   let engineURL = new URL("../../browser/searchSuggestionEngine.xml", root)
     .href;
@@ -38,9 +36,8 @@ add_setup(async function () {
   });
 
   registerCleanupFunction(async function () {
-    await Services.search.setDefault(
-      oldDefaultEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    Services.prefs.clearUserPref(
+      "browser.urlbar.quickactions.timesShownOnboardingLabel"
     );
   });
 });
@@ -56,7 +53,7 @@ const expected = {
   n_chars: "4",
   n_words: "1",
   engagement_type: "enter",
-  provider: "HeuristicFallback",
+  provider: "UrlbarProviderHeuristicFallback",
   threshold: "10",
 };
 

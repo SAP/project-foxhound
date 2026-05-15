@@ -107,17 +107,19 @@ class gfxMathTable {
   /**
    * @param aGlyphID  glyph index of the character we want to stretch
    * @param aVertical direction of the stretching (vertical/horizontal)
+   * @param aRTL      writing direction (LTR/RTL)
    * @param aSize     the desired size variant
    *
    * Returns the glyph index of the desired size variant or 0 if there is not
    * any such size variant.
    */
-  uint32_t VariantsSize(uint32_t aGlyphID, bool aVertical,
+  uint32_t VariantsSize(uint32_t aGlyphID, bool aVertical, bool aRTL,
                         uint16_t aSize) const;
 
   /**
    * @param aGlyphID  glyph index of the character we want to stretch
    * @param aVertical direction of the stretching (vertical/horizontal)
+   * @param aRTL      writing direction (LTR/RTL)
    * @param aGlyphs   pre-allocated buffer of 4 elements where the glyph
    * indexes (or 0 for absent parts) will be stored. The parts are stored in
    * the order expected by the nsMathMLChar: Top (or Left), Middle, Bottom
@@ -129,7 +131,7 @@ class gfxMathTable {
    * the format is not supported by the nsMathMLChar code.
    *
    */
-  bool VariantsParts(uint32_t aGlyphID, bool aVertical,
+  bool VariantsParts(uint32_t aGlyphID, bool aVertical, bool aRTL,
                      uint32_t aGlyphs[4]) const;
 
  private:
@@ -140,13 +142,15 @@ class gfxMathTable {
   struct MathVariantCacheEntry {
     uint32_t glyphID;
     bool vertical;
+    bool isRTL;
     uint32_t sizes[kMaxCachedSizeCount];
     uint32_t parts[4];
     bool arePartsValid;
   };
   mutable MathVariantCacheEntry mMathVariantCache;
   void ClearCache() const;
-  void UpdateMathVariantCache(uint32_t aGlyphID, bool aVertical) const;
+  void UpdateMathVariantCache(uint32_t aGlyphID, bool aVertical,
+                              bool aRTL) const;
 };
 
 #endif

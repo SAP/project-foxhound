@@ -11,12 +11,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 
   Deferred: "chrome://remote/content/shared/Sync.sys.mjs",
-  isInitialDocument:
+  isUncommittedInitialDocument:
     "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   NavigationListener:
     "chrome://remote/content/shared/listeners/NavigationListener.sys.mjs",
   truncate: "chrome://remote/content/shared/Format.sys.mjs",
+  NavigationError: "chrome://remote/content/shared/RemoteError.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
@@ -93,15 +94,16 @@ export async function waitForInitialNavigationCompleted(
   });
   const navigated = listener.start();
 
-  const isInitial = lazy.isInitialDocument(browsingContext);
+  const isUncommittedInitial =
+    lazy.isUncommittedInitialDocument(browsingContext);
   const isLoadingDocument = listener.isLoadingDocument;
   lazy.logger.trace(
-    lazy.truncate`[${browsingContext.id}] Wait for initial navigation: isInitial=${isInitial}, isLoadingDocument=${isLoadingDocument}`
+    lazy.truncate`[${browsingContext.id}] Wait for initial navigation: isUncommittedInitial=${isUncommittedInitial}, isLoadingDocument=${isLoadingDocument}`
   );
 
   // If the current document is not the initial "about:blank" and is also
   // no longer loading, assume the navigation is done and return.
-  if (!isInitial && !isLoadingDocument) {
+  if (!isUncommittedInitial && !isLoadingDocument) {
     lazy.logger.trace(
       lazy.truncate`[${browsingContext.id}] Document already finished loading: ${browsingContext.currentURI?.spec}`
     );
@@ -135,6 +137,7 @@ export async function waitForInitialNavigationCompleted(
 export class ProgressListener {
   #expectNavigation;
   #resolveWhenCommitted;
+  #resolveWhenCommittedError;
   #resolveWhenStarted;
   #unloadTimeout;
   #waitForExplicitStart;
@@ -144,6 +147,7 @@ export class ProgressListener {
   #errorName;
   #navigationId;
   #navigationListener;
+  #seenNavigationCommitted;
   #seenStartFlag;
   #targetURI;
   #unloadTimerId;
@@ -205,6 +209,8 @@ export class ProgressListener {
 
     this.#deferredNavigation = null;
     this.#errorName = null;
+    this.#resolveWhenCommittedError = null;
+    this.#seenNavigationCommitted = false;
     this.#seenStartFlag = false;
     this.#targetURI = targetURI;
     this.#unloadTimerId = null;
@@ -265,11 +271,6 @@ export class ProgressListener {
 
   get documentURI() {
     return this.#webProgress.browsingContext.currentWindowGlobal.documentURI;
-  }
-
-  get isInitialDocument() {
-    return this.#webProgress.browsingContext.currentWindowGlobal
-      .isInitialDocument;
   }
 
   get isLoadingDocument() {
@@ -336,36 +337,17 @@ export class ProgressListener {
             // Wait for the next location change notification to ensure that the
             // real error page was loaded.
             this.#trace(`Error=${errorName}, wait for redirect to error page`);
+            this.#seenNavigationCommitted = false;
             this.#errorName = errorName;
             return;
           }
 
-          // Handle an aborted navigation. While for an initial document another
-          // navigation to the real document will happen it's not the case for
-          // normal documents. Here we need to stop the listener immediately.
-          if (status == Cr.NS_BINDING_ABORTED && this.isInitialDocument) {
-            this.#trace(
-              "Ignore aborted navigation error to the initial document."
-            );
-            return;
-          }
-
-          this.stop({ error: new Error(errorName) });
+          this.stop({ error: new lazy.NavigationError(errorName, status) });
           return;
         }
 
-        // If a non initial page finished loading the navigation is done.
-        if (!this.isInitialDocument) {
-          this.stop();
-          return;
-        }
-
-        // Otherwise wait for a potential additional page load.
-        this.#trace(
-          "Initial document loaded. Wait for a potential further navigation."
-        );
-        this.#seenStartFlag = false;
-        this.#setUnloadTimer();
+        // If a page finished loading the navigation is done.
+        this.stop();
       }
     }
   }
@@ -391,13 +373,24 @@ export class ProgressListener {
   }
 
   #onNavigationCommitted = (eventName, data) => {
-    const { navigationId } = data;
+    const { navigationId, url } = data;
+
+    this.#seenNavigationCommitted = true;
 
     if (this.#resolveWhenCommitted && this.#navigationId === navigationId) {
-      this.#trace(
-        `Received "navigation-committed" event. Stopping the navigation.`
-      );
-      this.stop();
+      this.#targetURI = Services.io.newURI(url);
+      if (this.#resolveWhenCommittedError) {
+        this.#trace(
+          `Received "navigation-committed" event for an error page` +
+            ` (error: ${this.#resolveWhenCommittedError}). Stopping the navigation.`
+        );
+        this.stop({ error: new Error(this.#resolveWhenCommittedError) });
+      } else {
+        this.#trace(
+          `Received "navigation-committed" event. Stopping the navigation.`
+        );
+        this.stop();
+      }
     }
   };
 
@@ -446,7 +439,16 @@ export class ProgressListener {
       this.#trace(
         lazy.truncate`Location=errorPage, error=${errorName}, url=${this.documentURI.spec}`
       );
-      this.stop({ error: new Error(errorName) });
+      if (this.#seenNavigationCommitted || !this.#navigationListener) {
+        // If the navigation-committed event was already received, resolve immediately
+        this.stop({ error: new Error(errorName) });
+      } else {
+        this.#trace(
+          `Waiting for the "navigation-committed" event for the error page navigation (error: ${errorName}).`
+        );
+        this.#resolveWhenCommittedError = errorName;
+        this.#resolveWhenCommitted = true;
+      }
       return;
     }
 
@@ -503,7 +505,7 @@ export class ProgressListener {
       }
     }
 
-    this.#deferredNavigation = new lazy.Deferred();
+    this.#deferredNavigation = lazy.Deferred();
 
     // Enable all location change and network state notifications to get
     // informed about an upcoming load as early as possible.

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NeqoHttp3Conn_h__
-#define NeqoHttp3Conn_h__
+#ifndef NeqoHttp3Conn_h_
+#define NeqoHttp3Conn_h_
 
 #include <cstdint>
 #include "mozilla/net/neqo_glue_ffi_generated.h"
@@ -18,12 +18,12 @@ class NeqoHttp3Conn final {
       const NetAddr& aLocalAddr, const NetAddr& aRemoteAddr,
       uint32_t aMaxTableSize, uint16_t aMaxBlockedStreams, uint64_t aMaxData,
       uint64_t aMaxStreamData, bool aVersionNegotiation, bool aWebTransport,
-      const nsACString& aQlogDir, uint32_t aDatagramSize,
-      uint32_t aProviderFlags, uint32_t aIdleTimeout, NeqoHttp3Conn** aConn) {
+      const nsACString& aQlogDir, uint32_t aProviderFlags,
+      uint32_t aIdleTimeout, NeqoHttp3Conn** aConn) {
     return neqo_http3conn_new_use_nspr_for_io(
         &aOrigin, &aAlpn, &aLocalAddr, &aRemoteAddr, aMaxTableSize,
         aMaxBlockedStreams, aMaxData, aMaxStreamData, aVersionNegotiation,
-        aWebTransport, &aQlogDir, aDatagramSize, aProviderFlags, aIdleTimeout,
+        aWebTransport, &aQlogDir, aProviderFlags, aIdleTimeout,
         (const mozilla::net::NeqoHttp3Conn**)aConn);
   }
 
@@ -32,14 +32,14 @@ class NeqoHttp3Conn final {
                        uint32_t aMaxTableSize, uint16_t aMaxBlockedStreams,
                        uint64_t aMaxData, uint64_t aMaxStreamData,
                        bool aVersionNegotiation, bool aWebTransport,
-                       const nsACString& aQlogDir, uint32_t aDatagramSize,
-                       uint32_t aProviderFlags, uint32_t aIdleTimeout,
-                       int64_t socket, NeqoHttp3Conn** aConn) {
+                       const nsACString& aQlogDir, uint32_t aProviderFlags,
+                       uint32_t aIdleTimeout, int64_t socket,
+                       bool aPMTUDEnabled, NeqoHttp3Conn** aConn) {
     return neqo_http3conn_new(
         &aOrigin, &aAlpn, &aLocalAddr, &aRemoteAddr, aMaxTableSize,
         aMaxBlockedStreams, aMaxData, aMaxStreamData, aVersionNegotiation,
-        aWebTransport, &aQlogDir, aDatagramSize, aProviderFlags, aIdleTimeout,
-        socket, (const mozilla::net::NeqoHttp3Conn**)aConn);
+        aWebTransport, &aQlogDir, aProviderFlags, aIdleTimeout, socket,
+        aPMTUDEnabled, (const mozilla::net::NeqoHttp3Conn**)aConn);
   }
 
   void Close(uint64_t aError) { neqo_http3conn_close(this, aError); }
@@ -90,6 +90,12 @@ class NeqoHttp3Conn final {
                                 &aHeaders, aStreamId, aUrgency, aIncremental);
   }
 
+  nsresult Connect(const nsACString& aHost, const nsACString& aHeaders,
+                   uint64_t* aStreamId, uint8_t aUrgency, bool aIncremental) {
+    return neqo_http3conn_connect(this, &aHost, &aHeaders, aStreamId, aUrgency,
+                                  aIncremental);
+  }
+
   nsresult PriorityUpdate(uint64_t aStreamId, uint8_t aUrgency,
                           bool aIncremental) {
     return neqo_http3conn_priority_update(this, aStreamId, aUrgency,
@@ -125,8 +131,8 @@ class NeqoHttp3Conn final {
     neqo_http3conn_stream_stop_sending(this, aStreamId, aError);
   }
 
-  void SetResumptionToken(nsTArray<uint8_t>& aToken) {
-    neqo_http3conn_set_resumption_token(this, &aToken);
+  nsresult SetResumptionToken(nsTArray<uint8_t>& aToken) {
+    return neqo_http3conn_set_resumption_token(this, &aToken);
   }
 
   void SetEchConfig(nsTArray<uint8_t>& aEchConfig) {
@@ -149,10 +155,22 @@ class NeqoHttp3Conn final {
                                                       &aHeaders, aSessionId);
   }
 
+  nsresult CreateConnectUdp(const nsACString& aHost, const nsACString& aPath,
+                            const nsACString& aHeaders, uint64_t* aSessionId) {
+    return neqo_http3conn_connect_udp_create_session(this, &aHost, &aPath,
+                                                     &aHeaders, aSessionId);
+  }
+
   nsresult CloseWebTransport(uint64_t aSessionId, uint32_t aError,
                              const nsACString& aMessage) {
     return neqo_http3conn_webtransport_close_session(this, aSessionId, aError,
                                                      &aMessage);
+  }
+
+  nsresult CloseConnectUdp(uint64_t aSessionId, uint32_t aError,
+                           const nsACString& aMessage) {
+    return neqo_http3conn_connect_udp_close_session(this, aSessionId, aError,
+                                                    &aMessage);
   }
 
   nsresult CreateWebTransportStream(uint64_t aSessionId,
@@ -167,6 +185,12 @@ class NeqoHttp3Conn final {
                                     uint64_t aTrackingId) {
     return neqo_http3conn_webtransport_send_datagram(this, aSessionId, &aData,
                                                      aTrackingId);
+  }
+
+  nsresult ConnectUdpSendDatagram(uint64_t aSessionId, nsTArray<uint8_t>& aData,
+                                  uint64_t aTrackingId) {
+    return neqo_http3conn_connect_udp_send_datagram(this, aSessionId, &aData,
+                                                    aTrackingId);
   }
 
   nsresult WebTransportMaxDatagramSize(uint64_t aSessionId, uint64_t* aResult) {

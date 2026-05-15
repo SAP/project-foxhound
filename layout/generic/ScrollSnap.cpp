@@ -27,7 +27,9 @@ class CalcSnapPoints final {
 
  public:
   CalcSnapPoints(ScrollUnit aUnit, ScrollSnapFlags aSnapFlags,
-                 const nsPoint& aDestination, const nsPoint& aStartPos);
+                 const nsPoint& aDestination, const nsPoint& aStartPos,
+                 const StyleScrollSnapStrictness& aXStrictness,
+                 const StyleScrollSnapStrictness& aYStrictness);
   struct SnapPosition : public SnapTarget {
     SnapPosition(const SnapTarget& aSnapTarget, nscoord aPosition,
                  nscoord aDistanceOnOtherAxis)
@@ -67,6 +69,7 @@ class CalcSnapPoints final {
                nscoord aStartPos, nscoord aScrollingDirection,
                CandidateTracker* aCandidateTracker);
   SnapDestination GetBestEdge(const nsSize& aSnapportSize) const;
+  nsPoint GetDefaultSnapPoint() const;
   nscoord XDistanceBetweenBestAndSecondEdge() const {
     return std::abs(NSCoordSaturatingSubtract(
         mTrackerOnX.mSecondBestEdge,
@@ -90,17 +93,23 @@ class CalcSnapPoints final {
                          // snapping
   nsPoint mStartPos;     // gives the position before scrolling
   nsIntPoint mScrollingDirection;  // always -1, 0, or 1
+  StyleScrollSnapStrictness mStrictnessX;
+  StyleScrollSnapStrictness mStrictnessY;
   CandidateTracker mTrackerOnX;
   CandidateTracker mTrackerOnY;
 };
 
 CalcSnapPoints::CalcSnapPoints(ScrollUnit aUnit, ScrollSnapFlags aSnapFlags,
                                const nsPoint& aDestination,
-                               const nsPoint& aStartPos)
+                               const nsPoint& aStartPos,
+                               const StyleScrollSnapStrictness& aXStrictness,
+                               const StyleScrollSnapStrictness& aYStrictness)
     : mUnit(aUnit),
       mSnapFlags(aSnapFlags),
       mDestination(aDestination),
-      mStartPos(aStartPos) {
+      mStartPos(aStartPos),
+      mStrictnessX(aXStrictness),
+      mStrictnessY(aYStrictness) {
   MOZ_ASSERT(aSnapFlags != ScrollSnapFlags::Disabled);
 
   nsPoint direction = aDestination - aStartPos;
@@ -117,6 +126,21 @@ CalcSnapPoints::CalcSnapPoints(ScrollUnit aUnit, ScrollSnapFlags aSnapFlags,
   if (direction.y > 0) {
     mScrollingDirection.y = 1;
   }
+}
+
+nsPoint CalcSnapPoints::GetDefaultSnapPoint() const {
+  MOZ_ASSERT(mSnapFlags != ScrollSnapFlags::Disabled);
+  nsPoint defaultPoint = mDestination;
+  if ((mSnapFlags & ScrollSnapFlags::IntendedDirection) ==
+      ScrollSnapFlags::IntendedDirection) {
+    if (mStrictnessX != StyleScrollSnapStrictness::Proximity) {
+      defaultPoint.x = mStartPos.x;
+    }
+    if (mStrictnessY != StyleScrollSnapStrictness::Proximity) {
+      defaultPoint.y = mStartPos.y;
+    }
+  }
+  return defaultPoint;
 }
 
 SnapDestination CalcSnapPoints::GetBestEdge(const nsSize& aSnapportSize) const {
@@ -271,19 +295,19 @@ SnapDestination CalcSnapPoints::GetBestEdge(const nsSize& aSnapportSize) const {
     // should not happen but we fall back for safety.
   }
 
+  nsPoint defaultPoint = GetDefaultSnapPoint();
   return SnapDestination{
-      nsPoint(
-          mTrackerOnX.EdgeFound() ? mTrackerOnX.mBestEdges[0].mPosition
-          // In the case of IntendedEndPosition (i.e. the destination point is
-          // explicitely specied, e.g. scrollTo) use the destination point if we
-          // didn't find any candidates.
-          : !(mSnapFlags & ScrollSnapFlags::IntendedDirection) ? mDestination.x
-                                                               : mStartPos.x,
-          mTrackerOnY.EdgeFound() ? mTrackerOnY.mBestEdges[0].mPosition
-          // Same as above X axis case, use the destination point if we didn't
-          // find any candidates.
-          : !(mSnapFlags & ScrollSnapFlags::IntendedDirection) ? mDestination.y
-                                                               : mStartPos.y),
+      nsPoint(mTrackerOnX.EdgeFound()
+                  ? mTrackerOnX.mBestEdges[0].mPosition
+                  // In the case of IntendedEndPosition (i.e. the destination
+                  // point is explicitely specied, e.g. scrollTo) use the
+                  // destination point if we didn't find any candidates.
+                  : defaultPoint.x,
+              mTrackerOnY.EdgeFound()
+                  ? mTrackerOnY.mBestEdges[0].mPosition
+                  // Same as above X axis case, use the destination point if we
+                  // didn't find any candidates.
+                  : defaultPoint.y),
       ScrollSnapTargetIds{mTrackerOnX.mTargetIds, mTrackerOnY.mTargetIds}};
 }
 
@@ -484,7 +508,9 @@ Maybe<SnapDestination> ScrollSnapUtils::GetSnapPointForDestination(
     return Nothing();
   }
 
-  CalcSnapPoints calcSnapPoints(aUnit, aSnapFlags, aDestination, aStartPos);
+  CalcSnapPoints calcSnapPoints(aUnit, aSnapFlags, aDestination, aStartPos,
+                                aSnapInfo.mScrollSnapStrictnessX,
+                                aSnapInfo.mScrollSnapStrictnessY);
 
   ProcessSnapPositions(calcSnapPoints, aSnapInfo);
 
@@ -502,7 +528,7 @@ Maybe<SnapDestination> ScrollSnapUtils::GetSnapPointForDestination(
             aSnapInfo.mSnapportSize.width) {
       calcSnapPoints.AddVerticalEdge(ScrollSnapInfo::SnapTarget{
           Some(clampedDestination.x), Nothing(), range.mSnapArea,
-          StyleScrollSnapStop::Normal, range.mTargetId});
+          StyleScrollSnapStop::Normal, ScrollSnapTargetId::None});
       break;
     }
   }
@@ -512,7 +538,7 @@ Maybe<SnapDestination> ScrollSnapUtils::GetSnapPointForDestination(
             aSnapInfo.mSnapportSize.height) {
       calcSnapPoints.AddHorizontalEdge(ScrollSnapInfo::SnapTarget{
           Nothing(), Some(clampedDestination.y), range.mSnapArea,
-          StyleScrollSnapStop::Normal, range.mTargetId});
+          StyleScrollSnapStop::Normal, ScrollSnapTargetId::None});
       break;
     }
   }
@@ -677,10 +703,10 @@ Maybe<SnapDestination> ScrollSnapUtils::GetSnapPointForResnap(
   if (!x || !y) {
     nsPoint newPosition =
         nsPoint(x ? *x : aCurrentPosition.x, y ? *y : aCurrentPosition.y);
-    CalcSnapPoints calcSnapPoints(ScrollUnit::DEVICE_PIXELS,
-                                  ScrollSnapFlags::IntendedEndPosition,
-                                  newPosition, newPosition);
-
+    CalcSnapPoints calcSnapPoints(
+        ScrollUnit::DEVICE_PIXELS, ScrollSnapFlags::IntendedEndPosition,
+        newPosition, newPosition, aSnapInfo.mScrollSnapStrictnessX,
+        aSnapInfo.mScrollSnapStrictnessY);
     aSnapInfo.ForEachValidTargetFor(
         newPosition, [&, &x = x, &y = y](const auto& aTarget) -> bool {
           if (!x && aTarget.mSnapPoint.mX &&

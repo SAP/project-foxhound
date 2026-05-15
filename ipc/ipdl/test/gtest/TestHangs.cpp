@@ -124,7 +124,7 @@ class TestHangsParent : public PTestHangsParent {
   IPDL_TEST(TestHangs, mode) {                                       \
     mActor->SendStart(                                               \
         (uint32_t)HangMode::mode,                                    \
-        [=](bool detectedHang) {                                     \
+        [this](bool detectedHang) {                                  \
           EXPECT_EQ(detectedHang, HangMode::mode != HangMode::None); \
           mActor->Close();                                           \
         },                                                           \

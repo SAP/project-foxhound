@@ -9,13 +9,16 @@ import androidx.annotation.StringRes
 import org.mozilla.fenix.R
 import org.mozilla.fenix.nimbus.SetupChecklistType
 import org.mozilla.fenix.utils.Settings
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * A sealed class representing an item in the setup checklist.
  *
  * @property title the string resource for the checklist item title.
  */
-sealed class ChecklistItem(@param:StringRes open val title: Int) {
+sealed class ChecklistItem(
+    @param:StringRes open val title: Int,
+) {
     /**
      * A data class representing an individual task in the checklist.
      *
@@ -121,7 +124,7 @@ private fun createTasksCollection(settings: Settings) = with(settings) {
 private fun defaultBrowserTask(isCompleted: Boolean) = ChecklistItem.Task(
     type = ChecklistItem.Task.Type.SET_AS_DEFAULT,
     title = R.string.setup_checklist_task_default_browser,
-    icon = R.drawable.mozac_ic_globe_24,
+    icon = iconsR.drawable.mozac_ic_globe_24,
     isCompleted = isCompleted,
 )
 
@@ -162,7 +165,7 @@ private fun customizeGroup(settings: Settings, tabStripEnabled: Boolean): Checkl
             ChecklistItem.Task(
                 type = ChecklistItem.Task.Type.SELECT_THEME,
                 title = R.string.setup_checklist_task_theme_selection,
-                icon = R.drawable.mozac_ic_themes_24,
+                icon = iconsR.drawable.mozac_ic_themes_24,
                 isCompleted = hasCompletedSetupStepTheme,
             ),
         )
@@ -173,7 +176,7 @@ private fun customizeGroup(settings: Settings, tabStripEnabled: Boolean): Checkl
                 ChecklistItem.Task(
                     type = ChecklistItem.Task.Type.CHANGE_TOOLBAR_PLACEMENT,
                     title = R.string.setup_checklist_task_toolbar_selection,
-                    icon = R.drawable.mozac_ic_tool_24,
+                    icon = iconsR.drawable.mozac_ic_tool_24,
                     isCompleted = hasCompletedSetupStepToolbar,
                 ),
             )
@@ -193,7 +196,7 @@ private fun helpfulToolsGroup(settings: Settings) = ChecklistItem.Group(
                 type = ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
                 title = R.string.setup_checklist_task_search_widget_2,
                 icon = R.drawable.ic_search,
-                isCompleted = searchWidgetInstalled,
+                isCompleted = hasCompletedSetupStepInstallSearchWidget,
             ),
             exploreExtensionTask(hasCompletedSetupStepExtensions),
         )

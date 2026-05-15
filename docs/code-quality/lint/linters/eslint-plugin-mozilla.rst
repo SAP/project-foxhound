@@ -4,17 +4,6 @@ Mozilla ESLint Plugin
 
 This is the documentation of Mozilla ESLint PLugin.
 
-Environments
-============
-
-The plugin implements the following environments:
-
-
-.. toctree::
-   :maxdepth: 2
-
-   eslint-plugin-mozilla/environment
-
 Rules
 =====
 

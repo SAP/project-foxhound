@@ -12,7 +12,7 @@ add_task(async function () {
   const browser = document.createXULElement("browser");
   browser.setAttribute("type", "content");
   document.body.appendChild(browser);
-  await BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   info("Save heap snapshot");
   const result = await SpecialPowers.spawn(browser, [], () => {

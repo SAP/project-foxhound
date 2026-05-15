@@ -8,6 +8,7 @@
 #define mozilla_net_DNSServiceBase_h
 
 #include "mozilla/Atomics.h"
+#include "mozilla/net/rust_helper.h"
 #include "nsIObserver.h"
 #include "nsString.h"
 
@@ -20,6 +21,8 @@ class DNSServiceBase : public nsIObserver {
   NS_DECL_THREADSAFE_ISUPPORTS
 
   DNSServiceBase() = default;
+
+  static void DoReadEtcHostsFile(ParsingCallback aCallback);
 
  protected:
   virtual ~DNSServiceBase() = default;

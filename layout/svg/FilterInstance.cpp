@@ -7,14 +7,12 @@
 // Main header first:
 #include "FilterInstance.h"
 
-// MFBT headers next:
-#include "mozilla/UniquePtr.h"
+#include <memory>
 
 // Keep others in (case-insensitive) order:
 #include "CSSFilterInstance.h"
 #include "FilterSupport.h"
 #include "ImgDrawResult.h"
-#include "SVGContentUtils.h"
 #include "SVGIntegrationUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
@@ -25,7 +23,6 @@
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/gfx/Filters.h"
 #include "mozilla/gfx/Helpers.h"
@@ -49,7 +46,7 @@ FilterDescription FilterInstance::GetFilterDescription(
   nsTArray<SVGFilterFrame*> filterFrames;
   if (SVGObserverUtils::GetAndObserveFilters(aFiltersObserverList,
                                              &filterFrames) ==
-      SVGObserverUtils::eHasRefsSomeInvalid) {
+      SVGObserverUtils::ReferenceState::HasRefsSomeInvalid) {
     return FilterDescription();
   }
 
@@ -62,11 +59,12 @@ FilterDescription FilterInstance::GetFilterDescription(
   return instance.ExtractDescriptionAndAdditionalImages(aOutAdditionalImages);
 }
 
-static UniquePtr<UserSpaceMetrics> UserSpaceMetricsForFrame(nsIFrame* aFrame) {
+static std::unique_ptr<UserSpaceMetrics> UserSpaceMetricsForFrame(
+    nsIFrame* aFrame) {
   if (auto* element = SVGElement::FromNodeOrNull(aFrame->GetContent())) {
-    return MakeUnique<SVGElementMetrics>(element);
+    return std::make_unique<SVGElementMetrics>(element);
   }
-  return MakeUnique<NonSVGFrameUserSpaceMetrics>(aFrame);
+  return std::make_unique<NonSVGFrameUserSpaceMetrics>(aFrame);
 }
 
 void FilterInstance::PaintFilteredFrame(
@@ -75,7 +73,7 @@ void FilterInstance::PaintFilteredFrame(
     const SVGFilterPaintCallback& aPaintCallback, const nsRegion* aDirtyArea,
     imgDrawingParams& aImgParams, float aOpacity,
     const gfxRect* aOverrideBBox) {
-  UniquePtr<UserSpaceMetrics> metrics =
+  std::unique_ptr<UserSpaceMetrics> metrics =
       UserSpaceMetricsForFrame(aFilteredFrame);
 
   gfxContextMatrixAutoSaveRestore autoSR(aCtx);
@@ -168,11 +166,12 @@ WrFiltersStatus FilterInstance::BuildWebRenderFiltersImpl(
   nsTArray<SVGFilterFrame*> filterFrames;
   if (SVGObserverUtils::GetAndObserveFilters(firstFrame, &filterFrames,
                                              aStyleFilterType) ==
-      SVGObserverUtils::eHasRefsSomeInvalid) {
+      SVGObserverUtils::ReferenceState::HasRefsSomeInvalid) {
     return WrFiltersStatus::UNSUPPORTED;
   }
 
-  UniquePtr<UserSpaceMetrics> metrics = UserSpaceMetricsForFrame(firstFrame);
+  std::unique_ptr<UserSpaceMetrics> metrics =
+      UserSpaceMetricsForFrame(firstFrame);
 
   // TODO: simply using an identity matrix here, was pulling the scale from a
   // gfx context for the non-wr path.
@@ -374,7 +373,7 @@ WrFiltersStatus FilterInstance::BuildWebRenderFiltersImpl(
       // css/filter-effects/filter-scale-001.html for which the needless
       // sRGB->linear->no-op->sRGB roundtrip introduces a slight error and we
       // cannot add fuzziness to the test.
-      Unused << aWrFilters.filters.PopLastElement();
+      (void)aWrFilters.filters.PopLastElement();
       srgb = previousSrgb;
     }
 
@@ -1225,11 +1224,12 @@ WrFiltersStatus FilterInstance::BuildWebRenderSVGFiltersImpl(
   nsTArray<SVGFilterFrame*> filterFrames;
   if (SVGObserverUtils::GetAndObserveFilters(firstFrame, &filterFrames,
                                              aStyleFilterType) ==
-      SVGObserverUtils::eHasRefsSomeInvalid) {
+      SVGObserverUtils::ReferenceState::HasRefsSomeInvalid) {
     return WrFiltersStatus::UNSUPPORTED;
   }
 
-  UniquePtr<UserSpaceMetrics> metrics = UserSpaceMetricsForFrame(firstFrame);
+  std::unique_ptr<UserSpaceMetrics> metrics =
+      UserSpaceMetricsForFrame(firstFrame);
 
   gfxRect filterSpaceBoundsNotSnapped;
 
@@ -1477,7 +1477,7 @@ nsRegion FilterInstance::GetPreFilterNeededArea(
     const nsRegion& aPostFilterDirtyRegion) {
   gfxMatrix tm = SVGUtils::GetCanvasTM(aFilteredFrame);
   auto filterChain = aFilteredFrame->StyleEffects()->mFilters.AsSpan();
-  UniquePtr<UserSpaceMetrics> metrics =
+  std::unique_ptr<UserSpaceMetrics> metrics =
       UserSpaceMetricsForFrame(aFilteredFrame);
   // Hardcode InputIsTainted to true because we don't want JS to be able to
   // read the rendered contents of aFilteredFrame.
@@ -1510,7 +1510,7 @@ Maybe<nsRect> FilterInstance::GetPostFilterBounds(
 
   gfxMatrix tm = SVGUtils::GetCanvasTM(aFilteredFrame);
   auto filterChain = aFilteredFrame->StyleEffects()->mFilters.AsSpan();
-  UniquePtr<UserSpaceMetrics> metrics =
+  std::unique_ptr<UserSpaceMetrics> metrics =
       UserSpaceMetricsForFrame(aFilteredFrame);
   // Hardcode InputIsTainted to true because we don't want JS to be able to
   // read the rendered contents of aFilteredFrame.
@@ -1729,7 +1729,7 @@ void FilterInstance::ComputeNeededBoxes() {
       mFilterDescription, mPostFilterDirtyRegion, sourceGraphicNeededRegion,
       fillPaintNeededRegion, strokePaintNeededRegion);
 
-  sourceGraphicNeededRegion.And(sourceGraphicNeededRegion, mTargetBounds);
+  sourceGraphicNeededRegion.AndWith(mTargetBounds);
 
   UpdateNeededBounds(sourceGraphicNeededRegion, mSourceGraphic.mNeededBounds);
   UpdateNeededBounds(fillPaintNeededRegion, mFillPaint.mNeededBounds);
@@ -1989,7 +1989,7 @@ nsIntRegion FilterInstance::FrameSpaceToFilterSpace(
   for (auto iter = aRegion->RectIter(); !iter.Done(); iter.Next()) {
     // FrameSpaceToFilterSpace rounds out, so this works.
     nsRect rect = iter.Get();
-    result.Or(result, FrameSpaceToFilterSpace(&rect));
+    result.OrWith(FrameSpaceToFilterSpace(&rect));
   }
   return result;
 }
@@ -1999,7 +1999,7 @@ nsRegion FilterInstance::FilterSpaceToFrameSpace(
   nsRegion result;
   for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
     // FilterSpaceToFrameSpace rounds out, so this works.
-    result.Or(result, FilterSpaceToFrameSpace(iter.Get()));
+    result.OrWith(FilterSpaceToFrameSpace(iter.Get()));
   }
   return result;
 }

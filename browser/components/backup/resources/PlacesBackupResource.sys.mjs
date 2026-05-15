@@ -8,10 +8,8 @@ import { MeasurementUtils } from "resource:///modules/backup/MeasurementUtils.sy
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
+  PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
 });
-
-const BOOKMARKS_BACKUP_FILENAME = "bookmarks.jsonlz4";
 
 /**
  * Class representing Places database related files within a user profile.
@@ -29,26 +27,15 @@ export class PlacesBackupResource extends BackupResource {
     return 1;
   }
 
+  static get canBackupResource() {
+    return BackupResource.backingUpPlaces;
+  }
+
   async backup(
     stagingPath,
     profilePath = PathUtils.profileDir,
     _isEncrypting = false
   ) {
-    /**
-     * Do not backup places.sqlite and favicons.sqlite if users have history disabled, want history cleared on shutdown or are using permanent private browsing mode.
-     * Instead, export all existing bookmarks to a compressed JSON file that we can read when restoring the backup.
-     */
-    if (!BackupResource.canBackupHistory()) {
-      let bookmarksBackupFile = PathUtils.join(
-        stagingPath,
-        BOOKMARKS_BACKUP_FILENAME
-      );
-      await lazy.BookmarkJSONUtils.exportToFile(bookmarksBackupFile, {
-        compress: true,
-      });
-      return { bookmarksOnly: true };
-    }
-
     // These are copied in parallel because they're attached[1], and we don't
     // want them to get out of sync with one another.
     //
@@ -69,45 +56,23 @@ export class PlacesBackupResource extends BackupResource {
     ];
     await Promise.all(timedCopies);
 
+    // Now that both databases are copied, open the places db copy to remove
+    // downloaded files, since they won't be valid in the restored profile.
+    await lazy.PlacesDBUtils.removeDownloadsMetadataFromDb(
+      PathUtils.join(stagingPath, "places.sqlite")
+    );
+
     return null;
   }
 
   async recover(manifestEntry, recoveryPath, destProfilePath) {
-    if (!manifestEntry) {
-      const simpleCopyFiles = ["places.sqlite", "favicons.sqlite"];
-      await BackupResource.copyFiles(
-        recoveryPath,
-        destProfilePath,
-        simpleCopyFiles
-      );
-    } else {
-      const { bookmarksOnly } = manifestEntry;
-
-      /**
-       * If the recovery file only has bookmarks backed up, pass the file path to postRecovery()
-       * so that we can import all bookmarks into the new profile once it's been launched and restored.
-       */
-      if (bookmarksOnly) {
-        let bookmarksBackupPath = PathUtils.join(
-          recoveryPath,
-          BOOKMARKS_BACKUP_FILENAME
-        );
-        return { bookmarksBackupPath };
-      }
-    }
-
+    const simpleCopyFiles = ["places.sqlite", "favicons.sqlite"];
+    await BackupResource.copyFiles(
+      recoveryPath,
+      destProfilePath,
+      simpleCopyFiles
+    );
     return null;
-  }
-
-  async postRecovery(postRecoveryEntry) {
-    if (postRecoveryEntry?.bookmarksBackupPath) {
-      await lazy.BookmarkJSONUtils.importFromFile(
-        postRecoveryEntry.bookmarksBackupPath,
-        {
-          replace: true,
-        }
-      );
-    }
   }
 
   async measure(profilePath = PathUtils.profileDir) {

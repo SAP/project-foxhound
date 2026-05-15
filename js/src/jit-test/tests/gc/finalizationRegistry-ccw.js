@@ -28,53 +28,66 @@ function incrementalGC() {
   }
 }
 
-// Test the case when the registry remains live.
-for (let w of [false, true]) {
-  for (let x of [false, true]) {
-    for (let y of [false, true]) {
-      for (let z of [false, true]) {
-        let registry = w ? ccwToRegistry(w) : newRegistry();
-        let target = x ? ccwToObject() : {};
-        let heldValue = y ? ccwToObject() : {};
-        let token = z ? ccwToObject() : {};
-        registry.register(target, heldValue, token);
-        registry.unregister(token);
-        registry.register(target, heldValue, token);
-        target = undefined;
-        token = undefined;
-        heldValue = undefined;
-        incrementalGC();
-        heldValues.length = 0; // Clear, don't replace.
-        drainJobQueue();
-        assertEq(heldValues.length, 1);
-      }
-    }
+const RegistryKinds = ['SameZoneRegistry', 'OtherZoneRegistry'];
+function makeRegistry(kind) {
+  if (kind === 'SameZoneRegistry') {
+    return new FinalizationRegistry(value => {
+      heldValues.push(value);
+    });
   }
+
+  assertEq(kind, 'OtherZoneRegistry');
+  let global = newGlobal({newCompartment: true});
+  global.heldValues = heldValues;
+  return global.eval(
+    `new FinalizationRegistry(value => heldValues.push(value))`);
+  return evalcx('({})', newGlobal({newCompartment: true}));
 }
 
-// Test the case when registry has no more references.
-for (let w of [false, true]) {
-  for (let x of [false, true]) {
-    for (let y of [false, true]) {
-      for (let z of [false, true]) {
-        let registry = w ? ccwToRegistry(w) : newRegistry();
-        let target = x ? ccwToObject() : {};
-        let heldValue = y ? ccwToObject() : {};
-        let token = z ? ccwToObject() : {};
-        registry.register(target, heldValue, token);
-        registry.unregister(token);
-        registry.register(target, heldValue, token);
-        target = undefined;
-        token = undefined;
-        heldValue = undefined;
-        registry = undefined; // Remove last reference to registry.
-        incrementalGC();
-        heldValues.length = 0;
-        drainJobQueue();
-        // The cleanup callback may or may not be run depending on
-        // which order the zones are swept in, which itself depends on
-        // the arrangement of CCWs.
-        assertEq(heldValues.length <= 1, true);
+const ObjectKinds = ['SameZoneObject', 'OtherZoneObject'];
+function makeObject(kind) {
+  if (kind === 'SameZoneObject') {
+    return {};
+  }
+
+  assertEq(kind, 'OtherZoneObject');
+  return evalcx('({})', newGlobal({newCompartment: true}));
+}
+
+for (let registryReachable of [false, true]) {
+  for (let registryKind of RegistryKinds) {
+    for (let targetKind of ObjectKinds) {
+      for (let heldValueKind of ObjectKinds) {
+        for (let tokenKind of ObjectKinds) {
+          let registry = makeRegistry(registryKind);
+          let target = makeObject(targetKind);
+          let heldValue = makeObject(heldValueKind);
+          let token = makeObject(tokenKind);
+
+          registry.register(target, heldValue, token);
+          registry.unregister(token);
+
+          registry.register(target, heldValue, token);
+
+          target = undefined;
+          token = undefined;
+          heldValue = undefined;
+          if (!registryReachable) {
+            registry = undefined;
+          }
+          incrementalGC();
+          heldValues.length = 0; // Clear, don't replace.
+          drainJobQueue();
+
+          if (registryReachable) {
+            assertEq(heldValues.length, 1);
+          } else {
+            // The cleanup callback may or may not be run depending on
+            // which order the zones are swept in, which itself depends on
+            // the arrangement of CCWs.
+            assertEq(heldValues.length <= 1, true);
+          }
+        }
       }
     }
   }

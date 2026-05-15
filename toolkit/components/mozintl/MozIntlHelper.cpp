@@ -20,8 +20,8 @@ MozIntlHelper::MozIntlHelper() = default;
 
 MozIntlHelper::~MozIntlHelper() = default;
 
-static nsresult AddFunctions(JSContext* cx, JS::Handle<JS::Value> val,
-                             const JSFunctionSpec* funcs) {
+NS_IMETHODIMP
+MozIntlHelper::AddGetCalendarInfo(JS::Handle<JS::Value> val, JSContext* cx) {
   if (!val.isObject()) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -35,20 +35,11 @@ static nsresult AddFunctions(JSContext* cx, JS::Handle<JS::Value> val,
 
   JSAutoRealm ar(cx, realIntlObj);
 
-  if (!JS_DefineFunctions(cx, realIntlObj, funcs)) {
+  if (!JS::AddMozGetCalendarInfo(cx, realIntlObj)) {
     return NS_ERROR_FAILURE;
   }
 
   return NS_OK;
-}
-
-NS_IMETHODIMP
-MozIntlHelper::AddGetCalendarInfo(JS::Handle<JS::Value> val, JSContext* cx) {
-  static const JSFunctionSpec funcs[] = {
-      JS_SELF_HOSTED_FN("getCalendarInfo", "Intl_getCalendarInfo", 1, 0),
-      JS_FS_END};
-
-  return AddFunctions(cx, val, funcs);
 }
 
 NS_IMETHODIMP

@@ -6,15 +6,17 @@
 
 #include "mozilla/dom/InspectorUtils.h"
 
+#include "AnchorPositioningUtils.h"
 #include "ChildIterator.h"
+#include "Units.h"
 #include "gfxTextRun.h"
 #include "inLayoutUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/RelativeLuminanceUtils.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoCSSParser.h"
@@ -23,9 +25,9 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/CSS2PropertiesBinding.h"
 #include "mozilla/dom/CSSBinding.h"
 #include "mozilla/dom/CSSKeyframesRule.h"
+#include "mozilla/dom/CSSStylePropertiesBinding.h"
 #include "mozilla/dom/CSSStyleRule.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/CharacterData.h"
@@ -49,8 +51,11 @@
 #include "nsColor.h"
 #include "nsComputedDOMStyle.h"
 #include "nsContentList.h"
+#include "nsFieldSetFrame.h"
 #include "nsGlobalWindowInner.h"
+#include "nsGridContainerFrame.h"
 #include "nsIContentInlines.h"
+#include "nsIFrameInlines.h"
 #include "nsLayoutUtils.h"
 #include "nsNameSpaceManager.h"
 #include "nsPresContext.h"
@@ -83,10 +88,24 @@ static nsPresContext* EnsureSafeToHandOutRules(Element& aElement) {
 }
 
 static already_AddRefed<const ComputedStyle> GetStartingStyle(
-    Element& aElement) {
+    Element& aElement, const PseudoStyleRequest& aPseudo) {
+  Element* elementOrPseudoElement = aElement.GetPseudoElement(aPseudo);
+  if (!elementOrPseudoElement) {
+    // For the pseudo elements which doesn't support animations or transitions,
+    // this returns nullptr. This is probably fine because @starting-style
+    // doesn't work on these pseudo elements neither.
+    //
+    // FIXME: If we still want to retrieve the @starting-style rules for those
+    // pseudo-elements which don't support animations, we may have to rework
+    // Servo_ResolveStartingStyle() because now @starting-style doesn't work on
+    // eagerly-cascaded pseudo-elements, and the above function,
+    // GetPseudoElement(), only works on the pseudo-elements which support
+    // animations.
+    return nullptr;
+  }
   // If this element is unstyled, or it doesn't have matched rules in
   // @starting-style, we return.
-  if (!Servo_Element_MayHaveStartingStyle(&aElement)) {
+  if (!Servo_Element_MayHaveStartingStyle(elementOrPseudoElement)) {
     return nullptr;
   }
   if (!EnsureSafeToHandOutRules(aElement)) {
@@ -101,7 +120,7 @@ static already_AddRefed<const ComputedStyle> GetStartingStyle(
   if (!ps) {
     return nullptr;
   }
-  return ps->StyleSet()->ResolveStartingStyle(aElement);
+  return ps->StyleSet()->ResolveStartingStyle(*elementOrPseudoElement);
 }
 
 static already_AddRefed<const ComputedStyle> GetCleanComputedStyleForElement(
@@ -228,6 +247,9 @@ void InspectorUtils::GetChildrenForNode(nsINode& aNode,
     }
   }
   nsIContent* parent = aNode.AsContent();
+  if (auto* node = nsLayoutUtils::GetBackdropPseudo(parent)) {
+    aResult.AppendElement(node);
+  }
   if (auto* node = nsLayoutUtils::GetMarkerPseudo(parent)) {
     aResult.AppendElement(node);
   }
@@ -269,8 +291,11 @@ class ReadOnlyInspectorDeclaration final : public nsDOMCSSDeclaration {
   void GetPropertyValue(const nsACString& aPropName, nsACString& aValue) final {
     Servo_DeclarationBlock_GetPropertyValue(mRaw, &aPropName, &aValue);
   }
-  void GetPropertyValue(nsCSSPropertyID aId, nsACString& aValue) final {
-    Servo_DeclarationBlock_GetPropertyValueById(mRaw, aId, &aValue);
+  void GetPropertyValue(NonCustomCSSPropertyId aId, nsACString& aValue) final {
+    Servo_DeclarationBlock_GetPropertyValueByNonCustomId(mRaw, aId, &aValue);
+  }
+  bool HasLonghandProperty(const nsACString& aPropName) final {
+    return Servo_DeclarationBlock_HasLonghandProperty(mRaw, &aPropName);
   }
   void IndexedGetter(uint32_t aIndex, bool& aFound,
                      nsACString& aPropName) final {
@@ -285,7 +310,7 @@ class ReadOnlyInspectorDeclaration final : public nsDOMCSSDeclaration {
                    ErrorResult& aRv) final {
     aRv.ThrowInvalidModificationError("Can't mutate this declaration");
   }
-  void SetPropertyValue(nsCSSPropertyID aId, const nsACString& aValue,
+  void SetPropertyValue(NonCustomCSSPropertyId aId, const nsACString& aValue,
                         nsIPrincipal* aSubjectPrincipal,
                         ErrorResult& aRv) final {
     aRv.ThrowInvalidModificationError("Can't mutate this declaration");
@@ -307,7 +332,7 @@ class ReadOnlyInspectorDeclaration final : public nsDOMCSSDeclaration {
   css::Rule* GetParentRule() final { return nullptr; }
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) final {
-    return CSS2Properties_Binding::Wrap(aCx, this, aGivenProto);
+    return CSSStyleProperties_Binding::Wrap(aCx, this, aGivenProto);
   }
   // These ones are a bit sad, but matches e.g. nsComputedDOMStyle.
   nsresult SetCSSDeclaration(DeclarationBlock* aDecl,
@@ -406,6 +431,8 @@ static void GetCSSRulesFromComputedValues(
             return DeclarationOrigin::User;
           case StyleMatchingDeclarationBlockOrigin::UserAgent:
             return DeclarationOrigin::User_agent;
+          case StyleMatchingDeclarationBlockOrigin::PositionFallback:
+            return DeclarationOrigin::Position_fallback;
           case StyleMatchingDeclarationBlockOrigin::Animations:
             return DeclarationOrigin::Animations;
           case StyleMatchingDeclarationBlockOrigin::Transitions:
@@ -427,20 +454,20 @@ void InspectorUtils::GetMatchingCSSRules(
     GlobalObject& aGlobalObject, Element& aElement, const nsAString& aPseudo,
     bool aIncludeVisitedStyle, bool aWithStartingStyle,
     nsTArray<OwningCSSRuleOrInspectorDeclaration>& aResult) {
-  auto pseudo = nsCSSPseudoElements::ParsePseudoElement(
-      aPseudo, CSSEnabledState::ForAllContent);
+  auto pseudo = PseudoStyleRequest::Parse(aPseudo);
   if (!pseudo) {
     return;
   }
 
   RefPtr<const ComputedStyle> computedStyle;
   if (aWithStartingStyle) {
-    computedStyle = GetStartingStyle(aElement);
+    computedStyle = GetStartingStyle(aElement, *pseudo);
   }
 
   // Note: GetStartingStyle() return nullptr if this element doesn't have rules
-  // inside @starting-style. For this case, we would like to return the primay
-  // rules of this element.
+  // inside @starting-style, or the pseudo-element doesn't support animations or
+  // transitions. For this case, we would like to return the primay rules of
+  // this element.
   if (!computedStyle) {
     computedStyle = GetCleanComputedStyleForElement(&aElement, *pseudo);
   }
@@ -545,12 +572,14 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
     // so the DevTools team gets notified and can decide if it should be
     // displayed.
     switch (rule->Type()) {
+      case StyleCssRuleType::CustomMedia:
       case StyleCssRuleType::Media:
       case StyleCssRuleType::Supports:
       case StyleCssRuleType::LayerBlock:
+      case StyleCssRuleType::PositionTry:
       case StyleCssRuleType::Property:
       case StyleCssRuleType::Container: {
-        Unused << aResult.AppendElement(OwningNonNull(*rule), fallible);
+        (void)aResult.AppendElement(OwningNonNull(*rule), fallible);
         break;
       }
       case StyleCssRuleType::Style:
@@ -568,7 +597,6 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::FontPaletteValues:
       case StyleCssRuleType::Scope:
       case StyleCssRuleType::StartingStyle:
-      case StyleCssRuleType::PositionTry:
       case StyleCssRuleType::NestedDeclarations:
         break;
     }
@@ -605,7 +633,7 @@ void InspectorUtils::GetCSSPropertyNames(GlobalObject& aGlobalObject,
                                      : CSSEnabledState::ForAllContent;
 
   auto appendProperty = [enabledState, &aResult](uint32_t prop) {
-    nsCSSPropertyID cssProp = nsCSSPropertyID(prop);
+    NonCustomCSSPropertyId cssProp = NonCustomCSSPropertyId(prop);
     if (nsCSSProps::IsEnabled(cssProp, enabledState)) {
       aResult.AppendElement(
           NS_ConvertASCIItoUTF16(nsCSSProps::GetStringValue(cssProp)));
@@ -614,7 +642,7 @@ void InspectorUtils::GetCSSPropertyNames(GlobalObject& aGlobalObject,
 
   uint32_t prop = 0;
   for (; prop < eCSSProperty_COUNT_no_shorthands; ++prop) {
-    if (!nsCSSProps::PropHasFlags(nsCSSPropertyID(prop),
+    if (!nsCSSProps::PropHasFlags(NonCustomCSSPropertyId(prop),
                                   CSSPropFlags::Inaccessible)) {
       appendProperty(prop);
     }
@@ -638,10 +666,10 @@ void InspectorUtils::GetCSSPropertyNames(GlobalObject& aGlobalObject,
 void InspectorUtils::GetCSSPropertyPrefs(GlobalObject& aGlobalObject,
                                          nsTArray<PropertyPref>& aResult) {
   for (const auto* src = nsCSSProps::kPropertyPrefTable;
-       src->mPropID != eCSSProperty_UNKNOWN; src++) {
+       src->mPropId != eCSSProperty_UNKNOWN; src++) {
     PropertyPref& dest = *aResult.AppendElement();
     dest.mName.Assign(
-        NS_ConvertASCIItoUTF16(nsCSSProps::GetStringValue(src->mPropID)));
+        NS_ConvertASCIItoUTF16(nsCSSProps::GetStringValue(src->mPropId)));
     dest.mPref.AssignASCII(src->mPref);
   }
 }
@@ -651,26 +679,26 @@ void InspectorUtils::GetSubpropertiesForCSSProperty(GlobalObject& aGlobal,
                                                     const nsACString& aProperty,
                                                     nsTArray<nsString>& aResult,
                                                     ErrorResult& aRv) {
-  nsCSSPropertyID propertyID = nsCSSProps::LookupProperty(aProperty);
+  NonCustomCSSPropertyId propertyId = nsCSSProps::LookupProperty(aProperty);
 
-  if (propertyID == eCSSProperty_UNKNOWN) {
+  if (propertyId == eCSSProperty_UNKNOWN) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
 
-  if (propertyID == eCSSPropertyExtra_variable) {
+  if (propertyId == eCSSPropertyExtra_variable) {
     aResult.AppendElement(NS_ConvertUTF8toUTF16(aProperty));
     return;
   }
 
-  if (!nsCSSProps::IsShorthand(propertyID)) {
+  if (!nsCSSProps::IsShorthand(propertyId)) {
     nsString* name = aResult.AppendElement();
-    CopyASCIItoUTF16(nsCSSProps::GetStringValue(propertyID), *name);
+    CopyASCIItoUTF16(nsCSSProps::GetStringValue(propertyId), *name);
     return;
   }
 
-  for (const nsCSSPropertyID* props =
-           nsCSSProps::SubpropertyEntryFor(propertyID);
+  for (const NonCustomCSSPropertyId* props =
+           nsCSSProps::SubpropertyEntryFor(propertyId);
        *props != eCSSProperty_UNKNOWN; ++props) {
     nsString* name = aResult.AppendElement();
     CopyASCIItoUTF16(nsCSSProps::GetStringValue(*props), *name);
@@ -745,11 +773,58 @@ void InspectorUtils::RgbToColorName(GlobalObject&, uint8_t aR, uint8_t aG,
   Servo_SlowRgbToColorName(aR, aG, aB, &aColorName);
 }
 
+void InspectorUtils::RgbToNearestColorName(GlobalObject&, float aR, float aG,
+                                           float aB,
+                                           InspectorNearestColor& aResult) {
+  bool exact = Servo_SlowRgbToNearestColorName(
+      aR, aG, aB, StyleColorSpace::Srgb, &aResult.mColorName);
+  aResult.mExact = exact;
+}
+
+/* static */
+void InspectorUtils::RgbToHsv(GlobalObject&, float aR, float aG, float aB,
+                              nsTArray<float>& aResult) {
+  StyleAbsoluteColor input{
+      .components = StyleColorComponents{aR, aG, aB},
+      .alpha = 1.0,
+      .color_space = StyleColorSpace::Srgb,
+  };
+  StyleAbsoluteColor result = input.ToColorSpace(StyleColorSpace::Hwb);
+  float h = result.components._0 / 360.0f;
+  float v = 1 - result.components._2 / 100.0f;
+  float s = 0;
+  if (v != 0.0) {
+    s = 1 - (result.components._1 / 100.0f) / v;
+  }
+  aResult = {h, s, v};
+}
+
+/* static */
+void InspectorUtils::HsvToRgb(GlobalObject&, float aH, float aS, float aV,
+                              nsTArray<float>& aResult) {
+  float h = aH * 360;
+  float w = aV * (1 - aS) * 100;
+  float b = (1 - aV) * 100;
+  StyleAbsoluteColor input{
+      .components = StyleColorComponents{h, w, b},
+      .alpha = 1.0,
+      .color_space = StyleColorSpace::Hwb,
+  };
+  StyleAbsoluteColor result = input.ToColorSpace(StyleColorSpace::Srgb);
+  aResult = {result.components._0, result.components._1, result.components._2};
+}
+
+/* static */
+float InspectorUtils::RelativeLuminance(GlobalObject&, float aR, float aG,
+                                        float aB) {
+  return RelativeLuminanceUtils::Compute(aR, aG, aB);
+}
+
 /* static */
 void InspectorUtils::ColorToRGBA(GlobalObject& aGlobal,
                                  const nsACString& aColorString,
                                  Nullable<InspectorRGBATuple>& aResult) {
-  auto* styleSet = [&]() -> ServoStyleSet* {
+  const auto* styleData = [&]() -> const StylePerDocumentStyleData* {
     nsCOMPtr<nsIGlobalObject> global =
         do_QueryInterface(aGlobal.GetAsSupports());
     if (!global) {
@@ -767,11 +842,11 @@ void InspectorUtils::ColorToRGBA(GlobalObject& aGlobal,
     if (!ps) {
       return nullptr;
     }
-    return ps->StyleSet();
+    return ps->StyleSet()->RawData();
   }();
 
   nscolor color = NS_RGB(0, 0, 0);
-  if (!ServoCSSParser::ComputeColor(styleSet, NS_RGB(0, 0, 0), aColorString,
+  if (!ServoCSSParser::ComputeColor(styleData, NS_RGB(0, 0, 0), aColorString,
                                     &color)) {
     aResult.SetNull();
     return;
@@ -883,17 +958,17 @@ static ElementState GetStatesForPseudoClass(const nsAString& aStatePseudo) {
 /* static */
 void InspectorUtils::GetCSSPseudoElementNames(GlobalObject& aGlobalObject,
                                               nsTArray<nsString>& aResult) {
-  const auto kPseudoCount =
-      static_cast<size_t>(PseudoStyleType::CSSPseudoElementsEnd);
+  const auto kPseudoCount = static_cast<size_t>(PseudoStyleType::MAX);
   for (size_t i = 0; i < kPseudoCount; ++i) {
     PseudoStyleType type = static_cast<PseudoStyleType>(i);
-    if (!nsCSSPseudoElements::IsEnabled(type, CSSEnabledState::ForAllContent)) {
+    if (type == PseudoStyleType::NotPseudo ||
+        !Servo_PseudoStyleType_EnabledForAllContent(type)) {
       continue;
     }
     auto& string = *aResult.AppendElement();
     // Use two semi-colons (though internally we use one).
     string.Append(u':');
-    nsAtom* atom = nsCSSPseudoElements::GetPseudoAtom(type);
+    const nsStaticAtom* atom = PseudoStyle::GetAtom(type);
     string.Append(nsDependentAtomString(atom));
   }
 }
@@ -989,6 +1064,30 @@ Element* InspectorUtils::ContainingBlockOf(GlobalObject&, Element& aElement) {
     return nullptr;
   }
   return Element::FromNodeOrNull(cb->GetContent());
+}
+
+bool InspectorUtils::IsBlockContainer(GlobalObject&, Element& aElement) {
+  nsIFrame* frame = aElement.GetPrimaryFrame(FlushType::Frames);
+  if (!frame) {
+    return false;
+  }
+  if (frame->IsBlockFrameOrSubclass()) {
+    return true;
+  }
+  // ScrollContainerFrame::GetContentInsertionFrame() jumps across the block and
+  // returns the ruby inside (because it calls GetContentInsertionFrame on its
+  // own). So we have to account for that here.
+  if (auto* sc = frame->GetScrollTargetFrame()) {
+    if (sc->GetScrolledFrame()->IsBlockFrameOrSubclass()) {
+      return true;
+    }
+  }
+  if (nsIFrame* inner = frame->GetContentInsertionFrame()) {
+    if (inner->IsBlockFrameOrSubclass()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void InspectorUtils::GetBlockLineCounts(GlobalObject& aGlobal,
@@ -1212,7 +1311,7 @@ void InspectorUtils::ReplaceBlockRuleBodyTextInStylesheet(
 
 void InspectorUtils::SetVerticalClipping(GlobalObject&,
                                          BrowsingContext* aContext,
-                                         mozilla::ScreenIntCoord aOffset) {
+                                         mozilla::CSSCoord aOffset) {
   MOZ_ASSERT(XRE_IsParentProcess());
   if (!aContext) {
     return;
@@ -1227,17 +1326,23 @@ void InspectorUtils::SetVerticalClipping(GlobalObject&,
   if (!parent) {
     return;
   }
-  parent->DynamicToolbarOffsetChanged(aOffset);
+  const LayoutDeviceToCSSScale scale = parent->GetLayoutDeviceToCSSScale();
+  const mozilla::LayoutDeviceCoord layoutOffset = aOffset / scale;
+  const mozilla::ScreenCoord screenOffset = ViewAs<ScreenPixel>(
+      layoutOffset, PixelCastJustification::LayoutDeviceIsScreenForBounds);
+  const mozilla::ScreenIntCoord offset = screenOffset.Rounded();
+  parent->DynamicToolbarOffsetChanged(offset);
 
   RefPtr<nsIWidget> widget = canonical->GetParentProcessWidgetContaining();
   if (!widget) {
     return;
   }
-  widget->DynamicToolbarOffsetChanged(aOffset);
+  widget->DynamicToolbarOffsetChanged(offset);
 }
 
-void InspectorUtils::SetDynamicToolbarMaxHeight(
-    GlobalObject&, BrowsingContext* aContext, mozilla::ScreenIntCoord aHeight) {
+void InspectorUtils::SetDynamicToolbarMaxHeight(GlobalObject&,
+                                                BrowsingContext* aContext,
+                                                mozilla::CSSCoord aHeight) {
   MOZ_ASSERT(XRE_IsParentProcess());
   if (!aContext) {
     return;
@@ -1253,6 +1358,82 @@ void InspectorUtils::SetDynamicToolbarMaxHeight(
     return;
   }
 
-  parent->DynamicToolbarMaxHeightChanged(aHeight);
+  const LayoutDeviceToCSSScale scale = parent->GetLayoutDeviceToCSSScale();
+  const mozilla::LayoutDeviceCoord layoutOffset = aHeight / scale;
+  const mozilla::ScreenCoord screenOffset = ViewAs<ScreenPixel>(
+      layoutOffset, PixelCastJustification::LayoutDeviceIsScreenForBounds);
+  const mozilla::ScreenIntCoord height = screenOffset.Rounded();
+  parent->DynamicToolbarMaxHeightChanged(height);
 }
+
+uint16_t InspectorUtils::GetGridContainerType(GlobalObject&,
+                                              Element& aElement) {
+  auto* f = nsGridContainerFrame::GetGridContainerFrame(
+      aElement.GetPrimaryFrame(FlushType::Frames));
+  if (!f) {
+    return InspectorUtils_Binding::GRID_NONE;
+  }
+  uint16_t result = InspectorUtils_Binding::GRID_CONTAINER;
+  if (f->IsRowSubgrid()) {
+    result |= InspectorUtils_Binding::GRID_SUBGRID_ROW;
+  }
+  if (f->IsColSubgrid()) {
+    result |= InspectorUtils_Binding::GRID_SUBGRID_COL;
+  }
+  return result;
+}
+
+void InspectorUtils::GetAnchorFor(GlobalObject&, Element& aElement,
+                                  const nsAString& aName,
+                                  Nullable<InspectorAnchorElement>& aResult) {
+  auto* frame = aElement.GetPrimaryFrame(FlushType::Frames);
+  if (!frame || !frame->IsAbsolutelyPositioned()) {
+    return;
+  }
+
+  nsIFrame* anchor = nullptr;
+  RefPtr<nsAtom> name;
+  ScopedNameRef scopedName{nullptr, StyleCascadeLevel::Default()};
+  InspectorAnchorType type = InspectorAnchorType::Explicit;
+  if (aName.IsEmpty()) {
+    // Anchor name, otherwise implicit anchor.
+    const auto& positionAnchor = frame->StylePosition()->mPositionAnchor;
+    if (positionAnchor.value.IsIdent()) {
+      scopedName = {positionAnchor.value.AsIdent().AsAtom(),
+                    positionAnchor.scope};
+    } else {
+      auto implicit = AnchorPositioningUtils::GetAnchorPosImplicitAnchor(frame);
+      anchor = implicit.mAnchorFrame;
+      if (!anchor) {
+        return;
+      }
+      switch (implicit.mKind) {
+        case AnchorPositioningUtils::ImplicitAnchorKind::None:
+          break;
+        case AnchorPositioningUtils::ImplicitAnchorKind::Popover:
+          type = InspectorAnchorType::Popover;
+          break;
+        case AnchorPositioningUtils::ImplicitAnchorKind::PseudoElement:
+          type = InspectorAnchorType::Pseudo_element;
+          break;
+      }
+      auto& result = aResult.SetValue();
+      result.mElement = *anchor->GetContent()->AsElement();
+      result.mType = type;
+      return;
+    }
+  } else {
+    // TODO(emilio): Allow looking up names from other trees.
+    name = NS_Atomize(aName);
+    scopedName = {name, StyleCascadeLevel::Default()};
+  }
+  anchor = frame->PresShell()->GetAnchorPosAnchor(scopedName, frame);
+  if (!anchor) {
+    return;
+  }
+  auto& result = aResult.SetValue();
+  result.mElement = *anchor->GetContent()->AsElement();
+  result.mType = type;
+}
+
 }  // namespace mozilla::dom

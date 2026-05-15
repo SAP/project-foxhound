@@ -11,11 +11,9 @@
  * The site blocks Firefox and Safari, reading info from userAgentData.
  */
 
-/* globals exportFunction, cloneInto */
-
 if (!navigator.userAgentData) {
   console.info(
-    "navigator.userAgentData has been overridden for compatibility reasons. See https://webcompat.com/issues/119767 for details."
+    "navigator.userAgentData has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1898952 for details."
   );
 
   const ua = navigator.userAgent;
@@ -49,20 +47,9 @@ if (!navigator.userAgentData) {
     },
   ];
 
-  const userAgentData = cloneInto(
-    {
-      brands,
-      mobile,
-      platform,
-    },
-    window
-  );
-
-  Object.defineProperty(window.navigator.wrappedJSObject, "userAgentData", {
-    get: exportFunction(function () {
-      return userAgentData;
-    }, window),
-
-    set: exportFunction(function () {}, window),
-  });
+  navigator.userAgentData = {
+    brands,
+    mobile,
+    platform,
+  };
 }

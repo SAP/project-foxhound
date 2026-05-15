@@ -12,7 +12,11 @@ import sys
 from filter_git_changes import filter_git_changes
 from restore_patch_stack import restore_patch_stack
 from run_operations import (
+    ErrorHelp,
+    RepoType,
+    detect_repo_type,
     get_last_line,
+    git_status,
     run_git,
     run_hg,
     run_shell,
@@ -24,14 +28,15 @@ from vendor_and_commit import vendor_and_commit
 # commit message, and adds the no-op commit tracking file for the when
 # we vendor the upstream commit later.
 
-error_help = None
 script_name = os.path.basename(__file__)
+error_help = ErrorHelp()
+error_help.set_prefix(f"*** ERROR *** {script_name} did not complete successfully")
+
+repo_type = detect_repo_type()
 
 
 def early_exit_handler():
-    print(f"*** ERROR *** {script_name} did not complete successfully")
-    if error_help is not None:
-        print(error_help)
+    error_help.print_help()
 
 
 def write_commit_message_file(
@@ -96,13 +101,24 @@ def write_noop_tracking_file(
         ofile.write(f"We cherry-picked this in bug {bug_number}")
         ofile.write("\n")
     shutil.copy(noop_filename, args.patch_path)
-    cmd = f"hg add {os.path.join(args.patch_path, noop_basename)}"
-    run_hg(cmd)
-    cmd = f"hg amend {os.path.join(args.patch_path, noop_basename)}"
-    run_hg(cmd)
+    if repo_type == RepoType.GIT:
+        cmd = f"git add {os.path.join(args.patch_path, noop_basename)}"
+        run_git(cmd, ".")
+        cmd = "git commit --amend --no-edit"
+        run_git(cmd, ".")
+    else:
+        cmd = f"hg add {os.path.join(args.patch_path, noop_basename)}"
+        run_hg(cmd)
+        cmd = f"hg amend {os.path.join(args.patch_path, noop_basename)}"
+        run_hg(cmd)
 
 
 if __name__ == "__main__":
+    # first, check which repo we're in, git or hg
+    if repo_type is None or not isinstance(repo_type, RepoType):
+        print("Unable to detect repo (git or hg)")
+        sys.exit(1)
+
     default_target_dir = "third_party/libwebrtc"
     default_state_dir = ".moz-fast-forward"
     default_log_dir = ".moz-fast-forward/logs"
@@ -210,28 +226,38 @@ if __name__ == "__main__":
     print(f"resume_state: '{resume_state}'")
 
     # don't allow abort/continue flags if not in resume state
-    error_help = "--abort or --continue flags are not allowed when not in resume state"
+    error_help.set_help(
+        "--abort or --continue flags are not allowed when not in resume state"
+    )
     if len(resume_state) == 0 and (args.abort or args.cont):
         sys.exit(1)
-    error_help = None
+    error_help.set_help(None)
 
     # detect missing abort/continue flags if in resume state
-    error_help = "cherry-pick in progress, use --abort or --continue"
+    error_help.set_help("cherry-pick in progress, use --abort or --continue")
     if len(resume_state) != 0 and not args.abort and not args.cont:
         sys.exit(1)
-    error_help = None
+    error_help.set_help(None)
 
     # handle aborting cherry-pick
     if args.abort:
-        run_hg("hg revert --all")
-        run_hg(f"hg purge {args.target_path}")
-        # If the resume_state is not resume2 or resume3 that means we may
-        # have committed something to mercurial.  First we need to check
-        # for our cherry-pick commit message, and if found, remove
-        # that commit.
+        if repo_type == RepoType.GIT:
+            run_git(f"git restore --staged {args.target_path}", ".")
+            run_git(f"git restore {args.target_path}", ".")
+            run_git(f"git clean -f {args.target_path}", ".")
+        else:
+            run_hg("hg revert --all")
+            run_hg(f"hg purge {args.target_path}")
+        # If the resume_state is not resume2 or resume3 that means we
+        # may have committed something to the Mozilla repo.  First we
+        # need to check for our cherry-pick commit message, and if
+        # found, remove that commit.
         if resume_state not in ("resume2", "resume3"):
-            # check for committed mercurial patch and backout
-            stdout_lines = run_hg("hg log --template {desc|firstline}\n -r .")
+            # check for committed patch and backout
+            if repo_type == RepoType.GIT:
+                stdout_lines = run_git("git show --oneline --no-patch", ".")
+            else:
+                stdout_lines = run_hg("hg log --template {desc|firstline}\n -r .")
             # check for "Cherry-pick upstream libwebrtc commit"
             print(f"stdout_lines before filter: {stdout_lines}")
             stdout_lines = [
@@ -241,9 +267,14 @@ if __name__ == "__main__":
             ]
             print(f"looking for commit: {stdout_lines}")
             if len(stdout_lines) > 0:
-                cmd = "hg prune ."
-                print(f"calling '{cmd}'")
-                run_hg(cmd)
+                if repo_type == RepoType.GIT:
+                    cmd = "git reset --hard HEAD^"
+                    print(f"calling '{cmd}'")
+                    run_git(cmd, ".")
+                else:
+                    cmd = "hg prune ."
+                    print(f"calling '{cmd}'")
+                    run_hg(cmd)
         print("restoring patch stack")
         restore_patch_stack(
             args.repo_path,
@@ -259,15 +290,19 @@ if __name__ == "__main__":
         atexit.unregister(early_exit_handler)
         sys.exit(0)
 
-    # make sure the relevant bits of the mercurial repo is clean before beginning
-    error_help = (
+    # make sure the relevant bits of the Mozilla repo are clean before
+    # beginning
+    error_help.set_help(
         f"There are modified or untracked files under {args.target_path}.\n"
         f"Please cleanup the repo under {args.target_path} before running {script_name}"
     )
-    stdout_lines = run_hg(f"hg status {args.target_path}")
+    if repo_type == RepoType.GIT:
+        stdout_lines = git_status(".", args.target_path)
+    else:
+        stdout_lines = run_hg(f"hg status {args.target_path}")
     if len(stdout_lines) != 0:
         sys.exit(1)
-    error_help = None
+    error_help.set_help(None)
 
     if len(resume_state) == 0:
         if args.skip_restore is False:
@@ -286,13 +321,13 @@ if __name__ == "__main__":
         update_resume_state("resume2", resume_state_filename)
 
     # make sure the github repo exists
-    error_help = (
+    error_help.set_help(
         f"No moz-libwebrtc github repo found at {args.repo_path}\n"
         f"Please run restore_patch_stack.py before running {script_name}"
     )
     if not os.path.exists(args.repo_path):
         sys.exit(1)
-    error_help = None
+    error_help.set_help(None)
 
     # Other scripts assume the short-sha is used for various comparisons, so
     # make sure the provided sha is in the short form.
@@ -327,7 +362,7 @@ if __name__ == "__main__":
         print(f"------- cherry-pick {args.commit_sha} into {args.repo_path}")
         print("-------")
         full_commit_message_filename = os.path.abspath(commit_message_filename)
-        error_help = (
+        error_help.set_help(
             f"The cherry-pick operation of {args.commit_sha} has failed.\n"
             "To fix this issue, you will need to jump to the github\n"
             f"repo at {args.repo_path} .\n"
@@ -343,7 +378,7 @@ if __name__ == "__main__":
             args.repo_path,
             args.commit_sha,
         )
-        error_help = None
+        error_help.set_help(None)
 
     if len(resume_state) == 0 or resume_state == "resume5":
         resume_state = ""
@@ -351,9 +386,9 @@ if __name__ == "__main__":
         print("-------")
         print(f"------- vendor from {args.repo_path}")
         print("-------")
-        error_help = (
+        error_help.set_help(
             f"Vendoring the newly cherry-picked git commit ({args.commit_sha}) has failed.\n"
-            "The mercurial repo is in an unknown state.  This failure is\n"
+            "The Mozilla repo is in an unknown state.  This failure is\n"
             "rare and thus makes it difficult to provide definitive guidance.\n"
             "In essence, the current failing command is:\n"
             f"./mach python {args.script_path}/vendor_and_commit.py \\\n"
@@ -382,12 +417,12 @@ if __name__ == "__main__":
             args.log_path,
             commit_message_filename,
         )
-        error_help = None
+        error_help.set_help(None)
 
     if len(resume_state) == 0 or resume_state == "resume6":
         resume_state = ""
         update_resume_state("resume7", resume_state_filename)
-        error_help = (
+        error_help.set_help(
             "Reverting change to 'third_party/libwebrtc/README.mozilla.last-vendor'\n"
             "has failed.  The cherry-pick commit should not modify\n"
             "'third_party/libwebrtc/README.mozilla'.  If necessary\n"
@@ -399,39 +434,53 @@ if __name__ == "__main__":
         # on what commit was vendored and the command line used to do
         # the vendoring.  Since we're only reusing the vendoring script
         # here, we don't want to update the README.mozilla file.
-        cmd = "hg revert -r tip^ third_party/libwebrtc/README.mozilla.last-vendor"
-        run_hg(cmd)
-        cmd = "hg amend"
-        run_hg(cmd)
-        error_help = None
+        if repo_type == RepoType.GIT:
+            cmd = (
+                "git checkout HEAD^ -- third_party/libwebrtc/README.mozilla.last-vendor"
+            )
+            run_git(cmd, ".")
+            cmd = "git commit --amend --no-edit"
+            run_git(cmd, ".")
+        else:
+            cmd = "hg revert -r tip^ third_party/libwebrtc/README.mozilla.last-vendor"
+            run_hg(cmd)
+            cmd = "hg amend"
+            run_hg(cmd)
+        error_help.set_help(None)
 
     if len(resume_state) == 0 or resume_state == "resume7":
         resume_state = ""
         update_resume_state("resume8", resume_state_filename)
         # get the files changed from the newly vendored cherry-pick
-        # commit in mercurial
-        cmd = "hg status --change tip --exclude '**/README.*'"
+        # commit in the Mozilla repo
+        if repo_type == RepoType.GIT:
+            cmd = "git show --format='' --name-status | grep -v 'README.'"
+        else:
+            cmd = "hg status --change tip --exclude '**/README.*'"
         stdout_lines = run_shell(cmd)  # run_shell to allow file wildcard
-        print(f"Mercurial changes:\n{stdout_lines}")
-        hg_file_change_cnt = len(stdout_lines)
+        print(f"Mozilla repo changes:\n{stdout_lines}")
+        mozilla_file_change_cnt = len(stdout_lines)
 
         # get the files changed from the original cherry-picked patch in
-        # our github repo (moz-libwebrtc)
-        git_paths_changed = filter_git_changes(args.repo_path, args.commit_sha, None)
-        print(f"github changes:\n{git_paths_changed}")
-        git_file_change_cnt = len(git_paths_changed)
+        # the libwebrtc github repo
+        libwebrtc_paths_changed = filter_git_changes(
+            args.repo_path, args.commit_sha, None
+        )
+        print(f"Libwebrtc repo changes:\n{libwebrtc_paths_changed}")
+        libwebrtc_file_change_cnt = len(libwebrtc_paths_changed)
 
-        error_help = (
+        error_help.set_help(
             f"Vendoring the cherry-pick of commit {args.commit_sha} has failed due to mismatched\n"
-            f"changed file counts between mercurial ({hg_file_change_cnt}) and git ({git_file_change_cnt}).\n"
+            f"changed file counts between the Mozilla repo ({mozilla_file_change_cnt}) "
+            f"and the libwebrtc repo ({libwebrtc_file_change_cnt}).\n"
             "This may be because the mozilla patch-stack was not verified after\n"
             "running restore_patch_stack.py.  After reconciling the changes in\n"
-            f"the newly committed mercurial patch, please re-run {script_name} to complete\n"
+            f"the newly committed patch, please re-run {script_name} to complete\n"
             "the cherry-pick processing."
         )
-        if hg_file_change_cnt != git_file_change_cnt:
+        if mozilla_file_change_cnt != libwebrtc_file_change_cnt:
             sys.exit(1)
-        error_help = None
+        error_help.set_help(None)
 
     if len(resume_state) == 0 or resume_state == "resume8":
         resume_state = ""

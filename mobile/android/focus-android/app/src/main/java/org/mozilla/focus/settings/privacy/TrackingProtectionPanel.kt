@@ -28,6 +28,10 @@ import org.mozilla.focus.ext.components
 import org.mozilla.focus.ext.installedDate
 import org.mozilla.focus.ext.settings
 import org.mozilla.focus.ui.theme.FocusTheme
+import java.text.NumberFormat
+import java.util.Locale
+import com.google.android.material.R as materialR
+import mozilla.components.ui.icons.R as iconsR
 
 @SuppressWarnings("LongParameterList")
 class TrackingProtectionPanel(
@@ -70,8 +74,7 @@ class TrackingProtectionPanel(
     }
 
     private fun expand() {
-        val bottomSheet =
-            findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) as FrameLayout
+        val bottomSheet = findViewById<View>(materialR.id.design_bottom_sheet) as FrameLayout
         BottomSheetBehavior.from(bottomSheet).state = BottomSheetBehavior.STATE_EXPANDED
     }
 
@@ -120,12 +123,12 @@ class TrackingProtectionPanel(
             context.getString(R.string.insecure_connection)
         }
 
-        val nextIcon = AppCompatResources.getDrawable(context, R.drawable.mozac_ic_chevron_right_24)
+        val nextIcon = AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_chevron_right_24)
 
         val securityIcon = if (isConnectionSecure) {
-            AppCompatResources.getDrawable(context, R.drawable.mozac_ic_lock_24)
+            AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_lock_24)
         } else {
-            AppCompatResources.getDrawable(context, R.drawable.mozac_ic_warning_fill_24)
+            AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_warning_fill_24)
         }
 
         binding.securityInfo.putCompoundDrawablesRelativeWithIntrinsicBounds(
@@ -144,9 +147,9 @@ class TrackingProtectionPanel(
         }
 
         val icon = if (isTrackingProtectionOn) {
-            R.drawable.mozac_ic_shield_24
+            iconsR.drawable.mozac_ic_shield_24
         } else {
-            R.drawable.mozac_ic_shield_slash_24
+            iconsR.drawable.mozac_ic_shield_slash_24
         }
 
         val iconContentDescription = context.getString(R.string.enhanced_tracking_protection)
@@ -158,9 +161,8 @@ class TrackingProtectionPanel(
     }
 
     private fun updateTrackersBlocked() {
-        binding.trackersCount.text = String.format("%,d", blockedTrackersCount)
-        binding.trackersCountNote.text =
-            context.getString(R.string.trackers_count_note, context.installedDate)
+        binding.trackersCount.text = NumberFormat.getIntegerInstance(Locale.getDefault()).format(blockedTrackersCount)
+        binding.trackersCountNote.text = context.getString(R.string.trackers_count_note, context.installedDate)
     }
 
     private fun updateTrackersState() {

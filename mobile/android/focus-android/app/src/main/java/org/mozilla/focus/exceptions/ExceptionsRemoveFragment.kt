@@ -8,7 +8,7 @@ import android.content.Context
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
-import kotlinx.coroutines.Dispatchers.Main
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.mozilla.focus.GleanMetrics.TrackingProtectionExceptions
 import org.mozilla.focus.R
@@ -39,7 +39,7 @@ class ExceptionsRemoveFragment : ExceptionsListFragment() {
         )
 
         if (exceptions.isNotEmpty()) {
-            launch(Main) {
+            viewLifecycleOwner.lifecycleScope.launch {
                 exceptions.withEach { exception ->
                     context.components.trackingProtectionUseCases.removeException(exception)
                 }

@@ -7,33 +7,34 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#include "nsAttrValue.h"
-#include "nsAttrValueOrString.h"
-#include "nsGenericHTMLElement.h"
-#include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
-#include "mozilla/dom/Document.h"
-#include "nsAttrValueOrString.h"
-#include "nsNetUtil.h"
-#include "nsContentUtils.h"
-#include "nsUnicharUtils.h"  // for nsCaseInsensitiveStringComparator()
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsServiceManagerUtils.h"
-#include "nsError.h"
-#include "nsTArray.h"
-#include "nsDOMJSUtils.h"
-#include "nsIScriptError.h"
-#include "nsISupportsImpl.h"
-#include "nsDOMTokenList.h"
-#include "nsTaintingUtils.h"
-#include "mozilla/dom/FetchPriority.h"
+
+
 #include "mozilla/dom/HTMLScriptElement.h"
+
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/HTMLScriptElementBinding.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/StaticPrefs_dom.h"
+#include "nsAttrValue.h"
+#include "nsAttrValueOrString.h"
+#include "nsContentUtils.h"
+#include "nsDOMJSUtils.h"
+#include "nsDOMTokenList.h"
+#include "nsError.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptError.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsISupportsImpl.h"
+#include "nsNetUtil.h"
+#include "nsServiceManagerUtils.h"
+#include "nsStyleConsts.h"
+#include "nsTaintingUtils.h"
+#include "nsTArray.h"
+#include "nsUnicharUtils.h"  // for nsCaseInsensitiveStringComparator()
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Script)
 
@@ -70,7 +71,7 @@ nsresult HTMLScriptElement::BindToTree(BindContext& aContext,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (IsInComposedDoc()) {
-    MaybeProcessScript();
+    MaybeProcessScript(nullptr /* aParser */);
   }
 
   return NS_OK;
@@ -156,8 +157,7 @@ void HTMLScriptElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   }
   if (nsGkAtoms::src == aName && kNameSpaceID_None == aNamespaceID) {
     mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
-        this, aValue ? aValue->GetStringValue() : EmptyString(),
-        aMaybeScriptedPrincipal);
+        this, nsAttrValueOrString(aValue).String(), aMaybeScriptedPrincipal);
   }
   return nsGenericHTMLElement::AfterSetAttr(
       aNamespaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
@@ -176,6 +176,8 @@ void HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML,
 void HTMLScriptElement::SetInnerHTMLTrusted(const nsAString& aInnerHTML,
                                             nsIPrincipal* aSubjectPrincipal,
                                             ErrorResult& aError) {
+  // aInnerHTML is trusted HTML, but not trusted script so we must not preserve
+  // trustworthiness.
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
   // Foxhound: script.innerHTML sink
   ReportTaintSink(aInnerHTML, "script.innerHTML", this); 
@@ -208,9 +210,11 @@ void HTMLScriptElement::SetText(const TrustedScriptOrString& aValue,
   }
 
   // Foxhound: script.text sink
-  ReportTaintSink(*compliantString, "script.text", this);      
+  ReportTaintSink(*compliantString, "script.text", this);
 
-  aRv = nsContentUtils::SetNodeTextContent(this, *compliantString, true);
+  aRv = nsContentUtils::SetNodeTextContent(
+      this, *compliantString, true,
+      MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 void HTMLScriptElement::GetInnerText(
@@ -236,7 +240,8 @@ void HTMLScriptElement::SetInnerText(
   if (aError.Failed()) {
     return;
   }
-  nsGenericHTMLElement::SetInnerText(*compliantString);
+  nsGenericHTMLElement::SetInnerTextInternal(
+      *compliantString, MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 void HTMLScriptElement::GetTrustedScriptOrStringTextContent(
@@ -264,7 +269,8 @@ void HTMLScriptElement::SetTrustedScriptOrStringTextContent(
   if (aError.Failed()) {
     return;
   }
-  SetTextContentInternal(*compliantString, aSubjectPrincipal, aError);
+  SetTextContentInternal(*compliantString, aSubjectPrincipal, aError,
+                         MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 void HTMLScriptElement::GetSrc(OwningTrustedScriptURLOrUSVString& aSrc) {

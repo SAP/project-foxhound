@@ -32,6 +32,7 @@ class LocaleDescriptor(private val localeTag: String) : Comparable<LocaleDescrip
         languageCodeAndNameMap["an"] = "Aragonés"
         languageCodeAndNameMap["anp"] = "अंगिका"
         languageCodeAndNameMap["ay"] = "Aimara"
+        languageCodeAndNameMap["bqi"] = "Bakhtiari"
         languageCodeAndNameMap["cak"] = "Kaqchikel"
         languageCodeAndNameMap["co"] = "Corsu"
         languageCodeAndNameMap["hus"] = "Tének"

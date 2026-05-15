@@ -22,8 +22,8 @@ add_setup(async function () {
   info(`TEST_LOGIN1 added with guid=${TEST_LOGIN1.guid}`);
   TEST_LOGIN3 = await addLogin(TEST_LOGIN3);
   info(`TEST_LOGIN3 added with guid=${TEST_LOGIN3.guid}`);
-  registerCleanupFunction(() => {
-    Services.logins.removeAllUserFacingLogins();
+  registerCleanupFunction(async () => {
+    await Services.logins.removeAllUserFacingLoginsAsync();
     Services.prefs.clearUserPref(SORT_PREF_NAME);
   });
 });
@@ -124,7 +124,7 @@ add_task(async function test_sort_order_persisted() {
     "passwordmgr-storage-changed",
     (_, data) => data == "removeLogin"
   );
-  Services.logins.removeLogin(TEST_LOGIN3);
+  await Services.logins.removeLoginAsync(TEST_LOGIN3);
   await storageChangedPromised;
   TEST_LOGIN2 = await addLogin(TEST_LOGIN2);
 

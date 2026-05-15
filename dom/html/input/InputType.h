@@ -4,17 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_InputType_h__
-#define mozilla_dom_InputType_h__
+#ifndef mozilla_dom_InputType_h_
+#define mozilla_dom_InputType_h_
 
 #include <stdint.h>
+
 #include "mozilla/Decimal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/UniquePtr.h"
+#include "nsError.h"
 #include "nsIConstraintValidation.h"
 #include "nsString.h"
-#include "nsError.h"
 
 // This must come outside of any namespace, or else it won't overload with the
 // double based version in nsMathUtils.h
@@ -239,4 +240,4 @@ class InputType {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_InputType_h__ */
+#endif /* mozilla_dom_InputType_h_ */

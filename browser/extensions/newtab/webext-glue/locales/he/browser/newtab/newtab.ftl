@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = התאמה אישית
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = סגירה
+    .aria-label = סגירה
 
 ## Search box component.
 
@@ -56,6 +59,9 @@ newtab-topsites-add-shortcut-header = קיצור דרך חדש
 newtab-topsites-edit-topsites-header = עריכת אתר מוביל
 newtab-topsites-edit-shortcut-header = עריכת קיצור דרך
 newtab-topsites-add-shortcut-label = הוספת קיצור דרך
+newtab-topsites-add-shortcut-title =
+    .title = הוספת קיצור דרך
+    .aria-label = הוספת קיצור דרך
 newtab-topsites-title-label = כותרת
 newtab-topsites-title-input =
     .placeholder = נא להזין כותרת
@@ -84,6 +90,14 @@ newtab-confirm-delete-history-p2 = לא ניתן לבטל פעולה זו.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = ממומן
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = ‏{ $title } (נעוץ)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -153,7 +167,7 @@ newtab-menu-bookmark = הוספת סימנייה
 
 newtab-menu-copy-download-link = העתקת קישור ההורדה
 newtab-menu-go-to-download-page = מעבר לעמוד ההורדה
-newtab-menu-remove-download = הסרה מההיסטורייה
+newtab-menu-remove-download = הסרה מההיסטוריה
 
 ## Context Menu - Download Menu: These are platform specific strings found in the context menu of an item that has
 ## been downloaded. The intention behind "this action" is that it will show where the downloaded file exists on the file
@@ -302,19 +316,32 @@ newtab-custom-pocket-subtitle = תוכן יוצא דופן שנבחר בקפיד
 newtab-custom-stories-toggle =
     .label = סיפורים מומלצים
     .description = תוכן יוצא דופן שנבחר בקפידה על־ידי משפחת { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = סיפורים
+newtab-custom-stories-personalized-checkbox-label = סיפורים מותאמים אישית המבוססים על הפעילות שלך
 newtab-custom-pocket-sponsored = סיפורים ממומנים
 newtab-custom-pocket-show-recent-saves = הצגת שמירות אחרונות
 newtab-custom-recent-title = פעילות אחרונה
 newtab-custom-recent-subtitle = מבחר של אתרים ותכנים אחרונים
-newtab-custom-recent-toggle =
-    .label = פעילות אחרונה
-    .description = מבחר של אתרים ותכנים אחרונים
 newtab-custom-weather-toggle =
     .label = מזג אוויר
     .description = התחזית של היום
-newtab-custom-trending-search-toggle =
-    .label = חיפושים פופולריים
-    .description = נושאים נפוצים ובחיפוש תדיר
+newtab-custom-widget-weather-toggle =
+    .label = מזג אוויר
+newtab-custom-widget-lists-toggle =
+    .label = רשימות
+newtab-custom-widget-timer-toggle =
+    .label = שעון עצר
+newtab-custom-widget-section-title = ווידג’טים
+newtab-custom-widget-section-toggle =
+    .label = ווידג’טים
+newtab-widget-manage-title = ווידג’טים
+newtab-widget-manage-widget-button =
+    .label = ניהול ווידג’טים
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = סגירה
+    .aria-label = סגירת תפריט
 newtab-custom-close-button = סגירה
 newtab-custom-settings = ניהול הגדרות נוספות
 
@@ -327,6 +354,7 @@ newtab-wallpaper-custom-color = בחירת צבע
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = התמונה חרגה ממגבלת גודל הקובץ של { $file_size } מ״ב. נא לנסות להעלות קובץ קטן יותר.
+newtab-wallpaper-error-upload-file-type = לא הצלחנו להעלות את הקובץ שלך. נא לנסות שוב עם קובץ תמונה.
 newtab-wallpaper-error-file-type = לא הצלחנו להעלות את הקובץ שלך. נא לנסות שוב עם סוג קובץ אחר.
 newtab-wallpaper-light-red-panda = פנדה אדומה
 newtab-wallpaper-light-mountain = הר לבן
@@ -376,7 +404,7 @@ newtab-wallpaper-abstract-purple-green = מעברי צבע סגול וירוק
 newtab-wallpaper-abstract-blue-purple-waves = צורות גליות בצבע כחול וסגול
 newtab-wallpaper-abstract-black-waves = צורות גליות בצבע שחור
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = תצלומים
 newtab-wallpaper-beach-at-sunrise = זריחה בחוף הים
@@ -406,6 +434,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -432,8 +464,9 @@ newtab-weather-menu-change-location = שינוי מקום
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = חיפוש מקום
     .aria-label = חיפוש מקום
-newtab-weather-change-location-search-input = חיפוש מקום
 newtab-weather-menu-weather-display = תצוגת מזג אוויר
+newtab-weather-todays-forecast = תחזית היום
+newtab-weather-see-full-forecast = הצגת תחזית מלאה
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -446,10 +479,24 @@ newtab-weather-menu-temperature-option-fahrenheit = פרנהייט
 newtab-weather-menu-temperature-option-celsius = צלזיוס
 newtab-weather-menu-change-temperature-units-fahrenheit = מעבר לפרנהייט
 newtab-weather-menu-change-temperature-units-celsius = מעבר לצלזיוס
+newtab-weather-menu-hide-weather-v2 = הסתרת מזג האוויר
 newtab-weather-menu-hide-weather = הסתרת מזג האוויר בלשונית החדשה
 newtab-weather-menu-learn-more = מידע נוסף
+newtab-weather-menu-detect-my-location = זיהוי המיקום שלי
 # This message is shown if user is working offline
 newtab-weather-error-not-available = נתוני מזג האוויר אינם זמינים כעת.
+newtab-weather-opt-in-see-weather = האם ברצונך לראות את מזג האוויר עבור המיקום שלך?
+newtab-weather-opt-in-not-now =
+    .label = לא כעת
+newtab-weather-opt-in-yes =
+    .label = כן
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = הצגת התחזית ב־{ $provider }
+    .aria-description = ‏{ $provider } ∙ ממומן
 
 ## Topic Labels
 
@@ -533,6 +580,12 @@ newtab-custom-wallpaper-title = טפטים מותאמים אישית נמצאי�
 newtab-custom-wallpaper-subtitle = ניתן להעלות טפט משלך או לבחור בצבע מותאם אישית כדי להפוך את { -brand-product-name } לשלך.
 newtab-custom-wallpaper-cta = בואו ננסה
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = ניתן לבחור בטפט כדי להפוך את { -brand-product-name } לשלך
+newtab-new-user-custom-wallpaper-subtitle = כל לשונית חדשה יכולה לקבל תחושה של בית עם טפטים וצבעים מותאמים אישית.
+newtab-new-user-custom-wallpaper-cta = לנסות עכשיו
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = הורדת { -brand-product-name } לנייד
@@ -545,8 +598,10 @@ newtab-download-mobile-highlight-image =
 
 ## Strings for shortcuts highlight
 
+newtab-shortcuts-highlight-title = המועדפים שלך בקצות האצבעות
+newtab-shortcuts-highlight-subtitle = ניתן להוסיף קיצור דרך כדי לשמור את האתרים המועדפים עליך במרחק קליק אחד.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = על מה הדיווח?
@@ -564,20 +619,123 @@ newtab-report-content-inappropriate-offensive =
     .label = בלתי הולם או פוגעני
 newtab-report-content-spam-misleading =
     .label = ספאם או הטעיה
+newtab-report-content-requires-payment-subscription =
+    .label = דורש תשלום או מינוי
+newtab-report-content-requires-payment-subscription-learn-more = מידע נוסף
 newtab-report-cancel = ביטול
 newtab-report-submit = שליחה
 newtab-toast-thanks-for-reporting =
     .message = תודה שדיווחת על זה.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = פופולרי ב־Google
-newtab-trending-searches-show-trending =
-    .title = הצגת חיפושים פופולריים
-newtab-trending-searches-hide-trending =
-    .title = הסתרת חיפושים פופולריים
-newtab-trending-searches-learn-more = מידע נוסף
-newtab-trending-searches-dismiss = הסתרת חיפושים פופולריים
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = חיפושים פופולריים
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = האפשרויות הן אינסופיות. בואו ונוסיף אחת כזאת.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = חדש
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = הושלמו ({ $number })
+newtab-widget-task-list-menu-copy = העתקה
+newtab-widget-lists-menu-edit = עריכת שם הרשימה
+newtab-widget-lists-menu-create = יצירת רשימה חדשה
+newtab-widget-lists-menu-delete = מחיקת רשימה זו
+newtab-widget-lists-menu-copy = העתקת הרשימה ללוח העריכה
+newtab-widget-lists-menu-hide = הסתרת כל הרשימות
+newtab-widget-lists-menu-learn-more = מידע נוסף
+newtab-widget-lists-input-add-an-item =
+    .placeholder = הוספת פריט
+newtab-widget-lists-input-error = נא לכלול טקסט כדי להוסיף פריט.
+newtab-widget-lists-input-menu-open-link = פתיחת קישור
+newtab-widget-lists-input-menu-move-up = להזיז מעלה
+newtab-widget-lists-input-menu-move-down = להזיז מטה
+newtab-widget-lists-input-menu-delete = מחיקה
+newtab-widget-lists-input-menu-edit = עריכה
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + יצירת רשימה חדשה
+newtab-widget-lists-name-label-default =
+    .label = רשימת משימות
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = רשימת משימות
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = רשימה חדשה
+newtab-widget-section-title = ווידג’טים
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = הסתרת ווידג׳טים
+    .aria-label = הסתרת כל הווידג׳טים
+newtab-widget-section-maximize =
+    .title = הרחבת ווידג׳טים
+    .aria-label = הרחבת כל הווידג׳טים לגודל מלא
+newtab-widget-section-minimize =
+    .title = מזעור ווידג׳טים
+    .aria-label = צמצום כל הווידג׳טים לגודל קומפקטי
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = שעון עצר
+newtab-widget-timer-notification-focus = זמן הריכוז נגמר. עבודה יפה. יש לך צורך בהפסקה?
+newtab-widget-timer-notification-break = ההפסקה שלך הסתיימה. נחזור בחזרה להתרכז?
+newtab-widget-timer-notification-warning = ההתרעות כבויות
+newtab-widget-timer-mode-focus =
+    .label = ריכוז
+newtab-widget-timer-mode-break =
+    .label = הפסקה
+newtab-widget-timer-label-play =
+    .label = הפעלה
+newtab-widget-timer-label-pause =
+    .label = השהייה
+newtab-widget-timer-reset =
+    .title = איפוס
+newtab-widget-timer-menu-notifications = כיבוי התרעות
+newtab-widget-timer-menu-notifications-on = הפעלת התרעות
+newtab-widget-timer-menu-hide = הסתרת שעון עצר
+newtab-widget-timer-menu-learn-more = מידע נוסף
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = כותרות מובילות
+newtab-daily-briefing-card-menu-dismiss = סגירה
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp =
+    { $minutes ->
+        [one] עודכן לפני דקה אחת
+       *[other] עודכן לפני { $minutes } דקות
+    }
+newtab-widget-message-title = להישאר מרוכז בעזרת רשימות ושעון עצר מובנה
+# to-dos stands for "things to do".
+newtab-widget-message-copy = מתזכורות מהירות ועד למשימות יומיות, מזמני התמקדות ועד להפסקות להתמתחות - כך ניתן להספיק את המשימות בזמן.
+newtab-promo-card-title = תמיכה ב־{ -brand-product-name }
+newtab-promo-card-body = נותני החסות שלנו תומכים במשימה שלנו לבנות אינטרנט טוב יותר
+newtab-promo-card-cta = מידע נוסף
+newtab-promo-card-dismiss-button =
+    .title = סגירה
+    .aria-label = סגירה
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = סגירה
+    .aria-label = סגירה
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = התאמה אישית של הדף הזה
+newtab-activation-window-message-customization-focus-message = ניתן לבחור בטפט חדש, להוסיף קיצורי דרך לאתרים המועדפים עליך ולהישאר מעודכנים בסיפורים שמעניינים אותך.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = להתחיל להתאים אישית
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = המרחב הזה פועל לפי הכללים שלך
+newtab-activation-window-message-values-focus-message = ‏{ -brand-product-name } מאפשר לך לגלוש בדרך שלך, עם דרך אישית יותר להתחיל את היום שלך באינטרנט. ניתן להפוך את { -brand-product-name } לשלך.

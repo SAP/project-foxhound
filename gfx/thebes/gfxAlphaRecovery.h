@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _GFXALPHARECOVERY_H_
-#define _GFXALPHARECOVERY_H_
+#ifndef GFXALPHARECOVERY_H_
+#define GFXALPHARECOVERY_H_
 
 #include "gfxTypes.h"
 #include "mozilla/gfx/Rect.h"
@@ -86,4 +86,4 @@ class gfxAlphaRecovery {
   }
 };
 
-#endif /* _GFXALPHARECOVERY_H_ */
+#endif /* GFXALPHARECOVERY_H_ */

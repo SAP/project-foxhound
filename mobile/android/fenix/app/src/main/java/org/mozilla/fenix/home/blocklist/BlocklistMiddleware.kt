@@ -5,7 +5,7 @@
 package org.mozilla.fenix.home.blocklist
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.home.recenttabs.RecentTab
@@ -26,14 +26,13 @@ class BlocklistMiddleware(
      * the blocklist.
      */
     override fun invoke(
-        context: MiddlewareContext<AppState, AppAction>,
+        store: Store<AppState, AppAction>,
         next: (AppAction) -> Unit,
         action: AppAction,
     ) {
-        next(getUpdatedAction(context.state, action))
+        next(getUpdatedAction(store.state, action))
     }
 
-    @Suppress("ComplexMethod")
     private fun getUpdatedAction(
         state: AppState,
         action: AppAction,

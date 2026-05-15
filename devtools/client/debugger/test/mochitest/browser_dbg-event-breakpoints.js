@@ -308,68 +308,6 @@ add_task(async function () {
   is(timerGroupCheckbox.checked, true);
 });
 
-function getEventListenersPanel(dbg) {
-  return findElementWithSelector(dbg, ".event-listeners-pane .event-listeners");
-}
-
-async function toggleEventBreakpoint(
-  dbg,
-  eventBreakpointGroup,
-  eventBreakpointName
-) {
-  const eventCheckbox = await getEventBreakpointCheckbox(
-    dbg,
-    eventBreakpointGroup,
-    eventBreakpointName
-  );
-  eventCheckbox.scrollIntoView();
-  info(`Toggle ${eventBreakpointName} breakpoint`);
-  const onEventListenersUpdate = waitForDispatch(
-    dbg.store,
-    "UPDATE_EVENT_LISTENERS"
-  );
-  const checked = eventCheckbox.checked;
-  eventCheckbox.click();
-  await onEventListenersUpdate;
-
-  info("Wait for the event breakpoint checkbox to be toggled");
-  // Wait for he UI to be toggled, otherwise, the reducer may not be fully updated
-  await waitFor(() => {
-    return eventCheckbox.checked == !checked;
-  });
-}
-
-async function getEventBreakpointCheckbox(
-  dbg,
-  eventBreakpointGroup,
-  eventBreakpointName
-) {
-  if (!getEventListenersPanel(dbg)) {
-    // Event listeners panel is collapsed, expand it
-    findElementWithSelector(
-      dbg,
-      `.event-listeners-pane ._header .header-label`
-    ).click();
-    await waitFor(() => getEventListenersPanel(dbg));
-  }
-
-  const groupCheckbox = findElementWithSelector(
-    dbg,
-    `input[value="${eventBreakpointGroup}"]`
-  );
-  const groupEl = groupCheckbox.closest(".event-listener-group");
-  let groupEventsUl = groupEl.querySelector("ul");
-  if (!groupEventsUl) {
-    info(
-      `Expand ${eventBreakpointGroup} and wait for the sub list to be displayed`
-    );
-    groupEl.querySelector(".event-listener-expand").click();
-    groupEventsUl = await waitFor(() => groupEl.querySelector("ul"));
-  }
-
-  return findElementWithSelector(dbg, `input[value="${eventBreakpointName}"]`);
-}
-
 async function invokeOnElement(selector, action) {
   await SpecialPowers.focus(gBrowser.selectedBrowser);
   await SpecialPowers.spawn(

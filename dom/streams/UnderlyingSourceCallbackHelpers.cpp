@@ -4,16 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
+
 #include "StreamUtils.h"
+#include "js/experimental/TypedData.h"
+#include "mozilla/dom/ReadableByteStreamController.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
-#include "mozilla/dom/ReadableByteStreamController.h"
-#include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "js/experimental/TypedData.h"
 #include "nsStreamUtils.h"
 
 namespace mozilla::dom {

@@ -28,13 +28,13 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "externalProtocolService",
   "@mozilla.org/uriloader/external-protocol-service;1",
-  "nsIExternalProtocolService"
+  Ci.nsIExternalProtocolService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "MIMEService",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 
 export function HandlerService() {
@@ -561,6 +561,7 @@ HandlerService.prototype = {
   /**
    * Private method to inject stored handler information into an nsIHandlerInfo
    * instance.
+   *
    * @param handlerInfo           the nsIHandlerInfo instance to write to
    * @param storedHandlers        the stored handlers
    * @param keepPreferredApp      whether to keep the handlerInfo's

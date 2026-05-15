@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 const { CryptoUtils } = ChromeUtils.importESModule(
-  "resource://services-crypto/utils.sys.mjs"
+  "moz-src:///services/crypto/modules/utils.sys.mjs"
 );
 
 add_test(function setup() {

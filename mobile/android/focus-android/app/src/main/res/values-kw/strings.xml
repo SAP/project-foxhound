@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -148,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gans %1$s yth esos\'ta ow kul maystri.</p> <p>Gwra hy usya avel peurell brivedh: <ul> <li>Hwilas ha peuri a-berth y\'n dowlen</li> <li>Lettya helerghellow (po nowedhi settyansow dhe amyttya helerghellow)</li> <li>Dilea pastiow, keffrys hag istori hwilas ha peuri</li> </ul> </p> <p>Askorrys gans Mozilla yw %1$s. Agan amkan yw maga kesrosweyth yagh hag ygor.<br/> <a href=\"%2$s\">Dyski moy</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gans %1$s yth esos\'ta ow kul maystri.</p>\n<p>Gwra hy usya avel peurell brivedh:\n<ul>\n<li>Hwilas ha peuri a-berth y\'n dowlen</li>\n<li>Lettya helerghellow (po nowedhi settyansow dhe amyttya helerghellow)</li>\n<li>Dilea pastiow, keffrys hag istori hwilas ha peuri</li>\n</ul> </p>\n<p>Askorrys gans Mozilla yw %1$s. Agan amkan yw maga kesrosweyth yagh hag ygor.<br/>\n<a href=\"%2$s\">Dyski moy</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privetter &amp; Diogeledh</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -838,9 +845,9 @@
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Junyans andhiogel</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Martesen yth yw problem gans kefurvyans an servyer, po bos nebonan owth assaya omwul an servyer. <br/><br/> Mar kwruss\'ta junya dhe\'n servyer ma yn sewen seulabrys, martesen yth yw an gwall anparghus.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Martesen yth yw problem gans kefurvyans an servyer, po bos nebonan owth assaya omwul an servyer. <br/><br/>\nMar kwruss\'ta junya dhe\'n servyer ma yn sewen seulabrys, martesen yth yw an gwall anparghus.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Martesen yma nebonan owth assaya omwul an wiasva ha peryllus via pesya.</label> <br><br> <label>Ny wra %1$s trestya dhe <b>%2$s</b> rag bos anwodhvos y dyller y destskrif, bos omsinys an testskrif, po nag usi an servyer ow tanvon an testskrifow kresel ewn.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Martesen yma nebonan owth assaya omwul an wiasva ha peryllus via pesya.</label> <br><br>\n<label>Ny wra %1$s trestya dhe <b>%2$s</b> rag bos anwodhvos y dyller y destskrif, bos omsinys an testskrif, po nag usi an servyer ow tanvon an testskrifow kresel ewn.</label>]]></string>
   <!--
     Sessions List
 

@@ -6,14 +6,14 @@
 #ifndef ChromiumAdapter_h_
 #define ChromiumAdapter_h_
 
+#include <utility>
+
 #include "GMPLoader.h"
-#include "prlink.h"
 #include "GMPUtils.h"
-#include "nsTArray.h"
 #include "content_decryption_module_ext.h"
 #include "nsString.h"
-
-#include <utility>
+#include "nsTArray.h"
+#include "prlink.h"
 
 struct GMPPlatformAPI;
 

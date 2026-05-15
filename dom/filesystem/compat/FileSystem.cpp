@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileSystem.h"
+
 #include "FileSystemRootDirectoryEntry.h"
 #include "mozilla/dom/FileSystemBinding.h"
 #include "nsIDUtils.h"

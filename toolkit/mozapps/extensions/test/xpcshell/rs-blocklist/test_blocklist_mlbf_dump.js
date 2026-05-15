@@ -4,7 +4,7 @@
 "use strict";
 
 /**
- * @fileOverview Verifies that the MLBF dump of the addons blocklist is
+ * @file Verifies that the MLBF dump of the addons blocklist is
  * correctly registered.
  */
 

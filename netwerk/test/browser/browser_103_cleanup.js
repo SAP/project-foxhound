@@ -4,11 +4,12 @@
 
 "use strict";
 
-Services.prefs.setBoolPref("network.early-hints.enabled", true);
-
 add_task(async function test_103_cancel_parent_connect() {
   await SpecialPowers.pushPrefEnv({
-    set: [["network.early-hints.parent-connect-timeout", 1]],
+    set: [
+      ["network.early-hints.enabled", true],
+      ["network.early-hints.parent-connect-timeout", 1],
+    ],
   });
 
   let callback;
@@ -19,11 +20,11 @@ add_task(async function test_103_cancel_parent_connect() {
   let observer = {
     QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
     observe(aSubject, aTopic) {
-      aSubject = aSubject.QueryInterface(Ci.nsIRequest);
+      aSubject = aSubject.QueryInterface(Ci.nsIChannel);
       if (
         aTopic == "http-on-stop-request" &&
-        aSubject.name ==
-          "https://example.com/browser/netwerk/test/browser/square.png"
+        aSubject.URI.spec ==
+          "https://example.com/browser/netwerk/test/browser/square2.png"
       ) {
         observed_cancel_reason = aSubject.canceledReason;
         Services.obs.removeObserver(observer, "http-on-stop-request");
@@ -44,6 +45,4 @@ add_task(async function test_103_cancel_parent_connect() {
   );
   await promise;
   Assert.equal(observed_cancel_reason, "parent-connect-timeout");
-
-  Services.prefs.clearUserPref("network.early-hints.parent-connect-timeout");
 });

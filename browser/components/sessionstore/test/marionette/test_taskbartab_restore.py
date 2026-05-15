@@ -19,20 +19,18 @@ def inline(title):
 
 class TestManualRestoreWithTaskbarTabs(SessionStoreTestCase):
     def setUp(self):
-        super(TestManualRestoreWithTaskbarTabs, self).setUp(
+        super().setUp(
             startup_page=1,
             include_private=False,
             restore_on_demand=False,
             taskbartabs_enable=True,
-            test_windows=set(
-                [
-                    # Window 1
-                    (
-                        inline("lorem ipsom"),
-                        inline("dolor"),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                # Window 1
+                (
+                    inline("lorem ipsom"),
+                    inline("dolor"),
+                ),
+            ]),
         )
 
     """
@@ -89,20 +87,18 @@ class TestManualRestoreWithTaskbarTabs(SessionStoreTestCase):
 
 class TestAutoRestoreWithTaskbarTabs(SessionStoreTestCase):
     def setUp(self):
-        super(TestAutoRestoreWithTaskbarTabs, self).setUp(
+        super().setUp(
             startup_page=3,
             include_private=False,
             restore_on_demand=False,
             taskbartabs_enable=True,
-            test_windows=set(
-                [
-                    # Window 1
-                    (
-                        inline("lorem ipsom"),
-                        inline("dolor"),
-                    ),
-                ]
-            ),
+            test_windows=set([
+                # Window 1
+                (
+                    inline("lorem ipsom"),
+                    inline("dolor"),
+                ),
+            ]),
         )
 
     """

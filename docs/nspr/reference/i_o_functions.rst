@@ -4,7 +4,7 @@ I/O functions
 This chapter describes the NSPR functions used to perform operations
 such as system access, normal file I/O, and socket (network) I/O.
 
-For sample code that illustrates basic I/O operations, see :ref:`Introduction_to_NSPR>`.
+For sample code that illustrates basic I/O operations, see :doc:`introduction_to_nspr`.
 For information about the types most
 commonly used with the functions described in this chapter, see `I/O
 Types <I%2fO_Types>`__.
@@ -168,7 +168,7 @@ Pollable Events
 
 A pollable event is a special kind of file descriptor. The only I/O
 operation you can perform on a pollable event is to poll it with the
-:ref:`PR_POLL_READ` flag. You cannot read from or write to a pollable
+``PR_POLL_READ`` flag. You cannot read from or write to a pollable
 event.
 
 The purpose of a pollable event is to combine event waiting with I/O
@@ -187,9 +187,9 @@ or unset.
 -  :ref:`PR_SetPollableEvent`
 -  :ref:`PR_WaitForPollableEvent`
 
-One can call :ref:`PR_Poll` with the :ref:`PR_POLL_READ` flag on a pollable
+One can call :ref:`PR_Poll` with the ``PR_POLL_READ`` flag on a pollable
 event. When the pollable event is set, :ref:`PR_Poll` returns the the
-:ref:`PR_POLL_READ` flag set in the out_flags.
+``PR_POLL_READ`` flag set in the out_flags.
 
 .. _Manipulating_Layers:
 
@@ -218,12 +218,12 @@ NSPR defines three identities:
    #define PR_TOP_IO_LAYER (PRDescIdentity)-2
    #define PR_NSPR_IO_LAYER (PRDescIdentity)0
 
--  :ref:`PR_INVALID_IO_LAYER`: An invalid layer identify (for error
+-  ``PR_INVALID_IO_LAYER``: An invalid layer identify (for error
    return).
--  :ref:`PR_TOP_IO_LAYER`: The identity of the top of the stack.
--  :ref:`PR_NSPR_IO_LAYER`: The identity for the layer implemented by NSPR.
+-  ``PR_TOP_IO_LAYER``: The identity of the top of the stack.
+-  ``PR_NSPR_IO_LAYER``: The identity for the layer implemented by NSPR.
 
-:ref:`PR_TOP_IO_LAYER` may be used as a shorthand for identifying the
+``PR_TOP_IO_LAYER`` may be used as a shorthand for identifying the
 topmost layer of an existing stack. For example, the following lines of
 code are equivalent:
 

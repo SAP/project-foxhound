@@ -7,8 +7,6 @@
 #ifndef mozilla_dom_HTMLLIElement_h
 #define mozilla_dom_HTMLLIElement_h
 
-#include "mozilla/Attributes.h"
-
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {

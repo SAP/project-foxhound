@@ -11,11 +11,12 @@
 
 // Global includes
 #include <cstdint>
-#include <cstdlib>
 #include <new>
 #include <utility>
+
 #include "ErrorList.h"
 #include "MainThreadUtils.h"
+#include "NotifyUtils.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
@@ -28,8 +29,6 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
-#include "mozilla/Variant.h"
 #include "mozilla/dom/PBackgroundSDBConnection.h"
 #include "mozilla/dom/PBackgroundSDBConnectionParent.h"
 #include "mozilla/dom/PBackgroundSDBRequestParent.h"
@@ -50,7 +49,6 @@
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "NotifyUtils.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsError.h"
@@ -630,7 +628,7 @@ void StreamHelper::RunOnIOThread() {
   MOZ_ASSERT(inputStream);
 
   nsresult rv = inputStream->Close();
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   MOZ_ALWAYS_SUCCEEDS(mOwningEventTarget->Dispatch(this, NS_DISPATCH_NORMAL));
 }
@@ -741,7 +739,7 @@ void Connection::OnClose() {
   }
 
   if (mAllowedToClose && !mActorDestroyed) {
-    Unused << SendClosed();
+    (void)SendClosed();
   }
 }
 
@@ -755,7 +753,7 @@ void Connection::AllowToClose() {
   mAllowedToClose = true;
 
   if (!mActorDestroyed) {
-    Unused << SendAllowToClose();
+    (void)SendAllowToClose();
   }
 
   MaybeCloseStream();
@@ -996,7 +994,7 @@ void ConnectionOperationBase::SendResults() {
       response = mResultCode;
     }
 
-    Unused << PBackgroundSDBRequestParent::Send__delete__(this, response);
+    (void)PBackgroundSDBRequestParent::Send__delete__(this, response);
   }
 
   Cleanup();
@@ -1712,7 +1710,7 @@ Result<UsageInfo, nsresult> QuotaClient::GetUsageForOrigin(
                        MOZ_TO_RESULT_INVOKE_MEMBER(file, IsDirectory));
 
         if (isDirectory) {
-          Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+          (void)WARN_IF_FILE_IS_UNKNOWN(*file);
           return usageInfo;
         }
 
@@ -1729,7 +1727,7 @@ Result<UsageInfo, nsresult> QuotaClient::GetUsageForOrigin(
                  UsageInfo{DatabaseUsageType(Some(uint64_t(fileSize)))};
         }
 
-        Unused << WARN_IF_FILE_IS_UNKNOWN(*file);
+        (void)WARN_IF_FILE_IS_UNKNOWN(*file);
 
         return usageInfo;
       }));

@@ -382,3 +382,6 @@ void TextTrack::CueBuckets::AddCue(TextTrackCue* aCue) {
 }
 
 }  // namespace mozilla::dom
+
+#undef WEBVTT_LOG
+#undef WEBVTT_LOGV

@@ -20,5 +20,4 @@ class NetworkContentFront extends FrontClassWithSpec(networkContentSpec) {
   }
 }
 
-exports.NetworkContentFront = NetworkContentFront;
 registerFront(NetworkContentFront);

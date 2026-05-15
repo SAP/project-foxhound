@@ -113,23 +113,40 @@ add_task(async function () {
       encodeURIComponent(TEST_URI)
   );
   const { inspector, view } = await openRuleView();
-  await assertRules("body", [
-    { selector: `element`, ancestorRulesData: null },
+
+  await selectNode("body", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `body, [data-test="in-starting-style"]`,
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `body, ~~[data-test="in-starting-style"]~~`,
       ancestorRulesData: ["@starting-style {"],
+      declarations: [{ name: "color", value: "navy" }],
     },
     {
-      selector: `body, [data-test="in-starting-style-layer"]`,
+      selector: `body, ~~[data-test="in-starting-style-layer"]~~`,
       ancestorRulesData: ["@starting-style {", "  @layer {"],
+      declarations: [{ name: "color", value: "hotpink", overridden: true }],
     },
+    { header: "@property" },
   ]);
 
-  await assertRules("h1", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("h1", inspector);
+  await checkRuleViewContent(view, [
     {
-      selector: `h1, [data-test="in-starting-style"]`,
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `h1, ~~[data-test="in-starting-style"]~~`,
       ancestorRulesData: ["@starting-style {"],
+      declarations: [{ name: "background-color", value: "salmon" }],
     },
     {
       selector: ``,
@@ -137,130 +154,226 @@ add_task(async function () {
         `h1, [data-test="top-level"] {`,
         "  @starting-style {",
       ],
+      declarations: [{ name: "color", value: "gold" }],
     },
     {
-      selector: `h1, [data-test="top-level"]`,
+      selector: `h1, ~~[data-test="top-level"]~~`,
       ancestorRulesData: null,
+      declarations: [
+        { name: "color", value: "tomato" },
+        { name: "transition", value: "all 1s" },
+      ],
     },
+    { header: "@property" },
   ]);
 
-  await assertRules("main", [
-    { selector: `element`, ancestorRulesData: null },
+  await selectNode("main", inspector);
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
     {
       selector: ``,
       ancestorRulesData: [
         `main, [data-test="top-level"] {`,
         "  @starting-style {",
       ],
+      declarations: [
+        { name: "--empty-start", value: "" },
+        {
+          name: "background-color",
+          value: "goldenrod",
+          // background-color value in last starting-style rule is not overridden
+          overridden: false,
+        },
+        {
+          name: "padding-top",
+          value: "3px",
+          // padding-top value in last starting-style rule is overridden by the !important
+          // set on the top level rule
+          overridden: true,
+        },
+        {
+          name: "margin-top",
+          value: "3px",
+          // margin-top value in last starting-style rule is overridden by the !important set
+          // on another starting-style rule
+          overridden: true,
+        },
+        {
+          name: "outline-color",
+          value: "goldenrod",
+          // outline-color value in last starting-style rule is overridden by the !important
+          // set on another starting-style rule
+          overridden: true,
+        },
+      ],
     },
     {
-      selector: `main, [data-test="top-level"]`,
+      selector: `main, ~~[data-test="top-level"]~~`,
       ancestorRulesData: null,
+      declarations: [
+        { name: "--my-color", value: "white" },
+        { name: "--my-overridden-color", value: "white !important" },
+        { name: "--my-registered-color", value: "white" },
+        { name: "--empty-start", value: "1px" },
+        {
+          name: "--check-my-overridden-color",
+          value: "var(--my-overridden-color)",
+        },
+        {
+          name: "--check-my-registered-color",
+          value: "var(--my-registered-color)",
+        },
+        { name: "--check-empty-start", value: "var(--empty-start)" },
+        { name: "color", value: "var(--my-color)" },
+        {
+          name: "background-color",
+          value: "firebrick",
+          // background-color value in top level rule is not overridden, even if the
+          // property is also set in a starting style rule
+          overridden: false,
+        },
+        {
+          name: "padding-top",
+          value: "2px !important",
+          // padding-top value in top level rule is not overridden
+          overridden: false,
+        },
+        {
+          name: "margin-top",
+          value: "2px",
+          // margin-top value in top level rule is not overridden
+          overridden: false,
+        },
+        { name: "transition", value: "all 1s 1000s" },
+        {
+          name: "outline-color",
+          value: "firebrick",
+          // outline-color value in top level rule is not overridden
+          overridden: false,
+        },
+        { name: "outline-width", value: "5px" },
+        { name: "outline-style", value: "solid" },
+        { name: "outline-offset", value: "10px" },
+      ],
     },
     {
-      selector: `main, [data-test="in-starting-style"]`,
+      selector: `main, ~~[data-test="in-starting-style"]~~`,
       ancestorRulesData: ["@starting-style {"],
+      declarations: [
+        { name: "--my-color", value: "black !important" },
+        { name: "--my-overridden-color", value: "black", overridden: true },
+        { name: "--my-registered-color", value: "black !important" },
+        { name: "--check-my-color", value: "var(--my-color)" },
+        {
+          name: "--check-my-overridden-color",
+          value: "var(--my-overridden-color)",
+          overridden: true,
+        },
+        {
+          name: "--check-my-registered-color",
+          value: "var(--my-registered-color)",
+          overridden: true,
+        },
+        {
+          name: "--check-my-unset-registered-color",
+          value: "var(--my-unset-registered-color)",
+        },
+        {
+          name: "background-color",
+          value: "dodgerblue",
+          // background-color value in top-level starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "padding-top",
+          value: "1px",
+          // padding-top value in top-level starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "margin-top",
+          value: "1px !important",
+          // margin-top value in top-level starting style rule is not overridden,
+          // since it's declared with !important
+          overridden: false,
+        },
+        {
+          name: "outline-color",
+          value: "dodgerblue",
+          // outline-color value in top-level starting style rule is overridden
+          overridden: true,
+        },
+      ],
     },
     {
-      selector: `main, [data-test="in-starting-style-layer-2"]`,
+      selector: `main, ~~[data-test="in-starting-style-layer-2"]~~`,
       ancestorRulesData: [`@starting-style {`, "  @layer {"],
+      declarations: [
+        {
+          name: "background-color",
+          value: "cyan",
+          // background-color value in second layer in starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "padding-top",
+          value: "5px",
+          // padding-top value in second layer in starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "margin-top",
+          value: "5px",
+          // margin-top value in second layer in starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "outline-color",
+          value: "cyan !important",
+          // outline-color value in second layer in starting style rule is overridden even
+          // if it was declared with !important
+          overridden: true,
+        },
+      ],
     },
     {
-      selector: `main, [data-test="in-starting-style-layer"]`,
+      selector: `main, ~~[data-test="in-starting-style-layer"]~~`,
       ancestorRulesData: [`@starting-style {`, "  @layer {"],
+      declarations: [
+        {
+          name: "background-color",
+          value: "forestgreen",
+          // background-color value in first layer in starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "padding-top",
+          value: "4px",
+          // padding-top value in first layer in starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "margin-top",
+          value: "4px",
+          // margin-top value in first layer in starting style rule is overridden
+          overridden: true,
+        },
+        {
+          name: "outline-color",
+          value: "forestgreen !important",
+          // outline-color value in first layer in starting style rule is not overridden
+          // as it's declared with !important
+          overridden: false,
+        },
+      ],
     },
+    { header: "@property" },
   ]);
-
-  await selectNode("main", inspector);
-
-  info("Check that we're handling overridden properties correctly");
-  //Check background-color
-  ok(
-    !isPropertyOverridden(view, 1, { "background-color": "goldenrod" }),
-    "background-color value in last starting-style rule is not overridden"
-  );
-  ok(
-    !isPropertyOverridden(view, 2, { "background-color": "firebrick" }),
-    "background-color value in top level rule is not overridden, even if the property is also set in a starting style rule"
-  );
-  ok(
-    isPropertyOverridden(view, 3, { "background-color": "dodgerblue" }),
-    "background-color value in top-level starting style rule is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 4, { "background-color": "cyan" }),
-    "background-color value in second layer in starting style rule is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 5, { "background-color": "forestgreen" }),
-    "background-color value in first layer in starting style rule is overridden"
-  );
-
-  //Check padding-top
-  ok(
-    isPropertyOverridden(view, 1, { "padding-top": "3px" }),
-    "padding-top value in last starting-style rule is overridden by the !important set on the top level rule"
-  );
-  ok(
-    !isPropertyOverridden(view, 2, { "padding-top": "2px" }),
-    "padding-top value in top level rule is not overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 3, { "padding-top": "1px" }),
-    "padding-top value in top-level starting style rule is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 4, { "padding-top": "5px" }),
-    "padding-top value in second layer in starting style rule is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 5, { "padding-top": "4px" }),
-    "padding-top value in first layer in starting style rule is overridden"
-  );
-
-  //Check margin-top
-  ok(
-    isPropertyOverridden(view, 1, { "margin-top": "3px" }),
-    "margin-top value in last starting-style rule is overridden by the !important set on another starting-style rule"
-  );
-  ok(
-    !isPropertyOverridden(view, 2, { "margin-top": "2px" }),
-    "margin-top value in top level rule is not overridden"
-  );
-  ok(
-    !isPropertyOverridden(view, 3, { "margin-top": "1px" }),
-    "margin-top value in top-level starting style rule is not overridden, since it's declared with !important"
-  );
-  ok(
-    isPropertyOverridden(view, 4, { "margin-top": "5px" }),
-    "margin-top value in second layer in starting style rule is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 5, { "margin-top": "4px" }),
-    "margin-top value in first layer in starting style rule is overridden"
-  );
-
-  //Check outline-color
-  ok(
-    isPropertyOverridden(view, 1, { "outline-color": "goldenrod" }),
-    "outline-color value in last starting-style rule is overridden by the !important set on another startint-style rule"
-  );
-  ok(
-    !isPropertyOverridden(view, 2, { "outline-color": "firebrick" }),
-    "outline-color value in top level rule is not overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 3, { "outline-color": "dodgerblue" }),
-    "outline-color value in top-level starting style rule is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 4, { "outline-color": "cyan" }),
-    "outline-color value in second layer in starting style rule is overridden even if it was declared with !important"
-  );
-  ok(
-    !isPropertyOverridden(view, 5, { "outline-color": "forestgreen" }),
-    "outline-color value in first layer in starting style rule is not overridden as it's declared with !important"
-  );
 
   info(
     "Check that CSS variables set in starting-style are not impacting the var() tooltip"
@@ -340,13 +453,8 @@ add_task(async function () {
           '</span>' +
           '<span class="ruleview-color">white</span>' +
         '</span>',
-      computed:
-        // prettier-ignore
-        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="white" class="color-swatch-container">' +
-          '<span class="inspector-swatch inspector-colorswatch" style="background-color:white">' +
-          '</span>' +
-          '<span class="ruleview-color">white</span>' +
-        '</span>',
+      // Computed value isn't displayed when it's the same as we put in the header
+      computed: null,
       // The starting-style rule is overridden, so we don't show a starting-style section in the tooltip
       startingStyle: null,
     }
@@ -494,57 +602,6 @@ add_task(async function () {
       startingStyleClasses: ["empty-css-variable"],
     }
   );
-
-  async function assertRules(nodeSelector, expectedRules) {
-    await selectNode(nodeSelector, inspector);
-    const rulesInView = Array.from(
-      // don't retrieve @property rules
-      view.element.querySelectorAll(".ruleview-rule:not([data-name])")
-    );
-    is(
-      rulesInView.length,
-      expectedRules.length,
-      `[${nodeSelector}] All expected rules are displayed`
-    );
-
-    for (let i = 0; i < expectedRules.length; i++) {
-      const expectedRule = expectedRules[i];
-      info(`[${nodeSelector}] Checking rule #${i}: ${expectedRule.selector}`);
-
-      const selector = rulesInView[i].querySelector(
-        ".ruleview-selectors-container"
-      )?.innerText;
-
-      is(
-        selector,
-        expectedRule.selector,
-        `[${nodeSelector}] Expected selector for rule #${i}`
-      );
-
-      const isInherited = rulesInView[i].matches(
-        ".ruleview-header-inherited + .ruleview-rule"
-      );
-      if (expectedRule.inherited) {
-        ok(isInherited, `[${nodeSelector}] rule #${i} is inherited`);
-      } else {
-        ok(!isInherited, `[${nodeSelector}] rule #${i} is not inherited`);
-      }
-
-      if (expectedRule.ancestorRulesData == null) {
-        is(
-          getRuleViewAncestorRulesDataElementByIndex(view, i),
-          null,
-          `[${nodeSelector}] No ancestor rules data displayed for ${selector}`
-        );
-      } else {
-        is(
-          getRuleViewAncestorRulesDataTextByIndex(view, i),
-          expectedRule.ancestorRulesData.join("\n"),
-          `[${nodeSelector}] Expected ancestor rules data displayed for ${selector}`
-        );
-      }
-    }
-  }
 });
 
 function isPropertyOverridden(view, ruleIndex, property) {

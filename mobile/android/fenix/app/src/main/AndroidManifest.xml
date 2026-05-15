@@ -54,6 +54,12 @@
     This is NOT required for the adjust plugin. -->
     <uses-permission android:name="com.adjust.preinstall.READ_PERMISSION"/>
 
+    <uses-permission android:name="${applicationId}.permission.PROFILER_INTERNAL" />
+
+    <permission
+        android:name="${applicationId}.permission.PROFILER_INTERNAL"
+        android:protectionLevel="signature" />
+
     <application
         android:name=".FenixApplication"
         android:allowBackup="false"
@@ -359,22 +365,6 @@
         </activity-alias>
 
         <activity-alias
-            android:name="${applicationId}.AppRetro2017"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@mipmap/ic_launcher_retro_2017"
-            android:roundIcon="@mipmap/ic_launcher_retro_2017"
-            android:targetActivity="HomeActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/shortcuts" />
-        </activity-alias>
-
-        <activity-alias
             android:name="${applicationId}.AppPixelated"
             android:enabled="false"
             android:exported="true"
@@ -391,11 +381,11 @@
         </activity-alias>
 
         <activity-alias
-            android:name="${applicationId}.AppMinimal"
+            android:name="${applicationId}.AppCuddling"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_minimal"
-            android:roundIcon="@mipmap/ic_launcher_minimal"
+            android:icon="@mipmap/ic_launcher_cuddling"
+            android:roundIcon="@mipmap/ic_launcher_cuddling"
             android:targetActivity="HomeActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -423,11 +413,27 @@
         </activity-alias>
 
         <activity-alias
-            android:name="${applicationId}.AppCute"
+            android:name="${applicationId}.AppFlaming"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_cute"
-            android:roundIcon="@mipmap/ic_launcher_cute"
+            android:icon="@mipmap/ic_launcher_flaming"
+            android:roundIcon="@mipmap/ic_launcher_flaming"
+            android:targetActivity="HomeActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+
+        <activity-alias
+            android:name="${applicationId}.AppMinimal"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_minimal"
+            android:roundIcon="@mipmap/ic_launcher_minimal"
             android:targetActivity="HomeActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -444,6 +450,21 @@
             android:exported="true"
             android:icon="@mipmap/ic_launcher_momo"
             android:roundIcon="@mipmap/ic_launcher_momo"
+            android:targetActivity="HomeActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity-alias>
+        <activity-alias
+            android:name="${applicationId}.AppCool"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_cool"
+            android:roundIcon="@mipmap/ic_launcher_cool"
             android:targetActivity="HomeActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -474,8 +495,15 @@
         </activity-alias>
 
         <activity
+            android:name=".startupCrash.StartupCrashActivity"
+            android:exported="false"
+            android:process=":StartupCrashActivityProcess"
+            >
+        </activity>
+
+        <activity
             android:name=".HomeActivity"
-            android:theme="@style/SplashScreen"
+            android:theme="@style/SplashScreenThemeBase"
             android:exported="true"
             android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize|layoutDirection|smallestScreenSize|screenLayout"
             android:launchMode="singleTask"
@@ -486,51 +514,30 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="enable_private_browsing"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="home"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="home_collections"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="install_search_widget"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="make_default_browser"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="open"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_accessibility"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_addon_manager"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_delete_browsing_data"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_logins"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_notifications"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_privacy"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_search_engine"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_tracking_protection"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="share_sheet"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="turn_on_sync"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="urls_bookmarks"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="urls_history"/>
-                <data android:scheme="${deepLinkScheme}"
-                    android:host="settings_private_browsing"/>
+                <data android:scheme="${deepLinkScheme}"/>
+                <data android:host="enable_private_browsing"/>
+                <data android:host="home"/>
+                <data android:host="home_collections"/>
+                <data android:host="install_search_widget"/>
+                <data android:host="make_default_browser"/>
+                <data android:host="open"/>
+                <data android:host="settings"/>
+                <data android:host="settings_accessibility"/>
+                <data android:host="settings_addon_manager"/>
+                <data android:host="settings_delete_browsing_data"/>
+                <data android:host="settings_logins"/>
+                <data android:host="settings_notifications"/>
+                <data android:host="settings_privacy"/>
+                <data android:host="settings_search_engine"/>
+                <data android:host="settings_tracking_protection"/>
+                <data android:host="settings_app_icon"/>
+                <data android:host="share_sheet"/>
+                <data android:host="turn_on_sync"/>
+                <data android:host="urls_bookmarks"/>
+                <data android:host="urls_history"/>
+                <data android:host="settings_private_browsing"/>
             </intent-filter>
         </activity>
-
-        <activity android:name=".home.mozonline.PrivacyContentDisplayActivity"
-                android:exported="false"/>
 
         <activity
             android:name=".customtabs.ExternalAppBrowserActivity"
@@ -648,6 +655,12 @@
             android:excludeFromRecents="true"
             />
 
+        <activity android:name="mozilla.components.feature.qr.QrScanActivity"
+            android:theme="@style/Theme.AppCompat.Translucent"
+            android:exported="false"
+            android:taskAffinity=""
+            />
+
         <activity
             android:name=".settings.account.AuthCustomTabActivity"
             android:autoRemoveFromRecents="false"
@@ -660,17 +673,14 @@
             android:exported="false" />
 
         <activity android:name=".autofill.AutofillUnlockActivity"
-            tools:targetApi="o"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.Translucent" />
 
         <activity android:name=".autofill.AutofillConfirmActivity"
-            tools:targetApi="o"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.Translucent" />
 
         <activity android:name=".autofill.AutofillSearchActivity"
-            tools:targetApi="o"
             android:exported="false"
             android:theme="@style/DialogActivityTheme" />
 
@@ -678,8 +688,15 @@
             android:name=".messaging.NotificationClickedReceiverActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".perf.StopProfilerActivity"
+            android:theme="@style/StopProfilerTransparentTheme"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask" />
+
         <service android:name=".autofill.AutofillService"
-            tools:targetApi="o"
             android:exported="true"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_AUTOFILL_SERVICE">
@@ -747,6 +764,22 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <service
+            android:name=".perf.ProfilerService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Developer tool: Shows notification during performance profiling" />
+        </service>
+
+        <provider
+            android:name=".perf.ProfilerProvider"
+            android:authorities="${applicationId}.profiler"
+            android:exported="false"
+            android:enabled="false"
+            android:readPermission="android.permission.DUMP"
+            android:grantUriPermissions="false" />
 
         <meta-data
             android:name="firebase_messaging_auto_init_enabled"

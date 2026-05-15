@@ -3,6 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+const { ProfilerTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ProfilerTestUtils.sys.mjs"
+);
+
+add_setup(ProfilerTestUtils.assertProfilerInactive);
+
 // This test is at the edge of timing out, probably because of LUL
 // initialization on Linux. This is also happening only once, which is why only
 // this test needs it: for other tests LUL is already initialized because

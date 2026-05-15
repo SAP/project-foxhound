@@ -25,19 +25,17 @@ def http_with_https_port_url(server_config):
     return _http_with_https_port_url
 
 
-@pytest.mark.capabilities(
-    {
-        "pageLoadStrategy": "eager",
-        "moz:firefoxOptions": {
-            "prefs": {
-                # Allow HTTPS upgrades for localhost and custom ports
-                "dom.security.https_first_for_custom_ports": True,
-                "dom.security.https_first_for_local_addresses": True,
-                "dom.security.https_first_for_unknown_suffixes": True,
-            },
+@pytest.mark.capabilities({
+    "pageLoadStrategy": "eager",
+    "moz:firefoxOptions": {
+        "prefs": {
+            # Allow HTTPS upgrades for localhost and custom ports
+            "dom.security.https_first_for_custom_ports": True,
+            "dom.security.https_first_for_local_addresses": True,
+            "dom.security.https_first_for_unknown_suffixes": True,
         },
-    }
-)
+    },
+})
 def test_no_https_first_upgrade(session, http_with_https_port_url):
     page = http_with_https_port_url("/webdriver/tests/support/html/default.html")
 

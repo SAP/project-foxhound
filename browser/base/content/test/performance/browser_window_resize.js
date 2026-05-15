@@ -42,6 +42,7 @@ async function toggleBookmarksToolbar(visible) {
  * Resizes a browser window to a particular width and height, and
  * waits for it to reach a "steady state" with respect to its overflowing
  * toolbars.
+ *
  * @param win (browser window)
  *        The window to resize.
  * @param width (int)

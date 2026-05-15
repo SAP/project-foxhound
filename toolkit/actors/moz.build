@@ -31,6 +31,8 @@ TESTING_JS_MODULES += [
 FINAL_TARGET_FILES.actors += [
     "AboutHttpsOnlyErrorChild.sys.mjs",
     "AboutHttpsOnlyErrorParent.sys.mjs",
+    "AboutRestrictedChild.sys.mjs",
+    "AboutRestrictedParent.sys.mjs",
     "AudioPlaybackChild.sys.mjs",
     "AudioPlaybackParent.sys.mjs",
     "AutoCompleteChild.sys.mjs",
@@ -46,8 +48,6 @@ FINAL_TARGET_FILES.actors += [
     "ContentMetaParent.sys.mjs",
     "ControllersChild.sys.mjs",
     "ControllersParent.sys.mjs",
-    "DateTimePickerChild.sys.mjs",
-    "DateTimePickerParent.sys.mjs",
     "ExtFindChild.sys.mjs",
     "FindBarChild.sys.mjs",
     "FindBarParent.sys.mjs",
@@ -58,8 +58,8 @@ FINAL_TARGET_FILES.actors += [
     "NetErrorChild.sys.mjs",
     "NetErrorParent.sys.mjs",
     "PictureInPictureChild.sys.mjs",
-    "PopupBlockingChild.sys.mjs",
-    "PopupBlockingParent.sys.mjs",
+    "PopupAndRedirectBlockingChild.sys.mjs",
+    "PopupAndRedirectBlockingParent.sys.mjs",
     "PrintingChild.sys.mjs",
     "PrintingParent.sys.mjs",
     "PrintingSelectionChild.sys.mjs",
@@ -80,4 +80,13 @@ FINAL_TARGET_FILES.actors += [
     "ViewSourcePageParent.sys.mjs",
     "WebChannelChild.sys.mjs",
     "WebChannelParent.sys.mjs",
+]
+
+MOZ_SRC_FILES += [
+    "ColorPickerChild.sys.mjs",
+    "ColorPickerParent.sys.mjs",
+    "DateTimePickerChild.sys.mjs",
+    "DateTimePickerParent.sys.mjs",
+    "InputPickerChildCommon.sys.mjs",
+    "InputPickerParentCommon.sys.mjs",
 ]

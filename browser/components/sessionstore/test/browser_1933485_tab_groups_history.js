@@ -13,12 +13,13 @@ add_task(
   async function test_browser_1933485_tabGroupImmediatelyStoredInClosedGroups() {
     let win = await promiseNewWindowLoaded();
 
-    const tabs = [
-      BrowserTestUtils.addTab(win.gBrowser, "about:blank"),
-      BrowserTestUtils.addTab(win.gBrowser, "about:robots"),
-      BrowserTestUtils.addTab(win.gBrowser, "https://www.example.com"),
-    ];
-    await Promise.all(tabs.map(t => promiseBrowserLoaded(t.linkedBrowser)));
+    const urls = ["about:blank", "about:robots", "https://www.example.com/"];
+    const tabs = urls.map(url => BrowserTestUtils.addTab(win.gBrowser, url));
+    await Promise.all(
+      tabs.map((t, i) =>
+        BrowserTestUtils.browserLoaded(t.linkedBrowser, { wantLoad: urls[i] })
+      )
+    );
 
     const tabGroup = win.gBrowser.addTabGroup(tabs);
 

@@ -100,7 +100,10 @@ void nsPlaceholderFrame::Reflow(nsPresContext* aPresContext,
   // Popups are an exception though, because their position doesn't depend on
   // the placeholder, so they don't have this requirement (and this condition
   // doesn't hold anyways because the default popupgroup goes before than the
-  // default tooltip, for example).
+  // default tooltip, for example). Same for the backdrop.
+  // TODO(emilio): All top layer nodes technically can hit this, but their
+  // static pos is supposed to be 0, 0, see
+  // https://github.com/w3c/csswg-drafts/issues/9939.
   //
   // We also have an exception if the out-of-flow created an orthogonal flow,
   // because in this case we may have needed to do a measuring reflow during
@@ -108,6 +111,7 @@ void nsPlaceholderFrame::Reflow(nsPresContext* aPresContext,
   // placeholder being reflowed first.
   if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW) &&
       !mOutOfFlowFrame->IsMenuPopupFrame() &&
+      mOutOfFlowFrame->Style()->GetPseudoType() != PseudoStyleType::Backdrop &&
       !mOutOfFlowFrame->HasAnyStateBits(NS_FRAME_FIRST_REFLOW) &&
       !mOutOfFlowFrame->GetWritingMode().IsOrthogonalTo(GetWritingMode())) {
     // Unfortunately, this can currently happen when the placeholder is in a
@@ -142,16 +146,9 @@ static FrameChildListID ChildListIDForOutOfFlow(nsFrameState aPlaceholderState,
   if (aPlaceholderState & PLACEHOLDER_FOR_FLOAT) {
     return FrameChildListID::Float;
   }
-  if (aPlaceholderState & PLACEHOLDER_FOR_FIXEDPOS) {
-    return nsLayoutUtils::MayBeReallyFixedPos(aChild)
-               ? FrameChildListID::Fixed
-               : FrameChildListID::Absolute;
-  }
-  if (aPlaceholderState & PLACEHOLDER_FOR_ABSPOS) {
-    return FrameChildListID::Absolute;
-  }
-  MOZ_DIAGNOSTIC_CRASH("unknown list");
-  return FrameChildListID::Float;
+  MOZ_ASSERT(aPlaceholderState &
+             (PLACEHOLDER_FOR_FIXEDPOS | PLACEHOLDER_FOR_ABSPOS));
+  return FrameChildListID::Absolute;
 }
 
 void nsPlaceholderFrame::Destroy(DestroyContext& aContext) {

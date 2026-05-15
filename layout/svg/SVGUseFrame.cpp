@@ -9,7 +9,6 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUtils.h"
-#include "mozilla/dom/MutationEvent.h"
 #include "mozilla/dom/SVGUseElement.h"
 #include "nsLayoutUtils.h"
 
@@ -56,7 +55,7 @@ void SVGUseFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
     // make sure our cached transform matrix gets (lazily) updated
     mCanvasTM = nullptr;
     SVGUtils::ScheduleReflowSVG(this);
-    SVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
+    SVGUtils::NotifyChildrenOfSVGChange(this, ChangeFlag::TransformChanged);
   }
 }
 
@@ -90,9 +89,9 @@ void SVGUseFrame::ReflowSVG() {
   // created for that purpose.
   auto* content = SVGUseElement::FromNode(GetContent());
   float x = SVGContentUtils::CoordToFloat(content, StyleSVGReset()->mX,
-                                          SVGContentUtils::X);
+                                          SVGLength::Axis::X);
   float y = SVGContentUtils::CoordToFloat(content, StyleSVGReset()->mY,
-                                          SVGContentUtils::Y);
+                                          SVGLength::Axis::Y);
   mRect.MoveTo(nsLayoutUtils::RoundGfxRectToAppRect(gfxRect(x, y, 0, 0),
                                                     AppUnitsPerCSSPixel())
                    .TopLeft());
@@ -106,12 +105,13 @@ void SVGUseFrame::ReflowSVG() {
   SVGGFrame::ReflowSVG();
 }
 
-void SVGUseFrame::NotifySVGChanged(uint32_t aFlags) {
-  if (aFlags & COORD_CONTEXT_CHANGED && !(aFlags & TRANSFORM_CHANGED)) {
+void SVGUseFrame::NotifySVGChanged(ChangeFlags aFlags) {
+  if (aFlags.contains(ChangeFlag::CoordContextChanged) &&
+      !aFlags.contains(ChangeFlag::TransformChanged)) {
     // Coordinate context changes affect mCanvasTM if we have a
     // percentage 'x' or 'y'
     if (StyleSVGReset()->mX.HasPercent() || StyleSVGReset()->mY.HasPercent()) {
-      aFlags |= TRANSFORM_CHANGED;
+      aFlags += ChangeFlag::TransformChanged;
       // Ancestor changes can't affect how we render from the perspective of
       // any rendering observers that we may have, so we don't need to
       // invalidate them. We also don't need to invalidate ourself, since our

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CodeAddressService_h__
-#define CodeAddressService_h__
+#ifndef CodeAddressService_h_
+#define CodeAddressService_h_
 
 #include <cstddef>
 #include <cstdint>
@@ -247,4 +247,4 @@ class CodeAddressService
 
 }  // namespace mozilla
 
-#endif  // CodeAddressService_h__
+#endif  // CodeAddressService_h_

@@ -141,6 +141,7 @@ class WallpapersUseCases(
             }
             val currentWallpaper = possibleWallpapers.find { it.name == currentWallpaperName }
                 ?: fileManager.lookupExpiredWallpaper(settings)
+                ?: Wallpaper.getCurrentWallpaperFromSettings(settings)
                 ?: Wallpaper.Default
 
             // Dispatching this early will make it accessible to the home screen ASAP. This may have
@@ -157,9 +158,11 @@ class WallpapersUseCases(
                 wallpaper.copy(thumbnailFileState = result)
             }
 
-            val defaultIncluded = listOf(Wallpaper.Default) + wallpapersWithUpdatedThumbnailState
+            val defaultIncluded = defaultWallpapers + wallpapersWithUpdatedThumbnailState
             appStore.dispatch(AppAction.WallpaperAction.UpdateAvailableWallpapers(defaultIncluded))
         }
+
+        private val defaultWallpapers: List<Wallpaper> = listOf(Wallpaper.EdgeToEdge, Wallpaper.Default)
 
         private fun Wallpaper.isExpired(): Boolean = when (this) {
             Wallpaper.Default -> false
@@ -269,7 +272,9 @@ class WallpapersUseCases(
          * @param wallpaper The selected wallpaper.
          */
         override suspend fun invoke(wallpaper: Wallpaper): Wallpaper.ImageFileState {
-            return if (wallpaper == Wallpaper.Default || fileManager.wallpaperImagesExist(wallpaper)) {
+            return if (wallpaper.collection == Wallpaper.DefaultCollection ||
+                fileManager.wallpaperImagesExist(wallpaper)
+            ) {
                 selectWallpaper(wallpaper)
                 dispatchDownloadState(wallpaper, Wallpaper.ImageFileState.Downloaded)
                 Wallpaper.ImageFileState.Downloaded

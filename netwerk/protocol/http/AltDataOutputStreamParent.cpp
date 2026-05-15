@@ -7,7 +7,6 @@
 
 #include "mozilla/net/AltDataOutputStreamParent.h"
 #include "mozilla/PerfStats.h"
-#include "mozilla/Unused.h"
 #include "nsIAsyncOutputStream.h"
 
 namespace mozilla {
@@ -29,7 +28,7 @@ mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvWriteData(
     const nsCString& data) {
   if (NS_FAILED(mStatus)) {
     if (mIPCOpen) {
-      Unused << SendError(mStatus);
+      (void)SendError(mStatus);
     }
     return IPC_OK();
   }
@@ -39,7 +38,7 @@ mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvWriteData(
     rv = mOutputStream->Write(data.BeginReading(), data.Length(), &n);
     MOZ_ASSERT(n == data.Length() || NS_FAILED(rv));
     if (NS_FAILED(rv) && mIPCOpen) {
-      Unused << SendError(rv);
+      (void)SendError(rv);
     }
   }
   return IPC_OK();
@@ -51,7 +50,7 @@ mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvClose(
 
   if (NS_FAILED(mStatus)) {
     if (mIPCOpen) {
-      Unused << SendError(mStatus);
+      (void)SendError(mStatus);
     }
     return IPC_OK();
   }
@@ -66,7 +65,7 @@ mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvClose(
 
   nsresult rv = asyncOutputStream->CloseWithStatus(aStatus);
   if (NS_FAILED(rv) && mIPCOpen) {
-    Unused << SendError(rv);
+    (void)SendError(rv);
   }
 
   mOutputStream = nullptr;
@@ -79,7 +78,7 @@ void AltDataOutputStreamParent::ActorDestroy(ActorDestroyReason aWhy) {
 
 mozilla::ipc::IPCResult AltDataOutputStreamParent::RecvDeleteSelf() {
   mIPCOpen = false;
-  Unused << SendDeleteSelf();
+  (void)SendDeleteSelf();
   return IPC_OK();
 }
 

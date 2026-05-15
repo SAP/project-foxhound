@@ -23,7 +23,7 @@ add_task(async function () {
   store.dispatch(Actions.batchEnable(false));
 
   let wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   const requestItem = document.querySelectorAll(".request-list-item")[0];
@@ -56,7 +56,7 @@ add_task(async function () {
   clickOnSidebarTab(document, "response");
   await wait;
 
-  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  wait = waitForDOM(document, "#response-panel .cm-content");
   const header = document.querySelector(
     "#response-panel .raw-data-toggle-input .devtools-checkbox-toggle"
   );
@@ -65,7 +65,7 @@ add_task(async function () {
 
   // CodeMirror will only load lines currently in view to the DOM. getValue()
   // retrieves all lines pending render after a user begins scrolling.
-  const text = document.querySelector(".CodeMirror").CodeMirror.getValue();
+  const text = getCodeMirrorValue(monitor);
 
   ok(
     text.includes("\u0411\u0440\u0430\u0442\u0430\u043d"),

@@ -5,14 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-
-#include "jsapi.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
-#include "nsContentUtils.h"
-#include "nsNetUtil.h"
+#include "jsapi.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
+#include "nsContentUtils.h"
+#include "nsNetUtil.h"
 
 using namespace mozilla::dom;
 

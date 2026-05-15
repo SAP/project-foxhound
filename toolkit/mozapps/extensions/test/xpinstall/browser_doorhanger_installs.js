@@ -12,13 +12,15 @@ const { ExtensionPermissions } = ChromeUtils.importESModule(
 const lazy = {};
 ChromeUtils.defineLazyGetter(lazy, "l10n", function () {
   return new Localization(
-    ["browser/addonNotifications.ftl", "branding/brand.ftl"],
+    [
+      "browser/addonNotifications.ftl",
+      "branding/brand.ftl",
+      "toolkit/global/extensions.ftl",
+    ],
     true
   );
 });
 
-const SECUREROOT =
-  "https://example.com/browser/toolkit/mozapps/extensions/test/xpinstall/";
 const PROGRESS_NOTIFICATION = "addon-progress";
 
 const CHROMEROOT = extractChromeRoot(gTestPath);
@@ -41,10 +43,6 @@ const cleanupBlocklist = async () => {
   });
   needsCleanupBlocklist = false;
 };
-
-function waitForTick() {
-  return new Promise(resolve => executeSoon(resolve));
-}
 
 function getObserverTopic(aNotificationId) {
   let topic = aNotificationId;
@@ -103,7 +101,7 @@ async function waitForProgressNotification(
 
   await observerPromise;
   await panelEventPromise;
-  await waitForTick();
+  await TestUtils.waitForTick();
 
   info("Saw a notification");
   ok(win.PopupNotifications.isPanelOpen, "Panel should be open");
@@ -302,7 +300,7 @@ async function waitForNotification(
 
   await observerPromise;
   await panelEventPromise;
-  await waitForTick();
+  await TestUtils.waitForTick();
 
   info("Saw a " + aId + " notification");
   ok(win.PopupNotifications.isPanelOpen, "Panel should be open");
@@ -381,32 +379,116 @@ async function waitForSingleNotification() {
   }
 }
 
-function setupRedirect(aSettings) {
-  var url =
-    "https://example.com/browser/toolkit/mozapps/extensions/test/xpinstall/redirect.sjs?mode=setup";
-  for (var name in aSettings) {
-    url += "&" + name + "=" + aSettings[name];
-  }
-
-  var req = new XMLHttpRequest();
-  req.open("GET", url, false);
-  req.send(null);
+async function setupRedirect(aSettings) {
+  var baseURL = `${SECURE_TESTROOT}/redirect.sjs`;
+  const params = new URLSearchParams(aSettings);
+  params.set("mode", "setup");
+  await fetch(`${baseURL}?${params}`);
 }
 
-var TESTS = [
-  async function test_disabledInstall() {
+async function installAddonWithPrivateBrowsingAccess(xpiUrl, addonId) {
+  // Note: this used to be effective, but changed in bug 1974419. Since then,
+  // the private browsing permission is only read from the database if an
+  // add-on was already installed at the time of prompting.
+  await ExtensionPermissions.add(addonId, {
+    permissions: ["internal:privateBrowsingAllowed"],
+    origins: [],
+  });
+
+  let progressPromise = waitForProgressNotification();
+  let dialogPromise = waitForInstallDialog();
+
+  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+    wantLoad: "about:blank",
+  });
+  gURLBar.value = xpiUrl;
+  gURLBar.focus();
+  EventUtils.synthesizeKey("KEY_Enter");
+
+  await progressPromise;
+  let installDialog = await dialogPromise;
+
+  testInstallDialogIncognitoCheckbox(installDialog, {
+    incognitoHidden: false,
+    // Note: before the change in bug 1974419, this expectation was true.
+    incognitoChecked: false,
+    toggleIncognito: true,
+  });
+  let notificationPromise = acceptAppMenuNotificationWhenShown(
+    "addon-installed",
+    addonId
+  );
+  let readyPromise = AddonTestUtils.promiseWebExtensionStartup(addonId);
+  installDialog.button.click();
+  await notificationPromise;
+  let installs = await AddonManager.getAllInstalls();
+  is(installs.length, 0, "Should be no pending installs");
+
+  await readyPromise;
+
+  let policy = WebExtensionPolicy.getByID(addonId);
+  ok(policy.privateBrowsingAllowed, "private browsing permission granted");
+
+  await removeTabAndWaitForNotificationClose();
+}
+
+add_setup(async function () {
+  requestLongerTimeout(4);
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.logging.enabled", true],
+      ["security.dialog_enable_delay", 0],
+    ],
+  });
+
+  const XPInstallObserver = {
+    observe(aSubject, aTopic) {
+      let installInfo = aSubject.wrappedJSObject;
+      info(`Observed ${aTopic} for ${installInfo.installs.length} installs`);
+      installInfo.installs.forEach(aInstall =>
+        info(
+          `Install of ${aInstall.sourceURI.spec} was in state ${aInstall.state}`
+        )
+      );
+    },
+  };
+
+  Services.obs.addObserver(XPInstallObserver, "addon-install-started");
+  Services.obs.addObserver(XPInstallObserver, "addon-install-blocked");
+  Services.obs.addObserver(XPInstallObserver, "addon-install-failed");
+
+  registerCleanupFunction(async function () {
+    let aInstalls = await AddonManager.getAllInstalls();
+    aInstalls.forEach(function (aInstall) {
+      aInstall.cancel();
+    });
+
+    Services.obs.removeObserver(XPInstallObserver, "addon-install-started");
+    Services.obs.removeObserver(XPInstallObserver, "addon-install-blocked");
+    Services.obs.removeObserver(XPInstallObserver, "addon-install-failed");
+  });
+});
+
+describe("Add-on installation doorhangers", function () {
+  async function beforeAndAfterEach() {
+    ok(!PopupNotifications.isPanelOpen, "Notification should be closed");
+    let installs = await AddonManager.getAllInstalls();
+    is(installs.length, 0, "Should be no active installs");
+  }
+  beforeEach(beforeAndAfterEach);
+  afterEach(beforeAndAfterEach);
+
+  it("should show an 'install disabled' notification when xpinstall.enabled=false that lets the user enable installation", async function test_disabledInstall() {
     await SpecialPowers.pushPrefEnv({
       set: [["xpinstall.enabled", false]],
     });
     let notificationPromise = waitForNotification("xpinstall-disabled");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "amosigned.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "amosigned.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     let panel = await notificationPromise;
 
@@ -440,22 +522,18 @@ var TESTS = [
     let installs = await AddonManager.getAllInstalls();
     is(installs.length, 0, "Shouldn't be any pending installs");
     await SpecialPowers.popPrefEnv();
-  },
+  });
 
-  async function test_blockedInstall() {
+  it("should show addon-install-blocked for 3rd party installs and proceed to installation after being allowed by the user", async function test_blockedInstall() {
     await SpecialPowers.pushPrefEnv({
       set: [["extensions.postDownloadThirdPartyPrompt", false]],
     });
 
     let notificationPromise = waitForNotification("addon-install-blocked");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "amosigned.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "amosigned.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     let panel = await notificationPromise;
 
@@ -515,22 +593,18 @@ var TESTS = [
 
     await BrowserTestUtils.removeTab(gBrowser.selectedTab);
     await SpecialPowers.popPrefEnv();
-  },
+  });
 
-  async function test_blockedPostDownload() {
+  it("should show the 3rd party install panel when installing add-ons from websites", async function test_blockedPostDownload() {
     await SpecialPowers.pushPrefEnv({
       set: [["extensions.postDownloadThirdPartyPrompt", true]],
     });
 
     let notificationPromise = waitForNotification("addon-install-blocked");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "amosigned.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "amosigned.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     let panel = await notificationPromise;
 
@@ -573,28 +647,34 @@ var TESTS = [
 
     await BrowserTestUtils.removeTab(gBrowser.selectedTab);
     await SpecialPowers.popPrefEnv();
-  },
+  });
 
-  async function test_recommendedPostDownload() {
+  it("should not show the 3rd party install panel when installing recommended add-ons", async function test_recommendedPostDownload() {
     await SpecialPowers.pushPrefEnv({
-      set: [["extensions.postDownloadThirdPartyPrompt", true]],
+      set: [
+        ["extensions.postDownloadThirdPartyPrompt", true],
+        // recommended.xpi is signed with AMO staging signature.
+        ["xpinstall.signatures.dev-root", true],
+        // Disable the blocklist because recommended.xpi is signed
+        // only with the staging signature and it may end up hitting
+        // a false positive on the Blocklist bloomfilter computed
+        // from all add-ons known by AMO as signed with the
+        // production key (e.g. see Bug 1996059).
+        ["extensions.blocklist.enabled", false],
+      ],
     });
 
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "recommended.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "recommended.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
 
     let installDialog = await waitForInstallDialog();
 
     let notificationPromise = acceptAppMenuNotificationWhenShown(
       "addon-installed",
-      "{811d77f1-f306-4187-9251-b4ff99bad60b}"
+      "recommended-line@test.mozilla.org"
     );
 
     installDialog.button.click();
@@ -604,15 +684,15 @@ var TESTS = [
     is(installs.length, 0, "Should be no pending installs");
 
     let addon = await AddonManager.getAddonByID(
-      "{811d77f1-f306-4187-9251-b4ff99bad60b}"
+      "recommended-line@test.mozilla.org"
     );
     await addon.uninstall();
 
     await BrowserTestUtils.removeTab(gBrowser.selectedTab);
     await SpecialPowers.popPrefEnv();
-  },
+  });
 
-  async function test_priviledgedNo3rdPartyPrompt() {
+  it("should not show the 3rd party install panel when installing privileged add-ons", async function test_priviledgedNo3rdPartyPrompt() {
     await SpecialPowers.pushPrefEnv({
       set: [["extensions.postDownloadThirdPartyPrompt", true]],
     });
@@ -621,11 +701,7 @@ var TESTS = [
       AddonManager.checkUpdateSecurity = true;
     });
 
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "privileged.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "privileged.xpi";
 
     let installDialogPromise = waitForInstallDialog();
 
@@ -637,7 +713,7 @@ var TESTS = [
       ExtensionTestUtils.failOnSchemaWarnings(false);
       let tab = await BrowserTestUtils.openNewForegroundTab(
         gBrowser,
-        TESTROOT + "installtrigger.html?" + triggers
+        TESTROOT + "navigate.html?" + xpiURL
       );
 
       let notificationPromise = acceptAppMenuNotificationWhenShown(
@@ -667,16 +743,12 @@ var TESTS = [
 
     await SpecialPowers.popPrefEnv();
     AddonManager.checkUpdateSecurity = true;
-  },
+  });
 
-  async function test_permaBlockInstall() {
+  it("should permanently block installations from a site when the user chooses 'Never Allow'", async function test_permaBlockInstall() {
     let notificationPromise = waitForNotification("addon-install-blocked");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "amosigned.xpi",
-      })
-    );
-    let target = TESTROOT + "installtrigger.html?" + triggers;
+    let xpiURL = TESTROOT + "amosigned.xpi";
+    let target = TESTROOT + "navigate.html?" + xpiURL;
 
     BrowserTestUtils.openNewForegroundTab(gBrowser, target);
     let notification = (await notificationPromise).firstElementChild;
@@ -705,15 +777,11 @@ var TESTS = [
     await BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
     PermissionTestUtils.remove(target, "install");
-  },
+  });
 
-  async function test_permaBlockedInstallNoPrompt() {
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "amosigned.xpi",
-      })
-    );
-    let target = TESTROOT + "installtrigger.html?" + triggers;
+  it("should not show any installation prompt for a site that is permanently blocked", async function test_permaBlockedInstallNoPrompt() {
+    let xpiURL = TESTROOT + "amosigned.xpi";
+    let target = TESTROOT + "navigate.html?" + xpiURL;
 
     PermissionTestUtils.add(target, "install", Services.perms.DENY_ACTION);
     await BrowserTestUtils.openNewForegroundTab(gBrowser, target);
@@ -736,28 +804,24 @@ var TESTS = [
     await BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
     PermissionTestUtils.remove(target, "install");
-  },
+  });
 
-  async function test_whitelistedInstall() {
+  it("should proceed directly to the install dialog for a site that already has permission to install add-ons", async function test_allowedInstall() {
     let originalTab = gBrowser.selectedTab;
     let tab;
     gBrowser.selectedTab = originalTab;
     PermissionTestUtils.add(
-      "http://example.com/",
+      "https://example.com/",
       "install",
       Services.perms.ALLOW_ACTION
     );
 
     let progressPromise = waitForProgressNotification();
     let dialogPromise = waitForInstallDialog();
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "amosigned.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "amosigned.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      SECURE_TESTROOT + "navigate.html?" + xpiURL
     ).then(newTab => (tab = newTab));
     await progressPromise;
     let installDialog = await dialogPromise;
@@ -777,6 +841,9 @@ var TESTS = [
       "amosigned-xpi@tests.mozilla.org",
       { dismiss: true }
     );
+    let readyPromise = AddonTestUtils.promiseWebExtensionStartup(
+      "amosigned-xpi@tests.mozilla.org"
+    );
     acceptInstallDialog(installDialog);
 
     await notificationPromise;
@@ -788,9 +855,15 @@ var TESTS = [
       "amosigned-xpi@tests.mozilla.org"
     );
 
+    await readyPromise;
+    let readyPromise2 = AddonTestUtils.promiseWebExtensionStartup(
+      "amosigned-xpi@tests.mozilla.org"
+    );
+
     // Test that the addon does not have permission. Reload it to ensure it would
     // have been set if possible.
     await addon.reload();
+    await readyPromise2;
     let policy = WebExtensionPolicy.getByID(addon.id);
     ok(
       !policy.privateBrowsingAllowed,
@@ -799,28 +872,47 @@ var TESTS = [
 
     await addon.uninstall();
 
-    PermissionTestUtils.remove("http://example.com/", "install");
+    PermissionTestUtils.remove("https://example.com/", "install");
 
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_failedDownload() {
+  it("should show a connection failure notification when the add-on download fails", async function test_failedDownload() {
     PermissionTestUtils.add(
       "http://example.com/",
       "install",
       Services.perms.ALLOW_ACTION
     );
 
+    let gotFirstRequest = false;
+    const server = AddonTestUtils.createHttpServer({
+      hosts: ["fail.example.com"],
+    });
+    server.registerPathHandler(
+      "/failed-xpi-download.xpi",
+      (request, response) => {
+        response.setStatusLine(request.httpVersion, 200, "OK");
+        response.setHeader("Content-Type", "application/x-xpinstall");
+        if (!gotFirstRequest) {
+          // The first request is expected to be the one intercepted by amContentHandler.sys.mjs,
+          // which will just look to the content-type to detect it as an add-on installation,
+          // then the request is cancelled and a new one retriggered as part of the actual
+          // add-on install flow.
+          gotFirstRequest = true;
+        } else {
+          // This second request is the actual download. We respond with an
+          // error to simulate a network failure.
+          response.setStatusLine(request.httpVersion, 502, "Bad Gateway");
+        }
+      }
+    );
+
     let progressPromise = waitForProgressNotification();
     let failPromise = waitForNotification("addon-install-failed");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "missing.xpi",
-      })
-    );
+    let xpiURL = "http://fail.example.com/failed-xpi-download.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     await progressPromise;
     let panel = await failPromise;
@@ -834,9 +926,9 @@ var TESTS = [
 
     PermissionTestUtils.remove("http://example.com/", "install");
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_corruptFile() {
+  it("should show a 'corrupt file' notification when the downloaded add-on is corrupt", async function test_corruptFile() {
     PermissionTestUtils.add(
       "http://example.com/",
       "install",
@@ -845,14 +937,10 @@ var TESTS = [
 
     let progressPromise = waitForProgressNotification();
     let failPromise = waitForNotification("addon-install-failed");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "corrupt.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "corrupt.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     await progressPromise;
     let panel = await failPromise;
@@ -867,9 +955,9 @@ var TESTS = [
 
     PermissionTestUtils.remove("http://example.com/", "install");
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_incompatible() {
+  it("should show an incompatibility notification when the add-on is not compatible with the Firefox version", async function test_incompatible() {
     PermissionTestUtils.add(
       "http://example.com/",
       "install",
@@ -878,14 +966,10 @@ var TESTS = [
 
     let progressPromise = waitForProgressNotification();
     let failPromise = waitForNotification("addon-install-failed");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "incompatible.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "incompatible.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     await progressPromise;
     let panel = await failPromise;
@@ -904,9 +988,54 @@ var TESTS = [
 
     PermissionTestUtils.remove("http://example.com/", "install");
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_blocklisted() {
+  it.skipIf(
+    "should show a warning in the installation dialog when the add-on is not signed",
+    () => AppConstants.MOZ_REQUIRE_SIGNING,
+    async function test_unsigned() {
+      let progressPromise = waitForProgressNotification();
+      let notificationPromise = waitForNotification("addon-install-blocked");
+      let xpiURL = TESTROOT + "unsigned.xpi";
+      BrowserTestUtils.openNewForegroundTab(
+        gBrowser,
+        TESTROOT + "navigate.html?" + xpiURL
+      );
+      await progressPromise;
+      let panel = await notificationPromise;
+
+      let notification = panel.childNodes[0];
+      let message = panel.ownerDocument.getElementById(
+        "addon-install-blocked-message"
+      );
+      is(
+        message.textContent,
+        "You are attempting to install an add-on from example.com. Make sure you trust this site before continuing.",
+        "Should have seen the right message"
+      );
+
+      let dialogPromise = waitForInstallDialog();
+      // Click on Allow
+      EventUtils.synthesizeMouse(notification.button, 20, 10, {});
+
+      let installDialog = await dialogPromise;
+      message = lazy.l10n.formatValueSync(`webext-perms-list-intro-unsigned`);
+      is(
+        installDialog.introEl.textContent,
+        message,
+        "Should have seen the right message"
+      );
+      is(
+        installDialog.getAttribute("icon"),
+        "chrome://global/skin/icons/warning.svg",
+        "Expect panel icon to be set to the warning icon"
+      );
+
+      await removeTabAndWaitForNotificationClose();
+    }
+  );
+
+  it("should show the appropriate blocklist notification for hard-blocked and soft-blocked add-ons", async function test_blocklisted() {
     let addonName = "XPI Test";
     let id = "amosigned-xpi@tests.mozilla.org";
     let version = "2.2";
@@ -942,7 +1071,7 @@ var TESTS = [
     await testBlocklistedAddon({
       stash: { softblocked: [`${id}:${version}`], blocked: [], unblocked: [] },
       expected: {
-        fluentId: "addon-install-error-soft-blocked",
+        fluentId: "addon-install-error-soft-blocked2",
         blocklistURL,
       },
     });
@@ -966,14 +1095,10 @@ var TESTS = [
 
       let progressPromise = waitForProgressNotification();
       let failPromise = waitForNotification("addon-install-failed-blocklist");
-      let triggers = encodeURIComponent(
-        JSON.stringify({
-          XPI: "amosigned.xpi",
-        })
-      );
+      let xpiURL = TESTROOT + "amosigned.xpi";
       BrowserTestUtils.openNewForegroundTab(
         gBrowser,
-        TESTROOT + "installtrigger.html?" + triggers
+        TESTROOT + "navigate.html?" + xpiURL
       );
       await progressPromise;
       info("Wait for addon-install-failed notification");
@@ -1040,9 +1165,9 @@ var TESTS = [
       BrowserTestUtils.removeTab(gBrowser.selectedTab);
       await closePromise;
     }
-  },
+  });
 
-  async function test_localFile() {
+  it("should show a 'corrupt file' failure notification when installing a local corrupt file", async function test_localFile() {
     let cr = Cc["@mozilla.org/chrome/chrome-registry;1"].getService(
       Ci.nsIChromeRegistry
     );
@@ -1060,7 +1185,9 @@ var TESTS = [
       }, "addon-install-failed");
     });
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+      wantLoad: "about:blank",
+    });
     BrowserTestUtils.startLoadingURIString(gBrowser, path);
     await failPromise;
 
@@ -1080,14 +1207,16 @@ var TESTS = [
     );
 
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_urlBar() {
+  it("should handle add-on installation initiated from the address bar", async function test_urlBar() {
     let progressPromise = waitForProgressNotification();
     let dialogPromise = waitForInstallDialog();
 
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+      wantLoad: "about:blank",
+    });
     gURLBar.value = TESTROOT + "amosigned.xpi";
     gURLBar.focus();
     EventUtils.synthesizeKey("KEY_Enter");
@@ -1126,21 +1255,17 @@ var TESTS = [
     await addon.uninstall();
 
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_wrongHost() {
-    let requestedUrl = TESTROOT2 + "enabled.html";
+  it("should show addon-install-failed when failing to install on a navigation that is triggered by the system principal", async function test_wrongHost() {
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
 
     let loadedPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser,
       false,
-      requestedUrl
+      TESTROOT2
     );
-    BrowserTestUtils.startLoadingURIString(
-      gBrowser,
-      TESTROOT2 + "enabled.html"
-    );
+    BrowserTestUtils.startLoadingURIString(gBrowser, TESTROOT2);
     await loadedPromise;
 
     let progressPromise = waitForProgressNotification();
@@ -1158,18 +1283,14 @@ var TESTS = [
     );
 
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_renotifyBlocked() {
+  it("should re-notify the user about blocked install if they dismiss the panel then trigger it again", async function test_renotifyBlocked() {
     let notificationPromise = waitForNotification("addon-install-blocked");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "amosigned.xpi",
-      })
-    );
+    let xpiURL = TESTROOT + "amosigned.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     let panel = await notificationPromise;
 
@@ -1185,7 +1306,7 @@ var TESTS = [
     notificationPromise = waitForNotification("addon-install-blocked");
     BrowserTestUtils.startLoadingURIString(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     await notificationPromise;
 
@@ -1196,24 +1317,51 @@ var TESTS = [
 
     installs = await AddonManager.getAllInstalls();
     is(installs.length, 0, "Should have cancelled the installs");
-  },
+  });
 
-  async function test_cancel() {
+  it("should cancel the installation when the user clicks cancel on the download progress notification", async function test_cancel() {
     PermissionTestUtils.add(
       "http://example.com/",
       "install",
       Services.perms.ALLOW_ACTION
     );
 
-    let notificationPromise = waitForNotification(PROGRESS_NOTIFICATION);
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "slowinstall.sjs?file=amosigned.xpi",
-      })
+    let gotFirstRequest = false;
+    let hangingResponse;
+    let hangingResponseCleanup = () => {
+      hangingResponse?.finish();
+      hangingResponse = null;
+    };
+    registerCleanupFunction(hangingResponseCleanup);
+    const server = AddonTestUtils.createHttpServer({
+      hosts: ["slow.example.com"],
+    });
+    server.registerPathHandler(
+      "/slow-xpi-download.xpi",
+      (request, response) => {
+        response.setStatusLine(request.httpVersion, 200, "OK");
+        response.setHeader("Content-Type", "application/x-xpinstall");
+        if (!gotFirstRequest) {
+          // The first request is expected to be the one intercepted by amContentHandler.sys.mjs,
+          // which will just look to the content-type to detect it as an add-on installation,
+          // then the request is cancelled and a new one retriggered as part of the actual
+          // add-on install flow.
+          gotFirstRequest = true;
+        } else {
+          // This second request is meant to be the one that is part of the actual add-on
+          // install flow and we leave it pending so that the test can then reliably
+          // cancel it from the download progress notification.
+          hangingResponse = response;
+          response.processAsync();
+        }
+      }
     );
+
+    let notificationPromise = waitForNotification(PROGRESS_NOTIFICATION);
+    let xpiURL = "http://slow.example.com/slow-xpi-download.xpi";
     BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     let panel = await notificationPromise;
     let notification = panel.childNodes[0];
@@ -1243,7 +1391,7 @@ var TESTS = [
     EventUtils.synthesizeMouseAtCenter(notification.secondaryButton, {});
     await cancelledPromise;
 
-    await waitForTick();
+    await TestUtils.waitForTick();
 
     ok(!PopupNotifications.isPanelOpen, "Notification should be closed");
 
@@ -1252,9 +1400,10 @@ var TESTS = [
 
     PermissionTestUtils.remove("http://example.com/", "install");
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  },
+    hangingResponseCleanup();
+  });
 
-  async function test_failedSecurity() {
+  it("should fail the installation for an https redirect to an insecure http URL without a fallback hash", async function test_failedSecurity() {
     await SpecialPowers.pushPrefEnv({
       set: [
         [PREF_INSTALL_REQUIREBUILTINCERTS, false],
@@ -1262,57 +1411,39 @@ var TESTS = [
       ],
     });
 
+    // Configures redirect.sjs to redirect to a http url through the Location
+    // header, this is expected to be triggering a download failure with an
+    // ERROR_NETWORK_FAILURE error due to the https url redirecting to an xpi
+    // to be downloaded from an insecure http url
+    // (and no hash provided to allow installing it from an insecure url).
     setupRedirect({
       Location: TESTROOT + "amosigned.xpi",
     });
 
-    let notificationPromise = waitForNotification("addon-install-blocked");
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        XPI: "redirect.sjs?mode=redirect",
-      })
-    );
-    BrowserTestUtils.openNewForegroundTab(
+    let notificationPromise = waitForNotification("addon-install-failed");
+
+    let tab = await BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      SECUREROOT + "installtrigger.html?" + triggers
+      SECURE_TESTROOT
     );
-    let panel = await notificationPromise;
+    let install = await AddonManager.getInstallForURL(
+      SECURE_TESTROOT + "redirect.sjs?mode=redirect"
+    );
+    AddonManager.installAddonFromWebpage(
+      "application/x-xpinstall",
+      tab.linkedBrowser,
+      Services.scriptSecurityManager.getSystemPrincipal(),
+      install
+    );
+    await notificationPromise;
 
-    let notification = panel.childNodes[0];
-    // Click on Allow
-    EventUtils.synthesizeMouse(notification.button, 20, 10, {});
-
-    // Notification should have changed to progress notification
     ok(PopupNotifications.isPanelOpen, "Notification should still be open");
     is(
       PopupNotifications.panel.childNodes.length,
       1,
       "Should be only one notification"
     );
-    notification = panel.childNodes[0];
-    is(
-      notification.id,
-      "addon-progress-notification",
-      "Should have seen the progress notification"
-    );
-
-    // Wait for it to fail
-    await new Promise(resolve => {
-      Services.obs.addObserver(function observer() {
-        Services.obs.removeObserver(observer, "addon-install-failed");
-        resolve();
-      }, "addon-install-failed");
-    });
-
-    // Allow the browser code to add the failure notification and then wait
-    // for the progress notification to dismiss itself
-    await waitForSingleNotification();
-    is(
-      PopupNotifications.panel.childNodes.length,
-      1,
-      "Should be only one notification"
-    );
-    notification = panel.childNodes[0];
+    let notification = PopupNotifications.panel.childNodes[0];
     is(
       notification.id,
       "addon-install-failed-notification",
@@ -1321,25 +1452,26 @@ var TESTS = [
 
     await removeTabAndWaitForNotificationClose();
     await SpecialPowers.popPrefEnv();
-  },
+  });
 
-  async function test_incognito_checkbox() {
+  // Verifies that incognito checkbox is checked if add-on was already
+  // installed before, with private access. Regression test for bug 1581852.
+  it("should revoke incognito permission when users uncheck the checkbox on re-installing add-on with granted incognito permission", async function test_incognito_checkbox() {
     // Grant permission up front.
-    const permissionName = "internal:privateBrowsingAllowed";
-    let incognitoPermission = {
-      permissions: [permissionName],
-      origins: [],
-    };
-    await ExtensionPermissions.add(
-      "amosigned-xpi@tests.mozilla.org",
-      incognitoPermission
+    await installAddonWithPrivateBrowsingAccess(
+      TESTROOT + "amosigned.xpi",
+      "amosigned-xpi@tests.mozilla.org"
     );
+    // ^ the above add-on will be overwritten by the install below, and removed
+    // at the end of this task.
 
     let progressPromise = waitForProgressNotification();
     let dialogPromise = waitForInstallDialog();
 
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+      wantLoad: "about:blank",
+    });
     gURLBar.value = TESTROOT + "amosigned.xpi";
     gURLBar.focus();
     EventUtils.synthesizeKey("KEY_Enter");
@@ -1357,6 +1489,9 @@ var TESTS = [
       "addon-installed",
       "amosigned-xpi@tests.mozilla.org"
     );
+    let readyPromise = AddonTestUtils.promiseWebExtensionStartup(
+      "amosigned-xpi@tests.mozilla.org"
+    );
     installDialog.button.click();
     await notificationPromise;
 
@@ -1367,6 +1502,8 @@ var TESTS = [
       "amosigned-xpi@tests.mozilla.org"
     );
 
+    await readyPromise;
+
     // This addon should no longer have private browsing permission.
     let policy = WebExtensionPolicy.getByID(addon.id);
     ok(!policy.privateBrowsingAllowed, "private browsing permission removed");
@@ -1374,21 +1511,19 @@ var TESTS = [
     await addon.uninstall();
 
     await removeTabAndWaitForNotificationClose();
-  },
+  });
 
-  async function test_incognito_checkbox_new_window() {
+  it("should correctly handle the incognito checkbox toggle during re-install in a new window", async function test_incognito_checkbox_new_window() {
+    // Grant permission up front.
+    await installAddonWithPrivateBrowsingAccess(
+      TESTROOT + "amosigned.xpi",
+      "amosigned-xpi@tests.mozilla.org"
+    );
+    // ^ the above add-on will be overwritten by the install below, and removed
+    // at the end of this task.
+
     let win = await BrowserTestUtils.openNewBrowserWindow();
     await SimpleTest.promiseFocus(win);
-    // Grant permission up front.
-    const permissionName = "internal:privateBrowsingAllowed";
-    let incognitoPermission = {
-      permissions: [permissionName],
-      origins: [],
-    };
-    await ExtensionPermissions.add(
-      "amosigned-xpi@tests.mozilla.org",
-      incognitoPermission
-    );
 
     let panelEventPromise = new Promise(resolve => {
       win.PopupNotifications.panel.addEventListener(
@@ -1425,13 +1560,15 @@ var TESTS = [
       win.gBrowser,
       "about:blank"
     );
-    await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+    await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser, {
+      wantLoad: "about:blank",
+    });
     win.gURLBar.value = TESTROOT + "amosigned.xpi";
     win.gURLBar.focus();
     EventUtils.synthesizeKey("KEY_Enter", {}, win);
 
     await panelEventPromise;
-    await waitForTick();
+    await TestUtils.waitForTick();
 
     let panel = win.PopupNotifications.panel;
     let installDialog = panel.childNodes[0];
@@ -1447,6 +1584,9 @@ var TESTS = [
       "amosigned-xpi@tests.mozilla.org",
       { global: win }
     );
+    let readyPromise = AddonTestUtils.promiseWebExtensionStartup(
+      "amosigned-xpi@tests.mozilla.org"
+    );
     acceptInstallDialog(installDialog);
     await notificationPromise;
 
@@ -1457,6 +1597,8 @@ var TESTS = [
       "amosigned-xpi@tests.mozilla.org"
     );
 
+    await readyPromise;
+
     // This addon should no longer have private browsing permission.
     let policy = WebExtensionPolicy.getByID(addon.id);
     ok(!policy.privateBrowsingAllowed, "private browsing permission removed");
@@ -1464,9 +1606,9 @@ var TESTS = [
     await addon.uninstall();
 
     await BrowserTestUtils.closeWindow(win);
-  },
+  });
 
-  async function test_mv3_installOrigins_disallowed_with_unified_extensions() {
+  it("should fail to install an MV3 add-on without matching install_origins when extensions.install_origins.enabled=true", async function test_mv3_installOrigins_disallowed_with_unified_extensions() {
     await SpecialPowers.pushPrefEnv({
       set: [
         // Disable signature check because we load an unsigned MV3 extension.
@@ -1484,23 +1626,19 @@ var TESTS = [
       "unified-extensions-button",
       win
     );
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        // This XPI does not have any `install_origins` in its manifest.
-        XPI: "unsigned_mv3.xpi",
-      })
-    );
+    // This XPI does not have any `install_origins` in its manifest.
+    let xpiURL = TESTROOT + "unsigned_mv3.xpi";
     await BrowserTestUtils.openNewForegroundTab(
       win.gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     await notificationPromise;
 
     await BrowserTestUtils.closeWindow(win);
     await SpecialPowers.popPrefEnv();
-  },
+  });
 
-  async function test_mv3_installOrigins_allowed_with_unified_extensions() {
+  it("should allow installing an MV3 add-on without matching install_origins when extensions.install_origins.enabled=false", async function test_mv3_installOrigins_allowed_with_unified_extensions() {
     await SpecialPowers.pushPrefEnv({
       set: [
         // Disable signature check because we load an unsigned MV3 extension.
@@ -1519,15 +1657,11 @@ var TESTS = [
       "unified-extensions-button",
       win
     );
-    let triggers = encodeURIComponent(
-      JSON.stringify({
-        // This XPI does not have any `install_origins` in its manifest.
-        XPI: "unsigned_mv3.xpi",
-      })
-    );
+    // This XPI does not have any `install_origins` in its manifest.
+    let xpiURL = TESTROOT + "unsigned_mv3.xpi";
     await BrowserTestUtils.openNewForegroundTab(
       win.gBrowser,
-      TESTROOT + "installtrigger.html?" + triggers
+      TESTROOT + "navigate.html?" + xpiURL
     );
     let panel = await notificationPromise;
 
@@ -1538,81 +1672,5 @@ var TESTS = [
 
     await BrowserTestUtils.closeWindow(win);
     await SpecialPowers.popPrefEnv();
-  },
-];
-
-var gTestStart = null;
-
-var XPInstallObserver = {
-  observe(aSubject, aTopic) {
-    var installInfo = aSubject.wrappedJSObject;
-    info(
-      "Observed " + aTopic + " for " + installInfo.installs.length + " installs"
-    );
-    installInfo.installs.forEach(function (aInstall) {
-      info(
-        "Install of " +
-          aInstall.sourceURI.spec +
-          " was in state " +
-          aInstall.state
-      );
-    });
-  },
-};
-
-add_setup(async function () {
-  requestLongerTimeout(4);
-
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.logging.enabled", true],
-      ["extensions.strictCompatibility", true],
-      ["extensions.install.requireSecureOrigin", false],
-      ["security.dialog_enable_delay", 0],
-      // These tests currently depends on InstallTrigger.install.
-      ["extensions.InstallTrigger.enabled", true],
-      ["extensions.InstallTriggerImpl.enabled", true],
-      // Relax the user input requirements while running this test.
-      ["xpinstall.userActivation.required", false],
-      // Bug 721336 - Use sync XHR system requests
-      ["network.xhr.block_sync_system_requests", false],
-    ],
   });
-
-  Services.obs.addObserver(XPInstallObserver, "addon-install-started");
-  Services.obs.addObserver(XPInstallObserver, "addon-install-blocked");
-  Services.obs.addObserver(XPInstallObserver, "addon-install-failed");
-
-  registerCleanupFunction(async function () {
-    // Make sure no more test parts run in case we were timed out
-    TESTS = [];
-
-    let aInstalls = await AddonManager.getAllInstalls();
-    aInstalls.forEach(function (aInstall) {
-      aInstall.cancel();
-    });
-
-    Services.obs.removeObserver(XPInstallObserver, "addon-install-started");
-    Services.obs.removeObserver(XPInstallObserver, "addon-install-blocked");
-    Services.obs.removeObserver(XPInstallObserver, "addon-install-failed");
-  });
-});
-
-// Run all test cases with the private browsing checkbox available in the first
-// install dialog, before the addon has been already installed.
-add_task(async function testBasic() {
-  for (let i = 0; i < TESTS.length; ++i) {
-    if (gTestStart) {
-      info("Test part took " + (Date.now() - gTestStart) + "ms");
-    }
-
-    ok(!PopupNotifications.isPanelOpen, "Notification should be closed");
-
-    let installs = await AddonManager.getAllInstalls();
-
-    is(installs.length, 0, "Should be no active installs");
-    info("===== Running test case: " + TESTS[i].name);
-    gTestStart = Date.now();
-    await TESTS[i]();
-  }
 });

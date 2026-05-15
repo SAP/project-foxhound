@@ -25,7 +25,6 @@
 #include "api/units/time_delta.h"
 #include "call/audio_state.h"
 #include "call/rtp_transport_config.h"
-#include "call/rtp_transport_controller_send_factory_interface.h"
 
 namespace webrtc {
 
@@ -53,7 +52,7 @@ struct CallConfig {
   BitrateConstraints bitrate_config;
 
   // AudioState which is possibly shared between multiple calls.
-  rtc::scoped_refptr<AudioState> audio_state;
+  scoped_refptr<AudioState> audio_state;
 
   // Audio Processing Module to be used in this call.
   AudioProcessing* audio_processing = nullptr;
@@ -77,9 +76,6 @@ struct CallConfig {
   NetEqFactory* neteq_factory = nullptr;
 
   TaskQueueBase* network_task_queue_ = nullptr;
-  // RtpTransportControllerSend to use for this call.
-  RtpTransportControllerSendFactoryInterface*
-      rtp_transport_controller_send_factory = nullptr;
 
   Metronome* decode_metronome = nullptr;
   Metronome* encode_metronome = nullptr;

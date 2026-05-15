@@ -15,7 +15,6 @@
 #include "mozilla/Omnijar.h"
 #include "mozilla/ProcessType.h"
 #include "mozilla/ipc/FileDescriptor.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProcessUtils.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/ipc/SetProcessTitle.h"
@@ -28,6 +27,11 @@
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxLaunch.h"
+#endif
+
+#if defined(XP_OPENBSD)
+#  include "BinaryPath.h"
+#  include <err.h>
 #endif
 
 #include <algorithm>
@@ -74,6 +78,13 @@ ForkServer::ForkServer(int* aArgc, char*** aArgv) : mArgc(aArgc), mArgv(aArgv) {
  */
 static void ForkServerPreload(int& aArgc, char** aArgv) {
   Omnijar::ChildProcessInit(aArgc, aArgv);
+#if defined(XP_OPENBSD)
+  char binaryPath[MAXPATHLEN];
+  nsresult rv = mozilla::BinaryPath::Get(binaryPath);
+  if (NS_FAILED(rv)) {
+    errx(1, "failed to cache binary path ?");
+  }
+#endif
 }
 
 /**
@@ -230,6 +241,12 @@ bool ForkServer::HandleForkNewSubprocess(UniquePtr<IPC::Message> aMessage) {
 #if defined(MOZ_MEMORY) && defined(DEBUG)
   jemalloc_stats_t stats;
   jemalloc_stats(&stats);
+  // What we actually want to assert is that there are 0 thread-local arenas
+  // (threads may exist but thread-local arenas are opt-in) that would be leaked
+  // (because the threads wont exist in the new process), and 0 private
+  // main-thread-only arenas and this is not the main thread (as those might be
+  // inconsistent in the new process).  Instead we check that there's exactly
+  // one arena - the default public arena).
   MOZ_ASSERT(stats.narenas == 1,
              "ForkServer before fork()/clone() should have a single arena.");
 #endif
@@ -268,7 +285,7 @@ bool ForkServer::HandleForkNewSubprocess(UniquePtr<IPC::Message> aMessage) {
 
   IPC::Message reply(MSG_ROUTING_CONTROL, Reply_ForkNewSubprocess__ID);
   IPC::MessageWriter writer(reply);
-  WriteIPDLParam(&writer, nullptr, pid);
+  WriteParam(&writer, pid);
   mTcver->SendInfallible(reply, "failed to send a reply message");
 
   return false;

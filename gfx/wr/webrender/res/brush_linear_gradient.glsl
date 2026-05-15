@@ -13,15 +13,15 @@ flat varying mediump vec2 v_scale_dir;
 
 #ifdef WR_VERTEX_SHADER
 
-struct Gradient {
+struct LinearGradientBrushData {
     vec4 start_end_point;
     int extend_mode;
     vec2 stretch_size;
 };
 
-Gradient fetch_gradient(int address) {
-    vec4 data[2] = fetch_from_gpu_cache_2(address);
-    return Gradient(
+LinearGradientBrushData fetch_gradient(int address) {
+    vec4 data[2] = fetch_from_gpu_buffer_2f(address);
+    return LinearGradientBrushData(
         data[0],
         int(data[1].x),
         data[1].yz
@@ -40,7 +40,7 @@ void brush_vs(
     int brush_flags,
     vec4 texel_rect
 ) {
-    Gradient gradient = fetch_gradient(prim_address);
+    LinearGradientBrushData gradient = fetch_gradient(prim_address);
 
     write_gradient_vertex(
         vi,
@@ -86,9 +86,13 @@ void swgl_drawSpanRGBA8() {
     if (address < 0) {
         return;
     }
-
+#ifdef WR_FEATURE_DITHERING
+    swgl_commitDitheredLinearGradientRGBA8(sGpuBufferF, address, GRADIENT_ENTRIES, true, v_gradient_repeat.x != 0.0,
+                                   v_pos, v_scale_dir, v_start_offset.x);
+#else
     swgl_commitLinearGradientRGBA8(sGpuBufferF, address, GRADIENT_ENTRIES, true, v_gradient_repeat.x != 0.0,
                                    v_pos, v_scale_dir, v_start_offset.x);
+#endif
 }
 #endif
 

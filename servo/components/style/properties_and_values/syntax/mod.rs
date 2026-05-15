@@ -9,9 +9,10 @@
 use std::fmt::{self, Debug};
 use std::{borrow::Cow, fmt::Write};
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::CustomIdent;
-use cssparser::{Parser as CSSParser, ParserInput as CSSParserInput};
+use cssparser::{Parser as CSSParser, ParserInput as CSSParserInput, Token};
 use style_traits::{
     CssWriter, ParseError as StyleParseError, PropertySyntaxParseError as ParseError,
     StyleParseErrorKind, ToCss,
@@ -23,7 +24,7 @@ mod ascii;
 pub mod data_type;
 
 /// <https://drafts.css-houdini.org/css-properties-values-api-1/#parsing-syntax>
-#[derive(Debug, Clone, Default, MallocSizeOf, PartialEq)]
+#[derive(Debug, Clone, Default, MallocSizeOf, PartialEq, ToShmem)]
 pub struct Descriptor {
     /// The parsed components, if any.
     /// TODO: Could be a Box<[]> if that supported const construction.
@@ -51,6 +52,93 @@ impl Descriptor {
     #[inline]
     pub fn specified_string(&self) -> Option<&str> {
         self.specified.as_deref()
+    }
+
+    /// Parse a syntax descriptor from a stream of tokens
+    /// https://drafts.csswg.org/css-values-5/#typedef-syntax
+    #[inline]
+    pub fn from_css_parser<'i>(input: &mut CSSParser<'i, '_>) -> Result<Self, StyleParseError<'i>> {
+        let mut components = vec![];
+
+        if input.try_parse(|i| i.expect_delim('*')).is_ok() {
+            return Ok(Self::universal());
+        }
+
+        // Parse <syntax-string> if given.
+        if let Ok(syntax_string) = input.try_parse(|i| i.expect_string_cloned()) {
+            return Self::from_str(syntax_string.as_ref(), /* save_specified = */ true).or_else(
+                |err| Err(input.new_custom_error(StyleParseErrorKind::PropertySyntaxField(err))),
+            );
+        }
+
+        loop {
+            let name = Self::try_parse_component_name(input).map_err(|err| {
+                input.new_custom_error(StyleParseErrorKind::PropertySyntaxField(err))
+            })?;
+
+            let multiplier = if name.is_pre_multiplied() {
+                None
+            } else {
+                Self::try_parse_multiplier(input)
+            };
+
+            let component = Component { multiplier, name };
+            components.push(component);
+            let Ok(delim) = input.next() else { break };
+
+            if delim != &Token::Delim('|') {
+                return Err(
+                    input.new_custom_error(StyleParseErrorKind::PropertySyntaxField(
+                        ParseError::ExpectedPipeBetweenComponents,
+                    )),
+                );
+            }
+        }
+
+        Ok(Self {
+            components,
+            specified: None,
+        })
+    }
+
+    fn try_parse_multiplier<'i>(input: &mut CSSParser<'i, '_>) -> Option<Multiplier> {
+        input
+            .try_parse(|input| {
+                let next = input.next().map_err(|_| ())?;
+                match next {
+                    Token::Delim('+') => Ok(Multiplier::Space),
+                    Token::Delim('#') => Ok(Multiplier::Comma),
+                    _ => Err(()),
+                }
+            })
+            .ok()
+    }
+
+    fn try_parse_component_name<'i>(
+        input: &mut CSSParser<'i, '_>,
+    ) -> Result<ComponentName, ParseError> {
+        if input.try_parse(|input| input.expect_delim('<')).is_ok() {
+            let name = Self::parse_component_data_type_name(input)?;
+            input
+                .expect_delim('>')
+                .map_err(|_| ParseError::UnclosedDataTypeName)?;
+            Ok(ComponentName::DataType(name))
+        } else {
+            input.try_parse(|input| {
+                let name = CustomIdent::parse(input, &[]).map_err(|_| ParseError::InvalidName)?;
+                Ok(ComponentName::Ident(name))
+            })
+        }
+    }
+
+    fn parse_component_data_type_name<'i>(
+        input: &mut CSSParser<'i, '_>,
+    ) -> Result<DataType, ParseError> {
+        input
+            .expect_ident()
+            .ok()
+            .and_then(|n| DataType::from_str(n))
+            .ok_or(ParseError::UnknownDataTypeName)
     }
 
     /// Parse a syntax descriptor.
@@ -87,9 +175,9 @@ impl Descriptor {
         // nulls in the parser specially.
         let mut components = vec![];
         {
-            let mut parser = Parser::new(input, &mut components);
+            let mut input = Parser::new(input, &mut components);
             // 5. Repeatedly consume the next input code point from stream.
-            parser.parse()?;
+            input.parse()?;
         }
         Ok(Self {
             components,
@@ -150,7 +238,9 @@ impl Parse for Descriptor {
 }
 
 /// <https://drafts.css-houdini.org/css-properties-values-api-1/#multipliers>
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem)]
+#[derive(
+    Clone, Copy, Debug, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem,
+)]
 pub enum Multiplier {
     /// Indicates a space-separated list.
     Space,
@@ -171,7 +261,7 @@ impl ToCss for Multiplier {
 }
 
 /// <https://drafts.css-houdini.org/css-properties-values-api-1/#syntax-component>
-#[derive(Clone, Debug, MallocSizeOf, PartialEq)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
 pub struct Component {
     name: ComponentName,
     multiplier: Option<Multiplier>,
@@ -192,7 +282,7 @@ impl Component {
 
     /// If the component is premultiplied, return the un-premultiplied component.
     #[inline]
-    pub fn unpremultiplied(&self) -> Cow<Self> {
+    pub fn unpremultiplied(&self) -> Cow<'_, Self> {
         match self.name.unpremultiply() {
             Some(component) => {
                 debug_assert!(
@@ -217,7 +307,7 @@ impl ToCss for Component {
 }
 
 /// <https://drafts.css-houdini.org/css-properties-values-api-1/#syntax-component-name>
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToShmem)]
 pub enum ComponentName {
     /// <https://drafts.css-houdini.org/css-properties-values-api-1/#data-type-name>
     DataType(DataType),

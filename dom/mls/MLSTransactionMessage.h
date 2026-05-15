@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_MLSTransactionMessage_h
 #define mozilla_dom_MLSTransactionMessage_h
 
-#include "nsTArray.h"
-#include "ipc/IPCMessageUtilsSpecializations.h"
-#include "mozilla/security/mls/mls_gk_ffi_generated.h"
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
+#include "ipc/IPCMessageUtilsSpecializations.h"
+#include "mozilla/security/mls/mls_gk_ffi_generated.h"
+#include "nsTArray.h"
 
 using namespace mozilla::security::mls;
 

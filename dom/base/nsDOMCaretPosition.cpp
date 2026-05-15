@@ -6,9 +6,9 @@
 
 #include "nsDOMCaretPosition.h"
 
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/CaretPositionBinding.h"
 #include "mozilla/dom/DOMRect.h"
-#include "mozilla/ErrorResult.h"
 #include "nsRange.h"
 
 using namespace mozilla::dom;

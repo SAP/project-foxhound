@@ -35,18 +35,8 @@ impl gecko_profiler::ProfilerMarker for DatetimeMetricMarker {
         let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
         schema.set_tooltip_label("{marker.data.cat}.{marker.data.id} {marker.data.time}");
         schema.set_table_label("{marker.data.cat}.{marker.data.id}: {marker.data.time}");
-        schema.add_key_label_format_searchable(
-            "cat",
-            "Category",
-            Format::UniqueString,
-            Searchable::Searchable,
-        );
-        schema.add_key_label_format_searchable(
-            "id",
-            "Metric",
-            Format::UniqueString,
-            Searchable::Searchable,
-        );
+        schema.add_key_label_format("cat", "Category", Format::UniqueString);
+        schema.add_key_label_format("id", "Metric", Format::UniqueString);
         // Note: there is no native profiler format for timestamps.
         // Bug 1926644 tracks the work of adding this.
         schema.add_key_label_format("time", "Time", Format::String);
@@ -93,8 +83,8 @@ pub enum DatetimeMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_metadata_getter!(DatetimeMetric, DATETIME_MAP);
-crate::define_metric_namer!(DatetimeMetric);
+define_metric_metadata_getter!(DatetimeMetric, DATETIME_MAP);
+define_metric_namer!(DatetimeMetric);
 
 impl DatetimeMetric {
     /// Create a new datetime metric.
@@ -165,7 +155,7 @@ impl DatetimeMetric {
                 match value.single() {
                     Some(d) => {
                         #[cfg(feature = "with_gecko")]
-                        if gecko_profiler::can_accept_markers() {
+                        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
                             gecko_profiler::add_marker(
                                 "Datetime::set",
                                 TelemetryProfilerCategory,
@@ -183,7 +173,7 @@ impl DatetimeMetric {
                         // so use the (slightly) expensive function to get
                         // the metric's name here.
                         #[cfg(feature = "with_gecko")]
-                        if gecko_profiler::can_accept_markers() {
+                        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
                             let name = id.get_name();
                             let payload = format!(
                                 "Conversion failed for metric {}: {} {} {} {} {} {} {} {}",
@@ -226,7 +216,7 @@ impl Datetime for DatetimeMetric {
                 // is None, so we re-produce the behaviour here so that the
                 // marker reflects what's actually being recorded.
                 #[cfg(feature = "with_gecko")]
-                if gecko_profiler::can_accept_markers() {
+                if gecko_profiler::current_thread_is_being_profiled_for_markers() {
                     // first, make sure that we actually have a value
                     match value {
                         Some(ref d) => {
@@ -273,31 +263,6 @@ impl Datetime for DatetimeMetric {
 
     /// **Exported for test purposes.**
     ///
-    /// Gets the currently stored value as a Datetime.
-    ///
-    /// The precision of this value is truncated to the `time_unit` precision.
-    ///
-    /// This doesn't clear the stored value.
-    ///
-    /// # Arguments
-    ///
-    /// * `ping_name` - represents the optional name of the ping to retrieve the
-    ///   metric for. Defaults to the first value in `send_in_pings`.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<glean::Datetime> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            DatetimeMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            DatetimeMetric::Child(_) => {
-                panic!("Cannot get test value for DatetimeMetric in non-main process!")
-            }
-        }
-    }
-
-    /// **Exported for test purposes.**
-    ///
     /// Gets the number of recorded errors for the given metric and error type.
     ///
     /// # Arguments
@@ -315,6 +280,32 @@ impl Datetime for DatetimeMetric {
             DatetimeMetric::Child(_) => panic!(
                 "Cannot get the number of recorded errors for DatetimeMetric in non-main process!"
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for DatetimeMetric {
+    type Output = glean::Datetime;
+
+    /// **Exported for test purposes.**
+    ///
+    /// Gets the currently stored value as a Datetime.
+    ///
+    /// The precision of this value is truncated to the `time_unit` precision.
+    ///
+    /// This doesn't clear the stored value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ping_name` - represents the optional name of the ping to retrieve the
+    ///   metric for. Defaults to the first value in `send_in_pings`.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<glean::Datetime> {
+        match self {
+            DatetimeMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            DatetimeMetric::Child(_) => {
+                panic!("Cannot get test value for DatetimeMetric in non-main process!")
+            }
         }
     }
 }
@@ -340,7 +331,12 @@ mod test {
         let expected: glean::Datetime = DateTime::parse_from_rfc3339("2020-05-07T11:58:00+05:00")
             .unwrap()
             .into();
-        assert_eq!(expected, metric.test_get_value("test-ping").unwrap());
+        assert_eq!(
+            expected,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -354,7 +350,12 @@ mod test {
         let expected: glean::Datetime = DateTime::parse_from_rfc3339("2020-05-07T11:58:00+05:00")
             .unwrap()
             .into();
-        assert_eq!(expected, metric.test_get_value("test-ping").unwrap());
+        assert_eq!(
+            expected,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -388,6 +389,11 @@ mod test {
         let expected: glean::Datetime = DateTime::parse_from_rfc3339("2020-10-13T16:41:00+05:00")
             .unwrap()
             .into();
-        assert_eq!(expected, parent_metric.test_get_value("test-ping").unwrap());
+        assert_eq!(
+            expected,
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 }

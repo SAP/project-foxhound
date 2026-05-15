@@ -8,6 +8,7 @@
 
 #ifdef MOZ_HAVE_SHMIMAGE
 #  include "mozilla/X11Util.h"
+#  include "mozilla/PodOperations.h"
 #  include "mozilla/gfx/gfxVars.h"
 #  include "mozilla/ipc/SharedMemoryMapping.h"
 #  include "gfxPlatform.h"

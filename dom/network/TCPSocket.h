@@ -7,19 +7,19 @@
 #ifndef mozilla_dom_TCPSocket_h
 #define mozilla_dom_TCPSocket_h
 
+#include "js/RootingAPI.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/TCPSocketBinding.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/DOMEventTargetHelper.h"
-#include "nsIProxyInfo.h"
-#include "nsITransport.h"
-#include "nsIStreamListener.h"
 #include "nsIAsyncInputStream.h"
-#include "nsISupportsImpl.h"
 #include "nsIObserver.h"
-#include "nsWeakReference.h"
-#include "nsITCPSocketCallback.h"
 #include "nsIProtocolProxyCallback.h"
-#include "js/RootingAPI.h"
+#include "nsIProxyInfo.h"
+#include "nsIStreamListener.h"
+#include "nsISupportsImpl.h"
+#include "nsITCPSocketCallback.h"
+#include "nsITransport.h"
+#include "nsWeakReference.h"
 
 class nsISocketTransport;
 class nsIInputStreamPump;

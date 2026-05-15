@@ -4,10 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Base64.h"
-#include "mozilla/dom/WebAuthenticationBinding.h"
 #include "mozilla/dom/AuthenticatorAssertionResponse.h"
+
+#include "mozilla/Base64.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/WebAuthenticationBinding.h"
 
 namespace mozilla::dom {
 

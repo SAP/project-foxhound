@@ -10,7 +10,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsIURIMutator.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "mozilla/Unused.h"
 #include "nsSerializationHelper.h"
 #include "mozilla/Base64.h"
 #include "nsEscape.h"
@@ -271,24 +270,21 @@ MOZ_GTEST_BENCH(TestStandardURL, DISABLED_Perf, [] {
               NS_OK);
     ASSERT_EQ(url->GetSpec(out), NS_OK);
     url->Resolve("foo.html?q=45"_ns, out);
-    mozilla::Unused << NS_MutateURI(url).SetScheme("foo"_ns).Finalize(url);
+    (void)NS_MutateURI(url).SetScheme("foo"_ns).Finalize(url);
     url->GetScheme(out);
-    mozilla::Unused
-        << NS_MutateURI(url).SetHost("www.yahoo.com"_ns).Finalize(url);
+    (void)NS_MutateURI(url).SetHost("www.yahoo.com"_ns).Finalize(url);
     url->GetHost(out);
-    mozilla::Unused
-        << NS_MutateURI(url)
-               .SetPathQueryRef(nsLiteralCString(
-                   "/some-path/one-the-net/about.html?with-a-query#for-you"))
-               .Finalize(url);
+    (void)NS_MutateURI(url)
+        .SetPathQueryRef(nsLiteralCString(
+            "/some-path/one-the-net/about.html?with-a-query#for-you"))
+        .Finalize(url);
     url->GetPathQueryRef(out);
-    mozilla::Unused << NS_MutateURI(url)
-                           .SetQuery(nsLiteralCString(
-                               "a=b&d=c&what-ever-you-want-to-be-called=45"))
-                           .Finalize(url);
+    (void)NS_MutateURI(url)
+        .SetQuery(
+            nsLiteralCString("a=b&d=c&what-ever-you-want-to-be-called=45"))
+        .Finalize(url);
     url->GetQuery(out);
-    mozilla::Unused
-        << NS_MutateURI(url).SetRef("#some-book-mark"_ns).Finalize(url);
+    (void)NS_MutateURI(url).SetRef("#some-book-mark"_ns).Finalize(url);
     url->GetRef(out);
   }
 });
@@ -393,7 +389,7 @@ TEST(TestStandardURL, CorruptSerialization)
                                         getter_AddRefs(deserializedObject)));
 
   nsAutoCString canonicalBin;
-  Unused << Base64Decode(serialization, canonicalBin);
+  (void)Base64Decode(serialization, canonicalBin);
 
 // The spec serialization begins at byte 49
 // If the implementation of nsStandardURL::Write changes, this test will need
@@ -405,7 +401,7 @@ TEST(TestStandardURL, CorruptSerialization)
   nsAutoCString corruptedBin = canonicalBin;
   // change mScheme.mPos
   corruptedBin.BeginWriting()[SPEC_OFFSET + spec.Length()] = 1;
-  Unused << Base64Encode(corruptedBin, serialization);
+  (void)Base64Encode(corruptedBin, serialization);
   ASSERT_EQ(
       NS_ERROR_MALFORMED_URI,
       NS_DeserializeObject(serialization, getter_AddRefs(deserializedObject)));
@@ -413,7 +409,7 @@ TEST(TestStandardURL, CorruptSerialization)
   corruptedBin = canonicalBin;
   // change mScheme.mLen
   corruptedBin.BeginWriting()[SPEC_OFFSET + spec.Length() + 4] = 127;
-  Unused << Base64Encode(corruptedBin, serialization);
+  (void)Base64Encode(corruptedBin, serialization);
   ASSERT_EQ(
       NS_ERROR_MALFORMED_URI,
       NS_DeserializeObject(serialization, getter_AddRefs(deserializedObject)));

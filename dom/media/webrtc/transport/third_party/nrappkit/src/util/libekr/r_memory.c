@@ -42,6 +42,8 @@
 #include "r_common.h"
 #include "r_memory.h"
 
+#ifndef NO_MALLOC_REPLACE
+
 typedef struct r_malloc_chunk_ {
 #ifdef SANITY_CHECKS
      UINT4 hdr;
@@ -53,7 +55,7 @@ typedef struct r_malloc_chunk_ {
 
 #define CHUNK_MEMORY_OFFSET                    offsetof(struct r_malloc_chunk_, memory)
 #define GET_CHUNK_ADDR_FROM_MEM_ADDR(memp) \
-        ((struct r_malloc_chunk *)(((unsigned char*)(memp))-CHUNK_MEMORY_OFFSET))
+        ((r_malloc_chunk *)(((unsigned char*)(memp))-CHUNK_MEMORY_OFFSET))
 #define CHUNK_SIZE(size) (size+sizeof(r_malloc_chunk))
 
 #define HDR_FLAG 0x464c4147
@@ -68,7 +70,7 @@ void *r_malloc(int type, size_t size)
 
     total=size+sizeof(r_malloc_chunk);
 
-    if(!(chunk=malloc(total)))
+    if(!(chunk=(r_malloc_chunk*)malloc(total)))
       return(0);
 
 #ifdef SANITY_CHECKS
@@ -115,32 +117,7 @@ void r_free(void *ptr)
     free(chunk);
   }
 
-void *r_realloc(void *ptr, size_t size)
-  {
-    r_malloc_chunk *chunk = 0, *nchunk = 0;
-    size_t total;
-
-    if(!ptr) return(r_malloc(255,size));
-
-    chunk=(r_malloc_chunk *)GET_CHUNK_ADDR_FROM_MEM_ADDR(ptr);
-#ifdef SANITY_CHECKS
-    assert(chunk->hdr==HDR_FLAG);
-#endif
-
-    total=size + sizeof(r_malloc_chunk);
-
-    if(!(nchunk=realloc(chunk,total)))
-      return(0);
-
-    mem_usage-=CHUNK_SIZE(nchunk->size);
-    mem_stats[nchunk->type]-=nchunk->size;
-
-    nchunk->size=size;
-    mem_usage+=CHUNK_SIZE(nchunk->size);
-    mem_stats[nchunk->type]+=nchunk->size;
-
-    return(nchunk->memory);
-  }
+#endif // ifndef NO_MALLOC_REPLACE
 
 char *r_strdup(const char *str)
   {
@@ -152,7 +129,7 @@ char *r_strdup(const char *str)
 
     len=strlen(str)+1;
 
-    if(!(nstr=r_malloc(0,len)))
+    if(!(nstr=(char*)RMALLOC(len)))
       return(0);
 
     memcpy(nstr,str,len);
@@ -160,28 +137,3 @@ char *r_strdup(const char *str)
     return(nstr);
   }
 
-int r_mem_get_usage(UINT4 *usagep)
-  {
-    *usagep=mem_usage;
-
-    return(0);
-  }
-
-int r_memory_dump_stats()
-  {
-    int i;
-
-    printf("Total memory usage: %d\n",mem_usage);
-    printf("Memory usage by bucket\n");
-    for(i=0;i<256;i++){
-      if(mem_stats[i]){
-        printf("%d\t%d\n",i,mem_stats[i]);
-      }
-    }
-    return(0);
-  }
-
-void *r_malloc_compat(size_t size)
-  {
-    return(r_malloc(255,size));
-  }

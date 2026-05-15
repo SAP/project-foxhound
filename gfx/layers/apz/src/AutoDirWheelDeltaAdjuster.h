@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_layers_AutoDirWheelDeltaAdjuster_h__
-#define __mozilla_layers_AutoDirWheelDeltaAdjuster_h__
+#ifndef _mozilla_layers_AutoDirWheelDeltaAdjuster_h_
+#define _mozilla_layers_AutoDirWheelDeltaAdjuster_h_
 
 #include "Axis.h"                         // for AxisX, AxisY, Side
 #include "mozilla/WheelHandlingHelper.h"  // for AutoDirWheelDeltaAdjuster
@@ -86,4 +86,4 @@ class MOZ_STACK_CLASS APZAutoDirWheelDeltaAdjuster final
 }  // namespace layers
 }  // namespace mozilla
 
-#endif  // __mozilla_layers_AutoDirWheelDeltaAdjuster_h__
+#endif  // _mozilla_layers_AutoDirWheelDeltaAdjuster_h_

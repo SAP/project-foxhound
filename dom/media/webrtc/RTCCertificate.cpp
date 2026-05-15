@@ -8,9 +8,9 @@
 
 #include <cstdio>
 #include <cstring>
-#include <memory>
 #include <new>
 #include <utility>
+
 #include "ErrorList.h"
 #include "MainThreadUtils.h"
 #include "cert.h"
@@ -20,9 +20,7 @@
 #include "js/Value.h"
 #include "keyhi.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/OwningNonNull.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/dom/CryptoKey.h"

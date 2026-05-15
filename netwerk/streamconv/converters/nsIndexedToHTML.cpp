@@ -23,9 +23,7 @@
 #include "nsNativeCharsetUtils.h"
 #include "nsString.h"
 #include "nsContentUtils.h"
-#include <algorithm>
 #include "nsIChannel.h"
-#include "mozilla/Unused.h"
 #include "nsIURIMutator.h"
 #include "nsITextToSubURI.h"
 
@@ -135,8 +133,9 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
   if (NS_FAILED(rv)) return rv;
 
   // We use the original URI for the title and parent link when it's a
-  // resource:// url, instead of the jar:file:// url it resolves to.
-  if (!uri->SchemeIs("resource")) {
+  // resource:// or moz-extension:// url, instead of the jar:file://
+  // url it resolves to.
+  if (!uri->SchemeIs("resource") && !uri->SchemeIs("moz-extension")) {
     rv = channel->GetURI(getter_AddRefs(uri));
     if (NS_FAILED(rv)) return rv;
   }
@@ -222,7 +221,7 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
     if (baseUri.Last() != '/') {
       baseUri.Append('/');
       path.Append('/');
-      mozilla::Unused << NS_MutateURI(uri).SetPathQueryRef(path).Finalize(uri);
+      (void)NS_MutateURI(uri).SetPathQueryRef(path).Finalize(uri);
     }
     if (!path.EqualsLiteral("/")) {
       rv = uri->Resolve(".."_ns, parentStr);
@@ -327,8 +326,8 @@ nsresult nsIndexedToHTML::DoOnStartRequest(nsIRequest* request,
       ".file > img {\n"
       "  margin-inline-end: 4px;\n"
       "  margin-inline-start: -20px;\n"
-      "  max-width: 16px;\n"
-      "  max-height: 16px;\n"
+      "  width: 16px;\n"
+      "  height: 16px;\n"
       "  vertical-align: middle;\n"
       "}\n"
       ".dir::before {\n"

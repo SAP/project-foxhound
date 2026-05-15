@@ -45,7 +45,6 @@
 #include "mozilla/dom/XPathExpression.h"
 #include "mozilla/dom/PBackgroundSessionStorageCache.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ReverseIterator.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentList.h"
@@ -282,7 +281,7 @@ void SessionStoreUtils::RestoreDocShellCapabilities(
   if (!mozilla::SessionHistoryInParent()) {
     // With SessionHistoryInParent, this is set from the parent process.
     BrowsingContext* bc = aDocShell->GetBrowsingContext();
-    Unused << bc->SetAllowJavascript(allowJavascript);
+    (void)bc->SetAllowJavascript(allowJavascript);
   }
 }
 
@@ -457,7 +456,7 @@ static void AppendValueToCollectedData(Document& aDocument, nsINode* aNode,
     // further causes an explosion of escape characters. cf. bug 467409
     if (aId.EqualsLiteral("sessionData")) {
       nsAutoCString url;
-      Unused << aDocument.GetDocumentURI()->GetSpecIgnoringRef(url);
+      (void)aDocument.GetDocumentURI()->GetSpecIgnoringRef(url);
       if (url.EqualsLiteral("about:sessionrestore") ||
           url.EqualsLiteral("about:welcomeback")) {
         JS::Rooted<JS::Value> jsval(aCx);
@@ -1367,7 +1366,7 @@ bool SessionStoreUtils::RestoreFormData(const GlobalObject& aGlobal,
   // Don't restore any data for the given frame if the URL
   // stored in the form data doesn't match its current URL.
   nsAutoCString url;
-  Unused << aDocument.GetDocumentURI()->GetSpecIgnoringRef(url);
+  (void)aDocument.GetDocumentURI()->GetSpecIgnoringRef(url);
   if (!aData.mUrl.Value().Equals(url)) {
     return false;
   }
@@ -1720,7 +1719,7 @@ already_AddRefed<Promise> SessionStoreUtils::RestoreDocShellState(
     }
   }
 
-  Unused << aContext.SetAllowJavascript(allowJavascript);
+  (void)aContext.SetAllowJavascript(allowJavascript);
 
   DocShellRestoreState state = {uri, aDocShellCaps};
 

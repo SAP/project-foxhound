@@ -5,7 +5,6 @@
 package mozilla.components.browser.toolbar.display
 
 import android.graphics.Color
-import android.os.Build
 import android.view.View
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
@@ -43,7 +42,6 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
-import org.robolectric.util.ReflectionHelpers
 import mozilla.components.ui.icons.R as iconsR
 
 @RunWith(AndroidJUnit4::class)
@@ -684,24 +682,7 @@ class DisplayToolbarTest {
     }
 
     @Test
-    fun `color filter is set with transparent when securityIconColor changes to transparent and api version is lower than 23`() {
-        ReflectionHelpers.setStaticField(Build.VERSION::class.java, "SDK_INT", 22)
-        val (_, displayToolbar) = createDisplayToolbar()
-
-        assertNull(displayToolbar.views.siteInfoIndicator.colorFilter)
-
-        displayToolbar.colors = displayToolbar.colors.copy(
-            siteInfoIconSecure = Color.TRANSPARENT,
-            siteInfoIconInsecure = Color.TRANSPARENT,
-        )
-
-        assertNotNull(displayToolbar.views.siteInfoIndicator.colorFilter)
-    }
-
-    @Test
-    fun `color filter is cleared when securityIconColor changes to transparent and api version is bigger than 22`() {
-        ReflectionHelpers.setStaticField(Build.VERSION::class.java, "SDK_INT", 23)
-
+    fun `color filter is cleared when securityIconColor changes to transparent`() {
         val (_, displayToolbar) = createDisplayToolbar()
 
         assertNull(displayToolbar.views.siteInfoIndicator.colorFilter)

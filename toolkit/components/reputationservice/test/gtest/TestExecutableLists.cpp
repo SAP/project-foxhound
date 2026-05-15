@@ -2,7 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/3.0/ */
 
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "nsLocalFileCommon.h"
 #include "ApplicationReputation.h"
 

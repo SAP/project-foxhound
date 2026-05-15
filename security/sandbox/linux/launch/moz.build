@@ -15,6 +15,15 @@ UNIFIED_SOURCES += [
 
 SOURCES += [
     "../../chromium-shim/base/logging.cpp",
+    "../../chromium/base/check.cc",
+    "../../chromium/base/check_op.cc",
+    "../../chromium/base/debug/alias.cc",
+    "../../chromium/base/debug/crash_logging.cc",
+    "../../chromium/base/location.cc",
+    "../../chromium/base/strings/string_number_conversions.cc",
+    "../../chromium/base/strings/string_util_constants.cc",
+    "../../chromium/base/strings/stringprintf.cc",
+    "../../chromium/base/trace_event/trace_event_stub.cc",
     "../../chromium/sandbox/linux/services/syscall_wrappers.cc",
 ]
 
@@ -31,7 +40,10 @@ LOCAL_INCLUDES += [
     # but it has to be after ipc/chromium/src.
     "/security/sandbox/chromium",
     "/security/sandbox/chromium-shim",
+    "/security/sandbox/chromium-shim/base/allocator/partition_allocator/src",
+    "/security/sandbox/chromium/base/allocator/partition_allocator/src",
     "/security/sandbox/linux",
+    "/third_party/abseil-cpp",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

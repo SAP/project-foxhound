@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_nsSpeechTask_h
 #define mozilla_dom_nsSpeechTask_h
 
-#include "SpeechSynthesisUtterance.h"
 #include "AudioChannelAgent.h"
+#include "SpeechSynthesisUtterance.h"
 #include "nsISpeechService.h"
 #include "nsWeakReference.h"
 

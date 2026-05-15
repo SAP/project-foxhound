@@ -6,7 +6,7 @@
 <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
 <menupopup id="popup" onpopupshowing="if (isSecondTest) popupShowing(event)" onpopupshown="popupShown()"
-                      onpopuphidden="nextTest()">
+                      onpopuphidden="nextTest()" native="false">
   <menuitem label="One"/>
   <menuitem label="Two"/>
 </menupopup>

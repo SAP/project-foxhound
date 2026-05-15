@@ -115,7 +115,7 @@ add_task(async function () {
   function urlbarBackspace(removeAll) {
     return new Promise(resolve => {
       gBrowser.selectedBrowser.focus();
-      gURLBar.addEventListener(
+      gURLBar.inputField.addEventListener(
         "input",
         function () {
           resolve();

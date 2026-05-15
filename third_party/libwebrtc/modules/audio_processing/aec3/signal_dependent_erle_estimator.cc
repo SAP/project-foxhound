@@ -11,10 +11,20 @@
 #include "modules/audio_processing/aec3/signal_dependent_erle_estimator.h"
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <functional>
+#include <memory>
 #include <numeric>
+#include <vector>
 
+#include "api/array_view.h"
+#include "api/audio/echo_canceller3_config.h"
+#include "modules/audio_processing/aec3/aec3_common.h"
+#include "modules/audio_processing/aec3/render_buffer.h"
 #include "modules/audio_processing/aec3/spectrum_buffer.h"
+#include "modules/audio_processing/logging/apm_data_dumper.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {
@@ -177,13 +187,13 @@ void SignalDependentErleEstimator::Reset() {
 // correction factor to the erle that is given as an input to this method.
 void SignalDependentErleEstimator::Update(
     const RenderBuffer& render_buffer,
-    rtc::ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
+    ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
         filter_frequency_responses,
-    rtc::ArrayView<const float, kFftLengthBy2Plus1> X2,
-    rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> Y2,
-    rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> E2,
-    rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> average_erle,
-    rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>>
+    ArrayView<const float, kFftLengthBy2Plus1> X2,
+    ArrayView<const std::array<float, kFftLengthBy2Plus1>> Y2,
+    ArrayView<const std::array<float, kFftLengthBy2Plus1>> E2,
+    ArrayView<const std::array<float, kFftLengthBy2Plus1>> average_erle,
+    ArrayView<const std::array<float, kFftLengthBy2Plus1>>
         average_erle_onset_compensated,
     const std::vector<bool>& converged_filters) {
   RTC_DCHECK_GT(num_sections_, 1);
@@ -231,7 +241,7 @@ void SignalDependentErleEstimator::Dump(
 // together constitute 90% of the estimated echo energy.
 void SignalDependentErleEstimator::ComputeNumberOfActiveFilterSections(
     const RenderBuffer& render_buffer,
-    rtc::ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
+    ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
         filter_frequency_responses) {
   RTC_DCHECK_GT(num_sections_, 1);
   // Computes an approximation of the power spectrum if the filter would have
@@ -244,17 +254,17 @@ void SignalDependentErleEstimator::ComputeNumberOfActiveFilterSections(
 }
 
 void SignalDependentErleEstimator::UpdateCorrectionFactors(
-    rtc::ArrayView<const float, kFftLengthBy2Plus1> X2,
-    rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> Y2,
-    rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> E2,
+    ArrayView<const float, kFftLengthBy2Plus1> X2,
+    ArrayView<const std::array<float, kFftLengthBy2Plus1>> Y2,
+    ArrayView<const std::array<float, kFftLengthBy2Plus1>> E2,
     const std::vector<bool>& converged_filters) {
   for (size_t ch = 0; ch < converged_filters.size(); ++ch) {
     if (converged_filters[ch]) {
       constexpr float kX2BandEnergyThreshold = 44015068.0f;
       constexpr float kSmthConstantDecreases = 0.1f;
       constexpr float kSmthConstantIncreases = kSmthConstantDecreases / 2.f;
-      auto subband_powers = [](rtc::ArrayView<const float> power_spectrum,
-                               rtc::ArrayView<float> power_spectrum_subbands) {
+      auto subband_powers = [](ArrayView<const float> power_spectrum,
+                               ArrayView<float> power_spectrum_subbands) {
         for (size_t subband = 0; subband < kSubbands; ++subband) {
           RTC_DCHECK_LE(kBandBoundaries[subband + 1], power_spectrum.size());
           power_spectrum_subbands[subband] = std::accumulate(
@@ -344,7 +354,7 @@ void SignalDependentErleEstimator::UpdateCorrectionFactors(
 
 void SignalDependentErleEstimator::ComputeEchoEstimatePerFilterSection(
     const RenderBuffer& render_buffer,
-    rtc::ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
+    ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
         filter_frequency_responses) {
   const SpectrumBuffer& spectrum_render_buffer =
       render_buffer.GetSpectrumBuffer();

@@ -35,7 +35,6 @@
 #include "nsHtml5HtmlAttributes.h"
 #include "nsHtml5SVGLoadDispatcher.h"
 #include "nsHtml5TreeBuilder.h"
-#include "nsIDTD.h"
 #include "nsIFormControl.h"
 #include "nsIMutationObserver.h"
 #include "nsINode.h"
@@ -51,6 +50,12 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+
+// If you are adding fields to a tree op and this static assert fails,
+// please consider reordering the fields to avoid excess padding or,
+// if that doesn't help, splitting a rare operation into multiple
+// tree ops before allowing the size of all operations to get larger.
+static_assert(sizeof(nsHtml5TreeOperation) <= 56);
 
 /**
  * Helper class that opens a notification batch if the current doc
@@ -214,6 +219,8 @@ nsHtml5TreeOperation::~nsHtml5TreeOperation() {
 
     void operator()(const opEnableEncodingMenu& aOperation) {}
 
+    void operator()(const opMicrotaskCheckpoint& aOperation) {}
+
     void operator()(const uninitialized& aOperation) {
       NS_WARNING("Uninitialized tree op.");
     }
@@ -256,7 +263,7 @@ nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
                                 aBuilder);
   }
 
-  nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
+  nsNodeInfoManager* nodeInfoManager = aParent->NodeInfoManager();
   RefPtr<nsTextNode> text = new (nodeInfoManager) nsTextNode(nodeInfoManager);
   NS_ASSERTION(text, "Infallible malloc failed?");
   rv = text->SetText(aBuffer, aLength, false, taint);
@@ -269,6 +276,7 @@ nsresult nsHtml5TreeOperation::Append(nsIContent* aNode, nsIContent* aParent,
                                       nsHtml5DocumentBuilder* aBuilder) {
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
+  MOZ_ASSERT(!aNode->GetParentNode());
   ErrorResult rv;
   Document* ownerDoc = aParent->OwnerDoc();
   nsHtml5OtherDocUpdate update(ownerDoc, aBuilder->GetDocument());
@@ -284,6 +292,13 @@ nsresult nsHtml5TreeOperation::Append(nsIContent* aNode, nsIContent* aParent,
 nsresult nsHtml5TreeOperation::Append(nsIContent* aNode, nsIContent* aParent,
                                       FromParser aFromParser,
                                       nsHtml5DocumentBuilder* aBuilder) {
+  if (MOZ_UNLIKELY(aNode->GetParentNode())) {
+    Detach(aNode, aBuilder);
+    if (MOZ_UNLIKELY(aNode->GetParentNode())) {
+      // Can this happen? If it can, give up.
+      return NS_OK;
+    }
+  }
   Maybe<nsHtml5AutoPauseUpdate> autoPause;
   Maybe<AutoCEReaction> autoCEReaction;
   DocGroup* docGroup = aParent->OwnerDoc()->GetDocGroup();
@@ -306,6 +321,13 @@ nsresult nsHtml5TreeOperation::AppendToDocument(
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->GetDocument() == aNode->OwnerDoc());
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
+  if (MOZ_UNLIKELY(aNode->GetParentNode())) {
+    Detach(aNode, aBuilder);
+    if (MOZ_UNLIKELY(aNode->GetParentNode())) {
+      // Can this happen? If it can, give up.
+      return NS_OK;
+    }
+  }
 
   ErrorResult rv;
   Document* doc = aBuilder->GetDocument();
@@ -356,7 +378,8 @@ void nsHtml5TreeOperation::Detach(nsIContent* aNode,
   nsCOMPtr<nsINode> parent = aNode->GetParentNode();
   if (parent) {
     nsHtml5OtherDocUpdate update(parent->OwnerDoc(), aBuilder->GetDocument());
-    parent->RemoveChildNode(aNode, true);
+    parent->RemoveChildNode(aNode, true, nullptr, nullptr,
+                            MutationEffectOnScript::KeepTrustWorthiness);
   }
 }
 
@@ -369,7 +392,8 @@ nsresult nsHtml5TreeOperation::AppendChildrenToNewParent(
   bool didAppend = false;
   while (aNode->HasChildren()) {
     nsCOMPtr<nsIContent> child = aNode->GetFirstChild();
-    aNode->RemoveChildNode(child, true);
+    aNode->RemoveChildNode(child, true, nullptr, nullptr,
+                           MutationEffectOnScript::KeepTrustWorthiness);
 
     ErrorResult rv;
     aParent->AppendChildTo(child, false, rv);
@@ -392,6 +416,14 @@ nsresult nsHtml5TreeOperation::FosterParent(nsIContent* aNode,
                                             nsHtml5DocumentBuilder* aBuilder) {
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
+  if (MOZ_UNLIKELY(aNode->GetParentNode())) {
+    Detach(aNode, aBuilder);
+    if (MOZ_UNLIKELY(aNode->GetParentNode())) {
+      // Can this happen? If it can, give up.
+      return NS_OK;
+    }
+  }
+
   nsIContent* foster = aTable->GetParent();
 
   if (IsElementOrTemplateContent(foster)) {
@@ -426,10 +458,19 @@ nsresult nsHtml5TreeOperation::AddAttributes(nsIContent* aNode,
     int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
     if (!node->HasAttr(nsuri, localName) &&
         !(nsuri == kNameSpaceID_None && localName == nsGkAtoms::nonce)) {
-      nsString value;  // Not Auto, because using it to hold nsStringBuffer*
-      aAttributes->getValueNoBoundsCheck(i).ToString(value);
-      node->SetAttr(nsuri, localName, aAttributes->getPrefixNoBoundsCheck(i),
-                    value, true);
+      nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
+      nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
+
+      // If value is already an atom, use it directly to avoid string
+      // allocation.
+      nsAtom* valAtom = val.MaybeAsAtom();
+      if (valAtom) {
+        node->SetAttr(nsuri, localName, prefix, valAtom, nullptr, true);
+      } else {
+        nsString value;  // Not Auto, because using it to hold nsStringBuffer*
+        val.ToString(value);
+        node->SetAttr(nsuri, localName, prefix, value, true);
+      }
       // XXX what to do with nsresult?
     }
   }
@@ -445,13 +486,23 @@ void nsHtml5TreeOperation::SetHTMLElementAttributes(
   }
   for (int32_t i = 0; i < len; i++) {
     nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
-    nsAtom* klass = val.MaybeAsAtom();
-    if (klass) {
-      aElement->SetClassAttrFromParser(klass);
+    nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
+    if (localName == nsGkAtoms::_class) {
+      nsAtom* klass = val.MaybeAsAtom();
+      if (klass) {
+        aElement->SetClassAttrFromParser(klass);
+        continue;
+      }
+    }
+
+    nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
+    int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
+
+    // If value is already an atom, use it directly to avoid string allocation.
+    nsAtom* valAtom = val.MaybeAsAtom();
+    if (valAtom) {
+      aElement->SetAttr(nsuri, localName, prefix, valAtom, nullptr, false);
     } else {
-      nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
-      nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
-      int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
       nsString value;  // Not Auto, because using it to hold nsStringBuffer*
       val.ToString(value);
       aElement->SetAttr(nsuri, localName, prefix, value, false);
@@ -577,14 +628,23 @@ nsIContent* nsHtml5TreeOperation::CreateSVGElement(
   int32_t len = aAttributes->getLength();
   for (int32_t i = 0; i < len; i++) {
     nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
-    nsAtom* klass = val.MaybeAsAtom();
-    if (klass) {
-      newContent->SetClassAttrFromParser(klass);
-    } else {
-      nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
-      nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
-      int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
+    nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
+    if (localName == nsGkAtoms::_class) {
+      nsAtom* klass = val.MaybeAsAtom();
+      if (klass) {
+        newContent->SetClassAttrFromParser(klass);
+        continue;
+      }
+    }
 
+    nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
+    int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
+
+    // If value is already an atom, use it directly to avoid string allocation.
+    nsAtom* valAtom = val.MaybeAsAtom();
+    if (valAtom) {
+      newContent->SetAttr(nsuri, localName, prefix, valAtom, nullptr, false);
+    } else {
       nsString value;  // Not Auto, because using it to hold nsStringBuffer*
       val.ToString(value);
       newContent->SetAttr(nsuri, localName, prefix, value, false);
@@ -629,14 +689,23 @@ nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
   int32_t len = aAttributes->getLength();
   for (int32_t i = 0; i < len; i++) {
     nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
-    nsAtom* klass = val.MaybeAsAtom();
-    if (klass) {
-      newContent->SetClassAttrFromParser(klass);
-    } else {
-      nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
-      nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
-      int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
+    nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
+    if (localName == nsGkAtoms::_class) {
+      nsAtom* klass = val.MaybeAsAtom();
+      if (klass) {
+        newContent->SetClassAttrFromParser(klass);
+        continue;
+      }
+    }
 
+    nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
+    int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
+
+    // If value is already an atom, use it directly to avoid string allocation.
+    nsAtom* valAtom = val.MaybeAsAtom();
+    if (valAtom) {
+      newContent->SetAttr(nsuri, localName, prefix, valAtom, nullptr, false);
+    } else {
       nsString value;  // Not Auto, because using it to hold nsStringBuffer*
       val.ToString(value);
       newContent->SetAttr(nsuri, localName, prefix, value, false);
@@ -680,8 +749,7 @@ nsresult nsHtml5TreeOperation::FosterParentText(
                                   previousSibling->GetAsText(), aBuilder);
     }
 
-    nsNodeInfoManager* nodeInfoManager =
-        aStackParent->OwnerDoc()->NodeInfoManager();
+    nsNodeInfoManager* nodeInfoManager = aStackParent->NodeInfoManager();
     RefPtr<nsTextNode> text = new (nodeInfoManager) nsTextNode(nodeInfoManager);
     NS_ASSERTION(text, "Infallible malloc failed?");
     rv = text->SetText(aBuffer, aLength, false, aTaint);
@@ -705,7 +773,7 @@ nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
                                              char16_t* aBuffer, int32_t aLength,
                                              const StringTaint& aTaint,
                                              nsHtml5DocumentBuilder* aBuilder) {
-  nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
+  nsNodeInfoManager* nodeInfoManager = aParent->NodeInfoManager();
   RefPtr<Comment> comment = new (nodeInfoManager) Comment(nodeInfoManager);
   NS_ASSERTION(comment, "Infallible malloc failed?");
   nsresult rv = comment->SetText(aBuffer, aLength, false, aTaint);
@@ -855,7 +923,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       // intendedParent == nullptr is a special case where the
       // intended parent is the document.
       nsNodeInfoManager* nodeInfoManager =
-          intendedParent ? intendedParent->OwnerDoc()->NodeInfoManager()
+          intendedParent ? intendedParent->NodeInfoManager()
                          : mBuilder->GetNodeInfoManager();
 
       *target = CreateHTMLElement(name, attributes, aOperation.mFromNetwork,
@@ -874,7 +942,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       // intendedParent == nullptr is a special case where the
       // intended parent is the document.
       nsNodeInfoManager* nodeInfoManager =
-          intendedParent ? intendedParent->OwnerDoc()->NodeInfoManager()
+          intendedParent ? intendedParent->NodeInfoManager()
                          : mBuilder->GetNodeInfoManager();
 
       *target = CreateSVGElement(name, attributes, aOperation.mFromNetwork,
@@ -892,7 +960,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       // intendedParent == nullptr is a special case where the
       // intended parent is the document.
       nsNodeInfoManager* nodeInfoManager =
-          intendedParent ? intendedParent->OwnerDoc()->NodeInfoManager()
+          intendedParent ? intendedParent->NodeInfoManager()
                          : mBuilder->GetNodeInfoManager();
 
       *target =
@@ -964,7 +1032,8 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
           *aOperation.mHost, aOperation.mShadowRootMode,
           aOperation.mShadowRootIsClonable,
           aOperation.mShadowRootIsSerializable,
-          aOperation.mShadowRootDelegatesFocus);
+          aOperation.mShadowRootDelegatesFocus,
+          aOperation.mShadowRootReferenceTarget);
       if (root) {
         *aOperation.mFragHandle = root;
         return NS_OK;
@@ -1256,6 +1325,12 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
     nsresult operator()(const opEnableEncodingMenu& aOperation) {
       Document* doc = mBuilder->GetDocument();
       doc->EnableEncodingMenu();
+      return NS_OK;
+    }
+
+    nsresult operator()(const opMicrotaskCheckpoint& aOperation) {
+      nsHtml5AutoPauseUpdate autoPauseContentUpdate(mBuilder);
+      nsAutoMicroTask mt;
       return NS_OK;
     }
 

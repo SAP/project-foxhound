@@ -12,11 +12,6 @@ using namespace mozilla;
 
 namespace mozilla {
 
-NS_QUERYFRAME_HEAD(ButtonControlFrame)
-  NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
-  NS_QUERYFRAME_ENTRY(ButtonControlFrame)
-NS_QUERYFRAME_TAIL_INHERITING(nsBlockFrame)
-
 void ButtonControlFrame::EnsureNonEmptyLabel(nsAString& aLabel) {
   if (aLabel.IsEmpty()) {
     // Have to use a space character of some sort for line-block-size
@@ -43,10 +38,10 @@ nsresult ButtonControlFrame::HandleEvent(nsPresContext* aPresContext,
   return NS_OK;
 }
 
-void ButtonControlFrame::Reflow(nsPresContext* aPc, ReflowOutput& aDesiredSize,
+void ButtonControlFrame::Reflow(nsPresContext* aPc, ReflowOutput& aReflowOutput,
                                 const ReflowInput& aReflowInput,
                                 nsReflowStatus& aStatus) {
-  nsBlockFrame::Reflow(aPc, aDesiredSize, aReflowInput, aStatus);
+  nsBlockFrame::Reflow(aPc, aReflowOutput, aReflowInput, aStatus);
   // We're always complete and we don't support overflow containers
   // so we shouldn't have a next-in-flow ever.
   aStatus.Reset();

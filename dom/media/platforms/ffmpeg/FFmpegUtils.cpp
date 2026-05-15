@@ -26,6 +26,7 @@ nsCString MakeErrorString(const FFmpegLibWrapper* aLib, int aErrNum) {
   }
 
 const char* AVCodecToString(const AVCodecID& aCodec) {
+  ENUM_TO_STR(AV_CODEC_ID_AAC);
   ENUM_TO_STR(AV_CODEC_ID_H264);
 #if LIBAVCODEC_VERSION_MAJOR >= 54
   ENUM_TO_STR(AV_CODEC_ID_VP8);

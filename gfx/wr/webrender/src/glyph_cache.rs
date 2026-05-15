@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{FontKey, FontInstanceKey, IdNamespace};
-use glyph_rasterizer::{FontInstance, GlyphFormat, GlyphKey, GlyphRasterizer};
+use glyph_rasterizer::{FontInstance, GlyphFormat, GlyphCacheKey, GlyphRasterizer};
 use crate::internal_types::{FrameId, FrameStamp, FastHashMap};
 use crate::resource_cache::ResourceClassCache;
 use std::sync::Arc;
@@ -16,6 +16,7 @@ use crate::texture_cache::TextureCacheHandle;
 pub struct CachedGlyphInfo {
     pub format: GlyphFormat,
     pub texture_cache_handle: TextureCacheHandle,
+    pub is_packed_glyph: bool,
 }
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -62,7 +63,7 @@ pub struct GlyphKeyCacheInfo {
     last_frame_used: FrameId,
 }
 
-pub type GlyphKeyCache = ResourceClassCache<GlyphKey, GlyphCacheEntry, GlyphKeyCacheInfo>;
+pub type GlyphKeyCache = ResourceClassCache<GlyphCacheKey, GlyphCacheEntry, GlyphKeyCacheInfo>;
 
 impl GlyphKeyCache {
     pub fn eviction_notice(&self) -> &EvictionNotice {
@@ -73,7 +74,7 @@ impl GlyphKeyCache {
         self.clear();
     }
 
-    pub fn add_glyph(&mut self, key: GlyphKey, value: GlyphCacheEntry) {
+    pub fn add_glyph(&mut self, key: GlyphCacheKey, value: GlyphCacheEntry) {
         self.insert(key, value);
     }
 

@@ -118,32 +118,27 @@ internal class BrowserGestureDetector(
          * The distance in x and y is also supplied for convenience.
          */
         val onScroll: ((distanceX: Float, distanceY: Float) -> Unit)? = { _, _ -> run {} },
-
         /**
          * Responds to an in progress scroll occuring more on the vertical axis.
          * The scroll distance is also supplied for convenience.
          */
         val onVerticalScroll: ((distance: Float) -> Unit)? = {},
-
         /**
          * Responds to an in progress scroll occurring more on the horizontal axis.
          * The scroll distance is also supplied for convenience.
          */
         val onHorizontalScroll: ((distance: Float) -> Unit)? = {},
-
         /**
          * Responds to the the beginning of a new scale gesture.
          * Reported by new pointers going down.
          */
         val onScaleBegin: ((scaleFactor: Float) -> Unit)? = {},
-
         /**
          * Responds to scaling events for a gesture in progress.
          * The scaling factor is also supplied for convenience.
          * This value is represents the difference from the previous scale event to the current event.
          */
         val onScale: ((scaleFactor: Float) -> Unit)? = {},
-
         /**
          * Responds to the end of a scale gesture.
          * Reported by existing pointers going up.

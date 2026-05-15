@@ -14,6 +14,8 @@ UNIFIED_SOURCES += [
     "TestBufferRotation.cpp",
     "TestConfigManager.cpp",
     "TestCoord.cpp",
+    "TestFontFallback.cpp",
+    "TestFontOverlapPrevention.cpp",
     "TestGfxWidgets.cpp",
     "TestMatrix.cpp",
     "TestMoz2D.cpp",
@@ -32,6 +34,13 @@ UNIFIED_SOURCES += [
 if CONFIG["OS_TARGET"] != "Android":
     UNIFIED_SOURCES += [
         "TestRect.cpp",
+    ]
+
+if CONFIG["OS_TARGET"] == "Darwin":
+    # Not in UNIFIED_SOURCES: MacIOSurface.h includes Carbon headers (MacTypes.h)
+    # which would make Rect/Point/Size ambiguous in all subsequent unified files.
+    SOURCES += [
+        "TestMacIOSurfaceHelpers.cpp",
     ]
 
 UNIFIED_SOURCES += [
@@ -66,6 +75,7 @@ LOCAL_INCLUDES += [
     "/gfx/layers",
     "/gfx/ots/src",
     "/gfx/qcms",
+    "/gfx/thebes",
     "/layout/base",
 ]
 

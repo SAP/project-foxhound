@@ -44,12 +44,10 @@ def get_blocking_bug():
 @CommandArgument(
     "tag",
     nargs=1,
-    help="The tagged release to upgrade to.",
+    help="The tagged release or commit to upgrade to.",
 )
 def nss_uplift(command_context, tag):
     tag = tag[0]
-    if not tag.startswith("NSS_"):
-        raise UserError("Tag must start with 'NSS_'")
 
     result = subprocess.run(
         ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
@@ -63,8 +61,9 @@ def nss_uplift(command_context, tag):
         ["./mach", "vendor", "security/nss/moz.yaml", "--revision", tag], check=True
     )
 
-    with open("security/nss/TAG-INFO", "w") as f:
-        f.write(tag)
+    if tag.startswith("NSS_"):
+        with open("security/nss/TAG-INFO", "w") as f:
+            f.write(tag)
 
     result = subprocess.run(
         ["git", "status", "--porcelain"], capture_output=True, text=True, check=True

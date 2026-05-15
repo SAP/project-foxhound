@@ -82,11 +82,7 @@ async function testEditProperty(inspector, ruleView) {
     EventUtils.sendChar(ch, ruleView.styleWindow);
     ruleView.debounce.flush();
     await onPreviewDone;
-    is(
-      prop.editor.warning.hidden,
-      true,
-      "warning triangle is hidden or shown as appropriate"
-    );
+    ok(!prop.editor.warning, "warning triangle is hidden as expected");
   }
   await onBlur;
 

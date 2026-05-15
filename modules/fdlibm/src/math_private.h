@@ -898,11 +898,6 @@ irintl(long double x)
 #define log10f fdlibm_log10f
 #define pow fdlibm_pow
 #define powf fdlibm_powf
-#define ceil fdlibm_ceil
-#define ceilf fdlibm_ceilf
-#define fabs fdlibm_fabs
-#define fabsf fdlibm_fabsf
-#define floor fdlibm_floor
 #define acosh fdlibm_acosh
 #define asinh fdlibm_asinh
 #define atanh fdlibm_atanh
@@ -912,18 +907,6 @@ irintl(long double x)
 #define hypotf fdlibm_hypotf
 #define log1p fdlibm_log1p
 #define log2 fdlibm_log2
-#define scalb fdlibm_scalb
-#define copysign fdlibm_copysign
-#define scalbn fdlibm_scalbn
-#define scalbnf fdlibm_scalbnf
-#define trunc fdlibm_trunc
-#define truncf fdlibm_truncf
-#define floorf fdlibm_floorf
-#define nearbyint fdlibm_nearbyint
-#define nearbyintf fdlibm_nearbyintf
-#define rint fdlibm_rint
-#define rintf fdlibm_rintf
-#define sqrtf fdlibm_sqrtf
 
 /* fdlibm kernel function */
 int	__kernel_rem_pio2(double*,double*,int,int,int);

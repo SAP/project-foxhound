@@ -27,7 +27,6 @@ def set_build_attributes(config, jobs):
 
 
 EXTRA_COMPILERS = {
-    "clang-4": {"CC": "clang-4.0", "CCC": "clang++-4.0"},
     "clang-10": {"CC": "clang-10", "CCC": "clang++-10"},
     "clang-18": {"CC": "clang-18", "CCC": "clang++-18"},
     # gcc-4.6 introduced nullptr.
@@ -164,7 +163,7 @@ def set_gyp_command(config, jobs):
         if attributes.get("static"):
             command += " --static -Ddisable_libpkix=1"
         if attributes.get("fuzz"):
-            command += " --disable-tests -Ddisable_libpkix=1 --fuzz -Duse_pkcs5_pbkd2_params2_only"
+            command += " --disable-tests -Ddisable_libpkix=1 --fuzz"
             job.setdefault("worker", {}).setdefault("env", {}).update({
                 "ASAN_OPTIONS": "allocator_may_return_null=1:detect_stack_use_after_return=1",
                 "UBSAN_OPTIONS": "print_stacktrace=1",

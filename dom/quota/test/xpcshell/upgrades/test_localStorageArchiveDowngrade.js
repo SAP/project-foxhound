@@ -35,7 +35,7 @@ async function testSteps() {
   // - webappsstore.sqlite
   // The file create_db.js in the package was run locally (with a build that
   // supports local storage archive upgrades and local storage archive version
-  // set to max integer), specifically it was temporarily added to xpcshell.ini
+  // set to max integer), specifically it was temporarily added to xpcshell.toml
   // and then executed:
   //   mach xpcshell-test --interactive dom/localstorage/test/xpcshell/create_db.js
   // Note: to make it become the profile in the test, additional manual steps

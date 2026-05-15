@@ -17,5 +17,7 @@ BROWSER_CHROME_MANIFESTS += [
     "tests/browser/browser_uuid_migration.toml",
 ]
 
+MARIONETTE_MANIFESTS += ["tests/marionette/manifest.toml"]
+
 with Files("**"):
     BUG_COMPONENT = ("Web Compatibility", "Tooling & Investigations")

@@ -1,0 +1,55 @@
+Remove unused dependency on base::Value in trace_event_stub.h
+
+Initially Value was forward declared in a dummy values.h however this caused
+compilation issues with base toolchain builds.
+
+diff --git a/base/trace_event/trace_event_stub.h b/base/trace_event/trace_event_stub.h
+--- a/base/trace_event/trace_event_stub.h
++++ b/base/trace_event/trace_event_stub.h
+@@ -10,17 +10,19 @@
+ #include <cstdint>
+ #include <memory>
+ #include <string>
+ 
+ #include "base/base_export.h"
+ #include "base/strings/string_piece.h"
+ #include "base/trace_event/common/trace_event_common.h"
+ #include "base/trace_event/memory_allocator_dump_guid.h"
++#if !defined(MOZ_SANDBOX)
+ #include "base/values.h"
++#endif
+ 
+ #define TRACE_STR_COPY(str) str
+ #define TRACE_ID_WITH_SCOPE(scope, ...) 0
+ #define TRACE_ID_GLOBAL(id) 0
+ #define TRACE_ID_LOCAL(id) 0
+ 
+ namespace trace_event_internal {
+ 
+@@ -121,24 +123,26 @@ class BASE_EXPORT TracedValue : public C
+   void AppendBoolean(bool) {}
+   void AppendString(base::StringPiece) {}
+   void BeginArray() {}
+   void BeginDictionary() {}
+ 
+   void AppendAsTraceFormat(std::string* out) const override;
+ };
+ 
++#if !defined(MOZ_SANDBOX)
+ class BASE_EXPORT TracedValueJSON : public TracedValue {
+  public:
+   explicit TracedValueJSON(size_t capacity = 0) : TracedValue(capacity) {}
+ 
+   std::unique_ptr<base::Value> ToBaseValue() const { return nullptr; }
+   std::string ToJSON() const { return ""; }
+   std::string ToFormattedJSON() const { return ""; }
+ };
++#endif
+ 
+ struct MemoryDumpArgs;
+ class ProcessMemoryDump;
+ 
+ class BASE_EXPORT MemoryDumpProvider {
+  public:
+   MemoryDumpProvider(const MemoryDumpProvider&) = delete;
+   MemoryDumpProvider& operator=(const MemoryDumpProvider&) = delete;

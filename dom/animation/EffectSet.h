@@ -8,9 +8,7 @@
 #define mozilla_EffectSet_h
 
 #include "mozilla/AnimationTarget.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/EffectCompositor.h"
-#include "mozilla/EnumeratedArray.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/KeyframeEffect.h"
 #include "nsHashKeys.h"  // For nsPtrHashKey

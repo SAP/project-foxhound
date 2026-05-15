@@ -745,7 +745,7 @@ impl<'a> Iterator for PrefTokenizer<'a> {
     }
 }
 
-pub fn tokenize(data: &[u8]) -> PrefTokenizer {
+pub fn tokenize(data: &[u8]) -> PrefTokenizer<'_> {
     PrefTokenizer::new(data)
 }
 
@@ -818,7 +818,7 @@ where
     Ok(())
 }
 
-fn escape_quote(data: &str) -> Cow<str> {
+fn escape_quote(data: &str) -> Cow<'_, str> {
     // Not very efficient…
     if data.contains('"') || data.contains('\\') {
         Cow::Owned(data.replace('\\', r"\\").replace('"', r#"\""#))

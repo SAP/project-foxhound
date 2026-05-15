@@ -45,6 +45,10 @@ class AudioReceiveStreamInterface : public MediaReceiveStreamInterface {
     int64_t payload_bytes_received = 0;
     int64_t header_and_padding_bytes_received = 0;
     uint32_t packets_received = 0;
+    // https://w3c.github.io/webrtc-stats/#dom-rtcreceivedrtpstreamstats-packetsreceivedwithect1
+    int64_t packets_received_with_ect1 = 0;
+    // https://w3c.github.io/webrtc-stats/#dom-rtcreceivedrtpstreamstats-packetsreceivedwithce
+    int64_t packets_received_with_ce = 0;
     uint64_t fec_packets_received = 0;
     uint64_t fec_packets_discarded = 0;
     int32_t packets_lost = 0;
@@ -153,7 +157,7 @@ class AudioReceiveStreamInterface : public MediaReceiveStreamInterface {
     // Decoder specifications for every payload type that we can receive.
     std::map<int, SdpAudioFormat> decoder_map;
 
-    rtc::scoped_refptr<AudioDecoderFactory> decoder_factory;
+    scoped_refptr<AudioDecoderFactory> decoder_factory;
 
     std::optional<AudioCodecPairId> codec_pair_id;
 
@@ -166,14 +170,14 @@ class AudioReceiveStreamInterface : public MediaReceiveStreamInterface {
     // TODO(tommi): Remove this member variable from the struct. It's not
     // a part of the AudioReceiveStreamInterface state but rather a pass through
     // variable.
-    rtc::scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor;
+    scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor;
 
     // An optional frame transformer used by insertable streams to transform
     // encoded frames.
     // TODO(tommi): Remove this member variable from the struct. It's not
     // a part of the AudioReceiveStreamInterface state but rather a pass through
     // variable.
-    rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer;
+    scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer;
   };
 
   // Methods that support reconfiguring the stream post initialization.

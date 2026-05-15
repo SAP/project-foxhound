@@ -21,6 +21,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.AMAZON_SPONSORED_TITLE
 import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.EBAY_SPONSORED_TITLE
+import org.mozilla.fenix.home.topsites.TopSitesConfigConstants.TOP_SITES_PROVIDER_LIMIT
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.nimbus.HomepageHideFrecentTopSites
 import org.mozilla.fenix.utils.Settings
@@ -101,5 +102,31 @@ class TopSitesConfigCreatorTest {
         }
         assertTrue(filteredProvidedSites.containsAll(listOf(amazonTopSite, firefoxTopSite)))
         assertFalse(filteredProvidedSites.contains(eBayTopSite))
+    }
+
+    @Test
+    fun `WHEN suppressSponsoredTopSitesEnabled is true THEN providerConfig limit is 0`() {
+        every { settings.suppressSponsoredTopSitesEnabled } returns true
+
+        val topSitesConfig = getTopSitesConfig(
+            settings = settings,
+            store = browserStore,
+        ).invoke()
+
+        assertNotNull(topSitesConfig.providerConfig)
+        assertEquals(0, topSitesConfig.providerConfig?.limit)
+    }
+
+    @Test
+    fun `WHEN suppressSponsoredTopSitesEnabled is false THEN providerConfig limit is TOP_SITES_PROVIDER_LIMIT`() {
+        every { settings.suppressSponsoredTopSitesEnabled } returns false
+
+        val topSitesConfig = getTopSitesConfig(
+            settings = settings,
+            store = browserStore,
+        ).invoke()
+
+        assertNotNull(topSitesConfig.providerConfig)
+        assertEquals(TOP_SITES_PROVIDER_LIMIT, topSitesConfig.providerConfig?.limit)
     }
 }

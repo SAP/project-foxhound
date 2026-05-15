@@ -16,7 +16,6 @@
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/SharedThreadPool.h"
 #  include "mozilla/TimeStamp.h"
-#  include "mozilla/Unused.h"
 #  include "nsITimer.h"
 
 namespace mozilla {

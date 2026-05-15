@@ -14,7 +14,6 @@
 //
 //
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/IntegerPrintfMacros.h"
 
 #include "nsCOMPtr.h"

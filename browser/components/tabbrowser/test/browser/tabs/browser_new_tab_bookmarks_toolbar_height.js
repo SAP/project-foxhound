@@ -62,8 +62,8 @@ async function expectBmToolbarVisibilityChange(triggerFn, visible, msg) {
   triggerFn();
   await collapsedState;
   is(
-    BookmarkingUI.toolbar.getAttribute("collapsed"),
-    (!visible).toString(),
+    BookmarkingUI.toolbar.hasAttribute("collapsed"),
+    !visible,
     `${msg}; collapsed attribute state`
   );
   if (visible) {

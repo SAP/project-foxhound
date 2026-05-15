@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsPlacesTables_h__
-#define __nsPlacesTables_h__
+#ifndef _nsPlacesTables_h_
+#define _nsPlacesTables_h_
 
 #define CREATE_MOZ_PLACES                                \
   nsLiteralCString(                                      \
@@ -193,9 +193,9 @@
 #define CREATE_MOZ_OPENPAGES_TEMP                   \
   nsLiteralCString(                                 \
       "CREATE TEMP TABLE moz_openpages_temp ("      \
-      "  url TEXT"                                  \
-      ", userContextId INTEGER"                     \
-      ", groupId TEXT"                              \
+      "  url TEXT NOT NULL"                         \
+      ", userContextId INTEGER NOT NULL"            \
+      ", groupId TEXT NOT NULL"                     \
       ", open_count INTEGER"                        \
       ", PRIMARY KEY (url, userContextId, groupId)" \
       ")")
@@ -344,4 +344,4 @@
       "  tile_position INTEGER NOT NULL"                                 \
       ")")
 
-#endif  // __nsPlacesTables_h__
+#endif  // _nsPlacesTables_h_

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HTMLElementAccessibles_h__
-#define mozilla_a11y_HTMLElementAccessibles_h__
+#ifndef mozilla_a11y_HTMLElementAccessibles_h_
+#define mozilla_a11y_HTMLElementAccessibles_h_
 
 #include "BaseAccessibles.h"
 
@@ -64,7 +64,7 @@ class HTMLLabelAccessible : public HyperTextAccessible {
   virtual ~HTMLLabelAccessible() {}
   virtual ENameValueFlag NativeName(nsString& aName) const override;
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
 };
@@ -84,7 +84,7 @@ class HTMLOutputAccessible : public HyperTextAccessible {
   virtual Relation RelationByType(RelationType aType) const override;
 
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
 
@@ -168,6 +168,31 @@ class HTMLSectionAccessible : public HyperTextAccessible {
 
  protected:
   virtual ~HTMLSectionAccessible() = default;
+};
+
+/**
+ * Used for abbr and the deprecated acronym elements.
+ */
+class HTMLAbbreviationAccessible : public HyperTextAccessible {
+ public:
+  HTMLAbbreviationAccessible(nsIContent* aContent, DocAccessible* aDoc)
+      : HyperTextAccessible(aContent, aDoc) {
+    mType = eHTMLAbbrevType;
+  }
+
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(HTMLAbbreviationAccessible,
+                                       HyperTextAccessible)
+
+ protected:
+  // LocalAccessible
+  virtual ENameValueFlag NativeName(nsString& aName) const override;
+
+  virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
+                                   AttrModType aModType,
+                                   const nsAttrValue* aOldValue,
+                                   uint64_t aOldState) override;
+
+  virtual ~HTMLAbbreviationAccessible() = default;
 };
 
 }  // namespace a11y

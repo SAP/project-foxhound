@@ -90,7 +90,7 @@ class thashtable_printer:
             if f.is_base_class:
                 continue
             # ...just to skip the fields we know exist...
-            if f.name == "mKeyHash" or f.name == "mData":
+            if f.name in {"mKeyHash", "mData"}:
                 continue
             # ...and assume the first one we find is the key.
             self.key_field_name = f.name

@@ -1517,6 +1517,19 @@ function pedanticChecks(report) {
           `${stat.responsesReceived} (${stat.kind})`
       );
 
+      const stateValues = [
+        "frozen",
+        "waiting",
+        "in-progress",
+        "failed",
+        "succeeded",
+        "cancelled",
+      ];
+      ok(
+        stateValues.includes(stat.state),
+        `${stat.type}.state '${stat.state}' not in ${stateValues}`
+      );
+
       // state
       if (
         stat.state == "succeeded" &&

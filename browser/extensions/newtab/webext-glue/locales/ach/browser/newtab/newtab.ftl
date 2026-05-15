@@ -45,9 +45,6 @@ newtab-confirm-delete-history-p1 = Imoko ni imito kwanyo nyig jami weng me potbu
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Pe ki twero gonyo tic man.
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -81,9 +78,6 @@ newtab-menu-delete-history = Kwany ki ii gin mukato
 newtab-menu-save-to-pocket = Gwok i { -pocket-brand-name }
 newtab-menu-delete-pocket = Kwany ki ii { -pocket-brand-name }
 newtab-menu-archive-pocket = Kan i { -pocket-brand-name }
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -181,12 +175,6 @@ newtab-pocket-cta-text = Gwok lok ma imaro ii { -pocket-brand-name }, ka i pik w
 newtab-pocket-save = Gwoki
 newtab-pocket-saved = Kigwoko
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -196,55 +184,3 @@ newtab-error-fallback-refresh-link = Nwo cano potbuk me temo odoco.
 ## Customization Menu
 
 newtab-custom-close-button = Lor
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

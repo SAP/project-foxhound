@@ -13,9 +13,11 @@
 #include "mozilla/gfx/CanvasManagerChild.h"
 #include "mozilla/layers/PersistentBufferProvider.h"
 
-using namespace mozilla::dom;
-
 namespace mozilla::gfx {
+
+using dom::CanvasRenderingContext2D;
+using dom::StrongWorkerRef;
+using dom::WorkerPrivate;
 
 StaticMutex CanvasShutdownManager::sManagersMutex;
 MOZ_RUNINIT std::set<CanvasShutdownManager*> CanvasShutdownManager::sManagers;
@@ -26,7 +28,7 @@ MOZ_RUNINIT std::set<CanvasShutdownManager*> CanvasShutdownManager::sManagers;
 MOZ_THREAD_LOCAL(CanvasShutdownManager*) CanvasShutdownManager::sLocalManager;
 
 CanvasShutdownManager::CanvasShutdownManager(StrongWorkerRef* aWorkerRef)
-    : mWorkerRef(new ThreadSafeWorkerRef(aWorkerRef)) {}
+    : mWorkerRef(new dom::ThreadSafeWorkerRef(aWorkerRef)) {}
 
 CanvasShutdownManager::CanvasShutdownManager() = default;
 CanvasShutdownManager::~CanvasShutdownManager() = default;
@@ -75,7 +77,7 @@ void CanvasShutdownManager::Destroy() {
     return managerWeak;
   }
 
-  if (WorkerPrivate* worker = GetCurrentThreadWorkerPrivate()) {
+  if (WorkerPrivate* worker = dom::GetCurrentThreadWorkerPrivate()) {
     // The ThreadSafeWorkerRef will let us know when the worker is shutting
     // down. This will let us clear our threadlocal reference and close the
     // actor. We rely upon an explicit shutdown for the main thread.
@@ -174,7 +176,7 @@ void CanvasShutdownManager::OnRemoteCanvasReset(
 /* static */ void CanvasShutdownManager::OnCompositorManagerRestored() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  class RestoreRunnable final : public MainThreadWorkerRunnable {
+  class RestoreRunnable final : public dom::MainThreadWorkerRunnable {
    public:
     RestoreRunnable()
         : MainThreadWorkerRunnable("CanvasShutdownManager::RestoreRunnable") {}

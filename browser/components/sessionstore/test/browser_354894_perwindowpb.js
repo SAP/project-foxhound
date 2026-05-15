@@ -9,7 +9,7 @@
  * working.
  *
  * @see https://bugzilla.mozilla.org/show_bug.cgi?id=354894
- * @note It is implicitly tested that restoring the last window works when
+ * Note: It is implicitly tested that restoring the last window works when
  * non-browser windows are around. The "Run Tests" window as well as the main
  * browser window (wherein the test code gets executed) won't be considered
  * browser windows. To achiveve this said main browser window has its windowtype
@@ -17,10 +17,10 @@
  * This is crucial, because otherwise there would be two browser windows around,
  * said main test window and the one opened by the tests, and hence the new
  * logic wouldn't be executed at all.
- * @note Mac only tests the new notifications, as restoring the last window is
+ * Note: Mac only tests the new notifications, as restoring the last window is
  * not enabled on that platform (platform shim; the application is kept running
  * although there are no windows left)
- * @note There is a difference when closing a browser window with
+ * Note: There is a difference when closing a browser window with
  * BrowserCommands.tryToCloseWindow() as opposed to close(). The former will make
  * nsSessionStore restore a window next time it gets a chance and will post
  * notifications. The latter won't.
@@ -210,7 +210,7 @@ function closeWindowForRestoration(win) {
 /**
  * Normal in-session restore
  *
- * @note: Non-Mac only
+ * Note: Non-Mac only
  *
  * Should do the following:
  *  1. Open a new browser window
@@ -260,7 +260,7 @@ add_task(async function test_open_close_normal() {
 /**
  * PrivateBrowsing in-session restore
  *
- * @note: Non-Mac only
+ * Note: Non-Mac only
  *
  * Should do the following:
  *  1. Open a new browser window A
@@ -321,7 +321,7 @@ add_task(async function test_open_close_private_browsing() {
  * Open some popup window to check it isn't restored. Instead nothing at all
  * should be restored
  *
- * @note: Non-Mac only
+ * Note: Non-Mac only
  *
  * Should do the following:
  *  1. Open a popup
@@ -402,7 +402,7 @@ add_task(async function test_open_close_only_popup() {
  * Open some windows and do undoCloseWindow. This should prevent any
  * restoring later in the test
  *
- * @note: Non-Mac only
+ * Note: Non-Mac only
  *
  * Should do the following:
  *  1. Open two browser windows and close them again
@@ -460,7 +460,8 @@ add_task(async function test_open_close_restore_from_popup() {
 
 /**
  * Test if closing can be denied on Mac.
- * @note: Mac only
+ *
+ * Note: Mac only
  */
 add_task(async function test_mac_notifications() {
   if (!IS_MAC) {

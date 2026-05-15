@@ -4,6 +4,7 @@
 
 //! Generic types for CSS values related to borders.
 
+use crate::derives::*;
 use crate::values::generics::rect::Rect;
 use crate::values::generics::size::Size2D;
 use crate::Zero;
@@ -59,6 +60,7 @@ pub use self::GenericBorderImageSideWidth as BorderImageSideWidth;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub struct GenericBorderImageSlice<NumberOrPercentage> {
@@ -91,6 +93,7 @@ pub use self::GenericBorderImageSlice as BorderImageSlice;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub struct GenericBorderCornerRadius<L>(
@@ -134,6 +137,7 @@ impl<L: Zero> Zero for BorderCornerRadius<L> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct GenericBorderSpacing<L>(
@@ -232,10 +236,10 @@ impl<L: Zero> Zero for BorderRadius<L> {
     }
 
     fn is_zero(&self) -> bool {
-        self.top_left.is_zero() &&
-            self.top_right.is_zero() &&
-            self.bottom_right.is_zero() &&
-            self.bottom_left.is_zero()
+        self.top_left.is_zero()
+            && self.top_right.is_zero()
+            && self.bottom_right.is_zero()
+            && self.bottom_left.is_zero()
     }
 }
 

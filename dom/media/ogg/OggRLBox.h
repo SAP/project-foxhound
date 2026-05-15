@@ -23,7 +23,6 @@
 #endif
 
 #include "mozilla/rlbox/rlbox.hpp"
-
 #include "ogg/OggStructsForRLBox.h"
 rlbox_load_structs_from_library(ogg);
 

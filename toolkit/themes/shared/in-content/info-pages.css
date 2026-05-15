@@ -38,7 +38,7 @@ body.wide-container {
   min-height: 1.6em;
   margin-inline-start: -2.3em;
   padding-inline-start: 2.3em;
-  font-size: 2.2rem;
+  font-size: var(--font-size-xxxlarge);
   -moz-context-properties: fill;
   fill: currentColor;
 }
@@ -49,7 +49,7 @@ body.wide-container {
 }
 
 .title-text {
-  font-size: 2.2rem;
+  font-size: var(--font-size-xxxlarge);
   padding-bottom: 0.4em;
 }
 
@@ -86,7 +86,7 @@ ul {
 }
 
 dt {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 ul.columns {
@@ -126,13 +126,13 @@ tree {
 /* Tables */
 
 table {
-  background-color: var(--in-content-table-background);
-  color: var(--in-content-text-color);
+  background-color: var(--table-background-color);
+  color: var(--text-color);
   font: message-box;
   text-align: start;
   width: 100%;
-  border: 1px solid var(--in-content-table-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--table-border-color);
+  border-radius: var(--border-radius-small);
   border-spacing: 0;
   overflow: hidden;
 }
@@ -152,9 +152,9 @@ thead th {
 }
 
 th {
-  background-color: var(--in-content-table-header-background);
-  color: var(--in-content-table-header-color);
-  border: 1px solid var(--in-content-table-border-color);
+  background-color: var(--table-header-background-color);
+  color: var(--table-header-text-color);
+  border: 1px solid var(--table-border-color);
 }
 
 th.column {
@@ -163,14 +163,14 @@ th.column {
 }
 
 td {
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--table-border-color);
   unicode-bidi: plaintext; /* Make sure file paths will be LTR */
 }
 
 .action-box {
-  background-color: var(--in-content-table-background);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  background-color: var(--table-background-color);
+  border: 1px solid var(--table-border-color);
+  border-radius: var(--border-radius-small);
   padding: 16px;
   flex: 1 1 25%;
 }

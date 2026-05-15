@@ -69,8 +69,8 @@ add_task(async function testPopup() {
     for (let menuitem of menuitems) {
       let expected = menuitem.dataset.visibilityEnum == state;
       is(
-        menuitem.getAttribute("checked"),
-        expected.toString(),
+        menuitem.hasAttribute("checked"),
+        expected,
         `The corresponding menuitem, ${menuitem.dataset.visibilityEnum}, ${
           expected ? "should" : "shouldn't"
         } be checked if state=${state}`

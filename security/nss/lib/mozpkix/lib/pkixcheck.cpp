@@ -727,9 +727,7 @@ CheckBasicConstraints(EndEntityOrCA endEntityOrCA,
 
 static Result
 MatchEKU(Reader& value, KeyPurposeId requiredEKU,
-         EndEntityOrCA endEntityOrCA, TrustDomain& trustDomain,
-         Time notBefore, /*in/out*/ bool& found,
-         /*in/out*/ bool& foundOCSPSigning)
+         /*in/out*/ bool& found, /*in/out*/ bool& foundOCSPSigning)
 {
   // See Section 5.9 of "A Layman's Guide to a Subset of ASN.1, BER, and DER"
   // for a description of ASN.1 DER encoding of OIDs.
@@ -748,35 +746,23 @@ MatchEKU(Reader& value, KeyPurposeId requiredEKU,
   static const uint8_t code  [] = { (40*1)+3, 6, 1, 5, 5, 7, 3, 3 };
   static const uint8_t email [] = { (40*1)+3, 6, 1, 5, 5, 7, 3, 4 };
   static const uint8_t ocsp  [] = { (40*1)+3, 6, 1, 5, 5, 7, 3, 9 };
-
-  // id-Netscape        OBJECT IDENTIFIER ::= { 2 16 840 1 113730 }
-  // id-Netscape-policy OBJECT IDENTIFIER ::= { id-Netscape 4 }
-  // id-Netscape-stepUp OBJECT IDENTIFIER ::= { id-Netscape-policy 1 }
-  static const uint8_t serverStepUp[] =
-    { (40*2)+16, 128+6,72, 1, 128+6,128+120,66, 4, 1 };
+  // RFC 9336 - X.509 Certificate General-Purpose Extended Key Usage (EKU) for
+  // Document Signing id-kp-documentSigning OBJECT IDENTIFIER ::= { id-kp 36 }
+  static const uint8_t documentSigning[] = { (40*1)+3, 6, 1, 5, 5, 7, 3, 36 };
+  // 1.2.840.113583.1.1.5 (Adobe Authentic Documents Trust)
+  // {iso(1) member-body(2) us(840) adbe(113583) acrobat(1) security(1) 5}
+  static const uint8_t documentSigningAdobe[] = { (40*1)+2, 128+6, 72, 128+6, 128+119, 47, 1, 1, 5 };
+  // 1.3.6.1.4.1.311.10.3.12 (Microsoft Document Signing OID)
+  // {iso(1) identified-organization(3) dod(6) internet(1) private(4) enterprise(1) 311 10 3 12}
+  static const uint8_t documentSigningMicrosoft[] = { (40*1)+3, 6, 1, 4, 1, 128+2, 55, 10, 3, 12 };
 
   bool match = false;
 
   if (!found) {
     switch (requiredEKU) {
-      case KeyPurposeId::id_kp_serverAuth: {
-        if (value.MatchRest(server)) {
-          match = true;
-          break;
-        }
-        // Potentially treat CA certs with step-up OID as also having SSL server
-        // type. Comodo has issued certificates that require this behavior that
-        // don't expire until June 2020!
-        if (endEntityOrCA == EndEntityOrCA::MustBeCA &&
-            value.MatchRest(serverStepUp)) {
-          Result rv = trustDomain.NetscapeStepUpMatchesServerAuth(notBefore,
-                                                                  match);
-          if (rv != Success) {
-            return rv;
-          }
-        }
+      case KeyPurposeId::id_kp_serverAuth:
+        match = value.MatchRest(server);
         break;
-      }
 
       case KeyPurposeId::id_kp_clientAuth:
         match = value.MatchRest(client);
@@ -792,6 +778,18 @@ MatchEKU(Reader& value, KeyPurposeId requiredEKU,
 
       case KeyPurposeId::id_kp_OCSPSigning:
         match = value.MatchRest(ocsp);
+        break;
+
+      case KeyPurposeId::id_kp_documentSigning:
+        match = value.MatchRest(documentSigning);
+        break;
+
+      case KeyPurposeId::id_kp_documentSigningAdobe:
+        match = value.MatchRest(documentSigningAdobe);
+        break;
+
+      case KeyPurposeId::id_kp_documentSigningMicrosoft:
+        match = value.MatchRest(documentSigningMicrosoft);
         break;
 
       case KeyPurposeId::anyExtendedKeyUsage:
@@ -817,8 +815,7 @@ MatchEKU(Reader& value, KeyPurposeId requiredEKU,
 Result
 CheckExtendedKeyUsage(EndEntityOrCA endEntityOrCA,
                       const Input* encodedExtendedKeyUsage,
-                      KeyPurposeId requiredEKU, TrustDomain& trustDomain,
-                      Time notBefore)
+                      KeyPurposeId requiredEKU)
 {
   // XXX: We're using Result::ERROR_INADEQUATE_CERT_TYPE here so that callers
   // can distinguish EKU mismatch from KU mismatch from basic constraints
@@ -833,8 +830,7 @@ CheckExtendedKeyUsage(EndEntityOrCA endEntityOrCA,
     Reader input(*encodedExtendedKeyUsage);
     Result rv = der::NestedOf(input, der::SEQUENCE, der::OIDTag,
                               der::EmptyAllowed::No, [&](Reader& r) {
-      return MatchEKU(r, requiredEKU, endEntityOrCA, trustDomain, notBefore,
-                      found, foundOCSPSigning);
+      return MatchEKU(r, requiredEKU, found, foundOCSPSigning);
     });
     if (rv != Success) {
       return Result::ERROR_INADEQUATE_CERT_TYPE;
@@ -1071,7 +1067,7 @@ CheckIssuerIndependentProperties(TrustDomain& trustDomain,
 
   // 4.2.1.12. Extended Key Usage
   rv = CheckExtendedKeyUsage(endEntityOrCA, cert.GetExtKeyUsage(),
-                             requiredEKUIfPresent, trustDomain, notBefore);
+                             requiredEKUIfPresent);
   if (rv != Success) {
     return rv;
   }

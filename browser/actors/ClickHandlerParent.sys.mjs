@@ -66,8 +66,8 @@ export class ClickHandlerParent extends JSWindowActorParent {
   /**
    * Handles clicks in the content area.
    *
-   * @param data {Object} object that looks like an Event
-   * @param browser {Element<browser>}
+   * @param {object} data
+   *   An Object that looks like an Event.
    */
   contentAreaClick(data) {
     // This is heavily based on contentAreaClick from browser.js (Bug 903016)
@@ -133,6 +133,7 @@ export class ClickHandlerParent extends JSWindowActorParent {
         triggeringSponsoredURLVisitTimeMS: browser.getAttribute(
           "triggeringSponsoredURLVisitTimeMS"
         ),
+        triggeringSource: browser.getAttribute("triggeringSource"),
       };
     }
 

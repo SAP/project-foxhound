@@ -7,15 +7,14 @@
 #ifndef mozilla_dom_SourceBuffer_h_
 #define mozilla_dom_SourceBuffer_h_
 
-#include "mozilla/MozPromise.h"
 #include "MediaContainerType.h"
 #include "MediaSource.h"
+#include "SourceBufferTask.h"
+#include "TrackBuffersManager.h"
 #include "js/RootingAPI.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/dom/SourceBufferBinding.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/mozalloc.h"
@@ -24,8 +23,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nscore.h"
-#include "TrackBuffersManager.h"
-#include "SourceBufferTask.h"
 
 class JSObject;
 struct JSContext;

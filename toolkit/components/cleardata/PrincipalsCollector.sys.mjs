@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "serviceWorkerManager",
   "@mozilla.org/serviceworkers/manager;1",
-  "nsIServiceWorkerManager"
+  Ci.nsIServiceWorkerManager
 );
 
 let logConsole;
@@ -76,7 +76,7 @@ export class PrincipalsCollector {
    * This function will cache its result and return the same list on second call,
    * even if the actual number of principals with cookies and site data changed.
    *
-   * @param {Object} [optional] progress A Sanitizer.sys.mjs progress object that
+   * @param {object} [optional] progress A Sanitizer.sys.mjs progress object that
    *   will be updated to reflect the current step of fetching principals.
    * @returns {Array<nsIPrincipal>} the list of principals
    */

@@ -254,12 +254,12 @@ login-command-button {
 
 .alert-date {
   display: block;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 .alert-link:visited,
 .alert-link {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   overflow-wrap: anywhere;
 }
 
@@ -293,8 +293,8 @@ login-command-button {
 }
 
 .error-message {
-  color: #fff;
-  background-color: var(--red-60);
+  color: var(--text-color);
+  background-color: var(--background-color-critical);
   border: 1px solid transparent;
   padding-block: 6px;
   display: inline-block;
@@ -316,7 +316,7 @@ login-command-button {
 .error-message-link > a:hover:active {
   color: currentColor;
   text-decoration: underline;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 .action-buttons {

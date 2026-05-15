@@ -400,8 +400,8 @@ add_task(async function testChart() {
  * Check that the svg chart line and control points are placed where we expect them.
  *
  * @param {ToolipPanel} panel
- * @param {Array<Array<Number>>} expectedPoints: Array of coordinated
- * @param {String} messagePrefix
+ * @param {Array<Array<number>>} expectedPoints: Array of coordinated
+ * @param {string} messagePrefix
  */
 function checkChartState(panel, expectedPoints, messagePrefix = "") {
   const svgLine = panel.querySelector("svg.chart .chart-linear");
@@ -439,10 +439,10 @@ function checkChartState(panel, expectedPoints, messagePrefix = "") {
  * Checks if the property in the rule view has the expected state
  *
  * @param {RuleView} view
- * @param {String} selector
- * @param {String} property
- * @param {String} expectedLinearValue: Expected value in the rule view
- * @param {String} expectedComputedLinearValue: Expected computed value. Defaults to expectedLinearValue.
+ * @param {string} selector
+ * @param {string} property
+ * @param {string} expectedLinearValue: Expected value in the rule view
+ * @param {string} expectedComputedLinearValue: Expected computed value. Defaults to expectedLinearValue.
  * @returns {Element|null}
  */
 async function checkRuleView(
@@ -476,8 +476,8 @@ async function checkRuleView(
  * Returns the linear easing swatch for a rule (defined by its selector), and a property.
  *
  * @param {RuleView} view
- * @param {String} selector
- * @param {String} property
+ * @param {string} selector
+ * @param {string} property
  * @returns {Element|null}
  */
 function getRuleViewLinearEasingSwatch(view, selector, property) {

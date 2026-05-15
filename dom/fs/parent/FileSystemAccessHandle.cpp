@@ -8,7 +8,6 @@
 
 #include "FileSystemDatabaseManager.h"
 #include "FileSystemParentTypes.h"
-#include "mozilla/Result.h"
 #include "mozilla/dom/FileSystemDataManager.h"
 #include "mozilla/dom/FileSystemHelpers.h"
 #include "mozilla/dom/FileSystemLog.h"

@@ -46,10 +46,6 @@ enum class FrameType {
   // interpreted. Only used under the --emit-interpreter-entry option.
   BaselineInterpreterEntry,
 
-  // A rectifier frame sits in between two JS frames, adapting argc != nargs
-  // mismatches in calls.
-  Rectifier,
-
   // Ion IC calling a scripted getter/setter or a VMFunction.
   IonICCall,
 
@@ -94,7 +90,6 @@ class OsiIndex;
 
 // Iterate over the JIT stack to assert that all invariants are respected.
 //  - Check that all entry frames are aligned on JitStackAlignment.
-//  - Check that all rectifier frames keep the JitStackAlignment.
 
 void AssertJitStackInvariants(JSContext* cx);
 
@@ -170,7 +165,6 @@ class JSJitFrameIter {
   bool isBaselineInterpreterEntry() const {
     return type_ == FrameType::BaselineInterpreterEntry;
   }
-  bool isRectifier() const { return type_ == FrameType::Rectifier; }
   bool isTrampolineNative() const {
     return type_ == FrameType::TrampolineNative;
   }
@@ -278,7 +272,7 @@ class JSJitProfilingFrameIterator {
 
   const char* baselineInterpreterLabel() const;
   void baselineInterpreterScriptPC(JSScript** script, jsbytecode** pc,
-                                   uint64_t* realmID) const;
+                                   uint64_t* realmID, uint32_t* sourceId) const;
 
   void* fp() const {
     MOZ_ASSERT(!done());
@@ -559,6 +553,8 @@ class SnapshotIterator {
 
  public:
   int64_t readInt64() { return allocationInt64(readAllocation()); }
+
+  intptr_t readIntPtr() { return allocationIntPtr(readAllocation()); }
 
   // Read either a BigInt or unpacked BigInt.
   JS::BigInt* readBigInt(JSContext* cx);

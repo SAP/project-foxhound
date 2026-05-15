@@ -148,12 +148,10 @@ function messageRemove(id) {
   };
 }
 
-function networkMessageUpdates(packets, idGenerator = null) {
-  if (idGenerator == null) {
-    idGenerator = defaultIdGenerator;
-  }
-
-  const messages = packets.map(packet => prepareMessage(packet, idGenerator));
+function networkMessageUpdates(packets) {
+  const messages = packets.map(packet =>
+    prepareMessage(packet, defaultIdGenerator)
+  );
 
   return {
     type: NETWORK_MESSAGES_UPDATE,

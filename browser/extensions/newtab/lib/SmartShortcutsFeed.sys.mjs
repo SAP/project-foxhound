@@ -5,15 +5,14 @@
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  PersistentCache: "resource://newtab/lib/PersistentCache.sys.mjs",
 });
 
 import { actionTypes as at } from "resource://newtab/common/Actions.mjs";
 
-const ETA = 100;
-
 const PREF_SYSTEM_SHORTCUTS_PERSONALIZATION =
   "discoverystream.shortcuts.personalization.enabled";
+
+const PREF_SYSTEM_SHORTCUTS_LOG = "discoverystream.shortcuts.force_log.enabled";
 
 function timeMSToSeconds(timeMS) {
   return Math.round(timeMS / 1000);
@@ -30,19 +29,20 @@ export class SmartShortcutsFeed {
   isEnabled() {
     const { values } = this.store.getState().Prefs;
     const systemPref = values[PREF_SYSTEM_SHORTCUTS_PERSONALIZATION];
-    const experimentVariable = values.smartShortcutsConfig?.enabled;
+    const experimentVariable = values.trainhopConfig?.smartShortcuts?.enabled;
+    const systemLogPref = values[PREF_SYSTEM_SHORTCUTS_LOG];
+    const experimentLogPref = values.trainhopConfig?.smartShortcuts?.force_log;
 
-    return systemPref || experimentVariable;
+    return (
+      systemPref || experimentVariable || systemLogPref || experimentLogPref
+    );
   }
 
   async init() {
     if (!this.isEnabled()) {
       return;
     }
-    const { values } = this.store.getState().Prefs;
     this.loaded = true;
-    // shortcut ranking params, eta=learning_rate
-    this.eta = (values.smartShortcutsConfig?.eta ?? ETA) / 10000;
   }
 
   async reset() {
@@ -53,17 +53,6 @@ export class SmartShortcutsFeed {
     // We don't need to worry about interactions that don't have a guid.
     if (!data.guid) {
       return;
-    }
-    // if learning rate (eta) is positive, update the shortcuts ranking weights
-    if (this.eta > 0) {
-      await this.updateShortcutRanker(
-        {
-          guid: data.guid,
-          val: event_type,
-          eta: this.eta,
-        },
-        "shortcut_cache"
-      );
     }
     const insertValues = {
       guid: data.guid,
@@ -128,66 +117,11 @@ export class SmartShortcutsFeed {
         break;
       case at.PREF_CHANGED:
         this.onPrefChangedAction(action);
-        if (action.data.name === "smartShortcutsConfig") {
+        if (action.data.name === "trainhopConfig") {
           await this.init();
         }
         break;
     }
-  }
-
-  /**
-   * Update the logistic regression weights for shortcuts ranking using gradient descent
-   *
-   * @param {object} params Stores the guid (topsite key), val (click or not), eta (learning rate)
-   * @param {object} sc_obj Cache where we will read/write weights, read features
-   * @returns {number} Sucessful or not flag
-   */
-  async updateShortcutRanker(params, cache_name) {
-    // Create cache object
-    const sc_obj = new lazy.PersistentCache(cache_name, true);
-    // Check the cache
-    const sc_cache = await sc_obj.get();
-    // Check we have scores
-    let score_map = {};
-    if (!sc_cache.score_map || !sc_cache.weights) {
-      return 0;
-    }
-
-    score_map = sc_cache.score_map;
-
-    if (!score_map[params.guid]) {
-      return 0;
-    }
-
-    // Now lets update the weights
-    // Assume score_map[guid] is available as `entry`
-    const delta = this.sigmoid(score_map[params.guid].final) - params.val;
-
-    // Clone weights for mutation
-    let new_weights = { ...sc_cache.weights };
-    for (const feature of Object.keys(sc_cache.weights)) {
-      const input = score_map[params.guid][feature] ?? 0;
-      new_weights[feature] -= params.eta * delta * input;
-    }
-
-    new_weights = this.clampWeights(new_weights);
-    await sc_obj.set("weights", new_weights);
-    return 1;
-  }
-
-  sigmoid(x) {
-    return 1 / (1 + Math.exp(-x));
-  }
-
-  clampWeights(weights, maxNorm = 100) {
-    const norm = Math.hypot(...Object.values(weights));
-    if (norm > maxNorm) {
-      const scale = maxNorm / norm;
-      return Object.fromEntries(
-        Object.entries(weights).map(([k, v]) => [k, v * scale])
-      );
-    }
-    return weights;
   }
 }
 

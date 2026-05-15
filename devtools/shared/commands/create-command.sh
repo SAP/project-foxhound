@@ -74,12 +74,12 @@ support-files = [
   "head.js",
 ]
 
-[browser_$1.js]
+["browser_$1.js"]
 EOF
 
 
 cat > $CMD_FOLDER/tests/head.js <<EOF
-* This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -127,3 +127,4 @@ echo ""
 echo "Now:"
 echo " - edit moz.build to add '\"$CMD_FOLDER\",' in DIRS (this need to be kept sorted)"
 echo " - edit index.js to add '$CMD_NAME_FIRST_LOWERCASE: \"devtools/shared/commands/$CMD_FOLDER/$1-command\"' in Commands dictionary"
+echo " - edit eslint-test-paths.config.mjs to add \"devtools/shared/commands/$CMD_FOLDER/tests/\" to the extraBrowserTestPaths array"

@@ -4,13 +4,12 @@
 
 package mozilla.components.browser.state.action
 
+import mozilla.components.browser.state.reducer.BrowserStateReducer
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.CustomTabConfig
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.createCustomTab
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -19,10 +18,10 @@ class CustomTabListActionTest {
 
     @Test
     fun `AddCustomTabAction - Adds provided tab`() {
-        val store = BrowserStore()
+        var state = BrowserState()
 
-        assertEquals(0, store.state.tabs.size)
-        assertEquals(0, store.state.customTabs.size)
+        assertEquals(0, state.tabs.size)
+        assertEquals(0, state.customTabs.size)
 
         val config = CustomTabConfig()
         val customTab = createCustomTab(
@@ -31,13 +30,13 @@ class CustomTabListActionTest {
             source = SessionState.Source.Internal.CustomTab,
         )
 
-        store.dispatch(CustomTabListAction.AddCustomTabAction(customTab)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, CustomTabListAction.AddCustomTabAction(customTab))
 
-        assertEquals(0, store.state.tabs.size)
-        assertEquals(1, store.state.customTabs.size)
-        assertEquals(SessionState.Source.Internal.CustomTab, store.state.customTabs[0].source)
-        assertEquals(customTab, store.state.customTabs[0])
-        assertSame(config, store.state.customTabs[0].config)
+        assertEquals(0, state.tabs.size)
+        assertEquals(1, state.customTabs.size)
+        assertEquals(SessionState.Source.Internal.CustomTab, state.customTabs[0].source)
+        assertEquals(customTab, state.customTabs[0])
+        assertSame(config, state.customTabs[0].config)
     }
 
     @Test
@@ -45,15 +44,14 @@ class CustomTabListActionTest {
         val customTab1 = createCustomTab("https://www.mozilla.org")
         val customTab2 = createCustomTab("https://www.firefox.com")
 
-        val state = BrowserState(customTabs = listOf(customTab1, customTab2))
-        val store = BrowserStore(state)
+        var state = BrowserState(customTabs = listOf(customTab1, customTab2))
 
-        assertEquals(2, store.state.customTabs.size)
+        assertEquals(2, state.customTabs.size)
 
-        store.dispatch(CustomTabListAction.RemoveCustomTabAction(customTab2.id)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, CustomTabListAction.RemoveCustomTabAction(customTab2.id))
 
-        assertEquals(1, store.state.customTabs.size)
-        assertEquals(customTab1, store.state.customTabs[0])
+        assertEquals(1, state.customTabs.size)
+        assertEquals(customTab1, state.customTabs[0])
     }
 
     @Test
@@ -61,16 +59,15 @@ class CustomTabListActionTest {
         val customTab1 = createCustomTab("https://www.mozilla.org")
         val customTab2 = createCustomTab("https://www.firefox.com")
 
-        val state = BrowserState(customTabs = listOf(customTab1, customTab2))
-        val store = BrowserStore(state)
+        var state = BrowserState(customTabs = listOf(customTab1, customTab2))
 
-        assertEquals(2, store.state.customTabs.size)
+        assertEquals(2, state.customTabs.size)
 
-        store.dispatch(CustomTabListAction.RemoveCustomTabAction("unknown id")).joinBlocking()
+        state = BrowserStateReducer.reduce(state, CustomTabListAction.RemoveCustomTabAction("unknown id"))
 
-        assertEquals(2, store.state.customTabs.size)
-        assertEquals(customTab1, store.state.customTabs[0])
-        assertEquals(customTab2, store.state.customTabs[1])
+        assertEquals(2, state.customTabs.size)
+        assertEquals(customTab1, state.customTabs[0])
+        assertEquals(customTab2, state.customTabs[1])
     }
 
     @Test
@@ -79,14 +76,13 @@ class CustomTabListActionTest {
         val customTab2 = createCustomTab("https://www.firefox.com")
         val regularTab = createTab(url = "https://www.mozilla.org")
 
-        val state = BrowserState(customTabs = listOf(customTab1, customTab2), tabs = listOf(regularTab))
-        val store = BrowserStore(state)
+        var state = BrowserState(customTabs = listOf(customTab1, customTab2), tabs = listOf(regularTab))
 
-        assertEquals(2, store.state.customTabs.size)
-        assertEquals(1, store.state.tabs.size)
+        assertEquals(2, state.customTabs.size)
+        assertEquals(1, state.tabs.size)
 
-        store.dispatch(CustomTabListAction.RemoveAllCustomTabsAction).joinBlocking()
-        assertEquals(0, store.state.customTabs.size)
-        assertEquals(1, store.state.tabs.size)
+        state = BrowserStateReducer.reduce(state, CustomTabListAction.RemoveAllCustomTabsAction)
+        assertEquals(0, state.customTabs.size)
+        assertEquals(1, state.tabs.size)
     }
 }

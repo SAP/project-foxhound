@@ -7,7 +7,6 @@
 #include <stdint.h>
 
 #include "ContainerParser.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/gtest/MozAssertions.h"
 
 using namespace mozilla;

@@ -6,29 +6,28 @@
 
 #include "BodyUtil.h"
 
-#include "nsError.h"
-#include "nsString.h"
-#include "nsIGlobalObject.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/dom/MimeType.h"
-#include "nsCRT.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsDOMString.h"
-#include "nsNetUtil.h"
-#include "nsReadableUtils.h"
-#include "nsStreamUtils.h"
-#include "nsStringStream.h"
-#include "nsURLHelper.h"
-
 #include "js/ArrayBuffer.h"  // JS::NewArrayBufferWithContents
 #include "js/JSON.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/FetchUtil.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/Headers.h"
+#include "mozilla/dom/MimeType.h"
 #include "mozilla/dom/Promise.h"
+#include "nsCRT.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "nsIGlobalObject.h"
+#include "nsNetUtil.h"
+#include "nsReadableUtils.h"
+#include "nsStreamUtils.h"
+#include "nsString.h"
+#include "nsStringStream.h"
+#include "nsURLHelper.h"
 
 namespace mozilla::dom {
 
@@ -346,7 +345,7 @@ class MOZ_STACK_CLASS FormDataParser {
       }
     }
 
-    MOZ_ASSERT_UNREACHABLE("Should never reach here.");
+    NS_WARNING("Body parse failed.");
     return false;
   }
 

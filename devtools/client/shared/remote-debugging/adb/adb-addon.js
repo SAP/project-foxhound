@@ -110,7 +110,7 @@ class ADBAddon extends EventEmitter {
    * Install and enable the adb extension. Returns a promise that resolves when ADB is
    * enabled.
    *
-   * @param {String} source
+   * @param {string} source
    *        String passed to the AddonManager for telemetry.
    */
   async install(source) {

@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GridArea.h"
-#include "mozilla/dom/GridBinding.h"
+
 #include "Grid.h"
+#include "mozilla/dom/GridBinding.h"
 
 namespace mozilla::dom {
 

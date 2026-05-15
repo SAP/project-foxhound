@@ -3,14 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef toolkit_breakpad_linux_utils_h__
-#define toolkit_breakpad_linux_utils_h__
+#ifndef toolkit_breakpad_linux_utils_h_
+#define toolkit_breakpad_linux_utils_h_
 
-#include <stdio.h>
 #include <stdint.h>
-#include <string>
-#include <vector>
 
 bool ElfFileSoVersion(const char* mapping_name, uint32_t* version);
 
-#endif /* toolkit_breakpad_linux_utils_h__ */
+#endif /* toolkit_breakpad_linux_utils_h_ */

@@ -7,16 +7,12 @@ LOGIN_CSS = ".mini-login-gadget"
 
 
 async def do_checks(client, shouldPass):
+    await client.navigate(URL, wait="none")
     if not shouldPass:
-        alert = await client.await_alert(UNSUPPORTED_ALERT, timeout=10)
-
-    await client.navigate(URL)
-
-    if not shouldPass:
-        assert await alert
+        assert await client.await_alert(UNSUPPORTED_ALERT, timeout=60)
 
     # the login bits of the page should properly load
-    assert client.await_css(LOGIN_CSS)
+    assert client.await_css(LOGIN_CSS, is_displayed=True, timeout=60)
 
     # we should never see the in-page support warning
     warningFound = client.execute_script(
@@ -29,6 +25,10 @@ async def do_checks(client, shouldPass):
       return false;
     """
     )
+
+    if shouldPass:
+        assert not await client.find_alert()
+
     assert (shouldPass and not warningFound) or (not shouldPass and warningFound)
 
 

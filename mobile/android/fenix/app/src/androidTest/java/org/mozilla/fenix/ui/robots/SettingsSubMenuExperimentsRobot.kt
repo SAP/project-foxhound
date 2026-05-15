@@ -8,6 +8,7 @@ import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.uiautomator.UiSelector
 import org.mozilla.fenix.R
+import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
@@ -21,11 +22,11 @@ class SettingsSubMenuExperimentsRobot {
 
     class Transition {
 
-        fun goBackToHomeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+        fun goBackToHomeScreen(composeTestRule: HomeActivityComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             goBackButton().click()
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
         fun goBack(interact: SettingsRobot.() -> Unit): SettingsRobot.Transition {

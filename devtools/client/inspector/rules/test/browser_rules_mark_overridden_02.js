@@ -26,7 +26,7 @@ add_task(async function () {
 });
 
 function testMarkOverridden(inspector, view) {
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
 
   const classRule = elementStyle.rules[2];
   const classProp = classRule.textProps[0];

@@ -12,7 +12,6 @@
 #include "nsPIDOMWindow.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Unused.h"
 
 using mozilla::dom::Promise;
 
@@ -61,7 +60,7 @@ nsSharePicker::Share(const nsACString& aTitle, const nsACString& aText,
   if (aUrl) {
     nsresult rv = aUrl->GetSpec(urlString);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    mozilla::Unused << rv;
+    (void)rv;
   } else {
     urlString.SetIsVoid(true);
   }

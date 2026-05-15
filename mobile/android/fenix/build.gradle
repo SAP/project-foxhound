@@ -6,25 +6,16 @@ import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 buildscript {
-    // This logic is duplicated in the allprojects block: I don't know how to fix that.
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
     dependencies {
-        classpath libs.tools.androidgradle
-        classpath libs.tools.benchmarkgradle
+        classpath libs.android.gradle.plugin
+        classpath libs.androidx.benchmark.gradle
         classpath libs.androidx.navigation.safeargs
+        classpath libs.mozilla.glean.gradle.plugin
         classpath libs.osslicenses.plugin
-        classpath libs.glean.gradle.plugin
-        classpath "${ApplicationServicesConfig.groupId}:tooling-nimbus-gradle:${ApplicationServicesConfig.version}"
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
@@ -32,8 +23,8 @@ buildscript {
 }
 
 plugins {
-    id 'ApkSizePlugin'
     id "mozac.ConfigPlugin"
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.detekt)
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
@@ -41,20 +32,8 @@ plugins {
 }
 
 allprojects {
-    // This logic is duplicated in the buildscript block: I don't know how to fix that.
-    repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
-
-        maven {
-            url = "${gradle.mozconfig.topobjdir}/gradle/maven"
-        }
+    ext {
+        gleanVersion = libs.versions.glean.get()
     }
 
     tasks.withType(KotlinCompile).configureEach {
@@ -83,13 +62,13 @@ subprojects {
             if (details.requested.group == 'org.mozilla.telemetry'
                     && details.requested.name.contains('glean') ) {
                 def requested = details.requested.version.tokenize(".")
-                    def defined = libs.versions.mozilla.glean.get().tokenize(".")
+                    def defined = project.ext.gleanVersion.tokenize(".")
                     // Check the major version
                     if (requested[0] != defined[0]) {
-                        throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${libs.versions.mozilla.glean.get()}")
+                        throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${project.ext.gleanVersion}")
                     } else {
                         // Enforce that all (transitive) dependencies are using the defined Glean version
-                        details.useVersion libs.versions.mozilla.glean.get()
+                        details.useVersion project.ext.gleanVersion
                     }
             }
         }
@@ -143,6 +122,27 @@ tasks.register('clean', Delete) {
     delete rootProject.layout.buildDirectory
 }
 
+dependencyAnalysis {
+    structure {
+        bundle("leakcanary") {
+            includeGroup("com.squareup.leakcanary")
+        }
+        bundle("mockk") {
+            includeGroup("io.mockk")
+        }
+        // Ignore Android KTX dependencies. See https://developer.android.com/kotlin/ktx#modules
+        //ignoreKtx(true)
+    }
+    issues {
+        all {
+            onAny {
+                // Fail the run if any issues are found (default = 'warn')
+                //severity('fail')
+            }
+        }
+    }
+}
+
 detekt {
     input = files("$projectDir/app/src")
     config = files("$projectDir/config/detekt.yml")
@@ -170,6 +170,13 @@ tasks.withType(Detekt).configureEach() {
     exclude "**/build/**"
     exclude "**/resources/**"
     exclude "**/tmp/**"
+
+    reports {
+        custom {
+            reportId = "suppression-count"
+            outputLocation.set(file("$projectDir/build/reports/suppressions.txt"))
+        }
+    }
 }
 
 // Apply same path exclusions as for the main task
@@ -191,9 +198,9 @@ dependencies {
             attribute(Bundling.BUNDLING_ATTRIBUTE, getObjects().named(Bundling, Bundling.EXTERNAL))
         }
     }
-
+    detekt project(":components:tooling-detekt")
     detekt project(":mozilla-detekt-rules")
-    detekt "io.gitlab.arturbosch.detekt:detekt-cli:${libs.versions.detekt.get()}"
+    detekt libs.detekt.cli
 }
 
 tasks.register('ktlint', JavaExec) {
@@ -203,7 +210,6 @@ tasks.register('ktlint', JavaExec) {
     mainClass.set("com.pinterest.ktlint.Main")
     args "app/src/**/*.kt"
     args "!**/build/**/*.kt"
-    args "--baseline=ktlint-baseline.xml"
     args "--reporter=json,output=build/reports/ktlint/ktlint.json"
     args "--reporter=plain"
 }
@@ -215,7 +221,6 @@ tasks.register('ktlintFormat', JavaExec) {
     args "-F"
     args "app/src/**/*.kt"
     args "!**/build/**/*.kt"
-    args "--baseline=ktlint-baseline.xml"
     args "--reporter=json,output=build/reports/ktlint/ktlintFormat.json"
     args "--reporter=plain"
     jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")

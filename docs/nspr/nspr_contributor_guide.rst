@@ -173,10 +173,3 @@ Test cases should serve as an example of how to use the API items.
 
 Test cases should provoke failure of every API item and report its
 failure.
-
-Frequently Asked Questions (FAQ)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Q:** Why was my contribution rejected?
-
-**A:** Check the Bugzilla report covering your contribution.

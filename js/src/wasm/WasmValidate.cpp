@@ -2010,7 +2010,8 @@ bool wasm::ValidateOps(ValidatingOpIter& iter, T& dumper,
       }
       case uint16_t(Op::RefIsNull): {
         Nothing nothing;
-        if (!iter.readRefIsNull(&nothing)) {
+        RefType unusedRefType;
+        if (!iter.readRefIsNull(&nothing, &unusedRefType)) {
           return false;
         }
         break;
@@ -2747,10 +2748,6 @@ static bool DecodeTypeSection(Decoder& d, CodeMetadata* codeMeta) {
     return false;
   }
 
-  if (numBytes > MaxStringBytes) {
-    return false;
-  }
-
   const uint8_t* bytes;
   if (!d.readBytes(numBytes, &bytes)) {
     return false;
@@ -2804,7 +2801,8 @@ static bool DecodeLimitBound(Decoder& d, AddressType addressType,
   return true;
 }
 
-static bool DecodeLimits(Decoder& d, LimitsKind kind, Limits* limits) {
+static bool DecodeLimits(Decoder& d, const CodeMetadata* codeMeta,
+                         LimitsKind kind, Limits* limits) {
   uint8_t flags;
   if (!d.readFixedU8(&flags)) {
     return d.fail("expected flags");
@@ -2859,19 +2857,43 @@ static bool DecodeLimits(Decoder& d, LimitsKind kind, Limits* limits) {
     limits->maximum.emplace(maximum);
   }
 
+  if (kind == LimitsKind::Memory) {
+    limits->pageSize = PageSize::Standard;
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+    if (flags & uint8_t(LimitsFlags::HasCustomPageSize)) {
+      if (!codeMeta->customPageSizesEnabled()) {
+        return d.fail("custom page sizes are disabled");
+      }
+
+      uint32_t customPageSize;
+      if (!d.readVarU32(&customPageSize)) {
+        return d.fail("failed to decode custom page size");
+      }
+
+      if (customPageSize == static_cast<uint32_t>(PageSize::Tiny)) {
+        limits->pageSize = PageSize::Tiny;
+      } else if (customPageSize != static_cast<uint32_t>(PageSize::Standard)) {
+        return d.fail("bad custom page size");
+      }
+    }
+#endif
+  }
+
   return true;
 }
 
 // Combined decoding for both table types and the augmented form of table types
 // that can include init expressions:
 //
-// https://wasm-dsl.github.io/spectec/core/binary/types.html#table-types
-// https://wasm-dsl.github.io/spectec/core/binary/modules.html#table-section
+// https://webassembly.github.io/spec/core/binary/types.html#table-types
+// https://webassembly.github.io/spec/core/binary/modules.html#table-section
 //
 // Only defined tables are therefore allowed to have init expressions, not
 // imported tables.
-static bool DecodeTableType(Decoder& d, CodeMetadata* codeMeta, bool isImport) {
-  bool initExprPresent = false;
+static bool DecodeTableType(Decoder& d, const CodeMetadata* codeMeta,
+                            bool isImport, TableType* tableType,
+                            bool* initExprPresent) {
+  *initExprPresent = false;
   uint8_t typeCode;
   if (!d.peekByte(&typeCode)) {
     return d.fail("expected type code");
@@ -2885,56 +2907,39 @@ static bool DecodeTableType(Decoder& d, CodeMetadata* codeMeta, bool isImport) {
     if (!d.readFixedU8(&flags) || flags != 0) {
       return d.fail("expected reserved byte to be 0");
     }
-    initExprPresent = true;
+    *initExprPresent = true;
   }
 
-  RefType tableElemType;
-  if (!d.readRefType(*codeMeta->types, codeMeta->features(), &tableElemType)) {
+  if (!d.readRefType(*codeMeta->types, codeMeta->features(),
+                     &tableType->elemType)) {
     return false;
   }
-
-  Limits limits;
-  if (!DecodeLimits(d, LimitsKind::Table, &limits)) {
+  if (!DecodeLimits(d, codeMeta, LimitsKind::Table, &tableType->limits)) {
     return false;
   }
 
   // If there's a maximum, check it is in range.  The check to exclude
   // initial > maximum is carried out by the DecodeLimits call above, so
   // we don't repeat it here.
-  if (limits.initial > MaxTableElemsValidation(limits.addressType) ||
-      ((limits.maximum.isSome() &&
-        limits.maximum.value() >
-            MaxTableElemsValidation(limits.addressType)))) {
+  if (tableType->limits.initial >
+          MaxTableElemsValidation(tableType->limits.addressType) ||
+      ((tableType->limits.maximum.isSome() &&
+        tableType->limits.maximum.value() >
+            MaxTableElemsValidation(tableType->limits.addressType)))) {
     return d.fail("too many table elements");
   }
 
-  if (codeMeta->tables.length() >= MaxTables) {
-    return d.fail("too many tables");
+  if (!tableType->elemType.isNullable() && !isImport && !*initExprPresent) {
+    return d.fail("table with non-nullable references requires initializer");
   }
 
-  Maybe<InitExpr> initExpr;
-  if (initExprPresent) {
-    InitExpr initializer;
-    if (!InitExpr::decodeAndValidate(d, codeMeta, tableElemType,
-                                     &initializer)) {
-      return false;
-    }
-    initExpr = Some(std::move(initializer));
-  } else {
-    if (!tableElemType.isNullable() && !isImport) {
-      return d.fail("table with non-nullable references requires initializer");
-    }
-  }
-
-  return codeMeta->tables.emplaceBack(limits, tableElemType,
-                                      std::move(initExpr),
-                                      /* isAsmJS */ false, isImport);
+  return true;
 }
 
-static bool DecodeGlobalType(Decoder& d, const SharedTypeContext& types,
-                             const FeatureArgs& features, ValType* type,
-                             bool* isMutable) {
-  if (!d.readValType(*types, features, type)) {
+static bool DecodeGlobalType(Decoder& d, const CodeMetadata* codeMeta,
+                             GlobalType* globalType) {
+  if (!d.readValType(*codeMeta->types, codeMeta->features(),
+                     &globalType->type)) {
     return d.fail("expected global type");
   }
 
@@ -2947,50 +2952,44 @@ static bool DecodeGlobalType(Decoder& d, const SharedTypeContext& types,
     return d.fail("unexpected bits set in global flags");
   }
 
-  *isMutable = flags & uint8_t(GlobalTypeImmediate::IsMutable);
+  globalType->isMutable = flags & uint8_t(GlobalTypeImmediate::IsMutable);
   return true;
 }
 
-static bool DecodeMemoryTypeAndLimits(Decoder& d, CodeMetadata* codeMeta,
-                                      MemoryDescVector* memories) {
-  if (codeMeta->numMemories() >= MaxMemories) {
-    return d.fail("too many memories");
-  }
-
-  Limits limits;
-  if (!DecodeLimits(d, LimitsKind::Memory, &limits)) {
+static bool DecodeMemoryType(Decoder& d, const CodeMetadata* codeMeta,
+                             Limits* limits) {
+  if (!DecodeLimits(d, codeMeta, LimitsKind::Memory, limits)) {
     return false;
   }
 
-  uint64_t maxField = MaxMemoryPagesValidation(limits.addressType);
+  uint64_t maxField =
+      MaxMemoryPagesValidation(limits->addressType, limits->pageSize);
 
-  if (limits.initial > maxField) {
+  if (limits->initial > maxField) {
     return d.fail("initial memory size too big");
   }
 
-  if (limits.maximum && *limits.maximum > maxField) {
+  if (limits->maximum && *limits->maximum > maxField) {
     return d.fail("maximum memory size too big");
   }
 
-  if (limits.shared == Shareable::True &&
+  if (limits->shared == Shareable::True &&
       codeMeta->sharedMemoryEnabled() == Shareable::False) {
     return d.fail("shared memory is disabled");
   }
 
-  return memories->emplaceBack(MemoryDesc(limits));
+  return true;
 }
 
-static bool DecodeTag(Decoder& d, CodeMetadata* codeMeta, TagKind* tagKind,
-                      uint32_t* funcTypeIndex) {
+static bool DecodeTagType(Decoder& d, const CodeMetadata* codeMeta,
+                          uint32_t* funcTypeIndex) {
   uint32_t tagCode;
   if (!d.readVarU32(&tagCode)) {
     return d.fail("expected tag kind");
   }
-
   if (TagKind(tagCode) != TagKind::Exception) {
     return d.fail("illegal tag kind");
   }
-  *tagKind = TagKind(tagCode);
 
   if (!d.readVarU32(funcTypeIndex)) {
     return d.fail("expected function index in tag");
@@ -3007,85 +3006,203 @@ static bool DecodeTag(Decoder& d, CodeMetadata* codeMeta, TagKind* tagKind,
   return true;
 }
 
-static bool DecodeImport(Decoder& d, CodeMetadata* codeMeta,
-                         ModuleMetadata* moduleMeta) {
-  CacheableName moduleName;
-  if (!DecodeName(d, &moduleName)) {
-    return d.fail("expected valid import module name");
+struct ExternType {
+ private:
+  DefinitionKind kind_ = DefinitionKind(-1);
+  union {
+    uint32_t funcTypeIndex;
+    TableType tableType;
+    Limits memType;
+    GlobalType globalType;
+    uint32_t tagFuncTypeIndex;
+  };
+
+ public:
+  ExternType() : funcTypeIndex() {}
+
+  static ExternType func(uint32_t funcTypeIndex) {
+    ExternType result;
+    result.kind_ = DefinitionKind::Function;
+    result.funcTypeIndex = funcTypeIndex;
+    return result;
   }
 
-  CacheableName fieldName;
-  if (!DecodeName(d, &fieldName)) {
-    return d.fail("expected valid import field name");
+  static ExternType table(TableType& tableType) {
+    ExternType result;
+    result.kind_ = DefinitionKind::Table;
+    result.tableType = tableType;
+    return result;
   }
 
-  uint8_t rawImportKind;
-  if (!d.readFixedU8(&rawImportKind)) {
-    return d.fail("failed to read import kind");
+  static ExternType memory(Limits& memType) {
+    ExternType result;
+    result.kind_ = DefinitionKind::Memory;
+    result.memType = memType;
+    return result;
   }
 
-  DefinitionKind importKind = DefinitionKind(rawImportKind);
+  static ExternType global(GlobalType& globalType) {
+    ExternType result;
+    result.kind_ = DefinitionKind::Global;
+    result.globalType = globalType;
+    return result;
+  }
 
+  static ExternType tag(uint32_t tagFuncTypeIndex) {
+    ExternType result;
+    result.kind_ = DefinitionKind::Tag;
+    result.tagFuncTypeIndex = tagFuncTypeIndex;
+    return result;
+  }
+
+  DefinitionKind kind() const { return kind_; }
+
+  uint32_t asFunc() const {
+    MOZ_ASSERT(kind_ == DefinitionKind::Function);
+    return funcTypeIndex;
+  }
+
+  const TableType& asTable() const {
+    MOZ_ASSERT(kind_ == DefinitionKind::Table);
+    return tableType;
+  }
+
+  const Limits& asMemory() const {
+    MOZ_ASSERT(kind_ == DefinitionKind::Memory);
+    return memType;
+  }
+
+  const GlobalType& asGlobal() const {
+    MOZ_ASSERT(kind_ == DefinitionKind::Global);
+    return globalType;
+  }
+
+  uint32_t asTag() const {
+    MOZ_ASSERT(kind_ == DefinitionKind::Tag);
+    return tagFuncTypeIndex;
+  }
+};
+
+[[nodiscard]]
+static bool DecodeImportType(Decoder& d, DefinitionKind importKind,
+                             const CodeMetadata* codeMeta,
+                             const ModuleMetadata* moduleMeta,
+                             ExternType* importType) {
   switch (importKind) {
     case DefinitionKind::Function: {
       uint32_t funcTypeIndex;
       if (!DecodeFuncTypeIndex(d, codeMeta->types, &funcTypeIndex)) {
         return false;
       }
-      if (!codeMeta->funcs.append(FuncDesc(funcTypeIndex))) {
+      *importType = ExternType::func(funcTypeIndex);
+      break;
+    }
+    case DefinitionKind::Table: {
+      TableType tableType;
+      bool hasInitExpr;
+      if (!DecodeTableType(d, codeMeta, /*isImport=*/true, &tableType,
+                           &hasInitExpr)) {
         return false;
       }
-      if (codeMeta->funcs.length() > MaxFuncs) {
+      MOZ_ASSERT(!hasInitExpr,
+                 "we should have failed because imported tables cannot have "
+                 "import expressions");
+      *importType = ExternType::table(tableType);
+      break;
+    }
+    case DefinitionKind::Memory: {
+      Limits memType;
+      if (!DecodeMemoryType(d, codeMeta, &memType)) {
+        return false;
+      }
+      *importType = ExternType::memory(memType);
+      break;
+    }
+    case DefinitionKind::Global: {
+      GlobalType globalType;
+      if (!DecodeGlobalType(d, codeMeta, &globalType)) {
+        return false;
+      }
+      *importType = ExternType::global(globalType);
+      break;
+    }
+    case DefinitionKind::Tag: {
+      uint32_t tagFuncTypeIndex;
+      if (!DecodeTagType(d, codeMeta, &tagFuncTypeIndex)) {
+        return false;
+      }
+      *importType = ExternType::tag(tagFuncTypeIndex);
+      break;
+    }
+    default:
+      return d.fail("unsupported import kind");
+  }
+
+  return true;
+}
+
+[[nodiscard]]
+static bool AddImport(Decoder& d, CacheableName& moduleName,
+                      CacheableName& itemName, ExternType importType,
+                      CodeMetadata* codeMeta, ModuleMetadata* moduleMeta) {
+  uint32_t importIndex = moduleMeta->imports.length();
+  if (!moduleMeta->imports.emplaceBack(
+          std::move(moduleName), std::move(itemName), importType.kind())) {
+    return false;
+  }
+
+  switch (importType.kind()) {
+    case DefinitionKind::Function: {
+      if (codeMeta->funcs.length() >= MaxFuncs) {
         return d.fail("too many functions");
+      }
+      if (!codeMeta->funcs.append(FuncDesc(importType.asFunc()))) {
+        return false;
       }
       break;
     }
     case DefinitionKind::Table: {
-      if (!DecodeTableType(d, codeMeta, /*isImport=*/true)) {
+      if (codeMeta->numTables() >= MaxTables) {
+        return d.fail("too many tables");
+      }
+      if (!codeMeta->tables.emplaceBack(
+              importType.asTable(), mozilla::Nothing(),
+              /*isAsmJS=*/false, /*isImported=*/true)) {
         return false;
       }
       break;
     }
     case DefinitionKind::Memory: {
-      if (!DecodeMemoryTypeAndLimits(d, codeMeta, &codeMeta->memories)) {
+      if (codeMeta->numMemories() >= MaxMemories) {
+        return d.fail("too many memories");
+      }
+      if (!codeMeta->memories.emplaceBack(MemoryDesc(importType.asMemory()))) {
         return false;
       }
-      codeMeta->memories.back().importIndex =
-          Some(moduleMeta->imports.length());
+      codeMeta->memories.back().importIndex = Some(importIndex);
       break;
     }
     case DefinitionKind::Global: {
-      ValType type;
-      bool isMutable;
-      if (!DecodeGlobalType(d, codeMeta->types, codeMeta->features(), &type,
-                            &isMutable)) {
-        return false;
+      if (codeMeta->globals.length() >= MaxGlobals) {
+        return d.fail("too many globals");
       }
       if (!codeMeta->globals.append(
-              GlobalDesc(type, isMutable, codeMeta->globals.length()))) {
+              GlobalDesc(importType.asGlobal(), codeMeta->globals.length()))) {
         return false;
-      }
-      if (codeMeta->globals.length() > MaxGlobals) {
-        return d.fail("too many globals");
       }
       break;
     }
     case DefinitionKind::Tag: {
-      TagKind tagKind;
-      uint32_t funcTypeIndex;
-      if (!DecodeTag(d, codeMeta, &tagKind, &funcTypeIndex)) {
-        return false;
-      }
       MutableTagType tagType = js_new<TagType>();
       if (!tagType ||
-          !tagType->initialize(&(*codeMeta->types)[funcTypeIndex])) {
+          !tagType->initialize(&(*codeMeta->types)[importType.asTag()])) {
         return false;
       }
-      if (!codeMeta->tags.emplaceBack(tagKind, tagType)) {
-        return false;
-      }
-      if (codeMeta->tags.length() > MaxTags) {
+      if (codeMeta->tags.length() >= MaxTags) {
         return d.fail("too many tags");
+      }
+      if (!codeMeta->tags.emplaceBack(TagKind::Exception, tagType)) {
+        return false;
       }
       break;
     }
@@ -3093,8 +3210,125 @@ static bool DecodeImport(Decoder& d, CodeMetadata* codeMeta,
       return d.fail("unsupported import kind");
   }
 
-  return moduleMeta->imports.emplaceBack(std::move(moduleName),
-                                         std::move(fieldName), importKind);
+  return true;
+}
+
+static bool DecodeImportGroup(Decoder& d, CodeMetadata* codeMeta,
+                              ModuleMetadata* moduleMeta) {
+  CacheableName moduleName;
+  if (!DecodeName(d, &moduleName)) {
+    return d.fail("expected valid import module name");
+  }
+  CacheableName itemName;
+  if (!DecodeName(d, &itemName)) {
+    return d.fail("expected valid import name");
+  }
+  uint8_t rawImportKind;
+  if (!d.readFixedU8(&rawImportKind)) {
+    return d.fail("failed to read import kind");
+  }
+
+#ifdef ENABLE_WASM_COMPACT_IMPORTS
+  // Compact encoding 1: one module name, many (item name, externtype) pairs
+  if (codeMeta->compactImportsEnabled() && itemName.isEmpty() &&
+      rawImportKind == uint8_t(CompactImportKind::ModuleName)) {
+    uint32_t numImports;
+    if (!d.readVarU32(&numImports)) {
+      return d.fail("failed to read number of compact imports");
+    }
+
+    mozilla::CheckedUint32 numImportsSoFar(moduleMeta->imports.length());
+    numImportsSoFar += numImports;
+    if (!numImportsSoFar.isValid() || numImportsSoFar.value() > MaxImports) {
+      return d.fail("too many imports");
+    }
+
+    for (uint32_t i = 0; i < numImports; i++) {
+      CacheableName clonedModuleName;
+      if (!moduleName.clone(&clonedModuleName)) {
+        return false;
+      }
+
+      CacheableName compactItemName;
+      if (!DecodeName(d, &compactItemName)) {
+        return d.fail("expected valid import name");
+      }
+
+      uint8_t importKind;
+      if (!d.readFixedU8(&importKind)) {
+        return d.fail("failed to read import kind");
+      }
+      ExternType importType;
+      if (!DecodeImportType(d, DefinitionKind(importKind), codeMeta, moduleMeta,
+                            &importType)) {
+        return false;
+      }
+
+      if (!AddImport(d, clonedModuleName, compactItemName, importType, codeMeta,
+                     moduleMeta)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Compact encoding 2: one module name and externtype, many item names
+  if (codeMeta->compactImportsEnabled() && itemName.isEmpty() &&
+      rawImportKind == uint8_t(CompactImportKind::ModuleNameAndExternType)) {
+    uint8_t importKind;
+    if (!d.readFixedU8(&importKind)) {
+      return d.fail("failed to read import kind");
+    }
+
+    ExternType importType;
+    if (!DecodeImportType(d, DefinitionKind(importKind), codeMeta, moduleMeta,
+                          &importType)) {
+      return false;
+    }
+
+    uint32_t numImports;
+    if (!d.readVarU32(&numImports)) {
+      return d.fail("failed to read number of compact imports");
+    }
+
+    mozilla::CheckedUint32 numImportsSoFar(moduleMeta->imports.length());
+    numImportsSoFar += numImports;
+    if (!numImportsSoFar.isValid() || numImportsSoFar.value() > MaxImports) {
+      return d.fail("too many imports");
+    }
+
+    for (uint32_t i = 0; i < numImports; i++) {
+      CacheableName clonedModuleName;
+      if (!moduleName.clone(&clonedModuleName)) {
+        return false;
+      }
+
+      CacheableName compactItemName;
+      if (!DecodeName(d, &compactItemName)) {
+        return d.fail("expected valid import name");
+      }
+
+      if (!AddImport(d, clonedModuleName, compactItemName, importType, codeMeta,
+                     moduleMeta)) {
+        return false;
+      }
+    }
+    return true;
+  }
+#endif
+
+  // Single-item encoding
+  mozilla::CheckedUint32 numImportsSoFar(moduleMeta->imports.length());
+  numImportsSoFar += 1;
+  if (!numImportsSoFar.isValid() || numImportsSoFar.value() > MaxImports) {
+    return d.fail("too many imports");
+  }
+  ExternType importType;
+  if (!DecodeImportType(d, DefinitionKind(rawImportKind), codeMeta, moduleMeta,
+                        &importType)) {
+    return false;
+  }
+  return AddImport(d, moduleName, itemName, importType, codeMeta, moduleMeta);
 }
 
 static bool CheckImportsAgainstBuiltinModules(Decoder& d,
@@ -3189,17 +3423,12 @@ static bool DecodeImportSection(Decoder& d, CodeMetadata* codeMeta,
     return true;
   }
 
-  uint32_t numImports;
-  if (!d.readVarU32(&numImports)) {
+  uint32_t numImportGroups;
+  if (!d.readVarU32(&numImportGroups)) {
     return d.fail("failed to read number of imports");
   }
-
-  if (numImports > MaxImports) {
-    return d.fail("too many imports");
-  }
-
-  for (uint32_t i = 0; i < numImports; i++) {
-    if (!DecodeImport(d, codeMeta, moduleMeta)) {
+  for (uint32_t i = 0; i < numImportGroups; i++) {
+    if (!DecodeImportGroup(d, codeMeta, moduleMeta)) {
       return false;
     }
   }
@@ -3260,15 +3489,41 @@ static bool DecodeTableSection(Decoder& d, CodeMetadata* codeMeta) {
     return true;
   }
 
-  uint32_t numTables;
-  if (!d.readVarU32(&numTables)) {
+  uint32_t numDefs;
+  if (!d.readVarU32(&numDefs)) {
     return d.fail("failed to read number of tables");
   }
 
-  for (uint32_t i = 0; i < numTables; ++i) {
-    if (!DecodeTableType(d, codeMeta, /*isImport=*/false)) {
+  CheckedInt<uint32_t> numTables = codeMeta->tables.length();
+  numTables += numDefs;
+  if (!numTables.isValid() || numTables.value() > MaxTables) {
+    return d.fail("too many tables");
+  }
+
+  if (!codeMeta->tables.reserve(numTables.value())) {
+    return false;
+  }
+
+  for (uint32_t i = 0; i < numDefs; ++i) {
+    TableType tableType;
+    bool initExprPresent;
+    if (!DecodeTableType(d, codeMeta, /*isImport=*/false, &tableType,
+                         &initExprPresent)) {
       return false;
     }
+    mozilla::Maybe<InitExpr> initExpr;
+    if (initExprPresent) {
+      InitExpr initializer;
+      if (!InitExpr::decodeAndValidate(d, codeMeta, tableType.elemType,
+                                       &initializer)) {
+        return false;
+      }
+      initExpr = mozilla::Some(std::move(initializer));
+    }
+
+    codeMeta->tables.infallibleAppend(TableDesc(tableType, std::move(initExpr),
+                                                /*isAsmJS=*/false,
+                                                /*isImported=*/false));
   }
 
   return d.finishSection(*range, "table");
@@ -3283,15 +3538,27 @@ static bool DecodeMemorySection(Decoder& d, CodeMetadata* codeMeta) {
     return true;
   }
 
-  uint32_t numMemories;
-  if (!d.readVarU32(&numMemories)) {
+  uint32_t numDefs;
+  if (!d.readVarU32(&numDefs)) {
     return d.fail("failed to read number of memories");
   }
 
-  for (uint32_t i = 0; i < numMemories; ++i) {
-    if (!DecodeMemoryTypeAndLimits(d, codeMeta, &codeMeta->memories)) {
+  CheckedInt<uint32_t> numMemories = codeMeta->memories.length();
+  numMemories += numDefs;
+  if (!numMemories.isValid() || numMemories.value() > MaxMemories) {
+    return d.fail("too many memories");
+  }
+
+  if (!codeMeta->memories.reserve(numMemories.value())) {
+    return false;
+  }
+
+  for (uint32_t i = 0; i < numDefs; ++i) {
+    Limits limits;
+    if (!DecodeMemoryType(d, codeMeta, &limits)) {
       return false;
     }
+    codeMeta->memories.infallibleAppend(MemoryDesc(limits));
   }
 
   return d.finishSection(*range, "memory");
@@ -3322,20 +3589,18 @@ static bool DecodeGlobalSection(Decoder& d, CodeMetadata* codeMeta) {
   }
 
   for (uint32_t i = 0; i < numDefs; i++) {
-    ValType type;
-    bool isMutable;
-    if (!DecodeGlobalType(d, codeMeta->types, codeMeta->features(), &type,
-                          &isMutable)) {
+    GlobalType type;
+    if (!DecodeGlobalType(d, codeMeta, &type)) {
       return false;
     }
 
     InitExpr initializer;
-    if (!InitExpr::decodeAndValidate(d, codeMeta, type, &initializer)) {
+    if (!InitExpr::decodeAndValidate(d, codeMeta, type.type, &initializer)) {
       return false;
     }
 
     codeMeta->globals.infallibleAppend(
-        GlobalDesc(std::move(initializer), isMutable));
+        GlobalDesc(std::move(initializer), type.isMutable));
   }
 
   return d.finishSection(*range, "global");
@@ -3366,16 +3631,15 @@ static bool DecodeTagSection(Decoder& d, CodeMetadata* codeMeta) {
   }
 
   for (uint32_t i = 0; i < numDefs; i++) {
-    TagKind tagKind;
     uint32_t funcTypeIndex;
-    if (!DecodeTag(d, codeMeta, &tagKind, &funcTypeIndex)) {
+    if (!DecodeTagType(d, codeMeta, &funcTypeIndex)) {
       return false;
     }
     MutableTagType tagType = js_new<TagType>();
     if (!tagType || !tagType->initialize(&(*codeMeta->types)[funcTypeIndex])) {
       return false;
     }
-    codeMeta->tags.infallibleEmplaceBack(tagKind, tagType);
+    codeMeta->tags.infallibleAppend(TagDesc(TagKind::Exception, tagType));
   }
 
   return d.finishSection(*range, "tag");
@@ -3656,7 +3920,7 @@ static bool DecodeElemSegment(Decoder& d, CodeMetadata* codeMeta,
   // For active segments, check if the element type is compatible with the
   // destination table type.
   if (seg.active()) {
-    RefType tblElemType = codeMeta->tables[seg.tableIndex].elemType;
+    RefType tblElemType = codeMeta->tables[seg.tableIndex].elemType();
     if (!CheckIsSubtypeOf(d, *codeMeta, d.currentOffset(),
                           ValType(elemType).storageType(),
                           ValType(tblElemType).storageType())) {
@@ -4098,7 +4362,7 @@ static bool DecodeDataSection(Decoder& d, CodeMetadata* codeMeta,
       return d.fail("expected segment size");
     }
 
-    if (segRange.length > MaxDataSegmentLengthPages * PageSize) {
+    if (segRange.length > MaxDataSegmentLengthPages * StandardPageSizeBytes) {
       return d.fail("segment size too big");
     }
 

@@ -7,16 +7,15 @@
 #ifndef ProfileBufferEntry_h
 #define ProfileBufferEntry_h
 
-#include "BaseProfilingCategory.h"
 #include "gtest/MozGtestFriend.h"
 #include "mozilla/BaseProfileJSONWriter.h"
+#include "mozilla/BaseProfilingCategory.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ProfileBufferEntryKinds.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Variant.h"
-#include "mozilla/Vector.h"
 
 #include <string>
 #include <type_traits>
@@ -42,6 +41,7 @@ class ProfileBufferEntry {
   ProfileBufferEntry(Kind aKind, double aDouble);
   ProfileBufferEntry(Kind aKind, int64_t aInt64);
   ProfileBufferEntry(Kind aKind, uint64_t aUint64);
+  ProfileBufferEntry(Kind aKind, uint32_t aUint32);
   ProfileBufferEntry(Kind aKind, int aInt);
   ProfileBufferEntry(Kind aKind, BaseProfilerThreadId aThreadId);
 

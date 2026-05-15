@@ -4,7 +4,9 @@ prefs = ["extensions.webextensions.remote=false"]
 dupe-manifest = true
 
 ["include:mochitest-common.toml"]
-skip-if = ["os == 'win'"] # Windows WebExtensions always run OOP
+skip-if = [
+  "os == 'win'", # Windows WebExtensions always run OOP
+]
 
 ["test_ext_storage_cleanup.html"]
 # Bug 1426514 storage_cleanup: clearing localStorage fails with oop

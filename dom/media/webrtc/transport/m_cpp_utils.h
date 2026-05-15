@@ -6,10 +6,8 @@
 
 // Original author: ekr@rtfm.com
 
-#ifndef m_cpp_utils_h__
-#define m_cpp_utils_h__
-
-#include "mozilla/Attributes.h"
+#ifndef m_cpp_utils_h_
+#define m_cpp_utils_h_
 
 namespace mozilla {
 

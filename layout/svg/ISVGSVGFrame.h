@@ -7,6 +7,7 @@
 #ifndef LAYOUT_SVG_ISVGSVGFRAME_H_
 #define LAYOUT_SVG_ISVGSVGFRAME_H_
 
+#include "mozilla/ISVGDisplayableFrame.h"
 #include "nsQueryFrame.h"
 
 namespace mozilla {
@@ -19,10 +20,11 @@ class ISVGSVGFrame {
    * Called when non-attribute changes have caused the element's width/height
    * or its for-children transform to change, and to get the element to notify
    * its children appropriately. aFlags must be set to
-   * ISVGDisplayableFrame::COORD_CONTEXT_CHANGED and/or
-   * ISVGDisplayableFrame::TRANSFORM_CHANGED.
+   * ISVGDisplayableFrame::ChangeFlag::CoordContextChanged and/or
+   * ISVGDisplayableFrame::ChangeFlag::TransformChanged.
    */
-  virtual void NotifyViewportOrTransformChanged(uint32_t aFlags) = 0;
+  virtual void NotifyViewportOrTransformChanged(
+      ISVGDisplayableFrame::ChangeFlags aFlags) = 0;
 };
 
 }  // namespace mozilla

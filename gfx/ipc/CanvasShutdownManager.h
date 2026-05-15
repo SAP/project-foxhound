@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _include_gfx_ipc_CanvasShutdownManager_h__
-#define _include_gfx_ipc_CanvasShutdownManager_h__
+#ifndef _include_gfx_ipc_CanvasShutdownManager_h_
+#define _include_gfx_ipc_CanvasShutdownManager_h_
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticMutex.h"
@@ -57,4 +57,4 @@ class CanvasShutdownManager final {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _include_gfx_ipc_CanvasShutdownManager_h__
+#endif  // _include_gfx_ipc_CanvasShutdownManager_h_

@@ -147,6 +147,8 @@ pub(super) fn map_builtin(word: spirv::Word, invariant: bool) -> Result<crate::B
         Some(Bi::PointCoord) => crate::BuiltIn::PointCoord,
         Some(Bi::FrontFacing) => crate::BuiltIn::FrontFacing,
         Some(Bi::PrimitiveId) => crate::BuiltIn::PrimitiveIndex,
+        Some(Bi::BaryCoordKHR) => crate::BuiltIn::Barycentric { perspective: true },
+        Some(Bi::BaryCoordNoPerspKHR) => crate::BuiltIn::Barycentric { perspective: false },
         Some(Bi::SampleId) => crate::BuiltIn::SampleIndex,
         Some(Bi::SampleMask) => crate::BuiltIn::SampleMask,
         // compute
@@ -181,7 +183,7 @@ pub(super) fn map_storage_class(word: spirv::Word) -> Result<super::ExtendedClas
         // we expect the `Storage` case to be filtered out before calling this function.
         Some(Sc::Uniform) => Ec::Global(crate::AddressSpace::Uniform),
         Some(Sc::Workgroup) => Ec::Global(crate::AddressSpace::WorkGroup),
-        Some(Sc::PushConstant) => Ec::Global(crate::AddressSpace::PushConstant),
+        Some(Sc::PushConstant) => Ec::Global(crate::AddressSpace::Immediate),
         _ => return Err(Error::UnsupportedStorageClass(word)),
     })
 }

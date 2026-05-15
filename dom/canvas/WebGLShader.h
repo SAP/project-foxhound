@@ -6,15 +6,13 @@
 #ifndef WEBGL_SHADER_H_
 #define WEBGL_SHADER_H_
 
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "GLDefs.h"
-#include "mozilla/MemoryReporting.h"
-
 #include "WebGLObjectModel.h"
+#include "mozilla/MemoryReporting.h"
 
 namespace mozilla {
 

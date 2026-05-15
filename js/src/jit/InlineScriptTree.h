@@ -22,6 +22,13 @@ namespace jit {
 // To support this, use a tree that records the inlinings done during
 // compilation.
 class InlineScriptTree {
+ public:
+  // Maximum inlining depth. This is the depth used by Ion/Warp compilation.
+  // Trial inlining uses a smaller depth (see MaxICScriptDepth in
+  // TrialInlining.cpp).
+  static constexpr uint32_t MaxDepth = 8;
+
+ private:
   // InlineScriptTree for the caller
   InlineScriptTree* caller_;
 

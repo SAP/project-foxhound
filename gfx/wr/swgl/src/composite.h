@@ -83,7 +83,8 @@ static inline void mask_row(uint32_t* dst, const uint8_t* mask, int span) {
     dst += 4;
   }
   if (dst < end) {
-    WideRGBA8 maskpx = expand_mask(dst, unpack(partial_load_span<PackedR8>(mask, end - dst)));
+    WideRGBA8 maskpx =
+        expand_mask(dst, unpack(partial_load_span<PackedR8>(mask, end - dst)));
     WideRGBA8 dstpx = unpack(partial_load_span<PackedRGBA8>(dst, end - dst));
     auto r = pack(maskpx + dstpx - muldiv255(dstpx, maskpx));
     partial_store_span(dst, r, end - dst);
@@ -99,9 +100,9 @@ static NO_INLINE void mask_blit(Texture& masktex, Texture& dsttex) {
   int span = dsttex.width;
 
   for (int rows = dsttex.height; rows > 0; rows--) {
-      mask_row((uint32_t*)dest, (uint8_t*)mask, span);
-      dest += destStride;
-      mask += maskStride;
+    mask_row((uint32_t*)dest, (uint8_t*)mask, span);
+    dest += destStride;
+    mask += maskStride;
   }
 }
 

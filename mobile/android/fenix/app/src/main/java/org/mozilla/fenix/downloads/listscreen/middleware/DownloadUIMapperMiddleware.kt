@@ -13,10 +13,10 @@ import mozilla.components.browser.state.action.DownloadAction
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.ext.flow
-import org.mozilla.fenix.FeatureFlags
+import mozilla.components.support.utils.DateTimeProvider
+import mozilla.components.support.utils.DefaultDateTimeProvider
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState
 import org.mozilla.fenix.downloads.listscreen.store.FileItem
@@ -32,18 +32,16 @@ import java.time.Instant
  * of the file item.
  * @param scope The [CoroutineScope] that will be used to launch coroutines.
  * @param dateTimeProvider The [DateTimeProvider] that will be used to get the current date.
- * @param isLiveDownloadsEnabled Whether or not live downloads in progress in the UI is enabled.
  */
 class DownloadUIMapperMiddleware(
     private val browserStore: BrowserStore,
     private val fileItemDescriptionProvider: FileItemDescriptionProvider,
     private val scope: CoroutineScope,
-    private val dateTimeProvider: DateTimeProvider = DateTimeProviderImpl(),
-    private val isLiveDownloadsEnabled: Boolean = FeatureFlags.showLiveDownloads,
+    private val dateTimeProvider: DateTimeProvider = DefaultDateTimeProvider(),
 ) : Middleware<DownloadUIState, DownloadUIAction> {
 
     override fun invoke(
-        context: MiddlewareContext<DownloadUIState, DownloadUIAction>,
+        store: Store<DownloadUIState, DownloadUIAction>,
         next: (DownloadUIAction) -> Unit,
         action: DownloadUIAction,
     ) {
@@ -51,7 +49,7 @@ class DownloadUIMapperMiddleware(
         when (action) {
             is DownloadUIAction.Init -> {
                 browserStore.dispatch(DownloadAction.RemoveDeletedDownloads)
-                update(context.store)
+                update(store)
             }
 
             else -> {
@@ -79,8 +77,7 @@ class DownloadUIMapperMiddleware(
             .map { it.toFileItem() }
 
     private fun isDisplayableItem(status: DownloadState.Status) =
-        status == DownloadState.Status.COMPLETED || isLiveDownloadsEnabled &&
-            status != DownloadState.Status.CANCELLED
+        status != DownloadState.Status.CANCELLED
 
     private fun DownloadState.toFileItem() =
         FileItem(

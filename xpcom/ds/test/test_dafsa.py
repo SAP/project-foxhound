@@ -22,8 +22,8 @@ def _node_to_string(node: Node, prefix, buffer, cache):
     if not cached:
         cache[id(node)] = node
         if node:
-            for node in sorted(node.children.values(), key=lambda n: n.character):
-                _node_to_string(node, prefix, buffer, cache)
+            for child_node in sorted(node.children.values(), key=lambda n: n.character):
+                _node_to_string(child_node, prefix, buffer, cache)
 
 
 def _dafsa_to_string(dafsa: Dafsa):

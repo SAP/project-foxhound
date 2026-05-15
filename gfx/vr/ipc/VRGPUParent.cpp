@@ -97,7 +97,7 @@ mozilla::ipc::IPCResult VRGPUParent::RecvPuppetSubmit(
 mozilla::ipc::IPCResult VRGPUParent::RecvPuppetCheckForCompletion() {
 #if !defined(MOZ_WIDGET_ANDROID)
   if (VRPuppetCommandBuffer::Get().HasEnded()) {
-    Unused << SendNotifyPuppetComplete();
+    (void)SendNotifyPuppetComplete();
   }
 #endif
   return IPC_OK();

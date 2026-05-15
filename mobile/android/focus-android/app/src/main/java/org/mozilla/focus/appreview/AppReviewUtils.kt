@@ -31,7 +31,7 @@ object AppReviewUtils {
     /**
      * Shows in app review or opens play store if Review Info task is not successful.
      *
-     * @property activity where In App review is triggered
+     * @param activity where In App review is triggered
      */
     fun showAppReview(activity: Activity) {
         if (shouldShowInAppReview(activity)) {
@@ -60,7 +60,7 @@ object AppReviewUtils {
     /**
      * Set the number of app openings and the flag when In App Review is needed.
      *
-     * @property context needed for SharePref
+     * @param context needed for SharePref
      */
     fun addAppOpenings(context: Context) {
         val preferenceManage = PreferenceManager.getDefaultSharedPreferences(context)

@@ -224,7 +224,8 @@ class NurseryAwareHashMap {
 namespace JS {
 
 template <typename T>
-struct GCPolicy<js::detail::UnsafeBareWeakHeapPtr<T>> {
+struct GCPolicy<js::detail::UnsafeBareWeakHeapPtr<T>>
+    : public GCPolicyBase<js::detail::UnsafeBareWeakHeapPtr<T>> {
   static void trace(JSTracer* trc, js::detail::UnsafeBareWeakHeapPtr<T>* thingp,
                     const char* name) {
     js::TraceEdge(trc, thingp, name);

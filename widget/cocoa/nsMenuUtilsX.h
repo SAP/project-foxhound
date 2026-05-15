@@ -26,6 +26,8 @@ unsigned int MacModifiersForGeckoModifiers(uint8_t geckoModifiers);
 nsMenuBarX* GetHiddenWindowMenuBar();   // returned object is not retained
 NSMenuItem* GetStandardEditMenuItem();  // returned object is not retained
 bool NodeIsHiddenOrCollapsed(nsIContent* aContent);
+NSAttributedString* AttributedStringForContent(nsIContent* aContent,
+                                               NSString* aLabel);
 
 // Find the menu item by following the path aLocationString from aRootMenu.
 // aLocationString is a '|'-separated list of integers, where each integer is

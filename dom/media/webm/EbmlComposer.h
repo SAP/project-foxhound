@@ -5,8 +5,8 @@
 
 #ifndef EbmlComposer_h_
 #define EbmlComposer_h_
-#include "nsTArray.h"
 #include "ContainerWriter.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 

@@ -17,6 +17,7 @@ export var FileUtils = {
   /**
    * Gets a directory at the specified hierarchy under a nsIDirectoryService
    * key.
+   *
    * @param   key
    *          The Directory Service Key to start from
    * @param   pathArray
@@ -34,12 +35,13 @@ export var FileUtils = {
 
   /**
    * Opens a file output stream for writing.
+   *
    * @param   file
    *          The file to write to.
    * @param   modeFlags
    *          (optional) File open flags. Can be undefined.
    * @returns nsIFileOutputStream to write to.
-   * @note The stream is initialized with the DEFER_OPEN behavior flag.
+   * Note: The stream is initialized with the DEFER_OPEN behavior flag.
    *       See nsIFileOutputStream.
    */
   openFileOutputStream: function FileUtils_openFileOutputStream(
@@ -54,12 +56,13 @@ export var FileUtils = {
 
   /**
    * Opens an atomic file output stream for writing.
+   *
    * @param   file
    *          The file to write to.
    * @param   modeFlags
    *          (optional) File open flags. Can be undefined.
    * @returns nsIFileOutputStream to write to.
-   * @note The stream is initialized with the DEFER_OPEN behavior flag.
+   * Note: The stream is initialized with the DEFER_OPEN behavior flag.
    *       See nsIFileOutputStream.
    *       OpeanAtomicFileOutputStream is generally better than openSafeFileOutputStream
    *       baecause flushing is not needed in most of the issues.
@@ -76,12 +79,13 @@ export var FileUtils = {
 
   /**
    * Opens a safe file output stream for writing.
+   *
    * @param   file
    *          The file to write to.
    * @param   modeFlags
    *          (optional) File open flags. Can be undefined.
    * @returns nsIFileOutputStream to write to.
-   * @note The stream is initialized with the DEFER_OPEN behavior flag.
+   * Note: The stream is initialized with the DEFER_OPEN behavior flag.
    *       See nsIFileOutputStream.
    */
   openSafeFileOutputStream: function FileUtils_openSafeFileOutputStream(
@@ -108,6 +112,7 @@ export var FileUtils = {
 
   /**
    * Closes an atomic file output stream.
+   *
    * @param   stream
    *          The stream to close.
    */
@@ -125,6 +130,7 @@ export var FileUtils = {
 
   /**
    * Closes a safe file output stream.
+   *
    * @param   stream
    *          The stream to close.
    */

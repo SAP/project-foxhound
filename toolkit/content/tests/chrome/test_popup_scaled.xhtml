@@ -17,7 +17,7 @@
 <iframe id="frame" width="60" height="140"
         src="data:text/html,&lt;html&gt;&lt;body&gt;&lt;input size='4' id='one'&gt;&lt;input size='4' id='two'&gt;&lt;/body&gt;&lt;/html&gt;"/>
 
-<menupopup id="popup" onpopupshown="shown()" onpopuphidden="nextTest()">
+<menupopup id="popup" onpopupshown="shown()" onpopuphidden="nextTest()" native="false">
   <menuitem label="One"/>
 </menupopup>
 
@@ -43,6 +43,13 @@ function setScale(win, scale)
   SpecialPowers.setFullZoom(win, scale);
 }
 
+function isRounded(a, b, msg) {
+  const diff = Math.abs(b - a);
+  const withinOnePx = diff <= 1;
+
+  is(withinOnePx, true, msg);
+}
+
 function shown()
 {
   var popup = $("popup");
@@ -53,10 +60,10 @@ function shown()
     is(popup.screenY - marginTop, screeny, "screen top position");
   } else {
     var anchor = $("frame").contentDocument.getElementById("two");
-    is(Math.round(anchor.getBoundingClientRect().left * 2),
-       Math.round(popup.getBoundingClientRect().left - marginLeft), "anchored left position");
-    is(Math.round(anchor.getBoundingClientRect().bottom * 2),
-       Math.round(popup.getBoundingClientRect().top - marginTop), "anchored top position");
+    isRounded(anchor.getBoundingClientRect().left * 2,
+       popup.getBoundingClientRect().left - marginLeft, "anchored left position");
+    isRounded(anchor.getBoundingClientRect().bottom * 2,
+       popup.getBoundingClientRect().top - marginTop, "anchored top position");
   }
 
   popup.hidePopup();

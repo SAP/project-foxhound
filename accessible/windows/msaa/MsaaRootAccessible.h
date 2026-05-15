@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_MsaaRootAccessible_h__
-#define mozilla_a11y_MsaaRootAccessible_h__
+#ifndef mozilla_a11y_MsaaRootAccessible_h_
+#define mozilla_a11y_MsaaRootAccessible_h_
 
 #include "mozilla/mscom/Aggregation.h"
 #include "MsaaDocAccessible.h"

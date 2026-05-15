@@ -1,0 +1,42 @@
+From: =?UTF-8?q?Emilio=20Cobos=20=C3=81lvarez?= <emilio@crisal.io>
+Date: Wed, 12 Nov 2025 05:17:00 +0000
+Subject: Bug 1768116 - Compile as C++20. r=glandium,webrtc-reviewers,mjf
+
+Co-authored-by: Chris Peterson <cpeterson@mozilla.com>
+
+Differential Revision: https://phabricator.services.mozilla.com/D271779
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a076ddec60822b1d20f39dd468e025f712b3ba4d
+---
+ BUILD.gn | 12 +-----------
+ 1 file changed, 1 insertion(+), 11 deletions(-)
+
+diff --git a/BUILD.gn b/BUILD.gn
+index c24f5c186e..487897df7a 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -316,16 +316,6 @@ config("common_config") {
+   cflags_objc = []
+   defines = []
+ 
+-  # We should be able to remove this after c++20 is enabled
+-  # across the Mozilla tree.
+-  if (build_with_mozilla) {
+-    if (is_win) {
+-      cflags_cc += [ "-std:c++20" ]
+-    } else {
+-      cflags_cc += [ "-std=gnu++20" ]
+-    }
+-  }
+-
+   if (rtc_enable_protobuf) {
+     defines += [ "WEBRTC_ENABLE_PROTOBUF=1" ]
+   } else {
+@@ -431,7 +421,7 @@ config("common_config") {
+         # "-Wnested-externs",  (C/Obj-C only)
+       ]
+       cflags_objc += [ "-Wstrict-prototypes" ]
+-      cflags_cc += [
++      cflags_cc = [
+         "-Wnon-virtual-dtor",
+ 
+         # This is enabled for clang; enable for gcc as well.

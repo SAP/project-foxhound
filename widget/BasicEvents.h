@@ -3,11 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_BasicEvents_h__
-#define mozilla_BasicEvents_h__
+#ifndef mozilla_BasicEvents_h_
+#define mozilla_BasicEvents_h_
 
 #include <stdint.h>
-#include <type_traits>
 
 #include "mozilla/EventForwards.h"
 #include "mozilla/TimeStamp.h"
@@ -773,7 +772,7 @@ class WidgetEvent : public WidgetEventTime {
   virtual aPrefix##aName* As##aName(); \
   const aPrefix##aName* As##aName() const;
 
-#include "mozilla/EventClassList.h"
+#include "mozilla/EventClassList.inc"
 
 #undef NS_EVENT_CLASS
 #undef NS_ROOT_EVENT_CLASS
@@ -1379,4 +1378,4 @@ class InternalUIEvent : public WidgetGUIEvent {
 
 }  // namespace mozilla
 
-#endif  // mozilla_BasicEvents_h__
+#endif  // mozilla_BasicEvents_h_

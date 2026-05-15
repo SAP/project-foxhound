@@ -6,6 +6,7 @@ if CONFIG["MOZ_BUILD_APP"] == "browser":
     # These collections are only referenced from browser/
     FINAL_TARGET_FILES.defaults.settings.main += [
         "language-dictionaries.json",
+        "newtab-wallpapers-v2.json",
         "search-telemetry-v2.json",
         "sites-classification.json",
         "top-sites.json",
@@ -83,8 +84,6 @@ if CONFIG["MOZ_BUILD_APP"] == "browser":
         "search-config-icons/70fdd651-6c50-b7bb-09ec-7e85da259173.meta.json",
         "search-config-icons/74793ce1-a918-a5eb-d3c0-2aadaff3c88c",
         "search-config-icons/74793ce1-a918-a5eb-d3c0-2aadaff3c88c.meta.json",
-        "search-config-icons/7bbe6c5c-fdb8-2845-a4f4-e1382e708a0e",
-        "search-config-icons/7bbe6c5c-fdb8-2845-a4f4-e1382e708a0e.meta.json",
         "search-config-icons/7bf4ca37-e2b8-4d31-a1c3-979bc0e85131",
         "search-config-icons/7bf4ca37-e2b8-4d31-a1c3-979bc0e85131.meta.json",
         "search-config-icons/7efbed51-813c-581d-d8d3-f8758434e451",

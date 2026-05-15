@@ -5,7 +5,9 @@
 package mozilla.components.feature.toolbar
 
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import mozilla.components.browser.state.selector.selectedTab
@@ -23,6 +25,7 @@ import mozilla.components.support.base.feature.LifecycleAwareFeature
 class ContainerToolbarFeature(
     private val toolbar: Toolbar,
     private var store: BrowserStore,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature {
     private var containerPageAction: ContainerToolbarAction? = null
     private var scope: CoroutineScope? = null
@@ -32,7 +35,7 @@ class ContainerToolbarFeature(
     }
 
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.distinctUntilChangedBy { it.selectedTab }
                 .collect { state ->
                     renderContainerAction(state, state.selectedTab)

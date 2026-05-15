@@ -18,6 +18,9 @@ class CRLiteTimestamp final : public nsICRLiteTimestamp {
   NS_DECL_NSICRLITETIMESTAMP
 
   CRLiteTimestamp() : mTimestamp(0) {}
+  explicit CRLiteTimestamp(const ct::VerifiedSCT& vsct)
+      : mLogID(Span(vsct.sct.logId)), mTimestamp(vsct.sct.timestamp) {}
+
   explicit CRLiteTimestamp(const ct::SignedCertificateTimestamp& sct)
       : mLogID(Span(sct.logId)), mTimestamp(sct.timestamp) {}
 

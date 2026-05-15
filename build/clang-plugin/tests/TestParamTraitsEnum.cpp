@@ -1,3 +1,5 @@
+#include <cstdint>
+
 typedef enum {
   BadFirst,
   BadSecond,
@@ -25,12 +27,25 @@ enum class ClassEnum {
   ClassLast
 };
 
+enum class TypedClassEnum : uint32_t {
+  TypedFirst,
+  TypedLast
+};
+
+enum class IsEnumCaseEnum {
+  IsEnumCaseFirst,
+  IsEnumCaseLast
+};
+
+enum class nsresult : uint32_t {
+  NS_OK = 0
+};
+
 template <class P> struct ParamTraits;
 
 // Simplified EnumSerializer etc. from IPCMessageUtils.h
 template <typename E, typename EnumValidator>
 struct EnumSerializer {
-  typedef E paramType;
 };
 
 template <typename E,
@@ -39,6 +54,7 @@ template <typename E,
 class ContiguousEnumValidator
 {};
 
+// Make sure the class derived from EnumSerializer doesn't error
 template <typename E,
           E MinLegal,
           E HighBound>
@@ -47,23 +63,31 @@ struct ContiguousEnumSerializer
                    ContiguousEnumValidator<E, MinLegal, HighBound>>
 {};
 
+// Simplified ParamTraits_IsEnumCase from IPCMessageUtils.h (alternative to EnumSerializer)
+template <typename E>
+struct ParamTraits_IsEnumCase
+{};
+
 // Typical ParamTraits implementation that should be avoided
 template<>
 struct ParamTraits<ClassEnum> // expected-error {{Custom ParamTraits implementation for an enum type}} expected-note {{Please use a helper class for example ContiguousEnumSerializer}}
 {
-  typedef ClassEnum paramType;
+  // Make sure the matcher doesn't need a typedef.
+};
+
+template<>
+struct ParamTraits<TypedClassEnum> // expected-error {{Custom ParamTraits implementation for an enum type}} expected-note {{Please use a helper class for example ContiguousEnumSerializer}}
+{
 };
 
 template<>
 struct ParamTraits<enum RawEnum> // expected-error {{Custom ParamTraits implementation for an enum type}} expected-note {{Please use a helper class for example ContiguousEnumSerializer}}
 {
-  typedef enum RawEnum paramType;
 };
 
 template<>
 struct ParamTraits<BadEnum> // expected-error {{Custom ParamTraits implementation for an enum type}} expected-note {{Please use a helper class for example ContiguousEnumSerializer}}
 {
-  typedef BadEnum paramType;
 };
 
 // Make sure the analysis catches nested typedefs
@@ -73,7 +97,6 @@ typedef NestedDefLevel1 NestedDefLevel2;
 template<>
 struct ParamTraits<NestedDefLevel2> // expected-error {{Custom ParamTraits implementation for an enum type}} expected-note {{Please use a helper class for example ContiguousEnumSerializer}}
 {
-  typedef NestedDefLevel2 paramType;
 };
 
 // Make sure a non enum typedef is not accidentally flagged
@@ -82,7 +105,6 @@ typedef int IntTypedef;
 template<>
 struct ParamTraits<IntTypedef>
 {
-  typedef IntTypedef paramType;
 };
 
 // Make sure ParamTraits using helper classes are not flagged
@@ -91,4 +113,15 @@ struct ParamTraits<GoodEnum>
 : public ContiguousEnumSerializer<GoodEnum,
                                   GoodEnum::GoodFirst,
                                   GoodEnum::GoodLast>
+{};
+
+// ParamTraits_IsEnumCase is an alternative to EnumSerializer and should not be flagged
+template<>
+struct ParamTraits<IsEnumCaseEnum>
+: public ParamTraits_IsEnumCase<IsEnumCaseEnum>
+{};
+
+// nsresult has special handling via ParamTraitsMozilla and should be allowed
+template<>
+struct ParamTraits<nsresult>
 {};

@@ -5,7 +5,9 @@
 package org.mozilla.focus.session
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -16,15 +18,24 @@ import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 
 /**
- * Responsible for starting or stopping up a [SessionNotificationService]
- * depending on whether a private tab is opened.
+ * Responsible for starting or stopping a [SessionNotificationService]
+ * depending on whether a private tab is open.
  *
- * @param browserStore Browser store reference used to observe the number of private tabs.
+ * This feature observes the number of private tabs in the [BrowserStore].
+ * When a private tab is opened, it starts the [SessionNotificationService].
+ * When all private tabs are closed, it stops the service.
+ *
+ * @param context The application context.
+ * @param browserStore The [BrowserStore] used to observe the number of private tabs.
+ * @param crashReporter The [CrashReporting] instance for error reporting.
+ * @param mainDispatcher The [CoroutineDispatcher] to be used for observing the store.
+ * @param permissionRequestHandler A lambda function to handle permission requests for the notification service.
  */
 class PrivateNotificationFeature(
     context: Context,
     private val browserStore: BrowserStore,
     private val crashReporter: CrashReporting,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val permissionRequestHandler: (() -> Unit),
 ) : LifecycleAwareFeature {
 
@@ -32,7 +43,7 @@ class PrivateNotificationFeature(
     private var scope: CoroutineScope? = null
 
     override fun start() {
-        scope = browserStore.flowScoped { flow ->
+        scope = browserStore.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.privateTabs.isNotEmpty() }
                 .distinctUntilChanged()
                 .collect { hasPrivateTabs ->

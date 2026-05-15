@@ -307,7 +307,8 @@ add_task(async function test_preload_basic() {
   // certificate but doesn't send the intermediate.
   await asyncStartTLSTestServer(
     "BadCertAndPinningServer",
-    "test_intermediate_preloads"
+    "test_intermediate_preloads",
+    false
   );
   // This ensures the test server doesn't include the intermediate in the
   // handshake.

@@ -44,7 +44,7 @@ bool AutoscrollAnimation::DoSample(FrameMetrics& aFrameMetrics,
 
   // The implementation of this function closely mirrors that of its main-
   // thread equivalent, the autoscrollLoop() function in
-  // toolkit/actors/AutoScrollChild.jsm.
+  // toolkit/actors/AutoScrollChild.sys.mjs.
 
   // Avoid long jumps when the browser hangs for more than |maxTimeDelta| ms.
   static const TimeDuration maxTimeDelta = TimeDuration::FromMilliseconds(100);

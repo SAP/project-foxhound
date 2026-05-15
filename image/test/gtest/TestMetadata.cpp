@@ -33,8 +33,7 @@ static void CheckMetadataFrameCount(
     NotNull<RefPtr<SourceBuffer>>& aSourceBuffer, BMPWithinICO aBMPWithinICO) {
   // Create a metadata decoder.
   DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
-  DecoderFlags decoderFlags =
-      DecoderFactory::GetDefaultDecoderFlagsForType(decoderType);
+  DecoderFlags decoderFlags = DefaultDecoderFlags();
   decoderFlags |= DecoderFlags::COUNT_FRAMES;
   RefPtr<image::Decoder> decoder =
       DecoderFactory::CreateAnonymousMetadataDecoder(decoderType, aSourceBuffer,
@@ -98,8 +97,7 @@ static void CheckMetadataCommon(const ImageTestCase& aTestCase,
                                 BMPWithinICO aBMPWithinICO) {
   // Create a metadata decoder.
   DecoderType decoderType = DecoderFactory::GetDecoderType(aTestCase.mMimeType);
-  DecoderFlags decoderFlags =
-      DecoderFactory::GetDefaultDecoderFlagsForType(decoderType);
+  DecoderFlags decoderFlags = DefaultDecoderFlags();
   decoderFlags |= DecoderFlags::FIRST_FRAME_ONLY;
   RefPtr<image::Decoder> decoder =
       DecoderFactory::CreateAnonymousMetadataDecoder(decoderType, aSourceBuffer,
@@ -264,6 +262,14 @@ TEST_F(ImageDecoderMetadata, AnimatedAVIF) {
                 /* aSkipCommon */ true, /* aSkipFrameCount */ false);
 }
 
+#ifdef MOZ_JXL
+TEST_F(ImageDecoderMetadata, AnimatedJXL) {
+  // TODO: Frame count decodes haven't been implemented for JXL yet.
+  CheckMetadata(GreenFirstFrameAnimatedJXLTestCase(), BMPWithinICO::NO,
+                /* aSkipCommon */ false, /* aSkipFrameCount */ true);
+}
+#endif
+
 TEST_F(ImageDecoderMetadata, FirstFramePaddingGIF) {
   CheckMetadata(FirstFramePaddingGIFTestCase());
 }
@@ -339,8 +345,14 @@ TEST_F(ImageDecoderMetadata, NoFrameDelayGIFFullDecode) {
 
   Progress imageProgress = tracker->GetProgress();
 
-  EXPECT_TRUE(bool(imageProgress & FLAG_HAS_TRANSPARENCY) == false);
+  // These seem contradictory, see the definition of this testcase in
+  // Common.cpp: metadata decodes detect it as not animated, full decodes
+  // detect it as animated.
   EXPECT_TRUE(bool(imageProgress & FLAG_IS_ANIMATED) == true);
+  EXPECT_TRUE(bool(testCase.mFlags & TEST_CASE_IS_ANIMATED) == false);
+
+  EXPECT_EQ(bool(testCase.mFlags & TEST_CASE_IS_TRANSPARENT),
+            bool(imageProgress & FLAG_HAS_TRANSPARENCY));
 
   // Ensure that we decoded both frames of the image.
   LookupResult result =

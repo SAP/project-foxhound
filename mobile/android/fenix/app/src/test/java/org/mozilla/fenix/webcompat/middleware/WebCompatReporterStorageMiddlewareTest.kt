@@ -5,7 +5,6 @@
 package org.mozilla.fenix.webcompat.middleware
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -82,7 +81,6 @@ class WebCompatReporterStorageMiddlewareTest {
         )
 
         webCompatReporterStore.dispatch(WebCompatReporterAction.BackPressed)
-        appStore.waitUntilIdle()
 
         assertEquals(expectedUrl, appStore.state.webCompatState!!.tabUrl)
         assertTrue(appStore.state.webCompatState!!.tabUrl.isNotEmpty())
@@ -102,7 +100,6 @@ class WebCompatReporterStorageMiddlewareTest {
         )
 
         webCompatReporterStore.dispatch(WebCompatReporterAction.BackPressed)
-        appStore.waitUntilIdle()
 
         assertEquals(savedState.toPersistedState(), appStore.state.webCompatState)
     }
@@ -121,7 +118,6 @@ class WebCompatReporterStorageMiddlewareTest {
         )
 
         webCompatReporterStore.dispatch(WebCompatReporterAction.BackPressed)
-        appStore.waitUntilIdle()
 
         assertEquals(savedState.toPersistedState(), appStore.state.webCompatState)
     }
@@ -140,7 +136,6 @@ class WebCompatReporterStorageMiddlewareTest {
         )
 
         webCompatReporterStore.dispatch(WebCompatReporterAction.LearnMoreClicked)
-        appStore.waitUntilIdle()
 
         assertEquals(savedState.toPersistedState(), appStore.state.webCompatState)
     }
@@ -159,7 +154,6 @@ class WebCompatReporterStorageMiddlewareTest {
         )
 
         webCompatReporterStore.dispatch(WebCompatReporterAction.CancelClicked)
-        appStore.waitUntilIdle()
 
         assertNull(appStore.state.webCompatState)
     }

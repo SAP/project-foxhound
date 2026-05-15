@@ -13,7 +13,6 @@
 #include "nsServiceManagerUtils.h"
 
 #include "nsString.h"
-#include "mozilla/Attributes.h"
 
 #include "gtest/gtest.h"
 

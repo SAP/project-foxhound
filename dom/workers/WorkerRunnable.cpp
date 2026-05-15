@@ -10,21 +10,18 @@
 #include "js/RootingAPI.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/glean/DomWorkersMetrics.h"
 #include "mozilla/TelemetryHistogramEnums.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/Worker.h"
 #include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/glean/DomWorkersMetrics.h"
 #include "nsDebug.h"
 #include "nsGlobalWindowInner.h"
 #include "nsID.h"
@@ -627,7 +624,7 @@ void WorkerMainThreadRunnable::Dispatch(WorkerPrivate* aWorkerPrivate,
   glean::workers::sync_worker_operation.Get(mTelemetryKey)
       .AccumulateRawDuration(TimeStamp::NowLoRes() - startTime);
 
-  Unused << startTime;  // Shut the compiler up.
+  (void)startTime;  // Shut the compiler up.
 
   if (!success) {
     aRv.ThrowUncatchableException();
@@ -637,12 +634,6 @@ void WorkerMainThreadRunnable::Dispatch(WorkerPrivate* aWorkerPrivate,
 NS_IMETHODIMP
 WorkerMainThreadRunnable::Run() {
   AssertIsOnMainThread();
-
-  // This shouldn't be necessary once we're better about making sure no workers
-  // are created during shutdown in earlier phases.
-  if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads)) {
-    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
-  }
 
   bool runResult = MainThreadRun();
 
@@ -718,7 +709,7 @@ void WorkerProxyToMainThreadRunnable::PostDispatchOnMainThread() {
 
     virtual nsresult Cancel() override {
       MOZ_ASSERT(GetCurrentThreadWorkerPrivate());
-      Unused << WorkerRun(nullptr, GetCurrentThreadWorkerPrivate());
+      (void)WorkerRun(nullptr, GetCurrentThreadWorkerPrivate());
       return NS_OK;
     }
 
@@ -743,7 +734,7 @@ void WorkerProxyToMainThreadRunnable::PostDispatchOnMainThread() {
   };
 
   RefPtr<WorkerControlRunnable> runnable = new ReleaseRunnable(this);
-  Unused << NS_WARN_IF(!runnable->Dispatch(mWorkerRef->Private()));
+  (void)NS_WARN_IF(!runnable->Dispatch(mWorkerRef->Private()));
 }
 
 void WorkerProxyToMainThreadRunnable::ReleaseWorker() { mWorkerRef = nullptr; }

@@ -129,32 +129,52 @@ A good way to get started is by taking a look at [existing highlighters here](ht
 Here is some boilerplate code for a new highlighter class:
 
 ```js
- function MyNewHighlighter(targetActor) {
-   this.doc = targetActor.window.document;
-   this.markup = new CanvasFrameAnonymousContentHelper(targetActor, this._buildMarkup.bind(this));
-   this.markup.initialize();
- }
+class MyNewHighlighter {
+  constructor(highlighterEnv) {
+    this.markup = new CanvasFrameAnonymousContentHelper(
+      highlighterEnv,
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-my-new-highlighter",
+      }
+    );
+  }
 
- MyNewHighlighter.prototype = {
-   destroy: function() {
-     this.doc = null;
-     this.markup.destroy();
-   },
+  destroy() {
+    this.markup.destroy();
+  }
 
-   _buildMarkup: function() {
-     let container = this.markup.anonymousContentDocument.createElement("div");
-     container.innerHTML = '<div id="new-highlighted-" style="display:none;">';
-     return container;
-   },
+  _buildMarkup() {
+    const container = this.markup.createNode({
+      attributes: { class: "highlighter-container" },
+    });
 
-   show: function(node, options) {
-     this.markup.removeAttributeForElement("new-highlighted-el", "style");
-   },
+    const node = this.markup.createNode({
+      parent: container,
+      attributes: {
+        id: "new-highlighted-elements",
+        class: "new-highlighted-elements",
+        hidden: "true",
+      },
+    });
 
-   hide: function() {
-     this.markup.setAttributeForElement("new-highlighted-el", "style", "display:none;");
-   }
- };
+    return container;
+  }
+
+  show(node, options) {
+    this.markup.removeAttributeForElement(
+      "new-highlighted-elements",
+      "hidden"
+    );
+  }
+
+  hide() {
+    this.markup.setAttributeForElement(
+      "new-highlighted-elements",
+      "hidden"
+    );
+  }
+}
 ```
 
 In most situations, the `container` returned by `_buildMarkup` will be absolutely positioned, and will need to contain elements with IDs, so that these can then later be moved, resized, hidden or shown in `show` and `hide` using the AnonymousContent API.

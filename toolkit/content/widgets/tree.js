@@ -266,7 +266,7 @@
             currElement.getAttribute("label");
           popupChild.setAttribute("label", columnName);
           popupChild.setAttribute("colindex", currCol.index);
-          if (currElement.getAttribute("hidden") != "true") {
+          if (!currElement.hasAttribute("hidden")) {
             popupChild.setAttribute("checked", "true");
           }
           if (currCol.primary) {
@@ -634,9 +634,7 @@
       <stack class="tree-stack" flex="1">
         <hbox class="tree-rows" flex="1">
           <html:slot name="treechildren"></html:slot>
-          <scrollbar height="0" minwidth="0" minheight="0" orient="vertical"
-                     class="hidevscroll-scrollbar scrollbar-topmost"
-                     ></scrollbar>
+          <scrollbar vertical="true" class="scrollbar-topmost" />
         </hbox>
         <html:input class="tree-input" type="text" hidden="true"/>
       </stack>
@@ -652,31 +650,23 @@
       this.NATURAL_ORDER = 1; // The original order, which is the DOM ordering
 
       this.attachShadow({ mode: "open" });
-      let handledElements = this.constructor.fragment.querySelectorAll(
-        "scrollbar,scrollcorner"
-      );
+      this.shadowRoot.appendChild(this.constructor.fragment);
+
       let stopAndPrevent = e => {
         e.stopPropagation();
         e.preventDefault();
       };
       let stopProp = e => e.stopPropagation();
-      for (let el of handledElements) {
-        el.addEventListener("click", stopAndPrevent);
-        el.addEventListener("contextmenu", stopAndPrevent);
-        el.addEventListener("dblclick", stopProp);
-        el.addEventListener("command", stopProp);
-      }
-      this.shadowRoot.appendChild(this.constructor.fragment);
-
-      this.#verticalScrollbar = this.shadowRoot.querySelector(
-        "scrollbar[orient='vertical']"
-      );
+      this.#verticalScrollbar = this.shadowRoot.querySelector("scrollbar");
+      this.#verticalScrollbar.addEventListener("click", stopAndPrevent);
+      this.#verticalScrollbar.addEventListener("contextmenu", stopAndPrevent);
+      this.#verticalScrollbar.addEventListener("dblclick", stopProp);
+      this.#verticalScrollbar.addEventListener("command", stopProp);
     }
 
     static get inheritedAttributes() {
       return {
-        ".hidevscroll-scrollbar": "collapsed=hidevscroll",
-        ".hidevscroll-scrollcorner": "collapsed=hidevscroll",
+        scrollbar: "collapsed=hidevscroll",
       };
     }
 
@@ -1359,7 +1349,7 @@
       var topadj = parseInt(style.borderTopWidth) + parseInt(style.paddingTop);
       input.style.top = `${textRect.y - topadj}px`;
 
-      // The leftside of the textbox is aligned to the left side of the text
+      // The left side of the textbox is aligned to the left side of the text
       // in LTR mode, and left side of the cell in RTL mode.
       let left = style.direction == "rtl" ? cellRect.x : textRect.x;
       let scrollbarWidth = window.windowUtils.getBoundsWithoutFlushing(
@@ -1681,11 +1671,10 @@
         return true;
       }
 
-      const curpos = Number(this.#verticalScrollbar.getAttribute("curpos"));
+      const curpos = this.scrollbarPosition;
       return (
         (event.detail < 0 && 0 < curpos) ||
-        (event.detail > 0 &&
-          curpos < Number(this.#verticalScrollbar.getAttribute("maxpos")))
+        (event.detail > 0 && curpos < this.scrollbarMaxPosition)
       );
     }
   }

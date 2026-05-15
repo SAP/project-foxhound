@@ -8,8 +8,7 @@
 :root[inDOMFullscreen] #sidebar-main,
 :root[inDOMFullscreen] #sidebar-splitter,
 :root[inDOMFullscreen] #sidebar-launcher-splitter,
-:root[inFullscreen]:not([macOSNativeFullscreen]) toolbar:not([fullscreentoolbar="true"]),
-:root[inFullscreen] .global-notificationbox {
+:root[inFullscreen]:not([macOSNativeFullscreen]) toolbar:not([fullscreentoolbar="true"]) {
   visibility: collapse;
 }
 
@@ -39,10 +38,11 @@
   font: message-box;
 
   align-items: center;
+  color-scheme: dark;
   background-color: rgba(45, 62, 72, 0.9);
   color: #fafafa;
   box-shadow: 0 0 5px 2px rgba(0, 0, 0, 0.5);
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
   border: 2px solid currentColor;
   padding: 24px 16px;
 
@@ -100,7 +100,7 @@
 }
 
 .pointerlockfswarning-domain {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   margin: 0;
 }
 

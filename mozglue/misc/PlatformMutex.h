@@ -7,9 +7,6 @@
 #ifndef mozilla_PlatformMutex_h
 #define mozilla_PlatformMutex_h
 
-#include <utility>
-
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
 #if !defined(XP_WIN) && !defined(__wasi__)

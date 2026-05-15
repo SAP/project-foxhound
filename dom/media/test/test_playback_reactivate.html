@@ -20,7 +20,7 @@
 var manager = new MediaTestManager;
 
 function startTest(test, token) {
-  var video = document.createElement('video');
+  const video = document.createElement('video');
   video.preload = "metadata";
   video.token = token;
 
@@ -34,33 +34,33 @@ function startTest(test, token) {
   video.src = test.name;
   video.name = test.name;
 
-  var check = function(t, v) { return function() {
-    is(t.name, v.name, t.name + ": Name should match #1");
-    Log(v.token, "removeChild: " + v.name);
-    document.body.removeChild(v);
+  var check = function() {
+    is(test.name, video.name, test.name + ": Name should match #1");
+    Log(video.token, "removeChild: " + video.name);
+    document.body.removeChild(video);
     var appendAndPlayElement = function() {
-      Log(v.token, "appendChild: " + v.name);
-      document.body.appendChild(v);
-      Log(v.token, "Element play: " + v.name);
-      v.play();
+      Log(video.token, "appendChild: " + video.name);
+      document.body.appendChild(video);
+      Log(video.token, "Element play: " + video.name);
+      video.play();
     }
     setTimeout(appendAndPlayElement, 2000);
-  }}(test, video);
+  };
 
   var finish = function() {
     video.finished = true;
     removeNodeAndSource(video);
     manager.finished(video.token);
-  }
+  };
 
-  var checkEnded = function(t, v) { return function() {
-    is(t.name, v.name, t.name + ": Name should match #2");
-    checkMetadata(t.name, v, t);
-    is(v.readyState, v.HAVE_CURRENT_DATA, t.name + " checking readyState");
-    ok(v.ended, t.name + " checking playback has ended");
+  var checkEnded = function() {
+    is(test.name, video.name, test.name + ": Name should match #2");
+    checkMetadata(test.name, video, test);
+    is(video.readyState, video.HAVE_CURRENT_DATA, test.name + " checking readyState");
+    ok(video.ended, test.name + " checking playback has ended");
 
     finish();
-  }}(test, video);
+  };
 
 
   video.addEventListener("loadedmetadata", check);

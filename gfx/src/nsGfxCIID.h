@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsGfxCIID_h__
-#define nsGfxCIID_h__
+#ifndef nsGfxCIID_h_
+#define nsGfxCIID_h_
 
 #define NS_FONT_ENUMERATOR_CID \
   {0xa6cf9115, 0x15b3, 0x11d2, {0x93, 0x2e, 0x00, 0x80, 0x5f, 0x8a, 0xdd, 0x32}}

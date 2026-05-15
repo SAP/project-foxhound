@@ -6,12 +6,12 @@
 #ifndef _mozilla_dom_ClientSource_h
 #define _mozilla_dom_ClientSource_h
 
+#include "mozilla/ResultVariant.h"
+#include "mozilla/Variant.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientOpPromise.h"
 #include "mozilla/dom/ClientThing.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
-#include "mozilla/ResultVariant.h"
-#include "mozilla/Variant.h"
 
 #ifdef XP_WIN
 #  undef PostMessage

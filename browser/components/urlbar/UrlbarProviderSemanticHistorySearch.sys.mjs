@@ -11,7 +11,7 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -19,9 +19,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   EnrollmentType: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarProviderOpenTabs:
+    "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", function () {
@@ -41,7 +42,6 @@ ChromeUtils.defineLazyGetter(lazy, "semanticManager", function () {
     0.6
   );
   return getPlacesSemanticHistoryManager({
-    embeddingSize: 384,
     rowLimit: 10000,
     samplingAttrib: "frecency",
     changeThresholdCount: 3,
@@ -63,9 +63,9 @@ ChromeUtils.defineLazyGetter(lazy, "semanticManager", function () {
  *
  * @class
  */
-export class ProviderSemanticHistorySearch extends UrlbarProvider {
+export class UrlbarProviderSemanticHistorySearch extends UrlbarProvider {
   /** @type {boolean} */
-  #exposureRecorded;
+  static #exposureRecorded;
 
   /**
    * Provides a shared instance of the semantic manager, so that other consumers
@@ -76,10 +76,6 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
    */
   static get semanticManager() {
     return lazy.semanticManager;
-  }
-
-  get name() {
-    return "SemanticHistorySearch";
   }
 
   /**
@@ -115,12 +111,11 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
   }
 
   /**
-   * Starts a semantic search query.
+   * Starts querying.
    *
-   * @param {object} queryContext
-   *   The query context, including the search string.
-   * @param {Function} addCallback
-   *   Callback to add results to the URL bar.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -143,12 +138,12 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
           addCallback
         )
       ) {
-        const result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.HISTORY,
-          ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-            title: [res.title, UrlbarUtils.HIGHLIGHT.NONE],
-            url: [res.url, UrlbarUtils.HIGHLIGHT.NONE],
+        const result = new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          payload: {
+            title: res.title,
+            url: res.url,
             icon: UrlbarUtils.getIconForUrl(res.url),
             isBlockable: true,
             blockL10n: { id: "urlbar-result-menu-remove-from-history" },
@@ -156,8 +151,8 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
               Services.urlFormatter.formatURLPref("app.support.baseURL") +
               "awesome-bar-result-menu",
             frecency: res.frecency,
-          })
-        );
+          },
+        });
         addCallback(this, result);
       }
     }
@@ -198,33 +193,21 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
       ) {
         continue;
       }
-      // Respect the switchTabs.searchAllContainers pref.
-      if (
-        !lazy.UrlbarPrefs.get("switchTabs.searchAllContainers") &&
-        tabUserContextId != userContextId
-      ) {
-        continue;
-      }
-      let payload = lazy.UrlbarResult.payloadAndSimpleHighlights(
-        queryContext.tokens,
-        {
-          url: [res.url, UrlbarUtils.HIGHLIGHT.NONE],
-          title: [res.title, UrlbarUtils.HIGHLIGHT.NONE],
+      let result = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+        source: UrlbarUtils.RESULT_SOURCE.TABS,
+        payload: {
+          url: res.url,
+          title: res.title,
           icon: UrlbarUtils.getIconForUrl(res.url),
           userContextId: tabUserContextId,
           tabGroup: tabGroupId,
           lastVisit: res.lastVisit,
-        }
-      );
-      if (lazy.UrlbarPrefs.get("secondaryActions.switchToTab")) {
-        payload[0].action =
-          UrlbarUtils.createTabSwitchSecondaryAction(tabUserContextId);
-      }
-      let result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-        UrlbarUtils.RESULT_SOURCE.TABS,
-        ...payload
-      );
+          action: lazy.UrlbarPrefs.get("secondaryActions.switchToTab")
+            ? UrlbarUtils.createTabSwitchSecondaryAction(tabUserContextId)
+            : undefined,
+        },
+      });
       addCallback(this, result);
       added = true;
     }
@@ -237,7 +220,7 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
    */
   #maybeRecordExposure() {
     // Skip if we already recorded or if the gate is manually turned off.
-    if (this.#exposureRecorded) {
+    if (UrlbarProviderSemanticHistorySearch.#exposureRecorded) {
       return;
     }
 
@@ -260,7 +243,7 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
         once: true,
         slug: metadata.slug,
       });
-      this.#exposureRecorded = true;
+      UrlbarProviderSemanticHistorySearch.#exposureRecorded = true;
       lazy.logger.debug(
         `Nimbus exposure event sent (semanticHistory: ${metadata.slug}).`
       );
@@ -287,6 +270,3 @@ export class ProviderSemanticHistorySearch extends UrlbarProvider {
     }
   }
 }
-
-export var UrlbarProviderSemanticHistorySearch =
-  new ProviderSemanticHistorySearch();

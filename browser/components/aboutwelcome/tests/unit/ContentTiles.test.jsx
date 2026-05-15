@@ -3,6 +3,8 @@ import { shallow, mount } from "enzyme";
 import { ContentTiles } from "content-src/components/ContentTiles";
 import { ActionChecklist } from "content-src/components/ActionChecklist";
 import { MobileDownloads } from "content-src/components/MobileDownloads";
+import { EmbeddedBackupRestore } from "content-src/components/EmbeddedBackupRestore";
+import { EmbeddedMigrationWizard } from "content-src/components/EmbeddedMigrationWizard";
 import { AboutWelcomeUtils } from "content-src/lib/aboutwelcome-utils.mjs";
 import { GlobalOverrider } from "asrouter/tests/unit/utils";
 
@@ -74,6 +76,12 @@ describe("ContentTiles component", () => {
     tiles: [CHECKLIST_TILE, MOBILE_TILE],
   };
 
+  const EMBEDDED_BACKUP_RESTORE_TILE = {
+    type: "backup_restore",
+    title: "Tile Title",
+    subtitle: "Tile Subtitle",
+  };
+
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     handleAction = sandbox.stub();
@@ -82,6 +90,15 @@ describe("ContentTiles component", () => {
     globals = new GlobalOverrider();
     globals.set({
       AWSendToDeviceEmailsSupported: () => Promise.resolve(),
+    });
+    globals.set({ AWSendToParent: sandbox.stub() });
+    globals.set({
+      AWSendToParent: sandbox.stub(),
+      AWFindBackupsInWellKnownLocations: sandbox.stub().resolves({
+        found: false,
+        multipleBackupsFound: false,
+        backupFileToRestore: null,
+      }),
     });
     wrapper = shallow(
       <ContentTiles
@@ -257,6 +274,29 @@ describe("ContentTiles component", () => {
       },
     });
     assert.equal(mobileDownloads.prop("handleAction"), handleAction);
+  });
+
+  it("should render EmbeddedBackupRestore for 'backup_restore' tile type", () => {
+    const TEST_CONTENT_WITH_EMBEDDED_BACKUP_RESTORE = {
+      tiles: [EMBEDDED_BACKUP_RESTORE_TILE],
+    };
+
+    const backupWrapper = mount(
+      <ContentTiles
+        content={TEST_CONTENT_WITH_EMBEDDED_BACKUP_RESTORE}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const embeddedBackupRestore = backupWrapper.find(EmbeddedBackupRestore);
+    assert.ok(
+      embeddedBackupRestore.exists(),
+      "EmbeddedBackupRestore component should be rendered"
+    );
+
+    backupWrapper.unmount();
   });
 
   it("should handle a single tile object", () => {
@@ -868,5 +908,332 @@ describe("ContentTiles component", () => {
       "minWidth should be set from icon.width"
     );
     wrapper.unmount();
+  });
+
+  it("restores last tiles focus in Spotlight context and genuine Tab is ignored", async () => {
+    const TAB_GRACE_WINDOW_MS = 250;
+
+    function nextFrame() {
+      return new Promise(r => requestAnimationFrame(r));
+    }
+    function delay(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+    async function waitFor(condition, timeout = TAB_GRACE_WINDOW_MS) {
+      const start = performance.now();
+      while (!condition()) {
+        await nextFrame();
+        if (performance.now() - start > timeout) {
+          throw new Error("timeout waiting for condition");
+        }
+      }
+    }
+
+    // Pretend we're in a Spotlight dialog so the effect runs
+    const root = document.body.appendChild(document.createElement("div"));
+    root.id = "multi-stage-message-root";
+    root.className = "onboardingContainer";
+    root.dataset.page = "spotlight";
+
+    const mountNode = document.body.appendChild(document.createElement("div"));
+
+    const content = {
+      tiles: [{ type: "multiselect", header: { title: "Test" }, data: [] }],
+    };
+
+    const focusWrapper = mount(
+      <main role="alertdialog">
+        <ContentTiles
+          content={content}
+          handleAction={() => {}}
+          activeMultiSelect={null}
+          setActiveMultiSelect={() => {}}
+        />
+        <div className="action-buttons">
+          <button className="primary">Continue</button>
+        </div>
+      </main>,
+      { attachTo: mountNode }
+    );
+
+    // Let the hook attach listeners
+    await nextFrame();
+
+    const dialog = focusWrapper.getDOMNode();
+    const header = dialog.querySelector(".tile-header");
+    const primary = dialog.querySelector(".action-buttons .primary");
+
+    // Record real DOM focus inside tiles
+    header.focus();
+    header.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await nextFrame();
+
+    // Wait past the tab grace window so this isn’t treated as a real Tab
+    await delay(TAB_GRACE_WINDOW_MS + 1);
+
+    // Simulate programmatic focus “snap” to an outside control
+    primary.focus();
+    primary.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    await waitFor(() => document.activeElement === header);
+    assert.strictEqual(
+      document.activeElement,
+      header,
+      "restored focus to tiles header"
+    );
+
+    dialog.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    primary.focus();
+    primary.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await nextFrame();
+    assert.strictEqual(
+      document.activeElement,
+      primary,
+      "did not override genuine Tab focus"
+    );
+
+    // Slow tab (>250ms) to action buttons - focus should stay on button
+    header.focus();
+    header.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await nextFrame();
+
+    // Wait past grace window to simulate slow tabbing
+    await delay(TAB_GRACE_WINDOW_MS + 50);
+
+    dialog.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true })
+    );
+    primary.focus();
+    primary.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    assert.strictEqual(
+      document.activeElement,
+      primary,
+      "did not restore focus when slow tabbing to action buttons"
+    );
+
+    // Cleanup
+    focusWrapper.unmount();
+    mountNode.remove();
+    root.remove();
+  });
+
+  it("passes content.skip_button to EmbeddedBackupRestore as skipButton", () => {
+    const content = {
+      tiles: [EMBEDDED_BACKUP_RESTORE_TILE],
+      skip_button: {
+        label: { raw: "Don't restore" },
+        action: { navigate: true },
+      },
+    };
+
+    const mountedWrapper = mount(
+      <ContentTiles
+        content={content}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const embeddedBackupComponent = mountedWrapper.find(EmbeddedBackupRestore);
+    assert.ok(
+      embeddedBackupComponent.exists(),
+      "EmbeddedBackupRestore rendered"
+    );
+    assert.deepEqual(
+      embeddedBackupComponent.prop("skipButton"),
+      content.skip_button,
+      "prop is wired"
+    );
+    mountedWrapper.unmount();
+  });
+
+  it("renders a single tile without container when there is no header or container style", () => {
+    const SINGLE_TILE_NO_CONTAINER = {
+      tiles: {
+        tile_items: {
+          type: "mobile_downloads",
+          data: { email: { link_text: "Email!" } },
+        },
+        container: {},
+      },
+    };
+
+    const mounted = mount(
+      <ContentTiles
+        content={SINGLE_TILE_NO_CONTAINER}
+        handleAction={() => {}}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    assert.isFalse(
+      mounted.find("#content-tiles-container").exists(),
+      "should not render container wrapper"
+    );
+    assert.equal(mounted.find(".content-tile").length, 1);
+
+    mounted.unmount();
+  });
+
+  it("passes migration_wizard_options properties to migration-wizard element", () => {
+    const MIGRATION_WIZARD_TILE = {
+      type: "migration-wizard",
+      migration_wizard_options: {
+        force_show_import_all: true,
+        option_expander_title_string: "Custom title",
+        hide_option_expander_subtitle: true,
+        hide_select_all: true,
+      },
+    };
+
+    const content = {
+      tiles: [MIGRATION_WIZARD_TILE],
+    };
+
+    const mountedWrapper = mount(
+      <ContentTiles
+        content={content}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const embeddedMigrationWizard = mountedWrapper.find(
+      EmbeddedMigrationWizard
+    );
+    assert.ok(
+      embeddedMigrationWizard.exists(),
+      "EmbeddedMigrationWizard rendered"
+    );
+
+    const migrationWizardEl = mountedWrapper.find("migration-wizard");
+    assert.ok(migrationWizardEl.exists(), "migration-wizard element rendered");
+
+    assert.equal(
+      migrationWizardEl.prop("force-show-import-all"),
+      true,
+      "force-show-import-all is set"
+    );
+    assert.equal(
+      migrationWizardEl.prop("option-expander-title-string"),
+      "Custom title",
+      "option-expander-title-string is set"
+    );
+    assert.equal(
+      migrationWizardEl.prop("hide-option-expander-subtitle"),
+      true,
+      "hide-option-expander-subtitle is set"
+    );
+    assert.equal(
+      migrationWizardEl.prop("hide-select-all"),
+      true,
+      "hide-select-all is set"
+    );
+
+    mountedWrapper.unmount();
+  });
+
+  it("should render link tiles with external-link-icon and no aria-expanded", () => {
+    const LINK_TILE = {
+      type: "link",
+      header: {
+        title: "link title",
+      },
+      action: {
+        type: "OPEN_URL",
+        data: { url: "https://example.com" },
+      },
+    };
+
+    const linkWrapper = mount(
+      <ContentTiles
+        content={{ tiles: [LINK_TILE] }}
+        handleAction={handleAction}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const tileButton = linkWrapper.find(".tile-header");
+
+    assert.strictEqual(
+      tileButton.prop("aria-expanded"),
+      undefined,
+      "Should not have aria-expanded since links don't expand content"
+    );
+
+    assert.strictEqual(
+      tileButton.prop("aria-controls"),
+      undefined,
+      "Should not have aria-controls"
+    );
+
+    assert.ok(
+      linkWrapper.find(".external-link-icon").exists(),
+      "Should show external-link-icon"
+    );
+    assert.ok(
+      !linkWrapper.find(".arrow-icon").exists(),
+      "Should not show arrow-icon"
+    );
+
+    linkWrapper.unmount();
+  });
+
+  it("should call handleAction when link tile is clicked", () => {
+    const LINK_TILE = {
+      type: "link",
+      id: "test-link",
+      header: {
+        title: "link tile",
+      },
+      action: {
+        type: "OPEN_URL",
+        data: { url: "https://example.com" },
+      },
+    };
+
+    let telemetrySpy = sandbox.spy(AboutWelcomeUtils, "sendActionTelemetry");
+    const linkWrapper = mount(
+      <ContentTiles
+        content={{ tiles: [LINK_TILE] }}
+        handleAction={handleAction}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const tileButton = linkWrapper.find(".tile-header");
+    tileButton.simulate("click");
+
+    sinon.assert.calledOnce(handleAction);
+    const callArgs = handleAction.firstCall.args;
+    assert.equal(
+      callArgs[1].type,
+      "OPEN_URL",
+      "Should call handleAction with tile action"
+    );
+
+    sinon.assert.calledOnce(telemetrySpy);
+    assert.equal(
+      telemetrySpy.firstCall.args[1],
+      "link_test-link_header",
+      "Telemetry should be sent for link tile click"
+    );
+
+    assert.ok(
+      !linkWrapper.find(".tile-content").exists(),
+      "Link tiles should not render tile-content"
+    );
+
+    linkWrapper.unmount();
   });
 });

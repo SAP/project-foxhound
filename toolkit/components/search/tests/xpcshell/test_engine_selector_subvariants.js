@@ -12,6 +12,9 @@ const STATIC_ENGINE_INFO = {
       base: "https://www.example.com/search",
       searchTermParamName: "q",
       displayName: null,
+      isNewUntil: null,
+      excludePartnerCodeFromTelemetry: false,
+      acceptedContentTypes: null,
     },
   },
 };

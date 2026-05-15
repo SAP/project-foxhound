@@ -20,7 +20,7 @@ add_task(async function () {
 
   info("Checking the UIs update after selecting another inspector");
   await selectNode("head", inspector);
-  inspector.sidebar.select("ruleview");
+  await inspector.sidebar.select("ruleview");
   await selectNode("div", inspector);
   await waitUntil(() => !animationInspector.state.animations.length);
   ok(true, "Should not update after selecting another inspector");
@@ -30,7 +30,7 @@ add_task(async function () {
   ok(true, "Should update after selecting animation inspector");
 
   await assertCurrentTimeUpdated(animationInspector, panel, true);
-  inspector.sidebar.select("ruleview");
+  await inspector.sidebar.select("ruleview");
   is(
     animationInspector.state.animations.length,
     1,

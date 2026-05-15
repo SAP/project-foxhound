@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUpdateSyncManager_h__
-#define nsUpdateSyncManager_h__
+#ifndef nsUpdateSyncManager_h_
+#define nsUpdateSyncManager_h_
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "nsIObserver.h"
@@ -46,4 +46,4 @@ class nsUpdateSyncManager final : public nsIUpdateSyncManager,
   mozilla::MultiInstLockHandle mLock = MULTI_INSTANCE_LOCK_HANDLE_ERROR;
 };
 
-#endif  // nsUpdateSyncManager_h__
+#endif  // nsUpdateSyncManager_h_

@@ -20,6 +20,7 @@ import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
 import org.mozilla.fenix.helpers.click
+import androidx.appcompat.R as appcompatR
 
 class SettingsSubMenuLanguageRobot {
     fun selectLanguage(language: String) {
@@ -75,7 +76,7 @@ class SettingsSubMenuLanguageRobot {
 
     fun clearSearchBar() {
         Log.i(TAG, "clearSearchBar: Trying to click the clear search bar button")
-        onView(withId(R.id.search_close_btn)).click()
+        onView(withId(appcompatR.id.search_close_btn)).click()
         Log.i(TAG, "clearSearchBar: Clicked the clear search bar button")
     }
 

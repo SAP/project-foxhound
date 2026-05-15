@@ -27,7 +27,7 @@ import org.mozilla.fenix.settings.SupportUtils
 import org.robolectric.RobolectricTestRunner
 
 private val PRIVACY_POLICY_URL =
-    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE) +
+    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE) +
         "?utm_medium=firefox-mobile&utm_source=modal&utm_campaign=microsurvey"
 
 @RunWith(RobolectricTestRunner::class)

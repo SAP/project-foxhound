@@ -179,7 +179,7 @@ class Performance : public DOMEventTargetHelper {
   void ClearUserEntries(const Optional<nsAString>& aEntryName,
                         const nsAString& aEntryType);
 
-  virtual void DispatchBufferFullEvent() = 0;
+  virtual void DispatchResourceTimingBufferFullEvent() = 0;
 
   virtual DOMHighResTimeStamp CreationTime() const = 0;
 
@@ -222,7 +222,7 @@ class Performance : public DOMEventTargetHelper {
 
  private:
   MOZ_ALWAYS_INLINE bool CanAddResourceTimingEntry();
-  void BufferEvent();
+  void ResourceTimingBufferFullEvent();
   void MaybeEmitExternalProfilerMarker(
       const nsAString& aName, Maybe<const PerformanceMeasureOptions&> aOptions,
       Maybe<const nsAString&> aStartMark, const Optional<nsAString>& aEndMark);

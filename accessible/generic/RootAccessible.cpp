@@ -5,7 +5,6 @@
 
 #include "RootAccessible.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "nsXULPopupManager.h"
 
 #define CreateEvent CreateEventA
@@ -65,11 +64,11 @@ RootAccessible::~RootAccessible() {}
 ////////////////////////////////////////////////////////////////////////////////
 // LocalAccessible
 
-ENameValueFlag RootAccessible::Name(nsString& aName) const {
+ENameValueFlag RootAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   if (ARIARoleMap()) {
-    LocalAccessible::Name(aName);
+    LocalAccessible::DirectName(aName);
     if (!aName.IsEmpty()) return eNameOK;
   }
 
@@ -128,17 +127,11 @@ const char* const kEventTypes[] = {
 #endif
     // Fired when list or tree selection changes.
     "select",
-    // Fired when value changes immediately, wether or not focused changed.
+    // Fired when value changes immediately, whether or not focused changed.
     "ValueChange", "AlertActive", "TreeRowCountChanged", "TreeInvalidated",
     // add ourself as a OpenStateChange listener (custom event fired in
     // tree.xml)
-    "OpenStateChange",
-    // add ourself as a CheckboxStateChange listener (custom event fired in
-    // HTMLInputElement.cpp)
-    "CheckboxStateChange",
-    // add ourself as a RadioStateChange Listener (custom event fired in in
-    // HTMLInputElement.cpp & radio.js)
-    "RadioStateChange", "popupshown", "popuphiding", "DOMMenuInactive",
+    "OpenStateChange", "popupshown", "popuphiding", "DOMMenuInactive",
     "DOMMenuItemActive", "DOMMenuItemInactive", "DOMMenuBarActive",
     "DOMMenuBarInactive", "scroll", "DOMTitleChanged"};
 
@@ -316,41 +309,6 @@ void RootAccessible::ProcessDOMEvent(Event* aDOMEvent, nsINode* aTarget) {
       return;
     }
   }
-
-  if (eventType.EqualsLiteral("RadioStateChange")) {
-    uint64_t state = accessible->State();
-    bool isEnabled = (state & (states::CHECKED | states::SELECTED)) != 0;
-
-    if (accessible->NeedsDOMUIEvent()) {
-      RefPtr<AccEvent> accEvent =
-          new AccStateChangeEvent(accessible, states::CHECKED, isEnabled);
-      nsEventShell::FireEvent(accEvent);
-    }
-
-    if (isEnabled) {
-      FocusMgr()->ActiveItemChanged(accessible);
-#ifdef A11Y_LOG
-      if (logging::IsEnabled(logging::eFocus)) {
-        logging::ActiveItemChangeCausedBy("RadioStateChange", accessible);
-      }
-#endif
-    }
-
-    return;
-  }
-
-  if (eventType.EqualsLiteral("CheckboxStateChange")) {
-    if (accessible->NeedsDOMUIEvent()) {
-      uint64_t state = accessible->State();
-      bool isEnabled = !!(state & states::CHECKED);
-
-      RefPtr<AccEvent> accEvent =
-          new AccStateChangeEvent(accessible, states::CHECKED, isEnabled);
-      nsEventShell::FireEvent(accEvent);
-    }
-    return;
-  }
-
   LocalAccessible* treeItemAcc = nullptr;
   // If it's a tree element, need the currently selected item.
   if (treeAcc) {
@@ -725,5 +683,10 @@ RemoteAccessible* RootAccessible::GetPrimaryRemoteTopLevelContentDoc() const {
   }
 
   auto tab = static_cast<dom::BrowserHost*>(remoteTab.get());
-  return tab->GetTopLevelDocAccessible();
+  DocAccessibleParent* doc = tab->GetTopLevelDocAccessible();
+  // If doc has no parent, it isn't currently attached to the tree and isn't
+  // interactive. This happens when the Terms of Use modal is displayed, which
+  // blocks all other interaction with the browser. In this case, we should
+  // behave as if there is no primary remote top level content document.
+  return doc && doc->Parent() ? doc : nullptr;
 }

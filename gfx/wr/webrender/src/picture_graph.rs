@@ -6,7 +6,7 @@ use crate::frame_builder::FrameBuildingContext;
 use crate::internal_types::FastHashMap;
 use crate::prim_store::PictureIndex;
 use crate::picture::{PicturePrimitive, SurfaceIndex, SurfaceInfo};
-use crate::picture::{TileCacheInstance, SliceId};
+use crate::tile_cache::{TileCacheInstance, SliceId};
 use smallvec::SmallVec;
 
 #[derive(Debug)]
@@ -174,7 +174,7 @@ fn assign_update_pass(
     info.parent = parent_pic_index;
 
     // Run pre-update to resolve animation properties etc
-    pic.pre_update(frame_context);
+    pic.resolve_scene_properties(frame_context.scene_properties);
 
     let can_be_drawn = match info.update_pass {
         Some(update_pass) => {

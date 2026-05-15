@@ -9,7 +9,6 @@
 
 #include "mozIStorageError.h"
 #include "nsString.h"
-#include "mozilla/Attributes.h"
 
 namespace mozilla {
 namespace storage {

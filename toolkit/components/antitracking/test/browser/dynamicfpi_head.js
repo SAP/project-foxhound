@@ -147,8 +147,8 @@ this.DynamicFPIHelper = {
               ok(false, "Unknown message");
             });
 
-            content.document.body.appendChild(ifr);
             ifr.src = obj.page;
+            content.document.body.appendChild(ifr);
           });
         }
       );

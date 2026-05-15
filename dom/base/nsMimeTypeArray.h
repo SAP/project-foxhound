@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMimeTypeArray_h___
-#define nsMimeTypeArray_h___
+#ifndef nsMimeTypeArray_h_
+#define nsMimeTypeArray_h_
 
-#include "nsWrapperCache.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "nsCOMPtr.h"
 #include "nsPIDOMWindow.h"
 #include "nsTArray.h"
-#include "mozilla/dom/BindingDeclarations.h"
+#include "nsWrapperCache.h"
 
 class nsMimeType;
 class nsPluginElement;
@@ -109,4 +109,4 @@ class nsMimeType final : public nsWrapperCache {
   nsString mName;
 };
 
-#endif /* nsMimeTypeArray_h___ */
+#endif /* nsMimeTypeArray_h_ */

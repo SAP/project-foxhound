@@ -4,7 +4,7 @@
     "os": "WINNT 6.1",
     "vendor": "0xabcd",
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 8.52.322.2202 ",
     "driverVersionComparator": " LESS_THAN "
@@ -23,7 +23,7 @@
     "os": "WINNT 6.1",
     "vendor": "0xabab",
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 8.52.322.2202 ",
     "driverVersionComparator": " GREATER_THAN_OR_EQUAL "
@@ -32,7 +32,7 @@
     "os": "WINNT 6.1",
     "vendor": "0xdcdc",
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 8.52.322.1111 ",
     "driverVersionComparator": " EQUAL "
@@ -41,21 +41,21 @@
     "os": "Darwin 13",
     "vendor": "0xabcd",
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
   {
     "os": "Linux",
     "vendor": "0xabcd",
     "devices": ["0x2783", "0x1234", "0x2782"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION "
   },
   {
     "os": "Android",
     "vendor": "abcd",
     "devices": ["wxyz", "asdf", "erty"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 5 ",
     "driverVersionComparator": " LESS_THAN_OR_EQUAL "
@@ -64,7 +64,7 @@
     "os": "Android",
     "vendor": "dcdc",
     "devices": ["uiop", "vbnm", "hjkl"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 5 ",
     "driverVersionComparator": " EQUAL "
@@ -73,7 +73,7 @@
     "os": "Android",
     "vendor": "abab",
     "devices": ["ghjk", "cvbn"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DRIVER_VERSION ",
     "driverVersion": " 7 ",
     "driverVersionComparator": " GREATER_THAN_OR_EQUAL "
@@ -82,28 +82,28 @@
     "os": "WINNT 6.1",
     "vendor": "0xabcd",
     "devices": ["0x6666"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DEVICE "
   },
   {
     "os": "Darwin 13",
     "vendor": "0xabcd",
     "devices": ["0x6666"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DEVICE "
   },
   {
     "os": "Linux",
     "vendor": "0xabcd",
     "devices": ["0x6666"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DEVICE "
   },
   {
     "os": "Android",
     "vendor": "0xabcd",
     "devices": ["0x6666"],
-    "feature": " DIRECT2D ",
+    "feature": " DX_NV12 ",
     "featureStatus": " BLOCKED_DEVICE "
   },
   {

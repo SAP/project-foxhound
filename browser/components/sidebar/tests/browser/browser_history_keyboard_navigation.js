@@ -63,10 +63,9 @@ add_task(async function test_navigation_sort_by_date() {
   await focusWithKeyboard(rows[3], "KEY_ArrowUp", contentWindow);
 
   info("Open the focused link.");
-  await waitForPageLoadTask(
-    () => EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow),
-    URLs[1]
-  );
+  let browser = gBrowser.selectedBrowser;
+  EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow);
+  await BrowserTestUtils.browserLoaded(browser, false, URLs[1]);
 });
 
 add_task(async function test_navigation_left_and_right_home_and_end_keys() {
@@ -185,8 +184,7 @@ add_task(async function test_navigation_sort_by_last_visited() {
     () => tabList.rowEls.length === URLs.length
   );
   tabList.rowEls[0].focus();
-  await waitForPageLoadTask(
-    () => EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow),
-    URLs[1]
-  );
+  let browser = gBrowser.selectedBrowser;
+  EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow);
+  await BrowserTestUtils.browserLoaded(browser, false, URLs[1]);
 });

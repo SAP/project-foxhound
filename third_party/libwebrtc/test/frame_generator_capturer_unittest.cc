@@ -10,6 +10,11 @@
 
 #include "test/frame_generator_capturer.h"
 
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_source_interface.h"
 #include "test/create_frame_generator_capturer.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -24,8 +29,7 @@ using ::testing::Property;
 constexpr int kWidth = 640;
 constexpr int kHeight = 360;
 
-class MockVideoSinkInterfaceVideoFrame
-    : public rtc::VideoSinkInterface<VideoFrame> {
+class MockVideoSinkInterfaceVideoFrame : public VideoSinkInterface<VideoFrame> {
  public:
   MOCK_METHOD(void, OnFrame, (const VideoFrame& frame), (override));
   MOCK_METHOD(void, OnDiscardedFrame, (), (override));
@@ -41,7 +45,7 @@ TEST(FrameGeneratorCapturerTest, CreateFromConfig) {
   auto capturer = CreateFrameGeneratorCapturer(
       time.GetClock(), *time.GetTaskQueueFactory(), config);
   testing::StrictMock<MockVideoSinkInterfaceVideoFrame> mock_sink;
-  capturer->AddOrUpdateSink(&mock_sink, rtc::VideoSinkWants());
+  capturer->AddOrUpdateSink(&mock_sink, VideoSinkWants());
   capturer->Start();
   EXPECT_CALL(mock_sink, OnFrame(Property(&VideoFrame::width, Eq(300))))
       .Times(21);
@@ -57,7 +61,7 @@ TEST(FrameGeneratorCapturerTest, OnOutputFormatRequest) {
   auto capturer = CreateFrameGeneratorCapturer(
       time.GetClock(), *time.GetTaskQueueFactory(), config);
   testing::StrictMock<MockVideoSinkInterfaceVideoFrame> mock_sink;
-  capturer->AddOrUpdateSink(&mock_sink, rtc::VideoSinkWants());
+  capturer->AddOrUpdateSink(&mock_sink, VideoSinkWants());
   capturer->OnOutputFormatRequest(kWidth / 2, kHeight / 2, /*max_fps=*/10);
   capturer->Start();
   EXPECT_CALL(mock_sink, OnFrame(Property(&VideoFrame::width, Eq(kWidth / 2))))
@@ -98,7 +102,7 @@ TEST(FrameGeneratorCapturerTest, AllowZeroHertz) {
   auto capturer = CreateFrameGeneratorCapturer(
       time.GetClock(), *time.GetTaskQueueFactory(), config);
   testing::StrictMock<MockVideoSinkInterfaceVideoFrame> mock_sink;
-  capturer->AddOrUpdateSink(&mock_sink, rtc::VideoSinkWants());
+  capturer->AddOrUpdateSink(&mock_sink, VideoSinkWants());
   capturer->Start();
   // The video changes frame every 500ms so during 10s we expect to capture 20
   // frames. The framerate set to 30 is ignored.
@@ -115,7 +119,7 @@ TEST(FrameGeneratorCapturerTest, AllowZeroHertzMinimumFps) {
   auto capturer = CreateFrameGeneratorCapturer(
       time.GetClock(), *time.GetTaskQueueFactory(), config);
   testing::StrictMock<MockVideoSinkInterfaceVideoFrame> mock_sink;
-  capturer->AddOrUpdateSink(&mock_sink, rtc::VideoSinkWants());
+  capturer->AddOrUpdateSink(&mock_sink, VideoSinkWants());
   capturer->Start();
   // The video frame never changes but the capturer still sends a minimum of one
   // frame per second.

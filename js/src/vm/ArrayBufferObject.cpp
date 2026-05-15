@@ -27,11 +27,12 @@
 #  include <valgrind/memcheck.h>
 #endif
 
-#include "jsnum.h"
 #include "jstypes.h"
 
+#include "builtin/Number.h"
 #include "gc/Barrier.h"
 #include "gc/Memory.h"
+#include "jit/InlinableNatives.h"
 #include "js/ArrayBuffer.h"
 #include "js/Conversions.h"
 #include "js/experimental/TypedData.h"  // JS_IsArrayBufferViewObject
@@ -171,8 +172,8 @@ uint64_t js::WasmReservedBytes() { return wasmReservedBytes; }
   return true;
 }
 
-void* js::MapBufferMemory(wasm::AddressType t, size_t mappedSize,
-                          size_t initialCommittedSize) {
+void* js::MapBufferMemory(wasm::AddressType t, wasm::PageSize pageSize,
+                          size_t mappedSize, size_t initialCommittedSize) {
   MOZ_ASSERT(mappedSize % gc::SystemPageSize() == 0);
   MOZ_ASSERT(initialCommittedSize % gc::SystemPageSize() == 0);
   MOZ_ASSERT(initialCommittedSize <= mappedSize);
@@ -346,7 +347,8 @@ static const JSFunctionSpec arraybuffer_proto_functions[] = {
 };
 
 static const JSPropertySpec arraybuffer_proto_properties[] = {
-    JS_PSG("byteLength", ArrayBufferObject::byteLengthGetter, 0),
+    JS_INLINABLE_PSG("byteLength", ArrayBufferObject::byteLengthGetter, 0,
+                     ArrayBufferByteLength),
     JS_PSG("maxByteLength", ArrayBufferObject::maxByteLengthGetter, 0),
     JS_PSG("resizable", ArrayBufferObject::resizableGetter, 0),
     JS_PSG("detached", ArrayBufferObject::detachedGetter, 0),
@@ -370,7 +372,7 @@ static const ClassSpec ArrayBufferObjectClassSpec = {
     arraybuffer_properties,
     arraybuffer_proto_functions,
     arraybuffer_proto_properties,
-    GenericFinishInit<WhichHasFuseProperty::ProtoAndCtor>,
+    GenericFinishInit<WhichHasRealmFuseProperty::ProtoAndCtor>,
 };
 
 static const ClassExtension FixedLengthArrayBufferObjectClassExtension = {
@@ -545,6 +547,19 @@ bool ArrayBufferObject::maxByteLengthGetterImpl(JSContext* cx,
   MOZ_ASSERT(IsArrayBuffer(args.thisv()));
 
   auto* buffer = &args.thisv().toObject().as<ArrayBufferObject>();
+
+  // Special case for wasm with potentially 64-bits memory.
+  // Manually compute the maxByteLength to avoid an overflow on 32-bit machines.
+  if (buffer->isWasm() && buffer->isResizable()) {
+    Pages sourceMaxPages = buffer->wasmSourceMaxPages().value();
+    uint64_t sourceMaxBytes = sourceMaxPages.byteLength64();
+
+    MOZ_ASSERT(sourceMaxBytes <= wasm::StandardPageSizeBytes *
+                                     wasm::MaxMemory64StandardPagesValidation);
+    args.rval().setNumber(double(sourceMaxBytes));
+
+    return true;
+  }
 
   // Steps 4-6.
   size_t maxByteLength = buffer->maxByteLength();
@@ -791,7 +806,7 @@ bool ArrayBufferObject::resizeImpl(JSContext* cx, const CallArgs& args) {
 
   if (obj->isWasm()) {
     // Special case for resizing of Wasm buffers.
-    if (newByteLength % wasm::PageSize != 0) {
+    if (newByteLength % wasm::StandardPageSizeBytes != 0) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_WASM_ARRAYBUFFER_PAGE_MULTIPLE);
       return false;
@@ -802,7 +817,8 @@ bool ArrayBufferObject::resizeImpl(JSContext* cx, const CallArgs& args) {
       return false;
     }
 
-    Pages newPages = Pages::fromByteLengthExact(newByteLength);
+    Pages newPages =
+        Pages::fromByteLengthExact(newByteLength, obj->wasmPageSize());
     MOZ_RELEASE_ASSERT(WasmArrayBufferSourceMaxPages(obj).isSome());
     Rooted<ArrayBufferObject*> res(
         cx,
@@ -1260,15 +1276,30 @@ static ArrayBufferContents ReallocateArrayBufferContents(JSContext* cx,
 }
 
 static ArrayBufferContents NewCopiedBufferContents(
-    JSContext* cx, Handle<ArrayBufferObject*> buffer) {
+    JSContext* cx, Handle<ArrayBufferObject*> buffer, size_t nbytes) {
+  size_t byteLength = buffer->byteLength();
+  MOZ_RELEASE_ASSERT(byteLength <= nbytes,
+                     "can't copy less than byteLength bytes");
+
   ArrayBufferContents dataCopy =
-      AllocateUninitializedArrayBufferContents(cx, buffer->byteLength());
+      AllocateUninitializedArrayBufferContents(cx, nbytes);
   if (dataCopy) {
-    if (auto count = buffer->byteLength()) {
-      memcpy(dataCopy.get(), buffer->dataPointer(), count);
+    // Copy the initial bytes from |buffer|.
+    if (byteLength) {
+      memcpy(dataCopy.get(), buffer->dataPointer(), byteLength);
+    }
+
+    // Zero the remaining bytes.
+    if (byteLength < nbytes) {
+      memset(dataCopy.get() + byteLength, 0, nbytes - byteLength);
     }
   }
   return dataCopy;
+}
+
+static ArrayBufferContents NewCopiedBufferContents(
+    JSContext* cx, Handle<ArrayBufferObject*> buffer) {
+  return NewCopiedBufferContents(cx, buffer, buffer->byteLength());
 }
 
 /* static */
@@ -1526,7 +1557,7 @@ void ResizableArrayBufferObject::resize(size_t newByteLength) {
   MOZ_ASSERT(newSize <= mappedSize());
 
   size_t delta = newSize - oldSize;
-  MOZ_ASSERT(delta % wasm::PageSize == 0);
+  MOZ_ASSERT(delta % wasm::StandardPageSizeBytes == 0);
 
   uint8_t* dataEnd = dataPointer() + oldSize;
   MOZ_ASSERT(uintptr_t(dataEnd) % gc::SystemPageSize() == 0);
@@ -1545,8 +1576,8 @@ void WasmArrayRawBuffer::discard(size_t byteOffset, size_t byteLen) {
 
   // The caller is responsible for ensuring these conditions are met; see this
   // function's comment in ArrayBufferObject.h.
-  MOZ_ASSERT(byteOffset % wasm::PageSize == 0);
-  MOZ_ASSERT(byteLen % wasm::PageSize == 0);
+  MOZ_ASSERT(byteOffset % wasm::StandardPageSizeBytes == 0);
+  MOZ_ASSERT(byteLen % wasm::StandardPageSizeBytes == 0);
   MOZ_ASSERT(wasm::MemoryBoundsCheck(uint64_t(byteOffset), uint64_t(byteLen),
                                      byteLength()));
 
@@ -1587,10 +1618,15 @@ void WasmArrayRawBuffer::discard(size_t byteOffset, size_t byteLen) {
 
 /* static */
 WasmArrayRawBuffer* WasmArrayRawBuffer::AllocateWasm(
-    AddressType addressType, Pages initialPages, Pages clampedMaxPages,
-    const Maybe<Pages>& sourceMaxPages, const Maybe<size_t>& mapped) {
+    AddressType addressType, wasm::PageSize pageSize, Pages initialPages,
+    Pages clampedMaxPages, const Maybe<Pages>& sourceMaxPages,
+    const Maybe<size_t>& mapped) {
   // Prior code has asserted that initial pages is within our implementation
   // limits (wasm::MaxMemoryPages) and we can assume it is a valid size_t.
+  MOZ_RELEASE_ASSERT(initialPages.pageSize() == pageSize);
+  MOZ_RELEASE_ASSERT(clampedMaxPages.pageSize() == pageSize);
+  MOZ_RELEASE_ASSERT(!sourceMaxPages.isSome() ||
+                     (pageSize == sourceMaxPages->pageSize()));
   MOZ_ASSERT(initialPages.hasByteLength());
   size_t numBytes = initialPages.byteLength();
 
@@ -1601,20 +1637,37 @@ WasmArrayRawBuffer* WasmArrayRawBuffer::AllocateWasm(
 
   // Use an override mapped size, or else compute the mapped size from
   // initialMappedPages.
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  MOZ_ASSERT_IF(pageSize == wasm::PageSize::Tiny, !mapped.isSome());
+#endif
   size_t mappedSize =
       mapped.isSome() ? *mapped : wasm::ComputeMappedSize(initialMappedPages);
 
   MOZ_RELEASE_ASSERT(mappedSize <= SIZE_MAX - gc::SystemPageSize());
   MOZ_RELEASE_ASSERT(numBytes <= SIZE_MAX - gc::SystemPageSize());
   MOZ_RELEASE_ASSERT(initialPages <= clampedMaxPages);
-  MOZ_ASSERT(numBytes % gc::SystemPageSize() == 0);
+  // With custom page sizes, the wasm-visible byte length may not fall along
+  // system page boundaries.
+  MOZ_ASSERT_IF(pageSize == wasm::PageSize::Standard,
+                numBytes % gc::SystemPageSize() == 0);
   MOZ_ASSERT(mappedSize % gc::SystemPageSize() == 0);
 
   uint64_t mappedSizeWithHeader = mappedSize + gc::SystemPageSize();
+#ifndef ENABLE_WASM_CUSTOM_PAGE_SIZES
   uint64_t numBytesWithHeader = numBytes + gc::SystemPageSize();
+#else
+  // For tiny page size, the mapped size and the committed size are the
+  // same since we do not have a slop area or guard page.
+  uint64_t numBytesWithHeader = pageSize == wasm::PageSize::Tiny
+                                    ? mappedSizeWithHeader
+                                    : (numBytes + gc::SystemPageSize());
+#endif
 
-  void* data = MapBufferMemory(addressType, (size_t)mappedSizeWithHeader,
-                               (size_t)numBytesWithHeader);
+  MOZ_ASSERT(numBytesWithHeader % gc::SystemPageSize() == 0);
+
+  void* data =
+      MapBufferMemory(addressType, pageSize, (size_t)mappedSizeWithHeader,
+                      (size_t)numBytesWithHeader);
   if (!data) {
     return nullptr;
   }
@@ -1622,8 +1675,9 @@ WasmArrayRawBuffer* WasmArrayRawBuffer::AllocateWasm(
   uint8_t* base = reinterpret_cast<uint8_t*>(data) + gc::SystemPageSize();
   uint8_t* header = base - sizeof(WasmArrayRawBuffer);
 
-  auto rawBuf = new (header) WasmArrayRawBuffer(
-      addressType, base, clampedMaxPages, sourceMaxPages, mappedSize, numBytes);
+  auto rawBuf = new (header)
+      WasmArrayRawBuffer(addressType, pageSize, base, clampedMaxPages,
+                         sourceMaxPages, mappedSize, numBytes);
   return rawBuf;
 }
 
@@ -1634,7 +1688,15 @@ void WasmArrayRawBuffer::Release(void* mem) {
 
   MOZ_RELEASE_ASSERT(header->mappedSize() <= SIZE_MAX - gc::SystemPageSize());
   size_t mappedSizeWithHeader = header->mappedSize() + gc::SystemPageSize();
+#ifndef ENABLE_WASM_CUSTOM_PAGE_SIZES
   size_t committedSize = header->byteLength() + gc::SystemPageSize();
+#else
+  // See above for numBytesWithHeader in AllocateWasm.
+  size_t committedSize = header->pageSize() == wasm::PageSize::Tiny
+                             ? mappedSizeWithHeader
+                             : (header->byteLength() + gc::SystemPageSize());
+#endif
+  MOZ_ASSERT(committedSize % gc::SystemPageSize() == 0);
 
   static_assert(std::is_trivially_destructible_v<WasmArrayRawBuffer>,
                 "no need to call the destructor");
@@ -1651,7 +1713,9 @@ WasmArrayRawBuffer* ArrayBufferObject::BufferContents::wasmBuffer() const {
 template <typename ObjT, typename RawbufT>
 static ArrayBufferObjectMaybeShared* CreateSpecificWasmBuffer(
     JSContext* cx, const wasm::MemoryDesc& memory) {
-  bool useHugeMemory = wasm::IsHugeMemoryEnabled(memory.addressType());
+  bool useHugeMemory =
+      wasm::IsHugeMemoryEnabled(memory.addressType(), memory.pageSize());
+  wasm::PageSize pageSize = memory.pageSize();
   Pages initialPages = memory.initialPages();
   Maybe<Pages> sourceMaxPages = memory.maximumPages();
   Pages clampedMaxPages = wasm::ClampedMaxPages(
@@ -1666,9 +1730,9 @@ static ArrayBufferObjectMaybeShared* CreateSpecificWasmBuffer(
   }
 #endif
 
-  RawbufT* buffer =
-      RawbufT::AllocateWasm(memory.limits.addressType, initialPages,
-                            clampedMaxPages, sourceMaxPages, mappedSize);
+  RawbufT* buffer = RawbufT::AllocateWasm(
+      memory.limits.addressType, memory.pageSize(), initialPages,
+      clampedMaxPages, sourceMaxPages, mappedSize);
   if (!buffer) {
     if (useHugeMemory) {
       WarnNumberASCII(cx, JSMSG_WASM_HUGE_MEMORY_FAILED);
@@ -1683,24 +1747,33 @@ static ArrayBufferObjectMaybeShared* CreateSpecificWasmBuffer(
     // If we fail, and have a sourceMaxPages, try to reserve the biggest
     // chunk in the range [initialPages, clampedMaxPages) using log backoff.
     if (!sourceMaxPages) {
-      wasm::Log(cx, "new Memory({initial=%" PRIu64 " pages}) failed",
-                initialPages.value());
+      wasm::Log(cx,
+                "new Memory({initial=%" PRIu64
+                " pages, "
+                "pageSize=%" PRIu32 " bytes}) failed",
+                initialPages.pageCount(),
+                wasm::PageSizeInBytes(initialPages.pageSize()));
       ReportOutOfMemory(cx);
       return nullptr;
     }
 
-    uint64_t cur = clampedMaxPages.value() / 2;
-    for (; Pages(cur) > initialPages; cur /= 2) {
-      buffer = RawbufT::AllocateWasm(memory.limits.addressType, initialPages,
-                                     Pages(cur), sourceMaxPages, mappedSize);
+    uint64_t cur = clampedMaxPages.pageCount() / 2;
+    for (; cur > initialPages.pageCount(); cur /= 2) {
+      buffer = RawbufT::AllocateWasm(
+          memory.limits.addressType, pageSize, initialPages,
+          Pages::fromPageCount(cur, pageSize), sourceMaxPages, mappedSize);
       if (buffer) {
         break;
       }
     }
 
     if (!buffer) {
-      wasm::Log(cx, "new Memory({initial=%" PRIu64 " pages}) failed",
-                initialPages.value());
+      wasm::Log(cx,
+                "new Memory({initial=%" PRIu64
+                " pages, "
+                "pageSize=%" PRIu32 " bytes}) failed",
+                initialPages.pageCount(),
+                wasm::PageSizeInBytes(initialPages.pageSize()));
       ReportOutOfMemory(cx);
       return nullptr;
     }
@@ -1735,19 +1808,25 @@ static ArrayBufferObjectMaybeShared* CreateSpecificWasmBuffer(
     if (useHugeMemory) {
       wasm::Log(cx,
                 "new Memory({initial:%" PRIu64 " pages, maximum:%" PRIu64
-                " pages}) succeeded",
-                initialPages.value(), sourceMaxPages->value());
+                " pages, pageSize:%" PRIu32 " bytes}) succeeded",
+                initialPages.pageCount(), sourceMaxPages->pageCount(),
+                wasm::PageSizeInBytes(initialPages.pageSize()));
     } else {
       wasm::Log(cx,
                 "new Memory({initial:%" PRIu64 " pages, maximum:%" PRIu64
-                " pages}) succeeded "
+                " pages, pageSize:%" PRIu32
+                " bytes}) succeeded "
                 "with internal maximum of %" PRIu64 " pages",
-                initialPages.value(), sourceMaxPages->value(),
-                object->wasmClampedMaxPages().value());
+                initialPages.pageCount(), sourceMaxPages->pageCount(),
+                wasm::PageSizeInBytes(initialPages.pageSize()),
+                object->wasmClampedMaxPages().pageCount());
     }
   } else {
-    wasm::Log(cx, "new Memory({initial:%" PRIu64 " pages}) succeeded",
-              initialPages.value());
+    wasm::Log(cx,
+              "new Memory({initial:%" PRIu64 " pages, pageSize:%" PRIu32
+              " bytes}) succeeded",
+              initialPages.pageCount(),
+              wasm::PageSizeInBytes(initialPages.pageSize()));
   }
 
   return object;
@@ -1755,9 +1834,13 @@ static ArrayBufferObjectMaybeShared* CreateSpecificWasmBuffer(
 
 ArrayBufferObjectMaybeShared* js::CreateWasmBuffer(
     JSContext* cx, const wasm::MemoryDesc& memory) {
-  MOZ_RELEASE_ASSERT(memory.initialPages() <=
-                     wasm::MaxMemoryPages(memory.addressType()));
+  MOZ_RELEASE_ASSERT(
+      memory.initialPages() <=
+      wasm::MaxMemoryPages(memory.addressType(), memory.pageSize()));
   MOZ_RELEASE_ASSERT(cx->wasm().haveSignalHandlers);
+#ifndef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  MOZ_ASSERT(memory.pageSize() == wasm::PageSize::Standard);
+#endif
 
   if (memory.isShared()) {
     if (!cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled()) {
@@ -1773,7 +1856,7 @@ ArrayBufferObjectMaybeShared* js::CreateWasmBuffer(
 }
 
 bool ArrayBufferObject::prepareForAsmJS() {
-  MOZ_ASSERT(byteLength() % wasm::PageSize == 0,
+  MOZ_ASSERT(byteLength() % wasm::StandardPageSizeBytes == 0,
              "prior size checking should have guaranteed page-size multiple");
   MOZ_ASSERT(byteLength() > 0,
              "prior size checking should have excluded empty buffers");
@@ -1792,9 +1875,9 @@ bool ArrayBufferObject::prepareForAsmJS() {
       return true;
 
     case INLINE_DATA:
-      static_assert(
-          wasm::PageSize > FixedLengthArrayBufferObject::MaxInlineBytes,
-          "inline data must be too small to be a page size multiple");
+      static_assert(wasm::StandardPageSizeBytes >
+                        FixedLengthArrayBufferObject::MaxInlineBytes,
+                    "inline data must be too small to be a page size multiple");
       MOZ_ASSERT_UNREACHABLE(
           "inline-data buffers should be implicitly excluded by size checks");
       return false;
@@ -1940,12 +2023,20 @@ AddressType ArrayBufferObject::wasmAddressType() const {
   return wasm::AddressType::I32;
 }
 
+wasm::PageSize ArrayBufferObject::wasmPageSize() const {
+  if (isWasm()) {
+    return contents().wasmBuffer()->pageSize();
+  }
+  MOZ_ASSERT(isPreparedForAsmJS());
+  return wasm::PageSize::Standard;
+}
+
 Pages ArrayBufferObject::wasmPages() const {
   if (isWasm()) {
     return contents().wasmBuffer()->pages();
   }
   MOZ_ASSERT(isPreparedForAsmJS());
-  return Pages::fromByteLengthExact(byteLength());
+  return Pages::fromByteLengthExact(byteLength(), wasmPageSize());
 }
 
 Pages ArrayBufferObject::wasmClampedMaxPages() const {
@@ -1953,7 +2044,7 @@ Pages ArrayBufferObject::wasmClampedMaxPages() const {
     return contents().wasmBuffer()->clampedMaxPages();
   }
   MOZ_ASSERT(isPreparedForAsmJS());
-  return Pages::fromByteLengthExact(byteLength());
+  return Pages::fromByteLengthExact(byteLength(), wasmPageSize());
 }
 
 Maybe<Pages> ArrayBufferObject::wasmSourceMaxPages() const {
@@ -1961,7 +2052,7 @@ Maybe<Pages> ArrayBufferObject::wasmSourceMaxPages() const {
     return contents().wasmBuffer()->sourceMaxPages();
   }
   MOZ_ASSERT(isPreparedForAsmJS());
-  return Some<Pages>(Pages::fromByteLengthExact(byteLength()));
+  return Some<Pages>(Pages::fromByteLengthExact(byteLength(), wasmPageSize()));
 }
 
 size_t js::WasmArrayBufferMappedSize(const ArrayBufferObjectMaybeShared* buf) {
@@ -1977,6 +2068,13 @@ AddressType js::WasmArrayBufferAddressType(
     return buf->as<ArrayBufferObject>().wasmAddressType();
   }
   return buf->as<SharedArrayBufferObject>().wasmAddressType();
+}
+wasm::PageSize js::WasmArrayBufferPageSize(
+    const ArrayBufferObjectMaybeShared* buf) {
+  if (buf->is<ArrayBufferObject>()) {
+    return buf->as<ArrayBufferObject>().wasmPageSize();
+  }
+  return buf->as<SharedArrayBufferObject>().wasmPageSize();
 }
 Pages js::WasmArrayBufferPages(const ArrayBufferObjectMaybeShared* buf) {
   if (buf->is<ArrayBufferObject>()) {
@@ -2027,7 +2125,7 @@ ArrayBufferObject* ArrayBufferObject::wasmGrowToPagesInPlace(
   if (newPages > oldBuf->wasmClampedMaxPages()) {
     return nullptr;
   }
-  MOZ_ASSERT(newPages <= wasm::MaxMemoryPages(t) &&
+  MOZ_ASSERT(newPages <= wasm::MaxMemoryPages(t, newPages.pageSize()) &&
              newPages.byteLength() <= ArrayBufferObject::ByteLengthLimit);
 
   if (oldBuf->is<ResizableArrayBufferObject>()) {
@@ -2106,7 +2204,7 @@ ArrayBufferObject* ArrayBufferObject::wasmMovingGrowToPages(
   if (newPages > oldBuf->wasmClampedMaxPages()) {
     return nullptr;
   }
-  MOZ_ASSERT(newPages <= wasm::MaxMemoryPages(t) &&
+  MOZ_ASSERT(newPages <= wasm::MaxMemoryPages(t, newPages.pageSize()) &&
              newPages.byteLength() <= ArrayBufferObject::ByteLengthLimit);
 
   // We have checked against the clamped maximum and so we know we can convert
@@ -2125,9 +2223,10 @@ ArrayBufferObject* ArrayBufferObject::wasmMovingGrowToPages(
 
   Pages clampedMaxPages =
       wasm::ClampedMaxPages(t, newPages, Nothing(), /* hugeMemory */ false);
-  WasmArrayRawBuffer* newRawBuf =
-      WasmArrayRawBuffer::AllocateWasm(oldBuf->wasmAddressType(), newPages,
-                                       clampedMaxPages, Nothing(), Nothing());
+  MOZ_ASSERT(newPages.pageSize() == oldBuf->wasmPageSize());
+  WasmArrayRawBuffer* newRawBuf = WasmArrayRawBuffer::AllocateWasm(
+      oldBuf->wasmAddressType(), oldBuf->wasmPageSize(), newPages,
+      clampedMaxPages, Nothing(), Nothing());
   if (!newRawBuf) {
     return nullptr;
   }
@@ -2163,6 +2262,9 @@ static constexpr js::gc::AllocKind GetArrayBufferGCObjectKind(size_t numSlots) {
   if (numSlots <= 4) {
     return js::gc::AllocKind::ARRAYBUFFER4;
   }
+  if (numSlots <= 6) {
+    return js::gc::AllocKind::ARRAYBUFFER6;
+  }
   if (numSlots <= 8) {
     return js::gc::AllocKind::ARRAYBUFFER8;
   }
@@ -2176,6 +2278,7 @@ template <class ArrayBufferType>
 static ArrayBufferType* NewArrayBufferObject(JSContext* cx, HandleObject proto_,
                                              gc::AllocKind allocKind) {
   MOZ_ASSERT(allocKind == gc::AllocKind::ARRAYBUFFER4 ||
+             allocKind == gc::AllocKind::ARRAYBUFFER6 ||
              allocKind == gc::AllocKind::ARRAYBUFFER8 ||
              allocKind == gc::AllocKind::ARRAYBUFFER12 ||
              allocKind == gc::AllocKind::ARRAYBUFFER16);
@@ -2306,6 +2409,50 @@ ArrayBufferObject* ArrayBufferObject::createForContents(
       contents.kind() == MALLOCED_UNKNOWN_ARENA) {
     AddCellMemory(buffer, nAllocated, MemoryUse::ArrayBufferContents);
   }
+
+  return buffer;
+}
+
+ArrayBufferObject* ArrayBufferObject::createFromTypedArrayMallocedElements(
+    JSContext* cx, Handle<FixedLengthTypedArrayObject*> tarray) {
+  MOZ_ASSERT(cx->realm() == tarray->realm());
+  MOZ_ASSERT(tarray->hasMallocedElements(cx));
+
+  size_t byteLength = tarray->byteLength();
+
+  // The typed array's byteLength must be a valid array buffer length.
+  static_assert(TypedArrayObject::ByteLengthLimit ==
+                ArrayBufferObject::ByteLengthLimit);
+  MOZ_RELEASE_ASSERT(byteLength <= ArrayBufferObject::ByteLengthLimit);
+
+  constexpr size_t reservedSlots = FixedLengthArrayBufferObject::RESERVED_SLOTS;
+  constexpr gc::AllocKind allocKind = GetArrayBufferGCObjectKind(reservedSlots);
+
+  AutoSetNewObjectMetadata metadata(cx);
+  Rooted<ArrayBufferObject*> buffer(
+      cx, NewArrayBufferObject<FixedLengthArrayBufferObject>(cx, nullptr,
+                                                             allocKind));
+  if (!buffer) {
+    return nullptr;
+  }
+
+  MOZ_ASSERT(!gc::IsInsideNursery(buffer),
+             "ArrayBufferObject has a finalizer that must be called to not "
+             "leak in some cases, so it can't be nursery-allocated");
+
+  // Transfer ownership of the malloced buffer from the typed array to the
+  // new array buffer.
+
+  size_t nbytes = RoundUp(byteLength, sizeof(Value));
+  if (!tarray->isTenured()) {
+    cx->nursery().removeMallocedBuffer(tarray->elements(), nbytes);
+  }
+  RemoveCellMemory(tarray, nbytes, MemoryUse::TypedArrayElements);
+
+  auto contents = BufferContents::createMallocedArrayBufferContentsArena(
+      tarray->elements());
+  buffer->initialize(byteLength, contents);
+  AddCellMemory(buffer, byteLength, MemoryUse::ArrayBufferContents);
 
   return buffer;
 }
@@ -2483,36 +2630,15 @@ template <class ArrayBufferType>
   size_t sourceByteLength = source->byteLength();
   size_t newMaxByteLength = source->maxByteLength();
 
-  if (newByteLength > sourceByteLength) {
-    // Copy into a larger buffer.
-    AutoSetNewObjectMetadata metadata(cx);
-    auto [buffer, toFill] = createBufferAndData<FillContents::Zero>(
-        cx, newByteLength, newMaxByteLength, metadata, nullptr);
-    if (!buffer) {
-      return nullptr;
-    }
-
-    // The `createBufferAndData()` call first zero-initializes the complete
-    // buffer and then we copy over |sourceByteLength| bytes from |source|. It
-    // seems prudent to only zero-initialize the trailing bytes of |toFill|
-    // to avoid writing twice to `toFill[0..newByteLength]`. We don't yet
-    // implement this optimization, because this method is only called for
-    // small, inline buffers, so any write optimizations probably won't make
-    // much of a difference.
-    std::copy_n(source->dataPointer(), sourceByteLength, toFill);
-
-    return buffer;
-  }
-
-  // Copy into a smaller or same size buffer.
   AutoSetNewObjectMetadata metadata(cx);
-  auto [buffer, toFill] = createBufferAndData<FillContents::Uninitialized>(
+  auto [buffer, toFill] = createBufferAndData<FillContents::Zero>(
       cx, newByteLength, newMaxByteLength, metadata, nullptr);
   if (!buffer) {
     return nullptr;
   }
 
-  std::uninitialized_copy_n(source->dataPointer(), newByteLength, toFill);
+  size_t nbytes = std::min(newByteLength, sourceByteLength);
+  std::copy_n(source->dataPointer(), nbytes, toFill);
 
   return buffer;
 }
@@ -3049,7 +3175,7 @@ bool ArrayBufferObject::ensureNonInline(JSContext* cx,
   }
 
   size_t nbytes = buffer->maxByteLength();
-  ArrayBufferContents copy = NewCopiedBufferContents(cx, buffer);
+  ArrayBufferContents copy = NewCopiedBufferContents(cx, buffer, nbytes);
   if (!copy) {
     return false;
   }
@@ -3093,7 +3219,7 @@ void ArrayBufferObject::addSizeOfExcludingThis(
         info->objectsMallocHeapElementsAsmJS +=
             mallocSizeOf(buffer.dataPointer());
       } else {
-        info->objectsMallocHeapElementsNormal +=
+        info->objectsMallocHeapElementsArrayBuffer +=
             mallocSizeOf(buffer.dataPointer());
       }
       break;

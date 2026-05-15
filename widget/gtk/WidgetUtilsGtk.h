@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WidgetUtilsGtk_h__
-#define WidgetUtilsGtk_h__
+#ifndef WidgetUtilsGtk_h_
+#define WidgetUtilsGtk_h_
 
 #include "nsString.h"
 #include "nsTArray.h"
@@ -90,4 +90,4 @@ void FindLatestUserTime(GdkDisplay* aDisplay, uintptr_t aWindow,
 
 }  // namespace mozilla::widget
 
-#endif  // WidgetUtilsGtk_h__
+#endif  // WidgetUtilsGtk_h_

@@ -7,12 +7,14 @@
 #ifndef widget_WindowOcclusionState_h
 #define widget_WindowOcclusionState_h
 
+#include <cstdint>
+
 namespace mozilla {
 namespace widget {
 
 // nsWindow's window occlusion state. On Windows, it is tracked by
 // WinWindowOcclusionTracker.
-enum class OcclusionState {
+enum class OcclusionState : uint8_t {
   // The window's occlusion state isn't tracked (NotifyOcclusionState()) or
   // hasn't been computed yet.
   UNKNOWN = 0,

@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/SVGFEComponentTransferElement.h"
 
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/SVGComponentTransferFunctionElement.h"
 #include "mozilla/dom/SVGFEComponentTransferElementBinding.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/BindContext.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEComponentTransfer)
 

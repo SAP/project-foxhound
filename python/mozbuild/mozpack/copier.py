@@ -2,12 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import concurrent.futures as futures
 import errno
 import os
 import stat
 import sys
 from collections import Counter, OrderedDict, defaultdict
+from concurrent import futures
 
 import mozpack.path as mozpath
 from mozpack.errors import errors

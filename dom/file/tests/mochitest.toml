@@ -28,8 +28,8 @@ support-files = [
   "worker_blob_reading.js",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_blobconstructor.html"]
@@ -39,7 +39,9 @@ support-files = ["worker_bug1507893.js"]
 
 ["test_bug1742540.html"]
 support-files = ["worker_bug1742540.js"]
-skip-if = ["os == 'android'"] #TIMED_OUT
+skip-if = [
+  "os == 'android'", # TIMED_OUT
+]
 
 ["test_file_from_blob.html"]
 
@@ -73,13 +75,13 @@ skip-if = ["os == 'android'"] #TIMED_OUT
 
 ["test_mozfiledataurl.html"]
 skip-if = [
-  "os == 'android'", # TIMED_OUT
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # TIMED_OUT
 ]
 
 ["test_nonascii_blob_url.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]

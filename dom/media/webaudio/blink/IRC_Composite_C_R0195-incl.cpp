@@ -18,8 +18,6 @@
  * the listener.
  */
 
-#include "mozilla/ArrayUtils.h"
-
 const int16_t irc_composite_c_r0195_p315[][256] =
     {/* IRC_Composite_C_R0195_T000_P315.wav */
      {-37,   37,   -38,  39,    -39,   40,    -41,  42,   -42,   43,    -43,

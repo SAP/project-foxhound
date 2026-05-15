@@ -17,16 +17,14 @@ import yaml
 
 # Skip all common files used to support tests for jstests
 # These files are listed in the README.txt
-SUPPORT_FILES = set(
-    [
-        "browser.js",
-        "shell.js",
-        "template.js",
-        "user.js",
-        "js-test-driver-begin.js",
-        "js-test-driver-end.js",
-    ]
-)
+SUPPORT_FILES = set([
+    "browser.js",
+    "shell.js",
+    "template.js",
+    "user.js",
+    "js-test-driver-begin.js",
+    "js-test-driver-end.js",
+])
 
 
 # Run once per subdirectory
@@ -676,7 +674,7 @@ def exportTest262(
 
             for fileName in fileNames:
                 # Skip browser.js files
-                if fileName == "browser.js" or fileName == "shell.js":
+                if fileName in {"browser.js", "shell.js"}:
                     continue
 
                 if fileName.endswith("~"):

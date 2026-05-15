@@ -13,21 +13,21 @@
  * limitations under the License.
  */
 
-// ./test/core/bulk.wast
+// ./test/core/bulk-memory/bulk.wast
 
-// ./test/core/bulk.wast:2
+// ./test/core/bulk-memory/bulk.wast:2
 let $0 = instantiate(`(module
   (memory 1)
   (data "foo"))`);
 
-// ./test/core/bulk.wast:6
+// ./test/core/bulk-memory/bulk.wast:6
 let $1 = instantiate(`(module
   (table 3 funcref)
   (elem funcref (ref.func 0) (ref.null func) (ref.func 1))
   (func)
   (func))`);
 
-// ./test/core/bulk.wast:13
+// ./test/core/bulk-memory/bulk.wast:13
 let $2 = instantiate(`(module
   (memory 1)
 
@@ -41,52 +41,52 @@ let $2 = instantiate(`(module
     (i32.load8_u (local.get 0)))
 )`);
 
-// ./test/core/bulk.wast:27
+// ./test/core/bulk-memory/bulk.wast:27
 invoke($2, `fill`, [1, 255, 3]);
 
-// ./test/core/bulk.wast:28
+// ./test/core/bulk-memory/bulk.wast:28
 assert_return(() => invoke($2, `load8_u`, [0]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:29
+// ./test/core/bulk-memory/bulk.wast:29
 assert_return(() => invoke($2, `load8_u`, [1]), [value("i32", 255)]);
 
-// ./test/core/bulk.wast:30
+// ./test/core/bulk-memory/bulk.wast:30
 assert_return(() => invoke($2, `load8_u`, [2]), [value("i32", 255)]);
 
-// ./test/core/bulk.wast:31
+// ./test/core/bulk-memory/bulk.wast:31
 assert_return(() => invoke($2, `load8_u`, [3]), [value("i32", 255)]);
 
-// ./test/core/bulk.wast:32
+// ./test/core/bulk-memory/bulk.wast:32
 assert_return(() => invoke($2, `load8_u`, [4]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:35
+// ./test/core/bulk-memory/bulk.wast:35
 invoke($2, `fill`, [0, 48042, 2]);
 
-// ./test/core/bulk.wast:36
+// ./test/core/bulk-memory/bulk.wast:36
 assert_return(() => invoke($2, `load8_u`, [0]), [value("i32", 170)]);
 
-// ./test/core/bulk.wast:37
+// ./test/core/bulk-memory/bulk.wast:37
 assert_return(() => invoke($2, `load8_u`, [1]), [value("i32", 170)]);
 
-// ./test/core/bulk.wast:40
+// ./test/core/bulk-memory/bulk.wast:40
 invoke($2, `fill`, [0, 0, 65536]);
 
-// ./test/core/bulk.wast:43
+// ./test/core/bulk-memory/bulk.wast:43
 assert_trap(() => invoke($2, `fill`, [65280, 1, 257]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:45
+// ./test/core/bulk-memory/bulk.wast:45
 assert_return(() => invoke($2, `load8_u`, [65280]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:46
+// ./test/core/bulk-memory/bulk.wast:46
 assert_return(() => invoke($2, `load8_u`, [65535]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:49
+// ./test/core/bulk-memory/bulk.wast:49
 invoke($2, `fill`, [65536, 0, 0]);
 
-// ./test/core/bulk.wast:52
+// ./test/core/bulk-memory/bulk.wast:52
 assert_trap(() => invoke($2, `fill`, [65537, 0, 0]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:57
+// ./test/core/bulk-memory/bulk.wast:57
 let $3 = instantiate(`(module
   (memory (data "\\aa\\bb\\cc\\dd"))
 
@@ -100,91 +100,91 @@ let $3 = instantiate(`(module
     (i32.load8_u (local.get 0)))
 )`);
 
-// ./test/core/bulk.wast:71
+// ./test/core/bulk-memory/bulk.wast:71
 invoke($3, `copy`, [10, 0, 4]);
 
-// ./test/core/bulk.wast:73
+// ./test/core/bulk-memory/bulk.wast:73
 assert_return(() => invoke($3, `load8_u`, [9]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:74
+// ./test/core/bulk-memory/bulk.wast:74
 assert_return(() => invoke($3, `load8_u`, [10]), [value("i32", 170)]);
 
-// ./test/core/bulk.wast:75
+// ./test/core/bulk-memory/bulk.wast:75
 assert_return(() => invoke($3, `load8_u`, [11]), [value("i32", 187)]);
 
-// ./test/core/bulk.wast:76
+// ./test/core/bulk-memory/bulk.wast:76
 assert_return(() => invoke($3, `load8_u`, [12]), [value("i32", 204)]);
 
-// ./test/core/bulk.wast:77
+// ./test/core/bulk-memory/bulk.wast:77
 assert_return(() => invoke($3, `load8_u`, [13]), [value("i32", 221)]);
 
-// ./test/core/bulk.wast:78
+// ./test/core/bulk-memory/bulk.wast:78
 assert_return(() => invoke($3, `load8_u`, [14]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:81
+// ./test/core/bulk-memory/bulk.wast:81
 invoke($3, `copy`, [8, 10, 4]);
 
-// ./test/core/bulk.wast:82
+// ./test/core/bulk-memory/bulk.wast:82
 assert_return(() => invoke($3, `load8_u`, [8]), [value("i32", 170)]);
 
-// ./test/core/bulk.wast:83
+// ./test/core/bulk-memory/bulk.wast:83
 assert_return(() => invoke($3, `load8_u`, [9]), [value("i32", 187)]);
 
-// ./test/core/bulk.wast:84
+// ./test/core/bulk-memory/bulk.wast:84
 assert_return(() => invoke($3, `load8_u`, [10]), [value("i32", 204)]);
 
-// ./test/core/bulk.wast:85
+// ./test/core/bulk-memory/bulk.wast:85
 assert_return(() => invoke($3, `load8_u`, [11]), [value("i32", 221)]);
 
-// ./test/core/bulk.wast:86
+// ./test/core/bulk-memory/bulk.wast:86
 assert_return(() => invoke($3, `load8_u`, [12]), [value("i32", 204)]);
 
-// ./test/core/bulk.wast:87
+// ./test/core/bulk-memory/bulk.wast:87
 assert_return(() => invoke($3, `load8_u`, [13]), [value("i32", 221)]);
 
-// ./test/core/bulk.wast:90
+// ./test/core/bulk-memory/bulk.wast:90
 invoke($3, `copy`, [10, 7, 6]);
 
-// ./test/core/bulk.wast:91
+// ./test/core/bulk-memory/bulk.wast:91
 assert_return(() => invoke($3, `load8_u`, [10]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:92
+// ./test/core/bulk-memory/bulk.wast:92
 assert_return(() => invoke($3, `load8_u`, [11]), [value("i32", 170)]);
 
-// ./test/core/bulk.wast:93
+// ./test/core/bulk-memory/bulk.wast:93
 assert_return(() => invoke($3, `load8_u`, [12]), [value("i32", 187)]);
 
-// ./test/core/bulk.wast:94
+// ./test/core/bulk-memory/bulk.wast:94
 assert_return(() => invoke($3, `load8_u`, [13]), [value("i32", 204)]);
 
-// ./test/core/bulk.wast:95
+// ./test/core/bulk-memory/bulk.wast:95
 assert_return(() => invoke($3, `load8_u`, [14]), [value("i32", 221)]);
 
-// ./test/core/bulk.wast:96
+// ./test/core/bulk-memory/bulk.wast:96
 assert_return(() => invoke($3, `load8_u`, [15]), [value("i32", 204)]);
 
-// ./test/core/bulk.wast:97
+// ./test/core/bulk-memory/bulk.wast:97
 assert_return(() => invoke($3, `load8_u`, [16]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:100
+// ./test/core/bulk-memory/bulk.wast:100
 invoke($3, `copy`, [65280, 0, 256]);
 
-// ./test/core/bulk.wast:101
+// ./test/core/bulk-memory/bulk.wast:101
 invoke($3, `copy`, [65024, 65280, 256]);
 
-// ./test/core/bulk.wast:104
+// ./test/core/bulk-memory/bulk.wast:104
 invoke($3, `copy`, [65536, 0, 0]);
 
-// ./test/core/bulk.wast:105
+// ./test/core/bulk-memory/bulk.wast:105
 invoke($3, `copy`, [0, 65536, 0]);
 
-// ./test/core/bulk.wast:108
+// ./test/core/bulk-memory/bulk.wast:108
 assert_trap(() => invoke($3, `copy`, [65537, 0, 0]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:110
+// ./test/core/bulk-memory/bulk.wast:110
 assert_trap(() => invoke($3, `copy`, [0, 65537, 0]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:115
+// ./test/core/bulk-memory/bulk.wast:115
 let $4 = instantiate(`(module
   (memory 1)
   (data "\\aa\\bb\\cc\\dd")
@@ -199,43 +199,43 @@ let $4 = instantiate(`(module
     (i32.load8_u (local.get 0)))
 )`);
 
-// ./test/core/bulk.wast:129
+// ./test/core/bulk-memory/bulk.wast:129
 invoke($4, `init`, [0, 1, 2]);
 
-// ./test/core/bulk.wast:130
+// ./test/core/bulk-memory/bulk.wast:130
 assert_return(() => invoke($4, `load8_u`, [0]), [value("i32", 187)]);
 
-// ./test/core/bulk.wast:131
+// ./test/core/bulk-memory/bulk.wast:131
 assert_return(() => invoke($4, `load8_u`, [1]), [value("i32", 204)]);
 
-// ./test/core/bulk.wast:132
+// ./test/core/bulk-memory/bulk.wast:132
 assert_return(() => invoke($4, `load8_u`, [2]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:135
+// ./test/core/bulk-memory/bulk.wast:135
 invoke($4, `init`, [65532, 0, 4]);
 
-// ./test/core/bulk.wast:138
+// ./test/core/bulk-memory/bulk.wast:138
 assert_trap(() => invoke($4, `init`, [65534, 0, 3]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:140
+// ./test/core/bulk-memory/bulk.wast:140
 assert_return(() => invoke($4, `load8_u`, [65534]), [value("i32", 204)]);
 
-// ./test/core/bulk.wast:141
+// ./test/core/bulk-memory/bulk.wast:141
 assert_return(() => invoke($4, `load8_u`, [65535]), [value("i32", 221)]);
 
-// ./test/core/bulk.wast:144
+// ./test/core/bulk-memory/bulk.wast:144
 invoke($4, `init`, [65536, 0, 0]);
 
-// ./test/core/bulk.wast:145
+// ./test/core/bulk-memory/bulk.wast:145
 invoke($4, `init`, [0, 4, 0]);
 
-// ./test/core/bulk.wast:148
+// ./test/core/bulk-memory/bulk.wast:148
 assert_trap(() => invoke($4, `init`, [65537, 0, 0]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:150
+// ./test/core/bulk-memory/bulk.wast:150
 assert_trap(() => invoke($4, `init`, [0, 5, 0]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:154
+// ./test/core/bulk-memory/bulk.wast:154
 let $5 = instantiate(`(module
   (memory 1)
   (data \$p "x")
@@ -250,37 +250,37 @@ let $5 = instantiate(`(module
     (memory.init \$a (i32.const 0) (i32.const 0) (local.get \$len)))
 )`);
 
-// ./test/core/bulk.wast:168
+// ./test/core/bulk-memory/bulk.wast:168
 invoke($5, `init_passive`, [1]);
 
-// ./test/core/bulk.wast:169
+// ./test/core/bulk-memory/bulk.wast:169
 invoke($5, `drop_passive`, []);
 
-// ./test/core/bulk.wast:170
+// ./test/core/bulk-memory/bulk.wast:170
 invoke($5, `drop_passive`, []);
 
-// ./test/core/bulk.wast:171
+// ./test/core/bulk-memory/bulk.wast:171
 assert_return(() => invoke($5, `init_passive`, [0]), []);
 
-// ./test/core/bulk.wast:172
+// ./test/core/bulk-memory/bulk.wast:172
 assert_trap(() => invoke($5, `init_passive`, [1]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:173
+// ./test/core/bulk-memory/bulk.wast:173
 invoke($5, `init_passive`, [0]);
 
-// ./test/core/bulk.wast:174
+// ./test/core/bulk-memory/bulk.wast:174
 invoke($5, `drop_active`, []);
 
-// ./test/core/bulk.wast:175
+// ./test/core/bulk-memory/bulk.wast:175
 assert_return(() => invoke($5, `init_active`, [0]), []);
 
-// ./test/core/bulk.wast:176
+// ./test/core/bulk-memory/bulk.wast:176
 assert_trap(() => invoke($5, `init_active`, [1]), `out of bounds memory access`);
 
-// ./test/core/bulk.wast:177
+// ./test/core/bulk-memory/bulk.wast:177
 invoke($5, `init_active`, [0]);
 
-// ./test/core/bulk.wast:181
+// ./test/core/bulk-memory/bulk.wast:181
 let $6 = instantiate(`(module
   ;; 65 data segments. 64 is the smallest positive number that is encoded
   ;; differently as a signed LEB.
@@ -295,10 +295,10 @@ let $6 = instantiate(`(module
   (data "")
   (func (data.drop 64)))`);
 
-// ./test/core/bulk.wast:196
+// ./test/core/bulk-memory/bulk.wast:196
 let $7 = instantiate(`(module (data "goodbye") (func (data.drop 0)))`);
 
-// ./test/core/bulk.wast:199
+// ./test/core/bulk-memory/bulk.wast:199
 let $8 = instantiate(`(module
   (table 3 funcref)
   (elem funcref
@@ -318,40 +318,40 @@ let $8 = instantiate(`(module
       (local.get 0)))
 )`);
 
-// ./test/core/bulk.wast:219
+// ./test/core/bulk-memory/bulk.wast:219
 assert_trap(() => invoke($8, `init`, [2, 0, 2]), `out of bounds table access`);
 
-// ./test/core/bulk.wast:221
+// ./test/core/bulk-memory/bulk.wast:221
 assert_trap(() => invoke($8, `call`, [2]), `uninitialized element 2`);
 
-// ./test/core/bulk.wast:224
+// ./test/core/bulk-memory/bulk.wast:224
 invoke($8, `init`, [0, 1, 2]);
 
-// ./test/core/bulk.wast:225
+// ./test/core/bulk-memory/bulk.wast:225
 assert_return(() => invoke($8, `call`, [0]), [value("i32", 1)]);
 
-// ./test/core/bulk.wast:226
+// ./test/core/bulk-memory/bulk.wast:226
 assert_return(() => invoke($8, `call`, [1]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:227
+// ./test/core/bulk-memory/bulk.wast:227
 assert_trap(() => invoke($8, `call`, [2]), `uninitialized element`);
 
-// ./test/core/bulk.wast:230
+// ./test/core/bulk-memory/bulk.wast:230
 invoke($8, `init`, [1, 2, 2]);
 
-// ./test/core/bulk.wast:233
+// ./test/core/bulk-memory/bulk.wast:233
 invoke($8, `init`, [3, 0, 0]);
 
-// ./test/core/bulk.wast:234
+// ./test/core/bulk-memory/bulk.wast:234
 invoke($8, `init`, [0, 4, 0]);
 
-// ./test/core/bulk.wast:237
+// ./test/core/bulk-memory/bulk.wast:237
 assert_trap(() => invoke($8, `init`, [4, 0, 0]), `out of bounds table access`);
 
-// ./test/core/bulk.wast:239
+// ./test/core/bulk-memory/bulk.wast:239
 assert_trap(() => invoke($8, `init`, [0, 5, 0]), `out of bounds table access`);
 
-// ./test/core/bulk.wast:244
+// ./test/core/bulk-memory/bulk.wast:244
 let $9 = instantiate(`(module
   (table 1 funcref)
   (func \$f)
@@ -369,37 +369,37 @@ let $9 = instantiate(`(module
   )
 )`);
 
-// ./test/core/bulk.wast:261
+// ./test/core/bulk-memory/bulk.wast:261
 invoke($9, `init_passive`, [1]);
 
-// ./test/core/bulk.wast:262
+// ./test/core/bulk-memory/bulk.wast:262
 invoke($9, `drop_passive`, []);
 
-// ./test/core/bulk.wast:263
+// ./test/core/bulk-memory/bulk.wast:263
 invoke($9, `drop_passive`, []);
 
-// ./test/core/bulk.wast:264
+// ./test/core/bulk-memory/bulk.wast:264
 assert_return(() => invoke($9, `init_passive`, [0]), []);
 
-// ./test/core/bulk.wast:265
+// ./test/core/bulk-memory/bulk.wast:265
 assert_trap(() => invoke($9, `init_passive`, [1]), `out of bounds table access`);
 
-// ./test/core/bulk.wast:266
+// ./test/core/bulk-memory/bulk.wast:266
 invoke($9, `init_passive`, [0]);
 
-// ./test/core/bulk.wast:267
+// ./test/core/bulk-memory/bulk.wast:267
 invoke($9, `drop_active`, []);
 
-// ./test/core/bulk.wast:268
+// ./test/core/bulk-memory/bulk.wast:268
 assert_return(() => invoke($9, `init_active`, [0]), []);
 
-// ./test/core/bulk.wast:269
+// ./test/core/bulk-memory/bulk.wast:269
 assert_trap(() => invoke($9, `init_active`, [1]), `out of bounds table access`);
 
-// ./test/core/bulk.wast:270
+// ./test/core/bulk-memory/bulk.wast:270
 invoke($9, `init_active`, [0]);
 
-// ./test/core/bulk.wast:274
+// ./test/core/bulk-memory/bulk.wast:274
 let $10 = instantiate(`(module
   ;; 65 elem segments. 64 is the smallest positive number that is encoded
   ;; differently as a signed LEB.
@@ -422,10 +422,10 @@ let $10 = instantiate(`(module
   (elem funcref)
   (func (elem.drop 64)))`);
 
-// ./test/core/bulk.wast:297
+// ./test/core/bulk-memory/bulk.wast:297
 let $11 = instantiate(`(module (elem funcref (ref.func 0)) (func (elem.drop 0)))`);
 
-// ./test/core/bulk.wast:300
+// ./test/core/bulk-memory/bulk.wast:300
 let $12 = instantiate(`(module
   (table 10 funcref)
   (elem (i32.const 0) \$zero \$one \$two)
@@ -444,56 +444,56 @@ let $12 = instantiate(`(module
       (local.get 0)))
 )`);
 
-// ./test/core/bulk.wast:319
+// ./test/core/bulk-memory/bulk.wast:319
 invoke($12, `copy`, [3, 0, 3]);
 
-// ./test/core/bulk.wast:321
+// ./test/core/bulk-memory/bulk.wast:321
 assert_return(() => invoke($12, `call`, [3]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:322
+// ./test/core/bulk-memory/bulk.wast:322
 assert_return(() => invoke($12, `call`, [4]), [value("i32", 1)]);
 
-// ./test/core/bulk.wast:323
+// ./test/core/bulk-memory/bulk.wast:323
 assert_return(() => invoke($12, `call`, [5]), [value("i32", 2)]);
 
-// ./test/core/bulk.wast:326
+// ./test/core/bulk-memory/bulk.wast:326
 invoke($12, `copy`, [0, 1, 3]);
 
-// ./test/core/bulk.wast:328
+// ./test/core/bulk-memory/bulk.wast:328
 assert_return(() => invoke($12, `call`, [0]), [value("i32", 1)]);
 
-// ./test/core/bulk.wast:329
+// ./test/core/bulk-memory/bulk.wast:329
 assert_return(() => invoke($12, `call`, [1]), [value("i32", 2)]);
 
-// ./test/core/bulk.wast:330
+// ./test/core/bulk-memory/bulk.wast:330
 assert_return(() => invoke($12, `call`, [2]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:333
+// ./test/core/bulk-memory/bulk.wast:333
 invoke($12, `copy`, [2, 0, 3]);
 
-// ./test/core/bulk.wast:335
+// ./test/core/bulk-memory/bulk.wast:335
 assert_return(() => invoke($12, `call`, [2]), [value("i32", 1)]);
 
-// ./test/core/bulk.wast:336
+// ./test/core/bulk-memory/bulk.wast:336
 assert_return(() => invoke($12, `call`, [3]), [value("i32", 2)]);
 
-// ./test/core/bulk.wast:337
+// ./test/core/bulk-memory/bulk.wast:337
 assert_return(() => invoke($12, `call`, [4]), [value("i32", 0)]);
 
-// ./test/core/bulk.wast:340
+// ./test/core/bulk-memory/bulk.wast:340
 invoke($12, `copy`, [6, 8, 2]);
 
-// ./test/core/bulk.wast:341
+// ./test/core/bulk-memory/bulk.wast:341
 invoke($12, `copy`, [8, 6, 2]);
 
-// ./test/core/bulk.wast:344
+// ./test/core/bulk-memory/bulk.wast:344
 invoke($12, `copy`, [10, 0, 0]);
 
-// ./test/core/bulk.wast:345
+// ./test/core/bulk-memory/bulk.wast:345
 invoke($12, `copy`, [0, 10, 0]);
 
-// ./test/core/bulk.wast:348
+// ./test/core/bulk-memory/bulk.wast:348
 assert_trap(() => invoke($12, `copy`, [11, 0, 0]), `out of bounds table access`);
 
-// ./test/core/bulk.wast:350
+// ./test/core/bulk-memory/bulk.wast:350
 assert_trap(() => invoke($12, `copy`, [0, 11, 0]), `out of bounds table access`);

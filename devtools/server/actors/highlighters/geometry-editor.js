@@ -99,7 +99,7 @@ var GeoProp = {
  * non-positioned itself, we just return null to let consumers know the node is
  * actually positioned relative to the viewport.
  *
- * @return {Object}
+ * @return {object}
  */
 function getOffsetParent(node) {
   const win = node.ownerGlobal;
@@ -215,14 +215,15 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
   constructor(highlighterEnv) {
     super(highlighterEnv);
 
-    this.ID_CLASS_PREFIX = "geometry-editor-";
-
     // The list of element geometry properties that can be set.
     this.definedProperties = new Map();
 
     this.markup = new CanvasFrameAnonymousContentHelper(
       highlighterEnv,
-      this._buildMarkup.bind(this)
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-geometry-editor",
+      }
     );
     this.isReady = this.initialize();
 
@@ -243,7 +244,7 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
     const onMouseDown = this.handleEvent.bind(this);
 
     for (const side of GeoProp.SIDES) {
-      this.getElement("handler-" + side).addEventListener(
+      this.getElement("geometry-editor-handler-" + side).addEventListener(
         "mousedown",
         onMouseDown
       );
@@ -255,25 +256,23 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
       attributes: { class: "highlighter-container" },
     });
 
-    const root = this.markup.createNode({
+    this.rootEl = this.markup.createNode({
       parent: container,
       attributes: {
-        id: "root",
-        class: "root",
+        id: "geometry-editor-root",
+        class: "geometry-editor-root",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     const svg = this.markup.createSVGNode({
       nodeType: "svg",
-      parent: root,
+      parent: this.rootEl,
       attributes: {
-        id: "elements",
+        id: "geometry-editor-elements",
         width: "100%",
         height: "100%",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Offset parent node highlighter.
@@ -281,11 +280,10 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
       nodeType: "polygon",
       parent: svg,
       attributes: {
-        class: "offset-parent",
-        id: "offset-parent",
+        class: "geometry-editor-offset-parent",
+        id: "geometry-editor-offset-parent",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Current node highlighter (margin box).
@@ -293,11 +291,10 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
       nodeType: "polygon",
       parent: svg,
       attributes: {
-        class: "current-node",
-        id: "current-node",
+        class: "geometry-editor-current-node",
+        id: "geometry-editor-current-node",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // Build the 4 side arrows, handlers and labels.
@@ -306,24 +303,22 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
         nodeType: "line",
         parent: svg,
         attributes: {
-          class: "arrow " + name,
-          id: "arrow-" + name,
+          class: "geometry-editor-arrow " + name,
+          id: "geometry-editor-arrow-" + name,
           hidden: "true",
         },
-        prefix: this.ID_CLASS_PREFIX,
       });
 
       this.markup.createSVGNode({
         nodeType: "circle",
         parent: svg,
         attributes: {
-          class: "handler-" + name,
-          id: "handler-" + name,
+          class: "geometry-editor-handler-" + name,
+          id: "geometry-editor-handler-" + name,
           r: "4",
           "data-side": name,
           hidden: "true",
         },
-        prefix: this.ID_CLASS_PREFIX,
       });
 
       // Labels are positioned by using a translated <g>. This group contains
@@ -334,10 +329,9 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
         nodeType: "g",
         parent: svg,
         attributes: {
-          id: "label-" + name,
+          id: "geometry-editor-label-" + name,
           hidden: "true",
         },
-        prefix: this.ID_CLASS_PREFIX,
       });
 
       const subG = this.markup.createSVGNode({
@@ -354,24 +348,22 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
         nodeType: "path",
         parent: subG,
         attributes: {
-          class: "label-bubble",
+          class: "geometry-editor-label-bubble",
           d: GeoProp.isHorizontal(name)
             ? "M0 0 L60 0 L60 20 L35 20 L30 25 L25 20 L0 20z"
             : "M5 0 L65 0 L65 20 L5 20 L5 15 L0 10 L5 5z",
         },
-        prefix: this.ID_CLASS_PREFIX,
       });
 
       this.markup.createSVGNode({
         nodeType: "text",
         parent: subG,
         attributes: {
-          class: "label-text",
-          id: "label-text-" + name,
+          class: "geometry-editor-label-text",
+          id: "geometry-editor-label-text-" + name,
           x: GeoProp.isHorizontal(name) ? "30" : "35",
           y: "10",
         },
-        prefix: this.ID_CLASS_PREFIX,
       });
     }
 
@@ -396,6 +388,8 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
     AutoRefreshHighlighter.prototype.destroy.call(this);
 
     this.markup.destroy();
+    this.rootEl = null;
+
     this.definedProperties.clear();
     this.definedProperties = null;
     this.offsetParent = null;
@@ -403,7 +397,7 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
 
   handleEvent(event, id) {
     // No event handling if the highlighter is hidden
-    if (this.getElement("root").hasAttribute("hidden")) {
+    if (this.getElement("geometry-editor-root").hasAttribute("hidden")) {
       return;
     }
 
@@ -418,7 +412,7 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
         }
 
         break;
-      case "mousedown":
+      case "mousedown": {
         // The mousedown event is intended only for the handler
         if (!id) {
           return;
@@ -456,21 +450,29 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
             inc: ratio * dir,
           };
 
-          this.getElement("handler-" + side).classList.add("dragging");
+          this.getElement("geometry-editor-handler-" + side).classList?.add(
+            "dragging"
+          );
         }
 
-        this.getElement("root").setAttribute("dragging", "true");
+        this.getElement("geometry-editor-root").setAttribute(
+          "dragging",
+          "true"
+        );
         break;
+      }
       case "mouseup":
         // If we're dragging, drop it.
         if (this[_dragging]) {
           const { side } = this[_dragging];
-          this.getElement("root").removeAttribute("dragging");
-          this.getElement("handler-" + side).classList.remove("dragging");
+          this.getElement("geometry-editor-root").removeAttribute("dragging");
+          this.getElement("geometry-editor-handler-" + side).classList?.remove(
+            "dragging"
+          );
           this[_dragging] = null;
         }
         break;
-      case "mousemove":
+      case "mousemove": {
         if (!this[_dragging]) {
           return;
         }
@@ -497,11 +499,12 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
         );
 
         break;
+      }
     }
   }
 
   getElement(id) {
-    return this.markup.getElement(this.ID_CLASS_PREFIX + id);
+    return this.markup.getElement(id);
   }
 
   _show() {
@@ -519,7 +522,7 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
       return false;
     }
 
-    this.getElement("root").removeAttribute("hidden");
+    this.getElement("geometry-editor-root").removeAttribute("hidden");
 
     return true;
   }
@@ -546,7 +549,7 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
 
     // Avoid zooming the arrows when content is zoomed.
     const node = this.currentNode;
-    this.markup.scaleRootElement(node, this.ID_CLASS_PREFIX + "root");
+    this.markup.scaleRootElement(node, "geometry-editor-root");
 
     setIgnoreLayoutChanges(false, this.highlighterEnv.document.documentElement);
     return true;
@@ -574,7 +577,7 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
       "padding"
     );
 
-    const el = this.getElement("offset-parent");
+    const el = this.getElement("geometry-editor-offset-parent");
 
     const isPositioned =
       this.computedStyle.position === "absolute" ||
@@ -637,7 +640,7 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
   }
 
   updateCurrentNode() {
-    const box = this.getElement("current-node");
+    const box = this.getElement("geometry-editor-current-node");
     const { p1, p2, p3, p4 } = this.currentQuads.margin[0];
     const attr =
       p1.x +
@@ -662,9 +665,15 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
   _hide() {
     setIgnoreLayoutChanges(true);
 
-    this.getElement("root").setAttribute("hidden", "true");
-    this.getElement("current-node").setAttribute("hidden", "true");
-    this.getElement("offset-parent").setAttribute("hidden", "true");
+    this.getElement("geometry-editor-root").setAttribute("hidden", "true");
+    this.getElement("geometry-editor-current-node").setAttribute(
+      "hidden",
+      "true"
+    );
+    this.getElement("geometry-editor-offset-parent").setAttribute(
+      "hidden",
+      "true"
+    );
     this.hideArrows();
 
     this.definedProperties.clear();
@@ -674,9 +683,18 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
 
   hideArrows() {
     for (const side of GeoProp.SIDES) {
-      this.getElement("arrow-" + side).setAttribute("hidden", "true");
-      this.getElement("label-" + side).setAttribute("hidden", "true");
-      this.getElement("handler-" + side).setAttribute("hidden", "true");
+      this.getElement("geometry-editor-arrow-" + side).setAttribute(
+        "hidden",
+        "true"
+      );
+      this.getElement("geometry-editor-label-" + side).setAttribute(
+        "hidden",
+        "true"
+      );
+      this.getElement("geometry-editor-handler-" + side).setAttribute(
+        "hidden",
+        "true"
+      );
     }
   }
 
@@ -756,10 +774,10 @@ class GeometryEditorHighlighter extends AutoRefreshHighlighter {
   }
 
   updateArrow(side, mainStart, mainEnd, crossPos, labelValue) {
-    const arrowEl = this.getElement("arrow-" + side);
-    const labelEl = this.getElement("label-" + side);
-    const labelTextEl = this.getElement("label-text-" + side);
-    const handlerEl = this.getElement("handler-" + side);
+    const arrowEl = this.getElement("geometry-editor-arrow-" + side);
+    const labelEl = this.getElement("geometry-editor-label-" + side);
+    const labelTextEl = this.getElement("geometry-editor-label-text-" + side);
+    const handlerEl = this.getElement("geometry-editor-handler-" + side);
 
     // Position the arrow <line>.
     arrowEl.setAttribute(GeoProp.axis(side) + "1", mainStart);

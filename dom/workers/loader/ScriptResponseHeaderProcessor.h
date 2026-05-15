@@ -4,18 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workers_ScriptResponseHeaderProcessor_h__
-#define mozilla_dom_workers_ScriptResponseHeaderProcessor_h__
+#ifndef mozilla_dom_workers_ScriptResponseHeaderProcessor_h_
+#define mozilla_dom_workers_ScriptResponseHeaderProcessor_h_
 
+#include "js/Modules.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/WorkerCommon.h"
-
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIStreamLoader.h"
 #include "nsStreamUtils.h"
-#include "js/Modules.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla::dom {
 
@@ -48,8 +47,7 @@ class ScriptResponseHeaderProcessor final : public nsIRequestObserver {
 
   NS_IMETHOD OnStartRequest(nsIRequest* aRequest) override {
     nsresult rv = NS_OK;
-    if (mRequiresStrictMimeCheck &&
-        StaticPrefs::dom_workers_importScripts_enforceStrictMimeType()) {
+    if (mRequiresStrictMimeCheck) {
       rv = EnsureExpectedModuleType(aRequest);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         aRequest->Cancel(rv);
@@ -98,4 +96,4 @@ class ScriptResponseHeaderProcessor final : public nsIRequestObserver {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_workers_ScriptResponseHeaderProcessor_h__ */
+#endif /* mozilla_dom_workers_ScriptResponseHeaderProcessor_h_ */

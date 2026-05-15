@@ -39,6 +39,17 @@ add_task(async function test_fire_contextmenu_by_mouseup() {
   await process_contextmenu_event({ isMousedown: false, preventEvent: true });
 });
 
+add_task(async function teardown() {
+  // Dismiss context menu if any
+  await promiseNativeMouseEvent({
+    type: "click",
+    target: document.body,
+    offsetX: 10,
+    offsetY: 10,
+    button: 0,
+  });
+});
+
 async function process_contextmenu_event({ isMousedown, preventEvent }) {
   await SpecialPowers.contentTransformsReceived(window);
 

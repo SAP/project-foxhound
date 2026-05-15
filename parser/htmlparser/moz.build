@@ -18,12 +18,10 @@ XPIDL_MODULE = "htmlparser"
 
 EXPORTS += [
     "nsElementTable.h",
-    "nsHTMLTagList.h",
+    "nsHTMLTagList.inc",
     "nsHTMLTags.h",
     "nsIContentSink.h",
-    "nsIDTD.h",
     "nsIFragmentContentSink.h",
-    "nsIHTMLContentSink.h",
     "nsIParser.h",
     "nsParserBase.h",
     "nsParserConstants.h",
@@ -32,7 +30,6 @@ EXPORTS += [
 ]
 
 UNIFIED_SOURCES += [
-    "CNavDTD.cpp",
     "CParserContext.cpp",
     "nsElementTable.cpp",
     "nsExpatDriver.cpp",

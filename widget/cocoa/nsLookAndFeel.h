@@ -35,13 +35,11 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
   // Having a separate, static method allows us to rely on the same
   // chunk of telemetry logging code at initialization and when we
-  // recieve an event that changes the value of our telemetry probe.
+  // receive an event that changes the value of our telemetry probe.
   static void RecordAccessibilityTelemetry();
 
  protected:
   bool mInitialized = false;
-  bool mRtl = false;
-  int32_t mTitlebarHeight = 0;
 };
 
 #endif  // nsLookAndFeel_h_

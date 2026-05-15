@@ -133,32 +133,60 @@ add_task(async function testTempPermissionOnReloadAllTabs() {
     );
 
     // Select all tabs before opening the context menu.
+    let visibleTabs = gBrowser.visibleTabs;
     gBrowser.selectAllTabs();
+    info(`Selected ${visibleTabs.length} tabs`);
 
     // Open the tab context menu.
     let contextMenu = document.getElementById("tabContextMenu");
     // The TabContextMenu initializes its strings only on a focus or mouseover event.
     // Calls focus event on the TabContextMenu early in the test.
     gBrowser.selectedTab.focus();
-    let popupShownPromise = BrowserTestUtils.waitForEvent(
-      contextMenu,
-      "popupshown"
+
+    Assert.equal(
+      contextMenu.state,
+      "closed",
+      "context menu is initially closed"
     );
+
+    let popupShownPromise = BrowserTestUtils.waitForPopupEvent(
+      contextMenu,
+      "shown"
+    );
+    let popupHiddenPromise = BrowserTestUtils.waitForPopupEvent(
+      contextMenu,
+      "hidden"
+    );
+    info("Opening tab context menu");
     EventUtils.synthesizeMouseAtCenter(gBrowser.selectedTab, {
       type: "contextmenu",
       button: 2,
     });
     await popupShownPromise;
+    info("Context menu opened");
 
     let reloadMenuItem = document.getElementById("context_reloadSelectedTabs");
+    Assert.ok(
+      BrowserTestUtils.isVisible(reloadMenuItem),
+      "Reload selected tabs menu item should be visible"
+    );
 
     let reloaded = Promise.all(
-      gBrowser.visibleTabs.map(tab =>
-        BrowserTestUtils.browserLoaded(gBrowser.getBrowserForTab(tab))
+      visibleTabs.map(tab =>
+        BrowserTestUtils.browserLoaded(gBrowser.getBrowserForTab(tab), {
+          wantLoad: () => true,
+        })
       )
     );
+    info("Triggering reload action");
     contextMenu.activateItem(reloadMenuItem);
+
+    info("Waiting for context menu to be hidden");
+    await popupHiddenPromise;
+    info("Context menu hidden");
+
     await reloaded;
+    info("Tabs reloaded");
 
     Assert.deepEqual(SitePermissions.getForPrincipal(principal, id, browser), {
       state: SitePermissions.BLOCK,

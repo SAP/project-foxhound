@@ -21,7 +21,6 @@
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EnumeratedArray.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/Span.h"
 
 #include <stdint.h>
@@ -1667,11 +1666,11 @@ class CalleeDesc {
     MOZ_ASSERT(which_ == WasmTable);
     return u.table.callIndirectId_;
   }
-  uint32_t wasmTableMinLength() const {
+  uint64_t wasmTableMinLength() const {
     MOZ_ASSERT(which_ == WasmTable);
     return u.table.minLength_;
   }
-  mozilla::Maybe<uint32_t> wasmTableMaxLength() const {
+  mozilla::Maybe<uint64_t> wasmTableMaxLength() const {
     MOZ_ASSERT(which_ == WasmTable);
     return u.table.maxLength_;
   }

@@ -82,9 +82,12 @@ class AboutCompatBroker {
               switch (type) {
                 case "interventions": {
                   if (active) {
-                    await this._interventions?.disableIntervention(what);
+                    await this._interventions?.disableInterventions([what.id]);
                   } else {
-                    await this._interventions?.enableIntervention(what);
+                    await this._interventions?.enableInterventions(
+                      [what.id],
+                      true
+                    );
                   }
                   break;
                 }
@@ -94,15 +97,8 @@ class AboutCompatBroker {
                   } else {
                     await this._shims?.enableShimForSession(id);
                   }
-                  // no need to broadcast the "toggled" signal for shims, as
-                  // they send a shimsUpdated message themselves instead
-                  return;
                 }
               }
-              this.portsToAboutCompatTabs.broadcast({
-                toggled: id,
-                active: !active,
-              });
             });
           break;
         }

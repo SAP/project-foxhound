@@ -7,16 +7,16 @@
 #ifndef mozilla_dom_timeout_handler_h
 #define mozilla_dom_timeout_handler_h
 
-#include "nsCOMPtr.h"
-#include "nsIGlobalObject.h"
-#include "nsISupports.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsString.h"
+#include "js/Promise.h"  // JS::Dispatchable
 #include "mozilla/Attributes.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/SourceLocation.h"
 #include "mozilla/dom/FunctionBinding.h"
-#include "js/Promise.h"  // JS::Dispatchable
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIGlobalObject.h"
+#include "nsISupports.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

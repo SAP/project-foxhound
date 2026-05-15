@@ -4,8 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "DrawTargetWebglInternal.h"
 #include "SourceSurfaceWebgl.h"
+
+#include "DrawTargetWebglInternal.h"
+#include "WebGLBuffer.h"
+#include "mozilla/gfx/Swizzle.h"
 
 namespace mozilla::gfx {
 
@@ -24,32 +27,89 @@ SourceSurfaceWebgl::~SourceSurfaceWebgl() {
     // Signal that the texture handle is not being used now.
     mHandle->ClearSurface();
   }
+  if (mReadBuffer) {
+    if (RefPtr<SharedContextWebgl> sharedContext = {mSharedContext}) {
+      sharedContext->RemoveSnapshotPBO(this, mReadBuffer.forget());
+    }
+    mReadBuffer = nullptr;
+  }
 }
 
-// Read back the contents of the target or texture handle for data use.
-inline bool SourceSurfaceWebgl::EnsureData() {
+// Read back the contents of the target or texture handle for data use. This
+// may attempt a readback into a PBO for performance, unless forced to
+// immediately read into data.
+inline bool SourceSurfaceWebgl::EnsureData(bool aForce, uint8_t* aData,
+                                           int32_t aStride) {
   if (mData) {
+    if (aData) {
+      DataSourceSurface::ScopedMap map(mData, MapType::READ);
+      if (!map.IsMapped()) {
+        return false;
+      }
+      SwizzleData(map.GetData(), map.GetStride(), mFormat, aData, aStride,
+                  mFormat, mSize);
+    }
     return true;
   }
-  if (!mDT) {
+
+  if (mReadBuffer) {
+    // If there is a pending PBO readback, then copy the contents of the PBO.
+    if (RefPtr<SharedContextWebgl> sharedContext = {mSharedContext}) {
+      mData = sharedContext->ReadSnapshotFromPBO(mReadBuffer, mFormat, mSize,
+                                                 aData, aStride);
+      mOwnsData = !mData || !aData;
+      sharedContext->RemoveSnapshotPBO(this, mReadBuffer.forget());
+    }
+    mReadBuffer = nullptr;
+    return !!mData;
+  }
+
+  if (RefPtr<DrawTargetWebgl> dt = {mDT}) {
+    if (!aForce) {
+      mReadBuffer = dt->ReadSnapshotIntoPBO(this);
+    }
+    if (!mReadBuffer) {
+      mData = dt->ReadSnapshot(aData, aStride);
+      mOwnsData = !mData || !aData;
+    }
+  } else if (mHandle) {
     // Assume that the target changed, so there should be a texture handle
     // holding a copy. Try to read data from the copy since we can't read
     // from the target.
-    if (!mHandle || !mSharedContext) {
-      return false;
+    if (RefPtr<SharedContextWebgl> sharedContext = {mSharedContext}) {
+      if (!aForce) {
+        mReadBuffer = sharedContext->ReadSnapshotIntoPBO(this, mHandle);
+      }
+      if (!mReadBuffer) {
+        mData = sharedContext->ReadSnapshot(mHandle, aData, aStride);
+        mOwnsData = !mData || !aData;
+      }
     }
-    mData = mSharedContext->ReadSnapshot(mHandle);
-  } else {
-    mData = mDT->ReadSnapshot();
   }
-  return !!mData;
+  return mData || mReadBuffer;
+}
+
+bool SourceSurfaceWebgl::ReadDataInto(uint8_t* aData, int32_t aStride) {
+  return EnsureData(true, aData, aStride);
+}
+
+bool SourceSurfaceWebgl::ForceReadFromPBO() {
+  if (mReadBuffer && EnsureData()) {
+    MOZ_ASSERT(!mReadBuffer);
+    return true;
+  }
+  return false;
 }
 
 uint8_t* SourceSurfaceWebgl::GetData() {
   if (!EnsureData()) {
     return nullptr;
   }
-  return mData->GetData();
+  if (!mOwnsData) {
+    mData = Factory::CopyDataSourceSurface(mData);
+    mOwnsData = true;
+  }
+  return mData ? mData->GetData() : nullptr;
 }
 
 int32_t SourceSurfaceWebgl::Stride() {
@@ -63,7 +123,11 @@ bool SourceSurfaceWebgl::Map(MapType aType, MappedSurface* aMappedSurface) {
   if (!EnsureData()) {
     return false;
   }
-  return mData->Map(aType, aMappedSurface);
+  if (!mOwnsData && aType != MapType::READ) {
+    mData = Factory::CopyDataSourceSurface(mData);
+    mOwnsData = true;
+  }
+  return mData && mData->Map(aType, aMappedSurface);
 }
 
 void SourceSurfaceWebgl::Unmap() {
@@ -77,21 +141,25 @@ void SourceSurfaceWebgl::Unmap() {
 // possible, or read back into data, if necessary, to preserve this particular
 // version of the framebuffer.
 void SourceSurfaceWebgl::DrawTargetWillChange(bool aNeedHandle) {
-  MOZ_ASSERT(mDT);
+  RefPtr<DrawTargetWebgl> dt(mDT);
+  if (!dt) {
+    MOZ_ASSERT_UNREACHABLE("No DrawTargetWebgl for SourceSurfaceWebgl");
+    return;
+  }
   // Only try to copy into a new texture handle if we don't already have data.
   // However, we still might need to immediately draw this snapshot to a WebGL
   // target, which would require a subsequent upload, so also copy into a new
   // handle even if we already have data in that case since it is faster than
   // uploading.
-  if ((!mData || aNeedHandle) && !mHandle) {
+  if ((aNeedHandle || (!mData && !mReadBuffer)) && !mHandle) {
     // Prefer copying the framebuffer to a texture if possible.
-    mHandle = mDT->CopySnapshot();
+    mHandle = dt->CopySnapshot();
     if (mHandle) {
       // Link this surface to the handle.
       mHandle->SetSurface(this);
     } else {
       // If that fails, then try to just read the data to a surface.
-      EnsureData();
+      EnsureData(false);
     }
   }
   mDT = nullptr;
@@ -118,56 +186,58 @@ void SourceSurfaceWebgl::SetHandle(TextureHandle* aHandle) {
 }
 
 // Handler for when the owner DrawTargetWebgl is destroying the cached texture
-// handle that has been allocated for this snapshot.
-void SourceSurfaceWebgl::OnUnlinkTexture(SharedContextWebgl* aContext) {
-  // If we get here, then we must have copied a snapshot, which only happens
-  // if the target changed.
-  MOZ_ASSERT(!mDT);
+// handle that has been allocated for this snapshot, or if the surface has
+// uploaded data.
+void SourceSurfaceWebgl::OnUnlinkTexture(SharedContextWebgl* aContext,
+                                         TextureHandle* aHandle, bool aForce) {
   // If the snapshot was mapped before the target changed, we may have read
   // data instead of holding a copied texture handle. If subsequently we then
   // try to draw with this snapshot, we might have allocated an external texture
   // handle in the texture cache that still links to this snapshot and can cause
   // us to end up here inside OnUnlinkTexture.
-  MOZ_ASSERT(mHandle || mData);
-  if (!mData) {
-    mData = aContext->ReadSnapshot(mHandle);
+  if (mHandle != aHandle) {
+    return;
+  }
+  if (!mData && !mReadBuffer) {
+    if (!aForce) {
+      mReadBuffer = aContext->ReadSnapshotIntoPBO(this, mHandle);
+    }
+    if (!mReadBuffer) {
+      mData = aContext->ReadSnapshot(mHandle);
+      mOwnsData = true;
+    }
   }
   mHandle = nullptr;
 }
 
 already_AddRefed<SourceSurface> SourceSurfaceWebgl::ExtractSubrect(
     const IntRect& aRect) {
-  // Ensure we have a texture source available to extract from.
-  if (!(mDT || (mHandle && mSharedContext)) || aRect.IsEmpty() ||
-      !GetRect().Contains(aRect)) {
+  // Ensure the subrect is actually in bounds.
+  if (aRect.IsEmpty() || !GetRect().Contains(aRect)) {
     return nullptr;
   }
   RefPtr<TextureHandle> subHandle;
   RefPtr<SharedContextWebgl> sharedContext;
-  if (mDT) {
+  if (RefPtr<DrawTargetWebgl> dt = {mDT}) {
     // If this is still a snapshot linked to a target, then copy from the
     // target.
-    subHandle = mDT->CopySnapshot(aRect);
-    if (!subHandle) {
-      return nullptr;
-    }
-    sharedContext = mDT->mSharedContext;
-  } else {
+    subHandle = dt->CopySnapshot(aRect);
+    sharedContext = dt->mSharedContext;
+  } else if (mHandle) {
     // Otherwise, we have a handle, but we need to verify it is still linked to
     // a valid context.
     sharedContext = mSharedContext;
-    if (!sharedContext) {
-      return nullptr;
-    }
-    // Try to copy directly from the handle using the context.
-    subHandle = sharedContext->CopySnapshot(aRect, mHandle);
-    if (!subHandle) {
-      return nullptr;
+    if (sharedContext) {
+      // Try to copy directly from the handle using the context.
+      subHandle = sharedContext->CopySnapshot(aRect, mHandle);
     }
   }
-  RefPtr<SourceSurfaceWebgl> surface = new SourceSurfaceWebgl(sharedContext);
-  surface->SetHandle(subHandle);
-  return surface.forget();
+  if (subHandle && sharedContext) {
+    RefPtr<SourceSurfaceWebgl> surface = new SourceSurfaceWebgl(sharedContext);
+    surface->SetHandle(subHandle);
+    return surface.forget();
+  }
+  return nullptr;
 }
 
 }  // namespace mozilla::gfx

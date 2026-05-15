@@ -14,7 +14,7 @@ add_task(async function () {
   const hud = await openNewTabAndConsole(TEST_URI);
 
   // Reload the browser to ensure the custom formatters are picked up
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await testHeaderNotAFunction(hud);
   await testHeaderNotReturningJsonMl(hud);

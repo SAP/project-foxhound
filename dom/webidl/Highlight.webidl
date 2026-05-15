@@ -26,7 +26,7 @@ enum HighlightType {
  *
  * See https://drafts.csswg.org/css-highlight-api-1/#highlight
  */
-[Pref="dom.customHighlightAPI.enabled", Exposed=Window]
+[Exposed=Window]
 interface Highlight {
 
   [Throws]
@@ -53,7 +53,7 @@ partial interface Highlight {
  *
  * See https://drafts.csswg.org/css-highlight-api-1/#highlightregistry
  */
-[Pref="dom.customHighlightAPI.enabled", Exposed=Window]
+[Exposed=Window]
 interface HighlightRegistry {
   maplike<DOMString, Highlight>;
 };

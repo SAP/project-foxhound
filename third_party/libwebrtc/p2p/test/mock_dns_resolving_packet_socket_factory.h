@@ -51,10 +51,5 @@ class MockDnsResolvingPacketSocketFactory : public BasicPacketSocketFactory {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::MockDnsResolvingPacketSocketFactory;
-}  // namespace rtc
 
 #endif  // P2P_TEST_MOCK_DNS_RESOLVING_PACKET_SOCKET_FACTORY_H_

@@ -33,10 +33,12 @@ class Http3WebTransportStream final : public WebTransportStreamBase,
   NS_DECL_NSIOUTPUTSTREAMCALLBACK
 
   explicit Http3WebTransportStream(
-      Http3Session* aSession, uint64_t aSessionId, WebTransportStreamType aType,
+      Http3SessionBase* aSession, uint64_t aSessionId,
+      WebTransportStreamType aType,
       std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
           aCallback);
-  explicit Http3WebTransportStream(Http3Session* aSession, uint64_t aSessionId,
+  explicit Http3WebTransportStream(Http3SessionBase* aSession,
+                                   uint64_t aSessionId,
                                    WebTransportStreamType aType,
                                    uint64_t aStreamId);
 
@@ -50,6 +52,8 @@ class Http3WebTransportStream final : public WebTransportStreamBase,
     return this;
   }
   Http3Stream* GetHttp3Stream() override { return nullptr; }
+  Http3ConnectUDPStream* GetHttp3ConnectUDPStream() override { return nullptr; }
+  Http3StreamTunnel* GetHttp3StreamTunnel() override { return nullptr; }
 
   void SetSendOrder(Maybe<int64_t> aSendOrder) override;
 

@@ -9,22 +9,6 @@ $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
   - 'Core :: Security: PSM'
 
-cert_storage:
-  memory:
-    type: memory_distribution
-    memory_unit: byte
-    description: >
-      Heap memory used by cert_storage.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1910500
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1910500
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - jschanck@mozilla.com
-    expires: 148
-
 data_storage:
   alternate_services:
     type: quantity
@@ -90,12 +74,13 @@ tls:
     bugs:
       - https://bugzilla.mozilla.org/1874963
       - https://bugzilla.mozilla.org/1933879
+      - https://bugzilla.mozilla.org/2005387
     data_reviews:
       - https://bugzilla.mozilla.org/1874963
       - https://bugzilla.mozilla.org/1974141
     notification_emails:
       - jschanck@mozilla.com
-    expires: 149
+    expires: 158
     labels:
       - PR_CONNECT_RESET_ERROR
       - PR_END_OF_FILE_ERROR
@@ -251,7 +236,7 @@ pkcs11:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1905453
     notification_emails:
       - haftandilian@mozilla.com
-    expires: 147
+    expires: 159
     extra_keys:
       filename:
         type: string
@@ -276,7 +261,7 @@ pkcs11:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1905453
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1905453
-    expires: 147
+    expires: 159
 
   external_trust_anchor_module_loaded:
     type: boolean
@@ -1627,3 +1612,49 @@ ssl:
     notification_emails:
       - seceng-telemetry@mozilla.com
     expires: never
+
+  scts_from_tiled_logs_per_connection:
+    type: custom_distribution
+    description: >
+      Histogram of the number of Signed Certificate Timestamps from tiled logs
+      per TLS connection from all sources (embedded / OCSP Stapling / TLS
+      handshake). Bucket 0 counts the cases when no SCTs from tiled logs were
+      received, or none were extracted due to parsing errors.
+    range_min: 0
+    range_max: 10
+    bucket_count: 11
+    histogram_type: linear
+    data_sensitivity:
+      - technical
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985598
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985598
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - jschanck@mozilla.com
+    expires: never
+
+oskeystore:
+  return_codes:
+    type: event
+    description: >
+      Collects return codes from the different implementations of the key store
+      API. These are sometimes poorly documented and collection is the only way
+      to discover them.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1958791
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1958791
+    notification_emails:
+      - simon@mozilla.com
+    expires: never
+    extra_keys:
+      function:
+        description: >
+          Which function returned the value.
+        type: string
+      result:
+        description: >
+          The error code, converted to a string.
+        type: string

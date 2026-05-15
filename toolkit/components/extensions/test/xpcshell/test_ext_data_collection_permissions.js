@@ -227,3 +227,28 @@ add_task(async function test_permissions_have_localization_strings() {
     }
   }
 });
+
+add_task(async function test_allow_unknown_props() {
+  const extension = await getExtension({
+    manifest: {
+      browser_specific_settings: {
+        gecko: {
+          data_collection_permissions: {
+            required: ["none"],
+            unknown_prop: true,
+          },
+        },
+      },
+    },
+  });
+
+  Assert.ok(
+    extension.warnings[0]?.includes(
+      "Warning processing browser_specific_settings.gecko.data_collection_permissions.unknown_prop: " +
+        "An unexpected property was found in the WebExtension manifest."
+    ),
+    `Expected a warning about the unknown property`
+  );
+
+  await extension.cleanupGeneratedFile();
+});

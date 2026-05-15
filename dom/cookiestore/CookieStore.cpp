@@ -5,10 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CookieStore.h"
-#include "CookieStoreChild.h"
-#include "CookieStoreNotifier.h"
-#include "CookieStoreNotificationWatcherWrapper.h"
 
+#include "CookieStoreChild.h"
+#include "CookieStoreNotificationWatcherWrapper.h"
+#include "CookieStoreNotifier.h"
+#include "ThirdPartyUtil.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -18,28 +21,19 @@
 #include "mozilla/net/CookieCommons.h"
 #include "mozilla/net/CookiePrefixes.h"
 #include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/StorageAccess.h"
+#include "nsGlobalWindowInner.h"
 #include "nsICookie.h"
 #include "nsIGlobalObject.h"
 #include "nsIPrincipal.h"
+#include "nsIURL.h"
 #include "nsReadableUtils.h"
 #include "nsSandboxFlags.h"
-#include "ThirdPartyUtil.h"
 
 using namespace mozilla::net;
 
 namespace mozilla::dom {
 
 namespace {
-
-int64_t ComputeExpiry(const CookieInit& aOptions) {
-  if (aOptions.mExpires.IsNull()) {  // Session cookie
-    return INT64_MAX;
-  }
-
-  return CookieCommons::MaybeCapExpiry(PR_Now() / PR_USEC_PER_MSEC,
-                                       aOptions.mExpires.Value());
-}
 
 int32_t SameSiteToConst(const CookieSameSite& aSameSite) {
   switch (aSameSite) {
@@ -54,9 +48,6 @@ int32_t SameSiteToConst(const CookieSameSite& aSameSite) {
 }
 
 bool ValidateCookieNameOrValue(const nsAString& aStr) {
-  if (aStr.Length() > 0 && (aStr.First() == 0x20 || aStr.Last() == 0x20)) {
-    return false;
-  }
   for (auto iter = aStr.BeginReading(), end = aStr.EndReading(); iter < end;
        ++iter) {
     if (*iter == 0x3B || *iter == 0x7F || (*iter <= 0x1F && *iter != 0x09)) {
@@ -64,6 +55,31 @@ bool ValidateCookieNameOrValue(const nsAString& aStr) {
     }
   }
   return true;
+}
+
+const nsDependentSubstring TrimTabAndSpace(const nsAString& aStr) {
+  nsAString::const_iterator start, end;
+
+  aStr.BeginReading(start);
+  aStr.EndReading(end);
+
+  auto TabOrSpace = [](char16_t ch) { return ch == 0x09 || ch == 0x20; };
+
+  while (start != end && TabOrSpace(*start)) {
+    ++start;
+  }
+
+  while (end != start) {
+    --end;
+
+    if (!TabOrSpace(*end)) {
+      ++end;
+
+      break;
+    }
+  }
+
+  return Substring(start, end);
 }
 
 bool ValidateCookieNameAndValue(const nsAString& aName, const nsAString& aValue,
@@ -77,6 +93,11 @@ bool ValidateCookieNameAndValue(const nsAString& aName, const nsAString& aValue,
 
   if (!ValidateCookieNameOrValue(aValue)) {
     aPromise->MaybeRejectWithTypeError("Cookie value contains invalid chars");
+    return false;
+  }
+
+  if (aName.Contains('=')) {
+    aPromise->MaybeRejectWithTypeError("Cookie name cannot contain '='");
     return false;
   }
 
@@ -155,15 +176,72 @@ bool ValidateCookieDomain(nsIPrincipal* aPrincipal, const nsAString& aName,
   return true;
 }
 
-bool ValidateCookiePath(const nsAString& aPath, Promise* aPromise) {
+bool ValidateExpiresAndMaxAge(const Nullable<double>& aExpires,
+                              const Nullable<int64_t>& aMaxAge,
+                              int64_t& aComputedExpiry, Promise* aPromise) {
   MOZ_ASSERT(aPromise);
 
-  if (!aPath.IsEmpty() && aPath[0] != '/') {
+  if (aExpires.IsNull() && aMaxAge.IsNull()) {
+    // Session cookie
+    aComputedExpiry = INT64_MAX;
+    return true;
+  }
+
+  if (!aExpires.IsNull() && !aMaxAge.IsNull()) {
+    aPromise->MaybeRejectWithTypeError(
+        "Cookie expires and maxAge attributes cannot both be set");
+    return false;
+  }
+
+  int64_t creationTimeInMSec = PR_Now() / PR_USEC_PER_MSEC;
+
+  if (!aExpires.IsNull()) {
+    aComputedExpiry =
+        CookieCommons::MaybeCapExpiry(creationTimeInMSec, aExpires.Value());
+  } else {
+    aComputedExpiry =
+        CookieCommons::MaybeCapMaxAge(creationTimeInMSec, aMaxAge.Value());
+  }
+
+  return true;
+}
+
+bool ValidateCookiePath(nsIURI* aURI, const nsAString& aPath,
+                        nsAString& aRetPath, Promise* aPromise) {
+  MOZ_ASSERT(aURI);
+  MOZ_ASSERT(aPromise);
+
+  aRetPath = aPath;
+
+  if (aRetPath.IsEmpty()) {
+    nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
+
+    if (!url) {
+      aPromise->MaybeRejectWithNotAllowedError("Permission denied");
+      return false;
+    }
+
+    nsAutoCString directory;
+    nsresult rv = url->GetDirectory(directory);
+
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      aPromise->MaybeRejectWithNotAllowedError("Permission denied");
+      return false;
+    }
+
+    if (!directory.IsEmpty() && directory.Last() == '/') {
+      directory.Truncate(directory.Length() - 1);
+    }
+
+    CopyUTF8toUTF16(directory, aRetPath);
+  }
+
+  if (aRetPath[0] != '/') {
     aPromise->MaybeRejectWithTypeError("Cookie path must start with '/'");
     return false;
   }
 
-  if (aPath.Length() > 1024) {
+  if (aRetPath.Length() > 1024) {
     aPromise->MaybeRejectWithTypeError(
         "Cookie domain size cannot be greater than 1024 bytes");
     return false;
@@ -253,8 +331,8 @@ bool GetContextAttributes(CookieStore* aCookieStore, bool* aThirdPartyContext,
 
     ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
     if (thirdPartyUtil) {
-      Unused << thirdPartyUtil->IsThirdPartyWindow(window->GetOuterWindow(),
-                                                   nullptr, aThirdPartyContext);
+      (void)thirdPartyUtil->IsThirdPartyWindow(window->GetOuterWindow(),
+                                               nullptr, aThirdPartyContext);
     }
 
     nsCOMPtr<Document> document = window->GetExtantDoc();
@@ -389,23 +467,33 @@ already_AddRefed<Promise> CookieStore::Set(const CookieInit& aOptions,
   NS_DispatchToCurrentThread(NS_NewRunnableFunction(
       __func__, [self = RefPtr(this), promise = RefPtr(promise), aOptions,
                  cookiePrincipal = RefPtr(cookiePrincipal.get())]() {
-        if (!ValidateCookieNameAndValue(aOptions.mName, aOptions.mValue,
-                                        promise)) {
+        nsCOMPtr<nsIURI> cookieURI = cookiePrincipal->GetURI();
+
+        nsString name(TrimTabAndSpace(aOptions.mName));
+        nsString value(TrimTabAndSpace(aOptions.mValue));
+
+        if (!ValidateCookieNameAndValue(name, value, promise)) {
           return;
         }
 
         nsString domain;
-        if (!ValidateCookieDomain(cookiePrincipal, aOptions.mName,
-                                  aOptions.mDomain, domain, promise)) {
+        if (!ValidateCookieDomain(cookiePrincipal, name, aOptions.mDomain,
+                                  domain, promise)) {
           return;
         }
 
-        if (!ValidateCookiePath(aOptions.mPath, promise)) {
+        int64_t expiry;
+        if (!ValidateExpiresAndMaxAge(aOptions.mExpires, aOptions.mMaxAge,
+                                      expiry, promise)) {
           return;
         }
 
-        if (!ValidateCookieNamePrefix(aOptions.mName, aOptions.mValue, domain,
-                                      aOptions.mPath, promise)) {
+        nsString path;
+        if (!ValidateCookiePath(cookieURI, aOptions.mPath, path, promise)) {
+          return;
+        }
+
+        if (!ValidateCookieNamePrefix(name, value, domain, path, promise)) {
           return;
         }
 
@@ -440,16 +528,13 @@ already_AddRefed<Promise> CookieStore::Set(const CookieInit& aOptions,
         self->mNotificationWatcher->ResolvePromiseWhenNotified(operationID,
                                                                promise);
 
-        nsCOMPtr<nsIURI> cookieURI = cookiePrincipal->GetURI();
         RefPtr<CookieStoreChild::SetRequestPromise> ipcPromise =
             self->mActor->SendSetRequest(
                 mozilla::WrapNotNull(cookieURI.get()),
                 cookiePrincipal->OriginAttributesRef(), thirdPartyContext,
                 partitionForeign, usingStorageAccess, isOn3PCBExceptionList,
-                aOptions.mName, aOptions.mValue,
-                // If expires is not set, it's a session cookie.
-                aOptions.mExpires.IsNull(), ComputeExpiry(aOptions), domain,
-                aOptions.mPath, SameSiteToConst(aOptions.mSameSite),
+                name, value, /* session cookie: */ expiry == INT64_MAX, expiry,
+                domain, path, SameSiteToConst(aOptions.mSameSite),
                 aOptions.mPartitioned, operationID);
         if (NS_WARN_IF(!ipcPromise)) {
           promise->MaybeResolveWithUndefined();
@@ -462,10 +547,27 @@ already_AddRefed<Promise> CookieStore::Set(const CookieInit& aOptions,
              operationID](
                 const CookieStoreChild::SetRequestPromise::ResolveOrRejectValue&
                     aResult) {
-              if (!aResult.IsResolve() || !aResult.ResolveValue()) {
+              auto cleanupNotificationWatcher = MakeScopeExit([&]() {
                 self->mNotificationWatcher->ForgetOperationID(operationID);
+              });
+
+              if (!aResult.IsResolve()) {
                 promise->MaybeResolveWithUndefined();
+                return;
               }
+
+              const CookieStoreResult& result = aResult.ResolveValue();
+              if (!result.success()) {
+                promise->MaybeRejectWithTypeError("Invalid cookie");
+                return;
+              }
+
+              if (!result.waitForNotification()) {
+                promise->MaybeResolveWithUndefined();
+                return;
+              }
+
+              cleanupNotificationWatcher.release();
             });
       }));
 
@@ -508,18 +610,21 @@ already_AddRefed<Promise> CookieStore::Delete(
   NS_DispatchToCurrentThread(NS_NewRunnableFunction(
       __func__, [self = RefPtr(this), promise = RefPtr(promise), aOptions,
                  cookiePrincipal = RefPtr(cookiePrincipal.get())]() {
+        nsCOMPtr<nsIURI> cookieURI = cookiePrincipal->GetURI();
+        nsString name(TrimTabAndSpace(aOptions.mName));
+
         nsString domain;
-        if (!ValidateCookieDomain(cookiePrincipal, aOptions.mName,
-                                  aOptions.mDomain, domain, promise)) {
+        if (!ValidateCookieDomain(cookiePrincipal, name, aOptions.mDomain,
+                                  domain, promise)) {
           return;
         }
 
-        if (!ValidateCookiePath(aOptions.mPath, promise)) {
+        nsString path;
+        if (!ValidateCookiePath(cookieURI, aOptions.mPath, path, promise)) {
           return;
         }
 
-        if (!ValidateCookieNamePrefix(aOptions.mName, u""_ns, domain,
-                                      aOptions.mPath, promise)) {
+        if (!ValidateCookieNamePrefix(name, u""_ns, domain, path, promise)) {
           return;
         }
 
@@ -553,14 +658,12 @@ already_AddRefed<Promise> CookieStore::Delete(
 
         self->mNotificationWatcher->ResolvePromiseWhenNotified(operationID,
                                                                promise);
-        nsCOMPtr<nsIURI> cookieURI = cookiePrincipal->GetURI();
         RefPtr<CookieStoreChild::DeleteRequestPromise> ipcPromise =
             self->mActor->SendDeleteRequest(
                 mozilla::WrapNotNull(cookieURI.get()),
                 cookiePrincipal->OriginAttributesRef(), thirdPartyContext,
                 partitionForeign, usingStorageAccess, isOn3PCBExceptionList,
-                aOptions.mName, domain, aOptions.mPath, aOptions.mPartitioned,
-                operationID);
+                name, domain, path, aOptions.mPartitioned, operationID);
         if (NS_WARN_IF(!ipcPromise)) {
           promise->MaybeResolveWithUndefined();
           return;
@@ -652,7 +755,7 @@ already_AddRefed<Promise> CookieStore::GetInternal(
        aOnlyTheFirstMatch]() {
         nsAutoString name;
         if (aOptions.mName.WasPassed()) {
-          name = aOptions.mName.Value();
+          name = TrimTabAndSpace(aOptions.mName.Value());
         }
 
         nsAutoCString path;
@@ -823,39 +926,6 @@ void CookieStore::CookieStructToItem(const CookieStruct& aData,
                                      CookieListItem* aItem) {
   aItem->mName.Construct(aData.name());
   aItem->mValue.Construct(aData.value());
-  aItem->mPath.Construct(aData.path());
-
-  if (aData.host().IsEmpty() || aData.host()[0] != '.') {
-    aItem->mDomain.Construct(VoidCString());
-  } else {
-    aItem->mDomain.Construct(nsDependentCSubstring(aData.host(), 1));
-  }
-
-  if (!aData.isSession()) {
-    aItem->mExpires.Construct(aData.expiry());
-  } else {
-    aItem->mExpires.Construct(nullptr);
-  }
-
-  aItem->mSecure.Construct(aData.isSecure());
-
-  CookieSameSite sameSite = CookieSameSite::None;
-  switch (aData.sameSite()) {
-    case nsICookie::SAMESITE_STRICT:
-      sameSite = CookieSameSite::Strict;
-      break;
-
-    case nsICookie::SAMESITE_LAX:
-      sameSite = CookieSameSite::Lax;
-      break;
-
-    default:
-      // FIXME: lax by default?
-      break;
-  }
-
-  aItem->mSameSite.Construct(sameSite);
-  aItem->mPartitioned.Construct(aData.isPartitioned());
 }
 
 }  // namespace mozilla::dom

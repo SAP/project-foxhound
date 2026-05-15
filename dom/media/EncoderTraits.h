@@ -7,8 +7,8 @@
 #ifndef EncoderTraits_h_
 #define EncoderTraits_h_
 
-#include "mozilla/dom/EncoderTypes.h"
 #include "PEMFactory.h"
+#include "mozilla/dom/EncoderTypes.h"
 
 namespace mozilla::EncoderSupport {
 

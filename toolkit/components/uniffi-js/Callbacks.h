@@ -37,6 +37,23 @@ void RegisterCallbackHandler(uint64_t aInterfaceId,
 void DeregisterCallbackHandler(uint64_t aInterfaceId, ErrorResult& aError);
 
 /**
+ * Create a new Callback interface handle
+ */
+uint64_t CallbackHandleCreate();
+
+/**
+ * Increase the refcount for a callback interface handle.  Returns the new
+ * refcount.
+ */
+uint32_t CallbackHandleAddRef(uint64_t aHandle);
+
+/**
+ * Decrease the refconut for a callback interface handle.  Returns the new
+ * refcount.
+ */
+uint32_t CallbackHandleRelease(uint64_t aHandle);
+
+/**
  * Base class for async callback interface method handlers
  *
  * In addition to handling actual async methods this also handles
@@ -49,7 +66,7 @@ void DeregisterCallbackHandler(uint64_t aInterfaceId, ErrorResult& aError);
  * The generated subclass stores all data needed to make the call, including the
  * arguments passed from Rust internally. MakeCall must only be called
  * once-per-object, since it may consume some of the arguments. We create a new
- * UniffiCallbackMethodHandlerBase subclass instance for each callback interface
+ * AsyncCallbackMethodHandlerBase subclass instance for each callback interface
  * call from Rust.
  */
 class AsyncCallbackMethodHandlerBase {

@@ -8,6 +8,7 @@ import androidx.core.view.isVisible
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.EngineState
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.feature.findinpage.view.FindInPageBar
 import mozilla.components.support.test.mock
@@ -23,7 +24,7 @@ internal class FindInPageIntegrationTest {
 
     @Test
     fun `GIVEN FIPB not shown WHEN show is called THEN FIPB is shown`() {
-        val feature = spy(FindInPageIntegration(mock(), findInPageBar, toolbar, mock()))
+        val feature = spy(FindInPageIntegration(BrowserStore(), findInPageBar, toolbar, mock()))
         val sessionState: SessionState = mock()
         val contentState: ContentState = mock()
         val engineState: EngineState = mock()
@@ -37,7 +38,7 @@ internal class FindInPageIntegrationTest {
 
     @Test
     fun `GIVEN FIPB is shown WHEN hide is called THEN FIPB is hidden`() {
-        val feature = spy(FindInPageIntegration(mock(), findInPageBar, toolbar, mock()))
+        val feature = spy(FindInPageIntegration(BrowserStore(), findInPageBar, toolbar, mock()))
 
         feature.hide()
 

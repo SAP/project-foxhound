@@ -7,16 +7,15 @@
 #ifndef nsInProcessBrowserChildGlobal_h
 #define nsInProcessBrowserChildGlobal_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/ContentFrameMessageManager.h"
 #include "mozilla/dom/MessageManagerCallback.h"
+#include "nsCOMArray.h"
 #include "nsCOMPtr.h"
+#include "nsDocShell.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptObjectPrincipal.h"
-#include "nsDocShell.h"
-#include "nsCOMArray.h"
 #include "nsWeakReference.h"
 
 class nsFrameMessageManager;
@@ -74,10 +73,10 @@ class InProcessBrowserChildMessageManager final
    * MessageManagerCallback methods that we override.
    */
   virtual bool DoSendBlockingMessage(
-      const nsAString& aMessage, StructuredCloneData& aData,
-      nsTArray<StructuredCloneData>* aRetVal) override;
-  virtual nsresult DoSendAsyncMessage(const nsAString& aMessage,
-                                      StructuredCloneData& aData) override;
+      const nsAString& aMessage, NotNull<StructuredCloneData*> aData,
+      nsTArray<NotNull<RefPtr<StructuredCloneData>>>* aRetVal) override;
+  virtual nsresult DoSendAsyncMessage(
+      const nsAString& aMessage, NotNull<StructuredCloneData*> aData) override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 

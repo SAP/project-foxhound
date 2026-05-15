@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Title of a dialog for a notification permission request. %1$s is the domain name of the website. -->
   <string name="mozac_feature_sitepermissions_notification_title">¿La niya\' q\'ij chi ri %1$s yerutäq taq rutzijol?</string>
@@ -35,8 +42,19 @@
     access to this permission
   -->
   <string name="mozac_feature_sitepermissions_not_allow">Man tiya\' q\'ij</string>
+  <!--
+    Alternate variant of the text for a negative button in a permission request dialog,
+    this button will not give access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_block">Tiq\'at</string>
+  <!-- Button label in a notification permission request dialog to dismiss the dialog. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_dismiss_label">Tiq\'at</string>
+  <!-- Button label in a notification permission request dialog. It will let the user go to Android Settings to grant the permission. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_settings_label">Tib\'e pa taq nuk\'ulem</string>
   <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
   <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site2">Tinatäx ri xna\'ojïx pa re ruxaq re\'</string>
+  <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
+  <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site4">Tinatäx pa re ruxaq re\'</string>
   <!-- Text for a positive button in a permission request dialog. This will always allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->
   <string name="mozac_feature_sitepermissions_always_allow">Junelïk</string>
   <!-- Text for a negative button in a permission request dialog. This will never allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->

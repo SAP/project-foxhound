@@ -17,9 +17,11 @@ kind-dependencies:
     - repackage
     - toolchain
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - linux64-shippable/opt
-    - linux-shippable/opt
     - linux64-aarch64-shippable/opt
     - macosx64-shippable/opt
     - win32-shippable/opt
@@ -27,7 +29,6 @@ only-for-build-platforms:
     - win64-aarch64-shippable/opt
     - linux64-devedition/opt
     - linux64-aarch64-devedition/opt
-    - linux-devedition/opt
     - macosx64-devedition/opt
     - win32-devedition/opt
     - win64-devedition/opt
@@ -76,21 +77,19 @@ tasks:
                     .*-devedition: devedition
             job-name:
                 by-build-platform:
-                    linux-shippable: linux-opt
                     linux64-shippable: linux64-opt
                     linux64-aarch64-shippable: linux64-aarch64-opt
                     macosx64-shippable: macosx64-opt
                     win32-shippable: win32-opt
                     win64-shippable: win64-opt
                     win64-aarch64-shippable: win64-aarch64-opt
-                    linux-devedition: linux-devedition-opt
                     linux64-devedition: linux64-devedition-opt
                     linux64-aarch64-devedition: linux64-aarch64-devedition-opt
                     macosx64-devedition: macosx64-devedition-opt
                     win32-devedition: win32-devedition-opt
                     win64-devedition: win64-devedition-opt
                     win64-aarch64-devedition: win64-aarch64-devedition-opt
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         treeherder:
             symbol: L10n(B)
             tier: 1
@@ -98,14 +97,12 @@ tasks:
                 by-build-platform:
                     linux64-shippable: linux64-shippable/opt
                     linux64-aarch64-shippable: linux64-aarch64-shippable/opt
-                    linux-shippable: linux32-shippable/opt
                     macosx64-shippable: osx-shippable/opt
                     win32-shippable: windows2012-32-shippable/opt
                     win64-shippable: windows2012-64-shippable/opt
                     win64-aarch64-shippable: windows2012-aarch64-shippable/opt
                     linux64-devedition: linux64-devedition/opt
                     linux64-aarch64-devedition: linux64-aarch64-devedition/opt
-                    linux-devedition: linux32-devedition/opt
                     macosx64-devedition: osx-cross-devedition/opt
                     win32-devedition: windows2012-32-devedition/opt
                     win64-devedition: windows2012-64-devedition/opt
@@ -121,12 +118,6 @@ tasks:
         mozharness:
             config:
                 by-build-platform:
-                    linux-shippable:
-                        - single_locale/firefox.py
-                        - single_locale/linux32.py
-                        - single_locale/tc_common.py
-                        - single_locale/tc_linux_common.py
-                        - taskcluster_nightly.py
                     linux64-shippable:
                         - single_locale/firefox.py
                         - single_locale/linux64.py
@@ -162,12 +153,6 @@ tasks:
                         - single_locale/win64-aarch64.py
                         - single_locale/tc_common.py
                         - single_locale/tc_win64.py
-                        - taskcluster_nightly.py
-                    linux-devedition:
-                        - single_locale/devedition.py
-                        - single_locale/linux32.py
-                        - single_locale/tc_common.py
-                        - single_locale/tc_linux_common.py
                         - taskcluster_nightly.py
                     linux64-devedition:
                         - single_locale/devedition.py

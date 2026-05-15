@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPrintDialog_h__
-#define nsPrintDialog_h__
+#ifndef nsPrintDialog_h_
+#define nsPrintDialog_h_
 
 #include "nsIPrintDialogService.h"
 

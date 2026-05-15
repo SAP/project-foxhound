@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _PATHHASH_H_
-#define _PATHHASH_H_
+#ifndef PATHHASH_H_
+#define PATHHASH_H_
 
 #include <windows.h>
 

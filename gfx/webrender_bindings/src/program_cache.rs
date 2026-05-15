@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use nsstring::nsAString;
+use rayon::ThreadPool;
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs::{create_dir_all, read_dir, read_to_string, File};
@@ -10,12 +12,17 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
-
-use nsstring::nsAString;
-use rayon::ThreadPool;
 use webrender::{ProgramBinary, ProgramCache, ProgramCacheObserver, ProgramSourceDigest};
 
 const MAX_LOAD_TIME_MS: u64 = 400;
+
+fn hash_bytes(v: &[u8]) -> u64 {
+    use rustc_hash::FxHasher;
+    use std::hash::{Hash, Hasher};
+    let mut state = FxHasher::default();
+    v.hash(&mut state);
+    state.finish()
+}
 
 fn deserialize_program_binary(path: &Path) -> Result<Arc<ProgramBinary>, Error> {
     let mut buf = vec![];
@@ -40,7 +47,7 @@ fn deserialize_program_binary(path: &Path) -> Result<Arc<ProgramBinary>, Error> 
 
     // Check if hash is correct
     let hash: u64 = bincode::deserialize(&hash).unwrap();
-    let hash_data = fxhash::hash64(&data);
+    let hash_data = hash_bytes(&data);
     if hash != hash_data {
         return Err(Error::new(ErrorKind::InvalidData, "File data is invalid (hash)"));
     }
@@ -152,7 +159,7 @@ impl WrProgramBinaryDiskCache {
                         .map_err(|e| error!("shader-cache: Failed to write magic + version: {}", e))?;
 
                     // Write hash
-                    let hash = fxhash::hash64(&data);
+                    let hash = hash_bytes(&data);
                     let hash = bincode::serialize(&hash).unwrap();
                     assert!(hash.len() == 8);
                     file.write_all(&hash)

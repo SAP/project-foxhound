@@ -2,23 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
         buildConfigField("String", "LIBRARY_VERSION", "\"" + config.componentsVersion + "\"")
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
     }
 
     buildFeatures {
@@ -29,16 +22,16 @@ android {
 }
 
 dependencies {
-    testImplementation libs.kotlin.coroutines
-
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.mockwebserver
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
+
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.mockwebserver
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

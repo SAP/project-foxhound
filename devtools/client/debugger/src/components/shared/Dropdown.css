@@ -47,7 +47,7 @@
   outline-offset: -2px;
 }
 
-.dropdown-button .img {
+.dropdown-button .dbg-img {
   display: block;
 }
 
@@ -72,8 +72,8 @@
       fill: currentColor;
     }
 
-    .dropdown-icon.prettyPrint,
-    .dropdown-icon.blackBox {
+    .dbg-img-prettyPrint.dropdown-icon,
+    .dbg-img-blackBox.dropdown-icon {
       background-color: currentColor;
     }
   }
@@ -91,8 +91,8 @@
   white-space: nowrap;
 }
 
-.dropdown-icon.prettyPrint,
-.dropdown-icon.blackBox {
+.dbg-img-prettyPrint.dropdown-icon,
+.dbg-img-blackBox.dropdown-icon {
   background-color: var(--theme-highlight-blue);
 }
 

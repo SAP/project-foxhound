@@ -23,7 +23,7 @@ module.exports = {
    *
    * @param {NodeFront} nodeFront
    *        Node that should be highlighted.
-   * @param {Object} options
+   * @param {object} options
    *        Optional configuration options passed to the grid highlighter
    */
   showGridHighlighter(nodeFront, options = {}) {

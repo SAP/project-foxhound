@@ -43,7 +43,6 @@
 #define BASE_METRICS_HISTOGRAM_H_
 #pragma once
 
-#include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 
 #include <map>

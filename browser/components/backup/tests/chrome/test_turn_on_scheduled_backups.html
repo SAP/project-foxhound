@@ -10,7 +10,7 @@
   src="chrome://browser/content/backup/turn-on-scheduled-backups.mjs"
   type="module"
 ></script>
-  <link rel="localization" href="preview/backupSettings.ftl"/>
+  <link rel="localization" href="browser/backupSettings.ftl"/>
   <link rel="localization" href="branding/brand.ftl"/>
   <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script>
@@ -36,13 +36,151 @@
     });
 
     /**
+     * Tests that the dialog displays a default save location for backups and updates to a custom one
+     * if there is one selected.
+     */
+    add_task(async function test_locationInputs() {
+      let turnOnScheduledBackups = document.getElementById("test-turn-on-scheduled-backups");
+
+      let inputDefault = turnOnScheduledBackups.filePathInputDefaultEl;
+      ok(inputDefault, "Default input should be found");
+
+      let promise = BrowserTestUtils.waitForCondition(() => inputDefault.value);
+
+      /* Normally we would pass in the default attributes, but for this test, we will
+       * hardcode them since file paths vary across different platforms.
+       */
+      const defaultPathFilename = "testdefaultpath";
+      let defaultPath = PathUtils.join(PathUtils.tempDir, defaultPathFilename);
+      turnOnScheduledBackups.defaultPath = defaultPath;
+      turnOnScheduledBackups.defaultLabel = defaultPathFilename;
+      await turnOnScheduledBackups.updateComplete;
+      await promise;
+
+      is(inputDefault.value, `${defaultPathFilename} (recommended)`, "Default input should not be empty and should contain part of the default path");
+
+      // Now pretend a custom file path was selected
+      const newPathFilename = "testnewpath";
+      let newPath = PathUtils.join(PathUtils.tempDir, newPathFilename);
+      turnOnScheduledBackups._newPath = newPath;
+      turnOnScheduledBackups._newLabel = newPathFilename;
+      await turnOnScheduledBackups.updateComplete;
+
+      let inputCustom = turnOnScheduledBackups.filePathInputCustomEl;
+      ok(inputCustom, "Input should be updated");
+      is(inputCustom.value, newPathFilename, "Input value should be set to the new path");
+    })
+
+    /**
      * Tests that pressing the confirm button will dispatch the expected events.
      */
     add_task(async function test_confirm() {
       let turnOnScheduledBackups = document.getElementById("test-turn-on-scheduled-backups");
       let confirmButton = turnOnScheduledBackups.confirmButtonEl;
 
+      // Reset the component state
+      turnOnScheduledBackups.defaultPath = null;
+      turnOnScheduledBackups.defaultLabel = null;
+      turnOnScheduledBackups._newPath = null;
+      turnOnScheduledBackups._newPathLabel = null;
+
+      await turnOnScheduledBackups.updateComplete;
+
+      // The confirm button will be disabled if BackupService cannot find a file path
+      ok(confirmButton.disabled, "confirm button should be inactive if there is no default path");
+
+      // Now we can set the default path
+      const defaultPathFilename = "testdefaultpath";
+      let defaultPath = PathUtils.join(PathUtils.tempDir, defaultPathFilename);
+      turnOnScheduledBackups.defaultPath = defaultPath;
+      turnOnScheduledBackups.defaultLabel = defaultPathFilename;
+
+      await turnOnScheduledBackups.updateComplete;
+
       ok(confirmButton, "Confirm button should be found");
+      ok(!confirmButton.disabled, "confirm button should be active");
+
+      let content = document.getElementById("content");
+      let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:EnableScheduledBackups");
+
+      confirmButton.click()
+
+      await promise;
+      ok(true, "Detected event after selecting the confirm button");
+    })
+
+    /**
+     * Tests that setting a new path will enable the confirm button and dispatch the expected events.
+     */
+    add_task(async function test_confirm_newpath() {
+      let turnOnScheduledBackups = document.getElementById("test-turn-on-scheduled-backups");
+      let confirmButton = turnOnScheduledBackups.confirmButtonEl;
+
+      // The confirm button will be disabled if BackupService cannot find a file path
+      const defaultPathFilename = null;
+      let defaultPath = PathUtils.join(PathUtils.tempDir, defaultPathFilename);
+      turnOnScheduledBackups.defaultPath = defaultPath;
+      turnOnScheduledBackups.defaultLabel = defaultPathFilename;
+
+      await turnOnScheduledBackups.updateComplete;
+
+      ok(confirmButton.disabled, "confirm button should be inactive if there is no default path");
+
+      // Set a new file path to enable the button
+      const newPathFilename = "testnewpath";
+      let newPath = PathUtils.join(PathUtils.tempDir, newPathFilename);
+      turnOnScheduledBackups._newPath = newPath;
+      turnOnScheduledBackups._newPathLabel = newPathFilename;
+
+      await turnOnScheduledBackups.updateComplete;
+
+      ok(confirmButton, "Confirm button should be found");
+      ok(!confirmButton.disabled, "confirm button should be active");
+
+      let content = document.getElementById("content");
+      let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:EnableScheduledBackups");
+
+      confirmButton.click()
+
+      await promise;
+      ok(true, "Detected event after selecting the confirm button");
+    })
+
+    /**
+     * Tests that setting a persisted path will enable the confirm button and dispatch the expected events.
+     */
+    add_task(async function test_confirm_persisted_path() {
+      let turnOnScheduledBackups = document.getElementById("test-turn-on-scheduled-backups");
+      let confirmButton = turnOnScheduledBackups.confirmButtonEl;
+      // For the purposes of this test, we are embedded
+      turnOnScheduledBackups.embeddedFxBackupOptIn = true;
+
+      // Reset the component state
+      turnOnScheduledBackups.defaultPath = "";
+      turnOnScheduledBackups.defaultLabel = "";
+      turnOnScheduledBackups._newPath = "";
+      turnOnScheduledBackups._newPathLabel = "";
+
+      turnOnScheduledBackups.backupServiceState = createBackupServiceState({
+        embeddedComponentPersistentData: {},
+      });
+
+      await turnOnScheduledBackups.updateComplete;
+
+      ok(confirmButton.disabled, "confirm button should be inactive if there is no default path");
+
+      // Set the persisted path to enable the button
+      const persistedPathFilename = "testpersistedpath";
+      let persistedPath = PathUtils.join(PathUtils.tempDir, persistedPathFilename);
+      turnOnScheduledBackups.backupServiceState.embeddedComponentPersistentData = {
+        path: persistedPath
+      }
+
+      turnOnScheduledBackups.reset();
+      await turnOnScheduledBackups.updateComplete;
+
+      ok(confirmButton, "Confirm button should be found");
+      ok(!confirmButton.disabled, "confirm button should be active");
 
       let content = document.getElementById("content");
       let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:EnableScheduledBackups");
@@ -129,41 +267,6 @@
       await invalidPromise;
 
       ok(confirmButton.disabled, "Confirm button should be disabled again");
-    })
-
-    /**
-     * Tests that the dialog displays a default save location for backups and updates to a custom one
-     * if there is one selected.
-     */
-    add_task(async function test_locationInputs() {
-      let turnOnScheduledBackups = document.getElementById("test-turn-on-scheduled-backups");
-      let inputDefault = turnOnScheduledBackups.filePathInputDefaultEl;
-      ok(inputDefault, "Default input should be found");
-
-      let promise = BrowserTestUtils.waitForCondition(() => inputDefault.value);
-
-      /* Normally we would pass in the default attributes, but for this test, we will
-       * hardcode them since file paths vary across different platforms.
-       */
-      const defaultPathFilename = "testdefaultpath";
-      let defaultPath = PathUtils.join(PathUtils.tempDir, defaultPathFilename);
-      turnOnScheduledBackups.defaultPath = defaultPath;
-      turnOnScheduledBackups.defaultLabel = defaultPathFilename;
-      await turnOnScheduledBackups.updateComplete;
-      await promise;
-
-      is(inputDefault.value, `${defaultPathFilename} (recommended)`, "Default input should not be empty and should contain part of the default path");
-
-      // Now pretend a custom file path was selected
-      const newPathFilename = "testnewpath";
-      let newPath = PathUtils.join(PathUtils.tempDir, newPathFilename);
-      turnOnScheduledBackups._newPath = newPath;
-      turnOnScheduledBackups._newLabel = newPathFilename;
-      await turnOnScheduledBackups.updateComplete;
-
-      let inputCustom = turnOnScheduledBackups.filePathInputCustomEl;
-      ok(inputCustom, "Input should be updated");
-      is(inputCustom.value, newPathFilename, "Input value should be set to the new path");
     })
   </script>
 </head>

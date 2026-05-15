@@ -6,6 +6,7 @@
 
 #include "AbortSignal.h"
 
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/AbortSignalBinding.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Event.h"
@@ -14,8 +15,8 @@
 #include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/RefPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsGlobalWindowInner.h"
 #include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {

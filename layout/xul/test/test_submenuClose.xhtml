@@ -20,15 +20,15 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1181560
   <vbox>
     <menubar>
       <menu id="menu" label="MyMenu">
-        <menupopup>
+        <menupopup native="false">
           <menuitem label="A"/>
           <menu id="b" label="B">
-            <menupopup>
+            <menupopup native="false">
               <menuitem label="B1"/>
             </menupopup>
           </menu>
           <menu id="c" label="C">
-            <menupopup>
+            <menupopup native="false">
               <menuitem label="C1"/>
             </menupopup>
           </menu>
@@ -40,7 +40,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1181560
   <!-- test code goes here -->
   <script type="application/javascript">
   <![CDATA[
-  /** Test for Bug 1181560 **/
+  /** Test for Bug 1181560 */
   SimpleTest.waitForExplicitFinish();
 
   let menuB, menuC, mainMenu, menuBOpen, menuCOpen;

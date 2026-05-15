@@ -23,42 +23,54 @@ function newTimer(name, delay, type) {
   return timer;
 }
 
-function getTimers() {
-  return timerManager.getTimers().filter(t => {
-    if (t.name == "BackgroundHangThread_timer") {
-      // BHR is Nightly-only, so just ignore it.
-      return false;
-    }
-
-    if (t.name == "CCGCScheduler::EnsureGCRunner") {
-      // GC runner can be scheduled anytime, randomly.
-      return false;
-    }
-
-    if (AppConstants.platform == "win" && t.name == "nsAnonTempFileRemover") {
-      // On Windows there's a 3min timer added at startup to then add an
-      // idle observer that finally triggers removing leftover temp files.
-      // Ignore that too.
-      return false;
-    }
-
-    return true;
-  });
+const ignoredTimers = [
+  "BackgroundHangThread_timer", // BHR is Nightly-only, just ignore it.
+  "CCGCScheduler::EnsureGCRunner", // GC runner can be scheduled anytime, randomly.
+  "IdleMemoryCleanupWantsLaterCheck", // When Worker is used, nsThread::ProcessNextEvent may call MayScheduleIdleMemoryCleanup.
+  "dom::IdleGCTimerCallback", // When Worker is used.
+  "dom::PeriodicGCTimerCallback", // When Worker is used.
+  "IdleRunnableWrapper::SetTimer", // When Worker is used.
+];
+if (AppConstants.platform == "win") {
+  // On Windows there's a 3min timer added at startup to then add an
+  // idle observer that finally triggers removing leftover temp files.
+  // Ignore that too.
+  ignoredTimers.push("nsAnonTempFileRemover");
+}
+if (
+  // Services.profiler is missing on some tier3 platforms where
+  // MOZ_GECKO_PROFILER is not set.
+  Services.profiler?.IsActive() &&
+  !Services.env.exists("MOZ_PROFILER_SHUTDOWN") &&
+  Services.env.exists("MOZ_UPLOAD_DIR") &&
+  Services.env.exists("MOZ_TEST_TIMEOUT_INTERVAL")
+) {
+  // Ignore the timer used to upload profiles of test timeouts when running
+  // the tests with --profiler.
+  ignoredTimers.push("upload_test_timeout_profile");
 }
 
-function run_test() {
-  {
-    let timers = getTimers();
-    for (let timer of timers) {
-      // Print info about unexpected startup timers to help debugging.
-      info(`${timer.name}: ${timer.delay}ms, ${timer.type}`);
-    }
-    Assert.equal(
-      timers.length,
-      0,
-      "there should be no timer at xpcshell startup"
-    );
+function getTimers() {
+  return timerManager
+    .getTimers()
+    .filter(t => !ignoredTimers.includes(t.name.replace(/\[.*/, "")));
+}
+
+function getTimersVerbose() {
+  let timers = getTimers();
+  for (let timer of timers) {
+    // To help with debugging in case of unexpected timers.
+    info(`${timer.name}: ${timer.delay}ms, ${timer.type}`);
   }
+  return timers;
+}
+
+add_task(function test_nsITimerManager_getTimers() {
+  Assert.equal(
+    getTimersVerbose().length,
+    0,
+    "there should be no timer at xpcshell startup"
+  );
 
   let timerData = [
     ["t1", 500, Ci.nsITimer.TYPE_ONE_SHOT],
@@ -92,4 +104,48 @@ function run_test() {
     timers.pop().cancel();
   }
   Assert.equal(getTimers().length, 0, "no timer left after cancelling");
-}
+});
+
+add_task(async function test_getTimers_with_active_worker_thread() {
+  let worker = new ChromeWorker("resource://test/data/test_timers.worker.js");
+
+  async function queryWorker(cmd, ...args) {
+    return new Promise(resolve => {
+      // One message at a time; we are not going to send multiple messages.
+      worker.addEventListener(
+        "message",
+        e => {
+          Assert.equal(e.data.replyToCmd, cmd, "Got reply from worker");
+          resolve(e.data.returnValue);
+        },
+        { once: true }
+      );
+      worker.postMessage([cmd, ...args]);
+    });
+  }
+
+  // A very long timeout that will certainly outlast the test execution.
+  const VERY_LONG_TIMEOUT_MS = 3_600_000;
+
+  Assert.equal(getTimersVerbose().length, 0, "no timers before");
+  const handle = await queryWorker("do_call_setTimeout", VERY_LONG_TIMEOUT_MS);
+
+  let timers = getTimersVerbose();
+  Assert.equal(timers.length, 1, "one timer after?");
+  Assert.equal(timers[0].name, "TimeoutExecutor Runnable", "Got timer name");
+
+  // Although we created a timer with 3600000 delay, it is reported as 3599999.
+  // As a sanity check, just check that it is close enough. A drift of more
+  // than 1 hour would be quite unexpected.
+  Assert.less(
+    Math.abs(VERY_LONG_TIMEOUT_MS - timers[0].delay),
+    60_000,
+    `Should match the expected timer delay: ${timers[0].delay}`
+  );
+  Assert.equal(Ci.nsITimer.TYPE_ONE_SHOT, timers[0].type, "Got timer type");
+
+  await queryWorker("do_call_clearTimeout", handle);
+
+  Assert.equal(getTimersVerbose().length, 0, "no timer left after cancelling");
+  worker.terminate();
+});

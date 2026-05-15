@@ -65,7 +65,7 @@ async function openPage(shouldClick) {
         browser,
         [""],
         function () {
-          return content.document.userHasInteracted;
+          return content.document.hasBeenUserGestureActivated;
         }
       );
       is(

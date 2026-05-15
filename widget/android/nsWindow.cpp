@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <android/bitmap.h>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
@@ -53,7 +54,6 @@
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 #include "nsUserIdleService.h"
-#include "nsViewManager.h"
 #include "nsWidgetsCID.h"
 #include "nsWindow.h"
 
@@ -63,15 +63,16 @@
 #include "nsIPrintSettings.h"
 #include "nsIPrintSettingsService.h"
 
+#include "mozilla/PresShell.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_android.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/TouchEvents.h"
-#include "mozilla/WeakPtr.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 #include "mozilla/a11y/SessionAccessibility.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -96,6 +97,7 @@
 #include "mozilla/java/SessionAccessibilityWrappers.h"
 #include "mozilla/java/SurfaceControlManagerWrappers.h"
 #include "mozilla/jni/NativesInlines.h"
+#include "mozilla/layers/AndroidHardwareBuffer.h"
 #include "mozilla/layers/APZEventState.h"
 #include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/APZThreadUtils.h"
@@ -105,6 +107,7 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/UiCompositorControllerChild.h"
 #include "mozilla/layers/IAPZCTreeManager.h"
+#include "mozilla/net/AsyncUrlChannelClassifier.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/widget/AndroidVsync.h"
 #include "mozilla/widget/Screen.h"
@@ -120,6 +123,7 @@ using namespace mozilla::ipc;
 using mozilla::dom::ContentChild;
 using mozilla::dom::ContentParent;
 using mozilla::gfx::DataSourceSurface;
+using mozilla::gfx::IntRect;
 using mozilla::gfx::IntSize;
 using mozilla::gfx::Matrix;
 using mozilla::gfx::SurfaceFormat;
@@ -131,13 +135,7 @@ static mozilla::LazyLogModule sGVSupportLog("GeckoViewSupport");
 // All the toplevel windows that have been created; these are in
 // stacking order, so the window at gTopLevelWindows[0] is the topmost
 // one.
-MOZ_RUNINIT static nsTArray<nsWindow*> gTopLevelWindows;
-
-static bool sFailedToCreateGLContext = false;
-
-// Multitouch swipe thresholds in inches
-static const double SWIPE_MAX_PINCH_DELTA_INCHES = 0.4;
-static const double SWIPE_MIN_DISTANCE_INCHES = 0.6;
+constinit static nsTArray<nsWindow*> gTopLevelWindows;
 
 static const double kTouchResampleVsyncAdjustMs = 5.0;
 
@@ -1050,7 +1048,6 @@ class NPZCSupport final
     PostInputEvent([input = std::move(aInput), result](nsWindow* window) {
       WidgetTouchEvent touchEvent = input.ToWidgetEvent(window);
       window->ProcessUntransformedAPZEvent(&touchEvent, result);
-      window->DispatchHitTest(touchEvent);
     });
 
     if (aReturnResult && result.GetHandledResult() != Nothing()) {
@@ -1102,8 +1099,7 @@ class LayerViewSupport final
     explicit CaptureRequest() : mResult(nullptr) {}
     explicit CaptureRequest(java::GeckoResult::GlobalRef aResult,
                             java::sdk::Bitmap::GlobalRef aBitmap,
-                            const ScreenRect& aSource,
-                            const IntSize& aOutputSize)
+                            const IntRect& aSource, const IntSize& aOutputSize)
         : mResult(aResult),
           mBitmap(aBitmap),
           mSource(aSource),
@@ -1115,11 +1111,19 @@ class LayerViewSupport final
     // where to store the pixels
     java::sdk::Bitmap::GlobalRef mBitmap;
 
-    ScreenRect mSource;
+    IntRect mSource;
 
     IntSize mOutputSize;
   };
+  // Queue of outstanding screen pixels requests received from Java frontend.
+  // Only the request at the front of the queue has been sent to the compositor,
+  // and the next will be sent when the previous result is returned.
   std::queue<CaptureRequest> mCapturePixelsResults;
+  // Screen pixels request that has been sent to the compositor. If the
+  // corresponding entry in mCapturePixelsResults is pop()ped prior to receiving
+  // the result from the compositor, this must be Disconnect()ed.
+  MozPromiseRequestHolder<UiCompositorControllerChild::ScreenPixelsPromise>
+      mPendingScreenPixelsRequest;
 
   // In order to use Event::HasSameTypeAs in PostTo(), we cannot make
   // LayerViewEvent a template because each template instantiation is
@@ -1178,8 +1182,10 @@ class LayerViewSupport final
       uiThread->Dispatch(NS_NewRunnableFunction(
           "LayerViewSupport::OnWeakNonIntrusiveDetach",
           [compositor, disposer = std::move(disposer),
-           results = &mCapturePixelsResults, window = mWindow]() mutable {
+           results = &mCapturePixelsResults,
+           request = &mPendingScreenPixelsRequest, window = mWindow]() mutable {
             if (auto accWindow = window.Access()) {
+              request->DisconnectIfExists();
               while (!results->empty()) {
                 auto aResult =
                     java::GeckoResult::LocalRef(results->front().mResult);
@@ -1256,6 +1262,7 @@ class LayerViewSupport final
     }
 
     if (auto window = mWindow.Access()) {
+      mPendingScreenPixelsRequest.DisconnectIfExists();
       while (!mCapturePixelsResults.empty()) {
         auto result =
             java::GeckoResult::LocalRef(mCapturePixelsResults.front().mResult);
@@ -1271,36 +1278,6 @@ class LayerViewSupport final
   }
 
   java::sdk::Surface::Param GetSurface() { return mSurface; }
-
- private:
-  already_AddRefed<DataSourceSurface> FlipScreenPixels(
-      Shmem& aMem, const ScreenIntSize& aInSize, const ScreenRect& aInRegion,
-      const IntSize& aOutSize) {
-    RefPtr<gfx::DataSourceSurface> image =
-        gfx::Factory::CreateWrappingDataSourceSurface(
-            aMem.get<uint8_t>(),
-            StrideForFormatAndWidth(SurfaceFormat::B8G8R8A8, aInSize.width),
-            IntSize(aInSize.width, aInSize.height), SurfaceFormat::B8G8R8A8);
-    RefPtr<gfx::DrawTarget> drawTarget =
-        gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(
-            aOutSize, SurfaceFormat::B8G8R8A8);
-    if (!drawTarget) {
-      return nullptr;
-    }
-
-    drawTarget->SetTransform(Matrix::Scaling(1.0, -1.0) *
-                             Matrix::Translation(0, aOutSize.height));
-
-    gfx::Rect srcRect(aInRegion.x,
-                      (aInSize.height - aInRegion.height) - aInRegion.y,
-                      aInRegion.width, aInRegion.height);
-    gfx::Rect destRect(0, 0, aOutSize.width, aOutSize.height);
-    drawTarget->DrawSurface(image, destRect, srcRect);
-
-    RefPtr<gfx::SourceSurface> snapshot = drawTarget->Snapshot();
-    RefPtr<gfx::DataSourceSurface> data = snapshot->GetDataSurface();
-    return data.forget();
-  }
 
   /**
    * Compositor methods
@@ -1349,7 +1326,7 @@ class LayerViewSupport final
       return;
     }
 
-    gkWindow->Resize(aLeft, aTop, aWidth, aHeight, /* repaint */ false);
+    gkWindow->DoResize(aLeft, aTop, aWidth, aHeight, /* repaint */ false);
   }
 
   void NotifyMemoryPressure() {
@@ -1435,6 +1412,7 @@ class LayerViewSupport final
     }
 
     if (auto lock{mWindow.Access()}) {
+      mPendingScreenPixelsRequest.DisconnectIfExists();
       while (!mCapturePixelsResults.empty()) {
         auto result =
             java::GeckoResult::LocalRef(mCapturePixelsResults.front().mResult);
@@ -1690,81 +1668,143 @@ class LayerViewSupport final
       return;
     }
 
-    int size = 0;
     if (auto window = mWindow.Access()) {
       mCapturePixelsResults.push(CaptureRequest(
           java::GeckoResult::GlobalRef(result),
           java::sdk::Bitmap::GlobalRef(java::sdk::Bitmap::LocalRef(aTarget)),
-          ScreenRect(aXOffset, aYOffset, aSrcWidth, aSrcHeight),
+          IntRect(aXOffset, aYOffset, aSrcWidth, aSrcHeight),
           IntSize(aOutWidth, aOutHeight)));
-      size = mCapturePixelsResults.size();
-    }
-
-    if (size == 1) {
-      mUiCompositorControllerChild->RequestScreenPixels();
+      if (mCapturePixelsResults.size() == 1) {
+        DoRequestScreenPixels();
+      }
     }
   }
 
-  void RecvScreenPixels(Shmem&& aMem, const ScreenIntSize& aSize,
-                        bool aNeedsYFlip) {
+  void DoRequestScreenPixels() {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-    CaptureRequest request;
-    java::GeckoResult::LocalRef result = nullptr;
-    java::sdk::Bitmap::LocalRef bitmap = nullptr;
-    if (auto window = mWindow.Access()) {
-      // The result might have been already rejected if the compositor was
-      // detached from the session
-      if (!mCapturePixelsResults.empty()) {
-        request = mCapturePixelsResults.front();
-        result = java::GeckoResult::LocalRef(request.mResult);
-        bitmap = java::sdk::Bitmap::LocalRef(request.mBitmap);
-        mCapturePixelsResults.pop();
+    MOZ_ASSERT(mUiCompositorControllerChild);
+
+    if (auto accwindow = mWindow.Access()) {
+      MOZ_ASSERT(!mCapturePixelsResults.empty());
+      const auto& request = mCapturePixelsResults.front();
+      mUiCompositorControllerChild
+          ->RequestScreenPixels(request.mSource, request.mOutputSize)
+          ->Then(GetCurrentSerialEventTarget(), __func__,
+                 [this, window = mWindow](
+                     UiCompositorControllerChild::ScreenPixelsPromise::
+                         ResolveOrRejectValue&& aValue) {
+                   if (auto accWindow = window.Access()) {
+                     mPendingScreenPixelsRequest.Complete();
+                     if (aValue.IsResolve()) {
+                       RecvScreenPixels(aValue.ResolveValue());
+                     } else {
+                       RecvScreenPixels(nullptr);
+                     }
+                     // If there are still outstanding requests then send the
+                     // next request to the compositor.
+                     if (!mCapturePixelsResults.empty()) {
+                       // If the compositor was lost we should have already
+                       // rejected all the results.
+                       MOZ_ASSERT(mUiCompositorControllerChild);
+                       if (mUiCompositorControllerChild) {
+                         DoRequestScreenPixels();
+                       }
+                     }
+                   }
+                 })
+          ->Track(mPendingScreenPixelsRequest);
+    }
+  }
+
+  void RecvScreenPixels(
+      RefPtr<mozilla::layers::AndroidHardwareBuffer> aHardwareBuffer) {
+    MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+    MOZ_RELEASE_ASSERT(!mCapturePixelsResults.empty());
+    const CaptureRequest request = mCapturePixelsResults.front();
+    mCapturePixelsResults.pop();
+    java::GeckoResult::LocalRef result = request.mResult;
+    java::sdk::Bitmap::LocalRef bitmap = request.mBitmap;
+
+    if (!aHardwareBuffer) {
+      result->CompleteExceptionally(
+          java::sdk::IllegalStateException::New(
+              "Failed to capture screen pixels (probably out of memory)")
+              .Cast<jni::Throwable>());
+      return;
+    }
+
+    if (!bitmap) {
+      result->CompleteExceptionally(java::sdk::IllegalArgumentException::New(
+                                        "No target bitmap argument provided")
+                                        .Cast<jni::Throwable>());
+      return;
+    }
+
+    JNIEnv* const env = jni::GetEnvForThread();
+    AndroidBitmapInfo info;
+    int res = AndroidBitmap_getInfo(env, bitmap.Get(), &info);
+    if (res < 0) {
+      result->CompleteExceptionally(
+          java::sdk::IllegalStateException::New(
+              "Failed to get Bitmap info for screen pixels")
+              .Cast<jni::Throwable>());
+      return;
+    }
+
+    MOZ_RELEASE_ASSERT(IntSize(info.width, info.height) ==
+                       aHardwareBuffer->mSize);
+    MOZ_RELEASE_ASSERT(info.format == ANDROID_BITMAP_FORMAT_RGBA_8888);
+    MOZ_RELEASE_ASSERT(aHardwareBuffer->mFormat == SurfaceFormat::R8G8B8A8);
+
+    UniqueFileHandle acquireFence = aHardwareBuffer->GetAndResetAcquireFence();
+    uint8_t* srcBuf;
+    res = AHardwareBuffer_lock(aHardwareBuffer->GetNativeBuffer(),
+                               AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN,
+                               acquireFence.release(), nullptr,
+                               reinterpret_cast<void**>(&srcBuf));
+    if (res < 0) {
+      result->CompleteExceptionally(
+          java::sdk::IllegalStateException::New(
+              "Failed to lock screen pixels HardwareBuffer")
+              .Cast<jni::Throwable>());
+      return;
+    }
+    auto hardwareBufferUnlock = MakeScopeExit([&]() {
+      AHardwareBuffer_unlock(aHardwareBuffer->GetNativeBuffer(), nullptr);
+    });
+
+    uint8_t* destBuf;
+    res = AndroidBitmap_lockPixels(env, bitmap.Get(),
+                                   reinterpret_cast<void**>(&destBuf));
+    if (res < 0) {
+      result->CompleteExceptionally(
+          java::sdk::IllegalStateException::New(
+              "Failed to get lock Bitmap for screen pixels")
+              .Cast<jni::Throwable>());
+      return;
+    }
+    auto bitmapUnlock =
+        MakeScopeExit([&]() { AndroidBitmap_unlockPixels(env, bitmap.Get()); });
+
+    // If the source and dest strides are equal we can do a single memcpy(),
+    // else we must copy row-by-row. It appears common for Hardware Buffers to
+    // have strides aligned to a certain value, whereas as bitmaps appear to be
+    // tightly packed. Note that AndroidBitmapInfo::stride is in bytes and
+    // AndroidHardwareBuffer::mStride is in pixels.
+    const int bpp = gfx::BytesPerPixel(aHardwareBuffer->mFormat);
+    if (info.stride == aHardwareBuffer->mStride * bpp) {
+      memcpy(destBuf, srcBuf, info.stride * info.height);
+    } else {
+      uint8_t* srcRow = srcBuf;
+      uint8_t* dstRow = destBuf;
+      for (uint32_t i = 0; i < info.height; i++) {
+        memcpy(dstRow, srcRow, info.width * bpp);
+        srcRow += aHardwareBuffer->mStride * bpp;
+        dstRow += info.stride;
       }
     }
 
-    if (result) {
-      if (bitmap) {
-        RefPtr<DataSourceSurface> surf;
-        if (aNeedsYFlip) {
-          surf = FlipScreenPixels(aMem, aSize, request.mSource,
-                                  request.mOutputSize);
-        } else {
-          surf = gfx::Factory::CreateWrappingDataSourceSurface(
-              aMem.get<uint8_t>(),
-              StrideForFormatAndWidth(SurfaceFormat::B8G8R8A8, aSize.width),
-              IntSize(aSize.width, aSize.height), SurfaceFormat::B8G8R8A8);
-        }
-        if (surf) {
-          DataSourceSurface::ScopedMap smap(surf, DataSourceSurface::READ);
-          auto pixels = mozilla::jni::ByteBuffer::New(
-              reinterpret_cast<int8_t*>(smap.GetData()),
-              smap.GetStride() * request.mOutputSize.height);
-          bitmap->CopyPixelsFromBuffer(pixels);
-          result->Complete(bitmap);
-        } else {
-          result->CompleteExceptionally(
-              java::sdk::IllegalStateException::New(
-                  "Failed to create flipped snapshot surface (probably out "
-                  "of memory)")
-                  .Cast<jni::Throwable>());
-        }
-      } else {
-        result->CompleteExceptionally(java::sdk::IllegalArgumentException::New(
-                                          "No target bitmap argument provided")
-                                          .Cast<jni::Throwable>());
-      }
-    }
-
-    // Pixels have been copied, so Dealloc Shmem
-    if (mUiCompositorControllerChild) {
-      mUiCompositorControllerChild->DeallocPixelBuffer(aMem);
-
-      if (auto window = mWindow.Access()) {
-        if (!mCapturePixelsResults.empty()) {
-          mUiCompositorControllerChild->RequestScreenPixels();
-        }
-      }
-    }
+    result->Complete(bitmap);
   }
 
   void EnableLayerUpdateNotifications(bool aEnable) {
@@ -1816,6 +1856,8 @@ void GeckoViewSupport::Open(
   // Might as well do that now so that the GPU process launch can get a head
   // start.
   gfxPlatform::GetPlatform();
+
+  mozilla::net::AsyncUrlChannelClassifier::WarmUp();
 
   nsCOMPtr<nsIWindowWatcher> ww = do_GetService(NS_WINDOWWATCHER_CONTRACTID);
   MOZ_RELEASE_ASSERT(ww);
@@ -2247,7 +2289,7 @@ nsWindow::~nsWindow() {
   ALOG("nsWindow %p destructor", (void*)this);
   // The mCompositorSession should have been cleaned up in nsWindow::Destroy()
   // DestroyLayerManager() will call DestroyCompositor() which will crash if
-  // called from nsBaseWidget destructor. See Bug 1392705
+  // called from nsIWidget destructor. See Bug 1392705
   MOZ_ASSERT(!mCompositorSession);
 }
 
@@ -2257,7 +2299,7 @@ bool nsWindow::IsTopLevel() {
 }
 
 nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
-                          InitData* aInitData) {
+                          const InitData& aInitData) {
   ALOG("nsWindow[%p]::Create %p [%d %d %d %d]", (void*)this, (void*)aParent,
        aRect.x, aRect.y, aRect.width, aRect.height);
 
@@ -2274,8 +2316,7 @@ nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
   mBounds = rect;
   SetSizeConstraints(SizeConstraints());
 
-  MOZ_DIAGNOSTIC_ASSERT(!aInitData ||
-                        aInitData->mWindowType != WindowType::Invisible);
+  MOZ_DIAGNOSTIC_ASSERT(aInitData.mWindowType != WindowType::Invisible);
 
   BaseCreate(aParent, aInitData);
   MOZ_ASSERT_IF(!IsTopLevel(), aParent);
@@ -2294,7 +2335,7 @@ nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
 void nsWindow::Destroy() {
   MutexAutoLock lock(mDestroyMutex);
 
-  nsBaseWidget::mOnDestroyCalled = true;
+  nsIWidget::mOnDestroyCalled = true;
 
   // Disassociate our native object from GeckoView.
   mGeckoViewSupport.Detach();
@@ -2304,15 +2345,15 @@ void nsWindow::Destroy() {
 
   // Ensure the compositor has been shutdown before this nsWindow is potentially
   // deleted
-  nsBaseWidget::DestroyCompositor();
+  nsIWidget::DestroyCompositor();
 
-  nsBaseWidget::Destroy();
+  nsIWidget::Destroy();
 
   if (IsTopLevel()) {
     gTopLevelWindows.RemoveElement(this);
   }
 
-  nsBaseWidget::OnDestroy();
+  nsIWidget::OnDestroy();
 
 #ifdef DEBUG_ANDROID_WIDGET
   DumpWindows();
@@ -2327,10 +2368,8 @@ mozilla::widget::EventDispatcher* nsWindow::GetEventDispatcher() const {
 }
 
 void nsWindow::RedrawAll() {
-  if (mAttachedWidgetListener) {
-    mAttachedWidgetListener->RequestRepaint();
-  } else if (mWidgetListener) {
-    mWidgetListener->RequestRepaint();
+  if (auto* ps = GetPresShell()) {
+    ps->SchedulePaint();
   }
 }
 
@@ -2474,7 +2513,7 @@ void nsWindow::Show(bool aState) {
 bool nsWindow::IsVisible() const { return mIsVisible; }
 
 void nsWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
-  ALOG("nsWindow[%p]::ConstrainPosition [%d %d]", (void*)this, aPoint.x.value,
+  ALOG("nsWindow[%p]::ConstrainPosition [%d %d]", this, aPoint.x.value,
        aPoint.y.value);
 
   // Constrain toplevel windows; children we don't care about
@@ -2483,19 +2522,25 @@ void nsWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
   }
 }
 
-void nsWindow::Move(double aX, double aY) {
-  if (IsTopLevel()) return;
+void nsWindow::Move(const DesktopPoint& aPoint) {
+  if (IsTopLevel()) {
+    return;
+  }
 
-  Resize(aX, aY, mBounds.width, mBounds.height, true);
+  DoResize(aPoint.x, aPoint.y, mBounds.width, mBounds.height, true);
 }
 
-void nsWindow::Resize(double aWidth, double aHeight, bool aRepaint) {
-  Resize(mBounds.x, mBounds.y, aWidth, aHeight, aRepaint);
+void nsWindow::Resize(const DesktopSize& aSize, bool aRepaint) {
+  DoResize(mBounds.x, mBounds.y, aSize.width, aSize.height, aRepaint);
 }
 
-void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
-                      bool aRepaint) {
-  ALOG("nsWindow[%p]::Resize [%f %f %f %f] (repaint %d)", (void*)this, aX, aY,
+void nsWindow::Resize(const DesktopRect& aRect, bool aRepaint) {
+  DoResize(aRect.x, aRect.y, aRect.width, aRect.height, aRepaint);
+}
+
+void nsWindow::DoResize(double aX, double aY, double aWidth, double aHeight,
+                        bool aRepaint) {
+  ALOG("nsWindow[%p]::DoResize [%f %f %f %f] (repaint %d)", this, aX, aY,
        aWidth, aHeight, aRepaint);
 
   LayoutDeviceIntRect oldBounds = mBounds;
@@ -2511,11 +2556,11 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
   bool needSizeDispatch = mBounds.Size() != oldBounds.Size();
 
   if (needSizeDispatch) {
-    OnSizeChanged(mBounds.Size().ToUnknownSize());
+    OnSizeChanged(mBounds.Size());
   }
 
   if (needPositionDispatch) {
-    NotifyWindowMoved(mBounds.x, mBounds.y);
+    NotifyWindowMoved(mBounds.TopLeft());
   }
 
   // Should we skip honoring aRepaint here?
@@ -2625,21 +2670,6 @@ LayoutDeviceIntPoint nsWindow::WidgetToScreenOffset() {
   return p;
 }
 
-nsresult nsWindow::DispatchEvent(WidgetGUIEvent* aEvent,
-                                 nsEventStatus& aStatus) {
-  aStatus = DispatchEvent(aEvent);
-  return NS_OK;
-}
-
-nsEventStatus nsWindow::DispatchEvent(WidgetGUIEvent* aEvent) {
-  if (mAttachedWidgetListener) {
-    return mAttachedWidgetListener->HandleEvent(aEvent, mUseAttachedEvents);
-  } else if (mWidgetListener) {
-    return mWidgetListener->HandleEvent(aEvent, mUseAttachedEvents);
-  }
-  return nsEventStatus_eIgnore;
-}
-
 nsresult nsWindow::MakeFullScreen(bool aFullScreen) {
   AssertIsOnMainThread();
 
@@ -2697,15 +2727,13 @@ void nsWindow::CreateLayerManager() {
               }
             });
       }
-
       return;
     }
-
-    // If we get here, then off main thread compositing failed to initialize.
-    sFailedToCreateGLContext = true;
   }
 
-  if (!ComputeShouldAccelerate() || sFailedToCreateGLContext) {
+  if (ComputeShouldAccelerate()) {
+    mWindowRenderer = CreateBackgroundedFallbackRenderer();
+  } else {
     printf_stderr(" -- creating basic, not accelerated\n");
     mWindowRenderer = CreateFallbackRenderer();
   }
@@ -2713,7 +2741,7 @@ void nsWindow::CreateLayerManager() {
 
 void nsWindow::NotifyCompositorSessionLost(
     mozilla::layers::CompositorSession* aSession) {
-  nsBaseWidget::NotifyCompositorSessionLost(aSession);
+  nsIWidget::NotifyCompositorSessionLost(aSession);
 
   DispatchToUiThread("nsWindow::NotifyCompositorSessionLost",
                      [lvs = mLayerViewSupport] {
@@ -2860,21 +2888,20 @@ void nsWindow::UpdateDragImage(java::sdk::Bitmap::LocalRef aBitmap) {
   }
 }
 
-void nsWindow::OnSizeChanged(const gfx::IntSize& aSize) {
+void nsWindow::OnSizeChanged(const LayoutDeviceIntSize& aSize) {
   ALOG("nsWindow: %p OnSizeChanged [%d %d]", (void*)this, aSize.width,
        aSize.height);
 
   if (mWidgetListener) {
-    mWidgetListener->WindowResized(this, aSize.width, aSize.height);
+    mWidgetListener->WindowResized(this, aSize);
   }
 
   if (mAttachedWidgetListener) {
-    mAttachedWidgetListener->WindowResized(this, aSize.width, aSize.height);
+    mAttachedWidgetListener->WindowResized(this, aSize);
   }
 
   if (mCompositorWidgetDelegate) {
-    mCompositorWidgetDelegate->NotifyClientSizeChanged(
-        LayoutDeviceIntSize::FromUnknownSize(aSize));
+    mCompositorWidgetDelegate->NotifyClientSizeChanged(aSize);
   }
 }
 
@@ -2953,20 +2980,6 @@ void* nsWindow::GetNativeData(uint32_t aDataType) {
   }
 
   return nullptr;
-}
-
-void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
-  if (aEvent.mMessage == eTouchStart && aEvent.mTouches.Length() == 1) {
-    // Since touch events don't get retargeted by PositionedEventTargeting.cpp
-    // code, we dispatch a dummy mouse event that *does* get retargeted.
-    // Front-end code can use this to activate the highlight element in case
-    // this touchstart is the start of a tap.
-    WidgetMouseEvent hittest(true, eMouseHitTest, this,
-                             WidgetMouseEvent::eReal);
-    hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;
-    nsEventStatus status;
-    DispatchEvent(&hittest, status);
-  }
 }
 
 void nsWindow::PassExternalResponse(java::WebResponse::Param aResponse) {
@@ -3080,6 +3093,18 @@ InputContext nsWindow::GetInputContext() {
   // We let the top window process SetInputContext,
   // so we should let it process GetInputContext as well.
   return acc->GetInputContext();
+}
+
+void nsWindow::PostHandleKeyEvent(mozilla::WidgetKeyboardEvent* aEvent) {
+  nsWindow* top = FindTopLevel();
+  MOZ_ASSERT(top);
+
+  auto acc(top->mEditableSupport.Access());
+  if (!acc) {
+    return;
+  }
+
+  return acc->PostHandleKeyEvent(aEvent);
 }
 
 nsresult nsWindow::SynthesizeNativeTouchPoint(
@@ -3249,7 +3274,7 @@ uint32_t nsWindow::GetMaxTouchPoints() const {
 void nsWindow::UpdateZoomConstraints(
     const uint32_t& aPresShellId, const ScrollableLayerGuid::ViewID& aViewId,
     const mozilla::Maybe<ZoomConstraints>& aConstraints) {
-  nsBaseWidget::UpdateZoomConstraints(aPresShellId, aViewId, aConstraints);
+  nsIWidget::UpdateZoomConstraints(aPresShellId, aViewId, aConstraints);
 }
 
 CompositorBridgeChild* nsWindow::GetCompositorBridgeChild() const {
@@ -3296,15 +3321,6 @@ void nsWindow::NotifyCompositorScrollUpdate(
         aUpdate.mMetrics.mVisualScrollOffset.x,
         aUpdate.mMetrics.mVisualScrollOffset.y, aUpdate.mMetrics.mZoom.scale,
         ConvertScrollUpdateSource(aUpdate.mSource));
-  }
-}
-
-void nsWindow::RecvScreenPixels(Shmem&& aMem, const ScreenIntSize& aSize,
-                                bool aNeedsYFlip) {
-  MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-  if (::mozilla::jni::NativeWeakPtr<LayerViewSupport>::Accessor lvs{
-          mLayerViewSupport.Access()}) {
-    lvs->RecvScreenPixels(std::move(aMem), aSize, aNeedsYFlip);
   }
 }
 
@@ -3506,10 +3522,6 @@ static int32_t GetCursorType(nsCursor aCursor) {
 }
 
 void nsWindow::SetCursor(const Cursor& aCursor) {
-  if (mozilla::jni::GetAPIVersion() < 24) {
-    return;
-  }
-
   // Only change cursor if it's actually been changed
   if (!mUpdateCursor && mCursor == aCursor) {
     return;

@@ -15,13 +15,26 @@ generate:
         symbol: doc(generate)
         kind: test
         tier: 1
+    run-on-repo-type: [hg]
     run-on-projects: ['trunk']
-    worker-type: b-linux-medium-gcp
+    worker-type: b-linux-medium
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 1800
         env:
             LC_ALL: C
+            # Define various variables to make the generation happy and not
+            # output `KeyError`s.
+            #
+            # This occurs when sphinx is processing some of the python, and
+            # there is processing going on at the top level. It shows up in
+            # automation because there's no build environment setup, and so
+            # the python code can't work out what these variables should be.
+            # Hence in defining them here we can work around the issue.
+            OS_TARGET: Linux
+            BIN_SUFFIX: ""
+            DLL_PREFIX: ""
+            DLL_SUFFIX: ""
         artifacts:
             - type: file
               name: public/docs.tar.gz
@@ -39,7 +52,7 @@ generate:
             ./mach doc --outdir docs-out --no-open --no-serve --archive --dump-trees=/builds/worker/artifacts/trees.json
         sparse-profile: sphinx-docs
     optimization:
-        skip-unless-schedules: [docs]
+        docs: null
     fetches:
         toolchain:
             - linux64-node
@@ -57,13 +70,25 @@ upload:
         kind: test
         tier: 2
     run-on-projects: [mozilla-central-only]
-    worker-type: b-linux-medium-gcp
+    worker-type: b-linux-medium
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 2400
         env:
             LC_ALL: C
             MOZ_SOURCE_DOCS_USE_GOOGLE: "1"
+            # Define various variables to make the generation happy and not
+            # output `KeyError`s.
+            #
+            # This occurs when sphinx is processing some of the python, and
+            # there is processing going on at the top level. It shows up in
+            # automation because there's no build environment setup, and so
+            # the python code can't work out what these variables should be.
+            # Hence in defining them here we can work around the issue.
+            OS_TARGET: Linux
+            BIN_SUFFIX: ""
+            DLL_PREFIX: ""
+            DLL_SUFFIX: ""
         taskcluster-proxy: true
         artifacts:
             - type: file
@@ -84,7 +109,7 @@ upload:
     scopes:
         - secrets:get:project/releng/gecko/build/level-{level}/gecko-docs-upload
     optimization:
-        skip-unless-schedules: [docs]
+        docs: null
     fetches:
         toolchain:
             - linux64-node

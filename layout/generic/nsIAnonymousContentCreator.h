@@ -9,8 +9,8 @@
  * anonymous content
  */
 
-#ifndef nsIAnonymousContentCreator_h___
-#define nsIAnonymousContentCreator_h___
+#ifndef nsIAnonymousContentCreator_h_
+#define nsIAnonymousContentCreator_h_
 
 #include "X11UndefineNone.h"
 #include "mozilla/AnonymousContentKey.h"

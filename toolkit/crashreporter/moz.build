@@ -10,14 +10,12 @@ with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
 
 EXPORTS += [
-    "!CrashAnnotations.h",
     "nsExceptionHandler.h",
 ]
 
 JAR_MANIFESTS += ["jar.mn"]
 
 UNIFIED_SOURCES = [
-    "CrashAnnotations.cpp",
     "ExtraFileParser.cpp",
     "nsExceptionHandlerUtils.cpp",
 ]
@@ -29,6 +27,8 @@ PREPROCESSED_IPDL_SOURCES = [
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
+
+DIRS += ["annotations"]
 
 if CONFIG["MOZ_CRASHREPORTER"]:
     if CONFIG["OS_ARCH"] != "WINNT":
@@ -77,13 +77,14 @@ if CONFIG["MOZ_CRASHREPORTER"]:
             "networking",
         ]
     else:
-        DIRS += ["minidump-analyzer/android"]
+        DIRS += ["android"]
 
     DIRS += [
         "breakpad_wrapper",
         "crash_helper",
         "crash_helper_client",
         "crash_helper_server",
+        "crashping",
         "mozannotation_client",
     ]
 
@@ -106,7 +107,6 @@ if CONFIG["MOZ_CRASHREPORTER"]:
     if CONFIG["OS_TARGET"] == "Android":
         DEFINES["ANDROID_NDK_MAJOR_VERSION"] = CONFIG["ANDROID_NDK_MAJOR_VERSION"]
         DEFINES["ANDROID_NDK_MINOR_VERSION"] = CONFIG["ANDROID_NDK_MINOR_VERSION"]
-        DEFINES["ANDROID_PACKAGE_NAME"] = '"%s"' % CONFIG["ANDROID_PACKAGE_NAME"]
         LOCAL_INCLUDES += [
             "/toolkit/crashreporter/google-breakpad/src/common/android/include",
         ]
@@ -141,17 +141,6 @@ else:
     UNIFIED_SOURCES += [
         "nsDummyExceptionHandler.cpp",
     ]
-
-# Generate CrashAnnotations.h
-GeneratedFile(
-    "CrashAnnotations.h",
-    script="generate_crash_reporter_sources.py",
-    entry_point="emit_header",
-    inputs=[
-        "CrashAnnotations.h.in",
-        "CrashAnnotations.yaml",
-    ],
-)
 
 with Files("**"):
     BUG_COMPONENT = ("Toolkit", "Crash Reporting")

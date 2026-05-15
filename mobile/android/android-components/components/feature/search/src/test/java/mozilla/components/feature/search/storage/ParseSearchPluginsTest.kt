@@ -7,6 +7,7 @@ package mozilla.components.feature.search.storage
 import android.text.TextUtils
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.feature.search.middleware.SearchExtraParams
+import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -24,7 +25,7 @@ class ParseSearchPluginsTest(private val searchEngineIdentifier: String) {
     @Throws(Exception::class)
     fun parserNoSearchExtraParams() {
         val stream = FileInputStream(File(basePath, searchEngineIdentifier))
-        val searchEngine = SearchEngineReader(type = SearchEngine.Type.BUNDLED)
+        val searchEngine = SearchEngineReader(context = testContext, type = SearchEngine.Type.BUNDLED)
             .loadStream(searchEngineIdentifier, stream)
 
         assertEquals(searchEngineIdentifier, searchEngine.id)
@@ -58,6 +59,7 @@ class ParseSearchPluginsTest(private val searchEngineIdentifier: String) {
         )
         val searchEngine =
             SearchEngineReader(
+                context = testContext,
                 type = SearchEngine.Type.BUNDLED,
                 searchExtraParams = searchExtraParams,
             ).loadStream(

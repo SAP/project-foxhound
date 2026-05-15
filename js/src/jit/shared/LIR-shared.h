@@ -7,7 +7,6 @@
 #ifndef jit_shared_LIR_shared_h
 #define jit_shared_LIR_shared_h
 
-#include "mozilla/Maybe.h"
 #include "jit/AtomicOp.h"
 #include "jit/shared/Assembler-shared.h"
 #include "util/Memory.h"
@@ -835,18 +834,13 @@ class LWasmCallIndirectAdjunctSafepoint : public LInstructionHelper<0, 0, 0> {
 // dual-call construction is only meaningful for wasm because wasm has no
 // invalidation of code; this is not a pattern to be used generally.
 class LWasmCall : public LVariadicInstruction<0, 0> {
-  bool needsBoundsCheck_;
-  mozilla::Maybe<uint32_t> tableSize_;
   LWasmCallIndirectAdjunctSafepoint* adjunctSafepoint_;
 
  public:
   LIR_HEADER(WasmCall);
 
-  LWasmCall(uint32_t numOperands, bool needsBoundsCheck,
-            mozilla::Maybe<uint32_t> tableSize = mozilla::Nothing())
+  explicit LWasmCall(uint32_t numOperands)
       : LVariadicInstruction(classOpcode, numOperands),
-        needsBoundsCheck_(needsBoundsCheck),
-        tableSize_(tableSize),
         adjunctSafepoint_(nullptr) {
     this->setIsCall();
   }
@@ -883,8 +877,6 @@ class LWasmCall : public LVariadicInstruction<0, 0> {
     return !reg.isFloat() && reg.gpr() == InstanceReg;
   }
 
-  bool needsBoundsCheck() const { return needsBoundsCheck_; }
-  mozilla::Maybe<uint32_t> tableSize() const { return tableSize_; }
   LWasmCallIndirectAdjunctSafepoint* adjunctSafepoint() const {
     MOZ_ASSERT(adjunctSafepoint_ != nullptr);
     return adjunctSafepoint_;
@@ -917,14 +909,14 @@ class LWasmRegisterPairResult : public LInstructionHelper<2, 0, 0> {
   MDefinition* mir() const { return mirRaw(); }
 };
 
-class LWasmBuiltinFloatRegisterResult : public LInstructionHelper<1, 0, 0> {
+class LWasmSystemFloatRegisterResult : public LInstructionHelper<1, 0, 0> {
  public:
-  LIR_HEADER(WasmBuiltinFloatRegisterResult);
+  LIR_HEADER(WasmSystemFloatRegisterResult);
 
-  LWasmBuiltinFloatRegisterResult() : LInstructionHelper(classOpcode) {}
+  LWasmSystemFloatRegisterResult() : LInstructionHelper(classOpcode) {}
 
-  MWasmBuiltinFloatRegisterResult* mir() const {
-    return mir_->toWasmBuiltinFloatRegisterResult();
+  MWasmSystemFloatRegisterResult* mir() const {
+    return mir_->toWasmSystemFloatRegisterResult();
   }
 };
 
@@ -1077,6 +1069,14 @@ const char* LCompareI64AndBranch::extraName() const { return CodeName(jsop_); }
 
 const char* LCompareAndBranch::extraName() const { return CodeName(jsop_); }
 
+const char* LStrictConstantCompareInt32AndBranch::extraName() const {
+  return CodeName(cmpMir()->jsop());
+}
+
+const char* LStrictConstantCompareBooleanAndBranch::extraName() const {
+  return CodeName(cmpMir()->jsop());
+}
+
 const char* LMathFunctionD::extraName() const {
   return MMathFunction::FunctionName(mir()->function());
 }
@@ -1098,6 +1098,10 @@ const char* LArrayPopShift::extraName() const {
 }
 
 const char* LMinMaxI::extraName() const {
+  return mir()->isMax() ? "Max" : "Min";
+}
+
+const char* LMinMaxIntPtr::extraName() const {
   return mir()->isMax() ? "Max" : "Min";
 }
 
@@ -1146,6 +1150,8 @@ const char* LBitOpI::extraName() const {
 const char* LBitOpI64::extraName() const { return CodeName(bitop_); }
 
 const char* LShiftI::extraName() const { return CodeName(bitop_); }
+
+const char* LShiftIntPtr::extraName() const { return CodeName(bitop_); }
 
 const char* LShiftI64::extraName() const { return CodeName(bitop_); }
 

@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = Tilpass
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Ignorer
+    .aria-label = Ignorer
 
 ## Search box component.
 
@@ -56,6 +59,9 @@ newtab-topsites-add-shortcut-header = Ny snarveg
 newtab-topsites-edit-topsites-header = Rediger Mest besøkt
 newtab-topsites-edit-shortcut-header = Rediger snarveg
 newtab-topsites-add-shortcut-label = Legg til snarveg
+newtab-topsites-add-shortcut-title =
+    .title = Legg til snarveg
+    .aria-label = Legg til snarveg
 newtab-topsites-title-label = Tittel
 newtab-topsites-title-input =
     .placeholder = Skriv inn ein tittel
@@ -84,6 +90,14 @@ newtab-confirm-delete-history-p2 = Denne handlinga kan ikkje angrast.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponsa
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (festa)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -141,7 +155,7 @@ newtab-privacy-modal-button-done = Ferdig
 newtab-privacy-modal-button-manage = Handsam innstillingar for sponsa innhald
 newtab-privacy-modal-header = Personvernet ditt er viktig.
 newtab-privacy-modal-paragraph-2 =
-    I tillegg til å servere fengslande historier, viser vi deg også relevant og
+    I tillegg til å servere fengslande artiklar, viser vi deg også relevant og
     høgt kontrollert innhald frå utvalde sponsorar. Du kan vere sikker på, <strong>at surfedata dine
     aldri forlèt det personlege eksemplaret ditt av  { -brand-product-name }</strong> — vi ser dei ikkje, og sponsorane våre ser dei ikkje heller.
 newtab-privacy-modal-link = Lær deg korleis personvernet fungerer på den nye fana
@@ -209,7 +223,7 @@ newtab-section-menu-add-topsite = Legg til mest besøkte
 newtab-section-menu-add-search-engine = Legg til søkjemotor
 newtab-section-menu-move-up = Flytt opp
 newtab-section-menu-move-down = Flytt ned
-newtab-section-menu-privacy-notice = Personvernpraksis
+newtab-section-menu-privacy-notice = Personvernfråsegn
 
 ## Section aria-labels
 
@@ -307,19 +321,32 @@ newtab-custom-pocket-subtitle = Eksepsjonelt innhald sett saman av { -pocket-bra
 newtab-custom-stories-toggle =
     .label = Tilrådde artiklar
     .description = Eineståande innhald utvalt av { -brand-product-name } familien
+newtab-custom-stories-personalized-toggle =
+    .label = Artiklar
+newtab-custom-stories-personalized-checkbox-label = Personlege artiklar basert på aktiviteten din
 newtab-custom-pocket-sponsored = Sponsa historier
 newtab-custom-pocket-show-recent-saves = Vis siste lagra
 newtab-custom-recent-title = Nyleg aktivitet
 newtab-custom-recent-subtitle = Eit utval av nylege nettstadar og innhald
-newtab-custom-recent-toggle =
-    .label = Nyleg aktivitet
-    .description = Eit utval av nylege nettstadar og innhald
 newtab-custom-weather-toggle =
     .label = Vêr
     .description = Dagens vêrmelding i korte trekk
-newtab-custom-trending-search-toggle =
-    .label = Populære søk
-    .description = Populære og ofte søkte emne
+newtab-custom-widget-weather-toggle =
+    .label = Vêr
+newtab-custom-widget-lists-toggle =
+    .label = Lister
+newtab-custom-widget-timer-toggle =
+    .label = Nedteljing
+newtab-custom-widget-section-title = Widgetar
+newtab-custom-widget-section-toggle =
+    .label = Widgetar
+newtab-widget-manage-title = Widgetar
+newtab-widget-manage-widget-button =
+    .label = Handsam widgetar
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Lat att
+    .aria-label = Lat att meny
 newtab-custom-close-button = Lat att
 newtab-custom-settings = Handsam fleire innstillingar
 
@@ -332,6 +359,7 @@ newtab-wallpaper-custom-color = Vel ein farge
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Bildet overskreid filstorleiksgrensa på { $file_size }MB. Prøv å laste opp ei mindre fil.
+newtab-wallpaper-error-upload-file-type = Vi klarte ikkje å laste opp fila di. Prøv igjen med ei bildefil.
 newtab-wallpaper-error-file-type = Vi klarte ikkje å laste opp fila di. Prøv igjen med ein annan filtype.
 newtab-wallpaper-light-red-panda = Raudpanda
 newtab-wallpaper-light-mountain = Kvitt fjell
@@ -381,7 +409,7 @@ newtab-wallpaper-abstract-purple-green = Fargeovergang med lilla og grønt lys
 newtab-wallpaper-abstract-blue-purple-waves = Blå og lilla bølgjeformer
 newtab-wallpaper-abstract-black-waves = Svarte bølgjeformer
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografi
 newtab-wallpaper-beach-at-sunrise = Strand ved soloppgang
@@ -411,6 +439,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -437,8 +469,9 @@ newtab-weather-menu-change-location = Endre plassering
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Søk plassering
     .aria-label = Søk plassering
-newtab-weather-change-location-search-input = Søk plassering
 newtab-weather-menu-weather-display = Vêrvising
+newtab-weather-todays-forecast = Vêrmeldinga i dag.
+newtab-weather-see-full-forecast = Sjå fullstendig vêrmelding
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -451,10 +484,24 @@ newtab-weather-menu-temperature-option-fahrenheit = Fahrenheit
 newtab-weather-menu-temperature-option-celsius = Celsius
 newtab-weather-menu-change-temperature-units-fahrenheit = Byt til Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Byt til Celsius
+newtab-weather-menu-hide-weather-v2 = Skjul vêr
 newtab-weather-menu-hide-weather = Skjul vêret på ny fane
 newtab-weather-menu-learn-more = Les meir
+newtab-weather-menu-detect-my-location = Oppdag posisjonen min
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Vêrdata er ikkje tilgjengeleg akkurat no.
+newtab-weather-opt-in-see-weather = Vil du sjå vêret for plasseringa di?
+newtab-weather-opt-in-not-now =
+    .label = Ikkje no
+newtab-weather-opt-in-yes =
+    .label = Ja
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Sjå vêrmelding hos { $provider }.
+    .aria-description = { $provider } ∙ Sponsa
 
 ## Topic Labels
 
@@ -538,6 +585,12 @@ newtab-custom-wallpaper-title = No får du tilpassa bakgrunnsbilde
 newtab-custom-wallpaper-subtitle = Last opp ditt eige bakgrunnsbilde eller vel ein farge for å gjere { -brand-product-name } til din.
 newtab-custom-wallpaper-cta = Prøv det
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Vel eit bakgrunnsbilde for å gjere { -brand-product-name } til din eigen
+newtab-new-user-custom-wallpaper-subtitle = Få kvar nye fane til å kjennast som heime med tilpassa bakgrunnar og fargar.
+newtab-new-user-custom-wallpaper-cta = Prøv det no
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Last ned { -brand-product-name } for mobil
@@ -553,7 +606,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Dine favorittar lett tilgjengelege
 newtab-shortcuts-highlight-subtitle = Legg til ein snarveg for å ha favorittnettstadane dine eitt klikk unna.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Kvifor rapporterer du dette?
@@ -570,21 +623,120 @@ newtab-report-content-outdated =
 newtab-report-content-inappropriate-offensive =
     .label = Upassande eller krenkande
 newtab-report-content-spam-misleading =
-    .label = Spam eller villeiande
+    .label = Søppelpost eller villeiande
+newtab-report-content-requires-payment-subscription =
+    .label = Krev betaling eller abonnement
+newtab-report-content-requires-payment-subscription-learn-more = Les meir
 newtab-report-cancel = Avbryt
 newtab-report-submit = Send inn
 newtab-toast-thanks-for-reporting =
     .message = Takk for at du rapporterte dette.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Populært på Google
-newtab-trending-searches-show-trending =
-    .title = Vis populære søk
-newtab-trending-searches-hide-trending =
-    .title = Skjul populære søk
-newtab-trending-searches-learn-more = Les meir
-newtab-trending-searches-dismiss = Skjul populære søk
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Populære søk
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Moglegheitene er uendelege. Legg til éi.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Ny
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Fullført ({ $number })
+newtab-widget-task-list-menu-copy = Kopier
+newtab-widget-lists-menu-edit = Rediger listenamn
+newtab-widget-lists-menu-create = Opprett ei ny liste
+newtab-widget-lists-menu-delete = Slett denne lista
+newtab-widget-lists-menu-copy = Kopier liste til utklippstavla
+newtab-widget-lists-menu-hide = Skjul alle lister
+newtab-widget-lists-menu-learn-more = Les meir
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Legg til eit element
+newtab-widget-lists-input-error = Legg til tekst for å leggje til eit element.
+newtab-widget-lists-input-menu-open-link = Opne lenke
+newtab-widget-lists-input-menu-move-up = Flytt opp
+newtab-widget-lists-input-menu-move-down = Flytt ned
+newtab-widget-lists-input-menu-delete = Slett
+newtab-widget-lists-input-menu-edit = Rediger
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Lag ei ny liste
+newtab-widget-lists-name-label-default =
+    .label = Oppgåveliste
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Oppgåveliste
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Ny liste
+newtab-widget-section-title = Widgetar
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Skjul widgetar
+    .aria-label = Skjul alle widgetar
+newtab-widget-section-maximize =
+    .title = Utvid widgetar
+    .aria-label = Utvid alle widgetar til full størrelse
+newtab-widget-section-minimize =
+    .title = Minimer widgetar
+    .aria-label = Slå saman alle widgetar til kompakt størrelse
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Nedteljing
+newtab-widget-timer-notification-focus = Fokustida er over. Bra jobba. Treng du ein pause?
+newtab-widget-timer-notification-break = Pausen din er over. Klar til å fokusere?
+newtab-widget-timer-notification-warning = Varsel er av
+newtab-widget-timer-mode-focus =
+    .label = Fokus
+newtab-widget-timer-mode-break =
+    .label = Pause
+newtab-widget-timer-label-play =
+    .label = Spel av
+newtab-widget-timer-label-pause =
+    .label = Pause
+newtab-widget-timer-reset =
+    .title = Tilbakestill
+newtab-widget-timer-menu-notifications = Slå av varsel
+newtab-widget-timer-menu-notifications-on = Slå på varsel
+newtab-widget-timer-menu-hide = Skjul nedteljar
+newtab-widget-timer-menu-learn-more = Les meir
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Toppoverskrifter
+newtab-daily-briefing-card-menu-dismiss = Ignorer
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = Oppdatert for { $minutes } minutt sidan
+newtab-widget-message-title = Hald fokus med lister og ein innebygd nedteljar
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Frå kjappe påminningar til daglege gjeremål, fokuserte arbeidsøkter til strekkpausar — hald deg til oppgåva og tidsplanen.
+newtab-promo-card-title = Støtt { -brand-product-name }
+newtab-promo-card-body = Sponsorane våre støttar oppdraget vårt om å byggje eit betre internett
+newtab-promo-card-cta = Les meir
+newtab-promo-card-dismiss-button =
+    .title = Avvis
+    .aria-label = Avvis
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Ignorer
+    .aria-label = Ignorer
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Gjer dette området til ditt eige
+newtab-activation-window-message-customization-focus-message = Vel eit nytt bakgrunnsbilde, legg til snarvegar til favorittnettstadane dine, og hald deg oppdatert på artiklar som interesserer deg.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Start tilpassing
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Dette området følgjer reglane dine
+newtab-activation-window-message-values-focus-message = { -brand-product-name } lèt deg surfe slik du vil, med ein meir personleg måte å starte dagen din på nettet. Gjer { -brand-product-name } til ditt eige.

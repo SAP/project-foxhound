@@ -21,5 +21,4 @@ class ManifestFront extends FrontClassWithSpec(manifestSpec) {
   }
 }
 
-exports.ManifestFront = ManifestFront;
 registerFront(ManifestFront);

@@ -28,7 +28,7 @@ if (AppConstants.MOZ_BITS_DOWNLOAD) {
     lazy,
     "gBits",
     "@mozilla.org/bits;1",
-    "nsIBits"
+    Ci.nsIBits
   );
 }
 
@@ -264,6 +264,7 @@ export class BitsRequest {
     this._status = this._request.status;
     this._bitsId = this._request.bitsId;
     this._transferError = this._request.transferError;
+    this._transferErrorCode = this._request.transferErrorCode;
 
     this._request = null;
   }
@@ -388,20 +389,33 @@ export class BitsRequest {
    * a BitsError object, or null.
    */
   get transferError() {
-    let result;
+    let bitsErrorType;
+    let bitsErrorCode;
     if (this._request) {
-      result = this._request.transferError;
+      bitsErrorType = this._request.transferError;
+      bitsErrorCode = this._request.transferErrorCode;
     } else {
-      result = this._transferError;
+      bitsErrorType = this._transferError;
+      bitsErrorCode = this._transferErrorCode;
     }
-    if (result == Ci.nsIBits.ERROR_TYPE_SUCCESS) {
+
+    if (bitsErrorType == Ci.nsIBits.ERROR_TYPE_SUCCESS) {
       return null;
     }
+
+    let bitsErrorCodeType;
+    if (bitsErrorCode) {
+      bitsErrorCodeType = Ci.nsIBits.ERROR_CODE_TYPE_HRESULT;
+    } else {
+      bitsErrorCodeType = Ci.nsIBits.ERROR_CODE_TYPE_NONE;
+    }
+
     return new BitsError(
-      result,
+      bitsErrorType,
       Ci.nsIBits.ERROR_ACTION_NONE,
       Ci.nsIBits.ERROR_STAGE_MONITOR,
-      Ci.nsIBits.ERROR_CODE_TYPE_NONE
+      bitsErrorCodeType,
+      bitsErrorCode
     );
   }
 

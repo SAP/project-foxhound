@@ -15,7 +15,9 @@
 
 <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 <script>
+  // eslint-disable-next-line no-unused-vars
   var wasRun = false;
+  // eslint-disable-next-line no-unused-vars
   var hasThrown = false;
   window.onerror = handleError;
 
@@ -26,6 +28,7 @@
 </script>
 
 <script type="module">
+  /* global wasRun */
   ok(import.meta.resolve("simple") ==
      "chrome://mochitests/content/chrome/dom/base/test/jsmodules/importmaps/module_simpleExport.mjs",
      "calling import.meta.resolve with a specifier from import map.");
@@ -40,7 +43,9 @@
 <script>
   SimpleTest.waitForExplicitFinish();
 
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
+    /* global wasRun, hasThrown */
     ok(wasRun, "Check inline module has run.");
     ok(hasThrown, "Check inline module has thrown.");
     SimpleTest.finish();

@@ -113,9 +113,6 @@ newtab-menu-delete-pocket = Ջնջել { -pocket-brand-name }-ից
 newtab-menu-archive-pocket = Արխիւացնել { -pocket-brand-name }-ում
 newtab-menu-show-privacy-info = Մեր հովանաւորները եւ Ձեր գաղտնիութիւնը
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
 newtab-privacy-modal-button-done = Արուած
@@ -230,12 +227,6 @@ newtab-pocket-cta-button = Ստանալ { -pocket-brand-name }
 newtab-pocket-cta-text = Խնայեք Ձեր սիրած պատմութիւնները { -pocket-brand-name }, եւ Ձեր միտքը վառեցրեք հետաքրքրաշարժ ընթերցանութեամբ։
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } պատկանում է { -brand-product-name } ընտանիքին
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -262,60 +253,5 @@ newtab-custom-pocket-subtitle = Բացառիկ բովանդակութիւն, ո�
 newtab-custom-pocket-sponsored = Հովանաւորուած պատմութիւններ
 newtab-custom-recent-title = Վերջին գործողութիւնը
 newtab-custom-recent-subtitle = Վերջին կայքերի եւ բովանդակութեան ընտրութիւն
-newtab-custom-recent-toggle =
-    .label = Վերջին գործողութիւնը
-    .description = Վերջին կայքերի եւ բովանդակութեան ընտրութիւն
 newtab-custom-close-button = Փակել
 newtab-custom-settings = Կառավարէք աւելի շատ կարգաւորումներ
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

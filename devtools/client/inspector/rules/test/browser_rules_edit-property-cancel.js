@@ -71,9 +71,49 @@ add_task(async function () {
     "#00F background color is set."
   );
 
-  is(
-    propEditor.warning.hidden,
-    true,
-    "warning icon is hidden after cancelling the edit"
+  ok(!propEditor.warning, "warning icon is hidden after cancelling the edit");
+});
+
+const TEST_URI_BLUR = `
+  <style type='text/css'>
+  #testid {
+    background-color: #CFF;
+  }
+  </style>
+  <input id='testid'></div>
+`;
+
+add_task(async function testCancelOnBlur() {
+  await addTab(
+    "data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI_BLUR)
   );
+
+  info("Initially move the focus in the input");
+  Services.focus.setFocus(gBrowser.selectedBrowser, Services.focus.FLAG_BYKEY);
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
+    const input = content.document.querySelector("input");
+    Services.focus.setFocus(input, Services.focus.FLAG_BYKEY);
+  });
+
+  info("Open DevTools and start editing a value in the rule view");
+  const { inspector, view } = await openRuleView({ overrideDebounce: false });
+  await selectNode("#testid", inspector);
+  const prop = getTextProperty(view, 1, { "background-color": "#CFF" });
+  const propEditor = prop.editor;
+  await focusEditableField(view, propEditor.valueSpan);
+
+  // Note: Using Services.focus here, but in theory this is more likely to be
+  // triggered via a click in the content page. But our various helpers to
+  // simulate events don't seem to trigger the expected blur from DevTools.
+  info("Move the focus back to the content page");
+  const onRuleviewChanged = view.once("ruleview-changed");
+  Services.focus.setFocus(gBrowser.selectedBrowser, Services.focus.FLAG_BYKEY);
+  await onRuleviewChanged;
+  await wait(1000);
+
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
+    const input = content.document.querySelector("input");
+    ok(content.document.hasFocus(), "The content document is still focused");
+    is(content.document.activeElement, input, "The input is still focused");
+  });
 });

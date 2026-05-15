@@ -439,6 +439,14 @@ struct BranchHintCollection {
 
 enum class GlobalKind { Import, Constant, Variable };
 
+struct GlobalType {
+  ValType type;
+  bool isMutable = false;
+
+  GlobalType() = default;
+  GlobalType(ValType type, bool isMutable) : type(type), isMutable(isMutable) {}
+};
+
 // A GlobalDesc describes a single global variable.
 //
 // wasm can import and export mutable and immutable globals.
@@ -480,12 +488,12 @@ class GlobalDesc {
     }
   }
 
-  explicit GlobalDesc(ValType type, bool isMutable, uint32_t importIndex,
+  explicit GlobalDesc(const GlobalType& type, uint32_t importIndex,
                       ModuleKind kind = ModuleKind::Wasm)
       : kind_(GlobalKind::Import) {
-    initial_ = InitExpr(LitVal(type));
+    initial_ = InitExpr(LitVal(type.type));
     importIndex_ = importIndex;
-    isMutable_ = isMutable;
+    isMutable_ = type.isMutable;
     isWasm_ = kind == Wasm;
     isExport_ = false;
     offset_ = UINT32_MAX;
@@ -796,16 +804,20 @@ struct Limits {
   // memories.
   Shareable shared;
 
-  WASM_CHECK_CACHEABLE_POD(addressType, initial, maximum, shared);
+  // `pageSize` is used only for memories. Defaults to the standard page size
+  // but may be set to other values with the custom page size proposal.
+  PageSize pageSize = PageSize::Standard;
+
+  WASM_CHECK_CACHEABLE_POD(addressType, initial, maximum, shared, pageSize);
 
   Limits() = default;
-  explicit Limits(uint64_t initial,
-                  const mozilla::Maybe<uint64_t>& maximum = mozilla::Nothing(),
-                  Shareable shared = Shareable::False)
+  Limits(uint64_t initial, const mozilla::Maybe<uint64_t>& maximum,
+         Shareable shared, PageSize pageSize)
       : addressType(AddressType::I32),
         initial(initial),
         maximum(maximum),
-        shared(shared) {}
+        shared(shared),
+        pageSize(pageSize) {}
 };
 
 WASM_DECLARE_CACHEABLE_POD(Limits);
@@ -825,34 +837,34 @@ struct MemoryDesc {
   // Whether a backing store for this memory may move when grown.
   bool canMovingGrow() const { return limits.maximum.isNothing(); }
 
-  // Whether the bounds check limit (see the doc comment in
-  // ArrayBufferObject.cpp regarding linear memory structure) can ever be
-  // larger than 32-bits.
-  bool boundsCheckLimitIs32Bits() const {
+  // Whether the boundsCheckLimit will always fit within 32 bits. See the SMDOC
+  // for "WASM Linear Memory structure".
+  bool boundsCheckLimitIsAlways32Bits() const {
     return limits.maximum.isSome() &&
-           limits.maximum.value() < (0x100000000 / PageSize);
+           limits.maximum.value() < (0x100000000 / PageSizeInBytes(pageSize()));
   }
 
   AddressType addressType() const { return limits.addressType; }
 
+  PageSize pageSize() const { return limits.pageSize; }
+
   // The initial length of this memory in pages.
-  Pages initialPages() const { return Pages(limits.initial); }
+  Pages initialPages() const {
+    return Pages::fromPageCount(limits.initial, pageSize());
+  }
 
   // The maximum length of this memory in pages.
   mozilla::Maybe<Pages> maximumPages() const {
-    return limits.maximum.map([](uint64_t x) { return Pages(x); });
+    return limits.maximum.map(
+        [&](uint64_t x) { return Pages::fromPageCount(x, pageSize()); });
   }
 
-  // The initial length of this memory in bytes. Only valid for memory32.
-  uint64_t initialLength32() const {
-    MOZ_ASSERT(addressType() == AddressType::I32);
-    // See static_assert after MemoryDesc for why this is safe.
-    return limits.initial * PageSize;
-  }
-
-  uint64_t initialLength64() const {
-    MOZ_ASSERT(addressType() == AddressType::I64);
-    return limits.initial * PageSize;
+  uint64_t initialLength() const {
+    // See static_assert after MemoryDesc for why this is safe for memory32.
+    MOZ_ASSERT_IF(addressType() == AddressType::I64,
+                  limits.initial <= UINT64_MAX / PageSizeInBytes(pageSize()));
+    return addressType() == AddressType::I64 ? initialPages().byteLength64()
+                                             : initialPages().byteLength();
   }
 
   MemoryDesc() = default;
@@ -864,34 +876,47 @@ WASM_DECLARE_CACHEABLE_POD(MemoryDesc);
 
 using MemoryDescVector = Vector<MemoryDesc, 1, SystemAllocPolicy>;
 
-// We don't need to worry about overflow with a Memory32 field when
+// We never need to worry about overflow with a Memory32 field when
 // using a uint64_t.
-static_assert(MaxMemory32PagesValidation <= UINT64_MAX / PageSize);
+static_assert(MaxMemory32StandardPagesValidation <=
+              UINT64_MAX / StandardPageSizeBytes);
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+static_assert(MaxMemory32TinyPagesValidation <= UINT64_MAX);
+#endif
 
-struct TableDesc {
+struct TableType {
   Limits limits;
   RefType elemType;
-  bool isImported;
-  bool isExported;
-  bool isAsmJS;
+
+  TableType() = default;
+  TableType(Limits limits, RefType elemType)
+      : limits(limits), elemType(elemType) {}
+};
+
+struct TableDesc {
+  TableType type;
+
+  bool isImported = false;
+  bool isExported = false;
+  bool isAsmJS = false;
   mozilla::Maybe<InitExpr> initExpr;
 
   TableDesc() = default;
-  TableDesc(Limits limits, RefType elemType,
-            mozilla::Maybe<InitExpr>&& initExpr, bool isAsmJS,
-            bool isImported = false, bool isExported = false)
-      : limits(limits),
-        elemType(elemType),
+  TableDesc(const TableType& type, mozilla::Maybe<InitExpr>&& initExpr,
+            bool isAsmJS, bool isImported = false, bool isExported = false)
+      : type(type),
         isImported(isImported),
         isExported(isExported),
         isAsmJS(isAsmJS),
         initExpr(std::move(initExpr)) {}
 
-  AddressType addressType() const { return limits.addressType; }
+  AddressType addressType() const { return type.limits.addressType; }
 
-  uint64_t initialLength() const { return limits.initial; }
+  uint64_t initialLength() const { return type.limits.initial; }
 
-  mozilla::Maybe<uint64_t> maximumLength() const { return limits.maximum; }
+  mozilla::Maybe<uint64_t> maximumLength() const { return type.limits.maximum; }
+
+  RefType elemType() const { return type.elemType; }
 };
 
 using TableDescVector = Vector<TableDesc, 0, SystemAllocPolicy>;

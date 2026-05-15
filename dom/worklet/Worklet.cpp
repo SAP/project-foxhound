@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Worklet.h"
-#include "WorkletThread.h"
 
+#include "WorkletThread.h"
 #include "mozilla/dom/WorkletFetchHandler.h"
 #include "mozilla/dom/WorkletImpl.h"
 #include "xpcprivate.h"

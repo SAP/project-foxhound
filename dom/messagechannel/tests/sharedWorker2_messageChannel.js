@@ -1,5 +1,3 @@
-/* eslint-env worker */
-
 var mc = new MessageChannel();
 var i = 0;
 

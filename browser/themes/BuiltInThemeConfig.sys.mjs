@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- * A Map of themes built in to the browser, alongwith a Map of collections those themes belong to. Params for the objects contained
+ * A Map of themes built in to the browser. Params for the objects contained
  * within the map:
  *
  * @param {string} id
@@ -12,31 +12,37 @@
  *   The theme add-on's semantic version, as defined in its manifest.
  * @param {string} path
  *   Path to the add-on files.
- * @param {string} [expiry]
- *  Date in YYYY-MM-DD format. Optional. If defined, the themes in the collection can no longer be
- *  used after this date, unless the user has permission to retain it.
- * @param {string} [collection]
- *  The collection id that the theme is a part of. Optional.
+ * @param {boolean} inApp
+ *   Optional, whether the theme uses the app's CSS, just forcing it to a
+ *   particular color scheme or variant.
+ * @param {boolean} nonNative
+ *   Whether this inApp theme should force the native theme, but with
+ *   non-native appearance. See Document.forceNonNativeTheme and the
+ *   (-moz-native-theme) media query.
  */
 export const BuiltInThemeConfig = new Map([
   [
     "firefox-compact-light@mozilla.org",
     {
-      version: "1.3.3",
+      version: "1.3.4",
       path: "resource://builtin-themes/light/",
+      inApp: true,
+      nonNative: true,
     },
   ],
   [
     "firefox-compact-dark@mozilla.org",
     {
-      version: "1.3.3",
+      version: "1.3.4",
       path: "resource://builtin-themes/dark/",
+      inApp: true,
+      nonNative: true,
     },
   ],
   [
     "firefox-alpenglow@mozilla.org",
     {
-      version: "1.5",
+      version: "1.5.1",
       path: "resource://builtin-themes/alpenglow/",
     },
   ],

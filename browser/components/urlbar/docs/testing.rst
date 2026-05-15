@@ -1,5 +1,7 @@
-Testing
-=======
+.. _urlbar-testing:
+
+Address Bar Testing
+===================
 This documentation discusses how to write a test for the address bar and the
 different test utilities that are useful when writing a test for the address
 bar.
@@ -105,11 +107,10 @@ manifest in alphabetical order.
 
 Start in the manifest file and add your test name in alphabetical
 order. The manifest file we should add our test in is
-`browser.ini <https://searchfox.org/mozilla-central/source/browser/components/
-urlbar/tests/browser/browser.ini>`_. The ``urlbar/test/browser/`` directory
+`browser.toml <https://searchfox.org/mozilla-central/source/browser/components/
+urlbar/tests/browser/browser.toml>`_. The ``urlbar/test/browser/`` directory
 is the main browser test directory for address bar, and the manifest file
 linked above is the main browser test manifest.
-The ``.ini`` file extension is an initialization file for Windows or MS-DOS.
 
 Manifest Metadata
 ~~~~~~~~~~~~~~~~~
@@ -196,8 +197,7 @@ a specific preference to change, and etc.
 
 PlacesTestUtils
 ~~~~~~~~~~~~~~~
-:searchfox:`PlacesTestUtils.sys.mjs <toolkit/components/places/tests/PlacesTestU
-tils.sys.mjs>` is useful for adding visits, adding
+:searchfox:`PlacesTestUtils.sys.mjs <toolkit/components/places/tests/PlacesTestUtils.sys.mjs>` is useful for adding visits, adding
 bookmarks, waiting for notification of visited pages, and etc.
 
 EventUtils

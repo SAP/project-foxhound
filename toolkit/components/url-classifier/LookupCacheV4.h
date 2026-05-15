@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef LookupCacheV4_h__
-#define LookupCacheV4_h__
+#ifndef LookupCacheV4_h_
+#define LookupCacheV4_h_
 
 #include "LookupCache.h"
 

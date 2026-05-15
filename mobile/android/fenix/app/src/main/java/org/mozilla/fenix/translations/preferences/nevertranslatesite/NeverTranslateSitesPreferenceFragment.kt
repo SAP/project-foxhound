@@ -6,10 +6,9 @@ package org.mozilla.fenix.translations.preferences.nevertranslatesite
 
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.Fragment
+import androidx.fragment.compose.content
 import androidx.navigation.fragment.findNavController
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.translate.TranslationError
@@ -35,34 +34,32 @@ class NeverTranslateSitesPreferenceFragment : Fragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        setContent {
-            FirefoxTheme {
-                val neverTranslateSites = browserStore.observeAsComposableState { state ->
-                    state.translationEngine.neverTranslateSites
-                }.value
+    ) = content {
+        FirefoxTheme {
+            val neverTranslateSites = browserStore.observeAsComposableState { state ->
+                state.translationEngine.neverTranslateSites
+            }.value
 
-                val engineError = browserStore.observeAsComposableState { state ->
-                    state.translationEngine.engineError
-                }.value
+            val engineError = browserStore.observeAsComposableState { state ->
+                state.translationEngine.engineError
+            }.value
 
-                val couldNotLoadNeverTranslateSites =
-                    engineError as? TranslationError.CouldNotLoadNeverTranslateSites
+            val couldNotLoadNeverTranslateSites =
+                engineError as? TranslationError.CouldNotLoadNeverTranslateSites
 
-                NeverTranslateSitesPreference(
-                    neverTranslateSitesListPreferences = neverTranslateSites,
-                    hasNeverTranslateSitesError = couldNotLoadNeverTranslateSites != null ||
-                        neverTranslateSites == null,
-                    onItemClick = {
-                        findNavController().navigate(
-                            NeverTranslateSitesPreferenceFragmentDirections
-                                .actionNeverTranslateSitePreferenceToNeverTranslateSiteDialogPreference(
-                                    neverTranslateSiteUrl = it,
-                                ),
-                        )
-                    },
-                )
-            }
+            NeverTranslateSitesPreference(
+                neverTranslateSitesListPreferences = neverTranslateSites,
+                hasNeverTranslateSitesError = couldNotLoadNeverTranslateSites != null ||
+                    neverTranslateSites == null,
+                onItemClick = {
+                    findNavController().navigate(
+                        NeverTranslateSitesPreferenceFragmentDirections
+                            .actionNeverTranslateSitePreferenceToNeverTranslateSiteDialogPreference(
+                                neverTranslateSiteUrl = it,
+                            ),
+                    )
+                },
+            )
         }
     }
 }

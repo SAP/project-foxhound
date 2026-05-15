@@ -56,7 +56,7 @@ CreateWebrtcTaskQueue(already_AddRefed<nsIEventTarget> aTarget,
  * mozilla::TaskQueue.
  */
 RefPtr<TaskQueue> CreateWebrtcTaskQueueWrapper(
-    already_AddRefed<nsIEventTarget> aTarget, const nsACString& aName,
+    already_AddRefed<nsIEventTarget> aTarget, const nsLiteralCString& aName,
     bool aSupportsTailDispatch);
 
 /**

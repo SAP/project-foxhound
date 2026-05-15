@@ -7,8 +7,8 @@
 #ifndef ThreeDPoint_h_
 #define ThreeDPoint_h_
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
 namespace mozilla::dom {
 

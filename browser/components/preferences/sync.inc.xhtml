@@ -13,7 +13,7 @@
   <html:h1 data-l10n-id="pane-sync-title3"/>
 </hbox>
 
-<deck id="weavePrefsDeck" data-category="paneSync" hidden="true"
+<deck id="weavePrefsDeck" data-category="paneSync" data-srd-groupid="sync" hidden="true"
       data-hidden-from-search="true">
   <groupbox id="noFxaAccount">
     <hbox>
@@ -243,6 +243,33 @@
              target="_blank"
              data-l10n-id="sync-connect-another-device"/>
     </vbox>
-  </vbox>
+</vbox>
 </deck>
+
+<!-- Default browser -->
+<html:setting-group groupid="defaultBrowserSync" data-category="paneSync" hidden="true" />
+
+<!-- Mozilla account -->
+<html:setting-group groupid="account" hidden="true" data-category="paneSync"/>
+
+<!-- Sync -->
+<html:setting-group groupid="sync" hidden="true" data-category="paneSync"/>
+
+<!-- Firefox Backup -->
+<hbox id="backupCategory"
+    class="subcategory"
+    hidden="true"
+    data-category="paneSync"
+    >
+  <html:h1 data-l10n-id="settings-data-backup-header"/>
+</hbox>
+<groupbox id="dataBackupGroup"
+          data-category="paneSync"
+          data-subcategory="backup"
+          hidden="true">
+  <label class="search-header" hidden="true"><html:h2 data-l10n-id="settings-data-backup-header"/></label>
+  <hbox flex="1">
+    <html:backup-settings />
+  </hbox>
+</groupbox>
 </html:template>

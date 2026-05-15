@@ -25,11 +25,11 @@ void nsGenConNode::CheckFrameAssertions() {
 
   NS_ASSERTION(mContentIndex < 0 ||
                    mPseudoFrame->Style()->GetPseudoType() ==
-                       mozilla::PseudoStyleType::before ||
+                       mozilla::PseudoStyleType::Before ||
                    mPseudoFrame->Style()->GetPseudoType() ==
-                       mozilla::PseudoStyleType::after ||
+                       mozilla::PseudoStyleType::After ||
                    mPseudoFrame->Style()->GetPseudoType() ==
-                       mozilla::PseudoStyleType::marker,
+                       mozilla::PseudoStyleType::Marker,
                "not CSS generated content and not counter change");
   NS_ASSERTION(mContentIndex < 0 ||
                    mPseudoFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT),
@@ -80,15 +80,15 @@ bool nsGenConList::DestroyNodesFor(nsIFrame* aFrame) {
  */
 inline int32_t PseudoCompareType(nsIFrame* aFrame, nsIContent** aContent) {
   auto pseudo = aFrame->Style()->GetPseudoType();
-  if (pseudo == mozilla::PseudoStyleType::marker) {
+  if (pseudo == mozilla::PseudoStyleType::Marker) {
     *aContent = aFrame->GetContent()->GetParent();
     return -2;
   }
-  if (pseudo == mozilla::PseudoStyleType::before) {
+  if (pseudo == mozilla::PseudoStyleType::Before) {
     *aContent = aFrame->GetContent()->GetParent();
     return -1;
   }
-  if (pseudo == mozilla::PseudoStyleType::after) {
+  if (pseudo == mozilla::PseudoStyleType::After) {
     *aContent = aFrame->GetContent()->GetParent();
     return 1;
   }

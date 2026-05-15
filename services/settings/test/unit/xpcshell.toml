@@ -3,7 +3,9 @@ head = "../../../common/tests/unit/head_global.js ../../../common/tests/unit/hea
 firefox-appdir = "browser"
 tags = "remote-settings"
 support-files = ["test_remote_settings_signatures/**"]
-skip-if = ["appname == 'thunderbird'"] # Bug 1662758 - these tests don't pass if default bucket isn't "main".
+skip-if = [
+  "appname == 'thunderbird'", # Bug 1662758 - these tests don't pass if default bucket isn't "main".
+]
 
 ["test_attachments_downloader.js"]
 support-files = ["test_attachments_downloader/**"]
@@ -15,6 +17,8 @@ support-files = ["test_attachments_downloader/**"]
 ["test_remote_settings_jexl_filters.js"]
 
 ["test_remote_settings_offline.js"]
+
+["test_remote_settings_older_than_local.js"]
 
 ["test_remote_settings_poll.js"]
 
@@ -33,8 +37,7 @@ support-files = ["test_remote_settings_startup_bundle/**"]
 
 ["test_remote_settings_utils_telemetry.js"]
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'", # Bug 1739463
-  "os == 'android' && android_version == '34' && processor == 'x86_64'", # Bug 1739463
+  "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1739463
 ]
 
 ["test_remote_settings_worker.js"]

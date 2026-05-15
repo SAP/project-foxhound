@@ -50,17 +50,17 @@ object Constants {
         )
     }
 
-    // "Ghostery" not included in the list because of the name discrepancy
-    // between the recommended list and the install confirmation prompt
+    // Notes:
+    // "Ghostery" - not included in the list because of the name discrepancy between the recommended list and the install confirmation prompt
+    // "AdGuard AdBlocker" - not included in the list because of the inconsistencies caused by the new tab that is opened after installation
+    // "Video Background Play Fix", "FoxyProxy" and "Google Search Fixer"
+    // - not included because instead of the add-on name the main menu extensions button displays "No extensions enabled"
+    // and no name is being displayed in the installed "Extensions" list, only the add-on icon
     val recommendedAddons = listOf(
         "uBlock Origin",
         "Privacy Badger",
-        "AdGuard AdBlocker",
         "Dark Reader",
         "Bitwarden",
-        "Tampermonkey",
-        // FoxyProxy from the suggested extensions because it instead of the add-on name the main menu extensions button displays "Disabled" and no name is being displayed in the installed "Extensions" list, only the add-on icon
-        // "FoxyProxy",
         "NoScript",
         "Search by Image",
         "ClearURLs",
@@ -69,8 +69,6 @@ object Constants {
         "Decentraleyes",
         "YouTube High Definition",
         "Web Archives",
-        "Video Background Play Fix",
         "Tomato Clock",
-        "Google Search Fixer",
     )
 }

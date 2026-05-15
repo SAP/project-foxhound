@@ -105,6 +105,7 @@ treeherder:
         'BM': 'Beetmover'
         'BMR': 'Beetmover repackages'
         'BM-apt': 'Beetmover .deb packages'
+        'BM-rpm': 'Beetmover .rpm packages'
         'c-Up': 'Balrog submission of complete updates'
         'css': 'Checksum signing for source'
         'rs': 'Repackage signing'
@@ -113,10 +114,9 @@ treeherder:
         'BMcss': 'Beetmover checksums for source'
         'Deb8': 'Packages for Debian 8'
         'Deb8-32': 'Packages for Debian 8 32-bits'
-        'Deb9': 'Packages for Debian 9'
-        'Deb10': 'Packages for Debian 10'
-        'Deb11': 'Packages for Debian 11'
+        'Deb10a64': 'AArch64 packages for Debian 10'
         'Deb12': 'Packages for Debian 12'
+        'Deb13': 'Packages for Debian 13'
         'Ub18': 'Packages for Ubuntu 18.04'
         'Ub20': 'Packages for Ubuntu 20.04'
         'Ub22': 'Packages for Ubuntu 22.04'
@@ -193,7 +193,7 @@ treeherder:
         'Boot': 'Bootstrap'
         'Attr-L10n': 'Build Attribution'
         'android-l10n': 'Import strings from android-l10n repo'
-        'update-test': 'Test updates to release from older firefox versions'
+        'updt-tst': 'Test updates to release from older firefox versions'
 
         # The below symbols are from firefox-android (fenix/focus/android-components)
         'buildconfig': 'Make sure the content of .buildconfig.yml matches what gradle knows about its projects'
@@ -233,12 +233,15 @@ treeherder:
         'compose-browser-toolbar': 'awesomebar-browser-toolbar'
         'compose-engine': 'compose-engine'
         'compose-tabstray': 'compose-tabstray'
+        'concept-accelerometer': 'concept-accelerometer'
+        'concept-integrity': 'concept-integrity'
         'concept-awesomebar': 'concept-awesomebar'
         'concept-base': 'concept-base'
         'compose-base': 'compose-base'
         'compose-cfr': 'compose-cfr'
         'concept-engine': 'concept-engine'
         'concept-fetch': 'concept-fetch'
+        'concept-llm': 'concept-llm'
         'concept-menu': 'concept-menu'
         'concept-push': 'concept-push'
         'concept-storage': 'concept-storage'
@@ -273,6 +276,7 @@ treeherder:
         'feature-screendetection': 'feature-screendetection'
         'feature-share': 'feature-share'
         'feature-sitepermissions': 'feature-sitepermissions'
+        'feature-summarize': 'feature-summarize'
         'feature-syncedtabs': 'feature-syncedtabs'
         'feature-tab-collections': 'feature-tab-collections'
         'feature-tabs': 'feature-tabs'
@@ -288,6 +292,10 @@ treeherder:
         'lib-dataprotect': 'lib-dataprotect'
         'lib-fetch-okhttp': 'lib-fetch-okhttp'
         'lib-jexl': 'lib-jexl'
+        'lib-llm-gemininano': 'lib-llm-gemininano'
+        'lib-llm-mlpa': 'lib-llm-mlpa'
+        'lib-integrity-googleplay': 'lib-integrity-googleplay'
+        'lib-shake': 'lib-shake'
         'lib-publicsuffixlist': 'lib-publicsuffixlist'
         'lib-push-firebase': 'lib-push-firebase'
         'lib-state': 'lib-state'
@@ -295,6 +303,7 @@ treeherder:
         'samples-crash': 'samples-crash'
         'samples-dataprotect': 'samples-dataprotect'
         'samples-firefox-accounts': 'samples-firefox-accounts'
+        'samples-firefox-relay': 'samples-firefox-relay'
         'samples-glean-library': 'samples-glean-library'
         'samples-glean': 'samples-glean'
         'samples-sync-logins': 'samples-sync-logins'
@@ -303,6 +312,7 @@ treeherder:
         'service-digitalassetlinks': 'service-digitalassetlinks'
         'service-experiments': 'service-experiments'
         'service-firefox-accounts': 'service-firefox-accounts'
+        'service-firefox-relay': 'service-firefox-relay'
         'service-fretboard': 'service-fretboard'
         'service-glean': 'service-glean'
         'service-location': 'service-location'
@@ -337,12 +347,15 @@ treeherder:
         'ui-colors': 'ui-colors'
         'ui-fonts': 'ui-fonts'
         'ui-icons': 'ui-icons'
+        'ui-richtext': 'ui-richtext'
         'ui-tabcounter': 'ui-tabcounter'
         'ui-widgets': 'ui-widgets'
 
         # These ones are too long to fit in 25 chars
+        'lib-accelerometer-sensorm': 'lib-accelerometer-sensormanager'
         'lib-fetch-httpurlconnecti': 'lib-fetch-httpurlconnection'
         'feature-webcompat-reporte': 'feature-webcompat-reporter'
+        'feature-protection-dashbo': 'feature-protection-dashboard'
 
         # Groups aren't generated off buildconfig.yml:
         'samples-browser': 'samples-browser'
@@ -379,6 +392,7 @@ try:
             - 'sm-arm-sim-linux32'
             - 'sm-arm64-sim-linux64'
             - 'sm-compacting-linux64'
+            - 'sm-concurrent-linux64'
             - 'sm-rootanalysis-linux64'
             - 'sm-package-linux64'
             - 'sm-tsan-linux64'
@@ -427,11 +441,6 @@ release-promotion:
                 - release-partner-attribution
                 - release-partner-attribution-beetmover
             target-tasks-method: promote_desktop
-        promote_firefox_rc:
-            product: firefox
-            is-rc: true
-            target-tasks-method: promote_desktop
-            partial-updates: true
         push_devedition:
             product: devedition
             target-tasks-method: push_desktop
@@ -449,11 +458,6 @@ release-promotion:
             product: firefox
             target-tasks-method: ship_desktop
             version-bump: true
-            partial-updates: true
-        ship_firefox_rc:
-            product: firefox
-            is-rc: true
-            target-tasks-method: ship_desktop
             partial-updates: true
         promote_android:
             product: firefox-android
@@ -477,38 +481,38 @@ partner-urls:
             firefox:
                 by-release-type:
                     default: null
-                    beta|release.*:
+                    beta|release:
                         by-release-level:
                             production: 'git@github.com:mozilla-partners/repack-manifests.git'
-                            staging: 'git@github.com:moz-releng-automation-stage/repack-manifests.git'
+                            staging: 'git@github.com:mozilla-partners/staging-repack-manifests.git'
                     esr.*:
                         by-release-level:
                             production: 'git@github.com:mozilla-partners/esr-repack-manifests.git'
-                            staging: 'git@github.com:moz-releng-automation-stage/esr-repack-manifests.git'
+                            staging: 'git@github.com:mozilla-partners/staging-esr-repack-manifests.git'
     release-partner-attribution:
         by-release-product:
             default: null
             firefox:
                 by-release-type:
                     default: null
-                    beta|release.*:
+                    beta|release:
                         by-release-level:
                             production: 'git@github.com:mozilla-partners/repack-manifests.git'
-                            staging: 'git@github.com:moz-releng-automation-stage/repack-manifests.git'
+                            staging: 'git@github.com:mozilla-partners/staging-repack-manifests.git'
                     esr.*:
                         by-release-level:
                             production: 'git@github.com:mozilla-partners/esr-repack-manifests.git'
-                            staging: 'git@github.com:moz-releng-automation-stage/esr-repack-manifests.git'
+                            staging: 'git@github.com:mozilla-partners/staging-esr-repack-manifests.git'
     release-eme-free-repack:
         by-release-product:
             default: null
             firefox:
                 by-release-type:
                     default: null
-                    beta|release.*:
+                    beta|release:
                         by-release-level:
                             production: 'git@github.com:mozilla-partners/mozilla-EME-free-manifest.git'
-                            staging: 'git@github.com:moz-releng-automation-stage/mozilla-EME-free-manifest.git'
+                            staging: 'git@github.com:mozilla-partners/staging-mozilla-EME-free-manifest.git'
 
 
 task-priority:
@@ -523,10 +527,13 @@ task-priority:
 
 taskgraph:
     register: gecko_taskgraph:register
+    repositories:
+        gecko:
+            name: 'Mozilla Firefox'
 
 workers:
     aliases:
-        b-linux.*:
+        b-linux(|-docker(|-x?large)-amd|-medium|-aarch64|-xlarge|-kvm):
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
             os: linux
@@ -541,27 +548,17 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
+        b-win2022-xxlarge:
+            provisioner: '{trust-domain}-{level}'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
         b-win-aarch64:
             provisioner: '{trust-domain}-{level}'
             implementation: generic-worker
             os: windows
             worker-type: 'win11-a64-24h2-builder'
-        image:
-            provisioner: '{trust-domain}-{level}'
-            implementation: docker-worker
-            os: linux
-            worker-type: '{alias}'
-        images:
-            provisioner: '{trust-domain}-{level}'
-            implementation: docker-worker
-            os: linux
-            worker-type: '{alias}'
-        images-gcp:
-            provisioner: '{trust-domain}-{level}'
-            implementation: docker-worker
-            os: linux
-            worker-type: '{alias}'
-        images-gcp-aarch64:
+        images.*:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
             os: linux
@@ -597,9 +594,13 @@ workers:
             implementation: beetmover
             os: linux
             worker-type:
-                by-release-level:
-                    production: '{trust-domain}-3-beetmover'
-                    staging: '{trust-domain}-1-beetmover'
+                by-project:
+                    # Autoland needs level 3 for integration beetmover tasks
+                    autoland: '{trust-domain}-3-beetmover'
+                    default:
+                        by-release-level:
+                            production: '{trust-domain}-3-beetmover'
+                            staging: '{trust-domain}-1-beetmover'
         beetmover-android:
             provisioner: scriptworker-k8s
             implementation: scriptworker-beetmover
@@ -716,7 +717,7 @@ workers:
             implementation: generic-worker
             os: linux-lambda
             worker-type: 'gecko-{alias}'
-        t-linux-docker(|-noscratch):
+        t-linux-docker(|-noscratch|-noscratch-amd|-16c32gb-amd|-amd):
             provisioner: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
@@ -751,11 +752,6 @@ workers:
             implementation: generic-worker
             os: linux
             worker-type: 't-linux-xlarge-2204-wayland'
-        t-linux-wayland-vm:
-            provisioner: '{trust-domain}-t'
-            implementation: generic-worker
-            os: linux
-            worker-type: 't-linux-vm-2204-wayland'
         t-linux-2204-wayland-snap:
             provisioner: '{trust-domain}-t'
             implementation: generic-worker
@@ -817,7 +813,7 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
-        win10-64-2009(-gpu):
+        win10-64-2009(-gpu|-source):
             provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows
@@ -827,7 +823,7 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
-        win11-64-24h2(|-gpu|-source|-large):
+        win11-64-24h2(|-gpu|-source|-large|-webgpu):
             provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows
@@ -856,7 +852,7 @@ workers:
             provisioner: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
-            worker-type: misc-gcp
+            worker-type: misc
 
 
 mac-signing:
@@ -870,26 +866,38 @@ mac-signing:
                 - deep: false
                   runtime: true
                   force: true
-                  entitlements: security/mac/hardenedruntime/production/plugin-container.xml
+                  entitlements: public/build/security/plugin-container.xml
                   globs:
                       - "/Contents/MacOS/plugin-container.app"
 
                 - deep: false
                   runtime: true
                   force: true
-                  entitlements: security/mac/hardenedruntime/production/media-plugin-helper.xml
+                  entitlements: public/build/security/media-plugin-helper.xml
                   globs:
                       - "/Contents/MacOS/media-plugin-helper.app"
 
                 - deep: false
                   runtime: true
                   force: true
-                  # These files are signed without entitlements
+                  entitlements: public/build/security/security-module-helper.xml
+                  globs:
+                      - "/Contents/MacOS/security-module-helper.app"
+                  only-if-milestone-is-nightly: true
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  # In production builds, these files are signed without
+                  # entitlements files, but with hardened runtime enabled. As a
+                  # result, they have the default (more restrictive)
+                  # entitlement settings.
                   globs:
                       - "/Contents/MacOS/crashhelper"
                       - "/Contents/MacOS/crashreporter.app"
                       - "/Contents/MacOS/updater.app/Contents/Frameworks/UpdateSettings.framework"
                       - "/Contents/MacOS/updater.app"
+                      - "/Contents/MacOS/gpu-helper.app"
                       - "/Contents/Library/LaunchServices/org.mozilla.updater"
                       - "/Contents/MacOS/XUL"
                       - "/Contents/MacOS/pingsender"
@@ -903,11 +911,11 @@ mac-signing:
                   force: true
                   entitlements:
                       by-build-platform:
-                          .*devedition.*: security/mac/hardenedruntime/production/firefoxdeveloperedition.browser.xml
+                          .*devedition.*: public/build/security/firefoxdeveloperedition.browser.xml
                           default:
                               by-project:
-                                  mozilla-central: security/mac/hardenedruntime/production/nightly.browser.xml
-                                  default: security/mac/hardenedruntime/production/firefox.browser.xml
+                                  mozilla-central: public/build/security/nightly.browser.xml
+                                  default: public/build/security/firefox.browser.xml
                   globs:
                       - "/"  # The .app
 
@@ -915,26 +923,35 @@ mac-signing:
                 - deep: false
                   runtime: true
                   force: true
-                  entitlements: security/mac/hardenedruntime/developer/plugin-container.xml
+                  entitlements: public/build/security/plugin-container.xml
                   globs:
                       - "/Contents/MacOS/plugin-container.app"
 
                 - deep: false
                   runtime: true
                   force: true
-                  entitlements: security/mac/hardenedruntime/developer/media-plugin-helper.xml
+                  entitlements: public/build/security/media-plugin-helper.xml
                   globs:
                       - "/Contents/MacOS/media-plugin-helper.app"
 
                 - deep: false
                   runtime: true
                   force: true
-                  entitlements: security/mac/hardenedruntime/developer/utility.xml
+                  entitlements: public/build/security/security-module-helper.xml
+                  globs:
+                      - "/Contents/MacOS/security-module-helper.app"
+                  only-if-milestone-is-nightly: true
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: public/build/security/utility.xml
                   globs:
                       - "/Contents/MacOS/crashhelper"
                       - "/Contents/MacOS/crashreporter.app"
                       - "/Contents/MacOS/updater.app/Contents/Frameworks/UpdateSettings.framework"
                       - "/Contents/MacOS/updater.app"
+                      - "/Contents/MacOS/gpu-helper.app"
                       - "/Contents/Library/LaunchServices/org.mozilla.updater"
                       - "/Contents/MacOS/pingsender"
                       - "/Contents/MacOS/nmhproxy"
@@ -952,19 +969,19 @@ mac-signing:
                 - deep: false
                   runtime: true
                   force: true
-                  entitlements: security/mac/hardenedruntime/developer/browser.xml
+                  entitlements: public/build/security/browser.xml
                   globs:
                       - "/"  # The .app
 
 expiration-policy:
-    by-project:
-        try:
+    by-level:
+        '1':
             default: 28 days
             shortest: 7 days
             short: 14 days
             medium: 28 days
             long: 28 days
-        autoland:
+        '3':
             default: 1 year
             shortest: 14 days
             short: 3 months

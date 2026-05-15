@@ -14,7 +14,7 @@ async function checkDeviceManager({ buttonIsDisabled }) {
     "",
     ""
   );
-  await BrowserTestUtils.waitForEvent(deviceManagerWindow, "load");
+  await TestUtils.topicObserved("device-manager-loaded");
 
   let tree = deviceManagerWindow.document.getElementById("device_tree");
   ok(tree, "The device tree exists");
@@ -35,7 +35,7 @@ async function checkDeviceManager({ buttonIsDisabled }) {
   let changePwButton =
     deviceManagerWindow.document.getElementById("change_pw_button");
   is(
-    changePwButton.getAttribute("disabled") == "true",
+    changePwButton.hasAttribute("disabled"),
     buttonIsDisabled,
     "Change Password button is in the correct state: " + buttonIsDisabled
   );

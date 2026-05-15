@@ -16,6 +16,7 @@ const TEST_URL2 = "https://example.org/";
 
 /**
  * Counts tombstone entries.
+ *
  * @returns {integer} number of tombstone entries.
  */
 async function countTombstones() {
@@ -166,6 +167,7 @@ function fetchImage(url) {
 /**
  * Sometimes on macOS fetching the preview fails for timeout/network reasons,
  * this retries so the test doesn't intermittently fail over it.
+ *
  * @param {string} url The url to store a preview for.
  * @returns {Promise} resolved once a preview has been captured.
  */

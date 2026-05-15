@@ -86,11 +86,11 @@ add_setup(async function () {
 });
 
 add_task(async function test_migration_after_renames() {
-  await Services.search.wrappedJSObject.reset();
-  await Services.search.init();
+  await SearchService.reset();
+  await SearchService.init();
 
   for (let [identifier, name] of ENGINE_NAME_TO_NEW_NAME_MAP.entries()) {
-    let engine = await Services.search.getEngineById(identifier);
+    let engine = await SearchService.getEngineById(identifier);
     Assert.ok(engine, `Should have loaded an engine for ${identifier}`);
 
     Assert.deepEqual(

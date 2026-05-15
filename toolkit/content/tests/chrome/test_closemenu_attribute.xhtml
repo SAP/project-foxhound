@@ -10,11 +10,11 @@
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>      
 
 <button id="menu" type="menu" label="Menu" onpopuphidden="popupHidden(event)">
-  <menupopup id="p1" onpopupshown="if (event.target == this) this.firstChild.open = true">
+  <menupopup id="p1" onpopupshown="if (event.target == this) this.firstChild.open = true" native="false">
     <menu id="l1" label="One">
-      <menupopup id="p2" onpopupshown="if (event.target == this) this.firstChild.open = true">
+      <menupopup id="p2" onpopupshown="if (event.target == this) this.firstChild.open = true" native="false">
         <menu id="l2" label="Two">
-          <menupopup id="p3" onpopupshown="executeMenuItem()">
+          <menupopup id="p3" onpopupshown="executeMenuItem()" native="false">
             <menuitem id="l3" label="Three"/>
           </menupopup>
         </menu>

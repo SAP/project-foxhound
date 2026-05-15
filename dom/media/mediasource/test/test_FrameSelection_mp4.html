@@ -35,7 +35,7 @@ runWithMSE(async (ms, v) => {
   await waitUntilTime(v, 1.5);
   await fetchAndLoad(sb, "bipbop/bipbop_480_624kbps-video", ["init"], ".mp4");
   sb.timestampOffset = 1.601666; // End of the video track buffered - time of first video sample (0.095).
-  sb.appendWindowEnd = 1.796677; // Only allow room for three extra video frames (we need 3 as this video has b-frames).
+  sb.appendWindowEnd = 1.830001; // Only allow room for 4 extra video frames (we need 4 as this video has b-frames).
   await fetchAndLoad(sb, "bipbop/bipbop_480_624kbps-video", ["1"], ".m4s");
   ms.endOfStream();
   await Promise.all([once(ms, "sourceended"), once(v, "playing"), once(v, "ended")]);

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@babel/plugin-proposal-async-generator-functions": "^7.2.0",
+    "@babel/plugin-transform-class-properties": "^7.27.1",
     "@babel/plugin-transform-modules-commonjs": "^7.23.0",
     "babel-plugin-add-module-exports": "1.0.4",
     "enzyme": "^3.9.0",

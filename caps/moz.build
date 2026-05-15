@@ -69,8 +69,7 @@ LOCAL_INCLUDES += [
     "/toolkit/components/jsoncpp/include",
 ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

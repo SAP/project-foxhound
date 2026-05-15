@@ -11,7 +11,7 @@
 }
 
 .addon-install-confirmation-name {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 html|*.addon-webext-perm-list {
@@ -109,7 +109,7 @@ html|ul.webext-perm-domains-list {
 
 .addon-webext-name {
   display: inline;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   margin: 0;
 }
 

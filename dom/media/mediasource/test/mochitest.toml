@@ -1,4 +1,7 @@
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 subsuite = "media"
 tags = "media-gpu"
 support-files = [
@@ -236,14 +239,17 @@ support-files = [
 
 ["test_FrameSelection_mp4.html"]
 skip-if = [
+  "os == 'android' && arch == 'aarch64' && debug", # Bug 1776960 - android aarch64 debug
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # mac due to bug 1487973
   "os == 'win'", # bug 1487973,
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # mac due to bug 1487973
-  "os == 'android' && processor == 'aarch64' && debug", # Bug 1776960 - android aarch64 debug
 ]
 
 ["test_HEAAC_extradata.html"]
 
 ["test_NoAudioLoopBackData.html"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt",
+]
 
 ["test_NoAudioLoopBackData_Muted.html"]
 
@@ -252,6 +258,9 @@ skip-if = [
 ["test_PlayEvents.html"]
 
 ["test_Resolution_change_should_not_cause_video_freeze.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && opt && verify-standalone",
+]
 
 ["test_ResumeAfterClearing_mp4.html"]
 

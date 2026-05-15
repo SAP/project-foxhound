@@ -25,13 +25,16 @@ support-files = [
 
 ["browser_json_refresh.js"]
 
+["browser_jsonview_access_data.js"]
+
+["browser_jsonview_array_buckets.js"]
+
 ["browser_jsonview_bug_1380828.js"]
 
 ["browser_jsonview_chunked_json.js"]
 support-files = ["chunked_json.sjs"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_jsonview_content_type.js"]
@@ -68,6 +71,9 @@ skip-if = [
 
 ["browser_jsonview_manifest.js"]
 
+["browser_jsonview_multipart_response.js"]
+support-files = ["json_multipart.sjs"]
+
 ["browser_jsonview_nojs.js"]
 
 ["browser_jsonview_nul.js"]
@@ -76,13 +82,14 @@ skip-if = [
 
 ["browser_jsonview_object-type.js"]
 
+["browser_jsonview_profile_size.js"]
+
 ["browser_jsonview_row_selection.js"]
 
 ["browser_jsonview_save_json.js"]
 support-files = ["!/toolkit/content/tests/browser/common/mockTransfer.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1829298
 ]
 
 ["browser_jsonview_serviceworker.js"]

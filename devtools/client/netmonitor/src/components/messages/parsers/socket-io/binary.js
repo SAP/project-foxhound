@@ -15,10 +15,10 @@
 /**
  * Reconstructs a binary packet from its placeholder packet and buffers
  *
- * @param {Object} packet - event packet with placeholders
+ * @param {object} packet - event packet with placeholders
  * @param {Array} buffers - binary buffers to put in placeholder positions
- * @return {Object} reconstructed packet
- * @api public
+ * @return {object} reconstructed packet
+ * @public
  */
 
 exports.reconstructPacket = function (packet, buffers) {

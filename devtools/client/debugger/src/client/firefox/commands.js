@@ -29,8 +29,8 @@ function currentThreadFront() {
 /**
  * Create an object front for the passed grip
  *
- * @param {Object} grip
- * @param {Object} frame: An optional frame that will manage the created object front.
+ * @param {object} grip
+ * @param {object} frame: An optional frame that will manage the created object front.
  *                        if not passed, the current thread front will manage the object.
  * @returns {ObjectFront}
  */
@@ -278,18 +278,18 @@ async function evaluateExpressions(expressions, options) {
 /**
  * Evaluate some JS expression in a given thread.
  *
- * @param {String} expression
- * @param {Object} options
- * @param {String} options.frameId
+ * @param {string} expression
+ * @param {object} options
+ * @param {string} options.frameId
  *                 Optional frame actor ID into which the expression should be evaluated.
- * @param {String} options.threadId
+ * @param {string} options.threadId
  *                 Optional thread actor ID into which the expression should be evaluated.
- * @param {String} options.selectedNodeActor
+ * @param {string} options.selectedNodeActor
  *                 Optional node actor ID which related to "$0" in the evaluated expression.
- * @param {Boolean} options.evalInTracer
+ * @param {boolean} options.evalInTracer
  *                 To be set to true, if the object actors created during the evaluation
  *                 should be registered in the tracer actor Pool.
- * @return {Object}
+ * @return {object}
  *                 See ScriptCommand.execute JS Doc.
  */
 async function evaluate(

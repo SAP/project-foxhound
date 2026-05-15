@@ -27,6 +27,8 @@ browser.engagement:
       - rtestard@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_ENGAGEMENT_TAB_UNLOAD_COUNT
+    no_lint:
+      - COMMON_PREFIX
 
   tab_reload_count:
     type: counter
@@ -43,6 +45,8 @@ browser.engagement:
       - rtestard@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_ENGAGEMENT_TAB_RELOAD_COUNT
+    no_lint:
+      - COMMON_PREFIX
 
   tab_explicit_unload:
     type: event
@@ -78,6 +82,8 @@ browser.engagement:
         description: Time to unload tabs (in ms)
         type: quantity
     expires: never
+    no_lint:
+      - COMMON_PREFIX
 
   tab_unload_to_reload:
     type: timing_distribution
@@ -95,6 +101,8 @@ browser.engagement:
       - tkikuchi@mozilla.com
     expires: never
     telemetry_mirror: TAB_UNLOAD_TO_RELOAD
+    no_lint:
+      - COMMON_PREFIX
 
 browser.ui.interaction:
   all_tabs_panel_dragstart_tab_event_count:
@@ -114,8 +122,6 @@ browser.ui.interaction:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_UI_INTERACTION_ALL_TABS_PANEL_DRAGSTART_TAB_EVENT_COUNT
-    no_lint:
-      - COMMON_PREFIX
 
   all_tabs_panel_entrypoint:
     type: labeled_counter
@@ -133,8 +139,43 @@ browser.ui.interaction:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_UI_INTERACTION_ALL_TABS_PANEL_ENTRYPOINT
-    no_lint:
-      - COMMON_PREFIX
+
+  list_all_tabs_action:
+    type: labeled_counter
+    description: >
+      Records how often users interact with any top-level menu option in the
+      "List All Tabs" menu.
+    bugs:
+      - https://bugzil.la/2001752
+    data_reviews:
+      - https://bugzil.la/2001752
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sthompson@mozilla.com
+    expires: never
+    labels:
+      - close_all_duplicates # "Close all duplicate tabs" menu item
+      - tabs_from_devices # "Tabs from other devices" menu item
+      - search_tabs # "Search tabs" menu item
+
+  tab_movement:
+    type: labeled_counter
+    description: >
+      Records information about user tab movements within the tab strip.
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sthompson@mozilla.com
+    expires: never
+    labels:
+      - not_from_external_app
+      - from_external_app_next_to_active_tab
+      - from_external_app_tab_strip_end
 
 tabgroup:
   create_group:
@@ -220,6 +261,9 @@ tabgroup:
         type: quantity
       layout:
         description: The layout of the tab strip when the tabs were added (either "horizontal" or "vertical")
+        type: string
+      group_type:
+        description: The state of the tab group to which the tab(s) are being added ("expanded", "collapsed" or "saved")
         type: string
     expires: never
 
@@ -404,7 +448,8 @@ tabgroup:
     data_sensitivity:
       - interaction
     labels:
-      - activate
+      - activate_expanded
+      - activate_collapsed
       - add
       - duplicate
       - new
@@ -429,6 +474,7 @@ tabgroup:
       - sthompson@mozilla.com
     bugs:
       - https://bugzil.la/1938401
+      - https://bugzil.la/1971241
     data_reviews:
       - https://bugzil.la/1938401
     data_sensitivity:
@@ -446,6 +492,7 @@ tabgroup:
       - delete
       - ungroup
       - move_window
+      - hover_preview
     expires: never
 
 
@@ -516,6 +563,9 @@ tabgroup:
       label_reason:
         description: Whether the model suggested no label due to low probability or dissimilar tabs
         type: string
+      backend:
+        description: The backend used for the ML Engine
+        type: string
     expires: never
     no_lint:
       - COMMON_PREFIX
@@ -560,6 +610,9 @@ tabgroup:
         type: string
       id:
         description: The ID of the created tab group
+        type: string
+      backend:
+        description: The backend used for the ML Engine
         type: string
     expires: never
     no_lint:
@@ -758,3 +811,164 @@ browser.tabclose:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: FX_TAB_CLOSE_PERMIT_UNLOAD_TIME_MS
+
+link.handling:
+  open_next_to_active_tab_settings_enabled:
+    type: boolean
+    lifetime: application
+    description: >
+      Records if the user has the "Open links from apps next to your active tab"
+      feature enabled.
+    notification_emails:
+      - sthompson@mozilla.com
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    expires: never
+    no_lint:
+      - COMMON_PREFIX
+  open_next_to_active_tab_settings_change:
+    type: event
+    description: >
+      This is recorded when the "Open links from apps next to your active tab"
+      checkbox in the General > Tabs section of about:preferences is toggled.
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sthompson@mozilla.com
+    expires: never
+    extra_keys:
+      checked:
+        description: >
+          Whether the checkbox was toggled on or off.
+        type: boolean
+    no_lint:
+      - COMMON_PREFIX
+  open_from_external_app:
+    type: event
+    description: >
+      This is recorded when a link is clicked outside of Firefox and this external
+      link is then opened inside of Firefox. The "Open links from apps next to
+      your active tab" option governs the behavior of where the link will be opened.
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sthompson@mozilla.com
+    expires: never
+    extra_keys:
+      next_to_active_tab:
+        description: >
+          Whether the link was opened next to the active tab.
+        type: boolean
+    no_lint:
+      - COMMON_PREFIX
+
+splitview:
+  uri_count:
+    type: labeled_counter
+    description: >
+      Records how many URIs were loaded on each side of the splitview.
+    bugs:
+      - https://bugzil.la/2013097
+    data_reviews:
+      - https://bugzil.la/2013097
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sfoster@mozilla.com
+    expires: never
+    labels:
+      - "1"  # left side
+      - "2"  # right side
+
+  start:
+    type: event
+    description: >
+      Recorded when a user starts a split view.
+    bugs:
+      - https://bugzil.la/1992744
+    data_reviews:
+      - https://bugzil.la/1992744
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kcochrane@mozilla.com
+    expires: never
+    extra_keys:
+      tab_layout:
+        description: The layout of the tab strip (horizontal or vertical)
+        type: string
+      trigger:
+        description: The method used to start the split view (menu_add for 1 tab selected, menu_open for 2 tabs selected)
+        type: string
+      tabgroup:
+        description: The tab group state (none for neither tab in a group, main for primary tab in a group, other for secondary tab in a group, both_same for both tabs in same group, both_different for both tabs in different groups)
+        type: string
+
+  end:
+    type: event
+    description: >
+      Recorded when a user terminates a split view.
+    bugs:
+      - https://bugzil.la/1992744
+    data_reviews:
+      - https://bugzil.la/1992744
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kcochrane@mozilla.com
+    expires: never
+    extra_keys:
+      tab_layout:
+        description: The layout of the tab strip (horizontal or vertical)
+        type: string
+      trigger:
+        description: The method used to end the split view (menu_separate, icon_separate, icon_close, tab_close, footer_separate, footer_close)
+        type: string
+
+  reverse:
+    type: event
+    description: >
+      Recorded when the user reverses tabs in a split view.
+    bugs:
+      - https://bugzil.la/1992744
+    data_reviews:
+      - https://bugzil.la/1992744
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kcochrane@mozilla.com
+    expires: never
+    extra_keys:
+      trigger:
+        description: The method used to reverse tabs (icon for split view icon menu, footer for split view footer menu)
+        type: string
+
+  resize:
+    type: event
+    description: >
+      Recorded at the end of a resize action in a split view.
+    bugs:
+      - https://bugzil.la/1992744
+    data_reviews:
+      - https://bugzil.la/1992744
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kcochrane@mozilla.com
+    expires: never
+    extra_keys:
+      width:
+        description: Rounded percentage of view area width
+        type: quantity

@@ -8,8 +8,8 @@
 
 #include "mozilla/ErrorResult.h"
 #include "nsAString.h"
-#include "nsIContent.h"
 #include "nsContentUtils.h"
+#include "nsIContent.h"
 
 namespace mozilla::dom {
 

@@ -52,8 +52,8 @@ input[type="url"]:not(:placeholder-shown) {
     content: url("chrome://global/skin/icons/error.svg");
     fill: var(--icon-color-critical);
     -moz-context-properties: fill;
-    height: var(--icon-size-default);
-    width: var(--icon-size-default);
+    height: var(--icon-size);
+    width: var(--icon-size);
     display: flex;
   }
 }

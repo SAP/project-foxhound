@@ -7,25 +7,22 @@ pluginManagement {
         apply from: file('../gradle/mozconfig.gradle')
     } else {
         gradle.ext.mozconfig = gradle.root.mozconfig
+        gradle.ext.configureMavenRepositories = gradle.root.ext.configureMavenRepositories
     }
 
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
+    includeBuild("../gradle/plugins/conventions")
     includeBuild("../android-components/plugins/publicsuffixlist")
     includeBuild("../android-components/plugins/dependencies")
     includeBuild("../android-components/plugins/config")
+    includeBuild("../gradle/plugins/nimbus-gradle-plugin")
 }
 
 plugins {
+    id 'org.mozilla.conventions.settings'
     id 'mozac.DependenciesPlugin'
 }
 
@@ -41,6 +38,10 @@ ext.topsrcdir = rootProject.projectDir.absolutePath.minus("mobile/android/focus-
 
 apply from: file('../shared-settings.gradle')
 apply from: file('../autopublish-settings.gradle')
+
+if (gradle.ext.mozconfig.substs.MOZ_APPSERVICES_IN_TREE) {
+    apply from: file("${topsrcdir}/services/app-services/settings.gradle")
+}
 
 include ':app'
 

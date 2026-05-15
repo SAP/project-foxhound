@@ -26,6 +26,25 @@ add_task(async function () {
   const textProp = await addProperty(view, 0, "background-color", "#XYZ");
 
   is(textProp.value, "#XYZ", "Text prop should have been changed.");
-  is(textProp.overridden, true, "Property should be overridden");
   is(textProp.editor.isValid(), false, "#XYZ should not be a valid entry");
+  ok(
+    textProp.editor.element.classList.contains("ruleview-invalid"),
+    "property element should have the ruleview-invalid class"
+  );
+
+  info("Check that editing the property removes the ruleview-invalid class");
+  await focusEditableField(view, textProp.editor.valueSpan);
+  ok(
+    !textProp.editor.element.classList.contains("ruleview-invalid"),
+    "property element does not have the ruleview-invalid class when the declaration is being edited"
+  );
+
+  info("Check that the expander gets shown again after we're done editing");
+  const onEditingCancelled = view.once("ruleview-changed");
+  EventUtils.sendKey("ESCAPE", view.styleWindow);
+  await onEditingCancelled;
+  ok(
+    textProp.editor.element.classList.contains("ruleview-invalid"),
+    "property element should have the ruleview-invalid class again after editing is over"
+  );
 });

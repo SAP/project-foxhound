@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.81.0"
+rust-version = "1.83.0"
 name = "ohttp"
-version = "0.6.0"
+version = "0.7.2"
 authors = ["Martin Thomson <mt@lowentropy.net>"]
 build = "build.rs"
 autolib = false
@@ -45,24 +45,28 @@ default = [
     "client",
     "server",
     "rust-hpke",
+    "stream",
 ]
 external-sqlite = []
 gecko = [
     "nss",
-    "mozbuild",
+    "dep:mozbuild",
 ]
-nss = ["bindgen"]
-pq = ["hpke-pq"]
+nss = ["dep:bindgen"]
 rust-hpke = [
-    "rand",
-    "aead",
-    "aes-gcm",
-    "chacha20poly1305",
-    "hkdf",
-    "sha2",
-    "hpke",
+    "dep:rand",
+    "dep:aead",
+    "dep:aes-gcm",
+    "dep:chacha20poly1305",
+    "dep:hkdf",
+    "dep:sha2",
+    "dep:hpke",
 ]
 server = []
+stream = [
+    "dep:futures",
+    "dep:pin-project",
+]
 unsafe-print-secrets = []
 
 [lib]
@@ -70,54 +74,51 @@ name = "ohttp"
 path = "src/lib.rs"
 
 [dependencies.aead]
-version = "0.4"
+version = "0.5"
 features = ["std"]
 optional = true
 
 [dependencies.aes-gcm]
-version = "0.9"
+version = "0.10"
 optional = true
 
 [dependencies.byteorder]
 version = "1.4"
 
 [dependencies.chacha20poly1305]
-version = "0.8"
+version = "0.10"
+optional = true
+
+[dependencies.futures]
+version = "0.3"
 optional = true
 
 [dependencies.hex]
 version = "0.4"
 
 [dependencies.hkdf]
-version = "0.11"
+version = "0.12"
 optional = true
 
 [dependencies.hpke]
-version = "0.11.0"
+version = "0.13"
 features = [
     "std",
     "x25519",
 ]
 optional = true
 default-features = false
-
-[dependencies.hpke-pq]
-version = "0.11.0"
-features = [
-    "std",
-    "x25519",
-    "xyber768d00",
-]
-optional = true
-default-features = false
-package = "hpke_pq"
 
 [dependencies.log]
 version = "0.4"
 default-features = false
 
+[dependencies.pin-project]
+version = "1.1"
+optional = true
+
 [dependencies.rand]
-version = "0.8"
+version = "0.9"
 optional = true
 
 [dependencies.regex]
@@ -125,18 +126,18 @@ version = "~1.11"
 optional = true
 
 [dependencies.sha2]
-version = "0.9"
+version = "0.10"
 optional = true
 
 [dependencies.thiserror]
-version = "1"
+version = "2"
 
 [dev-dependencies.env_logger]
 version = "0.10"
 default-features = false
 
 [build-dependencies.bindgen]
-version = "0.69"
+version = "0.72"
 features = ["runtime"]
 optional = true
 default-features = false
@@ -152,4 +153,4 @@ version = "1.0"
 version = "1.0"
 
 [build-dependencies.toml]
-version = "0.5"
+version = ">=0.5,<=0.9"

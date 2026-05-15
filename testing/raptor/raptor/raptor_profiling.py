@@ -112,19 +112,18 @@ class RaptorProfiling:
                             "The test ran in chimera mode but we found no cold "
                             "and warm browsertime JSONs. Cannot collect profiles."
                         )
-                profile_locations.extend(
-                    [("cold", results["cold"]), ("warm", results["warm"])]
-                )
+                profile_locations.extend([
+                    ("cold", results["cold"]),
+                    ("warm", results["warm"]),
+                ])
             else:
                 # When we don't run in chimera mode, it means that we
                 # either ran a benchmark, scenario test or separate
                 # warm/cold pageload tests.
-                profile_locations.append(
-                    (
-                        __get_test_type(),
-                        results["main"],
-                    )
-                )
+                profile_locations.append((
+                    __get_test_type(),
+                    results["main"],
+                ))
 
             for testtype, results_json in profile_locations:
                 with open(results_json, encoding="utf-8") as f:
@@ -135,12 +134,10 @@ class RaptorProfiling:
                         for rel_profile_path in entry["files"][
                             self.profile_entry_string
                         ]:
-                            res.append(
-                                {
-                                    "path": os.path.join(results_dir, rel_profile_path),
-                                    "type": testtype,
-                                }
-                            )
+                            res.append({
+                                "path": os.path.join(results_dir, rel_profile_path),
+                                "type": testtype,
+                            })
                     except KeyError:
                         if self._is_extra_profiler_run:
                             LOG.info("Failed to find profiles for extra profiler run.")
@@ -150,12 +147,10 @@ class RaptorProfiling:
             # Raptor-webext stores its profiles in the self.temp_profile_dir
             # directory
             for profile in os.listdir(self.temp_profile_dir):
-                res.append(
-                    {
-                        "path": os.path.join(self.temp_profile_dir, profile),
-                        "type": __get_test_type(),
-                    }
-                )
+                res.append({
+                    "path": os.path.join(self.temp_profile_dir, profile),
+                    "type": __get_test_type(),
+                })
 
         LOG.info("Found %s profiles: %s" % (len(res), str(res)))
         return res

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppShell_h__
-#define nsAppShell_h__
+#ifndef nsAppShell_h_
+#define nsAppShell_h_
 
 #include <time.h>
 
@@ -17,7 +17,6 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"  // for mozilla::TimeDuration
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/jni/Natives.h"
 #include "nsBaseAppShell.h"
 #include "nsCOMPtr.h"
@@ -184,7 +183,7 @@ class nsAppShell : public nsBaseAppShell {
       if (event->isInList()) {
         event->mPostTime = Event::GetTime();
         // Ownership of event object transfers to the queue.
-        mozilla::Unused << event.release();
+        (void)event.release();
       }
       lock.NotifyAll();
     }
@@ -214,4 +213,4 @@ class nsAppShell : public nsBaseAppShell {
   nsInterfaceHashtable<nsStringHashKey, nsIObserver> mObserversHash;
 };
 
-#endif  // nsAppShell_h__
+#endif  // nsAppShell_h_

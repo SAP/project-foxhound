@@ -103,9 +103,7 @@ def test_mozpower_measuring(mozpower_obj):
         "mozpower.macintelpower.MacIntelPower.initialize_power_measurements"
     ) as _, mock.patch(
         "mozpower.macintelpower.MacIntelPower.finalize_power_measurements"
-    ) as _, mock.patch(
-        "mozpower.macintelpower.MacIntelPower.get_perfherder_data"
-    ) as _:
+    ) as _, mock.patch("mozpower.macintelpower.MacIntelPower.get_perfherder_data") as _:
         mozpower_obj.initialize_power_measurements()
         mozpower_obj.measurer.initialize_power_measurements.assert_called()
 
@@ -124,9 +122,7 @@ def test_mozpower_measuring_with_no_measurer(mozpower_obj):
         "mozpower.macintelpower.MacIntelPower.initialize_power_measurements"
     ) as _, mock.patch(
         "mozpower.macintelpower.MacIntelPower.finalize_power_measurements"
-    ) as _, mock.patch(
-        "mozpower.macintelpower.MacIntelPower.get_perfherder_data"
-    ) as _:
+    ) as _, mock.patch("mozpower.macintelpower.MacIntelPower.get_perfherder_data") as _:
         measurer = mozpower_obj.measurer
         mozpower_obj.measurer = None
 

@@ -7,8 +7,8 @@
 /* base class for rendering objects that need child lists but behave like leaf
  */
 
-#ifndef nsAtomicContainerFrame_h___
-#define nsAtomicContainerFrame_h___
+#ifndef nsAtomicContainerFrame_h_
+#define nsAtomicContainerFrame_h_
 
 #include "nsContainerFrame.h"
 
@@ -41,4 +41,4 @@ class nsAtomicContainerFrame : public nsContainerFrame {
       : nsContainerFrame(aStyle, aPresContext, aID) {}
 };
 
-#endif  // nsAtomicContainerFrame_h___
+#endif  // nsAtomicContainerFrame_h_

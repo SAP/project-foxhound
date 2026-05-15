@@ -12,7 +12,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "resProto",
   "@mozilla.org/network/protocol;1?name=resource",
-  "nsISubstitutingProtocolHandler"
+  Ci.nsISubstitutingProtocolHandler
 );
 
 this.specialpowers = class extends ExtensionAPI {

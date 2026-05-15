@@ -114,8 +114,9 @@ class AutoRefreshHighlighter extends EventEmitter {
 
   /**
    * Show the highlighter on a given node
+   *
    * @param {DOMNode} node
-   * @param {Object} options
+   * @param {object} options
    *        Object used for passing options
    */
   show(node, options = {}) {
@@ -169,8 +170,9 @@ class AutoRefreshHighlighter extends EventEmitter {
    * Whether the current node is valid for this highlighter type.
    * This is implemented by default to check if the node is an element node. Highlighter
    * sub-classes should override this method if they want to highlight other node types.
+   *
    * @param {DOMNode} node
-   * @return {Boolean}
+   * @return {boolean}
    */
   _isNodeValid(node) {
     return isNodeValid(node);
@@ -228,7 +230,8 @@ class AutoRefreshHighlighter extends EventEmitter {
   /**
    * Update the knowledge we have of the current node's boxquads and return true
    * if any of the points x/y or bounds have change since.
-   * @return {Boolean}
+   *
+   * @return {boolean}
    */
   _hasMoved() {
     const oldQuads = this.currentQuads;
@@ -240,7 +243,8 @@ class AutoRefreshHighlighter extends EventEmitter {
   /**
    * Update the knowledge we have of the current window's scrolling offset, both
    * horizontal and vertical, and return `true` if they have changed since.
-   * @return {Boolean}
+   *
+   * @return {boolean}
    */
   _hasWindowScrolled() {
     if (!this.win) {
@@ -259,7 +263,8 @@ class AutoRefreshHighlighter extends EventEmitter {
   /**
    * Update the knowledge we have of the current window's dimensions and return `true`
    * if they have changed since.
-   * @return {Boolean}
+   *
+   * @return {boolean}
    */
   _haveWindowDimensionsChanged() {
     const { width, height } = getWindowDimensions(this.win);
@@ -339,16 +344,14 @@ class AutoRefreshHighlighter extends EventEmitter {
       return;
     }
 
-    const root = this.getElement("root");
-    if (!root) {
-      // Highlighters which support simple highlighters are expected to use a
-      // root element with the id "root".
+    if (!this.rootEl) {
+      // Highlighters which support simple highlighters are expected to use a root element.
       return;
     }
 
     // Add/remove the `user-simple-highlighters` class based on the current
     // toolbox configuration.
-    root.classList.toggle(
+    this.rootEl.classList.toggle(
       "use-simple-highlighters",
       this.highlighterEnv.useSimpleHighlightersForReducedMotion
     );

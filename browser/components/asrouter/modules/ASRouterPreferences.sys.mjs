@@ -312,6 +312,10 @@ export class _ASRouterPreferences {
     if (this._initialized) {
       Services.prefs.removeObserver(this._providerPrefBranch, this);
       Services.prefs.removeObserver(this._devtoolsPref, this);
+      Services.obs.removeObserver(
+        this._maybeSetMessagingProfileID,
+        SELECTABLE_PROFILES_UPDATED
+      );
       for (const id of Object.keys(USER_PREFERENCES)) {
         Services.prefs.removeObserver(USER_PREFERENCES[id], this);
       }

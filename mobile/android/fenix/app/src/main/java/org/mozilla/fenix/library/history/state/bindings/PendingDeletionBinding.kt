@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.library.history.state.bindings
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import mozilla.components.lib.state.helpers.AbstractBinding
@@ -17,7 +19,8 @@ import org.mozilla.fenix.library.history.HistoryView
 class PendingDeletionBinding(
     appStore: AppStore,
     private val view: HistoryView,
-) : AbstractBinding<AppState>(appStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<AppState>(appStore, mainDispatcher) {
     override suspend fun onState(flow: Flow<AppState>) {
         flow.distinctUntilChangedBy { it.pendingDeletionHistoryItems }
             .collect { view.update(it) }

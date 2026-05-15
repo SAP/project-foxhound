@@ -39,6 +39,8 @@
   -moz-context-properties: fill;
   fill: currentColor;
   min-height: 1rem;
+  margin-inline-start: var(--space-xsmall);
+  margin-block-start: var(--space-xsmall);
 }
 
 .wallpaper-input {
@@ -56,6 +58,11 @@
   padding: 0;
   width: 100%;
 
+  &:checked,
+  &.selected {
+    box-shadow: inset 0 0 0 3px var(--color-accent-primary);
+  }
+
   &.theme-custom-wallpaper {
     border: 2px dashed var(--border-color-default, #CFCFD8);
     box-shadow: none;
@@ -65,13 +72,18 @@
       content: '';
       -moz-context-properties: fill;
       fill: var(--icon-color);
-      width: calc(var(--icon-size-default) * 1.25 ); // Custom size: ~20px;
-      height: calc(var(--icon-size-default) * 1.25 ); // Custom size: ~20px;
+      width: calc(var(--icon-size) * 1.25 ); // Custom size: ~20px;
+      height: calc(var(--icon-size) * 1.25 ); // Custom size: ~20px;
       display: block;
       position: absolute;
       inset-block-start: 50%;
       inset-inline-start: 50%;
       transform: translate(-50%, -50%);
+    }
+
+    &:focus {
+      outline-color: var(--focus-outline-color);
+      outline-offset: var(--focus-outline-offset);
     }
   }
 
@@ -90,18 +102,12 @@
   }
 
   &:focus-visible {
-    outline-color: var(--newtab-primary-action-background);
+    outline-offset: var(--focus-outline-offset);
   }
 
   &:hover {
     filter: brightness(55%);
     outline-color: transparent;
-  }
-
-  &:focus {
-    border-color: transparent;
-    outline-color: var(--color-accent-primary-active);
-    padding: var(--space-xxsmall);
   }
 }
 
@@ -112,16 +118,14 @@
   outline: 2px dashed var(--border-color-default, #CFCFD8);
   outline-offset: 2px;
   position: relative;
-  color-scheme: light;
 
   .wallpaper-input {
     box-shadow: none;
-  }
 
-  &:focus-visible {
-    border-color: transparent;
-    outline-color: var(--color-accent-primary-active);
-    padding: var(--space-xxsmall);
+    &:focus {
+      outline-color: var(--focus-outline-color);
+      outline-offset: 6px;
+    }
   }
 
   // The color picker has a default state where the user has not picked a custom color
@@ -165,8 +169,8 @@
     content: '';
     -moz-context-properties: fill;
     fill: var(--icon-color);
-    width: calc(var(--icon-size-default) * 1.25); // Custom size: ~20px;
-    height: calc(var(--icon-size-default) * 1.25); // Custom size: ~20px;
+    width: calc(var(--icon-size) * 1.25); // Custom size: ~20px;
+    height: calc(var(--icon-size) * 1.25); // Custom size: ~20px;
     display: block;
     position: absolute;
     inset-block-start: 50%;
@@ -174,6 +178,7 @@
     transform: translate(-50%, -50%);
     pointer-events: none;
     cursor: pointer;
+    color-scheme: light;
   }
 
   label {
@@ -199,27 +204,24 @@
   border: none;
 
   &.category {
+    --wallpaper-panel-width: 430px;
+
     background-color: var(--newtab-background-color-secondary);
     color: var(--newtab-text-primary-color);
     display: unset;
     gap: unset;
     grid-auto-rows: unset;
     grid-template-columns: unset;
-
-    /* XXXdholbert The 32px subtraction here is to account for our 16px of
-     * margin on top and bottom. Ideally this should change to use
-     * 'height: stretch' when bug 1789477 lands. */
-    height: calc(100% - var(--space-xlarge));
-    inset-inline-start: var(--space-xlarge);
+    height: 100%;
+    // Can get rid of padding and replace height with
+    // 'height: stretch' when bug 1789477 lands.
+    padding: var(--space-xlarge);
     position: absolute;
     inset-block-start: 0;
-    width: 380px;
+    inset-inline-start: 100%;
+    width: var(--wallpaper-panel-width);
     z-index: 2;
-    transform: translateX(100%);
-
-    &:dir(rtl) {
-      transform: translateX(-100%);
-    }
+    overflow-y: auto;
 
     fieldset {
       border: none;
@@ -234,13 +236,13 @@
       &.wallpaper-list-exit,
       &.wallpaper-list-enter-done,
       &.wallpaper-list-exit-done {
-        transition: transform 300ms;
+        transition: inset-inline-start 300ms;
       }
     }
 
     &.wallpaper-list-enter-done,
     &.wallpaper-list-enter-active {
-      transform: translateX(0);
+      inset-inline-start: calc(100% - var(--wallpaper-panel-width));
     }
   }
 
@@ -284,6 +286,10 @@
 
   &:hover {
     text-decoration: none;
+  }
+
+  &:focus-visible {
+    outline-offset: -2px;
   }
 }
 

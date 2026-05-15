@@ -12,12 +12,14 @@ import { MozLitElement } from "../lit-utils.mjs";
  * @property {string} label - Text to display on the badge
  * @property {string} iconSrc - The src for an optional icon shown next to the label
  * @property {string} title - The title of the badge, appears as a tooltip on hover
+ * @property {string} type - The type of badge (e.g., "new")
  */
 export default class MozBadge extends MozLitElement {
   static properties = {
     label: { type: String, fluent: true },
     iconSrc: { type: String },
     title: { type: String, fluent: true, mapped: true },
+    type: { type: String, reflect: true },
   };
 
   constructor() {

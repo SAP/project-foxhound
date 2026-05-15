@@ -22,77 +22,35 @@ class PerfFront extends FrontClassWithSpec(perfSpec) {
     this.formAttributeName = "perfActor";
   }
 
-  /* @backward-compat { version 141 }
-   * Version 140 introduced the bulk transfer of the profile date, as
-   * implemented by getProfileAndStopProfilerBulk below.
-   * This function uses a trait to decide between calling the old method and the
-   * new method.
-   * In the case of the old method, the shared libraries are computed from the
-   * profile data itself. But when using the new method, the profile data is a
-   * gzipped buffer, therefore an additional call to
-   * getPreviouslyRetrievedAdditionalInformation is made to retrieve this
-   * information from the server-side.
-   *
-   * When we'll want to remove the backwards compatible code (on ESR 128 EOL),
-   * we'll remove the second part of this function, but we'll likely keep the first part
-   * for simplicity.
-   * */
   async getProfileAndStopProfiler() {
-    // Note: this.conn.traits exists sometimes, but isn't guaranteed to exist always.
-    // this.conn.mainRoot.traits always exists though.
-    const { useBulkTransferForPerformanceProfile } = this.conn.mainRoot.traits;
-    if (useBulkTransferForPerformanceProfile) {
-      const handle = await this.startCaptureAndStopProfiler();
+    const handle = await this.startCaptureAndStopProfiler();
 
-      // Start both calls in parallel
-      const profilePromise = this.getPreviouslyCapturedProfileDataBulk(handle);
-      const additionalInformationPromise =
-        this.getPreviouslyRetrievedAdditionalInformation(handle);
+    // Start both calls in parallel
+    const profilePromise = this.getPreviouslyCapturedProfileDataBulk(handle);
+    const additionalInformationPromise =
+      this.getPreviouslyRetrievedAdditionalInformation(handle);
 
-      // But make sure we wait until the end of both calls even in case of an error.
-      const [profileResult, additionalInformationResult] =
-        await Promise.allSettled([
-          profilePromise,
-          additionalInformationPromise,
-        ]);
+    // But make sure we wait until the end of both calls even in case of an error.
+    const [profileResult, additionalInformationResult] =
+      await Promise.allSettled([profilePromise, additionalInformationPromise]);
 
-      if (profileResult.status === "rejected") {
-        throw profileResult.reason;
-      }
-
-      if (additionalInformationResult.status === "rejected") {
-        throw additionalInformationResult.reason;
-      }
-
-      return {
-        profile: profileResult.value,
-        additionalInformation: additionalInformationResult.value,
-      };
+    if (profileResult.status === "rejected") {
+      throw profileResult.reason;
     }
 
-    /**
-     * Flatten all the sharedLibraries of the different processes in the profile
-     * into one list of libraries.
-     * @param {any} processProfile - The profile JSON object
-     * @returns {Library[]}
-     */
-    function sharedLibrariesFromProfile(processProfile) {
-      return processProfile.libs.concat(
-        ...processProfile.processes.map(sharedLibrariesFromProfile)
-      );
+    if (additionalInformationResult.status === "rejected") {
+      throw additionalInformationResult.reason;
     }
 
-    const profileAsJson = await super.getProfileAndStopProfiler();
     return {
-      profile: profileAsJson,
-      additionalInformation: {
-        sharedLibraries: sharedLibrariesFromProfile(profileAsJson),
-      },
+      profile: profileResult.value,
+      additionalInformation: additionalInformationResult.value,
     };
   }
 
   /**
    * This implements the retrieval of the profile data using the bulk protocol.
+   *
    * @param {number} handle THe handle returned by startCaptureAndStopProfiler
    */
   async getPreviouslyCapturedProfileDataBulk(handle) {

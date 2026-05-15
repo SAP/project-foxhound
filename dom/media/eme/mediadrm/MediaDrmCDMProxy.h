@@ -8,15 +8,15 @@
 #define MediaDrmCDMProxy_h_
 
 #include <jni.h>
-#include "mozilla/jni/Types.h"
-#include "mozilla/CDMProxy.h"
-#include "mozilla/CDMCaps.h"
-#include "mozilla/dom/MediaKeys.h"
-#include "mozilla/dom/MediaKeySession.h"
-#include "mozilla/MediaDrmProxySupport.h"
-#include "mozilla/UniquePtr.h"
 
 #include "MediaCodec.h"
+#include "mozilla/CDMCaps.h"
+#include "mozilla/CDMProxy.h"
+#include "mozilla/MediaDrmProxySupport.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/MediaKeySession.h"
+#include "mozilla/dom/MediaKeys.h"
+#include "mozilla/jni/Types.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -35,8 +35,8 @@ class MediaDrmCDMProxy final : public CDMProxy {
             const nsAString& aGMPName) override;
 
   void CreateSession(uint32_t aCreateSessionToken,
-                     MediaKeySessionType aSessionType, PromiseId aPromiseId,
-                     const nsAString& aInitDataType,
+                     dom::MediaKeySessionType aSessionType,
+                     PromiseId aPromiseId, const nsAString& aInitDataType,
                      nsTArray<uint8_t>& aInitData) override;
 
   void LoadSession(PromiseId aPromiseId, dom::MediaKeySessionType aSessionType,
@@ -75,7 +75,8 @@ class MediaDrmCDMProxy final : public CDMProxy {
   void OnExpirationChange(const nsAString& aSessionId,
                           UnixTime aExpiryTime) override;
 
-  void OnSessionClosed(const nsAString& aSessionId) override;
+  void OnSessionClosed(const nsAString& aSessionId,
+                       dom::MediaKeySessionClosedReason aReason) override;
 
   void OnSessionError(const nsAString& aSessionId, nsresult aException,
                       uint32_t aSystemCode, const nsAString& aMsg) override;
@@ -116,7 +117,7 @@ class MediaDrmCDMProxy final : public CDMProxy {
   void ResolvePromiseWithResult(PromiseId aId, const T& aResult);
 
   struct CreateSessionData {
-    MediaKeySessionType mSessionType;
+    dom::MediaKeySessionType mSessionType;
     uint32_t mCreateSessionToken;
     PromiseId mPromiseId;
     nsCString mInitDataType;

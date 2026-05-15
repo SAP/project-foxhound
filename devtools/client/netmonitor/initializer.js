@@ -29,7 +29,7 @@ EventEmitter.decorate(window);
 /**
  * This is the initialization point for the Network monitor.
  *
- * @param {Object} api Allows reusing existing API object.
+ * @param {object} api Allows reusing existing API object.
  */
 function initialize(api) {
   const app = new NetMonitorApp(api);

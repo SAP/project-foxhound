@@ -26,6 +26,12 @@ add_task(async function test_side_component_navigation_by_click() {
 
     for (let element of pageNavButtons) {
       const view = element.view;
+
+      // Skip chats view
+      if (view === "chats") {
+        continue;
+      }
+
       let buttonClicked = BrowserTestUtils.waitForEvent(
         element.buttonEl,
         "click",
@@ -59,6 +65,12 @@ add_task(async function test_side_component_navigation_by_keyboard() {
 
     for (let element of Array.from(pageNavButtons).slice(1)) {
       const view = element.view;
+
+      // Skip chats view
+      if (view === "chats") {
+        continue;
+      }
+
       let buttonFocused = BrowserTestUtils.waitForEvent(element, "focus", win);
 
       info(`Focus is on ${document.activeElement.view}`);
@@ -79,6 +91,11 @@ add_task(async function test_direct_navigation_to_correct_view() {
 
     for (let element of pageNavButtons) {
       const view = element.view;
+
+      // Skip chats view
+      if (view === "chats") {
+        continue;
+      }
 
       info(`Navigating to ${URL_BASE + view}`);
       document.location.assign(URL_BASE + view);

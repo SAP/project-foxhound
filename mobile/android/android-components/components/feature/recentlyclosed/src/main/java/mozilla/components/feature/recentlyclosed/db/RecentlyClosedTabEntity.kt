@@ -22,13 +22,10 @@ internal data class RecentlyClosedTabEntity(
     @PrimaryKey
     @ColumnInfo(name = "uuid")
     var uuid: String,
-
     @ColumnInfo(name = "title")
     var title: String,
-
     @ColumnInfo(name = "url")
     var url: String,
-
     @ColumnInfo(name = "created_at")
     var createdAt: Long,
 ) {

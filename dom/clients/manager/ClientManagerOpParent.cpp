@@ -31,11 +31,11 @@ void ClientManagerOpParent::DoServiceOp(Method aMethod, Args&&... aArgs) {
        GetCurrentSerialEventTarget(), __func__,
        [this](const mozilla::dom::ClientOpResult& aResult) {
          mPromiseRequestHolder.Complete();
-         Unused << PClientManagerOpParent::Send__delete__(this, aResult);
+         (void)PClientManagerOpParent::Send__delete__(this, aResult);
        },
        [this](const CopyableErrorResult& aRv) {
          mPromiseRequestHolder.Complete();
-         Unused << PClientManagerOpParent::Send__delete__(this, aRv);
+         (void)PClientManagerOpParent::Send__delete__(this, aRv);
        })
       ->Track(mPromiseRequestHolder);
 }

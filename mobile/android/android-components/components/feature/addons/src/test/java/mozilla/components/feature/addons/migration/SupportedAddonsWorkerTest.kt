@@ -8,6 +8,7 @@ import androidx.concurrent.futures.await
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.AddonManager
 import mozilla.components.feature.addons.AddonManagerException
@@ -15,15 +16,12 @@ import mozilla.components.feature.addons.update.AddonUpdater
 import mozilla.components.feature.addons.update.GlobalAddonDependencyProvider
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.components.support.test.whenever
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
@@ -31,9 +29,6 @@ import java.io.IOException
 
 @RunWith(AndroidJUnit4::class)
 class SupportedAddonsWorkerTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setUp() {
@@ -47,7 +42,7 @@ class SupportedAddonsWorkerTest {
 
     @Test
     fun `doWork - will return Result_success and update new supported add-ons when found`() =
-        runTestOnMain {
+        runTest {
             val addonManager = mock<AddonManager>()
             val addonUpdater = mock<AddonUpdater>()
             val worker = TestListenableWorkerBuilder<SupportedAddonsWorker>(testContext).build()
@@ -69,7 +64,7 @@ class SupportedAddonsWorkerTest {
         }
 
     @Test
-    fun `doWork - will try pass any exceptions to the crashReporter`() = runTestOnMain {
+    fun `doWork - will try pass any exceptions to the crashReporter`() = runTest {
         val addonManager = mock<AddonManager>()
         val worker = TestListenableWorkerBuilder<SupportedAddonsWorker>(testContext).build()
         var crashWasReported = false
@@ -87,7 +82,7 @@ class SupportedAddonsWorkerTest {
     }
 
     @Test
-    fun `doWork - will NOT pass any IOExceptions to the crashReporter`() = runTestOnMain {
+    fun `doWork - will NOT pass any IOExceptions to the crashReporter`() = runTest {
         val addonManager = mock<AddonManager>()
         val worker = TestListenableWorkerBuilder<SupportedAddonsWorker>(testContext).build()
         var crashWasReported = false

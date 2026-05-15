@@ -5,19 +5,23 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS.mozilla.dom += [
+    "HTMLTrackElement.h",
     "TextTrack.h",
     "TextTrackCue.h",
     "TextTrackCueList.h",
     "TextTrackList.h",
+    "TextTrackManager.h",
     "TextTrackRegion.h",
     "WebVTTListener.h",
 ]
 
 UNIFIED_SOURCES += [
+    "HTMLTrackElement.cpp",
     "TextTrack.cpp",
     "TextTrackCue.cpp",
     "TextTrackCueList.cpp",
     "TextTrackList.cpp",
+    "TextTrackManager.cpp",
     "TextTrackRegion.cpp",
     "WebVTTListener.cpp",
 ]

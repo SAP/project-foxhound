@@ -318,15 +318,6 @@ class IntermediatePreloads {
       }
     }
 
-    try {
-      // fetches a bundle containing all attachments, download() is called further down to force a re-sync on hash mismatches for old data or if the bundle fails to download
-      await this.client.attachments.cacheAll();
-    } catch (err) {
-      lazy.log.warn(
-        `Error fetching/caching attachment bundle in intermediate preloading: ${err}`
-      );
-    }
-
     let current = [];
     try {
       current = await this.client.db.list();
@@ -338,6 +329,19 @@ class IntermediatePreloads {
         return;
       }
     }
+
+    // fetch attachment bundle if we are initializing cert data or remote-settings records
+    if (!hasPriorCertData || !current.length) {
+      try {
+        // download() is called further down to force a re-sync on hash mismatches for old data or if the bundle fails to download
+        await this.client.attachments.cacheAll();
+      } catch (err) {
+        lazy.log.warn(
+          `Error fetching/caching attachment bundle in intermediate preloading: ${err}`
+        );
+      }
+    }
+
     const waiting = current.filter(record => !record.cert_import_complete);
 
     lazy.log.debug(

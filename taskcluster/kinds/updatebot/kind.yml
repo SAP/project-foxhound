@@ -13,6 +13,9 @@ transforms:
     - gecko_taskgraph.transforms.job:transforms
     - gecko_taskgraph.transforms.task:transforms
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     cron:
         description: Cron Job for Updatebot
@@ -22,7 +25,7 @@ tasks:
             platform: updatebot/all
             symbol: cron
             tier: 1
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: updatebot}
             max-run-time: 4500

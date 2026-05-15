@@ -12,8 +12,6 @@
 #include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT
 #include "mozilla/Variant.h"     // for AsVariant
 
-#include <utility>  // for move
-
 #include "jstypes.h"            // for JS_PUBLIC_API
 #include "debugger/Debugger.h"  // for DebuggerScriptReferent
 #include "gc/Cell.h"            // for Cell

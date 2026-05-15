@@ -151,7 +151,7 @@ static void TestPrintfFormats() {
   MOZ_RELEASE_ASSERT(print_one("hello", "%.*s", 5, "hello there"));
   MOZ_RELEASE_ASSERT(print_one("", "%.*s", 0, "hello there"));
   MOZ_RELEASE_ASSERT(print_one("%%", "%%%%"));
-  MOZ_RELEASE_ASSERT(print_one("0", "%p", (char*)0));
+  MOZ_RELEASE_ASSERT(print_one("0", "%p", (char*)nullptr));
   MOZ_RELEASE_ASSERT(print_one("h", "%c", 'h'));
   MOZ_RELEASE_ASSERT(print_one("1.500000", "%f", 1.5f));
   MOZ_RELEASE_ASSERT(print_one("1.5", "%g", 1.5));

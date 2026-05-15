@@ -49,6 +49,7 @@
 namespace js {
 
 class FrontendContext;
+struct ConstantCompareOperand;
 
 namespace frontend {
 
@@ -1003,23 +1004,13 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   [[nodiscard]] bool emitLexicalInitialization(NameNode* name);
   [[nodiscard]] bool emitLexicalInitialization(TaggedParserAtomIndex name);
 
-  // Emit bytecode for the spread operator.
+  // Emit bytecode for the array spread operator.
   //
-  // emitSpread expects some values representing the spread target (an array or
-  // a tuple), the iterator and it's next() method to be on the stack in that
-  // order (iterator's next() on the bottom).
-  // The number of values representing the spread target is
-  // `spreadeeStackItems`: it's 2 for arrays (one for the array and one for the
-  // index) and 1 for tuples (the tuple itself).
-  // Since arrays and tuples use different opcodes to initialize new elements,
-  // it must be specified using `storeElementOp`.
-  // When emitSpread() finishes, the stack only contains the values representing
-  // the spread target.
-  [[nodiscard]] bool emitSpread(SelfHostedIter selfHostedIter,
-                                int spreadeeStackItems, JSOp storeElementOp);
-  // This shortcut can be used when spreading into arrays, as it assumes
-  // `spreadeeStackItems = 2` (|ARRAY INDEX|) and `storeElementOp =
-  // JSOp::InitElemInc`
+  // emitSpread expects some values representing the spread target (an array),
+  // the iterator and its next() method to be on the stack in that order
+  // (iterator's next() on the bottom).
+  // When emitSpread() finishes, the stack only contains the spread target and
+  // the final index.
   [[nodiscard]] bool emitSpread(SelfHostedIter selfHostedIter);
 
   enum class ClassNameKind {
@@ -1037,11 +1028,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
       ClassNode* classNode, ClassNameKind nameKind = ClassNameKind::BindingName,
       TaggedParserAtomIndex nameForAnonymousClass =
           TaggedParserAtomIndex::null());
-
-  [[nodiscard]] bool emitSuperElemOperands(
-      PropertyByValue* elem, EmitElemOption opts = EmitElemOption::Get);
-  [[nodiscard]] bool emitSuperGetElem(PropertyByValue* elem,
-                                      bool isCall = false);
 
   [[nodiscard]] bool emitCalleeAndThis(ParseNode* callee, CallNode* maybeCall,
                                        CallOrNewEmitter& cone);
@@ -1063,9 +1049,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   [[nodiscard]] bool emitNewPrivateName(TaggedParserAtomIndex bindingName,
                                         TaggedParserAtomIndex symbolName);
-
-  template <class ClassMemberType>
-  [[nodiscard]] bool emitNewPrivateNames(ListNode* classMembers);
 
   [[nodiscard]] bool emitNewPrivateNames(TaggedParserAtomIndex privateBrandName,
                                          ListNode* classMembers);

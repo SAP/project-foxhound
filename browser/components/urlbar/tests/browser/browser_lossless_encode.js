@@ -57,7 +57,10 @@ add_task(async function () {
     function () {
       for (let [url, expected] of tests) {
         info("testing: " + url);
-        gURLBar.setURI(Services.io.newURI(url), false, true);
+        gURLBar.setURI({
+          uri: Services.io.newURI(url),
+          dueToSessionRestore: true,
+        });
         Assert.equal(gURLBar.untrimmedValue, expected);
       }
     }

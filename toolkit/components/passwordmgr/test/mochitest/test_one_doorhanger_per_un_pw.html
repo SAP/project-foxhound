@@ -26,8 +26,10 @@
 
 <pre id="test"></pre>
 <script>
-  /** Test for Login Manager: Don't repeatedly prompt to save the
-      same username and password combination in the same document **/
+  /**
+   * Test for Login Manager: Don't repeatedly prompt to save the
+   * same username and password combination in the same document
+   */
 
   add_task(async function test_prompt_does_not_reappear() {
     let username = document.getElementById("ufield");

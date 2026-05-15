@@ -61,8 +61,11 @@ for patch in \
  double-conversion.diff \
  bug-1856290-ICU-20548-dateinterval-timezone.diff \
  bug-1954138-dtitvfmt-adopt-calendar.diff \
- bug-1954138-ICU-23069-rosh-hashanah-postponement.diff \
  bug-1972781-chinese-based-calendar.diff \
+ bug-2000225-ICU-23264-increase-measure-unit-capacity.diff \
+ bug-2000225-ICU-23262-missing-resource-error-for-iso8601-era.diff \
+ bug-2002735-ICU-23277-coptic-single-era.diff \
+ bug-2010411-patch-cldr-hv-en-root.diff \
 ; do
   echo "Applying local patch $patch"
   patch -d ${icu_dir}/../../ -p1 --no-backup-if-mismatch < ${icu_dir}/../icu-patches/$patch

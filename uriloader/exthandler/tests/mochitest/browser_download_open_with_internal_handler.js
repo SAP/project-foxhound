@@ -735,11 +735,12 @@ add_task(async function test_check_open_with_internal_handler_noask() {
             case "popup":
               content.open(contentUrl);
               break;
-            case "frame":
+            case "frame": {
               let frame = content.document.createElement("iframe");
               frame.setAttribute("src", contentUrl);
               content.document.body.appendChild(frame);
               break;
+            }
             default:
               ok(false, "Unknown where value");
               break;

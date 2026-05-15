@@ -6,11 +6,9 @@
 
 #include "frontend/ParseNode.h"
 
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/Try.h"  // MOZ_TRY*
 
-#include "jsnum.h"
-
+#include "builtin/Number.h"
 #include "frontend/CompilationStencil.h"  // ExtensibleCompilationStencil
 #include "frontend/FullParseHandler.h"
 #include "frontend/ParseContext.h"
@@ -91,8 +89,7 @@ ParseNodeResult ParseNode::appendOrCreateList(ParseNodeKind kind,
     }
   }
 
-  ListNode* list;
-  MOZ_TRY_VAR(list, handler->newResult<ListNode>(kind, left));
+  ListNode* list = MOZ_TRY(handler->newResult<ListNode>(kind, left));
 
   list->append(right);
   return list;

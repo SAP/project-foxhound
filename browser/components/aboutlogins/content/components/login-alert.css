@@ -8,10 +8,10 @@
   grid-template-areas: "icon title action" "icon content content";
   grid-template-columns: min-content 1fr auto;
   padding: 16px 32px;
-  color: var(--in-content-text-color);
+  color: var(--text-color);
   background-color: var(--background-color-box);
-  border-radius: 4px;
-  border: 1px solid var(--in-content-border-color);
+  border-radius: var(--border-radius-small);
+  border: 1px solid var(--border-color);
   box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.1);
   font-size: 0.9em;
 }
@@ -21,13 +21,13 @@
 }
 
 :host([variant="error"]) {
-  background-color: #a4000f;
-  color: white;
+  background-color: var(--background-color-critical);
+  color: var(--text-color);
 }
 
 :host([variant="warning"]) {
-  background: #d7b600;
-  color: black;
+  background: var(--background-color-warning);
+  color: var(--text-color);
 }
 
 :host(login-alert) img {
@@ -59,7 +59,7 @@
 }
 
 :host(login-vulnerable-password-alert) a {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 :host(login-vulnerable-password-alert) div[slot="content"] > a {
@@ -76,6 +76,6 @@
 }
 
 :host(login-breach-alert) a {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: inherit;
 }

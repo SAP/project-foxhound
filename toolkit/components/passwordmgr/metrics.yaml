@@ -118,6 +118,7 @@ pwmgr:
       - https://bugzil.la/1754637
       - https://bugzil.la/1850872
       - https://bugzil.la/1969169
+      - https://bugzil.la/1999882
     data_reviews: &pwmgr_doorhanger_submitted_data_reviews
       - https://bugzil.la/1650929
       - https://bugzil.la/1650941
@@ -127,7 +128,7 @@ pwmgr:
       - https://bugzil.la/1850872
     notification_emails: &pwmgr_doorhanger_submitted_emails
       - passwords-dev@mozilla.org
-    expires: 148
+    expires: 155
     extra_keys: &pwmgr_doorhanger_submitted_extra
       did_edit_un:
         description: >
@@ -149,7 +150,6 @@ pwmgr:
           Whether or not the saved/updated password was selected by the user choosing a suggested value from the autocomplete popup.
 
         type: boolean
-    telemetry_mirror: Pwmgr_DoorhangerSubmitted_Save
 
   doorhanger_submitted_update:
     type: event
@@ -168,9 +168,8 @@ pwmgr:
     bugs: *pwmgr_doorhanger_submitted_bugs
     data_reviews: *pwmgr_doorhanger_submitted_data_reviews
     notification_emails: *pwmgr_doorhanger_submitted_emails
-    expires: 148
+    expires: 155
     extra_keys: *pwmgr_doorhanger_submitted_extra
-    telemetry_mirror: Pwmgr_DoorhangerSubmitted_Update
 
   saved_login_used_form_login:
     type: event
@@ -818,8 +817,25 @@ pwmgr:
     expires: never
     unit: passwords
     telemetry_mirror: PWMGR_POTENTIALLY_BREACHED_PASSWORDS
-    no_lint:
-      - UNIT_IN_NAME
+
+  breach_alert_link_clicked:
+    type: event
+    description: >
+      Recorded when a user clicks on a breach alert link in about:logins.
+      This tracks user engagement with breach notifications, specifically
+      when they click to visit the breached website.
+    bugs:
+      - https://bugzil.la/TBD
+    data_reviews:
+      - https://bugzil.la/TBD
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      breach_name:
+        description: >
+          The name of the breach that was clicked.
+        type: string
 
   num_saved_passwords:
     type: quantity
@@ -835,8 +851,160 @@ pwmgr:
     notification_emails:
       - passwords-dev@mozilla.org
     expires: never
-    no_lint:
-      - UNIT_IN_NAME
+
+  rust_mirror_status:
+    type: event
+    description: >
+      Records the outcome of each operation mirrored into the Rust password store.
+      Each record contains the operation type and whether it
+      succeeded or failed.
+    bugs:
+      - https://bugzil.la/1981812
+    data_reviews:
+      - https://bugzil.la/1981812
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      metric_version:
+         type: string
+         description: Identifier for rust mirror telemetry version
+      run_id:
+        type: string
+        description: Unique identifier for the login change event
+      operation:
+        description: >
+          The type of operation that failed (e.g. "add", "modify", "remove", "remove-all", "migration", etc.).
+        type: string
+      status:
+        description: >
+          The result of the operation ("success" or "failure").
+        type: string
+
+  rust_migration_status:
+    type: event
+    description: >
+      One record per rolling migration run, recording duration, total number
+      of logins migrated and whether there have been errors.
+    bugs:
+      - https://bugzil.la/1985800
+    data_reviews:
+      - https://bugzil.la/1985800
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      metric_version:
+        type: string
+        description: Identifier for rust mirror telemetry version
+      run_id:
+        type: string
+        description: Unique identifier for the migration run.
+      number_of_logins_to_migrate:
+        description: >
+          Total number of logins to be migrated during this run.
+        type: quantity
+      number_of_logins_migrated:
+        description: >
+          Number of logins migrated during this run.
+        type: quantity
+      duration_ms:
+        description: >
+          Duration of the migration in milliseconds.
+        type: quantity
+      had_errors:
+        description: >
+          Whether the migration had errors.
+        type: boolean
+
+  rust_write_failure:
+    type: event
+    description: >
+      Records errors during mirror or migration run.
+    bugs:
+      - https://bugzil.la/1991676
+    data_reviews:
+      - https://bugzil.la/1991676
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      metric_version:
+         type: string
+         description: Identifier for rust mirror telemetry version
+      run_id:
+        type: string
+        description: Unique identifier for the login change event
+      operation:
+        description: >
+          The type of operation that failed (e.g. "add", "modify", "remove", "remove-all", "migration", etc.).
+        type: string
+      poisoned:
+        description: >
+          Whether there was a previous error, meaning that this event must be viewed with caution.
+        type: boolean
+      error_message:
+        description: >
+          The error message or exception string from the failure.
+        type: string
+      origin_error:
+        description: >
+          a string providing more information about an invalid origin, can be "EmptyString", "SurroundingWhitespace", "MissingScheme", "InvalidScheme", "IllegalCharacters", "InvalidPercentEncoding", "InvalidPort" or "UrlParseError"
+        type: string
+      origin_fixable:
+        description: >
+          Whether our logic would be able to fix the origin
+        type: boolean
+      form_action_origin_error:
+        description: >
+          a string providing more information about an invalid origin, can be "EmptyString", "SurroundingWhitespace", "MissingScheme", "InvalidScheme", "IllegalCharacters", "InvalidPercentEncoding", "InvalidPort" or "UrlParseError"
+        type: string
+      form_action_origin_fixable:
+        description: >
+          Whether our logic would be able to fix the form action origin
+        type: boolean
+      has_punycode_origin:
+        description: >
+          Whether the login to add/modify/remove has a punycode origin
+        type: boolean
+      has_punycode_form_action_origin:
+        description: >
+          Whether the login to add/modify/remove has a punycode form_action_origin
+        type: boolean
+      has_ftp_origin:
+        description: >
+          Whether the login origin string contains indications of an FTP scheme
+        type: boolean
+      has_empty_password:
+        description: >
+          Whether the login to add/modify/remove has an empty password
+        type: boolean
+      has_username_line_break:
+        description: >
+          Whether the login to add/modify/remove has a username containing a line break
+        type: boolean
+      has_username_nul:
+        description: >
+          Whether the login to add/modify/remove has a username containing a Nul char
+        type: boolean
+      is_deleted:
+        description: >
+          Whether the login to add/modify/remove is a deletion stub
+        type: boolean
+      time_created:
+        description: >
+          Time when login was created (rounded to month)
+        type: string
+      time_last_used:
+        description: >
+          Time when login was last used (rounded to month)
+        type: string
 
   saving_enabled:
     type: boolean
@@ -871,14 +1039,18 @@ pwmgr:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1749882
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1777397
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1850888
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1978988
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010472
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1688653
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1749882
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1777397
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1850888
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1978988
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010472
     notification_emails:
       - passwords-dev@mozilla.org
-    expires: 144
+    expires: 160
     telemetry_mirror: h#PWMGR_IMPORT_LOGINS_FROM_FILE_CATEGORICAL
 
   login_page_safety:
@@ -1181,7 +1353,10 @@ relay_integration:
   clicked_fill_username:
     type: event
     description: >
-      Firefox relay integration autocomplete popup
+      Firefox relay integration autocomplete popup.
+      Note: this event does NOT fire when a user places an email mask
+        during their first Relay opt-in flow.
+        So, we also fire `placed_email_mask`, defined below.
       This event was generated to correspond to the Legacy Telemetry event
       relay_integration.clicked#fill_username.
     bugs: *relay_integration_shown_bugs
@@ -1190,6 +1365,17 @@ relay_integration:
     expires: never
     extra_keys: *relay_integration_fill_username
     telemetry_mirror: Relay_integration_Clicked_FillUsername
+
+  placed_email_mask:
+    type: event
+    description: >
+        Recorded when a Firefox Relay mask is placed (filled) in a
+        form field, e.g., when the user selects a Relay-provided mask fromautocompleteautocomplete, or after successful opt-in.
+    bugs: *relay_integration_shown_bugs
+    data_reviews: *relay_integration_shown_data_reviews
+    notification_emails: *relay_integration_shown_emails
+    expires: never
+    extra_keys: *relay_integration_fill_username
 
   shown_reuse_panel:
     type: event

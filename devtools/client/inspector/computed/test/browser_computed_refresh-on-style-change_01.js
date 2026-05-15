@@ -17,7 +17,7 @@ add_task(async function () {
   is(fontSize, "10px", "The computed view shows the right font-size");
 
   info("Changing the node's style and waiting for the update");
-  const onUpdated = inspector.once("computed-view-refreshed");
+  let onUpdated = inspector.once("computed-view-refreshed");
   await setContentPageElementAttribute(
     "#testdiv",
     "style",
@@ -29,4 +29,13 @@ add_task(async function () {
   is(fontSize, "15px", "The computed view shows the updated font-size");
   const color = getComputedViewPropertyValue(view, "color");
   is(color, "rgb(255, 0, 0)", "The computed view also shows the color now");
+
+  info(
+    "Setting attribute that will add pres-hint style and waiting for the update"
+  );
+  onUpdated = inspector.once("computed-view-refreshed");
+  await setContentPageElementAttribute("#testdiv", "align", "right");
+  await onUpdated;
+  const textAlign = getComputedViewPropertyValue(view, "text-align");
+  is(textAlign, "-moz-right", "The computed view also shows text-align now");
 });

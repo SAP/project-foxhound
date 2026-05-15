@@ -38,7 +38,9 @@ add_task(async function test_contextmenu_openlink_after_tabnavigated() {
     gBrowser.selectedBrowser,
     "about:blank"
   );
-  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+    wantLoad: "about:blank",
+  });
 
   let awaitNewTabOpen = BrowserTestUtils.waitForNewTab(
     gBrowser,

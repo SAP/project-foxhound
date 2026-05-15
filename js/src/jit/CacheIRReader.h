@@ -9,11 +9,13 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 
 #include <stdint.h>
 #include "NamespaceImports.h"
 
 #include "jit/CacheIR.h"
+#include "jit/CacheIROpsGenerated.h"
 #include "jit/CacheIRWriter.h"
 #include "jit/CompactBuffer.h"
 #include "js/ScalarType.h"
@@ -38,6 +40,9 @@ class CacheIRStubInfo;
 // Helper class for reading CacheIR bytecode.
 class MOZ_RAII CacheIRReader {
   CompactBufferReader buffer_;
+#ifdef DEBUG
+  mozilla::Maybe<CacheOp> lastOp_;
+#endif
 
   CacheIRReader(const CacheIRReader&) = delete;
   CacheIRReader& operator=(const CacheIRReader&) = delete;
@@ -51,7 +56,13 @@ class MOZ_RAII CacheIRReader {
 
   bool more() const { return buffer_.more(); }
 
-  CacheOp readOp() { return CacheOp(buffer_.readFixedUint16_t()); }
+  CacheOp readOp() {
+    CacheOp op = CacheOp(buffer_.readFixedUint16_t());
+#ifdef DEBUG
+    lastOp_ = mozilla::Some(op);
+#endif
+    return op;
+  }
   CacheOp peekOp() { return CacheOp(buffer_.peekFixedUint16_t()); }
 
   // Skip data not currently used.
@@ -109,6 +120,9 @@ class MOZ_RAII CacheIRReader {
   RealmFuses::FuseIndex realmFuseIndex() {
     return RealmFuses::FuseIndex(buffer_.readByte());
   }
+  RuntimeFuses::FuseIndex runtimeFuseIndex() {
+    return RuntimeFuses::FuseIndex(buffer_.readByte());
+  }
 
   Scalar::Type scalarType() { return Scalar::Type(buffer_.readByte()); }
   JSWhyMagic whyMagic() { return JSWhyMagic(buffer_.readByte()); }
@@ -152,6 +166,8 @@ class MOZ_RAII CacheIRReader {
   }
 
   const uint8_t* currentPosition() const { return buffer_.currentPosition(); }
+
+  CACHE_IR_READER_GENERATED
 };
 
 }  // namespace jit

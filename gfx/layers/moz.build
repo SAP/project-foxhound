@@ -102,7 +102,6 @@ EXPORTS.mozilla.layers += [
     "apz/src/KeyboardMap.h",
     "apz/src/KeyboardScrollAction.h",
     "apz/testutil/APZTestData.h",
-    "apz/util/ActiveElementManager.h",
     "apz/util/APZCCallbackHelper.h",
     "apz/util/APZEventState.h",
     "apz/util/APZTaskRunnable.h",
@@ -110,6 +109,7 @@ EXPORTS.mozilla.layers += [
     "apz/util/ChromeProcessController.h",
     "apz/util/ContentProcessController.h",
     "apz/util/DoubleTapToZoom.h",
+    "apz/util/ElementStateManager.h",
     "apz/util/InputAPZContext.h",
     "apz/util/ScrollingInteractionContext.h",
     "apz/util/ScrollLinkedEffectDetector.h",
@@ -169,6 +169,7 @@ EXPORTS.mozilla.layers += [
     "ipc/ContentCompositorBridgeParent.h",
     "ipc/ImageBridgeChild.h",
     "ipc/ImageBridgeParent.h",
+    "ipc/IOSurfacePort.h",
     "ipc/ISurfaceAllocator.h",
     "ipc/KnowsCompositor.h",
     "ipc/LayersMessageUtils.h",
@@ -191,6 +192,9 @@ EXPORTS.mozilla.layers += [
     "LayersTypes.h",
     "MemoryPressureObserver.h",
     "NativeLayer.h",
+    "NativeLayerCommandQueue.h",
+    "NativeLayerRemoteChild.h",
+    "NativeLayerRemoteParent.h",
     "OOPCanvasRenderer.h",
     "opengl/CompositingRenderTargetOGL.h",
     "opengl/CompositorOGL.h",
@@ -215,7 +219,6 @@ EXPORTS.mozilla.layers += [
     "TextureWrapperImage.h",
     "TransactionIdAllocator.h",
     "TreeTraversal.h",
-    "UpdateImageHelper.h",
     "wr/AsyncImagePipelineManager.h",
     "wr/AsyncImagePipelineOp.h",
     "wr/ClipManager.h",
@@ -269,6 +272,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
         "GpuFenceMTLSharedEvent.h",
         "NativeLayerCA.h",
         "NativeLayerMacSurfaceHandler.h",
+        "NativeLayerRemoteMac.h",
+        "NativeLayerRootRemoteMacChild.h",
+        "NativeLayerRootRemoteMacParent.h",
         "SurfacePoolCA.h",
     ]
     EXPORTS += [
@@ -278,6 +284,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
     UNIFIED_SOURCES += [
         "NativeLayerCA.mm",
         "NativeLayerMacSurfaceHandler.mm",
+        "NativeLayerRemoteMac.mm",
+        "NativeLayerRootRemoteMacChild.mm",
+        "NativeLayerRootRemoteMacParent.mm",
         "SurfacePoolCA.mm",
     ]
     SOURCES += [
@@ -318,7 +327,6 @@ UNIFIED_SOURCES += [
     "apz/src/FlingAccelerator.cpp",
     "apz/src/FocusState.cpp",
     "apz/src/FocusTarget.cpp",
-    "apz/src/GenericScrollAnimation.cpp",
     "apz/src/GestureEventListener.cpp",
     "apz/src/HitTestingTreeNode.cpp",
     "apz/src/IAPZHitTester.cpp",
@@ -332,12 +340,9 @@ UNIFIED_SOURCES += [
     "apz/src/SampledAPZCState.cpp",
     "apz/src/ScrollThumbUtils.cpp",
     "apz/src/SimpleVelocityTracker.cpp",
-    "apz/src/SmoothMsdScrollAnimation.cpp",
     "apz/src/SmoothScrollAnimation.cpp",
-    "apz/src/WheelScrollAnimation.cpp",
     "apz/src/WRHitTester.cpp",
     "apz/testutil/APZTestData.cpp",
-    "apz/util/ActiveElementManager.cpp",
     "apz/util/APZCCallbackHelper.cpp",
     "apz/util/APZEventState.cpp",
     "apz/util/APZTaskRunnable.cpp",
@@ -346,6 +351,7 @@ UNIFIED_SOURCES += [
     "apz/util/ChromeProcessController.cpp",
     "apz/util/ContentProcessController.cpp",
     "apz/util/DoubleTapToZoom.cpp",
+    "apz/util/ElementStateManager.cpp",
     "apz/util/InputAPZContext.cpp",
     "apz/util/ScrollingInteractionContext.cpp",
     "apz/util/ScrollLinkedEffectDetector.cpp",
@@ -397,6 +403,7 @@ UNIFIED_SOURCES += [
     "ipc/ContentCompositorBridgeParent.cpp",
     "ipc/ImageBridgeChild.cpp",
     "ipc/ImageBridgeParent.cpp",
+    "ipc/IOSurfacePort.cpp",
     "ipc/ISurfaceAllocator.cpp",
     "ipc/KnowsCompositor.cpp",
     "ipc/LayerTreeOwnerTracker.cpp",
@@ -412,6 +419,7 @@ UNIFIED_SOURCES += [
     "ipc/VideoBridgeParent.cpp",
     "LayersTypes.cpp",
     "MemoryPressureObserver.cpp",
+    "NativeLayerCommandQueue.cpp",
     "opengl/CompositingRenderTargetOGL.cpp",
     "opengl/CompositorOGL.cpp",
     "opengl/OGLShaderProgram.cpp",
@@ -482,6 +490,7 @@ IPDL_SOURCES += [
     "ipc/PCompositorBridgeTypes.ipdlh",
     "ipc/PCompositorManager.ipdl",
     "ipc/PImageBridge.ipdl",
+    "ipc/PNativeLayerRemote.ipdl",
     "ipc/PTexture.ipdl",
     "ipc/PUiCompositorController.ipdl",
     "ipc/PVideoBridge.ipdl",
@@ -512,9 +521,7 @@ FINAL_LIBRARY = "xul"
 if CONFIG["MOZ_DEBUG"]:
     DEFINES["D3D_DEBUG_INFO"] = True
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["apz/test/gtest"]
-    DIRS += ["apz/test/gtest/mvm"]
+TEST_DIRS += ["apz/test/gtest", "apz/test/gtest/mvm"]
 
 MOCHITEST_MANIFESTS += ["apz/test/mochitest/mochitest.toml"]
 BROWSER_CHROME_MANIFESTS += [

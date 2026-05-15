@@ -6,21 +6,18 @@
 
 #include "Link.h"
 
-#include "mozilla/dom/Element.h"
+#include "mozilla/Components.h"
+#include "mozilla/IHistory.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/SVGAElement.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
-#include "mozilla/IHistory.h"
-#include "nsLayoutUtils.h"
-#include "nsIURIMutator.h"
-#include "nsISizeOf.h"
-
-#include "nsGkAtoms.h"
-#include "nsString.h"
-
-#include "mozilla/Components.h"
+#include "mozilla/dom/SVGAElement.h"
 #include "nsAttrValueInlines.h"
+#include "nsGkAtoms.h"
+#include "nsIURIMutator.h"
+#include "nsLayoutUtils.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 
@@ -444,8 +441,12 @@ void Link::SetHrefAttribute(nsIURI* aURI) {
 size_t Link::SizeOfExcludingThis(mozilla::SizeOfState& aState) const {
   size_t n = 0;
 
-  if (nsCOMPtr<nsISizeOf> iface = do_QueryInterface(mCachedURI)) {
-    n += iface->SizeOfIncludingThis(aState.mMallocSizeOf);
+  // It is okay to include the size of mCachedURI here even though it might have
+  // strong references from elsewhere because the URI was created for this
+  // object, in nsGenericHTMLElement::GetURIAttr(). Only objects that created
+  // their own URI will call nsIURI::SizeOfIncludingThis().
+  if (mCachedURI) {
+    n += mCachedURI->SizeOfIncludingThis(aState.mMallocSizeOf);
   }
 
   // The following members don't need to be measured:

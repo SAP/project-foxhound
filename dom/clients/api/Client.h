@@ -7,8 +7,8 @@
 #define _mozilla_dom_Client_h
 
 #include "X11UndefineNone.h"
-#include "mozilla/dom/ClientBinding.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/dom/ClientBinding.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsISupports.h"

@@ -12,7 +12,7 @@ add_task(async function checkIdentityOfAboutSupport() {
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
   });
 
-  await promiseTabLoaded(tab);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   let identityBox = document.getElementById("identity-box");
   is(identityBox.className, "chromeUI", "Should know that we're chrome.");
   gBrowser.removeTab(tab);

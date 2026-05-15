@@ -5,40 +5,40 @@
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 import "./moz-support-link.mjs";
 
-MozXULElement.insertFTLIfNeeded(
-  "locales-preview/moz-support-link-storybook.ftl"
-);
-MozXULElement.insertFTLIfNeeded("toolkit/global/mozSupportLink.ftl");
-
-const fluentStrings = [
-  "storybook-amo-test",
-  "storybook-fluent-test",
-  "moz-support-link-text",
-];
+const fluentStrings = ["moz-support-link-text-amo", "moz-support-link-text"];
 
 export default {
   title: "UI Widgets/Support Link",
   component: "moz-support-link",
   argTypes: {
-    "data-l10n-id": {
-      options: [fluentStrings[0], fluentStrings[1], fluentStrings[2]],
+    l10nId: {
+      options: fluentStrings,
       control: { type: "select" },
     },
     onClick: { action: "clicked" },
+    "data-l10n-id": {
+      table: {
+        disable: true,
+      },
+    },
   },
   parameters: {
     status: "stable",
+    fluent: `
+moz-support-link-text-amo = Learn more about add-ons
+moz-support-link-text = Learn more
+    `,
   },
 };
 
 const Template = ({
-  "data-l10n-id": dataL10nId,
+  l10nId,
   "support-page": supportPage,
   "utm-content": utmContent,
 }) => html`
   <a
     is="moz-support-link"
-    data-l10n-id=${ifDefined(dataL10nId)}
+    data-l10n-id=${ifDefined(l10nId)}
     support-page=${ifDefined(supportPage)}
     utm-content=${ifDefined(utmContent)}
   >
@@ -47,20 +47,13 @@ const Template = ({
 
 export const withAMOUrl = Template.bind({});
 withAMOUrl.args = {
-  "data-l10n-id": fluentStrings[0],
+  l10nId: "moz-support-link-text-amo",
   "support-page": "addons",
   "utm-content": "promoted-addon-badge",
 };
 
 export const Primary = Template.bind({});
 Primary.args = {
-  "support-page": "preferences",
-  "utm-content": "",
-};
-
-export const withFluentId = Template.bind({});
-withFluentId.args = {
-  "data-l10n-id": fluentStrings[1],
   "support-page": "preferences",
   "utm-content": "",
 };

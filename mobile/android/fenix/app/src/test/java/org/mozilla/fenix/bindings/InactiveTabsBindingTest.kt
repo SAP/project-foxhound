@@ -4,11 +4,11 @@
 
 package org.mozilla.fenix.bindings
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
@@ -20,11 +20,10 @@ import org.mozilla.fenix.tabstray.TabsTrayAction
 import org.mozilla.fenix.tabstray.TabsTrayState
 import org.mozilla.fenix.tabstray.TabsTrayStore
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class InactiveTabsBindingTest {
 
-    @get:Rule
-    val coroutineRule = MainCoroutineRule()
-
+    private val testDispatcher = StandardTestDispatcher()
     lateinit var tabsTrayStore: TabsTrayStore
     lateinit var appStore: AppStore
 
@@ -32,7 +31,7 @@ class InactiveTabsBindingTest {
     private val tab1 = createTab(url = tabId1, id = tabId1)
 
     @Test
-    fun `WHEN inactiveTabsExpanded changes THEN tabs tray action dispatched with update`() = runTestOnMain {
+    fun `WHEN inactiveTabsExpanded changes THEN tabs tray action dispatched with update`() = runTest(testDispatcher) {
         appStore = AppStore(
             AppState(
                 inactiveTabsExpanded = false,
@@ -50,9 +49,11 @@ class InactiveTabsBindingTest {
         val binding = InactiveTabsBinding(
             appStore = appStore,
             tabsTrayStore = tabsTrayStore,
+            mainDispatcher = testDispatcher,
         )
         binding.start()
-        appStore.dispatch(AppAction.UpdateInactiveExpanded(true)).joinBlocking()
+        appStore.dispatch(AppAction.UpdateInactiveExpanded(true))
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify(tabsTrayStore).dispatch(TabsTrayAction.UpdateInactiveExpanded(true))
     }

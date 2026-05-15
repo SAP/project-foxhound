@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_NodeInfoInlines_h___
-#define mozilla_dom_NodeInfoInlines_h___
+#ifndef mozilla_dom_NodeInfoInlines_h_
+#define mozilla_dom_NodeInfoInlines_h_
 
 #include "nsAtom.h"
-#include "nsINode.h"
 #include "nsDOMString.h"
 #include "nsGkAtoms.h"
+#include "nsINode.h"
 
 namespace mozilla::dom {
 
@@ -99,4 +99,4 @@ inline void CheckValidNodeInfo(uint16_t aNodeType, const nsAtom* aName,
              "Wrong localName for nodeType");
 }
 
-#endif /* mozilla_dom_NodeInfoInlines_h___ */
+#endif /* mozilla_dom_NodeInfoInlines_h_ */

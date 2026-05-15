@@ -329,7 +329,7 @@ class BlockReflowState {
    * pushed floats list. aFloatCont should not be on any child list when making
    * this call. Its next-in-flows will be removed from mBlock using StealFrame()
    * before being added to mBlock's pushed floats list. All appended frames will
-   * be marked NS_FRAME_IS_PUSHED_FLOAT.
+   * be marked NS_FRAME_IS_PUSHED_OUT_OF_FLOW.
    */
   void AppendPushedFloatChain(nsIFrame* aFloatCont);
 

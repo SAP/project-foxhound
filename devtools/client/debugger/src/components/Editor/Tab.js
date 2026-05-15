@@ -16,14 +16,13 @@ import {
   getDisplayPath,
   getFileURL,
   getTruncatedFileName,
-  isPretty,
 } from "../../utils/source";
 import { createLocation } from "../../utils/location";
 
 import {
   getSelectedLocation,
-  getSourcesForTabs,
   isSourceBlackBoxed,
+  getOpenedSources,
 } from "../../selectors/index";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
@@ -31,14 +30,12 @@ const classnames = require("resource://devtools/client/shared/classnames.js");
 class Tab extends PureComponent {
   static get propTypes() {
     return {
-      closeTab: PropTypes.func.isRequired,
+      closeTabForSource: PropTypes.func.isRequired,
       onDragEnd: PropTypes.func.isRequired,
       onDragOver: PropTypes.func.isRequired,
       onDragStart: PropTypes.func.isRequired,
       selectSource: PropTypes.func.isRequired,
       source: PropTypes.object.isRequired,
-      sourceActor: PropTypes.object.isRequired,
-      tabSources: PropTypes.array.isRequired,
       isBlackBoxed: PropTypes.bool.isRequired,
     };
   }
@@ -55,37 +52,32 @@ class Tab extends PureComponent {
   render() {
     const {
       selectSource,
-      closeTab,
+      closeTabForSource,
       source,
-      sourceActor,
-      tabSources,
       onDragOver,
       onDragStart,
       onDragEnd,
       index,
       isActive,
     } = this.props;
-    const sourceId = source.id;
-    const isPrettyCode = isPretty(source);
 
     function onClickClose(e) {
       e.stopPropagation();
-      closeTab(source);
+      closeTabForSource(source);
     }
 
     function handleTabClick(e) {
       e.preventDefault();
       e.stopPropagation();
-      return selectSource(source, sourceActor);
+      return selectSource(source);
     }
 
     const className = classnames("source-tab", {
       active: isActive,
-      pretty: isPrettyCode,
       blackboxed: this.props.isBlackBoxed,
     });
 
-    const path = getDisplayPath(source, tabSources);
+    const path = getDisplayPath(source, this.props.openedSources);
     return div(
       {
         draggable: true,
@@ -94,19 +86,17 @@ class Tab extends PureComponent {
         onDragEnd,
         className,
         "data-index": index,
-        "data-source-id": sourceId,
+        "data-source-id": source.id,
         onClick: handleTabClick,
         // Accommodate middle click to close tab
-        onMouseUp: e => e.button === 1 && closeTab(source),
+        onMouseUp: e => e.button === 1 && closeTabForSource(source),
         onContextMenu: this.onContextMenu,
         title: getFileURL(source, false),
       },
       React.createElement(SourceIcon, {
         location: createLocation({
           source,
-          sourceActor,
         }),
-        forTab: true,
       }),
       div(
         {
@@ -124,10 +114,15 @@ class Tab extends PureComponent {
 }
 
 const mapStateToProps = (state, { source }) => {
+  const selectedSource = getSelectedLocation(state)?.source;
+  // When a pretty printed source is selected, we should check if the related minimized/generated source is opened in a tab.
+  const isActive = selectedSource?.isPrettyPrinted
+    ? selectedSource.generatedSource == source
+    : selectedSource == source;
   return {
-    tabSources: getSourcesForTabs(state),
     isBlackBoxed: isSourceBlackBoxed(state, source),
-    isActive: source.id === getSelectedLocation(state)?.source.id,
+    isActive,
+    openedSources: getOpenedSources(state),
   };
 };
 
@@ -135,7 +130,7 @@ export default connect(
   mapStateToProps,
   {
     selectSource: actions.selectSource,
-    closeTab: actions.closeTab,
+    closeTabForSource: actions.closeTabForSource,
     showTabContextMenu: actions.showTabContextMenu,
   },
   null,

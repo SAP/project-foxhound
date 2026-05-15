@@ -1,7 +1,9 @@
 [DEFAULT]
 head = "head.js head_remote.js head_telemetry.js head_sync.js head_storage.js"
 firefox-appdir = "browser"
-skip-if = ["os == 'win' && socketprocess_networking && fission"] # Bug 1759035
+skip-if = [
+  "os == 'win' && socketprocess_networking && fission", # Bug 1759035
+]
 # I would put linux here, but debug has too many chunks and only runs this manifest, so I need 1 test to pass
 dupe-manifest = ""
 support-files = [
@@ -11,6 +13,8 @@ support-files = [
   "xpcshell-content.toml",
 ]
 tags = "webextensions remote-webextensions"
+# Extension tests frequently take more than the default 30s timeout
+requesttimeoutfactor = 2
 
 # Make sure that loading the default settings for url-classifier-skip-urls
 # doesn't interfere with running our tests while IDB operations are in
@@ -26,13 +30,31 @@ prefs = ["services.settings.server='data:,#remote-settings-dummy/v1'"]
 
 ["test_WebExtensionContentScript.js"]
 
+["test_WebExtensionContentScript_mozextMatchWarning.js"]
+
 ["test_ext_contentscript_perf_observers.js"] # Inexplicably, PerformanceObserver used in the test doesn't fire in non-e10s mode.
-skip-if = ["tsan"]
+skip-if = [
+  "tsan",
+]
 
 ["test_ext_contentscript_xorigin_frame.js"]
 
 ["test_ext_ipcBlob.js"]
-skip-if = ["os == 'android' && processor == 'x86_64'"]
+skip-if = [
+  "os == 'android' && arch == 'x86_64'",
+]
+
+["test_ext_proxy_http3.js"]
+support-files = ["!/netwerk/test/unit/proxy-ca.pem", "!/netwerk/test/unit/http2-ca.pem"]
+skip-if = [
+  "msix", # H3 server not working on msix
+  "os == 'android'", # bug 1992996
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  # Setting dontfragment socket option on MacOS 10.15 fails with -5987. Without
+  # dontfragment, PMTUD needs to be disabled. Without PMTUD, the HTTP/3 proxy
+  # outer connection can not carry the UDP datagrams of the HTTP/3 proxied inner
+  # connection. Disable test on MacOS 10.15.
+]
 
 ["test_extension_process_alive.js"]
 

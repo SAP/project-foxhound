@@ -208,163 +208,8 @@ assert_return(() => invoke($3, `store_at_page_size`, []), []);
 // ./test/core/memory_grow.wast:104
 assert_return(() => invoke($3, `load_at_page_size`, []), [value("i32", 3)]);
 
-// ./test/core/memory_grow.wast:109
+// ./test/core/memory_grow.wast:108
 let $4 = instantiate(`(module
-  (memory (export "mem1") 2 5)
-  (memory (export "mem2") 0)
-)`);
-
-// ./test/core/memory_grow.wast:113
-register($4, `M`);
-
-// ./test/core/memory_grow.wast:115
-let $5 = instantiate(`(module
-  (memory \$mem1 (import "M" "mem1") 1 6)
-  (memory \$mem2 (import "M" "mem2") 0)
-  (memory \$mem3 3)
-  (memory \$mem4 4 5)
-
-  (func (export "size1") (result i32) (memory.size \$mem1))
-  (func (export "size2") (result i32) (memory.size \$mem2))
-  (func (export "size3") (result i32) (memory.size \$mem3))
-  (func (export "size4") (result i32) (memory.size \$mem4))
-
-  (func (export "grow1") (param i32) (result i32)
-    (memory.grow \$mem1 (local.get 0))
-  )
-  (func (export "grow2") (param i32) (result i32)
-    (memory.grow \$mem2 (local.get 0))
-  )
-  (func (export "grow3") (param i32) (result i32)
-    (memory.grow \$mem3 (local.get 0))
-  )
-  (func (export "grow4") (param i32) (result i32)
-    (memory.grow \$mem4 (local.get 0))
-  )
-)`);
-
-// ./test/core/memory_grow.wast:140
-assert_return(() => invoke($5, `size1`, []), [value("i32", 2)]);
-
-// ./test/core/memory_grow.wast:141
-assert_return(() => invoke($5, `size2`, []), [value("i32", 0)]);
-
-// ./test/core/memory_grow.wast:142
-assert_return(() => invoke($5, `size3`, []), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:143
-assert_return(() => invoke($5, `size4`, []), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:145
-assert_return(() => invoke($5, `grow1`, [1]), [value("i32", 2)]);
-
-// ./test/core/memory_grow.wast:146
-assert_return(() => invoke($5, `size1`, []), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:147
-assert_return(() => invoke($5, `size2`, []), [value("i32", 0)]);
-
-// ./test/core/memory_grow.wast:148
-assert_return(() => invoke($5, `size3`, []), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:149
-assert_return(() => invoke($5, `size4`, []), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:151
-assert_return(() => invoke($5, `grow1`, [2]), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:152
-assert_return(() => invoke($5, `size1`, []), [value("i32", 5)]);
-
-// ./test/core/memory_grow.wast:153
-assert_return(() => invoke($5, `size2`, []), [value("i32", 0)]);
-
-// ./test/core/memory_grow.wast:154
-assert_return(() => invoke($5, `size3`, []), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:155
-assert_return(() => invoke($5, `size4`, []), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:157
-assert_return(() => invoke($5, `grow1`, [1]), [value("i32", -1)]);
-
-// ./test/core/memory_grow.wast:158
-assert_return(() => invoke($5, `size1`, []), [value("i32", 5)]);
-
-// ./test/core/memory_grow.wast:159
-assert_return(() => invoke($5, `size2`, []), [value("i32", 0)]);
-
-// ./test/core/memory_grow.wast:160
-assert_return(() => invoke($5, `size3`, []), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:161
-assert_return(() => invoke($5, `size4`, []), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:163
-assert_return(() => invoke($5, `grow2`, [10]), [value("i32", 0)]);
-
-// ./test/core/memory_grow.wast:164
-assert_return(() => invoke($5, `size1`, []), [value("i32", 5)]);
-
-// ./test/core/memory_grow.wast:165
-assert_return(() => invoke($5, `size2`, []), [value("i32", 10)]);
-
-// ./test/core/memory_grow.wast:166
-assert_return(() => invoke($5, `size3`, []), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:167
-assert_return(() => invoke($5, `size4`, []), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:169
-assert_return(() => invoke($5, `grow3`, [268435456]), [value("i32", -1)]);
-
-// ./test/core/memory_grow.wast:170
-assert_return(() => invoke($5, `size1`, []), [value("i32", 5)]);
-
-// ./test/core/memory_grow.wast:171
-assert_return(() => invoke($5, `size2`, []), [value("i32", 10)]);
-
-// ./test/core/memory_grow.wast:172
-assert_return(() => invoke($5, `size3`, []), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:173
-assert_return(() => invoke($5, `size4`, []), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:175
-assert_return(() => invoke($5, `grow3`, [3]), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:176
-assert_return(() => invoke($5, `size1`, []), [value("i32", 5)]);
-
-// ./test/core/memory_grow.wast:177
-assert_return(() => invoke($5, `size2`, []), [value("i32", 10)]);
-
-// ./test/core/memory_grow.wast:178
-assert_return(() => invoke($5, `size3`, []), [value("i32", 6)]);
-
-// ./test/core/memory_grow.wast:179
-assert_return(() => invoke($5, `size4`, []), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:181
-assert_return(() => invoke($5, `grow4`, [1]), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:182
-assert_return(() => invoke($5, `grow4`, [1]), [value("i32", -1)]);
-
-// ./test/core/memory_grow.wast:183
-assert_return(() => invoke($5, `size1`, []), [value("i32", 5)]);
-
-// ./test/core/memory_grow.wast:184
-assert_return(() => invoke($5, `size2`, []), [value("i32", 10)]);
-
-// ./test/core/memory_grow.wast:185
-assert_return(() => invoke($5, `size3`, []), [value("i32", 6)]);
-
-// ./test/core/memory_grow.wast:186
-assert_return(() => invoke($5, `size4`, []), [value("i32", 5)]);
-
-// ./test/core/memory_grow.wast:191
-let $6 = instantiate(`(module
   (memory 1)
 
   (func (export "as-br-value") (result i32)
@@ -522,193 +367,156 @@ let $6 = instantiate(`(module
   )
 )`);
 
-// ./test/core/memory_grow.wast:349
-assert_return(() => invoke($6, `as-br-value`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:266
+assert_return(() => invoke($4, `as-br-value`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:351
-assert_return(() => invoke($6, `as-br_if-cond`, []), []);
+// ./test/core/memory_grow.wast:268
+assert_return(() => invoke($4, `as-br_if-cond`, []), []);
 
-// ./test/core/memory_grow.wast:352
-assert_return(() => invoke($6, `as-br_if-value`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:269
+assert_return(() => invoke($4, `as-br_if-value`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:353
-assert_return(() => invoke($6, `as-br_if-value-cond`, []), [value("i32", 6)]);
+// ./test/core/memory_grow.wast:270
+assert_return(() => invoke($4, `as-br_if-value-cond`, []), [value("i32", 6)]);
 
-// ./test/core/memory_grow.wast:355
-assert_return(() => invoke($6, `as-br_table-index`, []), []);
+// ./test/core/memory_grow.wast:272
+assert_return(() => invoke($4, `as-br_table-index`, []), []);
 
-// ./test/core/memory_grow.wast:356
-assert_return(() => invoke($6, `as-br_table-value`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:273
+assert_return(() => invoke($4, `as-br_table-value`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:357
-assert_return(() => invoke($6, `as-br_table-value-index`, []), [value("i32", 6)]);
+// ./test/core/memory_grow.wast:274
+assert_return(() => invoke($4, `as-br_table-value-index`, []), [value("i32", 6)]);
 
-// ./test/core/memory_grow.wast:359
-assert_return(() => invoke($6, `as-return-value`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:276
+assert_return(() => invoke($4, `as-return-value`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:361
-assert_return(() => invoke($6, `as-if-cond`, []), [value("i32", 0)]);
+// ./test/core/memory_grow.wast:278
+assert_return(() => invoke($4, `as-if-cond`, []), [value("i32", 0)]);
 
-// ./test/core/memory_grow.wast:362
-assert_return(() => invoke($6, `as-if-then`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:279
+assert_return(() => invoke($4, `as-if-then`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:363
-assert_return(() => invoke($6, `as-if-else`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:280
+assert_return(() => invoke($4, `as-if-else`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:365
-assert_return(() => invoke($6, `as-select-first`, [0, 1]), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:282
+assert_return(() => invoke($4, `as-select-first`, [0, 1]), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:366
-assert_return(() => invoke($6, `as-select-second`, [0, 0]), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:283
+assert_return(() => invoke($4, `as-select-second`, [0, 0]), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:367
-assert_return(() => invoke($6, `as-select-cond`, []), [value("i32", 0)]);
+// ./test/core/memory_grow.wast:284
+assert_return(() => invoke($4, `as-select-cond`, []), [value("i32", 0)]);
 
-// ./test/core/memory_grow.wast:369
-assert_return(() => invoke($6, `as-call-first`, []), [value("i32", -1)]);
+// ./test/core/memory_grow.wast:286
+assert_return(() => invoke($4, `as-call-first`, []), [value("i32", -1)]);
 
-// ./test/core/memory_grow.wast:370
-assert_return(() => invoke($6, `as-call-mid`, []), [value("i32", -1)]);
+// ./test/core/memory_grow.wast:287
+assert_return(() => invoke($4, `as-call-mid`, []), [value("i32", -1)]);
 
-// ./test/core/memory_grow.wast:371
-assert_return(() => invoke($6, `as-call-last`, []), [value("i32", -1)]);
+// ./test/core/memory_grow.wast:288
+assert_return(() => invoke($4, `as-call-last`, []), [value("i32", -1)]);
 
-// ./test/core/memory_grow.wast:373
-assert_return(() => invoke($6, `as-call_indirect-first`, []), [value("i32", -1)]);
+// ./test/core/memory_grow.wast:290
+assert_return(() => invoke($4, `as-call_indirect-first`, []), [value("i32", -1)]);
 
-// ./test/core/memory_grow.wast:374
-assert_return(() => invoke($6, `as-call_indirect-mid`, []), [value("i32", -1)]);
+// ./test/core/memory_grow.wast:291
+assert_return(() => invoke($4, `as-call_indirect-mid`, []), [value("i32", -1)]);
 
-// ./test/core/memory_grow.wast:375
-assert_return(() => invoke($6, `as-call_indirect-last`, []), [value("i32", -1)]);
+// ./test/core/memory_grow.wast:292
+assert_return(() => invoke($4, `as-call_indirect-last`, []), [value("i32", -1)]);
 
-// ./test/core/memory_grow.wast:376
-assert_trap(() => invoke($6, `as-call_indirect-index`, []), `undefined element`);
+// ./test/core/memory_grow.wast:293
+assert_trap(() => invoke($4, `as-call_indirect-index`, []), `undefined element`);
 
-// ./test/core/memory_grow.wast:378
-assert_return(() => invoke($6, `as-local.set-value`, []), []);
+// ./test/core/memory_grow.wast:295
+assert_return(() => invoke($4, `as-local.set-value`, []), []);
 
-// ./test/core/memory_grow.wast:379
-assert_return(() => invoke($6, `as-local.tee-value`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:296
+assert_return(() => invoke($4, `as-local.tee-value`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:380
-assert_return(() => invoke($6, `as-global.set-value`, []), []);
+// ./test/core/memory_grow.wast:297
+assert_return(() => invoke($4, `as-global.set-value`, []), []);
 
-// ./test/core/memory_grow.wast:382
-assert_return(() => invoke($6, `as-load-address`, []), [value("i32", 0)]);
+// ./test/core/memory_grow.wast:299
+assert_return(() => invoke($4, `as-load-address`, []), [value("i32", 0)]);
 
-// ./test/core/memory_grow.wast:383
-assert_return(() => invoke($6, `as-loadN-address`, []), [value("i32", 0)]);
+// ./test/core/memory_grow.wast:300
+assert_return(() => invoke($4, `as-loadN-address`, []), [value("i32", 0)]);
 
-// ./test/core/memory_grow.wast:384
-assert_return(() => invoke($6, `as-store-address`, []), []);
+// ./test/core/memory_grow.wast:301
+assert_return(() => invoke($4, `as-store-address`, []), []);
 
-// ./test/core/memory_grow.wast:385
-assert_return(() => invoke($6, `as-store-value`, []), []);
+// ./test/core/memory_grow.wast:302
+assert_return(() => invoke($4, `as-store-value`, []), []);
 
-// ./test/core/memory_grow.wast:386
-assert_return(() => invoke($6, `as-storeN-address`, []), []);
+// ./test/core/memory_grow.wast:303
+assert_return(() => invoke($4, `as-storeN-address`, []), []);
 
-// ./test/core/memory_grow.wast:387
-assert_return(() => invoke($6, `as-storeN-value`, []), []);
+// ./test/core/memory_grow.wast:304
+assert_return(() => invoke($4, `as-storeN-value`, []), []);
 
-// ./test/core/memory_grow.wast:389
-assert_return(() => invoke($6, `as-unary-operand`, []), [value("i32", 31)]);
+// ./test/core/memory_grow.wast:306
+assert_return(() => invoke($4, `as-unary-operand`, []), [value("i32", 31)]);
 
-// ./test/core/memory_grow.wast:391
-assert_return(() => invoke($6, `as-binary-left`, []), [value("i32", 11)]);
+// ./test/core/memory_grow.wast:308
+assert_return(() => invoke($4, `as-binary-left`, []), [value("i32", 11)]);
 
-// ./test/core/memory_grow.wast:392
-assert_return(() => invoke($6, `as-binary-right`, []), [value("i32", 9)]);
+// ./test/core/memory_grow.wast:309
+assert_return(() => invoke($4, `as-binary-right`, []), [value("i32", 9)]);
 
-// ./test/core/memory_grow.wast:394
-assert_return(() => invoke($6, `as-test-operand`, []), [value("i32", 0)]);
+// ./test/core/memory_grow.wast:311
+assert_return(() => invoke($4, `as-test-operand`, []), [value("i32", 0)]);
 
-// ./test/core/memory_grow.wast:396
-assert_return(() => invoke($6, `as-compare-left`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:313
+assert_return(() => invoke($4, `as-compare-left`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:397
-assert_return(() => invoke($6, `as-compare-right`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:314
+assert_return(() => invoke($4, `as-compare-right`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:399
-assert_return(() => invoke($6, `as-memory.grow-size`, []), [value("i32", 1)]);
+// ./test/core/memory_grow.wast:316
+assert_return(() => invoke($4, `as-memory.grow-size`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:401
-let $7 = instantiate(`(module \$Mgm
+// ./test/core/memory_grow.wast:318
+let $5 = instantiate(`(module \$Mgm
   (memory (export "memory") 1) ;; initial size is 1
   (func (export "grow") (result i32) (memory.grow (i32.const 1)))
 )`);
-let $Mgm = $7;
+let $Mgm = $5;
 
-// ./test/core/memory_grow.wast:405
+// ./test/core/memory_grow.wast:322
 register($Mgm, `grown-memory`);
 
-// ./test/core/memory_grow.wast:406
+// ./test/core/memory_grow.wast:323
 assert_return(() => invoke($Mgm, `grow`, []), [value("i32", 1)]);
 
-// ./test/core/memory_grow.wast:407
-let $8 = instantiate(`(module \$Mgim1
+// ./test/core/memory_grow.wast:324
+let $6 = instantiate(`(module \$Mgim1
   ;; imported memory limits should match, because external memory size is 2 now
   (memory (export "memory") (import "grown-memory" "memory") 2)
   (func (export "grow") (result i32) (memory.grow (i32.const 1)))
 )`);
-let $Mgim1 = $8;
+let $Mgim1 = $6;
 
-// ./test/core/memory_grow.wast:412
+// ./test/core/memory_grow.wast:329
 register($Mgim1, `grown-imported-memory`);
 
-// ./test/core/memory_grow.wast:413
+// ./test/core/memory_grow.wast:330
 assert_return(() => invoke($Mgim1, `grow`, []), [value("i32", 2)]);
 
-// ./test/core/memory_grow.wast:414
-let $9 = instantiate(`(module \$Mgim2
+// ./test/core/memory_grow.wast:331
+let $7 = instantiate(`(module \$Mgim2
   ;; imported memory limits should match, because external memory size is 3 now
   (import "grown-imported-memory" "memory" (memory 3))
   (func (export "size") (result i32) (memory.size))
 )`);
-let $Mgim2 = $9;
+let $Mgim2 = $7;
 
-// ./test/core/memory_grow.wast:419
+// ./test/core/memory_grow.wast:336
 assert_return(() => invoke($Mgim2, `size`, []), [value("i32", 3)]);
 
-// ./test/core/memory_grow.wast:424
-let $10 = instantiate(`(module
-  (memory \$mem1 1)
-  (memory \$mem2 2)
-
-  (func (export "grow1") (param i32) (result i32)
-    (memory.grow \$mem1 (local.get 0))
-  )
-  (func (export "grow2") (param i32) (result i32)
-    (memory.grow \$mem2 (local.get 0))
-  )
-
-  (func (export "size1") (result i32) (memory.size \$mem1))
-  (func (export "size2") (result i32) (memory.size \$mem2))
-)`);
-
-// ./test/core/memory_grow.wast:439
-assert_return(() => invoke($10, `size1`, []), [value("i32", 1)]);
-
-// ./test/core/memory_grow.wast:440
-assert_return(() => invoke($10, `size2`, []), [value("i32", 2)]);
-
-// ./test/core/memory_grow.wast:441
-assert_return(() => invoke($10, `grow1`, [3]), [value("i32", 1)]);
-
-// ./test/core/memory_grow.wast:442
-assert_return(() => invoke($10, `grow1`, [4]), [value("i32", 4)]);
-
-// ./test/core/memory_grow.wast:443
-assert_return(() => invoke($10, `grow1`, [1]), [value("i32", 8)]);
-
-// ./test/core/memory_grow.wast:444
-assert_return(() => invoke($10, `grow2`, [1]), [value("i32", 2)]);
-
-// ./test/core/memory_grow.wast:445
-assert_return(() => invoke($10, `grow2`, [1]), [value("i32", 3)]);
-
-// ./test/core/memory_grow.wast:450
+// ./test/core/memory_grow.wast:341
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -719,7 +527,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:459
+// ./test/core/memory_grow.wast:350
 assert_invalid(
   () => instantiate(`(module
     (memory 0)
@@ -730,7 +538,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:468
+// ./test/core/memory_grow.wast:359
 assert_invalid(
   () => instantiate(`(module
     (memory 0)
@@ -742,7 +550,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:478
+// ./test/core/memory_grow.wast:369
 assert_invalid(
   () => instantiate(`(module
     (memory 0)
@@ -754,7 +562,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:488
+// ./test/core/memory_grow.wast:379
 assert_invalid(
   () => instantiate(`(module
     (memory 0)
@@ -766,7 +574,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:499
+// ./test/core/memory_grow.wast:390
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -777,7 +585,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:508
+// ./test/core/memory_grow.wast:399
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -788,7 +596,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:518
+// ./test/core/memory_grow.wast:409
 assert_invalid(
   () => instantiate(`(module
     (memory 1)
@@ -799,7 +607,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/memory_grow.wast:527
+// ./test/core/memory_grow.wast:418
 assert_invalid(
   () => instantiate(`(module
     (memory 1)

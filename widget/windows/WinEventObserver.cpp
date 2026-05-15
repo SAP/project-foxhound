@@ -222,7 +222,7 @@ static void OnSettingsChange(WPARAM wParam, LPARAM lParam) {
   if (lParamString == u"UserInteractionMode"_ns) {
     // Documentation implies, and testing shows, that this is seen on Win10
     // only.
-    Unused << NS_WARN_IF(mozilla::IsWin11OrLater());
+    (void)NS_WARN_IF(mozilla::IsWin11OrLater());
     WindowsUIUtils::UpdateInWin10TabletMode();
     NotifyThemeChanged(widget::ThemeChangeKind::MediaQueriesOnly);
     return;
@@ -230,7 +230,7 @@ static void OnSettingsChange(WPARAM wParam, LPARAM lParam) {
 
   if (lParamString == u"ConvertibleSlateMode"_ns) {
     // Documentation implies, and testing shows, that this is not seen on Win10.
-    Unused << NS_WARN_IF(!mozilla::IsWin11OrLater());
+    (void)NS_WARN_IF(!mozilla::IsWin11OrLater());
     WindowsUIUtils::UpdateInWin11TabletMode();
     NotifyThemeChanged(widget::ThemeChangeKind::MediaQueriesOnly);
     return;

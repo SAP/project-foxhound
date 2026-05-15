@@ -101,14 +101,4 @@ This is to support [Artifact Builds](/contributing/build/artifact_builds).
 
 See also `telemetry.fog.artifact_build`.
 
-`OS_TARGET`
-
-If not set to `'Android'` we set a `glean_million_queue` Rust feature
-([see gkrust-features.mozbuild][gkrust-features])
-which, when passed to the Glean SDK,
-opts us into a preinit queue that doesn't discard tasks until there are 10^6 of them.
-
-See [bug 1797494](https://bugzilla.mozilla.org/show_bug.cgi?id=1797494) for details.
-
-[gkrust-features]: https://searchfox.org/mozilla-central/source/toolkit/library/rust/gkrust-features.mozbuild
 [gifft]: ../user/gifft

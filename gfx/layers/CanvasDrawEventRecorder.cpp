@@ -6,8 +6,6 @@
 
 #include "CanvasDrawEventRecorder.h"
 
-#include <string.h>
-
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"

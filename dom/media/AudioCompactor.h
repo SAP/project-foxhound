@@ -3,12 +3,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#if !defined(AudioCompactor_h)
-#  define AudioCompactor_h
+#ifndef AudioCompactor_h
+#define AudioCompactor_h
 
-#  include "MediaQueue.h"
-#  include "MediaData.h"
-#  include "VideoUtils.h"
+#include "MediaData.h"
+#include "MediaQueue.h"
+#include "VideoUtils.h"
 
 namespace mozilla {
 

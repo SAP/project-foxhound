@@ -22,7 +22,6 @@
 
 #define nsHtml5NamedCharacters_cpp_
 #include "jArray.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Logging.h"
 #include "nsDebug.h"
 #include "nscore.h"
@@ -31,7 +30,7 @@
 
 const char16_t nsHtml5NamedCharacters::VALUES[][2] = {
 #define NAMED_CHARACTER_REFERENCE(N, CHARS, LEN, FLAG, VALUE) {VALUE},
-#include "nsHtml5NamedCharactersInclude.h"
+#include "nsHtml5NamedCharactersInclude.inc"
 #undef NAMED_CHARACTER_REFERENCE
     {0, 0}};
 
@@ -52,7 +51,7 @@ static char16_t const WINDOWS_1252_DATA[] = {
 
 static const int8_t ALL_NAMES[] = {
 #define NAMED_CHARACTER_REFERENCE(N, CHARS, LEN, FLAG, VALUE) CHARS,
-#include "nsHtml5NamedCharactersInclude.h"
+#include "nsHtml5NamedCharactersInclude.inc"
 #undef NAMED_CHARACTER_REFERENCE
 };
 
@@ -63,7 +62,7 @@ enum NamePositions {
   NAME_##N##_DUMMY, /* automatically one higher than previous */ \
       NAME_##N##_START = NAME_##N##_DUMMY - 1,                   \
       NAME_##N##_END = NAME_##N##_START + LEN + FLAG,
-#include "nsHtml5NamedCharactersInclude.h"
+#include "nsHtml5NamedCharactersInclude.inc"
 #undef NAMED_CHARACTER_REFERENCE
   DUMMY_FINAL_NAME_VALUE
 };
@@ -82,7 +81,7 @@ const nsHtml5CharacterName nsHtml5NamedCharacters::NAMES[] = {
         LEN,                                                    \
     },
 #endif
-#include "nsHtml5NamedCharactersInclude.h"
+#include "nsHtml5NamedCharactersInclude.inc"
 #undef NAMED_CHARACTER_REFERENCE
 };
 

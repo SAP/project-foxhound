@@ -8,7 +8,7 @@
 "use strict";
 
 let { SkippableTimer } = ChromeUtils.importESModule(
-  "resource:///modules/UrlbarUtils.sys.mjs"
+  "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs"
 );
 const { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
@@ -45,7 +45,7 @@ add_task(async function test_fire() {
     },
     time: longTimeMs,
   });
-  let start = Cu.now();
+  let start = ChromeUtils.now();
   Assert.equal(timer.name, "test 1", "Timer should have the correct name");
   Assert.ok(!timer.done, "Should not be done");
   Assert.equal(invoked, 0, "Should not have invoked the callback yet");
@@ -55,7 +55,11 @@ add_task(async function test_fire() {
   timer.fire();
   Assert.ok(timer.done, "Should be done");
   await deferred.promise;
-  Assert.greater(longTimeMs, Cu.now() - start, "Should have resolved earlier");
+  Assert.greater(
+    longTimeMs,
+    ChromeUtils.now() - start,
+    "Should have resolved earlier"
+  );
   Assert.equal(invoked, 1, "Should have invoked the callback");
 });
 
@@ -71,7 +75,7 @@ add_task(async function test_cancel() {
     },
     time: timeMs,
   });
-  let start = Cu.now();
+  let start = ChromeUtils.now();
   Assert.equal(timer.name, "test 1", "Timer should have the correct name");
   Assert.ok(!timer.done, "Should not be done");
   Assert.equal(invoked, 0, "Should not have invoked the callback yet");
@@ -84,6 +88,10 @@ add_task(async function test_cancel() {
     // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
     new Promise(r => setTimeout(r, timeMs * 4)),
   ]);
-  Assert.greater(Cu.now() - start, timeMs, "Should not have resolved earlier");
+  Assert.greater(
+    ChromeUtils.now() - start,
+    timeMs,
+    "Should not have resolved earlier"
+  );
   Assert.equal(invoked, 0, "Should not have invoked the callback");
 });

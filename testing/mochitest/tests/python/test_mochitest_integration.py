@@ -267,7 +267,7 @@ def test_output_assertion(flavor, runFailures, runtests, test_name):
     # assertion failure prints error, but still emits test-ok
     test_end = filter_action("test_end", lines)
     assert len(test_end) == results["lines"]
-    assert test_end[0]["status"] == "OK"
+    assert test_end[0]["status"] == "FAIL"
 
     assertions = filter_action("assertion_count", lines)
     assert len(assertions) == results["assertions"]
@@ -321,12 +321,10 @@ def test_output_testfile_in_dupe_manifests(flavor, runtests, test_name, test_man
     # Explicitly provide a manifestFile property that includes the
     # two manifest files that share the same test file.
     extra_opts = {
-        "manifestFile": test_manifest(
-            [
-                "mochitest-dupemanifest-1.ini",
-                "mochitest-dupemanifest-2.ini",
-            ]
-        ),
+        "manifestFile": test_manifest([
+            "mochitest-dupemanifest-1.ini",
+            "mochitest-dupemanifest-2.ini",
+        ]),
         "runByManifest": True,
     }
 

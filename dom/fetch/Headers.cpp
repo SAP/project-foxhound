@@ -7,8 +7,8 @@
 #include "mozilla/dom/Headers.h"
 
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/WorkerPrivate.h"
 
 namespace mozilla::dom {
 

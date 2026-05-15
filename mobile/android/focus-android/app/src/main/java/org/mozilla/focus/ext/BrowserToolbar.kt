@@ -9,10 +9,10 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.isVisible
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.concept.engine.EngineView
+import mozilla.components.ui.widgets.behavior.DependencyGravity.Top
 import mozilla.components.ui.widgets.behavior.EngineViewClippingBehavior
-import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
+import mozilla.components.ui.widgets.behavior.EngineViewScrollingGesturesBehavior
 import org.mozilla.focus.R
-import mozilla.components.ui.widgets.behavior.ViewPosition as browserToolbarPosition
 
 private const val BOTTOM_TOOLBAR_HEIGHT = 0
 
@@ -39,10 +39,10 @@ fun BrowserToolbar.disableDynamicBehavior(engineView: EngineView) {
  * @param engineView [EngineView] that should react to toolbar's dynamic behavior.
  */
 fun BrowserToolbar.enableDynamicBehavior(context: Context, engineView: EngineView) {
-    (layoutParams as? CoordinatorLayout.LayoutParams)?.behavior = EngineViewScrollingBehavior(
-        context,
-        null,
-        browserToolbarPosition.TOP,
+    (layoutParams as? CoordinatorLayout.LayoutParams)?.behavior = EngineViewScrollingGesturesBehavior(
+        engineView = engineView,
+        dependency = this,
+        dependencyGravity = Top,
     )
 
     val toolbarHeight = context.resources.getDimension(R.dimen.browser_toolbar_height).toInt()

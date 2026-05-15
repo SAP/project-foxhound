@@ -14,12 +14,12 @@ from service_worker_utils import MarionetteServiceWorkerTestCase
 
 class ServiceWorkerAtStartupTestCase(MarionetteServiceWorkerTestCase):
     def setUp(self):
-        super(ServiceWorkerAtStartupTestCase, self).setUp()
+        super().setUp()
         self.install_service_worker("serviceworker/install_serviceworker.html")
 
     def tearDown(self):
         self.marionette.restart(in_app=False, clean=True)
-        super(ServiceWorkerAtStartupTestCase, self).tearDown()
+        super().tearDown()
 
     def test_registered_service_worker_after_restart(self):
         self.marionette.restart()

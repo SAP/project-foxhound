@@ -2,11 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// @ts-nocheck - TODO - Remove this to type check this file.
+
 // The following globals are defined in dom/webidl/ONNX.webidl
 /* global Tensor, InferenceSession */
 
 /**
  * @typedef {import("../../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
+ */
+
+/**
+ * @typedef {object} PipelineMetrics
+ * @property {number} [preprocessingTime] - Time spent preprocessing inputs (ms).
+ * @property {number} [tokenizingTime] - Time spent tokenizing (same as preprocessingTime, for Glean consistency) (ms).
+ * @property {number} [inferenceTime] - Time spent running the model (ms).
+ * @property {number} [decodingTime] - Time spent decoding outputs (ms).
+ * @property {number} inputTokens - Number of tokens in the input.
+ * @property {number} outputTokens - Number of tokens in the output.
+ * @property {number|null} [timeToFirstToken] - Time to the first generated token (ms).
+ * @property {number} [tokensPerSecond] - Inference throughput (tokens/s).
+ * @property {number} [timePerOutputToken] - Latency per output token (ms).
+ * @property {Array<object>} [runTimestamps] - Timeline of execution events.
  */
 
 /* eslint-disable-next-line mozilla/reject-import-system-module-from-non-system */
@@ -62,12 +78,15 @@ let transformers = null;
  * @async
  * @function importTransformers
  * @param {string} backend - The backend to use (e.g. "onnx-native" or "onnx").
- * @returns {Promise<void>} A promise that resolves once the Transformers library is imported.
+ * @returns {Promise<import("chrome://global/content/ml/transformers-dev.js")>}
+ * A promise that resolves once the Transformers library is imported.
  */
-async function importTransformers(backend) {
+export async function importTransformers(backend) {
   if (transformers) {
-    return;
+    return transformers;
   }
+
+  let importStart = ChromeUtils.now();
 
   lazy.console.debug(`Using backend ${backend}`);
 
@@ -88,13 +107,20 @@ async function importTransformers(backend) {
   }
   if (AppConstants.NIGHTLY_BUILD) {
     lazy.console.debug("Nightly detected. Using transformers-dev.js");
-    transformers = await import(
-      "chrome://global/content/ml/transformers-dev.js"
-    );
+    transformers =
+      await import("chrome://global/content/ml/transformers-dev.js");
   } else {
     lazy.console.debug("Beta or Release detected, using transformers.js");
     transformers = await import("chrome://global/content/ml/transformers.js");
   }
+
+  ChromeUtils.addProfilerMarker(
+    "MLEngine:ONNX",
+    { startTime: importStart },
+    `Load transformers.js for ${backend}`
+  );
+
+  return transformers;
 }
 
 /**
@@ -160,7 +186,10 @@ async function echo(request, _model, _tokenizer, _processor, config) {
 
   return {
     metrics: {
-      tokenizingTime: 0,
+      preprocessingTime: 0,
+      decodingTime: 0,
+      inputTokens: 0,
+      outputTokens: 0,
     },
     output: result,
   };
@@ -186,10 +215,16 @@ async function imageToText(request, model, tokenizer, processor, _config) {
   let result = {
     metrics: {
       inferenceTime: 0,
-      tokenizingTime: 0,
+      preprocessingTime: 0,
+      decodingTime: 0,
+      inputTokens: null,
+      outputTokens: 0,
     },
   };
-  let start = Date.now();
+  // Destructure to simplify assignments
+  const { metrics } = result;
+
+  let startLoad = ChromeUtils.now();
   let rawImage;
 
   if ("url" in request) {
@@ -203,27 +238,28 @@ async function imageToText(request, model, tokenizer, processor, _config) {
     );
   }
 
-  lazy.console.debug("Image loaded in ", Date.now() - start);
+  lazy.console.debug("Image loaded in ", ChromeUtils.now() - startLoad);
 
+  const startProcessing = ChromeUtils.now();
   const { pixel_values } = await processor(rawImage);
-  result.metrics.tokenizingTime += Date.now() - start;
+  metrics.preprocessingTime += ChromeUtils.now() - startProcessing;
   const toReturn = [];
   const streamer = request.options?.streamer;
   for (const batch of pixel_values) {
     batch.dims = [1, ...batch.dims];
-    start = Date.now();
+    const startInference = ChromeUtils.now();
     const output = await model.generate({ inputs: batch, streamer });
-    result.metrics.inferenceTime += Date.now() - start;
-    start = Date.now();
+    metrics.inferenceTime += ChromeUtils.now() - startInference;
+    const startDecoding = ChromeUtils.now();
     const decoded = tokenizer
       .batch_decode(output, {
         skip_special_tokens: true,
       })
       .map(x => ({ generated_text: x.trim() }));
-    result.metrics.tokenizingTime += Date.now() - start;
+    metrics.decodingTime += ChromeUtils.now() - startDecoding;
     toReturn.push(decoded);
   }
-  lazy.console.debug("Inference done in ", Date.now() - start);
+  lazy.console.debug("Inference done in ", ChromeUtils.now() - startProcessing);
   result.output = toReturn[0][0].generated_text;
 
   // Bug 1918220 - replace the result for models with that bug
@@ -231,6 +267,122 @@ async function imageToText(request, model, tokenizer, processor, _config) {
     lazy.console.debug("Replacing `T` with `Text document.`");
     result.output = "Text document.";
   }
+  return result;
+}
+
+async function getDomainId(domain, domainVocab) {
+  return domainVocab[domain] ?? domainVocab["<unk>"];
+}
+
+/**
+ * Converts a query or webpage title into a goal embedding using a multi-task ONNX model.
+ *
+ * Accepts either:
+ * - Query: just `text`
+ * - Page: requires both `text` and `domain`
+ *
+ * @param {object} request - The input request to the pipeline.
+ * @param {Array} request.inputArgs - The input arguments: [texts], [taskTypes], [domains?]
+ * @param {object} model - The ONNX model session.
+ * @param {object} tokenizer - The tokenizer instance.
+ * @param {object} _processor - (Unused)
+ * @param {object} config - The engine configuration options
+ * @param {object} modelConfig - The model configuration options
+ * @returns {object} - Inference result with embedding(s)
+ */
+async function textToGoal(
+  request,
+  model,
+  tokenizer,
+  _processor,
+  config,
+  modelConfig
+) {
+  const result = {
+    metrics: {
+      preprocessingTime: 0,
+      inferenceTime: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    },
+    output: [],
+  };
+  const { metrics } = result;
+
+  const texts = request.args?.[0] ?? [];
+  const taskTypes = request.args?.[1] ?? []; // ["query", "page", ...]
+  const domains = request.args?.[2] ?? []; // Optional (needed for "page")
+
+  for (let i = 0; i < texts.length; i++) {
+    const text = texts[i];
+    const task = taskTypes[i] ?? "query";
+    const domain = domains[i] ?? "";
+
+    const startToken = ChromeUtils.now();
+
+    const encoded = await tokenizer(text, {
+      padding: "max_length",
+      truncation: true,
+      max_length: 64,
+      return_attention_mask: true,
+    });
+    const tokenizeTime = ChromeUtils.now() - startToken;
+    metrics.preprocessingTime += tokenizeTime;
+    ChromeUtils.addProfilerMarker(
+      "MLEngine:ONNX",
+      { startTime: startToken },
+      `Tokenize text: ${encoded.input_ids.data.length} tokens`
+    );
+    const input_ids = encoded.input_ids.ort_tensor;
+    const attention_mask = encoded.attention_mask.ort_tensor;
+    const domain_vocab = modelConfig["transformers.js_config"].domain_vocab;
+    const domain_id =
+      task === "page" ? await getDomainId(domain, domain_vocab) : 0;
+    // choose Tensor based on WASM or ONNX-NATIVE backend respectively
+    const tensorFactory =
+      config.backend === WASM_BACKEND ? transformers.Tensor : globalThis.Tensor;
+
+    const domain_ids = new tensorFactory(
+      "int64",
+      BigInt64Array.from([BigInt(domain_id)]),
+      [1]
+    );
+    const task_type = new tensorFactory(
+      "int64",
+      BigInt64Array.from([task === "query" ? 0n : 1n]),
+      [1]
+    );
+
+    const inputs = {
+      input_ids,
+      attention_mask,
+      domain_ids,
+      task_type,
+    };
+
+    const startInfer = ChromeUtils.now();
+    const session = model.sessions.model;
+    const output = await session.run(inputs);
+    const inferenceTime = ChromeUtils.now() - startInfer;
+    metrics.inferenceTime += inferenceTime;
+    ChromeUtils.addProfilerMarker(
+      "MLEngine:ONNX",
+      { startTime: startInfer },
+      `textToGoal`
+    );
+    metrics.inputTokens += encoded.input_ids.ort_tensor.dims[1];
+
+    result.output.push({
+      embedding: Array.from(output.embedding.data),
+      task,
+      domain,
+    });
+  }
+
+  if (result.output.length === 1) {
+    result.output = result.output[0];
+  }
+
   return result;
 }
 
@@ -269,6 +421,13 @@ const ENGINE_CONFIGURATION = {
     processorId: null,
     processorClass: null,
     pipelineFunction: echo,
+  },
+  "moz-text-to-goal": {
+    modelId: "mozilla/iab-multitask-inference",
+    modelClass: "AutoModel",
+    tokenizerId: "mozilla/iab-multitask-inference",
+    tokenizerClass: "AutoTokenizer",
+    pipelineFunction: textToGoal,
   },
 };
 
@@ -345,6 +504,7 @@ export class ONNXPipeline {
   #config = null;
   #metrics = null;
   #errorFactory = null;
+  #modelConfig = null;
 
   /**
    * Creates an instance of a Pipeline.
@@ -431,6 +591,19 @@ export class ONNXPipeline {
     if (config.pipelineFunction && config.taskName != "test-echo") {
       lazy.console.debug("Using internal inference function");
 
+      //moz-text-to-goal customizes feature-extraction
+      if (config.taskName === "moz-text-to-goal") {
+        config.taskName = "feature-extraction";
+        //obtain modelConfig options using AutoConfig
+        this.#modelConfig = transformers.AutoConfig.from_pretrained(
+          config.modelId,
+          { revision: config.modelRevision }
+        );
+        lazy.console.debug(
+          `Switching  config.taskName from  moz-text-to-goal to ${config.taskName}`
+        );
+      }
+
       // use the model revision of the tokenizer or processor don't have one
       if (!config.tokenizerRevision) {
         config.tokenizerRevision = modelRevision;
@@ -497,7 +670,7 @@ export class ONNXPipeline {
 
   async #metricsSnapShot({ name, snapshot = {} }) {
     if (!("when" in snapshot)) {
-      snapshot.when = Date.now();
+      snapshot.when = ChromeUtils.now();
     }
     this.#metrics.push({ name, ...snapshot });
   }
@@ -514,8 +687,9 @@ export class ONNXPipeline {
    * @returns {Promise<Pipeline>} The initialized pipeline instance.
    */
   static async initialize(mlEngineWorker, runtime, options, errorFactory) {
+    let initStart = ChromeUtils.now();
     let snapShot = {
-      when: Date.now(),
+      when: initStart,
     };
 
     if (options.logLevel) {
@@ -549,13 +723,28 @@ export class ONNXPipeline {
     if (lazy.console.logLevel != config.logLevel) {
       lazy.console.logLevel = config.logLevel;
     }
+
+    let pipelineReadyStart = ChromeUtils.now();
     const pipeline = new ONNXPipeline(mlEngineWorker, config, errorFactory);
     await pipeline.ensurePipelineIsReady();
+
+    ChromeUtils.addProfilerMarker(
+      "MLEngine:ONNX",
+      { startTime: pipelineReadyStart },
+      `Pipeline ready`
+    );
+
     await pipeline.#metricsSnapShot({
       name: "initializationStart",
       snapshot: snapShot,
     });
     await pipeline.#metricsSnapShot({ name: "initializationEnd" });
+
+    ChromeUtils.addProfilerMarker(
+      "MLEngine:ONNX",
+      { startTime: initStart },
+      `Initialized: task=${taskName}, backend=${config.backend}`
+    );
 
     return pipeline;
   }
@@ -593,9 +782,13 @@ export class ONNXPipeline {
           lazy.console.debug("Initializing model, tokenizer and processor");
 
           try {
-            [this.#model, this.#tokenizer, this.#processor] = await Promise.all(
-              [this.#model, this.#tokenizer, this.#processor]
-            );
+            [this.#model, this.#tokenizer, this.#processor, this.#modelConfig] =
+              await Promise.all([
+                this.#model,
+                this.#tokenizer,
+                this.#processor,
+                this.#modelConfig,
+              ]);
             this.#isReady = true;
           } catch (error) {
             lazy.console.debug("Error initializing pipeline", error);
@@ -632,11 +825,51 @@ export class ONNXPipeline {
   async run(request, requestId, inferenceProgressCallback = null) {
     lazy.console.debug("Running task: ", this.#config.taskName);
 
-    let result;
-    await this.#metricsSnapShot({ name: "runStart" });
+    /** @type {PipelineMetrics} */
+    const metrics = {
+      inputTokens: 0,
+      outputTokens: 0,
+      preprocessingTime: 0,
+      tokenizingTime: 0, // Same as preprocessingTime, but named for Glean consistency
+      inferenceTime: 0,
+      decodingTime: 0,
+      timeToFirstToken: null,
+      tokensPerSecond: 0,
+      timePerOutputToken: 0,
+      runTimestamps: [],
+    };
+
+    /**
+     * Helper to record a timestamp in the metrics timeline.
+     *
+     * @param {string} name
+     */
+    const snapshot = name => {
+      metrics.runTimestamps.push({ name, when: ChromeUtils.now() });
+    };
+
+    const runStartTime = ChromeUtils.now();
+    snapshot("runStart");
 
     const tokenizer =
       this.#genericPipelineFunction?.tokenizer ?? this.#tokenizer;
+
+    if (this.#genericPipelineFunction && tokenizer && request.args?.[0]) {
+      try {
+        const inputs = [request.args[0]].flat();
+        for (const text of inputs) {
+          if (typeof text === "string") {
+            const encoded = await tokenizer.encode(text);
+            metrics.inputTokens += encoded.length;
+          }
+        }
+      } catch (e) {
+        lazy.console.debug(
+          "Could not count input tokens for generic pipeline",
+          e
+        );
+      }
+    }
 
     const progressInfo = {
       ok: true,
@@ -650,12 +883,13 @@ export class ONNXPipeline {
       ...request.streamerOptions,
     };
 
-    let streamer = undefined;
+    let streamer;
     let chunkTokens = [];
     let chunkText = "";
     let nextTokensArePrompt = !streamerOptions.skipPrompt;
     let restoreTokenizer = false;
 
+    let firstTokenTimestamp = null;
     if (tokenizer && inferenceProgressCallback) {
       const flushPrompts = _tokens => {
         streamer.token_cache = _tokens;
@@ -669,6 +903,7 @@ export class ONNXPipeline {
         restoreTokenizer = true;
         streamer.next_tokens_are_prompt = false;
       };
+
       streamer = new transformers.TextStreamer(tokenizer, {
         skip_prompt: streamerOptions.skipPrompt,
         decode_kwargs: {
@@ -679,6 +914,16 @@ export class ONNXPipeline {
             streamer.tokenizer = tokenizer;
             restoreTokenizer = false;
           }
+
+          // Record Time To First Token on the very first callback
+          const now = ChromeUtils.now();
+          if (metrics.timeToFirstToken === null) {
+            metrics.timeToFirstToken = now - runStartTime;
+            firstTokenTimestamp = now;
+          }
+
+          metrics.outputTokens += tokens.length;
+
           if (streamerOptions.perTokens) {
             if (nextTokensArePrompt) {
               flushPrompts(tokens);
@@ -696,10 +941,8 @@ export class ONNXPipeline {
               statusText: lazy.Progress.ProgressStatusText.IN_PROGRESS,
             });
 
-            // We have sent the text, now resetting it
             chunkText = "";
           } else {
-            // Append newly received tokens.
             chunkTokens.push(tokens);
 
             if (nextTokensArePrompt) {
@@ -739,21 +982,33 @@ export class ONNXPipeline {
         }
       : request;
 
+    let result;
+
     if (this.#genericPipelineFunction) {
       if (this.#config.modelId === "test-echo") {
         result = {
           output: requestWithCallback.args,
           config: this.#config,
           multiThreadSupported: isMultiThreadSupported(),
+          metrics: { ...metrics },
         };
       } else {
-        result = await this.#genericPipelineFunction(
+        const start = ChromeUtils.now();
+        let output = await this.#genericPipelineFunction(
           ...requestWithCallback.args,
           requestWithCallback.options || {}
         );
-        if (result instanceof transformers.Tensor) {
-          result = result.tolist();
+        const inferenceTime = ChromeUtils.now() - start;
+        metrics.inferenceTime = inferenceTime;
+        ChromeUtils.addProfilerMarker(
+          "MLEngine:ONNX",
+          { startTime: start },
+          `Inference`
+        );
+        if (output instanceof transformers.Tensor) {
+          output = output.tolist();
         }
+        result = output;
       }
     } else {
       result = await this.#pipelineFunction(
@@ -761,11 +1016,52 @@ export class ONNXPipeline {
         this.#model,
         this.#tokenizer,
         this.#processor,
-        this.#config
+        this.#config,
+        this.#modelConfig
       );
+      result.metrics ??= {};
     }
-    await this.#metricsSnapShot({ name: "runEnd" });
-    result.metrics = this.#metrics;
+
+    if (result.metrics) {
+      for (const [key, value] of Object.entries(result.metrics)) {
+        if (value !== undefined && value !== null) {
+          metrics[key] = value;
+        }
+      }
+    }
+
+    snapshot("runEnd");
+    const runEndTime = ChromeUtils.now();
+
+    // Calculate metrics
+    try {
+      // If we streamed, decoding time is Time(End) - Time(FirstToken).
+      // Otherwise, we fallback to inferenceTime (e.g. for embeddings or image-to-text without streaming).
+      if (metrics.timeToFirstToken !== null && firstTokenTimestamp !== null) {
+        metrics.decodingTime = runEndTime - firstTokenTimestamp;
+      } else {
+        metrics.decodingTime = metrics.inferenceTime;
+      }
+
+      // Sync tokenizingTime with preprocessingTime for Glean metrics consistency
+      metrics.tokenizingTime = metrics.preprocessingTime;
+
+      // Calculate throughput metrics if we have the necessary data
+      if (metrics.inferenceTime > 0 && metrics.outputTokens > 0) {
+        metrics.tokensPerSecond =
+          metrics.outputTokens / (metrics.inferenceTime / 1000);
+        metrics.timePerOutputToken =
+          metrics.inferenceTime / metrics.outputTokens;
+      }
+    } catch (e) {
+      lazy.console.debug("Error computing throughput metrics", e);
+    }
+
+    // Merge initialization snapshots from this.#metrics into runTimestamps
+    // so tests can access all timing data
+    metrics.runTimestamps = [...this.#metrics, ...metrics.runTimestamps];
+
+    result.metrics = metrics;
 
     if (streamer) {
       inferenceProgressCallback?.({

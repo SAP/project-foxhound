@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-atomics-pause) skip-if(!this.hasOwnProperty('Atomics')||!Atomics.pause||!xulRuntime.shell) -- Atomics.pause is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Atomics')||!Atomics.pause) -- Atomics.pause is not enabled unconditionally
 // Copyright 2024 the V8 project authors. All rights reserved.
 // This code is governed by the license found in the LICENSE file.
 

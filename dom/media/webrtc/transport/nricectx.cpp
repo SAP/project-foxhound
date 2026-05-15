@@ -43,25 +43,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <vector>
 
-#include "nr_socket_proxy_config.h"
-#include "nsXULAppAPI.h"
-
+#include "ScopedNSSTypes.h"
 #include "logging.h"
-#include "pk11pub.h"
-#include "plbase64.h"
-
+#include "mozilla/Preferences.h"
+#include "nr_socket_proxy_config.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
+#include "nsIUUIDGenerator.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
-#include "ScopedNSSTypes.h"
+#include "nsXULAppAPI.h"
+#include "pk11pub.h"
 #include "runnable_utils.h"
-#include "nsIUUIDGenerator.h"
 
 // nICEr includes
 extern "C" {
+// clang-format off
 #include "nr_api.h"
 #include "registry.h"
+#include "addrs.h"
 #include "async_timer.h"
 #include "r_crc32.h"
 #include "r_memory.h"
@@ -71,16 +71,17 @@ extern "C" {
 #include "nr_socket.h"
 #include "nr_socket_local.h"
 #include "stun_reg.h"
-#include "stun_util.h"
 #include "ice_codeword.h"
 #include "ice_ctx.h"
 #include "ice_candidate.h"
+// clang-format on
 }
 
 // Local includes
+#include "mozilla/Base64.h"
+#include "nr_socket_prsock.h"
 #include "nricectx.h"
 #include "nricemediastream.h"
-#include "nr_socket_prsock.h"
 #include "nrinterfaceprioritizer.h"
 #include "rlogconnector.h"
 #include "test_nr_socket.h"
@@ -299,6 +300,14 @@ nsresult NrIceCtx::SetIceConfig(const Config& aConfig) {
       nr_ice_ctx_remove_flags(ctx_, NR_ICE_CTX_FLAGS_DISABLE_HOST_CANDIDATES);
       nr_ice_ctx_remove_flags(ctx_, NR_ICE_CTX_FLAGS_RELAY_ONLY);
       break;
+  }
+
+  if (config_.mAllowLoopback) {
+    nr_ice_ctx_add_flags(ctx_, NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK);
+  }
+
+  if (config_.mAllowLinkLocal) {
+    nr_ice_ctx_add_flags(ctx_, NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL);
   }
 
   // TODO: Support re-configuring the test NAT someday?
@@ -547,7 +556,7 @@ void NrIceCtx::InitializeGlobals(const GlobalConfig& aConfig) {
   RLogConnector::CreateInstance();
   // Initialize the crypto callbacks and logging stuff
   if (!initialized) {
-    NR_reg_init(NR_REG_MODE_LOCAL);
+    NR_reg_init();
     nr_crypto_vtbl = &nr_ice_crypto_nss_vtbl;
     initialized = true;
 
@@ -572,13 +581,6 @@ void NrIceCtx::InitializeGlobals(const GlobalConfig& aConfig) {
 
     NR_reg_set_char((char*)NR_ICE_REG_ICE_TCP_DISABLE, !aConfig.mTcpEnabled);
 
-    if (aConfig.mAllowLoopback) {
-      NR_reg_set_char((char*)NR_STUN_REG_PREF_ALLOW_LOOPBACK_ADDRS, 1);
-    }
-
-    if (aConfig.mAllowLinkLocal) {
-      NR_reg_set_char((char*)NR_STUN_REG_PREF_ALLOW_LINK_LOCAL_ADDRS, 1);
-    }
     if (!aConfig.mForceNetInterface.Length()) {
       NR_reg_set_string((char*)NR_ICE_REG_PREF_FORCE_INTERFACE_NAME,
                         const_cast<char*>(aConfig.mForceNetInterface.get()));
@@ -616,7 +618,7 @@ nsTArray<NrIceStunAddr> NrIceCtx::GetStunAddrs() {
   }
 
   MOZ_MTLOG(ML_INFO, "NrIceCtx static call to find local stun addresses");
-  if (nr_stun_find_local_addresses(local_addrs, MAXADDRS, &addr_ct)) {
+  if (nr_stun_get_addrs(local_addrs, MAXADDRS, &addr_ct)) {
     MOZ_MTLOG(ML_INFO, "Error finding local stun addresses");
   } else {
     for (int i = 0; i < addr_ct; ++i) {
@@ -654,6 +656,7 @@ bool NrIceCtx::Initialize() {
   int r;
 
   UINT4 flags = NR_ICE_CTX_FLAGS_AGGRESSIVE_NOMINATION;
+
   r = nr_ice_ctx_create(const_cast<char*>(name_.c_str()), flags,
                         ice_gather_handler_, &ctx_);
 
@@ -1041,7 +1044,7 @@ void NrIceCtx::gather_cb(NR_SOCKET s, int h, void* arg) {
 
 void NrIceCtx::SignalAllStreamsFailed() {
   for (auto& [id, stream] : streams_) {
-    Unused << id;
+    (void)id;
     stream->Failed();
     SignalConnectionStateChange(stream, ICE_CTX_FAILED);
   }
@@ -1113,9 +1116,9 @@ void nr_ice_compute_codeword(char* buf, int len, char* codeword) {
   UINT4 c;
 
   r_crc32(buf, len, &c);
-
-  PL_Base64Encode(reinterpret_cast<char*>(&c), 3, codeword);
-  codeword[4] = 0;
+  [[maybe_unused]] nsresult nr = mozilla::Base64Encode(
+      reinterpret_cast<char*>(&c), 3, mozilla::Span(codeword, 5));
+  MOZ_ASSERT(NS_SUCCEEDED(nr));
 }
 
 int nr_socket_local_create(void* obj, nr_transport_addr* addr,

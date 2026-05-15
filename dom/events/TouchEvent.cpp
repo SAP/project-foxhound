@@ -4,19 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/TouchEvent.h"
-#include "mozilla/dom/Touch.h"
-#include "mozilla/dom/TouchListBinding.h"
+
+#include "gfxPlatform.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TouchEvents.h"
-#include "gfxPlatform.h"
+#include "mozilla/dom/Navigator.h"
+#include "mozilla/dom/Touch.h"
+#include "mozilla/dom/TouchListBinding.h"
 #include "nsContentUtils.h"
-#include "nsIDocShell.h"
 #include "nsExceptionHandler.h"
+#include "nsIDocShell.h"
 
 namespace mozilla::dom {
 
@@ -225,6 +226,13 @@ bool TouchEvent::PrefEnabled(nsIDocShell* aDocShell) {
   } else if (touchEventsOverride ==
              mozilla::dom::TouchEventsOverride::Disabled) {
     enabled = false;
+  } else if (nsContentUtils::ShouldResistFingerprinting(
+                 aDocShell, RFPTarget::PointerEvents)) {
+#ifdef MOZ_WIDGET_COCOA
+    enabled = false;
+#else
+    enabled = true;
+#endif
   } else {
     const int32_t prefValue = StaticPrefs::dom_w3c_touch_events_enabled();
     if (prefValue == 2) {
@@ -243,10 +251,8 @@ bool TouchEvent::PrefEnabled(nsIDocShell* aDocShell) {
       if (enabled && aDocShell) {
         // APZ might be disabled on this particular widget, in which case
         // TouchEvent support will also be disabled. Try to detect that.
-        RefPtr<nsPresContext> pc = aDocShell->GetPresContext();
-        if (pc) {
-          nsCOMPtr<nsIWidget> widget = pc->GetRootWidget();
-          if (widget) {
+        if (RefPtr<nsPresContext> pc = aDocShell->GetPresContext()) {
+          if (nsCOMPtr<nsIWidget> widget = pc->GetRootWidget()) {
             enabled &= widget->AsyncPanZoomEnabled();
           }
         }

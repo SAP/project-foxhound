@@ -70,9 +70,9 @@ add_task(async function () {
  * of the viewport, depending on the provided "expected" argument.
  * Returns a promise that will resolve when the test has been performed.
  *
- * @param {String} selector
+ * @param {string} selector
  *        css selector for the element to test
- * @param {Boolean} expected
+ * @param {boolean} expected
  *        true if the element is expected to be in the viewport, false otherwise
  * @return {Promise} promise
  */

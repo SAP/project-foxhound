@@ -39,10 +39,9 @@ FINAL_TARGET_FILES.actors = [
 ]
 
 if CONFIG["OS_ARCH"] == "WINNT":
-    if CONFIG["ENABLE_TESTS"]:
-        DIRS += [
-            "tests/unit/insertIEHistory",
-        ]
+    TEST_DIRS += [
+        "tests/unit/insertIEHistory",
+    ]
     EXPORTS += [
         "nsEdgeMigrationUtils.h",
     ]

@@ -7,3 +7,6 @@
 BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 
 JAR_MANIFESTS += ["jar.mn"]
+
+with Files("**"):
+    BUG_COMPONENT = ("Toolkit", "Preferences")

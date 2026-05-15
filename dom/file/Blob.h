@@ -8,10 +8,10 @@
 #define mozilla_dom_Blob_h
 
 #include "mozilla/dom/BodyConsumer.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
-#include "nsWrapperCache.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsWeakReference.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
 class nsIInputStream;

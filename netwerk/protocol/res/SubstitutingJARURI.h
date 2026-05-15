@@ -153,6 +153,7 @@ class SubstitutingJARURI : public nsIJARURI,
   }
   NS_IMETHOD Mutate(nsIURIMutator** _retval) override;
   NS_IMETHOD_(void) Serialize(mozilla::ipc::URIParams& aParams) override;
+  virtual size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) override;
 
  private:
   nsresult Clone(nsIURI** aURI);

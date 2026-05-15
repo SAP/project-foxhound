@@ -1153,3 +1153,120 @@ add_task(async function test_live_update_with_no_extension_listener() {
 
   await shutdown(extension, target);
 });
+
+// This test verifies that Bug 1994355 fix doesn't regress.
+add_task(
+  async function test_extension_onChanged_emitted_with_active_storage_panel() {
+    function background() {
+      const onChangedCalls = [];
+
+      browser.test.onMessage.addListener(async (msg, ...args) => {
+        switch (msg) {
+          case "storage-local-add-listener":
+            browser.storage.local.onChanged.addListener(changes => {
+              browser.test.log(
+                `Extension onChanged listener called with changes: ${JSON.stringify(changes)}`
+              );
+              onChangedCalls.push(changes);
+            });
+            browser.test.sendMessage("storage-local-add-listener:done");
+            break;
+          case "storage-local-set":
+            await browser.storage.local.set({ testKey: args[0] });
+            browser.test.sendMessage("storage-local-set:done");
+            break;
+          case "get-onChanged-calls":
+            browser.test.sendMessage(
+              "get-onChanged-calls:done",
+              onChangedCalls
+            );
+            break;
+          default:
+            browser.test.fail(`Unexpected test message received: ${msg}`);
+        }
+      });
+
+      browser.test.sendMessage("background-ready");
+    }
+
+    const extension = await startupExtension(
+      getExtensionConfig({ background })
+    );
+
+    await extension.awaitMessage("background-ready");
+
+    // Set the storage.local key to an js object to force the
+    // value to be serialize into a StructureCloneHolder.
+    const TEST_VALUE_INITIAL = { valueObjKey: "initialTestValue" };
+    const TEST_VALUE_UPDATED = { valueObjKey: "newTestValue" };
+
+    extension.sendMessage("storage-local-set", TEST_VALUE_INITIAL);
+    await extension.awaitMessage("storage-local-set:done");
+
+    const { commands, extensionStorage } = await openAddonStoragePanel(
+      extension.id
+    );
+
+    const { baseURI } = extension.extension;
+    const host = `${baseURI.scheme}://${baseURI.host}`;
+
+    let { data } = await extensionStorage.getStoreObjects(host);
+    Assert.deepEqual(
+      data,
+      [
+        {
+          area: "local",
+          name: "testKey",
+          value: { str: JSON.stringify(TEST_VALUE_INITIAL) },
+          isValueEditable: true,
+        },
+      ],
+      "Storage actor got the expected initial data"
+    );
+
+    extension.sendMessage("storage-local-add-listener");
+    await extension.awaitMessage("storage-local-add-listener:done");
+
+    extension.sendMessage("storage-local-set", TEST_VALUE_UPDATED);
+    await extension.awaitMessage("storage-local-set:done");
+
+    await TestUtils.waitForCondition(async () => {
+      const res = await extensionStorage.getStoreObjects(host);
+      return res.data?.length > 0;
+    }, "Wait for extension storage panel to update");
+
+    data = (await extensionStorage.getStoreObjects(host)).data;
+    Assert.deepEqual(
+      data,
+      [
+        {
+          area: "local",
+          name: "testKey",
+          value: { str: JSON.stringify(TEST_VALUE_UPDATED) },
+          isValueEditable: true,
+        },
+      ],
+      "Storage actor received the change"
+    );
+
+    extension.sendMessage("get-onChanged-calls");
+    const onChangedCalls = await extension.awaitMessage(
+      "get-onChanged-calls:done"
+    );
+
+    Assert.deepEqual(
+      onChangedCalls,
+      [
+        {
+          testKey: {
+            oldValue: TEST_VALUE_INITIAL,
+            newValue: TEST_VALUE_UPDATED,
+          },
+        },
+      ],
+      "Extension onChanged listener was called for the expected changes"
+    );
+
+    await shutdown(extension, commands);
+  }
+);

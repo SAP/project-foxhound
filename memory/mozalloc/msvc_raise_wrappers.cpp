@@ -7,6 +7,7 @@
 
 #include <exception>
 #include "mozalloc_abort.h"
+#include "mozilla/Attributes.h"
 
 static void __cdecl RaiseHandler(const std::exception& e) {
   mozalloc_abort(e.what());

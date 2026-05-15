@@ -11,7 +11,6 @@ import android.text.TextUtils
 import android.util.AttributeSet
 import android.widget.EditText
 import android.widget.ProgressBar
-import androidx.core.os.bundleOf
 import androidx.core.view.isVisible
 import androidx.core.widget.doOnTextChanged
 import androidx.preference.Preference
@@ -72,11 +71,11 @@ class ManualAddSearchEnginePreference(context: Context, attrs: AttributeSet) :
     override fun onSaveInstanceState(): Parcelable {
         val state = super.onSaveInstanceState()
 
-        return bundleOf(
-            SUPER_STATE_KEY to state,
-            SEARCH_ENGINE_NAME_KEY to engineNameEditText?.text.toString(),
-            SEARCH_QUERY_KEY to searchQueryEditText?.text.toString(),
-        )
+        return Bundle().apply {
+            putParcelable(SUPER_STATE_KEY, state)
+            putString(SEARCH_ENGINE_NAME_KEY, engineNameEditText?.text.toString())
+            putString(SEARCH_QUERY_KEY, searchQueryEditText?.text.toString())
+        }
     }
 
     fun validateEngineNameAndShowError(engineName: String, existingEngines: List<SearchEngine>): Boolean {

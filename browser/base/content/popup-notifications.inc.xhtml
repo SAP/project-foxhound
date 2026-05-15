@@ -39,12 +39,16 @@
         <description id="webRTC-all-windows-shared" hidden="true" data-l10n-id="popup-all-windows-shared"></description>
       </popupnotificationcontent>
 
-      <popupnotificationcontent id="webRTC-preview" orient="vertical" hidden="true">
-        <html:video id="webRTC-previewVideo" tabindex="-1"/>
+      <popupnotificationcontent id="webRTC-preview-section" orient="vertical">
+        <!-- <webrtc-preview> gets inserted here lazily by WebRTCParent.sys.mjs -->
         <vbox id="webRTC-previewWarningBox">
           <description id="webRTC-previewWarning"/>
           <hbox>
-            <label id="webRTC-previewWarning-learnMore" is="text-link" class="popup-notification-learnmore-link"/>
+            <html:a id="webRTC-previewWarning-learnMore"
+                    is="moz-support-link"
+                    support-page="screenshare-safety"
+                    class="popup-notification-learnmore-link"
+          ></html:a>
           </hbox>
         </vbox>
       </popupnotificationcontent>
@@ -258,11 +262,14 @@
     <popupnotification id="relay-integration-offer-notification" hidden="true">
       <popupnotificationcontent orient="vertical">
         <html:div>
-          <html:p data-l10n-id="firefox-relay-offer-why-to-use-relay"></html:p>
+          <html:p data-l10n-id="firefox-relay-offer-why-to-use-relay-1">
+            <label class="firefox-relay-learn-more-url" is="text-link" data-l10n-name="firefox-relay-learn-more-url"/>
+            <label class="firefox-fxa-and-relay-offer-domain" data-l10n-name="firefox-fxa-and-relay-offer-domain"/>
+          </html:p>
           <html:p id="firefox-relay-offer-what-relay-provides" data-l10n-id="firefox-relay-offer-what-relay-provides" data-l10n-args='{"useremail": ""}'></html:p>
-          <html:p id="firefox-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice">
-            <label id="firefox-relay-offer-tos-url" is="text-link" data-l10n-name="tos-url"/>
-            <label id="firefox-relay-offer-privacy-url" is="text-link" data-l10n-name="privacy-url"/>
+          <html:p id="firefox-relay-offer-legal-notice" data-l10n-id="firefox-relay-offer-legal-notice-1">
+            <label class="firefox-fxa-and-relay-offer-tos-url" is="text-link" data-l10n-name="tos-url"/>
+            <label class="firefox-fxa-and-relay-offer-privacy-url" is="text-link" data-l10n-name="privacy-url"/>
           </html:p>
         </html:div>
       </popupnotificationcontent>
@@ -312,7 +319,7 @@
             <label class="firefox-relay-learn-more-url" is="text-link" data-l10n-name="firefox-relay-learn-more-url"/>
             <label class="firefox-fxa-and-relay-offer-domain" data-l10n-name="firefox-fxa-and-relay-offer-domain"/>
           </html:p>
-          <html:p class="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-and-fxa-popup-notification-second-sentence-with-domain"></html:p>
+          <html:p class="firefox-relay-offer-what-fxa-and-relay-provides" data-l10n-id="firefox-relay-and-fxa-popup-notification-second-sentence-with-domain-and-value-prop"></html:p>
         </html:div>
       </popupnotificationcontent>
     </popupnotification>

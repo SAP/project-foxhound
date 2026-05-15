@@ -59,7 +59,7 @@ async function run_test() {
     executeSoon(ensureBlocklistSet);
   }
   function ensureBlocklistSet() {
-    var status = gfxInfo.getFeatureStatusStr("DIRECT2D");
+    var status = gfxInfo.getFeatureStatusStr("DX_NV12");
     Assert.equal(status, "BLOCKED_DRIVER_VERSION");
 
     // Make sure unrelated features aren't affected
@@ -67,7 +67,7 @@ async function run_test() {
     Assert.equal(status, "STATUS_OK");
 
     Assert.equal(
-      Services.prefs.getIntPref("gfx.blacklist.direct2d"),
+      Services.prefs.getIntPref("gfx.blacklist.dx_nv12"),
       "BLOCKED_DRIVER_VERSION"
     );
 
@@ -78,7 +78,7 @@ async function run_test() {
         os: "WINNT 6.1",
         vendor: "0xabcd",
         devices: ["0x2783", "0x2782"],
-        feature: " DIRECT2D ",
+        feature: " DX_NV12 ",
         featureStatus: " BLOCKED_DRIVER_VERSION ",
         driverVersion: " 8.52.322.2202 ",
         driverVersionComparator: " LESS_THAN ",
@@ -101,7 +101,7 @@ async function run_test() {
     executeSoon(ensureBlocklistUnset);
   }
   function ensureBlocklistUnset() {
-    var status = gfxInfo.getFeatureStatusStr("DIRECT2D");
+    var status = gfxInfo.getFeatureStatusStr("DX_NV12");
     Assert.equal(status, "STATUS_OK");
 
     // Make sure unrelated features aren't affected
@@ -110,7 +110,7 @@ async function run_test() {
 
     var exists = false;
     try {
-      Services.prefs.getIntPref("gfx.blacklist.direct2d");
+      Services.prefs.getIntPref("gfx.blacklist.dx_nv12");
       exists = true;
     } catch (e) {}
 

@@ -10,9 +10,8 @@
 
 #include "modules/video_capture/device_info_impl.h"
 
-#include <stdlib.h>
-
 #include <cstdint>
+#include <cstdlib>
 
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
@@ -31,7 +30,7 @@ namespace webrtc {
 namespace videocapturemodule {
 
 DeviceInfoImpl::DeviceInfoImpl()
-    : _lastUsedDeviceName(NULL), _lastUsedDeviceNameLength(0) {}
+    : _lastUsedDeviceName(nullptr), _lastUsedDeviceNameLength(0) {}
 
 DeviceInfoImpl::~DeviceInfoImpl(void) {
   MutexLock lock(&_apiLock);

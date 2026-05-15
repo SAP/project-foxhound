@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.wrapper {
+  padding: var(--space-large);
+}
+
+.ai-response {
+  white-space: pre-wrap;
+}
+
+#input.find-input {
+  --input-background-icon: url(chrome://global/skin/icons/search-glass.svg);
+}

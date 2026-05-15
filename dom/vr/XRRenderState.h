@@ -7,10 +7,9 @@
 #ifndef mozilla_dom_XRRenderState_h_
 #define mozilla_dom_XRRenderState_h_
 
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/WebXRBinding.h"
-
-#include "gfxVR.h"
 
 namespace mozilla::dom {
 class XRWebGLLayer;

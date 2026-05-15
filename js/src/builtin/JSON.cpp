@@ -10,18 +10,17 @@
 #include "builtin/JSON.h"
 
 #include "mozilla/CheckedInt.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/Range.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Variant.h"
 
 #include <algorithm>
 
-#include "jsnum.h"
 #include "jstypes.h"
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
+#include "builtin/Number.h"
 #include "builtin/ParseRecordObject.h"
 #include "builtin/RawJSONObject.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -46,6 +45,7 @@
 #include "vm/NumberObject.h"  // js::NumberObject
 #include "vm/PlainObject.h"   // js::PlainObject
 #include "vm/StringObject.h"  // js::StringObject
+
 #include "builtin/Array-inl.h"
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSAtomUtils-inl.h"  // AtomToId, PrimitiveValueToId, IndexToId, IdToString,
@@ -1757,35 +1757,33 @@ static bool InternalizeJSONProperty(JSContext* cx, HandleObject holder,
 
   RootedObject context(cx);
   Rooted<ParseRecordObject*> entries(cx);
-  if (JS::Prefs::experimental_json_parse_with_source()) {
-    // https://tc39.es/proposal-json-parse-with-source/#sec-internalizejsonproperty
-    if (parseRecord) {
-      bool sameVal = false;
-      if (!SameValue(cx, parseRecord->getValue(), val, &sameVal)) {
-        return false;
-      }
-      if (parseRecord->hasValue() && sameVal) {
-        if (parseRecord->getParseNode()) {
-          MOZ_ASSERT(!val.isObject());
-          Rooted<IdValueVector> props(cx, cx);
-          if (!props.emplaceBack(
-                  IdValuePair(NameToId(cx->names().source),
-                              StringValue(parseRecord->getParseNode())))) {
-            return false;
-          }
-          context = NewPlainObjectWithUniqueNames(cx, props);
-          if (!context) {
-            return false;
-          }
-        }
-        entries.set(parseRecord);
-      }
+  // https://tc39.es/proposal-json-parse-with-source/#sec-internalizejsonproperty
+  if (parseRecord) {
+    bool sameVal = false;
+    if (!SameValue(cx, parseRecord->getValue(), val, &sameVal)) {
+      return false;
     }
-    if (!context) {
-      context = NewPlainObject(cx);
-      if (!context) {
-        return false;
+    if (parseRecord->hasValue() && sameVal) {
+      if (parseRecord->getParseNode()) {
+        MOZ_ASSERT(!val.isObject());
+        Rooted<IdValueVector> props(cx, cx);
+        if (!props.emplaceBack(
+                IdValuePair(NameToId(cx->names().source),
+                            StringValue(parseRecord->getParseNode())))) {
+          return false;
+        }
+        context = NewPlainObjectWithUniqueNames(cx, props);
+        if (!context) {
+          return false;
+        }
       }
+      entries.set(parseRecord);
+    }
+  }
+  if (!context) {
+    context = NewPlainObject(cx);
+    if (!context) {
+      return false;
     }
   }
 
@@ -1911,11 +1909,8 @@ static bool InternalizeJSONProperty(JSContext* cx, HandleObject holder,
   }
 
   RootedValue keyVal(cx, StringValue(key));
-  if (JS::Prefs::experimental_json_parse_with_source()) {
-    RootedValue contextVal(cx, ObjectValue(*context));
-    return js::Call(cx, reviver, holder, keyVal, val, contextVal, vp);
-  }
-  return js::Call(cx, reviver, holder, keyVal, val, vp);
+  RootedValue contextVal(cx, ObjectValue(*context));
+  return js::Call(cx, reviver, holder, keyVal, val, contextVal, vp);
 }
 
 static bool Revive(JSContext* cx, HandleValue reviver,
@@ -1929,8 +1924,7 @@ static bool Revive(JSContext* cx, HandleValue reviver,
     return false;
   }
 
-  MOZ_ASSERT_IF(JS::Prefs::experimental_json_parse_with_source(),
-                pro->getValue() == vp.get());
+  MOZ_ASSERT(pro->getValue() == vp.get());
   Rooted<jsid> id(cx, NameToId(cx->names().empty_));
   return InternalizeJSONProperty(cx, obj, id, reviver, pro, vp);
 }
@@ -1952,7 +1946,7 @@ bool js::ParseJSONWithReviver(JSContext* cx,
                                          JS::ProfilingCategoryPair::JS_Parsing);
   /* https://262.ecma-international.org/14.0/#sec-json.parse steps 2-10. */
   Rooted<ParseRecordObject*> pro(cx);
-  if (JS::Prefs::experimental_json_parse_with_source() && IsCallable(reviver)) {
+  if (IsCallable(reviver)) {
     Rooted<JSONReviveParser<CharT>> parser(cx, cx, chars, taint);
     if (!parser.get().parse(vp, &pro)) {
       return false;

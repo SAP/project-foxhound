@@ -4,6 +4,8 @@
 
 //! Generic types for url properties.
 
+use crate::derives::*;
+
 /// An image url or none, used for example in list-style-image
 #[derive(
     Animate,
@@ -20,6 +22,7 @@
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericUrlOrNone<U> {

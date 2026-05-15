@@ -26,6 +26,7 @@
 #include "modules/include/module_common_types.h"
 #include "modules/video_coding/histogram.h"
 #include "rtc_base/numerics/sequence_number_util.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/task_utils/repeating_task.h"
 #include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/clock.h"
@@ -87,7 +88,7 @@ class NackRequester final : public NackRequesterBase {
  private:
   // Which fields to consider when deciding which packet to nack in
   // GetNackBatch.
-  enum NackFilterOptions { kSeqNumOnly, kTimeOnly, kSeqNumAndTime };
+  enum NackFilterOptions { kSeqNumOnly, kTimeOnly };
 
   // This class holds the sequence number of the packet that is in the nack list
   // as well as the meta data about when it should be nacked and how many times

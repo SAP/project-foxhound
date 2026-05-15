@@ -5,20 +5,12 @@
 :root {
   /* Colors from common.css */
   --in-content-background-color: light-dark(#fff, rgb(28, 27, 34));
-  --in-content-border-color: light-dark(#d7d7db, rgba(249, 249, 250, 0.2));
-  --in-content-primary-button-background: light-dark(rgb(0, 97, 224), #00ddff);
-  --in-content-primary-button-background-active: light-dark(rgb(5, 62, 148), rgb(170, 242, 255));
-  --in-content-primary-button-background-hover: light-dark(rgb(2, 80, 187), rgb(128, 235, 255));
-  --in-content-text-color: light-dark(#0c0c0d, #eee);
-
   --bg-color: var(--in-content-background-color);
-  --text-color: var(--in-content-text-color);
+  --text-color: light-dark(#0c0c0d, #eee);
   --secondary-text-color: light-dark(var(--grey-50), rgb(168, 168, 168));
 
-  --border-color: var(--in-content-border-color);
-
   --box-background: light-dark(#fff, rgb(35, 34, 43));
-  --box-border-color: var(--in-content-border-color);
+  --box-border-color: var(--border-color);
 
   /* prettier-ignore */
   --button-background-color: light-dark(
@@ -38,7 +30,7 @@
 
   --category-background-hover: rgba(12, 12, 13, 0.1);
   --category-text: light-dark(rgba(12, 12, 13), var(--text-color));
-  --category-text-selected: var(--in-content-primary-button-background);
+  --category-text-selected: var(--button-background-color-primary);
 
   --fieldpair-text-color: light-dark(var(--grey-50), var(--text-color));
 
@@ -51,16 +43,12 @@
 
   /* Dimensions from common.css #categories > .category */
   /* TODO: Values are not based on photon's 4px base distance, see bug 1501638 */
-  --category-height: 48px;
+  --category-height: var(--size-item-xlarge);
   --category-padding: 10px;
   --category-transition-duration: 150ms;
 
   --icon-ok-color: light-dark(var(--green-70), var(--white-100));
   --icon-info-color: light-dark(var(--grey-90), var(--white-100));
-
-  --link-color: var(--in-content-primary-button-background);
-  --link-color-active: var(--in-content-primary-button-background-active);
-  --link-color-hover: var(--in-content-primary-button-background-hover);
 
   --primary-button-background-color: light-dark(var(--blue-60), #00ddff);
   --primary-button-color: light-dark(var(--white-100), rgb(43, 42, 51));
@@ -97,18 +85,18 @@
   /* Typography from Photon */
   /* See https://firefox-dev.tools/photon/visuals/typography.html */
   --body-10-font-size: 13px;
-  --body-10-font-weight: 400;
+  --body-10-font-weight: normal;
   --body-20-font-size: 15px;
-  --body-20-font-weight: 400;
-  --body-20-font-weight-bold: 700;
+  --body-20-font-weight: normal;
+  --body-20-font-weight-bold: var(--font-weight-bold);
   --caption-10-font-size: 11px;
-  --caption-10-font-weight: 400;
+  --caption-10-font-weight: normal;
   --caption-20-font-size: 13px;
-  --caption-20-font-weight: 400;
+  --caption-20-font-weight: normal;
   --display-10-font-size: 28px;
-  --display-10-font-weight: 600;
+  --display-10-font-weight: var(--font-weight-semibold);
   --title-20-font-size: 17px;
-  --title-20-font-weight: 600;
+  --title-20-font-weight: var(--font-weight-semibold);
   --title-30-font-size: 22px;
 
   /* Global layout vars */
@@ -117,15 +105,13 @@
   /* Global styles */
   --base-font-style: message-box;
   --base-font-size: var(--body-10-font-size);
-  --base-font-weight: var(--body-10-font-weight);
+  --base-font-weight: normal;
   --base-line-height: 1.8;
   --icon-label-font-size: var(--body-10-font-size);
   --message-font-size: var(--body-10-font-size);
   --button-font-size: var(--base-font-size);
   --micro-font-size: 11px;
   --monospace-font-family: monospace;
-
-  --card-shadow-blur-radius: var(--base-unit);
 
   /*
    * Variables particular to about:debugging
@@ -273,7 +259,7 @@ h1 {
 */
 .alt-subheading {
   margin-block-start: calc(var(--base-unit) * 4);
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
   font-size: 1.14em;
   line-height: 1.4em; /* odd value - from common.inc.css */
 
@@ -333,7 +319,7 @@ Form controls
   padding-inline-end: calc(var(--base-unit) * 5);
 
   border: none;
-  border-radius: calc(var(--base-unit) / 2);
+  border-radius: var(--border-radius-xsmall);
 
   font-size: var(--button-font-size);
 }
@@ -410,7 +396,7 @@ Form controls
 .ghost-button {
   background: transparent;
   border: none;
-  border-radius: calc(var(--base-unit) / 2);
+  border-radius: var(--border-radius-xsmall);
   fill: var(--button-color);
   height: calc(var(--base-unit) * 6);
   padding: calc(var(--base-unit));
@@ -434,7 +420,7 @@ Form controls
   height: 100%;
 
   border: 1px solid var(--box-border-color);
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   color: var(--text-color);
   background-color: var(--box-background);
 }
@@ -449,7 +435,7 @@ Form controls
 */
 .badge {
   background: var(--grey-30);
-  border-radius: calc(var(--base-unit) / 2);
+  border-radius: var(--border-radius-xsmall);
   font-size: var(--micro-font-size);
   padding: var(--base-unit) calc(2 * var(--base-unit));
 }
@@ -475,7 +461,7 @@ Form controls
  */
 .card {
   background-color: var(--card-background-color); /* from common.inc.css */
-  border-radius: var(--card-shadow-blur-radius); /* from common.inc.css */
+  border-radius: var(--border-radius-small);
   box-shadow: 0 1px 4px var(--grey-90-a10); /* from common.inc.css */
   box-sizing: border-box;
   min-width: min-content;

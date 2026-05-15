@@ -6,7 +6,6 @@ package mozilla.components.feature.pwa.intent
 
 import android.content.Intent
 import android.content.Intent.ACTION_VIEW
-import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsService.RELATION_HANDLE_ALL_URLS
 import androidx.browser.customtabs.CustomTabsSessionToken
@@ -28,6 +27,7 @@ import mozilla.components.feature.pwa.ext.toOrigin
 import mozilla.components.feature.tabs.CustomTabsUseCases
 import mozilla.components.service.digitalassetlinks.RelationChecker
 import mozilla.components.support.utils.SafeIntent
+import mozilla.components.support.utils.ext.PackageManagerCompatHelper
 import mozilla.components.support.utils.toSafeIntent
 
 /**
@@ -36,7 +36,7 @@ import mozilla.components.support.utils.toSafeIntent
 @Deprecated("TWAs are not supported. See https://github.com/mozilla-mobile/android-components/issues/12024")
 class TrustedWebActivityIntentProcessor(
     private val addNewTabUseCase: CustomTabsUseCases.AddCustomTabUseCase,
-    packageManager: PackageManager,
+    packageManager: PackageManagerCompatHelper,
     relationChecker: RelationChecker,
     private val store: CustomTabsServiceStore,
 ) : IntentProcessor {

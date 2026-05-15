@@ -299,13 +299,14 @@ var parsers = {
 
 /**
  * Parse an attribute value.
- * @param {String} namespaceURI The namespaceURI of the node that has the
+ *
+ * @param {string} namespaceURI The namespaceURI of the node that has the
  * attribute.
- * @param {String} tagName The tagName of the node that has the attribute.
+ * @param {string} tagName The tagName of the node that has the attribute.
  * @param {Array} attributes The list of all attributes of the node. This should
  * be an array of {name, value} objects.
- * @param {String} attributeName The name of the attribute to parse.
- * @param {String} attributeValue The value of the attribute to parse.
+ * @param {string} attributeName The name of the attribute to parse.
+ * @param {string} attributeValue The value of the attribute to parse.
  * @return {Array} An array of tokens that represents the value. Each token is
  * an object {type: [string|uri|jsresource|cssresource|idref], value}.
  * For instance parsing the ping attribute in <a ping="uri1 uri2"> returns:
@@ -337,12 +338,13 @@ function parseAttribute(
 
 /**
  * Get the type for links in this attribute if any.
- * @param {String} namespaceURI The node's namespaceURI.
- * @param {String} tagName The node's tagName.
+ *
+ * @param {string} namespaceURI The node's namespaceURI.
+ * @param {string} tagName The node's tagName.
  * @param {Array} attributes The node's attributes, as a list of {name, value}
  * objects.
- * @param {String} attributeName The name of the attribute to get the type for.
- * @return {Object} null if no type exist for this attribute on this node, the
+ * @param {string} attributeName The name of the attribute to get the type for.
+ * @return {object} null if no type exist for this attribute on this node, the
  * type object otherwise.
  */
 function getType(namespaceURI, tagName, attributes, attributeName) {
@@ -389,8 +391,9 @@ function getAttribute(attributes, attributeName) {
  * Split a string by a given character and return an array of objects parts.
  * The array will contain objects for the split character too, marked with
  * TYPE_STRING type.
- * @param {String} value The string to parse.
- * @param {String} splitChar A 1 length split character.
+ *
+ * @param {string} value The string to parse.
+ * @param {string} splitChar A 1 length split character.
  * @return {Array}
  */
 function splitBy(value, splitChar) {

@@ -180,6 +180,12 @@ interface nsIX509Cert : nsISupports {
   ACString getBase64DERString();
 
   /**
+   * The bytes of the certificate's DER encoded subject public key info.
+   */
+  [must_use]
+  readonly attribute Array<octet> subjectPublicKeyInfo;
+
+  /**
    * The base64 encoding of the DER encoded public key info using the specified
    * digest.
    */

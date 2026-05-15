@@ -14,6 +14,7 @@ This runner can be executed in two different ways:
 When the module is executed directly, if the --on-try option is used,
 it will fetch arguments from Tascluster's parameters.
 """
+
 import json
 import logging
 import os
@@ -245,7 +246,7 @@ def main(argv=sys.argv[1:]):
     if os.getenv("PERF_FLAGS"):
         extra_args = []
         for extra_arg in os.getenv("PERF_FLAGS").split():
-            extra_args.append(f"--{extra_arg}")
+            extra_args.append(f"--{os.path.expandvars(extra_arg)}")
         argv.extend(extra_args)
 
     mozconfig = SRC_ROOT / "browser" / "config" / "mozconfig"

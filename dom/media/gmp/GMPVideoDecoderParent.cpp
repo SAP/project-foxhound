@@ -6,13 +6,12 @@
 #include "GMPVideoDecoderParent.h"
 
 #include "GMPContentParent.h"
-#include "GMPUtils.h"
 #include "GMPLog.h"
 #include "GMPMessageUtils.h"
+#include "GMPUtils.h"
 #include "GMPVideoEncodedFrameImpl.h"
 #include "GMPVideoi420FrameImpl.h"
 #include "mozilla/gmp/GMPTypes.h"
-#include "mozilla/Unused.h"
 #include "nsAutoRef.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
@@ -137,7 +136,7 @@ nsresult GMPVideoDecoderParent::Decode(
       ipc::Shmem outputShmem;
       if (memMgr->MgrTakeShmem(GMPSharedMemClass::Decoded, mDecodedShmemSize,
                                &outputShmem)) {
-        Unused << SendGiveShmem(std::move(outputShmem));
+        (void)SendGiveShmem(std::move(outputShmem));
       }
     }
   }
@@ -250,7 +249,7 @@ nsresult GMPVideoDecoderParent::Shutdown() {
 
   mIsOpen = false;
   if (!mActorDestroyed) {
-    Unused << Send__delete__(this);
+    (void)Send__delete__(this);
   }
 
   return NS_OK;

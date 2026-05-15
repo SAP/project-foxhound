@@ -52,9 +52,7 @@ add_task(async function () {
     const inspector = gToolbox.getPanel("inspector");
 
     info("Select the rule view");
-    const onSidebarSelect = inspector.sidebar.once("select");
-    inspector.sidebar.select("ruleview");
-    await onSidebarSelect;
+    await inspector.sidebar.select("ruleview");
 
     info("Select a DIV element in the test page");
     await selectNodeInFrames(

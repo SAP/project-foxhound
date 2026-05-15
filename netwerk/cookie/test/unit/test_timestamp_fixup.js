@@ -43,7 +43,7 @@ function initDB(conn, now) {
   conn.executeSimpleSQL("PRAGMA wal_autocheckpoint = 16");
 
   conn.executeSimpleSQL(
-    `INSERT INTO moz_cookies(baseDomain, host, name, value, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly) 
+    `INSERT INTO moz_cookies(baseDomain, host, name, value, path, expiry, lastAccessed, creationTime, isSecure, isHttpOnly)
     VALUES ('foo.com', '.foo.com', 'foo', 'bar=baz', '/',
     ${now + ONE_DAY}, ${now + LAST_ACCESSED_DIFF} , ${
       now + CREATION_DIFF
@@ -88,19 +88,13 @@ add_task(async function test_timestamp_fixup() {
       await Glean.networking.cookieCreationFixupDiff.testGetValue();
     info(JSON.stringify(values));
     let keys = Object.keys(values).splice(-2, 2);
-    Assert.equal(keys.length, 2, "There should be two entries in telemetry");
+    Assert.equal(keys.length, 1, "There should be one entry in telemetry");
     Assert.equal(values[keys[0]], 1, "First entry should have value 1");
-    Assert.equal(values[keys[1]], 0, "Second entry should have value 0");
     const creationDiffInSeconds = CREATION_DIFF / USEC_PER_SEC;
     Assert.lessOrEqual(
       parseInt(keys[0]),
       creationDiffInSeconds,
       "The bucket should be smaller than time diff"
-    );
-    Assert.lessOrEqual(
-      creationDiffInSeconds,
-      parseInt(keys[1]),
-      "The next bucket should be larger than time diff"
     );
   }
 
@@ -109,20 +103,14 @@ add_task(async function test_timestamp_fixup() {
       await Glean.networking.cookieAccessFixupDiff.testGetValue();
     info(JSON.stringify(values));
     let keys = Object.keys(values).splice(-2, 2);
-    Assert.equal(keys.length, 2, "There should be two entries in telemetry");
+    Assert.equal(keys.length, 1, "There should be one entry in telemetry");
     Assert.equal(values[keys[0]], 1, "First entry should have value 1");
-    Assert.equal(values[keys[1]], 0, "Second entry should have value 0");
     info(now);
     const lastAccessedDiffInSeconds = LAST_ACCESSED_DIFF / USEC_PER_SEC;
     Assert.lessOrEqual(
       parseInt(keys[0]),
       lastAccessedDiffInSeconds,
       "The bucket should be smaller than time diff"
-    );
-    Assert.lessOrEqual(
-      lastAccessedDiffInSeconds,
-      parseInt(keys[1]),
-      "The next bucket should be larger than time diff"
     );
   }
 

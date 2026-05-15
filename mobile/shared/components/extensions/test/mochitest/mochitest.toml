@@ -25,7 +25,9 @@ tags = "webextensions"
 ["test_ext_tabs_create.html"]
 
 ["test_ext_tabs_events.html"]
-skip-if = ["fission"] # Bug 1827754
+skip-if = [
+  "fission", # Bug 1827754
+]
 
 ["test_ext_tabs_executeScript.html"]
 
@@ -44,7 +46,9 @@ skip-if = ["fission"] # Bug 1827754
 ["test_ext_tabs_insertCSS.html"]
 
 ["test_ext_tabs_lastAccessed.html"]
-skip-if = ["true"] # tab.lastAccessed not implemented
+skip-if = [
+  "true", # tab.lastAccessed not implemented
+]
 
 ["test_ext_tabs_onUpdated.html"]
 

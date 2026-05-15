@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_MessageChannel_h
 #define mozilla_dom_MessageChannel_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-#include "nsCOMPtr.h"
 
 class nsIGlobalObject;
 

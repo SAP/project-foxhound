@@ -6,17 +6,15 @@
 // /docs/architecture-overview.md
 class HistoryFragment : Fragment() {
 
-    private val store by lazy {
-        StoreProvider.get(this) {
-            HistoryStore(
-                initialState = HistoryState.initial,
-                middleware = listOf(
-                    HistoryNavigationMiddleware(findNavController())
-                    HistoryStorageMiddleware(HistoryStorage()),
-                    HistoryTelemetryMiddleware(),
-                )
+    private val store by storeFragment(HistoryState.initial) { restoredState ->
+        HistoryStore(
+            initialState = restoredState,
+            middleware = listOf(
+                HistoryNavigationMiddleware(findNavController())
+                HistoryStorageMiddleware(HistoryStorage()),
+                HistoryTelemetryMiddleware(),
             )
-        }
+        )
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {

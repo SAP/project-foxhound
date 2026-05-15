@@ -9,7 +9,10 @@ if [ ! -d "${VSPATH}/${VCDIR}" ]; then
     VCDIR=VC/Tools/MSVC/14.39.33519
 fi
 if [ ! -d "${VSPATH}/${VCDIR}" ]; then
-    VCDIR=VC/Tools/MSVC/14.41.34120
+    VCDIR=VC/Tools/MSVC/14.44.35207
+fi
+if [ ! -d "${VSPATH}/${VCDIR}" ]; then
+    VCDIR=VC/Tools/MSVC/14.50.35717
 fi
 SDKDIR="Windows Kits/10"
 SDK_VERSION=10.0.17134.0
@@ -41,6 +44,9 @@ if [ ! -d "${UNIX_VSPATH}/redist/${SDK_CPU}/$CRT_DIR" ]; then
 fi
 if [ ! -d "${UNIX_VSPATH}/redist/${SDK_CPU}/$CRT_DIR" ]; then
     CRT_DIR="microsoft.vc143.crt"
+fi
+if [ ! -d "${UNIX_VSPATH}/redist/${SDK_CPU}/$CRT_DIR" ]; then
+    CRT_DIR="microsoft.vc145.crt"
 fi
 
 export INCLUDE="${VSPATH}/${VCDIR}/include;${VSPATH}/${VCDIR}/atlmfc/include;${VSPATH}/${SDKDIR}/Include/${SDK_VERSION}/ucrt;${VSPATH}/${SDKDIR}/Include/${SDK_VERSION}/shared;${VSPATH}/${SDKDIR}/Include/${SDK_VERSION}/um;${VSPATH}/${SDKDIR}/Include/${SDK_VERSION}/winrt;${VSPATH}/dia sdk/include"

@@ -5,7 +5,6 @@
 Transform the beetmover task into an actual task description.
 """
 
-
 from taskgraph.transforms.base import TransformSequence
 
 transforms = TransformSequence()

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function test_sizemodeDefaults() {
-  /** Test for Bug 477657 **/
+  /** Test for Bug 477657 */
   let newWin = openDialog(location, "_blank", "chrome,all,dialog=no");
   await promiseWindowLoaded(newWin);
   let newState = {

@@ -2,7 +2,7 @@
  * Test that doorhanger submit telemetry is sent when the user saves/updates.
  */
 
-add_setup(function () {
+add_setup(async function () {
   // This test used to rely on the initial timer of
   // TestUtils.waitForCondition. See bug 1695395.
   // The test is perma-fail on Linux asan opt without this.
@@ -275,6 +275,8 @@ function _validateTestCase(tc) {
 }
 
 async function test_submit_telemetry(tc) {
+  Services.fog.testResetFOG();
+  await Services.fog.testFlushAllChildren();
   if (tc.savedLogin) {
     await Services.logins.addLoginAsync(
       LoginTestUtils.testData.formLogin({
@@ -288,6 +290,7 @@ async function test_submit_telemetry(tc) {
 
   let notif;
   for (let userAction of tc.userActions) {
+    const formProcessedPromise = listenForTestNotification("FormProcessed");
     await BrowserTestUtils.withNewTab(
       {
         gBrowser,
@@ -297,6 +300,9 @@ async function test_submit_telemetry(tc) {
       },
       async function (browser) {
         await SimpleTest.promiseFocus(browser.ownerGlobal);
+
+        info("Waiting for form-processed message");
+        await formProcessedPromise;
 
         if (userAction.pageChanges) {
           info(
@@ -316,7 +322,10 @@ async function test_submit_telemetry(tc) {
         }
 
         info("Submitting form");
-        let formSubmittedPromise = listenForTestNotification("ShowDoorhanger");
+        let formSubmittedPromise = listenForTestNotification([
+          "FormProcessed",
+          "ShowDoorhanger",
+        ]);
         await SpecialPowers.spawn(browser, [], async function () {
           let doc = this.content.document;
           doc.getElementById("form-basic").submit();
@@ -361,27 +370,36 @@ async function test_submit_telemetry(tc) {
     );
   }
 
-  let expectedEvents = tc.expectedEvents.map(expectedEvent => [
-    "pwmgr",
-    "doorhanger_submitted",
-    expectedEvent.type,
-    null,
-    expectedEvent.ping,
-  ]);
+  await Services.fog.testFlushAllChildren();
 
-  await LoginTestUtils.telemetry.waitForEventCount(
-    expectedEvents.length,
-    "parent",
-    "pwmgr",
-    "doorhanger_submitted"
-  );
-  TelemetryTestUtils.assertEvents(
-    expectedEvents,
-    { category: "pwmgr", method: "doorhanger_submitted" },
-    { clear: true }
-  );
+  let expectedEvents = tc.expectedEvents.map(e => ({
+    metric: e.type,
+    extra: e.ping,
+  }));
+
+  for (let expected of expectedEvents) {
+    let metricName = expected.metric;
+    let metric =
+      metricName === "save"
+        ? Glean.pwmgr.doorhangerSubmittedSave
+        : Glean.pwmgr.doorhangerSubmittedUpdate;
+
+    let events = await metric.testGetValue();
+
+    Assert.equal(
+      events.length,
+      1,
+      `Number of ${metricName} events must match expected.`
+    );
+
+    Assert.deepEqual(
+      events[0].extra,
+      expected.extra,
+      `Extra for ${metricName} must match expected.`
+    );
+  }
 
   // Clean up the database before the next test case is executed.
   await cleanupDoorhanger(notif);
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
 }

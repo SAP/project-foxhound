@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ValidityState.h"
-#include "mozilla/dom/ValidityStateBinding.h"
 
+#include "mozilla/dom/ValidityStateBinding.h"
 #include "nsCycleCollectionParticipant.h"
 
 namespace mozilla::dom {

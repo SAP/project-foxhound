@@ -306,7 +306,10 @@ addAccessibleTask(
     <li id="li">Number one</li>
   </ol>
   `,
-  async function (browser, docAcc) {
+  async function testApiSelection(browser, docAcc) {
+    // waitForSelectionChange expects caret events. Ensure the document is
+    // focused so we get caret events.
+    docAcc.takeFocus();
     const paragraph = findAccessibleChildByID(docAcc, "paragraph", [
       nsIAccessibleText,
     ]);

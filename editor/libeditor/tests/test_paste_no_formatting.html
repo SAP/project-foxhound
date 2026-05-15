@@ -17,8 +17,13 @@
 <div id="source">Some <b>Bold</b> Text</div>
 <script>
 
+const includeCommonAncestor = SpecialPowers.getBoolPref(
+  "dom.serializer.includeCommonAncestor.enabled"
+);
 const expectedText = "Some Bold Text";
-const expectedHTML = "<div id=\"source\">Some <b>Bold</b> Text</div>";
+const expectedHTML = `${includeCommonAncestor ? "<div id=\"source\">" : ""}` +
+                     `Some <b>Bold</b> Text` +
+                     `${includeCommonAncestor ? "</div>" : ""}`;
 
 const htmlPrefix = navigator.platform.includes("Win")
   ? "<html><body>\n<!--StartFragment-->"

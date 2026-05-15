@@ -8,10 +8,10 @@
 #define mozilla_dom_Crypto_h
 
 #include "mozilla/dom/SubtleCrypto.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsIGlobalObject.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
-#include "mozilla/dom/TypedArray.h"
 
 namespace mozilla {
 

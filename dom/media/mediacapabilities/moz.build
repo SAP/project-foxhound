@@ -9,6 +9,7 @@ EXPORTS.mozilla.dom += [
 
 UNIFIED_SOURCES += [
     "MediaCapabilities.cpp",
+    "MediaCapabilitiesValidation.cpp",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

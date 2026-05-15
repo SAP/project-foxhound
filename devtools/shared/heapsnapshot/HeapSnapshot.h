@@ -3,17 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_devtools_HeapSnapshot__
-#define mozilla_devtools_HeapSnapshot__
+#ifndef mozilla_devtools_HeapSnapshot_
+#define mozilla_devtools_HeapSnapshot_
 
 #include "js/HashTable.h"
 #include "mozilla/devtools/DeserializedNode.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Nullable.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/RefCounted.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtrExtensions.h"
 
@@ -213,4 +210,4 @@ MallocSizeOf GetCurrentThreadDebuggerMallocSizeOf();
 }  // namespace devtools
 }  // namespace mozilla
 
-#endif  // mozilla_devtools_HeapSnapshot__
+#endif  // mozilla_devtools_HeapSnapshot_

@@ -4,28 +4,19 @@
 
 import org.apache.tools.ant.filters.ReplaceTokens
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
     sourceSets {
         main {
             assets {
                 srcDir layout.buildDirectory.dir("generated/assets/")
             }
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -60,22 +51,27 @@ tasks.register("syncWebcompatExtension", Sync) {
     }
 }
 
+// Make sure DAGP asset-source exploding happens after syncWebcompatExtension
+tasks.matching { it.name.startsWith("explodeAssetSource") }.configureEach { t ->
+    t.dependsOn(tasks.named("syncWebcompatExtension"))
+}
+
 dependencies {
     implementation project(':components:concept-engine')
 
     implementation libs.androidx.core.ktx
-
-    implementation libs.kotlin.coroutines
+    implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
     testImplementation project(':components:support-webextensions')
+
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)
 preBuild.dependsOn syncWebcompatExtension

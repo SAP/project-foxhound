@@ -7,14 +7,14 @@
 
 #include <wrl.h>
 
-#include "mozilla/Assertions.h"
-#include "mozilla/EventTargetAndLockCapability.h"
-#include "mozilla/PMFCDMParent.h"
-#include "mozilla/RefPtr.h"
 #include "MFCDMExtra.h"
 #include "MFCDMSession.h"
 #include "MFPMPHostWrapper.h"
 #include "RemoteMediaManagerParent.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/EventTargetAndLockCapability.h"
+#include "mozilla/PMFCDMParent.h"
+#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 
@@ -99,7 +99,6 @@ class MFCDMParent final : public PMFCDMParent {
 
   enum class CapabilitesFlag {
     HarewareDecryption,
-    NeedHDCPCheck,
     NeedClearLeadCheck,
     IsPrivateBrowsing,
   };
@@ -154,10 +153,12 @@ class MFCDMParent final : public PMFCDMParent {
   MediaEventForwarder<MFCDMKeyMessage> mKeyMessageEvents;
   MediaEventForwarder<MFCDMKeyStatusChange> mKeyChangeEvents;
   MediaEventForwarder<MFCDMKeyExpiration> mExpirationEvents;
+  MediaEventForwarder<MFCDMSessionClosedResult> mClosedEvents;
 
   MediaEventListener mKeyMessageListener;
   MediaEventListener mKeyChangeListener;
   MediaEventListener mExpirationListener;
+  MediaEventListener mClosedListener;
 
   // The mCDM and mCDMProxy members are exclusively modified on the manager
   // thread, while being read-only on other threads. To ensure thread-safe

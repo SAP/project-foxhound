@@ -9,7 +9,7 @@ use {
     libc::pid_t,
     minidump_writer::{
         crash_context::CrashContext,
-        minidump_writer::{DirectAuxvDumpInfo as InternalDumpInfo, MinidumpWriter},
+        minidump_writer::{DirectAuxvDumpInfo as InternalDumpInfo, MinidumpWriterConfig},
     },
     std::{
         convert::TryInto,
@@ -33,7 +33,11 @@ type fpregset_t = u8;
 /// Creates the target minidump file and gathers any context needed for the minidump generation.
 pub struct MinidumpWriterContext {
     dump_file: File,
-    writer: MinidumpWriter,
+    writer_config: MinidumpWriterConfig,
+    // These two fields are not accessible in `MinidumpWriterConfig` right now, so we have to store
+    // them separate to create the CrashContext.
+    process_id: pid_t,
+    blamed_thread: pid_t,
 }
 
 /// Mirror of [minidump_writer::DirectAuxvDumpInfo][InternalDumpInfo] (`cbindgen` workaround)
@@ -95,9 +99,14 @@ pub unsafe extern "C" fn minidump_writer_create(
             .open(dump_path)
             .context("failed to open minidump file")?;
 
-        let writer = MinidumpWriter::new(child, child_blamed_thread);
+        let writer_config = MinidumpWriterConfig::new(child, child_blamed_thread);
 
-        Ok(Box::new(MinidumpWriterContext { dump_file, writer }))
+        Ok(Box::new(MinidumpWriterContext {
+            dump_file,
+            writer_config,
+            process_id: child,
+            blamed_thread: child_blamed_thread,
+        }))
     })
 }
 
@@ -122,7 +131,7 @@ pub extern "C" fn minidump_writer_set_crash_context(
     #[cfg(target_arch = "arm")]
     assert!(float_state.is_none());
 
-    context.writer.set_crash_context(CrashContext {
+    context.writer_config.set_crash_context(CrashContext {
         inner: crash_context::CrashContext {
             context: ucontext.clone(),
             #[cfg(not(target_arch = "arm"))]
@@ -130,8 +139,8 @@ pub extern "C" fn minidump_writer_set_crash_context(
             siginfo: siginfo
                 .cloned()
                 .unwrap_or_else(|| unsafe { std::mem::zeroed() }),
-            pid: context.writer.process_id,
-            tid: context.writer.blamed_thread,
+            pid: context.process_id,
+            tid: context.blamed_thread,
         },
     });
 }
@@ -147,18 +156,20 @@ pub extern "C" fn minidump_writer_set_direct_auxv_dump_info(
     context: &mut MinidumpWriterContext,
     direct_auxv_dump_info: &DirectAuxvDumpInfo,
 ) {
-    context.writer.set_direct_auxv_dump_info(InternalDumpInfo {
-        program_header_count: direct_auxv_dump_info
-            .program_header_count
-            .try_into()
-            .unwrap(),
-        program_header_address: direct_auxv_dump_info
-            .program_header_address
-            .try_into()
-            .unwrap(),
-        linux_gate_address: direct_auxv_dump_info.linux_gate_address.try_into().unwrap(),
-        entry_address: direct_auxv_dump_info.entry_address.try_into().unwrap(),
-    });
+    context
+        .writer_config
+        .set_direct_auxv_dump_info(InternalDumpInfo {
+            program_header_count: direct_auxv_dump_info
+                .program_header_count
+                .try_into()
+                .unwrap(),
+            program_header_address: direct_auxv_dump_info
+                .program_header_address
+                .try_into()
+                .unwrap(),
+            linux_gate_address: direct_auxv_dump_info.linux_gate_address.try_into().unwrap(),
+            entry_address: direct_auxv_dump_info.entry_address.try_into().unwrap(),
+        });
 }
 
 /// Write the minidump to the file
@@ -181,8 +192,8 @@ pub unsafe extern "C" fn minidump_writer_dump(
 ) -> bool {
     err_to_error_msg(error_msg, || {
         context
-            .writer
-            .dump(&mut context.dump_file)
+            .writer_config
+            .write(&mut context.dump_file)
             .context("failed to write dump file")
     })
     .is_some()
@@ -214,7 +225,7 @@ where
         Ok(t) => Some(t),
         Err(e) => {
             if !error_msg.is_null() {
-                *error_msg = CString::new(e.to_string()).unwrap().into_raw();
+                *error_msg = CString::new(format!("{e:#?}")).unwrap().into_raw();
             }
             None
         }

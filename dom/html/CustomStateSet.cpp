@@ -5,10 +5,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CustomStateSet.h"
+
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/ElementInternalsBinding.h"
 #include "mozilla/dom/HTMLElement.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/PresShell.h"
 
 namespace mozilla::dom {
 

@@ -17,6 +17,7 @@ function ok(test, message) {
  * Returns a handler function for an online/offline event. The returned handler
  * ensures the passed event object has expected properties and that the handler
  * is called at the right moment (according to the gState variable).
+ *
  * @param nameTemplate The string identifying the hanlder. '%1' in that
  *                     string will be replaced with the event name.
  * @param eventName 'online' or 'offline'

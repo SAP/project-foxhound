@@ -5,19 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ConsoleUtils.h"
-#include "ConsoleCommon.h"
-#include "nsContentUtils.h"
-#include "nsIConsoleAPIStorage.h"
-#include "nsIXPConnect.h"
-#include "nsServiceManagerUtils.h"
 
+#include "ConsoleCommon.h"
+#include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/ConsoleBinding.h"
 #include "mozilla/dom/ConsoleInstanceBinding.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "js/PropertyAndElement.h"  // JS_DefineProperty
+#include "nsContentUtils.h"
+#include "nsIConsoleAPIStorage.h"
+#include "nsIXPConnect.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
 

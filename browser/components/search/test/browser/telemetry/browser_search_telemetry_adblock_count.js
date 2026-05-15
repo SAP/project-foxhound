@@ -115,16 +115,6 @@ add_task(async function test_adblock_count() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        is_signed_in: "false",
-        is_private: "false",
-        source: "unknown",
-        is_shopping_page: "false",
-        partner_code: "ff",
-        provider: "example",
-        shopping_tab_displayed: "false",
-        tagged: "true",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,

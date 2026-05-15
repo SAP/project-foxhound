@@ -6,13 +6,13 @@
 
 #include "mozilla/dom/ProcessActor.h"
 
-#include "nsContentUtils.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/Logging.h"
 #include "mozilla/dom/JSActorService.h"
-#include "mozilla/dom/JSProcessActorParent.h"
 #include "mozilla/dom/JSProcessActorChild.h"
+#include "mozilla/dom/JSProcessActorParent.h"
 #include "mozilla/dom/JSProcessActorProtocol.h"
+#include "nsContentUtils.h"
 
 namespace mozilla::dom {
 

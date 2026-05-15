@@ -133,3 +133,63 @@ add_task(async function test_set_response_override_redirects() {
 
   Services.obs.removeObserver(observer, "http-on-before-connect");
 });
+
+// Test that a response override for a requst with CORS preflight succeeds without
+// crashing Firefox.
+add_task(async function test_set_response_override_cors_preflight() {
+  let observer = {
+    QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
+    observe(aSubject, aTopic) {
+      aSubject = aSubject.QueryInterface(Ci.nsIHttpChannelInternal);
+      if (
+        aTopic == "http-on-before-connect" &&
+        aSubject.URI.spec == "https://example.org/cors"
+      ) {
+        const replacedHttpResponse = Cc[
+          "@mozilla.org/network/replaced-http-response;1"
+        ].createInstance(Ci.nsIReplacedHttpResponse);
+        replacedHttpResponse.responseStatus = 200;
+        replacedHttpResponse.responseStatusText = "OK";
+        replacedHttpResponse.responseBody = "From setResponseOverride";
+        replacedHttpResponse.setResponseHeader(
+          "Access-Control-Allow-Origin",
+          "*",
+          false
+        );
+
+        aSubject.setResponseOverride(replacedHttpResponse);
+      }
+    },
+  };
+  Services.obs.addObserver(observer, "http-on-before-connect");
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "https://example.com/browser/netwerk/test/browser/dummy.html",
+      waitForLoad: true,
+    },
+    async function (browser) {
+      await ContentTask.spawn(browser, [], async function () {
+        const response = await content.fetch("https://example.org/cors", {
+          // extra header to force a CORS preflight request.
+          headers: { "X-PINGOTHER": "pingpong" },
+        });
+        // Note: https://example.org/cors does not exist, so simply receiving
+        // a response here already means the override was successful.
+        Assert.equal(
+          response.status,
+          200,
+          "Status was set from the response override"
+        );
+        Assert.equal(
+          await response.text(),
+          "From setResponseOverride",
+          "Text content was set from the response override"
+        );
+      });
+    }
+  );
+
+  Services.obs.removeObserver(observer, "http-on-before-connect");
+});

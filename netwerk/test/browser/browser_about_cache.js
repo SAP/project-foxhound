@@ -90,7 +90,7 @@ add_task(async function () {
       let links = [
         ...content.document.querySelectorAll("a[href*='" + kTestPage + "']"),
       ];
-      is(links.length, 2, "Should have 2 links to entries for " + kTestPage);
+      is(links.length, 1, "Should have 1 link to entries for " + kTestPage);
       // Make sure to pick correct entry - only the partitioned one has data.
       let partitioned = Array.from(links).filter(e =>
         e.href.includes("https%2Cexample.com")

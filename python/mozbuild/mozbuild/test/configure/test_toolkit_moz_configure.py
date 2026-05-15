@@ -38,7 +38,7 @@ class TestToolkitMozConfigure(BaseConfigureTest):
         )
 
         self.assertEqual(
-            "--enable-application=browser " "MOZ_VTUNE=1",
+            "--enable-application=browser MOZ_VTUNE=1",
             get_value_for(["--enable-application=browser", "MOZ_VTUNE=1"]),
         )
 

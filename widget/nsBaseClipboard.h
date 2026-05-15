@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBaseClipboard_h__
-#define nsBaseClipboard_h__
+#ifndef nsBaseClipboard_h_
+#define nsBaseClipboard_h_
 
 #include "mozilla/Array.h"
 #include "mozilla/dom/PContent.h"
@@ -252,6 +252,10 @@ class nsBaseClipboard : public nsIClipboard {
       const nsTArray<nsCString>& aFlavorList, ClipboardType aClipboardType,
       mozilla::dom::WindowContext* aRequestingWindowContext);
 
+  // Clean up data in transferable for posting to clipboard or dragging.  This
+  // guarantees that text data does not include NUL characters.
+  static nsresult SanitizeForClipboard(nsITransferable* aTransferable);
+
   // Track the pending request for each clipboard type separately. And only need
   // to track the latest request for each clipboard type as the prior pending
   // request will be canceled when a new request is made.
@@ -266,4 +270,4 @@ class nsBaseClipboard : public nsIClipboard {
   bool mIgnoreEmptyNotification = false;
 };
 
-#endif  // nsBaseClipboard_h__
+#endif  // nsBaseClipboard_h_

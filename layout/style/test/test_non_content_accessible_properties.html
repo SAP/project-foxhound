@@ -11,6 +11,7 @@ const CHROME_ONLY_PROPERTIES = [
   "-moz-window-transform",
   "-moz-default-appearance",
   "-moz-user-focus",
+  "-moz-window-dragging",
 ];
 
 const UA_ONLY_PROPERTIES = [
@@ -42,7 +43,7 @@ function testInWin(win) {
   for (const prop of CHROME_ONLY_PROPERTIES.concat(UA_ONLY_PROPERTIES)) {
     sheet.textContent = `div { ${prop}: initial }`;
     let block = sheet.sheet.cssRules[0].style;
-    assert_false(prop in block, `${prop} shouldn't be exposed in CSS2Properties`);
+    assert_false(prop in block, `${prop} shouldn't be exposed in CSSStyleProperties`);
 
     let isUAOnly = UA_ONLY_PROPERTIES.includes(prop);
     assert_equals(prop in SpecialPowers.wrap(block), !isUAOnly, `${prop} should be exposed to chrome code if needed`);

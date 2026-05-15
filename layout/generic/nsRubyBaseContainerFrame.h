@@ -6,8 +6,8 @@
 
 /* rendering object for CSS "display: ruby-base-container" */
 
-#ifndef nsRubyBaseContainerFrame_h___
-#define nsRubyBaseContainerFrame_h___
+#ifndef nsRubyBaseContainerFrame_h_
+#define nsRubyBaseContainerFrame_h_
 
 #include "RubyUtils.h"
 #include "nsContainerFrame.h"
@@ -34,7 +34,7 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
   void AddInlinePrefISize(const mozilla::IntrinsicSizeInput& aInput,
                           InlinePrefISizeData* aData) override;
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -57,6 +57,11 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
   }
   mozilla::RubyBlockLeadings GetDescendantLeadings() const {
     return mDescendantLeadings;
+  }
+
+  mozilla::RubyMetrics RubyMetrics(float aRubyMetricsFactor) const override {
+    // provided by nsContainerFrame
+    return RubyMetricsIncludingChildren(aRubyMetricsFactor);
   }
 
  protected:
@@ -89,4 +94,4 @@ class nsRubyBaseContainerFrame final : public nsContainerFrame {
   mozilla::RubyBlockLeadings mDescendantLeadings;
 };
 
-#endif /* nsRubyBaseContainerFrame_h___ */
+#endif /* nsRubyBaseContainerFrame_h_ */

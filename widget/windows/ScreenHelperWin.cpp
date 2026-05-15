@@ -7,6 +7,7 @@
 #include "ScreenHelperWin.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/ToString.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "nsTArray.h"
 #include "WinUtils.h"
@@ -94,12 +95,7 @@ BOOL CALLBACK CollectMonitors(HMONITOR aMon, HDC, LPRECT, LPARAM ioParam) {
   }
 
   double scale = WinUtils::LogToPhysFactor(aMon);
-  DesktopToLayoutDeviceScale contentsScaleFactor;
-  if (WinUtils::IsPerMonitorDPIAware()) {
-    contentsScaleFactor.scale = 1.0;
-  } else {
-    contentsScaleFactor.scale = scale;
-  }
+  DesktopToLayoutDeviceScale contentsScaleFactor(1.0);
   CSSToLayoutDeviceScale defaultCssScaleFactor(scale);
   LayoutDeviceIntRect rect(info.rcMonitor.left, info.rcMonitor.top,
                            info.rcMonitor.right - info.rcMonitor.left,

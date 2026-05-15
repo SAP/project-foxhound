@@ -13,6 +13,7 @@ add_setup(async () => {
   });
 
   await setStorage(TEST_ADDRESS_1);
+  await setStorage(TEST_CREDIT_CARD_1);
 
   registerCleanupFunction(async () => {
     await removeAllRecords();
@@ -95,7 +96,7 @@ add_task(async function address_field_refilled_after_cleared_by_site() {
 
     /* eslint-disable mozilla/no-arbitrary-setTimeout */
     await new Promise(resolve => {
-      setTimeout(resolve, FormAutofill.refillOnSiteClearingFields);
+      setTimeout(resolve, FormAutofill.refillOnSiteClearingFieldsTimeout);
     });
 
     let [org, postalCode] = await SpecialPowers.spawn(browser, [], async () => {
@@ -146,7 +147,7 @@ add_task(
 
         /* eslint-disable mozilla/no-arbitrary-setTimeout */
         await new Promise(resolve => {
-          setTimeout(resolve, FormAutofill.refillOnSiteClearingFields);
+          setTimeout(resolve, FormAutofill.refillOnSiteClearingFieldsTimeout);
         });
 
         return await SpecialPowers.spawn(
@@ -161,3 +162,56 @@ add_task(
     Assert.equal(orgaValue, "", "Element was not refilled");
   }
 );
+
+add_task(async function address_field_not_refilled_after_reformat_by_site() {
+  const value = await BrowserTestUtils.withNewTab(
+    CREDITCARD_FORM_URL,
+    async browser => {
+      const selectorToTriggerAutocompletion = "#cc-number";
+      const elementValueToVerifyAutofill = TEST_CREDIT_CARD_1["cc-number"];
+
+      info("Triggering autocompletion.");
+      await openPopupOn(browser, selectorToTriggerAutocompletion);
+      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
+      await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, browser);
+      await waitForAutofill(
+        browser,
+        selectorToTriggerAutocompletion,
+        elementValueToVerifyAutofill
+      );
+
+      const formatValue = TEST_CREDIT_CARD_1["cc-number"]
+        .replace(/(.{4})/g, "$1 ")
+        .trim();
+      await SpecialPowers.spawn(
+        browser,
+        [selectorToTriggerAutocompletion, formatValue],
+        async (ccNumberSelector, reformatValue) => {
+          const ccNumberInput =
+            content.document.querySelector(ccNumberSelector);
+
+          info("Simulating site reformats an input");
+          ccNumberInput.value = reformatValue;
+        }
+      );
+
+      /* eslint-disable mozilla/no-arbitrary-setTimeout */
+      await new Promise(resolve => {
+        setTimeout(resolve, FormAutofill.refillOnSiteClearingFieldsTimeout);
+      });
+
+      return await SpecialPowers.spawn(
+        browser,
+        [selectorToTriggerAutocompletion],
+        async ccNumberSelector => {
+          return content.document.querySelector(ccNumberSelector).value;
+        }
+      );
+    }
+  );
+
+  const formatValue = TEST_CREDIT_CARD_1["cc-number"]
+    .replace(/(.{4})/g, "$1 ")
+    .trim();
+  Assert.equal(value, formatValue, "Element was not refilled");
+});

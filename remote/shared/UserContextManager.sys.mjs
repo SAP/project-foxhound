@@ -7,6 +7,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
+  EventEmitter: "resource://gre/modules/EventEmitter.sys.mjs",
 
   ContextualIdentityListener:
     "chrome://remote/content/shared/listeners/ContextualIdentityListener.sys.mjs",
@@ -23,12 +24,21 @@ const DEFAULT_INTERNAL_ID = 0;
  *
  * This class is exported for test purposes. Otherwise the UserContextManager
  * singleton should be used.
+ *
+ * @fires UserContextManagerClass#"user-context-created"
+ *      - {string} userContextId
+ *            The UUID of the user context which was just created.
+ * @fires UserContextManagerClass#"user-context-deleted"
+ *      - {string} userContextId
+ *            The UUID of the user context which was just deleted.
  */
 export class UserContextManagerClass {
   #contextualIdentityListener;
   #userContextIds;
 
   constructor() {
+    lazy.EventEmitter.decorate(this);
+
     // Map from internal ids (numbers) from the ContextualIdentityService to
     // opaque UUIDs (string).
     this.#userContextIds = new Map();
@@ -76,19 +86,14 @@ export class UserContextManagerClass {
    *     The user context id of the new user context.
    */
   createContext(prefix = "remote") {
-    // Prepare the opaque id and name beforehand.
-    const userContextId = lazy.generateUUID();
-    const name = `${prefix}-${userContextId}`;
+    // Prepare a unique name.
+    const name = `${prefix}-${lazy.generateUUID()}`;
 
     // Create the user context.
     const identity = lazy.ContextualIdentityService.create(name);
-    const internalId = identity.userContextId;
 
     // An id has been set already by the contextual-identity-created observer.
-    // Override it with `userContextId` to match the container name.
-    this.#userContextIds.set(internalId, userContextId);
-
-    return userContextId;
+    return this.#userContextIds.get(identity.userContextId);
   }
 
   /**
@@ -163,19 +168,13 @@ export class UserContextManagerClass {
    *     The array of tabs.
    */
   getTabsForUserContext(internalId) {
-    const tabs = [];
-
-    for (const tab of lazy.TabManager.tabs) {
-      if (
+    return lazy.TabManager.allTabs.filter(tab => {
+      return (
         (tab.hasAttribute("usercontextid") &&
           parseInt(tab.getAttribute("usercontextid"), 10) == internalId) ||
         (!tab.hasAttribute("usercontextid") && internalId === 0)
-      ) {
-        tabs.push(tab);
-      }
-    }
-
-    return tabs;
+      );
+    });
   }
 
   /**
@@ -232,13 +231,15 @@ export class UserContextManagerClass {
   };
 
   #onIdentityDeleted = (eventName, data) => {
+    const userContextId = this.#userContextIds.get(data.identity.userContextId);
     this.#userContextIds.delete(data.identity.userContextId);
+    this.emit("user-context-deleted", { userContextId });
   };
 
   #registerIdentity(identity) {
-    // Note: the id for identities created via UserContextManagerClass.createContext
-    // are overridden in createContext.
-    this.#userContextIds.set(identity.userContextId, lazy.generateUUID());
+    const userContextId = lazy.generateUUID();
+    this.#userContextIds.set(identity.userContextId, userContextId);
+    this.emit("user-context-created", { userContextId });
   }
 }
 

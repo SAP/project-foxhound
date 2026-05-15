@@ -16,6 +16,7 @@ const NOT_SECURE_LABEL = Services.prefs.getBoolPref(
 /**
  * Tests that the page info dialog "security" section labels a
  * connection as unencrypted and does not show certificate.
+ *
  * @param {string} uri - URI of the page to test with.
  */
 async function testPageInfoNotEncrypted(uri) {

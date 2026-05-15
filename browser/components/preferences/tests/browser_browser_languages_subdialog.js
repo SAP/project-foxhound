@@ -1036,9 +1036,10 @@ add_task(async function testLiveLanguageReloadingBidiOff() {
   );
 
   await Promise.all(addons.map(addon => addon.uninstall()));
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
   assertTelemetryRecorded([["reorder", "main"]]);
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
 add_task(async function testLiveLanguageReloadingBidiOn() {
@@ -1109,7 +1110,8 @@ add_task(async function testLiveLanguageReloadingBidiOn() {
   );
 
   await Promise.all(addons.map(addon => addon.uninstall()));
-  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
   assertTelemetryRecorded([["reorder", "main"]]);
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

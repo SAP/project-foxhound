@@ -98,7 +98,7 @@ function locationsForBackgroundTaskNamed(name) {
  * which is registered at `resource://testing-common`, the standard
  * location for test-only modules.
  *
- * @return {Object} The imported module.
+ * @return {object} The imported module.
  * @throws NS_ERROR_NOT_AVAILABLE if a background task with the given `name` is
  * not found.
  */

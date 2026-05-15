@@ -15,7 +15,7 @@
     height: 16px;
     margin-inline-start: var(--space-xsmall);
     vertical-align: top;
-    width: 12px;
+    width: var(--icon-size-xsmall);
   }
 
   &:dir(rtl)::after  {

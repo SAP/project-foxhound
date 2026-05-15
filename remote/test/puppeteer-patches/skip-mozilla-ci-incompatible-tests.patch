@@ -1,17 +1,58 @@
-commit 557f47fb4c745b8af1ec0f11ea861cbbed112328
-Author: Julian Descottes <jdescottes@mozilla.com>
-Date:   Tue Jan 21 17:08:36 2025 +0000
+From 0bdf473a4ef59ad8054cf371cdd402e53b549628 Mon Sep 17 00:00:00 2001
+From: Henrik Skupin <mail@hskupin.info>
+Date: Thu, 15 Jan 2026 19:48:36 +0100
+Subject: [PATCH] Bug 1998377 - [puppeteer] Update test expectations for
+ puppeteer tests in Mozilla CI.
 
-    Bug 1934281 - [puppeteer] Disable all puppeteer tests incompatible with Mozilla CI.
+Differential Revision: https://phabricator.services.mozilla.com/D279201
+---
+ .../test/puppeteer/test/TestExpectations.json | 36 +++++++++----------
+ 1 file changed, 18 insertions(+), 18 deletions(-)
 
 diff --git a/remote/test/puppeteer/test/TestExpectations.json b/remote/test/puppeteer/test/TestExpectations.json
-index cc41a5e2c717..28b261003915 100644
+index 8637def22128..3f91026a2da0 100644
 --- a/remote/test/puppeteer/test/TestExpectations.json
 +++ b/remote/test/puppeteer/test/TestExpectations.json
-@@ -1252,6 +1252,13 @@
+@@ -804,23 +804,16 @@
+   },
+   {
+     "testIdPattern": "[requestinterception.spec] request interception Page.setRequestInterception should work with keep alive redirects",
+     "platforms": ["darwin", "linux", "win32"],
+     "parameters": ["chrome"],
+     "expectations": ["FAIL"],
+     "comment": "crbug.com/469591372"
+   },
+-  {
+-    "testIdPattern": "[requestinterception.spec] request interception Page.setRequestInterception should work with keep alive redirects",
+-    "platforms": ["darwin", "linux", "win32"],
+-    "parameters": ["firefox"],
+-    "expectations": ["FAIL"],
+-    "comment": "Missing events for keep alive requests?"
+-  },
+   {
+     "testIdPattern": "[requestinterception.spec] request interception Page.setRequestInterception should work with worker",
+     "platforms": ["darwin", "linux", "win32"],
+     "parameters": ["firefox"],
+     "expectations": ["SKIP"],
+     "comment": "Workers do not work in Firefox yet"
+   },
+   {
+@@ -1293,27 +1286,41 @@
+   },
+   {
+     "testIdPattern": "[launcher.spec] Launcher specs Puppeteer Puppeteer.connect should support targetFilter option in puppeteer.launch",
+     "platforms": ["darwin", "linux", "win32"],
+     "parameters": ["chrome", "webDriverBiDi"],
      "expectations": ["FAIL"],
      "comment": "TODO: add a comment explaining why this expectation is required (include links to issues)"
    },
++  {
++    "testIdPattern": "[launcher.spec] Launcher specs Puppeteer Puppeteer.executablePath returns executablePath for channel",
++    "platforms": ["darwin", "linux", "win32"],
++    "parameters": ["firefox"],
++    "expectations": ["SKIP"],
++    "comment": "Cannot run on Mozilla CI"
++  },
 +  {
 +    "testIdPattern": "[launcher.spec] Launcher specs Puppeteer Puppeteer.executablePath should work",
 +    "platforms": ["darwin", "linux", "win32"],
@@ -22,15 +63,50 @@ index cc41a5e2c717..28b261003915 100644
    {
      "testIdPattern": "[launcher.spec] Launcher specs Puppeteer Puppeteer.launch should filter out ignored default argument in Firefox",
      "platforms": ["linux"],
-@@ -1262,9 +1269,9 @@
+-    "parameters": ["firefox", "headful"],
+-    "expectations": ["FAIL"],
+-    "comment": "TODO: add a comment explaining why this expectation is required (include links to issues)"
++    "parameters": ["firefox"],
++    "expectations": ["SKIP"],
++    "comment": "Cannot run on Mozilla CI"
+   },
    {
      "testIdPattern": "[launcher.spec] Launcher specs Puppeteer Puppeteer.launch should filter out ignored default arguments in Chrome",
      "platforms": ["darwin", "linux", "win32"],
 -    "parameters": ["firefox", "headful"],
 +    "parameters": ["firefox"],
      "expectations": ["SKIP"],
--    "comment": "Test is testing chrome specific ignore and fails"
-+    "comment": "Cannot run on Mozilla CI"
+     "comment": "Test is testing chrome specific ignore and fails"
    },
    {
      "testIdPattern": "[launcher.spec] Launcher specs Puppeteer Puppeteer.launch should have custom URL when launching browser",
+     "platforms": ["darwin"],
+     "parameters": ["chrome", "webDriverBiDi"],
+     "expectations": ["SKIP"],
+@@ -1790,23 +1797,16 @@
+   },
+   {
+     "testIdPattern": "[touchscreen.spec] Touchscreen Touchscreen.prototype.touchMove should work with two touches",
+     "platforms": ["darwin", "linux", "win32"],
+     "parameters": ["firefox", "webDriverBiDi"],
+     "expectations": ["FAIL"],
+     "comment": "TODO: add a comment explaining why this expectation is required (include links to issues)"
+   },
+-  {
+-    "testIdPattern": "[waittask.spec] waittask specs Frame.waitForFunction should work with strict CSP policy",
+-    "platforms": ["darwin", "linux", "win32"],
+-    "parameters": ["firefox", "webDriverBiDi"],
+-    "expectations": ["FAIL"],
+-    "comment": "TODO: add a comment explaining why this expectation is required (include links to issues)"
+-  },
+   {
+     "testIdPattern": "[worker.spec] Workers can be closed",
+     "platforms": ["darwin", "linux", "win32"],
+     "parameters": ["chrome", "webDriverBiDi"],
+     "expectations": ["FAIL"],
+     "comment": "TODO: add a comment explaining why this expectation is required (include links to issues)"
+   },
+   {
+-- 
+2.52.0
+

@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/DocShellMessageUtils.h"
+
 #include "mozilla/dom/DOMTypes.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "nsSerializationHelper.h"
 
 namespace IPC {

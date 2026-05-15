@@ -201,11 +201,10 @@ nsresult LibSecret::DeleteSecret(const nsACString& aLabel) {
     return NS_ERROR_FAILURE;
   }
   GUniquePtr<GError> error;
-  Unused << secret_password_clear_sync(&kSchema,
-                                       nullptr,  // GCancellable
-                                       getter_Transfers(error), "string",
-                                       PromiseFlatCString(aLabel).get(),
-                                       nullptr);
+  (void)secret_password_clear_sync(&kSchema,
+                                   nullptr,  // GCancellable
+                                   getter_Transfers(error), "string",
+                                   PromiseFlatCString(aLabel).get(), nullptr);
   if (error && !(error->domain == secret_error_get_quark() &&
                  error->code == SECRET_ERROR_NO_SUCH_OBJECT)) {
     MOZ_LOG(gLibSecretLog, LogLevel::Debug, ("Error deleting secret"));

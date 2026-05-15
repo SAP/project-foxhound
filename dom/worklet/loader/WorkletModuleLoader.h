@@ -30,13 +30,7 @@ class WorkletScriptLoader : public JS::loader::ScriptLoaderInterface {
 
   nsresult FillCompileOptionsForRequest(
       JSContext* cx, ScriptLoadRequest* aRequest, JS::CompileOptions* aOptions,
-      JS::MutableHandle<JSScript*> aIntroductionScript) override {
-    aOptions->setIntroductionType("Worklet");
-    aOptions->setFileAndLine(aRequest->mURL.get(), 1);
-    aOptions->setIsRunOnce(true);
-    aOptions->setNoScriptRval(true);
-    return NS_OK;
-  }
+      JS::MutableHandle<JSScript*> aIntroductionScript) override;
 
  private:
   ~WorkletScriptLoader() = default;
@@ -63,15 +57,14 @@ class WorkletModuleLoader : public JS::loader::ModuleLoaderBase {
  private:
   ~WorkletModuleLoader() = default;
 
-  already_AddRefed<JS::loader::ModuleLoadRequest> CreateStaticImport(
-      nsIURI* aURI, JS::ModuleType aModuleType,
-      JS::loader::ModuleLoadRequest* aParent,
-      const mozilla::dom::SRIMetadata& aSriMetadata) override;
+  already_AddRefed<ModuleLoadRequest> CreateRequest(
+      JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+      JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+      bool aIsDynamicImport, JS::loader::ScriptFetchOptions* aOptions,
+      dom::ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
+      const dom::SRIMetadata& aSriMetadata) override;
 
-  already_AddRefed<JS::loader::ModuleLoadRequest> CreateDynamicImport(
-      JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-      LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-      JS::Handle<JSObject*> aPromise) override;
+  bool IsDynamicImportSupported() override { return false; }
 
   bool CanStartLoad(JS::loader::ModuleLoadRequest* aRequest,
                     nsresult* aRvOut) override;
@@ -83,9 +76,9 @@ class WorkletModuleLoader : public JS::loader::ModuleLoaderBase {
       JS::CompileOptions& aOptions, JS::loader::ModuleLoadRequest* aRequest,
       JS::MutableHandle<JSObject*> aModuleScript) override;
 
-  nsresult CompileJavaScriptModule(JSContext* aCx, JS::CompileOptions& aOptions,
-                                   ModuleLoadRequest* aRequest,
-                                   JS::MutableHandle<JSObject*> aModuleScript);
+  nsresult CompileJavaScriptOrWasmModule(
+      JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
+      JS::MutableHandle<JSObject*> aModuleScript);
 
   nsresult CompileJsonModule(JSContext* aCx, JS::CompileOptions& aOptions,
                              ModuleLoadRequest* aRequest,
@@ -96,6 +89,14 @@ class WorkletModuleLoader : public JS::loader::ModuleLoaderBase {
   nsresult GetResolveFailureMessage(JS::loader::ResolveError aError,
                                     const nsAString& aSpecifier,
                                     nsAString& aResult) override;
+
+  bool IsModuleTypeAllowed(JS::ModuleType aModuleType) override {
+    // https://html.spec.whatwg.org/#module-type-allowed
+    // If moduleType is "css" and the CSSStyleSheet interface is not exposed in
+    // settings's realm, then return false.
+    return aModuleType == JS::ModuleType::JavaScript ||
+           aModuleType == JS::ModuleType::JSON;
+  }
 
   // A hashtable to map a nsIURI(from main thread) to a ModuleLoadRequest(in
   // worklet thread).

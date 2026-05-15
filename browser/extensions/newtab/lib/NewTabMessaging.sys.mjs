@@ -16,15 +16,15 @@ export class NewTabMessaging {
 
   init() {
     if (!this.initialized) {
+      this.initialized = true;
       Services.obs.addObserver(this, "newtab-message");
       Services.obs.addObserver(this, "newtab-message-query");
-      this.initialized = true;
     }
   }
 
   uninit() {
+    Services.obs.removeObserver(this, "newtab-message-query");
     Services.obs.removeObserver(this, "newtab-message");
-    Services.obs.addObserver(this, "newtab-message-query");
   }
 
   observe(subject, topic, _data) {
@@ -80,7 +80,9 @@ export class NewTabMessaging {
       this.store.dispatch(
         ac.AlsoToPreloaded({
           type: at.MESSAGE_TOGGLE_VISIBILITY,
-          data: true,
+          data: {
+            isVisible: true,
+          },
         })
       );
     }
@@ -103,7 +105,8 @@ export class NewTabMessaging {
 
   /**
    * Send impression to ASRouter
-   * @param {Object} message
+   *
+   * @param {object} message
    */
   handleImpression(message) {
     this.sendTelemetry("IMPRESSION", message);
@@ -145,7 +148,7 @@ export class NewTabMessaging {
     }
   }
 
-  async onAction(action) {
+  onAction(action) {
     switch (action.type) {
       case at.INIT:
         this.init();
@@ -158,6 +161,14 @@ export class NewTabMessaging {
         break;
       case at.MESSAGE_DISMISS:
         this.sendTelemetry("DISMISS", action.data.message);
+        this.store.dispatch(
+          ac.AlsoToPreloaded({
+            type: at.MESSAGE_TOGGLE_VISIBILITY,
+            data: {
+              isVisible: false,
+            },
+          })
+        );
         break;
       case at.MESSAGE_CLICK:
         this.sendTelemetry("CLICK", action.data.message, action.data.source);

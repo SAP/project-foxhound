@@ -40,7 +40,6 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/Unused.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "nsAppRunner.h"
 #include "nsComponentManagerUtils.h"
@@ -267,77 +266,6 @@ void gfxUtils::ConvertBGRAtoRGBA(uint8_t* aData, uint32_t aLength) {
               SurfaceFormat::R8G8B8A8, IntSize(aLength / 4, 1));
 }
 
-#if !defined(MOZ_GFX_OPTIMIZE_MOBILE)
-/**
- * This returns the fastest operator to use for solid surfaces which have no
- * alpha channel or their alpha channel is uniformly opaque.
- * This differs per render mode.
- */
-static CompositionOp OptimalFillOp() {
-#  ifdef XP_WIN
-  if (gfxWindowsPlatform::GetPlatform()->IsDirect2DBackend()) {
-    // D2D -really- hates operator source.
-    return CompositionOp::OP_OVER;
-  }
-#  endif
-  return CompositionOp::OP_SOURCE;
-}
-
-// EXTEND_PAD won't help us here; we have to create a temporary surface to hold
-// the subimage of pixels we're allowed to sample.
-static already_AddRefed<gfxDrawable> CreateSamplingRestrictedDrawable(
-    gfxDrawable* aDrawable, gfxContext* aContext, const ImageRegion& aRegion,
-    const SurfaceFormat aFormat, bool aUseOptimalFillOp) {
-  AUTO_PROFILER_LABEL("CreateSamplingRestrictedDrawable", GRAPHICS);
-
-  DrawTarget* destDrawTarget = aContext->GetDrawTarget();
-  // We've been not using CreateSamplingRestrictedDrawable in a bunch of places
-  // for a while. Let's disable it everywhere and confirm that it's ok to get
-  // rid of.
-  if (destDrawTarget->GetBackendType() == BackendType::DIRECT2D1_1 || (true)) {
-    return nullptr;
-  }
-
-  gfxRect clipExtents = aContext->GetClipExtents();
-
-  // Inflate by one pixel because bilinear filtering will sample at most
-  // one pixel beyond the computed image pixel coordinate.
-  clipExtents.Inflate(1.0);
-
-  gfxRect needed = aRegion.IntersectAndRestrict(clipExtents);
-  needed.RoundOut();
-
-  // if 'needed' is empty, nothing will be drawn since aFill
-  // must be entirely outside the clip region, so it doesn't
-  // matter what we do here, but we should avoid trying to
-  // create a zero-size surface.
-  if (needed.IsEmpty()) return nullptr;
-
-  IntSize size(int32_t(needed.Width()), int32_t(needed.Height()));
-
-  RefPtr<DrawTarget> target =
-      gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(size,
-                                                                   aFormat);
-  if (!target || !target->IsValid()) {
-    return nullptr;
-  }
-
-  gfxContext tmpCtx(target);
-
-  if (aUseOptimalFillOp) {
-    tmpCtx.SetOp(OptimalFillOp());
-  }
-  aDrawable->Draw(&tmpCtx, needed - needed.TopLeft(), ExtendMode::REPEAT,
-                  SamplingFilter::LINEAR, 1.0,
-                  gfxMatrix::Translation(needed.TopLeft()));
-  RefPtr<SourceSurface> surface = target->Snapshot();
-
-  RefPtr<gfxDrawable> drawable = new gfxSurfaceDrawable(
-      surface, size, gfxMatrix::Translation(-needed.TopLeft()));
-  return drawable.forget();
-}
-#endif  // !MOZ_GFX_OPTIMIZE_MOBILE
-
 /* These heuristics are based on
  * Source/WebCore/platform/graphics/skia/ImageSkia.cpp:computeResamplingMode()
  */
@@ -512,8 +440,7 @@ void gfxUtils::DrawPixelSnapped(gfxContext* aContext, gfxDrawable* aDrawable,
                                 const ImageRegion& aRegion,
                                 const SurfaceFormat aFormat,
                                 SamplingFilter aSamplingFilter,
-                                uint32_t aImageFlags, gfxFloat aOpacity,
-                                bool aUseOptimalFillOp) {
+                                uint32_t aImageFlags, gfxFloat aOpacity) {
   AUTO_PROFILER_LABEL("gfxUtils::DrawPixelSnapped", GRAPHICS);
 
   gfxRect imageRect(gfxPoint(0, 0), aImageSize);
@@ -547,22 +474,6 @@ void gfxUtils::DrawPixelSnapped(gfxContext* aContext, gfxDrawable* aDrawable,
                                   ToRect(imageRect), aSamplingFilter, aFormat,
                                   aOpacity, extendMode)) {
         return;
-      }
-#endif
-
-      // On Mobile, we don't ever want to do this; it has the potential for
-      // allocating very large temporary surfaces, especially since we'll
-      // do full-page snapshots often (see bug 749426).
-#if !defined(MOZ_GFX_OPTIMIZE_MOBILE)
-      RefPtr<gfxDrawable> restrictedDrawable = CreateSamplingRestrictedDrawable(
-          aDrawable, aContext, aRegion, aFormat, aUseOptimalFillOp);
-      if (restrictedDrawable) {
-        drawable.swap(restrictedDrawable);
-
-        // We no longer need to tile: Either we never needed to, or we already
-        // filled a surface with the tiled pattern; this surface can now be
-        // drawn without tiling.
-        extendMode = ExtendMode::CLAMP;
       }
 #endif
     }
@@ -1045,6 +956,27 @@ gfxUtils::CopySurfaceToDataSourceSurfaceWithFormat(SourceSurface* aSurface,
   return dataSurface.forget();
 }
 
+/* static */
+already_AddRefed<SourceSurface> gfxUtils::ScaleSourceSurface(
+    SourceSurface& aSurface, const IntSize& aTargetSize) {
+  const IntSize surfaceSize = aSurface.GetSize();
+
+  MOZ_ASSERT(surfaceSize != aTargetSize);
+  MOZ_ASSERT(!surfaceSize.IsEmpty());
+  MOZ_ASSERT(!aTargetSize.IsEmpty());
+
+  RefPtr<DrawTarget> dt = Factory::CreateDrawTarget(
+      gfxVars::ContentBackend(), aTargetSize, aSurface.GetFormat());
+
+  if (!dt || !dt->IsValid()) {
+    return nullptr;
+  }
+
+  dt->DrawSurface(&aSurface, Rect(Point(), Size(aTargetSize)),
+                  Rect(Point(), Size(surfaceSize)));
+  return dt->GetBackingSurface();
+}
+
 const uint32_t gfxUtils::sNumFrameColors = 8;
 
 /* static */
@@ -1126,7 +1058,7 @@ nsresult gfxUtils::EncodeSourceSurfaceAsStream(SourceSurface* aSurface,
   nsresult rv = encoder->InitFromData(
       map.mData, BufferSizeFromStrideAndHeight(map.mStride, size.height),
       size.width, size.height, map.mStride, imgIEncoder::INPUT_FORMAT_HOSTARGB,
-      aOutputOptions);
+      aOutputOptions, VoidCString());
   dataSurface->Unmap();
   if (NS_FAILED(rv)) {
     return NS_ERROR_FAILURE;
@@ -1212,7 +1144,7 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
 
   if (aBinaryOrData == gfxUtils::eBinaryEncode) {
     if (aFile) {
-      Unused << fwrite(imgData.Elements(), 1, imgData.Length(), aFile);
+      (void)fwrite(imgData.Elements(), 1, imgData.Length(), aFile);
     }
     return NS_OK;
   }
@@ -1645,7 +1577,7 @@ nsresult gfxUtils::GetInputStream(gfx::DataSourceSurface* aSurface,
 
   return dom::ImageEncoder::GetInputStream(
       aSurface->GetSize().width, aSurface->GetSize().height, imageBuffer.get(),
-      format, encoder, aEncoderOptions, outStream);
+      format, encoder, aEncoderOptions, VoidCString(), outStream);
 }
 
 /* static */
@@ -1676,7 +1608,7 @@ nsresult gfxUtils::GetInputStreamWithRandomNoise(
 
   return dom::ImageEncoder::GetInputStream(
       aSurface->GetSize().width, aSurface->GetSize().height, imageBuffer.get(),
-      format, encoder, aEncoderOptions, outStream);
+      format, encoder, aEncoderOptions, VoidCString(), outStream);
 }
 
 class GetFeatureStatusWorkerRunnable final

@@ -23,7 +23,7 @@ import {
   getEventListenerExpanded,
 } from "../../selectors/index";
 
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
 const isOSX = Services.appinfo.OS == "Darwin";
@@ -268,8 +268,9 @@ class EventListeners extends Component {
           className: "event-listener-expand",
           onClick: () => this.onCategoryToggle(category.name),
         },
-        React.createElement(AccessibleImage, {
-          className: classnames("arrow", {
+        React.createElement(DebuggerImage, {
+          name: "arrow",
+          className: classnames({
             expanded,
           }),
         })

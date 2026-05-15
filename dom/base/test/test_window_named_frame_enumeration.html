@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1019417
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 1019417 **/
+  /** Test for Bug 1019417 */
   SimpleTest.waitForExplicitFinish();
   addLoadEvent(function() {
     var names1 = Object.getOwnPropertyNames(window);
@@ -20,6 +20,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1019417
     for (var i in window) {
       names2.push(i);
     }
+
+    // Per WebIDL spec, [[OwnPropertyKeys]] for the named properties object
+    // returns only @@toStringTag unless the legacy pref is enabled.
+    var legacyOwnPropertyKeys = SpecialPowers.getBoolPref(
+      "dom.window.named_properties_object.legacy_own_property_keys", false);
 
     is(names1.indexOf(""), -1,
        "Frame with no name or empty name should not be in our own prop list");
@@ -31,26 +36,26 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1019417
        "Frame with about:blank loaded should not be in our own prop list");
     is(names2.indexOf("x"), -1,
        "Frame with about:blank loaded should not be in our enumeration list");
-    isnot(names3.indexOf("x"), -1,
-          "Frame with about:blank loaded should be in GSP own prop list");
+    is(names3.indexOf("x") != -1, legacyOwnPropertyKeys,
+       "Frame with about:blank in GSP own prop list should match legacy pref");
     is(names1.indexOf("y"), -1,
        "Frame with same-origin loaded should not be in our own prop list");
     is(names2.indexOf("y"), -1,
        "Frame with same-origin loaded should not be in our enumeration list");
-    isnot(names3.indexOf("y"), -1,
-          "Frame with same-origin loaded should be in GSP own prop list");
+    is(names3.indexOf("y") != -1, legacyOwnPropertyKeys,
+       "Frame with same-origin in GSP own prop list should match legacy pref");
     is(names1.indexOf("z"), -1,
        "Frame with cross-origin loaded should not be in our own prop list");
     is(names2.indexOf("z"), -1,
        "Frame with cross-origin loaded should not be in our enumeration list");
-    isnot(names3.indexOf("z"), -1,
-          "Frame with cross-origin loaded should be in GSP own prop list");
+    is(names3.indexOf("z") != -1, legacyOwnPropertyKeys,
+       "Frame with cross-origin in GSP own prop list should match legacy pref");
     is(names1.indexOf("sameorigin"), -1,
           "Frame with same-origin changed name should not be in our own prop list");
     is(names2.indexOf("sameorigin"), -1,
        "Frame with same-origin changed name should not be in our enumeration list");
-    isnot(names3.indexOf("sameorigin"), -1,
-          "Frame with same-origin changed name should be in GSP own prop list");
+    is(names3.indexOf("sameorigin") != -1, legacyOwnPropertyKeys,
+       "Frame with same-origin changed name in GSP own prop list should match legacy pref");
     is(names1.indexOf("crossorigin"), -1,
        "Frame with cross-origin changed name should not be in our own prop list");
     is(names2.indexOf("crossorigin"), -1,

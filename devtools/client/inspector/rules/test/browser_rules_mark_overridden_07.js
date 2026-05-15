@@ -52,7 +52,7 @@ add_task(async function () {
 });
 
 function testMarkOverridden(inspector, view) {
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
 
   const RESULTS = [
     // We skip the first element

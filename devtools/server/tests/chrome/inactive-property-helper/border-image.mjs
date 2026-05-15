@@ -80,7 +80,7 @@ export default [
 ];
 
 /**
- * @param {Object} testParameters
+ * @param {object} testParameters
  * @param {bool} testParameters.useDivTagWithDisplayTableStyle use generic divs using display property instead of actual table/tr/td tags
  * @param {bool} testParameters.borderCollapse is `border-collapse` property set to `collapse` ( instead of `separate`)
  * @param {bool} testParameters.borderCollapsePropertyIsInherited should the border collapse property be inherited from the table parent (instead of directly set on the internal table element)

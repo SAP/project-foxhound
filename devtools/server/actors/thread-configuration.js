@@ -54,8 +54,7 @@ const SUPPORTED_OPTIONS = {
  * flags when they are created. The flags will be forwarded to the WatcherActor
  * and stored as THREAD_CONFIGURATION data entries.
  *
- * @constructor
- *
+ * @class
  */
 class ThreadConfigurationActor extends Actor {
   constructor(watcherActor) {

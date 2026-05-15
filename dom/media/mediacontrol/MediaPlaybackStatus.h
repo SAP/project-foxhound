@@ -7,7 +7,6 @@
 
 #include "mozilla/DefineEnum.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/dom/MediaSession.h"
 #include "nsID.h"
 #include "nsISupportsImpl.h"

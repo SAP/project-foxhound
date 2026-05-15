@@ -4,9 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txNodeSet.h"
+
+#include <algorithm>
+
 #include "txLog.h"
 #include "txXPathTreeWalker.h"
-#include <algorithm>
 
 /**
  * Implementation of an XPath nodeset

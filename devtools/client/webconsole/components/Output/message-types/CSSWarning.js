@@ -34,7 +34,7 @@ loader.lazyRequireGetter(
  * selectors match elements in the current page (warnings can appear for styles
  * which don't apply to the current page).
  *
- * @extends Component
+ * @augments Component
  */
 class CSSWarning extends Component {
   static get propTypes() {

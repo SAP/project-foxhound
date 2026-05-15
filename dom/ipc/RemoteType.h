@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_RemoteType_h
 #define mozilla_dom_RemoteType_h
 
-#include "nsString.h"
 #include "nsReadableUtils.h"
+#include "nsString.h"
 
 // These must match the similar ones in E10SUtils.sys.mjs and ProcInfo.h and
 // ChromeUtils.webidl Process names as reported by about:memory are defined in

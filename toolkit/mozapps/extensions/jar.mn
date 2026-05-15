@@ -4,7 +4,7 @@
 
 toolkit.jar:
 % content mozapps %content/mozapps/
-#ifndef MOZ_FENNEC
+#ifndef MOZ_GECKOVIEW
   content/mozapps/extensions/OpenH264-license.txt               (content/OpenH264-license.txt)
   content/mozapps/extensions/aboutaddons.html                   (content/aboutaddons.html)
   content/mozapps/extensions/aboutaddons.js                     (content/aboutaddons.js)

@@ -4,26 +4,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_quota_quotacommon_h__
-#define mozilla_dom_quota_quotacommon_h__
-
-#include "mozilla/dom/quota/Config.h"
+#ifndef mozilla_dom_quota_quotacommon_h_
+#define mozilla_dom_quota_quotacommon_h_
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+
 #include "mozIStorageStatement.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MacroArgs.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticString.h"
 #include "mozilla/Try.h"
+#include "mozilla/dom/quota/Config.h"
 #if defined(QM_LOG_ERROR_ENABLED) && defined(QM_ERROR_STACKS_ENABLED)
 #  include "mozilla/Variant.h"
 #endif
@@ -180,7 +181,7 @@ class NotNull;
  *   return NS_OK;
  * }
  *
- * 2. Using MOZ_TRY/MOZ_TRY_VAR macros
+ * 2. Using MOZ_TRY macro
  *
  * Typical use cases:
  *
@@ -382,7 +383,7 @@ class NotNull;
  *   return NS_OK;
  * }
  *
- * QM_TRY/QM_TRY_UNWRAP/QM_TRY_INSPECT is like MOZ_TRY/MOZ_TRY_VAR but if an
+ * QM_TRY/QM_TRY_UNWRAP/QM_TRY_INSPECT is like MOZ_TRY but if an
  * error occurs it additionally calls a generic function HandleError to handle
  * the error and it can be used to return custom return values as well and even
  * call an additional cleanup function.
@@ -547,10 +548,10 @@ struct IpcFailCustomRetVal {
   auto tryResult = (expr);                                                   \
   static_assert(std::is_empty_v<typename decltype(tryResult)::ok_type>);     \
   if (MOZ_UNLIKELY(tryResult.isErr())) {                                     \
-    auto tryTempError MOZ_MAYBE_UNUSED = tryResult.unwrapErr();              \
+    [[maybe_unused]] auto tryTempError = tryResult.unwrapErr();              \
     mozilla::dom::quota::QM_HANDLE_ERROR(                                    \
         expr, tryTempError, mozilla::dom::quota::Severity::Error);           \
-    constexpr const auto& func MOZ_MAYBE_UNUSED = __func__;                  \
+    [[maybe_unused]] constexpr const auto& func = __func__;                  \
     return QM_HANDLE_CUSTOM_RET_VAL(func, expr, tryTempError, customRetVal); \
   }
 
@@ -565,7 +566,7 @@ struct IpcFailCustomRetVal {
     mozilla::dom::quota::QM_HANDLE_ERROR(                                    \
         expr, tryTempError, mozilla::dom::quota::Severity::Error);           \
     cleanup(tryTempError);                                                   \
-    constexpr const auto& func MOZ_MAYBE_UNUSED = __func__;                  \
+    [[maybe_unused]] constexpr const auto& func = __func__;                  \
     return QM_HANDLE_CUSTOM_RET_VAL(func, expr, tryTempError, customRetVal); \
   }
 
@@ -580,7 +581,7 @@ struct IpcFailCustomRetVal {
           expr, tryTempError, mozilla::dom::quota::Severity::Error);         \
     }                                                                        \
     cleanup(tryTempError);                                                   \
-    constexpr const auto& func MOZ_MAYBE_UNUSED = __func__;                  \
+    [[maybe_unused]] constexpr const auto& func = __func__;                  \
     return QM_HANDLE_CUSTOM_RET_VAL(func, expr, tryTempError, customRetVal); \
   }
 
@@ -633,10 +634,10 @@ struct IpcFailCustomRetVal {
                                      customRetVal)                            \
   auto tryResult = (expr);                                                    \
   if (MOZ_UNLIKELY(tryResult.isErr())) {                                      \
-    auto tryTempError MOZ_MAYBE_UNUSED = tryResult.unwrapErr();               \
+    [[maybe_unused]] auto tryTempError = tryResult.unwrapErr();               \
     mozilla::dom::quota::QM_HANDLE_ERROR(                                     \
         expr, tryTempError, mozilla::dom::quota::Severity::Error);            \
-    constexpr const auto& func MOZ_MAYBE_UNUSED = __func__;                   \
+    [[maybe_unused]] constexpr const auto& func = __func__;                   \
     return QM_HANDLE_CUSTOM_RET_VAL(func, expr, tryTempError, customRetVal);  \
   }                                                                           \
   MOZ_REMOVE_PAREN(target) = tryResult.accessFunction();
@@ -651,7 +652,7 @@ struct IpcFailCustomRetVal {
     mozilla::dom::quota::QM_HANDLE_ERROR(                                    \
         expr, tryTempError, mozilla::dom::quota::Severity::Error);           \
     cleanup(tryTempError);                                                   \
-    constexpr const auto& func MOZ_MAYBE_UNUSED = __func__;                  \
+    [[maybe_unused]] constexpr const auto& func = __func__;                  \
     return QM_HANDLE_CUSTOM_RET_VAL(func, expr, tryTempError, customRetVal); \
   }                                                                          \
   MOZ_REMOVE_PAREN(target) = tryResult.accessFunction();
@@ -718,10 +719,10 @@ struct IpcFailCustomRetVal {
 #define QM_TRY_RETURN_CUSTOM_RET_VAL(tryResult, expr, customRetVal)          \
   auto tryResult = (expr);                                                   \
   if (MOZ_UNLIKELY(tryResult.isErr())) {                                     \
-    auto tryTempError MOZ_MAYBE_UNUSED = tryResult.unwrapErr();              \
+    [[maybe_unused]] auto tryTempError = tryResult.unwrapErr();              \
     mozilla::dom::quota::QM_HANDLE_ERROR(                                    \
         expr, tryResult.inspectErr(), mozilla::dom::quota::Severity::Error); \
-    constexpr const auto& func MOZ_MAYBE_UNUSED = __func__;                  \
+    [[maybe_unused]] constexpr const auto& func = __func__;                  \
     return QM_HANDLE_CUSTOM_RET_VAL(func, expr, tryTempError, customRetVal); \
   }                                                                          \
   return tryResult.unwrap();
@@ -736,7 +737,7 @@ struct IpcFailCustomRetVal {
     mozilla::dom::quota::QM_HANDLE_ERROR(                                    \
         expr, tryTempError, mozilla::dom::quota::Severity::Error);           \
     cleanup(tryTempError);                                                   \
-    constexpr const auto& func MOZ_MAYBE_UNUSED = __func__;                  \
+    [[maybe_unused]] constexpr const auto& func = __func__;                  \
     return QM_HANDLE_CUSTOM_RET_VAL(func, expr, tryTempError, customRetVal); \
   }                                                                          \
   return tryResult.unwrap();
@@ -1181,8 +1182,7 @@ auto CollectEach(Step aStep, const Body& aBody)
           typename std::invoke_result_t<Body, StepResultType&&>::ok_type>);
 
   while (true) {
-    StepResultType element;
-    MOZ_TRY_VAR(element, aStep());
+    StepResultType element = MOZ_TRY(aStep());
 
     if (!static_cast<bool>(element)) {
       break;
@@ -1210,7 +1210,7 @@ auto ReduceEach(InputGenerator aInputGenerator, T aInit,
       [&res, &aBinaryOp](const auto& element)
           -> Result<Ok,
                     typename std::invoke_result_t<InputGenerator>::err_type> {
-        MOZ_TRY_VAR(res, aBinaryOp(std::move(res), element));
+        res = MOZ_TRY(aBinaryOp(std::move(res), element));
 
         return Ok{};
       }));
@@ -1592,6 +1592,8 @@ template <typename Cancel, typename Body>
 Result<mozilla::Ok, nsresult> CollectEachFile(nsIFile& aDirectory,
                                               const Cancel& aCancel,
                                               const Body& aBody) {
+  GECKO_TRACE_SCOPE("dom::quota", "CollectEachFile");
+
   QM_TRY_INSPECT(const auto& entries, MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                                           nsCOMPtr<nsIDirectoryEnumerator>,
                                           aDirectory, GetDirectoryEntries));
@@ -1650,10 +1652,12 @@ template <typename Func>
 auto CallWithDelayedRetriesIfAccessDenied(Func&& aFunc, uint32_t aMaxRetries,
                                           uint32_t aDelayMs)
     -> Result<typename std::invoke_result_t<Func>::ok_type, nsresult> {
+  std::decay_t<Func> func = std::forward<Func>(aFunc);
+
   uint32_t retries = 0;
 
   while (true) {
-    auto result = std::forward<Func>(aFunc)();
+    auto result = std::invoke(func);
 
     if (result.isOk()) {
       return result;
@@ -1744,6 +1748,7 @@ auto ExecuteInitialization(
                 : Some(ScopedLogExtraInfo{
                       ScopedLogExtraInfo::kTagContextTainted, aContext});
 #endif
+        GECKO_TRACE_SCOPE("dom::quota", aContext);
 
         return std::forward<Func>(aFunc)(firstInitializationAttempt);
       });
@@ -1752,4 +1757,4 @@ auto ExecuteInitialization(
 }  // namespace dom::quota
 }  // namespace mozilla
 
-#endif  // mozilla_dom_quota_quotacommon_h__
+#endif  // mozilla_dom_quota_quotacommon_h_

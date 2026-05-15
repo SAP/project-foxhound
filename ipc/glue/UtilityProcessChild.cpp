@@ -227,11 +227,24 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvRequestMemoryReport(
   mozilla::dom::MemoryReportRequestClient::Start(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile, processName,
       [&](const MemoryReport& aReport) {
-        Unused << GetSingleton()->SendAddMemoryReport(aReport);
+        (void)GetSingleton()->SendAddMemoryReport(aReport);
       },
       aResolver);
   return IPC_OK();
 }
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+IPCResult UtilityProcessChild::RecvStartPKCS11ModuleService(
+    Endpoint<PPKCS11ModuleChild>&& aEndpoint) {
+  auto child = MakeRefPtr<psm::PKCS11ModuleChild>();
+  if (!child || NS_FAILED(child->Start(std::move(aEndpoint)))) {
+    return IPC_FAIL(this, "Failed to create and start PKCS11ModuleChild");
+  }
+
+  mPKCS11ModuleInstance = std::move(child);
+  return IPC_OK();
+}
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 mozilla::ipc::IPCResult UtilityProcessChild::RecvInitSandboxTesting(
@@ -386,6 +399,10 @@ void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
 #  ifdef XP_WIN
   mWindowsUtilsInstance = nullptr;
 #  endif
+
+#  if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  mPKCS11ModuleInstance = nullptr;
+#  endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
   // Wait until all RemoteMediaManagerParent have closed.
   // It is still possible some may not have clean up yet, and we might hit

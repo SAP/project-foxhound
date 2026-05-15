@@ -2,6 +2,7 @@
 .shortcut-feature-highlight {
   .feature-highlight-modal {
     padding: var(--space-large);
+    width: auto;
 
     p {
       margin: 0;
@@ -22,14 +23,30 @@
       inset-inline-end: var(--space-xlarge);
     }
 
-    img {
-      -moz-context-properties: fill;
-      fill: currentColor;
+    // The "Dismiss" button in the top right corner of the highlight needs to be in front of the image
+    >moz-button {
+      position: absolute;
+      inset-inline-end: var(--space-large);
+      inset-block-start: var(--space-large);
+    }
+  }
+
+  // Custom override for dismiss-contrast
+  &.is-inverted-dark-dismiss-button {
+    .feature-highlight-modal {
+      @media (prefers-color-scheme: dark) {
+
+        // override color so that it is visible on the image
+        >moz-button {
+          --button-icon-fill: var(--color-gray-70);
+        }
+      }
     }
   }
 
   .shortcut-feature-highlight-content {
     display: flex;
+    flex-direction: column;
     gap: var(--space-medium);
   }
 
@@ -37,7 +54,7 @@
     font-size: var(--font-size-small);
 
     .title {
-      font-weight: var(--font-weight-bold);
+      font-weight: var(--heading-font-weight);
       margin-block-end: var(--space-xsmall);
       text-align: inherit;
     }

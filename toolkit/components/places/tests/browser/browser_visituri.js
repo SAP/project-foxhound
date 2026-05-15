@@ -98,11 +98,6 @@ add_task(async function test_basic() {
 });
 
 add_task(async function test_userpass() {
-  // Avoid showing the auth prompt.
-  await SpecialPowers.pushPrefEnv({
-    set: [["network.auth.confirmAuth.enabled", false]],
-  });
-
   // Open a html having test links.
   await BrowserTestUtils.openNewForegroundTab(
     gBrowser,

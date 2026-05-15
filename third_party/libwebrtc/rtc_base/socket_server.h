@@ -66,10 +66,5 @@ class SocketServer : public SocketFactory {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::SocketServer;
-}  // namespace rtc
 
 #endif  // RTC_BASE_SOCKET_SERVER_H_

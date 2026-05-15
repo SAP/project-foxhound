@@ -11,6 +11,7 @@ from threading import Timer
 
 import mozcrash
 import psutil
+from mozdebug import prepend_debugger_args
 from mozlog import get_proxy_logger
 from mozscreenshot import dump_screen
 
@@ -133,10 +134,12 @@ def run_browser(
     Returns a ProcessContext instance, with available output and pid used.
     """
 
-    debugger_info = find_debugger_info(debug, debugger, debugger_args)
-    if debugger_info is not None:
+    if debug or debugger or debugger_args:
+        command_under_dbg = prepend_debugger_args(command, debugger, debugger_args)
+        if not command_under_dbg:
+            raise TalosError("Could not find a suitable debugger in your PATH.")
         return run_in_debug_mode(
-            command, debugger_info, on_started=on_started, env=kwargs.get("env")
+            command_under_dbg, on_started=on_started, env=kwargs.get("env")
         )
 
     is_launcher = sys.platform.startswith("win") and "-wait-for-browser" in command
@@ -227,32 +230,9 @@ def run_browser(
     return context
 
 
-def find_debugger_info(debug, debugger, debugger_args):
-    debuggerInfo = None
-    if debug or debugger or debugger_args:
-        import mozdebug
-
-        if not debugger:
-            # No debugger name was provided. Look for the default ones on
-            # current OS.
-            debugger = mozdebug.get_default_debugger_name(
-                mozdebug.DebuggerSearch.KeepLooking
-            )
-
-        debuggerInfo = None
-        if debugger:
-            debuggerInfo = mozdebug.get_debugger_info(debugger, debugger_args)
-
-        if debuggerInfo is None:
-            raise TalosError("Could not find a suitable debugger in your PATH.")
-
-    return debuggerInfo
-
-
-def run_in_debug_mode(command, debugger_info, on_started=None, env=None):
+def run_in_debug_mode(command_under_dbg, on_started=None, env=None):
     signal.signal(signal.SIGINT, lambda sigid, frame: None)
     context = ProcessContext()
-    command_under_dbg = [debugger_info.path] + debugger_info.args + command
 
     ttest_process = subprocess.Popen(command_under_dbg, env=env)
 

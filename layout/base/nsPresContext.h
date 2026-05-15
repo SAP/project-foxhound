@@ -6,9 +6,10 @@
 
 /* a presentation of a document, part 1 */
 
-#ifndef nsPresContext_h___
-#define nsPresContext_h___
+#ifndef nsPresContext_h_
+#define nsPresContext_h_
 
+#include "FontVisibilityProvider.h"
 #include "Units.h"
 #include "gfxRect.h"
 #include "gfxTypes.h"
@@ -128,7 +129,9 @@ class nsRootPresContext;
 // An interface for presentation contexts. Presentation contexts are
 // objects that provide an outer context for a presentation shell.
 
-class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
+class nsPresContext : public nsISupports,
+                      public mozilla::SupportsWeakPtr,
+                      public FontVisibilityProvider {
  public:
   using Encoding = mozilla::Encoding;
   template <typename T>
@@ -143,6 +146,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(nsPresContext)
 
+  FONT_VISIBILITY_PROVIDER_IMPL
+
   enum nsPresContextType : uint8_t {
     eContext_Galley,        // unpaginated screen presentation
     eContext_PrintPreview,  // paginated screen presentation
@@ -155,7 +160,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   /**
    * Initialize the presentation context from a particular device.
    */
-  nsresult Init(nsDeviceContext* aDeviceContext);
+  void Init(nsDeviceContext*);
 
   /**
    * Initialize the font cache if it hasn't been initialized yet.
@@ -164,21 +169,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void InitFontCache();
 
   void UpdateFontCacheUserFonts(gfxUserFontSet* aUserFontSet);
-
-  /**
-   * Return the font visibility level to be applied to this context,
-   * potentially blocking user-installed or non-standard fonts from being
-   * used by web content.
-   * Note that depending on ResistFingerprinting options, the caller may
-   * override this value when resolving CSS <generic-family> keywords.
-   */
-  FontVisibility GetFontVisibility() const { return mFontVisibility; }
-
-  /**
-   * Log a message to the console about a font request being blocked.
-   */
-  void ReportBlockedFontFamily(const mozilla::fontlist::Family& aFamily);
-  void ReportBlockedFontFamily(const gfxFontFamily& aFamily);
 
   /**
    * Get the nsFontMetrics that describe the properties of
@@ -237,13 +227,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   /**
    * Returns the nearest widget for the root frame or view of this.
-   *
-   * @param aOffset     If non-null the offset from the origin of the root
-   *                    frame's view to the widget's origin (usually positive)
-   *                    expressed in appunits of this will be returned in
-   *                    aOffset.
    */
-  nsIWidget* GetNearestWidget(nsPoint* aOffset = nullptr);
+  nsIWidget* GetNearestWidget() const;
 
   /**
    * Returns the root widget for this.
@@ -458,6 +443,14 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   nscoord GetBimodalDynamicToolbarHeightInAppUnits() const;
 
   /**
+   * Returns the maximum height of the dynamic toolbar if the toolbar state is
+   * `DynamicToolbarState::Collapsed`, otherwise returns zero.
+   * The maximum height is based on the fixed viewport scale for elements with
+   * position:fixed.
+   */
+  nscoord GetBimodalDynamicToolbarHeightForFixedPosInAppUnits() const;
+
+  /**
    * Returns the state of the dynamic toolbar.
    */
   mozilla::DynamicToolbarState GetDynamicToolbarState() const;
@@ -479,6 +472,12 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * context.
    */
   bool HasPaginatedScrolling() const { return mCanPaginatedScroll; }
+
+  uint32_t LastScrollGeneration() { return mLastScrollGeneration; }
+  void UpdateLastScrollGeneration() { mLastScrollGeneration += 1; }
+  bool HasBeenScrolledSince(const uint32_t& mPreviousScrollGeneration) const {
+    return mPreviousScrollGeneration < mLastScrollGeneration;
+  }
 
   /**
    * Get/set the size of a page
@@ -566,7 +565,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void SetFullZoom(float aZoom);
   void SetOverrideDPPX(float);
   void SetInRDMPane(bool aInRDMPane);
-  void UpdateTopInnerSizeForRFP();
+  void UpdateInnerSizeSpoofedForRFP();
   void UpdateForcedColors(bool aNotify = true);
 
  public:
@@ -643,20 +642,20 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return NSAppUnitsToIntPixels(aAppUnits, float(AppUnitsPerDevPixel()));
   }
 
-  float AppUnitsToFloatDevPixels(nscoord aAppUnits) {
+  float AppUnitsToFloatDevPixels(nscoord aAppUnits) const {
     return aAppUnits / float(AppUnitsPerDevPixel());
   }
 
-  int32_t CSSPixelsToDevPixels(int32_t aPixels) {
+  int32_t CSSPixelsToDevPixels(int32_t aPixels) const {
     return AppUnitsToDevPixels(CSSPixelsToAppUnits(aPixels));
   }
 
-  float CSSPixelsToDevPixels(float aPixels) {
+  float CSSPixelsToDevPixels(float aPixels) const {
     return NSAppUnitsToFloatPixels(CSSPixelsToAppUnits(aPixels),
                                    float(AppUnitsPerDevPixel()));
   }
 
-  int32_t DevPixelsToIntCSSPixels(int32_t aPixels) {
+  int32_t DevPixelsToIntCSSPixels(int32_t aPixels) const {
     return AppUnitsToIntCSSPixels(DevPixelsToAppUnits(aPixels));
   }
 
@@ -917,15 +916,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   bool IsPrintPreview() const { return mType == eContext_PrintPreview; }
 
-  // Is this presentation in a chrome docshell?
-  bool IsChrome() const;
-
   gfxUserFontSet* GetUserFontSet();
-
-  // Should be called whenever the set of fonts available in the user
-  // font set changes (e.g., because a new font loads, or because the
-  // user font set is changed and fonts become unavailable).
-  void UserFontSetUpdated(gfxUserFontEntry* aUpdatedFont = nullptr);
 
   gfxMissingFontRecorder* MissingFontRecorder() { return mMissingFonts.get(); }
 
@@ -1080,7 +1071,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   void FinishedContainerQueryUpdate();
 
-  bool UpdateContainerQueryStyles();
+  void UpdateContainerQueryStylesAndAnchorPosLayout();
 
   mozilla::intl::Bidi& BidiEngine();
 
@@ -1104,6 +1095,16 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     }
   }
 
+  // Return the cached value of the about:config pref
+  // 'layout.abspos.fragmentainer-aware-positioning.enabled'.
+  //
+  // Note: Layout code should use this helper rather than the actual "live" pref
+  // value. This ensures a given frame tree handles abspos fragmentation
+  // consistently even if the actual pref value changes.
+  bool FragmentainerAwarePositioningEnabled() const {
+    return mFragmentainerAwarePositioningEnabled;
+  }
+
  protected:
   void DoUpdateHiddenByContentVisibilityForAnimations();
   friend class nsRunnableMethod<nsPresContext>;
@@ -1125,6 +1126,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   void UpdateCharSet(NotNull<const Encoding*> aCharSet);
 
   void DoForceReflowForFontInfoUpdateFromStyle();
+
+  void UpdateAnimationsPlayBackRateMultiplier(double aMultiplier);
 
  public:
   // Used by the PresShell to force a reflow when some aspect of font info
@@ -1150,6 +1153,22 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
     return mMarkPaintTimingStart;
   }
 
+  // Are we using normalized ruby-positioning metrics? This will fetch and
+  // cache the pref if not already initialized.
+  bool NormalizeRubyMetrics();
+
+  // Get the scaling factor to apply to em-normalized font ascent/descent. This
+  // should only be used if NormalizeRubyMetrics() has returned true, otherwise
+  // its return value may be meaningless.
+  float RubyPositioningFactor() const {
+    MOZ_ASSERT(mRubyPositioningFactor > 0.0f);
+    return mRubyPositioningFactor;
+  }
+
+  double AnimationsPlayBackRateMultiplier() const {
+    return mAnimationsPlayBackRateMultiplier;
+  }
+
  protected:
   // May be called multiple times (unlink, destructor)
   void Destroy();
@@ -1161,7 +1180,8 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // Creates a one-shot timer with the given aCallback & aDelay.
   // Returns a refcounted pointer to the timer (or nullptr on failure).
   already_AddRefed<nsITimer> CreateTimer(nsTimerCallbackFunc aCallback,
-                                         const char* aName, uint32_t aDelay);
+                                         const nsACString& aName,
+                                         uint32_t aDelay);
 
   struct TransactionInvalidations {
     TransactionId mTransactionId;
@@ -1178,8 +1198,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // visibile to CSS. Returns whether the current visibility value actually
   // changed (in which case content should be reflowed).
   bool UpdateFontVisibility();
-  void ReportBlockedFontFamilyName(const nsCString& aFamily,
-                                   FontVisibility aVisibility);
 
   // IMPORTANT: The ownership implicit in the following member variables
   // has been explicitly checked.  If you add any members to this class,
@@ -1216,10 +1234,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   float mTextZoom;  // Text zoom, defaults to 1.0
   float mFullZoom;  // Page zoom, defaults to 1.0
+
   gfxSize mLastFontInflationScreenSize;
 
   int32_t mCurAppUnitsPerDevPixel;
   int32_t mAutoQualityMinFontSizePixelsPref;
+
+  float mRubyPositioningFactor = -1.0f;  // negative indicates uninitialized
 
   nsCOMPtr<nsITheme> mTheme;
   nsCOMPtr<nsIPrintSettings> mPrintSettings;
@@ -1294,6 +1315,11 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // last time we did a full style flush
   mozilla::TimeStamp mLastStyleUpdateForAllAnimations;
 
+  // incremented each time the root scroller scrolls, helpful to determine if
+  // it has scrolled between the start and end of some deferred work (such as a
+  // navigation intercept).
+  uint32_t mLastScrollGeneration;
+
   uint32_t mInterruptChecksToSkip;
 
   // During page load we use slower frame rate.
@@ -1317,6 +1343,12 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // been updated so far. This is necessary to avoid reentering on container
   // query style changes which cause us to do frame reconstruction.
   nsTHashSet<nsIContent*> mUpdatedContainerQueryContents;
+
+  // The cache of BrowsingContext.animationsPlayBackRateMultiplier.
+  // We need to cache it since the multiplier needs to be queried off the
+  // main-thread, unfortunately Document::GetBrowsingContext can not be used off
+  // the main-thread.
+  double mAnimationsPlayBackRateMultiplier = 1.0;
 
   ScrollStyles mViewportScrollStyles;
 
@@ -1395,6 +1427,12 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   unsigned mNeedsToUpdateHiddenByContentVisibilityForAnimations : 1;
 
   unsigned mUserInputEventsAllowed : 1;
+
+  // Cached value of the about:config pref
+  // 'layout.abspos.fragmentainer-aware-positioning.enabled'
+  // from when this nsPresContext was initialized.
+  bool mFragmentainerAwarePositioningEnabled : 1 = false;
+
 #ifdef DEBUG
   unsigned mInitialized : 1;
 #endif
@@ -1477,4 +1515,4 @@ class nsRootPresContext final : public nsPresContext {
 #  define DO_GLOBAL_REFLOW_COUNT(_name)
 #endif  // MOZ_REFLOW_PERF
 
-#endif /* nsPresContext_h___ */
+#endif /* nsPresContext_h_ */

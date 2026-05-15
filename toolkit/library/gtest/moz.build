@@ -6,24 +6,23 @@
 
 FINAL_TARGET = "dist/bin/gtest"
 
-if CONFIG["ENABLE_TESTS"]:
-    USE_LIBS += [
-        "gkrust-gtest",
-    ]
+USE_LIBS += [
+    "gkrust-gtest",
+]
 
-    DIRS += [
-        "libxul_broken_buildid",
-        "libxul_correct_buildid",
-        "libxul_missing_buildid",
-    ]
+DIRS += [
+    "libxul_broken_buildid",
+    "libxul_correct_buildid",
+    "libxul_missing_buildid",
+]
 
-    UNIFIED_SOURCES = [
-        "TestBuildIDReader.cpp",
-    ]
+UNIFIED_SOURCES = [
+    "TestBuildIDReader.cpp",
+]
 
-    LOCAL_INCLUDES += [
-        "/xpcom/build",
-    ]
+LOCAL_INCLUDES += [
+    "/xpcom/build",
+]
 
 USE_LIBS += [
     "static:xul",

@@ -6,8 +6,6 @@
 #ifndef mozilla_image_decoders_icon_android_nsIconChannel_h
 #define mozilla_image_decoders_icon_android_nsIconChannel_h
 
-#include "mozilla/Attributes.h"
-
 #include "nsIChannel.h"
 #include "nsIURI.h"
 #include "nsCOMPtr.h"

@@ -5,15 +5,16 @@
 package org.mozilla.focus.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material.Colors
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.darkColors
-import androidx.compose.material.lightColors
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.sp
 import mozilla.components.ui.colors.PhotonColors
 
@@ -30,21 +31,25 @@ fun FocusTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val dimensions = if (LocalConfiguration.current.screenWidthDp <= TABLET_SIZE) {
+    val widthDp = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.width.toDp().value
+    }
+
+    val dimensions = if (widthDp <= TABLET_SIZE) {
         phoneDimensions()
     } else {
         tabletDimensions()
     }
 
-    val colors = if (darkTheme) {
+    val colorScheme = if (darkTheme) {
         darkColorPalette()
     } else {
         lightColorPalette()
     }
 
-    CompositionLocalProvider(localColors provides colors, localDimensions provides dimensions) {
+    CompositionLocalProvider(localColors provides colorScheme, localDimensions provides dimensions) {
         MaterialTheme(
-            colors = colors.material,
+            colorScheme = colorScheme.material,
             typography = focusTypography.materialTypography,
             content = content,
         )
@@ -62,7 +67,7 @@ val focusDimensions: FocusDimensions
     get() = localDimensions.current
 
 private fun darkColorPalette(): FocusColors = FocusColors(
-    material = darkColorsMaterial(),
+    material = darkColorSchemeMaterial(),
     dialogActiveControls = PhotonColors.Pink40,
     topSiteBackground = PhotonColors.Ink05,
     topSiteFaviconText = PhotonColors.LightGrey05,
@@ -85,7 +90,7 @@ private fun darkColorPalette(): FocusColors = FocusColors(
 )
 
 private fun lightColorPalette(): FocusColors = FocusColors(
-    material = lightColorsMaterial(),
+    material = lightColorSchemeMaterial(),
     dialogActiveControls = PhotonColors.Pink70,
     topSiteBackground = PhotonColors.White,
     topSiteFaviconText = PhotonColors.Ink50,
@@ -110,7 +115,7 @@ private fun lightColorPalette(): FocusColors = FocusColors(
 /**
  * Material baseline colors can be overridden here.
  */
-private fun darkColorsMaterial(): Colors = darkColors(
+private fun darkColorSchemeMaterial(): ColorScheme = darkColorScheme(
     secondary = PhotonColors.Ink05,
     surface = PhotonColors.Ink60,
     onSurface = PhotonColors.LightGrey05,
@@ -118,13 +123,14 @@ private fun darkColorsMaterial(): Colors = darkColors(
     onPrimary = PhotonColors.LightGrey05,
 )
 
-private fun lightColorsMaterial(): Colors = lightColors(
+private fun lightColorSchemeMaterial(): ColorScheme = lightColorScheme(
     secondary = PhotonColors.LightGrey05,
     surface = PhotonColors.Violet05,
     onSurface = PhotonColors.Ink50,
     onBackground = PhotonColors.Ink50,
     onPrimary = PhotonColors.Ink50,
 )
+
 fun phoneDimensions() = FocusDimensions(
     onboardingTitle = 24.sp,
     onboardingSubtitleOne = 16.sp,

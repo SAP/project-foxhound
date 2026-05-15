@@ -8,16 +8,15 @@
 #define mozilla_dom_AsyncLogger_h
 
 #include <atomic>
-#include <thread>
 #include <cinttypes>
-#include "mozilla/ArrayUtils.h"
+#include <thread>
+
+#include "GeckoProfiler.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BaseProfilerMarkerTypes.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TimeStamp.h"
-#include "GeckoProfiler.h"
-#include "mozilla/dom/MPSCQueue.h"
+#include "mozilla/dom/UnboundedMPSCQueue.h"
 
 #if defined(_WIN32)
 #  include <process.h>
@@ -131,8 +130,9 @@ class AsyncLogger {
   // The goal here is to make it easy on the allocator. We pack a pointer in the
   // message struct, and we still want to do power of two allocations to
   // minimize allocator slop.
-  static_assert(sizeof(MPSCQueue<TracePayload>::Message) == PAYLOAD_TOTAL_SIZE,
-                "MPSCQueue internal allocations has an unexpected size.");
+  static_assert(
+      sizeof(UnboundedMPSCQueue<TracePayload>::Message) == PAYLOAD_TOTAL_SIZE,
+      "UnboundedMPSCQueue internal allocations has an unexpected size.");
 
   explicit AsyncLogger() : mThread(nullptr), mRunning(false) {}
 
@@ -155,7 +155,7 @@ class AsyncLogger {
       return;
     }
 
-    auto* msg = new MPSCQueue<TracePayload>::Message();
+    auto* msg = new UnboundedMPSCQueue<TracePayload>::Message();
 
     msg->data.mTID = profiler_current_thread_id();
     msg->data.mPhase = aPhase;
@@ -182,7 +182,7 @@ class AsyncLogger {
   void LogDuration(const char* aName, const char* aCategory, uint64_t aDuration,
                    uint64_t aFrames, uint64_t aSampleRate) {
     if (Enabled()) {
-      auto* msg = new MPSCQueue<TracePayload>::Message();
+      auto* msg = new UnboundedMPSCQueue<TracePayload>::Message();
       msg->data.mTID = profiler_current_thread_id();
       msg->data.mPhase = TracingPhase::COMPLETE;
       msg->data.mTimestamp = TimeStamp::Now();
@@ -216,10 +216,8 @@ class AsyncLogger {
               using MS = MarkerSchema;
               MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
               schema.SetChartLabel("{marker.data.name}");
-              schema.SetTableLabel("{marker.name} - {marker.data.name}");
-              schema.AddKeyLabelFormatSearchable("name", "Comment",
-                                                 MS::Format::String,
-                                                 MS::Searchable::Searchable);
+              schema.SetTableLabel("{marker.data.name}");
+              schema.AddKeyLabelFormat("name", "Comment", MS::Format::String);
               return schema;
             }
           };
@@ -292,7 +290,7 @@ class AsyncLogger {
   void Sleep() { std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
 
   std::unique_ptr<std::thread> mThread;
-  MPSCQueue<TracePayload> mMessageQueueProfiler;
+  UnboundedMPSCQueue<TracePayload> mMessageQueueProfiler;
   std::atomic<bool> mRunning;
 };
 

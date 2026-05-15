@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 from mach.util import (
     to_optional_path,
@@ -56,7 +56,7 @@ class GitRepository(Repository):
     """An implementation of `Repository` for Git repositories."""
 
     def __init__(self, path: Path, git="git"):
-        super(GitRepository, self).__init__(path, tool=git)
+        super().__init__(path, tool=git)
 
     @property
     def name(self):
@@ -72,7 +72,10 @@ class GitRepository(Repository):
         try:
             # First revision of the canonical Firefox repository
             self._run(
-                "cat-file", "-e", "2ca566cd74d5d0863ba7ef0529a4f88b2823eb43^{commit}"
+                "cat-file",
+                "-e",
+                "2ca566cd74d5d0863ba7ef0529a4f88b2823eb43^{commit}",
+                stderr=subprocess.DEVNULL,
             )
         except subprocess.CalledProcessError:
             output = self._run("for-each-ref")
@@ -113,7 +116,11 @@ class GitRepository(Repository):
             )
 
         for line in remotes:
-            name, url, action = line.split()
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+
+            name, url, action, *_ = parts
 
             # Only consider fetch sources.
             if action != "(fetch)":
@@ -179,6 +186,12 @@ class GitRepository(Repository):
         if not email:
             return None
         return email.strip()
+
+    def get_user_name(self):
+        name = self._run("config", "user.name", return_codes=[0, 1])
+        if not name:
+            return None
+        return name.strip()
 
     def get_changed_files(self, diff_filter="ADM", mode="unstaged", rev=None):
         assert all(f.lower() in self._valid_diff_filter for f in diff_filter)
@@ -260,7 +273,7 @@ class GitRepository(Repository):
         if pattern.startswith("^"):
             magics += ["top"]
             pattern = pattern[1:]
-        return ":({0}){1}".format(",".join(magics), pattern)
+        return ":({}){}".format(",".join(magics), pattern)
 
     def diff_stream(self, rev=None, extensions=(), exclude_file=None, context=8):
         commit_range = "HEAD"  # All uncommitted changes.
@@ -272,11 +285,12 @@ class GitRepository(Repository):
         # git-diff doesn't support an 'exclude-from-files' param, but
         # allow to add individual exclude pattern since v1.9, see
         # https://git-scm.com/docs/gitglossary#gitglossary-aiddefpathspecapathspec
-        with open(exclude_file) as exclude_pattern_file:
-            for pattern in exclude_pattern_file.readlines():
-                pattern = self._translate_exclude_expr(pattern.rstrip())
-                if pattern is not None:
-                    args.append(pattern)
+        if exclude_file is not None:
+            with open(exclude_file) as exclude_pattern_file:
+                for pattern in exclude_pattern_file.readlines():
+                    pattern = self._translate_exclude_expr(pattern.rstrip())
+                    if pattern is not None:
+                        args.append(pattern)
         return self._pipefrom(*args)
 
     def working_directory_clean(self, untracked=False, ignored=False):
@@ -386,6 +400,24 @@ class GitRepository(Repository):
         `changed_files` may contain a dict of file paths and their contents,
         see `stage_changes`.
         """
+        try_head, cleanup = self.prepare_try_push(commit_message, changed_files)
+        yield try_head
+        cleanup()
+
+    def prepare_try_push(
+        self, commit_message: str, changed_files: Optional[dict[str, str]] = None
+    ) -> tuple[Optional[str], Callable]:
+        """Create a temporary try commit as a context manager.
+
+        Create a new commit using `commit_message` as the commit message. The commit
+        may be empty, for example when only including try syntax.
+
+        `changed_files` may contain a dict of file paths and their contents,
+        see `stage_changes`.
+
+        This function returns a tuple of the ref of the new head and a function
+        that can be called to remove the head from the local repository.
+        """
         current_head = self.head_ref
 
         def data(content):
@@ -401,24 +433,22 @@ class GitRepository(Repository):
         # adding or modifying the files from `changed_files`.
         # fast-import will output the sha1 for that temporary commit on stdout
         # (via `get-mark`).
-        fast_import = "\n".join(
-            [
-                f"commit refs/machtry/{branch}",
-                "mark :1",
-                f"author {author}",
-                f"committer {committer}",
-                data(commit_message),
-                f"from {current_head}",
-                "\n".join(
-                    f"M 100644 inline {path}\n{data(content)}"
-                    for path, content in (changed_files or {}).items()
-                ),
-                f"reset refs/machtry/{branch}",
-                "from 0000000000000000000000000000000000000000",
-                "get-mark :1",
-                "",
-            ]
-        )
+        fast_import = "\n".join([
+            f"commit refs/machtry/{branch}",
+            "mark :1",
+            f"author {author}",
+            f"committer {committer}",
+            data(commit_message),
+            f"from {current_head}",
+            "\n".join(
+                f"M 100644 inline {path}\n{data(content)}"
+                for path, content in (changed_files or {}).items()
+            ),
+            f"reset refs/machtry/{branch}",
+            "from 0000000000000000000000000000000000000000",
+            "get-mark :1",
+            "",
+        ])
 
         cmd = (str(self._tool), "fast-import", "--quiet")
         stdout = subprocess.check_output(
@@ -431,24 +461,28 @@ class GitRepository(Repository):
         )
 
         try_head = stdout.decode("ascii").strip()
-        yield try_head
 
-        # Keep trace of the temporary push in the reflog, as if we did actually commit.
-        # This does update HEAD for a small window of time.
-        # If we raced with something else that changed the HEAD after we created our
-        # commit, update-ref will fail and print an error message. Only the update in
-        # the reflog would be lost in this case.
-        self._run("update-ref", "-m", "mach try: push", "HEAD", try_head, current_head)
-        # Likewise, if we raced with something else that updated the HEAD between our
-        # two update-ref, update-ref will fail and print an error message.
-        self._run(
-            "update-ref",
-            "-m",
-            "mach try: restore",
-            "HEAD",
-            current_head,
-            try_head,
-        )
+        def cleanup():
+            # Keep trace of the temporary push in the reflog, as if we did actually commit.
+            # This does update HEAD for a small window of time.
+            # If we raced with something else that changed the HEAD after we created our
+            # commit, update-ref will fail and print an error message. Only the update in
+            # the reflog would be lost in this case.
+            self._run(
+                "update-ref", "-m", "mach try: push", "HEAD", try_head, current_head
+            )
+            # Likewise, if we raced with something else that updated the HEAD between our
+            # two update-ref, update-ref will fail and print an error message.
+            self._run(
+                "update-ref",
+                "-m",
+                "mach try: restore",
+                "HEAD",
+                current_head,
+                try_head,
+            )
+
+        return try_head, cleanup
 
     def get_last_modified_time_for_file(self, path: Path):
         """Return last modified in VCS time for the specified file."""
@@ -504,6 +538,18 @@ class GitRepository(Repository):
                         f"Please upgrade to at least version '{MINIMUM_GIT_VERSION}' to ensure "
                         "full compatibility and performance."
                     )
+
+                if not self.get_user_email():
+                    print("\nGit requires an email address to identify your commits.")
+                    email = input("Enter your email address: ").strip()
+                    if email:
+                        self.set_config_key_value("user.email", email)
+
+                if not self.get_user_name():
+                    print("\nGit requires a name to identify your commits.")
+                    name = input("Enter your name: ").strip()
+                    if name:
+                        self.set_config_key_value("user.name", name)
 
             system = platform.system()
 
@@ -638,6 +684,7 @@ class GitRepository(Repository):
                 "watchman is not installed. Please install `watchman` and "
                 "re-run `./mach vcs-setup` to enable faster git commands."
             )
+            return
 
         print("Ensuring watchman is properly configured...")
 
@@ -675,3 +722,39 @@ class GitRepository(Repository):
             print(f"Copying {watchman_sample} to {watchman_config}")
             subprocess.check_call(copy_cmd, cwd=str(self.path))
         self.set_config_key_value(key="core.fsmonitor", value=str(watchman_config))
+
+    def get_patches_after_ref(self, base_ref) -> str:
+        """
+        Retrieve git format-patch style patches of all commits that occurred
+        after `base_ref`.
+        """
+        return self._run("format-patch", f"{base_ref}..HEAD", "--stdout")
+
+    def get_patch_for_uncommitted_changes(
+        self, message: str = "[PATCH] Uncommitted changes", date: datetime = None
+    ) -> str:
+        """
+        Generate a git format-patch style patch of all uncommitted changes in
+        the working directory.
+        """
+        diff = self._run("diff", "--no-color", "HEAD")
+        if not diff.strip():
+            return ""
+
+        if not date:
+            date = datetime.now()
+
+        name = self.get_user_name()
+        email = self.get_user_email()
+        formatted_date = date.strftime("%a %b %d %H:%M:%S %Y %z")
+
+        patch = [
+            "From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001",
+            f"From: {name} <{email}>",
+            f"Date: {formatted_date}",
+            f"Subject: {message}",
+            "\n---\n",
+            diff,
+        ]
+
+        return "\n".join(patch)

@@ -40,9 +40,9 @@ const getThemePrefValue = (exports.getThemePrefValue = () => {
  * for the current toolbox theme, or null if the variable does not exist, or it's not a
  * registered property, or doesn't have a <color> syntax.
  *
- * @param {String} variableName
+ * @param {string} variableName
  * @param {Window} win: The window into which the variable should be defined.
- * @returns {String|null}
+ * @returns {string | null}
  */
 const getCssVariableColor = (exports.getCssVariableColor = (
   variableName,

@@ -252,7 +252,6 @@ internal object CreditCardUtils {
      * @return the [CreditCardIIN] for the provided credit card number or null if it does not
      * match any of the recognized credit card issuers.
      */
-    @Suppress("ComplexMethod")
     fun getCreditCardIIN(cardNumber: String): CreditCardIIN? {
         val safeCardNumber = cardNumber.toCreditCardNumber()
         for (issuer in creditCardIINs) {

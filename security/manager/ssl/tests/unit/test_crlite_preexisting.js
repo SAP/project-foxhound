@@ -8,6 +8,105 @@
 
 "use strict";
 
+const CHECK_AT_TIME = new Date("2020-01-01T00:00:00Z").getTime() / 1000;
+
+async function test_crlite_preexisting(ctMode) {
+  Services.prefs.setIntPref(
+    "security.pki.certificate_transparency.mode",
+    ctMode
+  );
+
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
+  );
+
+  let validCert = constructCertFromFile(
+    "test_crlite_filters/valid.example.com.pem"
+  );
+  await checkCertErrorGenericAtTime(
+    certdb,
+    validCert,
+    PRErrorCodeSuccess,
+    Ci.nsIX509CertDB.verifyUsageTLSServer,
+    CHECK_AT_TIME,
+    false,
+    "valid.example.com",
+    0
+  );
+
+  let revokedCert = constructCertFromFile(
+    "test_crlite_filters/revoked.example.com.pem"
+  );
+  await checkCertErrorGenericAtTime(
+    certdb,
+    revokedCert,
+    SEC_ERROR_REVOKED_CERTIFICATE,
+    Ci.nsIX509CertDB.verifyUsageTLSServer,
+    CHECK_AT_TIME,
+    false,
+    "revoked.example.com",
+    0
+  );
+
+  let revokedInDeltaCert = constructCertFromFile(
+    "test_crlite_filters/revoked-in-delta.example.com.pem"
+  );
+  await checkCertErrorGenericAtTime(
+    certdb,
+    revokedInDeltaCert,
+    SEC_ERROR_REVOKED_CERTIFICATE,
+    Ci.nsIX509CertDB.verifyUsageTLSServer,
+    CHECK_AT_TIME,
+    false,
+    "revoked-in-delta.example.com",
+    0
+  );
+
+  // This certificate has no embedded SCTs, but it should be considered revoked
+  // if the appropriate SCT is side-loaded.
+  let revokedNoSctCert = constructCertFromFile(
+    "test_crlite_filters/revoked-no-sct.example.com.pem"
+  );
+
+  let sctFile = do_get_file(
+    "test_crlite_filters/revoked-no-sct.example.com.sct",
+    false
+  );
+  let sctBytes = readBinaryFile(sctFile);
+  let sctList = new Uint8Array(2 + 2 + sctBytes.length);
+  sctList[0] = (2 + sctBytes.length) / 256;
+  sctList[1] = (2 + sctBytes.length) % 256;
+  sctList[2] = sctBytes.length / 256;
+  sctList[3] = sctBytes.length % 256;
+  sctList.set(sctBytes, 4);
+
+  await checkCertErrorGenericAtTime(
+    certdb,
+    revokedNoSctCert,
+    PRErrorCodeSuccess,
+    Ci.nsIX509CertDB.verifyUsageTLSServer,
+    CHECK_AT_TIME,
+    false,
+    "revoked-no-sct.example.com",
+    0,
+    [] // no side-loaded SCTs
+  );
+
+  await checkCertErrorGenericAtTime(
+    certdb,
+    revokedNoSctCert,
+    ctMode == CT_MODE_DISABLE
+      ? PRErrorCodeSuccess
+      : SEC_ERROR_REVOKED_CERTIFICATE,
+    Ci.nsIX509CertDB.verifyUsageTLSServer,
+    CHECK_AT_TIME,
+    false,
+    "revoked-no-sct.example.com",
+    0,
+    sctList
+  );
+}
+
 add_task(async function () {
   Services.prefs.setIntPref(
     "security.pki.crlite_mode",
@@ -18,19 +117,14 @@ add_task(async function () {
   securityStateDirectory.append("security_state");
 
   // For simplicity, re-use the filters from test_crlite_filters.js.
-  do_get_file("test_crlite_filters/20201017-0-filter").copyTo(
+  do_get_file("test_crlite_filters/20200101-0-filter").copyTo(
     securityStateDirectory,
     "crlite.filter"
   );
 
-  do_get_file("test_crlite_filters/20201017-1-filter.delta").copyTo(
+  do_get_file("test_crlite_filters/20200101-1-filter.delta").copyTo(
     securityStateDirectory,
     "20201017-1-filter.delta"
-  );
-
-  do_get_file("test_crlite_filters/20201201-3-filter.delta").copyTo(
-    securityStateDirectory,
-    "20201201-3-filter.delta"
   );
 
   let certStorage = Cc["@mozilla.org/security/certstorage;1"].getService(
@@ -41,8 +135,11 @@ add_task(async function () {
     Ci.nsIX509CertDB
   );
 
-  // This needs to be available for path building.
-  let issuerCert = constructCertFromFile("test_crlite_filters/issuer.pem");
+  // These need to be available for path building.
+  let ca = addCertFromFile(certdb, "test_crlite_filters/ca.pem", "C,C,");
+  ok(ca, "ca certificate should decode successfully");
+
+  let issuerCert = constructCertFromFile("test_crlite_filters/int.pem");
   ok(issuerCert, "issuer certificate should decode successfully");
 
   // Mark CRLite filter as fresh
@@ -53,55 +150,12 @@ add_task(async function () {
     });
   });
 
-  let validCert = constructCertFromFile("test_crlite_filters/valid.pem");
-  await checkCertErrorGenericAtTime(
-    certdb,
-    validCert,
-    PRErrorCodeSuccess,
-    Ci.nsIX509CertDB.verifyUsageTLSServer,
-    new Date("2020-10-20T00:00:00Z").getTime() / 1000,
-    false,
-    "vpn.worldofspeed.org",
-    0
-  );
+  info(`testing with CT disabled`);
+  await test_crlite_preexisting(CT_MODE_DISABLE);
 
-  let revokedCert = constructCertFromFile("test_crlite_filters/revoked.pem");
-  await checkCertErrorGenericAtTime(
-    certdb,
-    revokedCert,
-    SEC_ERROR_REVOKED_CERTIFICATE,
-    Ci.nsIX509CertDB.verifyUsageTLSServer,
-    new Date("2020-10-20T00:00:00Z").getTime() / 1000,
-    false,
-    "us-datarecovery.com",
-    0
-  );
+  info(`testing with CT in telemetry only mode`);
+  await test_crlite_preexisting(CT_MODE_COLLECT_TELEMETRY);
 
-  let revokedInStashCert = constructCertFromFile(
-    "test_crlite_filters/revoked-in-stash.pem"
-  );
-  await checkCertErrorGenericAtTime(
-    certdb,
-    revokedInStashCert,
-    SEC_ERROR_REVOKED_CERTIFICATE,
-    Ci.nsIX509CertDB.verifyUsageTLSServer,
-    new Date("2020-10-20T00:00:00Z").getTime() / 1000,
-    false,
-    "stokedmoto.com",
-    0
-  );
-
-  let revokedInStash2Cert = constructCertFromFile(
-    "test_crlite_filters/revoked-in-stash-2.pem"
-  );
-  await checkCertErrorGenericAtTime(
-    certdb,
-    revokedInStash2Cert,
-    SEC_ERROR_REVOKED_CERTIFICATE,
-    Ci.nsIX509CertDB.verifyUsageTLSServer,
-    new Date("2020-10-20T00:00:00Z").getTime() / 1000,
-    false,
-    "icsreps.com",
-    0
-  );
+  info(`testing with CT enabled`);
+  await test_crlite_preexisting(CT_MODE_ENFORCE);
 });

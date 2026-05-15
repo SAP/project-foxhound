@@ -22,27 +22,22 @@ internal data class Breadcrumb(
      * Date of the crash breadcrumb.
      */
     val timestamp: String = "",
-
     /**
      * Message of the crash breadcrumb.
      */
     val message: String = "",
-
     /**
      * Category of the crash breadcrumb.
      */
     val category: String = "",
-
     /**
      * Level of the crash breadcrumb.
      */
     val level: String = Level.DEBUG.value,
-
     /**
      * Type of the crash breadcrumb.
      */
     val type: String = Type.DEFAULT.value,
-
     /**
      * Data related to the crash breadcrumb.
      */

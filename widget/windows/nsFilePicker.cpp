@@ -27,7 +27,6 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/WindowsVersion.h"
 #include "nsArrayEnumerator.h"
 #include "nsCRT.h"
 #include "nsEnumeratorUtils.h"

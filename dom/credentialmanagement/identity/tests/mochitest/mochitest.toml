@@ -8,9 +8,9 @@ prefs = [
 ]
 scheme = "https"
 skip-if = [
-  "xorigin",
-  "http3", #  Bug 1838420
   "http2",
+  "http3", #  Bug 1838420
+  "xorigin",
 ]
 
 support-files = [

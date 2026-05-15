@@ -7,12 +7,9 @@
 #ifndef mozilla_dom_HTMLSharedElement_h
 #define mozilla_dom_HTMLSharedElement_h
 
-#include "nsGenericHTMLElement.h"
-
-#include "nsGkAtoms.h"
-
-#include "mozilla/Attributes.h"
 #include "mozilla/Assertions.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
 
 namespace mozilla::dom {
 

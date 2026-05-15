@@ -58,8 +58,8 @@ imgRequest::imgRequest(imgLoader* aLoader, const ImageCacheKey& aCacheKey)
       mLoadId(nullptr),
       mFirstProxy(nullptr),
       mValidator(nullptr),
-      mCORSMode(CORS_NONE),
       mImageErrorCode(NS_OK),
+      mCORSMode(CORS_NONE),
       mImageAvailable(false),
       mIsDeniedCrossSiteCORSRequest(false),
       mIsCrossSiteNoCORSRequest(false),
@@ -110,8 +110,8 @@ nsresult imgRequest::Init(
   mChannel = aChannel;
   mTimedChannel = do_QueryInterface(mChannel);
   mTriggeringPrincipal = aTriggeringPrincipal;
-  mCORSMode = aCORSMode;
   mReferrerInfo = aReferrerInfo;
+  mCORSMode = aCORSMode;
 
   // If the original URI and the final URI are different, check whether the
   // original URI is secure. We deliberately don't take the final URI into
@@ -851,6 +851,7 @@ struct NewPartResult final {
         mShouldResetCacheEntry(false) {}
 
   nsAutoCString mContentType;
+  int64_t mContentLength;
   nsAutoCString mContentDisposition;
   RefPtr<image::Image> mImage;
   const bool mIsFirstPart;
@@ -892,6 +893,7 @@ static NewPartResult PrepareForNewPart(nsIRequest* aRequest,
 
   if (chan) {
     chan->GetContentDispositionHeader(result.mContentDisposition);
+    chan->GetContentLength(&result.mContentLength);
   }
 
   MOZ_LOG(gImgLog, LogLevel::Debug,
@@ -969,6 +971,7 @@ void imgRequest::FinishPreparingForNewPart(const NewPartResult& aResult) {
   MOZ_ASSERT(NS_IsMainThread());
 
   mContentType = aResult.mContentType;
+  mContentLength = aResult.mContentLength;
 
   SetProperties(aResult.mContentType, aResult.mContentDisposition);
 

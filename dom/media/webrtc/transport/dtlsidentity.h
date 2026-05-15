@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef dtls_identity_h__
-#define dtls_identity_h__
+#ifndef dtls_identity_h_
+#define dtls_identity_h_
 
 #include <utility>
 #include <vector>

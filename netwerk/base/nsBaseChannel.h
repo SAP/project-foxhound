@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBaseChannel_h__
-#define nsBaseChannel_h__
+#ifndef nsBaseChannel_h_
+#define nsBaseChannel_h_
 
 #include "mozilla/dom/MimeType.h"
 #include "mozilla/Maybe.h"
@@ -313,4 +313,4 @@ class nsBaseChannel
   friend class mozilla::net::PrivateBrowsingChannel<nsBaseChannel>;
 };
 
-#endif  // !nsBaseChannel_h__
+#endif  // !nsBaseChannel_h_

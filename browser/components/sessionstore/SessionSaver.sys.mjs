@@ -108,7 +108,7 @@ var SessionSaverInternal = {
   /**
    * The idle callback ID referencing an active idle callback. When no idle
    * callback is pending, this is null.
-   * */
+   */
   _idleCallbackID: null,
 
   /**

@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SupportedFeatures.h"
+
 #include "Adapter.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WebGPUBinding.h"
@@ -15,6 +16,8 @@ GPU_IMPL_JS_WRAP(SupportedFeatures)
 
 SupportedFeatures::SupportedFeatures(Adapter* const aParent)
     : ChildOf(aParent) {}
+
+SupportedFeatures::~SupportedFeatures() = default;
 
 void SupportedFeatures::Add(const dom::GPUFeatureName aFeature,
                             ErrorResult& aRv) {

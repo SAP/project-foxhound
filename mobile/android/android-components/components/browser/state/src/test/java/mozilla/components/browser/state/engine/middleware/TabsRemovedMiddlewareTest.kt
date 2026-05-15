@@ -4,6 +4,7 @@
 
 package mozilla.components.browser.state.engine.middleware
 
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.CustomTabListAction
 import mozilla.components.browser.state.action.EngineAction
@@ -17,28 +18,19 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
+import mozilla.components.lib.state.Store
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
 class TabsRemovedMiddlewareTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val dispatcher = coroutinesTestRule.testDispatcher
-    private val scope = coroutinesTestRule.scope
 
     @Test
-    fun `closes and unlinks engine session when tab is removed`() = runTestOnMain {
-        val middleware = TabsRemovedMiddleware(scope)
+    fun `closes and unlinks engine session when tab is removed`() = runTest {
+        val middleware = TabsRemovedMiddleware(this)
 
         val tab = createTab("https://www.mozilla.org", id = "1")
         val store = BrowserStore(
@@ -47,17 +39,16 @@ class TabsRemovedMiddlewareTest {
         )
 
         val engineSession = linkEngineSession(store, tab.id)
-        store.dispatch(TabListAction.RemoveTabAction(tab.id)).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(TabListAction.RemoveTabAction(tab.id))
+        testScheduler.advanceUntilIdle()
 
         assertNull(store.state.findTab(tab.id)?.engineState?.engineSession)
         verify(engineSession).close()
     }
 
     @Test
-    fun `closes and unlinks engine session when list of tabs are removed`() = runTestOnMain {
-        val middleware = TabsRemovedMiddleware(scope)
+    fun `closes and unlinks engine session when list of tabs are removed`() = runTest {
+        val middleware = TabsRemovedMiddleware(this)
 
         val tab1 = createTab("https://www.mozilla.org", id = "1", private = false)
         val tab2 = createTab("https://www.firefox.com", id = "2", private = false)
@@ -72,9 +63,8 @@ class TabsRemovedMiddlewareTest {
         val engineSession2 = linkEngineSession(store, tab2.id)
         val engineSession3 = linkEngineSession(store, tab3.id)
 
-        store.dispatch(TabListAction.RemoveTabsAction(listOf(tab1.id, tab2.id))).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(TabListAction.RemoveTabsAction(listOf(tab1.id, tab2.id)))
+        testScheduler.advanceUntilIdle()
 
         assertNull(store.state.findTab(tab1.id)?.engineState?.engineSession)
         assertNull(store.state.findTab(tab2.id)?.engineState?.engineSession)
@@ -85,8 +75,8 @@ class TabsRemovedMiddlewareTest {
     }
 
     @Test
-    fun `closes and unlinks engine session when all normal tabs are removed`() = runTestOnMain {
-        val middleware = TabsRemovedMiddleware(scope)
+    fun `closes and unlinks engine session when all normal tabs are removed`() = runTest {
+        val middleware = TabsRemovedMiddleware(this)
 
         val tab1 = createTab("https://www.mozilla.org", id = "1", private = false)
         val tab2 = createTab("https://www.firefox.com", id = "2", private = false)
@@ -100,9 +90,8 @@ class TabsRemovedMiddlewareTest {
         val engineSession2 = linkEngineSession(store, tab2.id)
         val engineSession3 = linkEngineSession(store, tab3.id)
 
-        store.dispatch(TabListAction.RemoveAllNormalTabsAction).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(TabListAction.RemoveAllNormalTabsAction)
+        testScheduler.advanceUntilIdle()
 
         assertNull(store.state.findTab(tab1.id)?.engineState?.engineSession)
         assertNull(store.state.findTab(tab2.id)?.engineState?.engineSession)
@@ -113,8 +102,8 @@ class TabsRemovedMiddlewareTest {
     }
 
     @Test
-    fun `closes and unlinks engine session when all private tabs are removed`() = runTestOnMain {
-        val middleware = TabsRemovedMiddleware(scope)
+    fun `closes and unlinks engine session when all private tabs are removed`() = runTest {
+        val middleware = TabsRemovedMiddleware(this)
 
         val tab1 = createTab("https://www.mozilla.org", id = "1", private = true)
         val tab2 = createTab("https://www.firefox.com", id = "2", private = true)
@@ -128,9 +117,8 @@ class TabsRemovedMiddlewareTest {
         val engineSession2 = linkEngineSession(store, tab2.id)
         val engineSession3 = linkEngineSession(store, tab3.id)
 
-        store.dispatch(TabListAction.RemoveAllPrivateTabsAction).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(TabListAction.RemoveAllPrivateTabsAction)
+        testScheduler.advanceUntilIdle()
 
         assertNull(store.state.findTab(tab1.id)?.engineState?.engineSession)
         assertNull(store.state.findTab(tab2.id)?.engineState?.engineSession)
@@ -141,8 +129,8 @@ class TabsRemovedMiddlewareTest {
     }
 
     @Test
-    fun `closes and unlinks engine session when all tabs are removed`() = runTestOnMain {
-        val middleware = TabsRemovedMiddleware(scope)
+    fun `closes and unlinks engine session when all tabs are removed`() = runTest {
+        val middleware = TabsRemovedMiddleware(this)
 
         val tab1 = createTab("https://www.mozilla.org", id = "1", private = true)
         val tab2 = createTab("https://www.firefox.com", id = "2", private = false)
@@ -156,9 +144,8 @@ class TabsRemovedMiddlewareTest {
         val engineSession2 = linkEngineSession(store, tab2.id)
         val engineSession3 = linkEngineSession(store, tab3.id)
 
-        store.dispatch(TabListAction.RemoveAllTabsAction()).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(TabListAction.RemoveAllTabsAction())
+        testScheduler.advanceUntilIdle()
 
         assertNull(store.state.findTab(tab1.id)?.engineState?.engineSession)
         assertNull(store.state.findTab(tab2.id)?.engineState?.engineSession)
@@ -169,8 +156,8 @@ class TabsRemovedMiddlewareTest {
     }
 
     @Test
-    fun `closes and unlinks engine session when custom tab is removed`() = runTestOnMain {
-        val middleware = TabsRemovedMiddleware(scope)
+    fun `closes and unlinks engine session when custom tab is removed`() = runTest {
+        val middleware = TabsRemovedMiddleware(this)
 
         val tab = createCustomTab("https://www.mozilla.org", id = "1")
         val store = BrowserStore(
@@ -179,17 +166,16 @@ class TabsRemovedMiddlewareTest {
         )
 
         val engineSession = linkEngineSession(store, tab.id)
-        store.dispatch(CustomTabListAction.RemoveCustomTabAction(tab.id)).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(CustomTabListAction.RemoveCustomTabAction(tab.id))
+        testScheduler.advanceUntilIdle()
 
         assertNull(store.state.findTab(tab.id)?.engineState?.engineSession)
         verify(engineSession).close()
     }
 
     @Test
-    fun `closes and unlinks engine session when all custom tabs are removed`() = runTestOnMain {
-        val middleware = TabsRemovedMiddleware(scope)
+    fun `closes and unlinks engine session when all custom tabs are removed`() = runTest {
+        val middleware = TabsRemovedMiddleware(this)
 
         val tab1 = createCustomTab("https://www.mozilla.org", id = "1")
         val tab2 = createCustomTab("https://www.firefox.com", id = "2")
@@ -203,9 +189,8 @@ class TabsRemovedMiddlewareTest {
         val engineSession2 = linkEngineSession(store, tab2.id)
         val engineSession3 = linkEngineSession(store, tab3.id)
 
-        store.dispatch(CustomTabListAction.RemoveAllCustomTabsAction).joinBlocking()
-        store.waitUntilIdle()
-        dispatcher.scheduler.advanceUntilIdle()
+        store.dispatch(CustomTabListAction.RemoveAllCustomTabsAction)
+        testScheduler.advanceUntilIdle()
 
         assertNull(store.state.findCustomTab(tab1.id)?.engineState?.engineSession)
         assertNull(store.state.findCustomTab(tab2.id)?.engineState?.engineSession)
@@ -217,7 +202,7 @@ class TabsRemovedMiddlewareTest {
 
     private fun linkEngineSession(store: BrowserStore, tabId: String): EngineSession {
         val engineSession: EngineSession = mock()
-        store.dispatch(EngineAction.LinkEngineSessionAction(tabId, engineSession)).joinBlocking()
+        store.dispatch(EngineAction.LinkEngineSessionAction(tabId, engineSession))
         assertNotNull(store.state.findTabOrCustomTab(tabId)?.engineState?.engineSession)
         return engineSession
     }
@@ -227,7 +212,7 @@ class TabsRemovedMiddlewareTest {
     // TabsRemovedMiddleware processed the action.
     private class ConsumeRemoveTabActionsMiddleware : Middleware<BrowserState, BrowserAction> {
         override fun invoke(
-            context: MiddlewareContext<BrowserState, BrowserAction>,
+            store: Store<BrowserState, BrowserAction>,
             next: (BrowserAction) -> Unit,
             action: BrowserAction,
         ) {

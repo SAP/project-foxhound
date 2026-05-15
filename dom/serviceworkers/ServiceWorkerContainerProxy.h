@@ -7,8 +7,8 @@
 #ifndef moz_dom_ServiceWorkerContainerProxy_h
 #define moz_dom_ServiceWorkerContainerProxy_h
 
-#include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/ServiceWorkerUtils.h"
 
 namespace mozilla::dom {
 
@@ -27,7 +27,7 @@ class ServiceWorkerContainerProxy final {
 
   RefPtr<ServiceWorkerRegistrationPromise> Register(
       const ClientInfo& aClientInfo, const nsACString& aScopeURL,
-      const nsACString& aScriptURL,
+      const WorkerType& aType, const nsACString& aScriptURL,
       ServiceWorkerUpdateViaCache aUpdateViaCache);
 
   RefPtr<ServiceWorkerRegistrationPromise> GetRegistration(

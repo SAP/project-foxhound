@@ -91,8 +91,6 @@ class OSXNotificationInfo final : public nsISupports {
   nsCOMPtr<nsIAlertNotification> mAlertNotification;
   nsCOMPtr<nsIObserver> mObserver;
   nsString mCookie;
-  RefPtr<nsICancelable> mIconRequest;
-  NSUserNotification* mPendingNotification;
 };
 
 NS_IMPL_ISUPPORTS0(OSXNotificationInfo)
@@ -107,7 +105,6 @@ OSXNotificationInfo::OSXNotificationInfo(
   mAlertNotification = aAlertNotification;
   mObserver = observer;
   mCookie = alertCookie;
-  mPendingNotification = nil;
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -116,7 +113,6 @@ OSXNotificationInfo::~OSXNotificationInfo() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   [mName release];
-  [mPendingNotification release];
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -150,7 +146,7 @@ OSXNotificationCenter::~OSXNotificationCenter() {
 }
 
 NS_IMPL_ISUPPORTS(OSXNotificationCenter, nsIAlertsService,
-                  nsIAlertsDoNotDisturb, nsIAlertNotificationImageListener)
+                  nsIAlertsDoNotDisturb)
 
 nsresult OSXNotificationCenter::Init() {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
@@ -159,27 +155,6 @@ nsresult OSXNotificationCenter::Init() {
                                                       : NS_ERROR_FAILURE;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-NS_IMETHODIMP
-OSXNotificationCenter::ShowAlertNotification(
-    const nsAString& aImageUrl, const nsAString& aAlertTitle,
-    const nsAString& aAlertText, bool aAlertTextClickable,
-    const nsAString& aAlertCookie, nsIObserver* aAlertListener,
-    const nsAString& aAlertName, const nsAString& aBidi, const nsAString& aLang,
-    const nsAString& aData, nsIPrincipal* aPrincipal, bool aInPrivateBrowsing,
-    bool aRequireInteraction) {
-  nsCOMPtr<nsIAlertNotification> alert =
-      do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
-  NS_ENSURE_TRUE(alert, NS_ERROR_FAILURE);
-  // vibrate is unused for now
-  nsTArray<uint32_t> vibrate;
-  nsresult rv = alert->Init(aAlertName, aImageUrl, aAlertTitle, aAlertText,
-                            aAlertTextClickable, aAlertCookie, aBidi, aLang,
-                            aData, aPrincipal, aInPrivateBrowsing,
-                            aRequireInteraction, false, vibrate);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return ShowAlert(alert, aAlertListener);
 }
 
 NS_IMETHODIMP
@@ -194,7 +169,7 @@ OSXNotificationCenter::ShowAlert(nsIAlertNotification* aAlert,
   }
 
   Class unClass = NSClassFromString(@"NSUserNotification");
-  NSUserNotification* notification = [[unClass alloc] init];
+  NSUserNotification* notification = [[[unClass alloc] init] autorelease];
 
   nsAutoString title;
   nsresult rv = aAlert->GetTitle(title);
@@ -305,6 +280,20 @@ OSXNotificationCenter::ShowAlert(nsIAlertNotification* aAlert,
   rv = aAlert->GetCookie(cookie);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsCOMPtr<imgIContainer> image;
+  MOZ_TRY(aAlert->GetImage(getter_AddRefs(image)));
+  if (image) {
+    NSImage* cocoaImage = nil;
+    // TODO: Pass pres context / ComputedStyle here to support context paint
+    // properties.
+    // TODO: Do we have a reasonable size to pass around here?
+    nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
+        image, imgIContainer::FRAME_FIRST, nullptr, NSMakeSize(0, 0),
+        &cocoaImage);
+    notification.contentImage = cocoaImage;
+    [cocoaImage release];
+  }
+
   OSXNotificationInfo* osxni =
       new OSXNotificationInfo(alertName, aAlert, aAlertListener, cookie);
 
@@ -312,25 +301,11 @@ OSXNotificationCenter::ShowAlert(nsIAlertNotification* aAlert,
   rv = aAlert->GetInPrivateBrowsing(&inPrivateBrowsing);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Show the notification without waiting for an image if there is no icon URL
-  // or notification icons are not supported on this version of OS X.
-  if (![unClass instancesRespondToSelector:@selector(setContentImage:)]) {
-    CloseAlertCocoaString(alertName);
-    mActiveAlerts.AppendElement(osxni);
-    [GetNotificationCenter() deliverNotification:notification];
-    [notification release];
-    if (aAlertListener) {
-      aAlertListener->Observe(nullptr, "alertshow", cookie.get());
-    }
-  } else {
-    mPendingAlerts.AppendElement(osxni);
-    osxni->mPendingNotification = notification;
-    // Wait six seconds for the image to load.
-    rv = aAlert->LoadImage(6000, this, osxni,
-                           getter_AddRefs(osxni->mIconRequest));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      ShowPendingNotification(osxni);
-    }
+  CloseAlertCocoaString(alertName);
+  mActiveAlerts.AppendElement(osxni);
+  [GetNotificationCenter() deliverNotification:notification];
+  if (aAlertListener) {
+    aAlertListener->Observe(nullptr, "alertshow", cookie.get());
   }
 
   return NS_OK;
@@ -351,7 +326,6 @@ OSXNotificationCenter::CloseAlert(const nsAString& aAlertName,
 }
 
 NS_IMETHODIMP OSXNotificationCenter::Teardown() {
-  mPendingAlerts.Clear();
   mActiveAlerts.Clear();
   return NS_OK;
 }
@@ -382,10 +356,6 @@ void OSXNotificationCenter::CloseAlertCocoaString(NSString* aAlertName) {
       if (osxni->mObserver) {
         osxni->mObserver->Observe(nullptr, "alertfinished",
                                   osxni->mCookie.get());
-      }
-      if (osxni->mIconRequest) {
-        osxni->mIconRequest->Cancel(NS_BINDING_ABORTED);
-        osxni->mIconRequest = nullptr;
       }
       mActiveAlerts.RemoveElementAt(i);
       break;
@@ -448,84 +418,6 @@ void OSXNotificationCenter::OnActivate(
   }
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
-}
-
-void OSXNotificationCenter::ShowPendingNotification(
-    OSXNotificationInfo* osxni) {
-  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
-
-  if (osxni->mIconRequest) {
-    osxni->mIconRequest->Cancel(NS_BINDING_ABORTED);
-    osxni->mIconRequest = nullptr;
-  }
-
-  CloseAlertCocoaString(osxni->mName);
-
-  for (unsigned int i = 0; i < mPendingAlerts.Length(); i++) {
-    if (mPendingAlerts[i] == osxni) {
-      mActiveAlerts.AppendElement(osxni);
-      mPendingAlerts.RemoveElementAt(i);
-      break;
-    }
-  }
-
-  [GetNotificationCenter() deliverNotification:osxni->mPendingNotification];
-
-  if (osxni->mObserver) {
-    osxni->mObserver->Observe(nullptr, "alertshow", osxni->mCookie.get());
-  }
-
-  [osxni->mPendingNotification release];
-  osxni->mPendingNotification = nil;
-
-  NS_OBJC_END_TRY_IGNORE_BLOCK;
-}
-
-NS_IMETHODIMP
-OSXNotificationCenter::OnImageMissing(nsISupports* aUserData) {
-  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
-
-  OSXNotificationInfo* osxni = static_cast<OSXNotificationInfo*>(aUserData);
-  if (osxni->mPendingNotification) {
-    // If there was an error getting the image, or the request timed out, show
-    // the notification without a content image.
-    ShowPendingNotification(osxni);
-  }
-  return NS_OK;
-
-  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-NS_IMETHODIMP
-OSXNotificationCenter::OnImageReady(nsISupports* aUserData,
-                                    imgIRequest* aRequest) {
-  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
-
-  nsCOMPtr<imgIContainer> image;
-  nsresult rv = aRequest->GetImage(getter_AddRefs(image));
-  if (NS_WARN_IF(NS_FAILED(rv) || !image)) {
-    return rv;
-  }
-
-  OSXNotificationInfo* osxni = static_cast<OSXNotificationInfo*>(aUserData);
-  if (!osxni->mPendingNotification) {
-    return NS_ERROR_FAILURE;
-  }
-
-  NSImage* cocoaImage = nil;
-  // TODO: Pass pres context / ComputedStyle here to support context paint
-  // properties.
-  // TODO: Do we have a reasonable size to pass around here?
-  nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(
-      image, imgIContainer::FRAME_FIRST, nullptr, NSMakeSize(0, 0),
-      &cocoaImage);
-  (osxni->mPendingNotification).contentImage = cocoaImage;
-  [cocoaImage release];
-  ShowPendingNotification(osxni);
-
-  return NS_OK;
-
-  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
 
 NS_IMETHODIMP

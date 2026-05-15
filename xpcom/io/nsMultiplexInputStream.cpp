@@ -9,7 +9,6 @@
  * stream.
  */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Mutex.h"
@@ -34,7 +33,7 @@
 using namespace mozilla;
 using namespace mozilla::ipc;
 
-using mozilla::DeprecatedAbs;
+using mozilla::Abs;
 
 NS_IMPL_ADDREF(nsMultiplexInputStream)
 NS_IMPL_RELEASE(nsMultiplexInputStream)
@@ -558,10 +557,10 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset) {
         return rv;
       }
 
-      int64_t streamLength = avail + mStreams[i].mCurrentPos;
+      uint64_t streamLength = avail + mStreams[i].mCurrentPos;
 
       // The seek(END) can be completed in the current stream.
-      if (streamLength >= DeprecatedAbs(remaining)) {
+      if (streamLength >= Abs(remaining)) {
         rv = stream->Seek(NS_SEEK_END, remaining);
         if (NS_WARN_IF(NS_FAILED(rv))) {
           return rv;
@@ -579,6 +578,7 @@ nsMultiplexInputStream::Seek(int32_t aWhence, int64_t aOffset) {
         return rv;
       }
 
+      MOZ_ASSERT(remaining <= 0 && (remaining + (int64_t)streamLength) < 0);
       remaining += streamLength;
       mStreams[i].mCurrentPos = 0;
     }

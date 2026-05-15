@@ -204,6 +204,7 @@ class AutofillDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun autofill() {
         // Test parts of the Oreo auto-fill API; there is another autofill test in
         // SessionAccessibility for a11y auto-fill support.

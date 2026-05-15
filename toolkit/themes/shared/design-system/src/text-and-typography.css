@@ -1,0 +1,61 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Typography scale */
+:root {
+  font: message-box;
+}
+
+h1,
+.heading-xlarge {
+  font-weight: var(--heading-font-weight);
+  font-size: var(--heading-font-size-xlarge);
+}
+
+h2,
+.heading-large {
+  font-weight: var(--heading-font-weight);
+  font-size: var(--heading-font-size-large);
+}
+
+h3,
+.heading-medium {
+  font-weight: var(--heading-font-weight);
+  font-size: var(--heading-font-size-medium);
+}
+
+/* Text helpers */
+.text-deemphasized {
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+}
+
+.text-error {
+  color: var(--text-color-error);
+  font-weight: var(--font-weight-semibold);
+}
+
+.text-truncated-ellipsis {
+  /* Will not work on `display: flex` items
+    unless you wrap its contents with another element that has this class. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-box-trim-start {
+  /* Trim the "leading" from top of the text. This visually removes the
+   * line-height above the first line of text so we don't end up with too much
+   * padding between text and its container.
+   *
+   * `1cap` is the cap height, or height of capital letters. `1lh` is the
+   * computed line-height. This calc therefore removes half of the difference
+   * between the two from the height of the element. This has the result of
+   * spacing the top of a capital letter from its container similarly to how a
+   * border or background would be spaced.
+   *
+   * NOTE: This emulates the `text-box-trim` property (bug 1816038). */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  margin-block-start: calc((1cap - 1lh) / 2);
+}

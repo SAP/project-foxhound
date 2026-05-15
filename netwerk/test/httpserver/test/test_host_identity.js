@@ -72,7 +72,7 @@ function runIdentityTest(host, port) {
   });
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

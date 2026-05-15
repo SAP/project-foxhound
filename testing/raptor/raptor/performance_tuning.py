@@ -135,14 +135,12 @@ class PerformanceTuner:
         # Pixel 6 perf tuning: Bug 1876545
         # Samsung S21 perf tuning: Bug 1876546
         if device_name == "SM-A515F":
-            commands.update(
-                {
-                    "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor": "performance",
-                    "/sys/devices/system/cpu/cpufreq/policy4/scaling_governor": "performance",
-                    "/sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq": "1742000",
-                    "/sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq": "2314000",
-                }
-            )
+            commands.update({
+                "/sys/devices/system/cpu/cpufreq/policy0/scaling_governor": "performance",
+                "/sys/devices/system/cpu/cpufreq/policy4/scaling_governor": "performance",
+                "/sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq": "1742000",
+                "/sys/devices/system/cpu/cpufreq/policy4/scaling_min_freq": "2314000",
+            })
         else:
             self.log.info(
                 f"CPU for device with ro.product.model '{device_name}' unknown, not scaling_governor"

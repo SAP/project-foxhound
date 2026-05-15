@@ -9,7 +9,6 @@
 #include "nsICookieService.h"
 #include "nsICookieManager.h"
 #include "nsICookie.h"
-#include <stdio.h>
 #include "plstr.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
@@ -22,7 +21,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/CookieValidation.h"
 #include "Cookie.h"
@@ -107,12 +105,12 @@ void GetACookie(nsICookieService* aCookieService, const char* aSpec,
   nsCOMPtr<nsIIOService> service = do_GetIOService();
 
   nsCOMPtr<nsIChannel> channel;
-  Unused << service->NewChannelFromURI(
+  (void)service->NewChannelFromURI(
       uri, nullptr, nsContentUtils::GetSystemPrincipal(),
       nsContentUtils::GetSystemPrincipal(), 0, nsIContentPolicy::TYPE_DOCUMENT,
       getter_AddRefs(channel));
 
-  Unused << aCookieService->GetCookieStringFromHttp(uri, channel, aCookie);
+  (void)aCookieService->GetCookieStringFromHttp(uri, channel, aCookie);
 }
 
 // The cookie string is returned via aCookie.
@@ -126,15 +124,16 @@ void GetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
   MOZ_RELEASE_ASSERT(principal);
 
   nsCOMPtr<mozilla::dom::Document> document;
-  nsresult rv = NS_NewDOMDocument(getter_AddRefs(document),
-                                  u""_ns,   // aNamespaceURI
-                                  u""_ns,   // aQualifiedName
-                                  nullptr,  // aDoctype
-                                  uri, uri, principal,
-                                  false,    // aLoadedAsData
-                                  nullptr,  // aEventObject
-                                  DocumentFlavor::HTML);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  nsresult rv =
+      NS_NewDOMDocument(getter_AddRefs(document),
+                        u""_ns,   // aNamespaceURI
+                        u""_ns,   // aQualifiedName
+                        nullptr,  // aDoctype
+                        uri, uri, principal,
+                        mozilla::dom::LoadedAsData::No,  // aLoadedAsData
+                        nullptr,                         // aEventObject
+                        DocumentFlavor::HTML);
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   nsAutoString cookie;
   ErrorResult err;
@@ -1157,7 +1156,7 @@ TEST(TestCookie, MaxAgeParser)
   nsCOMPtr<nsIIOService> service = do_GetIOService();
 
   nsCOMPtr<nsIChannel> channel;
-  Unused << service->NewChannelFromURI(
+  (void)service->NewChannelFromURI(
       uri, nullptr, nsContentUtils::GetSystemPrincipal(),
       nsContentUtils::GetSystemPrincipal(), 0, nsIContentPolicy::TYPE_DOCUMENT,
       getter_AddRefs(channel));

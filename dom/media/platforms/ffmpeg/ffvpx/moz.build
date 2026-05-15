@@ -25,7 +25,7 @@ SOURCES += [
 ]
 LOCAL_INCLUDES += [
     "..",
-    "../ffmpeg61/include",
+    "/media/ffvpx",
     "/media/mozva",
 ]
 
@@ -61,6 +61,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "D3D11TextureWrapper.cpp",
     ]
     EXPORTS += ["D3D11TextureWrapper.h"]
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+    DEFINES["MOZ_USE_HWDECODE"] = 1
 
 include("/ipc/chromium/chromium-config.mozbuild")
 

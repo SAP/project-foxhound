@@ -56,6 +56,9 @@ newtab-topsites-add-shortcut-header = Gnove scurte
 newtab-topsites-edit-topsites-header = Modifiche sît principâl
 newtab-topsites-edit-shortcut-header = Modifiche scurte
 newtab-topsites-add-shortcut-label = Zonte scurte
+newtab-topsites-add-shortcut-title =
+    .title = Zonte scurte
+    .aria-label = Zonte scurte
 newtab-topsites-title-label = Titul
 newtab-topsites-title-input =
     .placeholder = Inserìs un titul
@@ -84,6 +87,14 @@ newtab-confirm-delete-history-p2 = No si pues tornâ indaûr di cheste operazion
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponsorizât
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (fissât)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -309,19 +320,30 @@ newtab-custom-pocket-subtitle = Contignûts ecezionâi curâts di { -pocket-bran
 newtab-custom-stories-toggle =
     .label = Storiis conseadis
     .description = Contignûts ecezionâl curât de famee di prodots { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Storiis
+newtab-custom-stories-personalized-checkbox-label = Storiis personalizadis in base ae tô ativitât
 newtab-custom-pocket-sponsored = Storiis sponsorizadis
 newtab-custom-pocket-show-recent-saves = Mostre salvaments resints
 newtab-custom-recent-title = Ativitât resinte
 newtab-custom-recent-subtitle = Une selezion di sîts e contignûts resints
-newtab-custom-recent-toggle =
-    .label = Ativitât resinte
-    .description = Une selezion di sîts e contignûts resints
 newtab-custom-weather-toggle =
     .label = Meteo
     .description = Previsions par vuê cuntune voglade
-newtab-custom-trending-search-toggle =
-    .label = Ricercjis di tindince
-    .description = Argoments popolârs e cirûts dispès
+newtab-custom-widget-weather-toggle =
+    .label = Meteo
+newtab-custom-widget-lists-toggle =
+    .label = Listis
+newtab-custom-widget-timer-toggle =
+    .label = Temporizadôr
+newtab-custom-widget-section-title = Widgets
+newtab-custom-widget-section-toggle =
+    .label = Widgets
+newtab-widget-manage-title = Widgets
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Siere
+    .aria-label = Siere menù
 newtab-custom-close-button = Siere
 newtab-custom-settings = Gjestìs plui impostazions
 
@@ -334,6 +356,7 @@ newtab-wallpaper-custom-color = Sielç un colôr
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = La imagjin e va fûr de dimension massime ametude ({ $file_size } MB). Prove a cjariâ un file plui piçul.
+newtab-wallpaper-error-upload-file-type = No sin rivâts a cjariâ in rêt il to file. Torne prove cuntun file di imagjin.
 newtab-wallpaper-error-file-type = No rivìn a cjariâ il to file. Torne prove cuntun altri gjenar di file.
 newtab-wallpaper-light-red-panda = Panda ros
 newtab-wallpaper-light-mountain = Montagne blancje
@@ -383,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Sfumadure di lûs viole e verde
 newtab-wallpaper-abstract-blue-purple-waves = Formis ondadis blu e viole
 newtab-wallpaper-abstract-black-waves = Formis ondadis neris
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografiis
 newtab-wallpaper-beach-at-sunrise = Splaze al cricâ dal dì
@@ -413,6 +436,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -439,7 +466,6 @@ newtab-weather-menu-change-location = Cambie localitât
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Cîr localitât
     .aria-label = Cîr localitât
-newtab-weather-change-location-search-input = Cîr localitât
 newtab-weather-menu-weather-display = Visualizazion meteo
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -455,8 +481,21 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Passe a Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Passe a Celsius
 newtab-weather-menu-hide-weather = Plate il meteo ae Gnove schede
 newtab-weather-menu-learn-more = Plui informazions
+newtab-weather-menu-detect-my-location = Rileve la mê posizion
 # This message is shown if user is working offline
 newtab-weather-error-not-available = I dâts sul meteo in chest moment no son disponibii.
+newtab-weather-opt-in-see-weather = Desideristu viodi il timp pe tô posizion?
+newtab-weather-opt-in-not-now =
+    .label = No cumò
+newtab-weather-opt-in-yes =
+    .label = Sì
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Viôt lis previsions in { $provider }
+    .aria-description = { $provider } ∙ Sponsorizât
 
 ## Topic Labels
 
@@ -540,6 +579,12 @@ newtab-custom-wallpaper-title = I fonts personalizâts a son achì
 newtab-custom-wallpaper-subtitle = Cjame il to font o sielç un colôr personalizât par fâ to { -brand-product-name }.
 newtab-custom-wallpaper-cta = Provilu
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Sielç un fonts par personalizâ il to { -brand-product-name }
+newtab-new-user-custom-wallpaper-subtitle = Rint ogni gnove schede come se e fos cjase tô, cun fonts e colôrs personalizâts.
+newtab-new-user-custom-wallpaper-cta = Provilu daurman
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Discjame { -brand-product-name } par dispositîfs mobii
@@ -552,8 +597,10 @@ newtab-download-mobile-highlight-image =
 
 ## Strings for shortcuts highlight
 
+newtab-shortcuts-highlight-title = I tiei preferîts a puartade di man
+newtab-shortcuts-highlight-subtitle = Zonte une scurte par mantignî i tiei sîts preferîts a puartade di clic.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Parcè stâstu segnalant cheste publicitât?
@@ -571,18 +618,91 @@ newtab-report-content-inappropriate-offensive =
     .label = Inadate o ofensive
 newtab-report-content-spam-misleading =
     .label = Spam o ingjanose
+newtab-report-content-requires-payment-subscription =
+    .label = Al domande il paiament o l'abonament
+newtab-report-content-requires-payment-subscription-learn-more = Par savê di plui
 newtab-report-cancel = Anule
 newtab-report-submit = Invie
 newtab-toast-thanks-for-reporting =
     .message = Graciis pe segnalazion.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Di tindince su Google
-newtab-trending-searches-show-trending =
-    .title = Mostre ricercjis di tindince
-newtab-trending-searches-hide-trending =
-    .title = Plate ricercjis di tindince
-newtab-trending-searches-learn-more = Plui informazions
-newtab-trending-searches-dismiss = Plate ricercjis di tindince
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Lis pussibilitâts a son infinidis. Zonte une.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Novitâts
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Completadis ({ $number })
+newtab-widget-task-list-menu-copy = Copie
+newtab-widget-lists-menu-edit = Modifiche non liste
+newtab-widget-lists-menu-create = Cree gnove liste
+newtab-widget-lists-menu-delete = Elimine cheste liste
+newtab-widget-lists-menu-copy = Copie liste intes notis
+newtab-widget-lists-menu-hide = Plate dutis lis listis
+newtab-widget-lists-menu-learn-more = Plui informazions
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Zonte un element
+newtab-widget-lists-input-error = Inclût test par zontâ un element.
+newtab-widget-lists-input-menu-open-link = Vierç colegament
+newtab-widget-lists-input-menu-move-up = Sposte in sù
+newtab-widget-lists-input-menu-move-down = Sposte in jù
+newtab-widget-lists-input-menu-delete = Elimine
+newtab-widget-lists-input-menu-edit = Modifiche
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Cree une gnove liste
+newtab-widget-lists-name-label-default =
+    .label = Liste di ativitâts
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Liste di ativitâts
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Gnove liste
+newtab-widget-section-title = Widgets
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Plate widgets
+    .aria-label = Plate ducj i widgets
+newtab-widget-section-maximize =
+    .title = Slargje widgets
+    .aria-label = Slargje ducj i widgets ae dimension massime
+newtab-widget-section-minimize =
+    .title = Minimize widgets
+    .aria-label = Strenç ducj i widgets ae dimension compate
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Temporizadôr
+newtab-widget-timer-notification-focus = Il timp par concentrâti al è finît. Ben fate. Ti coventie une pause?
+newtab-widget-timer-notification-break = La tô pause e je finide. Sêstu pront(e) par concentrâti?
+newtab-widget-timer-notification-warning = Lis notifichis a son disativadis
+newtab-widget-timer-mode-focus =
+    .label = Concentrazion
+newtab-widget-timer-mode-break =
+    .label = Pause
+newtab-widget-timer-label-play =
+    .label = Invie
+newtab-widget-timer-label-pause =
+    .label = Met in pause
+newtab-widget-timer-reset =
+    .title = Ripristine
+newtab-widget-timer-menu-notifications = Disative lis notifichis
+newtab-widget-timer-menu-notifications-on = Ative lis notifichis
+newtab-widget-timer-menu-hide = Plate temporizadôr
+newtab-widget-timer-menu-learn-more = Plui informazions
+newtab-widget-message-title = Reste concentrât doprant lis listis e il temporizadôr integrât
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Di pro memoria svelts a listis di ativitâts cuotidianis, di sessions di concentrazion a pausis par rilassâsi — manten la atenzion e rispiete i timps.
+newtab-promo-card-title = Prudele { -brand-product-name }
+newtab-promo-card-body = I nestris patrocinadôrs nus supuartin te nestre mission di fâ sù un web miôr
+newtab-promo-card-cta = Plui informazions
+newtab-promo-card-dismiss-button =
+    .title = Siere
+    .aria-label = Scarte e siere

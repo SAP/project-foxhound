@@ -32,7 +32,6 @@
 #include "EventDispatcher.h"
 
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "WidgetUtils.h"
 
 #include "mozilla/java/EventDispatcherWrappers.h"
@@ -42,7 +41,6 @@
 using namespace mozilla;
 
 AndroidBridge* AndroidBridge::sBridge = nullptr;
-static jobject sGlobalContext = nullptr;
 
 jmethodID AndroidBridge::GetMethodID(JNIEnv* env, jclass jClass,
                                      const char* methodName,
@@ -272,14 +270,6 @@ void AndroidBridge::GetCurrentNetworkInformation(
   aNetworkInfo->dhcpGateway() = info[2];
 
   env->ReleaseDoubleArrayElements(arr.Get(), info, 0);
-}
-
-jobject AndroidBridge::GetGlobalContextRef() {
-  // The context object can change, so get a fresh copy every time.
-  auto context = java::GeckoAppShell::GetApplicationContext();
-  sGlobalContext = jni::Object::GlobalRef(context).Forget();
-  MOZ_ASSERT(sGlobalContext);
-  return sGlobalContext;
 }
 
 /* Implementation file */

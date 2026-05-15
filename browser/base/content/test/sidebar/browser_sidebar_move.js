@@ -9,14 +9,18 @@ const EXPECTED_START_ORDINALS = [
   ["sidebar-box", 3],
   ["sidebar-splitter", 4],
   ["tabbrowser-tabbox", 5],
+  ["ai-window-splitter", 6],
+  ["ai-window-box", 7],
 ];
 
 const EXPECTED_END_ORDINALS = [
-  ["sidebar-main", 5],
-  ["sidebar-launcher-splitter", 4],
-  ["sidebar-box", 3],
-  ["sidebar-splitter", 2],
-  ["tabbrowser-tabbox", 1],
+  ["sidebar-main", 7],
+  ["sidebar-launcher-splitter", 6],
+  ["sidebar-box", 5],
+  ["sidebar-splitter", 4],
+  ["tabbrowser-tabbox", 3],
+  ["ai-window-splitter", 2],
+  ["ai-window-box", 1],
 ];
 
 function getBrowserChildrenWithOrdinals() {

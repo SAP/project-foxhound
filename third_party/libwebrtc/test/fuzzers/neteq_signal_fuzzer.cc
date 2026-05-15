@@ -24,12 +24,13 @@
 #include "api/audio_codecs/audio_format.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/neteq/neteq.h"
-#include "api/rtp_headers.h"
+#include "api/units/time_delta.h"
 #include "modules/audio_coding/codecs/pcm16b/audio_encoder_pcm16b.h"
 #include "modules/audio_coding/neteq/tools/audio_checksum.h"
 #include "modules/audio_coding/neteq/tools/encode_neteq_input.h"
 #include "modules/audio_coding/neteq/tools/neteq_input.h"
 #include "modules/audio_coding/neteq/tools/neteq_test.h"
+#include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/random.h"
@@ -49,20 +50,21 @@ class SineAndNoiseGenerator : public EncodeNetEqInput::Generator {
         noise_generator_(fuzz_data_.ReadOrDefaultValueNotZero<uint64_t>(1)) {}
 
   // Generates num_samples of the sine-gaussian mixture.
-  rtc::ArrayView<const int16_t> Generate(size_t num_samples) override {
+  webrtc::ArrayView<const int16_t> Generate(size_t num_samples) override {
     if (samples_.size() < num_samples) {
       samples_.resize(num_samples);
     }
 
-    rtc::ArrayView<int16_t> output(samples_.data(), num_samples);
+    webrtc::ArrayView<int16_t> output(samples_.data(), num_samples);
     // Randomize an amplitude between 0 and 32768; use 65000/2 if we are out of
     // fuzzer data.
     const float amplitude = fuzz_data_.ReadOrDefaultValue<uint16_t>(65000) / 2;
     // Randomize a noise standard deviation between 0 and 1999.
     const float noise_std = fuzz_data_.ReadOrDefaultValue<uint16_t>(0) % 2000;
     for (auto& x : output) {
-      x = rtc::saturated_cast<int16_t>(amplitude * std::sin(phase_) +
-                                       noise_generator_.Gaussian(0, noise_std));
+      x = webrtc::saturated_cast<int16_t>(
+          amplitude * std::sin(phase_) +
+          noise_generator_.Gaussian(0, noise_std));
       phase_ += 2 * kPi * kFreqHz / sample_rate_hz_;
     }
     return output;
@@ -102,7 +104,7 @@ class FuzzSignalInput : public NetEqInput {
   }
 
   std::optional<int64_t> NextPacketTime() const override {
-    return packet_->time_ms;
+    return packet_->arrival_time().ms();
   }
 
   std::optional<int64_t> NextOutputEventTime() const override {
@@ -113,9 +115,9 @@ class FuzzSignalInput : public NetEqInput {
     return input_->NextSetMinimumDelayInfo();
   }
 
-  std::unique_ptr<PacketData> PopPacket() override {
+  std::unique_ptr<RtpPacketReceived> PopPacket() override {
     RTC_DCHECK(packet_);
-    std::unique_ptr<PacketData> packet_to_return = std::move(packet_);
+    std::unique_ptr<RtpPacketReceived> packet_to_return = std::move(packet_);
     do {
       packet_ = input_->PopPacket();
       // If the next value from the fuzzer input is 0, the packet is discarded
@@ -123,10 +125,12 @@ class FuzzSignalInput : public NetEqInput {
     } while (fuzz_data_.CanReadBytes(1) && fuzz_data_.Read<uint8_t>() == 0);
     if (fuzz_data_.CanReadBytes(1)) {
       // Generate jitter by setting an offset for the arrival time.
-      const int8_t arrival_time_offset_ms = fuzz_data_.Read<int8_t>();
+      const TimeDelta arrival_time_offset =
+          TimeDelta::Millis(fuzz_data_.Read<int8_t>());
       // The arrival time can not be before the previous packets.
-      packet_->time_ms = std::max(packet_to_return->time_ms,
-                                  packet_->time_ms + arrival_time_offset_ms);
+      packet_->set_arrival_time(
+          std::max(packet_to_return->arrival_time(),
+                   packet_->arrival_time() + arrival_time_offset));
     } else {
       // Mark that we are at the end of the test. However, the current packet is
       // still valid (but it may not have been fuzzed as expected).
@@ -145,16 +149,16 @@ class FuzzSignalInput : public NetEqInput {
 
   bool ended() const override { return ended_; }
 
-  std::optional<RTPHeader> NextHeader() const override {
+  const RtpPacketReceived* NextPacket() const override {
     RTC_DCHECK(packet_);
-    return packet_->header;
+    return packet_.get();
   }
 
  private:
   bool ended_ = false;
   FuzzDataHelper& fuzz_data_;
   std::unique_ptr<EncodeNetEqInput> input_;
-  std::unique_ptr<PacketData> packet_;
+  std::unique_ptr<RtpPacketReceived> packet_;
   int64_t next_output_event_ms_ = 0;
   int64_t output_event_period_ms_ = 10;
 };
@@ -172,7 +176,7 @@ void FuzzOneInputTest(const uint8_t* data, size_t size) {
     return;
   }
 
-  FuzzDataHelper fuzz_data(rtc::ArrayView<const uint8_t>(data, size));
+  FuzzDataHelper fuzz_data(webrtc::ArrayView<const uint8_t>(data, size));
 
   // Allowed sample rates and payload types used in the test.
   std::pair<int, uint8_t> rate_types[] = {

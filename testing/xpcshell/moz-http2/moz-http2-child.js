@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env node */
-
-function sendBackResponse(evalResult, e) {
-  const output = { result: evalResult, error: "", errorStack: "" };
+function sendBackResponse(messageId, evalResult, e) {
+  const output = { result: evalResult, error: "", errorStack: "", messageId };
   if (e) {
     output.error = e.toString();
     output.errorStack = e.stack;
@@ -15,19 +13,20 @@ function sendBackResponse(evalResult, e) {
 
 process.on("message", msg => {
   const code = msg.code;
+  const messageId = msg.messageId;
   let evalResult = null;
   try {
     // eslint-disable-next-line no-eval
     evalResult = eval(code);
     if (evalResult instanceof Promise) {
       evalResult
-        .then(x => sendBackResponse(x))
-        .catch(e => sendBackResponse(undefined, e));
+        .then(x => sendBackResponse(messageId, x))
+        .catch(e => sendBackResponse(messageId, undefined, e));
       return;
     }
   } catch (e) {
-    sendBackResponse(undefined, e);
+    sendBackResponse(messageId, undefined, e);
     return;
   }
-  sendBackResponse(evalResult);
+  sendBackResponse(messageId, evalResult);
 });

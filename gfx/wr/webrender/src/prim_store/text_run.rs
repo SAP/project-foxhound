@@ -2,29 +2,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, FontInstanceFlags, GlyphInstance, RasterSpace, Shadow};
+use api::{ColorF, FontInstanceFlags, GlyphInstance, RasterSpace, Shadow, GlyphIndex};
 use api::units::{LayoutToWorldTransform, LayoutVector2D, RasterPixelScale, DevicePixelScale};
+use api::units::*;
 use crate::scene_building::{CreateShadow, IsVisible};
 use crate::frame_builder::FrameBuildingState;
 use glyph_rasterizer::{FontInstance, FontTransform, GlyphKey, FONT_SIZE_LIMIT};
-use crate::gpu_cache::GpuCache;
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::picture::SurfaceInfo;
 use crate::prim_store::{PrimitiveOpacity,  PrimitiveScratchBuffer};
 use crate::prim_store::{PrimitiveStore, PrimKeyCommonData, PrimTemplateCommonData};
-use crate::renderer::MAX_VERTEX_TEXTURE_WIDTH;
+use crate::renderer::{GpuBufferBuilderF, MAX_VERTEX_TEXTURE_WIDTH};
 use crate::resource_cache::ResourceCache;
 use crate::util::MatrixHelpers;
-use crate::prim_store::{InternablePrimitive, PrimitiveInstanceKind};
+use crate::prim_store::{InternablePrimitive, PrimitiveInstanceKind, LayoutPointAu};
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::space::SpaceSnapper;
-use crate::util::PrimaryArc;
 
 use std::ops;
-use std::sync::Arc;
 
 use super::{storage, VectorKey};
+
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Debug, Clone, Eq, MallocSizeOf, PartialEq, Hash)]
+pub struct GlyphInstanceAu {
+    pub index: GlyphIndex,
+    pub point: LayoutPointAu,
+}
 
 /// A run of glyphs, with associated font information.
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -33,7 +39,7 @@ use super::{storage, VectorKey};
 pub struct TextRunKey {
     pub common: PrimKeyCommonData,
     pub font: FontInstance,
-    pub glyphs: PrimaryArc<Vec<GlyphInstance>>,
+    pub glyphs: Vec<GlyphInstanceAu>,
     pub shadow: bool,
     pub requested_raster_space: RasterSpace,
     pub reference_frame_offset: VectorKey,
@@ -44,10 +50,21 @@ impl TextRunKey {
         info: &LayoutPrimitiveInfo,
         text_run: TextRun,
     ) -> Self {
+        let glyphs = text_run
+            .glyphs
+            .iter()
+            .map(|glyph| {
+                GlyphInstanceAu {
+                    index: glyph.index,
+                    point: glyph.point.to_au(),
+                }
+            })
+            .collect();
+
         TextRunKey {
             common: info.into(),
             font: text_run.font,
-            glyphs: PrimaryArc(text_run.glyphs),
+            glyphs,
             shadow: text_run.shadow,
             requested_raster_space: text_run.requested_raster_space,
             reference_frame_offset: text_run.reference_frame_offset.into(),
@@ -63,8 +80,7 @@ impl intern::InternDebug for TextRunKey {}
 pub struct TextRunTemplate {
     pub common: PrimTemplateCommonData,
     pub font: FontInstance,
-    #[ignore_malloc_size_of = "Measured via PrimaryArc"]
-    pub glyphs: Arc<Vec<GlyphInstance>>,
+    pub glyphs: Vec<GlyphInstance>,
 }
 
 impl ops::Deref for TextRunTemplate {
@@ -83,10 +99,21 @@ impl ops::DerefMut for TextRunTemplate {
 impl From<TextRunKey> for TextRunTemplate {
     fn from(item: TextRunKey) -> Self {
         let common = PrimTemplateCommonData::with_key_common(item.common);
+        let glyphs = item
+            .glyphs
+            .iter()
+            .map(|glyph| {
+                GlyphInstance {
+                    index: glyph.index,
+                    point: LayoutPoint::from_au(glyph.point),
+                }
+            })
+            .collect();
+
         TextRunTemplate {
             common,
             font: item.font,
-            glyphs: item.glyphs.0,
+            glyphs,
         }
     }
 }
@@ -108,32 +135,32 @@ impl TextRunTemplate {
         &mut self,
         frame_state: &mut FrameBuildingState,
     ) {
-        // corresponds to `fetch_glyph` in the shaders
-        if let Some(mut request) = frame_state.gpu_cache.request(&mut self.common.gpu_cache_handle) {
-            request.push(ColorF::from(self.font.color).premultiplied());
+        // Corresponds to `fetch_glyph` in the shaders.
+        let num_blocks = (self.glyphs.len() + 1) / 2 + 1;
+        assert!(num_blocks <= MAX_VERTEX_TEXTURE_WIDTH);
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(num_blocks);
+        writer.push_one(ColorF::from(self.font.color).premultiplied());
 
-            let mut gpu_block = [0.0; 4];
-            for (i, src) in self.glyphs.iter().enumerate() {
-                // Two glyphs are packed per GPU block.
-
-                if (i & 1) == 0 {
-                    gpu_block[0] = src.point.x;
-                    gpu_block[1] = src.point.y;
-                } else {
-                    gpu_block[2] = src.point.x;
-                    gpu_block[3] = src.point.y;
-                    request.push(gpu_block);
-                }
+        let mut gpu_block = [0.0; 4];
+        for (i, src) in self.glyphs.iter().enumerate() {
+            // Two glyphs are packed per GPU block.
+            if (i & 1) == 0 {
+                gpu_block[0] = src.point.x;
+                gpu_block[1] = src.point.y;
+            } else {
+                gpu_block[2] = src.point.x;
+                gpu_block[3] = src.point.y;
+                writer.push_one(gpu_block);
             }
-
-            // Ensure the last block is added in the case
-            // of an odd number of glyphs.
-            if (self.glyphs.len() & 1) != 0 {
-                request.push(gpu_block);
-            }
-
-            assert!(request.current_used_block_num() <= MAX_VERTEX_TEXTURE_WIDTH);
         }
+
+        // Ensure the last block is added in the case
+        // of an odd number of glyphs.
+        if (self.glyphs.len() & 1) != 0 {
+            writer.push_one(gpu_block);
+        }
+
+        self.common.gpu_buffer_address = writer.finish();
     }
 }
 
@@ -144,8 +171,7 @@ pub type TextRunDataHandle = intern::Handle<TextRun>;
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct TextRun {
     pub font: FontInstance,
-    #[ignore_malloc_size_of = "Measured via PrimaryArc"]
-    pub glyphs: Arc<Vec<GlyphInstance>>,
+    pub glyphs: Vec<GlyphInstance>,
     pub shadow: bool,
     pub requested_raster_space: RasterSpace,
     pub reference_frame_offset: LayoutVector2D,
@@ -439,7 +465,7 @@ impl TextRunPrimitive {
         allow_subpixel: bool,
         low_quality_pinch_zoom: bool,
         resource_cache: &mut ResourceCache,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         spatial_tree: &SpatialTree,
         scratch: &mut PrimitiveScratchBuffer,
     ) {
@@ -480,7 +506,7 @@ impl TextRunPrimitive {
         resource_cache.request_glyphs(
             self.used_font.clone(),
             &scratch.glyph_keys[self.glyph_keys_range],
-            gpu_cache,
+            gpu_buffer,
         );
     }
 }
@@ -496,8 +522,8 @@ fn test_struct_sizes() {
     //     test expectations and move on.
     // (b) You made a structure larger. This is not necessarily a problem, but should only
     //     be done with care, and after checking if talos performance regresses badly.
-    assert_eq!(mem::size_of::<TextRun>(), 72, "TextRun size changed");
-    assert_eq!(mem::size_of::<TextRunTemplate>(), 80, "TextRunTemplate size changed");
-    assert_eq!(mem::size_of::<TextRunKey>(), 88, "TextRunKey size changed");
+    assert_eq!(mem::size_of::<TextRun>(), 88, "TextRun size changed");
+    assert_eq!(mem::size_of::<TextRunTemplate>(), 96, "TextRunTemplate size changed");
+    assert_eq!(mem::size_of::<TextRunKey>(), 104, "TextRunKey size changed");
     assert_eq!(mem::size_of::<TextRunPrimitive>(), 80, "TextRunPrimitive size changed");
 }

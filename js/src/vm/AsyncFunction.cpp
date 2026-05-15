@@ -153,6 +153,7 @@ static bool AsyncFunctionResume(JSContext* cx,
   FixedInvokeArgs<1> args(cx);
   args[0].set(valueOrReason);
   RootedValue generatorOrValue(cx, ObjectValue(*generator));
+  MOZ_RELEASE_ASSERT(cx->realm() == generator->nonCCWRealm());
   if (!CallSelfHostedFunction(cx, funName, generatorOrValue, args,
                               &generatorOrValue)) {
     if (!generator->isClosed()) {

@@ -35,19 +35,26 @@
     "version": "2c2aa06dac65ddb647d8902aaa60263c8e119ff2"
   },
   "spocs": [],
-  "recommendations": [
+  "recommendedAt": 1755834072383,
+  "surfaceId": "NEW_TAB_EN_US",
+  "data": [
     {
-      "id": 53093,
-      "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAA/UlEQVR4nO3RMQ0AMAzAsPIn3d5DsBw2gkiZJWV+B/AyJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQmAP4K6zWNUjE4wAAAABJRU5ErkJggg==",
-      "domain": "bbc.com",
+      "corpusItemId": "vroom-ca3a5c",
+      "scheduledCorpusItemId": "screech-g04r3b",
+      "url": "https://tesssssst.com/why-vegan",
       "title": "Why vegan junk food may be even worse for your health",
       "excerpt": "While we might switch to a plant-based diet with the best intentions, the unseen risks of vegan fast foods might not show up for years.",
-      "image_src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAA/UlEQVR4nO3RMQ0AMAzAsPIn3d5DsBw2gkiZJWV+B/AyJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQGENiDIkxJMaQmAP4K6zWNUjE4wAAAABJRU5ErkJggg==",
-      "published_timestamp": "1580277600",
-      "engagement": "",
-      "parameter_set": "default",
-      "domain_affinities": {},
-      "item_score": 1
+      "topic": "business",
+      "publisher": "bbc.com",
+      "isTimeSensitive": true,
+      "imageUrl": "https://tesssssst.com/random.jpeg",
+      "iconUrl": "https://merino-images.services.mozilla.com/favicons/favicon-3a4b5c.png",
+      "tileId": 53093,
+      "receivedRank": 0,
+      "features": { "t_business": 1.0 }
     }
-  ]
+  ],
+  "feeds": null,
+  "interestPicker": null,
+  "inferredLocalModel": null
 }

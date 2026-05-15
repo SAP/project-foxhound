@@ -9,7 +9,6 @@
 
 #include <ostream>
 
-#include "mozilla/Attributes.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/gfx/ScaleFactor.h"
 #include "mozilla/gfx/Point.h"

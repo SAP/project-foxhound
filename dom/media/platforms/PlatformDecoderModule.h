@@ -13,16 +13,17 @@
 #  include "MediaEventSource.h"
 #  include "MediaInfo.h"
 #  include "MediaResult.h"
+#  include "PerformanceRecorder.h"
 #  include "mozilla/EnumSet.h"
 #  include "mozilla/EnumTypeTraits.h"
 #  include "mozilla/MozPromise.h"
+#  include "mozilla/PRemoteCDMActor.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/TaskQueue.h"
+#  include "mozilla/ipc/UtilityMediaService.h"
 #  include "mozilla/layers/KnowsCompositor.h"
 #  include "mozilla/layers/LayersTypes.h"
-#  include "mozilla/ipc/UtilityMediaService.h"
 #  include "nsTArray.h"
-#  include "PerformanceRecorder.h"
 
 namespace mozilla {
 class TrackInfo;
@@ -132,6 +133,7 @@ struct CreateDecoderParamsForAsync {
   const RefPtr<layers::ImageContainer> mImageContainer;
   const RefPtr<layers::KnowsCompositor> mKnowsCompositor;
   const RefPtr<GMPCrashHelper> mCrashHelper;
+  const RefPtr<PRemoteCDMActor> mCDM;
   const media::UseNullDecoder mUseNullDecoder;
   const media::WrapperSet mWrappers;
   const TrackInfo::TrackType mType = TrackInfo::kUndefinedTrack;
@@ -163,6 +165,7 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
         mImageContainer(aParams.mImageContainer),
         mKnowsCompositor(aParams.mKnowsCompositor),
         mCrashHelper(aParams.mCrashHelper),
+        mCDM(aParams.mCDM),
         mUseNullDecoder(aParams.mUseNullDecoder),
         mWrappers(aParams.mWrappers),
         mType(aParams.mType),
@@ -213,6 +216,7 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
                      mError ? mError->Description().get() : "null");
     str.AppendPrintf(", mKnowsCompositor = %p", mKnowsCompositor);
     str.AppendPrintf(", mCrashHelper = %p", mCrashHelper);
+    str.AppendPrintf(", mCDM = %p", mCDM);
     str.AppendPrintf(", mUseNullDecoder = %s",
                      mUseNullDecoder.mUse ? "yes" : "no");
     str.AppendPrintf(", mWrappers = %s", EnumSetToString(mWrappers).get());
@@ -240,6 +244,7 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
   MediaResult* mError = nullptr;
   layers::KnowsCompositor* mKnowsCompositor = nullptr;
   GMPCrashHelper* mCrashHelper = nullptr;
+  PRemoteCDMActor* mCDM = nullptr;
   media::UseNullDecoder mUseNullDecoder;
   WrapperSet mWrappers;
   TrackInfo::TrackType mType = TrackInfo::kUndefinedTrack;
@@ -258,6 +263,7 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
   }
   void Set(MediaResult* aError) { mError = aError; }
   void Set(GMPCrashHelper* aCrashHelper) { mCrashHelper = aCrashHelper; }
+  void Set(PRemoteCDMActor* aCDM) { mCDM = aCDM; }
   void Set(UseNullDecoder aUseNullDecoder) {
     mUseNullDecoder = aUseNullDecoder;
   }
@@ -292,6 +298,7 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
     mError = aParams.mError;
     mKnowsCompositor = aParams.mKnowsCompositor;
     mCrashHelper = aParams.mCrashHelper;
+    mCDM = aParams.mCDM;
     mUseNullDecoder = aParams.mUseNullDecoder;
     mWrappers = aParams.mWrappers;
     mType = aParams.mType;
@@ -322,6 +329,7 @@ struct MOZ_STACK_CLASS SupportDecoderParams final {
       : mConfig(aParams.mConfig),
         mError(aParams.mError),
         mKnowsCompositor(aParams.mKnowsCompositor),
+        mCDM(aParams.mCDM),
         mUseNullDecoder(aParams.mUseNullDecoder),
         mWrappers(aParams.mWrappers),
         mOptions(aParams.mOptions),
@@ -340,6 +348,7 @@ struct MOZ_STACK_CLASS SupportDecoderParams final {
   DecoderDoctorDiagnostics* mDiagnostics = nullptr;
   MediaResult* mError = nullptr;
   RefPtr<layers::KnowsCompositor> mKnowsCompositor;
+  PRemoteCDMActor* mCDM = nullptr;
   UseNullDecoder mUseNullDecoder;
   WrapperSet mWrappers;
   OptionSet mOptions = OptionSet(Option::Default);
@@ -351,6 +360,7 @@ struct MOZ_STACK_CLASS SupportDecoderParams final {
     mDiagnostics = aDiagnostics;
   }
   void Set(MediaResult* aError) { mError = aError; }
+  void Set(PRemoteCDMActor* aCDM) { mCDM = aCDM; }
   void Set(media::UseNullDecoder aUseNullDecoder) {
     mUseNullDecoder = aUseNullDecoder;
   }
@@ -399,6 +409,8 @@ struct MaxEnumValue<::mozilla::CreateDecoderParams::Option> {
 class PlatformDecoderModule {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PlatformDecoderModule)
+
+  virtual const char* Name() const = 0;
 
   // Perform any per-instance initialization.
   // This is called on the decode task queue.
@@ -633,6 +645,31 @@ class MediaDataDecoder : public DecoderDoctorLifeLogger<MediaDataDecoder> {
   // Decode().
   virtual ConversionRequired NeedsConversion() const {
     return ConversionRequired::kNeedNone;
+  }
+
+  // Properties specific to platform decoders. They can be consulted by the
+  // client to improve playback smoothness. When not defined by the decoder, the
+  // client can choose its own.
+  // MaxNumVideoBuffers: some platform decoders have limited output buffers.
+  // This specifies how many (output) video buffers can be held at most by the
+  // client. Holding more will exhaust the deocder buffer pool and block further
+  // decoding.
+  // MinNumVideoBuffers: some platform decoders have decoding time longer than
+  // frame duration. To avoid frame dropping in this case, the client queues
+  // frames before starting to play. This value tells the client the least
+  // amount of frames it should queue.
+  // MaxNumCurrentImages: specifies how many (output) video buffers are current
+  // (renderable) at a time.
+  // The result is not accurated until Init() is resolved.
+  MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING_AT_CLASS_SCOPE(PropertyName,
+                                                     (MaxNumVideoBuffers,
+                                                      MinNumVideoBuffers,
+                                                      MaxNumCurrentImages));
+  // Generic type for property values to avoid breaking existing client code in
+  // the future.
+  using PropertyValue = Variant<uint32_t>;
+  virtual Maybe<PropertyValue> GetDecodeProperty(PropertyName aName) const {
+    return Nothing();
   }
 };
 

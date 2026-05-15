@@ -36,7 +36,7 @@ class _SharedRemoteSettingsService {
     );
 
     this.#config = new RemoteSettingsConfig2({
-      server: new RemoteSettingsServer.Custom({ url: Utils.SERVER_URL }),
+      server: this.#makeServer(Utils.SERVER_URL),
       bucketName: Utils.actualBucketName("main"),
       appContext: new RemoteSettingsContext({
         formFactor: "desktop",
@@ -51,8 +51,33 @@ class _SharedRemoteSettingsService {
     });
 
     Services.obs.addObserver(this, Region.REGION_TOPIC);
+    Services.obs.addObserver(this, "intl:app-locales-changed");
 
     this.#rustService = RemoteSettingsService.init(storageDir, this.#config);
+  }
+
+  /**
+   * @returns {string}
+   *   The country of the service's app context.
+   */
+  get country() {
+    return this.#config.appContext.country;
+  }
+
+  /**
+   * @returns {string}
+   *   The locale of the service's app context.
+   */
+  get locale() {
+    return this.#config.appContext.locale;
+  }
+
+  /**
+   * @returns {RemoteSettingsServer}
+   *   The service's server.
+   */
+  get server() {
+    return this.#config.server;
   }
 
   /**
@@ -62,11 +87,19 @@ class _SharedRemoteSettingsService {
    * - `url`: server URL (defaults to the production URL)
    * - `bucketName`: bucket name (defaults to "main")
    */
-  updateServer(opts) {
-    this.#config.server = opts.url
-      ? new RemoteSettingsServer.Custom({ url: opts.url })
-      : undefined;
+  updateServer(opts = {}) {
+    this.#config.server = this.#makeServer(opts.url ?? Utils.SERVER_URL);
     this.#config.bucketName = opts.bucketName ?? Utils.actualBucketName("main");
+    this.#updateConfig();
+  }
+
+  /**
+   * Update the Remote settings config
+   *
+   * Note: this currently schedules an async call to avoid the deadlock from
+   * https://bugzilla.mozilla.org/show_bug.cgi?id=2012955.
+   */
+  #updateConfig() {
     this.#rustService.updateConfig(this.#config);
   }
 
@@ -86,13 +119,50 @@ class _SharedRemoteSettingsService {
   }
 
   observe(subj, topic) {
-    if (topic == Region.REGION_TOPIC) {
-      const newCountry = subj.data;
-      if (newCountry != this.#config.appContext.country) {
-        this.#config.appContext.country = newCountry;
-        this.#rustService.updateConfig(this.#config);
+    switch (topic) {
+      case Region.REGION_TOPIC: {
+        const newCountry = subj.data;
+        if (newCountry != this.#config.appContext.country) {
+          this.#config.appContext.country = newCountry;
+          this.#updateConfig();
+        }
+        break;
+      }
+      case "intl:app-locales-changed": {
+        const newLocale = Services.locale.appLocaleAsBCP47;
+        if (newLocale != this.#config.appContext.locale) {
+          this.#config.appContext.locale = newLocale;
+          this.#updateConfig();
+        }
+        break;
       }
     }
+  }
+
+  #makeServer(url) {
+    // This is annoyingly complex but set `config.server` to a falsey value
+    // while tests are running and the URL is `Utils.SERVER_URL`. This will
+    // cause the Rust component to fall back to the production server, but it
+    // will avoid "cannot-be-a-base" errors. Since remote connections are not
+    // allowed during testing, consumers will need to avoid using the RS
+    // service. Ideally we would both handle the cannot-be-a-base errors and
+    // avoid pinging the production server for them somehow.
+    //
+    // Details:
+    //
+    // * During normal operation, `Utils.SERVER_URL` is the production URL, but
+    //   during tests, it's a dummy data URI, `data:,#remote-settings-dummy/v1`,
+    //   which is a "cannot-be-a-base" URL.
+    //
+    // * `RemoteSettingsService::new` falls back to the production URL when
+    //   `config.server.url` is a cannot-be-a-base URL. So passing in the dummy
+    //   data URI is actually fine for `new`.
+    //
+    // * In contrast, `RemoteSettingsService::update_config` returns the error
+    //   when it parses a cannot-be-a-base `config.server.url`.
+    return !Utils.shouldSkipRemoteActivityDueToTests || url != Utils.SERVER_URL
+      ? new RemoteSettingsServer.Custom({ url })
+      : null;
   }
 }
 

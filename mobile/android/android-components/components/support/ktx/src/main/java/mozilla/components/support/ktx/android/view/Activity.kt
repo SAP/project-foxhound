@@ -46,14 +46,7 @@ fun Activity.enterImmersiveMode(
 
     setOnApplyWindowInsetsListener(IMMERSIVE_MODE_WINDOW_INSETS_LISTENER, insetsListener)
 
-    if (SDK_INT >= VERSION_CODES.P) {
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-        )
-        window.attributes.layoutInDisplayCutoutMode =
-            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-    }
+    tryEnableEnterEdgeToEdge()
 }
 
 private fun WindowInsetsControllerCompat.hideInsets() {
@@ -81,11 +74,7 @@ fun Activity.exitImmersiveMode(
 
     unregisterOnApplyWindowInsetsListener(IMMERSIVE_MODE_WINDOW_INSETS_LISTENER)
 
-    if (SDK_INT >= VERSION_CODES.P) {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
-        window.attributes.layoutInDisplayCutoutMode =
-            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
-    }
+    tryDisableEdgeToEdge()
 }
 
 /**
@@ -104,5 +93,30 @@ fun Activity.reportFullyDrawnSafe(errorLogger: Logger) {
         // We include "Fully drawn" in the log statement so that this error appears when grepping
         // for fully drawn time.
         errorLogger.error("Fully drawn - unable to call reportFullyDrawn", e)
+    }
+}
+
+/**
+ * For devices running Android 9 Pie, force the given activity to enter edge-to-edge mode.
+ */
+fun Activity.tryEnableEnterEdgeToEdge() {
+    if (SDK_INT >= VERSION_CODES.P) {
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+        )
+        window.attributes.layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+    }
+}
+
+/**
+ * For devices running Android 9 Pie, force the given activity to exit edge-to-edge mode.
+ */
+fun Activity.tryDisableEdgeToEdge() {
+    if (SDK_INT >= VERSION_CODES.P) {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        window.attributes.layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
     }
 }

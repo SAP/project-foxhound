@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLmunderoverFrame_h___
-#define nsMathMLmunderoverFrame_h___
+#ifndef nsMathMLmunderoverFrame_h_
+#define nsMathMLmunderoverFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsIReflowCallback.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -27,20 +26,21 @@ class nsMathMLmunderoverFrame final : public nsMathMLContainerFrame,
   friend nsIFrame* NS_NewMathMLmunderoverFrame(mozilla::PresShell* aPresShell,
                                                ComputedStyle* aStyle);
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   NS_IMETHOD InheritAutomaticData(nsIFrame* aParent) override;
 
   NS_IMETHOD TransmitAutomaticData() override;
 
-  NS_IMETHOD UpdatePresentationData(uint32_t aFlagsValues,
-                                    uint32_t aFlagsToUpdate) override;
+  NS_IMETHOD UpdatePresentationData(
+      MathMLPresentationFlags aFlagsValues,
+      MathMLPresentationFlags aFlagsToUpdate) override;
 
   void Destroy(DestroyContext&) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   uint8_t ScriptIncrement(nsIFrame* aFrame) override;
 
@@ -87,4 +87,4 @@ class nsMathMLmunderoverFrame final : public nsMathMLContainerFrame,
       mPostReflowIncrementScriptLevelCommands;
 };
 
-#endif /* nsMathMLmunderoverFrame_h___ */
+#endif /* nsMathMLmunderoverFrame_h_ */

@@ -76,8 +76,8 @@ const BINARY_ACK = 6;
 /**
  * A socket.io Decoder instance
  *
- * @return {Object} decoder
- * @api public
+ * @return {object} decoder
+ * @public
  */
 
 function Decoder() {
@@ -95,9 +95,9 @@ Emitter(Decoder.prototype);
  * be constructed whenever a packet of type BINARY_EVENT is
  * decoded.
  *
- * @param {Object} packet
+ * @param {object} packet
  * @return {BinaryReconstructor} initialized reconstructor
- * @api private
+ * @private
  */
 
 function BinaryReconstructor(packet) {
@@ -110,9 +110,9 @@ function BinaryReconstructor(packet) {
  * after a BINARY_EVENT packet.
  *
  * @param {Buffer | ArrayBuffer} binData - the raw binary data received
- * @return {null | Object} returns null if more binary data is expected or
+ * @return {null | object} returns null if more binary data is expected or
  *   a reconstructed packet object if all buffers have been received.
- * @api private
+ * @private
  */
 
 BinaryReconstructor.prototype.takeBinaryData = function (binData) {
@@ -129,7 +129,7 @@ BinaryReconstructor.prototype.takeBinaryData = function (binData) {
 /**
  * Cleans up binary packet reconstruction variables.
  *
- * @api private
+ * @private
  */
 
 BinaryReconstructor.prototype.finishedReconstruction = function () {
@@ -140,9 +140,9 @@ BinaryReconstructor.prototype.finishedReconstruction = function () {
 /**
  * Decodes an encoded packet string into packet JSON.
  *
- * @param {String} obj - encoded packet
- * @return {Object} packet
- * @api public
+ * @param {string} obj - encoded packet
+ * @return {object} packet
+ * @public
  */
 
 Decoder.prototype.add = function (obj) {
@@ -181,9 +181,9 @@ Decoder.prototype.add = function (obj) {
 /**
  * Decode a packet String (JSON data)
  *
- * @param {String} str
- * @return {Object} packet
- * @api private
+ * @param {string} str
+ * @return {object} packet
+ * @private
  */
 // eslint-disable-next-line complexity
 function decodeString(str) {
@@ -273,7 +273,7 @@ function tryParse(str) {
 /**
  * Deallocates a parser's resources
  *
- * @api public
+ * @public
  */
 
 Decoder.prototype.destroy = function () {

@@ -6,12 +6,12 @@
 #ifndef mozilla_dom_WebVTTLoadListener_h
 #define mozilla_dom_WebVTTLoadListener_h
 
-#include "nsIWebVTTListener.h"
-#include "nsIStreamListener.h"
-#include "nsIChannelEventSink.h"
-#include "nsIInterfaceRequestor.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIChannelEventSink.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIStreamListener.h"
+#include "nsIWebVTTListener.h"
 
 class nsIWebVTTParserWrapper;
 

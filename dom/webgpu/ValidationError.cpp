@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ValidationError.h"
+
 #include "mozilla/dom/WebGPUBinding.h"
 
 namespace mozilla::webgpu {

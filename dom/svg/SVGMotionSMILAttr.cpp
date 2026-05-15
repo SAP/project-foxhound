@@ -8,12 +8,12 @@
 
 #include "SVGMotionSMILAttr.h"
 
+#include "SVGMotionSMILType.h"
+#include "gfx2DGlue.h"
+#include "mozilla/SMILValue.h"
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "mozilla/dom/SVGElement.h"
-#include "mozilla/SMILValue.h"
-#include "SVGMotionSMILType.h"
 #include "nsDebug.h"
-#include "gfx2DGlue.h"
 
 namespace mozilla {
 

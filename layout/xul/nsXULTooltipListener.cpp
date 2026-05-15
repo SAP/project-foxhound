@@ -198,7 +198,7 @@ void nsXULTooltipListener::MouseMove(Event* aEvent) {
       nsresult rv = NS_NewTimerWithFuncCallback(
           getter_AddRefs(mTooltipTimer), sTooltipCallback, this,
           StaticPrefs::ui_tooltip_delay_ms(), nsITimer::TYPE_ONE_SHOT,
-          "sTooltipCallback", GetMainThreadSerialEventTarget());
+          "sTooltipCallback"_ns, GetMainThreadSerialEventTarget());
       if (NS_FAILED(rv)) {
         mTargetNode = nullptr;
         mSourceNode = nullptr;

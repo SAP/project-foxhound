@@ -41,6 +41,13 @@ class SVGFragmentIdentifier {
    */
   static bool ProcessSVGViewSpec(const nsAString& aViewSpec,
                                  dom::SVGSVGElement* root);
+
+  /**
+   * Parse a media fragment
+   * @return true if there is a valid media fragment.
+   */
+  static bool ProcessMediaFragment(const nsAString& aMediaFragment,
+                                   dom::SVGSVGElement* root);
 };
 
 }  // namespace mozilla

@@ -190,7 +190,7 @@ class PermissionsDialogFragment : AddonDialogFragment() {
     }
 
     @SuppressLint("InflateParams")
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     private fun createContainer(): View {
         val rootView = LayoutInflater.from(requireContext()).inflate(
             R.layout.mozac_feature_addons_fragment_dialog_addon_permissions,
@@ -265,9 +265,10 @@ class PermissionsDialogFragment : AddonDialogFragment() {
                 setButtonEnabled(positiveButton, enabled)
             },
             domains = displayDomainList,
-            domainsHeaderText = requireContext()
-                .getString(
-                    R.string.mozac_feature_addons_permissions_all_domain_count_description,
+            domainsHeaderText = requireContext().resources
+                .getQuantityString(
+                    R.plurals.mozac_feature_addons_permissions_all_domain_count_description_2,
+                    displayDomainList.size,
                     displayDomainList.size,
                 ),
             extraPermissionWarning = extraPermissionWarning,

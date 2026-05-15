@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Name of the "notification channel" used for displaying media notification. See https://developer.android.com/training/notify-user/channels -->
+  <string name="mozac_feature_media_notification_channel">មេឌៀ</string>
+  <!-- Title of notification shown when the device's camera is shared with a website (WebRTC) -->
+  <string name="mozac_feature_media_sharing_camera">កាមេរ៉ាបានបើក</string>
+  <!-- Title of notification shown when the device's microphone is shared with a website (WebRTC) -->
+  <string name="mozac_feature_media_sharing_microphone">មីក្រូហ្វូន​បានបើក​</string>
+  <!-- Title of notification shown when the device's camera and microphone is shared with a website (WebRTC) -->
+  <string name="mozac_feature_media_sharing_camera_and_microphone">កាមេរ៉ា និងមីក្រូហ្វូនត្រូវបានបើក</string>
+  <!-- Text of notification shown when the device's camera is shared with a website (WebRTC) -->
+  <string name="mozac_feature_media_sharing_camera_text">ចុចដើម្បីបើកផ្ទាំងដែលកំពុងប្រើកាមេរ៉ារបស់អ្នក។</string>
+  <!-- Text of notification shown when the device's microphone is shared with a website (WebRTC) -->
+  <string name="mozac_feature_media_sharing_microphone_text">ចុចដើម្បីបើកផ្ទាំងដែលកំពុងប្រើមីក្រូហ្វូនរបស់អ្នក។</string>
+  <!-- Text of notification shown when the device's camera and microphone is shared with a website (WebRTC) -->
+  <string name="mozac_feature_media_sharing_camera_and_microphone_text">ចុចដើម្បីបើកផ្ទាំងដែលកំពុងប្រើមីក្រូហ្វូន និងកាមេរ៉ារបស់អ្នក។</string>
+  <!-- Text of reminder notification shown when the device's camera is shared with a website (WebRTC). %1$s is a placeholder that will be replaced by the app name -->
+  <string name="mozac_feature_media_sharing_camera_reminder_text">ការរំលឹក៖ %1$s កំពុងតែប្រើកាមេរ៉ារបស់អ្នក។ ប៉ះដើម្បីបើកផ្ទាំង។</string>
+  <!-- Text of reminder notification shown when the device's microphone is shared with a website (WebRTC) %1$s is a placeholder that will be replaced by the app name -->
+  <string name="mozac_feature_media_sharing_microphone_reminder_text_2">ការរំលឹក៖ %1$s កំពុងតែប្រើមីក្រូហ្វូនរបស់អ្នក។ ប៉ះដើម្បីបើកផ្ទាំង។</string>
+  <!-- Text of reminder notification shown when the device's camera and microphone is shared with a website (WebRTC) %1$s is a placeholder that will be replaced by the app name -->
+  <string name="mozac_feature_media_sharing_camera_and_microphone_reminder_text_2">ការរំលឹក៖ %1$s កំពុងតែប្រើមីក្រូហ្វូន និងកាមេរ៉ារបស់អ្នក។ ប៉ះដើម្បីបើកផ្ទាំង។</string>
+  <!-- This is the title of the "play" action media shown in the media notification while web content is playing media. Clicking it will resume playing paused media. On most modern Android system only an icon is visible. But screen readers may read this title. -->
+  <string name="mozac_feature_media_notification_action_play">ចាក់</string>
+  <!-- This is the title of the "pause" action shown in the media notification while web content is playing media. Clicking it will pause currently playing media. On most modern Android system only an icon is visible. But screen readers may read this title. -->
+  <string name="mozac_feature_media_notification_action_pause">ផ្អាក</string>
+  <!-- Neutral title of the media notification for when a website that is open in private mode. -->
+  <string name="mozac_feature_media_notification_private_mode">គេហទំព័រមួយកំពុងចាក់មេឌៀ</string>
+</resources>

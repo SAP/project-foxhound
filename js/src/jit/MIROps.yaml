@@ -109,6 +109,13 @@
 #   - attribute not specified (default): no code generated, no constants to fold
 #   - custom: custom C++ implementation
 #
+# value_hash
+# ==========
+# Used by ValueNumbering to determine the hash number for the instruction.
+#   - attribute not specified (default): no code generated, inherit valueHash from
+#     the base class
+#   - custom: custom C++ implementation
+#
 # congruent_to
 # ============
 # Used by ValueNumbering to determine if two values are congruent.
@@ -170,14 +177,26 @@
 #   - attribute not specified (default): no code generated
 #   - true: generates corresponding LIR classes in LIROpsGenerated.h
 #
-# lir_temps
-# ===================
+# lir_temps, lir_temp64s, lir_temp_boxes
+# ======================================
 # Specifies the number of temporary virtual registers, LDefinitions, used by
-# the corresponding LIR op in case generate_lir is true.
+# the corresponding LIR op in the case generate_lir is true. The temp can be
+# either a single LDefinition, a LInt64Definition, or a LBoxDefinition
+# depending on the variant used.
+#
 # Possible values:
 #   - attribute not specified (default): number of temps is set to 0
 #   - number: sets number of temps max 15
 #
+# lir_result_type
+# ===============
+# Specifies the result_type of the corresponding LIR op in case generate_lir is
+# true.
+# Possible values:
+#   - attribute not specified (default): the LIR result type is based on the MIR
+#     op's result_type
+#   - none: the LIR instruction does not produce a result
+#   - result type: the LIR op's result type
 
 # TODO(no-TI): try to remove this instruction.
 - name: Start
@@ -218,6 +237,7 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  can_recover: true
   generate_lir: true
 
 - name: IsConstructing
@@ -284,8 +304,9 @@
   guard: true
   # Throws if length is negative.
   alias_set: custom
+  possibly_calls: true
   generate_lir: true
-  lir_temps: 1
+  lir_temps: 3
 
 # Create a new TypedArray from an Array (or Array-like object) or a TypedArray.
 - name: NewTypedArrayFromArray
@@ -394,6 +415,8 @@
   congruent_to: if_operands_equal
   # The is-constructor flag is immutable for a bound function.
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 # Setting __proto__ in an object literal.
 - name: MutateProto
@@ -402,6 +425,7 @@
     value: Value
   result_type: None
   possibly_calls: true
+  generate_lir: true
 
 - name: InitPropGetterSetter
   operands:
@@ -409,12 +433,16 @@
     value: Object
   arguments:
     name: PropertyName*
+  possibly_calls: true
+  generate_lir: true
 
 - name: InitElemGetterSetter
   operands:
     object: Object
     id: Value
     value: Object
+  possibly_calls: true
+  generate_lir: true
 
 - name: Call
   gen_boilerplate: false
@@ -469,9 +497,10 @@
   can_recover: true
   movable: true
   alias_set: none
+  folds_to: custom
   result_type: Boolean
   generate_lir: true
-  lir_temps: 2
+  lir_temps: 1
 
 - name: StrictConstantCompareBoolean
   operands:
@@ -482,9 +511,9 @@
   can_recover: true
   movable: true
   alias_set: none
+  folds_to: custom
   result_type: Boolean
   generate_lir: true
-  lir_temps: 1
 
 - name: SameValueDouble
   operands:
@@ -649,6 +678,9 @@
   congruent_to: custom
   # The flags are packed with the length in a fixed private slot.
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 # Guard cx->realm() == obj->realm().
 - name: GuardObjectHasSameRealm
@@ -661,6 +693,9 @@
   # The object's realm is immutable. The context's realm must always be the same
   # realm for this compilation.
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: LoadScriptedProxyHandler
   operands:
@@ -754,6 +789,7 @@
   alias_set: none
   generate_lir: true
   lir_temps: 1
+  lir_temp_boxes: 1
 
 - name: WasmAnyRefFromJSObject
   operands:
@@ -825,7 +861,7 @@
     wideningOp: wasm::FieldWideningOp
   type_policy: none
   result_type: Int32
-  congruent_to: if_operands_equal
+  congruent_to: custom
   alias_set: none
   generate_lir: true
 
@@ -912,6 +948,8 @@
     iterator: Object
     nextMethod: Value
   result_type: Object
+  possibly_calls: true
+  generate_lir: true
 
 - name: ToPropertyKeyCache
   operands:
@@ -995,10 +1033,12 @@
 - name: Random
   result_type: Double
   alias_set: custom
-  possibly_calls: true
   compute_range: custom
   can_recover: custom
   clone: true
+  generate_lir: true
+  lir_temps: 1
+  lir_temps64: 2
 
 - name: Sign
   gen_boilerplate: false
@@ -1416,6 +1456,7 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  possibly_calls: true
   generate_lir: true
 
 # Index of last non-whitespace character.
@@ -1427,6 +1468,7 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  possibly_calls: true
   generate_lir: true
 
 - name: StringSplit
@@ -1518,6 +1560,8 @@
   result_type: None
   guard: true
   alias_set: custom
+  possibly_calls: true
+  generate_lir: true
 
 - name: ThrowMsg
   gen_boilerplate: false
@@ -1610,12 +1654,25 @@
   arguments:
     module: JSObject*
   result_type: Object
+  possibly_calls: true
+  generate_lir: true
 
 - name: DynamicImport
   operands:
     specifier: Value
     options: Value
   result_type: Object
+  possibly_calls: true
+  generate_lir: true
+
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+- name: DynamicImportSource
+  operands:
+    specifier: Value
+  result_type: Object
+  possibly_calls: true
+  generate_lir: true
+#endif
 
 - name: Lambda
   gen_boilerplate: false
@@ -1767,7 +1824,7 @@
   compute_range: custom
   generate_lir: true
 
-# Read the length of an array buffer view.
+# Read the elements of an array buffer view.
 - name: ArrayBufferViewElements
   operands:
     object: Object
@@ -1777,19 +1834,6 @@
   alias_set: custom
   clone: true
   generate_lir: true
-
-# Implements the TypedArrayByteOffset intrinsic for resizable typed arrays,
-# which calls TypedArrayObject::byteOffsetMaybeOutOfBounds().
-- name: ResizableTypedArrayByteOffsetMaybeOutOfBounds
-  operands:
-    object: Object
-  result_type: IntPtr
-  movable: true
-  congruent_to: if_operands_equal
-  alias_set: custom
-  compute_range: custom
-  generate_lir: true
-  lir_temps: 1
 
 # Read the length of a resizable typed array.
 - name: ResizableTypedArrayLength
@@ -1804,6 +1848,8 @@
   congruent_to: custom
   alias_set: custom
   compute_range: custom
+  generate_lir: true
+  lir_temps: 1
 
 # Read the byteLength of a resizable dataview.
 - name: ResizableDataViewByteLength
@@ -1818,6 +1864,8 @@
   congruent_to: custom
   alias_set: custom
   compute_range: custom
+  generate_lir: true
+  lir_temps: 1
 
 # Read the byte length of a growable shared array buffer as IntPtr.
 - name: GrowableSharedArrayBufferByteLength
@@ -1850,6 +1898,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 # Guard a resizable typed array is in-bounds.
 - name: GuardResizableArrayBufferViewInBounds
@@ -1860,6 +1911,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 # Guard a resizable typed array is in-bounds or detached.
 - name: GuardResizableArrayBufferViewInBoundsOrDetached
@@ -1870,6 +1924,65 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
+
+# Inline TypedArray.prototype.fill
+- name: TypedArrayFill
+  gen_boilerplate: false
+
+# Inlined TypedArray.prototype.set
+- name: TypedArraySet
+  operands:
+    target: Object
+    source: Object
+    offset: IntPtr
+  arguments:
+    canUseBitwiseCopy: bool
+  alias_set: custom
+  possibly_calls: true
+  generate_lir: true
+
+- name: TypedArraySetFromSubarray
+  operands:
+    target: Object
+    source: Object
+    offset: IntPtr
+    sourceOffset: IntPtr
+    sourceLength: IntPtr
+  arguments:
+    canUseBitwiseCopy: bool
+  alias_set: custom
+  possibly_calls: true
+  generate_lir: true
+
+- name: GuardTypedArraySetOffset
+  operands:
+    offset: IntPtr
+    targetLength: IntPtr
+    sourceLength: IntPtr
+  result_type: IntPtr
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
+
+# Inlined TypedArray.prototype.subarray
+- name: TypedArraySubarray
+  gen_boilerplate: false
+
+- name: ToIntegerIndex
+  operands:
+    index: IntPtr
+    length: IntPtr
+  result_type: IntPtr
+  alias_set: none
+  folds_to: custom
+  generate_lir: true
 
 - name: GuardNumberToIntPtrIndex
   gen_boilerplate: false
@@ -1879,16 +1992,21 @@
     object: Object
   result_type: None
   guard: true
+  generate_lir: true
 
 - name: DebugEnterGCUnsafeRegion
   result_type: None
   guard: true
   alias_set: none
+  generate_lir: true
+  lir_temps: 1
 
 - name: DebugLeaveGCUnsafeRegion
   result_type: None
   guard: true
   alias_set: none
+  generate_lir: true
+  lir_temps: 1
 
 - name: Not
   gen_boilerplate: false
@@ -2010,13 +2128,18 @@
 - name: ObjectKeys
   operands:
     object: Object
+  arguments:
+    resultShape: Shape*
   result_type: Object
-
-  # We can recover Object.keys on bailout as long as the object is not escaped
-  # or that the object is not mutated by any aliased calls in-between the
-  # instruction and the recovered location, as the recovered keys array might be
-  # different.
   can_recover: custom
+  possibly_calls: true
+  generate_lir: true
+
+- name: ObjectKeysFromIterator
+  operands:
+    iterator: Object
+  result_type: Object
+  can_recover: true
 
 # Used to fold Object.keys(obj).length into a single operation.
 #
@@ -2033,6 +2156,8 @@
   congruent_to: if_operands_equal
   alias_set: custom
   clone: true
+  possibly_calls: true
+  generate_lir: true
 
 - name: LoadUnboxedScalar
   gen_boilerplate: false
@@ -2052,7 +2177,10 @@
 - name: StoreTypedArrayElementHole
   gen_boilerplate: false
 
-- name: EffectiveAddress
+- name: EffectiveAddress3
+  gen_boilerplate: false
+
+- name: EffectiveAddress2
   gen_boilerplate: false
 
 - name: ClampToUint8
@@ -2061,6 +2189,16 @@
 - name: LoadFixedSlot
   gen_boilerplate: false
 
+- name: LoadFixedSlotFromOffset
+  operands:
+    object: Object
+    offset: Int32
+  result_type: Value
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
+  generate_lir: true
+
 - name: LoadFixedSlotAndUnbox
   gen_boilerplate: false
 
@@ -2068,6 +2206,12 @@
   gen_boilerplate: false
 
 - name: StoreFixedSlot
+  gen_boilerplate: false
+
+- name: StoreFixedSlotFromOffset
+  gen_boilerplate: false
+
+- name: StoreDynamicSlotFromOffset
   gen_boilerplate: false
 
 - name: GetPropertyCache
@@ -2097,7 +2241,7 @@
     environmentChain: Object
   result_type: Object
   movable: true
-  congruent_to: custom
+  congruent_to: if_operands_equal
   alias_set: none
   generate_lir: true
 
@@ -2112,6 +2256,7 @@
   congruent_to: custom
   alias_set: custom
   might_alias: custom
+  folds_to: custom
   generate_lir: true
   lir_temps: 1
 
@@ -2134,7 +2279,11 @@
   movable: true
   congruent_to: custom
   alias_set: custom
+  generate_lir: true
 
+# This is the equivalent of the GuardMultipleShapes CacheIR op. Because it
+# stores a pointer to the ShapeListObject, we don't need to recompile Ion code
+# when a new shape is added to the list.
 - name: GuardMultipleShapes
   operands:
     object: Object
@@ -2146,6 +2295,46 @@
   alias_set: custom
   generate_lir: true
   lir_temps: 4
+
+# Similar to GuardMultipleShapes but used when the list had a small number of
+# shapes. These shapes have been copied to the ShapeListSnapshot and are
+# available at compile-time. This lets us perform more MIR optimizations, but
+# we need to recompile when a new shape is added to the list.
+- name: GuardShapeList
+  operands:
+    object: Object
+  arguments:
+    shapeList: const ShapeListSnapshot*
+  result_type: Object
+  guard: true
+  movable: true
+  congruent_to: custom
+  alias_set: custom
+  generate_lir: true
+  lir_temps: 2
+
+- name: GuardShapeListToOffset
+  operands:
+    object: Object
+  arguments:
+    shapeList: const ShapeListWithOffsetsSnapshot*
+  result_type: Int32
+  guard: true
+  movable: true
+  congruent_to: custom
+  alias_set: custom
+  generate_lir: true
+  lir_temps: 2
+
+- name: GuardMultipleShapesToOffset
+  operands:
+    object: Object
+    shapeList: Object
+  result_type: Int32
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
 
 - name: GuardProto
   gen_boilerplate: false
@@ -2162,6 +2351,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardGlobalGeneration
   arguments:
@@ -2172,6 +2364,8 @@
   movable: true
   alias_set: custom
   congruent_to: custom
+  generate_lir: true
+  lir_temps: 1
 
 - name: GuardIsProxy
   operands:
@@ -2181,6 +2375,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardIsNotDOMProxy
   operands:
@@ -2190,6 +2387,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardIsNotProxy
   operands:
@@ -2200,6 +2400,9 @@
   congruent_to: if_operands_equal
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: ProxyGet
   operands:
@@ -2386,6 +2589,9 @@
   congruent_to: if_operands_equal
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardIsTypedArray
   operands:
@@ -2395,6 +2601,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardIsNonResizableTypedArray
   operands:
@@ -2404,6 +2613,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardIsResizableTypedArray
   operands:
@@ -2413,6 +2625,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardHasProxyHandler
   operands:
@@ -2424,15 +2639,18 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 # Loads a specific JSObject* that was originally nursery-allocated.
 # See also WarpObjectField.
 - name: NurseryObject
   arguments:
     # Index in the Vector of objects stored in the WarpSnapshot.
-    nurseryIndex: uint32_t
+    nurseryObjectIndex: uint32_t
   result_type: Object
   movable: true
+  value_hash: custom
   congruent_to: custom
   alias_set: none
   generate_lir: true
@@ -2449,6 +2667,8 @@
   congruent_to: if_operands_equal
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 - name: GuardIsNotObject
   operands:
@@ -2459,6 +2679,8 @@
   congruent_to: if_operands_equal
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 - name: GuardFunctionFlags
   gen_boilerplate: false
@@ -2471,6 +2693,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardFunctionKind
   operands:
@@ -2483,6 +2708,9 @@
   movable: true
   congruent_to: custom
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardFunctionScript
   operands:
@@ -2500,6 +2728,8 @@
   # self-hosted functions is an exception to this, but we don't use this
   # guard for self-hosted functions.
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
 
 - name: GuardObjectIdentity
   gen_boilerplate: false
@@ -2518,6 +2748,9 @@
   congruent_to: custom
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardSpecificSymbol
   gen_boilerplate: false
@@ -2532,6 +2765,8 @@
   movable: true
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 - name: GuardStringToIndex
   operands:
@@ -2582,12 +2817,25 @@
   guard: true
   movable: true
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardTagNotEqual
   gen_boilerplate: false
 
 - name: LoadDynamicSlot
   gen_boilerplate: false
+
+- name: LoadDynamicSlotFromOffset
+  operands:
+    slots: Slots
+    offset: Int32
+  result_type: Value
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
+  generate_lir: true
 
 # Inline call to access a function's environment (scope chain).
 - name: FunctionEnvironment
@@ -2598,6 +2846,7 @@
   folds_to: custom
   # A function's environment is fixed.
   alias_set: none
+  can_recover: true
   generate_lir: true
 
 # Allocate a new BlockLexicalEnvironmentObject.
@@ -2640,19 +2889,11 @@
     slotOffset: uint32_t
     shape: Shape*
     numNewSlots: uint32_t
+    preserveWrapper: bool
   possibly_calls: true
   alias_set: custom
   generate_lir: true
   lir_temps: 2
-
-- name: AddSlotAndCallAddPropHook
-  operands:
-    object: Object
-    value: Value
-  arguments:
-    shape: Shape*
-  possibly_calls: true
-  generate_lir: true
 
 - name: StoreDynamicSlot
   gen_boilerplate: false
@@ -2679,6 +2920,8 @@
     name: PropertyName*
     strict: bool
   result_type: Boolean
+  possibly_calls: true
+  generate_lir: true
 
 - name: DeleteElement
   operands:
@@ -2687,6 +2930,8 @@
   arguments:
     strict: bool
   result_type: Boolean
+  possibly_calls: true
+  generate_lir: true
 
 - name: SetPropertyCache
   gen_boilerplate: false
@@ -2706,15 +2951,39 @@
 - name: ObjectToIterator
   gen_boilerplate: false
 
+- name: IteratorLength
+  operands:
+    iter: Object
+  result_type: Int32
+  generate_lir: true
+
+- name: LoadIteratorElement
+  operands:
+    iter: Object
+    index: Int32
+  result_type: String
+  alias_set: none
+  generate_lir: true
+
 - name: ValueToIterator
   operands:
     value: Value
   result_type: Object
+  possibly_calls: true
+  generate_lir: true
 
 - name: IteratorHasIndices
   operands:
     object: Object
     iterator: Object
+  result_type: Boolean
+  alias_set: custom
+
+- name: IteratorsMatchAndHaveIndices
+  operands:
+    object: Object
+    iterator: Object
+    otherIterator: Object
   result_type: Boolean
   alias_set: custom
 
@@ -2731,6 +3000,30 @@
   operands:
     object: Object
     iterator: Object
+    value: Value
+  alias_set: custom
+  generate_lir: true
+  lir_temps: 2
+
+# Okay this is a confusing name, but essentially, the above ops load/store a
+# slot of an object using the PropertyIndex associated with the *current* key
+# for the iterator. The below op uses the PropertyIndex associated with the
+# key indexed by `index`, rather than the current one.
+- name: LoadSlotByIteratorIndexIndexed
+  operands:
+    object: Object
+    iterator: Object
+    index: Int32
+  result_type: Value
+  alias_set: custom
+  generate_lir: true
+  lir_temps: 2
+
+- name: StoreSlotByIteratorIndexIndexed
+  operands:
+    object: Object
+    iterator: Object
+    index: Int32
     value: Value
   alias_set: custom
   generate_lir: true
@@ -2773,6 +3066,9 @@
   movable: true
   congruent_to: custom
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 # Read length field of a JSString*.
 - name: StringLength
@@ -2803,6 +3099,9 @@
   gen_boilerplate: false
 
 - name: NearbyInt
+  gen_boilerplate: false
+
+- name: RoundToDouble
   gen_boilerplate: false
 
 - name: GetIteratorCache
@@ -2957,6 +3256,8 @@
   result_type: None
   guard: true
   alias_set: none
+  generate_lir: true
+  lir_temps: 1
 
 # Allocates a new NamedLambdaObject.
 #
@@ -3067,12 +3368,16 @@
   guard: true
   folds_to: custom
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
 
 - name: AsyncResolve
   operands:
     generator: Object
     value: Value
   result_type: Object
+  possibly_calls: true
+  generate_lir: true
 
 - name: AsyncReject
   operands:
@@ -3080,6 +3385,8 @@
     reason: Value
     stack: Value
   result_type: Object
+  possibly_calls: true
+  generate_lir: true
 
 # Returns from this function to the previous caller; this looks like a regular
 # Unary instruction and is used to lie to the MIR generator about suspending
@@ -3096,6 +3403,8 @@
     value: Value
     generator: Object
   result_type: Object
+  possibly_calls: true
+  generate_lir: true
 
 - name: CheckThisReinit
   operands:
@@ -3104,6 +3413,8 @@
   guard: true
   folds_to: custom
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
 
 - name: Generator
   gen_boilerplate: false
@@ -3112,6 +3423,8 @@
   operands:
     value: Value
   result_type: Boolean
+  possibly_calls: true
+  generate_lir: true
 
 - name: MaybeExtractAwaitValue
   gen_boilerplate: false
@@ -3163,18 +3476,26 @@
   folds_to: custom
   # Throws on null or undefined.
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
 
 - name: CheckClassHeritage
   operands:
     heritage: Value
   result_type: Value
   guard: true
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 2
 
 - name: DebugCheckSelfHosted
   operands:
     checkValue: Value
   result_type: Value
   guard: true
+  possibly_calls: true
+  generate_lir: true
+  lir_result_type: none
 
 - name: IsPackedArray
   operands:
@@ -3193,6 +3514,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 2
 
 - name: GuardElementsArePacked
   operands:
@@ -3246,7 +3570,16 @@
   congruent_to: if_operands_equal
   alias_set: custom
   generate_lir: true
-  lir_temps: 1
+
+- name: SuperFunctionAndUnbox
+  operands:
+    callee: Object
+  result_type: Object
+  movable: true
+  guard: true
+  congruent_to: if_operands_equal
+  alias_set: custom
+  generate_lir: true
 
 - name: InitHomeObject
   operands:
@@ -3255,6 +3588,7 @@
   result_type: Object
   alias_set: custom
   generate_lir: true
+  lir_result_type: none
 
 # Return true if the object is definitely a TypedArray constructor, but not
 # necessarily from the currently active realm. Return false if the object is
@@ -3312,13 +3646,16 @@
     object: Object
   arguments:
     propId: jsid
-    getterSetter: GetterSetter*
+    getterSetterValue: ValueOrNurseryValueIndex
   result_type: Object
   guard: true
   movable: true
   possibly_calls: true
   congruent_to: custom
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 3
 
 - name: GuardIsExtensible
   operands:
@@ -3328,6 +3665,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 1
 
 - name: GuardInt32IsNonNegative
   operands:
@@ -3338,6 +3678,20 @@
   congruent_to: if_operands_equal
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
+
+- name: GuardIntPtrIsNonNegative
+  operands:
+    index: IntPtr
+  result_type: IntPtr
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  folds_to: custom
+  alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 - name: GuardInt32Range
   operands:
@@ -3351,6 +3705,8 @@
   congruent_to: if_operands_equal
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 # Guard the input index is either greater than the dense initialized length of
 # an object, or a hole element.
@@ -3363,6 +3719,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 2
 
 # Guard an array object's length can be updated successfully when adding an
 # element at the input index.
@@ -3375,6 +3734,9 @@
   movable: true
   congruent_to: if_operands_equal
   alias_set: custom
+  generate_lir: true
+  lir_result_type: none
+  lir_temps: 2
 
 # Add or update a sparse element of an ArrayObject or PlainObject. It's allowed
 # for the sparse element to be already present on the object. It may also be an
@@ -3466,6 +3828,8 @@
   congruent_to: if_operands_equal
   folds_to: custom
   alias_set: none
+  generate_lir: true
+  lir_result_type: none
 
 - name: ToHashableNonGCThing
   operands:
@@ -3748,6 +4112,47 @@
   alias_set: custom
   generate_lir: true
 
+# Note: for now these WeakMap/WeakSet instructions are non-movable and don't
+# override congruentTo, but it'd probably be fine to change this in the future.
+- name: WeakMapGetObject
+  operands:
+    weakMap: Object
+    object: Object
+  result_type: Value
+  alias_set: custom
+  movable: false
+  generate_lir: true
+#ifdef JS_CODEGEN_X86
+  possibly_calls: true
+  lir_temps: 1
+#else
+  lir_temps: 7
+#endif
+
+- name: WeakMapHasObject
+  operands:
+    weakMap: Object
+    object: Object
+  result_type: Boolean
+  alias_set: custom
+  movable: false
+  generate_lir: true
+#ifdef JS_CODEGEN_X86
+  possibly_calls: true
+#else
+  lir_temps: 7
+#endif
+
+- name: WeakSetHasObject
+  operands:
+    weakSet: Object
+    object: Object
+  result_type: Boolean
+  alias_set: custom
+  movable: false
+  possibly_calls: true
+  generate_lir: true
+
 - name: DateFillLocalTimeSlots
   operands:
     date: Object
@@ -3821,7 +4226,10 @@
   congruent_to: if_operands_equal
   type_policy: none
   generate_lir: true
+  lir_result_type: none
   lir_temps: 1
+  alias_set: none
+  guard: true
 
 - name: WasmExtendU32Index
   operands:
@@ -3937,7 +4345,7 @@
 - name: WasmFloatRegisterResult
   gen_boilerplate: false
 
-- name: WasmBuiltinFloatRegisterResult
+- name: WasmSystemFloatRegisterResult
   gen_boilerplate: false
 
 - name: WasmRegister64Result
@@ -3973,24 +4381,34 @@
 
 - name: WasmStackSwitchToMain
   operands:
-    suspender: Object
-    fn: Object
+    instance: WasmAnyRef
+    suspender: WasmAnyRef
+    fn: WasmAnyRef
     data: WasmAnyRef
   result_type: WasmAnyRef
   type_policy: none
+  possibly_calls: true
+  generate_lir: true
 
 - name: WasmStackSwitchToSuspendable
   operands:
-    suspender: Object
-    fn: Object
+    instance: WasmAnyRef
+    suspender: WasmAnyRef
+    fn: WasmAnyRef
     data: WasmAnyRef
   type_policy: none
+  possibly_calls: true
+  generate_lir: true
 
 - name: WasmStackContinueOnSuspendable
   operands:
-    suspender: Object
+    instance: WasmAnyRef
+    suspender: WasmAnyRef
     result: WasmAnyRef
   type_policy: none
+  possibly_calls: true
+  generate_lir: true
+  lir_temps: 2
 
 - name: WasmBinarySimd128
   gen_boilerplate: false
@@ -4098,6 +4516,19 @@
 - name: WasmRefCastAbstract
   gen_boilerplate: false
 
+# Produced by OptimizeWasmCasts when a cast is known to always succeed.
+- name: WasmRefCastInfallible
+  operands:
+    ref: WasmAnyRef
+  arguments:
+    destType: wasm::RefType
+  result_type: WasmAnyRef
+  type_policy: none
+  wasm_ref_type: wasm::MaybeRefType(destType)
+  guard: true
+  alias_set: none
+  congruent_to: custom
+
 - name: WasmRefConvertAnyExtern
   gen_boilerplate: false
 
@@ -4124,6 +4555,8 @@
     needsClosure: Boolean
   arguments:
     hint: uint8_t
+  possibly_calls: true
+  generate_lir: true
 
 - name: TakeDisposeCapability
   operands:
@@ -4137,4 +4570,6 @@
     suppressed: Value
   result_type: Object
   alias_set: none
+  possibly_calls: true
+  generate_lir: true
 #endif

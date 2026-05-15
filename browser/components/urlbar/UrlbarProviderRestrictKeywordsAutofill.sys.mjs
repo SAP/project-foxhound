@@ -10,14 +10,15 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
 
 const RESTRICT_KEYWORDS_FEATURE_GATE = "searchRestrictKeywords.featureGate";
@@ -25,16 +26,12 @@ const RESTRICT_KEYWORDS_FEATURE_GATE = "searchRestrictKeywords.featureGate";
 /**
  * Class used to create the provider.
  */
-class ProviderRestrictKeywordsAutofill extends UrlbarProvider {
+export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
   #autofillData;
   #lowerCaseTokenToKeywords;
 
   constructor() {
     super();
-  }
-
-  get name() {
-    return "RestrictKeywordsAutofill";
   }
 
   /**
@@ -109,6 +106,13 @@ class ProviderRestrictKeywordsAutofill extends UrlbarProvider {
     return false;
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
     if (
       this.#autofillData &&
@@ -140,15 +144,16 @@ class ProviderRestrictKeywordsAutofill extends UrlbarProvider {
     }
 
     if (restrictSymbol && typedKeyword == aliasKeyword) {
-      let result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.RESTRICT,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+      let result = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.RESTRICT,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        heuristic: true,
+        hideRowLabel: true,
+        payload: {
           keyword: restrictSymbol,
           providesSearchMode: false,
-        })
-      );
-      result.heuristic = true;
+        },
+      });
       addCallback(this, result);
     }
 
@@ -183,37 +188,30 @@ class ProviderRestrictKeywordsAutofill extends UrlbarProvider {
           mode => mode.restrict == token
         )?.icon;
 
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.RESTRICT,
-          UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-          ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+        return new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.RESTRICT,
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          hideRowLabel: true,
+          autofill: {
+            value,
+            selectionStart: queryContext.searchString.length,
+            selectionEnd: value.length,
+          },
+          payload: {
             icon,
             keyword: token,
-            l10nRestrictKeywords: [
-              l10nRestrictKeywords,
-              UrlbarUtils.HIGHLIGHT.TYPED,
-            ],
-            autofillKeyword: [
-              keywordPreservingUserCase,
-              UrlbarUtils.HIGHLIGHT.TYPED,
-            ],
+            l10nRestrictKeywords,
+            autofillKeyword: keywordPreservingUserCase,
             providesSearchMode: true,
-          })
-        );
-
-        result.autofill = {
-          value,
-          selectionStart: queryContext.searchString.length,
-          selectionEnd: value.length,
-        };
-
-        return result;
+          },
+          highlights: {
+            l10nRestrictKeywords: UrlbarUtils.HIGHLIGHT.TYPED,
+            autofillKeyword: UrlbarUtils.HIGHLIGHT.TYPED,
+          },
+        });
       }
     }
 
     return null;
   }
 }
-
-export var UrlbarProviderRestrictKeywordsAutofill =
-  new ProviderRestrictKeywordsAutofill();

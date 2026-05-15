@@ -13,7 +13,6 @@ const { FxAccountsDevice } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccountsDevice.sys.mjs"
 );
 const {
-  CLIENT_IS_THUNDERBIRD,
   ERRNO_DEVICE_SESSION_CONFLICT,
   ERRNO_TOO_MANY_CLIENT_REQUESTS,
   ERRNO_UNKNOWN_DEVICE,
@@ -622,56 +621,6 @@ add_task(
     Assert.equal(spy.args[0].length, 2);
     Assert.equal(spy.args[0][1].device.id, "wibble");
     Assert.equal(result, "wibble");
-    await fxa.signOut(true);
-  }
-);
-
-add_task(
-  { skip_if: () => CLIENT_IS_THUNDERBIRD },
-  async function test_verification_updates_registration() {
-    const deviceName = "foo";
-    ensureOauthNotConfigured();
-
-    const credentials = getTestUser("baz");
-    const fxa = await MockFxAccounts(credentials, {
-      id: "device-id",
-      name: deviceName,
-    });
-
-    // We should already have a device registration, but without send-tab due to
-    // our inability to fetch keys for an unverified users.
-    const state = fxa._internal.currentAccountState;
-    const { device } = await state.getUserAccountData();
-    Assert.equal(device.registeredCommandsKeys.length, 0);
-
-    let updatePromise = new Promise(resolve => {
-      const old_registerOrUpdateDevice =
-        fxa.device._registerOrUpdateDevice.bind(fxa.device);
-      fxa.device._registerOrUpdateDevice = async function (
-        currentState,
-        signedInUser
-      ) {
-        await old_registerOrUpdateDevice(currentState, signedInUser);
-        fxa.device._registerOrUpdateDevice = old_registerOrUpdateDevice;
-        resolve();
-      };
-    });
-
-    fxa._internal.checkEmailStatus = async function () {
-      credentials.verified = true;
-      return credentials;
-    };
-
-    await updatePromise;
-
-    const {
-      device: newDevice,
-      encryptedSendTabKeys,
-      encryptedCloseTabKeys,
-    } = await state.getUserAccountData();
-    Assert.equal(newDevice.registeredCommandsKeys.length, 2);
-    Assert.notEqual(encryptedSendTabKeys, null);
-    Assert.notEqual(encryptedCloseTabKeys, null);
     await fxa.signOut(true);
   }
 );

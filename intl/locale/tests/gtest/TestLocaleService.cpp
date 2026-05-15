@@ -72,6 +72,14 @@ TEST(Intl_Locale_LocaleService, GetAppLocaleAsLangTag)
   ASSERT_TRUE(appLocales[0] == locale);
 }
 
+TEST(Intl_Locale_LocaleService, GetEllipsis)
+{
+  nsAutoString ellipsis;
+  LocaleService::GetInstance()->GetEllipsis(ellipsis);
+
+  ASSERT_TRUE(ellipsis == u"…");
+}
+
 TEST(Intl_Locale_LocaleService, GetRegionalPrefsLocales)
 {
   nsTArray<nsCString> rpLocales;
@@ -152,6 +160,16 @@ TEST(Intl_Locale_LocaleService, IsAppLocaleRTL)
   mozilla::Preferences::SetCString("intl.l10n.pseudo", "bidi");
   ASSERT_TRUE(LocaleService::GetInstance()->IsAppLocaleRTL());
   mozilla::Preferences::ClearUser("intl.l10n.pseudo");
+}
+
+TEST(Intl_Locale_LocaleService, AlwaysAppendAccesskeys)
+{
+  ASSERT_FALSE(LocaleService::GetInstance()->AlwaysAppendAccesskeys());
+}
+
+TEST(Intl_Locale_LocaleService, InsertSeparatorBeforeAccesskeys)
+{
+  ASSERT_TRUE(LocaleService::GetInstance()->InsertSeparatorBeforeAccesskeys());
 }
 
 TEST(Intl_Locale_LocaleService, TryCreateComponent)

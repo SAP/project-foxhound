@@ -11,8 +11,6 @@
 #  include "Logging.h"
 #endif
 
-#include "mozilla/UniquePtr.h"
-
 using namespace mozilla;
 using namespace mozilla::a11y;
 

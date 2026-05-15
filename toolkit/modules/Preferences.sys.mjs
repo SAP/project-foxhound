@@ -172,7 +172,7 @@ Preferences._set = function (prefName, prefValue) {
  * @param   prefName  {String|Array}
  *          the pref to check, or an array of prefs to check
  *
- * @returns {Boolean|Array}
+ * @returns {boolean | Array}
  *          whether or not the pref has a value; or, if the caller provided
  *          an array of pref names, an array of booleans indicating whether
  *          or not the prefs have values
@@ -196,7 +196,7 @@ Preferences.has = function (prefName) {
  * @param   prefName  {String|Array}
  *          the pref to check, or an array of prefs to check
  *
- * @returns {Boolean|Array}
+ * @returns {boolean | Array}
  *          whether or not the pref has a user-set value; or, if the caller
  *          provided an array of pref names, an array of booleans indicating
  *          whether or not the prefs have user-set values
@@ -212,6 +212,7 @@ Preferences.isSet = function (prefName) {
 /**
  * Whether or not the given pref has a user-set value. Use isSet instead,
  * which is equivalent.
+ *
  * @deprecated
  */
 Preferences.modified = function (prefName) {
@@ -245,7 +246,7 @@ Preferences.lock = function (prefName) {
  * Unlock a pref so it can be changed.
  *
  * @param   prefName  {String|Array}
- *          the pref to lock, or an array of prefs to lock
+ *          the pref to unlock, or an array of prefs to unlock
  */
 Preferences.unlock = function (prefName) {
   if (Array.isArray(prefName)) {
@@ -261,7 +262,7 @@ Preferences.unlock = function (prefName) {
  * @param   prefName  {String|Array}
  *          the pref to check, or an array of prefs to check
  *
- * @returns {Boolean|Array}
+ * @returns {boolean | Array}
  *          whether or not the pref has a user-set value; or, if the caller
  *          provided an array of pref names, an array of booleans indicating
  *          whether or not the prefs have user-set values
@@ -355,6 +356,7 @@ Preferences.resetBranch = function (prefBranch = "") {
 /**
  * A string identifying the branch of the preferences tree to which this
  * instance provides access.
+ *
  * @private
  */
 Preferences._branchStr = "";
@@ -362,12 +364,14 @@ Preferences._branchStr = "";
 /**
  * The cached preferences branch object this instance encapsulates, or null.
  * Do not use!  Use _prefBranch below instead.
+ *
  * @private
  */
 Preferences._cachedPrefBranch = null;
 
 /**
  * The preferences branch object for this instance.
+ *
  * @private
  */
 Object.defineProperty(Preferences, "_prefBranch", {

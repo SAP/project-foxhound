@@ -4,7 +4,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "content_analysis/sdk/analysis_client.h"

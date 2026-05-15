@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __ClassOfService_h__
-#define __ClassOfService_h__
+#ifndef ClassOfService_h_
+#define ClassOfService_h_
 
 #include "nsIClassOfService.h"
 #include "nsPrintfCString.h"

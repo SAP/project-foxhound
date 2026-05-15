@@ -606,9 +606,9 @@ nsresult CacheFileChunk::OnDataRead(CacheFileHandle* aHandle, char* aBuf,
   {
     CacheFileAutoLock lock(mFile);
 
-    MOZ_ASSERT(mState == READING);
-    MOZ_ASSERT(mListener);
-    MOZ_ASSERT(mReadingStateBuf);
+    MOZ_DIAGNOSTIC_ASSERT(mState == READING);
+    MOZ_DIAGNOSTIC_ASSERT(mListener);
+    MOZ_DIAGNOSTIC_ASSERT(mReadingStateBuf);
     MOZ_RELEASE_ASSERT(mBuf->ReadHandlesCount() == 0);
     MOZ_RELEASE_ASSERT(!mBuf->WriteHandleExists());
 

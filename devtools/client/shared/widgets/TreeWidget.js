@@ -10,51 +10,51 @@ const { KeyCodes } = require("resource://devtools/client/shared/keycodes.js");
 
 /**
  * A tree widget with keyboard navigation and collapsable structure.
- *
- * @param {Node} node
- *        The container element for the tree widget.
- * @param {Object} options
- *        - emptyText {string}: text to display when no entries in the table.
- *        - defaultType {string}: The default type of the tree items. For ex.
- *          'js'
- *        - sorted {boolean}: Defaults to true. If true, tree items are kept in
- *          lexical order. If false, items will be kept in insertion order.
- *        - contextMenuId {string}: ID of context menu to be displayed on
- *          tree items.
  */
-function TreeWidget(node, options = {}) {
-  EventEmitter.decorate(this);
+class TreeWidget extends EventEmitter {
+  /**
+   * @param {Node} node
+   *        The container element for the tree widget.
+   * @param {object} options
+   * @param {string} [options.emptyText]  text to display when no entries in the table.
+   * @param {string} options.defaultType  The default type of the tree items. For ex.
+   *  'js'
+   * @param {boolean} [options.sorted]  Defaults to true. If true, tree items are kept in
+   *  lexical order. If false, items will be kept in insertion order.
+   * @param {string} [options.contextMenuId] ID of context menu to be displayed on
+   *  tree items.
+   */
+  constructor(node, options = {}) {
+    super();
 
-  this.document = node.ownerDocument;
-  this.window = this.document.defaultView;
-  this._parent = node;
+    this.document = node.ownerDocument;
+    this.window = this.document.defaultView;
+    this._parent = node;
 
-  this.emptyText = options.emptyText || "";
-  this.defaultType = options.defaultType;
-  this.sorted = options.sorted !== false;
-  this.contextMenuId = options.contextMenuId;
+    this.emptyText = options.emptyText || "";
+    this.defaultType = options.defaultType;
+    this.sorted = options.sorted !== false;
+    this.contextMenuId = options.contextMenuId;
 
-  this.setupRoot();
+    this.setupRoot();
 
-  this.placeholder = this.document.createElementNS(HTML_NS, "label");
-  this.placeholder.className = "tree-widget-empty-text";
-  this._parent.appendChild(this.placeholder);
+    this.placeholder = this.document.createElementNS(HTML_NS, "label");
+    this.placeholder.className = "tree-widget-empty-text";
+    this._parent.appendChild(this.placeholder);
 
-  if (this.emptyText) {
-    this.setPlaceholderText(this.emptyText);
+    if (this.emptyText) {
+      this.setPlaceholderText(this.emptyText);
+    }
+    // A map to hold all the passed attachment to each leaf in the tree.
+    this.attachments = new Map();
   }
-  // A map to hold all the passed attachment to each leaf in the tree.
-  this.attachments = new Map();
-}
 
-TreeWidget.prototype = {
-  _selectedLabel: null,
-  _selectedItem: null,
-
+  _selectedLabel = null;
+  _selectedItem = null;
   /**
    * Select any node in the tree.
    *
-   * @param {array} ids
+   * @param {Array} ids
    *        An array of ids leading upto the selected item
    */
   set selectedItem(ids) {
@@ -83,22 +83,22 @@ TreeWidget.prototype = {
         this.attachments.get(JSON.stringify(ids))
       );
     }
-  },
+  }
 
   /**
    * Gets the selected item in the tree.
    *
-   * @return {array}
+   * @return {Array}
    *        An array of ids leading upto the selected item
    */
   get selectedItem() {
     return this._selectedItem;
-  },
+  }
 
   /**
    * Returns if the passed array corresponds to the selected item in the tree.
    *
-   * @return {array}
+   * @return {Array}
    *        An array of ids leading upto the requested item
    */
   isSelected(item) {
@@ -113,12 +113,12 @@ TreeWidget.prototype = {
     }
 
     return true;
-  },
+  }
 
   destroy() {
     this.root.remove();
     this.root = null;
-  },
+  }
 
   /**
    * Sets up the root container of the TreeWidget.
@@ -140,7 +140,7 @@ TreeWidget.prototype = {
 
     this.root.children.addEventListener("mousedown", e => this.onClick(e));
     this.root.children.addEventListener("keydown", e => this.onKeydown(e));
-  },
+  }
 
   /**
    * Sets the text to be shown when no node is present in the tree.
@@ -153,17 +153,17 @@ TreeWidget.prototype = {
     } else {
       this.placeholder.setAttribute("hidden", "true");
     }
-  },
+  }
 
   /**
    * Select any node in the tree.
    *
-   * @param {array} id
+   * @param {Array} id
    *        An array of ids leading upto the selected item
    */
   selectItem(id) {
     this.selectedItem = id;
-  },
+  }
 
   /**
    * Selects the next visible item in the tree.
@@ -173,7 +173,7 @@ TreeWidget.prototype = {
     if (next) {
       this.selectedItem = next;
     }
-  },
+  }
 
   /**
    * Selects the previos visible item in the tree
@@ -183,7 +183,7 @@ TreeWidget.prototype = {
     if (prev) {
       this.selectedItem = prev;
     }
-  },
+  }
 
   /**
    * Returns the next visible item in the tree
@@ -205,7 +205,7 @@ TreeWidget.prototype = {
       node = node.parentNode;
     }
     return null;
-  },
+  }
 
   /**
    * Returns the previous visible item in the tree
@@ -234,11 +234,11 @@ TreeWidget.prototype = {
       return JSON.parse(node.getAttribute("data-id"));
     }
     return null;
-  },
+  }
 
   clearSelection() {
     this.selectedItem = -1;
-  },
+  }
 
   /**
    * Adds an item in the tree. The item can be added as a child to any node in
@@ -281,12 +281,12 @@ TreeWidget.prototype = {
     }
     // Empty the empty-tree-text
     this.setPlaceholderText("");
-  },
+  }
 
   /**
    * Check if an item exists.
    *
-   * @param {array} item
+   * @param {Array} item
    *        The array of ids leading up to the item.
    */
   exists(item) {
@@ -300,12 +300,12 @@ TreeWidget.prototype = {
       }
     }
     return true;
-  },
+  }
 
   /**
    * Removes the specified item and all of its child items from the tree.
    *
-   * @param {array} item
+   * @param {Array} item
    *        The array of ids leading up to the item.
    */
   remove(item) {
@@ -315,7 +315,7 @@ TreeWidget.prototype = {
     if (this.root.items.size == 0 && this.emptyText) {
       this.setPlaceholderText(this.emptyText);
     }
-  },
+  }
 
   /**
    * Removes all of the child nodes from this tree.
@@ -327,21 +327,21 @@ TreeWidget.prototype = {
     if (this.emptyText) {
       this.setPlaceholderText(this.emptyText);
     }
-  },
+  }
 
   /**
    * Expands the tree completely
    */
   expandAll() {
     this.root.expandAll();
-  },
+  }
 
   /**
    * Collapses the tree completely
    */
   collapseAll() {
     this.root.collapseAll();
-  },
+  }
 
   /**
    * Click handler for the tree. Used to select, open and close the tree nodes.
@@ -368,7 +368,7 @@ TreeWidget.prototype = {
       const ids = target.parentNode.getAttribute("data-id");
       this.selectedItem = JSON.parse(ids);
     }
-  },
+  }
 
   /**
    * Keydown handler for this tree. Used to select next and previous visible
@@ -407,7 +407,7 @@ TreeWidget.prototype = {
         return;
     }
     event.preventDefault();
-  },
+  }
 
   /**
    * Scrolls the viewport of the tree so that the selected item is always
@@ -421,78 +421,79 @@ TreeWidget.prototype = {
     } else if (bottom > height) {
       this._selectedLabel.scrollIntoView(false);
     }
-  },
-};
+  }
+}
 
 module.exports.TreeWidget = TreeWidget;
 
 /**
  * Any item in the tree. This can be an empty leaf node also.
- *
- * @param {HTMLDocument} document
- *        The document element used for creating new nodes.
- * @param {TreeItem} parent
- *        The parent item for this item.
- * @param {string|DOMElement} label
- *        Either the dom node to be used as the item, or the string to be
- *        displayed for this node in the tree
- * @param {string} type
- *        The type of the current node. For ex. "js"
  */
-function TreeItem(document, parent, label, type) {
-  this.document = document;
-  this.node = this.document.createElementNS(HTML_NS, "li");
-  this.node.setAttribute("tabindex", "0");
-  this.isRoot = !parent;
-  this.parent = parent;
-  if (this.parent) {
-    this.level = this.parent.level + 1;
-  }
-  if (label) {
-    this.label = this.document.createElementNS(HTML_NS, "div");
-    this.label.setAttribute("empty", "true");
-    this.label.setAttribute("level", this.level);
-    this.label.className = "tree-widget-item";
-    if (type) {
-      this.label.setAttribute("type", type);
+class TreeItem {
+  /**
+   * @param {HTMLDocument} document
+   *        The document element used for creating new nodes.
+   * @param {TreeItem} parent
+   *        The parent item for this item.
+   * @param {string|DOMElement} label
+   *        Either the dom node to be used as the item, or the string to be
+   *        displayed for this node in the tree
+   * @param {string} type
+   *        The type of the current node. For ex. "js"
+   */
+  constructor(document, parent, label, type) {
+    this.document = document;
+    this.node = this.document.createElementNS(HTML_NS, "li");
+    this.node.setAttribute("tabindex", "0");
+    this.isRoot = !parent;
+    this.parent = parent;
+    if (this.parent) {
+      this.level = this.parent.level + 1;
     }
-    if (typeof label == "string") {
-      this.label.textContent = label;
+    if (label) {
+      this.label = this.document.createElementNS(HTML_NS, "div");
+      this.label.setAttribute("empty", "true");
+      this.label.setAttribute("level", this.level);
+      this.label.className = "tree-widget-item";
+      if (type) {
+        this.label.setAttribute("type", type);
+      }
+      if (typeof label == "string") {
+        this.label.textContent = label;
+      } else {
+        this.label.appendChild(label);
+      }
+      this.node.appendChild(this.label);
+    }
+    this.children = this.document.createElementNS(HTML_NS, "ul");
+    if (this.isRoot) {
+      this.children.className = "tree-widget-container";
     } else {
-      this.label.appendChild(label);
+      this.children.className = "tree-widget-children";
     }
-    this.node.appendChild(this.label);
+    this.node.appendChild(this.children);
+    this.items = new Map();
   }
-  this.children = this.document.createElementNS(HTML_NS, "ul");
-  if (this.isRoot) {
-    this.children.className = "tree-widget-container";
-  } else {
-    this.children.className = "tree-widget-children";
-  }
-  this.node.appendChild(this.children);
-  this.items = new Map();
-}
 
-TreeItem.prototype = {
-  items: null,
+  items = null;
 
-  isSelected: false,
+  isSelected = false;
 
-  expanded: false,
+  expanded = false;
 
-  isRoot: false,
+  isRoot = false;
 
-  parent: null,
+  parent = null;
 
-  children: null,
+  children = null;
 
-  level: 0,
+  level = 0;
 
   /**
    * Adds the item to the sub tree contained by this node. The item to be
    * inserted can be a direct child of this node, or further down the tree.
    *
-   * @param {array} items
+   * @param {Array} items
    *        Same as TreeWidget.add method's argument
    * @param {string} defaultType
    *        The default type of the item to be used when items[i].type is null
@@ -559,7 +560,7 @@ TreeItem.prototype = {
       this.label.removeAttribute("empty");
     }
     this.items.set(id, treeItem);
-  },
+  }
 
   /**
    * If this item is to be removed, then removes this item and thus all of its
@@ -567,7 +568,7 @@ TreeItem.prototype = {
    * recursive method goes on till we have reached the end of the branch or the
    * current item is to be removed.
    *
-   * @param {array} items
+   * @param {Array} items
    *        Ids of items leading up to the item to be removed.
    */
   remove(items = []) {
@@ -584,13 +585,13 @@ TreeItem.prototype = {
     } else if (!id) {
       this.destroy();
     }
-  },
+  }
 
   /**
    * If this item is to be selected, then selected and expands the item.
    * Otherwise, if a child item is to be selected, just expands this item.
    *
-   * @param {array} items
+   * @param {Array} items
    *        Ids of items leading up to the item to be selected.
    */
   setSelectedItem(items) {
@@ -607,7 +608,7 @@ TreeItem.prototype = {
       return label;
     }
     return null;
-  },
+  }
 
   /**
    * Collapses this item and all of its sub tree items
@@ -619,7 +620,7 @@ TreeItem.prototype = {
     for (const child of this.items.values()) {
       child.collapseAll();
     }
-  },
+  }
 
   /**
    * Expands this item and all of its sub tree items
@@ -631,7 +632,7 @@ TreeItem.prototype = {
     for (const child of this.items.values()) {
       child.expandAll();
     }
-  },
+  }
 
   destroy() {
     this.children.remove();
@@ -639,5 +640,5 @@ TreeItem.prototype = {
     this.label = null;
     this.items = null;
     this.children = null;
-  },
-};
+  }
+}

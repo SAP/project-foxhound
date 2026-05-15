@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDirectoryService_h___
-#define nsDirectoryService_h___
+#ifndef nsDirectoryService_h_
+#define nsDirectoryService_h_
 
 #include "nsIDirectoryService.h"
 #include "nsInterfaceHashtable.h"
 #include "nsIFile.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/StaticPtr.h"
 
 #define NS_DIRECTORY_SERVICE_CID \

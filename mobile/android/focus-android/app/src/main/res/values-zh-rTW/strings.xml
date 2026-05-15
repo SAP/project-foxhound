@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -16,7 +23,7 @@
   <string name="action_ok">確定</string>
   <string name="action_save">儲存</string>
   <!-- This text is shown in the URL bar when it's empty -->
-  <string name="urlbar_hint">進行搜尋或輸入網址</string>
+  <string name="urlbar_hint">搜尋或輸入網址</string>
   <string name="teaser">無痕瀏覽，不留足跡。</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">已清除您的瀏覽紀錄。</string>
@@ -78,12 +85,12 @@
     See https://github.com/mozilla-mobile/focus-android/issues/2106
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
-  <string name="menu_custom_tab_branding">由 %1$s 提供</string>
+  <string name="menu_custom_tab_branding">Powered by %1$s</string>
   <!--
     This is the title of a dialog that shows all the share targets (apps or contacts) when
     sharing an URL.
   -->
-  <string name="share_dialog_title">透過下列程式分享</string>
+  <string name="share_dialog_title">分享到</string>
   <string name="notification_erase_title_android_14">要清除瀏覽紀錄嗎？</string>
   <!--
     Text shown in the notification description that pops up to remind the user that a browsing session is active
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s 讓您可自行控制線上生活。</p> <p>可當作私密瀏覽器使用: <ul> <li>直接在程式中搜尋、瀏覽</li> <li>封鎖追蹤器（也可調整設定，允許追蹤器）</li> <li>清除 Cookie、搜尋紀錄、上網紀錄</li> </ul> </p> <p>%1$s 是由 Mozilla 所打造，我們的使命是培養一個健康、開放的網際網路環境。<br/> <a href=\"%2$s\">了解更多</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s 讓您可自行控制線上生活。</p>\n<p>可當作隱私瀏覽器使用：\n<ul>\n<li>直接在程式中搜尋、瀏覽</li>\n<li>封鎖追蹤器（也可調整設定，允許追蹤器）</li>\n<li>清除 Cookie、搜尋紀錄、上網紀錄</li>\n</ul> </p>\n<p>%1$s 是由 Mozilla 所打造，我們的使命是培養一個健康、開放的網際網路環境。<br/>\n<a href=\"%2$s\">了解更多</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">更多資訊</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">若繼續，代表您同意 %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">若繼續，代表您同意 %1$s。</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefox 的使用條款。</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefox 的使用條款</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox 關心您的隱私。到我們的 %1$s 閱讀更多資訊。</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox 關心您的隱私。到我們的%1$s閱讀更多資訊。</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">隱私權公告</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">隱私權公告</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">清除瀏覽紀錄</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">關閉其他分頁</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">新增分頁</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[可能是伺服器設定問題造成，或是有人嘗試偽裝成該伺服器。<br/><br/> 若您以前可以與該伺服器正常連線，那麼這個錯誤可能只是暫時的，請稍候再試試看。]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>有心人士可能正在嘗試將別的網站偽裝成您想造訪的網站，若繼續開啟網站可能會有風險。</label> <br><br> <label>因為憑證簽發者未知、憑證是自簽憑證，或伺服器並未送出正確的中介憑證的關係，%1$s 無法信任 <b>%2$s</b>。</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>有心人士可能正在嘗試將別的網站偽裝成您想造訪的網站，若繼續開啟網站可能會有風險。</label> <br><br>\n<label>因為憑證簽發者未知、憑證是自簽憑證，或伺服器並未送出正確的中介憑證的關係，%1$s 無法信任 <b>%2$s</b>。</label>]]></string>
   <!--
     Sessions List
 

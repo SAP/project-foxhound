@@ -7,7 +7,6 @@
 
 #include <ctype.h>
 #include <stdlib.h>
-#include <stdio.h>
 
 #include <mach/mach_port.h>
 #include <mach/mach_interface.h>
@@ -29,7 +28,7 @@ extern "C" {
 #include "nsGkAtoms.h"
 #include "nsIRollupListener.h"
 #include "nsIWidget.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 
 #include "nsIObserverService.h"
 
@@ -135,11 +134,9 @@ void nsToolkit::RemoveSleepWakeNotifications() {
 
 // Cocoa Firefox's use of custom context menus requires that we explicitly
 // handle mouse events from other processes that the OS handles
-// "automatically" for native context menus -- mouseMoved events so that
-// right-click context menus work properly when our browser doesn't have the
-// focus (bmo bug 368077), and mouseDown events so that our browser can
-// dismiss a context menu when a mouseDown happens in another process (bmo
-// bug 339945).
+// "automatically" for native context menus. This is not a frequently
+// exercised code path any more, so if you're working on it it's worth looking
+// into whether this is really doing what you want.
 void nsToolkit::MonitorAllProcessMouseEvents() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
@@ -153,14 +150,14 @@ void nsToolkit::MonitorAllProcessMouseEvents() {
   if (mAllProcessMouseMonitor == nil) {
     mAllProcessMouseMonitor = [NSEvent
         addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown |
-                                              NSEventMaskLeftMouseDown
+                                              NSEventMaskOtherMouseDown
                                       handler:^(NSEvent* evt) {
                                         if ([NSApp isActive]) {
                                           return;
                                         }
 
                                         nsIRollupListener* rollupListener =
-                                            nsBaseWidget::
+                                            nsIWidget::
                                                 GetActiveRollupListener();
                                         if (!rollupListener) {
                                           return;

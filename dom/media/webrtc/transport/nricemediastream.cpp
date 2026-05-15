@@ -49,12 +49,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // nICEr includes
 extern "C" {
+// clang-format off
 #include "nr_api.h"
 #include "transport_addr.h"
 #include "nr_socket.h"
 #include "ice_ctx.h"
 #include "ice_candidate.h"
 #include "ice_handler.h"
+// clang-format on
 }
 
 // Local includes

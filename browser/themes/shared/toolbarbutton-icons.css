@@ -189,6 +189,10 @@
   list-style-image: url("chrome://browser/skin/login.svg");
 }
 
+#share-tab-button {
+  list-style-image: url("chrome://browser/skin/share.svg");
+}
+
 #sidebar-button {
   /* stylelint-disable-next-line media-query-no-invalid */
   @media not -moz-pref("sidebar.revamp") {
@@ -256,33 +260,30 @@
 /* Bookmark toolbar buttons and menu items */
 
 .bookmark-item {
-  list-style-image: url("chrome://global/skin/icons/defaultFavicon.svg");
-  -moz-context-properties: fill;
-  fill: currentColor;
+  --bookmark-item-icon: url("chrome://global/skin/icons/defaultFavicon.svg");
+  --menuitem-icon: var(--bookmark-item-icon);
 
   &:is(toolbarbutton) {
     -moz-context-properties: fill, fill-opacity;
     fill: var(--toolbarbutton-icon-fill);
+    list-style-image: var(--bookmark-item-icon);
   }
 
-  &[container] {
-    list-style-image: url("chrome://global/skin/icons/folder.svg");
+  &[container],
+  &[hostContainer] {
+    --bookmark-item-icon: url("chrome://global/skin/icons/folder.svg");
   }
 
   &[query] {
-    list-style-image: url("chrome://browser/skin/places/folder-smart.svg");
+    --bookmark-item-icon: url("chrome://browser/skin/places/folder-smart.svg");
   }
 
   &[tagContainer] {
-    list-style-image: url("chrome://browser/skin/places/tag.svg");
+    --bookmark-item-icon: url("chrome://browser/skin/places/tag.svg");
   }
 
   &[dayContainer] {
-    list-style-image: url("chrome://browser/skin/history.svg");
-  }
-
-  &[hostContainer] {
-    list-style-image: url("chrome://global/skin/icons/folder.svg");
+    --bookmark-item-icon: url("chrome://browser/skin/history.svg");
   }
 }
 
@@ -317,5 +318,82 @@
 }
 
 #ipprotection-button {
-  list-style-image: url("chrome://browser/content/logos/vpn.svg");
+  list-style-image: url("chrome://browser/content/logos/ipprotection-off.svg");
+  -moz-context-properties: fill, stroke, fill-opacity;
+
+  &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+    list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-off.svg");
+
+    > .toolbarbutton-icon {
+      width: var(--icon-size-small);
+      height: var(--icon-size-small);
+    }
+  }
+
+  &.ipprotection-on {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-on.svg");
+    stroke: var(--icon-color-success);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-on.svg");
+      fill: var(--icon-color-success);
+    }
+  }
+
+  &.ipprotection-error {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-error.svg");
+    stroke: var(--icon-color-critical);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-error.svg");
+      fill: var(--icon-color-critical);
+    }
+  }
+
+  &.ipprotection-excluded {
+    list-style-image: url("chrome://browser/content/logos/ipprotection-excluded.svg");
+    stroke: var(--icon-color-success);
+
+    &:is([overflowedItem="true"], [cui-areatype="panel"]) {
+      list-style-image: url("chrome://browser/content/ipprotection/assets/states/ipprotection-excluded.svg");
+      fill: transparent;
+      stroke: var(--icon-color-success);
+    }
+  }
+}
+
+#taskbar-tabs-favicon {
+  margin: auto 8px;
+  height: var(--icon-size);
+  width: var(--icon-size);
+
+  :root:not([taskbartab]) & {
+    display: none;
+  }
+}
+
+#taskbar-tabs-audio {
+  /* This is only visible in Taskbar Tabs windows; see ':root[taskbartab] toolbar' in
+   * toolbarbuttons.css. */
+  display: none;
+
+  &[soundplaying] {
+    list-style-image: url("chrome://global/skin/media/audio.svg");
+  }
+
+  &[muted] {
+    list-style-image: url("chrome://global/skin/media/audio-muted.svg");
+  }
+}
+
+#smartwindow-ask-button {
+  list-style-image: url("chrome://browser/content/aiwindow/assets/ask-icon.svg");
+
+  &.sidebar-is-open {
+    list-style-image: url("chrome://global/skin/icons/close.svg");
+  }
+}
+
+#document-pip-return-to-opener-button {
+  list-style-image: url("chrome://global/skin/media/picture-in-picture-closed.svg");
 }

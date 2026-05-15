@@ -137,7 +137,7 @@ export function parseURLPattern(pattern) {
 
   let patternUrl;
   switch (pattern.type) {
-    case URLPatternType.Pattern:
+    case URLPatternType.Pattern: {
       patternUrl = "";
       if ("protocol" in pattern) {
         patternUrl += parseProtocol(pattern.protocol);
@@ -179,6 +179,7 @@ export function parseURLPattern(pattern) {
         hasSearch = false;
       }
       break;
+    }
     case URLPatternType.String:
       lazy.assert.string(
         pattern.pattern,

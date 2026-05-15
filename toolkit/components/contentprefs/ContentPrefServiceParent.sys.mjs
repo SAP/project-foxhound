@@ -73,7 +73,7 @@ export class ContentPrefsParent extends JSProcessActorParent {
         break;
       }
 
-      case "ContentPrefs:FunctionCall":
+      case "ContentPrefs:FunctionCall": {
         let data = msg.data;
         let signature;
 
@@ -130,6 +130,7 @@ export class ContentPrefsParent extends JSProcessActorParent {
           // And call the function.
           lazy.cps2[data.call](...args);
         });
+      }
     }
 
     return undefined;
@@ -156,5 +157,5 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "cps2",
   "@mozilla.org/content-pref/service;1",
-  "nsIContentPrefService2"
+  Ci.nsIContentPrefService2
 );

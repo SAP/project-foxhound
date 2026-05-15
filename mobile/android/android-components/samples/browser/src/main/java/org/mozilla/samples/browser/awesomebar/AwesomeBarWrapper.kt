@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.AbstractComposeView
 import mozilla.components.compose.browser.awesomebar.AwesomeBar
 import mozilla.components.concept.awesomebar.AwesomeBar
+import mozilla.components.concept.awesomebar.AwesomeBar.GroupedSuggestion
 
 /**
  * This wrapper wraps the `AwesomeBar()` composable and exposes it as a `View` and `concept-awesomebar`
@@ -23,6 +24,8 @@ class AwesomeBarWrapper @JvmOverloads constructor(
 ) : AbstractComposeView(context, attrs, defStyleAttr), AwesomeBar {
     private val providers = mutableStateOf(emptyList<AwesomeBar.SuggestionProvider>())
     private val text = mutableStateOf("")
+    private val hiddenSuggestions = mutableStateOf<Set<GroupedSuggestion>>(emptySet())
+    private var onRemoveSuggestionButtonClicked: ((GroupedSuggestion) -> Unit)? = null
     private var onEditSuggestionListener: ((String) -> Unit)? = null
     private var onStopListener: (() -> Unit)? = null
 
@@ -31,12 +34,16 @@ class AwesomeBarWrapper @JvmOverloads constructor(
         AwesomeBar(
             text = text.value,
             providers = providers.value,
+            hiddenSuggestions = hiddenSuggestions.value,
             onSuggestionClicked = { suggestion ->
                 suggestion.onSuggestionClicked?.invoke()
                 onStopListener?.invoke()
             },
             onAutoComplete = { suggestion ->
                 onEditSuggestionListener?.invoke(suggestion.editSuggestion!!)
+            },
+            onRemoveClicked = { suggestion ->
+                onRemoveSuggestionButtonClicked?.invoke(suggestion)
             },
         )
     }
@@ -71,5 +78,13 @@ class AwesomeBarWrapper @JvmOverloads constructor(
 
     override fun setOnStopListener(listener: () -> Unit) {
         onStopListener = listener
+    }
+
+    override fun updateHiddenSuggestions(hiddenSuggestions: Set<GroupedSuggestion>) {
+        this.hiddenSuggestions.value = hiddenSuggestions
+    }
+
+    override fun setOnRemoveSuggestionButtonClicked(listener: (GroupedSuggestion) -> Unit) {
+        onRemoveSuggestionButtonClicked = listener
     }
 }

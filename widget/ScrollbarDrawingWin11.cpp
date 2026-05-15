@@ -59,9 +59,6 @@ LayoutDeviceIntSize ScrollbarDrawingWin11::GetMinimumWidgetSize(
     case StyleAppearance::ScrollbarbuttonDown:
     case StyleAppearance::ScrollbarbuttonLeft:
     case StyleAppearance::ScrollbarbuttonRight: {
-      if (IsScrollbarWidthThin(aFrame)) {
-        return {};
-      }
       const LayoutDeviceIntCoord size =
           ScrollbarDrawing::GetScrollbarSize(aPresContext, aFrame);
       return LayoutDeviceIntSize{
@@ -147,8 +144,12 @@ bool ScrollbarDrawingWin11::PaintScrollbarButton(
   auto [buttonColor, arrowColor] = ComputeScrollbarButtonColors(
       aFrame, aAppearance, aStyle, aElementState, aColors);
   if (style != Style::Overlay) {
-    aDrawTarget.FillRect(aRect.ToUnknownRect(),
-                         gfx::ColorPattern(ToDeviceColor(buttonColor)));
+    auto borderColor = aColors.System(StyleSystemColor::Buttontext);
+    // Draw an outline around the scrollbar in high contrast mode
+    auto borderWidth = aColors.HighContrast() ? CSSCoord(1.0f) : CSSCoord(0.0f);
+    ThemeDrawing::PaintRoundedRectWithRadius(aDrawTarget, aRect, buttonColor,
+                                             borderColor, borderWidth, 0,
+                                             aDpiRatio);
   }
 
   // Start with Up arrow.

@@ -7,7 +7,6 @@
 #define ChildProfilerController_h
 
 #include "base/process.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/RefPtr.h"
@@ -57,7 +56,7 @@ class ChildProfilerController final {
   }
   [[nodiscard]] ProfileAndAdditionalInformation
   GrabShutdownProfileAndShutdown() {
-    return ProfileAndAdditionalInformation(std::move(EmptyCString()));
+    return ProfileAndAdditionalInformation();
   }
   void Shutdown() {}
 

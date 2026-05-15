@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_NavigationHistoryEntry_h___
-#define mozilla_dom_NavigationHistoryEntry_h___
+#ifndef mozilla_dom_NavigationHistoryEntry_h_
+#define mozilla_dom_NavigationHistoryEntry_h_
 
 #include "mozilla/DOMEventTargetHelper.h"
 
 class nsIGlobalObject;
-class nsStructuredCloneContainer;
+class nsIStructuredCloneContainer;
 
 namespace mozilla::dom {
 
@@ -34,7 +34,6 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
 
   void GetState(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
                 ErrorResult& aRv) const;
-  void SetState(nsStructuredCloneContainer* aState);
 
   IMPL_EVENT_HANDLER(dispose);
 
@@ -47,7 +46,12 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
 
   const nsID& Key() const;
 
-  nsStructuredCloneContainer* GetNavigationState() const;
+  nsIStructuredCloneContainer* GetNavigationAPIState() const;
+  void SetNavigationAPIState(nsIStructuredCloneContainer* aState);
+
+  class SessionHistoryInfo* SessionHistoryInfo() { return mSHInfo.get(); }
+
+  void ResetIndexForDisposal();
 
  private:
   ~NavigationHistoryEntry();
@@ -57,10 +61,10 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
   bool HasActiveDocument() const;
 
   // https://html.spec.whatwg.org/#nhe-she
-  UniquePtr<SessionHistoryInfo> mSHInfo;
+  UniquePtr<class SessionHistoryInfo> mSHInfo;
   int64_t mIndex;
 };
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_NavigationHistoryEntry_h___
+#endif  // mozilla_dom_NavigationHistoryEntry_h_

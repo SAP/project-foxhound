@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _TraversalRule_H_
-#define _TraversalRule_H_
+#ifndef TraversalRule_H_
+#define TraversalRule_H_
 
 #include "Pivot.h"
 

@@ -231,7 +231,9 @@ void GfxInfo::GetData() {
   bool error = !ManageChildProcess("glxtest", &sGLXTestPID, &sGLXTestPipe,
                                    GFX_TEST_TIMEOUT, &glxData);
   if (error) {
-    gfxCriticalNote << "glxtest: ManageChildProcess failed\n";
+    gfxWarning()
+        << "Failed to get GPU info from glxtest. Fallback to SW rendering! Run "
+           "with MOZ_GFX_DEBUG=1 env variable to get further info.\n";
   }
 
   nsCString glVendor;
@@ -268,7 +270,7 @@ void GfxInfo::GetData() {
       stringToFill->Assign(line);
       stringToFill = nullptr;
     } else if (logString) {
-      gfxCriticalNote << "glxtest: " << line;
+      gfxWarning() << "glxtest: " << line;
       logString = false;
     } else if (!strcmp(line, "VENDOR")) {
       stringToFill = &glVendor;
@@ -480,14 +482,14 @@ void GfxInfo::GetData() {
   // If we still don't have a vendor ID, we can try the PCI vendor list.
   if (mVendorId.IsEmpty()) {
     if (pciVendors.IsEmpty()) {
-      gfxCriticalNote << "No GPUs detected via PCI\n";
+      gfxWarning() << "No GPUs detected via PCI\n";
     } else {
       for (size_t i = 0; i < pciVendors.Length(); ++i) {
         if (mVendorId.IsEmpty()) {
           mVendorId = pciVendors[i];
         } else if (mVendorId != pciVendors[i]) {
-          gfxCriticalNote << "More than 1 GPU vendor detected via PCI, cannot "
-                             "deduce vendor\n";
+          gfxWarning() << "More than 1 GPU vendor detected via PCI, cannot "
+                          "deduce vendor\n";
           mVendorId.Truncate();
           break;
         }
@@ -503,8 +505,8 @@ void GfxInfo::GetData() {
         if (mDeviceId.IsEmpty()) {
           mDeviceId = pciDevices[i];
         } else if (mDeviceId != pciDevices[i]) {
-          gfxCriticalNote << "More than 1 GPU from same vendor detected via "
-                             "PCI, cannot deduce device\n";
+          gfxWarning() << "More than 1 GPU from same vendor detected via "
+                          "PCI, cannot deduce device\n";
           mDeviceId.Truncate();
           break;
         }
@@ -515,7 +517,7 @@ void GfxInfo::GetData() {
   // Assuming we know the vendor, we should check for a secondary card.
   if (!mVendorId.IsEmpty()) {
     if (pciLen > 2) {
-      gfxCriticalNote
+      gfxWarning()
           << "More than 2 GPUs detected via PCI, secondary GPU is arbitrary\n";
     }
     for (size_t i = 0; i < pciLen; ++i) {
@@ -531,8 +533,8 @@ void GfxInfo::GetData() {
   // If we couldn't choose, log them.
   if (mVendorId.IsEmpty()) {
     for (size_t i = 0; i < pciLen; ++i) {
-      gfxCriticalNote << "PCI candidate " << pciVendors[i].get() << "/"
-                      << pciDevices[i].get() << "\n";
+      gfxWarning() << "PCI candidate " << pciVendors[i].get() << "/"
+                   << pciDevices[i].get() << "\n";
     }
   }
 
@@ -994,6 +996,21 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0),
         "FEATURE_FAILURE_WEBRENDER_MESA_VM", "");
+
+    ////////////////////////////////////
+    // FEATURE_MESA_THREADING
+
+    // Bug 1852794 - Disable old nouveau drivers.
+    APPEND_TO_DRIVER_BLOCKLIST_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::MesaNouveau, DeviceFamily::All,
+        nsIGfxInfo::FEATURE_MESA_THREADING, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
+        DRIVER_LESS_THAN_OR_EQUAL, V(23, 2, 1, 0),
+        "FEATURE_FAILURE_MESA_THREADING_OLD_NOUVEAU", "Mesa 23.2.1.0");
+
+    ////////////////////////////////////
+    // FEATURE_WEBGL_USE_HARDWARE
+
     // Disable hardware mesa drivers in virtual machines due to instability.
     APPEND_TO_DRIVER_BLOCKLIST_EXT(
         OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
@@ -1085,12 +1102,31 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
     // FEATURE_DMABUF_WEBGL
     // Disabled due to DMABuf rendering/correctness with WebGL on Nvidia driver,
     // tracked in bug 1924578.
+#ifdef NIGHTLY_BUILD
+    // Block all but the most recent drivers for NVIDIA legacy devices.
+    APPEND_TO_DRIVER_BLOCKLIST_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::NonMesaAll, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_DMABUF_WEBGL, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
+        DRIVER_LESS_THAN, V(470, 256, 2, 0), "FEATURE_FAILURE_BUG_1981326",
+        "NVIDIA 470.256.02 / 580.76.05");
+
+    // Block all but the most recent drivers for NVIDIA supported devices.
+    APPEND_TO_DRIVER_BLOCKLIST_RANGE_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::NonMesaAll, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_DMABUF_WEBGL,
+        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
+        DRIVER_BETWEEN_INCLUSIVE_START, V(471, 0, 0, 0), V(580, 76, 5, 0),
+        "FEATURE_FAILURE_BUG_1981326", "NVIDIA 470.256.02 / 580.76.05");
+#else
     APPEND_TO_DRIVER_BLOCKLIST_EXT(
         OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
         WindowProtocol::All, DriverVendor::NonMesaAll, DeviceFamily::NvidiaAll,
         nsIGfxInfo::FEATURE_DMABUF_WEBGL, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), "FEATURE_FAILURE_BUG_1924578",
         "");
+#endif
 
     ////////////////////////////////////
     // FEATURE_HARDWARE_VIDEO_DECODING
@@ -1167,6 +1203,22 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
         V(21, 0, 0, 0), "FEATURE_FAILURE_WEBRENDER_PARTIAL_PRESENT_BUG_1677892",
         "Mesa 21.0.0.0");
+
+    ////////////////////////////////////
+    // FEATURE_WEBGPU
+    APPEND_TO_DRIVER_BLOCKLIST_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::MesaAll, DeviceFamily::All,
+        nsIGfxInfo::FEATURE_WEBGPU, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
+        DRIVER_LESS_THAN, V(25, 0, 4, 0),
+        "FEATURE_FAILURE_WEBGPU_MESA_BUG_1979007", "Mesa 25.0.4");
+
+    APPEND_TO_DRIVER_BLOCKLIST_EXT(
+        OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
+        WindowProtocol::All, DriverVendor::MesaLLVMPipe, DeviceFamily::All,
+        nsIGfxInfo::FEATURE_WEBGPU, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
+        DRIVER_LESS_THAN, V(25, 2, 5, 0),
+        "FEATURE_FAILURE_WEBGPU_MESA_LLVMPipe_BUG_1995054", "Mesa 25.2.5");
 
     ////////////////////////////////////
 
@@ -1383,9 +1435,6 @@ nsresult GfxInfo::GetFeatureStatusImpl(
 
   return ret;
 }
-
-NS_IMETHODIMP
-GfxInfo::GetD2DEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
 NS_IMETHODIMP
 GfxInfo::GetDWriteEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }

@@ -4,7 +4,7 @@
 ---
 task-defaults:
     description: "geckodriver toolchain build"
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     run-on-projects: ['trunk']
@@ -25,18 +25,6 @@ task-defaults:
             # 'testing/geckodriver/Cargo.toml'.
 
 # For Linux platforms target "*-musl" so that the binary will be statically linked.
-
-linux32-geckodriver:
-    treeherder:
-        symbol: TL32(gd)
-        platform: linux32/opt
-    run:
-        arguments: ['i686-unknown-linux-musl']
-    attributes:
-        build_platform: linux-geckodriver
-    fetches:
-        toolchain:
-            - linux64-rust-static
 
 linux64-geckodriver:
     treeherder:

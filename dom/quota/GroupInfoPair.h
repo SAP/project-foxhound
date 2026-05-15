@@ -65,6 +65,21 @@ class GroupInfoPair {
            mPrivateStorageGroupInfo;
   }
 
+  template <typename Iterator, typename Pred>
+  void MaybeInsertOriginInfos(Iterator aDest, Pred aPred) const;
+
+  template <typename Iterator>
+  void MaybeInsertNonPersistedOriginInfos(Iterator aDest) const;
+
+  // Inserts non-persisted origins that also have zero quota-charged usage.
+  // Used by cleanup routines to identify candidate origins for removal.
+  //
+  // See QuotaManager::GetOriginInfosWithZeroUsage for the semantics and time
+  // units of |aCutoffAccessTime|.
+  template <typename Iterator>
+  void MaybeInsertNonPersistedZeroUsageOriginInfos(
+      Iterator aDest, const Maybe<int64_t>& aCutoffAccessTime) const;
+
  private:
   RefPtr<GroupInfo>& GetGroupInfoForPersistenceType(
       PersistenceType aPersistenceType);

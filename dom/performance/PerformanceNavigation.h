@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_PerformanceNavigation_h
 #define mozilla_dom_PerformanceNavigation_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/Performance.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsWrapperCache.h"

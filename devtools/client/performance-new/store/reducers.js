@@ -19,6 +19,7 @@
 
 /**
  * The current state of the recording.
+ *
  * @type {Reducer<RecordingState>}
  */
 // eslint-disable-next-line complexity
@@ -109,6 +110,7 @@ function recordingState(state = "not-yet-known", action) {
 /**
  * Whether or not the recording state unexpectedly stopped. This allows
  * the UI to display a helpful message.
+ *
  * @param {RecordingState | undefined} recState
  * @param {boolean} state
  * @param {Action} action
@@ -134,6 +136,7 @@ function recordingUnexpectedlyStopped(recState, state = false, action) {
 /**
  * The profiler needs to be queried asynchronously on whether or not
  * it supports the user's platform.
+ *
  * @type {Reducer<boolean | null>}
  */
 function isSupportedPlatform(state = null, action) {
@@ -148,6 +151,7 @@ function isSupportedPlatform(state = null, action) {
 /**
  * This object represents the default recording settings. They should be
  * overriden by whatever is read from the Firefox preferences at load time.
+ *
  * @type {RecordingSettings}
  */
 const DEFAULT_RECORDING_SETTINGS = {
@@ -170,6 +174,7 @@ const DEFAULT_RECORDING_SETTINGS = {
 /**
  * This small utility returns true if the parameters contain the same values.
  * This is essentially a deepEqual operation specific to this structure.
+ *
  * @param {RecordingSettings} a
  * @param {RecordingSettings} b
  * @return {boolean}
@@ -212,6 +217,7 @@ function areSettingsEquals(a, b) {
 
 /**
  * This handles all values used as recording settings.
+ *
  * @type {Reducer<RecordingSettings>}
  */
 function recordingSettings(state = DEFAULT_RECORDING_SETTINGS, action) {
@@ -308,6 +314,7 @@ function promptEnvRestart(state = null, action) {
 
 /**
  * The main reducer for the performance-new client.
+ *
  * @type {Reducer<State>}
  */
 module.exports = (state = undefined, action) => {

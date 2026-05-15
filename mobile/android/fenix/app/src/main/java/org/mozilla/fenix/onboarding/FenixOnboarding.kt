@@ -17,7 +17,7 @@ class FenixOnboarding(context: Context) : PreferencesHolder {
 
     private val strictMode = context.components.strictMode
 
-    override val preferences: SharedPreferences = strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+    override val preferences: SharedPreferences = strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
         context.getSharedPreferences(
             PREF_NAME_ONBOARDING_KEY,
             Context.MODE_PRIVATE,
@@ -40,7 +40,7 @@ class FenixOnboarding(context: Context) : PreferencesHolder {
     }
 
     fun userHasBeenOnboarded(): Boolean {
-        return strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        return strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             onboardedVersion == CURRENT_ONBOARDING_VERSION
         }
     }

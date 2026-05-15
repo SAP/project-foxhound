@@ -11,7 +11,6 @@ import android.media.MediaCodec.CryptoInfo;
 import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
-import androidx.annotation.ChecksSdkIntAtLeast;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import org.mozilla.gecko.annotation.WrapForJNI;
@@ -69,11 +68,10 @@ public final class Sample implements Parcelable {
       cryptoInfo = new CryptoInfo();
     }
     cryptoInfo.set(numSubSamples, numBytesOfClearData, numBytesOfEncryptedData, key, iv, mode);
-    if (supportsCryptoPattern()) {
-      final int numEncryptBlocks = in.readInt();
-      final int numSkipBlocks = in.readInt();
-      cryptoInfo.setPattern(new CryptoInfo.Pattern(numEncryptBlocks, numSkipBlocks));
-    }
+
+    final int numEncryptBlocks = in.readInt();
+    final int numSkipBlocks = in.readInt();
+    cryptoInfo.setPattern(new CryptoInfo.Pattern(numEncryptBlocks, numSkipBlocks));
   }
 
   public Sample set(final BufferInfo info, final CryptoInfo cryptoInfo) {
@@ -110,13 +108,11 @@ public final class Sample implements Parcelable {
       // synthesize it by creating a subsample as big as the sample itself.
       cryptoInfo.set(1, new int[] {0}, new int[] {info.size}, crypto.key, crypto.iv, crypto.mode);
     }
-    if (supportsCryptoPattern()) {
-      final CryptoInfo.Pattern pattern = getCryptoPatternCompat(crypto);
-      if (pattern == null) {
-        return;
-      }
-      cryptoInfo.setPattern(pattern);
+    final CryptoInfo.Pattern pattern = getCryptoPatternCompat(crypto);
+    if (pattern == null) {
+      return;
     }
+    cryptoInfo.setPattern(pattern);
   }
 
   @WrapForJNI
@@ -209,16 +205,14 @@ public final class Sample implements Parcelable {
       dest.writeIntArray(cryptoInfo.numBytesOfClearData);
       dest.writeIntArray(cryptoInfo.numBytesOfEncryptedData);
       dest.writeInt(cryptoInfo.numSubSamples);
-      if (supportsCryptoPattern()) {
-        final CryptoInfo.Pattern pattern = getCryptoPatternCompat(cryptoInfo);
-        if (pattern != null) {
-          dest.writeInt(pattern.getEncryptBlocks());
-          dest.writeInt(pattern.getSkipBlocks());
-        } else {
-          // Couldn't get pattern - write default values
-          dest.writeInt(0);
-          dest.writeInt(0);
-        }
+      final CryptoInfo.Pattern pattern = getCryptoPatternCompat(cryptoInfo);
+      if (pattern != null) {
+        dest.writeInt(pattern.getEncryptBlocks());
+        dest.writeInt(pattern.getSkipBlocks());
+      } else {
+        // Couldn't get pattern - write default values
+        dest.writeInt(0);
+        dest.writeInt(0);
       }
     } else {
       dest.writeInt(0);
@@ -265,35 +259,22 @@ public final class Sample implements Parcelable {
     return str.toString();
   }
 
-  @ChecksSdkIntAtLeast(api = android.os.Build.VERSION_CODES.N)
-  public static boolean supportsCryptoPattern() {
-    return Build.VERSION.SDK_INT >= 24;
-  }
-
   @SuppressLint("DiscouragedPrivateApi")
   public static CryptoInfo.Pattern getCryptoPatternCompat(final CryptoInfo cryptoInfo) {
-    if (!supportsCryptoPattern()) {
-      return null;
-    }
     // getPattern() added in API 31:
     // https://developer.android.com/reference/android/media/MediaCodec.CryptoInfo#getPattern()
     if (Build.VERSION.SDK_INT >= 31) {
       return cryptoInfo.getPattern();
     }
 
-    // CryptoInfo.Pattern added in API 24:
-    // https://developer.android.com/reference/android/media/MediaCodec.CryptoInfo.Pattern
-    if (Build.VERSION.SDK_INT >= 24) {
-      try {
-        // Without getPattern(), no way to access the pattern without reflection.
-        // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r1:frameworks/base/media/java/android/media/MediaCodec.java;l=2718;drc=3c715d5778e15dc84082e63dc65b382d31fe8e45
-        final Field patternField = CryptoInfo.class.getDeclaredField("pattern");
-        patternField.setAccessible(true);
-        return (CryptoInfo.Pattern) patternField.get(cryptoInfo);
-      } catch (final NoSuchFieldException | IllegalAccessException e) {
-        return null;
-      }
+    try {
+      // Without getPattern(), no way to access the pattern without reflection.
+      // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r1:frameworks/base/media/java/android/media/MediaCodec.java;l=2718;drc=3c715d5778e15dc84082e63dc65b382d31fe8e45
+      final Field patternField = CryptoInfo.class.getDeclaredField("pattern");
+      patternField.setAccessible(true);
+      return (CryptoInfo.Pattern) patternField.get(cryptoInfo);
+    } catch (final NoSuchFieldException | IllegalAccessException e) {
+      return null;
     }
-    return null;
   }
 }

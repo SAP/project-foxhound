@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<issues format="6" by="lint 8.9.1" type="baseline" client="gradle" dependencies="false" name="AGP (8.9.1)" variant="all" version="8.9.1">
+<issues format="6" by="lint 8.13.2" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.2)" variant="all" version="8.13.2">
 
     <issue
         id="ButtonStyleXmlDetector"
@@ -10,17 +10,6 @@
             file="src/main/res/layout/activity_installed_add_on_details.xml"
             line="86"
             column="10"/>
-    </issue>
-
-    <issue
-        id="PrivateResource"
-        message="The resource `@color/browser_actions_divider_color` is marked as private in androidx.browser:browser:1.8.0"
-        errorLine1="                    dividerColor = androidxBrowserR.color.browser_actions_divider_color,"
-        errorLine2="                                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/samples/browser/addons/AddonsFragment.kt"
-            line="82"
-            column="59"/>
     </issue>
 
     <issue
@@ -40,7 +29,7 @@
         errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
         errorLine2="^">
         <location
-            file="src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+            file="src/main/res/mipmap-anydpi/ic_launcher.xml"
             line="5"
             column="1"/>
     </issue>
@@ -51,7 +40,7 @@
         errorLine1="&lt;adaptive-icon xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
         errorLine2="^">
         <location
-            file="src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml"
+            file="src/main/res/mipmap-anydpi/ic_launcher_round.xml"
             line="5"
             column="1"/>
     </issue>

@@ -8,13 +8,13 @@
 
 #include "AsyncEventRunner.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/SourceBufferListBinding.h"
 #include "mozilla/mozalloc.h"
 #include "nsCOMPtr.h"
 #include "nsIRunnable.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Logging.h"
 
 extern mozilla::LogModule* GetMediaSourceLog();
 extern mozilla::LogModule* GetMediaSourceAPILog();

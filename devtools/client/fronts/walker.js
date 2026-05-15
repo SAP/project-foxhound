@@ -273,6 +273,9 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
         }
       } else if (change.type === "shadowRootAttached") {
         targetFront._form.isShadowHost = true;
+        if ("numChildren" in change) {
+          targetFront._form.numChildren = change.numChildren;
+        }
       } else if (change.type === "customElementDefined") {
         targetFront._form.customElementLocation = change.customElementLocation;
       } else if (change.type === "unretained") {
@@ -436,7 +439,8 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
 
   /**
    * Start the element picker on the debuggee target.
-   * @param {Boolean} doFocus - Optionally focus the content area once the picker is
+   *
+   * @param {boolean} doFocus - Optionally focus the content area once the picker is
    *                            activated.
    */
   pick(doFocus) {
@@ -465,5 +469,4 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
   }
 }
 
-exports.WalkerFront = WalkerFront;
 registerFront(WalkerFront);

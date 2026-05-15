@@ -7,8 +7,6 @@
 #ifndef mozilla_layout_ScrollSnapInfo_h_
 #define mozilla_layout_ScrollSnapInfo_h_
 
-#include <memory>
-
 #include "mozilla/Maybe.h"
 #include "mozilla/ScrollSnapTargetId.h"
 #include "mozilla/ScrollTypes.h"
@@ -34,9 +32,7 @@ struct SnapPoint {
   SnapPoint(Maybe<nscoord>&& aX, Maybe<nscoord>&& aY)
       : mX(std::move(aX)), mY(std::move(aY)) {}
 
-  bool operator==(const SnapPoint& aOther) const {
-    return mX == aOther.mX && mY == aOther.mY;
-  }
+  bool operator==(const SnapPoint&) const = default;
 
   Maybe<nscoord> mX;
   Maybe<nscoord> mY;
@@ -46,14 +42,7 @@ struct ScrollSnapInfo {
   using ScrollDirection = layers::ScrollDirection;
   ScrollSnapInfo();
 
-  bool operator==(const ScrollSnapInfo& aOther) const {
-    return mScrollSnapStrictnessX == aOther.mScrollSnapStrictnessX &&
-           mScrollSnapStrictnessY == aOther.mScrollSnapStrictnessY &&
-           mSnapTargets == aOther.mSnapTargets &&
-           mXRangeWiderThanSnapport == aOther.mXRangeWiderThanSnapport &&
-           mYRangeWiderThanSnapport == aOther.mYRangeWiderThanSnapport &&
-           mSnapportSize == aOther.mSnapportSize;
-  }
+  bool operator==(const ScrollSnapInfo&) const = default;
 
   bool HasScrollSnapping() const;
   bool HasSnapPositions() const;
@@ -88,11 +77,7 @@ struct ScrollSnapInfo {
           mScrollSnapStop(aScrollSnapStop),
           mTargetId(aTargetId) {}
 
-    bool operator==(const SnapTarget& aOther) const {
-      return mSnapPoint == aOther.mSnapPoint && mSnapArea == aOther.mSnapArea &&
-             mScrollSnapStop == aOther.mScrollSnapStop &&
-             mTargetId == aOther.mTargetId;
-    }
+    bool operator==(const SnapTarget& aOther) const = default;
   };
 
   CopyableTArray<SnapTarget> mSnapTargets;
@@ -114,10 +99,7 @@ struct ScrollSnapInfo {
     ScrollDirection mDirection;
     ScrollSnapTargetId mTargetId;
 
-    bool operator==(const ScrollSnapRange& aOther) const {
-      return mDirection == aOther.mDirection && mSnapArea == aOther.mSnapArea &&
-             mTargetId == aOther.mTargetId;
-    }
+    bool operator==(const ScrollSnapRange& aOther) const = default;
 
     nscoord Start() const {
       return mDirection == ScrollDirection::eHorizontal ? mSnapArea.X()

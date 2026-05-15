@@ -1,0 +1,15 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * ehealth.gov.gr - popup text does not properly fit.
+ * Bug #2003011 - https://bugzilla.mozilla.org/show_bug.cgi?id=2003011
+ * WebCompat issue #192011 - https://webcompat.com/issues/192011
+ *
+ * Firefox for Android's font inflation causes text in a popup to be too
+ * large to fit in its space. This CSS corrects that issue.
+ */
+:root {
+  -moz-text-size-adjust: none;
+}

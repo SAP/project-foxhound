@@ -20,8 +20,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=375363
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for parsing, storage, and serialization of CSS 'initial' on all
-    properties and 'unset' on reset properties **/
+/**
+ * Test for parsing, storage, and serialization of CSS 'initial' on all
+ * properties and 'unset' on reset properties
+ */
 
 var gDeclaration = document.getElementById("testnode").style;
 
@@ -32,6 +34,9 @@ var gDeclaration = document.getElementById("testnode").style;
 function check_consistency(sproperty, valFromGetPropertyValue, messagePrefix)
 {
   var sinfo = gCSSProperties[sproperty];
+  if (sinfo.domPropDisabled) {
+    return;
+  }
   is(valFromGetPropertyValue, gDeclaration[sinfo.domProp],
      `(${messagePrefix}) consistency between ` +
      `decl.getPropertyValue(${sproperty}) and decl.${sinfo.domProp}`);

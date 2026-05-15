@@ -48,7 +48,7 @@ class SVGFELeafFrame final : public nsIFrame {
 #endif
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   bool ComputeCustomOverflow(OverflowAreas& aOverflowAreas) override {
     // We don't maintain a ink overflow rect
@@ -81,7 +81,7 @@ void SVGFELeafFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 nsresult SVGFELeafFrame::AttributeChanged(int32_t aNameSpaceID,
                                           nsAtom* aAttribute,
-                                          int32_t aModType) {
+                                          AttrModType aModType) {
   auto* element =
       static_cast<mozilla::dom::SVGFilterPrimitiveElement*>(GetContent());
   if (element->AttributeAffectsRendering(aNameSpaceID, aAttribute)) {

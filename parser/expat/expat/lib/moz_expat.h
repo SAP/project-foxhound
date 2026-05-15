@@ -59,7 +59,7 @@ MOZ_XML_SetExternalEntityRefHandler(XML_Parser parser,
 void
 MOZ_XML_SetReturnNSTriplet(XML_Parser parser, int do_nst);
 
-enum XML_Status
+void
 MOZ_XML_SetBase(XML_Parser parser, const XML_Char *base);
 
 const XML_Char *
@@ -68,13 +68,15 @@ MOZ_XML_GetBase(XML_Parser parser);
 int
 MOZ_XML_GetSpecifiedAttributeCount(XML_Parser parser);
 
-enum XML_Status
+// The return value is an XML_Status.
+int
 MOZ_XML_Parse(XML_Parser parser, const char *s, int len, int isFinal);
 
-enum XML_Status
+void
 MOZ_XML_StopParser(XML_Parser parser, int resumable);
 
-enum XML_Status
+// The return value is an XML_Status.
+int
 MOZ_XML_ResumeParser(XML_Parser parser);
 
 XML_Parser
@@ -89,7 +91,8 @@ MOZ_XML_SetParamEntityParsing(XML_Parser parser,
 int
 MOZ_XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt);
 
-enum XML_Error
+// The return value is an XML_Error.
+int
 MOZ_XML_GetErrorCode(XML_Parser parser);
 
 XML_Size MOZ_XML_GetCurrentLineNumber(XML_Parser parser);

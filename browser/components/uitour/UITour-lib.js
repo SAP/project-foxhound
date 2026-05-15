@@ -322,7 +322,6 @@ if (typeof Mozilla == "undefined") {
    *
    * @see Mozilla.UITour.showMenu
    * @see Mozilla.UITour.hideMenu
-   * @see Mozilla.UITour.openSearchPanel
    */
 
   /**
@@ -632,6 +631,19 @@ if (typeof Mozilla == "undefined") {
   };
 
   /**
+   * Trigger the Firefox Accounts sign-in flow for the AI Window feature.
+   *
+   * This will prompt the user to sign in and then open the AI Window
+   * upon successful authentication.
+   *
+   * @example
+   * Mozilla.UITour.showFirefoxAccountsForAIWindow();
+   */
+  Mozilla.UITour.showFirefoxAccountsForAIWindow = function () {
+    _sendEvent("showFirefoxAccountsForAIWindow");
+  };
+
+  /**
    * Request the browser open the "Connect Another Device" Firefox Accounts page.
    *
    * @param {object} extraURLParams - An object containing additional
@@ -757,20 +769,6 @@ if (typeof Mozilla == "undefined") {
   };
 
   /**
-   * @summary Opens the search box's panel.
-   *
-   * @description This should have been implemented via `showMenu("search", …)`.
-   *
-   * @param {Function} callback - Called once the panel has opened.
-   * @since 34
-   */
-  Mozilla.UITour.openSearchPanel = function (callback) {
-    _sendEvent("openSearchPanel", {
-      callbackID: _waitForCallback(callback),
-    });
-  };
-
-  /**
    * @summary Force the reader mode icon to appear in the address bar regardless of whether
    * heuristics determine it's appropriate.
    *
@@ -831,7 +829,6 @@ if (typeof Mozilla == "undefined") {
 })();
 
 // Make this library Require-able.
-/* eslint-env commonjs */
 if (typeof module !== "undefined" && module.exports) {
   module.exports = Mozilla.UITour;
 }

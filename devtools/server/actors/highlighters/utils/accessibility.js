@@ -93,10 +93,6 @@ class Infobar {
     return this.highlighter.options;
   }
 
-  get prefix() {
-    return this.highlighter.ID_CLASS_PREFIX;
-  }
-
   get win() {
     return this.highlighter.win;
   }
@@ -125,50 +121,45 @@ class Infobar {
     const container = this.markup.createNode({
       parent: root,
       attributes: {
-        class: "infobar-container",
-        id: "infobar-container",
+        class: "accessible-infobar-container",
+        id: "accessible-infobar-container",
         "aria-hidden": "true",
         hidden: "true",
       },
-      prefix: this.prefix,
     });
 
     const infobar = this.markup.createNode({
       parent: container,
       attributes: {
-        class: "infobar",
-        id: "infobar",
+        class: "accessible-infobar",
+        id: "accessible-infobar",
       },
-      prefix: this.prefix,
     });
 
     const infobarText = this.markup.createNode({
       parent: infobar,
       attributes: {
-        class: "infobar-text",
-        id: "infobar-text",
+        class: "accessible-infobar-text",
+        id: "accessible-infobar-text",
       },
-      prefix: this.prefix,
     });
 
     this.markup.createNode({
       nodeType: "span",
       parent: infobarText,
       attributes: {
-        class: "infobar-role",
-        id: "infobar-role",
+        class: "accessible-infobar-role",
+        id: "accessible-infobar-role",
       },
-      prefix: this.prefix,
     });
 
     this.markup.createNode({
       nodeType: "span",
       parent: infobarText,
       attributes: {
-        class: "infobar-name",
-        id: "infobar-name",
+        class: "accessible-infobar-name",
+        id: "accessible-infobar-name",
       },
-      prefix: this.prefix,
     });
 
     this.audit.buildMarkup(infobarText);
@@ -186,7 +177,7 @@ class Infobar {
   /**
    * Gets the element with the specified ID.
    *
-   * @param  {String} id
+   * @param  {string} id
    *         Element ID.
    * @return {Element} The element with specified ID.
    */
@@ -197,21 +188,20 @@ class Infobar {
   /**
    * Gets the text content of element.
    *
-   * @param  {String} id
+   * @param  {string} id
    *          Element ID to retrieve text content from.
-   * @return {String} The text content of the element.
+   * @return {string} The text content of the element.
    */
   getTextContent(id) {
     const anonymousContent = this.markup.content;
-    return anonymousContent.root.getElementById(`${this.prefix}${id}`)
-      .textContent;
+    return anonymousContent.root.getElementById(id).textContent;
   }
 
   /**
    * Hide the accessible infobar.
    */
   hide() {
-    const container = this.getElement("infobar-container");
+    const container = this.getElement("accessible-infobar-container");
     container.setAttribute("hidden", "true");
   }
 
@@ -219,7 +209,7 @@ class Infobar {
    * Show the accessible infobar highlighter.
    */
   show() {
-    const container = this.getElement("infobar-container");
+    const container = this.getElement("accessible-infobar-container");
 
     // Remove accessible's infobar "hidden" attribute. We do this first to get the
     // computed styles of the infobar container.
@@ -235,8 +225,8 @@ class Infobar {
   update(container) {
     const { audit, name, role } = this.options;
 
-    this.updateRole(role, this.getElement("infobar-role"));
-    this.updateName(name, this.getElement("infobar-name"));
+    this.updateRole(role, this.getElement("accessible-infobar-role"));
+    this.updateName(name, this.getElement("accessible-infobar-name"));
     this.audit.update(audit);
 
     // Position the infobar.
@@ -248,7 +238,7 @@ class Infobar {
    *
    * @param  {Element} el
    *         Element to set text content on.
-   * @param  {String} text
+   * @param  {string} text
    *         Text for content.
    */
   setTextContent(el, text) {
@@ -258,7 +248,7 @@ class Infobar {
   /**
    * Show the accessible's name message.
    *
-   * @param  {String} name
+   * @param  {string} name
    *         Accessible's name value.
    * @param  {Element} el
    *         Element to set text content on.
@@ -271,7 +261,7 @@ class Infobar {
   /**
    * Show the accessible's role.
    *
-   * @param  {String} role
+   * @param  {string} role
    *         Accessible's role value.
    * @param  {Element} el
    *         Element to set text content on.
@@ -299,10 +289,6 @@ class Audit {
     };
   }
 
-  get prefix() {
-    return this.infobar.prefix;
-  }
-
   get markup() {
     return this.infobar.markup;
   }
@@ -312,17 +298,16 @@ class Audit {
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "infobar-audit",
-        id: "infobar-audit",
+        class: "accessible-infobar-audit",
+        id: "accessible-infobar-audit",
       },
-      prefix: this.prefix,
     });
 
     Object.values(this.reports).forEach(report => report.buildMarkup(audit));
   }
 
   update(audit = {}) {
-    const el = this.getElement("infobar-audit");
+    const el = this.getElement("accessible-infobar-audit");
     el.setAttribute("hidden", true);
 
     let updated = false;
@@ -361,10 +346,6 @@ class AuditReport {
     this.audit = audit;
   }
 
-  get prefix() {
-    return this.audit.prefix;
-  }
-
   get markup() {
     return this.audit.markup;
   }
@@ -392,20 +373,18 @@ class ContrastRatio extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "contrast-ratio-label",
-        id: "contrast-ratio-label",
+        class: "accessible-contrast-ratio-label",
+        id: "accessible-contrast-ratio-label",
       },
-      prefix: this.prefix,
     });
 
     this.markup.createNode({
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "contrast-ratio-error",
-        id: "contrast-ratio-error",
+        class: "accessible-contrast-ratio-error",
+        id: "accessible-contrast-ratio-error",
       },
-      prefix: this.prefix,
       text: L10N.getStr("accessibility.contrast.ratio.error"),
     });
 
@@ -413,37 +392,34 @@ class ContrastRatio extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "contrast-ratio",
-        id: "contrast-ratio-min",
+        class: "accessible-contrast-ratio",
+        id: "accessible-contrast-ratio-min",
       },
-      prefix: this.prefix,
     });
 
     this.markup.createNode({
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "contrast-ratio-separator",
-        id: "contrast-ratio-separator",
+        class: "accessible-contrast-ratio-separator",
+        id: "accessible-contrast-ratio-separator",
       },
-      prefix: this.prefix,
     });
 
     this.markup.createNode({
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "contrast-ratio",
-        id: "contrast-ratio-max",
+        class: "accessible-contrast-ratio",
+        id: "accessible-contrast-ratio-max",
       },
-      prefix: this.prefix,
     });
   }
 
   _fillAndStyleContrastValue(el, { value, className, color, backgroundColor }) {
     value = value.toFixed(2);
     this.setTextContent(el, value);
-    el.classList.add(className);
+    el.classList?.add(className);
     el.setAttribute(
       "style",
       `--accessibility-highlighter-contrast-ratio-color: rgba(${color});` +
@@ -454,19 +430,22 @@ class ContrastRatio extends AuditReport {
 
   /**
    * Update contrast ratio score infobar markup.
-   * @param  {Object}
+   *
+   * @param  {object}
    *         Audit report for a given highlighted accessible.
-   * @return {Boolean}
+   * @return {boolean}
    *         True if the contrast ratio markup was updated correctly and infobar audit
    *         block should be visible.
    */
   update(audit) {
     const els = {};
     for (const key of ["label", "min", "max", "error", "separator"]) {
-      const el = (els[key] = this.getElement(`contrast-ratio-${key}`));
+      const el = (els[key] = this.getElement(
+        `accessible-contrast-ratio-${key}`
+      ));
       if (["min", "max"].includes(key)) {
         Object.values(SCORES).forEach(className =>
-          el.classList.remove(className)
+          el.classList?.remove(className)
         );
         this.setTextContent(el, "");
       }
@@ -559,25 +538,25 @@ class Keyboard extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "audit",
-        id: "keyboard",
+        class: "accessible-audit",
+        id: "accessible-keyboard",
       },
-      prefix: this.prefix,
     });
   }
 
   /**
    * Update keyboard audit infobar markup.
-   * @param  {Object}
+   *
+   * @param  {object}
    *         Audit report for a given highlighted accessible.
-   * @return {Boolean}
+   * @return {boolean}
    *         True if the keyboard markup was updated correctly and infobar audit
    *         block should be visible.
    */
   update(audit) {
-    const el = this.getElement("keyboard");
+    const el = this.getElement("accessible-keyboard");
     el.setAttribute("hidden", true);
-    Object.values(SCORES).forEach(className => el.classList.remove(className));
+    Object.values(SCORES).forEach(className => el.classList?.remove(className));
 
     if (!audit) {
       return false;
@@ -593,7 +572,7 @@ class Keyboard extends AuditReport {
       el,
       L10N.getStr(Keyboard.ISSUE_TO_INFOBAR_LABEL_MAP[issue])
     );
-    el.classList.add(score);
+    el.classList?.add(score);
     el.removeAttribute("hidden");
 
     return true;
@@ -638,25 +617,25 @@ class TextLabel extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "audit",
-        id: "text-label",
+        class: "accessible-audit",
+        id: "accessible-text-label",
       },
-      prefix: this.prefix,
     });
   }
 
   /**
    * Update text label audit infobar markup.
-   * @param  {Object}
+   *
+   * @param  {object}
    *         Audit report for a given highlighted accessible.
-   * @return {Boolean}
+   * @return {boolean}
    *         True if the text label markup was updated correctly and infobar
    *         audit block should be visible.
    */
   update(audit) {
-    const el = this.getElement("text-label");
+    const el = this.getElement("accessible-text-label");
     el.setAttribute("hidden", true);
-    Object.values(SCORES).forEach(className => el.classList.remove(className));
+    Object.values(SCORES).forEach(className => el.classList?.remove(className));
 
     if (!audit) {
       return false;
@@ -672,7 +651,7 @@ class TextLabel extends AuditReport {
       el,
       L10N.getStr(TextLabel.ISSUE_TO_INFOBAR_LABEL_MAP[issue])
     );
-    el.classList.add(score);
+    el.classList?.add(score);
     el.removeAttribute("hidden");
 
     return true;
@@ -683,9 +662,9 @@ class TextLabel extends AuditReport {
  * A helper function that calculate accessible object bounds and positioning to
  * be used for highlighting.
  *
- * @param  {Object} win
+ * @param  {object} win
  *         window that contains accessible object.
- * @param  {Object} options
+ * @param  {object} options
  *         Object used for passing options:
  *         - {Number} x
  *           x coordinate of the top left corner of the accessible object
@@ -695,7 +674,7 @@ class TextLabel extends AuditReport {
  *           width of the the accessible object
  *         - {Number} h
  *           height of the the accessible object
- * @return {Object|null} Returns, if available, positioning and bounds information for
+ * @return {object | null} Returns, if available, positioning and bounds information for
  *                 the accessible object.
  */
 function getBounds(win, { x, y, w, h }) {
@@ -726,9 +705,9 @@ function getBounds(win, { x, y, w, h }) {
  * A helper function that calculate accessible object bounds and positioning to
  * be used for highlighting in browser toolbox.
  *
- * @param  {Object} win
+ * @param  {object} win
  *         window that contains accessible object.
- * @param  {Object} options
+ * @param  {object} options
  *         Object used for passing options:
  *         - {Number} x
  *           x coordinate of the top left corner of the accessible object
@@ -740,7 +719,7 @@ function getBounds(win, { x, y, w, h }) {
  *           height of the the accessible object
  *         - {Number} zoom
  *           zoom level of the accessible object's parent window
- * @return {Object|null} Returns, if available, positioning and bounds information for
+ * @return {object | null} Returns, if available, positioning and bounds information for
  *                 the accessible object.
  */
 function getBoundsXUL(win, { x, y, w, h, zoom }) {

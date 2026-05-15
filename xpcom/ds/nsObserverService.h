@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsObserverService_h___
-#define nsObserverService_h___
+#ifndef nsObserverService_h_
+#define nsObserverService_h_
 
 #include "nsIObserverService.h"
 #include "nsObserverList.h"
 #include "nsIMemoryReporter.h"
 #include "nsTHashtable.h"
-#include "mozilla/Attributes.h"
 
 // {D07F5195-E3D1-11d2-8ACD-00105A1B8860}
 #define NS_OBSERVERSERVICE_CID \
@@ -47,4 +46,4 @@ class nsObserverService final : public nsIObserverService,
   nsTHashtable<nsObserverList> mObserverTopicTable;
 };
 
-#endif /* nsObserverService_h___ */
+#endif /* nsObserverService_h_ */

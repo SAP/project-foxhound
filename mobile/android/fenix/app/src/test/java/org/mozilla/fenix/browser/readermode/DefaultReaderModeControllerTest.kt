@@ -25,6 +25,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.robolectric.RobolectricTestRunner
+import mozilla.components.feature.readerview.R as readerviewR
 
 @RunWith(RobolectricTestRunner::class)
 class DefaultReaderModeControllerTest {
@@ -119,16 +120,16 @@ class DefaultReaderModeControllerTest {
         val sansSerif = mockk<RadioButton>(relaxUnitFun = true)
 
         every {
-            readerViewControlsBar.findViewById<Button>(R.id.mozac_feature_readerview_font_size_decrease)
+            readerViewControlsBar.findViewById<Button>(readerviewR.id.mozac_feature_readerview_font_size_decrease)
         } returns decrease
         every {
-            readerViewControlsBar.findViewById<Button>(R.id.mozac_feature_readerview_font_size_increase)
+            readerViewControlsBar.findViewById<Button>(readerviewR.id.mozac_feature_readerview_font_size_increase)
         } returns increase
         every {
-            readerViewControlsBar.findViewById<RadioButton>(R.id.mozac_feature_readerview_font_serif)
+            readerViewControlsBar.findViewById<RadioButton>(readerviewR.id.mozac_feature_readerview_font_serif)
         } returns serif
         every {
-            readerViewControlsBar.findViewById<RadioButton>(R.id.mozac_feature_readerview_font_sans_serif)
+            readerViewControlsBar.findViewById<RadioButton>(readerviewR.id.mozac_feature_readerview_font_sans_serif)
         } returns sansSerif
 
         controller.showControls()

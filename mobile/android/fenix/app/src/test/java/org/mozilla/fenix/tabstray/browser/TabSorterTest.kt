@@ -7,7 +7,6 @@ package org.mozilla.fenix.tabstray.browser
 import io.mockk.every
 import io.mockk.mockk
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -36,8 +35,6 @@ class TabSorterTest {
             selectedTabId = "tab1",
         )
 
-        tabsTrayStore.waitUntilIdle()
-
         assertEquals(tabsTrayStore.state.inactiveTabs.size, 0)
         assertEquals(tabsTrayStore.state.normalTabs.size, 1)
     }
@@ -54,8 +51,6 @@ class TabSorterTest {
             tabPartition = null,
             selectedTabId = "tab1",
         )
-
-        tabsTrayStore.waitUntilIdle()
 
         assertEquals(tabsTrayStore.state.inactiveTabs.size, 1)
         assertEquals(tabsTrayStore.state.normalTabs.size, 1)
@@ -79,8 +74,6 @@ class TabSorterTest {
             tabPartition = null,
             selectedTabId = "tab1",
         )
-
-        tabsTrayStore.waitUntilIdle()
 
         assertEquals(tabsTrayStore.state.inactiveTabs.size, 0)
         assertEquals(tabsTrayStore.state.normalTabs.size, 2)
@@ -116,8 +109,6 @@ class TabSorterTest {
             selectedTabId = "tab1",
         )
 
-        tabsTrayStore.waitUntilIdle()
-
         assertEquals(tabsTrayStore.state.inactiveTabs.size, 0)
         assertEquals(tabsTrayStore.state.normalTabs.size, 4)
     }
@@ -144,8 +135,6 @@ class TabSorterTest {
             tabPartition = null,
             selectedTabId = "tab4",
         )
-
-        tabsTrayStore.waitUntilIdle()
 
         assertEquals(expected, tabsTrayStore.state.selectedTabId)
     }

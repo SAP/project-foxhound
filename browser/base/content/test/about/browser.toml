@@ -6,6 +6,10 @@ support-files = [
 ]
 
 ["browser_aboutCertError.js"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1996741
+]
 
 ["browser_aboutCertError_cca_telemetry.js"]
 
@@ -28,11 +32,22 @@ support-files = [
 
 ["browser_aboutCertError_noSubjectAltName.js"]
 
+["browser_aboutCertError_notYetValid.js"]
+
 ["browser_aboutCertError_offlineSupport.js"]
+
+["browser_aboutCertError_offlineSupport_feltPrivacyV1.js"]
+
+["browser_aboutCertError_revoked.js"]
 
 ["browser_aboutCertError_telemetry.js"]
 
+["browser_aboutCertError_untrustedIssuer.js"]
+
 ["browser_aboutDialog_distribution.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && msix && verify-standalone",
+]
 
 ["browser_aboutNetError.js"]
 
@@ -53,7 +68,13 @@ support-files = [
   "csp_iframe.sjs",
 ]
 
+["browser_aboutNetError_emptyResponse.js"]
+
+["browser_aboutNetError_httpAuthDisabled.js"]
+
 ["browser_aboutNetError_internet_connection_offline.js"]
+
+["browser_aboutNetError_invalid_cert_noUserFix.js"]
 
 ["browser_aboutNetError_invalid_header.js"]
 support-files = [
@@ -67,8 +88,8 @@ support-files = [
 
 ["browser_aboutNetError_trr.js"]
 skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1831977
   "socketprocess_networking",
-  "os == 'win' && os_version == '11.26100' && bits == 64 && asan", # Bug 1831977
 ]
 
 ["browser_aboutNetError_xfo_iframe.js"]
@@ -79,11 +100,15 @@ support-files = [
 ]
 
 ["browser_aboutNewTab_bookmarksToolbar.js"]
+skip-if = [
+  "debug && verify-standalone",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1775602
+]
 
 ["browser_aboutNewTab_bookmarksToolbarEmpty.js"]
 skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1970513
   "tsan", # Bug 1676326, highly frequent on TSan
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1970513
 ]
 
 ["browser_aboutNewTab_bookmarksToolbarNewWindow.js"]
@@ -93,21 +118,24 @@ skip-if = [
 ["browser_aboutStopReload.js"]
 
 ["browser_aboutSupport.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && asan"] # Bug 1713368
 tags = "remote-settings"
 
 ["browser_aboutSupport_newtab_security_state.js"]
 
 ["browser_aboutSupport_places.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["browser_aboutSupport_user_namespaces.js"]
 skip-if = [
-  "os != 'linux'",
   "asan",
+  "os != 'linux'",
   "tsan",
 ]
 
 ["browser_bug435325.js"]
 
 ["browser_bug633691.js"]
+
+["browser_bug2008464.js"]

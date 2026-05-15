@@ -16,8 +16,8 @@ use crate::histogram::{Functional, Histogram};
 use crate::metrics::time_unit::TimeUnit;
 use crate::metrics::{DistributionData, Metric, MetricType};
 use crate::storage::StorageManager;
-use crate::CommonMetricData;
 use crate::Glean;
+use crate::{CommonMetricData, TestGetValue};
 
 // The base of the logarithm used to determine bucketing
 const LOG_BASE: f64 = 2.0;
@@ -153,7 +153,7 @@ impl TimingDistributionMetric {
     ///
     /// A unique [`TimerId`] for the new timer.
     pub fn start(&self) -> TimerId {
-        let start_time = time::precise_time_ns();
+        let start_time = zeitstempel::now_awake();
         let id = self.next_id.fetch_add(1, Ordering::SeqCst).into();
         let metric = self.clone();
         crate::launch_with_glean(move |_glean| metric.set_start(id, start_time));
@@ -161,7 +161,7 @@ impl TimingDistributionMetric {
     }
 
     pub(crate) fn start_sync(&self) -> TimerId {
-        let start_time = time::precise_time_ns();
+        let start_time = zeitstempel::now_awake();
         let id = self.next_id.fetch_add(1, Ordering::SeqCst).into();
         let metric = self.clone();
         metric.set_start(id, start_time);
@@ -192,7 +192,7 @@ impl TimingDistributionMetric {
     ///   same timespan metric.
     /// * `stop_time` - Timestamp in nanoseconds.
     pub fn stop_and_accumulate(&self, id: TimerId) {
-        let stop_time = time::precise_time_ns();
+        let stop_time = zeitstempel::now_awake();
         let metric = self.clone();
         crate::launch_with_glean(move |glean| metric.set_stop_and_accumulate(glean, id, stop_time));
     }
@@ -553,25 +553,6 @@ impl TimingDistributionMetric {
         }
     }
 
-    /// **Test-only API (exported for FFI purposes).**
-    ///
-    /// Gets the currently stored value as an integer.
-    ///
-    /// This doesn't clear the stored value.
-    ///
-    /// # Arguments
-    ///
-    /// * `ping_name` - the optional name of the ping to retrieve the metric
-    ///                 for. Defaults to the first value in `send_in_pings`.
-    ///
-    /// # Returns
-    ///
-    /// The stored value or `None` if nothing stored.
-    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
-        crate::block_on_dispatcher();
-        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
-    }
-
     /// **Exported for test purposes.**
     ///
     /// Gets the number of recorded errors for the given metric and error type.
@@ -629,6 +610,29 @@ impl TimingDistributionMetric {
                     Metric::TimingDistribution(hist)
                 });
         });
+    }
+}
+
+impl TestGetValue for TimingDistributionMetric {
+    type Output = DistributionData;
+
+    /// **Test-only API (exported for FFI purposes).**
+    ///
+    /// Gets the currently stored value as an integer.
+    ///
+    /// This doesn't clear the stored value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ping_name` - the optional name of the ping to retrieve the metric
+    ///                 for. Defaults to the first value in `send_in_pings`.
+    ///
+    /// # Returns
+    ///
+    /// The stored value or `None` if nothing stored.
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        crate::block_on_dispatcher();
+        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
     }
 }
 

@@ -49,7 +49,7 @@ already_AddRefed<GleanMetric> NewMetricFromId(uint32_t id, nsISupports* aParent)
   uint32_t metricId = GLEAN_METRIC_ID(id);
 
   switch (typeId) {
-    {% for (type_name, subtype_name), (type_id, original_type) in metric_type_ids.items() %}
+    {% for (type_name, subtype_name), (type_id, original_type) in metric_type_ids %}
     case {{ type_id }}: /* {{ original_type }} */
     {
       return MakeAndAddRef<{{type_name}}>(metricId{% if subtype_name|length > 0 %}, {{ type_id }}{% endif %}, aParent);
@@ -78,7 +78,7 @@ already_AddRefed<GleanMetric> NewSubMetricFromIds(uint32_t aParentTypeId,
                                            uint32_t* aSubmetricId,
                                            nsISupports* aParent) {
   switch (aParentTypeId) {
-    {% for (type_name, subtype_name), (type_id, original_type) in metric_type_ids.items() %}
+    {% for (type_name, subtype_name), (type_id, original_type) in metric_type_ids %}
     {% if subtype_name|length > 0 %}
     case {{ type_id }}: { /* {{ original_type }} */
       auto id = impl::fog_{{original_type}}_get(aParentMetricId, &aLabel);

@@ -7,7 +7,6 @@ package mozilla.components.browser.toolbar.edit
 import android.view.KeyEvent
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.browser.toolbar.R
@@ -28,7 +27,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class EditToolbarTest {
     private fun createEditToolbar(): Pair<BrowserToolbar, EditToolbar> {
@@ -61,7 +59,7 @@ class EditToolbarTest {
         latch.await()
 
         assertEquals("Hello", invokedWithParams!![0])
-        assertTrue(invokedWithParams!![1] is AutocompleteDelegate)
+        assertTrue(invokedWithParams[1] is AutocompleteDelegate)
     }
 
     @Test
@@ -84,7 +82,7 @@ class EditToolbarTest {
         // Serialize here for the sake of tests.
         latch.await()
         assertEquals("Test", invokedWithParams!![0])
-        assertTrue(invokedWithParams!![1] is AutocompleteDelegate)
+        assertTrue(invokedWithParams[1] is AutocompleteDelegate)
     }
 
     @Test

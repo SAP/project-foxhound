@@ -15,8 +15,8 @@
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder_software_fallback_wrapper.h"
 #include "media/engine/simulcast_encoder_adapter.h"
-#include "modules/video_coding/codecs/av1/libaom_av1_encoder.h"
 #include "modules/video_coding/codecs/av1/dav1d_decoder.h"
+#include "modules/video_coding/codecs/av1/libaom_av1_encoder.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 

@@ -6,14 +6,14 @@
 
 #include "ADTSDemuxer.h"
 
+#include <inttypes.h>
+
+#include "Adts.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/UniquePtr.h"
-#include "Adts.h"
-#include <inttypes.h>
 
-extern mozilla::LazyLogModule gMediaDemuxerLog;
 #define LOG(msg, ...) \
   MOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 #define ADTSLOG(msg, ...) \
@@ -597,3 +597,7 @@ bool ADTSDemuxer::ADTSSniffer(const uint8_t* aData, const uint32_t aLength) {
 }
 
 }  // namespace mozilla
+
+#undef LOG
+#undef ADTSLOG
+#undef ADTSLOGV

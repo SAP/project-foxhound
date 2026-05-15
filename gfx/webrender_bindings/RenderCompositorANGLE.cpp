@@ -23,7 +23,6 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
-#include "mozilla/WindowsVersion.h"
 #include "mozilla/glean/GfxMetrics.h"
 #include "nsPrintfCString.h"
 #include "FxROutputHandler.h"
@@ -828,7 +827,7 @@ gfx::DeviceResetReason RenderCompositorANGLE::IsContextLost(bool aForce) {
 }
 
 bool RenderCompositorANGLE::UseCompositor() const {
-  return mDCLayerTree && mDCLayerTree->UseNativeCompositor();
+  return mDCLayerTree && mDCLayerTree->UseCompositor();
 }
 
 bool RenderCompositorANGLE::UseLayerCompositor() const {
@@ -840,10 +839,10 @@ bool RenderCompositorANGLE::SupportAsyncScreenshot() {
 }
 
 bool RenderCompositorANGLE::ShouldUseNativeCompositor() {
-  return UseCompositor();
+  return mDCLayerTree && mDCLayerTree->UseNativeCompositor();
 }
 
-bool RenderCompositorANGLE::ShouldUseLayerCompositor() {
+bool RenderCompositorANGLE::ShouldUseLayerCompositor() const {
   return UseLayerCompositor();
 }
 
@@ -972,8 +971,7 @@ bool RenderCompositorANGLE::EnableAsyncScreenshot() {
   if (!UseLayerCompositor()) {
     return false;
   }
-  mDCLayerTree->EnableAsyncScreenshot();
-  return true;
+  return mDCLayerTree->EnableAsyncScreenshot();
 }
 
 bool RenderCompositorANGLE::RecreateNonNativeCompositorSwapChain() {
@@ -1008,7 +1006,13 @@ void RenderCompositorANGLE::InitializeUsePartialPresent() {
 
 bool RenderCompositorANGLE::UsePartialPresent() { return mUsePartialPresent; }
 
-bool RenderCompositorANGLE::RequestFullRender() { return mFullRender; }
+bool RenderCompositorANGLE::RequestFullRender() {
+  // XXX Remove when partial update is supported.
+  if (UseLayerCompositor() && mDCLayerTree->UseDCLayerDCompositionTexture()) {
+    return true;
+  }
+  return mFullRender;
+}
 
 uint32_t RenderCompositorANGLE::GetMaxPartialPresentRects() {
   if (!mUsePartialPresent) {

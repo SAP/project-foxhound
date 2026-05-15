@@ -10,9 +10,13 @@
 <script class="testbody" type="text/javascript">
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
+const AlertNotification = Components.Constructor(
+  "@mozilla.org/alert-notification;1",
+  "nsIAlertNotification",
+  "initWithObject"
+);
 
 const chromeScript = SpecialPowers.loadChromeScript(_ => {
-  /* eslint-env mozilla/chrome-script */
   const {clearTimeout, setTimeout} = ChromeUtils.importESModule(
     "resource://gre/modules/Timer.sys.mjs"
   );
@@ -60,7 +64,7 @@ function promiseAlertPosition(alertService) {
     });
     chromeScript.sendAsyncMessage("waitForPosition");
 
-    alertService.showAlertNotification(null, "title", "body");
+    alertService.showAlert(new AlertNotification({ title: "title", text: "body" }));
     ok(true, "Alert shown.");
   });
 }

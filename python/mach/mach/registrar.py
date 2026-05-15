@@ -33,7 +33,7 @@ class MachRegistrar:
 
         if not handler.category:
             raise MachError(
-                "Cannot register a mach command without a " "category: %s" % name
+                "Cannot register a mach command without a category: %s" % name
             )
 
         if handler.category not in self.categories:

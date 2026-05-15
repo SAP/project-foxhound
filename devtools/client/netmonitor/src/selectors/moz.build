@@ -7,6 +7,7 @@ DevToolsModules(
     "messages.js",
     "requests.js",
     "search.js",
+    "statistics.js",
     "timing-markers.js",
     "ui.js",
 )

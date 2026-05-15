@@ -7,10 +7,10 @@
 #define TRANSFRMX_TXTOPLEVELITEMS_H
 
 #include "nsError.h"
-#include "txOutputFormat.h"
-#include "txXMLUtils.h"
-#include "txStylesheet.h"
 #include "txInstructions.h"
+#include "txOutputFormat.h"
+#include "txStylesheet.h"
+#include "txXMLUtils.h"
 
 class txPattern;
 class Expr;

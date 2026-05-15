@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WebSocket_h__
-#define WebSocket_h__
+#ifndef WebSocket_h_
+#define WebSocket_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/WebSocketBinding.h"  // for BinaryType
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/TypedArray.h"
+#include "mozilla/dom/WebSocketBinding.h"  // for BinaryType
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"

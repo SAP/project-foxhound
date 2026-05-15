@@ -6,13 +6,10 @@
 
 #ifndef jit_riscv64_constant_Constant_riscv64_h
 #define jit_riscv64_constant_Constant_riscv64_h
-#include "mozilla/Assertions.h"
-#include "mozilla/Types.h"
-
-#include <stdio.h>
 
 #include "jit/riscv64/constant/Base-constant-riscv.h"
 #include "jit/riscv64/constant/Constant-riscv-a.h"
+#include "jit/riscv64/constant/Constant-riscv-b.h"
 #include "jit/riscv64/constant/Constant-riscv-c.h"
 #include "jit/riscv64/constant/Constant-riscv-d.h"
 #include "jit/riscv64/constant/Constant-riscv-f.h"

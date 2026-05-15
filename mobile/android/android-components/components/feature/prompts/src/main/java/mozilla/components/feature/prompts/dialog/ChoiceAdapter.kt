@@ -39,9 +39,11 @@ internal class ChoiceAdapter(
         val item = choices[position]
         return when {
             fragment.isSingleChoice and item.isGroupType -> TYPE_GROUP
+            fragment.isSingleChoice and item.isASeparator -> TYPE_MENU_SEPARATOR
             fragment.isSingleChoice -> TYPE_SINGLE
             fragment.isMenuChoice -> if (item.isASeparator) TYPE_MENU_SEPARATOR else TYPE_MENU
             item.isGroupType -> TYPE_GROUP
+            item.isASeparator -> TYPE_MENU_SEPARATOR
             else -> TYPE_MULTIPLE
         }
     }

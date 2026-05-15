@@ -4,22 +4,16 @@
 
 buildscript {
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
 
         dependencies {
-            classpath libs.glean.gradle.plugin
+            classpath libs.mozilla.glean.gradle.plugin
         }
     }
 }
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.python.envs.plugin)
 }
 
@@ -27,10 +21,11 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
+        minSdk config.minSdkVersion
+        targetSdk config.targetSdkVersion
     }
 
     buildTypes {

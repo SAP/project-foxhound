@@ -49,6 +49,17 @@ class HitTestInfoManager {
   bool ProcessItem(nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
                    nsDisplayListBuilder* aDisplayListBuilder);
 
+  /**
+   * Process an item which cannot create WebRender commands and needs to be
+   * pushed as an image instead (WebRenderCommandBuilder::PushItemAsImage).
+   * Such items need to produce, in addition to the image, a hit test item
+   * with the eIrregularArea flag set, so that the compositor knows to defer
+   * to the main thread for more detailed hit test information.
+   */
+  void ProcessItemAsImage(nsDisplayItem* aItem, const wr::LayoutRect& aRect,
+                          wr::DisplayListBuilder& aBuilder,
+                          nsDisplayListBuilder* aDisplayListBuilder);
+
  private:
   bool Update(const nsRect& aArea, const gfx::CompositorHitTestInfo& aFlags,
               const ScrollableLayerGuid::ViewID& aViewId,

@@ -1,0 +1,16 @@
+[DEFAULT]
+head = ""
+skip-if = ["os == 'android'"]
+prefs = [
+  "browser.ml.logLevel=Info",
+  "browser.ml.security.enabled=true",
+]
+
+["test_condition_evaluator.js"]
+["test_decision_types.js"]
+["test_json_policy_system.js"]
+["test_ml_engine_security.js"]
+["test_policy_evaluator.js"]
+["test_security_logger.js"]
+["test_security_orchestrator.js"]
+["test_security_utils.js"]

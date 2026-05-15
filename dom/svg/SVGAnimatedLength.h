@@ -7,12 +7,13 @@
 #ifndef DOM_SVG_SVGANIMATEDLENGTH_H_
 #define DOM_SVG_SVGANIMATEDLENGTH_H_
 
-#include "mozilla/Attributes.h"
+#include <memory>
+
 #include "mozilla/SMILAttr.h"
 #include "mozilla/SVGContentUtils.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGElement.h"
+#include "mozilla/dom/SVGLength.h"
+#include "mozilla/dom/SVGLengthBinding.h"
 #include "nsError.h"
 
 struct GeckoFontMetrics;
@@ -50,7 +51,7 @@ class UserSpaceMetrics {
   float GetChSize(Type aType) const;
   float GetIcWidth(Type aType) const;
   float GetCapHeight(Type aType) const;
-  virtual float GetAxisLength(uint8_t aCtxType) const = 0;
+  virtual float GetAxisLength(SVGLength::Axis aAxis) const = 0;
   virtual CSSSize GetCSSViewportSize() const = 0;
   virtual float GetLineHeight(Type aType) const = 0;
 
@@ -62,18 +63,19 @@ class UserSpaceMetrics {
 class UserSpaceMetricsWithSize : public UserSpaceMetrics {
  public:
   virtual gfx::Size GetSize() const = 0;
-  float GetAxisLength(uint8_t aCtxType) const override;
+  float GetAxisLength(SVGLength::Axis aAxis) const override;
 };
 
 class SVGElementMetrics final : public UserSpaceMetrics {
  public:
   explicit SVGElementMetrics(const SVGElement* aSVGElement,
                              const SVGViewportElement* aCtx = nullptr);
+  ~SVGElementMetrics();
 
   float GetEmLength(Type aType) const override {
     return SVGContentUtils::GetFontSize(GetElementForType(aType));
   }
-  float GetAxisLength(uint8_t aCtxType) const override;
+  float GetAxisLength(SVGLength::Axis aAxis) const override;
   CSSSize GetCSSViewportSize() const override;
   float GetLineHeight(Type aType) const override;
   float GetZoom() const override;
@@ -86,7 +88,7 @@ class SVGElementMetrics final : public UserSpaceMetrics {
   WritingMode GetWritingModeForType(Type aType) const override;
 
   const SVGElement* mSVGElement;
-  mutable const SVGViewportElement* mCtx;
+  mutable RefPtr<const SVGViewportElement> mCtx;
 };
 
 class NonSVGFrameUserSpaceMetrics final : public UserSpaceMetricsWithSize {
@@ -118,13 +120,16 @@ class SVGAnimatedLength {
   using UserSpaceMetrics = dom::UserSpaceMetrics;
 
  public:
-  void Init(uint8_t aCtxType = SVGContentUtils::XY, uint8_t aAttrEnum = 0xff,
-            float aValue = 0,
-            uint8_t aUnitType = dom::SVGLength_Binding::SVG_LENGTHTYPE_NUMBER) {
+  void Init(
+      SVGLength::Axis aAxis = SVGLength::Axis::XY, uint8_t aAttrEnum = 0xff,
+      float aValue = 0,
+      uint16_t aUnitType = dom::SVGLength_Binding::SVG_LENGTHTYPE_NUMBER) {
+    MOZ_ASSERT(aUnitType <= std::numeric_limits<uint8_t>::max(),
+               "Length unit-type enums should fit in 8 bits");
     mAnimVal = mBaseVal = aValue;
-    mBaseUnitType = mAnimUnitType = aUnitType;
+    mBaseUnitType = mAnimUnitType = uint8_t(aUnitType);
     mAttrEnum = aAttrEnum;
-    mCtxType = aCtxType;
+    mAxis = aAxis;
     mIsAnimated = false;
     mIsBaseSet = false;
   }
@@ -164,9 +169,9 @@ class SVGAnimatedLength {
     return mAnimVal * GetPixelsPerUnitWithZoom(aMetrics, mAnimUnitType);
   }
 
-  uint8_t GetCtxType() const { return mCtxType; }
-  uint8_t GetBaseUnitType() const { return mBaseUnitType; }
-  uint8_t GetAnimUnitType() const { return mAnimUnitType; }
+  SVGLength::Axis Axis() const { return mAxis; }
+  uint16_t GetBaseUnitType() const { return mBaseUnitType; }
+  uint16_t GetAnimUnitType() const { return mAnimUnitType; }
   bool IsPercentage() const {
     return mAnimUnitType == dom::SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE;
   }
@@ -186,29 +191,29 @@ class SVGAnimatedLength {
   already_AddRefed<dom::DOMSVGAnimatedLength> ToDOMAnimatedLength(
       SVGElement* aSVGElement);
 
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
   float mAnimVal;
   float mBaseVal;
   uint8_t mBaseUnitType;
   uint8_t mAnimUnitType;
-  uint8_t mAttrEnum : 6;  // element specified tracking for attribute
-  uint8_t mCtxType : 2;   // X, Y or Unspecified
+  uint8_t mAttrEnum : 6;      // element specified tracking for attribute
+  SVGLength::Axis mAxis : 2;  // X, Y or Unspecified
   bool mIsAnimated : 1;
   bool mIsBaseSet : 1;
 
   // These APIs returns the number of user-unit pixels per unit of the
   // given type, in a given context (frame/element/etc).
   float GetPixelsPerUnit(const SVGElement* aSVGElement,
-                         uint8_t aUnitType) const;
-  float GetPixelsPerUnitWithZoom(nsIFrame* aFrame, uint8_t aUnitType) const;
+                         uint16_t aUnitType) const;
+  float GetPixelsPerUnitWithZoom(nsIFrame* aFrame, uint16_t aUnitType) const;
   float GetPixelsPerUnitWithZoom(const UserSpaceMetrics& aMetrics,
-                                 uint8_t aUnitType) const;
+                                 uint16_t aUnitType) const;
   float GetPixelsPerUnitWithZoom(const SVGElement* aSVGElement,
-                                 uint8_t aUnitType) const;
+                                 uint16_t aUnitType) const;
   float GetPixelsPerUnitWithZoom(const SVGViewportElement* aCtx,
-                                 uint8_t aUnitType) const;
+                                 uint16_t aUnitType) const;
 
   // SetBaseValue and SetAnimValue set the value in user units. This may fail
   // if unit conversion fails e.g. conversion to ex or em units where the
@@ -275,18 +280,18 @@ class SVGLengthAndInfo {
 
   bool operator==(const SVGLengthAndInfo& rhs) const {
     return mValue == rhs.mValue && mUnitType == rhs.mUnitType &&
-           mCtxType == rhs.mCtxType;
+           mAxis == rhs.mAxis;
   }
 
   float Value() const { return mValue; }
 
-  uint8_t UnitType() const { return mUnitType; }
+  uint16_t UnitType() const { return mUnitType; }
 
   void CopyFrom(const SVGLengthAndInfo& rhs) {
     mElement = rhs.mElement;
     mValue = rhs.mValue;
     mUnitType = rhs.mUnitType;
-    mCtxType = rhs.mCtxType;
+    mAxis = rhs.mAxis;
   }
 
   float ConvertUnits(const SVGLengthAndInfo& aTo) const;
@@ -306,14 +311,16 @@ class SVGLengthAndInfo {
    */
   void CopyBaseFrom(const SVGAnimatedLength& rhs) {
     mValue = rhs.GetBaseValInSpecifiedUnits();
-    mUnitType = rhs.GetBaseUnitType();
-    mCtxType = rhs.GetCtxType();
+    mUnitType = uint8_t(rhs.GetBaseUnitType());
+    mAxis = rhs.Axis();
   }
 
-  void Set(float aValue, uint8_t aUnitType, uint8_t aCtxType) {
+  void Set(float aValue, uint16_t aUnitType, SVGLength::Axis aAxis) {
+    MOZ_ASSERT(aUnitType <= std::numeric_limits<uint8_t>::max(),
+               "Length unit-type enums should fit in 8 bits");
     mValue = aValue;
-    mUnitType = aUnitType;
-    mCtxType = aCtxType;
+    mUnitType = uint8_t(aUnitType);
+    mAxis = aAxis;
   }
 
  private:
@@ -324,7 +331,7 @@ class SVGLengthAndInfo {
   nsWeakPtr mElement;
   float mValue = 0.0f;
   uint8_t mUnitType = dom::SVGLength_Binding::SVG_LENGTHTYPE_NUMBER;
-  uint8_t mCtxType = SVGContentUtils::XY;
+  SVGLength::Axis mAxis = SVGLength::Axis::XY;
 };
 
 }  // namespace mozilla

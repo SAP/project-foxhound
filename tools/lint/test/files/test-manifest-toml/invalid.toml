@@ -1,2 +1,14 @@
 # Invalid TOML
 & = @
+
+["aaa.js"]
+skip-if = [
+  "a",,
+  "b",
+]
+
+["bbb.js"]
+skip-if = [
+  "a"
+  "b",
+]

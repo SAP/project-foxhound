@@ -16,8 +16,6 @@ html[dir="rtl"] .webconsole-evaluation-selector-button {
 
 .jsterm-editor .webconsole-editor-toolbar .webconsole-evaluation-selector-button {
   height: 20px;
-  display: flex;
-  align-items: center;
   margin-inline-start: 5px;
   margin-top: 1px;
 }

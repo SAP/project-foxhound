@@ -17,7 +17,7 @@
   }
 
   td {
-    border-bottom: 1px solid var(--in-content-border-color);
+    border-bottom: 1px solid var(--border-color);
   }
 
   td:last-child > button {
@@ -106,7 +106,7 @@
     text-align: left;
     border-block: 2px solid transparent;
     font-size: 1em;
-    font-weight: bold;
+    font-weight: var(--font-weight-bold);
     padding: 1em;
   }
 
@@ -149,7 +149,7 @@
   }
 
   td:not([colspan]):nth-child(1) {
-    font-weight: bold;
+    font-weight: var(--font-weight-bold);
     padding-bottom: 0.25em;
   }
 
@@ -173,7 +173,7 @@
     padding: 0;
     border: 0;
     border-inline-start: 1px solid var(--border-color);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     appearance: none;
   }
 }

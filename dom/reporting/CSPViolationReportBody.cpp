@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSPViolationReportBody.h"
-#include "mozilla/dom/ReportingBinding.h"
+
 #include "mozilla/JSONWriter.h"
+#include "mozilla/dom/ReportingBinding.h"
 
 namespace mozilla::dom {
 
@@ -34,11 +35,11 @@ JSObject* CSPViolationReportBody::WrapObject(
 }
 
 void CSPViolationReportBody::GetBlockedURL(nsAString& aURL) const {
-  aURL = mDocumentURL;
+  aURL = mBlockedURL;
 }
 
 void CSPViolationReportBody::GetDocumentURL(nsAString& aURL) const {
-  aURL = mBlockedURL;
+  aURL = mDocumentURL;
 }
 
 void CSPViolationReportBody::GetReferrer(nsAString& aReferrer) const {

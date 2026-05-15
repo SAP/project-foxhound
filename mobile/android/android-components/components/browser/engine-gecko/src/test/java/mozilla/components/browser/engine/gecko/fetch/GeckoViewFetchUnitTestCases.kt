@@ -117,7 +117,7 @@ class GeckoViewFetchUnitTestCases : FetchTestCases() {
         val requestHeaders = mapOf(
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Encoding" to "gzip, deflate",
-            "Accept-Language" to "en-US,en;q=0.5",
+            "Accept-Language" to "en-US,en;q=0.9",
             "Connection" to "keep-alive",
             "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0",
         )

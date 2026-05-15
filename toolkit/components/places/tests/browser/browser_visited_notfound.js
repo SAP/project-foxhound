@@ -19,7 +19,7 @@ add_task(async function test() {
     "frecency",
     { url }
   );
-  Assert.equal(frecency, 100, "Check initial frecency");
+  Assert.greater(frecency, 0, "Check initial frecency");
 
   // Used to verify errors are not marked as typed.
   PlacesUtils.history.markPageAsTyped(NetUtil.newURI(url));

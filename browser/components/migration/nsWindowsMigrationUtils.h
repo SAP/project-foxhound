@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef windowsmigrationutils__h__
-#define windowsmigrationutils__h__
+#ifndef windowsmigrationutils_h_
+#define windowsmigrationutils_h_
 
 #include "prtime.h"
 

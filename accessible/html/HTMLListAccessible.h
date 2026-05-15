@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HTMLListAccessible_h__
-#define mozilla_a11y_HTMLListAccessible_h__
+#ifndef mozilla_a11y_HTMLListAccessible_h_
+#define mozilla_a11y_HTMLListAccessible_h_
 
 #include "BaseAccessibles.h"
 #include "HyperTextAccessible.h"
@@ -67,7 +67,7 @@ class HTMLListBulletAccessible : public LeafAccessible {
   virtual ~HTMLListBulletAccessible() {}
 
   // LocalAccessible
-  virtual ENameValueFlag Name(nsString& aName) const override;
+  virtual ENameValueFlag DirectName(nsString& aName) const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;

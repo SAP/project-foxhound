@@ -28,6 +28,22 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
 });
 
 /**
+ * @typedef {object} JsonSchemaValidatorResult
+ * @property {boolean} valid
+ *   True if validation is successful, false if not.
+ * @property {any} parsedValue
+ *   If validation is successful, this is the validated value.  It can
+ *   differ from the passed-in value in the following ways:
+ *
+ *   - If a type in the schema is "URL" or "URLorEmpty", the passed-in value can
+ *     use a string instead and it will be converted into a `URL` object in
+ *     parsedValue.
+ *   - Some of the `allow*` parameters control the properties that appear.
+ *     {@link JsonSchemaValidator.validate()}.
+ *  @property {JsonSchemaValidatorError} error
+ */
+
+/**
  * To validate a single value, use the static `JsonSchemaValidator.validate`
  * method.  If you need to validate multiple values, you instead might want to
  * make a JsonSchemaValidator instance with the options you need and then call
@@ -37,30 +53,31 @@ export class JsonSchemaValidator {
   /**
    * Validates a value against a schema.
    *
-   * @param {*} value
+   * @param {any} value
    *   The value to validate.
    * @param {object} schema
    *   The schema to validate against.
-   * @param {boolean} allowArrayNonMatchingItems
+   * @param {object} [options]
+   * @param {boolean} [options.allowArrayNonMatchingItems]
    *   When true:
    *     Invalid items in arrays will be ignored, and they won't be included in
    *     result.parsedValue.
    *   When false:
    *     Invalid items in arrays will cause validation to fail.
-   * @param {boolean} allowExplicitUndefinedProperties
+   * @param {boolean} [options.allowExplicitUndefinedProperties]
    *   When true:
    *     `someProperty: undefined` will be allowed for non-required properties.
    *   When false:
    *     `someProperty: undefined` will cause validation to fail even for
    *     properties that are not required.
-   * @param {boolean} allowNullAsUndefinedProperties
+   * @param {boolean} [options.allowNullAsUndefinedProperties]
    *   When true:
    *     `someProperty: null` will be allowed for non-required properties whose
    *     expected types are non-null.
    *   When false:
    *     `someProperty: null` will cause validation to fail for non-required
    *     properties, except for properties whose expected types are null.
-   * @param {boolean} allowAdditionalProperties
+   * @param {boolean} [options.allowAdditionalProperties]
    *   When true:
    *     Properties that are not defined in the schema will be ignored, and they
    *     won't be included in result.parsedValue.
@@ -75,54 +92,7 @@ export class JsonSchemaValidator {
    *     `result.parsedValue`. (The inverse is not true: If a schema object
    *     defines `additionalProperties: false` but `allowAdditionalProperties`
    *     is true, extra properties will be allowed.)
-   * @return {object}
-   *   The result of the validation, an object that looks like this:
-   *
-   *   {
-   *     valid,
-   *     parsedValue,
-   *     error: {
-   *       message,
-   *       rootValue,
-   *       rootSchema,
-   *       invalidValue,
-   *       invalidPropertyNameComponents,
-   *     }
-   *   }
-   *
-   *   {boolean} valid
-   *     True if validation is successful, false if not.
-   *   {*} parsedValue
-   *     If validation is successful, this is the validated value.  It can
-   *     differ from the passed-in value in the following ways:
-   *       * If a type in the schema is "URL" or "URLorEmpty", the passed-in
-   *         value can use a string instead and it will be converted into a
-   *         `URL` object in parsedValue.
-   *       * Some of the `allow*` parameters control the properties that appear.
-   *         See above.
-   *   {Error} error
-   *     If validation fails, `error` will be present.  It contains a number of
-   *     properties useful for understanding the validation failure.
-   *   {string} error.message
-   *     The validation failure message.
-   *   {*} error.rootValue
-   *     The passed-in value.
-   *   {object} error.rootSchema
-   *     The passed-in schema.
-   *   {*} invalidValue
-   *     The value that caused validation to fail.  If the passed-in value is a
-   *     scalar type, this will be the value itself.  If the value is an object
-   *     or array, it will be the specific nested value in the object or array
-   *     that caused validation to fail.
-   *   {array} invalidPropertyNameComponents
-   *     If the passed-in value is an object or array, this will contain the
-   *     names of the object properties or array indexes where invalidValue can
-   *     be found.  For example, assume the passed-in value is:
-   *       { foo: { bar: { baz: 123 }}}
-   *     And assume `baz` should be a string instead of a number.  Then
-   *     invalidValue will be 123, and invalidPropertyNameComponents will be
-   *     ["foo", "bar", "baz"], indicating that the erroneous property in the
-   *     passed-in object is `foo.bar.baz`.
+   * @returns {JsonSchemaValidatorResult}
    */
   static validate(
     value,
@@ -146,13 +116,14 @@ export class JsonSchemaValidator {
   /**
    * Constructor.
    *
-   * @param {boolean} allowArrayNonMatchingItems
+   * @param {object} [options]
+   * @param {boolean} [options.allowArrayNonMatchingItems]
    *   See the static `validate` method above.
-   * @param {boolean} allowExplicitUndefinedProperties
+   * @param {boolean} [options.allowExplicitUndefinedProperties]
    *   See the static `validate` method above.
-   * @param {boolean} allowNullAsUndefinedProperties
+   * @param {boolean} [options.allowNullAsUndefinedProperties]
    *   See the static `validate` method above.
-   * @param {boolean} allowAdditionalProperties
+   * @param {boolean} [options.allowAdditionalProperties]
    *   See the static `validate` method above.
    */
   constructor({
@@ -214,7 +185,7 @@ export class JsonSchemaValidator {
           message:
             `The value '${valueToString(param)}' does not match any type in ` +
             valueToString(properties.type),
-          value: param,
+          invalidValue: param,
           keyPath,
           state,
         }),
@@ -247,7 +218,7 @@ export class JsonSchemaValidator {
                 message:
                   `The value '${valueToString(param)}' is not one of the ` +
                   `enumerated values ${valueToString(properties.enum)}`,
-                value: param,
+                invalidValue: param,
                 keyPath,
                 state,
               }),
@@ -257,7 +228,7 @@ export class JsonSchemaValidator {
         return result;
       }
 
-      case "array":
+      case "array": {
         if (!Array.isArray(param)) {
           return {
             valid: false,
@@ -265,7 +236,7 @@ export class JsonSchemaValidator {
               message:
                 `The value '${valueToString(param)}' does not match the ` +
                 `expected type 'array'`,
-              value: param,
+              invalidValue: param,
               keyPath,
               state,
             }),
@@ -298,6 +269,7 @@ export class JsonSchemaValidator {
         }
 
         return { valid: true, parsedValue: parsedArray };
+      }
 
       case "object": {
         if (typeof param != "object" || !param) {
@@ -307,7 +279,7 @@ export class JsonSchemaValidator {
               message:
                 `The value '${valueToString(param)}' does not match the ` +
                 `expected type 'object'`,
-              value: param,
+              invalidValue: param,
               keyPath,
               state,
             }),
@@ -341,7 +313,7 @@ export class JsonSchemaValidator {
                 valid: false,
                 error: new JsonSchemaValidatorError({
                   message: `Object is missing required property '${required}'`,
-                  value: param,
+                  invalidValue: param,
                   keyPath,
                   state,
                 }),
@@ -376,7 +348,7 @@ export class JsonSchemaValidator {
               valid: false,
               error: new JsonSchemaValidatorError({
                 message: `Object has unexpected property '${item}'`,
-                value: param,
+                invalidValue: param,
                 keyPath,
                 state,
               }),
@@ -418,7 +390,7 @@ export class JsonSchemaValidator {
               valid: false,
               error: new JsonSchemaValidatorError({
                 message: `JSON was not an object: ${valueToString(param)}`,
-                value: param,
+                invalidValue: param,
                 keyPath,
                 state,
               }),
@@ -433,7 +405,7 @@ export class JsonSchemaValidator {
               message: `JSON string could not be parsed: ${valueToString(
                 param
               )}`,
-              value: param,
+              invalidValue: param,
               keyPath,
               state,
             }),
@@ -447,7 +419,7 @@ export class JsonSchemaValidator {
         message: `Invalid schema property type: ${valueToString(
           properties.type
         )}`,
-        value: param,
+        invalidValue: param,
         keyPath,
         state,
       }),
@@ -545,7 +517,7 @@ export class JsonSchemaValidator {
         message:
           `The value '${valueToString(param)}' does not match the expected ` +
           `type '${type}'`,
-        value: param,
+        invalidValue: param,
         keyPath,
         state,
       });
@@ -562,26 +534,76 @@ export class JsonSchemaValidator {
   }
 }
 
+function valueToString(value) {
+  try {
+    return JSON.stringify(value);
+  } catch (ex) {}
+  return String(value);
+}
+
+/**
+ * Class to describe an error in the JSON Schema Validator.
+ */
 class JsonSchemaValidatorError extends Error {
-  constructor({ message, value, keyPath, state } = {}, ...args) {
+  /**
+   * @type {any}
+   *   The value being validated.
+   */
+  rootValue;
+
+  /**
+   * @type {any}
+   *   The schema being checked against.
+   */
+  rootSchema;
+
+  /**
+   * @type {any}
+   *   The value that caused validation to fail. If the passed-in value is a
+   *   scalar type, this will be the value itself. If the value is an object
+   *   or array, it will be the specific nested value in the object or array
+   *   that caused validation to fail.
+   */
+  invalidValue;
+
+  /**
+   * @type {(string|number)[]}
+   *   If the passed-in value is an object or array, this will contain the
+   *   names of the object properties or array indexes where invalidValue can
+   *   be found.  For example, assume the passed-in value is:
+   *     { foo: { bar: { baz: 123 }}}
+   *   And assume `baz` should be a string instead of a number.  Then
+   *   invalidValue will be 123, and invalidPropertyNameComponents will be
+   *   ["foo", "bar", "baz"], indicating that the erroneous property in the
+   *   passed-in object is `foo.bar.baz`.
+   */
+  invalidPropertyNameComponents;
+
+  /**
+   * @param {object} details
+   * @param {string} details.message
+   *   The validation failure message.
+   * @param {any} details.invalidValue
+   *   The value that caused validation to fail.  If the passed-in value is a
+   *   scalar type, this will be the value itself.  If the value is an object
+   *   or array, it will be the specific nested value in the object or array
+   *   that caused validation to fail.
+   * @param {(string|number)[]} details.keyPath
+   * @param {object} details.state
+   *   The root value and schema of the validation.
+   */
+  constructor({ message, invalidValue, keyPath, state }) {
     if (keyPath.length) {
       message +=
         ". " +
         `The invalid value is property '${keyPath.join(".")}' in ` +
         JSON.stringify(state.rootValue);
     }
-    super(message, ...args);
+    super(message);
     this.name = "JsonSchemaValidatorError";
     this.rootValue = state.rootValue;
     this.rootSchema = state.rootSchema;
     this.invalidPropertyNameComponents = keyPath;
-    this.invalidValue = value;
+    this.invalidValue = invalidValue;
   }
-}
-
-function valueToString(value) {
-  try {
-    return JSON.stringify(value);
-  } catch (ex) {}
-  return String(value);
 }

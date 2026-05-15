@@ -4,10 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef BorrowedAttrInfo_h__
-#define BorrowedAttrInfo_h__
-
-#include "mozilla/Assertions.h"
+#ifndef BorrowedAttrInfo_h_
+#define BorrowedAttrInfo_h_
 
 class nsAttrName;
 class nsAttrValue;

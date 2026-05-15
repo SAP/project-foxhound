@@ -32,10 +32,10 @@ delete Boolean.prototype.length;
 Boolean.prototype[0] = "monkeys";
 Boolean.prototype[2] = "bogus";
 assert.throws(RangeError,
-              () => compareArray(Array.prototype.with.call(true, 0, 2)),
+              () => Array.prototype.with.call(true, 0, 2),
               "Array.prototype.with on object with undefined length");
 assert.throws(RangeError,
-              () => compareArray(Array.prototype.with.call(false, 0, 2)),
+              () => Array.prototype.with.call(false, 0, 2),
               "Array.prototype.with on object with undefined length");
 
 reportCompare(0, 0);

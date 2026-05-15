@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_RootAccessible_h__
-#define mozilla_a11y_RootAccessible_h__
+#ifndef mozilla_a11y_RootAccessible_h_
+#define mozilla_a11y_RootAccessible_h_
 
 #include "HyperTextAccessible.h"
 #include "DocAccessibleWrap.h"
@@ -35,7 +35,8 @@ class RootAccessible : public DocAccessibleWrap, public nsIDOMEventListener {
 
   // LocalAccessible
   virtual void Shutdown() override;
-  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) const override;
+  virtual mozilla::a11y::ENameValueFlag DirectName(
+      nsString& aName) const override;
   virtual Relation RelationByType(RelationType aType) const override;
   virtual uint64_t NativeState() const override;
 

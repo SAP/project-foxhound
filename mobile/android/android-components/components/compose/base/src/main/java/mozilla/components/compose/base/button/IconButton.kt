@@ -5,15 +5,19 @@
 package mozilla.components.compose.base.button
 
 import android.view.SoundEffectConstants
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.Interaction
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
@@ -27,9 +31,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.theme.AcornTheme
+import mozilla.components.compose.base.theme.acornPrivateColorScheme
+import mozilla.components.compose.base.theme.privateColorPalette
 import mozilla.components.ui.icons.R as iconsR
 
 // Temporary workaround to Compose buttons not having click sounds
@@ -62,8 +69,8 @@ fun IconButton(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     colors: IconButtonColors = IconButtonDefaults.iconButtonColors(
-        contentColor = AcornTheme.colors.iconButton,
-        disabledContentColor = AcornTheme.colors.iconDisabled,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
     ),
     onClickLabel: String? = null,
     enabled: Boolean = true,
@@ -105,30 +112,63 @@ fun IconButton(
 @Composable
 private fun IconButtonPreview() {
     AcornTheme {
-        IconButton(
-            onClick = {},
-            contentDescription = "test",
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-        ) {
-            Icon(
-                painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
-                contentDescription = null,
-            )
+        Surface {
+            Column(
+                modifier = Modifier.padding(all = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(
+                    onClick = {},
+                    contentDescription = "test",
+                ) {
+                    Icon(
+                        painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
+                        contentDescription = null,
+                    )
+                }
+
+                IconButton(
+                    onClick = {},
+                    contentDescription = "test",
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                ) {
+                    Text(text = "button")
+                }
+            }
         }
     }
 }
 
-@PreviewLightDark
+@Preview
 @Composable
-private fun TextButtonPreview() {
-    AcornTheme {
-        IconButton(
-            onClick = {},
-            contentDescription = "test",
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            colors = IconButtonDefaults.iconButtonColors(contentColor = AcornTheme.colors.textPrimary),
-        ) {
-            Text(text = "button")
+private fun IconButtonPrivatePreview() {
+    AcornTheme(
+        colors = privateColorPalette,
+        colorScheme = acornPrivateColorScheme(),
+    ) {
+        Surface {
+            Column(
+                modifier = Modifier.padding(all = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                IconButton(
+                    onClick = {},
+                    contentDescription = "test",
+                ) {
+                    Icon(
+                        painter = painterResource(iconsR.drawable.mozac_ic_bookmark_fill_24),
+                        contentDescription = null,
+                    )
+                }
+
+                IconButton(
+                    onClick = {},
+                    contentDescription = "test",
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                ) {
+                    Text(text = "button")
+                }
+            }
         }
     }
 }

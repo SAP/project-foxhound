@@ -6,10 +6,10 @@
 
 #include "SVGPreserveAspectRatio.h"
 
+#include "SVGAnimatedPreserveAspectRatio.h"
 #include "mozilla/dom/SVGPreserveAspectRatioBinding.h"
 #include "nsContentUtils.h"
 #include "nsWhitespaceTokenizer.h"
-#include "SVGAnimatedPreserveAspectRatio.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGPreserveAspectRatio_Binding;

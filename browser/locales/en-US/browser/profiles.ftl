@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 profile-window-title-2 = { -brand-short-name } - Choose a profile
+
 profile-window-logo =
     .alt = { -brand-short-name } logo
 profile-window-heading = Choose a { -brand-short-name } profile
@@ -33,12 +34,17 @@ default-profile-name = Profile { $number }
 # The word 'original' is used in the sense that it is the initial or starting profile when you install Firefox.
 original-profile-name = Original profile
 
+default-desktop-shortcut-name = { -brand-short-name }
+
 edit-profile-page-title = Edit profile
 edit-profile-page-header = Edit your profile
 edit-profile-page-profile-name-label = Profile name
 edit-profile-page-theme-header-2 =
     .label = Theme
 edit-profile-page-explore-themes = Explore more themes
+edit-profile-page-desktop-shortcut-header = Create desktop shortcut
+edit-profile-page-desktop-shortcut-toggle =
+    .aria-label = Create desktop shortcut
 edit-profile-page-avatar-header-2 =
     .label = Avatar
 edit-profile-page-delete-button =
@@ -70,6 +76,11 @@ new-profile-page-input-placeholder =
 new-profile-page-done-button =
     .label = Done editing
 
+# Variables
+#   $profilename (String) - The name of the copied profile.
+copied-profile-page-header = Your copy of { $profilename } is ready to customize
+copied-profile-page-header-description = We copied your data and settings into a new profile. Now give it a name, pick a look, and make it your own.
+
 ## Delete profile dialogue that allows users to review what they will lose if they choose to delete their profile. Each item (open windows, etc.) is displayed in a table, followed by a column with the number of items.
 
 # Variables
@@ -98,35 +109,54 @@ delete-profile-confirm = Delete
 
 ## These strings are color themes available to select from the profile selection screen. Theme names should be localized.
 
-# This light theme features sunny colors such as goldenrod and pale yellow. Its name evokes the color of a marigold flower. This name can be translated directly if it's easily understood in your language, or adapted to a more natural sounding name that fits the color scheme.
-profiles-marigold-theme-2 = Marigold yellow
-
-# This light theme features various shades of soft, muted purples. Its name evokes the color of a lavender flower. This name can be translated directly if it's easily understood in your language, or adapted to a more natural sounding name that fits the color scheme.
-profiles-lavender-theme-2 = Pale lavender
-
-# This light theme features very pale green tones. Its name evokes the color of pale green mint ice cream. This name can be translated directly if it's easily understood in your language, or adapted to a more natural sounding name that fits the color scheme.
-profiles-lichen-theme-2 = Minty green
-
-# This light theme features various shades of pink ranging from pale to bold. Its name evokes the color of a pink magnolia flower. This name can be translated directly if it's easily understood in your language, or adapted to a more natural sounding name that fits the color scheme.
-profiles-magnolia-theme-2 = Magnolia pink
-
-# Ocean blue is a dark theme that features very dark blues and black. Its name evokes the color of the deep ocean water. This name can be translated directly if it's easily understood in your language, or adapted to a more natural sounding name that fits the color scheme.
-profiles-ocean-theme-2 = Ocean blue
-
-# This dark theme features warm oranges, dark mahogany browns, and earthy red/brown colors. The name evokes the earthy colors of brick masonry. This name can be translated directly if it's easily understood in your language, or adapted to a more natural sounding name that fits the color scheme.
-profiles-terracotta-theme-2 = Brick red
-
-# This dark theme features forest green, dusky green with a gray undertone, and a muted sage green. Its name evokes the rich color of green moss in the forest. This name can be translated directly if its easily understood in your language, or adapted to a more natural sounding name that fits the color scheme.
-profiles-moss-theme-2 = Moss green
-
-# The default light theme
-profiles-light-theme = Light
-
-# The default dark theme
-profiles-dark-theme = Dark
+profiles-gray-theme = Gray
+profiles-gray-theme-title =
+    .title = Apply gray theme
+profiles-yellow-theme = Yellow
+profiles-yellow-theme-title =
+    .title = Apply yellow theme
+profiles-orange-theme = Orange
+profiles-orange-theme-title =
+    .title = Apply orange theme
+profiles-red-theme = Red
+profiles-red-theme-title =
+    .title = Apply red theme
+profiles-pink-theme = Pink
+profiles-pink-theme-title =
+    .title = Apply pink theme
+profiles-purple-theme = Purple
+profiles-purple-theme-title =
+    .title = Apply purple theme
+profiles-violet-theme = Violet
+profiles-violet-theme-title =
+    .title = Apply violet theme
+profiles-blue-theme = Blue
+profiles-blue-theme-title =
+    .title = Apply blue theme
+profiles-green-theme = Green
+profiles-green-theme-title =
+    .title = Apply green theme
+profiles-cyan-theme = Cyan
+profiles-cyan-theme-title =
+    .title = Apply cyan theme
+profiles-custom-theme-title =
+    .title = Apply custom theme
 
 # The default system theme
 profiles-system-theme = System
+profiles-system-theme-title =
+    .title = Apply system theme
+
+## Data collection settings changed (multi-profile)
+
+# Full infobar message with inline bold title followed by body text
+multiprofile-data-collection-message = <strong>Data collection settings changed.</strong> The changes made in another profile apply to all profiles on this device.
+
+# Primary button label to open the Data collection section in Settings
+multiprofile-data-collection-view-settings = View settings
+
+# Secondary button label to dismiss the infobar without action
+multiprofile-data-collection-dismiss = Dismiss
 
 ## Alternative text for default profile icons
 
@@ -138,17 +168,16 @@ book-avatar-alt =
     .alt = Book
 briefcase-avatar-alt =
     .alt = Briefcase
-# Canvas refers to an artist's painting canvas, not the general material
-canvas-avatar-alt =
-    .alt = Canvas
+picture-avatar-alt =
+    .alt = Picture
 # Craft refers to hobby arts and crafts, represented by a button/fastener commonly found on clothing like shirts
 craft-avatar-alt =
     .alt = Craft
 custom-avatar-alt =
     .alt = Custom avatar
-# Default favicon refers to the generic globe/world icon that appears in browser tabs when a website doesn't have its own favicon.
-default-favicon-avatar-alt =
-    .alt = Default favicon
+# Globe refers to the generic globe/world icon that appears in browser tabs when a website doesn't have its own favicon.
+globe-avatar-alt =
+    .alt = Globe
 # Diamond refers to the precious stone, not the geometric shape
 diamond-avatar-alt =
     .alt = Diamond
@@ -162,8 +191,8 @@ heart-avatar-alt =
     .alt = Heart
 heart-rate-avatar-alt =
     .alt = Heart rate
-history-avatar-alt =
-    .alt = History
+clock-avatar-alt =
+    .alt = Clock
 leaf-avatar-alt =
     .alt = Leaf
 lightbulb-avatar-alt =
@@ -186,8 +215,8 @@ present-avatar-alt =
     .alt = Present
 shopping-avatar-alt =
     .alt = Shopping cart
-soccer-avatar-alt =
-    .alt = Soccer
+soccer-ball-avatar-alt =
+    .alt = Soccer ball
 sparkle-single-avatar-alt =
     .alt = Sparkle
 star-avatar-alt =
@@ -201,21 +230,19 @@ barbell-avatar = Barbell
 bike-avatar = Bike
 book-avatar = Book
 briefcase-avatar = Briefcase
-# Canvas refers to an artist's painting canvas, not the general material
-canvas-avatar = Canvas
+clock-avatar = Clock
 # Craft refers to hobby arts and crafts, represented by a button/fastener commonly found on clothing like shirts
 craft-avatar = Craft
 custom-avatar = Custom avatar
-# Default favicon refers to the generic globe/world icon that appears in browser tabs when a website doesn't have its own favicon.
-default-favicon-avatar = Default favicon
 # Diamond refers to the precious stone, not the geometric shape
 diamond-avatar = Diamond
 flower-avatar = Flower
 folder-avatar = Folder
+# Globe refers to the generic globe/world icon that appears in browser tabs when a website doesn't have its own favicon.
+globe-avatar = Globe
 hammer-avatar = Hammer
 heart-avatar = Heart
 heart-rate-avatar = Heart rate
-history-avatar = History
 leaf-avatar = Leaf
 lightbulb-avatar = Lightbulb
 makeup-avatar = Makeup
@@ -224,14 +251,79 @@ message-avatar = Message
 musical-note-avatar = Musical note
 palette-avatar = Palette
 paw-print-avatar = Paw print
+picture-avatar = Picture
 plane-avatar = Plane
 # Present refers to a gift box, not the current time period
 present-avatar = Present
 shopping-avatar = Shopping cart
-soccer-avatar = Soccer
+soccer-ball-avatar = Soccer ball
 sparkle-single-avatar = Sparkle
 star-avatar = Star
 video-game-controller-avatar = Video game controller
+
+## Tooltips for default avatar icons
+
+barbell-avatar-tooltip =
+    .tooltiptext = Apply barbell avatar
+bike-avatar-tooltip =
+    .tooltiptext = Apply bike avatar
+book-avatar-tooltip =
+    .tooltiptext = Apply book avatar
+briefcase-avatar-tooltip =
+    .tooltiptext = Apply briefcase avatar
+picture-avatar-tooltip =
+    .tooltiptext = Apply picture avatar
+# Craft refers to hobby arts and crafts, represented by a button/fastener commonly found on clothing like shirts
+craft-avatar-tooltip =
+    .tooltiptext = Apply craft avatar
+# Globe refers to the generic globe/world icon that appears in browser tabs when a website doesn't have its own favicon.
+globe-avatar-tooltip =
+    .tooltiptext = Apply globe avatar
+diamond-avatar-tooltip =
+    .tooltiptext = Apply diamond avatar
+flower-avatar-tooltip =
+    .tooltiptext = Apply flower avatar
+folder-avatar-tooltip =
+    .tooltiptext = Apply folder avatar
+hammer-avatar-tooltip =
+    .tooltiptext = Apply hammer avatar
+heart-avatar-tooltip =
+    .tooltiptext = Apply heart avatar
+heart-rate-avatar-tooltip =
+    .tooltiptext = Apply heart rate avatar
+clock-avatar-tooltip =
+    .tooltiptext = Apply clock avatar
+leaf-avatar-tooltip =
+    .tooltiptext = Apply leaf avatar
+lightbulb-avatar-tooltip =
+    .tooltiptext = Apply lightbulb avatar
+makeup-avatar-tooltip =
+    .tooltiptext = Apply makeup avatar
+# Message refers to a text message, not a traditional letter/envelope message
+message-avatar-tooltip =
+    .tooltiptext = Apply message avatar
+musical-note-avatar-tooltip =
+    .tooltiptext = Apply musical note avatar
+palette-avatar-tooltip =
+    .tooltiptext = Apply palette avatar
+paw-print-avatar-tooltip =
+    .tooltiptext = Apply paw print avatar
+plane-avatar-tooltip =
+    .tooltiptext = Apply plane avatar
+# Present refers to a gift box, not the current time period
+present-avatar-tooltip =
+    .tooltiptext = Apply present avatar
+shopping-avatar-tooltip =
+    .tooltiptext = Apply shopping cart avatar
+soccer-ball-avatar-tooltip =
+    .tooltiptext = Apply soccer ball avatar
+sparkle-single-avatar-tooltip =
+    .tooltiptext = Apply sparkle avatar
+star-avatar-tooltip =
+    .tooltiptext = Apply star avatar
+video-game-controller-avatar-tooltip =
+    .tooltiptext = Apply video game controller avatar
+
 
 custom-avatar-crop-back-button =
   .aria-label = Back
@@ -241,3 +333,8 @@ custom-avatar-crop-area =
   .aria-label = Adjust crop area
 custom-avatar-drag-handle =
   .aria-label = Resize crop area
+
+profiles-appmenu-callout-tour-title = Your new profile is good to go
+# "Spin up another" means creating another profile, “Hop between your digital lives" is referring to switching between different profiles such as work, personal, etc.
+profiles-appmenu-callout-tour-subtitle = In the ☰ menu, tap your profile name to spin up another, edit this one, or hop between your digital lives.
+profiles-appmenu-callout-tour-primary-button = Show me how

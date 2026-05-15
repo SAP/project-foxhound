@@ -14,8 +14,8 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ActivityScenario.launch
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.crash.Crash
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.crash.prompt.CrashReporterActivity.Companion.PREFERENCE_KEY_SEND_REPORT
@@ -23,13 +23,10 @@ import mozilla.components.lib.crash.prompt.CrashReporterActivity.Companion.SHARE
 import mozilla.components.lib.crash.service.CrashReporterService
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mock
@@ -37,16 +34,11 @@ import org.mockito.Mockito.verify
 import org.mockito.MockitoAnnotations.openMocks
 import kotlin.coroutines.CoroutineContext
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class CrashReporterActivityTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val scope = coroutinesTestRule.scope
-
     @Mock
     lateinit var service: CrashReporterService
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setUp() {
@@ -54,12 +46,13 @@ class CrashReporterActivityTest {
     }
 
     @Test
-    fun `Pressing close button sends report`() = runTestOnMain {
+    fun `Pressing close button sends report`() = runTest(testDispatcher) {
         CrashReporter(
             context = testContext,
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
             services = listOf(service),
-            scope = scope,
+            mainDispatcher = testDispatcher,
+            scope = this,
         ).install(testContext)
 
         val crash = Crash.UncaughtExceptionCrash(0, RuntimeException("Hello World"), arrayListOf())
@@ -71,19 +64,20 @@ class CrashReporterActivityTest {
         }
 
         // Await for all coroutines to be finished
-        advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         // Then
         verify(service).report(crash)
     }
 
     @Test
-    fun `Pressing restart button sends report`() = runTestOnMain {
+    fun `Pressing restart button sends report`() = runTest(testDispatcher) {
         CrashReporter(
             context = testContext,
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
             services = listOf(service),
-            scope = scope,
+            mainDispatcher = testDispatcher,
+            scope = this,
         ).install(testContext)
 
         val crash = Crash.UncaughtExceptionCrash(0, RuntimeException("Hello World"), arrayListOf())
@@ -95,14 +89,14 @@ class CrashReporterActivityTest {
         }
 
         // Await for all coroutines to be finished
-        advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         // Then
         verify(service).report(crash)
     }
 
     @Test
-    fun `Custom message is set on CrashReporterActivity`() = runTestOnMain {
+    fun `Custom message is set on CrashReporterActivity`() = runTest(testDispatcher) {
         CrashReporter(
             context = testContext,
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
@@ -110,6 +104,8 @@ class CrashReporterActivityTest {
                 message = "Hello World!",
                 theme = android.R.style.Theme_DeviceDefault, // Yolo!
             ),
+            mainDispatcher = testDispatcher,
+            scope = this,
             services = listOf(mock()),
         ).install(testContext)
 
@@ -123,12 +119,13 @@ class CrashReporterActivityTest {
     }
 
     @Test
-    fun `Sending crash report saves checkbox state`() = runTestOnMain {
+    fun `Sending crash report saves checkbox state`() = runTest(testDispatcher) {
         CrashReporter(
             context = testContext,
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
             services = listOf(service),
-            scope = scope,
+            mainDispatcher = testDispatcher,
+            scope = this,
         ).install(testContext)
 
         val crash = Crash.UncaughtExceptionCrash(0, RuntimeException("Hello World"), arrayListOf())
@@ -150,12 +147,13 @@ class CrashReporterActivityTest {
     }
 
     @Test
-    fun `Restart button visible for main process crash`() = runTestOnMain {
+    fun `Restart button visible for main process crash`() = runTest(testDispatcher) {
         CrashReporter(
             context = testContext,
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
             services = listOf(service),
-            scope = scope,
+            mainDispatcher = testDispatcher,
+            scope = this,
         ).install(testContext)
 
         val crash = Crash.NativeCodeCrash(
@@ -175,12 +173,13 @@ class CrashReporterActivityTest {
     }
 
     @Test
-    fun `Restart button hidden for background child process crash`() = runTestOnMain {
+    fun `Restart button hidden for background child process crash`() = runTest(testDispatcher) {
         CrashReporter(
             context = testContext,
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
             services = listOf(service),
-            scope = scope,
+            mainDispatcher = testDispatcher,
+            scope = this,
         ).install(testContext)
 
         val crash = Crash.NativeCodeCrash(
@@ -200,12 +199,13 @@ class CrashReporterActivityTest {
     }
 
     @Test
-    fun `WHEN crash is native AND background child THEN is background returns true`() = runTestOnMain {
+    fun `WHEN crash is native AND background child THEN is background returns true`() = runTest(testDispatcher) {
         CrashReporter(
             context = testContext,
             shouldPrompt = CrashReporter.Prompt.ALWAYS,
             services = listOf(service),
-            scope = scope,
+            mainDispatcher = testDispatcher,
+            scope = this,
         ).install(testContext)
 
         val crash = Crash.NativeCodeCrash(
@@ -229,7 +229,6 @@ class CrashReporterActivityTest {
 /**
  * Launch activity scenario for certain [crash].
  */
-@ExperimentalCoroutinesApi
 private fun CoroutineContext.launchActivityWithCrash(
     crash: Crash,
 ): ActivityScenario<CrashReporterActivity> = run {

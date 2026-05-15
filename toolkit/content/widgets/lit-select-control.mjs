@@ -39,10 +39,12 @@ const NAVIGATION_DIRECTIONS = {
  * expected.
  */
 export class SelectControlBaseElement extends MozLitElement {
+  static formAssociated = true;
   #childElements;
   #value;
   #checkedIndex;
   #focusedIndex;
+  #internals;
 
   static properties = {
     type: { type: String },
@@ -52,6 +54,7 @@ export class SelectControlBaseElement extends MozLitElement {
     label: { type: String, fluent: true },
     name: { type: String },
     value: { type: String },
+    headingLevel: { type: Number },
   };
 
   static queries = {
@@ -60,6 +63,7 @@ export class SelectControlBaseElement extends MozLitElement {
 
   set value(newValue) {
     this.#value = newValue;
+    this.#internals.setFormValue(newValue);
     this.childElements.forEach((item, index) => {
       let isChecked = this.value === item.value;
       item.checked = isChecked;
@@ -72,6 +76,10 @@ export class SelectControlBaseElement extends MozLitElement {
 
   get value() {
     return this.#value;
+  }
+
+  get hasValue() {
+    return this.value === 0 || !!this.value;
   }
 
   set focusedIndex(newIndex) {
@@ -131,11 +139,19 @@ export class SelectControlBaseElement extends MozLitElement {
     }
     return this.#childElements;
   }
+  get form() {
+    return this.#internals.form;
+  }
+
+  formResetCallback() {
+    this.value = this.getAttribute("value");
+  }
 
   constructor() {
     super();
     this.type = "radio";
     this.disabled = false;
+    this.#internals = this.attachInternals();
     this.addEventListener("blur", e => this.handleBlur(e), true);
     this.addEventListener("keydown", e => this.handleKeydown(e));
   }
@@ -180,9 +196,14 @@ export class SelectControlBaseElement extends MozLitElement {
     this.focusedIndex = undefined;
   }
 
-  // NB: We may need to revise this to avoid bugs when we add more focusable
-  // elements to select control base/items.
+  /**
+   * @param {KeyboardEvent & { target: HTMLElement }} event
+   */
   handleKeydown(event) {
+    if (event.target.parentElement != this) {
+      // Ignore events from nested controls.
+      return;
+    }
     let directions = this.getNavigationDirections();
     switch (event.key) {
       case "Down":
@@ -233,15 +254,11 @@ export class SelectControlBaseElement extends MozLitElement {
       let nextItem = children[nextIndex];
 
       if (nextItem && !nextItem.disabled) {
+        nextItem.focus();
         if (isRadio) {
           this.value = nextItem.value;
-          this.dispatchEvent(new Event("input"), {
-            bubbles: true,
-            composed: true,
-          });
-          this.dispatchEvent(new Event("change"), { bubbles: true });
+          nextItem.click();
         }
-        nextItem.focus();
         return;
       }
     }
@@ -262,18 +279,15 @@ export class SelectControlBaseElement extends MozLitElement {
         item.role = childRole;
       });
     }
+    if (changedProperties.has("value")) {
+      this.#internals.setFormValue(this.value);
+    }
   }
 
   handleSetName() {
     this.childElements.forEach(item => {
       item.name = this.name;
     });
-  }
-
-  // Re-dispatch change event so it's re-targeted to the custom element.
-  handleChange(event) {
-    event.stopPropagation();
-    this.dispatchEvent(new Event(event.type));
   }
 
   handleSlotChange() {
@@ -291,7 +305,8 @@ export class SelectControlBaseElement extends MozLitElement {
         support-page=${ifDefined(this.supportPage)}
         role=${this.type == "radio" ? "radiogroup" : "listbox"}
         ?disabled=${this.disabled}
-        label=${this.label}
+        label=${ifDefined(this.label)}
+        headinglevel=${this.headingLevel}
         exportparts="inputs, support-link"
         aria-orientation=${ifDefined(this.constructor.orientation)}
       >
@@ -360,7 +375,7 @@ export const SelectControlItemMixin = superClass =>
 
       this.#controller = hostElement;
       this.role = this.#controller.type == "radio" ? "radio" : "option";
-      if (this.#controller.value) {
+      if (this.#controller.hasValue) {
         this.checked = this.value === this.#controller.value;
       }
     }
@@ -371,7 +386,7 @@ export const SelectControlItemMixin = superClass =>
       if (
         changedProperties.has("checked") &&
         this.checked &&
-        this.#controller.value &&
+        this.#controller.hasValue &&
         this.value !== this.#controller.value
       ) {
         this.#controller.value = this.value;
@@ -381,7 +396,7 @@ export const SelectControlItemMixin = superClass =>
       if (
         changedProperties.has("checked") &&
         !this.checked &&
-        this.#controller.value &&
+        this.#controller.hasValue &&
         this.value === this.#controller.value
       ) {
         this.#controller.value = "";
@@ -395,7 +410,7 @@ export const SelectControlItemMixin = superClass =>
         }
 
         // Update items via focus manager parent for proper keyboard nav behavior.
-        if (this.checked || !this.#controller.value) {
+        if (this.checked || !this.#controller.hasValue) {
           if (this.controller.checkedIndex != this.position) {
             this.#controller.syncFocusState();
           } else {

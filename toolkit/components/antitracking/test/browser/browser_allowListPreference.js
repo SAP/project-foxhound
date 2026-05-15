@@ -8,6 +8,7 @@ const COLLECTION_NAME = "url-classifier-exceptions";
 
 /**
  * Load a tracker in third-party context.
+ *
  * @param {string} trackerUrl - The URL of the tracker to load in an iframe.
  * @returns {Promise} A promise that resolves when the tracker is loaded or
  * blocked. The promise resolves to "loaded" if the tracker is loaded, or
@@ -95,10 +96,12 @@ add_setup(async function () {
 
 /**
  * Set exceptions via RemoteSettings.
- * @param {Boolean} baseline - If true, set baseline allow list entries.
- * @param {Boolean} convenience - If true, set convenience allow list entries.
+ *
+ * @param {boolean} baseline - If true, set baseline allow list entries.
+ * @param {boolean} convenience - If true, set convenience allow list entries.
+ * @param {string} category - The content blocking category to set.
  */
-async function setAllowListPrefs(baseline, convenience) {
+async function setAllowListPrefs(baseline, convenience, category) {
   info("Set allow list baseline and convenience prefs");
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -107,13 +110,33 @@ async function setAllowListPrefs(baseline, convenience) {
         "privacy.trackingprotection.allow_list.convenience.enabled",
         convenience,
       ],
+      ["browser.contentblocking.category", category],
     ],
   });
+  is(
+    Services.prefs.getBoolPref(
+      "privacy.trackingprotection.allow_list.baseline.enabled"
+    ),
+    baseline,
+    "Baseline allow list preference should be set correctly."
+  );
+  is(
+    Services.prefs.getBoolPref(
+      "privacy.trackingprotection.allow_list.convenience.enabled"
+    ),
+    convenience,
+    "Convenience allow list preference should be set correctly."
+  );
+  is(
+    Services.prefs.getCharPref("browser.contentblocking.category"),
+    category,
+    "Content blocking category preference should be set correctly."
+  );
 }
 
 add_task(async function test_allow_list_both_enabled() {
   info("Set baseline to true and convenience to true.");
-  await setAllowListPrefs(true, true);
+  await setAllowListPrefs(true, true, "standard");
 
   let success = await loadTracker({
     trackerUrl: "https://email-tracking.example.org/",
@@ -137,7 +160,7 @@ add_task(async function test_allow_list_both_enabled() {
 
 add_task(async function test_allow_list_baseline_only() {
   info("Set baseline to true and convenience to false.");
-  await setAllowListPrefs(true, false);
+  await setAllowListPrefs(true, false, "strict");
 
   let success = await loadTracker({
     trackerUrl: "https://email-tracking.example.org/",
@@ -161,17 +184,7 @@ add_task(async function test_allow_list_baseline_only() {
 
 add_task(async function test_allow_list_none_enabled() {
   info("Set baseline to false and convenience to false.");
-  await setAllowListPrefs(false, false);
-  console.log(
-    Services.prefs.getBoolPref(
-      "privacy.trackingprotection.allow_list.baseline.enabled"
-    )
-  );
-  console.log(
-    Services.prefs.getBoolPref(
-      "privacy.trackingprotection.allow_list.convenience.enabled"
-    )
-  );
+  await setAllowListPrefs(false, false, "custom");
 
   let success = await loadTracker({
     trackerUrl: "https://email-tracking.example.org/",

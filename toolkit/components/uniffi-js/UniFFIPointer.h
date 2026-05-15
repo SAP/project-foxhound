@@ -22,14 +22,14 @@ class UniFFIPointer final : public nsISupports, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(UniFFIPointer)
 
   static already_AddRefed<UniFFIPointer> Create(
-      void* aPtr, const uniffi::UniFFIPointerType* aType);
+      uint64_t aPtr, const uniffi::UniFFIPointerType* aType);
   static already_AddRefed<UniFFIPointer> Read(
       const ArrayBuffer& aArrayBuff, uint32_t aPosition,
       const uniffi::UniFFIPointerType* aType, ErrorResult& aError);
   void Write(const ArrayBuffer& aArrayBuff, uint32_t aPosition,
              const uniffi::UniFFIPointerType* aType, ErrorResult& aError) const;
 
-  UniFFIPointer(void* aPtr, const uniffi::UniFFIPointerType* aType);
+  UniFFIPointer(uint64_t aPtr, const uniffi::UniFFIPointerType* aType);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -44,7 +44,7 @@ class UniFFIPointer final : public nsISupports, public nsWrapperCache {
    *   - When calling a method
    *   - When passing the object as an argument to a function
    */
-  void* ClonePtr() const;
+  uint64_t ClonePtr() const;
 
   /**
    * Returns true if the pointer type `this` holds is the same as the argument
@@ -55,7 +55,7 @@ class UniFFIPointer final : public nsISupports, public nsWrapperCache {
 
  private:
   const uniffi::UniFFIPointerType* mType;
-  void* mPtr;
+  uint64_t mPtr;
 
  protected:
   /**

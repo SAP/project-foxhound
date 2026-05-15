@@ -28,9 +28,9 @@ const CLASSES = new WeakMap();
  * @param {Inspector} inspector
  *        The current inspector instance.
  */
-class ClassList {
+class ClassList extends EventEmitter {
   constructor(inspector) {
-    EventEmitter.decorate(this);
+    super();
 
     this.inspector = inspector;
 
@@ -112,9 +112,9 @@ class ClassList {
   /**
    * Set the state for a given class on the current node.
    *
-   * @param {String} name
+   * @param {string} name
    *        The class which state should be changed.
-   * @param {Boolean} isApplied
+   * @param {boolean} isApplied
    *        True if the class should be enabled, false otherwise.
    * @return {Promise} Resolves when the change has been made in the DOM.
    */
@@ -129,7 +129,7 @@ class ClassList {
   /**
    * Add several classes to the current node at once.
    *
-   * @param {String} classNameString
+   * @param {string} classNameString
    *        The string that contains all classes.
    * @return {Promise} Resolves when the change has been made in the DOM.
    */
@@ -146,7 +146,7 @@ class ClassList {
   /**
    * Add a class to the current node at once.
    *
-   * @param {String} name
+   * @param {string} name
    *        The class to be added.
    * @return {Promise} Resolves when the change has been made in the DOM.
    */
@@ -218,9 +218,9 @@ class ClassList {
    * - the one already used on elements of the document
    * - the one defined in Stylesheets of the document
    *
-   * @param {String} filter: A string the classNames should start with (an insensitive
+   * @param {string} filter: A string the classNames should start with (an insensitive
    *                         case matching will be done).
-   * @returns {Promise<Array<String>>} A promise that resolves with an array of strings
+   * @returns {Promise<Array<string>>} A promise that resolves with an array of strings
    *                                   matching the passed filter.
    */
   getClassNames(filter) {

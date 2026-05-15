@@ -55,6 +55,13 @@ class GCZonesIter {
     }
   }
   explicit GCZonesIter(JSRuntime* rt) : GCZonesIter(&rt->gc) {}
+  explicit GCZonesIter(GCRuntime* gc, ZoneSelector selector) : GCZonesIter(gc) {
+    if (selector == SkipAtoms) {
+      while (!done() && get()->isAtomsZone()) {
+        next();
+      }
+    }
+  }
 
   bool done() const { return zone.done(); }
 

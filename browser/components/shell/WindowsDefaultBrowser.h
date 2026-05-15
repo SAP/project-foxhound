@@ -8,8 +8,8 @@
  * without linking to libxul.
  */
 
-#ifndef windowsdefaultbrowser_h____
-#define windowsdefaultbrowser_h____
+#ifndef windowsdefaultbrowser_h_
+#define windowsdefaultbrowser_h_
 
 #include "mozilla/UniquePtr.h"
 
@@ -17,4 +17,4 @@ bool GetAppRegName(mozilla::UniquePtr<wchar_t[]>& aAppRegName);
 bool LaunchControlPanelDefaultPrograms();
 bool LaunchModernSettingsDialogDefaultApps();
 
-#endif  // windowsdefaultbrowser_h____
+#endif  // windowsdefaultbrowser_h_

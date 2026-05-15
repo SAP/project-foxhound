@@ -6,13 +6,14 @@
 #define BUFFER_READER_H_
 
 #include <string.h>
-#include "mozilla/EndianUtils.h"
-#include "nscore.h"
-#include "nsTArray.h"
+
 #include "MediaData.h"
 #include "MediaSpan.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Result.h"
+#include "nsTArray.h"
+#include "nscore.h"
 
 namespace mozilla {
 

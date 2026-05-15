@@ -5,7 +5,7 @@
 "use strict";
 
 const { MacAttribution } = ChromeUtils.importESModule(
-  "resource:///modules/MacAttribution.sys.mjs"
+  "moz-src:///browser/components/attribution/MacAttribution.sys.mjs"
 );
 
 let extendedAttributeTestCases = [

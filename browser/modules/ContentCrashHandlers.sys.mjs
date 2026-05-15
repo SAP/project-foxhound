@@ -1000,7 +1000,9 @@ export var UnsubmittedCrashHandler = {
 
   removeExistingNotification(aNotification) {
     if (aNotification) {
-      let chromeWin = lazy.BrowserWindowTracker.getTopWindow();
+      let chromeWin = lazy.BrowserWindowTracker.getTopWindow({
+        allowFromInactiveWorkspace: true,
+      });
       if (!chromeWin) {
         return false;
       }
@@ -1114,7 +1116,9 @@ export var UnsubmittedCrashHandler = {
    * @returns The <xul:notification> if one is shown. null otherwise.
    */
   show({ notificationID, reportIDs, onAction, requestedByDevs }) {
-    let chromeWin = lazy.BrowserWindowTracker.getTopWindow();
+    let chromeWin = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     if (!chromeWin) {
       // Can't show a notification in this case. We'll hopefully
       // get another opportunity to have the user submit their

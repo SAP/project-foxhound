@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Utils_h__
-#define Utils_h__
+#ifndef Utils_h_
+#define Utils_h_
 
 #include "CustomAttributes.h"
 #include "ThirdPartyPaths.h"

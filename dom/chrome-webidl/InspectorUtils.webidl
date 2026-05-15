@@ -33,6 +33,10 @@ namespace InspectorUtils {
   sequence<PropertyPref> getCSSPropertyPrefs();
   [Throws] sequence<DOMString> getCSSValuesForProperty(UTF8String property);
   UTF8String rgbToColorName(octet r, octet g, octet b);
+  InspectorNearestColor rgbToNearestColorName(float r, float g, float b);
+  sequence<float> rgbToHsv(float r, float g, float b);
+  sequence<float> hsvToRgb(float h, float s, float v);
+  float relativeLuminance(float r, float g, float b);
   InspectorRGBATuple? colorToRGBA(UTF8String colorString);
   InspectorColorToResult? colorTo(UTF8String fromColor, UTF8String toColorSpace);
   boolean isValidCSSColor(UTF8String colorString);
@@ -83,6 +87,8 @@ namespace InspectorUtils {
 
   Element? containingBlockOf(Element element);
 
+  boolean isBlockContainer(Element element);
+
   // If the element is styled as display:block, returns an array of numbers giving
   // the number of lines in each fragment.
   // Returns null if the element is not a block.
@@ -126,9 +132,36 @@ namespace InspectorUtils {
   // This interface may not be the clearest, but we want to match
   // what has been established by the GeckoView API
   [ChromeOnly] undefined setVerticalClipping(BrowsingContext? aContext,
-                                             long aOffset);
+                                             float aOffset);
   [ChromeOnly] undefined setDynamicToolbarMaxHeight(BrowsingContext? aContext,
-                                             long aHeight);
+                                             float aHeight);
+
+  // This element is not a grid container.
+  const unsigned short GRID_NONE = 0;
+  // This element is a grid container, and might additionally be a subgrid.
+  const unsigned short GRID_CONTAINER = 1;
+  // This element is a subgrid in the row direction.
+  const unsigned short GRID_SUBGRID_ROW = 2;
+  // This element is a subgrid in the col direction.
+  const unsigned short GRID_SUBGRID_COL = 4;
+  // Returns a set of GRID_* flags based on whether the element is a grid
+  // container or not.
+  unsigned short getGridContainerType(Element aElement);
+
+  // Given a DOM element, return the anchor named `anchorName`, or the default
+  // anchor otherwise.
+  InspectorAnchorElement? getAnchorFor(Element element, optional DOMString? anchorName = null);
+};
+
+enum InspectorAnchorType {
+  "explicit",
+  "popover",
+  "pseudo-element",
+};
+
+dictionary InspectorAnchorElement {
+  required Element element;
+  required InspectorAnchorType type;
 };
 
 enum DeclarationOrigin {
@@ -136,6 +169,7 @@ enum DeclarationOrigin {
   "user-agent",
   "pres-hints",
   "style-attribute",
+  "position-fallback",
   "animations",
   "transitions",
   "smil",
@@ -174,6 +208,11 @@ dictionary InspectorRGBATuple {
   double g = 0;
   double b = 0;
   double a = 1;
+};
+
+dictionary InspectorNearestColor {
+  required UTF8String colorName;
+  required boolean exact;
 };
 
 dictionary InspectorColorToResult {

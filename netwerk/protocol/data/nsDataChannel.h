@@ -5,23 +5,26 @@
 
 // data implementation header
 
-#ifndef nsDataChannel_h___
-#define nsDataChannel_h___
+#ifndef nsDataChannel_h_
+#define nsDataChannel_h_
 
 #include "nsBaseChannel.h"
+#include "nsIChildChannel.h"
 #include "nsIDataChannel.h"
 
 class nsIInputStream;
 
 class nsDataChannel : public nsBaseChannel,
                       public nsIDataChannel,
-                      public nsIIdentChannel {
+                      public nsIIdentChannel,
+                      public nsIChildChannel {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDATACHANNEL
   NS_FORWARD_NSIREQUEST(nsBaseChannel::)
   NS_FORWARD_NSICHANNEL(nsBaseChannel::)
   NS_DECL_NSIIDENTCHANNEL
+  NS_DECL_NSICHILDCHANNEL
 
   explicit nsDataChannel(nsIURI* uri) { SetURI(uri); }
 
@@ -37,4 +40,4 @@ class nsDataChannel : public nsBaseChannel,
   nsresult MaybeSendDataChannelOpenNotification();
 };
 
-#endif /* nsDataChannel_h___ */
+#endif /* nsDataChannel_h_ */

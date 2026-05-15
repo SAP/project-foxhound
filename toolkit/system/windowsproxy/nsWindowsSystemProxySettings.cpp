@@ -7,8 +7,6 @@
 #include <ras.h>
 #include <wininet.h>
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Attributes.h"
 #include "nsISystemProxySettings.h"
 #include "mozilla/Components.h"
 #include "mozilla/ProfilerLabels.h"
@@ -17,31 +15,21 @@
 #include "nsThreadUtils.h"
 #include "prnetdb.h"
 #include "ProxyUtils.h"
-
-class nsWindowsSystemProxySettings final : public nsISystemProxySettings {
- public:
-  NS_DECL_THREADSAFE_ISUPPORTS
-  NS_DECL_NSISYSTEMPROXYSETTINGS
-
-  nsWindowsSystemProxySettings() {};
-
- private:
-  ~nsWindowsSystemProxySettings() {};
-
-  bool MatchOverride(const nsACString& aHost);
-  bool PatternMatch(const nsACString& aHost, const nsACString& aOverride);
-};
+#include "nsWindowsSystemProxySettings.h"
 
 NS_IMPL_ISUPPORTS(nsWindowsSystemProxySettings, nsISystemProxySettings)
 
-NS_IMETHODIMP
-nsWindowsSystemProxySettings::GetMainThreadOnly(bool* aMainThreadOnly) {
+NS_IMETHODIMP nsWindowsSystemProxySettings::GetMainThreadOnly(
+    bool* aMainThreadOnly) {
   // bug 1366133: if you change this to main thread only, please handle
   // nsProtocolProxyService::Resolve_Internal carefully to avoid hang on main
   // thread.
   *aMainThreadOnly = false;
   return NS_OK;
 }
+
+nsWindowsSystemProxySettings::nsWindowsSystemProxySettings() {}
+nsWindowsSystemProxySettings::~nsWindowsSystemProxySettings() {}
 
 static void SetProxyResult(const char* aType, const nsACString& aHostPort,
                            nsACString& aResult) {
@@ -179,6 +167,14 @@ nsresult nsWindowsSystemProxySettings::GetProxyForURI(const nsACString& aSpec,
   nsresult rv;
   uint32_t flags = 0;
   nsAutoString buf;
+
+  rv = mozilla::toolkit::system::GetProxyFromEnvironment(aScheme, aHost, aPort,
+                                                         aResult);
+  // GetProxyFromEnvironment has already formatted and set the proxy result
+  // string in |aResult|.
+  if (NS_SUCCEEDED(rv) && !aResult.IsEmpty()) {
+    return NS_OK;
+  }
 
   rv = ReadInternetOption(INTERNET_PER_CONN_PROXY_SERVER, flags, buf);
   if (NS_FAILED(rv) || !(flags & PROXY_TYPE_PROXY)) {

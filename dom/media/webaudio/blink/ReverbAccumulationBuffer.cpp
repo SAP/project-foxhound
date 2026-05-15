@@ -27,9 +27,11 @@
  */
 
 #include "ReverbAccumulationBuffer.h"
+
+#include <algorithm>
+
 #include "AudioNodeEngine.h"
 #include "mozilla/PodOperations.h"
-#include <algorithm>
 
 using namespace mozilla;
 

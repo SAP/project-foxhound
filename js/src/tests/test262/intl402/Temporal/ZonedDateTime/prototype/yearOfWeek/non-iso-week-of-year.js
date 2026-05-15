@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -7,19 +7,33 @@ esid: sec-temporal.zoneddatetime.prototype.yearofweek
 description: >
   Temporal.ZonedDateTime.prototype.yearOfWeek returns undefined for all
   non-ISO calendars without a well-defined week numbering system.
-features: [Temporal]
+features: [Temporal, Intl.Era-monthcode]
 ---*/
 
-assert.sameValue(
-  new Temporal.ZonedDateTime(1_704_112_496_987_654_321n, "UTC", "gregory").yearOfWeek,
-  undefined,
-  "Gregorian calendar does not provide week numbers"
-);
+const nonIsoCalendars = [
+  "buddhist",
+  "chinese",
+  "coptic",
+  "dangi",
+  "ethioaa",
+  "ethiopic",
+  "gregory",
+  "hebrew",
+  "indian",
+  "islamic-civil",
+  "islamic-tbla",
+  "islamic-umalqura",
+  "japanese",
+  "persian",
+  "roc"
+];
 
-assert.sameValue(
-  new Temporal.ZonedDateTime(1_704_112_496_987_654_321n, "UTC", "hebrew").yearOfWeek,
-  undefined,
-  "Hebrew calendar does not provide week numbers"
-);
+for (const calendar of nonIsoCalendars) {
+  assert.sameValue(
+    new Temporal.ZonedDateTime(1_704_112_496_987_654_321n, "UTC", calendar).yearOfWeek,
+    undefined,
+    `${calendar} does not provide week numbers`
+  );
+}
 
 reportCompare(0, 0);

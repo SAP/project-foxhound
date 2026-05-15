@@ -73,25 +73,27 @@ summary {
     }
   }
 
-  .chevron-icon,
-  #heading-icon {
+  .chevron-icon {
     background-position: center;
     background-repeat: no-repeat;
+  }
+
+  .chevron-icon,
+  #heading-icon {
     -moz-context-properties: fill;
     fill: currentColor;
-    width: 24px;
-    height: 24px;
-    min-width: 24px;
-    min-height: 24px;
+    width: var(--icon-size);
+    height: var(--icon-size);
+    min-width: var(--icon-size);
+    min-height: var(--icon-size);
     padding: 0;
     flex-shrink: 0;
-    align-self: flex-start;
   }
 }
 
 #heading {
   font-size: var(--font-size-root);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 }
 
 #content {

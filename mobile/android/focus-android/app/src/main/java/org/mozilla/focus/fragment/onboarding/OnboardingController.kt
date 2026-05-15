@@ -40,7 +40,7 @@ class DefaultOnboardingController(
     }
 
     override fun handleGetStartedButtonClicked() {
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.M || Browsers.all(context).isDefaultBrowser) {
+        if (Browsers.all(context).isDefaultBrowser) {
             handleFinishOnBoarding()
         } else {
             navigateToOnBoardingSecondScreen()
@@ -68,30 +68,24 @@ class DefaultOnboardingController(
     }
 
     private fun makeFocusDefaultBrowser(activityResultLauncher: ActivityResultLauncher<Intent>) {
-        when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
-                context.getSystemService(RoleManager::class.java).also {
-                    if (
-                        it.isRoleAvailable(RoleManager.ROLE_BROWSER) &&
-                        !it.isRoleHeld(RoleManager.ROLE_BROWSER)
-                    ) {
-                        try {
-                            activityResultLauncher.launch(it.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
-                        } catch (e: ActivityNotFoundException) {
-                            Logger(TAG).error(
-                                "ActivityNotFoundException " +
-                                    e.message.toString(),
-                            )
-                            handleFinishOnBoarding()
-                        }
-                    } else {
-                        context.navigateToDefaultBrowserAppsSettings(BuildManufacturerChecker())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            context.getSystemService(RoleManager::class.java).also {
+                if (
+                    it.isRoleAvailable(RoleManager.ROLE_BROWSER) &&
+                    !it.isRoleHeld(RoleManager.ROLE_BROWSER)
+                ) {
+                    try {
+                        activityResultLauncher.launch(it.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
+                    } catch (e: ActivityNotFoundException) {
+                        Logger(TAG).error("ActivityNotFoundException ${e.message}")
+                        handleFinishOnBoarding()
                     }
+                } else {
+                    context.navigateToDefaultBrowserAppsSettings(BuildManufacturerChecker())
                 }
             }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
-                context.navigateToDefaultBrowserAppsSettings(BuildManufacturerChecker())
-            }
+        } else {
+            context.navigateToDefaultBrowserAppsSettings(BuildManufacturerChecker())
         }
     }
 

@@ -128,9 +128,6 @@ export class GroupsPanel {
       }
       itemCount++;
       let row = this.#createRow(groupData);
-      let button = row.querySelector("toolbarbutton");
-      button.dataset.command = "allTabsGroupView_selectGroup";
-      button.setAttribute("context", "open-tab-group-context-menu");
       fragment.appendChild(row);
     }
 
@@ -140,10 +137,6 @@ export class GroupsPanel {
       }
       itemCount++;
       let row = this.#createRow(groupData, { isOpen: false });
-      let button = row.querySelector("toolbarbutton");
-      button.dataset.command = "allTabsGroupView_restoreGroup";
-      button.classList.add("all-tabs-group-saved-group");
-      button.setAttribute("context", "saved-tab-group-context-menu");
       fragment.appendChild(row);
     }
 
@@ -188,7 +181,7 @@ export class GroupsPanel {
     let button = doc.createXULElement("toolbarbutton");
     button.setAttribute(
       "class",
-      "all-tabs-button subviewbutton subviewbutton-iconic all-tabs-group-action-button"
+      "all-tabs-button subviewbutton subviewbutton-iconic all-tabs-group-action-button tab-group-icon"
     );
     button.dataset.tabGroupId = group.id;
     if (!isOpen) {
@@ -197,9 +190,10 @@ export class GroupsPanel {
         "tab-group-icon-closed"
       );
       button.dataset.command = "allTabsGroupView_restoreGroup";
+      button.setAttribute("context", "saved-tab-group-context-menu");
     } else {
-      button.classList.add("tab-group-icon");
       button.dataset.command = "allTabsGroupView_selectGroup";
+      button.setAttribute("context", "open-tab-group-context-menu");
     }
     button.setAttribute("flex", "1");
     button.setAttribute("crop", "end");

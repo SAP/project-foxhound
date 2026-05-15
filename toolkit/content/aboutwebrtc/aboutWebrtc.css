@@ -8,7 +8,7 @@ body {
 
 table {
   font-family: monospace;
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   border-spacing: 0;
   margin-block: 1em;
 }
@@ -39,7 +39,7 @@ table {
 #mediactx > div {
   padding: 1em 2em;
   margin: 1em 0;
-  border: 1px solid var(--in-content-box-border-color);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   background-color: var(--background-color-box);
 }
@@ -68,7 +68,7 @@ table {
 }
 
 .fold-target {
-  border-inline-start: 1px solid var(--in-content-border-color);
+  border-inline-start: 1px solid var(--border-color);
   padding-inline-start: 1em;
 
   .section-body > & {
@@ -77,7 +77,7 @@ table {
 }
 
 .peer-connection > h3 {
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   padding: 4px;
 }
 
@@ -95,13 +95,13 @@ h3 > span {
 }
 
 .peer-connection table th {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .peer-connection table th,
 .peer-connection table td {
   padding: 0.4em;
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
 }
 
 .peer-connection table tr:nth-child(odd) {
@@ -123,7 +123,7 @@ h3 > span {
 .peer-connection-config div {
   margin-inline: 1em;
   padding: 4px;
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
 }
 
 .peer-connection-config div:nth-child(odd) {
@@ -152,7 +152,7 @@ h3 > span {
 }
 
 .info-label {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .info-body,
@@ -186,17 +186,17 @@ div.fold-trigger {
 }
 
 .active-tab-pane {
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   display: block;
 }
 
 .tab-button {
-  color: var(--in-content-button-text-color);
+  color: var(--button-text-color);
 }
 
 .active-tab-button {
-  color: var(--in-content-button-text-color-active);
-  background: var(--in-content-button-background-active);
+  color: var(--button-text-color-active);
+  background: var(--button-background-color-active);
 }
 
 .sdp-history {
@@ -209,24 +209,24 @@ div.fold-trigger {
 }
 
 .sdp-history h5 {
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
 }
 
 .sdp-history div {
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   padding: 1em;
   width: 50%;
   overflow: scroll;
 }
 
 .line-graph {
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   margin-inline: 1px;
   padding: 1px;
 }
 
 .svg-graph {
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
   margin-inline: 1px;
 }
 

@@ -7,7 +7,7 @@ package mozilla.components.feature.prompts.dialog
 import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 
 private const val KEY_POSITIVE_BUTTON_TITLE = "KEY_POSITIVE_BUTTON_TITLE"
@@ -27,7 +27,7 @@ internal class MultiButtonDialogFragment : AbstractPromptTextDialogFragment() {
     internal val neutralButtonTitle: String? by lazy { safeArguments.getString(KEY_NEUTRAL_BUTTON_TITLE) }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
             .setCancelable(true)
             .setupButtons()
@@ -41,7 +41,7 @@ internal class MultiButtonDialogFragment : AbstractPromptTextDialogFragment() {
         feature?.onCancel(sessionId, promptRequestUID)
     }
 
-    private fun AlertDialog.Builder.setupButtons(): AlertDialog.Builder {
+    private fun MaterialAlertDialogBuilder.setupButtons(): MaterialAlertDialogBuilder {
         if (!positiveButtonTitle.isNullOrBlank()) {
             setPositiveButton(positiveButtonTitle) { _, _ ->
                 feature?.onConfirm(sessionId, promptRequestUID, userSelectionNoMoreDialogs to ButtonType.POSITIVE)

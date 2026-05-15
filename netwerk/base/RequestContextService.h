@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla__net__RequestContextService_h
-#define mozilla__net__RequestContextService_h
+#ifndef mozilla_net_RequestContextService_h
+#define mozilla_net_RequestContextService_h
 
 #include "nsCOMPtr.h"
 #include "nsInterfaceHashtable.h"
@@ -41,4 +41,4 @@ class RequestContextService final : public nsIRequestContextService,
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // mozilla__net__RequestContextService_h
+#endif  // mozilla_net_RequestContextService_h

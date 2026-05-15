@@ -87,40 +87,109 @@ add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
 
+  info(
+    "Check that there's no inherited ::details-content header when top-level <summary> is selected"
+  );
   await selectNode("summary", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    ["Inherited from details"],
-    "There's no inherited ::details-content header when top-level <summary> is selected"
-  );
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `& summary`,
+      ancestorRulesData: ["details {"],
+      declarations: [{ name: "color", value: "violet" }],
+    },
+    {
+      header: "Inherited from details",
+    },
+    {
+      selector: `details`,
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "blue" },
+        { name: "color", value: "gold", overridden: true },
+      ],
+    },
+  ]);
 
+  info(
+    "Check that there are expected inherited headers when children of top-level <details> is selected"
+  );
   await selectNode("body > details > p", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    ["Inherited from details::details-content", "Inherited from details"],
-    "Got expected inherited headers when children of top-level <details> is selected"
-  );
-
-  is(
-    view.element.querySelector(
-      ".ruleview-header + #pseudo-elements-container .ruleview-selector-pseudo-class"
-    ).textContent,
-    "::after",
-    "The ::after pseudo element rules is properly displayed in its section"
-  );
-
-  ok(
-    !isPropertyOverridden(view, 6, { color: "dodgerblue" }),
-    "color property in ::details-content is not overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 7, { color: "forestgreen" }),
-    "color property in lower specificity ::details-content is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 9, { color: "gold" }),
-    "color property in details is overridden"
-  );
+  await checkRuleViewContent(view, [
+    {
+      header: "Pseudo-elements",
+    },
+    {
+      selector: `&::after`,
+      ancestorRulesData: [`p {`],
+      declarations: [
+        { name: "content", value: `" meow"` },
+        { name: "color", value: "green" },
+      ],
+    },
+    {
+      header: "This Element",
+    },
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `p`,
+      declarations: [{ name: "outline-color", value: "var(--x)" }],
+    },
+    {
+      header: "Inherited from details::details-content",
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: [`details {`],
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "tomato" },
+        { name: "color", value: "dodgerblue" },
+      ],
+    },
+    {
+      selector: `:where(body > details)::details-content`,
+      inherited: true,
+      declarations: [
+        {
+          name: "color",
+          value: "forestgreen",
+          // overridden because lower specificity than ::details-content
+          overridden: true,
+        },
+      ],
+    },
+    {
+      header: "Inherited from details",
+    },
+    {
+      selector: `details`,
+      inherited: true,
+      declarations: [
+        {
+          name: "--x",
+          value: "blue",
+          overridden: true,
+        },
+        {
+          name: "color",
+          value: "gold",
+          // overridden by color: dodgerblue on ::details-content
+          overridden: true,
+        },
+      ],
+    },
+  ]);
 
   checkCSSVariableOutput(
     view,
@@ -132,58 +201,183 @@ add_task(async function () {
 
   info("Check rules and declarations for details in summary");
   await selectNode("details#in-summary", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    ["Inherited from summary"],
-    "Got expected inherited headers when <details> in <summary> is selected"
-  );
+  await checkRuleViewContent(view, [
+    {
+      header: "Pseudo-elements",
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: ["details#in-summary {"],
+      declarations: [
+        { name: "--x", value: "rebeccapurple" },
+        { name: "color", value: "brown" },
+      ],
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: ["details {"],
+      declarations: [
+        { name: "--x", value: "tomato", overridden: true },
+        { name: "color", value: "dodgerblue", overridden: true },
+        { name: "background-color", value: "rgb(200 0 0 / 0.1)" },
+      ],
+    },
+    {
+      header: "This Element",
+    },
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `details#in-summary`,
+      declarations: [{ name: "color", value: "cyan" }],
+    },
+    {
+      selector: `details`,
+      declarations: [
+        { name: "--x", value: "blue" },
+        { name: "color", value: "gold", overridden: true },
+      ],
+    },
+    {
+      header: "Inherited from summary",
+    },
+    {
+      selector: `& summary`,
+      ancestorRulesData: ["details {"],
+      inherited: true,
+      declarations: [{ name: "color", value: "violet", overridden: true }],
+    },
+  ]);
 
+  info("Check rules and declarations for nested summary");
   await selectNode("details#in-summary summary", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    ["Inherited from details#in-summary"],
-    "Got expected inherited headers when nested <summary> is selected"
-  );
 
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `& summary`,
+      ancestorRulesData: ["details#in-summary {"],
+      declarations: [{ name: "color", value: "hotpink" }],
+    },
+    {
+      selector: `& summary`,
+      ancestorRulesData: ["details {"],
+      declarations: [{ name: "color", value: "violet", overridden: true }],
+    },
+    {
+      header: "Inherited from details#in-summary",
+    },
+    {
+      selector: `details#in-summary`,
+      inherited: true,
+      declarations: [{ name: "color", value: "cyan", overridden: true }],
+    },
+    {
+      selector: `details`,
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "blue" },
+        { name: "color", value: "gold", overridden: true },
+      ],
+    },
+  ]);
+
+  info("Check rules and declarations for nested <details> child");
   await selectNode("details#in-summary p", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    [
-      "Inherited from details#in-summary::details-content",
-      "Inherited from details#in-summary",
-      "Inherited from summary",
-    ],
-    "Got expected inherited headers when nested <details> child is selected"
-  );
-
-  is(
-    view.element.querySelector(
-      ".ruleview-header + #pseudo-elements-container .ruleview-selector-pseudo-class"
-    ).textContent,
-    "::after",
-    "The ::after pseudo element rules is properly displayed in its section"
-  );
-
-  ok(
-    !isPropertyOverridden(view, 6, { color: "brown" }),
-    "color property in #detail#in-summary::details-content is not overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 7, { color: "dodgerblue" }),
-    "color property in ::details-content is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 9, { color: "cyan" }),
-    "color property in details#in-summary is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 10, { color: "gold" }),
-    "color property in details is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 12, { color: "violet" }),
-    "color property in summary is overridden"
-  );
+  await checkRuleViewContent(view, [
+    {
+      header: "Pseudo-elements",
+    },
+    {
+      selector: `&::after`,
+      ancestorRulesData: [`p {`],
+      declarations: [
+        { name: "content", value: `" meow"` },
+        { name: "color", value: "green" },
+      ],
+    },
+    {
+      header: "This Element",
+    },
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `p`,
+      declarations: [{ name: "outline-color", value: "var(--x)" }],
+    },
+    {
+      header: "Inherited from details#in-summary::details-content",
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: [`details#in-summary {`],
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "rebeccapurple" },
+        {
+          name: "color",
+          value: "brown",
+        },
+      ],
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: [`details {`],
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "tomato", overridden: true },
+        {
+          name: "color",
+          value: "dodgerblue",
+          overridden: true,
+        },
+      ],
+    },
+    {
+      header: "Inherited from details#in-summary",
+    },
+    {
+      selector: `details#in-summary`,
+      inherited: true,
+      declarations: [{ name: "color", value: "cyan", overridden: true }],
+    },
+    {
+      selector: `details`,
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "blue", overridden: true },
+        { name: "color", value: "gold", overridden: true },
+      ],
+    },
+    {
+      header: "Inherited from summary",
+    },
+    {
+      selector: `& summary`,
+      ancestorRulesData: [`details {`],
+      inherited: true,
+      declarations: [
+        {
+          name: "color",
+          value: "violet",
+          overridden: true,
+        },
+      ],
+    },
+  ]);
 
   checkCSSVariableOutput(
     view,
@@ -197,117 +391,227 @@ add_task(async function () {
   // when a <details> element has multiple <summary> children, only the first one is
   // actually interactive. The other ones are placed inside the ::details-content
   await selectNode("summary#non-functional-summary", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    ["Inherited from details::details-content", "Inherited from details"],
-    "Got expected inherited headers when non functional summary is selected"
-  );
-
-  ok(
-    !isPropertyOverridden(view, 1, { color: "violet" }),
-    "color property in summary is not overridden when non functional summary is selected"
-  );
-  ok(
-    isPropertyOverridden(view, 3, { color: "dodgerblue" }),
-    "color property in details::details-content is overridden when non functional summary is selected"
-  );
-  ok(
-    isPropertyOverridden(view, 4, { color: "forestgreen" }),
-    "color property in :where(body > details)::details-content is overridden when non functional summary is selected"
-  );
-  ok(
-    isPropertyOverridden(view, 6, { color: "gold" }),
-    "color property in details is overridden when non functional summary is selected"
-  );
+  await checkRuleViewContent(view, [
+    { selector: `element`, selectorEditable: false, declarations: [] },
+    {
+      selector: `& summary`,
+      ancestorRulesData: [`details {`],
+      declarations: [{ name: "color", value: "violet" }],
+    },
+    {
+      header: "Inherited from details::details-content",
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: [`details {`],
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "tomato" },
+        { name: "color", value: "dodgerblue", overridden: true },
+      ],
+    },
+    {
+      selector: `:where(body > details)::details-content`,
+      inherited: true,
+      declarations: [
+        {
+          name: "color",
+          value: "forestgreen",
+          overridden: true,
+        },
+      ],
+    },
+    {
+      header: "Inherited from details",
+    },
+    {
+      selector: `details`,
+      inherited: true,
+      declarations: [
+        {
+          name: "--x",
+          value: "blue",
+          overridden: true,
+        },
+        {
+          name: "color",
+          value: "gold",
+          overridden: true,
+        },
+      ],
+    },
+  ]);
 
   info("Check rules and declarations for details in details");
   await selectNode("details.in-details", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    ["Inherited from details::details-content"],
-    "Got expected inherited headers when <details> in <details> is selected"
-  );
-  ok(
-    !isPropertyOverridden(view, 4, { color: "gold" }),
-    "color property in details is not overridden for details in details"
-  );
-  ok(
-    isPropertyOverridden(view, 6, { color: "forestgreen" }),
-    "color property in where(body > details)::details-content is overridden for details in details"
-  );
+  await checkRuleViewContent(view, [
+    {
+      header: "Pseudo-elements",
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: ["details {"],
+      declarations: [
+        { name: "--x", value: "tomato" },
+        { name: "color", value: "dodgerblue" },
+        { name: "background-color", value: "rgb(200 0 0 / 0.1)" },
+      ],
+    },
+    {
+      header: "This Element",
+    },
+    {
+      selector: `element`,
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
+    {
+      selector: `details`,
+      declarations: [
+        { name: "--x", value: "blue" },
+        { name: "color", value: "gold" },
+      ],
+    },
+    {
+      header: "Inherited from details::details-content",
+    },
+    {
+      selector: `:where(body > details)::details-content`,
+      inherited: true,
+      declarations: [{ name: "color", value: "forestgreen", overridden: true }],
+    },
+  ]);
 
   info("Check rules and declarations for children of details in details");
   await selectNode("details.in-details p", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    [
+  await checkRuleViewContent(view, [
+    {
+      header: "Pseudo-elements",
+    },
+    {
+      selector: `&::after`,
+      ancestorRulesData: [`p {`],
+      declarations: [
+        { name: "content", value: `" meow"` },
+        { name: "color", value: "green" },
+      ],
+    },
+    {
+      header: "This Element",
+    },
+    {
+      selector: `element`,
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
+    {
+      selector: `p`,
+      declarations: [{ name: "outline-color", value: "var(--x)" }],
+    },
+    {
       // this is for the body > details > details::details-content pseudo
-      "Inherited from details::details-content",
+      header: "Inherited from details::details-content",
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: [`details {`],
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "tomato" },
+        {
+          name: "color",
+          value: "dodgerblue",
+        },
+      ],
+    },
+    {
       // this is for the body > details::details-content pseudo
-      "Inherited from details::details-content",
-      "Inherited from details",
-    ],
-    "Got expected inherited headers when children <details> in <details> is selected"
-  );
-
-  ok(
-    !isPropertyOverridden(view, 6, { color: "dodgerblue" }),
-    "color property in inherited details::details-content is not overridden for child of details in details"
-  );
-  ok(
-    isPropertyOverridden(view, 8, { color: "forestgreen" }),
-    "color property in inherited :where(body > details)::details-content is overridden for child of details in details"
-  );
-  ok(
-    isPropertyOverridden(view, 10, { color: "gold" }),
-    "color property in inherited details is overridden for child of details in details"
-  );
+      header: "Inherited from details::details-content",
+    },
+    {
+      selector: `:where(body > details)::details-content`,
+      inherited: true,
+      declarations: [{ name: "color", value: "forestgreen", overridden: true }],
+    },
+    {
+      header: "Inherited from details",
+    },
+    {
+      selector: `details`,
+      inherited: true,
+      declarations: [
+        {
+          name: "--x",
+          value: "blue",
+          overridden: true,
+        },
+        {
+          name: "color",
+          value: "gold",
+          overridden: true,
+        },
+      ],
+    },
+  ]);
 
   info(
     "Check that properties in inherited element-backed pseudo element rules are properly picked when using !important"
   );
   await selectNode("#vip article", inspector);
-  Assert.deepEqual(
-    getInheritedHeadersText(view),
-    [
-      "Inherited from details#vip::details-content",
-      "Inherited from details#vip",
-    ],
-    "Got expected inherited headers"
-  );
-
-  ok(
-    isPropertyOverridden(view, 2, { color: "red" }),
-    "non-important color property in #vip::details-content is overridden"
-  );
-  ok(
-    !isPropertyOverridden(view, 3, { color: "blue" }),
-    "important color property in #vip::details-content is not overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 4, { color: "dodgerblue" }),
-    "non important color property in details::details-content is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 5, { color: "forestgreen" }),
-    "non important color property in :where(body > details)::details-content is overridden"
-  );
-  ok(
-    isPropertyOverridden(view, 7, { color: "gold" }),
-    "non important color property in details is overridden"
-  );
+  await checkRuleViewContent(view, [
+    {
+      selector: `element`,
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
+    {
+      header: "Inherited from details#vip::details-content",
+    },
+    {
+      selector: `details#vip::details-content`,
+      inherited: true,
+      declarations: [{ name: "color", value: "red", overridden: true }],
+    },
+    {
+      selector: `details#vip::details-content`,
+      inherited: true,
+      declarations: [{ name: "color", value: "blue !important" }],
+    },
+    {
+      selector: `&::details-content`,
+      ancestorRulesData: [`details {`],
+      inherited: true,
+      declarations: [
+        { name: "--x", value: "tomato" },
+        { name: "color", value: "dodgerblue", overridden: true },
+      ],
+    },
+    {
+      selector: `:where(body > details)::details-content`,
+      inherited: true,
+      declarations: [{ name: "color", value: "forestgreen", overridden: true }],
+    },
+    {
+      header: "Inherited from details#vip",
+    },
+    {
+      selector: `details`,
+      inherited: true,
+      declarations: [
+        {
+          name: "--x",
+          value: "blue",
+          overridden: true,
+        },
+        {
+          name: "color",
+          value: "gold",
+          overridden: true,
+        },
+      ],
+    },
+  ]);
 });
-
-function getInheritedHeadersText(view) {
-  return [...view.element.querySelectorAll(".ruleview-header-inherited")].map(
-    el => el.textContent
-  );
-}
-
-function isPropertyOverridden(view, ruleIndex, property) {
-  return getTextProperty(
-    view,
-    ruleIndex,
-    property
-  ).editor.element.classList.contains("ruleview-overridden");
-}

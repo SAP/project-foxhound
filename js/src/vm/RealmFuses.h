@@ -48,10 +48,23 @@ class InvalidatingRealmFuse : public InvalidatingFuse {
 // Popped when one of the following fuses is popped:
 // - ArrayPrototypeIteratorFuse (for `Array.prototype[@@iterator]`)
 // - OptimizeArrayIteratorPrototypeFuse (for `%ArrayIteratorPrototype%`)
-struct OptimizeGetIteratorFuse final : public InvalidatingRealmFuse {
+struct OptimizeGetIteratorFuse final : public RealmFuse {
   virtual const char* name() override { return "OptimizeGetIteratorFuse"; }
   virtual bool checkInvariant(JSContext* cx) override;
   virtual void popFuse(JSContext* cx, RealmFuses& realmFuses) override;
+};
+
+// This fuse is similar to OptimizeGetIteratorFuse, but additionally guards
+// there are no DebugScripts in this realm.
+//
+// This ensures JSOp::OptimizeSpreadCall and JSOp::OptimizeGetIterator only
+// optimize packed arrays when no debugger hooks can run before later bytecode
+// ops that rely on the array still being packed.
+struct OptimizeGetIteratorBytecodeFuse final : public InvalidatingRealmFuse {
+  virtual const char* name() override {
+    return "OptimizeGetIteratorBytecodeFuse";
+  }
+  virtual bool checkInvariant(JSContext* cx) override;
 };
 
 struct PopsOptimizedGetIteratorFuse : public RealmFuse {
@@ -178,6 +191,36 @@ struct OptimizeSharedArrayBufferSpeciesFuse final : public RealmFuse {
   virtual bool checkInvariant(JSContext* cx) override;
 };
 
+// Fuse used to optimize @@species lookups for TypedArrays. If this fuse is
+// intact, the following invariants must hold:
+//
+// - The builtin `%TypedArray%.prototype` object has a `constructor` property
+//   that's the builtin `%TypedArray%` constructor.
+// - This `%TypedArray%` constructor has a `Symbol.species` property that's the
+//   original accessor.
+// - The builtin `<TypedArray>.prototype` object has a `constructor` property
+//   that's the builtin `<TypedArray>` constructor and the prototype of
+//   `<TypedArray>.prototype` is %TypedArray%.prototype.
+//   Where `<TypedArray>` is all concrete built-in TypedArray types:
+//   - Int8Array
+//   - Uint8Array
+//   - Uint8ClampedArray
+//   - Int16Array
+//   - Uint16Array
+//   - Int32Array
+//   - Uint32Array
+//   - BigInt64Array
+//   - BigUint64Array
+//   - Float16Array
+//   - Float32Array
+//   - Float64Array
+struct OptimizeTypedArraySpeciesFuse final : public InvalidatingRealmFuse {
+  virtual const char* name() override {
+    return "OptimizeTypedArraySpeciesFuse";
+  }
+  virtual bool checkInvariant(JSContext* cx) override;
+};
+
 // Fuse used to optimize various property lookups for promises. If this fuse is
 // intact, the following invariants must hold:
 //
@@ -214,20 +257,6 @@ struct OptimizePromiseLookupFuse final : public RealmFuse {
 // - [@@split] (RegExpSplit)
 struct OptimizeRegExpPrototypeFuse final : public InvalidatingRealmFuse {
   virtual const char* name() override { return "OptimizeRegExpPrototypeFuse"; }
-  virtual bool checkInvariant(JSContext* cx) override;
-};
-
-// Fuse used to optimize lookups of certain symbols on String.prototype.
-// If this fuse is intact, the following invariants must hold:
-//
-// - The builtin String.prototype object has the builtin Object.prototype object
-//   as prototype.
-// - Both String.prototype and Object.prototype don't have any of the following
-//   properties: Symbol.match, Symbol.replace, Symbol.search, Symbol.split.
-struct OptimizeStringPrototypeSymbolsFuse final : public InvalidatingRealmFuse {
-  virtual const char* name() override {
-    return "OptimizeStringPrototypeSymbolsFuse";
-  }
   virtual bool checkInvariant(JSContext* cx) override;
 };
 
@@ -297,6 +326,7 @@ struct OptimizeWeakSetPrototypeAddFuse final : public RealmFuse {
 
 #define FOR_EACH_REALM_FUSE(FUSE)                                              \
   FUSE(OptimizeGetIteratorFuse, optimizeGetIteratorFuse)                       \
+  FUSE(OptimizeGetIteratorBytecodeFuse, optimizeGetIteratorBytecodeFuse)       \
   FUSE(OptimizeArrayIteratorPrototypeFuse, optimizeArrayIteratorPrototypeFuse) \
   FUSE(ArrayPrototypeIteratorFuse, arrayPrototypeIteratorFuse)                 \
   FUSE(ArrayPrototypeIteratorNextFuse, arrayPrototypeIteratorNextFuse)         \
@@ -312,9 +342,9 @@ struct OptimizeWeakSetPrototypeAddFuse final : public RealmFuse {
   FUSE(OptimizeArrayBufferSpeciesFuse, optimizeArrayBufferSpeciesFuse)         \
   FUSE(OptimizeSharedArrayBufferSpeciesFuse,                                   \
        optimizeSharedArrayBufferSpeciesFuse)                                   \
+  FUSE(OptimizeTypedArraySpeciesFuse, optimizeTypedArraySpeciesFuse)           \
   FUSE(OptimizePromiseLookupFuse, optimizePromiseLookupFuse)                   \
   FUSE(OptimizeRegExpPrototypeFuse, optimizeRegExpPrototypeFuse)               \
-  FUSE(OptimizeStringPrototypeSymbolsFuse, optimizeStringPrototypeSymbolsFuse) \
   FUSE(OptimizeMapObjectIteratorFuse, optimizeMapObjectIteratorFuse)           \
   FUSE(OptimizeSetObjectIteratorFuse, optimizeSetObjectIteratorFuse)           \
   FUSE(OptimizeMapPrototypeSetFuse, optimizeMapPrototypeSetFuse)               \

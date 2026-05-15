@@ -247,15 +247,14 @@ class BaseRunner(metaclass=ABCMeta):
                     )
                 else:
                     self.logger.warning("Can not log crashes without mozcrash")
-            else:
-                if mozcrash:
-                    crash_count = mozcrash.check_for_crashes(
-                        dump_directory,
-                        self.symbols_path,
-                        dump_save_path=dump_save_path,
-                        test_name=test_name,
-                        quiet=quiet,
-                    )
+            elif mozcrash:
+                crash_count = mozcrash.check_for_crashes(
+                    dump_directory,
+                    self.symbols_path,
+                    dump_save_path=dump_save_path,
+                    test_name=test_name,
+                    quiet=quiet,
+                )
 
             self.crashed += crash_count
         except Exception:

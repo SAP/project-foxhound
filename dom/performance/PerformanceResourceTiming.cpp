@@ -5,9 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceResourceTiming.h"
+
 #include "mozilla/dom/PerformanceResourceTimingBinding.h"
-#include "nsNetUtil.h"
 #include "nsArrayUtils.h"
+#include "nsGkAtoms.h"
+#include "nsNetUtil.h"
 
 using namespace mozilla::dom;
 
@@ -27,7 +29,8 @@ NS_IMPL_RELEASE_INHERITED(PerformanceResourceTiming, PerformanceEntry)
 PerformanceResourceTiming::PerformanceResourceTiming(
     UniquePtr<PerformanceTimingData>&& aPerformanceTiming,
     Performance* aPerformance, const nsAString& aName)
-    : PerformanceEntry(aPerformance->GetParentObject(), aName, u"resource"_ns),
+    : PerformanceEntry(aPerformance->GetParentObject(), aName,
+                       nsGkAtoms::resource),
       mTimingData(std::move(aPerformanceTiming)),
       mPerformance(aPerformance) {
   MOZ_RELEASE_ASSERT(mTimingData);
@@ -85,10 +88,7 @@ size_t PerformanceResourceTiming::SizeOfExcludingThis(
     mozilla::MallocSizeOf aMallocSizeOf) const {
   return PerformanceEntry::SizeOfExcludingThis(aMallocSizeOf) +
          mInitiatorType.SizeOfExcludingThisIfUnshared(aMallocSizeOf) +
-         mTimingData->ContentType().SizeOfExcludingThisIfUnshared(
-             aMallocSizeOf) +
-         mTimingData->NextHopProtocol().SizeOfExcludingThisIfUnshared(
-             aMallocSizeOf);
+         mTimingData->SizeOfIncludingThis(aMallocSizeOf);
 }
 
 void PerformanceResourceTiming::GetServerTiming(

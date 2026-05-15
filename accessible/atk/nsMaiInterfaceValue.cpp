@@ -9,7 +9,6 @@
 #include "AccessibleWrap.h"
 #include "nsMai.h"
 #include "RemoteAccessible.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
 
 using namespace mozilla;

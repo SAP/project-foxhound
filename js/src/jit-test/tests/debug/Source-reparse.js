@@ -45,6 +45,17 @@ function getBreakpointPositions(script) {
   const offsets = script.getPossibleBreakpoints();
   const str = offsets.map(({ lineNumber, columnNumber }) => `${lineNumber}:${columnNumber}`).toString();
   const childPositions = script.getChildScripts().map(getBreakpointPositions);
-  return str + childPositions.toString();
+  return str + ";" + childPositions.toString();
 }
 assertEq(getBreakpointPositions(globalScript), getBreakpointPositions(reparsedScript));
+
+// reparse new Function succeeds
+dbg.onNewScript = script => { globalScript = script; };
+g.evaluate(`bar = new Function("return 5;");`);
+
+const reparsedScript2 = globalScript.source.reparse();
+
+// reparse eval succeeds
+g.evaluate(`rv = eval("a = 3; b = 4; a + b;")`);
+
+const reparsedScript3 = globalScript.source.reparse();

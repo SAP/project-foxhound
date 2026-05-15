@@ -51,8 +51,10 @@ add_task(async function basic() {
 
     Assert.equal(UrlbarTestUtils.getResultCount(window), 2);
 
-    const details = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
-    const { element, result } = details;
+    const { element, result } = await UrlbarTestUtils.getDetailsOfResultAt(
+      window,
+      1
+    );
     Assert.equal(
       result.providerName,
       UrlbarProviderQuickSuggest.name,
@@ -63,23 +65,23 @@ add_task(async function basic() {
       result.payload.url,
       "https://www.yelp.com/search?find_desc=RaMeN&find_loc=Tokyo%2C+Tokyo-to&utm_medium=partner&utm_source=mozilla"
     );
-    const titleElement = element.row.querySelector(".urlbarView-title");
-    Assert.equal(
-      titleElement.innerHTML,
-      `Top results for <strong xmlns=\"http://www.w3.org/1999/xhtml\">RaMeN</strong> <strong xmlns=\"http://www.w3.org/1999/xhtml\">iN</strong> <strong xmlns=\"http://www.w3.org/1999/xhtml\">Tokyo</strong>, <strong xmlns=\"http://www.w3.org/1999/xhtml\">Tokyo</strong>-to`
-    );
 
-    const { row } = details.element;
-    const bottom = row.querySelector(".urlbarView-row-body-bottom");
-    Assert.ok(bottom, "Bottom text element should exist");
-    Assert.ok(
-      BrowserTestUtils.isVisible(bottom),
-      "Bottom text element should be visible"
-    );
+    const { row } = element;
+    Assert.ok(row.hasAttribute("sponsored"));
+    const icon = row.querySelector(".urlbarView-favicon");
+    Assert.equal(icon.src, "chrome://global/skin/icons/defaultFavicon.svg");
+    const title = row.querySelector(".urlbarView-title");
+    Assert.equal(title.textContent, "Top results for RaMeN iN Tokyo, Tokyo-to");
+    const subtitle = row.querySelector(".urlbarView-subtitle");
+    Assert.equal(subtitle.textContent, "Yelp");
+    const description = row.querySelector(".urlbarView-row-body-description");
+    Assert.equal(description.textContent, "");
+    const bottomLabel = row.querySelector(".urlbarView-bottom-label");
+    Assert.equal(bottomLabel.textContent, "Sponsored");
+    const bottomUrl = row.querySelector(".urlbarView-url");
     Assert.equal(
-      bottom.textContent,
-      "Yelp · Sponsored",
-      "Bottom text is correct"
+      bottomUrl.textContent,
+      "yelp.com/search?find_desc=RaMeN&find_loc=Tokyo,+Tokyo-to&utm_medium=partner&utm_source=mozilla"
     );
 
     await UrlbarTestUtils.promisePopupClose(window);
@@ -111,10 +113,7 @@ add_task(async function businessSubject() {
     "https://www.yelp.com/search?find_desc=the+shop&find_loc=Tokyo%2C+Tokyo-to&utm_medium=partner&utm_source=mozilla"
   );
   const titleElement = element.row.querySelector(".urlbarView-title");
-  Assert.equal(
-    titleElement.innerHTML,
-    `<strong xmlns=\"http://www.w3.org/1999/xhtml\">the</strong> <strong xmlns=\"http://www.w3.org/1999/xhtml\">shop</strong> in <strong xmlns=\"http://www.w3.org/1999/xhtml\">To</strong>kyo, <strong xmlns=\"http://www.w3.org/1999/xhtml\">To</strong>kyo-<strong xmlns=\"http://www.w3.org/1999/xhtml\">to</strong>`
-  );
+  Assert.equal(titleElement.textContent, "the shop in Tokyo, Tokyo-to");
 
   await UrlbarTestUtils.promisePopupClose(window);
   await SpecialPowers.popPrefEnv();
@@ -334,18 +333,6 @@ add_task(async function resultMenu_not_relevant() {
   await QuickSuggest.clearDismissedSuggestions();
 });
 
-// Tests the "Not interested" result menu dismissal command.
-add_task(async function resultMenu_not_interested() {
-  await doDismiss({
-    menu: "not_interested",
-    assert: () => {
-      Assert.ok(!UrlbarPrefs.get("suggest.yelp"));
-    },
-  });
-
-  UrlbarPrefs.clear("suggest.yelp");
-});
-
 async function doDismiss({ menu, assert }) {
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -362,14 +349,10 @@ async function doDismiss({ menu, assert }) {
   let dismissalPromise = TestUtils.topicObserved(
     "quicksuggest-dismissals-changed"
   );
-  await UrlbarTestUtils.openResultMenuAndClickItem(
-    window,
-    ["[data-l10n-id=firefox-suggest-command-dont-show-this]", menu],
-    {
-      resultIndex,
-      openByMouse: true,
-    }
-  );
+  await UrlbarTestUtils.openResultMenuAndClickItem(window, [menu], {
+    resultIndex,
+    openByMouse: true,
+  });
   info("Awaiting dismissal promise");
   await dismissalPromise;
 
@@ -452,10 +435,33 @@ add_task(async function resultMenu_manage() {
   await doManageTest({ input: "ramen", index: 1 });
 });
 
+// Tests the "Learn more" result menu.
+add_task(async function resultMenu_learn_more() {
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "ramen",
+  });
+
+  info("Selecting Learn more item from the result menu");
+  let tabOpenPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "awesome-bar-result-menu"
+  );
+  await UrlbarTestUtils.openResultMenuAndClickItem(window, "help", {
+    resultIndex: 1,
+  });
+  info("Waiting for Learn more link to open in a new tab");
+  await tabOpenPromise;
+  gBrowser.removeCurrentTab();
+
+  await UrlbarTestUtils.promisePopupClose(window);
+});
+
 // Tests the row/group label.
 add_task(async function rowLabel() {
   let tests = [
-    { topPick: true, label: "Local recommendations" },
+    { topPick: true, label: null },
     { topPick: false, label: "Firefox Suggest" },
   ];
 

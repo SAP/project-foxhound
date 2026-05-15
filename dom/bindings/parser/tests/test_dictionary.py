@@ -120,7 +120,7 @@ def WebIDLTest(parser, harness):
         threw = True
 
     harness.ok(
-        threw, "Should not allow name duplication in a dictionary and " "its ancestor"
+        threw, "Should not allow name duplication in a dictionary and its ancestor"
     )
 
     # More reset
@@ -324,7 +324,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Union arg containing dictionary followed by optional arg must " "be optional",
+        "Union arg containing dictionary followed by optional arg must be optional",
     )
 
     parser = parser.reset()
@@ -404,7 +404,7 @@ def WebIDLTest(parser, harness):
     harness.ok(threw, "Required dictionary arg must not be nullable")
     harness.ok(
         "nullable" in str(threw),
-        "Must have the expected exception for required nullable " "dictionary arg",
+        "Must have the expected exception for required nullable dictionary arg",
     )
 
     parser = parser.reset()
@@ -605,7 +605,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "Member type must not be a Dictionary that " "inherits from its Dictionary.",
+        "Member type must not be a Dictionary that inherits from its Dictionary.",
     )
 
     parser = parser.reset()

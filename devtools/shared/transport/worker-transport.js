@@ -65,23 +65,20 @@ exports.MainThreadWorkerDebuggerTransport = MainThreadWorkerDebuggerTransport;
  * A transport that uses a WorkerDebuggerGlobalScope to send packets from a
  * worker thread to the main thread.
  */
-function WorkerThreadWorkerDebuggerTransport(scope, id) {
-  this._scope = scope;
-  this._id = id;
-  this._onMessage = this._onMessage.bind(this);
-}
-
-WorkerThreadWorkerDebuggerTransport.prototype = {
-  constructor: WorkerThreadWorkerDebuggerTransport,
-
+class WorkerThreadWorkerDebuggerTransport {
+  constructor(scope, id) {
+    this._scope = scope;
+    this._id = id;
+    this._onMessage = this._onMessage.bind(this);
+  }
   ready() {
     this._scope.addEventListener("message", this._onMessage);
-  },
+  }
 
   close() {
     this._scope.removeEventListener("message", this._onMessage);
     this.hooks?.onTransportClosed();
-  },
+  }
 
   send(packet) {
     this._scope.postMessage(
@@ -91,11 +88,11 @@ WorkerThreadWorkerDebuggerTransport.prototype = {
         message: packet,
       })
     );
-  },
+  }
 
   startBulkSend() {
     throw new Error("Can't send bulk data from worker threads!");
-  },
+  }
 
   _onMessage(event) {
     const packet = JSON.parse(event.data);
@@ -106,8 +103,8 @@ WorkerThreadWorkerDebuggerTransport.prototype = {
     if (this.hooks) {
       this.hooks.onPacket(packet.message);
     }
-  },
-};
+  }
+}
 
 exports.WorkerThreadWorkerDebuggerTransport =
   WorkerThreadWorkerDebuggerTransport;

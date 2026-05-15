@@ -85,13 +85,13 @@ def WebIDLTest(parser, harness):
     asyncIterableMembers = [
         (x, WebIDL.IDLMethod) for x in ["entries", "keys", "values"]
     ]
-    asyncIterableMembers.append(("__iterable", WebIDL.IDLAsyncIterable))
+    asyncIterableMembers.append(("__async_iterable", WebIDL.IDLAsyncIterable))
 
     valueIterableMembers = [("__iterable", WebIDL.IDLIterable)]
     valueIterableMembers.append(("__indexedgetter", WebIDL.IDLMethod))
     valueIterableMembers.append(("length", WebIDL.IDLAttribute))
 
-    valueAsyncIterableMembers = [("__iterable", WebIDL.IDLAsyncIterable)]
+    valueAsyncIterableMembers = [("__async_iterable", WebIDL.IDLAsyncIterable)]
     valueAsyncIterableMembers.append(("values", WebIDL.IDLMethod))
 
     disallowedIterableNames = [
@@ -185,7 +185,7 @@ def WebIDLTest(parser, harness):
         "Async iterable (key only)",
         """
                interface Foo1 {
-               async iterable<long>;
+               async_iterable<long>;
                attribute long unrelatedAttribute;
                long unrelatedMethod();
                };
@@ -199,7 +199,7 @@ def WebIDLTest(parser, harness):
         "Async iterable (key only) inheriting from parent",
         """
                interface Foo1 : Foo2 {
-               async iterable<long>;
+               async_iterable<long>;
                };
                interface Foo2 {
                attribute long unrelatedAttribute;
@@ -215,7 +215,7 @@ def WebIDLTest(parser, harness):
         "Async iterable with argument (key only)",
         """
                interface Foo1 {
-               async iterable<long>(optional long foo);
+               async_iterable<long>(optional long foo);
                attribute long unrelatedAttribute;
                long unrelatedMethod();
                };
@@ -229,7 +229,7 @@ def WebIDLTest(parser, harness):
         "Async iterable (key and value)",
         """
                interface Foo1 {
-               async iterable<long, long>;
+               async_iterable<long, long>;
                attribute long unrelatedAttribute;
                long unrelatedMethod();
                };
@@ -243,7 +243,7 @@ def WebIDLTest(parser, harness):
         "Async iterable (key and value) inheriting from parent",
         """
                interface Foo1 : Foo2 {
-               async iterable<long, long>;
+               async_iterable<long, long>;
                };
                interface Foo2 {
                attribute long unrelatedAttribute;
@@ -259,7 +259,7 @@ def WebIDLTest(parser, harness):
         "Async iterable with argument (key and value)",
         """
                interface Foo1 {
-               async iterable<long, long>(optional long foo);
+               async_iterable<long, long>(optional long foo);
                attribute long unrelatedAttribute;
                long unrelatedMethod();
                };
@@ -478,7 +478,7 @@ def WebIDLTest(parser, harness):
         """
                interface Foo1 {
                iterable<long>;
-               async iterable<long>;
+               async_iterable<long>;
                };
                """,
     )
@@ -487,8 +487,8 @@ def WebIDLTest(parser, harness):
         "Two iterables on same interface",
         """
                interface Foo1 {
-               async iterable<long>;
-               async iterable<long, long>;
+               async_iterable<long>;
+               async_iterable<long, long>;
                };
                """,
     )
@@ -497,7 +497,7 @@ def WebIDLTest(parser, harness):
         "Async iterable with non-optional arguments",
         """
                interface Foo1 {
-               async iterable<long>(long foo);
+               async_iterable<long>(long foo);
                };
                """,
     )
@@ -506,7 +506,7 @@ def WebIDLTest(parser, harness):
         "Async iterable with non-optional arguments",
         """
                interface Foo1 {
-               async iterable<long>(optional long foo, long bar);
+               async_iterable<long>(optional long foo, long bar);
                };
                """,
     )
@@ -515,7 +515,7 @@ def WebIDLTest(parser, harness):
         "Async iterable with non-optional arguments",
         """
                interface Foo1 {
-               async iterable<long, long>(long foo);
+               async_iterable<long, long>(long foo);
                };
                """,
     )
@@ -938,7 +938,7 @@ def WebIDLTest(parser, harness):
         ("maplike", "  maplike<long, long>;"),
         ("setlike", "  readonly setlike<long>;"),
         ("iterable", "  iterable<long>;"),
-        ("iterable", "  async iterable<long, long>;"),
+        ("async_iterable", "  async_iterable<long, long>;"),
     ]
 
     for name, line in tests:

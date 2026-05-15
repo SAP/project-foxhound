@@ -1,0 +1,439 @@
+[
+  {
+    "test": "test-removed-class",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-removed-method",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-removed-package",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-removed-param",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-removed-field-deprecated",
+    "expected": "INCOMPATIBLE",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 91,
+    "allowed_packages": ["test", "java"]
+  },
+  {
+    "test": "test-removed-method-deprecated",
+    "expected": "INCOMPATIBLE",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 91,
+    "allowed_packages": ["test", "java"]
+  },
+  {
+    "test": "test-removed-class-deprecated",
+    "expected": "INCOMPATIBLE",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 91,
+    "allowed_packages": ["test", "java"]
+  },
+  {
+    "test": "test-changed-return-type",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-changed-final-return-type",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-method-moved-to-child-class",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-ctor-removed",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-field-removed",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-field-value-changed",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-field-type-changed",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-method-renamed",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-annotation-add",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-annotation-remove",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-annotation-change-value",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-annotation-remove-ctor",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-annotation-remove-class",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-enum-field-removed",
+    "expected": "INCOMPATIBLE"
+  },
+  {
+    "test": "test-enum-field-added",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-removed-final-modifier-class",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-removed-final-modifier-method",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-added-final-modifier-method",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-method-moved-to-parent-class",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-annotation-add-class",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-interface-default-pass",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-interface-default-functional",
+    "expected": "API_CHANGE"
+  },
+  {
+    "test": "test-removed-field-deprecated",
+    "expected": "API_CHANGE",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 92,
+    "allowed_packages": ["test", "java"]
+  },
+  {
+    "test": "test-removed-method-deprecated",
+    "expected": "API_CHANGE",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 92,
+    "allowed_packages": ["test", "java"]
+  },
+  {
+    "test": "test-removed-class-deprecated",
+    "expected": "API_CHANGE",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 92,
+    "allowed_packages": ["test", "java"]
+  },
+  {
+    "test": "test-package-allowed-implements",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV",
+    "allowed_packages": ["test"]
+  },
+  {
+    "test": "test-built-in-types-allowed",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV7",
+    "allowed_packages": ["test"]
+  },
+  {
+    "test": "test-fields-only-class",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV1"
+  },
+  {
+    "test": "test-fields-only-class-final",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV2"
+  },
+  {
+    "test": "test-nullable-method-no-args-missing-nullable",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV4"
+  },
+  {
+    "test": "test-nullable-field-missing-nullable",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV4"
+  },
+  {
+    "test": "test-nullable-void-method-missing-nullable-arg",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV5"
+  },
+  {
+    "test": "test-interface-default",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV6"
+  },
+  {
+    "test": "test-package-unallowed-ctor",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-ctor-annotation",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-method-return-type",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-method-type-generic",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV7",
+    "rule": "GV7",
+    "allowed_packages": ["test", "java"]
+  },
+  {
+    "test": "test-package-unallowed-method-return-type-annotation",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-method-argument",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-method-argument-annotation",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-field",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-field-annotation",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-implements",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-extends-class",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-package-unallowed-extends",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV7",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-enum-annotations",
+    "expected": "API_ERROR",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV8",
+    "file": "api.txt",
+    "line": 4,
+    "column": 0,
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-deprecated-method",
+    "expected": "API_ERROR",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV9",
+    "file": "test-map-location",
+    "line": 123,
+    "column": 45,
+    "allowed_packages": ["test", "java", "android"]
+  },
+  {
+    "test": "test-deprecated-method-missing",
+    "expected": "API_ERROR",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV12",
+    "allowed_packages": ["test", "java", "android"]
+  },
+  {
+    "test": "test-deprecated-method",
+    "expected": "API_ERROR",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 65,
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV9",
+    "allowed_packages": ["test", "java", "android"]
+  },
+  {
+    "test": "test-deprecated-method-present",
+    "expected": "API_ERROR",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "check_compat": false,
+    "library-version": 65,
+    "filter": "GV",
+    "rule": "GV10",
+    "allowed_packages": ["test", "java", "android"]
+  },
+  {
+    "test": "test-deprecated-method-present",
+    "expected": "API_WARNING",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 64,
+    "check_compat": false,
+    "filter": "GV",
+    "rule": "GV11",
+    "file": "test-correct-map",
+    "line": 54,
+    "column": 0,
+    "allowed_packages": ["test", "java", "android"]
+  },
+  {
+    "test": "test-deprecated-method-present",
+    "expected": "SUCCESS",
+    "deprecation-annotation": "test.DeprecationSchedule",
+    "library-version": 63,
+    "check_compat": false,
+    "filter": "GV",
+    "allowed_packages": ["test", "java", "android"]
+  },
+  {
+    "test": "test-nullable-method-with-annotations",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV"
+  },
+  {
+    "test": "test-nullable-void-method-int-args",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV",
+    "allowed_packages": ["test", "android"]
+  },
+  {
+    "test": "test-nullable-void-method-no-args",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV"
+  },
+  {
+    "test": "test-nullable-field-pass",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV",
+    "allowed_packages": ["java", "android", "test"]
+  },
+  {
+    "test": "test-annotation-arguments",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV",
+    "allowed_packages": ["java", "android", "test", "org.mozilla.geckoview"]
+  },
+  {
+    "test": "test-annotation-arguments-androidx",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV",
+    "allowed_packages": ["java", "androidx", "test", "org.mozilla.geckoview"]
+  },
+  {
+    "test": "test-interface-default-ok",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV",
+    "allowed_packages": ["java", "android", "test"]
+  },
+  {
+    "test": "test-nullable-const-field",
+    "expected": "SUCCESS",
+    "check_compat": false,
+    "filter": "GV"
+  },
+  {
+    "test": "test-whitespace-change",
+    "expected": "SUCCESS"
+  },
+  {
+    "test": "test-reoder-class",
+    "expected": "SUCCESS"
+  },
+  {
+    "test": "test-import",
+    "expected": "API_CHANGE"
+  }
+]

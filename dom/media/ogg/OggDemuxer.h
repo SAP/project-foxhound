@@ -6,14 +6,14 @@
 #if !defined(OggDemuxer_h_)
 #  define OggDemuxer_h_
 
-#  include "nsTArray.h"
+#  include <memory>
+
 #  include "MediaDataDemuxer.h"
+#  include "MediaMetadataManager.h"
 #  include "OggCodecState.h"
 #  include "OggCodecStore.h"
 #  include "OggRLBoxTypes.h"
-#  include "MediaMetadataManager.h"
-
-#  include <memory>
+#  include "nsTArray.h"
 
 namespace mozilla {
 

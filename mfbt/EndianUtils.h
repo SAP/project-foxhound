@@ -67,15 +67,12 @@
 #define mozilla_EndianUtils_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Compiler.h"
 #include "mozilla/DebugOnly.h"
 
 #include <stdint.h>
 #include <string.h>
 
 #if defined(_MSC_VER)
-#  include <stdlib.h>
 #  pragma intrinsic(_byteswap_ushort)
 #  pragma intrinsic(_byteswap_ulong)
 #  pragma intrinsic(_byteswap_uint64)
@@ -84,6 +81,8 @@
 /*
  * Our supported compilers provide architecture-independent macros for this.
  * Yes, there are more than two values for __BYTE_ORDER__.
+ *
+ * FIXME: use std::endian once we move to C++20
  */
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
     defined(__ORDER_BIG_ENDIAN__)
@@ -100,72 +99,22 @@
 #  error "Don't know how to determine endianness"
 #endif
 
-#if defined(__clang__)
-#  if __has_builtin(__builtin_bswap16)
-#    define MOZ_HAVE_BUILTIN_BYTESWAP16 __builtin_bswap16
-#  endif
-#elif defined(__GNUC__)
-#  define MOZ_HAVE_BUILTIN_BYTESWAP16 __builtin_bswap16
-#elif defined(_MSC_VER)
-#  define MOZ_HAVE_BUILTIN_BYTESWAP16 _byteswap_ushort
-#endif
-
 namespace mozilla {
 
-namespace detail {
-
-/*
- * We need wrappers here because free functions with default template
- * arguments and/or partial specialization of function templates are not
- * supported by all the compilers we use.
+/* FIXME: move to std::byteswap with C++23
  */
-template <typename T, size_t Size = sizeof(T)>
-struct Swapper;
-
 template <typename T>
-struct Swapper<T, 2> {
-  static T swap(T aValue) {
-#if defined(MOZ_HAVE_BUILTIN_BYTESWAP16)
-    return MOZ_HAVE_BUILTIN_BYTESWAP16(aValue);
-#else
-    return T(((aValue & 0x00ff) << 8) | ((aValue & 0xff00) >> 8));
-#endif
+T byteswap(T n) {
+  if constexpr (sizeof(T) == 2) {
+    return __builtin_bswap16(n);
+  } else if constexpr (sizeof(T) == 4) {
+    return __builtin_bswap32(n);
+  } else if constexpr (sizeof(T) == 8) {
+    return __builtin_bswap64(n);
   }
-};
+}
 
-template <typename T>
-struct Swapper<T, 4> {
-  static T swap(T aValue) {
-#if defined(__clang__) || defined(__GNUC__)
-    return T(__builtin_bswap32(aValue));
-#elif defined(_MSC_VER)
-    return T(_byteswap_ulong(aValue));
-#else
-    return T(((aValue & 0x000000ffU) << 24) | ((aValue & 0x0000ff00U) << 8) |
-             ((aValue & 0x00ff0000U) >> 8) | ((aValue & 0xff000000U) >> 24));
-#endif
-  }
-};
-
-template <typename T>
-struct Swapper<T, 8> {
-  static inline T swap(T aValue) {
-#if defined(__clang__) || defined(__GNUC__)
-    return T(__builtin_bswap64(aValue));
-#elif defined(_MSC_VER)
-    return T(_byteswap_uint64(aValue));
-#else
-    return T(((aValue & 0x00000000000000ffULL) << 56) |
-             ((aValue & 0x000000000000ff00ULL) << 40) |
-             ((aValue & 0x0000000000ff0000ULL) << 24) |
-             ((aValue & 0x00000000ff000000ULL) << 8) |
-             ((aValue & 0x000000ff00000000ULL) >> 8) |
-             ((aValue & 0x0000ff0000000000ULL) >> 24) |
-             ((aValue & 0x00ff000000000000ULL) >> 40) |
-             ((aValue & 0xff00000000000000ULL) >> 56));
-#endif
-  }
-};
+namespace detail {
 
 enum Endianness { Little, Big };
 
@@ -201,10 +150,10 @@ class EndianUtils {
    */
   template <Endianness SourceEndian, Endianness DestEndian, typename T>
   static inline T maybeSwap(T aValue) {
-    if (SourceEndian == DestEndian) {
+    if constexpr (SourceEndian == DestEndian) {
       return aValue;
     }
-    return Swapper<T>::swap(aValue);
+    return byteswap(aValue);
   }
 
   /**
@@ -215,11 +164,11 @@ class EndianUtils {
   static inline void maybeSwapInPlace(T* aPtr, size_t aCount) {
     assertAligned(aPtr);
 
-    if (SourceEndian == DestEndian) {
+    if constexpr (SourceEndian == DestEndian) {
       return;
     }
     for (size_t i = 0; i < aCount; i++) {
-      aPtr[i] = Swapper<T>::swap(aPtr[i]);
+      aPtr[i] = byteswap(aPtr[i]);
     }
   }
 
@@ -232,19 +181,15 @@ class EndianUtils {
     assertNoOverlap(aDest, aSrc, aCount * sizeof(T));
     assertAligned(aSrc);
 
-    if (SourceEndian == DestEndian) {
+    if constexpr (SourceEndian == DestEndian) {
       memcpy(aDest, aSrc, aCount * sizeof(T));
       return;
     }
 
     uint8_t* byteDestPtr = static_cast<uint8_t*>(aDest);
     for (size_t i = 0; i < aCount; ++i) {
-      union {
-        T mVal;
-        uint8_t mBuffer[sizeof(T)];
-      } u;
-      u.mVal = maybeSwap<SourceEndian, DestEndian>(aSrc[i]);
-      memcpy(byteDestPtr, u.mBuffer, sizeof(T));
+      const T Val = maybeSwap<SourceEndian, DestEndian>(aSrc[i]);
+      memcpy(byteDestPtr, static_cast<const void*>(&Val), sizeof(T));
       byteDestPtr += sizeof(T);
     }
   }
@@ -258,19 +203,16 @@ class EndianUtils {
     assertNoOverlap(aDest, aSrc, aCount * sizeof(T));
     assertAligned(aDest);
 
-    if (SourceEndian == DestEndian) {
+    if constexpr (SourceEndian == DestEndian) {
       memcpy(aDest, aSrc, aCount * sizeof(T));
       return;
     }
 
     const uint8_t* byteSrcPtr = static_cast<const uint8_t*>(aSrc);
     for (size_t i = 0; i < aCount; ++i) {
-      union {
-        T mVal;
-        uint8_t mBuffer[sizeof(T)];
-      } u;
-      memcpy(u.mBuffer, byteSrcPtr, sizeof(T));
-      aDest[i] = maybeSwap<SourceEndian, DestEndian>(u.mVal);
+      T Val;
+      memcpy(static_cast<void*>(&Val), byteSrcPtr, sizeof(T));
+      aDest[i] = maybeSwap<SourceEndian, DestEndian>(Val);
       byteSrcPtr += sizeof(T);
     }
   }
@@ -513,12 +455,9 @@ class Endian : private EndianUtils {
    */
   template <typename T>
   static T read(const void* aPtr) {
-    union {
-      T mVal;
-      uint8_t mBuffer[sizeof(T)];
-    } u;
-    memcpy(u.mBuffer, aPtr, sizeof(T));
-    return maybeSwap<ThisEndian, MOZ_NATIVE_ENDIANNESS>(u.mVal);
+    T Val;
+    memcpy(static_cast<void*>(&Val), aPtr, sizeof(T));
+    return maybeSwap<ThisEndian, MOZ_NATIVE_ENDIANNESS>(Val);
   }
 
   /**

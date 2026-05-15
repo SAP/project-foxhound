@@ -1,5 +1,3 @@
-/* eslint-env webextensions */
-
 "use strict";
 
 const { Preferences } = ChromeUtils.importESModule(
@@ -40,13 +38,17 @@ const FPP_PBM_PREF = "privacy.fingerprintingProtection.pbmode";
 const THIRD_PARTY_COOKIE_DEPRECATION_PREF =
   "network.cookie.cookieBehavior.optInPartitioning";
 const BTP_PREF = "privacy.bounceTrackingProtection.mode";
+const LNA_PREF = "network.lna.blocking";
+const LNA_ETP_PREF = "network.lna.etp.enabled";
 
-const { EnterprisePolicyTesting, PoliciesPrefTracker } =
-  ChromeUtils.importESModule(
-    "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
-  );
+requestLongerTimeout(3);
 
-requestLongerTimeout(2);
+// Enable LNA ETP integration for all tests so lna rules are processed
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [[LNA_ETP_PREF, true]],
+  });
+});
 
 add_task(async function testListUpdate() {
   SpecialPowers.pushPrefEnv({ set: [[PREF_TEST_NOTIFICATIONS, true]] });
@@ -125,11 +127,7 @@ add_task(async function testContentBlockingMainCategory() {
   for (let selector of checkboxes) {
     let element = doc.querySelector(selector);
     ok(element, "checkbox " + selector + " exists");
-    is(
-      element.getAttribute("checked"),
-      "true",
-      "checkbox " + selector + " is checked"
-    );
+    ok(element.hasAttribute("checked"), "checkbox " + selector + " is checked");
   }
 
   // Ensure the dependent controls of the tracking protection subsection behave properly.
@@ -350,6 +348,7 @@ add_task(async function testContentBlockingStandardCategory() {
     [FPP_PBM_PREF]: null,
     [THIRD_PARTY_COOKIE_DEPRECATION_PREF]: null,
     [BTP_PREF]: null,
+    [LNA_PREF]: null,
   };
 
   for (let pref in prefs) {
@@ -520,6 +519,7 @@ add_task(async function testContentBlockingStrictCategory() {
     BTP_PREF,
     Ci.nsIBounceTrackingProtection.MODE_ENABLED_DRY_RUN
   );
+  Services.prefs.setBoolPref(LNA_PREF, false);
   let strict_pref = Services.prefs.getStringPref(STRICT_PREF).split(",");
 
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
@@ -886,6 +886,20 @@ add_task(async function testContentBlockingStrictCategory() {
           `${BTP_PREF} has been set to MODE_ENABLED_DRY_RUN`
         );
         break;
+      case "lna":
+        is(
+          Services.prefs.getBoolPref(LNA_PREF),
+          true,
+          `${LNA_PREF} has been set to true`
+        );
+        break;
+      case "-lna":
+        is(
+          Services.prefs.getBoolPref(LNA_PREF),
+          false,
+          `${LNA_PREF} has been set to false`
+        );
+        break;
       default:
         ok(false, "unknown option was added to the strict pref");
         break;
@@ -1049,15 +1063,11 @@ add_task(async function testContentBlockingCustomCategory() {
 function checkControlState(doc, controls, enabled) {
   for (let selector of controls) {
     for (let control of doc.querySelectorAll(selector)) {
-      if (enabled) {
-        ok(!control.hasAttribute("disabled"), `${selector} is enabled.`);
-      } else {
-        is(
-          control.getAttribute("disabled"),
-          "true",
-          `${selector} is disabled.`
-        );
-      }
+      is(
+        !control.hasAttribute("disabled"),
+        enabled,
+        `${selector} is ${enabled ? "enabled" : "disabled"}.`
+      );
     }
   }
 }
@@ -1103,9 +1113,8 @@ add_task(async function testDisableTPCheckBoxDisablesEmailTP() {
   );
 
   // Verify the initial check state of the tracking protection checkbox.
-  is(
-    tpCheckbox.getAttribute("checked"),
-    "true",
+  ok(
+    tpCheckbox.hasAttribute("checked"),
     "Tracking protection checkbox is checked initially"
   );
 
@@ -1218,7 +1227,7 @@ add_task(async function testFPPCustomCheckBox() {
 
   // Verify the default state of the FPP checkbox.
   ok(fppCheckbox, "FPP checkbox exists");
-  is(fppCheckbox.getAttribute("checked"), "true", "FPP checkbox is checked");
+  ok(fppCheckbox.hasAttribute("checked"), "FPP checkbox is checked");
 
   let menu = doc.querySelector("#fingerprintingProtectionMenu");
   let alwaysMenuItem = doc.querySelector(

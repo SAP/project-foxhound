@@ -4,8 +4,6 @@ To record Legacy Telemetry events using Glean APIs, you need these two things:
 
 1. A Glean event definition to generate a Glean API
     * This will go in a `metrics.yaml` file [likely in your component][new-metrics-yaml]
-    * If you're familiar with Telemetry events, you might like to read [this short section][glean-events-vs]
-  	  about how Glean events are different.
     * The [Glean `event` metric docs][glean-event-doc] has an
   	  [example definition][sample-event-defn] you might find helpful.
     * If you already know of a Legacy Telemetry event definition similar to what you want,
@@ -36,7 +34,6 @@ which means that testing the Legacy Telemetry event or seeing its value in `abou
 [requires a full, compiled build][artifact-support-gifft].
 
 [new-metrics-yaml]: ./new_definitions_file.md#where-do-i-define-new-metrics-and-pings
-[glean-events-vs]: ./migration.md#events---use-gleans-event
 [glean-event-doc]: https://mozilla.github.io/glean/book/reference/metrics/event.html
 [sample-event-defn]: https://mozilla.github.io/glean/book/reference/metrics/event.html#metric-parameters
 [gifft]: ./gifft.md

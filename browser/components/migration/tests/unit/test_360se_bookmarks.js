@@ -1,7 +1,7 @@
 "use strict";
 
 const { CustomizableUI } = ChromeUtils.importESModule(
-  "resource:///modules/CustomizableUI.sys.mjs"
+  "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
 );
 
 add_task(async function () {

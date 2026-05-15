@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGGElement.h"
+
 #include "mozilla/dom/SVGGElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(G)

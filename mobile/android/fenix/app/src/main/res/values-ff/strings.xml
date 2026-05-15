@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Cuuriɗum %s</string>
@@ -10,10 +17,6 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">Cuɓe Goɗɗe</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Hurmin banngogol suturo</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Ñif banngagol suturo</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Yiilo walla naatnu ñiiɓirde</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -25,7 +28,7 @@
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Naatnu kelme jiyleteeɗe</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">Tabbe maa udditiiɗe maa kollire ɗoo.</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Tabbe maa udditiiɗe maa kollire ɗoo.</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
   <string name="tab_tray_add_new_collection">Ɓeydu leemannde hesere</string>
   <!-- Label of editable text in create collection dialog for naming a new collection -->
@@ -33,10 +36,13 @@
   <!-- Label of button in save to collection dialog for selecting a current collection -->
   <string name="tab_tray_select_collection">Danndu to leemannde</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description">Danndu tabbe labaaɗe to leemannde</string>
+  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Danndu tabbe labaaɗe to leemannde</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
   <string name="about_content">Ko Mozilla jibini %1$s</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Tinndi goowaaɗi baɗte banngogol suturo</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!-- Text for the positive action button to go to Settings for auto close tabs. -->
   <string name="tab_tray_close_tabs_banner_positive_button_text">Juɓtorɗe jiytol</string>
   <!-- Text for the banner message to tell users about our inactive tabs feature. -->
@@ -97,9 +103,9 @@
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">Dartin</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">Ballal</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Ballal</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">Ko Hesɗi</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Ko Hesɗi</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Teelte</string>
   <!-- Browser menu button that opens a user's library -->
@@ -124,9 +130,9 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Uddit e jaaɓnirgal</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view">Heertin jiytol taroowo</string>
+  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Heertin jiytol taroowo</string>
   <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1">Heertin jaɓɓorgo</string>
+  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Heertin jaɓɓorgo</string>
   <!--
     Locale Settings Fragment
 
@@ -151,10 +157,10 @@
   <string name="search_engine_suggestions_title">Yiylo %s</string>
   <!-- Search engine suggestion description text -->
   <string name="search_engine_suggestions_description">Yiylo beƴ e palal ñiiɓirɗe ngal</string>
-  <!-- Home onboarding dialog sign into sync screen description text. -->
-  <string name="onboarding_home_sync_description" moz:removedIn="141" tools:ignore="UnusedResources">Ɓamtu ɗo dartino-ɗaa e tabbe iwɗe e kaɓirɗi goɗɗi gonɗi jooni e jaɓɓorgo maa.</string>
-  <!-- Onboarding home screen sync popup dialog message, shown on top of Recent Synced Tabs in the Jump back in section. -->
-  <string name="sync_cfr_message" moz:removedIn="142" tools:ignore="UnusedResources">Tabbe maa ko canngoɗinaaɗe! Fuɗɗo ɗoon ɗo darnunu-ɗaa e kaɓirgol maa goɗngol.</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!--
     Search Widget
 
@@ -224,8 +230,6 @@
   <string name="preferences_account_sync_error">Seŋo kadi ngam fuɗɗitaade jahdingol</string>
   <!-- Preference for language -->
   <string name="preferences_language">Ɗemngal</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">Cuɓe keɓe</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">Ƴettugol keɓe</string>
   <!-- Preference for developers -->
@@ -250,17 +254,11 @@
   <string name="preferences_enable_autocomplete_urls">Timmin binndi URL e jaajol</string>
   <!-- Preference for open links in third party apps -->
   <string name="preferences_open_links_in_apps">Uddit jokke e nder jaaɓnirɗe</string>
-  <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager" tools:ignore="UnusedResources" moz:removedIn="141">Toppitorde gaawte yaasiire</string>
   <!-- Summary for notification preference indicating notifications are allowed -->
   <string name="notifications_allowed_summary">Yamiraama</string>
   <!-- Summary for notification preference indicating notifications are not allowed -->
   <string name="notifications_not_allowed_summary">Yamiraaka</string>
-  <!--
-    Customize Home
-
-    Header text for jumping back into the recent tab in customize the home screen
-  -->
+  <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">Artu ɗo ngonno-ɗaa</string>
   <!--
     Title for the customize home screen section with recently visited. Recently visited is
@@ -279,10 +277,6 @@
     Content description for various wallpapers. %1$s is the name of the wallpaper.
   -->
   <string name="wallpapers_item_name_content_description">Temre ɗeerol ɓalal: %1$s</string>
-  <!-- Snackbar message for when wallpaper is selected -->
-  <string name="wallpaper_updated_snackbar_message">Deɗol ɓalal hesɗitinaama!</string>
-  <!-- Snackbar label for action to view selected wallpaper -->
-  <string name="wallpaper_updated_snackbar_action">Hollir</string>
   <!-- Snackbar message for when wallpaper couldn't be downloaded -->
   <string name="wallpaper_download_error_snackbar_message">Horiima aawtaade wallpaper</string>
   <!-- Snackbar label for action to retry downloading the wallpaper -->
@@ -349,12 +343,6 @@
   <string name="exceptions_empty_message_description">Paltooje ina mbaawnuma daaƴde ndeenka dewindol e lowe cuɓaaɗe ɗee.</string>
   <!-- Text displayed when there are no exceptions, with learn more link that brings users to a tracking protection SUMO page -->
   <string name="exceptions_empty_message_learn_more_link">Ɓeydu humpito</string>
-  <!--
-    Turn On Sync Preferences
-
-    Header of the Sync and save your data preference view
-  -->
-  <string name="preferences_sync_2">Sanngoɗin ngam daɗnude keɓe maa</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Seŋo ngam seŋaade kadi</string>
   <!-- Preference for removing FxA account -->
@@ -501,15 +489,15 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Ɓeydu tabbere hesere</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">Cuuriɗum</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Cuuriɗum</string>
   <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync">Sanngoɗin</string>
+  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Sanngoɗin</string>
   <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share">Lollin tabbe fof</string>
+  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Lollin tabbe fof</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Tabbe uddaaɗe sakket</string>
   <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources">Uddaaɗe sakket</string>
+  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Uddaaɗe sakket</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Teelte konte</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -517,11 +505,11 @@
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Uddu tabbe fof</string>
   <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark">Maantorol</string>
+  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Maantorol</string>
   <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close">Uddu</string>
+  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Uddu</string>
   <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description">Danndu tabbe labaaɗe</string>
+  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Danndu tabbe labaaɗe</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Dosol tabbe labaaɗe</string>
   <!-- Text for button to enter multiselect mode in tabs tray -->
@@ -541,9 +529,9 @@
   <!-- Text for the button to clear all history -->
   <string name="history_delete_all">Momtu aslol</string>
   <!-- Text for the snackbar to confirm that multiple browsing history items has been deleted -->
-  <string name="history_delete_multiple_items_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">Aslol momtaama</string>
+  <string name="history_delete_multiple_items_snackbar">Aslol momtaama</string>
   <!-- Text for the snackbar to confirm that a single browsing history item has been deleted. %1$s is the shortened URL of the deleted history item. -->
-  <string name="history_delete_single_item_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">Momtaama %1$s</string>
+  <string name="history_delete_single_item_snackbar">Momtaama %1$s</string>
   <!-- Context description text for the button to delete a single history item -->
   <string name="history_delete_item">Momtu</string>
   <!--
@@ -576,12 +564,6 @@
   <string name="tab_crash_close">Uddu tabbere</string>
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">Artir tabbe</string>
-  <!--
-    Bookmarks
-
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
-  -->
-  <string name="bookmark_delete_folder_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">Aɗa yenanaa yiɗde momtude ndee runngere?</string>
   <!-- Screen title for adding a bookmarks folder -->
   <string name="bookmark_add_folder">Ɓeydu runngere</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
@@ -589,7 +571,7 @@
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Taƴto</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">Natto</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Natto</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Lollin</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -600,8 +582,6 @@
   <string name="bookmark_menu_open_all_in_tabs_button">Uddit fof e tabbe kese</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">Momtu</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">Danndu</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -611,33 +591,23 @@
   <string name="edit_bookmark_fragment_title">Taƴto Maantorol</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">Taƴto runngere</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button" tools:ignore="UnusedResources" moz:removedIn="143">Seŋo ngam yiyde maantore jahdinaaɗe</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">RUNNGERE</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">INNDE</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label" tools:ignore="UnusedResources" moz:removedIn="143">Ɓeydu runngere</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Suɓo runngere</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error" tools:ignore="UnusedResources" moz:removedIn="143">Ina foti jogaade tiitoonde</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">URL o moƴƴaani</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message" tools:ignore="UnusedResources" moz:removedIn="143">Ɗoo alaa maantore</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Momtaama %1$s</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks not including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_2" tools:ignore="UnusedResources" moz:removedIn="143">Maantore momtaama</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">FIRTU</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">FIRTU</string>
   <!--
     Site Permissions
 
@@ -716,12 +686,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d tabbere suɓaa</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved" tools:ignore="UnusedResources" moz:removedIn="142">Tabbe ndanndaama!</string>
-  <!-- Text shown in snackbar when one or multiple tabs have been saved in a new collection -->
-  <string name="create_collection_tabs_saved_new_collection">Leemannde danndaama!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">Tabbere danndaama!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">Uddu</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -749,8 +713,6 @@
   <string name="toast_copy_link_to_clipboard">Natto faade ɗakkitorde</string>
   <!-- An option from the share dialog to sign into sync -->
   <string name="sync_sign_in">Seŋo ngam yahdinde</string>
-  <!-- An option from the three dot menu to sync and save data -->
-  <string name="sync_menu_sync_and_save_data">Sanngoɗin ngam daɗnude keɓe</string>
   <!-- An option from the share dialog to send link to all other sync devices -->
   <string name="sync_send_to_all">Neldu to masiŋon kon fof</string>
   <!-- An option from the share dialog to reconnect to sync -->
@@ -777,18 +739,18 @@
     Text shown in the notification that pops up to remind the user that a private browsing session is active.
   -->
   <string name="notification_pbm_delete_text_2">Uddu tabbe cuuriiɗe</string>
-  <!-- Text shown in snackbar when user closes a tab -->
+  <!--
+    Snackbar
+
+    Text shown in snackbar when user closes a tab
+  -->
   <string name="snackbar_tab_closed">Tabbere uddaama</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">Tabbe uddaama</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Tabbere suuriinde uddaama</string>
-  <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed" moz:removedIn="141" tools:ignore="UnusedResources">Tabbe cuuriinde uddaama</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">FIRTU</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed">Lowre momtaama</string>
   <!--
     QR code scanner prompt which appears after scanning a code, but before navigating to it
     %1$s is the name of the app (for example "Firefox"), %2$s is the URL or text scanned
@@ -800,10 +762,6 @@
   <string name="qr_scanner_dialog_negative">HAƊ</string>
   <!-- Tab collection deletion prompt dialog message. %1$s is the collection name. -->
   <string name="tab_collection_dialog_message">Aɗa yenanaa yiɗde momtude %1$s?</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive" tools:ignore="UnusedResources" moz:removedIn="143">Momtu</string>
-  <!-- Message for copying the URL via long press on the toolbar -->
-  <string name="url_copied" tools:ignore="UnusedResources" moz:removedIn="142">Ñiiɓirde geese nattaama</string>
   <!-- Sample text for accessibility font size -->
   <string name="accessibility_text_size_sample_text_1">Ɗum ko jubbannde binndi. Waɗiraa ko ngam hollirde no binndi ɗii mbayata so a ɓeydii walla a ustii darnde alkule ɗee e ngol teeltol.</string>
   <!-- Summary for Accessibility Text Size Scaling Preference -->
@@ -840,7 +798,7 @@
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Ina momta keɓe banngogol ɗoon e ɗoon so a suɓiima \"Uddu\" e dosol dowrowol ngol</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">Uddu</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Uddu</string>
   <!-- Dialog message to the user asking to delete browsing data. %s is the name of the app (for example "Firefox"). -->
   <string name="delete_browsing_data_prompt_message_3">%s momtoytu keɓe banngogol cuɓaaɗe ɗee.</string>
   <!-- Text for the cancel button for the data deletion dialog -->
@@ -851,14 +809,6 @@
   <string name="preferences_delete_browsing_data_snackbar">Keɓe banngogol momtaama</string>
   <!-- Text for the snackbar to show the user that the deletion of browsing data is in progress -->
   <string name="deleting_browsing_data_in_progress">Momtugol keɓe banngogol…</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar">Tabbe neldaama!</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">Tabbere neldaama!</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">Horiima neldude</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -1003,8 +953,6 @@
   <string name="credit_cards_edit_card">Taƴto kartal</string>
   <!-- The header for the card number of a credit card -->
   <string name="credit_cards_card_number">Tonngoode Kartal</string>
-  <!-- The header for the expiration date of a credit card -->
-  <string name="credit_cards_expiration_date">Ña,gu Kiiɗtugol</string>
   <!-- The label for the expiration date month of a credit card to be used by a11y services -->
   <string name="credit_cards_expiration_date_month">Lewru Ñalngu Kiiɗtugol</string>
   <!-- The label for the expiration date year of a credit card to be used by a11y services -->
@@ -1037,12 +985,6 @@
   <string name="search_engine_delete">Momtu</string>
   <!-- Text shown when a user leaves the name field empty -->
   <string name="search_add_custom_engine_error_empty_name">Naatnu innde yiylorde</string>
-  <!-- Text shown when a user creates a new search engine. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s Sosaa</string>
-  <!-- Text shown when a user successfully edits a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_edit_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s danndaa</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">Momtaama %s</string>
   <!-- Heading for the instructions to allow a permission -->
   <string name="phone_feature_blocked_intro">Yamirde ɗum:</string>
   <!-- First step for the allowing a permission -->
@@ -1050,7 +992,7 @@
   <!-- Confirmation message for a dialog confirming if the user wants to set default value a permission for a site -->
   <string name="confirm_clear_permission_site">Aɗa yananaa yiɗde momtude ɗee jamirooje e ɗee lowe?</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">Momtu</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Momtu</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Momtu</string>
   <!-- The error message in add login view when hostname field is blank. -->
@@ -1096,4 +1038,10 @@
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

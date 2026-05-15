@@ -14,6 +14,9 @@ const position = index + 1;
 requestLongerTimeout(3);
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
   await initQuickSuggestPingTest({
     remoteSettingsRecords: [
       {
@@ -30,37 +33,20 @@ add_task(async function amp() {
   let advertiser = SUGGESTION.advertiser.toLowerCase();
   let source = "rust";
 
-  // Make sure `improveSuggestExperience` is recorded correctly depending on the
-  // value of the related pref.
-  for (let improveSuggestExperience of [false, true]) {
-    await SpecialPowers.pushPrefEnv({
-      set: [
-        [
-          "browser.urlbar.quicksuggest.dataCollection.enabled",
-          improveSuggestExperience,
+  // Make sure `improveSuggestExperience` is recorded correctly.
+  for (let onlineAvailable of [false, true]) {
+    for (let onlineEnabled of [false, true]) {
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["browser.urlbar.quicksuggest.online.available", onlineAvailable],
+          ["browser.urlbar.quicksuggest.online.enabled", onlineEnabled],
         ],
-      ],
-    });
-    await doQuickSuggestPingTest({
-      index,
-      suggestion: SUGGESTION,
-      impressionOnly: {
-        pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
-        matchType,
-        advertiser,
-        blockId: SUGGESTION.id.toString(),
-        improveSuggestExperience,
-        position,
-        suggestedIndex: "-1",
-        suggestedIndexRelativeToGroup: true,
-        requestId: undefined,
-        source,
-        contextId: "",
-        isClicked: false,
-        reportingUrl: SUGGESTION.impression_url,
-      },
-      click: [
-        {
+      });
+      let improveSuggestExperience = onlineAvailable && onlineEnabled;
+      await doQuickSuggestPingTest({
+        index,
+        suggestion: SUGGESTION,
+        impressionOnly: {
           pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
           matchType,
           advertiser,
@@ -72,82 +58,99 @@ add_task(async function amp() {
           requestId: undefined,
           source,
           contextId: "",
-          isClicked: true,
+          isClicked: false,
           reportingUrl: SUGGESTION.impression_url,
         },
-        {
-          pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION,
-          matchType,
-          advertiser,
-          blockId: SUGGESTION.id.toString(),
-          improveSuggestExperience,
-          position,
-          suggestedIndex: "-1",
-          suggestedIndexRelativeToGroup: true,
-          requestId: undefined,
-          source,
-          contextId: "",
-          reportingUrl: SUGGESTION.click_url,
-        },
-      ],
-      commands: [
-        {
-          command: "dismiss",
-          pings: [
-            {
-              pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
-              matchType,
-              advertiser,
-              blockId: SUGGESTION.id.toString(),
-              improveSuggestExperience,
-              position,
-              suggestedIndex: "-1",
-              suggestedIndexRelativeToGroup: true,
-              requestId: undefined,
-              source,
-              contextId: "",
-              isClicked: false,
-              reportingUrl: SUGGESTION.impression_url,
-            },
-            {
-              pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_BLOCK,
-              matchType,
-              advertiser,
-              blockId: SUGGESTION.id.toString(),
-              improveSuggestExperience,
-              position,
-              suggestedIndex: "-1",
-              suggestedIndexRelativeToGroup: true,
-              requestId: undefined,
-              source,
-              contextId: "",
-              iabCategory: SUGGESTION.iab_category,
-            },
-          ],
-        },
-        {
-          command: "manage",
-          pings: [
-            {
-              pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
-              matchType,
-              advertiser,
-              blockId: SUGGESTION.id.toString(),
-              improveSuggestExperience,
-              position,
-              suggestedIndex: "-1",
-              suggestedIndexRelativeToGroup: true,
-              requestId: undefined,
-              source,
-              contextId: "",
-              isClicked: false,
-              reportingUrl: SUGGESTION.impression_url,
-            },
-          ],
-        },
-      ],
-    });
-    await SpecialPowers.popPrefEnv();
+        click: [
+          {
+            pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
+            matchType,
+            advertiser,
+            blockId: SUGGESTION.id.toString(),
+            improveSuggestExperience,
+            position,
+            suggestedIndex: "-1",
+            suggestedIndexRelativeToGroup: true,
+            requestId: undefined,
+            source,
+            contextId: "",
+            isClicked: true,
+            reportingUrl: SUGGESTION.impression_url,
+          },
+          {
+            pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_SELECTION,
+            matchType,
+            advertiser,
+            blockId: SUGGESTION.id.toString(),
+            improveSuggestExperience,
+            position,
+            suggestedIndex: "-1",
+            suggestedIndexRelativeToGroup: true,
+            requestId: undefined,
+            source,
+            contextId: "",
+            reportingUrl: SUGGESTION.click_url,
+          },
+        ],
+        commands: [
+          {
+            command: "dismiss",
+            pings: [
+              {
+                pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
+                matchType,
+                advertiser,
+                blockId: SUGGESTION.id.toString(),
+                improveSuggestExperience,
+                position,
+                suggestedIndex: "-1",
+                suggestedIndexRelativeToGroup: true,
+                requestId: undefined,
+                source,
+                contextId: "",
+                isClicked: false,
+                reportingUrl: SUGGESTION.impression_url,
+              },
+              {
+                pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_BLOCK,
+                matchType,
+                advertiser,
+                blockId: SUGGESTION.id.toString(),
+                improveSuggestExperience,
+                position,
+                suggestedIndex: "-1",
+                suggestedIndexRelativeToGroup: true,
+                requestId: undefined,
+                source,
+                contextId: "",
+                iabCategory: SUGGESTION.iab_category,
+              },
+            ],
+          },
+          {
+            command: "manage",
+            pings: [
+              {
+                pingType: CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION,
+                matchType,
+                advertiser,
+                blockId: SUGGESTION.id.toString(),
+                improveSuggestExperience,
+                position,
+                suggestedIndex: "-1",
+                suggestedIndexRelativeToGroup: true,
+                requestId: undefined,
+                source,
+                contextId: "",
+                isClicked: false,
+                reportingUrl: SUGGESTION.impression_url,
+              },
+            ],
+          },
+        ],
+      });
+      await SpecialPowers.popPrefEnv();
+    }
   }
 });
 

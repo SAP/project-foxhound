@@ -62,8 +62,6 @@ html {
   window.onload = onloaded;
   window.onDOMContentLoaded = sendDpToParent;
   document.onreadystatechange = sendDpToParent;
-  document.onafterscriptexecute = sendDpToParent;
-  document.onbeforescriptexecute = sendDpToParent;
   document.onvisibilitychange = sendDpToParent;
   function onloaded() {
     numMoreTimesToSend = 10;

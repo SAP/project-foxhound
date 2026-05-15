@@ -33,6 +33,8 @@ class RecordedTextureData final : public TextureData {
 
   void EndDraw() final;
 
+  void ReturnDrawTarget(already_AddRefed<gfx::DrawTarget> aDT) final;
+
   already_AddRefed<gfx::SourceSurface> BorrowSnapshot() final;
 
   void ReturnSnapshot(already_AddRefed<gfx::SourceSurface> aSnapshot) final;

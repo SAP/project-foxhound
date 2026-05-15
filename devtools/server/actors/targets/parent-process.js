@@ -35,10 +35,10 @@ class ParentProcessTargetActor extends WindowGlobalTargetActor {
    *
    * @param {DevToolsServerConnection} conn
    *        The connection to the client.
-   * @param {Boolean} options.isTopLevelTarget
+   * @param {boolean} options.isTopLevelTarget
    *        flag to indicate if this is the top
    *        level target of the DevTools session
-   * @param {Object} options.sessionContext
+   * @param {object} options.sessionContext
    *        The Session Context to help know what is debugged.
    *        See devtools/server/actors/watcher/session-context.js
    */
@@ -126,6 +126,7 @@ class ParentProcessTargetActor extends WindowGlobalTargetActor {
 
   /**
    * Getter for the list of all docshells in this targetActor
+   *
    * @return {Array}
    */
   get docShells() {

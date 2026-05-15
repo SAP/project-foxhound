@@ -181,13 +181,11 @@ def main():
         work = []
         for i in args.input:
             fn = os.path.basename(i)
-            work.append(
-                {
-                    "input": i,
-                    "output": os.path.join(args.output, fn),
-                    "attribution": args.attribution,
-                }
-            )
+            work.append({
+                "input": i,
+                "output": os.path.join(args.output, fn),
+                "attribution": args.attribution,
+            })
     else:
         log.error("No configuration found. Set ATTRIBUTION_CONFIG or pass arguments.")
         return 1

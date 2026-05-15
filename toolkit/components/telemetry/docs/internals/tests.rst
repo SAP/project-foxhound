@@ -33,17 +33,11 @@ It should be used to test the C++ API and core of Firefox Telemetry.
 This is for tests like
 “Do we correctly accumulate to bucket 0 if I pass -1 to ``Telemetry::Accumulate``?”
 
-Integration Tests (telemetry-tests-client and telemetry-integration-tests)
+Integration Tests (telemetry-tests-client)
 --------------------------------------------------------------------------
-:Location: ``t/c/t/t/marionette/tests/client`` and ``t/c/t/t/integration/``
+:Location: ``t/c/t/t/marionette/tests/client``
 :Language: Python
-  (`unittest <https://docs.python.org/3/library/unittest.html>`__,
-  `pytest <https://docs.pytest.org/en/latest/>`_)
-
-The most modern of the test harnesses,
-telemetry-integration-tests uses marionette to puppet the entire browser allowing us to write integration tests that include ping servers and multiple browser runs.
-You should use this if you’re testing Big Picture things like
-“Does Firefox resend its “deletion-request” ping if the network is down when Telemetry is first disabled?”.
+  (`unittest <https://docs.python.org/3/library/unittest.html>`__)
 
 At time of writing there are two “editions” of integration tests.
 Prefer writing new tests in telemetry-tests-client

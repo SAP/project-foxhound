@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_layers_TouchActionHelper_h__
-#define __mozilla_layers_TouchActionHelper_h__
+#ifndef _mozilla_layers_TouchActionHelper_h_
+#define _mozilla_layers_TouchActionHelper_h_
 
 #include "mozilla/layers/LayersTypes.h"  // for TouchBehaviorFlags
 #include "RelativeTo.h"                  // for RelativeTo
@@ -43,4 +43,4 @@ class TouchActionHelper {
 
 }  // namespace mozilla::layers
 
-#endif /*__mozilla_layers_TouchActionHelper_h__ */
+#endif /*_mozilla_layers_TouchActionHelper_h_ */

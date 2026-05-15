@@ -71,16 +71,6 @@ add_task(async function load_serp_in_new_window_with_pref_and_click_ad() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -137,16 +127,6 @@ add_task(async function load_serp_in_new_window_with_pref_and_click_organic() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -204,16 +184,6 @@ add_task(async function load_serp_in_new_window_with_context_menu() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -294,16 +264,6 @@ add_task(
 
     assertSERPTelemetry([
       {
-        impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
-        },
         adImpressions: [
           {
             component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
@@ -314,16 +274,6 @@ add_task(
         ],
       },
       {
-        impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
-        },
         engagements: [
           {
             action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,

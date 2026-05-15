@@ -10,9 +10,9 @@ from collections.abc import Iterable
 import gyp
 import gyp.msvs_emulation
 import mozpack.path as mozpath
+import mozshellutil
 from mozpack.files import FileFinder
 
-from mozbuild import shellutil
 from mozbuild.util import expand_variables
 
 from .context import VARIABLES, ObjDirPath, SourcePath, TemplateContext
@@ -431,12 +431,10 @@ class GypProcessor:
         if config.substs["CC_TYPE"] == "clang-cl":
             # This isn't actually used anywhere in this generator, but it's needed
             # to override the registry detection of VC++ in gyp.
-            os.environ.update(
-                {
-                    "GYP_MSVS_OVERRIDE_PATH": "fake_path",
-                    "GYP_MSVS_VERSION": config.substs["MSVS_VERSION"],
-                }
-            )
+            os.environ.update({
+                "GYP_MSVS_OVERRIDE_PATH": "fake_path",
+                "GYP_MSVS_VERSION": config.substs["MSVS_VERSION"],
+            })
 
         params = {
             "parallel": False,
@@ -448,7 +446,7 @@ class GypProcessor:
         # floating-point ABI on arm.
         os.environ.update(
             CC=config.substs["CC"],
-            CFLAGS=shellutil.quote(*config.substs["CC_BASE_FLAGS"]),
+            CFLAGS=mozshellutil.quote(*config.substs["CC_BASE_FLAGS"]),
         )
 
         if gyp_dir_attrs.no_chromium:

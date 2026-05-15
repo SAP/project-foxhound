@@ -10,18 +10,27 @@
 
 #include "video/frame_dumping_encoder.h"
 
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "api/sequence_checker.h"
-#include "api/video/video_codec_type.h"
+#include "api/environment/environment.h"
+#include "api/fec_controller_override.h"
+#include "api/field_trials_view.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_frame_type.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder.h"
 #include "modules/video_coding/utility/ivf_file_writer.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/file_wrapper.h"
-#include "rtc_base/time_utils.h"
+#include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 namespace {
@@ -129,16 +138,16 @@ class FrameDumpingEncoder : public VideoEncoder, public EncodedImageCallback {
 }  // namespace
 
 std::unique_ptr<VideoEncoder> MaybeCreateFrameDumpingEncoderWrapper(
-    std::unique_ptr<VideoEncoder> encoder,
-    const FieldTrialsView& field_trials) {
+    const Environment& env,
+    std::unique_ptr<VideoEncoder> encoder) {
   auto output_directory =
-      field_trials.Lookup(kEncoderDataDumpDirectoryFieldTrial);
+      env.field_trials().Lookup(kEncoderDataDumpDirectoryFieldTrial);
   if (output_directory.empty() || !encoder) {
     return encoder;
   }
   absl::c_replace(output_directory, ';', '/');
-  return std::make_unique<FrameDumpingEncoder>(std::move(encoder), TimeMicros(),
-                                               output_directory);
+  return std::make_unique<FrameDumpingEncoder>(
+      std::move(encoder), env.clock().TimeInMicroseconds(), output_directory);
 }
 
 }  // namespace webrtc

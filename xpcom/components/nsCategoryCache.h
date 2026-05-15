@@ -7,8 +7,6 @@
 #ifndef nsCategoryCache_h_
 #define nsCategoryCache_h_
 
-#include "mozilla/Attributes.h"
-
 #include "nsIObserver.h"
 
 #include "nsServiceManagerUtils.h"

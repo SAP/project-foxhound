@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "mozilla/ArenaAllocator.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Polygon.h"
 #include "nsTArray.h"
 

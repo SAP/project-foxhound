@@ -1,0 +1,232 @@
+<!doctype html>
+<title>MediaStreamTrack clones have independent settings. Assumes Mozilla's fake camera source with 480p and 720p capabilities.</title>
+<meta name="timeout" content="long">
+<p class="instructions">When prompted, accept to share your video stream.</p>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=/resources/testdriver.js></script>
+<script src=/resources/testdriver-vendor.js></script>
+<script src=../mediacapture-streams/settings-helper.js></script>
+<script src=../mediacapture-streams/video-test-helper.js></script>
+<script>
+  "use strict"
+
+  setup(() => assert_implements("getDisplayMedia" in navigator.mediaDevices, "getDisplayMedia() not supported"));
+
+  // Note these gDM tests will fail if our own window is on a screen different
+  // than the system's first screen. They're functions in case the browser
+  // window needs to be moved to the first screen during the test in order to
+  // pass.
+  function screenPixelRatio() { return SpecialPowers.wrap(window).desktopToDeviceScale; }
+  function screenWidth() { return window.screen.width * window.devicePixelRatio; }
+  function screenHeight() { return window.screen.height * window.devicePixelRatio; }
+  function desktopWidth() {
+    // TODO: Bug 1965499 - scale down by screenPixelRatio by default in resizeMode: crop-and-scale.
+    // return screenWidth() / screenPixelRatio();
+    return screenWidth();
+  }
+  function desktopHeight() {
+    // TODO: Bug 1965499 - scale down by screenPixelRatio by default in resizeMode: crop-and-scale.
+    // return screenHeight() / screenPixelRatio();
+    return screenHeight();
+  }
+
+  // TODO: By default we shouldn't be multiplying with window.devicePixelRatio (bug 1703991).
+  function defaultScreen() {
+    return {
+      resizeMode: "crop-and-scale",
+      width: screenWidth(),
+      height: screenHeight(),
+      frameRate: 30,
+    };
+  }
+  // TODO: Should get the source's real refresh rate for frameRate (bug 1984363).
+  function nativeScreen() {
+    return {
+      resizeMode: "none",
+      width: screenWidth(),
+      height: screenHeight(),
+      frameRate: 60
+    };
+  }
+
+  [
+    [
+      [{resizeMode: "none", width: 100}, {resizeMode: "none", height: 500}],
+      [nativeScreen, nativeScreen],
+    ],
+    [
+      [{resizeMode: "none", frameRate: 50}, {resizeMode: "none", frameRate: 1}],
+      [nativeScreen, nativeScreen],
+    ],
+    [
+      [{resizeMode: "none"}, {resizeMode: "crop-and-scale"}],
+      [nativeScreen, defaultScreen],
+    ],
+    [
+      [{resizeMode: "crop-and-scale"}, {resizeMode: "crop-and-scale", height: 100}],
+      [
+        defaultScreen,
+        () => ({
+          resizeMode: "crop-and-scale",
+          width: Math.round(screenWidth() / screenHeight() * 100),
+          height: 100,
+          frameRate: 30
+        }),
+      ],
+    ],
+    [
+      [{resizeMode: "crop-and-scale", height: 100}, {resizeMode: "crop-and-scale"}],
+      [
+        () => ({
+          resizeMode: "crop-and-scale",
+          width: Math.round(screenWidth() / screenHeight() * 100),
+          height: 100,
+          frameRate: 30
+        }),
+        defaultScreen,
+      ],
+    ],
+    [
+      [{resizeMode: "crop-and-scale", frameRate: 5}, {resizeMode: "crop-and-scale", frameRate: 50}],
+      [
+        () => {
+          const { width, height } = defaultScreen();
+          return { width, height, frameRate: 5};
+        },
+        () => {
+          const { width, height } = defaultScreen();
+          return { width, height, frameRate: 50};
+        },
+      ],
+      [[2, 7], [2, 50]],
+    ],
+    [
+      [{resizeMode: "crop-and-scale", frameRate: 50}, {resizeMode: "crop-and-scale", frameRate: 5}],
+      [
+        () => {
+          const { width, height } = defaultScreen();
+          return { width, height, frameRate: 50};
+        },
+        () => {
+          const { width, height } = defaultScreen();
+          return { width, height, frameRate: 5};
+        },
+        [[2, 50], [2, 7]]
+      ],
+    ],
+    [
+      [{resizeMode: "none"}, {resizeMode: "crop-and-scale", frameRate: 5000}, {}],
+      [
+        nativeScreen,
+        () => {
+          const { width, height } = defaultScreen();
+          return { width, height, frameRate: 120};
+        },
+      ]
+    ],
+  ].forEach(
+    ([
+      [video, cloneVideo],
+      [expectedFunc, cloneExpectedFunc],
+      [testFramerate, cloneTestFramerate] = [null, null]
+    ]) => {
+      let expected, cloneExpected;
+      promise_test(async t => {
+          expected = expectedFunc();
+          cloneExpected = cloneExpectedFunc();
+          await test_driver.bless('getDisplayMedia()');
+          const stream = await navigator.mediaDevices.getDisplayMedia({video});
+          const [track] = stream.getTracks();
+          const clone = track.clone();
+          t.add_cleanup(() => {
+            track.stop();
+            clone.stop();
+          });
+          let settings = track.getSettings();
+          let cloneSettings = clone.getSettings();
+          for (const key of Object.keys(expected)) {
+            assert_equals(settings[key], expected[key], `original: ${key}`);
+            assert_equals(cloneSettings[key], expected[key], `clone: ${key}`);
+          }
+          await clone.applyConstraints(cloneVideo);
+          settings = track.getSettings();
+          cloneSettings = clone.getSettings();
+          for (const key of Object.keys(expected)) {
+            assert_equals(settings[key], expected[key], `original-post: ${key}`);
+          }
+          for (const key of Object.keys(cloneExpected)) {
+            assert_equals(cloneSettings[key], cloneExpected[key], `clone-post: ${key}`);
+          }
+          await test_resolution_equals(t, track, settings.width, settings.height);
+          await test_resolution_equals(t, clone, cloneSettings.width, cloneSettings.height);
+          if (testFramerate) {
+            const [low, high] = testFramerate;
+            await test_framerate_between_exclusive(t, track, low, high);
+          }
+          if (cloneTestFramerate) {
+            const [low, high] = cloneTestFramerate;
+            await test_framerate_between_exclusive(t, clone, low, high);
+          }
+        }, `gDM gets expected modes by ${JSON.stringify(video)} + (cloned) ${JSON.stringify(cloneVideo)}`);
+    });
+
+  promise_test(async t => {
+    await test_driver.bless('getDisplayMedia()');
+    const stream = await navigator.mediaDevices.getDisplayMedia({video: {resizeMode: "none"}});
+    const [track] = stream.getTracks();
+    const clone = track.clone();
+    t.add_cleanup(() => {
+      track.stop();
+      clone.stop();
+    });
+    await clone.applyConstraints(
+      {
+        resizeMode: "crop-and-scale",
+        width: 400,
+        height: 400
+      }
+    );
+    const expected = findFittestResolutionSetting(
+      screenWidth(),
+      screenHeight(),
+      clone.getConstraints()
+    );
+    assert_equals(clone.getSettings().width, expected.width, "width");
+    assert_equals(clone.getSettings().height, expected.height, "height");
+    await test_resolution_equals(t, clone, clone.getSettings().width, clone.getSettings().height);
+    assert_approx_equals(
+      clone.getSettings().width / clone.getSettings().height,
+      desktopWidth() / desktopHeight(),
+      0.01,
+      "aspect ratio"
+    );
+    assert_equals(clone.getSettings().resizeMode, "crop-and-scale", "resizeMode");
+  }, "applyConstraints on gDM clone doesn't crop with only ideal dimensions");
+
+  promise_test(async t => {
+    await test_driver.bless('getDisplayMedia()');
+    const stream = await navigator.mediaDevices.getDisplayMedia({video: {resizeMode: "none"}});
+    const [track] = stream.getTracks();
+    const clone = track.clone();
+    t.add_cleanup(() => {
+      track.stop();
+      clone.stop();
+    });
+    await clone.applyConstraints(
+      {
+        resizeMode: "crop-and-scale",
+        width: {max: 400},
+        height: {ideal: 400}
+      }
+    );
+    assert_equals(clone.getSettings().width, 400, "width");
+    assert_equals(
+      clone.getSettings().height,
+      Math.round(screenHeight() / screenWidth() * 400),
+      "height"
+    );
+    await test_resolution_equals(t, clone, clone.getSettings().width, clone.getSettings().height);
+    assert_equals(clone.getSettings().resizeMode, "crop-and-scale", "resizeMode");
+  }, "applyConstraints on gDM clone doesn't crop with ideal and max dimensions");
+</script>

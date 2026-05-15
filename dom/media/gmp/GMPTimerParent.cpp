@@ -6,7 +6,6 @@
 #include "GMPTimerParent.h"
 
 #include "GMPLog.h"
-#include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 
 namespace mozilla {
@@ -39,8 +38,8 @@ mozilla::ipc::IPCResult GMPTimerParent::RecvSetTimer(
 
   rv = NS_NewTimerWithFuncCallback(
       getter_AddRefs(ctx->mTimer), &GMPTimerParent::GMPTimerExpired, ctx.get(),
-      aTimeoutMs, nsITimer::TYPE_ONE_SHOT, "gmp::GMPTimerParent::RecvSetTimer",
-      mGMPEventTarget);
+      aTimeoutMs, nsITimer::TYPE_ONE_SHOT,
+      "gmp::GMPTimerParent::RecvSetTimer"_ns, mGMPEventTarget);
   NS_ENSURE_SUCCESS(rv, IPC_OK());
 
   ctx->mId = aTimerId;
@@ -95,7 +94,7 @@ void GMPTimerParent::TimerExpired(Context* aContext) {
   uint32_t id = aContext->mId;
   mTimers.Remove(aContext);
   if (id) {
-    Unused << SendTimerExpired(id);
+    (void)SendTimerExpired(id);
   }
 }
 

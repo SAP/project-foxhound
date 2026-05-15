@@ -373,7 +373,7 @@ void FinishAntiTrackingRedirectHeuristic(nsIChannel* aNewChannel,
   newLoadInfo->SetAllowListFutureDocumentsCreatedFromThisRedirectChain(true);
 
   uint64_t innerWindowID;
-  Unused << newChannel->GetTopLevelContentWindowId(&innerWindowID);
+  (void)newChannel->GetTopLevelContentWindowId(&innerWindowID);
 
   nsAutoString errorText;
   AutoTArray<nsString, 2> params = {NS_ConvertUTF8toUTF16(newOrigin),
@@ -412,7 +412,7 @@ void FinishAntiTrackingRedirectHeuristic(nsIChannel* aNewChannel,
           newPrincipal, oldPrincipal,
           StorageAccessAPIHelper::StorageAccessPromptChoices::eAllow, false,
           StaticPrefs::privacy_restrict3rdpartystorage_expiration_redirect());
-  Unused << promise;
+  (void)promise;
 }
 
 }  // namespace mozilla

@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ServiceWorkerContainerChild.h"
+
+#include "ServiceWorkerContainer.h"
 #include "mozilla/dom/PServiceWorkerContainerChild.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
-
-#include "ServiceWorkerContainer.h"
-#include "ServiceWorkerContainerChild.h"
 
 namespace mozilla::dom {
 

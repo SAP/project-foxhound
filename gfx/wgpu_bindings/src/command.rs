@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::{id, server::Global, RawString};
-use std::{borrow::Cow, ffi, slice};
+use crate::{id, server::Global, FfiSlice, RawString};
+use std::{borrow::Cow, ffi};
 use wgc::{
     command::{
         ComputePassDescriptor, PassTimestampWrites, RenderPassColorAttachment,
         RenderPassDepthStencilAttachment,
     },
-    id::CommandEncoderId,
+    id::{CommandEncoderId, TextureViewId},
 };
 use wgt::{BufferAddress, BufferSize, Color, DynamicOffset, IndexFormat};
 
@@ -51,7 +51,7 @@ pub struct Pass<C> {
 pub struct RecordedRenderPass {
     base: Pass<RenderCommand>,
     color_attachments: Vec<Option<RenderPassColorAttachment>>,
-    depth_stencil_attachment: Option<RenderPassDepthStencilAttachment>,
+    depth_stencil_attachment: Option<RenderPassDepthStencilAttachment<TextureViewId>>,
     timestamp_writes: Option<PassTimestampWrites>,
     occlusion_query_set_id: Option<id::QuerySetId>,
 }
@@ -60,7 +60,7 @@ impl RecordedRenderPass {
     pub fn new(
         label: Option<String>,
         color_attachments: Vec<Option<RenderPassColorAttachment>>,
-        depth_stencil_attachment: Option<RenderPassDepthStencilAttachment>,
+        depth_stencil_attachment: Option<RenderPassDepthStencilAttachment<TextureViewId>>,
         timestamp_writes: Option<PassTimestampWrites>,
         occlusion_query_set_id: Option<id::QuerySetId>,
     ) -> Self {
@@ -223,25 +223,19 @@ pub enum ComputeCommand {
     EndPipelineStatisticsQuery,
 }
 
-/// # Safety
-///
-/// This function is unsafe as there is no guarantee that the given pointer is
-/// valid for `offset_length` elements.
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_recorded_render_pass_set_bind_group(
     pass: &mut RecordedRenderPass,
     index: u32,
     bind_group_id: Option<id::BindGroupId>,
-    offsets: *const DynamicOffset,
-    offset_length: usize,
+    offsets: FfiSlice<'_, DynamicOffset>,
 ) {
-    pass.base
-        .dynamic_offsets
-        .extend_from_slice(unsafe { slice::from_raw_parts(offsets, offset_length) });
+    let offsets = offsets.as_slice();
+    pass.base.dynamic_offsets.extend_from_slice(offsets);
 
     pass.base.commands.push(RenderCommand::SetBindGroup {
         index,
-        num_dynamic_offsets: offset_length,
+        num_dynamic_offsets: offsets.len(),
         bind_group_id,
     });
 }
@@ -568,43 +562,31 @@ pub extern "C" fn wgpu_recorded_render_pass_end_pipeline_statistics_query(
         .push(RenderCommand::EndPipelineStatisticsQuery);
 }
 
-/// # Safety
-///
-/// This function is unsafe as there is no guarantee that the given pointer is
-/// valid for `render_bundle_ids_length` elements.
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_recorded_render_pass_execute_bundles(
     pass: &mut RecordedRenderPass,
-    render_bundle_ids: *const id::RenderBundleId,
-    render_bundle_ids_length: usize,
+    render_bundles: FfiSlice<'_, id::RenderBundleId>,
 ) {
-    for &bundle_id in unsafe { slice::from_raw_parts(render_bundle_ids, render_bundle_ids_length) }
-    {
+    for &bundle_id in render_bundles.as_slice() {
         pass.base
             .commands
             .push(RenderCommand::ExecuteBundle(bundle_id));
     }
 }
 
-/// # Safety
-///
-/// This function is unsafe as there is no guarantee that the given pointer is
-/// valid for `offset_length` elements.
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_recorded_compute_pass_set_bind_group(
     pass: &mut RecordedComputePass,
     index: u32,
     bind_group_id: Option<id::BindGroupId>,
-    offsets: *const DynamicOffset,
-    offset_length: usize,
+    offsets: FfiSlice<'_, DynamicOffset>,
 ) {
-    pass.base
-        .dynamic_offsets
-        .extend_from_slice(unsafe { slice::from_raw_parts(offsets, offset_length) });
+    let offsets = offsets.as_slice();
+    pass.base.dynamic_offsets.extend_from_slice(offsets);
 
     pass.base.commands.push(ComputeCommand::SetBindGroup {
         index,
-        num_dynamic_offsets: offset_length,
+        num_dynamic_offsets: offsets.len(),
         bind_group_id,
     });
 }
@@ -727,6 +709,27 @@ pub fn replay_render_pass(
     src_pass: &RecordedRenderPass,
     error_buf: &mut crate::error::OwnedErrorBuffer,
 ) {
+    // Explicitly forbid `LoadOp::DontCare`, until wgpu#8780 is resolved.
+    //
+    // Since `DontCare` is not part of WebGPU (and is unlikely to become so),
+    // only a corrupted content process could ever produce such a render pass,
+    // so it suffices for us to just crash here if we see it.
+    for attachment in &src_pass.color_attachments {
+        if let Some(attachment) = attachment {
+            assert!(!matches!(attachment.load_op, wgt::LoadOp::DontCare(_)));
+        }
+    }
+    if let Some(ref attachment) = src_pass.depth_stencil_attachment {
+        assert!(!matches!(
+            attachment.depth.load_op,
+            Some(wgt::LoadOp::DontCare(_))
+        ));
+        assert!(!matches!(
+            attachment.stencil.load_op,
+            Some(wgt::LoadOp::DontCare(_))
+        ));
+    }
+
     let (mut dst_pass, err) = global.command_encoder_begin_render_pass(
         id,
         &wgc::command::RenderPassDescriptor {
@@ -735,6 +738,7 @@ pub fn replay_render_pass(
             depth_stencil_attachment: src_pass.depth_stencil_attachment.as_ref(),
             timestamp_writes: src_pass.timestamp_writes.as_ref(),
             occlusion_query_set: src_pass.occlusion_query_set_id,
+            multiview_mask: None,
         },
     );
     if let Some(err) = err {

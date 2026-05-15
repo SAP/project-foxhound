@@ -9,6 +9,7 @@ FINAL_LIBRARY = "js"
 # Includes should be relative to parent path
 LOCAL_INCLUDES += ["!..", ".."]
 
+include("../js-compileflags.mozbuild")
 include("../js-config.mozbuild")
 include("../js-cxxflags.mozbuild")
 
@@ -43,6 +44,7 @@ UNIFIED_SOURCES += [
     "ExecutableAllocator.cpp",
     "FlushICache.cpp",
     "FoldLinearArithConstants.cpp",
+    "GraphSpewer.cpp",
     "InlinableNatives.cpp",
     "InstructionReordering.cpp",
     "InterpreterEntryTrampoline.cpp",
@@ -61,7 +63,6 @@ UNIFIED_SOURCES += [
     "JitScript.cpp",
     "JitSpewer.cpp",
     "JSJitFrameIter.cpp",
-    "JSONSpewer.cpp",
     "KnownClass.cpp",
     "Label.cpp",
     "LICM.cpp",
@@ -83,6 +84,7 @@ UNIFIED_SOURCES += [
     "SafepointIndex.cpp",
     "Safepoints.cpp",
     "ScalarReplacement.cpp",
+    "ShapeList.cpp",
     "shared/Assembler-shared.cpp",
     "shared/AtomicOperations-shared-jit.cpp",
     "shared/CodeGenerator-shared.cpp",
@@ -92,6 +94,7 @@ UNIFIED_SOURCES += [
     "SimpleAllocator.cpp",
     "Sink.cpp",
     "Snapshots.cpp",
+    "StubFolding.cpp",
     "Trampoline.cpp",
     "TrampolineNatives.cpp",
     "TrialInlining.cpp",
@@ -174,6 +177,8 @@ elif CONFIG["JS_CODEGEN_ARM64"]:
         "arm64/vixl/MozAssembler-vixl.cpp",
         "arm64/vixl/MozCpu-vixl.cpp",
         "arm64/vixl/MozInstructions-vixl.cpp",
+        "arm64/vixl/Operands-vixl.cpp",
+        "arm64/vixl/Registers-vixl.cpp",
         "arm64/vixl/Utils-vixl.cpp",
     ]
     vixl_werror_sources = [
@@ -232,6 +237,7 @@ elif CONFIG["JS_CODEGEN_RISCV64"]:
         "riscv64/extension/base-assembler-riscv.cc",
         "riscv64/extension/base-riscv-i.cc",
         "riscv64/extension/extension-riscv-a.cc",
+        "riscv64/extension/extension-riscv-b.cc",
         "riscv64/extension/extension-riscv-c.cc",
         "riscv64/extension/extension-riscv-d.cc",
         "riscv64/extension/extension-riscv-f.cc",

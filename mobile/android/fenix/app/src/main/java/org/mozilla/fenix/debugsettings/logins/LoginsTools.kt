@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.debugsettings.logins
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,14 +24,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
 import mozilla.components.concept.storage.LoginsStorage
@@ -41,7 +42,10 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.TextListItem
 import org.mozilla.fenix.debugsettings.ui.DebugDrawer
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 import java.util.UUID
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Logins UI for [DebugDrawer] that displays existing logins for the current domain and allows
@@ -69,33 +73,35 @@ fun LoginsTools(
         }
     }
 
-    LoginsContent(
-        origin = origin,
-        existingLogins = existingLogins,
-        onAddFakeLogin = {
-            origin?.let {
-                scope.launch {
-                    existingLogins += loginsStorage.add(
-                        LoginEntry(
-                            username = "fake_username${existingLogins.size + 1}",
-                            password = "fake_password${existingLogins.size + 1}",
-                            origin = "https://$origin",
-                            formActionOrigin = "https://$origin",
-                        ),
-                    )
-                }
-            }
-        },
-        onDeleteLogin = { entry ->
-            scope.launch {
-                loginsStorage.delete(entry.guid).also { isSuccess ->
-                    if (isSuccess) {
-                        existingLogins -= entry
+    Surface {
+        LoginsContent(
+            origin = origin,
+            existingLogins = existingLogins,
+            onAddFakeLogin = {
+                origin?.let {
+                    scope.launch {
+                        existingLogins += loginsStorage.add(
+                            LoginEntry(
+                                username = "fake_username${existingLogins.size + 1}",
+                                password = "fake_password${existingLogins.size + 1}",
+                                origin = "https://$origin",
+                                formActionOrigin = "https://$origin",
+                            ),
+                        )
                     }
                 }
-            }
-        },
-    )
+            },
+            onDeleteLogin = { entry ->
+                scope.launch {
+                    loginsStorage.delete(entry.guid).also { isSuccess ->
+                        if (isSuccess) {
+                            existingLogins -= entry
+                        }
+                    }
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -108,21 +114,20 @@ private fun LoginsContent(
     Column(modifier = Modifier.padding(16.dp)) {
         Text(
             text = stringResource(R.string.debug_drawer_logins_title),
-            color = FirefoxTheme.colors.textPrimary,
             style = FirefoxTheme.typography.headline5,
         )
 
         Text(
-            color = FirefoxTheme.colors.textSecondary,
             text = stringResource(
                 R.string.debug_drawer_logins_current_domain_label,
                 origin ?: "",
             ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        PrimaryButton(
+        FilledButton(
             text = stringResource(R.string.debug_drawer_logins_add_login_button),
             modifier = Modifier.fillMaxWidth(),
             onClick = onAddFakeLogin,
@@ -133,34 +138,13 @@ private fun LoginsContent(
                 TextListItem(
                     label = login.username,
                     onIconClick = { onDeleteLogin(login) },
-                    iconPainter = painterResource(R.drawable.ic_delete),
+                    iconPainter = painterResource(iconsR.drawable.mozac_ic_delete_24),
                     iconDescription = stringResource(
                         R.string.debug_drawer_logins_delete_login_button_content_description,
                         login.username,
                     ),
                 )
             }
-        }
-    }
-}
-
-@Composable
-@PreviewLightDark
-private fun LoginsScreenPreview() {
-    FirefoxTheme {
-        Box(
-            modifier = Modifier.background(color = FirefoxTheme.colors.layer1),
-        ) {
-            val selectedTab = createTab("https://example.com")
-            LoginsTools(
-                browserStore = BrowserStore(
-                    BrowserState(
-                        selectedTabId = selectedTab.id,
-                        tabs = listOf(selectedTab),
-                    ),
-                ),
-                loginsStorage = FakeLoginsStorage(),
-            )
         }
     }
 }
@@ -172,6 +156,9 @@ internal class FakeLoginsStorage : LoginsStorage {
     override suspend fun get(guid: String): Login? = null
     override suspend fun touch(guid: String) = Unit
     override suspend fun list(): List<Login> = listOf()
+    override suspend fun count(): Long {
+        return list().size.toLong()
+    }
     override suspend fun findLoginToUpdate(entry: LoginEntry): Login? = null
     override suspend fun add(entry: LoginEntry): Login {
         val guid = UUID.randomUUID().toString()
@@ -200,4 +187,23 @@ internal class FakeLoginsStorage : LoginsStorage {
         usernameField = usernameField,
         passwordField = passwordField,
     )
+}
+
+@Preview
+@Composable
+private fun LoginsScreenPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        val selectedTab = createTab("https://example.com")
+        LoginsTools(
+            browserStore = BrowserStore(
+                BrowserState(
+                    selectedTabId = selectedTab.id,
+                    tabs = listOf(selectedTab),
+                ),
+            ),
+            loginsStorage = FakeLoginsStorage(),
+        )
+    }
 }

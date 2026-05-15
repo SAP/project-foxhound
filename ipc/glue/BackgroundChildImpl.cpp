@@ -21,7 +21,6 @@
 #include "mozilla/dom/PBackgroundSDBConnectionChild.h"
 #include "mozilla/dom/CookieStoreChild.h"
 #include "mozilla/dom/PFileSystemRequestChild.h"
-#include "mozilla/dom/EndpointForReportChild.h"
 #include "mozilla/dom/PVsync.h"
 #include "mozilla/dom/TemporaryIPCBlobChild.h"
 #include "mozilla/dom/cache/ActorUtils.h"
@@ -422,18 +421,6 @@ BackgroundChildImpl::AllocPServiceWorkerRegistrationChild(
     const IPCServiceWorkerRegistrationDescriptor&) {
   MOZ_CRASH("Shouldn't be called.");
   return {};
-}
-
-dom::PEndpointForReportChild* BackgroundChildImpl::AllocPEndpointForReportChild(
-    const nsAString& aGroupName, const PrincipalInfo& aPrincipalInfo) {
-  return new dom::EndpointForReportChild();
-}
-
-bool BackgroundChildImpl::DeallocPEndpointForReportChild(
-    PEndpointForReportChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete static_cast<dom::EndpointForReportChild*>(aActor);
-  return true;
 }
 
 }  // namespace mozilla::ipc

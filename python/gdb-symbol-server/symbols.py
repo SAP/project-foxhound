@@ -23,7 +23,8 @@ except ImportError:
     from urllib2 import urlopen
     from urlparse import urljoin
 
-SYMBOL_SERVER_URL = "https://symbols.mozilla.org/"
+# /try covers regular symbols as well, see https://github.com/mstange/reliost/pull/8
+SYMBOL_SERVER_URL = "https://symbols.mozilla.org/try/"
 
 debug_dir = os.path.join(os.environ["HOME"], ".cache", "gdb")
 cache_dir = os.path.join(debug_dir, ".build-id")
@@ -58,14 +59,15 @@ def try_fetch_symbols(filename, build_id, destination):
     path = os.path.join(filename, munge_build_id(build_id), filename + ".dbg.gz")
     url = urljoin(SYMBOL_SERVER_URL, quote(path))
     try:
+        print(f"Trying to fetch symbols from {url}")
         u = urlopen(url)
         if u.getcode() != 200:
             return None
-        print(f"Fetching symbols from {url}")
         with open(debug_file, "wb") as f, gzip.GzipFile(
             fileobj=io.BytesIO(u.read()), mode="r"
         ) as z:
             shutil.copyfileobj(z, f)
+            print(f"Fetched symbols from {url}")
             return debug_file
     except (URLError, HTTPError):
         None

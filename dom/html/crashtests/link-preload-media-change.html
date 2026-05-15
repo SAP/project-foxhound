@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  iframe {
+    width: 800px;
+  }
+</style>
+</head>
+<body>
+<iframe srcdoc="" id="iframe"></iframe>
+<script>
+const iframe = document.getElementById("iframe");
+
+iframe.onload = () => {
+  const doc = iframe.contentDocument;
+
+  // Create link with media query that matches current viewport
+  const link = doc.createElement("link");
+  link.rel = "preload";
+  link.as = "script";
+  link.href = "data:text/javascript,void+0";
+  link.media = "(min-width: 600px)";
+  doc.head.appendChild(link);
+
+  // Resize viewport so media query no longer matches
+  iframe.style.width = "400px";
+
+  // Force a layout flush
+  iframe.offsetWidth;
+  doc.documentElement.offsetWidth;
+
+  // Change media attribute to something that matches new viewport
+  // Bug 2014588 started a second preload without canceling the first one,
+  // causing an assertion failure.
+  link.media = "all";
+};
+</script>
+</body>
+</html>

@@ -35,16 +35,16 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/BaseProfilerDetail.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/ProfileBufferEntrySerialization.h"
 #include "mozilla/ProfileJSONWriter.h"
 #include "mozilla/ProfilerUtils.h"
 #include "mozilla/ProgressLogger.h"
+#include "mozilla/SharedLibraries.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
 #include "nsString.h"
-#include "SharedLibraries.h"
+#include "ProfileAdditionalInformation.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -158,7 +158,8 @@ void profiler_mark_thread_awake();
 
 void profiler_mark_thread_asleep();
 
-[[nodiscard]] bool profiler_get_profile_json(
+[[nodiscard]] ProfilerResult<mozilla::ProfileGenerationAdditionalInformation>
+profiler_get_profile_json(
     SpliceableChunkedJSONWriter& aSpliceableChunkedJSONWriter,
     double aSinceTime, bool aIsShuttingDown,
     mozilla::ProgressLogger aProgressLogger);

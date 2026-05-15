@@ -188,7 +188,8 @@ def gen_use_counter_metrics():
       * dom/base/UseCounters.conf
       * dom/base/UseCountersWorker.conf
       * dom/base/nsDeprecatedOperationsList.h
-      * !/layout/style/ServoCSSPropList.py
+      * servo/components/style/properties/longhands.toml
+      * servo/components/style/properties/shorthands.toml
       * servo/components/style/properties/counted_unknown_properties.py
     and overwrites the Glean metrics definition file
     `dom/base/use_counter_metrics.yaml` with definitions for each use counter found.
@@ -345,7 +346,8 @@ def parse_use_counters():
       * dom/base/UseCounters.conf
       * dom/base/UseCountersWorker.conf
       * dom/base/nsDeprecatedOperationsList.h
-      * !/layout/style/ServoCSSPropList.py
+      * servo/components/style/properties/longhands.toml
+      * servo/components/style/properties/shorthands.toml
       * servo/components/style/properties/counted_unknown_properties.py
     and returns them as a tuple of lists of tuples of the form:
     (page, doc, dedicated, shared, service, ops_page, ops_doc, css_page, css_doc)
@@ -383,42 +385,38 @@ def parse_use_counters():
             )
             name = f"{counter['interface_name']}_{counter['attribute_name']}".lower()
             attr = f"{counter['interface_name']}.{counter['attribute_name']}"
-            page.append(
-                (f"{enum_root}_getter", f"{name}_getter", f"Whether a page got {attr}.")
-            )
-            page.append(
-                (f"{enum_root}_setter", f"{name}_setter", f"Whether a page set {attr}.")
-            )
-            doc.append(
-                (
-                    f"{enum_root}_getter",
-                    f"{name}_getter",
-                    f"Whether a document got {attr}.",
-                )
-            )
-            doc.append(
-                (
-                    f"{enum_root}_setter",
-                    f"{name}_setter",
-                    f"Whether a document set {attr}.",
-                )
-            )
+            page.append((
+                f"{enum_root}_getter",
+                f"{name}_getter",
+                f"Whether a page got {attr}.",
+            ))
+            page.append((
+                f"{enum_root}_setter",
+                f"{name}_setter",
+                f"Whether a page set {attr}.",
+            ))
+            doc.append((
+                f"{enum_root}_getter",
+                f"{name}_getter",
+                f"Whether a document got {attr}.",
+            ))
+            doc.append((
+                f"{enum_root}_setter",
+                f"{name}_setter",
+                f"Whether a document set {attr}.",
+            ))
         elif counter["type"] == "custom":
             enum_name = f"eUseCounter_custom_{counter['name']}"
-            page.append(
-                (
-                    enum_name,
-                    to_snake_case(counter["name"]),
-                    f"Whether a page {counter['desc']}.",
-                )
-            )
-            doc.append(
-                (
-                    enum_name,
-                    to_snake_case(counter["name"]),
-                    f"Whether a document {counter['desc']}.",
-                )
-            )
+            page.append((
+                enum_name,
+                to_snake_case(counter["name"]),
+                f"Whether a page {counter['desc']}.",
+            ))
+            doc.append((
+                enum_name,
+                to_snake_case(counter["name"]),
+                f"Whether a document {counter['desc']}.",
+            ))
         else:
             print(f"Found unexpected use counter type {counter['type']}. Returning 1.")
             return 1
@@ -434,84 +432,72 @@ def parse_use_counters():
             enum_name = f"{counter['interface_name']}_{counter['method_name']}"
             name = f"{counter['interface_name']}_{counter['method_name']}".lower()
             method = f"called {counter['interface_name']}.{counter['method_name']}"
-            dedicated.append(
-                (enum_name, name, f"Whether a dedicated worker called {method}.")
-            )
-            shared.append(
-                (enum_name, name, f"Whether a shared worker called {method}.")
-            )
-            service.append(
-                (enum_name, name, f"Whether a service worker called {method}.")
-            )
+            dedicated.append((
+                enum_name,
+                name,
+                f"Whether a dedicated worker called {method}.",
+            ))
+            shared.append((
+                enum_name,
+                name,
+                f"Whether a shared worker called {method}.",
+            ))
+            service.append((
+                enum_name,
+                name,
+                f"Whether a service worker called {method}.",
+            ))
         elif counter["type"] == "attribute":
             enum_root = f"{counter['interface_name']}_{counter['attribute_name']}"
             name = f"{counter['interface_name']}_{counter['attribute_name']}".lower()
             attr = f"{counter['interface_name']}.{counter['attribute_name']}"
-            dedicated.append(
-                (
-                    f"{enum_root}_getter",
-                    f"{name}_getter",
-                    f"Whether a dedicated worker got {attr}.",
-                )
-            )
-            dedicated.append(
-                (
-                    f"{enum_root}_setter",
-                    f"{name}_setter",
-                    f"Whether a dedicated worker set {attr}.",
-                )
-            )
-            shared.append(
-                (
-                    f"{enum_root}_getter",
-                    f"{name}_getter",
-                    f"Whether a shared worker got {attr}.",
-                )
-            )
-            shared.append(
-                (
-                    f"{enum_root}_setter",
-                    f"{name}_setter",
-                    f"Whether a shared worker set {attr}.",
-                )
-            )
-            service.append(
-                (
-                    f"{enum_root}_getter",
-                    f"{name}_getter",
-                    f"Whether a service worker got {attr}.",
-                )
-            )
-            service.append(
-                (
-                    f"{enum_root}_setter",
-                    f"{name}_setter",
-                    f"Whether a service worker set {attr}.",
-                )
-            )
+            dedicated.append((
+                f"{enum_root}_getter",
+                f"{name}_getter",
+                f"Whether a dedicated worker got {attr}.",
+            ))
+            dedicated.append((
+                f"{enum_root}_setter",
+                f"{name}_setter",
+                f"Whether a dedicated worker set {attr}.",
+            ))
+            shared.append((
+                f"{enum_root}_getter",
+                f"{name}_getter",
+                f"Whether a shared worker got {attr}.",
+            ))
+            shared.append((
+                f"{enum_root}_setter",
+                f"{name}_setter",
+                f"Whether a shared worker set {attr}.",
+            ))
+            service.append((
+                f"{enum_root}_getter",
+                f"{name}_getter",
+                f"Whether a service worker got {attr}.",
+            ))
+            service.append((
+                f"{enum_root}_setter",
+                f"{name}_setter",
+                f"Whether a service worker set {attr}.",
+            ))
         elif counter["type"] == "custom":
             enum_name = f"Custom_{counter['name']}"
-            dedicated.append(
-                (
-                    enum_name,
-                    to_snake_case(counter["name"]),
-                    f"Whether a dedicated worker {counter['desc']}.",
-                )
-            )
-            shared.append(
-                (
-                    enum_name,
-                    to_snake_case(counter["name"]),
-                    f"Whether a shared worker {counter['desc']}.",
-                )
-            )
-            service.append(
-                (
-                    enum_name,
-                    to_snake_case(counter["name"]),
-                    f"Whether a service worker {counter['desc']}.",
-                )
-            )
+            dedicated.append((
+                enum_name,
+                to_snake_case(counter["name"]),
+                f"Whether a dedicated worker {counter['desc']}.",
+            ))
+            shared.append((
+                enum_name,
+                to_snake_case(counter["name"]),
+                f"Whether a shared worker {counter['desc']}.",
+            ))
+            service.append((
+                enum_name,
+                to_snake_case(counter["name"]),
+                f"Whether a service worker {counter['desc']}.",
+            ))
         else:
             print(
                 f"Found unexpected worker use counter type {counter['type']}. Returning 1."
@@ -520,7 +506,7 @@ def parse_use_counters():
 
     # nsDeprecatedOperationsList.h parsing is adapted from parse_histograms.py.
     operation_list_path = os.path.join(
-        buildconfig.topsrcdir, "dom", "base", "nsDeprecatedOperationList.h"
+        buildconfig.topsrcdir, "dom", "base", "nsDeprecatedOperationList.inc"
     )
     operation_regex = re.compile("^DEPRECATED_OPERATION\\(([^)]+)\\)")
     ops_page = []
@@ -538,82 +524,53 @@ def parse_use_counters():
             ops_page.append((enum_name, op_name, f"Whether a page used {op}."))
             ops_doc.append((enum_name, op_name, f"Whether a document used {op}."))
 
-    # Theoretically, we could do this without a completed build
-    # (ie, without the generated ServoCSSPropList.py) by sourcing direct from
-    # servo/components/style/properties/data.py:PropertiesData(engine=gecko).
-    #
-    # ...but parse_histograms.py doesn't do this the hard way. Should we?
+    import sys
 
-    import runpy
-
-    proplist_path = os.path.join(
-        buildconfig.topobjdir, "layout", "style", "ServoCSSPropList.py"
+    SERVO_PROPS = os.path.join(
+        buildconfig.topsrcdir, "servo", "components", "style", "properties"
     )
-    css_properties = runpy.run_path(proplist_path)["data"]
+    sys.path.insert(0, SERVO_PROPS)
+    import data
+
+    css_properties = data.PropertiesData("gecko")
     css_page = []
     css_doc = []
-    for prop in css_properties.values():
+    for prop in css_properties.all_properties_and_aliases():
         # We prefix `prop_name` with `css_` to avoid colliding with C++ keywords
         # like `float`.
-        prop_name = "css_" + to_snake_case(prop.name)
-
-        # Dependency keywords: CSS_PROP_PUBLIC_OR_PRIVATE, GenerateServoCSSPropList.py.
-        method = "Float" if prop.method == "CssFloat" else prop.method
-        # Dependency keywords: CSS_PROP_DOMPROP_PREFIXED, GenerateServoCSSPropList.py.
-        if method.startswith("Moz") and prop.type() != "alias":
-            method = method[3:]  # remove the moz prefix
-
-        enum_name = f"eUseCounter_property_{method}"
-        css_page.append(
-            (enum_name, prop_name, f"Whether a page used the CSS property {prop.name}.")
-        )
-        css_doc.append(
-            (
-                enum_name,
-                prop_name,
-                f"Whether a document used the CSS property {prop.name}.",
-            )
-        )
+        prop_name = "css_" + prop.ident.lstrip("_")
+        enum_name = f"eUseCounter_property_{prop.ident}"
+        css_page.append((
+            enum_name,
+            prop_name,
+            f"Whether a page used the CSS property {prop.name}.",
+        ))
+        css_doc.append((
+            enum_name,
+            prop_name,
+            f"Whether a document used the CSS property {prop.name}.",
+        ))
 
     # Counted unknown properties: AKA - stuff that doesn't exist, but we want
     # to count uses of anyway.
     # We _might_ decide to implement these in the future, though, so we just add
     # them to the css_page, css_doc lists directly for continuity.
     # (We do give them a different description, though)
-
-    import sys
-
-    sys.path.append(os.path.join(buildconfig.topsrcdir, "layout", "style"))
-    from GenerateCountedUnknownProperties import to_camel_case
-
-    unknown_proplist_path = os.path.join(
-        buildconfig.topsrcdir,
-        "servo",
-        "components",
-        "style",
-        "properties",
-        "counted_unknown_properties.py",
-    )
-    unknown_properties = runpy.run_path(unknown_proplist_path)[
-        "COUNTED_UNKNOWN_PROPERTIES"
-    ]
-    for prop in unknown_properties:
-        enum_name = f"eUseCounter_unknown_property_{to_camel_case(prop)}"
-        prop_name = to_snake_case(prop)
-        css_page.append(
-            (
-                enum_name,
-                prop_name,
-                f"Whether a page used the (unknown, counted) CSS property {prop}.",
-            )
-        )
-        css_doc.append(
-            (
-                enum_name,
-                prop_name,
-                f"Whether a document used the (unknown, counted) CSS property {prop}.",
-            )
-        )
+    for prop in css_properties.counted_unknown_properties:
+        enum_name = f"eUseCounter_unknown_property_{prop.ident}"
+        # FIXME(emilio): This is inconsistent with the branch above
+        # (no css_ prefix). Probably shouldn't.
+        prop_name = prop.ident.lstrip("_")
+        css_page.append((
+            enum_name,
+            prop_name,
+            f"Whether a page used the (unknown, counted) CSS property {prop.name}.",
+        ))
+        css_doc.append((
+            enum_name,
+            prop_name,
+            f"Whether a document used the (unknown, counted) CSS property {prop.name}.",
+        ))
 
     return (page, doc, dedicated, shared, service, ops_page, ops_doc, css_page, css_doc)
 

@@ -1486,11 +1486,15 @@ static JS::TranscodeResult EncodeStencilImpl(
 JS::TranscodeResult JS::EncodeStencil(JSContext* cx, JS::Stencil* stencil,
                                       JS::TranscodeBuffer& buffer) {
   AutoReportFrontendContext fc(cx);
+  return JS::EncodeStencil(&fc, stencil, buffer);
+}
 
+JS::TranscodeResult JS::EncodeStencil(FrontendContext* fc, JS::Stencil* stencil,
+                                      JS::TranscodeBuffer& buffer) {
   const CompilationStencil* initial;
   UniquePtr<CompilationStencil> merged;
   if (stencil->canLazilyParse()) {
-    merged.reset(stencil->getMerged(&fc));
+    merged.reset(stencil->getMerged(fc));
     if (!merged) {
       return TranscodeResult::Throw;
     }
@@ -1499,7 +1503,7 @@ JS::TranscodeResult JS::EncodeStencil(JSContext* cx, JS::Stencil* stencil,
     initial = stencil->getInitial();
   }
 
-  return EncodeStencilImpl(&fc, initial, buffer);
+  return EncodeStencilImpl(fc, initial, buffer);
 }
 
 JS::TranscodeResult js::EncodeStencil(JSContext* cx,
@@ -1507,6 +1511,12 @@ JS::TranscodeResult js::EncodeStencil(JSContext* cx,
                                       JS::TranscodeBuffer& buffer) {
   AutoReportFrontendContext fc(cx);
   return EncodeStencilImpl(&fc, stencil, buffer);
+}
+
+JS::TranscodeResult js::EncodeStencil(FrontendContext* fc,
+                                      frontend::CompilationStencil* stencil,
+                                      JS::TranscodeBuffer& buffer) {
+  return EncodeStencilImpl(fc, stencil, buffer);
 }
 
 XDRResult XDRStencilDecoder::codeStencil(

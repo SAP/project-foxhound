@@ -312,7 +312,7 @@ add_task(async function testTelemetrySentOnDialogAccept() {
     "chrome://browser/content/preferences/dialogs/syncChooseWhatToSync.xhtml",
     null,
     {},
-    async () => {
+    () => {
       var expectedEnabledEngines = [];
       var expectedDisabledEngines = [];
 
@@ -335,7 +335,7 @@ add_task(async function testTelemetrySentOnDialogAccept() {
       }
       callbackCalled = true;
 
-      const actual = await Glean.syncSettings.save.testGetValue()[0];
+      const actual = Glean.syncSettings.save.testGetValue()[0];
       const expectedCategory = "sync_settings";
       const expectedName = "save";
       const actualEnabledEngines = actual.extra.enabled_engines.split(",");
@@ -409,7 +409,7 @@ async function runWithCWTSDialog(test) {
   let promiseSubDialogLoaded = promiseLoadSubDialog(
     "chrome://browser/content/preferences/dialogs/syncChooseWhatToSync.xhtml"
   );
-  gBrowser.contentWindow.gSyncPane._chooseWhatToSync(true);
+  gBrowser.contentWindow.SyncHelpers._chooseWhatToSync(true);
 
   let win = await promiseSubDialogLoaded;
 

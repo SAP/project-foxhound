@@ -29,12 +29,12 @@ DEFAULT_TAG_CONTENT = {
 }
 
 DATA_REVIEW_HELP = """
-Beginning 2024-05-07[1], data reviews for projects in mozilla-central are now
-conducted on Phabricator. Simply duplicate your bug URL from the `bugs` list to
-the `data_reviews` list in your metrics and pings definitions, and push for code
-review in the normal way[2].
+Data reviews for projects in mozilla-central are conducted on Phabricator.
+Bugs that add or change a metric or ping should be added to the `bugs` list.
+Duplicate your bug URL from the `bugs` list to the `data_reviews` list in your metrics and pings definitions,
+and push for code review in the normal way[1].
 
-More details about this process can be found in the in-tree docs[3] and wiki[4].
+More details about this process can be found in the in-tree docs[2] and wiki[3].
 
 If you'd like to generate a Data Review Request template anyway (if, for
 instance, you can't use Phabricator for your data review or you need a Data
@@ -43,10 +43,9 @@ curious), you can invoke glean_parser directly:
 
 ./mach python -m glean_parser data-review
 
-[1]: https://groups.google.com/a/mozilla.org/g/firefox-dev/c/7z-i6UhPoKY
-[2]: https://firefox-source-docs.mozilla.org/contributing/index.html
-[3]: https://firefox-source-docs.mozilla.org/contributing/data-review.html
-[4]: https://wiki.mozilla.org/Data_Collection
+[1]: https://firefox-source-docs.mozilla.org/contributing/index.html
+[2]: https://firefox-source-docs.mozilla.org/contributing/data-review.html
+[3]: https://wiki.mozilla.org/Data_Collection
 """
 
 
@@ -166,8 +165,8 @@ def update_glean(command_context, version):
 
     replace_in_file_or_die(
         topsrcdir / "gradle" / "libs.versions.toml",
-        r'mozilla-glean = "[0-9.]+"',
-        f'mozilla-glean = "{version}"',
+        r'glean = "[0-9.]+"',
+        f'glean = "{version}"',
     )
     replace_in_file_or_die(
         topsrcdir / "Cargo.toml",

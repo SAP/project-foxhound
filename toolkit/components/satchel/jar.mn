@@ -14,3 +14,4 @@ toolkit.jar:
   content/global/megalist/components/login-line/login-line.css    (megalist/content/components/login-line/login-line.css)
   content/global/megalist/components/notification-message-bar/notification-message-bar.mjs    (megalist/content/components/notification-message-bar/notification-message-bar.mjs)
   content/global/megalist/icons/cpm-fox-illustration.svg    (megalist/content/icons/cpm-fox-illustration.svg)
+  content/global/megalist/components/virtual-passwords-list/virtual-passwords-list.mjs    (megalist/content/components/virtual-passwords-list/virtual-passwords-list.mjs)

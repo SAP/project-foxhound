@@ -36,6 +36,7 @@ COPY install-snap.sh /usr/local/bin/
 
 RUN install-snap.sh core
 
+# 8.11.1 is https://api.snapcraft.io/api/v1/snaps/download/vMTKRaLjnOJQetI78HjntT37VuoyssFE_15600.snap
 RUN install-snap.sh snapcraft
 
 RUN install-snap.sh $SNAP_BASE
@@ -66,6 +67,14 @@ ENV SNAP_INSTANCE_KEY=
 ENV SNAP_INSTANCE_NAME=snapcraft
 ENV SNAPCRAFT_PLATFORM=
 
+# Bug 1985494
+#
+# The change at https://github.com/canonical/craft-application/commit/f3436a9eab1eeed3ad6d44d9d430b5f4b008f7d8
+# moved configuration query and breaks us in docker
+# This is a temporary workaround and proper fix should be done:
+#  - either there's a way to feed the configuration to avoid hitting snapctl
+#  - or we need to introduce a way to bypass that properly with upstream
+RUN sed -ri 's/debug_mode = .*/debug_mode = False/g' /snap/snapcraft/current/lib/python*/site-packages/craft_application/application.py
 RUN snapcraft --version
 
 # Snapcraft pull will need to sudo apt-get update ...

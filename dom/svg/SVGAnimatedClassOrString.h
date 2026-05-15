@@ -7,8 +7,8 @@
 #ifndef DOM_SVG_SVGANIMATEDCLASSORSTRING_H_
 #define DOM_SVG_SVGANIMATEDCLASSORSTRING_H_
 
-#include "nsStringFwd.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "nsStringFwd.h"
 
 class nsIPrincipal;
 

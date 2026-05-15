@@ -17,7 +17,7 @@ function copyString(string) {
 /**
  * Retrieve the current clipboard data matching the flavor "text/plain".
  *
- * @return {String} Clipboard text content, null if no text clipboard data is available.
+ * @return {string} Clipboard text content, null if no text clipboard data is available.
  */
 function getText() {
   const flavor = "text/plain";

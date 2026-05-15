@@ -3,13 +3,17 @@
 /* exported MockAlertsService */
 
 function mockServicesChromeScript() {
-  /* eslint-env mozilla/chrome-script */
-
   const MOCK_ALERTS_CID = Components.ID(
     "{48068bc2-40ab-4904-8afd-4cdfb3a385f3}"
   );
   const SYSTEM_CID = Components.ID("{a0ccaaf8-09da-44d8-b250-9ac3e93c8117}");
   const ALERTS_SERVICE_CONTRACT_ID = "@mozilla.org/alerts-service;1";
+
+  const BinaryInputStream = Components.Constructor(
+    "@mozilla.org/binaryinputstream;1",
+    "nsIBinaryInputStream",
+    "setInputStream"
+  );
 
   const { setTimeout } = ChromeUtils.importESModule(
     "resource://gre/modules/Timer.sys.mjs"
@@ -18,6 +22,7 @@ function mockServicesChromeScript() {
 
   let activeNotifications = Object.create(null);
 
+  let throwHistory = false;
   let history = [];
 
   const mockAlertsService = {
@@ -26,6 +31,7 @@ function mockServicesChromeScript() {
         listener,
         cookie: alert.cookie,
         title: alert.title,
+        image: alert.image,
       };
 
       // fake async alert show event
@@ -50,25 +56,6 @@ function mockServicesChromeScript() {
       }
     },
 
-    showAlertNotification(
-      imageUrl,
-      title,
-      text,
-      textClickable,
-      cookie,
-      alertListener,
-      name
-    ) {
-      this.showAlert(
-        {
-          name,
-          cookie,
-          title,
-        },
-        alertListener
-      );
-    },
-
     closeAlert(name) {
       let alertNotification = activeNotifications[name];
       if (alertNotification) {
@@ -84,6 +71,9 @@ function mockServicesChromeScript() {
     },
 
     getHistory() {
+      if (throwHistory) {
+        throw new Error("no history, sorry");
+      }
       return history;
     },
 
@@ -161,8 +151,32 @@ function mockServicesChromeScript() {
     Object.keys(activeNotifications)
   );
 
+  addMessageListener("mock-alert-service:get-icon-image", id => {
+    let image = activeNotifications[id].image;
+    if (!image) {
+      return null;
+    }
+
+    const imgTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
+    let stream = imgTools.encodeImage(image, "image/png");
+    let binaryStream = new BinaryInputStream(stream);
+
+    let count = stream.available();
+    let arrayBuffer = new ArrayBuffer(count);
+    let actuallyRead = binaryStream.readArrayBuffer(count, arrayBuffer);
+    if (actuallyRead != count) {
+      throw Error("Did not read whole stream");
+    }
+
+    return arrayBuffer;
+  });
+
   addMessageListener("mock-alert-service:set-history", value => {
     history = value;
+  });
+
+  addMessageListener("mock-alert-service:set-throw-history", value => {
+    throwHistory = value;
   });
 
   sendAsyncMessage("mock-alert-service:registered");
@@ -236,10 +250,22 @@ const MockAlertsService = {
       "mock-alert-service:get-notification-ids"
     );
   },
+  async getIconImage(id) {
+    return await this._chromeScript.sendQuery(
+      "mock-alert-service:get-icon-image",
+      id
+    );
+  },
   async setHistory(ids) {
     return await this._chromeScript.sendQuery(
       "mock-alert-service:set-history",
       ids
+    );
+  },
+  async setThrowHistory(throws) {
+    return await this._chromeScript.sendQuery(
+      "mock-alert-service:set-throw-history",
+      throws
     );
   },
 };

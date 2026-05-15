@@ -115,25 +115,7 @@ const kDecorations = [
 
 ];
 
-function IsD2DEnabled() {
-  var enabled = false;
-
-  try {
-    enabled = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).D2DEnabled;
-  } catch(e) {}
-
-  return enabled;
-}
-
 function getFuzz(test) {
-  // Only failing on Windows with Direct2D enabled, and only for 16 permutations.
-  if (IsD2DEnabled() &&
-      test.decoration.styleName == "solid" &&
-      test.decoration.relativeSize == "1" &&
-      test.font.family == "mplusTest" &&
-      test.selection.typeName != "SpellCheck") {
-    return { numDifferentPixels: 194, maxDifference: 1 };
-  }
   return null;
 }
 

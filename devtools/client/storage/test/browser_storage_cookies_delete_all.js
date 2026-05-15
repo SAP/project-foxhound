@@ -36,7 +36,7 @@ async function performDelete(store, rowName, action) {
       case "deleteAllSessionCookies":
         menuDeleteAllSessionCookiesItem.click();
         break;
-      case "deleteAllFrom":
+      case "deleteAllFrom": {
         menuDeleteAllFromItem.click();
         const hostName = cells.host.value;
         ok(
@@ -44,6 +44,7 @@ async function performDelete(store, rowName, action) {
           `Context menu item label contains '${hostName}'`
         );
         break;
+      }
     }
   });
 

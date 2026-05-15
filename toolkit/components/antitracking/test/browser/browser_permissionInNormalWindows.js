@@ -13,7 +13,6 @@ AntiTracking.runTest(
     try {
       // We load the test script in the parent process to check permissions.
       let chromeScript = SpecialPowers.loadChromeScript(_ => {
-        /* eslint-env mozilla/chrome-script */
         addMessageListener("go", _ => {
           function ok(what, msg) {
             sendAsyncMessage("ok", { what: !!what, msg });

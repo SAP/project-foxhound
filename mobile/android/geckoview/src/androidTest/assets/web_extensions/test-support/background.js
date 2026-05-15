@@ -101,6 +101,12 @@ const APIS = {
   GetWebExtensionSchemaPermissionNames({ typeNames }) {
     return browser.test.getWebExtensionsSchemaPermissionNames(typeNames);
   },
+  TeardownAlertsService() {
+    return browser.test.teardownAlertsService();
+  },
+  NotifyUserGestureActivation({ tab }) {
+    return browser.test.notifyUserGestureActivation(tab.id);
+  },
 };
 
 port.onMessage.addListener(async message => {

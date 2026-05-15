@@ -16,17 +16,19 @@ function run_test() {
   });
   fakeOCSPResponder.start(8888);
 
-  // Test successful connection (failedCertChain should be null,
-  // succeededCertChain should be set as expected)
+  // Test successful connection (both handshakeCertificates and
+  // succeededCertChain should be set as expected).
   add_connection_test(
     "good.include-subdomains.pinning.example.com",
     PRErrorCodeSuccess,
     null,
     function withSecurityInfo(aSecInfo) {
-      equal(
-        aSecInfo.failedCertChain.length,
-        0,
-        "failedCertChain for a successful connection should be empty"
+      ok(
+        areCertArraysEqual(
+          aSecInfo.handshakeCertificates,
+          build_cert_chain(["default-ee", "test-ca"])
+        ),
+        "handshakeCertificates for a successful connection should be as expected"
       );
       ok(
         areCertArraysEqual(
@@ -38,7 +40,7 @@ function run_test() {
     }
   );
 
-  // Test failed connection (failedCertChain should be set as expected,
+  // Test failed connection (handshakeCertificates should be set as expected,
   // succeededCertChain should be null)
   add_connection_test(
     "expired.example.com",
@@ -52,23 +54,52 @@ function run_test() {
       );
       ok(
         areCertArraysEqual(
-          aSecInfo.failedCertChain,
+          aSecInfo.handshakeCertificates,
           build_cert_chain(["expired-ee", "test-ca"])
         ),
-        "failedCertChain for a failed connection should be as expected"
+        "handshakeCertificates for a failed connection should be as expected"
       );
     }
   );
 
-  // Ensure the correct failed cert chain is set on cert override
-  let overrideStatus = {
-    failedCertChain: build_cert_chain(["expired-ee", "test-ca"]),
-  };
-  add_cert_override_test(
+  // Test non-overrideable error (handshakeCertificates should be non-null).
+  add_connection_test(
+    "inadequatekeyusage.example.com",
+    SEC_ERROR_INADEQUATE_KEY_USAGE,
+    null,
+    function withSecurityInfo(securityInfo) {
+      ok(
+        areCertArraysEqual(
+          securityInfo.handshakeCertificates,
+          build_cert_chain(["inadequatekeyusage-ee", "test-ca"])
+        ),
+        "handshakeCertificates for a non-overridable error should be as expected"
+      );
+    }
+  );
+
+  // Ensure the correct handshakeCertificates is set on cert error override.
+  // First, add a certificate error override.
+  add_cert_override_test("expired.example.com", SEC_ERROR_EXPIRED_CERTIFICATE);
+  // Then, connect again and validate handshakeCertificates.
+  add_connection_test(
     "expired.example.com",
-    SEC_ERROR_EXPIRED_CERTIFICATE,
-    undefined,
-    overrideStatus
+    PRErrorCodeSuccess,
+    null,
+    function withSecurityInfo(aSecInfo) {
+      equal(
+        aSecInfo.succeededCertChain.length,
+        0,
+        "succeededCertChain for a connection with a certificate error override should be null"
+      );
+      ok(
+        areCertArraysEqual(
+          aSecInfo.handshakeCertificates,
+          build_cert_chain(["expired-ee", "test-ca"])
+        ),
+        "handshakeCertificates for a connection with a certificate error override should be as expected"
+      );
+    }
   );
 
   run_next_test();

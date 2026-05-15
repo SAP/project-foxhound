@@ -19,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=493251
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 493251 **/
+/** Test for Bug 493251 */
 
   var win;
 
@@ -37,12 +37,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=493251
     utils.suppressEventHandling(aSuppress);
   }
 
-  function dispatchMouseEvent(aType, aX, aY, aButton, aClickCount, aModifiers) {
-    var utils = SpecialPowers.getDOMWindowUtils(win);
-    ok(true, "Dipatching mouse event: aType=" + aType + ", aX=" + aX + ", aY" +
-               aY + ", aButton=" + aButton + ", aClickCount=" + aClickCount +
-               ", aModifiers=" + aModifiers);
-    utils.sendMouseEvent(aType, aX, aY, aButton, aClickCount, aModifiers);
+  function dispatchMouseEvent(aType, aX, aY) {
+    ok(true, "Dipatching mouse event: aType=" + aType + ", aX=" + aX + ", aY" + aY);
+    synthesizeMouseAtPoint(aX, aY, { type: aType }, win);
   }
 
   function dumpEvent(aEvent) {
@@ -134,16 +131,16 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=493251
     is(keyPress, 2, "Wrong number events (14)");
     is(keyUp, 2, "Wrong number events (15)");
 
-    dispatchMouseEvent("mousedown", 5, 5, 0, 1, 0);
-    dispatchMouseEvent("mouseup", 5, 5, 0, 1, 0);
+    dispatchMouseEvent("mousedown", 5, 5);
+    dispatchMouseEvent("mouseup", 5, 5);
     is(mouseDown, 1, "Wrong number events (16)");
     is(mouseUp, 1, "Wrong number events (17)");
     is(mouseClick, 1, "Wrong number events (18)");
 
     ok(true, "continueTest2 #2...");
     suppressEventHandling(true);
-    dispatchMouseEvent("mousedown", 5, 5, 0, 1, 0);
-    dispatchMouseEvent("mouseup", 5, 5, 0, 1, 0);
+    dispatchMouseEvent("mousedown", 5, 5);
+    dispatchMouseEvent("mouseup", 5, 5);
     suppressEventHandling(false);
     is(mouseDown, 1, "Wrong number events (19)");
     is(mouseUp, 1, "Wrong number events (20)");
@@ -154,9 +151,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=493251
 
   function continueTest3() {
     ok(true, "continueTest3...");
-    dispatchMouseEvent("mousedown", 5, 5, 0, 1, 0);
+    dispatchMouseEvent("mousedown", 5, 5);
     suppressEventHandling(true);
-    dispatchMouseEvent("mouseup", 5, 5, 0, 1, 0);
+    dispatchMouseEvent("mouseup", 5, 5);
     suppressEventHandling(false);
     setTimeout(continueTest4, 1000);
   }

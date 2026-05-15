@@ -28,12 +28,12 @@ class GittoolParser(OutputParser):
         m = self.got_revision_exp.match(line)
         if m:
             self.got_revision = m.group(1)
-        super(GittoolParser, self).parse_single_line(line)
+        super().parse_single_line(line)
 
 
 class GittoolVCS(ScriptMixin, LogMixin):
     def __init__(self, log_obj=None, config=None, vcs_config=None, script_obj=None):
-        super(GittoolVCS, self).__init__()
+        super().__init__()
 
         self.log_obj = log_obj
         self.script_obj = script_obj

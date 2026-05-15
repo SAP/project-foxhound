@@ -139,9 +139,11 @@ interface nsIUrlClassifierDBService : nsISupports
    *
    * @param updater The update observer tied to this update.
    * @param tables A comma-separated list of tables included in this update.
+   * @param provider The provider of the update.
    */
   void beginUpdate(in nsIUrlClassifierUpdateObserver updater,
-                   in ACString tables);
+                   in ACString tables,
+                   in ACString provider);
 
   /**
    * Begin a stream update.  This should be called once per url being
@@ -204,6 +206,12 @@ interface nsIUrlClassifierDBService : nsISupports
    * Empty all the caches.
    */
   void clearCache();
+
+  /**
+   * Clean the simulated cache in RealTimeRequestSimulator.
+   * For testing purposes only.
+   */
+  void cleanRealTimeSimulatorCache();
 };
 
 /**

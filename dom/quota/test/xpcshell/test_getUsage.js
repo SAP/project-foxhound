@@ -109,7 +109,7 @@ async function testSteps() {
 
   // The profile contains IndexedDB databases placed across the repositories.
   // The file create_db.js in the package was run locally, specifically it was
-  // temporarily added to xpcshell.ini and then executed:
+  // temporarily added to xpcshell.toml and then executed:
   // mach xpcshell-test --interactive dom/quota/test/xpcshell/create_db.js
   installPackage("getUsage_profile");
 

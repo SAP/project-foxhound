@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ให้คุณควบคุมได้ทุกอย่าง</p> <p>ใช้เป็นเบราว์เซอร์ส่วนตัว: <ul> <li>ค้นหาและเรียกดูได้จากในแอปโดยตรง</li> <li>ปิดกั้นตัวติดตาม (หรืออัปเดตการตั้งค่าเพื่ออนุญาตตัวติดตาม)</li> <li>ล้างเพื่อลบคุกกี้รวมทั้งประวัติการค้นหาและการเรียกดู</li> </ul> </p> <p>%1$s ถูกสร้างขึ้นโดย Mozilla ภารกิจของเราคือส่งเสริมอินเทอร์เน็ตที่สมบูรณ์และเปิดกว้าง<br/> <a href=\"%2$s\">เรียนรู้เพิ่มเติม</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ให้คุณควบคุมได้ทุกอย่าง</p>\n<p>ใช้เป็นเบราว์เซอร์ส่วนตัว:\n<ul>\n<li>ค้นหาและเรียกดูได้จากในแอปโดยตรง</li>\n<li>ปิดกั้นตัวติดตาม (หรืออัปเดตการตั้งค่าเพื่ออนุญาตตัวติดตาม)</li>\n<li>ล้างเพื่อลบคุกกี้รวมทั้งประวัติการค้นหาและการเรียกดู</li>\n</ul> </p>\n<p>%1$s ถูกสร้างขึ้นโดย Mozilla ภารกิจของเราคือส่งเสริมอินเทอร์เน็ตที่สมบูรณ์และเปิดกว้าง<br/>\n<a href=\"%2$s\">เรียนรู้เพิ่มเติม</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">เรียนรู้เพิ่มเติม</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">ความเป็นส่วนตัวและความปลอดภัย</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -462,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">เมื่อดำเนินการต่อ แสดงว่าคุณยอมรับ%1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">เมื่อดำเนินการต่อ แสดงว่าคุณยอมรับ%1$s</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">เงื่อนไขการใช้งาน Firefox</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">เงื่อนไขการใช้งาน Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox ห่วงใยเกี่ยวกับความเป็นส่วนตัวของคุณ เรียนรู้เพิ่มเติมใน%1$sของเรา</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox ห่วงใยเกี่ยวกับความเป็นส่วนตัวของคุณ เรียนรู้เพิ่มเติมใน%1$sของเรา</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">ประกาศความเป็นส่วนตัว</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">ประกาศความเป็นส่วนตัว</string>
   <!-- New Onboarding flow first screen button label -->
@@ -561,6 +562,8 @@
   <string name="tabs_tray_action_erase">ล้างประวัติการท่องเว็บ</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">ปิดแท็บอื่น ๆ</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">เพิ่มแท็บใหม่</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -881,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[สิ่งนี้อาจเป็นปัญหาจากการกำหนดค่าของเซิร์ฟเวอร์ หรืออาจมีใครบางคนกำลังพยายามปลอมแปลงเซิร์ฟเวอร์ <br/><br/> หากคุณเคยเชื่อมต่อกับเซิร์ฟเวอร์นี้สำเร็จมาก่อน ข้อผิดพลาดอาจเกิดขึ้นเพียงชั่วคราว]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>อาจมีใครบางคนกำลังพยายามปลอมแปลงไซต์นี้และคุณไม่ควรดำเนินการต่อ</label> <br><br> <label>%1$s ไม่เชื่อถือ <b>%2$s</b> เนื่องจากไม่ทราบผู้ออกใบรับรอง ใบรับรองถูกลงชื่อด้วยตนเอง หรือเซิร์ฟเวอร์ไม่ส่งใบรับรองระดับกลางที่ถูกต้องมาให้</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>อาจมีใครบางคนกำลังพยายามปลอมแปลงไซต์นี้และคุณไม่ควรดำเนินการต่อ</label> <br><br>\n<label>%1$s ไม่เชื่อถือ <b>%2$s</b> เนื่องจากไม่ทราบผู้ออกใบรับรอง ใบรับรองถูกลงชื่อด้วยตนเอง หรือเซิร์ฟเวอร์ไม่ส่งใบรับรองระดับกลางที่ถูกต้องมาให้</label>]]></string>
   <!--
     Sessions List
 

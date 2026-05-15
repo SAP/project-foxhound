@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -142,7 +149,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s metztekipanultia.</p> <p>Shikwi kenha ken se ichtaka tajtachialis: <ul> <li>Shitatejtemu wan shipashalu tik ne app</li> <li>Shiktentzakwa ne tapachiwiani (ush shitajshitia uksenpa pal tikajkawa tekiti ne tapachiwiani)</li> <li>Shikpupu pal tikpulua cookies wan tay tiktemuj wan kan tipashaluj yewa</li> </ul> </p> <p>Mozilla kichiwtuk ne %1$s. Tiknekit tikajsit tikpiat ne Wey Matat yek wan tapujtuk.<br/> <a href=\"%2$s\">Shikmatiuk</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s metztekipanultia.</p>\n<p>Shikwi kenha ken se ichtaka tajtachialis:\n<ul>\n<li>Shitatejtemu wan shipashalu tik ne app</li>\n<li>Shiktentzakwa ne tapachiwiani (ush shitajshitia uksenpa pal tikajkawa tekiti ne tapachiwiani)</li>\n<li>Shikpupu pal tikpulua cookies wan tay tiktemuj wan kan tipashaluj yewa</li>\n</ul> </p>\n<p>Mozilla kichiwtuk ne %1$s. Tiknekit tikajsit tikpiat ne Wey Matat yek wan tapujtuk.<br/>\n<a href=\"%2$s\">Shikmatiuk</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Ichtakachiwalis wan tamanawilis</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -420,7 +427,7 @@
     This text is shown in a dialog if no app could be found for a custom link protocol. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar") and %2$s is the name of
     the app store installed on the device (usually that's Google Play).
   -->
-  <string name="external_app_prompt_no_app">Te kanaj se aplicación weli kitapua ini ilpika. Tiweli tikisa tik %1$s pal tiktemua %2$s ipal se aplicación weli kitapua.\n\n</string>
+  <string name="external_app_prompt_no_app">Te kanaj se aplicación weli kitapua ini ilpika. Tiweli tikisa tik %1$s pal tiktemua %2$s ipal se aplicación weli kitapua.</string>
   <!-- This label is shown above a list of apps that can be used to open a given link -->
   <string name="external_multiple_apps_matched_exit">Tikneki tikisa tik ne ichtaka pashalulis?</string>
   <!-- Snackbar that will be displayed after a download has completed. %1$s is the file name. -->
@@ -814,7 +821,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ini weli mukwepa ne uijkayu iwan ne iconfiguración ne servidor, u anka se akaj kiejekua tashijshikua mukwepa ne servidor. <br/><br/> Asu timusalujtuk yek itech ini servidor ikman, ne tajtakul anka ishtuna chupi.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Se akaj anka kiejekua tashijshikua mukwepa ne sitioj wan asu tipanu weli tesajsay.</label> <br><br> <label>%1$s tesu kichiwa confianzaj tik <b>%2$s</b> ika ne emisor pal ne certificadoj tesu mumati, ne certificadoj kijkwiluj ne ifirmaj isel wan ne servidor tesu kititania ne yejyek cejcertificadoj intermedios.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Se akaj anka kiejekua tashijshikua mukwepa ne sitioj wan asu tipanu weli tesajsay.</label> <br><br>\n<label>%1$s tesu kichiwa confianzaj tik <b>%2$s</b> ika ne emisor pal ne certificadoj tesu mumati, ne certificadoj kijkwiluj ne ifirmaj isel wan ne servidor tesu kititania ne yejyek cejcertificadoj intermedios.</label>]]></string>
   <!--
     Sessions List
 

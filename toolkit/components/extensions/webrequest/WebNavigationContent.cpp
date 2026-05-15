@@ -16,7 +16,6 @@
 #include "mozilla/extensions/ExtensionsChild.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Services.h"
 #include "mozilla/Try.h"
 #include "nsCRT.h"
@@ -134,7 +133,7 @@ FrameTransitionData WebNavigationContent::GetFrameTransitionData(
   FrameTransitionData result;
 
   uint32_t loadType = 0;
-  Unused << aWebProgress->GetLoadType(&loadType);
+  (void)aWebProgress->GetLoadType(&loadType);
 
   if (loadType & nsIDocShell::LOAD_CMD_HISTORY) {
     result.forwardBack() = true;
@@ -178,7 +177,7 @@ nsresult WebNavigationContent::OnCreatedNavigationTargetFromJS(
   dom::BrowsingContext* sourceBC = sourceDocShell->GetBrowsingContext();
   if (createdBC->IsContent() && sourceBC->IsContent()) {
     nsCString url;
-    Unused << aProps->GetPropertyAsACString(u"url"_ns, url);
+    (void)aProps->GetPropertyAsACString(u"url"_ns, url);
 
     ExtensionsChild::Get().SendCreatedNavigationTarget(createdBC, sourceBC,
                                                        url);

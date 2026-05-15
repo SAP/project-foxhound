@@ -1,0 +1,304 @@
+# HG changeset patch
+# User Bob Owen <bobowencode@gmail.com>
+# Date 1730277955 0
+#      Wed Oct 30 08:45:55 2024 +0000
+Add back SANDBOX_EXPORTS because we still currently need this for plugin-container.exe
+
+diff --git a/sandbox/win/src/interception.cc b/sandbox/win/src/interception.cc
+--- a/sandbox/win/src/interception.cc
++++ b/sandbox/win/src/interception.cc
+@@ -351,16 +351,26 @@ bool InterceptionManager::IsInterception
+ }
+ 
+ ResultCode InterceptionManager::PatchNtdll(bool hot_patch_needed) {
+   // Maybe there is nothing to do
+   if (!hot_patch_needed && interceptions_.empty())
+     return SBOX_ALL_OK;
+ 
+   if (hot_patch_needed) {
++#if defined(SANDBOX_EXPORTS)
++// Make sure the functions are not excluded by the linker.
++#if defined(_WIN64)
++#pragma comment(linker, "/include:TargetNtMapViewOfSection64")
++#pragma comment(linker, "/include:TargetNtUnmapViewOfSection64")
++#else
++#pragma comment(linker, "/include:_TargetNtMapViewOfSection@44")
++#pragma comment(linker, "/include:_TargetNtUnmapViewOfSection@12")
++#endif
++#endif  // defined(SANDBOX_EXPORTS)
+     ADD_NT_INTERCEPTION(NtMapViewOfSection, MAP_VIEW_OF_SECTION_ID, 44);
+     ADD_NT_INTERCEPTION(NtUnmapViewOfSection, UNMAP_VIEW_OF_SECTION_ID, 12);
+   }
+ 
+   // Reserve a full 64k memory range in the child process.
+   HANDLE child = child_->Process();
+   BYTE* thunk_base = reinterpret_cast<BYTE*>(::VirtualAllocEx(
+       child, nullptr, kAllocGranularity, MEM_RESERVE, PAGE_NOACCESS));
+@@ -422,28 +432,53 @@ ResultCode InterceptionManager::PatchCli
+     DllInterceptionData* dll_data) {
+   DCHECK(thunks);
+   DCHECK(dll_data);
+ 
+   HMODULE ntdll_base = ::GetModuleHandle(kNtdllName);
+   if (!ntdll_base)
+     return SBOX_ERROR_NO_HANDLE;
+ 
++  char* interceptor_base = nullptr;
++
++#if defined(SANDBOX_EXPORTS)
++  interceptor_base = reinterpret_cast<char*>(child_->MainModule());
++  base::ScopedNativeLibrary local_interceptor(::LoadLibrary(child_->Name()));
++#endif  // defined(SANDBOX_EXPORTS)
++
+   ServiceResolverThunk thunk(child_->Process(), /*relaxed=*/true);
+ 
+   for (auto interception : interceptions_) {
+     const std::wstring ntdll(kNtdllName);
+     if (interception.dll != ntdll)
+       return SBOX_ERROR_BAD_PARAMS;
+ 
+     if (INTERCEPTION_SERVICE_CALL != interception.type)
+       return SBOX_ERROR_BAD_PARAMS;
+ 
++#if defined(SANDBOX_EXPORTS)
++    // We may be trying to patch by function name.
++    if (!interception.interceptor_address) {
++      const char* address;
++      NTSTATUS ret = thunk.ResolveInterceptor(
++          local_interceptor.get(), interception.interceptor.c_str(),
++          reinterpret_cast<const void**>(&address));
++      if (!NT_SUCCESS(ret)) {
++        ::SetLastError(GetLastErrorFromNtStatus(ret));
++        return SBOX_ERROR_CANNOT_RESOLVE_INTERCEPTION_THUNK;
++      }
++
++      // Translate the local address to an address on the child.
++      interception.interceptor_address =
++          interceptor_base +
++          (address - reinterpret_cast<char*>(local_interceptor.get()));
++    }
++#endif  // defined(SANDBOX_EXPORTS)
+     NTSTATUS ret = thunk.Setup(
+-        ntdll_base, nullptr, interception.function.c_str(),
++        ntdll_base, interceptor_base, interception.function.c_str(),
+         interception.interceptor.c_str(), interception.interceptor_address,
+         &thunks->thunks[dll_data->num_thunks],
+         thunk_bytes - dll_data->used_bytes, nullptr);
+     if (!NT_SUCCESS(ret)) {
+       ::SetLastError(GetLastErrorFromNtStatus(ret));
+       return SBOX_ERROR_CANNOT_SETUP_INTERCEPTION_THUNK;
+     }
+ 
+diff --git a/sandbox/win/src/interception.h b/sandbox/win/src/interception.h
+--- a/sandbox/win/src/interception.h
++++ b/sandbox/win/src/interception.h
+@@ -218,16 +218,42 @@ class InterceptionManager {
+ };
+ 
+ // This macro simply calls interception_manager.AddToPatchedFunctions with
+ // the given service to intercept (INTERCEPTION_SERVICE_CALL), and assumes that
+ // the interceptor is called "TargetXXX", where XXX is the name of the service.
+ // Note that num_params is the number of bytes to pop out of the stack for
+ // the exported interceptor, following the calling convention of a service call
+ // (WINAPI = with the "C" underscore).
++#if SANDBOX_EXPORTS
++#if defined(_WIN64)
++#define MAKE_SERVICE_NAME(service, params) "Target" #service "64"
++#else
++#define MAKE_SERVICE_NAME(service, params) "_Target" #service "@" #params
++#endif
++
++#define ADD_NT_INTERCEPTION(service, id, num_params)        \
++  AddToPatchedFunctions(kNtdllName, #service,               \
++                        sandbox::INTERCEPTION_SERVICE_CALL, \
++                        MAKE_SERVICE_NAME(service, num_params), id)
++
++#define INTERCEPT_NT(manager, service, id, num_params)                        \
++  ((&Target##service) ? manager->ADD_NT_INTERCEPTION(service, id, num_params) \
++                      : false)
++
++// When intercepting the EAT it is important that the patched version of the
++// function not call any functions imported from system libraries unless
++// |TargetServices::InitCalled()| returns true, because it is only then that
++// we are guaranteed that our IAT has been initialized.
++#define INTERCEPT_EAT(manager, dll, function, id, num_params)             \
++  ((&Target##function) ? manager->AddToPatchedFunctions(                  \
++                             dll, #function, sandbox::INTERCEPTION_EAT,   \
++                             MAKE_SERVICE_NAME(function, num_params), id) \
++                       : false)
++#else  // SANDBOX_EXPORTS
+ #if defined(_WIN64)
+ #define MAKE_SERVICE_NAME(service) &Target##service##64
+ #else
+ #define MAKE_SERVICE_NAME(service) &Target##service
+ #endif
+ 
+ #define ADD_NT_INTERCEPTION(service, id, num_params)            \
+   AddToPatchedFunctions(                                        \
+@@ -240,12 +266,13 @@ class InterceptionManager {
+ // When intercepting the EAT it is important that the patched version of the
+ // function not call any functions imported from system libraries unless
+ // |TargetServices::InitCalled()| returns true, because it is only then that
+ // we are guaranteed that our IAT has been initialized.
+ #define INTERCEPT_EAT(manager, dll, function, id, num_params) \
+   manager->AddToPatchedFunctions(                             \
+       dll, #function, sandbox::INTERCEPTION_EAT,              \
+       reinterpret_cast<void*>(MAKE_SERVICE_NAME(function)), id)
++#endif  // SANDBOX_EXPORTS
+ 
+ }  // namespace sandbox
+ 
+ #endif  // SANDBOX_WIN_SRC_INTERCEPTION_H_
+diff --git a/sandbox/win/src/sandbox_types.h b/sandbox/win/src/sandbox_types.h
+--- a/sandbox/win/src/sandbox_types.h
++++ b/sandbox/win/src/sandbox_types.h
+@@ -197,17 +197,21 @@ class BrokerServices;
+ class TargetServices;
+ 
+ // Contains the pointer to a target or broker service.
+ struct SandboxInterfaceInfo {
+   raw_ptr<BrokerServices> broker_services;
+   raw_ptr<TargetServices> target_services;
+ };
+ 
++#if SANDBOX_EXPORTS
++#define SANDBOX_INTERCEPT extern "C" __declspec(dllexport)
++#else
+ #define SANDBOX_INTERCEPT extern "C"
++#endif
+ 
+ enum InterceptionType {
+   INTERCEPTION_INVALID = 0,
+   INTERCEPTION_SERVICE_CALL,  // Trampoline of an NT native call
+   INTERCEPTION_EAT,
+   INTERCEPTION_UNLOAD_MODULE,  // Unload the module (don't patch)
+   INTERCEPTION_LAST            // Placeholder for last item in the enumeration
+ };
+diff --git a/sandbox/win/src/target_process.cc b/sandbox/win/src/target_process.cc
+--- a/sandbox/win/src/target_process.cc
++++ b/sandbox/win/src/target_process.cc
+@@ -215,35 +215,60 @@ ResultCode TargetProcess::Create(
+   base_address_ = GetProcessBaseAddress(process_info.process_handle());
+   DCHECK(base_address_);
+   if (!base_address_) {
+     *win_error = ::GetLastError();
+     ::TerminateProcess(process_info.process_handle(), 0);
+     return SBOX_ERROR_CANNOT_FIND_BASE_ADDRESS;
+   }
+ 
++#if !defined(SANDBOX_EXPORTS)
+   if (base_address_ != CURRENT_MODULE()) {
+     ::TerminateProcess(process_info.process_handle(), 0);
+     return SBOX_ERROR_INVALID_TARGET_BASE_ADDRESS;
+   }
++#endif
+ 
+   sandbox_process_info_.Set(process_info.Take());
+   return SBOX_ALL_OK;
+ }
+ 
++void* TargetProcess::GetChildAddress(const char* name, const void* address) {
++#if SANDBOX_EXPORTS
++  HMODULE module = ::LoadLibrary(exe_name_.get());
++  if (!module) return nullptr;
++
++  void* child_addr = reinterpret_cast<void*>(::GetProcAddress(module, name));
++  if (!child_addr) {
++    return nullptr;
++  }
++
++  size_t offset =
++      reinterpret_cast<char*>(child_addr) - reinterpret_cast<char*>(module);
++  ::FreeLibrary(module);
++  return reinterpret_cast<char*>(MainModule()) + offset;
++#else
++  return const_cast<void*>(address);
++#endif
++}
++
+ ResultCode TargetProcess::TransferVariable(const char* name,
+                                            const void* address,
+                                            size_t size) {
+   if (!sandbox_process_info_.IsValid())
+     return SBOX_ERROR_UNEXPECTED_CALL;
+ 
++  void* child_var = GetChildAddress(name, address);
++  if (!child_var) {
++    return SBOX_ERROR_CANNOT_FIND_VARIABLE_ADDRESS;
++  }
++
+   SIZE_T written;
+-  if (!::WriteProcessMemory(sandbox_process_info_.process_handle(),
+-                            const_cast<void*>(address), address, size,
+-                            &written)) {
++  if (!::WriteProcessMemory(sandbox_process_info_.process_handle(), child_var,
++                            address, size, &written)) {
+     return SBOX_ERROR_CANNOT_WRITE_VARIABLE_VALUE;
+   }
+   if (written != size)
+     return SBOX_ERROR_INVALID_WRITE_VARIABLE_SIZE;
+ 
+   return SBOX_ALL_OK;
+ }
+ 
+@@ -379,29 +404,30 @@ void TargetProcess::Terminate() {
+   ::TerminateProcess(sandbox_process_info_.process_handle(), 0);
+ }
+ 
+ ResultCode TargetProcess::VerifySentinels() {
+   if (!sandbox_process_info_.IsValid())
+     return SBOX_ERROR_UNEXPECTED_CALL;
+   DWORD value = 0;
+   SIZE_T read;
+-
++  void* sentinel_start =
++      GetChildAddress("g_sentinel_value_start", &g_sentinel_value_start);
+   if (!::ReadProcessMemory(sandbox_process_info_.process_handle(),
+-                           &g_sentinel_value_start, &value, sizeof(DWORD),
+-                           &read)) {
++                           sentinel_start, &value, sizeof(DWORD), &read)) {
+     return SBOX_ERROR_CANNOT_READ_SENTINEL_VALUE;
+   }
+   if (read != sizeof(DWORD))
+     return SBOX_ERROR_INVALID_READ_SENTINEL_SIZE;
+   if (value != g_sentinel_value_start)
+     return SBOX_ERROR_MISMATCH_SENTINEL_VALUE;
+-  if (!::ReadProcessMemory(sandbox_process_info_.process_handle(),
+-                           &g_sentinel_value_end, &value, sizeof(DWORD),
+-                           &read)) {
++  void* sentinel_end =
++      GetChildAddress("g_sentinel_value_end", &g_sentinel_value_end);
++  if (!::ReadProcessMemory(sandbox_process_info_.process_handle(), sentinel_end,
++                           &value, sizeof(DWORD), &read)) {
+     return SBOX_ERROR_CANNOT_READ_SENTINEL_VALUE;
+   }
+   if (read != sizeof(DWORD))
+     return SBOX_ERROR_INVALID_READ_SENTINEL_SIZE;
+   if (value != g_sentinel_value_end)
+     return SBOX_ERROR_MISMATCH_SENTINEL_VALUE;
+ 
+   return SBOX_ALL_OK;
+diff --git a/sandbox/win/src/target_process.h b/sandbox/win/src/target_process.h
+--- a/sandbox/win/src/target_process.h
++++ b/sandbox/win/src/target_process.h
+@@ -88,16 +88,20 @@ class TargetProcess {
+ 
+   // Creates a mock TargetProcess used for testing interceptions.
+   static std::unique_ptr<TargetProcess> MakeTargetProcessForTesting(
+       HANDLE process,
+       HMODULE base_address);
+ 
+  private:
+   FRIEND_TEST_ALL_PREFIXES(TargetProcessTest, FilterEnvironment);
++
++  // Get the address in the child for a given variable name.
++  void* GetChildAddress(const char* name, const void* address);
++
+   // Verify the target process looks the same as the broker process.
+   ResultCode VerifySentinels();
+ 
+   // Filters an environment to only include those that have an entry in
+   // `to_keep`.
+   static std::wstring FilterEnvironment(
+       const wchar_t* env,
+       const base::span<const base::WStringPiece> to_keep);

@@ -16,6 +16,8 @@ const TEST_URI = `<style>
   <div id="box"></div>`;
 
 add_task(async function () {
+  // Disable three-pane so we can check that the rule view isn't selected
+  await pushPref("devtools.inspector.three-pane-enabled", false);
   await pushPref("devtools.layout.boxmodel.highlightProperty", true);
   await addTab("data:text/html," + encodeURIComponent(TEST_URI));
   const { inspector, boxmodel } = await openLayoutView();
@@ -47,4 +49,10 @@ add_task(async function () {
     boxmodel.document.defaultView
   );
   await onRulePreviewTooltipShown;
+
+  is(
+    inspector.sidebar.getCurrentTabID(),
+    "layoutview",
+    "Layout view is still shown in the sidebar (we didn't select the ruleview)"
+  );
 });

@@ -703,7 +703,7 @@ add_task(function teardown_telemetry_events() {
 /**
  *  Check that the expected sitepermission install events are recorded.
  *
- * @param {Array<String>} expectedSteps: An array of the expected extra.step values recorded.
+ * @param {Array<string>} expectedSteps: An array of the expected extra.step values recorded.
  */
 function assertSitePermissionInstallTelemetryEvents(expectedSteps) {
   let amInstallEvents = AddonTestUtils.getAMTelemetryEvents()

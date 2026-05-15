@@ -4,7 +4,7 @@
 https://bugzilla.mozilla.org/show_bug.cgi?id=1037519
 -->
 <head>
-  <title>Test for nsIDOMUtils::selectorMatchesElement</title>
+  <title>Test for CSSStyleRule::selectorMatchesElement</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <style type="text/css">
@@ -38,64 +38,122 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1037519
     #bar::first-letter {
       font-variant: small-caps;
     }
+
+    ::view-transition-group(root), #bar, ::view-transition-group(*) {
+       animation-duration: 3600s;
+    }
   </style>
 </head>
 <body>
 <div id="foo">foo content</div>
-<pre id="test">
-<script type="application/javascript">
+
+<script>
 
 const InspectorUtils = SpecialPowers.InspectorUtils;
 
-function do_test() {
-  var element = document.querySelector("#foo");
+add_task(async () => {
+  const element = document.querySelector("#foo");
+  const elementRules = InspectorUtils.getMatchingCSSRules(element);
 
-  var elementRules = InspectorUtils.getMatchingCSSRules(element);
+  const multiSelectorRule = elementRules[2];
+  is(
+    multiSelectorRule.selectorText,
+    `#foo, #bar, #foo::before`,
+    "Got expected multi-selector rule"
+  );
+  ok(
+    multiSelectorRule.selectorMatchesElement(0, element),
+    "Matches #foo"
+  );
+  ok(
+    !multiSelectorRule.selectorMatchesElement(1, element),
+    "Doesn't match #bar"
+  );
+  ok(
+    !multiSelectorRule.selectorMatchesElement(0, element, ":bogus"),
+    "Doesn't match #foo with a bogus pseudo"
+  );
+  ok(
+    !multiSelectorRule.selectorMatchesElement(2, element, ":bogus"),
+    "Doesn't match #foo::before with bogus pseudo"
+  );
+  ok(
+    !multiSelectorRule.selectorMatchesElement(0, element, ":after"),
+    "Does match #foo::before with the :after pseudo"
+  );
 
-  var multiSelectorRule = elementRules[2];
-  is(multiSelectorRule.selectorText, `#foo, #bar, #foo::before`, "Got expected multi-selector rule");
-  is (multiSelectorRule.selectorMatchesElement(0, element), true,
-    "Matches #foo");
-  is (multiSelectorRule.selectorMatchesElement(1, element), false,
-    "Doesn't match #bar");
-  is (multiSelectorRule.selectorMatchesElement(0, element, ":bogus"), false,
-    "Doesn't match #foo with a bogus pseudo");
-  is (multiSelectorRule.selectorMatchesElement(2, element, ":bogus"), false,
-    "Doesn't match #foo::before with bogus pseudo");
-  is (multiSelectorRule.selectorMatchesElement(0, element, ":after"), false,
-    "Does match #foo::before with the :after pseudo");
-
-  var nestedRule = elementRules[4];
+  const nestedRule = elementRules[4];
   is(nestedRule.selectorText, `div&`, "Got expected nested rule");
-  is (nestedRule.selectorMatchesElement(0, element), true, "Matches div&");
+  ok(nestedRule.selectorMatchesElement(0, element), "Matches div&");
 
   checkPseudo(":before");
   checkPseudo(":after");
   checkPseudo(":first-letter");
   checkPseudo(":first-line");
 
-  SimpleTest.finish();
-
   function checkPseudo(pseudo) {
-    var rules = InspectorUtils.getMatchingCSSRules(element, pseudo);
-    var rule = rules[rules.length - 1];
-
-    is (rule.selectorMatchesElement(0, element), false,
-      "Doesn't match without " + pseudo);
-    is (rule.selectorMatchesElement(1, element), false,
-      "Doesn't match without " + pseudo);
-
-    is (rule.selectorMatchesElement(0, element, pseudo), true,
-      "Matches on #foo" + pseudo);
-    is (rule.selectorMatchesElement(1, element, pseudo), false,
-      "Doesn't match on #bar" + pseudo);
+    const rule = InspectorUtils.getMatchingCSSRules(element, pseudo).at(-1);
+    ok(
+      !rule.selectorMatchesElement(0, element),
+      "Doesn't match without " + pseudo
+    );
+    ok(
+      !rule.selectorMatchesElement(1, element),
+      "Doesn't match without " + pseudo
+    );
+    ok(
+      rule.selectorMatchesElement(0, element, pseudo),
+      "Matches on #foo" + pseudo
+    );
+    ok(
+      !rule.selectorMatchesElement(1, element, pseudo),
+      "Doesn't match on #bar" + pseudo
+    );
   }
-}
 
-SimpleTest.waitForExplicitFinish();
-addLoadEvent(do_test);
+  info("Create a view transition");
+  const transition = document.startViewTransition(() => {
+    element.replaceChildren("updated foo content");
+  });
+  await transition.ready;
+  await transition.updateCallbackDone;
+
+  const viewTransitionGroupRule = InspectorUtils.getMatchingCSSRules(
+    document.documentElement,
+    "::view-transition-group(root)"
+  ).find(rule => {
+    try {
+      return rule.selectorText === "::view-transition-group(root), #bar, ::view-transition-group(*)";
+    } catch {}
+    return false;
+  });
+
+  ok(
+    !!viewTransitionGroupRule,
+    "Got the expected ::view-transition-group rule"
+  );
+  ok(
+    viewTransitionGroupRule.selectorMatchesElement(
+      0,
+      document.documentElement,
+      "::view-transition-group(root)"
+    ),
+    "Matches ::view-transition-group(root)"
+  );
+  ok(
+    !viewTransitionGroupRule.selectorMatchesElement(1, document.documentElement),
+    "Doesn't match #bar"
+  );
+  ok(
+    viewTransitionGroupRule.selectorMatchesElement(
+      2,
+      document.documentElement,
+      "::view-transition-group(root)"
+    ),
+    "Matches ::view-transition-group(*)"
+  );
+});
 
 </script>
-</pre>
 </body>
 </html>

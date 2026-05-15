@@ -8,9 +8,9 @@
 #define DOM_WEBTRANSPORT_WEBTRANSPORTCHILD_H_
 
 #include "mozilla/TimeStamp.h"
-#include "nsISupportsImpl.h"
 #include "mozilla/dom/PWebTransportChild.h"
 #include "mozilla/ipc/DataPipe.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
 

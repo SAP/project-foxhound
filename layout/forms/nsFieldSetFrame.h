@@ -4,11 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFieldSetFrame_h___
-#define nsFieldSetFrame_h___
+#ifndef nsFieldSetFrame_h_
+#define nsFieldSetFrame_h_
 
 #include "ImgDrawResult.h"
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 
 namespace mozilla {
@@ -88,6 +87,13 @@ class nsFieldSetFrame final : public nsContainerFrame {
    */
   nsContainerFrame* GetInner() const;
 
+  nsContainerFrame* GetContentInsertionFrame() override {
+    if (auto* inner = GetInner()) {
+      return inner->GetContentInsertionFrame();
+    }
+    return this;
+  }
+
   /**
    * Return the frame that represents the rendered legend if any.
    * https://html.spec.whatwg.org/multipage/rendering.html#rendered-legend
@@ -112,4 +118,4 @@ class nsFieldSetFrame final : public nsContainerFrame {
   nscoord mLegendSpace;
 };
 
-#endif  // nsFieldSetFrame_h___
+#endif  // nsFieldSetFrame_h_

@@ -1073,6 +1073,7 @@ limitations under the License.
    * Runs a sequence of function and when finished invokes the done callback.
    * Each function in the sequence is invoked with its own done function and
    * it should call that function once it's complete.
+   *
    * @param {Array<Function>} functions An array of async functions.
    * @param {Function} done A final callback to be invoked once all function
    *     have run.
@@ -1095,6 +1096,7 @@ limitations under the License.
    * that ourselves for the non-polyfill case. Since all tests call observe
    * on targets in sequential order, this should always match.
    * https://crbug.com/613679
+   *
    * @param {Array<IntersectionObserverEntry>} entries The entries to sort.
    * @return {Array<IntersectionObserverEntry>} The sorted array.
    */

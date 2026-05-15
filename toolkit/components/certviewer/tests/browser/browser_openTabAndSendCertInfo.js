@@ -76,6 +76,9 @@ function openCertDownloadDialog(cert) {
 
 add_task(async function openFromPopUp() {
   info("Testing openFromPopUp");
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", false]],
+  });
 
   const certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
     Ci.nsIX509CertDB
@@ -113,9 +116,113 @@ add_task(async function openFromPopUp() {
   await BrowserTestUtils.windowClosed(win);
 });
 
+add_task(async function testBadCert_feltPrivacyToTrue() {
+  info("Testing bad cert");
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", true]],
+  });
+
+  let tab = await openErrorPage();
+  let tabsCount = gBrowser.tabs.length;
+  let loaded = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    const netErrorCard =
+      content.document.querySelector("net-error-card").wrappedJSObject;
+    await netErrorCard.getUpdateComplete();
+    Assert.ok(netErrorCard.advancedButton, "advancedButton found");
+    Assert.ok(
+      !netErrorCard.advancedButton.hasAttribute("disabled"),
+      "advancedButton should be clickable"
+    );
+    EventUtils.synthesizeMouseAtCenter(
+      netErrorCard.advancedButton,
+      {},
+      content
+    );
+    await netErrorCard.getUpdateComplete();
+    await ContentTaskUtils.waitForCondition(
+      () =>
+        netErrorCard.viewCertificate &&
+        ContentTaskUtils.isVisible(netErrorCard.viewCertificate),
+      "Waiting for viewCertificate link"
+    );
+    Assert.ok(netErrorCard.viewCertificate, "viewCertificate link found");
+    Assert.ok(
+      !netErrorCard.viewCertificate.hasAttribute("disabled"),
+      "viewCertificate should be clickable"
+    );
+    netErrorCard.viewCertificate.scrollIntoView();
+    EventUtils.synthesizeMouseAtCenter(
+      netErrorCard.viewCertificate,
+      {},
+      content
+    );
+  });
+  await loaded;
+  checksCertTab(tabsCount);
+  await checkCertChain(gBrowser.selectedBrowser);
+  await SpecialPowers.flushPrefEnv();
+  gBrowser.removeCurrentTab(); // closes about:certificate
+  gBrowser.removeCurrentTab(); // closes https://expired.example.com/
+});
+
+add_task(async function testBadCertIframe_feltPrivacyToTrue() {
+  info("Testing bad cert in an iframe");
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", true]],
+  });
+
+  let tab = await openErrorPage(true);
+  let tabsCount = gBrowser.tabs.length;
+  let loaded = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    let iframe = content.document.querySelector("iframe");
+    let doc = iframe.contentDocument;
+    const netErrorCard = doc.querySelector("net-error-card").wrappedJSObject;
+    await netErrorCard.getUpdateComplete();
+    Assert.ok(netErrorCard.advancedButton, "advancedButton found");
+    Assert.ok(
+      !netErrorCard.advancedButton.hasAttribute("disabled"),
+      "advancedButton should be clickable"
+    );
+    netErrorCard.advancedButton.click();
+    await ContentTaskUtils.waitForCondition(
+      () =>
+        netErrorCard.viewCertificate &&
+        ContentTaskUtils.isVisible(netErrorCard.viewCertificate),
+      "Waiting for view certificate link"
+    );
+    Assert.ok(netErrorCard.viewCertificate, "viewCertificate found");
+    Assert.ok(
+      !netErrorCard.viewCertificate.hasAttribute("disabled"),
+      "viewCertificate should be clickable"
+    );
+    netErrorCard.viewCertificate.scrollIntoView();
+    const iframeRect = iframe.getBoundingClientRect();
+    const linkRect = netErrorCard.viewCertificate.getBoundingClientRect();
+
+    EventUtils.synthesizeMouseAtPoint(
+      iframeRect.x + linkRect.x + linkRect.width / 2,
+      iframeRect.y + linkRect.y + linkRect.height / 2,
+      {},
+      content
+    );
+  });
+  await loaded;
+  checksCertTab(tabsCount);
+  await checkCertChain(gBrowser.selectedBrowser);
+  await SpecialPowers.flushPrefEnv();
+  gBrowser.removeCurrentTab(); // closes about:certificate
+  gBrowser.removeCurrentTab(); // closes https://expired.example.com/
+});
+
 add_task(async function testBadCert() {
   info("Testing bad cert");
-
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", false]],
+  });
   let tab = await openErrorPage();
 
   let tabsCount = gBrowser.tabs.length;
@@ -124,17 +231,15 @@ add_task(async function testBadCert() {
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
     let advancedButton = content.document.getElementById("advancedButton");
     Assert.ok(advancedButton, "advancedButton found");
-    Assert.equal(
-      advancedButton.hasAttribute("disabled"),
-      false,
+    Assert.ok(
+      !advancedButton.hasAttribute("disabled"),
       "advancedButton should be clickable"
     );
     advancedButton.click();
     let viewCertificate = content.document.getElementById("viewCertificate");
     Assert.ok(viewCertificate, "viewCertificate found");
-    Assert.equal(
-      viewCertificate.hasAttribute("disabled"),
-      false,
+    Assert.ok(
+      !viewCertificate.hasAttribute("disabled"),
       "viewCertificate should be clickable"
     );
 
@@ -143,14 +248,15 @@ add_task(async function testBadCert() {
   await loaded;
   checksCertTab(tabsCount);
   await checkCertChain(gBrowser.selectedBrowser);
-
   gBrowser.removeCurrentTab(); // closes about:certificate
   gBrowser.removeCurrentTab(); // closes https://expired.example.com/
 });
 
 add_task(async function testBadCertIframe() {
   info("Testing bad cert in an iframe");
-
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", false]],
+  });
   let tab = await openErrorPage(true);
 
   let tabsCount = gBrowser.tabs.length;
@@ -160,20 +266,17 @@ add_task(async function testBadCertIframe() {
     let doc = content.document.querySelector("iframe").contentDocument;
     let advancedButton = doc.getElementById("advancedButton");
     Assert.ok(advancedButton, "advancedButton found");
-    Assert.equal(
-      advancedButton.hasAttribute("disabled"),
-      false,
+    Assert.ok(
+      !advancedButton.hasAttribute("disabled"),
       "advancedButton should be clickable"
     );
     advancedButton.click();
     let viewCertificate = doc.getElementById("viewCertificate");
     Assert.ok(viewCertificate, "viewCertificate found");
-    Assert.equal(
-      viewCertificate.hasAttribute("disabled"),
-      false,
+    Assert.ok(
+      !viewCertificate.hasAttribute("disabled"),
       "viewCertificate should be clickable"
     );
-
     viewCertificate.click();
   });
   await loaded;
@@ -186,6 +289,9 @@ add_task(async function testBadCertIframe() {
 
 add_task(async function testGoodCert() {
   info("Testing page info");
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", false]],
+  });
   let url = "https://example.com/";
 
   let tabsCount = gBrowser.tabs.length;
@@ -222,6 +328,9 @@ add_task(async function testGoodCert() {
 
 add_task(async function testPreferencesCert() {
   info("Testing preferences cert");
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.certerrors.felt-privacy-v1", false]],
+  });
   let url = "about:preferences#privacy";
 
   let tabsCount;

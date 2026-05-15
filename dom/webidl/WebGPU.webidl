@@ -155,6 +155,7 @@ enum GPUFeatureName {
     "clip-distances",
     "dual-source-blending",
     "subgroups",
+    "primitive-index",
 };
 
 [Func="mozilla::webgpu::Instance::PrefEnabled",
@@ -171,6 +172,8 @@ interface GPUDevice : EventTarget {
     [Throws]
     GPUBuffer createBuffer(GPUBufferDescriptor descriptor);
     GPUTexture createTexture(GPUTextureDescriptor descriptor);
+    [Throws, Func="mozilla::webgpu::Instance::ExternalTexturePrefEnabled"]
+    GPUExternalTexture importExternalTexture(GPUExternalTextureDescriptor descriptor);
     GPUSampler createSampler(optional GPUSamplerDescriptor descriptor = {});
 
     GPUBindGroupLayout createBindGroupLayout(GPUBindGroupLayoutDescriptor descriptor);
@@ -307,6 +310,7 @@ dictionary GPUTextureViewDescriptor
          : GPUObjectDescriptorBase {
     GPUTextureFormat format;
     GPUTextureViewDimension dimension;
+    GPUTextureUsageFlags usage = 0;
     GPUTextureAspect aspect = "all";
     GPUIntegerCoordinate baseMipLevel = 0;
     GPUIntegerCoordinate mipLevelCount;
@@ -456,6 +460,12 @@ interface GPUExternalTexture {
 };
 GPUExternalTexture includes GPUObjectBase;
 
+dictionary GPUExternalTextureDescriptor
+         : GPUObjectDescriptorBase {
+    required (HTMLVideoElement or VideoFrame) source;
+    PredefinedColorSpace colorSpace = "srgb";
+};
+
 [Func="mozilla::webgpu::Instance::PrefEnabled",
  Exposed=(Window, Worker), SecureContext]
 interface GPUSampler {
@@ -601,7 +611,8 @@ typedef (GPUSampler or
          GPUTexture or
          GPUTextureView or
          GPUBuffer or
-         GPUBufferBinding) GPUBindingResource;
+         GPUBufferBinding or
+         GPUExternalTexture) GPUBindingResource;
 
 dictionary GPUBindGroupEntry {
     required GPUIndex32 binding;
@@ -775,7 +786,7 @@ dictionary GPUMultisampleState {
 
 dictionary GPUFragmentState
          : GPUProgrammableStage {
-    required sequence<GPUColorTargetState> targets;
+    required sequence<GPUColorTargetState?> targets;
 };
 
 dictionary GPUColorTargetState {
@@ -1046,7 +1057,7 @@ interface mixin GPUBindingCommandsMixin {
         optional sequence<GPUBufferDynamicOffset> dynamicOffsets = []);
     [Throws]
     undefined setBindGroup(GPUIndex32 index, GPUBindGroup? bindGroup,
-        Uint32Array dynamicOffsetsData,
+        [AllowShared] Uint32Array dynamicOffsetsData,
         GPUSize64 dynamicOffsetsDataStart,
         GPUSize32 dynamicOffsetsDataLength);
 };
@@ -1115,7 +1126,7 @@ dictionary GPURenderPassTimestampWrites {
 
 dictionary GPURenderPassDescriptor
          : GPUObjectDescriptorBase {
-    required sequence<GPURenderPassColorAttachment> colorAttachments;
+    required sequence<GPURenderPassColorAttachment?> colorAttachments;
     GPURenderPassDepthStencilAttachment depthStencilAttachment;
     GPUQuerySet occlusionQuerySet;
     GPURenderPassTimestampWrites timestampWrites;
@@ -1157,7 +1168,7 @@ enum GPUStoreOp {
 
 dictionary GPURenderPassLayout
          : GPUObjectDescriptorBase {
-    required sequence<GPUTextureFormat> colorFormats;
+    required sequence<GPUTextureFormat?> colorFormats;
     GPUTextureFormat depthStencilFormat;
     GPUSize32 sampleCount = 1;
 };

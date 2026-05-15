@@ -10,11 +10,15 @@
 
 #include "rtc_base/strings/json.h"
 
-#include <errno.h>
-#include <limits.h>
-#include <stdlib.h>
+#include <cerrno>
+#include <climits>
+#include <cstdlib>
+#include <string>
+#include <vector>
 
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "json/writer.h"
 #include "rtc_base/string_encode.h"
 
 namespace webrtc {
@@ -22,13 +26,13 @@ namespace webrtc {
 bool GetStringFromJson(const Json::Value& in, std::string* out) {
   if (!in.isString()) {
     if (in.isBool()) {
-      *out = rtc::ToString(in.asBool());
+      *out = BoolToString(in.asBool());
     } else if (in.isInt()) {
-      *out = rtc::ToString(in.asInt());
+      *out = absl::StrCat(in.asInt());
     } else if (in.isUInt()) {
-      *out = rtc::ToString(in.asUInt());
+      *out = absl::StrCat(in.asUInt());
     } else if (in.isDouble()) {
-      *out = rtc::ToString(in.asDouble());
+      *out = absl::StrCat(in.asDouble());
     } else {
       return false;
     }

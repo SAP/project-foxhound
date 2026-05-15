@@ -178,16 +178,6 @@ add_task(async function test_click_second_ad_in_component() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -235,16 +225,6 @@ add_task(async function test_click_ads_link_modified() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -291,16 +271,6 @@ add_task(async function test_click_and_submit_incontent_searchbox() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -314,14 +284,7 @@ add_task(async function test_click_and_submit_incontent_searchbox() {
     },
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
         source: "follow_on_from_refine_on_incontent_search",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
     },
   ]);
@@ -351,16 +314,6 @@ add_task(async function test_click_autosuggest() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.SUBMITTED,
@@ -370,14 +323,7 @@ add_task(async function test_click_autosuggest() {
     },
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
         source: "follow_on_from_refine_on_incontent_search",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
     },
   ]);
@@ -399,16 +345,6 @@ add_task(async function test_click_carousel_expand() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.EXPANDED,
@@ -460,16 +396,6 @@ add_task(async function test_click_link_with_special_characters_in_path() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -516,16 +442,6 @@ add_task(async function test_click_cookie_banner_accept() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED_ACCEPT,
@@ -562,16 +478,6 @@ add_task(async function test_click_cookie_banner_reject() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED_REJECT,
@@ -608,16 +514,6 @@ add_task(async function test_click_cookie_banner_more_options() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED_MORE_OPTIONS,

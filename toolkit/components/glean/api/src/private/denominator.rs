@@ -30,8 +30,8 @@ pub enum DenominatorMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_metadata_getter!(DenominatorMetric, DENOMINATOR_MAP);
-crate::define_metric_namer!(DenominatorMetric);
+define_metric_metadata_getter!(DenominatorMetric, DENOMINATOR_MAP);
+define_metric_namer!(DenominatorMetric);
 
 impl DenominatorMetric {
     /// The constructor used by automatically generated metrics.
@@ -89,7 +89,7 @@ impl Counter for DenominatorMetric {
         };
 
         #[cfg(feature = "with_gecko")]
-        if gecko_profiler::can_accept_markers() {
+        if gecko_profiler::current_thread_is_being_profiled_for_markers() {
             gecko_profiler::add_marker(
                 "Counter::add",
                 super::profiler_utils::TelemetryProfilerCategory,
@@ -103,25 +103,29 @@ impl Counter for DenominatorMetric {
         }
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<i32> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            DenominatorMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            DenominatorMetric::Child(meta) => {
-                panic!(
-                    "Cannot get test value for {:?} in non-parent process!",
-                    meta.id
-                );
-            }
-        }
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
             DenominatorMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
             DenominatorMetric::Child(meta) => {
                 panic!(
                     "Cannot get the number of recorded errors for {:?} in non-parent process!",
+                    meta.id
+                );
+            }
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for DenominatorMetric {
+    type Output = i32;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<i32> {
+        match self {
+            DenominatorMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            DenominatorMetric::Child(meta) => {
+                panic!(
+                    "Cannot get test value for {:?} in non-parent process!",
                     meta.id
                 );
             }
@@ -140,7 +144,12 @@ mod test {
         let metric = &metrics::test_only_ipc::an_external_denominator;
         metric.add(1);
 
-        assert_eq!(1, metric.test_get_value("test-ping").unwrap());
+        assert_eq!(
+            1,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -176,7 +185,9 @@ mod test {
 
         assert_eq!(
             45,
-            parent_metric.test_get_value("test-ping").unwrap(),
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "Values from the 'processes' should be summed"
         );
     }

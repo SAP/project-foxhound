@@ -13,20 +13,20 @@
  * values appropriately so we get recognized as Chrome.
  */
 
-/* globals exportFunction */
+if (!navigator.userAgent.includes("Chrome for WebCompat")) {
+  console.info(
+    "The user agent has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1457335 for details."
+  );
 
-console.info(
-  "The user agent has been overridden for compatibility reasons. See https://webcompat.com/issues/1804 for details."
-);
+  const CHROME_UA = navigator.userAgent + " Chrome for WebCompat";
 
-const CHROME_UA = navigator.userAgent + " Chrome for WebCompat";
+  const nav = Object.getPrototypeOf(navigator);
 
-const nav = Object.getPrototypeOf(navigator.wrappedJSObject);
+  const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
+  ua.get = () => CHROME_UA;
+  Object.defineProperty(nav, "userAgent", ua);
 
-const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
-ua.get = exportFunction(() => CHROME_UA, window);
-Object.defineProperty(nav, "userAgent", ua);
-
-const vendor = Object.getOwnPropertyDescriptor(nav, "vendor");
-vendor.get = exportFunction(() => "Google Inc.", window);
-Object.defineProperty(nav, "vendor", vendor);
+  const vendor = Object.getOwnPropertyDescriptor(nav, "vendor");
+  vendor.get = () => "Google Inc.";
+  Object.defineProperty(nav, "vendor", vendor);
+}

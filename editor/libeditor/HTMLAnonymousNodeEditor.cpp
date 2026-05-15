@@ -7,7 +7,6 @@
 #include "CSSEditUtils.h"
 #include "HTMLEditUtils.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/dom/BindContext.h"
@@ -418,9 +417,8 @@ nsresult HTMLEditor::RefreshEditingUI() {
   //                cellElement   contains the element for InlineTableEditing
   //                absPosElement contains the element for Positioning
 
-  // Note: All the Hide/Show methods below may change attributes on real
-  // content which means a DOMAttrModified handler may cause arbitrary
-  // side effects while this code runs (bug 420439).
+  // TODO: Since we've already stopped supporting the DOM mutation events.
+  // So, we may not need to verity the result below.
 
   if (IsAbsolutePositionEditorEnabled() && mAbsolutelyPositionedObject &&
       absPosElement != mAbsolutelyPositionedObject) {
@@ -584,7 +582,7 @@ nsresult HTMLEditor::SetAnonymousElementPositionWithoutTransaction(
     nsStyledElement& aStyledElement, int32_t aX, int32_t aY) {
   nsresult rv;
   rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
-      aStyledElement, *nsGkAtoms::left, aX);
+      *this, aStyledElement, *nsGkAtoms::left, aX);
   if (rv == NS_ERROR_EDITOR_DESTROYED) {
     NS_WARNING(
         "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(nsGkAtoms::left) "
@@ -596,7 +594,7 @@ nsresult HTMLEditor::SetAnonymousElementPositionWithoutTransaction(
       "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(nsGkAtoms::left) "
       "failed, but ignored");
   rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
-      aStyledElement, *nsGkAtoms::top, aY);
+      *this, aStyledElement, *nsGkAtoms::top, aY);
   if (rv == NS_ERROR_EDITOR_DESTROYED) {
     NS_WARNING(
         "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(nsGkAtoms::top) "

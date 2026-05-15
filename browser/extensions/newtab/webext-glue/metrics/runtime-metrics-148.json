@@ -1,0 +1,84 @@
+{
+  "metrics": {
+    "newtab": {
+      "widgets_container_action": {
+        "description": "Recorded when user interacts with widget container controls.\n",
+        "disabled": false,
+        "extraArgs": {
+          "allowed_extra_keys": [
+            "action_type",
+            "action_value",
+            "newtab_visit_id",
+            "widget_size"
+          ]
+        },
+        "lifetime": "ping",
+        "pings": ["newtab"],
+        "type": "event"
+      },
+      "widgets_enabled": {
+        "description": "Recorded when a widget is enabled or disabled. This metric replaces widgets_lists_change_display, widgets_timer_change_display, and weather_enabled.\n",
+        "disabled": false,
+        "extraArgs": {
+          "allowed_extra_keys": [
+            "enabled",
+            "newtab_visit_id",
+            "widget_name",
+            "widget_size",
+            "widget_source"
+          ]
+        },
+        "lifetime": "ping",
+        "pings": ["newtab"],
+        "type": "event"
+      },
+      "widgets_error": {
+        "description": "Recorded when a widget encounters an error state (e.g., failed to load data). This metric replaces weather_load_error.\n",
+        "disabled": false,
+        "extraArgs": {
+          "allowed_extra_keys": [
+            "error_type",
+            "newtab_visit_id",
+            "widget_name",
+            "widget_size"
+          ]
+        },
+        "lifetime": "ping",
+        "pings": ["newtab"],
+        "type": "event"
+      },
+      "widgets_impression": {
+        "description": "Recorded when any widget is viewable on a user's screen. This metric replaces widgets_lists_impression, widgets_timer_impression, and weather_impression.\n",
+        "disabled": false,
+        "extraArgs": {
+          "allowed_extra_keys": [
+            "newtab_visit_id",
+            "widget_name",
+            "widget_size"
+          ]
+        },
+        "lifetime": "ping",
+        "pings": ["newtab"],
+        "type": "event"
+      },
+      "widgets_user_event": {
+        "description": "Recorded when user interacts with any widget. This metric replaces widgets_lists_user_event, widgets_timer_user_event, weather_detect_location, weather_opt_in_selection, weather_location_selected, weather_open_provider_url and weather_change_display.\n",
+        "disabled": false,
+        "extraArgs": {
+          "allowed_extra_keys": [
+            "action_value",
+            "newtab_visit_id",
+            "user_action",
+            "widget_name",
+            "widget_size",
+            "widget_source"
+          ]
+        },
+        "lifetime": "ping",
+        "pings": ["newtab"],
+        "type": "event"
+      }
+    }
+  },
+  "pings": {}
+}

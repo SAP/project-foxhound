@@ -29,8 +29,8 @@
  *                --Benjamin Smedberg <benjamin@smedbergs.us>
  */
 
-#ifndef bspatch_h__
-#define bspatch_h__
+#ifndef bspatch_h_
+#define bspatch_h_
 
 #include <stdint.h>
 #include <stdio.h>
@@ -82,7 +82,7 @@ int MBS_ReadHeader(FILE* file, MBSPatchHeader* header);
  *                should be at the beginning of the file.
  */
 int MBS_ApplyPatch(const MBSPatchHeader* header, FILE* patchFile,
-                   unsigned char* fbuffer, FILE* file);
+                   const unsigned char* fbuffer, FILE* file);
 
 typedef struct MBSPatchTriple_ {
   uint32_t x; /* add x bytes from oldfile to x bytes from the diff block */
@@ -90,4 +90,4 @@ typedef struct MBSPatchTriple_ {
   int32_t z;  /* seek forwards in oldfile by z bytes */
 } MBSPatchTriple;
 
-#endif  // bspatch_h__
+#endif  // bspatch_h_

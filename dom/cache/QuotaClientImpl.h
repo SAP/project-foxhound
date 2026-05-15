@@ -10,8 +10,8 @@
 #include "CacheCipherKeyManager.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/QMResult.h"
-#include "mozilla/dom/cache/QuotaClient.h"
 #include "mozilla/dom/cache/FileUtils.h"
+#include "mozilla/dom/cache/QuotaClient.h"
 #include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 

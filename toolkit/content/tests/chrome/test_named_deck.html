@@ -4,7 +4,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title><!-- Shadow Parts issue with xul/xbl domparser --></title>
+  <title>Named Deck</title>
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
   <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
@@ -41,6 +41,20 @@ async function runTests({ deck, buttons }) {
   const selectedSlot = deck.shadowRoot.querySelector('slot[name="selected"]');
   const getButtonByName = name => buttons.querySelector(`[name="${name}"]`);
 
+  function checkButtonStates(name, count) {
+    // Check the right button is selected.
+    is(buttons.children.length, count, "There are the right number of buttons");
+    for (let button of buttons.children) {
+      let buttonName = button.getAttribute("name");
+      let selected = buttonName == name;
+      is(
+        button.hasAttribute("selected"),
+        selected,
+        `${buttonName} is ${selected ? "selected" : "not selected"}`
+      );
+    }
+  }
+
   function checkState(name, count, empty = false) {
     // Check that the right view is selected.
     is(deck.selectedViewName, name, "The right view is selected");
@@ -70,17 +84,7 @@ async function runTests({ deck, buttons }) {
       }
     }
 
-    // Check the right button is selected.
-    is(buttons.children.length, count, "There are the right number of buttons");
-    for (let button of buttons.children) {
-      let buttonName = button.getAttribute("name");
-      let selected = buttonName == name;
-      is(
-        button.hasAttribute("selected"),
-        selected,
-        `${buttonName} is ${selected ? "selected" : "not selected"}`
-      );
-    }
+    checkButtonStates(name, count);
   }
 
   // Check that the first view is selected by default.
@@ -141,9 +145,17 @@ async function runTests({ deck, buttons }) {
   deck.removeEventListener("view-changed", viewChangedFn);
   ok(!viewChangedEvent, "The view-changed event didn't fire");
   checkState("missing", 4);
+
+  info("Check that listeners are cleaned up on disconnect");
+  buttons.remove();
+  shown = BrowserTestUtils.waitForEvent(deck, "view-changed");
+  deck.selectedViewName = "last";
+  await shown;
+  // Button state should not have changed cause we aren't listening.
+  checkButtonStates("missing", 4);
 }
 
-async function setup({ beAsync, first, deckId }) {
+async function setup({ beAsync, first, deckId, shadow }) {
   // Make the deck and buttons.
   const deck = document.createElement("named-deck");
   deck.id = deckId;
@@ -164,12 +176,20 @@ async function setup({ beAsync, first, deckId }) {
     throw new Error("Invalid order");
   }
 
+  let parent = document.body;
+  if (shadow) {
+    let host = document.createElement("div");
+    host.attachShadow({ mode: "open" });
+    document.body.append(host);
+    parent = host.shadowRoot;
+  }
+
   // Insert them in the specified order, possibly async.
-  document.body.appendChild(ordered.shift());
+  parent.appendChild(ordered.shift());
   if (beAsync) {
     await new Promise(resolve => requestAnimationFrame(resolve));
   }
-  document.body.appendChild(ordered.shift());
+  parent.appendChild(ordered.shift());
 
   return { deck, buttons };
 }
@@ -186,6 +206,12 @@ add_task(async function testNamedDeckAndButtons() {
   await runTests(await setup({ beAsync: false, first: "buttons", deckId: "buttons-sync" }));
   dump("Running buttons first tests asynchronously");
   await runTests(await setup({ beAsync: true, first: "buttons", deckId: "buttons-async" }));
+
+  // Check shadow DOM parent
+  dump("Running buttons first tests synchronously");
+  await runTests(await setup({ beAsync: false, first: "buttons", deckId: "shadow-sync", shadow: true }));
+  dump("Running buttons first tests asynchronously");
+  await runTests(await setup({ beAsync: true, first: "buttons", deckId: "shadow-async", shadow: true }));
 });
 
 add_task(async function testFocusAndClickMixing() {

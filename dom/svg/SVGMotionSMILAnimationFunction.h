@@ -7,10 +7,10 @@
 #ifndef DOM_SVG_SVGMOTIONSMILANIMATIONFUNCTION_H_
 #define DOM_SVG_SVGMOTIONSMILANIMATIONFUNCTION_H_
 
-#include "mozilla/gfx/2D.h"
+#include "SVGMotionSMILType.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SMILAnimationFunction.h"
-#include "SVGMotionSMILType.h"
+#include "mozilla/gfx/2D.h"
 #include "nsTArray.h"
 
 class nsAttrValue;
@@ -36,7 +36,7 @@ class SVGMotionSMILAnimationFunction final : public SMILAnimationFunction {
   using Path = mozilla::gfx::Path;
 
  public:
-  SVGMotionSMILAnimationFunction();
+  SVGMotionSMILAnimationFunction() = default;
   bool SetAttr(nsAtom* aAttribute, const nsAString& aValue,
                nsAttrValue& aResult, nsresult* aParseResult = nullptr) override;
   bool UnsetAttr(nsAtom* aAttribute) override;
@@ -49,15 +49,15 @@ class SVGMotionSMILAnimationFunction final : public SMILAnimationFunction {
   void MpathChanged() { mIsPathStale = mHasChanged = true; }
 
  protected:
-  enum PathSourceType {
+  enum class PathSourceType : uint8_t {
     // NOTE: Ordering matters here. Higher-priority path-descriptors should
     // have higher enumerated values
-    ePathSourceType_None,    // uninitialized or not applicable
-    ePathSourceType_ByAttr,  // by or from-by animation
-    ePathSourceType_ToAttr,  // to or from-to animation
-    ePathSourceType_ValuesAttr,
-    ePathSourceType_PathAttr,
-    ePathSourceType_Mpath
+    None,    // uninitialized or not applicable
+    ByAttr,  // by or from-by animation
+    ToAttr,  // to or from-to animation
+    ValuesAttr,
+    PathAttr,
+    Mpath
   };
 
   SMILCalcMode GetCalcMode() const override;
@@ -85,16 +85,15 @@ class SVGMotionSMILAnimationFunction final : public SMILAnimationFunction {
 
   // Members
   // -------
-  FallibleTArray<double> mKeyPoints;  // parsed from "keyPoints" attribute.
-
-  RotateType mRotateType;  // auto, auto-reverse, or explicit.
-  float mRotateAngle;      // the angle value, if explicit.
-
-  PathSourceType mPathSourceType;        // source of our Path.
+  FallibleTArray<double> mKeyPoints;     // parsed from "keyPoints" attribute.
   RefPtr<Path> mPath;                    // representation of motion path.
   FallibleTArray<double> mPathVertices;  // distances of vertices along path.
 
-  bool mIsPathStale;
+  float mRotateAngle = 0.0f;
+  RotateType mRotateType = RotateType::Explicit;
+  PathSourceType mPathSourceType = PathSourceType::None;
+
+  bool mIsPathStale = true;
 };
 
 }  // namespace mozilla

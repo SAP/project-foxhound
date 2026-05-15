@@ -67,10 +67,10 @@ async function testAccordionStateAfterSwitchingSidebars(inspector, doc) {
   );
 
   info("Selecting the computed view.");
-  inspector.sidebar.select("computedview");
+  await inspector.sidebar.select("computedview");
 
   info("Selecting the layout view.");
-  inspector.sidebar.select("layoutview");
+  await inspector.sidebar.select("layoutview");
 
   const item = await waitFor(() => doc.querySelector(GRID_PANE_SELECTOR));
   const content = item.querySelector(ACCORDION_CONTENT_SELECTOR);

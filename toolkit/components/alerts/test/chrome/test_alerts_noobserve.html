@@ -20,9 +20,13 @@
 <script class="testbody" type="text/javascript">
 const Cc = SpecialPowers.Cc;
 const Ci = SpecialPowers.Ci;
+const AlertNotification = Components.Constructor(
+  "@mozilla.org/alert-notification;1",
+  "nsIAlertNotification",
+  "initWithObject"
+);
 
 const chromeScript = SpecialPowers.loadChromeScript(_ => {
-  /* eslint-env mozilla/chrome-script */
   const {setTimeout} = ChromeUtils.importESModule(
     "resource://gre/modules/Timer.sys.mjs"
   );
@@ -72,12 +76,14 @@ async function runTest() {
 
     if (notifier) {
       try {
-        notifier.showAlertNotification(null, "Notification test",
-                                       "This notification has no observer");
+        notifier.showAlert(new AlertNotification({
+          title: "Notification test",
+          text: "This notification has no observer"
+        }));
         notifier.closeAlert();
-        ok(true, "showAlertNotification() succeeded");
+        ok(true, "showAlert() succeeded");
       } catch (ex) {
-        todo(false, "showAlertNotification() failed.", ex);
+        todo(false, "showAlert() failed.", ex);
       }
     }
   }

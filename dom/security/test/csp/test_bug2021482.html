@@ -1,0 +1,49 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline'">
+  <title>Bug 2021482 - Parent process CSP checks against 'self' for about:blank</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<script>
+SimpleTest.waitForExplicitFinish();
+
+function waitForControlling() {
+  if (navigator.serviceWorker.controller) return Promise.resolve();
+  return new Promise(res => navigator.serviceWorker.addEventListener("controllerchange", res, {once: true}));
+}
+
+function cleanup() {
+  return navigator.serviceWorker.getRegistration().then(r => r && r.unregister());
+}
+
+window.addEventListener("message", e => {
+  if (e.data === "script-loaded") {
+    cleanup().then(() => {
+      ok(true, "same-origin script loaded without CSP violation from SW-intercepted fetch");
+      SimpleTest.finish();
+    });
+  }
+});
+
+SpecialPowers.pushPrefEnv({"set": [["dom.serviceWorkers.testing.enabled", true]]})
+  .then(() => navigator.serviceWorker.register("file_bug2021482_sw.js"))
+  .then(waitForControlling)
+  .then(() => {
+    const ifr = document.createElement("iframe");
+    document.body.append(ifr);
+    ifr.contentDocument.open();
+    ifr.contentDocument.write('<script src="file_bug2021482_check.js"><\/script>');
+    ifr.contentDocument.close();
+    ifr.contentDocument.addEventListener("securitypolicyviolation", () => {
+      cleanup().then(() => {
+        ok(false, "CSP incorrectly blocked same-origin script from about:blank iframe");
+        SimpleTest.finish();
+      });
+    });
+  });
+</script>
+</body>
+</html>

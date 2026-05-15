@@ -17,7 +17,6 @@
 #include <sys/syscall.h>
 
 #include "mozilla/StackWalk.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Exceptions.h"
 #include "nsContentUtils.h"
 #include "nsExceptionHandler.h"

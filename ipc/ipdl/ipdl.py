@@ -31,7 +31,7 @@ class WorkerPool:
         allsyncmessages,
         alljsonobjs,
         *,
-        processes=None
+        processes=None,
     ):
         if processes is None:
             processes = os.cpu_count() or 1

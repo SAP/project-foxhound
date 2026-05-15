@@ -22,7 +22,7 @@ void ServiceWorkerContainerParent::ActorDestroy(ActorDestroyReason aReason) {
 
 IPCResult ServiceWorkerContainerParent::RecvRegister(
     const IPCClientInfo& aClientInfo, const nsACString& aScopeURL,
-    const nsACString& aScriptURL,
+    const WorkerType& aType, const nsACString& aScriptURL,
     const ServiceWorkerUpdateViaCache& aUpdateViaCache,
     RegisterResolver&& aResolver) {
   if (!mProxy) {
@@ -31,7 +31,7 @@ IPCResult ServiceWorkerContainerParent::RecvRegister(
   }
 
   mProxy
-      ->Register(ClientInfo(aClientInfo), aScopeURL, aScriptURL,
+      ->Register(ClientInfo(aClientInfo), aScopeURL, aType, aScriptURL,
                  aUpdateViaCache)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PendingTransactionInfo_h__
-#define PendingTransactionInfo_h__
+#ifndef PendingTransactionInfo_h_
+#define PendingTransactionInfo_h_
 
 #include "DnsAndConnectSocket.h"
 
@@ -60,4 +60,4 @@ class PendingComparator {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // !PendingTransactionInfo_h__
+#endif  // !PendingTransactionInfo_h_

@@ -49,7 +49,7 @@ template <typename T>
 struct GCPolicy<T* const> : public js::InternalGCPointerPolicy<T* const> {};
 
 template <typename T>
-struct GCPolicy<js::HeapPtr<T>> {
+struct GCPolicy<js::HeapPtr<T>> : public GCPolicyBase<js::HeapPtr<T>> {
   static void trace(JSTracer* trc, js::HeapPtr<T>* thingp, const char* name) {
     js::TraceNullableEdge(trc, thingp, name);
   }
@@ -65,7 +65,8 @@ struct GCPolicy<js::HeapPtr<T>> {
 };
 
 template <typename T>
-struct GCPolicy<js::PreBarriered<T>> {
+struct GCPolicy<js::PreBarriered<T>>
+    : public GCPolicyBase<js::PreBarriered<T>> {
   static void trace(JSTracer* trc, js::PreBarriered<T>* thingp,
                     const char* name) {
     js::TraceNullableEdge(trc, thingp, name);
@@ -73,7 +74,7 @@ struct GCPolicy<js::PreBarriered<T>> {
 };
 
 template <typename T>
-struct GCPolicy<js::WeakHeapPtr<T>> {
+struct GCPolicy<js::WeakHeapPtr<T>> : public GCPolicyBase<js::WeakHeapPtr<T>> {
   static void trace(JSTracer* trc, js::WeakHeapPtr<T>* thingp,
                     const char* name) {
     js::TraceEdge(trc, thingp, name);
@@ -90,7 +91,8 @@ struct GCPolicy<js::WeakHeapPtr<T>> {
 };
 
 template <typename T>
-struct GCPolicy<js::UnsafeBarePtr<T>> {
+struct GCPolicy<js::UnsafeBarePtr<T>>
+    : public GCPolicyBase<js::UnsafeBarePtr<T>> {
   static bool traceWeak(JSTracer* trc, js::UnsafeBarePtr<T>* vp) {
     if (*vp) {
       return js::TraceManuallyBarrieredWeakEdge(trc, vp->unbarrieredAddress(),
@@ -101,7 +103,7 @@ struct GCPolicy<js::UnsafeBarePtr<T>> {
 };
 
 template <>
-struct GCPolicy<JS::GCCellPtr> {
+struct GCPolicy<JS::GCCellPtr> : public GCPolicyBase<JS::GCCellPtr> {
   static void trace(JSTracer* trc, JS::GCCellPtr* thingp, const char* name) {
     // It's not safe to trace unbarriered pointers except as part of root
     // marking.

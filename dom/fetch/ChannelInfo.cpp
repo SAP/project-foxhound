@@ -5,16 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ChannelInfo.h"
+
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/net/HttpBaseChannel.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
-#include "mozilla/dom/Document.h"
 #include "nsIGlobalObject.h"
 #include "nsIHttpChannel.h"
-#include "nsSerializationHelper.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/net/HttpBaseChannel.h"
 #include "nsNetUtil.h"
+#include "nsSerializationHelper.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

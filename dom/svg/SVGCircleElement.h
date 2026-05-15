@@ -7,9 +7,9 @@
 #ifndef DOM_SVG_SVGCIRCLEELEMENT_H_
 #define DOM_SVG_SVGCIRCLEELEMENT_H_
 
-#include "nsCSSPropertyID.h"
-#include "SVGGeometryElement.h"
+#include "NonCustomCSSPropertyId.h"
 #include "SVGAnimatedLength.h"
+#include "SVGGeometryElement.h"
 
 nsresult NS_NewSVGCircleElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -48,7 +48,7 @@ class SVGCircleElement final : public SVGCircleElementBase {
 
   static bool IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
                                     const ComputedStyle& aOldStyle);
-  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
+  static NonCustomCSSPropertyId GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedLength> Cx();

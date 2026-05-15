@@ -20,6 +20,7 @@ import org.junit.runner.RunWith
 import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import mozilla.components.feature.readerview.R as readerviewR
 
 @RunWith(AndroidJUnit4::class)
 class ReaderViewControlsBarTest {
@@ -37,8 +38,8 @@ class ReaderViewControlsBarTest {
         val bar = ReaderViewControlsBar(appCompatContext)
         bar.tryInflate()
 
-        val serifButton = bar.findViewById<AppCompatRadioButton>(R.id.mozac_feature_readerview_font_serif)
-        val sansSerifButton = bar.findViewById<AppCompatRadioButton>(R.id.mozac_feature_readerview_font_sans_serif)
+        val serifButton = bar.findViewById<AppCompatRadioButton>(readerviewR.id.mozac_feature_readerview_font_serif)
+        val sansSerifButton = bar.findViewById<AppCompatRadioButton>(readerviewR.id.mozac_feature_readerview_font_sans_serif)
 
         assertFalse(serifButton.isChecked)
 
@@ -58,8 +59,8 @@ class ReaderViewControlsBarTest {
         val bar = ReaderViewControlsBar(appCompatContext)
         bar.tryInflate()
 
-        val sizeDecreaseButton = bar.findViewById<AppCompatButton>(R.id.mozac_feature_readerview_font_size_decrease)
-        val sizeIncreaseButton = bar.findViewById<AppCompatButton>(R.id.mozac_feature_readerview_font_size_increase)
+        val sizeDecreaseButton = bar.findViewById<AppCompatButton>(readerviewR.id.mozac_feature_readerview_font_size_decrease)
+        val sizeIncreaseButton = bar.findViewById<AppCompatButton>(readerviewR.id.mozac_feature_readerview_font_size_increase)
 
         bar.setFontSize(5)
 
@@ -92,9 +93,9 @@ class ReaderViewControlsBarTest {
         val bar = ReaderViewControlsBar(appCompatContext)
         bar.tryInflate()
 
-        val colorOptionDark = bar.findViewById<AppCompatRadioButton>(R.id.mozac_feature_readerview_color_dark)
-        val colorOptionSepia = bar.findViewById<AppCompatRadioButton>(R.id.mozac_feature_readerview_color_sepia)
-        val colorOptionLight = bar.findViewById<AppCompatRadioButton>(R.id.mozac_feature_readerview_color_light)
+        val colorOptionDark = bar.findViewById<AppCompatRadioButton>(readerviewR.id.mozac_feature_readerview_color_dark)
+        val colorOptionSepia = bar.findViewById<AppCompatRadioButton>(readerviewR.id.mozac_feature_readerview_color_sepia)
+        val colorOptionLight = bar.findViewById<AppCompatRadioButton>(readerviewR.id.mozac_feature_readerview_color_light)
 
         bar.setColorScheme(ReaderViewFeature.ColorScheme.DARK)
 
@@ -159,7 +160,7 @@ class ReaderViewControlsBarTest {
         bar.listener = listener
         bar.tryInflate()
 
-        bar.findViewById<AppCompatRadioButton>(R.id.mozac_feature_readerview_font_sans_serif).performClick()
+        bar.findViewById<AppCompatRadioButton>(readerviewR.id.mozac_feature_readerview_font_sans_serif).performClick()
 
         verify(listener).onFontChanged(ReaderViewFeature.FontType.SANSSERIF)
     }
@@ -174,7 +175,7 @@ class ReaderViewControlsBarTest {
         bar.listener = listener
         bar.tryInflate()
 
-        bar.findViewById<AppCompatButton>(R.id.mozac_feature_readerview_font_size_increase).performClick()
+        bar.findViewById<AppCompatButton>(readerviewR.id.mozac_feature_readerview_font_size_increase).performClick()
 
         verify(listener).onFontSizeIncreased()
     }
@@ -189,7 +190,7 @@ class ReaderViewControlsBarTest {
         bar.listener = listener
         bar.tryInflate()
 
-        bar.findViewById<AppCompatRadioButton>(R.id.mozac_feature_readerview_color_sepia).performClick()
+        bar.findViewById<AppCompatRadioButton>(readerviewR.id.mozac_feature_readerview_color_sepia).performClick()
 
         verify(listener).onColorSchemeChanged(ReaderViewFeature.ColorScheme.SEPIA)
     }

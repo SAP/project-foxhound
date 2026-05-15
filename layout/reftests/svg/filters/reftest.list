@@ -28,7 +28,7 @@ fuzzy(0-2,0-1000000) == feColorMatrix-2.svg feColorMatrix-2-ref.svg
 
 == feComponentTransfer-1.svg feComponentTransfer-1-ref.svg
 == feComponentTransfer-2.svg feComponentTransfer-2-ref.svg
-fuzzy(0-1,0-375) == feComponentTransfer-discrete.svg feComponentTransfer-discrete-ref.svg
+fuzzy(0-1,0-1625) == feComponentTransfer-discrete.svg feComponentTransfer-discrete-ref.svg
 
 fuzzy(0-2,0-1000000) == feComposite-1.svg feComposite-1-ref.svg
 fuzzy(0-2,0-1000000) == feComposite-2.svg feComposite-2-ref.svg
@@ -114,7 +114,7 @@ fuzzy(0-1,0-400) == feDisplacementMap-alpha-01.svg pass.svg
 fuzzy(0-2,0-500) == feDisplacementMap-colour-01.svg feDisplacementMap-colour-01-ref.svg
 == feDisplacementMap-scale-01.svg pass.svg
 
-fuzzy-if(winWidget,0-2,0-25) fuzzy-if(Android13&&aarch64,6-6,4548-4565) fuzzy-if(!useDrawSnapshot,55-98,14033-16467) fuzzy-if(gfxSVGFEDropShadow&&!gfxSVGFEOffset,97-98,21500-22951) fuzzy-if(gfxSVGFEOffset,0-6,0-1000000) == feDropShadow-01.svg feDropShadow-01-ref.svg
+fuzzy-if(winWidget,0-2,0-25) fuzzy-if(Android13&&aarch64,6-6,4548-4565) fuzzy-if(gtkWidget&&useDrawSnapshot,0-3,0-968) fuzzy-if(!useDrawSnapshot,55-98,14033-16467) fuzzy-if(gfxSVGFEDropShadow&&!gfxSVGFEOffset,97-98,21500-22951) fuzzy-if(gfxSVGFEOffset,0-47,0-1000000) == feDropShadow-01.svg feDropShadow-01-ref.svg
 
 == feFlood-color-01.svg pass.svg
 
@@ -124,6 +124,7 @@ fuzzy(0-21,0-1000000) == feGaussianBlur-alpha-01.svg feGaussianBlur-alpha-01-ref
 == feMorphology-radius-negative-02.svg pass.svg
 == feMorphology-radius-zero-01.svg pass.svg
 == feMorphology-radius-zero-02.svg pass.svg
+== feMorphology-radius-zero-03.svg pass.svg
 
 == feTile-large-01.svg pass.svg
 == feTile-large-02.svg feTile-large-02-ref.svg

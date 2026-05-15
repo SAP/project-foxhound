@@ -1,0 +1,7 @@
+import java.lang.Deprecated;
+import test.DeprecationSchedule;
+
+package test {
+  @Deprecated @DeprecationSchedule(id="test",version="92") public class TestClass {
+  }
+}

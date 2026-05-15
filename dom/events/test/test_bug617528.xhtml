@@ -9,6 +9,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=617528
         xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
+  <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
   <body xmlns="http://www.w3.org/1999/xhtml">
     <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=617528"
@@ -71,19 +72,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=617528
       var win = browser.contentWindow;
       win.focus();
       var node = win.document.getElementById("node");
-      var rect = node.getBoundingClientRect();
-      var left = rect.left + rect.width / 2;
-      var top = rect.top + rect.height / 2;
-
-      var wu = win.windowUtils;
 
       browser.addEventListener("contextmenu", onContextMenu1);
-      wu.sendMouseEvent("contextmenu", left, top, 2, 1, 0);
+      synthesizeMouseAtCenter(node, { type: "contextmenu", button: 2 }, win);
       browser.removeEventListener("contextmenu", onContextMenu1);
 
       browser.addEventListener("contextmenu", onContextMenu2);
-      var shiftMask = Event.SHIFT_MASK;
-      wu.sendMouseEvent("contextmenu", left, top, 2, 1, shiftMask);
+      synthesizeMouseAtCenter(node, { type: "contextmenu", button: 2, shiftKey: true }, win);
       browser.removeEventListener("contextmenu", onContextMenu2);
 
       _window.close();

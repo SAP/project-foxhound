@@ -20,6 +20,9 @@ kind-dependencies:
     - system-symbols-upload
     - fetch
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     system-symbols-reprocess:
         from-deps:
@@ -28,7 +31,7 @@ tasks:
         description: Reprocess Symbols on Crash-Stats
         attributes:
             cron: true
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: system-symbols-linux-scraper}
             max-run-time: 7200

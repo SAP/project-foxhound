@@ -1,0 +1,37 @@
+package ${package};
+
+import androidx.annotation.AnyThread;
+
+/**
+ * Constants used by the crash reporter. These are generated so that they
+ * are kept in sync with the other C++ and JS users.
+ */
+final class ${class} {
+    /** Crash Annotations */
+    @AnyThread
+    public enum Annotation {
+        ${enum};
+
+        private final String s;
+        private final String scope;
+
+        private Annotation(String s, String scope) {
+            this.s = s;
+            this.scope = scope;
+        }
+
+        public String toString() {
+            return this.s;
+        }
+
+        /** @return Whether the annotation should be included in crash pings. */
+        public boolean allowedInPing() {
+            return this.scope.equals("ping") || this.scope.equals("ping-only");
+        }
+
+        /** @return Whether the annotation should be included in crash reports. */
+        public boolean allowedInReport() {
+            return this.scope.equals("ping") || this.scope.equals("report");
+        }
+    }
+}

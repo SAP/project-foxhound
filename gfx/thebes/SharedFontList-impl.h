@@ -12,7 +12,6 @@
 #include "nsClassHashtable.h"
 #include "nsTHashMap.h"
 #include "nsXULAppAPI.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
 

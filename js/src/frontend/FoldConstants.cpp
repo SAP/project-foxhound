@@ -9,16 +9,15 @@
 #include "mozilla/Maybe.h"  // mozilla::Maybe
 #include "mozilla/Try.h"    // MOZ_TRY*
 
-#include "jslibmath.h"
-#include "jsmath.h"
-
+#include "builtin/Math.h"
 #include "frontend/FullParseHandler.h"
 #include "frontend/ParseNode.h"
 #include "frontend/ParseNodeVisitor.h"
 #include "frontend/Parser-macros.h"  // MOZ_TRY_VAR_OR_RETURN
 #include "frontend/ParserAtom.h"     // ParserAtomsTable, TaggedParserAtomIndex
 #include "js/Conversions.h"
-#include "js/Stack.h"            // JS::NativeStackLimit
+#include "js/Stack.h"  // JS::NativeStackLimit
+#include "util/PortableMath.h"
 #include "util/StringBuilder.h"  // StringBuilder
 
 using namespace js;
@@ -161,6 +160,9 @@ restart:
     case ParseNodeKind::BreakStmt:
     case ParseNodeKind::ContinueStmt:
     case ParseNodeKind::ImportDecl:
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+    case ParseNodeKind::ImportSourceDecl:
+#endif
     case ParseNodeKind::ImportSpecList:
     case ParseNodeKind::ImportSpec:
     case ParseNodeKind::ImportNamespaceSpec:
@@ -172,6 +174,9 @@ restart:
     case ParseNodeKind::ExportStmt:
     case ParseNodeKind::ExportBatchSpecStmt:
     case ParseNodeKind::CallImportExpr:
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+    case ParseNodeKind::CallImportSourceExpr:
+#endif
     case ParseNodeKind::CallImportSpec:
     case ParseNodeKind::ImportAttributeList:
     case ParseNodeKind::ImportAttribute:

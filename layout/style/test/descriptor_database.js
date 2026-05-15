@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Each property has the following fields:
-//   domProp: The name of the relevant member of nsIDOM[NS]CSS2Properties
+//   domProp: The name of the relevant member of CSSStyleProperties
 //   values: Strings that are values for the descriptor and should be accepted.
 //   invalid_values: Things that are not values for the descriptor and
 //     should be rejected.

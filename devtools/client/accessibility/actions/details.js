@@ -10,7 +10,7 @@ const {
 /**
  * Update details with the given accessible object.
  *
- * @param {Object} accessible front
+ * @param {object} accessible front
  */
 exports.updateDetails =
   accessible =>

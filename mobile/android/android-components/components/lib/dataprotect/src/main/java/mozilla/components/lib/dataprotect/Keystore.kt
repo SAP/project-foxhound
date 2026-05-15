@@ -4,10 +4,8 @@
 
 package mozilla.components.lib.dataprotect
 
-import android.os.Build.VERSION_CODES.M
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import androidx.annotation.RequiresApi
 import mozilla.components.support.base.log.logger.Logger
 import java.security.GeneralSecurityException
 import java.security.InvalidKeyException
@@ -22,18 +20,14 @@ import javax.crypto.spec.GCMParameterSpec
 private const val KEYSTORE_TYPE = "AndroidKeyStore"
 private const val ENCRYPTED_VERSION = 0x02
 
-@RequiresApi(M)
 internal const val CIPHER_ALG = KeyProperties.KEY_ALGORITHM_AES
 
-@RequiresApi(M)
 internal const val CIPHER_MOD = KeyProperties.BLOCK_MODE_GCM
 
-@RequiresApi(M)
 internal const val CIPHER_PAD = KeyProperties.ENCRYPTION_PADDING_NONE
 internal const val CIPHER_KEY_LEN = 256
 internal const val CIPHER_TAG_LEN = 128
 
-@RequiresApi(M)
 internal const val CIPHER_SPEC = "$CIPHER_ALG/$CIPHER_MOD/$CIPHER_PAD"
 
 internal const val CIPHER_NONCE_LEN = 12
@@ -43,7 +37,6 @@ internal const val CIPHER_NONCE_LEN = 12
  * and instrumenting.
  *
  */
-@RequiresApi(M)
 open class KeyStoreWrapper {
     private var keystore: KeyStore? = null
     private val logger = Logger("KeyStoreWrapper")
@@ -153,7 +146,6 @@ open class KeyStoreWrapper {
  * Unless `manual` is `true`, the key is created if not already present in the
  * platform's key storage.
  */
-@RequiresApi(M)
 open class Keystore(
     val label: String,
     manual: Boolean = false,

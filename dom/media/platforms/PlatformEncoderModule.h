@@ -7,18 +7,18 @@
 #if !defined(PlatformEncoderModule_h_)
 #  define PlatformEncoderModule_h_
 
+#  include "EncoderConfig.h"
 #  include "MP4Decoder.h"
 #  include "MediaCodecsSupport.h"
 #  include "MediaResult.h"
 #  include "VPXDecoder.h"
+#  include "VideoUtils.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/MozPromise.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/TaskQueue.h"
 #  include "mozilla/dom/ImageBitmapBinding.h"
 #  include "nsISupportsImpl.h"
-#  include "VideoUtils.h"
-#  include "EncoderConfig.h"
 
 namespace mozilla {
 
@@ -65,13 +65,6 @@ class MediaDataEncoder {
  public:
   NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 
-  static bool IsVideo(const CodecType aCodec) {
-    return aCodec > CodecType::_BeginVideo_ && aCodec < CodecType::_EndVideo_;
-  }
-  static bool IsAudio(const CodecType aCodec) {
-    return aCodec > CodecType::_BeginAudio_ && aCodec < CodecType::_EndAudio_;
-  }
-
   using InitPromise = MozPromise<bool, MediaResult, /* IsExclusive = */ true>;
   using EncodedData = nsTArray<RefPtr<MediaRawData>>;
   using EncodePromise =
@@ -92,6 +85,17 @@ class MediaDataEncoder {
   // returns will be resolved with already encoded MediaRawData at the moment,
   // or empty when there is none available yet.
   virtual RefPtr<EncodePromise> Encode(const MediaData* aSample) = 0;
+
+  // Inserts a batch of samples into the encoder's encode pipeline. The
+  // EncodePromise it returns will be resolved with already encoded MediaRawData
+  // at the moment, or empty when there is none available yet.
+  virtual RefPtr<EncodePromise> Encode(nsTArray<RefPtr<MediaData>>&& aSamples) {
+    MOZ_ASSERT_UNREACHABLE("Encode samples in a batch is not implemented");
+    return EncodePromise::CreateAndReject(
+        MediaResult(NS_ERROR_NOT_IMPLEMENTED,
+                    "Encode samples in a batch is not implemented"),
+        __func__);
+  }
 
   // Attempt to reconfigure the encoder on the fly. This can fail if the
   // underlying PEM doesn't support this type of reconfiguration.

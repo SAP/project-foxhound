@@ -1,0 +1,6 @@
+---
+root:
+  items:
+    - type: rect
+      bounds: [ 125, 25, 50, 50 ]
+      color: green

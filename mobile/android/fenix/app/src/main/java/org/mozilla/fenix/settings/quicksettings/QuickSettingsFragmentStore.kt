@@ -188,6 +188,14 @@ class QuickSettingsFragmentStore(
                     options = autoplayValues,
                     isVisible = permissionHighlights.isAutoPlayBlocking || permissions !== null,
                 )
+            } else if (this == PhoneFeature.LOCAL_NETWORK_ACCESS || this == PhoneFeature.LOCAL_DEVICE_ACCESS) {
+                WebsitePermission.Toggleable(
+                    phoneFeature = this,
+                    status = getActionLabel(context, permissions, settings),
+                    isVisible = settings.isLnaFeatureEnabled && shouldBeVisible(permissions, settings),
+                    isEnabled = shouldBeEnabled(context, permissions, settings),
+                    isBlockedByAndroid = !isAndroidPermissionGranted(context),
+                )
             } else {
                 WebsitePermission.Toggleable(
                     phoneFeature = this,

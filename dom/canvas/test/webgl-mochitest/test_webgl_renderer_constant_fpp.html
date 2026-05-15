@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>WebGL Renderer Constant with FPP - Renderer should be "Mozilla"</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script>
+/* global SimpleTest SpecialPowers */
+SimpleTest.waitForExplicitFinish();
+document.addEventListener("DOMContentLoaded", async function() {
+  // Enable FPP with WebGLRendererConstant
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.fingerprintingProtection", true],
+      ["privacy.fingerprintingProtection.overrides", "+WebGLRendererConstant"],
+      ["privacy.resistFingerprinting", false]
+    ]
+  });
+
+  let canvas = document.body.appendChild(document.createElement("canvas"));
+  if (!canvas) {
+    SimpleTest.ok(false, "Cannot create canvas");
+    SimpleTest.finish();
+    return;
+  }
+
+  let gl = canvas.getContext("webgl");
+  if (!gl) {
+    SimpleTest.ok(false, "Cannot get WebGL context");
+    SimpleTest.finish();
+    return;
+  }
+
+  // Try to get the WEBGL_debug_renderer_info extension
+  let ext = gl.getExtension("WEBGL_debug_renderer_info");
+  if (!ext) {
+    SimpleTest.ok(false, "WEBGL_debug_renderer_info extension should be available with FPP");
+    SimpleTest.finish();
+    return;
+  }
+
+  // With FPP and WebGLRendererConstant enabled, the renderer should be "Mozilla"
+  let renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+
+  SimpleTest.is(renderer, "Mozilla",
+    "UNMASKED_RENDERER_WEBGL should be 'Mozilla' with WebGLRendererConstant enabled");
+
+  SimpleTest.finish();
+});
+</script>

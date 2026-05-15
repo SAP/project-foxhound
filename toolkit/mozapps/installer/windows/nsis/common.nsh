@@ -1200,93 +1200,6 @@
   !verbose pop
 !macroend
 
-/**
- * Read the value of an installer pref that's been set by the product.
- *
- * @param   _KEY ($R1)
- *          Sub key containing all the installer prefs
- *          Usually "Software\Mozilla\${AppName}"
- * @param   _PREF ($R2)
- *          Name of the pref to look up
- * @return  _RESULT ($R3)
- *          'true' or 'false' (only boolean prefs are supported)
- *          If no value exists for the requested pref, the result is 'false'
- */
-!macro GetInstallerRegistryPref
-  !ifndef ${_MOZFUNC_UN}GetInstallerRegistryPref
-    !verbose push
-    !verbose ${_MOZFUNC_VERBOSE}
-    !define ${_MOZFUNC_UN}GetInstallerRegistryPref "!insertmacro GetInstallerRegistryPrefCall"
-
-    Function ${_MOZFUNC_UN}GetInstallerRegistryPref
-      ; stack: key, pref
-      Exch $R1 ; key, stack: old R1, pref
-      Exch 1   ; stack: pref, old R1
-      Exch $R2 ; pref, stack: old R2, old R1
-      Push $R3
-
-      StrCpy $R3 0
-
-      ; These prefs are always stored in the native registry.
-      SetRegView 64
-
-      ClearErrors
-      ReadRegDWORD $R3 HKCU "$R1\Installer\$AppUserModelID" "$R2"
-
-      SetRegView lastused
-
-      ${IfNot} ${Errors}
-      ${AndIf} $R3 != 0
-        StrCpy $R1 "true"
-      ${Else}
-        StrCpy $R1 "false"
-      ${EndIf}
-
-      ; stack: old R3, old R2, old R1
-      Pop $R3 ; stack: old R2, old R1
-      Pop $R2 ; stack: old R1
-      Exch $R1 ; stack: result
-    FunctionEnd
-
-    !verbose pop
-  !endif
-!macroend
-
-!macro GetInstallerRegistryPrefCall _KEY _PREF _RESULT
-  !verbose push
-  !verbose ${_MOZFUNC_VERBOSE}
-  Push "${_PREF}"
-  Push "${_KEY}"
-  Call GetInstallerRegistryPref
-  Pop ${_RESULT}
-  !verbose pop
-!macroend
-
-!macro un.GetInstallerRegistryPrefCall _KEY _PREF _RESULT
-  !verbose push
-  !verbose ${_MOZFUNC_VERBOSE}
-  Push "${_PREF}"
-  Push "${_KEY}"
-  Call un.GetInstallerRegistryPref
-  Pop ${_RESULT}
-  !verbose pop
-!macroend
-
-!macro un.GetInstallerRegistryPref
-  !ifndef un.GetInstallerRegistryPref
-    !verbose push
-    !verbose ${_MOZFUNC_VERBOSE}
-    !undef _MOZFUNC_UN
-    !define _MOZFUNC_UN "un."
-
-    !insertmacro GetInstallerRegistryPref
-
-    !undef _MOZFUNC_UN
-    !define _MOZFUNC_UN
-    !verbose pop
-  !endif
-!macroend
-
 ################################################################################
 # Macros for adding file and protocol handlers
 
@@ -3556,7 +3469,6 @@
   !ifndef ${_MOZFUNC_UN}CleanMaintenanceServiceLogs
     !define _MOZFUNC_UN_TMP ${_MOZFUNC_UN}
     !insertmacro ${_MOZFUNC_UN_TMP}GetLongPath
-    !insertmacro ${_MOZFUNC_UN_TMP}GetCommonDirectory
     !undef _MOZFUNC_UN
     !define _MOZFUNC_UN ${_MOZFUNC_UN_TMP}
     !undef _MOZFUNC_UN_TMP
@@ -5298,6 +5210,31 @@
   !endif
 !macroend
 
+
+/**
+ * Converts a string whose value is expected to be "true" or "false" into a value of "0" or "1",
+ * copying the result into the variable OUTPUT. If the string is neither "true" nor "false", the
+ * DEFAULT value will be copied to OUTPUT.
+ *
+ * @param   STRING
+ *          A string that is expected to have the value of "true" or "false"
+ * @param   DEFAULT
+ *          The default value that will result if STRING is neither "true" nor "false"
+ * @param   OUTPUT
+ *          The variable where the result of "0", "1", or ${DEFAULT} will be copied
+ */
+!macro StringToBoolean STRING DEFAULT OUTPUT
+  ${If} ${STRING} == "true"
+    StrCpy ${OUTPUT} "1"
+  ${ElseIf} ${STRING} == "false"
+    StrCpy ${OUTPUT} "0"
+  ${Else}
+    StrCpy ${OUTPUT} "${DEFAULT}"
+  ${EndIf}
+!macroend
+!define StringToBoolean "!insertmacro StringToBoolean"
+
+
 /**
  * Reads a flag option from the command line and sets a variable with its state,
  * if the option is present on the command line.
@@ -5439,66 +5376,41 @@
             ${EndIf}
 
             ReadINIStr $R8 $R7 "Install" "DesktopShortcut"
-            ${If} $R8 == "false"
-              StrCpy $AddDesktopSC "0"
-            ${Else}
-              StrCpy $AddDesktopSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddDesktopSC
+
+            !ifdef DESKTOP_LAUNCHER_ENABLED
+            ; If this build does not support desktop launcher installation, ignore the flag that requests it
+            ReadINIStr $R8 $R7 "Install" "DesktopLauncher"
+            ${StringToBoolean} $R8 "0" $AddDesktopLauncher
+            !endif
 
             ReadINIStr $R8 $R7 "Install" "StartMenuShortcuts"
-            ${If} $R8 == "false"
-              StrCpy $AddStartMenuSC "0"
-            ${Else}
-              StrCpy $AddStartMenuSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddStartMenuSC
 
             ; We still accept the plural version for backwards compatibility,
             ; but the singular version takes priority.
             ClearErrors
             ReadINIStr $R8 $R7 "Install" "StartMenuShortcut"
-            ${If} $R8 == "false"
-              StrCpy $AddStartMenuSC "0"
-            ${ElseIfNot} ${Errors}
-              StrCpy $AddStartMenuSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddStartMenuSC
 
             !ifdef MOZ_PRIVATE_BROWSING
               ReadINIStr $R8 $R7 "Install" "PrivateBrowsingShortcut"
-              ${If} $R8 == "false"
-                StrCpy $AddPrivateBrowsingSC "0"
-              ${ElseIfNot} ${Errors}
-                StrCpy $AddPrivateBrowsingSC "1"
-              ${EndIf}
+              ${StringToBoolean} $R8 "1" $AddPrivateBrowsingSC
             !endif
 
             ReadINIStr $R8 $R7 "Install" "TaskbarShortcut"
-            ${If} $R8 == "false"
-              StrCpy $AddTaskbarSC "0"
-            ${Else}
-              StrCpy $AddTaskbarSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddTaskbarSC
 
             ReadINIStr $R8 $R7 "Install" "MaintenanceService"
-            ${If} $R8 == "false"
-              StrCpy $InstallMaintenanceService "0"
-            ${Else}
-              StrCpy $InstallMaintenanceService "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $InstallMaintenanceService
 
             ReadINIStr $R8 $R7 "Install" "RegisterDefaultAgent"
-            ${If} $R8 == "false"
-              StrCpy $RegisterDefaultAgent "0"
-            ${Else}
-              StrCpy $RegisterDefaultAgent "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $RegisterDefaultAgent
+
 
             !ifdef MOZ_OPTIONAL_EXTENSIONS
               ReadINIStr $R8 $R7 "Install" "OptionalExtensions"
-              ${If} $R8 == "false"
-                StrCpy $InstallOptionalExtensions "0"
-              ${Else}
-                StrCpy $InstallOptionalExtensions "1"
-              ${EndIf}
+              ${StringToBoolean} $R8 "1" $InstallOptionalExtensions
             !endif
 
             !ifndef NO_STARTMENU_DIR
@@ -5530,6 +5442,12 @@
         ${EndIf}
 
         ${InstallGetOption} $R8 "DesktopShortcut" $AddDesktopSC
+
+        !ifdef DESKTOP_LAUNCHER_ENABLED
+        ; If this build does not support desktop launcher installation, ignore the flag that requests it
+        ${InstallGetOption} $R8 "DesktopLauncher" $AddDesktopLauncher
+        !endif
+
         ${InstallGetOption} $R8 "StartMenuShortcuts" $AddStartMenuSC
         ; We still accept the plural version for backwards compatibility,
         ; but the singular version takes priority.
@@ -5614,302 +5532,6 @@
   Push "${_WARN_UNSUPPORTED_MSG}"
   Call InstallOnInitCommon
   !verbose pop
-!macroend
-
-/**
- * Called from the uninstaller's .onInit function not to be confused with the
- * installer's .onInit or the uninstaller's un.onInit functions.
- */
-!macro UninstallOnInitCommon
-
-  !ifndef UninstallOnInitCommon
-    !insertmacro ElevateUAC
-    !insertmacro GetLongPath
-    !insertmacro GetOptions
-    !insertmacro GetParameters
-    !insertmacro GetParent
-    !insertmacro UnloadUAC
-    !insertmacro UpdateShortcutAppModelIDs
-    !insertmacro UpdateUninstallLog
-
-    !verbose push
-    !verbose ${_MOZFUNC_VERBOSE}
-    !define UninstallOnInitCommon "!insertmacro UninstallOnInitCommonCall"
-
-    Function UninstallOnInitCommon
-      ; Prevents breaking apps that don't use SetBrandNameVars
-      !ifdef SetBrandNameVars
-        ${SetBrandNameVars} "$EXEDIR\distribution\setup.ini"
-      !endif
-
-      ; Prevent launching the application when a reboot is required and this
-      ; executable is the main application executable
-      IfFileExists "$EXEDIR\${FileMainEXE}.moz-upgrade" +1 +4
-      MessageBox MB_YESNO|MB_ICONEXCLAMATION "$(WARN_RESTART_REQUIRED_UPGRADE)" IDNO +2
-      Reboot
-      Quit ; Nothing initialized so no need to call OnEndCommon
-
-      ${GetParent} "$EXEDIR" $INSTDIR
-      ${GetLongPath} "$INSTDIR" $INSTDIR
-      IfFileExists "$INSTDIR\${FileMainEXE}" +2 +1
-      Quit ; Nothing initialized so no need to call OnEndCommon
-
-!ifmacrodef InitHashAppModelId
-      ; setup the application model id registration value
-      !ifdef AppName
-      ${InitHashAppModelId} "$INSTDIR" "Software\Mozilla\${AppName}\TaskBarIDs"
-      !endif
-!endif
-
-      ; Prevents breaking apps that don't use SetBrandNameVars
-      !ifdef SetBrandNameVars
-        ${SetBrandNameVars} "$INSTDIR\distribution\setup.ini"
-      !endif
-
-      ; Application update uses a directory named tobedeleted in the $INSTDIR to
-      ; delete files on OS reboot when they are in use. Try to delete this
-      ; directory if it exists.
-      ${If} ${FileExists} "$INSTDIR\${TO_BE_DELETED}"
-        RmDir /r "$INSTDIR\${TO_BE_DELETED}"
-      ${EndIf}
-
-      ; Prevent all operations (e.g. set as default, postupdate, etc.) when a
-      ; reboot is required and the executable launched is helper.exe
-      IfFileExists "$INSTDIR\${FileMainEXE}.moz-upgrade" +1 +4
-      MessageBox MB_YESNO|MB_ICONEXCLAMATION "$(WARN_RESTART_REQUIRED_UPGRADE)" IDNO +2
-      Reboot
-      Quit ; Nothing initialized so no need to call OnEndCommon
-
-      !ifdef HAVE_64BIT_BUILD
-        SetRegView 64
-      !endif
-
-      ${GetParameters} $R0
-
-      ${Unless} ${Silent}
-        ; Manually check for /S in the command line due to Bug 506867
-        ClearErrors
-        ${GetOptions} "$R0" "/S" $R2
-        ${Unless} ${Errors}
-          SetSilent silent
-        ${Else}
-          ; Support for the deprecated -ms command line argument.
-          ClearErrors
-          ${GetOptions} "$R0" "-ms" $R2
-          ${Unless} ${Errors}
-            SetSilent silent
-          ${EndUnless}
-        ${EndUnless}
-      ${EndUnless}
-
-      StrCmp "$R0" "" continue +1
-
-      ; Require elevation if the user can elevate
-      hideshortcuts:
-      ClearErrors
-      ${GetOptions} "$R0" "/HideShortcuts" $R2
-      IfErrors showshortcuts +1
-!ifndef NONADMIN_ELEVATE
-      ${ElevateUAC}
-!endif
-      ${HideShortcuts}
-      GoTo finish
-
-      ; Require elevation if the user can elevate
-      showshortcuts:
-      ClearErrors
-      ${GetOptions} "$R0" "/ShowShortcuts" $R2
-      IfErrors defaultappuser +1
-!ifndef NONADMIN_ELEVATE
-      ${ElevateUAC}
-!endif
-      ${ShowShortcuts}
-      GoTo finish
-
-      ; Require elevation if the the StartMenuInternet registry keys require
-      ; updating and the user can elevate
-      defaultappuser:
-      ClearErrors
-      ${GetOptions} "$R0" "/SetAsDefaultAppUser" $R2
-      IfErrors defaultappglobal +1
-      ${SetAsDefaultAppUser}
-      GoTo finish
-
-      ; Require elevation if the user can elevate
-      defaultappglobal:
-      ClearErrors
-      ${GetOptions} "$R0" "/SetAsDefaultAppGlobal" $R2
-      IfErrors postupdate +1
-      ${ElevateUAC}
-      ${SetAsDefaultAppGlobal}
-      GoTo finish
-
-      ; Do not attempt to elevate. The application launching this executable is
-      ; responsible for elevation if it is required.
-      postupdate:
-      ${WordReplace} "$R0" "$\"" "" "+" $R0
-      ClearErrors
-      ${GetOptions} "$R0" "/PostUpdate" $R2
-      IfErrors continue +1
-      ; If the uninstall.log does not exist don't perform post update
-      ; operations. This prevents updating the registry for zip builds.
-      IfFileExists "$EXEDIR\uninstall.log" +2 +1
-      Quit ; Nothing initialized so no need to call OnEndCommon
-      ${PostUpdate}
-      ClearErrors
-      ${GetOptions} "$R0" "/UninstallLog=" $R2
-      IfErrors updateuninstalllog +1
-      StrCmp "$R2" "" finish +1
-      GetFullPathName $R3 "$R2"
-      IfFileExists "$R3" +1 finish
-      Delete "$INSTDIR\uninstall\*wizard*"
-      Delete "$INSTDIR\uninstall\uninstall.log"
-      CopyFiles /SILENT /FILESONLY "$R3" "$INSTDIR\uninstall\"
-      ${GetParent} "$R3" $R4
-      Delete "$R3"
-      RmDir "$R4"
-      GoTo finish
-
-      ; Do not attempt to elevate. The application launching this executable is
-      ; responsible for elevation if it is required.
-      updateuninstalllog:
-      ${UpdateUninstallLog}
-
-      finish:
-      ${UnloadUAC}
-      ${RefreshShellIcons}
-      Quit ; Nothing initialized so no need to call OnEndCommon
-
-      continue:
-
-      ; If the uninstall.log does not exist don't perform uninstall
-      ; operations. This prevents running the uninstaller for zip builds.
-      IfFileExists "$INSTDIR\uninstall\uninstall.log" +2 +1
-      Quit ; Nothing initialized so no need to call OnEndCommon
-
-      ; When silent, try to avoid elevation if we have a chance to succeed.  We
-      ; can succeed when we can write to (hence delete from) the install
-      ; directory and when we can clean up all registry entries.  Now, the
-      ; installer when elevated writes privileged registry entries for the use
-      ; of the Maintenance Service, even when the service is not and will not be
-      ; installed.  (In fact, even when a service installed in the future will
-      ; never update the installation, for example due to not being in a
-      ; privileged location.)  In practice this means we can only truly silently
-      ; remove an unelevated install: an elevated installer writing to an
-      ; unprivileged install directory will still write privileged registry
-      ; entries, requiring an elevated uninstaller to completely clean up.
-      ;
-      ; This avoids a wrinkle, whereby an uninstaller which runs unelevated will
-      ; never itself launch the Maintenance Service uninstaller, because it will
-      ; fail to remove its own service registration (removing the relevant
-      ; registry key would require elevation).  Therefore the check for the
-      ; service being unused will fail, which will prevent running the service
-      ; uninstaller.  That's both subtle and possibly leaves the service
-      ; registration hanging around, which might be a security risk.
-      ;
-      ; That is why we look for a privileged service registration for this
-      ; installation when deciding to elevate, and elevate unconditionally if we
-      ; find one, regardless of the result of the write check that would avoid
-      ; elevation.
-
-      ; The reason for requiring elevation, or "" for not required.
-      StrCpy $R4 ""
-
-      ${IfNot} ${Silent}
-        ; In normal operation, require elevation if the user can elevate so that
-        ; we are most likely to succeed.
-        StrCpy $R4 "not silent"
-      ${EndIf}
-
-      GetTempFileName $R6 "$INSTDIR"
-      FileOpen $R5 "$R6" w
-      FileWrite $R5 "Write Access Test"
-      FileClose $R5
-      Delete $R6
-      ${If} ${Errors}
-        StrCpy $R4 "write"
-      ${EndIf}
-
-      !ifdef MOZ_MAINTENANCE_SERVICE
-        ; We don't necessarily have $MaintCertKey, so use temporary registers.
-        ServicesHelper::PathToUniqueRegistryPath "$INSTDIR"
-        Pop $R5
-
-        ${If} $R5 != ""
-          ; Always use the 64bit registry for certs on 64bit systems.
-          ${If} ${RunningX64}
-          ${OrIf} ${IsNativeARM64}
-            SetRegView 64
-          ${EndIf}
-
-          EnumRegKey $R6 HKLM $R5 0
-          ClearErrors
-
-          ${If} ${RunningX64}
-          ${OrIf} ${IsNativeARM64}
-            SetRegView lastused
-          ${EndIf}
-
-          ${IfNot} "$R6" == ""
-            StrCpy $R4 "mms"
-          ${EndIf}
-        ${EndIf}
-      !endif
-
-      ${If} "$R4" != ""
-        ; In the future, we might not try to elevate to remain truly silent.  Or
-        ; we might add a command line arguments to specify behaviour.  One
-        ; reason to not do that immediately is that we have no great way to
-        ; signal that we exited without taking action.
-        ${ElevateUAC}
-      ${EndIf}
-
-      ; Now we've elevated, try the write access test again.
-      ClearErrors
-      GetTempFileName $R6 "$INSTDIR"
-      FileOpen $R5 "$R6" w
-      FileWrite $R5 "Write Access Test"
-      FileClose $R5
-      Delete $R6
-      ${If} ${Errors}
-        ; Nothing initialized so no need to call OnEndCommon
-        Quit
-      ${EndIf}
-
-      !ifdef MOZ_MAINTENANCE_SERVICE
-        ; And verify that if we need to, we're going to clean up the registry
-        ; correctly.
-        ${If} "$R4" == "mms"
-          WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" "Write Test"
-          ${If} ${Errors}
-            ; Nothing initialized so no need to call OnEndCommon
-            Quit
-          ${Endif}
-          DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
-        ${EndIf}
-      !endif
-
-      ; If we made it this far then this installer is being used as an uninstaller.
-      WriteUninstaller "$EXEDIR\uninstaller.exe"
-
-      ${If} ${Silent}
-        StrCpy $R1 "$\"$EXEDIR\uninstaller.exe$\" /S"
-      ${Else}
-        StrCpy $R1 "$\"$EXEDIR\uninstaller.exe$\""
-      ${EndIf}
-
-      ; When the uninstaller is launched it copies itself to the temp directory
-      ; so it won't be in use so it can delete itself.
-      ExecWait $R1
-      ${DeleteFile} "$EXEDIR\uninstaller.exe"
-      ${UnloadUAC}
-      SetErrorLevel 0
-      Quit ; Nothing initialized so no need to call OnEndCommon
-
-    FunctionEnd
-
-    !verbose pop
-  !endif
 !macroend
 
 !macro UninstallOnInitCommonCall
@@ -6858,11 +6480,6 @@
     !verbose push
     !verbose ${_MOZFUNC_VERBOSE}
     !define LogDesktopShortcut "!insertmacro LogDesktopShortcutCall"
-
-    Function LogDesktopShortcut
-      Call LogShortcut
-    FunctionEnd
-
     !verbose pop
   !endif
 !macroend
@@ -6872,7 +6489,7 @@
   !verbose ${_MOZFUNC_VERBOSE}
   Push "DESKTOP"
   Push "${_FILE_NAME}"
-  Call LogDesktopShortcut
+  Call LogShortcut
   !verbose pop
 !macroend
 
@@ -7468,7 +7085,7 @@
           ${EndIf}
 
           ${If} ${FileExists} "$SMPROGRAMS\$R5"
-            ShellLink::GetShortCutTarget "$SMPROGRAMS\$$R5"
+            ShellLink::GetShortCutTarget "$SMPROGRAMS\$R5"
             Pop $R4
             ${GetLongPath} "$R4" $R4
             ${If} "$R4" == "$R9" ; link path == install path
@@ -7810,8 +7427,8 @@
  * Copy the post-signing data, which was left alongside the installer
  * by the self-extractor stub, into the global location for this data.
  *
- * If the post-signing data file doesn't exist, or is empty, "0" is
- * pushed on the stack, and nothing is copied.
+ * If the post-signing data file doesn't exist, or is empty, an error value 
+ * is pushed on the stack, and nothing is copied.
  * Otherwise the first line of the post-signing data (including newline,
  * if any) is pushed on the stack.
  */
@@ -7825,12 +7442,17 @@
       Push $0   ; Stack: old $0
       Push $1   ; Stack: $1, old $0
 
+      ClearErrors
       ${LineRead} "$EXEDIR\postSigningData" "1" $0
       ${If} ${Errors}
         ClearErrors
-        StrCpy $0 "0"
+        StrCpy $0 "error:lineread"
       ${Else}
         CopyFiles /SILENT "$EXEDIR\postSigningData" "$INSTDIR"
+        ${If} ${Errors}
+          ClearErrors
+          StrCpy $0 "error:copyfile"
+        ${Endif}
       ${Endif}
 
       Pop $1    ; Stack: old $0
@@ -8742,6 +8364,7 @@
   Push $0
   Push $1
   Push $2
+  Push $3
 
   ; Command line
   StrCpy $0 "${CMDLINE}"
@@ -8762,81 +8385,21 @@
   ${If} $0 <> 0
     System::Call "*$2(i . r0, i . r1)"
     ; $0: hProcess, $1: hThread
-    System::Call "user32::WaitForInputIdle(i $0, i 10000)"
+    System::Call "user32::WaitForInputIdle(i $0, i 10000) i . r3"
     System::Call "kernel32::CloseHandle(i $0)"
     System::Call "kernel32::CloseHandle(i $1)"
+    ; WaitForInputIdle returns 0 on success
+    ${If} $3 <> 0
+      SetErrors
+    ${EndIf}
+  ${Else}
+    ; CreateProcessW failed
+    SetErrors
   ${EndIf}
   System::Free $2
 
-  Pop $2
-  Pop $1
-  Pop $0
-!macroend
-
-Function WriteRegQWORD
-          ; Stack contents:
-          ; VALUE, VALUE_NAME, SUBKEY, ROOTKEY
-  Exch $3 ; $3, VALUE_NAME, SUBKEY, ROOTKEY
-  Exch 1  ; VALUE_NAME, $3, SUBKEY, ROOTKEY
-  Exch $2 ; $2, $3, SUBKEY, ROOTKEY
-  Exch 2  ; SUBKEY, $3, $2, ROOTKEY
-  Exch $1 ; $1, $3, $2, ROOTKEY
-  Exch 3  ; ROOTKEY, $3, $2, $1
-  Exch $0 ; $0, $3, $2, $1
-  System::Call "advapi32::RegSetKeyValueW(p r0, w r1, w r2, i 11, *l r3, i 8) i.r0"
-  ${IfNot} $0 = 0
-    SetErrors
-  ${EndIf}
-  Pop $0
   Pop $3
   Pop $2
   Pop $1
-FunctionEnd
-!macro WriteRegQWORD ROOTKEY SUBKEY VALUE_NAME VALUE
-  ${If} "${ROOTKEY}" == "HKCR"
-    Push 0x80000000
-  ${ElseIf} "${ROOTKEY}" == "HKCU"
-    Push 0x80000001
-  ${ElseIf} "${ROOTKEY}" == "HKLM"
-    Push 0x80000002
-  ${Endif}
-  Push "${SUBKEY}"
-  Push "${VALUE_NAME}"
-  System::Int64Op ${VALUE} + 0 ; The result is pushed on the stack
-  Call WriteRegQWORD
+  Pop $0
 !macroend
-!define WriteRegQWORD "!insertmacro WriteRegQWORD"
-
-Function ReadRegQWORD
-          ; Stack contents:
-          ; VALUE_NAME, SUBKEY, ROOTKEY
-  Exch $2 ; $2, SUBKEY, ROOTKEY
-  Exch 1  ; SUBKEY, $2, ROOTKEY
-  Exch $1 ; $1, $2, ROOTKEY
-  Exch 2  ; ROOTKEY, $2, $1
-  Exch $0 ; $0, $2, $1
-  System::Call "advapi32::RegGetValueW(p r0, w r1, w r2, i 0x48, p 0, *l s, *i 8) i.r0"
-  ${IfNot} $0 = 0
-    SetErrors
-  ${EndIf}
-          ; VALUE, $0, $2, $1
-  Exch 3  ; $1, $0, $2, VALUE
-  Pop $1  ; $0, $2, VALUE
-  Pop $0  ; $2, VALUE
-  Pop $2  ; VALUE
-FunctionEnd
-!macro ReadRegQWORD DEST ROOTKEY SUBKEY VALUE_NAME
-  ${If} "${ROOTKEY}" == "HKCR"
-    Push 0x80000000
-  ${ElseIf} "${ROOTKEY}" == "HKCU"
-    Push 0x80000001
-  ${ElseIf} "${ROOTKEY}" == "HKLM"
-    Push 0x80000002
-  ${Endif}
-  Push "${SUBKEY}"
-  Push "${VALUE_NAME}"
-  Call ReadRegQWORD
-  Pop ${DEST}
-!macroend
-!define ReadRegQWORD "!insertmacro ReadRegQWORD"
-

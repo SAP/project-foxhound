@@ -6,18 +6,15 @@
 
 #include "mozilla/dom/SimpleGlobalObject.h"
 
-#include "jsapi.h"
 #include "js/Class.h"
 #include "js/Object.h"  // JS::GetClass, JS::GetObjectISupports, JS::SetObjectISupports
-
+#include "jsapi.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "nsContentUtils.h"
 #include "nsJSPrincipals.h"
 #include "nsThreadUtils.h"
-#include "nsContentUtils.h"
-
 #include "xpcprivate.h"
-
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/NullPrincipal.h"
 
 namespace mozilla::dom {
 

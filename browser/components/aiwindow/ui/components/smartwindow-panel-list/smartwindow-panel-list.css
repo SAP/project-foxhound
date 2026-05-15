@@ -1,0 +1,63 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.smartwindow-panel-list-anchor {
+  height: var(--anchor-height, 0);
+  pointer-events: none;
+  position: absolute;
+  transform: translate(var(--anchor-left, 0), var(--anchor-top, 0));
+  visibility: hidden;
+  width: var(--anchor-width, 0);
+}
+
+panel-list {
+  --panel-list-border-radius: var(--space-medium);
+  --panel-list-background-color: light-dark(color-mix(in srgb, var(--color-violet-30) 5%, white), var(--color-violet-110));
+  --panel-list-border-color: light-dark(var(--color-purple-20), var(--color-gray-70));
+  --panel-list-box-shadow: var(--box-shadow-level-3);
+  --panel-list-color: light-dark(var(--color-violet-110), var(--color-violet-0));
+  --panel-max-width: 392px;
+  --panel-section-header-color: var(--text-color-deemphasized);
+  --panel-section-header-font-size: var(--font-size-small);
+  --panel-item-padding: calc(var(--size-item-small) / 2);
+  --panel-item-icon-size: var(--icon-size-small);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: var(--panel-max-width);
+  white-space: normal;
+}
+
+panel-item.panel-section-header::part(button) {
+  color: var(--panel-section-header-color);
+  font-size: var(--panel-section-header-font-size);
+  opacity: 1;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding: var(--panel-item-padding);
+}
+
+panel-item:not(.panel-section-header)::part(button) {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding: var(--panel-item-padding);
+}
+
+panel-item[icon]::part(button) {
+  background-image: var(--panel-item-icon-url);
+  background-size: var(--panel-item-icon-size);
+  background-repeat: no-repeat;
+  background-position: var(--panel-item-padding) center;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-inline-start: calc(var(--panel-item-padding) + var(--panel-item-icon-size) + var(--panel-item-padding));
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+panel-item[icon]::part(button):dir(rtl) {
+  background-position-x: right var(--panel-item-padding);
+}
+
+panel-item::part(label) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

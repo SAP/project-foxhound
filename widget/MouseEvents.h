@@ -3,15 +3,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_MouseEvents_h__
-#define mozilla_MouseEvents_h__
+#ifndef mozilla_MouseEvents_h_
+#define mozilla_MouseEvents_h_
 
 #include <stdint.h>
 #include <math.h>
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/ipc/IPCForwards.h"
@@ -44,10 +46,20 @@ class WidgetPointerEventHolder final {
 
 class WidgetPointerHelper {
  public:
+  struct Tilt {
+    int32_t mX = 0;
+    int32_t mY = 0;
+  };
+
+  struct Angle {
+    double mAltitude = 0.0;
+    double mAzimuth = 0.0;
+  };
+
   uint32_t pointerId = 0;
-  int32_t tiltX = 0;
-  int32_t tiltY = 0;
+  Maybe<Tilt> mTilt;
   int32_t twist = 0;
+  Maybe<Angle> mAngle;
   float tangentialPressure = 0.0f;
   bool convertToPointer = true;
   // When convertToPointerRawUpdate is set to true, the event or the touch may
@@ -63,11 +75,14 @@ class WidgetPointerHelper {
   WidgetPointerHelper(uint32_t aPointerId, uint32_t aTiltX, uint32_t aTiltY,
                       uint32_t aTwist = 0, float aTangentialPressure = 0)
       : pointerId(aPointerId),
-        tiltX(aTiltX),
-        tiltY(aTiltY),
+        mTilt(Some(
+            Tilt{static_cast<int32_t>(aTiltX), static_cast<int32_t>(aTiltY)})),
         twist(aTwist),
         tangentialPressure(aTangentialPressure),
-        convertToPointer(true) {}
+        convertToPointer(true) {
+    MOZ_ASSERT(aTiltX <= INT32_MAX);
+    MOZ_ASSERT(aTiltY <= INT32_MAX);
+  }
 
   explicit WidgetPointerHelper(const WidgetPointerHelper& aHelper) = default;
 
@@ -89,14 +104,48 @@ class WidgetPointerHelper {
   constexpr static double GetDefaultAzimuthAngle() { return 0.0; }
 
   double ComputeAltitudeAngle() const {
-    return ComputeAltitudeAngle(tiltX, tiltY);
+    if (mAngle.isSome()) {
+      return mAngle->mAltitude;
+    }
+    if (mTilt.isSome()) {
+      return ComputeAltitudeAngle(mTilt->mX, mTilt->mY);
+    }
+    return GetDefaultAltitudeAngle();
   }
   double ComputeAzimuthAngle() const {
-    return ComputeAzimuthAngle(tiltX, tiltY);
+    if (mAngle.isSome()) {
+      return mAngle->mAzimuth;
+    }
+    if (mTilt.isSome()) {
+      return ComputeAzimuthAngle(mTilt->mX, mTilt->mY);
+    }
+    return GetDefaultAzimuthAngle();
   }
 
   static double ComputeAltitudeAngle(int32_t aTiltX, int32_t aTiltY);
   static double ComputeAzimuthAngle(int32_t aTiltX, int32_t aTiltY);
+
+  constexpr static int32_t GetDefaultTiltX() { return 0; }
+  constexpr static int32_t GetDefaultTiltY() { return 0; }
+
+  int32_t ComputeTiltX() const {
+    if (mTilt.isSome()) {
+      return mTilt->mX;
+    }
+    if (mAngle.isSome()) {
+      return ComputeTiltX(mAngle->mAltitude, mAngle->mAzimuth);
+    }
+    return GetDefaultTiltX();
+  }
+  int32_t ComputeTiltY() const {
+    if (mTilt.isSome()) {
+      return mTilt->mY;
+    }
+    if (mAngle.isSome()) {
+      return ComputeTiltY(mAngle->mAltitude, mAngle->mAzimuth);
+    }
+    return GetDefaultTiltY();
+  }
 
   static double ComputeTiltX(double aAltitudeAngle, double aAzimuthAngle);
   static double ComputeTiltY(double aAltitudeAngle, double aAzimuthAngle);
@@ -104,8 +153,7 @@ class WidgetPointerHelper {
   void AssignPointerHelperData(const WidgetPointerHelper& aEvent,
                                bool aCopyCoalescedEvents = false) {
     pointerId = aEvent.pointerId;
-    tiltX = aEvent.tiltX;
-    tiltY = aEvent.tiltY;
+    mTilt = aEvent.mTilt;
     twist = aEvent.twist;
     tangentialPressure = aEvent.tangentialPressure;
     convertToPointer = aEvent.convertToPointer;
@@ -288,18 +336,11 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
   ALLOW_DEPRECATED_READPARAM
 
  public:
-  typedef bool ReasonType;
-  enum Reason : ReasonType { eReal, eSynthesized };
+  enum Reason : bool { eReal, eSynthesized };
 
-  typedef uint8_t ContextMenuTriggerType;
-  enum ContextMenuTrigger : ContextMenuTriggerType {
-    eNormal,
-    eContextMenuKey,
-    eControlClick
-  };
+  enum ContextMenuTrigger : uint8_t { eNormal, eContextMenuKey, eControlClick };
 
-  typedef uint8_t ExitFromType;
-  enum ExitFrom : ExitFromType {
+  enum ExitFrom : uint8_t {
     ePlatformChild,
     ePlatformTopLevel,
     ePuppet,
@@ -338,6 +379,11 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
       mButton = (mContextMenuTrigger == eNormal) ? MouseButton::eSecondary
                                                  : MouseButton::ePrimary;
     }
+  }
+
+  WidgetMouseEvent(const WidgetMouseEvent& aEvent)
+      : WidgetMouseEventBase(aEvent), WidgetPointerHelper(aEvent) {
+    AssignMouseEventDataOnly(aEvent);
   }
 
 #ifdef DEBUG
@@ -399,10 +445,23 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
   // This will be available for popupshowing event only.
   RefPtr<dom::Event> mTriggerEvent;
 
-  void AssignMouseEventData(const WidgetMouseEvent& aEvent, bool aCopyTargets) {
-    AssignMouseEventBaseData(aEvent, aCopyTargets);
-    AssignPointerHelperData(aEvent, /* aCopyCoalescedEvents */ true);
+  /**
+   * An optional identifier for the callback associated with this wheel event.
+   * This ID is used to reference a specific callback for a synthesized event,
+   * if one is present. If no callback is associated, this value will be empty.
+   */
+  Maybe<uint64_t> mCallbackId;
 
+  void AssignMouseEventData(const WidgetMouseEvent& aEvent, bool aCopyTargets,
+                            bool aCopyCoalescedEvents = true) {
+    AssignMouseEventBaseData(aEvent, aCopyTargets);
+    AssignPointerHelperData(aEvent, aCopyCoalescedEvents);
+    AssignMouseEventDataOnly(aEvent);
+  }
+
+  void AssignMouseEventDataOnly(const WidgetMouseEvent& aEvent) {
+    // NOTE: Intentionally not copying mClickTarget, it should only be used by
+    //       the original mouseup event to dispatch the click event.
     mReason = aEvent.mReason;
     mContextMenuTrigger = aEvent.mContextMenuTrigger;
     mExitFrom = aEvent.mExitFrom;
@@ -410,7 +469,12 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
     mIgnoreRootScrollFrame = aEvent.mIgnoreRootScrollFrame;
     mIgnoreCapturingContent = aEvent.mIgnoreCapturingContent;
     mClickEventPrevented = aEvent.mClickEventPrevented;
+    // NOTE: Intentionally not copying mSynthesizeMoveAfterDispatch, it should
+    //       only be used by the original event to check whether we need to
+    //       synthesize an additional mousemove or pointermove event.
     mTriggerEvent = aEvent.mTriggerEvent;
+    // NOTE: Intentionally not copying mCallbackId, it should only be tracked by
+    //       the original event or propagated to the cross-process event.
   }
 
   /**
@@ -437,6 +501,10 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
    */
   static bool IsMiddleClickPasteEnabled();
 };
+
+// Used for logging WidgetMouseEvent::IsReal() (or
+// !WidgetMouseEvent::IsSynthesized())
+MOZ_DEFINE_BOOL_PRETTY_PRINTER(RealOrSynthesized, Real, Synthesized);
 
 /******************************************************************************
  * mozilla::WidgetDragEvent
@@ -892,8 +960,9 @@ class WidgetPointerEvent : public WidgetMouseEvent {
 
   // XXX Not tested by test_assign_event_data.html
   void AssignPointerEventData(const WidgetPointerEvent& aEvent,
-                              bool aCopyTargets) {
-    AssignMouseEventData(aEvent, aCopyTargets);
+                              bool aCopyTargets,
+                              bool aCopyCoalescedEvents = true) {
+    AssignMouseEventData(aEvent, aCopyTargets, aCopyCoalescedEvents);
 
     mWidth = aEvent.mWidth;
     mHeight = aEvent.mHeight;
@@ -904,4 +973,4 @@ class WidgetPointerEvent : public WidgetMouseEvent {
 
 }  // namespace mozilla
 
-#endif  // mozilla_MouseEvents_h__
+#endif  // mozilla_MouseEvents_h_

@@ -4,6 +4,7 @@
 
 package org.mozilla.focus.settings
 
+import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.fetch.Client
 import mozilla.components.concept.fetch.Request
 import mozilla.components.concept.fetch.Response
@@ -19,8 +20,6 @@ import org.mozilla.focus.settings.ManualAddSearchEngineSettingsFragment.Companio
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
-// This unit test is not running on an Android device. Allow me to use spaces in function names.
-@Suppress("IllegalIdentifier")
 class SearchEngineValidationTest {
 
     lateinit var client: Client
@@ -31,37 +30,51 @@ class SearchEngineValidationTest {
     }
 
     @Test
-    fun `URL returning 200 OK is valid`() = withMockWebServer(responseWithStatus(200)) {
-        assertTrue(isValidSearchQueryURL(client, it.rootUrl()))
+    fun `URL returning 200 OK is valid`() = runTest {
+        withMockWebServer(responseWithStatus(200)) {
+            val result = isValidSearchQueryURL(client, it.rootUrl())
+            assertTrue(result)
+        }
     }
 
     @Test
-    fun `URL using HTTP redirect is invalid`() = withMockWebServer(responseWithStatus(301)) {
-        // We now follow redirects(Issue #1976). This test now asserts false.
-        assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+    fun `URL using HTTP redirect is invalid`() = runTest {
+        withMockWebServer(responseWithStatus(301)) {
+            // We now follow redirects(Issue #1976). This test now asserts false.
+            assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+        }
     }
 
     @Test
-    fun `URL returning 404 NOT FOUND is not valid`() = withMockWebServer(responseWithStatus(404)) {
-        assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+    fun `URL returning 404 NOT FOUND is not valid`() = runTest {
+        withMockWebServer(responseWithStatus(404)) {
+            assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+        }
     }
 
     @Test
-    fun `URL returning server error is not valid`() = withMockWebServer(responseWithStatus(500)) {
-        assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+    fun `URL returning server error is not valid`() = runTest {
+        withMockWebServer(responseWithStatus(500)) {
+            assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+        }
     }
 
     @Test
-    fun `URL timing out is not valid`() = withMockWebServer {
-        // Without queuing a response MockWebServer will not return anything and keep the connection open
-        assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+    fun `URL timing out is not valid`() = runTest {
+        withMockWebServer {
+            // Without queuing a response MockWebServer will not return anything and keep the connection open
+            assertFalse(isValidSearchQueryURL(client, it.rootUrl()))
+        }
     }
 }
 
 /**
  * Helper for creating a test that uses a mock webserver instance.
  */
-private fun withMockWebServer(vararg responses: MockResponse, block: (MockWebServer) -> Unit) {
+private suspend fun withMockWebServer(
+    vararg responses: MockResponse,
+    block: suspend (MockWebServer) -> Unit,
+) {
     val server = MockWebServer()
 
     responses.forEach { server.enqueue(it) }

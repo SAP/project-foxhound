@@ -28,6 +28,13 @@ nsServerTiming::GetDescription(nsACString& aDescription) {
   return NS_OK;
 }
 
+size_t nsServerTiming::SizeOfIncludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) {
+  return aMallocSizeOf(this) +
+         mName.SizeOfExcludingThisIfUnshared(aMallocSizeOf) +
+         mDescription.SizeOfExcludingThisIfUnshared(aMallocSizeOf);
+}
+
 namespace mozilla {
 namespace net {
 

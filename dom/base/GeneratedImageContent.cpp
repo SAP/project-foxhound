@@ -6,12 +6,12 @@
 
 #include "mozilla/dom/GeneratedImageContent.h"
 
-#include "nsContentCreatorFunctions.h"
-#include "nsGkAtoms.h"
 #include "mozilla/dom/Document.h"
-#include "nsNodeInfoManager.h"
 #include "mozilla/dom/HTMLElementBinding.h"
 #include "mozilla/dom/NameSpaceConstants.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsGkAtoms.h"
+#include "nsNodeInfoManager.h"
 
 namespace mozilla::dom {
 

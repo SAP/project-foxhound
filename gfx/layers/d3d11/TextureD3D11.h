@@ -64,16 +64,12 @@ class D3D11TextureData final : public TextureData {
                                   gfx::SurfaceFormat aFormat,
                                   TextureAllocationFlags aAllocFlags,
                                   ID3D11Device* aDevice = nullptr);
-  static D3D11TextureData* Create(gfx::SourceSurface* aSurface,
-                                  TextureAllocationFlags aAllocFlags,
-                                  ID3D11Device* aDevice = nullptr);
 
   static already_AddRefed<TextureClient> CreateTextureClient(
       ID3D11Texture2D* aTexture, uint32_t aIndex, gfx::IntSize aSize,
       gfx::SurfaceFormat aFormat, gfx::ColorSpace2 aColorSpace,
       gfx::ColorRange aColorRange, KnowsCompositor* aKnowsCompositor,
-      RefPtr<ZeroCopyUsageInfo> aUsageInfo,
-      const RefPtr<FenceD3D11> aWriteFence);
+      ZeroCopyUsageInfo* aUsageInfo, const RefPtr<FenceD3D11> aWriteFence);
 
   virtual ~D3D11TextureData();
 
@@ -135,8 +131,6 @@ class D3D11TextureData final : public TextureData {
                    const RefPtr<FenceD3D11> aWriteFence,
                    TextureAllocationFlags aFlags);
 
-  bool PrepareDrawTargetInLock(OpenMode aMode);
-
   friend class gl::GLBlitHelper;
   bool SerializeSpecific(SurfaceDescriptorD3D10* aOutDesc);
 
@@ -145,10 +139,6 @@ class D3D11TextureData final : public TextureData {
                                   gfx::SourceSurface* aSurface,
                                   TextureAllocationFlags aAllocFlags,
                                   ID3D11Device* aDevice = nullptr);
-
-  // Hold on to the DrawTarget because it is expensive to create one each
-  // ::Lock.
-  RefPtr<gfx::DrawTarget> mDrawTarget;
 
  public:
   const gfx::IntSize mSize;
@@ -378,8 +368,7 @@ class DXGITextureHostD3D11 : public TextureHost {
 
   // Return DataSourceSurface using aDevice withou readback to CPU.
   already_AddRefed<gfx::DataSourceSurface> GetAsSurfaceWithDevice(
-      ID3D11Device* const aDevice,
-      DataMutex<RefPtr<VideoProcessorD3D11>>& aVideoProcessorD3D11);
+      ID3D11Device* const aDevice);
 
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
@@ -401,6 +390,10 @@ class DXGITextureHostD3D11 : public TextureHost {
 
   DXGITextureHostD3D11* AsDXGITextureHostD3D11() override { return this; }
 
+  void NotifyNotUsed() override;
+
+  void SetReadFence(Fence* aReadFence) override;
+
   const RefPtr<gfx::FileHandleWrapper> mHandle;
   const Maybe<GpuProcessTextureId> mGpuProcessTextureId;
   const uint32_t mArrayIndex;
@@ -410,6 +403,9 @@ class DXGITextureHostD3D11 : public TextureHost {
   const Maybe<CompositeProcessFencesHolderId> mFencesHolderId;
   const gfx::ColorSpace2 mColorSpace;
   const gfx::ColorRange mColorRange;
+
+ protected:
+  RefPtr<FenceD3D11> mReadFence;
 };
 
 class DXGIYCbCrTextureHostD3D11 : public TextureHost {
@@ -461,8 +457,11 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
     return this;
   }
 
-  void SetReadFence(RefPtr<FenceD3D11> aReadFence);
+  void SetReadFence(Fence* aReadFence) override;
 
+  // Handles will be closed automatically when `UniqueFileHandle` gets
+  // destroyed.
+  const RefPtr<gfx::FileHandleWrapper> mHandles[3];
   const gfx::IntSize mSize;
   const gfx::IntSize mSizeY;
   const gfx::IntSize mSizeCbCr;
@@ -472,9 +471,6 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
   const CompositeProcessFencesHolderId mFencesHolderId;
 
  protected:
-  // Handles will be closed automatically when `UniqueFileHandle` gets
-  // destroyed.
-  RefPtr<gfx::FileHandleWrapper> mHandles[3];
   bool mIsLocked = false;
   RefPtr<FenceD3D11> mReadFence;
 };

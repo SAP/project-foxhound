@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import org.junit.Ignore
 import org.junit.Rule
@@ -24,7 +25,12 @@ import org.mozilla.fenix.ui.robots.navigationToolbar
 @Ignore("Disabled feature in: https://bugzilla.mozilla.org/show_bug.cgi?id=1940418")
 class CookieBannerBlockerTest : TestSetup() {
     @get:Rule
-    val activityTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true)
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(
+                skipOnboarding = true,
+            ),
+        ) { it.activity }
 
     @get:Rule
     val memoryLeaksRule = DetectMemoryLeaksRule()
@@ -34,9 +40,9 @@ class CookieBannerBlockerTest : TestSetup() {
     @Test
     fun verifyCookieBannerBlockerSettingsOptionTest() {
         runWithCondition(appContext.settings().shouldUseCookieBannerPrivateMode) {
-            homeScreen {
+            homeScreen(composeTestRule) {
             }.openThreeDotMenu {
-            }.openSettings {
+            }.clickSettingsButton {
                 verifyCookieBannerBlockerButton(enabled = true)
             }
         }
@@ -47,10 +53,10 @@ class CookieBannerBlockerTest : TestSetup() {
     @Test
     fun verifyCFRAfterBlockingTheCookieBanner() {
         runWithCondition(appContext.settings().shouldUseCookieBannerPrivateMode) {
-            homeScreen {
+            homeScreen(composeTestRule) {
             }.togglePrivateBrowsingMode()
 
-            navigationToolbar {
+            navigationToolbar(composeTestRule) {
             }.enterURLAndEnterToBrowser("materiel.net".toUri()) {
                 verifyCookieBannerExists(exists = false)
                 verifyCookieBannerBlockerCFRExists(exists = true)

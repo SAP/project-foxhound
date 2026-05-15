@@ -12,7 +12,7 @@
 
 body {
   border: 1px solid ThreeDShadow;
-  border-radius: 10px;
+  border-radius: var(--border-radius-medium);
   padding: 3em;
   min-width: 30em;
   max-width: 65em;

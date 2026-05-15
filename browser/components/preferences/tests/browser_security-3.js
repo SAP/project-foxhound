@@ -62,7 +62,7 @@ add_task(async function () {
   let checkbox = doc.getElementById("enableSafeBrowsing");
   checkbox.scrollIntoView();
   EventUtils.synthesizeMouseAtCenter(
-    checkbox,
+    checkbox.inputEl,
     {},
     gBrowser.selectedBrowser.contentWindow
   );
@@ -79,7 +79,7 @@ add_task(async function () {
   );
 
   EventUtils.synthesizeMouseAtCenter(
-    checkbox,
+    checkbox.inputEl,
     {},
     gBrowser.selectedBrowser.contentWindow
   );
@@ -105,7 +105,7 @@ add_task(async function () {
   checkbox = doc.getElementById("blockDownloads");
   checkbox.scrollIntoView();
   EventUtils.synthesizeMouseAtCenter(
-    checkbox,
+    checkbox.inputEl,
     {},
     gBrowser.selectedBrowser.contentWindow
   );
@@ -117,7 +117,7 @@ add_task(async function () {
   );
 
   EventUtils.synthesizeMouseAtCenter(
-    checkbox,
+    checkbox.inputEl,
     {},
     gBrowser.selectedBrowser.contentWindow
   );

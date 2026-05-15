@@ -7,6 +7,7 @@
 #include "mozilla/dom/cache/StreamList.h"
 
 #include <algorithm>
+
 #include "mozilla/dom/cache/CacheStreamControlParent.h"
 #include "mozilla/dom/cache/Context.h"
 #include "mozilla/dom/cache/Manager.h"

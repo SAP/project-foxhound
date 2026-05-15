@@ -7,6 +7,7 @@
 #ifndef mozilla_PostTraversalTask_h
 #define mozilla_PostTraversalTask_h
 
+#include "nsString.h"
 #include "nscore.h"
 
 /* a task to be performed immediately after a Servo traversal */
@@ -14,6 +15,7 @@
 namespace mozilla {
 class ServoStyleSet;
 namespace dom {
+enum class FontFaceLoadedRejectReason : uint8_t;
 class FontFace;
 class FontFaceSet;
 class FontFaceSetImpl;
@@ -43,11 +45,13 @@ class PostTraversalTask {
     return task;
   }
 
-  static PostTraversalTask RejectFontFaceLoadedPromise(dom::FontFace* aFontFace,
-                                                       nsresult aResult) {
+  static PostTraversalTask RejectFontFaceLoadedPromise(
+      dom::FontFace* aFontFace, dom::FontFaceLoadedRejectReason aReason,
+      nsCString&& aMessage) {
     auto task = PostTraversalTask(Type::ResolveFontFaceLoadedPromise);
     task.mTarget = aFontFace;
-    task.mResult = aResult;
+    task.mResult.emplace(aReason);
+    task.mMessage = std::move(aMessage);
     return task;
   }
 
@@ -96,7 +100,7 @@ class PostTraversalTask {
     ResolveFontFaceLoadedPromise,
 
     // mTarget (FontFace*)
-    // mResult
+    // mResult / mMessage
     RejectFontFaceLoadedPromise,
 
     // mTarget (FontFaceSet*)
@@ -115,12 +119,12 @@ class PostTraversalTask {
     FontInfoUpdate,
   };
 
-  explicit PostTraversalTask(Type aType)
-      : mType(aType), mTarget(nullptr), mResult(NS_OK) {}
+  explicit PostTraversalTask(Type aType) : mType(aType) {}
 
-  Type mType;
-  void* mTarget;
-  nsresult mResult;
+  const Type mType;
+  void* mTarget = nullptr;
+  nsCString mMessage;
+  Maybe<dom::FontFaceLoadedRejectReason> mResult;
 };
 
 }  // namespace mozilla

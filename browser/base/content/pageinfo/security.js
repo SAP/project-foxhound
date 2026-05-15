@@ -92,7 +92,7 @@ var security = {
     if (secInfo.succeededCertChain.length) {
       certChainArray = secInfo.succeededCertChain;
     } else {
-      certChainArray = secInfo.failedCertChain;
+      certChainArray = secInfo.handshakeCertificates;
     }
 
     retval = {

@@ -7,13 +7,14 @@
 #ifndef DOM_SVG_SVGANIMATEDVIEWBOX_H_
 #define DOM_SVG_SVGANIMATEDVIEWBOX_H_
 
+#include <memory>
+
+#include "SVGAttrTearoffTable.h"
+#include "mozilla/SMILAttr.h"
+#include "mozilla/dom/SVGAnimatedRect.h"
+#include "mozilla/gfx/Point.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
-#include "SVGAttrTearoffTable.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/dom/SVGAnimatedRect.h"
 
 namespace mozilla {
 
@@ -38,6 +39,30 @@ struct SVGViewBox {
     return SVGViewBox(x * m, y * m, width * m, height * m);
   }
 
+  gfx::Size Size() const { return gfx::Size(width, height); }
+
+  bool IsFinite() const {
+    if (none) {
+      return true;
+    }
+    return std::isfinite(x) && std::isfinite(y) && std::isfinite(width) &&
+           std::isfinite(height);
+  }
+
+  bool IsEmpty() const { return !none && (width <= .0f || height <= .0f); }
+
+  bool IsValid() const { return IsFinite() && !IsEmpty(); }
+
+  friend std::ostream& operator<<(std::ostream& stream,
+                                  const SVGViewBox& aViewBox) {
+    if (aViewBox.none) {
+      return stream << "(none)";
+    }
+    return stream << "(x=" << aViewBox.x << ", y=" << aViewBox.y
+                  << ", w=" << aViewBox.width << ", h=" << aViewBox.height
+                  << ')';
+  }
+
   static nsresult FromString(const nsAString& aStr, SVGViewBox* aViewBox);
 };
 
@@ -49,7 +74,7 @@ class SVGAnimatedViewBox {
   SVGAnimatedViewBox& operator=(const SVGAnimatedViewBox& aOther) {
     mBaseVal = aOther.mBaseVal;
     if (aOther.mAnimVal) {
-      mAnimVal = MakeUnique<SVGViewBox>(*aOther.mAnimVal);
+      mAnimVal = std::make_unique<SVGViewBox>(*aOther.mAnimVal);
     }
     mHasBaseVal = aOther.mHasBaseVal;
     return *this;
@@ -72,14 +97,26 @@ class SVGAnimatedViewBox {
    */
   bool IsExplicitlySet() const {
     if (mAnimVal || mHasBaseVal) {
-      const SVGViewBox& rect = GetAnimValue();
-      return rect.none || (rect.width >= 0 && rect.height >= 0);
+      return GetAnimValue().IsValid();
     }
     return false;
   }
 
   const SVGViewBox& GetBaseValue() const { return mBaseVal; }
-  void SetBaseValue(const SVGViewBox& aRect, SVGElement* aSVGElement);
+  void SetBaseX(float aX, SVGElement* aSVGElement) {
+    SetBaseField(aX, aSVGElement, mBaseVal.x);
+  }
+  void SetBaseY(float aY, SVGElement* aSVGElement) {
+    SetBaseField(aY, aSVGElement, mBaseVal.y);
+  }
+  void SetBaseWidth(float aWidth, SVGElement* aSVGElement) {
+    SetBaseField(aWidth, aSVGElement, mBaseVal.width);
+  }
+  void SetBaseHeight(float aHeight, SVGElement* aSVGElement) {
+    SetBaseField(aHeight, aSVGElement, mBaseVal.height);
+  }
+  void SetBaseValue(const SVGViewBox& aRect, SVGElement* aSVGElement,
+                    bool aDoSetAttr);
   const SVGViewBox& GetAnimValue() const {
     return mAnimVal ? *mAnimVal : mBaseVal;
   }
@@ -96,11 +133,13 @@ class SVGAnimatedViewBox {
 
   already_AddRefed<dom::SVGRect> ToDOMAnimVal(SVGElement* aSVGElement);
 
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
+  void SetBaseField(float aHeight, SVGElement* aSVGElement, float& aElement);
+
+  std::unique_ptr<SVGViewBox> mAnimVal;
   SVGViewBox mBaseVal;
-  UniquePtr<SVGViewBox> mAnimVal;
   bool mHasBaseVal;
 
  public:

@@ -8,6 +8,9 @@
 newtab-page-title = Iccer amaynut
 newtab-settings-button =
     .title = Sagen asebter n yiccer-ik amaynut
+newtab-customize-panel-icon-button =
+    .title = Sagen asebter-a
+newtab-customize-panel-icon-button-label = Sagen
 newtab-personalize-settings-icon-label =
     .title = Sagen iccer amaynut
     .aria-label = Iɣewwaren
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Anegzum amaynut
 newtab-topsites-edit-topsites-header = Ẓreg asmel ifazen
 newtab-topsites-edit-shortcut-header = Ẓreg anegzum
 newtab-topsites-add-shortcut-label = Rnu anegzum
+newtab-topsites-add-shortcut-title =
+    .title = Rnu anegzum
+    .aria-label = Rnu anegzum
 newtab-topsites-title-label = Azwel
 newtab-topsites-title-input =
     .placeholder = Sekcem azwel
@@ -297,13 +303,26 @@ newtab-custom-row-selector =
 newtab-custom-sponsored-sites = Inegzumen yettwarefden
 newtab-custom-pocket-title = yettuwelleh-d sɣur { -pocket-brand-name }
 newtab-custom-pocket-subtitle = Agbur ufrin i s-yettusuddsen sɣur { -pocket-brand-name }, d aḥric seg twacult { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Tiqsiḍin
 newtab-custom-pocket-sponsored = Tiqṣidin yettwarefden
 newtab-custom-pocket-show-recent-saves = Sken iseklas akk ineggura
 newtab-custom-recent-title = Armud n melmi kan
 newtab-custom-recent-subtitle = Tafrant n yismal d ugbur n melmi kan
-newtab-custom-recent-toggle =
-    .label = Armud n melmi kan
-    .description = Tafrant n yismal d ugbur n melmi kan
+newtab-custom-widget-weather-toggle =
+    .label = Tagnawt
+newtab-custom-widget-lists-toggle =
+    .label = Tibdarin
+newtab-custom-widget-timer-toggle =
+    .label = Amakud
+newtab-custom-widget-section-title = Iwiǧiten
+newtab-custom-widget-section-toggle =
+    .label = Iwiǧiten
+newtab-widget-manage-title = Iwiǧiten
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Mdel
+    .aria-label = Mdel umuɣ
 newtab-custom-close-button = Mdel
 newtab-custom-settings = Sefrek ugar n yiɣewwaṛen
 
@@ -340,7 +359,7 @@ newtab-wallpaper-brown = Aqehwi
 
 newtab-wallpaper-category-title-abstract = Amadwan
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Tiwlafin
 newtab-wallpaper-white-mountains = Idurar imellalen
@@ -358,9 +377,6 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
-## Celestial
-
-
 ## New Tab Weather
 
 # Variables:
@@ -370,7 +386,6 @@ newtab-weather-menu-change-location = Ẓreg adig
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Adig n unadi
     .aria-label = Adig n unadi
-newtab-weather-change-location-search-input = Adig n unadi
 newtab-weather-menu-weather-display = Askan n tegnawt
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -384,12 +399,17 @@ newtab-weather-menu-temperature-option-celsius = Celsius
 newtab-weather-menu-change-temperature-units-fahrenheit = Beddel ɣer Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Beddel ɣer Celsius
 newtab-weather-menu-learn-more = Issin ugar
+newtab-weather-opt-in-not-now =
+    .label = Mačči tura
+newtab-weather-opt-in-yes =
+    .label = Ih
 
 ## Topic Labels
 
 newtab-topic-label-business = Amahil
 newtab-topic-label-career = Axeddim
 newtab-topic-label-education = Aselmed
+newtab-topic-label-arts = Asedhu
 newtab-topic-label-food = Tuččit
 newtab-topic-label-health = Tazmert
 newtab-topic-label-hobbies = Uraren
@@ -448,23 +468,74 @@ newtab-section-mangage-topics-blocked-topics = Iwḥel
 newtab-section-mangage-topics-blocked-topics-empty-state = Ur tesweḥleḍ ula d yiwen usentel akka ar tura.
 newtab-custom-wallpaper-cta = Ɛreḍ-it
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-cta = Ɛreḍ-it tura
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Sader { -brand-product-name } i uziraz
 newtab-download-mobile-highlight-image =
     .aria-label = Tangalt QR i usader n { -brand-product-name } i uziraz
 
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Ayɣer i d-tuzneḍ aneqqis ɣef waya?
+newtab-report-ads-reason-not-interested =
+    .label = Ur d-cliɛeɣ ara
 newtab-report-content-wrong-category =
     .label = Yir taggayt
+newtab-report-content-outdated =
+    .label = Aqbuṛ
 newtab-report-cancel = Sefsex
 newtab-report-submit = Azen
+newtab-toast-thanks-for-reporting =
+    .message = Tanemmirt imi d-temliḍ aya:
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Amaynut
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Yemmed ({ $number })
+newtab-widget-task-list-menu-copy = Nɣel
+newtab-widget-lists-menu-edit = Ẓreg isem tabdart
+newtab-widget-lists-menu-create = Rnu tabdart tamaynut
+newtab-widget-lists-menu-delete = Kkes tabdart-a
+newtab-widget-lists-menu-copy = Nɣel tabdart ɣer tecfawt
+newtab-widget-lists-menu-hide = Ffer akk tibdarin
+newtab-widget-lists-menu-learn-more = Issin ugar
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Rnu aferdis
+newtab-widget-lists-input-menu-open-link = Ldi aseɣwen
+newtab-widget-lists-input-menu-move-up = Ali
+newtab-widget-lists-input-menu-move-down = Ader
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-mode-focus =
+    .label = Focus
+newtab-widget-timer-mode-break =
+    .label = Angaz
+newtab-widget-timer-label-play =
+    .label = Urar
+newtab-widget-timer-label-pause =
+    .label = Asteɛfu
+newtab-widget-timer-reset =
+    .title = Wennez
+newtab-widget-timer-menu-notifications = Sens ilɣa
+newtab-widget-timer-menu-notifications-on = Rmed ilɣa
+newtab-widget-timer-menu-hide = Ffer amakud
+newtab-widget-timer-menu-learn-more = Issin ugar
+newtab-promo-card-title = Allel { -brand-product-name }
+newtab-promo-card-cta = Issin ugar
+newtab-promo-card-dismiss-button =
+    .title = Zgel
+    .aria-label = Zgel

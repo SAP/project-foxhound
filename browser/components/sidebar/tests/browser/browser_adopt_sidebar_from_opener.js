@@ -9,6 +9,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
 });
 
+registerCleanupFunction(async () => {
+  // Clean up SidebarPopupNotifications from all windows if it created before
+  for (const win of BrowserWindowTracker.orderedWindows) {
+    if (win.SidebarPopupNotifications) {
+      win.SidebarPopupNotifications._currentAnchorElement = null;
+      delete win.SidebarPopupNotifications;
+    }
+  }
+});
+
 add_task(async function test_adopt_from_window() {
   const sidebar = document.querySelector("sidebar-main");
   ok(sidebar, "Sidebar is shown.");

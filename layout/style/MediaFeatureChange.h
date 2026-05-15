@@ -6,8 +6,8 @@
 
 /* A struct defining a media feature change. */
 
-#ifndef mozilla_MediaFeatureChange_h__
-#define mozilla_MediaFeatureChange_h__
+#ifndef mozilla_MediaFeatureChange_h_
+#define mozilla_MediaFeatureChange_h_
 
 #include "mozilla/Attributes.h"
 #include "mozilla/ServoStyleConsts.h"

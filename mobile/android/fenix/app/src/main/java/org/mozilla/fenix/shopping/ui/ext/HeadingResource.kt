@@ -17,7 +17,9 @@ import org.mozilla.fenix.R
  */
 @Composable
 @ReadOnlyComposable
-fun headingResource(@StringRes id: Int): String {
+fun headingResource(
+    @StringRes id: Int,
+): String {
     return headingResource(text = stringResource(id = id))
 }
 

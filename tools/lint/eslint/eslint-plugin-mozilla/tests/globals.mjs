@@ -3,12 +3,13 @@
 
 import assert from "assert";
 import globalsUtils from "../lib/globals.mjs";
+import path from "path";
 
 var { getGlobalsForCode } = globalsUtils;
 
-/* global describe, it */
+/* global describe, it, beforeEach */
 
-describe("globals", function () {
+describe("global variables", function () {
   it("should reflect top-level this property assignment", function () {
     const globals = getGlobalsForCode(`
 this.foo = 10;
@@ -157,5 +158,224 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 `);
     assert.deepEqual(globals, [{ name: "A", writable: true, explicit: true }]);
+  });
+});
+
+function getFullTestFilePath(filename) {
+  return import.meta.dirname + "/globals-data/" + filename;
+}
+
+describe("global import - file trees", () => {
+  function callFn(filename) {
+    return globalsUtils.ensureFileTree({
+      filePath: getFullTestFilePath(filename),
+    });
+  }
+
+  function stripPathsSet(set) {
+    return new Set(set.values().map(v => path.basename(v)));
+  }
+
+  function stripPathsMap(map) {
+    return new Map(
+      map.entries().map(([k, v]) => [path.basename(k), stripPathsSet(v)])
+    );
+  }
+
+  beforeEach(() => {
+    globalsUtils.clearFileImportGraph();
+  });
+
+  it("should report errors where import-globals-from tries to import mjs files", () => {
+    assert.throws(
+      () => {
+        callFn("import-globals-from-invalid.js");
+      },
+      {
+        message:
+          "import-globals-from does not support module files - use a direct import instead",
+      }
+    );
+  });
+
+  function assertImportGraph(testFilename, expectedMap, expectedSet) {
+    let fileImportGraph = callFn(testFilename);
+
+    assert.deepEqual(stripPathsMap(fileImportGraph), expectedMap);
+    assert.deepEqual(
+      stripPathsSet(
+        fileImportGraph.getSubGraph(getFullTestFilePath(testFilename))
+      ),
+      expectedSet
+    );
+  }
+
+  it("should build a tree when importing globals from another file", () => {
+    assertImportGraph(
+      "import-globals-from-1.js",
+      new Map([
+        ["import-globals-from-1-additional.js", new Set()],
+        [
+          "import-globals-from-1.js",
+          new Set(["import-globals-from-1-additional.js"]),
+        ],
+      ]),
+      new Set([
+        "import-globals-from-1-additional.js",
+        "import-globals-from-1.js",
+      ])
+    );
+  });
+
+  it("should handle loadSubScript", () => {
+    assertImportGraph(
+      "loadSubScript-1.js",
+      new Map([
+        ["loadSubScript-1.js", new Set(["loadSubScript-1-additional.js"])],
+        ["loadSubScript-1-additional.js", new Set([])],
+      ]),
+      new Set(["loadSubScript-1-additional.js", "loadSubScript-1.js"])
+    );
+  });
+
+  it("should handle importScripts in a worker", () => {
+    assertImportGraph(
+      "importScripts-1.js",
+      new Map([
+        ["importScripts-1.js", new Set(["importScripts-1-additional.js"])],
+        ["importScripts-1-additional.js", new Set([])],
+      ]),
+      new Set(["importScripts-1-additional.js", "importScripts-1.js"])
+    );
+  });
+
+  it("should build a tree handling a simple circular import", () => {
+    assertImportGraph(
+      "import-globals-from-circular-1.js",
+      new Map([
+        [
+          "import-globals-from-circular-1.js",
+          new Set(["import-globals-from-circular-2.js"]),
+        ],
+        [
+          "import-globals-from-circular-2.js",
+          new Set(["import-globals-from-circular-1.js"]),
+        ],
+      ]),
+      new Set([
+        "import-globals-from-circular-2.js",
+        "import-globals-from-circular-1.js",
+      ])
+    );
+  });
+
+  it("should build a tree handling complex circular import", () => {
+    assertImportGraph(
+      "import-globals-from-circular-3.js",
+      new Map([
+        [
+          "import-globals-from-circular-3.js",
+          new Set(["import-globals-from-circular-4.js"]),
+        ],
+        [
+          "import-globals-from-circular-4.js",
+          new Set(["import-globals-from-circular-5.js"]),
+        ],
+        [
+          "import-globals-from-circular-5.js",
+          new Set(["import-globals-from-circular-3.js"]),
+        ],
+      ]),
+      new Set([
+        "import-globals-from-circular-3.js",
+        "import-globals-from-circular-4.js",
+        "import-globals-from-circular-5.js",
+      ])
+    );
+  });
+});
+
+describe("global import - correct globals", () => {
+  beforeEach(() => {
+    globalsUtils.clearFileImportGraph();
+  });
+
+  function callFn(filename) {
+    return globalsUtils.getGlobalsForFile({
+      filePath: getFullTestFilePath(filename),
+    });
+  }
+
+  it("should return the globals for the simple import case", () => {
+    let globals = callFn("import-globals-from-1.js");
+
+    assert.deepEqual(globals, [
+      { name: "foo1", writable: true },
+      { explicit: true, name: "foo", writable: true },
+      { name: "bar1", writable: true },
+      { explicit: true, name: "bar", writable: true },
+    ]);
+  });
+
+  it("should return the globals for a simple circular import case", () => {
+    let globals = callFn("import-globals-from-circular-1.js");
+
+    assert.deepEqual(
+      globals,
+      [
+        { name: "circ1", writable: true },
+        { name: "circ2", writable: true },
+      ],
+      "should return the correct global when getting the globals for the first file"
+    );
+
+    globals = callFn("import-globals-from-circular-2.js");
+
+    assert.deepEqual(
+      globals,
+      [
+        { name: "circ2", writable: true },
+        { name: "circ1", writable: true },
+      ],
+      "should return the correct global when getting the globals for the second file"
+    );
+  });
+
+  it("should return the globals for a simple circular import case", () => {
+    let globals = callFn("import-globals-from-circular-3.js");
+
+    assert.deepEqual(
+      globals,
+      [
+        { name: "circ3", writable: true },
+        { name: "circ4", writable: true },
+        { name: "circ5", writable: true },
+      ],
+      "should return the correct global when getting the globals for the first file"
+    );
+
+    globals = callFn("import-globals-from-circular-4.js");
+
+    assert.deepEqual(
+      globals,
+      [
+        { name: "circ4", writable: true },
+        { name: "circ5", writable: true },
+        { name: "circ3", writable: true },
+      ],
+      "should return the correct global when getting the globals for the second file"
+    );
+
+    globals = callFn("import-globals-from-circular-5.js");
+
+    assert.deepEqual(
+      globals,
+      [
+        { name: "circ5", writable: true },
+        { name: "circ3", writable: true },
+        { name: "circ4", writable: true },
+      ],
+      "should return the correct global when getting the globals for the third file"
+    );
   });
 });

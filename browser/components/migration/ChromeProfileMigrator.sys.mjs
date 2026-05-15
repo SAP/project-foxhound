@@ -491,7 +491,7 @@ export class ChromeProfileMigrator extends MigratorBase {
             };
 
             switch (row.getResultByName("scheme")) {
-              case AUTH_TYPE.SCHEME_HTML:
+              case AUTH_TYPE.SCHEME_HTML: {
                 let action_url = row.getResultByName("action_url");
                 if (!action_url) {
                   // If there is no action_url, store the wildcard "" value.
@@ -505,6 +505,7 @@ export class ChromeProfileMigrator extends MigratorBase {
                 }
                 loginInfo.formActionOrigin = action_uri.prePath;
                 break;
+              }
               case AUTH_TYPE.SCHEME_BASIC:
               case AUTH_TYPE.SCHEME_DIGEST:
                 // signon_realm format is URIrealm, so we need remove URI

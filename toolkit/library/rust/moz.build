@@ -24,7 +24,7 @@ RUST_TESTS = [
     "crashreporter",
     "firefox-on-glean",
     "l10nregistry",
-    "rsclientcerts",
+    "rsclientcerts-util",
     "selectors",
     "servo_arc",
     "qcms",
@@ -49,6 +49,15 @@ if not CONFIG["MOZ_CODE_COVERAGE"]:
     # at eliminating dead code, so we end up with some missing symbols too.
     if CONFIG["OS_TARGET"] != "WINNT":
         RUST_TESTS += ["style"]
+        # dom_fragmentdirectives depends on nsstring which has Gecko FFI symbols.
+        # The tests don't use these symbols, but Windows linker pulls them in anyway.
+        RUST_TESTS += ["dom_fragmentdirectives"]
+
+# Code coverage builds time out when executing the crashping tests on windows
+# (see bug 2010162), and it's more consistent to simply disable for all
+# platforms (since bug 2006492 ran into some issues with Linux ccov as well).
+if not CONFIG["MOZ_CODE_COVERAGE"]:
+    RUST_TESTS += ["crashping"]
 
 if CONFIG["TARGET_CPU"] != "x86":
     # malloc_size_of_derive is a build dependency, so if we are doing

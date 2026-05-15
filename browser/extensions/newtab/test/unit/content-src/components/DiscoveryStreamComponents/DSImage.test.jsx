@@ -54,12 +54,12 @@ describe("Discovery Stream <DSImage>", () => {
     assert.equal(
       img.find("img").prop("srcSet"),
       [
-        "https://img-getpocket.cdn.mozilla.net/296x148/filters:format(jpeg):quality(60):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 296w",
-        "https://img-getpocket.cdn.mozilla.net/592x296/filters:format(jpeg):quality(60):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 592w",
-        "https://img-getpocket.cdn.mozilla.net/218x109/filters:format(jpeg):quality(60):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 218w",
-        "https://img-getpocket.cdn.mozilla.net/436x218/filters:format(jpeg):quality(60):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 436w",
-        "https://img-getpocket.cdn.mozilla.net/202x101/filters:format(jpeg):quality(60):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 202w",
-        "https://img-getpocket.cdn.mozilla.net/404x202/filters:format(jpeg):quality(60):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 404w",
+        "https://img-getpocket.cdn.mozilla.net/296x148/filters:format(webp):quality(75):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 296w",
+        "https://img-getpocket.cdn.mozilla.net/592x296/filters:format(webp):quality(75):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 592w",
+        "https://img-getpocket.cdn.mozilla.net/218x109/filters:format(webp):quality(75):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 218w",
+        "https://img-getpocket.cdn.mozilla.net/436x218/filters:format(webp):quality(75):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 436w",
+        "https://img-getpocket.cdn.mozilla.net/202x101/filters:format(webp):quality(75):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 202w",
+        "https://img-getpocket.cdn.mozilla.net/404x202/filters:format(webp):quality(75):no_upscale():strip_exif()/https%3A%2F%2Fplacekitten.com%2Fg%2F640%2F480 404w",
       ].join(",")
     );
   });
@@ -122,6 +122,16 @@ describe("Discovery Stream <DSImage>", () => {
 
     img.instance().onLoad();
     assert.propertyVal(img.state(), "isLoaded", true);
+  });
+
+  it("should set proper ohttp src if secureImage is true", () => {
+    const rawSource = "https://placekitten.com/g/640/480";
+    const img = mount(<DSImage rawSource={rawSource} secureImage={true} />);
+
+    assert.equal(
+      img.find("img").prop("src"),
+      `moz-cached-ohttp://newtab-image/?url=${encodeURIComponent(rawSource)}`
+    );
   });
 
   describe("DSImage with Idle Callback", () => {

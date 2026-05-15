@@ -4,10 +4,15 @@
 
 import { ContentProcessWatcherRegistry } from "resource://devtools/server/connectors/js-process-actor/ContentProcessWatcherRegistry.sys.mjs";
 
+// Do not import Targets/index.js to prevent having to load DevTools module loader.
+const FRAME = "frame";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(
   lazy,
   {
+    HTMLSourcesCache:
+      "resource://devtools/server/actors/utils/HTMLSourcesCache.sys.mjs",
     isWindowGlobalPartOfContext:
       "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
     WEBEXTENSION_FALLBACK_DOC_URL:
@@ -25,11 +30,6 @@ ChromeUtils.defineESModuleGetters(
       "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs",
   },
   { global: "shared" }
-);
-
-const isEveryFrameTargetEnabled = Services.prefs.getBoolPref(
-  "devtools.every-frame-target.enabled",
-  false
 );
 
 function watch() {
@@ -114,11 +114,11 @@ function createTargetsForWatcher(watcherDataObject, isProcessActorStartup) {
       //
       // We want to avoid creating transient targets for initial about blank when a new WindowGlobal
       // just get created as it will most likely navigate away just after and confuse the frontend with short lived target.
-      const acceptInitialDocument = !isProcessActorStartup;
+      const acceptUncommitedInitialDocument = !isProcessActorStartup;
 
       if (
         lazy.isWindowGlobalPartOfContext(windowGlobalChild, sessionContext, {
-          acceptInitialDocument,
+          acceptUncommitedInitialDocument,
         })
       ) {
         createWindowGlobalTargetActor(watcherDataObject, windowGlobalChild);
@@ -180,6 +180,13 @@ function createTargetsForWatcher(watcherDataObject, isProcessActorStartup) {
       }
     }
   }
+
+  // Utility class to watch for HTML Sources text content emitted by the HTML Parser.
+  // As this can come from the previous WindowGlobal, we need this logic to be running outside
+  // of individual WindowGlobal targets.
+  if (sessionContext.type != "all") {
+    lazy.HTMLSourcesCache.watch(sessionContext.browserId);
+  }
 }
 
 function destroyTargetsForWatcher(watcherDataObject, options) {
@@ -198,6 +205,10 @@ function destroyTargetsForWatcher(watcherDataObject, options) {
       options
     );
   }
+
+  if (watcherDataObject.sessionContext.type != "all") {
+    lazy.HTMLSourcesCache.unwatch(watcherDataObject.sessionContext.browserId);
+  }
 }
 
 /**
@@ -206,12 +217,12 @@ function destroyTargetsForWatcher(watcherDataObject, options) {
  *  - by a bfcache navigation (pageshow)
  *
  * @param {Window} window
- * @param {Object} options
- * @param {Boolean} options.isBFCache
+ * @param {object} options
+ * @param {boolean} options.isBFCache
  *        True, if the request to instantiate a new target comes from a bfcache navigation.
  *        i.e. when we receive a pageshow event with persisted=true.
  *        This will be true regardless of bfcacheInParent being enabled or disabled.
- * @param {Boolean} options.ignoreIfExisting
+ * @param {boolean} options.ignoreIfExisting
  *        By default to false. If true is passed, we avoid instantiating a target actor
  *        if one already exists for this windowGlobal.
  */
@@ -353,7 +364,8 @@ function onWindowGlobalDestroyed(innerWindowId) {
     // be created and managed by the watcher universe, like all the others.
     const isTopLevelActorRegisteredOutsideOfWatcherActor =
       !watcherDataObject.actors.find(
-        actor => actor.innerWindowId == innerWindowId
+        actor =>
+          actor.innerWindowId == innerWindowId && actor.targetType == FRAME
       );
     const targetActorForm = isTopLevelActorRegisteredOutsideOfWatcherActor
       ? existingTarget.form()
@@ -382,9 +394,9 @@ function onWindowGlobalDestroyed(innerWindowId) {
  * Instantiate a WindowGlobal target actor for a given browsing context
  * and for a given watcher actor.
  *
- * @param {Object} watcherDataObject
+ * @param {object} watcherDataObject
  * @param {BrowsingContext} windowGlobalChild
- * @param {Boolean} isDocumentCreation
+ * @param {boolean} isDocumentCreation
  */
 function createWindowGlobalTargetActor(
   watcherDataObject,
@@ -438,7 +450,7 @@ function createWindowGlobalTargetActor(
     // type of navigation/reload.
     followWindowGlobalLifeCycle: true,
     isTopLevelTarget,
-    ignoreSubFrames: isEveryFrameTargetEnabled,
+    ignoreSubFrames: true,
     sessionContext,
   });
   targetActor.createdFromJsWindowActor = true;
@@ -456,13 +468,23 @@ function createWindowGlobalTargetActor(
  * @param {DOMWindow|Document} subject
  *        A window for *-document-global-created
  *        A document for *-page-{shown|hide}
- * @param {String} topic
+ * @param {string} topic
  */
 function observe(subject, topic) {
   if (
     topic == "content-document-global-created" ||
     topic == "chrome-document-global-created"
   ) {
+    if (subject.isUncommittedInitialDocument) {
+      // If this is the initial document, it might be a short-lived transient one, and
+      // onWindowGlobalCreated will ignore such documents. If we receive a load
+      // event, the document has been committed to, and we know the initial document
+      // will persist. In that case, we need to call onWindowGlobalCreated again.
+      subject.addEventListener("DOMContentLoaded", handleEvent, {
+        capture: true,
+        once: true,
+      });
+    }
     onWindowGlobalCreated(subject);
   } else if (topic == "inner-window-destroyed") {
     const innerWindowId = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
@@ -504,9 +526,9 @@ function observe(subject, topic) {
 /**
  * DOM Event handler.
  *
- * @param {String} type
+ * @param {string} type
  *        DOM event name
- * @param {Boolean} persisted
+ * @param {boolean} persisted
  *        A flag set to true in cache of BFCache navigation
  * @param {Document} target
  *        The navigating document
@@ -559,15 +581,29 @@ function handleEvent({ type, persisted, target }) {
     // if we navigate back to it, the next DOMWindowCreated won't create a new target for it.
     onWindowGlobalDestroyed(target.defaultView.windowGlobalChild.innerWindowId);
   }
+
+  if (type == "DOMContentLoaded") {
+    if (!target.isInitialDocument) {
+      return;
+    }
+
+    // This is similar to initial-document-element-inserted. onWindowGlobalCreated likely
+    // ignored the earlier call for this document because it was the uncommitted initial one. Now
+    // that we got a load event we know that the document is not transient but the destination of a
+    // load. Its state will have changed and onWindowGlobalCreated won't skip it anymore.
+    onWindowGlobalCreated(target.defaultView, {
+      ignoreIfExisting: true,
+    });
+  }
 }
 
 /**
  * Return an existing Window Global target for given a WatcherActor
  * and against a given WindowGlobal.
  *
- * @param {Object} options
- * @param {String} options.watcherDataObject
- * @param {Number} options.innerWindowId
+ * @param {object} options
+ * @param {string} options.watcherDataObject
+ * @param {number} options.innerWindowId
  *                 The WindowGlobal inner window ID.
  *
  * @returns {WindowGlobalTargetActor|null}
@@ -582,8 +618,10 @@ function findTargetActor({
   //
   // And start by checking if there is a perfect match first by doing a WindowGlobal / innerWindowId lookup,
   // before falling back to a BrowsingContext / browsingContextID lookup.
+  // Check the actorType to avoid considering ContentScript targets which might
+  // have the same innerWindowId.
   let targetActor = watcherDataObject.actors.find(
-    actor => actor.innerWindowId == innerWindowId
+    actor => actor.innerWindowId == innerWindowId && actor.targetType == FRAME
   );
   if (!targetActor && browsingContextID) {
     targetActor = watcherDataObject.actors.find(
@@ -606,7 +644,9 @@ function findTargetActor({
     connectionPrefix
   );
 
-  return targetActors.find(actor => actor.innerWindowId == innerWindowId);
+  return targetActors.find(
+    actor => actor.innerWindowId == innerWindowId && actor.targetType == FRAME
+  );
 }
 
 export const WindowGlobalTargetWatcher = {

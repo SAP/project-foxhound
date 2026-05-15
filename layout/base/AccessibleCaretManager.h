@@ -8,10 +8,10 @@
 #define AccessibleCaretManager_h
 
 #include "AccessibleCaret.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/CaretStateChangedEvent.h"
 #include "mozilla/dom/MouseEventBinding.h"
@@ -27,6 +27,7 @@ struct nsPoint;
 
 namespace mozilla {
 class PresShell;
+struct FrameAndOffset;  // defined in SelectionMovementUtils.h
 namespace dom {
 class Element;
 class Selection;
@@ -221,14 +222,71 @@ class AccessibleCaretManager {
 
   void SetSelectionDirection(nsDirection aDir) const;
 
-  // If aDirection is eDirNext, get the frame for the range start in the first
-  // range from the current selection, and return the offset into that frame as
-  // well as the range start content and the content offset. Otherwise, get the
-  // frame and the offset for the range end in the last range instead.
-  nsIFrame* GetFrameForFirstRangeStartOrLastRangeEnd(
-      nsDirection aDirection, int32_t* aOutOffset,
-      nsIContent** aOutContent = nullptr,
-      int32_t* aOutContentOffset = nullptr) const;
+  /**
+   * Return a frame and offset where to put the first accessible caret in the
+   * selection mode. The result may be a non-selectable frame which is for a
+   * child of a selectable content.  If aOutContent is set and its pointee is
+   * different from the frame content of the result, it means that the result is
+   * the child at aOutContent and aOutOffsetInContent.
+   *
+   * @param aRange      The range, typically the first range of `Selection`.
+   * @param aOutContent [optional] If set, this will be set to the first
+   *                    selectable container in aRange. It's typically a
+   *                    container element.
+   * @param aOutOffsetInContent
+   *                    [optional] If set, this will be set to the offset in
+   *                    the first selectable content (i.e., aOutContent).
+   *                    NOTE: {*aOutContent, *aOutOffsetInContent} means that
+   *                    it's the start boundary of actual selectable range at a
+   *                    container element.
+   * @return            mFrame is the first meaningful frame whose content is
+   *                    selected by aRange. Typically, a text frame or a image
+   *                    frame. Or a container frame which is not selectable but
+   *                    its parent is selectable.
+   *                    mOffsetInFrameContent is the offset in
+   *                    mFrame->GetContent().
+   *                    I.e, if mFrame->GetContent() is not a void element,
+   *                    {mFrame->GetContent(), mOffsetInFrameContent} means that
+   *                    it's the start boundary of visible/meaningful selection
+   *                    start boundary at a leaf node like a `Text` or position
+   *                    at the first non-selectable element in selectable node.
+   */
+  FrameAndOffset GetFirstVisibleLeafFrameOrUnselectableChildFrame(
+      nsRange& aRange, nsIContent** aOutContent = nullptr,
+      int32_t* aOutOffsetInContent = nullptr) const;
+
+  /**
+   * Return a frame and offset where to put the last accessible caret in the
+   * selection mode. The result may be a non-selectable frame which is for a
+   * child of a selectable content.  If aOutContent is set and its pointee is
+   * different from the frame content of the result, it means that the result is
+   * the previous sibling of a child at aOutContent and aOutOffsetInContent.
+   *
+   * @param aRange      The range, typically the last range of `Selection`.
+   * @param aOutContent [optional] If set, this will be set to the last
+   *                    selectable container in aRange. It's typically a
+   *                    container element.
+   * @param aOutOffsetInContent
+   *                    [optional] If set, this will be set to the offset in
+   *                    the last selectable container (i.e., aOutContent).
+   *                    NOTE: {*aOutContent, *aOutOffsetInContent} means that
+   *                    it's the end boundary of actual selectable range at a
+   *                    container element.
+   * @return            mFrame is the last meaningful frame whose content is
+   *                    selected by aRange. Typically, a text frame or a image
+   *                    frame. Or a container frame which is not selectable but
+   *                    its parent is selectable.
+   *                    mOffsetInFrameContent is the offset in
+   *                    mFrame->GetContent().
+   *                    I.e, if mFrame->GetContent() is not a void element,
+   *                    {mFrame->GetContent(), mOffsetInFrameContent} means that
+   *                    it's the end boundary of visible/meaningful selection
+   *                    end boundary at a leaf node like a `Text` or position at
+   *                    the last non-selectable element in selectable node.
+   */
+  FrameAndOffset GetLastVisibleLeafFrameOrUnselectableChildFrame(
+      nsRange& aRange, nsIContent** aOutContent = nullptr,
+      int32_t* aOutOffsetInContent = nullptr) const;
 
   MOZ_CAN_RUN_SCRIPT nsresult DragCaretInternal(const nsPoint& aPoint);
   nsPoint AdjustDragBoundary(const nsPoint& aPoint) const;
@@ -278,8 +336,10 @@ class AccessibleCaretManager {
   virtual CaretMode GetCaretMode() const;
 
   // @return true if aStartFrame comes before aEndFrame.
-  virtual bool CompareTreePosition(nsIFrame* aStartFrame,
-                                   nsIFrame* aEndFrame) const;
+  virtual bool CompareTreePosition(const nsIFrame* aStartFrame,
+                                   int32_t aStartOffset,
+                                   const nsIFrame* aEndFrame,
+                                   int32_t aEndOffset) const;
 
   // Check if the two carets is overlapping to become tilt.
   // @return true if the two carets become tilt; false, otherwise.
@@ -400,11 +460,11 @@ class AccessibleCaretManager {
    public:
     void Update(const AccessibleCaretManager& aAccessibleCaretManager);
 
-    enum class Value : bool { Disabled, Enabled };
-
-    Value Get() const { return mValue; }
+    bool ShouldDisable() const { return mValue == Value::Disabled; }
 
    private:
+    enum class Value : bool { Disabled, Enabled };
+
     Value mValue = Value::Enabled;
   };
 

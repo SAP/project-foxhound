@@ -79,7 +79,7 @@ const LearnMore = createFactory(LearnMoreClass);
 /**
  * Renders icon with text description for the accessibility check.
  *
- * @param {Object}
+ * @param {object}
  *        Options:
  *          - score: value from SCORES from "devtools/shared/constants"
  */
@@ -95,7 +95,7 @@ function Icon({ score }) {
 /**
  * Renders text description of the accessibility check.
  *
- * @param {Object}
+ * @param {object}
  *        Options:
  *          - args:   arguments for fluent localized string
  *          - href:   url for the learn more link pointing to MDN

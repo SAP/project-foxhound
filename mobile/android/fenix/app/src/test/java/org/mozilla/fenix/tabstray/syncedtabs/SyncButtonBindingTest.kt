@@ -5,48 +5,46 @@
 package org.mozilla.fenix.tabstray.syncedtabs
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
-import mozilla.components.support.test.rule.MainCoroutineRule
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.tabstray.TabsTrayAction
 import org.mozilla.fenix.tabstray.TabsTrayStore
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SyncButtonBindingTest {
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Test
-    fun `WHEN syncing state is true THEN invoke callback`() {
+    fun `WHEN syncing state is true THEN invoke callback`() = runTest(testDispatcher) {
         var invoked = false
         val store = TabsTrayStore()
-        val binding = SyncButtonBinding(store) { invoked = true }
+        val binding = SyncButtonBinding(store, testDispatcher) { invoked = true }
 
         binding.start()
 
         store.dispatch(TabsTrayAction.SyncNow)
-        store.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(invoked)
     }
 
     @Test
-    fun `WHEN syncing state is false THEN nothing is invoked`() {
+    fun `WHEN syncing state is false THEN nothing is invoked`() = runTest(testDispatcher) {
         var invoked = false
         val store = TabsTrayStore()
-        val binding = SyncButtonBinding(store) { invoked = true }
+        val binding = SyncButtonBinding(store, testDispatcher) { invoked = true }
 
         binding.start()
 
-        store.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertFalse(invoked)
 
         store.dispatch(TabsTrayAction.SyncCompleted)
-        store.waitUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertFalse(invoked)
     }

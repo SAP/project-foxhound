@@ -4,7 +4,12 @@
 
 @import url("chrome://global/skin/design-system/text-and-typography.css");
 
-.sidebar-panel-header {
+:host {
+  padding-block: var(--space-large);
+  margin-block-start: calc(var(--space-large) * -1);
+}
+
+.sidebar-panel-heading {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -12,7 +17,7 @@
   fill: currentColor;
   font-size: 15px;
 
-  h4 {
+  > h4 {
     margin-block: var(--space-large);
   }
 }

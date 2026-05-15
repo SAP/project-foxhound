@@ -11,7 +11,6 @@
 #include "mozilla/Compiler.h"
 #include "mozilla/Sprintf.h"
 
-#include <iterator>
 #include <stdarg.h>
 
 #include "util/GetPidProvider.h"  // getpid()

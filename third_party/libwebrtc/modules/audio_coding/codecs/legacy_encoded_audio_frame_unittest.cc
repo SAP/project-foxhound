@@ -10,6 +10,11 @@
 
 #include "modules/audio_coding/codecs/legacy_encoded_audio_frame.h"
 
+#include <cstddef>
+#include <cstdint>
+
+#include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "test/gtest.h"
 
@@ -34,7 +39,7 @@ enum class NetEqDecoder {
 
 class SplitBySamplesTest : public ::testing::TestWithParam<NetEqDecoder> {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     decoder_type_ = GetParam();
     switch (decoder_type_) {
       case NetEqDecoder::kDecoderPCMu:
@@ -113,16 +118,20 @@ TEST_P(SplitBySamplesTest, PayloadSizes) {
   // 40 ms -> 20 + 20 ms
   // 50 ms -> 25 + 25 ms
   // 60 ms -> 30 + 30 ms
-  ExpectedSplit expected_splits[] = {{10, 1, {10}},     {20, 1, {20}},
-                                     {30, 1, {30}},     {40, 2, {20, 20}},
-                                     {50, 2, {25, 25}}, {60, 2, {30, 30}}};
+  ExpectedSplit expected_splits[] = {
+      {.payload_size_ms = 10, .num_frames = 1, .frame_sizes = {10}},
+      {.payload_size_ms = 20, .num_frames = 1, .frame_sizes = {20}},
+      {.payload_size_ms = 30, .num_frames = 1, .frame_sizes = {30}},
+      {.payload_size_ms = 40, .num_frames = 2, .frame_sizes = {20, 20}},
+      {.payload_size_ms = 50, .num_frames = 2, .frame_sizes = {25, 25}},
+      {.payload_size_ms = 60, .num_frames = 2, .frame_sizes = {30, 30}}};
 
   for (const auto& expected_split : expected_splits) {
     // The payload values are set to steadily increase (modulo 256), so that the
     // resulting frames can be checked and we can be reasonably certain no
     // sample was missed or repeated.
     const auto generate_payload = [](size_t num_bytes) {
-      rtc::Buffer payload(num_bytes);
+      Buffer payload(num_bytes);
       uint8_t value = 0;
       // Allow wrap-around of value in counter below.
       for (size_t i = 0; i != payload.size(); ++i, ++value) {
@@ -146,10 +155,10 @@ TEST_P(SplitBySamplesTest, PayloadSizes) {
       const size_t length_bytes = expected_split.frame_sizes[i] * bytes_per_ms_;
       EXPECT_EQ(length_bytes, frame->payload().size());
       EXPECT_EQ(expected_timestamp, result.timestamp);
-      const rtc::Buffer& payload = frame->payload();
+      const Buffer& payload = frame->payload();
       // Allow wrap-around of value in counter below.
-      for (size_t i = 0; i != payload.size(); ++i, ++value) {
-        ASSERT_EQ(value, payload[i]);
+      for (size_t j = 0; j != payload.size(); ++j, ++value) {
+        ASSERT_EQ(value, payload[j]);
       }
 
       expected_timestamp += checked_cast<uint32_t>(

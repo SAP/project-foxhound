@@ -156,6 +156,8 @@ function addMessage(newMessage, state, filtersState, prefsState, uiState) {
 
   if (lastMessage && mutableMessagesById.size > 0) {
     if (
+      // only repeat messages if the group similar messages pref is enabled
+      prefsState.groupSimilar &&
       lastMessage.groupId === currentGroup &&
       areMessagesSimilar(lastMessage, newMessage)
     ) {
@@ -181,9 +183,8 @@ function addMessage(newMessage, state, filtersState, prefsState, uiState) {
   // proper message.
   const warningGroupType = getWarningGroupType(newMessage);
 
-  // If the preference for warning grouping is true, and the new message could be in a
-  // warning group.
-  if (prefsState.groupWarnings && warningGroupType !== null) {
+  // If the preference for grouping is true, and the new message could be in a warning group.
+  if (prefsState.groupSimilar && warningGroupType !== null) {
     const warningGroupMessageId = getParentWarningGroupMessageId(newMessage);
 
     // If there's no warning group for the type/innerWindowID yet
@@ -386,7 +387,7 @@ function messages(
 
   let newState;
   switch (action.type) {
-    case constants.MESSAGES_ADD:
+    case constants.MESSAGES_ADD: {
       // If the action holds more messages than the log limit, we can preemptively remove
       // messages that will never be rendered.
       const batchHasMoreMessagesThanLogLimit =
@@ -432,8 +433,9 @@ function messages(
       }
 
       return limitTopLevelMessageCount(newState, logLimit);
+    }
 
-    case constants.MESSAGES_CLEAR:
+    case constants.MESSAGES_CLEAR: {
       const frontsToRelease = [];
       for (const message of state.mutableMessagesById.values()) {
         // We want to minimize time spent in reducer as much as we can, so we're using
@@ -449,6 +451,7 @@ function messages(
         // `releaseActorsEnhancer` to release all of those backend actors.
         frontsToRelease,
       });
+    }
 
     case constants.PRIVATE_MESSAGES_CLEAR: {
       const removedIds = new Set();
@@ -502,7 +505,7 @@ function messages(
         disabledMessagesById: [...disabledMessagesById, ...action.ids],
       };
 
-    case constants.MESSAGE_OPEN:
+    case constants.MESSAGE_OPEN: {
       const openState = { ...state };
       openState.messagesUiById = [...messagesUiById, action.id];
       const currMessage = mutableMessagesById.get(action.id);
@@ -543,8 +546,9 @@ function messages(
         ];
       }
       return openState;
+    }
 
-    case constants.MESSAGE_CLOSE:
+    case constants.MESSAGE_CLOSE: {
       const closeState = { ...state };
       const messageId = action.id;
       const index = closeState.messagesUiById.indexOf(messageId);
@@ -582,6 +586,7 @@ function messages(
         );
       }
       return closeState;
+    }
 
     case constants.CSS_MESSAGE_ADD_MATCHING_ELEMENTS:
       return {
@@ -592,7 +597,7 @@ function messages(
         ),
       };
 
-    case constants.NETWORK_MESSAGES_UPDATE:
+    case constants.NETWORK_MESSAGES_UPDATE: {
       const updatedState = {
         ...state,
         networkMessagesUpdateById: {
@@ -624,6 +629,7 @@ function messages(
       }
 
       return updatedState;
+    }
 
     case UPDATE_REQUEST:
     case constants.NETWORK_UPDATES_REQUEST: {
@@ -658,10 +664,10 @@ function messages(
         frontsToRelease: [],
       };
 
-    case constants.WARNING_GROUPS_TOGGLE:
+    case constants.GROUP_SIMILAR_MESSAGES_TOGGLE: {
       // There's no warningGroups, and the pref was set to false,
       // we don't need to do anything.
-      if (!prefsState.groupWarnings && state.warningGroupsById.size === 0) {
+      if (!prefsState.groupSimilar && state.warningGroupsById.size === 0) {
         return state;
       }
 
@@ -714,8 +720,9 @@ function messages(
         uiState,
         // If the user disabled warning groups, we want the messages to be sorted by their
         // timestamps.
-        forceTimestampSort: !prefsState.groupWarnings,
+        forceTimestampSort: !prefsState.groupSimilar,
       });
+    }
 
     case constants.MESSAGE_REMOVE:
       return removeMessagesFromState(
@@ -835,7 +842,7 @@ function setVisibleMessages({
   maybeSortVisibleMessages(
     newState,
     // Only sort for warningGroups if the feature is enabled
-    prefsState.groupWarnings,
+    prefsState.groupSimilar,
     forceTimestampSort
   );
 
@@ -846,10 +853,10 @@ function setVisibleMessages({
  * Returns the new current group id given the previous current group and the groupsById
  * state property.
  *
- * @param {String} currentGroup: id of the current group
+ * @param {string} currentGroup: id of the current group
  * @param {Map} groupsById
  * @param {Array} ignoredIds: An array of ids which can't be the new current group.
- * @returns {String|null} The new current group id, or null if there isn't one.
+ * @returns {string | null} The new current group id, or null if there isn't one.
  */
 function getNewCurrentGroup(currentGroup, groupsById, ignoredIds = new Set()) {
   if (!currentGroup) {
@@ -1103,8 +1110,9 @@ function getToplevelMessageCount(state) {
 /**
  * Check if a message should be visible in the console output, and if not, what
  * causes it to be hidden.
+ *
  * @param {Message} message: The message to check
- * @param {Object} option: An option object of the following shape:
+ * @param {object} option: An option object of the following shape:
  *                   - {MessageState} messagesState: The current messages state
  *                   - {FilterState} filtersState: The current filters state
  *                   - {PrefsState} prefsState: The current preferences state
@@ -1117,7 +1125,7 @@ function getToplevelMessageCount(state) {
  *                   - {Boolean} hasMatchedAncestor: Set to true if message is part of a
  *                                 group that has been set to visible
  *
- * @return {Object} An object of the following form:
+ * @return {object} An object of the following form:
  *         - visible {Boolean}: true if the message should be visible
  *         - cause {String}: if visible is false, what causes the message to be hidden.
  */
@@ -1329,9 +1337,9 @@ function isGroupClosed(groupId, messagesUI) {
 /**
  * Returns true if the message shouldn't be hidden because of the network filter state.
  *
- * @param {Object} message - The message to check the filter against.
+ * @param {object} message - The message to check the filter against.
  * @param {FilterState} filters - redux "filters" state.
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function passNetworkFilter(message, filters) {
   // The message passes the filter if it is not a network message,
@@ -1348,9 +1356,9 @@ function passNetworkFilter(message, filters) {
 /**
  * Returns true if the message shouldn't be hidden because of the xhr filter state.
  *
- * @param {Object} message - The message to check the filter against.
+ * @param {object} message - The message to check the filter against.
  * @param {FilterState} filters - redux "filters" state.
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function passXhrFilter(message, filters) {
   // The message passes the filter if it is not a network message,
@@ -1367,9 +1375,9 @@ function passXhrFilter(message, filters) {
 /**
  * Returns true if the message shouldn't be hidden because of levels filter state.
  *
- * @param {Object} message - The message to check the filter against.
+ * @param {object} message - The message to check the filter against.
  * @param {FilterState} filters - redux "filters" state.
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function passLevelFilters(message, filters) {
   // The message passes the filter if it is not a console call,
@@ -1385,9 +1393,9 @@ function passLevelFilters(message, filters) {
 /**
  * Returns true if the message shouldn't be hidden because of the CSS filter state.
  *
- * @param {Object} message - The message to check the filter against.
+ * @param {object} message - The message to check the filter against.
  * @param {FilterState} filters - redux "filters" state.
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function passCssFilters(message, filters) {
   // The message passes the filter if it is not a CSS message,
@@ -1398,9 +1406,9 @@ function passCssFilters(message, filters) {
 /**
  * Returns true if the message shouldn't be hidden because of search filter state.
  *
- * @param {Object} message - The message to check the filter against.
+ * @param {object} message - The message to check the filter against.
  * @param {FilterState} filters - redux "filters" state.
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function passSearchFilters(message, filters) {
   const trimmed = (filters.text || "").trim();
@@ -1618,11 +1626,11 @@ function getDefaultFiltersCounter() {
  * Sort state.visibleMessages if needed.
  *
  * @param {MessageState} state
- * @param {Boolean} sortWarningGroupMessage: set to true to sort warningGroup
+ * @param {boolean} sortWarningGroupMessage: set to true to sort warningGroup
  *                                           messages. Default to false, as in some
  *                                           situations we already take care of putting
  *                                           the ids at the right position.
- * @param {Boolean} timeStampSort: set to true to sort messages by their timestamps.
+ * @param {boolean} timeStampSort: set to true to sort messages by their timestamps.
  */
 function maybeSortVisibleMessages(
   state,
@@ -1703,7 +1711,7 @@ function shouldGroupWarningMessages(
   }
 
   // Only group if the preference is ON.
-  if (!prefsState.groupWarnings) {
+  if (!prefsState.groupSimilar) {
     return false;
   }
 

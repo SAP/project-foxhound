@@ -8,7 +8,7 @@ task-defaults:
         local-toolchain: true
     index:
         product: static-analysis
-    worker-type: b-linux-large-amd
+    worker-type: b-linux-docker-large-amd
     worker:
         max-run-time: 3600
     run:
@@ -20,11 +20,10 @@ task-defaults:
             - 'build/clang-plugin/*.py'
             - 'build/clang-plugin/*.txt'
             - 'build/clang-plugin/moz.build'
-            - 'build/clang-plugin/Makefile.in'
             - 'build/build-clang/build-clang.py'
     fetches:
         fetch:
-            - clang-19
+            - clang-20
 
 linux64-clang-tidy:
     index:
@@ -42,6 +41,7 @@ linux64-clang-tidy:
     fetches:
         toolchain:
             - linux64-clang-toolchain
+            - linux64-libxml2
             - linux64-toolchain-sysroot
 
 macosx64-clang-tidy:

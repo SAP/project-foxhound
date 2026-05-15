@@ -51,14 +51,15 @@ add_task(async function () {
       !val,
       "block uncommon checkbox is set correctly"
     );
-
+    let update = waitForSettingControlChange(checkbox.control);
     // scroll the checkbox into view, otherwise the synthesizeMouseAtCenter will be ignored, and click it
     checkbox.scrollIntoView();
     EventUtils.synthesizeMouseAtCenter(
-      checkbox,
+      checkbox.inputEl,
       {},
       gBrowser.selectedBrowser.contentWindow
     );
+    await update;
 
     // check that setting is now turned on or off
     is(

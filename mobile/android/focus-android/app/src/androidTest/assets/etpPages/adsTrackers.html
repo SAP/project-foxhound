@@ -16,7 +16,11 @@
     <p>ads trackers not blocked</p>
     <img
       src="https://ads-track-digest256.dummytracker.org/test_not_blocked.png"
-      onerror="this.onerror=null;this.src='https://not-a-tracker.dummytracker.org/test_blocked.png';alert('ads trackers blocked')"
+      onerror="
+        this.onerror = null;
+        this.src = 'https://not-a-tracker.dummytracker.org/test_blocked.png';
+        alert('ads trackers blocked');
+      "
     />
   </body>
 </html>

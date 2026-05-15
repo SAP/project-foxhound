@@ -6,12 +6,11 @@
 
 #include "WebBrowserPersistResourcesParent.h"
 
-#include "nsThreadUtils.h"
-
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 

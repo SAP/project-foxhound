@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html
+  xmlns="http://www.w3.org/1999/xhtml"
+  xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+>
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome: resource:;"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/security/unexpectedScriptLoad.css"
+    />
+    <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="browser/unexpectedScript.ftl" />
+    <script src="chrome://global/content/customElements.js" />
+    <title data-l10n-id="unexpected-script-load-title"></title>
+  </head>
+  <body>
+    <xul:vbox
+      class="dialogBox"
+      pack="end"
+      role="dialog"
+      aria-labelledby="dialogTitle"
+    >
+      <xul:hbox class="dialogTitleBar" align="center">
+        <label class="dialogTitle" data-l10n-id="unexpected-script-load-title"
+          >Unexpected Script Load</label
+        >
+        <moz-button
+          type="ghost"
+          class="dialogClose"
+          iconsrc="chrome://global/skin/icons/close.svg"
+          data-l10n-id="unexpected-script-close-button"
+        />
+      </xul:hbox>
+      <xul:hbox class="dialogContent">
+        <xul:vbox>
+          <p>
+            <span id="unexpected-script-load-detail-1"></span>
+            <a
+              id="more-info-link"
+              data-l10n-id="unexpected-script-load-more-info"
+              target="_blank"
+            ></a>
+          </p>
+          <p data-l10n-id="unexpected-script-load-detail-2"></p>
+          <p class="scriptUrl">
+            http://example.com/something/else/some-weird-script.js
+          </p>
+
+          <div class="checkbox-grid">
+            <p
+              id="telemetry-disabled-message"
+              data-l10n-id="unexpected-script-load-telemetry-disabled"
+            ></p>
+            <moz-checkbox
+              id="reportCheckbox"
+              data-l10n-id="unexpected-script-load-report-checkbox"
+            />
+            <moz-fieldset>
+              <!-- I am omitting the label as I do not want a label displayed -->
+              <moz-checkbox
+                id="emailCheckbox"
+                data-l10n-id="unexpected-script-load-email-checkbox"
+              >
+                <input
+                  slot="nested"
+                  id="emailInput"
+                  type="text"
+                  data-l10n-id="unexpected-script-load-email-textbox"
+                />
+              </moz-checkbox>
+            </moz-fieldset>
+          </div>
+
+          <div id="actionContainer">
+            <a
+              id="learn-more-link"
+              is="moz-support-link"
+              support-page="unexpected-script-load"
+              data-l10n-id="unexpected-script-load-learn-more"
+              target="_blank"
+            ></a>
+            <moz-button-group id="actionButtons">
+              <moz-button
+                id="allow-button"
+                data-l10n-id="unexpected-script-load-message-button-allow"
+              ></moz-button>
+              <moz-button
+                id="block-button"
+                data-l10n-id="unexpected-script-load-message-button-block"
+              ></moz-button>
+            </moz-button-group>
+          </div>
+        </xul:vbox>
+      </xul:hbox>
+    </xul:vbox>
+    <script src="chrome://browser/content/security/unexpectedScriptLoad.js"></script>
+  </body>
+</html>

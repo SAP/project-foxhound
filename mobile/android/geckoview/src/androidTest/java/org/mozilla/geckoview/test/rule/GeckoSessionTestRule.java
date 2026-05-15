@@ -2272,7 +2272,7 @@ public class GeckoSessionTestRule implements TestRule {
 
     /**
      * When doContinuallyPost is set to true, @{@link #postLocation()} will post the location to the
-     * location manager every 3s. When set to false, @{@link #postLocation()} will only post the
+     * location manager every 2s. When set to false, @{@link #postLocation()} will only post the
      * location once. Purpose is to prevent the location from becoming stale.
      *
      * @param doContinuallyPost setting for continually posting the location after calling @{@link
@@ -2288,14 +2288,14 @@ public class GeckoSessionTestRule implements TestRule {
      */
     public void stopPostingLocation() {
       if (executor != null) {
-        executor.shutdown();
+        executor.shutdownNow();
         executor = null;
       }
     }
 
     /**
      * Posts the set location to the system location manager. If @{@link #doContinuallyPost} is
-     * true, the location will be posted every 3s by an executor, otherwise will post once.
+     * true, the location will be posted every 2s by an executor, otherwise will post once.
      */
     public void postLocation() {
       if (!isActiveTestProvider) {
@@ -2344,7 +2344,7 @@ public class GeckoSessionTestRule implements TestRule {
               }
             },
             0,
-            3,
+            2,
             TimeUnit.SECONDS);
       }
     }
@@ -2538,6 +2538,10 @@ public class GeckoSessionTestRule implements TestRule {
         args -> {
           args.put("languageState", languageState);
         });
+  }
+
+  public void teardownAlertsService(final @NonNull GeckoSession session) {
+    webExtensionApiCall(session, "TeardownAlertsService", null);
   }
 
   private Object waitForMessage(final WebExtension.Port port, final String id) {
@@ -2823,6 +2827,11 @@ public class GeckoSessionTestRule implements TestRule {
   /** Checks if fission is running. */
   public boolean isFissionRunning() {
     return (Boolean) webExtensionApiCall("IsFissionRunning", null);
+  }
+
+  /** Simulate user gesture activation */
+  public void notifyUserGestureActivation(final GeckoSession session) {
+    webExtensionApiCall(session, "NotifyUserGestureActivation", null);
   }
 
   /**

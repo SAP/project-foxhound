@@ -5,19 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Highlight.h"
-#include "HighlightRegistry.h"
-#include "mozilla/StaticAnalysisFunctions.h"
-#include "mozilla/dom/HighlightBinding.h"
-
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/RefPtr.h"
 
 #include "AbstractRange.h"
 #include "Document.h"
+#include "HighlightRegistry.h"
 #include "PresShell.h"
 #include "Selection.h"
-
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StaticAnalysisFunctions.h"
+#include "mozilla/dom/HighlightBinding.h"
 #include "nsFrameSelection.h"
 #include "nsPIDOMWindow.h"
 

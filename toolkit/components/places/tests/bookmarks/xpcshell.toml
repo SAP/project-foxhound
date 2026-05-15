@@ -1,6 +1,8 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head_bookmarks.js"
-skip-if = ["os == 'android'"]
 firefox-appdir = "browser"
 
 ["test_1016953-renaming-uncompressed.js"]

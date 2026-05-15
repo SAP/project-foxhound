@@ -35,7 +35,7 @@ add_task(async function test_create_taskbar_tab() {
     "Initially, no Taskbar Tab should exist for the given URL and container."
   );
 
-  const taskbarTab = registry.findOrCreateTaskbarTab(url, userContextId);
+  const taskbarTab = createTaskbarTab(registry, url, userContextId);
 
   Assert.ok(taskbarTab, "Taskbar Tab should be created.");
   Assert.deepEqual(
@@ -46,7 +46,8 @@ add_task(async function test_create_taskbar_tab() {
 
   const secondUrl = Services.io.newURI("https://www.another-test.com/start");
   const secondUserContextId = 1;
-  const secondTaskbarTab = registry.findOrCreateTaskbarTab(
+  const secondTaskbarTab = createTaskbarTab(
+    registry,
     secondUrl,
     secondUserContextId
   );
@@ -61,12 +62,17 @@ add_task(async function test_create_taskbar_tab() {
     "Second Taskbar Tab created should still be present."
   );
 
-  const repeatTaskbarTab = registry.findOrCreateTaskbarTab(
+  const repeated = registry.findOrCreateTaskbarTab(
     secondUrl,
     secondUserContextId
   );
+  Assert.equal(
+    repeated.created,
+    false,
+    "The existing taskbar tab should have been found, not created"
+  );
   Assert.deepEqual(
-    repeatTaskbarTab,
+    repeated.taskbarTab,
     secondTaskbarTab,
     "Should have found the second created Taskbar Tab instead of creating a new Taskbar Tab."
   );
@@ -77,7 +83,7 @@ add_task(async function test_remove_taskbar_tab() {
   const userContextId = 0;
 
   const registry = new TaskbarTabsRegistry();
-  const taskbarTab = registry.findOrCreateTaskbarTab(url, userContextId);
+  const taskbarTab = createTaskbarTab(registry, url, userContextId);
 
   Assert.deepEqual(
     registry.findTaskbarTab(url, userContextId),
@@ -85,11 +91,21 @@ add_task(async function test_remove_taskbar_tab() {
     "Taskbar Tab ID should match the ID returned on creation."
   );
 
-  registry.removeTaskbarTab(taskbarTab.id);
+  Assert.deepEqual(
+    registry.removeTaskbarTab(taskbarTab.id),
+    taskbarTab,
+    "The removed Taskbar Tab was removed"
+  );
 
   Assert.ok(
     !registry.findTaskbarTab(url, userContextId),
     "Taskbar Tab ID should be removed."
+  );
+
+  Assert.strictEqual(
+    registry.removeTaskbarTab(taskbarTab.id),
+    null,
+    "Null was returned since no Taskbar Tab with that ID exists"
   );
 });
 
@@ -99,7 +115,7 @@ add_task(async function test_container_mismatch() {
   const mismatchedUserContextId = 1;
 
   const registry = new TaskbarTabsRegistry();
-  const taskbarTab = registry.findOrCreateTaskbarTab(url, userContextId);
+  const taskbarTab = createTaskbarTab(registry, url, userContextId);
   Assert.ok(taskbarTab, "Taskbar Tab ID should be created.");
 
   Assert.ok(
@@ -120,7 +136,7 @@ add_task(async function test_scope_navigable() {
   const userContextId = 0;
 
   const registry = new TaskbarTabsRegistry();
-  const taskbarTab = registry.findOrCreateTaskbarTab(url, userContextId);
+  const taskbarTab = createTaskbarTab(registry, url, userContextId);
 
   Assert.ok(
     taskbarTab.isScopeNavigable(validNavigationDomain),
@@ -145,7 +161,7 @@ add_task(async function test_psl_navigable() {
   const userContextId = 0;
 
   const registry = new TaskbarTabsRegistry();
-  const taskbarTab = registry.findOrCreateTaskbarTab(url, userContextId);
+  const taskbarTab = createTaskbarTab(registry, url, userContextId);
 
   Assert.ok(
     !taskbarTab.isScopeNavigable(invalidNavigationPublicSuffixList),
@@ -158,10 +174,7 @@ add_task(async function test_save_and_load_consistency() {
   const userContextId = 0;
 
   let saveRegistry = new TaskbarTabsRegistry();
-  const saveTaskbarTab = saveRegistry.findOrCreateTaskbarTab(
-    url,
-    userContextId
-  );
+  const saveTaskbarTab = createTaskbarTab(saveRegistry, url, userContextId);
 
   let file = testFile();
   let storage = new TaskbarTabsRegistryStorage(saveRegistry, file);
@@ -206,6 +219,34 @@ add_task(async function test_load_and_save_consistency() {
   );
 });
 
+add_task(async function test_load_and_save_migrates_name() {
+  const loadFile = do_get_file("test_taskbarTabs_nonames.json");
+
+  const registry = await TaskbarTabsRegistry.create({ loadFile });
+  const tt = registry.findTaskbarTab(
+    Services.io.newURI("https://www.test.com"),
+    0
+  );
+  equal(
+    tt.id,
+    "4186657a-0fe5-492a-af64-dc628c232c4c",
+    "Taskbar Tab ID should match the one in the test JSON file."
+  );
+
+  equal(typeof tt.name, "string", "A name should be present in-memory.");
+
+  let file = testFile();
+  let storage = new TaskbarTabsRegistryStorage(registry, file);
+  await storage.save();
+
+  const outputData = await IOUtils.readJSON(file.path);
+  equal(
+    typeof outputData.taskbarTabs[0].name,
+    "string",
+    "A name should be saved to storage."
+  );
+});
+
 add_task(async function test_guards_against_commandline_strings() {
   const validUrl = Services.io.newURI("https://www.test.com/start");
   const invalidUrl = "https://www.test.com/start";
@@ -217,7 +258,7 @@ add_task(async function test_guards_against_commandline_strings() {
 
   Assert.throws(
     () => registry.findTaskbarTab(invalidUrl, validUserContextId),
-    /Invalid argument, `aUrl` should be instance of `nsIURI`/,
+    /Invalid argument, `aUrl` should be instance of `nsIURL`/,
     "Should reject URLs provided as a string."
   );
   Assert.throws(
@@ -227,9 +268,24 @@ add_task(async function test_guards_against_commandline_strings() {
   );
 });
 
+add_task(async function test_guards_against_non_urls() {
+  // about:blank is a URI, but not a URL.
+  const url = Services.io.newURI("about:blank");
+  const userContextId = 0;
+
+  const registry = new TaskbarTabsRegistry();
+
+  throws(
+    () => createTaskbarTab(registry, url, userContextId),
+    /Invalid argument, `aUrl` should be instance of `nsIURL`/,
+    "Should reject URIs that are not URLs."
+  );
+});
+
 add_task(async function test_patch_becomes_visible() {
   const registry = new TaskbarTabsRegistry();
-  const tt = registry.findOrCreateTaskbarTab(
+  const tt = createTaskbarTab(
+    registry,
     Services.io.newURI("https://www.test.com/start"),
     0
   );
@@ -257,7 +313,8 @@ add_task(async function test_patch_becomes_visible() {
 
 add_task(async function test_shortcutRelativePath_is_saved() {
   const registry = new TaskbarTabsRegistry();
-  const tt = registry.findOrCreateTaskbarTab(
+  const tt = createTaskbarTab(
+    registry,
     Services.io.newURI("https://www.test.com/start"),
     0
   );
@@ -277,3 +334,38 @@ add_task(async function test_shortcutRelativePath_is_saved() {
     "Shortcut relative path should be saved"
   );
 });
+
+add_task(async function test_multiple_match_longest_prefix() {
+  const registry = new TaskbarTabsRegistry();
+
+  const uriWithPrefix = prefix =>
+    Services.io.newURI("https://example.com" + prefix);
+
+  const createWithScope = uri =>
+    createTaskbarTab(registry, uri, 0, {
+      manifest: {
+        scope: uri.spec,
+      },
+    });
+  const find = prefix => registry.findTaskbarTab(uriWithPrefix(prefix), 0);
+
+  // Register them in an arbitrary order.
+  const ttAB = createWithScope(uriWithPrefix("/ab"));
+  const ttA = createWithScope(uriWithPrefix("/a"));
+  const ttABC = createWithScope(uriWithPrefix("/abc"));
+  const ttABCD = createWithScope(uriWithPrefix("/abc/d/"));
+
+  equal(find("/q"), null, "/q does not exist");
+  equal(find("/a").id, ttA.id, "/a matches /a");
+  equal(find("/az").id, ttA.id, "/a matches /az");
+
+  equal(find("/ab").id, ttAB.id, "/ab matches /ab");
+  equal(find("/abq").id, ttAB.id, "/abq matches /ab");
+
+  equal(find("/abc").id, ttABC.id, "/abc matches /abc");
+  equal(find("/abc/").id, ttABC.id, "/abc/ matches /abc");
+  equal(find("/abc/d").id, ttABC.id, "/abc/d matches /abc (not /abc/d/)");
+
+  equal(find("/abc/d/").id, ttABCD.id, "/abc/d/ matches /abc/d/");
+  equal(find("/abc/d/efgh").id, ttABCD.id, "/abc/d/efgh matches /abc/d/");
+}).skip(); // TODO bug 2000948

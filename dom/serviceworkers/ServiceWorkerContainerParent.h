@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_serviceworkercontainerparent_h__
-#define mozilla_dom_serviceworkercontainerparent_h__
+#ifndef mozilla_dom_serviceworkercontainerparent_h_
+#define mozilla_dom_serviceworkercontainerparent_h_
 
 #include "mozilla/dom/PServiceWorkerContainerParent.h"
 
@@ -25,7 +25,7 @@ class ServiceWorkerContainerParent final
 
   mozilla::ipc::IPCResult RecvRegister(
       const IPCClientInfo& aClientInfo, const nsACString& aScopeURL,
-      const nsACString& aScriptURL,
+      const WorkerType& aType, const nsACString& aScriptURL,
       const ServiceWorkerUpdateViaCache& aUpdateViaCache,
       RegisterResolver&& aResolver) override;
 
@@ -50,4 +50,4 @@ class ServiceWorkerContainerParent final
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_serviceworkercontainerparent_h__
+#endif  // mozilla_dom_serviceworkercontainerparent_h_

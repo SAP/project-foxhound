@@ -15,20 +15,33 @@ class nsWindowSizes;
 
 namespace mozilla {
 
+struct PseudoStyleRequest;
 enum class PseudoStyleType : uint8_t;
 class ComputedStyle;
+
+// Entry in the cached inheriting styles cache. Stores the style and, for
+// functional pseudo-elements like ::highlight(name), the functional parameter.
+struct CachedStyleEntry {
+  RefPtr<ComputedStyle> mStyle;
+  RefPtr<nsAtom> mFunctionalPseudoParameter;
+};
 
 // Cache of anonymous box and lazy pseudo styles that inherit from a given
 // style.
 //
 // To minimize memory footprint, the cache is word-sized with a tagged pointer
-// If there is only one entry, it's stored inline. If there are more, they're
-// stored in an out-of-line buffer. See bug 1429126 comment 0 and comment 1 for
-// the measurements and rationale that influenced the design.
+// If there is only one entry without a functional parameter, it's stored
+// inline. If there are more entries, or the entry has a functional parameter,
+// they're stored in an out-of-line buffer. See bug 1429126 comment 0 and
+// comment 1 for the measurements and rationale that influenced the design.
 class CachedInheritingStyles {
  public:
-  void Insert(ComputedStyle* aStyle);
-  ComputedStyle* Lookup(PseudoStyleType) const;
+  void Insert(ComputedStyle* aStyle,
+              nsAtom* aFunctionalPseudoParameter = nullptr);
+  ComputedStyle* Lookup(const PseudoStyleRequest& aRequest) const;
+
+  // Appends all cached styles to the given array.
+  void AppendTo(nsTArray<const ComputedStyle*>& aArray) const;
 
   CachedInheritingStyles() : mBits(0) {}
   ~CachedInheritingStyles() {
@@ -43,7 +56,7 @@ class CachedInheritingStyles {
 
  private:
   // See bug 1429126 comment 1 for the choice of four here.
-  typedef AutoTArray<RefPtr<ComputedStyle>, 4> IndirectCache;
+  using IndirectCache = AutoTArray<CachedStyleEntry, 4>;
 
   bool IsEmpty() const { return !mBits; }
   bool IsIndirect() const { return (mBits & 1); }

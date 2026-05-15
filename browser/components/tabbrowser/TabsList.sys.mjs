@@ -5,7 +5,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   TabMetrics: "moz-src:///browser/components/tabbrowser/TabMetrics.sys.mjs",
 });
 
@@ -346,10 +347,12 @@ class TabsListBase {
    * @param {MozTabbrowserTab} tab
    */
   _moveTab(tab) {
-    let item = this.tabToElement.get(tab);
-    if (item) {
-      this._removeItem(item, tab);
-      this._addTab(tab);
+    for (let t of tab.splitview?.tabs ?? [tab]) {
+      let item = this.tabToElement.get(t);
+      if (item) {
+        this._removeItem(item, t);
+        this._addTab(t);
+      }
     }
   }
 
@@ -512,6 +515,7 @@ export class TabsPanel extends TabsListBase {
     /**
      * Setting a new property `XulToolbarItem._tab` on the row elements
      * for internal use by this module only.
+     *
      * @see getTabFromRow
      */
     row._tab = tab;
@@ -528,6 +532,7 @@ export class TabsPanel extends TabsListBase {
     /**
      * Setting a new property `MozToolbarbutton.tab` on the buttons
      * to support tab context menu integration.
+     *
      * @see TabContextMenu.updateContextMenu
      */
     button.tab = tab;
@@ -586,6 +591,7 @@ export class TabsPanel extends TabsListBase {
     /**
      * Setting a new property `XulToolbarItem._tabGroup` on the row elements
      * for internal use by this module only.
+     *
      * @see getTabGroupFromRow
      */
     row._tabGroup = group;
@@ -610,8 +616,11 @@ export class TabsPanel extends TabsListBase {
       "all-tabs-group-button",
       "subviewbutton",
       "subviewbutton-iconic",
-      group.collapsed ? "tab-group-icon-collapsed" : "tab-group-icon"
+      "tab-group-icon"
     );
+    if (group.collapsed) {
+      button.classList.add("tab-group-icon-collapsed");
+    }
     button.setAttribute("flex", "1");
     button.setAttribute("crop", "end");
 
@@ -651,7 +660,6 @@ export class TabsPanel extends TabsListBase {
       label: tab.label,
       tooltiptext,
       image: !busy && tab.getAttribute("image"),
-      iconloadingprincipal: tab.getAttribute("iconloadingprincipal"),
     });
 
     this._setImageAttributes(row, tab);
@@ -703,9 +711,13 @@ export class TabsPanel extends TabsListBase {
         ? getTabGroupFromRow(row).labelElement
         : getTabFromRow(row);
 
-    this.gBrowser.tabContainer.startTabDrag(event, elementToDrag, {
-      fromTabList: true,
-    });
+    this.gBrowser.tabContainer.tabDragAndDrop.startTabDrag(
+      event,
+      elementToDrag.splitview || elementToDrag,
+      {
+        fromTabList: true,
+      }
+    );
   }
 
   /**
@@ -721,7 +733,8 @@ export class TabsPanel extends TabsListBase {
    * @returns {boolean}
    */
   _isMovingTabs(event) {
-    var effects = this.gBrowser.tabContainer.getDropEffectForTabDrag(event);
+    var effects =
+      this.gBrowser.tabContainer.tabDragAndDrop.getDropEffectForTabDrag(event);
     return effects == "move";
   }
 
@@ -841,10 +854,19 @@ export class TabsPanel extends TabsListBase {
     }
 
     const threshold = rect.height * 0.5;
-    if (event.clientY < rect.top + threshold) {
-      this._setDropTarget(row, -1);
+    const direction = event.clientY < rect.top + threshold ? -1 : 0;
+    if (
+      getRowVariant(row) === ROW_VARIANT_TAB &&
+      getTabFromRow(row).splitview
+    ) {
+      const tab = getTabFromRow(row);
+      if (tab == tab.splitview.tabs[0]) {
+        this._setDropTarget(row, -1);
+      } else if (tab == tab.splitview.tabs[1]) {
+        this._setDropTarget(row, 0);
+      }
     } else {
-      this._setDropTarget(row, 0);
+      this._setDropTarget(row, direction);
     }
 
     return true;

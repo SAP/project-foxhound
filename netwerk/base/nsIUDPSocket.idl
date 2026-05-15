@@ -273,6 +273,13 @@ interface nsIUDPSocket : nsISupports
       */
     [noscript, notxpcom] void enableWritePoll();
 
+     /**
+      * isSocketClosed
+      *
+      * @return true when the socket is already closed.
+      */
+    [noscript, notxpcom] boolean isSocketClosed();
+
     /**
      * addOutputBytes
      *
@@ -296,6 +303,23 @@ interface nsIUDPSocket : nsISupports
      *        The number of bytes read.
      */
     [noscript, notxpcom] void addInputBytes(in uint32_t aBytes);
+
+    /**
+     * markAsTRRServiceChannel
+     *
+     * Mark this socket as being used for a TRR service channel connection.
+     * This affects prioritization of socket events.
+     */
+    [noscript, notxpcom] void markAsTRRServiceChannel();
+
+    /**
+     * isTRRServiceChannel
+     *
+     * Check if this socket is marked as being used for a TRR service channel.
+     *
+     * @return true if the socket is for TRR, false otherwise.
+     */
+    [noscript, notxpcom] boolean isTRRServiceChannel();
 
     /**
      * multicastLoopback

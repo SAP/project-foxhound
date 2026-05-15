@@ -7,7 +7,6 @@
 #ifndef DOM_SVG_SVGANIMATIONELEMENT_H_
 #define DOM_SVG_SVGANIMATIONELEMENT_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILTimedElement.h"
 #include "mozilla/dom/IDTracker.h"
 #include "mozilla/dom/SVGElement.h"

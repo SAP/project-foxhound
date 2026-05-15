@@ -28,7 +28,7 @@ impl<'a> AutoProfilerLabel<'a> {
     pub unsafe fn new(
         label: &mut std::mem::MaybeUninit<mozilla::AutoProfilerLabel>,
         category_pair: ProfilingCategoryPair,
-    ) -> AutoProfilerLabel {
+    ) -> Self {
         bindings::gecko_profiler_construct_label(
             label.as_mut_ptr(),
             category_pair.to_cpp_enum_value(),

@@ -2,7 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const ERROR_LINE_NUMBER = 36;
+const ERROR_LINE_NUMBER = 37;
 const EXCEPTION_LINE_NUMBER = ERROR_LINE_NUMBER + 3;
 const ERROR_COLUMN_NUMBER = 31;
 const EXCEPTION_COLUMN_NUMBER = 22;

@@ -6,27 +6,25 @@
 #ifndef GPU_BindGroupLayout_H_
 #define GPU_BindGroupLayout_H_
 
-#include "nsWrapperCache.h"
 #include "ObjectModel.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::webgpu {
 
 class Device;
 
-class BindGroupLayout final : public ObjectBase, public ChildOf<Device> {
+class BindGroupLayout final : public nsWrapperCache,
+                              public ObjectBase,
+                              public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(BindGroupLayout)
   GPU_DECL_JS_WRAP(BindGroupLayout)
 
-  BindGroupLayout(Device* const aParent, RawId aId, bool aOwning);
-
-  const RawId mId;
-  const bool mOwning;
+  BindGroupLayout(Device* const aParent, RawId aId);
 
  private:
-  ~BindGroupLayout();
-  void Cleanup();
+  virtual ~BindGroupLayout();
 };
 
 }  // namespace mozilla::webgpu

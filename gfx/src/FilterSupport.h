@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FilterSupport_h
-#define __FilterSupport_h
+#ifndef FilterSupport_h
+#define FilterSupport_h
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Matrix.h"
@@ -464,4 +464,4 @@ bool ComputeColorMatrix(const ColorMatrixAttributes& aMatrixAttributes,
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // __FilterSupport_h
+#endif  // FilterSupport_h

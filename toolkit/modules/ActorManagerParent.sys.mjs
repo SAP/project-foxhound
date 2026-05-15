@@ -103,6 +103,7 @@ let JSWINDOWACTORS = {
     },
 
     matches: ["about:certificate"],
+    remoteTypes: ["privilegedabout"],
   },
 
   AboutHttpsOnlyError: {
@@ -119,24 +120,18 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
-  AboutTranslations: {
+  AboutRestricted: {
     parent: {
-      esModuleURI: "resource://gre/actors/AboutTranslationsParent.sys.mjs",
+      esModuleURI: "resource://gre/actors/AboutRestrictedParent.sys.mjs",
     },
     child: {
-      esModuleURI: "resource://gre/actors/AboutTranslationsChild.sys.mjs",
+      esModuleURI: "resource://gre/actors/AboutRestrictedChild.sys.mjs",
       events: {
-        // Run the actor before any content of the page appears to inject functions.
         DOMDocElementInserted: {},
-        DOMContentLoaded: {},
-        // Used to show and hide the translations button.
-        pageshow: { mozSystemGroup: true },
-        pagehide: { mozSystemGroup: true },
       },
     },
-    matches: ["about:translations"],
-    remoteTypes: ["privilegedabout"],
-    enablePreference: "browser.translations.enable",
+    matches: ["about:restricted?*"],
+    allFrames: true,
   },
 
   AudioPlayback: {
@@ -472,54 +467,35 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
-  PictureInPictureLauncher: {
+  PageExtractor: {
     parent: {
-      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+      esModuleURI: "resource://gre/actors/PageExtractorParent.sys.mjs",
     },
     child: {
-      esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
-      events: {
-        MozTogglePictureInPicture: { capture: true },
-      },
+      esModuleURI: "resource://gre/actors/PageExtractorChild.sys.mjs",
     },
-
-    allFrames: true,
+    matches: [
+      "http://*/*",
+      "https://*/*",
+      "file:///*",
+      "moz-extension://*",
+      "data:text/html,*",
+      "about:reader?*",
+    ],
+    messageManagerGroups: ["browsers", "headless-browsers"],
   },
 
-  PictureInPicture: {
+  PopupAndRedirectBlocking: {
     parent: {
-      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+      esModuleURI:
+        "resource://gre/actors/PopupAndRedirectBlockingParent.sys.mjs",
     },
     child: {
-      esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
-    },
-
-    allFrames: true,
-  },
-
-  PictureInPictureToggle: {
-    parent: {
-      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
-    },
-    child: {
-      esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
-      events: {
-        UAWidgetSetupOrChange: {},
-        contextmenu: { capture: true },
-      },
-    },
-
-    allFrames: true,
-  },
-
-  PopupBlocking: {
-    parent: {
-      esModuleURI: "resource://gre/actors/PopupBlockingParent.sys.mjs",
-    },
-    child: {
-      esModuleURI: "resource://gre/actors/PopupBlockingChild.sys.mjs",
+      esModuleURI:
+        "resource://gre/actors/PopupAndRedirectBlockingChild.sys.mjs",
       events: {
         DOMPopupBlocked: { capture: true },
+        DOMRedirectBlocked: { capture: true },
         // Only listen for the `pageshow` event after the actor has already been
         // created for some other reason.
         pageshow: { createActor: false },
@@ -631,20 +607,24 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource://gre/actors/TranslationsChild.sys.mjs",
       events: {
         DOMContentLoaded: {},
+        load: {
+          // Once the page is loaded, it's important that we react to the page's
+          // language tag as soon as possible in order to give a good response time
+          // for showing the translations panel, or for auto-translating, etc.
+          capture: true,
+          createActor: false,
+        },
       },
     },
-    matches: [
-      "http://*/*",
-      "https://*/*",
-      "file:///*",
-      "moz-extension://*",
-
-      // The actor is explicitly loaded by this page,
-      // so it needs to be allowed for it.
-      "about:translations",
-    ],
+    matches: ["http://*/*", "https://*/*", "file:///*", "moz-extension://*"],
     messageManagerGroups: ["browsers"],
     enablePreference: "browser.translations.enable",
+    onPreferenceChanged(isEnabled) {
+      const { TranslationsParent } = ChromeUtils.importESModule(
+        "resource://gre/actors/TranslationsParent.sys.mjs"
+      );
+      TranslationsParent.onIsEnabledChanged(isEnabled);
+    },
   },
 
   UAWidgets: {
@@ -721,15 +701,90 @@ if (AppConstants.platform != "android") {
   // Note that GeckoView handles MozOpenDateTimePicker in GeckoViewPrompt.
   JSWINDOWACTORS.DateTimePicker = {
     parent: {
-      esModuleURI: "resource://gre/actors/DateTimePickerParent.sys.mjs",
+      esModuleURI: "moz-src:///toolkit/actors/DateTimePickerParent.sys.mjs",
     },
 
     child: {
-      esModuleURI: "resource://gre/actors/DateTimePickerChild.sys.mjs",
+      esModuleURI: "moz-src:///toolkit/actors/DateTimePickerChild.sys.mjs",
       events: {
         MozOpenDateTimePicker: {},
-        MozUpdateDateTimePicker: {},
         MozCloseDateTimePicker: {},
+      },
+    },
+
+    includeChrome: true,
+    allFrames: true,
+  };
+
+  JSWINDOWACTORS.PictureInPictureLauncher = {
+    parent: {
+      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
+      events: {
+        MozTogglePictureInPicture: { capture: true },
+      },
+    },
+    messageManagerGroups: ["browsers"],
+    allFrames: true,
+  };
+
+  JSWINDOWACTORS.PictureInPicture = {
+    parent: {
+      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
+    },
+    messageManagerGroups: ["browsers", "pip-player"],
+    allFrames: true,
+  };
+
+  JSWINDOWACTORS.PictureInPictureToggle = {
+    parent: {
+      esModuleURI: "resource://gre/modules/PictureInPicture.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/PictureInPictureChild.sys.mjs",
+      events: {
+        UAWidgetSetupOrChange: {},
+        contextmenu: { capture: true },
+      },
+    },
+    messageManagerGroups: ["browsers"],
+    allFrames: true,
+  };
+
+  JSWINDOWACTORS.AboutTranslations = {
+    parent: {
+      esModuleURI: "resource://gre/actors/AboutTranslationsParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/AboutTranslationsChild.sys.mjs",
+      events: {
+        // Run the actor before any content of the page appears to inject functions.
+        DOMDocElementInserted: {},
+        DOMContentLoaded: {},
+        // Used to show and hide the translations button.
+        pageshow: { mozSystemGroup: true },
+        pagehide: { mozSystemGroup: true },
+      },
+    },
+    matches: ["about:translations"],
+    remoteTypes: ["privilegedabout"],
+  };
+
+  JSWINDOWACTORS.ColorPicker = {
+    parent: {
+      esModuleURI: "moz-src:///toolkit/actors/ColorPickerParent.sys.mjs",
+    },
+
+    child: {
+      esModuleURI: "moz-src:///toolkit/actors/ColorPickerChild.sys.mjs",
+      events: {
+        MozOpenColorPicker: {},
+        MozCloseColorPicker: {},
       },
     },
 

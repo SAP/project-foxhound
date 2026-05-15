@@ -6,8 +6,8 @@
 #ifndef GMPCrashHelperHolder_h_
 #define GMPCrashHelperHolder_h_
 
-#include "mozilla/RefPtr.h"
 #include "GMPCrashHelper.h"
+#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 

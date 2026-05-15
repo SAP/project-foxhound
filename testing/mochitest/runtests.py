@@ -47,8 +47,6 @@ import mozprocess
 import mozrunner
 from manifestparser import TestManifest
 from manifestparser.filters import (
-    chunk_by_dir,
-    chunk_by_runtime,
     chunk_by_slice,
     failures,
     pathprefix,
@@ -146,25 +144,22 @@ TBPL_RETRY = 4  # Defined in mozharness
 class MessageLogger:
     """File-like object for logging messages (structured logs)"""
 
-    BUFFERING_THRESHOLD = 100
     # This is a delimiter used by the JS side to avoid logs interleaving
     DELIMITER = "\ue175\uee31\u2c32\uacbf"
     BUFFERED_ACTIONS = set(["test_status", "log"])
-    VALID_ACTIONS = set(
-        [
-            "suite_start",
-            "suite_end",
-            "group_start",
-            "group_end",
-            "test_start",
-            "test_end",
-            "test_status",
-            "log",
-            "assertion_count",
-            "buffering_on",
-            "buffering_off",
-        ]
-    )
+    VALID_ACTIONS = set([
+        "suite_start",
+        "suite_end",
+        "group_start",
+        "group_end",
+        "test_start",
+        "test_end",
+        "test_status",
+        "log",
+        "assertion_count",
+        "buffering_on",
+        "buffering_off",
+    ])
     # Regexes that will be replaced with an empty string if found in a test
     # name. We do this to normalize test names which may contain URLs and test
     # package prefixes.
@@ -207,8 +202,10 @@ class MessageLogger:
             raise ValueError
 
     def _fix_subtest_name(self, message):
-        """Make sure subtest name is a string"""
-        if "subtest" in message and not isinstance(message["subtest"], str):
+        """Ensure test_status messages have a subtest field and convert it to a string"""
+        if message.get("action") == "test_status" and "subtest" not in message:
+            message["subtest"] = None
+        elif message.get("subtest") is not None:
             message["subtest"] = str(message["subtest"])
 
     def _fix_test_name(self, message):
@@ -297,15 +294,7 @@ class MessageLogger:
             self.restore_buffering = self.restore_buffering or self.buffering
             self.buffering = False
             if self.buffered_messages:
-                snipped = len(self.buffered_messages) - self.BUFFERING_THRESHOLD
-                if snipped > 0:
-                    self.logger.info(
-                        f"<snipped {snipped} output lines - "
-                        "if you need more context, please use "
-                        "SimpleTest.requestCompleteLog() in your test>"
-                    )
-                # Dumping previously buffered messages
-                self.dump_buffered(limit=True)
+                self.dump_buffered()
 
             # Logging the error message
             self.logger.log_raw(message)
@@ -342,14 +331,9 @@ class MessageLogger:
     def flush(self):
         sys.stdout.flush()
 
-    def dump_buffered(self, limit=False):
-        if limit:
-            dumped_messages = self.buffered_messages[-self.BUFFERING_THRESHOLD :]
-        else:
-            dumped_messages = self.buffered_messages
-
+    def dump_buffered(self):
         last_timestamp = None
-        for buf in dumped_messages:
+        for buf in self.buffered_messages:
             # pylint --py3k W1619
             timestamp = datetime.fromtimestamp(buf["time"] / 1000).strftime("%H:%M:%S")
             if timestamp != last_timestamp:
@@ -516,6 +500,10 @@ class MochitestServer:
             self._httpdPath = SCRIPT_DIR
         self._httpdPath = os.path.abspath(self._httpdPath)
 
+        self._trainHop = "browser.newtabpage.trainhopAddon.version=any" in options.get(
+            "extraPrefs", []
+        )
+
         MochitestServer.instance_count += 1
 
     def start(self):
@@ -528,6 +516,12 @@ class MochitestServer:
             env["LD_LIBRARY_PATH"] = self._xrePath
         else:
             env["LD_LIBRARY_PATH"] = ":".join([self._xrePath, env["LD_LIBRARY_PATH"]])
+
+        if self._trainHop:
+            env["LD_LIBRARY_PATH"] = ":".join([
+                os.path.join(os.path.dirname(here), "bin"),
+                env["LD_LIBRARY_PATH"],
+            ])
 
         # When running with an ASan build, our xpcshell server will also be ASan-enabled,
         # thus consuming too much resources when running together with the browser on
@@ -705,7 +699,7 @@ class SSLTunnel:
         self.webServer = options.webServer
         self.webSocketPort = options.webSocketPort
 
-        self.customCertRE = re.compile("^cert=(?P<nickname>[0-9a-zA-Z_ ]+)")
+        self.customCertRE = re.compile("^cert=(?P<nickname>[0-9a-zA-Z_ -]+)")
         self.clientAuthRE = re.compile("^clientauth=(?P<clientauth>[a-z]+)")
         self.redirRE = re.compile("^redir=(?P<redirhost>[0-9a-zA-Z_ .]+)")
 
@@ -901,18 +895,16 @@ def findTestMediaDevices(log):
         gst = gst010
     else:
         gst = gst10
-    process = subprocess.Popen(
-        [
-            gst,
-            "--no-fault",
-            "videotestsrc",
-            "pattern=green",
-            "num-buffers=1",
-            "!",
-            "v4l2sink",
-            "device=%s" % device,
-        ]
-    )
+    process = subprocess.Popen([
+        gst,
+        "--no-fault",
+        "videotestsrc",
+        "pattern=green",
+        "num-buffers=1",
+        "!",
+        "v4l2sink",
+        "device=%s" % device,
+    ])
     info["video"] = {"name": name, "process": process}
     info["speaker"] = {"name": "44100Hz Null Output"}
     info["audio"] = {"name": "Monitor of {}".format(info["speaker"]["name"])}
@@ -982,6 +974,7 @@ class MochitestDesktop:
         self.prefs_by_manifest = defaultdict(set)
         self.env_vars_by_manifest = defaultdict(set)
         self.tests_dirs_by_manifest = defaultdict(set)
+        self.profile_path_by_manifest = defaultdict(set)
         self._active_tests = None
         self.currentTests = None
         self._locations = None
@@ -996,12 +989,13 @@ class MochitestDesktop:
         self.extraEnv = {}
         self.extraTestsDirs = []
         self.conditioned_profile_dir = None
+        self.perfherder_data = []
 
         if logger_options.get("log"):
             self.log = logger_options["log"]
         else:
             self.log = commandline.setup_logging(
-                "mochitest", logger_options, {"tbpl": sys.stdout}
+                "mochitest", logger_options, {"raw": sys.stdout}
             )
 
         self.message_logger = MessageLogger(
@@ -1723,52 +1717,14 @@ toolbar#nav-bar {
             if options.test_tags:
                 filters.append(tags(options.test_tags))
 
+            path_filter = None
             if options.test_paths:
                 options.test_paths = self.normalize_paths(options.test_paths)
-                filters.append(pathprefix(options.test_paths))
+                path_filter = pathprefix(options.test_paths)
+                filters.append(path_filter)
 
-            # Add chunking filters if specified
             if options.totalChunks:
-                if options.chunkByDir:
-                    filters.append(
-                        chunk_by_dir(
-                            options.thisChunk, options.totalChunks, options.chunkByDir
-                        )
-                    )
-                elif options.chunkByRuntime:
-                    if mozinfo.info["os"] == "android":
-                        platkey = "android"
-                    elif mozinfo.isWin:
-                        platkey = "windows"
-                    else:
-                        platkey = "unix"
-
-                    runtime_file = os.path.join(
-                        SCRIPT_DIR,
-                        "runtimes",
-                        f"manifest-runtimes-{platkey}.json",
-                    )
-                    if not os.path.exists(runtime_file):
-                        self.log.error("runtime file %s not found!" % runtime_file)
-                        sys.exit(1)
-
-                    # Given the mochitest flavor, load the runtimes information
-                    # for only that flavor due to manifest runtime format change in Bug 1637463.
-                    with open(runtime_file) as f:
-                        if "suite_name" in options:
-                            runtimes = json.load(f).get(options.suite_name, {})
-                        else:
-                            runtimes = {}
-
-                    filters.append(
-                        chunk_by_runtime(
-                            options.thisChunk, options.totalChunks, runtimes
-                        )
-                    )
-                else:
-                    filters.append(
-                        chunk_by_slice(options.thisChunk, options.totalChunks)
-                    )
+                filters.append(chunk_by_slice(options.thisChunk, options.totalChunks))
 
             noDefaultFilters = False
             if options.runFailures:
@@ -1787,6 +1743,16 @@ toolbar#nav-bar {
                 strictExpressions=True,
                 **info,
             )
+
+            # Store missing manifests for later use in structured logging
+            self.missing_manifests = set()
+            if path_filter and path_filter.missing:
+                self.missing_manifests = path_filter.missing
+                self.log.warning(
+                    "The following path(s) didn't resolve any tests:\n  {}".format(
+                        "  \n".join(sorted(path_filter.missing))
+                    )
+                )
 
             if len(tests) == 0:
                 self.log.error(
@@ -1825,8 +1791,15 @@ toolbar#nav-bar {
             self.prefs_by_manifest[manifest_key].add(test.get("prefs"))
             self.env_vars_by_manifest[manifest_key].add(test.get("environment"))
             self.tests_dirs_by_manifest[manifest_key].add(test.get("test-directories"))
+            self.profile_path_by_manifest[manifest_key].add(test.get("profile-path"))
 
-            for key in ["args", "prefs", "environment", "test-directories"]:
+            for key in [
+                "args",
+                "prefs",
+                "environment",
+                "test-directories",
+                "profile-path",
+            ]:
                 if key in test and not options.runByManifest and "disabled" not in test:
                     self.log.error(
                         "parsing {}: runByManifest mode must be enabled to "
@@ -1892,6 +1865,17 @@ toolbar#nav-bar {
                 )
             )
             sys.exit(1)
+        profile_path_not_default = [
+            m for m, p in self.profile_path_by_manifest.items() if len(p) > 1
+        ]
+        if profile_path_not_default:
+            self.log.error(
+                "The 'profile-path' key must be set in the DEFAULT section of a "
+                "manifest. Fix the following manifests: {}".format(
+                    "\n".join(profile_path_not_default)
+                )
+            )
+            sys.exit(1)
 
         paths.sort(key=lambda p: p["path"].split("/"))
         if options.dump_tests:
@@ -1902,6 +1886,11 @@ toolbar#nav-bar {
 
             self.log.info("Dumping active_tests to %s file." % options.dump_tests)
             sys.exit()
+
+        # Add missing manifests with empty test lists so they appear in
+        # group_result output with SKIP status
+        for missing_path in self.missing_manifests:
+            self.tests_by_manifest[missing_path] = []
 
         # Upload a list of test manifests that were executed in this run.
         if "MOZ_UPLOAD_DIR" in os.environ:
@@ -2183,6 +2172,8 @@ toolbar#nav-bar {
         certutil = os.path.join(options.utilityPath, "certutil" + bin_suffix)
         pk12util = os.path.join(options.utilityPath, "pk12util" + bin_suffix)
         toolsEnv = env
+        if "browser.newtabpage.trainhopAddon.version=any" in options.extraPrefs:
+            toolsEnv["LD_LIBRARY_PATH"] = os.path.join(os.path.dirname(here), "bin")
         if mozinfo.info["asan"]:
             # Disable leak checking when running these tools
             toolsEnv["ASAN_OPTIONS"] = "detect_leaks=0"
@@ -2473,34 +2464,25 @@ toolbar#nav-bar {
         }
 
         test_timeout = None
-        if options.flavor == "browser" and options.timeout:
-            test_timeout = options.timeout
-
-        # browser-chrome tests use a fairly short default timeout of 45 seconds;
-        # this is sometimes too short on asan and debug, where we expect reduced
-        # performance.
-        if (
-            (mozinfo.info["asan"] or mozinfo.info["debug"])
-            and options.flavor == "browser"
-            and options.timeout is None
-        ):
-            self.log.info("Increasing default timeout to 90 seconds (asan or debug)")
-            test_timeout = 90
-
-        # tsan builds need even more time
-        if (
-            mozinfo.info["tsan"]
-            and options.flavor == "browser"
-            and options.timeout is None
-        ):
-            self.log.info("Increasing default timeout to 120 seconds (tsan)")
-            test_timeout = 120
-
-        if mozinfo.info["os"] == "win" and mozinfo.info["processor"] == "aarch64":
-            test_timeout = self.DEFAULT_TIMEOUT * 4
-            self.log.info(
-                f"Increasing default timeout to {test_timeout} seconds (win aarch64)"
-            )
+        if options.flavor == "browser":
+            if options.timeout:
+                test_timeout = options.timeout
+            elif mozinfo.info["asan"] or mozinfo.info["debug"]:
+                # browser-chrome tests use a fairly short default timeout of 45 seconds;
+                # this is sometimes too short on asan and debug, where we expect reduced
+                # performance.
+                self.log.info(
+                    "Increasing default timeout to 90 seconds (asan or debug)"
+                )
+                test_timeout = 90
+            elif mozinfo.info["tsan"]:
+                # tsan builds need even more time
+                self.log.info("Increasing default timeout to 120 seconds (tsan)")
+                test_timeout = 120
+            else:
+                test_timeout = 45
+        elif options.flavor in ("a11y", "chrome"):
+            test_timeout = 45
 
         if "MOZ_CHAOSMODE=0xfb" in options.environment and test_timeout:
             test_timeout *= 2
@@ -2961,7 +2943,7 @@ toolbar#nav-bar {
                     "thread": None,
                     "pid": None,
                     "source": "mochitest",
-                    "time": int(time.time()) * 1000,
+                    "time": int(time.time() * 1000),
                     "test": self.lastTestSeen,
                     "message": "Application shut down (without crashing) in the middle of a test!",
                 }
@@ -2986,7 +2968,7 @@ toolbar#nav-bar {
                         "thread": None,
                         "pid": None,
                         "source": "mochitest",
-                        "time": int(time.time()) * 1000,
+                        "time": int(time.time() * 1000),
                         "test": self.lastTestSeen,
                         "message": msg,
                     }
@@ -3052,7 +3034,7 @@ toolbar#nav-bar {
                     "thread": None,
                     "pid": None,
                     "source": "mochitest",
-                    "time": int(time.time()) * 1000,
+                    "time": int(time.time() * 1000),
                     "test": self.lastTestSeen,
                     "message": "application terminated with exit code %s" % status,
                 }
@@ -3093,7 +3075,10 @@ toolbar#nav-bar {
         self.expectedError.clear()
         self.result.clear()
         options.manifestFile = None
-        options.profilePath = None
+        # When runByManifest is true, runTests already sets profilePath
+        # appropriately for each manifest (from profile-path key, or None).
+        if not options.runByManifest:
+            options.profilePath = None
 
     def initializeVirtualAudioDevices(self):
         """
@@ -3119,13 +3104,11 @@ toolbar#nav-bar {
         input_devices = []
         for i in range(1, INPUT_DEVICES_COUNT + 1):
             freq = i * DEVICES_BASE_FREQUENCY
-            input_devices.append(
-                {
-                    "name": f"sine-{freq}",
-                    "description": f"{freq}Hz Sine Source",
-                    "frequency": freq,
-                }
-            )
+            input_devices.append({
+                "name": f"sine-{freq}",
+                "description": f"{freq}Hz Sine Source",
+                "frequency": freq,
+            })
 
         # Determine if this is running PulseAudio or PipeWire
         # `pactl info` works on both systems, but when running on PipeWire it says
@@ -3267,8 +3250,9 @@ toolbar#nav-bar {
 
             except subprocess.CalledProcessError:
                 self.log.error(
-                    "Could not create device with module-sine-source"
-                    " (freq={})".format(device["frequency"])
+                    "Could not create device with module-sine-source (freq={})".format(
+                        device["frequency"]
+                    )
                 )
 
         self.virtualDeviceIdList = idList
@@ -3319,8 +3303,7 @@ toolbar#nav-bar {
                     for key in self.expectedError:
                         full_key = [x for x in testsToRun if key in x]
                         if full_key:
-                            if testsToRun.index(full_key[0]) < firstFail:
-                                firstFail = testsToRun.index(full_key[0])
+                            firstFail = min(firstFail, testsToRun.index(full_key[0]))
                     testsToRun = testsToRun[firstFail + 1 :]
                     if testsToRun == []:
                         status = -1
@@ -3369,7 +3352,6 @@ toolbar#nav-bar {
             options.keep_open = False
             options.runUntilFailure = True
             options.profilePath = None
-            options.comparePrefs = True
             result = self.runTests(options)
             result = result or (-2 if self.countfail > 0 else 0)
             self.message_logger.finish()
@@ -3504,58 +3486,49 @@ toolbar#nav-bar {
         self.extraPrefs["fission.autostart"] = not options.disable_fission
 
         # for test manifest parsing.
-        mozinfo.update(
-            {
-                "a11y_checks": options.a11y_checks,
-                "e10s": options.e10s,
-                "fission": not options.disable_fission,
-                "headless": options.headless,
-                "http3": options.useHttp3Server,
-                "http2": options.useHttp2Server,
-                "inc_origin_init": os.environ.get("MOZ_ENABLE_INC_ORIGIN_INIT") == "1",
-                # Until the test harness can understand default pref values,
-                # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
-                # should by synchronized with the default pref value indicated in
-                # StaticPrefList.yaml.
-                #
-                # Currently for automation, the pref defaults to true (but can be
-                # overridden with --setpref).
-                "sessionHistoryInParent": not options.disable_fission
-                or not self.extraPrefs.get(
-                    "fission.disableSessionHistoryInParent",
-                    mozinfo.info["os"] == "android"
-                    and mozinfo.info.get("release_or_beta", False),
-                ),
-                "socketprocess_e10s": self.extraPrefs.get(
-                    "network.process.enabled", False
-                ),
-                "socketprocess_networking": self.extraPrefs.get(
-                    "network.http.network_access_on_socket_process.enabled", False
-                ),
-                "swgl": self.extraPrefs.get("gfx.webrender.software", False),
-                "verify": options.verify,
-                "verify_fission": options.verify_fission,
-                "vertical_tab": self.extraPrefs.get("sidebar.verticalTabs", False),
-                "webgl_ipc": self.extraPrefs.get("webgl.out-of-process", False),
-                "wmfme": (
-                    self.extraPrefs.get("media.wmf.media-engine.enabled", 0)
-                    and self.extraPrefs.get(
-                        "media.wmf.media-engine.channel-decoder.enabled", False
-                    )
-                ),
-                "mda_gpu": self.extraPrefs.get(
-                    "media.hardware-video-decoding.force-enabled", False
-                ),
-                "xorigin": options.xOriginTests,
-                "condprof": options.conditionedProfile,
-                "msix": "WindowsApps" in options.app,
-                "android_version": mozinfo.info.get("android_version", -1),
-                "android": mozinfo.info.get("android", False),
-                "is_emulator": mozinfo.info.get("is_emulator", False),
-                "coverage": mozinfo.info.get("coverage", False),
-                "nogpu": mozinfo.info.get("nogpu", False),
-            }
-        )
+        mozinfo.update({
+            "a11y_checks": options.a11y_checks,
+            "e10s": options.e10s,
+            "fission": not options.disable_fission,
+            "headless": options.headless,
+            "http3": options.useHttp3Server,
+            "http2": options.useHttp2Server,
+            "inc_origin_init": os.environ.get("MOZ_ENABLE_INC_ORIGIN_INIT") == "1",
+            # Until the test harness can understand default pref values,
+            # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
+            # should by synchronized with the default pref value indicated in
+            # StaticPrefList.yaml.
+            #
+            # Currently for automation, the pref defaults to true (but can be
+            # overridden with --setpref).
+            "sessionHistoryInParent": not options.disable_fission
+            or not self.extraPrefs.get("fission.disableSessionHistoryInParent"),
+            "socketprocess_e10s": self.extraPrefs.get("network.process.enabled", False),
+            "socketprocess_networking": self.extraPrefs.get(
+                "network.http.network_access_on_socket_process.enabled", False
+            ),
+            "swgl": self.extraPrefs.get("gfx.webrender.software", False),
+            "verify": options.verify,
+            "verify_fission": options.verify_fission,
+            "vertical_tab": self.extraPrefs.get("sidebar.verticalTabs", False),
+            "webgl_ipc": self.extraPrefs.get("webgl.out-of-process", False),
+            "wmfme": (
+                self.extraPrefs.get("media.wmf.media-engine.enabled", 0)
+                and self.extraPrefs.get(
+                    "media.wmf.media-engine.channel-decoder.enabled", False
+                )
+            ),
+            "mda_gpu": self.extraPrefs.get(
+                "media.hardware-video-decoding.force-enabled", False
+            ),
+            "xorigin": options.xOriginTests,
+            "condprof": options.conditionedProfile,
+            "msix": "WindowsApps" in options.app,
+            "android": mozinfo.info.get("android", False),
+            "is_emulator": mozinfo.info.get("is_emulator", False),
+            "coverage": mozinfo.info.get("coverage", False),
+            "nogpu": mozinfo.info.get("nogpu", False),
+        })
 
         if not self.mozinfo_variables_shown:
             self.mozinfo_variables_shown = True
@@ -3634,13 +3607,21 @@ toolbar#nav-bar {
             self.extraEnv = {}
             if envVars:
                 self.extraEnv = envVars.strip().split()
+                env_list = "\n  ".join(self.extraEnv)
                 self.log.info(
-                    "The following extra environment variables will be set:\n  {}".format(
-                        "\n  ".join(self.extraEnv)
-                    )
+                    f"The following extra environment variables will be set:\n  {env_list}"
                 )
 
             self.parseAndCreateTestsDirs(m)
+
+            profilePath = list(self.profile_path_by_manifest[m])[0]
+            if profilePath:
+                options.profilePath = os.path.expanduser(profilePath.strip())
+                self.log.info(
+                    f"The following profile path will be set:\n  {options.profilePath}"
+                )
+            else:
+                options.profilePath = None
 
             # If we are using --run-by-manifest, we should not use the profile path (if) provided
             # by the user, since we need to create a new directory for each run. We would face
@@ -3687,6 +3668,13 @@ toolbar#nav-bar {
             print("3 INFO Todo:    %s" % self.counttodo)
             print("4 INFO Mode:    %s" % e10s_mode)
             print("5 INFO SimpleTest FINISHED")
+
+        if os.getenv("MOZ_AUTOMATION") and self.perfherder_data:
+            upload_dir = Path(os.getenv("MOZ_UPLOAD_DIR"))
+            for i, data in enumerate(self.perfherder_data):
+                out_path = upload_dir / f"perfherder-data-mochitest-{i}.json"
+                with out_path.open("w", encoding="utf-8") as f:
+                    f.write(json.dumps(data))
 
         self.handleShutdownProfile(options)
 
@@ -3768,8 +3756,7 @@ toolbar#nav-bar {
 
         if (valgrindArgs or valgrindSuppFiles) and not valgrindPath:
             self.log.error(
-                "Specified --valgrind-args or --valgrind-supp-files,"
-                " but not --valgrind"
+                "Specified --valgrind-args or --valgrind-supp-files, but not --valgrind"
             )
             return 1
 
@@ -3903,7 +3890,7 @@ toolbar#nav-bar {
                         mozinfo.info.get("socketprocess_e10s", False)
                     )
                 )
-                self.log.info("runtests.py | Running tests: start.\n")
+                self.log.info(f"runtests.py | Running {scheme} tests: start.\n")
                 ret, _ = self.runApp(
                     testURL,
                     self.browserEnv,
@@ -3926,6 +3913,9 @@ toolbar#nav-bar {
                     runFailures=options.runFailures,
                     crashAsPass=options.crashAsPass,
                     currentManifest=manifestToFilter,
+                )
+                self.log.info(
+                    f"runtests.py | Running {scheme} tests: end. status: {ret}"
                 )
                 status = ret or status
         except KeyboardInterrupt:
@@ -3975,8 +3965,6 @@ toolbar#nav-bar {
                 scope=manifestToFilter,
             )
 
-        self.log.info("runtests.py | Running tests: end.")
-
         if self.manifest is not None:
             self.cleanup(options, False)
 
@@ -4002,7 +3990,7 @@ toolbar#nav-bar {
             "thread": None,
             "pid": None,
             "source": "mochitest",
-            "time": int(time.time()) * 1000,
+            "time": int(time.time() * 1000),
             "test": self.lastTestSeen,
             "message": "application timed out after %d seconds with no output"
             % int(timeout),
@@ -4178,6 +4166,7 @@ toolbar#nav-bar {
 
                 # Processing the message by the logger
                 self.harness.message_logger.process_message(msg)
+                self.parse_perfherder_data(msg)
 
         __call__ = processOutputLine
 
@@ -4210,13 +4199,14 @@ toolbar#nav-bar {
                 self.harness.countfail += numFailures
                 for message in errorMessages:
                     msg = {
-                        "action": "test_end",
+                        "action": "test_status",
+                        "subtest": "Shutdown",
                         "status": "FAIL",
                         "expected": "PASS",
                         "thread": None,
                         "pid": None,
                         "source": "mochitest",
-                        "time": int(time.time()) * 1000,
+                        "time": message.get("time") or int(time.time() * 1000),
                         "test": message["test"],
                         "message": message["msg"],
                     }
@@ -4250,9 +4240,8 @@ toolbar#nav-bar {
             ):
                 key = message["test"].split("/")[-1].strip()
                 if key not in self.harness.expectedError:
-                    self.harness.expectedError[key] = message.get(
-                        "message", message["subtest"]
-                    ).strip()
+                    error_msg = message.get("message") or message.get("subtest") or ""
+                    self.harness.expectedError[key] = error_msg.strip()
             return message
 
         def countline(self, message):
@@ -4298,6 +4287,7 @@ toolbar#nav-bar {
                 and self.dump_screen_on_timeout
                 and message["action"] == "test_status"
                 and "expected" in message
+                and message["subtest"] is not None
                 and "Test timed out" in message["subtest"]
             ):
                 self.harness.dumpScreen(self.utilityPath)
@@ -4329,6 +4319,13 @@ toolbar#nav-bar {
             if self.shutdownLeaks:
                 self.shutdownLeaks.log(message)
             return message
+
+        def parse_perfherder_data(self, message):
+            PERFHERDER_MATCHER = re.compile(r"PERFHERDER_DATA:\s*(\{.*\})\s*$")
+            match = PERFHERDER_MATCHER.search(message.get("message", ""))
+            if match:
+                data = json.loads(match.group(1))
+                self.harness.perfherder_data.append(data)
 
 
 def view_gecko_profile_from_mochitest(profile_path, options, profiler_logger):

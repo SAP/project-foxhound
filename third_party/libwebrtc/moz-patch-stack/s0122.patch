@@ -1,0 +1,44 @@
+From: Michael Froman <mfroman@mozilla.com>
+Date: Wed, 17 Sep 2025 15:41:00 +0000
+Subject: Bug 1988042 - android build fix in
+ third_party/libwebrtc/rtc_base/cpu_info.cc r?ng!
+
+Supports(...) is really used in unittests and outside of unittests
+it is only used when WEBRTC_ARCH_X86_FAMILY is defined.  For now,
+we'll return false when checking for arm/neon suport.
+
+Differential Revision: https://phabricator.services.mozilla.com/D265018
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/eae7b6ec4f7ca191e8eaa8e36787142528f2c132
+---
+ rtc_base/cpu_info.cc | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
+index f0bff56911..b51c9e950e 100644
+--- a/rtc_base/cpu_info.cc
++++ b/rtc_base/cpu_info.cc
+@@ -25,7 +25,9 @@
+ #elif defined(WEBRTC_MAC)
+ #include <sys/sysctl.h>
+ #elif defined(WEBRTC_ANDROID)
++#if !defined(WEBRTC_MOZILLA_BUILD)
+ #include <cpu-features.h>
++#endif
+ #include <unistd.h>
+ #elif defined(WEBRTC_FUCHSIA)
+ #include <zircon/syscalls.h>
+@@ -175,7 +177,14 @@ bool Supports(ISA instruction_set_architecture) {
+ #elif defined(WEBRTC_ARCH_ARM_FAMILY)
+   if (instruction_set_architecture == ISA::kNeon) {
+ #if defined(WEBRTC_ANDROID)
++#if defined(WEBRTC_MOZILLA_BUILD)
++    // We should revisit this if Supports(...) is ever more widely used.
++    // Currently, it is used in unittests and when WEBRTC_ARCH_X86_FAMILY
++    // is defined in non-unittest code.
++    return false;
++#else
+     return 0 != (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON);
++#endif
+ #elif defined(WEBRTC_BSD)
+     // OpenBSD does not have getauxval() and does not have /proc reading
+     return false;

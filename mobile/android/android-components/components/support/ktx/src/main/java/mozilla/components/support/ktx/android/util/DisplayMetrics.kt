@@ -35,3 +35,31 @@ fun Float.spToPx(displayMetrics: DisplayMetrics) = TypedValue.applyDimension(
     this,
     displayMetrics,
 )
+
+/**
+ * An interface for converting display units (like dp) to pixels.
+ * */
+interface DisplayUnitConverter {
+    /**
+     * Converts a value in density independent pixels (dp) to the actual pixel value for the display.
+     *
+     * @param dp The value in dp.
+     * @return The value in pixels.
+     */
+    fun dpToPx(dp: Int): Int
+}
+
+/**
+ * A [DisplayUnitConverter] that uses the Android framework to perform the conversion.
+ *
+ * It requires a [DisplayMetrics] instance to correctly calculate the pixel values.
+ *
+ * @param displayMetrics The [DisplayMetrics] of the current display.
+ */
+class AndroidDisplayUnitConverter(
+    private val displayMetrics: DisplayMetrics,
+) : DisplayUnitConverter {
+    override fun dpToPx(dp: Int): Int {
+        return dp.dpToPx(displayMetrics)
+    }
+}

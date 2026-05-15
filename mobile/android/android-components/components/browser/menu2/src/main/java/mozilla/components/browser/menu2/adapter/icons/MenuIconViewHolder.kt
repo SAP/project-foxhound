@@ -40,7 +40,9 @@ internal abstract class MenuIconViewHolder<T : MenuIcon>(
     /**
      * Inflates the layout resource and adds it to the parent layout.
      */
-    protected fun inflate(@LayoutRes layoutResource: Int): View {
+    protected fun inflate(
+        @LayoutRes layoutResource: Int,
+    ): View {
         val view = inflater.inflate(layoutResource, parent, false)
         parent.addView(view)
         return view

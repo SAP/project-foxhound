@@ -63,7 +63,7 @@ For folders and groups, the following context menu options are available:
 - **Collapse all** collapses all subfolders of the item.
 - **Expand all** expands all subfolders of the item.
 - **Set directory root** changes the Source List view so that only that item and its children are visible. The name of the selected directory is shown at the top of the Source List pane; clicking this name reverts the pane to showing all source items.
-- **Ignore** (since Firefox 76)
+- **Ignore**
 
    - **Ignore files in this directory** causes all files within the selected directory to be skipped by the debugger. All child files acquired the eye icon, and the folder menu option changes to **Unignore files in this directory**.
    - **Ignore files outside this directory** causes all files other than those within the selected directory to be skipped by the debugger. All such files acquire the eye icon, and the menu option for that folder changes to **Unignore files outside this directory**.
@@ -141,7 +141,7 @@ The toolbar consists of:
 - A button that deactivates all breakpoints.
 - A settings menu that contains:
 
-  - **Disable JavaScript**: disables JavaScript for this tab. This option enables you to see how your web page looks if the user has disabled JavaScript via an extension or a configuration setting. The setting is reset when the Developer Tools are closed (except in Firefox 77, see `bug 1640318 <https://bugzilla.mozilla.org/show_bug.cgi?id=1640318>`_).
+  - **Disable JavaScript**: disables JavaScript for this tab. This option enables you to see how your web page looks if the user has disabled JavaScript via an extension or a configuration setting. The setting is reset when the Developer Tools are closed.
   - **Inline Variable Preview**: enabled by default, this option displays variable values within the source pane when the debugger is paused.
   - **Wrap Lines**: Toggles wrapping of long lines in the :ref:`source pane <debugger_ui_tour_source_pane>`.
   - **Source Maps**: enabled by default, this option directs the Debugger to load the original versions of files, and map them to the generated ones loaded in a page, to ease debugging of transformed sources. See :doc:`Use a source map <../how_to/use_a_source_map/index>` for details.

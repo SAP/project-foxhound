@@ -3,9 +3,11 @@
 <!--
 https://bugzilla.mozilla.org/show_bug.cgi?id=652486
 https://bugzilla.mozilla.org/show_bug.cgi?id=1039488
+https://bugzilla.mozilla.org/show_bug.cgi?id=1574222
+https://bugzilla.mozilla.org/show_bug.cgi?id=1980562
 -->
 <head>
-  <title>Test for Bug 652486, Bug 1039488 and Bug 1574222</title>
+  <title>Test for Bug 652486, Bug 1039488, Bug 1574222 and Bug 1980562</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
@@ -13,6 +15,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1039488
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=652486">Mozilla Bug 652486</a>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1039488">Mozilla Bug 1039488</a>
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1574222">Mozilla Bug 1574222</a>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1980562">Mozilla Bug 1980562</a>
 
 <p id="display"></p>
 <div id="content" style="display: none">
@@ -21,74 +24,63 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1039488
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 652486, Bug 1039488 and Bug 1574222 **/
+/** Test for Bug 652486, Bug 1039488 and Bug 1574222 */
 
 function c() {
   return document.defaultView.getComputedStyle($('t')).
            getPropertyValue("text-decoration");
 }
 
-// The default value of the 'color' property, which in turn establishes the
-// default value of 'text-decoration-color' (via the 'currentColor' keyword).
-var defaultLineColor = "rgb(0, 0, 0)";
-
 var tests = [
-  // When only text-decoration was specified, text-decoration should look like
-  // a longhand property. However, as of Bug 1574222, the getComputedStyle()
-  // serialization for "text-decoration" will always include the color,
-  // because we can't tell whether the resolved color value came from the
-  // initial "currentColor" value (and could safely be omitted) vs. whether it
-  // came from a custom specified value (and cannot be omitted).
-  { decoration: "none",
+  // Since bug 1980562, we can now determine whether the resolved color value
+  // comes from the initial value `currentColor` and can be omitted from the
+  // computed value of the shorthand, so it does not appear in the expected
+  // value here unless a color was explicitly specified.
+    { decoration: "none",
     line: null, color: null, style: null,
-    expectedValue: defaultLineColor },
+    expectedValue: "none" },
   { decoration: "underline",
     line: null, color: null, style: null,
-    expectedValue: "underline " + defaultLineColor },
+    expectedValue: "underline" },
   { decoration: "overline",
     line: null, color: null, style: null,
-    expectedValue: "overline " + defaultLineColor },
+    expectedValue: "overline" },
   { decoration: "line-through",
     line: null, color: null, style: null,
-    expectedValue: "line-through " + defaultLineColor },
+    expectedValue: "line-through" },
   { decoration: "blink",
     line: null, color: null, style: null,
-    expectedValue: "blink " + defaultLineColor },
+    expectedValue: "blink" },
   { decoration: "underline overline",
     line: null, color: null, style: null,
-    expectedValue: "underline overline " + defaultLineColor },
+    expectedValue: "underline overline" },
   { decoration: "underline line-through",
     line: null, color: null, style: null,
-    expectedValue: "underline line-through " + defaultLineColor },
+    expectedValue: "underline line-through" },
   { decoration: "blink underline",
     line: null, color: null, style: null,
-    expectedValue: "underline blink " + defaultLineColor },
+    expectedValue: "underline blink" },
   { decoration: "underline blink",
     line: null, color: null, style: null,
-    expectedValue: "underline blink " + defaultLineColor },
+    expectedValue: "underline blink" },
 
   // When only text-decoration-line or text-blink was specified,
   // text-decoration should look like a longhand property.
-  // However, as of Bug 1574222, the getComputedStyle() serialization for
-  // "text-decoration" will always include the color, because we can't tell
-  // whether the resolved color value came from the initial "currentColor"
-  // value (and could safely be omitted) vs. whether it came from a custom
-  // specified value (and cannot be omitted).
   { decoration: null,
     line: "blink", color: null, style: null,
-    expectedValue: "blink " + defaultLineColor },
+    expectedValue: "blink" },
   { decoration: null,
     line: "underline", color: null, style: null,
-    expectedValue: "underline " + defaultLineColor },
+    expectedValue: "underline" },
   { decoration: null,
     line: "overline", color: null, style: null,
-    expectedValue: "overline " + defaultLineColor },
+    expectedValue: "overline" },
   { decoration: null,
     line: "line-through", color: null, style: null,
-    expectedValue: "line-through " + defaultLineColor },
+    expectedValue: "line-through" },
   { decoration: null,
     line: "blink underline", color: null, style: null,
-    expectedValue: "underline blink " + defaultLineColor },
+    expectedValue: "underline blink" },
 
   // When text-decoration-color isn't its initial value,
   // text-decoration should be a shorthand property.
@@ -103,37 +95,37 @@ var tests = [
     expectedValue: "overline rgb(255, 0, 0)" },
   { decoration: "line-through",
     line: null, color: "initial", style: null,
-    expectedValue: "line-through " + defaultLineColor },
+    expectedValue: "line-through" },
   { decoration: "blink underline",
     line: null, color: "currentColor", style: null,
-    expectedValue: "underline blink " + defaultLineColor },
+    expectedValue: "underline blink" },
   { decoration: "underline line-through",
     line: null, color: "currentcolor", style: null,
-    expectedValue: "underline line-through " + defaultLineColor },
+    expectedValue: "underline line-through" },
 
   // When text-decoration-style isn't its initial value,
   // text-decoration should be a shorthand property.
   { decoration: "blink",
     line: null, color: null, style: "-moz-none",
-    expectedValue: "blink -moz-none " + defaultLineColor },
+    expectedValue: "blink -moz-none" },
   { decoration: "underline",
     line: null, color: null, style: "dotted",
-    expectedValue: "underline dotted " + defaultLineColor },
+    expectedValue: "underline dotted" },
   { decoration: "overline",
     line: null, color: null, style: "dashed",
-    expectedValue: "overline dashed " + defaultLineColor },
+    expectedValue: "overline dashed" },
   { decoration: "line-through",
     line: null, color: null, style: "double",
-    expectedValue: "line-through double " + defaultLineColor },
+    expectedValue: "line-through double" },
   { decoration: "blink underline",
     line: null, color: null, style: "wavy",
-    expectedValue: "underline blink wavy " + defaultLineColor },
+    expectedValue: "underline blink wavy" },
   { decoration: "underline blink overline line-through",
     line: null, color: null, style: "solid",
-    expectedValue: "underline overline line-through blink " + defaultLineColor },
+    expectedValue: "underline overline line-through blink" },
   { decoration: "line-through overline underline",
     line: null, color: null, style: "initial",
-    expectedValue: "underline overline line-through " + defaultLineColor }
+    expectedValue: "underline overline line-through" }
 ];
 
 function makeDeclaration(aTest)

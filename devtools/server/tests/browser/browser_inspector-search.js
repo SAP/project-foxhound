@@ -251,6 +251,13 @@ add_task(async function () {
           expected: [],
         },
         {
+          desc: "Search for attributeName=attributeValue pairs with leading space",
+          search: " id=arr",
+          expected: [
+            { node: inspectee.getElementById("arrows"), type: "attributeName" },
+          ],
+        },
+        {
           desc: "Search that has tag and text results",
           search: "h1",
           expected: [

@@ -10,6 +10,8 @@
 #include <stdint.h>
 
 #include "js/TypeDecls.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/CSSStyleValueBindingFwd.h"
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"
@@ -23,15 +25,18 @@ class RefPtr;
 namespace mozilla {
 
 class ErrorResult;
+struct StylePropertyTypedValueResult;
 
 namespace dom {
 
-class CSSStyleValue;
+class CSSStyleRule;
+class Element;
 class OwningUndefinedOrCSSStyleValue;
 
 class StylePropertyMapReadOnly : public nsISupports, public nsWrapperCache {
  public:
-  explicit StylePropertyMapReadOnly(nsCOMPtr<nsISupports> aParent);
+  StylePropertyMapReadOnly(Element* aElement, bool aComputed);
+  explicit StylePropertyMapReadOnly(CSSStyleRule* aRule);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(StylePropertyMapReadOnly)
@@ -42,9 +47,11 @@ class StylePropertyMapReadOnly : public nsISupports, public nsWrapperCache {
 
   // start of StylePropertyMapReadOnly Web IDL declarations
 
+  // https://drafts.css-houdini.org/css-typed-om-1/#dom-stylepropertymapreadonly-get
   void Get(const nsACString& aProperty, OwningUndefinedOrCSSStyleValue& aRetVal,
            ErrorResult& aRv) const;
 
+  // https://drafts.css-houdini.org/css-typed-om-1/#dom-stylepropertymapreadonly-getall
   void GetAll(const nsACString& aProperty,
               nsTArray<RefPtr<CSSStyleValue>>& aRetVal, ErrorResult& aRv) const;
 
@@ -67,7 +74,35 @@ class StylePropertyMapReadOnly : public nsISupports, public nsWrapperCache {
  protected:
   virtual ~StylePropertyMapReadOnly() = default;
 
+  class Declarations {
+   public:
+    enum class Kind : uint8_t {
+      Inline,
+      Computed,
+      Rule,
+    };
+    Declarations(Element* aElement, bool aComputed)
+        : mElement(aElement),
+          mKind(aComputed ? Kind::Computed : Kind::Inline) {}
+
+    explicit Declarations(CSSStyleRule* aRule)
+        : mRule(aRule), mKind(Kind::Rule) {}
+
+    StylePropertyTypedValueResult Get(const nsACString& aProperty,
+                                      ErrorResult& aRv) const;
+
+    void Unlink();
+
+   private:
+    union {
+      Element* mElement;
+      CSSStyleRule* mRule;
+    };
+    const Kind mKind;
+  };
+
   nsCOMPtr<nsISupports> mParent;
+  Declarations mDeclarations;
 };
 
 }  // namespace dom

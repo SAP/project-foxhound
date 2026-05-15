@@ -1,0 +1,17 @@
+[package]
+name = "libcrux-traits"
+description = "Traits for cryptographic algorithms"
+version = "0.0.3"
+license = "Apache-2.0"
+edition = "2021"
+
+[features]
+# core::error::Error is still pretty recent, so we only implement it for our errors behind a feature
+error-in-core = []
+# expose tests that are generic over the traits
+generic-tests = []
+# whether or not the alloc crate is used
+alloc = []
+
+[dependencies]
+rand = { version = "0.8", default-features = false }

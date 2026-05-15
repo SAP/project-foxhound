@@ -10,11 +10,11 @@
 #ifndef DOM_SVG_SVGMOTIONSMILPATHUTILS_H_
 #define DOM_SVG_SVGMOTIONSMILPATHUTILS_H_
 
+#include "gfxPlatform.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SMILParserUtils.h"
 #include "mozilla/gfx/2D.h"
-#include "gfxPlatform.h"
 #include "nsDebug.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"

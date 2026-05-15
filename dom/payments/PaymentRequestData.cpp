@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "PaymentRequestData.h"
+
+#include "PaymentRequestUtils.h"
 #include "mozilla/dom/PaymentRequestBinding.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "nsArrayUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
 #include "nsUnicharUtils.h"
-#include "PaymentRequestData.h"
-#include "PaymentRequestUtils.h"
 
 namespace mozilla::dom::payments {
 

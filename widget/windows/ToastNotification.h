@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ToastNotification_h__
-#define ToastNotification_h__
+#ifndef ToastNotification_h_
+#define ToastNotification_h_
 
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
@@ -34,6 +34,7 @@ class WindowsAlertNotification final : public AlertNotification,
  protected:
   virtual ~WindowsAlertNotification() = default;
   nsIWindowsAlertNotification::ImagePlacement mImagePlacement = eInline;
+  nsString mImagePathUnchecked;
 };
 
 class ToastNotification final : public nsIWindowsAlertsService,

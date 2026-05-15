@@ -24,21 +24,17 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-let firstPaintNotification = "widget-first-paint";
+let firstPaintNotification = "xul-window-visible";
 // On Linux widget-first-paint fires much later than expected and
 // xul-window-visible fires too early for currently unknown reasons.
 if (AppConstants.platform == "linux") {
   firstPaintNotification = "document-shown";
-} else if (
-  Services.prefs.getBoolPref("browser.startup.preXulSkeletonUI", false)
-) {
-  firstPaintNotification = "xul-window-visible";
 }
 
 let win, canvas;
 let paints = [];
 let afterPaintListener = () => {
-  let startTime = Cu.now();
+  let startTime = ChromeUtils.now();
   let width, height;
   canvas.width = width = win.innerWidth;
   canvas.height = height = win.innerHeight;
@@ -235,7 +231,7 @@ StartupRecorder.prototype = {
         this.data.profile = profileData;
         // There's no equivalent StartProfiler call in this file because the
         // profiler is started using the MOZ_PROFILER_STARTUP environment
-        // variable in browser/base/content/test/performance/browser.ini
+        // variable in browser/base/content/test/performance/browser.toml
         Services.profiler.StopProfiler();
 
         this._resolve();

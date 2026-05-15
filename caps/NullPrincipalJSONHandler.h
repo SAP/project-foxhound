@@ -11,9 +11,8 @@
 
 #include "js/TypeDecls.h"  // JS::Latin1Char
 
-#include "mozilla/AlreadyAddRefed.h"  // already_AddRefed
-#include "mozilla/Assertions.h"       // MOZ_ASSERT_UNREACHABLE
-#include "mozilla/RefPtr.h"           // RefPtr
+#include "mozilla/Assertions.h"  // MOZ_ASSERT_UNREACHABLE
+#include "mozilla/RefPtr.h"      // RefPtr
 
 #include "nsCOMPtr.h"  // nsCOMPtr
 #include "nsDebug.h"   // NS_WARNING

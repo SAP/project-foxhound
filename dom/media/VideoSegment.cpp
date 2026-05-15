@@ -5,9 +5,9 @@
 
 #include "VideoSegment.h"
 
-#include "gfx2DGlue.h"
 #include "ImageContainer.h"
 #include "VideoUtils.h"
+#include "gfx2DGlue.h"
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {

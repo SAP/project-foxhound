@@ -34,8 +34,8 @@ support-files = ["file_iframe_buttons.html"]
 
 ["browser_iframe_test.js"]
 skip-if = [
-  "os == 'linux' && bits == 64", # Bug 1735565
-  "os == 'win' && bits == 64", # Bug 1735565
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1735565
+  "os == 'win' && arch == 'x86_64'", # Bug 1735565
 ]
 support-files = ["file_iframe_test.sjs"]
 
@@ -60,7 +60,9 @@ support-files = ["file_save_as.html"]
 support-files = ["file_user_gesture.sjs"]
 
 ["browser_websocket_exceptions.js"]
-skip-if = ["os == 'android'"] # WebSocket tests are not supported on Android Yet. Bug 1566168.
+skip-if = [
+  "os == 'android'", # WebSocket tests are not supported on Android Yet. Bug 1566168.
+]
 support-files = [
   "file_websocket_exceptions.html",
   "file_websocket_exceptions_iframe.html",

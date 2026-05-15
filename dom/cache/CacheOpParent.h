@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_cache_CacheOpParent_h
 #define mozilla_dom_cache_CacheOpParent_h
 
+#include "mozilla/InitializedOnce.h"
 #include "mozilla/dom/cache/Manager.h"
 #include "mozilla/dom/cache/PCacheOpParent.h"
 #include "mozilla/dom/cache/PrincipalVerifier.h"
@@ -25,10 +26,9 @@ class CacheOpParent final : public PCacheOpParent,
   using Manager::Listener::OnOpComplete;
 
  public:
-  CacheOpParent(mozilla::ipc::PBackgroundParent* aIpcManager, CacheId aCacheId,
-                const CacheOpArgs& aOpArgs);
-  CacheOpParent(mozilla::ipc::PBackgroundParent* aIpcManager,
-                Namespace aNamespace, const CacheOpArgs& aOpArgs);
+  CacheOpParent(const WeakRefParentType& aIpcManager,
+                const CacheOpArgs& aOpArgs, CacheId aCacheId = INVALID_CACHE_ID,
+                Namespace aNamespace = INVALID_NAMESPACE);
 
   void Execute(const SafeRefPtr<ManagerId>& aManagerId);
 
@@ -60,7 +60,8 @@ class CacheOpParent final : public PCacheOpParent,
   void ProcessCrossOriginResourcePolicyHeader(
       ErrorResult& aRv, const nsTArray<SavedResponse>& aResponses);
 
-  mozilla::ipc::PBackgroundParent* mIpcManager;
+  mozilla::LazyInitializedOnceEarlyDestructible<const WeakRefParentType>
+      mIpcManager;
   const CacheId mCacheId;
   const Namespace mNamespace;
   const CacheOpArgs mOpArgs;

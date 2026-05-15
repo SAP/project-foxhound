@@ -125,4 +125,6 @@ add_task(async function httpsOnlyCorrectLabels() {
   await SpecialPowers.setBoolPref("dom.security.https_first", false);
   await ensureL10nIds(false);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+  SpecialPowers.clearUserPref("dom.security.https_only_mode_ever_enabled_pbm");
 });

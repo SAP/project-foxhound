@@ -8,14 +8,15 @@
 #define mozilla_dom_Event_h_
 
 #include <cstdint>
+
 #include "Units.h"
 #include "js/TypeDecls.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCOMPtr.h"
@@ -55,6 +56,7 @@ class MouseEvent;
 class MessageEvent;
 class PointerEvent;
 class TimeEvent;
+class ToggleEvent;
 class UIEvent;
 class WantsPopupControlCheck;
 class XULCommandEvent;
@@ -134,6 +136,9 @@ class Event : public nsISupports, public nsWrapperCache {
 
   // MessageEvent has a non-autogeneratable initMessageEvent and more.
   virtual MessageEvent* AsMessageEvent() { return nullptr; }
+
+  // ToggleEvent has a non-autogeneratable initToggleEvent.
+  virtual ToggleEvent* AsToggleEvent() { return nullptr; }
 
   void InitEvent(const nsAString& aEventTypeArg, bool aCanBubble,
                  bool aCancelable) {
@@ -355,6 +360,7 @@ class Event : public nsISupports, public nsWrapperCache {
   double TimeStamp();
 
   EventTarget* GetOriginalTarget() const;
+  EventTarget* GetOriginalTarget(CallerType aCallerType) const;
   EventTarget* GetExplicitOriginalTarget() const;
   EventTarget* GetComposedTarget() const;
 

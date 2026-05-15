@@ -14,18 +14,27 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.helpers.FenixGleanTestRule
+import org.mozilla.fenix.utils.Settings
 import org.mozilla.gecko.search.SearchWidgetProvider
 import org.mozilla.gecko.search.SearchWidgetProviderSize
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class SearchWidgetProviderTest {
+    @get:Rule
+    val gleanRule = FenixGleanTestRule(testContext)
 
     @Test
     fun testGetLayoutSize() {
@@ -178,5 +187,44 @@ class SearchWidgetProviderTest {
         SearchWidgetProvider.updateAllWidgets(context, widgetManager)
 
         verify(exactly = 0) { context.sendBroadcast(any()) }
+    }
+
+    @Test
+    fun `WHEN the search widget is added on homescreen THEN record telemetry and persist that the widget is installed`() {
+        val settings = Settings(testContext)
+        every { testContext.settings() } returns settings
+        val widgetProvider = SearchWidgetProvider()
+        assertFalse(settings.searchWidgetInstalled)
+
+        widgetProvider.onEnabled(testContext)
+
+        assertTrue(settings.searchWidgetInstalled)
+        assertEquals(true, Metrics.searchWidgetInstalled.testGetValue())
+    }
+
+    @Test
+    fun `WHEN the search widget is removed from the homescreen THEN record telemetry and persist that the widget is uninstalled`() {
+        val settings = Settings(testContext)
+        every { testContext.settings() } returns settings
+        val widgetProvider = SearchWidgetProvider()
+        settings.searchWidgetInstalled = true
+
+        widgetProvider.onDisabled(testContext)
+
+        assertFalse(testContext.settings().searchWidgetInstalled)
+        assertEquals(false, Metrics.searchWidgetInstalled.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN not knowing search widget is installed WHEN a widget is updated THEN record telemetry and persist that the widget is installed`() {
+        val settings = Settings(testContext)
+        every { testContext.settings() } returns settings
+        val widgetProvider = SearchWidgetProvider()
+        assertFalse(settings.searchWidgetInstalled)
+
+        widgetProvider.onUpdate(testContext, mockk(), intArrayOf())
+
+        assertTrue(testContext.settings().searchWidgetInstalled)
+        assertEquals(true, Metrics.searchWidgetInstalled.testGetValue())
     }
 }

@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_MediaDocument_h
 #define mozilla_dom_MediaDocument_h
 
-#include "mozilla/Attributes.h"
-#include "nsHTMLDocument.h"
 #include "nsGenericHTMLElement.h"
+#include "nsHTMLDocument.h"
 #include "nsIStreamListener.h"
 #include "nsIStringBundle.h"
 #include "nsIThreadRetargetableStreamListener.h"

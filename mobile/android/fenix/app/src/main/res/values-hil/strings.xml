@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Pribado %s</string>
@@ -12,6 +19,8 @@
   <string name="content_description_menu">Madamo nga pilian</string>
   <!-- Label of editable text in create collection dialog for naming a new collection -->
   <string name="tab_tray_add_new_collection_name">Ngalan</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!--
     Browser Fragment
 
@@ -21,11 +30,15 @@
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">Mga extension</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">Bulig</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Bulig</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">Anu ang Bag-o</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Anu ang Bag-o</string>
   <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
   <string name="resync_button_content_description">Mag-resync</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!--
     Preference linking to about page for Fenix
     %1$s is the name of the app (for example "Firefox").
@@ -102,16 +115,20 @@
   <!-- Option for auto closing tabs that will auto close tabs after one month -->
   <string name="close_tabs_after_one_month">Pagkatapos sang isa ka bulan</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">Pribado</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Pribado</string>
   <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync">Mag sync</string>
+  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Mag sync</string>
   <!-- Postfix for private WebApp titles. %1$s is the name of the app (for example "Firefox"). -->
   <string name="pwa_site_controls_title_private">%1$s (Private Mode)</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Ambit</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">Mag save</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

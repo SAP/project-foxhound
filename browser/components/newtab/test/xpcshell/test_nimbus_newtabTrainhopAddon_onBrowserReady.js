@@ -35,7 +35,7 @@ add_task(
     const { nimbusFeatureCleanup } = await setupNimbusTrainhopAddon({
       updateAddonVersion,
     });
-    AboutNewTab.onBrowserReady();
+    await AboutNewTab.onBrowserReady();
     await promiseInstallPostponed;
     const { pendingInstall } = await asyncAssertNimbusTrainhopAddonStaged({
       updateAddonVersion,

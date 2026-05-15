@@ -13,7 +13,6 @@
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/Unused.h"
 #include "nsIDNSRecord.h"
 #include "nsIDNSByTypeRecord.h"
 #include "nsHostResolver.h"
@@ -445,11 +444,11 @@ DNSRequestSender::Cancel(nsresult reason) {
   }
 
   if (DNSRequestChild* child = mIPCActor->AsDNSRequestChild()) {
-    Unused << child->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
-                                          mOriginAttributes, mFlags, reason);
+    (void)child->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
+                                      mOriginAttributes, mFlags, reason);
   } else if (DNSRequestParent* parent = mIPCActor->AsDNSRequestParent()) {
-    Unused << parent->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
-                                           mOriginAttributes, mFlags, reason);
+    (void)parent->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
+                                       mOriginAttributes, mFlags, reason);
   }
 
   return NS_OK;
@@ -502,7 +501,7 @@ void DNSRequestSender::StartRequest() {
     auto task = [requestParent, self]() {
       RefPtr<SocketProcessParent> socketParent =
           SocketProcessParent::GetSingleton();
-      Unused << socketParent->SendPDNSRequestConstructor(
+      (void)socketParent->SendPDNSRequestConstructor(
           requestParent, self->mHost, self->mTrrServer, self->mPort,
           self->mType, self->mOriginAttributes, self->mFlags);
     };
@@ -563,9 +562,9 @@ bool DNSRequestSender::OnRecvLookupCompleted(const DNSRequestResponse& reply) {
   }
 
   if (DNSRequestChild* child = mIPCActor->AsDNSRequestChild()) {
-    Unused << mozilla::net::DNSRequestChild::Send__delete__(child);
+    (void)mozilla::net::DNSRequestChild::Send__delete__(child);
   } else if (DNSRequestParent* parent = mIPCActor->AsDNSRequestParent()) {
-    Unused << mozilla::net::DNSRequestParent::Send__delete__(parent);
+    (void)mozilla::net::DNSRequestParent::Send__delete__(parent);
   }
 
   return true;

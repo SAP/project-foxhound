@@ -10,12 +10,13 @@
 
 #include <algorithm>
 
+#include "AnchorPositioningUtils.h"
+#include "NonCustomCSSPropertyId.h"
+#include "PseudoStyleType.h"
 #include "mozilla/AppUnits.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/EffectSet.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Preferences.h"
@@ -33,7 +34,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "nsCSSProps.h"
-#include "nsCSSPseudoElements.h"
 #include "nsContentUtils.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsDOMCSSValueList.h"
@@ -68,8 +68,7 @@ using namespace mozilla::dom;
 already_AddRefed<nsComputedDOMStyle> NS_NewComputedDOMStyle(
     dom::Element* aElement, const nsAString& aPseudoElt, Document* aDocument,
     nsComputedDOMStyle::StyleType aStyleType, mozilla::ErrorResult&) {
-  auto request = nsCSSPseudoElements::ParsePseudoElement(
-      aPseudoElt, CSSEnabledState::ForAllContent);
+  auto request = PseudoStyleRequest::Parse(aPseudoElt);
   auto returnEmpty = nsComputedDOMStyle::AlwaysReturnEmptyStyle::No;
   if (!request) {
     if (!aPseudoElt.IsEmpty() && aPseudoElt.First() == u':') {
@@ -164,7 +163,7 @@ struct ComputedStyleMap {
     // Create a pointer-to-member-function type.
     using ComputeMethod = already_AddRefed<CSSValue> (nsComputedDOMStyle::*)();
 
-    nsCSSPropertyID mProperty;
+    NonCustomCSSPropertyId mProperty;
 
     // Whether the property can ever be exposed in getComputedStyle(). For
     // example, @page descriptors implemented as CSS properties or other
@@ -201,7 +200,7 @@ struct ComputedStyleMap {
    * that should be exposed on an nsComputedDOMStyle, excluding any
    * disabled properties.
    */
-  nsCSSPropertyID PropertyAt(uint32_t aIndex) {
+  NonCustomCSSPropertyId PropertyAt(uint32_t aIndex) {
     Update();
     return kEntries[EntryIndex(aIndex)].mProperty;
   }
@@ -211,13 +210,13 @@ struct ComputedStyleMap {
    * property, or nullptr if the property is not exposed on nsComputedDOMStyle
    * or is currently disabled.
    */
-  const Entry* FindEntryForProperty(nsCSSPropertyID aPropID) {
-    if (size_t(aPropID) >= std::size(kEntryIndices)) {
-      MOZ_ASSERT(aPropID == eCSSProperty_UNKNOWN);
+  const Entry* FindEntryForProperty(NonCustomCSSPropertyId aPropId) {
+    if (size_t(aPropId) >= std::size(kEntryIndices)) {
+      MOZ_ASSERT(aPropId == eCSSProperty_UNKNOWN);
       return nullptr;
     }
-    MOZ_ASSERT(kEntryIndices[aPropID] < std::size(kEntries));
-    const auto& entry = kEntries[kEntryIndices[aPropID]];
+    MOZ_ASSERT(kEntryIndices[aPropId] < std::size(kEntries));
+    const auto& entry = kEntries[kEntryIndices[aPropId]];
     if (!entry.IsEnabled()) {
       return nullptr;
     }
@@ -363,18 +362,18 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsComputedDOMStyle)
 NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(nsComputedDOMStyle,
                                                    ClearComputedStyle())
 
-void nsComputedDOMStyle::GetPropertyValue(const nsCSSPropertyID aPropID,
+void nsComputedDOMStyle::GetPropertyValue(const NonCustomCSSPropertyId aPropId,
                                           nsACString& aValue) {
-  return GetPropertyValue(aPropID, EmptyCString(), aValue);
+  return GetPropertyValue(aPropId, EmptyCString(), aValue);
 }
 
-void nsComputedDOMStyle::SetPropertyValue(const nsCSSPropertyID aPropID,
+void nsComputedDOMStyle::SetPropertyValue(const NonCustomCSSPropertyId aPropId,
                                           const nsACString& aValue,
                                           nsIPrincipal* aSubjectPrincipal,
                                           ErrorResult& aRv) {
   aRv.ThrowNoModificationAllowedError(nsPrintfCString(
       "Can't set value for property '%s' in computed style",
-      PromiseFlatCString(nsCSSProps::GetStringValue(aPropID)).get()));
+      PromiseFlatCString(nsCSSProps::GetStringValue(aPropId)).get()));
 }
 
 void nsComputedDOMStyle::GetCssText(nsACString& aCssText) {
@@ -407,24 +406,24 @@ css::Rule* nsComputedDOMStyle::GetParentRule() { return nullptr; }
 
 void nsComputedDOMStyle::GetPropertyValue(const nsACString& aPropertyName,
                                           nsACString& aReturn) {
-  nsCSSPropertyID prop = nsCSSProps::LookupProperty(aPropertyName);
+  NonCustomCSSPropertyId prop = nsCSSProps::LookupProperty(aPropertyName);
   GetPropertyValue(prop, aPropertyName, aReturn);
 }
 
 void nsComputedDOMStyle::GetPropertyValue(
-    nsCSSPropertyID aPropID, const nsACString& aMaybeCustomPropertyName,
+    NonCustomCSSPropertyId aPropId, const nsACString& aMaybeCustomPropertyName,
     nsACString& aReturn) {
   MOZ_ASSERT(aReturn.IsEmpty());
 
   const ComputedStyleMap::Entry* entry = nullptr;
-  if (aPropID != eCSSPropertyExtra_variable) {
-    entry = GetComputedStyleMap()->FindEntryForProperty(aPropID);
+  if (aPropId != eCSSPropertyExtra_variable) {
+    entry = GetComputedStyleMap()->FindEntryForProperty(aPropId);
     if (!entry) {
       return;
     }
   }
 
-  UpdateCurrentStyleSources(aPropID);
+  UpdateCurrentStyleSources(aPropId);
   if (!mComputedStyle) {
     return;
   }
@@ -440,21 +439,21 @@ void nsComputedDOMStyle::GetPropertyValue(
     return;
   }
 
-  if (nsCSSProps::PropHasFlags(aPropID, CSSPropFlags::IsLogical)) {
+  if (nsCSSProps::PropHasFlags(aPropId, CSSPropFlags::IsLogical)) {
     MOZ_ASSERT(entry);
     MOZ_ASSERT(entry->mGetter == &nsComputedDOMStyle::DummyGetter);
 
-    DebugOnly<nsCSSPropertyID> logicalProp = aPropID;
+    DebugOnly<NonCustomCSSPropertyId> logicalProp = aPropId;
 
-    aPropID = Servo_ResolveLogicalProperty(aPropID, mComputedStyle);
-    entry = GetComputedStyleMap()->FindEntryForProperty(aPropID);
+    aPropId = Servo_ResolveLogicalProperty(aPropId, mComputedStyle);
+    entry = GetComputedStyleMap()->FindEntryForProperty(aPropId);
 
-    MOZ_ASSERT(NeedsToFlushLayout(logicalProp) == NeedsToFlushLayout(aPropID),
+    MOZ_ASSERT(NeedsToFlushLayout(logicalProp) == NeedsToFlushLayout(aPropId),
                "Logical and physical property don't agree on whether layout is "
                "needed");
   }
 
-  if (!nsCSSProps::PropHasFlags(aPropID, CSSPropFlags::SerializedByServo)) {
+  if (!nsCSSProps::PropHasFlags(aPropId, CSSPropFlags::SerializedByServo)) {
     if (RefPtr<CSSValue> value = (this->*entry->mGetter)()) {
       nsAutoString text;
       value->GetCssText(text);
@@ -464,7 +463,7 @@ void nsComputedDOMStyle::GetPropertyValue(
   }
 
   MOZ_ASSERT(entry->mGetter == &nsComputedDOMStyle::DummyGetter);
-  Servo_GetResolvedValue(mComputedStyle, aPropID,
+  Servo_GetResolvedValue(mComputedStyle, aPropId,
                          mPresShell->StyleSet()->RawData(), mElement, &aReturn);
 }
 
@@ -598,7 +597,7 @@ nsMargin nsComputedDOMStyle::GetAdjustedValuesForBoxSizing() {
   const nsStylePosition* stylePos = StylePosition();
 
   nsMargin adjustment;
-  if (stylePos->mBoxSizing == StyleBoxSizing::Border) {
+  if (stylePos->mBoxSizing == StyleBoxSizing::BorderBox) {
     adjustment = mInnerFrame->GetUsedBorderAndPadding();
   }
 
@@ -653,7 +652,7 @@ static void AddImageURLs(const nsStyleImageLayers& aLayers,
   }
 }
 
-static void CollectImageURLsForProperty(nsCSSPropertyID aProp,
+static void CollectImageURLsForProperty(NonCustomCSSPropertyId aProp,
                                         const ComputedStyle& aStyle,
                                         nsTArray<nsCString>& aURLs) {
   if (nsCSSProps::IsShorthand(aProp)) {
@@ -710,7 +709,7 @@ float nsComputedDOMStyle::UsedFontSize() {
 void nsComputedDOMStyle::GetCSSImageURLs(const nsACString& aPropertyName,
                                          nsTArray<nsCString>& aImageURLs,
                                          mozilla::ErrorResult& aRv) {
-  nsCSSPropertyID prop = nsCSSProps::LookupProperty(aPropertyName);
+  NonCustomCSSPropertyId prop = nsCSSProps::LookupProperty(aPropertyName);
   if (prop == eCSSProperty_UNKNOWN) {
     // Note: not using nsPrintfCString here in case aPropertyName contains
     // nulls.
@@ -760,26 +759,34 @@ void nsComputedDOMStyle::ClearComputedStyle() {
 }
 
 void nsComputedDOMStyle::SetResolvedComputedStyle(
-    RefPtr<const ComputedStyle>&& aContext, uint64_t aGeneration) {
+    RefPtr<const ComputedStyle> aStyle, uint64_t aGeneration) {
   if (!mResolvedComputedStyle) {
     mResolvedComputedStyle = true;
     mElement->AddMutationObserver(this);
   }
-  mComputedStyle = aContext;
+  mComputedStyle = std::move(aStyle);
   mComputedStyleGeneration = aGeneration;
   mPresShellId = mPresShell->GetPresShellId();
 }
 
-void nsComputedDOMStyle::SetFrameComputedStyle(mozilla::ComputedStyle* aStyle,
-                                               uint64_t aGeneration) {
+void nsComputedDOMStyle::SetFrameComputedStyle(
+    RefPtr<const ComputedStyle> aStyle, uint64_t aGeneration) {
   ClearComputedStyle();
-  mComputedStyle = aStyle;
+  mComputedStyle = std::move(aStyle);
   mComputedStyleGeneration = aGeneration;
   mPresShellId = mPresShell->GetPresShellId();
 }
 
-static bool MayNeedToFlushLayout(nsCSSPropertyID aPropID) {
-  switch (aPropID) {
+static bool MayNeedToFlushLayout(NonCustomCSSPropertyId aPropId) {
+  switch (aPropId) {
+    case eCSSProperty_max_width:
+    case eCSSProperty_max_height:
+    case eCSSProperty_min_width:
+    case eCSSProperty_min_height:
+    case eCSSProperty_max_inline_size:
+    case eCSSProperty_max_block_size:
+    case eCSSProperty_min_inline_size:
+    case eCSSProperty_min_block_size:
     case eCSSProperty_width:
     case eCSSProperty_height:
     case eCSSProperty_block_size:
@@ -790,14 +797,7 @@ static bool MayNeedToFlushLayout(nsCSSPropertyID aPropID) {
     case eCSSProperty_perspective_origin:
     case eCSSProperty_transform_origin:
     case eCSSProperty_transform:
-    case eCSSProperty_border_top_width:
-    case eCSSProperty_border_bottom_width:
-    case eCSSProperty_border_left_width:
-    case eCSSProperty_border_right_width:
-    case eCSSProperty_border_block_start_width:
-    case eCSSProperty_border_block_end_width:
-    case eCSSProperty_border_inline_start_width:
-    case eCSSProperty_border_inline_end_width:
+    case eCSSProperty__webkit_transform:
     case eCSSProperty_top:
     case eCSSProperty_right:
     case eCSSProperty_bottom:
@@ -828,8 +828,9 @@ static bool MayNeedToFlushLayout(nsCSSPropertyID aPropID) {
   }
 }
 
-bool nsComputedDOMStyle::NeedsToFlushStyle(nsCSSPropertyID aPropID) const {
-  bool mayNeedToFlushLayout = MayNeedToFlushLayout(aPropID);
+bool nsComputedDOMStyle::NeedsToFlushStyle(
+    NonCustomCSSPropertyId aPropId) const {
+  bool mayNeedToFlushLayout = MayNeedToFlushLayout(aPropId);
 
   // We always compute styles from the element's owner document.
   if (ElementNeedsRestyle(mElement, mPseudo, mayNeedToFlushLayout)) {
@@ -861,8 +862,9 @@ static bool IsNonReplacedInline(nsIFrame* aFrame) {
          !aFrame->IsColumnSetWrapperFrame();
 }
 
-static Side SideForPaddingOrMarginOrInsetProperty(nsCSSPropertyID aPropID) {
-  switch (aPropID) {
+static Side SideForPaddingOrMarginOrInsetProperty(
+    NonCustomCSSPropertyId aPropId) {
+  switch (aPropId) {
     case eCSSProperty_top:
     case eCSSProperty_margin_top:
     case eCSSProperty_padding_top:
@@ -890,9 +892,15 @@ static bool PaddingNeedsUsedValue(const LengthPercentage& aValue,
   return !aValue.ConvertsToLength() || aStyle.StyleDisplay()->HasAppearance();
 }
 
-bool nsComputedDOMStyle::NeedsToFlushLayout(nsCSSPropertyID aPropID) const {
-  MOZ_ASSERT(aPropID != eCSSProperty_UNKNOWN);
-  if (aPropID == eCSSPropertyExtra_variable) {
+static bool HasPositionFallbacks(nsIFrame* aFrame) {
+  return aFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
+         !aFrame->StylePosition()->mPositionTryFallbacks._0.IsEmpty();
+}
+
+bool nsComputedDOMStyle::NeedsToFlushLayout(
+    NonCustomCSSPropertyId aPropId) const {
+  MOZ_ASSERT(aPropId != eCSSProperty_UNKNOWN);
+  if (aPropId == eCSSPropertyExtra_variable) {
     return false;
   }
   nsIFrame* outerFrame = GetOuterFrame();
@@ -901,11 +909,23 @@ bool nsComputedDOMStyle::NeedsToFlushLayout(nsCSSPropertyID aPropID) const {
   }
   nsIFrame* frame = nsLayoutUtils::GetStyleFrame(outerFrame);
   auto* style = frame->Style();
-  if (nsCSSProps::PropHasFlags(aPropID, CSSPropFlags::IsLogical)) {
-    aPropID = Servo_ResolveLogicalProperty(aPropID, style);
+  if (nsCSSProps::PropHasFlags(aPropId, CSSPropFlags::IsLogical)) {
+    aPropId = Servo_ResolveLogicalProperty(aPropId, style);
   }
 
-  switch (aPropID) {
+  switch (aPropId) {
+    case eCSSProperty_max_width:
+      return HasPositionFallbacks(frame) ||
+             frame->StylePosition()->mMaxWidth.HasAnchorPositioningFunction();
+    case eCSSProperty_max_height:
+      return HasPositionFallbacks(frame) ||
+             frame->StylePosition()->mMaxHeight.HasAnchorPositioningFunction();
+    case eCSSProperty_min_width:
+      return HasPositionFallbacks(frame) ||
+             frame->StylePosition()->mMinWidth.HasAnchorPositioningFunction();
+    case eCSSProperty_min_height:
+      return HasPositionFallbacks(frame) ||
+             frame->StylePosition()->mMinHeight.HasAnchorPositioningFunction();
     case eCSSProperty_width:
     case eCSSProperty_height:
       return !IsNonReplacedInline(frame);
@@ -919,6 +939,7 @@ bool nsComputedDOMStyle::NeedsToFlushLayout(nsCSSPropertyID aPropID) const {
     case eCSSProperty_transform_origin:
       return style->StyleDisplay()->mTransformOrigin.HasPercent();
     case eCSSProperty_transform:
+    case eCSSProperty__webkit_transform:
       return style->StyleDisplay()->mTransform.HasPercent();
     case eCSSProperty_top:
     case eCSSProperty_right:
@@ -930,7 +951,7 @@ bool nsComputedDOMStyle::NeedsToFlushLayout(nsCSSPropertyID aPropID) const {
     case eCSSProperty_padding_right:
     case eCSSProperty_padding_bottom:
     case eCSSProperty_padding_left: {
-      Side side = SideForPaddingOrMarginOrInsetProperty(aPropID);
+      Side side = SideForPaddingOrMarginOrInsetProperty(aPropId);
       // Theming can override used padding, sigh.
       //
       // TODO(emilio): If we make GetUsedPadding() stop returning 0 for an
@@ -947,8 +968,9 @@ bool nsComputedDOMStyle::NeedsToFlushLayout(nsCSSPropertyID aPropID) const {
       // See https://github.com/w3c/csswg-drafts/issues/2328
       // NOTE(dshin): Raw margin value access since we want to flush
       // anchor-dependent values here.
-      Side side = SideForPaddingOrMarginOrInsetProperty(aPropID);
-      return !style->StyleMargin()->mMargin.Get(side).ConvertsToLength();
+      Side side = SideForPaddingOrMarginOrInsetProperty(aPropId);
+      return !style->StyleMargin()->mMargin.Get(side).ConvertsToLength() ||
+             HasPositionFallbacks(frame);
     }
     default:
       return false;
@@ -984,22 +1006,12 @@ nsIFrame* nsComputedDOMStyle::GetOuterFrame() const {
   if (mPseudo.mType == PseudoStyleType::NotPseudo) {
     return mElement->GetPrimaryFrame();
   }
-  nsAtom* property = nullptr;
-  if (mPseudo.mType == PseudoStyleType::before) {
-    property = nsGkAtoms::beforePseudoProperty;
-  } else if (mPseudo.mType == PseudoStyleType::after) {
-    property = nsGkAtoms::afterPseudoProperty;
-  } else if (mPseudo.mType == PseudoStyleType::marker) {
-    property = nsGkAtoms::markerPseudoProperty;
-  }
-  if (!property) {
-    return nullptr;
-  }
-  auto* pseudo = static_cast<Element*>(mElement->GetProperty(property));
+  auto* pseudo = mElement->GetPseudoElement(mPseudo);
   return pseudo ? pseudo->GetPrimaryFrame() : nullptr;
 }
 
-void nsComputedDOMStyle::UpdateCurrentStyleSources(nsCSSPropertyID aPropID) {
+void nsComputedDOMStyle::UpdateCurrentStyleSources(
+    NonCustomCSSPropertyId aPropId) {
   nsCOMPtr<Document> document(mDocumentWeak);
   if (!document) {
     ClearComputedStyle();
@@ -1022,16 +1034,16 @@ void nsComputedDOMStyle::UpdateCurrentStyleSources(nsCSSPropertyID aPropID) {
   }
 
   DebugOnly<bool> didFlush = false;
-  if (NeedsToFlushStyle(aPropID)) {
+  if (NeedsToFlushStyle(aPropId)) {
     didFlush = true;
     // We look at the frame in NeedsToFlushLayout, so flush frames, not only
     // styles.
     Flush(*document, FlushType::Frames);
   }
 
-  const bool needsToFlushLayoutForProp = NeedsToFlushLayout(aPropID);
+  const bool needsToFlushLayoutForProp = NeedsToFlushLayout(aPropId);
   if (needsToFlushLayoutForProp || NeedsToFlushLayoutForContainerQuery()) {
-    MOZ_ASSERT_IF(needsToFlushLayoutForProp, MayNeedToFlushLayout(aPropID));
+    MOZ_ASSERT_IF(needsToFlushLayoutForProp, MayNeedToFlushLayout(aPropId));
     didFlush = true;
     Flush(*document, FlushType::Layout);
 #ifdef DEBUG
@@ -1074,7 +1086,12 @@ void nsComputedDOMStyle::UpdateCurrentStyleSources(nsCSSPropertyID aPropID) {
     mInnerFrame = mOuterFrame;
     if (mOuterFrame) {
       mInnerFrame = nsLayoutUtils::GetStyleFrame(mOuterFrame);
-      SetFrameComputedStyle(mInnerFrame->Style(), currentGeneration);
+      const auto* style = mInnerFrame->Style();
+      if (auto* data = mInnerFrame->GetProperty(
+              nsIFrame::LastSuccessfulPositionFallback())) {
+        style = data->mStyle.get();
+      }
+      SetFrameComputedStyle(std::move(style), currentGeneration);
       NS_ASSERTION(mComputedStyle, "Frame without style?");
     }
   }
@@ -1245,6 +1262,10 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetPerspectiveOrigin() {
 already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetTransform() {
   const nsStyleDisplay* display = StyleDisplay();
   return GetTransformValue(display->mTransform);
+}
+
+already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetWebkitTransform() {
+  return DoGetTransform();
 }
 
 /* static */
@@ -1729,22 +1750,6 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetPaddingRight() {
   return GetPaddingWidthFor(eSideRight);
 }
 
-already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetBorderTopWidth() {
-  return GetBorderWidthFor(eSideTop);
-}
-
-already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetBorderBottomWidth() {
-  return GetBorderWidthFor(eSideBottom);
-}
-
-already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetBorderLeftWidth() {
-  return GetBorderWidthFor(eSideLeft);
-}
-
-already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetBorderRightWidth() {
-  return GetBorderWidthFor(eSideRight);
-}
-
 already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetMarginTop() {
   return GetMarginFor(eSideTop);
 }
@@ -2067,11 +2072,6 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetPaddingWidthFor(
   return AppUnitsToCSSValue(mInnerFrame->GetUsedPadding().Side(aSide));
 }
 
-already_AddRefed<CSSValue> nsComputedDOMStyle::GetBorderWidthFor(
-    mozilla::Side aSide) {
-  return AppUnitsToCSSValue(StyleBorder()->GetComputedBorderWidth(aSide));
-}
-
 already_AddRefed<CSSValue> nsComputedDOMStyle::GetMarginFor(Side aSide) {
   // Use raw margin here, layout-dependent margins should be stored in used
   // margin.
@@ -2388,7 +2388,7 @@ void nsComputedDOMStyle::RegisterPrefChangeCallbacks() {
 
   AutoTArray<const char*, 64> prefs;
   for (const auto* p = nsCSSProps::kPropertyPrefTable;
-       p->mPropID != eCSSProperty_UNKNOWN; p++) {
+       p->mPropId != eCSSProperty_UNKNOWN; p++) {
     // Many properties are controlled by the same preference, so de-duplicate
     // them before adding observers.
     //

@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     description: "libxml2 toolchain build"

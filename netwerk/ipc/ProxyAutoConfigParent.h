@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ProxyAutoConfigParent_h__
-#define ProxyAutoConfigParent_h__
+#ifndef ProxyAutoConfigParent_h_
+#define ProxyAutoConfigParent_h_
 
 #include "mozilla/net/PProxyAutoConfigParent.h"
 
@@ -25,4 +25,4 @@ class ProxyAutoConfigParent final : public PProxyAutoConfigParent {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // ProxyAutoConfigParent_h__
+#endif  // ProxyAutoConfigParent_h_

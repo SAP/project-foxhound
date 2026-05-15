@@ -7,6 +7,10 @@
 /* import-globals-from ../../mochitest/states.js */
 loadScripts({ name: "states.js", dir: MOCHITESTS_DIR });
 
+// nsIEditor.passwordMask is the same for all editors. Therefore, we just grab
+// it from the URL bar for simplicity.
+const PASSWORD_MASK = gURLBar.inputField.editor.passwordMask;
+
 /**
  * Test data has the format of:
  * {
@@ -186,6 +190,46 @@ const valueTests = [
     waitFor: EVENT_TEXT_VALUE_CHANGE,
     expected: "Some rich text bold",
   },
+  {
+    desc: "Initially input value reflects @value attribute",
+    id: "input",
+    expected: "ab",
+  },
+  {
+    desc: "Input value changes when @value attribute changes",
+    id: "input",
+    attrs: [{ attr: "value", value: "c   d" }],
+    waitFor: EVENT_TEXT_VALUE_CHANGE,
+    expected: "c   d",
+  },
+  {
+    desc: "Initially textarea value reflects @value attribute",
+    id: "textarea",
+    expected: "ab",
+  },
+  {
+    desc: "Textarea value changes when .value property changes",
+    id: "textarea",
+    async action(browser) {
+      await invokeContentTask(browser, [], () => {
+        content.document.getElementById("textarea").value = "c\nd";
+      });
+    },
+    waitFor: EVENT_TEXT_VALUE_CHANGE,
+    expected: "c\nd",
+  },
+  {
+    desc: "Initially password value reflects @value attribute",
+    id: "password",
+    expected: PASSWORD_MASK.repeat(2),
+  },
+  {
+    desc: "Password value changes when @value attribute changes",
+    id: "password",
+    attrs: [{ attr: "value", value: "cde" }],
+    waitFor: EVENT_TEXT_VALUE_CHANGE,
+    expected: PASSWORD_MASK.repeat(3),
+  },
 ];
 
 /**
@@ -233,7 +277,10 @@ addAccessibleTask(
   <input id="combobox" role="combobox" aria-autocomplete="inline">
   <progress id="progress" value="22" max="100"></progress>
   <input type="range" id="range" min="0" max="10" value="6">
-  <div contenteditable="yes" role="textbox" id="textbox">Some <a href="#">rich</a> text</div>`,
+  <div contenteditable="yes" role="textbox" id="textbox">Some   <a href="#" aria-label="label">rich</a> text</div>
+  <input id="input" value="ab">
+  <textarea id="textarea">ab</textarea>
+  <input id="password" type="password" value="ab">`,
   async function (browser, accDoc) {
     for (let { desc, id, action, attrs, expected, waitFor } of valueTests) {
       info(desc);
@@ -261,7 +308,7 @@ addAccessibleTask(
       }
     }
   },
-  { iframe: true, remoteIframe: true }
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );
 
 /**
@@ -444,4 +491,32 @@ addAccessibleTask(
     is(comboDivSelected.value, "value", "Combobox value correct");
   },
   { chrome: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Test the value of a color input.
+ */
+addAccessibleTask(
+  `<input id="color" type="color" value="#000000">`,
+  async function testColor(browser, docAcc) {
+    const color = findAccessibleChildByID(docAcc, "color");
+    is(color.value, "0% red 0% green 0% blue", "Initial value correct");
+    info("Setting value attribute to #ffffff");
+    let changed = waitForEvent(EVENT_TEXT_VALUE_CHANGE, color);
+    await invokeSetAttribute(browser, "color", "value", "#ffffff");
+    await changed;
+    is(
+      color.value,
+      "100% red 100% green 100% blue",
+      "Value correct after change"
+    );
+    info("Setting value property to #ffffff");
+    changed = waitForEvent(EVENT_TEXT_VALUE_CHANGE, color);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("color").value = "#000000";
+    });
+    await changed;
+    is(color.value, "0% red 0% green 0% blue", "Value correct after change");
+  },
+  { chrome: true, topLevel: true }
 );

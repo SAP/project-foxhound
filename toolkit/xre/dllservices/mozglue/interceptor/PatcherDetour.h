@@ -12,12 +12,11 @@
 #endif  // defined(_M_ARM64)
 #include <utility>
 
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/TypedEnumBits.h"
-#include "mozilla/Types.h"
-#include "mozilla/Unused.h"
 #include "mozilla/interceptor/PatcherBase.h"
 #include "mozilla/interceptor/Trampoline.h"
 #include "mozilla/interceptor/VMSharingPolicies.h"
@@ -665,10 +664,20 @@ class WindowsDllDetourPatcher final
   }
 
 #  if defined(_M_X64)
-  enum class JumpType { Je, Jne, Jae, Jmp, Call };
+  enum class JumpType { Je, Jne, Jae, Jmp, Call, Js };
 
   static bool GenerateJump(Trampoline<MMPolicyT>& aTramp,
-                           uintptr_t aAbsTargetAddress, const JumpType aType) {
+                           uintptr_t aAbsTargetAddress, const JumpType aType,
+                           const ReadOnlyTargetFunction<MMPolicyT>& origBytes,
+                           uint32_t aBytesToPatch) {
+    if (aAbsTargetAddress >= origBytes.GetBaseAddress() &&
+        aAbsTargetAddress < origBytes.GetBaseAddress() + aBytesToPatch) {
+      // We don't correctly detour jumps or calls with target inside the section
+      // that we are patching. We don't think we need this for any realistic
+      // use case, so just fail here.
+      return false;
+    }
+
     // Near call, absolute indirect, address given in r/m32
     if (aType == JumpType::Call) {
       // CALL [RIP+0]
@@ -695,6 +704,10 @@ class WindowsDllDetourPatcher final
     } else if (aType == JumpType::Jae) {
       // JB RIP+14
       aTramp.WriteByte(0x72);
+      aTramp.WriteByte(14);
+    } else if (aType == JumpType::Js) {
+      // JNS RIP+14
+      aTramp.WriteByte(0x79);
       aTramp.WriteByte(14);
     }
 
@@ -812,19 +825,24 @@ class WindowsDllDetourPatcher final
         return false;
       }
 
+      // Set aOutTramp now so that the new target won't race if accessing this
+      // value. Bug 1838286 did not fix this path, resulting in bug 1950847.
+      *aOutTramp = reinterpret_cast<void*>(originalTarget);
+
       // Write the new JMP target address.
       target.WritePointer(aDest);
       if (!target.Commit()) {
+        *aOutTramp = nullptr;
         return false;
       }
 
       // Store the old target address so we can restore it when we're cleared
       aTramp.WritePointer(originalTarget);
       if (!aTramp) {
+        *aOutTramp = nullptr;
         return false;
       }
 
-      *aOutTramp = reinterpret_cast<void*>(originalTarget);
       return true;
     }
 #endif  // defined(_M_X64)
@@ -919,6 +937,8 @@ class WindowsDllDetourPatcher final
   }
 #endif  // defined(_M_X64)
 
+  // Note that *aOutTramp is not set until CreateTrampoline has completed
+  // successfully, so callers can use that to check for success.
   void CreateTrampoline(ReadOnlyTargetFunction<MMPolicyT>& origBytes,
                         TrampPoolT* aTrampPool, Trampoline<MMPolicyT>& aTramp,
                         intptr_t aDest, void** aOutTramp) {
@@ -946,8 +966,7 @@ class WindowsDllDetourPatcher final
 
     auto clearInstanceOnFailure = MakeScopeExit([this, aOutTramp, &tramp,
                                                  &origBytes]() -> void {
-      // *aOutTramp is not set until CreateTrampoline has completed
-      // successfully, so we can use that to check for success.
+      // If *aOutTramp was set this method ran successfully.
       if (*aOutTramp) {
         return;
       }
@@ -978,8 +997,8 @@ class WindowsDllDetourPatcher final
 #  endif  // defined(_M_ARM64)
 #else
       // Silence -Wunused-lambda-capture in non-Nightly.
-      Unused << this;
-      Unused << origBytes;
+      (void)this;
+      (void)origBytes;
 #endif  // defined(NIGHTLY_BUILD)
     });
 
@@ -1050,19 +1069,13 @@ class WindowsDllDetourPatcher final
         // INC r32
         origBytes += 1;
       } else if (*origBytes == 0x83) {
-        uint8_t mod = static_cast<uint8_t>(origBytes[1]) & kMaskMod;
-        uint8_t rm = static_cast<uint8_t>(origBytes[1]) & kMaskRm;
-        if (mod == kModReg) {
-          // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP r, imm8
-          origBytes += 3;
-        } else if (mod == kModDisp8 && rm != kRmNeedSib) {
-          // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP [r+disp8], imm8
-          origBytes += 4;
-        } else {
-          // bail
-          MOZ_ASSERT_UNREACHABLE("Unrecognized bit opcode sequence");
+        // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP on imm8
+        int len = CountModRmSib(origBytes + 1);
+        if (len < 0) {
+          MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
           return;
         }
+        COPY_CODES(len + 2);  // 1 for 0x83, 1 for imm8
       } else if (*origBytes == 0x68) {
         // PUSH with 4-byte operand
         origBytes += 5;
@@ -1173,8 +1186,17 @@ class WindowsDllDetourPatcher final
           ++origBytes;
           --tramp;  // overwrite the 0x0f we copied above
 
+          if (!GenerateJump(tramp, origBytes.ReadDisp32AsAbsolute(), jumpType,
+                            origBytes, bytesRequired)) {
+            return;
+          }
+        } else if (*origBytes == 0x88) {
+          // 0f 88 cd    JS  rel32
+          ++origBytes;
+          --tramp;  // overwrite the 0x0f we copied above
+
           if (!GenerateJump(tramp, origBytes.ReadDisp32AsAbsolute(),
-                            jumpType)) {
+                            JumpType::Js, origBytes, bytesRequired)) {
             return;
           }
         } else {
@@ -1276,16 +1298,14 @@ class WindowsDllDetourPatcher final
         if (*origBytes == 0x81 && (origBytes[1] & 0xf8) == 0xe8) {
           // sub r, dword
           COPY_CODES(6);
-        } else if (*origBytes == 0x83 && (origBytes[1] & 0xf8) == 0xe8) {
-          // sub r, byte
-          COPY_CODES(3);
-        } else if (*origBytes == 0x83 &&
-                   (origBytes[1] & (kMaskMod | kMaskReg)) == kModReg) {
-          // add r, byte
-          COPY_CODES(3);
-        } else if (*origBytes == 0x83 && (origBytes[1] & 0xf8) == 0x60) {
-          // and [r+d], imm8
-          COPY_CODES(5);
+        } else if (*origBytes == 0x83) {
+          // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP on imm8
+          int len = CountModRmSib(origBytes + 1);
+          if (len < 0) {
+            MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
+            return;
+          }
+          COPY_CODES(len + 2);  // 1 for 0x83, 1 for imm8
         } else if (*origBytes == 0x2b && (origBytes[1] & kMaskMod) == kModReg) {
           // sub r64, r64
           COPY_CODES(2);
@@ -1355,7 +1375,8 @@ class WindowsDllDetourPatcher final
 
             foundJmp = (origBytes[1] & 0x38) == 0x20;
             if (!GenerateJump(tramp, origBytes.ChasePointerFromDisp(),
-                              foundJmp ? JumpType::Jmp : JumpType::Call)) {
+                              foundJmp ? JumpType::Jmp : JumpType::Call,
+                              origBytes, bytesRequired)) {
               return;
             }
           } else {
@@ -1512,9 +1533,14 @@ class WindowsDllDetourPatcher final
         // bit shifts/rotates : (SA|SH|RO|RC)(R|L) r32
         // (e.g. 0xd1 0xe0 is SAL, 0xd1 0xc8 is ROR)
         COPY_CODES(2);
-      } else if (*origBytes == 0x83 && (origBytes[1] & kMaskMod) == kModReg) {
-        // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP r, imm8
-        COPY_CODES(3);
+      } else if (*origBytes == 0x83) {
+        // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP on imm8
+        int len = CountModRmSib(origBytes + 1);
+        if (len < 0) {
+          MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
+          return;
+        }
+        COPY_CODES(len + 2);  // 1 for 0x83, 1 for imm8
       } else if (*origBytes == 0xc3) {
         // ret
         COPY_CODES(1);
@@ -1527,7 +1553,8 @@ class WindowsDllDetourPatcher final
         ++origBytes;
 
         if (!GenerateJump(tramp, origBytes.ReadDisp32AsAbsolute(),
-                          foundJmp ? JumpType::Jmp : JumpType::Call)) {
+                          foundJmp ? JumpType::Jmp : JumpType::Call, origBytes,
+                          bytesRequired)) {
           return;
         }
       } else if (*origBytes >= 0x73 && *origBytes <= 0x75) {
@@ -1537,12 +1564,36 @@ class WindowsDllDetourPatcher final
         const JumpType kJumpTypes[] = {JumpType::Jae, JumpType::Je,
                                        JumpType::Jne};
         auto jumpType = kJumpTypes[*origBytes - 0x73];
-        uint8_t offset = origBytes[1];
+        int8_t offset = origBytes[1];
+        if (offset < 0) {
+          // We don't support backwards relative jumps. If we want to in the
+          // future we should find a good way to test them.
+          MOZ_ASSERT_UNREACHABLE(
+              "Unrecognized opcode sequence - backwards relative jump");
+          return;
+        }
+
+        origBytes += 2;
+
+        if (!GenerateJump(tramp, origBytes.OffsetToAbsolute(offset), jumpType,
+                          origBytes, bytesRequired)) {
+          return;
+        }
+      } else if (*origBytes == 0x78) {
+        // 78 cb    JS rel8
+        int8_t offset = origBytes[1];
+        if (offset < 0) {
+          // We don't support backwards relative jumps. If we want to in the
+          // future we should find a good way to test them.
+          MOZ_ASSERT_UNREACHABLE(
+              "Unrecognized opcode sequence - backwards relative jump");
+          return;
+        }
 
         origBytes += 2;
 
         if (!GenerateJump(tramp, origBytes.OffsetToAbsolute(offset),
-                          jumpType)) {
+                          JumpType::Js, origBytes, bytesRequired)) {
           return;
         }
       } else if (*origBytes == 0xff) {
@@ -1557,7 +1608,7 @@ class WindowsDllDetourPatcher final
           // FF 15    CALL [disp32]
           origBytes += 2;
           if (!GenerateJump(tramp, origBytes.ChasePointerFromDisp(),
-                            JumpType::Call)) {
+                            JumpType::Call, origBytes, bytesRequired)) {
             return;
           }
         } else if (reg == 4) {
@@ -1570,7 +1621,8 @@ class WindowsDllDetourPatcher final
 
             uintptr_t jmpDest = origBytes.ChasePointerFromDisp();
 
-            if (!GenerateJump(tramp, jmpDest, JumpType::Jmp)) {
+            if (!GenerateJump(tramp, jmpDest, JumpType::Jmp, origBytes,
+                              bytesRequired)) {
               return;
             }
           } else {
@@ -1590,9 +1642,6 @@ class WindowsDllDetourPatcher final
           MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
           return;
         }
-      } else if (*origBytes == 0x83 && (origBytes[1] & 0xf8) == 0x60) {
-        // and [r+d], imm8
-        COPY_CODES(5);
       } else if (*origBytes == 0xc6) {
         // mov [r+d], imm8
         int len = CountModRmSib(origBytes + 1);
@@ -1645,6 +1694,23 @@ class WindowsDllDetourPatcher final
         break;
       }
 
+      if (pcRelInfo.inspect().mType == arm64::LoadOrBranch::Type::Branch) {
+        // We need to branch to the original target of this instruction.
+        // This is a problem because on the first pass
+        // GetCurrentRemoteAddress() is 0, so the offset may be too large for
+        // BuildUnconditionalBranchImm. We don't need this for now on ARM64.
+        // so just behave like we don't have a decoder.
+
+        // origBytes is now pointing one instruction past the one that we
+        // need the trampoline to jump back to.
+        if (!origBytes.BackUpOneInstruction()) {
+          return;
+        }
+
+        break;
+      }
+
+      MOZ_ASSERT(pcRelInfo.inspect().mType == arm64::LoadOrBranch::Type::Load);
       // We need to load an absolute address into a particular register
       tramp.WriteLoadLiteral(pcRelInfo.inspect().mAbsAddress,
                              pcRelInfo.inspect().mDestReg);
@@ -1674,7 +1740,8 @@ class WindowsDllDetourPatcher final
     // if we found a _conditional_ jump or a CALL (or no control operations
     // at all) then we still need to run the rest of aOriginalFunction.
     if (!foundJmp) {
-      if (!GenerateJump(tramp, origBytes.GetAddress(), JumpType::Jmp)) {
+      if (!GenerateJump(tramp, origBytes.GetAddress(), JumpType::Jmp, origBytes,
+                        bytesRequired)) {
         return;
       }
     }

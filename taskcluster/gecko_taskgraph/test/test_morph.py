@@ -106,13 +106,11 @@ def test_try_task_duplicates(make_taskgraph, graph_config, params, expected):
     taskb = Task(kind="test", label="b", attributes={}, task={})
     task1 = Task(kind="test", label="a-1", attributes={}, task={})
     task2 = Task(kind="test", label="a-2", attributes={}, task={})
-    taskgraph, label_to_taskid = make_taskgraph(
-        {
-            taskb.label: taskb,
-            task1.label: task1,
-            task2.label: task2,
-        }
-    )
+    taskgraph, label_to_taskid = make_taskgraph({
+        taskb.label: taskb,
+        task1.label: task1,
+        task2.label: task2,
+    })
 
     taskgraph, label_to_taskid = morph._add_try_task_duplicates(
         taskgraph, label_to_taskid, params, graph_config
@@ -170,12 +168,10 @@ def test_make_index_tasks(make_taskgraph, graph_config):
     docker_task = Task(
         kind="docker-image", label="docker-image-index-task", attributes={}, task={}
     )
-    taskgraph, label_to_taskid = make_taskgraph(
-        {
-            task.label: task,
-            docker_task.label: docker_task,
-        }
-    )
+    taskgraph, label_to_taskid = make_taskgraph({
+        task.label: task,
+        docker_task.label: docker_task,
+    })
 
     index_paths = [
         r.split(".", 1)[1] for r in task_def["routes"] if r.startswith("index.")
@@ -194,7 +190,7 @@ def test_make_index_tasks(make_taskgraph, graph_config):
 
     assert index_task.task["payload"]["command"][0] == "insert-indexes.js"
     assert index_task.task["payload"]["env"]["TARGET_TASKID"] == "a-tid"
-    assert index_task.task["payload"]["env"]["INDEX_RANK"] == 1540722354
+    assert index_task.task["payload"]["env"]["INDEX_RANK"] == "1540722354"
 
     # check the scope summary
     assert index_task.task["scopes"] == ["index:insert-task:gecko.v2.mozilla-central.*"]

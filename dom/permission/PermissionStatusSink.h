@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_PermissionStatusSink_h
 #define mozilla_dom_PermissionStatusSink_h
 
-#include "mozilla/dom/PermissionsBinding.h"
-#include "mozilla/dom/PermissionStatusBinding.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/PermissionStatusBinding.h"
+#include "mozilla/dom/PermissionsBinding.h"
 #include "nsIPermission.h"
 
 class nsPIDOMWindowInner;
@@ -19,7 +19,7 @@ namespace mozilla::dom {
 
 class PermissionObserver;
 class PermissionStatus;
-class WeakWorkerRef;
+class ThreadSafeWorkerRef;
 
 class PermissionStatusSink {
  public:
@@ -70,7 +70,7 @@ class PermissionStatusSink {
 
   // Protected by mutex.
   // Created and released on worker-thread. Used also on main-thread.
-  RefPtr<WeakWorkerRef> mWorkerRef MOZ_GUARDED_BY(mMutex);
+  RefPtr<ThreadSafeWorkerRef> mWorkerRef MOZ_GUARDED_BY(mMutex);
 
   PermissionName mPermissionName;
   nsCString mPermissionType;

@@ -7,7 +7,8 @@ import { BrowserTestUtils } from "resource://testing-common/BrowserTestUtils.sys
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
 });
 
 async function promiseAnimationFrame(window) {

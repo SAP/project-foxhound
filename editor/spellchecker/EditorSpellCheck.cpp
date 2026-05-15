@@ -10,7 +10,6 @@
 #include "HTMLEditor.h"            // for HTMLEditor
 #include "TextServicesDocument.h"  // for TextServicesDocument
 
-#include "mozilla/Attributes.h"   // for final
 #include "mozilla/dom/Element.h"  // for Element
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Selection.h"

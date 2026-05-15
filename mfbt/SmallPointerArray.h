@@ -36,6 +36,12 @@ namespace mozilla {
 // Any modification of the array invalidates any outstanding iterators.
 template <typename T>
 class SmallPointerArray {
+  // We cannot support SmallPointerArray<bool> because of iterator of
+  // std::vector<bool> specialization that don't match iterator on pointer of
+  // bool.
+  static_assert(!std::is_same_v<T, bool>,
+                "SmallPointerArray<bool> is not supported");
+
  public:
   SmallPointerArray() {
     // List-initialization would be nicer, but it only lets you initialize the
@@ -64,7 +70,7 @@ class SmallPointerArray {
   void Clear() {
     if (first()) {
       first() = nullptr;
-      new (&mArray[1].mValue) std::vector<T*>*(nullptr);
+      new (&mArray[1].mVector) std::vector<T*>*(nullptr);
       return;
     }
 

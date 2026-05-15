@@ -28,10 +28,12 @@
   SimpleTest.waitForExplicitFinish();
 
   let hasError = false;
+  // eslint-disable-next-line no-unused-vars
   function importMapError() {
     hasError = true;
   }
 
+  // eslint-disable-next-line no-unused-vars
   function testLoaded() {
     import("./module_simpleExport.mjs").then((ns) => {
       ok(ns.x == 42, 'Check simple imported value result: ' + ns.x);

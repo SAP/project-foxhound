@@ -4,6 +4,9 @@ import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
 
 
+/**
+ * See the [Rust documentation for `Weekday`](https://docs.rs/icu/2.1.1/icu/calendar/types/enum.Weekday.html) for more information.
+ */
 export class Weekday {
     #value = undefined;
 
@@ -46,6 +49,7 @@ export class Weekday {
         throw TypeError(value + " is not a Weekday and does not correspond to any of its enumerator values.");
     }
 
+    /** @internal */
     static fromValue(value) {
         return new Weekday(value);
     }
@@ -58,6 +62,7 @@ export class Weekday {
         }
     }
 
+    /** @internal */
     get ffiValue(){
         return this.#value;
     }

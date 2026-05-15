@@ -7,6 +7,7 @@
 
 import logging
 import os
+import re
 import traceback
 from abc import ABCMeta, abstractmethod
 
@@ -17,18 +18,20 @@ from mozinfo.platforminfo import PlatformInfo
 from moztest.resolve import TEST_SUITES, TestManifestLoader, TestResolver
 from requests.exceptions import RetryError
 from taskgraph.util import json
+from taskgraph.util.taskcluster import get_artifact_from_index
 from taskgraph.util.yaml import load_yaml
 
-from gecko_taskgraph import GECKO
+from gecko_taskgraph import TEST_CONFIGS
 from gecko_taskgraph.util.bugbug import CT_LOW, BugbugTimeoutException, push_schedules
 
 logger = logging.getLogger(__name__)
 here = os.path.abspath(os.path.dirname(__file__))
 resolver = TestResolver.from_environment(cwd=here, loader_cls=TestManifestLoader)
 
+VARIANTS_YML = os.path.join(TEST_CONFIGS, "variants.yml")
 TEST_VARIANTS = {}
-if os.path.exists(os.path.join(GECKO, "taskcluster", "kinds", "test", "variants.yml")):
-    TEST_VARIANTS = load_yaml(GECKO, "taskcluster", "kinds", "test", "variants.yml")
+if os.path.exists(VARIANTS_YML):
+    TEST_VARIANTS = load_yaml(VARIANTS_YML)
 
 WPT_SUBSUITES = {
     "canvas": ["html/canvas"],
@@ -92,7 +95,8 @@ def guess_mozinfo_from_task(task, repo="", app_version="", test_tags=[]):
     info["appname"] = "fennec" if info["os"] == "android" else "firefox"
     info["buildapp"] = "browser"
 
-    info["processor"] = platform_info.arch
+    # TODO processor being deprecated by arch, remove once finished.
+    info["processor"] = info["arch"] = platform_info.arch
 
     # guess toolkit
     if info["os"] == "android":
@@ -143,23 +147,118 @@ def guess_mozinfo_from_task(task, repo="", app_version="", test_tags=[]):
 
 
 @memoize
+def _load_manifest_runtimes_data():
+    index_route = "gecko.v2.mozilla-central.latest.source.test-info-manifest-timings"
+    return get_artifact_from_index(index_route, "public/manifests-runtimes.json")
+
+
+@memoize
 def get_runtimes(platform, suite_name):
     if not suite_name or not platform:
         raise TypeError("suite_name and platform cannot be empty.")
 
-    base = os.path.join(GECKO, "testing", "runtimes", "manifest-runtimes-{}.json")
-    for key in ("android", "windows"):
-        if key in platform:
-            path = base.format(key)
+    data = _load_manifest_runtimes_data()
+
+    manifest_runtimes = {}
+    job_names = data.get("jobNames", [])
+    manifests_data = data.get("manifests", {})
+
+    # Helper to insert -shippable before suffixes like -qr, -lite
+    def add_shippable(platform_str):
+        if "/opt" not in platform_str or "-shippable" in platform_str:
+            return None
+
+        parts = platform_str.rsplit("/", 1)  # ["windows10-64-2009-qr", "opt"]
+        platform_part = parts[0]
+
+        # Move suffixes after -shippable
+        suffixes_to_move = ["-qr", "-lite"]
+        base = platform_part
+        suffix = ""
+        for s in suffixes_to_move:
+            if platform_part.endswith(s):
+                base = platform_part[: -len(s)]
+                suffix = s
+                break
+
+        return f"{base}-shippable{suffix}/{parts[1]}"
+
+    # Build platform candidates to try (exact match first, then fallbacks)
+    platform_candidates = [platform]
+
+    # Fallback 1: Add -shippable for /opt builds
+    shippable = add_shippable(platform)
+    if shippable:
+        platform_candidates.append(shippable)
+
+    # Fallback 2: Remove -devedition (devedition jobs may not run on mozilla-central)
+    if "-devedition" in platform:
+        without_devedition = platform.replace("-devedition", "")
+        platform_candidates.append(without_devedition)
+        shippable = add_shippable(without_devedition)
+        if shippable:
+            platform_candidates.append(shippable)
+    matched_jobs = []
+    used_platform = None
+
+    # Implicit parts of job names that are always present for certain
+    # platforms but not included in the suite name by the task graph.
+    # Strip these (along with chunk numbers) from job names before matching.
+    def _strip_job_name(job_name):
+        name = re.sub(r"-\d+$", "", job_name)
+        name = name.replace("-geckoview-", "-")
+        name = name.replace("-swr", "")
+        name = name.replace("-1proc", "")
+        return name
+
+    # Try each platform candidate until we find jobs
+    for candidate in platform_candidates:
+        expected = f"test-{candidate}-{suite_name}"
+        matching = [j for j in job_names if _strip_job_name(j) == expected]
+        if matching:
+            matched_jobs = matching
+            used_platform = candidate
             break
-    else:
-        path = base.format("unix")
 
-    if not os.path.exists(path):
-        raise OSError(f"manifest runtime file at {path} not found.")
+    if not matched_jobs:
+        logger.warning(
+            f"get_runtimes({platform}, {suite_name}): No jobs found. Tried candidates: {platform_candidates}"
+        )
+        return {}
 
-    with open(path) as fh:
-        return json.load(fh)[suite_name]
+    # Collect runtimes from matched jobs
+    for manifest_name, manifest_info in manifests_data.items():
+        jobs = manifest_info.get("jobs", [])
+        runtimes_arrays = manifest_info.get("runtimes", [])
+
+        all_runtimes = []
+        for job_idx, job_runtimes in enumerate(runtimes_arrays):
+            job_name = job_names[jobs[job_idx]]
+            if job_name in matched_jobs:
+                all_runtimes.extend(job_runtimes)
+
+        # Calculate median runtime
+        if all_runtimes:
+            all_runtimes.sort()
+            mid = len(all_runtimes) // 2
+            if len(all_runtimes) % 2 == 0:
+                median = (all_runtimes[mid - 1] + all_runtimes[mid]) / 2
+            else:
+                median = all_runtimes[mid]
+            # Convert from milliseconds to seconds
+            manifest_runtimes[manifest_name] = median / 1000
+
+    # Log if we used a fallback
+    if used_platform != platform:
+        logger.debug(
+            f"get_runtimes({platform}, {suite_name}): Using fallback platform {used_platform}, matched {len(matched_jobs)} jobs, found {len(manifest_runtimes)} manifests"
+        )
+    elif len(manifest_runtimes) == 0:
+        logger.warning(
+            f"get_runtimes({platform}, {suite_name}): Matched {len(matched_jobs)} jobs but found 0 manifests"
+        )
+
+    return manifest_runtimes
 
 
 def chunk_manifests(suite, platform, chunks, manifests):
@@ -174,32 +273,62 @@ def chunk_manifests(suite, platform, chunks, manifests):
         A list of length `chunks` where each item contains a list of manifests
         that run in that chunk.
     """
-    ini_manifests = set([x.replace(".toml", ".ini") for x in manifests])
+    if "web-platform-tests" not in suite:
+        all_runtimes = get_runtimes(platform, suite)
 
-    if "web-platform-tests" not in suite and "marionette" not in suite:
-        runtimes = {
-            k: v for k, v in get_runtimes(platform, suite).items() if k in ini_manifests
-        }
-        retVal = []
-        for c in chunk_by_runtime(None, chunks, runtimes).get_chunked_manifests(
-            ini_manifests
-        ):
-            retVal.append(
-                [m if m in manifests else m.replace(".ini", ".toml") for m in c[1]]
+        # Build runtimes dict, handling manifest includes
+        # Manifest names can be "manifest.toml" or "manifest.toml:included.toml"
+        runtimes = {}
+        for manifest in manifests:
+            total_runtime = 0
+            found = False
+
+            # Direct match
+            if manifest in all_runtimes:
+                total_runtime += all_runtimes[manifest]
+                found = True
+
+            # Also check for included manifests (manifest.toml:*)
+            if manifest.endswith(".toml"):
+                manifest_prefix = manifest + ":"
+                for runtime_key, runtime_value in all_runtimes.items():
+                    if runtime_key.startswith(manifest_prefix):
+                        total_runtime += runtime_value
+                        found = True
+
+            if found:
+                runtimes[manifest] = total_runtime
+
+        # Log if some manifests are missing runtime data
+        manifests_without_data = [m for m in manifests if m not in runtimes]
+        if manifests_without_data and len(runtimes) > 0:
+            missing_list = ", ".join(manifests_without_data[:5])
+            if len(manifests_without_data) > 5:
+                missing_list += f" ... and {len(manifests_without_data) - 5} more"
+            logger.warning(
+                f"chunk_manifests({suite}, {platform}): Missing runtime data for {len(manifests_without_data)}/{len(manifests)} manifests: {missing_list}"
             )
 
+        # Separate manifests with 0 runtime from those with real data.
+        # When we fall back to a similar platform's data, some manifests may
+        # not exist in that fallback configuration and end up with 0ms.
+        # Spread them evenly across chunks to limit the damage when they
+        # actually take significant time.
+        zero_runtime_manifests = sorted(m for m in manifests if runtimes.get(m, 0) == 0)
+        nonzero_manifests = [m for m in manifests if runtimes.get(m, 0) != 0]
+
+        cbr = chunk_by_runtime(None, chunks, runtimes)
+        chunked = [c for _, c in cbr.get_chunked_manifests(nonzero_manifests)]
+
+        for i, m in enumerate(zero_runtime_manifests):
+            chunked[i % chunks].append(m)
+
+        return chunked
+
     # Keep track of test paths for each chunk, and the runtime information.
-    chunked_manifests = [[] for _ in range(chunks)]
-
     # Spread out the test manifests evenly across all chunks.
-    for index, key in enumerate(sorted(manifests)):
-        chunked_manifests[index % chunks].append(key)
-
-    # One last sort by the number of manifests. Chunk size should be more or less
-    # equal in size.
-    chunked_manifests.sort(key=lambda x: len(x))
-
-    # Return just the chunked test paths.
+    sorted_manifests = sorted(manifests)
+    chunked_manifests = [sorted_manifests[c::chunks] for c in range(chunks)]
     return chunked_manifests
 
 
@@ -247,41 +376,56 @@ class DefaultLoader(BaseManifestLoader):
     @memoize
     def get_manifests(self, suite, frozen_mozinfo):
         mozinfo = dict(frozen_mozinfo)
-        # Compute all tests for the given suite/subsuite.
+
         tests = self.get_tests(suite)
+
+        mozinfo_tags = json.loads(mozinfo.get("tag", "[]"))
 
         if "web-platform-tests" in suite:
             manifests = set()
-            subsuite = [x for x in WPT_SUBSUITES.keys() if mozinfo[x]]
-            for t in tests:
-                if json.loads(mozinfo["tag"]) and not any(
-                    x in t.get("tags", []) for x in json.loads(mozinfo["tag"])
-                ):
-                    continue
-                if subsuite:
-                    # add specific directories
-                    if any(x in t["manifest"] for x in WPT_SUBSUITES[subsuite[0]]):
-                        manifests.add(t["manifest"])
-                else:
-                    containsSubsuite = False
-                    for subsuites in WPT_SUBSUITES.values():
-                        if any(subsuite in t["manifest"] for subsuite in subsuites):
-                            containsSubsuite = True
-                            break
 
-                    if containsSubsuite:
+            subsuite = next((x for x in WPT_SUBSUITES.keys() if mozinfo.get(x)), None)
+
+            if subsuite:
+                subsuite_paths = WPT_SUBSUITES[subsuite]
+                for t in tests:
+                    if mozinfo_tags and not any(
+                        x in t.get("tags", []) for x in mozinfo_tags
+                    ):
                         continue
 
-                    manifests.add(t["manifest"])
+                    manifest = t["manifest"]
+                    if any(x in manifest for x in subsuite_paths):
+                        manifests.add(manifest)
+            else:
+                all_subsuite_paths = [
+                    path for paths in WPT_SUBSUITES.values() for path in paths
+                ]
+                for t in tests:
+                    if mozinfo_tags and not any(
+                        x in t.get("tags", []) for x in mozinfo_tags
+                    ):
+                        continue
+
+                    manifest = t["manifest"]
+                    if not any(path in manifest for path in all_subsuite_paths):
+                        manifests.add(manifest)
+
             return {
                 "active": list(manifests),
                 "skipped": [],
-                "other_dirs": dict.fromkeys(manifests, ""),
+                "other_dirs": {},
             }
 
-        manifests = {chunk_by_runtime.get_manifest(t) for t in tests}
-
         filters = []
+        SUITES_WITHOUT_TAG = {
+            "crashtest",
+            "crashtest-qr",
+            "jsreftest",
+            "reftest",
+            "reftest-qr",
+        }
+
         # Exclude suites that don't support --tag to prevent manifests from
         # being optimized out, which would result in no jobs being triggered.
         # No need to check suites like gtest, as all suites in compiled.yml
@@ -291,37 +435,24 @@ class DefaultLoader(BaseManifestLoader):
         # DesktopUnittest's _query_abs_base_cmd method. The lists should be
         # kept in sync.
         assert suite not in ["gtest", "cppunittest", "jittest"]
-        if suite not in [
-            "crashtest",
-            "crashtest-qr",
-            "jsreftest",
-            "reftest",
-            "reftest-qr",
-        ] and (mozinfo_tags := json.loads(mozinfo["tag"])):
+
+        if suite not in SUITES_WITHOUT_TAG and mozinfo_tags:
             filters.extend([tags([x]) for x in mozinfo_tags])
 
-        # Compute  the active tests.
         m = TestManifest()
         m.tests = tests
-        tests = m.active_tests(disabled=False, exists=False, filters=filters, **mozinfo)
-        active = {}
-        # map manifests and 'other' directories included
-        for t in tests:
-            mp = chunk_by_runtime.get_manifest(t)
-            active.setdefault(mp, [])
+        active_tests = m.active_tests(
+            disabled=False, exists=False, filters=filters, **mozinfo
+        )
 
-            if not mp.startswith(t["dir_relpath"]):
-                active[mp].append(t["dir_relpath"])
+        active_manifests = {chunk_by_runtime.get_manifest(t) for t in active_tests}
 
-        skipped = manifests - set(active.keys())
-        other = {}
-        for m in active:
-            if len(active[m]) > 0:
-                other[m] = list(set(active[m]))
+        skipped_manifests = {chunk_by_runtime.get_manifest(t) for t in tests}
+        skipped_manifests.difference_update(active_manifests)
         return {
-            "active": list(active.keys()),
-            "skipped": list(skipped),
-            "other_dirs": other,
+            "active": list(active_manifests),
+            "skipped": list(skipped_manifests),
+            "other_dirs": {},
         }
 
 

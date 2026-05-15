@@ -10,12 +10,7 @@ import mozilla.components.lib.state.Action
  * Actions relating to the Logins list screen and its various subscreens.
  */
 internal sealed interface LoginsAction : Action
-
-/**
- * The Store is initializing.
- */
-internal data object Init : LoginsAction
-internal data object ViewDisposed : LoginsAction
+internal data object LoginsListAppeared : LoginsAction
 internal data object LoginsListBackClicked : LoginsAction
 
 /**
@@ -44,6 +39,11 @@ internal sealed class DetailLoginMenuAction : LoginsAction {
     data class DeleteLoginMenuItemClicked(val item: LoginItem) : DetailLoginMenuAction()
 }
 
+internal sealed class LoginDeletionDialogAction : LoginsAction {
+    data object CancelTapped : LoginDeletionDialogAction()
+    data object DeleteTapped : LoginDeletionDialogAction()
+}
+
 internal data object LoginsDetailBackClicked : LoginsAction
 internal data object AddLoginBackClicked : LoginsAction
 internal data object EditLoginBackClicked : LoginsAction
@@ -67,4 +67,5 @@ internal sealed class DetailLoginAction : LoginsAction {
     data class GoToSiteClicked(val url: String) : DetailLoginAction()
     data class CopyUsernameClicked(val username: String) : DetailLoginAction()
     data class CopyPasswordClicked(val password: String) : DetailLoginAction()
+    data class PasswordVisibilityChanged(val isPasswordVisible: Boolean) : DetailLoginAction()
 }

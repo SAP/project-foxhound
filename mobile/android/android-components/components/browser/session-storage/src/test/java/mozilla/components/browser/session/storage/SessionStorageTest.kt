@@ -10,6 +10,8 @@ import mozilla.components.browser.state.ext.getUrl
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.EngineState
 import mozilla.components.browser.state.state.ReaderState
+import mozilla.components.browser.state.state.TabGroup
+import mozilla.components.browser.state.state.TabPartition
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.state.recover.RecoverableTab
@@ -31,7 +33,7 @@ import org.mockito.Mockito.verify
 @RunWith(AndroidJUnit4::class)
 class SessionStorageTest {
     @Test
-    fun `Restored browser state should contain tabs of saved state`() {
+    fun `Restored browser state should contain tabs and tab partitions of saved state`() {
         // Build the state
 
         val engineSessionState1 = FakeEngineSessionState("engineState1")
@@ -42,9 +44,14 @@ class SessionStorageTest {
         val tab2 = createTab("https://getpocket.com", id = "tab2", contextId = "context2")
         val tab3 = createTab("https://www.firefox.com", id = "tab3", parent = tab1)
 
+        val tabGroup = TabGroup(id = "group1", name = "Group 1", tabIds = setOf("a"))
+        val tabPartition = TabPartition(id = "testFeaturePartition1", tabGroups = listOf(tabGroup))
+        val tabPartitions = mapOf("testFeaturePartition1" to tabPartition)
+
         val state = BrowserState(
             tabs = listOf(tab1, tab2, tab3),
             selectedTabId = tab1.id,
+            tabPartitions = tabPartitions,
         )
 
         // Persist the state
@@ -62,6 +69,7 @@ class SessionStorageTest {
 
         assertEquals(3, restoredState.tabs.size)
         assertEquals("tab1", restoredState.selectedTabId)
+        assertEquals(tabPartitions, restoredState.tabPartitions)
 
         tab1.assertSameAs(restoredState.tabs[0])
         tab2.assertSameAs(restoredState.tabs[1])

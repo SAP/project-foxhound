@@ -6,9 +6,9 @@
 #ifndef mozilla_dom_FocusEvent_h_
 #define mozilla_dom_FocusEvent_h_
 
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/FocusEventBinding.h"
 #include "mozilla/dom/UIEvent.h"
-#include "mozilla/EventForwards.h"
 
 namespace mozilla::dom {
 

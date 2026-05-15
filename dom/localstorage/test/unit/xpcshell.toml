@@ -19,10 +19,14 @@ support-files = [
 ]
 
 ["make_migration_emptyValue.js"]
-run-if = ["false"] # Only used for recreating migration_emptyValue_profile.zip
+run-if = [
+  "false", # Only used for recreating migration_emptyValue_profile.zip
+]
 
 ["make_somedata.js"]
-run-if = ["false"] # Only used for recreating somedata_profile.zip
+run-if = [
+  "false", # Only used for recreating somedata_profile.zip
+]
 
 ["test_archive.js"]
 
@@ -32,31 +36,31 @@ run-if = ["false"] # Only used for recreating somedata_profile.zip
 
 ["test_databaseShadowing1.js"]
 prefs = ["dom.storage.shadow_writes=true"]
-run-sequentially = "test_databaseShadowing2.js depends on a file produced by this test"
+run-sequentially = ["true"] # test_databaseShadowing2.js depends on a file produced by this test
 
 ["test_databaseShadowing2.js"]
-run-sequentially = "this test depends on a file produced by test_databaseShadowing1.js"
+run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing1.js
 
 ["test_databaseShadowing_clearOrigin1.js"]
 prefs = ["dom.storage.shadow_writes=true"]
-run-sequentially = "test_databaseShadowing_clearOrigin2.js depends on a file produced by this test"
+run-sequentially = ["true"] # test_databaseShadowing_clearOrigin2.js depends on a file produced by this test
 
 ["test_databaseShadowing_clearOrigin2.js"]
-run-sequentially = "this test depends on a file produced by test_databaseShadowing_clearOrigin1.js"
+run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing_clearOrigin1.js
 
 ["test_databaseShadowing_clearOriginsByPattern1.js"]
 prefs = ["dom.storage.shadow_writes=true"]
-run-sequentially = "test_databaseShadowing_clearOriginsByPattern2.js depends on a file produced by this test"
+run-sequentially = ["true"] # test_databaseShadowing_clearOriginsByPattern2.js depends on a file produced by this test
 
 ["test_databaseShadowing_clearOriginsByPattern2.js"]
-run-sequentially = "this test depends on a file produced by test_databaseShadowing_clearOriginsByPattern1.js"
+run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing_clearOriginsByPattern1.js
 
 ["test_databaseShadowing_clearOriginsByPrefix1.js"]
 prefs = ["dom.storage.shadow_writes=true"]
-run-sequentially = "test_databaseShadowing_clearOriginsByPrefix2.js depends on a file produced by this test"
+run-sequentially = ["true"] # test_databaseShadowing_clearOriginsByPrefix2.js depends on a file produced by this test
 
 ["test_databaseShadowing_clearOriginsByPrefix2.js"]
-run-sequentially = "this test depends on a file produced by test_databaseShadowing_clearOriginsByPrefix1.js"
+run-sequentially = ["true"] # this test depends on a file produced by test_databaseShadowing_clearOriginsByPrefix1.js
 
 ["test_databaseWorkStarted.js"]
 
@@ -104,7 +108,7 @@ support-files = ["migration_emptyValue_profile.zip",]
 ["test_slowStorageInitialization.js"]
 
 ["test_snapshotting.js"]
-requesttimeoutfactor = 4
+requesttimeoutfactor = 2  # Slow on debug
 
 ["test_stringLength.js"]
 prefs = ["dom.storage.enable_migration_from_unsupported_legacy_implementation=true"]

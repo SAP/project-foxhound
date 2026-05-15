@@ -123,40 +123,6 @@ gfx.features:
       - gfx-telemetry-alerts@mozilla.com
     expires: never
 
-  d2d:
-    type: object
-    lifetime: application
-    description: |
-      (Windows-only) information about the D2D compositor.
-      * status - One of
-        * "unused"      - This feature has not been requested.
-        * "unavailable" - Safe Mode or OS restriction prevents use.
-        * "blocked"     - An internal condition (such as safe mode) prevents use.
-        * "blocklisted" - Blocked due to a blocklist restriction.
-        * "denied"      - Blocked due to allowlist restrictions.
-        * "disabled"    - User explicitly disabled this default feature.
-        * "failed"      - Feature failed to initialize.
-        * "available"   - User has this feature available by default.
-                  optionally including ":" followed by a reason
-                  e.g. "FEATURE_FAILURE_WEBRENDER_VIDEO_CRASH_INTEL_23.20.16.4973".
-      * version - The feature version, either "1.0" or "1.1"
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1950412
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1950412
-    data_sensitivity:
-      - technical
-    structure:
-      type: object
-      properties:
-        status:
-          type: string
-        version:
-          type: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-    expires: never
-
   hw_compositing: &basic_gfx_feature
     type: object
     lifetime: application
@@ -269,21 +235,6 @@ gfx.features:
                   optionally including ":" followed by a reason
                   e.g. "FEATURE_FAILURE_WEBRENDER_VIDEO_CRASH_INTEL_23.20.16.4973".
 gfx:
-  d2d_enabled:
-    type: boolean
-    lifetime: application
-    description: |
-      Whether Direct2D is enabled. (Windows-only)
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1950411
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1950411
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-    expires: never
-
   dwrite_enabled:
     type: boolean
     lifetime: application

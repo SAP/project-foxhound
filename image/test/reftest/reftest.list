@@ -23,16 +23,16 @@ include pngsuite-zlib/reftest.list
 include png/reftest.list
 
 # BMP tests
-skip-if(Android) include bmp/reftest.list
+include bmp/reftest.list
 
 # ICO tests
-skip-if(Android) include ico/reftest.list
+include ico/reftest.list
 
 # JPEG tests
 include jpeg/reftest.list
 
 # JXL tests
-skip-if(Android||release_or_beta) include jxl/reftest.list
+include jxl/reftest.list
 
 # GIF tests
 include gif/reftest.list

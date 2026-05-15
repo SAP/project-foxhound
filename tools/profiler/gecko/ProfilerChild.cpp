@@ -335,13 +335,14 @@ void ProfilerChild::GatherProfileThreadFunction(
 
   auto writer =
       MakeUnique<SpliceableChunkedJSONWriter>(parameters->failureLatchSource);
-  if (!profiler_get_profile_json(
-          *writer,
-          /* aSinceTime */ 0,
-          /* aIsShuttingDown */ false,
-          progressLogger.CreateSubLoggerFromTo(
-              1_pc, "profiler_get_profile_json started", 99_pc,
-              "profiler_get_profile_json done"))) {
+  auto rv =
+      profiler_get_profile_json(*writer,
+                                /* aSinceTime */ 0,
+                                /* aIsShuttingDown */ false,
+                                progressLogger.CreateSubLoggerFromTo(
+                                    1_pc, "profiler_get_profile_json started",
+                                    99_pc, "profiler_get_profile_json done"));
+  if (rv.isErr()) {
     // Failed to get a profile, reset the writer pointer, so that we'll send a
     // failure message.
     writer.reset();
@@ -355,7 +356,7 @@ void ProfilerChild::GatherProfileThreadFunction(
                // that it doesn't get marked as 100% done when this off-thread
                // function ends.
                progressLogger = std::move(progressLogger),
-               writer = std::move(writer)]() mutable {
+               writer = std::move(writer), rv = std::move(rv)]() mutable {
                 // We are now on the ProfilerChild thread, about to send the
                 // completed profile. Any incoming progress request will now be
                 // handled after this task ends, so updating the progress is now
@@ -424,11 +425,10 @@ void ProfilerChild::GatherProfileThreadFunction(
                   }
                 }
 
-                SharedLibraryInfo sharedLibraryInfo =
-                    SharedLibraryInfo::GetInfoForSelf();
+                Maybe<ProfileGenerationAdditionalInformation> additionalInfo =
+                    rv.isOk() ? Some(rv.unwrap()) : Nothing();
                 parameters->resolver(IPCProfileAndAdditionalInformation{
-                    shmem, Some(ProfileGenerationAdditionalInformation{
-                               std::move(sharedLibraryInfo)})});
+                    std::move(shmem), std::move(additionalInfo)});
                 // Let's join the gather profile thread now since it's done.
                 // Note that this gets called inside the ProfilerChild thread
                 // and not inside the gather profile thread itself.

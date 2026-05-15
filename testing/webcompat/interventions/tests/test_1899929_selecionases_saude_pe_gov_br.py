@@ -14,8 +14,8 @@ VPN_MESSAGE = "Please try again using a VPN set to Brazil, or test this site man
 
 async def do_check(client, whichCSS, whichNotCSS):
     try:
-        await client.navigate(URL, wait="none")
-        client.await_css(whichCSS, timeout=10, is_displayed=True)
+        await client.navigate(URL, wait="none", timeout=10)
+        client.await_css(whichCSS, is_displayed=True)
         assert not client.find_css(whichNotCSS, is_displayed=True)
     except (ConnectionRefusedError, NoSuchElementException):
         pytest.skip(VPN_MESSAGE)

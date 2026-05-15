@@ -1,0 +1,18 @@
+events:
+  dom.quota.try:
+    description: >
+      An event recorded on an error of the quota manager or its clients.
+    inherits_from: [source_located]
+    attributes:
+      frame_id:
+        description: >
+          Optionally, the frame within stack_id.
+        type: string
+      result:
+        description: >
+          Optionally, the name of the error that occurred.
+        type: string
+      severity:
+        description: >
+          One of WARNING or ERROR.
+        type: string

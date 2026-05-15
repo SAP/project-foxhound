@@ -6,8 +6,10 @@
 #define MP4_DEMUXER_H264_H_
 
 #include <stdint.h>
+
 #include "ErrorList.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "mozilla/Span.h"
 #include "mozilla/gfx/Point.h"

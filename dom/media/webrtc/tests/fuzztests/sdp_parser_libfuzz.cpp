@@ -6,15 +6,13 @@
 
 #include <string>
 
-#include "gtest/gtest.h"
-
 #include "FuzzingInterface.h"
-
+#include "gtest/gtest.h"
 #include "sdp/SipccSdpParser.h"
 
 using namespace mozilla;
 
-MOZ_RUNINIT static mozilla::UniquePtr<SdpParser::Results> sdpPtr;
+constinit static mozilla::UniquePtr<SdpParser::Results> sdpPtr;
 MOZ_RUNINIT static SipccSdpParser mParser;
 
 int FuzzingInitSdpParser(int* argc, char*** argv) { return 0; }

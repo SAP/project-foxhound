@@ -437,7 +437,7 @@ add_task(async function test_apiScript_method_throws_errors() {
             case "userScriptTypeError":
               err = new scriptGlobals.TypeError(`${errorTestName} message`);
               break;
-            case "userScriptProxyObject":
+            case "userScriptProxyObject": {
               let proxyTarget = script.export({
                 name: "ProxyObject",
                 message: "ProxyObject message",
@@ -460,6 +460,7 @@ add_task(async function test_apiScript_method_throws_errors() {
               });
               err = new scriptGlobals.Proxy(proxyTarget, proxyHandlers);
               break;
+            }
             default:
               browser.test.fail(`Unknown ${errorTestName} error testname`);
               return undefined;

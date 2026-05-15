@@ -110,6 +110,7 @@ def is_skiplisted(dep):
             "MSVC_C_RUNTIME_DLL",
             "MSVC_C_RUNTIME_1_DLL",
             "MSVC_CXX_RUNTIME_DLL",
+            "MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL",
         ]:
             dll = substs.get(runtime)
             if dll and dep == dll:

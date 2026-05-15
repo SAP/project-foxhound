@@ -11,7 +11,6 @@ import mozilla.components.support.base.Component
 import mozilla.components.support.base.facts.Action
 import mozilla.components.support.base.facts.Fact
 import mozilla.components.support.base.facts.collect
-import java.lang.Exception
 
 /**
  * This class exists so that we can measure how reliable our usage of AndroidKeyStore is.
@@ -45,7 +44,6 @@ class SecurePrefsReliabilityExperiment(private val context: Context) {
             const val RESET = "reset"
         }
 
-        @Suppress("MagicNumber")
         enum class Values(val v: Int) {
             SUCCESS_MISSING(1),
             SUCCESS_PRESENT(2),
@@ -67,7 +65,7 @@ class SecurePrefsReliabilityExperiment(private val context: Context) {
     /**
      * Runs an experiment. This will emit one or more [Fact]s describing results.
      */
-    @Suppress("TooGenericExceptionCaught", "ComplexMethod")
+    @Suppress("TooGenericExceptionCaught")
     operator fun invoke() {
         try {
             val storedVal = try {

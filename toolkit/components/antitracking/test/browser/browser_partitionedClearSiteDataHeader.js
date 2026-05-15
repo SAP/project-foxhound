@@ -33,9 +33,10 @@ const skipLocalStorageTests = Services.prefs.getBoolPref(
 
 /**
  * Creates an iframe in the passed browser and waits for it to load.
+ *
  * @param {Browser} browser - Browser to create the frame in.
- * @param {String} src - Frame source url.
- * @param {String} id - Frame id.
+ * @param {string} src - Frame source url.
+ * @param {string} id - Frame id.
  * @param {boolean} sandbox - Whether the frame should be sandboxed.
  * @returns {Promise} - Resolves once the frame has loaded.
  */
@@ -61,9 +62,10 @@ function createFrame(browser, src, id, sandbox) {
 /**
  * Creates a new tab, loads a url and creates an iframe.
  * Callers need to clean up the tab before the test ends.
- * @param {String} firstPartyUrl - Url to load in tab.
- * @param {String} thirdPartyUrl - Url to load in frame.
- * @param {String} frameId - Id of iframe element.
+ *
+ * @param {string} firstPartyUrl - Url to load in tab.
+ * @param {string} thirdPartyUrl - Url to load in frame.
+ * @param {string} frameId - Id of iframe element.
  * @param {boolean} sandbox - Whether the frame should be sandboxed.
  * @returns {Promise} - Resolves with the tab and the frame BrowsingContext once
  * the tab and the frame have loaded.
@@ -94,6 +96,7 @@ async function createTabWithFrame(
  * Depending on the clearDataContext variable we then either navigate ORIGIN_A
  * (as top level) or ORIGIN_B (as third party frame) to the clear-site-data
  * endpoint.
+ *
  * @param {function} cbPreClear - Called after initial setup, once top levels
  * and frames have been loaded.
  * @param {function} cbPostClear - Called after data has been cleared via the
@@ -183,9 +186,10 @@ async function runClearSiteDataTest(
 
 /**
  * Create an origin with partitionKey.
- * @param {String} originNoSuffix - Origin without origin attributes.
- * @param {String} [firstParty] - First party to create partitionKey.
- * @returns {String} Origin with suffix. If not passed this will return the
+ *
+ * @param {string} originNoSuffix - Origin without origin attributes.
+ * @param {string} [firstParty] - First party to create partitionKey.
+ * @returns {string} Origin with suffix. If not passed this will return the
  * umodified origin.
  */
 function getOrigin(originNoSuffix, firstParty) {
@@ -199,12 +203,13 @@ function getOrigin(originNoSuffix, firstParty) {
 
 /**
  * Sets a storage item for an origin.
+ *
  * @param {("cookie"|"localStorage")} storageType - Which storage type to use.
- * @param {String} originNoSuffix - Context to set storage item in.
- * @param {String} [firstParty] - Optional first party domain to partition
+ * @param {string} originNoSuffix - Context to set storage item in.
+ * @param {string} [firstParty] - Optional first party domain to partition
  * under.
- * @param {String} key - Key of the entry.
- * @param {String} value  - Value of the entry.
+ * @param {string} key - Key of the entry.
+ * @param {string} value  - Value of the entry.
  */
 function setStorageEntry(storageType, originNoSuffix, firstParty, key, value) {
   if (storageType != "cookie" && storageType != "localStorage") {
@@ -227,12 +232,13 @@ function setStorageEntry(storageType, originNoSuffix, firstParty, key, value) {
  * For the purpose of this test we assume that there is either one or no cookie
  * set.
  * This performs cookie lookups directly via the cookie service.
+ *
  * @param {boolean} hasCookie - Whether we expect to see a cookie.
- * @param {String} originNoSuffix - Origin the cookie is stored for.
- * @param {String|null} firstParty - Whether to test for a partitioned cookie.
+ * @param {string} originNoSuffix - Origin the cookie is stored for.
+ * @param {string | null} firstParty - Whether to test for a partitioned cookie.
  * If set this will be used to construct the partitionKey.
- * @param {String} [key] - Expected key / name of the cookie.
- * @param {String} [value] - Expected value of the cookie.
+ * @param {string} [key] - Expected key / name of the cookie.
+ * @param {string} [value] - Expected value of the cookie.
  */
 function testHasCookie(hasCookie, originNoSuffix, firstParty, key, value) {
   let origin = getOrigin(originNoSuffix, firstParty);
@@ -257,11 +263,12 @@ function testHasCookie(hasCookie, originNoSuffix, firstParty, key, value) {
 
 /**
  * Tests whether a context has a localStorage entry.
+ *
  * @param {boolean} hasEntry - Whether we expect to see an entry.
- * @param {String} originNoSuffix - Origin to test localStorage for.
- * @param {String} [firstParty] - First party context to test under.
- * @param {String} key - key of the localStorage item.
- * @param {String} [expectedValue] - Expected value of the item.
+ * @param {string} originNoSuffix - Origin to test localStorage for.
+ * @param {string} [firstParty] - First party context to test under.
+ * @param {string} key - key of the localStorage item.
+ * @param {string} [expectedValue] - Expected value of the item.
  */
 function testHasLocalStorageEntry(
   hasEntry,
@@ -299,6 +306,7 @@ function testHasLocalStorageEntry(
  * 3. third party partitioned ( B under A)
  * 4. third party partitioned ( A under B)
  * The entry values reflect which context they are set for.
+ *
  * @param {("cookie"|"localStorage")} storageType - Storage type to initialize.
  */
 async function setupInitialStorageState(storageType) {

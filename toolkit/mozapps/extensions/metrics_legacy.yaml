@@ -45,6 +45,7 @@ addons_manager:
       - https://bugzil.la/1861295
       - https://bugzil.la/1912166
       - https://bugzil.la/1958151
+      - https://bugzil.la/1994595
     data_reviews: &addonsManager_install_data_reviews
       - https://bugzil.la/1433335
       - https://bugzil.la/1515697
@@ -61,7 +62,7 @@ addons_manager:
       - https://bugzil.la/1912166
     notification_emails: &addonsManager_install_emails
       - addons-dev-internal@mozilla.com
-    expires: 147
+    expires: 154
     extra_keys: &addonsManager_install_extra
       value:
         description: >
@@ -120,7 +121,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Install_Theme
 
@@ -135,7 +136,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Install_Locale
 
@@ -150,7 +151,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Install_Dictionary
 
@@ -165,7 +166,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Install_Sitepermission
 
@@ -180,7 +181,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Install_SitepermDeprecated
 
@@ -195,7 +196,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Install_Other
 
@@ -210,7 +211,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Install_Unknown
 
@@ -225,7 +226,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_Extension
 
@@ -240,7 +241,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_Theme
 
@@ -255,7 +256,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_Locale
 
@@ -270,7 +271,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_Dictionary
 
@@ -285,7 +286,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_Sitepermission
 
@@ -300,7 +301,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_SitepermDeprecated
 
@@ -315,7 +316,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_Other
 
@@ -330,7 +331,7 @@ addons_manager:
     bugs: *addonsManager_install_bugs
     data_reviews: *addonsManager_install_data_reviews
     notification_emails: *addonsManager_install_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_install_extra
     telemetry_mirror: Addonsmanager_Update_Unknown
 
@@ -521,6 +522,7 @@ addons_manager:
       - https://bugzil.la/1912166
       - https://bugzil.la/1917859
       - https://bugzil.la/1958149
+      - https://bugzil.la/1994595
     data_reviews: &addonsManager_disable_data_reviews
       - https://bugzil.la/1433335
       - https://bugzil.la/1515697
@@ -538,7 +540,7 @@ addons_manager:
       - https://bugzil.la/1917859
     notification_emails: &addonsManager_disable_emails
       - addons-dev-internal@mozilla.com
-    expires: 147
+    expires: 154
     extra_keys: &addonsManager_disable_extra
       value:
         description: >
@@ -576,7 +578,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Disable_Theme
 
@@ -592,7 +594,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Disable_Locale
 
@@ -608,7 +610,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Disable_Dictionary
 
@@ -624,7 +626,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Disable_Sitepermission
 
@@ -640,7 +642,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Disable_SitepermDeprecated
 
@@ -656,7 +658,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Disable_Other
 
@@ -672,7 +674,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Disable_Unknown
 
@@ -688,7 +690,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_Extension
 
@@ -704,7 +706,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_Theme
 
@@ -720,7 +722,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_Locale
 
@@ -736,7 +738,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_Dictionary
 
@@ -752,7 +754,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_Sitepermission
 
@@ -768,7 +770,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_SitepermDeprecated
 
@@ -784,7 +786,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_Other
 
@@ -800,7 +802,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Enable_Unknown
 
@@ -816,7 +818,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_Extension
 
@@ -832,7 +834,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_Theme
 
@@ -848,7 +850,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_Locale
 
@@ -864,7 +866,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_Dictionary
 
@@ -880,7 +882,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_Sitepermission
 
@@ -896,7 +898,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_SitepermDeprecated
 
@@ -912,7 +914,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_Other
 
@@ -928,7 +930,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_SideloadPrompt_Unknown
 
@@ -944,7 +946,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_Extension
 
@@ -960,7 +962,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_Theme
 
@@ -976,7 +978,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_Locale
 
@@ -992,7 +994,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_Dictionary
 
@@ -1008,7 +1010,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_Sitepermission
 
@@ -1024,7 +1026,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_SitepermDeprecated
 
@@ -1040,7 +1042,7 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_Other
 
@@ -1056,6 +1058,6 @@ addons_manager:
     bugs: *addonsManager_disable_bugs
     data_reviews: *addonsManager_disable_data_reviews
     notification_emails: *addonsManager_disable_emails
-    expires: 147
+    expires: 154
     extra_keys: *addonsManager_disable_extra
     telemetry_mirror: Addonsmanager_Uninstall_Unknown

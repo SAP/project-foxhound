@@ -9,59 +9,46 @@
     SimpleTest.waitForExplicitFinish();
     SimpleTest.requestFlakyTimeout("Need to wait to make sure an event does not fire");
 
+    function waitForEvent(target, event) {
+      return new Promise(resolve =>
+        target.addEventListener(event, resolve, { once: true }));
+    }
+
     async function runTest() {
-      let win = window.open();
-      let goneBackAndForwardOnce = new Promise((resolve) => {
-        let timeoutID;
+      // Target page needs to be the initial load so that the synchronously
+      // available window is reused and we can attach popstate listeners.
+      const win = window.open('file_bug1729662.html');
 
-        // We should only get one load event in win.
-        let bc = new BroadcastChannel("bug1729662");
-        bc.addEventListener("message", () => {
-          bc.addEventListener("message", () => {
-            clearTimeout(timeoutID);
-            resolve(false);
-          });
-        }, { once: true });
-
-        let goneBack = false, goneForward = false;
-        win.addEventListener("popstate", ({ state }) => {
-          // We should only go back and forward once, if we get another
-          // popstate after that then we should fall through to the
-          // failure case below.
-          if (!(goneBack && goneForward)) {
-            // Check if this is the popstate for the forward (the one for
-            // back will have state == undefined).
-            if (state == 1) {
-              ok(goneBack, "We should have gone back before going forward");
-
-              goneForward = true;
-
-              // Wait a bit to make sure there are no more popstate events.
-              // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-              timeoutID = setTimeout(resolve, 1000, true);
-
-              return;
-            }
-
-            // Check if we've gone back once before, if we get another
-            // popstate after that then we should fall through to the
-            // failure case below.
-            if (!goneBack) {
-              goneBack = true;
-
-              return;
-            }
-          }
-
+      let timeoutID;
+      let loadCount = 0;
+      let bc = new BroadcastChannel("bug1729662");
+      bc.onmessage = ({ data }) => {
+        if (data != 'load') return;
+        if (++loadCount > 1) {
+          // We should only get one load event in win
           clearTimeout(timeoutID);
-          resolve(false);
-        });
-      });
+        }
+      };
 
-      win.location = "file_bug1729662.html";
+      // We should only go back and forward once
+      // The popstate for back will have state == null, see file_bug1729662.html
+      const state1 = await waitForEvent(win, 'popstate');
+      is(state1.state, null, 'got expected state for history.back');
 
-      ok(await goneBackAndForwardOnce, "Stopped navigating history");
+      const state2 = await waitForEvent(win, 'popstate');
+      is(state2.state, 1, 'got expected state for history.forward');
 
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      const timeout = new Promise(resolve => timeoutID = setTimeout(resolve, 1000, 'timeout'));
+      const result = await Promise.race([
+        waitForEvent(win, 'popstate'),
+        timeout
+      ]);
+      is(result, 'timeout', 'Got no more popstate');
+
+      is(loadCount, isXOrigin ? 0 : 1, 'Got exactly one (zero for xorigin) load events in win');
+
+      clearTimeout(timeoutID);
       win.close();
 
       SimpleTest.finish();

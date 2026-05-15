@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">Tekrar dene</string>
@@ -9,15 +16,15 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">Güvenli bağlantı kurulamadı</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>Görüntülemeye çalıştığınız sayfa, alınan verilerin yetkinliği doğrulanamadığı için gösterilemiyor.</li> <li>Lütfen site yöneticisi ile irtibata geçip durumu bildirin.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>Görüntülemeye çalıştığınız sayfa, alınan verilerin yetkinliği doğrulanamadığı için gösterilemiyor.</li>\n<li>Lütfen site yöneticisi ile irtibata geçip durumu bildirin.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Güvenli bağlantı kurulamadı</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul> <li>Sunucunun yapılandırmasıyla ilgili bir sorun olabilir veya birisi sunucuyu taklit etmeye çalışıyor olabilir.</li> <li>Daha önce bu sunucuya sorunsuz bağlandıysanız sorun geçici olabilir ve daha sonra yeniden bağlanmayı deneyebilirsiniz.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>Sunucunun yapılandırmasıyla ilgili bir sorun olabilir veya birisi sunucuyu taklit etmeye çalışıyor olabilir.</li>\n<li>Daha önce bu sunucuya sorunsuz bağlandıysanız sorun geçici olabilir ve daha sonra yeniden bağlanmayı deneyebilirsiniz.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">Gelişmiş…</string>
   <!-- The advanced certificate information shown when a website sends has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Birisi bu siteyi taklit etmeye çalışıyor olabilir. Devam etmemenizi öneririz.</label> <br><br> <label>Web siteleri kimliklerini kanıtlamak için sertifikaları kullanlır. %1$s <b>%2$s</b> sitesine güvenmiyor. Sitenin sertifikasını düzenleyen kuruluş tanınmıyor olabilir, sertifika kendi kendine imzalanmış olabilir veya sunucu doğu ara sertifikaları göndermiyor olabilir.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Birisi bu siteyi taklit etmeye çalışıyor olabilir. Devam etmemenizi öneririz.</label> <br><br>\n<label>Web siteleri kimliklerini kanıtlamak için sertifikaları kullanlır. %1$s <b>%2$s</b> sitesine güvenmiyor. Sitenin sertifikasını düzenleyen kuruluş tanınmıyor olabilir, sertifika kendi kendine imzalanmış olabilir veya sunucu doğu ara sertifikaları göndermiyor olabilir.</label>]]></string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
   <string name="mozac_browser_errorpages_security_bad_cert_back">Geri dön (Önerilir)</string>
   <!-- The text shown inside the advanced options button used to bypass the invalid SSL certificate. It's only shown if the user has expanded the advanced options. -->
@@ -25,7 +32,7 @@
   <!-- The document title and heading of the error page shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_title">Bu web sitesi güvenli bir bağlantı gerektiriyor.</string>
   <!-- The error message shown when a website uses HSTS. -->
-  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul> <li>Bu web sitesi güvenli bir bağlantı gerektirdiği için, görüntülemeye çalıştığınızı sayfa gösterilemiyor.</li> <li>Sorun büyük ihtimalle siteden kaynaklanıyor ve sorunu çözmek için sizin yapabileceğiniz bir şey yok.</li> <li>Sorun hakkında site yöneticisini bilgilendirmeyi deneyebilirsiniz.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_hsts_cert_message"><![CDATA[<ul>\n<li>Bu web sitesi güvenli bir bağlantı gerektirdiği için, görüntülemeye çalıştığınızı sayfa gösterilemiyor.</li>\n<li>Sorun büyük ihtimalle siteden kaynaklanıyor ve sorunu çözmek için sizin yapabileceğiniz bir şey yok.</li>\n<li>Sorun hakkında site yöneticisini bilgilendirmeyi deneyebilirsiniz.</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website uses HSTS. -->
   <string name="mozac_browser_errorpages_security_bad_hsts_cert_advanced">Gelişmiş…</string>
   <!-- The advanced certificate information shown when a website uses HSTS. The %1$s will be replaced by the website URL and %2$s will be replaced by the app name. It's only shown when a website uses HSTS. -->
@@ -35,7 +42,7 @@
   <!-- The document title and heading of the error page shown when the user's network connection is interrupted while connecting to a website. -->
   <string name="mozac_browser_errorpages_net_interrupt_title">Bağlantı kesintiye uğradı</string>
   <!-- The error message shown when the user's network connection is interrupted while connecting to a website. -->
-  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>Tarayıcı başarıyla bağlandı ama bilgi aktarılırken bağlantı kesildi. Lütfen tekrar deneyin.</p> <ul> <li>Site geçici olarak kullanılamıyor veya çok meşgul olabilir. Birkaç dakika sonra tekrar deneyin.</li> <li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_interrupt_message"><![CDATA[<p>Tarayıcı başarıyla bağlandı ama bilgi aktarılırken bağlantı kesildi. Lütfen tekrar deneyin.</p>\n<ul>\n<li>Site geçici olarak kullanılamıyor veya çok meşgul olabilir. Birkaç dakika sonra tekrar deneyin.</li>\n<li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website takes too long to load. -->
   <string name="mozac_browser_errorpages_net_timeout_title">Bağlantı zaman aşımına uğradı</string>
   <!-- The error message shown when a website took long to load. -->
@@ -43,7 +50,7 @@
   <!-- The document title and heading of the error page shown when a website could not be reached. -->
   <string name="mozac_browser_errorpages_connection_failure_title">Bağlanılamadı</string>
   <!-- The error message shown when a website could not be reached. -->
-  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul> <li>Site geçici olarak kapalı veya çok meşgul olabilir. Birkaç dakika sonra yeniden deneyin.</li> <li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_connection_failure_message"><![CDATA[<ul>\n<li>Site geçici olarak kapalı veya çok meşgul olabilir. Birkaç dakika sonra yeniden deneyin.</li>\n<li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website responds in an unexpected way and the browser cannot continue. -->
   <string name="mozac_browser_errorpages_unknown_socket_type_title">Sunucudan beklenmeyen yanıt</string>
   <!-- The error message shown when a website responds in an unexpected way and the browser cannot continue. -->
@@ -63,11 +70,11 @@
   <!-- The document title and heading of the error page shown when the Internet connection is disrupted while loading a website. -->
   <string name="mozac_browser_errorpages_net_reset_title">Bağlantı sıfırlandı</string>
   <!-- The error message shown when the Internet connection is disrupted while loading a website. -->
-  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>Bağlantı anlaşması yapılırken ağ bağlantısı kesildi. Lütfen tekrar deneyin.</p> <ul> <li>Site geçici olarak kullanılamıyor veya çok meşgul olabilir. Birkaç dakika sonra tekrar deneyin.</li> <li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_net_reset_message"><![CDATA[<p>Bağlantı anlaşması yapılırken ağ bağlantısı kesildi. Lütfen tekrar deneyin.</p>\n<ul>\n<li>Site geçici olarak kullanılamıyor veya çok meşgul olabilir. Birkaç dakika sonra tekrar deneyin.</li>\n<li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">Güvensiz dosya türü</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>Site sahipleriyle iletişim kurarak bu sorunu onlara bildirmeyi düşünebilirsiniz.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>Site sahipleriyle iletişim kurarak bu sorunu onlara bildirmeyi düşünebilirsiniz.</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">Hasarlı İçerik Hatası</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
@@ -77,11 +84,11 @@
   <string name="mozac_browser_errorpages_content_crashed_message"><![CDATA[<p>Veri aktarımında bir hata tespit edildiği için bakmak istediğiniz sayfa gösterilemiyor.</p><ul><li>Site sahipleriyle iletişim kurup bu sorunu onlara bildirmeyi düşünebilirsiniz.</li></ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_invalid_content_encoding_title">İçerik kodlama hatası</string>
-  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>Görüntülemeye çalıştığınız sayfa geçersiz veya desteklenmeyen bir sıkıştırma biçimi kullandığından dolayı gösterilemiyor.</p> <ul> <li>Bu sorunu bildirmek için lütfen web sitesi sahipleriyle iletişime geçin.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_invalid_content_encoding_message"><![CDATA[<p>Görüntülemeye çalıştığınız sayfa geçersiz veya desteklenmeyen bir sıkıştırma biçimi kullandığından dolayı gösterilemiyor.</p>\n<ul>\n<li>Bu sorunu bildirmek için lütfen web sitesi sahipleriyle iletişime geçin.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_host_title">Adres bulunamadı</string>
   <!-- In the example, the two URLs in markup do not need to be translated. -->
-  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>Tarayıcı girilen adresin sunucusunu bulamadı.</p> <ul> <li>Adreste olabilecek yazım hatalarını kontrol edin. Örneğin <strong>www</strong>.example.com yerine <strong>ww</strong>.example.com yazmış olabilir misiniz?</li> <li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unknown_host_message"><![CDATA[<p>Tarayıcı girilen adresin sunucusunu bulamadı.</p>\n<ul>\n<li>Adreste olabilecek yazım hatalarını kontrol edin. Örneğin <strong>www</strong>.example.com yerine <strong>ww</strong>.example.com yazmış olabilir misiniz?</li>\n<li>Hiçbir sayfa açılmıyorsa cihazınızın mobil internet veya Wi-Fi bağlantısını kontrol edin.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_no_internet_title_2">İnternet bağlantınızla ilgili bir sorun var</string>
   <!-- The main body text of this error page. It will be shown beneath the title -->
@@ -96,7 +103,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">Adres geçersiz</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>Web adresleri genelde <strong>http://www.example.com/</strong> biçiminde yazılır.</li> <li>Adreste sağa yatık bölü işareti (<strong>/</strong>) bulunduğundan emin olun.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>Web adresleri genelde <strong>http://www.example.com/</strong> biçiminde yazılır.</li>\n<li>Adreste sağa yatık bölü işareti (<strong>/</strong>) bulunduğundan emin olun.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">Bilinmeyen protokol</string>
   <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>Girilen adres tarayıcı tarafından tanınmayan bir iletişim kuralına (ör. <q>abcd://</q>) işaret ettiğinden tarayıcı siteye düzgünce bağlanamıyor.</p><ul><li>Çoklu ortam barındıran veya metin içermeyen bir hizmete bağlanmak istiyor olabilirsiniz.</li><li>Bazı iletişim kurallarının tarayıcı tarafından tanınabilmesi için üçüncü kişilerce geliştirilen yazılımlara ya da eklentilere ihtiyaç duyulabilir.</li></ul>]]></string>
@@ -105,7 +112,7 @@
   <string name="mozac_browser_errorpages_file_not_found_message"><![CDATA[<ul><li>Dosya taşınmış, silinmiş ya da adı değiştirilmiş olabilir.</li><li>Adreste yazım hatası yapılmış olabilir.</li><li>İstenen öğeye erişmek için gerekli izniniz olmayabilir.</li></ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_file_access_denied_title">Dosyaya erişim reddedildi</string>
-  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul> <li>Silinmiş, taşınmış veya dosya izinleri nedeniyle erişilemiyor olabilir.</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_file_access_denied_message"><![CDATA[<ul>\n<li>Silinmiş, taşınmış veya dosya izinleri nedeniyle erişilemiyor olabilir.</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_proxy_connection_refused_title">Vekil sunucu bağlantıyı reddetti</string>
   <string name="mozac_browser_errorpages_proxy_connection_refused_message"><![CDATA[<p>Tarayıcı vekil sunucu kullanmak üzere yapılandırılmış, ancak vekil sunucu bağlantı isteğini geri çevirdi.</p><ul><li>Vekil sunucu ayarları düzgün yapılmamış olabilir. Ayarlarınızı gözden geçirip yeniden deneyin.</li><li>Belirtilen vekil sunucu ağınız üzerinden kurulan bağlantılara izin vermiyor olabilir.</li><li>Hâlâ sorun yaşıyorsanız ağ yöneticinize ya da internet servis sağlayıcınıza başvurun.</li></ul>]]></string>
@@ -128,6 +135,10 @@
   <string name="mozac_browser_errorpages_safe_phishing_uri_title">Aldatıcı site sorunu</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
   <string name="mozac_browser_errorpages_safe_phishing_uri_message"><![CDATA[<p> %1$s web sayfasının aldatıcı bir sayfa olduğu ihbar edilmiştir. Sayfa, güvenlik tercihlerinize dayanılarak engellendi.</p>]]></string>
+  <!-- The document title and heading of an error page. -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_title">Güvenliğiniz için bu site engellendi</string>
+  <!-- The %1$s will be replaced by the malicious website URL -->
+  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>%1$s adresindeki web sayfası, eklentilerinizden biri tarafından açılmaya çalışıldığı için engellendi. Bu site, parolalarınız veya kredi kartı numaralarınız gibi bilgilerinizi çalmak için kullanılabilir.</p>]]></string>
   <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
   <string name="mozac_browser_errorpages_httpsonly_title">Güvenli site mevcut değil</string>
   <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

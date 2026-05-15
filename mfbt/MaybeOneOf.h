@@ -16,10 +16,10 @@
 
 #include <new>  // for placement new
 #include <utility>
+#include <algorithm>
 
 #include "mozilla/Assertions.h"
 #include "mozilla/OperatorNewExtensions.h"
-#include "mozilla/TemplateLib.h"
 
 namespace mozilla {
 
@@ -40,9 +40,8 @@ namespace mozilla {
  */
 template <class T1, class T2>
 class MOZ_NON_PARAM MaybeOneOf {
-  static constexpr size_t StorageAlignment =
-      tl::Max<alignof(T1), alignof(T2)>::value;
-  static constexpr size_t StorageSize = tl::Max<sizeof(T1), sizeof(T2)>::value;
+  static constexpr size_t StorageAlignment = std::max(alignof(T1), alignof(T2));
+  static constexpr size_t StorageSize = std::max(sizeof(T1), sizeof(T2));
 
   alignas(StorageAlignment) unsigned char storage[StorageSize];
 

@@ -11,10 +11,10 @@
 
 use crate::api::ExternalImageType;
 use crate::api::units::*;
-use crate::gpu_cache::GpuCache;
 use crate::prim_store::DeferredResolve;
 use crate::renderer::BLOCKS_PER_UV_RECT;
 use crate::render_task_cache::RenderTaskCacheEntryHandle;
+use crate::renderer::GpuBufferBuilderF;
 use crate::resource_cache::{ResourceCache, ImageRequest, CacheItem};
 use crate::internal_types::{TextureSource, TextureSourceExternal, DeferredResolveIndex, FrameVec};
 
@@ -22,8 +22,9 @@ use crate::internal_types::{TextureSource, TextureSourceExternal, DeferredResolv
 pub fn resolve_image(
     request: ImageRequest,
     resource_cache: &ResourceCache,
-    gpu_cache: &mut GpuCache,
+    gpu_buffer: &mut GpuBufferBuilderF,
     deferred_resolves: &mut FrameVec<DeferredResolve>,
+    is_composited: bool,
 ) -> CacheItem {
     match resource_cache.get_image_properties(request.key) {
         Some(image_properties) => {
@@ -34,7 +35,7 @@ pub fn resolve_image(
                     // This is an external texture - we will add it to
                     // the deferred resolves list to be patched by
                     // the render thread...
-                    let cache_handle = gpu_cache.push_deferred_per_frame_blocks(BLOCKS_PER_UV_RECT);
+                    let uv_rect_address = gpu_buffer.reserve_renderer_deferred_blocks(BLOCKS_PER_UV_RECT);
 
                     let deferred_resolve_index = DeferredResolveIndex(deferred_resolves.len() as u32);
 
@@ -55,7 +56,7 @@ pub fn resolve_image(
                             kind: image_buffer_kind,
                             normalized_uvs: external_image.normalized_uvs,
                         }),
-                        uv_rect_handle: cache_handle,
+                        uv_rect_handle: uv_rect_address,
                         uv_rect: DeviceIntRect::from_size(
                             image_properties.descriptor.size,
                         ),
@@ -64,8 +65,9 @@ pub fn resolve_image(
 
                     deferred_resolves.push(DeferredResolve {
                         image_properties,
-                        address: gpu_cache.get_address(&cache_handle),
+                        handle: uv_rect_address,
                         rendering: request.rendering,
+                        is_composited,
                     });
 
                     cache_item

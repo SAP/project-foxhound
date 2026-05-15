@@ -111,9 +111,6 @@ newtab-menu-delete-pocket = { -pocket-brand-name } నుండి తొలగ�
 newtab-menu-archive-pocket = { -pocket-brand-name }లో ఆర్కయివ్ చెయ్యి
 newtab-menu-show-privacy-info = మా స్పాన్సర్లు & మీ అంతరంగికత
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
 newtab-privacy-modal-button-done = పూర్తయింది
@@ -232,9 +229,6 @@ newtab-pocket-save = భద్రపరుచు
 newtab-pocket-thumbs-up-tooltip =
     .title = ఇలాంటివి మరిన్ని
 
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -253,16 +247,10 @@ newtab-custom-row-selector =
     }
 newtab-custom-pocket-sponsored = ప్రాయోజిక కథనాలు
 newtab-custom-recent-title = ఇటీవలి కార్యకలాపం
-newtab-custom-recent-toggle =
-    .label = ఇటీవలి కార్యకలాపం
-    .description = ఇటీవలి సైట్లు, విషయం నుండి కొన్ని
 newtab-custom-weather-toggle =
     .label = వాతావరణం
     .description = నేటి వాతావరణ అంచనా
 newtab-custom-close-button = మూసివేయి
-
-## New Tab Wallpapers
-
 
 ## Solid Colors
 
@@ -275,18 +263,12 @@ newtab-wallpaper-red = ఎరుపు
 newtab-wallpaper-dark-blue = ముదురు నీలం
 newtab-wallpaper-dark-green = ముదురాకుపచ్చ
 
-## Abstract
-
-
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = ఛాయాచిత్రాలు
 newtab-wallpaper-beach-at-sunrise = ఉషాతీరం
 newtab-wallpaper-beach-at-sunset = సంధ్యాతీరం
 newtab-wallpaper-feature-highlight-button = అర్థమైంది
-
-## Celestial
-
 
 ## New Tab Weather
 
@@ -317,31 +299,3 @@ newtab-topic-selection-cancel-button = రద్దుచేయి
 newtab-topic-selection-button-maybe-later = బహుశా తర్వాత
 newtab-topic-selection-button-update-interests = మీ ఆసక్తులను తాజాకరించండి
 newtab-topic-selection-button-pick-interests = మీ ఆసక్తులను ఎంచుకోండి
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

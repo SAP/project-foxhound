@@ -122,7 +122,13 @@ ssl_init()
   TLS13_CIPHER_SUITES="-c ${TLS13_SUITES}${EC_SUITES}${NON_EC_SUITES}"
 
   # in fips mode, turn off curve25519 until it's NIST approved
-  FIPS_OPTIONS="-I P256,P384,P521,FF2048,FF3072,FF4096,FF6144,FF8192"
+  FIPS_OPTIONS=""
+  # in fips mode, turn off curve25519 until it's NIST approved
+  ALL_GROUPS="P256,P384,P521,x25519,FF2048,FF3072,FF4096,FF6144,FF8192,xyber768d00,x25519mlkem768,secp256r1mlkem768,secp384r1mlkem1024"
+  NON_PQ_GROUPS="P256,P384,P521,x25519,FF2048,FF3072,FF4096,FF6144,FF8192"
+  FIPS_GROUPS="P256,P384,P521,FF2048,FF3072,FF4096,FF6144,FF8192,mx25519mlkem768,secp256r1mlkem768,secp384r1mlkem1024"
+  FIPS_NON_PQ_GROUPS="P256,P384,P521,FF2048,FF3072,FF4096,FF6144,FF8192"
+
 
   # in non-fips mode, tstclnt may run without the db password in some
   # cases, but in fips mode it's always needed
@@ -251,20 +257,26 @@ start_selfserv()
   else
       RSA_OPTIONS="-n ${HOSTADDR}-rsa-pss"
   fi
+  if [ -z "$NSS_DISABLE_DSA" ]; then
+      DSA_OPTIONS="-S ${HOSTADDR}-dsa"
+  else
+      DSA_OPTIONS=""
+  fi
+
   SERVER_VMIN=${SERVER_VMIN-ssl3}
   SERVER_VMAX=${SERVER_VMAX-tls1.2}
   echo "selfserv starting at `date`"
   echo "selfserv -D -p ${PORT} -d ${P_R_SERVERDIR} ${RSA_OPTIONS} ${SERVER_OPTIONS} \\"
-  echo "         ${ECC_OPTIONS} -S ${HOSTADDR}-dsa -w nss "$@" -i ${R_SERVERPID}\\"
+  echo "         ${ECC_OPTIONS} ${DSA_OPTIONS} -w nss "$@" -i ${R_SERVERPID}\\"
   echo "         -V ${SERVER_VMIN}:${SERVER_VMAX} $verbose -H 1 &"
   if [ ${fileout} -eq 1 ]; then
       ${PROFTOOL} ${BINDIR}/selfserv -D -p ${PORT} -d ${P_R_SERVERDIR} ${RSA_OPTIONS} ${SERVER_OPTIONS} \
-               ${ECC_OPTIONS} -S ${HOSTADDR}-dsa -w nss "$@" -i ${R_SERVERPID} -V ${SERVER_VMIN}:${SERVER_VMAX} $verbose -H 1 \
+               ${ECC_OPTIONS} ${DSA_OPTIONS} -w nss "$@" -i ${R_SERVERPID} -V ${SERVER_VMIN}:${SERVER_VMAX} $verbose -H 1 \
                > ${SERVEROUTFILE} 2>&1 &
       RET=$?
   else
       ${PROFTOOL} ${BINDIR}/selfserv -D -p ${PORT} -d ${P_R_SERVERDIR} ${RSA_OPTIONS} ${SERVER_OPTIONS} \
-               ${ECC_OPTIONS} -S ${HOSTADDR}-dsa -w nss "$@" -i ${R_SERVERPID} -V ${SERVER_VMIN}:${SERVER_VMAX} $verbose -H 1 &
+               ${ECC_OPTIONS} ${DSA_OPTIONS} -w nss "$@" -i ${R_SERVERPID} -V ${SERVER_VMIN}:${SERVER_VMAX} $verbose -H 1 &
       RET=$?
   fi
 
@@ -306,10 +318,12 @@ ssl_cov()
 
   SAVE_SERVER_OPTIONS=${SERVER_OPTIONS}
   if [ "${SERVER_MODE}" = "fips" ] ; then
-      SERVER_OPTIONS="${SERVER_OPTIONS} ${FIPS_OPTIONS}"
+      SERVER_OPTIONS="${SERVER_OPTIONS} -I ${FIPS_GROUPS} ${FIPS_OPTIONS}"
   fi
   SAVE_CLIENT_OPTIONS=${CLIENT_OPTIONS}
+  CLIENT_GROUPS=${NON_PQ_GROUPS}
   if [ "${CLIENT_MODE}" = "fips" ] ; then
+      CLIENT_GROUPS=${FIPS_NON_PQ_GROUPS}
       CLIENT_OPTIONS="${CLIENT_OPTIONS} ${FIPS_OPTIONS}"
   fi
 
@@ -322,17 +336,17 @@ ssl_cov()
   # cygwin, which means we can't kill selfserv at the end here.
   SSL_COV_TMP=$(mktemp /tmp/ssl_cov.XXXXXX)
   ignore_blank_lines ${SSLCOV} > ${SSL_COV_TMP}
-  while read ectype testmax param testname
+  while read ectype testmax param sig testname
   do
-      echo "${testname}" | grep "EXPORT" > /dev/null
-      EXP=$?
-
       # RSA-PSS tests are handled in a separate function
-      case $testname in
-        *RSA-PSS)
+      if [ "$sig" = "RSA-PSS" ]; then
           continue
-          ;;
-      esac
+      fi
+
+      # skip DSA tests if they are disabled
+      if [ -n "$NSS_DISABLE_DSA" -a "$sig" = "DSA" ]; then
+          continue
+      fi
 
       echo "$SCRIPTNAME: running $testname ----------------------------"
       VMAX="ssl3"
@@ -369,13 +383,22 @@ ssl_cov()
               VMIN="ssl3"
       fi
 
+      TLS_GROUPS=${CLIENT_GROUPS}
+      if [ "$ectype" = "XYBER" ]; then
+          TLS_GROUPS="xyber768d00"
+      elif [ "$ectype" = "MLKEM219" ]; then
+          TLS_GROUPS="x25519mlkem768"
+      elif [ "$ectype" = "MLKEM256" ]; then
+          TLS_GROUPS="secp256r1mlkem768"
+      elif [ "$ectype" = "MLKEM384" ]; then
+          TLS_GROUPS="secp384r1mlkem1024"
+      fi
 
-
-      echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -c ${param} -V ${VMIN}:${VMAX} ${CLIENT_OPTIONS} \\"
+      echo "tstclnt -4 -p ${PORT} -h ${HOSTADDR} -c ${param} -I \"${TLS_GROUPS}\" -V ${VMIN}:${VMAX} ${CLIENT_OPTIONS} \\"
       echo "        -f -d ${P_R_CLIENTDIR} $verbose -w nss < ${REQUEST_FILE}"
 
       rm ${TMP}/$HOST.tmp.$$ 2>/dev/null
-      ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -c ${param} -V ${VMIN}:${VMAX} ${CLIENT_OPTIONS} -f \
+      ${PROFTOOL} ${BINDIR}/tstclnt -4 -p ${PORT} -h ${HOSTADDR} -c ${param} -I "${TLS_GROUPS}" -V ${VMIN}:${VMAX} ${CLIENT_OPTIONS} -f \
               -d ${P_R_CLIENTDIR} $verbose -w nss < ${REQUEST_FILE} \
               >${TMP}/$HOST.tmp.$$  2>&1
       ret=$?
@@ -415,15 +438,12 @@ ssl_cov_rsa_pss()
   VMAX="tls1.2"
 
   ignore_blank_lines ${SSLCOV} | \
-  while read ectype testmax param testname
+  while read ectype testmax param sig testname
   do
-      case $testname in
-        *RSA-PSS)
-          ;;
-        *)
+      # only PSS testa are handled here.
+      if [ "$sig" != "RSA-PSS" ]; then
           continue
-          ;;
-      esac
+      fi
 
       echo "$SCRIPTNAME: running $testname (RSA-PSS) ----------------------------"
 
@@ -669,6 +689,8 @@ ssl_stress()
       CAUTH=$?
       echo "${testname}" | grep "no login" > /dev/null
       NOLOGIN=$?
+      echo "${testname}" | grep "_DSS_" > /dev/null
+      IS_DSA=$?
 
       if [ "$ectype" = "SNI" -a "$NORM_EXT" = "Extended Test" ] ; then
           echo "$SCRIPTNAME: skipping  $testname for $NORM_EXT"
@@ -677,6 +699,8 @@ ssl_stress()
       elif [ "${NOLOGIN}" -eq 0 ] && \
            [ "${CLIENT_MODE}" = "fips" -o "$NORM_EXT" = "Extended Test" ] ; then
           echo "$SCRIPTNAME: skipping  $testname for $NORM_EXT"
+      elif [ -n "${NSS_DISABLE_DSA}" -a "$IS_DSA" -eq 0 ] ; then
+          echo "$SCRIPTNAME: skipping  $testname for $NORM_EXT (DSA is disabled"
       else
           cparam=`echo $cparam | sed -e 's;_; ;g' -e "s/TestUser/$USER_NICKNAME/g" `
           if [ "$ectype" = "SNI" ]; then

@@ -97,6 +97,15 @@ export class ExtensionActionHelper {
     this.extension = extension;
   }
 
+  static isShowingAnyExtensionActionPopup() {
+    // On desktop we query the popup state for a window, but on mobile the
+    // implementation does not track the relation between the popup and the
+    // "window" for which it is opened, so we cannot meaningfully query the
+    // status of the current popup. Since we only support one popup at a time,
+    // just query the global state.
+    return Services.wm.getEnumerator("navigator:popup").hasMoreElements();
+  }
+
   getTab(aTabId) {
     if (aTabId !== null) {
       return this.tabTracker.getTab(aTabId);
@@ -604,25 +613,10 @@ class ExtensionPromptObserver {
     resolve(response.allow);
   }
 
-  async updatePermissionPrompt({
-    addon,
-    existingAddon,
-    permissions,
-    resolve,
-    reject,
-  }) {
+  async updatePermissionPrompt({ addon, permissions, resolve, reject }) {
     const response = await lazy.EventDispatcher.instance.sendRequestForResult({
       type: "GeckoView:WebExtension:UpdatePrompt",
-      // TODO - Bug 1974744: when we remove the deprecated `onUpdatePrompt`
-      // method, we can also: (1) remove this `currentlyInstalled` property,
-      // and (2) renamed `updatedExtension` to "just" `extension`. Ideally,
-      // we'd also stop passing `existingAddon` to this method, which needs a
-      // small change in `AddonManager.sys.mjs`.
-      currentlyInstalled: await exportExtension(
-        existingAddon,
-        /* aSourceURI */ null
-      ),
-      updatedExtension: await exportExtension(addon, /* aSourceURI */ null),
+      extension: await exportExtension(addon, /* aSourceURI */ null),
       newPermissions: await filterPromptPermissions(permissions.permissions),
       newOrigins: permissions.origins,
       newDataCollectionPermissions: permissions.data_collection,

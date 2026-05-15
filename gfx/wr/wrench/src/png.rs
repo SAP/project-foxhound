@@ -14,7 +14,6 @@ use crate::yaml_frame_reader::YamlFrameReader;
 
 pub enum ReadSurface {
     Screen,
-    GpuCache,
 }
 
 pub struct SaveSettings {
@@ -96,14 +95,6 @@ pub fn png(
             (dim, data, SaveSettings {
                 flip_vertical: true,
                 try_crop: true,
-            })
-        }
-        ReadSurface::GpuCache => {
-            let (size, data) = wrench.renderer
-                .read_gpu_cache();
-            (size, data, SaveSettings {
-                flip_vertical: false,
-                try_crop: false,
             })
         }
     };

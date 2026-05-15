@@ -18,14 +18,15 @@ add_task(async function bug1703472() {
   await BrowserTestUtils.withNewTab(
     BASE_URL + "file_bug1703472.html",
     async function (browser) {
-      info("Opening popup");
+      info("Opening about:blank popup");
       let win = await newFocusedWindow(function () {
         return BrowserTestUtils.synthesizeMouseAtCenter(
           "#openWindow",
           {},
           browser
         );
-      });
+      }, true);
+      is(Services.focus.focusedWindow, win, "New window should be focused");
 
       info("re-focusing the original window");
       {

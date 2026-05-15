@@ -8,6 +8,7 @@
 
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_general.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/ToString.h"
 
 static mozilla::LazyLogModule sApzMsdLog("apz.msd");
@@ -15,8 +16,12 @@ static mozilla::LazyLogModule sApzMsdLog("apz.msd");
 
 using namespace mozilla;
 
-ScrollAnimationMSDPhysics::ScrollAnimationMSDPhysics(const nsPoint& aStartPos)
-    : mStartPos(aStartPos),
+ScrollAnimationMSDPhysics::ScrollAnimationMSDPhysics(
+    ScrollAnimationKind aAnimationKind, const nsPoint& aStartPos,
+    nscoord aSmallestVisibleIncrement)
+    : mAnimationKind(aAnimationKind),
+      mSmallestVisibleIncrement(aSmallestVisibleIncrement),
+      mStartPos(aStartPos),
       mModelX(
           0, 0, 0,
           StaticPrefs::general_smoothScroll_msdPhysics_regularSpringConstant(),
@@ -31,6 +36,7 @@ void ScrollAnimationMSDPhysics::Update(const TimeStamp& aTime,
                                        const nsPoint& aDestination,
                                        const nsSize& aCurrentVelocity) {
   double springConstant = ComputeSpringConstant(aTime);
+  double dampingRatio = GetDampingRatio();
 
   // mLastSimulatedTime is the most recent time that this animation has been
   // "observed" at. We don't want to update back to a state in the past, so we
@@ -49,10 +55,12 @@ void ScrollAnimationMSDPhysics::Update(const TimeStamp& aTime,
 
   mLastSimulatedTime = mStartTime;
   mDestination = aDestination;
-  mModelX = NonOscillatingAxisPhysicsMSDModel(
-      mStartPos.x, aDestination.x, aCurrentVelocity.width, springConstant, 1);
-  mModelY = NonOscillatingAxisPhysicsMSDModel(
-      mStartPos.y, aDestination.y, aCurrentVelocity.height, springConstant, 1);
+  mModelX = NonOscillatingAxisPhysicsMSDModel(mStartPos.x, aDestination.x,
+                                              aCurrentVelocity.width,
+                                              springConstant, dampingRatio);
+  mModelY = NonOscillatingAxisPhysicsMSDModel(mStartPos.y, aDestination.y,
+                                              aCurrentVelocity.height,
+                                              springConstant, dampingRatio);
   mIsFirstIteration = false;
 }
 
@@ -64,16 +72,28 @@ void ScrollAnimationMSDPhysics::ApplyContentShift(const CSSPoint& aShiftDelta) {
   nsPoint currentPosition = PositionAt(currentTime) + shiftDelta;
   nsSize currentVelocity = VelocityAt(currentTime);
   double springConstant = ComputeSpringConstant(currentTime);
+  double dampingRatio = GetDampingRatio();
   mModelX = NonOscillatingAxisPhysicsMSDModel(currentPosition.x, mDestination.x,
                                               currentVelocity.width,
-                                              springConstant, 1);
+                                              springConstant, dampingRatio);
   mModelY = NonOscillatingAxisPhysicsMSDModel(currentPosition.y, mDestination.y,
                                               currentVelocity.height,
-                                              springConstant, 1);
+                                              springConstant, dampingRatio);
+}
+
+double ScrollAnimationMSDPhysics::GetDampingRatio() const {
+  if (mAnimationKind == ScrollAnimationKind::SmoothMsd) {
+    return StaticPrefs::layout_css_scroll_snap_damping_ratio();
+  }
+  return 1.0;
 }
 
 double ScrollAnimationMSDPhysics::ComputeSpringConstant(
     const TimeStamp& aTime) {
+  if (mAnimationKind == ScrollAnimationKind::SmoothMsd) {
+    return StaticPrefs::layout_css_scroll_snap_spring_constant();
+  }
+
   if (!mPreviousEventTime) {
     mPreviousEventTime = aTime;
     mPreviousDelta = TimeDuration();
@@ -125,6 +145,12 @@ void ScrollAnimationMSDPhysics::SimulateUntil(const TimeStamp& aTime) {
           delta.ToMilliseconds(), IsFinished(aTime),
           ToString(CSSPoint::FromAppUnits(PositionAt(aTime))).c_str(),
           ToString(CSSPoint::FromAppUnits(VelocityAt(aTime))).c_str());
+}
+
+bool mozilla::ScrollAnimationMSDPhysics::IsFinished(const TimeStamp& aTime) {
+  SimulateUntil(aTime);
+  return mModelX.IsFinished(mSmallestVisibleIncrement) &&
+         mModelY.IsFinished(mSmallestVisibleIncrement);
 }
 
 nsPoint ScrollAnimationMSDPhysics::PositionAt(const TimeStamp& aTime) {

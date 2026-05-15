@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/throw_ref.wast
+// ./test/core/exceptions/throw_ref.wast
 
-// ./test/core/throw_ref.wast:3
+// ./test/core/exceptions/throw_ref.wast:3
 let $0 = instantiate(`(module
   (tag \$e0)
   (tag \$e1)
@@ -112,44 +112,44 @@ let $0 = instantiate(`(module
   )
 )`);
 
-// ./test/core/throw_ref.wast:99
+// ./test/core/exceptions/throw_ref.wast:99
 assert_exception(() => invoke($0, `catch-throw_ref-0`, []));
 
-// ./test/core/throw_ref.wast:101
+// ./test/core/exceptions/throw_ref.wast:101
 assert_exception(() => invoke($0, `catch-throw_ref-1`, [0]));
 
-// ./test/core/throw_ref.wast:102
+// ./test/core/exceptions/throw_ref.wast:102
 assert_return(() => invoke($0, `catch-throw_ref-1`, [1]), [value("i32", 23)]);
 
-// ./test/core/throw_ref.wast:104
+// ./test/core/exceptions/throw_ref.wast:104
 assert_exception(() => invoke($0, `catchall-throw_ref-0`, []));
 
-// ./test/core/throw_ref.wast:106
+// ./test/core/exceptions/throw_ref.wast:106
 assert_exception(() => invoke($0, `catchall-throw_ref-1`, [0]));
 
-// ./test/core/throw_ref.wast:107
+// ./test/core/exceptions/throw_ref.wast:107
 assert_return(() => invoke($0, `catchall-throw_ref-1`, [1]), [value("i32", 23)]);
 
-// ./test/core/throw_ref.wast:108
+// ./test/core/exceptions/throw_ref.wast:108
 assert_exception(() => invoke($0, `throw_ref-nested`, [0]));
 
-// ./test/core/throw_ref.wast:109
+// ./test/core/exceptions/throw_ref.wast:109
 assert_exception(() => invoke($0, `throw_ref-nested`, [1]));
 
-// ./test/core/throw_ref.wast:110
+// ./test/core/exceptions/throw_ref.wast:110
 assert_return(() => invoke($0, `throw_ref-nested`, [2]), [value("i32", 23)]);
 
-// ./test/core/throw_ref.wast:112
+// ./test/core/exceptions/throw_ref.wast:112
 assert_return(() => invoke($0, `throw_ref-recatch`, [0]), [value("i32", 23)]);
 
-// ./test/core/throw_ref.wast:113
+// ./test/core/exceptions/throw_ref.wast:113
 assert_return(() => invoke($0, `throw_ref-recatch`, [1]), [value("i32", 42)]);
 
-// ./test/core/throw_ref.wast:115
+// ./test/core/exceptions/throw_ref.wast:115
 assert_exception(() => invoke($0, `throw_ref-stack-polymorphism`, []));
 
-// ./test/core/throw_ref.wast:117
+// ./test/core/exceptions/throw_ref.wast:117
 assert_invalid(() => instantiate(`(module (func (throw_ref)))`), `type mismatch`);
 
-// ./test/core/throw_ref.wast:118
+// ./test/core/exceptions/throw_ref.wast:118
 assert_invalid(() => instantiate(`(module (func (block (throw_ref))))`), `type mismatch`);

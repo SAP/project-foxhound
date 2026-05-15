@@ -11,29 +11,46 @@ support-files = [
 ]
 
 ["test_AMBrowserExtensionsImport.js"]
-skip-if = ["os == 'android'"] # Extension import is a desktop-only feature.
+run-if = [
+  "os != 'android'", # Extension import is a desktop-only feature.
+]
 
 ["test_AbuseReporter.js"]
 
 ["test_AddonRepository.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs static theme.
+]
 
 ["test_AddonRepository_appIsShuttingDown.js"]
 
 ["test_AddonRepository_cache.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
+requesttimeoutfactor = 2  # Slow on Windows
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs static theme.
+]
 
 ["test_AddonRepository_cache_locale.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs langpack.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs langpack.
+]
 
 ["test_AddonRepository_langpacks.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs langpack.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs langpack.
+]
 
 ["test_AddonRepository_paging.js"]
 
+["test_EnvironmentAddonBuilder_telemetry.js"]
+ # Ensure EnvironmentAddonBuilder is managed by AMTelemetry on all builds.
+prefs = ["extensions.telemetry.EnvironmentAddonBuilder=true"]
+
 ["test_ModelHubProvider.js"]
+run-if = [
+  "appname != 'thunderbird'", # Disabled in extensions.manifest
+]
 skip-if = [
-  "appname == 'thunderbird'", # Disabled in extensions.manifest
   "os == 'android'", # ModelHubProvider.sys.mjs is not included on Android
 ]
 
@@ -48,7 +65,9 @@ head = "head_addons.js head_amremotesettings.js"
 ["test_QuarantinedDomains_AddonWrapper.js"]
 
 ["test_XPIStates.js"]
-skip-if = ["condprof"] # Bug 1769184 - by design for now
+skip-if = [
+  "condprof", # Bug 1769184 - by design for now
+]
 
 ["test_XPIcancel.js"]
 
@@ -58,11 +77,17 @@ skip-if = ["condprof"] # Bug 1769184 - by design for now
 
 ["test_addon_manager_telemetry_events.js"]
 
+["test_addons_glean_ping.js"]
+
 ["test_amo_stats_telemetry.js"]
-skip-if = ["os == 'android'"] # bug 1866520 - missing Glean version of stats telemetry
+skip-if = [
+  "os == 'android'", # bug 1866520 - missing Glean version of stats telemetry
+]
 
 ["test_aom_startup.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs static theme.
+]
 
 ["test_bad_json.js"]
 
@@ -71,7 +96,9 @@ skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Andro
 ["test_builtin_location.js"]
 
 ["test_builtin_theme_missing_fluent_strings.js"]
-skip-if = ["os == 'android'"] # Built-in Static Theme add-ons are not supported on Android.
+run-if = [
+  "os != 'android'", # Built-in Static Theme add-ons are not supported on Android.
+]
 
 ["test_cacheflush.js"]
 
@@ -79,7 +106,9 @@ skip-if = ["os == 'android'"] # Built-in Static Theme add-ons are not supported 
 head = ""
 
 ["test_cleanup_theme_processedColors.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs static theme.
+]
 
 ["test_cookies.js"]
 
@@ -87,12 +116,18 @@ skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Andro
 
 ["test_crash_annotation_quoting.js"]
 
+["test_data_collection_not_in_db.js"]
+
 ["test_db_path.js"]
 head = ""
-skip-if = ["os == 'android'"] # Cannot override profdir path, see comment about do_get_profile() in test_db_path.js
+run-if = [
+  "os != 'android'", # Cannot override profdir path, see comment about do_get_profile() in test_db_path.js
+]
 
 ["test_default_theme.js"]
-skip-if = ["os == 'android'"] # resource://default-theme not packaged on Android.
+run-if = [
+  "os != 'android'", # resource://default-theme not packaged on Android.
+]
 
 ["test_delay_update_webextension.js"]
 tags = "webextensions"
@@ -100,18 +135,26 @@ tags = "webextensions"
 ["test_dependencies.js"]
 
 ["test_dictionary_webextension.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs dictionary. And GeckoView also disables hunspell spellchecker.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs dictionary. And GeckoView also disables hunspell spellchecker.
+]
 
 ["test_distribution.js"]
-skip-if = ["os == 'android'"] # Test passes, but not relevant because extensions.installDistroAddons=false in GeckoView.
+run-if = [
+  "os != 'android'", # Test passes, but not relevant because extensions.installDistroAddons=false in GeckoView.
+]
 
 ["test_distribution_langpack.js"]
-skip-if = ["os == 'android'"] # Test passes, but not relevant because extensions.installDistroAddons=false in GeckoView.
+run-if = [
+  "os != 'android'", # Test passes, but not relevant because extensions.installDistroAddons=false in GeckoView.
+]
 
 ["test_embedderDisabled.js"]
 
 ["test_error.js"]
-skip-if = ["os == 'win'"] # Bug 1508482
+skip-if = [
+  "os == 'win'", # Bug 1508482
+]
 
 ["test_ext_management.js"]
 tags = "webextensions"
@@ -144,9 +187,6 @@ skip-if = [
 prefs = ["dom.security.https_first=false"]
 head = "head_addons.js head_amremotesettings.js"
 
-["test_installtrigger_schemes.js"]
-prefs = ["dom.security.https_first=false"]
-
 ["test_isDebuggable.js"]
 
 ["test_isReady.js"]
@@ -156,7 +196,9 @@ prefs = ["dom.security.https_first=false"]
 ["test_locale.js"]
 
 ["test_moved_extension_metadata.js"]
-skip-if = ["true"] # bug 1777900
+skip-if = [
+  "true", # bug 1777900
+]
 
 ["test_no_addons.js"]
 
@@ -164,7 +206,9 @@ skip-if = ["true"] # bug 1777900
 
 ["test_onPropertyChanged_appDisabled.js"]
 head = "head_addons.js head_compat.js"
-skip-if = ["tsan"] # Times out, bug 1674773
+skip-if = [
+  "tsan", # Times out, bug 1674773
+]
 
 ["test_permissions.js"]
 
@@ -181,23 +225,33 @@ skip-if = ["tsan"] # Times out, bug 1674773
 ["test_provider_unsafe_access_startup.js"]
 
 ["test_proxies.js"]
+run-if = [
+  "os != 'android'", # Fails due to missing /bin/ln; extension proxy files are not used on Android.
+]
 skip-if = [
   "require_signing",
-  "os == 'android'", # Fails due to missing /bin/ln; extension proxy files are not used on Android.
 ]
 
 ["test_recommendations.js"]
-skip-if = ["require_signing"]
+skip-if = [
+  "require_signing",
+]
+
+["test_recordException.js"]
 
 ["test_registerchrome.js"]
 
 ["test_registry.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_reinstall_disabled_addon.js"]
 
 ["test_reload.js"]
-skip-if = ["os == 'win'"] # There's a problem removing a temp file without manually clearing the cache on Windows
+skip-if = [
+  "os == 'win'", # There's a problem removing a temp file without manually clearing the cache on Windows
+]
 tags = "webextensions"
 
 ["test_remote_pref_telemetry.js"]
@@ -211,36 +265,48 @@ tags = "webextensions"
 ["test_shutdown.js"]
 
 ["test_shutdown_barriers.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_shutdown_early.js"]
-skip-if = ["condprof"] # Bug 1769184 - by design for now
+skip-if = [
+  "condprof", # Bug 1769184 - by design for now
+]
 
 ["test_sideload_scopes.js"]
 head = "head_addons.js head_sideload.js"
 skip-if = [
-  "os == 'linux'", # Bug 1613268
   "condprof", # Bug 1769184 - by design for now
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1613268
 ]
 
 ["test_sideloads.js"]
 
 ["test_sideloads_after_rebuild.js"]
-skip-if = ["condprof"] # Bug 1769184 - by design for now
+skip-if = [
+  "condprof", # Bug 1769184 - by design for now
+]
 head = "head_addons.js head_sideload.js"
 
 ["test_signed_inject.js"]
-skip-if = ["true"] # Bug 1394122
+skip-if = [
+  "true", # Bug 1394122
+]
 
 ["test_signed_install.js"]
 
 ["test_signed_langpack.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs langpack.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs langpack.
+]
 
 ["test_signed_long.js"]
 
 ["test_signed_updatepref.js"]
-skip-if = ["require_signing"]
+skip-if = [
+  "require_signing",
+]
 
 ["test_signed_verify.js"]
 
@@ -255,9 +321,11 @@ skip-if = [
 ["test_startup.js"]
 head = "head_addons.js head_sideload.js"
 skip-if = [
-  "os == 'linux'", # Bug 1613268
   "condprof", # Bug 1769184 - by design for now
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1613268
 ]
+
+["test_startupTimeline.js"]
 
 ["test_startup_enable.js"]
 
@@ -265,6 +333,8 @@ skip-if = [
 
 ["test_startup_scan.js"]
 head = "head_addons.js head_sideload.js"
+
+["test_startup_version.js"]
 
 ["test_strictcompatibility.js"]
 head = "head_addons.js head_compat.js"
@@ -289,7 +359,9 @@ head = "head_addons.js head_system_addons.js"
 head = "head_addons.js head_system_addons.js"
 
 ["test_system_startupprefs.js"]
-skip-if = ["condprof"] # Bug 1769184 - by design for now
+skip-if = [
+  "condprof", # Bug 1769184 - by design for now
+]
 head = "head_addons.js head_system_addons.js"
 
 ["test_system_update_blank.js"]
@@ -303,11 +375,15 @@ head = "head_addons.js head_system_addons.js"
 
 ["test_system_update_empty.js"]
 head = "head_addons.js head_system_addons.js"
-skip-if = ["true"] # Failing intermittently due to a race condition in the test, see bug 1348981
+skip-if = [
+  "true", # Failing intermittently due to a race condition in the test, see bug 1348981
+]
 
 ["test_system_update_enterprisepolicy.js"]
 head = "head_addons.js head_system_addons.js"
-skip-if = ["os == 'android'"] # Services.policies not supported on Android
+run-if = [
+  "os != 'android'", # Services.policies not supported on Android
+]
 
 ["test_system_update_fail.js"]
 head = "head_addons.js head_system_addons.js"
@@ -328,36 +404,56 @@ head = "head_addons.js head_system_addons.js"
 head = "head_addons.js head_system_addons.js"
 
 ["test_system_upgrades.js"]
-skip-if = ["condprof"] # Bug 1769184 - by design for now
+skip-if = [
+  "condprof", # Bug 1769184 - by design for now
+]
 head = "head_addons.js head_system_addons.js"
 
 ["test_temporary.js"]
-skip-if = ["os == 'win'"] # Bug 1469904
+skip-if = [
+  "os == 'win'", # Bug 1469904
+]
 tags = "webextensions"
 
 ["test_trash_directory.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_types.js"]
+# prevents test failure due to EnvironmentAddonBuilder calls
+# to getActiveAddons used to collect the Glean activeAddons
+# metric.
+prefs = ["extensions.telemetry.EnvironmentAddonBuilder=false"]
 
 ["test_undouninstall.js"]
-skip-if = ["os == 'win'"] # Bug 1358846
+skip-if = [
+  "os == 'win'", # Bug 1358846
+]
 
 ["test_update.js"]
 
 ["test_updateCancel.js"]
 
 ["test_update_addontype.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs static theme.
+]
+
+["test_update_cn_repack_addons.js"]
 
 ["test_update_compatmode.js"]
 head = "head_addons.js head_compat.js"
 
 ["test_update_ignorecompat.js"]
-skip-if = ["true"] # Bug 676922 Bug 1437697
+skip-if = [
+  "true", # Bug 676922 Bug 1437697
+]
 
 ["test_update_isPrivileged.js"]
-skip-if = ["condprof"] # Bug 1769184 - by design for now
+skip-if = [
+  "condprof", # Bug 1769184 - by design for now
+]
 
 ["test_update_noSystemAddonUpdate.js"]
 head = "head_addons.js head_system_addons.js"
@@ -366,7 +462,9 @@ head = "head_addons.js head_system_addons.js"
 head = "head_addons.js head_compat.js"
 
 ["test_update_theme.js"]
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
+run-if = [
+  "os != 'android'", # Non-extension add-ons are not supported on Android, but test installs static theme.
+]
 
 ["test_update_webextensions.js"]
 tags = "webextensions"
@@ -383,7 +481,7 @@ tags = "webextensions"
 
 ["test_upgrade.js"]
 head = "head_addons.js head_compat.js"
-run-sequentially = "Uses global XCurProcD dir."
+run-sequentially = ["true"] # Uses global XCurProcD dir.
 
 ["test_upgrade_incompatible.js"]
 
@@ -404,8 +502,12 @@ tags = "webextensions"
 
 ["test_webextension_langpack.js"]
 tags = "webextensions"
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs langpack.
+skip-if = [
+  "os == 'android'", # Non-extension add-ons are not supported on Android, but test installs langpack.
+]
 
 ["test_webextension_theme.js"]
 tags = "webextensions"
-skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
+skip-if = [
+  "os == 'android'", # Non-extension add-ons are not supported on Android, but test installs static theme.
+]

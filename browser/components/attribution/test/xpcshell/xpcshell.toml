@@ -1,14 +1,16 @@
 [DEFAULT]
 firefox-appdir = "browser"
 run-if = [
-    "os == 'win'",
-    "os == 'mac'",
+  "os == 'mac'",
+  "os == 'win'",
 ]
 head = "head.js"
 
 ["test_AttributionCode.js"]
 
 ["test_MacAttribution.js"]
-run-if = ["os == 'mac'"] # osx specific tests
+run-if = [
+  "os == 'mac'", # osx specific tests
+]
 
 ["test_attribution_parsing.js"]

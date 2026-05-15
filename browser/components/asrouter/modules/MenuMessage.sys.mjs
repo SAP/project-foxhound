@@ -7,7 +7,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   RemoteL10n: "resource:///modules/asrouter/RemoteL10n.sys.mjs",
   SpecialMessageActions:
@@ -21,7 +22,17 @@ export const MenuMessage = {
     PXI_MENU: "pxi_menu",
   }),
 
+  MESSAGE_TYPES: Object.freeze({
+    FXA_CTA: "fxa_cta",
+    DEFAULT_CTA: "default_cta",
+  }),
+
+  MESSAGE_TYPE_ALLOWED_BY_SOURCE: Object.freeze({
+    app_menu: new Set(["fxa_cta", "default_cta"]),
+    pxi_menu: new Set(["fxa_cta"]),
+  }),
   SHOWING_FXA_MENU_MESSAGE_ATTR: "showing-fxa-menu-message",
+  SHOWING_SET_TO_DEFAULT_MENU_MESSAGE_ATTR: "showing-default-cta-menu-message",
 
   async showMenuMessage(browser, message, trigger, force) {
     if (!browser) {
@@ -36,57 +47,115 @@ export const MenuMessage = {
 
     let source = trigger?.context?.source || message.testingTriggerContext;
 
+    // Restrict message types to their allowed sources
+    if (
+      !this.MESSAGE_TYPE_ALLOWED_BY_SOURCE[source]?.has(
+        message.content.messageType
+      )
+    ) {
+      return;
+    }
+
     switch (source) {
-      case MenuMessage.SOURCES.APP_MENU: {
+      case this.SOURCES.APP_MENU: {
         this.showAppMenuMessage(browser, message, force);
         break;
       }
-      case MenuMessage.SOURCES.PXI_MENU: {
+
+      case this.SOURCES.PXI_MENU: {
         this.showPxiMenuMessage(browser, message, force);
         break;
       }
     }
   },
 
+  /**
+   * Whether the message should be suppressed for a signed-in user.
+   *  - fxa_cta: suppress when signed in by default, unless
+   *    content.allowWhenSignedIn is set to true.
+   *  - default_cta: never suppress
+   */
+  shouldSuppressForSignedIn(message) {
+    const type = message?.content?.messageType;
+    const isSignedIn =
+      lazy.UIState.get().status === lazy.UIState.STATUS_SIGNED_IN;
+
+    // If not signed in, no need to suppress
+    if (!isSignedIn) {
+      return false;
+    }
+
+    //  Suppress fxa_cta messages by default, unless we explicitly allow it.
+    if (type === this.MESSAGE_TYPES.FXA_CTA) {
+      const allowWhenSignedIn = !!message.content?.allowWhenSignedIn;
+      return !allowWhenSignedIn;
+    }
+
+    // For any other message, we don't suppress it.
+    return false;
+  },
+
+  preparePrimaryAction(message, source) {
+    const type = message?.content?.messageType;
+    const primaryAction = message?.content?.primaryAction;
+    if (!primaryAction) {
+      return null;
+    }
+    const action = structuredClone(primaryAction);
+
+    // For fxa_cta messages, depending on the source that showed the
+    // message, we'll want to set a particular entrypoint in the data
+    // payload in the event that we're  opening up the FxA sign-up page.
+    if (type === this.MESSAGE_TYPES.FXA_CTA) {
+      action.data = action.data || {};
+      action.data.extraParams = action.data.extraParams || {};
+
+      if (source === this.SOURCES.APP_MENU) {
+        action.data.entrypoint = "fxa_app_menu";
+        action.data.extraParams.utm_content = `${action.data.extraParams.utm_content}-app_menu`;
+      } else if (source === this.SOURCES.PXI_MENU) {
+        action.data.entrypoint = "fxa_avatar_menu";
+        action.data.extraParams.utm_content = `${action.data.extraParams.utm_content}-avatar`;
+      }
+    }
+    return action;
+  },
+
   async showAppMenuMessage(browser, message, force) {
     const win = browser.ownerGlobal;
     const msgContainer = this.hideAppMenuMessage(browser);
+    const type = message?.content?.messageType;
 
-    // This version of the browser only supports the fxa_cta version
-    // of this message in the AppMenu. We also don't draw focus away from any
-    // existing AppMenuNotifications.
-    if (
-      !message ||
-      message.content.messageType !== "fxa_cta" ||
-      lazy.AppMenuNotifications.activeNotification
-    ) {
+    // This version of the browser only supports the fxa_cta and
+    // default_cta versions of this message in the AppMenu.
+    // We also don't draw focus away from any existing AppMenuNotifications.
+    if (!message || lazy.AppMenuNotifications.activeNotification) {
       return;
     }
 
-    // Since we know this is an fxa_cta message, we know that if we're already
-    // signed in, we don't want to show it in the AppMenu.
-    if (lazy.UIState.get().status === lazy.UIState.STATUS_SIGNED_IN) {
+    // Respect message type signed-in render rules (fxa_cta suppresses by default)
+    if (this.shouldSuppressForSignedIn(message)) {
       return;
     }
 
-    win.PanelUI.mainView.setAttribute(
-      MenuMessage.SHOWING_FXA_MENU_MESSAGE_ATTR,
-      message.id
-    );
+    const menuMessageAttribute =
+      type === this.MESSAGE_TYPES.DEFAULT_CTA
+        ? MenuMessage.SHOWING_SET_TO_DEFAULT_MENU_MESSAGE_ATTR
+        : MenuMessage.SHOWING_FXA_MENU_MESSAGE_ATTR;
 
-    let msgElement = await this.constructFxAMessage(
+    let msgElement = await this.constructMenuMessage(
       win,
       message,
       MenuMessage.SOURCES.APP_MENU
     );
 
-    msgElement.addEventListener("FxAMenuMessage:Close", () => {
-      win.PanelUI.mainView.removeAttribute(
-        MenuMessage.SHOWING_FXA_MENU_MESSAGE_ATTR
-      );
+    win.PanelUI.mainView.setAttribute(menuMessageAttribute, message.id);
+
+    msgElement.addEventListener("MenuMessage:Close", () => {
+      win.PanelUI.mainView.removeAttribute(menuMessageAttribute);
     });
 
-    msgElement.addEventListener("FxAMenuMessage:SignUp", () => {
+    msgElement.addEventListener("MenuMessage:PrimaryButton", () => {
       win.PanelUI.hide();
     });
 
@@ -102,11 +171,14 @@ export const MenuMessage = {
     const document = browser.ownerDocument;
     const msgContainer = lazy.PanelMultiView.getViewNode(
       document,
-      "appMenu-fxa-menu-message"
+      "appMenu-menu-message"
     );
     msgContainer.innerHTML = "";
     win.PanelUI.mainView.removeAttribute(
       MenuMessage.SHOWING_FXA_MENU_MESSAGE_ATTR
+    );
+    win.PanelUI.mainView.removeAttribute(
+      MenuMessage.SHOWING_SET_TO_DEFAULT_MENU_MESSAGE_ATTR
     );
 
     return msgContainer;
@@ -117,15 +189,8 @@ export const MenuMessage = {
     const { document } = win;
     const msgContainer = this.hidePxiMenuMessage(browser);
 
-    // This version of the browser only supports the fxa_cta version
-    // of this message in the PXI menu.
-    if (!message || message.content.messageType !== "fxa_cta") {
-      return;
-    }
-
-    // Since we know this is an fxa_cta message, we know that if we're already
-    // signed in, we don't want to show it in the AppMenu.
-    if (lazy.UIState.get().status === lazy.UIState.STATUS_SIGNED_IN) {
+    // Respect message type signed-in render rules (fxa_cta suppresses by default)
+    if (this.shouldSuppressForSignedIn(message)) {
       return;
     }
 
@@ -135,17 +200,17 @@ export const MenuMessage = {
       message.id
     );
 
-    let msgElement = await this.constructFxAMessage(
+    let msgElement = await this.constructMenuMessage(
       win,
       message,
       MenuMessage.SOURCES.PXI_MENU
     );
 
-    msgElement.addEventListener("FxAMenuMessage:Close", () => {
+    msgElement.addEventListener("MenuMessage:Close", () => {
       fxaPanelView.removeAttribute(MenuMessage.SHOWING_FXA_MENU_MESSAGE_ATTR);
     });
 
-    msgElement.addEventListener("FxAMenuMessage:SignUp", () => {
+    msgElement.addEventListener("MenuMessage:PrimaryButton", () => {
       let panelNode = fxaPanelView.closest("panel");
 
       if (panelNode) {
@@ -175,23 +240,29 @@ export const MenuMessage = {
     return msgContainer;
   },
 
-  async constructFxAMessage(win, message, source) {
+  async constructMenuMessage(win, message, source) {
     let { document, gBrowser } = win;
 
     win.MozXULElement.insertFTLIfNeeded("browser/newtab/asrouter.ftl");
 
-    const msgElement = document.createElement("fxa-menu-message");
+    const msgElement = document.createElement("menu-message");
     msgElement.layout = message.content.layout ?? "column";
     msgElement.imageURL = message.content.imageURL;
+    msgElement.logoURL = message.content.logoURL;
+    msgElement.primaryButtonSize =
+      message.content.primaryButtonSize ?? "default";
     msgElement.buttonText = await lazy.RemoteL10n.formatLocalizableText(
       message.content.primaryActionText
     );
     msgElement.primaryText = await lazy.RemoteL10n.formatLocalizableText(
       message.content.primaryText
     );
-    msgElement.secondaryText = await lazy.RemoteL10n.formatLocalizableText(
-      message.content.secondaryText
-    );
+    // Simple layout does not support secondary text
+    if (message.content.layout !== "simple" && message.content.secondaryText) {
+      msgElement.secondaryText = await lazy.RemoteL10n.formatLocalizableText(
+        message.content.secondaryText
+      );
+    }
     msgElement.dataset.navigableWithTabOnly = "true";
     if (message.content.imageWidth !== undefined) {
       msgElement.style.setProperty(
@@ -199,20 +270,38 @@ export const MenuMessage = {
         `${message.content.imageWidth}px`
       );
     }
-    msgElement.style.setProperty(
-      "--illustration-margin-block-start-offset",
-      `${message.content.imageVerticalTopOffset}px`
-    );
-    msgElement.style.setProperty(
-      "--illustration-margin-block-end-offset",
-      `${message.content.imageVerticalBottomOffset}px`
-    );
-    msgElement.style.setProperty(
-      "--container-margin-block-end-offset",
-      `${message.content.containerVerticalBottomOffset}px`
-    );
+    if (message.content.logoWidth !== undefined) {
+      msgElement.style.setProperty(
+        "--logo-width",
+        `${message.content.logoWidth}px`
+      );
+    }
+    if (message.content.imageVerticalTopOffset !== undefined) {
+      msgElement.style.setProperty(
+        "--illustration-margin-block-start-offset",
+        `${message.content.imageVerticalTopOffset}px`
+      );
+    }
+    if (message.content.imageVerticalBottomOffset !== undefined) {
+      msgElement.style.setProperty(
+        "--illustration-margin-block-end-offset",
+        `${message.content.imageVerticalBottomOffset}px`
+      );
+    }
+    if (message.content.containerVerticalBottomOffset !== undefined) {
+      msgElement.style.setProperty(
+        "--container-margin-block-end-offset",
+        `${message.content.containerVerticalBottomOffset}px`
+      );
+    }
+    if (message.content.containerPaddingBottom !== undefined) {
+      msgElement.style.setProperty(
+        "--container-padding-block-end",
+        `${message.content.containerPaddingBottom}px`
+      );
+    }
 
-    msgElement.addEventListener("FxAMenuMessage:Close", () => {
+    msgElement.addEventListener("MenuMessage:Close", () => {
       msgElement.remove();
 
       this.recordMenuMessageTelemetry("DISMISS", source, message.id);
@@ -223,25 +312,16 @@ export const MenuMessage = {
       );
     });
 
-    msgElement.addEventListener("FxAMenuMessage:SignUp", () => {
+    msgElement.addEventListener("MenuMessage:PrimaryButton", () => {
       this.recordMenuMessageTelemetry("CLICK", source, message.id);
 
-      // Depending on the source that showed the message, we'll want to set
-      // a particular entrypoint in the data payload in the event that we're
-      // opening up the FxA sign-up page.
-      let clonedPrimaryAction = structuredClone(message.content.primaryAction);
-      if (source === MenuMessage.SOURCES.APP_MENU) {
-        clonedPrimaryAction.data.entrypoint = "fxa_app_menu";
-        clonedPrimaryAction.data.extraParams.utm_content += "-app_menu";
-      } else if (source === MenuMessage.SOURCES.PXI_MENU) {
-        clonedPrimaryAction.data.entrypoint = "fxa_avatar_menu";
-        clonedPrimaryAction.data.extraParams.utm_content += "-avatar";
+      const primaryAction = this.preparePrimaryAction(message, source);
+      if (primaryAction) {
+        lazy.SpecialMessageActions.handleAction(
+          primaryAction,
+          gBrowser.selectedBrowser
+        );
       }
-
-      lazy.SpecialMessageActions.handleAction(
-        clonedPrimaryAction,
-        gBrowser.selectedBrowser
-      );
     });
 
     return msgElement;

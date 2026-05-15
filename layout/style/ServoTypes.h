@@ -9,10 +9,10 @@
 #ifndef mozilla_ServoTypes_h
 #define mozilla_ServoTypes_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "X11UndefineNone.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TypedEnumBits.h"
-#include "nsCSSPropertyID.h"
 #include "nsCoord.h"
 
 namespace mozilla {
@@ -127,7 +127,7 @@ class ServoStyleSetSizes {
 struct DeclarationBlockMutationClosure {
   // The callback function. The first argument is `data`, the second is the
   // property id that changed.
-  void (*function)(void*, nsCSSPropertyID) = nullptr;
+  void (*function)(void*, NonCustomCSSPropertyId) = nullptr;
   void* data = nullptr;
 };
 

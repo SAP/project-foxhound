@@ -9,27 +9,36 @@
  */
 #include "test/pc/e2e/cross_media_metrics_reporter.h"
 
+#include <cstdlib>
+#include <map>
+#include <string>
 #include <utility>
 #include <vector>
 
-#include "api/stats/rtc_stats.h"
+#include "absl/flags/flag.h"
+#include "absl/strings/string_view.h"
+#include "api/scoped_refptr.h"
+#include "api/stats/rtc_stats_report.h"
 #include "api/stats/rtcstats_objects.h"
 #include "api/test/metrics/metric.h"
+#include "api/test/metrics/metrics_logger.h"
+#include "api/test/track_id_stream_info_map.h"
 #include "api/units/timestamp.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/event.h"
-#include "system_wrappers/include/field_trial.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "system_wrappers/include/clock.h"
 #include "test/pc/e2e/metric_metadata_keys.h"
+#include "test/test_flags.h"
 
 namespace webrtc {
 namespace webrtc_pc_e2e {
 
-using ::webrtc::test::ImprovementDirection;
-using ::webrtc::test::Unit;
+using test::Unit;
 
 CrossMediaMetricsReporter::CrossMediaMetricsReporter(
+    webrtc::Clock& clock,
     test::MetricsLogger* metrics_logger)
-    : metrics_logger_(metrics_logger) {
+    : clock_(clock), metrics_logger_(metrics_logger) {
   RTC_CHECK(metrics_logger_);
 }
 
@@ -42,7 +51,7 @@ void CrossMediaMetricsReporter::Start(
 
 void CrossMediaMetricsReporter::OnStatsReports(
     absl::string_view pc_label,
-    const rtc::scoped_refptr<const RTCStatsReport>& report) {
+    const scoped_refptr<const RTCStatsReport>& report) {
   auto inbound_stats = report->GetStatsOfType<RTCInboundRtpStreamStats>();
   std::map<std::string, std::vector<const RTCInboundRtpStreamStats*>>
       sync_group_stats;
@@ -56,6 +65,7 @@ void CrossMediaMetricsReporter::OnStatsReports(
     }
   }
 
+  webrtc::Timestamp now = clock_.CurrentTime();
   MutexLock lock(&mutex_);
   for (const auto& pair : sync_group_stats) {
     // If there is less than two streams, it is not a sync group.
@@ -91,12 +101,14 @@ void CrossMediaMetricsReporter::OnStatsReports(
                                       *video_stat->estimated_playout_timestamp;
     if (audio_video_playout_diff > 0) {
       stats_info_[sync_group].audio_ahead_ms.AddSample(
-          audio_video_playout_diff);
-      stats_info_[sync_group].video_ahead_ms.AddSample(0);
-    } else {
-      stats_info_[sync_group].audio_ahead_ms.AddSample(0);
+          {.value = audio_video_playout_diff, .time = now});
       stats_info_[sync_group].video_ahead_ms.AddSample(
-          std::abs(audio_video_playout_diff));
+          {.value = 0., .time = now});
+    } else {
+      stats_info_[sync_group].audio_ahead_ms.AddSample(
+          {.value = 0., .time = now});
+      stats_info_[sync_group].video_ahead_ms.AddSample(
+          {.value = std::abs(audio_video_playout_diff), .time = now});
     }
   }
 }
@@ -105,7 +117,6 @@ void CrossMediaMetricsReporter::StopAndReportResults() {
   MutexLock lock(&mutex_);
   for (const auto& pair : stats_info_) {
     const std::string& sync_group = pair.first;
-    // TODO(bugs.webrtc.org/14757): Remove kExperimentalTestNameMetadataKey.
     std::map<std::string, std::string> audio_metric_metadata{
         {MetricMetadataKey::kPeerSyncGroupMetadataKey, sync_group},
         {MetricMetadataKey::kAudioStreamMetadataKey,
@@ -113,16 +124,14 @@ void CrossMediaMetricsReporter::StopAndReportResults() {
         {MetricMetadataKey::kPeerMetadataKey,
          pair.second.audio_stream_info.receiver_peer},
         {MetricMetadataKey::kReceiverMetadataKey,
-         pair.second.audio_stream_info.receiver_peer},
-        {MetricMetadataKey::kExperimentalTestNameMetadataKey, test_case_name_}};
+         pair.second.audio_stream_info.receiver_peer}};
     metrics_logger_->LogMetric(
         "audio_ahead_ms",
         GetTestCaseName(pair.second.audio_stream_info.stream_label, sync_group),
         pair.second.audio_ahead_ms, Unit::kMilliseconds,
-        webrtc::test::ImprovementDirection::kSmallerIsBetter,
+        test::ImprovementDirection::kSmallerIsBetter,
         std::move(audio_metric_metadata));
 
-    // TODO(bugs.webrtc.org/14757): Remove kExperimentalTestNameMetadataKey.
     std::map<std::string, std::string> video_metric_metadata{
         {MetricMetadataKey::kPeerSyncGroupMetadataKey, sync_group},
         {MetricMetadataKey::kAudioStreamMetadataKey,
@@ -130,13 +139,12 @@ void CrossMediaMetricsReporter::StopAndReportResults() {
         {MetricMetadataKey::kPeerMetadataKey,
          pair.second.video_stream_info.receiver_peer},
         {MetricMetadataKey::kReceiverMetadataKey,
-         pair.second.video_stream_info.receiver_peer},
-        {MetricMetadataKey::kExperimentalTestNameMetadataKey, test_case_name_}};
+         pair.second.video_stream_info.receiver_peer}};
     metrics_logger_->LogMetric(
         "video_ahead_ms",
         GetTestCaseName(pair.second.video_stream_info.stream_label, sync_group),
         pair.second.video_ahead_ms, Unit::kMilliseconds,
-        webrtc::test::ImprovementDirection::kSmallerIsBetter,
+        test::ImprovementDirection::kSmallerIsBetter,
         std::move(video_metric_metadata));
   }
 }
@@ -144,7 +152,10 @@ void CrossMediaMetricsReporter::StopAndReportResults() {
 std::string CrossMediaMetricsReporter::GetTestCaseName(
     const std::string& stream_label,
     const std::string& sync_group) const {
-  return test_case_name_ + "/" + sync_group + "_" + stream_label;
+  if (!absl::GetFlag(FLAGS_isolated_script_test_perf_output).empty()) {
+    return test_case_name_ + "/" + sync_group + "_" + stream_label;
+  }
+  return test_case_name_;
 }
 
 }  // namespace webrtc_pc_e2e

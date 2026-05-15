@@ -51,21 +51,23 @@
 
 #include <string>
 
+#include "mozilla/DebugOnly.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
-#include "nsServiceManagerUtils.h"
 #include "nsIEventTarget.h"
 #include "nsINamed.h"
 #include "nsITimer.h"
 #include "nsNetCID.h"
+#include "nsServiceManagerUtils.h"
 #include "runnable_utils.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/UniquePtr.h"
 
 extern "C" {
+// clang-format off
 #include "async_wait.h"
 #include "async_timer.h"
 #include "r_errors.h"
 #include "r_log.h"
+// clang-format on
 }
 
 namespace mozilla {

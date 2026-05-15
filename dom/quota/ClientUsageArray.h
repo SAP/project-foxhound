@@ -8,6 +8,7 @@
 #define DOM_QUOTA_CLIENTUSAGEARRAY_H_
 
 #include <cstdint>
+
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/quota/Client.h"
 

@@ -7,7 +7,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ContileIntegration: "resource://newtab/lib/TopSitesFeed.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
-  SearchService: "resource://gre/modules/SearchService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   TopSitesFeed: "resource://newtab/lib/TopSitesFeed.sys.mjs",
 });
 
@@ -122,7 +122,7 @@ add_setup(async () => {
   Services.fog.initializeFOG();
 
   let sandbox = sinon.createSandbox();
-  sandbox.stub(SearchService.prototype, "init").resolves();
+  sandbox.stub(SearchService, "init").resolves();
 
   const nimbusStub = sandbox.stub(NimbusFeatures.newtab, "getVariable");
   nimbusStub.withArgs(NIMBUS_VARIABLE_CONTILE_ENABLED).returns(true);

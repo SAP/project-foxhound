@@ -24,6 +24,13 @@
                 "type": "string"
               },
               "description": "List of Match pattern compatible strings to match against"
+            },
+            "regexPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of regular expression patterns to match against URLs"
             }
           },
           "required": ["id"],
@@ -50,6 +57,13 @@
                 "type": "string"
               },
               "description": "List of Match pattern compatible strings to match against"
+            },
+            "regexPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of regular expression patterns to match against URLs"
             }
           },
           "required": ["id"],
@@ -88,6 +102,13 @@
                 "type": "string"
               },
               "description": "List of Match pattern compatible strings to match against"
+            },
+            "regexPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of regular expression patterns to match against URLs"
             }
           },
           "required": ["id"],
@@ -447,6 +468,7 @@
                 "searchSource": {
                   "type": "string",
                   "enum": [
+                    "searchbar",
                     "urlbar-handoff",
                     "urlbar-searchmode",
                     "urlbar-persisted",
@@ -493,6 +515,87 @@
           "additionalProperties": false,
           "required": ["id"],
           "description": "Happens when a browser chrome element is clicked"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["ipProtectionReady"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the IP protection widget is loaded and the toolbar item is available"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["ipProtectionPanelClosed"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Fires on close of the IP Protection Panel"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["selectableProfilesUpdated"]
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["remote"],
+                  "description": "The source type of the profiles update event. Only 'remote' is emitted by the trigger"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when shared profile data changes in another running profile instance (remote) and a tracked data-collection preference changed."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["tabSwitch"]
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "integer",
+                  "description": "The number of currently open tabs"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the user switches between two tabs 2 times within a minute"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["smartWindowNewTab"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Occurs every time a user opens a new Smart Window tab."
         }
       ]
     }

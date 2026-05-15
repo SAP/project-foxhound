@@ -123,7 +123,8 @@ For help on implementing providers in general, see the address bar's
 `Architecture Overview`__.
 
 If you are creating the provider in the internal address bar implementation in
-mozilla-central, then don't forget to register it in ``UrlbarProvidersManager``.
+mozilla-central, then don't forget to register it in a ``ProvidersManager``
+instance.
 
 __ https://firefox-source-docs.mozilla.org/browser/urlbar/overview.html#urlbarprovider
 
@@ -575,17 +576,17 @@ payload property in the following example:
 
 .. code-block:: javascript
 
-    let result = new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
-      {
+    let result = new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
+      payload: {
         title: [
           "Some result title",
           UrlbarUtils.HIGHLIGHT.TYPED,
         ],
         // *more payload properties*
       }
-    );
+    });
 
 Your view template must create an element corresponding to the payload
 property. That is, it must include an object where the value of the ``name``

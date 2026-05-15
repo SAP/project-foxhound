@@ -1,4 +1,4 @@
-// |jit-test| --setpref=wasm_relaxed_simd=true; skip-if: !wasmRelaxedSimdEnabled()
+// |jit-test| skip-if: !wasmRelaxedSimdEnabled()
 /* Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 
 // ./test/core/relaxed-simd/i16x8_relaxed_q15mulr_s.wast
 
-// ./test/core/relaxed-simd/i16x8_relaxed_q15mulr_s.wast:4
+// ./test/core/relaxed-simd/i16x8_relaxed_q15mulr_s.wast:3
 let $0 = instantiate(`(module
     (func (export "i16x8.relaxed_q15mulr_s") (param v128 v128) (result v128) (i16x8.relaxed_q15mulr_s (local.get 0) (local.get 1)))
 
@@ -26,7 +26,7 @@ let $0 = instantiate(`(module
             (i16x8.relaxed_q15mulr_s (local.get 0) (local.get 1))))
 )`);
 
-// ./test/core/relaxed-simd/i16x8_relaxed_q15mulr_s.wast:14
+// ./test/core/relaxed-simd/i16x8_relaxed_q15mulr_s.wast:13
 assert_return(
   () => invoke($0, `i16x8.relaxed_q15mulr_s`, [
     i16x8([0x8000, 0x8001, 0x7fff, 0x0, 0x0, 0x0, 0x0, 0x0]),
@@ -40,7 +40,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/i16x8_relaxed_q15mulr_s.wast:23
+// ./test/core/relaxed-simd/i16x8_relaxed_q15mulr_s.wast:22
 assert_return(
   () => invoke($0, `i16x8.relaxed_q15mulr_s_cmp`, [
     i16x8([0x8000, 0x8001, 0x7fff, 0x0, 0x0, 0x0, 0x0, 0x0]),

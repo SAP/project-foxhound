@@ -13,11 +13,12 @@
 
 #include "mozilla/dom/JSExecutionUtils.h"
 
-#include <utility>      // std::move
+#include <utility>  // std::move
+
 #include "ErrorList.h"  // NS_ERROR_OUT_OF_MEMORY, NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW, NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW_UNCATCHABLE
 #include "js/CompilationAndEvaluation.h"  // JS::UpdateDebugMetadata
+#include "js/SourceText.h"                // JS::SourceText, JS::SourceOwnership
 #include "js/experimental/JSStencil.h"  // JS::Stencil, JS::CompileGlobalScriptToStencil
-#include "js/SourceText.h"              // JS::SourceText, JS::SourceOwnership
 #include "jsapi.h"                      // JS_IsExceptionPending
 #include "nsTPromiseFlatString.h"  // PromiseFlatString
 

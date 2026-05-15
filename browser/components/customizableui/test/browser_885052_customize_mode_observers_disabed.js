@@ -4,9 +4,25 @@
 
 "use strict";
 
-function isFullscreenSizeMode() {
-  let sizemode = document.documentElement.getAttribute("sizemode");
-  return sizemode == "fullscreen";
+function promiseButtonCheckedState(button, expectedCheckedState) {
+  return BrowserTestUtils.waitForMutationCondition(
+    button,
+    {
+      attributes: true,
+      attributeFilter: ["checked"],
+    },
+    () => button.checked === expectedCheckedState
+  ).then(() => info("Button checked state now correct."));
+}
+
+function promiseSizemodeChange(expectedSizeMode) {
+  return BrowserTestUtils.waitForEvent(window, "sizemodechange", false, () => {
+    let sizemode = document.documentElement.getAttribute("sizemode");
+    info(`Sizemode changed to ${sizemode}. Expected: ${expectedSizeMode}`);
+    return (
+      document.documentElement.getAttribute("sizemode") === expectedSizeMode
+    );
+  }).then(() => info("Sizemode changed to " + expectedSizeMode + "."));
 }
 
 // Observers should be disabled when in customization mode.
@@ -29,13 +45,20 @@ add_task(async function () {
     !fullscreenButton.checked,
     "Fullscreen button should not be checked when not in fullscreen."
   );
-  ok(
-    !isFullscreenSizeMode(),
+  let oldSizemode = document.documentElement.getAttribute("sizemode");
+  Assert.notEqual(
+    oldSizemode,
+    "fullscreen",
     "Should not be in fullscreen sizemode before we enter fullscreen."
   );
 
+  let sizemodeChangePromise = promiseSizemodeChange("fullscreen");
   BrowserCommands.fullScreen();
-  await TestUtils.waitForCondition(() => isFullscreenSizeMode());
+  await Promise.all([
+    promiseButtonCheckedState(fullscreenButton, true),
+    sizemodeChangePromise,
+  ]);
+
   ok(
     fullscreenButton.checked,
     "Fullscreen button should be checked when in fullscreen."
@@ -62,9 +85,12 @@ add_task(async function () {
 
   await endCustomizing();
 
+  sizemodeChangePromise = promiseSizemodeChange(oldSizemode);
   BrowserCommands.fullScreen();
-  fullscreenButton = document.getElementById("fullscreen-button");
-  await TestUtils.waitForCondition(() => !isFullscreenSizeMode());
+  await Promise.all([
+    promiseButtonCheckedState(fullscreenButton, false),
+    sizemodeChangePromise,
+  ]);
   ok(
     !fullscreenButton.checked,
     "Fullscreen button should not be checked when not in fullscreen."

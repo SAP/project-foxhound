@@ -7,35 +7,26 @@ package mozilla.components.lib.state.ext
 import android.view.View
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.TestAction
 import mozilla.components.lib.state.TestState
 import mozilla.components.lib.state.reducer
 import mozilla.components.support.test.argumentCaptor
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doNothing
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
+import kotlin.coroutines.ContinuationInterceptor
 
 @RunWith(AndroidJUnit4::class)
-@ExperimentalCoroutinesApi
 class ViewKtTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Test
     @Synchronized
-    fun `consumeFrom reads states from store`() {
+    fun `consumeFrom reads states from store`() = runTest {
         val view = mock<View>()
         val owner = MockedLifecycleOwner(Lifecycle.State.INITIALIZED)
 
@@ -46,44 +37,43 @@ class ViewKtTest {
 
         val onAttachListener = argumentCaptor<View.OnAttachStateChangeListener>()
         var receivedValue = 0
-        var latch = CountDownLatch(1)
         doNothing().`when`(view).addOnAttachStateChangeListener(onAttachListener.capture())
 
-        view.consumeFrom(store, owner) { state ->
+        view.consumeFrom(
+            store,
+            owner,
+            mainDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+        ) { state ->
             receivedValue = state.counter
-            latch.countDown()
         }
 
+        testScheduler.runCurrent()
         // Nothing received yet.
-        assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(0, receivedValue)
 
         // Updating state: Nothing received yet.
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
-        assertFalse(latch.await(1, TimeUnit.SECONDS))
+        store.dispatch(TestAction.IncrementAction)
+        testScheduler.runCurrent()
         assertEquals(0, receivedValue)
 
         // Switching to STARTED state: Receiving initial state
         owner.lifecycleRegistry.currentState = Lifecycle.State.STARTED
-        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        testScheduler.runCurrent()
         assertEquals(24, receivedValue)
-        latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
-        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        store.dispatch(TestAction.IncrementAction)
+        testScheduler.runCurrent()
         assertEquals(25, receivedValue)
-        latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
-        assertTrue(latch.await(1, TimeUnit.SECONDS))
+        store.dispatch(TestAction.IncrementAction)
+        testScheduler.runCurrent()
         assertEquals(26, receivedValue)
-        latch = CountDownLatch(1)
 
         // View gets detached
         onAttachListener.value.onViewDetachedFromWindow(view)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
-        assertFalse(latch.await(1, TimeUnit.SECONDS))
+        store.dispatch(TestAction.IncrementAction)
+        testScheduler.runCurrent()
         assertEquals(26, receivedValue)
     }
 }

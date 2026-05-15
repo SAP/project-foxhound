@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_XULAlertAccessible_h__
-#define mozilla_a11y_XULAlertAccessible_h__
+#ifndef mozilla_a11y_XULAlertAccessible_h_
+#define mozilla_a11y_XULAlertAccessible_h_
 
 #include "AccessibleWrap.h"
 
@@ -22,7 +22,8 @@ class XULAlertAccessible : public AccessibleWrap {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(XULAlertAccessible, AccessibleWrap)
 
   // LocalAccessible
-  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName) const override;
+  virtual mozilla::a11y::ENameValueFlag DirectName(
+      nsString& aName) const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
 

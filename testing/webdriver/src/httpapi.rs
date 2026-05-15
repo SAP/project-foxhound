@@ -311,6 +311,16 @@ pub fn standard_routes<U: WebDriverExtensionRoute>() -> Vec<(Method, &'static st
         (Method::POST, "/session/{sessionId}/print", Route::Print),
         (
             Method::POST,
+            "/session/{sessionId}/privacy",
+            Route::GPCSetGlobalPrivacyControl,
+        ),
+        (
+            Method::GET,
+            "/session/{sessionId}/privacy",
+            Route::GPCGetGlobalPrivacyControl,
+        ),
+        (
+            Method::POST,
             "/session/{sessionId}/webauthn/authenticator",
             Route::WebAuthnAddVirtualAuthenticator,
         ),
@@ -418,6 +428,8 @@ pub enum Route<U: WebDriverExtensionRoute> {
     SetPermission,
     Status,
     Extension(U),
+    GPCGetGlobalPrivacyControl,
+    GPCSetGlobalPrivacyControl,
     WebAuthnAddVirtualAuthenticator,
     WebAuthnRemoveVirtualAuthenticator,
     WebAuthnAddCredential,

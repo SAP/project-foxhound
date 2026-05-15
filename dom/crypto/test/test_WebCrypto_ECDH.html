@@ -427,6 +427,81 @@ TestArray.addTest(
 );
 
 // -----------------------------------------------------------------------------
+// See bug 1994770
+TestArray.addTest(
+  "Derive an AES Key from two X25519 keys",
+  function() {
+    var that = this;
+    const alg = { name: 'X25519' };
+    const lengths = [128, 192, 256];
+
+    async function deriveKey(algorithm, privateKey, publicKey, length) {
+      return window.crypto.subtle.deriveKey(
+        { name: algorithm.name, public: publicKey },
+        privateKey,
+        { name: 'AES-GCM', length },
+        true,
+        ['encrypt', 'decrypt'],
+      );
+    }
+
+    async function doTest(length) {
+      let keyPair1 = await crypto.subtle.generateKey(alg, true, ["deriveKey", "deriveBits"]);
+      let keyPair2 = await crypto.subtle.generateKey(alg, true, ["deriveKey", "deriveBits"]);
+      let derivedKey = await deriveKey(alg, keyPair1.privateKey, keyPair2.publicKey, length);
+      const raw = await window.crypto.subtle.exportKey('raw', derivedKey);
+      const bitLength = raw.byteLength * 8;
+      return bitLength === length;
+    }
+
+    Promise.all(lengths.map(doTest))
+      .then(complete(that, function(results) {
+        return results.every(result => result === true);
+      }))
+      .catch(error(that));
+  }
+);
+
+// See bug 1994770
+TestArray.addTest(
+  "Derive an AES Key from two X25519 keys (invalid length)",
+  function() {
+    var that = this;
+    const alg = { name: "X25519" };
+    // AES-GCM only accepts 128, 192, 256.
+    const invalidLengths = [0, 64, 129, 200];
+
+    async function deriveKey(algorithm, privateKey, publicKey, length) {
+      return window.crypto.subtle.deriveKey(
+        { name: algorithm.name, public: publicKey },
+        privateKey,
+        { name: "AES-GCM", length },
+        true,
+        ["encrypt", "decrypt"],
+      );
+    }
+
+    async function doTest(length) {
+      let keyPair1 = await crypto.subtle.generateKey(alg, true, ["deriveKey", "deriveBits"]);
+      let keyPair2 = await crypto.subtle.generateKey(alg, true, ["deriveKey", "deriveBits"]);
+      try {
+        await deriveKey(alg, keyPair1.privateKey, keyPair2.publicKey, length);
+        return false;
+      } catch (e) {
+        return true;
+      }
+    }
+
+    Promise.all(invalidLengths.map(doTest))
+      .then(complete(that, function(results) {
+          return results.every(result => result === true);
+        }),
+      )
+      .catch(error(that));
+  }
+);
+
+// -----------------------------------------------------------------------------
 TestArray.addTest(
   "SPKI import/export of public ECDH keys (P-256)",
   function() {

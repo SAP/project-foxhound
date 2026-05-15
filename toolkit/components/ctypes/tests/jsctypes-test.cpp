@@ -6,7 +6,6 @@
 #include "jsctypes-test.h"
 #include <math.h>
 #include <stdarg.h>
-#include <stdio.h>
 #include "typedefs.h"
 
 template <typename T>

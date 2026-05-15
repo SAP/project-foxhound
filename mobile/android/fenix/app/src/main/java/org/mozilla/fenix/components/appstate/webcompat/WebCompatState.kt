@@ -12,10 +12,12 @@ package org.mozilla.fenix.components.appstate.webcompat
  * in the Web Compat Reporter feature.
  * @property reason Optional param specifying the reason that [tabUrl] is broken.
  * @property problemDescription Description of the encountered problem.
+ * @property includeEtpBlockedUrls Checks if the user wants to include URLs blocked by ETP when they submit the report.
  */
 data class WebCompatState(
     val tabUrl: String = "",
     val enteredUrl: String = "",
     val reason: String? = null,
     val problemDescription: String = "",
+    val includeEtpBlockedUrls: Boolean = false,
 )

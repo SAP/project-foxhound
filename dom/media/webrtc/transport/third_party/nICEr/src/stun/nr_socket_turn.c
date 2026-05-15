@@ -43,10 +43,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "nr_socket_turn.h"
 
 
-static char *nr_socket_turn_magic_cookie = "nr_socket_turn";
+static const char *nr_socket_turn_magic_cookie = "nr_socket_turn";
 
 typedef struct nr_socket_turn_ {
-  char *magic_cookie;
+  const char *magic_cookie;
   nr_turn_client_ctx *turn;
 } nr_socket_turn;
 
@@ -80,7 +80,7 @@ int nr_socket_turn_create(nr_socket **sockp)
     int r,_status;
     nr_socket_turn *sturn=0;
 
-    if(!(sturn=RCALLOC(sizeof(nr_socket_turn))))
+    if(!(sturn=R_NEW(nr_socket_turn)))
       ABORT(R_NO_MEMORY);
 
     sturn->magic_cookie = nr_socket_turn_magic_cookie;
@@ -104,7 +104,7 @@ static int nr_socket_turn_destroy(void **objp)
     if(!objp || !*objp)
       return(0);
 
-    sturn=*objp;
+    sturn=(nr_socket_turn*)*objp;
     *objp=0;
 
     assert(sturn->magic_cookie == nr_socket_turn_magic_cookie);
@@ -121,12 +121,12 @@ static int nr_socket_turn_sendto(void *obj,const void *msg, size_t len,
   int flags, const nr_transport_addr *addr)
   {
     int r,_status;
-    nr_socket_turn *sturn=obj;
+    nr_socket_turn *sturn=(nr_socket_turn*)obj;
 
     assert(sturn->magic_cookie == nr_socket_turn_magic_cookie);
     assert(sturn->turn);
 
-    if ((r = nr_turn_client_send_indication(sturn->turn, msg, len, flags,
+    if ((r = nr_turn_client_send_indication(sturn->turn, (const UCHAR*)msg, len, flags,
                                             addr)))
       ABORT(r);
 
@@ -155,7 +155,7 @@ static int nr_socket_turn_getfd(void *obj, NR_SOCKET *fd)
 
 static int nr_socket_turn_getaddr(void *obj, nr_transport_addr *addrp)
   {
-    nr_socket_turn *sturn=obj;
+    nr_socket_turn *sturn=(nr_socket_turn*)obj;
     int r, _status;
 
     assert(sturn->magic_cookie == nr_socket_turn_magic_cookie);
@@ -174,7 +174,7 @@ static int nr_socket_turn_close(void *obj)
   {
     /* No-op */
 #ifndef NDEBUG
-    nr_socket_turn *sturn=obj;
+    nr_socket_turn *sturn=(nr_socket_turn*)obj;
     assert(sturn->magic_cookie == nr_socket_turn_magic_cookie);
 #endif
 

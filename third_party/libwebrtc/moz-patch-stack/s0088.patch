@@ -1,0 +1,42 @@
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Mon, 6 May 2024 07:28:00 +0000
+Subject: Bug 1892329 - Invert _captureThread check in
+ VideoCaptureModuleV4L2::StartCapture. r=webrtc-reviewers,mjf
+
+Differential Revision: https://phabricator.services.mozilla.com/D208186
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6ed6737b8214bf664642eb17cbf66a8c8450e569
+---
+ .../video_capture/linux/video_capture_v4l2.cc | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/modules/video_capture/linux/video_capture_v4l2.cc b/modules/video_capture/linux/video_capture_v4l2.cc
+index 0693b96bea..7e4901b566 100644
+--- a/modules/video_capture/linux/video_capture_v4l2.cc
++++ b/modules/video_capture/linux/video_capture_v4l2.cc
+@@ -306,15 +306,18 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
+   }
+ 
+   // start capture thread;
+-  if (_captureThread.empty()) {
+-    quit_ = false;
+-    _captureThread = PlatformThread::SpawnJoinable(
+-        [self = scoped_refptr(this)] {
+-          while (self->CaptureProcess()) {
+-          }
+-        },
+-        "CaptureThread", ThreadAttributes().SetPriority(ThreadPriority::kHigh));
++  if (!_captureThread.empty()) {
++    return 0;
+   }
++
++  quit_ = false;
++
++  _captureThread = PlatformThread::SpawnJoinable(
++      [self = scoped_refptr(this)] {
++        while (self->CaptureProcess()) {
++        }
++      },
++      "CaptureThread", ThreadAttributes().SetPriority(ThreadPriority::kHigh));
+   return 0;
+ }
+ 

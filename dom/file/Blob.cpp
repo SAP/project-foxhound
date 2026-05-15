@@ -5,21 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Blob.h"
+
 #include "EmptyBlobImpl.h"
 #include "File.h"
 #include "MemoryBlobImpl.h"
+#include "MultipartBlobImpl.h"
+#include "StreamBlobImpl.h"
+#include "StringBlobImpl.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/HoldDropJSObjects.h"
-#include "MultipartBlobImpl.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsIInputStream.h"
 #include "nsPIDOMWindow.h"
-#include "StreamBlobImpl.h"
-#include "StringBlobImpl.h"
 
 namespace mozilla::dom {
 

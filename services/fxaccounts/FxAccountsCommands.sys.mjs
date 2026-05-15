@@ -47,7 +47,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "idleService",
   "@mozilla.org/widget/useridleservice;1",
-  "nsIUserIdleService"
+  Ci.nsIUserIdleService
 );
 
 const TOPIC_TABS_CHANGED = "services.sync.tabs.changed";
@@ -122,7 +122,7 @@ export class FxAccountsCommands {
    * This method can be called either in response to a Push message,
    * or by itself as a "commands recovery" mechanism.
    *
-   * @param {Number} notifiedIndex "Command received" push messages include
+   * @param {number} notifiedIndex "Command received" push messages include
    * the index of the command that triggered the message. We use it as a
    * hint when we have no "last command index" stored.
    */
@@ -232,15 +232,15 @@ export class FxAccountsCommands {
           break;
         case COMMAND_SENDTAB:
           try {
-            const { title, uri } = await this.sendTab.handle(
-              senderId,
-              payload,
-              reason
-            );
+            const {
+              title,
+              uri,
+              private: isPrivate,
+            } = await this.sendTab.handle(senderId, payload, reason);
             log.info(
               `Tab received with FxA commands: "${
                 title || "<no title>"
-              }" from ${sender ? sender.name : "Unknown device"}.`
+              }" (private=${isPrivate}) from ${sender ? sender.name : "Unknown device"}.`
             );
             // URLs are PII, so only logged at trace.
             log.trace(`Tab received URL: ${uri}`);
@@ -251,7 +251,7 @@ export class FxAccountsCommands {
             if (lazy.INVALID_SHAREABLE_SCHEMES.has(scheme)) {
               throw new Error("Invalid scheme found for received URI.");
             }
-            tabsReceived.push({ title, uri, sender });
+            tabsReceived.push({ title, uri, private: isPrivate, sender });
           } catch (e) {
             log.error(`Error while handling incoming Send Tab payload.`, e);
           }
@@ -465,17 +465,22 @@ export class SendTab extends Command {
 
   /**
    * @param {Device[]} to - Device objects (typically returned by fxAccounts.getDevicesList()).
-   * @param {Object} tab
+   * @param {object} tab
    * @param {string} tab.url
    * @param {string} tab.title
+   * @param {string} tab.private
    * @returns A report object, in the shape of
    *          {succeded: [Device], error: [{device: Device, error: Exception}]}
    */
   async send(to, tab) {
-    log.info(`Sending a tab to ${to.length} devices.`);
+    log.info(
+      `Sending a ${tab.private ? "private " : ""}tab to ${to.length} devices.`
+    );
     const flowID = this._fxai.telemetry.generateFlowID();
     const encoder = new TextEncoder();
-    const data = { entries: [{ title: tab.title, url: tab.url }] };
+    const data = {
+      entries: [{ title: tab.title, url: tab.url, private: tab.private }],
+    };
     const report = {
       succeeded: [],
       failed: [],
@@ -522,7 +527,7 @@ export class SendTab extends Command {
     const current = data.hasOwnProperty("current")
       ? data.current
       : entries.length - 1;
-    const { title, url: uri } = entries[current];
+    const { title, url: uri, private: isPrivate } = entries[current];
     // `flowID` and `streamID` are in the top-level of the JSON, `entries` is
     // an array of "tabs" with `current` being what index is the one we care
     // about, or the last one if not specified.
@@ -544,6 +549,7 @@ export class SendTab extends Command {
     return {
       title,
       uri,
+      private: isPrivate,
     };
   }
 }
@@ -558,7 +564,7 @@ export class CloseRemoteTab extends Command {
 
   /**
    * @param {Device} target - Device object (typically returned by fxAccounts.getDevicesList()).
-   * @param {String[]} urls - array of urls that should be closed on the remote device
+   * @param {string[]} urls - array of urls that should be closed on the remote device
    */
   async sendCloseTabsCommand(target, urls, flowID) {
     log.info(`Sending tab closures to ${target.id} device.`);

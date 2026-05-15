@@ -187,7 +187,7 @@ void ModifyWakeLockWithChildID(const nsAString& aTopic,
         if (!entry) {
           entry.Insert(MakeUnique<ProcessLockTable>());
         } else {
-          Unused << entry.Data()->Get(aChildID, &processCount);
+          (void)entry.Data()->Get(aChildID, &processCount);
           CountWakeLocks(entry->get(), &totalCount);
         }
         return entry->get();

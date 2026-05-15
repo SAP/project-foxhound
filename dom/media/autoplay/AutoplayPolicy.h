@@ -7,7 +7,7 @@
 #if !defined(AutoplayPolicy_h_)
 #  define AutoplayPolicy_h_
 
-#  include "mozilla/NotNull.h"
+#  include <cstdint>
 
 class nsIPrincipal;
 

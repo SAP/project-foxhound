@@ -14,13 +14,13 @@
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 
 namespace mozilla {
 namespace layers {
 
 InProcessCompositorSession::InProcessCompositorSession(
-    nsBaseWidget* aWidget, widget::CompositorWidget* aCompositorWidget,
+    nsIWidget* aWidget, widget::CompositorWidget* aCompositorWidget,
     CompositorBridgeChild* aChild, CompositorBridgeParent* aParent)
     : CompositorSession(aWidget, aCompositorWidget->AsDelegate(), aChild,
                         aParent->RootLayerTreeId()),
@@ -31,7 +31,7 @@ InProcessCompositorSession::InProcessCompositorSession(
 
 /* static */
 RefPtr<InProcessCompositorSession> InProcessCompositorSession::Create(
-    nsBaseWidget* aWidget, WebRenderLayerManager* aLayerManager,
+    nsIWidget* aWidget, WebRenderLayerManager* aLayerManager,
     const LayersId& aRootLayerTreeId, CSSToLayoutDeviceScale aScale,
     const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
     const gfx::IntSize& aSurfaceSize, uint32_t aNamespace,
@@ -63,7 +63,7 @@ RefPtr<InProcessCompositorSession> InProcessCompositorSession::Create(
 void InProcessCompositorSession::NotifySessionLost() {
   // Hold a reference to mWidget since NotifyCompositorSessionLost may
   // release the last reference mid-execution.
-  RefPtr<nsBaseWidget> widget(mWidget);
+  RefPtr<nsIWidget> widget(mWidget);
   widget->NotifyCompositorSessionLost(this);
 }
 

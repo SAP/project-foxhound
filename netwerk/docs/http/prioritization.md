@@ -18,7 +18,7 @@ Firefox employs several techniques to orchestrate network request scheduling:
 ### Class of Service
 - Categorizes requests based on context or request target. See [nsIClassOfService.idl](https://searchfox.org/mozilla-central/rev/f549a50b1e39b1e6bea19912d92545c4c0a06b7b/netwerk/base/nsIClassOfService.idl#7-15)
 - Categories (e.g. [Leader, Normal, Follower, Speculative, etc](https://searchfox.org/mozilla-central/rev/f549a50b1e39b1e6bea19912d92545c4c0a06b7b/netwerk/base/nsIClassOfService.idl#69-102)) can affect both network and cache behaviours
-- May defer scheduling of certain requests (e.g., trackers classified as `ClassOfService::Tail`).
+- May defer scheduling of certain requests (e.g., trackers classified as `ClassOfService::Tail`). For detailed information about resource tailing, see [Firefox Resource Tailing Documentation](resource_tailing.md).
 - Also defines [base urgency for a request](https://searchfox.org/mozilla-central/rev/f2c181a7ab3bfea4d2266521e6eac713630479b3/netwerk/protocol/http/nsHttpHandler.cpp#794-818)
 
 ## Priority

@@ -4,9 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CDMStorageIdProvider.h"
+
 #include "GMPLog.h"
-#include "nsCOMPtr.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "nsCOMPtr.h"
 #include "nsICryptoHash.h"
 
 #ifdef SUPPORT_STORAGE_ID

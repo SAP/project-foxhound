@@ -7,13 +7,11 @@
 #ifndef dom_ipc_MemMapSnapshot_h
 #define dom_ipc_MemMapSnapshot_h
 
+#include "ErrorList.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
-#include "ErrorList.h"
 
 namespace mozilla::ipc {
 

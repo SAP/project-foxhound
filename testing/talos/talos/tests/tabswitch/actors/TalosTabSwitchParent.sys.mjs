@@ -95,7 +95,7 @@ export class TalosTabSwitchParent extends JSWindowActorParent {
     let browser = tab.linkedBrowser;
     let gBrowser = tab.ownerGlobal.gBrowser;
 
-    let start = Cu.now();
+    let start = ChromeUtils.now();
 
     // We need to wait for the TabSwitchDone event to make sure
     // that the async tab switcher has shut itself down.
@@ -151,7 +151,7 @@ export class TalosTabSwitchParent extends JSWindowActorParent {
   waitForContentPresented(browser) {
     return new Promise(resolve => {
       function onLayersReady() {
-        let now = Cu.now();
+        let now = ChromeUtils.now();
         TalosParentProfiler.mark("Browser layers seen by tabswitch");
         resolve(now);
       }

@@ -3,11 +3,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef AudioSink_h__
-#define AudioSink_h__
+#ifndef AudioSink_h_
+#define AudioSink_h_
 
-#include "AudioStream.h"
 #include "AudibilityMonitor.h"
+#include "AudioStream.h"
 #include "MediaEventSource.h"
 #include "MediaInfo.h"
 #include "MediaQueue.h"
@@ -17,7 +17,6 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Result.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -177,4 +176,4 @@ class AudioSink : private AudioStream::DataSource {
 
 }  // namespace mozilla
 
-#endif  // AudioSink_h__
+#endif  // AudioSink_h_

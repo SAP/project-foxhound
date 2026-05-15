@@ -3,14 +3,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TestMIDIPlatformService.h"
+
+#include "mozilla/dom/MIDIPlatformRunnables.h"
 #include "mozilla/dom/MIDIPort.h"
-#include "mozilla/dom/MIDITypes.h"
 #include "mozilla/dom/MIDIPortInterface.h"
 #include "mozilla/dom/MIDIPortParent.h"
-#include "mozilla/dom/MIDIPlatformRunnables.h"
+#include "mozilla/dom/MIDITypes.h"
 #include "mozilla/dom/MIDIUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/Unused.h"
 #include "nsIThread.h"
 
 using namespace mozilla;

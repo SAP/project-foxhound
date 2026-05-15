@@ -18,11 +18,11 @@ function startTest() {
   document.getElementById("content").appendChild(canvas);
 
   var helper = new CaptureStreamTestHelper2D(100, 100);
-  helper.drawColor(canvas, helper.red);
+  // Draw repeatedly to speed up delivery of the first "dataavailable" event.
+  let drawing =
+      helper.startDrawing(helper.drawColor.bind(helper, canvas, helper.red));
 
-  var stream = canvas.captureStream(0);
-
-  var blob;
+  var stream = canvas.captureStream();
 
   let mediaRecorder = new MediaRecorder(stream);
   is(mediaRecorder.stream, stream,
@@ -32,24 +32,24 @@ function startTest() {
 
   mediaRecorder.onerror = () => ok(false, "Recording failed");
 
-  mediaRecorder.ondataavailable = ev => {
-    is(blob, undefined, "Should only get one dataavailable event");
-    blob = ev.data;
-  };
-
   mediaRecorder.onstart = () => {
     info("Got 'start' event");
-    // We just want one frame encoded, to see that the recorder produces something readable.
-    mediaRecorder.stop();
   };
 
   mediaRecorder.onstop = () => {
     info("Got 'stop' event");
-    ok(blob, "Should have gotten a data blob");
+  }
+
+  mediaRecorder.ondataavailable = ev => {
+    info("Got 'dataavailable' event");
+    // We just want one frame encoded, to see that the recorder produces something readable.
+    mediaRecorder.stop();
+    mediaRecorder.ondataavailable = null;
+    drawing.stop();
 
     var video = document.createElement("video");
     video.id = "recorded-video";
-    video.src = URL.createObjectURL(blob);
+    video.src = URL.createObjectURL(ev.data);
     video.play();
     video.onerror = () => {
       ok(false, "Should be able to play the recording. Got error. code=" + video.error.code);
@@ -62,7 +62,7 @@ function startTest() {
     }).then(SimpleTest.finish);
   };
 
-  mediaRecorder.start();
+  mediaRecorder.start(1);
   is(mediaRecorder.state, "recording", "Media recorder should be recording");
 }
 

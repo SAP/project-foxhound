@@ -213,6 +213,7 @@ def get_parser():
 )
 def run_xpcshell_test(command_context, test_objects=None, **params):
     from mozbuild.controller.building import BuildDriver
+    from mozlog.handlers import ResourceHandler
 
     if test_objects is not None:
         from manifestparser import TestManifest
@@ -229,6 +230,7 @@ def run_xpcshell_test(command_context, test_objects=None, **params):
     # case the tree wasn't built with mach).
     command_context._ensure_state_subdir_exists(".")
 
+    created_logger = False
     if not params.get("log"):
         log_defaults = {
             command_context._mach_context.settings["test"]["format"]: sys.stdout
@@ -240,6 +242,8 @@ def run_xpcshell_test(command_context, test_objects=None, **params):
         params["log"] = structured.commandline.setup_logging(
             "XPCShellTests", params, log_defaults, fmt_defaults
         )
+        created_logger = True
+        params["log"].add_handler(ResourceHandler(command_context))
 
     if not params["threadCount"]:
         if sys.platform == "darwin":
@@ -315,3 +319,6 @@ def run_xpcshell_test(command_context, test_objects=None, **params):
     except InvalidTestPathError as e:
         print(str(e))
         return 1
+    finally:
+        if created_logger:
+            params["log"].shutdown()

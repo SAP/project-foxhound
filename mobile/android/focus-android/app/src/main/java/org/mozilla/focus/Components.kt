@@ -8,10 +8,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Environment
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationManagerCompat
 import mozilla.components.browser.engine.gecko.cookiebanners.GeckoCookieBannersStorage
+import mozilla.components.browser.engine.gecko.util.EngineDownloadDelegate
 import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.store.BrowserStore
@@ -22,8 +24,6 @@ import mozilla.components.feature.app.links.AppLinksInterceptor
 import mozilla.components.feature.app.links.AppLinksUseCases
 import mozilla.components.feature.contextmenu.ContextMenuUseCases
 import mozilla.components.feature.customtabs.store.CustomTabsServiceStore
-import mozilla.components.feature.downloads.DateTimeProvider
-import mozilla.components.feature.downloads.DefaultDateTimeProvider
 import mozilla.components.feature.downloads.DefaultFileSizeFormatter
 import mozilla.components.feature.downloads.DownloadEstimator
 import mozilla.components.feature.downloads.DownloadMiddleware
@@ -70,6 +70,8 @@ import mozilla.components.support.remotesettings.DefaultRemoteSettingsSyncSchedu
 import mozilla.components.support.remotesettings.RemoteSettingsServer
 import mozilla.components.support.remotesettings.RemoteSettingsService
 import mozilla.components.support.remotesettings.into
+import mozilla.components.support.utils.DateTimeProvider
+import mozilla.components.support.utils.DefaultDateTimeProvider
 import org.mozilla.focus.activity.MainActivity
 import org.mozilla.focus.browser.BlockedTrackersMiddleware
 import org.mozilla.focus.cfr.CfrMiddleware
@@ -83,6 +85,7 @@ import org.mozilla.focus.ext.components
 import org.mozilla.focus.ext.isTablet
 import org.mozilla.focus.ext.settings
 import org.mozilla.focus.media.MediaSessionService
+import org.mozilla.focus.nimbus.FocusNimbus
 import org.mozilla.focus.search.SearchFilterMiddleware
 import org.mozilla.focus.search.SearchMigration
 import org.mozilla.focus.state.AppState
@@ -153,6 +156,15 @@ class Components(
             httpsOnlyMode = settings.getHttpsOnlyMode(),
             preferredColorScheme = settings.getPreferredColorScheme(),
             cookieBannerHandlingModePrivateBrowsing = settings.getCurrentCookieBannerOptionFromSharePref().mode,
+            certificateTransparencyMode = FocusNimbus.features.pki.value().certificateTransparencyMode,
+            downloadDelegate = EngineDownloadDelegate(
+                context = context,
+                downloadLocationGetter = {
+                    Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS,
+                    ).absolutePath
+                },
+            ),
         )
     }
 
@@ -205,7 +217,7 @@ class Components(
                 AdsTelemetryMiddleware(adsTelemetry),
                 BlockedTrackersMiddleware(context),
                 RecordingDevicesMiddleware(context, notificationsDelegate),
-                CfrMiddleware(context),
+                CfrMiddleware(appStore, settings),
                 FileUploadsDirCleanerMiddleware(fileUploadsDirCleaner),
             ) + EngineMiddleware.create(
                 engine,
@@ -242,7 +254,7 @@ class Components(
 
     val contextMenuUseCases: ContextMenuUseCases by lazy { ContextMenuUseCases(store) }
 
-    val downloadsUseCases: DownloadsUseCases by lazy { DownloadsUseCases(store) }
+    val downloadsUseCases: DownloadsUseCases by lazy { DownloadsUseCases(store, context.applicationContext) }
 
     val appLinksUseCases: AppLinksUseCases by lazy { AppLinksUseCases(context.applicationContext) }
 
@@ -260,8 +272,20 @@ class Components(
         )
     }
 
+    val remoteSettingsService by lazy {
+        RemoteSettingsService(
+            context,
+            if (context.settings.useProductionRemoteSettingsServer) {
+                RemoteSettingsServer.Prod.into()
+            } else {
+                RemoteSettingsServer.Stage.into()
+            },
+            channel = BuildConfig.BUILD_TYPE,
+        )
+    }
+
     val experiments: NimbusApi by lazy {
-        createNimbus(context, BuildConfig.NIMBUS_ENDPOINT)
+        createNimbus(context, BuildConfig.NIMBUS_ENDPOINT, remoteSettingsService.remoteSettingsService)
     }
 
     val adsTelemetry: AdsTelemetry by lazy { AdsTelemetry() }
@@ -288,18 +312,6 @@ class Components(
     val dateTimeProvider: DateTimeProvider by lazy { DefaultDateTimeProvider() }
 
     val downloadEstimator: DownloadEstimator by lazy { DownloadEstimator(dateTimeProvider = dateTimeProvider) }
-
-    val remoteSettingsService by lazy {
-        RemoteSettingsService(
-            context,
-            if (context.settings.useProductionRemoteSettingsServer) {
-                RemoteSettingsServer.Prod.into()
-            } else {
-                RemoteSettingsServer.Stage.into()
-            },
-            channel = BuildConfig.BUILD_TYPE,
-        )
-    }
 }
 
 private fun createCrashReporter(context: Context): CrashReporter {

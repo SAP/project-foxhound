@@ -6,7 +6,6 @@
 #include "mozilla/a11y/Compatibility.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/dom/BrowserParent.h"
-#include "mozilla/WindowsVersion.h"
 #include "MsaaRootAccessible.h"
 #include "Relation.h"
 #include "RootAccessible.h"

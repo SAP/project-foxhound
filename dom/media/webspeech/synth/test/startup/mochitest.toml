@@ -4,3 +4,6 @@ subsuite = "media"
 support-files = ["file_voiceschanged.html"]
 
 ["test_voiceschanged.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && opt && verify-standalone",
+]

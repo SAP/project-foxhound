@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<body>
+<script>
+if (typeof VideoDecoder !== 'undefined') {
+  const decoder = new VideoDecoder({
+    output: frame => frame.close(),
+    error: e => {}
+  });
+
+  decoder.configure({
+    codec: 'vp8',
+    codedWidth: 320,
+    codedHeight: 240,
+  });
+
+  const invalidData = new Uint8Array(100);
+  const chunk = new EncodedVideoChunk({
+    type: 'key',
+    timestamp: 0,
+    data: invalidData,
+  });
+
+  decoder.decode(chunk);
+  decoder.close();
+}
+document.documentElement.className = "";
+</script>
+</body>
+</html>

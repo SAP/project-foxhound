@@ -7,12 +7,13 @@
 #ifndef DOM_SVG_SVGIMAGEELEMENT_H_
 #define DOM_SVG_SVGIMAGEELEMENT_H_
 
-#include "nsImageLoadingContent.h"
 #include "mozilla/dom/SVGAnimatedLength.h"
+#include "mozilla/dom/SVGAnimatedPreserveAspectRatio.h"
 #include "mozilla/dom/SVGAnimatedString.h"
 #include "mozilla/dom/SVGGeometryElement.h"
-#include "mozilla/dom/SVGAnimatedPreserveAspectRatio.h"
 #include "mozilla/gfx/2D.h"
+#include "nsINode.h"
+#include "nsImageLoadingContent.h"
 
 nsresult NS_NewSVGImageElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -43,6 +44,7 @@ class SVGImageElement final : public SVGImageElementBase,
   // interfaces:
 
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   // EventTarget
   void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
@@ -102,7 +104,7 @@ class SVGImageElement final : public SVGImageElementBase,
 
   already_AddRefed<Promise> Decode(ErrorResult& aRv);
 
-  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
+  static NonCustomCSSPropertyId GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   gfx::Rect GeometryBounds(const gfx::Matrix& aToBoundsSpace);
 
@@ -126,15 +128,15 @@ class SVGImageElement final : public SVGImageElementBase,
 
   nsCOMPtr<nsIURI> mSrcURI;
 
+  enum { HREF, XLINK_HREF };
+  SVGAnimatedString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
+
   enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
   SVGAnimatedLength mLengthAttributes[4];
   static LengthInfo sLengthInfo[4];
 
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
-
-  enum { HREF, XLINK_HREF };
-  SVGAnimatedString mStringAttributes[2];
-  static StringInfo sStringInfo[2];
 };
 
 }  // namespace dom

@@ -4,7 +4,7 @@
 
 :root {
   --prefs-table-border-width: 1px;
-  --prefs-table-border: var(--prefs-table-border-width) solid var(--in-content-box-border-color);
+  --prefs-table-border: var(--prefs-table-border-width) solid var(--border-color);
 }
 
 .hidden {
@@ -38,7 +38,7 @@
   z-index: 1;
   box-sizing: border-box;
   width: 100%;
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   padding: 10px;
   padding-bottom: 0;
   min-width: 644px;
@@ -99,14 +99,14 @@
 
 #prefs {
   background-color: var(--table-row-background-color);
-  color: var(--in-content-text-color);
+  color: var(--text-color);
   margin: 10px;
   table-layout: fixed;
   width: calc(100% - 20px);
   min-width: 644px;
   /* To stay consistent with about:preferences (664px - 20px margin). */
   border: var(--prefs-table-border);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   border-spacing: 0;
 }
 
@@ -115,12 +115,12 @@
 }
 
 #prefs > tr:hover {
-  background-color: var(--in-content-item-hover);
-  color: var(--in-content-item-hover-text);
+  background-color: var(--background-color-list-item-hover);
+  color: var(--text-color-list-item-hover);
 }
 
 #prefs > tr.has-user-value {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #prefs > tr.locked {
@@ -270,7 +270,7 @@ td.cell-value > form > input[type="number"] {
   /* Make it wider by the border width so the border-inline is hidden. */
   inset-inline: calc(var(--prefs-table-border-width) * -1);
   height: 12px;
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   /* This is visually the top border on the add row. */
   border-bottom: var(--prefs-table-border);
 }

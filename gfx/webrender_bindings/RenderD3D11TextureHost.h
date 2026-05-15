@@ -14,6 +14,7 @@
 #include "RenderTextureHostSWGL.h"
 
 struct ID3D11Texture2D;
+struct IDCompositionTexture;
 struct IDXGIKeyedMutex;
 
 namespace mozilla {
@@ -34,6 +35,8 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
       const gfx::IntSize aSize, const bool aHasKeyedMutex,
       const Maybe<layers::CompositeProcessFencesHolderId>& aFencesHolderId);
 
+  static bool UseDCompositionTextureOverlay(gfx::SurfaceFormat aFormat);
+
   wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL) override;
   void Unlock() override;
   void ClearCachedResources() override;
@@ -49,6 +52,8 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
 
   ID3D11Texture2D* GetD3D11Texture2DWithGL();
   ID3D11Texture2D* GetD3D11Texture2D() { return mTexture; }
+
+  IDCompositionTexture* GetDCompositionTexture();
 
   // RenderTextureHostSWGL
   gfx::SurfaceFormat GetFormat() const override { return mFormat; }
@@ -106,6 +111,7 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
   RefPtr<ID3D11Texture2D> mTexture;
   const uint32_t mArrayIndex;
   RefPtr<IDXGIKeyedMutex> mKeyedMutex;
+  RefPtr<IDCompositionTexture> mDCompositionTexture;
 
   // Temporary state between MapPlane and UnmapPlanes.
   RefPtr<ID3D11DeviceContext> mDeviceContext;
@@ -136,7 +142,7 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
 class RenderDXGIYCbCrTextureHost final : public RenderTextureHostSWGL {
  public:
   explicit RenderDXGIYCbCrTextureHost(
-      RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
+      const RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
       const gfx::YUVColorSpace aYUVColorSpace,
       const gfx::ColorDepth aColorDepth, const gfx::ColorRange aColorRange,
       const gfx::IntSize aSizeY, const gfx::IntSize aSizeCbCr,

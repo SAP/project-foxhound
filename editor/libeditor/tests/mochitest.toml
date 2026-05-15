@@ -9,7 +9,9 @@ prefs = [
 support-files = ["green.png"]
 
 ["test_CF_HTML_clipboard.html"]
-skip-if = ["os != 'mac'"] # bug 574005
+skip-if = [
+  "os != 'mac'", # bug 574005
+]
 support-files = [
   "data/cfhtml-chromium.txt",
   "data/cfhtml-firefox.txt",
@@ -21,13 +23,15 @@ support-files = [
 ["test_abs_positioner_appearance.html"]
 
 ["test_abs_positioner_hidden_during_dragging.html"]
-skip-if = ["os == 'android'"] # Sync with test_abs_positioner_positioning_elements.html
+skip-if = [
+  "os == 'android'", # Sync with test_abs_positioner_positioning_elements.html
+]
 
 ["test_abs_positioner_positioning_elements.html"]
 skip-if = [
   "os == 'android'", # Bug 1525959
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1929435
   "xorigin", # Inconsistent pass/fail in opt and debug
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1929435
 ]
 
 ["test_backspace_vs.html"]
@@ -37,7 +41,9 @@ skip-if = [
 ["test_bug200416.html"]
 
 ["test_bug289384.html"]
-skip-if = ["os != 'mac'"]
+skip-if = [
+  "os != 'mac'",
+]
 support-files = [
   "file_bug289384-1.html",
   "file_bug289384-2.html",
@@ -63,7 +69,9 @@ support-files = ["test_bug332636.html^headers^"]
 ["test_bug404320.html"]
 
 ["test_bug408231.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug410986.html"]
 
@@ -72,8 +80,6 @@ skip-if = ["os == 'android'"]
 ["test_bug417418.html"]
 
 ["test_bug426246.html"]
-
-["test_bug430392.html"]
 
 ["test_bug439808.html"]
 
@@ -99,8 +105,8 @@ skip-if = ["os == 'android'"]
 
 ["test_bug490879.html"]
 skip-if = [
-  "os == 'android'", # bug 1299578
   "headless",
+  "os == 'android'", # bug 1299578
 ]
 
 ["test_bug502673.html"]
@@ -128,14 +134,18 @@ support-files = [
 ["test_bug567213.html"]
 
 ["test_bug569988.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug570144.html"]
 
 ["test_bug578771.html"]
 
 ["test_bug586662.html"]
-skip-if = ["true"] # bug 1376382
+skip-if = [
+  "true", # bug 1376382
+]
 support-files = ["file_bug586662.html"]
 
 ["test_bug590554.html"]
@@ -177,7 +187,9 @@ support-files = [
 ["test_bug625452.html"]
 
 ["test_bug629172.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug629845.html"]
 
@@ -204,7 +216,9 @@ skip-if = [
 support-files = ["file_bug674770-1.html"]
 
 ["test_bug674770-2.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug674861.html"]
 
@@ -263,7 +277,9 @@ support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_utils.js"]
 ["test_bug796839.html"]
 
 ["test_bug830600.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug832025.html"]
 
@@ -280,11 +296,15 @@ support-files = [
 ]
 
 ["test_bug966155.html"]
-skip-if = ["os != 'win'"]
+skip-if = [
+  "os != 'win'",
+]
 support-files = ["file_bug966155.html"]
 
 ["test_bug966552.html"]
-skip-if = ["os != 'win'"]
+skip-if = [
+  "os != 'win'",
+]
 support-files = ["file_bug966552.html"]
 
 ["test_bug974309.html"]
@@ -298,7 +318,9 @@ support-files = ["file_bug966552.html"]
 ["test_bug1068979.html"]
 
 ["test_bug1102906.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_bug1109465.html"]
 
@@ -309,7 +331,9 @@ skip-if = ["os == 'android'"]
 ["test_bug1140617.html"]
 
 ["test_bug1151186.html"]
-skip-if = ["os == 'win' && ccov && xorigin"] # high frequency intermittent
+skip-if = [
+  "os == 'win' && ccov && xorigin", # high frequency intermittent
+]
 
 ["test_bug1153237.html"]
 
@@ -342,7 +366,9 @@ skip-if = ["os == 'win' && ccov && xorigin"] # high frequency intermittent
 ["test_bug1270235.html"]
 
 ["test_bug1306532.html"]
-skip-if = ["headless"]
+skip-if = [
+  "headless",
+]
 
 ["test_bug1310912.html"]
 
@@ -383,7 +409,9 @@ skip-if = ["headless"]
 ["test_bug1568996.html"]
 
 ["test_bug1574596.html"]
-skip-if = ["os == 'android'"] #Bug 1575739
+skip-if = [
+  "os == 'android'", # Bug 1575739
+]
 
 ["test_bug1581337.html"]
 
@@ -430,7 +458,9 @@ skip-if = ["os == 'android'"] #Bug 1575739
 ["test_defaultParagraphSeparatorBR_between_blocks.html"]
 
 ["test_doc_scrollbar_toggled_designMode_on_mousedown.html"]
-skip-if = ["os == 'android'"] # Needs interaction with the scrollbar
+skip-if = [
+  "os == 'android'", # Needs interaction with the scrollbar
+]
 
 ["test_dom_input_event_on_htmleditor.html"]
 
@@ -443,7 +473,9 @@ skip-if = ["os == 'android'"] # Needs interaction with the scrollbar
 ["test_editing_UI_in_plaintext-only.html"]
 
 ["test_execCommandPaste_noTarget.html"]
-skip-if = ["display == 'wayland'"] # Bug 1935188
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1935188
+]
 
 ["test_focus_caret_navigation_between_nested_editors.html"]
 
@@ -476,20 +508,32 @@ skip-if = ["display == 'wayland'"] # Bug 1935188
 ["test_label_contenteditable.html"]
 
 ["test_mailcite_backspace_at_end_of_inline_reply.html"]
-skip-if = ["xorigin"] # Testing internal API for comm-central
+skip-if = [
+  "xorigin", # Testing internal API for comm-central
+]
+
+["test_mailcite_keep_preceding_br_after_insert.html"]
+skip-if = [
+  "xorigin", # Testing internal API for comm-central
+]
 
 ["test_mailcite_keep_trailing_br_after_delete.html"]
-skip-if = ["xorigin"] # Testing internal API for comm-central
+skip-if = [
+  "xorigin", # Testing internal API for comm-central
+]
 
 ["test_middle_click_paste.html"]
 skip-if = [
   "headless",
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64' && display == 'wayland' && opt", # Bug 1870753
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1870753
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt", # Bug 1870753
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1870753
 ]
 
 ["test_native_key_bindings_in_shadow.html"]
-skip-if = ["os != 'linux' && os != 'mac'"] # Depends on NativeKeyBindings used only on Linux and macOS
+skip-if = [
+  "os == 'android'", # Depends on NativeKeyBindings used only on Linux and macOS
+  "os == 'win'", # Depends on NativeKeyBindings used only on Linux and macOS
+]
 
 ["test_nested_editor.html"]
 
@@ -498,7 +542,9 @@ skip-if = ["os != 'linux' && os != 'mac'"] # Depends on NativeKeyBindings used o
 ["test_nsIEditorMailSupport_insertAsCitedQuotation.html"]
 
 ["test_nsIEditorMailSupport_insertTextWithQuotations.html"]
-skip-if = ["xorigin"] # Testing internal API for comm-central
+skip-if = [
+  "xorigin", # Testing internal API for comm-central
+]
 
 ["test_nsIEditor_beginningOfDocument.html"]
 
@@ -599,7 +645,9 @@ skip-if = ["xorigin"] # Testing internal API for comm-central
 ["test_pasting_in_temporarily_created_div_outside_body.html"]
 
 ["test_pasting_table_rows.html"]
-skip-if = ["headless"] # The test calls `synthesizeKey`, see bug 1669923.
+skip-if = [
+  "headless", # The test calls `synthesizeKey`, see bug 1669923.
+]
 
 ["test_pasting_text_longer_than_maxlength.html"]
 
@@ -617,13 +665,22 @@ support-files = ["file_sanitizer_on_paste.sjs"]
 ["test_select_all_without_body.html"]
 support-files = ["file_select_all_without_body.html"]
 
+["test_selectable_input_event_dispatching_for_compositionend.html"]
+
+["test_selection_at_beforeinput_insertReplacementText.html"]
+skip-if = [
+  "os == 'android'", # using the spellchecker
+]
+
 ["test_selection_move_commands.html"]
 support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_utils.js"]
 
 ["test_setting_value_longer_than_maxlength_with_setUserInput.html"]
 
 ["test_spellcheck_pref.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_state_change_on_reframe.html"]
 
@@ -640,7 +697,9 @@ skip-if = ["os == 'android'"]
 ["test_typing_at_edge_of_anchor.html"]
 
 ["test_undo_after_spellchecker_replaces_word.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_undo_redo_stack_after_setting_value.html"]
 

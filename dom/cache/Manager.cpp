@@ -6,38 +6,38 @@
 
 #include "mozilla/dom/cache/Manager.h"
 
+#include "QuotaClientImpl.h"
+#include "Types.h"
+#include "mozStorageHelper.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
+#include "mozilla/dom/InternalResponse.h"
+#include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/dom/cache/Context.h"
 #include "mozilla/dom/cache/DBAction.h"
 #include "mozilla/dom/cache/DBSchema.h"
 #include "mozilla/dom/cache/FileUtils.h"
 #include "mozilla/dom/cache/ManagerId.h"
-#include "mozilla/dom/cache/CacheTypes.h"
 #include "mozilla/dom/cache/SavedTypes.h"
 #include "mozilla/dom/cache/StreamList.h"
 #include "mozilla/dom/cache/Types.h"
 #include "mozilla/dom/quota/Client.h"
 #include "mozilla/dom/quota/ClientDirectoryLock.h"
 #include "mozilla/dom/quota/ClientImpl.h"
-#include "mozilla/dom/quota/StringifyUtils.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/quota/StringifyUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozStorageHelper.h"
-#include "nsIInputStream.h"
 #include "nsID.h"
 #include "nsIFile.h"
+#include "nsIInputStream.h"
 #include "nsIThread.h"
 #include "nsIUUIDGenerator.h"
-#include "nsThreadUtils.h"
 #include "nsTObserverArray.h"
-#include "QuotaClientImpl.h"
-#include "Types.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom::cache {
 
@@ -929,6 +929,14 @@ class Manager::CachePutAllAction final : public DBAction {
         if (e.mResponseStream) {
           // Gerenate padding size for opaque response if needed.
           if (e.mResponse.type() == ResponseType::Opaque) {
+            // Validate padding size from content process.
+            // Valid values: UNKNOWN_PADDING_SIZE (-1) or non-negative.
+            // Reject any other negative values as invalid.
+            QM_TRY(OkIf(e.mResponse.paddingSize() ==
+                            InternalResponse::UNKNOWN_PADDING_SIZE ||
+                        e.mResponse.paddingSize() >= 0),
+                   NS_ERROR_UNEXPECTED);
+
             // It'll generate padding if we've not set it yet.
             QM_TRY(MOZ_TO_RESULT(BodyMaybeUpdatePaddingSize(
                 *mDirectoryMetadata, *mDBDir, e.mResponseBodyId,
@@ -2190,8 +2198,7 @@ void Manager::NoteOrphanedBodyIdList(const nsTArray<nsID>& aDeletedBodyIdList) {
   deleteNowList.SetCapacity(aDeletedBodyIdList.Length());
 
   std::copy_if(aDeletedBodyIdList.cbegin(), aDeletedBodyIdList.cend(),
-               MakeBackInserter(deleteNowList),
-               [this](const auto& deletedBodyId) {
+               MakeBackInserter(deleteNowList), [&](const auto& deletedBodyId) {
                  return !SetBodyIdOrphanedIfRefed(deletedBodyId);
                });
 

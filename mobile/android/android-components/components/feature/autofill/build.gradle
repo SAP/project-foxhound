@@ -2,29 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-parcelize'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.feature.autofill'
 }
 
 dependencies {
-    implementation platform(libs.androidx.compose.bom)
     implementation project(':components:concept-fetch')
     implementation project(':components:concept-storage')
     implementation project(':components:lib-publicsuffixlist')
@@ -37,24 +27,24 @@ dependencies {
     implementation libs.androidx.annotation
     implementation libs.androidx.autofill
     implementation libs.androidx.biometric
+    implementation libs.androidx.core.ktx
     implementation libs.androidx.fragment
     implementation libs.androidx.lifecycle.runtime
-    implementation libs.androidx.recyclerview
-    implementation libs.androidx.core.ktx
     implementation libs.androidx.preferences
+    implementation libs.androidx.recyclerview
+    implementation libs.kotlinx.coroutines
+    implementation libs.google.material
 
-    implementation libs.kotlin.coroutines
-
-    testImplementation project(':components:support-test')
     testImplementation project(':components:lib-fetch-okhttp')
+    testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.mockwebserver
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.mockwebserver
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

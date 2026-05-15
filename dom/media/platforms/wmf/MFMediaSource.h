@@ -8,11 +8,10 @@
 #include <mfidl.h>
 #include <wrl.h>
 
-#include "MediaInfo.h"
-#include "MediaEventSource.h"
 #include "MFMediaEngineExtra.h"
 #include "MFMediaEngineStream.h"
-#include "mozilla/EnumSet.h"
+#include "MediaEventSource.h"
+#include "MediaInfo.h"
 #include "mozilla/TaskQueue.h"
 
 namespace mozilla {

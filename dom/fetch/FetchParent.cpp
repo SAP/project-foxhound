@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "FetchLog.h"
 #include "FetchParent.h"
+
+#include "FetchLog.h"
 #include "FetchService.h"
 #include "InternalRequest.h"
 #include "InternalResponse.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/FetchTypes.h"
 #include "mozilla/dom/PerformanceTimingTypes.h"
@@ -30,18 +30,19 @@ FetchParent::FetchParentCSPEventListener::FetchParentCSPEventListener(
 }
 
 NS_IMETHODIMP FetchParent::FetchParentCSPEventListener::OnCSPViolationEvent(
-    const nsAString& aJSON) {
+    const nsAString& aJSON, const nsAString& aReportGroupName) {
   AssertIsOnMainThread();
   FETCH_LOG(("FetchParentCSPEventListener::OnCSPViolationEvent [%p]", this));
 
   nsAutoString json(aJSON);
-  nsCOMPtr<nsIRunnable> r =
-      NS_NewRunnableFunction(__func__, [actorID = mActorID, json]() mutable {
+  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+      __func__, [actorID = mActorID, json,
+                 reportGroup = nsString{aReportGroupName}]() mutable {
         FETCH_LOG(
             ("FetchParentCSPEventListener::OnCSPViolationEvent, Runnale"));
         RefPtr<FetchParent> actor = FetchParent::GetActorByID(actorID);
         if (actor) {
-          actor->OnCSPViolationEvent(json);
+          actor->OnCSPViolationEvent(json, reportGroup);
         }
       });
 
@@ -129,7 +130,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
           FETCH_LOG(("FetchParent::RecvFetchOp [%p] Fetch has already aborted",
                      self.get()));
           if (!self->mActorDestroyed) {
-            Unused << NS_WARN_IF(
+            (void)NS_WARN_IF(
                 !self->Send__delete__(self, NS_ERROR_DOM_ABORT_ERR));
           }
           return;
@@ -138,7 +139,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
         if (!self->mActorDestroyed && !self->mExtendForCSPEventListener) {
           FETCH_LOG(("FetchParent::RecvFetchOp [%p] Send__delete__(NS_OK)",
                      self.get()));
-          Unused << NS_WARN_IF(!self->Send__delete__(self, NS_OK));
+          (void)NS_WARN_IF(!self->Send__delete__(self, NS_OK));
         }
       },
       [self](const nsresult&& aErr) mutable {
@@ -150,7 +151,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
         if (!self->mActorDestroyed) {
           FETCH_LOG(("FetchParent::RecvFetchOp [%p] Send__delete__(aErr)",
                      self.get()));
-          Unused << NS_WARN_IF(!self->Send__delete__(self, aErr));
+          (void)NS_WARN_IF(!self->Send__delete__(self, aErr));
         }
       });
 
@@ -176,7 +177,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
       self->mResponsePromises =
           fetchService->Fetch(AsVariant(FetchService::WorkerFetchArgs(
               {self->mRequest.clonePtr(), self->mPrincipalInfo,
-               self->mWorkerScript, self->mClientInfo, self->mController,
+               self->mWorkerScript, *self->mClientInfo, self->mController,
                self->mCookieJarSettings, self->mNeedOnDataAvailable,
                self->mCSPEventListener, self->mAssociatedBrowsingContextID,
                self->mBackgroundEventTarget, self->mID,
@@ -189,6 +190,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
           fetchService->Fetch(AsVariant(FetchService::MainThreadFetchArgs({
               self->mRequest.clonePtr(),
               self->mPrincipalInfo,
+              *self->mClientInfo,
               self->mCookieJarSettings,
               self->mNeedOnDataAvailable,
               self->mCSPEventListener,
@@ -316,7 +318,7 @@ void FetchParent::OnResponseAvailableInternal(
     mExtendForCSPEventListener = true;
   }
 
-  Unused << SendOnResponseAvailableInternal(
+  (void)SendOnResponseAvailableInternal(
       aResponse->ToParentToChildInternalResponse());
 }
 
@@ -333,7 +335,7 @@ void FetchParent::OnResponseEnd(const ResponseEndArgs& aArgs) {
     return;
   }
 
-  Unused << SendOnResponseEnd(aArgs);
+  (void)SendOnResponseEnd(aArgs);
 }
 
 void FetchParent::OnDataAvailable() {
@@ -341,7 +343,7 @@ void FetchParent::OnDataAvailable() {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!mActorDestroyed);
 
-  Unused << SendOnDataAvailable();
+  (void)SendOnDataAvailable();
 }
 
 void FetchParent::OnFlushConsoleReport(
@@ -350,7 +352,7 @@ void FetchParent::OnFlushConsoleReport(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!mActorDestroyed);
 
-  Unused << SendOnFlushConsoleReport(aReports);
+  (void)SendOnFlushConsoleReport(aReports);
 }
 
 void FetchParent::OnReportPerformanceTiming(const ResponseTiming&& aTiming) {
@@ -358,7 +360,7 @@ void FetchParent::OnReportPerformanceTiming(const ResponseTiming&& aTiming) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!mActorDestroyed);
 
-  Unused << SendOnReportPerformanceTiming(aTiming);
+  (void)SendOnReportPerformanceTiming(aTiming);
 }
 
 void FetchParent::OnNotifyNetworkMonitorAlternateStack(uint64_t aChannelID) {
@@ -366,7 +368,7 @@ void FetchParent::OnNotifyNetworkMonitorAlternateStack(uint64_t aChannelID) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!mActorDestroyed);
 
-  Unused << SendOnNotifyNetworkMonitorAlternateStack(aChannelID);
+  (void)SendOnNotifyNetworkMonitorAlternateStack(aChannelID);
 }
 
 void FetchParent::ActorDestroy(ActorDestroyReason aReason) {
@@ -394,13 +396,14 @@ nsICSPEventListener* FetchParent::GetCSPEventListener() {
   return mCSPEventListener;
 }
 
-void FetchParent::OnCSPViolationEvent(const nsAString& aJSON) {
+void FetchParent::OnCSPViolationEvent(const nsAString& aJSON,
+                                      const nsAString& aReportGroupName) {
   FETCH_LOG(("FetchParent::OnCSPViolationEvent [%p]", this));
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(mHasCSPEventListener);
   MOZ_ASSERT(!mActorDestroyed);
 
-  Unused << SendOnCSPViolationEvent(aJSON);
+  (void)SendOnCSPViolationEvent(aJSON, aReportGroupName);
 }
 
 }  // namespace mozilla::dom

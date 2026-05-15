@@ -141,29 +141,27 @@ void BaseLocalIter::operator++(int) {
 
 bool BaseCompiler::createStackMap(const char* who) {
   const ExitStubMapVector noExtras;
-  return stackMapGenerator_.createStackMap(who, noExtras, masm.currentOffset(),
-                                           HasDebugFrameWithLiveRefs::No, stk_);
+  StackMap* stackMap;
+  return stackMapGenerator_.createStackMap(
+             who, noExtras, HasDebugFrameWithLiveRefs::No, stk_, &stackMap) &&
+         (!stackMap || stackMaps_->add(masm.currentOffset(), stackMap));
 }
 
 bool BaseCompiler::createStackMap(const char* who, CodeOffset assemblerOffset) {
   const ExitStubMapVector noExtras;
-  return stackMapGenerator_.createStackMap(who, noExtras,
-                                           assemblerOffset.offset(),
-                                           HasDebugFrameWithLiveRefs::No, stk_);
+  StackMap* stackMap;
+  return stackMapGenerator_.createStackMap(
+             who, noExtras, HasDebugFrameWithLiveRefs::No, stk_, &stackMap) &&
+         (!stackMap || stackMaps_->add(assemblerOffset.offset(), stackMap));
 }
 
 bool BaseCompiler::createStackMap(
     const char* who, HasDebugFrameWithLiveRefs debugFrameWithLiveRefs) {
   const ExitStubMapVector noExtras;
-  return stackMapGenerator_.createStackMap(who, noExtras, masm.currentOffset(),
-                                           debugFrameWithLiveRefs, stk_);
-}
-
-bool BaseCompiler::createStackMap(
-    const char* who, const ExitStubMapVector& extras, uint32_t assemblerOffset,
-    HasDebugFrameWithLiveRefs debugFrameWithLiveRefs) {
-  return stackMapGenerator_.createStackMap(who, extras, assemblerOffset,
-                                           debugFrameWithLiveRefs, stk_);
+  StackMap* stackMap;
+  return stackMapGenerator_.createStackMap(
+             who, noExtras, debugFrameWithLiveRefs, stk_, &stackMap) &&
+         (!stackMap || stackMaps_->add(masm.currentOffset(), stackMap));
 }
 
 bool MachineStackTracker::cloneTo(MachineStackTracker* dst) {
@@ -182,8 +180,12 @@ bool StackMapGenerator::generateStackmapEntriesForTrapExit(
 }
 
 bool StackMapGenerator::createStackMap(
-    const char* who, const ExitStubMapVector& extras, uint32_t assemblerOffset,
-    HasDebugFrameWithLiveRefs debugFrameWithLiveRefs, const StkVector& stk) {
+    const char* who, const ExitStubMapVector& extras,
+    HasDebugFrameWithLiveRefs debugFrameWithLiveRefs, const StkVector& stk,
+    wasm::StackMap** result) {
+  // Always initialize the result value
+  *result = nullptr;
+
   size_t countedPointers = machineStackTracker.numPtrs() + memRefsOnStk;
 #ifndef DEBUG
   // An important optimization.  If there are obviously no pointers, as
@@ -369,7 +371,7 @@ bool StackMapGenerator::createStackMap(
   const uint32_t augmentedMstWords = augmentedMst.length();
   const uint32_t numMappedWords =
       numStackArgPaddingWords + extraWords + augmentedMstWords;
-  StackMap* stackMap = StackMap::create(numMappedWords);
+  StackMap* stackMap = stackMaps_->create(numMappedWords);
   if (!stackMap) {
     return false;
   }
@@ -422,12 +424,6 @@ bool StackMapGenerator::createStackMap(
     stackMap->setHasDebugFrameWithLiveRefs();
   }
 
-  // Add the completed map to the running collection thereof.
-  if (!stackMaps_->add(assemblerOffset, stackMap)) {
-    stackMap->destroy();
-    return false;
-  }
-
 #ifdef DEBUG
   {
     // Crosscheck the map pointer counting.
@@ -442,6 +438,7 @@ bool StackMapGenerator::createStackMap(
   }
 #endif
 
+  *result = stackMaps_->finalize(stackMap);
   return true;
 }
 

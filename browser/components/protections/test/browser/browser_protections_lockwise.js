@@ -194,8 +194,8 @@ add_task(async function testLockwiseCardUIWithLogins() {
     );
   });
 
-  Services.logins.removeLogin(TEST_LOGIN1);
-  Services.logins.removeLogin(TEST_LOGIN2);
+  await Services.logins.removeLoginAsync(TEST_LOGIN1);
+  await Services.logins.removeLoginAsync(TEST_LOGIN2);
 
   gBrowser.removeTab(tab);
 });
@@ -256,7 +256,7 @@ add_task(async function testLockwiseCardUIWithBreachedLogins() {
   });
 
   AboutProtectionsParent.setTestOverride(null);
-  Services.logins.removeLogin(TEST_LOGIN1);
+  await Services.logins.removeLoginAsync(TEST_LOGIN1);
   gBrowser.removeTab(tab);
 });
 

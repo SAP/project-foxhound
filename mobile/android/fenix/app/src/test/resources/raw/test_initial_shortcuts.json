@@ -1,0 +1,61 @@
+{
+  "data": [
+    {
+      "id": "1",
+      "url": "https://www.example1.com/",
+      "title": "US Region Site",
+      "order": 0,
+      "schema": 1,
+      "include_regions": ["US"],
+      "last_modified": 1
+    },
+    {
+      "id": "2",
+      "url": "https://www.example2.com/",
+      "title": "CA Excluded Region Site",
+      "order": 1,
+      "schema": 1,
+      "exclude_regions": ["CA"],
+      "last_modified": 1
+    },
+    {
+      "id": "3",
+      "url": "https://www.example3.com/",
+      "title": "All Region Site",
+      "order": 2,
+      "schema": 1,
+      "last_modified": 1
+    },
+    {
+      "id": "4",
+      "url": "https://www.example4.com/",
+      "title": "",
+      "order": 3,
+      "schema": 1,
+      "last_modified": 1
+    },
+    {
+      "id": "5",
+      "url": "https://www.example5.com/",
+      "order": 4,
+      "schema": 1,
+      "last_modified": 1
+    },
+    {
+      "id": "6",
+      "url": "https://www.example6.com/",
+      "order": 5,
+      "schema": 1,
+      "include_experiments": ["firefox-jp-guide-default-site"],
+      "last_modified": 1
+    },
+    {
+      "id": "7",
+      "url": "https://www.example7.com/",
+      "order": 6,
+      "schema": 1,
+      "include_experiments": ["test"],
+      "last_modified": 1
+    }
+  ]
+}

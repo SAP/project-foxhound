@@ -380,8 +380,8 @@ impl FontTransform {
             // The X axis has been swapped with the Y axis
             SubpixelDirection::Vertical
         } else {
-            // Use subpixel precision on all axes
-            SubpixelDirection::Mixed
+            // Mixed transforms get no subpixel positioning
+            SubpixelDirection::None
         }
     }
 }
@@ -1032,7 +1032,6 @@ pub enum SubpixelDirection {
     None = 0,
     Horizontal,
     Vertical,
-    Mixed,
 }
 
 impl SubpixelDirection {
@@ -1047,7 +1046,7 @@ impl SubpixelDirection {
 
     pub fn swap_xy(self) -> Self {
         match self {
-            SubpixelDirection::None | SubpixelDirection::Mixed => self,
+            SubpixelDirection::None => self,
             SubpixelDirection::Horizontal => SubpixelDirection::Vertical,
             SubpixelDirection::Vertical => SubpixelDirection::Horizontal,
         }
@@ -1099,10 +1098,26 @@ impl Into<f64> for SubpixelOffset {
     }
 }
 
+impl SubpixelOffset {
+    fn to_f32(self) -> f32 {
+        match self {
+            SubpixelOffset::Zero => 0.0,
+            SubpixelOffset::Quarter => 0.25,
+            SubpixelOffset::Half => 0.5,
+            SubpixelOffset::ThreeQuarters => 0.75,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, Ord, PartialOrd)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct GlyphKey(u32);
+
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, Ord, PartialOrd)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct GlyphCacheKey(u32);
 
 impl GlyphKey {
     pub fn new(
@@ -1114,24 +1129,50 @@ impl GlyphKey {
             SubpixelDirection::None => (0.0, 0.0),
             SubpixelDirection::Horizontal => (point.x, 0.0),
             SubpixelDirection::Vertical => (0.0, point.y),
-            SubpixelDirection::Mixed => (point.x, point.y),
         };
         let sox = SubpixelOffset::quantize(dx);
         let soy = SubpixelOffset::quantize(dy);
-        assert_eq!(0, index & 0xF0000000);
+        assert_eq!(0, index & 0xFC000000);
 
-        GlyphKey(index | (sox as u32) << 28 | (soy as u32) << 30)
+        GlyphKey(index | (sox as u32) << 26 | (soy as u32) << 28 | (subpx_dir as u32) << 30)
     }
 
     pub fn index(&self) -> GlyphIndex {
-        self.0 & 0x0FFFFFFF
+        self.0 & 0x03FFFFFF
     }
 
-    fn subpixel_offset(&self) -> (SubpixelOffset, SubpixelOffset) {
-        let x = (self.0 >> 28) as u8 & 3;
-        let y = (self.0 >> 30) as u8 & 3;
+    pub fn subpixel_offset(&self) -> (SubpixelOffset, SubpixelOffset) {
+        let x = (self.0 >> 26) as u8 & 3;
+        let y = (self.0 >> 28) as u8 & 3;
         unsafe {
             (mem::transmute(x), mem::transmute(y))
+        }
+    }
+
+    pub fn subpixel_dir(&self) -> SubpixelDirection {
+        let dir = (self.0 >> 30) as u8 & 3;
+        unsafe {
+            mem::transmute(dir as u32)
+        }
+    }
+
+    pub fn cache_key(&self) -> GlyphCacheKey {
+        let index = self.index();
+        let subpx_dir = self.subpixel_dir();
+        assert_eq!(0, index & 0xFC000000);
+        GlyphCacheKey(index | (subpx_dir as u32) << 30)
+    }
+}
+
+impl GlyphCacheKey {
+    pub fn index(&self) -> GlyphIndex {
+        self.0 & 0x03FFFFFF
+    }
+
+    pub fn subpixel_dir(&self) -> SubpixelDirection {
+        let dir = ((self.0 >> 30) & 3) as u32;
+        unsafe {
+            mem::transmute(dir)
         }
     }
 }
@@ -1292,6 +1333,7 @@ pub struct RasterizedGlyph {
     pub scale: f32,
     pub format: GlyphFormat,
     pub bytes: Vec<u8>,
+    pub is_packed_glyph: bool,
 }
 
 impl RasterizedGlyph {
@@ -1669,6 +1711,69 @@ pub type GlyphRasterResult = Result<RasterizedGlyph, GlyphRasterError>;
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct GpuGlyphCacheKey(pub u32);
 
+fn pack_glyph_variants_horizontal(variants: &[RasterizedGlyph]) -> RasterizedGlyph {
+    // Pack 4 glyph variants horizontally into a single texture.
+    // Normalize both left and top offsets via padding so all variants can use the same base offsets.
+
+    let min_left = variants.iter().map(|v| v.left.floor()).fold(f32::INFINITY, f32::min);
+    let max_top = variants.iter().map(|v| v.top.floor()).fold(f32::NEG_INFINITY, f32::max);
+
+    // Slot width must accommodate the widest variant plus left padding
+    let slot_width = variants.iter()
+        .map(|v| v.width + (v.left.floor() - min_left) as i32)
+        .max().unwrap();
+
+    // Slot height must accommodate the tallest variant plus top padding
+    let slot_height = variants.iter()
+        .map(|v| v.height + (max_top - v.top.floor()) as i32)
+        .max().unwrap();
+
+    let packed_width = slot_width * 4;
+    let bpp = 4;
+
+    let mut packed_bytes = vec![0u8; (packed_width * slot_height * bpp) as usize];
+
+    for (variant_idx, variant) in variants.iter().enumerate() {
+        // Compute padding needed to normalize both left and top offsets
+        let left_pad = (variant.left.floor() - min_left) as i32;
+        let top_pad = (max_top - variant.top.floor()) as i32;
+        let slot_x = variant_idx as i32 * slot_width;
+
+        for src_y in 0..variant.height {
+            let dst_y = src_y + top_pad;
+            if dst_y >= slot_height {
+                break;
+            }
+
+            let dst_x = slot_x + left_pad;
+            if dst_x < 0 {
+                continue;
+            }
+
+            let src_row_start = (src_y * variant.width * bpp) as usize;
+            let src_row_end = src_row_start + (variant.width * bpp) as usize;
+            let dst_row_start = (dst_y * packed_width * bpp + dst_x * bpp) as usize;
+            let dst_row_end = dst_row_start + (variant.width * bpp) as usize;
+
+            if dst_row_end <= packed_bytes.len() && src_row_end <= variant.bytes.len() {
+                packed_bytes[dst_row_start..dst_row_end]
+                    .copy_from_slice(&variant.bytes[src_row_start..src_row_end]);
+            }
+        }
+    }
+
+    RasterizedGlyph {
+        top: max_top,
+        left: min_left,
+        width: packed_width,
+        height: slot_height,
+        scale: variants[0].scale,
+        format: variants[0].format,
+        bytes: packed_bytes,
+        is_packed_glyph: true,
+    }
+}
+
 fn process_glyph(
     context: &mut FontContext,
     can_use_r8_format: bool,
@@ -1676,7 +1781,44 @@ fn process_glyph(
     key: GlyphKey,
 ) -> GlyphRasterJob {
     profile_scope!("glyph-raster");
-    let result = context.rasterize_glyph(&font, &key);
+
+    let subpx_dir = key.subpixel_dir();
+
+    let result = if subpx_dir == SubpixelDirection::None {
+        context.rasterize_glyph(&font, &key)
+    } else {
+        let offsets = [
+            SubpixelOffset::Zero,
+            SubpixelOffset::Quarter,
+            SubpixelOffset::Half,
+            SubpixelOffset::ThreeQuarters,
+        ];
+
+        let mut variants = Vec::with_capacity(4);
+        for offset in &offsets {
+            let variant_key = GlyphKey::new(
+                key.index(),
+                match subpx_dir {
+                    SubpixelDirection::Horizontal => DevicePoint::new(offset.to_f32(), 0.0),
+                    SubpixelDirection::Vertical => DevicePoint::new(0.0, offset.to_f32()),
+                    SubpixelDirection::None => DevicePoint::zero(),
+                },
+                subpx_dir,
+            );
+
+            match context.rasterize_glyph(&font, &variant_key) {
+                Ok(glyph) => variants.push(glyph),
+                Err(e) => return GlyphRasterJob {
+                    font: font,
+                    key: key.clone(),
+                    result: Err(e),
+                },
+            }
+        }
+
+        Ok(pack_glyph_variants_horizontal(&variants))
+    };
+
     let mut job = GlyphRasterJob {
         font: font,
         key: key.clone(),

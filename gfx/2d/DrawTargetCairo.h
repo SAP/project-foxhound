@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_GFX_DRAWTARGET_CAIRO_H_
-#define _MOZILLA_GFX_DRAWTARGET_CAIRO_H_
+#ifndef MOZILLA_GFX_DRAWTARGET_CAIRO_H_
+#define MOZILLA_GFX_DRAWTARGET_CAIRO_H_
 
 #include "2D.h"
 #include "cairo.h"
@@ -48,7 +48,6 @@ class GradientStopsCairo : public GradientStops {
 class DrawTargetCairo final : public DrawTarget {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawTargetCairo, override)
-  friend class BorrowedXlibDrawable;
 
   DrawTargetCairo();
   virtual ~DrawTargetCairo();
@@ -186,6 +185,8 @@ class DrawTargetCairo final : public DrawTarget {
 
   // Cairo hardcodes this as its maximum surface size.
   static size_t GetMaxSurfaceSize() { return 32766; }
+  // Cairo assumes the surface area will fit in a 32-bit signed integer.
+  static size_t GetMaxSurfaceArea() { return 0x7FFFFFFF; }
 
  private:  // methods
   // Init cairo surface without doing a cairo_surface_reference() call.
@@ -252,4 +253,4 @@ class DrawTargetCairo final : public DrawTarget {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _MOZILLA_GFX_DRAWTARGET_CAIRO_H_
+#endif  // MOZILLA_GFX_DRAWTARGET_CAIRO_H_

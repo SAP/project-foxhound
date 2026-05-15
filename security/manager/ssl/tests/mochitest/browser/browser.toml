@@ -22,17 +22,25 @@ https_first_disabled = true
 ["browser_certificateManager.js"]
 
 ["browser_clientAuthRememberService.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_clientAuth_connection.js"]
 # Any test that has to delete certificates (e.g. as part of cleanup) is
 # fundamentally incompatible with verify due to how NSS handles deleting
 # certificates.
-skip-if = ["socketprocess_networking"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && msix && verify-standalone",
+  "socketprocess_networking",
+]
 
 ["browser_clientAuth_fetch_from_extension.js"]
 
 ["browser_clientAuth_speculative_connection.js"]
-skip-if = ["socketprocess_networking"]
+skip-if = [
+  "socketprocess_networking",
+]
 
 ["browser_clientAuth_ui.js"]
 
@@ -43,7 +51,9 @@ skip-if = ["socketprocess_networking"]
 ["browser_editCACertTrust.js"]
 # An earlier attempt at landing this test resulted in frequent intermittent
 # failures, almost entirely on Linux. See Bug 1309519.
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]
 
 ["browser_exportP12_passwordUI.js"]
 

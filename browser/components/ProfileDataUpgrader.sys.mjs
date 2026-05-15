@@ -13,7 +13,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/FirefoxBridgeExtensionUtils.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
 });
 
@@ -263,7 +262,7 @@ export let ProfileDataUpgrader = {
       // from default placement. This is done early enough that it doesn't
       // impact adding new managed bookmarks.
       const { CustomizableUI } = ChromeUtils.importESModule(
-        "resource:///modules/CustomizableUI.sys.mjs"
+        "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
       );
       CustomizableUI.removeWidgetFromArea("managed-bookmarks");
     }
@@ -316,11 +315,6 @@ export let ProfileDataUpgrader = {
         !oldPrefValue
       );
       Services.prefs.clearUserPref(oldPrefName);
-    }
-
-    // Initialize the new browser.urlbar.showSuggestionsBeforeGeneral pref.
-    if (existingDataVersion < 106) {
-      lazy.UrlbarPrefs.initializeShowSearchSuggestionsFirstPref();
     }
 
     if (existingDataVersion < 107) {
@@ -903,6 +897,60 @@ export let ProfileDataUpgrader = {
     if (AppConstants.NIGHTLY_BUILD && existingDataVersion === 158) {
       lazy.LoginHelper.setOSAuthEnabled(false);
       lazy.FormAutofillUtils.setOSAuthEnabled(false);
+    }
+
+    if (existingDataVersion < 159) {
+      // Bug 1979014 / bug 1980398 - autohide attribute becomes a real boolean attribute.
+      let menubarWasEnabled =
+        Services.xulStore.getValue(
+          BROWSER_DOCURL,
+          "toolbar-menubar",
+          "autohide"
+        ) == "false";
+      if (menubarWasEnabled) {
+        Services.xulStore.setValue(
+          BROWSER_DOCURL,
+          "toolbar-menubar",
+          "autohide",
+          "-moz-missing\n"
+        );
+      }
+    }
+
+    if (existingDataVersion < 160) {
+      // Force all logins to be re-encrypted to make use of more modern crypto.
+      // This pref is checked in the initialization of the LoginManagerStorage.
+      Services.prefs.setBoolPref("signon.reencryptionNeeded", true);
+    }
+
+    if (existingDataVersion < 164) {
+      const { PREF_BOOL, PREF_INT, PREF_STRING } = Services.prefs;
+      const METHODS = {
+        [PREF_BOOL]: ["getBoolPref", "setBoolPref"],
+        [PREF_INT]: ["getIntPref", "setIntPref"],
+        [PREF_STRING]: ["getStringPref", "setStringPref"],
+      };
+      const OLD_PREFIX = "browser.aiwindow.";
+      for (let oldPref of Services.prefs.getChildList(OLD_PREFIX)) {
+        let prefType = Services.prefs.getPrefType(oldPref);
+        if (
+          !Services.prefs.prefHasUserValue(oldPref) ||
+          !Object.hasOwn(METHODS, prefType)
+        ) {
+          continue;
+        }
+        let newPref =
+          "browser.smartwindow." + oldPref.substring(OLD_PREFIX.length);
+        let [getter, setter] = METHODS[prefType];
+        Services.prefs[setter](newPref, Services.prefs[getter](oldPref));
+        Services.prefs.clearUserPref(oldPref);
+      }
+    }
+
+    // Updating from 161 to 165 to trigger re-migrations of the Rusts store.
+    if (existingDataVersion < 165) {
+      // Force all logins to be re-migrated to the rust store.
+      Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
     }
 
     // Update the migration version.

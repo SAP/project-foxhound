@@ -2,18 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _JSEPTRANSCEIVER_H_
-#define _JSEPTRANSCEIVER_H_
+#ifndef JSEPTRANSCEIVER_H_
+#define JSEPTRANSCEIVER_H_
 
 #include <string>
 
+#include "jsep/JsepTrack.h"
+#include "jsep/JsepTransport.h"
+#include "nsError.h"
+#include "sdp/Sdp.h"
 #include "sdp/SdpAttribute.h"
 #include "sdp/SdpMediaSection.h"
-#include "sdp/Sdp.h"
-#include "jsep/JsepTransport.h"
-#include "jsep/JsepTrack.h"
-
-#include "nsError.h"
 
 namespace mozilla {
 
@@ -217,4 +216,4 @@ class JsepTransceiver {
 
 }  // namespace mozilla
 
-#endif  // _JSEPTRANSCEIVER_H_
+#endif  // JSEPTRANSCEIVER_H_

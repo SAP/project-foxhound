@@ -10,8 +10,8 @@
  * via XMLHttpRequest).
  */
 
-#ifndef nsDataDocumentContentPolicy_h__
-#define nsDataDocumentContentPolicy_h__
+#ifndef nsDataDocumentContentPolicy_h_
+#define nsDataDocumentContentPolicy_h_
 
 /* 1147d32c-215b-4014-b180-07fe7aedf915 */
 #define NS_DATADOCUMENTCONTENTPOLICY_CID \
@@ -20,7 +20,6 @@
   "@mozilla.org/data-document-content-policy;1"
 
 #include "nsIContentPolicy.h"
-#include "mozilla/Attributes.h"
 
 class nsDataDocumentContentPolicy final : public nsIContentPolicy {
   ~nsDataDocumentContentPolicy() = default;
@@ -32,4 +31,4 @@ class nsDataDocumentContentPolicy final : public nsIContentPolicy {
   nsDataDocumentContentPolicy() = default;
 };
 
-#endif /* nsDataDocumentContentPolicy_h__ */
+#endif /* nsDataDocumentContentPolicy_h_ */

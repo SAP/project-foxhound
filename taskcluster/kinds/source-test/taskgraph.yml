@@ -4,13 +4,14 @@
 ---
 diff:
     description: Generates diffs of CI changes
-    platform: linux1804-64/opt
-    worker-type: t-linux-docker
+    platform: linux
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: "lint"}
         max-run-time: 2400
+        env:
+            TASKGRAPH_SERIAL: "1"
         # Uncomment to upload logs of the generations as artifacts.
-        # env:
         #     XDG_CACHE_HOME: "/builds/worker/artifacts/cache"
         artifacts:
             - type: directory
@@ -29,6 +30,7 @@ diff:
             base_rev: base_rev
         substitution-fields:
             - run.command
+    run-on-repo-type: [hg]
     run:
         using: run-task
         cwd: '{checkout}'
@@ -40,4 +42,4 @@ diff:
         files-changed:
             - 'taskcluster/kinds/**'
             - 'taskcluster/**/*.py'
-            - 'third_party/python/taskcluster_taskgraph/**/*.py'
+            - 'taskcluster/requirements.txt'

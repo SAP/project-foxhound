@@ -6,8 +6,8 @@
 
 #include "mozilla/dom/SVGPathSegment.h"
 
-#include "mozilla/dom/SVGPathElementBinding.h"
 #include "SVGPathSegUtils.h"
+#include "mozilla/dom/SVGPathElementBinding.h"
 
 namespace mozilla::dom {
 
@@ -20,6 +20,30 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(SVGPathSegment, mSVGPathElement)
 
 //----------------------------------------------------------------------
 // Implementation
+void SVGPathSegment::AppendEndPoint(const StyleEndPoint<StyleCSSFloat>& point) {
+  if (point.IsToPosition()) {
+    const auto& pos = point.AsToPosition();
+    mValues.AppendElement(pos.horizontal);
+    mValues.AppendElement(pos.vertical);
+  } else if (point.IsByCoordinate()) {
+    const auto& coord = point.AsByCoordinate();
+    mValues.AppendElement(coord.x);
+    mValues.AppendElement(coord.y);
+  }
+}
+
+void SVGPathSegment::AppendControlPoint(
+    const StyleCurveControlPoint<StyleCSSFloat>& point) {
+  if (point.IsAbsolute()) {
+    const auto& pos = point.AsAbsolute();
+    mValues.AppendElement(pos.horizontal);
+    mValues.AppendElement(pos.vertical);
+  } else if (point.IsRelative()) {
+    const auto& rel_point = point.AsRelative();
+    mValues.AppendElement(rel_point.coord.x);
+    mValues.AppendElement(rel_point.coord.y);
+  }
+}
 
 SVGPathSegment::SVGPathSegment(SVGPathElement* aSVGPathElement,
                                const StylePathCommand& aCommand)
@@ -29,66 +53,55 @@ SVGPathSegment::SVGPathSegment(SVGPathElement* aSVGPathElement,
       mCommand.AssignLiteral("Z");
       break;
     case StylePathCommand::Tag::Move:
-      mCommand.AssignLiteral(aCommand.move.by_to == StyleByTo::To ? "M" : "m");
-      mValues.AppendElement(aCommand.move.point.x);
-      mValues.AppendElement(aCommand.move.point.y);
+      mCommand.AssignLiteral(aCommand.move.point.IsToPosition() ? "M" : "m");
+      AppendEndPoint(aCommand.move.point);
       break;
     case StylePathCommand::Tag::Line:
-      mCommand.AssignLiteral(aCommand.line.by_to == StyleByTo::To ? "L" : "l");
-      mValues.AppendElement(aCommand.line.point.x);
-      mValues.AppendElement(aCommand.line.point.y);
+      mCommand.AssignLiteral(aCommand.line.point.IsToPosition() ? "L" : "l");
+      AppendEndPoint(aCommand.line.point);
       break;
     case StylePathCommand::Tag::CubicCurve:
-      mCommand.AssignLiteral(aCommand.cubic_curve.by_to == StyleByTo::To ? "C"
-                                                                         : "c");
-      mValues.AppendElement(aCommand.cubic_curve.control1.x);
-      mValues.AppendElement(aCommand.cubic_curve.control1.y);
-      mValues.AppendElement(aCommand.cubic_curve.control2.x);
-      mValues.AppendElement(aCommand.cubic_curve.control2.y);
-      mValues.AppendElement(aCommand.cubic_curve.point.x);
-      mValues.AppendElement(aCommand.cubic_curve.point.y);
+      mCommand.AssignLiteral(aCommand.cubic_curve.point.IsToPosition() ? "C"
+                                                                       : "c");
+      AppendControlPoint(aCommand.cubic_curve.control1);
+      AppendControlPoint(aCommand.cubic_curve.control2);
+      AppendEndPoint(aCommand.cubic_curve.point);
       break;
     case StylePathCommand::Tag::QuadCurve:
-      mCommand.AssignLiteral(aCommand.quad_curve.by_to == StyleByTo::To ? "Q"
-                                                                        : "q");
-      mValues.AppendElement(aCommand.quad_curve.control1.x);
-      mValues.AppendElement(aCommand.quad_curve.control1.y);
-      mValues.AppendElement(aCommand.quad_curve.point.x);
-      mValues.AppendElement(aCommand.quad_curve.point.y);
+      mCommand.AssignLiteral(aCommand.quad_curve.point.IsToPosition() ? "Q"
+                                                                      : "q");
+      AppendControlPoint(aCommand.quad_curve.control1);
+      AppendEndPoint(aCommand.quad_curve.point);
       break;
-    case StylePathCommand::Tag::Arc:
-      mCommand.AssignLiteral(aCommand.arc.by_to == StyleByTo::To ? "A" : "a");
-      mValues.AppendElement(aCommand.arc.radii.x);
-      mValues.AppendElement(aCommand.arc.radii.y);
+    case StylePathCommand::Tag::Arc: {
+      mCommand.AssignLiteral(aCommand.arc.point.IsToPosition() ? "A" : "a");
+      const auto r = aCommand.arc.radii.ToGfxPoint();
+      mValues.AppendElement(r.x);
+      mValues.AppendElement(r.y);
       mValues.AppendElement(aCommand.arc.rotate);
       mValues.AppendElement(aCommand.arc.arc_size == StyleArcSize::Large);
       mValues.AppendElement(aCommand.arc.arc_sweep == StyleArcSweep::Cw);
-      mValues.AppendElement(aCommand.arc.point.x);
-      mValues.AppendElement(aCommand.arc.point.y);
+      AppendEndPoint(aCommand.arc.point);
       break;
+    }
     case StylePathCommand::Tag::HLine:
-      mCommand.AssignLiteral(aCommand.h_line.by_to == StyleByTo::To ? "H"
-                                                                    : "h");
-      mValues.AppendElement(aCommand.h_line.x);
+      mCommand.AssignLiteral(aCommand.h_line.x.IsToPosition() ? "H" : "h");
+      mValues.AppendElement(aCommand.h_line.x.ToGfxCoord());
       break;
     case StylePathCommand::Tag::VLine:
-      mCommand.AssignLiteral(aCommand.v_line.by_to == StyleByTo::To ? "V"
-                                                                    : "v");
-      mValues.AppendElement(aCommand.v_line.y);
+      mCommand.AssignLiteral(aCommand.v_line.y.IsToPosition() ? "V" : "v");
+      mValues.AppendElement(aCommand.v_line.y.ToGfxCoord());
       break;
     case StylePathCommand::Tag::SmoothCubic:
-      mCommand.AssignLiteral(
-          aCommand.smooth_cubic.by_to == StyleByTo::To ? "S" : "s");
-      mValues.AppendElement(aCommand.smooth_cubic.control2.x);
-      mValues.AppendElement(aCommand.smooth_cubic.control2.y);
-      mValues.AppendElement(aCommand.smooth_cubic.point.x);
-      mValues.AppendElement(aCommand.smooth_cubic.point.y);
+      mCommand.AssignLiteral(aCommand.smooth_cubic.point.IsToPosition() ? "S"
+                                                                        : "s");
+      AppendControlPoint(aCommand.smooth_cubic.control2);
+      AppendEndPoint(aCommand.smooth_cubic.point);
       break;
     case StylePathCommand::Tag::SmoothQuad:
-      mCommand.AssignLiteral(aCommand.smooth_quad.by_to == StyleByTo::To ? "T"
-                                                                         : "t");
-      mValues.AppendElement(aCommand.smooth_quad.point.x);
-      mValues.AppendElement(aCommand.smooth_quad.point.y);
+      mCommand.AssignLiteral(aCommand.smooth_quad.point.IsToPosition() ? "T"
+                                                                       : "t");
+      AppendEndPoint(aCommand.smooth_quad.point);
       break;
   }
 }

@@ -15,6 +15,7 @@ kind-dependencies:
     - release-bouncer-sub
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: notify-release-drivers-promote
     description: Sends email to release-drivers telling release was promoted.
     run-on-projects: []

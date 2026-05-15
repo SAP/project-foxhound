@@ -20,7 +20,7 @@
 .command-bar-button:disabled {
   cursor: default;
 
-  & .img {
+  & .dbg-img {
     background-color: var(--theme-icon-disabled-color);
   }
 }

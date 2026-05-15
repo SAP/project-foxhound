@@ -9,42 +9,13 @@
 #ifndef mozilla_CheckedInt_h
 #define mozilla_CheckedInt_h
 
-#include <stdint.h>
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/IntegerTypeTraits.h"
+#include "mozilla/CheckedArithmetic.h"
+
+#include <cstdint>
 #include <limits>
 #include <type_traits>
-
-#define MOZILLA_CHECKEDINT_COMPARABLE_VERSION(major, minor, patch) \
-  (major << 16 | minor << 8 | patch)
-
-// Probe for builtin math overflow support.  Disabled for 32-bit builds for now
-// since "gcc -m32" claims to support these but its implementation is buggy.
-// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=82274
-// Also disabled for clang before version 7 (resp. Xcode clang 10.0.1): while
-// clang 5 and 6 have a working __builtin_add_overflow, it is not constexpr.
-#if defined(HAVE_64BIT_BUILD)
-#  if defined(__has_builtin) &&                                        \
-      (!defined(__clang_major__) ||                                    \
-       (!defined(__apple_build_version__) && __clang_major__ >= 7) ||  \
-       (defined(__apple_build_version__) &&                            \
-        MOZILLA_CHECKEDINT_COMPARABLE_VERSION(                         \
-            __clang_major__, __clang_minor__, __clang_patchlevel__) >= \
-            MOZILLA_CHECKEDINT_COMPARABLE_VERSION(10, 0, 1)))
-#    define MOZ_HAS_BUILTIN_OP_OVERFLOW (__has_builtin(__builtin_add_overflow))
-#  elif defined(__GNUC__)
-// (clang also defines __GNUC__ but it supports __has_builtin since at least
-//  v3.1 (released in 2012) so it won't get here.)
-#    define MOZ_HAS_BUILTIN_OP_OVERFLOW (__GNUC__ >= 5)
-#  else
-#    define MOZ_HAS_BUILTIN_OP_OVERFLOW (0)
-#  endif
-#else
-#  define MOZ_HAS_BUILTIN_OP_OVERFLOW (0)
-#endif
-
-#undef MOZILLA_CHECKEDINT_COMPARABLE_VERSION
 
 namespace mozilla {
 
@@ -63,8 +34,6 @@ namespace detail {
  * For example, on GCC 4.6, aside from the basic integer types, the only other
  * type that isn't just a typedef for some of them, is int8_t.
  */
-
-struct UnsupportedType {};
 
 template <typename IntegerType>
 struct IsSupportedPass2 {
@@ -177,33 +146,6 @@ struct IsSupportedPass2<unsigned long long> {
  * Ideas taken from IntegerLib, code different.
  */
 
-template <typename IntegerType, size_t Size = sizeof(IntegerType)>
-struct TwiceBiggerType {
-  typedef typename detail::StdintTypeForSizeAndSignedness<
-      sizeof(IntegerType) * 2, std::is_signed_v<IntegerType>>::Type Type;
-};
-
-template <typename IntegerType>
-struct TwiceBiggerType<IntegerType, 8> {
-  typedef UnsupportedType Type;
-};
-
-template <typename T>
-constexpr bool HasSignBit(T aX) {
-  // In C++, right bit shifts on negative values is undefined by the standard.
-  // Notice that signed-to-unsigned conversions are always well-defined in the
-  // standard, as the value congruent modulo 2**n as expected. By contrast,
-  // unsigned-to-signed is only well-defined if the value is representable.
-  return bool(std::make_unsigned_t<T>(aX) >> PositionOfSignBit<T>::value);
-}
-
-// Bitwise ops may return a larger type, so it's good to use this inline
-// helper guaranteeing that the result is really of type T.
-template <typename T>
-constexpr T BinaryComplement(T aX) {
-  return ~aX;
-}
-
 template <typename T, typename U, bool IsTSigned = std::is_signed_v<T>,
           bool IsUSigned = std::is_signed_v<U>>
 struct DoesRangeContainRange {};
@@ -267,95 +209,6 @@ struct IsInRangeImpl<T, U, false, true, false> {
 template <typename T, typename U>
 constexpr bool IsInRange(U aX) {
   return IsInRangeImpl<T, U>::run(aX);
-}
-
-template <typename T>
-constexpr bool IsAddValid(T aX, T aY) {
-#if MOZ_HAS_BUILTIN_OP_OVERFLOW
-  T dummy;
-  return !__builtin_add_overflow(aX, aY, &dummy);
-#else
-  // Addition is valid if the sign of aX+aY is equal to either that of aX or
-  // that of aY. Since the value of aX+aY is undefined if we have a signed
-  // type, we compute it using the unsigned type of the same size.  Beware!
-  // These bitwise operations can return a larger integer type, if T was a
-  // small type like int8_t, so we explicitly cast to T.
-
-  std::make_unsigned_t<T> ux = aX;
-  std::make_unsigned_t<T> uy = aY;
-  std::make_unsigned_t<T> result = ux + uy;
-  return std::is_signed_v<T>
-             ? HasSignBit(BinaryComplement(T((result ^ aX) & (result ^ aY))))
-             : BinaryComplement(aX) >= aY;
-#endif
-}
-
-template <typename T>
-constexpr bool IsSubValid(T aX, T aY) {
-#if MOZ_HAS_BUILTIN_OP_OVERFLOW
-  T dummy;
-  return !__builtin_sub_overflow(aX, aY, &dummy);
-#else
-  // Subtraction is valid if either aX and aY have same sign, or aX-aY and aX
-  // have same sign. Since the value of aX-aY is undefined if we have a signed
-  // type, we compute it using the unsigned type of the same size.
-  std::make_unsigned_t<T> ux = aX;
-  std::make_unsigned_t<T> uy = aY;
-  std::make_unsigned_t<T> result = ux - uy;
-
-  return std::is_signed_v<T>
-             ? HasSignBit(BinaryComplement(T((result ^ aX) & (aX ^ aY))))
-             : aX >= aY;
-#endif
-}
-
-template <typename T, bool IsTSigned = std::is_signed_v<T>,
-          bool TwiceBiggerTypeIsSupported =
-              IsSupported<typename TwiceBiggerType<T>::Type>::value>
-struct IsMulValidImpl {};
-
-template <typename T, bool IsTSigned>
-struct IsMulValidImpl<T, IsTSigned, true> {
-  static constexpr bool run(T aX, T aY) {
-    typedef typename TwiceBiggerType<T>::Type TwiceBiggerType;
-    TwiceBiggerType product = TwiceBiggerType(aX) * TwiceBiggerType(aY);
-    return IsInRange<T>(product);
-  }
-};
-
-template <typename T>
-struct IsMulValidImpl<T, true, false> {
-  static constexpr bool run(T aX, T aY) {
-    const T max = std::numeric_limits<T>::max();
-    const T min = std::numeric_limits<T>::min();
-
-    if (aX == 0 || aY == 0) {
-      return true;
-    }
-    if (aX > 0) {
-      return aY > 0 ? aX <= max / aY : aY >= min / aX;
-    }
-
-    // If we reach this point, we know that aX < 0.
-    return aY > 0 ? aX >= min / aY : aY >= max / aX;
-  }
-};
-
-template <typename T>
-struct IsMulValidImpl<T, false, false> {
-  static constexpr bool run(T aX, T aY) {
-    return aY == 0 || aX <= std::numeric_limits<T>::max() / aY;
-  }
-};
-
-template <typename T>
-constexpr bool IsMulValid(T aX, T aY) {
-#if MOZ_HAS_BUILTIN_OP_OVERFLOW
-  T dummy;
-  return !__builtin_mul_overflow(aX, aY, &dummy);
-#else
-  return IsMulValidImpl<T>::run(aX, aY);
-#endif
 }
 
 template <typename T>
@@ -684,34 +537,28 @@ class CheckedInt {
       return CheckedInt<T>(T(0), false);                                    \
     }                                                                       \
     /* For some T, arithmetic ops automatically promote to a wider type, so \
-     * explitly do the narrowing cast here.  The narrowing cast is valid    \
+     * explicitly do the narrowing cast here.  The narrowing cast is valid  \
      * because we did the "Is##NAME##Valid" check above. */                 \
     return CheckedInt<T>(T(aLhs.mValue OP aRhs.mValue),                     \
                          aLhs.mIsValid && aRhs.mIsValid);                   \
   }
 
-#if MOZ_HAS_BUILTIN_OP_OVERFLOW
-#  define MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(NAME, OP, FUN)       \
-    template <typename T>                                            \
-    constexpr CheckedInt<T> operator OP(const CheckedInt<T>& aLhs,   \
-                                        const CheckedInt<T>& aRhs) { \
-      auto result = T{};                                             \
-      if (FUN(aLhs.mValue, aRhs.mValue, &result)) {                  \
-        static_assert(detail::IsInRange<T>(0),                       \
-                      "Integer type can't represent 0");             \
-        return CheckedInt<T>(T(0), false);                           \
-      }                                                              \
-      return CheckedInt<T>(result, aLhs.mIsValid && aRhs.mIsValid);  \
-    }
-MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Add, +, __builtin_add_overflow)
-MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Sub, -, __builtin_sub_overflow)
-MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Mul, *, __builtin_mul_overflow)
-#  undef MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2
-#else
-MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR(Add, +)
-MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR(Sub, -)
-MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR(Mul, *)
-#endif
+#define MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(NAME, OP, FUN)       \
+  template <typename T>                                            \
+  constexpr CheckedInt<T> operator OP(const CheckedInt<T>& aLhs,   \
+                                      const CheckedInt<T>& aRhs) { \
+    auto result = T{};                                             \
+    if (MOZ_UNLIKELY(!FUN(aLhs.mValue, aRhs.mValue, &result))) {   \
+      static_assert(detail::IsInRange<T>(0),                       \
+                    "Integer type can't represent 0");             \
+      return CheckedInt<T>(T(0), false);                           \
+    }                                                              \
+    return CheckedInt<T>(result, aLhs.mIsValid && aRhs.mIsValid);  \
+  }
+MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Add, +, SafeAdd)
+MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Sub, -, SafeSub)
+MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2(Mul, *, SafeMul)
+#undef MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR2
 
 MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR(Div, /)
 MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR(Mod, %)
@@ -719,7 +566,7 @@ MOZ_CHECKEDINT_BASIC_BINARY_OPERATOR(Mod, %)
 
 // Implement castToCheckedInt<T>(x), making sure that
 //  - it allows x to be either a CheckedInt<T> or any integer type
-//    that can be casted to T
+//    that can be cast to T
 //  - if x is already a CheckedInt<T>, we just return a reference to it,
 //    instead of copying it (optimization)
 

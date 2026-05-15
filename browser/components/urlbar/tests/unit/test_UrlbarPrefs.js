@@ -39,212 +39,197 @@ add_task(function test() {
   );
 });
 
-// Tests UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }).
-add_task(function makeResultGroups_true() {
-  Assert.deepEqual(
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
+const EXPECTED_SUGGESTIONS_FIRST_GROUPS = {
+  children: [
+    // heuristic
     {
+      maxResultCount: 1,
       children: [
-        // heuristic
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
         {
-          maxResultCount: 1,
+          group: UrlbarUtils.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
+        },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+      ],
+    },
+    // extensions using the omnibox API
+    {
+      group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
+    },
+    // main group
+    {
+      flexChildren: true,
+      children: [
+        // suggestions
+        {
+          flex: 2,
           children: [
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
             {
-              group:
-                UrlbarUtils.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
+              flexChildren: true,
+              children: [
+                {
+                  flex: 2,
+                  group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
+                },
+                {
+                  flex: 99,
+                  group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
+                },
+                {
+                  flex: 4,
+                  group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
+                },
+              ],
             },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+            {
+              group: UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
+            },
           ],
         },
-        // extensions using the omnibox API
+        // general
         {
-          group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
-        },
-        // main group
-        {
-          flexChildren: true,
+          group: UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
+          flex: 1,
           children: [
-            // suggestions
             {
-              flex: 2,
+              availableSpan: 3,
+              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+            },
+            {
+              flexChildren: true,
               children: [
                 {
-                  flexChildren: true,
-                  children: [
-                    {
-                      flex: 2,
-                      group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
-                    },
-                    {
-                      flex: 99,
-                      group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
-                    },
-                    {
-                      flex: 4,
-                      group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
-                    },
-                  ],
+                  flex: 1,
+                  group: UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
                 },
                 {
-                  group: UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
+                  flex: 2,
+                  group: UrlbarUtils.RESULT_GROUP.GENERAL,
+                  orderBy: "frecency",
+                },
+                {
+                  flex: 2,
+                  group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
+                },
+                {
+                  flex: 99,
+                  group: UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
                 },
               ],
             },
-            // general
             {
-              group: UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
-              flex: 1,
-              children: [
-                {
-                  availableSpan: 3,
-                  group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
-                },
-                {
-                  flexChildren: true,
-                  children: [
-                    {
-                      flex: 1,
-                      group: UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
-                    },
-                    {
-                      flex: 2,
-                      group: UrlbarUtils.RESULT_GROUP.GENERAL,
-                      orderBy: "frecency",
-                    },
-                    {
-                      flex: 2,
-                      group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
-                    },
-                    {
-                      flex: 99,
-                      group: UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
-                    },
-                  ],
-                },
-                {
-                  group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
-                },
-              ],
+              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
             },
           ],
         },
       ],
-    }
-  );
-});
+    },
+  ],
+};
 
-// Tests UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }).
-add_task(function makeResultGroups_false() {
-  Assert.deepEqual(
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }),
-
+const EXPECTED_NOT_SUGGESTIONS_FIRST_GROUPS = {
+  children: [
+    // heuristic
     {
+      maxResultCount: 1,
       children: [
-        // heuristic
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
         {
-          maxResultCount: 1,
+          group: UrlbarUtils.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
+        },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
+        { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+      ],
+    },
+    // extensions using the omnibox API
+    {
+      group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
+    },
+    // main group
+    {
+      flexChildren: true,
+      children: [
+        // general
+        {
+          group: UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
+          flex: 2,
           children: [
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
             {
-              group:
-                UrlbarUtils.RESULT_GROUP.HEURISTIC_RESTRICT_KEYWORD_AUTOFILL,
+              availableSpan: 3,
+              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
             },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
-            { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+            {
+              flexChildren: true,
+              children: [
+                {
+                  flex: 1,
+                  group: UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
+                },
+                {
+                  flex: 2,
+                  group: UrlbarUtils.RESULT_GROUP.GENERAL,
+                  orderBy: "frecency",
+                },
+                {
+                  flex: 2,
+                  group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
+                },
+                {
+                  flex: 99,
+                  group: UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
+                },
+              ],
+            },
+            {
+              group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+            },
           ],
         },
-        // extensions using the omnibox API
+        // suggestions
         {
-          group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
-        },
-        // main group
-        {
-          flexChildren: true,
+          flex: 1,
           children: [
-            // general
             {
-              group: UrlbarUtils.RESULT_GROUP.GENERAL_PARENT,
-              flex: 2,
+              flexChildren: true,
               children: [
                 {
-                  availableSpan: 3,
-                  group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+                  flex: 2,
+                  group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
                 },
                 {
-                  flexChildren: true,
-                  children: [
-                    {
-                      flex: 1,
-                      group: UrlbarUtils.RESULT_GROUP.REMOTE_TAB,
-                    },
-                    {
-                      flex: 2,
-                      group: UrlbarUtils.RESULT_GROUP.GENERAL,
-                      orderBy: "frecency",
-                    },
-                    {
-                      flex: 2,
-                      group: UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
-                    },
-                    {
-                      flex: 99,
-                      group: UrlbarUtils.RESULT_GROUP.RESTRICT_SEARCH_KEYWORD,
-                    },
-                  ],
+                  flex: 99,
+                  group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
                 },
                 {
-                  group: UrlbarUtils.RESULT_GROUP.INPUT_HISTORY,
+                  flex: 4,
+                  group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
                 },
               ],
             },
-            // suggestions
             {
-              flex: 1,
-              children: [
-                {
-                  flexChildren: true,
-                  children: [
-                    {
-                      flex: 2,
-                      group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
-                    },
-                    {
-                      flex: 99,
-                      group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
-                    },
-                    {
-                      flex: 4,
-                      group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION,
-                    },
-                  ],
-                },
-                {
-                  group: UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
-                },
-              ],
+              group: UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION,
             },
           ],
         },
       ],
-    }
-  );
-});
+    },
+  ],
+};
 
 // Tests interaction between showSearchSuggestionsFirst and resultGroups.
 add_task(function showSearchSuggestionsFirst_resultGroups() {
@@ -255,40 +240,48 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
     "showSearchSuggestionsFirst is true initially"
   );
   Assert.deepEqual(
-    UrlbarPrefs.resultGroups,
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
-    "resultGroups is the same as the groups for which howSearchSuggestionsFirst is true"
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "urlbar", searchString: "test" },
+    }),
+    EXPECTED_SUGGESTIONS_FIRST_GROUPS,
+    "resultGroups is the same as the groups for which showSearchSuggestionsFirst is true"
   );
 
-  // Set showSearchSuggestionsFirst = false.
   UrlbarPrefs.set("showSearchSuggestionsFirst", false);
   Assert.deepEqual(
-    UrlbarPrefs.resultGroups,
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }),
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "urlbar", searchString: "test" },
+    }),
+    EXPECTED_NOT_SUGGESTIONS_FIRST_GROUPS,
     "resultGroups is updated after setting showSearchSuggestionsFirst = false"
   );
 
-  // Set showSearchSuggestionsFirst = true.
   UrlbarPrefs.set("showSearchSuggestionsFirst", true);
   Assert.deepEqual(
-    UrlbarPrefs.resultGroups,
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "urlbar", searchString: "test" },
+    }),
+    EXPECTED_SUGGESTIONS_FIRST_GROUPS,
     "resultGroups is updated after setting showSearchSuggestionsFirst = true"
   );
 
   // Set showSearchSuggestionsFirst = false again so we can clear it next.
   UrlbarPrefs.set("showSearchSuggestionsFirst", false);
   Assert.deepEqual(
-    UrlbarPrefs.resultGroups,
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: false }),
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "urlbar", searchString: "test" },
+    }),
+    EXPECTED_NOT_SUGGESTIONS_FIRST_GROUPS,
     "resultGroups is updated after setting showSearchSuggestionsFirst = false"
   );
 
   // Clear showSearchSuggestionsFirst.
   Services.prefs.clearUserPref("browser.urlbar.showSearchSuggestionsFirst");
   Assert.deepEqual(
-    UrlbarPrefs.resultGroups,
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
+    UrlbarPrefs.getResultGroups({
+      context: { sapName: "urlbar", searchString: "test" },
+    }),
+    EXPECTED_SUGGESTIONS_FIRST_GROUPS,
     "resultGroups is updated immediately after clearing showSearchSuggestionsFirst"
   );
   Assert.equal(
@@ -296,79 +289,6 @@ add_task(function showSearchSuggestionsFirst_resultGroups() {
     true,
     "showSearchSuggestionsFirst defaults to true after clearing it"
   );
-  Assert.deepEqual(
-    UrlbarPrefs.resultGroups,
-    UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true }),
-    "resultGroups remains correct after getting showSearchSuggestionsFirst"
-  );
-});
-
-// Tests UrlbarPrefs.initializeShowSearchSuggestionsFirstPref() and the
-// interaction between matchGroups, showSearchSuggestionsFirst, and
-// resultGroups.  It's a little complex, but the flow is:
-//
-// 1. The old matchGroups pref has some value
-// 2. UrlbarPrefs.initializeShowSearchSuggestionsFirstPref() is called to
-//    translate matchGroups into the newer showSearchSuggestionsFirst pref
-// 3. The update to showSearchSuggestionsFirst causes the new resultGroups
-//    pref to be set
-add_task(function initializeShowSearchSuggestionsFirstPref() {
-  // Each value in `tests`: [matchGroups, expectedShowSearchSuggestionsFirst]
-  let tests = [
-    ["suggestion:4,general:Infinity", true],
-    ["suggestion:4,general:5", true],
-    ["suggestion:1,general:5,suggestion:Infinity", true],
-    ["suggestion:Infinity", true],
-    ["suggestion:4", true],
-
-    ["foo:1,suggestion:4,general:Infinity", true],
-    ["foo:2,suggestion:4,general:5", true],
-    ["foo:3,suggestion:1,general:5,suggestion:Infinity", true],
-    ["foo:4,suggestion:Infinity", true],
-    ["foo:5,suggestion:4", true],
-
-    ["general:5,suggestion:Infinity", false],
-    ["general:5,suggestion:4", false],
-    ["general:1,suggestion:4,general:Infinity", false],
-    ["general:Infinity", false],
-    ["general:5", false],
-
-    ["foo:1,general:5,suggestion:Infinity", false],
-    ["foo:2,general:5,suggestion:4", false],
-    ["foo:3,general:1,suggestion:4,general:Infinity", false],
-    ["foo:4,general:Infinity", false],
-    ["foo:5,general:5", false],
-
-    ["", true],
-    ["bogus groups", true],
-  ];
-
-  for (let [matchGroups, expectedValue] of tests) {
-    info("Running test: " + JSON.stringify({ matchGroups, expectedValue }));
-    Services.prefs.clearUserPref("browser.urlbar.showSearchSuggestionsFirst");
-
-    // Set matchGroups.
-    Services.prefs.setCharPref("browser.urlbar.matchGroups", matchGroups);
-
-    // Call initializeShowSearchSuggestionsFirstPref.
-    UrlbarPrefs.initializeShowSearchSuggestionsFirstPref();
-
-    // Both showSearchSuggestionsFirst and resultGroups should be updated.
-    Assert.equal(
-      Services.prefs.getBoolPref("browser.urlbar.showSearchSuggestionsFirst"),
-      expectedValue,
-      "showSearchSuggestionsFirst has the expected value"
-    );
-    Assert.deepEqual(
-      UrlbarPrefs.resultGroups,
-      UrlbarPrefs.makeResultGroups({
-        showSearchSuggestionsFirst: expectedValue,
-      }),
-      "resultGroups should be updated with the appropriate default"
-    );
-  }
-
-  Services.prefs.clearUserPref("browser.urlbar.matchGroups");
 });
 
 // Tests whether observer.onNimbusChanged works.
@@ -462,4 +382,50 @@ add_task(async function onPrefChanged() {
     "browser.urlbar.autoFill.adaptiveHistory.enabled"
   );
   await doCleanup();
+});
+
+// Tests add function.
+add_task(async function add() {
+  info("Start from empty value");
+  Services.prefs.setStringPref(
+    "browser.urlbar.quicksuggest.realtimeOptIn.notNowTypes",
+    ""
+  );
+  let result = UrlbarPrefs.get("quicksuggest.realtimeOptIn.notNowTypes");
+  Assert.equal(result.size, 0);
+  UrlbarPrefs.add("quicksuggest.realtimeOptIn.notNowTypes", "a");
+  UrlbarPrefs.add("quicksuggest.realtimeOptIn.notNowTypes", "b");
+  UrlbarPrefs.add("quicksuggest.realtimeOptIn.notNowTypes", "a");
+  result = UrlbarPrefs.get("quicksuggest.realtimeOptIn.notNowTypes");
+  Assert.equal(result.size, 2);
+  Assert.ok(result.has("a"));
+  Assert.ok(result.has("b"));
+
+  info("Start from some values");
+  Services.prefs.setStringPref(
+    "browser.urlbar.quicksuggest.realtimeOptIn.notNowTypes",
+    "a,b,c"
+  );
+  result = UrlbarPrefs.get("quicksuggest.realtimeOptIn.notNowTypes");
+  Assert.equal(result.size, 3);
+  UrlbarPrefs.add("quicksuggest.realtimeOptIn.notNowTypes", "a");
+  UrlbarPrefs.add("quicksuggest.realtimeOptIn.notNowTypes", "b");
+  UrlbarPrefs.add("quicksuggest.realtimeOptIn.notNowTypes", "a");
+  UrlbarPrefs.add("quicksuggest.realtimeOptIn.notNowTypes", "d");
+  result = UrlbarPrefs.get("quicksuggest.realtimeOptIn.notNowTypes");
+  Assert.equal(result.size, 4);
+  Assert.ok(result.has("a"));
+  Assert.ok(result.has("b"));
+  Assert.ok(result.has("c"));
+  Assert.ok(result.has("d"));
+
+  info("Test for singular value pref");
+  Assert.throws(
+    () => UrlbarPrefs.add("merino.providers", "a"),
+    /The pref merino.providers should handle the values as Set but 'string'/
+  );
+  Assert.throws(
+    () => UrlbarPrefs.add("addons.featureGate", true),
+    /The pref addons.featureGate should handle the values as Set but 'boolean'/
+  );
 });

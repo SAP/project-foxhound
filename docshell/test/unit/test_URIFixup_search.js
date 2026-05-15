@@ -119,13 +119,13 @@ add_task(async function setup() {
     true
   );
 
-  await Services.search.setDefault(
-    Services.search.getEngineByName(kSearchEngineID),
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  await SearchService.setDefault(
+    SearchService.getEngineByName(kSearchEngineID),
+    SearchService.CHANGE_REASON.UNKNOWN
   );
-  await Services.search.setDefaultPrivate(
-    Services.search.getEngineByName(kPrivateSearchEngineID),
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+  await SearchService.setDefaultPrivate(
+    SearchService.getEngineByName(kPrivateSearchEngineID),
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 });
 

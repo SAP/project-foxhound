@@ -4,9 +4,7 @@
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  FormAutofill: "resource://autofill/FormAutofill.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
-  MLAutofill: "resource://autofill/MLAutofill.sys.mjs",
 });
 
 /**
@@ -100,11 +98,8 @@ export class FieldDetail {
     fieldName = null,
     {
       autocompleteInfo = null,
-      fathomLabel = null,
       fathomConfidence = null,
       isVisible = true,
-      mlHeaderInput = null,
-      mlButtonInput = null,
       isLookup = false,
     } = {}
   ) {
@@ -138,23 +133,6 @@ export class FieldDetail {
     } else if (fathomConfidence) {
       fieldDetail.reason = "fathom";
       fieldDetail.confidence = fathomConfidence;
-
-      // TODO: This should be removed once we support reference field info across iframe.
-      // Temporarily add an addtional "the field is the only visible input" constraint
-      // when determining whether a form has only a high-confidence cc-* field a valid
-      // credit card section. We can remove this restriction once we are confident
-      // about only using fathom.
-      fieldDetail.isOnlyVisibleFieldWithHighConfidence = false;
-      if (
-        fieldDetail.confidence >
-        lazy.FormAutofillUtils.ccFathomHighConfidenceThreshold
-      ) {
-        const root = element.form || element.ownerDocument;
-        const inputs = root.querySelectorAll("input:not([type=hidden])");
-        if (inputs.length == 1 && inputs[0] == element) {
-          fieldDetail.isOnlyVisibleFieldWithHighConfidence = true;
-        }
-      }
     } else {
       fieldDetail.reason = "regex-heuristic";
     }
@@ -172,17 +150,6 @@ export class FieldDetail {
 
     // Info required by heuristics
     fieldDetail.maxLength = element.maxLength;
-
-    if (
-      lazy.FormAutofill.isMLExperimentEnabled &&
-      ["input", "select"].includes(element.localName)
-    ) {
-      fieldDetail.mlinput = lazy.MLAutofill.getMLMarkup(fieldDetail.element);
-      fieldDetail.mlHeaderInput = mlHeaderInput;
-      fieldDetail.mlButtonInput = mlButtonInput;
-      fieldDetail.fathomLabel = fathomLabel;
-      fieldDetail.fathomConfidence = fathomConfidence;
-    }
 
     fieldDetail.isLookup = isLookup;
 
@@ -256,6 +223,19 @@ export class FieldScanner {
     }
 
     return this.#fieldDetails[index];
+  }
+
+  getFieldsMatching(matchFn, includeInvisible = false) {
+    let fields = [];
+
+    for (let idx = 0; this.elementExisting(idx); idx++) {
+      let field = this.#fieldDetails[idx];
+      if ((includeInvisible || field.isVisible) && matchFn(field)) {
+        fields.push(field);
+      }
+    }
+
+    return fields;
   }
 
   /**

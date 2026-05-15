@@ -98,7 +98,8 @@ async function test_hint_asset(testName, asset, variant) {
     variant === "cached" &&
     numConnectBackRemaining === 1
   ) {
-    // If the navigation cache is enabled (dom.script_loader.navigation_cache),
+    // If the navigation cache is enabled
+    // (dom.script_loader.experimental.navigation_cache),
     // the script can be cached in the per-process cache storage, and in that
     // case the channel isn't opened, and the "earlyhints-connectback"
     // notification isn't observed.

@@ -12,27 +12,27 @@
 }
 
 .list-item:not(.selected):hover {
-  background-color: var(--in-content-button-background-hover);
-  color: var(--in-content-button-text-color-hover);
+  background-color: var(--button-background-color-hover);
+  color: var(--button-text-color-hover);
 }
 
 .list-item:not(.selected):hover:active {
-  background-color: var(--in-content-button-background-active);
-  color: var(--in-content-button-text-color-active);
+  background-color: var(--button-background-color-active);
+  color: var(--button-text-color-active);
 }
 
 .list-item.keyboard-selected {
-  border-inline-start-color: var(--in-content-border-color);
-  background-color: var(--in-content-button-background-hover);
+  border-inline-start-color: var(--border-color);
+  background-color: var(--button-background-color-hover);
 }
 
 .list-item.selected {
-  border-inline-start-color: var(--color-accent-primary);
-  background-color: var(--in-content-page-background);
+  border-inline-start-color: var(--border-color-selected);
+  background-color: var(--background-color-canvas);
 }
 
 .list-item.selected .title {
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
 }
 
 .labels {

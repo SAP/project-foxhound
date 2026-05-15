@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_ApplicationAccessible_h__
-#define mozilla_a11y_ApplicationAccessible_h__
+#ifndef mozilla_a11y_ApplicationAccessible_h_
+#define mozilla_a11y_ApplicationAccessible_h_
 
 #include "AccessibleWrap.h"
 
@@ -37,9 +37,10 @@ class ApplicationAccessible : public AccessibleWrap {
   virtual nsRect BoundsInAppUnits() const override;
   virtual already_AddRefed<AccAttributes> NativeAttributes() override;
   virtual GroupPos GroupPosition() override;
-  virtual ENameValueFlag Name(nsString& aName) const override;
+  virtual ENameValueFlag DirectName(nsString& aName) const override;
   virtual void ApplyARIAState(uint64_t* aState) const override;
-  virtual void Description(nsString& aDescription) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual void Value(nsString& aValue) const override;
   virtual mozilla::a11y::role NativeRole() const override;
   virtual uint64_t State() override;

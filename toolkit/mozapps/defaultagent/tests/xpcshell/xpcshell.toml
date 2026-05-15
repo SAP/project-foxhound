@@ -1,5 +1,7 @@
 [DEFAULT]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_backgroundtask_defaultagent.js"]
 

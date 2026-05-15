@@ -15,6 +15,10 @@ browser.jar:
     content/browser/sidebar/sidebar-page.mjs
     content/browser/sidebar/sidebar-panel-header.css
     content/browser/sidebar/sidebar-panel-header.mjs
+    content/browser/sidebar/sidebar-permissions.mjs
+    content/browser/sidebar/sidebar-permissions-ui.mjs
+    content/browser/sidebar/sidebar-pins-promo.css
+    content/browser/sidebar/sidebar-pins-promo.mjs
     content/browser/sidebar/sidebar-syncedtabs.html
     content/browser/sidebar/sidebar-syncedtabs.mjs
     content/browser/sidebar/sidebar-tab-list.css

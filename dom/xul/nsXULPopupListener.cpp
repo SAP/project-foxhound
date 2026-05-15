@@ -9,34 +9,34 @@
  */
 
 #include "nsXULPopupListener.h"
+
 #include "XULButtonElement.h"
-#include "nsCOMPtr.h"
-#include "nsGkAtoms.h"
-#include "nsContentUtils.h"
-#include "nsXULPopupManager.h"
-#include "nsIScriptContext.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "nsServiceManagerUtils.h"
-#include "nsLayoutUtils.h"
-#include "mozilla/ReflowInput.h"
-#include "nsIObjectLoadingContent.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ReflowInput.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"  // for Event
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/MouseEventBinding.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsIObjectLoadingContent.h"
+#include "nsIScriptContext.h"
+#include "nsLayoutUtils.h"
+#include "nsServiceManagerUtils.h"
+#include "nsXULPopupManager.h"
 
 // for event firing in context menus
-#include "nsPresContext.h"
+#include "nsError.h"
 #include "nsFocusManager.h"
 #include "nsPIDOMWindow.h"
-#include "nsViewManager.h"
-#include "nsError.h"
+#include "nsPresContext.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

@@ -1,9 +1,21 @@
 [DEFAULT]
 subsuite = "webgpu"
-# This file's tests should run when 'modules/libpref/init/StaticPrefList.yaml'
-# defaults the 'dom.webgpu.enabled' pref to true.
-run-if = ["!early_beta_or_earlier && os != 'win'"]
-skip-if = ["verify"] # `test-verify` jobs don't guarantee a GPU, so skip them.
+# This file's tests should run when WebGPU is disabled by the default
+# value of `dom.webgpu.enabled` in `modules/libpref/init/StaticPrefList.yaml`.
+#
+# This condition should be the same as the `run-if` condition in
+# `mochitest.toml`, except for `verify`.
+skip-if = [
+  "early_beta_or_earlier",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+  "os == 'win'",
+  "verify", # `test-verify` jobs don't guarantee a GPU, so skip them.
+]
+prefs = [
+  "gfx.webgpu.ignore-blocklist=true", # https://bugzilla.mozilla.org/show_bug.cgi?id=1985348
+]
 
 # Even if the pref were enabled, WebGPU is only available in secure contexts.
 #

@@ -1,8 +1,10 @@
 import codecs
 import logging
 import os
+import platform
 import re
 import shutil
+import stat
 import sys
 from collections.abc import Iterable
 from datetime import datetime, timedelta
@@ -22,6 +24,31 @@ L10N_SOURCE_NAME = "l10n-source"
 L10N_SOURCE_REPO = "https://github.com/mozilla-l10n/firefox-l10n-source.git"
 
 PULL_AFTER = timedelta(days=2)
+
+
+def handle_rmtree_error(func, path, exc_info):
+    """
+    Custom error handler for shutil.rmtree().
+    Attempts to change file permissions if a permission error occurs.
+    """
+    if func == os.unlink and isinstance(exc_info[0], PermissionError):
+        print(
+            f"Permission error encountered for: {path}. Attempting to change permissions."
+        )
+        try:
+            os.chmod(path, stat.S_IWRITE)  # Make the file writable
+            func(path)  # Retry the removal
+        except Exception as e:
+            print(f"Failed to remove {path} even after changing permissions: {e}")
+            raise  # Re-raise the original exception if retry fails
+    else:
+        raise exc_info[0].with_traceback(exc_info[1], exc_info[2])
+
+
+def remove_readonly(func, path, _):
+    "Clear the readonly bit and reattempt the removal"
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def inspect_migration(path):
@@ -101,7 +128,15 @@ def test_migration(
     )
 
     if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
+        # in python 3.12+ we can use onexc=
+        pyver = platform.python_version()
+        major, minor, _ = pyver.split(".")
+        # 3.12 deprecated onerror and introduced onexc.
+        if int(major) >= 3 and int(minor) >= 12:
+            shutil.rmtree(work_dir, onexc=remove_readonly)
+        else:
+            shutil.rmtree(work_dir, onerror=handle_rmtree_error)
+
     os.makedirs(join(work_dir, "reference"))
     l10n_toml = join(cmd.topsrcdir, cmd.substs["MOZ_BUILD_APP"], "locales", "l10n.toml")
     pc = TOMLParser().parse(l10n_toml, env={"l10n_base": work_dir})

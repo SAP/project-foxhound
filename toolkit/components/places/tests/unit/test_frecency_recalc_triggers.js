@@ -13,7 +13,7 @@
  *  - changing url of a bookmark
  *
  * Also check setting a frecency resets recalc_frecency to 0.
- **/
+ */
 
 const TEST_URL = "https://example.com/";
 const TEST_URL_2 = "https://example2.com/";

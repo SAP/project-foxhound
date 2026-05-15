@@ -26,8 +26,8 @@ pub enum StringListMetric {
     Child(ChildMetricMeta),
 }
 
-crate::define_metric_metadata_getter!(StringListMetric, STRING_LIST_MAP);
-crate::define_metric_namer!(StringListMetric);
+define_metric_metadata_getter!(StringListMetric, STRING_LIST_MAP);
+define_metric_namer!(StringListMetric);
 
 impl StringListMetric {
     /// Create a new string list metric.
@@ -131,34 +131,6 @@ impl StringList for StringListMetric {
         }
     }
 
-    /// **Test-only API.**
-    ///
-    /// Get the currently stored values.
-    /// This doesn't clear the stored value.
-    ///
-    /// ## Arguments
-    ///
-    /// * `storage_name` - the storage name to look into.
-    ///
-    /// ## Return value
-    ///
-    /// Returns the stored value or `None` if nothing stored.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<Vec<String>> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        match self {
-            StringListMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            StringListMetric::Child(meta) => {
-                panic!(
-                    "Cannot get test value for {:?} in non-parent process!",
-                    meta.id
-                )
-            }
-        }
-    }
-
     /// **Exported for test purposes.**
     ///
     /// Gets the number of recorded errors for the given error type.
@@ -183,6 +155,35 @@ impl StringList for StringListMetric {
     }
 }
 
+#[inherent]
+impl glean::TestGetValue for StringListMetric {
+    type Output = Vec<String>;
+
+    /// **Test-only API.**
+    ///
+    /// Get the currently stored values.
+    /// This doesn't clear the stored value.
+    ///
+    /// ## Arguments
+    ///
+    /// * `storage_name` - the storage name to look into.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the stored value or `None` if nothing stored.
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<Vec<String>> {
+        match self {
+            StringListMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            StringListMetric::Child(meta) => {
+                panic!(
+                    "Cannot get test value for {:?} in non-parent process!",
+                    meta.id
+                )
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::{common_test::*, ipc, metrics};
@@ -199,7 +200,9 @@ mod test {
 
         assert_eq!(
             vec!["test_string_value", "another test value"],
-            metric.test_get_value("test-ping").unwrap()
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 
@@ -232,7 +235,9 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
         assert_eq!(
             vec!["test_string_value", "another test value"],
-            parent_metric.test_get_value("test-ping").unwrap()
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 }

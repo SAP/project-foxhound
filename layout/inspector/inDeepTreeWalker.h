@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __inDeepTreeWalker_h___
-#define __inDeepTreeWalker_h___
+#ifndef _inDeepTreeWalker_h_
+#define _inDeepTreeWalker_h_
 
 #include "inIDeepTreeWalker.h"
 #include "nsCOMPtr.h"
@@ -53,4 +53,4 @@ class inDeepTreeWalker final : public inIDeepTreeWalker {
 #define IN_DEEPTREEWALKER_CID \
   {0xbfcb82c2, 0x5611, 0x4318, {0x90, 0xd6, 0xba, 0xf4, 0xa7, 0x86, 0x42, 0x52}}
 
-#endif  // __inDeepTreeWalker_h___
+#endif  // _inDeepTreeWalker_h_

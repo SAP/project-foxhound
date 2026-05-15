@@ -10,90 +10,66 @@
 
 using namespace mozilla;
 
-Mutex base_mtx;
-
-// Current pages that are being used for internal memory allocations.  These
-// pages are carved up in cacheline-size quanta, so that there is no chance of
-// false cache line sharing.
-static void* base_pages MOZ_GUARDED_BY(base_mtx);
-static void* base_next_addr MOZ_GUARDED_BY(base_mtx);
-static void* base_next_decommitted MOZ_GUARDED_BY(base_mtx);
-// Address immediately past base_pages.
-static void* base_past_addr MOZ_GUARDED_BY(base_mtx);
-size_t base_mapped MOZ_GUARDED_BY(base_mtx);
-size_t base_committed MOZ_GUARDED_BY(base_mtx);
+constinit BaseAlloc sBaseAlloc;
 
 // Initialize base allocation data structures.
-void base_init() MOZ_REQUIRES(gInitLock) {
-  base_mtx.Init();
-  MOZ_PUSH_IGNORE_THREAD_SAFETY
-  base_mapped = 0;
-  base_committed = 0;
-  MOZ_POP_THREAD_SAFETY
-}
+void BaseAlloc::Init() MOZ_REQUIRES(gInitLock) { mMutex.Init(); }
 
-static bool base_pages_alloc(size_t minsize) MOZ_REQUIRES(base_mtx) {
-  size_t csize;
-  size_t pminsize;
-
+bool BaseAlloc::pages_alloc(size_t minsize) MOZ_REQUIRES(mMutex) {
   MOZ_ASSERT(minsize != 0);
-  csize = CHUNK_CEILING(minsize);
-  base_pages = chunk_alloc(csize, kChunkSize, true);
-  if (!base_pages) {
-    return true;
+  size_t csize = CHUNK_CEILING(minsize);
+  uintptr_t base_pages =
+      reinterpret_cast<uintptr_t>(chunk_alloc(csize, kChunkSize, true));
+  if (base_pages == 0) {
+    return false;
   }
-  base_next_addr = base_pages;
-  base_past_addr = (void*)((uintptr_t)base_pages + csize);
+  mNextAddr = reinterpret_cast<uintptr_t>(base_pages);
+  mPastAddr = base_pages + csize;
   // Leave enough pages for minsize committed, since otherwise they would
   // have to be immediately recommitted.
-  pminsize = PAGE_CEILING(minsize);
-  base_next_decommitted = (void*)((uintptr_t)base_pages + pminsize);
+  size_t pminsize = REAL_PAGE_CEILING(minsize);
+  mNextDecommitted = base_pages + pminsize;
   if (pminsize < csize) {
-    pages_decommit(base_next_decommitted, csize - pminsize);
+    pages_decommit(reinterpret_cast<void*>(mNextDecommitted), csize - pminsize);
   }
-  base_mapped += csize;
-  base_committed += pminsize;
+  mStats.mMapped += csize;
+  mStats.mCommitted += pminsize;
 
-  return false;
+  return true;
 }
 
-void* base_alloc(size_t aSize) {
-  void* ret;
-  size_t csize;
-
+void* BaseAlloc::alloc(size_t aSize) {
   // Round size up to nearest multiple of the cacheline size.
-  csize = CACHELINE_CEILING(aSize);
+  size_t csize = CACHELINE_CEILING(aSize);
 
-  MutexAutoLock lock(base_mtx);
+  MutexAutoLock lock(mMutex);
   // Make sure there's enough space for the allocation.
-  if ((uintptr_t)base_next_addr + csize > (uintptr_t)base_past_addr) {
-    if (base_pages_alloc(csize)) {
+  if (mNextAddr + csize > mPastAddr) {
+    if (!pages_alloc(csize)) {
       return nullptr;
     }
   }
   // Allocate.
-  ret = base_next_addr;
-  base_next_addr = (void*)((uintptr_t)base_next_addr + csize);
+  void* ret = reinterpret_cast<void*>(mNextAddr);
+  mNextAddr = mNextAddr + csize;
   // Make sure enough pages are committed for the new allocation.
-  if ((uintptr_t)base_next_addr > (uintptr_t)base_next_decommitted) {
-    void* pbase_next_addr = (void*)(PAGE_CEILING((uintptr_t)base_next_addr));
+  if (mNextAddr > mNextDecommitted) {
+    uintptr_t pbase_next_addr = REAL_PAGE_CEILING(mNextAddr);
 
-    if (!pages_commit(
-            base_next_decommitted,
-            (uintptr_t)pbase_next_addr - (uintptr_t)base_next_decommitted)) {
+    if (!pages_commit(reinterpret_cast<void*>(mNextDecommitted),
+                      mNextAddr - mNextDecommitted)) {
       return nullptr;
     }
 
-    base_committed +=
-        (uintptr_t)pbase_next_addr - (uintptr_t)base_next_decommitted;
-    base_next_decommitted = pbase_next_addr;
+    mStats.mCommitted += pbase_next_addr - mNextDecommitted;
+    mNextDecommitted = pbase_next_addr;
   }
 
   return ret;
 }
 
-void* base_calloc(size_t aNumber, size_t aSize) {
-  void* ret = base_alloc(aNumber * aSize);
+void* BaseAlloc::calloc(size_t aNumber, size_t aSize) {
+  void* ret = alloc(aNumber * aSize);
   if (ret) {
     memset(ret, 0, aNumber * aSize);
   }

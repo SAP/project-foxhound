@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
 /**
  * Determines whether a given value is a fluent id or plain text and adds it to an element
+ *
  * @param {Array<[HTMLElement, string]>} items An array of [element, value] where value is
  *                                       a fluent id starting with "fluent:" or plain text
  */
@@ -352,55 +351,4 @@ document.addEventListener("DOMContentLoaded", function () {
   };
   openSearchOptions.addEventListener("click", openSearchOptionsEvtHandler);
   openSearchOptions.addEventListener("keypress", openSearchOptionsEvtHandler);
-
-  // Setup the search hand-off box.
-  let btn = document.getElementById("search-handoff-button");
-
-  let editable = document.getElementById("fake-editable");
-  let DISABLE_SEARCH_TOPIC = "DisableSearch";
-  let SHOW_SEARCH_TOPIC = "ShowSearch";
-  let SEARCH_HANDOFF_TOPIC = "SearchHandoff";
-
-  function showSearch() {
-    btn.classList.remove("focused");
-    btn.classList.remove("disabled");
-    RPMRemoveMessageListener(SHOW_SEARCH_TOPIC, showSearch);
-  }
-
-  function disableSearch() {
-    btn.classList.add("disabled");
-  }
-
-  function handoffSearch(text) {
-    RPMSendAsyncMessage(SEARCH_HANDOFF_TOPIC, { text });
-    RPMAddMessageListener(SHOW_SEARCH_TOPIC, showSearch);
-    if (text) {
-      disableSearch();
-    } else {
-      btn.classList.add("focused");
-      RPMAddMessageListener(DISABLE_SEARCH_TOPIC, disableSearch);
-    }
-  }
-  btn.addEventListener("focus", function () {
-    handoffSearch();
-  });
-  btn.addEventListener("click", function () {
-    handoffSearch();
-  });
-
-  // Hand-off any text that gets dropped or pasted
-  editable.addEventListener("drop", function (ev) {
-    ev.preventDefault();
-    let text = ev.dataTransfer.getData("text");
-    if (text) {
-      handoffSearch(text);
-    }
-  });
-  editable.addEventListener("paste", function (ev) {
-    ev.preventDefault();
-    handoffSearch(ev.clipboardData.getData("Text"));
-  });
-
-  // Load contentSearchUI so it sets the search engine icon and name for us.
-  new window.ContentSearchHandoffUIController();
 });

@@ -59,11 +59,7 @@ pref("security.remote_settings.intermediates.enabled", true);
 pref("security.remote_settings.intermediates.downloads_per_poll", 5000);
 pref("security.remote_settings.intermediates.parallel_downloads", 8);
 
-#if !defined(MOZ_WIDGET_ANDROID)
-  pref("security.remote_settings.crlite_filters.enabled", true);
-#else
-  pref("security.remote_settings.crlite_filters.enabled", false);
-#endif
+pref("security.remote_settings.crlite_filters.enabled", true);
 
 pref("security.osreauthenticator.blank_password", false);
 pref("security.osreauthenticator.password_last_changed_lo", 0);
@@ -170,6 +166,22 @@ pref("dom.keyboardevent.keypress.hack.use_legacy_keycode_and_charcode.addl", "")
 // enabled here, the feature may not be visible in all browsers.
 pref("dom.text-recognition.enabled", true);
 
+// Blocklist of domains of web apps which we should not dispatch `input` event
+// immediately before `compositionend`.
+pref("editor.texteditor.inputevent.hack.no_dispatch_before_compositionend", "");
+pref("editor.htmleditor.inputevent.hack.no_dispatch_before_compositionend", "");
+// Pref for end-users and policy to add additional values.
+pref("editor.texteditor.inputevent.hack.no_dispatch_before_compositionend.addl", "");
+pref("editor.htmleditor.inputevent.hack.no_dispatch_before_compositionend.addl", "");
+
+// Blocklist of domains of web apps which we should not dispatch `input` event
+// immediately after `compositionend`.
+pref("editor.texteditor.inputevent.hack.no_dispatch_after_compositionend", "");
+pref("editor.htmleditor.inputevent.hack.no_dispatch_after_compositionend", "");
+// Pref for end-users and policy to add additional values.
+pref("editor.texteditor.inputevent.hack.no_dispatch_after_compositionend.addl", "");
+pref("editor.htmleditor.inputevent.hack.no_dispatch_after_compositionend.addl", "");
+
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
 pref("browser.sessionhistory.max_total_viewers", -1);
@@ -249,8 +261,8 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   // Whether to expose the resizeMode constraint/setting/capability to content.
   // Kept false while implementing the feature in bug 1286945 and dependencies,
   // to allow for gradually gaining support and test coverage.
-  pref("media.navigator.video.resize_mode.enabled", false);
-  pref("media.navigator.video.default_resize_mode", 0); // 0=none, 1=crop-and-scale
+  pref("media.navigator.video.resize_mode.enabled", true);
+  pref("media.navigator.video.default_resize_mode", 1); // 0=none, 1=crop-and-scale
   pref("media.navigator.video.use_remb", true);
   pref("media.navigator.video.use_transport_cc", true);
   pref("media.peerconnection.video.use_rtx", true);
@@ -265,15 +277,14 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
     pref("media.peerconnection.sdp.alternate_parse_mode", "parallel");
     pref("media.peerconnection.sdp.strict_success", false);
     pref("media.navigator.video.red_ulpfec_enabled", true);
-    pref("media.peerconnection.sctp.use_dcsctp", true);
   #else
     pref("media.peerconnection.sdp.parser", "sipcc");
     pref("media.peerconnection.sdp.alternate_parse_mode", "never");
     pref("media.peerconnection.sdp.strict_success", false);
     pref("media.navigator.video.red_ulpfec_enabled", true);
-    pref("media.peerconnection.sctp.use_dcsctp", false);
   #endif
 
+  pref("media.peerconnection.sctp.use_dcsctp", true);
   pref("media.peerconnection.sdp.disable_stereo_fmtp", false);
   pref("media.webrtc.debug.log_file", "");
 
@@ -322,12 +333,7 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   pref("media.peerconnection.ice.trickle_grace_period", 5000);
   pref("media.peerconnection.ice.no_host", false);
   pref("media.peerconnection.ice.default_address_only", false);
-  // See Bug 1581947 for Android hostname obfuscation
-  #if defined(MOZ_WIDGET_ANDROID)
-    pref("media.peerconnection.ice.obfuscate_host_addresses", false);
-  #else
-    pref("media.peerconnection.ice.obfuscate_host_addresses", true);
-  #endif
+  pref("media.peerconnection.ice.obfuscate_host_addresses", true);
   pref("media.peerconnection.ice.obfuscate_host_addresses.blocklist", "");
   pref("media.peerconnection.ice.proxy_only_if_behind_proxy", false);
   pref("media.peerconnection.ice.proxy_only", false);
@@ -381,15 +387,10 @@ pref("media.recorder.audio_node.enabled", false);
 // to keep up under load. Useful for tests but beware of memory consumption!
 pref("media.recorder.video.frame_drops", true);
 
-// The default number of decoded video frames that are enqueued in
-// MediaDecoderReader's mVideoQueue.
-pref("media.video-queue.default-size", 10);
-
-// The maximum number of queued frames to send to the compositor.
-// By default, send all of them.
-pref("media.video-queue.send-to-compositor-size", 9999);
-
 pref("media.cubeb.output_voice_routing", true);
+
+// Force cubeb to use the mock context, which exposes only fake devices.
+pref("media.cubeb.force_mock_context", false);
 
 // APZ preferences. For documentation/details on what these prefs do, check
 // gfx/layers/apz/src/AsyncPanZoomController.cpp.
@@ -415,18 +416,14 @@ pref("gfx.downloadable_fonts.fallback_delay", 3000);
 pref("gfx.downloadable_fonts.fallback_delay_short", 100);
 
 #ifdef XP_WIN
-  pref("gfx.font_rendering.directwrite.use_gdi_table_loading", true);
+  // Bug 2011408 will remove this pref and the code that uses it completely if
+  // we don't see any performance issues.
+  pref("gfx.font_rendering.directwrite.use_gdi_table_loading", false);
 #endif
 
-#if defined(XP_WIN)
-  // comma separated list of backends to use in order of preference
-  // e.g., pref("gfx.canvas.azure.backends", "direct2d,skia");
-  pref("gfx.canvas.azure.backends", "direct2d1.1,skia");
-#elif defined(XP_MACOSX)
-  pref("gfx.canvas.azure.backends", "skia");
-#else
-  pref("gfx.canvas.azure.backends", "skia");
-#endif
+// comma separated list of backends to use in order of preference
+// e.g., pref("gfx.canvas.azure.backends", "direct2d,skia");
+pref("gfx.canvas.azure.backends", "skia");
 pref("gfx.content.azure.backends", "skia");
 
 #ifdef XP_WIN
@@ -459,6 +456,7 @@ pref("gfx.webrender.debug.glyph-flashing", false);
 pref("gfx.webrender.debug.capture-profiler", false);
 pref("gfx.webrender.debug.profiler-ui", "Default");
 pref("gfx.webrender.debug.window-visibility", false);
+pref("gfx.webrender.debug.external-composite-borders", false);
 
 pref("gfx.webrender.multithreading", true);
 #ifdef XP_WIN
@@ -738,6 +736,8 @@ pref("nglayout.enable_drag_images", true);
 // URI fixup prefs
 pref("browser.fixup.alternate.prefix", "www.");
 pref("browser.fixup.alternate.protocol", "https");
+// The suffix is localized, and should be read using
+// Services.locale.urlFixupSuffix.
 pref("browser.fixup.alternate.suffix", ".com");
 pref("browser.fixup.fallback-to-https", true);
 
@@ -810,10 +810,6 @@ pref("dom.disable_window_flip",             false);
 pref("dom.disable_window_move_resize",      false);
 
 pref("dom.allow_scripts_to_close_windows",          false);
-
-// List of urls for which mutation events are enabled even if mutation events
-// in general are disabled. See nsContentUtils::IsURIInPrefList.
-pref("dom.mutation_events.forceEnable", "");
 
 pref("dom.popup_allowed_events", "change click dblclick auxclick mousedown mouseup pointerdown pointerup notificationclick reset submit touchend contextmenu");
 
@@ -977,6 +973,11 @@ pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 16);
 // JSGC_MAX_MARKING_THREADS
 pref("javascript.options.mem.gc_max_parallel_marking_threads", 2);
 
+#ifdef NIGHTLY_BUILD
+// JSGC_CONCURRENT_MARKING_ENABLED
+pref("javascript.options.mem.gc_experimental_concurrent_marking", false);
+#endif
+
 // JSGC_HIGH_FREQUENCY_TIME_LIMIT
 pref("javascript.options.mem.gc_high_frequency_time_limit_ms", 1000);
 
@@ -1048,6 +1049,26 @@ pref("javascript.options.dump_stack_on_debuggee_would_run", false);
 
 // advanced prefs
 pref("image.animation_mode",                "normal");
+
+pref("keyword.enabled", true);
+
+// Fixup whitelists, the urlbar won't try to search for these words, but will
+// instead consider them valid TLDs. Don't check these directly, use
+// Services.uriFixup.isDomainKnown() instead.
+pref("browser.fixup.domainwhitelist.localhost", true);
+// https://tools.ietf.org/html/rfc2606
+pref("browser.fixup.domainsuffixwhitelist.test", true);
+pref("browser.fixup.domainsuffixwhitelist.example", true);
+pref("browser.fixup.domainsuffixwhitelist.invalid", true);
+pref("browser.fixup.domainsuffixwhitelist.localhost", true);
+// https://tools.ietf.org/html/draft-wkumari-dnsop-internal-00
+pref("browser.fixup.domainsuffixwhitelist.internal", true);
+// https://tools.ietf.org/html/rfc6762
+pref("browser.fixup.domainsuffixwhitelist.local", true);
+
+// Whether to always go through the DNS server before sending a single word
+// search string, that may contain a valid host, to a search engine.
+pref("browser.fixup.dns_first_for_single_words", false);
 
 // If there is ever a security firedrill that requires
 // us to block certian ports global, this is the pref
@@ -1192,6 +1213,9 @@ pref("network.http.redirection-limit", 20);
 // NOTE: separate values with comma+space (", "): see bug 576033
 pref("network.http.accept-encoding", "gzip, deflate");
 pref("network.http.accept-encoding.secure", "gzip, deflate, br, zstd");
+// dictionary compression is always only for secure connections
+// Added to network.http.accept-encoding.secure
+pref("network.http.accept-encoding.dictionary", "dcb, dcz");
 
 // Prompt for redirects resulting in unsafe HTTP requests
 pref("network.http.prompt-temp-redirect", false);
@@ -1407,16 +1431,6 @@ pref("network.automatic-ntlm-auth.allow-proxies", true);
 pref("network.automatic-ntlm-auth.allow-non-fqdn", false);
 pref("network.automatic-ntlm-auth.trusted-uris", "");
 
-// The string to return to the server as the 'workstation' that the
-// user is using.  Bug 1046421 notes that the previous default, of the
-// system hostname, could be used for user fingerprinting.
-//
-// However, in some network environments where allowedWorkstations is in use
-// to provide a level of host-based access control, it must be set to a string
-// that is listed in allowedWorkstations for the user's account in their
-// AD Domain.
-pref("network.generic-ntlm-auth.workstation", "WORKSTATION");
-
 // This preference controls whether to allow sending default credentials (SSO) to
 // NTLM/Negotiate servers allowed in the "trusted uri" list when navigating them
 // in a Private Browsing window.
@@ -1492,15 +1506,15 @@ pref("network.proxy.enable_wpad_over_dhcp", true);
 pref("converter.html2txt.structs",          true); // Output structured phrases (strong, em, code, sub, sup, b, i, u)
 pref("converter.html2txt.header_strategy",  1); // 0 = no indention; 1 = indention, increased with header level; 2 = numbering and slight indention
 
-pref("intl.accept_languages",               "chrome://global/locale/intl.properties");
-pref("intl.menuitems.alwaysappendaccesskeys","chrome://global/locale/intl.properties");
-pref("intl.menuitems.insertseparatorbeforeaccesskeys","chrome://global/locale/intl.properties");
-pref("intl.ellipsis",                       "chrome://global-platform/locale/intl.properties");
+// The default value of this pref depends on the current app locale,
+// and so should always be read via Services.locale.acceptLanguages.
+pref("intl.accept_languages",               "und");
+
 // this pref allows user to request that all internationalization formatters
 // like date/time formatting, unit formatting, calendars etc. should use
 // OS locale set instead of the app locale set.
 pref("intl.regional_prefs.use_os_locales",  false);
-pref("font.language.group",                 "chrome://global/locale/intl.properties");
+
 pref("font.cjk_pref_fallback_order",        "zh-cn,zh-hk,zh-tw,ja,ko");
 
 // This pref controls pseudolocales for testing localization.
@@ -1533,8 +1547,8 @@ pref("intl.hyphenation-alias.hu-*", "hu");
 pref("intl.hyphenation-alias.ia-*", "ia");
 pref("intl.hyphenation-alias.is-*", "is");
 pref("intl.hyphenation-alias.it-*", "it");
-pref("intl.hyphenation-alias.kmr-*", "kmr");
 pref("intl.hyphenation-alias.kn-*", "kn");
+pref("intl.hyphenation-alias.ku-*", "ku");
 pref("intl.hyphenation-alias.la-*", "la");
 pref("intl.hyphenation-alias.lt-*", "lt");
 pref("intl.hyphenation-alias.ml-*", "ml");
@@ -1791,32 +1805,18 @@ pref("extensions.eventPages.enabled", true);
 // Whether MV3 restrictions for actions popup urls should be extended to MV2 extensions
 // (only allowing same extension urls to be used as action popup urls).
 pref("extensions.manifestV2.actionsPopupURLRestricted", false);
-// Whether "manifest_version: 3" extensions should be allowed to install successfully.
-pref("extensions.manifestV3.enabled", true);
 #ifndef MOZ_WEBEXT_WEBIDL_ENABLED
   // Defined in StaticPrefList.yaml but overridden here to lock it.
   pref("extensions.backgroundServiceWorker.enabled", false, locked);
 #endif
 // Whether to enable the updated openPopup API.
-#ifdef NIGHTLY_BUILD
-  pref("extensions.openPopupWithoutUserGesture.enabled", true);
-#else
-  pref("extensions.openPopupWithoutUserGesture.enabled", false);
-#endif
+pref("extensions.openPopupWithoutUserGesture.enabled", true);
 // Install origins restriction.
 pref("extensions.install_origins.enabled", false);
 
 // TODO: bug 1830712: remove prefs related to browser_style deprecation.
 pref("extensions.browser_style_mv3.supported", false);
 pref("extensions.browser_style_mv3.same_as_mv2", false);
-
-// If set to true, browser.cookies.set() will throw exceptions if the cookie is
-// invalid. Otherwise, a warning message will be shown in the console.
-#ifdef NIGHTLY_BUILD
-pref("extensions.cookie.rejectWhenInvalid", true);
-#else
-pref("extensions.cookie.rejectWhenInvalid", false);
-#endif
 
 // Experimental Inference API
 pref("extensions.ml.enabled", true);
@@ -2180,7 +2180,7 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.monospace.x-armn", "Arial AMU");
 
   pref("font.name-list.serif.x-beng", "Vrinda, Akaash, Likhan, Ekushey Punarbhaba");
-  pref("font.name-list.sans-serif.x-beng", "Vrinda, Akaash, Likhan, Ekushey Punarbhaba");
+  pref("font.name-list.sans-serif.x-beng", "Nirmala Text, Vrinda, Akaash, Likhan, Ekushey Punarbhaba");
   pref("font.name-list.monospace.x-beng", "Mitra Mono, Likhan, Mukti Narrow");
 
   pref("font.name-list.serif.x-cans", "Aboriginal Serif, BJCree Uni");
@@ -2241,7 +2241,7 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.monospace.x-math", "Consolas");
   pref("font.name-list.cursive.x-math", "Comic Sans MS");
 
-  // ClearType tuning parameters for directwrite/d2d.
+  // ClearType tuning parameters for directwrite.
   //
   // Allows overriding of underlying registry values in:
   //   HKCU/Software/Microsoft/Avalon.Graphics/<display> (contrast and level)
@@ -2513,7 +2513,6 @@ pref("font.size.monospace.x-math", 13);
   // XP_MACOSX changes to default font sizes
   pref("font.minimum-size.th", 10);
 
-  // Apple's Symbol is Unicode so use it
   pref("font.name-list.serif.x-math", "Latin Modern Math, STIX Two Math, XITS Math, Cambria Math, Libertinus Math, DejaVu Math TeX Gyre, TeX Gyre Bonum Math, TeX Gyre Pagella Math, TeX Gyre Schola, TeX Gyre Termes Math, STIX Math, Asana Math, STIXGeneral, DejaVu Serif, DejaVu Sans, Symbol, Times");
   pref("font.name-list.sans-serif.x-math", "Helvetica");
   pref("font.name-list.monospace.x-math", "Menlo");
@@ -3050,6 +3049,12 @@ pref("signon.firefoxRelay.terms_of_service_url", "https://www.mozilla.org/%LOCAL
 pref("signon.firefoxRelay.privacy_policy_url", "https://www.mozilla.org/%LOCALE%/privacy/subscription-services/");
 pref("signon.signupDetection.confidenceThreshold",     "0.75");
 
+#ifdef NIGHTLY_BUILD
+  pref("signon.rustMirror.enabled", true);
+#else
+  pref("signon.rustMirror.enabled", false);
+#endif
+
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
 pref("browser.formfill.enable",           true);
@@ -3102,12 +3107,14 @@ pref("network.tcp.keepalive.idle_time", 600); // seconds; 10 mins
 
 // All the Geolocation preferences are here.
 //
-pref("geo.provider.network.url", "https://www.googleapis.com/geolocation/v1/geolocate?key=%GOOGLE_LOCATION_SERVICE_API_KEY%");
+#ifndef ANDROID
+  pref("geo.provider.network.url", "https://www.googleapis.com/geolocation/v1/geolocate?key=%GOOGLE_LOCATION_SERVICE_API_KEY%&solution_channel=%OS%");
 
-// Timeout to wait before sending the location request.
-pref("geo.provider.network.timeToWaitBeforeSending", 5000);
-// Timeout for outbound network geolocation provider.
-pref("geo.provider.network.timeout", 60000);
+  // Timeout to wait before sending the location request.
+  pref("geo.provider.network.timeToWaitBeforeSending", 5000);
+  // Timeout for outbound network geolocation provider.
+  pref("geo.provider.network.timeout", 60000);
+#endif
 
 #ifdef XP_MACOSX
   pref("geo.provider.use_corelocation", true);
@@ -3156,10 +3163,6 @@ pref("extensions.originControls.grantByDefault", true);
 // unless other process sandboxing and extension remoting prefs are changed.
 pref("extensions.webextensions.protocol.remote", true);
 
-// Enable userScripts API by default.
-pref("extensions.webextensions.userScripts.enabled", true);
-pref("extensions.userScripts.mv3.enabled", true);
-
 // Whether or not the installed extensions should be migrated to the storage.local IndexedDB backend.
 pref("extensions.webextensions.ExtensionStorageIDB.enabled", true);
 
@@ -3187,6 +3190,7 @@ pref("extensions.webcompat-reporter.newIssueEndpoint", "https://webcompat.com/is
 // Add-on content security policies.
 pref("extensions.webextensions.base-content-security-policy", "script-src 'self' https://* http://localhost:* http://127.0.0.1:* moz-extension: blob: filesystem: 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline';");
 pref("extensions.webextensions.base-content-security-policy.v3", "script-src 'self' 'wasm-unsafe-eval';");
+pref("extensions.webextensions.base-content-security-policy.v3-with-localhost", "script-src 'self' 'wasm-unsafe-eval' http://localhost:* http://127.0.0.1:*;");
 pref("extensions.webextensions.default-content-security-policy", "script-src 'self' 'wasm-unsafe-eval';");
 pref("extensions.webextensions.default-content-security-policy.v3", "script-src 'self'; upgrade-insecure-requests;");
 
@@ -3303,6 +3307,10 @@ pref("network.trr.confirmationNS", "example.com");
 pref("network.trr.excluded-domains", "");
 pref("network.trr.builtin-excluded-domains", "localhost,local");
 
+// This preference controls if LNA blocking should be tied to ETP strict modes.
+// Used for progressive rollout of LNA for ETP strict users
+pref("network.lna.etp.enabled", true);
+
 pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/canonical.html");
 pref("captivedetect.canonicalContent", "<meta http-equiv=\"refresh\" content=\"0;url=https://support.mozilla.org/kb/captive-portal\"/>");
 pref("captivedetect.maxWaitingTime", 5000);
@@ -3323,12 +3331,17 @@ pref("urlclassifier.malwareTable", "goog-malware-proto,goog-unwanted-proto,mozte
 pref("urlclassifier.downloadAllowTable", "goog-downloadwhite-proto");
 pref("urlclassifier.downloadBlockTable", "goog-badbinurl-proto");
 
+// Tables for the Global Cache
+pref("urlclassifier.globalCacheTable", "goog-globalcache-proto");
+
 // Tables for anti-tracking features
 pref("urlclassifier.trackingAnnotationTable", "moztest-track-simple,ads-track-digest256,social-track-digest256,analytics-track-digest256,content-track-digest256");
 pref("urlclassifier.trackingAnnotationWhitelistTable", "moztest-trackwhite-simple,mozstd-trackwhite-digest256,google-trackwhite-digest256");
 pref("urlclassifier.trackingTable", "moztest-track-simple,ads-track-digest256,social-track-digest256,analytics-track-digest256");
 pref("urlclassifier.trackingWhitelistTable", "moztest-trackwhite-simple,mozstd-trackwhite-digest256,google-trackwhite-digest256");
 
+pref("urlclassifier.features.harmfuladdon.blocklistTables", "harmful-addon-block-digest256");
+pref("urlclassifier.features.harmfuladdon.entitylistTables", "");
 pref("urlclassifier.features.fingerprinting.blacklistTables", "base-fingerprinting-track-digest256");
 pref("urlclassifier.features.fingerprinting.whitelistTables", "mozstd-trackwhite-digest256,google-trackwhite-digest256");
 pref("urlclassifier.features.fingerprinting.annotate.blacklistTables", "base-fingerprinting-track-digest256");
@@ -3351,7 +3364,7 @@ pref("urlclassifier.features.antifraud.annotate.blocklistTables", "anti-fraud-tr
 pref("urlclassifier.features.antifraud.annotate.allowlistTables", "mozstd-trackwhite-digest256");
 
 // These tables will never trigger a gethash call.
-pref("urlclassifier.disallow_completions", "goog-downloadwhite-digest256,base-track-digest256,mozstd-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256");
+pref("urlclassifier.disallow_completions", "goog-downloadwhite-digest256,base-track-digest256,mozstd-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256,harmful-addon-block-digest256");
 
 // Workaround for Google Recaptcha
 pref("urlclassifier.trackingAnnotationSkipURLs", "");
@@ -3363,6 +3376,11 @@ pref("privacy.trackingprotection.emailtracking.webapp.domains", "mail.163.com,ma
 // The migration for this pref disables both allow-list categories (convenience
 // and baseline) for users in ETP "strict" and "custom" mode.
 pref("privacy.trackingprotection.allow_list.hasMigratedCategoryPrefs", false);
+
+// Indicates if the user has interacted with the ETP category, tracking protection baseline exceptions,
+// or convenience exceptions by changing them in the prefs or in the UI. This is used to determine
+// if we should show the ETP Strict exceptions onboarding message again.
+pref("privacy.trackingprotection.allow_list.hasUserInteractedWithETPSettings", false);
 
 // Number of random entries to send with a gethash request
 pref("urlclassifier.gethashnoise", 4);
@@ -3424,13 +3442,24 @@ pref("browser.safebrowsing.provider.google4.advisoryName", "Google Safe Browsing
 pref("browser.safebrowsing.provider.google4.dataSharingURL", "https://safebrowsing.googleapis.com/v4/threatHits?$ct=application/x-protobuf&key=%GOOGLE_SAFEBROWSING_API_KEY%&$httpMethod=POST");
 pref("browser.safebrowsing.provider.google4.dataSharing.enabled", false);
 
+// Google Safe Browsing V5 prefs.
+pref("browser.safebrowsing.provider.google5.enabled", true);
+pref("browser.safebrowsing.provider.google5.lists", "goog-badbinurl-proto,goog-downloadwhite-proto,goog-phish-proto,googpub-phish-proto,goog-malware-proto,goog-unwanted-proto,goog-harmful-proto,goog-globalcache-proto");
+pref("browser.safebrowsing.provider.google5.updateURL", "https://safebrowsing.googleapis.com/v5/hashLists:batchGet?key=%GOOGLE_SAFEBROWSING_API_KEY%");
+pref("browser.safebrowsing.provider.google5.gethashURL", "https://safebrowsing.googleapis.com/v5/hashes:search?key=%GOOGLE_SAFEBROWSING_API_KEY%");
+pref("browser.safebrowsing.provider.google5.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?site=");
+pref("browser.safebrowsing.provider.google5.reportPhishMistakeURL", "https://%LOCALE%.phish-error.mozilla.com/?url=");
+pref("browser.safebrowsing.provider.google5.reportMalwareMistakeURL", "https://%LOCALE%.malware-error.mozilla.com/?url=");
+pref("browser.safebrowsing.provider.google5.advisoryURL", "https://developers.google.com/safe-browsing/v4/advisory");
+pref("browser.safebrowsing.provider.google5.advisoryName", "Google Safe Browsing");
+
 #endif // ifndef MOZ_WIDGET_ANDROID
 
 pref("browser.safebrowsing.reportPhishURL", "https://%LOCALE%.phish-report.mozilla.com/?url=");
 
 // Mozilla Safe Browsing provider (for tracking protection and plugin blocking)
 pref("browser.safebrowsing.provider.mozilla.pver", "2.2");
-pref("browser.safebrowsing.provider.mozilla.lists", "base-track-digest256,mozstd-trackwhite-digest256,google-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256");
+pref("browser.safebrowsing.provider.mozilla.lists", "base-track-digest256,mozstd-trackwhite-digest256,google-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256,consent-manager-track-digest256,anti-fraud-track-digest256,harmful-addon-block-digest256,harmful-addon-entitylist-digest256");
 pref("browser.safebrowsing.provider.mozilla.updateURL", "moz-sbrs:://antitracking");
 pref("browser.safebrowsing.provider.mozilla.gethashURL", "https://shavar.services.mozilla.com/gethash?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
 // Set to a date in the past to force immediate download in new profiles.
@@ -3464,9 +3493,6 @@ pref("browser.search.suggest.enabled.private", false);
 pref("browser.search.separatePrivateDefault", true);
 pref("browser.search.separatePrivateDefault.ui.enabled", false);
 pref("browser.search.removeEngineInfobar.enabled", true);
-// Temporary preference to allow switching between the Rust based search engine
-// selector and the JavaScript one (bug 1914143).
-pref("browser.search.rustSelector.featureGate", true);
 
 // GMPInstallManager prefs
 
@@ -3482,25 +3508,6 @@ pref("media.gmp-manager.allowLocalSources", true);
 // Update service URL for GMP install/updates:
 pref("media.gmp-manager.url", "https://aus5.mozilla.org/update/3/GMP/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
 
-// When |media.gmp-manager.checkContentSignature| is true, then the reply
-// containing the update xml file is expected to provide a content signature
-// header. Information from this header will be used to validate the response.
-// If this header is not present, is malformed, or cannot be determined as
-// valid then the update will fail.
-// We should eventually remove this pref and any cert pinning code and make
-// the content signature path the sole path. We retain this for now in case
-// we need to debug content sig vs cert pin.
-pref("media.gmp-manager.checkContentSignature", true);
-
-// When |media.gmp-manager.cert.requireBuiltIn| is true or not specified the
-// final certificate and all certificates the connection is redirected to before
-// the final certificate for the url specified in the |media.gmp-manager.url|
-// preference must be built-in. The check related to this pref is not done if
-// |media.gmp-manager.checkContentSignature| is set to true (the content
-// signature check provides protection that supersedes the built in
-// requirement).
-pref("media.gmp-manager.cert.requireBuiltIn", true);
-
 // The |media.gmp-manager.certs.| preference branch contains branches that are
 // sequentially numbered starting at 1 that contain attribute name / value
 // pairs for the certificate used by the server that hosts the update xml file
@@ -3514,9 +3521,7 @@ pref("media.gmp-manager.cert.requireBuiltIn", true);
 // no update available. This validation will not be performed when the
 // |media.gmp-manager.url.override| user preference has been set for testing updates or
 // when the |media.gmp-manager.cert.checkAttributes| preference is set to false.
-// This check will also not be done if the |media.gmp-manager.checkContentSignature|
-// pref is set to true. Also, the |media.gmp-manager.url.override| preference should
-// ONLY be used for testing.
+// Also, the |media.gmp-manager.url.override| preference should ONLY be used for testing.
 // IMPORTANT! app.update.certs.* prefs should also be updated if these
 // are updated.
 pref("media.gmp-manager.cert.checkAttributes", true);
@@ -3563,10 +3568,10 @@ pref("reader.content_width", 3);
 pref("reader.line_height", 4);
 
 // The default character spacing in reader mode (1-9)
-pref("reader.character_spacing", 0);
+pref("reader.character_spacing", 1);
 
 // The default word spacing in reader mode (1-9)
-pref("reader.word_spacing", 0);
+pref("reader.word_spacing", 1);
 
 // The default text alignment direction in reader mode
 pref("reader.text_alignment", "start");
@@ -3604,6 +3609,9 @@ pref("narrate.voice", " { \"default\": \"automatic\" }");
 pref("narrate.filter-voices", true);
 
 pref("memory.report_concurrency", 10);
+
+// Enable logging downloads operations to the Console.
+pref("toolkit.download.loglevel", "Error");
 
 pref("toolkit.pageThumbs.screenSizeDivisor", 7);
 pref("toolkit.pageThumbs.minWidth", 0);
@@ -3679,6 +3687,14 @@ pref("browser.translations.simulateUnsupportedEngine", false);
 // between 0ms and the timeoutMS provided.
 pref("browser.translations.chaos.errors", false);
 pref("browser.translations.chaos.timeoutMS", 0);
+
+// AI controls
+pref("browser.ai.control.default", "available");
+pref("browser.ai.control.translations", "default");
+pref("browser.ai.control.pdfjsAltText", "default");
+pref("browser.ai.control.smartTabGroups", "default");
+pref("browser.ai.control.linkPreviewKeyPoints", "default");
+pref("browser.ai.control.sidebarChatbot", "default");
 
 // Enable the experimental machine learning inference engine.
 pref("browser.ml.enable", true);
@@ -3929,13 +3945,18 @@ pref("services.common.log.logger.tokenserverclient", "Debug");
   // Enable retrying to execute commands in the child process in case the
   // JSWindowActor gets destroyed.
   pref("remote.retry-on-abort", true);
-
-  // Enable the NavigationManager using parent process WebProgress listeners
-  pref("remote.parent-navigation.enabled", true);
 #endif
 
 // Enable the JSON View tool (an inspector for application/json documents).
 pref("devtools.jsonview.enabled", true);
+
+// Size profiler button in JSON View. Nightly-only until the profiler
+// front-end has been polished for the size profile use case.
+#ifdef NIGHTLY_BUILD
+  pref("devtools.jsonview.size-profiler.enabled", true);
+#else
+  pref("devtools.jsonview.size-profiler.enabled", false);
+#endif
 
 // Default theme ("auto", "dark" or "light").
 pref("devtools.theme", "auto", sticky);
@@ -4002,9 +4023,6 @@ pref("devtools.remote.adb.extensionID", "adb@mozilla.org");
 // path).
 pref("devtools.remote.adb.extensionURL", "https://ftp.mozilla.org/pub/labs/devtools/adb-extension/#OS#/adb-extension-latest-#OS#.xpi");
 
-// Enable Inactive CSS detection; used both by the client and the server.
-pref("devtools.inspector.inactive.css.enabled", true);
-
 // Should F12 open the Developer Tools toolbox.
 pref("devtools.f12_enabled", true);
 
@@ -4037,7 +4055,7 @@ pref("extensions.formautofill.addresses.capture.enabled", true);
 #endif
 pref("extensions.formautofill.addresses.ignoreAutocompleteOff", true);
 // Supported countries need to follow ISO 3166-1 to align with "browser.search.region"
-pref("extensions.formautofill.addresses.supportedCountries", "US,CA,GB,FR,DE");
+pref("extensions.formautofill.addresses.supportedCountries", "US,CA,GB,FR,DE,BR,ES,JP,AT,IN,IT,PL,AU");
 pref("extensions.formautofill.creditCards.supported", "on");
 pref("extensions.formautofill.creditCards.enabled", true);
 pref("extensions.formautofill.creditCards.ignoreAutocompleteOff", true);
@@ -4053,8 +4071,6 @@ pref("extensions.formautofill.creditCards.heuristics.mode", 2);
 pref("extensions.formautofill.creditCards.heuristics.fathom.types", "cc-number,cc-name");
 // Defines the threshold to identify whether a field is a cc field
 pref("extensions.formautofill.creditCards.heuristics.fathom.confidenceThreshold", "0.5");
-// Defineis the threshold to mark fields that are "high-confidence", see `isValidSection` for details
-pref("extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold", "0.95");
 // This is Only for testing! Set the confidence value (> 0 && <= 1) after a field is identified by fathom
 pref("extensions.formautofill.creditCards.heuristics.fathom.testConfidence", "0");
 
@@ -4072,11 +4088,6 @@ pref("extensions.formautofill.heuristics.refillOnSiteClearingFields", true);
 pref("extensions.formautofill.heuristics.refillOnSiteClearingFields.timeout", 500);
 
 pref("extensions.formautofill.heuristics.autofillSameOriginWithTop", true);
-
-#ifdef NIGHTLY_BUILD
-  pref("extensions.formautofill.ml.experiment.enabled", true);
-  pref("extensions.formautofill.ml.experiment.modelRevision", "v0.1.3");
-#endif
 
 pref("toolkit.osKeyStore.loglevel", "Warn");
 
@@ -4123,10 +4134,12 @@ pref("dom.sitepermsaddon-provider.separatedBlocklistedDomains", "shopee.co.th,sh
 // Log level for logger in URLQueryStrippingListService
 pref("privacy.query_stripping.listService.logLevel", "Error");
 
-// Signal to the webcompat site intervention add-on to use the MV3
-// scripting.registerContentScripts API instead of the older MV2
-// contentScripts.register API.
-pref("extensions.webcompat.useScriptingAPI", true);
+// Signal to the webcompat built-in addon to enable webcompat interventions
+pref("extensions.webcompat.enable_interventions", true);
+// Signal to the webcompat built-in addon to enable SmartBlock shims
+pref("extensions.webcompat.enable_shims", true);
+// Signal to the webcompat built-in addon to enable SmartBlock embeds
+pref("extensions.webcompat.smartblockEmbeds.enabled", true);
 
 // Controls the log level for Fingerprinting Remote Overrides.
 pref("privacy.fingerprintingProtection.WebCompatService.logLevel", "Error");
@@ -4139,9 +4152,6 @@ pref("privacy.query_stripping.strip_on_share.enableTestMode", false);
   pref("toolkit.backgroundtasks.tests.geckoPrefsInherited", 17);
   pref("toolkit.backgroundtasks.tests.geckoPrefsOverriden", 18);
 #endif
-
-// To disable the Strip on Share context menu option if nothing can be stripped
-pref("privacy.query_stripping.strip_on_share.canDisable", true);
 
 // Captcha Detection
 pref("captchadetection.loglevel", "Warn");

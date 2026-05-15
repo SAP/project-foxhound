@@ -10,15 +10,17 @@ const FilterState = overrides =>
 
 function filters(state = FilterState(), action) {
   switch (action.type) {
-    case constants.FILTER_TOGGLE:
+    case constants.FILTER_TOGGLE: {
       const { filter } = action;
       const active = !state[filter];
       return cloneState(state, { [filter]: active });
+    }
     case constants.FILTERS_CLEAR:
       return FilterState();
-    case constants.FILTER_TEXT_SET:
+    case constants.FILTER_TEXT_SET: {
       const { text } = action;
       return cloneState(state, { [constants.FILTERS.TEXT]: text });
+    }
   }
 
   return state;

@@ -10,7 +10,6 @@ import android.os.Parcel
 import android.os.Parcelable
 import android.os.Parcelable.Creator
 import android.view.autofill.AutofillId
-import androidx.annotation.RequiresApi
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.utils.Browsers
 
@@ -20,7 +19,6 @@ import mozilla.components.support.utils.Browsers
  * Originally implemented in Lockwise:
  * https://github.com/mozilla-lockwise/lockwise-android/blob/d3c0511f73c34e8759e1bb597f2d3dc9bcc146f0/app/src/main/java/mozilla/lockbox/autofill/ParsedStructure.kt#L52
  */
-@RequiresApi(Build.VERSION_CODES.O)
 data class ParsedStructure(
     val usernameId: AutofillId? = null,
     val passwordId: AutofillId? = null,
@@ -81,7 +79,6 @@ internal suspend fun ParsedStructure.getLookupDomain(publicSuffixList: PublicSuf
     return publicSuffixList.getPublicSuffixPlusOne(domain).await() ?: domain
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 internal fun parseStructure(context: Context, structure: RawStructure): ParsedStructure? {
     val activityPackageName = structure.activityPackageName
     if (context.packageName == activityPackageName) {

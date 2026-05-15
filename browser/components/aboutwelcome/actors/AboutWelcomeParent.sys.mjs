@@ -11,11 +11,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/aboutwelcome/AboutWelcomeTelemetry.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AWScreenUtils: "resource:///modules/aboutwelcome/AWScreenUtils.sys.mjs",
+  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   LangPackMatcher: "resource://gre/modules/LangPackMatcher.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
@@ -288,6 +289,16 @@ export class AboutWelcomeParent extends JSWindowActorParent {
           return true;
         }
         break;
+      }
+      case "AWPage:BACKUP_FIND_WELL_KNOWN": {
+        // Ask the BackupService to probe default locations.
+        let bs;
+        try {
+          bs = lazy.BackupService.get();
+        } catch {
+          bs = lazy.BackupService.init();
+        }
+        return bs.findBackupsInWellKnownLocations(data);
       }
       default:
         lazy.log.debug(`Unexpected event ${type} was not handled.`);

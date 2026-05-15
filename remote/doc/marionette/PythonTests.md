@@ -76,7 +76,7 @@ which includes a reference to the test files and expectations for results.
 
 Such a manifest file can look like the following and is stored with the extension `.toml`:
 
-```ini
+```toml
 [DEFAULT]
 
 ["test_expected_fail.py"]

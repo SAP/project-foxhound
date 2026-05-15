@@ -1,0 +1,13 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * workbench.researchallofus.org - Hide unsupported browser warning.
+ *
+ * Bug #1913668 - https://bugzilla.mozilla.org/show_bug.cgi?id=1913668
+ * WebCompat issue #140432 - https://webcompat.com/issues/140432
+ */
+#outdated:has(#buttonUpdateBrowser) {
+  display: none !important;
+}

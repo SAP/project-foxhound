@@ -467,11 +467,11 @@ nsresult EarlyHintPreloader::OpenChannel(
 
 void EarlyHintPreloader::PriorizeAsPreload() {
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL;
-  Unused << mChannel->GetLoadFlags(&loadFlags);
-  Unused << mChannel->SetLoadFlags(loadFlags | nsIRequest::LOAD_BACKGROUND);
+  (void)mChannel->GetLoadFlags(&loadFlags);
+  (void)mChannel->SetLoadFlags(loadFlags | nsIRequest::LOAD_BACKGROUND);
 
   if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(mChannel)) {
-    Unused << cos->AddClassFlags(nsIClassOfService::Unblocked);
+    (void)cos->AddClassFlags(nsIClassOfService::Unblocked);
   }
 }
 
@@ -643,7 +643,7 @@ EarlyHintPreloader::OnStartRequest(nsIRequest* aRequest) {
   MOZ_DIAGNOSTIC_ASSERT(mChannel);
 
   nsresult status = NS_OK;
-  Unused << aRequest->GetStatus(&status);
+  (void)aRequest->GetStatus(&status);
 
   if (mParent) {
     SetParentChannel();

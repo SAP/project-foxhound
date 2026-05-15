@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "placeholder_device_info.h"
+
 #include "modules/video_capture/video_capture_factory.h"
 
 namespace mozilla {

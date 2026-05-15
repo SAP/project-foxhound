@@ -64,7 +64,13 @@ class DefaultPrivacyPreferencesRepository(
         enabled: Boolean,
     ) {
         when (type) {
-            PreferenceType.CrashReporting -> settings.crashReportChoice = CrashReportOption.Ask.label
+            PreferenceType.CrashReporting -> {
+                if (enabled) {
+                    settings.crashReportChoice = CrashReportOption.Auto.label
+                } else {
+                    settings.crashReportChoice = CrashReportOption.Ask.label
+                }
+            }
             PreferenceType.UsageData -> {
                 settings.isExperimentationEnabled = enabled
                 settings.isTelemetryEnabled = enabled

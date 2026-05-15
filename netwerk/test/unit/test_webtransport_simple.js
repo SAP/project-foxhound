@@ -15,7 +15,6 @@ var { setTimeout } = ChromeUtils.importESModule(
 
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.dns.localDomains");
-  Services.prefs.clearUserPref("network.webtransport.datagrams.enabled");
   Services.prefs.clearUserPref(
     "network.http.http3.alt-svc-mapping-for-testing"
   );
@@ -23,8 +22,6 @@ registerCleanupFunction(async () => {
 
 add_task(async function setup() {
   await http3_setup_tests("h3");
-
-  Services.prefs.setBoolPref("network.webtransport.datagrams.enabled", true);
 
   h3Port = Services.env.get("MOZHTTP3_PORT");
   Assert.notEqual(h3Port, null);

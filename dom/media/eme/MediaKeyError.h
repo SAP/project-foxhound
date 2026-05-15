@@ -7,10 +7,9 @@
 #ifndef mozilla_dom_MediaKeyError_h
 #define mozilla_dom_MediaKeyError_h
 
-#include "mozilla/Attributes.h"
-#include "nsWrapperCache.h"
-#include "mozilla/dom/Event.h"
 #include "js/TypeDecls.h"
+#include "mozilla/dom/Event.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

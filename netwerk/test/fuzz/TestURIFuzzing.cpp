@@ -18,7 +18,6 @@
 #include "nsString.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/Span.h"
-#include "mozilla/Unused.h"
 
 template <typename T>
 T get_numeric(char** buf, size_t* size) {

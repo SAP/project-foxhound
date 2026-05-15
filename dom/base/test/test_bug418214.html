@@ -19,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=418214
 
 var str = '<root xmlns:html="http://www.w3.org/1999/xhtml" xmlns:svg="http://www.w3.org/2000/svg" xmlns:math="http://www.w3.org/1998/Math/MathML"><html:div id="d" style="border:: invalid"/><svg:svg id="s" style="border:: invalid"/><math:math id="m" style="border:: invalid"/></root>';
 
-/** Test for Bug 418214 **/
+/** Test for Bug 418214 */
 var doc = (new DOMParser()).parseFromString(str, "text/xml");
 var d = doc.getElementById("d");
 var s = doc.getElementById("s");

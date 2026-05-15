@@ -9,6 +9,9 @@ support-files = [
   "worker.js",
   "blank.html",
 ]
+prefs = [
+  "sidebar.verticalTabs.dragToPinPromo.dismissed=true",
+]
 
 ["browser_aboutURLs.js"]
 
@@ -30,20 +33,20 @@ support-files = [
 https_first_disabled = true
 
 ["browser_forgetaboutsite.js"]
-skip-if = ["true"] # Bug 1924563
+skip-if = [
+  "true", # Bug 1924563
+]
 
 ["browser_guessusercontext.js"]
 
 ["browser_imageCache.js"]
 
 ["browser_middleClick.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
 tags = "bleedover"
 
 ["browser_newtabButton.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1775706
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt", # Bug 1775706
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1775706
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1775706
 ]
 
@@ -55,7 +58,6 @@ https_first_disabled = true
 ["browser_reopenIn.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1783491
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1783491
 ]
 
@@ -76,7 +78,6 @@ support-files = [
 ["browser_telemetry.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1783491
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1783491
 ]
 
@@ -87,8 +88,9 @@ skip-if = [
 ["browser_usercontextid_tabdrop.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Intermittent failure - bug 1268276
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Intermittent failure - bug 1268276
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1984803
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Intermittent failure - bug 1268276
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1984803
   "os == 'win'", # Intermittent failure - bug 1268276
 ]
 

@@ -85,6 +85,20 @@ class _TabState {
       tabData.groupId = tab.group.id;
     }
 
+    if (tab.splitview) {
+      tabData.splitViewId = tab.splitview.splitViewId;
+    }
+
+    if (tab.canonicalUrl) {
+      let canonicalUrl = tab.canonicalUrl;
+      if (!options.includePrivateData) {
+        canonicalUrl = lazy.PrivacyFilter.filterCanonicalUrl(canonicalUrl);
+      }
+      if (canonicalUrl) {
+        tabData.canonicalUrl = canonicalUrl;
+      }
+    }
+
     tabData.searchMode = tab.ownerGlobal.gURLBar.getSearchMode(browser, true);
 
     tabData.userContextId = tab.userContextId || 0;

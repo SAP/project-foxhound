@@ -8,24 +8,64 @@
 
 #include "CertVerifier.h"
 #include "ScopedNSSTypes.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIMutableArray.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSComponent.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsPKCS11Slot.h"
 #include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
+#include "nss.h"
+#include "xpcpublic.h"
 
 #if defined(XP_MACOSX)
 #  include "nsMacUtilsImpl.h"
 #  include "nsIFile.h"
 #endif  // defined(XP_MACOSX)
 
+using mozilla::ErrorResult;
+using mozilla::dom::Promise;
+
 namespace mozilla {
 namespace psm {
 
 NS_IMPL_ISUPPORTS(PKCS11ModuleDB, nsIPKCS11ModuleDB)
+
+StaticRefPtr<PKCS11ModuleDB> sPKCS11ModuleDB;
+
+already_AddRefed<PKCS11ModuleDB> PKCS11ModuleDB::GetSingleton() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return nullptr;
+  }
+
+  if (!sPKCS11ModuleDB) {
+    sPKCS11ModuleDB = new PKCS11ModuleDB();
+    ClearOnShutdown(&sPKCS11ModuleDB);
+  }
+
+  return do_AddRef(sPKCS11ModuleDB);
+}
+
+// Using the NSS serial task queue avoids threading issues in NSS'
+// implementation of module loading and unloading.
+nsresult DispatchToNSSTaskQueue(already_AddRefed<nsIRunnable>&& aRunnable) {
+  nsCOMPtr<nsIRunnable> runnable(aRunnable);
+  nsCOMPtr<nsINSSComponent> nss(do_GetService(PSM_COMPONENT_CONTRACTID));
+  if (!nss) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  nsCOMPtr<nsISerialEventTarget> nssTaskQueue;
+  nsresult rv = nss->GetNssTaskQueue(getter_AddRefs(nssTaskQueue));
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  return nssTaskQueue->Dispatch(runnable.forget());
+}
 
 // Convert the UTF16 name of the module as it appears to the user to the
 // internal representation. For most modules this just involves converting from
@@ -47,9 +87,27 @@ static nsresult NormalizeModuleNameIn(const nsAString& moduleNameIn,
   return NS_OK;
 }
 
+nsresult DoDeleteModule(const nsCString& moduleName) {
+  // modType is an output variable. We ignore it.
+  int32_t modType;
+  SECStatus srv = SECMOD_DeleteModule(moduleName.get(), &modType);
+  if (srv != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+
+  CollectThirdPartyPKCS11ModuleTelemetry();
+
+  return NS_OK;
+}
+
 // Delete a PKCS11 module from the user's profile.
 NS_IMETHODIMP
-PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName) {
+PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName, JSContext* aCx,
+                             Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
   if (aModuleName.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -59,22 +117,38 @@ PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName) {
   if (NS_FAILED(rv)) {
     return rv;
   }
-  // modType is an output variable. We ignore it.
-  int32_t modType;
-  SECStatus srv = SECMOD_DeleteModule(moduleNameNormalized.get(), &modType);
-  if (srv != SECSuccess) {
-    return NS_ERROR_FAILURE;
+
+  ErrorResult result;
+  RefPtr<Promise> promise =
+      Promise::Create(xpc::CurrentNativeGlobal(aCx), result);
+  if (result.Failed()) {
+    return result.StealNSResult();
   }
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<Promise>>(
+      "DeleteModule promise", promise);
 
-  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
-  if (!certVerifier) {
-    return NS_ERROR_FAILURE;
-  }
-  certVerifier->ClearTrustCache();
+  nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
+      "DeleteModule runnable",
+      [promiseHolder = std::move(promiseHolder),
+       moduleNameNormalized = std::move(moduleNameNormalized)]() {
+        nsresult rv = DoDeleteModule(moduleNameNormalized);
+        RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
+        if (certVerifier) {
+          certVerifier->ClearTrustCache();
+        }
+        NS_DispatchToMainThread(NS_NewRunnableFunction(
+            "DeleteModule callback",
+            [rv, promiseHolder = std::move(promiseHolder)] {
+              if (NS_SUCCEEDED(rv)) {
+                promiseHolder->get()->MaybeResolveWithUndefined();
+              } else {
+                promiseHolder->get()->MaybeReject(rv);
+              }
+            }));
+      }));
 
-  CollectThirdPartyPKCS11ModuleTelemetry();
-
-  return NS_OK;
+  promise.forget(aPromise);
+  return DispatchToNSSTaskQueue(runnable.forget());
 }
 
 #if defined(XP_MACOSX)
@@ -127,11 +201,37 @@ void CollectThirdPartyModuleFilename(const nsCString& aModulePath) {
 }
 #endif  // defined(XP_MACOSX)
 
+nsresult DoAddModule(const nsCString& moduleName, const nsCString& libraryPath,
+                     uint32_t mechanismFlags, uint32_t cipherFlags) {
+  uint32_t internalMechanismFlags =
+      SECMOD_PubMechFlagstoInternal(mechanismFlags);
+  uint32_t internalCipherFlags = SECMOD_PubCipherFlagstoInternal(cipherFlags);
+  SECStatus srv =
+      SECMOD_AddNewModule(moduleName.get(), libraryPath.get(),
+                          internalMechanismFlags, internalCipherFlags);
+  if (srv != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+
+#if defined(XP_MACOSX)
+  CollectThirdPartyModuleSignatureType(libraryPath);
+#endif  // defined(XP_MACOSX)
+
+  CollectThirdPartyPKCS11ModuleTelemetry();
+
+  return NS_OK;
+}
+
 // Add a new PKCS11 module to the user's profile.
 NS_IMETHODIMP
 PKCS11ModuleDB::AddModule(const nsAString& aModuleName,
-                          const nsAString& aLibraryFullPath,
-                          int32_t aCryptoMechanismFlags, int32_t aCipherFlags) {
+                          const nsAString& aLibraryPath,
+                          uint32_t aMechanismFlags, uint32_t aCipherFlags,
+                          JSContext* aCx, Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
+  }
   if (aModuleName.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -147,115 +247,101 @@ PKCS11ModuleDB::AddModule(const nsAString& aModuleName,
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  // There appears to be a deadlock if we try to load modules concurrently, so
-  // just wait until the loadable roots module has been loaded.
-  nsresult rv = BlockUntilLoadableCertsLoaded();
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
   nsAutoCString moduleNameNormalized;
-  rv = NormalizeModuleNameIn(aModuleName, moduleNameNormalized);
+  nsresult rv = NormalizeModuleNameIn(aModuleName, moduleNameNormalized);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  nsCString fullPath;
-  CopyUTF16toUTF8(aLibraryFullPath, fullPath);
-  uint32_t mechFlags = SECMOD_PubMechFlagstoInternal(aCryptoMechanismFlags);
-  uint32_t cipherFlags = SECMOD_PubCipherFlagstoInternal(aCipherFlags);
-  SECStatus srv = SECMOD_AddNewModule(moduleNameNormalized.get(),
-                                      fullPath.get(), mechFlags, cipherFlags);
-  if (srv != SECSuccess) {
-    return NS_ERROR_FAILURE;
+
+  nsAutoCString libraryPath;
+  CopyUTF16toUTF8(aLibraryPath, libraryPath);
+
+  ErrorResult result;
+  RefPtr<Promise> promise =
+      Promise::Create(xpc::CurrentNativeGlobal(aCx), result);
+  if (result.Failed()) {
+    return result.StealNSResult();
   }
+  auto promiseHolder =
+      MakeRefPtr<nsMainThreadPtrHolder<Promise>>("AddModule promise", promise);
 
-  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
-  if (!certVerifier) {
-    return NS_ERROR_FAILURE;
-  }
-  certVerifier->ClearTrustCache();
+  nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
+      "AddModule runnable",
+      [promiseHolder = std::move(promiseHolder),
+       moduleNameNormalized = std::move(moduleNameNormalized),
+       libraryPath = std::move(libraryPath), mechanismFlags = aMechanismFlags,
+       cipherFlags = aCipherFlags]() {
+        nsresult rv = DoAddModule(moduleNameNormalized, libraryPath,
+                                  mechanismFlags, cipherFlags);
+        RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
+        if (certVerifier) {
+          certVerifier->ClearTrustCache();
+        }
+        NS_DispatchToMainThread(NS_NewRunnableFunction(
+            "AddModule callback",
+            [rv, promiseHolder = std::move(promiseHolder)] {
+              if (NS_SUCCEEDED(rv)) {
+                promiseHolder->get()->MaybeResolveWithUndefined();
+              } else {
+                promiseHolder->get()->MaybeReject(rv);
+              }
+            }));
+      }));
 
-#if defined(XP_MACOSX)
-  CollectThirdPartyModuleSignatureType(fullPath);
-#endif  // defined(XP_MACOSX)
-
-  CollectThirdPartyPKCS11ModuleTelemetry();
-
-  return NS_OK;
+  promise.forget(aPromise);
+  return DispatchToNSSTaskQueue(runnable.forget());
 }
 
-NS_IMETHODIMP
-PKCS11ModuleDB::ListModules(nsISimpleEnumerator** _retval) {
-  NS_ENSURE_ARG_POINTER(_retval);
-
-  nsresult rv = BlockUntilLoadableCertsLoaded();
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsIMutableArray> array = do_CreateInstance(NS_ARRAY_CONTRACTID);
-  if (!array) {
-    return NS_ERROR_FAILURE;
-  }
-
-  /* lock down the list for reading */
+nsTArray<UniqueSECMODModule> DoListModules() {
+  // nsPKCS11Module isn't thread-safe (and doesn't need to be), so this
+  // collects the known modules as an array of UniqueSECMODModule on the
+  // background thread. They can then each be turned into an nsPKCS11Module on
+  // the main thread.
+  nsTArray<UniqueSECMODModule> modules;
   AutoSECMODListReadLock lock;
   for (SECMODModuleList* list = SECMOD_GetDefaultModuleList(); list;
        list = list->next) {
-    nsCOMPtr<nsIPKCS11Module> module = new nsPKCS11Module(list->module);
-    nsresult rv = array->AppendElement(module);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
+    modules.AppendElement(SECMOD_ReferenceModule(list->module));
   }
-
-  /* Get the modules in the database that didn't load */
   for (SECMODModuleList* list = SECMOD_GetDeadModuleList(); list;
        list = list->next) {
-    nsCOMPtr<nsIPKCS11Module> module = new nsPKCS11Module(list->module);
-    nsresult rv = array->AppendElement(module);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
+    modules.AppendElement(SECMOD_ReferenceModule(list->module));
   }
-
-  return array->Enumerate(_retval, NS_GET_IID(nsIPKCS11Module));
+  return modules;
 }
 
 NS_IMETHODIMP
-PKCS11ModuleDB::GetCanToggleFIPS(bool* aCanToggleFIPS) {
-  NS_ENSURE_ARG_POINTER(aCanToggleFIPS);
-
-  *aCanToggleFIPS = SECMOD_CanDeleteInternalModule();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-PKCS11ModuleDB::ToggleFIPSMode() {
-  // The way to toggle FIPS mode in NSS is extremely obscure. Basically, we
-  // delete the internal module, and it gets replaced with the opposite module
-  // (i.e. if it was FIPS before, then it becomes non-FIPS next).
-  // SECMOD_GetInternalModule() returns a pointer to a local copy of the
-  // internal module stashed in NSS.  We don't want to delete it since it will
-  // cause much pain in NSS.
-  SECMODModule* internal = SECMOD_GetInternalModule();
-  if (!internal) {
-    return NS_ERROR_FAILURE;
+PKCS11ModuleDB::ListModules(JSContext* aCx, Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!NS_IsMainThread()) {
+    return NS_ERROR_NOT_SAME_THREAD;
   }
 
-  if (SECMOD_DeleteInternalModule(internal->commonName) != SECSuccess) {
-    return NS_ERROR_FAILURE;
+  ErrorResult result;
+  RefPtr<Promise> promise =
+      Promise::Create(xpc::CurrentNativeGlobal(aCx), result);
+  if (result.Failed()) {
+    return result.StealNSResult();
   }
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<Promise>>(
+      "ListModules promise", promise);
 
-  return NS_OK;
-}
+  nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
+      "ListModules runnable", [promiseHolder = std::move(promiseHolder)]() {
+        nsTArray<UniqueSECMODModule> rawModules(DoListModules());
+        NS_DispatchToMainThread(NS_NewRunnableFunction(
+            "ListModules callback", [rawModules = std::move(rawModules),
+                                     promiseHolder = std::move(promiseHolder)] {
+              nsTArray<nsCOMPtr<nsIPKCS11Module>> modules;
+              for (const auto& rawModule : rawModules) {
+                modules.AppendElement(new nsPKCS11Module(rawModule.get()));
+              }
+              promiseHolder->get()->MaybeResolve(modules);
+            }));
+      }));
 
-NS_IMETHODIMP
-PKCS11ModuleDB::GetIsFIPSEnabled(bool* aIsFIPSEnabled) {
-  NS_ENSURE_ARG_POINTER(aIsFIPSEnabled);
-
-  *aIsFIPSEnabled = PK11_IsFIPS();
-  return NS_OK;
+  promise.forget(aPromise);
+  return DispatchToNSSTaskQueue(runnable.forget());
 }
 
 const nsLiteralCString kBuiltInModuleNames[] = {

@@ -29,7 +29,7 @@ macro_rules! try_match_ident_ignore_ascii_case {
     ($input:expr, $( $match_body:tt )*) => {{
         let location = $input.current_source_location();
         let ident = $input.expect_ident()?;
-        match_ignore_ascii_case! { &ident,
+        ::cssparser::match_ignore_ascii_case! { &ident,
             $( $match_body )*
             _ => return Err(location.new_custom_error(
                 ::selectors::parser::SelectorParseErrorKind::UnexpectedIdent(ident.clone())
@@ -41,17 +41,17 @@ macro_rules! try_match_ident_ignore_ascii_case {
 #[cfg(feature = "servo")]
 macro_rules! local_name {
     ($s:tt) => {
-        $crate::values::GenericAtomIdent(markup5ever::local_name!($s))
+        $crate::values::GenericAtomIdent(web_atoms::local_name!($s))
     };
 }
 
 #[cfg(feature = "servo")]
 macro_rules! ns {
     () => {
-        $crate::values::GenericAtomIdent(markup5ever::ns!())
+        $crate::values::GenericAtomIdent(web_atoms::ns!())
     };
     ($s:tt) => {
-        $crate::values::GenericAtomIdent(markup5ever::ns!($s))
+        $crate::values::GenericAtomIdent(web_atoms::ns!($s))
     };
 }
 

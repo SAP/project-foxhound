@@ -20,7 +20,10 @@
 
 #if defined(OS_POSIX)
 #include <errno.h>
+#include <string.h>
 #endif
+
+#include "base/strings/stringprintf.h"
 
 #if defined(OS_WIN)
 #include "base/strings/utf_string_conversions.h"
@@ -29,7 +32,6 @@
 #include <algorithm>
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 
 namespace logging {
 
@@ -75,35 +77,12 @@ int GetVlogLevelHelper(const char* file, size_t N) {
   return 0;
 }
 
-// Explicit instantiations for commonly used comparisons.
-template std::string* MakeCheckOpString<int, int>(
-    const int&, const int&, const char* names);
-template std::string* MakeCheckOpString<unsigned long, unsigned long>(
-    const unsigned long&, const unsigned long&, const char* names);
-template std::string* MakeCheckOpString<unsigned long, unsigned int>(
-    const unsigned long&, const unsigned int&, const char* names);
-template std::string* MakeCheckOpString<unsigned int, unsigned long>(
-    const unsigned int&, const unsigned long&, const char* names);
-template std::string* MakeCheckOpString<std::string, std::string>(
-    const std::string&, const std::string&, const char* name);
-
 LogMessage::LogMessage(const char* file, int line, LogSeverity severity)
     : severity_(severity), file_(file), line_(line) {
 }
 
 LogMessage::LogMessage(const char* file, int line, const char* condition)
     : severity_(LOG_FATAL), file_(file), line_(line) {
-}
-
-LogMessage::LogMessage(const char* file, int line, std::string* result)
-    : severity_(LOG_FATAL), file_(file), line_(line) {
-  delete result;
-}
-
-LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
-                       std::string* result)
-    : severity_(severity), file_(file), line_(line) {
-  delete result;
 }
 
 LogMessage::~LogMessage() {
@@ -122,39 +101,35 @@ SystemErrorCode GetLastSystemErrorCode() {
 #endif
 }
 
-#if defined(OS_WIN)
-Win32ErrorLogMessage::Win32ErrorLogMessage(const char* file,
-                                           int line,
+#if BUILDFLAG(IS_WIN)
+Win32ErrorLogMessage::Win32ErrorLogMessage(const char* file, int line,
                                            LogSeverity severity,
                                            SystemErrorCode err)
-    : err_(err),
-      log_message_(file, line, severity) {
-  mozilla::Unused << err_;
+    : LogMessage(file, line, severity), err_(err) {
+  (void)err_;
 }
 
-Win32ErrorLogMessage::~Win32ErrorLogMessage() {
-}
-#elif defined(OS_POSIX)
+Win32ErrorLogMessage::~Win32ErrorLogMessage() {}
+#elif BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 ErrnoLogMessage::ErrnoLogMessage(const char* file,
                                  int line,
                                  LogSeverity severity,
                                  SystemErrorCode err)
-    : err_(err),
-      log_message_(file, line, severity) {
-  mozilla::Unused << err_;
+    : LogMessage(file, line, severity), err_(err) {
+  (void)err_;
 }
 
 ErrnoLogMessage::~ErrnoLogMessage() {
 }
-#endif  // OS_WIN
+#endif  // BUILDFLAG(IS_WIN))
 
 void RawLog(int level, const char* message) {
 }
 
-} // namespace logging
-
-#if defined(OS_WIN)
-std::ostream& std::operator<<(std::ostream& out, const wchar_t* wstr) {
-  return out << base::WideToUTF8(std::wstring(wstr));
+#if !BUILDFLAG(USE_RUNTIME_VLOG)
+int GetDisableAllVLogLevel() {
+  return -1;
 }
-#endif
+#endif  // !BUILDFLAG(USE_RUNTIME_VLOG)
+
+} // namespace logging

@@ -10,11 +10,29 @@
 
 #include "test/testsupport/file_utils.h"
 
+#include <stdlib.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "absl/base/attributes.h"
+#include "absl/strings/string_view.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/crypto_random.h"
+#include "rtc_base/strings/string_builder.h"
+#include "test/testsupport/file_utils_override.h"
+
 #if defined(WEBRTC_POSIX)
 #include <unistd.h>
 #endif
 
 #if defined(WEBRTC_WIN)
+#include <Shlwapi.h>
+#include <WinDef.h>
 #include <direct.h>
 #include <tchar.h>
 #include <windows.h>
@@ -22,8 +40,7 @@
 #include <algorithm>
 #include <locale>
 
-#include "Shlwapi.h"
-#include "WinDef.h"
+#include "rtc_base/string_utils.h"
 #include "rtc_base/win32.h"
 
 #define GET_CURRENT_DIR _getcwd
@@ -38,28 +55,11 @@
 #define S_ISDIR(mode) (((mode) & S_IFMT) == S_IFDIR)
 #endif
 
-#include <stdio.h>
-#include <stdlib.h>
-
-#include <memory>
-#include <optional>
-#include <string>
-#include <type_traits>
-#include <utility>
-#include <vector>
-
 #if defined(WEBRTC_IOS)
 #include "test/testsupport/ios_file_utils.h"
 #elif defined(WEBRTC_MAC)
 #include "test/testsupport/mac_file_utils.h"
 #endif
-
-#include "absl/strings/string_view.h"
-#include "rtc_base/checks.h"
-#include "rtc_base/crypto_random.h"
-#include "rtc_base/string_utils.h"
-#include "rtc_base/strings/string_builder.h"
-#include "test/testsupport/file_utils_override.h"
 
 namespace webrtc {
 namespace test {
@@ -82,30 +82,37 @@ std::string DirName(absl::string_view path) {
   return std::string(path.substr(0, path.find_last_of(kPathDelimiter)));
 }
 
+absl::string_view FileName(absl::string_view path) {
+  if (path.find_last_of(kPathDelimiter) == absl::string_view::npos) {
+    return path;
+  }
+  return path.substr(path.find_last_of(kPathDelimiter) + 1);
+}
+
 bool FileExists(absl::string_view file_name) {
-  struct stat file_info = {0};
+  struct stat file_info = {.st_dev = 0};
   return stat(std::string(file_name).c_str(), &file_info) == 0;
 }
 
 bool DirExists(absl::string_view directory_name) {
-  struct stat directory_info = {0};
+  struct stat directory_info = {.st_dev = 0};
   return stat(std::string(directory_name).c_str(), &directory_info) == 0 &&
          S_ISDIR(directory_info.st_mode);
 }
 
 std::string OutputPath() {
-  return webrtc::test::internal::OutputPath();
+  return test::internal::OutputPath();
 }
 
 std::string OutputPathWithRandomDirectory() {
-  std::string path = webrtc::test::internal::OutputPath();
+  std::string path = test::internal::OutputPath();
   std::string rand_dir = path + CreateRandomUuid();
   RTC_CHECK(CreateDir(rand_dir)) << "Failed to create dir: " << rand_dir;
   return rand_dir + std::string(kPathDelimiter);
 }
 
 std::string WorkingDir() {
-  return webrtc::test::internal::WorkingDir();
+  return test::internal::WorkingDir();
 }
 
 // Generate a temporary filename in a safe way.
@@ -113,9 +120,9 @@ std::string WorkingDir() {
 std::string TempFilename(absl::string_view dir, absl::string_view prefix) {
 #ifdef WIN32
   wchar_t filename[MAX_PATH];
-  if (::GetTempFileNameW(rtc::ToUtf16(dir).c_str(),
-                         rtc::ToUtf16(prefix).c_str(), 0, filename) != 0)
-    return rtc::ToUtf8(filename);
+  if (::GetTempFileNameW(webrtc::ToUtf16(dir).c_str(),
+                         webrtc::ToUtf16(prefix).c_str(), 0, filename) != 0)
+    return webrtc::ToUtf8(filename);
   RTC_DCHECK_NOTREACHED();
   return "";
 #else
@@ -142,7 +149,7 @@ std::string GenerateTempFilename(absl::string_view dir,
 }
 
 std::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
-  if (path.length() == 0)
+  if (path.empty())
     return std::optional<std::vector<std::string>>();
 
   std::string path_str(path);
@@ -154,14 +161,15 @@ std::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
 
   // Init.
   WIN32_FIND_DATAW data;
-  HANDLE handle = ::FindFirstFileW(rtc::ToUtf16(path_str + '*').c_str(), &data);
+  HANDLE handle =
+      ::FindFirstFileW(webrtc::ToUtf16(path_str + '*').c_str(), &data);
   if (handle == INVALID_HANDLE_VALUE)
     return std::optional<std::vector<std::string>>();
 
   // Populate output.
   std::vector<std::string> found_entries;
   do {
-    const std::string name = rtc::ToUtf8(data.cFileName);
+    const std::string name = webrtc::ToUtf8(data.cFileName);
     if (name != "." && name != "..")
       found_entries.emplace_back(path_str + name);
   } while (::FindNextFileW(handle, &data) == TRUE);
@@ -196,7 +204,7 @@ std::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
 
 bool CreateDir(absl::string_view directory_name) {
   std::string directory_name_str(directory_name);
-  struct stat path_info = {0};
+  struct stat path_info = {.st_dev = 0};
   // Check if the path exists already:
   if (stat(directory_name_str.c_str(), &path_info) == 0) {
     if (!S_ISDIR(path_info.st_mode)) {
@@ -253,7 +261,7 @@ bool RemoveFile(absl::string_view file_name) {
 }
 
 std::string ResourcePath(absl::string_view name, absl::string_view extension) {
-  return webrtc::test::internal::ResourcePath(name, extension);
+  return test::internal::ResourcePath(name, extension);
 }
 
 std::string JoinFilename(absl::string_view dir, absl::string_view name) {
@@ -271,7 +279,7 @@ std::string JoinFilename(absl::string_view dir, absl::string_view name) {
 size_t GetFileSize(absl::string_view filename) {
   FILE* f = fopen(std::string(filename).c_str(), "rb");
   size_t size = 0;
-  if (f != NULL) {
+  if (f != nullptr) {
     if (fseek(f, 0, SEEK_END) == 0) {
       size = ftell(f);
     }

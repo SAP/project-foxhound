@@ -9,7 +9,7 @@ How to use the JavaScript Tracer
 .. note::
 
   This feature is still under development and may drastically change at any time.
-  You will have to toggle `devtools.debugger.features.javascript-tracing preference` preference to true in about:config
+  You will have to toggle ``devtools.debugger.features.javascript-tracing preference`` preference to true in about:config
   before opening DevTools in order to use it.
 
 Once enabled, you have three ways to toggle the tracer:
@@ -18,10 +18,10 @@ Once enabled, you have three ways to toggle the tracer:
 
     You can right click on this button (only when the tracer is OFF) to configure its behavior.
 
-  * From the console, via the `:trace` command.
+  * From the console, via the ``:trace`` command.
 
-    You can execute `:trace --help` to see all supported optional arguments.
-    Otherwise `:trace` will either start or stop the JS Tracer based on its current state.
+    You can execute ``:trace --help`` to see all supported optional arguments.
+    Otherwise ``:trace`` will either start or stop the JS Tracer based on its current state.
 
   * From the page, via Ctrl+Shift+5 key shortcut (or Cmd+Shift+5 on MacOS).
 
@@ -29,6 +29,7 @@ Once enabled, you have three ways to toggle the tracer:
     This will use the configuration current defined in the Debugger tracer icon's context menu.
 
 .. |image1| image:: trace-icon.svg
+  :alt: The JSTracer icon in the Toolbox top toolbar
 
 Tracer options
 **************
@@ -44,7 +45,7 @@ Logging output
 
    |image2|
 
-   (`:trace --logMethod console`)
+   (``:trace --logMethod console``)
 
  * Debugger Sidebar
 
@@ -57,7 +58,7 @@ Logging output
 
    |image5|
 
-   (`:trace --logMethod debugger-sidebar`)
+   (``:trace --logMethod debugger-sidebar``)
 
  * Profiler record
 
@@ -68,7 +69,7 @@ Logging output
 
    |image4|
 
-   (`:trace --logMethod profiler`)
+   (``:trace --logMethod profiler``)
 
  * Stdout
 
@@ -91,7 +92,7 @@ Logging output
   ————[interpreter]—> https://bugzilla.mozilla.org/static/v20240305.1/js/jquery/jquery-min.js:2:29696 - λ F
   ———[interpreter]—> https://bugzilla.mozilla.org/static/v20240305.1/js/jquery/jquery-min.js:2:40177 - λ handlers
 
-(`:trace --logMethod stdout`)
+(``:trace --logMethod stdout``)
 
 .. |image2| image:: console-trace.png
   :class: border
@@ -115,7 +116,7 @@ The Tracer will then be in pending mode, which is indicated via a blue badge on 
    The tracer will only really start logging function calls when the first clicking or pressing a key on the page.
    To be precise, the tracer will start on first mousdown or keydown event.
 
-   (`:trace --on-next-interaction`)
+   (``:trace --on-next-interaction``)
 
  * on next page load
 
@@ -127,6 +128,7 @@ The Tracer will then be in pending mode, which is indicated via a blue badge on 
 
 .. |image3| image:: pending-icon.png
   :class: border
+  :alt: The JSTracer icon in the Toolbox top toolbar, with an active style and a small round circle at the right bottom corner.
 
 Tracing function returns
 ------------------------
@@ -138,8 +140,9 @@ Note that this option is enabled by default for the profiler output, without any
 in order to properly record each function call duration.
 
 .. image:: trace-returns.png
+  :alt: Tracer output showing 2 items. The first one is "→ [interpreter] isEmptyObject", and the second "← isEmptyObject return"
 
-(`:trace --returns`)
+(``:trace --returns``)
 
 Tracing values
 --------------
@@ -150,10 +153,12 @@ This is disabled by default as it complexify the output of the tracer, making it
 Note that the profiler output doesn't support this feature.
 
 .. image:: trace-returns-with-values.png
+  :alt: Tracer output showing 2 items. The first one is "→ [baseline] isEmptyObject( Object { } )", and the second "← isEmptyObject return true"
 
 .. image:: trace-values.png
+  :alt: Tracer output showing 2 items. The first one is a "DOM | mouseup", and the second "→ [interpreter] add/v.handle (mouseup { target: div#content, buttons: 0, clientX: 1018, clientY: 388, layerX: 1003, layerY: 325 })"
 
-(`:trace --values`)
+(``:trace --values``)
 
 
 Web Console Command only options
@@ -164,11 +169,11 @@ Web Console Command only options
 You may optionally trace all DOM Mutations happening on the page.
 The mutation will appear according to their precise execution order versus JavaScript code modifying the DOM (JS Traces),
 but also errors, warnings and console API logs.
-By default, the console command argument `--dom-mutations` will record all types of mutations: new nodes being added to the document,
+By default, the console command argument ``--dom-mutations`` will record all types of mutations: new nodes being added to the document,
 attributes changed on a node and node being removed from the document.
 The argument also accept a coma separated list of options to control which type of mutation should be logged.
 
-(`:trace --dom-mutations` === `:trace --dom-mutations add,attributes,remove`)
+(``:trace --dom-mutations`` === ``:trace --dom-mutations add,attributes,remove``)
 
  * Depth limit
 
@@ -198,7 +203,7 @@ For example, while :trace without any argument would log the following on bugzil
   ————[interpreter]—> https://bugzilla.mozilla.org/static/v20240305.1/js/jquery/jquery-min.js:2:29696 - λ F
   ———[interpreter]—> https://bugzilla.mozilla.org/static/v20240305.1/js/jquery/jquery-min.js:2:40177 - λ handlers
 
-running `:trace --max-depth 1` will give us:
+running ``:trace --max-depth 1`` will give us:
 
 .. code-block:: bash
 
@@ -207,7 +212,7 @@ running `:trace --max-depth 1` will give us:
   —DOM | mouseup
   —[interpreter]—> https://bugzilla.mozilla.org/static/v20240305.1/js/jquery/jquery-min.js:2:37892 - λ add/
 
-and running `:trace --max-depth 3` will give us:
+and running ``:trace --max-depth 3`` will give us:
 
 .. code-block:: bash
 
@@ -224,7 +229,7 @@ and running `:trace --max-depth 3` will give us:
   ———[interpreter]—> https://bugzilla.mozilla.org/static/v20240305.1/js/jquery/jquery-min.js:2:30171 - λ get
   ———[interpreter]—> https://bugzilla.mozilla.org/static/v20240305.1/js/jquery/jquery-min.js:2:40177 - λ handlers
 
-(`:trace --max-depth 5`)
+(``:trace --max-depth 5``)
 
  * Record limit
 
@@ -234,4 +239,4 @@ A record is composed of one top level function call, including all its nested fu
 This option can be especially useful in combination to tracer on next user interaction.
 This can help narrow down to a very precise code acting only on a mouse or key event processing.
 
-(`:trace --max-records 10`)
+(``:trace --max-records 10``)

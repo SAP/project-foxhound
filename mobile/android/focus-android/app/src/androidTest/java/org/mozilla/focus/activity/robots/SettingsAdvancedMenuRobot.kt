@@ -20,6 +20,7 @@ import org.mozilla.focus.helpers.EspressoHelper.hasCousin
 import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.packageName
 import org.mozilla.focus.helpers.TestHelper.waitingTime
+import androidx.preference.R as preferenceR
 
 class SettingsAdvancedMenuRobot {
     fun verifyAdvancedSettingsItems() {
@@ -52,7 +53,7 @@ private fun assertOpenLinksInAppsSwitchState(enabled: Boolean = false) {
                 matches(
                     hasCousin(
                         allOf(
-                            withId(R.id.switchWidget),
+                            withId(android.R.id.switch_widget),
                             isChecked(),
                         ),
                     ),
@@ -64,7 +65,7 @@ private fun assertOpenLinksInAppsSwitchState(enabled: Boolean = false) {
                 matches(
                     hasCousin(
                         allOf(
-                            withId(R.id.switchWidget),
+                            withId(android.R.id.switch_widget),
                             isNotChecked(),
                         ),
                     ),
@@ -87,7 +88,7 @@ private fun assertRemoteDebuggingSwitchState(enabled: Boolean = false) {
                 matches(
                     hasCousin(
                         allOf(
-                            withId(R.id.switchWidget),
+                            withId(preferenceR.id.switchWidget),
                             isChecked(),
                         ),
                     ),
@@ -99,7 +100,7 @@ private fun assertRemoteDebuggingSwitchState(enabled: Boolean = false) {
                 matches(
                     hasCousin(
                         allOf(
-                            withId(R.id.switchWidget),
+                            withId(android.R.id.switch_widget),
                             isNotChecked(),
                         ),
                     ),

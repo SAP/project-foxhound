@@ -11,7 +11,6 @@ import mozilla.components.service.nimbus.GleanMetrics.Microsurvey
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -38,9 +37,6 @@ class NimbusMessagingControllerTest {
     @get:Rule
     val gleanTestRule = GleanTestRule(testContext)
 
-    private val coroutinesTestRule = MainCoroutineRule()
-    private val coroutineScope = coroutinesTestRule.scope
-
     private val deepLinkScheme = "deepLinkScheme"
     private val controller = NimbusMessagingController(storage, deepLinkScheme)
 
@@ -51,7 +47,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN message not expired WHEN calling onMessageDisplayed THEN record a messageShown event and update storage`() =
-        coroutineScope.runTest {
+        runTest {
             val message = createMessage("id-1", style = StyleData(maxDisplayCount = 2))
             val displayedMessage = createMessage("id-1", style = StyleData(maxDisplayCount = 2), displayCount = 1)
             `when`(storage.onMessageDisplayed(eq(message), any())).thenReturn(displayedMessage)
@@ -76,7 +72,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN message is expired WHEN calling onMessageDisplayed THEN record messageShown, messageExpired events and update storage`() =
-        coroutineScope.runTest {
+        runTest {
             val message =
                 createMessage("id-1", style = StyleData(maxDisplayCount = 1), displayCount = 0)
             val displayedMessage = createMessage("id-1", style = StyleData(maxDisplayCount = 1), displayCount = 1)
@@ -104,7 +100,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `WHEN calling onMessageDismissed THEN record a messageDismissed event and update metadata`() =
-        coroutineScope.runTest {
+        runTest {
             val message = createMessage("id-1")
             assertNull(GleanMessaging.messageDismissed.testGetValue())
 
@@ -120,7 +116,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `WHEN calling onMicrosurveyDismissed THEN record a messageDismissed event and update metadata`() =
-        coroutineScope.runTest {
+        runTest {
             val message = createMessage("id-1")
             assertNull(Microsurvey.dismissButtonTapped.testGetValue())
 
@@ -136,7 +132,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN microsurvey WHEN calling onMicrosurveyShown THEN report telemetry`() =
-        coroutineScope.runTest {
+        runTest {
             assertNull(Microsurvey.shown.testGetValue())
 
             controller.onMicrosurveyShown("id-1")
@@ -146,7 +142,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN microsurvey WHEN calling onMicrosurveySentConfirmationShown THEN report telemetry`() =
-        coroutineScope.runTest {
+        runTest {
             assertNull(Microsurvey.confirmationShown.testGetValue())
 
             controller.onMicrosurveySentConfirmationShown("id-1")
@@ -156,7 +152,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN microsurvey WHEN calling onMicrosurveyPrivacyNoticeTapped THEN report telemetry`() =
-        coroutineScope.runTest {
+        runTest {
             assertNull(Microsurvey.privacyNoticeTapped.testGetValue())
 
             controller.onMicrosurveyPrivacyNoticeTapped("id-1")
@@ -255,7 +251,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN message WHEN calling onMessageClicked THEN update stored metadata for message`() =
-        coroutineScope.runTest {
+        runTest {
             val message = createMessage("id-1")
             assertFalse(message.metadata.pressed)
 
@@ -267,7 +263,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN microsurvey WHEN calling onMicrosurveyStarted THEN report telemetry`() =
-        coroutineScope.runTest {
+        runTest {
             val messageData = MessageData(microsurveyConfig = mock())
             val message = createMessage("id-1", messageData = messageData)
             assertFalse(message.metadata.pressed)
@@ -303,7 +299,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN stored messages contains a matching message WHEN calling getMessage THEN return the matching message`() =
-        coroutineScope.runTest {
+        runTest {
             val message1 = createMessage("1")
             `when`(storage.getMessage(message1.id)).thenReturn(message1)
             val actualMessage = controller.getMessage(message1.id)
@@ -313,7 +309,7 @@ class NimbusMessagingControllerTest {
 
     @Test
     fun `GIVEN stored messages doesn't contain a matching message WHEN calling getMessage THEN return null`() =
-        coroutineScope.runTest {
+        runTest {
             `when`(storage.getMessage("unknown id")).thenReturn(null)
             val actualMessage = controller.getMessage("unknown id")
 

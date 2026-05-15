@@ -996,7 +996,7 @@ browser:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1525076
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1874944
     notification_emails:
-      - aoprea@mozilla.com
+      - omc-core@mozilla.com
     expires: never
     telemetry_mirror: h#BROWSER_ATTRIBUTION_ERRORS
 
@@ -1017,3 +1017,81 @@ browser:
     data_sensitivity:
       - technical
     expires: never
+
+  global_ai_control_is_blocking:
+    type: boolean
+    lifetime: application
+    description: |
+      Status of the global AI enhancements setting.
+      When true, enhancements are blocked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2013077
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2013077
+    notification_emails:
+      - nimbus-team@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    send_in_pings:
+      - metrics
+
+  ai_control_is_blocking:
+    type: labeled_boolean
+    lifetime: application
+    description: |
+      Status of the AI controls per feature setting.
+      When true, the feature enhancement is blocked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    notification_emails:
+      - sopsal@mozilla.com
+      - mstriemer@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    send_in_pings:
+      - metrics
+
+  global_ai_control_toggled:
+    type: event
+    description: Emitted when the global AI enhancements setting is toggled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012214
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2012214
+    notification_emails:
+      - nimbus-team@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    extra_keys:
+      blocked:
+        type: boolean
+        description: >
+          The state of the "Block AI Enhancements" toggle.
+
+  ai_control_changed:
+    type: event
+    description: Emitted when an AI enhancement control setting is changed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2018218
+    notification_emails:
+      - sopsal@mozilla.com
+      - mstriemer@mozilla.com
+    data_sensitivity:
+      - interaction
+    expires: never
+    extra_keys:
+      feature:
+        type: string
+        description: >
+          The AI Control feature identifier.
+      selection:
+        type: string
+        description: >
+          The state of the "Block AI Enhancements" dropdown.

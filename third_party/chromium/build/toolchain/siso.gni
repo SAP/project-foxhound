@@ -7,7 +7,6 @@ import("//chromium/build/config/gclient_args.gni")
 use_siso_default = false
 
 _is_google_corp_machine = false
-if (false) { # Mozilla
 if (path_exists("/usr/bin/gcert") ||  # linux
     path_exists("/usr/local/bin/gcert") ||  # mac
     path_exists("/c:/gnubby/bin/gcert.exe")) {
@@ -20,7 +19,6 @@ if (path_exists("//chromium/build/config/siso/.sisoenv") &&
     defined(build_with_chromium) && build_with_chromium &&
     _is_google_corp_machine && !_is_ninja_used) {
   use_siso_default = true
-}
 }
 
 declare_args() {

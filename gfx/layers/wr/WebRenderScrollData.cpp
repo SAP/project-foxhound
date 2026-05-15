@@ -12,8 +12,6 @@
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/ToString.h"
-#include "mozilla/Unused.h"
 #include "nsDisplayList.h"
 #include "nsTArray.h"
 #include "UnitTransforms.h"
@@ -67,15 +65,18 @@ void WebRenderLayerScrollData::Initialize(
 
   while (asr && asr != aStopAtAsr) {
     MOZ_ASSERT(aOwner.GetManager());
+    if (asr->mKind != ActiveScrolledRoot::ASRKind::Scroll) {
+      asr = asr->mParent;
+      continue;
+    }
     ScrollableLayerGuid::ViewID scrollId = asr->GetViewId();
     if (Maybe<size_t> index = aOwner.HasMetadataFor(scrollId)) {
       mScrollIds.AppendElement(index.ref());
     } else {
       Maybe<ScrollMetadata> metadata =
-          asr->mScrollContainerFrame->ComputeScrollMetadata(
+          asr->ScrollFrame()->ComputeScrollMetadata(
               aOwner.GetManager(), aItem->Frame(), aItem->ToReferenceFrame());
-      aOwner.GetBuilder()->AddScrollContainerFrameToNotify(
-          asr->mScrollContainerFrame);
+      aOwner.GetBuilder()->AddScrollContainerFrameToNotify(asr->ScrollFrame());
       if (metadata) {
         MOZ_ASSERT(metadata->GetMetrics().GetScrollId() == scrollId);
         mScrollIds.AppendElement(aOwner.AddMetadata(metadata.ref()));

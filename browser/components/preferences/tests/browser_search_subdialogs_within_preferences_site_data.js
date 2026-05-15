@@ -12,7 +12,10 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("cookies", ["siteDataGroup", "trackingGroup"]);
+  await evaluateSearchResults("cookies", [
+    "cookiesAndSiteData",
+    "trackingGroup",
+  ]);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -20,7 +23,7 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("site data", ["siteDataGroup"]);
+  await evaluateSearchResults("site data", ["cookiesAndSiteData"]);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -28,7 +31,7 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("cache", ["siteDataGroup"]);
+  await evaluateSearchResults("cache", ["cookiesAndSiteData"]);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 

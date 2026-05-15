@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_CookieStore_h
 #define mozilla_dom_CookieStore_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/CookieStoreBinding.h"
 

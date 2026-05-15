@@ -25,13 +25,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.PlaceholderCard
 import org.mozilla.fenix.home.collections.CollectionColors
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 @Composable
 internal fun CollectionsPlaceholder(
@@ -78,7 +79,7 @@ internal fun CollectionsPlaceholder(
                     modifier = Modifier.size(20.dp),
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.mozac_ic_cross_20),
+                        painter = painterResource(iconsR.drawable.mozac_ic_cross_20),
                         contentDescription = stringResource(
                             R.string.remove_home_collection_placeholder_content_description,
                         ),
@@ -97,16 +98,15 @@ internal fun CollectionsPlaceholder(
             if (showAddTabsToCollection) {
                 Spacer(modifier = Modifier.height(16.dp))
 
-                PrimaryButton(
+                FilledButton(
                     text = stringResource(R.string.tabs_menu_save_to_collection1),
                     modifier = Modifier
                         .fillMaxWidth()
                         .wrapContentHeight(),
                     icon = painterResource(R.drawable.ic_tab_collection),
                     onClick = interactor::onAddTabsToCollectionTapped,
-                    textColor = buttonTextColor,
-                    backgroundColor = buttonBackgroundColor,
-                    iconTint = buttonTextColor,
+                    contentColor = buttonTextColor,
+                    containerColor = buttonBackgroundColor,
                 )
             }
         },
@@ -117,7 +117,7 @@ internal fun CollectionsPlaceholder(
 @Composable
 private fun CollectionsPlaceholderPreview() {
     FirefoxTheme {
-        Surface(color = FirefoxTheme.colors.layer1) {
+        Surface {
             Column(modifier = Modifier.padding(16.dp)) {
                 CollectionsPlaceholder(
                     interactor = FakeHomepagePreview.collectionInteractor,

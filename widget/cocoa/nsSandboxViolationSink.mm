@@ -71,7 +71,7 @@ void nsSandboxViolationSink::ViolationHandler() {
     // be better to make the chrome process log all the other processes'
     // violations.
     char query_pid[20] = {0};
-    SprintfLiteral(query_pid, "%u", getpid());
+    SprintfLiteral(query_pid, "%d", getpid());
     asl_set_query(query, ASL_KEY_REF_PID, query_pid, ASL_QUERY_OP_EQUAL);
   }
 

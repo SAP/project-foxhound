@@ -248,7 +248,11 @@ add_task(
     let onNewTabOpened = new Promise(resolve =>
       win.gBrowser.addTabsProgressListener({
         onStateChange(browser, webProgress, request, stateFlags) {
-          if (stateFlags & Ci.nsIWebProgressListener.STATE_START) {
+          if (
+            stateFlags & Ci.nsIWebProgressListener.STATE_START &&
+            request.QueryInterface(Ci.nsIChannel).originalURI.spec !==
+              "about:blank"
+          ) {
             win.gBrowser.removeTabsProgressListener(this);
             resolve(win.gBrowser.getTabForBrowser(browser));
           }

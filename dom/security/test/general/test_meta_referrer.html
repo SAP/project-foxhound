@@ -22,7 +22,6 @@ function checkTestsDone() {
   }
 }
 var script = SpecialPowers.loadChromeScript(() => {
-  /* eslint-env mozilla/chrome-script */
   let counter = 0;
   Services.obs.addObserver(function onExamResp(subject) {
     let channel = subject.QueryInterface(Ci.nsIHttpChannel);

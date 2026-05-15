@@ -254,6 +254,37 @@ const EXPIRATION_QUERIES = {
       ACTION.DEBUG,
   },
 
+  // Expire icon relations for pages not visited in the last six months.
+  // The six-month threshold is arbitrary: the history view groups visits older
+  // than six months under a "Older than 6 months" entry, so losing icons in
+  // such a large list would be acceptable.
+  // We only remove relations whose expire_ms is at least six months older than
+  // the page's last visit, indicating the relation has not been refreshed by
+  // visits for a long time and is likely stale.
+  // We also exclude bookmarked pages and root icons.
+  // We proceed cautiously because these icons might still be in use;
+  // they are only potentially stale.
+  // Orphaned icons are removed by subsequent expiration queries.
+  QUERY_EXPIRE_OLD_FAVICON_RELATIONS: {
+    sql: `
+    DELETE FROM moz_icons_to_pages
+    WHERE (page_id, icon_id) IN (
+     	SELECT page_id, icon_id
+      FROM moz_icons_to_pages ip
+      JOIN moz_pages_w_icons pi ON pi.id = page_id
+      JOIN moz_places ON url_hash = page_url_hash
+      WHERE
+        last_visit_date BETWEEN
+          strftime('%s', ip.expire_ms / 1000, 'unixepoch', '+6 months', 'localtime', 'utc') * 1000000
+          AND strftime('%s', 'now', 'localtime', '-6 months', 'utc') * 1000000
+        AND foreign_count = 0
+        AND NOT EXISTS (SELECT 1 FROM moz_icons WHERE id = icon_id AND root = 1)
+      LIMIT 50
+    )
+    `,
+    actions: ACTION.IDLE_DIRTY | ACTION.IDLE_DAILY | ACTION.DEBUG,
+  },
+
   // Expire from favicons any page that has only relations older than 180 days,
   // if the page is not bookmarked, and we have a root icon that can be used
   // as a placeholder until the page is visited again.
@@ -417,7 +448,7 @@ export function nsPlacesExpiration() {
     this,
     "_idle",
     "@mozilla.org/widget/useridleservice;1",
-    "nsIUserIdleService"
+    Ci.nsIUserIdleService
   );
 
   // Max number of unique URIs to retain in history.

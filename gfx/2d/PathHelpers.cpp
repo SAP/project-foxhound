@@ -138,7 +138,7 @@ void AppendRoundedRectToPath(PathBuilder* aPathBuilder, const Rect& aRect,
 
   for (int i = 0; i < 4; ++i) {
     // the corner index -- either 1 2 3 0 (cw) or 0 3 2 1 (ccw)
-    int c = aDrawClockwise ? ((i + 1) % 4) : ((4 - i) % 4);
+    auto c = Corner(aDrawClockwise ? ((i + 1) % 4) : ((4 - i) % 4));
 
     // i+2 and i+3 respectively.  These are used to index into the corner
     // multiplier table, and were deduced by calculating out the long form

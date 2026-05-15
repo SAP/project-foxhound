@@ -2,17 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "DecoderData.h"
+
 #include "Adts.h"
 #include "AnnexB.h"
 #include "BufferReader.h"
-#include "DecoderData.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/EndianUtils.h"
-#include "mozilla/glean/DomMediaMp4Metrics.h"
-#include "VideoUtils.h"
 #include "MP4Metadata.h"
+#include "VideoUtils.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/Logging.h"
-
+#include "mozilla/glean/DomMediaMp4Metrics.h"
 #include "mp4parse.h"
 
 #define LOG(...) \
@@ -183,7 +182,8 @@ MediaResult MP4AudioInfo::Update(const Mp4parseTrackInfo* aTrack,
         mp4ParseSampleCodecSpecific.data, mp4ParseSampleCodecSpecific.length);
     mCodecSpecificConfig =
         AudioCodecSpecificVariant{std::move(opusCodecSpecificData)};
-  } else if (codecType == MP4PARSE_CODEC_AAC) {
+  } else if (codecType == MP4PARSE_CODEC_AAC ||
+             codecType == MP4PARSE_CODEC_XHEAAC) {
     mMimeType = "audio/mp4a-latm"_ns;
     int64_t codecDelayUS = aTrack->media_time;
     double USECS_PER_S = 1e6;

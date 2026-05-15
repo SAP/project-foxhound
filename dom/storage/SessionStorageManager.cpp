@@ -6,10 +6,10 @@
 
 #include "SessionStorageManager.h"
 
-#include "StorageIPC.h"
 #include "SessionStorage.h"
 #include "SessionStorageCache.h"
 #include "SessionStorageObserver.h"
+#include "StorageIPC.h"
 #include "StorageUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/OriginAttributes.h"
@@ -33,6 +33,21 @@
 namespace mozilla::dom {
 
 using namespace StorageUtils;
+
+static bool ExactDomainMatch(const nsACString& aOriginKey,
+                             const nsACString& aOriginScope) {
+  // aOriginScope is reversed domain with trailing dot.
+  // e.g: example.com => moc.elpmaxe. (see StorageUtils.cpp)
+  // aOriginKey is reversed domain with trailing dot, plus ":",
+  // scheme, and optional port. e.g: moc.elpmaxe.:http:80 (see
+  // https://searchfox.org/firefox-main/rev/987f566373ea82403c5c1235b219bd9e7d56a4aa/caps/BasePrincipal.cpp#1539)
+  // To check if it is an exact match, we need to ensure that aOriginKey starts
+  // with aOriginScope and the first character immediately following the
+  // matching part is ":". i.e: Domain part of aOriginKey is identical to
+  // aOriginScope.
+  return StringBeginsWith(aOriginKey, aOriginScope) &&
+         aOriginKey.CharAt(aOriginScope.Length()) == ':';
+}
 
 // Parent process, background thread hashmap that stores top context id and
 // manager pair.
@@ -151,7 +166,10 @@ bool RecvClearStoragesForOrigin(const nsACString& aOriginAttrs,
 }
 
 void SessionStorageManagerBase::ClearStoragesInternal(
-    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope) {
+    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+    DomainMatchingMode aMode) {
+  const bool isExactMatch = aMode == DomainMatchingMode::EXACT_MATCH;
+
   for (const auto& oaEntry : mOATable) {
     OriginAttributes oa;
     DebugOnly<bool> ok = oa.PopulateFromSuffix(oaEntry.GetKey());
@@ -164,7 +182,10 @@ void SessionStorageManagerBase::ClearStoragesInternal(
     OriginKeyHashTable* table = oaEntry.GetWeak();
     for (const auto& originKeyEntry : *table) {
       if (aOriginScope.IsEmpty() ||
-          StringBeginsWith(originKeyEntry.GetKey(), aOriginScope)) {
+          (!isExactMatch &&
+           StringBeginsWith(originKeyEntry.GetKey(), aOriginScope)) ||
+          (isExactMatch &&
+           ExactDomainMatch(originKeyEntry.GetKey(), aOriginScope))) {
         const auto cache = originKeyEntry.GetData()->mCache;
         cache->Clear(false);
         cache->ResetWriteInfos();
@@ -444,7 +465,7 @@ void SessionStorageManager::CheckpointDataInternal(
     return;
   }
 
-  Unused << cacheActor->SendCheckpoint(writeInfos);
+  (void)cacheActor->SendCheckpoint(writeInfos);
 
   aCache.ResetWriteInfos();
 }
@@ -626,17 +647,19 @@ SessionStorageManager::CheckStorage(nsIPrincipal* aPrincipal, Storage* aStorage,
 }
 
 void SessionStorageManager::ClearStorages(
-    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope) {
+    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+    DomainMatchingMode aMode) {
   if (CanLoadData()) {
     nsresult rv = EnsureManager();
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }
 
-    mActor->SendClearStorages(aPattern, nsCString(aOriginScope));
+    mActor->SendClearStorages(aPattern, nsCString(aOriginScope),
+                              static_cast<uint32_t>(aMode));
   }
 
-  ClearStoragesInternal(aPattern, aOriginScope);
+  ClearStoragesInternal(aPattern, aOriginScope, aMode);
 }
 
 nsresult SessionStorageManager::Observe(
@@ -665,6 +688,13 @@ nsresult SessionStorageManager::Observe(
   // for the given domain and subdomains.
   if (!strcmp(aTopic, "browser:purge-sessionStorage")) {
     ClearStorages(pattern, aOriginScope);
+    return NS_OK;
+  }
+
+  // Clear everything (including so and pb data) from caches and database
+  // for the given domain.
+  if (!strcmp(aTopic, "extension:purge-sessionStorage")) {
+    ClearStorages(pattern, aOriginScope, DomainMatchingMode::EXACT_MATCH);
     return NS_OK;
   }
 
@@ -893,10 +923,11 @@ void BackgroundSessionStorageManager::UpdateData(
 }
 
 void BackgroundSessionStorageManager::ClearStorages(
-    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope) {
+    const OriginAttributesPattern& aPattern, const nsACString& aOriginScope,
+    DomainMatchingMode aMode) {
   MOZ_ASSERT(XRE_IsParentProcess());
   ::mozilla::ipc::AssertIsOnBackgroundThread();
-  ClearStoragesInternal(aPattern, aOriginScope);
+  ClearStoragesInternal(aPattern, aOriginScope, aMode);
 }
 
 void BackgroundSessionStorageManager::ClearStoragesForOrigin(
@@ -939,7 +970,7 @@ void BackgroundSessionStorageManager::MaybeScheduleSessionStoreUpdate() {
       },
       this, StaticPrefs::browser_sessionstore_interval(),
       nsITimer::TYPE_ONE_SHOT,
-      "BackgroundSessionStorageManager::DispatchSessionStoreUpdate");
+      "BackgroundSessionStorageManager::DispatchSessionStoreUpdate"_ns);
 
   if (result.isErr()) {
     return;

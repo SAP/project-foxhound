@@ -13,10 +13,10 @@
 #include "TeeState.h"
 #include "js/Array.h"
 #include "js/Exception.h"
+#include "js/Iterator.h"
 #include "js/PropertyAndElement.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "js/Iterator.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -25,6 +25,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BindingCallContext.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
+#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/QueueWithSizes.h"
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/ReadRequest.h"
@@ -42,8 +43,6 @@
 #include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/WritableStreamDefaultWriter.h"
 #include "nsCOMPtr.h"
-
-#include "mozilla/dom/Promise-inl.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 

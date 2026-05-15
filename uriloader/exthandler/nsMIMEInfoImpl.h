@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef __nsmimeinfoimpl_h___
-#define __nsmimeinfoimpl_h___
+#ifndef _nsmimeinfoimpl_h_
+#define _nsmimeinfoimpl_h_
 
 #include "nsIMIMEInfo.h"
 #include "nsAtom.h"
@@ -223,4 +223,4 @@ class nsMIMEInfoImpl : public nsMIMEInfoBase {
       mDefaultApplication;  ///< default application associated with this type.
 };
 
-#endif  //__nsmimeinfoimpl_h___
+#endif  //_nsmimeinfoimpl_h_

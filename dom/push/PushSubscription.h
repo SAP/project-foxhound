@@ -7,19 +7,18 @@
 #ifndef mozilla_dom_PushSubscription_h
 #define mozilla_dom_PushSubscription_h
 
+#include "domstubs.h"
 #include "js/RootingAPI.h"
-#include "nsCOMPtr.h"
 #include "nsJSUtils.h"
-#include "nsWrapperCache.h"
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/RefPtr.h"
-
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/PushSubscriptionBinding.h"
 #include "mozilla/dom/PushSubscriptionOptionsBinding.h"
 #include "mozilla/dom/TypedArray.h"
-#include "domstubs.h"
+#include "nsCOMPtr.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
 

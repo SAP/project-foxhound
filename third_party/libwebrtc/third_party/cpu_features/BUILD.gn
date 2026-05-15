@@ -1,0 +1,3 @@
+# mozilla shim
+source_set("ndk_compat") {
+}

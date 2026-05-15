@@ -5,7 +5,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "WebrtcTaskQueueWrapper.h"
-
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "mozilla/TaskQueue.h"

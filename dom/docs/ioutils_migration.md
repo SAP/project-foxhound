@@ -487,7 +487,7 @@ Promise<sequence<DOMString>> getChildren(DOMString path);
 
 **`OS.File`**
 ```js
-for await (const { path } of new OS.FileDirectoryIterator(dirName)) {</p>
+for await (const { path } of new OS.FileDirectoryIterator(dirName)) {
   ...
 }
 ```

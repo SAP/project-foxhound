@@ -9,4 +9,4 @@ There are 3 different options to use `viaduct`:
 
 * Any `libxul` based can ignore initialization, since it's handled by `libxul`.
 * Using the reqwest backend, which uses the `reqwest` library and a `reqwest`-managed thread.
-* Implementing the C FFI like `libxul` does (https://searchfox.org/mozilla-central/source/toolkit/components/viaduct).
+* Implementing a native backend like `viaduct-necko` does (https://searchfox.org/mozilla-central/source/services/application-services/components/viaduct-necko).

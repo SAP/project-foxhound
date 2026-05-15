@@ -26,8 +26,8 @@ const TEST_PAGE = TEST_ROOT + "get_user_media.html";
  *
  * @param {<xul:browser>} aBrowser - The window to run the test on. This browser
  *   should have TEST_PAGE loaded.
- * @return Promise
- * @resolves undefined - When the test on the browser is complete.
+ * @returns {Promise<void>}
+ *   Resolves when the test on the browser is complete.
  */
 async function testNotificationSilencing(aBrowser) {
   let hasIndicator = Services.wm

@@ -49,8 +49,6 @@ function onUnload() {
 
 var gFocusObservingElement = null;
 var gBlurObservingElement = null;
-var canTabMoveFocusToRootElement =
-  !SpecialPowers.getBoolPref("dom.disable_tab_focus_to_root_element");
 
 function onFocus(aEvent) {
   if (aEvent.target != gFocusObservingElement) {
@@ -203,30 +201,16 @@ function runTests() {
   root = iframe.contentDocument.documentElement;
   resetFocusToInput("initializing for iframe_not_editable");
 
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(true, root, false, prev, true,
-               false, "input#prev[readonly] -> html");
-    testTabKey(true, editor, true, root, false,
-               true, "html -> input in the subdoc");
-  } else {
-    testTabKey(true, editor, true, prev, true,
-               true, "input#prev[readonly] -> input in the subdoc");
-  }
+  testTabKey(true, editor, true, prev, true,
+             true, "input#prev[readonly] -> input in the subdoc");
   testTabKey(true, next, true, editor, true,
              false, "input in the subdoc -> input#next[readonly]");
   testTabKey(false, editor, true, next, true,
              true, "input#next[readonly] -> input in the subdoc");
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(false, root, false, editor, true,
-               false, "input in the subdoc -> html");
-    testTabKey(false, prev, true, root, false,
-               false, "html -> input#next[readonly]");
-  } else {
-    testTabKey(false, prev, true, editor, true,
-               false, "input in the subdoc -> input#prev[readonly]");
-    testTabKey(false, next, true, prev, true,
-               false, "input#prev[readonly] -> input#next[readonly]");
-  }
+  testTabKey(false, prev, true, editor, true,
+             false, "input in the subdoc -> input#prev[readonly]");
+  testTabKey(false, next, true, prev, true,
+             false, "input#prev[readonly] -> input#next[readonly]");
 
   iframe.style.display = "none";
 
@@ -250,13 +234,8 @@ function runTests() {
   resetFocusToParentHTML("testing iframe_html");
   testTabKey(true, editor, true, html, false,
              true, "html of parent -> html[contentediable=true]");
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(false, html, false, editor, true,
-               false, "html[contenteditable=true] -> html of parent");
-  } else {
-    testTabKey(false, next, true, editor, true,
-               false, "html[contenteditable=true] -> input#next[readonly]");
-  }
+  testTabKey(false, next, true, editor, true,
+             false, "html[contenteditable=true] -> input#next[readonly]");
   prev.style.display = "inline";
   resetFocusToInput("after parent html <-> html[contenteditable=true]");
 
@@ -289,13 +268,8 @@ function runTests() {
   resetFocusToParentHTML("testing iframe_designMode");
   testTabKey(true, root, false, html, false,
              true, "html of parent -> html in designMode");
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(false, html, false, root, false,
-               false, "html[contenteditable=true] -> html of parent");
-  } else {
-    testTabKey(false, next, true, root, false,
-               false, "html in designMode -> html of parent");
-  }
+  testTabKey(false, next, true, root, false,
+             false, "html in designMode -> html of parent");
   prev.style.display = "inline";
   resetFocusToInput("after parent html <-> html in designMode");
 
@@ -326,13 +300,8 @@ function runTests() {
   resetFocusToParentHTML("testing iframe_body");
   testTabKey(true, editor, true, html, false,
              true, "html of parent -> body[contentediable=true]");
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(false, html, false, editor, true,
-               false, "body[contenteditable=true] -> html of parent");
-  } else {
-    testTabKey(false, next, true, editor, true,
-               false, "body[contenteditable=true] -> input#next[readonly]");
-  }
+  testTabKey(false, next, true, editor, true,
+             false, "body[contenteditable=true] -> input#next[readonly]");
   prev.style.display = "inline";
   resetFocusToInput("after parent html <-> body[contenteditable=true]");
 
@@ -350,44 +319,23 @@ function runTests() {
   root = iframe.contentDocument.documentElement;
   resetFocusToInput("initializing for iframe_p");
 
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(true, root, false, prev, true,
-               false, "input#prev[readonly] -> html (has p[contenteditable=true])");
-    testTabKey(true, editor, true, root, false,
-               true, "html (has p[contenteditable=true]) -> p[contentediable=true]");
-  } else {
-    testTabKey(true, editor, true, prev, true,
-               true, "input#prev[readonly] -> p[contenteditable=true]");
-  }
+  testTabKey(true, editor, true, prev, true,
+             true, "input#prev[readonly] -> p[contenteditable=true]");
   testTabKey(true, next, true, editor, true,
              false, "p[contentediable=true] -> input#next[readonly]");
   testTabKey(false, editor, true, next, true,
              true, "input#next[readonly] -> p[contentediable=true]");
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(false, root, false, editor, true,
-               false, "p[contenteditable=true] -> html (has p[contenteditable=true])");
-    testTabKey(false, prev, true, root, false,
-               false, "html (has p[contenteditable=true]) -> input#prev[readonly]");
-  } else {
-    testTabKey(false, prev, true, editor, true,
-               false, "p[contenteditable=true] -> html (has p[contenteditable=true])");
-    testTabKey(false, next, true, prev, true,
-               false, "html (has p[contenteditable=true]) -> input#next[readonly]");
-  }
+  testTabKey(false, prev, true, editor, true,
+             false, "p[contenteditable=true] -> html (has p[contenteditable=true])");
+  testTabKey(false, next, true, prev, true,
+             false, "html (has p[contenteditable=true]) -> input#next[readonly]");
   prev.style.display = "none";
 
   resetFocusToParentHTML("testing iframe_p");
-  if (canTabMoveFocusToRootElement) {
-    testTabKey(true, root, false, html, false,
-               false, "html of parent -> html (has p[contentediable=true])");
-    testTabKey(false, html, false, root, false,
-               false, "html (has p[contentediable=true]) -> html of parent");
-  } else {
-    testTabKey(true, editor, true, html, false,
-               true, "html of parent -> p[contentediable=true]");
-    testTabKey(false, next, true, editor, true,
-               false, "p[contentediable=true] -> input#next[readonly]");
-  }
+  testTabKey(true, editor, true, html, false,
+             true, "html of parent -> p[contentediable=true]");
+  testTabKey(false, next, true, editor, true,
+             false, "p[contentediable=true] -> input#next[readonly]");
   prev.style.display = "inline";
   resetFocusToInput("after parent html <-> html (has p[contentediable=true])");
 

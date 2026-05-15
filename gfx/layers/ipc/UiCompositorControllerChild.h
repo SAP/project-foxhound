@@ -10,7 +10,6 @@
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/ipc/Shmem.h"
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/RefPtr.h"
 #include "nsThread.h"
@@ -19,10 +18,12 @@
 #  include "mozilla/java/CompositorSurfaceManagerWrappers.h"
 #endif
 
-class nsBaseWidget;
+class nsIWidget;
 
 namespace mozilla {
 namespace layers {
+
+class AndroidHardwareBuffer;
 
 class UiCompositorControllerChild final
     : protected PUiCompositorControllerChild {
@@ -32,11 +33,10 @@ class UiCompositorControllerChild final
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(UiCompositorControllerChild, final)
 
   static RefPtr<UiCompositorControllerChild> CreateForSameProcess(
-      const LayersId& aRootLayerTreeId, nsBaseWidget* aWidget);
+      const LayersId& aRootLayerTreeId, nsIWidget* aWidget);
   static RefPtr<UiCompositorControllerChild> CreateForGPUProcess(
       const uint64_t& aProcessToken,
-      Endpoint<PUiCompositorControllerChild>&& aEndpoint,
-      nsBaseWidget* aWidget);
+      Endpoint<PUiCompositorControllerChild>&& aEndpoint, nsIWidget* aWidget);
 
   bool Pause();
   bool Resume();
@@ -47,12 +47,15 @@ class UiCompositorControllerChild final
   bool SetFixedBottomOffset(int32_t aOffset);
   bool ToolbarAnimatorMessageFromUI(const int32_t& aMessage);
   bool SetDefaultClearColor(const uint32_t& aColor);
-  bool RequestScreenPixels();
+#ifdef MOZ_WIDGET_ANDROID
+  using ScreenPixelsPromise =
+      MozPromise<RefPtr<layers::AndroidHardwareBuffer>, nsresult, true>;
+  RefPtr<ScreenPixelsPromise> RequestScreenPixels(gfx::IntRect aSourceRect,
+                                                  gfx::IntSize aDestSize);
+#endif
   bool EnableLayerUpdateNotifications(const bool& aEnable);
 
   void Destroy();
-
-  bool DeallocPixelBuffer(Shmem& aMem);
 
 #ifdef MOZ_WIDGET_ANDROID
   // Set mCompositorSurfaceManager. Must be called straight after initialization
@@ -82,13 +85,14 @@ class UiCompositorControllerChild final
       const int32_t& aMessage);
   mozilla::ipc::IPCResult RecvNotifyCompositorScrollUpdate(
       const CompositorScrollUpdate& aUpdate);
-  mozilla::ipc::IPCResult RecvScreenPixels(Shmem&& aMem,
-                                           const ScreenIntSize& aSize,
-                                           bool aNeedsYFlip);
+  mozilla::ipc::IPCResult RecvScreenPixels(
+      uint64_t aRequestId, Maybe<ipc::FileDescriptor>&& aHardwareBuffer,
+      Maybe<ipc::FileDescriptor>&& aAcquireFence,
+      ScreenPixelsResolver&& aResolver);
 
  private:
   explicit UiCompositorControllerChild(const uint64_t& aProcessToken,
-                                       nsBaseWidget* aWidget);
+                                       nsIWidget* aWidget);
   virtual ~UiCompositorControllerChild();
   void OpenForSameProcess();
   void OpenForGPUProcess(Endpoint<PUiCompositorControllerChild>&& aEndpoint);
@@ -103,7 +107,23 @@ class UiCompositorControllerChild final
   Maybe<int32_t> mMaxToolbarHeight;
   Maybe<uint32_t> mDefaultClearColor;
   Maybe<bool> mLayerUpdateEnabled;
-  RefPtr<nsBaseWidget> mWidget;
+  RefPtr<nsIWidget> mWidget;
+
+#ifdef MOZ_WIDGET_ANDROID
+  // Promise created by RequestScreenPixels() that will be resolved when the
+  // result is returned by RecvScreenPixels(). The uint64_t is assigned from a
+  // monotonic counter and is unique for each request sent. It is used to check
+  // whether a received result is for the most recent request made.
+  // In an ideal world PUiCompositorControllerChild::SendRequestScreenPixels()
+  // would return a promise and RequestScreenPixels() could just chain to that
+  // rather than managing its own promise. This would allow us to remove
+  // RecvScreenPixels() altogether. Unfortunately, however, we cannot chain to a
+  // promise returned from an IPDL function on the Android UI thread, as the
+  // thread does not support direct task dispatch.
+  Maybe<std::pair<uint64_t, RefPtr<ScreenPixelsPromise::Private>>>
+      mScreenPixelsPromise;
+#endif
+
   // Should only be set when compositor is in process.
   RefPtr<UiCompositorControllerParent> mParent;
 

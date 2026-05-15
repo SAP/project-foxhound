@@ -8,6 +8,9 @@
 newtab-page-title = Skedë e Re
 newtab-settings-button =
     .title = Personalizoni faqen tuaj Skedë e Re
+newtab-customize-panel-icon-button =
+    .title = Përshtateni këtë faqe
+newtab-customize-panel-icon-button-label = Përshtateni
 newtab-personalize-settings-icon-label =
     .title = Personalizoni Skedën e Re
     .aria-label = Rregullime
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Shkurtore e Re
 newtab-topsites-edit-topsites-header = Përpunoni Sajtin Kryesues
 newtab-topsites-edit-shortcut-header = Përpunoni Shkurtore
 newtab-topsites-add-shortcut-label = Shtoni Shkurtore
+newtab-topsites-add-shortcut-title =
+    .title = Shtoni Shkurtore
+    .aria-label = Shtoni Shkurtore
 newtab-topsites-title-label = Titull
 newtab-topsites-title-input =
     .placeholder = Jepni një titull
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Ky veprim s’mund të zhbëhet.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = E sponsorizuar
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (i fiksuar)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,6 +131,8 @@ newtab-menu-delete-pocket = Fshije nga { -pocket-brand-name }
 newtab-menu-archive-pocket = Arkivoje në { -pocket-brand-name }
 newtab-menu-show-privacy-info = Sponsorët tanë & privatësia jonë
 newtab-menu-about-fakespot = Mvi { -fakespot-brand-name }
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Raportojeni
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Bllokoje
@@ -186,6 +202,8 @@ newtab-label-sponsored-by = Sponsorizuar nga { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } minuta
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = E sponsorizuar
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -297,16 +315,30 @@ newtab-custom-pocket-subtitle = Lëndë e jashtëzakonshme, në kujdesin e { -po
 newtab-custom-stories-toggle =
     .label = Histori të rekomanduara
     .description = Lëndë e veçantë, nën kujdesin e familjes { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Histori
+newtab-custom-stories-personalized-checkbox-label = Histori të personalizuara, bazuar në veprimtarinë tuaj
 newtab-custom-pocket-sponsored = Histori të sponsorizuara
 newtab-custom-pocket-show-recent-saves = Shfaq të ruajturat së fundi
 newtab-custom-recent-title = Veprimtari së fundi
 newtab-custom-recent-subtitle = Një përzgjedhje sajtesh dhe lënde së fundi
-newtab-custom-recent-toggle =
-    .label = Veprimtari së fundi
-    .description = Një përzgjedhje sajtesh dhe lënde së fundi
 newtab-custom-weather-toggle =
     .label = Moti
     .description = Parashikimi i motit për sot me një vështrim
+newtab-custom-widget-weather-toggle =
+    .label = Moti
+newtab-custom-widget-lists-toggle =
+    .label = Lista
+newtab-custom-widget-timer-toggle =
+    .label = Kohëmatës
+newtab-custom-widget-section-title = Widget-e
+newtab-custom-widget-section-toggle =
+    .label = Widget-e
+newtab-widget-manage-title = Widget-e
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Mbylle
+    .aria-label = Mbylleni menunë
 newtab-custom-close-button = Mbylle
 newtab-custom-settings = Administroni më tepër rregullime
 
@@ -319,6 +351,7 @@ newtab-wallpaper-custom-color = Zgjidhni një ngjyrë
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Figura tejkalonte kufirin { $file_size }MB e madhësive të kartelave. Ju lutemi, provoni të ngarkoni një kartelë më të vogël.
+newtab-wallpaper-error-upload-file-type = S’e ngarkuam dot kartelën tuaj. Ju lutemi, riprovoni me një kartelë figurë.
 newtab-wallpaper-error-file-type = S’e ngarkuam dot kartelën tuaj. Ju lutemi, riprovoni me një lloj tjetër kartele.
 newtab-wallpaper-light-red-panda = Panda e kuqe
 newtab-wallpaper-light-mountain = Mal i bardhë
@@ -368,7 +401,7 @@ newtab-wallpaper-abstract-purple-green = Gradient ndriçimi të purpur dhe të g
 newtab-wallpaper-abstract-blue-purple-waves = Forma të valëzuara blu dhe të purpurta
 newtab-wallpaper-abstract-black-waves = Forma të valëzuara të zeza
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografi
 newtab-wallpaper-beach-at-sunrise = Plazh në agim
@@ -398,6 +431,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -424,7 +461,6 @@ newtab-weather-menu-change-location = Ndryshoni vendndodhje
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Kërkoni për vendndodhje
     .aria-label = Kërkoni për vendndodhje
-newtab-weather-change-location-search-input = Kërkoni për vendndodhje
 newtab-weather-menu-weather-display = Shfaqje moti
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -440,8 +476,21 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Kalo në Farenajt
 newtab-weather-menu-change-temperature-units-celsius = Kalo në Celsius
 newtab-weather-menu-hide-weather = Fshihe motin në Skedë të Re
 newtab-weather-menu-learn-more = Mësoni më tepër
+newtab-weather-menu-detect-my-location = Pikas vendndodhjen time
 # This message is shown if user is working offline
 newtab-weather-error-not-available = S’ka të dhëna moti tani për tani.
+newtab-weather-opt-in-see-weather = Doni të shihni motin për vendndodhjen tuaj?
+newtab-weather-opt-in-not-now =
+    .label = Jo tani
+newtab-weather-opt-in-yes =
+    .label = Po
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Nju Jork Siti
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Shihni parashikimin në { $provider }
+    .aria-description = { $provider } ∙ E sponsorizuar
 
 ## Topic Labels
 
@@ -489,6 +538,9 @@ newtab-topic-selection-button-pick-interests = Zgjidhni interesat tuaja
 newtab-section-follow-button = Ndiqe
 newtab-section-following-button = Po e Ndiqni
 newtab-section-unfollow-button = Hiqi Ndjekjen
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Përimtoni prurjen tuaj
+newtab-section-follow-highlight-subtitle = Ndiqni interesat tuaja, që të shihni më tepër gjëra nga ato që pëlqeni.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -521,6 +573,12 @@ newtab-custom-wallpaper-title = Mbërritën sfonde vetjake
 newtab-custom-wallpaper-subtitle = Ngarkoni sfondin tuaj vetjak, ose zgjidhni një ngjyrë vetjake, për ta bërë { -brand-product-name }-in si e doni.
 newtab-custom-wallpaper-cta = Provojeni
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Zgjidhni një sfond, për ta bërë { -brand-product-name }-in si e doni
+newtab-new-user-custom-wallpaper-subtitle = Bëjeni çdo skedë të re t’ju duket si shtëpia juaj, me sfonde dhe ngjyra tuajat.
+newtab-new-user-custom-wallpaper-cta = Provojeni tani
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Shkarkoni { -brand-product-name } për celular
@@ -533,8 +591,10 @@ newtab-download-mobile-highlight-image =
 
 ## Strings for shortcuts highlight
 
+newtab-shortcuts-highlight-title = Të parapëlqyerat tuaja në majë të gishtave
+newtab-shortcuts-highlight-subtitle = Shtoni një shkurtore, për t’i mbajtur sajtet e parapëlqyer vetëm një klikim larg.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Pse po njoftoni për këtë?
@@ -552,10 +612,91 @@ newtab-report-content-inappropriate-offensive =
     .label = E papërshtatshme ose fyese
 newtab-report-content-spam-misleading =
     .label = Mesazh i padëshiruar, ose ngatërrues
+newtab-report-content-requires-payment-subscription =
+    .label = Lyp pagesë ose pajtim
+newtab-report-content-requires-payment-subscription-learn-more = Mësoni më tepër
 newtab-report-cancel = Anuloje
 newtab-report-submit = Parashtroje
 newtab-toast-thanks-for-reporting =
     .message = Faleminderit për njoftimin rreth kësaj.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Mundësitë janë të pafundme. Shtoni një të tillë.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = E re
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Të plotësuara ({ $number })
+newtab-widget-task-list-menu-copy = Kopjoje
+newtab-widget-lists-menu-edit = Përpunoni emër liste
+newtab-widget-lists-menu-create = Krijoni një listë të re
+newtab-widget-lists-menu-delete = Fshije këtë listë
+newtab-widget-lists-menu-copy = Kopjoje listën në të papastër
+newtab-widget-lists-menu-hide = Fshihi krejt listat
+newtab-widget-lists-menu-learn-more = Mësoni më tepër
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Shtoni një objekt
+newtab-widget-lists-input-error = Ju lutemi, që të shtohet një objekt, përfshini tekst.
+newtab-widget-lists-input-menu-open-link = Hape lidhjen
+newtab-widget-lists-input-menu-move-up = Ngjite sipër
+newtab-widget-lists-input-menu-move-down = Zbrite poshtë
+newtab-widget-lists-input-menu-delete = Fshije
+newtab-widget-lists-input-menu-edit = Përpunoni
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Krijoni një listë të re
+newtab-widget-lists-name-label-default =
+    .label = Listë punësh
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Listë punësh
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Listë e re
+newtab-widget-section-title = Widget-e
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Fshihni widget-et
+    .aria-label = Fshihni krejt widget-et
+newtab-widget-section-maximize =
+    .title = Zgjeroji widget-et
+    .aria-label = Zgjeroji krejt widget-et sa madhësia e plotë
+newtab-widget-section-minimize =
+    .title = Minimizoji widget-et
+    .aria-label = Tkurri krejt widget-et sa madhësia kompakte
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Kohëmatës
+newtab-widget-timer-notification-focus = Koha për i përqendruar mbaroi. Punë e paqme. Ju duhet një pushim?
+newtab-widget-timer-notification-break = Pushimi juaj përfundoi. Gati për t’u përqendruar?
+newtab-widget-timer-notification-warning = Njoftimet janë të çaktivizuara
+newtab-widget-timer-mode-focus =
+    .label = Vëmendje
+newtab-widget-timer-mode-break =
+    .label = Pushim
+newtab-widget-timer-label-play =
+    .label = Luaje
+newtab-widget-timer-label-pause =
+    .label = Ndalesë
+newtab-widget-timer-reset =
+    .title = Riktheje te parazgjedhjet
+newtab-widget-timer-menu-notifications = Çaktivizoni njoftimet
+newtab-widget-timer-menu-notifications-on = Aktivizoni njoftimet
+newtab-widget-timer-menu-hide = Fshihe kohëmatësin
+newtab-widget-timer-menu-learn-more = Mësoni më tepër
+newtab-widget-message-title = Mbani përqendrimin, me lista dhe kohëmatës të brendshëm
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Nga kujtues të shpejtë e deri te për-t’u-bërë të përditshme, nga sesione përqendrimi e deri te pushime — merruni me punë dhe ndiqni kohën.
+newtab-promo-card-title = Përkrahni { -brand-product-name }
+newtab-promo-card-body = Sponsorët tanë përkrahin misionin tonë për ndërtimin e një interneti më të mirë
+newtab-promo-card-cta = Mësoni më tepër
+newtab-promo-card-dismiss-button =
+    .title = Hidhe tej
+    .aria-label = Hidheni tej

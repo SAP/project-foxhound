@@ -9,86 +9,42 @@
 #include "WebTransportSessionBase.h"
 #include "Http3StreamBase.h"
 #include "nsIWebTransport.h"
-#include "mozilla/WeakPtr.h"
 #include "mozilla/net/NeqoHttp3Conn.h"
 
 namespace mozilla::net {
 
 class Http3Session;
 
-// TODO Http3WebTransportSession is very similar to Http3Stream. It should
-// be built on top of it with a couple of small changes. The docs will be added
-// when this is implemented.
-
-class Http3WebTransportSession final : public WebTransportSessionBase,
-                                       public Http3StreamBase,
-                                       public nsAHttpSegmentWriter,
-                                       public nsAHttpSegmentReader {
+class Http3TunnelStreamBase : public Http3StreamBase,
+                              public nsAHttpSegmentWriter,
+                              public nsAHttpSegmentReader {
  public:
   NS_DECL_NSAHTTPSEGMENTWRITER
   NS_DECL_NSAHTTPSEGMENTREADER
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Http3WebTransportSession, override)
 
-  Http3WebTransportSession(nsAHttpTransaction*, Http3Session*);
-
-  Http3WebTransportSession* GetHttp3WebTransportSession() override {
-    return this;
-  }
-  Http3WebTransportStream* GetHttp3WebTransportStream() override {
-    return nullptr;
-  }
-  Http3Stream* GetHttp3Stream() override { return nullptr; }
+  explicit Http3TunnelStreamBase(nsAHttpTransaction* trans,
+                                 Http3SessionBase* aHttp3Session);
 
   [[nodiscard]] nsresult ReadSegments() override;
   [[nodiscard]] nsresult WriteSegments() override;
 
-  bool Done() const override { return mRecvState == RECV_DONE; }
-
-  void Close(nsresult aResult) override;
-
   void SetResponseHeaders(nsTArray<uint8_t>& aResponseHeaders, bool fin,
                           bool interim) override;
 
-  nsresult TryActivating();
+  virtual nsresult TryActivating();
+
+  bool Done() const override { return mRecvState == RECV_DONE; }
+
+  virtual void OnDatagramReceived(nsTArray<uint8_t>&& aData) = 0;
+
   void TransactionIsDone(nsresult aResult);
-  void CloseSession(uint32_t aStatus, const nsACString& aReason) override;
-  void OnSessionClosed(bool aCleanly, uint32_t aStatus,
-                       const nsACString& aReason);
 
-  uint64_t GetStreamId() const override;
+  virtual bool OnActivated() { return true; }
+  virtual nsresult OnProcessDatagram() { return NS_OK; }
 
-  void CreateOutgoingBidirectionalStream(
-      std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
-          aCallback) override;
-  void CreateOutgoingUnidirectionalStream(
-      std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
-          aCallback) override;
-  void RemoveWebTransportStream(Http3WebTransportStream* aStream);
-
-  already_AddRefed<Http3WebTransportStream> OnIncomingWebTransportStream(
-      WebTransportStreamType aType, uint64_t aId);
-
-  void SendDatagram(nsTArray<uint8_t>&& aData, uint64_t aTrackingId) override;
-
-  void OnDatagramReceived(nsTArray<uint8_t>&& aData);
-
-  void GetMaxDatagramSize() override;
-
-  void OnOutgoingDatagramOutCome(
-      uint64_t aId, WebTransportSessionEventListener::DatagramOutcome aOutCome);
-
-  void OnStreamStopSending(uint64_t aId, nsresult aError);
-  void OnStreamReset(uint64_t aId, nsresult aError);
-
- private:
-  virtual ~Http3WebTransportSession();
-
+ protected:
   bool ConsumeHeaders(const char* buf, uint32_t avail, uint32_t* countUsed);
-
-  void CreateStreamInternal(
-      bool aBidi,
-      std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
-          aCallback);
+  virtual void OnClosePending() = 0;
 
   enum RecvStreamState {
     BEFORE_HEADERS,
@@ -108,11 +64,73 @@ class Http3WebTransportSession final : public WebTransportSessionBase,
 
   nsCString mFlatHttpRequestHeaders;
   nsTArray<uint8_t> mFlatResponseHeaders;
-  nsTArray<RefPtr<Http3WebTransportStream>> mStreams;
 
   nsresult mSocketInCondition = NS_ERROR_NOT_INITIALIZED;
   nsresult mSocketOutCondition = NS_ERROR_NOT_INITIALIZED;
+};
 
+// TODO Http3WebTransportSession is very similar to Http3Stream. It should
+// be built on top of it with a couple of small changes. The docs will be added
+// when this is implemented.
+
+class Http3WebTransportSession final : public WebTransportSessionBase,
+                                       public Http3TunnelStreamBase {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Http3WebTransportSession, override)
+
+  Http3WebTransportSession(nsAHttpTransaction*, Http3Session*);
+
+  Http3WebTransportSession* GetHttp3WebTransportSession() override {
+    return this;
+  }
+  Http3WebTransportStream* GetHttp3WebTransportStream() override {
+    return nullptr;
+  }
+  Http3Stream* GetHttp3Stream() override { return nullptr; }
+  Http3ConnectUDPStream* GetHttp3ConnectUDPStream() override { return nullptr; }
+  Http3StreamTunnel* GetHttp3StreamTunnel() override { return nullptr; }
+
+  void Close(nsresult aResult) override;
+
+  void CloseSession(uint32_t aStatus, const nsACString& aReason) override;
+  void OnSessionClosed(bool aCleanly, uint32_t aStatus,
+                       const nsACString& aReason);
+
+  uint64_t GetStreamId() const override;
+
+  void CreateOutgoingBidirectionalStream(
+      std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
+          aCallback) override;
+  void CreateOutgoingUnidirectionalStream(
+      std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
+          aCallback) override;
+  void RemoveWebTransportStream(Http3WebTransportStream* aStream);
+
+  already_AddRefed<Http3WebTransportStream> OnIncomingWebTransportStream(
+      WebTransportStreamType aType, uint64_t aId);
+
+  void SendDatagram(nsTArray<uint8_t>&& aData, uint64_t aTrackingId) override;
+
+  void OnDatagramReceived(nsTArray<uint8_t>&& aData) override;
+
+  void GetMaxDatagramSize() override;
+
+  void OnOutgoingDatagramOutCome(
+      uint64_t aId, WebTransportSessionEventListener::DatagramOutcome aOutCome);
+
+  void OnStreamStopSending(uint64_t aId, nsresult aError);
+  void OnStreamReset(uint64_t aId, nsresult aError);
+
+ private:
+  virtual ~Http3WebTransportSession();
+
+  void CreateStreamInternal(
+      bool aBidi,
+      std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
+          aCallback);
+  void OnClosePending() override;
+
+  nsTArray<RefPtr<Http3WebTransportStream>> mStreams;
   uint32_t mStatus{0};
   nsCString mReason;
 };

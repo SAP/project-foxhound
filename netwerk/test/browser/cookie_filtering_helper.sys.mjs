@@ -5,7 +5,7 @@
 
 // The functions in this file will run in the content process in a test
 // scope.
-/* eslint-env mozilla/simpletest */
+
 /* global ContentTaskUtils, content */
 
 import { NetUtil } from "resource://gre/modules/NetUtil.sys.mjs";

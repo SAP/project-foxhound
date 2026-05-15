@@ -108,7 +108,7 @@ class AMOAddonsProvider(
      * a connectivity problem or a timeout.
      */
     @Throws(IOException::class)
-    @Suppress("NestedBlockDepth")
+    @Suppress("NestedBlockDepth", "CognitiveComplexMethod")
     override suspend fun getFeaturedAddons(
         allowCache: Boolean,
         readTimeoutInSeconds: Long?,
@@ -149,6 +149,7 @@ class AMOAddonsProvider(
         }
     }
 
+    @Suppress("CognitiveComplexMethod")
     private suspend fun fetchFeaturedAddons(
         readTimeoutInSeconds: Long?,
         language: String?,

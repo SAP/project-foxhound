@@ -5,19 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceEventTiming.h"
+
+#include <algorithm>
+
+#include "PerformanceInteractionMetrics.h"
 #include "PerformanceMainThread.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/PerformanceEventTimingBinding.h"
-#include "PerformanceInteractionMetrics.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Performance.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PerformanceEventTimingBinding.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 #include "nsIDocShell.h"
-#include <algorithm>
 
 namespace mozilla::dom {
 
@@ -35,13 +38,13 @@ PerformanceEventTiming::PerformanceEventTiming(Performance* aPerformance,
                                                const TimeStamp& aStartTime,
                                                bool aIsCancelable,
                                                EventMessage aMessage)
-    : PerformanceEntry(aPerformance->GetParentObject(), aName, u"event"_ns),
+    : PerformanceEntry(aPerformance->GetParentObject(), aName,
+                       nsGkAtoms::event),
       mPerformance(aPerformance),
       mProcessingStart(aPerformance->NowUnclamped()),
       mProcessingEnd(0),
       mStartTime(
           aPerformance->GetDOMTiming()->TimeStampToDOMHighRes(aStartTime)),
-      mDuration(0),
       mCancelable(aIsCancelable),
       mMessage(aMessage) {}
 
@@ -49,7 +52,7 @@ PerformanceEventTiming::PerformanceEventTiming(
     const PerformanceEventTiming& aEventTimingEntry)
     : PerformanceEntry(aEventTimingEntry.mPerformance->GetParentObject(),
                        nsDependentAtomString(aEventTimingEntry.GetName()),
-                       nsDependentAtomString(aEventTimingEntry.GetEntryType())),
+                       aEventTimingEntry.GetEntryTypeAsStaticAtom()),
       mPerformance(aEventTimingEntry.mPerformance),
       mProcessingStart(aEventTimingEntry.mProcessingStart),
       mProcessingEnd(aEventTimingEntry.mProcessingEnd),
@@ -145,7 +148,7 @@ bool PerformanceEventTiming::ShouldAddEntryToBuffer(double aDuration) const {
     return true;
   }
   MOZ_ASSERT(GetEntryType() == nsGkAtoms::event);
-  return RawDuration() >= aDuration;
+  return RawDuration().valueOr(0) >= aDuration;
 }
 
 bool PerformanceEventTiming::ShouldAddEntryToObserverBuffer(

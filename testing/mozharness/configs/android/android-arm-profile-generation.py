@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# mozharness configuration for Android x86/x86_64 7.0 unit tests
+# mozharness configuration for Android x86/arm unit tests
 #
 # This configuration should be combined with suite definitions and other
 # mozharness configuration from android_common.py, or similar.
@@ -24,7 +24,7 @@ config = {
         "-cores",
         "4",
         "-skin",
-        "800x1280",
+        "1080x1920",
         "-no-snapstorage",
         "-no-snapshot",
         # Disables first-run dialogs
@@ -40,6 +40,7 @@ config = {
         # "LIBGL_DEBUG": "verbose"
     },
     "bogomips_minimum": 3000,
-    "android_version": 24,
+    "android_version": 30,
+    "os_version": "11.0",
     "is_emulator": True,
 }

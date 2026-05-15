@@ -7,7 +7,7 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
 import { getLibraryFromUrl } from "../../../utils/pause/frames/index";
 
-import AccessibleImage from "../../shared/AccessibleImage";
+import DebuggerImage from "../../shared/DebuggerImage";
 import FrameComponent from "./Frame";
 import Badge from "../../shared/Badge";
 import FrameIndent from "./FrameIndent";
@@ -19,19 +19,20 @@ function FrameLocation({ frame, expanded }) {
   if (!library) {
     return null;
   }
-  const arrowClassName = classnames("arrow", {
-    expanded,
-  });
   return React.createElement(
     "span",
     {
       className: "group-description",
     },
-    React.createElement(AccessibleImage, {
-      className: arrowClassName,
+    React.createElement(DebuggerImage, {
+      name: "arrow",
+      className: classnames({
+        expanded,
+      }),
     }),
-    React.createElement(AccessibleImage, {
-      className: `annotation-logo ${library.toLowerCase()}`,
+    React.createElement(DebuggerImage, {
+      name: library.toLowerCase(),
+      className: "annotation-logo",
     }),
     React.createElement(
       "span",

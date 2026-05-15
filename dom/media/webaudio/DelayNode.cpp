@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DelayNode.h"
-#include "mozilla/dom/DelayNodeBinding.h"
+
+#include "AudioDestinationNode.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "AudioDestinationNode.h"
-#include "WebAudioUtils.h"
 #include "DelayBuffer.h"
 #include "PlayingRefChangeHandler.h"
 #include "Tracing.h"
+#include "WebAudioUtils.h"
+#include "mozilla/dom/DelayNodeBinding.h"
 
 namespace mozilla::dom {
 

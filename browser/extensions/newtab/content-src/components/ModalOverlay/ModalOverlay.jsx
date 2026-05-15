@@ -2,11 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import React, { useEffect, useCallback, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 function ModalOverlayWrapper({
-  // eslint-disable-next-line no-shadow
-  document = globalThis.document,
   unstyled,
   innerClassName,
   onClose,
@@ -14,50 +12,48 @@ function ModalOverlayWrapper({
   headerId,
   id,
 }) {
-  const modalRef = useRef(null);
+  const dialogRef = useRef(null);
 
-  let className = unstyled ? "" : "modalOverlayInner active";
+  let className = unstyled ? "" : "modalOverlayInner";
   if (innerClassName) {
     className += ` ${innerClassName}`;
   }
 
-  // The intended behaviour is to listen for an escape key
-  // but not for a click; see Bug 1582242
-  const onKeyDown = useCallback(
-    event => {
-      if (event.key === "Escape") {
-        onClose(event);
-      }
-    },
-    [onClose]
-  );
-
   useEffect(() => {
-    document.addEventListener("keydown", onKeyDown);
-    document.body.classList.add("modal-open");
+    const dialogElement = dialogRef.current;
+    if (dialogElement && !dialogElement.open) {
+      dialogElement.showModal();
+    }
+
+    const handleCancel = e => {
+      e.preventDefault();
+      onClose(e);
+    };
+
+    dialogElement?.addEventListener("cancel", handleCancel);
 
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.classList.remove("modal-open");
+      dialogElement?.removeEventListener("cancel", handleCancel);
+      if (dialogElement && dialogElement.open) {
+        dialogElement.close();
+      }
     };
-  }, [document, onKeyDown]);
+  }, [onClose]);
 
   return (
-    <div
-      className="modalOverlayOuter active"
-      onKeyDown={onKeyDown}
-      role="presentation"
+    <dialog
+      ref={dialogRef}
+      className="modalOverlayOuter"
+      onClick={e => {
+        if (e.target === dialogRef.current) {
+          onClose(e);
+        }
+      }}
     >
-      <div
-        className={className}
-        aria-labelledby={headerId}
-        id={id}
-        role="dialog"
-        ref={modalRef}
-      >
+      <div className={className} aria-labelledby={headerId} id={id}>
         {children}
       </div>
-    </div>
+    </dialog>
   );
 }
 

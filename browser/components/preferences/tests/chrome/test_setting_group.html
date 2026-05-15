@@ -9,8 +9,13 @@
       href="chrome://mochikit/content/tests/SimpleTest/test.css"
     />
     <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/preferences/widgets/setting-group.css"
+    />
     <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
     <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script src="./head.js"></script>
     <script
       type="module"
       src="chrome://browser/content/preferences/widgets/setting-group.mjs"
@@ -29,55 +34,66 @@
     ></script>
     <script>
       /* import-globals-from /toolkit/content/preferencesBindings.js */
-      let html, testHelpers;
+      let html, nothing, testHelpers;
 
       const LABEL_L10N_ID = "browsing-use-autoscroll";
       const GROUP_L10N_ID = "pane-experimental-reset";
+      const PREF_ONE = "test.settings-group.itemone";
+      const PREF_TWO = "test.settings-group.itemtwo";
 
-      function renderTemplate(config) {
-        return testHelpers.renderTemplate(html`
+      function settingGroupTemplate(config) {
+        return html`
           <setting-group
             .config=${config}
             .getSetting=${(...args) => Preferences.getSetting(...args)}
           ></setting-group>
-        `);
+        `;
       }
 
-      function waitForSettingChange(setting) {
-        return new Promise(resolve => {
-          setting.on("change", function handler() {
-            setting.off("change", handler);
-            resolve();
-          });
-        });
+      function renderTemplate(config) {
+        return testHelpers.renderTemplate(settingGroupTemplate(config));
       }
 
       add_setup(async function setup() {
+        const mockL10nSource = L10nFileSource.createMock(
+          "test",
+          "app",
+          ["en-US"],
+          "/localization/{locale}/",
+          [
+            {
+              path: "/localization/en-US/mock.ftl",
+              source: "l10n-test-id =\n .label = Test label",
+            },
+          ]
+        );
+        L10nRegistry.getInstance().registerSources([mockL10nSource]);
+        MozXULElement.insertFTLIfNeeded("mock.ftl");
+        SimpleTest.registerCleanupFunction(() => {
+          L10nRegistry.getInstance().removeSources([mockL10nSource.name]);
+        });
         testHelpers = new InputTestHelpers();
-        ({ html } = await testHelpers.setupLit());
+        ({ html, nothing } = await testHelpers.setupLit());
         testHelpers.setupTests({
           templateFn: () => html`<setting-group></setting-group>`,
         });
         MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
         MozXULElement.insertFTLIfNeeded("browser/preferences/preferences.ftl");
+        Preferences.addAll([
+          { id: PREF_ONE, type: "bool" },
+          { id: PREF_TWO, type: "bool" },
+        ]);
       });
 
       add_task(async function testSettingGroupSimple() {
-        const PREF_ONE = "test.settings-group.itemone";
         const SETTING_ONE = "setting-item-one";
-        const PREF_TWO = "test.settings-group.itemtwo";
         const SETTING_TWO = "setting-item-two";
         await SpecialPowers.pushPrefEnv({
           set: [
             [PREF_ONE, true],
             [PREF_TWO, false],
-            ["settings.revamp.design", true],
           ],
         });
-        Preferences.addAll([
-          { id: PREF_ONE, type: "bool" },
-          { id: PREF_TWO, type: "bool" },
-        ]);
         Preferences.addSetting({
           id: SETTING_ONE,
           pref: PREF_ONE,
@@ -113,6 +129,386 @@
           item2.config.id,
           SETTING_TWO,
           "Second setting-control id is correct"
+        );
+        await SpecialPowers.popPrefEnv();
+      });
+
+      add_task(async function testSettingGroupVisibility() {
+        /**
+         * Wait for a requestAnimationFrame so lit renders have completed.
+         */
+        function waitForRenderUpdate() {
+          return new Promise(r => requestAnimationFrame(r));
+        }
+
+        /**
+         * Render the common template into a groupbox that may be hidden from search.
+         */
+        async function renderTemplateInGroupbox(
+          config,
+          hiddenFromSearch = false
+        ) {
+          return testHelpers.renderTemplate(html`
+            <groupbox
+              data-hidden-from-search=${hiddenFromSearch ? "true" : nothing}
+              ?hidden=${hiddenFromSearch}
+            >
+              ${settingGroupTemplate(config)}
+            </groupbox>
+          `);
+        }
+
+        async function assertVisibilityChanges(
+          group,
+          staysHidden = false,
+          hiddenElsewhere = false
+        ) {
+          await waitForRenderUpdate();
+          ok(group, "setting-group is created");
+          let control1 = group.querySelector(`#setting-control-${SETTING_ONE}`);
+          let control2 = group.querySelector(`#setting-control-${SETTING_TWO}`);
+          ok(
+            BrowserTestUtils.isHidden(control1),
+            "First setting-control should be hidden"
+          );
+          ok(
+            BrowserTestUtils.isHidden(control2),
+            "Second setting-control should be hidden"
+          );
+          ok(
+            BrowserTestUtils.isHidden(group),
+            "setting-group should be hidden since its controls are hidden"
+          );
+          let initialHiddenValue = group.hidden;
+
+          if (hiddenElsewhere) {
+            ok(
+              !group.hasAttribute("data-hidden-from-search"),
+              "setting-group is not hidden from search when hidden elsewhere"
+            );
+          } else {
+            is(
+              group.getAttribute("data-hidden-from-search"),
+              "true",
+              "setting-group is hidden from search when hidden"
+            );
+          }
+          is(
+            group.hidden,
+            initialHiddenValue,
+            "setting-group should not change hidden attribute"
+          );
+
+          Services.prefs.setBoolPref(PREF_ONE, true);
+          await waitForRenderUpdate();
+          is(
+            group.hidden,
+            initialHiddenValue,
+            "setting-group should not change hidden attribute"
+          );
+          if (staysHidden) {
+            ok(BrowserTestUtils.isHidden(group), "Group should stay hidden");
+            if (hiddenElsewhere) {
+              ok(
+                !group.hasAttribute("data-hidden-from-search"),
+                "setting-group is not hidden from search when hidden elsewhere"
+              );
+            } else {
+              is(
+                group.getAttribute("data-hidden-from-search"),
+                "true",
+                "setting-group is hidden from search when hidden"
+              );
+            }
+          } else {
+            ok(
+              !control1.hidden,
+              "Control 1 should be visible after changing pref value"
+            );
+            ok(
+              BrowserTestUtils.isVisible(group),
+              "Group should be visible since one of the controls is visible"
+            );
+            ok(
+              !group.hasAttribute("data-hidden-from-search"),
+              "setting-group is not hidden from search when visible"
+            );
+            is(
+              control2.hidden,
+              true,
+              "The second setting-control should still be hidden"
+            );
+          }
+          Services.prefs.setBoolPref(PREF_TWO, true);
+          await waitForRenderUpdate();
+          is(
+            group.hidden,
+            initialHiddenValue,
+            "setting-group should not change hidden attribute"
+          );
+          if (staysHidden) {
+            ok(
+              BrowserTestUtils.isHidden(group),
+              "Group should still stay hidden"
+            );
+            if (hiddenElsewhere) {
+              ok(
+                !group.hasAttribute("data-hidden-from-search"),
+                "setting-group is not hidden from search when hidden elsewhere"
+              );
+            } else {
+              is(
+                group.getAttribute("data-hidden-from-search"),
+                "true",
+                "setting-group is hidden from search when hidden"
+              );
+            }
+          } else {
+            ok(
+              !control2.hidden,
+              "Control 2 should be visible after changing pref value"
+            );
+            ok(!control1.hidden, "Control 1 should still be visible");
+            ok(
+              BrowserTestUtils.isVisible(group),
+              "Group should still be visible"
+            );
+            ok(
+              !group.hasAttribute("data-hidden-from-search"),
+              "setting-group is not hidden from search when visible"
+            );
+          }
+
+          Services.prefs.setBoolPref(PREF_ONE, false);
+          Services.prefs.setBoolPref(PREF_TWO, false);
+
+          await waitForRenderUpdate();
+          is(
+            group.hidden,
+            initialHiddenValue,
+            "setting-group should not change hidden attribute"
+          );
+          ok(
+            control1.hidden,
+            "Control 1 should be hidden after changing pref value"
+          );
+          ok(
+            control2.hidden,
+            "Control 2 should be hidden after changing pref value"
+          );
+          ok(
+            BrowserTestUtils.isHidden(group),
+            "Group should be hidden now that the controls are hidden"
+          );
+          is(
+            group.getAttribute("data-hidden-from-search"),
+            "true",
+            "setting-group is hidden from search when hidden"
+          );
+        }
+
+        const SETTING_ONE = "setting-item-one";
+        const SETTING_TWO = "setting-item-two";
+        const SETTING_NESTED = "setting-item-nested";
+        await SpecialPowers.pushPrefEnv({
+          set: [
+            [PREF_ONE, false],
+            [PREF_TWO, false],
+          ],
+        });
+        Preferences.addSetting({
+          id: SETTING_ONE,
+          pref: PREF_ONE,
+          visible: (_, setting) => setting.value,
+        });
+        Preferences.addSetting({
+          id: SETTING_TWO,
+          pref: PREF_TWO,
+          visible: (_, setting) => setting.value,
+        });
+        // This nested setting is always visible, but its parent may be hidden.
+        Preferences.addSetting({
+          id: SETTING_NESTED,
+          get: () => true,
+        });
+        let config = {
+          l10nId: GROUP_L10N_ID,
+          items: [
+            {
+              l10nId: LABEL_L10N_ID,
+              id: SETTING_ONE,
+              items: [
+                {
+                  id: SETTING_NESTED,
+                  l10nId: LABEL_L10N_ID,
+                },
+              ],
+            },
+            { l10nId: LABEL_L10N_ID, id: SETTING_TWO },
+          ],
+        };
+
+        // Check without a groupbox
+        let result = await renderTemplate(config);
+        let group = result.querySelector("setting-group");
+        info("-- assertVisibilityChanges setting-group --");
+        await assertVisibilityChanges(group);
+
+        // Without a groupbox, initially hidden, settings visible
+        result = await renderTemplate(config);
+        group = result.querySelector("setting-group");
+        // Make a setting visible so the group would be visible
+        Services.prefs.setBoolPref(PREF_TWO, true);
+        await waitForRenderUpdate();
+        // Hide the group, as if it's on a hidden setting pane
+        group.hidden = true;
+        info("-- assertVisibilityChanges setting-group hidden --");
+        await assertVisibilityChanges(group, true, true);
+
+        // Check with an initially visible groupbox
+        result = await renderTemplateInGroupbox(config);
+        group = result.querySelector("groupbox");
+        info("-- assertVisibilityChanges groupbox --");
+        await assertVisibilityChanges(group);
+
+        // Check with a groupbox that should stay hidden
+        result = await renderTemplateInGroupbox(config, true);
+        group = result.querySelector("groupbox");
+        info("-- assertVisibilityChanges groupbox[data-hidden-from-search] --");
+        await assertVisibilityChanges(group, true);
+      });
+
+      add_task(async function testCommonControlProperties() {
+        const SETTING = "setting-control-support-link";
+        Preferences.addSetting({
+          id: SETTING,
+          get: () => true,
+        });
+
+        await testCommonSettingControlProperties(async commonConfig => {
+          const control = await renderTemplate({
+            ...commonConfig,
+            id: SETTING,
+            items: [],
+          });
+          return control.querySelector("moz-fieldset");
+        });
+      });
+
+      add_task(async function testSettingGroupCallbacks() {
+        const SETTING_ONE = "setting-first";
+        const SETTING_TWO = "setting-second";
+        const SETTING_THREE = "setting-item-three";
+
+        let clickCallbacks = [];
+        let changeCallbacks = [];
+        let messageBarDismissCallbacks = [];
+
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF_ONE, true]],
+        });
+        Preferences.addSetting({
+          id: SETTING_ONE,
+          pref: PREF_ONE,
+          onUserClick(_, __, setting) {
+            clickCallbacks.push(setting.id);
+          },
+          onUserChange(_, __, setting) {
+            changeCallbacks.push(setting.id);
+          },
+        });
+        Preferences.addSetting({
+          id: SETTING_TWO,
+          onUserClick(_, __, setting) {
+            clickCallbacks.push(setting.id);
+          },
+        });
+        Preferences.addSetting({
+          id: SETTING_THREE,
+          onUserClick(_, __, setting) {
+            clickCallbacks.push(setting.id);
+          },
+          onMessageBarDismiss(_, __, setting) {
+            messageBarDismissCallbacks.push(setting.id);
+          },
+        });
+        let config = {
+          l10nId: GROUP_L10N_ID,
+          items: [
+            {
+              l10nId: LABEL_L10N_ID,
+              id: SETTING_ONE,
+            },
+            {
+              l10nId: LABEL_L10N_ID,
+              id: SETTING_TWO,
+              control: "moz-box-button",
+            },
+            {
+              l10nId: LABEL_L10N_ID,
+              id: SETTING_THREE,
+              control: "moz-message-bar",
+              controlAttrs: {
+                dismissable: true,
+              },
+            },
+          ],
+        };
+
+        let result = await renderTemplate(config);
+        let group = result.querySelector("setting-group");
+        let fieldset = group.children[0];
+        let [item1, item2, item3] = fieldset.children;
+
+        is(
+          item1.controlEl.localName,
+          "moz-checkbox",
+          "First setting control renders a moz-checkbox."
+        );
+        is(
+          item2.controlEl.localName,
+          "moz-box-button",
+          "Second setting control renders a moz-box-button."
+        );
+        is(
+          item3.controlEl.localName,
+          "moz-message-bar",
+          "Third setting control renders a moz-message-bar."
+        );
+
+        let settingOne = Preferences.getSetting(SETTING_ONE);
+        let settingChanged = waitForSettingChange(settingOne);
+        synthesizeMouseAtCenter(item1.controlEl, {});
+        await settingChanged;
+
+        is(
+          clickCallbacks.length,
+          0,
+          "onUserClick is not called when clicking on moz-checkbox."
+        );
+        is(
+          changeCallbacks.length,
+          1,
+          "onUserChange called when clicking on moz-checkbox."
+        );
+
+        synthesizeMouseAtCenter(item2.controlEl, {});
+        is(
+          clickCallbacks.length,
+          1,
+          "onUserClick is called when clicking on moz-box-button."
+        );
+
+        synthesizeMouseAtCenter(item3.controlEl.closeButton, {});
+        is(
+          clickCallbacks.length,
+          2,
+          "onUserClick is called when clicking on moz-message-bar."
+        );
+        is(
+          messageBarDismissCallbacks.length,
+          1,
+          "onMessageBarDismiss is called when clicking on moz-message-bar close button."
         );
       });
     </script>

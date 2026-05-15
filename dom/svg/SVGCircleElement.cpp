@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "ComputedStyle.h"
 #include "mozilla/dom/SVGCircleElement.h"
-#include "mozilla/gfx/2D.h"
-#include "nsGkAtoms.h"
+
+#include "ComputedStyle.h"
+#include "SVGGeometryProperty.h"
 #include "mozilla/dom/SVGCircleElementBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
-#include "SVGGeometryProperty.h"
+#include "mozilla/gfx/2D.h"
+#include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Circle)
 
@@ -25,11 +26,11 @@ JSObject* SVGCircleElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGCircleElement::sLengthInfo[3] = {
     {nsGkAtoms::cx, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::cy, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::r, 0, SVGLength_Binding::SVG_LENGTHTYPE_NUMBER,
-     SVGContentUtils::XY}};
+     SVGLength::Axis::XY}};
 
 //----------------------------------------------------------------------
 // Implementation
@@ -156,7 +157,7 @@ bool SVGCircleElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
          newSVGReset.mCy != oldSVGReset.mCy || newSVGReset.mR != oldSVGReset.mR;
 }
 
-nsCSSPropertyID SVGCircleElement::GetCSSPropertyIdForAttrEnum(
+NonCustomCSSPropertyId SVGCircleElement::GetCSSPropertyIdForAttrEnum(
     uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case ATTR_CX:

@@ -39,21 +39,36 @@ async function getJsonSchema() {
 class TaskbarTab {
   // Unique identifier for the Taskbar Tab.
   #id;
-  // List of hosts associated with this Taskbar tab.
+  // List of scopes associated with this Taskbar Tab. A scope has a 'hostname'
+  // property, and a 'prefix' property. If a 'prefix' is set, then the path
+  // must literally start with that prefix; this matches the 'within scope'
+  // algorithm of the Web App Manifest specification.
+  //
+  // @type {{ hostname: string; [prefix]: string }[]}
   #scopes = [];
   // Container the Taskbar Tab is opened in when opened from the Taskbar.
   #userContextId;
   // URL opened when a Taskbar Tab is opened from the Taskbar.
   #startUrl;
+  // Human-readable name of this Taskbar Tab.
+  #name;
   // The path to the shortcut associated with this Taskbar Tab, *relative
   // to the `Start Menu\Programs` folder.*
   #shortcutRelativePath;
 
-  constructor({ id, scopes, startUrl, userContextId, shortcutRelativePath }) {
+  constructor({
+    id,
+    scopes,
+    startUrl,
+    name,
+    userContextId,
+    shortcutRelativePath,
+  }) {
     this.#id = id;
     this.#scopes = scopes;
     this.#userContextId = userContextId;
     this.#startUrl = startUrl;
+    this.#name = name;
 
     this.#shortcutRelativePath = shortcutRelativePath ?? null;
   }
@@ -72,6 +87,10 @@ class TaskbarTab {
 
   get startUrl() {
     return this.#startUrl;
+  }
+
+  get name() {
+    return this.#name;
   }
 
   get shortcutRelativePath() {
@@ -111,6 +130,7 @@ class TaskbarTab {
       scopes: this.scopes,
       userContextId: this.userContextId,
       startUrl: this.startUrl,
+      name: this.name,
       ...maybe(this, "shortcutRelativePath"),
     };
   }
@@ -121,6 +141,8 @@ class TaskbarTab {
    * Always use TaskbarTabsRegistry.patchTaskbarTab instead. Aside
    * from calling into this, it notifies other objects (especially
    * the saver) about the change.
+   *
+   * @param {object} aPatch - An object with properties to change.
    */
   _applyPatch(aPatch) {
     if ("shortcutRelativePath" in aPatch) {
@@ -191,7 +213,9 @@ export class TaskbarTabsRegistry {
           Current Version: ${kStorageVersion}
           File Version: ${jsonObject.version}`);
     }
-    this.#taskbarTabs = jsonObject.taskbarTabs.map(tt => new TaskbarTab(tt));
+    this.#taskbarTabs = jsonObject.taskbarTabs.map(
+      tt => new TaskbarTab(migrateStoredTaskbarTab(tt))
+    );
   }
 
   toJSON() {
@@ -208,20 +232,42 @@ export class TaskbarTabsRegistry {
    *
    * @param {nsIURI} aUrl - The URL to match or derive the scope and start URL from.
    * @param {number} aUserContextId - The container to start a Taskbar Tab in.
-   * @returns {TaskbarTab} The matching or created Taskbar Tab.
+   * @param {object} aDetails - Additional options to use if it needs to be
+   * created.
+   * @param {object} aDetails.manifest - The Web app manifest that should be
+   * associated with this Taskbar Tab.
+   * @returns {{taskbarTab:TaskbarTab, created:bool}}
+   *   The matching or created Taskbar Tab, along with whether it was created.
    */
-  findOrCreateTaskbarTab(aUrl, aUserContextId) {
-    let taskbarTab = this.findTaskbarTab(aUrl, aUserContextId);
-    if (taskbarTab) {
-      return taskbarTab;
+  findOrCreateTaskbarTab(aUrl, aUserContextId, { manifest = {} } = {}) {
+    let existing = this.findTaskbarTab(aUrl, aUserContextId);
+    if (existing) {
+      return {
+        created: false,
+        taskbarTab: existing,
+      };
+    }
+
+    let scope = { hostname: aUrl.host };
+    if ("scope" in manifest) {
+      // Note: manifest.scope will not be set unless the start_url is
+      // within scope. As such, this scope always contains the start_url.
+      // If a manifest is used but there isn't a scope, it uses the parent
+      // of the start_url; e.g. '/a/b/c.html' --> '/a/b'.
+      const scopeUri = Services.io.newURI(manifest.scope);
+      scope = {
+        hostname: scopeUri.host,
+        prefix: scopeUri.filePath,
+      };
     }
 
     let id = Services.uuid.generateUUID().toString().slice(1, -1);
-    taskbarTab = new TaskbarTab({
+    let taskbarTab = new TaskbarTab({
       id,
-      scopes: [{ hostname: aUrl.host }],
+      scopes: [scope],
       userContextId: aUserContextId,
-      startUrl: aUrl.prePath,
+      name: manifest.name ?? generateName(aUrl),
+      startUrl: manifest.start_url ?? aUrl.prePath,
     });
     this.#taskbarTabs.push(taskbarTab);
 
@@ -230,13 +276,18 @@ export class TaskbarTabsRegistry {
     Glean.webApp.install.record({});
     this.#emitter.emit(kTaskbarTabsRegistryEvents.created, taskbarTab);
 
-    return taskbarTab;
+    return {
+      created: true,
+      taskbarTab,
+    };
   }
 
   /**
    * Removes a Taskbar Tab.
    *
    * @param {string} aId - The ID of the TaskbarTab to remove.
+   * @returns {TaskbarTab?} The removed taskbar tab, or null if it wasn't
+   * found.
    */
   removeTaskbarTab(aId) {
     let tts = this.#taskbarTabs;
@@ -250,24 +301,27 @@ export class TaskbarTabsRegistry {
 
       Glean.webApp.uninstall.record({});
       this.#emitter.emit(kTaskbarTabsRegistryEvents.removed, removed[0]);
-    } else {
-      lazy.logConsole.error(`Taskbar Tab ID ${aId} not found.`);
+      return removed[0];
     }
+
+    lazy.logConsole.error(`Taskbar Tab ID ${aId} not found.`);
+    return null;
   }
 
   /**
    * Searches for an existing Taskbar Tab matching the URL and Container.
    *
-   * @param {nsIURI} aUrl - The URL to match.
+   * @param {nsIURL} aUrl - The URL to match.
    * @param {number} aUserContextId - The container to match.
    * @returns {TaskbarTab|null} The matching Taskbar Tab, or null if none match.
    */
   findTaskbarTab(aUrl, aUserContextId) {
-    // Could be used in contexts reading from the command line, so validate
-    // input to guard against passing in strings.
-    if (!(aUrl instanceof Ci.nsIURI)) {
+    // Ensure that the caller uses the correct types. nsIURI alone isn't
+    // enough---we need to know that there's a hostname and that the structure
+    // is otherwise standard.
+    if (!(aUrl instanceof Ci.nsIURL)) {
       throw new TypeError(
-        "Invalid argument, `aUrl` should be instance of `nsIURI`"
+        "Invalid argument, `aUrl` should be instance of `nsIURL`"
       );
     }
     if (typeof aUserContextId !== "number") {
@@ -277,24 +331,37 @@ export class TaskbarTabsRegistry {
     }
 
     for (const tt of this.#taskbarTabs) {
+      let bestPrefix = "";
       for (const scope of tt.scopes) {
-        if (aUrl.host === scope.hostname) {
-          if (aUserContextId !== tt.userContextId) {
-            lazy.logConsole.info(
-              `Matched TaskbarTab for URL ${aUrl.host} to ${scope.hostname}, but container ${aUserContextId} mismatched ${tt.userContextId}.`
-            );
-          } else {
-            lazy.logConsole.info(
-              `Matched TaskbarTab for URL ${aUrl.host} to ${scope.hostname} with container ${aUserContextId}.`
-            );
-            return tt;
+        if (aUrl.host !== scope.hostname) {
+          continue;
+        }
+        if ("prefix" in scope) {
+          if (scope.prefix.length < bestPrefix.length) {
+            // We've already found something better.
+            continue;
           }
+          if (!aUrl.filePath.startsWith(scope.prefix)) {
+            // This URL wouldn't be within scope.
+            continue;
+          }
+        }
+
+        if (aUserContextId !== tt.userContextId) {
+          lazy.logConsole.info(
+            `Matched TaskbarTab for URL ${aUrl.host} to ${scope.hostname}, but container ${aUserContextId} mismatched ${tt.userContextId}.`
+          );
+        } else {
+          lazy.logConsole.info(
+            `Matched TaskbarTab for URL ${aUrl.host} to ${scope.hostname} with container ${aUserContextId}.`
+          );
+          return tt;
         }
       }
     }
 
     lazy.logConsole.info(
-      `No matching TaskbarTab found for URL ${aUrl.host} and container ${aUserContextId}.`
+      `No matching TaskbarTab found for URL ${aUrl.spec} and container ${aUserContextId}.`
     );
     return null;
   }
@@ -333,6 +400,15 @@ export class TaskbarTabsRegistry {
     // will fire, and thus that I/O might be possible.
     aTaskbarTab._applyPatch(aPatch);
     this.#emitter.emit(kTaskbarTabsRegistryEvents.patched, aTaskbarTab);
+  }
+
+  /**
+   * Gets the number of taskbar tabs that are registered in this registry.
+   *
+   * @returns {number} The number of registered taskbar tabs.
+   */
+  countTaskbarTabs() {
+    return this.#taskbarTabs.length;
   }
 
   /**
@@ -432,4 +508,59 @@ export class TaskbarTabsRegistryStorage {
 
     return this.#saveQueue;
   }
+}
+
+/**
+ * Mutates the provided Taskbar Tab object from storage so it contains all
+ * current properties.
+ *
+ * @param {object} aStored - The object stored in the database; this will be
+ * mutated as part of migrating it.
+ * @returns {object} aStored exactly.
+ */
+function migrateStoredTaskbarTab(aStored) {
+  if (typeof aStored.name !== "string") {
+    try {
+      aStored.name = generateName(Services.io.newURI(aStored.startUrl));
+    } catch (e) {
+      lazy.logConsole.warn(`Migrating ${aStored.id} failed:`, e);
+    }
+  }
+
+  return aStored;
+}
+
+/**
+ * Generates a name for the Taskbar Tab appropriate for user facing UI.
+ *
+ * @param {nsIURI} aUri - The URI to derive the name from.
+ * @returns {string} A name suitable for user facing UI.
+ */
+function generateName(aUri) {
+  // https://www.subdomain.example.co.uk/test
+
+  // ["www", "subdomain", "example", "co", "uk"]
+  let hostParts = aUri.host.split(".");
+
+  // ["subdomain", "example", "co", "uk"]
+  if (hostParts[0] === "www") {
+    hostParts.shift();
+  }
+
+  let suffixDomainCount = Services.eTLD
+    .getKnownPublicSuffix(aUri)
+    .split(".").length;
+
+  // ["subdomain", "example"]
+  hostParts.splice(-suffixDomainCount);
+
+  let name = hostParts
+    // ["example", "subdomain"]
+    .reverse()
+    // ["Example", "Subdomain"]
+    .map(s => s.charAt(0).toUpperCase() + s.slice(1))
+    // "Example Subdomain"
+    .join(" ");
+
+  return name;
 }

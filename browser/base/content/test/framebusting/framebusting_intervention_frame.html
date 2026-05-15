@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Framebusting Intervention - Frame</title>
+  </head>
+  <body>
+    <script>
+    if (self != top) {
+      window.top.location = window.location;
+    }
+    </script>
+  </body>
+</html>

@@ -8,10 +8,10 @@
 
 #include "ClientInfo.h"
 #include "ClientOpPromise.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/dom/PClientSourceParent.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/MozPromise.h"
 
 namespace mozilla::dom {
 

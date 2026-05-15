@@ -10,7 +10,9 @@
 
 #include "media/sctp/sctp_transport_factory.h"
 
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "api/environment/environment.h"
 #include "media/sctp/sctp_transport_internal.h"
@@ -22,22 +24,31 @@
 #include "media/sctp/dcsctp_transport.h"  // nogncheck
 #endif
 
-namespace cricket {
+namespace webrtc {
 
-SctpTransportFactory::SctpTransportFactory(webrtc::Thread* network_thread)
+SctpTransportFactory::SctpTransportFactory(Thread* network_thread)
     : network_thread_(network_thread) {
   RTC_UNUSED(network_thread_);
 }
 
 std::unique_ptr<SctpTransportInternal>
-SctpTransportFactory::CreateSctpTransport(const webrtc::Environment& env,
+SctpTransportFactory::CreateSctpTransport(const Environment& env,
                                           DtlsTransportInternal* transport) {
   std::unique_ptr<SctpTransportInternal> result;
 #ifdef WEBRTC_HAVE_DCSCTP
   result = std::unique_ptr<SctpTransportInternal>(
-      new webrtc::DcSctpTransport(env, network_thread_, transport));
+      new DcSctpTransport(env, network_thread_, transport));
 #endif
   return result;
 }
 
-}  // namespace cricket
+std::vector<uint8_t> SctpTransportFactory::GenerateConnectionToken(
+    const Environment& env) {
+  std::vector<uint8_t> result;
+#ifdef WEBRTC_HAVE_DCSCTP
+  result = DcSctpTransport::GenerateConnectionToken(env);
+#endif
+  return result;
+}
+
+}  // namespace webrtc

@@ -4,15 +4,23 @@
 
 package mozilla.components.support.ktx.android.content
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.view.Window
 import android.view.accessibility.AccessibilityManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
+import mozilla.components.support.utils.ext.getActivityWindow
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.doReturn
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowAccessibilityManager
 
@@ -51,5 +59,28 @@ class ContextKtTest {
 
         // Then
         assertFalse(isEnabled)
+    }
+
+    @Test
+    fun `GIVEN an ancestor context is an Activity WHEN asking for the Window THEN return the Activity Window`() {
+        val window: Window = mock()
+        val activity: Activity = mock()
+        doReturn(window).`when`(activity).window
+        val context: ContextWrapper = mock()
+        doReturn(activity).`when`(context).baseContext
+
+        val result = context.getActivityWindow()
+
+        assertEquals(window, result)
+    }
+
+    @Test
+    fun `GIVEN no ancestor context is an Activity WHEN asking for the Window THEN return the Activity Window`() {
+        val context: ContextWrapper = mock()
+        doReturn(mock<Context>()).`when`(context).baseContext
+
+        val result = context.getActivityWindow()
+
+        assertNull(result)
     }
 }

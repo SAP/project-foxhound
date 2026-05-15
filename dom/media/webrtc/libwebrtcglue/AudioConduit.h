@@ -5,13 +5,12 @@
 #ifndef AUDIO_SESSION_H_
 #define AUDIO_SESSION_H_
 
+#include "MediaConduitInterface.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/ReentrantMonitor.h"
 #include "mozilla/RWLock.h"
+#include "mozilla/ReentrantMonitor.h"
 #include "mozilla/StateMirroring.h"
 #include "mozilla/TimeStamp.h"
-
-#include "MediaConduitInterface.h"
 
 /**
  * This file hosts several structures identifying different aspects of a RTP
@@ -33,7 +32,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
 
   void OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
                      webrtc::RTPHeader&& aHeader);
-  void OnRtcpReceived(rtc::CopyOnWriteBuffer&& aPacket);
+  void OnRtcpReceived(webrtc::CopyOnWriteBuffer&& aPacket);
 
   void OnRtcpBye() override;
   void OnRtcpTimeout() override;
@@ -56,12 +55,12 @@ class WebrtcAudioConduit : public AudioSessionConduit,
         aEvent.Connect(mCallThread, this, &WebrtcAudioConduit::OnRtpReceived);
   }
   void ConnectReceiverRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) override {
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
     mReceiverRtcpEventListener =
         aEvent.Connect(mCallThread, this, &WebrtcAudioConduit::OnRtcpReceived);
   }
   void ConnectSenderRtcpEvent(
-      MediaEventSourceExc<rtc::CopyOnWriteBuffer>& aEvent) override {
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
     mSenderRtcpEventListener =
         aEvent.Connect(mCallThread, this, &WebrtcAudioConduit::OnRtcpReceived);
   }
@@ -114,7 +113,8 @@ class WebrtcAudioConduit : public AudioSessionConduit,
 
   void SetJitterBufferTarget(DOMHighResTimeStamp aTargetMs) override;
 
-  void DeliverPacket(rtc::CopyOnWriteBuffer packet, PacketType type) override;
+  void DeliverPacket(webrtc::CopyOnWriteBuffer packet,
+                     PacketType type) override;
 
   RefPtr<GenericPromise> Shutdown() override;
 

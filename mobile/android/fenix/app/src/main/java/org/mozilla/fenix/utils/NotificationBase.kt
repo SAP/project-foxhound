@@ -13,6 +13,7 @@ import org.mozilla.fenix.R
 
 /**
  * Create a [Notification] with default behaviour and styling.
+ * Optionally applies BigTextStyle for extended text, if specified.
  */
 fun createBaseNotification(
     context: Context,
@@ -21,11 +22,13 @@ fun createBaseNotification(
     text: String,
     onClick: PendingIntent? = null,
     onDismiss: PendingIntent? = null,
+    bigTextStyle: Boolean = false,
 ): Notification {
     return NotificationCompat.Builder(context, channelId)
         .setSmallIcon(R.drawable.ic_status_logo)
         .setContentTitle(title)
         .setContentText(text)
+        .setStyle(if (bigTextStyle) NotificationCompat.BigTextStyle().bigText(text) else null)
         .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
         .setColor(ContextCompat.getColor(context, R.color.primary_text_light_theme))
         .setPriority(NotificationCompat.PRIORITY_DEFAULT)

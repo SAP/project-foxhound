@@ -23,13 +23,18 @@ sealed interface MenuItem {
      * @property text The text to be displayed in the menu item.
      * @property level The level of the menu item. This is used to determine the style of the menu.
      * @property testTag Tag used to identify the item in automated tests.
+     * @property supportingText The supporting text to be displayed below [text].
+     * @property enabled Sets the enabled status for the item. By default, it is always set to true.
      * @property onClick The action to be performed when the menu item is clicked.
+     *
      */
     sealed class FixedItem(
         open val text: Text,
         open val level: Level,
         open val testTag: String,
+        open val supportingText: Text? = null,
         open val onClick: () -> Unit,
+        open val enabled: Boolean = true,
     ) : MenuItem {
 
         /**
@@ -54,19 +59,26 @@ sealed interface MenuItem {
      * @property text [Text] to be displayed in the menu item.
      * @property level The level of the menu item. This is used to determine the style of the menu.
      * @property testTag Tag used to identify the item in automated tests.
+     * @property supportingText The supporting text to be displayed below [text].
+     * @property enabled Sets the enabled status for the item. By default, it is always set to true.
      * @property onClick The action to be performed when the menu item is clicked.
+     *
      */
     data class TextItem(
         override val text: Text,
         override val level: Level = Level.Default,
         override val testTag: String = "",
+        override val supportingText: Text? = null,
+        override val enabled: Boolean = true,
         override val onClick: () -> Unit,
-    ) : FixedItem(
+        ) : FixedItem(
         text = text,
         level = level,
         testTag = testTag,
+        supportingText = supportingText,
+        enabled = enabled,
         onClick = onClick,
-    )
+        )
 
     /**
      * [CheckableItem] is a [FixedItem] that represents a menu item with text and a check icon.
@@ -75,6 +87,8 @@ sealed interface MenuItem {
      * @property isChecked The state of the checkable item.
      * @property level The level of the menu item. This is used to determine the style of the menu.
      * @property testTag Tag used to identify the item in automated tests.
+     * @property supportingText The supporting text to be displayed below [text].
+     * @property enabled Sets the enabled status for the item. By default, it is always set to true.
      * @property onClick The action to be performed when the menu item is clicked.
      */
     data class CheckableItem(
@@ -82,11 +96,15 @@ sealed interface MenuItem {
         val isChecked: Boolean,
         override val level: Level = Level.Default,
         override val testTag: String = "",
+        override val supportingText: Text? = null,
+        override val enabled: Boolean = true,
         override val onClick: () -> Unit,
-    ) : FixedItem(
+        ) : FixedItem(
         text = text,
         level = level,
         testTag = testTag,
+        supportingText = supportingText,
+        enabled = enabled,
         onClick = onClick,
     )
 
@@ -97,6 +115,8 @@ sealed interface MenuItem {
      * @property drawableRes The drawable resource to be displayed in the menu item.
      * @property level The level of the menu item. This is used to determine the style of the menu.
      * @property testTag Tag used to identify the item in automated tests.
+     * @property supportingText The supporting text to be displayed below [text].
+     * @property enabled Sets the enabled status for the item. By default, it is always set to true.
      * @property onClick The action to be performed when the menu item is clicked.
      */
     data class IconItem(
@@ -104,13 +124,17 @@ sealed interface MenuItem {
         @param:DrawableRes val drawableRes: Int,
         override val level: Level = Level.Default,
         override val testTag: String = "",
+        override val supportingText: Text? = null,
+        override val enabled: Boolean = true,
         override val onClick: () -> Unit,
-    ) : FixedItem(
+        ) : FixedItem(
         text = text,
         level = level,
         testTag = testTag,
+        supportingText = supportingText,
+        enabled = enabled,
         onClick = onClick,
-    )
+        )
 
     /**
      * [CustomMenuItem] can be used to render a custom content as a menu item. This should be used

@@ -33,7 +33,7 @@ public abstract class RuntimeSettings implements Parcelable {
   public abstract static class Builder<Settings extends RuntimeSettings> {
     private final Settings mSettings;
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /** Create a new Builder instance. */
     public Builder() {
       mSettings = newSettings(null);
     }
@@ -48,6 +48,11 @@ public abstract class RuntimeSettings implements Parcelable {
       return newSettings(mSettings);
     }
 
+    /**
+     * Get the current settings object being built.
+     *
+     * @return The settings object being constructed.
+     */
     @AnyThread
     protected @NonNull Settings getSettings() {
       return mSettings;
@@ -70,6 +75,12 @@ public abstract class RuntimeSettings implements Parcelable {
     private T mValue;
     private boolean mIsSet;
 
+    /**
+     * Create a new preference.
+     *
+     * @param name The preference name.
+     * @param defaultValue The default value for this preference.
+     */
     public Pref(@NonNull final String name, final T defaultValue) {
       this.name = name;
       this.defaultValue = defaultValue;
@@ -78,11 +89,21 @@ public abstract class RuntimeSettings implements Parcelable {
       RuntimeSettings.this.addPref(this);
     }
 
+    /**
+     * Set the preference value.
+     *
+     * @param newValue The new value to set.
+     */
     public void set(final T newValue) {
       mValue = newValue;
       mIsSet = true;
     }
 
+    /**
+     * Set the preference value and commit it immediately.
+     *
+     * @param newValue The new value to set and commit.
+     */
     public void commit(final T newValue) {
       if (newValue.equals(mValue)) {
         return;
@@ -91,6 +112,7 @@ public abstract class RuntimeSettings implements Parcelable {
       commit();
     }
 
+    /** Commit the current preference value to the runtime. */
     public void commit() {
       final GeckoRuntime runtime = RuntimeSettings.this.getRuntime();
       if (runtime == null) {
@@ -101,18 +123,34 @@ public abstract class RuntimeSettings implements Parcelable {
       runtime.setDefaultPrefs(prefs);
     }
 
+    /**
+     * Get the current preference value.
+     *
+     * @return The current value of this preference.
+     */
     public T get() {
       return mValue;
     }
 
+    /**
+     * Check if this preference has been explicitly set.
+     *
+     * @return True if the preference has been set, false otherwise.
+     */
     public boolean isSet() {
       return mIsSet;
     }
 
+    /**
+     * Check if this preference has a default value.
+     *
+     * @return True if the preference has a default value.
+     */
     public boolean hasDefault() {
       return true;
     }
 
+    /** Reset the preference to its default value. */
     public void reset() {
       mValue = defaultValue;
       mIsSet = false;
@@ -141,15 +179,30 @@ public abstract class RuntimeSettings implements Parcelable {
    * included in the GeckoView build, or the user prefs file created by the xpcshell and mochitest
    * test harness.
    */
-  /* package */ class PrefWithoutDefault<T> extends Pref<T> {
+  class PrefWithoutDefault<T> extends Pref<T> {
+    /**
+     * Create a preference without a default value.
+     *
+     * @param name The preference name.
+     */
     public PrefWithoutDefault(@NonNull final String name) {
       super(name, null);
     }
 
+    /**
+     * Check if this preference has a default value.
+     *
+     * @return False, as this preference type has no default.
+     */
     public boolean hasDefault() {
       return false;
     }
 
+    /**
+     * Get the current preference value, or null if not set.
+     *
+     * @return The current value or null if not explicitly set.
+     */
     public @Nullable T get() {
       if (!isSet()) {
         return null;
@@ -157,6 +210,7 @@ public abstract class RuntimeSettings implements Parcelable {
       return super.get();
     }
 
+    /** Commit the preference value to the runtime if set. */
     public void commit() {
       if (!isSet()) {
         // Only add to the bundle prefs and
@@ -178,6 +232,7 @@ public abstract class RuntimeSettings implements Parcelable {
   private final ArrayList<RuntimeSettings> mChildren;
   private final ArrayList<Pref<?>> mPrefs;
 
+  /** Create a RuntimeSettings instance with no parent. */
   protected RuntimeSettings() {
     this(null /* parent */);
   }
@@ -219,7 +274,12 @@ public abstract class RuntimeSettings implements Parcelable {
     }
   }
 
-  /* package */ @Nullable
+  /**
+   * Get the associated GeckoRuntime instance.
+   *
+   * @return The runtime instance, or null if not available.
+   */
+  @Nullable
   GeckoRuntime getRuntime() {
     if (mParent != null) {
       return mParent.getRuntime();
@@ -227,6 +287,11 @@ public abstract class RuntimeSettings implements Parcelable {
     return null;
   }
 
+  /**
+   * Set the parent settings object.
+   *
+   * @param parent The parent settings, or null if none.
+   */
   private void setParent(final @Nullable RuntimeSettings parent) {
     mParent = parent;
     if (mParent != null) {
@@ -234,11 +299,21 @@ public abstract class RuntimeSettings implements Parcelable {
     }
   }
 
+  /**
+   * Add a child settings object.
+   *
+   * @param child The child settings to add.
+   */
   private void addChild(final @NonNull RuntimeSettings child) {
     mChildren.add(child);
   }
 
-  /* pacakge */ void addPref(final Pref<?> pref) {
+  /**
+   * Add a preference to this settings object.
+   *
+   * @param pref The preference to add.
+   */
+  void addPref(final Pref<?> pref) {
     mPrefs.add(pref);
   }
 
@@ -247,7 +322,7 @@ public abstract class RuntimeSettings implements Parcelable {
    *
    * @return A key-value mapping of the prefs.
    */
-  /* package */ @NonNull
+  @NonNull
   Map<String, Object> getPrefsMap() {
     final ArrayMap<String, Object> prefs = new ArrayMap<>();
     forAllPrefs(pref -> prefs.put(pref.name, pref.get()));
@@ -258,6 +333,8 @@ public abstract class RuntimeSettings implements Parcelable {
   /**
    * Iterates through all prefs in this RuntimeSettings instance and in all children, grandchildren,
    * etc.
+   *
+   * @param visitor The consumer to call for each preference.
    */
   private void forAllPrefs(final GeckoResult.Consumer<Pref<?>> visitor) {
     for (final RuntimeSettings child : mChildren) {
@@ -306,9 +383,13 @@ public abstract class RuntimeSettings implements Parcelable {
     }
   }
 
-  @AnyThread
   // AIDL code may call readFromParcel even though it's not part of Parcelable.
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Read settings from a Parcel.
+   *
+   * @param source The Parcel to read from
+   */
+  @AnyThread
   public void readFromParcel(final @NonNull Parcel source) {
     for (final Pref<?> pref : mPrefs) {
       if (pref.hasDefault()) {

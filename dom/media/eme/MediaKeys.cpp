@@ -16,6 +16,7 @@
 #include "mozilla/dom/MediaKeyError.h"
 #include "mozilla/dom/MediaKeyMessageEvent.h"
 #include "mozilla/dom/MediaKeySession.h"
+#include "mozilla/dom/MediaKeySessionBinding.h"
 #include "mozilla/dom/MediaKeyStatusMap.h"
 #include "mozilla/dom/MediaKeySystemAccess.h"
 #include "mozilla/dom/MediaKeysBinding.h"
@@ -29,10 +30,11 @@
 #include "nsServiceManagerUtils.h"
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include "AndroidDecoderModule.h"
 #  include "mozilla/MediaDrmCDMProxy.h"
-#endif
-#ifdef XP_WIN
-#  include "mozilla/WindowsVersion.h"
+#  include "mozilla/RemoteCDMChild.h"
+#  include "mozilla/RemoteMediaManagerChild.h"
+#  include "mozilla/StaticPrefs_media.h"
 #endif
 #ifdef MOZ_WMF_CDM
 #  include "mozilla/WMFCDMProxy.h"
@@ -173,7 +175,7 @@ void MediaKeys::Terminated() {
     keySessions.InsertOrUpdate(session->GetSessionId(), RefPtr{session});
   }
   for (const RefPtr<MediaKeySession>& session : keySessions.Values()) {
-    session->OnClosed();
+    session->OnClosed(MediaKeySessionClosedReason::Internal_error);
   }
   keySessions.Clear();
   MOZ_ASSERT(mKeySessions.Count() == 0);
@@ -187,9 +189,15 @@ void MediaKeys::Terminated() {
 }
 
 void MediaKeys::Shutdown() {
+  // Hold a self reference to keep us alive after we clear the self reference
+  // for each promise. This ensures we stay alive until we're done shutting
+  // down.
+  RefPtr<MediaKeys> selfReference = this;
+
   EME_LOG("MediaKeys[%p]::Shutdown()", this);
   if (mProxy) {
-    mProxy->Shutdown();
+    RefPtr<CDMProxy> proxy = mProxy;
+    proxy->Shutdown();
     mProxy = nullptr;
   }
 
@@ -198,11 +206,6 @@ void MediaKeys::Shutdown() {
   if (observerService && mObserverAdded) {
     observerService->RemoveObserver(this, kMediaKeysResponseTopic);
   }
-
-  // Hold a self reference to keep us alive after we clear the self reference
-  // for each promise. This ensures we stay alive until we're done shutting
-  // down.
-  RefPtr<MediaKeys> selfReference = this;
 
   for (const RefPtr<dom::DetailedPromise>& promise : mPromises.Values()) {
     promise->MaybeRejectWithInvalidStateError(
@@ -325,6 +328,7 @@ void MediaKeys::RejectPromise(PromiseId aId, ErrorResult&& aException,
             this, aId, errorCodeAsInt);
     return;
   }
+  RefPtr<MediaKeys> keys(this);
 
   // This promise could be a createSession or loadSession promise,
   // so we might have a pending session waiting to be resolved into
@@ -379,6 +383,7 @@ void MediaKeys::ResolvePromise(PromiseId aId) {
   if (!promise) {
     return;
   }
+  RefPtr<MediaKeys> keys(this);
 
   uint32_t token = 0;
   if (!mPromiseIdToken.Get(aId, &token)) {
@@ -434,10 +439,17 @@ already_AddRefed<CDMProxy> MediaKeys::CreateCDMProxy() {
   RefPtr<CDMProxy> proxy;
 #ifdef MOZ_WIDGET_ANDROID
   if (IsWidevineKeySystem(mKeySystem)) {
-    proxy = new MediaDrmCDMProxy(
-        this, mKeySystem,
-        mConfig.mDistinctiveIdentifier == MediaKeysRequirement::Required,
-        mConfig.mPersistentState == MediaKeysRequirement::Required);
+    if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
+      proxy = new MediaDrmCDMProxy(
+          this, mKeySystem,
+          mConfig.mDistinctiveIdentifier == MediaKeysRequirement::Required,
+          mConfig.mPersistentState == MediaKeysRequirement::Required);
+    } else {
+      proxy = RemoteMediaManagerChild::CreateCDM(
+          RemoteMediaIn::RddProcess, this, mKeySystem,
+          mConfig.mDistinctiveIdentifier == MediaKeysRequirement::Required,
+          mConfig.mPersistentState == MediaKeysRequirement::Required);
+    }
   } else
 #endif
 #ifdef MOZ_WMF_CDM

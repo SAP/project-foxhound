@@ -6,13 +6,13 @@
 #if !defined(AOMDecoder_h_)
 #  define AOMDecoder_h_
 
+#  include <aom/aom_decoder.h>
 #  include <stdint.h>
 
 #  include "PerformanceRecorder.h"
 #  include "PlatformDecoderModule.h"
-#  include <aom/aom_decoder.h>
-#  include "mozilla/Span.h"
 #  include "VideoUtils.h"
+#  include "mozilla/Span.h"
 
 namespace mozilla {
 
@@ -38,6 +38,9 @@ class AOMDecoder final : public MediaDataDecoder,
   // Return true if aMimeType is a one of the strings used
   // by our demuxers to identify AV1 streams.
   static bool IsAV1(const nsACString& aMimeType);
+
+  // Return true if uses AV1 main profile.
+  static bool IsMainProfile(const MediaByteBuffer* aBox);
 
   // Return true if a sample is a keyframe.
   static bool IsKeyframe(Span<const uint8_t> aBuffer);

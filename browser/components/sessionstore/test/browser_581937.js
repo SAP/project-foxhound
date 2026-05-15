@@ -5,7 +5,9 @@
 
 add_task(async function () {
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  await promiseBrowserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
 
   is(
     tab.linkedBrowser.currentURI.spec,

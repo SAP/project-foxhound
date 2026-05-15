@@ -61,8 +61,8 @@ interface nsIPipe : nsISupports
                          in unsigned long segmentCount);
 
     /**
-     * The pipe's input end, which also implements nsISearchableInputStream.
-     * Getting fails if the pipe hasn't been initialized.
+     * The pipe's input end. Getting fails if the pipe hasn't been
+     * initialized.
      */
     [must_use] readonly attribute nsIAsyncInputStream inputStream;
 
@@ -72,29 +72,6 @@ interface nsIPipe : nsISupports
      */
     [must_use] readonly attribute nsIAsyncOutputStream outputStream;
 
-};
-
-/**
- * XXX this interface doesn't really belong in here.  It is here because
- * currently nsPipeInputStream is the only implementation of this interface.
- */
-[scriptable, uuid(8C39EF62-F7C9-11d4-98F5-001083010E9B)]
-interface nsISearchableInputStream : nsISupports
-{
-    /**
-     * Searches for a string in the input stream. Since the stream has a notion
-     * of EOF, it is possible that the string may at some time be in the
-     * buffer, but is is not currently found up to some offset. Consequently,
-     * both the found and not found cases return an offset:
-     *    if found, return offset where it was found
-     *    if not found, return offset of the first byte not searched
-     * In the case the stream is at EOF and the string is not found, the first
-     * byte not searched will correspond to the length of the buffer.
-     */
-    void search(in string forString,
-                in boolean ignoreCase,
-                out boolean found,
-                out unsigned long offsetSearchedTo);
 };
 
 %{C++

@@ -19,13 +19,13 @@
   outline-offset: 4px;
   min-block-size: 24px;
   min-inline-size: 24px;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
   padding: 2px;
   margin: 9px;
 }
 
 .icon-buttons > radio > .userContext-icon {
-  fill: var(--in-content-text-color);
+  fill: var(--icon-color);
 }
 
 .radio-buttons > radio {
@@ -37,14 +37,14 @@ radio > .userContext-icon {
   block-size: 22px;
 }
 
-.radio-buttons > radio[selected="true"] {
-  outline-color: var(--in-content-text-color);
+.radio-buttons > radio[selected] {
+  outline-color: var(--text-color);
 }
 
-.radio-buttons > radio[focused="true"] {
-  outline-color: var(--color-accent-primary);
+.radio-buttons > radio[focused] {
+  outline-color: var(--border-color-selected);
 }
 
 .radio-buttons > radio:hover:active {
-  outline-color: var(--color-accent-primary);
+  outline-color: var(--border-color-selected);
 }

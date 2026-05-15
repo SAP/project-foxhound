@@ -18,7 +18,6 @@ DevToolsModules(
     "array-buffer.js",
     "blackboxing.js",
     "breakpoint-list.js",
-    "changes.js",
     "compatibility.js",
     "css-properties.js",
     "device.js",

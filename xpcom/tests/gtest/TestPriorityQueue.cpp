@@ -5,8 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsTPriorityQueue.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include "gtest/gtest.h"
 
 template <class T, class Compare>

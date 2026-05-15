@@ -74,7 +74,9 @@ support-files = [
 ["browser_accessibility_text_label_audit_frame.js"]
 
 ["browser_accessibility_walker.js"]
-skip-if = ["os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt"] # Bug 1959257
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1959257
+]
 
 ["browser_accessibility_walker_audit.js"]
 
@@ -110,12 +112,13 @@ skip-if = ["os == 'win' && os_version == '11.26100' && processor == 'x86_64' && 
 
 ["browser_animation_simple.js"]
 
+["browser_animation_unhandledActorPlayers.js"]
+
 ["browser_animation_updatedState.js"]
 
 ["browser_application_manifest.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_canvasframe_helper_01.js"]
@@ -126,10 +129,9 @@ skip-if = [
 
 ["browser_canvasframe_helper_04.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1183605
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1183605
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1183605
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1183605
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1183605
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1183605
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1183605
 ]
 
 ["browser_canvasframe_helper_05.js"]
@@ -137,6 +139,7 @@ skip-if = [
 ["browser_canvasframe_helper_06.js"]
 
 ["browser_compatibility_cssIssues.js"]
+tags = "devtools-compat-data"
 
 ["browser_connectToFrame.js"]
 
@@ -189,32 +192,27 @@ skip-if = [
 ["browser_storage_cookies-duplicate-names.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_storage_dynamic_windows.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1715916 - test is having race conditions on slow hardware
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1715916 - test is having race conditions on slow hardware
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # high frequency intermittent
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan", # high frequency intermittent
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1767758
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1715916 - test is having race conditions on slow hardware
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # high frequency intermittent
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1767758
 ]
 
 ["browser_storage_listings.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_storage_updates.js"]
 https_first_disabled = true
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1829298
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
 ]
 
 ["browser_style_utils_getFontPreviewData.js"]

@@ -6,8 +6,8 @@
 
 /* rendering object for CSS "display: flex" and "display: -webkit-box" */
 
-#ifndef nsFlexContainerFrame_h___
-#define nsFlexContainerFrame_h___
+#ifndef nsFlexContainerFrame_h_
+#define nsFlexContainerFrame_h_
 
 #include <tuple>
 
@@ -269,7 +269,8 @@ class nsFlexContainerFrame final : public nsContainerFrame,
   int32_t GetNumLines() const final;
   bool IsLineIteratorFlowRTL() final;
   mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
-  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  int32_t FindLineContaining(const nsIFrame* aFrame,
+                             int32_t aStartLine = 0) final;
   NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                          nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
                          bool* aPosIsAfterLastFrame) final;
@@ -696,4 +697,4 @@ class nsFlexContainerFrame final : public nsContainerFrame,
   nscoord mLastBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
 };
 
-#endif /* nsFlexContainerFrame_h___ */
+#endif /* nsFlexContainerFrame_h_ */

@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/SmallPointerArray.h"
+#include <stdint.h>
 
 #define PTR1 (void*)0x4
 #define PTR2 (void*)0x5

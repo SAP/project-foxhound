@@ -25,8 +25,7 @@
 
 #include <algorithm>
 
-#include "jsnum.h"
-
+#include "builtin/Number.h"
 #include "jit/Disassemble.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/FlushICache.h"  // for FlushExecutionContextForAllThreads
@@ -483,6 +482,16 @@ bool Code::createManyLazyEntryStubs(const WriteGuard& guard,
 
   *stubBlockIndex = guard->blocks.length();
 
+  if (!guard->lazyExports.reserve(guard->lazyExports.length() +
+                                  funcExportIndices.length()) ||
+      !addCodeBlock(guard, std::move(stubCodeBlock), nullptr)) {
+    return false;
+  }
+
+  // Everything after this point must be guaranteed to succeed. A failure after
+  // this point can leave things in an inconsistent state, and be observed if we
+  // retry to create a lazy stub.
+
   uint32_t codeRangeIndex = 0;
   for (uint32_t funcExportIndex : funcExportIndices) {
     const FuncExport& fe = funcExports[funcExportIndex];
@@ -511,17 +520,17 @@ bool Code::createManyLazyEntryStubs(const WriteGuard& guard,
       MOZ_ASSERT(oldKind == CodeBlockKind::SharedStubs ||
                  oldKind == CodeBlockKind::BaselineTier);
       guard->lazyExports[exportIndex] = std::move(lazyExport);
-    } else if (!guard->lazyExports.insert(
-                   guard->lazyExports.begin() + exportIndex,
-                   std::move(lazyExport))) {
-      return false;
+    } else {
+      // We reserved memory earlier, this should not fail.
+      MOZ_RELEASE_ASSERT(guard->lazyExports.insert(
+          guard->lazyExports.begin() + exportIndex, std::move(lazyExport)));
     }
   }
 
-  stubCodeBlock->sendToProfiler(*codeMeta_, *codeTailMeta_, codeMetaForAsmJS_,
-                                FuncIonPerfSpewerSpan(),
-                                FuncBaselinePerfSpewerSpan());
-  return addCodeBlock(guard, std::move(stubCodeBlock), nullptr);
+  guard->blocks[*stubBlockIndex]->sendToProfiler(
+      *codeMeta_, *codeTailMeta_, codeMetaForAsmJS_, FuncIonPerfSpewerSpan(),
+      FuncBaselinePerfSpewerSpan());
+  return true;
 }
 
 bool Code::createOneLazyEntryStub(const WriteGuard& guard,
@@ -787,10 +796,28 @@ bool Code::addCodeBlock(const WriteGuard& guard, UniqueCodeBlock block,
 
   CodeBlock* blockPtr = block.get();
   size_t codeBlockIndex = guard->blocks.length();
-  return guard->blocks.append(std::move(block)) &&
-         guard->blocksLinkData.append(std::move(maybeLinkData)) &&
-         blockMap_.insert(blockPtr) &&
-         blockPtr->initialize(*this, codeBlockIndex);
+
+  if (!guard->blocks.reserve(guard->blocks.length() + 1) ||
+      !guard->blocksLinkData.reserve(guard->blocksLinkData.length() + 1)) {
+    return false;
+  }
+
+  // If anything fails here, be careful to reset our state back so that we are
+  // not in an inconsistent state.
+  if (!blockPtr->initialize(*this, codeBlockIndex)) {
+    return false;
+  }
+
+  if (!blockMap_.insert(blockPtr)) {
+    // We don't need to deinitialize the blockPtr, because that will be
+    // automatically handled by its destructor.
+    return false;
+  }
+
+  guard->blocks.infallibleAppend(std::move(block));
+  guard->blocksLinkData.infallibleAppend(std::move(maybeLinkData));
+
+  return true;
 }
 
 SharedCodeSegment Code::createFuncCodeSegmentFromPool(
@@ -1506,7 +1533,7 @@ void Code::disassemble(JSContext* cx, Tier tier, int kindSelection,
 // Return a map with names and associated statistics
 MetadataAnalysisHashMap Code::metadataAnalysis(JSContext* cx) const {
   MetadataAnalysisHashMap hashmap;
-  if (!hashmap.reserve(14)) {
+  if (!hashmap.reserve(16)) {
     return hashmap;
   }
 
@@ -1561,6 +1588,16 @@ MetadataAnalysisHashMap Code::metadataAnalysis(JSContext* cx) const {
         "funcExports size",
         codeBlock.funcExports.sizeOfExcludingThis(mallocSizeOf));
   }
+
+  size_t codeBytesUsedInTier1 = 0;
+  size_t codeBytesUsedInTier2 = 0;
+  {
+    auto guard = data_.readLock();
+    codeBytesUsedInTier1 = guard->tier1Stats.codeBytesUsed;
+    codeBytesUsedInTier2 = guard->tier2Stats.codeBytesUsed;
+  }
+  hashmap.putNewInfallible("tier1 code bytes used", codeBytesUsedInTier1);
+  hashmap.putNewInfallible("tier2 code bytes used", codeBytesUsedInTier2);
 
   return hashmap;
 }

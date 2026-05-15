@@ -1,0 +1,159 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@keyframes springUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#multi-stage-message-root {
+  --bg-transparent: transparent;
+  --card-bg: light-dark(#fff, #191622);
+  --card-bg-translucent: light-dark(color-mix(in srgb, #fff 60%, var(--bg-transparent)), color-mix(in srgb, #191622 40%, var(--bg-transparent)));
+  --card-border-color: light-dark(#f1e7f8, #736a8a);
+  --card-border-gradient: light-dark(var(--aiwindow-input-gradient), var(--aiwindow-input-gradient-dark));
+  --card-selected-shadow: light-dark(0 3px 16px 0 color-mix(in srgb, rgb(59 34 121) 12%, var(--bg-transparent)), 0 27px 124px 0 rgba(117, 67, 227, 0.18));
+  --brand-text-color: light-dark(#210340, #e4dcf7);
+  --button-text-color: light-dark(var(--button-text-color-primary), #fbfbfe);
+  --button-gradient: light-dark(var(--aiwindow-gradient-button), var(--aiwindow-gradient-button-dark));
+
+  .main-content,
+  .section-main,
+  .dialog-initial,
+  .onboardingContainer {
+    box-shadow: none;
+  }
+
+  .onboardingContainer .screen[pos="center"] {
+    background-color: var(--bg-transparent);
+  }
+
+  #mainContentHeader {
+    /* stylelint-disable-next-line -- using linear gradient for text effect */
+    background: light-dark(linear-gradient(91deg, #7630c0 22.04%, #5c66ee 78.7%), linear-gradient(65deg, #9165ff 18.85%, #d8c9ff 78.79%));
+    background-clip: text;
+    /* stylelint-disable-next-line -- transparent needed for gradient text effect */
+    color: var(--bg-transparent);
+  }
+
+  .screen.AI_WINDOW_INTRO {
+    #mainContentHeader {
+      opacity: 0;
+      animation: springUp 0.3s ease-in forwards;
+      animation-delay: 0.3s;
+    }
+  }
+
+  .screen.AI_WINDOW_CHOOSE_MODEL {
+    h2,
+    p {
+      letter-spacing: 0.3px;
+      line-height: normal;
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- custom brand color per Figma design */
+      color: var(--brand-text-color);
+    }
+
+    .welcome-text h2 {
+      opacity: 0.8;
+      margin-top: var(--space-medium);
+    }
+
+    button.primary {
+      width: calc(var(--size-item-large) * 7);
+      height: var(--size-item-xlarge);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: var(--space-small);
+      padding: var(--space-xsmall) var(--space-large);
+      margin: 0 auto;
+      border-radius: var(--border-radius-medium);
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- custom gradient per Figma design */
+      background: var(--button-gradient);
+      color: var(--button-text-color);
+      text-align: center;
+      font-size: var(--button-font-size);
+      font-weight: var(--button-font-weight);
+      letter-spacing: -0.3px;
+      cursor: pointer;
+      border: none;
+    }
+
+    &:not(:has(.icon.selected)) button.primary {
+      opacity: 0.5;
+      pointer-events: none;
+      cursor: default;
+    }
+  }
+
+  .tiles-single-select-section.single-select {
+    gap: var(--space-large);
+    margin-top: calc(var(--space-xsmall) * 8);
+    margin-bottom: var(--space-xxlarge);
+
+    .select-item {
+      width: calc(var(--size-item-large) * 7);
+      height: calc(var(--size-item-medium) * 11);
+      padding-block: calc(var(--space-xsmall) * 9) 0;
+      /* stylelint-disable-next-line -- custom border color per Figma design */
+      border: var(--border-width) solid var(--card-border-color);
+      display: flex;
+      flex-direction: column;
+      justify-content: start;
+      align-items: center;
+      gap: 0;
+      padding-inline: var(--space-medium);
+      box-sizing: border-box;
+      border-radius: var(--border-radius-large);
+      /* stylelint-disable-next-line -- custom background per Figma design */
+      background: var(--card-bg-translucent);
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- custom brand color per Figma design */
+      color: var(--brand-text-color);
+
+      .label-text {
+        margin-top: calc(var(--space-xsmall) * 5);
+        margin-bottom: 0;
+        letter-spacing: 0.5px;
+        opacity: 0.8;
+        line-height: normal;
+      }
+
+      .body-text {
+        opacity: 0.8;
+        line-height: normal;
+      }
+
+      .icon {
+        width: calc(var(--size-item-xlarge) * 2);
+        height: calc(var(--size-item-xlarge) * 2);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      &:hover:not(:has(.selected)) {
+        /* stylelint-disable-next-line -- custom background for hover state */
+        background: var(--card-bg);
+        cursor: pointer;
+      }
+
+      &:has(.selected) {
+        border: calc(var(--border-width) * 2) solid var(--border-color-transparent);
+        /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens -- gradient defined in ai-window-content.css */
+        background:
+          linear-gradient(var(--card-bg), var(--card-bg)) padding-box,
+          var(--card-border-gradient) border-box;
+        /* stylelint-disable-next-line -- custom shadow per Figma design */
+        box-shadow: var(--card-selected-shadow);
+      }
+    }
+  }
+}

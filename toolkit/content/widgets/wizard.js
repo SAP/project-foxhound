@@ -338,10 +338,8 @@
 
       if (this.onLastPage) {
         this.canAdvance = true;
-        this.setAttribute("lastpage", "true");
-      } else {
-        this.setAttribute("lastpage", "false");
       }
+      this.toggleAttribute("lastpage", this.onLastPage);
 
       this._adjustWizardHeader();
       this._wizardButtons.onPageChange();
@@ -585,10 +583,8 @@
 
     onPageChange() {
       if (AppConstants.platform == "macosx") {
-        this.getButton("finish").hidden = !(
-          this.getAttribute("lastpage") == "true"
-        );
-      } else if (this.getAttribute("lastpage") == "true") {
+        this.getButton("finish").hidden = !this.hasAttribute("lastpage");
+      } else if (this.hasAttribute("lastpage")) {
         this._wizardButtonDeck.selectedIndex = 0;
       } else {
         this._wizardButtonDeck.selectedIndex = 1;

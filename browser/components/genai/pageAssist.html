@@ -1,0 +1,31 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml" role="document">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src resource: chrome:; object-src 'none'; img-src chrome:;"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title data-l10n-id="genai-page-assist-title"></title>
+    <link rel="localization" href="browser/genai.ftl" />
+    <link rel="localization" href="browser/sidebar.ftl" />
+    <link rel="localization" href="preview/genai.ftl" />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/sidebar/sidebar.css"
+    />
+    <script src="chrome://browser/content/contentTheme.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/genai/content/page-assist.mjs"
+    ></script>
+  </head>
+  <body id="page-assist-wrapper">
+    <page-assist></page-assist>
+  </body>
+</html>

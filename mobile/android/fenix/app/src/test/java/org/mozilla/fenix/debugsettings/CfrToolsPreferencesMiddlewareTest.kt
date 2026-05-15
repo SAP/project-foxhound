@@ -9,13 +9,11 @@ import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.debugsettings.cfrs.CfrPreferencesRepository
@@ -27,9 +25,6 @@ import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
 @RunWith(AndroidJUnit4::class)
 class CfrToolsPreferencesMiddlewareTest {
 
-    @get:Rule
-    val mainCoroutineTestRule = MainCoroutineRule()
-
     private lateinit var cfrPreferencesRepository: CfrPreferencesRepository
     private lateinit var middleware: CfrToolsPreferencesMiddleware
 
@@ -40,7 +35,7 @@ class CfrToolsPreferencesMiddlewareTest {
     }
 
     @Test
-    fun `WHEN the store gets initialized THEN repository is initialized`() = runTestOnMain {
+    fun `WHEN the store gets initialized THEN repository is initialized`() = runTest {
         var initCalled = false
         val repository = object : CfrPreferencesRepository {
             override val cfrPreferenceUpdates: Flow<CfrPreferencesRepository.CfrPreferenceUpdate>
@@ -71,6 +66,8 @@ class CfrToolsPreferencesMiddlewareTest {
                 ),
             ),
         )
+
+        testScheduler.advanceUntilIdle()
 
         assertTrue(initCalled)
         assertTrue(store.state.inactiveTabsShown)

@@ -52,7 +52,8 @@ extern "C" {
                                         uint32_t* column);                  \
   void Servo_StyleSet_##type_##RuleChanged(                                 \
       const StylePerDocumentStyleData*, const Style##prefix_##type_##Rule*, \
-      const StyleDomStyleSheet*, StyleRuleChangeKind);                      \
+      const StyleDomStyleSheet*, StyleRuleChangeKind,                       \
+      const nsTArray<StyleCssRuleRef>*);                                    \
   BASIC_RULE_FUNCS_WITHOUT_GETTER_WITH_PREFIX(type_##Rule, prefix_)
 
 #define BASIC_RULE_FUNCS_LOCKED(type_) \
@@ -78,6 +79,7 @@ GROUP_RULE_FUNCS_UNLOCKED(Media)
 GROUP_RULE_FUNCS_UNLOCKED(Document)
 BASIC_RULE_FUNCS_UNLOCKED(Namespace)
 BASIC_RULE_FUNCS_UNLOCKED(Margin)
+BASIC_RULE_FUNCS_UNLOCKED(CustomMedia)
 GROUP_RULE_FUNCS_LOCKED(Page)
 BASIC_RULE_FUNCS_UNLOCKED(Property)
 GROUP_RULE_FUNCS_UNLOCKED(Supports)

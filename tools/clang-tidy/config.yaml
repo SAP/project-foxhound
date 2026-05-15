@@ -19,7 +19,7 @@ platforms:
 # Minimum clang-tidy version that is required for all the following checkers
 # to work properly.
 # This is also used by 'mach clang-format'
-package_version: "19.1.7"
+package_version: "20.1.8"
 clang_checkers:
   - name: -*
     publish: !!bool no
@@ -204,8 +204,6 @@ clang_checkers:
       - linux64
       - macosx64
     reliability: high
-    # Disable as the test does not support C++17 yet
-    publish: !!bool no
   - name: performance-inefficient-string-concatenation
     reliability: high
   - name: performance-inefficient-vector-operation
@@ -231,7 +229,9 @@ clang_checkers:
       - key: AllowedTypes
         # Allow EnumSet because it only has a non-trivial copy constructor
         # in debug builds.
-        value: ::mozilla::EnumSet
+        # Allow Range because it only has more than two pointer-sized members
+        # in debug (or fuzzing) builds.
+        value: ::mozilla::(EnumSet|Range)
   - name: readability-braces-around-statements
     reliability: high
     config:

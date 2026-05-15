@@ -7,10 +7,9 @@
 #ifndef DOM_SVG_DOMSVGANIMATEDLENGTHLIST_H_
 #define DOM_SVG_DOMSVGANIMATEDLENGTHLIST_H_
 
-#include "nsCycleCollectionParticipant.h"
 #include "SVGElement.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
 
@@ -126,7 +125,7 @@ class DOMSVGAnimatedLengthList final : public nsWrapperCache {
    */
   static already_AddRefed<DOMSVGAnimatedLengthList> GetDOMWrapper(
       SVGAnimatedLengthList* aList, dom::SVGElement* aElement,
-      uint8_t aAttrEnum, uint8_t aAxis);
+      uint8_t aAttrEnum, SVGLength::Axis aAxis);
 
   /**
    * This method returns the DOMSVGAnimatedLengthList wrapper for an internal
@@ -171,7 +170,7 @@ class DOMSVGAnimatedLengthList final : public nsWrapperCache {
    * type.
    */
   DOMSVGAnimatedLengthList(dom::SVGElement* aElement, uint8_t aAttrEnum,
-                           uint8_t aAxis)
+                           SVGLength::Axis aAxis)
       : mBaseVal(nullptr),
         mAnimVal(nullptr),
         mElement(aElement),
@@ -195,7 +194,7 @@ class DOMSVGAnimatedLengthList final : public nsWrapperCache {
   RefPtr<dom::SVGElement> mElement;
 
   uint8_t mAttrEnum;
-  uint8_t mAxis;
+  SVGLength::Axis mAxis;
 };
 
 }  // namespace dom

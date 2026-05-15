@@ -16,9 +16,11 @@ ChromeUtils.defineESModuleGetters(this, {
     "resource://services-settings/RemoteSettingsClient.sys.mjs",
   SearchEngineClassification:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSearch.sys.mjs",
+  SearchEngineInstallError:
+    "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   SearchEngineSelector:
     "moz-src:///toolkit/components/search/SearchEngineSelector.sys.mjs",
-  SearchService: "resource://gre/modules/SearchService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SearchSettings: "moz-src:///toolkit/components/search/SearchSettings.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
@@ -38,7 +40,7 @@ const RemoteSettingsUtils = Utils;
 updateAppInfo({ name: "XPCShell", version: "48", platformVersion: "48" });
 
 // We generally also need a profile set-up, for saving search settings etc.
-do_get_profile();
+do_get_profile(true);
 
 SearchTestUtils.init(this);
 
@@ -474,14 +476,14 @@ async function assertGleanDefaultEngine(expected) {
  *   The enterprise policy to use.
  */
 async function setupPolicyEngineWithJson(policy) {
-  Services.search.wrappedJSObject.reset();
+  SearchService.reset();
 
   await this.EnterprisePolicyTesting.setupPolicyEngineWithJson(policy);
 
   let settingsWritten = SearchTestUtils.promiseSearchNotification(
     "write-settings-to-disk-complete"
   );
-  await Services.search.init();
+  await SearchService.init();
   await settingsWritten;
 }
 
@@ -504,11 +506,19 @@ async function enableEnterprise() {
  * A simple observer to ensure we get only the expected notifications.
  */
 class SearchObserver {
-  constructor(expectedNotifications, returnEngineForNotification = false) {
+  /**
+   *
+   * @param {Array<[string, string|null]>} expectedNotifications
+   *   An array of [notificationType, engineName] tuples. Use null for
+   *   engineName if we don't care which engine triggered the notification.
+   */
+  constructor(expectedNotifications) {
     this.observer = this.observer.bind(this);
     this.deferred = Promise.withResolvers();
-    this.expectedNotifications = expectedNotifications;
-    this.returnEngineForNotification = returnEngineForNotification;
+    this.expectedNotifications = expectedNotifications.map(([type, name]) => {
+      return { type, name };
+    });
+    this.receivedNotifications = [];
 
     Services.obs.addObserver(this.observer, SearchUtils.TOPIC_ENGINE_MODIFIED);
 
@@ -520,10 +530,18 @@ class SearchObserver {
   }
 
   handleTimeout() {
+    let stillExpecting = this.expectedNotifications
+      .map(n => `[type: ${n.type}, name: ${n.name}]`)
+      .join(", ");
+    let received = this.receivedNotifications
+      .map(n => `[type: ${n.type}, name: ${n.engineName}]`)
+      .join(", ");
+
     this.deferred.reject(
       new Error(
-        "Waiting for Notifications timed out, only received: " +
-          this.expectedNotifications.join(",")
+        `Waiting for Notifications timed out:
+          still expecting - [${stillExpecting || "(none)"}]
+          received - [${received || "(none);"}]`
       )
     );
   }
@@ -534,20 +552,25 @@ class SearchObserver {
       0,
       "Should be expecting a notification"
     );
-    Assert.equal(
-      data,
-      this.expectedNotifications[0],
-      "Should have received the next expected notification"
+
+    let engine = subject.wrappedJSObject;
+    let engineName = engine.name;
+    this.receivedNotifications.push({ type: data, engineName });
+
+    let matchIndex = this.expectedNotifications.findIndex(
+      expected =>
+        expected.type == data &&
+        (expected.name == null || expected.name == engineName)
     );
 
-    if (
-      this.returnEngineForNotification &&
-      data == this.returnEngineForNotification
-    ) {
-      this.engineToReturn = subject.QueryInterface(Ci.nsISearchEngine);
+    if (matchIndex == -1) {
+      info(
+        `SearchObserver received unexpected notification: ${data}, ${engineName}`
+      );
+      return;
     }
 
-    this.expectedNotifications.shift();
+    this.expectedNotifications.splice(matchIndex, 1);
 
     if (!this.expectedNotifications.length) {
       clearTimeout(this.timeout);
@@ -571,7 +594,7 @@ let updatePromise = SearchTestUtils.promiseSearchNotification(
 );
 
 registerCleanupFunction(async () => {
-  if (Services.search.isInitialized) {
+  if (SearchService.isInitialized) {
     await updatePromise;
   }
 });
@@ -634,53 +657,51 @@ async function assertSelectorEnginesEqualsExpected(
   expectedEngines,
   message
 ) {
-  engineSelector._configuration = null;
+  engineSelector.clearCachedConfigurationForTests();
   SearchTestUtils.setRemoteSettingsConfig(config);
 
   if (expectedEngines.length) {
     let { engines } = await engineSelector.fetchEngineConfiguration(userEnv);
 
-    if (SearchUtils.rustSelectorFeatureGate) {
-      // Add default parameters to match the selector output.
-      for (let i = 0; i < expectedEngines.length; i++) {
-        expectedEngines[i] = {
-          aliases: [],
-          charset: "UTF-8",
-          optional: false,
-          partnerCode: "",
-          telemetrySuffix: "",
-          orderHint: null,
-          clickUrl: null,
-          isNewUntil: null,
-          ...expectedEngines[i],
-        };
-        expectedEngines[i].classification =
-          expectedEngines[i].classification == "general"
-            ? SearchEngineClassification.GENERAL
-            : SearchEngineClassification.UNKNOWN;
+    // Add default parameters to match the selector output.
+    for (let i = 0; i < expectedEngines.length; i++) {
+      expectedEngines[i] = {
+        aliases: [],
+        charset: "UTF-8",
+        optional: false,
+        partnerCode: "",
+        telemetrySuffix: "",
+        orderHint: null,
+        clickUrl: null,
+        isNewUntil: null,
+        ...expectedEngines[i],
+      };
+      expectedEngines[i].classification =
+        expectedEngines[i].classification == "general"
+          ? SearchEngineClassification.GENERAL
+          : SearchEngineClassification.UNKNOWN;
 
-        expectedEngines[i].urls = {
-          suggestions: null,
-          trending: null,
-          searchForm: null,
-          visualSearch: null,
-          ...expectedEngines[i].urls,
+      expectedEngines[i].urls = {
+        suggestions: null,
+        trending: null,
+        searchForm: null,
+        visualSearch: null,
+        ...expectedEngines[i].urls,
+      };
+      expectedEngines[i].urls.search = {
+        method: "GET",
+        ...expectedEngines[i].urls.search,
+      };
+      if (!expectedEngines[i].urls.search.params) {
+        expectedEngines[i].urls.search.params = [];
+      }
+      for (let j = 0; j < expectedEngines[i].urls.search.params.length; j++) {
+        expectedEngines[i].urls.search.params[j] = {
+          enterpriseValue: null,
+          experimentConfig: null,
+          value: null,
+          ...expectedEngines[i].urls.search.params[j],
         };
-        expectedEngines[i].urls.search = {
-          method: "GET",
-          ...expectedEngines[i].urls.search,
-        };
-        if (!expectedEngines[i].urls.search.params) {
-          expectedEngines[i].urls.search.params = [];
-        }
-        for (let j = 0; j < expectedEngines[i].urls.search.params.length; j++) {
-          expectedEngines[i].urls.search.params[j] = {
-            enterpriseValue: null,
-            experimentConfig: null,
-            value: null,
-            ...expectedEngines[i].urls.search.params[j],
-          };
-        }
       }
     }
 

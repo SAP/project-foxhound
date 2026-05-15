@@ -167,6 +167,18 @@
       }
     },
 
+    "BrowserDataBackup": {
+      "type": ["boolean", "object"],
+      "properties": {
+        "AllowBackup": {
+          "type": "boolean"
+        },
+        "AllowRestore": {
+          "type": "boolean"
+        }
+      }
+    },
+
     "CaptivePortal": {
       "type": "boolean"
     },
@@ -547,6 +559,10 @@
       "type": "boolean"
     },
 
+    "DisableRemoteImprovements": {
+      "type": "boolean"
+    },
+
     "DisableSafeMode": {
       "type": "boolean"
     },
@@ -653,6 +669,12 @@
         "Category": {
           "type": "string",
           "enum": ["standard", "strict"]
+        },
+        "BaselineExceptions": {
+          "type": "boolean"
+        },
+        "ConvenienceExceptions": {
+          "type": "boolean"
         }
       }
     },
@@ -844,6 +866,30 @@
         "ImproveSuggest": {
           "type": "boolean"
         },
+        "OnlineEnabled": {
+          "type": "boolean"
+        },
+        "Locked": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    "GenerativeAI": {
+      "type": "object",
+      "properties": {
+        "Chatbot": {
+          "type": "boolean"
+        },
+        "LinkPreviews": {
+          "type": "boolean"
+        },
+        "TabGroups": {
+          "type": "boolean"
+        },
+        "Enabled": {
+          "type": "boolean"
+        },
         "Locked": {
           "type": "boolean"
         }
@@ -969,6 +1015,30 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+
+    "LocalNetworkAccess": {
+      "type": "object",
+      "properties": {
+        "Enabled": {
+          "type": "boolean"
+        },
+        "BlockTrackers": {
+          "type": "boolean"
+        },
+        "EnablePrompting": {
+          "type": "boolean"
+        },
+        "SkipDomains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Locked": {
+          "type": "boolean"
+        }
       }
     },
 
@@ -1615,6 +1685,10 @@
     },
 
     "UseSystemPrintDialog": {
+      "type": "boolean"
+    },
+
+    "VisualSearchEnabled": {
       "type": "boolean"
     },
 

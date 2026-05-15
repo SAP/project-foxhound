@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.tabstray
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -16,11 +18,14 @@ import org.mozilla.fenix.components.appstate.AppState
  *
  * @param appStore [AppStore] used to listen for changes to [AppState].
  * @param tabsTrayStore [TabsTrayStore] used to listen for changes to [TabsTrayState].
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 class InactiveTabsBinding(
     appStore: AppStore,
     private val tabsTrayStore: TabsTrayStore,
-) : AbstractBinding<AppState>(appStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<AppState>(appStore, mainDispatcher) {
     override suspend fun onState(flow: Flow<AppState>) {
         flow.distinctUntilChangedBy { it.inactiveTabsExpanded }
             .collectLatest {

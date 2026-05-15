@@ -89,13 +89,29 @@ class WindowManagerMixin(object):
 
         def loaded(handle):
             with self.marionette.using_context("chrome"):
-                return self.marionette.execute_script(
+                return self.marionette.execute_async_script(
                     """
+                  const [handle, resolve] = arguments;
+
+                  const { NavigableManager } = ChromeUtils.importESModule(
+                    "chrome://remote/content/shared/NavigableManager.sys.mjs"
+                  );
                   const { windowManager } = ChromeUtils.importESModule(
                     "chrome://remote/content/shared/WindowManager.sys.mjs"
                   );
-                  const win = windowManager.findWindowByHandle(arguments[0]).win;
-                  return win.document.readyState == "complete";
+
+                  const browsingContext =
+                    NavigableManager.getBrowsingContextById(handle);
+                  const window =
+                    windowManager.getChromeWindowForBrowsingContext(browsingContext);
+
+                  (async function() {
+                    if (window) {
+                      await windowManager.waitForChromeWindowLoaded(window);
+                    }
+
+                    resolve();
+                  })();
                 """,
                     script_args=[handle],
                 )
@@ -129,12 +145,7 @@ class WindowManagerMixin(object):
             )
 
             # Before continuing ensure the window has been completed loading
-            Wait(self.marionette).until(
-                lambda _: loaded(new_window),
-                message="Window with handle '{}'' did not finish loading".format(
-                    new_window
-                ),
-            )
+            loaded(new_window)
 
             # Bug 1507771 - Return the correct handle based on the currently selected context
             # as long as "WebDriver:NewWindow" is not handled separtely in chrome context

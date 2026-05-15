@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <stdio.h>
 #include "nsIDragService.h"
 #include "nsWidgetsCID.h"
 #include "nsNativeDragTarget.h"
@@ -19,17 +18,14 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/MouseEvents.h"
-#include "mozilla/Logging.h"
+#include "mozilla/widget/WidgetLogging.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
 
-extern mozilla::LazyLogModule sWidgetDragServiceLog;
-#define __DRAGSERVICE_LOG__(logLevel, ...) \
-  MOZ_LOG(sWidgetDragServiceLog, logLevel, __VA_ARGS__)
-#define LOGD(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Debug, (__VA_ARGS__))
-#define LOGI(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Info, (__VA_ARGS__))
-#define LOGE(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Error, (__VA_ARGS__))
+#define LOGD DRAGSERVICE_LOGD
+#define LOGI DRAGSERVICE_LOGI
+#define LOGE DRAGSERVICE_LOGE
 
 // This is cached for Leave notification
 static POINTL gDragLastPoint;
@@ -365,7 +361,7 @@ nsNativeDragTarget::DragOver(DWORD grfKeyState, POINTL ptl, LPDWORD pdwEffect) {
       "[%p] %s | grfKeyState: %lu | ptl: (%ld, %ld) | *pdwEffect: %lu | "
       "mEffectsAllowed: %lu | dragImageChanged: %s",
       this, __FUNCTION__, grfKeyState, ptl.x, ptl.y, *pdwEffect,
-      mEffectsAllowed, GetBoolName(dragImageChanged));
+      mEffectsAllowed, TrueOrFalse(dragImageChanged));
   LOGI("[%p] %s | Firing 'drag' event at drag source, if available", this,
        __FUNCTION__);
 

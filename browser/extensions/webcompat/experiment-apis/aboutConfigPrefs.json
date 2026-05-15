@@ -24,17 +24,17 @@
     ],
     "functions": [
       {
-        "name": "getBranch",
+        "name": "getCheckableGlobalPrefs",
         "type": "function",
-        "description": "Get all child prefs for a branch",
-        "parameters": [
-          {
-            "name": "branchName",
-            "type": "string",
-            "description": "The branch name"
+        "description": "Lists the global prefs the addon may read",
+        "parameters": [],
+        "returns": {
+          "type": "array",
+          "description": "The list of pref names.",
+          "items": {
+            "type": "string"
           }
-        ],
-        "async": true
+        }
       },
       {
         "name": "getPref",
@@ -45,49 +45,23 @@
             "name": "name",
             "type": "string",
             "description": "The preference name"
-          }
-        ],
-        "async": true
-      },
-      {
-        "name": "getBoolPrefSync",
-        "type": "function",
-        "description": "Get a webcompat preference's boolean value synchronously",
-        "parameters": [
-          {
-            "name": "name",
-            "type": "string",
-            "description": "The preference name"
           },
           {
             "name": "defaultValue",
             "type": "boolean",
             "optional": true,
-            "description": "Default value to return if the pref is not set (defaults to false if omitted)"
+            "description": "Default value to return if the pref is not set"
           }
         ],
         "returns": {
-          "type": "boolean",
-          "description": "returns the value of a boolean pref."
+          "choices": [
+            { "type": "boolean" },
+            { "type": "integer" },
+            { "type": "string" }
+          ],
+          "optional": true,
+          "description": "returns the value of a pref."
         }
-      },
-      {
-        "name": "setPref",
-        "type": "function",
-        "description": "Set a preference's value",
-        "parameters": [
-          {
-            "name": "name",
-            "type": "string",
-            "description": "The preference name"
-          },
-          {
-            "name": "value",
-            "type": "any",
-            "description": "The new value"
-          }
-        ],
-        "async": true
       }
     ]
   }

@@ -297,8 +297,8 @@ var gFromToBundles = [
   new TestcaseBundle(gPropList.dominant_baseline, [
     new AnimTestcaseFromTo("alphabetic", "hanging"),
     new AnimTestcaseFromTo("mathematical", "central"),
-    new AnimTestcaseFromTo("middle", "text-after-edge"),
-    new AnimTestcaseFromTo("text-before-edge", "auto"),
+    new AnimTestcaseFromTo("middle", "text-bottom"),
+    new AnimTestcaseFromTo("text-top", "auto"),
     new AnimTestcaseFromTo("alphabetic", "inherit", { toComp: "auto" }),
   ]),
   // NOTE: Mozilla doesn't currently support "enable-background", but I'm

@@ -65,7 +65,7 @@ class SVGMarkerFrame final : public SVGContainerFrame {
                         const nsDisplayListSet& aLists) override {}
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {

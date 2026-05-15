@@ -18,7 +18,7 @@
 
 #include "wasm/WasmValue.h"
 
-#include "jsmath.h"
+#include "builtin/Math.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/Printf.h"
 #include "js/Value.h"
@@ -88,11 +88,21 @@ void Val::readFromHeapLocation(const void* loc) {
   memcpy(&cell_, loc, type_.size());
 }
 
-void Val::writeToHeapLocation(void* loc) const {
+void Val::writeToHeapLocation(gc::Cell* owner, void* loc) const {
   if (isAnyRef()) {
-    *((GCPtr<AnyRef>*)loc) = toAnyRef();
+    BarrieredSet(owner, loc, toAnyRef());
     return;
   }
+
+  memcpy(loc, &cell_, type_.size());
+}
+
+void Val::writeToTenuredHeapLocation(void* loc) const {
+  if (isAnyRef()) {
+    BarrieredSet(false, loc, toAnyRef());
+    return;
+  }
+
   memcpy(loc, &cell_, type_.size());
 }
 
@@ -390,7 +400,8 @@ bool ToWebAssemblyValue_i32(JSContext* cx, HandleValue val, int32_t* loc,
                             bool mustWrite64) {
   bool ok = ToInt32(cx, val, loc);
   if (ok && mustWrite64) {
-#if defined(JS_CODEGEN_MIPS64)
+#if defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
+    defined(JS_CODEGEN_RISCV64)
     loc[1] = loc[0] >> 31;
 #else
     loc[1] = 0;
@@ -900,3 +911,10 @@ Value wasm::UnboxFuncRef(FuncRef val) {
   result.setObjectOrNull(fn);
   return result;
 }
+
+#ifdef DEBUG
+void wasm::AssertEdgeSourceNotInsideNursery(void* vp) {
+  Nursery& nursery = TlsContext.get()->runtime()->gc.nursery();
+  MOZ_ASSERT(!nursery.isInside(vp));
+}
+#endif

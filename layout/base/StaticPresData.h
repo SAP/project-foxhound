@@ -72,6 +72,11 @@ struct LangGroupFontPrefs {
         return &mDefaultCursiveFont;
       case StyleGenericFontFamily::Fantasy:
         return &mDefaultFantasyFont;
+      case StyleGenericFontFamily::Math:
+        // TODO(eri): Change to a specific math font once the generic
+        // math family is no longer mapped to "serif.x-math". See
+        // `gfxPlatformFontList::AddGenericFonts`.
+        return &mDefaultSerifFont;
       case StyleGenericFontFamily::SystemUi:
         return &mDefaultSystemUiFont;
       case StyleGenericFontFamily::MozEmoji:

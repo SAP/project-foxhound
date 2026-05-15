@@ -5,6 +5,8 @@
 package org.mozilla.fenix
 
 import android.content.Intent
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -26,6 +28,8 @@ import org.mozilla.fenix.components.appstate.AppState
  * @param customTabsUseCases The [CustomTabsUseCases] used to turn the session into a regular tab and select it.
  * @param openInFenixIntent The [Intent] used to open the tab in the browser.
  * @param sessionFeature The [SessionFeature] used to release the session from the EngineView.
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 class OpenInFirefoxBinding(
     private val activity: HomeActivity,
@@ -34,7 +38,8 @@ class OpenInFirefoxBinding(
     private val customTabsUseCases: CustomTabsUseCases,
     private val openInFenixIntent: Intent,
     private val sessionFeature: ViewBoundFeatureWrapper<SessionFeature>,
-) : AbstractBinding<AppState>(appStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<AppState>(appStore, mainDispatcher) {
 
     override suspend fun onState(flow: Flow<AppState>) {
         flow.map { state -> state.openInFirefoxRequested }

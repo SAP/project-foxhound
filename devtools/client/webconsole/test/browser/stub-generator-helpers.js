@@ -243,9 +243,9 @@ function cleanTimeStamp(packet) {
 /**
  * Write stubs to a given file
  *
- * @param {String} fileName: The file to write the stubs in.
+ * @param {string} fileName: The file to write the stubs in.
  * @param {Map} packets: A Map of the packets.
- * @param {Boolean} isNetworkMessage: Is the packets are networkMessage packets
+ * @param {boolean} isNetworkMessage: Is the packets are networkMessage packets
  */
 async function writeStubsToFile(fileName, packets, isNetworkMessage) {
   const mozRepo = Services.env.get("MOZ_DEVELOPER_REPO_DIR");
@@ -330,13 +330,13 @@ function sortObjectKeys(obj) {
 }
 
 /**
- * @param {Object} packet
+ * @param {object} packet
  *        The packet to serialize.
- * @param {Object} options
- * @param {Boolean} options.sortKeys
+ * @param {object} options
+ * @param {boolean} options.sortKeys
  *        Pass true to sort all keys alphabetically in the packet before serialization.
  *        For instance stub comparison should not fail if the order of properties changed.
- * @param {Boolean} options.replaceActorIds
+ * @param {boolean} options.replaceActorIds
  *        Pass true to replace actorIDs with a fake one so it's easier to compare stubs
  *        that includes grips.
  */

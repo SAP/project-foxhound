@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] that reacts to various [CfrToolsAction]s and updates any corresponding preferences.
@@ -22,9 +22,8 @@ class CfrToolsPreferencesMiddleware(
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : Middleware<CfrToolsState, CfrToolsAction> {
 
-    @Suppress("LongMethod")
     override fun invoke(
-        context: MiddlewareContext<CfrToolsState, CfrToolsAction>,
+        store: Store<CfrToolsState, CfrToolsAction>,
         next: (CfrToolsAction) -> Unit,
         action: CfrToolsAction,
     ) {
@@ -36,7 +35,7 @@ class CfrToolsPreferencesMiddleware(
                     cfrPreferencesRepository.cfrPreferenceUpdates
                         .collect { cfrPreferenceUpdate ->
                             val updateAction = mapRepoUpdateToStoreAction(cfrPreferenceUpdate)
-                            context.store.dispatch(updateAction)
+                            store.dispatch(updateAction)
                         }
                 }
                 cfrPreferencesRepository.init()
@@ -45,7 +44,7 @@ class CfrToolsPreferencesMiddleware(
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSearchBar,
-                        value = context.state.homepageSearchBarShown,
+                        value = store.state.homepageSearchBarShown,
                     ),
                 )
             }
@@ -53,7 +52,7 @@ class CfrToolsPreferencesMiddleware(
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner,
-                        value = context.state.tabAutoCloseBannerShown,
+                        value = store.state.tabAutoCloseBannerShown,
                     ),
                 )
             }
@@ -61,7 +60,7 @@ class CfrToolsPreferencesMiddleware(
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.InactiveTabs,
-                        value = context.state.inactiveTabsShown,
+                        value = store.state.inactiveTabsShown,
                     ),
                 )
             }
@@ -69,7 +68,7 @@ class CfrToolsPreferencesMiddleware(
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.OpenInApp,
-                        value = context.state.openInAppShown,
+                        value = store.state.openInAppShown,
                     ),
                 )
             }

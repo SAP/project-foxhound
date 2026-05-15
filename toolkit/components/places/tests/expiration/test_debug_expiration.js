@@ -287,6 +287,7 @@ add_task(async function test_expire_icons() {
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAA" +
     "AAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==";
 
+  const now = new Date();
   const entries = [
     {
       desc: "Not expired because recent",
@@ -342,11 +343,31 @@ add_task(async function test_expire_icons() {
       iconExpired: false,
       removed: true,
     },
+    {
+      desc: "Expired because old relation and no recent visit",
+      page: "https://oldrelation.expired.org/",
+      icon: "https://oldrelation.expired.org/test_icon.png",
+      removed: true,
+      visitDate: new Date(now.setMonth(now.getMonth() - 7)),
+      relationDate: new Date(now.setMonth(now.getMonth() - 14)),
+    },
+    {
+      desc: "Not expired even if old relation because bookmark",
+      page: "https://oldrelation.notexpired.org/",
+      icon: "https://oldrelation.notexpired.org/test_icon.png",
+      removed: false,
+      bookmarked: true,
+      visitDate: new Date(now.setMonth(now.getMonth() - 7)),
+      relationDate: new Date(now.setMonth(now.getMonth() - 14)),
+    },
   ];
 
   for (let entry of entries) {
     if (!entry.skipHistory) {
-      await PlacesTestUtils.addVisits(entry.page);
+      await PlacesTestUtils.addVisits({
+        url: entry.page,
+        visitDate: entry.visitDate || new Date(),
+      });
     }
     if (entry.bookmarked) {
       await PlacesUtils.bookmarks.insert({
@@ -394,6 +415,7 @@ add_task(async function test_expire_icons() {
         }
       });
     }
+
     if (entry.icon) {
       let favicon = await PlacesTestUtils.getFaviconForPage(entry.page);
       Assert.equal(
@@ -402,14 +424,37 @@ add_task(async function test_expire_icons() {
         "Sanity check the initial icon value"
       );
     }
+
+    if (entry.relationDate) {
+      // Set an old date on the icon-page relation.
+      await PlacesUtils.withConnectionWrapper(
+        "setFaviconPageRelationDate",
+        async db => {
+          await db.execute(
+            `UPDATE moz_icons_to_pages
+             SET expire_ms = :date
+             WHERE page_id = (SELECT id FROM moz_pages_w_icons
+                              WHERE page_url_hash = hash(:page_url)
+                                AND page_url = :page_url)
+              AND icon_id = (SELECT id FROM moz_icons WHERE icon_url = :icon_url)
+           `,
+            {
+              date: entry.relationDate.getTime(),
+              page_url: entry.page,
+              icon_url: entry.icon,
+            }
+          );
+        }
+      );
+    }
   }
 
-  info("Run expiration");
-  await promiseForceExpirationStep(-1);
+  info("Run expiration, but don't expire pages");
+  await promiseForceExpirationStep(0);
 
   info("Check expiration");
   for (let entry of entries) {
-    Assert.ok(page_in_database(entry.page));
+    Assert.ok(page_in_database(entry.page), `Page in database: ${entry.page}`);
 
     let favicon = await PlacesTestUtils.getFaviconForPage(entry.page);
     if (!entry.removed) {

@@ -53,6 +53,9 @@ interface nsIInputStreamPump : nsIRequest
               in boolean        aCloseWhenDone,
               [optional] in nsISerialEventTarget aMainThreadTarget);
 
+    // Resets the inputstream and listener
+    void reset();
+
     /**
      * asyncRead causes the input stream to be read in chunks and delivered
      * asynchronously to the listener via OnDataAvailable.

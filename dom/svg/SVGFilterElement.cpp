@@ -6,12 +6,11 @@
 
 #include "mozilla/dom/SVGFilterElement.h"
 
-#include "nsGkAtoms.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGFilterElementBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGUnitTypesBinding.h"
+#include "nsGkAtoms.h"
 #include "nsQueryObject.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Filter)
@@ -27,13 +26,13 @@ JSObject* SVGFilterElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGFilterElement::sLengthInfo[4] = {
     {nsGkAtoms::x, -10, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, -10, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 120, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 120, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 SVGElement::EnumInfo SVGFilterElement::sEnumInfo[2] = {
@@ -84,7 +83,8 @@ already_AddRefed<DOMSVGAnimatedEnumeration> SVGFilterElement::PrimitiveUnits() {
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGFilterElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }

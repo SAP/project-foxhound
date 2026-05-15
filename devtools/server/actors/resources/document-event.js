@@ -8,6 +8,8 @@ const {
   DocumentEventsListener,
 } = require("resource://devtools/server/actors/webconsole/listeners/document-events.js");
 
+loader.lazyRequireGetter(this, "flags", "resource://devtools/shared/flags.js");
+
 class DocumentEventWatcher {
   #abortController = new AbortController();
   /**
@@ -29,6 +31,15 @@ class DocumentEventWatcher {
     // registered, but it no longer has a valid window reference.
     if (!targetActor.window) {
       return;
+    }
+
+    // Test-only codepath used to test the AppErrorBoundary displayed when the
+    // toolbox fails to initialize.
+    if (
+      flags.testing &&
+      Services.prefs.getBoolPref("devtools.testing.force-server-error", false)
+    ) {
+      throw new TypeError("Test only server error");
     }
 
     const onDocumentEvent = (

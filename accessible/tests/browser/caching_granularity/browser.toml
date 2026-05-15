@@ -9,7 +9,9 @@ support-files = [
 ]
 prefs = [
   # Required for the eval in invokeContentTask in shared-head.js
-  "security.allow_eval_with_system_principal=true"
+  "security.allow_eval_with_system_principal=true",
+  # Required for browser_relations_domain_popoverinvokerisdetails
+  "dom.element.popoverhint.enabled=true",
 ]
 
 ["browser_APZ_domain.js"]
@@ -25,13 +27,17 @@ prefs = [
 ["browser_initial_caching.js"]
 
 ["browser_inner_html_caching.js"]
-skip-if = ["os != 'win'"]
+skip-if = [
+  "os != 'win'",
+]
 
 ["browser_name_and_description_domain.js"]
 
 ["browser_relations_domain_1.js"]
 
 ["browser_relations_domain_2.js"]
+
+["browser_relations_domain_popoverinvokerisdetails.js"]
 
 ["browser_scroll_position_domain.js"]
 

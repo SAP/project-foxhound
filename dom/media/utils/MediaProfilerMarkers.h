@@ -2,9 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef DOM_MEDIA_UTILS_MEDIAPROFILERMARKERS_H_
+#define DOM_MEDIA_UTILS_MEDIAPROFILERMARKERS_H_
+
 #include "mozilla/BaseProfilerMarkersPrerequisites.h"
-#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Flow.h"
+#include "mozilla/ProfilerMarkers.h"
 
 namespace mozilla {
 
@@ -23,15 +26,19 @@ struct TimeUpdateMarker : public BaseMarkerType<TimeUpdateMarker> {
        MS::Format::Milliseconds},
       {"paintedFrames", MS::InputType::Uint32, "Painted Frames",
        MS::Format::Integer},  // optional, zero for audio
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
                                    uint64_t aCurrentTime, uint64_t aDuration,
-                                   uint32_t aPaintedFrames,
-                                   Flow aFlow) {
+                                   uint32_t aPaintedFrames, Flow aFlow) {
     aWriter.IntProperty("currentTimeMs", aCurrentTime);
     aWriter.IntProperty("mediaDurationMs", aDuration);
     if (aPaintedFrames != 0) {
@@ -54,7 +61,12 @@ struct BufferedUpdateMarker : public BaseMarkerType<BufferedUpdateMarker> {
        MS::Format::Milliseconds},
       {"mediaDurationMs", MS::InputType::Uint64, "Media Duration (Ms)",
        MS::Format::Milliseconds},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
@@ -62,8 +74,7 @@ struct BufferedUpdateMarker : public BaseMarkerType<BufferedUpdateMarker> {
   static constexpr const char* ChartLabel = "{marker.data.name}";
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
                                    uint64_t aBufferStart, uint64_t aBufferEnd,
-                                   uint64_t aDuration,
-                                   Flow aFlow) {
+                                   uint64_t aDuration, Flow aFlow) {
     aWriter.IntProperty("bufferStartMs", aBufferStart);
     aWriter.IntProperty("bufferEndMs", aBufferEnd);
     aWriter.IntProperty("mediaDurationMs", aDuration);
@@ -80,7 +91,12 @@ struct VideoResizeMarker : public BaseMarkerType<VideoResizeMarker> {
   static constexpr MS::PayloadField PayloadFields[] = {
       {"width", MS::InputType::Uint64, "Width", MS::Format::Integer},
       {"height", MS::InputType::Uint64, "Height", MS::Format::Integer},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
@@ -107,7 +123,12 @@ struct MetadataMarker : public BaseMarkerType<MetadataMarker> {
        MS::Format::String},
       {"videoMimeType", MS::InputType::CString, "Video Mimetype",
        MS::Format::String},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
@@ -118,7 +139,8 @@ struct MetadataMarker : public BaseMarkerType<MetadataMarker> {
                                    const ProfilerString8View& aAudioMimeType,
                                    const ProfilerString8View& aVideoMimeType,
                                    Flow aFlow) {
-    StreamJSONMarkerDataImpl(aWriter, aSrc, aAudioMimeType, aVideoMimeType, aFlow);
+    StreamJSONMarkerDataImpl(aWriter, aSrc, aAudioMimeType, aVideoMimeType,
+                             aFlow);
   }
 };
 
@@ -132,7 +154,12 @@ struct CDMResolvedMarker : public BaseMarkerType<CDMResolvedMarker> {
       {"keySystem", MS::InputType::String, "Key System", MS::Format::String},
       {"configuration", MS::InputType::CString, "Configuration",
        MS::Format::String},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
@@ -155,7 +182,12 @@ struct LoadErrorMarker : public BaseMarkerType<LoadErrorMarker> {
   static constexpr MS::PayloadField PayloadFields[] = {
       {"errorMessage", MS::InputType::CString, "Error Message",
        MS::Format::String},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
@@ -176,7 +208,12 @@ struct ErrorMarker : public BaseMarkerType<ErrorMarker> {
   static constexpr MS::PayloadField PayloadFields[] = {
       {"errorMessage", MS::InputType::String, "Error Message",
        MS::Format::String},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
@@ -200,7 +237,12 @@ struct LoadSourceMarker : public BaseMarkerType<LoadSourceMarker> {
       {"contentType", MS::InputType::String, "Content Type",
        MS::Format::String},
       {"media", MS::InputType::String, "Media", MS::Format::String},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
@@ -225,17 +267,23 @@ struct RenderVideoMarker : public BaseMarkerType<RenderVideoMarker> {
   static constexpr MS::PayloadField PayloadFields[] = {
       {"paintedFrames", MS::InputType::Uint64, "Painted Frames",
        MS::Format::Integer},
-      {"element", MS::InputType::Uint64, "Element", MS::Format::Flow, MS::PayloadFlags::Searchable},
+      {
+          "element",
+          MS::InputType::Uint64,
+          "Element",
+          MS::Format::Flow,
+      },
   };
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   uint64_t aPaintedFrames,
-                                   Flow aFlow) {
+                                   uint64_t aPaintedFrames, Flow aFlow) {
     aWriter.IntProperty("paintedFrames", aPaintedFrames);
     aWriter.FlowProperty("element", aFlow);
   }
 };
 
 }  // namespace mozilla
+
+#endif  // DOM_MEDIA_UTILS_MEDIAPROFILERMARKERS_H_

@@ -19,6 +19,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
 import org.mozilla.fenix.ext.tabClosedUndoMessage
+import org.mozilla.fenix.ext.tabsClosedUndoMessage
 import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_NORMAL_TABS
 import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_PRIVATE_TABS
 import org.mozilla.fenix.utils.Settings
@@ -69,17 +70,28 @@ class TabsCleanupFeature(
 
     override fun stop() = Unit
 
+    /**
+     * Shows an undo snackbar after removing one or more tabs.
+     *
+     * @param message The message to display in the snackbar.
+     * @param onCancel The action to perform when the user clicks the "Undo" button.
+     */
+    @VisibleForTesting
+    internal fun showUndoSnackbar(message: String, onCancel: () -> Unit) {
+        viewLifecycleScope.allowUndo(
+            view = snackBarParentView,
+            message = message,
+            undoActionTitle = context.getString(R.string.snackbar_deleted_undo),
+            onCancel = onCancel,
+            operation = {},
+        )
+    }
+
     private fun removeAllTabsAndShowSnackbar(sessionCode: String) {
         if (sessionCode == ALL_PRIVATE_TABS) {
             tabsUseCases.removePrivateTabs()
         } else {
             tabsUseCases.removeNormalTabs()
-        }
-
-        val snackbarMessage = if (sessionCode == ALL_PRIVATE_TABS) {
-            context.getString(R.string.snackbar_private_data_deleted)
-        } else {
-            context.getString(R.string.snackbar_tabs_closed)
         }
 
         var tabId: String? = null
@@ -92,14 +104,11 @@ class TabsCleanupFeature(
             )
         }
 
-        viewLifecycleScope.allowUndo(
-            view = snackBarParentView,
-            message = snackbarMessage,
-            undoActionTitle = context.getString(R.string.snackbar_deleted_undo),
+        showUndoSnackbar(
+            message = context.tabsClosedUndoMessage(private = sessionCode == ALL_PRIVATE_TABS),
             onCancel = {
                 onUndoAllTabsRemoved(tabId)
             },
-            operation = {},
         )
     }
 
@@ -141,14 +150,11 @@ class TabsCleanupFeature(
             )
         }
 
-        viewLifecycleScope.allowUndo(
-            view = snackBarParentView,
+        showUndoSnackbar(
             message = context.tabClosedUndoMessage(tab.content.private),
-            undoActionTitle = context.getString(R.string.snackbar_deleted_undo),
             onCancel = {
                 onUndoTabRemoved(tabId)
             },
-            operation = {},
         )
     }
 

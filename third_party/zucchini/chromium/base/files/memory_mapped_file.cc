@@ -115,7 +115,13 @@ bool MemoryMappedFile::Initialize(File file,
     return false;
 
   if (region != Region::kWholeFile)
+#if defined(MOZ_ZUCCHINI)
+  {
+#endif  // defined(MOZ_ZUCCHINI)
     DCHECK_GE(region.offset, 0);
+#if defined(MOZ_ZUCCHINI)
+  }
+#endif  // defined(MOZ_ZUCCHINI)
 
   file_ = std::move(file);
 

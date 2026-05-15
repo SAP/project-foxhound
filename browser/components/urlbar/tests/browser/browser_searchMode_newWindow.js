@@ -24,7 +24,7 @@ async function doTest(exitSearchMode) {
     EventUtils.synthesizeKey("k", { accelKey: true }, win)
   );
   await UrlbarTestUtils.assertSearchMode(win, {
-    engineName: Services.search.defaultEngine.name,
+    engineName: SearchService.defaultEngine.name,
     isGeneralPurposeEngine: true,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     isPreview: false,

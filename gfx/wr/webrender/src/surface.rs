@@ -2,23 +2,281 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Contains functionality to help building the render task graph from a series of off-screen
+//! surfaces that are created during the prepare pass, and other surface related types and
+//! helpers.
+
 use api::units::*;
+use crate::box_shadow::BLUR_SAMPLE_SCALE;
 use crate::command_buffer::{CommandBufferBuilderKind, CommandBufferList, CommandBufferBuilder, CommandBufferIndex};
-use crate::internal_types::FastHashMap;
-use crate::picture::{SurfaceInfo, SurfaceIndex, TileKey, SubSliceIndex, MAX_COMPOSITOR_SURFACES};
+use crate::internal_types::{FastHashMap, Filter};
+use crate::picture::PictureCompositeMode;
+use crate::tile_cache::{TileKey, SubSliceIndex, MAX_COMPOSITOR_SURFACES};
 use crate::prim_store::PictureIndex;
 use crate::render_task_graph::{RenderTaskId, RenderTaskGraphBuilder};
 use crate::render_target::ResolveOp;
 use crate::render_task::{RenderTask, RenderTaskKind, RenderTaskLocation};
-use crate::visibility::{VisibilityState, PrimitiveVisibility};
+use crate::space::SpaceMapper;
+use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
+use crate::util::MaxRect;
+use crate::visibility::{VisibilityState, PrimitiveVisibility, FrameVisibilityContext};
+pub use crate::picture_composite_mode::{get_surface_rects, calculate_uv_rect_kind};
 
-/*
- Contains functionality to help building the render task graph from a series of off-screen
- surfaces that are created during the prepare pass. For now, it maintains existing behavior.
- A future patch will add support for surface sub-graphs, while ensuring the render task
- graph itself is built correctly with dependencies regardless of the surface kind (chained,
- tiled, simple).
- */
+
+/// Maximum blur radius for blur filter
+const MAX_BLUR_RADIUS: f32 = 100.;
+
+/// An index into the surface array
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct SurfaceIndex(pub usize);
+
+/// Specify whether a surface allows subpixel AA text rendering.
+#[derive(Debug, Copy, Clone)]
+pub enum SubpixelMode {
+    /// This surface allows subpixel AA text
+    Allow,
+    /// Subpixel AA text cannot be drawn on this surface
+    Deny,
+    /// Subpixel AA can be drawn on this surface, if not intersecting
+    /// with the excluded regions, and inside the allowed rect.
+    Conditional {
+        allowed_rect: PictureRect,
+        prohibited_rect: PictureRect,
+    },
+}
+
+/// Information about an offscreen surface. For now,
+/// it contains information about the size and coordinate
+/// system of the surface. In the future, it will contain
+/// information about the contents of the surface, which
+/// will allow surfaces to be cached / retained between
+/// frames and display lists.
+pub struct SurfaceInfo {
+    /// A local rect defining the size of this surface, in the
+    /// coordinate system of the parent surface. This contains
+    /// the unclipped bounding rect of child primitives.
+    pub unclipped_local_rect: PictureRect,
+    /// The local space coverage of child primitives after they are
+    /// are clipped to their owning clip-chain.
+    pub clipped_local_rect: PictureRect,
+    /// The (conservative) valid part of this surface rect. Used
+    /// to reduce the size of render target allocation.
+    pub clipping_rect: PictureRect,
+    /// The rectangle to use for culling and clipping.
+    pub culling_rect: VisRect,
+    /// Helper structs for mapping local rects in different
+    /// coordinate systems into the picture coordinates.
+    pub map_local_to_picture: SpaceMapper<LayoutPixel, PicturePixel>,
+    /// The positioning node for the surface itself,
+    pub surface_spatial_node_index: SpatialNodeIndex,
+    /// The rasterization root for this surface.
+    pub raster_spatial_node_index: SpatialNodeIndex,
+    /// The spatial node for culling and clipping (anything using VisPixel).
+    /// TODO: Replace with the raster spatial node.
+    pub visibility_spatial_node_index: SpatialNodeIndex,
+    /// The device pixel ratio specific to this surface.
+    pub device_pixel_scale: DevicePixelScale,
+    /// The scale factors of the surface to world transform.
+    pub world_scale_factors: (f32, f32),
+    /// Local scale factors surface to raster transform
+    pub local_scale: (f32, f32),
+    /// If true, we know this surface is completely opaque.
+    pub is_opaque: bool,
+    /// If true, allow snapping on this and child surfaces
+    pub allow_snapping: bool,
+    /// If true, the scissor rect must be set when drawing this surface
+    pub force_scissor_rect: bool,
+}
+
+impl SurfaceInfo {
+    pub fn new(
+        surface_spatial_node_index: SpatialNodeIndex,
+        raster_spatial_node_index: SpatialNodeIndex,
+        world_rect: WorldRect,
+        spatial_tree: &SpatialTree,
+        device_pixel_scale: DevicePixelScale,
+        world_scale_factors: (f32, f32),
+        local_scale: (f32, f32),
+        allow_snapping: bool,
+        force_scissor_rect: bool,
+    ) -> Self {
+        let map_surface_to_world = SpaceMapper::new_with_target(
+            spatial_tree.root_reference_frame_index(),
+            surface_spatial_node_index,
+            world_rect,
+            spatial_tree,
+        );
+
+        let pic_bounds = map_surface_to_world
+            .unmap(&map_surface_to_world.bounds)
+            .unwrap_or_else(PictureRect::max_rect);
+
+        let map_local_to_picture = SpaceMapper::new(
+            surface_spatial_node_index,
+            pic_bounds,
+        );
+
+        // TODO: replace the root with raster space.
+        let visibility_spatial_node_index = spatial_tree.root_reference_frame_index();
+
+        SurfaceInfo {
+            unclipped_local_rect: PictureRect::zero(),
+            clipped_local_rect: PictureRect::zero(),
+            is_opaque: false,
+            clipping_rect: PictureRect::zero(),
+            map_local_to_picture,
+            raster_spatial_node_index,
+            surface_spatial_node_index,
+            visibility_spatial_node_index,
+            device_pixel_scale,
+            world_scale_factors,
+            local_scale,
+            allow_snapping,
+            force_scissor_rect,
+            // TODO: At the moment all culling is done in world space but
+            // but the plan is to move it to raster space.
+            culling_rect: world_rect.cast_unit(),
+        }
+    }
+
+    /// Clamps the blur radius depending on scale factors.
+    pub fn clamp_blur_radius(
+        &self,
+        x_blur_radius: f32,
+        y_blur_radius: f32,
+    ) -> (f32, f32) {
+        // Clamping must occur after scale factors are applied, but scale factors are not applied
+        // until later on. To clamp the blur radius, we first apply the scale factors and then clamp
+        // and finally revert the scale factors.
+
+        let sx_blur_radius = x_blur_radius * self.local_scale.0;
+        let sy_blur_radius = y_blur_radius * self.local_scale.1;
+
+        let largest_scaled_blur_radius = f32::max(
+            sx_blur_radius * self.world_scale_factors.0,
+            sy_blur_radius * self.world_scale_factors.1,
+        );
+
+        if largest_scaled_blur_radius > MAX_BLUR_RADIUS {
+            let sf = MAX_BLUR_RADIUS / largest_scaled_blur_radius;
+            (x_blur_radius * sf, y_blur_radius * sf)
+        } else {
+            // Return the original blur radius to avoid any rounding errors
+            (x_blur_radius, y_blur_radius)
+        }
+    }
+
+    pub fn update_culling_rect(
+        &mut self,
+        parent_culling_rect: VisRect,
+        composite_mode: &PictureCompositeMode,
+        frame_context: &FrameVisibilityContext,
+    ) {
+        // Set the default culling rect to be the parent, in case we fail
+        // any mappings below due to weird perspective or invalid transforms.
+        self.culling_rect = parent_culling_rect;
+
+        if let PictureCompositeMode::Filter(Filter::Blur { width, height, should_inflate, .. }) = composite_mode {
+            if *should_inflate {
+                // Space mapping vis <-> picture space
+                let map_surface_to_vis = SpaceMapper::new_with_target(
+                    // TODO: switch from root to raster space.
+                    frame_context.root_spatial_node_index,
+                    self.surface_spatial_node_index,
+                    parent_culling_rect,
+                    frame_context.spatial_tree,
+                );
+
+                // Unmap the parent culling rect to surface space. Note that this may be
+                // quite conservative in the case of a complex transform, especially perspective.
+                if let Some(local_parent_culling_rect) = map_surface_to_vis.unmap(&parent_culling_rect) {
+                    let (width_factor, height_factor) = self.clamp_blur_radius(*width, *height);
+
+                    // Inflate by the local-space amount this surface extends.
+                    let expanded_rect: PictureBox2D = local_parent_culling_rect.inflate(
+                        width_factor.ceil() * BLUR_SAMPLE_SCALE,
+                        height_factor.ceil() * BLUR_SAMPLE_SCALE,
+                    );
+
+                    // Map back to the expected vis-space culling rect
+                    if let Some(rect) = map_surface_to_vis.map(&expanded_rect) {
+                        self.culling_rect = rect;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn map_to_device_rect(
+        &self,
+        picture_rect: &PictureRect,
+        spatial_tree: &SpatialTree,
+    ) -> DeviceRect {
+        let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
+            // Currently, the surface's spatial node can be different from its raster node only
+            // for surfaces in the root coordinate system for snapping reasons.
+            // See `PicturePrimitive::assign_surface`.
+            assert_eq!(self.device_pixel_scale.0, 1.0);
+            assert_eq!(self.raster_spatial_node_index, spatial_tree.root_reference_frame_index());
+
+            let pic_to_raster = SpaceMapper::new_with_target(
+                self.raster_spatial_node_index,
+                self.surface_spatial_node_index,
+                WorldRect::max_rect(),
+                spatial_tree,
+            );
+
+            pic_to_raster.map(&picture_rect).unwrap()
+        } else {
+            picture_rect.cast_unit()
+        };
+
+        raster_rect * self.device_pixel_scale
+    }
+
+    /// Clip and transform a local rect to a device rect suitable for allocating
+    /// a child off-screen surface of this surface (e.g. for clip-masks)
+    pub fn get_surface_rect(
+        &self,
+        local_rect: &PictureRect,
+        spatial_tree: &SpatialTree,
+    ) -> Option<DeviceIntRect> {
+        let local_rect = match local_rect.intersection(&self.clipping_rect) {
+            Some(rect) => rect,
+            None => return None,
+        };
+
+        let raster_rect = if self.raster_spatial_node_index != self.surface_spatial_node_index {
+            assert_eq!(self.device_pixel_scale.0, 1.0);
+
+            let local_to_world = SpaceMapper::new_with_target(
+                spatial_tree.root_reference_frame_index(),
+                self.surface_spatial_node_index,
+                WorldRect::max_rect(),
+                spatial_tree,
+            );
+
+            local_to_world.map(&local_rect).unwrap()
+        } else {
+            // The content should have been culled out earlier.
+            assert!(self.device_pixel_scale.0 > 0.0);
+
+            local_rect.cast_unit()
+        };
+
+        let surface_rect = (raster_rect * self.device_pixel_scale).round_out().to_i32();
+        if surface_rect.is_empty() {
+            // The local_rect computed above may have non-empty size that is very
+            // close to zero. Due to limited arithmetic precision, the SpaceMapper
+            // might transform the near-zero-sized rect into a zero-sized one.
+            return None;
+        }
+
+        Some(surface_rect)
+    }
+}
 
 // Information about the render task(s) for a given tile
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -616,4 +874,18 @@ impl SurfaceBuilder {
     pub fn finalize(self) {
         assert!(self.builder_stack.is_empty());
     }
+}
+
+
+pub fn calculate_screen_uv(
+    p: DevicePoint,
+    clipped: DeviceRect,
+) -> DeviceHomogeneousVector {
+    // TODO(gw): Switch to a simple mix, no bilerp / homogeneous vec needed anymore
+    DeviceHomogeneousVector::new(
+        (p.x - clipped.min.x) / (clipped.max.x - clipped.min.x),
+        (p.y - clipped.min.y) / (clipped.max.y - clipped.min.y),
+        0.0,
+        1.0,
+    )
 }

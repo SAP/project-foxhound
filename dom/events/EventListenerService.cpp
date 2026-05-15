@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EventListenerService.h"
+
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
@@ -14,12 +15,12 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/EventListenerBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "nsArray.h"
 #include "nsArrayUtils.h"
 #include "nsCOMArray.h"
 #include "nsINode.h"
 #include "nsJSUtils.h"
 #include "nsServiceManagerUtils.h"
-#include "nsArray.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {

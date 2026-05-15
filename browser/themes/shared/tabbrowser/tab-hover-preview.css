@@ -5,17 +5,39 @@
 #tab-preview-panel {
   --panel-width: 280px;
   --panel-padding: 0;
-  pointer-events: none;
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media not -moz-pref("browser.tabs.notes.enabled") {
+    pointer-events: none;
+
+    .tab-preview-text-container {
+      order: 1;
+    }
+    .tab-preview-thumbnail-container {
+      order: 2;
+    }
+  }
+}
+
+.tab-preview-content-interactive:not(:empty),
+.tab-preview-content-main {
+  gap: var(--space-small);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-small);
+}
+
+.tab-preview-content-interactive:not(:empty) {
+  padding-block-end: 0;
 }
 
 .tab-preview-text-container {
-  padding: var(--space-small);
+  margin: 0 var(--space-small);
 }
 
 .tab-preview-title {
   overflow: hidden;
   -webkit-line-clamp: 2;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 }
 
 .tab-preview-uri {
@@ -32,9 +54,10 @@
 }
 
 .tab-preview-thumbnail-container {
-  width: 280px;
-  height: 140px;
-  border-top: 1px solid var(--panel-border-color);
+  width: 264px;
+  margin: 0 auto;
+  overflow: hidden;
+
   &.hide-thumbnail {
     display: none;
   }
@@ -45,6 +68,102 @@
     display: block;
     width: 100%;
     animation: tab-hover-preview-fadein 0.2s ease;
+    border: 1px solid var(--border-color-deemphasized);
+    border-radius: var(--border-radius-medium);
+    box-sizing: border-box;
+  }
+}
+
+.tab-preview-add-note {
+  margin: 0 !important;
+
+  &[hidden] {
+    display: none;
+  }
+
+  &::after {
+    /* The badge is a flex child of the toolbarbutton, so without this the
+     * arrow would appear immediately after the badge rather than at the end. */
+    margin-inline-start: auto;
+  }
+
+  > .toolbarbutton-text {
+    max-width: max-content;
+  }
+
+  > moz-badge {
+    margin-inline-start: 8px;
+    align-self: center;
+  }
+}
+
+/*
+ * Tab note preview panel
+ */
+
+#tab-note-preview-panel {
+  --panel-width: 280px;
+  --panel-padding: var(--space-small);
+  --tab-note-text-background: light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.3));
+  --tab-note-text-border-color: transparent;
+  @media (prefers-contrast) {
+    --tab-note-text-background: transparent;
+    --tab-note-text-border-color: var(--border-color-card);
+  }
+}
+
+.tab-note-preview-container {
+  font: menu;
+  position: relative;
+  padding: var(--space-small);
+  border-radius: var(--border-radius-medium);
+  background-color: var(--tab-note-text-background);
+  border: var(--border-width) solid var(--tab-note-text-border-color);
+}
+
+.tab-note-preview-text {
+  overflow-wrap: break-word;
+
+  #tab-note-preview-panel:not([note-expanded]) & {
+    /* Set by Javascript */
+    --tab-note-expand-toggle-width: 0;
+
+    --gradient-width: 40px;
+    --gradient-offset: 10px;
+    --gradient-direction: right;
+
+    overflow: hidden;
+    -webkit-line-clamp: 10;
+
+    mask:
+      /* Mask 1: make all lines except the last visible (by default,
+       * unmasked portions of an element are invisible, which is why
+       * this is needed). Mask 2: Fade out the end of the last line */
+      linear-gradient(black) 0 0 / 100% calc(100% - 1lh) no-repeat,
+      linear-gradient(
+          to var(--gradient-direction),
+          black calc(100% - var(--tab-note-expand-toggle-width) - var(--gradient-width) - var(--gradient-offset)),
+          transparent calc(100% - var(--tab-note-expand-toggle-width) - var(--gradient-offset))
+        )
+        0 100% / 100% 1lh no-repeat;
+
+    &:dir(rtl) {
+      --gradient-direction: left;
+    }
+  }
+}
+
+.tab-note-preview-expand {
+  display: none;
+  text-decoration: underline;
+  cursor: pointer;
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  padding: var(--space-small);
+
+  #tab-note-preview-panel[note-overflow]:not([note-expanded]) & {
+    display: block;
   }
 }
 
@@ -54,5 +173,13 @@
   }
   to {
     opacity: 100;
+  }
+}
+
+#tabgroup-panel-content {
+  max-width: var(--menuitem-max-width);
+
+  & toolbarbutton.active-tab {
+    font-weight: var(--font-weight-semibold);
   }
 }

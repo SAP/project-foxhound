@@ -9,13 +9,13 @@
 
 */
 
-#ifndef nsXULControllers_h__
-#define nsXULControllers_h__
+#ifndef nsXULControllers_h_
+#define nsXULControllers_h_
 
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
-#include "nsIControllers.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIControllers.h"
+#include "nsTArray.h"
 
 /* non-XPCOM class for holding controllers and their IDs */
 class nsXULControllerData final {
@@ -48,4 +48,4 @@ class nsXULControllers final : public nsIControllers {
   uint32_t mCurControllerID;
 };
 
-#endif  // nsXULControllers_h__
+#endif  // nsXULControllers_h_

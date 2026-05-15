@@ -106,7 +106,6 @@ void VRChild::Init() {
       gfxConfig::GetValue(Feature::D3D11_COMPOSITING);
   devicePrefs.oglCompositing() =
       gfxConfig::GetValue(Feature::OPENGL_COMPOSITING);
-  devicePrefs.useD2D1() = gfxConfig::GetValue(Feature::DIRECT2D);
 
   SendInit(updates, devicePrefs);
 
@@ -192,7 +191,9 @@ bool VRChild::SendRequestMemoryReport(const uint32_t& aGeneration,
   return true;
 }
 
-void VRChild::OnVarChanged(const GfxVarUpdate& aVar) { SendUpdateVar(aVar); }
+void VRChild::OnVarChanged(const nsTArray<GfxVarUpdate>& aVar) {
+  SendUpdateVar(aVar);
+}
 
 class DeferredDeleteVRChild : public Runnable {
  public:

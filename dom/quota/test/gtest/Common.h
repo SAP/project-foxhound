@@ -8,6 +8,7 @@
 #define DOM_QUOTA_TEST_GTEST_COMMON_H_
 
 #include <cstdint>
+
 #include "gtest/gtest.h"
 #include "mozilla/dom/quota/Config.h"
 

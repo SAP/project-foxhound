@@ -30,12 +30,11 @@ function getMisspelledWords(editor) {
   return editor.selectionController.getSelection(Ci.nsISelectionController.SELECTION_SPELLCHECK).toString();
 }
 
-/** Test for Bug 1773802 **/
+/** Test for Bug 1773802 */
 SimpleTest.waitForExplicitFinish();
 addLoadEvent(start);
 async function start() {
   let script = SpecialPowers.loadChromeScript(() => {
-    /* eslint-env mozilla/chrome-script */
     // eslint-disable-next-line mozilla/use-services
     let dir = Cc["@mozilla.org/file/directory_service;1"]
                 .getService(Ci.nsIProperties)

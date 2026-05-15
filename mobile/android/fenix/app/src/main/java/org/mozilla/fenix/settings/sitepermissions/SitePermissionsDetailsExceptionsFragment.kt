@@ -8,11 +8,12 @@ import android.content.Context
 import android.content.DialogInterface
 import android.os.Bundle
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.findNavController
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
@@ -29,6 +30,8 @@ import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.settings.PhoneFeature.AUTOPLAY
 import org.mozilla.fenix.settings.PhoneFeature.CAMERA
 import org.mozilla.fenix.settings.PhoneFeature.CROSS_ORIGIN_STORAGE_ACCESS
+import org.mozilla.fenix.settings.PhoneFeature.LOCAL_DEVICE_ACCESS
+import org.mozilla.fenix.settings.PhoneFeature.LOCAL_NETWORK_ACCESS
 import org.mozilla.fenix.settings.PhoneFeature.LOCATION
 import org.mozilla.fenix.settings.PhoneFeature.MEDIA_KEY_SYSTEM_ACCESS
 import org.mozilla.fenix.settings.PhoneFeature.MICROPHONE
@@ -37,6 +40,7 @@ import org.mozilla.fenix.settings.PhoneFeature.PERSISTENT_STORAGE
 import org.mozilla.fenix.settings.quicksettings.AutoplayValue
 import org.mozilla.fenix.settings.requirePreference
 import org.mozilla.fenix.utils.Settings
+import com.google.android.material.R as materialR
 
 @SuppressWarnings("TooManyFunctions")
 class SitePermissionsDetailsExceptionsFragment : PreferenceFragmentCompat() {
@@ -72,6 +76,8 @@ class SitePermissionsDetailsExceptionsFragment : PreferenceFragmentCompat() {
 
     @VisibleForTesting
     internal fun bindCategoryPhoneFeatures() {
+        val settings = provideSettings()
+
         initPhoneFeature(CAMERA)
         initPhoneFeature(LOCATION)
         initPhoneFeature(MICROPHONE)
@@ -80,19 +86,28 @@ class SitePermissionsDetailsExceptionsFragment : PreferenceFragmentCompat() {
         initPhoneFeature(CROSS_ORIGIN_STORAGE_ACCESS)
         initPhoneFeature(MEDIA_KEY_SYSTEM_ACCESS)
         initAutoplayFeature()
+        initPhoneFeature(LOCAL_DEVICE_ACCESS, visible = settings.isLnaFeatureEnabled)
+        initPhoneFeature(LOCAL_NETWORK_ACCESS, visible = settings.isLnaFeatureEnabled)
         bindClearPermissionsButton()
     }
 
     @VisibleForTesting
-    internal fun initPhoneFeature(phoneFeature: PhoneFeature) {
+    internal fun initPhoneFeature(phoneFeature: PhoneFeature, visible: Boolean = true) {
         val summary = phoneFeature.getActionLabel(provideContext(), sitePermissions)
-        val cameraPhoneFeatures = getPreference(phoneFeature)
-        cameraPhoneFeatures.summary = summary
-
-        cameraPhoneFeatures.onPreferenceClickListener = Preference.OnPreferenceClickListener {
+        val preference = getPreference(phoneFeature)
+        preference.summary = summary
+        preference.isVisible = visible
+        preference.onPreferenceClickListener = Preference.OnPreferenceClickListener {
             navigateToPhoneFeature(phoneFeature)
             true
         }
+        preference.icon?.setTint(
+            MaterialColors.getColor(
+                provideContext(),
+                materialR.attr.colorOnSurface,
+                "Could not resolve themed color",
+            ),
+        )
     }
 
     @VisibleForTesting
@@ -136,7 +151,7 @@ class SitePermissionsDetailsExceptionsFragment : PreferenceFragmentCompat() {
         val button: Preference = requirePreference(R.string.pref_key_exceptions_clear_site_permissions)
 
         button.onPreferenceClickListener = Preference.OnPreferenceClickListener {
-            AlertDialog.Builder(requireContext()).apply {
+            MaterialAlertDialogBuilder(requireContext()).apply {
                 setMessage(R.string.confirm_clear_permissions_site)
                 setTitle(R.string.clear_permissions)
                 setPositiveButton(R.string.clear_permissions_positive) { dialog: DialogInterface, _ ->

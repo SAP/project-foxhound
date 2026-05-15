@@ -69,14 +69,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gCaptivePortalService",
   "@mozilla.org/network/captive-portal-service;1",
-  "nsICaptivePortalService"
+  Ci.nsICaptivePortalService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
-  "nsINetworkLinkService"
+  Ci.nsINetworkLinkService
 );
 
 // Stores whether we've done first-run.
@@ -163,6 +163,11 @@ export const DoHController = {
     );
 
     lazy.Preferences.set(FIRST_RUN_PREF, true);
+  },
+
+  // Clears all of the doh-rollout prefs
+  async cleanupPrefs() {
+    lazy.Preferences.resetBranch("doh-rollout.");
   },
 
   // Also used by tests to reset DoHController state (prefs are not cleared

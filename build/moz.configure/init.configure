@@ -253,10 +253,10 @@ def js_package(build_env, help):
 def vcs_checkout_type(build_env, automation, js_package, help):
     if os.path.exists(os.path.join(build_env.topsrcdir, ".hg")):
         return "hg"
-    elif os.path.exists(os.path.join(build_env.topsrcdir, ".git")):
-        return "git"
     elif os.path.exists(os.path.join(build_env.topsrcdir, ".jj")):
         return "jj"
+    elif os.path.exists(os.path.join(build_env.topsrcdir, ".git")):
+        return "git"
     elif automation and not js_package and not help:
         raise FatalCheckError(
             "unable to resolve VCS type; must run "

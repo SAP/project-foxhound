@@ -205,14 +205,7 @@ class float16 final {
   uint16_t val;
 
  public:
-  // The default constructor can be 'constexpr' when we switch to C++20.
-  //
-  // C++17 requires explicit initialization of all members when using a
-  // 'constexpr' default constructor. That means `val` needs to be initialized
-  // through a member initializer. But adding a member initializer makes the
-  // class no longer trivial, which breaks memcpy/memset optimizations.
-
-  /* constexpr */ float16() = default;
+  constexpr float16() = default;
   constexpr float16(const float16&) = default;
 
   explicit float16(float x) : val(half::float2half_impl(x)) {}
@@ -340,7 +333,7 @@ class std::numeric_limits<js::float16> {
 };
 
 template <>
-struct mozilla::detail::FloatingPointTrait<js::float16> {
+struct mozilla::FloatingPointTrait<js::float16> {
  protected:
   using Bits = uint16_t;
 

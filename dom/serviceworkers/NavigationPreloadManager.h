@@ -7,12 +7,12 @@
 #ifndef mozilla_dom_NavigationPreloadManager_h
 #define mozilla_dom_NavigationPreloadManager_h
 
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/ServiceWorkerRegistration.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "mozilla/dom/ServiceWorkerRegistration.h"
-#include "mozilla/RefPtr.h"
 
 class nsIGlobalObject;
 

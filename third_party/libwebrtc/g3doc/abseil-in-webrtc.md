@@ -1,5 +1,5 @@
 <!-- go/cmark -->
-<!--* freshness: {owner: 'danilchap' reviewed: '2025-03-13'} *-->
+<!--* freshness: {owner: 'danilchap' reviewed: '2025-09-24'} *-->
 
 # Using Abseil in WebRTC
 
@@ -29,7 +29,7 @@ on a monolithic Abseil build target that will generate a shared library.
 * `absl::Cleanup`
 * [Hash tables, and B-tree ordered][abseil-containers] containers
 * `absl::InlinedVector`
-* `absl::Nonnull` and `absl::Nullable`
+* `absl_nonnull` and `absl_nullable`
 * `absl::WrapUnique`
 * `absl::string_view`
 * The functions in `absl/strings/ascii.h`, `absl/strings/match.h`,
@@ -40,7 +40,7 @@ on a monolithic Abseil build target that will generate a shared library.
 * The macros in `absl/base/attributes.h`, `absl/base/config.h` and
   `absl/base/macros.h`.
 * `absl/numeric/bits.h`
-* Single argument absl::StrCat
+* Single argument `absl::StrCat`
 
 * ABSL_FLAG is allowed in tests and tools, but disallowed in in non-test code.
 
@@ -62,16 +62,17 @@ on a monolithic Abseil build target that will generate a shared library.
 
 ### `absl::Span`
 
-*Use `rtc::ArrayView` instead.*
+*Use `webrtc::ArrayView` instead.*
 
-`absl::Span` differs from `rtc::ArrayView` on several points, and both
+`absl::Span` differs from `webrtc::ArrayView` on several points, and both
 of them differ from the `std::span` introduced in C++20. We should just keep
-using `rtc::ArrayView` and avoid `absl::Span`. When WebRTC switches to C++20,
-we will consider replacing `rtc::ArrayView` with `std::span`.
+using `webrtc::ArrayView` and avoid `absl::Span`. Note that we are planning
+to replace `webrtc::ArrayView` with `std::span` rather than with `absl::Span`,
+see https://bugs.webrtc.org/439801349
 
 ### `absl::StrCat`, `absl::StrAppend`, `absl::StrJoin`, `absl::StrSplit`
 
-*Use `rtc::SimpleStringBuilder` to build strings.*
+*Use `webrtc::SimpleStringBuilder` to build strings.*
 
 These are optimized for speed, not binary size. Even `StrCat` calls
 with a modest number of arguments can easily add several hundred bytes

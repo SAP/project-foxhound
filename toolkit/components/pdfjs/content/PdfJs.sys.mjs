@@ -28,13 +28,13 @@ XPCOMUtils.defineLazyServiceGetter(
   Svc,
   "mime",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 XPCOMUtils.defineLazyServiceGetter(
   Svc,
   "handlerService",
   "@mozilla.org/uriloader/handler-service;1",
-  "nsIHandlerService"
+  Ci.nsIHandlerService
 );
 
 // We're supposed to get this type of thing from the OS, and generally we do.

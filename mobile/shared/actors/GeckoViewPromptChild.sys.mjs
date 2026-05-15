@@ -16,6 +16,7 @@ export class GeckoViewPromptChild extends GeckoViewActorChild {
       case "click":
       case "contextmenu":
       case "DOMPopupBlocked":
+      case "DOMRedirectBlocked":
         Services.prompt.wrappedJSObject.handleEvent(event);
     }
   }

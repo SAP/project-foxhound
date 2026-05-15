@@ -5,8 +5,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XRSpace.h"
-#include "mozilla/dom/XRRigidTransform.h"
+
 #include "VRDisplayClient.h"
+#include "mozilla/dom/XRRigidTransform.h"
 
 namespace mozilla::dom {
 

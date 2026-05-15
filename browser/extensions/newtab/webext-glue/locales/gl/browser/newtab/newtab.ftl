@@ -56,6 +56,9 @@ newtab-topsites-add-shortcut-header = Novo atallo
 newtab-topsites-edit-topsites-header = Editar sitio favorito
 newtab-topsites-edit-shortcut-header = Editar o atallo
 newtab-topsites-add-shortcut-label = Engadir atallo
+newtab-topsites-add-shortcut-title =
+    .title = Engadir atallo
+    .aria-label = Engadir atallo
 newtab-topsites-title-label = Título
 newtab-topsites-title-input =
     .placeholder = Escribir un título
@@ -84,6 +87,14 @@ newtab-confirm-delete-history-p2 = Non é posíbel desfacer esta acción.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Patrocinado
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (fixado)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -308,19 +319,25 @@ newtab-custom-pocket-subtitle = Contido excepcional patrocinado por { -pocket-br
 newtab-custom-stories-toggle =
     .label = Historias recomendadas
     .description = Contido excepcional seleccionado pola familia de { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Historias
 newtab-custom-pocket-sponsored = Historias patrocinadas
 newtab-custom-pocket-show-recent-saves = Mostrar o gardado recentemente
 newtab-custom-recent-title = Actividade recente
 newtab-custom-recent-subtitle = Unha selección de sitios e contido recentes
-newtab-custom-recent-toggle =
-    .label = Actividade recente
-    .description = Unha selección de sitios e contido recentes
 newtab-custom-weather-toggle =
     .label = Tempo
     .description = Predición de hoxe dunha ollada
-newtab-custom-trending-search-toggle =
-    .label = Tendencias de busca
-    .description = Temas populares e buscados con frecuencia
+newtab-custom-widget-weather-toggle =
+    .label = Tempo
+newtab-custom-widget-lists-toggle =
+    .label = Listas
+newtab-custom-widget-timer-toggle =
+    .label = Temporizador
+newtab-custom-widget-section-title = Widgets
+newtab-custom-widget-section-toggle =
+    .label = Widgets
+newtab-widget-manage-title = Widgets
 newtab-custom-close-button = Pechar
 newtab-custom-settings = Xestionar máis axustes
 
@@ -382,7 +399,7 @@ newtab-wallpaper-abstract-purple-green = Degradado de luz violeta e verde
 newtab-wallpaper-abstract-blue-purple-waves = Formas onduladas azuis e moradas
 newtab-wallpaper-abstract-black-waves = Formas onduladas negras
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografías
 newtab-wallpaper-beach-at-sunrise = Praia ao amencer
@@ -438,7 +455,6 @@ newtab-weather-menu-change-location = Cambiar localización
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Busca localización
     .aria-label = Busca localización
-newtab-weather-change-location-search-input = Busca localización
 newtab-weather-menu-weather-display = Pantalla do tempo
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -456,6 +472,11 @@ newtab-weather-menu-hide-weather = Ocultar o tempo na nova pestana
 newtab-weather-menu-learn-more = Máis información
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Os datos meteorolóxicos non están dispoñibles neste momento.
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Ver a previsión en { $provider }
+    .aria-description = { $provider } ∙ Patrocinado
 
 ## Topic Labels
 
@@ -539,6 +560,12 @@ newtab-custom-wallpaper-title = Os fondos de pantalla personalizados están aqu�
 newtab-custom-wallpaper-subtitle = Carga o teu propio fondo de pantalla ou escolle unha cor personalizada para personalizar { -brand-product-name }.
 newtab-custom-wallpaper-cta = Téntao
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Escolle un fondo de pantalla para facer teu { -brand-product-name }
+newtab-new-user-custom-wallpaper-subtitle = Fai que cada nova pestana se sinta como na casa con fondos de pantalla e cores personalizados.
+newtab-new-user-custom-wallpaper-cta = Probar agora
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Descargar { -brand-product-name } para móbil
@@ -554,7 +581,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Os teus favoritos na punta dos teus dedos
 newtab-shortcuts-highlight-subtitle = Engade un atallo para manter os teus sitios favoritos a un clic de distancia.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Por que informas isto?
@@ -577,15 +604,37 @@ newtab-report-submit = Enviar
 newtab-toast-thanks-for-reporting =
     .message = Grazas por informar sobre isto.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Tendencias en Google
-newtab-trending-searches-show-trending =
-    .title = Mostrar buscas en tendencia
-newtab-trending-searches-hide-trending =
-    .title = Ocultar buscas en tendencia
-newtab-trending-searches-learn-more = Máis información
-newtab-trending-searches-dismiss = Ocultar buscas en tendencia
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Tendencias de busca
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Novo
+newtab-widget-lists-label-beta =
+    .label = Beta
+newtab-widget-task-list-menu-copy = Copiar
+newtab-widget-lists-menu-edit = Editar o nome da lista
+newtab-widget-lists-menu-create = Crea unha nova lista
+newtab-widget-lists-menu-delete = Eliminar esta lista
+newtab-widget-lists-menu-copy = Copiar a lista no portapapeis
+newtab-widget-lists-menu-hide = Ocultar todas as listas
+newtab-widget-lists-menu-learn-more = Máis información
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Engadir un elemento
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-label-play =
+    .label = Reproducir
+newtab-widget-timer-label-pause =
+    .label = Pausar
+newtab-widget-timer-menu-notifications-on = Activar as notificacións
+newtab-widget-timer-menu-hide = Ocultar o temporizador
+newtab-widget-timer-menu-learn-more = Máis información
+newtab-widget-message-title = Mantente concentrado con listas e un temporizador incorporado
+newtab-promo-card-title = Apoiar a { -brand-product-name }
+newtab-promo-card-body = Os nosos patrocinadores apoian a nosa misión de construír unha web mellor
+newtab-promo-card-cta = Máis información
+newtab-promo-card-dismiss-button =
+    .title = Rexeitar
+    .aria-label = Rexeitar

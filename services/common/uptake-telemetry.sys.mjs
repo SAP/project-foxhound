@@ -2,70 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-
-const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
-  ClientID: "resource://gre/modules/ClientID.sys.mjs",
-});
-
-ChromeUtils.defineLazyGetter(lazy, "CryptoHash", () => {
-  return Components.Constructor(
-    "@mozilla.org/security/hash;1",
-    "nsICryptoHash",
-    "initWithString"
-  );
-});
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "gSampleRate",
-  "services.common.uptake.sampleRate"
-);
-
-/**
- * A wrapper around certain low-level operations that can be substituted for testing.
- */
-export var Policy = {
-  _clientIDHash: null,
-
-  getClientID() {
-    return lazy.ClientID.getClientID();
-  },
-
-  /**
-   * Compute an integer in the range [0, 100) using a hash of the
-   * client ID.
-   *
-   * This is useful for sampling clients when trying to report
-   * telemetry only for a sample of clients.
-   */
-  async getClientIDHash() {
-    if (this._clientIDHash === null) {
-      this._clientIDHash = this._doComputeClientIDHash();
-    }
-    return this._clientIDHash;
-  },
-
-  async _doComputeClientIDHash() {
-    const clientID = await this.getClientID();
-    let byteArr = new TextEncoder().encode(clientID);
-    let hash = new lazy.CryptoHash("sha256");
-    hash.update(byteArr, byteArr.length);
-    const bytes = hash.finish(false);
-    let rem = 0;
-    for (let i = 0, len = bytes.length; i < len; i++) {
-      rem = ((rem << 8) + (bytes[i].charCodeAt(0) & 0xff)) % 100;
-    }
-    return rem;
-  },
-
-  getChannel() {
-    return AppConstants.MOZ_UPDATE_CHANNEL;
-  },
-};
-
 /**
  * A Telemetry helper to report uptake of remote content.
  */
@@ -101,7 +37,7 @@ export class UptakeTelemetry {
    * - `CUSTOM_4_ERROR`: Update source specific error #4.
    * - `CUSTOM_5_ERROR`: Update source specific error #5.
    *
-   * @type {Object}
+   * @type {object}
    */
   static get STATUS() {
     return {
@@ -137,16 +73,12 @@ export class UptakeTelemetry {
     };
   }
 
-  static get Policy() {
-    return Policy;
-  }
-
   /**
    * Reports the uptake status for the specified source.
    *
    * @param {string} component     the component reporting the uptake (eg. "Normandy").
    * @param {string} status        the uptake status (eg. "network_error")
-   * @param {Object} extra         extra values to report
+   * @param {object} extra         extra values to report
    * @param {string} extra.source  the update source (eg. "recipe-42").
    * @param {string} extra.trigger what triggered the polling/fetching (eg. "broadcast", "timer").
    * @param {int}    extra.age     age of pulled data in seconds
@@ -162,13 +94,7 @@ export class UptakeTelemetry {
       throw new Error(`Unknown status '${status}'`);
     }
 
-    const hash = await UptakeTelemetry.Policy.getClientIDHash();
-    const channel = UptakeTelemetry.Policy.getChannel();
-    const shouldSendEvent =
-      !["release", "esr"].includes(channel) || hash < lazy.gSampleRate;
-    if (shouldSendEvent) {
-      extra.value = status;
-      Glean.uptakeRemotecontentResult["uptake" + component].record(extra);
-    }
+    extra.value = status;
+    Glean.uptakeRemotecontentResult["uptake" + component].record(extra);
   }
 }

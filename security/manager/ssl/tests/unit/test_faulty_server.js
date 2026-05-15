@@ -84,6 +84,9 @@ add_task(
     // ssl_grp_ec_curve25519 = 29
     let countOfMlkem = handlerCount("/callback/4588");
     let countOfX25519 = handlerCount("/callback/29");
+    let countOfPrEndOfFileError =
+      await Glean.tls.xyberIntoleranceReason.PR_END_OF_FILE_ERROR.testGetValue();
+
     let chan = makeChan(`https://${retryDomain}:8443`);
     let [, buf] = await channelOpenPromise(chan, CL_ALLOW_UNKNOWN_CL);
     ok(buf);
@@ -99,7 +102,7 @@ add_task(
     if (!mozinfo.socketprocess_networking) {
       // Bug 1824574
       equal(
-        1,
+        countOfPrEndOfFileError + 1,
         await Glean.tls.xyberIntoleranceReason.PR_END_OF_FILE_ERROR.testGetValue(),
         "PR_END_OF_FILE_ERROR telemetry accumulated"
       );

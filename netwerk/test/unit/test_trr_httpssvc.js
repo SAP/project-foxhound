@@ -15,38 +15,61 @@ function inChildProcess() {
   return Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
 }
 
+async function clearCache() {
+  if (inChildProcess()) {
+    do_send_remote_message("clearCache");
+    await do_await_remote_message("clearCache-done");
+  } else {
+    Services.dns.clearCache(true);
+  }
+}
+
+async function setTRRURI(uri) {
+  if (!inChildProcess()) {
+    Services.prefs.setCharPref("network.trr.uri", uri);
+    Services.prefs.setIntPref("network.trr.mode", 3);
+  } else {
+    do_send_remote_message("set-trr-uri", uri);
+    await do_await_remote_message("set-trr-uri-done");
+  }
+}
+
 add_setup(async function setup() {
+  trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
+  ok(h2Port);
+
+  registerCleanupFunction(async () => {
+    if (trrServer) {
+      await trrServer.stop();
+    }
+    if (inChildProcess()) {
+      do_send_remote_message("set-trr-uri", "test-done");
+      do_send_remote_message("clearCache", "test-done");
+    }
+  });
+
   if (inChildProcess()) {
     return;
   }
 
   trr_test_setup();
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
 
   registerCleanupFunction(async () => {
     trr_clear_prefs();
     Services.prefs.clearUserPref("network.dns.port_prefixed_qname_https_rr");
-    await trrServer.stop();
   });
 
   if (mozinfo.socketprocess_networking) {
     Services.dns; // Needed to trigger socket process.
     await TestUtils.waitForCondition(() => Services.io.socketProcessLaunched);
   }
-
-  Services.prefs.setIntPref("network.trr.mode", 3);
 });
 
 add_task(async function testHTTPSSVC() {
   // use the h2 server as DOH provider
-  if (!inChildProcess()) {
-    Services.prefs.setCharPref(
-      "network.trr.uri",
-      "https://foo.example.com:" + h2Port + "/httpssvc"
-    );
-  }
+  await setTRRURI("https://foo.example.com:" + h2Port + "/doh?httpssvc=1");
 
   let { inRecord } = await new TRRDNSListener("test.httpssvc.com", {
     type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
@@ -143,20 +166,8 @@ add_task(async function testHTTPSSVC() {
 });
 
 add_task(async function test_aliasform() {
-  trrServer = new TRRServer();
-  await trrServer.start();
-  dump(`port = ${trrServer.port()}\n`);
-
-  if (inChildProcess()) {
-    do_send_remote_message("mode3-port", trrServer.port());
-    await do_await_remote_message("mode3-port-done");
-  } else {
-    Services.prefs.setIntPref("network.trr.mode", 3);
-    Services.prefs.setCharPref(
-      "network.trr.uri",
-      `https://foo.example.com:${trrServer.port()}/dns-query`
-    );
-  }
+  await setTRRURI(`https://foo.example.com:${trrServer.port()}/dns-query`);
+  await clearCache();
 
   // Make sure that HTTPS AliasForm is only treated as a CNAME for HTTPS requests
   await trrServer.registerDoHAnswers("test1.com", "A", {
@@ -634,6 +645,7 @@ add_task(async function test_aliasform() {
 });
 
 add_task(async function testNegativeResponse() {
+  await setTRRURI(`https://foo.example.com:${trrServer.port()}/dns-query`);
   let { inStatus } = await new TRRDNSListener("negative_test.com", {
     type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
     expectedSuccess: false,
@@ -669,12 +681,7 @@ add_task(async function testNegativeResponse() {
     `${inStatus} should be an error code`
   );
 
-  if (inChildProcess()) {
-    do_send_remote_message("clearCache");
-    await do_await_remote_message("clearCache-done");
-  } else {
-    Services.dns.clearCache(true);
-  }
+  await clearCache();
 
   let inRecord;
   ({ inRecord, inStatus } = await new TRRDNSListener("negative_test.com", {
@@ -728,20 +735,10 @@ add_task(async function testPortPrefixedName() {
   let answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
   Assert.equal(answer[0].priority, 1);
   Assert.equal(answer[0].name, "port_prefix.test1.com");
-  await trrServer.stop();
 });
 
 async function doTestFlattenRecordsWithECH(host, targetName, alpn, expected) {
-  Services.dns.clearCache(true);
-
-  trrServer = new TRRServer();
-  await trrServer.start();
-
-  Services.prefs.setIntPref("network.trr.mode", 3);
-  Services.prefs.setCharPref(
-    "network.trr.uri",
-    `https://foo.example.com:${trrServer.port()}/dns-query`
-  );
+  await clearCache();
 
   await trrServer.registerDoHAnswers(host, "HTTPS", {
     answers: [
@@ -779,57 +776,52 @@ async function doTestFlattenRecordsWithECH(host, targetName, alpn, expected) {
       Assert.equal(answer[i].selectedAlpn, expected[i].selectedAlpn);
     }
   }
-
-  await trrServer.stop();
 }
 
-add_task(
-  { skip_if: () => inChildProcess() },
-  async function testFlattenRecordsWithECH() {
-    // Test when host name and targetName are the same.
-    await doTestFlattenRecordsWithECH(
-      "test.target.com",
-      "test.target.com",
-      ["h3"],
-      [
-        { priority: 1, name: "test.target.com", selectedAlpn: "h3" },
-        { priority: 1, name: "test.target.com", selectedAlpn: "" },
-      ]
-    );
-    await doTestFlattenRecordsWithECH(
-      "test.target.com",
-      ".",
-      ["h3"],
-      [
-        { priority: 1, name: "test.target.com", selectedAlpn: "h3" },
-        { priority: 1, name: "test.target.com", selectedAlpn: "" },
-      ]
-    );
+add_task(async function testFlattenRecordsWithECH() {
+  // Test when host name and targetName are the same.
+  await doTestFlattenRecordsWithECH(
+    "test.target.com",
+    "test.target.com",
+    ["h3"],
+    [
+      { priority: 1, name: "test.target.com", selectedAlpn: "h3" },
+      { priority: 1, name: "test.target.com", selectedAlpn: "" },
+    ]
+  );
+  await doTestFlattenRecordsWithECH(
+    "test.target.com",
+    ".",
+    ["h3"],
+    [
+      { priority: 1, name: "test.target.com", selectedAlpn: "h3" },
+      { priority: 1, name: "test.target.com", selectedAlpn: "" },
+    ]
+  );
 
-    // Test when host name and targetName are not the same.
-    // We add
-    await doTestFlattenRecordsWithECH(
-      "test.target.com",
-      "test.target_1.com",
-      ["h3"],
-      [
-        { priority: 1, name: "test.target_1.com", selectedAlpn: "h3" },
-        { priority: 1, name: "test.target_1.com", selectedAlpn: "" },
-      ]
-    );
+  // Test when host name and targetName are not the same.
+  // We add
+  await doTestFlattenRecordsWithECH(
+    "test.target.com",
+    "test.target_1.com",
+    ["h3"],
+    [
+      { priority: 1, name: "test.target_1.com", selectedAlpn: "h3" },
+      { priority: 1, name: "test.target_1.com", selectedAlpn: "" },
+    ]
+  );
 
-    // Test when alpn is empty.
-    await doTestFlattenRecordsWithECH("test.target.com", ".", null, [
-      { priority: 1, name: "test.target.com", selectedAlpn: null },
-    ]);
-    await doTestFlattenRecordsWithECH(
-      "test.target.com",
-      "test.target_1.com",
-      null,
-      [{ priority: 1, name: "test.target_1.com", selectedAlpn: null }]
-    );
-  }
-);
+  // Test when alpn is empty.
+  await doTestFlattenRecordsWithECH("test.target.com", ".", null, [
+    { priority: 1, name: "test.target.com", selectedAlpn: null },
+  ]);
+  await doTestFlattenRecordsWithECH(
+    "test.target.com",
+    "test.target_1.com",
+    null,
+    [{ priority: 1, name: "test.target_1.com", selectedAlpn: null }]
+  );
+});
 
 async function doTestFlattenRecordsWithoutECH(
   host,
@@ -837,17 +829,9 @@ async function doTestFlattenRecordsWithoutECH(
   alpn,
   expected
 ) {
-  Services.dns.clearCache(true);
+  await clearCache();
 
-  trrServer = new TRRServer();
-  await trrServer.start();
-
-  Services.prefs.setIntPref("network.trr.mode", 3);
-  Services.prefs.setCharPref(
-    "network.trr.uri",
-    `https://foo.example.com:${trrServer.port()}/dns-query`
-  );
-
+  await setTRRURI(`https://foo.example.com:${trrServer.port()}/dns-query`);
   await trrServer.registerDoHAnswers(host, "HTTPS", {
     answers: [
       {
@@ -881,47 +865,42 @@ async function doTestFlattenRecordsWithoutECH(
       Assert.equal(answer[i].selectedAlpn, expected[i].selectedAlpn);
     }
   }
-
-  await trrServer.stop();
 }
 
-add_task(
-  { skip_if: () => inChildProcess() },
-  async function testFlattenRecordsWithoutECH() {
-    // Test when host name and targetName are the same.
-    await doTestFlattenRecordsWithoutECH(
-      "test.target_noech.com",
-      "test.target_noech.com",
-      ["h3"],
-      [{ priority: 1, name: "test.target_noech.com", selectedAlpn: "h3" }]
-    );
-    await doTestFlattenRecordsWithoutECH(
-      "test.target_noech.com",
-      ".",
-      ["h3"],
-      [{ priority: 1, name: "test.target_noech.com", selectedAlpn: "h3" }]
-    );
+add_task(async function testFlattenRecordsWithoutECH() {
+  // Test when host name and targetName are the same.
+  await doTestFlattenRecordsWithoutECH(
+    "test.target_noech.com",
+    "test.target_noech.com",
+    ["h3"],
+    [{ priority: 1, name: "test.target_noech.com", selectedAlpn: "h3" }]
+  );
+  await doTestFlattenRecordsWithoutECH(
+    "test.target_noech.com",
+    ".",
+    ["h3"],
+    [{ priority: 1, name: "test.target_noech.com", selectedAlpn: "h3" }]
+  );
 
-    // Test when host name and targetName are not the same.
-    await doTestFlattenRecordsWithoutECH(
-      "test.target_noech.com",
-      "test.target_noech_1.com",
-      ["h3"],
-      [
-        { priority: 1, name: "test.target_noech_1.com", selectedAlpn: "h3" },
-        { priority: 1, name: "test.target_noech_1.com", selectedAlpn: "" },
-      ]
-    );
+  // Test when host name and targetName are not the same.
+  await doTestFlattenRecordsWithoutECH(
+    "test.target_noech.com",
+    "test.target_noech_1.com",
+    ["h3"],
+    [
+      { priority: 1, name: "test.target_noech_1.com", selectedAlpn: "h3" },
+      { priority: 1, name: "test.target_noech_1.com", selectedAlpn: "" },
+    ]
+  );
 
-    // Test when alpn is empty.
-    await doTestFlattenRecordsWithoutECH("test.target_noech.com", ".", null, [
-      { priority: 1, name: "test.target_noech.com", selectedAlpn: null },
-    ]);
-    await doTestFlattenRecordsWithoutECH(
-      "test.target_noech.com",
-      "test.target_noech_1.com",
-      null,
-      [{ priority: 1, name: "test.target_noech_1.com", selectedAlpn: null }]
-    );
-  }
-);
+  // Test when alpn is empty.
+  await doTestFlattenRecordsWithoutECH("test.target_noech.com", ".", null, [
+    { priority: 1, name: "test.target_noech.com", selectedAlpn: null },
+  ]);
+  await doTestFlattenRecordsWithoutECH(
+    "test.target_noech.com",
+    "test.target_noech_1.com",
+    null,
+    [{ priority: 1, name: "test.target_noech_1.com", selectedAlpn: null }]
+  );
+});

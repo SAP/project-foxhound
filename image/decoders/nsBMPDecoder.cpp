@@ -99,7 +99,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/EndianUtils.h"
-#include "mozilla/Likely.h"
 #include "mozilla/UniquePtrExtensions.h"
 
 #include "RasterImage.h"
@@ -430,7 +429,7 @@ LexerResult nsBMPDecoder::DoDecode(SourceBufferIterator& aIterator,
 
   return mLexer.Lex(
       aIterator, aOnResume,
-      [=](State aState, const char* aData, size_t aLength) {
+      [this](State aState, const char* aData, size_t aLength) {
         switch (aState) {
           case State::FILE_HEADER:
             return ReadFileHeader(aData, aLength);

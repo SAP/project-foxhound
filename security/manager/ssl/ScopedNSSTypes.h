@@ -18,7 +18,6 @@
 #include "cryptohi.h"
 #include "keyhi.h"
 #include "mozilla/Likely.h"
-#include "mozilla/UniquePtr.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "NSSErrorsService.h"

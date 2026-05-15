@@ -3,6 +3,7 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """module for http authentication operations"""
+
 import getpass
 import os
 

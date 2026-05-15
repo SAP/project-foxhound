@@ -127,9 +127,7 @@ DocGroup::DocGroup(BrowsingContextGroup* aBrowsingContextGroup,
   // This method does not add itself to
   // mBrowsingContextGroup->mDocGroups as the caller does it for us.
   MOZ_ASSERT(NS_IsMainThread());
-  if (StaticPrefs::dom_arena_allocator_enabled_AtStartup()) {
-    mArena = new mozilla::dom::DOMArena(aKey.mKey);
-  }
+  mArena = new mozilla::dom::DOMArena(aKey.mKey);
 }
 
 DocGroup::~DocGroup() {

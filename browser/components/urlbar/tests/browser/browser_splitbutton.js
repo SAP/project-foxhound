@@ -10,10 +10,10 @@ ChromeUtils.defineESModuleGetters(this, {
 // Tests for split buttton component in urlbar result.
 
 const TEST_RESULTS = [
-  new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TIP,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
+  new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TIP,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    payload: {
       helpUrl: "https://example.com/",
       type: "test",
       titleL10n: { id: "urlbar-search-tips-confirm" },
@@ -81,8 +81,8 @@ const TEST_RESULTS = [
           ],
         },
       ],
-    }
-  ),
+    },
+  }),
 ];
 
 add_setup(async function () {
@@ -90,9 +90,10 @@ add_setup(async function () {
     results: TEST_RESULTS,
     priority: 1,
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   registerCleanupFunction(() => {
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
     sinon.restore();
   });
 });

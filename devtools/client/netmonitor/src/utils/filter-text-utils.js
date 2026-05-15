@@ -112,7 +112,7 @@ function processFlagFilter(type, value) {
     case "size":
     case "transferred":
     case "larger-than":
-    case "transferred-larger-than":
+    case "transferred-larger-than": {
       let multiplier = 1;
       if (value.endsWith("k")) {
         multiplier = 1000;
@@ -126,6 +126,7 @@ function processFlagFilter(type, value) {
         return null;
       }
       return quantity * multiplier;
+    }
     default:
       return value.toLowerCase();
   }

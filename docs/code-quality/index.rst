@@ -13,6 +13,7 @@ In this document, we try to list these all tools.
   static-analysis/index.rst
   lint/index.rst
   coding-style/index.rst
+  typescript/index.md
 
 .. list-table:: C/C++
    :header-rows: 1
@@ -41,7 +42,7 @@ In this document, we try to list these all tools.
    * - cpp virtual final
      -
      -
-     - :ref:`cpp virtual final`
+     - :ref:`cpp virtual final <cpp virtual final>`
      -
    * - clang-format
      - Yes
@@ -129,7 +130,7 @@ In this document, we try to list these all tools.
      - :ref:`Rustfmt`
      - https://github.com/rust-lang/rustfmt
    * - Clippy
-     -
+     - Yes
      - `bug 1361342 <https://bugzilla.mozilla.org/show_bug.cgi?id=1361342>`__
      - :ref:`clippy`
      - https://github.com/rust-lang/rust-clippy

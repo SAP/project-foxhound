@@ -1,5 +1,5 @@
-#ifndef icu4x_CollatorNumericOrdering_D_HPP
-#define icu4x_CollatorNumericOrdering_D_HPP
+#ifndef ICU4X_CollatorNumericOrdering_D_HPP
+#define ICU4X_CollatorNumericOrdering_D_HPP
 
 #include <stdio.h>
 #include <stdint.h>
@@ -9,7 +9,7 @@
 #include <functional>
 #include <optional>
 #include <cstdlib>
-#include "../diplomat_runtime.hpp"
+#include "diplomat_runtime.hpp"
 
 
 namespace icu4x {
@@ -25,27 +25,28 @@ namespace capi {
 
 namespace icu4x {
 /**
- * See the [Rust documentation for `CollationNumericOrdering`](https://docs.rs/icu/latest/icu/collator/preferences/enum.CollationNumericOrdering.html) for more information.
+ * See the [Rust documentation for `CollationNumericOrdering`](https://docs.rs/icu/2.1.1/icu/collator/preferences/enum.CollationNumericOrdering.html) for more information.
  */
 class CollatorNumericOrdering {
 public:
-  enum Value {
-    Off = 0,
-    On = 1,
-  };
+    enum Value {
+        Off = 0,
+        On = 1,
+    };
 
-  CollatorNumericOrdering() = default;
-  // Implicit conversions between enum and ::Value
-  constexpr CollatorNumericOrdering(Value v) : value(v) {}
-  constexpr operator Value() const { return value; }
-  // Prevent usage as boolean value
-  explicit operator bool() const = delete;
+    CollatorNumericOrdering(): value(Value::Off) {}
 
-  inline icu4x::capi::CollatorNumericOrdering AsFFI() const;
-  inline static icu4x::CollatorNumericOrdering FromFFI(icu4x::capi::CollatorNumericOrdering c_enum);
+    // Implicit conversions between enum and ::Value
+    constexpr CollatorNumericOrdering(Value v) : value(v) {}
+    constexpr operator Value() const { return value; }
+    // Prevent usage as boolean value
+    explicit operator bool() const = delete;
+
+    inline icu4x::capi::CollatorNumericOrdering AsFFI() const;
+    inline static icu4x::CollatorNumericOrdering FromFFI(icu4x::capi::CollatorNumericOrdering c_enum);
 private:
     Value value;
 };
 
 } // namespace
-#endif // icu4x_CollatorNumericOrdering_D_HPP
+#endif // ICU4X_CollatorNumericOrdering_D_HPP

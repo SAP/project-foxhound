@@ -4,8 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "TCPServerSocket.h"
 #include "TCPSocket.h"
+
+#include "TCPServerSocket.h"
 #include "TCPSocketChild.h"
 #include "TCPSocketParent.h"
 #include "mozilla/BasePrincipal.h"
@@ -404,8 +405,8 @@ void TCPSocket::NotifyCopyComplete(nsresult aStatus) {
   CalculateBufferedAmount();
 
   if (mSocketBridgeParent && mSocketBridgeParent->IPCOpen()) {
-    mozilla::Unused << mSocketBridgeParent->SendUpdateBufferedAmount(
-        BufferedAmount(), mTrackingNumber);
+    (void)mSocketBridgeParent->SendUpdateBufferedAmount(BufferedAmount(),
+                                                        mTrackingNumber);
   }
 
   if (NS_FAILED(aStatus)) {
@@ -730,7 +731,7 @@ nsresult TCPSocket::MaybeReportErrorAndCloseIfOpen(nsresult status) {
       }
     }
 
-    Unused << NS_WARN_IF(NS_FAILED(FireErrorEvent(errName, errorType, status)));
+    (void)NS_WARN_IF(NS_FAILED(FireErrorEvent(errName, errorType, status)));
   }
 
   return FireEvent(u"close"_ns);

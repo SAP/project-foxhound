@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WindowNamedPropertiesHandler.h"
+
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/dom/ProxyHandlerUtils.h"
 #include "mozilla/dom/WindowBinding.h"
@@ -179,6 +181,17 @@ bool WindowNamedPropertiesHandler::ownPropNames(
   if (!(flags & JSITER_HIDDEN)) {
     // None of our named properties are enumerable.
     return true;
+  }
+
+  if (!StaticPrefs::
+          dom_window_named_properties_object_legacy_own_property_keys()) {
+    // Per the WebIDL spec, [[OwnPropertyKeys]] for the named properties object
+    // returns only @@toStringTag. Named properties are resolved via
+    // [[GetOwnProperty]] but are not enumerated as own keys.
+    // https://webidl.spec.whatwg.org/#named-properties-object
+    JS::Rooted<jsid> toStringTagId(
+        aCx, JS::GetWellKnownSymbolKey(aCx, JS::SymbolCode::toStringTag));
+    return aProps.append(toStringTagId);
   }
 
   // Grab the DOM window.

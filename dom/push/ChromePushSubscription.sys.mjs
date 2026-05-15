@@ -27,7 +27,8 @@ export class ChromePushSubscription {
     return this.#props.pushCount;
   }
 
-  /** The number of remaining background messages that can be sent to this
+  /**
+   * The number of remaining background messages that can be sent to this
    * subscription, or -1 of the subscription is exempt from the quota.
    */
   get quota() {

@@ -1,4 +1,4 @@
-// |jit-test| --disable-main-thread-denormals; skip-if: !getBuildConfiguration("can-disable-main-thread-denormals") || !wasmIsSupported() || (getBuildConfiguration("osx") && getBuildConfiguration("arm64"));
+// |jit-test| --disable-main-thread-denormals; skip-if: !getBuildConfiguration("can-disable-main-thread-denormals") || !wasmIsSupported();
 
 function a(b) {
   c = new WebAssembly.Module(b);
@@ -7,7 +7,9 @@ function a(b) {
 function d(e) {
   return a(wasmTextToBinary(e));
 }
-f = [ , Number.MIN_VALUE ]
 let { refTest } = d(`(func (export "refTest") (param externref))`).exports;
+
+// Ensure there are enough values to trigger a wasm JIT entry
+f = Array(16).fill([Number.MIN_VALUE, -Number.MIN_VALUE]).flat();
 for (h of f)
   refTest(h);

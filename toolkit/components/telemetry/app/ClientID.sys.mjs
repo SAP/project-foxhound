@@ -49,8 +49,8 @@ const PREF_CACHED_USAGE_PROFILEGROUPID =
 /**
  * Checks if the string is a valid UUID (without braces).
  *
- * @param {String} id A string containing an ID.
- * @return {Boolean} True when the ID has valid format, or False otherwise.
+ * @param {string} id A string containing an ID.
+ * @return {boolean} True when the ID has valid format, or False otherwise.
  */
 function isValidUUID(id) {
   const UUID_REGEX =
@@ -103,7 +103,7 @@ export var ClientID = Object.freeze({
    * Asynchronously updates the stable profile group ID we use for data
    * reporting.
    *
-   * @param {String} id A string containing the profile group ID.
+   * @param {string} id A string containing the profile group ID.
    * @return {Promise} Resolves when the ID is updated.
    */
   setProfileGroupID(id) {
@@ -114,7 +114,7 @@ export var ClientID = Object.freeze({
    * Asynchronously updates the stable Usage Profile ID we use for DAU
    * reporting.
    *
-   * @param {String} id A string containing the Usage Profile ID.
+   * @param {string} id A string containing the Usage Profile ID.
    * @return {Promise} Resolves when the ID is updated.
    */
   setUsageProfileID(id) {
@@ -125,7 +125,7 @@ export var ClientID = Object.freeze({
    * Asynchronously updates the stable Usage Profile Group ID we use for DAU
    * reporting.
    *
-   * @param {String} id A string containing the Usage Group Profile ID.
+   * @param {string} id A string containing the Usage Group Profile ID.
    * @return {Promise} Resolves when the ID is updated.
    */
   setUsageProfileGroupID(id) {
@@ -502,7 +502,7 @@ var ClientIDImpl = {
    * Asynchronously updates the stable profile group ID we use for data reporting
    * (FHR & Telemetry).
    *
-   * @param {String} id A string containing the profile group ID.
+   * @param {string} id A string containing the profile group ID.
    * @return {Promise} Resolves when the ID is updated.
    */
   async setProfileGroupID(id) {
@@ -529,7 +529,7 @@ var ClientIDImpl = {
   /**
    * Asynchronously updates the stable Usage Profile ID we use for DAU reporting.
    *
-   * @param {String} id A string containing the Usage Profile ID.
+   * @param {string} id A string containing the Usage Profile ID.
    * @return {Promise} Resolves when the ID is updated.
    */
   async setUsageProfileID(id) {
@@ -558,7 +558,7 @@ var ClientIDImpl = {
    * Asynchronously updates the stable Usage Profile Group ID we use for DAU
    * reporting.
    *
-   * @param {String} id A string containing the Usage Profile Group ID.
+   * @param {string} id A string containing the Usage Profile Group ID.
    * @return {Promise} Resolves when the ID is updated.
    */
   async setUsageProfileGroupID(id) {
@@ -869,8 +869,8 @@ var ClientIDImpl = {
    * Sets the client id to the given value and updates the value cached in
    * preferences only if the given id is a valid UUID.
    *
-   * @param {String} id A string containing the client ID.
-   * @return {Boolean} True when the client ID has valid format, or False
+   * @param {string} id A string containing the client ID.
+   * @return {boolean} True when the client ID has valid format, or False
    * otherwise.
    */
   updateClientID(id) {
@@ -893,8 +893,8 @@ var ClientIDImpl = {
    * Sets the profile group ID to the given value and updates the value cached
    * in preferences only if the given id is a valid UUID.
    *
-   * @param {String} id A string containing the profile group ID.
-   * @return {Boolean} True when the profile group ID has valid format, or False
+   * @param {string} id A string containing the profile group ID.
+   * @return {boolean} True when the profile group ID has valid format, or False
    * otherwise.
    */
   updateProfileGroupID(id) {
@@ -919,8 +919,8 @@ var ClientIDImpl = {
    * Sets the Usage Profile ID to the given value and updates the value cached
    * in preferences only if the given id is a valid UUID.
    *
-   * @param {String} id A string containing the Profile Usage ID.
-   * @return {Boolean} True when the Profile Usage ID has valid format, or False
+   * @param {string} id A string containing the Profile Usage ID.
+   * @return {boolean} True when the Profile Usage ID has valid format, or False
    * otherwise.
    */
   updateUsageProfileID(id) {
@@ -945,8 +945,8 @@ var ClientIDImpl = {
    * Sets the Usage Profile Group ID to the given value and updates the value
    * cached in preferences only if the given id is a valid UUID.
    *
-   * @param {String} id A string containing the Profile Group Usage ID.
-   * @return {Boolean} True when the Profile Group Usage ID has valid format,
+   * @param {string} id A string containing the Profile Group Usage ID.
+   * @return {boolean} True when the Profile Group Usage ID has valid format,
    * or False otherwise.
    */
   updateUsageProfileGroupID(id) {

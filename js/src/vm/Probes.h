@@ -7,10 +7,6 @@
 #ifndef vm_Probes_h
 #define vm_Probes_h
 
-#ifdef INCLUDE_MOZILLA_DTRACE
-#  include "javascript-trace.h"
-#endif
-
 #include "vm/JSObject.h"
 
 namespace js {
@@ -51,27 +47,11 @@ namespace probes {
  */
 extern bool ProfilingActive;
 
-extern const char nullName[];
-extern const char anonymousName[];
-
-/*
- * Test whether we are tracking JS function call enter/exit. The JITs use this
- * to decide whether they can optimize in a way that would prevent probes from
- * firing.
- */
-bool CallTrackingActive(JSContext*);
-
 /* Entering a JS function */
 bool EnterScript(JSContext*, JSScript*, JSFunction*, InterpreterFrame*);
 
 /* About to leave a JS function */
 void ExitScript(JSContext*, JSScript*, JSFunction*, bool popProfilerFrame);
-
-/* Executing a script */
-bool StartExecution(JSScript* script);
-
-/* Script has completed execution */
-bool StopExecution(JSScript* script);
 
 /*
  * Object has been created. |obj| must exist (its class and size are read)
@@ -83,61 +63,11 @@ bool CreateObject(JSContext* cx, JSObject* obj);
  * read)
  */
 bool FinalizeObject(JSObject* obj);
-
-/*
- * Internal: DTrace-specific functions to be called during probes::EnterScript
- * and probes::ExitScript. These will not be inlined, but the argument
- * marshalling required for these probe points is expensive enough that it
- * shouldn't really matter.
- */
-void DTraceEnterJSFun(JSContext* cx, JSFunction* fun, JSScript* script);
-void DTraceExitJSFun(JSContext* cx, JSFunction* fun, JSScript* script);
-
 }  // namespace probes
 
-#ifdef INCLUDE_MOZILLA_DTRACE
-static const char* ObjectClassname(JSObject* obj) {
-  if (!obj) {
-    return "(null object)";
-  }
-  const JSClass* clasp = obj->getClass();
-  if (!clasp) {
-    return "(null)";
-  }
-  const char* class_name = clasp->name;
-  if (!class_name) {
-    return "(null class name)";
-  }
-  return class_name;
-}
-#endif
+inline bool probes::CreateObject(JSContext* cx, JSObject* obj) { return true; }
 
-inline bool probes::CreateObject(JSContext* cx, JSObject* obj) {
-  bool ok = true;
-
-#ifdef INCLUDE_MOZILLA_DTRACE
-  if (JAVASCRIPT_OBJECT_CREATE_ENABLED()) {
-    JAVASCRIPT_OBJECT_CREATE(ObjectClassname(obj), (uintptr_t)obj);
-  }
-#endif
-
-  return ok;
-}
-
-inline bool probes::FinalizeObject(JSObject* obj) {
-  bool ok = true;
-
-#ifdef INCLUDE_MOZILLA_DTRACE
-  if (JAVASCRIPT_OBJECT_FINALIZE_ENABLED()) {
-    const JSClass* clasp = obj->getClass();
-
-    /* the first arg is nullptr - reserved for future use (filename?) */
-    JAVASCRIPT_OBJECT_FINALIZE(nullptr, (char*)clasp->name, (uintptr_t)obj);
-  }
-#endif
-
-  return ok;
-}
+inline bool probes::FinalizeObject(JSObject* obj) { return true; }
 
 } /* namespace js */
 

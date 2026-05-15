@@ -224,20 +224,18 @@ def generate_platform_feature_manifest(fd, input_file):
     write_fm_headers(fd)
 
     def file_structure(data):
-        return "\n".join(
-            [
-                "#ifndef mozilla_NimbusFeaturesManifest_h",
-                "#define mozilla_NimbusFeaturesManifest_h",
-                "#include <utility>",
-                '#include "mozilla/Maybe.h"',
-                '#include "nsStringFwd.h"',
-                "namespace mozilla {",
-                platform_feature_manifest_array(data),
-                '#include "./lib/NimbusFeatureManifest.inc.h"',
-                "}  // namespace mozilla",
-                "#endif  // mozilla_NimbusFeaturesManifest_h",
-            ]
-        )
+        return "\n".join([
+            "#ifndef mozilla_NimbusFeaturesManifest_h",
+            "#define mozilla_NimbusFeaturesManifest_h",
+            "#include <utility>",
+            '#include "mozilla/Maybe.h"',
+            '#include "nsStringFwd.h"',
+            "namespace mozilla {",
+            platform_feature_manifest_array(data),
+            '#include "./lib/NimbusFeatureManifest.inc.h"',
+            "}  // namespace mozilla",
+            "#endif  // mozilla_NimbusFeaturesManifest_h",
+        ])
 
     try:
         with open(input_file, encoding="utf-8") as yaml_input:

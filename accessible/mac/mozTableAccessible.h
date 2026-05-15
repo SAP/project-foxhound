@@ -5,6 +5,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef ACCESSIBLE_MAC_MOZTABLEACCESSIBLE_H_
+#define ACCESSIBLE_MAC_MOZTABLEACCESSIBLE_H_
+
 #import "mozAccessible.h"
 
 @interface mozColumnContainer : MOXAccessibleBase {
@@ -175,3 +178,5 @@
 - (void)stateChanged:(uint64_t)state isEnabled:(BOOL)enabled;
 
 @end
+
+#endif  // ACCESSIBLE_MAC_MOZTABLEACCESSIBLE_H_

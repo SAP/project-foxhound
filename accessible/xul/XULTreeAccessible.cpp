@@ -924,7 +924,7 @@ NS_IMPL_RELEASE_INHERITED(XULTreeItemAccessible, XULTreeItemAccessibleBase)
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeItemAccessible: nsIAccessible implementation
 
-ENameValueFlag XULTreeItemAccessible::Name(nsString& aName) const {
+ENameValueFlag XULTreeItemAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   GetCellName(mColumn, aName);

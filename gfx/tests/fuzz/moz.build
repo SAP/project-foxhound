@@ -6,8 +6,13 @@
 
 UNIFIED_SOURCES += [
     "TestCOLRv1.cpp",
+    "TestMoz2D.cpp",
 ]
 
 include("/tools/fuzzing/libfuzzer-config.mozbuild")
 
 FINAL_LIBRARY = "xul-gtest"
+
+LOCAL_INCLUDES += [
+    "/gfx/webrender_bindings",
+]

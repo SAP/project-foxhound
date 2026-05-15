@@ -31,9 +31,10 @@ export function getBreakpoint(state, location) {
 
 /**
  * Gets the breakpoints on a line or within a range of lines
- * @param {Object} state
- * @param {Number} source
- * @param {Number|Object} lines - line or an object with a start and end range of lines
+ *
+ * @param {object} state
+ * @param {number} source
+ * @param {number | object} lines - line or an object with a start and end range of lines
  * @returns {Array} breakpoints
  */
 export function getBreakpointsForSource(state, source, lines) {

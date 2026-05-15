@@ -21,14 +21,14 @@ class SearchBarComponent(composeRule: AndroidComposeTestRule<HomeActivityIntentT
         NavigationRegistry.register(
             from = "HomePage",
             to = pageName,
-            steps = listOf(NavigationStep.Click(ToolbarSelectors.URL_BAR_PLACE_HOLDER)),
+            steps = listOf(NavigationStep.Click(ToolbarSelectors.TOOLBAR_URL_BOX)),
         )
 
         // Click search bar to edit or replace a URL
         NavigationRegistry.register(
             from = "BrowserPage",
             to = pageName,
-            steps = listOf(NavigationStep.Click(SearchBarSelectors.URL_TEXT)),
+            steps = listOf(NavigationStep.Click(ToolbarSelectors.TOOLBAR_URL_BOX)),
         )
     }
 

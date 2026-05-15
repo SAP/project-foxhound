@@ -50,5 +50,5 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         isinstance(results[0].members[0].defaultValue, WebIDL.IDLEmptySequenceValue),
-        "Should have IDLEmptySequenceValue as default value of " "dictionary member",
+        "Should have IDLEmptySequenceValue as default value of dictionary member",
     )

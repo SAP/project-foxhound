@@ -7,7 +7,6 @@
 #ifndef InputStreamLengthWrapper_h
 #define InputStreamLengthWrapper_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"

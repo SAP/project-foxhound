@@ -18,6 +18,7 @@
 #include "mozilla/layers/ProfilerScreenshots.h"
 #include "mozilla/layers/SurfacePool.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/webrender/RenderTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "RenderCompositorRecordedFrame.h"
@@ -32,6 +33,8 @@ RenderCompositorNative::RenderCompositorNative(
     : RenderCompositor(aWidget),
       mNativeLayerRoot(GetWidget()->GetNativeLayerRoot()) {
   LOG("RenderCompositorNative::RenderCompositorNative()");
+
+  MOZ_ASSERT(mNativeLayerRoot);
 
 #if defined(XP_DARWIN) || defined(MOZ_WAYLAND)
   auto pool = RenderThread::Get()->SharedSurfacePool();
@@ -132,6 +135,12 @@ void RenderCompositorNative::GetCompositorCapabilities(
 #endif
 }
 
+RenderCompositorNative::Surface::~Surface() = default;
+
+RenderCompositorNative::Surface::Surface(wr::DeviceIntSize aTileSize,
+                                         bool aIsOpaque)
+    : mTileSize(aTileSize), mIsOpaque(aIsOpaque) {}
+
 bool RenderCompositorNative::MaybeReadback(
     const gfx::IntSize& aReadbackSize, const wr::ImageFormat& aReadbackFormat,
     const Range<uint8_t>& aReadbackBuffer, bool* aNeedsYFlip) {
@@ -231,6 +240,10 @@ bool RenderCompositorNative::MaybeProcessScreenshotQueue() {
   MakeCurrent();
 
   return true;
+}
+
+void RenderCompositorNative::WaitUntilPresentationFlushed() {
+  mNativeLayerRoot->WaitUntilCommitToScreenHasBeenProcessed();
 }
 
 void RenderCompositorNative::CompositorBeginFrame() {
@@ -351,6 +364,19 @@ void RenderCompositorNative::AttachExternalImage(
   MOZ_RELEASE_ASSERT(surface.mNativeLayers.size() == 1);
   MOZ_RELEASE_ASSERT(surface.mIsExternal);
   surface.mNativeLayers.begin()->second->AttachExternalImage(image);
+}
+
+void RenderCompositorNativeOGL::AttachExternalImage(
+    wr::NativeSurfaceId aId, wr::ExternalImageId aExternalImage) {
+  RenderTextureHost* image =
+      RenderThread::Get()->GetRenderTexture(aExternalImage);
+
+  // image->Lock only uses the channel index to populate the returned
+  // `WrExternalImage`. Since we don't use that, it doesn't matter
+  // what channel index we pass.
+  image->Lock(0, mGL);
+
+  RenderCompositorNative::AttachExternalImage(aId, aExternalImage);
 }
 
 void RenderCompositorNative::DestroySurface(NativeSurfaceId aId) {

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef dom_base_nsPIDOMWindowInlines_h___
-#define dom_base_nsPIDOMWindowInlines_h___
+#ifndef dom_base_nsPIDOMWindowInlines_h_
+#define dom_base_nsPIDOMWindowInlines_h_
 
 inline bool nsPIDOMWindowOuter::IsLoading() const {
   auto* win = GetCurrentInnerWindow();

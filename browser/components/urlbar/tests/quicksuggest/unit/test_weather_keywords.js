@@ -391,6 +391,10 @@ async function doKeywordsTest({
   info("Doing keywords test: " + desc);
   info(JSON.stringify({ nimbusValues, settingsData, minKeywordLength }));
 
+  let cleanup = GeolocationTestUtils.stubGeolocation(
+    GeolocationTestUtils.SAN_FRANCISCO
+  );
+
   let nimbusCleanup;
   if (nimbusValues) {
     nimbusCleanup = await UrlbarTestUtils.initNimbusFeature(nimbusValues);
@@ -433,6 +437,8 @@ async function doKeywordsTest({
   ]);
 
   UrlbarPrefs.clear("weather.minKeywordLength");
+
+  await cleanup();
 }
 
 // Tests the "Show less frequently" command when no show-less-frequently cap is
@@ -561,6 +567,10 @@ async function doShowLessFrequentlyTest({
   info("Doing increment test: " + desc);
   info(JSON.stringify({ weather, configuration, nimbusValues }));
 
+  let cleanup = GeolocationTestUtils.stubGeolocation(
+    GeolocationTestUtils.SAN_FRANCISCO
+  );
+
   let nimbusCleanup;
   if (nimbusValues) {
     nimbusCleanup = await UrlbarTestUtils.initNimbusFeature(nimbusValues);
@@ -648,4 +658,6 @@ async function doShowLessFrequentlyTest({
   ]);
   UrlbarPrefs.clear("weather.minKeywordLength");
   UrlbarPrefs.clear("weather.showLessFrequentlyCount");
+
+  await cleanup();
 }

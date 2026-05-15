@@ -17,6 +17,7 @@ import mozilla.components.concept.menu.candidate.TextMenuCandidate
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.support.ktx.android.util.dpToPx
 import org.mozilla.fenix.R
+import mozilla.components.ui.icons.R as iconsR
 
 typealias MozSearchEngine = SearchEngine
 
@@ -69,7 +70,7 @@ class SearchSelectorMenu(
             start = DrawableMenuIcon(
                 drawable = AppCompatResources.getDrawable(
                     context,
-                    R.drawable.mozac_ic_settings_24,
+                    iconsR.drawable.mozac_ic_settings_24,
                 ),
                 tint = context.getColorFromAttr(R.attr.textPrimary),
             ),

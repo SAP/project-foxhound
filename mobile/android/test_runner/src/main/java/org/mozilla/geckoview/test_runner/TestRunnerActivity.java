@@ -14,6 +14,7 @@ import android.content.pm.ActivityInfo;
 import android.graphics.SurfaceTexture;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Surface;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -21,9 +22,11 @@ import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.mozilla.geckoview.AllowOrDeny;
+import org.mozilla.geckoview.BuildConfig;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.ExperimentDelegate;
 import org.mozilla.geckoview.GeckoDisplay;
@@ -37,12 +40,15 @@ import org.mozilla.geckoview.GeckoView;
 import org.mozilla.geckoview.OrientationController;
 import org.mozilla.geckoview.WebExtension;
 import org.mozilla.geckoview.WebExtensionController;
+import org.mozilla.geckoview.WebNotification;
+import org.mozilla.geckoview.WebNotificationDelegate;
 import org.mozilla.geckoview.WebRequestError;
 
 public class TestRunnerActivity extends Activity {
   private static final String LOGTAG = "TestRunnerActivity";
   private static final String ERROR_PAGE =
       "<!DOCTYPE html><head><title>Error</title></head><body>Error!</body></html>";
+  private static final String TEST_RUNNER_EXT_ID = "test-runner-support@tests.mozilla.org";
 
   static GeckoRuntime sRuntime;
 
@@ -278,6 +284,9 @@ public class TestRunnerActivity extends Activity {
             final WebExtension extension,
             final GeckoSession session,
             final WebExtension.Action action) {
+          if (!mExtensions.containsKey(extension.id)) {
+            throw new RuntimeException("Extension not found: " + extension.id);
+          }
           mExtensions.get(extension.id).browserActions.put(session, action);
         }
 
@@ -286,6 +295,9 @@ public class TestRunnerActivity extends Activity {
             final WebExtension extension,
             final GeckoSession session,
             final WebExtension.Action action) {
+          if (!mExtensions.containsKey(extension.id)) {
+            throw new RuntimeException("Extension not found: " + extension.id);
+          }
           mExtensions.get(extension.id).pageActions.put(session, action);
         }
       };
@@ -447,22 +459,56 @@ public class TestRunnerActivity extends Activity {
               .updateUrl("http://mochi.test:8888/safebrowsing4-dummy/update")
               .build();
 
+      final ContentBlocking.SafeBrowsingProvider google5 =
+          ContentBlocking.SafeBrowsingProvider.from(
+                  ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER)
+              .getHashUrl("http://mochi.test:8888/safebrowsing5-dummy/gethash")
+              .updateUrl("http://mochi.test:8888/safebrowsing5-dummy/update")
+              .build();
+
       runtimeSettingsBuilder
           .consoleOutput(true)
           .contentBlocking(
               new ContentBlocking.Settings.Builder()
-                  .safeBrowsingProviders(google, googleLegacy)
+                  .safeBrowsingProviders(google, googleLegacy, google5)
                   .build())
-          .lowMemoryDetection(false); // Avoid unpredictability in tests
+          .lowMemoryDetection(false) // Avoid unpredictability in tests
+          .isolatedProcessEnabled(BuildConfig.MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS)
+          .appZygoteProcessEnabled(
+              Objects.equals(
+                  System.getenv("MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_WITH_ZYGOTE"), "1"));
 
       sRuntime = GeckoRuntime.create(this, runtimeSettingsBuilder.build());
 
       webExtensionController()
-          .setDebuggerDelegate(
-              new WebExtensionController.DebuggerDelegate() {
+          .setAddonManagerDelegate(
+              new WebExtensionController.AddonManagerDelegate() {
                 @Override
-                public void onExtensionListUpdated() {
-                  refreshExtensionList();
+                public void onInstalling(final @NonNull WebExtension extension) {
+                  // NOTE: doing this from onInstalled seems to not be early enough
+                  // and some mochitests (e.g. test_ext_runtime_getContexts.html)
+                  // end up triggering a race with the onBrowserAction method
+                  // being called due to the GeckoView request sent from
+                  // brawserAction API onManifestEntry lifecycle method.
+                  initExtensionWrapper(extension);
+                }
+
+                @Override
+                public void onEnabling(final @NonNull WebExtension extension) {
+                  // NOTE: similarly to onInstalled, onEnabled may still hit
+                  // a race with the call to onBrowserAction method originated
+                  // from the browserAction API onManifestEntry lifecycle method.
+                  initExtensionWrapper(extension);
+                }
+
+                @Override
+                public void onDisabled(final @NonNull WebExtension extension) {
+                  mExtensions.remove(extension.id);
+                }
+
+                @Override
+                public void onUninstalled(final @NonNull WebExtension extension) {
+                  mExtensions.remove(extension.id);
                 }
               });
 
@@ -473,9 +519,6 @@ public class TestRunnerActivity extends Activity {
                 extension.setMessageDelegate(mApiEngine, "test-runner-support");
                 extension.setTabDelegate(mTabDelegate);
               });
-
-      webExtensionController()
-          .setAddonManagerDelegate(new WebExtensionController.AddonManagerDelegate() {});
 
       sRuntime.setDelegate(
           () -> {
@@ -520,6 +563,14 @@ public class TestRunnerActivity extends Activity {
           @Override
           public GeckoResult<GeckoSession> onOpenWindow(@NonNull String url) {
             return mNavigationDelegate.onNewSession(mSession, url);
+          }
+        });
+
+    sRuntime.setWebNotificationDelegate(
+        new WebNotificationDelegate() {
+          @Override
+          public void onShowNotification(@NonNull WebNotification notification) {
+            notification.show();
           }
         });
   }
@@ -614,45 +665,59 @@ public class TestRunnerActivity extends Activity {
   // Random start timestamp for the BrowsingDataDelegate API.
   private static final int CLEAR_DATA_START_TIMESTAMP = 1234;
 
-  private void refreshExtensionList() {
-    webExtensionController()
-        .list()
-        .accept(
-            extensions -> {
-              mExtensions.clear();
-              for (final WebExtension extension : extensions) {
-                mExtensions.put(extension.id, new ExtensionWrapper(extension));
-                extension.setActionDelegate(mActionDelegate);
-                extension.setTabDelegate(mTabDelegate);
+  private void initExtensionWrapper(@NonNull WebExtension extension) {
+    // Trigger an explicit TestRunnerActivity crash if a new ExtensionWrapper
+    // would be overwriting an existing ExtensionWrapper for the same
+    // extension id (so that we may be hitting a failure in the same
+    // test case that is hitting a race between the onUninstalled/onDisabled
+    // AddonManagerDelegate methods removing an older ExtensionWrapper
+    // instance and the onInstalling/onEnabling AddonManagerDelegate methods
+    // creating a new one).
+    if (mExtensions.containsKey(extension.id)) {
+      throw new RuntimeException(
+          "Unexpected existing ExtensionWrapper found for add-on id: " + extension.id);
+    }
+    mExtensions.put(extension.id, new ExtensionWrapper(extension));
+    extension.setActionDelegate(mActionDelegate);
+    extension.setTabDelegate(mTabDelegate);
 
-                extension.setBrowsingDataDelegate(
-                    new WebExtension.BrowsingDataDelegate() {
-                      @Nullable
-                      @Override
-                      public GeckoResult<Settings> onGetSettings() {
-                        final long types =
-                            Type.CACHE
-                                | Type.COOKIES
-                                | Type.HISTORY
-                                | Type.FORM_DATA
-                                | Type.DOWNLOADS;
-                        return GeckoResult.fromValue(
-                            new Settings(CLEAR_DATA_START_TIMESTAMP, types, types));
-                      }
-                    });
+    extension.setBrowsingDataDelegate(
+        new WebExtension.BrowsingDataDelegate() {
+          @Nullable
+          @Override
+          public GeckoResult<Settings> onGetSettings() {
+            final long types =
+                Type.CACHE | Type.COOKIES | Type.HISTORY | Type.FORM_DATA | Type.DOWNLOADS;
+            return GeckoResult.fromValue(new Settings(CLEAR_DATA_START_TIMESTAMP, types, types));
+          }
+        });
 
-                for (final GeckoSession session : mOwnedSessions) {
-                  final WebExtension.SessionController controller =
-                      session.getWebExtensionController();
-                  controller.setActionDelegate(extension, mActionDelegate);
-                  controller.setTabDelegate(extension, mSessionTabDelegate);
-                }
-              }
-            });
+    for (final GeckoSession session : mOwnedSessions) {
+      final WebExtension.SessionController controller = session.getWebExtensionController();
+      controller.setActionDelegate(extension, mActionDelegate);
+      controller.setTabDelegate(extension, mSessionTabDelegate);
+    }
   }
 
   @Override
   protected void onDestroy() {
+    // Raise an explicit RuntimeException if some test extension has leaked an ExtensionWrapper
+    // instance in the TestRunnerActivity and trigger a more visible failure (in addition to
+    // the similar shutdown check done by the Gecko side of the test harness).
+    if (!mExtensions.isEmpty()) {
+      Boolean hasLeakedExtensionWrappers = false;
+      for (final String extensionId : mExtensions.keySet()) {
+        if (TEST_RUNNER_EXT_ID.equals(extensionId)) {
+          continue;
+        }
+        hasLeakedExtensionWrappers = true;
+        Log.e(LOGTAG, "ExtensionWrapper leaked for add-on id: " + extensionId);
+      }
+      if (hasLeakedExtensionWrappers) {
+        throw new RuntimeException(
+            "ExtensionWrapper instances leaked detected at TestRunnerActivity shutdown");
+      }
+    }
     mSession.close();
     super.onDestroy();
 

@@ -49,13 +49,12 @@ async function openCompatibilityView() {
  *        For the structure of issue items, see types.js.
  */
 async function assertIssueList(panel, expectedIssues) {
-  info("Check the number of issues");
-  await waitUntil(
+  await waitFor(
     () =>
       panel.querySelectorAll("[data-qa-property]").length ===
-      expectedIssues.length
+      expectedIssues.length,
+    "The number of issues is correct"
   );
-  ok(true, "The number of issues is correct");
 
   if (expectedIssues.length === 0) {
     // No issue.
@@ -229,7 +228,7 @@ async function assertNodeList(panel, expectedNodes) {
 /**
  * Get IssueItem of given property from given element.
  *
- * @param {String} property
+ * @param {string} property
  * @param {Element} element
  * @return {Element}
  */
@@ -241,8 +240,8 @@ function getIssueItem(property, element) {
  * Toggle enable/disable checkbox of a specific property on rule view.
  *
  * @param {Inspector} inspector
- * @param {Number} ruleIndex
- * @param {Number} propIndex
+ * @param {number} ruleIndex
+ * @param {number} propIndex
  */
 async function togglePropStatusOnRuleView(inspector, ruleIndex, propIndex) {
   const ruleView = inspector.getPanel("ruleview").view;
@@ -263,7 +262,7 @@ async function togglePropStatusOnRuleView(inspector, ruleIndex, propIndex) {
 /**
  * Return a promise which waits for COMPATIBILITY_UPDATE_SELECTED_NODE_COMPLETE action.
  *
- * @param {Object} store
+ * @param {object} store
  * @return {Promise}
  */
 function waitForUpdateSelectedNodeAction(store) {
@@ -273,7 +272,7 @@ function waitForUpdateSelectedNodeAction(store) {
 /**
  * Return a promise which waits for COMPATIBILITY_UPDATE_TOP_LEVEL_TARGET_COMPLETE action.
  *
- * @param {Object} store
+ * @param {object} store
  * @return {Promise}
  */
 function waitForUpdateTopLevelTargetAction(store) {

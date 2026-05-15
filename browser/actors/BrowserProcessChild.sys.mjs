@@ -13,13 +13,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export class BrowserProcessChild extends JSProcessActorChild {
   receiveMessage(message) {
     switch (message.name) {
-      case "AboutHomeStartupCache:InputStreams":
+      case "AboutHomeStartupCache:InputStreams": {
         let { pageInputStream, scriptInputStream } = message.data;
         lazy.AboutHomeStartupCacheChild.init(
           pageInputStream,
           scriptInputStream
         );
         break;
+      }
     }
   }
 

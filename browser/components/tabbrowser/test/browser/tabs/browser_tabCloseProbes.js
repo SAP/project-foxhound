@@ -49,8 +49,8 @@ function assertCount(snapshot, expectedCount) {
  *        The Telemetry histogram to examine.
  * @param expectedCount (int)
  *        What we expect the number of incremented counts to become.
- * @return (Promise)
- * @resolves When the histogram snapshot count becomes the expected count.
+ * @returns {Promise<void>}
+ *   Resolves when the histogram snapshot count becomes the expected count.
  */
 function waitForSnapshotCount(histogram, expectedCount) {
   return BrowserTestUtils.waitForCondition(() => {

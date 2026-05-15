@@ -188,6 +188,7 @@ void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
     // in future if we get better at handling things like `lang=zh-Hant`, not
     // just resolving based on the Unicode text.
     case Script::TRADITIONAL_HAN:
+    case Script::TRADITIONAL_HAN_WITH_LATIN:
       aFontList.AppendElement("Songti TC");
       if (aCh > 0x10000) {
         // macOS installations with MS Office may have these -ExtB fonts
@@ -656,6 +657,10 @@ void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
     case Script::SUNUWAR:
     case Script::TODHRI:
     case Script::TULU_TIGALARI:
+    case Script::BERIA_ERFE:
+    case Script::SIDETIC:
+    case Script::TAI_YO:
+    case Script::TOLONG_SIKI:
       break;
   }
 
@@ -734,33 +739,48 @@ class OSXVsyncSource final : public VsyncSource {
   OSXVsyncSource() : mDisplayLink(nullptr, "OSXVsyncSource::mDisplayLink") {
     MOZ_ASSERT(NS_IsMainThread());
     mTimer = NS_NewTimer();
-    CGDisplayRegisterReconfigurationCallback(DisplayReconfigurationCallback,
-                                             this);
+    CGError err = CGDisplayRegisterReconfigurationCallback(
+        DisplayReconfigurationCallback, this);
+    if (err != kCGErrorSuccess) {
+      gfxWarning() << "Failed to register display reconfiguration callback";
+      // We're in a tricky situation. Without a working reconfiguration
+      // callback, we might fail to recover from sleep. Best to early exit
+      // without creating a display link, and fall back to software vsync.
+      return;
+    }
+
     CreateDisplayLink();
+    auto displayLink = mDisplayLink.Lock();
+    if (!*displayLink) {
+      gfxWarning()
+          << "Could not create a display link during construction. This is "
+             "unrecoverable. We'll fallback to software vsync.";
+    }
   }
 
   virtual ~OSXVsyncSource() {
     MOZ_ASSERT(NS_IsMainThread());
-    CGDisplayRemoveReconfigurationCallback(DisplayReconfigurationCallback,
-                                           this);
-    DisableVsync();
-    DestroyDisplayLink();
+    Shutdown();
   }
 
-  static void RetryCreateDisplayLink(nsITimer* aTimer, void* aOsxVsyncSource) {
+  static void RetryCreateDisplayLinkAndEnableVsync(nsITimer* aTimer,
+                                                   void* aOsxVsyncSource) {
     MOZ_ASSERT(NS_IsMainThread());
     OSXVsyncSource* osxVsyncSource =
         static_cast<OSXVsyncSource*>(aOsxVsyncSource);
     MOZ_ASSERT(osxVsyncSource);
+
+    osxVsyncSource->DisableVsync();
+    osxVsyncSource->DestroyDisplayLink();
     osxVsyncSource->CreateDisplayLink();
-  }
-
-  static void RetryEnableVsync(nsITimer* aTimer, void* aOsxVsyncSource) {
-    MOZ_ASSERT(NS_IsMainThread());
-    OSXVsyncSource* osxVsyncSource =
-        static_cast<OSXVsyncSource*>(aOsxVsyncSource);
-    MOZ_ASSERT(osxVsyncSource);
     osxVsyncSource->EnableVsync();
+
+    if (!osxVsyncSource->IsVsyncEnabled()) {
+      gfxWarning() << "Display reconfiguration vsync has failed; giving up.";
+      osxVsyncSource->Shutdown();
+      gfxPlatform::ResetHardwareVsyncSource();
+      gfxPlatform::ReInitFrameRate(nullptr, nullptr);
+    }
   }
 
   void CreateDisplayLink() {
@@ -774,6 +794,11 @@ class OSXVsyncSource final : public VsyncSource {
     // with all displays running on the computer But if we have different
     // monitors at different display rates, we may hit issues.
     CVReturn retval = CVDisplayLinkCreateWithActiveCGDisplays(&*displayLink);
+    if (!*displayLink) {
+      gfxWarning()
+          << "Could not create a display link with all active displays.";
+      return;
+    }
 
     // Workaround for bug 1201401: CVDisplayLinkCreateWithCGDisplays()
     // (called by CVDisplayLinkCreateWithActiveCGDisplays()) sometimes
@@ -789,37 +814,18 @@ class OSXVsyncSource final : public VsyncSource {
       retval = kCVReturnInvalidDisplay;
     }
 
-    if (!*displayLink || (retval != kCVReturnSuccess)) {
-      NS_WARNING(
-          "Could not create a display link with all active displays. "
-          "Retrying");
-      if (*displayLink) {
-        CVDisplayLinkRelease(*displayLink);
-        *displayLink = nullptr;
-      }
-
-      // bug 1142708 - When coming back from sleep,
-      // or when changing displays, active displays may not be ready yet,
-      // even if listening for the kIOMessageSystemHasPoweredOn event
-      // from OS X sleep notifications.
-      // Active displays are those that are drawable.
-      // bug 1144638 - When changing display configurations and getting
-      // notifications from CGDisplayReconfigurationCallBack, the
-      // callback gets called twice for each active display
-      // so it's difficult to know when all displays are active.
-      // Instead, try again soon. The delay is arbitrary. 100ms chosen
-      // because on a late 2013 15" retina, it takes about that
-      // long to come back up from sleep.
-      uint32_t delay = 100;
-      mTimer->InitWithNamedFuncCallback(RetryCreateDisplayLink, this, delay,
-                                        nsITimer::TYPE_ONE_SHOT,
-                                        "RetryCreateDisplayLink");
+    if (retval != kCVReturnSuccess) {
+      gfxWarning()
+          << "Display link was created, but is malformed; destroying it.";
+      CVDisplayLinkRelease(*displayLink);
+      *displayLink = nullptr;
       return;
     }
 
     if (CVDisplayLinkSetOutputCallback(*displayLink, &VsyncCallback, this) !=
         kCVReturnSuccess) {
-      NS_WARNING("Could not set displaylink output callback");
+      gfxWarning()
+          << "Could not set display link output callback; destroying it.";
       CVDisplayLinkRelease(*displayLink);
       *displayLink = nullptr;
     }
@@ -842,20 +848,20 @@ class OSXVsyncSource final : public VsyncSource {
 
     auto displayLink = mDisplayLink.Lock();
     if (!*displayLink) {
-      NS_WARNING("No display link available when starting vsync");
+      gfxWarning() << "No display link available when starting vsync.";
       return;
     }
 
     mPreviousTimestamp = TimeStamp::Now();
     if (CVDisplayLinkStart(*displayLink) != kCVReturnSuccess) {
-      NS_WARNING("Could not activate the display link");
+      gfxWarning() << "Could not activate the display link.";
       return;
     }
 
     CVTime vsyncRate =
         CVDisplayLinkGetNominalOutputVideoRefreshPeriod(*displayLink);
     if (vsyncRate.flags & kCVTimeIsIndefinite) {
-      NS_WARNING("Could not get vsync rate, setting to 60.");
+      gfxWarning() << "Could not get vsync rate, setting to 60.";
       mVsyncRate = TimeDuration::FromMilliseconds(1000.0 / 60.0);
     } else {
       int64_t timeValue = vsyncRate.timeValue;
@@ -892,8 +898,12 @@ class OSXVsyncSource final : public VsyncSource {
 
   void Shutdown() override {
     MOZ_ASSERT(NS_IsMainThread());
-    mTimer->Cancel();
-    mTimer = nullptr;
+    if (mTimer) {
+      mTimer->Cancel();
+      mTimer = nullptr;
+    }
+    CGDisplayRemoveReconfigurationCallback(DisplayReconfigurationCallback,
+                                           this);
     DisableVsync();
     DestroyDisplayLink();
   }
@@ -950,10 +960,12 @@ class OSXVsyncSource final : public VsyncSource {
       // Check if we actually succeeded in enabling vsync, and if we didn't,
       // retry one time.
       if (!IsVsyncEnabled()) {
+        gfxWarning()
+            << "Display reconfiguration vsync has failed; retrying one time.";
         uint32_t delay = 100;
-        mTimer->InitWithNamedFuncCallback(RetryCreateDisplayLink, this, delay,
-                                          nsITimer::TYPE_ONE_SHOT,
-                                          "RetryEnableVsync");
+        mTimer->InitWithNamedFuncCallback(
+            RetryCreateDisplayLinkAndEnableVsync, this, delay,
+            nsITimer::TYPE_ONE_SHOT, "RetryCreateDisplayLinkAndEnableVsync"_ns);
       }
     }
   }
@@ -1007,8 +1019,8 @@ gfxPlatformMac::CreateGlobalHardwareVsyncSource() {
   RefPtr<VsyncSource> osxVsyncSource = new OSXVsyncSource();
   osxVsyncSource->EnableVsync();
   if (!osxVsyncSource->IsVsyncEnabled()) {
-    NS_WARNING(
-        "OS X Vsync source not enabled. Falling back to software vsync.");
+    gfxWarning()
+        << "OS X Vsync source not enabled. Falling back to software vsync.";
     return GetSoftwareVsyncSource();
   }
 
@@ -1060,10 +1072,3 @@ nsTArray<uint8_t> gfxPlatformMac::GetPlatformCMSOutputProfileData() {
 }
 
 bool gfxPlatformMac::CheckVariationFontSupport() { return true; }
-
-void gfxPlatformMac::InitPlatformGPUProcessPrefs() {
-  FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
-  gpuProc.ForceDisable(FeatureStatus::Blocked,
-                       "GPU process does not work on Mac",
-                       "FEATURE_FAILURE_MAC_GPU_PROC"_ns);
-}

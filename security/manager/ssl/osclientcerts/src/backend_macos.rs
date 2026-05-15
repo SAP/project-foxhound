@@ -14,11 +14,12 @@ use core_foundation::error::*;
 use core_foundation::number::*;
 use core_foundation::string::*;
 use libloading::{Library, Symbol};
+use log::error;
 use pkcs11_bindings::*;
-use rsclientcerts::error::{Error, ErrorType};
+use rsclientcerts::cryptoki::*;
 use rsclientcerts::manager::{ClientCertsBackend, CryptokiObject, Sign};
-use rsclientcerts::util::*;
-use sha2::{Digest, Sha256};
+use rsclientcerts_util::*;
+use rsclientcerts_util::error::{Error, ErrorType};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::os::raw::c_void;
@@ -227,6 +228,9 @@ fn sec_key_create_signature(
         )
     };
     if signature.is_null() {
+        if error.is_null() {
+            return Err(error_here!(ErrorType::ExternalError));
+        }
         let error = unsafe { CFError::wrap_under_create_rule(error) };
         return Err(error_here!(
             ErrorType::ExternalError,
@@ -236,8 +240,12 @@ fn sec_key_create_signature(
     Ok(unsafe { CFData::wrap_under_create_rule(signature) })
 }
 
-fn sec_key_copy_attributes<T: TCFType>(key: &SecKey) -> CFDictionary<CFString, T> {
-    unsafe { CFDictionary::wrap_under_create_rule(SecKeyCopyAttributes(key.as_concrete_TypeRef())) }
+fn sec_key_copy_attributes<T: TCFType>(key: &SecKey) -> Result<CFDictionary<CFString, T>, Error> {
+    let attributes = unsafe { SecKeyCopyAttributes(key.as_concrete_TypeRef()) };
+    if attributes.is_null() {
+        return Err(error_here!(ErrorType::ExternalError));
+    }
+    Ok(unsafe { CFDictionary::wrap_under_create_rule(attributes) })
 }
 
 fn sec_key_copy_external_representation(key: &SecKey) -> Result<CFData, Error> {
@@ -245,6 +253,9 @@ fn sec_key_copy_external_representation(key: &SecKey) -> Result<CFData, Error> {
     let representation =
         unsafe { SecKeyCopyExternalRepresentation(key.as_concrete_TypeRef(), &mut error) };
     if representation.is_null() {
+        if error.is_null() {
+            return Err(error_here!(ErrorType::ExternalError));
+        }
         let error = unsafe { CFError::wrap_under_create_rule(error) };
         return Err(error_here!(
             ErrorType::ExternalError,
@@ -295,116 +306,15 @@ fn sec_identity_copy_private_key(identity: &SecIdentity) -> Result<SecKey, Error
     Ok(unsafe { SecKey::wrap_under_create_rule(key) })
 }
 
-pub struct Cert {
-    class: Vec<u8>,
-    token: Vec<u8>,
-    id: Vec<u8>,
-    label: Vec<u8>,
-    value: Vec<u8>,
-    issuer: Vec<u8>,
-    serial_number: Vec<u8>,
-    subject: Vec<u8>,
+fn new_cert_from_identity(identity: &SecIdentity) -> Result<CryptokiCert, Error> {
+    let certificate = sec_identity_copy_certificate(identity)?;
+    new_cert_from_certificate(&certificate)
 }
 
-impl Cert {
-    fn new_from_identity(identity: &SecIdentity) -> Result<Cert, Error> {
-        let certificate = sec_identity_copy_certificate(identity)?;
-        Cert::new_from_certificate(&certificate)
-    }
-
-    fn new_from_certificate(certificate: &SecCertificate) -> Result<Cert, Error> {
-        let label = sec_certificate_copy_subject_summary(certificate)?;
-        let der = sec_certificate_copy_data(certificate)?;
-        let der = der.bytes().to_vec();
-        let id = Sha256::digest(&der).to_vec();
-        let (serial_number, issuer, subject) = read_encoded_certificate_identifiers(&der)?;
-        Ok(Cert {
-            class: serialize_uint(CKO_CERTIFICATE)?,
-            token: serialize_uint(CK_TRUE)?,
-            id,
-            label: label.to_string().into_bytes(),
-            value: der,
-            issuer,
-            serial_number,
-            subject,
-        })
-    }
-
-    fn class(&self) -> &[u8] {
-        &self.class
-    }
-
-    fn token(&self) -> &[u8] {
-        &self.token
-    }
-
-    fn id(&self) -> &[u8] {
-        &self.id
-    }
-
-    fn label(&self) -> &[u8] {
-        &self.label
-    }
-
-    fn value(&self) -> &[u8] {
-        &self.value
-    }
-
-    fn issuer(&self) -> &[u8] {
-        &self.issuer
-    }
-
-    fn serial_number(&self) -> &[u8] {
-        &self.serial_number
-    }
-
-    fn subject(&self) -> &[u8] {
-        &self.subject
-    }
-}
-
-impl CryptokiObject for Cert {
-    fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
-        for (attr_type, attr_value) in attrs {
-            let comparison = match *attr_type {
-                CKA_CLASS => self.class(),
-                CKA_TOKEN => self.token(),
-                CKA_LABEL => self.label(),
-                CKA_ID => self.id(),
-                CKA_VALUE => self.value(),
-                CKA_ISSUER => self.issuer(),
-                CKA_SERIAL_NUMBER => self.serial_number(),
-                CKA_SUBJECT => self.subject(),
-                _ => return false,
-            };
-            if attr_value.as_slice() != comparison {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
-        let result = match attribute {
-            CKA_CLASS => self.class(),
-            CKA_TOKEN => self.token(),
-            CKA_LABEL => self.label(),
-            CKA_ID => self.id(),
-            CKA_VALUE => self.value(),
-            CKA_ISSUER => self.issuer(),
-            CKA_SERIAL_NUMBER => self.serial_number(),
-            CKA_SUBJECT => self.subject(),
-            _ => return None,
-        };
-        Some(result)
-    }
-}
-
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug)]
-pub enum KeyType {
-    EC(usize),
-    RSA,
+fn new_cert_from_certificate(certificate: &SecCertificate) -> Result<CryptokiCert, Error> {
+    let der = sec_certificate_copy_data(certificate)?.bytes().to_vec();
+    let label = sec_certificate_copy_subject_summary(certificate)?;
+    CryptokiCert::new(der, label.to_string().into_bytes())
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -525,7 +435,7 @@ impl ThreadSpecificHandles {
 
     fn sign(
         &mut self,
-        key_type_enum: KeyType,
+        key_type: KeyType,
         maybe_modulus: Option<Vec<u8>>,
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
@@ -538,14 +448,14 @@ impl ThreadSpecificHandles {
         let data = data.to_vec();
         let params = params.clone();
         let task = moz_task::spawn_onto("sign", &thread, async move {
-            let result = sign_internal(&identity, &mut maybe_key, key_type_enum, &data, &params);
+            let result = sign_internal(&identity, &mut maybe_key, key_type, &data, &params);
             if result.is_ok() {
                 return (result, identity, maybe_key);
             }
             // Some devices appear to not work well when the key handle is held for too long or if a
             // card is inserted/removed while Firefox is running. Try refreshing the key handle.
             let _ = maybe_key.take();
-            let result = sign_internal(&identity, &mut maybe_key, key_type_enum, &data, &params);
+            let result = sign_internal(&identity, &mut maybe_key, key_type, &data, &params);
             // If this succeeded, return the result.
             if result.is_ok() {
                 return (result, identity, maybe_key);
@@ -573,7 +483,7 @@ impl ThreadSpecificHandles {
                 sign_internal(
                     &identity,
                     &mut maybe_key,
-                    key_type_enum,
+                    key_type,
                     &emsa_pss_encoded,
                     &None,
                 ),
@@ -591,7 +501,7 @@ impl ThreadSpecificHandles {
 fn sign_internal(
     identity: &SecIdentity,
     maybe_key: &mut Option<SecKey>,
-    key_type_enum: KeyType,
+    key_type: KeyType,
     data: &[u8],
     params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
 ) -> Result<Vec<u8>, Error> {
@@ -605,11 +515,11 @@ fn sign_internal(
     let Some(key) = maybe_key.as_ref() else {
         return Err(error_here!(ErrorType::LibraryFailure));
     };
-    let sign_params = SignParams::new(key_type_enum, data, params)?;
+    let sign_params = SignParams::new(key_type, data, params)?;
     let signing_algorithm = sign_params.get_algorithm();
     let data_to_sign = CFData::from_buffer(sign_params.get_data_to_sign());
     let signature = sec_key_create_signature(key, signing_algorithm, &data_to_sign)?;
-    let signature_value = match key_type_enum {
+    let signature_value = match key_type {
         KeyType::EC(coordinate_width) => {
             // We need to convert the DER Ecdsa-Sig-Value to the
             // concatenation of r and s, the coordinates of the point on
@@ -647,34 +557,23 @@ impl Drop for ThreadSpecificHandles {
 
 pub struct Key {
     handles: ThreadSpecificHandles,
-    class: Vec<u8>,
-    token: Vec<u8>,
-    id: Vec<u8>,
-    private: Vec<u8>,
-    key_type: Vec<u8>,
-    modulus: Option<Vec<u8>>,
-    ec_params: Option<Vec<u8>>,
-    key_type_enum: KeyType,
+    cryptoki_key: CryptokiKey,
 }
 
 impl Key {
     fn new(identity: &SecIdentity, thread: &nsIEventTarget) -> Result<Key, Error> {
         let certificate = sec_identity_copy_certificate(identity)?;
         let der = sec_certificate_copy_data(&certificate)?;
-        let id = Sha256::digest(der.bytes()).to_vec();
         let key = SECURITY_FRAMEWORK.sec_certificate_copy_key(&certificate)?;
         let key_type: CFString = get_key_attribute(&key, unsafe { kSecAttrKeyType })?;
         let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
-        let mut modulus = None;
-        let mut ec_params = None;
         let sec_attr_key_type_ec =
             unsafe { CFString::wrap_under_create_rule(kSecAttrKeyTypeECSECPrimeRandom) };
-        let (key_type_enum, key_type_attribute) =
+        let (modulus, ec_params) =
             if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeRSA } {
                 let public_key = sec_key_copy_external_representation(&key)?;
-                let modulus_value = read_rsa_modulus(public_key.bytes())?;
-                modulus = Some(modulus_value);
-                (KeyType::RSA, CKK_RSA)
+                let modulus = read_rsa_modulus(public_key.bytes())?;
+                (Some(modulus), None)
             } else if key_type == sec_attr_key_type_ec {
                 // Assume all EC keys are secp256r1, secp384r1, or secp521r1. This
                 // is wrong, but the API doesn't seem to give us a way to determine
@@ -685,109 +584,31 @@ impl Key {
                     Some(value) => value,
                     None => return Err(error_here!(ErrorType::ValueTooLarge)),
                 };
-                match key_size_in_bits {
-                    256 => ec_params = Some(ENCODED_OID_BYTES_SECP256R1.to_vec()),
-                    384 => ec_params = Some(ENCODED_OID_BYTES_SECP384R1.to_vec()),
-                    521 => ec_params = Some(ENCODED_OID_BYTES_SECP521R1.to_vec()),
+                let ec_params = match key_size_in_bits {
+                    256 => ENCODED_OID_BYTES_SECP256R1.to_vec(),
+                    384 => ENCODED_OID_BYTES_SECP384R1.to_vec(),
+                    521 => ENCODED_OID_BYTES_SECP521R1.to_vec(),
                     _ => return Err(error_here!(ErrorType::UnsupportedInput)),
-                }
-                let coordinate_width = (key_size_in_bits as usize + 7) / 8;
-                (KeyType::EC(coordinate_width), CKK_EC)
+                };
+                (None, Some(ec_params))
             } else {
                 return Err(error_here!(ErrorType::LibraryFailure));
             };
 
         Ok(Key {
             handles: ThreadSpecificHandles::new(identity.clone(), thread),
-            class: serialize_uint(CKO_PRIVATE_KEY)?,
-            token: serialize_uint(CK_TRUE)?,
-            id,
-            private: serialize_uint(CK_TRUE)?,
-            key_type: serialize_uint(key_type_attribute)?,
-            modulus,
-            ec_params,
-            key_type_enum,
+            cryptoki_key: CryptokiKey::new(modulus, ec_params, der.bytes())?,
         })
-    }
-
-    fn class(&self) -> &[u8] {
-        &self.class
-    }
-
-    fn token(&self) -> &[u8] {
-        &self.token
-    }
-
-    fn id(&self) -> &[u8] {
-        &self.id
-    }
-
-    fn private(&self) -> &[u8] {
-        &self.private
-    }
-
-    fn key_type(&self) -> &[u8] {
-        &self.key_type
-    }
-
-    fn modulus(&self) -> Option<&[u8]> {
-        match &self.modulus {
-            Some(modulus) => Some(modulus.as_slice()),
-            None => None,
-        }
-    }
-
-    fn ec_params(&self) -> Option<&[u8]> {
-        match &self.ec_params {
-            Some(ec_params) => Some(ec_params.as_slice()),
-            None => None,
-        }
     }
 }
 
 impl CryptokiObject for Key {
     fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
-        for (attr_type, attr_value) in attrs {
-            let comparison = match *attr_type {
-                CKA_CLASS => self.class(),
-                CKA_TOKEN => self.token(),
-                CKA_ID => self.id(),
-                CKA_PRIVATE => self.private(),
-                CKA_KEY_TYPE => self.key_type(),
-                CKA_MODULUS => {
-                    if let Some(modulus) = self.modulus() {
-                        modulus
-                    } else {
-                        return false;
-                    }
-                }
-                CKA_EC_PARAMS => {
-                    if let Some(ec_params) = self.ec_params() {
-                        ec_params
-                    } else {
-                        return false;
-                    }
-                }
-                _ => return false,
-            };
-            if attr_value.as_slice() != comparison {
-                return false;
-            }
-        }
-        true
+        self.cryptoki_key.matches(attrs)
     }
 
     fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
-        match attribute {
-            CKA_CLASS => Some(self.class()),
-            CKA_TOKEN => Some(self.token()),
-            CKA_ID => Some(self.id()),
-            CKA_PRIVATE => Some(self.private()),
-            CKA_KEY_TYPE => Some(self.key_type()),
-            CKA_MODULUS => self.modulus(),
-            CKA_EC_PARAMS => self.ec_params(),
-            _ => None,
-        }
+        self.cryptoki_key.get_attribute(attribute)
     }
 }
 
@@ -809,13 +630,17 @@ impl Sign for Key {
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
     ) -> Result<Vec<u8>, Error> {
-        self.handles
-            .sign(self.key_type_enum, self.modulus.clone(), data, params)
+        self.handles.sign(
+            self.cryptoki_key.key_type(),
+            self.cryptoki_key.modulus().clone(),
+            data,
+            params,
+        )
     }
 }
 
 fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, Error> {
-    let attributes: CFDictionary<CFString, T> = sec_key_copy_attributes(key);
+    let attributes: CFDictionary<CFString, T> = sec_key_copy_attributes(key)?;
     match attributes.find(attr as *const _) {
         Some(value) => Ok((*value).clone()),
         None => Err(error_here!(ErrorType::ExternalError)),
@@ -900,11 +725,16 @@ impl Backend {
     }
 }
 
+const SLOT_DESCRIPTION_BYTES: &[u8; 64] =
+    b"OS Client Cert Slot                                             ";
+const TOKEN_LABEL_BYTES: &[u8; 32] = b"OS Client Cert Token            ";
+const TOKEN_MODEL_BYTES: &[u8; 16] = b"osclientcerts   ";
+const TOKEN_SERIAL_NUMBER_BYTES: &[u8; 16] = b"0000000000000000";
+
 impl ClientCertsBackend for Backend {
-    type Cert = Cert;
     type Key = Key;
 
-    fn find_objects(&mut self) -> Result<(Vec<Cert>, Vec<Key>), Error> {
+    fn find_objects(&mut self) -> Result<(Vec<CryptokiCert>, Vec<Key>), Error> {
         match self.last_scan_finished {
             Some(last_scan_finished) => {
                 if Instant::now().duration_since(last_scan_finished) < Duration::new(3, 0) {
@@ -922,9 +752,32 @@ impl ClientCertsBackend for Backend {
         self.last_scan_finished = Some(Instant::now());
         result
     }
+
+    fn get_slot_info(&self) -> CK_SLOT_INFO {
+        CK_SLOT_INFO {
+            slotDescription: *SLOT_DESCRIPTION_BYTES,
+            manufacturerID: *crate::MANUFACTURER_ID_BYTES,
+            flags: CKF_TOKEN_PRESENT,
+            ..Default::default()
+        }
+    }
+
+    fn get_token_info(&self) -> CK_TOKEN_INFO {
+        CK_TOKEN_INFO {
+            label: *TOKEN_LABEL_BYTES,
+            manufacturerID: *crate::MANUFACTURER_ID_BYTES,
+            model: *TOKEN_MODEL_BYTES,
+            serialNumber: *TOKEN_SERIAL_NUMBER_BYTES,
+            ..Default::default()
+        }
+    }
+
+    fn get_mechanism_list(&self) -> Vec<CK_MECHANISM_TYPE> {
+        vec![CKM_ECDSA, CKM_RSA_PKCS, CKM_RSA_PKCS_PSS]
+    }
 }
 
-fn find_objects(thread: &nsIEventTarget) -> Result<(Vec<Cert>, Vec<Key>), Error> {
+fn find_objects(thread: &nsIEventTarget) -> Result<(Vec<CryptokiCert>, Vec<Key>), Error> {
     let mut certs = Vec::new();
     let mut keys = Vec::new();
     let identities = unsafe {
@@ -955,7 +808,7 @@ fn find_objects(thread: &nsIEventTarget) -> Result<(Vec<Cert>, Vec<Key>), Error>
     };
     for identity in identities.get_all_values().iter() {
         let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };
-        let cert = Cert::new_from_identity(&identity);
+        let cert = new_cert_from_identity(&identity);
         let key = Key::new(&identity, thread);
         if let (Ok(cert), Ok(key)) = (cert, key) {
             certs.push(cert);
@@ -965,7 +818,7 @@ fn find_objects(thread: &nsIEventTarget) -> Result<(Vec<Cert>, Vec<Key>), Error>
         }
         if let Ok(issuers) = get_issuers(&identity) {
             for issuer in issuers {
-                if let Ok(cert) = Cert::new_from_certificate(&issuer) {
+                if let Ok(cert) = new_cert_from_certificate(&issuer) {
                     certs.push(cert);
                 }
             }

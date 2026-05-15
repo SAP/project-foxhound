@@ -530,14 +530,20 @@ async function runTest(test, getObservances) {
   });
 
   let doc = gBrowser.contentDocument;
-  let historyMode = doc.getElementById("historyMode");
-  historyMode.value = "custom";
-  historyMode.doCommand();
+
+  await selectHistoryMode(gBrowser.contentWindow, "custom");
 
   let promiseSubDialogLoaded = promiseLoadSubDialog(
     "chrome://browser/content/preferences/dialogs/permissions.xhtml"
   );
-  doc.getElementById("cookieExceptions").doCommand();
+
+  let cookieExceptionsButton = doc.getElementById("cookieExceptions");
+  cookieExceptionsButton.scrollIntoView();
+  await EventUtils.synthesizeMouseAtCenter(
+    cookieExceptionsButton,
+    {},
+    doc.ownerGlobal
+  );
 
   let win = await promiseSubDialogLoaded;
 

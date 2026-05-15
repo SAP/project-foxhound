@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef FuzzySocketControl_h__
-#define FuzzySocketControl_h__
+#ifndef FuzzySocketControl_h_
+#define FuzzySocketControl_h_
 
 #include "nsITLSSocketControl.h"
 
@@ -26,4 +26,4 @@ class FuzzySocketControl final : public nsITLSSocketControl {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // FuzzySocketControl_h__
+#endif  // FuzzySocketControl_h_

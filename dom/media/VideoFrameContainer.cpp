@@ -6,6 +6,8 @@
 
 #include "VideoFrameContainer.h"
 
+#include "mozilla/Logging.h"
+
 #ifdef MOZ_WIDGET_ANDROID
 #  include "GLImages.h"  // for SurfaceTextureImage
 #endif
@@ -15,6 +17,8 @@
 #include "mozilla/gfx/gfxVars.h"
 
 using namespace mozilla::layers;
+
+mozilla::LazyLogModule gVideoFrameContainer("VideoFrameContainer");
 
 namespace mozilla {
 #define NS_DispatchToMainThread(...) CompileError_UseAbstractMainThreadInstead
@@ -64,16 +68,11 @@ void VideoFrameContainer::UpdatePrincipalHandleForFrameIDLocked(
 
 #ifdef MOZ_WIDGET_ANDROID
 static void NotifySetCurrent(Image* aImage) {
-  if (aImage == nullptr) {
-    return;
+  if (aImage) {
+    MOZ_LOG_FMT(gVideoFrameContainer, LogLevel::Debug,
+                "NotifySetCurrent, serial={}", aImage->GetSerial());
+    aImage->OnSetCurrent();
   }
-
-  SurfaceTextureImage* image = aImage->AsSurfaceTextureImage();
-  if (image == nullptr) {
-    return;
-  }
-
-  image->OnSetCurrent();
 }
 #endif
 
@@ -81,6 +80,11 @@ void VideoFrameContainer::SetCurrentFrame(
     const gfx::IntSize& aIntrinsicSize, Image* aImage,
     const TimeStamp& aTargetTime, const media::TimeUnit& aProcessingDuration,
     const media::TimeUnit& aMediaTime) {
+  MOZ_LOG_FMT(
+      gVideoFrameContainer, LogLevel::Debug,
+      "SetCurrentFrame, processing duration={}us,pts={}",
+      aProcessingDuration.IsValid() ? aProcessingDuration.ToMicroseconds() : -1,
+      aMediaTime.ToString());
 #ifdef MOZ_WIDGET_ANDROID
   NotifySetCurrent(aImage);
 #endif
@@ -96,11 +100,13 @@ void VideoFrameContainer::SetCurrentFrame(
 void VideoFrameContainer::SetCurrentFrames(
     const gfx::IntSize& aIntrinsicSize,
     const nsTArray<ImageContainer::NonOwningImage>& aImages) {
+  MOZ_LOG_FMT(gVideoFrameContainer, LogLevel::Debug,
+              "SetCurrentFrames ({} images)", aImages.Length());
 #ifdef MOZ_WIDGET_ANDROID
   // When there are multiple frames, only the last one is effective
   // (see bug 1299068 comment 4). Here I just count on VideoSink and VideoOutput
   // to send one frame at a time and warn if not.
-  Unused << NS_WARN_IF(aImages.Length() > 1);
+  (void)NS_WARN_IF(aImages.Length() > 1);
   for (auto& image : aImages) {
     NotifySetCurrent(image.mImage);
   }
@@ -118,6 +124,8 @@ static bool Is8BitImage(const ImageContainer::NonOwningImage& aFrame) {
 void VideoFrameContainer::SetCurrentFramesLocked(
     const gfx::IntSize& aIntrinsicSize,
     const nsTArray<ImageContainer::NonOwningImage>& aImages) {
+  MOZ_LOG_FMT(gVideoFrameContainer, LogLevel::Debug,
+              "SetCurrentFramesLocked ({} images", aImages.Length());
   mMutex.AssertCurrentThreadOwns();
 
   MOZ_ASSERT(!SupportsOnly8BitImage() ||
@@ -182,6 +190,7 @@ void VideoFrameContainer::SetCurrentFramesLocked(
 void VideoFrameContainer::ClearFutureFrames(TimeStamp aNow) {
   MutexAutoLock lock(mMutex);
 
+  MOZ_LOG_FMT(gVideoFrameContainer, LogLevel::Debug, "ClearFutureFrame");
   // See comment in SetCurrentFrame for the reasoning behind
   // using a kungFuDeathGrip here.
   AutoTArray<ImageContainer::OwningImage, 10> kungFuDeathGrip;

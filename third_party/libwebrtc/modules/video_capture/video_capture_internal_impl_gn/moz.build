@@ -19,16 +19,17 @@ DEFINES["PROTOBUF_ENABLE_DEBUG_LOGGING_MAY_LEAK_PII"] = "0"
 DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
+DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
 DEFINES["WEBRTC_MOZILLA_BUILD"] = True
 DEFINES["WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS"] = "0"
 DEFINES["WEBRTC_STRICT_FIELD_TRIALS"] = "0"
-DEFINES["_LIBCPP_HARDENING_MODE"] = "_LIBCPP_HARDENING_MODE_NONE"
 
 FINAL_LIBRARY = "xul"
 
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
@@ -85,15 +86,10 @@ if CONFIG["OS_TARGET"] == "Linux":
     DEFINES["WEBRTC_LINUX"] = True
     DEFINES["WEBRTC_POSIX"] = True
     DEFINES["_FILE_OFFSET_BITS"] = "64"
-    DEFINES["_GLIBCXX_ASSERTIONS"] = "1"
     DEFINES["_LARGEFILE64_SOURCE"] = True
     DEFINES["_LARGEFILE_SOURCE"] = True
     DEFINES["__STDC_CONSTANT_MACROS"] = True
     DEFINES["__STDC_FORMAT_MACROS"] = True
-
-    OS_LIBS += [
-        "rt"
-    ]
 
     UNIFIED_SOURCES += [
         "/third_party/libwebrtc/modules/video_capture/linux/device_info_linux.cc",
@@ -194,7 +190,6 @@ if CONFIG["TARGET_CPU"] == "loongarch64":
 
 if CONFIG["TARGET_CPU"] == "mips32":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["MIPS32_LE"] = True
     DEFINES["MIPS_FPU_LE"] = True
     DEFINES["WEBRTC_USE_PIPEWIRE"] = True
@@ -214,7 +209,6 @@ if CONFIG["TARGET_CPU"] == "mips32":
 
 if CONFIG["TARGET_CPU"] == "mips64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["WEBRTC_USE_PIPEWIRE"] = True
     DEFINES["_GNU_SOURCE"] = True
 
@@ -266,7 +260,6 @@ if CONFIG["OS_TARGET"] == "Android" and CONFIG["TARGET_CPU"] == "x86":
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "aarch64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["WEBRTC_USE_PIPEWIRE"] = True
     DEFINES["_GNU_SOURCE"] = True
 
@@ -284,7 +277,6 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "aarch64":
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "arm":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["WEBRTC_USE_PIPEWIRE"] = True
     DEFINES["_GNU_SOURCE"] = True
 
@@ -306,7 +298,6 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
         "-msse2"
     ]
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["WEBRTC_USE_PIPEWIRE"] = True
     DEFINES["_GNU_SOURCE"] = True
 
@@ -324,7 +315,6 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86_64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["WEBRTC_USE_PIPEWIRE"] = True
     DEFINES["_GNU_SOURCE"] = True
 

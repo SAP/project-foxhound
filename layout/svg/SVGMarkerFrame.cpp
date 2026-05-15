@@ -36,7 +36,7 @@ NS_IMPL_FRAMEARENA_HELPERS(SVGMarkerFrame)
 
 nsresult SVGMarkerFrame::AttributeChanged(int32_t aNameSpaceID,
                                           nsAtom* aAttribute,
-                                          int32_t aModType) {
+                                          AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::markerUnits || aAttribute == nsGkAtoms::refX ||
        aAttribute == nsGkAtoms::refY || aAttribute == nsGkAtoms::markerWidth ||
@@ -111,7 +111,7 @@ void SVGMarkerFrame::PaintMark(gfxContext& aContext,
 
   const SVGViewBox viewBox = marker->GetViewBox();
 
-  if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
+  if (!viewBox.IsValid()) {
     // We must disable rendering if the viewBox width or height are zero.
     return;
   }
@@ -133,7 +133,8 @@ void SVGMarkerFrame::PaintMark(gfxContext& aContext,
   nsIFrame* kid = GetAnonymousChildFrame(this);
   ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
   // The CTM of each frame referencing us may be different.
-  SVGFrame->NotifySVGChanged(ISVGDisplayableFrame::TRANSFORM_CHANGED);
+  SVGFrame->NotifySVGChanged(
+      ISVGDisplayableFrame::ChangeFlag::TransformChanged);
   auto contextPaint = MakeRefPtr<SVGContextPaintImpl>();
   contextPaint->Init(aContext.GetDrawTarget(),
                      aToMarkedFrameUserSpace * aContext.CurrentMatrixDouble(),
@@ -167,7 +168,7 @@ SVGBBox SVGMarkerFrame::GetMarkBBoxContribution(const Matrix& aToBBoxUserspace,
 
   const SVGViewBox viewBox = content->GetViewBox();
 
-  if (viewBox.width <= 0.0f || viewBox.height <= 0.0f) {
+  if (!viewBox.IsValid()) {
     return bbox;
   }
 

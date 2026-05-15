@@ -9,9 +9,9 @@ module.exports = {
    * Given a CSS unit type, get the amount by which to increment a numeric value.
    * Used as the step attribute in inputs of type "range" or "number".
    *
-   * @param {String} unit
+   * @param {string} unit
    *        CSS unit type (px, %, em, rem, vh, vw, ...)
-   * @return {Number}
+   * @return {number}
    *         Amount by which to increment.
    */
   getStepForUnit(unit) {
@@ -37,9 +37,9 @@ module.exports = {
    * Get the unit type from the end of a CSS value string.
    * Returns null for non-string input or unitless values.
    *
-   * @param {String} value
+   * @param {string} value
    *        CSS value string.
-   * @return {String|null}
+   * @return {string | null}
    *         CSS unit type, like "px", "em", "rem", etc or null.
    */
   getUnitFromValue(value) {
@@ -56,11 +56,11 @@ module.exports = {
    * axis tag names and corresponding values. If the string is a keyword or does not
    * contain axes, return an empty object.
    *
-   * @param {String} string
+   * @param {string} string
    *        Value of font-variation-settings property coming from node's computed style.
    *        Its contents are expected to be stable having been already parsed by the
    *        browser.
-   * @return {Object}
+   * @return {object}
    */
   parseFontVariationAxes(string) {
     let axes = {};
@@ -97,10 +97,10 @@ module.exports = {
    * this function does not pad with extra zeros. If the input is not a number,
    * the function throws an error.
    *
-   * @param {Number} number
-   * @param {Number} decimals
+   * @param {number} number
+   * @param {number} decimals
    *        Decimal count in the output number. Default to one decimal.
-   * @return {Number}
+   * @return {number}
    */
   toFixed(number, decimals = 1) {
     if (typeof number !== "number") {

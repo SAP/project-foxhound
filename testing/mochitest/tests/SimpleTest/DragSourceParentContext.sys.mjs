@@ -7,16 +7,8 @@ import { DragParentContextBase } from "./DragParentContextBase.sys.mjs";
 
 /* global content */
 export class DragSourceParentContext extends DragParentContextBase {
-  constructor(aBrowsingContext, aParams, aSpecialPowers, aOk, aIs, aInfo) {
-    super(
-      "dragSource",
-      aBrowsingContext,
-      aParams,
-      aSpecialPowers,
-      aOk,
-      aIs,
-      aInfo
-    );
+  constructor(aBrowsingContext, aParams, aSpecialPowers) {
+    super("dragSource", aBrowsingContext, aParams, aSpecialPowers);
   }
 
   initialize() {

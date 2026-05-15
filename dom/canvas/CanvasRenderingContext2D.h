@@ -5,13 +5,11 @@
 #ifndef CanvasRenderingContext2D_h
 #define CanvasRenderingContext2D_h
 
-#include <vector>
-#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
-#include "mozilla/dom/HTMLCanvasElement.h"
-#include "mozilla/intl/Bidi.h"
-#include "mozilla/gfx/Rect.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/Atomics.h"
+#include "FilterDescription.h"
+#include "gfx2DGlue.h"
+#include "gfxFontConstants.h"
+#include "gfxTextRun.h"
+#include "gfxUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/Maybe.h"
@@ -20,15 +18,15 @@
 #include "mozilla/SurfaceFromElementResult.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/UniquePtr.h"
-#include "FilterDescription.h"
-#include "gfx2DGlue.h"
-#include "gfxFontConstants.h"
-#include "gfxTextRun.h"
-#include "gfxUtils.h"
-#include "nsICanvasRenderingContextInternal.h"
+#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/intl/Bidi.h"
 #include "nsColor.h"
-#include "nsRFPService.h"
+#include "nsICanvasRenderingContextInternal.h"
 #include "nsIFrame.h"
+#include "nsRFPService.h"
 
 class gfxFontGroup;
 class nsGlobalWindowInner;
@@ -304,7 +302,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   void GetFont(nsACString& aFont) { aFont = GetFont(); }
 
-  void SetFont(const nsACString& aFont, mozilla::ErrorResult& aError);
+  void SetFont(const nsACString& aFont, ErrorResult& aError);
 
   CanvasTextAlign TextAlign() { return CurrentState().textAlign; }
   void SetTextAlign(const CanvasTextAlign& aTextAlign) {
@@ -498,9 +496,10 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   NS_IMETHOD InitializeWithDrawTarget(
       nsIDocShell* aShell, NotNull<gfx::DrawTarget*> aTarget) override;
 
-  NS_IMETHOD GetInputStream(const char* aMimeType,
-                            const nsAString& aEncoderOptions,
-                            nsIInputStream** aStream) override;
+  NS_IMETHOD GetInputStream(
+      const char* aMimeType, const nsAString& aEncoderOptions,
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
+      const nsACString& aRandomizationKey, nsIInputStream** aStream) override;
 
   already_AddRefed<mozilla::gfx::SourceSurface> GetOptimizedSnapshot(
       mozilla::gfx::DrawTarget* aTarget, gfxAlphaType* aOutAlphaType) override;
@@ -592,6 +591,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   }
 
   virtual UniquePtr<uint8_t[]> GetImageBuffer(
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
       int32_t* out_format, gfx::IntSize* out_imageSize) override;
 
   void OnShutdown();
@@ -620,7 +620,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
                     nsACString& aNormalized);
 
   already_AddRefed<const ComputedStyle> ResolveStyleForProperty(
-      nsCSSPropertyID aProperty, const nsACString& aValue);
+      NonCustomCSSPropertyId aProperty, const nsACString& aValue);
 
   nsresult GetImageDataArray(JSContext* aCx, int32_t aX, int32_t aY,
                              uint32_t aWidth, uint32_t aHeight,
@@ -843,7 +843,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
                             gfx::IntSize aImgSize);
 
   nsCString& GetFont() {
-    /* will initilize the value if not set, else does nothing */
+    // will initialize the value if not set, else does nothing
     GetCurrentFontStyle();
 
     return CurrentState().font;
@@ -1077,8 +1077,9 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     ElementOrArray<ClipState> clipsAndTransforms;
 
     RefPtr<gfxFontGroup> fontGroup;
-    RefPtr<nsAtom> fontLanguage;
     nsFont fontFont;
+    RefPtr<const ComputedStyle>
+        fontComputedStyle;  // NOTE: Only non-null if connected.
 
     EnumeratedArray<Style, RefPtr<CanvasGradient>, size_t(Style::MAX)>
         gradientStyles;
@@ -1097,8 +1098,6 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
     gfx::Float letterSpacing = 0.0f;
     gfx::Float wordSpacing = 0.0f;
-    mozilla::StyleLineHeight fontLineHeight =
-        mozilla::StyleLineHeight::Normal();
     nsCString letterSpacingStr;
     nsCString wordSpacingStr;
 
@@ -1139,9 +1138,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     // We keep track of this to ensure that if this gets out of sync with the
     // tainted state of the canvas itself, we update our filters accordingly.
     bool filterSourceGraphicTainted = false;
-
     bool imageSmoothingEnabled = true;
-    bool fontExplicitLanguage = false;
   };
 
   AutoTArray<ContextState, 3> mStyleStack;
@@ -1187,6 +1184,10 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   };
 
   FontStyleCache mFontStyleCache;
+  const ComputedStyle* GetCurrentFontComputedStyle() {
+    GetCurrentFontStyle();
+    return CurrentState().fontComputedStyle;
+  }
 
   struct ColorStyleCacheEntry {
     nsCString mKey;

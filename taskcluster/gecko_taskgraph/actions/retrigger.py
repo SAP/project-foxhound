@@ -14,7 +14,6 @@ from gecko_taskgraph.util.taskcluster import state_task
 
 from .registry import register_callback_action
 from .util import (
-    combine_task_graph_files,
     create_task_from_def,
     create_tasks,
     fetch_graph_and_labels,
@@ -155,8 +154,8 @@ def retrigger_action(parameters, graph_config, input, task_group_id, task_id):
     to_run = [label]
 
     if not input.get("force", None) and not _should_retrigger(full_task_graph, label):
-        logger.info(
-            f"Not retriggering task {label}, task should not be retrigged "
+        logger.error(
+            f"fatal error: Not retriggering task {label}, task should not be retriggered "
             "and force not specified."
         )
         sys.exit(1)
@@ -166,20 +165,22 @@ def retrigger_action(parameters, graph_config, input, task_group_id, task_id):
         with_downstream = " (with downstream) "
 
     times = input.get("times", 1)
-    for i in range(times):
-        create_tasks(
-            graph_config,
-            to_run,
-            full_task_graph,
-            label_to_taskid,
-            parameters,
-            decision_task_id,
-            i,
-            action_tag="retrigger-task",
-        )
 
-        logger.info(f"Scheduled {label}{with_downstream}(time {i + 1}/{times})")
-    combine_task_graph_files(list(range(times)))
+    def modifier(task):
+        task.attributes["task_duplicates"] = times
+        return task
+
+    create_tasks(
+        graph_config,
+        to_run,
+        full_task_graph,
+        label_to_taskid,
+        parameters,
+        decision_task_id,
+        action_tag="retrigger-task",
+        modifier=modifier,
+    )
+    logger.info(f"Scheduled {label}{with_downstream}({times} times)")
 
 
 @register_callback_action(
@@ -238,17 +239,20 @@ def _rerun_task(task_id, label):
             "requests": {
                 "type": "array",
                 "items": {
-                    "tasks": {
-                        "type": "array",
-                        "description": "An array of task labels",
-                        "items": {"type": "string"},
-                    },
-                    "times": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 100,
-                        "title": "Times",
-                        "description": "How many times to run each task.",
+                    "type": "object",
+                    "properties": {
+                        "tasks": {
+                            "type": "array",
+                            "description": "An array of task labels",
+                            "items": {"type": "string"},
+                        },
+                        "times": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "title": "Times",
+                            "description": "How many times to run each task.",
+                        },
                     },
                     "additionalProperties": False,
                 },
@@ -265,20 +269,22 @@ def retrigger_multiple(parameters, graph_config, input, task_group_id, task_id):
         label_to_taskids,
     ) = fetch_graph_and_labels(parameters, graph_config)
 
-    suffixes = []
-    for i, request in enumerate(input.get("requests", [])):
-        times = request.get("times", 1)
+    def modifier(task):
+        for request in input.get("requests", []):
+            if task.attributes.get("retrigger", False) and task.label in request.get(
+                "tasks"
+            ):
+                task.attributes["task_duplicates"] = request.get("times", 1)
+        return task
+
+    retrigger_tasks = []
+
+    for request in input.get("requests", []):
         rerun_tasks = [
             label
             for label in request.get("tasks")
             if not _should_retrigger(full_task_graph, label)
         ]
-        retrigger_tasks = [
-            label
-            for label in request.get("tasks")
-            if _should_retrigger(full_task_graph, label)
-        ]
-
         for label in rerun_tasks:
             # XXX we should not re-run tasks pulled in from other pushes
             # In practice, this shouldn't matter, as only completed tasks
@@ -287,19 +293,19 @@ def retrigger_multiple(parameters, graph_config, input, task_group_id, task_id):
             for rerun_taskid in label_to_taskids[label]:
                 _rerun_task(rerun_taskid, label)
 
-        for j in range(times):
-            suffix = f"{i}-{j}"
-            suffixes.append(suffix)
-            create_tasks(
-                graph_config,
-                retrigger_tasks,
-                full_task_graph,
-                label_to_taskid,
-                parameters,
-                decision_task_id,
-                suffix,
-                action_tag="retrigger-multiple-task",
-            )
+        retrigger_tasks.extend([
+            label
+            for label in request.get("tasks")
+            if _should_retrigger(full_task_graph, label)
+        ])
 
-    if suffixes:
-        combine_task_graph_files(suffixes)
+    create_tasks(
+        graph_config,
+        retrigger_tasks,
+        full_task_graph,
+        label_to_taskid,
+        parameters,
+        decision_task_id,
+        modifier=modifier,
+        action_tag="retrigger-multiple-task",
+    )

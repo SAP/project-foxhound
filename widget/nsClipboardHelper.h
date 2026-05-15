@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsClipboardHelper_h__
-#define nsClipboardHelper_h__
+#ifndef nsClipboardHelper_h_
+#define nsClipboardHelper_h_
 
 // interfaces
 #include "nsIClipboardHelper.h"
@@ -27,4 +27,4 @@ class nsClipboardHelper : public nsIClipboardHelper {
   nsClipboardHelper();
 };
 
-#endif  // nsClipboardHelper_h__
+#endif  // nsClipboardHelper_h_

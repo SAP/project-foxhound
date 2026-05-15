@@ -50,12 +50,14 @@ interface nsINavBookmarksService : nsISupports
    */
   const short DEFAULT_INDEX = -1;
 
-  const unsigned short TYPE_BOOKMARK = 1;
-  const unsigned short TYPE_FOLDER = 2;
-  const unsigned short TYPE_SEPARATOR = 3;
-  // Dynamic containers are deprecated and unsupported.
-  // This const exists just to avoid reusing the value.
-  const unsigned short TYPE_DYNAMIC_CONTAINER = 4;
+  cenum BookmarkType : 16 {
+    TYPE_BOOKMARK = 1,
+    TYPE_FOLDER = 2,
+    TYPE_SEPARATOR = 3,
+    // Dynamic containers are deprecated and unsupported.
+    // This const exists just to avoid reusing the value.
+    TYPE_DYNAMIC_CONTAINER = 4,
+  };
 
   // Change source constants. These are used to distinguish changes made by
   // Sync and bookmarks import from other Places consumers, though they can

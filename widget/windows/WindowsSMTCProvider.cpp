@@ -92,7 +92,7 @@ static IAsyncInfo* GetIAsyncInfo(IAsyncOperation<unsigned int>* aAsyncOp) {
                                         reinterpret_cast<void**>(&asyncInfo));
   // The assertion always works since IAsyncOperation implements IAsyncInfo
   MOZ_ASSERT(SUCCEEDED(hr));
-  Unused << hr;
+  (void)hr;
   MOZ_ASSERT(asyncInfo);
   return asyncInfo;
 }
@@ -209,7 +209,7 @@ void WindowsSMTCProvider::SetPlaybackState(
   }
 
   MOZ_ASSERT(SUCCEEDED(hr));
-  Unused << hr;
+  (void)hr;
 }
 
 void WindowsSMTCProvider::SetMediaMetadata(
@@ -224,7 +224,6 @@ void WindowsSMTCProvider::ClearMetadata() {
   if (FAILED(mDisplay->ClearAll())) {
     LOG("Failed to clear SMTC display");
   }
-  mImageFetchRequest.DisconnectIfExists();
   CancelPendingStoreAsyncOperation();
   mThumbnailUrl.Truncate();
   mProcessingUrl.Truncate();
@@ -473,7 +472,7 @@ bool WindowsSMTCProvider::SetMusicMetadata(const nsString& aArtist,
 
   HRESULT hr = mDisplay->put_Type(MediaPlaybackType::MediaPlaybackType_Music);
   MOZ_ASSERT(SUCCEEDED(hr));
-  Unused << hr;
+  (void)hr;
   hr = mDisplay->get_MusicProperties(musicProps.GetAddressOf());
   if (FAILED(hr)) {
     LOG("Failed to get music properties");
@@ -596,102 +595,46 @@ void WindowsSMTCProvider::SetPositionState(
 }
 
 void WindowsSMTCProvider::LoadThumbnail(
-    const nsTArray<mozilla::dom::MediaImage>& aArtwork) {
+    const nsTArray<mozilla::dom::MediaImageData>& aArtwork) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  // TODO: Sort the images by the preferred size or format.
-  mArtwork = aArtwork;
-  mNextImageIndex = 0;
+  for (const dom::MediaImageData& image : aArtwork) {
+    if (!image.mDataSurface) {
+      continue;
+    }
 
-  // Abort the loading if
-  // 1) thumbnail is being updated, and one in processing is in the artwork
-  // 2) thumbnail is not being updated, and one in use is in the artwork
-  if (!mProcessingUrl.IsEmpty()) {
-    LOG("Load thumbnail while image: %s is being processed",
-        NS_ConvertUTF16toUTF8(mProcessingUrl).get());
-    if (mozilla::dom::IsImageIn(mArtwork, mProcessingUrl)) {
-      LOG("No need to load thumbnail. The one being processed is in the "
-          "artwork");
+    if (mThumbnailUrl == image.mSrc) {
+      LOG("Artwork image URL did not change");
       return;
     }
-  } else if (!mThumbnailUrl.IsEmpty()) {
-    if (mozilla::dom::IsImageIn(mArtwork, mThumbnailUrl)) {
-      LOG("No need to load thumbnail. The one in use is in the artwork");
-      return;
+
+    // Although IMAGE_JPEG or IMAGE_BMP are valid types as well, but a
+    // png image with transparent background will be converted into a
+    // jpeg/bmp file with a colored background. IMAGE_PNG format seems
+    // to be the best choice for now.
+    uint32_t size = 0;
+    char* src = nullptr;
+    // Only used to hold the image data
+    nsCOMPtr<nsIInputStream> inputStream;
+    nsresult rv = mozilla::dom::GetEncodedImageBuffer(
+        image.mDataSurface, nsLiteralCString(IMAGE_PNG),
+        getter_AddRefs(inputStream), &size, &src);
+    if (NS_FAILED(rv) || !inputStream || size == 0 || !src) {
+      LOG("Failed to get the image buffer info. Try next image");
+      continue;
     }
+
+    // If there is a pending image store operation, that image must be different
+    // from the new image will be loaded below, so the pending one should be
+    // cancelled.
+    CancelPendingStoreAsyncOperation();
+    // Remove the current thumbnail on the interface
+    ClearThumbnail();
+
+    mProcessingUrl = image.mSrc;
+    LoadImage(src, size);
+    break;
   }
-
-  // If there is a pending image store operation, that image must be different
-  // from the new image will be loaded below, so the pending one should be
-  // cancelled.
-  CancelPendingStoreAsyncOperation();
-  // Remove the current thumbnail on the interface
-  ClearThumbnail();
-  // Then load the new thumbnail asynchronously
-  LoadImageAtIndex(mNextImageIndex++);
-}
-
-void WindowsSMTCProvider::LoadImageAtIndex(const size_t aIndex) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  if (aIndex >= mArtwork.Length()) {
-    LOG("Stop loading thumbnail. No more available images");
-    mImageFetchRequest.DisconnectIfExists();
-    mProcessingUrl.Truncate();
-    return;
-  }
-
-  const mozilla::dom::MediaImage& image = mArtwork[aIndex];
-
-  // TODO: No need to fetch the default image and do image processing since the
-  // the default image is local file and it's trustworthy. For the default
-  // image, we can use `CreateFromFile` to create the IRandomAccessStream. We
-  // should probably cache it since it could be used very often (Bug 1643102)
-
-  if (!mozilla::dom::IsValidImageUrl(image.mSrc)) {
-    LOG("Skip the image with invalid URL. Try next image");
-    mImageFetchRequest.DisconnectIfExists();
-    LoadImageAtIndex(mNextImageIndex++);
-    return;
-  }
-
-  mImageFetchRequest.DisconnectIfExists();
-  mProcessingUrl = image.mSrc;
-
-  mImageFetcher = mozilla::MakeUnique<mozilla::dom::FetchImageHelper>(image);
-  RefPtr<WindowsSMTCProvider> self = this;
-  mImageFetcher->FetchImage()
-      ->Then(
-          AbstractThread::MainThread(), __func__,
-          [this, self](const nsCOMPtr<imgIContainer>& aImage) {
-            LOG("The image is fetched successfully");
-            mImageFetchRequest.Complete();
-
-            // Although IMAGE_JPEG or IMAGE_BMP are valid types as well, but a
-            // png image with transparent background will be converted into a
-            // jpeg/bmp file with a colored background. IMAGE_PNG format seems
-            // to be the best choice for now.
-            uint32_t size = 0;
-            char* src = nullptr;
-            // Only used to hold the image data
-            nsCOMPtr<nsIInputStream> inputStream;
-            nsresult rv = mozilla::dom::GetEncodedImageBuffer(
-                aImage, nsLiteralCString(IMAGE_PNG),
-                getter_AddRefs(inputStream), &size, &src);
-            if (NS_FAILED(rv) || !inputStream || size == 0 || !src) {
-              LOG("Failed to get the image buffer info. Try next image");
-              LoadImageAtIndex(mNextImageIndex++);
-              return;
-            }
-
-            LoadImage(src, size);
-          },
-          [this, self](bool) {
-            LOG("Failed to fetch image. Try next image");
-            mImageFetchRequest.Complete();
-            LoadImageAtIndex(mNextImageIndex++);
-          })
-      ->Track(mImageFetchRequest);
 }
 
 void WindowsSMTCProvider::LoadImage(const char* aImageData,
@@ -848,7 +791,7 @@ void WindowsSMTCProvider::ClearThumbnail() {
   MOZ_ASSERT(SUCCEEDED(hr));
   hr = mDisplay->Update();
   MOZ_ASSERT(SUCCEEDED(hr));
-  Unused << hr;
+  (void)hr;
   mThumbnailUrl.Truncate();
 }
 

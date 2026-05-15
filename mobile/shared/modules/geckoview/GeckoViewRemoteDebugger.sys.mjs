@@ -65,7 +65,7 @@ export var GeckoViewRemoteDebugger = {
     lazy.DevToolsServer.keepAlive = true;
 
     // Socket address for USB remote debugger expects
-    // @ANDROID_PACKAGE_NAME/firefox-debugger-socket.
+    // @{package_name}/firefox-debugger-socket format.
     // In /proc/net/unix, it will be outputed as
     // @org.mozilla.geckoview_example/firefox-debugger-socket
     //

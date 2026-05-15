@@ -18,9 +18,8 @@
 
 #include "wasm/WasmCompile.h"
 
-#include "mozilla/Maybe.h"
-
 #include <algorithm>
+#include <cstdint>
 
 #include "js/Conversions.h"
 #include "js/Equality.h"
@@ -53,7 +52,7 @@ using namespace js::wasm;
 using mozilla::Atomic;
 
 uint32_t wasm::ObservedCPUFeatures() {
-  enum Arch {
+  enum Arch : uint32_t {
     X86 = 0x1,
     X64 = 0x2,
     ARM = 0x3,
@@ -62,8 +61,12 @@ uint32_t wasm::ObservedCPUFeatures() {
     ARM64 = 0x6,
     LOONG64 = 0x7,
     RISCV64 = 0x8,
-    ARCH_BITS = 3
+
+    LAST = RISCV64,
+    ARCH_BITS = 4
   };
+
+  static_assert(LAST < (1 << ARCH_BITS));
 
 #if defined(JS_CODEGEN_X86)
   MOZ_ASSERT(uint32_t(jit::CPUInfo::GetFingerprint()) <=
@@ -151,7 +154,7 @@ bool FeatureOptions::init(JSContext* cx, HandleValue val) {
     }
 
     this->jsStringConstantsNamespace =
-        js_new<ShareableChars>(std::move(jsStringConstantsNamespace));
+        cx->new_<ShareableChars>(std::move(jsStringConstantsNamespace));
     if (!this->jsStringConstantsNamespace) {
       return false;
     }
@@ -867,16 +870,12 @@ void CompilerEnvironment::computeParameters(const ModuleMetadata& moduleMeta) {
   // Various constraints in various places should prevent failure here.
   MOZ_RELEASE_ASSERT(baselineEnabled || ionEnabled);
 
-  bool isGcModule = moduleMeta.codeMeta->types->hasGcType();
   uint32_t codeSectionSize = moduleMeta.codeMeta->codeSectionSize();
 
-  // We use lazy tiering if the 'for-all' pref is enabled, or the 'gc-only'
-  // pref is enabled and we're compiling a GC module.  However, forcing
-  // serialization-testing disables lazy tiering.
+  // We use lazy tiering if the pref is enabled and we're not doing
+  // serialization-testing.
   bool testSerialization = args_->features.testSerialization;
-  bool lazyTiering = (JS::Prefs::wasm_lazy_tiering() ||
-                      (JS::Prefs::wasm_lazy_tiering_for_gc() && isGcModule)) &&
-                     !testSerialization;
+  bool lazyTiering = JS::Prefs::wasm_lazy_tiering() && !testSerialization;
 
   if (baselineEnabled && hasSecondTier &&
       (TieringBeneficial(lazyTiering, codeSectionSize) || forceTiering) &&
@@ -1220,19 +1219,16 @@ class DumpIonModuleGenerator {
   const CompilerEnvironment& compilerEnv_;
   CodeMetadata& codeMeta_;
   uint32_t targetFuncIndex_;
-  IonDumpContents contents_;
   GenericPrinter& out_;
   UniqueChars* error_;
 
  public:
   DumpIonModuleGenerator(const CompilerEnvironment& compilerEnv,
                          CodeMetadata& codeMeta, uint32_t targetFuncIndex,
-                         IonDumpContents contents, GenericPrinter& out,
-                         UniqueChars* error)
+                         GenericPrinter& out, UniqueChars* error)
       : compilerEnv_(compilerEnv),
         codeMeta_(codeMeta),
         targetFuncIndex_(targetFuncIndex),
-        contents_(contents),
         out_(out),
         error_(error) {}
 
@@ -1245,14 +1241,12 @@ class DumpIonModuleGenerator {
 
     FuncCompileInput input(funcIndex, lineOrBytecode, begin, end,
                            Uint32Vector());
-    return IonDumpFunction(compilerEnv_, codeMeta_, input, contents_, out_,
-                           error_);
+    return IonDumpFunction(compilerEnv_, codeMeta_, input, out_, error_);
   }
 };
 
 bool wasm::DumpIonFunctionInModule(const ShareableBytes& bytecode,
                                    uint32_t targetFuncIndex,
-                                   IonDumpContents contents,
                                    GenericPrinter& out, UniqueChars* error) {
   SharedCompileArgs compileArgs =
       CompileArgs::buildForValidation(FeatureArgs::allEnabled());
@@ -1275,7 +1269,7 @@ bool wasm::DumpIonFunctionInModule(const ShareableBytes& bytecode,
   }
 
   DumpIonModuleGenerator mg(compilerEnv, *moduleMeta->codeMeta, targetFuncIndex,
-                            contents, out, error);
+                            out, error);
   return moduleMeta->prepareForCompile(CompileMode::Once) &&
          DecodeCodeSection(*moduleMeta->codeMeta, d, mg);
 }

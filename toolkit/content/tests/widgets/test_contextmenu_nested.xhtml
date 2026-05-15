@@ -19,10 +19,10 @@ href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
     </menu>
   </menupopup>
 
-  <menupopup id="outermain">
+  <menupopup id="outermain" native="false">
     <menuitem label="One" />
     <menu id="outermenu" label="Sub">
-      <menupopup id="innermain">
+      <menupopup id="innermain" native="false">
         <menuitem id="innermenu" label="Sub One" context="outercontext" />
       </menupopup>
     </menu>

@@ -12,16 +12,16 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Attr.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/NamedNodeMapBinding.h"
 #include "mozilla/dom/NodeInfoInlines.h"
-#include "mozilla/dom/TrustedTypesConstants.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "nsAttrName.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
 #include "nsNameSpaceManager.h"
 #include "nsNodeInfoManager.h"
 #include "nsUnicharUtils.h"
@@ -180,23 +180,6 @@ already_AddRefed<Attr> nsDOMAttributeMap::SetNamedItemNS(
     Attr& aAttr, nsIPrincipal* aSubjectPrincipal, ErrorResult& aError) {
   NS_ENSURE_TRUE(mContent, nullptr);
 
-  // XXX should check same-origin between mContent and aAttr however
-  // nsContentUtils::CheckSameOrigin can't deal with attributenodes yet
-
-  // Check that attribute is not owned by somebody else
-  nsDOMAttributeMap* owner = aAttr.GetMap();
-  if (owner) {
-    if (owner != this) {
-      aError.Throw(NS_ERROR_DOM_INUSE_ATTRIBUTE_ERR);
-      return nullptr;
-    }
-
-    // setting a preexisting attribute is a no-op, just return the same
-    // node.
-    RefPtr<Attr> attribute = &aAttr;
-    return attribute.forget();
-  }
-
   nsAutoString value;
   aAttr.GetValue(value);
 
@@ -212,11 +195,19 @@ already_AddRefed<Attr> nsDOMAttributeMap::SetNamedItemNS(
   if (aError.Failed()) {
     return nullptr;
   }
-  // After the GetTrustedTypesCompliantAttributeValue() call, the attribute may
-  // have been attached to another element.
-  if (aAttr.GetMap() && aAttr.GetMap() != this) {
-    aError.Throw(NS_ERROR_DOM_INUSE_ATTRIBUTE_ERR);
-    return nullptr;
+
+  // Check that attribute is not owned by somebody else
+  nsDOMAttributeMap* owner = aAttr.GetMap();
+  if (owner) {
+    if (owner != this) {
+      aError.Throw(NS_ERROR_DOM_INUSE_ATTRIBUTE_ERR);
+      return nullptr;
+    }
+
+    // setting a preexisting attribute is a no-op, just return the same
+    // node.
+    RefPtr<Attr> attribute = &aAttr;
+    return attribute.forget();
   }
 
   nsresult rv;

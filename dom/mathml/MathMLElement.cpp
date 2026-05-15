@@ -6,29 +6,28 @@
 
 #include "mozilla/dom/MathMLElement.h"
 
-#include "mozilla/FocusModel.h"
-#include "mozilla/dom/BindContext.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/TextUtils.h"
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "nsAttrValueOrString.h"
+#include "nsCSSValue.h"
+#include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 #include "nsIContentInlines.h"
-#include "nsITableCellLayout.h"  // for MAX_COLSPAN / MAX_ROWSPAN
-#include "nsCSSValue.h"
-#include "nsStyleConsts.h"
-#include "mozilla/dom/Document.h"
-#include "nsPresContext.h"
 #include "nsIScriptError.h"
-#include "nsContentUtils.h"
+#include "nsITableCellLayout.h"  // for MAX_COLSPAN / MAX_ROWSPAN
 #include "nsIURI.h"
+#include "nsPresContext.h"
+#include "nsStyleConsts.h"
 
 // used for parsing CSS units
-#include "mozilla/dom/SVGLength.h"
-
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/dom/MathMLElementBinding.h"
+#include "mozilla/dom/SVGLength.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -149,8 +148,9 @@ nsMapRuleToAttributesFunc MathMLElement::GetAttributeMappingFunction() const {
 
 /* static */
 bool MathMLElement::ParseNamedSpaceValue(const nsString& aString,
-                                         nsCSSValue& aCSSValue, uint32_t aFlags,
-                                         const Document& aDocument) {
+                                         nsCSSValue& aCSSValue,
+                                         const Document& aDocument,
+                                         ParseFlags aFlags) {
   if (StaticPrefs::mathml_mathspace_names_disabled()) {
     return false;
   }
@@ -170,7 +170,7 @@ bool MathMLElement::ParseNamedSpaceValue(const nsString& aString,
     i = 6;
   } else if (aString.EqualsLiteral("veryverythickmathspace")) {
     i = 7;
-  } else if (aFlags & PARSE_ALLOW_NEGATIVE) {
+  } else if (aFlags.contains(ParseFlag::AllowNegative)) {
     if (aString.EqualsLiteral("negativeveryverythinmathspace")) {
       i = -1;
     } else if (aString.EqualsLiteral("negativeverythinmathspace")) {
@@ -240,20 +240,20 @@ bool MathMLElement::ParseNamedSpaceValue(const nsString& aString,
 // XXXfredw: Deprecate legacy MathML syntax and use the CSS parser instead.
 // See https://github.com/mathml-refresh/mathml/issues/63
 bool MathMLElement::ParseNumericValue(const nsString& aString,
-                                      nsCSSValue& aCSSValue, uint32_t aFlags,
-                                      Document* aDocument) {
+                                      nsCSSValue& aCSSValue,
+                                      Document* aDocument, ParseFlags aFlags) {
   nsAutoString str(aString);
   str.CompressWhitespace();  // aString is const in this code...
 
   int32_t stringLength = str.Length();
   if (!stringLength) {
-    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+    if (!aFlags.contains(ParseFlag::SuppressWarnings)) {
       ReportLengthParseError(aString, aDocument);
     }
     return false;
   }
 
-  if (aDocument && ParseNamedSpaceValue(str, aCSSValue, aFlags, *aDocument)) {
+  if (aDocument && ParseNamedSpaceValue(str, aCSSValue, *aDocument, aFlags)) {
     return true;
   }
 
@@ -272,7 +272,7 @@ bool MathMLElement::ParseNumericValue(const nsString& aString,
   for (; i < stringLength; i++) {
     c = str[i];
     if (gotDot && c == '.') {
-      if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      if (!aFlags.contains(ParseFlag::SuppressWarnings)) {
         ReportLengthParseError(aString, aDocument);
       }
       return false;  // two dots encountered
@@ -287,7 +287,7 @@ bool MathMLElement::ParseNumericValue(const nsString& aString,
     number.Append(c);
   }
   if (gotDot && str[i - 1] == '.') {
-    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+    if (!aFlags.contains(ParseFlag::SuppressWarnings)) {
       ReportLengthParseError(aString, aDocument);
     }
     return false;  // Number ending with a dot.
@@ -297,13 +297,13 @@ bool MathMLElement::ParseNumericValue(const nsString& aString,
   nsresult errorCode;
   float floatValue = number.ToFloat(&errorCode);
   if (NS_FAILED(errorCode)) {
-    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+    if (!aFlags.contains(ParseFlag::SuppressWarnings)) {
       ReportLengthParseError(aString, aDocument);
     }
     return false;
   }
-  if (floatValue < 0 && !(aFlags & PARSE_ALLOW_NEGATIVE)) {
-    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+  if (floatValue < 0 && !aFlags.contains(ParseFlag::AllowNegative)) {
+    if (!aFlags.contains(ParseFlag::SuppressWarnings)) {
       ReportLengthParseError(aString, aDocument);
     }
     return false;
@@ -315,7 +315,7 @@ bool MathMLElement::ParseNumericValue(const nsString& aString,
     // If the value is 0 we can just call it "pixels" otherwise
     // this is illegal.
     if (floatValue != 0.0) {
-      if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      if (!aFlags.contains(ParseFlag::SuppressWarnings)) {
         ReportLengthParseError(aString, aDocument);
       }
       return false;
@@ -328,7 +328,7 @@ bool MathMLElement::ParseNumericValue(const nsString& aString,
     uint8_t unitType = SVGLength::GetUnitTypeForString(unit);
     if (unitType ==
         SVGLength_Binding::SVG_LENGTHTYPE_UNKNOWN) {  // unexpected unit
-      if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      if (!aFlags.contains(ParseFlag::SuppressWarnings)) {
         ReportLengthParseError(aString, aDocument);
       }
       return false;
@@ -358,9 +358,10 @@ void MathMLElement::MapMTableAttributesInto(
     const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::width);
     nsCSSValue width;
     // This does not handle auto and unitless values
-    if (value && value->Type() == nsAttrValue::eString) {
-      ParseNumericValue(value->GetStringValue(), width, 0,
-                        &aBuilder.Document());
+    if (value && (value->Type() == nsAttrValue::eString ||
+                  value->Type() == nsAttrValue::eAtom)) {
+      nsString str(nsAttrValueOrString(value).String());
+      ParseNumericValue(str, width, &aBuilder.Document());
       if (width.GetUnit() == eCSSUnit_Percent) {
         aBuilder.SetPercentValue(eCSSProperty_width, width.GetPercentValue());
       } else if (width.GetUnit() != eCSSUnit_Null) {
@@ -376,10 +377,11 @@ void MathMLElement::MapMiAttributesInto(MappedDeclarationsBuilder& aBuilder) {
   // https://w3c.github.io/mathml-core/#dfn-mathvariant
   if (!aBuilder.PropertyIsSet(eCSSProperty_text_transform)) {
     const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::mathvariant);
-    if (value && value->Type() == nsAttrValue::eString) {
-      auto str = value->GetStringValue();
+    if (value && (value->Type() == nsAttrValue::eString ||
+                  value->Type() == nsAttrValue::eAtom)) {
+      nsString str(nsAttrValueOrString(value).String());
       str.CompressWhitespace();
-      if (value->GetStringValue().LowerCaseEqualsASCII("normal")) {
+      if (str.LowerCaseEqualsASCII("normal")) {
         aBuilder.SetKeywordValue(eCSSProperty_text_transform,
                                  StyleTextTransform::NONE._0);
       }
@@ -415,9 +417,11 @@ void MathMLElement::MapGlobalMathMLAttributesInto(
   // scriptlevel
   // https://w3c.github.io/mathml-core/#dfn-scriptlevel
   const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::scriptlevel);
-  if (value && value->Type() == nsAttrValue::eString &&
+  if (value &&
+      (value->Type() == nsAttrValue::eString ||
+       value->Type() == nsAttrValue::eAtom) &&
       !aBuilder.PropertyIsSet(eCSSProperty_math_depth)) {
-    auto str = value->GetStringValue();
+    nsString str(nsAttrValueOrString(value).String());
     // FIXME: Should we remove whitespace trimming?
     // See https://github.com/w3c/mathml/issues/122
     str.CompressWhitespace();
@@ -450,11 +454,13 @@ void MathMLElement::MapGlobalMathMLAttributesInto(
   // mathsize
   // https://w3c.github.io/mathml-core/#dfn-mathsize
   value = aBuilder.GetAttr(nsGkAtoms::mathsize);
-  if (value && value->Type() == nsAttrValue::eString &&
+  if (value &&
+      (value->Type() == nsAttrValue::eString ||
+       value->Type() == nsAttrValue::eAtom) &&
       !aBuilder.PropertyIsSet(eCSSProperty_font_size)) {
-    auto str = value->GetStringValue();
+    nsString str(nsAttrValueOrString(value).String());
     nsCSSValue fontSize;
-    ParseNumericValue(str, fontSize, 0, nullptr);
+    ParseNumericValue(str, fontSize, nullptr);
     if (fontSize.GetUnit() == eCSSUnit_Percent) {
       aBuilder.SetPercentValue(eCSSProperty_font_size,
                                fontSize.GetPercentValue());
@@ -476,9 +482,11 @@ void MathMLElement::MapGlobalMathMLAttributesInto(
     // default: normal (except on <mi>)
     //
     value = aBuilder.GetAttr(nsGkAtoms::mathvariant);
-    if (value && value->Type() == nsAttrValue::eString &&
+    if (value &&
+        (value->Type() == nsAttrValue::eString ||
+         value->Type() == nsAttrValue::eAtom) &&
         !aBuilder.PropertyIsSet(eCSSProperty__moz_math_variant)) {
-      auto str = value->GetStringValue();
+      nsString str(nsAttrValueOrString(value).String());
       str.CompressWhitespace();
 
       // Instead of a big table that holds all sizes, store a compressed version
@@ -579,9 +587,11 @@ void MathMLElement::MapGlobalMathMLAttributesInto(
   // dir
   // https://w3c.github.io/mathml-core/#dfn-dir
   value = aBuilder.GetAttr(nsGkAtoms::dir);
-  if (value && value->Type() == nsAttrValue::eString &&
+  if (value &&
+      (value->Type() == nsAttrValue::eString ||
+       value->Type() == nsAttrValue::eAtom) &&
       !aBuilder.PropertyIsSet(eCSSProperty_direction)) {
-    auto str = value->GetStringValue();
+    nsString str(nsAttrValueOrString(value).String());
     static const char dirs[][4] = {"ltr", "rtl"};
     static const StyleDirection dirValues[std::size(dirs)] = {
         StyleDirection::Ltr, StyleDirection::Rtl};
@@ -596,9 +606,11 @@ void MathMLElement::MapGlobalMathMLAttributesInto(
   // displaystyle
   // https://mathml-refresh.github.io/mathml-core/#dfn-displaystyle
   value = aBuilder.GetAttr(nsGkAtoms::displaystyle);
-  if (value && value->Type() == nsAttrValue::eString &&
+  if (value &&
+      (value->Type() == nsAttrValue::eString ||
+       value->Type() == nsAttrValue::eAtom) &&
       !aBuilder.PropertyIsSet(eCSSProperty_math_style)) {
-    auto str = value->GetStringValue();
+    nsString str(nsAttrValueOrString(value).String());
     static const char displaystyles[][6] = {"false", "true"};
     static const StyleMathStyle mathStyle[std::size(displaystyles)] = {
         StyleMathStyle::Compact, StyleMathStyle::Normal};
@@ -719,9 +731,11 @@ void MathMLElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
 
   if (aNameSpaceID == kNameSpaceID_None) {
     if (IsEventAttributeName(aName) && aValue) {
-      MOZ_ASSERT(aValue->Type() == nsAttrValue::eString,
-                 "Expected string value for script body");
-      SetEventHandler(GetEventNameForAttr(aName), aValue->GetStringValue());
+      MOZ_ASSERT(aValue->Type() == nsAttrValue::eString ||
+                     aValue->Type() == nsAttrValue::eAtom,
+                 "Expected string or atom value for script body");
+      SetEventHandler(GetEventNameForAttr(aName),
+                      nsAttrValueOrString(aValue).String());
     }
   }
 

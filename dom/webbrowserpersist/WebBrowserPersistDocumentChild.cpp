@@ -6,15 +6,15 @@
 
 #include "WebBrowserPersistDocumentChild.h"
 
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/dom/Document.h"
-#include "nsIInputStream.h"
 #include "WebBrowserPersistLocalDocument.h"
 #include "WebBrowserPersistResourcesChild.h"
 #include "WebBrowserPersistSerializeChild.h"
 #include "mozilla/StaticPrefs_fission.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "nsIInputStream.h"
 
 namespace mozilla {
 

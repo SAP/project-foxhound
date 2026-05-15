@@ -6,12 +6,12 @@
 #ifndef GPU_INSTANCE_H_
 #define GPU_INSTANCE_H_
 
+#include "ObjectModel.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/layers/BuildConstants.h"
 #include "nsCOMPtr.h"
-#include "ObjectModel.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -38,11 +38,8 @@ class WGSLLanguageFeatures final : public nsWrapperCache,
     dom::WGSLLanguageFeatures_Binding::SetlikeHelpers::Add(this, feature, aRv);
   }
 
- private:
-  void Cleanup() {}
-
  protected:
-  ~WGSLLanguageFeatures() { Cleanup(); };
+  virtual ~WGSLLanguageFeatures() = default;
 
  public:
   JSObject* WrapObject(JSContext* aCx,
@@ -59,6 +56,7 @@ class Instance final : public nsWrapperCache {
   nsIGlobalObject* GetParentObject() const { return mOwner; }
 
   static bool PrefEnabled(JSContext* aCx, JSObject* aObj);
+  static bool ExternalTexturePrefEnabled(JSContext* aCx, JSObject* aObj);
 
   static already_AddRefed<Instance> Create(nsIGlobalObject* aOwner);
 
@@ -77,8 +75,7 @@ class Instance final : public nsWrapperCache {
 
  private:
   explicit Instance(nsIGlobalObject* aOwner);
-  virtual ~Instance();
-  void Cleanup();
+  virtual ~Instance() = default;
 
   nsCOMPtr<nsIGlobalObject> mOwner;
   RefPtr<WGSLLanguageFeatures> mWgslLanguageFeatures;

@@ -29,159 +29,128 @@ object TestAssetHelper {
      * Content for these pages all follow the same pattern. See [generic1.html] for
      * content implementation details.
      */
-    fun getGenericAssets(server: MockWebServer): List<TestAsset> {
-        @Suppress("MagicNumber")
-        return (1..4).map {
-            TestAsset(
-                server.url("pages/generic$it.html").toString().toUri()!!,
-                "Page content: $it",
-                "Test_Page_$it",
-            )
-        }
-    }
+    @Suppress("MagicNumber")
+    val MockWebServer.genericAssets
+        get() = (1..4).map { getGenericAsset(it) }
 
-    fun getGenericAsset(server: MockWebServer, pageNum: Int): TestAsset {
-        val url = server.url("pages/generic$pageNum.html").toString().toUri()!!
-        val content = "Page content: $pageNum"
-        val title = "Test_Page_$pageNum"
+    fun MockWebServer.getGenericAsset(pageNum: Int) = createTestAsset(
+        path = "pages/generic$pageNum.html",
+        content = "Page content: $pageNum",
+        title = "Test_Page_$pageNum",
+    )
 
-        return TestAsset(url, content, title)
-    }
+    val MockWebServer.loremIpsumAsset
+        get() = createTestAsset(
+            path = "pages/lorem-ipsum.html",
+            content = "Page content: lorem ipsum",
+            title = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt",
+        )
 
-    fun getLoremIpsumAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/lorem-ipsum.html").toString().toUri()!!
-        val content = "Page content: lorem ipsum"
-        val title = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt"
+    val MockWebServer.refreshAsset
+        get() = createTestAsset(
+            path = "pages/refresh.html",
+            content = "Page content: refresh",
+        )
 
-        return TestAsset(url, content, title)
-    }
+    val MockWebServer.uuidPage
+        get() = createTestAsset(
+            path = "pages/basic_nav_uuid.html",
+            content = "Page content: basic_nav_uuid",
+        )
 
-    fun getRefreshAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/refresh.html").toString().toUri()!!
-        val content = "Page content: refresh"
+    val MockWebServer.enhancedTrackingProtectionAsset
+        get() = createTestAsset(
+            path = "pages/trackingPage.html",
+            content = "Level 1 (Basic) List",
+        )
 
-        return TestAsset(url, content, "")
-    }
+    val MockWebServer.imageAsset
+        get() = createTestAsset("resources/rabbit.jpg")
 
-    fun getUUIDPage(server: MockWebServer): TestAsset {
-        val url = server.url("pages/basic_nav_uuid.html").toString().toUri()!!
-        val content = "Page content: basic_nav_uuid"
+    val MockWebServer.pdfFormAsset
+        get() = createTestAsset("resources/pdfForm.pdf")
 
-        return TestAsset(url, content, "")
-    }
+    val MockWebServer.saveLoginAsset
+        get() = createTestAsset("pages/password.html")
 
-    fun getEnhancedTrackingProtectionAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/trackingPage.html").toString().toUri()!!
-        val content = "Level 1 (Basic) List"
+    val MockWebServer.addressFormAsset
+        get() = createTestAsset("pages/addressForm.html")
 
-        return TestAsset(url, content, "")
-    }
+    val MockWebServer.appLinksRedirectAsset
+        get() = createTestAsset("pages/appLinksLinks.html")
 
-    fun getImageAsset(server: MockWebServer): TestAsset {
-        val url = server.url("resources/rabbit.jpg").toString().toUri()!!
+    val MockWebServer.creditCardFormAsset
+        get() = createTestAsset("pages/creditCardForm.html")
 
-        return TestAsset(url, "", "")
-    }
+    val MockWebServer.htmlControlsFormAsset
+        get() = createTestAsset("pages/htmlControls.html")
 
-    fun getPdfFormAsset(server: MockWebServer): TestAsset {
-        val url = server.url("resources/pdfForm.pdf").toString().toUri()!!
+    val MockWebServer.externalLinksAsset
+        get() = createTestAsset("pages/externalLinks.html")
 
-        return TestAsset(url, "", "")
-    }
+    val MockWebServer.audioPageAsset
+        get() = createTestAsset(
+            path = "pages/audioMediaPage.html",
+            title = "Audio_Test_Page",
+            content = "Page content: audio player",
+        )
 
-    fun getSaveLoginAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/password.html").toString().toUri()!!
+    val MockWebServer.videoPageAsset
+        get() = createTestAsset(
+            path = "pages/videoMediaPage.html",
+            title = "Video_Test_Page",
+            content = "Page content: video player",
+        )
 
-        return TestAsset(url, "", "")
-    }
+    val MockWebServer.mutedVideoPageAsset
+        get() = createTestAsset(
+            path = "pages/mutedVideoPage.html",
+            title = "Muted_Video_Test_Page",
+            content = "Page content: muted video player",
+        )
 
-    fun getAddressFormAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/addressForm.html").toString().toUri()!!
+    val MockWebServer.gcpTestAsset
+        get() = createTestAsset("pages/global_privacy_control.html")
 
-        return TestAsset(url, "", "")
-    }
+    val MockWebServer.textFragmentAsset
+        get() = createTestAsset(
+            path = "pages/textFragment.html",
+            title = "Text_Fragment",
+        )
 
-    fun getCreditCardFormAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/creditCardForm.html").toString().toUri()!!
+    val MockWebServer.promptAsset
+        get() = createTestAsset(
+            path = "pages/beforeUnload.html",
+            title = "BeforeUnload_Test_Page",
+        )
 
-        return TestAsset(url, "", "")
-    }
+    val MockWebServer.firstForeignWebPageAsset
+        get() = createTestAsset(
+            path = "pages/firstForeignWebPage.html",
+            title = "Page_de_test_FR_1",
+            content = "Article du jour",
+        )
 
-    fun getHTMLControlsFormAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/htmlControls.html").toString().toUri()!!
+    val MockWebServer.secondForeignWebPageAsset
+        get() = createTestAsset(
+            path = "pages/secondForeignWebPage.html",
+            title = "Page_de_test_FR_2",
+            content = "Mot du jour",
+        )
 
-        return TestAsset(url, "", "")
-    }
+    val MockWebServer.storageCheckPageAsset
+        get() = createTestAsset("pages/storage_check.html")
 
-    fun getExternalLinksAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/externalLinks.html").toString().toUri()!!
+    val MockWebServer.storageWritePageAsset
+        get() = createTestAsset("pages/storage_write.html")
 
-        return TestAsset(url, "", "")
-    }
-
-    fun getAudioPageAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/audioMediaPage.html").toString().toUri()!!
-        val title = "Audio_Test_Page"
-        val content = "Page content: audio player"
-
-        return TestAsset(url, content, title)
-    }
-
-    fun getVideoPageAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/videoMediaPage.html").toString().toUri()!!
-        val title = "Video_Test_Page"
-        val content = "Page content: video player"
-
-        return TestAsset(url, content, title)
-    }
-
-    fun getMutedVideoPageAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/mutedVideoPage.html").toString().toUri()!!
-        val title = "Muted_Video_Test_Page"
-        val content = "Page content: muted video player"
-
-        return TestAsset(url, content, title)
-    }
-
-    fun getStorageTestAsset(server: MockWebServer, pageAsset: String): TestAsset {
-        val url = server.url("pages/$pageAsset").toString().toUri()!!
-
-        return TestAsset(url, "", "")
-    }
-
-    fun getGPCTestAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/global_privacy_control.html").toString().toUri()!!
-
-        return TestAsset(url, "", "")
-    }
-
-    fun getTextFragmentAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/textFragment.html").toString().toUri()!!
-        val title = "Text_Fragment"
-
-        return TestAsset(url, "", title)
-    }
-
-    fun getPromptAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/beforeUnload.html").toString().toUri()!!
-        val title = "BeforeUnload_Test_Page"
-
-        return TestAsset(url, "", title)
-    }
-
-    fun getFirstForeignWebPageAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/firstForeignWebPage.html").toString().toUri()!!
-        val title = "Page_de_test_FR_1"
-        val content = "Article du jour"
-
-        return TestAsset(url, content, title)
-    }
-
-    fun getSecondForeignWebPageAsset(server: MockWebServer): TestAsset {
-        val url = server.url("pages/secondForeignWebPage.html").toString().toUri()!!
-        val title = "Page_de_test_FR_2"
-        val content = "Mot du jour"
-
-        return TestAsset(url, content, title)
-    }
+    private fun MockWebServer.createTestAsset(
+        path: String,
+        content: String = "",
+        title: String = "",
+    ) = TestAsset(
+        url(path).toString().toUri(),
+        content,
+        title,
+    )
 }

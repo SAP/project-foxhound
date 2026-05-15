@@ -89,7 +89,8 @@ already_AddRefed<SourceSurface> SVGMaskFrame::GetMaskForMaskedFrame(
     // The CTM of each frame referencing us can be different
     ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
     if (SVGFrame) {
-      SVGFrame->NotifySVGChanged(ISVGDisplayableFrame::TRANSFORM_CHANGED);
+      SVGFrame->NotifySVGChanged(
+          ISVGDisplayableFrame::ChangeFlag::TransformChanged);
       m = SVGUtils::GetTransformMatrixInUserSpace(kid) * m;
     }
 
@@ -144,7 +145,8 @@ gfxRect SVGMaskFrame::GetMaskArea(nsIFrame* aMaskedFrame) {
 }
 
 nsresult SVGMaskFrame::AttributeChanged(int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType) {
+                                        nsAtom* aAttribute,
+                                        AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::x || aAttribute == nsGkAtoms::y ||
        aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height ||

@@ -234,7 +234,7 @@ TEST(IntlDateTimeFormat, ComponentsAll)
 
   TestBuffer<char16_t> buffer;
   ASSERT_TRUE(FormatComponents(buffer, components));
-  ASSERT_TRUE(buffer.verboseMatches(u"Mon, 9 23, 2002 AD, 20:07:30.000 GMT+3"));
+  ASSERT_TRUE(buffer.verboseMatches(u"Mon, 9/23/2002 AD, 20:07:30.000 GMT+3"));
 }
 
 TEST(IntlDateTimeFormat, ComponentsHour12Default)
@@ -277,17 +277,88 @@ TEST(IntlDateTimeFormat, ComponentsHour12DayPeriod)
   ASSERT_TRUE(buffer.verboseMatches(u"8:07 in the evening"));
 }
 
-const char* ToString(uint8_t b) { return "uint8_t"; }
-const char* ToString(bool b) { return b ? "true" : "false"; }
+static const char* ToString(uint8_t b) { return "uint8_t"; }
+static const char* ToString(bool b) { return b ? "true" : "false"; }
+
+static const char* ToString(DateTimeFormat::TimeZoneName aTimeZoneName) {
+  using TimeZoneName = DateTimeFormat::TimeZoneName;
+  switch (aTimeZoneName) {
+    case TimeZoneName::Long:
+      return "long";
+    case TimeZoneName::Short:
+      return "short";
+    case TimeZoneName::ShortOffset:
+      return "shortOffset";
+    case TimeZoneName::LongOffset:
+      return "longOffset";
+    case TimeZoneName::ShortGeneric:
+      return "shortGeneric";
+    case TimeZoneName::LongGeneric:
+      return "longGeneric";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::TimeZoneName");
+}
+
+static const char* ToString(DateTimeFormat::Month aMonth) {
+  using Month = DateTimeFormat::Month;
+  switch (aMonth) {
+    case Month::Numeric:
+      return "numeric";
+    case Month::TwoDigit:
+      return "2-digit";
+    case Month::Long:
+      return "long";
+    case Month::Short:
+      return "short";
+    case Month::Narrow:
+      return "narrow";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::Month");
+}
+
+static const char* ToString(DateTimeFormat::Text aText) {
+  using Text = DateTimeFormat::Text;
+  switch (aText) {
+    case Text::Long:
+      return "long";
+    case Text::Short:
+      return "short";
+    case Text::Narrow:
+      return "narrow";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::Text");
+}
+
+static const char* ToString(DateTimeFormat::Numeric aNumeric) {
+  using Numeric = DateTimeFormat::Numeric;
+  switch (aNumeric) {
+    case Numeric::Numeric:
+      return "numeric";
+    case Numeric::TwoDigit:
+      return "2-digit";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::Numeric");
+}
+
+static const char* ToString(DateTimeFormat::HourCycle aHourCycle) {
+  using HourCycle = DateTimeFormat::HourCycle;
+  switch (aHourCycle) {
+    case HourCycle::H11:
+      return "h11";
+    case HourCycle::H12:
+      return "h12";
+    case HourCycle::H23:
+      return "h23";
+    case HourCycle::H24:
+      return "h24";
+  }
+  MOZ_CRASH("Unexpected DateTimeFormat::HourCycle");
+}
 
 template <typename T>
 const char* ToString(Maybe<T> option) {
   if (option) {
-    if constexpr (std::is_same_v<T, bool> || std::is_same_v<T, uint8_t>) {
-      return ToString(*option);
-    } else {
-      return DateTimeFormat::ToString(*option);
-    }
+    return ToString(*option);
   }
   return "Nothing";
 }

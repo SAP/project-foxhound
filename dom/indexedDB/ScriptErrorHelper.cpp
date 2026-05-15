@@ -7,10 +7,9 @@
 #include "ScriptErrorHelper.h"
 
 #include "MainThreadUtils.h"
+#include "mozilla/SchedulerGroup.h"
 #include "nsContentUtils.h"
 #include "nsThreadUtils.h"
-
-#include "mozilla/SchedulerGroup.h"
 
 namespace {
 

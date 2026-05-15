@@ -63,10 +63,6 @@ class CommonSocketControl : public nsITLSSocketControl {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     return mMadeOCSPRequests;
   }
-  void SetUsedPrivateDNS(bool aUsedPrivateDNS) {
-    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    mUsedPrivateDNS = aUsedPrivateDNS;
-  }
   bool GetUsedPrivateDNS() {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     return mUsedPrivateDNS;
@@ -91,7 +87,7 @@ class CommonSocketControl : public nsITLSSocketControl {
                nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET;
   }
   void SetSucceededCertChain(nsTArray<nsTArray<uint8_t>>&& certList);
-  void SetFailedCertChain(nsTArray<nsTArray<uint8_t>>&& certList);
+  void SetHandshakeCertificates(nsTArray<nsTArray<uint8_t>>&& certList);
   void SetIsBuiltCertChainRootBuiltInRoot(
       bool aIsBuiltCertChainRootBuiltInRoot) {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
@@ -160,9 +156,11 @@ class CommonSocketControl : public nsITLSSocketControl {
   // Fields used to build a TransportSecurityInfo
   uint32_t mSecurityState;
   PRErrorCode mErrorCode;
-  // Peer cert chain for failed connections.
-  nsTArray<RefPtr<nsIX509Cert>> mFailedCertChain;
+  // Certificates provided in the TLS handshake by the server.
+  nsTArray<RefPtr<nsIX509Cert>> mHandshakeCertificates;
+  // The server end-entity certificate.
   nsCOMPtr<nsIX509Cert> mServerCert;
+  // The chain built during certificate validation, if successful.
   nsTArray<RefPtr<nsIX509Cert>> mSucceededCertChain;
   mozilla::Maybe<uint16_t> mCipherSuite;
   mozilla::Maybe<nsCString> mKeaGroupName;

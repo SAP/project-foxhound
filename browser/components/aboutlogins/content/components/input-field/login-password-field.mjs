@@ -41,6 +41,10 @@ class LoginPasswordField extends MozLitElement {
   }
 
   get #password() {
+    if (!this.value) {
+      return "";
+    }
+
     return !this.newPassword && this.concealed
       ? LoginPasswordField.CONCEALED_PASSWORD_TEXT
       : this.value;
@@ -64,7 +68,7 @@ class LoginPasswordField extends MozLitElement {
         onFocus: this.handleFocus,
         onBlur: this.handleBlur,
         labelL10nId: "login-item-password-label",
-        noteL10nId: "contextual-manager-passwords-password-tooltip",
+        noteL10nId: "contextual-manager-passwords-password-tooltip-2",
       })}
     `;
   }

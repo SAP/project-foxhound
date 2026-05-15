@@ -10,20 +10,17 @@ import android.content.pm.Signature
 import android.content.pm.SigningInfo
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
+import mozilla.components.support.utils.ext.PackageManagerCompatHelper
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mock
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.spy
-import org.mockito.Mockito.times
-import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.MockitoAnnotations
 import org.robolectric.annotation.Config
@@ -34,7 +31,7 @@ class AndroidAssetFinderTest {
     private lateinit var assetFinder: AndroidAssetFinder
     private lateinit var packageInfo: PackageInfo
 
-    @Mock lateinit var packageManager: PackageManager
+    @Mock lateinit var packageManager: PackageManagerCompatHelper
 
     @Mock lateinit var signingInfo: SigningInfo
 
@@ -45,14 +42,14 @@ class AndroidAssetFinderTest {
         MockitoAnnotations.openMocks(this)
         packageInfo = PackageInfo()
         @Suppress("DEPRECATION")
-        `when`(packageManager.getPackageInfo(anyString(), anyInt())).thenReturn(packageInfo)
+        `when`(packageManager.getPackageInfoCompat(anyString(), anyInt())).thenReturn(packageInfo)
     }
 
     @Test
     @Config(sdk = [28])
     fun `test getAndroidAppAsset returns empty list if name not found on SDK 28 or less`() {
         @Suppress("DEPRECATION")
-        `when`(packageManager.getPackageInfo(anyString(), anyInt()))
+        `when`(packageManager.getPackageInfoCompat(anyString(), anyInt()))
             .thenThrow(PackageManager.NameNotFoundException::class.java)
 
         assertEquals(
@@ -64,9 +61,9 @@ class AndroidAssetFinderTest {
     @Test
     fun `test getAndroidAppAsset returns empty list if name not found`() {
         `when`(
-            packageManager.getPackageInfo(
+            packageManager.getPackageInfoCompat(
                 anyString(),
-                ArgumentMatchers.any(PackageManager.PackageInfoFlags::class.java),
+                anyInt(),
             ),
         )
             .thenThrow(PackageManager.NameNotFoundException::class.java)
@@ -123,58 +120,6 @@ class AndroidAssetFinderTest {
             emptyList<AssetDescriptor.Android>(),
             assetFinder.getAndroidAppAsset("com.test.app", packageManager).toList(),
         )
-    }
-
-    @Config(sdk = [Build.VERSION_CODES.LOLLIPOP])
-    @Suppress("Deprecation")
-    @Test
-    fun `test getAndroidAppAsset on deprecated SDK`() {
-        val signature = mock<Signature>()
-        packageInfo.signatures = arrayOf(signature)
-        doReturn("01:BB:AA:10:30").`when`(assetFinder).getCertificateSHA256Fingerprint(signature)
-
-        assertEquals(
-            listOf(AssetDescriptor.Android("com.test.app", "01:BB:AA:10:30")),
-            assetFinder.getAndroidAppAsset("com.test.app", packageManager).toList(),
-        )
-    }
-
-    @Config(sdk = [Build.VERSION_CODES.LOLLIPOP])
-    @Suppress("Deprecation")
-    @Test
-    fun `test getAndroidAppAsset with multiple signatures on deprecated SDK`() {
-        val signature1 = mock<Signature>()
-        val signature2 = mock<Signature>()
-        packageInfo.signatures = arrayOf(signature1, signature2)
-        doReturn("01:BB:AA:10:30").`when`(assetFinder).getCertificateSHA256Fingerprint(signature1)
-        doReturn("FF:CC:AA:99:77").`when`(assetFinder).getCertificateSHA256Fingerprint(signature2)
-
-        assertEquals(
-            listOf(
-                AssetDescriptor.Android("org.test.app", "01:BB:AA:10:30"),
-                AssetDescriptor.Android("org.test.app", "FF:CC:AA:99:77"),
-            ),
-            assetFinder.getAndroidAppAsset("org.test.app", packageManager).toList(),
-        )
-    }
-
-    @Config(sdk = [Build.VERSION_CODES.LOLLIPOP])
-    @Suppress("Deprecation")
-    @Test
-    fun `test getAndroidAppAsset is lazily computed`() {
-        val signature1 = mock<Signature>()
-        val signature2 = mock<Signature>()
-        packageInfo.signatures = arrayOf(signature1, signature2)
-        doReturn("01:BB:AA:10:30").`when`(assetFinder).getCertificateSHA256Fingerprint(signature1)
-        doReturn("FF:CC:AA:99:77").`when`(assetFinder).getCertificateSHA256Fingerprint(signature2)
-
-        val result = assetFinder.getAndroidAppAsset("android.package", packageManager).first()
-        assertEquals(
-            AssetDescriptor.Android("android.package", "01:BB:AA:10:30"),
-            result,
-        )
-
-        verify(assetFinder, times(1)).getCertificateSHA256Fingerprint(any())
     }
 
     @Test

@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["debug"] # bug 1884982 - takes 20+ minutes to run on debug
+skip-if = [
+  "debug", # bug 1884982 - takes 20+ minutes to run on debug
+]
 prefs = [
   # Disable the Storage Access API prompts for all of the tests in this directory
   "dom.storage_access.prompt.testing=true",
@@ -41,10 +43,14 @@ support-files = [
 ]
 
 ["browser_blockingCookies.js"]
-skip-if = ["socketprocess_networking"]
+skip-if = [
+  "socketprocess_networking",
+]
 
 ["browser_blockingDOMCache.js"]
-skip-if = ["socketprocess_networking"]
+skip-if = [
+  "socketprocess_networking",
+]
 
 ["browser_blockingIndexedDb.js"]
 

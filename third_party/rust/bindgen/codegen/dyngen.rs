@@ -1,7 +1,7 @@
 use crate::codegen;
 use crate::ir::context::BindgenContext;
 use crate::ir::function::ClangAbi;
-use proc_macro2::Ident;
+use proc_macro2::{Ident, TokenStream};
 
 /// Used to build the output tokens for dynamic bindings.
 #[derive(Default)]
@@ -14,7 +14,7 @@ pub(crate) struct DynamicItems {
     ///    ...
     /// }
     /// ```
-    struct_members: Vec<proc_macro2::TokenStream>,
+    struct_members: Vec<TokenStream>,
 
     /// Tracks the tokens that will appear inside the library struct's implementation, e.g.:
     ///
@@ -26,7 +26,7 @@ pub(crate) struct DynamicItems {
     ///     }
     /// }
     /// ```
-    struct_implementation: Vec<proc_macro2::TokenStream>,
+    struct_implementation: Vec<TokenStream>,
 
     /// Tracks the initialization of the fields inside the `::new` constructor of the library
     /// struct, e.g.:
@@ -45,7 +45,7 @@ pub(crate) struct DynamicItems {
     ///     ...
     /// }
     /// ```
-    constructor_inits: Vec<proc_macro2::TokenStream>,
+    constructor_inits: Vec<TokenStream>,
 
     /// Tracks the information that is passed to the library struct at the end of the `::new`
     /// constructor, e.g.:
@@ -65,7 +65,7 @@ pub(crate) struct DynamicItems {
     ///     }
     /// }
     /// ```
-    init_fields: Vec<proc_macro2::TokenStream>,
+    init_fields: Vec<TokenStream>,
 }
 
 impl DynamicItems {
@@ -75,13 +75,19 @@ impl DynamicItems {
 
     pub(crate) fn get_tokens(
         &self,
-        lib_ident: Ident,
+        lib_ident: &Ident,
         ctx: &BindgenContext,
-    ) -> proc_macro2::TokenStream {
+    ) -> TokenStream {
         let struct_members = &self.struct_members;
         let constructor_inits = &self.constructor_inits;
         let init_fields = &self.init_fields;
         let struct_implementation = &self.struct_implementation;
+
+        let library_new = if ctx.options().wrap_unsafe_ops {
+            quote!(unsafe { ::libloading::Library::new(path) })
+        } else {
+            quote!(::libloading::Library::new(path))
+        };
 
         let from_library = if ctx.options().wrap_unsafe_ops {
             quote!(unsafe { Self::from_library(library) })
@@ -90,8 +96,6 @@ impl DynamicItems {
         };
 
         quote! {
-            extern crate libloading;
-
             pub struct #lib_ident {
                 __library: ::libloading::Library,
                 #(#struct_members)*
@@ -102,7 +106,7 @@ impl DynamicItems {
                     path: P
                 ) -> Result<Self, ::libloading::Error>
                 where P: AsRef<::std::ffi::OsStr> {
-                    let library = ::libloading::Library::new(path)?;
+                    let library = #library_new?;
                     #from_library
                 }
 
@@ -124,17 +128,18 @@ impl DynamicItems {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn push(
+    pub(crate) fn push_func(
         &mut self,
-        ident: Ident,
+        ident: &Ident,
+        symbol: &str,
         abi: ClangAbi,
         is_variadic: bool,
         is_required: bool,
-        args: Vec<proc_macro2::TokenStream>,
-        args_identifiers: Vec<proc_macro2::TokenStream>,
-        ret: proc_macro2::TokenStream,
-        ret_ty: proc_macro2::TokenStream,
-        attributes: Vec<proc_macro2::TokenStream>,
+        args: &[TokenStream],
+        args_identifiers: &[TokenStream],
+        ret: &TokenStream,
+        ret_ty: &TokenStream,
+        attributes: &[TokenStream],
         ctx: &BindgenContext,
     ) {
         if !is_variadic {
@@ -177,11 +182,12 @@ impl DynamicItems {
         }
 
         // N.B: Unwrap the signature upon construction if it is required to be resolved.
-        let ident_str = codegen::helpers::ast_ty::cstr_expr(ident.to_string());
+        let symbol_cstr =
+            codegen::helpers::ast_ty::cstr_expr(symbol.to_string());
         let library_get = if ctx.options().wrap_unsafe_ops {
-            quote!(unsafe { __library.get(#ident_str) })
+            quote!(unsafe { __library.get(#symbol_cstr) })
         } else {
-            quote!(__library.get(#ident_str))
+            quote!(__library.get(#symbol_cstr))
         };
 
         self.constructor_inits.push(if is_required {
@@ -193,6 +199,57 @@ impl DynamicItems {
                 let #ident = #library_get.map(|sym| *sym);
             }
         });
+
+        self.init_fields.push(quote! {
+            #ident
+        });
+    }
+
+    pub fn push_var(
+        &mut self,
+        ident: &Ident,
+        symbol: &str,
+        ty: &TokenStream,
+        is_required: bool,
+        wrap_unsafe_ops: bool,
+    ) {
+        let member = if is_required {
+            quote! { *mut #ty }
+        } else {
+            quote! { Result<*mut #ty, ::libloading::Error> }
+        };
+
+        self.struct_members.push(quote! {
+            pub #ident: #member,
+        });
+
+        let deref = if is_required {
+            quote! { self.#ident }
+        } else {
+            quote! { *self.#ident.as_ref().expect("Expected variable, got error.") }
+        };
+        self.struct_implementation.push(quote! {
+            pub unsafe fn #ident (&self) -> *mut #ty {
+                #deref
+            }
+        });
+
+        let symbol_cstr =
+            codegen::helpers::ast_ty::cstr_expr(symbol.to_string());
+
+        let library_get = if wrap_unsafe_ops {
+            quote!(unsafe { __library.get::<*mut #ty>(#symbol_cstr) })
+        } else {
+            quote!(__library.get::<*mut #ty>(#symbol_cstr))
+        };
+
+        let qmark = if is_required { quote!(?) } else { quote!() };
+
+        let var_get = quote! {
+            let #ident = #library_get.map(|sym| *sym)#qmark;
+        };
+
+        self.constructor_inits.push(var_get);
 
         self.init_fields.push(quote! {
             #ident

@@ -125,6 +125,9 @@ const sessionDataMap = new Map();
  *
  */
 export class SessionData {
+  #data;
+  #messageHandler;
+
   constructor(messageHandler) {
     if (messageHandler.constructor.type != lazy.RootMessageHandler.type) {
       throw new Error(
@@ -132,17 +135,17 @@ export class SessionData {
       );
     }
 
-    this._messageHandler = messageHandler;
+    this.#messageHandler = messageHandler;
 
     /*
      * The actual data for this session. This is an array of SessionDataItems.
      */
-    this._data = [];
+    this.#data = [];
   }
 
   destroy() {
     // Update the sessionDataMap singleton.
-    sessionDataMap.delete(this._messageHandler.sessionId);
+    sessionDataMap.delete(this.#messageHandler.sessionId);
 
     // Update sharedData and flush to force consistency.
     Services.ppmm.sharedData.set(SESSION_DATA_SHARED_DATA_KEY, sessionDataMap);
@@ -179,10 +182,10 @@ export class SessionData {
         const item = { moduleName, category, contextDescriptor, value };
 
         if (method === SessionDataMethod.Add) {
-          const hasItem = this._findIndex(item) != -1;
+          const hasItem = this.#findIndex(item) != -1;
 
           if (!hasItem) {
-            this._data.push(item);
+            this.#data.push(item);
             updatedValues.push(value);
           } else {
             lazy.logger.warn(
@@ -192,11 +195,11 @@ export class SessionData {
             );
           }
         } else {
-          const itemIndex = this._findIndex(item);
+          const itemIndex = this.#findIndex(item);
 
           if (itemIndex != -1) {
             // The item was found in the session data, remove it.
-            this._data.splice(itemIndex, 1);
+            this.#data.splice(itemIndex, 1);
             updatedValues.push(value);
           } else {
             lazy.logger.warn(
@@ -216,9 +219,66 @@ export class SessionData {
       }
     }
     // Persist the sessionDataMap.
-    this._persist();
+    this.#persist();
 
     return updates;
+  }
+
+  /**
+   * Generate session data item update (remove existing items and add new)
+   * for a given module, category, contextDescriptor and new value.
+   *
+   * @param {string} moduleName
+   *     The name of the module.
+   * @param {string} category
+   *     The session data category.
+   * @param {ContextDescriptor=} contextDescriptor
+   *     The context descriptor.
+   * @param {boolean} onlyRemove
+   *     If it's set to "true" do not add a new session data item.
+   * @param {(string|number|boolean)} newValue
+   *     The new value of the session data item.
+   *
+   * @returns {Array<SessionDataItemUpdate>} sessionDataItemUpdates
+   *     Array of session data item updates.
+   */
+  generateSessionDataItemUpdate(
+    moduleName,
+    category,
+    contextDescriptor,
+    onlyRemove,
+    newValue
+  ) {
+    const sessionDataUpdate = [];
+    const sessionData = this.getSessionData(
+      moduleName,
+      category,
+      contextDescriptor
+    );
+
+    if (sessionData.length) {
+      for (const item of sessionData) {
+        sessionDataUpdate.push({
+          category,
+          moduleName,
+          values: [item.value],
+          contextDescriptor,
+          method: SessionDataMethod.Remove,
+        });
+      }
+    }
+
+    if (!onlyRemove) {
+      sessionDataUpdate.push({
+        category,
+        moduleName,
+        values: [newValue],
+        contextDescriptor,
+        method: SessionDataMethod.Add,
+      });
+    }
+
+    return sessionDataUpdate;
   }
 
   /**
@@ -226,8 +286,8 @@ export class SessionData {
    *
    * @param {string} moduleName
    *     The name of the module responsible for this data item.
-   * @param {string} category
-   *     The session data category.
+   * @param {string=} category
+   *     Optional session data category.
    * @param {ContextDescriptor=} contextDescriptor
    *     Optional context descriptor, to retrieve only session data items added
    *     for a specific context descriptor.
@@ -235,15 +295,53 @@ export class SessionData {
    *     Array of SessionDataItems for the provided module and type.
    */
   getSessionData(moduleName, category, contextDescriptor) {
-    return this._data.filter(
+    return this.#data.filter(item =>
+      this.#matchItem(item, moduleName, category, contextDescriptor)
+    );
+  }
+
+  /**
+   * Retrieve the SessionDataItems for a given module, type and
+   * with context descriptors which would match the provided
+   * browsing context.
+   *
+   * @param {string} moduleName
+   *     The name of the module.
+   * @param {string} category
+   *     The session data category.
+   * @param {BrowsingContext} context
+   *     The browsing context.
+   * @returns {Array<SessionDataItem>}
+   *     Array of SessionDataItems for the provided module, type
+   *     and browsing context.
+   */
+  getSessionDataForContext(moduleName, category, context) {
+    return this.#data.filter(
       item =>
-        item.moduleName === moduleName &&
-        item.category === category &&
-        (!contextDescriptor ||
-          this._isSameContextDescriptor(
-            item.contextDescriptor,
-            contextDescriptor
-          ))
+        this.#matchItem(item, moduleName, category) &&
+        this.#messageHandler.contextsMatchDescriptor(
+          [context],
+          item.contextDescriptor
+        )
+    );
+  }
+
+  /**
+   * Checks if any session data exists for a provided module name.
+   *
+   * @param {string} moduleName
+   *     The name of the module responsible for this data item.
+   * @param {string=} category
+   *     Optional session data category.
+   * @param {ContextDescriptor=} contextDescriptor
+   *     Optional context descriptor, to retrieve only session data items added
+   *     for a specific context descriptor.
+   * @returns {boolean}
+   *     Returns `true` if matching session data is found, `false` otherwise.
+   */
+  hasSessionData(moduleName, category, contextDescriptor) {
+    return this.#data.some(item =>
+      this.#matchItem(item, moduleName, category, contextDescriptor)
     );
   }
 
@@ -297,7 +395,7 @@ export class SessionData {
     for (const [moduleName, categories] of structuredUpdates.entries()) {
       for (const [category, contextDescriptors] of categories.entries()) {
         // Find sessionData for the category and the moduleName.
-        const relevantSessionData = this._data.filter(
+        const relevantSessionData = this.#data.filter(
           item => item.category == category && item.moduleName === moduleName
         );
         for (const contextDescriptor of contextDescriptors.values()) {
@@ -312,14 +410,14 @@ export class SessionData {
           ]) {
             // Only apply session data if the module is present for the destination.
             if (
-              this._messageHandler.supportsCommand(
+              this.#messageHandler.supportsCommand(
                 moduleName,
                 "_applySessionData",
                 destination
               )
             ) {
               sessionDataPromises.push(
-                this._messageHandler
+                this.#messageHandler
                   .handleCommand({
                     moduleName,
                     commandName: "_applySessionData",
@@ -327,6 +425,7 @@ export class SessionData {
                       sessionData: relevantSessionData,
                       category,
                       contextDescriptor,
+                      initial: false,
                     },
                     destination,
                   })
@@ -345,19 +444,19 @@ export class SessionData {
     await Promise.allSettled(sessionDataPromises);
   }
 
-  _isSameItem(item1, item2) {
+  #isSameItem(item1, item2) {
     const descriptor1 = item1.contextDescriptor;
     const descriptor2 = item2.contextDescriptor;
 
     return (
       item1.moduleName === item2.moduleName &&
       item1.category === item2.category &&
-      this._isSameContextDescriptor(descriptor1, descriptor2) &&
-      this._isSameValue(item1.category, item1.value, item2.value)
+      this.#isSameContextDescriptor(descriptor1, descriptor2) &&
+      this.#isSameValue(item1.category, item1.value, item2.value)
     );
   }
 
-  _isSameContextDescriptor(contextDescriptor1, contextDescriptor2) {
+  #isSameContextDescriptor(contextDescriptor1, contextDescriptor2) {
     if (contextDescriptor1.type === lazy.ContextDescriptorType.All) {
       // Ignore the id for type "all" since we made the id optional for this type.
       return contextDescriptor1.type === contextDescriptor2.type;
@@ -369,7 +468,7 @@ export class SessionData {
     );
   }
 
-  _isSameValue(category, value1, value2) {
+  #isSameValue(category, value1, value2) {
     if (category === SessionDataCategory.PreloadScript) {
       return value1.script === value2.script;
     }
@@ -377,13 +476,25 @@ export class SessionData {
     return value1 === value2;
   }
 
-  _findIndex(item) {
-    return this._data.findIndex(_item => this._isSameItem(item, _item));
+  #findIndex(item) {
+    return this.#data.findIndex(_item => this.#isSameItem(item, _item));
   }
 
-  _persist() {
+  #matchItem(item, moduleName, category, contextDescriptor) {
+    return (
+      item.moduleName === moduleName &&
+      (!category || item.category === category) &&
+      (!contextDescriptor ||
+        this.#isSameContextDescriptor(
+          item.contextDescriptor,
+          contextDescriptor
+        ))
+    );
+  }
+
+  #persist() {
     // Update the sessionDataMap singleton.
-    sessionDataMap.set(this._messageHandler.sessionId, this._data);
+    sessionDataMap.set(this.#messageHandler.sessionId, this.#data);
 
     // Update sharedData and flush to force consistency.
     Services.ppmm.sharedData.set(SESSION_DATA_SHARED_DATA_KEY, sessionDataMap);

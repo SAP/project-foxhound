@@ -158,11 +158,8 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
 
   LayoutDeviceIntSize GetMinimumWidgetSize(nsPresContext*, nsIFrame*,
                                            StyleAppearance) override;
-  bool WidgetAttributeChangeRequiresRepaint(StyleAppearance,
-                                            nsAtom* aAttribute) override;
   bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame*,
                            StyleAppearance) override;
-  bool WidgetIsContainer(StyleAppearance) override;
   bool ThemeDrawsFocusForWidget(nsIFrame*, StyleAppearance) override;
   bool ThemeNeedsComboboxDropmarker() override;
   bool WidgetAppearanceDependsOnWindowFocus(StyleAppearance) override;

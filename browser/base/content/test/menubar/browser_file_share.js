@@ -88,7 +88,7 @@ add_task(async function test_file_menu_share() {
       "Share button's label should match the service's menu item title. "
     );
     is(
-      shareButton.getAttribute("share-name"),
+      shareButton.getAttribute("data-share-name"),
       mockShareData[0].name,
       "Share button's share-name value should match the service's name. "
     );

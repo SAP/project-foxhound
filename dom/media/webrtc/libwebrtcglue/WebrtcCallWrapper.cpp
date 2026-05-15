@@ -6,12 +6,9 @@
 
 #include "WebrtcCallWrapper.h"
 
+#include "MediaConduitInterface.h"
 #include "jsapi/PeerConnectionCtx.h"
 #include "libwebrtcglue/WebrtcEnvironmentWrapper.h"
-#include "MediaConduitInterface.h"
-
-// libwebrtc includes
-#include "call/rtp_transport_controller_send_factory.h"
 
 namespace mozilla {
 

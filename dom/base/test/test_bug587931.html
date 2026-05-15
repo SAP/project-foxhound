@@ -12,50 +12,14 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=587931
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=587931">Mozilla Bug 587931</a>
 <pre id="test">
 <script type="application/javascript">
-
-const gScriptExecuteEventEnabled = SpecialPowers.getBoolPref("dom.events.script_execute.enabled");
-
-/** Test for Bug 587931 **/
+/** Test for Bug 587931 */
 SimpleTest.waitForExplicitFinish();
-var afterCount = 0;
-var lastBeforeExecute = null;
-var afterCountForSystemGroup = 0;
-// For system group
-var afterCountForSystemGroup = 0;
-var lastBeforeExecuteForSystemGroup = null;
-var expectedCurrentScriptInAfterScriptExecute = null;
 function verifyScript(n) {
   var curr = document.currentScript;
   is(curr, document.getElementById(n), "correct script (" + n + ")");
-  is(lastBeforeExecute, gScriptExecuteEventEnabled ? curr : null, "correct beforescript (" + n + ")");
-  document.addEventListener("afterscriptexecute", function(event) {
-    afterCount++;
-    lastBeforeExecute = null;
-    is(event.target, curr, "correct afterscript (" + n + ")");
-    is(document.currentScript, expectedCurrentScriptInAfterScriptExecute,
-       "document.currentScript in afterscriptexecute(" + n + ")");
-    document.removeEventListener("afterscriptexecute", arguments.callee);
-  });
-  // Test system group
-  SpecialPowers.wrap(document).addEventListener("afterscriptexecute", function(event) {
-    afterCountForSystemGroup++;
-    lastBeforeExecuteForSystemGroup = null;
-    is(event.target, curr, "correct afterscript (" + n + ") for system group");
-    is(document.currentScript, expectedCurrentScriptInAfterScriptExecute,
-       "document.currentScript in afterscriptexecute(" + n + ") for system group");
-  }, { mozSystemGroup: true, once: true });
 }
-document.onbeforescriptexecute = function(event) {
-  lastBeforeExecute = event.target;
-};
-// Test system group
-SpecialPowers.wrap(document).addEventListener("beforescriptexecute", function(event) {
-  lastBeforeExecuteForSystemGroup = event.target;
-}, { mozSystemGroup: true });
 
 window.addEventListener("load", function() {
-  is(afterCount, gScriptExecuteEventEnabled ? 4 : 0, "correct number of afterscriptexecute");
-  is(afterCountForSystemGroup, 4, "correct number of afterscriptexecute for system group");
   SimpleTest.finish();
 });
 </script>
@@ -71,52 +35,12 @@ verifyScript("parse-inline");
 var s = document.createElement("script");
 s.textContent = "verifyScript('dom-inline');";
 s.id = "dom-inline";
-expectedCurrentScriptInAfterScriptExecute = document.currentScript;
 document.body.appendChild(s);
-expectedCurrentScriptInAfterScriptExecute = null;
 
 s = document.createElement("script");
 s.src = "data:text/plain,verifyScript('dom-ext');";
 s.id = "dom-ext";
 document.body.appendChild(s);
-</script>
-
-<!-- Test cancel using beforescriptexecute -->
-<script onbeforescriptexecute="return false;"
-        onafterescriptexecute="window.firedAfterScriptExecuteForCancel = true;">
-ok(!gScriptExecuteEventEnabled, "should have been canceled");
-</script>
-<script>
-isnot(window.firedAfterScriptExecuteForCancel, true, "onafterscriptexecute executed");
-</script>
-
-<!-- Test cancel using beforescriptexecute for external -->
-<script onbeforescriptexecute="window.extFiredBeforeScriptExecuteForCancel = true; return false;"
-        onafterescriptexecute="window.extFiredAfterScriptExecuteForCancel = true;"
-        onload="window.extFiredLoadForCancel = true;"
-        src="data:text/plain,ok(!window.extFiredBeforeScriptExecuteForCancel, 'should have been canceled');">
-</script>
-<script>
-isnot(window.extFiredAfterScriptExecuteForCancel, true, "onafterscriptexecute executed");
-is(extFiredLoadForCancel, true, "onload executed");
-</script>
-
-<!-- Test that all events fire -->
-<script onbeforescriptexecute="window.beforeDidExecute = true;"
-        onafterscriptexecute="window.afterDidExecute = true;"
-        onload="window.loadDidExecute = true"
-        onerror="window.errorDidExecute = true"
-        src="data:text/plain,window.didExecute=true">
-is(window.beforeDidExecute, gScriptExecuteEventEnabled ? true : undefined, 'onbeforescriptexecute executed');
-is(window.afterDidExecute, undefined, 'onafterscriptexecute executed');
-is(window.didExecute, true, 'script executed');
-is(window.loadDidExecute, undefined, 'onload executed');
-is(window.errorDidExecute, undefined, 'onerror executed');
-</script>
-<script>
-is(window.afterDidExecute, gScriptExecuteEventEnabled ? true : undefined, "onafterscriptexecute executed");
-is(window.loadDidExecute, true, "onload executed");
-is(window.errorDidExecute, undefined, "onerror executed");
 </script>
 </body>
 </html>

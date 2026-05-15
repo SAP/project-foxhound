@@ -61,8 +61,9 @@ class FontsHighlighter {
 
   /**
    * Show the highlighter for a given node.
+   *
    * @param {DOMNode} node The node in which we want to search for text runs.
-   * @param {Object} options A bunch of options that can be set:
+   * @param {object} options A bunch of options that can be set:
    * - {String} name The actual font name to look for in the node.
    * - {String} CSSFamilyName The CSS font-family name given to this font.
    */

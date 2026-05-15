@@ -13,7 +13,7 @@ def inline(doc):
 
 class TestRestoreLoadingPage(WindowManagerMixin, MarionetteTestCase):
     def setUp(self):
-        super(TestRestoreLoadingPage, self).setUp()
+        super().setUp()
         self.delayed_page = self.marionette.absolute_url("slow")
 
     def do_test(self, html, is_restoring_expected):

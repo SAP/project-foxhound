@@ -11,20 +11,14 @@ SimpleTest.waitForExplicitFinish();
 
 (async function() {
   const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs");
-  const { isPropertyUsed } = require("devtools/server/actors/utils/inactive-property-helper");
+  const { getInactiveCssDataForProperty } = require("devtools/server/actors/utils/inactive-property-helper");
   const { DocumentWalker } = require("devtools/server/actors/inspector/document-walker");
 
-  const INACTIVE_CSS_PREF = "devtools.inspector.inactive.css.enabled";
-  const CUSTOM_HIGHLIGHT_API = "dom.customHighlightAPI.enabled";
   const TEXT_FRAGMENTS = "dom.text_fragments.enabled";
 
-  Services.prefs.setBoolPref(INACTIVE_CSS_PREF, true);
-  Services.prefs.setBoolPref(CUSTOM_HIGHLIGHT_API, true);
   Services.prefs.setBoolPref(TEXT_FRAGMENTS, true);
 
   SimpleTest.registerCleanupFunction(() => {
-    Services.prefs.clearUserPref(INACTIVE_CSS_PREF);
-    Services.prefs.clearUserPref(CUSTOM_HIGHLIGHT_API);
     Services.prefs.clearUserPref(TEXT_FRAGMENTS);
   });
 
@@ -40,15 +34,19 @@ SimpleTest.waitForExplicitFinish();
   //                                           where elements used for the test case will
   //                                           be appended. The function should return the
   //                                           element that will be passed to
-  //                                           isPropertyUsed.
+  //                                           getInactiveCssDataForProperty.
   //                                           Optional only if there's a tagName property
   // - {Array<String>} rules: An array of the rules that will be applied on the element.
-  //                          This can't be empty as isPropertyUsed need a rule.
+  //                          This can't be empty as getInactiveCssDataForProperty needs a rule.
   // - {Integer|undefined} ruleIndex: If there are multiples rules in `rules`, the index
-  //                                  of the one that should be tested in isPropertyUsed.
-  // - {Boolean} isActive: should the property be active (isPropertyUsed `used` result).
+  //                                  of the one that should be tested in getInactiveCssDataForProperty.
+  // - {Boolean} isActive: should the property be active (e.g. getInactiveCssDataForProperty returns null).
   const testFiles = [
     "align-content.mjs",
+    "at-position-try-rules.mjs",
+    "anchor-name.mjs",
+    "block-container-properties.mjs",
+    "block-flex-grid-container-properties.mjs",
     "border-image.mjs",
     "border-spacing.mjs",
     "box-sizing.mjs",
@@ -69,9 +67,11 @@ SimpleTest.waitForExplicitFinish();
     "place-items-content.mjs",
     "placeholder-pseudo-element.mjs",
     "positioned.mjs",
+    "position-area.mjs",
     "replaced-element-properties.mjs",
     "resize.mjs",
     "scroll-padding.mjs",
+    "self-position-properties.mjs",
     "vertical-align.mjs",
     "table.mjs",
     "table-cell.mjs",
@@ -133,10 +133,10 @@ SimpleTest.waitForExplicitFinish();
       }
     }
 
-    const { used, msgId } = isPropertyUsed(el, getComputedStyle(el, pseudoElement), rule, property);
-    ok(used === isActive, summary);
+    const inactiveCssData = getInactiveCssDataForProperty(el, getComputedStyle(el, pseudoElement), rule, property);
+    is(inactiveCssData === null, isActive, summary);
     if (expectedMsgId) {
-      is(msgId, expectedMsgId, `${summary} - returned expected msgId`);
+      is(inactiveCssData.msgId, expectedMsgId, `${summary} - returned expected msgId`);
     }
 
     main.remove();

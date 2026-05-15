@@ -351,6 +351,15 @@ interface nsIDNSService : nsISupports
      */
     readonly attribute ACString TRRDomainKey;
 
+    /**
+     * Sets whether a TRR server supports HTTP/3 first for connection attempts.
+     * @param aServer
+     *        The server hostname.
+     * @param aEnabled
+     *        True if the server supports HTTP/3 first, false otherwise.
+     */
+    void setHttp3FirstForServer(in AUTF8String aServer, in boolean aEnabled);
+
     /*************************************************************************
      * Listed below are the various flags that may be OR'd together to form
      * the aFlags parameter passed to asyncResolve() and resolve().

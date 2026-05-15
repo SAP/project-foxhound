@@ -7,10 +7,9 @@
 #ifndef mozilla_dom_External_h
 #define mozilla_dom_External_h
 
+#include "mozilla/dom/ExternalBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-
-#include "mozilla/dom/ExternalBinding.h"
 
 namespace mozilla::dom {
 

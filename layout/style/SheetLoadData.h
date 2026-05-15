@@ -199,18 +199,6 @@ class SheetLoadData final
   // async observer notification for an already-complete sheet.
   bool mSheetAlreadyComplete : 1;
 
-  // If true, the sheet is being loaded cross-origin without CORS permissions.
-  // This is completely normal and CORS isn't needed for such loads.  This
-  // flag is simply useful in determining whether to set mBlockResourceTiming
-  // for a child sheet.
-  bool mIsCrossOriginNoCORS : 1;
-
-  // If this flag is true, LoadSheet will call SetReportResourceTiming(false)
-  // on the timedChannel. This is to mark resources that are loaded by a
-  // cross-origin stylesheet with a no-cors policy.
-  // https://www.w3.org/TR/resource-timing/#processing-model
-  bool mBlockResourceTiming : 1;
-
   // Boolean flag indicating whether the load has failed.  This will be set
   // to true if this load, or the load of any descendant import, fails.
   bool mLoadFailed : 1;

@@ -123,7 +123,7 @@ invalidTyping('(rec (type $a (struct)) (type $b (struct)))', '(ref $a)', '(ref $
       let y = b[i];
       // intentionally use loose equality to allow bigint to compare equally
       // to number, as can happen with how we use the JS-API here.
-      assertEq(x == y, true);
+      assertEq(x == y, true, `expected ${x} == ${y}, at ${i}`);
     }
   }
 
@@ -160,6 +160,95 @@ invalidTyping('(rec (type $a (struct)) (type $b (struct)))', '(ref $a)', '(ref $
 
     assertEqResults(select(t), trueValues);
     assertEqResults(select(f), falseValues);
+  }
+
+  // multiples of primitive valtypes
+  for (let valtype of ['i32', 'i64', 'f32', 'f64']) {
+    testExtra([valtype]);
+    testExtra([valtype, valtype]);
+    testExtra([valtype, valtype, valtype]);
+    testExtra([valtype, valtype, valtype, valtype, valtype, valtype, valtype, valtype]);
+  }
+
+  // random sundry of valtypes
+  testExtra(['i32', 'f32', 'i64', 'f64']);
+  testExtra(['i32', 'f32', 'i64', 'f64', 'i32', 'f32', 'i64', 'f64']);
+}
+
+// Runtime test of casting with extra values passed through the branch
+{
+  function assertEqResults(a, b) {
+    if (!(a instanceof Array)) {
+      a = [a];
+    }
+    if (!(b instanceof Array)) {
+      b = [b];
+    }
+    if (a.length !== b.length) {
+      assertEq(a.length, b.length);
+    }
+    for (let i = 0; i < a.length; i++) {
+      let x = a[i];
+      let y = b[i];
+      // intentionally use loose equality to allow bigint to compare equally
+      // to number, as can happen with how we use the JS-API here.
+      assertEq(x == y, true, `expected ${x} == ${y}, at ${i}`);
+    }
+  }
+
+  function testExtra(values) {
+    let types = values.map((type) => type).join(" ");
+
+    // Construct a `select` function which takes `values` twice and a value to
+    // cast. It will return the first values if the 'true' value is passed,
+    // otherwise it will return the 'false' values.
+    let { makeT, makeF, select } = wasmEvalText(`(module
+      (type $t (struct))
+      (type $f (struct (field i32)))
+
+      (func (export "makeT") (result eqref)
+        struct.new_default $t
+      )
+      (func (export "makeF") (result eqref)
+        struct.new_default $f
+      )
+
+      (func (export "select") (param ${types} ${types} eqref) (result ${types})
+        (block (result ${types} anyref)
+          (block (result ${types} (ref $t))
+            ;; branch to 0, passing along 'true' values and the 'casted' value
+            ${values.map((_, i) => `local.get ${i}`).join(" ")}
+            local.get ${values.length * 2}
+            br_on_cast 0 anyref (ref $t)
+
+            ;; branch to 1, passing along 'false' values and the 'uncasted' value
+            ${values.map((_, i) => `local.get ${values.length + i}`).join(" ")}
+            local.get ${values.length * 2}
+            br_on_cast_fail 1 anyref (ref $t)
+
+            ;; cast and cast_fail of the same type cannot both fallthrough
+            unreachable
+          )
+
+          ;; fallthrough, passing our values along
+        )
+        
+        ;; drop the casted/uncasted value at the top, we don't need it
+        drop
+      )
+    )`).exports;
+
+    let t = makeT();
+    let f = makeF();
+
+    let trueValues = values.map((type, i) => type == 'i64' ? BigInt(i) : i);
+    let falseValues = values.map((type, i) => {
+      let value = values.length + i;
+      return type == 'i64' ? BigInt(value) : value;
+    });
+
+    assertEqResults(select(...trueValues, ...falseValues, t), trueValues);
+    assertEqResults(select(...trueValues, ...falseValues, f), falseValues);
   }
 
   // multiples of primitive valtypes

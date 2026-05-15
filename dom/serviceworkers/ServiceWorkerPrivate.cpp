@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "MainThreadUtils.h"
-#include "ServiceWorkerCloneData.h"
 #include "ServiceWorkerManager.h"
 #include "ServiceWorkerRegistrationInfo.h"
 #include "ServiceWorkerUtils.h"
@@ -25,33 +24,47 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/RemoteLazyInputStreamStorage.h"
 #include "mozilla/Result.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/glean/DomServiceworkersMetrics.h"
-#include "mozilla/Unused.h"
+#include "mozilla/dom/Client.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientManager.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/FetchEventOpChild.h"
+#include "mozilla/dom/FetchUtil.h"
+#include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/InternalHeaders.h"
 #include "mozilla/dom/InternalRequest.h"
+#include "mozilla/dom/NotificationEvent.h"
+#include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/dom/PushEventBinding.h"
 #include "mozilla/dom/PushManager.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/RemoteType.h"
 #include "mozilla/dom/RemoteWorkerControllerChild.h"
 #include "mozilla/dom/RemoteWorkerManager.h"  // RemoteWorkerManager::GetRemoteType
+#include "mozilla/dom/RequestBinding.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ServiceWorkerBinding.h"
 #include "mozilla/dom/ServiceWorkerLifetimeExtension.h"
+#include "mozilla/dom/WorkerDebugger.h"
+#include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"  // WebExtensionPolicy
+#include "mozilla/glean/DomServiceworkersMetrics.h"
 #include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/CookieService.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
@@ -60,10 +73,11 @@
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIHttpHeaderVisitor.h"
-#include "nsINetworkInterceptController.h"
 #include "nsINamed.h"
+#include "nsINetworkInterceptController.h"
 #include "nsIObserverService.h"
 #include "nsIRedirectHistoryEntry.h"
+#include "nsIReferrerInfo.h"
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsISupportsImpl.h"
@@ -77,24 +91,6 @@
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
 #include "nsThreadUtils.h"
-
-#include "mozilla/dom/Client.h"
-#include "mozilla/dom/FetchUtil.h"
-#include "mozilla/dom/IndexedDatabaseManager.h"
-#include "mozilla/dom/NotificationEvent.h"
-#include "mozilla/dom/PromiseNativeHandler.h"
-#include "mozilla/dom/PushEventBinding.h"
-#include "mozilla/dom/RequestBinding.h"
-#include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/dom/WorkerDebugger.h"
-#include "mozilla/dom/WorkerRef.h"
-#include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/WorkerScope.h"
-#include "mozilla/dom/ipc/StructuredCloneData.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/StaticPrefs_privacy.h"
-#include "nsIReferrerInfo.h"
 
 extern mozilla::LazyLogModule sWorkerTelemetryLog;
 
@@ -355,7 +351,7 @@ Result<IPCInternalRequest, nsresult> GetIPCInternalRequest(
   nsCOMPtr<nsIReferrerInfo> referrerInfo = httpChannel->GetReferrerInfo();
   if (referrerInfo) {
     referrerPolicy = referrerInfo->ReferrerPolicy();
-    Unused << referrerInfo->GetComputedReferrerSpec(referrer);
+    (void)referrerInfo->GetComputedReferrerSpec(referrer);
   }
 
   uint32_t loadFlags;
@@ -646,8 +642,7 @@ nsresult ServiceWorkerPrivate::Initialize() {
       }
     }
   } else {
-    net::CookieJarSettings::Cast(cookieJarSettings)
-        ->SetPartitionKey(uri, false);
+    net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
     firstPartyURI = uri;
 
     // The service worker is for a first-party context, we can use the uri of
@@ -746,9 +741,13 @@ nsresult ServiceWorkerPrivate::Initialize() {
   mClientInfo->SetURL(mInfo->ScriptSpec());
   mClientInfo->SetFrameType(FrameType::None);
 
+  WorkerOptions workerOptions;
+  workerOptions.mCredentials = RequestCredentials::Omit;
+  workerOptions.mType = mInfo->Type();
+
   mRemoteWorkerData = RemoteWorkerData(
       NS_ConvertUTF8toUTF16(mInfo->ScriptSpec()), baseScriptURL, baseScriptURL,
-      WorkerOptions(),
+      workerOptions,
       /* loading principal */ principalInfo, principalInfo,
       partitionedPrincipalInfo,
       /* useRegularPrincipal */ true,
@@ -886,11 +885,10 @@ nsresult ServiceWorkerPrivate::CheckScriptEvaluation(
 }
 
 nsresult ServiceWorkerPrivate::SendMessageEvent(
-    RefPtr<ServiceWorkerCloneData>&& aData,
+    ipc::StructuredCloneData* aData,
     const ServiceWorkerLifetimeExtension& aLifetimeExtension,
     const PostMessageSource& aSource) {
   AssertIsOnMainThread();
-  MOZ_ASSERT(aData);
 
   auto scopeExit = MakeScopeExit([&] { Shutdown(); });
 
@@ -902,9 +900,7 @@ nsresult ServiceWorkerPrivate::SendMessageEvent(
 
   ServiceWorkerMessageEventOpArgs args;
   args.source() = aSource;
-  if (!aData->BuildClonedMessageData(args.clonedData())) {
-    return NS_ERROR_DOM_DATA_CLONE_ERR;
-  }
+  args.clonedData() = aData;
 
   scopeExit.release();
 
@@ -1106,8 +1102,8 @@ nsresult ServiceWorkerPrivate::SendFetchEvent(
     nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
 
     // We'll check for a null registration below rather than an error code here.
-    Unused << swm->GetClientRegistration(loadInfo->GetClientInfo().ref(),
-                                         getter_AddRefs(registration));
+    (void)swm->GetClientRegistration(loadInfo->GetClientInfo().ref(),
+                                     getter_AddRefs(registration));
   }
 
   // Its possible the registration is removed between starting the interception
@@ -1145,8 +1141,7 @@ nsresult ServiceWorkerPrivate::SendFetchEvent(
     Shutdown();
   });
 
-  IPCInternalRequest request;
-  MOZ_TRY_VAR(request, GetIPCInternalRequest(aChannel));
+  IPCInternalRequest request = MOZ_TRY(GetIPCInternalRequest(aChannel));
 
   scopeExit.release();
 
@@ -1215,7 +1210,7 @@ nsresult ServiceWorkerPrivate::SendFetchEventInternal(
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [holder = std::move(holder)](
                  const GenericPromise::ResolveOrRejectValue& aResult) {
-               Unused << NS_WARN_IF(aResult.IsReject());
+               (void)NS_WARN_IF(aResult.IsReject());
              });
 
   return NS_OK;
@@ -1396,7 +1391,7 @@ void ServiceWorkerPrivate::UpdateState(ServiceWorkerState aState) {
   }
 
   for (auto& event : mPendingFunctionalEvents) {
-    Unused << NS_WARN_IF(NS_FAILED(event->Send()));
+    (void)NS_WARN_IF(NS_FAILED(event->Send()));
   }
 
   mPendingFunctionalEvents.Clear();
@@ -1962,7 +1957,7 @@ RefPtr<GenericNonExclusivePromise> ServiceWorkerPrivate::ShutdownInternal(
   RefPtr<GenericNonExclusivePromise::Private> promise =
       new GenericNonExclusivePromise::Private(__func__);
 
-  Unused << ExecServiceWorkerOp(
+  (void)ExecServiceWorkerOp(
       ServiceWorkerTerminateWorkerOpArgs(aShutdownStateId),
       // It doesn't make sense to extend the lifetime in this case.  This will
       // also ensure that we don't try and spawn the ServiceWorker, but as our

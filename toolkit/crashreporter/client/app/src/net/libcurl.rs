@@ -199,7 +199,7 @@ fn to_result(code: CurlCode) -> Result<()> {
 }
 
 impl Curl {
-    pub fn easy(&self) -> std::io::Result<Easy> {
+    pub fn easy(&self) -> std::io::Result<Easy<'_>> {
         let handle = unsafe { (self.curl_easy_init)() };
         if handle.0.is_null() {
             Err(std::io::Error::other("curl_easy_init failed"))

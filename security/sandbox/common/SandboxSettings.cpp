@@ -20,7 +20,6 @@
 
 #ifdef XP_WIN
 #  include "mozilla/gfx/gfxVars.h"
-#  include "mozilla/WindowsVersion.h"
 #  include "nsExceptionHandler.h"
 #  include "PDMFactory.h"
 #endif  // XP_WIN
@@ -198,6 +197,10 @@ int GetEffectiveContentSandboxLevel() {
 }
 
 bool IsContentSandboxEnabled() { return GetEffectiveContentSandboxLevel() > 0; }
+
+bool IsGPUSandboxEnabled() {
+  return Preferences::GetInt("security.sandbox.gpu.level") > 0;
+}
 
 int GetEffectiveSocketProcessSandboxLevel() {
   if (PR_GetEnv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX")) {

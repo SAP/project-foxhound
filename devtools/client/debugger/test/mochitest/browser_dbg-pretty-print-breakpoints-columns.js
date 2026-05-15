@@ -11,7 +11,7 @@ add_task(async function () {
   const dbg = await initDebugger("doc-pretty.html", "pretty.js");
 
   await selectSource(dbg, "pretty.js");
-  await prettyPrint(dbg);
+  await togglePrettyPrint(dbg);
 
   info(
     "Add breakpoint in funcWithMultipleBreakableColumns, on the for-loop line"

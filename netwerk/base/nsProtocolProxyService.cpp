@@ -5,8 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SimpleChannel.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 
 #include "nsProtocolProxyService.h"
@@ -43,7 +41,6 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tokenizer.h"
-#include "mozilla/Unused.h"
 
 //----------------------------------------------------------------------------
 
@@ -57,6 +54,7 @@ extern const char kProxyType_SOCKS4[];
 extern const char kProxyType_SOCKS5[];
 extern const char kProxyType_DIRECT[];
 extern const char kProxyType_PROXY[];
+extern const char kProxyType_MASQUE[];
 
 #undef LOG
 #define LOG(args) MOZ_LOG(gProxyLog, LogLevel::Debug, args)
@@ -678,7 +676,7 @@ class AsyncGetPACURIRequestOrSystemWPADSetting final : public nsIRunnable {
         mResetPACThread(aResetPACThread),
         mSystemWPADAllowed(aSystemWPADAllowed) {
     MOZ_ASSERT(NS_IsMainThread());
-    Unused << mIsMainThreadOnly;
+    (void)mIsMainThreadOnly;
   }
 
   NS_IMETHOD Run() override {
@@ -1261,6 +1259,7 @@ const char kProxyType_SOCKS[] = "socks";
 const char kProxyType_SOCKS4[] = "socks4";
 const char kProxyType_SOCKS5[] = "socks5";
 const char kProxyType_DIRECT[] = "direct";
+const char kProxyType_MASQUE[] = "masque";
 
 const char* nsProtocolProxyService::ExtractProxyInfo(const char* start,
                                                      uint32_t aResolveFlags,
@@ -1700,8 +1699,21 @@ nsProtocolProxyService::NewProxyInfoWithAuth(
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  return NewProxyInfo_Internal(type, aHost, aPort, aUsername, aPassword,
+  return NewProxyInfo_Internal(type, aHost, aPort, ""_ns, aUsername, aPassword,
                                aProxyAuthorizationHeader,
+                               aConnectionIsolationKey, aFlags,
+                               aFailoverTimeout, aFailoverProxy, 0, aResult);
+}
+
+NS_IMETHODIMP
+nsProtocolProxyService::NewMASQUEProxyInfo(
+    const nsACString& aHost, int32_t aPort, const nsACString& aMasqueTemplate,
+    const nsACString& aProxyAuthorizationHeader,
+    const nsACString& aConnectionIsolationKey, uint32_t aFlags,
+    uint32_t aFailoverTimeout, nsIProxyInfo* aFailoverProxy,
+    nsIProxyInfo** aResult) {
+  return NewProxyInfo_Internal(kProxyType_MASQUE, aHost, aPort, aMasqueTemplate,
+                               ""_ns, ""_ns, aProxyAuthorizationHeader,
                                aConnectionIsolationKey, aFlags,
                                aFailoverTimeout, aFailoverProxy, 0, aResult);
 }
@@ -2073,8 +2085,8 @@ nsresult nsProtocolProxyService::GetProtocolInfo(nsIURI* uri,
 
 nsresult nsProtocolProxyService::NewProxyInfo_Internal(
     const char* aType, const nsACString& aHost, int32_t aPort,
-    const nsACString& aUsername, const nsACString& aPassword,
-    const nsACString& aProxyAuthorizationHeader,
+    const nsACString& aMasqueTemplate, const nsACString& aUsername,
+    const nsACString& aPassword, const nsACString& aProxyAuthorizationHeader,
     const nsACString& aConnectionIsolationKey, uint32_t aFlags,
     uint32_t aFailoverTimeout, nsIProxyInfo* aFailoverProxy,
     uint32_t aResolveFlags, nsIProxyInfo** aResult) {
@@ -2091,10 +2103,14 @@ nsresult nsProtocolProxyService::NewProxyInfo_Internal(
   proxyInfo->mType = aType;
   proxyInfo->mHost = aHost;
   proxyInfo->mPort = aPort;
+  proxyInfo->mMasqueTemplate = aMasqueTemplate;
   proxyInfo->mUsername = aUsername;
   proxyInfo->mPassword = aPassword;
   proxyInfo->mFlags = aFlags;
   proxyInfo->mResolveFlags = aResolveFlags;
+  if (aFlags & nsIProxyInfo::ALWAYS_TUNNEL_VIA_PROXY) {
+    proxyInfo->mResolveFlags |= nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL;
+  }
   proxyInfo->mTimeout =
       aFailoverTimeout == UINT32_MAX ? mFailedProxyTimeout : aFailoverTimeout;
   proxyInfo->mProxyAuthorizationHeader = aProxyAuthorizationHeader;
@@ -2294,7 +2310,8 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
 
   if (type) {
     rv = NewProxyInfo_Internal(type, *host, port, ""_ns, ""_ns, ""_ns, ""_ns,
-                               proxyFlags, UINT32_MAX, nullptr, flags, result);
+                               ""_ns, proxyFlags, UINT32_MAX, nullptr, flags,
+                               result);
     if (NS_FAILED(rv)) return rv;
   }
 
@@ -2341,7 +2358,7 @@ bool nsProtocolProxyService::ApplyFilter(
 
   if (filterLink->filter) {
     nsCOMPtr<nsIURI> uri;
-    Unused << GetProxyURI(channel, getter_AddRefs(uri));
+    (void)GetProxyURI(channel, getter_AddRefs(uri));
     if (!uri) {
       return false;
     }

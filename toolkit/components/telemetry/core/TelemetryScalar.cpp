@@ -10,12 +10,10 @@
 #include "js/Array.h"               // JS::GetArrayLength, JS::IsArrayObject
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefineUCProperty, JS_Enumerate, JS_GetElement, JS_GetProperty, JS_GetPropertyById, JS_HasProperty
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/JSONWriter.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TelemetryComms.h"
-#include "mozilla/Unused.h"
 #include "nsBaseHashtable.h"
 #include "nsClassHashtable.h"
 #include "nsContentUtils.h"
@@ -90,20 +88,14 @@ struct ScalarMarker {
   using MS = mozilla::MarkerSchema;
   static MS MarkerTypeDisplay() {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable("id", "Scalar Name",
-                                       MS::Format::UniqueString,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("key", "Key", MS::Format::String,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("scalarType", "Type",
-                                       MS::Format::UniqueString,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val", "Value", MS::Format::String,
-                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("id", "Scalar Name", MS::Format::UniqueString);
+    schema.AddKeyLabelFormat("key", "Key", MS::Format::String);
+    schema.AddKeyLabelFormat("scalarType", "Type", MS::Format::UniqueString);
+    schema.AddKeyLabelFormat("val", "Value", MS::Format::String);
     schema.SetTooltipLabel(
         "{marker.data.id}[{marker.data.key}] {marker.data.val}");
     schema.SetTableLabel(
-        "{marker.name} - {marker.data.id}[{marker.data.key}]: "
+        "{marker.data.id}[{marker.data.key}]: "
         "{marker.data.val}");
     return schema;
   }
@@ -152,7 +144,6 @@ struct ScalarMarker {
 namespace {
 
 const uint32_t kMaximumNumberOfKeys = 100;
-const uint32_t kMaxEventSummaryKeys = 500;
 const uint32_t kMaximumKeyStringLength = 72;
 const uint32_t kMaximumStringValueLength = 50;
 // The category and scalar name maximum lengths are used by the dynamic
@@ -316,16 +307,12 @@ class ScalarBase {
   virtual ~ScalarBase() = default;
 
   // Convenience methods used by the C++ API.
-  virtual void SetValue(uint32_t aValue) {
-    mozilla::Unused << HandleUnsupported();
-  }
+  virtual void SetValue(uint32_t aValue) { (void)HandleUnsupported(); }
   virtual ScalarResult SetValue(const nsAString& aValue) {
     return HandleUnsupported();
   }
-  virtual void SetValue(bool aValue) { mozilla::Unused << HandleUnsupported(); }
-  virtual void AddValue(uint32_t aValue) {
-    mozilla::Unused << HandleUnsupported();
-  }
+  virtual void SetValue(bool aValue) { (void)HandleUnsupported(); }
+  virtual void AddValue(uint32_t aValue) { (void)HandleUnsupported(); }
 
   // GetValue is used to get the value of the scalar when persisting it to JS.
   virtual nsresult GetValue(const nsACString& aStoreName, bool aClearStore,
@@ -1323,7 +1310,7 @@ void internal_BroadcastDefinitions(
 
   // Broadcast the definitions to the other content processes.
   for (auto parent : parents) {
-    mozilla::Unused << parent->SendAddDynamicScalars(scalarDefs);
+    (void)parent->SendAddDynamicScalars(scalarDefs);
   }
 }
 
@@ -1789,18 +1776,8 @@ void TelemetryScalar::InitializeGlobalState(bool aCanRecordBase,
     entry->SetData(ScalarKey{i, false});
   }
 
-  // To summarize dynamic events we need a dynamic scalar.
-  const nsTArray<DynamicScalarInfo> initialDynamicScalars({
-      DynamicScalarInfo{
-          nsITelemetry::SCALAR_TYPE_COUNT,
-          true /* recordOnRelease */,
-          false /* expired */,
-          nsAutoCString("telemetry.dynamic_event_counts"),
-          true /* keyed */,
-          {} /* stores */,
-      },
-  });
-  internal_RegisterScalars(locker, initialDynamicScalars);
+  // Initializes gDynamicScalarInfo and gDynamicStoreNames.
+  internal_RegisterScalars(locker, {});
 
   gTelemetryScalarInitDone = true;
 }
@@ -2470,42 +2447,6 @@ nsresult TelemetryScalar::RegisterScalars(const nsACString& aCategoryName,
   ::internal_BroadcastDefinitions(ipcDefinitions);
 
   return NS_OK;
-}
-
-/**
- * Count in Scalars how many of which events were recorded. See bug 1440673
- *
- * Event Telemetry unfortunately cannot use vanilla ScalarAdd because it needs
- * to summarize events recorded in different processes to the
- * telemetry.event_counts of the same process. Including "dynamic".
- *
- * @param aUniqueEventName - expected to be category#object#method
- * @param aProcessType - the process of the event being summarized
- */
-void TelemetryScalar::SummarizeEvent(const nsCString& aUniqueEventName,
-                                     ProcessID aProcessType) {
-  MOZ_ASSERT(XRE_IsParentProcess(),
-             "Only summarize events in the parent process");
-  if (!XRE_IsParentProcess()) {
-    return;
-  }
-
-  StaticMutexAutoLock lock(gTelemetryScalarsMutex);
-
-  ScalarKey scalarKey{static_cast<uint32_t>(ScalarID::TELEMETRY_EVENT_COUNTS)};
-  KeyedScalar* scalar = nullptr;
-  nsresult rv =
-      internal_GetKeyedScalarByEnum(lock, scalarKey, aProcessType, &scalar);
-
-  if (NS_FAILED(rv)) {
-    NS_WARNING("NS_FAILED getting keyed scalar for event summary. Wut.");
-    return;
-  }
-
-  // Set this each time as it may have been cleared and recreated between calls
-  scalar->SetMaximumNumberOfKeys(kMaxEventSummaryKeys);
-
-  scalar->AddValue(lock, NS_ConvertASCIItoUTF16(aUniqueEventName), 1);
 }
 
 /**

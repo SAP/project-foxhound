@@ -29,7 +29,6 @@ add_task(async function test_privacy() {
   // Create an object to hold the values to which we will initialize the prefs.
   const SETTINGS = {
     "network.networkPredictionEnabled": {
-      "network.predictor.enabled": true,
       "network.prefetch-next": true,
       // This pref starts with a numerical value and we need to use whatever the
       // default is or we encounter issues when the pref is reset during the test.

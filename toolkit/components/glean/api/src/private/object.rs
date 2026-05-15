@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use inherent::inherent;
+
 use super::{BaseMetricId, CommonMetricData};
 
 use crate::ipc::need_ipc;
@@ -28,13 +30,8 @@ impl gecko_profiler::ProfilerMarker for ObjectMetricMarker {
         use gecko_profiler::schema::*;
         let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
         schema.set_tooltip_label("{marker.data.id}");
-        schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.value}");
-        schema.add_key_label_format_searchable(
-            "id",
-            "Metric",
-            Format::UniqueString,
-            Searchable::Searchable,
-        );
+        schema.set_table_label("{marker.data.id}: {marker.data.value}");
+        schema.add_key_label_format("id", "Metric", Format::UniqueString);
         schema.add_key_label_format("value", "Value", Format::String);
         schema
     }
@@ -149,22 +146,7 @@ impl<K: ObjectSerialize + Clone> ObjectMetric<K> {
         };
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<serde_json::Value> {
-        match self {
-            ObjectMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
-            ObjectMetric::Child => {
-                panic!("Cannot get test value for object metric in non-parent process!",)
-            }
-        }
-    }
-
-    pub fn test_get_value_as_str<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<String> {
+    pub fn test_get_value_as_str(&self, ping_name: Option<String>) -> Option<String> {
         self.test_get_value(ping_name)
             .map(|val| serde_json::to_string(&val).unwrap())
     }
@@ -174,6 +156,20 @@ impl<K: ObjectSerialize + Clone> ObjectMetric<K> {
             ObjectMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
             ObjectMetric::Child => {
                 panic!("Cannot get the number of recorded errors in non-parent process!")
+            }
+        }
+    }
+}
+
+#[inherent]
+impl<K> glean::TestGetValue for ObjectMetric<K> {
+    type Output = serde_json::Value;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<serde_json::Value> {
+        match self {
+            ObjectMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
+            ObjectMetric::Child => {
+                panic!("Cannot get test value for object metric in non-parent process!",)
             }
         }
     }

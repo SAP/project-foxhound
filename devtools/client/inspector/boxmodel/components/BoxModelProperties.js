@@ -48,7 +48,7 @@ class BoxModelProperties extends PureComponent {
    * This returns the right element if there needs to be one, and one was passed in the
    * props.
    *
-   * @return {Object} An object with 2 properties:
+   * @return {object} An object with 2 properties:
    * - referenceElement {NodeFront}
    * - referenceElementType {String}
    */

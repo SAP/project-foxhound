@@ -4,75 +4,76 @@
 
 package org.mozilla.fenix.downloads.listscreen
 
-import androidx.compose.runtime.Composable
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+import androidx.fragment.compose.content
+import androidx.lifecycle.viewModelScope
 import androidx.navigation.fragment.findNavController
-import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.feature.downloads.AbstractFetchDownloadService
-import org.mozilla.fenix.HomeActivity
-import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.components.lazyStore
-import org.mozilla.fenix.compose.ComposeFragment
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
+import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.appstate.SupportedMenuNotifications
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.downloads.getCannotOpenFileErrorMessage
 import org.mozilla.fenix.downloads.listscreen.di.DownloadUIMiddlewareProvider
-import org.mozilla.fenix.downloads.listscreen.di.DownloadUIMiddlewareProvider.provideUndoDelayProvider
-import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIStore
 import org.mozilla.fenix.downloads.listscreen.store.FileItem
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.hideToolbar
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
  * Fragment for displaying and managing the downloads list.
  */
-class DownloadFragment : ComposeFragment() {
+class DownloadFragment : Fragment() {
 
-    private val downloadStore by lazyStore { viewModelScope ->
-        DownloadUIStore(
-            initialState = DownloadUIState.INITIAL,
-            middleware = DownloadUIMiddlewareProvider.provideMiddleware(
-                coroutineScope = viewModelScope,
-                applicationContext = requireContext().applicationContext,
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        requireContext().applicationContext.components.appStore.dispatch(
+            AppAction.MenuNotification.RemoveMenuNotification(
+                SupportedMenuNotifications.Downloads,
             ),
         )
     }
 
-    @Composable
-    override fun UI() {
+    private val downloadStore by fragmentStore(DownloadUIState.INITIAL) {
+        DownloadUIStore(
+            initialState = it,
+            middleware = DownloadUIMiddlewareProvider.provideMiddleware(
+                coroutineScope = storeProvider.viewModelScope,
+                applicationContext = requireContext().applicationContext,
+                navController = findNavController(),
+            ),
+        )
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View? = content {
         FirefoxTheme {
             DownloadsScreen(
                 downloadsStore = downloadStore,
-                undoDelayProvider = provideUndoDelayProvider(requireContext().settings()),
                 onItemClick = { openItem(it) },
-                onNavigationIconClick = {
-                    if (downloadStore.state.mode is DownloadUIState.Mode.Editing) {
-                        downloadStore.dispatch(DownloadUIAction.ExitEditMode)
-                    } else {
-                        this@DownloadFragment.findNavController().popBackStack()
-                    }
-                },
             )
         }
     }
 
-    private fun openItem(item: FileItem, mode: BrowsingMode? = null) {
-        mode?.let { (activity as HomeActivity).browsingModeManager.mode = it }
+    private fun openItem(item: FileItem) {
         context?.let {
-            val downloadState = DownloadState(
-                id = item.id,
-                url = item.url,
-                fileName = item.fileName,
-                contentType = item.contentType,
-                status = item.status.toDownloadStateStatus(),
-            )
-
             val canOpenFile = AbstractFetchDownloadService.openFile(
                 applicationContext = it.applicationContext,
-                downloadFileName = downloadState.fileName,
-                downloadFilePath = downloadState.filePath,
-                downloadContentType = downloadState.contentType,
+                packageName = it.applicationContext.packageName,
+                downloadFileName = item.fileName,
+                downloadFilePath = item.filePath,
+                downloadContentType = item.contentType,
             )
 
             val rootView = view
@@ -82,11 +83,16 @@ class DownloadFragment : ComposeFragment() {
                     snackbarState = SnackbarState(
                         message = getCannotOpenFileErrorMessage(
                             context = it,
-                            download = downloadState,
+                            filePath = item.filePath,
                         ),
                     ),
                 ).show()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hideToolbar()
     }
 }

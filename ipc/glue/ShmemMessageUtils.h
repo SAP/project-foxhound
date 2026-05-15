@@ -8,23 +8,18 @@
 #define mozilla_ipc_ShmemMessageUtils_h
 
 #include "ipc/IPCMessageUtils.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/Shmem.h"
 
-namespace mozilla {
-namespace ipc {
+namespace IPC {
 
 template <>
-struct IPDLParamTraits<Shmem> {
-  typedef Shmem paramType;
+struct ParamTraits<mozilla::ipc::Shmem> {
+  using paramType = mozilla::ipc::Shmem;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    paramType&& aParam);
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult);
+  static void Write(IPC::MessageWriter* aWriter, paramType&& aParam);
+  static bool Read(IPC::MessageReader* aReader, paramType* aResult);
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
 #endif  // ifndef mozilla_ipc_ShmemMessageUtils_h

@@ -107,6 +107,19 @@ class SearchProviders {
         if (p.shoppingTab?.inspectRegexpInSERP) {
           p.shoppingTab.regexp = new RegExp(p.shoppingTab.regexp);
         }
+
+        let impressionAttributes =
+          p.impressionAttributes?.map(attribute => {
+            if (attribute.element?.regexp) {
+              let newAttribute = structuredClone(attribute);
+              newAttribute.element.regexp = new RegExp(
+                newAttribute.element.regexp
+              );
+              return newAttribute;
+            }
+            return attribute;
+          }) ?? [];
+
         let subframes =
           p.subframes
             ?.filter(obj => obj.inspectRegexpInSERP)
@@ -119,6 +132,7 @@ class SearchProviders {
           extraAdServersRegexps: p.extraAdServersRegexps.map(
             r => new RegExp(r)
           ),
+          impressionAttributes,
           subframes,
         };
       });
@@ -210,7 +224,7 @@ class ListenerHelper {
    * @param {EventListenerParam} eventListenerParam
    * @param {string} target
    * @param {Function} callback
-   * @returns {Array<function>} Array of remove event listener functions.
+   * @returns {Array<Function>} Array of remove event listener functions.
    */
   static addListener(elements, eventListenerParam, target, callback) {
     let { action, eventType, target: customTarget } = eventListenerParam;
@@ -233,7 +247,7 @@ class ListenerHelper {
       if (CONDITIONS[eventListenerParam.condition]) {
         let condition = CONDITIONS[eventListenerParam.condition];
         eventCallback = async event => {
-          let start = Cu.now();
+          let start = ChromeUtils.now();
           if (condition(event)) {
             callback({ action, target });
           }
@@ -327,48 +341,6 @@ class SearchAdImpression {
         this.#topDownComponents.push(component);
       }
     }
-  }
-
-  /**
-   * Check if the page has a shopping tab.
-   *
-   * @param {Document} document
-   * @return {boolean}
-   *   Whether the page has a shopping tab. Defaults to false.
-   */
-  hasShoppingTab(document) {
-    if (!this.#providerInfo?.shoppingTab) {
-      return false;
-    }
-
-    // If a provider has the inspectRegexpInSERP, we assume there must be an
-    // associated regexp that must be used on any hrefs matched by the elements
-    // found using the selector. If inspectRegexpInSERP is false, then check if
-    // the number of items found using the selector matches exactly one element
-    // to ensure we've used a fine-grained search.
-    let elements = document.querySelectorAll(
-      this.#providerInfo.shoppingTab.selector
-    );
-    if (this.#providerInfo.shoppingTab.inspectRegexpInSERP) {
-      let regexp = this.#providerInfo.shoppingTab.regexp;
-      for (let element of elements) {
-        let href = element.getAttribute("href");
-        if (href && regexp.test(href)) {
-          this.#recordElementData(element, {
-            type: "shopping_tab",
-            count: 1,
-          });
-          return true;
-        }
-      }
-    } else if (elements.length == 1) {
-      this.#recordElementData(elements[0], {
-        type: "shopping_tab",
-        count: 1,
-      });
-      return true;
-    }
-    return false;
   }
 
   /**
@@ -488,6 +460,84 @@ class SearchAdImpression {
     this.#elementToAdDataMap.clear();
 
     return { componentToVisibilityMap, hrefToComponentMap };
+  }
+
+  /**
+   * Determines the presence of specific elements on a SERP that are used on
+   * additional attributes for the page impression.
+   *
+   * For each attribute defined in the providers `impressionAttributes` config
+   * this method queries the document for matching elements and records whether
+   * they were found. If an attribute's element definition includes a
+   * component with `countImpressions`, matched elements are also recorded as
+   * ad impression data.
+   *
+   * @param {Document} document
+   *   The document to inspect for impression attributes.
+   * @returns {object}
+   *   An object where keys correspond to attribute keys from the provider's
+   *   `impressionAttributes` config and values are either a pre-defined value
+   *   or a boolean indicating whether matching elements were found.
+   */
+  detectImpressionAttributes(document) {
+    /** @type {Record<string, string>} */
+    let results = {};
+
+    let attributes = this.#providerInfo?.impressionAttributes;
+    if (!attributes?.length) {
+      return results;
+    }
+
+    for (let attribute of attributes) {
+      if (!attribute.element) {
+        continue;
+      }
+
+      let key = attribute.key;
+      let { selector, attributeName, regexp, component, value } =
+        attribute.element;
+
+      // Use a pre-defined value if it exists.
+      if (value) {
+        results[key] = value;
+        continue;
+      }
+
+      // Preserve any previous true value for this key.
+      results[key] ??= "false";
+
+      let elements = document.querySelectorAll(selector);
+      let matchedElements = regexp
+        ? Array.from(elements).filter(el => {
+            let attributeValue = el.getAttribute(attributeName);
+            return attributeValue && regexp.test(attributeValue);
+          })
+        : Array.from(elements);
+
+      let visibleElements = matchedElements.filter(el =>
+        el.checkVisibility({
+          visibilityProperty: true,
+          opacityProperty: true,
+        })
+      );
+
+      if (!visibleElements.length) {
+        continue;
+      }
+
+      results[key] = "true";
+
+      if (component?.type && component.countImpressions) {
+        for (let matchedElement of matchedElements) {
+          this.#recordElementData(matchedElement, {
+            type: component.type,
+            count: 1,
+          });
+        }
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -750,7 +800,6 @@ class SearchAdImpression {
    * for this function, we either increment the ad count by 1 or don't increment the ad
    * count because the parent used `countChildren` completed the calculation in a
    * previous step.
-   *
    *
    * @param {HTMLAnchorElement} anchor
    *  The anchor to be inspected.
@@ -1029,10 +1078,10 @@ class SearchAdImpression {
    *  The number of ads found for a component. The number represents either
    *  the number of elements that match an ad expression or the number of DOM
    *  elements containing an ad link.
-   * @param {Array<Element>} params.proxyChildElements
+   * @param {Array<Element>} [params.proxyChildElements=[]]
    *  An array of DOM elements that should be inspected for visibility instead
    *  of the actual child elements, possibly because they are grouped.
-   * @param {Array<Element>} params.childElements
+   * @param {Array<Element>} [params.childElements=[]]
    *  An array of DOM elements to inspect.
    */
   #recordElementData(
@@ -1285,7 +1334,8 @@ class DomainExtractor {
     }
   }
 
-  /* Given a list of elements, examine the text content for each element, which
+  /**
+   * Given a list of elements, examine the text content for each element, which
    * may be 1) a URL from which we can extract a domain or 2) text we can fix
    * up to create a best guess as to a URL. If either condition is met, we add
    * the domain to the result set.
@@ -1432,7 +1482,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
    * the information associated with that provider.
    *
    * @param {string} url The url to check
-   * @returns {array|null} Returns null if there's no match, otherwise an array
+   * @returns {Array | null} Returns null if there's no match, otherwise an array
    *   of provider name and the provider information.
    */
   _getProviderInfoForUrl(url) {
@@ -1497,8 +1547,10 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
       providerInfo.components?.length &&
       (eventType == "load" || eventType == "pageshow")
     ) {
+      this.#checkForPageImpressionComponents();
+
       // Start performance measurements.
-      let start = Cu.now();
+      let start = ChromeUtils.now();
       let timerId = Glean.serp.categorizationDuration.start();
 
       let pageActionCallback = info => {
@@ -1544,7 +1596,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
       providerInfo.domainExtraction &&
       (eventType == "load" || eventType == "pageshow")
     ) {
-      let start = Cu.now();
+      let start = ChromeUtils.now();
       let nonAdDomains = domainExtractor.extractDomainsFromDocument(
         doc,
         providerInfo.domainExtraction.nonAds,
@@ -1580,18 +1632,17 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
     let providerInfo = this._getProviderInfoForUrl(url);
     if (providerInfo.components?.length) {
       searchAdImpression.providerInfo = providerInfo;
-      let start = Cu.now();
-      let shoppingTabDisplayed = searchAdImpression.hasShoppingTab(
-        this.document
-      );
+      let start = ChromeUtils.now();
+      let elementBasedAttributes =
+        searchAdImpression.detectImpressionAttributes(this.document);
       ChromeUtils.addProfilerMarker(
         "SearchSERPTelemetryChild.#recordImpression",
         start,
-        "Checked for shopping tab"
+        "Detected impression components"
       );
       this.sendAsyncMessage("SearchTelemetry:PageImpression", {
         url,
-        shoppingTabDisplayed,
+        elementBasedAttributes,
       });
     }
   }
@@ -1646,7 +1697,6 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         // so that we remain consistent with the *.in-content:sap* count for the
         // SEARCH_COUNTS histogram.
         if (event.persisted) {
-          this.#checkForPageImpressionComponents();
           this.#check(event.type);
         }
         break;
@@ -1656,7 +1706,6 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         break;
       }
       case "load": {
-        this.#checkForPageImpressionComponents();
         // We check both DOMContentLoaded and load in case the page has
         // taken a long time to load and the ad is only detected on load.
         // We still check at DOMContentLoaded because if the page hasn't
@@ -1683,7 +1732,6 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
     switch (message.name) {
       case "SearchSERPTelemetry:WaitForSPAPageLoad":
         lazy.setTimeout(() => {
-          this.#checkForPageImpressionComponents();
           this._checkForAdLink("load");
         }, Services.cpmm.sharedData.get(SEARCH_TELEMETRY_SHARED.SPA_LOAD_TIMEOUT));
         break;

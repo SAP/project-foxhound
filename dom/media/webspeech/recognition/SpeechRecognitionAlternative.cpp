@@ -6,9 +6,8 @@
 
 #include "SpeechRecognitionAlternative.h"
 
-#include "mozilla/dom/SpeechRecognitionAlternativeBinding.h"
-
 #include "SpeechRecognition.h"
+#include "mozilla/dom/SpeechRecognitionAlternativeBinding.h"
 
 namespace mozilla::dom {
 

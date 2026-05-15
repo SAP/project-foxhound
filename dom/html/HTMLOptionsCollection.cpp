@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLOptionsCollection.h"
-#include "mozilla/dom/HTMLOptionsCollectionBinding.h"
 
 #include "mozilla/dom/HTMLOptionElement.h"
+#include "mozilla/dom/HTMLOptionsCollectionBinding.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 
 namespace mozilla::dom {

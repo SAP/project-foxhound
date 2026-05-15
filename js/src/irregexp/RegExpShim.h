@@ -17,11 +17,9 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/SegmentedVector.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/Types.h"
 
 #include <algorithm>
 #include <cctype>
-#include <iterator>
 #include <optional>
 
 #include "irregexp/RegExpTypes.h"
@@ -608,7 +606,7 @@ class Object {
 // isolate->stack_guard()->HandleInterrupts(). We want to handle
 // interrupts in the caller, so we return a magic value from
 // HandleInterrupts and check for it here.
-inline bool IsException(Object obj, Isolate*) {
+inline bool IsExceptionHole(Object obj, Isolate*) {
   return obj.value().isMagic(JS_INTERRUPT_REGEXP);
 }
 

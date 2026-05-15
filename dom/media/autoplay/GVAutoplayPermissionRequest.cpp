@@ -47,6 +47,7 @@ enum class TestRequest : uint32_t {
   eAllowInAudible = 5,
   eDenyInAudible = 6,
   eLeaveAllPending = 7,
+  eAllowAllAsync = 8,
 };
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(GVAutoplayPermissionRequest,
@@ -67,11 +68,15 @@ void GVAutoplayPermissionRequest::CreateRequest(nsGlobalWindowInner* aWindow,
   if (testingPref != TestRequest::ePromptAsNormal) {
     LOG("Create testing request, tesing value=%u",
         static_cast<uint32_t>(testingPref));
-    if (testingPref == TestRequest::eAllowAll ||
-        (testingPref == TestRequest::eAllowAudible &&
-         aType == RType::eAUDIBLE) ||
-        (testingPref == TestRequest::eAllowInAudible &&
-         aType == RType::eINAUDIBLE)) {
+    if (testingPref == TestRequest::eAllowAllAsync) {
+      request->RequestDelayedTask(
+          aWindow->SerialEventTarget(),
+          GVAutoplayPermissionRequest::DelayedTaskType::Allow);
+    } else if (testingPref == TestRequest::eAllowAll ||
+               (testingPref == TestRequest::eAllowAudible &&
+                aType == RType::eAUDIBLE) ||
+               (testingPref == TestRequest::eAllowInAudible &&
+                aType == RType::eINAUDIBLE)) {
       request->Allow(JS::UndefinedHandleValue);
     } else if (testingPref == TestRequest::eDenyAll ||
                (testingPref == TestRequest::eDenyAudible &&
@@ -117,23 +122,26 @@ void GVAutoplayPermissionRequest::SetRequestStatus(RStatus aStatus) {
   AssertIsOnMainThread();
   if (mType == RType::eAUDIBLE) {
     // Return value of setting synced field should be checked. See bug 1656492.
-    Unused << mContext->SetGVAudibleAutoplayRequestStatus(aStatus);
+    (void)mContext->SetGVAudibleAutoplayRequestStatus(aStatus);
   } else {
     // Return value of setting synced field should be checked. See bug 1656492.
-    Unused << mContext->SetGVInaudibleAutoplayRequestStatus(aStatus);
+    (void)mContext->SetGVInaudibleAutoplayRequestStatus(aStatus);
   }
 }
 
 NS_IMETHODIMP
 GVAutoplayPermissionRequest::Cancel() {
   MOZ_ASSERT(mContext, "Do not call 'Cancel()' twice!");
-  // As the process of replying of the request is an async task, the status
-  // might have be reset at the time we get the result from parent process.
-  // Ex. if the page got closed or naviagated immediately after user replied to
+  // As the process of replying to the request is an async task, the status
+  // might have been reset at the time we get the result from parent process.
+  // Ex. if the page got closed or navigated immediately after user replied to
   // the request. Therefore, the status should be either `pending` or `unknown`.
+  // Additionally, we tolerate `canceled` if the request was already canceled.
+  // See Bug 1996123 for details on the multiple cancel.
   const RStatus status = GetRequestStatus(mContext, mType);
   REQUEST_LOG("Cancel, current status=%s", EnumValueToString(status));
-  MOZ_ASSERT(status == RStatus::ePENDING || status == RStatus::eUNKNOWN);
+  MOZ_ASSERT(status == RStatus::ePENDING || status == RStatus::eDENIED ||
+             status == RStatus::eUNKNOWN);
   if ((status == RStatus::ePENDING) && !mContext->IsDiscarded()) {
     SetRequestStatus(RStatus::eDENIED);
   }
@@ -144,15 +152,25 @@ GVAutoplayPermissionRequest::Cancel() {
 NS_IMETHODIMP
 GVAutoplayPermissionRequest::Allow(JS::Handle<JS::Value> aChoices) {
   MOZ_ASSERT(mContext, "Do not call 'Allow()' twice!");
-  // As the process of replying of the request is an async task, the status
-  // might have be reset at the time we get the result from parent process.
-  // Ex. if the page got closed or naviagated immediately after user replied to
+  // As the process of replying to the request is an async task, the status
+  // might have been reset at the time we get the result from parent process.
+  // Ex. if the page got closed or navigated immediately after user replied to
   // the request. Therefore, the status should be either `pending` or `unknown`.
+  // Additionally, we tolerate `allowed` if the request was already allowed.
+  // See Bug 1996123 for details on the multiple allow.
   const RStatus status = GetRequestStatus(mContext, mType);
   REQUEST_LOG("Allow, current status=%s", EnumValueToString(status));
-  MOZ_ASSERT(status == RStatus::ePENDING || status == RStatus::eUNKNOWN);
+  MOZ_ASSERT(status == RStatus::ePENDING || status == RStatus::eALLOWED ||
+             status == RStatus::eUNKNOWN);
   if (status == RStatus::ePENDING) {
     SetRequestStatus(RStatus::eALLOWED);
+    // Permission grant may arrive late and elements may be suspended.
+    // We message to wake them up and resume downloading data if needed.
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+      obs->NotifyObservers(ToSupports(mWindow), kGVAutoplayAllowedTopic,
+                           /* no extra string data */ nullptr);
+    }
   }
   mContext = nullptr;
   return NS_OK;
@@ -191,6 +209,22 @@ void GVAutoplayPermissionRequestor::AskForPermissionIfNeeded(
 bool GVAutoplayPermissionRequestor::HasEverAskForRequest(
     BrowsingContext* aContext, RType aType) {
   return GetRequestStatus(aContext, aType) != RStatus::eUNKNOWN;
+}
+
+/* static */
+bool GVAutoplayPermissionRequestor::HasUnresolvedRequest(
+    nsPIDOMWindowInner* aWindow) {
+  if (!aWindow) {
+    return false;
+  }
+
+  RefPtr<BrowsingContext> context = aWindow->GetBrowsingContext()->Top();
+  auto gvAudible = context->GetGVAudibleAutoplayRequestStatus();
+  auto gvInaudible = context->GetGVInaudibleAutoplayRequestStatus();
+  return (gvAudible == GVAutoplayRequestStatus::eUNKNOWN) ||
+         (gvAudible == GVAutoplayRequestStatus::ePENDING) ||
+         (gvInaudible == GVAutoplayRequestStatus::eUNKNOWN) ||
+         (gvInaudible == GVAutoplayRequestStatus::ePENDING);
 }
 
 /* static */

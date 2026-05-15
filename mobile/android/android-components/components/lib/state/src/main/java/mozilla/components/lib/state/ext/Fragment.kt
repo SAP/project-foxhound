@@ -9,10 +9,12 @@ import androidx.annotation.MainThread
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.flowWithLifecycle
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.State
 import mozilla.components.lib.state.Store
@@ -64,17 +66,20 @@ fun <S : State, A : Action> Fragment.consumeFrom(store: Store<S, A>, block: (S) 
 }
 
 /**
- * Helper extension method for consuming [State] from a [Store] as a [Flow].
+ * Helper extension method for consuming [State] from a [Store] as a reactive [Flow],
+ * specifically designed for use within a [Fragment]. This function ensures that state
+ * observation and processing are lifecycle-aware with respect to the Fragment's view.
  *
- * The lifetime of the coroutine scope the [Flow] is launched in, and [block] is executed in, is
- * bound to the [View] of the [Fragment]. Once the [View] gets detached, the coroutine scope will
- * automatically be cancelled and no longer observe the [Store].
+ * This function **must be called** when the Fragment's view has been created (e.g., in
+ * `onViewCreated()` or later methods like `onStart()`), as it requires the Fragment's `view`
+ * to be non-null and uses `viewLifecycleOwner`.
  *
- * An optional [LifecycleOwner] can be passed to this method. It will be used to automatically pause
- * and resume the [Store] subscription. With that an application can, for example, automatically
- * stop updating the UI if the application is in the background. Once the [Lifecycle] switches back
- * to at least STARTED state then the latest [State] and further will be passed to the [Flow] again.
- * By default, the fragment itself is used as a [LifecycleOwner].
+ * @param from The [Store] instance from which to consume states.
+ * @param owner The [LifecycleOwner] whose lifecycle dictates the activity of the base
+ *   subscription to the `store`. Defaults to `this` Fragment instance.
+ * @param block A `suspend` lambda that receives the fully prepared, lifecycle-aware,
+ *   and filtered [Flow] of states. You are responsible for `collect`ing this [Flow]
+ *   within the `block` to react to state updates (e.g., updating UI).
  */
 @MainThread
 fun <S : State, A : Action> Fragment.consumeFlow(
@@ -84,22 +89,25 @@ fun <S : State, A : Action> Fragment.consumeFlow(
 ) {
     val fragment = this
     val view = checkNotNull(view) { "Fragment has no view yet. Call from onViewCreated()." }
+    val currentViewLifecycleOwner = this.viewLifecycleOwner
 
-    // It's important to create the flow here directly instead of in the coroutine below,
-    // as otherwise the fragment could be removed before the subscription is created.
-    // This would cause us to create an unnecessary subscription leaking the fragment,
-    // as we only unsubscribe on destroy which already happened.
-    val flow = from.flow(owner)
+    val storeFlow = from.flow(owner)
 
-    val scope = view.toScope()
-    scope.launch {
-        val filtered = flow.filter {
-            // We ignore state updates if the fragment does not have an activity or view
-            // attached anymore.
-            // See comment in [consumeFrom] above.
+    val viewLifecycleAwareFlow = storeFlow.flowWithLifecycle(
+        lifecycle = currentViewLifecycleOwner.lifecycle,
+        minActiveState = Lifecycle.State.STARTED,
+    )
+
+    val viewBoundScope = view.toScope()
+
+    viewBoundScope.launch {
+        val filteredFlow = viewLifecycleAwareFlow.filter {
             fragment.activity != null && fragment.view != null
         }
 
-        block(filtered)
+        // Yield to ensure a possible scope cancellation is processed before executing the block.
+        yield()
+
+        block(filteredFlow)
     }
 }

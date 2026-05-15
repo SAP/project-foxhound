@@ -40,7 +40,9 @@ import mozilla.components.ui.autocomplete.OnFilterListener
 import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
 import kotlin.coroutines.CoroutineContext
 
-internal fun ImageView.setTintResource(@ColorRes tintColorResource: Int) {
+internal fun ImageView.setTintResource(
+    @ColorRes tintColorResource: Int,
+) {
     if (tintColorResource != NO_ID) {
         imageTintList = AppCompatResources.getColorStateList(context, tintColorResource)
     }
@@ -407,13 +409,13 @@ class BrowserToolbar @JvmOverloads constructor(
 
     override fun expand() {
         (layoutParams as? CoordinatorLayout.LayoutParams)?.apply {
-            (behavior as? EngineViewScrollingBehavior)?.forceExpand(this@BrowserToolbar)
+            (behavior as? EngineViewScrollingBehavior)?.forceExpand()
         }
     }
 
     override fun collapse() {
         (layoutParams as? CoordinatorLayout.LayoutParams)?.apply {
-            (behavior as? EngineViewScrollingBehavior)?.forceCollapse(this@BrowserToolbar)
+            (behavior as? EngineViewScrollingBehavior)?.forceCollapse()
         }
     }
 

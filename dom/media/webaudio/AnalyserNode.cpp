@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/AnalyserNode.h"
-#include "mozilla/dom/AnalyserNodeBinding.h"
+
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
+#include "Tracing.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/dom/AnalyserNodeBinding.h"
 #include "nsMathUtils.h"
-#include "Tracing.h"
 
 namespace mozilla {
 
@@ -133,7 +134,7 @@ AnalyserNode::AnalyserNode(AudioContext* aContext)
   // Enough chunks must be recorded to handle the case of fftSize being
   // increased to maximum immediately before getFloatTimeDomainData() is
   // called, for example.
-  Unused << mChunks.SetLength(CHUNK_COUNT, fallible);
+  (void)mChunks.SetLength(CHUNK_COUNT, fallible);
 
   AllocateBuffer();
 }

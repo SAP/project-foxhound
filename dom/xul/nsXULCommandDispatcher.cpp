@@ -10,24 +10,25 @@
 
  */
 
-#include "nsIContent.h"
-#include "nsFocusManager.h"
-#include "nsIControllers.h"
+#include "nsXULCommandDispatcher.h"
+
+#include "mozilla/BasicEvents.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/Document.h"
-#include "nsPresContext.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ElementBinding.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsFocusManager.h"
+#include "nsIContent.h"
+#include "nsIControllers.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsXULCommandDispatcher.h"
-#include "mozilla/Logging.h"
-#include "nsContentUtils.h"
+#include "nsPresContext.h"
 #include "nsReadableUtils.h"
-#include "nsCRT.h"
-#include "nsError.h"
-#include "mozilla/BasicEvents.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/ElementBinding.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;

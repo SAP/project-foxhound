@@ -8,7 +8,6 @@
 
 #include "DataSurfaceHelpers.h"
 #include "Logging.h"
-#include "mozilla/Types.h"  // for decltype
 #include "nsIMemoryReporter.h"
 
 namespace mozilla {

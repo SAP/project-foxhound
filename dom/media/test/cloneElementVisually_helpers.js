@@ -82,9 +82,8 @@ function captureFrameImageData(video) {
  *        A video element to compare against.
  * @param video2 (<video> element)
  *        A video to compare with video1.
- * @return Promise
- * @resolves
- *        Resolves as true if the two videos match.
+ * @returns {Promise<boolean>}
+ *   Resolves as true if the two videos match.
  */
 async function assertVideosMatch(video1, video2) {
   let video1Frame = captureFrameImageData(video1);
@@ -133,10 +132,9 @@ async function assertVideosMatch(video1, video2) {
  * @param asyncFn (async function)
  *        A test function that will be passed the new clone as its
  *        only argument.
- * @return Promise
- * @resolves
- *        When the asyncFn resolves and the clone has been removed
- *        from the DOM.
+ * @returns {Promise<void>}
+ *   Resolves when the asyncFn has resolved and the clone has been removed from
+ *   the DOM.
  */
 async function withNewClone(video, asyncFn) {
   let clone = video.cloneNode();
@@ -159,9 +157,8 @@ async function withNewClone(video, asyncFn) {
  *        The video to set the src on.
  * @param src (string)
  *        The URL to set as the source on a video.
- * @return Promise
- * @resolves
- *        When the video fires the "canplay" event.
+ * @returns {Promise<Event>}
+ *   Resolves when the video fires the "canplay" event.
  */
 async function setVideoSrc(video, src) {
   let promiseReady = waitForEventOnce(video, "canplay");
@@ -177,9 +174,8 @@ async function setVideoSrc(video, src) {
  *        The target to monitor for the event.
  * @param event (string)
  *        The name of the event to wait for.
- * @return Promise
- * @resolves
- *        When the event fires, and resolves to the event.
+ * @returns {Promise<Event>}
+ *   Resolves when the event fires with the event.
  */
 function waitForEventOnce(target, event) {
   return new Promise(resolve => {
@@ -192,9 +188,8 @@ function waitForEventOnce(target, event) {
  * when the decoders have shut down.
  *
  * @param video (<video> element)
- * @return Promise
- * @resolves
- *        When the decoder has shut down.
+ * @returns {Promise<void>}
+ *   Resolves when the decoder has shut down.
  */
 function waitForShutdownDecoder(video) {
   return SimpleTest.promiseWaitForCondition(async () => {

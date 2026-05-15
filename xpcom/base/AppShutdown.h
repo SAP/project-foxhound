@@ -7,7 +7,6 @@
 #ifndef AppShutdown_h
 #define AppShutdown_h
 
-#include <type_traits>
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "ShutdownPhase.h"

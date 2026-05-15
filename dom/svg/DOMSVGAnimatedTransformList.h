@@ -7,11 +7,10 @@
 #ifndef DOM_SVG_DOMSVGANIMATEDTRANSFORMLIST_H_
 #define DOM_SVG_DOMSVGANIMATEDTRANSFORMLIST_H_
 
-#include "nsCycleCollectionParticipant.h"
 #include "SVGElement.h"
-#include "nsWrapperCache.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsLayoutStatics_h__
-#define nsLayoutStatics_h__
+#ifndef nsLayoutStatics_h_
+#define nsLayoutStatics_h_
 
 #include "MainThreadUtils.h"
 #include "nsDebug.h"
@@ -55,4 +55,4 @@ class nsLayoutStatics {
   static nsrefcnt sLayoutStaticRefcnt;
 };
 
-#endif  // nsLayoutStatics_h__
+#endif  // nsLayoutStatics_h_

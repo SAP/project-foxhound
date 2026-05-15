@@ -9,8 +9,6 @@ const BASE_URL = `http://localhost:${server.identity.primaryPort}/data`;
 // the right timeout for content scripts executed at document_idle.
 ExtensionTestUtils.mockAppInfo();
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
   return ExtensionTestUtils.loadExtension({
     manifest: {
@@ -84,6 +82,7 @@ add_task(
           runAt: "document_start",
           world: "MAIN",
           persistAcrossSessions: false,
+          cssOrigin: "author",
           css: ["style.js"],
           excludeMatches: ["http://*/*/foobar.html"],
           js: ["script.js"],

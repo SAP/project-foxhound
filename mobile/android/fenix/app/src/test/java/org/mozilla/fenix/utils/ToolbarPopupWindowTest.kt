@@ -10,19 +10,13 @@ import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.createCustomTab
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class ToolbarPopupWindowTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Test
     fun `getUrlForClipboard should get the right URL`() {
@@ -53,7 +47,7 @@ class ToolbarPopupWindowTest {
         // Custom tab
         val customTabSession = createCustomTab("https://mozilla.org")
         var store = BrowserStore(BrowserState(customTabs = listOf(customTabSession)))
-        store.dispatch(ContentAction.UpdateUrlAction(customTabSession.id, "https://firefox.com")).joinBlocking()
+        store.dispatch(ContentAction.UpdateUrlAction(customTabSession.id, "https://firefox.com"))
         assertEquals(
             "https://firefox.com",
             ToolbarPopupWindow.getUrlForClipboard(store, customTabSession.id),
@@ -62,7 +56,7 @@ class ToolbarPopupWindowTest {
         // Regular tab
         val regularTab = createTab(url = "http://firefox.com")
         store = BrowserStore(BrowserState(tabs = listOf(regularTab), selectedTabId = regularTab.id))
-        store.dispatch(ContentAction.UpdateUrlAction(regularTab.id, "https://mozilla.org")).joinBlocking()
+        store.dispatch(ContentAction.UpdateUrlAction(regularTab.id, "https://mozilla.org"))
         assertEquals("https://mozilla.org", ToolbarPopupWindow.getUrlForClipboard(store))
     }
 }

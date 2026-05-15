@@ -138,7 +138,7 @@ TEST_F(APZCSnappingTesterMock, Snap_After_Pinch) {
   PinchWithPinchInput(apzc, ScreenIntPoint(50, 50), ScreenIntPoint(50, 50),
                       1.2f);
 
-  apzc->AssertStateIsSmoothMsdScroll();
+  apzc->AssertInSmoothMsdScroll();
 }
 
 // Currently fails on Android because on the platform we have a different
@@ -208,7 +208,7 @@ TEST_F(APZCSnappingTesterMock, SnapOnPanEndWithZeroVelocity) {
              ScreenPoint(0, 0), mcc->Time());
 
   // Now a smooth animation has been triggered for snapping to 30.
-  apzc->AssertStateIsSmoothMsdScroll();
+  apzc->AssertInSmoothMsdScroll();
 
   apzc->AdvanceAnimationsUntilEnd();
   // The snapped position should be 30 rather than 100 because it's the nearest
@@ -291,7 +291,7 @@ TEST_F(APZCSnappingTesterMock, SnapOnPanEndWithPositiveVelocity) {
   mcc->AdvanceByMillis(5);
 
   // A smooth animation has been triggered by the pan-end event above.
-  apzc->AssertStateIsSmoothMsdScroll();
+  apzc->AssertInSmoothMsdScroll();
 
   apzc->AdvanceAnimationsUntilEnd();
   EXPECT_EQ(apzc->GetCurrentAsyncScrollOffset(

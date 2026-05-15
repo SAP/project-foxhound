@@ -14,6 +14,110 @@ const {
   "moz-src:///browser/components/tabbrowser/SmartTabGrouping.sys.mjs"
 );
 
+const { OPFS: SharedOPFS } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/OPFS.sys.mjs"
+);
+
+const { TestIndexedDBCache: SharedIndexedDBCache } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/ModelHub.sys.mjs"
+);
+
+const {
+  SecurityOrchestrator: SharedSecurityOrchestrator,
+  getSecurityOrchestrator: sharedGetSecurityOrchestrator,
+} = ChromeUtils.importESModule(
+  "chrome://global/content/ml/security/SecurityOrchestrator.sys.mjs"
+);
+
+const PREF_SECURITY_ENABLED = "browser.ml.security.enabled";
+
+async function setupSecurity() {
+  Services.prefs.setBoolPref(PREF_SECURITY_ENABLED, true);
+}
+
+async function teardownSecurity() {
+  Services.prefs.clearUserPref(PREF_SECURITY_ENABLED);
+  await SharedSecurityOrchestrator.resetForTesting();
+}
+
+function createRandomBlob(blockSize = 8, count = 1) {
+  const blocks = Array.from({ length: count }, () =>
+    Uint32Array.from(
+      { length: blockSize / 4 },
+      () => Math.random() * 4294967296
+    )
+  );
+  return new Blob(blocks, { type: "application/octet-stream" });
+}
+
+function createBlob(size = 8) {
+  return createRandomBlob(size);
+}
+
+function stripLastUsed(data) {
+  return data.map(({ lastUsed: _unusedLastUsed, ...rest }) => {
+    return rest;
+  });
+}
+
+/**
+ * Check whether an IndexedDB database exists without creating or deleting it.
+ *
+ * @param {string} name
+ * @returns {Promise<boolean>} true if it exists, false otherwise
+ */
+function indexedDBExists(name) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(name); // no version -> avoids VersionError issues
+    let sawUpgradeNeeded = false;
+
+    req.onupgradeneeded = e => {
+      // DB did not exist; abort so we don't create it.
+      sawUpgradeNeeded = true;
+      e.target.transaction.abort();
+    };
+
+    req.onsuccess = e => {
+      e.target.result.close();
+      resolve(true); // existed
+    };
+
+    req.onerror = () => {
+      // If we aborted because it didn't exist, treat as "doesn't exist".
+      if (sawUpgradeNeeded && req.error?.name === "AbortError") {
+        resolve(false);
+        return;
+      }
+      reject(req.error);
+    };
+  });
+}
+
+/**
+ * Helper function to initialize the cache
+ */
+async function initializeCache() {
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await SharedIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
+  await SharedOPFS.getDirectoryHandle(dbName, { create: true });
+  return await SharedIndexedDBCache.init({ dbName });
+}
+
+/**
+ * Helper function to delete the cache database
+ */
+async function deleteCache(cache) {
+  await cache.dispose();
+  await SharedIndexedDBCache.deleteDatabaseAndWait(cache.dbName).catch(
+    () => {}
+  );
+  try {
+    await SharedOPFS.remove(cache.dbName, { recursive: true });
+  } catch (e) {
+    // can be empty
+  }
+}
+
 /**
  * Checks if numbers are close up to decimalPoints decimal points
  *

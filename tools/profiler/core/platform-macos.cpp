@@ -25,9 +25,6 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/sysctl.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <string.h>
 #include <errno.h>
 #include <math.h>
 

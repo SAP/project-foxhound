@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsRegion_h__
-#define nsRegion_h__
+#ifndef nsRegion_h_
+#define nsRegion_h_
 
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for uint32_t, uint64_t

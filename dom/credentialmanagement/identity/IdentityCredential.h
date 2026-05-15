@@ -7,12 +7,12 @@
 #ifndef mozilla_dom_IdentityCredential_h
 #define mozilla_dom_IdentityCredential_h
 
+#include "mozilla/IdentityCredentialStorageService.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Credential.h"
 #include "mozilla/dom/PWebIdentity.h"
 #include "nsICredentialChosenCallback.h"
-#include "mozilla/IdentityCredentialStorageService.h"
-#include "mozilla/MozPromise.h"
 
 namespace mozilla::dom {
 

@@ -1,6 +1,8 @@
 [DEFAULT]
 head = "head.js"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 tags = "os_integration"
 
 # Note: The "tail.js" file is not defined in the "tail" key because it calls
@@ -11,7 +13,8 @@ support-files = ["common_test_Download.js"]
 
 ["test_DownloadCore.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1968548
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968548
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 2018334
 ]
 
 ["test_DownloadHistory.js"]
@@ -23,9 +26,9 @@ skip-if = [
 ["test_DownloadIntegration.js"]
 
 ["test_DownloadLegacy.js"]
-run-sequentially = "very high failure rate in parallel"
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1968548
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968548
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 2018334
 ]
 
 ["test_DownloadList.js"]
@@ -35,6 +38,8 @@ skip-if = [
 ["test_DownloadStore.js"]
 
 ["test_Download_noext_win.js"]
-run-if = ["os == 'win'"] # Windows-specific test.
+run-if = [
+  "os == 'win'", # Windows-specific test.
+]
 
 ["test_Downloads.js"]

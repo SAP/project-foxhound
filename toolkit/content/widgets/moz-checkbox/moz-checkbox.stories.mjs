@@ -50,6 +50,7 @@ const Template = ({
   hasSlottedSupportLink,
   nestedFields,
   ellipsized,
+  value,
 }) => {
   let checkboxTemplate = html`
     <moz-checkbox
@@ -61,6 +62,7 @@ const Template = ({
       ?disabled=${disabled}
       accesskey=${ifDefined(accesskey)}
       support-page=${ifDefined(supportPage)}
+      value=${ifDefined(value)}
       class=${classMap({ "text-truncated-ellipsis": ellipsized })}
     >
       ${hasSlottedDescription

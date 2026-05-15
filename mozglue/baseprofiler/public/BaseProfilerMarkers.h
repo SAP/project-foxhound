@@ -34,7 +34,6 @@
 #include "mozilla/BaseProfilerMarkersDetail.h"
 #include "mozilla/BaseProfilerLabels.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 
 #include <functional>
 #include <string>
@@ -56,7 +55,7 @@ ProfileBufferBlockIndex AddMarkerToBuffer(
     ProfileChunkedBuffer& aBuffer, const ProfilerString8View& aName,
     const MarkerCategory& aCategory, MarkerOptions&& aOptions,
     MarkerType aMarkerType, const PayloadArguments&... aPayloadArguments) {
-  Unused << aMarkerType;  // Only the empty object type is useful.
+  (void)aMarkerType;  // Only the empty object type is useful.
   AUTO_BASE_PROFILER_LABEL("baseprofiler::AddMarkerToBuffer", PROFILER);
   return base_profiler_markers_detail::AddMarkerToBuffer<MarkerType>(
       aBuffer, aName, aCategory, std::move(aOptions),
@@ -149,8 +148,12 @@ struct TextMarker : public BaseMarkerType<TextMarker> {
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] =
       // XXX - This is confusingly labeled 'name'. We probably want to fix that.
-      {{"name", MS::InputType::CString, "Details", MS::Format::String,
-        MS::PayloadFlags::Searchable}};
+      {{
+          "name",
+          MS::InputType::CString,
+          "Details",
+          MS::Format::String,
+      }};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
@@ -176,8 +179,12 @@ struct TextStackMarker : public BaseMarkerType<TextStackMarker> {
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] =
       // XXX - This is confusingly labeled 'name'. We probably want to fix that.
-      {{"name", MS::InputType::CString, "Details", MS::Format::String,
-        MS::PayloadFlags::Searchable}};
+      {{
+          "name",
+          MS::InputType::CString,
+          "Details",
+          MS::Format::String,
+      }};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
@@ -205,9 +212,12 @@ struct Tracing : public BaseMarkerType<Tracing> {
   static constexpr bool StoreName = true;
 
   using MS = MarkerSchema;
-  static constexpr MS::PayloadField PayloadFields[] = {
-      {"category", MS::InputType::CString, "Type", MS::Format::String,
-       MS::PayloadFlags::Searchable}};
+  static constexpr MS::PayloadField PayloadFields[] = {{
+      "category",
+      MS::InputType::CString,
+      "Type",
+      MS::Format::String,
+  }};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable,
@@ -231,9 +241,7 @@ struct StackMarker : public BaseMarkerType<StackMarker> {
   static constexpr bool StoreName = true;
 
   using MS = MarkerSchema;
-  static constexpr MS::PayloadField PayloadFields[] = {
-      {"category", MS::InputType::CString, "Type", MS::Format::String,
-       MS::PayloadFlags::Searchable}};
+  static constexpr MS::PayloadField PayloadFields[0] = {};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable,
@@ -241,12 +249,7 @@ struct StackMarker : public BaseMarkerType<StackMarker> {
 
   static constexpr bool IsStackBased = true;
 
-  static void StreamJSONMarkerData(SpliceableJSONWriter& aWriter,
-                                   const ProfilerString8View& aCategory) {
-    if (aCategory.Length() != 0) {
-      aWriter.StringProperty("category", aCategory);
-    }
-  }
+  static void StreamJSONMarkerData(SpliceableJSONWriter& aWriter) {}
 };
 
 }  // namespace mozilla::baseprofiler::markers

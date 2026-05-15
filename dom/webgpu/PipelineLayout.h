@@ -6,26 +6,25 @@
 #ifndef GPU_PipelineLayout_H_
 #define GPU_PipelineLayout_H_
 
-#include "nsWrapperCache.h"
 #include "ObjectModel.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::webgpu {
 
 class Device;
 
-class PipelineLayout final : public ObjectBase, public ChildOf<Device> {
+class PipelineLayout final : public nsWrapperCache,
+                             public ObjectBase,
+                             public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(PipelineLayout)
   GPU_DECL_JS_WRAP(PipelineLayout)
 
   PipelineLayout(Device* const aParent, RawId aId);
 
-  const RawId mId;
-
  private:
   virtual ~PipelineLayout();
-  void Cleanup();
 };
 
 }  // namespace mozilla::webgpu

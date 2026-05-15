@@ -8,7 +8,6 @@
 #include "nsReadLine.h"
 #include "nsStreamUtils.h"
 
-#include <algorithm>
 #include <tuple>
 
 using namespace mozilla;

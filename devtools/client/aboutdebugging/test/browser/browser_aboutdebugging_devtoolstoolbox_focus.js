@@ -117,6 +117,6 @@ function assertDevtoolsToolboxTabState(devtoolsURL) {
   const tab = existingTabs[0];
   const navigator = tab.ownerGlobal;
   is(navigator.gBrowser.selectedTab, tab, "The tab is selected");
-  const focusedNavigator = Services.wm.getMostRecentWindow("navigator:browser");
+  const focusedNavigator = Services.wm.getMostRecentBrowserWindow();
   is(navigator, focusedNavigator, "The navigator is focused");
 }

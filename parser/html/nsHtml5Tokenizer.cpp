@@ -40,8 +40,6 @@
 
 #include "nsHtml5Tokenizer.h"
 
-#include "nsHtml5TokenizerLoopPolicies.h"
-
 char16_t nsHtml5Tokenizer::LT_GT[] = {'<', '>'};
 char16_t nsHtml5Tokenizer::LT_SOLIDUS[] = {'<', '/'};
 char16_t nsHtml5Tokenizer::RSQB_RSQB[] = {']', ']'};
@@ -227,8 +225,10 @@ void nsHtml5Tokenizer::setLineNumber(int32_t line) {
   this->line = line;
 }
 
-nsHtml5HtmlAttributes* nsHtml5Tokenizer::emptyAttributes() {
-  return nsHtml5HtmlAttributes::EMPTY_ATTRIBUTES;
+void nsHtml5Tokenizer::appendCharRefBuf(char16_t c) {
+  MOZ_RELEASE_ASSERT(charRefBufLen < charRefBuf.length,
+                     "Attempted to overrun charRefBuf!");
+  charRefBuf[charRefBufLen++] = c;
 }
 
 void nsHtml5Tokenizer::emitOrAppendCharRefBuf(int32_t returnState) {
@@ -242,27 +242,6 @@ void nsHtml5Tokenizer::emitOrAppendCharRefBuf(int32_t returnState) {
   }
 }
 
-nsHtml5String nsHtml5Tokenizer::strBufToString() {
-  nsHtml5String str = nsHtml5Portability::newStringFromBuffer(
-      strBuf, 0, strBufLen, strBufTaint, tokenHandler,
-      !newAttributesEachTime &&
-          attributeName == nsHtml5AttributeName::ATTR_CLASS);
-  clearStrBufAfterUse();
-  return str;
-}
-
-void nsHtml5Tokenizer::strBufToDoctypeName() {
-  doctypeName =
-      nsHtml5Portability::newLocalNameFromBuffer(strBuf, strBufLen, interner);
-  clearStrBufAfterUse();
-}
-
-void nsHtml5Tokenizer::emitStrBuf() {
-  if (strBufLen > 0) {
-    tokenHandler->characters(strBuf, strBufTaint, 0, strBufLen);
-    clearStrBufAfterUse();
-  }
-}
 
 void nsHtml5Tokenizer::appendStrBuf(char16_t* buffer, int32_t offset,
                                     int32_t length, const StringTaint& taint) {
@@ -278,6 +257,7 @@ void nsHtml5Tokenizer::appendStrBuf(char16_t* buffer, int32_t offset,
   strBufTaint.concat(taint.safeSubTaint(offset, offset + length), strBufLen);
   strBufLen = newLen;
 }
+
 
 void nsHtml5Tokenizer::emitComment(int32_t provisionalHyphens, int32_t pos) {
   RememberGt(pos);
@@ -4478,41 +4458,7 @@ void nsHtml5Tokenizer::initDoctypeFields() {
   forceQuirks = false;
 }
 
-template <class P>
-void nsHtml5Tokenizer::adjustDoubleHyphenAndAppendToStrBufCarriageReturn() {
-  P::silentCarriageReturn(this);
-  adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
-}
-
-template <class P>
-void nsHtml5Tokenizer::adjustDoubleHyphenAndAppendToStrBufLineFeed() {
-  P::silentLineFeed(this);
-  adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
-}
-
-template <class P>
-void nsHtml5Tokenizer::appendStrBufLineFeed() {
-  P::silentLineFeed(this);
-  appendStrBuf('\n', TaintFlow::getEmptyTaintFlow());
-}
-
-template <class P>
-void nsHtml5Tokenizer::appendStrBufCarriageReturn() {
-  P::silentCarriageReturn(this);
-  appendStrBuf('\n', TaintFlow::getEmptyTaintFlow());
-}
-
-template <class P>
-void nsHtml5Tokenizer::emitCarriageReturn(char16_t* buf, const StringTaint& taint, int32_t pos) {
-  P::silentCarriageReturn(this);
-  flushChars(buf, taint, pos);
-  tokenHandler->characters(nsHtml5Tokenizer::LF, EmptyTaint, 0, 1);
-  cstart = INT32_MAX;
-}
-
-void
-nsHtml5Tokenizer::emitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos)
-{
+void nsHtml5Tokenizer::emitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos) {
   flushChars(buf, taint, pos);
   tokenHandler->zeroOriginatingReplacementCharacter();
   cstart = pos + 1;
@@ -4530,10 +4476,6 @@ void nsHtml5Tokenizer::emitPlaintextReplacementCharacter(char16_t* buf, const St
   flushChars(buf, taint, pos);
   tokenHandler->characters(REPLACEMENT_CHARACTER, EmptyTaint, 0, 1);
   cstart = pos + 1;
-}
-
-void nsHtml5Tokenizer::setAdditionalAndRememberAmpersandLocation(char16_t add) {
-  additional = add;
 }
 
 void nsHtml5Tokenizer::bogusDoctype() {
@@ -4900,13 +4842,6 @@ void nsHtml5Tokenizer::emitDoctypeToken(int32_t pos) {
   suspendIfRequestedAfterCurrentNonTextToken();
 }
 
-void nsHtml5Tokenizer::suspendIfRequestedAfterCurrentNonTextToken() {
-  if (suspendAfterCurrentNonTextToken) {
-    suspendAfterCurrentNonTextToken = false;
-    shouldSuspend = true;
-  }
-}
-
 void nsHtml5Tokenizer::suspendAfterCurrentTokenIfNotInText() {
   switch (stateSave) {
     case DATA:
@@ -5018,6 +4953,7 @@ bool nsHtml5Tokenizer::internalEncodingDeclaration(
   return false;
 }
 
+
 void
 nsHtml5Tokenizer::emitOrAppendTwo(const char16_t* val, const StringTaint& taint, int32_t returnState)
 {
@@ -5038,6 +4974,7 @@ nsHtml5Tokenizer::emitOrAppendOne(const char16_t* val, const StringTaint& taint,
     tokenHandler->characters(val, taint, 0, 1);
   }
 }
+
 
 void nsHtml5Tokenizer::end() {
   if (!keepBuffer) {
@@ -5061,10 +4998,6 @@ void nsHtml5Tokenizer::end() {
     attributes->clear(0);
   }
 }
-
-void nsHtml5Tokenizer::requestSuspension() { shouldSuspend = true; }
-
-bool nsHtml5Tokenizer::isInDataState() { return (stateSave == DATA); }
 
 void nsHtml5Tokenizer::resetToDataState() {
   clearStrBufAfterUse();

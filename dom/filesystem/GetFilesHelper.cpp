@@ -5,15 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GetFilesHelper.h"
+
+#include "FileSystemUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/FileBlobImpl.h"
+#include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "FileSystemUtils.h"
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
 

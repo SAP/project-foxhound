@@ -5,12 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceMark.h"
+
 #include "MainThreadUtils.h"
-#include "nsContentUtils.h"
 #include "Performance.h"
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/PerformanceBinding.h"
 #include "mozilla/dom/PerformanceMarkBinding.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 
 using namespace mozilla::dom;
 
@@ -18,7 +20,7 @@ PerformanceMark::PerformanceMark(nsISupports* aParent, const nsAString& aName,
                                  DOMHighResTimeStamp aStartTime,
                                  const JS::Handle<JS::Value>& aDetail,
                                  DOMHighResTimeStamp aUnclampedStartTime)
-    : PerformanceEntry(aParent, aName, u"mark"_ns),
+    : PerformanceEntry(aParent, aName, nsGkAtoms::mark),
       mStartTime(aStartTime),
       mDetail(aDetail),
       mUnclampedStartTime(aUnclampedStartTime) {

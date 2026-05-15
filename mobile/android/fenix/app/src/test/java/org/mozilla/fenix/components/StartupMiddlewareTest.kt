@@ -13,7 +13,6 @@ import mozilla.components.browser.state.action.RestoreCompleteAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Before
@@ -48,7 +47,7 @@ class StartupMiddlewareTest {
         settings.enableHomepageAsNewTab = true
         val store = createStore()
 
-        store.dispatch(RestoreCompleteAction).joinBlocking()
+        store.dispatch(RestoreCompleteAction)
 
         captureActionsMiddleware.assertLastAction(RestoreCompleteAction::class) {}
 
@@ -62,7 +61,7 @@ class StartupMiddlewareTest {
         settings.enableHomepageAsNewTab = false
         val store = createStore()
 
-        store.dispatch(RestoreCompleteAction).joinBlocking()
+        store.dispatch(RestoreCompleteAction)
 
         captureActionsMiddleware.assertLastAction(RestoreCompleteAction::class) {}
 
@@ -79,7 +78,7 @@ class StartupMiddlewareTest {
             initialState = BrowserState(tabs = listOf(tab)),
         )
 
-        store.dispatch(RestoreCompleteAction).joinBlocking()
+        store.dispatch(RestoreCompleteAction)
 
         captureActionsMiddleware.assertLastAction(RestoreCompleteAction::class) {}
 

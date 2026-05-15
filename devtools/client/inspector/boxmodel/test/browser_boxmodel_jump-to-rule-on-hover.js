@@ -28,7 +28,7 @@ add_task(async function () {
   );
 
   info("Wait for mouse to hover over margin-top element.");
-  const onHighlightProperty = ruleView.once("scrolled-to-element");
+  const onHighlightProperty = ruleView.once("element-highlighted");
   EventUtils.synthesizeMouseAtCenter(
     el,
     { type: "mousemove", shiftKey: true },

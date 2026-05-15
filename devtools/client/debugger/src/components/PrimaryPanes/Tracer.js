@@ -146,6 +146,18 @@ export class Tracer extends Component {
     if (!this.tooltip) {
       this.instantiateTooltip();
     }
+
+    // Force updating indexes when we navigate back to the tracer sidebar.
+    // For example, when we navigated away to the source tree.
+    if (!this.state.renderedTraceCount) {
+      this.updateIndexes(
+        {
+          startIndex: this.state.startIndex,
+          endIndex: this.state.endIndex,
+        },
+        this.props
+      );
+    }
   }
 
   instantiateTooltip() {
@@ -416,7 +428,9 @@ export class Tracer extends Component {
             className,
             showFunctionName: true,
             showAnonymousFunctionName: true,
-            frame,
+            // Frame's savedFrameToLocation mess up with the frame object
+            // by incrementing the column unexpectedly.
+            frame: { ...frame, column: frame.column + 1 },
             sourceMapURLService: window.sourceMapURLService,
           })
         );
@@ -599,6 +613,11 @@ export class Tracer extends Component {
   }
 
   renderEventsInSlider() {
+    // When getting back to tracer sidebar after having moved to any other side panel, like source tree,
+    // the timeline is null and would crash here.
+    if (!this.refs.timeline) {
+      return null;
+    }
     const { topTraces, allTraces, traceChildren } = this.props;
     const { startIndex, endIndex } = this.state;
 
@@ -766,7 +785,7 @@ export class Tracer extends Component {
   /**
    * Select the next or previous trace according to the current search string
    *
-   * @param {Boolean} goForward
+   * @param {boolean} goForward
    *                  Select the next matching trace if true,
    *                  otherwise select the previous one.
    */
@@ -938,9 +957,9 @@ export class Tracer extends Component {
  * Walk through the call tree to find the very last children frame
  * and return its trace index.
  *
- * @param {Object} traceChildren
+ * @param {object} traceChildren
  *                 The reducer data containing children trace indexes for all the traces.
- * @param {Number} traceIndex
+ * @param {number} traceIndex
  */
 function findLastTraceIndex(traceChildren, traceIndex) {
   const children = traceChildren[traceIndex];
@@ -954,11 +973,11 @@ function findLastTraceIndex(traceChildren, traceIndex) {
  * Store in the `results` attribute all following siblings for a given trace,
  * as well as for its parents, that, recursively up to the top traces.
  *
- * @param {Object} traceParents
+ * @param {object} traceParents
  *                 The reducer data containing parent trace index for all the traces.
- * @param {Object} traceChildren
+ * @param {object} traceChildren
  *                 The reducer data containing children trace indexes for all the traces.
- * @param {Number} traceIndex
+ * @param {number} traceIndex
  * @param {Array} results
  */
 function collectAllSiblings(traceParents, traceChildren, traceIndex, results) {
@@ -978,7 +997,7 @@ function collectAllSiblings(traceParents, traceChildren, traceIndex, results) {
  * Given the TRACER_FIELDS_INDEXES.EVENT_NAME field of a trace,
  * return the classname to use for a given event trace.
  *
- * @param {String} eventName
+ * @param {string} eventName
  */
 function getEventClassNameFromTraceEventName(eventName) {
   let eventType = "other";
@@ -1002,10 +1021,10 @@ function getEventClassNameFromTraceEventName(eventName) {
 /**
  * Return the index of the top-most parent frame for a given trace index.
  *
- * @param {Object} traceParents
+ * @param {object} traceParents
  *                 The reducer data containing parent trace index for all the traces.
- * @param {Number} traceIndex
- * @return {Number} The top-most parent trace index
+ * @param {number} traceIndex
+ * @return {number} The top-most parent trace index
  */
 function getTraceParentIndex(traceParents, index) {
   const parentIndex = traceParents[index];

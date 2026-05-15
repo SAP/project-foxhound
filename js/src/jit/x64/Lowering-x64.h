@@ -31,6 +31,10 @@ class LIRGeneratorX64 : public LIRGeneratorX86Shared {
   void lowerForMulInt64(LMulI64* ins, MMul* mir, MDefinition* lhs,
                         MDefinition* rhs);
 
+  template <class LInstr>
+  void lowerForShiftInt64(LInstr* ins, MDefinition* mir, MDefinition* lhs,
+                          MDefinition* rhs);
+
   // Returns a box allocation. reg2 is ignored on 64-bit platforms.
   LBoxAllocation useBoxFixed(MDefinition* mir, Register reg1, Register,
                              bool useAtStart = false);

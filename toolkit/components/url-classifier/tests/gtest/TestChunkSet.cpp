@@ -9,7 +9,6 @@
 #include <set>
 
 #include "ChunkSet.h"
-#include "mozilla/ArrayUtils.h"
 
 #include "Common.h"
 

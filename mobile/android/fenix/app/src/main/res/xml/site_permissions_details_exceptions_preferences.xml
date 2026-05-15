@@ -2,8 +2,8 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<androidx.preference.PreferenceScreen
-        xmlns:android="http://schemas.android.com/apk/res/android">
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
     <androidx.preference.Preference
             android:icon="@drawable/ic_camera_enabled"
             android:key="@string/pref_key_phone_feature_camera"
@@ -51,6 +51,20 @@
         android:key="@string/pref_key_browser_feature_autoplay_v2"
         android:title="@string/preference_browser_feature_autoplay"
         android:summary="@string/preference_option_phone_feature_ask_to_allow"/>
+
+    <androidx.preference.Preference
+        android:icon="@drawable/mozac_ic_device_desktop_24"
+        android:key="@string/pref_key_browser_feature_local_device_access"
+        android:summary="@string/preference_option_phone_feature_ask_to_allow"
+        android:title="@string/preference_browser_feature_local_device_access"
+        app:isPreferenceVisible="false" />
+
+    <androidx.preference.Preference
+        android:icon="@drawable/mozac_ic_router_24"
+        android:key="@string/pref_key_browser_feature_local_network_access"
+        android:summary="@string/preference_option_phone_feature_ask_to_allow"
+        android:title="@string/preference_browser_feature_local_network_access"
+        app:isPreferenceVisible="false" />
 
     <androidx.preference.Preference
             android:key="@string/pref_key_exceptions_clear_site_permissions"

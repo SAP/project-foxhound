@@ -10,13 +10,14 @@ use api::{
 use api::units::*;
 use euclid::point2;
 use crate::composite::CompositorSurfaceKind;
+use crate::gpu_types::{ImageBrushPrimitiveData, YuvPrimitive};
+use crate::renderer::{GpuBufferBuilderF, GpuBufferWriterF};
 use crate::scene_building::{CreateShadow, IsVisible};
 use crate::frame_builder::{FrameBuildingContext, FrameBuildingState};
-use crate::gpu_cache::{GpuCache, GpuDataRequest};
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::prim_store::{
-    EdgeAaSegmentMask, PrimitiveInstanceKind,
+    EdgeMask, PrimitiveInstanceKind,
     PrimitiveOpacity, PrimKey,
     PrimTemplate, PrimTemplateCommonData, PrimitiveStore, SegmentInstanceIndex,
     SizeKey, InternablePrimitive,
@@ -28,7 +29,6 @@ use crate::render_task_cache::{
     RenderTaskCacheKey, RenderTaskCacheKeyKind, RenderTaskParent
 };
 use crate::resource_cache::{ImageRequest, ImageProperties, ResourceCache};
-use crate::util::pack_as_float;
 use crate::visibility::{PrimitiveVisibility, compute_conservative_visible_rect};
 use crate::spatial_tree::SpatialNodeIndex;
 use crate::image_tiling;
@@ -38,7 +38,7 @@ use crate::image_tiling;
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct VisibleImageTile {
     pub src_color: RenderTaskId,
-    pub edge_flags: EdgeAaSegmentMask,
+    pub edge_flags: EdgeMask,
     pub local_rect: LayoutRect,
     pub local_clip_rect: LayoutRect,
 }
@@ -192,11 +192,11 @@ impl ImageData {
 
                 let mut size = frame_state.resource_cache.request_image(
                     request,
-                    frame_state.gpu_cache,
+                    &mut frame_state.frame_gpu_data.f32,
                 );
 
                 let mut task_id = frame_state.rg_builder.add().init(
-                    RenderTask::new_image(size, request)
+                    RenderTask::new_image(size, request, false)
                 );
 
                 if let Some(external_image) = external_image {
@@ -274,11 +274,10 @@ impl ImageData {
                         }),
                         descriptor.is_opaque(),
                         RenderTaskParent::Surface,
-                        frame_state.gpu_cache,
                         &mut frame_state.frame_gpu_data.f32,
                         frame_state.rg_builder,
                         &mut frame_state.surface_builder,
-                        &mut |rg_builder, _, _| {
+                        &mut |rg_builder, _| {
                             // Create a task to blit from the texture cache to
                             // a normal transient render task surface.
                             // TODO: figure out if/when we can do a blit instead.
@@ -357,11 +356,11 @@ impl ImageData {
                         let request = request.with_tile(tile.offset);
                         let size = frame_state.resource_cache.request_image(
                             request,
-                            frame_state.gpu_cache,
+                            &mut frame_state.frame_gpu_data.f32,
                         );
 
                         let task_id = frame_state.rg_builder.add().init(
-                            RenderTask::new_image(size, request)
+                            RenderTask::new_image(size, request, false)
                         );
 
                         image_instance.visible_tiles.push(VisibleImageTile {
@@ -390,35 +389,31 @@ impl ImageData {
             );
         }
 
-        if let Some(mut request) = frame_state.gpu_cache.request(&mut common.gpu_cache_handle) {
-            self.write_prim_gpu_blocks(&image_instance.adjustment, &mut request);
-        }
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3);
+        self.write_prim_gpu_blocks(&image_instance.adjustment, &mut writer);
+        common.gpu_buffer_address = writer.finish();
     }
 
-    pub fn write_prim_gpu_blocks(&self, adjustment: &AdjustedImageSource, request: &mut GpuDataRequest) {
-        let stretch_size = adjustment.map_stretch_size(self.stretch_size);
-        // Images are drawn as a white color, modulated by the total
-        // opacity coming from any collapsed property bindings.
-        // Size has to match `VECS_PER_SPECIFIC_BRUSH` from `brush_image.glsl` exactly.
-        request.push(self.color.premultiplied());
-        request.push(PremultipliedColorF::WHITE);
-        request.push([
-            stretch_size.width + self.tile_spacing.width,
-            stretch_size.height + self.tile_spacing.height,
-            0.0,
-            0.0,
-        ]);
+    pub fn write_prim_gpu_blocks(&self, adjustment: &AdjustedImageSource, writer: &mut GpuBufferWriterF) {
+        let stretch_size = adjustment.map_stretch_size(self.stretch_size)
+             + self.tile_spacing;
+
+        writer.push(&ImageBrushPrimitiveData {
+            color: self.color.premultiplied(),
+            background_color: PremultipliedColorF::WHITE,
+            stretch_size,
+        });
     }
 }
 
-fn edge_flags_for_tile_spacing(tile_spacing: &LayoutSize) -> EdgeAaSegmentMask {
-    let mut flags = EdgeAaSegmentMask::empty();
+fn edge_flags_for_tile_spacing(tile_spacing: &LayoutSize) -> EdgeMask {
+    let mut flags = EdgeMask::empty();
 
     if tile_spacing.width > 0.0 {
-        flags |= EdgeAaSegmentMask::LEFT | EdgeAaSegmentMask::RIGHT;
+        flags |= EdgeMask::LEFT | EdgeMask::RIGHT;
     }
     if tile_spacing.height > 0.0 {
-        flags |= EdgeAaSegmentMask::TOP | EdgeAaSegmentMask::BOTTOM;
+        flags |= EdgeMask::TOP | EdgeMask::BOTTOM;
     }
 
     flags
@@ -656,6 +651,7 @@ impl YuvImageData {
     pub fn update(
         &mut self,
         common: &mut PrimTemplateCommonData,
+        is_composited: bool,
         frame_state: &mut FrameBuildingState,
     ) {
 
@@ -672,28 +668,32 @@ impl YuvImageData {
 
             let size = frame_state.resource_cache.request_image(
                 request,
-                frame_state.gpu_cache,
+                &mut frame_state.frame_gpu_data.f32,
             );
 
             let task_id = frame_state.rg_builder.add().init(
-                RenderTask::new_image(size, request)
+                RenderTask::new_image(
+                    size,
+                    request,
+                    is_composited,
+                )
             );
 
             self.src_yuv[channel] = Some(task_id);
         }
 
-        if let Some(mut request) = frame_state.gpu_cache.request(&mut common.gpu_cache_handle) {
-            self.write_prim_gpu_blocks(&mut request);
-        };
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(1);
+        self.write_prim_gpu_blocks(&mut writer);
+        common.gpu_buffer_address = writer.finish();
 
-        // YUV images never have transparency
+    // YUV images never have transparency
         common.opacity = PrimitiveOpacity::opaque();
     }
 
     pub fn request_resources(
         &mut self,
         resource_cache: &mut ResourceCache,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
     ) {
         let channel_num = self.format.get_plane_num();
         debug_assert!(channel_num <= 3);
@@ -704,19 +704,17 @@ impl YuvImageData {
                     rendering: self.image_rendering,
                     tile: None,
                 },
-                gpu_cache,
+                gpu_buffer,
             );
         }
     }
 
-    pub fn write_prim_gpu_blocks(&self, request: &mut GpuDataRequest) {
-        let ranged_color_space = self.color_space.with_range(self.color_range);
-        request.push([
-            pack_as_float(self.color_depth.bit_depth()),
-            pack_as_float(ranged_color_space as u32),
-            pack_as_float(self.format as u32),
-            0.0
-        ]);
+    pub fn write_prim_gpu_blocks(&self, writer: &mut GpuBufferWriterF) {
+        writer.push(&YuvPrimitive {
+            channel_bit_depth: self.color_depth.bit_depth(),
+            color_space: self.color_space.with_range(self.color_range),
+            yuv_format: self.format,
+        });
     }
 }
 

@@ -39,7 +39,7 @@ exports.setIgnoreLayoutChanges = (...args) =>
  *
  * @param {DOMWindow} boundaryWindow
  * @param {DOMWindow} win
- * @return {Boolean}
+ * @return {boolean}
  */
 function isWindowIncluded(boundaryWindow, win) {
   if (win === boundaryWindow) {
@@ -132,10 +132,10 @@ exports.getFrameOffsets = getFrameOffsets;
  * @param {DOMNode} node
  *        The node for which we are to get the box model region
  *        quads.
- * @param {String} region
+ * @param {string} region
  *        The box model region to return: "content", "padding", "border" or
  *        "margin".
- * @param {Object} [options.ignoreZoom=false]
+ * @param {object} [options.ignoreZoom=false]
  *        Ignore zoom used in the context of e.g. canvas.
  * @return {Array}
  *        An array of objects that have the same structure as quads returned by
@@ -225,7 +225,7 @@ exports.getAdjustedQuads = getAdjustedQuads;
  *        a DOM element to get the bounds for
  * @param {DOMWindow} contentWindow
  *        the content window holding the node
- * @return {Object}
+ * @return {object}
  *         A rect object with the {top, left, width, height} properties
  */
 function getRect(boundaryWindow, node, contentWindow) {
@@ -279,7 +279,7 @@ exports.getRect = getRect;
  *        The window where to stop to iterate. If `null` is given, the top
  *        window is used.
  * @param {DOMNode} node
- * @return {Object}
+ * @return {object}
  *         An object with p1,p2,p3,p4 properties being {x,y} objects
  */
 function getNodeBounds(boundaryWindow, node) {
@@ -340,6 +340,7 @@ exports.getNodeBounds = getNodeBounds;
  * elements that act like frames (e.g. <embed>), where 'contentWindow' isn't a
  * property that can be accessed.
  * This uses the inIDeepTreeWalker instead.
+ *
  * @param {DOMNode} frame
  * @return {Window}
  */
@@ -400,7 +401,7 @@ function getFrameContentOffset(frame) {
  * and attached to the window.
  *
  * @param {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function isNodeConnected(node) {
   if (!node.ownerDocument || !node.ownerDocument.defaultView) {
@@ -420,23 +421,10 @@ function isNodeConnected(node) {
 exports.isNodeConnected = isNodeConnected;
 
 /**
- * Determine whether a node is anonymous.
- *
- * @param {DOMNode} node
- * @return {Boolean}
- *
- * FIXME(bug 1597411): Remove one of these (or both, as
- * `node.isNativeAnonymous` is quite clear).
- */
-const isAnonymous = node => node.isNativeAnonymous;
-exports.isAnonymous = isAnonymous;
-exports.isNativeAnonymous = isAnonymous;
-
-/**
  * Determine whether a node is a template element.
  *
  * @param {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function isTemplateElement(node) {
   return (
@@ -449,16 +437,16 @@ exports.isTemplateElement = isTemplateElement;
  * Determine whether a node is a shadow root.
  *
  * @param {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 const isShadowRoot = node => node.containingShadowRoot == node;
 exports.isShadowRoot = isShadowRoot;
 
-/*
+/**
  * Gets the shadow root mode (open or closed).
  *
  * @param {DOMNode} node
- * @return {String|null}
+ * @return {string | null}
  */
 function getShadowRootMode(node) {
   return isShadowRoot(node) ? node.mode : null;
@@ -470,7 +458,7 @@ exports.getShadowRootMode = getShadowRootMode;
  * attached to itself.
  *
  * @param {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function isShadowHost(node) {
   const shadowRoot = node.openOrClosedShadowRoot;
@@ -484,16 +472,12 @@ exports.isShadowHost = isShadowHost;
  * still considered to be the "host" element, and we need to walk them differently.
  *
  * @param {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function isDirectShadowHostChild(node) {
-  // Pseudo elements and native anonymous elements are always part of the anonymous tree.
-  if (
-    isMarkerPseudoElement(node) ||
-    isBeforePseudoElement(node) ||
-    isAfterPseudoElement(node) ||
-    node.isNativeAnonymous
-  ) {
+  // native anonymous elements (which includes pseudo elements) are always part of the
+  // anonymous tree.
+  if (node.isNativeAnonymous) {
     return false;
   }
 
@@ -503,44 +487,12 @@ function isDirectShadowHostChild(node) {
 exports.isDirectShadowHostChild = isDirectShadowHostChild;
 
 /**
- * Determine whether a node is a ::marker pseudo.
- *
- * @param {DOMNode} node
- * @return {Boolean}
- */
-function isMarkerPseudoElement(node) {
-  return node.nodeName === "_moz_generated_content_marker";
-}
-exports.isMarkerPseudoElement = isMarkerPseudoElement;
-
-/**
- * Determine whether a node is a ::before pseudo.
- *
- * @param {DOMNode} node
- * @return {Boolean}
- */
-function isBeforePseudoElement(node) {
-  return node.nodeName === "_moz_generated_content_before";
-}
-exports.isBeforePseudoElement = isBeforePseudoElement;
-
-/**
- * Determine whether a node is a ::after pseudo.
- *
- * @param {DOMNode} node
- * @return {Boolean}
- */
-function isAfterPseudoElement(node) {
-  return node.nodeName === "_moz_generated_content_after";
-}
-exports.isAfterPseudoElement = isAfterPseudoElement;
-
-/**
  * Get the current zoom factor applied to the container window of a given node.
+ *
  * @param {DOMNode|DOMWindow}
  *        The node for which the zoom factor should be calculated, or its
  *        owner window.
- * @return {Number}
+ * @return {number}
  */
 function getCurrentZoom(node) {
   const win = getWindowFor(node);
@@ -562,7 +514,7 @@ exports.getCurrentZoom = getCurrentZoom;
  * @param {DOMNode|DOMWindow}
  *        The node for which the zoom factor should be calculated, or its
  *        owner window.
- * @return {Number}
+ * @return {number}
  */
 function getDisplayPixelRatio(node) {
   const win = getWindowFor(node);
@@ -573,7 +525,7 @@ exports.getDisplayPixelRatio = getDisplayPixelRatio;
 /**
  * Returns the window's dimensions for the `window` given.
  *
- * @return {Object} An object with `width` and `height` properties, representing the
+ * @return {object} An object with `width` and `height` properties, representing the
  * number of pixels for the document's size.
  */
 function getWindowDimensions(window) {
@@ -600,7 +552,7 @@ exports.getWindowDimensions = getWindowDimensions;
 /**
  * Returns the viewport's dimensions for the `window` given.
  *
- * @return {Object} An object with `width` and `height` properties, representing the
+ * @return {object} An object with `width` and `height` properties, representing the
  * number of pixels for the viewport's size.
  */
 function getViewportDimensions(window) {
@@ -622,6 +574,7 @@ exports.getViewportDimensions = getViewportDimensions;
  * - a DOM node
  * - the document node
  * - the window itself
+ *
  * @param {DOMNode|DOMWindow|DOMDocument} node The node to get the window for.
  * @return {DOMWindow}
  */
@@ -644,8 +597,8 @@ function getWindowFor(node) {
  * `window` given.
  *
  * @param {DOMWindow} window
- * @param {String} url
- * @param {String} [type="agent"]
+ * @param {string} url
+ * @param {string} [type="agent"]
  */
 function loadSheet(window, url, type = "agent") {
   if (!(type in SHEET_TYPE)) {
@@ -666,8 +619,8 @@ exports.loadSheet = loadSheet;
  * style sheets of the document. The removal takes effect immediately.
  *
  * @param {DOMWindow} window
- * @param {String} url
- * @param {String} [type="agent"]
+ * @param {string} url
+ * @param {string} [type="agent"]
  */
 function removeSheet(window, url, type = "agent") {
   if (!(type in SHEET_TYPE)) {
@@ -688,7 +641,7 @@ exports.removeSheet = removeSheet;
  *
  * @param  {DOMNode} node
  *         The node for which the DOMQuad is to be returned.
- * @param  {String} region
+ * @param  {string} region
  *         The box model region to return: "content", "padding", "border" or
  *         "margin".
  * @return {DOMQuad}
@@ -771,11 +724,11 @@ exports.getUntransformedQuad = getUntransformedQuad;
  *
  * @param  {DOMNode} node
  *         The node for which the absolute scroll offsets should be calculated.
- * @return {Object} object
+ * @return {object} object
  *         An object containing scrollTop and scrollLeft values.
- * @return {Number} object.scrollLeft
+ * @return {number} object.scrollLeft
  *         The total scrollLeft values of the node and all of its ancestors.
- * @return {Number} object.scrollTop
+ * @return {number} object.scrollTop
  *         The total scrollTop values of the node and all of its ancestors.
  */
 function getAbsoluteScrollOffsetsForNode(node) {
@@ -814,7 +767,7 @@ exports.getAbsoluteScrollOffsetsForNode = getAbsoluteScrollOffsetsForNode;
  * Check if the provided node is a <frame> or <iframe> element.
  *
  * @param {DOMNode} node
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isFrame(node) {
   const className = ChromeUtils.getClassName(node);
@@ -825,7 +778,7 @@ function isFrame(node) {
  * Check if the provided node is representing a remote <browser> element.
  *
  * @param  {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function isRemoteBrowserElement(node) {
   return (
@@ -845,7 +798,7 @@ exports.isRemoteBrowserElement = isRemoteBrowserElement;
  * a different origin document.
  *
  * @param  {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function isRemoteFrame(node) {
   if (isFrame(node)) {
@@ -865,7 +818,7 @@ exports.isRemoteFrame = isRemoteFrame;
  *
  * @param {BrowsingContextTargetActor} targetActor
  * @param {DOMNode} node
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isFrameWithChildTarget(targetActor, node) {
   // If the iframe is blocked because of CSP, it won't have a document (and no associated targets)
@@ -882,7 +835,7 @@ exports.isFrameWithChildTarget = isFrameWithChildTarget;
  * Check if the provided node is representing a frame that is blocked by CSP.
  *
  * @param {DOMNode} node
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isFrameBlockedByCSP(node) {
   if (!isFrame(node)) {

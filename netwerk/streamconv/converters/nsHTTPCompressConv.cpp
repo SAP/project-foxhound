@@ -9,19 +9,21 @@
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
 #include "nsError.h"
+#include "nsIChannel.h"
+#include "nsIForcePendingChannel.h"
+#include "nsIHttpChannel.h"
+#include "nsIRequest.h"
+#include "nsIThreadRetargetableRequest.h"
 #include "nsIThreadRetargetableStreamListener.h"
+#include "nsThreadUtils.h"
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
 #include "nsComponentManagerUtils.h"
-#include "nsThreadUtils.h"
+#include "mozilla/net/Dictionary.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Logging.h"
-#include "nsIForcePendingChannel.h"
-#include "nsIRequest.h"
 #include "mozilla/UniquePtrExtensions.h"
-#include "nsIThreadRetargetableRequest.h"
-#include "nsIChannel.h"
 
 // brotli headers
 #undef assert
@@ -35,16 +37,53 @@
 namespace mozilla {
 namespace net {
 
+class DictionaryCacheEntry;
+
 extern LazyLogModule gHttpLog;
 #define LOG(args) \
   MOZ_LOG(mozilla::net::gHttpLog, mozilla::LogLevel::Debug, args)
 
+extern LazyLogModule gDictionaryLog;
+#define DICTIONARY_LOG(args) \
+  MOZ_LOG(mozilla::net::gDictionaryLog, mozilla::LogLevel::Debug, args)
+
 class BrotliWrapper {
  public:
-  BrotliWrapper() {
-    BrotliDecoderStateInit(&mState, nullptr, nullptr, nullptr);
-  }
+  BrotliWrapper() {}
   ~BrotliWrapper() { BrotliDecoderStateCleanup(&mState); }
+
+  bool Init(nsIRequest* aRequest) {
+    if (!BrotliDecoderStateInit(&mState, nullptr, nullptr, nullptr)) {
+      return false;
+    }
+
+    nsCOMPtr<nsIHttpChannel> httpchannel(do_QueryInterface(aRequest));
+    if (!httpchannel) {
+      return false;
+    }
+    if (NS_SUCCEEDED(httpchannel->GetDecompressDictionary(
+            getter_AddRefs(mDictionary))) &&
+        mDictionary) {
+      // Critical: Dictionary must be fully loaded before use
+      if (!mDictionary->DictionaryReady()) {
+        DICTIONARY_LOG(("Brotli: dictionary not ready yet!"));
+        MOZ_ASSERT(false, "Dictionary should be ready before decompression");
+        return false;
+      }
+      size_t length = mDictionary->GetDictionary().length();
+      DICTIONARY_LOG(("Brotli: dictionary %zu bytes", length));
+      if (length > 0) {
+        BROTLI_BOOL result = BrotliDecoderAttachDictionary(
+            &mState, BROTLI_SHARED_DICTIONARY_RAW, length,
+            mDictionary->GetDictionary().begin());
+        if (!result) {
+          DICTIONARY_LOG(("Brotli: AttachDictionary failed"));
+          return false;
+        }
+      }
+    }
+    return true;
+  }
 
   BrotliDecoderState mState{};
   Atomic<size_t, Relaxed> mTotalOut{0};
@@ -54,6 +93,11 @@ class BrotliWrapper {
   nsIRequest* mRequest{nullptr};
   nsISupports* mContext{nullptr};
   uint64_t mSourceOffset{0};
+
+  RefPtr<DictionaryCacheEntry> mDictionary;
+
+  uint8_t mEaten{0};
+  uint8_t mHeader[36];  // \FF\44\43\42 + 32-byte SHA-256
 };
 
 #ifdef ZSTD_INFALLIBLE
@@ -67,7 +111,30 @@ ZSTD_customMem const zstd_allocators = {zstd_malloc, zstd_free, nullptr};
 
 class ZstdWrapper {
  public:
-  ZstdWrapper() {
+  ZstdWrapper(nsIRequest* aRequest, nsHTTPCompressConv::CompressMode aMode) {
+    size_t length = 0;
+    if (aMode == nsHTTPCompressConv::HTTP_COMPRESS_ZSTD_DICTIONARY) {
+      nsCOMPtr<nsIHttpChannel> httpchannel(do_QueryInterface(aRequest));
+      if (httpchannel) {
+        if (NS_FAILED(httpchannel->GetDecompressDictionary(
+                getter_AddRefs(mDictionary))) ||
+            !mDictionary) {
+          return;
+        }
+        // Critical: Dictionary must be fully loaded before use
+        if (!mDictionary->DictionaryReady()) {
+          DICTIONARY_LOG(("Zstd: dictionary not ready yet!"));
+          MOZ_ASSERT(false, "Dictionary should be ready before decompression");
+          mDictionary = nullptr;
+          return;
+        }
+        length = mDictionary->GetDictionary().length();
+      } else {
+        // Can't decode without a dictionary
+        return;
+      }
+    }
+
 #ifdef ZSTD_INFALLIBLE
     mDStream = ZSTD_createDStream_advanced(zstd_allocators);  // infallible
 #else
@@ -79,6 +146,15 @@ class ZstdWrapper {
       return;
     }
 #endif
+    if (mDictionary) {
+      DICTIONARY_LOG(("zstd: dictionary %zu bytes", length));
+      ZSTD_DCtx_reset(mDStream, ZSTD_reset_session_only);
+      if (ZSTD_isError(ZSTD_DCtx_loadDictionary(
+              mDStream, mDictionary->GetDictionary().begin(), length))) {
+        return;
+      }
+    }
+
     ZSTD_DCtx_setParameter(mDStream, ZSTD_d_windowLogMax, 23 /*8*1024*1024*/);
   }
   ~ZstdWrapper() {
@@ -93,6 +169,8 @@ class ZstdWrapper {
   nsISupports* mContext{nullptr};
   uint64_t mSourceOffset{0};
   ZSTD_DStream* mDStream{nullptr};
+
+  RefPtr<DictionaryCacheEntry> mDictionary;
 };
 
 // nsISupports implementation
@@ -160,6 +238,12 @@ nsHTTPCompressConv::AsyncConvertData(const char* aFromType, const char* aToType,
   } else if (!nsCRT::strncasecmp(aFromType, HTTP_ZST_TYPE,
                                  sizeof(HTTP_ZST_TYPE) - 1)) {
     mMode = HTTP_COMPRESS_ZSTD;
+  } else if (!nsCRT::strncasecmp(aFromType, HTTP_BROTLI_DICTIONARY_TYPE,
+                                 sizeof(HTTP_BROTLI_DICTIONARY_TYPE) - 1)) {
+    mMode = HTTP_COMPRESS_BROTLI_DICTIONARY;
+  } else if (!nsCRT::strncasecmp(aFromType, HTTP_ZSTD_DICTIONARY_TYPE,
+                                 sizeof(HTTP_ZSTD_DICTIONARY_TYPE) - 1)) {
+    mMode = HTTP_COMPRESS_ZSTD_DICTIONARY;
   }
   LOG(("nsHttpCompresssConv %p AsyncConvertData %s %s mode %d\n", this,
        aFromType, aToType, (CompressMode)mMode));
@@ -260,7 +344,7 @@ nsHTTPCompressConv::OnStopRequest(nsIRequest* request, nsresult aStatus) {
   // Bug 1886237 : TRRServiceChannel calls OnStopRequest OMT
   // MOZ_ASSERT(NS_IsMainThread());
   LOG(("nsHttpCompresssConv %p onstop %" PRIx32 " mDispatchToMainThread %d\n",
-       this, static_cast<uint32_t>(aStatus), mDispatchToMainThread));
+       this, static_cast<uint32_t>(aStatus), bool(mDispatchToMainThread)));
 
   // Framing integrity is enforced for content-encoding: gzip, but not for
   // content-encoding: deflate. Note that gzip vs deflate is NOT determined
@@ -271,7 +355,8 @@ nsHTTPCompressConv::OnStopRequest(nsIRequest* request, nsresult aStatus) {
     status = NS_ERROR_NET_PARTIAL_TRANSFER;
     LOG(("nsHttpCompresssConv %p onstop partial gzip\n", this));
   }
-  if (NS_SUCCEEDED(status) && mMode == HTTP_COMPRESS_BROTLI) {
+  if (NS_SUCCEEDED(status) && (mMode == HTTP_COMPRESS_BROTLI ||
+                               mMode == HTTP_COMPRESS_BROTLI_DICTIONARY)) {
     nsCOMPtr<nsIForcePendingChannel> fpChannel = do_QueryInterface(request);
     bool isPending = false;
     if (request) {
@@ -288,6 +373,17 @@ nsHTTPCompressConv::OnStopRequest(nsIRequest* request, nsresult aStatus) {
     if (fpChannel && !isPending) {
       fpChannel->ForcePending(false);
     }
+  }
+  // We don't need the dictionary data anymore
+  if (mBrotli || mZstd) {
+    RefPtr<DictionaryCacheEntry> dict;
+    nsCOMPtr<nsIHttpChannel> httpchannel(do_QueryInterface(request));
+    if (httpchannel) {
+      httpchannel->SetDecompressDictionary(nullptr);
+    }
+    // paranoia
+    mBrotli = nullptr;
+    mZstd = nullptr;
   }
 
   nsCOMPtr<nsIStreamListener> listener;
@@ -319,6 +415,36 @@ nsresult nsHTTPCompressConv::BrotliHandler(nsIInputStream* stream,
     return NS_OK;
   }
 
+  // Dictionary-encoded brotli has a 36-byte header (4 byte fixed + 32 byte
+  // SHA-256)
+  if (self->mBrotli->mDictionary && self->mBrotli->mEaten < 36) {
+    uint8_t header_needed = 36 - self->mBrotli->mEaten;
+    if (avail >= header_needed) {
+      memcpy(&self->mBrotli->mHeader[self->mBrotli->mEaten], dataIn,
+             header_needed);
+      avail -= header_needed;
+      dataIn += header_needed;
+      self->mBrotli->mEaten = 36;
+
+      // Validate header
+      // XXX we could verify the SHA-256 matches what we offered
+      static uint8_t brotli_header[4] = {0xff, 0x44, 0x43, 0x42};
+      if (memcmp(self->mBrotli->mHeader, brotli_header, 4) != 0) {
+        DICTIONARY_LOG(
+            ("!! %p Brotli failed: bad magic header 0x%02x%02x%02x%02x", self,
+             self->mBrotli->mHeader[0], self->mBrotli->mHeader[1],
+             self->mBrotli->mHeader[2], self->mBrotli->mHeader[3]));
+        self->mBrotli->mStatus = NS_ERROR_INVALID_CONTENT_ENCODING;
+        return self->mBrotli->mStatus;
+      }
+    } else {
+      memcpy(&self->mBrotli->mHeader[self->mBrotli->mEaten], dataIn, aAvail);
+      self->mBrotli->mEaten += aAvail;
+      *countRead = aAvail;
+      return NS_OK;
+    }
+  }
+
   auto outBuffer = MakeUniqueFallible<uint8_t[]>(kOutSize);
   if (outBuffer == nullptr) {
     self->mBrotli->mStatus = NS_ERROR_OUT_OF_MEMORY;
@@ -339,12 +465,15 @@ nsresult nsHTTPCompressConv::BrotliHandler(nsIInputStream* stream,
     self->mBrotli->mTotalOut = totalOut;
     self->mBrotli->mBrotliStateIsStreamEnd =
         BrotliDecoderIsFinished(&self->mBrotli->mState);
-    LOG(("nsHttpCompresssConv %p brotlihandler decompress rv=%" PRIx32
+    LOG(("nsHttpCompressConv %p brotlihandler decompress rv=%" PRIx32
          " out=%zu\n",
          self, static_cast<uint32_t>(res), outSize));
 
     if (res == BROTLI_DECODER_RESULT_ERROR) {
-      LOG(("nsHttpCompressConv %p marking invalid encoding", self));
+      DICTIONARY_LOG(
+          ("nsHttpCompressConv %p decoding error: marking invalid encoding "
+           "(%zu)",
+           self, avail));
       self->mBrotli->mStatus = NS_ERROR_INVALID_CONTENT_ENCODING;
       return self->mBrotli->mStatus;
     }
@@ -699,9 +828,13 @@ nsHTTPCompressConv::OnDataAvailable(nsIRequest* request, nsIInputStream* iStr,
       } /* gzip */
       break;
 
-    case HTTP_COMPRESS_BROTLI: {
+    case HTTP_COMPRESS_BROTLI:
+    case HTTP_COMPRESS_BROTLI_DICTIONARY: {
       if (!mBrotli) {
         mBrotli = MakeUnique<BrotliWrapper>();
+        if (!mBrotli->Init(request)) {
+          return NS_ERROR_FAILURE;
+        }
       }
 
       mBrotli->mRequest = request;
@@ -718,9 +851,10 @@ nsHTTPCompressConv::OnDataAvailable(nsIRequest* request, nsIInputStream* iStr,
       }
     } break;
 
-    case HTTP_COMPRESS_ZSTD: {
+    case HTTP_COMPRESS_ZSTD:
+    case HTTP_COMPRESS_ZSTD_DICTIONARY: {
       if (!mZstd) {
-        mZstd = MakeUnique<ZstdWrapper>();
+        mZstd = MakeUnique<ZstdWrapper>(request, mMode);
         if (!mZstd->mDStream) {
           return NS_ERROR_OUT_OF_MEMORY;
         }
@@ -771,7 +905,7 @@ nsresult nsHTTPCompressConv::do_OnDataAvailable(nsIRequest* request,
   LOG(
       ("nsHttpCompressConv %p do_OnDataAvailable mDispatchToMainThread %d "
        "count %u",
-       this, mDispatchToMainThread, count));
+       this, bool(mDispatchToMainThread), count));
   if (count == 0) {
     // Never send 0-byte OnDataAvailables; imglib at least barfs on them and
     // they're not useful
@@ -797,7 +931,7 @@ nsresult nsHTTPCompressConv::do_OnDataAvailable(nsIRequest* request,
         [request{RefPtr<nsIRequest>(request)}, stream{std::move(stream)},
          listener{std::move(listener)}, offset, count]() {
           LOG(("nsHttpCompressConv Calling OnDataAvailable on Mainthread"));
-          Unused << listener->OnDataAvailable(request, stream, offset, count);
+          (void)listener->OnDataAvailable(request, stream, offset, count);
         });
 
     mDecodedDataLength += count;
@@ -976,43 +1110,49 @@ uint32_t nsHTTPCompressConv::check_header(nsIInputStream* iStr,
 
 NS_IMETHODIMP
 nsHTTPCompressConv::CheckListenerChain() {
-  if (XRE_IsContentProcess() &&
-      StaticPrefs::network_decompression_off_mainthread2()) {
-    // handle decompression OMT always.  If the chain needs to be MT,
-    // we'll determine that in OnStartRequest and dispatch to MT
-    return NS_OK;
-  }
+  MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIThreadRetargetableStreamListener> listener;
   {
     MutexAutoLock lock(mMutex);
     listener = do_QueryInterface(mListener);
   }
-  if (!listener) {
-    return NS_ERROR_NO_INTERFACE;
+
+  nsresult rv = NS_ERROR_NO_INTERFACE;
+  if (listener) {
+    rv = listener->CheckListenerChain();
   }
 
-  return listener->CheckListenerChain();
+  // handle decompression OMT always.  If the chain needs to be MT,
+  // we'll determine that in OnStartRequest and dispatch to MT
+  bool alwaysOMT = XRE_IsContentProcess() &&
+                   StaticPrefs::network_decompression_off_mainthread2();
+
+  if (NS_FAILED(rv) && alwaysOMT) {
+    mDispatchToMainThread = true;
+    return NS_OK;
+  }
+
+  return rv;
 }
 
 NS_IMETHODIMP
 nsHTTPCompressConv::OnDataFinished(nsresult aStatus) {
-  nsCOMPtr<nsIThreadRetargetableStreamListener> listener;
+  if (mDispatchToMainThread && !NS_IsMainThread()) {
+    // If this is called off main thread, but the listener can only
+    // handle calls on the main thread, then just return.
+    // Also important - never QI the listener off main thread
+    // if mDispatchToMainThread is true, because the listener
+    // might be JS implemented and won't support that.
+    return NS_OK;
+  }
 
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener;
   {
     MutexAutoLock lock(mMutex);
     listener = do_QueryInterface(mListener);
   }
 
   if (listener) {
-    if (mDispatchToMainThread && !NS_IsMainThread()) {
-      nsCOMPtr<nsIRunnable> handler = NS_NewRunnableFunction(
-          "dispatch", [listener{std::move(listener)}, aStatus]() {
-            Unused << listener->OnDataFinished(aStatus);
-          });
-
-      return NS_DispatchToMainThread(handler);
-    }
-
     return listener->OnDataFinished(aStatus);
   }
 

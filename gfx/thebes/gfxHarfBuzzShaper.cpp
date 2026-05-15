@@ -1173,7 +1173,7 @@ static hb_bool_t HBUnicodeCompose(hb_unicode_funcs_t* ufuncs, hb_codepoint_t a,
 static hb_bool_t HBUnicodeDecompose(hb_unicode_funcs_t* ufuncs,
                                     hb_codepoint_t ab, hb_codepoint_t* a,
                                     hb_codepoint_t* b, void* user_data) {
-#ifdef MOZ_WIDGET_ANDROID
+#if defined(MOZ_WIDGET_ANDROID) && !defined(NIGHTLY_BUILD)
   // Hack for the SamsungDevanagari font, bug 1012365:
   // support U+0972 by decomposing it.
   if (ab == 0x0972) {
@@ -1209,9 +1209,6 @@ static void AddOpenTypeFeature(uint32_t aTag, uint32_t aValue, void* aUserArg) {
  * gfxFontShaper override to initialize the text run using HarfBuzz
  */
 
-static hb_font_funcs_t* sHBFontFuncs = nullptr;
-static hb_font_funcs_t* sNominalGlyphFunc = nullptr;
-static hb_unicode_funcs_t* sHBUnicodeFuncs = nullptr;
 MOZ_RUNINIT static const hb_script_t sMathScript =
     hb_ot_tag_to_script(HB_TAG('m', 'a', 't', 'h'));
 
@@ -1222,52 +1219,58 @@ bool gfxHarfBuzzShaper::Initialize() {
   mInitialized = true;
   mCallbackData.mShaper = this;
 
-  if (!sHBFontFuncs) {
-    // static function callback pointers, initialized by the first
-    // harfbuzz shaper used
-    sHBFontFuncs = hb_font_funcs_create();
-    hb_font_funcs_set_nominal_glyph_func(sHBFontFuncs, HBGetNominalGlyph,
-                                         nullptr, nullptr);
-    hb_font_funcs_set_nominal_glyphs_func(sHBFontFuncs, HBGetNominalGlyphs,
-                                          nullptr, nullptr);
-    hb_font_funcs_set_variation_glyph_func(sHBFontFuncs, HBGetVariationGlyph,
-                                           nullptr, nullptr);
-    hb_font_funcs_set_glyph_h_advance_func(sHBFontFuncs, HBGetGlyphHAdvance,
-                                           nullptr, nullptr);
-    hb_font_funcs_set_glyph_h_advances_func(sHBFontFuncs, HBGetGlyphHAdvances,
-                                            nullptr, nullptr);
-    hb_font_funcs_set_glyph_v_advance_func(sHBFontFuncs, HBGetGlyphVAdvance,
-                                           nullptr, nullptr);
-    hb_font_funcs_set_glyph_v_origin_func(sHBFontFuncs, HBGetGlyphVOrigin,
-                                          nullptr, nullptr);
-    hb_font_funcs_set_glyph_extents_func(sHBFontFuncs, HBGetGlyphExtents,
-                                         nullptr, nullptr);
-    hb_font_funcs_set_glyph_contour_point_func(sHBFontFuncs, HBGetContourPoint,
-                                               nullptr, nullptr);
-    hb_font_funcs_set_glyph_h_kerning_func(sHBFontFuncs, HBGetHKerning, nullptr,
+  // Function callback pointers; these are local statics to ensure thread-safe
+  // initialization on first use.
+  static hb_font_funcs_t* sHBFontFuncs = [] {
+    auto* funcs = hb_font_funcs_create();
+    hb_font_funcs_set_nominal_glyph_func(funcs, HBGetNominalGlyph, nullptr,
+                                         nullptr);
+    hb_font_funcs_set_nominal_glyphs_func(funcs, HBGetNominalGlyphs, nullptr,
+                                          nullptr);
+    hb_font_funcs_set_variation_glyph_func(funcs, HBGetVariationGlyph, nullptr,
                                            nullptr);
-    hb_font_funcs_make_immutable(sHBFontFuncs);
+    hb_font_funcs_set_glyph_h_advance_func(funcs, HBGetGlyphHAdvance, nullptr,
+                                           nullptr);
+    hb_font_funcs_set_glyph_h_advances_func(funcs, HBGetGlyphHAdvances, nullptr,
+                                            nullptr);
+    hb_font_funcs_set_glyph_v_advance_func(funcs, HBGetGlyphVAdvance, nullptr,
+                                           nullptr);
+    hb_font_funcs_set_glyph_v_origin_func(funcs, HBGetGlyphVOrigin, nullptr,
+                                          nullptr);
+    hb_font_funcs_set_glyph_extents_func(funcs, HBGetGlyphExtents, nullptr,
+                                         nullptr);
+    hb_font_funcs_set_glyph_contour_point_func(funcs, HBGetContourPoint,
+                                               nullptr, nullptr);
+    hb_font_funcs_set_glyph_h_kerning_func(funcs, HBGetHKerning, nullptr,
+                                           nullptr);
+    hb_font_funcs_make_immutable(funcs);
+    return funcs;
+  }();
 
-    sNominalGlyphFunc = hb_font_funcs_create();
-    hb_font_funcs_set_nominal_glyph_func(sNominalGlyphFunc, HBGetNominalGlyph,
-                                         nullptr, nullptr);
-    hb_font_funcs_make_immutable(sNominalGlyphFunc);
+  static hb_font_funcs_t* sNominalGlyphFunc = [] {
+    auto* funcs = hb_font_funcs_create();
+    hb_font_funcs_set_nominal_glyph_func(funcs, HBGetNominalGlyph, nullptr,
+                                         nullptr);
+    hb_font_funcs_make_immutable(funcs);
+    return funcs;
+  }();
 
-    sHBUnicodeFuncs = hb_unicode_funcs_create(hb_unicode_funcs_get_empty());
-    hb_unicode_funcs_set_mirroring_func(sHBUnicodeFuncs, HBGetMirroring,
-                                        nullptr, nullptr);
-    hb_unicode_funcs_set_script_func(sHBUnicodeFuncs, HBGetScript, nullptr,
-                                     nullptr);
-    hb_unicode_funcs_set_general_category_func(
-        sHBUnicodeFuncs, HBGetGeneralCategory, nullptr, nullptr);
-    hb_unicode_funcs_set_combining_class_func(
-        sHBUnicodeFuncs, HBGetCombiningClass, nullptr, nullptr);
-    hb_unicode_funcs_set_compose_func(sHBUnicodeFuncs, HBUnicodeCompose,
-                                      nullptr, nullptr);
-    hb_unicode_funcs_set_decompose_func(sHBUnicodeFuncs, HBUnicodeDecompose,
-                                        nullptr, nullptr);
-    hb_unicode_funcs_make_immutable(sHBUnicodeFuncs);
-  }
+  static hb_unicode_funcs_t* sHBUnicodeFuncs = [] {
+    auto* funcs = hb_unicode_funcs_create(hb_unicode_funcs_get_empty());
+    hb_unicode_funcs_set_mirroring_func(funcs, HBGetMirroring, nullptr,
+                                        nullptr);
+    hb_unicode_funcs_set_script_func(funcs, HBGetScript, nullptr, nullptr);
+    hb_unicode_funcs_set_general_category_func(funcs, HBGetGeneralCategory,
+                                               nullptr, nullptr);
+    hb_unicode_funcs_set_combining_class_func(funcs, HBGetCombiningClass,
+                                              nullptr, nullptr);
+    hb_unicode_funcs_set_compose_func(funcs, HBUnicodeCompose, nullptr,
+                                      nullptr);
+    hb_unicode_funcs_set_decompose_func(funcs, HBUnicodeDecompose, nullptr,
+                                        nullptr);
+    hb_unicode_funcs_make_immutable(funcs);
+    return funcs;
+  }();
 
   gfxFontEntry* entry = mFont->GetFontEntry();
   if (!mUseFontGetGlyph) {
@@ -1314,23 +1317,23 @@ bool gfxHarfBuzzShaper::Initialize() {
   hb_buffer_set_cluster_level(mBuffer,
                               HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS);
 
-  auto* funcs =
-      mFont->GetFontEntry()->HasFontTable(TRUETYPE_TAG('C', 'F', 'F', ' '))
-          ? sNominalGlyphFunc
-          : sHBFontFuncs;
-  mHBFont = CreateHBFont(mFont, funcs, &mCallbackData);
+  bool isCFF =
+      mFont->GetFontEntry()->HasFontTable(TRUETYPE_TAG('C', 'F', 'F', ' '));
+  auto* funcs = isCFF ? sNominalGlyphFunc : sHBFontFuncs;
+  mHBFont = CreateHBFont(mFont, funcs, &mCallbackData, isCFF);
 
   return true;
 }
 
 hb_font_t* gfxHarfBuzzShaper::CreateHBFont(gfxFont* aFont,
                                            hb_font_funcs_t* aFontFuncs,
-                                           FontCallbackData* aCallbackData) {
+                                           FontCallbackData* aCallbackData,
+                                           bool aCreateSubfont) {
   auto face(aFont->GetFontEntry()->GetHBFace());
   hb_font_t* result = hb_font_create(face);
 
   if (aFontFuncs && aCallbackData) {
-    if (aFontFuncs == sNominalGlyphFunc) {
+    if (aCreateSubfont) {
       hb_font_t* subfont = hb_font_create_sub_font(result);
       hb_font_destroy(result);
       result = subfont;
@@ -1479,8 +1482,8 @@ bool gfxHarfBuzzShaper::ShapeText(DrawTarget* aDrawTarget,
   bool addSmallCaps = false;
   if (style->variantCaps != NS_FONT_VARIANT_CAPS_NORMAL) {
     switch (style->variantCaps) {
-      case NS_FONT_VARIANT_CAPS_ALLPETITE:
-      case NS_FONT_VARIANT_CAPS_PETITECAPS:
+      case NS_FONT_VARIANT_CAPS_ALL_PETITE_CAPS:
+      case NS_FONT_VARIANT_CAPS_PETITE_CAPS:
         bool synLower, synUpper;
         mFont->SupportsVariantCaps(aScript, style->variantCaps, addSmallCaps,
                                    synLower, synUpper);

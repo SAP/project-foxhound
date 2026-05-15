@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 #ifndef jit_riscv64_extension_Extension_riscv_f_h_
 #define jit_riscv64_extension_Extension_riscv_f_h_
-#include "mozilla/Assertions.h"
 
 #include <stdint.h>
 

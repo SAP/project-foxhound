@@ -118,16 +118,14 @@ def repackage_snap(
 
 def unpack_tarball(package, destdir):
     os.makedirs(destdir, exist_ok=True)
-    subprocess.check_call(
-        [
-            "tar",
-            "-C",
-            destdir,
-            "-xvf",
-            package,
-            "--strip-components=1",
-        ]
-    )
+    subprocess.check_call([
+        "tar",
+        "-C",
+        destdir,
+        "-xvf",
+        package,
+        "--strip-components=1",
+    ])
 
 
 def missing_connections(app_name):

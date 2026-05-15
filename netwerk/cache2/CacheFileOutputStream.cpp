@@ -127,6 +127,12 @@ CacheFileOutputStream::Write(const char* aBuf, uint32_t aCount,
 
   *_retval = aCount;
 
+  if (mDict) {
+    // We need to calculate the hash for the entry as we save it
+    // We don't necessarily need to save the data in memory, however
+    mDict->AccumulateHash(aBuf, aCount);
+  }
+
   while (aCount) {
     EnsureCorrectChunk(false);
     if (NS_FAILED(mStatus)) {

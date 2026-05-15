@@ -6,8 +6,6 @@
 #ifndef nsZipArchive_h_
 #define nsZipArchive_h_
 
-#include "mozilla/Attributes.h"
-
 #define ZIP_TABSIZE 256
 #define ZIP_BUFLEN \
   (4 * 1024) /* Used as output buffer when deflating items to a file */

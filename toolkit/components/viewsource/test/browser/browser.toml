@@ -9,19 +9,27 @@ https_first_disabled = true
 
 ["browser_bug713810.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1775668
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1775668
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1775668
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1775668
 ]
 
 ["browser_contextmenu.js"]
-skip-if = ["os == 'mac' && !debug"] # Bug 1713913 - new Fission platform triage
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1713913 - new Fission platform triage
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1713913 - new Fission platform triage
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1713913 - new Fission platform triage
+]
 
 ["browser_gotoline.js"]
 
 ["browser_open_docgroup.js"]
 
 ["browser_partialsource.js"]
-skip-if = ["os == 'mac' && !debug"]  # Bug 1713913 - new Fission platform triage
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1713913 - new Fission platform triage
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1713913 - new Fission platform triage
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1713913 - new Fission platform triage
+]
 
 ["browser_srcdoc.js"]
 
@@ -32,6 +40,9 @@ https_first_disabled = true
 
 ["browser_viewsourceprefs.js"]
 skip-if = [
-  "socketprocess_networking && os == 'linux' && !debug",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && socketprocess_networking",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1775670
 ]

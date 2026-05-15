@@ -10,7 +10,7 @@ add_setup(async function () {
   });
 });
 
-/** Test for Bug 1901139 **/
+/** Test for Bug 1901139 */
 
 add_task(async function () {
   await BrowserTestUtils.withNewTab(

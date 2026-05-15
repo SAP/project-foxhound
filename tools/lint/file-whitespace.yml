@@ -44,6 +44,7 @@ file-whitespace:
         - dom/smil/crashtests
         - dom/smil/test
         - dom/security/test
+        - dom/serializers/tests
         - dom/svg/crashtests
         - dom/svg/test
         - dom/webauthn/winwebauthn/webauthn.h
@@ -122,7 +123,6 @@ file-whitespace:
         - toolkit/locales/en-US/chrome/passwordmgr/passwordmgr.properties
         - tools/lint/eslint
         - tools/lint/test/test_clang_format.py
-        - view/crashtests
         - widget/cocoa/crashtests
         - widget/nsFilePickerProxy.cpp
         - widget/tests

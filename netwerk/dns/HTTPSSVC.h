@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HTTPSSVC_h__
-#define HTTPSSVC_h__
+#ifndef HTTPSSVC_h_
+#define HTTPSSVC_h_
 
 #include "nsIDNSByTypeRecord.h"
 #include "mozilla/net/DNS.h"
@@ -166,4 +166,4 @@ class DNSHTTPSSVCRecordBase {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // HTTPSSVC_h__
+#endif  // HTTPSSVC_h_

@@ -13,17 +13,17 @@ add_task(async function () {
   let onEngagementDeferred = Promise.withResolvers();
   const provider = new UrlbarTestUtils.TestProvider({
     results: [
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        payload: {
           url: TEST_URL,
           helpUrl: "https://example.com/help",
           helpL10n: {
             id: "urlbar-result-menu-tip-get-help",
           },
-        }
-      ),
+        },
+      }),
     ],
     priority: 999,
     onEngagement: () => {
@@ -35,7 +35,8 @@ add_task(async function () {
       });
     },
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   // This should cover at least engagement and abandonment.
   let engagementSpy = sinon.spy(provider, "onEngagement");
 
@@ -52,7 +53,7 @@ add_task(async function () {
 
   registerCleanupFunction(() => {
     sinon.restore();
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
   });
 
   await doTest(async () => {

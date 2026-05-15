@@ -8,17 +8,17 @@
 
 use std::fmt::Write;
 
+use crate::derives::*;
 use crate::properties::PropertyDeclarationBlock;
 use crate::shared_lock::{
     DeepCloneWithLock, Locked, SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard,
 };
-use crate::str::CssStringWriter;
 use crate::values::DashedIdent;
 use cssparser::SourceLocation;
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use servo_arc::Arc;
-use style_traits::{CssWriter, ToCss};
+use style_traits::{CssStringWriter, CssWriter, ToCss};
 
 /// A position-try rule.
 #[derive(Clone, Debug, ToShmem)]
@@ -40,11 +40,7 @@ impl PositionTryRule {
 }
 
 impl DeepCloneWithLock for PositionTryRule {
-    fn deep_clone_with_lock(
-        &self,
-        lock: &SharedRwLock,
-        guard: &SharedRwLockReadGuard,
-    ) -> Self {
+    fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Self {
         PositionTryRule {
             name: self.name.clone(),
             block: Arc::new(lock.wrap(self.block.read_with(&guard).clone())),

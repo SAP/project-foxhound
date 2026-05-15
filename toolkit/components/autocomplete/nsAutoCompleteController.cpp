@@ -14,7 +14,6 @@
 #include "nsIObserverService.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/Services.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/Event.h"
 
@@ -110,7 +109,7 @@ nsAutoCompleteController::SetInput(nsIAutoCompleteInput* aInput) {
   // Don't do anything if the input isn't changing.
   if (mInput == aInput) return NS_OK;
 
-  Unused << ResetInternalState();
+  (void)ResetInternalState();
   if (mInput) {
     mSearches.Clear();
     ClosePopup();
@@ -139,8 +138,8 @@ nsAutoCompleteController::ResetInternalState() {
     nsAutoString value;
     mInput->GetTextValue(value);
     // Stop all searches in case they are async.
-    Unused << StopSearch();
-    Unused << ClearResults();
+    (void)StopSearch();
+    (void)ClearResults();
     SetSearchStringInternal(value);
   }
 
@@ -428,7 +427,7 @@ nsAutoCompleteController::HandleKeyNavigation(uint32_t aKey, bool* _retval) {
       // The user has keyed up or down to change the selection.  Stop the search
       // (if there is one) now so that the results do not change while the user
       // is making a selection.
-      Unused << StopSearch();
+      (void)StopSearch();
 
       // Instruct the result view to scroll by the given amount and direction
       popup->SelectBy(reverse, page);

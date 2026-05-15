@@ -9,10 +9,10 @@ import os
 import re
 from datetime import datetime, timedelta
 
-import requests
 from redo import retry
+from taskcluster.exceptions import TaskclusterRestFailure
 from taskgraph import create
-from taskgraph.target_tasks import register_target_task
+from taskgraph.target_tasks import filter_for_git_branch, register_target_task
 from taskgraph.util.attributes import attrmatch
 from taskgraph.util.parameterization import resolve_timestamps
 from taskgraph.util.taskcluster import (
@@ -23,12 +23,14 @@ from taskgraph.util.taskcluster import (
 )
 from taskgraph.util.yaml import load_yaml
 
-from gecko_taskgraph import GECKO
+from gecko_taskgraph import GECKO, TEST_CONFIGS
 from gecko_taskgraph.util.attributes import (
     is_try,
     match_run_on_hg_branches,
     match_run_on_projects,
+    match_run_on_repo_type,
 )
+from gecko_taskgraph.util.constants import TEST_KINDS
 from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
 from gecko_taskgraph.util.platforms import platform_family
 from gecko_taskgraph.util.taskcluster import find_task, insert_index
@@ -50,9 +52,6 @@ UNCOMMON_TRY_TASK_LABELS = [
     # Windows tasks
     r"windows11-64-24h2-hw-ref",
     r"windows10-aarch64-qr",
-    # Linux tasks
-    r"linux-",  # hide all linux32 tasks by default - bug 1599197
-    r"linux1804-32",  # hide linux32 tests - bug 1599197
     # Test tasks
     r"web-platform-tests.*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
     r"-ccov",
@@ -75,7 +74,9 @@ def index_exists(index_path, reason=""):
         task_id = find_task_id(index_path)
         print(f"Index {index_path} exists: taskId {task_id}")
         return True
-    except KeyError:
+    except (KeyError, TaskclusterRestFailure) as e:
+        if isinstance(e, TaskclusterRestFailure) and e.status_code != 404:
+            raise
         print(f"Index {index_path} doesn't exist.")
         return False
 
@@ -99,10 +100,19 @@ def filter_out_cron(task, parameters):
     return not task.attributes.get("cron")
 
 
+def filter_for_repo_type(task, parameters):
+    """Filter tasks by repository type.
+
+    This filter is temporarily in-place to facilitate the hg.mozilla.org ->
+    Github migration."""
+    run_on_repo_types = set(task.attributes.get("run_on_repo_type", ["git", "hg"]))
+    return match_run_on_repo_type(parameters["repository_type"], run_on_repo_types)
+
+
 def filter_for_project(task, parameters):
     """Filter tasks by project.  Optionally enable nightlies."""
     run_on_projects = set(task.attributes.get("run_on_projects", []))
-    return match_run_on_projects(parameters["project"], run_on_projects)
+    return match_run_on_projects(parameters, run_on_projects)
 
 
 def filter_for_hg_branch(task, parameters):
@@ -157,7 +167,6 @@ def filter_by_regex(task_label, regexes, mode="include"):
 def filter_release_tasks(task, parameters):
     platform = task.attributes.get("build_platform")
     if platform in (
-        "linux",
         "linux64",
         "linux64-aarch64",
         "macosx64",
@@ -237,7 +246,7 @@ def filter_tests_without_manifests(task, parameters):
     aware that the task exists (which is needed by the backfill action).
     """
     if (
-        task.kind == "test"
+        task.kind in TEST_KINDS
         and "test_manifests" in task.attributes
         and not task.attributes["test_manifests"]
     ):
@@ -250,8 +259,10 @@ def standard_filter(task, parameters):
         filter_func(task, parameters)
         for filter_func in (
             filter_out_cron,
+            filter_for_repo_type,
             filter_for_project,
             filter_for_hg_branch,
+            filter_for_git_branch,
             filter_tests_without_manifests,
         )
     )
@@ -380,7 +391,7 @@ def target_tasks_autoland(full_task_graph, parameters, graph_config):
     )
 
     def filter(task):
-        if task.kind != "test":
+        if task.kind not in TEST_KINDS:
             return True
 
         if parameters["backstop"]:
@@ -406,7 +417,7 @@ def target_tasks_mozilla_central(full_task_graph, parameters, graph_config):
     )
 
     def filter(task):
-        if task.kind != "test":
+        if task.kind not in TEST_KINDS:
             return True
 
         build_platform = task.attributes.get("build_platform")
@@ -514,11 +525,6 @@ def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
         if task.attributes.get("shipping_product") != parameters["release_product"]:
             return False
 
-        # 'secondary' balrog/update verify/final verify tasks only run for RCs
-        if parameters.get("release_type") != "release-rc":
-            if "secondary" in task.kind:
-                return False
-
         if not filter_out_missing_signoffs(task, parameters):
             return False
 
@@ -558,22 +564,11 @@ def target_tasks_push_desktop(full_task_graph, parameters, graph_config):
 def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to ship desktop.
     Previous build deps will be optimized out via action task."""
-    is_rc = parameters.get("release_type") == "release-rc"
-    if is_rc:
-        # ship_firefox_rc runs after `promote` rather than `push`; include
-        # all promote tasks.
-        filtered_for_candidates = target_tasks_promote_desktop(
-            full_task_graph,
-            parameters,
-            graph_config,
-        )
-    else:
-        # ship_firefox runs after `push`; include all push tasks.
-        filtered_for_candidates = target_tasks_push_desktop(
-            full_task_graph,
-            parameters,
-            graph_config,
-        )
+    filtered_for_candidates = target_tasks_push_desktop(
+        full_task_graph,
+        parameters,
+        graph_config,
+    )
 
     def filter(task):
         if not filter_out_missing_signoffs(task, parameters):
@@ -583,14 +578,10 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
             return True
 
         if (
-            task.attributes.get("shipping_product") != parameters["release_product"]
-            or task.attributes.get("shipping_phase") != "ship"
+            task.attributes.get("shipping_product") == parameters["release_product"]
+            and task.attributes.get("shipping_phase") == "ship"
         ):
-            return False
-
-        if "secondary" in task.kind:
-            return is_rc
-        return not is_rc
+            return True
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
@@ -645,7 +636,7 @@ def target_tasks_larch(full_task_graph, parameters, graph_config):
         ):
             return False
         # otherwise reduce tests only
-        if task.kind != "test":
+        if task.kind not in TEST_KINDS:
             return True
         return "browser-chrome" in task.label or "xpcshell" in task.label
 
@@ -674,8 +665,7 @@ def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_conf
             return False
 
         try_name = attributes.get("raptor_try_name")
-
-        if "network-bench" in try_name:
+        if "network-bench" in try_name and "linux" not in platform:
             return False
 
         # Desktop and Android selection for CaR
@@ -755,6 +745,9 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 # Disabled chrome responsiveness tests temporarily in bug 1898351
                 # due to frequent failures
                 return False
+            # Bug 1961141 - Disable unity webgl for chrome windows
+            if "chrome-unity-webgl" in try_name and "windows11" in platform:
+                return False
             # Bug 1961145 - Disable bing-search for test-windows11-64-24h2-shippable
             if "windows11" in platform and "bing-search" in try_name:
                 return False
@@ -775,6 +768,13 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                         return True
                 if "safari" and "benchmark" in try_name:
                     if "jetstream2" in try_name and "safari" in try_name:
+                        return False
+                    # JetStream 3 fails with Safari 18.3 but not Safari-TP.
+                    # See bug 1996277.
+                    if (
+                        "safari-jetstream3" in try_name
+                        and "macosx1500-aarch64" in platform
+                    ):
                         return False
                     return True
         # Android selection
@@ -865,17 +865,14 @@ def make_desktop_nightly_filter(platforms):
     """Returns a filter that gets all nightly tasks on the given platform."""
 
     def filter(task, parameters):
-        return all(
-            [
-                filter_on_platforms(task, platforms),
-                filter_for_project(task, parameters),
-                task.attributes.get("shippable", False),
-                # Tests and nightly only builds don't have `shipping_product` set
-                task.attributes.get("shipping_product")
-                in {None, "firefox", "thunderbird"},
-                task.kind not in {"l10n"},  # no on-change l10n
-            ]
-        )
+        return all([
+            filter_on_platforms(task, platforms),
+            filter_for_project(task, parameters),
+            task.attributes.get("shippable", False),
+            # Tests and nightly only builds don't have `shipping_product` set
+            task.attributes.get("shipping_product") in {None, "firefox", "thunderbird"},
+            task.kind not in {"l10n"},  # no on-change l10n
+        ])
 
     return filter
 
@@ -916,9 +913,10 @@ def target_tasks_nightly_linux(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of linux. The
     nightly build process involves a pipeline of builds, signing,
     and, eventually, uploading the tasks to balrog."""
-    filter = make_desktop_nightly_filter(
-        {"linux64-shippable", "linux-shippable", "linux64-aarch64-shippable"}
-    )
+    filter = make_desktop_nightly_filter({
+        "linux64-shippable",
+        "linux64-aarch64-shippable",
+    })
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
@@ -963,9 +961,10 @@ def target_tasks_nightly_asan(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of asan. The
     nightly build process involves a pipeline of builds, signing,
     and, eventually, uploading the tasks to balrog."""
-    filter = make_desktop_nightly_filter(
-        {"linux64-asan-reporter-shippable", "win64-asan-reporter-shippable"}
-    )
+    filter = make_desktop_nightly_filter({
+        "linux64-asan-reporter-shippable",
+        "win64-asan-reporter-shippable",
+    })
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
@@ -1057,14 +1056,19 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
         try:
             task = find_task(index_path)
             print(f"Index {index_path} exists: taskId {task['taskId']}")
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code != 404:
+        except TaskclusterRestFailure as e:
+            if e.status_code != 404:
                 raise
             print(f"Index {index_path} doesn't exist.")
         else:
             # Find the earlier expiration time of existing tasks
             taskdef = get_task_definition(task["taskId"])
-            task_graph = get_artifact(task["taskId"], "public/task-graph.json")
+            try:
+                task_graph = get_artifact(task["taskId"], "public/task-graph.json")
+            except TaskclusterRestFailure as e:
+                if e.status_code != 404:
+                    raise
+                task_graph = None
             if task_graph:
                 base_time = parse_time(taskdef["created"])
                 first_expiry = min(
@@ -1076,12 +1080,15 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
                     print("Skipping index tasks")
                     return []
         if not create.testing:
-            insert_index(index_path, os.environ["TASK_ID"], use_proxy=True)
+            insert_index(index_path, os.environ["TASK_ID"])
 
     return [
+        "searchfox-linux64-searchfox/opt",
         "searchfox-linux64-searchfox/debug",
         "searchfox-macosx64-searchfox/debug",
+        "searchfox-macosx64-aarch64-searchfox/opt",
         "searchfox-macosx64-aarch64-searchfox/debug",
+        "searchfox-win64-searchfox/opt",
         "searchfox-win64-searchfox/debug",
         "searchfox-android-aarch64-searchfox/debug",
         "searchfox-ios-searchfox/debug",
@@ -1125,13 +1132,14 @@ def target_tasks_customv8_update(full_task_graph, parameters, graph_config):
 
 @register_target_task("file_update")
 def target_tasks_file_update(full_task_graph, parameters, graph_config):
-    """Select the set of tasks required to perform nightly in-tree file updates"""
+    """Select the set of tasks required to perform periodic in-tree file updates"""
+    return ["repo-update-periodic-file-update"]
 
-    def filter(task):
-        # For now any task in the repo-update kind is ok
-        return task.kind in ["repo-update"]
 
-    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+@register_target_task("pinning_update")
+def target_tasks_pinning_update(full_task_graph, parameters, graph_config):
+    """Select the set of tasks required to perform periodic HSTS/HPKP pinning updates"""
+    return ["repo-update-pinning-update"]
 
 
 @register_target_task("l10n_bump")
@@ -1150,8 +1158,7 @@ def target_tasks_merge_automation(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to perform repository merges."""
 
     def filter(task):
-        # For now any task in the repo-update kind is ok
-        return task.kind in ["merge-automation"]
+        return task.kind in ["merge-automation", "mark-as-merged"]
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
@@ -1191,12 +1198,9 @@ def _filter_by_release_project(parameters):
     if target_project is None:
         raise Exception("Unknown or unspecified release type in simulation run.")
 
-    def filter_for_target_project(task):
-        """Filter tasks by project.  Optionally enable nightlies."""
-        run_on_projects = set(task.attributes.get("run_on_projects", []))
-        return match_run_on_projects(target_project, run_on_projects)
-
-    return filter_for_target_project
+    params = parameters.copy()
+    params["project"] = target_project
+    return lambda task: filter_for_project(task, params)
 
 
 def filter_out_android_on_esr(parameters, task):
@@ -1535,6 +1539,18 @@ def target_tasks_perftest(full_task_graph, parameters, graph_config):
             yield name
 
 
+@register_target_task("perftest-fenix-startup")
+def target_tasks_perftest_fenix_startup(full_task_graph, parameters, graph_config):
+    """
+    Select perftest tasks we want to run daily for fenix startup
+    """
+    for name, task in full_task_graph.tasks.items():
+        if task.kind != "perftest":
+            continue
+        if "fenix" in name and "startup" in name and "profiling" not in name:
+            yield name
+
+
 @register_target_task("perftest-on-autoland")
 def target_tasks_perftest_autoland(full_task_graph, parameters, graph_config):
     """
@@ -1546,6 +1562,32 @@ def target_tasks_perftest_autoland(full_task_graph, parameters, graph_config):
         if task.attributes.get("cron", False) and any(
             test_name in name for test_name in ["view"]
         ):
+            yield name
+
+
+@register_target_task("retrigger-perftests-autoland")
+def retrigger_perftests_autoland_commits(full_task_graph, parameters, graph_config):
+    """
+    In this transform we are trying to do retrigger the following tasks 4 times every 20 commits in autoland:
+    - "perftest-android-hw-a55-aarch64-shippable-startup-fenix-cold-main-first-frame",
+    - "perftest-android-hw-a55-aarch64-shippable-startup-fenix-cold-view-nav-start",
+    - "perftest-android-hw-a55-aarch64-shippable-startup-fenix-homeview-startup",
+    - "perftest-android-hw-a55-aarch64-shippable-startup-fenix-newssite-applink-startup",
+    - "perftest-android-hw-a55-aarch64-shippable-startup-fenix-shopify-applink-startup",
+    - "perftest-android-hw-a55-aarch64-shippable-startup-fenix-tab-restore-shopify"
+    - "test-windows11-64-24h2-shippable/opt-browsertime-benchmark-firefox-speedometer3",
+    """
+    retrigger_count = 4
+    for name, task in full_task_graph.tasks.items():
+        if (
+            (
+                "perftest-android-hw-a55-aarch64-shippable-startup-fenix" in task.label
+                and "simple" not in task.label
+            )
+            or "test-windows11-64-24h2-shippable/opt-browsertime-benchmark-firefox-speedometer3"
+            in task.label
+        ):
+            task.attributes["task_duplicates"] = retrigger_count
             yield name
 
 
@@ -1587,10 +1629,6 @@ def target_tasks_snap_upstream_tasks(full_task_graph, parameters, graph_config):
 @register_target_task("nightly-android")
 def target_tasks_nightly_android(full_task_graph, parameters, graph_config):
     def filter(task, parameters):
-        # bug 1899553: don't automatically schedule uploads to google play
-        if task.kind == "push-bundle":
-            return False
-
         # geckoview
         if task.attributes.get("shipping_product") == "fennec" and task.kind in (
             "beetmover-geckoview",
@@ -1637,13 +1675,11 @@ def target_tasks_android_l10n_sync(full_task_graph, parameters, graph_config):
 
 @register_target_task("os-integration")
 def target_tasks_os_integration(full_task_graph, parameters, graph_config):
-    candidate_attrs = load_yaml(
-        os.path.join(GECKO, "taskcluster", "kinds", "test", "os-integration.yml")
-    )
+    candidate_attrs = load_yaml(os.path.join(TEST_CONFIGS, "os-integration.yml"))
 
     labels = []
     for label, task in full_task_graph.tasks.items():
-        if task.kind not in ("test", "source-test", "perftest", "startup-test"):
+        if task.kind not in TEST_KINDS + ("source-test", "perftest", "startup-test"):
             continue
 
         # Match tasks against attribute sets defined in os-integration.yml.
@@ -1672,3 +1708,17 @@ def target_tasks_os_integration(full_task_graph, parameters, graph_config):
 
         labels.append(label)
     return labels
+
+
+@register_target_task("weekly-test-info")
+def target_tasks_weekly_test_info(full_task_graph, parameters, graph_config):
+    return ["source-test-file-metadata-test-info-all"]
+
+
+@register_target_task("test-info-timings-periodic")
+def target_tasks_test_info_timings_periodic(full_task_graph, parameters, graph_config):
+    return [
+        "source-test-file-metadata-test-info-xpcshell-timings-periodic",
+        "source-test-file-metadata-test-info-mochitest-timings-periodic",
+        "source-test-file-metadata-test-info-manifest-timings-periodic",
+    ]

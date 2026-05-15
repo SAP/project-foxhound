@@ -10,7 +10,6 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "nsIX509CertDB.h"
 #include "nsString.h"
 

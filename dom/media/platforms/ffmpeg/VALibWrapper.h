@@ -6,7 +6,6 @@
 #define DOM_MEDIA_PLATFORMS_FFMPEG_VALIBWRAPPER_H_
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Types.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsISupportsImpl.h"
 

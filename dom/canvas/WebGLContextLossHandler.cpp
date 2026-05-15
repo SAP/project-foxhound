@@ -4,8 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLContextLossHandler.h"
-#include "WebGLContext.h"
 
+#include "WebGLContext.h"
 #include "base/message_loop.h"
 
 namespace mozilla {

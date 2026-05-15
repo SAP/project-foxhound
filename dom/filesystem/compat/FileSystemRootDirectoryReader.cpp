@@ -5,10 +5,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileSystemRootDirectoryReader.h"
+
 #include "CallbackRunnables.h"
-#include "nsIGlobalObject.h"
 #include "mozilla/dom/FileSystemDirectoryReaderBinding.h"
 #include "mozilla/dom/FileSystemUtils.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla::dom {
 

@@ -10,23 +10,28 @@
 
 #include "rtc_base/async_tcp_socket.h"
 
-#include <stdint.h>
-#include <string.h>
-
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <utility>
 
+#include "absl/base/nullability.h"
+#include "absl/memory/memory.h"
 #include "api/array_view.h"
+#include "api/environment/environment.h"
+#include "rtc_base/async_packet_socket.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/network/received_packet.h"
 #include "rtc_base/network/sent_packet.h"
-#include "rtc_base/time_utils.h"  // for TimeMillis
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 
 #if defined(WEBRTC_POSIX)
-#include <errno.h>
+#include <cerrno>
 #endif  // WEBRTC_POSIX
 
 namespace webrtc {
@@ -45,33 +50,20 @@ static const size_t kMinimumRecvSize = 128;
 
 static const int kListenBacklog = 5;
 
-// Binds and connects `socket`
-Socket* AsyncTCPSocketBase::ConnectSocket(Socket* socket,
-                                          const SocketAddress& bind_address,
-                                          const SocketAddress& remote_address) {
-  std::unique_ptr<Socket> owned_socket(socket);
-  if (socket->Bind(bind_address) < 0) {
-    RTC_LOG(LS_ERROR) << "Bind() failed with error " << socket->GetError();
-    return nullptr;
-  }
-  if (socket->Connect(remote_address) < 0) {
-    RTC_LOG(LS_ERROR) << "Connect() failed with error " << socket->GetError();
-    return nullptr;
-  }
-  return owned_socket.release();
-}
-
-AsyncTCPSocketBase::AsyncTCPSocketBase(Socket* socket, size_t max_packet_size)
-    : socket_(socket),
+AsyncTCPSocketBase::AsyncTCPSocketBase(
+    absl_nonnull std::unique_ptr<Socket> socket,
+    size_t max_packet_size)
+    : socket_(std::move(socket)),
       max_insize_(max_packet_size),
       max_outsize_(max_packet_size) {
   inbuf_.EnsureCapacity(kMinimumRecvSize);
 
-  socket_->SignalConnectEvent.connect(this,
-                                      &AsyncTCPSocketBase::OnConnectEvent);
+  socket_->SubscribeConnectEvent(
+      [this](Socket* socket) { OnConnectEvent(socket); });
   socket_->SignalReadEvent.connect(this, &AsyncTCPSocketBase::OnReadEvent);
   socket_->SignalWriteEvent.connect(this, &AsyncTCPSocketBase::OnWriteEvent);
-  socket_->SignalCloseEvent.connect(this, &AsyncTCPSocketBase::OnCloseEvent);
+  socket_->SubscribeCloseEvent(
+      [this](Socket* socket, int error) { OnCloseEvent(socket, error); });
 }
 
 AsyncTCPSocketBase::~AsyncTCPSocketBase() {}
@@ -121,7 +113,7 @@ void AsyncTCPSocketBase::SetError(int error) {
 int AsyncTCPSocketBase::SendTo(const void* pv,
                                size_t cb,
                                const SocketAddress& addr,
-                               const rtc::PacketOptions& options) {
+                               const AsyncSocketPacketOptions& options) {
   const SocketAddress& remote_address = GetRemoteAddress();
   if (addr == remote_address)
     return Send(pv, cb, options);
@@ -133,9 +125,9 @@ int AsyncTCPSocketBase::SendTo(const void* pv,
 
 int AsyncTCPSocketBase::FlushOutBuffer() {
   RTC_DCHECK_GT(outbuf_.size(), 0);
-  rtc::ArrayView<uint8_t> view = outbuf_;
+  ArrayView<uint8_t> view = outbuf_;
   int res;
-  while (view.size() > 0) {
+  while (!view.empty()) {
     res = socket_->Send(view.data(), view.size());
     if (res <= 0) {
       break;
@@ -175,7 +167,7 @@ void AsyncTCPSocketBase::AppendToOutBuffer(const void* pv, size_t cb) {
 }
 
 void AsyncTCPSocketBase::OnConnectEvent(Socket* socket) {
-  SignalConnect(this);
+  NotifyConnect(this);
 }
 
 void AsyncTCPSocketBase::OnReadEvent(Socket* socket) {
@@ -227,11 +219,11 @@ void AsyncTCPSocketBase::OnReadEvent(Socket* socket) {
 void AsyncTCPSocketBase::OnWriteEvent(Socket* socket) {
   RTC_DCHECK(socket_.get() == socket);
 
-  if (outbuf_.size() > 0) {
+  if (!outbuf_.empty()) {
     FlushOutBuffer();
   }
 
-  if (outbuf_.size() == 0) {
+  if (outbuf_.empty()) {
     SignalReadyToSend(this);
   }
 }
@@ -240,23 +232,13 @@ void AsyncTCPSocketBase::OnCloseEvent(Socket* socket, int error) {
   NotifyClosed(error);
 }
 
-// AsyncTCPSocket
-// Binds and connects `socket` and creates AsyncTCPSocket for
-// it. Takes ownership of `socket`. Returns null if bind() or
-// connect() fail (`socket` is destroyed in that case).
-AsyncTCPSocket* AsyncTCPSocket::Create(Socket* socket,
-                                       const SocketAddress& bind_address,
-                                       const SocketAddress& remote_address) {
-  return new AsyncTCPSocket(
-      AsyncTCPSocketBase::ConnectSocket(socket, bind_address, remote_address));
-}
-
-AsyncTCPSocket::AsyncTCPSocket(Socket* socket)
-    : AsyncTCPSocketBase(socket, kBufSize) {}
+AsyncTCPSocket::AsyncTCPSocket(const Environment& env,
+                               absl_nonnull std::unique_ptr<Socket> socket)
+    : AsyncTCPSocketBase(std::move(socket), kBufSize), env_(env) {}
 
 int AsyncTCPSocket::Send(const void* pv,
                          size_t cb,
-                         const rtc::PacketOptions& options) {
+                         const AsyncSocketPacketOptions& options) {
   if (cb > kBufSize) {
     SetError(EMSGSIZE);
     return -1;
@@ -266,7 +248,7 @@ int AsyncTCPSocket::Send(const void* pv,
   if (!IsOutBufferEmpty())
     return static_cast<int>(cb);
 
-  PacketLength pkt_len = webrtc::HostToNetwork16(static_cast<PacketLength>(cb));
+  PacketLength pkt_len = HostToNetwork16(static_cast<PacketLength>(cb));
   AppendToOutBuffer(&pkt_len, kPacketLenSize);
   AppendToOutBuffer(pv, cb);
 
@@ -277,8 +259,9 @@ int AsyncTCPSocket::Send(const void* pv,
     return res;
   }
 
-  rtc::SentPacket sent_packet(options.packet_id, TimeMillis(),
-                              options.info_signaled_after_sent);
+  SentPacketInfo sent_packet(options.packet_id,
+                             env_.clock().TimeInMilliseconds(),
+                             options.info_signaled_after_sent);
   CopySocketInformationToPacketInfo(cb, *this, &sent_packet.info);
   SignalSentPacket(this, sent_packet);
 
@@ -286,7 +269,7 @@ int AsyncTCPSocket::Send(const void* pv,
   return static_cast<int>(cb);
 }
 
-size_t AsyncTCPSocket::ProcessInput(rtc::ArrayView<const uint8_t> data) {
+size_t AsyncTCPSocket::ProcessInput(ArrayView<const uint8_t> data) {
   SocketAddress remote_addr(GetRemoteAddress());
 
   size_t processed_bytes = 0;
@@ -295,20 +278,21 @@ size_t AsyncTCPSocket::ProcessInput(rtc::ArrayView<const uint8_t> data) {
     if (bytes_left < kPacketLenSize)
       return processed_bytes;
 
-    PacketLength pkt_len = webrtc::GetBE16(data.data() + processed_bytes);
+    PacketLength pkt_len = GetBE16(data.data() + processed_bytes);
     if (bytes_left < kPacketLenSize + pkt_len)
       return processed_bytes;
 
-    rtc::ReceivedPacket received_packet(
+    ReceivedIpPacket received_packet(
         data.subview(processed_bytes + kPacketLenSize, pkt_len), remote_addr,
-        Timestamp::Micros(TimeMicros()));
+        env_.clock().CurrentTime());
     NotifyPacketReceived(received_packet);
     processed_bytes += kPacketLenSize + pkt_len;
   }
 }
 
-AsyncTcpListenSocket::AsyncTcpListenSocket(std::unique_ptr<Socket> socket)
-    : socket_(std::move(socket)) {
+AsyncTcpListenSocket::AsyncTcpListenSocket(const Environment& env,
+                                           std::unique_ptr<Socket> socket)
+    : env_(env), socket_(std::move(socket)) {
   RTC_DCHECK(socket_.get() != nullptr);
   socket_->SignalReadEvent.connect(this, &AsyncTcpListenSocket::OnReadEvent);
   if (socket_->Listen(kListenBacklog) < 0) {
@@ -344,14 +328,15 @@ void AsyncTcpListenSocket::OnReadEvent(Socket* socket) {
     return;
   }
 
-  HandleIncomingConnection(new_socket);
+  HandleIncomingConnection(absl::WrapUnique(new_socket));
 
   // Prime a read event in case data is waiting.
   new_socket->SignalReadEvent(new_socket);
 }
 
-void AsyncTcpListenSocket::HandleIncomingConnection(Socket* socket) {
-  SignalNewConnection(this, new AsyncTCPSocket(socket));
+void AsyncTcpListenSocket::HandleIncomingConnection(
+    std::unique_ptr<Socket> socket) {
+  SignalNewConnection(this, new AsyncTCPSocket(env_, std::move(socket)));
 }
 
 }  // namespace webrtc

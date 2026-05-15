@@ -117,3 +117,52 @@ add_task(async function user_overwrites_search_term_with_blank_string() {
   BrowserTestUtils.removeTab(tab1);
   BrowserTestUtils.removeTab(tab2);
 });
+
+add_task(async function test_behavior_with_navigation() {
+  let { tab: searchTab } = await searchWithTab(SEARCH_STRING);
+  let originalURL = searchTab.linkedBrowser.currentURI.spec;
+
+  let testURL = "http://mochi.test:8888/";
+
+  let parseResult = SearchService.parseSubmissionURL(testURL);
+  Assert.equal(parseResult.engine, null, "Url doesn't match an engine.");
+
+  Assert.notEqual(
+    new URL(originalURL).origin,
+    new URL(testURL).origin,
+    "Different origins."
+  );
+
+  let dummyTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+
+  let loadPromise = BrowserTestUtils.browserLoaded(
+    searchTab.linkedBrowser,
+    false,
+    testURL,
+    true
+  );
+  BrowserTestUtils.startLoadingURIString(searchTab.linkedBrowser, testURL);
+  await loadPromise;
+
+  await BrowserTestUtils.switchTab(gBrowser, searchTab);
+
+  Assert.ok(
+    !window.gURLBar.hasAttribute("persistsearchterms"),
+    "Search terms should not persist."
+  );
+
+  Assert.equal(
+    window.gURLBar.getAttribute("pageproxystate"),
+    "valid",
+    "Urlbar has a valid pageproxystate."
+  );
+
+  Assert.equal(
+    window.gURLBar.value,
+    "http://mochi.test:8888",
+    "Urlbar displays the expected url."
+  );
+
+  BrowserTestUtils.removeTab(searchTab);
+  BrowserTestUtils.removeTab(dummyTab);
+});

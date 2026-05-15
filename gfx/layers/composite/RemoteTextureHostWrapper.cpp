@@ -161,6 +161,12 @@ void RemoteTextureHostWrapper::NotifyNotUsed() {
       mTextureId, mOwnerId, mForPid);
 }
 
+void RemoteTextureHostWrapper::SetReadFence(Fence* aReadFence) {
+  if (mRemoteTexture) {
+    mRemoteTexture->SetReadFence(aReadFence);
+  }
+}
+
 TextureHostType RemoteTextureHostWrapper::GetTextureHostType() {
   if (!mRemoteTexture) {
     return TextureHostType::Unknown;

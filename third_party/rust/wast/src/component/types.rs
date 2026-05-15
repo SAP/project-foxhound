@@ -88,7 +88,7 @@ pub enum ModuleTypeDecl<'a> {
     /// An alias local to the component type.
     Alias(Alias<'a>),
     /// An import.
-    Import(core::Import<'a>),
+    Import(core::Imports<'a>),
     /// An export.
     Export(&'a str, core::ItemSig<'a>),
 }
@@ -238,6 +238,7 @@ pub enum PrimitiveValType {
     F64,
     Char,
     String,
+    ErrorContext,
 }
 
 impl<'a> Parse<'a> for PrimitiveValType {
@@ -288,6 +289,9 @@ impl<'a> Parse<'a> for PrimitiveValType {
         } else if l.peek::<kw::string>()? {
             parser.parse::<kw::string>()?;
             Ok(Self::String)
+        } else if l.peek::<kw::error_context>()? {
+            parser.parse::<kw::error_context>()?;
+            Ok(Self::ErrorContext)
         } else {
             Err(l.error())
         }
@@ -313,6 +317,7 @@ impl Peek for PrimitiveValType {
                 | Some(("float64", _))
                 | Some(("char", _))
                 | Some(("string", _))
+                | Some(("error-context", _))
         ))
     }
 
@@ -381,6 +386,8 @@ pub enum ComponentDefinedType<'a> {
     Record(Record<'a>),
     Variant(Variant<'a>),
     List(List<'a>),
+    Map(Map<'a>),
+    FixedSizeList(FixedSizeList<'a>),
     Tuple(Tuple<'a>),
     Flags(Flags<'a>),
     Enum(Enum<'a>),
@@ -388,6 +395,8 @@ pub enum ComponentDefinedType<'a> {
     Result(ResultType<'a>),
     Own(Index<'a>),
     Borrow(Index<'a>),
+    Stream(Stream<'a>),
+    Future(Future<'a>),
 }
 
 impl<'a> ComponentDefinedType<'a> {
@@ -398,7 +407,9 @@ impl<'a> ComponentDefinedType<'a> {
         } else if l.peek::<kw::variant>()? {
             Ok(Self::Variant(parser.parse()?))
         } else if l.peek::<kw::list>()? {
-            Ok(Self::List(parser.parse()?))
+            parse_list(parser)
+        } else if l.peek::<kw::map>()? {
+            Ok(Self::Map(parser.parse()?))
         } else if l.peek::<kw::tuple>()? {
             Ok(Self::Tuple(parser.parse()?))
         } else if l.peek::<kw::flags>()? {
@@ -415,6 +426,10 @@ impl<'a> ComponentDefinedType<'a> {
         } else if l.peek::<kw::borrow>()? {
             parser.parse::<kw::borrow>()?;
             Ok(Self::Borrow(parser.parse()?))
+        } else if l.peek::<kw::stream>()? {
+            Ok(Self::Stream(parser.parse()?))
+        } else if l.peek::<kw::future>()? {
+            Ok(Self::Future(parser.parse()?))
         } else {
             Err(l.error())
         }
@@ -439,6 +454,7 @@ impl Peek for ComponentDefinedType<'_> {
                 Some(("record", _))
                     | Some(("variant", _))
                     | Some(("list", _))
+                    | Some(("map", _))
                     | Some(("tuple", _))
                     | Some(("flags", _))
                     | Some(("enum", _))
@@ -575,11 +591,48 @@ pub struct List<'a> {
     pub element: Box<ComponentValType<'a>>,
 }
 
-impl<'a> Parse<'a> for List<'a> {
+/// A map type.
+#[derive(Debug)]
+pub struct Map<'a> {
+    /// The key type of the map.
+    pub key: Box<ComponentValType<'a>>,
+    /// The value type of the map.
+    pub value: Box<ComponentValType<'a>>,
+}
+
+/// A fixed size list type.
+#[derive(Debug)]
+pub struct FixedSizeList<'a> {
+    /// The element type of the array.
+    pub element: Box<ComponentValType<'a>>,
+    /// Number of Elements
+    pub elements: u32,
+}
+
+fn parse_list<'a>(parser: Parser<'a>) -> Result<ComponentDefinedType<'a>> {
+    parser.parse::<kw::list>()?;
+    let tp = parser.parse()?;
+    let elements = parser.parse::<Option<u32>>()?;
+    if let Some(elements) = elements {
+        Ok(ComponentDefinedType::FixedSizeList(FixedSizeList {
+            element: Box::new(tp),
+            elements,
+        }))
+    } else {
+        Ok(ComponentDefinedType::List(List {
+            element: Box::new(tp),
+        }))
+    }
+}
+
+impl<'a> Parse<'a> for Map<'a> {
     fn parse(parser: Parser<'a>) -> Result<Self> {
-        parser.parse::<kw::list>()?;
+        parser.parse::<kw::map>()?;
+        let key = parser.parse()?;
+        let value = parser.parse()?;
         Ok(Self {
-            element: Box::new(parser.parse()?),
+            key: Box::new(key),
+            value: Box::new(value),
         })
     }
 }
@@ -684,32 +737,71 @@ impl<'a> Parse<'a> for ResultType<'a> {
     }
 }
 
+/// A stream type.
+#[derive(Debug)]
+pub struct Stream<'a> {
+    /// The element type of the stream.
+    pub element: Option<Box<ComponentValType<'a>>>,
+}
+
+impl<'a> Parse<'a> for Stream<'a> {
+    fn parse(parser: Parser<'a>) -> Result<Self> {
+        parser.parse::<kw::stream>()?;
+        Ok(Self {
+            element: parser.parse::<Option<ComponentValType>>()?.map(Box::new),
+        })
+    }
+}
+
+/// A future type.
+#[derive(Debug)]
+pub struct Future<'a> {
+    /// The element type of the future, if any.
+    pub element: Option<Box<ComponentValType<'a>>>,
+}
+
+impl<'a> Parse<'a> for Future<'a> {
+    fn parse(parser: Parser<'a>) -> Result<Self> {
+        parser.parse::<kw::future>()?;
+        Ok(Self {
+            element: parser.parse::<Option<ComponentValType>>()?.map(Box::new),
+        })
+    }
+}
+
 /// A component function type with parameters and result.
 #[derive(Debug)]
 pub struct ComponentFunctionType<'a> {
+    /// Whether or not this is an `async` fnction.
+    pub async_: bool,
     /// The parameters of a function, optionally each having an identifier for
     /// name resolution and a name for the custom `name` section.
     pub params: Box<[ComponentFunctionParam<'a>]>,
-    /// The result of a function, optionally each having an identifier for
-    /// name resolution and a name for the custom `name` section.
-    pub results: Box<[ComponentFunctionResult<'a>]>,
+    /// The result of a function.
+    pub result: Option<ComponentValType<'a>>,
 }
 
 impl<'a> Parse<'a> for ComponentFunctionType<'a> {
     fn parse(parser: Parser<'a>) -> Result<Self> {
+        let async_ = parser.parse::<Option<kw::r#async>>()?.is_some();
         let mut params: Vec<ComponentFunctionParam> = Vec::new();
         while parser.peek2::<kw::param>()? {
             params.push(parser.parens(|p| p.parse())?);
         }
 
-        let mut results: Vec<ComponentFunctionResult> = Vec::new();
-        while parser.peek2::<kw::result>()? {
-            results.push(parser.parens(|p| p.parse())?);
-        }
+        let result = if parser.peek2::<kw::result>()? {
+            Some(parser.parens(|p| {
+                p.parse::<kw::result>()?;
+                p.parse()
+            })?)
+        } else {
+            None
+        };
 
         Ok(Self {
+            async_,
             params: params.into(),
-            results: results.into(),
+            result,
         })
     }
 }
@@ -766,15 +858,8 @@ pub struct ComponentExportType<'a> {
 impl<'a> Parse<'a> for ComponentExportType<'a> {
     fn parse(parser: Parser<'a>) -> Result<Self> {
         let span = parser.parse::<kw::export>()?.0;
-        let id = parser.parse()?;
-        let debug_name = parser.parse()?;
         let name = parser.parse()?;
-        let item = parser.parens(|p| {
-            let mut item = p.parse::<ItemSigNoName<'_>>()?.0;
-            item.id = id;
-            item.name = debug_name;
-            Ok(item)
-        })?;
+        let item = parser.parens(|p| p.parse())?;
         Ok(Self { span, name, item })
     }
 }

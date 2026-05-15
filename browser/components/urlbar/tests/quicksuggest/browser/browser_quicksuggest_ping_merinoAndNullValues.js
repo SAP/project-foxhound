@@ -33,6 +33,9 @@ const position = index + 1;
 requestLongerTimeout(3);
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.suggest.quickactions", false]],
+  });
   await initQuickSuggestPingTest({
     merinoSuggestions: [MERINO_RESULT],
   });

@@ -159,6 +159,11 @@ already_AddRefed<gfx::SourceSurface> RecordedTextureData::BorrowSnapshot() {
   return wrapper.forget();
 }
 
+void RecordedTextureData::ReturnDrawTarget(
+    already_AddRefed<gfx::DrawTarget> aDT) {
+  RefPtr<gfx::DrawTarget> dt(aDT);
+}
+
 void RecordedTextureData::ReturnSnapshot(
     already_AddRefed<gfx::SourceSurface> aSnapshot) {
   RefPtr<gfx::SourceSurface> snapshot = aSnapshot;

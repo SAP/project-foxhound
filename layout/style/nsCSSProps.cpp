@@ -12,8 +12,6 @@
 #include "nsCSSProps.h"
 
 #include "gfxPlatform.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Casting.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/LookAndFeel.h"  // for system colors
 #include "mozilla/Preferences.h"
@@ -25,26 +23,23 @@
 #include "mozilla/gfx/gfxVars.h"  // for UseWebRender
 #include "nsIWidget.h"
 #include "nsLayoutUtils.h"
-#include "nsStaticNameTable.h"
 #include "nsString.h"
 #include "nsStyleConsts.h"  // For system widget appearance types
 
 using namespace mozilla;
 
-static StaticAutoPtr<nsStaticCaseInsensitiveNameTable> gFontDescTable;
-static StaticAutoPtr<nsStaticCaseInsensitiveNameTable> gCounterDescTable;
-static StaticAutoPtr<nsTHashMap<nsCStringHashKey, nsCSSPropertyID>>
+static StaticAutoPtr<nsTHashMap<nsCStringHashKey, NonCustomCSSPropertyId>>
     gPropertyIDLNameTable;
 
-static constexpr const char* const kCSSRawFontDescs[] = {
-#define CSS_FONT_DESC(name_, method_) #name_,
-#include "nsCSSFontDescList.h"
+static constexpr nsLiteralCString const kCSSRawFontDescs[] = {
+#define CSS_FONT_DESC(name_, method_) #name_ ""_ns,
+#include "nsCSSFontDescList.inc"
 #undef CSS_FONT_DESC
 };
 
-static constexpr const char* const kCSSRawCounterDescs[] = {
-#define CSS_COUNTER_DESC(name_, method_) #name_,
-#include "nsCSSCounterDescList.h"
+static constexpr nsLiteralCString const kCSSRawCounterDescs[] = {
+#define CSS_COUNTER_DESC(name_, method_) #name_ ""_ns,
+#include "nsCSSCounterDescList.inc"
 #undef CSS_COUNTER_DESC
 };
 
@@ -58,35 +53,38 @@ static constexpr CSSPropFlags kFlagsTable[eCSSProperty_COUNT_with_aliases] = {
 #undef CSS_PROP_LONGHAND
 };
 
-static nsStaticCaseInsensitiveNameTable* CreateStaticTable(
-    const char* const aRawTable[], int32_t aLength) {
-  auto* table = new nsStaticCaseInsensitiveNameTable(aRawTable, aLength);
-#ifdef DEBUG
-  // Partially verify the entries.
-  for (int32_t index = 0; index < aLength; ++index) {
-    nsAutoCString temp(aRawTable[index]);
-    MOZ_ASSERT(-1 == temp.FindChar('_'),
-               "underscore char in case insensitive name table");
+template <size_t N>
+static constexpr bool DescsAreValid(const nsLiteralCString (&aDescs)[N]) {
+  for (const nsLiteralCString& desc : aDescs) {
+    for (size_t i = 0; i < desc.Length(); ++i) {
+      unsigned char c = desc.CharAt(i);
+      if (!IS_ASCII(c) || IS_ASCII_UPPER(c) || c == '_') {
+        return false;
+      }
+    }
   }
-#endif
-  return table;
+  return true;
 }
+static_assert(DescsAreValid(kCSSRawFontDescs),
+              "invalid desc in nsCSSFontDescList.inc");
+static_assert(DescsAreValid(kCSSRawCounterDescs),
+              "invalid desc in nsCSSCounterDescList.inc");
 
 void nsCSSProps::RecomputeEnabledState(const char* aPref, void*) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   DebugOnly<bool> foundPref = false;
   for (const PropertyPref* pref = kPropertyPrefTable;
-       pref->mPropID != eCSSProperty_UNKNOWN; pref++) {
+       pref->mPropId != eCSSProperty_UNKNOWN; pref++) {
     if (!aPref || !strcmp(aPref, pref->mPref)) {
       foundPref = true;
-#ifdef FUZZING
-      gPropertyEnabled[pref->mPropID] = true;
-#else
-      gPropertyEnabled[pref->mPropID] = Preferences::GetBool(pref->mPref);
-      if (pref->mPropID == eCSSProperty_backdrop_filter) {
-        gPropertyEnabled[pref->mPropID] &=
+      gPropertyEnabled[pref->mPropId] = Preferences::GetBool(pref->mPref);
+      if (pref->mPropId == eCSSProperty_backdrop_filter) {
+        gPropertyEnabled[pref->mPropId] &=
             gfx::gfxVars::GetAllowBackdropFilterOrDefault();
       }
+#ifdef FUZZING
+      // In fuzzing builds we want to enable all properties unconditionally.
+      gPropertyEnabled[pref->mPropId] = true;
 #endif
     }
   }
@@ -94,29 +92,23 @@ void nsCSSProps::RecomputeEnabledState(const char* aPref, void*) {
 }
 
 void nsCSSProps::Init() {
-  MOZ_ASSERT(!gFontDescTable, "pre existing array!");
-  MOZ_ASSERT(!gCounterDescTable, "pre existing array!");
   MOZ_ASSERT(!gPropertyIDLNameTable, "pre existing array!");
 
-  gFontDescTable = CreateStaticTable(kCSSRawFontDescs, eCSSFontDesc_COUNT);
-  gCounterDescTable =
-      CreateStaticTable(kCSSRawCounterDescs, eCSSCounterDesc_COUNT);
-
-  gPropertyIDLNameTable = new nsTHashMap<nsCStringHashKey, nsCSSPropertyID>;
-  for (nsCSSPropertyID p = nsCSSPropertyID(0);
-       size_t(p) < std::size(kIDLNameTable); p = nsCSSPropertyID(p + 1)) {
+  gPropertyIDLNameTable =
+      new nsTHashMap<nsCStringHashKey, NonCustomCSSPropertyId>;
+  for (NonCustomCSSPropertyId p = NonCustomCSSPropertyId(0);
+       size_t(p) < std::size(kIDLNameTable);
+       p = NonCustomCSSPropertyId(p + 1)) {
     if (kIDLNameTable[p]) {
       gPropertyIDLNameTable->InsertOrUpdate(
           nsDependentCString(kIDLNameTable[p]), p);
     }
   }
 
-  ClearOnShutdown(&gFontDescTable);
-  ClearOnShutdown(&gCounterDescTable);
   ClearOnShutdown(&gPropertyIDLNameTable);
 
   for (const PropertyPref* pref = kPropertyPrefTable;
-       pref->mPropID != eCSSProperty_UNKNOWN; pref++) {
+       pref->mPropId != eCSSProperty_UNKNOWN; pref++) {
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1472523
     // We need to use nsCString instead of substring because the preference
     // callback code stores them. Using AssignLiteral prevents any
@@ -134,10 +126,10 @@ bool nsCSSProps::IsCustomPropertyName(const nsACString& aProperty) {
          StringBeginsWith(aProperty, "--"_ns);
 }
 
-nsCSSPropertyID nsCSSProps::LookupPropertyByIDLName(
+NonCustomCSSPropertyId nsCSSProps::LookupPropertyByIDLName(
     const nsACString& aPropertyIDLName, EnabledState aEnabled) {
   MOZ_ASSERT(gPropertyIDLNameTable, "no lookup table, needs addref");
-  nsCSSPropertyID res;
+  NonCustomCSSPropertyId res;
   if (!gPropertyIDLNameTable->Get(aPropertyIDLName, &res)) {
     return eCSSProperty_UNKNOWN;
   }
@@ -149,32 +141,39 @@ nsCSSPropertyID nsCSSProps::LookupPropertyByIDLName(
 }
 
 nsCSSFontDesc nsCSSProps::LookupFontDesc(const nsACString& aFontDesc) {
-  MOZ_ASSERT(gFontDescTable, "no lookup table, needs addref");
-  nsCSSFontDesc which = nsCSSFontDesc(gFontDescTable->Lookup(aFontDesc));
+  // NOTE: This method does chained comparisons as there are only 14 items in
+  // `nsCSSFontDescList.inc`. A more advanced table-based lookup may be
+  // warranted if this grows substantially.
+#define CSS_FONT_DESC(name_, method_)             \
+  if (aFontDesc.LowerCaseEqualsLiteral(#name_)) { \
+    return eCSSFontDesc_##method_;                \
+  }
+#include "nsCSSFontDescList.inc"
+#undef CSS_FONT_DESC
 
-  return which;
+  return eCSSFontDesc_UNKNOWN;
 }
 
 static constexpr auto sDescNullStr = ""_ns;
 
 const nsCString& nsCSSProps::GetStringValue(nsCSSFontDesc aFontDescID) {
-  MOZ_ASSERT(gFontDescTable, "no lookup table, needs addref");
-  if (gFontDescTable) {
-    return gFontDescTable->GetStringValue(int32_t(aFontDescID));
+  if (eCSSFontDesc_UNKNOWN < aFontDescID && aFontDescID < eCSSFontDesc_COUNT) {
+    return kCSSRawFontDescs[size_t(aFontDescID)];
   }
   return sDescNullStr;
 }
 
 const nsCString& nsCSSProps::GetStringValue(nsCSSCounterDesc aCounterDescID) {
-  MOZ_ASSERT(gCounterDescTable, "no lookup table, needs addref");
-  if (gCounterDescTable) {
-    return gCounterDescTable->GetStringValue(int32_t(aCounterDescID));
+  if (eCSSCounterDesc_UNKNOWN < aCounterDescID &&
+      aCounterDescID < eCSSCounterDesc_COUNT) {
+    return kCSSRawCounterDescs[size_t(aCounterDescID)];
   }
   return sDescNullStr;
 }
 
-CSSPropFlags nsCSSProps::PropFlags(nsCSSPropertyID aProperty) {
-  MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT_with_aliases,
+CSSPropFlags nsCSSProps::PropFlags(NonCustomCSSPropertyId aProperty) {
+  MOZ_ASSERT(aProperty != eCSSProperty_UNKNOWN &&
+                 aProperty < eCSSProperty_COUNT_with_aliases,
              "out of range");
   return kFlagsTable[aProperty];
 }
@@ -218,7 +217,7 @@ class nsCSSPropsGfxVarReceiver final : public gfx::gfxVarReceiver {
  public:
   static gfx::gfxVarReceiver& GetInstance() { return sInstance; }
 
-  void OnVarChanged(const gfx::GfxVarUpdate&) override {
+  void OnVarChanged(const nsTArray<gfx::GfxVarUpdate>&) override {
     bool enabled = gfx::gfxVars::AllowBackdropFilter();
     if (sLastKnownAllowBackdropFilter != enabled) {
       sLastKnownAllowBackdropFilter = enabled;

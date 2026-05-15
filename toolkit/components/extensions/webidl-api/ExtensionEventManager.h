@@ -9,7 +9,6 @@
 
 #include "js/GCHashTable.h"  // for JS::GCHashMap
 #include "js/TypeDecls.h"    // for JS::Handle, JSContext, JSObject, ...
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/ErrorResult.h"
 #include "nsCycleCollectionParticipant.h"

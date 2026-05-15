@@ -30,10 +30,10 @@ add_setup(async function () {
 
   // This is helpful to avoid some weird race conditions in the test, specifically
   // the assertion that !this.blankTab in AsyncTabSwitcher when adding a new tab.
-  await promiseTabLoadEvent(
-    gBrowser.selectedTab,
-    "http://mochi.test:8888/#originalTab"
-  );
+  await BrowserTestUtils.loadURIString({
+    browser: gBrowser.selectedTab.linkedBrowser,
+    uriString: "http://mochi.test:8888/#originalTab",
+  });
   let originalTab = gBrowser.selectedTab;
   // switch to Firefox View tab to initialize it
   FirefoxViewHandler.openTab();
@@ -355,7 +355,7 @@ add_task(async function test_unload_all_tabs_no_firefox_view() {
   );
   ok(
     !FirefoxViewHandler.tab,
-    "Should not open Firefox View (since the button is hidden)"
+    "Should not open Firefox View (since the button is not present)"
   );
 
   await BrowserTestUtils.removeTab(gBrowser.selectedTab);
@@ -370,6 +370,44 @@ add_task(async function test_unload_all_tabs_no_firefox_view() {
   await BrowserTestUtils.removeTab(tab3);
   await BrowserTestUtils.removeTab(tab2);
   await BrowserTestUtils.removeTab(tab1);
+});
+
+add_task(async function test_unload_all_tabs_hidden_private_window() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tabs.unloadTabInContextMenu", true]],
+  });
+
+  // When unloading all tabs in a private window, the Firefox View button is
+  // not present, so make sure we don't show Firefox View when unloading all tabs.
+  let newWindow = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+
+  let originalTab = newWindow.gBrowser.selectedTab;
+  originalTab.focus();
+  let menuItemUnload = newWindow.document.getElementById("context_unloadTab");
+  ok(!menuItemUnload.hidden, "Unload Tab is visible");
+  is(
+    JSON.parse(menuItemUnload.getAttribute("data-l10n-args")).tabCount,
+    1,
+    "showing 1 tab on menu item"
+  );
+  {
+    let menu = await openTabMenuFor(originalTab);
+    let menuHiddenPromise = BrowserTestUtils.waitForPopupEvent(menu, "hidden");
+    menu.activateItem(menuItemUnload);
+    await menuHiddenPromise;
+  }
+  await TestUtils.waitForCondition(
+    () => !originalTab.linkedPanel,
+    "Wait for tab to be unloaded"
+  );
+  ok(
+    !newWindow.FirefoxViewHandler.tab,
+    "Should not open Firefox View (since the button is hidden)"
+  );
+
+  await BrowserTestUtils.closeWindow(newWindow);
 });
 
 add_task(async function test_pref_off_does_not_show_unload_menu_item() {

@@ -9,18 +9,17 @@
  */
 #include "net/dcsctp/packet/chunk/init_chunk.h"
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "api/array_view.h"
+#include "net/dcsctp/common/internal_types.h"
 #include "net/dcsctp/packet/bounded_byte_reader.h"
 #include "net/dcsctp/packet/bounded_byte_writer.h"
 #include "net/dcsctp/packet/parameter/parameter.h"
-#include "net/dcsctp/packet/tlv_trait.h"
 #include "rtc_base/strings/string_format.h"
 
 namespace dcsctp {
@@ -44,9 +43,9 @@ namespace dcsctp {
 //  /              Optional/Variable-Length Parameters              /
 //  \                                                               \
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-constexpr int InitChunk::kType;
 
-std::optional<InitChunk> InitChunk::Parse(rtc::ArrayView<const uint8_t> data) {
+std::optional<InitChunk> InitChunk::Parse(
+    webrtc::ArrayView<const uint8_t> data) {
   std::optional<BoundedByteReader<kHeaderSize>> reader = ParseTLV(data);
   if (!reader.has_value()) {
     return std::nullopt;
@@ -68,7 +67,7 @@ std::optional<InitChunk> InitChunk::Parse(rtc::ArrayView<const uint8_t> data) {
 }
 
 void InitChunk::SerializeTo(std::vector<uint8_t>& out) const {
-  rtc::ArrayView<const uint8_t> parameters = parameters_.data();
+  webrtc::ArrayView<const uint8_t> parameters = parameters_.data();
   BoundedByteWriter<kHeaderSize> writer = AllocateTLV(out, parameters.size());
 
   writer.Store32<4>(*initiate_tag_);

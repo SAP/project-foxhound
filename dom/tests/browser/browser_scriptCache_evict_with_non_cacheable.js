@@ -6,7 +6,7 @@ const TEST_SCRIPT_URL =
 
 add_task(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", true]],
+    set: [["dom.script_loader.experimental.navigation_cache", true]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

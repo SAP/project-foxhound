@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpTransactionShell_h__
-#define HttpTransactionShell_h__
+#ifndef HttpTransactionShell_h_
+#define HttpTransactionShell_h_
 
 #include <functional>
 
 #include "TimingStruct.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIClassOfService.h"
 #include "nsIEarlyHintObserver.h"
@@ -182,6 +181,8 @@ class HttpTransactionShell : public nsISupports {
   virtual TimeStamp GetOnStartRequestStartTime() const { return TimeStamp(); }
   virtual TimeStamp GetDataAvailableStartTime() const { return TimeStamp(); }
   virtual TimeStamp GetOnStopRequestStartTime() const { return TimeStamp(); }
+
+  virtual void SetIsTRRTransaction() {}
 };
 
 #define NS_DECL_HTTPTRANSACTIONSHELL                                           \
@@ -247,4 +248,4 @@ class HttpTransactionShell : public nsISupports {
 
 }  // namespace mozilla::net
 
-#endif  // HttpTransactionShell_h__
+#endif  // HttpTransactionShell_h_

@@ -7,20 +7,21 @@
 #include "QuotaParent.h"
 
 #include <mozilla/Assertions.h>
+
+#include "OriginOperations.h"
+#include "QuotaRequestBase.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/quota/ErrorHandling.h"
-#include "mozilla/dom/quota/PrincipalUtils.h"
-#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/PQuota.h"
 #include "mozilla/dom/quota/PQuotaRequestParent.h"
 #include "mozilla/dom/quota/PQuotaUsageRequestParent.h"
+#include "mozilla/dom/quota/PrincipalUtils.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaUsageRequestParent.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "OriginOperations.h"
-#include "QuotaRequestBase.h"
 
 // CUF == CRASH_UNLESS_FUZZING
 #define QM_CUF_AND_IPC_FAIL(actor)                           \

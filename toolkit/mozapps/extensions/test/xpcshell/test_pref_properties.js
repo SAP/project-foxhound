@@ -129,7 +129,7 @@ add_task(async function setup() {
   Assert.ok(Services.prefs.getBoolPref("extensions.strictCompatibility"));
 
   // AddonManager.checkCompatibility
-  if (isNightlyChannel()) {
+  if (AppConstants.NIGHTLY_BUILD) {
     var version = "nightly";
   } else {
     version = Services.appinfo.version.replace(

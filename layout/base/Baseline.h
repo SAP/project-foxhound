@@ -19,6 +19,13 @@ enum class BaselineSharingGroup : uint8_t {
   Last = 1,
 };
 
+inline BaselineSharingGroup GetOppositeBaselineSharingGroup(
+    BaselineSharingGroup aBaselineSharingGroup) {
+  return aBaselineSharingGroup == BaselineSharingGroup::First
+             ? BaselineSharingGroup::Last
+             : BaselineSharingGroup::First;
+}
+
 // Layout context under which the baseline is being exported to.
 enum class BaselineExportContext : uint8_t {
   LineLayout = 0,

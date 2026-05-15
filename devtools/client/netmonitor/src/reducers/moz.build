@@ -11,6 +11,7 @@ DevToolsModules(
     "requests.js",
     "search.js",
     "sort.js",
+    "statistics.js",
     "timing-markers.js",
     "ui.js",
 )

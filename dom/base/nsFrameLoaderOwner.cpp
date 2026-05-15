@@ -5,26 +5,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsFrameLoaderOwner.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "nsFrameLoader.h"
-#include "nsFocusManager.h"
-#include "nsNetUtil.h"
-#include "nsSubDocumentFrame.h"
-#include "nsQueryObject.h"
+
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/Logging.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_fission.h"
+#include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/BrowserBridgeHost.h"
+#include "mozilla/dom/BrowserHost.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/FrameLoaderBinding.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
 #include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/dom/BrowserBridgeChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/BrowserBridgeHost.h"
-#include "mozilla/dom/BrowserHost.h"
-#include "mozilla/StaticPrefs_fission.h"
-#include "mozilla/EventStateManager.h"
+#include "nsFocusManager.h"
+#include "nsFrameLoader.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsSubDocumentFrame.h"
 
 extern mozilla::LazyLogModule gSHIPBFCacheLog;
 
@@ -145,7 +146,7 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
           MOZ_LOG(gSHIPBFCacheLog, LogLevel::Debug,
                   ("nsFrameLoaderOwner::ChangeRemotenessCommon: store the old "
                    "page in bfcache"));
-          Unused << bc->SetIsInBFCache(true);
+          (void)bc->SetIsInBFCache(true);
           bfcacheEntry->SetFrameLoader(mFrameLoader);
           // Session history owns now the frameloader.
           mFrameLoader = nullptr;
@@ -253,7 +254,10 @@ void nsFrameLoaderOwner::ChangeRemoteness(
     const mozilla::dom::RemotenessOptions& aOptions, mozilla::ErrorResult& rv) {
   bool isRemote = !aOptions.mRemoteType.IsEmpty();
 
+  MOZ_RELEASE_ASSERT(mFrameLoader, "Expecting to have mFrameLoader here.");
   std::function<void()> frameLoaderInit = [&] {
+    MOZ_RELEASE_ASSERT(mFrameLoader,
+                       "Expecting still to have mFrameLoader here.");
     if (isRemote) {
       mFrameLoader->ConfigRemoteProcess(aOptions.mRemoteType, nullptr);
     }

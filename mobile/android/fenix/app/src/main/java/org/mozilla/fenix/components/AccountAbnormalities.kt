@@ -79,7 +79,7 @@ class AccountAbnormalities(
     private val hadAccountPrior: Boolean
 
     init {
-        val prefPair = strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        val prefPair = strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             val p = context.getSharedPreferences(PREF_FXA_ABNORMALITIES, Context.MODE_PRIVATE)
             val a = p.getBoolean(KEY_HAS_ACCOUNT, false)
             Pair(p, a)

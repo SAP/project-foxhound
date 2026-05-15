@@ -27,7 +27,7 @@ async def test_install_with_permanent(
     else:
         data.update({"path": extension_data_value})
 
-    kwargs = {"moz:permanent": permanent} if permanent is not None else {}
+    extension_params = {"moz:permanent": permanent} if permanent is not None else {}
 
     if permanent and not signed:
         try:
@@ -35,7 +35,7 @@ async def test_install_with_permanent(
                 set_pref(current_session, "xpinstall.signatures.required", True)
                 await bidi_session.web_extension.install(
                     extension_data=data,
-                    **kwargs,
+                    _extension_params=extension_params,
                 )
         finally:
             clear_pref(current_session, "xpinstall.signatures.required")
@@ -45,7 +45,7 @@ async def test_install_with_permanent(
         set_pref(current_session, "xpinstall.signatures.required", True)
         web_extension = await bidi_session.web_extension.install(
             extension_data=data,
-            **kwargs,
+            _extension_params=extension_params,
         )
 
         assert_extension_id(web_extension, extension_data)

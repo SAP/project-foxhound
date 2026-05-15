@@ -52,7 +52,6 @@ LOCAL_INCLUDES += [
     "/netwerk/cookie",
     "/parser/htmlparser",
     "/toolkit/components/sessionstore",
-    "/view",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":

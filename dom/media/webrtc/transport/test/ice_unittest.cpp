@@ -14,42 +14,41 @@
 #include <string>
 #include <vector>
 
-#include "sigslot.h"
-
 #include "logging.h"
-#include "ssl.h"
-
 #include "mozilla/DataMutex.h"
 #include "mozilla/Preferences.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
+#include "sigslot.h"
+#include "ssl.h"
 
 extern "C" {
+// clang-format off
 #include "r_types.h"
 #include "async_wait.h"
 #include "async_timer.h"
 #include "r_data.h"
 #include "util.h"
 #include "r_time.h"
+// clang-format on
 }
 
+#include "gtest_ringbuffer_dumper.h"
 #include "ice_ctx.h"
-#include "ice_peer_ctx.h"
 #include "ice_media_stream.h"
-
+#include "ice_peer_ctx.h"
+#include "mozilla/net/DNS.h"
+#include "nr_socket_prsock.h"
 #include "nricectx.h"
 #include "nricemediastream.h"
-#include "nriceresolverfake.h"
 #include "nriceresolver.h"
+#include "nriceresolverfake.h"
 #include "nrinterfaceprioritizer.h"
-#include "gtest_ringbuffer_dumper.h"
+#include "nsISocketFilter.h"
 #include "rlogconnector.h"
 #include "runnable_utils.h"
 #include "stunserver.h"
-#include "nr_socket_prsock.h"
 #include "test_nr_socket.h"
-#include "nsISocketFilter.h"
-#include "mozilla/net/DNS.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
@@ -693,7 +692,7 @@ class IceTestPeer : public sigslot::has_slots<> {
   bool gathering_complete() {
     auto lock = mGatheringStates.Lock();
     for (const auto& [id, state] : lock.ref()) {
-      Unused << id;
+      (void)id;
       if (state != NrIceMediaStream::ICE_STREAM_GATHER_COMPLETE) {
         return false;
       }
@@ -1650,13 +1649,10 @@ class WebRtcIceConnectTest : public StunTest {
   }
 
   void Init(bool setup_stun_servers = true,
-            NrIceCtx::Policy ice_policy = NrIceCtx::ICE_POLICY_ALL) {
+            NrIceCtx::Config config = NrIceCtx::Config()) {
     if (initted_) {
       return;
     }
-
-    NrIceCtx::Config config;
-    config.mPolicy = ice_policy;
 
     p1_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
     p2_ = MakeUnique<IceTestPeer>("P2", test_utils_, false, config);
@@ -2120,9 +2116,9 @@ TEST_F(WebRtcIceGatherTest, TestGatherFakeStunServerHostnameNoResolver) {
     return;
   }
 
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
-  NrIceCtx::InitializeGlobals(config);
+  NrIceCtx::GlobalConfig globalConfig;
+  globalConfig.mTcpEnabled = false;
+  NrIceCtx::InitializeGlobals(globalConfig);
   EnsurePeer();
   peer_->SetStunServer(stun_server_hostname_, kDefaultStunServerPort);
   peer_->AddStream(1);
@@ -2452,13 +2448,14 @@ TEST_F(WebRtcIceGatherTest, TestGatherVerifyNoLoopback) {
 }
 
 TEST_F(WebRtcIceGatherTest, TestGatherAllowLoopback) {
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
-  config.mAllowLoopback = true;
-  NrIceCtx::InitializeGlobals(config);
+  NrIceCtx::GlobalConfig globalConfig;
+  globalConfig.mTcpEnabled = false;
+  NrIceCtx::InitializeGlobals(globalConfig);
 
+  NrIceCtx::Config config;
+  config.mAllowLoopback = true;
   // Set up peer with loopback allowed.
-  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, NrIceCtx::Config());
+  peer_ = MakeUnique<IceTestPeer>("P1", test_utils_, true, config);
   peer_->AddStream(1);
   Gather();
   ASSERT_TRUE(StreamHasMatchingCandidate(0, "127.0.0.1"));
@@ -2976,7 +2973,7 @@ TEST_F(WebRtcIceConnectTest, DISABLED_TestConnectNoHost) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
+  Init(false, NrIceCtx::Config{.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST});
   AddStream(1);
   ASSERT_TRUE(Gather());
   SetExpectedTypes(NrIceCandidate::Type::ICE_SERVER_REFLEXIVE,
@@ -2986,11 +2983,13 @@ TEST_F(WebRtcIceConnectTest, DISABLED_TestConnectNoHost) {
 }
 
 TEST_F(WebRtcIceConnectTest, TestLoopbackOnlySortOf) {
-  NrIceCtx::GlobalConfig config;
-  config.mTcpEnabled = false;
+  NrIceCtx::GlobalConfig globalConfig;
+  globalConfig.mTcpEnabled = false;
+  NrIceCtx::InitializeGlobals(globalConfig);
+
+  NrIceCtx::Config config;
   config.mAllowLoopback = true;
-  NrIceCtx::InitializeGlobals(config);
-  Init(false);
+  Init(false, config);
   AddStream(1);
   SetCandidateFilter(IsLoopbackCandidate);
   ASSERT_TRUE(Gather());
@@ -3114,7 +3113,7 @@ TEST_F(WebRtcIceConnectTest, TestConnectNoNatNoHost) {
   NrIceCtx::GlobalConfig config;
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
-  Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
+  Init(false, NrIceCtx::Config{.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST});
   UseTestStunServer();
   // Because we are connecting from our host candidate to the
   // other side's apparent srflx (which is also their host)
@@ -3131,7 +3130,7 @@ TEST_F(WebRtcIceConnectTest, TestConnectFullConeNoHost) {
   config.mTcpEnabled = false;
   NrIceCtx::InitializeGlobals(config);
   UseNat();
-  Init(false, NrIceCtx::ICE_POLICY_NO_HOST);
+  Init(false, NrIceCtx::Config{.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST});
   UseTestStunServer();
   SetExpectedTypes(NrIceCandidate::Type::ICE_SERVER_REFLEXIVE,
                    NrIceCandidate::Type::ICE_SERVER_REFLEXIVE);
@@ -4499,6 +4498,22 @@ TEST_F(WebRtcIcePacketFilterTest, TestRecvDataPacketWithAPendingAddress) {
   TestIncomingTcp(data, sizeof(data), true);
 
   ASSERT_EQ(0, nr_stun_message_destroy(&msg));
+}
+
+TEST_F(WebRtcIcePacketFilterTest, ZeroLengthIncoming) {
+  nr_stun_message* msg;
+  ASSERT_EQ(0, nr_stun_build_req_no_auth(nullptr, &msg));
+
+  msg->header.type = NR_STUN_MSG_BINDING_REQUEST;
+  ASSERT_EQ(0, nr_stun_encode_message(msg));
+  TestOutgoing(msg->buffer, msg->length, 123, 45, true);
+  TestOutgoingTcp(msg->buffer, msg->length, true);
+
+  ASSERT_EQ(0, nr_stun_message_destroy(&msg));
+
+  const unsigned char data[] = "";
+  TestIncoming(data, sizeof(data), 123, 45, true);
+  TestIncomingTcp(data, sizeof(data), true);
 }
 
 TEST(WebRtcIceInternalsTest, TestAddBogusAttribute)

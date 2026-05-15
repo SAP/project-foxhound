@@ -96,8 +96,8 @@ void Client::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
     return;
   }
 
-  StructuredCloneData data;
-  data.Write(aCx, aMessage, transferable, JS::CloneDataPolicy(), aRv);
+  auto data = MakeNotNull<RefPtr<StructuredCloneData>>();
+  data->Write(aCx, aMessage, transferable, JS::CloneDataPolicy(), aRv);
   if (aRv.Failed()) {
     return;
   }

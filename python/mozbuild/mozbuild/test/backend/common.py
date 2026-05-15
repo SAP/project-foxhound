@@ -84,6 +84,24 @@ CONFIGS = defaultdict(
                 "LIB_SUFFIX": "a",
             },
         },
+        "rust-program-features": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "i686-pc-windows-msvc",
+                "BIN_SUFFIX": ".exe",
+            },
+        },
+        "host-rust-program-features": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "RUST_TARGET": "i686-pc-windows-msvc",
+                "RUST_HOST_TARGET": "i686-pc-windows-msvc",
+                "BIN_SUFFIX": ".exe",
+                "HOST_BIN_SUFFIX": ".exe",
+            },
+        },
         "rust-programs": {
             "defines": {},
             "substs": {

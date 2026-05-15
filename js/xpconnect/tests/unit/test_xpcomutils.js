@@ -48,7 +48,7 @@ add_test(function test_defineLazyServiceGetter()
     let obj = { };
     XPCOMUtils.defineLazyServiceGetter(obj, "service",
                                        "@mozilla.org/consoleservice;1",
-                                       "nsIConsoleService");
+                                       Ci.nsIConsoleService);
     let service = Cc["@mozilla.org/consoleservice;1"].
                   getService(Ci.nsIConsoleService);
 

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef SuspendableChannelWrapper_h__
-#define SuspendableChannelWrapper_h__
+#ifndef SuspendableChannelWrapper_h_
+#define SuspendableChannelWrapper_h_
 
 #include "nsISuspendableChannelWrapper.h"
 
@@ -54,4 +54,4 @@ class SuspendableChannelWrapper final : public BaseSuspendableChannelWrapper {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // SuspendableChannelWrapper_h__
+#endif  // SuspendableChannelWrapper_h_

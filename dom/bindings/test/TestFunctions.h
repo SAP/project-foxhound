@@ -12,8 +12,8 @@
 #include "mozilla/dom/BufferSourceBindingFwd.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/TestFunctionsBinding.h"
-#include "nsWrapperCache.h"
 #include "nsString.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

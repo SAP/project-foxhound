@@ -142,7 +142,7 @@ add_task(async function testAboutAddonUninstall() {
  * @param {Tab} tab: The tab in which we want to install the gated permission
  * @param {Function} spawnCallback: function used in `SpecialPowers.spawn` that will trigger
  *                                  the install
- * @param {String} expectedPermType: The name of the permission that should be granted
+ * @param {string} expectedPermType: The name of the permission that should be granted
  * @returns {Promise<Addon>} The installed addon instance
  */
 async function testInstallGatedPermission(

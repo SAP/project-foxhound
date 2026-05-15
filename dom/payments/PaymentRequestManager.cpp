@@ -4,17 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/PaymentRequestChild.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/Preferences.h"
-#include "nsContentUtils.h"
-#include "nsString.h"
-#include "nsIPrincipal.h"
-#include "nsIPaymentActionResponse.h"
 #include "PaymentRequestManager.h"
+
 #include "PaymentRequestUtils.h"
 #include "PaymentResponse.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/PaymentRequestChild.h"
+#include "nsContentUtils.h"
+#include "nsIPaymentActionResponse.h"
+#include "nsIPrincipal.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 namespace {

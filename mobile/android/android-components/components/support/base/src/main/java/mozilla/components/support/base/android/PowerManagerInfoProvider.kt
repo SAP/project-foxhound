@@ -5,7 +5,6 @@
 package mozilla.components.support.base.android
 
 import android.content.Context
-import android.os.Build
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 
@@ -31,9 +30,5 @@ class DefaultPowerManagerInfoProvider(private val context: Context) : PowerManag
     }
 
     override fun isIgnoringBatteryOptimizations(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
-        } else {
-            true
-        }
+        powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
 }

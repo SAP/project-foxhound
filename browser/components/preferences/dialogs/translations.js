@@ -179,6 +179,7 @@ var gTranslationsSettings = {
 
   /**
    * Retrieves the always-translate language tags as an array.
+   *
    * @returns {Array<string>}
    */
   getAlwaysTranslateLanguages() {
@@ -187,6 +188,7 @@ var gTranslationsSettings = {
 
   /**
    * Retrieves the never-translate language tags as an array.
+   *
    * @returns {Array<string>}
    */
   getNeverTranslateLanguages() {

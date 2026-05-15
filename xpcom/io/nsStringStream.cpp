@@ -23,7 +23,6 @@
 #include "nsCRT.h"
 #include "prerror.h"
 #include "nsIClassInfoImpl.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ReentrantMonitor.h"

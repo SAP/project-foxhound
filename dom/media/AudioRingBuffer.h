@@ -6,10 +6,10 @@
 #ifndef MOZILLA_AUDIO_RING_BUFFER_H_
 #define MOZILLA_AUDIO_RING_BUFFER_H_
 
+#include <functional>
+
 #include "AudioSampleFormat.h"
 #include "mozilla/Span.h"
-
-#include <functional>
 
 namespace mozilla {
 

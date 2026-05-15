@@ -21,7 +21,7 @@ importScripts(
  */
 
 // This worker uses the wasm module that was generated from https://github.com/mstange/profiler-get-symbols.
-// See ProfilerGetSymbols.jsm for more information.
+// See profiler_get_symbols.js for more information.
 //
 // The worker instantiates the module, reads the binary into wasm memory, runs
 // the wasm code, and returns the symbol table or an error. Then it shuts down

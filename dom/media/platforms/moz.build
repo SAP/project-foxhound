@@ -111,8 +111,6 @@ if CONFIG["MOZ_APPLEMEDIA"]:
         # We want to lazily load _VTRegisterSupplementalVideoDecoderIfAvailable
         # symbol as it's only available in macOS 11 and later.
         "-Wl,-U,_VTRegisterSupplementalVideoDecoderIfAvailable",
-        # Same for VTIsHardwareDecodeSupported available from macOS 10.13.
-        "-Wl,-U,_VTIsHardwareDecodeSupported",
     ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

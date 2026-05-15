@@ -63,8 +63,6 @@ ScrollAnchorContainer::ScrollAnchorContainer(ScrollContainerFrame* aScrollFrame)
   MOZ_ASSERT(aScrollFrame == Frame());
 }
 
-ScrollAnchorContainer::~ScrollAnchorContainer() = default;
-
 ScrollAnchorContainer* ScrollAnchorContainer::FindFor(nsIFrame* aFrame) {
   aFrame = aFrame->GetParent();
   if (!aFrame) {
@@ -725,7 +723,6 @@ nsIFrame* ScrollAnchorContainer::FindAnchorIn(nsIFrame* aFrame) const {
     // XXX do we actually need to exclude FrameChildListID::OverflowOutOfFlow
     // too?
     if (listID == FrameChildListID::Absolute ||
-        listID == FrameChildListID::Fixed ||
         listID == FrameChildListID::Float ||
         listID == FrameChildListID::OverflowOutOfFlow) {
       continue;

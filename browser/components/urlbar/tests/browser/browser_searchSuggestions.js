@@ -46,7 +46,7 @@ add_task(async function clickSuggestion() {
     "Expected suggestion engine"
   );
 
-  let uri = (await Services.search.getDefault()).getSubmission(suggestion).uri;
+  let uri = (await SearchService.getDefault()).getSubmission(suggestion).uri;
   let loadPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
@@ -88,7 +88,7 @@ async function testPressEnterOnSuggestion(
 
   let hasExpectedUrl = !!expectedUrl;
   if (!expectedUrl) {
-    expectedUrl = (await Services.search.getDefault()).getSubmission(suggestion)
+    expectedUrl = (await SearchService.getDefault()).getSubmission(suggestion)
       .uri.spec;
   }
 
@@ -272,7 +272,7 @@ add_task(async function heuristicAddsFormHistory() {
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.SEARCH);
   Assert.equal(result.searchParams.query, "foo");
 
-  let uri = (await Services.search.getDefault()).getSubmission("foo").uri;
+  let uri = (await SearchService.getDefault()).getSubmission("foo").uri;
   let loadPromise = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,

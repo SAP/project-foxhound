@@ -50,17 +50,13 @@ HEADER = b"""
  *
  * To generate this file, see tutorial in \'GLConsts.py\'.
  */
-"""[
-    1:
-]
+"""[1:]
 
 FOOTER = b"""
 #endif // GLCONSTS_H_
 
 // clang-format on
-"""[
-    1:
-]
+"""[1:]
 
 # -
 

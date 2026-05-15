@@ -5,10 +5,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/TestInterfaceAsyncIterableDoubleUnion.h"
-#include "mozilla/dom/TestInterfaceJSMaplikeSetlikeIterableBinding.h"
-#include "nsPIDOMWindow.h"
+
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/TestInterfaceJSMaplikeSetlikeIterableBinding.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
 

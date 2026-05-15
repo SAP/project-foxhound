@@ -9,6 +9,7 @@
 #include "builtin/WeakSetObject.h"
 #include "gc/GC.h"
 #include "gc/GCContext.h"
+#include "jit/InlinableNatives.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/PropertySpec.h"
 #include "js/WeakMap.h"
@@ -31,13 +32,12 @@ using namespace js;
     JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(is(args.thisv()));
 
-  if (!CanBeHeldWeakly(cx, args.get(0))) {
+  if (!CanBeHeldWeakly(args.get(0))) {
     args.rval().setBoolean(false);
     return true;
   }
 
-  if (ValueValueWeakMap* map =
-          args.thisv().toObject().as<WeakMapObject>().getMap()) {
+  if (Map* map = args.thisv().toObject().as<WeakMapObject>().getMap()) {
     Value key = args[0];
     if (map->has(key)) {
       args.rval().setBoolean(true);
@@ -56,19 +56,25 @@ bool WeakMapObject::has(JSContext* cx, unsigned argc, Value* vp) {
                                                                           args);
 }
 
+// static
+bool WeakMapObject::hasObject(WeakMapObject* weakMap, JSObject* obj) {
+  AutoUnsafeCallWithABI unsafe;
+  Map* map = weakMap->getMap();
+  return map && map->has(ObjectValue(*obj));
+}
+
 /* static */ MOZ_ALWAYS_INLINE bool WeakMapObject::get_impl(
     JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(WeakMapObject::is(args.thisv()));
 
-  if (!CanBeHeldWeakly(cx, args.get(0))) {
+  if (!CanBeHeldWeakly(args.get(0))) {
     args.rval().setUndefined();
     return true;
   }
 
-  if (ValueValueWeakMap* map =
-          args.thisv().toObject().as<WeakMapObject>().getMap()) {
+  if (Map* map = args.thisv().toObject().as<WeakMapObject>().getMap()) {
     Value key = args[0];
-    if (ValueValueWeakMap::Ptr ptr = map->lookup(key)) {
+    if (Map::Ptr ptr = map->lookup(key)) {
       args.rval().set(ptr->value());
       return true;
     }
@@ -85,22 +91,34 @@ bool WeakMapObject::get(JSContext* cx, unsigned argc, Value* vp) {
                                                                           args);
 }
 
+// static
+void WeakMapObject::getObject(WeakMapObject* weakMap, JSObject* obj,
+                              Value* result) {
+  AutoUnsafeCallWithABI unsafe;
+  if (Map* map = weakMap->getMap()) {
+    if (Map::Ptr ptr = map->lookup(ObjectValue(*obj))) {
+      *result = ptr->value();
+      return;
+    }
+  }
+  *result = UndefinedValue();
+}
+
 /* static */ MOZ_ALWAYS_INLINE bool WeakMapObject::delete_impl(
     JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(WeakMapObject::is(args.thisv()));
 
-  if (!CanBeHeldWeakly(cx, args.get(0))) {
+  if (!CanBeHeldWeakly(args.get(0))) {
     args.rval().setBoolean(false);
     return true;
   }
 
-  if (ValueValueWeakMap* map =
-          args.thisv().toObject().as<WeakMapObject>().getMap()) {
+  if (Map* map = args.thisv().toObject().as<WeakMapObject>().getMap()) {
     Value key = args[0];
     // The lookup here is only used for the removal, so we can skip the read
     // barrier. This is not very important for performance, but makes it easier
     // to test nonbarriered removal from internal weakmaps (eg Debugger maps.)
-    if (ValueValueWeakMap::Ptr ptr = map->lookupUnbarriered(key)) {
+    if (Map::Ptr ptr = map->lookupUnbarriered(key)) {
       map->remove(ptr);
       args.rval().setBoolean(true);
       return true;
@@ -119,7 +137,7 @@ bool WeakMapObject::delete_(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static bool EnsureValidWeakMapKey(JSContext* cx, Handle<Value> keyVal) {
-  if (MOZ_UNLIKELY(!CanBeHeldWeakly(cx, keyVal))) {
+  if (MOZ_UNLIKELY(!CanBeHeldWeakly(keyVal))) {
     unsigned errorNum = GetErrorNumber(true);
     ReportValueError(cx, errorNum, JSDVG_IGNORE_STACK, keyVal, nullptr);
     return false;
@@ -155,7 +173,6 @@ bool WeakMapObject::set(JSContext* cx, unsigned argc, Value* vp) {
                                                                           args);
 }
 
-#ifdef NIGHTLY_BUILD
 static bool GetOrAddWeakMapEntry(JSContext* cx, Handle<WeakMapObject*> mapObj,
                                  Handle<Value> key, Handle<Value> value,
                                  MutableHandleValue rval) {
@@ -167,8 +184,8 @@ static bool GetOrAddWeakMapEntry(JSContext* cx, Handle<WeakMapObject*> mapObj,
     return false;
   }
 
-  ValueValueWeakMap* map = mapObj->getMap();
-  ValueValueWeakMap::AddPtr addPtr = map->lookupForAdd(key);
+  WeakCollectionObject::Map* map = mapObj->getMap();
+  auto addPtr = map->lookupForAdd(key);
   if (!addPtr) {
     if (!PreserveReflectorAndAssertValidEntry(cx, mapObj, key, value)) {
       return false;
@@ -196,16 +213,20 @@ bool WeakMapObject::getOrInsert(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<WeakMapObject::is,
                               WeakMapObject::getOrInsert_impl>(cx, args);
 }
-#endif  // #ifdef NIGHTLY_BUILD
 
 size_t WeakCollectionObject::sizeOfExcludingThis(
-    mozilla::MallocSizeOf aMallocSizeOf) {
-  ValueValueWeakMap* map = getMap();
-  return map ? map->sizeOfIncludingThis(aMallocSizeOf) : 0;
+    mozilla::MallocSizeOf mallocSizeOf) {
+  Map* map = getMap();
+  if (!map) {
+    return 0;
+  }
+
+  return gc::GetAllocSize(zone(), map) +
+         map->shallowSizeOfExcludingThis(mallocSizeOf);
 }
 
 size_t WeakCollectionObject::nondeterministicGetSize() {
-  ValueValueWeakMap* map = getMap();
+  Map* map = getMap();
   if (!map) {
     return 0;
   }
@@ -219,10 +240,10 @@ bool WeakCollectionObject::nondeterministicGetKeys(
   if (!arr) {
     return false;
   }
-  if (ValueValueWeakMap* map = obj->getMap()) {
+  if (Map* map = obj->getMap()) {
     // Prevent GC from mutating the weakmap while iterating.
     gc::AutoSuppressGC suppress(cx);
-    for (ValueValueWeakMap::Range r = map->all(); !r.empty(); r.popFront()) {
+    for (Map::Range r = map->all(); !r.empty(); r.popFront()) {
       const auto& key = r.front().key();
       MOZ_ASSERT(key.isObject() || key.isSymbol());
       JS::ExposeValueToActiveJS(key);
@@ -251,20 +272,20 @@ JS_PUBLIC_API bool JS_NondeterministicGetWeakMapKeys(JSContext* cx,
       cx, obj.as<WeakCollectionObject>(), ret);
 }
 
-static void WeakCollection_trace(JSTracer* trc, JSObject* obj) {
-  if (ValueValueWeakMap* map = obj->as<WeakCollectionObject>().getMap()) {
+/* static */
+void WeakCollectionObject::trace(JSTracer* trc, JSObject* obj) {
+  auto* collection = &obj->as<WeakCollectionObject>();
+  TraceBufferSlot(trc, collection, WeakCollectionObject::DataSlot,
+                  "WeakMapObject weak map");
+  if (Map* map = collection->getMap()) {
     map->trace(trc);
   }
 }
 
-static void WeakCollection_finalize(JS::GCContext* gcx, JSObject* obj) {
-  if (ValueValueWeakMap* map = obj->as<WeakCollectionObject>().getMap()) {
-    gcx->delete_(obj, map, MemoryUse::WeakMapObject);
-  }
-}
-
 JS_PUBLIC_API JSObject* JS::NewWeakMapObject(JSContext* cx) {
-  return NewBuiltinClassInstance<WeakMapObject>(cx);
+  JSObject* obj = NewTenuredBuiltinClassInstance<WeakMapObject>(cx);
+  MOZ_ASSERT_IF(obj, obj->isTenured());
+  return obj;
 }
 
 JS_PUBLIC_API bool JS::IsWeakMapObject(JSObject* obj) {
@@ -278,16 +299,16 @@ JS_PUBLIC_API bool JS::GetWeakMapEntry(JSContext* cx, HandleObject mapObj,
   cx->check(key);
   rval.setUndefined();
 
-  if (!CanBeHeldWeakly(cx, key)) {
+  if (!CanBeHeldWeakly(key)) {
     return true;
   }
 
-  ValueValueWeakMap* map = mapObj->as<WeakMapObject>().getMap();
+  WeakMapObject::Map* map = mapObj->as<WeakMapObject>().getMap();
   if (!map) {
     return true;
   }
 
-  if (ValueValueWeakMap::Ptr ptr = map->lookup(key)) {
+  if (auto ptr = map->lookup(key)) {
     rval.set(ptr->value());
   }
   return true;
@@ -361,11 +382,13 @@ bool WeakMapObject::construct(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  Rooted<WeakMapObject*> obj(cx,
-                             NewObjectWithClassProto<WeakMapObject>(cx, proto));
+  Rooted<WeakMapObject*> obj(cx, NewObjectWithClassProtoAndKind<WeakMapObject>(
+                                     cx, proto, TenuredObject));
   if (!obj) {
     return false;
   }
+
+  MOZ_ASSERT(obj->isTenured());
 
   // Steps 5-6, 11.
   if (!args.get(0).isNullOrUndefined()) {
@@ -391,16 +414,16 @@ bool WeakMapObject::construct(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 const JSClassOps WeakCollectionObject::classOps_ = {
-    nullptr,                  // addProperty
-    nullptr,                  // delProperty
-    nullptr,                  // enumerate
-    nullptr,                  // newEnumerate
-    nullptr,                  // resolve
-    nullptr,                  // mayResolve
-    WeakCollection_finalize,  // finalize
-    nullptr,                  // call
-    nullptr,                  // construct
-    WeakCollection_trace,     // trace
+    nullptr,  // addProperty
+    nullptr,  // delProperty
+    nullptr,  // enumerate
+    nullptr,  // newEnumerate
+    nullptr,  // resolve
+    nullptr,  // mayResolve
+    nullptr,  // finalize
+    nullptr,  // call
+    nullptr,  // construct
+    &trace,   // trace
 };
 
 const ClassSpec WeakMapObject::classSpec_ = {
@@ -411,13 +434,13 @@ const ClassSpec WeakMapObject::classSpec_ = {
     nullptr,
     WeakMapObject::methods,
     WeakMapObject::properties,
-    GenericFinishInit<WhichHasFuseProperty::Proto>,
+    GenericFinishInit<WhichHasRealmFuseProperty::Proto>,
 };
 
 const JSClass WeakMapObject::class_ = {
     "WeakMap",
     JSCLASS_HAS_RESERVED_SLOTS(SlotCount) |
-        JSCLASS_HAS_CACHED_PROTO(JSProto_WeakMap) | JSCLASS_BACKGROUND_FINALIZE,
+        JSCLASS_HAS_CACHED_PROTO(JSProto_WeakMap),
     &WeakCollectionObject::classOps_,
     &WeakMapObject::classSpec_,
 };
@@ -435,14 +458,12 @@ const JSPropertySpec WeakMapObject::properties[] = {
 };
 
 const JSFunctionSpec WeakMapObject::methods[] = {
-    JS_FN("has", has, 1, 0),
-    JS_FN("get", get, 1, 0),
+    JS_INLINABLE_FN("has", has, 1, 0, WeakMapHas),
+    JS_INLINABLE_FN("get", get, 1, 0, WeakMapGet),
     JS_FN("delete", delete_, 1, 0),
     JS_FN("set", set, 2, 0),
-#ifdef NIGHTLY_BUILD
     JS_FN("getOrInsert", getOrInsert, 2, 0),
     JS_SELF_HOSTED_FN("getOrInsertComputed", "WeakMapGetOrInsertComputed", 2,
                       0),
-#endif
     JS_FS_END,
 };

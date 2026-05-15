@@ -9,20 +9,24 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
 import androidx.annotation.DrawableRes
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.os.bundleOf
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDirections
+import androidx.navigation.findNavController
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.feature.intent.ext.getSessionId
+import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.support.utils.EXTRA_ACTIVITY_REFERRER_PACKAGE
 import mozilla.components.support.utils.SafeIntent
+import mozilla.components.support.utils.ext.SETTINGS_SELECT_OPTION_KEY
+import mozilla.components.support.utils.ext.SETTINGS_SHOW_FRAGMENT_ARGS
 import mozilla.components.support.utils.toSafeIntent
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.HomeActivity
@@ -31,13 +35,13 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.addons.AddonDetailsFragmentDirections
 import org.mozilla.fenix.addons.AddonPermissionsDetailsFragmentDirections
 import org.mozilla.fenix.addons.AddonsManagementFragmentDirections
+import org.mozilla.fenix.bookmarks.BookmarkFragmentDirections
 import org.mozilla.fenix.components.menu.MenuDialogFragmentDirections
 import org.mozilla.fenix.customtabs.EXTRA_IS_SANDBOX_CUSTOM_TAB
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsFragmentDirections
 import org.mozilla.fenix.exceptions.trackingprotection.TrackingProtectionExceptionsFragmentDirections
 import org.mozilla.fenix.home.HomeFragmentDirections
-import org.mozilla.fenix.library.bookmarks.BookmarkFragmentDirections
 import org.mozilla.fenix.library.history.HistoryFragmentDirections
 import org.mozilla.fenix.library.historymetadata.HistoryMetadataGroupFragmentDirections
 import org.mozilla.fenix.library.recentlyclosed.RecentlyClosedFragmentDirections
@@ -48,19 +52,19 @@ import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.TrackingProtectionFragmentDirections
 import org.mozilla.fenix.settings.about.AboutFragmentDirections
 import org.mozilla.fenix.settings.doh.DohSettingsFragmentDirections
-import org.mozilla.fenix.settings.logins.fragment.LoginDetailFragmentDirections
 import org.mozilla.fenix.settings.logins.fragment.SavedLoginsAuthFragmentDirections
 import org.mozilla.fenix.settings.search.SaveSearchEngineFragmentDirections
 import org.mozilla.fenix.settings.search.SearchEngineFragmentDirections
 import org.mozilla.fenix.settings.studies.StudiesFragmentDirections
 import org.mozilla.fenix.settings.wallpaper.WallpaperSettingsFragmentDirections
 import org.mozilla.fenix.share.AddNewDeviceFragmentDirections
-import org.mozilla.fenix.tabstray.TabsTrayFragmentDirections
+import org.mozilla.fenix.tabstray.ui.TabManagementFragmentDirections
 import org.mozilla.fenix.trackingprotection.TrackingProtectionPanelDialogFragmentDirections
 import org.mozilla.fenix.translations.TranslationsDialogFragmentDirections
 import org.mozilla.fenix.translations.preferences.downloadlanguages.DownloadLanguagesPreferenceFragmentDirections
 import org.mozilla.fenix.webcompat.ui.WebCompatReporterFragmentDirections
 import java.security.InvalidParameterException
+import com.google.android.material.R as materialR
 
 /**
  * Attempts to call immersive mode using the View to hide the status bar and navigation buttons.
@@ -137,15 +141,12 @@ fun Activity.openSetDefaultBrowserOption(
                 }
             }
         }
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
+        else -> {
             navigateToDefaultBrowserAppsSettings(
                 useCustomTab = useCustomTab,
                 from = from,
                 flags = flags,
             )
-        }
-        else -> {
-            openDefaultBrowserSumoPage(useCustomTab, from, flags)
         }
     }
 }
@@ -171,7 +172,6 @@ fun Context.isDefaultBrowserPromptSupported(): Boolean {
     return false
 }
 
-@RequiresApi(Build.VERSION_CODES.N)
 private fun Activity.navigateToDefaultBrowserAppsSettings(
     from: BrowserDirection,
     flags: EngineSession.LoadUrlFlags,
@@ -181,7 +181,7 @@ private fun Activity.navigateToDefaultBrowserAppsSettings(
         putExtra(SETTINGS_SELECT_OPTION_KEY, DEFAULT_BROWSER_APP_OPTION)
         putExtra(
             SETTINGS_SHOW_FRAGMENT_ARGS,
-            bundleOf(SETTINGS_SELECT_OPTION_KEY to DEFAULT_BROWSER_APP_OPTION),
+            Bundle().apply { putString(SETTINGS_SELECT_OPTION_KEY, DEFAULT_BROWSER_APP_OPTION) },
         )
     }
     startExternalActivitySafe(
@@ -206,10 +206,17 @@ private fun Activity.openDefaultBrowserSumoPage(
             url = sumoDefaultBrowserUrl,
         )
     } else {
-        (this as HomeActivity).openToBrowserAndLoad(
+        val directions = getNavDirections(from)
+        if (directions != null) {
+            val navController = findNavController(R.id.container)
+            navController.navigate(directions)
+        }
+
+        components.useCases.fenixBrowserUseCases.loadUrlOrSearch(
             searchTermOrURL = sumoDefaultBrowserUrl,
             newTab = true,
-            from = from,
+            forceSearch = false,
+            searchEngine = null,
             flags = flags,
         )
     }
@@ -224,7 +231,10 @@ fun Activity.setNavigationIcon(
 ) {
     (this as? AppCompatActivity)?.supportActionBar?.let {
         it.setDisplayHomeAsUpEnabled(true)
-        it.setHomeAsUpIndicator(icon)
+        val navigationIcon = AppCompatResources.getDrawable(this, icon)?.apply {
+            setTint(getColorFromAttr(materialR.attr.colorOnSurface))
+        }
+        it.setHomeAsUpIndicator(navigationIcon)
         it.setHomeActionContentDescription(R.string.action_bar_up_description)
     }
 }
@@ -318,9 +328,7 @@ private fun getHomeNavDirections(
     BrowserDirection.FromAddonPermissionsDetailsFragment ->
         AddonPermissionsDetailsFragmentDirections.actionGlobalBrowser()
 
-    BrowserDirection.FromLoginDetailFragment -> LoginDetailFragmentDirections.actionGlobalBrowser()
-
-    BrowserDirection.FromTabsTray -> TabsTrayFragmentDirections.actionGlobalBrowser()
+    BrowserDirection.FromTabManager -> TabManagementFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromRecentlyClosed -> RecentlyClosedFragmentDirections.actionGlobalBrowser()
 

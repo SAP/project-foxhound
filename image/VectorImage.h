@@ -9,7 +9,6 @@
 #include "Image.h"
 #include "nsIStreamListener.h"
 #include "mozilla/gfx/Point.h"
-#include "mozilla/MemoryReporting.h"
 
 class nsIRequest;
 class gfxDrawable;

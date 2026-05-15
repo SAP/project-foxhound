@@ -24,9 +24,8 @@ add_task(async function () {
   const dbg = await initDebuggerWithAbsoluteURL(TEST_URL);
 
   await selectSource(dbg, "doc_line_breaks.html");
-  clickElement(dbg, "prettyPrintButton");
+  await togglePrettyPrint(dbg);
 
-  await waitForSelectedSource(dbg, "doc_line_breaks.html:formatted");
   const prettyPrintedSource = findSourceContent(
     dbg,
     "doc_line_breaks.html:formatted"

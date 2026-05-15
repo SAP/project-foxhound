@@ -21,6 +21,30 @@ const smollm2Model = {
   useMmap: true,
   useMlock: false,
   perfModelId: "HuggingFaceTB/SmolLM2-360M-Instruct",
+  backend: "llama.cpp",
+};
+
+const qwen3Model = {
+  taskName: "text-generation",
+  modelId: "unsloth/Qwen3-0.6B-GGUF",
+  modelFile: "Qwen3-0.6B-Q8_0.gguf",
+  kvCacheDtype: "q8_0",
+  flashAttn: true,
+  useMmap: true,
+  useMlock: false,
+  perfModelId: "unsloth/Qwen3-0.6B-GGUF",
+};
+
+const qwen3ModelNative = {
+  taskName: "text-generation",
+  modelId: "unsloth/Qwen3-0.6B-GGUF",
+  modelFile: "Qwen3-0.6B-Q8_0.gguf",
+  kvCacheDtype: "q8_0",
+  flashAttn: false,
+  useMmap: false,
+  useMlock: true,
+  perfModelId: "unsloth/Qwen3-0.6B-GGUF",
+  backend: "llama.cpp",
 };
 
 const articles = [
@@ -34,11 +58,16 @@ const articles = [
     type: "medium",
     numTokens: 568,
   },
+  {
+    data: `${rootDataUrl}/big.txt`,
+    type: "big",
+    numTokens: 1100,
+  },
 ];
 
 let numEngines = 0;
 
-for (const model of [smollm2Model]) {
+for (const model of [qwen3ModelNative]) {
   for (const article of articles) {
     // Replace all non-alphabnumeric or dash or underscore by underscore
     const perfName = `${model.perfModelId.replace(/\//g, "-")}_${article.type}`;
@@ -99,7 +128,7 @@ const perfMetadata = {
   },
 };
 
-requestLongerTimeout(120);
+requestLongerTimeout(20);
 
 // To run locally
 // pip install huggingface-hub
@@ -151,6 +180,8 @@ async function run_summarizer_with_perf({
     ...llamaOptions,
   });
 
+  console.log("detected concurrency", navigator.hardwareConcurrency);
+
   if (taskName.includes("text-generation")) {
     chatInput = [
       {
@@ -169,6 +200,8 @@ async function run_summarizer_with_perf({
     prompt: chatInput,
     nPredict: numNewTokens,
     skipPrompt: false,
+    stopOnEndOfGenerationTokens: false,
+    context: { swaFull: false, flashAttn: false },
   };
 
   await perfTest({
@@ -187,10 +220,18 @@ add_task(async function test_ml_smollm_medium_article() {
   await run_summarizer_with_perf(testData[1]);
 });
 
+add_task(async function test_ml_smollm_medium_article() {
+  await run_summarizer_with_perf(testData[2]);
+});
+
 add_task(async function test_ml_smollm_tiny_article_with_mem() {
   await run_summarizer_with_perf({ ...testData[0], trackPeakMemory: true });
 });
 
 add_task(async function test_ml_smollm_medium_article_with_mem() {
   await run_summarizer_with_perf({ ...testData[1], trackPeakMemory: true });
+});
+
+add_task(async function test_ml_smollm_medium_article_with_mem() {
+  await run_summarizer_with_perf({ ...testData[2], trackPeakMemory: true });
 });

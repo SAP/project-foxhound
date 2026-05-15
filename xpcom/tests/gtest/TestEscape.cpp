@@ -6,7 +6,6 @@
 
 #include "nsEscape.h"
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "nsNetUtil.h"
 
 using namespace mozilla;

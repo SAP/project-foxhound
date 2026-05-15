@@ -103,6 +103,10 @@ function run_test() {
 
   // We always resolve localhost as it's hardcoded without the following pref:
   Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
+  Services.prefs.setBoolPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked",
+    false
+  );
 
   gHttpServer.start(-1);
 
@@ -115,6 +119,9 @@ function run_test() {
 
   gServerSocket.init(-1, true, -1);
   Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
+  Services.prefs.clearUserPref(
+    "network.proxy.testing_localhost_is_secure_when_hijacked"
+  );
 
   run_next_test();
 }

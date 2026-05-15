@@ -34,7 +34,7 @@ const TaskCache = require("resource://devtools/client/memory/actions/task-cache.
  *
  * @param {MemoryFront}
  * @param {HeapAnalysesClient}
- * @param {Object}
+ * @param {object}
  */
 exports.takeSnapshotAndCensus = function (front, heapWorker) {
   return async function ({ dispatch, getState }) {
@@ -104,7 +104,7 @@ exports.selectSnapshotAndRefresh = function (heapWorker, id) {
  * Take a snapshot and return its id on success, or null on failure.
  *
  * @param {MemoryFront} front
- * @returns {Number|null}
+ * @returns {number | null}
  */
 const takeSnapshot = (exports.takeSnapshot = function (front) {
   return async function ({ dispatch, getState }) {
@@ -354,8 +354,8 @@ exports.focusIndividual = function (node) {
  *
  * @param {HeapAnalysesClient} heapWorker
  * @param {SnapshotId} id
- * @param {Object} censusBreakdown
- * @param {Set<Number> | Number} reportLeafIndex
+ * @param {object} censusBreakdown
+ * @param {Set<number> | number} reportLeafIndex
  */
 const fetchIndividuals = (exports.fetchIndividuals = function (
   heapWorker,

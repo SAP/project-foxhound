@@ -61,7 +61,10 @@ export class ProfilesThemeCard extends MozLitElement {
         rel="stylesheet"
         href="chrome://browser/content/profiles/profiles-theme-card.css"
       />
-      <moz-card class="theme-card">
+      <moz-card
+        class="theme-card"
+        data-l10n-id=${ifDefined(this.theme.dataL10nTitle)}
+      >
         <div class="theme-content">
           <div class="img-holder" aria-hidden="true">
             <img alt="" />

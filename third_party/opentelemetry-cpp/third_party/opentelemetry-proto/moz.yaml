@@ -1,0 +1,74 @@
+schema: 1
+
+bugzilla:
+  product: "Firefox"
+  component: "Toolkit: Gecko Trace"
+
+origin:
+  name: opentelemetry-proto
+  description: OpenTelemetry protocol (OTLP) specification and Protobuf definitions
+  url: https://opentelemetry.io/docs/specs/otlp/
+
+  release: v1.8.0 (2025-09-02T11:03:39-04:00).
+  revision: v1.8.0
+
+  license: Apache-2.0
+  license-file: LICENSE
+
+vendoring:
+  url: https://github.com/open-telemetry/opentelemetry-proto
+  source-hosting: github
+  tracking: tag
+
+  exclude:
+   - "**"
+
+  include:
+   - CHANGELOG.md
+   - LICENSE
+   - README.md
+   - opentelemetry/proto/collector/trace/v1/trace_service.proto
+   - opentelemetry/proto/common/v1/common.proto
+   - opentelemetry/proto/resource/v1/resource.proto
+   - opentelemetry/proto/trace/v1/trace.proto
+
+  generated:
+   - opentelemetry.proto.common.v1.rs
+   - opentelemetry.proto.resource.v1.rs
+   - opentelemetry.proto.trace.v1.rs
+   - opentelemetry.proto.collector.trace.v1.rs
+   - opentelemetry/proto/collector/trace/v1/trace_service.pb.cc
+   - opentelemetry/proto/collector/trace/v1/trace_service.pb.h
+   - opentelemetry/proto/common/v1/common.pb.cc
+   - opentelemetry/proto/common/v1/common.pb.h
+   - opentelemetry/proto/resource/v1/resource.pb.cc
+   - opentelemetry/proto/resource/v1/resource.pb.h
+   - opentelemetry/proto/trace/v1/trace.pb.cc
+   - opentelemetry/proto/trace/v1/trace.pb.h
+
+  patches:
+    - patches/add-lite_runtime-optimization-to-protos.patch
+
+  post-patch-actions:
+    - action: run-script
+      script: "{topsrcdir}/toolkit/components/protobuf/scripts/protoc_wrapper.py"
+      cwd: "{topsrcdir}"
+      args:
+        - opentelemetry/proto/collector/trace/v1/trace_service.proto
+        - opentelemetry/proto/common/v1/common.proto
+        - opentelemetry/proto/resource/v1/resource.proto
+        - opentelemetry/proto/trace/v1/trace.proto
+        - "-I"
+        - "{yaml_dir}"
+        - "--cpp_out"
+        - "{yaml_dir}"
+
+    - action: run-script
+      script: "{topsrcdir}/toolkit/components/protobuf/scripts/protoc_wrapper.py"
+      cwd: "{topsrcdir}"
+      args:
+        - opentelemetry/proto/collector/trace/v1/trace_service.proto
+        - "-I"
+        - "{yaml_dir}"
+        - "--rust_out"
+        - "{yaml_dir}"

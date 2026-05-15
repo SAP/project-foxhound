@@ -29,11 +29,11 @@
 #ifndef Reverb_h
 #define Reverb_h
 
-#include "ReverbConvolver.h"
-#include "nsTArray.h"
 #include "AudioBlock.h"
+#include "ReverbConvolver.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
+#include "nsTArray.h"
 
 namespace WebCore {
 

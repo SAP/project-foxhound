@@ -26,18 +26,6 @@ add_task(async function test_escape() {
     Services.prefs.clearUserPref("browser.urlbar.autoFill");
   });
 
-  await PlacesTestUtils.addVisits([
-    { uri: "http://matchme/", title: "title1" },
-    { uri: "http://dontmatchme/", title: "title1" },
-    { uri: "http://title/1", title: "matchme2" },
-    { uri: "http://title/2", title: "dontmatchme3" },
-    { uri: "http://tag/1", title: "title1" },
-    { uri: "http://tag/2", title: "title1" },
-    { uri: "http://crazytitle/", title: "!@#$%^&*()_+{}|:<>?word" },
-    { uri: "http://katakana/", title: katakana.join("") },
-    { uri: "http://ideograph/", title: ideograph.join("") },
-    { uri: "http://camel/pleaseMatchMe/", title: "title1" },
-  ]);
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: "http://tag/1",
     title: "title1",
@@ -48,6 +36,25 @@ add_task(async function test_escape() {
     title: "title1",
     tags: ["dontmatchme3"],
   });
+
+  await PlacesTestUtils.addVisits([
+    { uri: "http://matchme/", title: "title1" },
+    { uri: "http://dontmatchme/", title: "title1" },
+    { uri: "http://title/1", title: "matchme2" },
+    { uri: "http://title/2", title: "dontmatchme3" },
+    {
+      uri: "http://tag/1",
+      title: "title1",
+    },
+    {
+      uri: "http://tag/2",
+      title: "title1",
+    },
+    { uri: "http://crazytitle/", title: "!@#$%^&*()_+{}|:<>?word" },
+    { uri: "http://katakana/", title: katakana.join("") },
+    { uri: "http://ideograph/", title: ideograph.join("") },
+    { uri: "http://camel/pleaseMatchMe/", title: "title1" },
+  ]);
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   info("Match 'match' at the beginning or after / or on a CamelCase");
@@ -199,7 +206,7 @@ add_task(async function test_escape() {
         })
       : makeVisitResult(context, {
           uri: "file:///",
-          fallbackTitle: "file:///",
+          title: "file:///",
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
           heuristic: true,
         });

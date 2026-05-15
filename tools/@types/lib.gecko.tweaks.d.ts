@@ -4,7 +4,7 @@
 
 // More specific types for parent process browsing contexts.
 interface CanonicalBrowsingContext extends LoadContextMixin {
-  embedderElement: XULBrowserElement;
+  embedderElement: MozBrowser;
   currentWindowContext: WindowGlobalParent;
   parent: CanonicalBrowsingContext;
   parentWindowContext: WindowGlobalParent;
@@ -12,12 +12,37 @@ interface CanonicalBrowsingContext extends LoadContextMixin {
   topWindowContext: WindowGlobalParent;
 }
 
+declare namespace ChromeUtils {
+  type Modules = import("./generated/lib.gecko.modules").Modules;
+
+  function importESModule<T extends keyof Modules>(
+    aResourceURI: T,
+    aOptions?: ImportESModuleOptionsDictionary
+  ): Modules[T];
+}
+
 interface ChromeWindow extends Window {
   isChromeWindow: true;
 }
 
+interface XULElementTagNameMap {
+  browser: MozBrowser;
+  iframe: XULFrameElement;
+  label: XULTextElement;
+  menu: XULMenuElement;
+  menupopup: XULPopupElement;
+  tree: XULTreeElement;
+}
+
 interface Document {
-  createXULElement(name: "browser"): XULBrowserElement;
+  createXULElement<K extends keyof XULElementTagNameMap>(
+    localName: K,
+    options?: string | ElementCreationOptions
+  ): XULElementTagNameMap[K];
+  createXULElement(
+    localName: string,
+    options?: string | ElementCreationOptions
+  ): XULElement;
 }
 
 type nsIGleanPingNoReason = {
@@ -117,14 +142,6 @@ type Sandbox = typeof globalThis & nsISupports;
 
 interface WindowGlobalParent extends WindowContext {
   readonly browsingContext: CanonicalBrowsingContext;
-}
-
-// Hand-crafted artisanal types.
-interface XULBrowserElement extends XULFrameElement, FrameLoader {
-  currentURI: nsIURI;
-  docShellIsActive: boolean;
-  isRemoteBrowser: boolean;
-  remoteType: string;
 }
 
 // https://github.com/microsoft/TypeScript-DOM-lib-generator/issues/1736

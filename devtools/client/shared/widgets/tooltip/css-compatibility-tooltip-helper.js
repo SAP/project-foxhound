@@ -144,7 +144,7 @@ class CssCompatibilityTooltipHelper {
   /**
    * Fill the tooltip with inactive CSS information.
    *
-   * @param {Object} data
+   * @param {object} data
    *        An object in the following format: {
    *          // Type of compatibility issue
    *          type: <string>,
@@ -166,25 +166,13 @@ class CssCompatibilityTooltipHelper {
    */
   async setContent(data, tooltip) {
     const fragment = this.getTemplate(data, tooltip);
-    const { doc } = tooltip;
-
-    tooltip.panel.innerHTML = "";
 
     tooltip.panel.addEventListener("click", this.addTab);
     tooltip.once("hidden", () => {
       tooltip.panel.removeEventListener("click", this.addTab);
     });
 
-    // Because Fluent is async we need to manually translate the fragment and
-    // then insert it into the tooltip. This is needed in order for the tooltip
-    // to size to the contents properly and for tests.
-    await doc.l10n.translateFragment(fragment);
-    doc.l10n.pauseObserving();
-    tooltip.panel.appendChild(fragment);
-    doc.l10n.resumeObserving();
-
-    // Size the content.
-    tooltip.setContentSize({ width: 267, height: Infinity });
+    await tooltip.setLocalizedFragment(fragment, { width: 267 });
   }
 
   /**
@@ -204,7 +192,7 @@ class CssCompatibilityTooltipHelper {
    *   </p>
    * </div>
    *
-   * @param {Object} data
+   * @param {object} data
    *        An object in the following format: {
    *          // Type of compatibility issue
    *          type: <string>,
@@ -263,7 +251,6 @@ class CssCompatibilityTooltipHelper {
    *
    * @param {DOMEvent} event
    *        The click event originating from the tooltip.
-   *
    */
   addTab(event) {
     // The XUL panel swallows click events so handlers can't be added directly

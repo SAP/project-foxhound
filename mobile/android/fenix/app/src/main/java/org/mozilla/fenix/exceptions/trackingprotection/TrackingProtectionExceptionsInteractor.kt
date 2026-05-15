@@ -6,8 +6,6 @@ package org.mozilla.fenix.exceptions.trackingprotection
 
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionException
 import mozilla.components.feature.session.TrackingProtectionUseCases
-import org.mozilla.fenix.BrowserDirection
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.exceptions.ExceptionsInteractor
 import org.mozilla.fenix.settings.SupportUtils
 
@@ -19,19 +17,16 @@ interface TrackingProtectionExceptionsInteractor : ExceptionsInteractor<Tracking
 }
 
 class DefaultTrackingProtectionExceptionsInteractor(
-    private val activity: HomeActivity,
     private val exceptionsStore: ExceptionsFragmentStore,
     private val trackingProtectionUseCases: TrackingProtectionUseCases,
+    private val openLearnMorePage: (String) -> Unit,
 ) : TrackingProtectionExceptionsInteractor {
 
     override fun onLearnMore() {
-        activity.openToBrowserAndLoad(
-            searchTermOrURL = SupportUtils.getGenericSumoURLForTopic(
-                SupportUtils.SumoTopic.TRACKING_PROTECTION,
-            ),
-            newTab = true,
-            from = BrowserDirection.FromTrackingProtectionExceptions,
+        val url = SupportUtils.getGenericSumoURLForTopic(
+            SupportUtils.SumoTopic.TRACKING_PROTECTION,
         )
+        openLearnMorePage(url)
     }
 
     override fun onDeleteAll() {

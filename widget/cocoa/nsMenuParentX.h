@@ -18,6 +18,9 @@ class nsMenuParentX {
  public:
   using MenuChild = mozilla::Variant<RefPtr<nsMenuX>, RefPtr<nsMenuItemX>>;
 
+  // The nesting depth; 0 for the root.
+  virtual size_t NestingDepth() = 0;
+
   // XXXmstange double-check that this is still needed
   virtual nsMenuBarX* AsMenuBar() { return nullptr; }
 

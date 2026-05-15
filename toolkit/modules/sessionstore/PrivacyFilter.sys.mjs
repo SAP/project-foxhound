@@ -14,6 +14,19 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 export var PrivacyFilter = Object.freeze({
   /**
+   * Filters canonical URLs according to the current privacy level.
+   *
+   * @param {string} url
+   * @returns {string|null} The url if allowed to be saved, otherwise null.
+   */
+  filterCanonicalUrl(url) {
+    if (!url) {
+      return null;
+    }
+    return lazy.PrivacyLevel.check(url) ? url : null;
+  },
+
+  /**
    * Filters the given (serialized) session storage |data| according to the
    * current privacy level and returns a new object containing only data that
    * we're allowed to store.

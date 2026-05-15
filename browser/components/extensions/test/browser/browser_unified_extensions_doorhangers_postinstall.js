@@ -51,6 +51,7 @@ async function testAddonPostInstall({
       win
     );
     const postInstallPanelPromise = promisePostInstallNotificationShown(win);
+    const readyPromise = AddonTestUtils.promiseWebExtensionStartup(addonId);
     win.gURLBar.value = xpi.path;
     win.gURLBar.focus();
     EventUtils.synthesizeKey("KEY_Enter", {}, win);
@@ -71,6 +72,16 @@ async function testAddonPostInstall({
       "#addon-pin-toolbarbutton-checkbox"
     );
     ok(checkbox, "Found 'Pin extension to toolbar' checkbox");
+
+    // The checkbox visibility is updated when the button is added. The button
+    // is registered from onManifestEntry in ext-browserAction.js on extension
+    // startup. The popupnotification is shown as soon as the AddonManager has
+    // installed the add-on, when the extension startup may still be pending.
+    // BrowserActionWidgetObserver in browser-addons.js detects when the button
+    // is added and updates the checkbox state as needed.
+    // This all is expected to be completed when an extension has started up,
+    // so await extension startup before checking the checkbox state.
+    await readyPromise;
     await verifyPostInstallCheckbox(checkbox);
 
     info(`Dismissing postinstall notification`);

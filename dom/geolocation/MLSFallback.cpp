@@ -5,12 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MLSFallback.h"
+
 #include "GeolocationPosition.h"
+#include "mozilla/Logging.h"
+#include "mozilla/glean/DomGeolocationMetrics.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIGeolocationProvider.h"
 #include "nsServiceManagerUtils.h"
-#include "mozilla/Logging.h"
-#include "mozilla/glean/DomGeolocationMetrics.h"
 
 extern mozilla::LazyLogModule gGeolocationLog;
 

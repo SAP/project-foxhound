@@ -24,8 +24,10 @@ export class NetworkDecodedBodySizeMap {
   }
 
   destroy() {
-    this.#authenticationAttemptsMap = null;
-    this.#channelIdToBodySizeMap = null;
+    // Reset both maps rather than making them null to avoid errors in case any
+    // API is called after the helper was destroyed.
+    this.#authenticationAttemptsMap = new Map();
+    this.#channelIdToBodySizeMap = new Map();
   }
 
   getDecodedBodySize(channelId) {

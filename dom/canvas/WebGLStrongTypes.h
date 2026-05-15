@@ -7,9 +7,9 @@
 #define WEBGL_STRONG_TYPES_H_
 
 #include <algorithm>
+#include <array>
 
 #include "GLDefs.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 

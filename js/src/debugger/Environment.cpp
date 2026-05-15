@@ -11,7 +11,6 @@
 #include "mozilla/Vector.h"      // for Vector
 
 #include <string.h>  // for strlen, size_t
-#include <utility>   // for move
 
 #include "debugger/Debugger.h"  // for Env, Debugger, ValueToIdentifier
 #include "debugger/Object.h"    // for DebuggerObject

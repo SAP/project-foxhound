@@ -158,7 +158,7 @@ async function assertActualEnginesEqualsExpected(
   expectedEngineOrders,
   message
 ) {
-  engineSelector._configuration = null;
+  engineSelector.clearCachedConfigurationForTests();
   SearchTestUtils.setRemoteSettingsConfig(config, []);
 
   let { engines } = await engineSelector.fetchEngineConfiguration(userEnv);

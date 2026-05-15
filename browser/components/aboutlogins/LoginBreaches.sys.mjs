@@ -127,6 +127,7 @@ export const LoginBreaches = {
   /**
    * Return information about logins using passwords that were potentially in a
    * breach.
+   *
    * @see the caveats in the documentation for `getPotentialBreachesByLoginGUID`.
    *
    * @param {nsILoginInfo[]} logins to check the passwords of.

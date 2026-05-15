@@ -16,12 +16,12 @@ export var NLP = {
    * http://locutus.io/php/strings/levenshtein/index.html
    * License: MIT.
    *
-   * @param  {String} word1   Word to compare against
-   * @param  {String} word2   Word that may be different
-   * @param  {Number} costIns The cost to insert a character
-   * @param  {Number} costRep The cost to replace a character
-   * @param  {Number} costDel The cost to delete a character
-   * @return {Number}
+   * @param  {string} word1   Word to compare against
+   * @param  {string} word2   Word that may be different
+   * @param  {number} costIns The cost to insert a character
+   * @param  {number} costRep The cost to replace a character
+   * @param  {number} costDel The cost to delete a character
+   * @return {number}
    */
   levenshtein(word1 = "", word2 = "", costIns = 1, costRep = 1, costDel = 1) {
     if (word1 === word2) {

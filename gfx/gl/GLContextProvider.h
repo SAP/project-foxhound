@@ -26,6 +26,8 @@ namespace gl {
 
 // Null is always there
 #define GL_CONTEXT_PROVIDER_NAME GLContextProviderNull
+
+// This header uses `already_AddRefed`.
 #include "GLContextProviderImpl.h"
 #undef GL_CONTEXT_PROVIDER_NAME
 

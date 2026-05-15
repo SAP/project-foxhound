@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s da was kontrolu wobchować.</p> <p>Wužiwajće jón jako priwatny wobhladowak: <ul> <li>Pytajće a přehladujće direktnje w nałoženju</li> <li>Blokujće přesćěhowaki (abo aktualizujće nastajenja, zo byšće přesćěhowaki dowolił)</li> <li>Zhašejće placki a pytansku a přehladowansku historiju</li> </ul> </p> <p>%1$s so wot Mozilla wuwiwa. Naša misija je spěchowanje stroweho, wotewrjeneho interneta.<br/> <a href=\"%2$s\">Dalše informacije</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s da was kontrolu wobchować.</p>\n<p>Wužiwajće jón jako priwatny wobhladowak:\n<ul>\n<li>Pytajće a přehladujće direktnje w nałoženju</li>\n<li>Blokujće přesćěhowaki (abo aktualizujće nastajenja, zo byšće přesćěhowaki dowolił)</li>\n<li>Zhašejće placki a pytansku a přehladowansku historiju</li>\n</ul> </p>\n<p>%1$s so wot Mozilla wuwiwa. Naša misija je spěchowanje stroweho, wotewrjeneho interneta.<br/>\n<a href=\"%2$s\">Dalše informacije</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Dalše informacije</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Hdyž pokročujeće, zwoliće do %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Hdyž pokročujeće, zwoliće do %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Wužiwanske wuměnjenja Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Wužiwanske wuměnjenja Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox so wo wašu priwatnosć stara. Dalše informacije w: %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox so wo wašu priwatnosć stara. Dalše informacije w: %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Zdźělenka priwatnosće.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Zdźělenka priwatnosće</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Přehladowansku historiju zhašeć</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Druhe rajtarki začinić</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Nowy rajtark přidać</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[To móhło problem z konfiguraciju serwera być, abo něchtó pospytuje, serwer imitować. <br/><br/> Jeli sće w zańdźenosći ze serwerom wuspěšnje zwjazany był, móže zmylk nachwilny być.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Něchtó móhł spytać, sydło za swoje wudać a pokročowanje móhło riskantne być.</label> <br><br> <label>%1$s <b>%2$s</b> njedowěrja, dokelž jeho certifikatowy wudawar je njeznaty, certifkat je samsignowany abo serwer korektne mjezycertifikaty njesćele.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Něchtó móhł spytać, sydło za swoje wudać a pokročowanje móhło riskantne być.</label> <br><br>\n<label>%1$s <b>%2$s</b> njedowěrja, dokelž jeho certifikatowy wudawar je njeznaty, certifkat je samsignowany abo serwer korektne mjezycertifikaty njesćele.</label>]]></string>
   <!--
     Sessions List
 

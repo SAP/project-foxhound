@@ -139,22 +139,18 @@ class Generator:
             # For static `.rst` file
             for static_file in framework["static"]:
                 if static_file.endswith("rst"):
-                    frameworks_info[yaml_content["name"]]["static"].append(
-                        {
-                            "file": static_file,
-                            "content": read_file(
-                                pathlib.Path(framework["path"], static_file),
-                                stringify=True,
-                            ),
-                        }
-                    )
+                    frameworks_info[yaml_content["name"]]["static"].append({
+                        "file": static_file,
+                        "content": read_file(
+                            pathlib.Path(framework["path"], static_file),
+                            stringify=True,
+                        ),
+                    })
                 else:
-                    frameworks_info[yaml_content["name"]]["static"].append(
-                        {
-                            "file": static_file,
-                            "content": pathlib.Path(framework["path"], static_file),
-                        }
-                    )
+                    frameworks_info[yaml_content["name"]]["static"].append({
+                        "file": static_file,
+                        "content": pathlib.Path(framework["path"], static_file),
+                    })
 
         return frameworks_info
 
@@ -189,7 +185,7 @@ class Generator:
 
         # Save the documentation files
         frameworks = []
-        for framework_name in sorted(framework_docs.keys()):
+        for framework_name in sorted(framework_docs.keys(), key=str.lower):
             frameworks.append(framework_name)
             save_file(
                 framework_docs[framework_name]["dynamic"],
@@ -281,12 +277,10 @@ class Generator:
             # (used to output a linter warning for regeneration)
             files = []
             for entry in self._perfdocs_tree:
-                files.extend(
-                    [
-                        pathlib.Path(entry["path"], entry["yml"]),
-                        pathlib.Path(entry["path"], entry["rst"]),
-                    ]
-                )
+                files.extend([
+                    pathlib.Path(entry["path"], entry["yml"]),
+                    pathlib.Path(entry["path"], entry["rst"]),
+                ])
             return files
 
         # Throw a warning if there's no need for generating

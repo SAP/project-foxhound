@@ -30,11 +30,14 @@ available.map(x => {
   // Find all locales which have both a script and a region subtag.
   return loc.script && loc.region;
 }).filter(loc => {
-  // Skip "sd-Deva-IN" and Fulah because of <https://unicode-org.atlassian.net/browse/ICU-21974>.
-  return !((loc.language === "sd" && loc.script === "Deva" && loc.region === "IN") ||
-           (loc.language === "ff" && (loc.script === "Adlm" || loc.script === "Latn") &&
-            (loc.region === "GH" || loc.region === "GM" || loc.region === "LR" || loc.region === "SL"))
-          );
+  // Skip "ku-Latn-IQ" because "ku-Arab" isn't exported from CLDR to ICU and the
+  // implied script of "ku-IQ" is "ku-Arab-IQ".
+  // This can result in hour cycle differences, see also
+  // <https://unicode-org.atlassian.net/browse/CLDR-19048>.
+  if (loc.language === "ku" && loc.script === "Latn" && loc.region === "IQ") {
+    return false;
+  }
+  return true;
 }).forEach(loc => {
   // Remove the script subtag from the locale.
   let noScript = new Intl.Locale(`${loc.language}-${loc.region}`);

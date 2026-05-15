@@ -30,7 +30,7 @@
     background: var(--theme-selection-background);
     color: var(--theme-selection-color);
 
-    & .img {
+    & .dbg-img {
       background-color: currentColor;
     }
   }
@@ -45,7 +45,7 @@
   flex: none;
 }
 
-.threads-list .img {
+.threads-list .dbg-img {
   display: block;
 }
 

@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 # This directory is for tests for the legacy, sync APIs as somewhere to put them
 # until we remove the APIs themselves.
 head = "head_legacy.js"

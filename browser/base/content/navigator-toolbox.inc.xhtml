@@ -10,6 +10,7 @@
            class="browser-toolbar chromeclass-menubar browser-titlebar"
            customizable="true"
            mode="icons"
+           autohide="true"
            context="toolbar-context-menu">
     <toolbaritem id="menubar-items" align="center">
 # The entire main menubar is placed into browser-menubar.inc, so that it can be
@@ -54,7 +55,12 @@
 # significantly, there is an optimization in
 # DisplayPortUtils::MaybeCreateDisplayPortInFirstScrollFrameEncountered based
 # the current structure that we may want to revisit.
-          <arrowscrollbox id="pinned-tabs-container" orient="horizontal"></arrowscrollbox>
+          <div id="pinned-drop-indicator">
+            <html:img id="pinned-drop-indicator-icon" src="chrome://browser/skin/pin.svg" role="presentation" loading="lazy"/>
+            <span id="pinned-drop-indicator-text" data-l10n-id="pinned-tabs-drop-indicator"></span>
+          </div>
+          <html:sidebar-pins-promo id="drag-to-pin-promo-card"></html:sidebar-pins-promo>
+          <arrowscrollbox id="pinned-tabs-container" orient="horizontal" clicktoscroll=""></arrowscrollbox>
           <splitter orient="vertical" id="vertical-pinned-tabs-splitter" resizebefore="sibling" resizeafter="none" hidden="true"/>
           <hbox class="tab-drop-indicator" hidden="true"/>
           <arrowscrollbox id="tabbrowser-arrowscrollbox" orient="horizontal" flex="1" clicktoscroll="" scrolledtostart="" scrolledtoend="">
@@ -98,6 +104,14 @@
     <hbox class="titlebar-spacer" type="post-tabs"/>
 
 #include private-browsing-indicator.inc.xhtml
+
+    <toolbarbutton id="ai-window-toggle"
+                    class="toolbarbutton-1 chromeclass-toolbar-additional"
+                    data-l10n-id="toolbar-button-ai-window-toggle"
+                    cui-areatype="toolbar"
+                    removable="false"
+                    hidden="true"/>
+
     <toolbarbutton class="content-analysis-indicator toolbarbutton-1 content-analysis-indicator-icon"/>
 
 #include titlebar-items.inc.xhtml
@@ -116,6 +130,8 @@
            addon-webext-overflowbutton="unified-extensions-button"
            addon-webext-overflowtarget="overflowed-extensions-list"
            context="toolbar-context-menu">
+
+    <html:img id="taskbar-tabs-favicon" alt="" decoding="sync" />
 
     <hbox class="titlebar-spacer" type="pre-tabs"/>
     <toolbartabstop/>
@@ -162,280 +178,248 @@
                    removable="false"
                    overflows="false"/>
       <toolbaritem id="urlbar-container"
+                   class="urlbar-container"
                    removable="false"
                    overflows="false">
         <toolbartabstop/>
-        <html:div id="urlbar"
+        <html:moz-urlbar id="urlbar"
+              class="urlbar"
               popover="manual"
               focused="true"
               pageproxystate="invalid"
               unifiedsearchbutton-available=""
-          >
-          <hbox id="urlbar-background"/>
-          <hbox class="urlbar-input-container"
-                flex="1"
-                pageproxystate="invalid">
-            <box id="remote-control-box"
-                 align="center"
-                 collapsed="true">
-                <image id="remote-control-icon"/>
+              sap-name="urlbar">
+
+          <box id="remote-control-box"
+              align="center"
+              collapsed="true"
+              urlbar-slot="remote-control-box">
+            <image id="remote-control-icon"/>
+          </box>
+
+          <box id="trust-icon-container" align="center" role="button" data-l10n-id="urlbar-identity-button" urlbar-slot="site-info">
+            <image id="trust-icon"/>
+            <label id="trust-label" crop="center" flex="1" data-l10n-id="urlbar-trust-icon-notsecure-label" />
+          </box>
+
+          <!-- Use onclick instead of normal popup= syntax since the popup
+                code fires onmousedown, and hence eats our favicon drag events. -->
+          <box id="tracking-protection-icon-container" align="center"
+                role="button"
+                tooltip="tracking-protection-icon-tooltip"
+                urlbar-slot="site-info">
+            <box id="tracking-protection-icon-box">
+              <image id="tracking-protection-icon"/>
             </box>
-            <box id="urlbar-search-button"
-                 class="chromeclass-toolbar-additional"/>
-            <toolbarbutton id="urlbar-searchmode-switcher"
-                            align="center"
-                            aria-expanded="false"
-                            aria-haspopup="menu"
-                            tooltip="dynamic-shortcut-tooltip"
-                            data-l10n-id="urlbar-searchmode-default"
-                            class="chromeclass-toolbar-additional"
-                            type="menu">
-              <image id="searchmode-switcher-icon" class="toolbarbutton-icon"/>
-              <image id="searchmode-switcher-dropmarker"
-                      data-l10n-id="urlbar-searchmode-dropmarker"
-                      class="toolbarbutton-icon toolbarbutton-combined-buttons-dropmarker" />
-              <menupopup id="searchmode-switcher-popup"
-                        class="toolbar-menupopup"
-                        consumeoutsideclicks="false">
-                <label id="searchmode-switcher-popup-description"
-                      data-l10n-id="urlbar-searchmode-popup-description"
-                      role="heading" />
-                <menuseparator/>
-                <menuseparator id="searchmode-switcher-popup-footer-separator"/>
-                <menuitem id="searchmode-switcher-popup-search-settings-button"
-                          class="menuitem-iconic"
-                          data-action="openpreferences"
-                          image="chrome://global/skin/icons/settings.svg"
-                          data-l10n-id="urlbar-searchmode-popup-search-settings-menuitem"/>
-              </menupopup>
-            </toolbarbutton>
-            <box id="searchmode-switcher-chicklet">
-              <label id="searchmode-switcher-title" />
-              <toolbarbutton id="searchmode-switcher-close"
-                              data-action="exitsearchmode"
-                              role="button"
-                              data-l10n-id="urlbar-searchmode-exit-button"
-                              class="toolbarbutton-icon close-button" />
+            <tooltip id="tracking-protection-icon-tooltip">
+              <description id="tracking-protection-icon-tooltip-label" class="tooltip-label"/>
+            </tooltip>
+          </box>
+
+          <box id="identity-box"
+                class="identity-box"
+                pageproxystate="invalid"
+                urlbar-slot="site-info">
+            <box id="identity-icon-box"
+                  role="button"
+                  align="center"
+                  data-l10n-id="urlbar-identity-button"
+                  class="identity-box-button">
+              <image id="identity-icon"/>
+              <label id="identity-icon-label" crop="center" flex="1"/>
             </box>
-            <box id="trust-icon-container" align="center" role="button" data-l10n-id="urlbar-identity-button">
-              <image id="trust-icon"/>
-            </box>
-            <!-- Use onclick instead of normal popup= syntax since the popup
-                 code fires onmousedown, and hence eats our favicon drag events. -->
-            <box id="tracking-protection-icon-container" align="center"
-                 role="button"
-                 tooltip="tracking-protection-icon-tooltip">
-              <box id="tracking-protection-icon-box">
-                <image id="tracking-protection-icon"/>
+            <box id="identity-permission-box"
+                  data-l10n-id="urlbar-permissions-granted"
+                  role="button"
+                  align="center"
+                  class="identity-box-button">
+              <image id="permissions-granted-icon"/>
+              <box style="pointer-events: none;">
+                  <image class="sharing-icon" id="webrtc-sharing-icon"/>
+                  <image class="sharing-icon geo-icon" id="geo-sharing-icon"/>
+                  <image class="sharing-icon xr-icon" id="xr-sharing-icon"/>
               </box>
-              <tooltip id="tracking-protection-icon-tooltip">
-                <description id="tracking-protection-icon-tooltip-label" class="tooltip-label"/>
-              </tooltip>
+              <box id="blocked-permissions-container" align="center">
+                <image data-permission-id="geo" class="blocked-permission-icon geo-icon" role="button"
+                      data-l10n-id="urlbar-geolocation-blocked"/>
+                <image data-permission-id="xr" class="blocked-permission-icon xr-icon" role="button"
+                      data-l10n-id="urlbar-xr-blocked"/>
+                <image data-permission-id="desktop-notification" class="blocked-permission-icon desktop-notification-icon" role="button"
+                      data-l10n-id="urlbar-web-notifications-blocked"/>
+                <image data-permission-id="camera" class="blocked-permission-icon camera-icon" role="button"
+                      data-l10n-id="urlbar-camera-blocked"/>
+                <image data-permission-id="microphone" class="blocked-permission-icon microphone-icon" role="button"
+                      data-l10n-id="urlbar-microphone-blocked"/>
+                <image data-permission-id="localhost" class="blocked-permission-icon localhost-icon" role="button"
+                      data-l10n-id="urlbar-localhost-blocked"/>
+                <image data-permission-id="local-network" class="blocked-permission-icon local-network-icon" role="button"
+                      data-l10n-id="urlbar-local-network-blocked"/>
+                <image data-permission-id="screen" class="blocked-permission-icon screen-icon" role="button"
+                      data-l10n-id="urlbar-screen-blocked"/>
+                <image data-permission-id="persistent-storage" class="blocked-permission-icon persistent-storage-icon" role="button"
+                      data-l10n-id="urlbar-persistent-storage-blocked"/>
+                <image data-permission-id="popup" class="blocked-permission-icon popup-icon" role="button"
+                      data-l10n-id="urlbar-popup-blocked2"/>
+                <image data-permission-id="autoplay-media" class="blocked-permission-icon autoplay-media-icon" role="button"
+                      data-l10n-id="urlbar-autoplay-media-blocked"/>
+                <image data-permission-id="canvas" class="blocked-permission-icon canvas-icon" role="button"
+                      data-l10n-id="urlbar-canvas-blocked"/>
+                <image data-permission-id="midi" class="blocked-permission-icon midi-icon" role="button"
+                      data-l10n-id="urlbar-midi-blocked"/>
+                <image data-permission-id="install" class="blocked-permission-icon install-icon" role="button"
+                      data-l10n-id="urlbar-install-blocked"/>
+                <!-- A speaker icon for blocked speaker selection is not
+                      shown because, without text, this may be interpreted as
+                      active or blocked audio. -->
+              </box>
             </box>
-            <box id="identity-box"
-                 class="identity-box"
-                 pageproxystate="invalid">
-              <box id="identity-icon-box"
+            <box id="notification-popup-box"
+                  class="anchor-root"
+                  hidden="true"
+                  align="center">
+              <image id="default-notification-icon" class="notification-anchor-icon" role="button"
+                      data-l10n-id="urlbar-default-notification-anchor"/>
+              <image id="geo-notification-icon" class="notification-anchor-icon geo-icon" role="button"
+                      data-l10n-id="urlbar-geolocation-notification-anchor"/>
+              <image id="localhost-notification-icon" class="notification-anchor-icon localhost-icon" role="button"
+                      data-l10n-id="urlbar-localhost-notification-anchor"/>
+              <image id="local-network-notification-icon" class="notification-anchor-icon local-network-icon" role="button"
+                      data-l10n-id="urlbar-local-network-notification-anchor"/>
+              <image id="xr-notification-icon" class="notification-anchor-icon xr-icon" role="button"
+                      data-l10n-id="urlbar-xr-notification-anchor"/>
+              <image id="autoplay-media-notification-icon" class="notification-anchor-icon autoplay-media-icon" role="button"
+                      data-l10n-id="urlbar-autoplay-notification-anchor"/>
+              <image id="addons-notification-icon" class="notification-anchor-icon install-icon" role="button"
+                      data-l10n-id="urlbar-addons-notification-anchor"/>
+              <image id="canvas-notification-icon" class="notification-anchor-icon" role="button"
+                      data-l10n-id="urlbar-canvas-notification-anchor"/>
+              <image id="indexedDB-notification-icon" class="notification-anchor-icon indexedDB-icon" role="button"
+                      data-l10n-id="urlbar-indexed-db-notification-anchor"/>
+              <image id="password-notification-icon" class="notification-anchor-icon" role="button"
+                      data-l10n-id="urlbar-password-notification-anchor"/>
+              <image id="web-notifications-notification-icon" class="notification-anchor-icon desktop-notification-icon" role="button"
+                      data-l10n-id="urlbar-web-notification-anchor"/>
+              <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon camera-icon" role="button"
+                      data-l10n-id="urlbar-web-rtc-share-devices-notification-anchor"/>
+              <image id="webRTC-shareMicrophone-notification-icon" class="notification-anchor-icon microphone-icon" role="button"
+                      data-l10n-id="urlbar-web-rtc-share-microphone-notification-anchor"/>
+              <image id="webRTC-shareScreen-notification-icon" class="notification-anchor-icon screen-icon" role="button"
+                      data-l10n-id="urlbar-web-rtc-share-screen-notification-anchor"/>
+              <image id="webRTC-shareSpeaker-notification-icon" class="notification-anchor-icon speaker-icon" role="button"
+                      data-l10n-id="urlbar-web-rtc-share-speaker-notification-anchor"/>
+              <image id="servicesInstall-notification-icon" class="notification-anchor-icon service-icon" role="button"
+                      data-l10n-id="urlbar-services-notification-anchor"/>
+              <image id="eme-notification-icon" class="notification-anchor-icon drm-icon" role="button"
+                      data-l10n-id="urlbar-eme-notification-anchor"/>
+              <image id="persistent-storage-notification-icon" class="notification-anchor-icon persistent-storage-icon" role="button"
+                      data-l10n-id="urlbar-persistent-storage-notification-anchor"/>
+              <image id="midi-notification-icon" class="notification-anchor-icon midi-icon" role="button"
+                      data-l10n-id="urlbar-midi-notification-anchor"/>
+              <image id="webauthn-notification-icon" class="notification-anchor-icon" role="button"
+                      data-l10n-id="urlbar-web-authn-anchor"/>
+              <image id="identity-credential-notification-icon" class="notification-anchor-icon" role="button"
+                    data-l10n-id="identity-credential-urlbar-anchor"/>
+              <image id="storage-access-notification-icon" class="notification-anchor-icon storage-access-icon" role="button"
+                      data-l10n-id="urlbar-storage-access-anchor"/>
+            </box>
+          </box>
+
+          <!-- This is technically not site info but we use the site-info
+             slot anyway because it's in the right spot. -->
+          <box id="urlbar-label-box" align="center" urlbar-slot="site-info">
+            <label id="urlbar-label-switchtab" class="urlbar-label" data-l10n-id="urlbar-switch-to-tab"/>
+            <label id="urlbar-label-extension" class="urlbar-label" data-l10n-id="urlbar-extension"/>
+          </box>
+          <html:div id="urlbar-search-mode-indicator" urlbar-slot="site-info">
+            <html:span id="urlbar-search-mode-indicator-title"/>
+            <html:div id="urlbar-search-mode-indicator-close"
+                      class="close-button"
+                      role="button"
+                      aria-labelledby="urlbar-search-mode-indicator-close urlbar-search-mode-indicator-title"
+                      data-l10n-id="urlbar-search-mode-indicator-close"/>
+          </html:div>
+
+          <hbox id="urlbar-revert-button-container" urlbar-slot="revert-button">
+            <toolbartabstop/>
+            <image id="urlbar-revert-button"
+                   class="urlbar-icon urlbar-revert-button"
                    role="button"
-                   align="center"
-                   data-l10n-id="urlbar-identity-button"
-                   class="identity-box-button">
-                <image id="identity-icon"/>
-                <label id="identity-icon-label" crop="center" flex="1"/>
-              </box>
-              <box id="identity-permission-box"
-                   data-l10n-id="urlbar-permissions-granted"
-                   role="button"
-                   align="center"
-                   class="identity-box-button">
-                <image id="permissions-granted-icon"/>
-                <box style="pointer-events: none;">
-                    <image class="sharing-icon" id="webrtc-sharing-icon"/>
-                    <image class="sharing-icon geo-icon" id="geo-sharing-icon"/>
-                    <image class="sharing-icon xr-icon" id="xr-sharing-icon"/>
-                </box>
-                <box id="blocked-permissions-container" align="center">
-                  <image data-permission-id="geo" class="blocked-permission-icon geo-icon" role="button"
-                        data-l10n-id="urlbar-geolocation-blocked"/>
-                  <image data-permission-id="xr" class="blocked-permission-icon xr-icon" role="button"
-                        data-l10n-id="urlbar-xr-blocked"/>
-                  <image data-permission-id="desktop-notification" class="blocked-permission-icon desktop-notification-icon" role="button"
-                        data-l10n-id="urlbar-web-notifications-blocked"/>
-                  <image data-permission-id="camera" class="blocked-permission-icon camera-icon" role="button"
-                        data-l10n-id="urlbar-camera-blocked"/>
-                  <image data-permission-id="microphone" class="blocked-permission-icon microphone-icon" role="button"
-                        data-l10n-id="urlbar-microphone-blocked"/>
-                  <image data-permission-id="screen" class="blocked-permission-icon screen-icon" role="button"
-                        data-l10n-id="urlbar-screen-blocked"/>
-                  <image data-permission-id="persistent-storage" class="blocked-permission-icon persistent-storage-icon" role="button"
-                        data-l10n-id="urlbar-persistent-storage-blocked"/>
-                  <image data-permission-id="popup" class="blocked-permission-icon popup-icon" role="button"
-                        data-l10n-id="urlbar-popup-blocked"/>
-                  <image data-permission-id="autoplay-media" class="blocked-permission-icon autoplay-media-icon" role="button"
-                        data-l10n-id="urlbar-autoplay-media-blocked"/>
-                  <image data-permission-id="canvas" class="blocked-permission-icon canvas-icon" role="button"
-                        data-l10n-id="urlbar-canvas-blocked"/>
-                  <image data-permission-id="midi" class="blocked-permission-icon midi-icon" role="button"
-                        data-l10n-id="urlbar-midi-blocked"/>
-                  <image data-permission-id="install" class="blocked-permission-icon install-icon" role="button"
-                        data-l10n-id="urlbar-install-blocked"/>
-                  <!-- A speaker icon for blocked speaker selection is not
-                       shown because, without text, this may be interpreted as
-                       active or blocked audio. -->
-                </box>
-              </box>
-              <box id="notification-popup-box"
-                   class="anchor-root"
-                   hidden="true"
-                   align="center">
-                <image id="default-notification-icon" class="notification-anchor-icon" role="button"
-                       data-l10n-id="urlbar-default-notification-anchor"/>
-                <image id="geo-notification-icon" class="notification-anchor-icon geo-icon" role="button"
-                       data-l10n-id="urlbar-geolocation-notification-anchor"/>
-                <image id="xr-notification-icon" class="notification-anchor-icon xr-icon" role="button"
-                       data-l10n-id="urlbar-xr-notification-anchor"/>
-                <image id="autoplay-media-notification-icon" class="notification-anchor-icon autoplay-media-icon" role="button"
-                       data-l10n-id="urlbar-autoplay-notification-anchor"/>
-                <image id="addons-notification-icon" class="notification-anchor-icon install-icon" role="button"
-                       data-l10n-id="urlbar-addons-notification-anchor"/>
-                <image id="canvas-notification-icon" class="notification-anchor-icon" role="button"
-                       data-l10n-id="urlbar-canvas-notification-anchor"/>
-                <image id="indexedDB-notification-icon" class="notification-anchor-icon indexedDB-icon" role="button"
-                       data-l10n-id="urlbar-indexed-db-notification-anchor"/>
-                <image id="password-notification-icon" class="notification-anchor-icon" role="button"
-                       data-l10n-id="urlbar-password-notification-anchor"/>
-                <image id="web-notifications-notification-icon" class="notification-anchor-icon desktop-notification-icon" role="button"
-                       data-l10n-id="urlbar-web-notification-anchor"/>
-                <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon camera-icon" role="button"
-                       data-l10n-id="urlbar-web-rtc-share-devices-notification-anchor"/>
-                <image id="webRTC-shareMicrophone-notification-icon" class="notification-anchor-icon microphone-icon" role="button"
-                       data-l10n-id="urlbar-web-rtc-share-microphone-notification-anchor"/>
-                <image id="webRTC-shareScreen-notification-icon" class="notification-anchor-icon screen-icon" role="button"
-                       data-l10n-id="urlbar-web-rtc-share-screen-notification-anchor"/>
-                <image id="webRTC-shareSpeaker-notification-icon" class="notification-anchor-icon speaker-icon" role="button"
-                       data-l10n-id="urlbar-web-rtc-share-speaker-notification-anchor"/>
-                <image id="servicesInstall-notification-icon" class="notification-anchor-icon service-icon" role="button"
-                       data-l10n-id="urlbar-services-notification-anchor"/>
-                <image id="eme-notification-icon" class="notification-anchor-icon drm-icon" role="button"
-                       data-l10n-id="urlbar-eme-notification-anchor"/>
-                <image id="persistent-storage-notification-icon" class="notification-anchor-icon persistent-storage-icon" role="button"
-                       data-l10n-id="urlbar-persistent-storage-notification-anchor"/>
-                <image id="midi-notification-icon" class="notification-anchor-icon midi-icon" role="button"
-                       data-l10n-id="urlbar-midi-notification-anchor"/>
-                <image id="webauthn-notification-icon" class="notification-anchor-icon" role="button"
-                       data-l10n-id="urlbar-web-authn-anchor"/>
-                <image id="identity-credential-notification-icon" class="notification-anchor-icon" role="button"
-                      data-l10n-id="identity-credential-urlbar-anchor"/>
-                <image id="storage-access-notification-icon" class="notification-anchor-icon storage-access-icon" role="button"
-                       data-l10n-id="urlbar-storage-access-anchor"/>
-              </box>
-            </box>
-            <box id="urlbar-label-box" align="center">
-              <label id="urlbar-label-switchtab" class="urlbar-label" data-l10n-id="urlbar-switch-to-tab"/>
-              <label id="urlbar-label-extension" class="urlbar-label" data-l10n-id="urlbar-extension"/>
-              <label id="urlbar-label-search-mode" class="urlbar-label"/>
-            </box>
-            <html:div id="urlbar-search-mode-indicator">
-              <html:span id="urlbar-search-mode-indicator-title"/>
-              <html:div id="urlbar-search-mode-indicator-close"
-                        class="close-button"
-                        role="button"
-                        aria-labelledby="urlbar-search-mode-indicator-close urlbar-search-mode-indicator-title"
-                        data-l10n-id="urlbar-search-mode-indicator-close"/>
-            </html:div>
-            <moz-input-box tooltip="aHTMLTooltip"
-                            class="urlbar-input-box"
-                            flex="1"
-                            role="combobox"
-                            aria-owns="urlbar-results">
-              <html:input id="urlbar-scheme"
-                          required="required"/>
-              <html:input id="urlbar-input"
-                          class="urlbar-input"
-                          anonid="input"
-                          aria-controls="urlbar-results"
-                          aria-autocomplete="both"
-                          inputmode="mozAwesomebar"
-                          data-l10n-id="urlbar-placeholder"
-                          data-l10n-attrs="placeholder"/>
-            </moz-input-box>
-            <hbox id="urlbar-revert-button-container">
-              <toolbartabstop/>
-              <image class="urlbar-icon urlbar-revert-button"
-                     role="button"
-                     data-l10n-id="urlbar-revert-button"/>
-            </hbox>
-            <image id="urlbar-go-button"
-                   class="urlbar-icon urlbar-go-button"
-                   role="button"
-                   data-l10n-id="urlbar-go-button"/>
-            <hbox id="page-action-buttons" context="pageActionContextMenu" align="center">
-              <toolbartabstop/>
-              <hbox id="contextual-feature-recommendation" role="button" hidden="true">
-                <hbox id="cfr-label-container">
-                  <label id="cfr-label"/>
-                </hbox>
-                <hbox id="cfr-button"
-                      role="presentation"
-                      class="urlbar-page-action">
-                  <image class="urlbar-icon"/>
-                </hbox>
+                   data-l10n-id="urlbar-revert-button"/>
+          </hbox>
+
+          <hbox id="page-action-buttons" context="pageActionContextMenu" align="center" urlbar-slot="page-actions">
+            <toolbartabstop/>
+            <hbox id="contextual-feature-recommendation" role="button" hidden="true">
+              <hbox id="cfr-label-container">
+                <label id="cfr-label"/>
               </hbox>
-              <hbox id="userContext-icons" hidden="true">
-                <label id="userContext-label"/>
-                <image id="userContext-indicator"/>
-              </hbox>
-              <hbox id="reader-mode-button"
-                    class="urlbar-page-action"
-                    role="button"
-                    data-l10n-id="reader-view-enter-button"
-                    hidden="true"
-                    tooltip="dynamic-shortcut-tooltip">
-                <image id="reader-mode-button-icon"
-                       class="urlbar-icon"/>
-              </hbox>
-              <hbox id="picture-in-picture-button"
-                    class="urlbar-page-action"
-                    role="button"
-                    hidden="true">
-                <image id="picture-in-picture-button-icon"
-                       class="urlbar-icon"/>
-              </hbox>
-              <hbox id="taskbar-tabs-button"
-                    class="urlbar-page-action"
-                    role="button"
-                    data-l10n-id="taskbar-tab-urlbar-button-open"
-                    hidden="true">
-                <image class="urlbar-icon"/>
-              </hbox>
-              <hbox id="translations-button"
-                    class="urlbar-page-action"
-                    role="button"
-                    data-l10n-id="urlbar-translations-button2"
-                    hidden="true">
-                <image class="urlbar-icon" id="translations-button-icon" />
-                <image class="urlbar-icon" id="translations-button-circle-arrows" />
-                <html:span id="translations-button-locale" aria-hidden="true" />
-              </hbox>
-              <toolbarbutton id="urlbar-zoom-button"
-                     tooltip="dynamic-shortcut-tooltip"
-                     hidden="true"/>
-              <hbox id="pageActionButton"
-                    class="urlbar-page-action"
-                    role="button"
-                    data-l10n-id="urlbar-page-action-button">
-                <image class="urlbar-icon"/>
-              </hbox>
-              <hbox id="star-button-box"
-                    hidden="true"
-                    role="button"
+              <hbox id="cfr-button"
+                    role="presentation"
                     class="urlbar-page-action">
-                <image id="star-button"
-                       class="urlbar-icon"/>
+                <image class="urlbar-icon"/>
               </hbox>
+            </hbox>
+            <hbox id="userContext-icons" hidden="true">
+              <label id="userContext-label"/>
+              <image id="userContext-indicator"/>
+            </hbox>
+            <hbox id="reader-mode-button"
+                  class="urlbar-page-action"
+                  role="button"
+                  data-l10n-id="reader-view-enter-button"
+                  hidden="true"
+                  tooltip="dynamic-shortcut-tooltip">
+              <image id="reader-mode-button-icon"
+                      class="urlbar-icon"/>
+            </hbox>
+            <hbox id="picture-in-picture-button"
+                  class="urlbar-page-action"
+                  role="button"
+                  hidden="true">
+              <image id="picture-in-picture-button-icon"
+                      class="urlbar-icon"/>
+            </hbox>
+            <hbox id="taskbar-tabs-button"
+                  class="urlbar-page-action"
+                  role="button"
+                  data-l10n-id="taskbar-tab-urlbar-button-open"
+                  hidden="true">
+              <image class="urlbar-icon"/>
+            </hbox>
+            <hbox id="translations-button"
+                  class="urlbar-page-action"
+                  role="button"
+                  data-l10n-id="urlbar-translations-button2"
+                  hidden="true">
+              <image class="urlbar-icon" id="translations-button-icon" />
+              <image class="urlbar-icon" id="translations-button-circle-arrows" />
+              <html:span id="translations-button-locale" aria-hidden="true" />
+            </hbox>
+            <toolbarbutton id="urlbar-zoom-button"
+                    tooltip="dynamic-shortcut-tooltip"
+                    hidden="true"/>
+            <hbox id="split-view-button"
+                  class="urlbar-page-action"
+                  role="button"
+                  data-l10n-id="urlbar-split-view-button"
+                  hidden="true">
+              <image class="urlbar-icon" id="split-view-button-icon" />
+            </hbox>
+            <hbox id="pageActionButton"
+                  class="urlbar-page-action"
+                  role="button"
+                  data-l10n-id="urlbar-page-action-button">
+              <image class="urlbar-icon"/>
+            </hbox>
+            <hbox id="star-button-box"
+                  hidden="true"
+                  role="button"
+                  class="urlbar-page-action">
+              <image id="star-button"
+                      class="urlbar-icon"/>
             </hbox>
           </hbox>
-        </html:div>
+        </html:moz-urlbar>
         <toolbartabstop/>
       </toolbaritem>
 
@@ -491,6 +475,21 @@
                      overflows="false"
                      removable="false"/>
     </hbox>
+
+    <toolbarbutton id="document-pip-return-to-opener-button" class="toolbarbutton-1"
+                    data-l10n-id="browser-window-return-to-opener"
+                    command="cmd_returnToOpener"/>
+
+    <toolbarbutton id="taskbar-tabs-audio" class="toolbarbutton-1 chromeclass-toolbar-additional"
+                    removable="false" overflows="false"/>
+
+    <toolbarbutton id="smartwindow-ask-button"
+                    class="toolbarbutton-1 chromeclass-toolbar-additional"
+                    data-l10n-id="smartwindow-ask-button"
+                    hidden="true"
+                    overflows="false"
+                    removable="false">
+    </toolbarbutton>
 
     <toolbarbutton id="nav-bar-overflow-button"
                    class="toolbarbutton-1 chromeclass-toolbar-additional"
@@ -566,6 +565,7 @@
           <menupopup id="PlacesChevronPopup"
                       is="places-popup"
                       placespopup="true"
+                      native="false"
                       class="toolbar-menupopup"
                       tooltip="bhTooltip" popupsinherittooltip="true"
                       context="placesContext"/>
@@ -573,7 +573,7 @@
       </hbox>
     </toolbaritem>
   </toolbar>
-  <toolbar id="notifications-toolbar" class="browser-toolbar" nowindowdrag="">
+  <toolbar id="notifications-toolbar" class="browser-toolbar" nowindowdrag="" fullscreentoolbar="true">
     <!-- NOTE: This gets instantiated in-place -->
     <html:template id="tab-notification-deck-template">
       <html:named-deck id="tab-notification-deck"></html:named-deck>
@@ -606,6 +606,7 @@
                  is="places-popup-arrow"
                  class="toolbar-menupopup animatable-menupopup"
                  placespopup="true"
+                 native="false"
                  context="placesContext"
                  openInTabs="children"
                  side="top"
@@ -629,6 +630,7 @@
           <menupopup id="BMB_bookmarksToolbarPopup"
                      is="places-popup"
                      placespopup="true"
+                     native="false"
                      context="placesContext">
             <menuitem id="BMB_viewBookmarksToolbar"
                       data-l10n-id="bookmarks-tools-toolbar-visibility-menuitem"
@@ -644,6 +646,7 @@
           <menupopup id="BMB_unsortedBookmarksPopup"
                      is="places-popup"
                      placespopup="true"
+                     native="false"
                      context="placesContext"/>
         </menu>
         <menu id="BMB_mobileBookmarks"
@@ -654,6 +657,7 @@
           <menupopup id="BMB_mobileBookmarksPopup"
                      is="places-popup"
                      placespopup="true"
+                     native="false"
                      context="placesContext"/>
         </menu>
 
@@ -671,12 +675,19 @@
     </toolbarbutton>
 
     <toolbaritem id="search-container"
-                 class="chromeclass-toolbar-additional"
+                 class="chromeclass-toolbar-additional urlbar-container"
                  data-l10n-id="navbar-search"
                  align="center"
                  persist="width">
       <toolbartabstop/>
       <searchbar id="searchbar" flex="1"/>
+      <html:moz-urlbar id="searchbar-new"
+              class="urlbar"
+              popover="manual"
+              pageproxystate="invalid"
+              unifiedsearchbutton-available=""
+              sap-name="searchbar">
+      </html:moz-urlbar>
       <toolbartabstop/>
     </toolbaritem>
 

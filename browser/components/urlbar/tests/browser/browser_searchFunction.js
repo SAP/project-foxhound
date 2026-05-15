@@ -19,7 +19,7 @@ add_setup(async function () {
   await SearchTestUtils.installSearchExtension({
     keyword: ALIAS,
   });
-  aliasEngine = Services.search.getEngineByName("Example");
+  aliasEngine = SearchService.getEngineByName("Example");
 
   registerCleanupFunction(async function () {
     BrowserTestUtils.removeTab(tab);

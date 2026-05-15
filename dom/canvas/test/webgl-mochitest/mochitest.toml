@@ -25,7 +25,9 @@ fail-if = [
 ]
 
 ["ensure-exts/test_EXT_disjoint_timer_query.html"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["ensure-exts/test_EXT_float_blend.html"]
 
@@ -34,22 +36,21 @@ fail-if = ["true"]
 ["ensure-exts/test_EXT_sRGB.html"]
 
 ["ensure-exts/test_EXT_shader_texture_lod.html"]
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["ensure-exts/test_EXT_texture_compression_bptc.html"]
 fail-if = [
   "os == 'android'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
 ["ensure-exts/test_EXT_texture_compression_rgtc.html"]
-fail-if = ["os == 'android'"]
+fail-if = [
+  "os == 'android'",
+]
 
 ["ensure-exts/test_EXT_texture_filter_anisotropic.html"]
-fail-if = ["os == 'linux'  && os_version == '18.04' && processor == 'x86_64'"]
 
 ["ensure-exts/test_OES_draw_buffers_indexed.html"]
 
@@ -59,12 +60,10 @@ fail-if = ["os == 'linux'  && os_version == '18.04' && processor == 'x86_64'"]
 
 ["ensure-exts/test_OVR_multiview2.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'",
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
@@ -72,73 +71,60 @@ fail-if = [
 
 ["ensure-exts/test_WEBGL_compressed_texture_astc.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
-  "win10_2009",
-  "win11_2009",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'",
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_etc.html"]
 fail-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
-  "win10_2009",
-  "win11_2009",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'",
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_etc1.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
-  "win10_2009",
-  "win11_2009",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'",
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_pvrtc.html"]
 fail-if = [
   "os == 'android'",
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
-  "win10_2009",
-  "win11_2009",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'",
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_s3tc.html"]
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["ensure-exts/test_WEBGL_depth_texture.html"]
 
 ["ensure-exts/test_WEBGL_draw_buffers.html"]
-fail-if = ["os == 'android' && android_version == '33'"]
 
 ["ensure-exts/test_WEBGL_provoking_vertex.html"]
 fail-if = [
   "os == 'android'",
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
 ]
 
 ["ensure-exts/test_common.html"]
@@ -153,12 +139,16 @@ fail-if = [
 
 ["test_backends.html"]
 tags = "os_integration"
-skip-if = ["os == 'android' && android_version == '34'"]
+skip-if = [
+  "os == 'android' && os_version == '14'",
+]
 
 ["test_canvas_size.html"]
 
 ["test_capture.html"]
-skip-if = ["os == 'win' && debug"] # Bug 1388624
+skip-if = [
+  "os == 'win' && debug", # Bug 1388624
+]
 support-files = ["../captureStream_common.js"]
 # Even though we use ../ here, in the test HTML, we need to omit this. Sub-CWD relative
 # paths are fine, but they locate the file and dump it in the current directory.
@@ -181,12 +171,10 @@ support-files = ["../captureStream_common.js"]
 
 ["test_has_rbab.html"]
 fail-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
@@ -206,11 +194,9 @@ fail-if = [
 
 ["test_pixel_pack_buffer.html"]
 skip-if = [
-  "win10_2009", # Unofficial DXGL support regressed by bug 1632249
-  "win11_2009", # Unofficial DXGL support regressed by bug 1632249
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
+  "os == 'android' && os_version == '14'",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
-  "os == 'android' && android_version == '34'",
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'", # Unofficial DXGL support regressed by bug 1632249
 ]
 
 ["test_privileged_exts.html"]
@@ -221,13 +207,14 @@ tags = "os_integration"
 ["test_read_pixels_no_format.html"]
 
 ["test_renderer_strings.html"]
-skip-if = ["display == 'wayland'"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+]
 tags = "os_integration"
 
 ["test_sab_with_webgl.html"]
 
 ["test_tex_large_uploads.html"]
-skip-if = ["win11_2009 && debug && bits == 32"] # bug 1705863
 support-files = ["blank_15000x10000.png"]
 
 ["test_tex_pbo.html"]
@@ -241,51 +228,80 @@ support-files = ["blank_15000x10000.png"]
 ["test_vertexattrib4f_update.html"]
 
 ["test_video_fastpath_mp4.html"]
-skip-if = ["win11_2009 && bits == 32"] # No fast video path for h264 decoder (done in RDD, can't be read in content)
 
 ["test_video_fastpath_vp8.html"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "win11_2009 && bits == 32", # No fast video path for vp8 decoder (done in RDD, can't be read in content)
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["test_video_fastpath_vp9.html"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
-  "win11_2009 && bits == 32", # No fast video path for vp9 decoder (done in RDD, can't be read in content)
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
 ]
 
 ["test_webgl2_alpha_luminance.html"]
-skip-if = ["os == 'android'"] #bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+skip-if = [
+  "os == 'android'", # bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+]
 
 ["test_webgl2_invalidate_framebuffer.html"]
-skip-if = ["os == 'android'"] #bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+skip-if = [
+  "os == 'android'", # bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+]
 
 ["test_webgl2_not_exposed.html"]
-skip-if = ["os == 'android'"] #bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+skip-if = [
+  "os == 'android'", # bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+]
 
 ["test_webgl2_uniform_block.html"]
 
 ["test_webgl_available.html"]
 
 ["test_webgl_compressed_texture_es3.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 # 2020-01-07 00:00:11.839 F/MOZ_Assert( 6742): Assertion failure: [GFX1]: void mozilla::gl::GLContext::raw_fClear(GLbitfield): Generated unexpected GL_OUT_OF_MEMORY error, at /builds/worker/workspace/build/src/gfx/2d/Logging.h:746
 # 2020-01-07 00:01:28.281 F/MOZ_Assert( 8333): Assertion failure: [GFX1]: Unexpected error from driver: DoCompressedTexSubImage(0x0de1, 0, 0,4,0, 4,4,1, 0x9270, 8) -> 0x0501, at /builds/worker/workspace/build/src/gfx/2d/Logging.h:746
+
+["test_webgl_constant_vendor_fpp.html"]
+
+["test_webgl_constant_vendor_fpp_explicit.html"]
+
+["test_webgl_constant_vendor_rfp.html"]
 
 ["test_webgl_fingerprinting_resistance.html"]
 
 ["test_webgl_force_enable.html"]
 
+["test_webgl_renderer_constant_fpp.html"]
+
+["test_webgl_renderer_constant_fpp_explicit.html"]
+
+["test_webgl_renderer_constant_rfp.html"]
+
 ["test_webgl_request_context.html"]
-skip-if = ["os == 'android'"] #bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+skip-if = [
+  "os == 'android'", # bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+]
 
 ["test_webgl_request_mismatch.html"]
-skip-if = ["os == 'android'"] #bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+skip-if = [
+  "os == 'android'", # bug 865443- seperate suite - the non_conf* tests pass except for one on armv6 tests
+]
+
+["test_webgl_vendor_randomize_fpp.html"]
+
+["test_webgl_vendor_randomize_fpp_explicit.html"]
+
+["test_webgl_vendor_randomize_rfp.html"]
+
+["test_webgl_vendor_sanitize_fpp.html"]
+
+["test_webgl_vendor_sanitize_fpp_explicit.html"]
+
+["test_webgl_vendor_sanitize_rfp.html"]
 
 ["test_webglcontextcreationerror.html"]
 

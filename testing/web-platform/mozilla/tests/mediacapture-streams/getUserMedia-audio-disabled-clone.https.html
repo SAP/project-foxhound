@@ -1,0 +1,46 @@
+<!doctype html>
+<title>Test clone of disabled audio track from getUserMedia()</title>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<body></body>
+<script>
+'use strict';
+
+async function promise_is_track_silent(track) {
+  const ctx = new AudioContext();
+  const sourceNode =
+      new MediaStreamTrackAudioSourceNode(ctx, {mediaStreamTrack: track});
+  const processor = ctx.createScriptProcessor(8192, 1, 0);
+  sourceNode.connect(processor);
+  const e = await new Promise(resolve => processor.onaudioprocess = resolve);
+  ctx.close();
+  const input = e.inputBuffer.getChannelData(0);
+  for (const sample of input) {
+    if (sample != 0.0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+promise_test(async t => {
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  const [track] = stream.getTracks();
+  track.enabled = false;
+  // media.getusermedia.microphone.off_while_disabled.delay_ms is 0.
+  // Allow some events to be processed for DeviceListener::SetDeviceEnabled()
+  // to change mDeviceState.mDeviceEnabled.
+  for (const i of Array(2).keys()) {
+    await new Promise(resolve => t.step_timeout(resolve, 0));
+  }
+  const clone = track.clone();
+  assert_false(clone.enabled, 'clone.enabled');
+  assert_true(await promise_is_track_silent(clone),
+              'clone silent before enabled');
+  clone.enabled = true;
+  assert_false(await promise_is_track_silent(clone),
+               'clone silent after enabled');
+  assert_false(track.enabled, 'track.enabled');
+  assert_true(await promise_is_track_silent(track), 'track silent');
+}, 'clone of disabled getUserMedia() audio track');
+</script>

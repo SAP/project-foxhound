@@ -1,4 +1,4 @@
-53587
+53625
 0/nm
 0th/pt
 1/n1
@@ -15863,6 +15863,7 @@ authentically
 authenticate/XGNDS
 authenticated/U
 authentication/M
+authenticator/S
 authenticity/M
 author/SMDG
 authoress/MS
@@ -19702,11 +19703,13 @@ christen/ASGD
 christening/MS
 christian/U
 christology
+chroma
 chromatic
 chromatically
 chromatin/M
 chromatography
 chrome/MGDS
+chrominance
 chromium/M
 chromosomal
 chromosome/MS
@@ -20803,6 +20806,7 @@ concision/M
 conclave/SM
 conclude/DSG
 conclusion/MS
+conclusionary
 conclusive/IYP
 conclusiveness/IM
 concoct/SDG
@@ -21292,6 +21296,7 @@ convoke/DSG
 convoluted
 convolution/MS
 convolutional
+convolve/GDS
 convoy/SMDG
 convulse/GNVXDS
 convulsion/M
@@ -21619,6 +21624,7 @@ counterproductive
 counterproposal
 counterrevolution/SM
 counterrevolutionary/SM
+countershading
 countersign/GSMD
 countersignature/MS
 countersink/GSM
@@ -22789,6 +22795,7 @@ deftness/M
 defunct
 defy/GDS
 deg
+degauss/ZDRS
 degeneracy/M
 degenerate/MVX
 degrade/B
@@ -26060,6 +26067,7 @@ exterminate/DSXGN
 extermination/M
 exterminator/MS
 external/MYS
+externality
 externalization/SM
 externalize/DSG
 extinct/GDS
@@ -26153,6 +26161,7 @@ eyestrain/M
 eyeteeth
 eyetooth/M
 eyewash/M
+eyewear/M
 eyewitness/MS
 f/CIAVTR
 fMRI
@@ -26172,6 +26181,7 @@ facecloths
 faceless
 facelift/SM
 facepalm/SDG
+faceplate/S
 facet/SMDG
 facetious/YP
 facetiousness/M
@@ -27127,7 +27137,7 @@ fluffiness/M
 fluffy/RPT
 fluid/SMY
 fluidity/M
-fluidize/GS
+fluidize/GDS
 fluke/SM
 fluky/RT
 flume/SM
@@ -27685,6 +27695,7 @@ fricative/SM
 friction/SM
 frictional
 fridge/SM
+fried/A
 friedcake/MS
 friend's
 friend/UGSDY
@@ -27846,6 +27857,7 @@ functional/Y
 functionalism
 functionalist/S
 functionality/S
+functionalize/GDS
 functionary/SM
 functor
 fund/AMDRZGS
@@ -28728,6 +28740,7 @@ goofiness/M
 goofy/RPT
 google/DSMG
 googly/S
+googol
 gooier
 gooiest
 gook/MS
@@ -29768,6 +29781,7 @@ headteacher/S
 headwaiter/SM
 headwaters/M
 headway/M
+headwear/M
 headwind/SM
 headword/SM
 heady/RTP
@@ -30934,7 +30948,7 @@ idealistic
 idealistically
 idealization/MS
 idealize/DSG
-ideation/S
+ideate/DSXGN
 idem
 idempotent
 identical/Y
@@ -31492,6 +31506,7 @@ indicate/XDSGNV
 indication/M
 indicative/SMY
 indicator/MS
+indicia
 indict/GDSBL
 indictment/SM
 indie/S
@@ -33180,6 +33195,8 @@ lagged
 lagging/M
 laggy
 lagniappe/SM
+lagomorph
+lagomorphs
 lagoon/SM
 laid/IA
 lain
@@ -33449,8 +33466,9 @@ leaflet/GMDS
 leafstalk/MS
 leafy/RT
 league/DSMG
-leak/MDSG
+leak/MDRSZG
 leakage/MS
+leaker/M
 leakiness/M
 leaky/PRT
 lean/MDRSTGJP
@@ -33808,6 +33826,8 @@ limerick/SM
 limescale
 limestone/M
 limey/S
+liminal
+liminality/S
 limit's
 limit/CSZGDR
 limitation/CM
@@ -34296,6 +34316,7 @@ lumbermen
 lumberyard/SM
 lumen/S
 lumina
+luminance
 luminary/SM
 luminescence/M
 luminescent
@@ -35172,6 +35193,7 @@ membrane/SM
 membranous
 meme/MS
 memento/MS
+memetic
 memo/MS
 memoir/MS
 memorabilia/M
@@ -35754,6 +35776,7 @@ misfire/MGDS
 misfit/SM
 misfitted
 misfitting
+misformed
 misfortune/SM
 misgender/SDG
 misgiving/MS
@@ -36936,6 +36959,9 @@ neuritic/MS
 neuritis/M
 neurocysticercoses
 neurocysticercosis
+neurodivergent
+neurodiverse
+neurodiversity/SM
 neurological/Y
 neurologist/SM
 neurology/M
@@ -37176,6 +37202,7 @@ nominative/SM
 nominator/CSM
 nominee/MS
 non
+non-sequiturs
 nonabrasive
 nonabsorbent/SM
 nonacademic
@@ -38547,6 +38574,7 @@ overeat/GSN
 overemotional
 overemphasis/M
 overemphasize/GDS
+overengineer/DGS
 overenthusiastic
 overestimate/MGNDS
 overestimation/M
@@ -38567,6 +38595,7 @@ overflown
 overfly/GS
 overfond
 overfull
+overgeneralization
 overgeneralize/DSG
 overgenerous
 overgraze/DSG
@@ -39090,6 +39119,7 @@ pardonably/U
 pardoner/M
 pare/S
 paregoric/M
+pareidolia
 parent/GMDS
 parentage/M
 parental
@@ -39365,7 +39395,7 @@ payout/MS
 payphone/S
 payroll/SM
 payslip/SM
-paywall/SM
+paywall/SMD
 payware
 pct
 pd
@@ -40380,7 +40410,9 @@ plateau/SMDG
 plateful/SM
 platelet/SM
 platen/M
-platform/SZGMDR
+platform's
+platform/CSGD
+platformer/S
 plating/M
 platinum/M
 platitude/SM
@@ -41240,6 +41272,7 @@ prescript/SVM
 prescription/SM
 prescriptive/Y
 preseason/SM
+preselected
 presence/SM
 present/LMDRYZGSB
 presentably
@@ -43943,6 +43976,7 @@ rune/MS
 rung/MS
 runic
 runlet/SM
+runnable
 runnel/SM
 runner/SM
 running/M
@@ -44530,6 +44564,7 @@ scintillate/DSGN
 scintillation/M
 scion/MS
 scissor/GDS
+sclera/SM
 scleroses
 sclerosis/M
 sclerotic
@@ -45076,7 +45111,7 @@ sequestrate/XGNDS
 sequestration/M
 sequin/SMD
 sequinned
-sequitur
+sequitur/S
 sequoia/MS
 sera
 seraglio/MS
@@ -48741,6 +48776,7 @@ tactless/PY
 tactlessness/M
 tad/SM
 tadpole/MS
+taekwondo
 taffeta/M
 taffrail/SM
 taffy/SM
@@ -51259,6 +51295,7 @@ unnerving/Y
 unobservant
 unoffensive
 unofficial/Y
+unopenable
 unoriginal
 unpeople
 unperceptive
@@ -51445,6 +51482,7 @@ uracil/M
 uranium/M
 urban
 urbane/RYT
+urbanism
 urbanity/M
 urbanization/M
 urbanize/DSG

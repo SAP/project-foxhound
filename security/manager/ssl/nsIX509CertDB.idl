@@ -41,10 +41,21 @@ interface nsIOpenSignedAppFileCallback : nsISupports
                                  in Array<nsIAppSignatureInfo> aSignatureInfos);
 };
 
-[scriptable, function, uuid(07c08655-8b11-4650-b6c4-0c145595ceb5)]
-interface nsIAsyncBoolCallback : nsISupports
-{
-    void onResult(in boolean result);
+/**
+ * Return type to be used in asyncVerifyPKCS7Object for PDF Verification.
+ * Consists of 3 elements:
+ * signatureResult describes the result of verifying the hash of data against the signature
+ * stored in pkcs7
+ * certificateResult describes the result of certificate verification
+ * If the signature verification has failed, certificate verification is not run.
+ * signerCertificate returns the signerCertificate from the pkcs7 message
+ * signerCertificate is null if the signature verification has failed (not equal to NS_OK).
+ */
+[scriptable, uuid(f2d9f5e4-1234-4d5a-b789-abcdef012345)]
+interface nsIPDFVerificationResult : nsISupports {
+  readonly attribute nsresult signatureResult;
+  readonly attribute nsresult certificateResult;
+  readonly attribute nsIX509Cert signerCertificate;
 };
 
 /**
@@ -318,6 +329,7 @@ interface nsIX509CertDB : nsISupports {
    * @param aFlags flags as described above
    * @param aHostname the (optional) hostname to verify for
    * @param aTime the time at which to verify, in seconds since the epoch
+   * @param aSctsFromTls an (optional) RFC6962 SignedCertificateTimestampList
    * @param aCallback the nsICertVerificationCallback that will receive the
                       results of this verification
    * @return a succeeding nsresult if the job was dispatched successfully
@@ -328,6 +340,7 @@ interface nsIX509CertDB : nsISupports {
                              in uint32_t aFlags,
                              in ACString aHostname,
                              in uint64_t aTime,
+                             in Array<uint8_t> aSctsFromTls,
                              in nsICertVerificationCallback aCallback);
 
   // Clears the OCSP cache for the current certificate verification
@@ -366,19 +379,56 @@ interface nsIX509CertDB : nsISupports {
   ACString asPKCS7Blob(in Array<nsIX509Cert> certList);
 
   /**
-   * Iterates through all the certs and returns false if any of the trusted
-   * CA certs are not built-in roots; and true otherwise.
-   */
-  [must_use]
-  void asyncHasThirdPartyRoots(in nsIAsyncBoolCallback callback);
-
-  unsigned long countTrustObjects();
-
-  /**
    * On Android, returns the client authentication certificate corresponding to
    * the given alias that was previously returned by a call to
    * `KeyChain.choosePrivateKeyAlias`.
    */
   [must_use]
   nsIX509Cert getAndroidCertificateFromAlias(in AString alias);
+
+  cenum QWACType : 8 {
+    OneQWAC,
+    TwoQWAC,
+  };
+
+  /**
+   * For a QWAC type (1-QWAC or 2-QWAC), given a certificate, a hostname, and a
+   * list of other certificates that may be useful in path building,
+   * asynchronously determines whether or not the certificate in question is a
+   * QWAC ("qualified website authentication certificate") of that type as per
+   * ETSI TS 119 411-5 and related standards.
+   */
+  [implicit_jscontext]
+  Promise asyncVerifyQWAC(in nsIX509CertDB_QWACType type,
+                          in nsIX509Cert cert,
+                          in ACString hostname,
+                          in Array<nsIX509Cert> collectedCerts);
+
+  /**
+   * Verifies that the all the signatures in the PKCS7 CMS message are valid for the associated data.
+   * Additionally, for each of them, the function extracts the signing certificate and
+   * its certificate chain from the PKCS7 object,
+   * checks that the certificate was valid at the time of signing,
+   * and ensures the chain leads to a trusted root certificate.
+   *
+   * @param pkcs7 DER-encoded PKCS#7 binary data object.
+   * @param data The associated data that was signed.
+   * @param signatureType Currently we support only adbe.pkcs7.detached
+   *
+   * If resolved, AsyncVerifyPKCS7Object(pkcs7, data, signatureType) will return an Array of
+   * nsIPDFVerificationResult (See above for the interface details).
+   */
+
+  /* ISO 32000-2 */
+  cenum PDFSignatureAlgorithm : 8 {
+    ADBE_PKCS7_DETACHED,
+    ADBE_PKCS7_SHA1
+  };
+
+  [implicit_jscontext]
+  Promise asyncVerifyPKCS7Object(
+    in Array<uint8_t> pkcs7,
+    in Array<Array<uint8_t> > data,
+    in nsIX509CertDB_PDFSignatureAlgorithm signatureType
+  );
 };

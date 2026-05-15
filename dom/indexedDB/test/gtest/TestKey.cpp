@@ -5,13 +5,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-
-#include "mozilla/dom/SimpleGlobalObject.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/indexedDB/Key.h"
-#include "mozilla/IntegerRange.h"
-#include "mozilla/Unused.h"
-
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "js/ArrayBuffer.h"
 #include "js/PropertyAndElement.h"  // JS_GetElement, JS_SetElement
@@ -19,6 +12,10 @@
 #include "js/String.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
+#include "mozilla/IntegerRange.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SimpleGlobalObject.h"
+#include "mozilla/dom/indexedDB/Key.h"
 
 // TODO: This PrintTo overload is defined in dom/media/gtest/TestGroupId.cpp.
 // However, it is not used, probably because of
@@ -420,7 +417,7 @@ TEST(DOM_IndexedDB_Key, ToLocaleAwareKey_Bug_1641598)
     // 1641598.
     res.AppendLiteral("\x90\x01\x01\x01\x01\x00\x40");
     for (const size_t unused : IntegerRange<size_t>(256)) {
-      Unused << unused;
+      (void)unused;
       res.AppendLiteral("\x01\x01\x80\x03\x43");
     }
     return res;

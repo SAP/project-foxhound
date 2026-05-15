@@ -18,7 +18,7 @@ const kDownloadAutohideCheckboxId = "downloads-button-autohide-checkbox";
 const kDownloadAutohidePanelId = "downloads-button-autohide-panel";
 const kDownloadAutoHidePref = "browser.download.autohideButton";
 
-import { CustomizableUI } from "resource:///modules/CustomizableUI.sys.mjs";
+import { CustomizableUI } from "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
@@ -26,7 +26,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  DragPositionManager: "resource:///modules/DragPositionManager.sys.mjs",
+  DragPositionManager:
+    "moz-src:///browser/components/customizableui/DragPositionManager.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 ChromeUtils.defineLazyGetter(lazy, "gWidgetsBundle", function () {
@@ -38,7 +39,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gTouchBarUpdater",
   "@mozilla.org/widget/touchbarupdater;1",
-  "nsITouchBarUpdater"
+  Ci.nsITouchBarUpdater
 );
 
 let gDebug;
@@ -511,7 +512,7 @@ export class CustomizeMode {
       this.#document.documentElement.toggleAttribute("customizing", true);
 
       let customizableToolbars = document.querySelectorAll(
-        "toolbar[customizable=true]:not([autohide=true], [collapsed=true])"
+        "toolbar[customizable=true]:not([autohide], [collapsed])"
       );
       for (let toolbar of customizableToolbars) {
         toolbar.toggleAttribute("customizing", true);
@@ -667,7 +668,7 @@ export class CustomizeMode {
       this._previousPanelContextMenuParent.appendChild(panelContextMenu);
 
       let customizableToolbars = document.querySelectorAll(
-        "toolbar[customizable=true]:not([autohide=true])"
+        "toolbar[customizable=true]:not([autohide])"
       );
       for (let toolbar of customizableToolbars) {
         toolbar.removeAttribute("customizing");
@@ -1147,7 +1148,7 @@ export class CustomizeMode {
     for (let command of this.#document.querySelectorAll("command")) {
       if (!command.id || !this.#enabledCommands.has(command.id)) {
         if (shouldBeDisabled) {
-          if (command.getAttribute("disabled") != "true") {
+          if (!command.hasAttribute("disabled")) {
             command.setAttribute("disabled", true);
           } else {
             command.setAttribute("wasdisabled", true);
@@ -1351,7 +1352,7 @@ export class CustomizeMode {
       aNode.removeAttribute("observes");
     }
 
-    if (aNode.getAttribute("checked") == "true") {
+    if (aNode.hasAttribute("checked")) {
       wrapper.setAttribute("itemchecked", "true");
       aNode.removeAttribute("checked");
     }
@@ -1481,7 +1482,7 @@ export class CustomizeMode {
 
       // XXX Bug 309953 - toolbarbuttons aren't in sync with their commands after customizing
       let command = this.$(commandID);
-      if (command && command.hasAttribute("disabled")) {
+      if (command?.hasAttribute("disabled")) {
         toolbarItem.setAttribute("disabled", command.getAttribute("disabled"));
       }
     }

@@ -4,6 +4,8 @@
 /**
  * Registers a one-time places observer for 'page-visited',
  * which resolves a promise on being called.
+ *
+ * @param {(PlacesEvent) => Promise<void>} callback
  */
 function promiseVisitAdded(callback) {
   return new Promise(resolve => {
@@ -20,6 +22,10 @@ function promiseVisitAdded(callback) {
 
 /**
  * Asynchronous task that adds a visit to the history database.
+ *
+ * @param {nsIURI} [uri]
+ * @param {number} [timestamp]
+ * @param {nsINavHistoryService.TransitionType} [transition]
  */
 async function task_add_visit(uri, timestamp, transition) {
   uri = uri || NetUtil.newURI("http://firefox.com/");

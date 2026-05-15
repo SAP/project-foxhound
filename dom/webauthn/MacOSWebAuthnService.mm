@@ -619,11 +619,11 @@ already_AddRefed<nsIWebAuthnService> NewMacOSWebAuthnServiceIfAvailable() {
 void MacOSWebAuthnService::AbortTransaction(nsresult aError) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mRegisterPromise) {
-    Unused << mRegisterPromise->Reject(aError);
+    (void)mRegisterPromise->Reject(aError);
     mRegisterPromise = nullptr;
   }
   if (mSignPromise) {
-    Unused << mSignPromise->Reject(aError);
+    (void)mSignPromise->Reject(aError);
     mSignPromise = nullptr;
   }
   ReleasePlatformResources();
@@ -668,29 +668,29 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
         self->mRegisterPromise = aPromise;
 
         nsAutoString rpId;
-        Unused << aArgs->GetRpId(rpId);
+        (void)aArgs->GetRpId(rpId);
         NSString* rpIdNS = nsCocoaUtils::ToNSString(rpId);
 
         nsTArray<uint8_t> challenge;
-        Unused << aArgs->GetChallenge(challenge);
+        (void)aArgs->GetChallenge(challenge);
         NSData* challengeNS = [NSData dataWithBytes:challenge.Elements()
                                              length:challenge.Length()];
 
         nsTArray<uint8_t> userId;
-        Unused << aArgs->GetUserId(userId);
+        (void)aArgs->GetUserId(userId);
         NSData* userIdNS = [NSData dataWithBytes:userId.Elements()
                                           length:userId.Length()];
 
         nsAutoString userName;
-        Unused << aArgs->GetUserName(userName);
+        (void)aArgs->GetUserName(userName);
         NSString* userNameNS = nsCocoaUtils::ToNSString(userName);
 
         nsAutoString userDisplayName;
-        Unused << aArgs->GetUserDisplayName(userDisplayName);
+        (void)aArgs->GetUserDisplayName(userDisplayName);
         NSString* userDisplayNameNS = nsCocoaUtils::ToNSString(userDisplayName);
 
         nsTArray<int32_t> coseAlgs;
-        Unused << aArgs->GetCoseAlgs(coseAlgs);
+        (void)aArgs->GetCoseAlgs(coseAlgs);
         NSMutableArray* credentialParameters = [[NSMutableArray alloc] init];
         for (const auto& coseAlg : coseAlgs) {
           ASAuthorizationPublicKeyCredentialParameters* credentialParameter =
@@ -700,9 +700,9 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
         }
 
         nsTArray<nsTArray<uint8_t>> excludeList;
-        Unused << aArgs->GetExcludeList(excludeList);
+        (void)aArgs->GetExcludeList(excludeList);
         nsTArray<uint8_t> excludeListTransports;
-        Unused << aArgs->GetExcludeListTransports(excludeListTransports);
+        (void)aArgs->GetExcludeListTransports(excludeListTransports);
         if (excludeList.Length() != excludeListTransports.Length()) {
           self->mRegisterPromise->Reject(NS_ERROR_INVALID_ARG);
           return;
@@ -711,7 +711,7 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
         Maybe<ASAuthorizationPublicKeyCredentialUserVerificationPreference>
             userVerificationPreference = Nothing();
         nsAutoString userVerification;
-        Unused << aArgs->GetUserVerification(userVerification);
+        (void)aArgs->GetUserVerification(userVerification);
         // This mapping needs to be reviewed if values are added to the
         // UserVerificationRequirement enum.
         static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 3);
@@ -734,7 +734,7 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
         // only used for security keys.
         ASAuthorizationPublicKeyCredentialAttestationKind attestationPreference;
         nsAutoString mozAttestationPreference;
-        Unused << aArgs->GetAttestationConveyancePreference(
+        (void)aArgs->GetAttestationConveyancePreference(
             mozAttestationPreference);
         if (mozAttestationPreference.EqualsLiteral(
                 MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_INDIRECT)) {
@@ -757,7 +757,7 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
         ASAuthorizationPublicKeyCredentialResidentKeyPreference
             residentKeyPreference;
         nsAutoString mozResidentKey;
-        Unused << aArgs->GetResidentKey(mozResidentKey);
+        (void)aArgs->GetResidentKey(mozResidentKey);
         // This mapping needs to be reviewed if values are added to the
         // ResidentKeyRequirement enum.
         static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 3);
@@ -823,6 +823,20 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
               *userVerificationPreference;
         }
 
+        if (__builtin_available(macos 13.5, *)) {
+          // Show the hybrid transport unless we have a non-empty hint list and
+          // none of the hints are for the hybrid transport.
+          bool hasHybridHint = false;
+          nsTArray<nsString> hints;
+          (void)aArgs->GetHints(hints);
+          for (nsString& hint : hints) {
+            if (hint.Equals(u"hybrid"_ns)) {
+              hasHybridHint = true;
+            }
+          }
+          platformRegistrationRequest.shouldShowHybridTransport =
+              hints.Length() == 0 || hasHybridHint;
+        }
         if (__builtin_available(macos 14.0, *)) {
           bool largeBlobSupportRequired;
           nsresult rv =
@@ -844,7 +858,7 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
         }
         if (__builtin_available(macos 15.0, *)) {
           bool requestedPrf;
-          Unused << aArgs->GetPrf(&requestedPrf);
+          (void)aArgs->GetPrf(&requestedPrf);
           if (requestedPrf) {
             NSData* saltInput1 = nil;
             NSData* saltInput2 = nil;
@@ -970,7 +984,7 @@ void MacOSWebAuthnService::FinishMakeCredential(
       aRawAttestationObject, Nothing(), aCredentialId, aTransports,
       aAuthenticatorAttachment, aLargeBlobSupported, aPrfSupported, aPrfFirst,
       aPrfSecond));
-  Unused << mRegisterPromise->Resolve(result);
+  (void)mRegisterPromise->Resolve(result);
   mRegisterPromise = nullptr;
 }
 
@@ -991,7 +1005,7 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
   });
 
   bool conditionallyMediated;
-  Unused << aArgs->GetConditionallyMediated(&conditionallyMediated);
+  (void)aArgs->GetConditionallyMediated(&conditionallyMediated);
   if (!conditionallyMediated) {
     DoGetAssertion(Nothing(), guard);
     return NS_OK;
@@ -1032,7 +1046,7 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
           if (authorizationState ==
               ASAuthorizationWebBrowserPublicKeyCredentialManagerAuthorizationStateAuthorized) {
             nsAutoString rpId;
-            Unused << aArgs->GetRpId(rpId);
+            (void)aArgs->GetRpId(rpId);
             [self->mCredentialManager
                 platformCredentialsForRelyingParty:nsCocoaUtils::ToNSString(
                                                        rpId)
@@ -1085,11 +1099,11 @@ void MacOSWebAuthnService::DoGetAssertion(
         self->mSignPromise = aPromise;
 
         nsAutoString rpId;
-        Unused << aArgs->GetRpId(rpId);
+        (void)aArgs->GetRpId(rpId);
         NSString* rpIdNS = nsCocoaUtils::ToNSString(rpId);
 
         nsTArray<uint8_t> challenge;
-        Unused << aArgs->GetChallenge(challenge);
+        (void)aArgs->GetChallenge(challenge);
         NSData* challengeNS = [NSData dataWithBytes:challenge.Elements()
                                              length:challenge.Length()];
 
@@ -1100,8 +1114,8 @@ void MacOSWebAuthnService::DoGetAssertion(
           allowListTransports.AppendElement(
               MOZ_WEBAUTHN_AUTHENTICATOR_TRANSPORT_ID_INTERNAL);
         } else {
-          Unused << aArgs->GetAllowList(allowList);
-          Unused << aArgs->GetAllowListTransports(allowListTransports);
+          (void)aArgs->GetAllowList(allowList);
+          (void)aArgs->GetAllowListTransports(allowListTransports);
         }
         // Compute the union of the transport sets.
         uint8_t transports = 0;
@@ -1138,7 +1152,7 @@ void MacOSWebAuthnService::DoGetAssertion(
         Maybe<ASAuthorizationPublicKeyCredentialUserVerificationPreference>
             userVerificationPreference = Nothing();
         nsAutoString userVerification;
-        Unused << aArgs->GetUserVerification(userVerification);
+        (void)aArgs->GetUserVerification(userVerification);
         // This mapping needs to be reviewed if values are added to the
         // UserVerificationRequirement enum.
         static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 3);
@@ -1173,11 +1187,19 @@ void MacOSWebAuthnService::DoGetAssertion(
               *userVerificationPreference;
         }
         if (__builtin_available(macos 13.5, *)) {
-          // Show the hybrid transport option if (1) we have no transport hints
-          // or (2) at least one allow list entry lists the hybrid transport.
+          // Show the hybrid transport option if (1) none of the allowlist
+          // credentials list transports, or (2) at least one allow list entry
+          // lists the hybrid transport, or (3) the request has the hybrid hint.
           bool shouldShowHybridTransport =
               !transports ||
               (transports & MOZ_WEBAUTHN_AUTHENTICATOR_TRANSPORT_ID_HYBRID);
+          nsTArray<nsString> hints;
+          (void)aArgs->GetHints(hints);
+          for (nsString& hint : hints) {
+            if (hint.Equals(u"hybrid"_ns)) {
+              shouldShowHybridTransport = true;
+            }
+          }
           platformAssertionRequest.shouldShowHybridTransport =
               shouldShowHybridTransport;
         }
@@ -1254,7 +1276,7 @@ void MacOSWebAuthnService::DoGetAssertion(
 
         if (__builtin_available(macos 15.0, *)) {
           bool requestedPrf;
-          Unused << aArgs->GetPrf(&requestedPrf);
+          (void)aArgs->GetPrf(&requestedPrf);
           if (requestedPrf) {
             NSData* saltInput1 = nil;
             NSData* saltInput2 = nil;
@@ -1331,7 +1353,7 @@ void MacOSWebAuthnService::FinishGetAssertion(
       aAuthenticatorData, Nothing(), aCredentialId, aSignature, aUserHandle,
       aAuthenticatorAttachment, aUsedAppId, aLargeBlobValue, aLargeBlobWritten,
       aPrfFirst, aPrfSecond));
-  Unused << mSignPromise->Resolve(result);
+  (void)mSignPromise->Resolve(result);
   mSignPromise = nullptr;
 }
 
@@ -1392,7 +1414,7 @@ MacOSWebAuthnService::HasPendingConditionalGet(uint64_t aBrowsingContextId,
   }
 
   nsString origin;
-  Unused << guard->ref().pendingSignArgs.ref()->GetOrigin(origin);
+  (void)guard->ref().pendingSignArgs.ref()->GetOrigin(origin);
   if (origin != aOrigin) {
     *aRv = 0;
     return NS_OK;
@@ -1425,7 +1447,7 @@ MacOSWebAuthnService::SelectAutoFillEntry(
   }
 
   nsTArray<nsTArray<uint8_t>> allowList;
-  Unused << guard->ref().pendingSignArgs.ref()->GetAllowList(allowList);
+  (void)guard->ref().pendingSignArgs.ref()->GetAllowList(allowList);
   if (!allowList.IsEmpty() && !allowList.Contains(aCredentialId)) {
     return NS_ERROR_FAILURE;
   }

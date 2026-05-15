@@ -23,6 +23,7 @@
 #include "mozpkix/pkixnss.h"
 #include "nsCRT.h"
 #include "nsHttpConnection.h"
+#include "nsHttpConnectionMgr.h"
 #include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
 #include "nsHttpResponseHead.h"
@@ -38,6 +39,7 @@
 #include "nsSocketTransport2.h"
 #include "nsSocketTransportService2.h"
 #include "nsStringStream.h"
+#include "nsThreadUtils.h"
 #include "sslerr.h"
 #include "sslt.h"
 
@@ -79,9 +81,10 @@ nsHttpConnection::~nsHttpConnection() {
     }
 
     MOZ_ASSERT(ci);
-    if (ci->GetIsTrrServiceChannel()) {
-      mozilla::glean::networking::trr_request_count_per_conn.Get("h1"_ns).Add(
-          static_cast<int32_t>(mHttp1xTransactionCount));
+    if (ci->GetIsTrrServiceChannel() && mHttp1xTransactionCount) {
+      mozilla::glean::networking::trr_request_count_per_conn
+          .Get(nsPrintfCString("%s_h1", ci->Origin()))
+          .Add(static_cast<int32_t>(mHttp1xTransactionCount));
     }
   }
 
@@ -155,12 +158,6 @@ nsresult nsHttpConnection::Init(
   return NS_OK;
 }
 
-void nsHttpConnection::ChangeState(HttpConnectionState newState) {
-  LOG(("nsHttpConnection::ChangeState %d -> %d [this=%p]", mState, newState,
-       this));
-  mState = newState;
-}
-
 nsresult nsHttpConnection::TryTakeSubTransactions(
     nsTArray<RefPtr<nsAHttpTransaction> >& list) {
   nsresult rv = mTransaction->TakeSubTransactions(list);
@@ -200,7 +197,12 @@ void nsHttpConnection::ResetTransaction(RefPtr<nsAHttpTransaction>&& trans,
     // Only do this when this is for websocket or webtransport over HTTP/2.
     trans->SetResettingForTunnelConn(true);
   }
-  trans->Close(NS_ERROR_NET_RESET);
+  if (trans->IsForFallback()) {
+    trans->InvokeCallback();
+    trans->Close(NS_OK);
+  } else {
+    trans->Close(NS_ERROR_NET_RESET);
+  }
 }
 
 nsresult nsHttpConnection::MoveTransactionsToSpdy(
@@ -607,7 +609,7 @@ nsresult nsHttpConnection::Activate(nsAHttpTransaction* trans, uint32_t caps,
 
   // need to handle HTTP CONNECT tunnels if this is the first time if
   // we are tunneling through a proxy
-  nsresult rv = CheckTunnelIsNeeded();
+  nsresult rv = CheckTunnelIsNeeded(mTransaction);
   if (NS_FAILED(rv)) goto failed_activation;
 
   // Clear the per activation counter
@@ -692,12 +694,12 @@ nsresult nsHttpConnection::AddTransaction(nsAHttpTransaction* httpTransaction,
     }
   }
 
-  Unused << ResumeSend();
+  (void)ResumeSend();
   return NS_OK;
 }
 
 nsresult nsHttpConnection::CreateTunnelStream(
-    nsAHttpTransaction* httpTransaction, nsHttpConnection** aHttpConnection,
+    nsAHttpTransaction* httpTransaction, HttpConnectionBase** aHttpConnection,
     bool aIsExtendedCONNECT) {
   if (!mSpdySession) {
     return NS_ERROR_UNEXPECTED;
@@ -1017,7 +1019,7 @@ nsresult nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction* trans,
   bool foundKeepAliveMax = false;
   if (mKeepAlive) {
     nsAutoCString keepAlive;
-    Unused << responseHead->GetHeader(nsHttp::Keep_Alive, keepAlive);
+    (void)responseHead->GetHeader(nsHttp::Keep_Alive, keepAlive);
 
     if (mUsingSpdyVersion == SpdyVersion::NONE) {
       const char* cp = nsCRT::strcasestr(keepAlive.get(), "timeout=");
@@ -1360,10 +1362,13 @@ nsresult nsHttpConnection::PushBack(const char* data, uint32_t length) {
   return NS_OK;
 }
 
-class HttpConnectionForceIO : public Runnable {
+class HttpConnectionForceIO : public Runnable, public nsIRunnablePriority {
  public:
   HttpConnectionForceIO(nsHttpConnection* aConn, bool doRecv)
       : Runnable("net::HttpConnectionForceIO"), mConn(aConn), mDoRecv(doRecv) {}
+
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIRUNNABLEPRIORITY
 
   NS_IMETHOD Run() override {
     MOZ_ASSERT(OnSocketThread(), "not on socket thread");
@@ -1383,9 +1388,26 @@ class HttpConnectionForceIO : public Runnable {
   }
 
  private:
+  virtual ~HttpConnectionForceIO() = default;
+
   RefPtr<nsHttpConnection> mConn;
   bool mDoRecv;
 };
+
+NS_IMPL_ISUPPORTS_INHERITED(HttpConnectionForceIO, Runnable,
+                            nsIRunnablePriority)
+
+NS_IMETHODIMP
+HttpConnectionForceIO::GetPriority(uint32_t* aPriority) {
+  if (StaticPrefs::network_trr_high_priority_events() &&
+      mConn->ConnectionInfo() &&
+      mConn->ConnectionInfo()->GetIsTrrServiceChannel()) {
+    *aPriority = nsIRunnablePriority::PRIORITY_MEDIUMHIGH;
+  } else {
+    *aPriority = nsIRunnablePriority::PRIORITY_NORMAL;
+  }
+  return NS_OK;
+}
 
 nsresult nsHttpConnection::ResumeSend() {
   LOG(("nsHttpConnection::ResumeSend [this=%p]\n", this));
@@ -1422,7 +1444,7 @@ nsresult nsHttpConnection::ResumeRecv() {
         if (hasDataToRecv && NS_SUCCEEDED(ForceRecv())) {
           return NS_OK;
         }
-        Unused << mSocketIn->AsyncWait(this, 0, 0, nullptr);
+        (void)mSocketIn->AsyncWait(this, 0, 0, nullptr);
         // We have to return an error here to let the underlying layer know this
         // connection doesn't read any data.
         return NS_BASE_STREAM_WOULD_BLOCK;
@@ -1457,10 +1479,10 @@ nsresult nsHttpConnection::MaybeForceSendIO() {
   }
   MOZ_ASSERT(!mForceSendTimer);
   mForceSendPending = true;
-  return NS_NewTimerWithFuncCallback(getter_AddRefs(mForceSendTimer),
-                                     nsHttpConnection::ForceSendIO, this,
-                                     kForceDelay, nsITimer::TYPE_ONE_SHOT,
-                                     "net::nsHttpConnection::MaybeForceSendIO");
+  return NS_NewTimerWithFuncCallback(
+      getter_AddRefs(mForceSendTimer), nsHttpConnection::ForceSendIO, this,
+      kForceDelay, nsITimer::TYPE_ONE_SHOT,
+      "net::nsHttpConnection::MaybeForceSendIO"_ns);
 }
 
 // trigger an asynchronous read
@@ -1546,7 +1568,9 @@ void nsHttpConnection::CloseTransaction(nsAHttpTransaction* trans,
 
   if (mTransaction) {
     LOG(("  closing associated mTransaction"));
-    mHttp1xTransactionCount += mTransaction->Http1xTransactionCount();
+    if (NS_SUCCEEDED(reason)) {
+      mHttp1xTransactionCount += mTransaction->Http1xTransactionCount();
+    }
 
     mTransaction->Close(reason);
     mTransaction = nullptr;
@@ -1776,17 +1800,7 @@ nsresult nsHttpConnection::OnSocketWritable() {
 
         rv = ResumeRecv();  // start reading
       }
-      // When Spdy tunnel is used we need to explicitly set when a request is
-      // done.
-      if ((mState != HttpConnectionState::SETTING_UP_TUNNEL) && !mSpdySession) {
-        nsHttpTransaction* trans =
-            mTransaction ? mTransaction->QueryHttpTransaction() : nullptr;
-        // needed for websocket over h2 (direct)
-        if (!trans ||
-            (!trans->IsWebsocketUpgrade() && !trans->IsForWebTransport())) {
-          mRequestDone = true;
-        }
-      }
+
       again = false;
     } else if (writeAttempts >= maxWriteAttempts) {
       LOG(("  yield for other transactions\n"));
@@ -1850,7 +1864,7 @@ nsresult nsHttpConnection::OnSocketReadable() {
     // give the handler a chance to create a new persistent connection to
     // this host if we've been busy for too long.
     mKeepAliveMask = false;
-    Unused << gHttpHandler->ProcessPendingQ(mConnInfo);
+    (void)gHttpHandler->ProcessPendingQ(mConnInfo);
   }
 
   // Reduce the estimate of the time since last read by up to 1 RTT to
@@ -1945,7 +1959,7 @@ void nsHttpConnection::SetupSecondaryTLS() {
   }
 }
 
-void nsHttpConnection::SetInSpdyTunnel() {
+void nsHttpConnection::SetInTunnel() {
   mInSpdyTunnel = true;
   mForcePlainText = true;
 }
@@ -2107,7 +2121,7 @@ nsresult nsHttpConnection::StartShortLivedTCPKeepalives() {
     mTCPKeepaliveTransitionTimer->InitWithNamedFuncCallback(
         nsHttpConnection::UpdateTCPKeepalive, this, (uint32_t)time * 1000,
         nsITimer::TYPE_ONE_SHOT,
-        "net::nsHttpConnection::StartShortLivedTCPKeepalives");
+        "net::nsHttpConnection::StartShortLivedTCPKeepalives"_ns);
   } else {
     NS_WARNING(
         "nsHttpConnection::StartShortLivedTCPKeepalives failed to "
@@ -2220,7 +2234,7 @@ nsHttpConnection::OnInputStreamReady(nsIAsyncInputStream* in) {
 
     if (!CanReuse()) {
       LOG(("Server initiated close of idle conn %p\n", this));
-      Unused << gHttpHandler->ConnMgr()->CloseIdleConnection(this);
+      (void)gHttpHandler->ConnMgr()->CloseIdleConnection(this);
       return NS_OK;
     }
 
@@ -2393,10 +2407,6 @@ ExtendedCONNECTSupport nsHttpConnection::GetExtendedCONNECTSupport() {
   return ExtendedCONNECTSupport::NO_SUPPORT;
 }
 
-bool nsHttpConnection::IsProxyConnectInProgress() {
-  return mState == SETTING_UP_TUNNEL;
-}
-
 bool nsHttpConnection::LastTransactionExpectedNoContent() {
   return mLastTransactionExpectedNoContent;
 }
@@ -2516,7 +2526,7 @@ void nsHttpConnection::HandshakeDoneInternal() {
              !earlyDataAccepted,
              negotiatedNPN != mTlsHandshaker->EarlyNegotiatedALPN())))) {
       LOG(
-          ("nsHttpConection::HandshakeDone [this=%p] closing transaction "
+          ("nsHttpConnection::HandshakeDone [this=%p] closing transaction "
            "%p",
            this, mTransaction.get()));
       if (mTransaction) {
@@ -2538,7 +2548,7 @@ void nsHttpConnection::HandshakeDoneInternal() {
     if (mSocketIn) {
       mSocketIn->AsyncWait(nullptr, 0, 0, nullptr);
     }
-    Unused << ResumeSend();
+    (void)ResumeSend();
   }
 
   int16_t tlsVersion;
@@ -2597,7 +2607,7 @@ void nsHttpConnection::HandshakeDoneInternal() {
   }
 
   mTlsHandshaker->FinishNPNSetup(true, true);
-  Unused << ResumeSend();
+  (void)ResumeSend();
 }
 
 void nsHttpConnection::SetTunnelSetupDone() {
@@ -2606,33 +2616,6 @@ void nsHttpConnection::SetTunnelSetupDone() {
 
   ChangeState(HttpConnectionState::REQUEST);
   mProxyConnectStream = nullptr;
-}
-
-nsresult nsHttpConnection::CheckTunnelIsNeeded() {
-  switch (mState) {
-    case HttpConnectionState::UNINITIALIZED: {
-      // This is is called first time. Check if we need a tunnel.
-      if (!mTransaction->ConnectionInfo()->UsingConnect()) {
-        ChangeState(HttpConnectionState::REQUEST);
-        return NS_OK;
-      }
-      ChangeState(HttpConnectionState::SETTING_UP_TUNNEL);
-    }
-      [[fallthrough]];
-    case HttpConnectionState::SETTING_UP_TUNNEL: {
-      // When a nsHttpConnection is in this state that means that an
-      // authentication was needed and we are resending a CONNECT
-      // request. This request will include authentication headers.
-      nsresult rv = SetupProxyConnectStream();
-      if (NS_FAILED(rv)) {
-        ChangeState(HttpConnectionState::UNINITIALIZED);
-      }
-      return rv;
-    }
-    case HttpConnectionState::REQUEST:
-      return NS_OK;
-  }
-  return NS_OK;
 }
 
 nsresult nsHttpConnection::SetupProxyConnectStream() {

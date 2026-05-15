@@ -7,7 +7,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
+  MerinoClient: "moz-src:///browser/components/urlbar/MerinoClient.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
   ObliviousHTTP: "resource://gre/modules/ObliviousHTTP.sys.mjs",

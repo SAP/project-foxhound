@@ -143,6 +143,34 @@ class DownloadTelemetryMiddlewareTest {
         assertEquals("cancel_download", snapshot.single().name)
     }
 
+    @Test
+    fun `WHEN the user adds a pending deletion set THEN record delete snackbar shown telemetry`() {
+        val store = createStore()
+
+        assertNull(Downloads.deleteSnackbarShown.testGetValue())
+
+        store.dispatch(DownloadUIAction.AddPendingDeletionSet(setOf("id")))
+
+        assertNotNull(Downloads.deleteSnackbarShown.testGetValue())
+        val snapshot = Downloads.deleteSnackbarShown.testGetValue()!!
+        assertEquals(1, snapshot.size)
+        assertEquals("delete_snackbar_shown", snapshot.single().name)
+    }
+
+    @Test
+    fun `WHEN the user undoes a pending deletion THEN record delete snackbar undo clicked telemetry`() {
+        val store = createStore()
+
+        assertNull(Downloads.deleteSnackbarUndoClicked.testGetValue())
+
+        store.dispatch(DownloadUIAction.UndoPendingDeletion)
+
+        assertNotNull(Downloads.deleteSnackbarUndoClicked.testGetValue())
+        val snapshot = Downloads.deleteSnackbarUndoClicked.testGetValue()!!
+        assertEquals(1, snapshot.size)
+        assertEquals("delete_snackbar_undo_clicked", snapshot.single().name)
+    }
+
     private fun createStore(
         downloadUIState: DownloadUIState = DownloadUIState.INITIAL,
     ) = DownloadUIStore(

@@ -61,6 +61,8 @@ const backgroundtaskPhases = {
         "@mozilla.org/layout/content-policy;1",
         "@mozilla.org/memory-reporter-manager;1",
         "@mozilla.org/network/captive-portal-service;1",
+        "@mozilla.org/network/dns-service;1",
+        "@mozilla.org/network/oblivious-http-service;1",
         "@mozilla.org/network/effective-tld-service;1",
         "@mozilla.org/network/idn-service;1",
         "@mozilla.org/network/io-service;1",

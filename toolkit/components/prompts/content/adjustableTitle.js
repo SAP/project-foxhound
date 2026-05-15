@@ -39,7 +39,7 @@ const AdjustableTitle = {
       background-size: 16px 16px;
       background-origin: content-box;
       background-repeat: no-repeat;
-      background-color: var(--in-content-page-background);
+      background-color: var(--background-color-canvas);
       -moz-context-properties: fill;
       fill: currentColor;
     }

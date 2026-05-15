@@ -195,7 +195,7 @@ void CSSKeyframeRule::GetCssText(nsACString& aCssText) const {
   Servo_Keyframe_GetCssText(mRaw, &aCssText);
 }
 
-nsICSSDeclaration* CSSKeyframeRule::Style() {
+nsDOMCSSDeclaration* CSSKeyframeRule::Style() {
   if (!mDeclaration) {
     mDeclaration = new CSSKeyframeDeclaration(this);
   }

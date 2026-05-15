@@ -4,16 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_responsiveimageselector_h__
-#define mozilla_dom_responsiveimageselector_h__
+#ifndef mozilla_dom_responsiveimageselector_h_
+#define mozilla_dom_responsiveimageselector_h_
 
-#include "mozilla/UniquePtr.h"
-#include "mozilla/ServoBindingTypes.h"
 #include "mozilla/FunctionRef.h"
-#include "nsISupports.h"
-#include "nsIContent.h"
-#include "nsString.h"
+#include "mozilla/ServoBindingTypes.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIContent.h"
+#include "nsISupports.h"
+#include "nsString.h"
 
 class nsMediaQuery;
 class nsCSSValue;
@@ -202,4 +202,4 @@ class ResponsiveImageCandidate {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_responsiveimageselector_h__
+#endif  // mozilla_dom_responsiveimageselector_h_

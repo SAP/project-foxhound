@@ -69,6 +69,7 @@ const HEADERS_L10N_IDS = {
   },
   cookies: {
     creationTime: "storage-table-headers-cookies-creation-time",
+    updateTime: "storage-table-headers-cookies-update-time",
     expires: "storage-table-headers-cookies-expires",
     lastAccessed: "storage-table-headers-cookies-last-accessed",
     name: "storage-table-headers-cookies-name",
@@ -129,12 +130,12 @@ const HEADERS_NON_L10N_STRINGS = {
  *
  * @param {Window} panelWin
  *        Window of the toolbox panel to populate UI in.
- * @param {Object} commands
+ * @param {object} commands
  *        The commands object with all interfaces defined from devtools/shared/commands/
  */
-class StorageUI {
+class StorageUI extends EventEmitter {
   constructor(panelWin, toolbox, commands) {
-    EventEmitter.decorate(this);
+    super();
     this._window = panelWin;
     this._panelDoc = panelWin.document;
     this._toolbox = toolbox;
@@ -227,6 +228,9 @@ class StorageUI {
     this._addButton = this._panelDoc.getElementById("add-button");
     this._addButton.addEventListener("click", this.onAddItem);
 
+    this._deleteAllButton = this._panelDoc.getElementById("delete-all-button");
+    this._deleteAllButton.addEventListener("click", this.onRemoveAll);
+
     this._window.addEventListener("resize", this.onPanelWindowResize, true);
 
     this._variableViewPopupCopy = this._panelDoc.getElementById(
@@ -318,7 +322,7 @@ class StorageUI {
 
     this._onResourceListAvailable = this._onResourceListAvailable.bind(this);
 
-    const { resourceCommand } = this._toolbox;
+    const { resourceCommand } = this._commands;
 
     this._listenedResourceTypes = [
       // The first item in this list will be the first selected storage item
@@ -333,7 +337,7 @@ class StorageUI {
     if (this._commands.descriptorFront.isWebExtensionDescriptor) {
       this._listenedResourceTypes.push(resourceCommand.TYPES.EXTENSION_STORAGE);
     }
-    await this._toolbox.resourceCommand.watchResources(
+    await this._commands.resourceCommand.watchResources(
       this._listenedResourceTypes,
       {
         onAvailable: this._onResourceListAvailable,
@@ -350,6 +354,7 @@ class StorageUI {
       "storage-table-headers-cookies-size",
       "storage-table-headers-cookies-last-accessed",
       "storage-table-headers-cookies-creation-time",
+      "storage-table-headers-cookies-update-time",
       "storage-table-headers-cache-status",
       "storage-table-headers-extension-storage-area",
       "storage-tree-labels-cookies",
@@ -433,6 +438,10 @@ class StorageUI {
     this.table.clear();
     this.hideSidebar();
     this.tree.clear();
+
+    // Do not attempt to load more items until the storage table has been
+    // populated again.
+    this.shouldLoadMoreItems = false;
   }
 
   set animationsEnabled(value) {
@@ -445,7 +454,7 @@ class StorageUI {
     }
     this._destroyed = true;
 
-    const { resourceCommand } = this._toolbox;
+    const { resourceCommand } = this._commands;
     resourceCommand.unwatchResources(this._listenedResourceTypes, {
       onAvailable: this._onResourceListAvailable,
     });
@@ -465,7 +474,7 @@ class StorageUI {
     );
     this.sidebarToggleBtn = null;
 
-    this._window.removeEventListener("resize", this.#onLazyPanelResize, true);
+    this._window.removeEventListener("resize", this.onPanelWindowResize, true);
 
     this._treePopup.removeEventListener(
       "popupshowing",
@@ -564,8 +573,8 @@ class StorageUI {
   makeFieldsEditable(editableFields) {
     if (editableFields && editableFields.length) {
       this.table.makeFieldsEditable(editableFields);
-    } else if (this.table._editableFieldsEngine) {
-      this.table._editableFieldsEngine.destroy();
+    } else if (this.table.editableFieldsEngine) {
+      this.table.editableFieldsEngine.destroy();
     }
   }
 
@@ -734,9 +743,9 @@ class StorageUI {
    * Get a string for a column name automatically choosing whether or not the
    * string should be localized.
    *
-   * @param {String} type
+   * @param {string} type
    *        The storage type.
-   * @param {String} name
+   * @param {string} name
    *        The field name that may need to be localized.
    */
   _getColumnName(type, name) {
@@ -910,7 +919,7 @@ class StorageUI {
    *        The type of storage. Ex. "cookies"
    * @param {string} host
    *        Hostname
-   * @param {array} names
+   * @param {Array} names
    *        Names of particular store objects. Empty if all are requested
    * @param {Constant} reason
    *        See REASON constant at top of file.
@@ -1003,6 +1012,9 @@ class StorageUI {
 
     // Add is only supported if the selected item has a host.
     this._addButton.hidden = !host || !this.supportsAddItem(type, host);
+
+    // Delete All is only supported if the selected item has a host.
+    this._deleteAllButton.hidden = !host || !this.supportsRemoveAll(type, host);
   }
 
   /**
@@ -1239,7 +1251,7 @@ class StorageUI {
    * Select handler for the storage tree. Fetches details of the selected item
    * from the storage details and populates the storage tree.
    *
-   * @param {array} item
+   * @param {Array} item
    *        An array of ids which represent the location of the selected item in
    *        the storage tree
    */
@@ -1367,7 +1379,7 @@ class StorageUI {
   /**
    * Populates or updates the rows in the storage table.
    *
-   * @param {array[object]} data
+   * @param {Array[object]} data
    *        Array of objects to be populated in the storage table
    * @param {Constant} reason
    *        See REASON constant at top of file.
@@ -1387,6 +1399,9 @@ class StorageUI {
       }
       if (item.creationTime != null) {
         item.creationTime = new Date(item.creationTime).toUTCString();
+      }
+      if (item.updateTime != null) {
+        item.updateTime = new Date(item.updateTime).toUTCString();
       }
       if (item.lastAccessed != null) {
         item.lastAccessed = new Date(item.lastAccessed).toUTCString();
@@ -1599,7 +1614,7 @@ class StorageUI {
 
   onVariableViewPopupShowing() {
     const item = this.view.getFocusedItem();
-    this._variableViewPopupCopy.setAttribute("disabled", !item);
+    this._variableViewPopupCopy.toggleAttribute("disabled", !item);
   }
 
   /**

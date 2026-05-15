@@ -88,7 +88,7 @@ object GeckoProvider {
         context: Context,
         policy: TrackingProtectionPolicy,
     ): GeckoRuntimeSettings {
-        return GeckoRuntimeSettings.Builder()
+        val builder = GeckoRuntimeSettings.Builder()
             .crashHandler(CrashHandlerService::class.java)
             .experimentDelegate(NimbusExperimentDelegate())
             .contentBlocking(
@@ -102,14 +102,10 @@ object GeckoProvider {
                     context.settings().shouldEnableCookieBannerGlobalRules,
                     cookieBannerGlobalRulesSubFramesEnabled =
                     context.settings().shouldEnableCookieBannerGlobalRulesSubFrame,
-                    queryParameterStripping =
-                    context.settings().shouldEnableQueryParameterStripping,
-                    queryParameterStrippingPrivateBrowsing =
-                    context.settings().shouldEnableQueryParameterStrippingPrivateBrowsing,
-                    queryParameterStrippingAllowList =
-                    context.settings().queryParameterStrippingAllowList,
-                    queryParameterStrippingStripList =
-                    context.settings().queryParameterStrippingStripList,
+                    queryParameterStripping = false,
+                    queryParameterStrippingPrivateBrowsing = false,
+                    queryParameterStrippingAllowList = "",
+                    queryParameterStrippingStripList = "",
                     allowListBaselineTrackingProtection =
                     context.settings().strictAllowListBaselineTrackingProtection,
                     allowListConvenienceTrackingProtection =
@@ -123,14 +119,21 @@ object GeckoProvider {
             .extensionsWebAPIEnabled(true)
             .translationsOfferPopup(context.settings().offerTranslation)
             .crashPullNeverShowAgain(context.settings().crashPullNeverShowAgain)
-            .disableShip(FxNimbus.features.ship.value().disabled)
-            .fissionEnabled(FxNimbus.features.fission.value().enabled)
             .setSameDocumentNavigationOverridesLoadType(
                 FxNimbus.features.sameDocumentNavigationOverridesLoadType.value().enabled,
             )
             .setSameDocumentNavigationOverridesLoadTypeForceDisable(
                 FxNimbus.features.sameDocumentNavigationOverridesLoadType.value().forceDisableUri,
             )
-            .build()
+            .isolatedProcessEnabled(context.settings().isIsolatedProcessEnabled)
+            .appZygoteProcessEnabled(context.settings().isAppZygoteEnabled)
+
+        if (FxNimbus.features.fission.value().shouldUseNimbus) {
+            builder
+                .fissionEnabled(FxNimbus.features.fission.value().enabled)
+                .disableShip(FxNimbus.features.ship.value().disabled)
+        }
+
+        return builder.build()
     }
 }

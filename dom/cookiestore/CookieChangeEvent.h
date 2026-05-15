@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_CookieChangeEvent_h
 #define mozilla_dom_CookieChangeEvent_h
 
-#include "mozilla/dom/Event.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/CookieChangeEventBinding.h"
+#include "mozilla/dom/Event.h"
 
 namespace mozilla::dom {
 

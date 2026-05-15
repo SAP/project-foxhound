@@ -295,6 +295,12 @@ add_task(async function do_test_http2_empty_data() {
   Assert.equal(httpProxyConnectResponseCode, -1);
 });
 
+add_task(async function do_test_http2_continuation_stream_zero() {
+  const { httpProxyConnectResponseCode } =
+    await test_http2_continuation_stream_zero(serverPort);
+  Assert.equal(httpProxyConnectResponseCode, -1);
+});
+
 add_task(async function do_test_http2_status_phrase() {
   const { httpProxyConnectResponseCode } =
     await test_http2_status_phrase(serverPort);

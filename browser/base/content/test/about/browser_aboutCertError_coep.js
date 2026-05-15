@@ -6,9 +6,11 @@
 const AUTH_ROUTE =
   "https://example.com/browser/browser/base/content/test/about/sandbox_corp_iframe.sjs";
 
-add_task(async function test_coepError() {
+add_task(async function test_coepError_legacy() {
   let browser;
   let pageLoaded;
+
+  await setSecurityCertErrorsFeltPrivacyToFalse();
 
   const uri = `${AUTH_ROUTE}?error=coep`;
 
@@ -51,4 +53,59 @@ add_task(async function test_coepError() {
   });
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});
+
+add_task(async function test_coepError() {
+  let browser;
+  let pageLoaded;
+
+  const uri = `${AUTH_ROUTE}?error=coep`;
+  await setSecurityCertErrorsFeltPrivacyToTrue();
+  await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    () => {
+      gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, uri);
+      browser = gBrowser.selectedBrowser;
+      pageLoaded = BrowserTestUtils.waitForErrorPage(browser);
+    },
+    false
+  );
+
+  await pageLoaded;
+
+  await SpecialPowers.spawn(browser, [], async function () {
+    // The error is displayed in the iframe for COEP
+    const doc = content.document.querySelector("iframe").contentDocument;
+
+    Assert.ok(
+      doc.documentURI.startsWith("about:neterror"),
+      "Should be showing error page"
+    );
+
+    const netErrorCard = doc.querySelector("net-error-card").wrappedJSObject;
+    await netErrorCard.getUpdateComplete();
+
+    Assert.strictEqual(
+      netErrorCard.netErrorTitleText.dataset.l10nId,
+      "fp-certerror-body-title",
+      "Correct error link title (CORP) is set"
+    );
+
+    await ContentTaskUtils.waitForCondition(() => {
+      return (
+        netErrorCard.netErrorLearnMoreLink &&
+        netErrorCard.netErrorLearnMoreLink.textContent != "" &&
+        netErrorCard.netErrorLearnMoreLink.tagName.toLowerCase() === "a"
+      );
+    }, "learn more link is visible and is a link");
+
+    Assert.strictEqual(
+      netErrorCard.netErrorLearnMoreLink.dataset.l10nId,
+      "certerror-coep-learn-more",
+      "Learn more element is a link and has COEP text"
+    );
+  });
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await SpecialPowers.popPrefEnv();
 });

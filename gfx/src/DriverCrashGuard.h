@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef gfx_src_DriverCrashGuard_h__
-#define gfx_src_DriverCrashGuard_h__
+#ifndef gfx_src_DriverCrashGuard_h_
+#define gfx_src_DriverCrashGuard_h_
 
 #include "nsCOMPtr.h"
 #include "nsIGfxInfo.h"
@@ -169,4 +169,4 @@ class WMFVPXVideoCrashGuard final : public DriverCrashGuard {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // gfx_src_DriverCrashGuard_h__
+#endif  // gfx_src_DriverCrashGuard_h_

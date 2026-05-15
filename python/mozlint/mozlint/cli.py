@@ -208,6 +208,15 @@ class MozlintParser(ArgumentParser):
             },
         ],
         [
+            ["--skip-rollouts"],
+            {
+                "dest": "skip_rollouts",
+                "default": False,
+                "action": "store_true",
+                "help": "Skip loading stylelint-rollouts.config.js (stylelint only).",
+            },
+        ],
+        [
             ["extra_args"],
             {
                 "nargs": REMAINDER,
@@ -236,7 +245,10 @@ class MozlintParser(ArgumentParser):
         args.extra_args = extra
 
         self.validate(args)
-        return args, extra
+        # Any extra arguments returned from `parse_known_args` are considered an
+        # error. Since we stash these into `extra_args` we just return an empty
+        # list.
+        return args, []
 
     def validate(self, args):
         if args.edit and not os.environ.get("EDITOR"):
@@ -247,17 +259,12 @@ class MozlintParser(ArgumentParser):
         ):
             self.error("can't read from both stdin and file system at the same time")
 
-        invalid = None
         if args.paths:
             invalid = [p for p in args.paths if not os.path.exists(p)]
-
-        if args.stdin_filename and not os.path.exists(args.stdin_filename):
-            invalid = [args.stdin_filename]
-
-        if invalid:
-            s_do = " does" if len(invalid) == 1 else "s do"
-            invalid = "\n".join(invalid)
-            self.error(f"the following path{s_do} not exist:\n{invalid}")
+            if invalid:
+                s_do = " does" if len(invalid) == 1 else "s do"
+                invalid = "\n".join(invalid)
+                self.error(f"the following path{s_do} not exist:\n{invalid}")
 
         if args.dump_stdin_file and not args.stdin_filename:
             self.error("must specify --stdin-filename alongside --dump-stdin-file")

@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/SourceLocation.h"
+
+#include "jsapi.h"
 #include "mozilla/ThreadLocal.h"
 #include "nsContentUtils.h"
-#include "jsapi.h"
 
 namespace mozilla {
 

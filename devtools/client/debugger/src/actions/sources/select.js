@@ -4,35 +4,35 @@
 
 /**
  * Redux actions for the sources state
+ *
  * @module actions/sources
  */
-import { prettyPrintSource, prettyPrintAndSelectSource } from "./prettyPrint";
-import { addTab, closeTab } from "../tabs";
+import { prettyPrintSource } from "./prettyPrint";
+import { addTab } from "../tabs";
 import { loadSourceText } from "./loadSourceText";
 import { setBreakableLines } from "./breakableLines";
-
 import { prefs } from "../../utils/prefs";
-import { isMinified } from "../../utils/source";
+
 import { createLocation } from "../../utils/location";
 import {
   getRelatedMapLocation,
   getOriginalLocation,
+  getGeneratedLocation,
 } from "../../utils/source-maps";
 
 import {
   getSource,
   getFirstSourceActorForGeneratedSource,
   getSourceByURL,
-  getPrettySource,
   getSelectedLocation,
   getShouldSelectOriginalLocation,
-  canPrettyPrintSource,
-  getSourceTextContent,
   tabExists,
   hasSource,
   hasSourceActor,
-  hasPrettyTab,
+  isPrettyPrinted,
+  isPrettyPrintedDisabled,
   isSourceActorWithSourceMap,
+  getSelectedTraceIndex,
 } from "../../selectors/index";
 
 // This is only used by jest tests (and within this module)
@@ -88,33 +88,13 @@ export function selectSourceURL(url, options) {
 }
 
 /**
- * Function dedicated to the Source Tree.
- *
- * This would automatically select the pretty printed source
- * if one exists for the passed source.
- *
- * We aren't relying on selectLocation's mayBeSelectMappedSource logic
- * as the (0,0) location (line 0, column 0) may not be mapped
- * and wouldn't be resolved to the pretty printed source.
- */
-export function selectMayBePrettyPrintedLocation(location) {
-  return async ({ dispatch, getState }) => {
-    const prettySource = getPrettySource(getState(), location.source.id);
-    if (prettySource) {
-      location = createLocation({ source: prettySource });
-    }
-    await dispatch(selectSpecificLocation(location));
-  };
-}
-
-/**
  * Wrapper around selectLocation, which creates the location object for us.
  * Note that it ignores the currently selected source and will select
  * the precise generated/original source passed as argument.
  *
- * @param {String} source
+ * @param {string} source
  *        The precise source to select.
- * @param {String} sourceActor
+ * @param {string} sourceActor
  *        The specific source actor of the source to
  *        select the source text. This is optional.
  */
@@ -133,18 +113,19 @@ export function selectSource(source, sourceActor) {
  * Based on `keepContext` argument passed to `selectLocation`,
  * this will automatically select the related mapped source (original or generated).
  *
- * @param {Object} location
+ * @param {object} location
  *        The location to select.
- * @param {Boolean} keepContext
+ * @param {boolean} keepContext
  *        If true, will try to select a mapped source.
- * @param {Object} thunkArgs
- * @return {Object}
+ * @param {object} thunkArgs
+ * @return {object}
  *        Object with two attributes:
  *         - `shouldSelectOriginalLocation`, to know if we should keep trying to select the original location
  *         - `newLocation`, for the final location to select
  */
 async function mayBeSelectMappedSource(location, keepContext, thunkArgs) {
   const { getState, dispatch } = thunkArgs;
+
   // Preserve the current source map context (original / generated)
   // when navigating to a new location.
   // i.e. if keepContext isn't manually overriden to false,
@@ -155,20 +136,52 @@ async function mayBeSelectMappedSource(location, keepContext, thunkArgs) {
   // even if that used to refer only to the generated source.
   let shouldSelectOriginalLocation =
     getShouldSelectOriginalLocation(getState());
-  if (keepContext) {
-    // Pretty print source may not be registered yet and getRelatedMapLocation may not return it.
-    // Wait for the pretty print source to be fully processed.
-    const sourceHasPrettyTab = hasPrettyTab(getState(), location.source);
-    if (
-      !location.source.isOriginal &&
-      shouldSelectOriginalLocation &&
-      sourceHasPrettyTab
-    ) {
-      // Note that prettyPrintSource has already been called a bit before when this generated source has been added
-      // but it is a slow operation and is most likely not resolved yet.
-      // prettyPrintSource uses memoization to avoid doing the operation more than once, while waiting from both callsites.
-      await dispatch(prettyPrintSource(location.source));
+
+  // Pretty print source may not be registered yet and getRelatedMapLocation may not return it.
+  // Wait for the pretty print source to be fully processed.
+  //
+  // In this case we don't follow the "should select original location",
+  // we solely follow user decision to have pretty printed the source.
+  const sourceIsPrettyPrinted = isPrettyPrinted(getState(), location.source);
+  const shouldPrettyPrint =
+    !location.source.isOriginal &&
+    (sourceIsPrettyPrinted ||
+      (prefs.autoPrettyPrint &&
+        !isPrettyPrintedDisabled(getState(), location.source)));
+
+  if (shouldPrettyPrint) {
+    const isAutoPrettyPrinting =
+      !sourceIsPrettyPrinted && prefs.autoPrettyPrint;
+    // Note that prettyPrintSource has already been called a bit before when this generated source has been added
+    // but it is a slow operation and is most likely not resolved yet.
+    // `prettyPrintSource` uses memoization to avoid doing the operation more than once, while waiting from both callsites.
+    const prettyPrintedSource = await dispatch(
+      prettyPrintSource({ source: location.source, isAutoPrettyPrinting })
+    );
+
+    // Return to the current location if the source can't be pretty printed
+    if (!prettyPrintedSource) {
+      return { shouldSelectOriginalLocation, newLocation: location };
     }
+
+    // If we aren't selecting a particular location line will be 0 and column be undefined,
+    // avoid calling getRelatedMapLocation which may not map to any original location.
+    if (location.line == 0 && !location.column) {
+      return {
+        shouldSelectOriginalLocation,
+        newLocation: createLocation({
+          ...location,
+          source: prettyPrintedSource,
+          line: 1,
+          column: 0,
+        }),
+      };
+    }
+    location = await getRelatedMapLocation(location, thunkArgs);
+    return { shouldSelectOriginalLocation, newLocation: location };
+  }
+
+  if (keepContext) {
     if (shouldSelectOriginalLocation != location.source.isOriginal) {
       // Only try to map the location if the source is mapped:
       // - mapping from original to generated, if this is original source
@@ -177,7 +190,7 @@ async function mayBeSelectMappedSource(location, keepContext, thunkArgs) {
       if (
         location.source.isOriginal ||
         isSourceActorWithSourceMap(getState(), location.sourceActor.id) ||
-        sourceHasPrettyTab
+        sourceIsPrettyPrinted
       ) {
         // getRelatedMapLocation will convert to the related generated/original location.
         // i.e if the original location is passed, the related generated location will be returned and vice versa.
@@ -211,8 +224,8 @@ async function mayBeSelectMappedSource(location, keepContext, thunkArgs) {
  * Note that by default, this may map your passed location to the original
  * or generated location based on the selected source state. (see keepContext)
  *
- * @param {Object} location
- * @param {Object} options
+ * @param {object} location
+ * @param {object} options
  * @param {boolean} options.keepContext
  *        If false, this will ignore the currently selected source
  *        and select the generated or original location, even if we
@@ -246,6 +259,8 @@ export function selectLocation(
       return;
     }
 
+    const lastSelectedTraceIndex = getSelectedTraceIndex(getState());
+
     let sourceActor = location.sourceActor;
     if (!sourceActor) {
       sourceActor = getFirstSourceActorForGeneratedSource(
@@ -276,8 +291,8 @@ export function selectLocation(
       location = createLocation({ ...location, sourceActor });
     }
 
-    if (!tabExists(getState(), source.id)) {
-      dispatch(addTab(source, sourceActor));
+    if (!tabExists(getState(), source)) {
+      dispatch(addTab(source));
     }
     dispatch(
       setSelectedLocation(
@@ -309,19 +324,6 @@ export function selectLocation(
       return;
     }
 
-    const sourceTextContent = getSourceTextContent(getState(), location);
-
-    if (
-      keepContext &&
-      prefs.autoPrettyPrint &&
-      !getPrettySource(getState(), loadedSource.id) &&
-      canPrettyPrintSource(getState(), location) &&
-      isMinified(source, sourceTextContent)
-    ) {
-      await dispatch(prettyPrintAndSelectSource(loadedSource));
-      dispatch(closeTab(loadedSource));
-    }
-
     // When we select a generated source which has a sourcemap,
     // asynchronously fetch the related original location in order to display
     // the mapped location in the editor's footer.
@@ -347,6 +349,34 @@ export function selectLocation(
         originalLocation,
       });
     }
+
+    // Also store the mapped generated location for the tracer which uses generated locations only.
+    if (location.source.isOriginal) {
+      const generatedLocation = await getGeneratedLocation(location, thunkArgs);
+      // We may concurrently race mutiples calls to selectTrace action, which is going to call selectLocation
+      // We should ignore and bail out if the selected trace changed while resolving the generated location.
+      if (getSelectedTraceIndex(getState()) != lastSelectedTraceIndex) {
+        return;
+      }
+
+      // Bail out if the selection changed to another one while getGeneratedLocation was computing.
+      if (getSelectedLocation(getState()) != location) {
+        return;
+      }
+
+      if (!generatedLocation.sourceActor) {
+        generatedLocation.sourceActor = getFirstSourceActorForGeneratedSource(
+          getState(),
+          generatedLocation.source.id
+        );
+      }
+
+      dispatch({
+        type: "SET_GENERATED_SELECTED_LOCATION",
+        location,
+        generatedLocation,
+      });
+    }
   };
 }
 
@@ -355,7 +385,7 @@ export function selectLocation(
  * This will select the generated location even if the currently
  * select source is an original source. And the other way around.
  *
- * @param {Object} location
+ * @param {object} location
  *        The location to select, object which includes enough
  *        information to specify a precise source, line and column.
  */
@@ -372,7 +402,7 @@ export function selectSpecificLocation(location) {
  * after reload, because the source objects are new on each new page load, but source
  * with the same URL may still exist.
  *
- * @param {Object} location
+ * @param {object} location
  *        The location to select.
  * @return {function}
  *        The action will return true if a matching source was found.

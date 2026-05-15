@@ -7,7 +7,6 @@
 #ifndef mozilla_WebRequestService_h
 #define mozilla_WebRequestService_h
 
-#include "mozilla/LinkedList.h"
 #include "mozilla/UniquePtr.h"
 
 #include "mozilla/extensions/ChannelWrapper.h"

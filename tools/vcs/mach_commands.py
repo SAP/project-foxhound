@@ -200,7 +200,6 @@ def _split_patches(patchfile, bug_number, pull_request, reviewer):
                 patch += line + b"\n"
     if len(patch) > 0:
         yield _parse_patch(patch, bug_number, pull_request, reviewer)
-    return
 
 
 def _parse_patch(patch, bug_number, pull_request, reviewer):

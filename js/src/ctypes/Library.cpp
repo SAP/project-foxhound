@@ -22,6 +22,10 @@
 #include "js/ValueArray.h"
 #include "vm/JSObject.h"
 
+#ifdef XP_WIN
+#  include "mozilla/Char16.h"
+#endif
+
 using JS::AutoStableStringChars;
 
 namespace js::ctypes {

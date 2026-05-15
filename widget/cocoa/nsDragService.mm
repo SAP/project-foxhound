@@ -24,7 +24,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIContent.h"
-#include "nsView.h"
 #include "nsCocoaUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "gfxPlatform.h"
@@ -115,6 +114,9 @@ NSImage* nsDragSession::ConstructDragImage(nsINode* aDOMNode,
 
   RefPtr<DataSourceSurface> dataSurface = Factory::CreateDataSourceSurface(
       IntSize(width, height), SurfaceFormat::B8G8R8A8);
+  if (!dataSurface) {
+    return nil;
+  }
   DataSourceSurface::MappedSurface map;
   if (!dataSurface->Map(DataSourceSurface::MapType::READ_WRITE, &map)) {
     return nil;
@@ -196,25 +198,12 @@ nsresult nsDragSession::InvokeDragSessionImpl(
     return NS_ERROR_FAILURE;
   }
 
-  mDataItems = aTransferableArray;
-
-  // Save the transferables away in case a promised file callback is invoked.
-  gDraggedTransferables = aTransferableArray;
-
-  // We need to retain the view and the event during the drag in case either
-  // gets destroyed.
-  mNativeDragView = [gLastDragView retain];
-  mNativeDragEvent = [gLastDragMouseDownEvent retain];
-
   gUserCancelledDrag = false;
 
-  NSPasteboardItem* pbItem = [NSPasteboardItem new];
   NSMutableArray* types = [NSMutableArray arrayWithCapacity:5];
-
-  if (gDraggedTransferables) {
+  if (aTransferableArray) {
     uint32_t count = 0;
-    gDraggedTransferables->GetLength(&count);
-
+    aTransferableArray->GetLength(&count);
     for (uint32_t j = 0; j < count; j++) {
       nsCOMPtr<nsITransferable> currentTransferable =
           do_QueryElementAt(aTransferableArray, j);
@@ -237,6 +226,18 @@ nsresult nsDragSession::InvokeDragSessionImpl(
       [types addObject:[UTIHelper stringFromPboardType:kMozWildcardPboardType]];
     }
   }
+
+  // Save the transferables away in case a promised file callback is invoked.
+  gDraggedTransferables = aTransferableArray;
+
+  mDataItems = aTransferableArray;
+
+  // We need to retain the view and the event during the drag in case either
+  // gets destroyed.
+  mNativeDragView = [gLastDragView retain];
+  mNativeDragEvent = [gLastDragMouseDownEvent retain];
+
+  NSPasteboardItem* pbItem = [[NSPasteboardItem new] autorelease];
   [pbItem setDataProvider:mNativeDragView forTypes:types];
 
   NSPoint draggingPoint;
@@ -247,15 +248,13 @@ nsresult nsDragSession::InvokeDragSessionImpl(
   localDragRect.origin.y = draggingPoint.y - localDragRect.size.height;
 
   NSDraggingItem* dragItem =
-      [[NSDraggingItem alloc] initWithPasteboardWriter:pbItem];
-  [pbItem release];
+      [[[NSDraggingItem alloc] initWithPasteboardWriter:pbItem] autorelease];
   [dragItem setDraggingFrame:localDragRect contents:image];
 
   OpenDragPopup();
 
   mNSDraggingSession = [mNativeDragView
-      beginDraggingSessionWithItems:[NSArray
-                                        arrayWithObject:[dragItem autorelease]]
+      beginDraggingSessionWithItems:[NSArray arrayWithObject:dragItem]
                               event:mNativeDragEvent
                              source:mNativeDragView];
 
@@ -504,6 +503,7 @@ nsresult nsDragSession::EndDragSessionImpl(bool aDoneDrag,
 
   nsresult rv = nsBaseDragSession::EndDragSessionImpl(aDoneDrag, aKeyModifiers);
   mDataItems = nullptr;
+  gDraggedTransferables = nullptr;
   return rv;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);

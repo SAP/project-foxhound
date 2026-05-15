@@ -13,7 +13,7 @@ with Files("APZTestData.webidl"):
 with Files("AccessibleNode.webidl"):
     BUG_COMPONENT = ("Core", "Disability Access APIs")
 
-with Files("ARIAMixin.webidl"):
+with Files("ARIA*.webidl"):
     BUG_COMPONENT = ("Core", "Disability Access APIs")
 
 with Files("Addon*"):
@@ -87,6 +87,9 @@ with Files("Crypto.webidl"):
 
 with Files("Device*"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
+
+with Files("DigitalCredential.webidl"):
+    BUG_COMPONENT = ("Core", "DOM: Credential Management")
 
 with Files("Directory.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
@@ -175,9 +178,6 @@ with Files("ImageDecoder.webidl"):
 with Files("InputEvent.webidl"):
     BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
 
-with Files("InstallTrigger.webidl"):
-    BUG_COMPONENT = ("Toolkit", "Add-ons Manager")
-
 with Files("KeyAlgorithm.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Security")
 
@@ -231,9 +231,6 @@ with Files("MIDI*"):
 
 with Files("Mouse*"):
     BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
-
-with Files("MutationEvent.webidl"):
-    BUG_COMPONENT = ("Core", "DOM: Events")
 
 with Files("NavigationPreloadManager.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Service Workers")
@@ -401,9 +398,9 @@ with Files("WebTransport*"):
     BUG_COMPONENT = ("Core", "Networking")
 
 GENERATED_WEBIDL_FILES = [
-    "CSS2Properties.webidl",
     "CSSPageDescriptors.webidl",
     "CSSPositionTryDescriptors.webidl",
+    "CSSStyleProperties.webidl",
 ]
 
 PREPROCESSED_WEBIDL_FILES = [
@@ -428,6 +425,7 @@ WEBIDL_FILES = [
     "AppInfo.webidl",
     "APZTestData.webidl",
     "ARIAMixin.webidl",
+    "ARIANotifyMixin.webidl",
     "Attr.webidl",
     "AudioBuffer.webidl",
     "AudioBufferSourceNode.webidl",
@@ -494,37 +492,72 @@ WEBIDL_FILES = [
     "CSPReport.webidl",
     "CSS.webidl",
     "CSSAnimation.webidl",
+    "CSSColor.webidl",
+    "CSSColorValue.webidl",
     "CSSConditionRule.webidl",
     "CSSContainerRule.webidl",
     "CSSCounterStyleRule.webidl",
+    "CSSCustomMediaRule.webidl",
     "CSSFontFaceRule.webidl",
     "CSSFontFeatureValuesRule.webidl",
     "CSSFontPaletteValuesRule.webidl",
     "CSSGroupingRule.webidl",
+    "CSSHSL.webidl",
+    "CSSHWB.webidl",
+    "CSSImageValue.webidl",
     "CSSImportRule.webidl",
     "CSSKeyframeRule.webidl",
     "CSSKeyframesRule.webidl",
+    "CSSKeywordValue.webidl",
+    "CSSLab.webidl",
     "CSSLayerBlockRule.webidl",
     "CSSLayerStatementRule.webidl",
+    "CSSLCH.webidl",
     "CSSMarginRule.webidl",
+    "CSSMathClamp.webidl",
+    "CSSMathInvert.webidl",
+    "CSSMathMax.webidl",
+    "CSSMathMin.webidl",
+    "CSSMathNegate.webidl",
+    "CSSMathProduct.webidl",
+    "CSSMathSum.webidl",
+    "CSSMathValue.webidl",
+    "CSSMatrixComponent.webidl",
     "CSSMediaRule.webidl",
     "CSSMozDocumentRule.webidl",
     "CSSNamespaceRule.webidl",
     "CSSNestedDeclarations.webidl",
+    "CSSNumericArray.webidl",
+    "CSSNumericValue.webidl",
+    "CSSOKLab.webidl",
+    "CSSOKLCH.webidl",
     "CSSPageRule.webidl",
+    "CSSPerspective.webidl",
     "CSSPositionTryRule.webidl",
     "CSSPropertyRule.webidl",
     "CSSPseudoElement.webidl",
+    "CSSRGB.webidl",
+    "CSSRotate.webidl",
     "CSSRule.webidl",
     "CSSRuleList.webidl",
+    "CSSScale.webidl",
     "CSSScopeRule.webidl",
+    "CSSSkew.webidl",
+    "CSSSkewX.webidl",
+    "CSSSkewY.webidl",
     "CSSStartingStyleRule.webidl",
     "CSSStyleDeclaration.webidl",
     "CSSStyleRule.webidl",
     "CSSStyleSheet.webidl",
     "CSSStyleValue.webidl",
     "CSSSupportsRule.webidl",
+    "CSSTransformComponent.webidl",
+    "CSSTransformValue.webidl",
     "CSSTransition.webidl",
+    "CSSTranslate.webidl",
+    "CSSUnitValue.webidl",
+    "CSSUnparsedValue.webidl",
+    "CSSVariableReferenceValue.webidl",
     "CustomElementRegistry.webidl",
     "DataTransfer.webidl",
     "DataTransferItem.webidl",
@@ -534,10 +567,13 @@ WEBIDL_FILES = [
     "DedicatedWorkerGlobalScope.webidl",
     "DelayNode.webidl",
     "DeviceMotionEvent.webidl",
+    "DigitalCredential.webidl",
     "Directory.webidl",
     "Document.webidl",
     "DocumentFragment.webidl",
     "DocumentOrShadowRoot.webidl",
+    "DocumentPictureInPicture.webidl",
+    "DocumentPictureInPictureEvent.webidl",
     "DocumentTimeline.webidl",
     "DocumentType.webidl",
     "DOMException.webidl",
@@ -774,7 +810,6 @@ WEBIDL_FILES = [
     "MouseEvent.webidl",
     "MouseScrollEvent.webidl",
     "MozFrameLoaderOwner.webidl",
-    "MutationEvent.webidl",
     "MutationObserver.webidl",
     "NamedNodeMap.webidl",
     "NavigateEvent.webidl",
@@ -782,6 +817,7 @@ WEBIDL_FILES = [
     "NavigationActivation.webidl",
     "NavigationDestination.webidl",
     "NavigationHistoryEntry.webidl",
+    "NavigationPrecommitController.webidl",
     "NavigationPreloadManager.webidl",
     "NavigationTransition.webidl",
     "Navigator.webidl",
@@ -865,7 +901,6 @@ WEBIDL_FILES = [
     "ServiceWorkerContainer.webidl",
     "ServiceWorkerGlobalScope.webidl",
     "ServiceWorkerRegistration.webidl",
-    "ShadowRealmGlobalScope.webidl",
     "ShadowRoot.webidl",
     "SharedWorker.webidl",
     "SharedWorkerGlobalScope.webidl",
@@ -1081,6 +1116,12 @@ WEBIDL_FILES = [
     "XSLTProcessor.webidl",
 ]
 
+# Native llama.cpp for ml engine.
+if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
+    WEBIDL_FILES += [
+        "LlamaRunner.webidl",
+    ]
+
 if CONFIG["MOZ_WEBRTC"]:
     WEBIDL_FILES += [
         "PeerConnectionImpl.webidl",
@@ -1166,10 +1207,6 @@ if CONFIG["MOZ_DEBUG"] and CONFIG["ENABLE_TESTS"]:
         "components.conf",
     ]
 
-WEBIDL_FILES += [
-    "InstallTrigger.webidl",
-]
-
 if CONFIG["FUZZING"]:
     WEBIDL_FILES += [
         "FuzzingFunctions.webidl",
@@ -1189,6 +1226,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     "ContentVisibilityAutoStateChangeEvent.webidl",
     "DeviceLightEvent.webidl",
     "DeviceOrientationEvent.webidl",
+    "DocumentPictureInPictureEvent.webidl",
     "ErrorEvent.webidl",
     "FontFaceSetLoadEvent.webidl",
     "FormDataEvent.webidl",
@@ -1207,6 +1245,8 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     "NavigationCurrentEntryChangeEvent.webidl",
     "NotificationEvent.webidl",
     "OfflineAudioCompletionEvent.webidl",
+    "PageRevealEvent.webidl",
+    "PageSwapEvent.webidl",
     "PageTransitionEvent.webidl",
     "PerformanceEntryEvent.webidl",
     "PopStateEvent.webidl",
@@ -1221,7 +1261,6 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     "TCPServerSocketEvent.webidl",
     "TCPSocketErrorEvent.webidl",
     "TCPSocketEvent.webidl",
-    "ToggleEvent.webidl",
     "TrackEvent.webidl",
     "UDPMessageEvent.webidl",
     "UserProximityEvent.webidl",

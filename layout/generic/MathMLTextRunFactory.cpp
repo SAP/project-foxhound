@@ -6,7 +6,6 @@
 
 #include "MathMLTextRunFactory.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"

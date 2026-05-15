@@ -40,55 +40,34 @@ inline NSString* ToNSString(id aValue) {
   return nil;
 }
 
-@interface mozTextAccessible ()
-- (long)textLength;
-- (BOOL)isReadOnly;
-- (NSString*)text;
-- (GeckoTextMarkerRange)selection;
-- (GeckoTextMarkerRange)textMarkerRangeFromRange:(NSValue*)range;
-@end
+static GeckoTextMarkerRange GetSelectionInObject(mozAccessible* aObj) {
+  id<MOXTextMarkerSupport> delegate = [aObj moxTextMarkerDelegate];
+  GeckoTextMarkerRange selection =
+      [static_cast<MOXTextMarkerDelegate*>(delegate) selection];
 
-@implementation mozTextAccessible
-
-- (id)moxValue {
-  // Apple's SpeechSynthesisServer expects AXValue to return an AXStaticText
-  // object's AXSelectedText attribute. See bug 674612 for details.
-  // Also if there is no selected text, we return the full text.
-  // See bug 369710 for details.
-  if ([[self moxRole] isEqualToString:NSAccessibilityStaticTextRole]) {
-    NSString* selectedText = [self moxSelectedText];
-    return (selectedText && [selectedText length]) ? selectedText : [self text];
+  if (!selection.IsValid() || !selection.Crop([aObj geckoAccessible])) {
+    // The selection is not in this accessible. Return invalid range.
+    return GeckoTextMarkerRange();
   }
 
-  return [self text];
+  return selection;
 }
 
-- (id)moxRequired {
-  return @([self stateWithMask:states::REQUIRED] != 0);
+static GeckoTextMarkerRange GetTextMarkerRangeFromRange(mozAccessible* aObj,
+                                                        NSValue* aRange) {
+  NSRange r = [aRange rangeValue];
+  Accessible* acc = [aObj geckoAccessible];
+
+  GeckoTextMarker startMarker =
+      GeckoTextMarker::MarkerFromIndex(acc, r.location);
+
+  GeckoTextMarker endMarker =
+      GeckoTextMarker::MarkerFromIndex(acc, r.location + r.length);
+
+  return GeckoTextMarkerRange(startMarker, endMarker);
 }
 
-- (NSString*)moxInvalid {
-  if ([self stateWithMask:states::INVALID] != 0) {
-    // If the attribute exists, it has one of four values: true, false,
-    // grammar, or spelling. We query the attribute value here in order
-    // to find the correct string to return.
-    RefPtr<AccAttributes> attributes;
-    HyperTextAccessibleBase* text = mGeckoAccessible->AsHyperTextBase();
-    if (text && mGeckoAccessible->IsTextRole()) {
-      attributes = text->DefaultTextAttributes();
-    }
-
-    nsAutoString invalidStr;
-    if (!attributes ||
-        !attributes->GetAttribute(nsGkAtoms::invalid, invalidStr)) {
-      return @"true";
-    }
-    return nsCocoaUtils::ToNSString(invalidStr);
-  }
-
-  // If the flag is not set, we return false.
-  return @"false";
-}
+@implementation mozAccessible (TextField)
 
 - (NSNumber*)moxInsertionPointLineNumber {
   MOZ_ASSERT(mGeckoAccessible);
@@ -101,20 +80,12 @@ inline NSString* ToNSString(id aValue) {
   return (lineNumber >= 0) ? [NSNumber numberWithInt:lineNumber] : nil;
 }
 
-- (NSString*)moxRole {
-  if (mRole == roles::ENTRY && [self stateWithMask:states::MULTI_LINE]) {
-    return NSAccessibilityTextAreaRole;
-  }
-
-  return [super moxRole];
-}
-
 - (NSNumber*)moxNumberOfCharacters {
-  return @([self textLength]);
+  return @([[self moxValue] length]);
 }
 
 - (NSString*)moxSelectedText {
-  GeckoTextMarkerRange selection = [self selection];
+  GeckoTextMarkerRange selection = GetSelectionInObject(self);
   if (!selection.IsValid()) {
     return nil;
   }
@@ -123,7 +94,7 @@ inline NSString* ToNSString(id aValue) {
 }
 
 - (NSValue*)moxSelectedTextRange {
-  GeckoTextMarkerRange selection = [self selection];
+  GeckoTextMarkerRange selection = GetSelectionInObject(self);
   if (!selection.IsValid()) {
     return nil;
   }
@@ -138,15 +109,7 @@ inline NSString* ToNSString(id aValue) {
 - (NSValue*)moxVisibleCharacterRange {
   // XXX this won't work with Textarea and such as we actually don't give
   // the visible character range.
-  return [NSValue valueWithRange:NSMakeRange(0, [self textLength])];
-}
-
-- (BOOL)moxBlockSelector:(SEL)selector {
-  if (selector == @selector(moxSetValue:) && [self isReadOnly]) {
-    return YES;
-  }
-
-  return [super moxBlockSelector:selector];
+  return [NSValue valueWithRange:NSMakeRange(0, [[self moxValue] length])];
 }
 
 - (void)moxSetValue:(id)value {
@@ -182,7 +145,7 @@ inline NSString* ToNSString(id aValue) {
 
 - (void)moxSetSelectedTextRange:(NSValue*)selectedTextRange {
   GeckoTextMarkerRange markerRange =
-      [self textMarkerRangeFromRange:selectedTextRange];
+      GetTextMarkerRangeFromRange(self, selectedTextRange);
 
   if (markerRange.IsValid()) {
     markerRange.Select();
@@ -204,7 +167,7 @@ inline NSString* ToNSString(id aValue) {
 }
 
 - (NSString*)moxStringForRange:(NSValue*)range {
-  GeckoTextMarkerRange markerRange = [self textMarkerRangeFromRange:range];
+  GeckoTextMarkerRange markerRange = GetTextMarkerRangeFromRange(self, range);
 
   if (!markerRange.IsValid()) {
     return nil;
@@ -214,7 +177,7 @@ inline NSString* ToNSString(id aValue) {
 }
 
 - (NSAttributedString*)moxAttributedStringForRange:(NSValue*)range {
-  GeckoTextMarkerRange markerRange = [self textMarkerRangeFromRange:range];
+  GeckoTextMarkerRange markerRange = GetTextMarkerRangeFromRange(self, range);
 
   if (!markerRange.IsValid()) {
     return nil;
@@ -225,7 +188,7 @@ inline NSString* ToNSString(id aValue) {
 
 - (NSValue*)moxRangeForLine:(NSNumber*)line {
   // XXX: actually get the integer value for the line #
-  return [NSValue valueWithRange:NSMakeRange(0, [self textLength])];
+  return [NSValue valueWithRange:NSMakeRange(0, [[self moxValue] length])];
 }
 
 - (NSNumber*)moxLineForIndex:(NSNumber*)index {
@@ -234,7 +197,7 @@ inline NSString* ToNSString(id aValue) {
 }
 
 - (NSValue*)moxBoundsForRange:(NSValue*)range {
-  GeckoTextMarkerRange markerRange = [self textMarkerRangeFromRange:range];
+  GeckoTextMarkerRange markerRange = GetTextMarkerRangeFromRange(self, range);
 
   if (!markerRange.IsValid()) {
     return nil;
@@ -243,12 +206,58 @@ inline NSString* ToNSString(id aValue) {
   return markerRange.Bounds();
 }
 
-#pragma mark - mozAccessible
+- (BOOL)moxIsTextField {
+  return !mGeckoAccessible->HasNumericValue() &&
+         mGeckoAccessible->IsEditableRoot();
+}
+
+- (BOOL)blockTextFieldMethod:(SEL)selector {
+  // These are the editable text methods defined in this category.
+  // We want to block them in certain cases.
+  if (selector != @selector(moxNumberOfCharacters) &&
+      selector != @selector(moxInsertionPointLineNumber) &&
+      selector != @selector(moxSelectedText) &&
+      selector != @selector(moxSelectedTextRange) &&
+      selector != @selector(moxVisibleCharacterRange) &&
+      selector != @selector(moxSetSelectedText:) &&
+      selector != @selector(moxSetSelectedTextRange:) &&
+      selector != @selector(moxSetVisibleCharacterRange:) &&
+      selector != @selector(moxStringForRange:) &&
+      selector != @selector(moxAttributedStringForRange:) &&
+      selector != @selector(moxRangeForLine:) &&
+      selector != @selector(moxLineForIndex:) &&
+      selector != @selector(moxBoundsForRange:) &&
+      selector != @selector(moxSetValue:)) {
+    return NO;
+  }
+
+  if ([[mozAccessible class] instanceMethodForSelector:selector] !=
+      [self methodForSelector:selector]) {
+    // This method was overridden by a subclass, so let it through.
+    return NO;
+  }
+
+  if (![self moxIsTextField]) {
+    // This is not an editable root, so block these methods.
+    return YES;
+  }
+
+  if (selector == @selector(moxSetValue:) &&
+      [self stateWithMask:states::EDITABLE] == 0) {
+    // The editable is read-only, so block setValue:
+    // Bug 1995330 - should rely on READONLY/UNAVAILABLE here.
+    return YES;
+  }
+
+  // Let these methods through.
+  return NO;
+}
 
 - (void)handleAccessibleTextChangeEvent:(NSString*)change
                                inserted:(BOOL)isInserted
                             inContainer:(Accessible*)container
                                      at:(int32_t)start {
+  MOZ_ASSERT([self moxIsTextField]);
   GeckoTextMarker startMarker(container, start);
   NSDictionary* userInfo = @{
     @"AXTextChangeElement" : self,
@@ -269,63 +278,6 @@ inline NSString* ToNSString(id aValue) {
                withUserInfo:userInfo];
 
   [self moxPostNotification:NSAccessibilityValueChangedNotification];
-}
-
-- (void)handleAccessibleEvent:(uint32_t)eventType {
-  switch (eventType) {
-    default:
-      [super handleAccessibleEvent:eventType];
-      break;
-  }
-}
-
-#pragma mark -
-
-- (long)textLength {
-  return [[self text] length];
-}
-
-- (BOOL)isReadOnly {
-  return [self stateWithMask:states::EDITABLE] == 0;
-}
-
-- (NSString*)text {
-  // A password text field returns an empty value
-  if (mRole == roles::PASSWORD_TEXT) {
-    return @"";
-  }
-
-  id<MOXTextMarkerSupport> delegate = [self moxTextMarkerDelegate];
-  return [delegate
-      moxStringForTextMarkerRange:[delegate
-                                      moxTextMarkerRangeForUIElement:self]];
-}
-
-- (GeckoTextMarkerRange)selection {
-  MOZ_ASSERT(mGeckoAccessible);
-
-  id<MOXTextMarkerSupport> delegate = [self moxTextMarkerDelegate];
-  GeckoTextMarkerRange selection =
-      [static_cast<MOXTextMarkerDelegate*>(delegate) selection];
-
-  if (!selection.IsValid() || !selection.Crop(mGeckoAccessible)) {
-    // The selection is not in this accessible. Return invalid range.
-    return GeckoTextMarkerRange();
-  }
-
-  return selection;
-}
-
-- (GeckoTextMarkerRange)textMarkerRangeFromRange:(NSValue*)range {
-  NSRange r = [range rangeValue];
-
-  GeckoTextMarker startMarker =
-      GeckoTextMarker::MarkerFromIndex(mGeckoAccessible, r.location);
-
-  GeckoTextMarker endMarker =
-      GeckoTextMarker::MarkerFromIndex(mGeckoAccessible, r.location + r.length);
-
-  return GeckoTextMarkerRange(startMarker, endMarker);
 }
 
 @end

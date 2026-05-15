@@ -19,7 +19,8 @@
 
 /**
  * Experiments store info about an active or expired preference experiment.
- * @typedef {Object} Experiment
+ *
+ * @typedef {object} Experiment
  * @property {string} slug
  *   A string uniquely identifying the experiment. Used for telemetry, and other
  *   machine-oriented use cases. Used as a display name if `userFacingName` is
@@ -40,7 +41,7 @@
  *   ISO-formatted date string of when temporary errors with this experiment
  *   should not longer be considered temporary. After this point, further errors
  *   will result in unenrollment.
- * @property {Object} preferences
+ * @property {object} preferences
  *   An object consisting of all the preferences that are set by this experiment.
  *   Keys are the name of each preference affected by this experiment. Values are
  *   Preference Objects, about which see below.
@@ -54,6 +55,7 @@
 /**
  * Each Preference stores information about a preference that an
  * experiment sets.
+ *
  * @property {string|integer|boolean} preferenceValue
  *   Value to change the preference to during the experiment.
  * @property {string} preferenceType
@@ -79,7 +81,7 @@ import { LogManager } from "resource://normandy/lib/LogManager.sys.mjs";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.sys.mjs",
 });
@@ -103,7 +105,8 @@ const DefaultPreferences = Services.prefs.getDefaultBranch("");
 
 /**
  * Enum storing Preference modules for each type of preference branch.
- * @enum {Object}
+ *
+ * @enum {object}
  */
 const PreferenceBranchType = {
   user: UserPreferences,
@@ -148,6 +151,7 @@ CleanupManager.addCleanupHandler(() =>
 export var PreferenceExperiments = {
   /**
    * Update the the experiment storage with changes that happened during early startup.
+   *
    * @param {object} studyPrefsChanged Map from pref name to previous pref value
    */
   async recordOriginalValues(studyPrefsChanged) {
@@ -318,7 +322,8 @@ export var PreferenceExperiments = {
 
   /**
    * Start a new preference experiment.
-   * @param {Object} experiment
+   *
+   * @param {object} experiment
    * @param {string} experiment.slug
    * @param {string} experiment.actionName  The action who knows about this
    *   experiment and is responsible for cleaning it up. This should
@@ -529,6 +534,7 @@ export var PreferenceExperiments = {
   /**
    * Register a preference observer that stops an experiment when the user
    * modifies the preference.
+   *
    * @param {string} experimentSlug
    * @param {string} preferenceName
    * @param {string|integer|boolean} preferenceValue
@@ -576,8 +582,9 @@ export var PreferenceExperiments = {
 
   /**
    * Check if a preference observer is active for an experiment.
+   *
    * @param {string} experimentSlug
-   * @return {Boolean}
+   * @return {boolean}
    */
   hasObserver(experimentSlug) {
     log.debug(`PreferenceExperiments.hasObserver(${experimentSlug})`);
@@ -586,6 +593,7 @@ export var PreferenceExperiments = {
 
   /**
    * Disable a preference observer for an experiment.
+   *
    * @param {string} experimentSlug
    * @throws {Error}
    *   If there is no active observer for the experiment.
@@ -622,6 +630,7 @@ export var PreferenceExperiments = {
   /**
    * Update the timestamp storing when Normandy last sent a recipe for the
    * experiment.
+   *
    * @param {string} experimentSlug
    * @rejects {Error}
    *   If there is no stored experiment with the given slug.
@@ -688,12 +697,13 @@ export var PreferenceExperiments = {
   /**
    * Stop an active experiment, deactivate preference watchers, and optionally
    * reset the associated preference to its previous value.
+   *
    * @param {string} experimentSlug
-   * @param {Object} options
+   * @param {object} options
    * @param {boolean} [options.resetValue = true]
    *   If true, reset the preference to its original value prior to
    *   the experiment. Optional, defaults to true.
-   * @param {String} [options.reason = "unknown"]
+   * @param {string} [options.reason = "unknown"]
    *   Reason that the experiment is ending. Optional, defaults to
    *   "unknown".
    * @rejects {Error}
@@ -832,8 +842,9 @@ export var PreferenceExperiments = {
 
   /**
    * Get the experiment object for the experiment.
+   *
    * @param {string} experimentSlug
-   * @resolves {Experiment}
+   * @returns {Promise<Experiment>}
    * @rejects {Error}
    *   If no preference experiment exists with the given slug.
    */
@@ -851,7 +862,8 @@ export var PreferenceExperiments = {
 
   /**
    * Get a list of all stored experiment objects.
-   * @resolves {Experiment[]}
+   *
+   * @returns {Promise<Experiment[]>}
    */
   async getAll() {
     const store = await ensureStorage();
@@ -862,7 +874,8 @@ export var PreferenceExperiments = {
 
   /**
    * Get a list of experiment objects for all active experiments.
-   * @resolves {Experiment[]}
+   *
+   * @returns {Promise<Experiment[]>}
    */
   async getAllActive() {
     const store = await ensureStorage();
@@ -873,8 +886,10 @@ export var PreferenceExperiments = {
 
   /**
    * Check if an experiment exists with the given slug.
+   *
    * @param {string} experimentSlug
-   * @resolves {boolean} True if the experiment exists, false if it doesn't.
+   * @returns {Promise<boolean>}
+   *   Resolves to true if the experiment exists, false if it doesn't.
    */
   async has(experimentSlug) {
     log.debug(`PreferenceExperiments.has(${experimentSlug})`);

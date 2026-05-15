@@ -6,12 +6,11 @@
 
 #include "mozilla/dom/SVGMaskElement.h"
 
-#include "nsGkAtoms.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGMaskElementBinding.h"
 #include "mozilla/dom/SVGUnitTypesBinding.h"
+#include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Mask)
 
@@ -28,13 +27,13 @@ JSObject* SVGMaskElement::WrapNode(JSContext* aCx,
 
 SVGElement::LengthInfo SVGMaskElement::sLengthInfo[4] = {
     {nsGkAtoms::x, -10, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::y, -10, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
     {nsGkAtoms::width, 120, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::X},
+     SVGLength::Axis::X},
     {nsGkAtoms::height, 120, SVGLength_Binding::SVG_LENGTHTYPE_PERCENTAGE,
-     SVGContentUtils::Y},
+     SVGLength::Axis::Y},
 };
 
 SVGElement::EnumInfo SVGMaskElement::sEnumInfo[2] = {

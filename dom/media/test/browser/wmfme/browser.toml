@@ -1,7 +1,9 @@
 [DEFAULT]
 subsuite = "media-bc"
 tags = "media-engine-compatible"
-run-if = ["wmfme"]
+run-if = [
+  "wmfme",
+]
 support-files = [
   "file_video.html",
   "head.js",
@@ -16,8 +18,8 @@ support-files = [
 
 ["browser_wmfme_glean_first_frame_loaded_time.js"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1894541
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov", # Bug 1894541
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1894541
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1894541
 ]
 
 ["browser_wmfme_max_crashes.js"]

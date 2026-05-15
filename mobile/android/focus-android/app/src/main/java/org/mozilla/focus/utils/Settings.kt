@@ -34,14 +34,20 @@ class Settings(
     val defaultSearchEngineName: String
         get() = preferences.getString(getPreferenceKey(R.string.pref_key_search_engine), "")!!
 
+    /**
+     * Determines whether the user has chosen to open supported links in external applications.
+     * Defaults to false.
+     */
     val openLinksInExternalApp: Boolean
         get() = preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_open_links_in_external_app),
             false,
         )
 
-    var isExperimentationEnabled: Boolean = false
-
+    /**
+     * Determines whether the call-for-reinforcement (CFR) message for the cookie banner
+     * should be displayed. Defaults to true.
+     */
     var shouldShowCookieBannerCfr: Boolean
         get() = preferences.getBoolean(
             getPreferenceKey(R.string.pref_cfr_visibility_for_cookie_banner),
@@ -56,6 +62,10 @@ class Settings(
             }
         }
 
+    /**
+     * Determines whether the call-for-reinforcement (CFR) message for tracking protection
+     * should be displayed. Defaults to true.
+     */
     var shouldShowCfrForTrackingProtection: Boolean
         get() = preferences.getBoolean(getPreferenceKey(R.string.pref_cfr_visibility_for_tracking_protection), true)
         set(value) {
@@ -64,6 +74,10 @@ class Settings(
             }
         }
 
+    /**
+     * Determines whether the call-for-reinforcement (CFR) message for "start browsing"
+     * should be displayed. Defaults to true.
+     */
     var shouldShowStartBrowsingCfr: Boolean
         get() = preferences.getBoolean(getPreferenceKey(R.string.pref_cfr_visibility_for_start_browsing), true)
         set(value) {
@@ -72,6 +86,10 @@ class Settings(
             }
         }
 
+    /**
+     * Determines if this is the first time the user is running the app.
+     * Defaults to true.
+     */
     var isFirstRun: Boolean
         get() = preferences.getBoolean(getPreferenceKey(R.string.firstrun_shown), true)
         set(value) {
@@ -80,6 +98,10 @@ class Settings(
             }
         }
 
+    /**
+     * Determines whether the tooltip for the privacy and security settings should be shown.
+     * Defaults to true.
+     */
     var shouldShowPrivacySecuritySettingsToolTip: Boolean
         get() = preferences.getBoolean(getPreferenceKey(R.string.pref_tool_tip_privacy_security_settings), true)
         set(value) {
@@ -90,36 +112,57 @@ class Settings(
 
     /**
      * Indicates whether or not to use remote server search configuration.
+     * The default value is controlled by a Nimbus feature flag.
      */
     var useRemoteSearchConfiguration by booleanPreference(
         key = getPreferenceKey(R.string.pref_key_use_remote_search_configuration),
         default = FocusNimbus.features.remoteSearchConfiguration.value().enabled,
     )
 
+    /**
+     * Checks if remote debugging via USB is enabled.
+     * Defaults to false.
+     */
     fun shouldEnableRemoteDebugging(): Boolean =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_remote_debugging),
             false,
         )
 
+    /**
+     * Checks if search suggestions are enabled.
+     * Defaults to false.
+     */
     fun shouldShowSearchSuggestions(): Boolean =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_show_search_suggestions),
             false,
         )
 
+    /**
+     * Checks if web fonts should be blocked for performance.
+     * Defaults to false.
+     */
     fun shouldBlockWebFonts(): Boolean =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_performance_block_webfonts),
             false,
         )
 
+    /**
+     * Checks if JavaScript should be blocked.
+     * Defaults to false.
+     */
     fun shouldBlockJavaScript(): Boolean =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_performance_block_javascript),
             false,
         )
 
+    /**
+     * Gets or sets the raw string value for the cookie blocking preference.
+     * It is recommended to use a typed version of this where possible.
+     */
     var shouldBlockCookiesValue: String
         get() = preferences.getString(
             getPreferenceKey(R.string.pref_key_performance_enable_cookies),
@@ -134,30 +177,53 @@ class Settings(
             }
         }
 
+    /**
+     * Checks if the app should be secured using biometric authentication (fingerprint, face, etc.).
+     * Defaults to false.
+     */
     fun shouldUseBiometrics(): Boolean =
         preferences.getBoolean(getPreferenceKey(R.string.pref_key_biometric), false)
 
+    /**
+     * Checks if the app should be in "secure mode", preventing screenshots and hiding content
+     * in the recent apps switcher. Defaults to false.
+     */
     fun shouldUseSecureMode(): Boolean =
         preferences.getBoolean(getPreferenceKey(R.string.pref_key_secure), false)
 
+    /**
+     * Persists the name of the default search engine.
+     */
     fun setDefaultSearchEngineByName(name: String) {
         preferences.edit {
             putString(getPreferenceKey(R.string.pref_key_search_engine), name)
         }
     }
 
+    /**
+     * Checks if URL autocomplete should use the shipped (pre-installed) domain list.
+     * Defaults to true.
+     */
     fun shouldAutocompleteFromShippedDomainList() =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_autocomplete_preinstalled),
             true,
         )
 
+    /**
+     * Checks if URL autocomplete should use the custom (user-added) domain list.
+     * Defaults to true.
+     */
     fun shouldAutocompleteFromCustomDomainList() =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_autocomplete_custom),
             true,
         )
 
+    /**
+     * Checks if ad trackers should be blocked.
+     * Defaults to true.
+     */
     fun shouldBlockAdTrackers() =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_privacy_block_ads),
@@ -166,6 +232,7 @@ class Settings(
 
     /**
      * Determines whether safe browsing should be enabled based on the user's preference.
+     * Defaults to true.
      */
     fun shouldUseSafeBrowsing() =
         preferences.getBoolean(
@@ -173,70 +240,83 @@ class Settings(
             true,
         )
 
+    /**
+     * Checks if analytic trackers should be blocked.
+     * Defaults to true.
+     */
     fun shouldBlockAnalyticTrackers() =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_privacy_block_analytics),
             true,
         )
 
+    /**
+     * Checks if social media trackers should be blocked.
+     * Defaults to true.
+     */
     fun shouldBlockSocialTrackers() =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_privacy_block_social),
             true,
         )
 
+    /**
+     * Checks if "other" trackers (e.g., content trackers) should be blocked.
+     * Defaults to false.
+     */
     fun shouldBlockOtherTrackers() =
         preferences.getBoolean(
             getPreferenceKey(R.string.pref_key_privacy_block_other3),
             false,
         )
 
+    /**
+     * Checks if the user has ever manually toggled the search suggestions setting.
+     */
     fun userHasToggledSearchSuggestions(): Boolean =
         preferences.getBoolean(SearchSuggestionsPreferences.TOGGLED_SUGGESTIONS_PREF, false)
 
+    /**
+     * Checks if the user has dismissed the "no suggestions" message in the search bar.
+     */
     fun userHasDismissedNoSuggestionsMessage(): Boolean =
         preferences.getBoolean(SearchSuggestionsPreferences.DISMISSED_NO_SUGGESTIONS_PREF, false)
 
-    fun hasRequestedDesktop() = preferences.getBoolean(
-        getPreferenceKey(R.string.has_requested_desktop),
-        false,
-    )
-
+    /**
+     * Gets the total number of times the application has been launched.
+     */
     fun getAppLaunchCount() = preferences.getInt(
         getPreferenceKey(R.string.app_launch_count),
         0,
     )
 
+    /**
+     * Gets the total number of trackers that have been blocked since installation.
+     */
     fun getTotalBlockedTrackersCount() = preferences.getInt(
         getPreferenceKey(R.string.pref_key_privacy_total_trackers_blocked_count),
         0,
     )
 
-    fun hasSocialBlocked() = preferences.getBoolean(
-        getPreferenceKey(R.string.pref_key_privacy_block_social),
-        true,
-    )
-
-    fun hasAdvertisingBlocked() = preferences.getBoolean(
-        getPreferenceKey(R.string.pref_key_privacy_block_ads),
-        true,
-    )
-
-    fun hasAnalyticsBlocked() = preferences.getBoolean(
-        getPreferenceKey(R.string.pref_key_privacy_block_analytics),
-        true,
-    )
-
+    /**
+     * Reflects the user's explicit choice to use the light theme.
+     */
     var lightThemeSelected by booleanPreference(
         getPreferenceKey(R.string.pref_key_light_theme),
         false,
     )
 
+    /**
+     * Reflects the user's explicit choice to use the dark theme.
+     */
     var darkThemeSelected by booleanPreference(
         getPreferenceKey(R.string.pref_key_dark_theme),
         false,
     )
 
+    /**
+     * Reflects the user's explicit choice to use the system's default theme setting.
+     */
     var useDefaultThemeSelected by booleanPreference(
         getPreferenceKey(R.string.pref_key_default_theme),
         false,
@@ -257,6 +337,10 @@ class Settings(
         }
     }
 
+    /**
+     * Determines if the Nimbus preview channel should be used for experiments.
+     * Requires a restart to take effect.
+     */
     var shouldUseNimbusPreview: Boolean
         get() = preferences.getBoolean(getPreferenceKey(R.string.pref_key_use_nimbus_preview), false)
         set(value) {
@@ -265,6 +349,10 @@ class Settings(
             }
         }
 
+    /**
+     * Determines if the production server for remote settings should be used.
+     * Requires a restart to take effect.
+     */
     var useProductionRemoteSettingsServer: Boolean
         get() = preferences.getBoolean(getPreferenceKey(R.string.pref_key_remote_server_prod), true)
         set(value) {
@@ -273,6 +361,9 @@ class Settings(
             }
         }
 
+    /**
+     * Increments the counter for how many times a search widget has been installed.
+     */
     fun addSearchWidgetInstalled(count: Int) {
         val key = getPreferenceKey(R.string.pref_key_search_widget_installed)
         val newValue = preferences.getInt(key, 0) + count
@@ -281,6 +372,9 @@ class Settings(
         }
     }
 
+    /**
+     * Checks if a search widget has been installed at least once.
+     */
     val searchWidgetInstalled: Boolean
         get() = 0 < preferences.getInt(
             getPreferenceKey(R.string.pref_key_search_widget_installed),
@@ -299,11 +393,17 @@ class Settings(
         }
     }
 
+    /**
+     * Gets the number of times the user has cleared their browsing session.
+     */
     fun getClearBrowsingSessions() = preferences.getInt(
         getPreferenceKey(R.string.pref_key_clear_browsing_sessions),
         0,
     )
 
+    /**
+     * Gets the current HTTPS-Only Mode setting for the browser engine.
+     */
     fun getHttpsOnlyMode(): Engine.HttpsOnlyMode {
         return if (preferences.getBoolean(getPreferenceKey(R.string.pref_key_https_only), true)) {
             Engine.HttpsOnlyMode.ENABLED
@@ -328,6 +428,9 @@ class Settings(
             }
         }
 
+    /**
+     * Saves the user's selected option for handling cookie banners.
+     */
     fun saveCurrentCookieBannerOptionInSharePref(
         cookieBannerOption: CookieBannerOption,
     ) {
@@ -339,6 +442,9 @@ class Settings(
         }
     }
 
+    /**
+     * Retrieves the user's currently selected option for handling cookie banners.
+     */
     fun getCurrentCookieBannerOptionFromSharePref(): CookieBannerOption {
         val optionValue = preferences.getString(
             context.getString(R.string.pref_key_cookie_banner_settings),
@@ -353,6 +459,9 @@ class Settings(
         }
     }
 
+    /**
+     * Determines whether the daily usage ping for telemetry is enabled.
+     */
     var isDailyUsagePingEnabled by booleanPreference(
         getPreferenceKey(R.string.pref_key_daily_usage_ping),
         default = GleanMetricsService.shouldTelemetryBeEnabledByDefault(context),

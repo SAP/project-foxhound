@@ -373,7 +373,9 @@ class PrefRow {
   }
 
   toggle() {
+    this.#notifyWillChange();
     Services.prefs.setBoolPref(this.name, !this.value);
+    this.#notifyChanged();
   }
 
   editOrToggle() {
@@ -385,14 +387,20 @@ class PrefRow {
   }
 
   save() {
+    if (this.type == "Number" && !this.inputField.reportValidity()) {
+      return;
+    }
+
+    this.#notifyWillChange();
+
     if (this.type == "Number") {
-      if (!this.inputField.reportValidity()) {
-        return;
-      }
       Services.prefs.setIntPref(this.name, parseInt(this.inputField.value));
     } else {
       Services.prefs.setStringPref(this.name, this.inputField.value);
     }
+
+    this.#notifyChanged();
+
     this.refreshValue();
     this.endEdit();
     this.editButton.focus();
@@ -402,6 +410,18 @@ class PrefRow {
     this.editing = false;
     this.refreshElement();
     gPrefInEdit = null;
+  }
+
+  #notifyWillChange() {
+    Services.obs.notifyObservers(
+      null,
+      "about-config-will-change-pref",
+      this.name
+    );
+  }
+
+  #notifyChanged() {
+    Services.obs.notifyObservers(null, "about-config-changed-pref", this.name);
   }
 }
 

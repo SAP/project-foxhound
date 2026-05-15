@@ -67,7 +67,7 @@ describe("CFRPageActions", () => {
     };
 
     const gURLBar = document.createElement("div");
-    gURLBar.textbox = document.createElement("div");
+    gURLBar.inputField = document.createElement("input");
 
     globals = new GlobalOverrider();
     globals.set({
@@ -160,7 +160,7 @@ describe("CFRPageActions", () => {
         await pageAction.showAddressBarNotifier(fakeRecommendation);
         const expectedWidth = pageAction.label.getClientRects()[0].width;
         assert.equal(
-          pageAction.urlbarinput.style.getPropertyValue("--cfr-label-width"),
+          pageAction.urlbar.style.getPropertyValue("--cfr-label-width"),
           `${expectedWidth}px`
         );
       });
@@ -173,7 +173,7 @@ describe("CFRPageActions", () => {
         assert.notCalled(pageAction._dispatchImpression);
         clock.tick(1001);
         assert.notEqual(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
+          pageAction.urlbar.getAttribute("cfr-recommendation-state"),
           "expanded"
         );
 
@@ -181,7 +181,7 @@ describe("CFRPageActions", () => {
         assert.calledOnce(pageAction._clearScheduledStateChanges);
         clock.tick(1001);
         assert.equal(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
+          pageAction.urlbar.getAttribute("cfr-recommendation-state"),
           "expanded"
         );
         assert.calledOnce(pageAction._dispatchImpression);
@@ -230,7 +230,7 @@ describe("CFRPageActions", () => {
         pageAction._expand();
         assert.calledOnce(pageAction._clearScheduledStateChanges);
         assert.equal(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
+          pageAction.urlbar.getAttribute("cfr-recommendation-state"),
           "expanded"
         );
       });
@@ -241,7 +241,7 @@ describe("CFRPageActions", () => {
         assert.lengthOf(pageAction.stateTransitionTimeoutIDs, 1);
         clock.tick(delay + 1);
         assert.equal(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
+          pageAction.urlbar.getAttribute("cfr-recommendation-state"),
           "expanded"
         );
       });
@@ -257,15 +257,12 @@ describe("CFRPageActions", () => {
         pageAction._collapse();
         assert.calledOnce(pageAction._clearScheduledStateChanges);
         assert.isNull(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state")
+          pageAction.urlbar.getAttribute("cfr-recommendation-state")
         );
-        pageAction.urlbarinput.setAttribute(
-          "cfr-recommendation-state",
-          "expanded"
-        );
+        pageAction.urlbar.setAttribute("cfr-recommendation-state", "expanded");
         pageAction._collapse();
         assert.equal(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
+          pageAction.urlbar.getAttribute("cfr-recommendation-state"),
           "collapsed"
         );
       });
@@ -285,7 +282,7 @@ describe("CFRPageActions", () => {
         clock.tick(delay + 1);
         // This time it was "expanded" so should now (after the delay) be "collapsed"
         assert.equal(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
+          pageAction.urlbar.getAttribute("cfr-recommendation-state"),
           "collapsed"
         );
       });
@@ -311,7 +308,7 @@ describe("CFRPageActions", () => {
 
         pageAction._popupStateChange("dismissed");
         assert.equal(
-          pageAction.urlbarinput.getAttribute("cfr-recommendation-state"),
+          pageAction.urlbar.getAttribute("cfr-recommendation-state"),
           "collapsed"
         );
 

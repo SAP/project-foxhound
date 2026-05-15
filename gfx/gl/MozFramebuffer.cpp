@@ -49,8 +49,8 @@ UniquePtr<MozFramebuffer> MozFramebuffer::Create(GLContext* const gl,
   } else {
     colorTarget = LOCAL_GL_TEXTURE_2D;
     colorName = gl->CreateTexture();
-    const ScopedBindTexture bindTex(gl, colorName);
-    gl->TexParams_SetClampNoMips();
+    const ScopedBindTexture bindTex(gl, colorName, colorTarget);
+    gl->TexParams_SetClampNoMips(colorTarget);
     gl->fTexImage2D(colorTarget, 0, LOCAL_GL_RGBA, size.width, size.height, 0,
                     LOCAL_GL_RGBA, LOCAL_GL_UNSIGNED_BYTE, nullptr);
   }

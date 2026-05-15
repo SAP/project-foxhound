@@ -6,8 +6,8 @@
 #ifndef MOZILLA_AUDIONODEENGINEGENERICIMPL_H_
 #define MOZILLA_AUDIONODEENGINEGENERICIMPL_H_
 
-#include "AudioNodeEngineGeneric.h"
 #include "AlignmentUtils.h"
+#include "AudioNodeEngineGeneric.h"
 
 #if defined(__GNUC__) && __GNUC__ > 7
 #  define MOZ_PRAGMA(tokens) _Pragma(#tokens)

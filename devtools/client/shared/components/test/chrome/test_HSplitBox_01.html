@@ -99,34 +99,47 @@ window.onload = async function () {
     ok(splitter, "Should get our splitter");
 
     synthesizeMouseAtCenter(splitter, { button: 0, type: "mousedown" }, window);
-
-    function mouseMove(clientX) {
-      const event = new MouseEvent("mousemove", { clientX });
-      document.defaultView.top.dispatchEvent(event);
+    function mouseMove(clientX, win) {
+      synthesizeMouseAtPoint(
+        clientX,
+        top,
+        { type: "mousemove" },
+        win
+      );
     }
 
-    mouseMove(middle);
+    // Move the splitter with events from the splitter's own window.
+    mouseMove(middle, window);
     is(newSizes.length, 1, "Should get 1 resize");
     ok(aboutEq(newSizes[0], .5), "New size should be ~.5");
 
-    mouseMove(left);
+    mouseMove(left, window);
     is(newSizes.length, 2, "Should get 2 resizes");
     ok(aboutEq(newSizes[1], 0), "New size should be ~0");
 
-    mouseMove(oneQuarter);
+    mouseMove(oneQuarter, window);
     is(newSizes.length, 3, "Sould get 3 resizes");
     ok(aboutEq(newSizes[2], .25), "New size should be ~.25");
 
-    mouseMove(threeQuarters);
+    mouseMove(threeQuarters, window);
     is(newSizes.length, 4, "Should get 4 resizes");
     ok(aboutEq(newSizes[3], .75), "New size should be ~.75");
+
+    // Move the splitter with events from the splitter's parent window.
+    mouseMove(middle, window.top);
+    is(newSizes.length, 5, "Should get 5 resizes");
+    ok(aboutEq(newSizes[4], .5), "New size should be ~.5");
+
+    mouseMove(left, window.top);
+    is(newSizes.length, 6, "Should get 6 resizes");
+    ok(aboutEq(newSizes[5], 0), "New size should be ~0");
 
     synthesizeMouseAtCenter(splitter, { button: 0, type: "mouseup" }, window);
 
     // Now that we have let go of the splitter, mouse moves should not result in resizes.
 
     synthesizeMouse(container, middle, top, { type: "mousemove" }, window);
-    is(newSizes.length, 4, "Should still have 4 resizes");
+    is(newSizes.length, 6, "Should still have 6 resizes");
 
   } catch(e) {
     ok(false, "Got an error: " + DevToolsUtils.safeErrorString(e));

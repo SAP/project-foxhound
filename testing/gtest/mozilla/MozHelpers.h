@@ -58,8 +58,26 @@ namespace mozilla::gtest {
           a;                                      \
         },                                        \
         b)
+
+// Wrap EXPECT_DEATH_* macros to also disable the crash reporter.
+#  define EXPECT_DEATH_WRAP(a, b)                 \
+    EXPECT_DEATH_IF_SUPPORTED(                    \
+        {                                         \
+          mozilla::gtest::DisableCrashReporter(); \
+          a;                                      \
+        },                                        \
+        b)
+#  define EXPECT_DEBUG_DEATH_WRAP(a, b)           \
+    EXPECT_DEBUG_DEATH(                           \
+        {                                         \
+          mozilla::gtest::DisableCrashReporter(); \
+          a;                                      \
+        },                                        \
+        b)
 #else
 #  define ASSERT_DEATH_WRAP(a, b)
+#  define EXPECT_DEATH_WRAP(a, b)
+#  define EXPECT_DEBUG_DEATH_WRAP(a, b)
 #endif
 
 void DisableCrashReporter();

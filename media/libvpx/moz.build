@@ -56,6 +56,13 @@ elif CONFIG['TARGET_CPU'] == 'arm':
     arm_asm_files = files['LINUX_ARM_SOURCES']
 
     if CONFIG['GNU_AS']:
+        for f in arm_asm_files:
+            if not f.endswith('.asm'):
+                continue
+            GeneratedFile(f + ".S",
+                          script="ads2gas.py",
+                          entry_point="generate",
+                          inputs=["libvpx/build/make/ads2gas.pl", f])
         SOURCES += sorted([
             "!%s.S" % f if f.endswith('.asm') else f for f in arm_asm_files
         ])

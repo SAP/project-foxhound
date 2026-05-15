@@ -7,12 +7,12 @@
 #ifndef mozilla_dom_PaymentRequestManager_h
 #define mozilla_dom_PaymentRequestManager_h
 
-#include "nsISupports.h"
 #include "PaymentRequest.h"
 #include "mozilla/dom/PaymentRequestBinding.h"
 #include "mozilla/dom/PaymentRequestUpdateEventBinding.h"
 #include "mozilla/dom/PaymentResponseBinding.h"
 #include "nsCOMPtr.h"
+#include "nsISupports.h"
 #include "nsTArray.h"
 
 namespace mozilla::dom {

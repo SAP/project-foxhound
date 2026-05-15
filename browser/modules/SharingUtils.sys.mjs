@@ -12,11 +12,16 @@ const APPLE_COPY_LINK = "com.apple.share.CopyLink.invite";
 let lazy = {};
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  MacSharingService: [
-    "@mozilla.org/widget/macsharingservice;1",
-    "nsIMacSharingService",
-  ],
-  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
+  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", Ci.nsIWindowsUIUtils],
+});
+
+// Use a non-caching getter so tests can swap out the service via MockRegistrar.
+Object.defineProperty(lazy, "MacSharingService", {
+  get() {
+    return Cc["@mozilla.org/widget/macsharingservice;1"].getService(
+      Ci.nsIMacSharingService
+    );
+  },
 });
 
 class SharingUtilsCls {
@@ -100,6 +105,7 @@ class SharingUtilsCls {
     let shareURLMenuItem = document.createXULElement("menuitem");
     document.l10n.setAttributes(shareURLMenuItem, "menu-share-copy-link");
     shareURLMenuItem.classList.add("share-copy-link");
+    shareURLMenuItem.setAttribute("data-share-name", "share_macosx_copy");
 
     if (AppConstants.platform == "macosx") {
       shareURLMenuItem.classList.add("menuitem-iconic");
@@ -126,7 +132,9 @@ class SharingUtilsCls {
     if (browser) {
       let maybeToShare = BrowserUtils.getShareableURL(browser.currentURI);
       if (maybeToShare) {
-        urlToShare = maybeToShare;
+        let { gURLBar } = node.ownerGlobal;
+        urlToShare = gURLBar.makeURIReadable(maybeToShare).displaySpec;
+
         titleToShare = browser.contentTitle;
       }
     }
@@ -141,15 +149,24 @@ class SharingUtilsCls {
       return;
     }
 
-    // Empty menupopup
+    this.populateShareMenu(menuPopup);
+
+    menuPopup.parentNode
+      .closest("menupopup")
+      .addEventListener("popuphiding", this);
+    menuPopup.setAttribute("data-initialized", true);
+  }
+
+  populateShareMenu(menuPopup) {
+    // Clear existing
     while (menuPopup.firstChild) {
       menuPopup.firstChild.remove();
     }
 
     let document = menuPopup.ownerDocument;
-    let { gURLBar } = menuPopup.ownerGlobal;
+    let node = menuPopup.parentNode;
 
-    let { urlToShare } = this.getDataToShare(menuPopup.parentNode);
+    let { urlToShare } = this.getDataToShare(node);
 
     // If we can't share the current URL, we display the items disabled,
     // but enable the "more..." item at the bottom, to allow the user to
@@ -157,11 +174,24 @@ class SharingUtilsCls {
     let shouldEnable = !!urlToShare;
     if (!urlToShare) {
       // Fake it so we can ask the sharing service for services:
-      urlToShare = Services.io.newURI("https://mozilla.org/");
+      urlToShare = "https://mozilla.org/";
     }
 
-    let currentURI = gURLBar.makeURIReadable(urlToShare).displaySpec;
-    let services = lazy.MacSharingService.getSharingProviders(currentURI);
+    let services = lazy.MacSharingService.getSharingProviders(urlToShare);
+
+    if (!menuPopup.hasAttribute("data-command-listener")) {
+      menuPopup.addEventListener("command", event => {
+        if (event.target.classList.contains("share-more-button")) {
+          this.openMacSharePreferences();
+        } else if (event.target.classList.contains("share-copy-link")) {
+          this.copyLink(node);
+        } else if (event.target.dataset.shareName) {
+          this.shareOnMac(node, event.target.dataset.shareName);
+        }
+      });
+
+      menuPopup.setAttribute("data-command-listener", "true");
+    }
 
     // Apple seems reluctant to provide copy link as a feature. Add it at the
     // start if it's not there.
@@ -173,28 +203,26 @@ class SharingUtilsCls {
       menuPopup.appendChild(item);
     }
 
+    // Share service items
     services.forEach(share => {
       let item = document.createXULElement("menuitem");
       item.classList.add("menuitem-iconic");
       item.setAttribute("label", share.menuItemTitle);
-      item.setAttribute("share-name", share.name);
-      item.setAttribute("image", share.image);
+      item.setAttribute("data-share-name", share.name);
+      item.setAttribute("image", ChromeUtils.encodeURIForSrcset(share.image));
       if (!shouldEnable) {
         item.setAttribute("disabled", "true");
       }
       menuPopup.appendChild(item);
     });
     menuPopup.appendChild(document.createXULElement("menuseparator"));
+
+    // More item
     let moreItem = document.createXULElement("menuitem");
     document.l10n.setAttributes(moreItem, "menu-share-more");
     moreItem.classList.add("menuitem-iconic", "share-more-button");
+    moreItem.setAttribute("data-share-name", "share_macosx_more");
     menuPopup.appendChild(moreItem);
-
-    menuPopup.addEventListener("command", this);
-    menuPopup.parentNode
-      .closest("menupopup")
-      .addEventListener("popuphiding", this);
-    menuPopup.setAttribute("data-initialized", true);
   }
 
   onShareURLCommand(event) {
@@ -206,27 +234,23 @@ class SharingUtilsCls {
     if (!target) {
       return;
     }
-    let { gURLBar } = target.ownerGlobal;
 
     // urlToShare/titleToShare may be null, in which case only the "more"
     // item is enabled, so handle that case first:
     if (event.target.classList.contains("share-more-button")) {
-      lazy.MacSharingService.openSharingPreferences();
+      this.openMacSharePreferences();
       return;
     }
 
-    let { urlToShare, titleToShare } = this.getDataToShare(target);
-    let currentURI = gURLBar.makeURIReadable(urlToShare).displaySpec;
-
     if (event.target.classList.contains("share-copy-link")) {
-      BrowserUtils.copyLink(currentURI, titleToShare);
+      this.copyLink(target);
     } else if (AppConstants.platform == "win") {
-      lazy.WindowsUIUtils.shareUrl(currentURI, titleToShare);
+      this.shareOnWindows(target);
     } else {
       // On macOSX platforms
-      let shareName = event.target.getAttribute("share-name");
+      let shareName = event.target.getAttribute("data-share-name");
       if (shareName) {
-        lazy.MacSharingService.shareUrl(shareName, currentURI, titleToShare);
+        this.shareOnMac(target, shareName);
       }
     }
   }
@@ -264,6 +288,37 @@ class SharingUtilsCls {
         this.onPopupShowing(aEvent);
         break;
     }
+  }
+
+  copyLink(node) {
+    let { urlToShare, titleToShare } = this.getDataToShare(node);
+    if (!urlToShare) {
+      return;
+    }
+
+    BrowserUtils.copyLink(urlToShare, titleToShare);
+  }
+
+  shareOnWindows(node) {
+    let { urlToShare, titleToShare } = this.getDataToShare(node);
+    if (!urlToShare) {
+      return;
+    }
+
+    lazy.WindowsUIUtils.shareUrl(urlToShare, titleToShare);
+  }
+
+  shareOnMac(node, serviceName) {
+    let { urlToShare, titleToShare } = this.getDataToShare(node);
+    if (!urlToShare) {
+      return;
+    }
+
+    lazy.MacSharingService.shareUrl(serviceName, urlToShare, titleToShare);
+  }
+
+  openMacSharePreferences() {
+    lazy.MacSharingService.openSharingPreferences();
   }
 
   testOnlyMockUIUtils(mock) {

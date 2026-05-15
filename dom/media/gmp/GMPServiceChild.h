@@ -9,10 +9,10 @@
 #include "GMPService.h"
 #include "MediaResult.h"
 #include "base/process.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/gmp/PGMPServiceChild.h"
 #include "mozilla/media/MediaUtils.h"
-#include "mozilla/MozPromise.h"
 #include "nsRefPtrHashtable.h"
 
 namespace mozilla::gmp {

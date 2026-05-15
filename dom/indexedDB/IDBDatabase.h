@@ -4,18 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_idbdatabase_h__
-#define mozilla_dom_idbdatabase_h__
+#ifndef mozilla_dom_idbdatabase_h_
+#define mozilla_dom_idbdatabase_h_
 
-#include "mozilla/Attributes.h"
+#include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/IDBTransactionBinding.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/quota/PersistenceType.h"
-#include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/UniquePtr.h"
-#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsString.h"
+#include "nsTHashMap.h"
 #include "nsTHashSet.h"
 
 class nsIEventTarget;
@@ -247,4 +246,4 @@ class IDBDatabase final : public DOMEventTargetHelper {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_idbdatabase_h__
+#endif  // mozilla_dom_idbdatabase_h_

@@ -6,14 +6,13 @@
 
 /* base class for nsCounterList and nsQuoteList */
 
-#ifndef nsGenConList_h___
-#define nsGenConList_h___
+#ifndef nsGenConList_h_
+#define nsGenConList_h_
 
 #include <functional>
 
 #include "mozilla/FunctionRef.h"
 #include "mozilla/LinkedList.h"
-#include "nsCSSPseudoElements.h"
 #include "nsStyleStruct.h"
 #include "nsTextNode.h"
 
@@ -130,4 +129,4 @@ class nsGenConList {
   nsGenConNode* mLastInserted;
 };
 
-#endif /* nsGenConList_h___ */
+#endif /* nsGenConList_h_ */

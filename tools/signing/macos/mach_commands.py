@@ -131,8 +131,7 @@ from mozbuild.base import MachCommandConditions as conditions
     default=None,
     type=str,
     dest="p12_password_file_arg",
-    help="The rcodesign pkcs12 password file, passed to rcodesign without "
-    "validation.",
+    help="The rcodesign pkcs12 password file, passed to rcodesign without validation.",
 )
 def macos_sign(
     command_context,
@@ -175,7 +174,7 @@ def macos_sign(
                 logging.ERROR,
                 "macos-sign",
                 {},
-                "ERROR: p12 password file with no p12 file, " "use both or neither",
+                "ERROR: p12 password file with no p12 file, use both or neither",
             )
             sys.exit(1)
         if p12_file_arg is not None and p12_password_file_arg is None:
@@ -183,7 +182,7 @@ def macos_sign(
                 logging.ERROR,
                 "macos-sign",
                 {},
-                "ERROR: p12 file with no p12 password file, " "use both or neither",
+                "ERROR: p12 file with no p12 password file, use both or neither",
             )
             sys.exit(1)
         if p12_file_arg is not None and p12_password_file_arg is not None:
@@ -197,8 +196,7 @@ def macos_sign(
             logging.ERROR,
             "macos-sign",
             {},
-            "ERROR: pkcs12 signing not supported with "
-            "native codesign, only rcodesign",
+            "ERROR: pkcs12 signing not supported with native codesign, only rcodesign",
         )
         sys.exit(1)
 
@@ -218,7 +216,7 @@ def macos_sign(
                     logging.ERROR,
                     "macos-sign",
                     {},
-                    "ERROR: rcodesign requires pkcs12 or " "ad-hoc signing",
+                    "ERROR: rcodesign requires pkcs12 or ad-hoc signing",
                 )
                 sys.exit(1)
 
@@ -228,7 +226,7 @@ def macos_sign(
                 logging.ERROR,
                 "macos-sign",
                 {},
-                "ERROR: both ad-hoc and pkcs12 signing " "requested",
+                "ERROR: both ad-hoc and pkcs12 signing requested",
             )
             sys.exit(1)
 
@@ -242,7 +240,7 @@ def macos_sign(
             logging.ERROR,
             "macos-sign",
             {},
-            "ERROR: " "Production entitlements and self-signing are " "not compatible",
+            "ERROR: Production entitlements and self-signing are not compatible",
         )
         sys.exit(1)
 
@@ -332,7 +330,10 @@ def macos_sign(
     # non-Mach-O executables such as script files. We want to avoid
     # any complications that might be caused by existing extended
     # attributes.
-    xattr_cmd = ["xattr", "-cr", app]
+    # Bug 2005439: xattr -r is not valid on linux
+    xattr_cmd = (
+        ["xattr", "-c", app] if sys.platform == "linux" else ["xattr", "-cr", app]
+    )
     run(command_context, xattr_cmd, capture_output=not verbose_arg)
 
     # Remove existing signatures. The codesign command only replaces
@@ -348,6 +349,7 @@ def macos_sign(
             verbose_arg,
             signing_groups,
             entitlements_arg,
+            entitlements_key,
             channel,
             app,
             p12_file_arg,
@@ -360,11 +362,40 @@ def macos_sign(
             signing_groups,
             signing_identity,
             entitlements_arg,
+            entitlements_key,
             channel,
             app,
         )
 
     verify_result(command_context, app, verbose_arg)
+
+
+def entitlement_repo_path(entitlements_key, entitlement_file):
+    """Translates an entitlement file path from the config to a path
+    in the repo.
+
+    The entitlements file contains the path to a file at the location
+    used by the signers such as public/build/security/foo.xml.
+    We need to get the leaf name of the entitlement file (foo.xml)
+    and, depending on entitlements key (production or default), use
+    the appropriate base dir to generate the local path to the
+    entitlement file such as
+    security/mac/hardenedruntime/production/foo.xml
+    """
+
+    entitlement_leaf_name = os.path.basename(entitlement_file)
+    translated_entitlement_file = None
+
+    if entitlements_key == "production":
+        translated_entitlement_file = os.path.join(
+            "security/mac/hardenedruntime/production/", entitlement_leaf_name
+        )
+    elif entitlements_key == "default":
+        translated_entitlement_file = os.path.join(
+            "security/mac/hardenedruntime/developer/", entitlement_leaf_name
+        )
+
+    return translated_entitlement_file
 
 
 def auto_detect_channel(ctx, app):
@@ -418,13 +449,35 @@ def auto_detect_channel(ctx, app):
             logging.ERROR,
             "macos-sign",
             {"plist": info_plist},
-            "Couldn't read bundle ID from {plist}",
+            (
+                "Couldn't read bundle ID from {plist} or bundle ID "
+                f"({bundleid}) not in [{NIGHTLY_BUNDLEID}, {DEVEDITION_BUNDLEID}"
+                f", {RELEASE_BUNDLEID}]. You can try to specify the channel"
+                " manually with -c $CHANNEL"
+            ),
         )
         sys.exit(1)
 
 
+# Simulate the resolution of the 'only-if-milestone-is-nightly' attribute in
+# 'hardened-sign-config' by taskgraph.
+def should_skip_on_channel(signing_group, channel):
+    if "only-if-milestone-is-nightly" not in signing_group:
+        return False
+    if not isinstance(signing_group["only-if-milestone-is-nightly"], bool):
+        raise ("Unexpected type for 'only-if-milestone-is-nightly'")
+    return signing_group["only-if-milestone-is-nightly"] and channel != "nightly"
+
+
 def sign_with_codesign(
-    ctx, verbose_arg, signing_groups, signing_identity, entitlements_arg, channel, app
+    ctx,
+    verbose_arg,
+    signing_groups,
+    signing_identity,
+    entitlements_arg,
+    entitlements_key,
+    channel,
+    app,
 ):
     # Signing with codesign:
     #
@@ -433,6 +486,9 @@ def sign_with_codesign(
     ctx.log(logging.INFO, "macos-sign", {}, "Signing with codesign")
 
     for signing_group in signing_groups:
+        if should_skip_on_channel(signing_group, channel):
+            continue
+
         cs_cmd = ["codesign"]
         cs_cmd.append("--sign")
         cs_cmd.append(signing_identity)
@@ -471,12 +527,15 @@ def sign_with_codesign(
                     entitlement_file = signing_group["entitlements"][
                         "by-build-platform"
                     ][".*devedition.*"]
-                elif channel == "release" or channel == "beta":
+                elif channel in {"release", "beta"}:
                     entitlement_file = signing_group["entitlements"][
                         "by-build-platform"
                     ]["default"]["by-project"]["default"]
                 else:
                     raise ("Unexpected channel")
+
+            # Get a path to the entitlement file in the repo
+            entitlement_file = entitlement_repo_path(entitlements_key, entitlement_file)
 
             # We now have an entitlement file for this signing group.
             # If we are signing using production-without-restricted, strip out
@@ -495,7 +554,7 @@ def sign_with_codesign(
             for binary_path in binary_paths:
                 cs_cmd.append(binary_path)
 
-        run(ctx, cs_cmd, capture_output=not verbose_arg, check=True)
+        run(ctx, cs_cmd, capture_output=not verbose_arg)
 
         for temp_file in temp_files_to_cleanup:
             os.remove(temp_file)
@@ -505,7 +564,7 @@ def run(ctx, cmd, **kwargs):
     cmd_as_str = " ".join(cmd)
     ctx.log(logging.DEBUG, "macos-sign", {"cmd": cmd_as_str}, "[{cmd}]")
     try:
-        subprocess.run(cmd, **kwargs)
+        subprocess.run(cmd, check=True, **kwargs)
     except subprocess.CalledProcessError as e:
         ctx.log(
             logging.ERROR,
@@ -522,7 +581,7 @@ def verify_result(ctx, app, verbose_arg):
     # Verbosely verify validity of signed app
     cs_verify_cmd = ["codesign", "-vv", app]
     try:
-        run(ctx, cs_verify_cmd, capture_output=not verbose_arg, check=True)
+        run(ctx, cs_verify_cmd, capture_output=not verbose_arg)
         ctx.log(
             logging.INFO,
             "macos-sign",
@@ -544,6 +603,7 @@ def sign_with_rcodesign(
     verbose_arg,
     signing_groups,
     entitlements_arg,
+    entitlements_key,
     channel,
     app,
     p12_file_arg,
@@ -578,6 +638,9 @@ def sign_with_rcodesign(
     temp_files_to_cleanup = []
 
     for signing_group in signing_groups:
+        if should_skip_on_channel(signing_group, channel):
+            continue
+
         # Ignore the 'deep' and 'force' setting for rcodesign
         group_runtime = "runtime" in signing_group and signing_group["runtime"]
 
@@ -603,12 +666,15 @@ def sign_with_rcodesign(
                     entitlement_file = signing_group["entitlements"][
                         "by-build-platform"
                     ][".*devedition.*"]
-                elif channel == "release" or channel == "beta":
+                elif channel in {"release", "beta"}:
                     entitlement_file = signing_group["entitlements"][
                         "by-build-platform"
                     ]["default"]["by-project"]["default"]
                 else:
                     raise ("Unexpected channel")
+
+            # Get a path to the entitlement file in the repo
+            entitlement_file = entitlement_repo_path(entitlements_key, entitlement_file)
 
             # We now have an entitlement file for this signing group.
             # If we are signing using production-without-restricted, strip out
@@ -647,7 +713,7 @@ def sign_with_rcodesign(
                     scoped_arg = binary_path_relative + ":" + entitlement_file
                     cs_cmd.append(scoped_arg)
 
-    run(ctx, cs_cmd, capture_output=not verbose_arg, check=True)
+    run(ctx, cs_cmd, capture_output=not verbose_arg)
 
     for temp_file in temp_files_to_cleanup:
         os.remove(temp_file)

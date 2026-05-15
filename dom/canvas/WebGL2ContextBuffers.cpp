@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WebGL2Context.h"
-
 #include "ClientWebGLContext.h"
 #include "GLContext.h"
+#include "WebGL2Context.h"
 #include "WebGLBuffer.h"
 #include "WebGLTransformFeedback.h"
 
@@ -79,24 +78,35 @@ void WebGL2Context::CopyBufferSubData(GLenum readTarget, GLenum writeTarget,
 }
 
 bool WebGL2Context::GetBufferSubData(GLenum target, uint64_t srcByteOffset,
-                                     const Range<uint8_t>& dest) const {
+                                     const Range<uint8_t>& dest,
+                                     uint64_t numRows, uint64_t rowDataWidth,
+                                     uint64_t srcStride,
+                                     uint64_t destStride) const {
   const FuncScope funcScope(*this, "getBufferSubData");
   if (IsContextLost()) return false;
 
   const auto& buffer = ValidateBufferSelection(target);
   if (!buffer) return false;
 
-  const auto byteLen = dest.length();
-  if (!buffer->ValidateRange(srcByteOffset, byteLen)) return false;
+  uint64_t srcLen =
+      numRows > 0 ? srcStride * (numRows - 1) + rowDataWidth : dest.length();
+  uint64_t destLen =
+      numRows > 0 ? destStride * (numRows - 1) + rowDataWidth : dest.length();
+  if (!buffer->ValidateRange(srcByteOffset, srcLen)) return false;
+  if (rowDataWidth > srcStride || rowDataWidth > destStride ||
+      destLen > dest.length()) {
+    ErrorInvalidValue("Destination is outside buffer.");
+    return false;
+  }
 
   ////
 
   if (!CheckedInt<GLintptr>(srcByteOffset).isValid() ||
-      !CheckedInt<GLsizeiptr>(byteLen).isValid()) {
-    ErrorOutOfMemory("offset or size too large for platform.");
+      !CheckedInt<GLsizeiptr>(srcLen).isValid()) {
+    ErrorOutOfMemory("Offset or size too large for platform.");
     return false;
   }
-  const GLsizeiptr glByteLen(byteLen);
+  const GLsizeiptr glByteLen(srcLen);
 
   ////
 
@@ -122,7 +132,7 @@ bool WebGL2Context::GetBufferSubData(GLenum target, uint64_t srcByteOffset,
 
   const ScopedLazyBind readBind(gl, target, buffer);
 
-  if (byteLen) {
+  if (srcLen) {
     const bool isTF = (target == LOCAL_GL_TRANSFORM_FEEDBACK_BUFFER);
     GLenum mapTarget = target;
     if (isTF) {
@@ -131,9 +141,20 @@ bool WebGL2Context::GetBufferSubData(GLenum target, uint64_t srcByteOffset,
       mapTarget = LOCAL_GL_ARRAY_BUFFER;
     }
 
-    const auto mappedBytes = gl->fMapBufferRange(
+    const void* mappedBytes = gl->fMapBufferRange(
         mapTarget, srcByteOffset, glByteLen, LOCAL_GL_MAP_READ_BIT);
-    memcpy(dest.begin().get(), mappedBytes, dest.length());
+    if (numRows > 0 && (destStride != srcStride || rowDataWidth != srcStride)) {
+      const uint8_t* srcRow = (const uint8_t*)mappedBytes;
+      uint8_t* destRow = dest.begin().get();
+      while (numRows > 0) {
+        memcpy(destRow, srcRow, rowDataWidth);
+        srcRow += srcStride;
+        destRow += destStride;
+        --numRows;
+      }
+    } else {
+      memcpy(dest.begin().get(), mappedBytes, srcLen);
+    }
     gl->fUnmapBuffer(mapTarget);
 
     if (isTF) {

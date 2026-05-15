@@ -314,7 +314,7 @@ add_task(async function test_getViews_excludes_blocked_parsing_documents() {
 
   // Ensure the mouse is not initially hovering the browserAction widget.
   EventUtils.synthesizeMouseAtCenter(
-    window.gURLBar.textbox,
+    window.gURLBar,
     { type: "mouseover" },
     window
   );
@@ -394,7 +394,7 @@ add_task(async function test_getViews_excludes_blocked_parsing_documents() {
 
   // Ensure the mouse is not hovering the browserAction widget anymore when exiting the test case.
   EventUtils.synthesizeMouseAtCenter(
-    window.gURLBar.textbox,
+    window.gURLBar,
     { type: "mouseover", button: 0 },
     window
   );

@@ -35,6 +35,10 @@
   });
 
   runTest(() => Promise.resolve()
+    .then(() => pushPrefs(
+      ["media.getusermedia.camera.fake.force", true],
+      ["media.video_loopback_dev", ""],
+    ))
     .then(() => testSingleTrackClonePlayback({audio: true}))
     .then(() => testSingleTrackClonePlayback({video: true}))
     .then(() => getUserMedia({video: true})).then(stream => {

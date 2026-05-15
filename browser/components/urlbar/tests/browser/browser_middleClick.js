@@ -136,7 +136,7 @@ add_task(async function test_middleClickOnComponentNotHandlingPasteEvent() {
     allTabsButton.addEventListener("auxclick", r, { once: true })
   );
   let pastedOnURLBar = false;
-  gURLBar.addEventListener("paste", () => {
+  gURLBar.inputField.addEventListener("paste", () => {
     pastedOnURLBar = true;
   });
   EventUtils.synthesizeMouseAtCenter(allTabsButton, { button: 1 });

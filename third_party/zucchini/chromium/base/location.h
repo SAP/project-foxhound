@@ -13,6 +13,21 @@
 #include "base/trace_event/base_tracing_forward.h"
 #include "build/build_config.h"
 
+#if defined(MOZ_ZUCCHINI)
+#if defined(__has_builtin)
+// Clang allows detection of these builtins.
+#  define SUPPORTS_LOCATION_BUILTINS                                       \
+    (__has_builtin(__builtin_FUNCTION) && __has_builtin(__builtin_FILE) && \
+     __has_builtin(__builtin_LINE))
+#elif defined(COMPILER_GCC) && __GNUC__ >= 7
+// GCC has supported these for a long time, but they point at the function
+// declaration in the case of default arguments, rather than at the call site.
+#  define SUPPORTS_LOCATION_BUILTINS 1
+#else
+#  define SUPPORTS_LOCATION_BUILTINS 0
+#endif
+#endif  // defined(MOZ_ZUCCHINI)
+
 namespace base {
 
 // Location provides basic info where of an object was constructed, or was
@@ -72,9 +87,13 @@ class BASE_EXPORT Location {
   // Write a representation of this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue context) const;
 
+#if !defined(MOZ_ZUCCHINI) || SUPPORTS_LOCATION_BUILTINS
   static Location Current(const char* function_name = __builtin_FUNCTION(),
                           const char* file_name = __builtin_FILE(),
                           int line_number = __builtin_LINE());
+#else
+  static Location Current();
+#endif  // !defined(MOZ_ZUCCHINI) || SUPPORTS_LOCATION_BUILTINS
 
  private:
   // Only initializes the file name and program counter, the source information

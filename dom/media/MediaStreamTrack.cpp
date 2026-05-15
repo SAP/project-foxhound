@@ -18,11 +18,7 @@
 #include "nsServiceManagerUtils.h"
 #include "systemservices/MediaUtils.h"
 
-#ifdef LOG
-#  undef LOG
-#endif
-
-static mozilla::LazyLogModule gMediaStreamTrackLog("MediaStreamTrack");
+mozilla::LazyLogModule gMediaStreamTrackLog("MediaStreamTrack");
 #define LOG(type, msg) MOZ_LOG(gMediaStreamTrackLog, type, msg)
 
 using namespace mozilla::media;
@@ -45,6 +41,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(MediaStreamTrackSource)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPrincipal)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+auto MediaStreamTrackSource::Clone() -> CloneResult { return {}; }
 
 auto MediaStreamTrackSource::ApplyConstraints(
     const dom::MediaTrackConstraints& aConstraints, CallerType aCallerType)
@@ -539,13 +537,6 @@ void MediaStreamTrack::RemoveConsumer(MediaStreamTrackConsumer* aConsumer) {
   }
 }
 
-already_AddRefed<MediaStreamTrack> MediaStreamTrack::Clone() {
-  RefPtr<MediaStreamTrack> newTrack = CloneInternal();
-  newTrack->SetEnabled(Enabled());
-  newTrack->SetMuted(Muted());
-  return newTrack.forget();
-}
-
 void MediaStreamTrack::SetReadyState(MediaStreamTrackState aState) {
   MOZ_ASSERT(!(mReadyState == MediaStreamTrackState::Ended &&
                aState == MediaStreamTrackState::Live),
@@ -649,3 +640,5 @@ already_AddRefed<MediaInputPort> MediaStreamTrack::ForwardTrackContentsTo(
 }
 
 }  // namespace mozilla::dom
+
+#undef LOG

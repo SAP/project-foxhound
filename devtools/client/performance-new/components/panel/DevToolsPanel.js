@@ -9,12 +9,12 @@
  */
 
 /**
- * @typedef {Object} StateProps
+ * @typedef {object} StateProps
  * @property {boolean?} isSupportedPlatform
  */
 
 /**
- * @typedef {Object} OwnProps
+ * @typedef {object} OwnProps
  * @property {import("../../@types/perf").PerfFront} perfFront
  * @property {import("../../@types/perf").OnProfileReceived} onProfileReceived
  * @property {() => void} onEditSettingsLinkClicked
@@ -63,7 +63,7 @@ const panelWindow = /** @type {PanelWindow} */ (anyWindow);
 /**
  * This is the top level component for the DevTools panel.
  *
- * @extends {React.PureComponent<Props>}
+ * @augments {React.PureComponent<Props>}
  */
 class DevToolsPanel extends PureComponent {
   render() {

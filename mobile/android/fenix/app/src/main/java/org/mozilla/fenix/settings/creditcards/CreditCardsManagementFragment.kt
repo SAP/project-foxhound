@@ -13,9 +13,9 @@ import androidx.navigation.fragment.findNavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.ext.consumeFrom
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
 import org.mozilla.fenix.R
 import org.mozilla.fenix.SecureFragment
-import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.databinding.ComponentCreditCardsBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.redirectToReAuth
@@ -44,8 +44,8 @@ class CreditCardsManagementFragment : SecureFragment() {
     ): View? {
         val view = inflater.inflate(CreditCardsManagementView.LAYOUT_ID, container, false)
 
-        store = StoreProvider.get(this) {
-            AutofillFragmentStore(AutofillFragmentState())
+        store = storeProvider.get { restoredState ->
+            AutofillFragmentStore(restoredState ?: AutofillFragmentState())
         }
 
         interactor = DefaultCreditCardsManagementInteractor(

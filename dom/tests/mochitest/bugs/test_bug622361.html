@@ -21,7 +21,7 @@ function boom(event)
     w = window.open("test1_bug622361.html");
     doNext();
     return;
-  case 2:
+  case 2: {
     w.location = "test2_bug622361.html";
     function next()
     {
@@ -30,6 +30,7 @@ function boom(event)
     }
     setTimeout(next, 5000);
     return;
+  }
   case 3:
     localStorage.setItem("key", "value");
     w.history.forward();

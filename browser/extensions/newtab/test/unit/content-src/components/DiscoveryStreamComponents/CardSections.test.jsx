@@ -6,6 +6,7 @@ import { CardSections } from "content-src/components/DiscoveryStreamComponents/C
 import { combineReducers, createStore } from "redux";
 import { DSCard } from "../../../../../content-src/components/DiscoveryStreamComponents/DSCard/DSCard";
 import { FollowSectionButtonHighlight } from "../../../../../content-src/components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight";
+import { BriefingCard } from "../../../../../content-src/components/DiscoveryStreamComponents/BriefingCard/BriefingCard";
 
 const PREF_SECTIONS_PERSONALIZATION_ENABLED =
   "discoverystream.sections.personalization.enabled";
@@ -13,8 +14,6 @@ const PREF_SECTIONS_PERSONALIZATION_ENABLED =
 const DEFAULT_PROPS = {
   type: "CardGrid",
   firstVisibleTimeStamp: null,
-  is_collection: true,
-  spocMessageVariant: "",
   ctaButtonSponsors: [""],
   anySectionsFollowed: false,
   data: {
@@ -195,8 +194,8 @@ describe("<CardSections />", () => {
   it("should apply correct class names for cards with and without excerpts", () => {
     wrapper.find(DSCard).forEach(card => {
       const props = card.props();
-      // Small cards don't show excerpts according to the data in DEFAULT_PROPS for this test suite
-      if (props.sectionsClassNames.includes("small")) {
+      const classNames = props.sectionsClassNames;
+      if (classNames.includes("small") || classNames.includes("medium")) {
         assert.include(props.sectionsClassNames, "hide-excerpt");
         assert.notInclude(props.sectionsClassNames, "show-excerpt");
       }
@@ -449,5 +448,227 @@ describe("<CardSections />", () => {
     const highlight = wrapper.find(FollowSectionButtonHighlight);
     assert.equal(highlight.length, 1);
     assert.isTrue(wrapper.html().includes("follow-section-button-highlight"));
+  });
+
+  describe("Keyboard navigation", () => {
+    beforeEach(() => {
+      // Mock window.innerWidth to return a value that will make getActiveColumnLayout return "col-1"
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 500,
+      });
+    });
+
+    it("should pass tabIndex={0} to the first card and tabIndex={-1} to other cards", () => {
+      const firstCard = wrapper.find(DSCard).at(0);
+      const secondCard = wrapper.find(DSCard).at(1);
+      const thirdCard = wrapper.find(DSCard).at(2);
+
+      assert.equal(firstCard.prop("tabIndex"), 0);
+      assert.equal(secondCard.prop("tabIndex"), -1);
+      assert.equal(thirdCard.prop("tabIndex"), -1);
+    });
+
+    it("should update focused index when onFocus is called", () => {
+      const secondCard = wrapper.find(DSCard).at(1);
+      const onFocus = secondCard.prop("onFocus");
+
+      onFocus();
+      wrapper.update();
+
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), 0);
+      assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), -1);
+    });
+
+    describe("handleCardKeyDown", () => {
+      let grid;
+      let mockLink;
+      let mockTargetCard;
+      let mockGridElement;
+      let mockCurrentCard;
+      let mockEvent;
+
+      beforeEach(() => {
+        grid = wrapper.find(".ds-section-grid.ds-card-grid");
+        mockLink = { focus: sandbox.spy() };
+        mockTargetCard = {
+          querySelector: sandbox.stub().returns(mockLink),
+        };
+        mockGridElement = {
+          querySelector: sandbox.stub().returns(mockTargetCard),
+        };
+        mockCurrentCard = {
+          parentElement: mockGridElement,
+        };
+        mockEvent = {
+          preventDefault: sandbox.spy(),
+          target: {
+            closest: sandbox.stub().returns(mockCurrentCard),
+          },
+        };
+      });
+
+      afterEach(() => {
+        sandbox.restore();
+      });
+
+      it("should navigate to next card with ArrowRight", () => {
+        mockEvent.key = "ArrowRight";
+        mockCurrentCard.classList = ["col-1-position-0"];
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.calledWith(
+          mockGridElement.querySelector,
+          "article.ds-card.col-1-position-1"
+        );
+        assert.calledOnce(mockLink.focus);
+      });
+
+      it("should navigate to previous card with ArrowLeft", () => {
+        mockEvent.key = "ArrowLeft";
+        mockCurrentCard.classList = ["col-1-position-1"];
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.calledWith(
+          mockGridElement.querySelector,
+          "article.ds-card.col-1-position-0"
+        );
+        assert.calledOnce(mockLink.focus);
+      });
+    });
+  });
+
+  describe("Daily Briefing v2 BriefingCard", () => {
+    let state;
+
+    const MOCK_HEADLINES = [
+      {
+        id: "h1",
+        section: "daily_brief_section",
+        isHeadline: true,
+        url: "https://example.com/1",
+        title: "Headline 1",
+        publisher: "Publisher 1",
+      },
+      {
+        id: "h2",
+        section: "daily_brief_section",
+        isHeadline: true,
+        url: "https://example.com/2",
+        title: "Headline 2",
+        publisher: "Publisher 2",
+      },
+      {
+        id: "h3",
+        section: "daily_brief_section",
+        isHeadline: true,
+        url: "https://example.com/3",
+        title: "Headline 3",
+        publisher: "Publisher 3",
+      },
+    ];
+
+    const createBriefingSectionProps = ({
+      sectionKey = "daily_brief_section",
+      allowsWidget = true,
+    } = {}) => ({
+      ...DEFAULT_PROPS,
+      data: {
+        sections: [
+          {
+            ...DEFAULT_PROPS.data.sections[0],
+            sectionKey,
+            layout: {
+              responsiveLayouts: [
+                {
+                  columnCount: 1,
+                  tiles: [{ position: 0, size: "medium", allowsWidget }],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    beforeEach(() => {
+      state = {
+        ...INITIAL_STATE,
+        DiscoveryStream: {
+          ...INITIAL_STATE.DiscoveryStream,
+          feeds: {
+            data: {
+              "https://merino.services.mozilla.com/api/v1/curated-recommendations":
+                {
+                  data: {
+                    recommendations: [
+                      ...MOCK_HEADLINES,
+                      { id: "r1", isHeadline: false },
+                    ],
+                  },
+                  lastUpdated: Date.now(),
+                },
+            },
+          },
+        },
+        Prefs: {
+          ...INITIAL_STATE.Prefs,
+          values: {
+            ...INITIAL_STATE.Prefs.values,
+            "discoverystream.dailyBrief.enabled": true,
+            "discoverystream.dailyBrief.sectionId": "daily_brief_section",
+          },
+        },
+      };
+    });
+
+    it("should render BriefingCard when all conditions met", () => {
+      const props = createBriefingSectionProps();
+
+      wrapper = mount(
+        <WrapWithProvider state={state}>
+          <CardSections dispatch={dispatch} {...props} />
+        </WrapWithProvider>
+      );
+
+      const briefingCard = wrapper.find(BriefingCard);
+      assert.lengthOf(briefingCard, 1);
+      assert.lengthOf(briefingCard.prop("headlines"), 3);
+      assert.isNumber(briefingCard.prop("lastUpdated"));
+    });
+
+    it("should not render BriefingCard when fewer than 3 headlines available", () => {
+      state.DiscoveryStream.feeds.data[
+        "https://merino.services.mozilla.com/api/v1/curated-recommendations"
+      ].data.recommendations = MOCK_HEADLINES.slice(0, 2);
+
+      const props = createBriefingSectionProps();
+
+      wrapper = mount(
+        <WrapWithProvider state={state}>
+          <CardSections dispatch={dispatch} {...props} />
+        </WrapWithProvider>
+      );
+
+      assert.lengthOf(wrapper.find(BriefingCard), 0);
+      assert.isAtLeast(wrapper.find(DSCard).length, 1);
+    });
+
+    it("should not render BriefingCard when section key doesn't match", () => {
+      const props = createBriefingSectionProps({ sectionKey: "other-section" });
+
+      wrapper = mount(
+        <WrapWithProvider state={state}>
+          <CardSections dispatch={dispatch} {...props} />
+        </WrapWithProvider>
+      );
+
+      assert.lengthOf(wrapper.find(BriefingCard), 0);
+    });
   });
 });

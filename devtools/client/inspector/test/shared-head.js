@@ -17,7 +17,8 @@ var {
 
 /**
  * Open the toolbox, with the inspector tool visible.
- * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
+ *
+ * @param {string} hostType Optional hostType, as defined in Toolbox.HostType
  * @return {Promise} A promise that resolves when the inspector is ready.The promise
  *         resolves with an object containing the following properties:
  *           - toolbox
@@ -43,9 +44,9 @@ var openInspector = async function (hostType) {
  * Open the toolbox, with the inspector tool visible, and the one of the sidebar
  * tabs selected.
  *
- * @param {String} id
+ * @param {string} id
  *        The ID of the sidebar tab to be opened
- * @return {Promise<Object>} A promise that resolves when the inspector is ready and the tab is
+ * @return {Promise<object>} A promise that resolves when the inspector is ready and the tab is
  *         visible and ready. The promise resolves with an object containing the
  *         following properties:
  *           - toolbox
@@ -57,18 +58,20 @@ var openInspectorSidebarTab = async function (id) {
 
   info("Selecting the " + id + " sidebar");
 
-  const onSidebarSelect = inspector.sidebar.once("select");
   if (id === "layoutview") {
+    await inspector.sidebar.select(id);
+
     // The layout view should wait until the box-model and grid-panel are ready.
-    const onBoxModelViewReady = inspector.once("boxmodel-view-updated");
-    const onGridPanelReady = inspector.once("grid-panel-updated");
-    inspector.sidebar.select(id);
-    await onBoxModelViewReady;
-    await onGridPanelReady;
+    // inspector.getPanel does create the panel, so we want to wait until the panel
+    // are create
+    await waitFor(
+      () => inspector.hasPanel("boxmodel") && inspector.hasPanel("layoutview")
+    );
+    await inspector.getPanel("boxmodel").initialized;
+    await inspector.getPanel("layoutview").gridInspector.initialized;
   } else {
-    inspector.sidebar.select(id);
+    await inspector.sidebar.select(id);
   }
-  await onSidebarSelect;
 
   return {
     toolbox,
@@ -81,8 +84,8 @@ var openInspectorSidebarTab = async function (id) {
  * Open the toolbox, with the inspector tool visible, and the rule-view
  * sidebar tab selected.
  *
- * @param {Object} options
- * @param {Boolean} options.overrideDebounce: Whether to replace the rule view debounce
+ * @param {object} options
+ * @param {boolean} options.overrideDebounce: Whether to replace the rule view debounce
  *        method with manual debounce (requires explicit calls to trigger the debounced calls).
  *        Defaults to true.
  * @return a promise that resolves when the inspector is ready and the rule view
@@ -186,8 +189,8 @@ function selectRuleView(inspector) {
  *        The opened inspector panel
  * @return {CssComputedView} the computed view
  */
-function selectComputedView(inspector) {
-  inspector.sidebar.select("computedview");
+async function selectComputedView(inspector) {
+  await inspector.sidebar.select("computedview");
   return inspector.getPanel("computedview").computedView;
 }
 
@@ -198,8 +201,8 @@ function selectComputedView(inspector) {
  *        The opened inspector panel
  * @return {ChangesView} the changes view
  */
-function selectChangesView(inspector) {
-  inspector.sidebar.select("changesview");
+async function selectChangesView(inspector) {
+  await inspector.sidebar.select("changesview");
   return inspector.getPanel("changesview");
 }
 
@@ -209,15 +212,16 @@ function selectChangesView(inspector) {
  * @param  {InspectorPanel} inspector
  * @return {BoxModel} the box model
  */
-function selectLayoutView(inspector) {
-  inspector.sidebar.select("layoutview");
+async function selectLayoutView(inspector) {
+  await inspector.sidebar.select("layoutview");
   return inspector.getPanel("boxmodel");
 }
 
 /**
  * Get the NodeFront for a node that matches a given css selector, via the
  * protocol.
- * @param {String|NodeFront} selector
+ *
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return {Promise} Resolves to the NodeFront instance
@@ -233,13 +237,13 @@ function getNodeFront(selector, { walker }) {
  * Set the inspector's current selection to the first match of the given css
  * selector
  *
- * @param {String|NodeFront} selector
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector
  *        The instance of InspectorPanel currently loaded in the toolbox.
- * @param {String} reason
+ * @param {string} reason
  *        Defaults to "test" which instructs the inspector not to highlight the
  *        node upon selection.
- * @param {Boolean} isSlotted
+ * @param {boolean} isSlotted
  *        Is the selection representing the slotted version the node.
  * @return {Promise} Resolves when the inspector is updated with the new node
  */
@@ -269,6 +273,7 @@ var selectNode = async function (
 /**
  * Using the markupview's _waitForChildren function, wait for all queued
  * children updates to be handled.
+ *
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return a promise that resolves when all queued children updates have been
@@ -379,9 +384,9 @@ async function getNodeFrontInFrames(selectors, inspector) {
  *        Ex: ["frame.first-frame", ..., "frame.last-frame", ".target-node"]
  * @param {InspectorPanel} inspector
  *        See `selectNode`
- * @param {String} reason
+ * @param {string} reason
  *        See `selectNode`
- * @param {Boolean} isSlotted
+ * @param {boolean} isSlotted
  *        See `selectNode`
  * @return {NodeFront} The selected node front.
  */
@@ -400,6 +405,7 @@ async function selectNodeInFrames(
  * Create a throttling function that can be manually "flushed". This is to replace the
  * use of the `debounce` function from `devtools/client/inspector/shared/utils.js`, which
  * has a setTimeout that can cause intermittents.
+ *
  * @return {Function} This function has the same function signature as debounce, but
  *                    the property `.flush()` has been added for flushing out any
  *                    debounced calls.
@@ -429,10 +435,10 @@ function manualDebounce() {
 /**
  * Get the requested rule style property from the current browser.
  *
- * @param {Number} styleSheetIndex
- * @param {Number} ruleIndex
- * @param {String} name
- * @return {String} The value, if found, null otherwise
+ * @param {number} styleSheetIndex
+ * @param {number} ruleIndex
+ * @param {string} name
+ * @return {string} The value, if found, null otherwise
  */
 
 async function getRulePropertyValue(styleSheetIndex, ruleIndex, name) {
@@ -467,11 +473,11 @@ async function getRulePropertyValue(styleSheetIndex, ruleIndex, name) {
 /**
  * Get the requested computed style property from the current browser.
  *
- * @param {String} selector
+ * @param {string} selector
  *        The selector used to obtain the element.
- * @param {String} pseudo
+ * @param {string} pseudo
  *        pseudo id to query, or null.
- * @param {String} propName
+ * @param {string} propName
  *        name of the property.
  */
 async function getComputedStyleProperty(selector, pseudo, propName) {
@@ -480,7 +486,7 @@ async function getComputedStyleProperty(selector, pseudo, propName) {
     [selector, pseudo, propName],
     (selectorChild, pseudoChild, propNameChild) => {
       const element = content.document.querySelector(selectorChild);
-      return content.document.defaultView
+      return content
         .getComputedStyle(element, pseudoChild)
         .getPropertyValue(propNameChild);
     }
@@ -491,13 +497,13 @@ async function getComputedStyleProperty(selector, pseudo, propName) {
  * Wait until the requested computed style property has the
  * expected value in the the current browser.
  *
- * @param {String} selector
+ * @param {string} selector
  *        The selector used to obtain the element.
- * @param {String} pseudo
+ * @param {string} pseudo
  *        pseudo id to query, or null.
- * @param {String} propName
+ * @param {string} propName
  *        name of the property.
- * @param {String} expected
+ * @param {string} expected
  *        expected value of property
  */
 async function waitForComputedStyleProperty(
@@ -512,7 +518,7 @@ async function waitForComputedStyleProperty(
     (selectorChild, pseudoChild, propNameChild, expectedChild) => {
       const element = content.document.querySelector(selectorChild);
       return ContentTaskUtils.waitForCondition(() => {
-        const value = content.document.defaultView
+        const value = content
           .getComputedStyle(element, pseudoChild)
           .getPropertyValue(propNameChild);
         return value === expectedChild;
@@ -580,10 +586,10 @@ var focusEditableField = async function (
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {String} selectorText
+ * @param {string} selectorText
  *        The selector in the rule-view for which the rule
  *        object is wanted
- * @param {Number} index
+ * @param {number} index
  *        If there are more than 1 rule with the same selector, you may pass a
  *        index to determine which of the rules you want.
  * @return {DOMNode}
@@ -613,16 +619,16 @@ function getRuleViewRule(view, selectorText, index = 0) {
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {String} selectorText
+ * @param {string} selectorText
  *        The selector in the rule-view to look for the property in
- * @param {String} propertyName
+ * @param {string} propertyName
  *        The name of the property
- * @param {Object=} options
- * @param {Boolean=} options.wait
+ * @param {object=} options
+ * @param {boolean=} options.wait
  *        When true, returns a promise which waits until a valid rule view
  *        property can be retrieved for the provided selectorText & propertyName.
  *        Defaults to false.
- * @return {Object} An object like {nameSpan: DOMNode, valueSpan: DOMNode}
+ * @return {object} An object like {nameSpan: DOMNode, valueSpan: DOMNode}
  */
 function getRuleViewProperty(view, selectorText, propertyName, options = {}) {
   if (options.wait) {
@@ -657,11 +663,11 @@ function _syncGetRuleViewProperty(view, selectorText, propertyName) {
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {String} selectorText
+ * @param {string} selectorText
  *        The selector in the rule-view to look for the property in
- * @param {String} propertyName
+ * @param {string} propertyName
  *        The name of the property
- * @return {String} The property value
+ * @return {string} The property value
  */
 function getRuleViewPropertyValue(view, selectorText, propertyName) {
   return getRuleViewProperty(view, selectorText, propertyName).valueSpan
@@ -674,7 +680,7 @@ function getRuleViewPropertyValue(view, selectorText, propertyName) {
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {String} selectorText
+ * @param {string} selectorText
  *        The selector in the rule-view to look for
  * @return {DOMNode} The selector DOM element
  */
@@ -690,7 +696,7 @@ function getRuleViewSelector(view, selectorText) {
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {Number} index
+ * @param {number} index
  *        The index of the link to get
  * @return {DOMNode|null} The link if any at this rule index, or null if it doesn't exist
  */
@@ -704,9 +710,9 @@ function getRuleViewLinkByIndex(view, index) {
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {Number} index
+ * @param {number} index
  *        The index of the link to get
- * @return {String} The string at this index
+ * @return {string} The string at this index
  */
 function getRuleViewLinkTextByIndex(view, index) {
   const link = getRuleViewLinkByIndex(view, index);
@@ -748,7 +754,7 @@ var focusNewRuleViewProperty = async function (ruleEditor) {
  *
  * @param {RuleEditor} ruleEditor
  *        The instance of RuleEditor that will receive the new property(ies)
- * @param {String} inputValue
+ * @param {string} inputValue
  *        The text to be entered in the new property name field
  * @return a promise that resolves when the new property name has been entered
  * and once the value field is focused
@@ -775,7 +781,7 @@ var createNewRuleViewProperty = async function (ruleEditor, inputValue) {
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {String} searchValue
+ * @param {string} searchValue
  *        The filter search value
  * @return a promise that resolves when the rule-view is filtered for the
  * search term
@@ -786,11 +792,11 @@ var setSearchFilter = async function (view, searchValue) {
   const searchField = view.searchField;
   searchField.focus();
 
+  const onRuleviewFiltered = view.inspector.once("ruleview-filtered");
   for (const key of searchValue.split("")) {
     EventUtils.synthesizeKey(key, {}, view.styleWindow);
   }
-
-  await view.inspector.once("ruleview-filtered");
+  await onRuleviewFiltered;
 };
 
 /**
@@ -813,6 +819,7 @@ function buildContextMenuItems(menu) {
 
 /**
  * Open the style editor context menu and return all of it's items in a flat array
+ *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
  * @return An array of MenuItems
@@ -824,8 +831,9 @@ function openStyleContextMenuAndGetAllItems(view, target) {
 
 /**
  * Open the inspector menu and return all of it's items in a flat array
+ *
  * @param {InspectorPanel} inspector
- * @param {Object} options to pass into openMenu
+ * @param {object} options to pass into openMenu
  * @return An array of MenuItems
  */
 function openContextMenuAndGetAllItems(inspector, options) {
@@ -940,8 +948,8 @@ function setContentPageElementProperty(selector, propertyName, propertyValue) {
 /**
  * Get all the attributes for a DOM Node living in the content page.
  *
- * @param {String} selector The node selector
- * @returns {Array<Object>} An array of {name, value} objects.
+ * @param {string} selector The node selector
+ * @returns {Array<object>} An array of {name, value} objects.
  */
 async function getContentPageElementAttributes(selector) {
   return SpecialPowers.spawn(
@@ -960,9 +968,9 @@ async function getContentPageElementAttributes(selector) {
 /**
  * Get an attribute on a DOM Node living in the content page.
  *
- * @param {String} selector The node selector
- * @param {String} attribute The attribute name
- * @return {String} value The attribute value
+ * @param {string} selector The node selector
+ * @param {string} attribute The attribute name
+ * @return {string} value The attribute value
  */
 async function getContentPageElementAttribute(selector, attribute) {
   return SpecialPowers.spawn(
@@ -977,9 +985,9 @@ async function getContentPageElementAttribute(selector, attribute) {
 /**
  * Set an attribute on a DOM Node living in the content page.
  *
- * @param {String} selector The node selector
- * @param {String} attribute The attribute name
- * @param {String} value The attribute value
+ * @param {string} selector The node selector
+ * @param {string} attribute The attribute name
+ * @param {string} value The attribute value
  */
 async function setContentPageElementAttribute(selector, attribute, value) {
   return SpecialPowers.spawn(
@@ -996,8 +1004,8 @@ async function setContentPageElementAttribute(selector, attribute, value) {
 /**
  * Remove an attribute from a DOM Node living in the content page.
  *
- * @param {String} selector The node selector
- * @param {String} attribute The attribute name
+ * @param {string} selector The node selector
+ * @param {string} attribute The attribute name
  */
 async function removeContentPageElementAttribute(selector, attribute) {
   return SpecialPowers.spawn(
@@ -1014,9 +1022,9 @@ async function removeContentPageElementAttribute(selector, attribute) {
  *
  * @param {CssRuleView} ruleView
  *        The instance of the rule-view panel
- * @param {Number} childrenIndex
+ * @param {number} childrenIndex
  *        The children index of the element to get
- * @param {Number} nodeIndex
+ * @param {number} nodeIndex
  *        The child node index of the element to get
  * @return {DOMNode} The rule editor if any at this index
  */
@@ -1037,9 +1045,9 @@ function getRuleViewRuleEditor(ruleView, childrenIndex, nodeIndex) {
  *
  * @param  {RuleView} ruleView
  *         Instance of RuleView.
- * @param  {Number} ruleIndex
+ * @param  {number} ruleIndex
  *         The index of the CSS rule where to find the declaration.
- * @param  {Object} declaration
+ * @param  {object} declaration
  *         An object representing the target declaration e.g. { color: red }.
  *         The first TextProperty instance which matches will be returned.
  * @return {TextProperty}
@@ -1067,11 +1075,11 @@ function getTextProperty(ruleView, ruleIndex, declaration) {
  *        The instance of the rule-view panel
  * @param {TextProperty} textProp
  *        The instance of the TextProperty to be changed
- * @param {String} value
+ * @param {string} value
  *        The new value to be used. If null is passed, then the value will be
  *        deleted
- * @param {Object} options
- * @param {Boolean} options.blurNewProperty
+ * @param {object} options
+ * @param {boolean} options.blurNewProperty
  *        After the value has been changed, a new property would have been
  *        focused. This parameter is true by default, and that causes the new
  *        property to be blurred. Set to false if you don't want this.
@@ -1194,6 +1202,9 @@ async function searchInMarkupView(inspector, search) {
 
   const onNewNodeFront = inspector.selection.once("new-node-front");
   const onSearchResult = inspector.search.once("search-result");
+  const onSearchResultHighlightingUpdated = inspector.markup.once(
+    "search-results-highlighting-updated"
+  );
   EventUtils.sendKey("return", inspector.panelWin);
 
   info("Wait for search-result");
@@ -1201,4 +1212,7 @@ async function searchInMarkupView(inspector, search) {
 
   info("Wait for new node being selected");
   await onNewNodeFront;
+
+  info("Wait for the search results highlighted to be updated");
+  await onSearchResultHighlightingUpdated;
 }

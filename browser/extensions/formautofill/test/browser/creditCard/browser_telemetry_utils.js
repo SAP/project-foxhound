@@ -237,7 +237,7 @@ async function setupTask(prefEnv, ...itemsToStore) {
     await SpecialPowers.pushPrefEnv(prefEnv);
   }
 
-  clearTelemetry();
+  await clearTelemetry();
 
   if (itemCount) {
     await setStorage(...itemsToStore);

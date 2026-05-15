@@ -11,9 +11,9 @@ import fs from "fs";
 import helpers from "../helpers.mjs";
 import globals from "../globals.mjs";
 
-function importHead(context, path, node) {
+function importHead(context, filePath, node) {
   try {
-    let stats = fs.statSync(path);
+    let stats = fs.statSync(filePath);
     if (!stats.isFile()) {
       return;
     }
@@ -21,7 +21,7 @@ function importHead(context, path, node) {
     return;
   }
 
-  let newGlobals = globals.getGlobalsForFile(path);
+  let newGlobals = globals.getGlobalsForFile({ filePath });
   helpers.addGlobals(newGlobals, context.sourceCode.getScope(node));
 }
 

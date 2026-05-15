@@ -81,6 +81,8 @@ class ValOperandId : public OperandId {
  public:
   ValOperandId() = default;
   explicit ValOperandId(uint16_t id) : OperandId(id) {}
+
+  bool operator==(const ValOperandId& other) const { return id_ == other.id_; }
 };
 
 class ValueTagOperandId : public OperandId {
@@ -239,9 +241,9 @@ class StubField {
     // These fields take up a single word.
     RawInt32,
     RawPointer,
+    ICScript,
     Shape,
     WeakShape,
-    WeakGetterSetter,
     JSObject,
     WeakObject,
     Symbol,
@@ -256,6 +258,7 @@ class StubField {
     RawInt64,
     First64BitType = RawInt64,
     Value,
+    WeakValue,
     Double,
 
     Limit
@@ -312,12 +315,12 @@ inline const char* StubFieldTypeName(StubField::Type ty) {
       return "RawInt32";
     case StubField::Type::RawPointer:
       return "RawPointer";
+    case StubField::Type::ICScript:
+      return "ICScript";
     case StubField::Type::Shape:
       return "Shape";
     case StubField::Type::WeakShape:
       return "WeakShape";
-    case StubField::Type::WeakGetterSetter:
-      return "WeakGetterSetter";
     case StubField::Type::JSObject:
       return "JSObject";
     case StubField::Type::WeakObject:
@@ -338,6 +341,8 @@ inline const char* StubFieldTypeName(StubField::Type ty) {
       return "RawInt64";
     case StubField::Type::Value:
       return "Value";
+    case StubField::Type::WeakValue:
+      return "WeakValue";
     case StubField::Type::Double:
       return "Double";
     case StubField::Type::Limit:
@@ -580,6 +585,8 @@ enum class GuardClassKind : uint8_t {
   Set,
   Map,
   Date,
+  WeakMap,
+  WeakSet,
 };
 
 const JSClass* ClassFor(GuardClassKind kind);
@@ -628,6 +635,10 @@ inline const char* GuardClassKindEnumName(GuardClassKind kind) {
       return "Map";
     case GuardClassKind::Date:
       return "Date";
+    case GuardClassKind::WeakMap:
+      return "WeakMap";
+    case GuardClassKind::WeakSet:
+      return "WeakSet";
   }
   MOZ_CRASH("Unknown GuardClassKind");
 }

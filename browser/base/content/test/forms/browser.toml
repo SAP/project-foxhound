@@ -4,14 +4,20 @@ support-files = ["head.js"]
 
 ["browser_selectpopup.js"]
 skip-if = [
-  "os == 'linux'", # Bug 1329991
-  "os == 'mac'", # Bug 1661132, 1775896
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1329991
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1329991
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1661132, 1775896
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1661132, 1775896
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1661132, 1775896
 ]
 
 ["browser_selectpopup_checked.js"]
 
 ["browser_selectpopup_colors.js"]
-skip-if = ["os == 'linux'"] # Bug 1329991 - test fails intermittently on Linux builds
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1329991 - test fails intermittently on Linux builds
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1329991 - test fails intermittently on Linux builds
+]
 
 ["browser_selectpopup_dir.js"]
 
@@ -23,8 +29,12 @@ skip-if = ["os == 'linux'"] # Bug 1329991 - test fails intermittently on Linux b
 
 ["browser_selectpopup_minFontSize.js"]
 
+["browser_selectpopup_navigation.js"]
+
 ["browser_selectpopup_searchfocus.js"]
-fail-if = ["a11y_checks"] # Bug 1854233 input may not be labeled
+fail-if = [
+  "a11y_checks", # Bug 1854233 input may not be labeled
+]
 
 ["browser_selectpopup_showPicker.js"]
 

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,7 @@
   <string name="menu_settings">Innstillinger</string>
   <string name="menu_about">Om</string>
   <string name="menu_help">Hjelp</string>
-  <string name="menu_terms_of_use">Vilkår for bruk</string>
+  <string name="menu_terms_of_use">Bruksvilkår</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s gir deg kontroll.</p> <p>Bruk den som en privat nettleser: <ul> <li>Søk og surf rett i appen</li> <li>Blokker sporere (eller oppdater innstillingene for å tillate sporere)</li> <li>Slett for å fjerne infokapsler samt søk- og nettleserhistorikk</li> </ul> </p> <p>%1$s er produsert av Mozilla. Vårt oppdrag er å fremme et sunt, åpent Internett.<br/> <a href=\"%2$s\">Les mer</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s gir deg kontroll.</p>\n<p>Bruk den som en privat nettleser:\n<ul>\n<li>Søk og surf rett i appen</li>\n<li>Blokker sporere (eller oppdater innstillingene for å tillate sporere)</li>\n<li>Slett for å fjerne infokapsler samt søk- og nettleserhistorikk</li>\n</ul> </p>\n<p>%1$s er produsert av Mozilla. Vårt oppdrag er å fremme et sunt, åpent Internett.<br/>\n<a href=\"%2$s\">Les mer</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Les mer</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -327,7 +334,7 @@
   <string name="preference_daily_usage_ping_description">Dette hjelper Mozilla med å beregne aktive brukere.</string>
   <string name="preference_daily_usage_ping_learn_more">Les mer</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
-  <string name="preference_privacy_notice">Personvernbestemmelser</string>
+  <string name="preference_privacy_notice">Personvernerklæring</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
   <string name="preference_licensing_info">Lisensinformasjon</string>
   <!-- Link to Focus licensing information from other libraries that we use. -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Ved å fortsette godtar du %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Ved å fortsette godtar du %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefox brukervilkår.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefox brukervilkår</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox bryr seg om ditt personvern. Les mer i vår %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox bryr seg om personvernet ditt. Les mer i vår %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Personvernbestemmelser.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Personvernerklæring</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Slett nettleserhistorikk</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Lukk andre faner</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Legg til ny fane</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Dette kan være på grunn av et problem med serverens konfigurasjon, eller det kan være fordi noen forsøker å forfalske tilkoblingen til serveren. <br/><br/> Dersom du har klart å koble til serveren tidligere kan problemet være midlertidig, og du kan prøve igjen senere.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Noen kan prøve å etterligne nettstedet, og det kan være risikabelt å fortsette.</label> <br><br> <label>%1$s stoler ikke på <b>%2$s</b> fordi sertifikatutstederen er ukjent, sertifikatet er selvsignert, eller serveren sender ikke de riktige mellomsertifikatene.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Noen kan prøve å etterligne nettstedet, og det kan være risikabelt å fortsette.</label> <br><br>\n<label>%1$s stoler ikke på <b>%2$s</b> fordi sertifikatutstederen er ukjent, sertifikatet er selvsignert, eller serveren sender ikke de riktige mellomsertifikatene.</label>]]></string>
   <!--
     Sessions List
 

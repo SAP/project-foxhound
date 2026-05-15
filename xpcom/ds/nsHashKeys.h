@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsTHashKeys_h__
-#define nsTHashKeys_h__
+#ifndef nsTHashKeys_h_
+#define nsTHashKeys_h_
 
 #include "nsID.h"
 #include "nsISupports.h"
@@ -678,4 +678,4 @@ class NoMemMoveKey : public Key {
   enum { ALLOW_MEMMOVE = false };
 };
 
-#endif  // nsTHashKeys_h__
+#endif  // nsTHashKeys_h_

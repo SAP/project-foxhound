@@ -361,7 +361,7 @@ bool XPCShellEnvironment::Init() {
 
   // unbuffer stdout so that output is in the correct order; note that stderr
   // is unbuffered by default
-  setbuf(stdout, 0);
+  setbuf(stdout, nullptr);
 
   AutoSafeJSContext cx;
 

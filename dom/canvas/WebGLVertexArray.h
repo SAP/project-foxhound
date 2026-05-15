@@ -8,13 +8,11 @@
 
 #include <array>
 #include <bitset>
-#include <vector>
-
-#include "mozilla/IntegerRange.h"
 
 #include "CacheInvalidator.h"
 #include "WebGLObjectModel.h"
 #include "WebGLStrongTypes.h"
+#include "mozilla/IntegerRange.h"
 
 namespace mozilla {
 

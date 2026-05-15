@@ -6,19 +6,15 @@
 
 /* rendering object for the HTML <canvas> element */
 
-#ifndef nsHTMLCanvasFrame_h___
-#define nsHTMLCanvasFrame_h___
+#ifndef nsHTMLCanvasFrame_h_
+#define nsHTMLCanvasFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 #include "nsStringFwd.h"
 
 namespace mozilla {
 class PresShell;
 namespace layers {
-class CanvasRenderer;
-class Layer;
-class LayerManager;
 class WebRenderCanvasData;
 }  // namespace layers
 }  // namespace mozilla
@@ -30,9 +26,7 @@ nsIFrame* NS_NewHTMLCanvasFrame(mozilla::PresShell* aPresShell,
 
 class nsHTMLCanvasFrame final : public nsContainerFrame {
  public:
-  typedef mozilla::layers::CanvasRenderer CanvasRenderer;
-  typedef mozilla::layers::LayerManager LayerManager;
-  typedef mozilla::layers::WebRenderCanvasData WebRenderCanvasData;
+  using WebRenderCanvasData = mozilla::layers::WebRenderCanvasData;
 
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsHTMLCanvasFrame)
@@ -40,8 +34,8 @@ class nsHTMLCanvasFrame final : public nsContainerFrame {
   nsHTMLCanvasFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
       : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
-  virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
-                                const nsDisplayListSet& aLists) override;
+  void BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                        const nsDisplayListSet& aLists) override;
 
   void Destroy(DestroyContext&) override;
 
@@ -54,33 +48,35 @@ class nsHTMLCanvasFrame final : public nsContainerFrame {
   nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) override;
 
-  virtual mozilla::IntrinsicSize GetIntrinsicSize() override;
+  mozilla::IntrinsicSize GetIntrinsicSize() override;
   mozilla::AspectRatio GetIntrinsicRatio() const override;
 
   void UnionChildOverflow(mozilla::OverflowAreas&, bool aAsIfScrolled) override;
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
       const mozilla::StyleSizeOverrides& aSizeOverrides,
       mozilla::ComputeSizeFlags aFlags) override;
 
-  virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
-                      const ReflowInput& aReflowInput,
-                      nsReflowStatus& aStatus) override;
+  void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
+              const ReflowInput& aReflowInput,
+              nsReflowStatus& aStatus) override;
+
+  nsRect GetDestRect(const nsRect& aFrameContentBox) const;
 
 #ifdef ACCESSIBILITY
-  virtual mozilla::a11y::AccType AccessibleType() override;
+  mozilla::a11y::AccType AccessibleType() override;
 #endif
 
 #ifdef DEBUG_FRAME_DUMP
-  virtual nsresult GetFrameName(nsAString& aResult) const override;
+  nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
   // Inserted child content gets its frames parented by our child block
-  virtual nsContainerFrame* GetContentInsertionFrame() override {
+  nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
   }
 
@@ -91,4 +87,4 @@ class nsHTMLCanvasFrame final : public nsContainerFrame {
   virtual ~nsHTMLCanvasFrame();
 };
 
-#endif /* nsHTMLCanvasFrame_h___ */
+#endif /* nsHTMLCanvasFrame_h_ */

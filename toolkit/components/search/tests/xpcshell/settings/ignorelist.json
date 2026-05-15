@@ -63,7 +63,8 @@
       "_definedAliases": [],
       "_updateInterval": null,
       "_updateURL": null,
-      "_iconUpdateURL": null
+      "_iconUpdateURL": null,
+      "_loadPath": "[https]www.example.com/search.xml"
     }
   ]
 }

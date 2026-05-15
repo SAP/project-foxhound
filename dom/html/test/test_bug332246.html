@@ -35,7 +35,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=332246
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 332246 **/
+/** Test for Bug 332246 */
 
 function isWithFuzz(itIs, itShouldBe, fuzz, description) {
   ok(Math.abs(itIs - itShouldBe) <= fuzz, `${description} - expected a value between ${itShouldBe - fuzz} and ${itShouldBe + fuzz}, got ${itIs}`);

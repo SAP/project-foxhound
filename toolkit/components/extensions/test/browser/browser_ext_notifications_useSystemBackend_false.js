@@ -13,10 +13,20 @@
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
+
+const { ImageTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ImageTestUtils.sys.mjs"
+);
+
 AddonTestUtils.initMochitest(this);
 const server = AddonTestUtils.createHttpServer();
 const serverHost = server.identity.primaryHost;
 const serverPort = server.identity.primaryPort;
+
+// data-URL with a valid 5x5 image.
+const BASE64_DATA =
+  "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAADElEQVQImWNgoBMAAABpAAFEI8ARAAAAAElFTkSuQmCC";
+const DATA_URL = "data:image/png;base64," + BASE64_DATA;
 
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
@@ -95,14 +105,13 @@ async function testCreateNotification({ iconUrl, testOnShown }) {
 // Ideally we'd also repeat the following test for https, but the test server
 // does not support https (bug 1742061).
 add_task(async function test_http_icon() {
-  const requestPromise = new Promise(resolve => {
-    let count = 0;
-    server.registerPathHandler("/test_http_icon.png", () => {
-      // We only care about the request happening, we don't care about the
-      // actual response.
-      is(++count, 1, "Got one request to test_http_icon.png");
-      resolve();
-    });
+  let count = 0;
+  server.registerPathHandler("/test_http_icon.png", (request, response) => {
+    is(++count, 1, "Got one request to test_http_icon.png");
+
+    response.setStatusLine(request.httpVersion, 200, "OK");
+    let body = atob(BASE64_DATA);
+    response.bodyOutputStream.write(body, body.length);
   });
 
   // eslint-disable-next-line @microsoft/sdl/no-insecure-url
@@ -111,33 +120,43 @@ add_task(async function test_http_icon() {
   await testCreateNotification({
     iconUrl: httpUrl,
     async testOnShown(alertWindow) {
-      info("Waiting for test_http_icon.png request to be detected.");
       const img = alertWindow.document.getElementById("alertImage");
-      is(img.src, httpUrl, "Got http:-URL");
-      await requestPromise;
-    },
-  });
-});
+      await ImageTestUtils.assertEqualImage(
+        alertWindow,
+        img.src,
+        DATA_URL,
+        "Got image"
+      );
 
-add_task(async function test_data_icon() {
-  // data-URL with a valid 5x5 image.
-  const dataUrl =
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAADElEQVQImWNgoBMAAABpAAFEI8ARAAAAAElFTkSuQmCC";
-
-  await testCreateNotification({
-    iconUrl: dataUrl,
-    async testOnShown(alertWindow) {
-      const img = alertWindow.document.getElementById("alertImage");
-      is(img.src, dataUrl, "Got data:-URL");
-
-      info("Verifying that data:-URL can be loaded in the document.");
+      info("Verifying that http:-URL can be loaded in the document.");
       // img is not an <img> but an <image> element, so we cannot read its
       // intrinsic size directly to guess whether it was loaded.
       // To see whether it is NOT blocked by CSP, create a new image and see if
       // it can be loaded.
 
       const testImg = alertWindow.document.createElement("img");
-      testImg.src = dataUrl;
+      testImg.src = img.src;
+      await testImg.decode();
+      is(testImg.naturalWidth, 5, "Test image was loaded successfully");
+    },
+  });
+});
+
+add_task(async function test_data_icon() {
+  await testCreateNotification({
+    iconUrl: DATA_URL,
+    async testOnShown(alertWindow) {
+      const img = alertWindow.document.getElementById("alertImage");
+      await ImageTestUtils.assertEqualImage(
+        alertWindow,
+        img.src,
+        DATA_URL,
+        "Got image"
+      );
+
+      info("Verifying that data:-URL can be loaded in the document.");
+      const testImg = alertWindow.document.createElement("img");
+      testImg.src = img.src;
       await testImg.decode();
       is(testImg.naturalWidth, 5, "Test image was loaded successfully");
     },
@@ -149,7 +168,12 @@ add_task(async function test_blob_icon() {
     iconUrl: "blob:REPLACE_WITH_REAL_URL_IN_TEST",
     async testOnShown(alertWindow) {
       const img = alertWindow.document.getElementById("alertImage");
-      ok(img.src.startsWith("blob:moz-extension"), `Got blob:-URL: ${img.src}`);
+      await ImageTestUtils.assertEqualImage(
+        alertWindow,
+        img.src,
+        DATA_URL,
+        "Got image"
+      );
 
       info("Verifying that blob:-URL can be loaded in the document.");
 
@@ -167,9 +191,11 @@ add_task(async function test_moz_extension_icon() {
     iconUrl: "moz-extension:REPLACE_WITH_REAL_URL_IN_TEST",
     async testOnShown(alertWindow) {
       const img = alertWindow.document.getElementById("alertImage");
-      ok(
-        img.src.startsWith("moz-extension:/") && img.src.endsWith("/5x5.png"),
-        `Got moz-extension:-URL: ${img.src}`
+      await ImageTestUtils.assertEqualImage(
+        alertWindow,
+        img.src,
+        DATA_URL,
+        "Got image"
       );
 
       info("Verifying that moz-extension:-URL can be loaded in the document.");
@@ -181,4 +207,30 @@ add_task(async function test_moz_extension_icon() {
       is(testImg.naturalWidth, 5, "Test image was loaded successfully");
     },
   });
+});
+
+add_task(async function test_forbidden_chrome_icon() {
+  let loadFailedMessagePromise = new Promise(resolve => {
+    Services.console.registerListener(function listener(msg) {
+      if (
+        /Content at moz-extension:.*? may not load or link to chrome:/.test(
+          msg.message
+        )
+      ) {
+        resolve();
+        Services.console.unregisterListener(listener);
+      }
+    });
+  });
+
+  await testCreateNotification({
+    iconUrl: "chrome://branding/content/icon64.png",
+    async testOnShown(alertWindow) {
+      const img = alertWindow.document.getElementById("alertImage");
+      ok(!img.hasAttribute("src"), "No image");
+    },
+  });
+
+  info("Waiting for console error message");
+  await loadFailedMessagePromise;
 });

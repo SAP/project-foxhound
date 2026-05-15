@@ -4,21 +4,21 @@
     <meta charset="UTF-8">
     <style>
     body::before {
-      animation: body 10s infinite;
+      animation: body 100s infinite;
       background-color: lime;
       content: "body-before";
       width: 100px;
     }
 
     .div-before::before {
-      animation: div-before 10s infinite;
+      animation: div-before 100s infinite;
       background-color: lime;
       content: "div-before";
       width: 100px;
     }
 
     .div-after::after {
-      animation: div-after 10s infinite;
+      animation: div-after 100s infinite;
       background-color: lime;
       content: "div-after";
       width: 100px;
@@ -31,6 +31,25 @@
 
     .div-marker::marker {
       content: "div-marker";
+    }
+
+    dialog::backdrop {
+      animation: dialog-backdrop 8.5s infinite;
+    }
+
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+       /* large number so the view-transition pseudo elements are available during the whole test */
+       animation-duration: 3600s;
+    }
+
+    ::view-transition-group(my-vt) {
+      animation-name: my-vt-animation;
+    }
+
+    .div-view-transition {
+      view-transition-name: my-vt;
     }
 
     @keyframes body {
@@ -62,12 +81,32 @@
         opacity: 0;
       }
     }
+
+    @keyframes my-vt-animation {
+      from {
+        rotate: 360deg;
+      }
+      to {
+        opacity: 0deg;
+      }
+    }
+
+    @keyframes dialog-backdrop {
+      from {
+        background-color: hotpink;
+      }
+      to {
+        background-color: gold;
+      }
+    }
     </style>
   </head>
   <body>
     <div class="div-before"></div>
     <div class="div-after"></div>
     <div class="div-marker"></div>
+    <div class="div-view-transition">Hello</div>
+    <dialog>My Modal</dialog>
 
     <script>
     "use strict";
@@ -86,6 +125,9 @@
         pseudoElement: "::marker",
       }
     );
+
+    // show the dialog modal so the backdrop pseudo element node gets displayed
+    document.querySelector("dialog").showModal();
     </script>
   </body>
 </html>

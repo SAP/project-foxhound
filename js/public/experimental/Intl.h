@@ -45,6 +45,15 @@ extern JS_PUBLIC_API bool AddMozDateTimeFormatConstructor(
 extern JS_PUBLIC_API bool AddMozDisplayNamesConstructor(JSContext* cx,
                                                         Handle<JSObject*> intl);
 
+/**
+ * Create and add the Intl.getCalendarInfo function to the provided object.
+ *
+ * If JS was built without JS_HAS_INTL_API, this function will throw an
+ * exception.
+ */
+extern JS_PUBLIC_API bool AddMozGetCalendarInfo(JSContext* cx,
+                                                Handle<JSObject*> intl);
+
 }  // namespace JS
 
 #endif  // js_experimental_Intl_h

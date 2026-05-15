@@ -61,6 +61,10 @@ USE_LIBS += [
     "static:js",
 ]
 
+if CONFIG["MOZ_LTO_FAT"]:
+    LDFLAGS += ["-fno-lto"]
+
+
 DEFINES["topsrcdir"] = "%s/js/src" % TOPSRCDIR
 FINAL_TARGET_PP_FILES += ["gdb-tests-gdb.py.in"]
 OBJDIR_FILES.js.src.gdb += ["!/dist/bin/gdb-tests-gdb.py"]

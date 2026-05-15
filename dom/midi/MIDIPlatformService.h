@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_MIDIPlatformService_h
 #define mozilla_dom_MIDIPlatformService_h
 
-#include "nsClassHashtable.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/dom/MIDIPortBinding.h"
+#include "nsClassHashtable.h"
 #include "nsHashKeys.h"
 
 // XXX Avoid including this here by moving function implementations to the cpp

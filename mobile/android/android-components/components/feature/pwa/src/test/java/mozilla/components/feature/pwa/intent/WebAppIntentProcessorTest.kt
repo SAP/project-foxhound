@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.Intent.ACTION_VIEW
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.CustomTabConfig
 import mozilla.components.browser.state.state.ExternalAppType
@@ -35,7 +34,6 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
 @RunWith(AndroidJUnit4::class)
-@ExperimentalCoroutinesApi
 class WebAppIntentProcessorTest {
     @Test
     fun `process checks if intent action is not valid`() {
@@ -51,7 +49,7 @@ class WebAppIntentProcessorTest {
     @Test
     fun `process returns false if no manifest is in storage`() = runTest {
         val storage: ManifestStorage = mock()
-        val processor = WebAppIntentProcessor(mock(), mock(), mock(), storage)
+        val processor = WebAppIntentProcessor(BrowserStore(), mock(), mock(), storage)
 
         `when`(storage.loadManifest("https://mozilla.com")).thenReturn(null)
 
@@ -79,7 +77,6 @@ class WebAppIntentProcessorTest {
                     enableUrlbarHiding = true,
                     showCloseButton = false,
                     showShareMenuItem = true,
-
                 ),
                 webAppManifest = manifest,
             ),
@@ -120,7 +117,6 @@ class WebAppIntentProcessorTest {
                 enableUrlbarHiding = true,
                 showCloseButton = false,
                 showShareMenuItem = true,
-
             ),
             webAppManifest = manifest,
         )

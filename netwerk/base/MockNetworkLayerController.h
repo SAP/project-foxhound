@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MockNetworkLayerController_h__
-#define MockNetworkLayerController_h__
+#ifndef MockNetworkLayerController_h_
+#define MockNetworkLayerController_h_
 
 #include "mozilla/net/DNS.h"
 #include "mozilla/RWLock.h"
@@ -40,4 +40,4 @@ class MockNetworkLayerController : public nsIMockNetworkLayerController {
 
 }  // namespace mozilla::net
 
-#endif  // MockNetworkLayerController_h__
+#endif  // MockNetworkLayerController_h_

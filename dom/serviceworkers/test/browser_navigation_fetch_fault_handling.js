@@ -74,7 +74,7 @@
  * beyond 6 MiB in the group will constitute a need to clear the group or
  * origin.  We fill with the storage with 8 MiB of artificial usage to this end,
  * storing 4 MiB in Cache API and 4 MiB in IDB.
- **/
+ */
 
 // Because of the amount of I/O involved in this test, pernosco reproductions
 // may experience timeouts without a timeout multiplier.

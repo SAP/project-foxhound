@@ -6,7 +6,9 @@ package mozilla.components.browser.menu
 
 import android.view.View
 import android.widget.PopupWindow
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import mozilla.components.browser.menu.facts.emitOpenMenuItemFact
@@ -26,6 +28,7 @@ import mozilla.components.lib.state.ext.flowScoped
 class WebExtensionBrowserMenu internal constructor(
     adapter: BrowserMenuAdapter,
     private val store: BrowserStore,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : BrowserMenu(adapter) {
     private var scope: CoroutineScope? = null
 
@@ -36,7 +39,7 @@ class WebExtensionBrowserMenu internal constructor(
         endOfMenuAlwaysVisible: Boolean,
         onDismiss: () -> Unit,
     ): PopupWindow {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.distinctUntilChangedBy { it.selectedTab }
                 .collect { state ->
                     getOrUpdateWebExtensionMenuItems(state, state.selectedTab)

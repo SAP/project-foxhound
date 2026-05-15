@@ -5,9 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformancePaintTiming.h"
-#include "Performance.h"
+
 #include "MainThreadUtils.h"
+#include "Performance.h"
 #include "mozilla/dom/PerformanceMeasureBinding.h"
+#include "nsGkAtoms.h"
 #include "nsRFPService.h"
 
 using namespace mozilla::dom;
@@ -24,7 +26,8 @@ NS_IMPL_RELEASE_INHERITED(PerformancePaintTiming, PerformanceEntry)
 PerformancePaintTiming::PerformancePaintTiming(Performance* aPerformance,
                                                const nsAString& aName,
                                                const TimeStamp& aStartTime)
-    : PerformanceEntry(aPerformance->GetParentObject(), aName, u"paint"_ns),
+    : PerformanceEntry(aPerformance->GetParentObject(), aName,
+                       nsGkAtoms::paint),
       mPerformance(aPerformance),
       mRawStartTime(aStartTime) {}
 

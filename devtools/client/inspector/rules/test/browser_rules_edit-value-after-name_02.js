@@ -9,17 +9,11 @@
 
 const TEST_URI = `
   <style type="text/css">
-  #testid {
+  div {
     color: red;
-    background: linear-gradient(
-      90deg,
-      rgb(183,222,237),
-      rgb(33,180,226),
-      rgb(31,170,217),
-      rgba(200,170,140,0.5));
   }
   </style>
-  <div id="testid">Styled Node</div>
+  <div>Styled Node</div>
 `;
 
 add_task(async function () {
@@ -28,26 +22,25 @@ add_task(async function () {
 
   info("Test shift + click on color swatch while editing property name");
 
-  await selectNode("#testid", inspector);
+  await selectNode("div", inspector);
   const prop = getTextProperty(view, 1, {
-    background:
-      "linear-gradient( 90deg, rgb(183,222,237), rgb(33,180,226), rgb(31,170,217), rgba(200,170,140,0.5))",
+    color: "red",
   });
   const propEditor = prop.editor;
 
-  const swatchSpan = propEditor.valueSpan.querySelectorAll(
+  const swatchSpan = propEditor.valueSpan.querySelector(
     ".inspector-colorswatch"
-  )[2];
+  );
 
   info("Focus the background name span");
   await focusEditableField(view, propEditor.nameSpan);
   const editor = inplaceEditor(propEditor.doc.activeElement);
 
   info(
-    "Modify the property to background-image to trigger the " +
+    "Modify the property to background-color to trigger the " +
       "property-value-updated event"
   );
-  editor.input.value = "background-image";
+  editor.input.value = "background-color";
 
   const onPropertyValueUpdate = view.once("property-value-updated");
   const onSwatchUnitChange = once(swatchSpan, "unit-change");

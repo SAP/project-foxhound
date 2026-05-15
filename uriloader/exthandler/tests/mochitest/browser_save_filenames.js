@@ -260,12 +260,6 @@ add_task(async function save_document() {
 
   for (let idx = 0; idx < expectedItems.length; idx++) {
     let filename = expectedItems[idx].filename;
-    if (idx == 66 && AppConstants.platform == "win") {
-      // This is special-cased on Windows. The default filename will be used, since
-      // the filename is invalid, but since the previous test file has the same issue,
-      // this second file will be saved with a number suffix added to it.
-      filename = "Untitled_002";
-    }
 
     let file = tmpDir.clone();
     file.append(filename);

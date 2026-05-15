@@ -68,6 +68,10 @@ def is_release_promotion_available(parameters):
                 "type": "string",
                 "description": "Path to file used when querying current version.",
             },
+            "merge-automation-id": {
+                "type": "integer",
+                "description": "Shipit merge automation ID for marking as merged.",
+            },
         },
         "required": ["behavior"],
     },
@@ -89,6 +93,7 @@ def merge_automation_action(parameters, graph_config, input, task_group_id, task
         "to-branch",
         "push",
         "fetch-version-from",
+        "merge-automation-id",
     ]:
         if input.get(field):
             parameters["merge_config"][field] = input[field]

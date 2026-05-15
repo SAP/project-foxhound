@@ -9,7 +9,6 @@
 #  include "mozilla/dom/ContentChild.h"
 #endif
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/mscom/COMWrappers.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/mscom/Utils.h"

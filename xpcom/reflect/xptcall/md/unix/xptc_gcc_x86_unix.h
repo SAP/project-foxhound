@@ -9,8 +9,13 @@
 // this may improve the static function calls, but may not.
 //
 
+#ifndef XPCOM_REFLECT_XPTCALL_MD_UNIX_XPTC_GCC_X86_UNIX_H_
+#define XPCOM_REFLECT_XPTCALL_MD_UNIX_XPTC_GCC_X86_UNIX_H_
+
 #ifdef MOZ_NEED_LEADING_UNDERSCORE
 #define SYMBOL_UNDERSCORE "_"
 #else
 #define SYMBOL_UNDERSCORE
 #endif
+
+#endif  // XPCOM_REFLECT_XPTCALL_MD_UNIX_XPTC_GCC_X86_UNIX_H_

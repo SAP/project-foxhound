@@ -6,6 +6,8 @@
 
 #include "jit/BytecodeAnalysis.h"
 
+#include "mozilla/PodOperations.h"
+
 #include "jit/JitSpewer.h"
 #include "jit/WarpBuilder.h"
 #include "vm/BytecodeIterator.h"

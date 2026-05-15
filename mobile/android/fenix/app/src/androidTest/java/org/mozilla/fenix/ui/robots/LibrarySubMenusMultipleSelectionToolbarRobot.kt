@@ -60,7 +60,6 @@ class LibrarySubMenusMultipleSelectionToolbarRobot {
                         ),
                     ),
                 ),
-
                 // This is used as part of the `multiSelectionToolbarItemsTest` test. Somehow, in the view hierarchy,
                 // the match above is finding two checkmark views - one visible, one hidden, which is throwing off
                 // the matcher. This 'isDisplayed' check is a hacky workaround for this, we're explicitly ignoring
@@ -87,12 +86,6 @@ class LibrarySubMenusMultipleSelectionToolbarRobot {
         Log.i(TAG, "verifyShareHistoryButton: Trying to verify that the multi-selection share history button is displayed")
         shareHistoryButton().check(matches(isDisplayed()))
         Log.i(TAG, "verifyShareHistoryButton: Verified that the multi-selection share history button is displayed")
-    }
-
-    fun verifyShareBookmarksButton() {
-        Log.i(TAG, "verifyShareBookmarksButton: Trying to verify that the multi-selection share bookmarks button is displayed")
-        shareBookmarksButton().check(matches(isDisplayed()))
-        Log.i(TAG, "verifyShareBookmarksButton: Verified that the multi-selection share bookmarks button is displayed")
     }
 
     fun verifyShareOverlay() {
@@ -138,19 +131,6 @@ class LibrarySubMenusMultipleSelectionToolbarRobot {
         )
     }
 
-    fun clickShareBookmarksButton() {
-        Log.i(TAG, "clickShareBookmarksButton: Trying to click the multi-selection share bookmarks button")
-        shareBookmarksButton().click()
-        Log.i(TAG, "clickShareBookmarksButton: Clicked the multi-selection share bookmarks button")
-
-        mDevice.waitNotNull(
-            Until.findObject(
-                By.text("ALL ACTIONS"),
-            ),
-            waitingTime,
-        )
-    }
-
     fun clickMultiSelectionDelete() {
         Log.i(TAG, "clickMultiSelectionDelete: Trying to click the multi-selection delete button")
         deleteButton().click()
@@ -169,17 +149,17 @@ class LibrarySubMenusMultipleSelectionToolbarRobot {
         Log.i(TAG, "clickMultiSelectThreeDotButton: Clicked the multi-selection three dot button")
     }
 
-    class Transition {
+    class Transition(private val composeTestRule: ComposeTestRule) {
         fun closeToolbarReturnToHistory(interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
             Log.i(TAG, "closeToolbarReturnToHistory: Trying to click the navigate up toolbar button")
             closeToolbarButton().click()
             Log.i(TAG, "closeToolbarReturnToHistory: Clicked the navigate up toolbar button")
 
             HistoryRobot().interact()
-            return HistoryRobot.Transition()
+            return HistoryRobot.Transition(composeTestRule)
         }
 
-        fun clickOpenNewTab(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenNewTab(interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenNewTab: Trying to click the multi-select \"Open in a new tab\" context menu button")
             openInNewTabButton().click()
             Log.i(TAG, "clickOpenNewTab: Clicked the multi-select \"Open in a new tab\" context menu button")
@@ -191,7 +171,7 @@ class LibrarySubMenusMultipleSelectionToolbarRobot {
             return TabDrawerRobot.Transition(composeTestRule)
         }
 
-        fun clickOpenInNewTabButton(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenInNewTabButton(interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenInNewTabButton: Trying to click the multi-select \"Open in a new tab\" context menu button")
             redesignedBookmarksOpenInNewTabButton(composeTestRule).performClick()
             Log.i(TAG, "clickOpenInNewTabButton: Clicked the multi-select \"Open in a new tab\" context menu button")
@@ -203,7 +183,7 @@ class LibrarySubMenusMultipleSelectionToolbarRobot {
             return TabDrawerRobot.Transition(composeTestRule)
         }
 
-        fun clickOpenPrivateTab(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickOpenPrivateTab(interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickOpenPrivateTab: Trying to click the multi-select \"Open in a private tab\" context menu button")
             openInPrivateTabButton().click()
             Log.i(TAG, "clickOpenPrivateTab: Clicked the multi-select \"Open in a private tab\" context menu button")
@@ -214,16 +194,14 @@ class LibrarySubMenusMultipleSelectionToolbarRobot {
     }
 }
 
-fun multipleSelectionToolbar(interact: LibrarySubMenusMultipleSelectionToolbarRobot.() -> Unit): LibrarySubMenusMultipleSelectionToolbarRobot.Transition {
+fun multipleSelectionToolbar(composeTestRule: ComposeTestRule, interact: LibrarySubMenusMultipleSelectionToolbarRobot.() -> Unit): LibrarySubMenusMultipleSelectionToolbarRobot.Transition {
     LibrarySubMenusMultipleSelectionToolbarRobot().interact()
-    return LibrarySubMenusMultipleSelectionToolbarRobot.Transition()
+    return LibrarySubMenusMultipleSelectionToolbarRobot.Transition(composeTestRule)
 }
 
 private fun closeToolbarButton() = onView(withContentDescription("Navigate up"))
 
 private fun shareHistoryButton() = onView(withId(R.id.share_history_multi_select))
-
-private fun shareBookmarksButton() = onView(withId(R.id.share_bookmark_multi_select))
 
 private fun openInNewTabButton() = onView(withText("Open in new tab"))
 

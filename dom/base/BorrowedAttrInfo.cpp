@@ -6,6 +6,8 @@
 
 #include "mozilla/dom/BorrowedAttrInfo.h"
 
+#include "mozilla/Assertions.h"
+
 namespace mozilla::dom {
 
 BorrowedAttrInfo::BorrowedAttrInfo(const nsAttrName* aName,

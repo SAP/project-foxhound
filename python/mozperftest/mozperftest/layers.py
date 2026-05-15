@@ -92,7 +92,7 @@ class Layer(MachLogger):
 
 class Layers(Layer):
     def __init__(self, env, mach_command, factories):
-        super(Layers, self).__init__(env, mach_command)
+        super().__init__(env, mach_command)
 
         def _active(layer):
             # if it's activated by default, see if we need to deactivate

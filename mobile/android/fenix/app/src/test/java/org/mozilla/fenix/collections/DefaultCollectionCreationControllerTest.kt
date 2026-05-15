@@ -11,15 +11,14 @@ import io.mockk.every
 import io.mockk.impl.annotations.MockK
 import io.mockk.mockk
 import io.mockk.verify
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.tab.collections.TabCollection
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -39,9 +38,8 @@ class DefaultCollectionCreationControllerTest {
     @get:Rule
     val gleanTestRule = GleanTestRule(testContext)
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val scope = coroutinesTestRule.scope
+    private val testDispatcher = StandardTestDispatcher()
+    private val testScope = TestScope(testDispatcher)
 
     private lateinit var state: CollectionCreationState
     private lateinit var controller: DefaultCollectionCreationController
@@ -74,18 +72,18 @@ class DefaultCollectionCreationControllerTest {
                 dismissed = true
             },
             tabCollectionStorage,
-            scope,
+            testScope,
         )
     }
 
     @Test
-    fun `GIVEN tab list WHEN saveCollectionName is called THEN collection should be created`() {
+    fun `GIVEN tab list WHEN saveCollectionName is called THEN collection should be created`() = runTest(testDispatcher) {
         val tab1 = createTab("https://www.mozilla.org", id = "session-1")
         val tab2 = createTab("https://www.mozilla.org", id = "session-2")
 
         browserStore.dispatch(
             TabListAction.AddMultipleTabsAction(listOf(tab1, tab2)),
-        ).joinBlocking()
+        )
 
         coEvery { tabCollectionStorage.addTabsToCollection(any(), any()) } returns 1L
         coEvery { tabCollectionStorage.createCollection(any(), any()) } returns 1L
@@ -96,6 +94,7 @@ class DefaultCollectionCreationControllerTest {
         )
 
         controller.saveCollectionName(tabs, "name")
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(dismissed)
         coVerify { tabCollectionStorage.createCollection("name", listOf(tab1)) }
@@ -147,11 +146,11 @@ class DefaultCollectionCreationControllerTest {
     }
 
     @Test
-    fun `GIVEN collection WHEN renameCollection is called THEN collection should be renamed`() = runTestOnMain {
+    fun `GIVEN collection WHEN renameCollection is called THEN collection should be renamed`() = runTest(testDispatcher) {
         val collection = mockk<TabCollection>()
 
         controller.renameCollection(collection, "name")
-        advanceUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(dismissed)
 
@@ -187,12 +186,12 @@ class DefaultCollectionCreationControllerTest {
     }
 
     @Test
-    fun `WHEN selectCollection is called THEN add tabs should be added to collection`() {
+    fun `WHEN selectCollection is called THEN add tabs should be added to collection`() = runTest(testDispatcher) {
         val tab1 = createTab("https://www.mozilla.org", id = "session-1")
         val tab2 = createTab("https://www.mozilla.org", id = "session-2")
         browserStore.dispatch(
             TabListAction.AddMultipleTabsAction(listOf(tab1, tab2)),
-        ).joinBlocking()
+        )
 
         val tabs = listOf(
             Tab("session-1", "", "", ""),
@@ -202,6 +201,7 @@ class DefaultCollectionCreationControllerTest {
         coEvery { tabCollectionStorage.createCollection(any(), any()) } returns 1L
 
         controller.selectCollection(collection, tabs)
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(dismissed)
         coVerify { tabCollectionStorage.addTabsToCollection(collection, listOf(tab1)) }

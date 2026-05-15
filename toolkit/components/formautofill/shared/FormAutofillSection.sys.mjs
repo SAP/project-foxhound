@@ -83,35 +83,32 @@ export class FormAutofillSection {
     return this.fieldDetails.map(field => field.fieldName);
   }
 
-  /*
+  /**
    * Examine the section is a valid section or not based on its fieldDetails or
    * other information. This method must be overrided.
    *
    * @returns {boolean} True for a valid section, otherwise false
-   *
    */
   isValidSection() {
     throw new TypeError("isValidSection method must be overrided");
   }
 
-  /*
+  /**
    * Examine the section is an enabled section type or not based on its
    * preferences. This method must be overrided.
    *
    * @returns {boolean} True for an enabled section type, otherwise false
-   *
    */
   isEnabled() {
     throw new TypeError("isEnabled method must be overrided");
   }
 
-  /*
+  /**
    * Examine the section is createable for storing the profile. This method
    * must be overrided.
    *
-   * @param {Object} _record The record for examining createable
+   * @param {object} _record The record for examining createable
    * @returns {boolean} True for the record is createable, otherwise false
-   *
    */
   isRecordCreatable(_record) {
     throw new TypeError("isRecordCreatable method must be overridden");
@@ -217,6 +214,32 @@ export class FormAutofillSection {
    */
   static groupFields(fieldDetails) {
     let sections = [];
+
+    // If there is only one duplicate overall, don't split that one field into
+    // a separate section.
+    let foundSectionName = false;
+    let dontAddToNewSections = false;
+    let numDuplicates = 0;
+    let fieldTypes = new Set();
+    for (let i = 0; i < fieldDetails.length; i++) {
+      const cur = fieldDetails[i];
+      // If any field has a section name specified, we should always add to
+      // new sections.
+      if (cur.sectionName) {
+        foundSectionName = true;
+        break;
+      }
+
+      if (cur.isVisible && fieldTypes.has(cur.fieldName)) {
+        numDuplicates++;
+      }
+      fieldTypes.add(cur.fieldName);
+    }
+
+    if (!foundSectionName && numDuplicates <= 1) {
+      dontAddToNewSections = true;
+    }
+
     for (let i = 0; i < fieldDetails.length; i++) {
       const cur = fieldDetails[i];
       const [currentSection] = sections.slice(-1);
@@ -241,40 +264,43 @@ export class FormAutofillSection {
       }
 
       if (candidateSection) {
-        // The field will still be placed in a new section if it is a duplicate of
-        // an existing field, unless it is a duplicate of the previous field. This
-        // allows for fields that might commonly appear twice such as a verification
-        // email field, an invisible field that appears next to the user-visible field,
-        // and simple cases where a page error where a field name is reused twice.
-        let dupIndex = candidateSection.fieldDetails.findIndex(
-          f =>
-            f.fieldName == cur.fieldName &&
-            f.isVisible &&
-            cur.isVisible &&
-            !f.isLookup
-        );
-        let isDuplicate = dupIndex != -1;
+        let isDuplicate = false;
+        if (!dontAddToNewSections) {
+          // The field will still be placed in a new section if it is a duplicate of
+          // an existing field, unless it is a duplicate of the previous field. This
+          // allows for fields that might commonly appear twice such as a verification
+          // email field, an invisible field that appears next to the user-visible field,
+          // and simple cases where a page error where a field name is reused twice.
+          let dupIndex = candidateSection.fieldDetails.findIndex(
+            f =>
+              f.fieldName == cur.fieldName &&
+              f.isVisible &&
+              cur.isVisible &&
+              !f.isLookup
+          );
+          isDuplicate = dupIndex != -1;
 
-        if (isDuplicate) {
-          const [last] = candidateSection.fieldDetails.slice(-1);
-          if (last.fieldName == cur.fieldName) {
-            isDuplicate = false;
-          } else if (
-            lazy.FormAutofillUtils.getCategoryFromFieldName(cur.fieldName) ==
-            "name"
-          ) {
-            // If the duplicate field is in the "name" category (e.g., family-name, given-name),
-            // we check whether all fields starting from the first duplicate also belong to the
-            // name category. If they do, we don't consider the field a duplicate, since name
-            // fields often appear in groups like family-name + given-name.
-            isDuplicate = !candidateSection.fieldDetails
-              .slice(dupIndex)
-              .every(
-                f =>
-                  lazy.FormAutofillUtils.getCategoryFromFieldName(
-                    f.fieldName
-                  ) === "name"
-              );
+          if (isDuplicate) {
+            const [last] = candidateSection.fieldDetails.slice(-1);
+            if (last.fieldName == cur.fieldName) {
+              isDuplicate = false;
+            } else if (
+              lazy.FormAutofillUtils.getCategoryFromFieldName(cur.fieldName) ==
+              "name"
+            ) {
+              // If the duplicate field is in the "name" category (e.g., family-name, given-name),
+              // we check whether all fields starting from the first duplicate also belong to the
+              // name category. If they do, we don't consider the field a duplicate, since name
+              // fields often appear in groups like family-name + given-name.
+              isDuplicate = !candidateSection.fieldDetails
+                .slice(dupIndex)
+                .every(
+                  f =>
+                    lazy.FormAutofillUtils.getCategoryFromFieldName(
+                      f.fieldName
+                    ) === "name"
+                );
+            }
           }
         }
 
@@ -498,8 +524,7 @@ export class FormAutofillSection {
 
 export class FormAutofillAddressSection extends FormAutofillSection {
   isValidSection() {
-    const fields = new Set(this.fieldDetails.map(f => f.fieldName));
-    return fields.size >= lazy.FormAutofillUtils.AUTOFILL_FIELDS_THRESHOLD;
+    return lazy.FormAutofillUtils.isValidSection(this.fieldDetails);
   }
 
   isEnabled() {
@@ -545,22 +570,16 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
   /**
    * Determine whether a set of cc fields identified by our heuristics form a
    * valid credit card section.
-   * There are 4 different cases when a field is considered a credit card field
+   * There are 3 different cases when a field is considered a credit card field
    * 1. Identified by autocomplete attribute. ex <input autocomplete="cc-number">
-   * 2. Identified by fathom and fathom is pretty confident (when confidence
-   *    value is higher than `highConfidenceThreshold`)
-   * 3. Identified by fathom. Confidence value is between `fathom.confidenceThreshold`
-   *    and `fathom.highConfidenceThreshold`
-   * 4. Identified by regex-based heurstic. There is no confidence value in thise case.
+   * 2. Identified by fathom.
+   * 3. Identified by regex-based heurstic. There is no confidence value in thise case.
    *
    * A form is considered a valid credit card form when one of the following condition
    * is met:
-   * A. One of the cc field is identified by autocomplete (case 1)
+   * A. One of the cc field is identified by autocomplete (case 1).
    * B. One of the cc field is identified by fathom (case 2 or 3), and there is also
-   *    another cc field found by any of our heuristic (case 2, 3, or 4)
-   * C. Only one cc field is found in the section, but fathom is very confident (Case 2).
-   *    Currently we add an extra restriction to this rule to decrease the false-positive
-   *    rate. See comments below for details.
+   *    another cc field found by any of our heuristic (case 2, 3).
    *
    * @returns {boolean} True for a valid section, otherwise false
    */
@@ -609,14 +628,6 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
       if (ccNumberDetail || ccExpiryDetail) {
         return true;
       }
-    }
-
-    // Condition C.
-    if (
-      ccNumberDetail?.isOnlyVisibleFieldWithHighConfidence ||
-      ccNameDetail?.isOnlyVisibleFieldWithHighConfidence
-    ) {
-      return true;
     }
 
     return false;
@@ -705,24 +716,6 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
       this.log.debug("Reauth is disabled");
       reauth = false;
     }
-    let string;
-    let errorResult = 0;
-    try {
-      string = await lazy.OSKeyStore.decrypt(cipherText, reauth);
-    } catch (e) {
-      errorResult = e.result;
-      if (e.result != Cr.NS_ERROR_ABORT) {
-        this.log.warn(`Decryption failed with result: ${e.result}`);
-        throw e;
-      }
-      this.log.warn("User canceled encryption login");
-    } finally {
-      Glean.creditcard.osKeystoreDecrypt.record({
-        isDecryptSuccess: errorResult === 0,
-        errorResult,
-        trigger: "autofill",
-      });
-    }
-    return string;
+    return await lazy.OSKeyStore.decrypt(cipherText, "formautofill_cc", reauth);
   }
 }

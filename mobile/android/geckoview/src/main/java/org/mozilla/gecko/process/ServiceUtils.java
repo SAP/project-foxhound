@@ -47,11 +47,11 @@ import androidx.annotation.NonNull;
    *
    * <p>Content services are defined in the manifest as "tab0" through "tabN" for some value of N.
    * For the purposes of binding to an isolated content service, we simply need to repeatedly re-use
-   * the definition of "tab0", the "0" being stored as the
-   * DEFAULT_ISOLATED_CONTENT_SERVICE_NAME_SUFFIX constant.
+   * the definition of "tab0" or "isolatedTab0" or "isolatedTabWithZygote0", the "0" being stored as
+   * the DEFAULT_ISOLATED_CONTENT_SERVICE_NAME_SUFFIX constant.
    */
   public static String buildIsolatedSvcName(@NonNull final GeckoProcessType type) {
-    if (type == GeckoProcessType.CONTENT) {
+    if (GeckoProcessManager.isContent(type)) {
       return buildSvcName(type, DEFAULT_ISOLATED_CONTENT_SERVICE_NAME_SUFFIX);
     }
 

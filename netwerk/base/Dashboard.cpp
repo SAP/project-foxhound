@@ -366,27 +366,27 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
 
-      Unused << record->GetPriority(&nextRecord->mPriority);
+      (void)record->GetPriority(&nextRecord->mPriority);
       nsCString name;
-      Unused << record->GetName(name);
+      (void)record->GetName(name);
       CopyASCIItoUTF16(name, nextRecord->mTargetName);
 
       nsTArray<RefPtr<nsISVCParam>> values;
-      Unused << record->GetValues(values);
+      (void)record->GetValues(values);
       if (values.IsEmpty()) {
         continue;
       }
 
       for (const auto& value : values) {
         uint16_t type;
-        Unused << value->GetType(&type);
+        (void)value->GetType(&type);
         switch (type) {
           case SvcParamKeyAlpn: {
             nextRecord->mAlpn.Construct();
             nextRecord->mAlpn.Value().mType = type;
             nsCOMPtr<nsISVCParamAlpn> alpnParam = do_QueryInterface(value);
             nsTArray<nsCString> alpn;
-            Unused << alpnParam->GetAlpn(alpn);
+            (void)alpnParam->GetAlpn(alpn);
             nsAutoCString alpnStr;
             for (const auto& str : alpn) {
               alpnStr.Append(str);
@@ -405,7 +405,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
             nextRecord->mPort.Construct();
             nextRecord->mPort.Value().mType = type;
             nsCOMPtr<nsISVCParamPort> portParam = do_QueryInterface(value);
-            Unused << portParam->GetPort(&nextRecord->mPort.Value().mPort);
+            (void)portParam->GetPort(&nextRecord->mPort.Value().mPort);
             break;
           }
           case SvcParamKeyIpv4Hint: {
@@ -413,7 +413,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
             nextRecord->mIpv4Hint.Value().mType = type;
             nsCOMPtr<nsISVCParamIPv4Hint> ipv4Param = do_QueryInterface(value);
             nsTArray<RefPtr<nsINetAddr>> ipv4Hint;
-            Unused << ipv4Param->GetIpv4Hint(ipv4Hint);
+            (void)ipv4Param->GetIpv4Hint(ipv4Hint);
             if (!ipv4Hint.IsEmpty()) {
               nextRecord->mIpv4Hint.Value().mAddress.Construct();
               for (const auto& address : ipv4Hint) {
@@ -425,7 +425,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
                 }
 
                 nsCString addressASCII;
-                Unused << address->GetAddress(addressASCII);
+                (void)address->GetAddress(addressASCII);
                 CopyASCIItoUTF16(addressASCII, *nextAddress);
               }
             }
@@ -436,7 +436,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
             nextRecord->mIpv6Hint.Value().mType = type;
             nsCOMPtr<nsISVCParamIPv6Hint> ipv6Param = do_QueryInterface(value);
             nsTArray<RefPtr<nsINetAddr>> ipv6Hint;
-            Unused << ipv6Param->GetIpv6Hint(ipv6Hint);
+            (void)ipv6Param->GetIpv6Hint(ipv6Hint);
             if (!ipv6Hint.IsEmpty()) {
               nextRecord->mIpv6Hint.Value().mAddress.Construct();
               for (const auto& address : ipv6Hint) {
@@ -448,7 +448,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
                 }
 
                 nsCString addressASCII;
-                Unused << address->GetAddress(addressASCII);
+                (void)address->GetAddress(addressASCII);
                 CopyASCIItoUTF16(addressASCII, *nextAddress);
               }
             }
@@ -460,7 +460,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
             nsCOMPtr<nsISVCParamEchConfig> echConfigParam =
                 do_QueryInterface(value);
             nsCString echConfigStr;
-            Unused << echConfigParam->GetEchconfig(echConfigStr);
+            (void)echConfigParam->GetEchconfig(echConfigStr);
             CStringToHexString(echConfigStr,
                                nextRecord->mEchConfig.Value().mEchConfig);
             break;
@@ -471,7 +471,7 @@ nsresult LookupHelper::ConstructHTTPSRRAnswer(LookupArgument* aArgument) {
             nsCOMPtr<nsISVCParamODoHConfig> ODoHConfigParam =
                 do_QueryInterface(value);
             nsCString ODoHConfigStr;
-            Unused << ODoHConfigParam->GetODoHConfig(ODoHConfigStr);
+            (void)ODoHConfigParam->GetODoHConfig(ODoHConfigStr);
             CStringToHexString(ODoHConfigStr,
                                nextRecord->mODoHConfig.Value().mODoHConfig);
             break;

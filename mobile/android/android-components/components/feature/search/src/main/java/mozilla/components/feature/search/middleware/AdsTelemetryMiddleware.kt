@@ -12,7 +12,7 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.search.telemetry.ads.AdsTelemetry
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 
 /**
@@ -28,13 +28,13 @@ class AdsTelemetryMiddleware(
 
     @Suppress("TooGenericExceptionCaught")
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
             is ContentAction.UpdateLoadRequestAction -> {
-                context.state.findTab(action.sessionId)?.let { tab ->
+                store.state.findTab(action.sessionId)?.let { tab ->
                     // Collect all load requests in between location changes
                     if (!redirectChain.containsKey(action.sessionId) && action.loadRequest.url != tab.content.url) {
                         redirectChain[action.sessionId] = RedirectChain(tab.content.url)

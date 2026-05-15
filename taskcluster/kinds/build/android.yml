@@ -9,7 +9,7 @@ task-defaults:
             - geckoview
     index:
         product: mobile
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         docker-image: {in-tree: android-build}
         max-run-time: 7200
@@ -19,8 +19,8 @@ task-defaults:
             - name: public/build/maven
               path: /builds/worker/workspace/obj-build/gradle/maven/
               type: directory
-            - name: public/build/target.maven.tar.xz
-              path: /builds/worker/workspace/obj-build/gradle/target.maven.tar.xz
+            - name: public/build/target.maven.zip
+              path: /builds/worker/workspace/obj-build/gradle/target.maven.zip
               type: file
             - name: public/build/geckoview-androidTest.apk
               path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/geckoview/outputs/apk/androidTest/debug/geckoview-debug-androidTest.apk
@@ -43,6 +43,7 @@ task-defaults:
             - name: public/reports
               path: /builds/worker/workspace/obj-build/gradle/build/reports
               type: directory
+    run-on-repo-type: [hg]
     run:
         using: mozharness
         script: "mozharness/scripts/fx_desktop_build.py"
@@ -62,6 +63,9 @@ task-defaults:
             - linux64-node
             - sysroot-x86_64-linux-gnu
             - sysroot-wasm32-wasi
+            # 'embedded-uniffi-bindgen' and 'nimbus-fml' only needed for artifact builds, but it's not easy to make that conditional.
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
 
 android-arm/debug:
     description: "Android Arm Debug"
@@ -87,113 +91,6 @@ android-arm/debug:
             - linux64-sccache
             - android-gradle-dependencies
 
-android-x86/opt:
-    description: "Android x86 Opt"
-    index:
-        job-name: android-x86-opt
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-x86/opt
-        symbol: B
-    run-on-projects: ['integration']
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        actions: [get-secrets, build]
-        custom-build-variant-cfg: x86
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies
-
-android-x86-lite/opt:
-    description: "Android x86 Opt Lite"
-    index:
-        job-name: android-x86-lite-opt
-    attributes:
-        enable-full-crashsymbols: true
-    treeherder:
-        platform: android-5-0-x86/opt
-        symbol: Bl
-    run-on-projects: ['integration']
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            PERFHERDER_EXTRA_OPTIONS: lite
-    run:
-        actions: [get-secrets, build]
-        custom-build-variant-cfg: x86-lite
-    use-sccache: true
-    fetches:
-        toolchain:
-            - linux64-clang
-            - linux64-sccache
-            - android-gradle-dependencies-lite
-
-android-x86-shippable/opt:
-    description: "Android x86 Shippable"
-    use-pgo: true
-    attributes:
-        enable-full-crashsymbols: true
-        shippable: true
-    shipping-phase: build
-    shipping-product: fennec
-    index:
-        job-name: android-x86-opt
-        type: android-shippable
-    treeherder:
-        platform: android-5-0-x86-shippable/opt
-        symbol: Bpgo(B)
-    run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-    run:
-        actions: [get-secrets, build, multi-l10n]
-        config: [taskcluster_nightly.py]
-        custom-build-variant-cfg: x86
-    fetches:
-        toolchain:
-            - linux64-clang
-            - android-gradle-dependencies
-
-android-x86-shippable-lite/opt:
-    description: "Android x86 Shippable Lite"
-    use-pgo: android-x86-shippable/opt
-    attributes:
-        enable-full-crashsymbols: true
-        shippable: true
-    shipping-phase: build
-    shipping-product: fennec
-    index:
-        job-name: android-x86-lite-opt
-        type: android-shippable
-    treeherder:
-        platform: android-5-0-x86-shippable/opt
-        symbol: Bpgo(Bl)
-    run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
-    worker:
-        env:
-            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
-            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
-            PERFHERDER_EXTRA_OPTIONS: lite
-    run:
-        actions: [get-secrets, build, multi-l10n]
-        config: [taskcluster_nightly.py]
-        custom-build-variant-cfg: x86-lite
-    fetches:
-        toolchain:
-            - linux64-clang
-            - android-gradle-dependencies-lite
-
 android-arm/opt:
     description: "Android Arm Opt"
     index:
@@ -212,6 +109,7 @@ android-arm/opt:
         actions: [get-secrets, build]
         custom-build-variant-cfg: arm
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
@@ -257,7 +155,7 @@ android-arm-shippable/opt:
         platform: android-5-0-armv7-shippable/opt
         symbol: Bpgo(B)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -286,7 +184,7 @@ android-arm-shippable-lite/opt:
         platform: android-5-0-armv7-shippable/opt
         symbol: Bpgo(Bl)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -319,6 +217,7 @@ android-aarch64/opt:
         actions: [get-secrets, build]
         custom-build-variant-cfg: aarch64
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
@@ -348,6 +247,33 @@ android-aarch64-lite/opt:
             - linux64-clang
             - linux64-sccache
             - android-gradle-dependencies-lite
+
+android-aarch64-non-unified/opt:
+    description: "Android AArch64 Opt Non-unified"
+    index:
+        job-name: android-aarch64-non-unified
+    treeherder:
+        platform: android-5-0-aarch64/opt
+        symbol: B-nu
+    run-on-projects: ['integration']
+    worker:
+        env:
+            MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
+            PERFHERDER_EXTRA_OPTIONS: non-unified
+            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+    run:
+        actions: [get-secrets, build]
+        custom-build-variant-cfg: aarch64
+        extra-config:
+            extra_mozconfig_content:
+                - ac_add_options --disable-unified-build
+    use-sccache: true
+    use-python: "3.11"
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-sccache
+            - android-gradle-dependencies
 
 android-aarch64/debug:
     description: "Android AArch64 Debug"
@@ -388,7 +314,7 @@ android-aarch64-shippable/opt:
         platform: android-5-0-aarch64-shippable/opt
         symbol: Bpgo(B)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -417,7 +343,7 @@ android-aarch64-shippable-lite/opt:
         platform: android-5-0-aarch64-shippable/opt
         symbol: Bpgo(Bl)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
@@ -450,6 +376,7 @@ android-x86_64/opt:
         actions: [get-secrets, build]
         custom-build-variant-cfg: x86_64
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
@@ -505,6 +432,33 @@ android-x86_64-fuzzing/debug:
     optimization:
         skip-unless-expanded: null
 
+android-x86_64-non-unified/opt:
+    description: "Android x86-64 Opt Non-unified"
+    index:
+        job-name: android-x86_64-non-unified
+    treeherder:
+        platform: android-5-0-x86_64/opt
+        symbol: B-nu
+    run-on-projects: ['integration']
+    worker:
+        env:
+            MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
+            PERFHERDER_EXTRA_OPTIONS: non-unified
+            TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
+    run:
+        actions: [get-secrets, build]
+        custom-build-variant-cfg: x86_64
+        extra-config:
+            extra_mozconfig_content:
+                - ac_add_options --disable-unified-build
+    use-sccache: true
+    use-python: "3.11"
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-sccache
+            - android-gradle-dependencies
+
 android-x86_64-shippable/opt:
     description: "Android x86-64 Shippable"
     use-pgo: true
@@ -520,7 +474,7 @@ android-x86_64-shippable/opt:
         platform: android-5-0-x86_64-shippable/opt
         symbol: Bpgo(B)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"
@@ -549,7 +503,7 @@ android-x86_64-shippable-lite/opt:
         platform: android-5-0-x86_64-shippable/opt
         symbol: Bpgo(Bl)
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         env:
             TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android-x86/releng.manifest"

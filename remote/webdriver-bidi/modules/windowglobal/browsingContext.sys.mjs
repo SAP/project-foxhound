@@ -14,13 +14,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ClipRectangleType:
     "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   LoadListener: "chrome://remote/content/shared/listeners/LoadListener.sys.mjs",
   LocatorType:
     "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.sys.mjs",
   OriginType:
     "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.sys.mjs",
   OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
-  PollPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
 });
 
@@ -31,6 +31,7 @@ const ELEMENT_NODE = 1;
 const ORDERED_NODE_SNAPSHOT_TYPE = 7;
 
 class BrowsingContextModule extends WindowGlobalBiDiModule {
+  #contextCreatedHandled;
   #loadListener;
   #subscribedEvents;
 
@@ -44,6 +45,7 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
 
     // Set of event names which have active subscriptions.
     this.#subscribedEvents = new Set();
+    this.contextCreatedHandled = false;
   }
 
   destroy() {
@@ -146,6 +148,23 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
       documentElement.scrollWidth,
       documentElement.scrollHeight
     );
+  }
+
+  /**
+   * Locate the container element of a provided context id.
+   *
+   * @see https://w3c.github.io/webdriver-bidi/#locate-the-container-element
+   */
+
+  #locateContainer(contextId) {
+    const returnedNodes = [];
+    const context = BrowsingContext.get(contextId);
+    const container = context.embedderElement;
+    if (container) {
+      returnedNodes.push(container);
+    }
+
+    return returnedNodes;
   }
 
   /**
@@ -399,6 +418,27 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
 
       // Subscribe to all events, which have an item in SessionData.
       for (const { value } of filteredSessionData) {
+        /**
+         * We only want to emit backfill events when subscribing to the contextCreated
+         * event. We also do not want to emit a backfill when creating the context
+         * initially as this is already emitted elsewhere, so backfilling it would
+         * cause a duplicate event to be emitted.
+         */
+        if (value === "browsingContext.contextCreated") {
+          /**
+           * We check for contextCreatedHandled so we do not replay any contextCreated events we
+           * have seen before. This can happen when navigating within a browser session as
+           * navigation will cause _applySessionData to be called with params.initial = false.
+           */
+          if (!params.initial && !this.#contextCreatedHandled) {
+            this.emitEvent("browsingContext.contextCreated", {
+              context: this.messageHandler.context,
+            });
+          }
+
+          this.#contextCreatedHandled = true;
+        }
+
         this.#subscribeEvent(value);
       }
     }
@@ -449,23 +489,38 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
    * Waits until the visibility state of the document has the expected value.
    *
    * @param {object} options
+   * @param {number=} options.timeout
+   *     Timeout in ms. Optional, if not provided, the command will only resolve
+   *     when the expected state is met.
    * @param {number} options.value
    *     Expected value of the visibility state.
    *
    * @returns {Promise}
-   *     Promise that resolves when the visibility state has the expected value.
+   *     Promise that resolves when the visibility state has the expected value,
+   *     or the timeout has been reached.
    */
   async _awaitVisibilityState(options) {
-    const { value } = options;
+    const { timeout = null, value } = options;
     const win = this.messageHandler.window;
 
-    await lazy.PollPromise((resolve, reject) => {
-      if (win.document.visibilityState === value) {
-        resolve();
-      } else {
-        reject();
+    if (win.document.visibilityState === value) {
+      // If the document visibilityState already has the expected value, resolve
+      // immediately.
+      return;
+    }
+
+    try {
+      // Otherwise, wait for the next visibilitychange event.
+      await new lazy.EventPromise(win, "visibilitychange", { timeout });
+    } catch (e) {
+      if (e instanceof lazy.error.TimeoutError) {
+        // Swallow the exception thrown by the EventPromise if we simply
+        // reached the timeout. Here the timeout is meant as an escape hatch,
+        // but we should still resolve
+        return;
       }
-    });
+      throw e;
+    }
   }
 
   _getBaseURL() {
@@ -544,6 +599,10 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
           locator.value,
           maxNodeCount
         );
+        break;
+      }
+      case lazy.LocatorType.context: {
+        returnedNodes = this.#locateContainer(locator.value.context);
         break;
       }
       case lazy.LocatorType.css: {

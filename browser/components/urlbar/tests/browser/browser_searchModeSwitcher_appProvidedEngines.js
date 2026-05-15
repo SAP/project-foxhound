@@ -16,7 +16,7 @@ add_setup(async function setup() {
 add_task(async function test_search_mode_app_provided_engines() {
   let cleanup = await installPersistTestEngines();
 
-  let switcher = document.getElementById("urlbar-searchmode-switcher");
+  let switcher = gURLBar.querySelector(".searchmode-switcher");
   await BrowserTestUtils.waitForCondition(
     () => BrowserTestUtils.isVisible(switcher),
     `Wait until unified search button is visible`
@@ -38,7 +38,7 @@ add_task(async function test_search_mode_app_provided_engines() {
   });
 
   info("Press the close button and escape search mode");
-  window.document.querySelector("#searchmode-switcher-close").click();
+  gURLBar.querySelector(".searchmode-switcher-close").click();
   await UrlbarTestUtils.assertSearchMode(window, null);
 
   cleanup();

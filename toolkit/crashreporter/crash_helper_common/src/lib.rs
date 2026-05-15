@@ -11,16 +11,28 @@ mod breakpad;
 mod ipc_channel;
 mod ipc_connector;
 mod ipc_listener;
+mod ipc_queue;
 mod platform;
 
-use errors::MessageError;
+use messages::MessageError;
 
 // Re-export the platform-specific types and functions
 pub use crate::breakpad::{BreakpadChar, BreakpadData, BreakpadRawData, Pid};
 pub use crate::ipc_channel::{IPCChannel, IPCClientChannel};
-pub use crate::ipc_connector::{AncillaryData, IPCConnector, IPCEvent, INVALID_ANCILLARY_DATA};
-pub use crate::ipc_listener::IPCListener;
-pub use crate::platform::{server_addr, ProcessHandle};
+pub use crate::ipc_connector::{
+    AncillaryData, IPCConnector, IPCConnectorKey, IPCEvent, RawIPCConnector,
+};
+pub use crate::ipc_listener::{IPCListener, IPCListenerError};
+pub use crate::ipc_queue::IPCQueue;
+pub use crate::platform::ProcessHandle;
+
+#[cfg(target_os = "windows")]
+pub use crate::platform::server_addr;
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub use crate::platform::{
+    mach_msg_recv, mach_msg_send, AsRawPort, MachMessageWrapper, ReceiveRight, SendRight,
+};
 
 /// OsString extensions to convert from/to C strings. The strings will be
 /// regular nul-terminated byte strings on most platforms but will use wide

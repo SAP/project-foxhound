@@ -8,10 +8,10 @@
 #define DOM_LOCKS_LOCKMANAGERPARENT_H_
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/dom/locks/PLockManagerParent.h"
-#include "mozilla/dom/locks/LockRequestParent.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/locks/LockRequestParent.h"
+#include "mozilla/dom/locks/PLockManagerParent.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 
 namespace mozilla::dom::locks {
 

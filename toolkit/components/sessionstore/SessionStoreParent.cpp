@@ -7,10 +7,8 @@
 #include "mozilla/dom/SessionStoreParent.h"
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowserSessionStore.h"
 #include "mozilla/dom/BrowserSessionStoreBinding.h"
@@ -96,7 +94,7 @@ static void DoSessionStoreUpdate(CanonicalBrowsingContext* aBrowsingContext,
   JS::Rooted<JS::Value> key(jsapi.cx(),
                             aBrowsingContext->Top()->PermanentKey());
 
-  Unused << sessionStoreFuncs->UpdateSessionStore(
+  (void)sessionStoreFuncs->UpdateSessionStore(
       nullptr, aBrowsingContext, key, aEpoch, aNeedCollectSHistory, update);
 }
 
@@ -248,21 +246,21 @@ void SessionStoreParent::SessionStoreUpdate(
     const Maybe<nsCString>& aDocShellCaps, const Maybe<bool>& aPrivatedMode,
     const MaybeSessionStoreZoom& aZoom, const bool aNeedCollectSHistory,
     const uint32_t& aEpoch) {
-  Unused << RecvSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
-                                   aNeedCollectSHistory, aEpoch);
+  (void)RecvSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
+                               aNeedCollectSHistory, aEpoch);
 }
 
 void SessionStoreParent::IncrementalSessionStoreUpdate(
     const MaybeDiscarded<BrowsingContext>& aBrowsingContext,
     const Maybe<FormData>& aFormData, const Maybe<nsPoint>& aScrollPosition,
     uint32_t aEpoch) {
-  Unused << RecvIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
-                                              aScrollPosition, aEpoch);
+  (void)RecvIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
+                                          aScrollPosition, aEpoch);
 }
 
 void SessionStoreParent::ResetSessionStore(
     const MaybeDiscarded<BrowsingContext>& aBrowsingContext, uint32_t aEpoch) {
-  Unused << RecvResetSessionStore(aBrowsingContext, aEpoch);
+  (void)RecvResetSessionStore(aBrowsingContext, aEpoch);
 }
 
 NS_IMPL_CYCLE_COLLECTION(SessionStoreParent, mBrowsingContext, mSessionStore)

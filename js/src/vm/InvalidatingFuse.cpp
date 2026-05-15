@@ -33,7 +33,14 @@ bool js::InvalidatingRuntimeFuse::addFuseDependency(
   return scriptSet->addScriptForFuse(this, ionScript);
 }
 
+// This method will pop the fuse and iterates over its dependencies
+// iff this fuse is still intact.
+// This avoids a costly iteration over dependencies in subsequent calls.
 void js::InvalidatingRuntimeFuse::popFuse(JSContext* cx) {
+  if (!intact()) {
+    return;
+  }
+
   // Pop the fuse in the base class
   GuardFuse::popFuse(cx);
   JS_LOG(fuseInvalidation, Verbose, "Invalidating fuse popping: %s", name());

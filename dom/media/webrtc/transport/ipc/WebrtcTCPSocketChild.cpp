@@ -6,13 +6,11 @@
 
 #include "WebrtcTCPSocketChild.h"
 
+#include "LoadInfo.h"
+#include "WebrtcTCPSocketCallback.h"
+#include "WebrtcTCPSocketLog.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/SocketProcessChild.h"
-
-#include "LoadInfo.h"
-
-#include "WebrtcTCPSocketLog.h"
-#include "WebrtcTCPSocketCallback.h"
 
 using namespace mozilla::ipc;
 

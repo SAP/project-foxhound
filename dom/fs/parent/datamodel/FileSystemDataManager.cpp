@@ -229,10 +229,8 @@ FileSystemDataManager::GetOrCreateFileSystemDataManager(
                                         NS_STREAMTRANSPORTSERVICE_CONTRACTID),
                 CreatePromise::CreateAndReject(NS_ERROR_FAILURE, __func__));
 
-  nsCString taskQueueName("OPFS "_ns + aOriginMetadata.mOrigin);
-
   RefPtr<TaskQueue> ioTaskQueue =
-      TaskQueue::Create(do_AddRef(streamTransportService), taskQueueName.get());
+      TaskQueue::Create(do_AddRef(streamTransportService), "OPFS");
 
   auto dataManager = MakeRefPtr<FileSystemDataManager>(
       aOriginMetadata, std::move(quotaManager),

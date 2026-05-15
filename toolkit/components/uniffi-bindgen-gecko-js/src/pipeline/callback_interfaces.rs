@@ -6,9 +6,9 @@ use heck::ToUpperCamelCase;
 
 use super::*;
 
-pub fn pass(module: &mut Module) -> Result<()> {
-    let module_name = module.name.clone();
-    module.visit_mut(|cbi: &mut CallbackInterface| {
+pub fn pass(namespace: &mut Namespace) -> Result<()> {
+    let namespace_name = namespace.name.clone();
+    namespace.visit_mut(|cbi: &mut CallbackInterface| {
         cbi.vtable.interface_name = cbi.name.clone();
         cbi.vtable.callback_interface = true;
         cbi.interface_base_class = InterfaceBaseClass {
@@ -33,10 +33,10 @@ pub fn pass(module: &mut Module) -> Result<()> {
         };
     });
     // Set the js_handler_var for both callback interfaces and trait interfaces
-    module.visit_mut(|vtable: &mut VTable| {
+    namespace.visit_mut(|vtable: &mut VTable| {
         vtable.js_handler_var = format!(
             "uniffiCallbackHandler{}{}",
-            module_name.to_upper_camel_case(),
+            namespace_name.to_upper_camel_case(),
             vtable.interface_name.to_upper_camel_case()
         );
     });

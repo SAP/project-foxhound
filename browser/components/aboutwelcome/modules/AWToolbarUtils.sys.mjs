@@ -9,7 +9,8 @@ const widgetId = "aboutwelcome-button";
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
 });
 
 export const AWToolbarButton = {

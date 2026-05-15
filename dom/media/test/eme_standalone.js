@@ -40,6 +40,7 @@ var EmeHelper = class EmeHelper {
 
   /**
    * Get the clearkey key system string.
+   *
    * @return The clearkey key system string.
    */
   static GetClearkeyKeySystemString() {
@@ -51,6 +52,7 @@ var EmeHelper = class EmeHelper {
   /**
    * Helper to convert Uint8Array into base64 using base64url alphabet, without
    * padding.
+   *
    * @param uint8Array An array of bytes to convert to base64.
    * @return A base 64 encoded string
    */
@@ -65,6 +67,7 @@ var EmeHelper = class EmeHelper {
   /**
    * Helper to convert a hex string into base64 using base64url alphabet,
    * without padding.
+   *
    * @param hexString A string of hex characters.
    * @return A base 64 encoded string
    */
@@ -83,6 +86,7 @@ var EmeHelper = class EmeHelper {
 
   /**
    * Helper to convert a base64 string (base64 or base64url) into a hex string.
+   *
    * @param base64String A base64 encoded string. This can be base64url.
    * @return A hex string (lower case);
    */
@@ -110,6 +114,7 @@ var EmeHelper = class EmeHelper {
 
   /**
    * Sets the key system that will be used by the EME helper.
+   *
    * @param keySystem The key system to use. Probably "org.w3.clearkey", which
    * can be fetched via `GetClearkeyKeySystemString`.
    */
@@ -120,6 +125,7 @@ var EmeHelper = class EmeHelper {
   /**
    * Sets the init data types that will be used by the EME helper. This is used
    * when calling `navigator.requestMediaKeySystemAccess`.
+   *
    * @param initDataTypes A list containing the init data types to be set by
    * the helper. This will usually be ["cenc"] or ["webm"], see
    * https://www.w3.org/TR/eme-initdata-registry/ for more info on what these
@@ -134,6 +140,7 @@ var EmeHelper = class EmeHelper {
    * used when calling `navigator.requestMediaKeySystemAccess`.
    * See https://developer.mozilla.org/en-US/docs/Web/API/Navigator/requestMediaKeySystemAccess
    * for more info on these.
+   *
    * @param audioCapabilities A list containing audio capabilities. E.g.
    * [{ contentType: 'audio/webm; codecs="opus"' }].
    */
@@ -146,6 +153,7 @@ var EmeHelper = class EmeHelper {
    * used when calling `navigator.requestMediaKeySystemAccess`.
    * See https://developer.mozilla.org/en-US/docs/Web/API/Navigator/requestMediaKeySystemAccess
    * for more info on these.
+   *
    * @param videoCapabilities A list containing video capabilities. E.g.
    * [{ contentType: 'video/webm; codecs="vp9"' }]
    */
@@ -156,12 +164,15 @@ var EmeHelper = class EmeHelper {
   /**
    * Adds a key id and key pair to the key map. These should both be hex
    * strings. E.g.
+   * ```js
    * emeHelper.AddKeyIdAndKey(
    *   "2cdb0ed6119853e7850671c3e9906c3c",
    *   "808b9adac384de1e4f56140f4ad76194"
    * );
+   * ```
    * This function will store the keyId and key in lower case to ensure
    * consistency internally.
+   *
    * @param keyId The key id used to lookup the following key.
    * @param key The key associated with the earlier key id.
    */
@@ -171,6 +182,7 @@ var EmeHelper = class EmeHelper {
 
   /**
    * Removes a key id and its associate key from the key map.
+   *
    * @param keyId The key id to remove.
    */
   RemoveKeyIdAndKey(keyId) {
@@ -183,6 +195,7 @@ var EmeHelper = class EmeHelper {
    * Internal handler for `session.onmessage`. When calling this either do so
    * from inside an arrow function or using `bind` to ensure `this` points to
    * an EmeHelper instance (rather than a session).
+   *
    * @param messageEvent The message event passed to `session.onmessage`.
    */
   _SessionMessageHandler(messageEvent) {
@@ -229,6 +242,7 @@ var EmeHelper = class EmeHelper {
   /**
    * Configures EME on a media element using the parameters already set on the
    * instance of EmeHelper.
+   *
    * @param htmlMediaElement - A media element to configure EME on.
    * @return A promise that will be resolved once the media element is
    * configured. This promise will be rejected with an error if configuration

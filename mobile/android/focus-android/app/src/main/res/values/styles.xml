@@ -2,11 +2,14 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="AppTheme" parent="Theme.MaterialComponents.DayNight.NoActionBar.Bridge">
+<resources>
+    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/colorPrimary</item>
         <!-- This is the default color for activated controls(buttons) -->
         <item name="colorAccent">@color/accentBright</item>
+        <item name="android:windowBackground">@color/modal_background</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.App.Button.OutlinedButton</item>
+        <item name="popupMenuBackground">@color/modal_background</item>
 
         <item name="android:windowAnimationStyle">@style/WindowAnimationTransition</item>
         <item name="android:windowContentTransitions">true</item>
@@ -14,6 +17,10 @@
         <item name="bottomSheetDialogTheme">@style/AppBottomSheetDialogTheme</item>
         <item name="disabled">@color/disabled</item>
         <item name="destructive">@color/destructive</item>
+        <item name="switchStyle">@style/App.Widget.Switch</item>
+        <item name="checkboxStyle">@style/App.Widget.CompoundButton.CheckBox</item>
+        <item name="radioButtonStyle">@style/App.Widget.CompoundButton.RadioButton</item>
+        <item name="textInputStyle">@style/Widget.App.TextInputLayout</item>
 
         <!-- Use the same colors for both themes until light theme it will be implemented -->
         <item name="primaryText">@color/primaryText</item>
@@ -25,10 +32,14 @@
         <item name="preferenceTheme">@style/PreferenceTheme</item>
         <item name="alertDialogStyle">@style/DialogStyle</item>
         <item name="alertDialogTheme">@style/DialogStyle</item>
+        <item name="materialAlertDialogTheme">@style/DialogStyle</item>
         <item name="android:progressBarStyleHorizontal">@style/progressBarStyleHorizontal</item>
         <item name="android:itemBackground">@color/menuBackground</item>
         <item name="android:itemTextAppearance">@style/ItemTextAppearance</item>
         <item name="tabCounterTintColor">?primaryText</item>
+
+        <item name="materialTimePickerTheme">@style/MaterialTimePicker</item>
+        <item name="materialCalendarTheme">@style/MaterialCalendar</item>
     </style>
 
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
@@ -38,6 +49,10 @@
     </style>
 
     <style name="Theme.CrashActivityTheme" parent="Theme.AppCompat.NoActionBar">
+    </style>
+
+    <style name="Widget.App.Button.OutlinedButton" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textColor">@color/contrastColor</item>
     </style>
 
     <!-- Fade animation for theme switching -->
@@ -84,14 +99,15 @@
     </style>
 
     <!-- Setting this via alertDialogStyle in AppTheme results in crashes. You need to
-         explicitly select this via "new AlertDialog.Builder(activity, R.style.DialogStyle)"
+         explicitly select this via "MaterialAlertDialogBuilder(activity, R.style.DialogStyle)"
          We need this style because the accent colour for the MainActivity is purple,
          but we want different accents in the dialog. -->
-    <style name="DialogStyle" parent="Theme.AppCompat.Dialog.Alert">
+    <style name="DialogStyle" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="android:windowTitleStyle">@style/DialogTitleStyle</item>
         <item name="android:textColorPrimary">@color/primaryText</item>
         <item name="dialogPreferredPadding">24dp</item>
         <item name="android:windowBackground">@drawable/dialog_background</item>
+        <item name="android:background">@drawable/dialog_background</item>
 
         <!-- This is the default color for activated controls(buttons) -->
         <item name="android:colorAccent">@color/accentBright</item>
@@ -100,13 +116,19 @@
         <item name="colorControlNormal">@color/accentBright</item>
         <item name="buttonBarNegativeButtonStyle">@style/DialogButtonStyle</item>
         <item name="buttonBarPositiveButtonStyle">@style/DialogButtonStyle</item>
+        <item name="shapeAppearance">@style/MaterialAlertDialogShapeAppearance</item>
+    </style>
+
+    <style name="MaterialAlertDialogShapeAppearance" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/material_dialog_corner_radius</item>
     </style>
 
     <style name="DialogButtonStyle" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
         <item name="android:textColor">@color/accentBright</item>
     </style>
 
-    <style name="ButtonStyle" parent="Base.Widget.AppCompat.ButtonBar.AlertDialog">
+    <style name="ButtonStyle" parent="Widget.Material3.Button.TextButton.Dialog">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textAllCaps">true</item>
@@ -283,8 +305,22 @@
         <item name="android:background">@color/modal_background</item>
     </style>
 
+    <style name="App.Widget.Switch" parent="Widget.Material3.CompoundButton.Switch">
+        <item name="android:theme">@style/SwitchTheme</item>
+        <item name="thumbTint">@color/thumb_color_selector</item>
+        <item name="trackTint">@color/track_color_selector</item>
+    </style>
+
     <style name="SwitchTheme" parent="Theme.AppCompat.Light">
         <item name="colorControlActivated">@color/accentBright</item>
+    </style>
+
+    <style name="App.Widget.CompoundButton.CheckBox" parent="Widget.Material3.CompoundButton.CheckBox">
+        <item name="buttonTint">@color/compound_button_color_selector</item>
+    </style>
+
+    <style name="App.Widget.CompoundButton.RadioButton" parent="Widget.Material3.CompoundButton.RadioButton">
+        <item name="buttonTint">@color/compound_button_color_selector</item>
     </style>
 
     <style name="Preference.Title" parent="Widget.MaterialComponents.TextView">
@@ -313,6 +349,38 @@
         <item name="fontFamily">@font/metropolis</item>
         <item name="android:letterSpacing">0.04</item>
         <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Widget.App.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <!-- This controls the floating hint color when the field is focused -->
+        <item name="hintTextColor">@color/accentBright</item>
+        <item name="boxStrokeColor">@color/accentBright</item>
+        <item name="cursorColor">@color/accentBright</item>
+
+        <!-- This controls the hint color when the field is NOT focused (resting) -->
+        <item name="android:textColorHint">@color/secondaryText</item>
+
+        <item name="boxStrokeWidthFocused">1dp</item>
+    </style>
+
+    <style name="MaterialTimePicker" parent="ThemeOverlay.Material3.MaterialTimePicker">
+        <item name="colorPrimary">@color/accentBright</item>
+        <item name="colorAccent">@color/accentBright</item>
+    </style>
+
+    <style name="MaterialCalendar" parent="ThemeOverlay.Material3.MaterialCalendar">
+        <item name="buttonBarPositiveButtonStyle">@style/DialogButtonStyle</item>
+        <item name="buttonBarNegativeButtonStyle">@style/DialogButtonStyle</item>
+        <item name="materialCalendarStyle">@style/CustomMaterialCalendarWidget</item>
+    </style>
+
+    <style name="CustomMaterialCalendarWidget" parent="Widget.Material3.MaterialCalendar">
+        <item name="daySelectedStyle">@style/DaySelectedStyle</item>
+    </style>
+
+    <style name="DaySelectedStyle" parent="Widget.Material3.MaterialCalendar.Day.Selected">
+        <item name="itemFillColor">@color/accentBright</item>
+        <item name="itemTextColor">@color/primaryText</item>
     </style>
 
     <style name="MetropolisButton">

@@ -37,8 +37,8 @@ add_setup(async function () {
       },
     ],
     prefs: [
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
-      ["suggest.quicksuggest.nonsponsored", true],
     ],
   });
 });

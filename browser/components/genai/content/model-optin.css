@@ -7,7 +7,7 @@
   background-color: var(--background-color-canvas);
   border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
   box-shadow: var(--optin-wrapper-box-shadow);
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
   padding: var(--space-large);
 }
 
@@ -24,7 +24,7 @@
 }
 
 .optin-heading {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   font-size: var(--font-size-xxlarge);
   margin: 0;
 }

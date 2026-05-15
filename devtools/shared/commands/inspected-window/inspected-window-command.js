@@ -32,11 +32,11 @@ class InspectedWindowCommand {
   /**
    * Evaluate the provided javascript code in a target window.
    *
-   * @param {Object} webExtensionCallerInfo - The addonId and the url (the addon base url
+   * @param {object} webExtensionCallerInfo - The addonId and the url (the addon base url
    *        or the url of the actual caller filename and lineNumber) used to log useful
    *        debugging information in the produced error logs and eval stack trace.
-   * @param {String} expression - The expression to evaluate.
-   * @param {Object} options - An option object. Check the actor method definition to see
+   * @param {string} expression - The expression to evaluate.
+   * @param {object} options - An option object. Check the actor method definition to see
    *        what properties it can hold (minus the `consoleFront` property which is defined
    *        below).
    * @param {WebConsoleFront} options.consoleFront - An optional webconsole front. When
@@ -100,7 +100,7 @@ class InspectedWindowCommand {
    *   the addonId and the url (the addon base url or the url of the actual caller
    *   filename and lineNumber) used to log useful debugging information in the
    *   produced error logs and eval stack trace.
-   * @param {Object} options
+   * @param {object} options
    * @param {boolean|undefined} options.ignoreCache
    *        Enable/disable the cache bypass headers.
    * @param {string|undefined} options.injectedScript

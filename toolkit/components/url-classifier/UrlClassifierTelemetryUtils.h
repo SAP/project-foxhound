@@ -3,10 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef UrlClassifierTelemetryUtils_h__
-#define UrlClassifierTelemetryUtils_h__
+#ifndef UrlClassifierTelemetryUtils_h_
+#define UrlClassifierTelemetryUtils_h_
 
-#include "mozilla/TypedEnumBits.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -28,4 +27,4 @@ enum UpdateTimeout {
 }  // namespace safebrowsing
 }  // namespace mozilla
 
-#endif  // UrlClassifierTelemetryUtils_h__
+#endif  // UrlClassifierTelemetryUtils_h_

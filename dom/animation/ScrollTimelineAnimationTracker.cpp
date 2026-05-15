@@ -13,6 +13,13 @@ namespace mozilla {
 NS_IMPL_CYCLE_COLLECTION(ScrollTimelineAnimationTracker, mPendingSet, mDocument)
 
 void ScrollTimelineAnimationTracker::TriggerPendingAnimations() {
+  // Sample scroll timelines now to make sure its offsets are up-to-date.
+  // The scroll container may not be ready when creating the scroll timelines,
+  // and we trigger the pending animations after we flush the layout, so we have
+  // to do this here to make sure the current time is up-to-date when triggering
+  // animations.
+  mDocument->TimelinesController().TrySampleScrollTimelines();
+
   for (RefPtr<dom::Animation>& animation :
        ToTArray<AutoTArray<RefPtr<dom::Animation>, 32>>(mPendingSet)) {
     MOZ_ASSERT(animation->GetTimeline() &&

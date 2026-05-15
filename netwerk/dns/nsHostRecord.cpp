@@ -11,6 +11,7 @@
 #include "mozilla/glean/NetwerkDnsMetrics.h"
 #include "mozilla/ThreadSafety.h"
 #include "TRRService.h"
+#include "mozilla/ProfilerMarkers.h"
 
 //----------------------------------------------------------------------------
 // this macro filters out any flags that are not used when constructing the
@@ -31,6 +32,32 @@
 
 using namespace mozilla;
 using namespace mozilla::net;
+
+struct HostResolverMarker {
+  static constexpr mozilla::Span<const char> MarkerTypeName() {
+    return mozilla::MakeStringSpan("HostResolver");
+  }
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aHost,
+      const mozilla::ProfilerString8View& aOriginSuffix, uint16_t aType,
+      uint32_t aFlags) {
+    aWriter.StringProperty("host", aHost);
+    aWriter.StringProperty("originSuffix", aOriginSuffix);
+    aWriter.IntProperty("qtype", aType);
+    aWriter.StringProperty("flags", nsPrintfCString("0x%x", aFlags));
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.SetTableLabel("{marker.data.host}");
+    schema.AddKeyFormat("host", MS::Format::SanitizedString);
+    schema.AddKeyFormat("originSuffix", MS::Format::SanitizedString);
+    schema.AddKeyFormat("qtype", MS::Format::Integer);
+    schema.AddKeyFormat("flags", MS::Format::String);
+    return schema;
+  }
+};
 
 nsHostKey::nsHostKey(const nsACString& aHost, const nsACString& aTrrServer,
                      uint16_t aType, nsIDNSService::DNSFlags aFlags,
@@ -286,9 +313,16 @@ void AddrHostRecord::NotifyRetryingTrr() {
 }
 
 void AddrHostRecord::ResolveComplete() {
+  TimeStamp now = TimeStamp::Now();
+
   if (LoadNativeUsed()) {
     if (mNativeSuccess) {
       glean::dns::native_lookup_time.AccumulateRawDuration(mNativeDuration);
+      profiler_add_marker(
+          "Native DNS Lookup", geckoprofiler::category::NETWORK,
+          MarkerOptions(MarkerTiming::Interval(mNativeStart, now),
+                        MarkerThreadId::MainThread()),
+          HostResolverMarker{}, host, originSuffix, type, flags);
     }
     glean::dns::lookup_disposition
         .Get(TRRService::ProviderKey(),
@@ -302,6 +336,11 @@ void AddrHostRecord::ResolveComplete() {
                             mozilla::net::TRRSkippedReason::TRR_OK);
       glean::dns::trr_lookup_time.Get(TRRService::ProviderKey())
           .AccumulateRawDuration(mTrrDuration);
+      profiler_add_marker(
+          "TRR DNS Lookup", geckoprofiler::category::NETWORK,
+          MarkerOptions(MarkerTiming::Interval(now - mTrrDuration, now),
+                        MarkerThreadId::MainThread()),
+          HostResolverMarker{}, host, originSuffix, type, flags);
     }
     glean::dns::lookup_disposition
         .Get(TRRService::ProviderKey(), mTRRSuccess ? "trrOK"_ns : "trrFail"_ns)

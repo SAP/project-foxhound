@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsstreamconverterservice__h___
-#define __nsstreamconverterservice__h___
+#ifndef _nsstreamconverterservice_h_
+#define _nsstreamconverterservice_h_
 
 #include "nsIStreamConverterService.h"
 
@@ -43,4 +43,4 @@ class nsStreamConverterService : public nsIStreamConverterService {
   nsClassHashtable<nsCStringHashKey, nsTArray<RefPtr<nsAtom>>> mAdjacencyList;
 };
 
-#endif  // __nsstreamconverterservice__h___
+#endif  // _nsstreamconverterservice_h_

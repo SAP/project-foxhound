@@ -11,27 +11,6 @@ therefore does not cover that update mechanism.
 Definitions
 -----------
 
-MAR file
-''''''''
-
-An archive format containing update data. They are signed to prevent
-being tampered with.
-
-Partial MAR file
-''''''''''''''''
-
-A MAR file containing a binary diff between the installed and updated
-versions of Firefox. This is the preferred update mechanism because the
-file sizes are much smaller.
-
-Complete MAR file
-'''''''''''''''''
-
-A MAR file containing a full copy of the application. This is typically
-used if updating from a partial MAR has failed or if the user is
-updating from such an old version that no partial MAR exists to upgrade
-directly from that version to the current version.
-
 Update directory
 ''''''''''''''''
 
@@ -56,7 +35,7 @@ The error codes used for failure status can be found
 Documentation
 -------------
 
-- `MAR files <https://wiki.mozilla.org/Software_Update:MAR>`__
+- `MAR files <MarFiles.md>`__
 - `Update
   pings <https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/data/update-ping.html>`__
 

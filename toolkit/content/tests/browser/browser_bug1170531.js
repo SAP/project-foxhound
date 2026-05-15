@@ -65,12 +65,13 @@ add_task(async function () {
         window.requestAnimationFrame(() => executeSoon(resolve))
       );
       await new Promise(openMenu);
-      menu_cut_disabled =
-        menuPopup.querySelector("#menu_cut").getAttribute("disabled") == "true";
+      menu_cut_disabled = menuPopup
+        .querySelector("#menu_cut")
+        .hasAttribute("disabled");
       is(menu_cut_disabled, false, "menu_cut should be enabled");
-      menu_copy_disabled =
-        menuPopup.querySelector("#menu_copy").getAttribute("disabled") ==
-        "true";
+      menu_copy_disabled = menuPopup
+        .querySelector("#menu_copy")
+        .hasAttribute("disabled");
       is(menu_copy_disabled, false, "menu_copy should be enabled");
       await new Promise(closeMenu);
 
@@ -87,12 +88,13 @@ add_task(async function () {
         window.requestAnimationFrame(() => executeSoon(resolve))
       );
       await new Promise(openMenu);
-      menu_cut_disabled =
-        menuPopup.querySelector("#menu_cut").getAttribute("disabled") == "true";
+      menu_cut_disabled = menuPopup
+        .querySelector("#menu_cut")
+        .hasAttribute("disabled");
       is(menu_cut_disabled, true, "menu_cut should be disabled");
-      menu_copy_disabled =
-        menuPopup.querySelector("#menu_copy").getAttribute("disabled") ==
-        "true";
+      menu_copy_disabled = menuPopup
+        .querySelector("#menu_copy")
+        .hasAttribute("disabled");
       is(menu_copy_disabled, true, "menu_copy should be disabled");
       await new Promise(closeMenu);
 
@@ -109,12 +111,13 @@ add_task(async function () {
         window.requestAnimationFrame(() => executeSoon(resolve))
       );
       await new Promise(openMenu);
-      menu_cut_disabled =
-        menuPopup.querySelector("#menu_cut").getAttribute("disabled") == "true";
+      menu_cut_disabled = menuPopup
+        .querySelector("#menu_cut")
+        .hasAttribute("disabled");
       is(menu_cut_disabled, false, "menu_cut should be enabled");
-      menu_copy_disabled =
-        menuPopup.querySelector("#menu_copy").getAttribute("disabled") ==
-        "true";
+      menu_copy_disabled = menuPopup
+        .querySelector("#menu_copy")
+        .hasAttribute("disabled");
       is(menu_copy_disabled, false, "menu_copy should be enabled");
       await new Promise(closeMenu);
 
@@ -126,12 +129,13 @@ add_task(async function () {
         window.requestAnimationFrame(() => executeSoon(resolve))
       );
       await new Promise(openMenu);
-      menu_cut_disabled =
-        menuPopup.querySelector("#menu_cut").getAttribute("disabled") == "true";
+      menu_cut_disabled = menuPopup
+        .querySelector("#menu_cut")
+        .hasAttribute("disabled");
       is(menu_cut_disabled, true, "menu_cut should be disabled");
-      menu_copy_disabled =
-        menuPopup.querySelector("#menu_copy").getAttribute("disabled") ==
-        "true";
+      menu_copy_disabled = menuPopup
+        .querySelector("#menu_copy")
+        .hasAttribute("disabled");
       is(menu_copy_disabled, true, "menu_copy should be disabled");
       await new Promise(closeMenu);
     }

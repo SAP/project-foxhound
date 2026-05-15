@@ -16,6 +16,7 @@ kind-dependencies:
     - build-fat-aar
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         build_platform: android
         retrigger: true
@@ -24,15 +25,17 @@ task-defaults:
     fetches:
         toolchain:
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - android-gradle-dependencies
             - linux64-jdk
         build-fat-aar:
-            - target.maven.tar.xz
+            - target.maven.zip
     run:
         using: gradlew
     treeherder:
         kind: test
-    worker-type: b-linux-medium-gcp
+    worker-type: b-linux-medium
     worker:
         docker-image: {in-tree: android-components}
         max-run-time: 7200
@@ -57,10 +60,10 @@ tasks:
         worker:
             artifacts:
                 - name: public/reports/index.html
-                  path: /builds/worker/checkouts/gecko/mobile/android/focus-android/app/build/reports/tests/testFocusDebugUnitTest/index.html
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/tests/testFocusDebugUnitTest/index.html
                   type: file
                 - name: public/reports/test
-                  path: /builds/worker/checkouts/gecko/mobile/android/focus-android/app/build/reports/tests
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/tests
                   type: directory
 
     fenix-debug:
@@ -72,7 +75,7 @@ tasks:
             pre-gradlew:
                 - ["cd", "mobile/android/fenix"]
                 - ['java', '-version']
-            gradlew: ['clean', 'testFenixDebugUnitTest']
+            gradlew: ['clean', 'testDebugUnitTest']
         treeherder:
             platform: 'fenix-android-all/opt'
             symbol: fenix-debug(T)
@@ -80,10 +83,10 @@ tasks:
         worker:
             artifacts:
                 - name: public/reports/index.html
-                  path: /builds/worker/checkouts/gecko/mobile/android/fenix/app/build/reports/tests/testFenixDebugUnitTest/index.html
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/tests/testDebugUnitTest/index.html
                   type: file
                 - name: public/reports/test
-                  path: /builds/worker/checkouts/gecko/mobile/android/fenix/app/build/reports/tests
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/tests
                   type: directory
         routes:
             by-level:

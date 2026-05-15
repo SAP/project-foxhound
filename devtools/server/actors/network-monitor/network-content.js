@@ -37,8 +37,7 @@ const {
  * This actor manages all network functionality runnning
  * in the content process.
  *
- * @constructor
- *
+ * @class
  */
 class NetworkContentActor extends Actor {
   constructor(conn, targetActor) {
@@ -53,9 +52,9 @@ class NetworkContentActor extends Actor {
   /**
    *  Send an HTTP request
    *
-   * @param {Object} request
+   * @param {object} request
    *        The details of the HTTP Request.
-   * @return {Number}
+   * @return {number}
    *        The channel id for the request
    */
   async sendHTTPRequest(request) {
@@ -139,9 +138,10 @@ class NetworkContentActor extends Actor {
 
   /**
    * Gets the stacktrace for the specified network resource.
-   *  @param {Number} resourceId
+   *
+   *  @param {number} resourceId
    *         The id for the network resource
-   * @return {Object}
+   * @return {object}
    *         The response packet - stack trace.
    */
   getStackTrace(resourceId) {

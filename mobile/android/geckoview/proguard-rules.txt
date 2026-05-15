@@ -171,10 +171,9 @@
     @org.mozilla.gecko.annotation.ReflectionTarget <fields>;
 }
 
-# Avoid "Warning: org.yaml.snakeyaml.scanner.ScannerImpl: can't find
-# referenced method 'java.nio.ByteBuffer flip()' in library class
-# java.nio.ByteBuffer".
-# Between Java 1.8 and 1.9, the signature of `flip()` changed, which
-# trips up proguard.
-
--dontwarn org.yaml.snakeyaml.scanner.ScannerImpl
+# Bug 1838031 - Needed for SnakeYAML
+-dontwarn java.beans.BeanInfo
+-dontwarn java.beans.FeatureDescriptor
+-dontwarn java.beans.IntrospectionException
+-dontwarn java.beans.Introspector
+-dontwarn java.beans.PropertyDescriptor

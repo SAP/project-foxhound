@@ -29,11 +29,11 @@
 #ifndef HRTFKernel_h
 #define HRTFKernel_h
 
-#include "nsAutoRef.h"
-#include "nsTArray.h"
 #include "mozilla/FFTBlock.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
+#include "nsAutoRef.h"
+#include "nsTArray.h"
 
 namespace WebCore {
 

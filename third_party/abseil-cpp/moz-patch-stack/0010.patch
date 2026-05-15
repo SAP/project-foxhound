@@ -1,83 +1,23 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Tue, 7 Jan 2025 15:30:00 -0600
-Subject: Bug 1935474 - BUILD.gn changes to allow building all of
- absl_component_deps. r?ng!
+Date: Tue, 7 Jan 2025 15:37:00 -0600
+Subject: Bug 1935474 - only apply android api < 17 fix for SYS_mmap2 if
+ actually on < 17 api. r?ng!
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/9cf7afd94407318bb1c39b801d3523db532232e1
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/7822a8be4fb906ec1570667f72565a1a91f17228
 ---
- abseil-cpp/BUILD.gn                      | 31 ++++++++++--------------
- abseil-cpp/absl/random/internal/BUILD.gn |  5 ++++
- 2 files changed, 18 insertions(+), 18 deletions(-)
+ abseil-cpp/absl/base/internal/direct_mmap.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/abseil-cpp/BUILD.gn b/abseil-cpp/BUILD.gn
-index 2474ca7fd2e..90cb271d6cd 100644
---- a/abseil-cpp/BUILD.gn
-+++ b/abseil-cpp/BUILD.gn
-@@ -56,7 +56,6 @@ component("absl") {
- }
- 
- group("absl_component_deps") {
--  if (false) {
-   public_deps = [
-     "//third_party/abseil-cpp/absl/algorithm",
-     "//third_party/abseil-cpp/absl/algorithm:container",
-@@ -122,23 +121,6 @@ group("absl_component_deps") {
-     # alternative to inject abort hook. See notes in `base/logging.cc`.
-     "//third_party/abseil-cpp/absl/base:raw_logging_internal",
-   ]
--  } else {
--  public_deps = [
--    "//abseil-cpp/absl/algorithm:container",
--    "//abseil-cpp/absl/base:nullability",
--    "//abseil-cpp/absl/cleanup",
--    "//abseil-cpp/absl/container:inlined_vector",
--    "//abseil-cpp/absl/functional:any_invocable",
--    "//abseil-cpp/absl/functional:bind_front",
--    "//abseil-cpp/absl/strings",
--    "//abseil-cpp/absl/strings:str_format",
--    "//abseil-cpp/absl/strings:string_view",
--    "//abseil-cpp/absl/types:optional",
--    "//abseil-cpp/absl/types:span",
--    "//abseil-cpp/absl/types:variant",
--    "//abseil-cpp/absl/utility",
--  ]
--  }
- 
-   if (is_component_build) {
-     public_deps += [ ":absl_full_deps" ]
-@@ -152,6 +134,19 @@ group("absl_component_deps") {
+diff --git a/abseil-cpp/absl/base/internal/direct_mmap.h b/abseil-cpp/absl/base/internal/direct_mmap.h
+index 1beb2ee4e52..986a8200ad8 100644
+--- a/abseil-cpp/absl/base/internal/direct_mmap.h
++++ b/abseil-cpp/absl/base/internal/direct_mmap.h
+@@ -94,7 +94,7 @@ inline void* DirectMmap(void* start, size_t length, int prot, int flags, int fd,
+     errno = EINVAL;
+     return MAP_FAILED;
    }
- 
-   visibility = [ ":absl" ]
-+
-+  if (moz_webrtc_build) {
-+    # rewrite deps for our new abseil-cpp location
-+    if (defined(public_deps)) {
-+      modified_deps = []
-+      foreach (dep, public_deps) {
-+        newdep = string_replace(dep, "//third_party/abseil-cpp/", "//")
-+        modified_deps += [ newdep ]
-+      }
-+      public_deps = []
-+      public_deps = modified_deps
-+    }
-+  }
- }
- 
- # Some third-party libraries use additional parts of absl that are banned in
-diff --git a/abseil-cpp/absl/random/internal/BUILD.gn b/abseil-cpp/absl/random/internal/BUILD.gn
-index 85fd64e95b8..da8a22f486e 100644
---- a/abseil-cpp/absl/random/internal/BUILD.gn
-+++ b/abseil-cpp/absl/random/internal/BUILD.gn
-@@ -188,6 +188,11 @@ absl_source_set("platform") {
-     "//third_party/abseil-cpp/absl/base:config",
-   ]
-   visibility = [ "//third_party/abseil-cpp/absl/random/*" ]
-+
-+  if (moz_webrtc_build) {
-+    # We don't really want to run Google's scripting to generate build flags
-+    deps -= [ "//build:chromeos_buildflags" ]
-+  }
- }
- 
- absl_source_set("randen") {
+-#ifdef __BIONIC__
++#if defined(__BIONIC__) && (!defined(__ANDROID_API__) || __ANDROID_API__ < 17)
+   // SYS_mmap2 has problems on Android API level <= 16.
+   // Workaround by invoking __mmap2() instead.
+   return __mmap2(start, length, prot, flags, fd,

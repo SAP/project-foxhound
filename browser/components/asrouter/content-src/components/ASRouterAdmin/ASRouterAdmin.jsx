@@ -91,6 +91,7 @@ export class ASRouterAdminInner extends React.PureComponent {
       collapsedMessages: [],
       modifiedMessages: [],
       messageBlockList: [],
+      multiProfileMessageBlocklist: [],
       evaluationStatus: {},
       stringTargetingParameters: null,
       newStringTargetingParameters: null,
@@ -425,7 +426,8 @@ export class ASRouterAdminInner extends React.PureComponent {
       msgProvider.exclude && msgProvider.exclude.includes(msg.id);
     const isMessageBlocked =
       this.state.messageBlockList.includes(msg.id) ||
-      this.state.messageBlockList.includes(msg.campaign);
+      this.state.messageBlockList.includes(msg.campaign) ||
+      this.state.multiProfileMessageBlocklist.includes(msg.id);
     const isBlocked =
       isMessageBlocked || isBlockedByGroup || isProviderExcluded;
     const impressions = this.state.messageImpressions[msg.id]

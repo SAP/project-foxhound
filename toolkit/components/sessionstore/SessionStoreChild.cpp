@@ -9,7 +9,6 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/InProcessChild.h"
@@ -224,8 +223,8 @@ void SessionStoreChild::SessionStoreUpdate(
   // during actor teardown, and we're most likely in a final flush
   // which expects that not all content processes manage to respond.
   if (XRE_IsContentProcess() && CanSend()) {
-    Unused << SendSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
-                                     aNeedCollectSHistory, aEpoch);
+    (void)SendSessionStoreUpdate(aDocShellCaps, aPrivatedMode, aZoom,
+                                 aNeedCollectSHistory, aEpoch);
   } else if (SessionStoreParent* sessionStoreParent =
                  static_cast<SessionStoreParent*>(
                      InProcessChild::ParentActorFor(this))) {
@@ -242,8 +241,8 @@ void SessionStoreChild::IncrementalSessionStoreUpdate(
   // during actor teardown, and we're most likely in a final flush
   // which expects that not all content processes manage to respond.
   if (XRE_IsContentProcess() && CanSend()) {
-    Unused << SendIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
-                                                aScrollPosition, aEpoch);
+    (void)SendIncrementalSessionStoreUpdate(aBrowsingContext, aFormData,
+                                            aScrollPosition, aEpoch);
   } else if (SessionStoreParent* sessionStoreParent =
                  static_cast<SessionStoreParent*>(
                      InProcessChild::ParentActorFor(this))) {
@@ -255,7 +254,7 @@ void SessionStoreChild::IncrementalSessionStoreUpdate(
 void SessionStoreChild::ResetSessionStore(
     const MaybeDiscarded<BrowsingContext>& aBrowsingContext, uint32_t aEpoch) {
   if (XRE_IsContentProcess()) {
-    Unused << SendResetSessionStore(aBrowsingContext, aEpoch);
+    (void)SendResetSessionStore(aBrowsingContext, aEpoch);
   } else if (SessionStoreParent* sessionStoreParent =
                  static_cast<SessionStoreParent*>(
                      InProcessChild::ParentActorFor(this))) {

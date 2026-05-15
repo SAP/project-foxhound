@@ -10,16 +10,10 @@ import {
 } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 
-import {
-  appendRTLClassNameIfNeeded,
-  wrapRender,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import {
-  rep as StringRep,
-  isLongString,
-} from "resource://devtools/client/shared/components/reps/reps/string.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
-import * as nodeConstants from "resource://devtools/client/shared/components/reps/shared/dom-node-constants.mjs";
+import { appendRTLClassNameIfNeeded, wrapRender } from "./rep-utils.mjs";
+import { rep as StringRep, isLongString } from "./string.mjs";
+import { MODE } from "./constants.mjs";
+import * as nodeConstants from "../shared/dom-node-constants.mjs";
 
 const MAX_ATTRIBUTE_LENGTH = 50;
 
@@ -43,8 +37,7 @@ ElementNode.propTypes = {
 function ElementNode(props) {
   const { object, mode, shouldRenderTooltip } = props;
 
-  const { isAfterPseudoElement, isBeforePseudoElement, isMarkerPseudoElement } =
-    object.preview;
+  const { isPseudoElement } = object.preview;
 
   let renderElements = [];
   const isInTree = object.preview && object.preview.isConnected === true;
@@ -52,8 +45,11 @@ function ElementNode(props) {
   const inspectIcon = getInspectIcon({ ...props, isInTree });
 
   // Elements Case 1: Pseudo Element
-  if (isAfterPseudoElement || isBeforePseudoElement || isMarkerPseudoElement) {
-    const pseudoNodeElement = getPseudoNodeElement(object);
+  if (isPseudoElement) {
+    const pseudoNodeElement = {
+      config: { className: "attrName" },
+      content: object.preview.displayName,
+    };
 
     // Regenerate config if shouldRenderTooltip
     if (shouldRenderTooltip) {
@@ -183,13 +179,16 @@ function getElements(opts) {
         },
         name
       ),
-      span({ className: "attrEqual" }, "="),
-      StringRep({
-        className: "attrValue",
-        object: value,
-        cropLimit: MAX_ATTRIBUTE_LENGTH,
-        title,
-      })
+      // only show the `=attrValue` part if the attribute has a non empty value
+      value ? span({ className: "attrEqual" }, "=") : null,
+      value
+        ? StringRep({
+            className: "attrValue",
+            object: value,
+            cropLimit: MAX_ATTRIBUTE_LENGTH,
+            title,
+          })
+        : null
     );
 
     return arr.concat([" ", attribute]);
@@ -242,26 +241,6 @@ function getTinyElements(grip) {
   }
 
   return elements;
-}
-
-function getPseudoNodeElement(grip) {
-  const { isAfterPseudoElement, isBeforePseudoElement, isMarkerPseudoElement } =
-    grip.preview;
-
-  let pseudoNodeName;
-
-  if (isAfterPseudoElement) {
-    pseudoNodeName = "after";
-  } else if (isBeforePseudoElement) {
-    pseudoNodeName = "before";
-  } else if (isMarkerPseudoElement) {
-    pseudoNodeName = "marker";
-  }
-
-  return {
-    config: { className: "attrName" },
-    content: `::${pseudoNodeName}`,
-  };
 }
 
 function getInspectIcon(opts) {

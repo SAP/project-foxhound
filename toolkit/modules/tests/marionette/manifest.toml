@@ -1,4 +1,6 @@
 [DEFAULT]
-run-if = ["buildapp == 'browser'"]
+run-if = [
+  "buildapp == 'browser'",
+]
 
 ["test_first_startup.py"]

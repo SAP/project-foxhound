@@ -89,7 +89,7 @@ int r_data_create(Data **dp, const UCHAR *d, size_t l)
     Data *d_=0;
     int _status;
 
-    if(!(d_=(Data *)RCALLOC(sizeof(Data))))
+    if(!(d_=R_NEW(Data)))
       ABORT(R_NO_MEMORY);
     if(!(d_->data=(UCHAR *)RMALLOC(l)))
       ABORT(R_NO_MEMORY);
@@ -109,28 +109,14 @@ int r_data_create(Data **dp, const UCHAR *d, size_t l)
     return(_status);
   }
 
-
-int r_data_alloc_mem(Data *d, size_t l)
-  {
-    int _status;
-
-    if(!(d->data=(UCHAR *)RMALLOC(l)))
-      ABORT(R_NO_MEMORY);
-    d->len=l;
-
-    _status=0;
-  abort:
-    return(_status);
-  }
-
 int r_data_alloc(Data **dp, size_t l)
   {
     Data *d_=0;
     int _status;
 
-    if(!(d_=(Data *)RCALLOC(sizeof(Data))))
+    if(!(d_=R_NEW(Data)))
       ABORT(R_NO_MEMORY);
-    if(!(d_->data=(UCHAR *)RCALLOC(l)))
+    if(!(d_->data=(UCHAR*)RCALLOC_RAWSIZE(l)))
       ABORT(R_NO_MEMORY);
 
     d_->len=l;
@@ -169,37 +155,6 @@ int r_data_destroy(Data **dp)
     return(0);
   }
 
-int r_data_destroy_v(void *v)
-  {
-    Data *d = 0;
-
-    if(!v)
-      return(0);
-
-    d=(Data *)v;
-    r_data_zfree(d);
-
-    RFREE(d);
-
-    return(0);
-  }
-
-int r_data_destroy_vp(void **v)
-  {
-    Data *d = 0;
-
-    if(!v || !*v)
-      return(0);
-
-    d=(Data *)*v;
-    r_data_zfree(d);
-
-    *v=0;
-    RFREE(d);
-
-    return(0);
-  }
-
 int r_data_copy(Data *dst, Data *src)
   {
     if(!(dst->data=(UCHAR *)RMALLOC(src->len)))
@@ -217,13 +172,4 @@ int r_data_zfree(Data *d)
     memset(d->data,0,d->len);
     RFREE(d->data);
     return(0);
-  }
-
-int r_data_compare(Data *d1, Data *d2)
-  {
-    if(d1->len<d2->len)
-      return(-1);
-    if(d2->len<d1->len)
-      return(-1);
-    return(memcmp(d1->data,d2->data,d1->len));
   }

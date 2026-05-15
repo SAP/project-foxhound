@@ -6,14 +6,15 @@
 
 #include "DOMSVGStringList.h"
 
+#include <algorithm>
+
+#include "SVGAttrTearoffTable.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/dom/SVGStringListBinding.h"
 #include "mozilla/dom/SVGTests.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
 #include "nsQueryObject.h"
-#include "SVGAttrTearoffTable.h"
-#include <algorithm>
 
 // See the architecture comment in this file's header.
 
@@ -59,7 +60,7 @@ class MOZ_RAII AutoChangeStringListNotifier : public mozAutoDocUpdate {
       : mozAutoDocUpdate(aStringList->mElement->GetComposedDoc(), true),
         mStringList(aStringList) {
     MOZ_ASSERT(mStringList, "Expecting non-null stringList");
-    mEmptyOrOldValue = mStringList->mElement->WillChangeStringList(
+    mStringList->mElement->WillChangeStringList(
         mStringList->mIsConditionalProcessingAttribute, mStringList->mAttrEnum,
         *this);
   }
@@ -67,12 +68,11 @@ class MOZ_RAII AutoChangeStringListNotifier : public mozAutoDocUpdate {
   ~AutoChangeStringListNotifier() {
     mStringList->mElement->DidChangeStringList(
         mStringList->mIsConditionalProcessingAttribute, mStringList->mAttrEnum,
-        mEmptyOrOldValue, *this);
+        *this);
   }
 
  private:
   DOMSVGStringList* const mStringList;
-  nsAttrValue mEmptyOrOldValue;
 };
 
 /* static */

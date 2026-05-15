@@ -140,6 +140,14 @@ sealed class Permission {
         override val id: String? = "ContentCrossOriginStorageAccess",
         override val desc: String? = "",
     ) : Permission()
+    data class ContentLocalDeviceAccess(
+        override val id: String? = "ContentLocalDeviceAccess",
+        override val desc: String? = "",
+    ) : Permission()
+    data class ContentLocalNetworkAccess(
+        override val id: String? = "ContentLocalNetworkAccess",
+        override val desc: String? = "",
+    ) : Permission()
 
     data class AppCamera(
         override val id: String? = "AppCamera",

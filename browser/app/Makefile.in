@@ -18,14 +18,6 @@ CXX := $(filter-out -march=% -msse -msse2 -mfpmath=sse,$(CXX))
 CXX += -march=pentiumpro
 endif
 
-ifeq ($(OS_ARCH),WINNT)
-# Rebuild firefox.exe if the manifest changes - it's included by splash.rc.
-# (this dependency should really be just for firefox.exe, not other targets)
-# Note the manifest file exists in the tree, so we use the explicit filename
-# here.
-EXTRA_DEPS += $(srcdir)/firefox.exe.manifest
-endif
-
 PROGRAMS_DEST = $(DIST)/bin
 objdir = $(topobjdir)/browser/app
 
@@ -92,6 +84,7 @@ tools repackage:: $(DIST)/bin/$(MOZ_APP_NAME) $(objdir)/macbuild/Contents/MacOS-
 	rsync -aL $(DIST)/bin/$(MOZ_APP_NAME) '$(dist_dest)/Contents/MacOS'
 	cp -RL $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/firefox.icns '$(dist_dest)/Contents/Resources/firefox.icns'
 	cp -RL $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/document.icns '$(dist_dest)/Contents/Resources/document.icns'
+	cp -RL $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/Assets.car '$(dist_dest)/Contents/Resources/Assets.car'
 	$(MKDIR) -p '$(dist_dest)/Contents/Library/LaunchServices'
 ifdef MOZ_UPDATER
 	cp -f '$(dist_dest)/Contents/MacOS/updater.app/Contents/MacOS/org.mozilla.updater' '$(dist_dest)/Contents/Library/LaunchServices'

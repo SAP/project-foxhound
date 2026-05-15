@@ -32,8 +32,6 @@
 #include <mmsystem.h>
 #include <process.h>
 
-#include "mozilla/WindowsVersion.h"
-
 #include <type_traits>
 
 static void PopulateRegsFromContext(Registers& aRegs, CONTEXT* aContext) {

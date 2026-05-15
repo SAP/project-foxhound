@@ -60,7 +60,8 @@ void DeviceManagerDx::Shutdown() { sInstance = nullptr; }
 
 DeviceManagerDx::DeviceManagerDx()
     : mDeviceLock("gfxWindowsPlatform.mDeviceLock"),
-      mCompositorDeviceSupportsVideo(false) {
+      mCompositorDeviceSupportsVideo(false),
+      mSupportsDCompositionTexture(false) {
   // Set up the D3D11 feature levels we can ask for.
   mFeatureLevels.AppendElement(D3D_FEATURE_LEVEL_11_1);
   mFeatureLevels.AppendElement(D3D_FEATURE_LEVEL_11_0);
@@ -504,18 +505,6 @@ bool DeviceManagerDx::CreateCanvasDeviceLocked() {
     return false;
   }
 
-  if (StaticPrefs::
-          gfx_direct2d_target_independent_rasterization_disabled_AtStartup()) {
-    int creationFlags = 0x2;  // disable target independent rasterization
-    const GUID D2D_INTERNAL_DEVICE_CREATION_OPTIONS = {
-        0xfb3a8e1a,
-        0x2e3c,
-        0x4de1,
-        {0x84, 0x42, 0x40, 0x43, 0xe0, 0xb0, 0x94, 0x95}};
-    mCanvasDevice->SetPrivateData(D2D_INTERNAL_DEVICE_CREATION_OPTIONS,
-                                  sizeof(creationFlags), &creationFlags);
-  }
-
   if (FAILED(hr) || !mCanvasDevice) {
     NS_WARNING("Failed to acquire a D3D11 device for Canvas");
     return false;
@@ -583,6 +572,32 @@ void DeviceManagerDx::CreateDirectCompositionDeviceLocked() {
     return;
   }
 
+  // Check if DCompositionTexture is supported
+  RefPtr<ID3D11Device> device = mCompositorDevice;
+  const bool supported = [device, compositionDevice] {
+    HRESULT hr;
+    RefPtr<IDCompositionDevice4> dcomp4;
+    hr = compositionDevice->QueryInterface(
+        (IDCompositionDevice4**)getter_AddRefs(dcomp4));
+    if (FAILED(hr)) {
+      return false;
+    }
+
+    BOOL supportCompositionTexture = FALSE;
+    hr = dcomp4->CheckCompositionTextureSupport(device,
+                                                &supportCompositionTexture);
+    if (FAILED(hr)) {
+      return false;
+    }
+
+    if (supportCompositionTexture == FALSE) {
+      return false;
+    }
+
+    return true;
+  }();
+
+  mSupportsDCompositionTexture = supported;
   mDirectCompositionDevice = compositionDevice;
 }
 
@@ -1121,7 +1136,7 @@ RefPtr<ID3D11Device> DeviceManagerDx::CreateMediaEngineDevice() {
   if (FAILED(hr) || !device || !D3D11Checks::DoesDeviceWork()) {
     return nullptr;
   }
-  Unused << SetDebugName(device.get(), "MFMediaEngineDevice");
+  (void)SetDebugName(device.get(), "MFMediaEngineDevice");
 
   RefPtr<ID3D10Multithread> multi;
   device->QueryInterface(__uuidof(ID3D10Multithread), getter_AddRefs(multi));
@@ -1435,6 +1450,11 @@ bool DeviceManagerDx::CanUseP016() {
 bool DeviceManagerDx::CanUseDComp() {
   MutexAutoLock lock(mDeviceLock);
   return !!mDirectCompositionDevice;
+}
+
+bool DeviceManagerDx::CanUseDCompositionTexture() {
+  MutexAutoLock lock(mDeviceLock);
+  return mDirectCompositionDevice && mSupportsDCompositionTexture;
 }
 
 void DeviceManagerDx::GetCompositorDevices(

@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDocShellLoadState_h__
-#define nsDocShellLoadState_h__
+#ifndef nsDocShellLoadState_h_
+#define nsDocShellLoadState_h_
 
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/NavigationBinding.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
 #include "mozilla/dom/UserNavigationInvolvement.h"
+#include "mozilla/dom/LoadURIOptionsBinding.h"
 
 #include "nsIClassifiedChannel.h"
 #include "nsILoadInfo.h"
@@ -34,6 +35,7 @@ class OriginAttributes;
 namespace dom {
 class FormData;
 class DocShellLoadStateInit;
+struct NavigationAPIMethodTracker;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -172,6 +174,18 @@ class nsDocShellLoadState final {
   bool IsFormSubmission() const;
 
   void SetIsFormSubmission(bool aIsFormSubmission);
+
+  bool NeedsCompletelyLoadedDocument() const;
+
+  void SetNeedsCompletelyLoadedDocument(bool aNeedsCompletelyLoadedDocument);
+
+  mozilla::Maybe<mozilla::dom::NavigationHistoryBehavior> HistoryBehavior()
+      const;
+
+  void SetHistoryBehavior(
+      mozilla::dom::NavigationHistoryBehavior aHistoryBehavior);
+
+  void ResetHistoryBehavior();
 
   uint32_t LoadType() const;
 
@@ -359,6 +373,15 @@ class nsDocShellLoadState final {
     return mSchemelessInput;
   }
 
+  void SetForceMediaDocument(
+      mozilla::dom::ForceMediaDocument aForceMediaDocument) {
+    mForceMediaDocument = aForceMediaDocument;
+  }
+
+  mozilla::dom::ForceMediaDocument GetForceMediaDocument() const {
+    return mForceMediaDocument;
+  }
+
   void SetHttpsUpgradeTelemetry(
       nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry) {
     mHttpsUpgradeTelemetry = aHttpsUpgradeTelemetry;
@@ -416,10 +439,17 @@ class nsDocShellLoadState final {
   void SetSourceElement(mozilla::dom::Element* aElement);
   already_AddRefed<mozilla::dom::Element> GetSourceElement() const;
 
-  // This is used as the parameter for https://html.spec.whatwg.org/#navigate,
-  // but it's currently missing. See bug 1966674
+  // This is used as the parameter for https://html.spec.whatwg.org/#navigate
   nsIStructuredCloneContainer* GetNavigationAPIState() const;
   void SetNavigationAPIState(nsIStructuredCloneContainer* aNavigationAPIState);
+
+  // This is used to pass the navigation API method tracker through the
+  // navigation pipeline for navigate().
+  // See https://html.spec.whatwg.org/#navigation-api-method-tracker
+  mozilla::dom::NavigationAPIMethodTracker* GetNavigationAPIMethodTracker()
+      const;
+  void SetNavigationAPIMethodTracker(
+      mozilla::dom::NavigationAPIMethodTracker* aTracker);
 
   // This is used as the parameter for https://html.spec.whatwg.org/#navigate
   mozilla::dom::NavigationType GetNavigationType() const;
@@ -428,6 +458,22 @@ class nsDocShellLoadState final {
   // It should only ever be set if the method is POST.
   mozilla::dom::FormData* GetFormDataEntryList();
   void SetFormDataEntryList(mozilla::dom::FormData* aFormDataEntryList);
+
+  // This is used as the getter/setter for the app link intent launch type
+  // for the load.
+  uint32_t GetAppLinkLaunchType() const;
+  void SetAppLinkLaunchType(uint32_t aAppLinkLaunchType);
+
+  // This is used as the getter/setter for the captive portal tab flag.
+  bool GetIsCaptivePortalTab() const;
+  void SetIsCaptivePortalTab(bool aIsCaptivePortalTab);
+
+  void ProhibitInitialAboutBlankHandling() {
+    mIsInitialAboutBlankHandlingProhibited = true;
+  }
+  bool IsInitialAboutBlankHandlingProhibited() {
+    return mIsInitialAboutBlankHandlingProhibited;
+  }
 
  protected:
   // Destructor can't be defaulted or inlined, as header doesn't have all type
@@ -519,6 +565,8 @@ class nsDocShellLoadState final {
   // for a content docshell the load fails.
   bool mPrincipalIsExplicit;
 
+  // If this attribute is true, any potential unload listeners have been
+  // notified if applicable.
   bool mNotifiedBeforeUnloadListeners;
 
   // Principal we're inheriting. If null, this means the principal should be
@@ -559,6 +607,14 @@ class nsDocShellLoadState final {
   // If this attribute is true, then the load was initiated by a
   // form submission.
   bool mIsFormSubmission;
+
+  // If this attribute is true, we need to check if the current document is
+  // completely loaded to determine if we should perform a push or replace load.
+  bool mNeedsCompletelyLoadedDocument;
+
+  // If this attribute is `Auto`, we should determine if this should be a push
+  // or replace load when actually loading.
+  mozilla::Maybe<mozilla::dom::NavigationHistoryBehavior> mHistoryBehavior;
 
   // Contains a load type as specified by the nsDocShellLoadTypes::load*
   // constants
@@ -681,15 +737,32 @@ class nsDocShellLoadState final {
   nsILoadInfo::SchemelessInputType mSchemelessInput =
       nsILoadInfo::SchemelessInputTypeUnset;
 
+  // If not None, force the load to result in a specific media document kind.
+  mozilla::dom::ForceMediaDocument mForceMediaDocument =
+      mozilla::dom::ForceMediaDocument::None;
+
   // Solely for the use of collecting Telemetry for HTTPS upgrades.
   nsILoadInfo::HTTPSUpgradeTelemetryType mHttpsUpgradeTelemetry =
       nsILoadInfo::NOT_INITIALIZED;
 
   nsWeakPtr mSourceElement;
 
-  nsCOMPtr<nsIStructuredCloneContainer> mNavigationAPIState;
+  RefPtr<nsStructuredCloneContainer> mNavigationAPIState;
+
+  RefPtr<mozilla::dom::NavigationAPIMethodTracker> mNavigationAPIMethodTracker;
 
   RefPtr<mozilla::dom::FormData> mFormDataEntryList;
+
+  // App link intent launch type: 0 = unknown, 1 = cold, 2 = warm, 3 = hot.
+  uint32_t mAppLinkLaunchType = 0;
+
+  // Whether this is a captive portal tab.
+  bool mIsCaptivePortalTab = false;
+
+  // When this is the initial load and it is loading about:blank, force it
+  // to take the regular load path. It will replace the previous document
+  // and not load synchronous.
+  bool mIsInitialAboutBlankHandlingProhibited;
 };
 
-#endif /* nsDocShellLoadState_h__ */
+#endif /* nsDocShellLoadState_h_ */

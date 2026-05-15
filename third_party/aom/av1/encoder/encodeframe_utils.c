@@ -1378,10 +1378,9 @@ void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, TileDataEnc *tile_data,
   const int avg_q_step = av1_ac_quant_QTX(p_rc->avg_frame_qindex[INTER_FRAME],
                                           0, cm->seq_params->bit_depth);
 
-  const unsigned int threshold =
-      (cpi->sf.rt_sf.use_rtc_tf == 1)
-          ? (clamp(avg_q_step, 250, 1000)) * ac_q_step
-          : 250 * ac_q_step;
+  const unsigned int threshold = (cpi->sf.rt_sf.use_rtc_tf == 1)
+                                     ? clamp(avg_q_step, 250, 1000) * ac_q_step
+                                     : 250 * ac_q_step;
 
   // TODO(yunqing): use a weighted sum instead of averaging in filtering.
   if (tmp_variance <= threshold && nmean2 <= 15) {

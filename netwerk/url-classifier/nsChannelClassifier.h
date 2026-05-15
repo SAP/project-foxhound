@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsChannelClassifier_h__
-#define nsChannelClassifier_h__
+#ifndef nsChannelClassifier_h_
+#define nsChannelClassifier_h_
 
 #include "nsIObserver.h"
 #include "nsIURIClassifier.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
 
 #include <functional>
 

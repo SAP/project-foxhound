@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.tab.collections.ext
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.state.BrowserState
@@ -16,7 +15,6 @@ import mozilla.components.concept.engine.EngineSession
 import mozilla.components.feature.tab.collections.Tab
 import mozilla.components.feature.tab.collections.TabCollection
 import mozilla.components.feature.tabs.TabsUseCases
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
@@ -40,7 +38,6 @@ class TabsUseCasesKtTest {
     private lateinit var tab: Tab
     private lateinit var filesDir: File
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     @get:Rule
     val coroutinesTestRule = MainCoroutineRule()
 
@@ -87,8 +84,6 @@ class TabsUseCasesKtTest {
     fun `RestoreUseCase updates last access when restoring collection`() {
         tabsUseCases.restore.invoke(filesDir, engine, collection) {}
 
-        store.waitUntilIdle()
-
         assertNotEquals(3735928559L, store.state.findTab("123")!!.lastAccess)
     }
 
@@ -96,16 +91,12 @@ class TabsUseCasesKtTest {
     fun `RestoreUseCase updates last access when restoring single tab in collection`() {
         tabsUseCases.restore.invoke(filesDir, engine, tab, onTabRestored = {}, onFailure = {})
 
-        store.waitUntilIdle()
-
         assertNotEquals(3735928559L, store.state.findTab("123")!!.lastAccess)
     }
 
     @Test
     fun `Restored single tab should be the last in the tabs list`() {
         tabsUseCases.restore.invoke(filesDir, engine, tab, onTabRestored = {}, onFailure = {})
-
-        store.waitUntilIdle()
 
         assertEquals("123", store.state.tabs.last().id)
     }

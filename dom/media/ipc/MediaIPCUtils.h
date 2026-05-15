@@ -7,20 +7,20 @@
 #ifndef mozilla_dom_media_MediaIPCUtils_h
 #define mozilla_dom_media_MediaIPCUtils_h
 
-#include <type_traits>
-
 #include "DecoderDoctorDiagnostics.h"
 #include "EncoderConfig.h"
+#include "MediaTrackConstraints.h"
 #include "PerformanceRecorder.h"
 #include "PlatformDecoderModule.h"
 #include "PlatformEncoderModule.h"
 #include "ipc/EnumSerializer.h"
-#include "mozilla/EnumSet.h"
+#include "mozilla/CDMProxy.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ParamTraits_TiedFields.h"
-#include "mozilla/gfx/Rect.h"
 #include "mozilla/dom/MFCDMSerializers.h"
+#include "mozilla/dom/MediaKeysBinding.h"
+#include "mozilla/gfx/Rect.h"
 
 namespace IPC {
 template <>
@@ -221,6 +221,13 @@ struct ParamTraits<mozilla::MediaDataDecoder::ConversionRequired>
               mozilla::MediaDataDecoder::ConversionRequired::kNeedHVCC)> {};
 
 template <>
+struct ParamTraits<mozilla::MediaDataDecoder::PropertyName>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::MediaDataDecoder::PropertyName,
+          mozilla::MediaDataDecoder::PropertyName(0),
+          mozilla::MediaDataDecoder::sHighestPropertyName> {};
+
+template <>
 struct ParamTraits<mozilla::media::TimeUnit> {
   using paramType = mozilla::media::TimeUnit;
 
@@ -414,9 +421,8 @@ struct ParamTraits<mozilla::H264BitStreamFormat>
 template <>
 struct ParamTraits<mozilla::HardwarePreference>
     : public ContiguousEnumSerializerInclusive<
-          mozilla::HardwarePreference,
-          mozilla::HardwarePreference::RequireHardware,
-          mozilla::HardwarePreference::None> {};
+          mozilla::HardwarePreference, mozilla::HardwarePreference::None,
+          mozilla::HardwarePreference::RequireSoftware> {};
 
 template <>
 struct ParamTraits<mozilla::Usage>
@@ -644,6 +650,70 @@ struct ParamTraits<mozilla::EncoderConfigurationChangeList*> {
     return true;
   }
 };
+
+template <>
+struct ParamTraits<mozilla::dom::MediaKeySessionType>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::MediaKeySessionType,
+          mozilla::dom::MediaKeySessionType::Temporary,
+          mozilla::dom::MediaKeySessionType::Persistent_license> {};
+
+template <>
+struct ParamTraits<mozilla::CDMKeyInfo> {
+  typedef mozilla::CDMKeyInfo paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mKeyId);
+    WriteParam(aWriter, aParam.mStatus);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mKeyId) &&
+           ReadParam(aReader, &aResult->mStatus);
+  }
+};
+
+template <typename T>
+struct ParamTraits<mozilla::NormalizedConstraintSet::Range<T>> {
+  using paramType = mozilla::NormalizedConstraintSet::Range<T>;
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParams(aWriter, aParam.mMin, aParam.mMax, aParam.mIdeal);
+  }
+
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    paramType& aParam = *aResult;
+    return ReadParams(aReader, aParam.mMin, aParam.mMax, aParam.mIdeal);
+  }
+};
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::LongRange,
+    mozilla::NormalizedConstraintSet::Range<int32_t>);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::LongLongRange,
+    mozilla::NormalizedConstraintSet::Range<int64_t>);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::DoubleRange,
+    mozilla::NormalizedConstraintSet::Range<double>);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS(
+    mozilla::NormalizedConstraintSet::BooleanRange,
+    mozilla::NormalizedConstraintSet::Range<bool>);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::NormalizedConstraintSet::StringRange,
+                                  mExact, mIdeal);
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::NormalizedConstraintSet, mWidth,
+                                  mHeight, mFrameRate, mFacingMode, mResizeMode,
+                                  mMediaSource, mBrowserWindow, mDeviceId,
+                                  mGroupId, mViewportOffsetX, mViewportOffsetY,
+                                  mViewportWidth, mViewportHeight,
+                                  mEchoCancellation, mNoiseSuppression,
+                                  mAutoGainControl, mChannelCount);
+DEFINE_IPC_SERIALIZER_WITH_SUPER_CLASS_AND_FIELDS(
+    mozilla::NormalizedConstraints, mozilla::NormalizedConstraintSet,
+    mAdvanced);
+
+template <>
+struct ParamTraits<mozilla::dom::VideoResizeModeEnum>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::VideoResizeModeEnum> {};
 
 }  // namespace IPC
 

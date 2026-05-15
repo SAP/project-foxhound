@@ -31,6 +31,9 @@ BROWSER_CHROME_MANIFESTS += [
     "test/browser/_browser_console.toml",
     "test/browser/_jsterm.toml",
     "test/browser/_webconsole.toml",
+    "test/browser/_webconsole_network.toml",
+    "test/browser/_webconsole_object_inspector.toml",
+    "test/browser/_webconsole_warning_group.toml",
     "test/node/fixtures/stubs/stubs.toml",
 ]
 

@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceWorker.h"
-#include "mozilla/dom/WorkerScope.h"
+
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/WorkerScope.h"
 
 namespace mozilla::dom {
 

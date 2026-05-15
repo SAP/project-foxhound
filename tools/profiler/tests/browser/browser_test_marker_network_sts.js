@@ -84,6 +84,7 @@ add_task(async function test_network_markers_redirect_to_https() {
         id: Expect.number(),
         redirectId: parentStopMarker.data.id,
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
         cache: "Unresolved",
         redirectType: "Permanent",
         isHttpToHttpsRedirect: true,
@@ -119,6 +120,7 @@ add_task(async function test_network_markers_redirect_to_https() {
       id: Expect.number(),
       count: Expect.number(),
       pri: Expect.number(),
+      priorityHeader: Expect.string(),
     };
 
     Assert.objectContains(parentStopMarker, expectedProperties);

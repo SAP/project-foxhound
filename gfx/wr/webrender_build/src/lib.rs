@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#![allow(clippy::new_without_default)]
+#![allow(clippy::new_without_default, unknown_lints, mismatched_lifetime_syntaxes)]
 
 #[macro_use]
 extern crate bitflags;

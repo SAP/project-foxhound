@@ -12,7 +12,6 @@
 #ifndef BasicTableLayoutStrategy_h_
 #define BasicTableLayoutStrategy_h_
 
-#include "mozilla/Attributes.h"
 #include "nsITableLayoutStrategy.h"
 
 class nsTableFrame;

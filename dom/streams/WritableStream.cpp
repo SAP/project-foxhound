@@ -18,6 +18,7 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/AbortSignal.h"
 #include "mozilla/dom/BindingCallContext.h"
+#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/QueueWithSizes.h"
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/ReadRequest.h"
@@ -27,8 +28,6 @@
 #include "mozilla/dom/WritableStreamDefaultController.h"
 #include "mozilla/dom/WritableStreamDefaultWriter.h"
 #include "nsCOMPtr.h"
-
-#include "mozilla/dom/Promise-inl.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 
@@ -119,13 +118,13 @@ void WritableStream::FinishErroring(JSContext* aCx, ErrorResult& aRv) {
   JS::Rooted<JS::Value> storedError(aCx, mStoredError);
 
   // Step 6. For each writeRequest of stream.[[writeRequests]]:
-  for (const RefPtr<Promise>& writeRequest : mWriteRequests) {
+  while (!mWriteRequests.IsEmpty()) {
     // Step 6.1. Reject writeRequest with storedError.
-    writeRequest->MaybeReject(storedError);
+    mWriteRequests.Pop()->MaybeReject(storedError);
   }
 
   // Step 7. Set stream.[[writeRequests]] to an empty list.
-  mWriteRequests.Clear();
+  // (Popping should make it empty)
 
   // Step 8. If stream.[[pendingAbortRequest]] is undefined,
   if (!mPendingAbortRequestPromise) {
@@ -326,10 +325,8 @@ void WritableStream::MarkFirstWriteRequestInFlight() {
   MOZ_ASSERT(!mWriteRequests.IsEmpty());
 
   // Step 3. Let writeRequest be stream.[[writeRequests]][0].
-  RefPtr<Promise> writeRequest = mWriteRequests.ElementAt(0);
-
   // Step 4. Remove writeRequest from stream.[[writeRequests]].
-  mWriteRequests.RemoveElementAt(0);
+  RefPtr<Promise> writeRequest = mWriteRequests.Pop();
 
   // Step 5. Set stream.[[inFlightWriteRequest]] to writeRequest.
   mInFlightWriteRequest = writeRequest;

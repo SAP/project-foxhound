@@ -182,7 +182,7 @@ function getJestErrors(out) {
 function getTypescriptErrors(out, err, testPath) {
   console.log(out);
   // Typescript error lines look like:
-  //   popup/panel.jsm.js(103,7): error TS2531: Object is possibly 'null'.
+  //   popup/panel.js(103,7): error TS2531: Object is possibly 'null'.
   // Which means:
   //   {file_path}({line},{col}): error TS{error_code}: {message}
   const tsErrorRegex =

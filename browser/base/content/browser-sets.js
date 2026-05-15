@@ -65,6 +65,9 @@ document.addEventListener(
           case "cmd_closeWindow":
             BrowserCommands.tryToCloseWindow(event);
             break;
+          case "cmd_returnToOpener":
+            BrowserCommands.returnToOpenerFromPiP(event);
+            break;
           case "cmd_minimizeWindow":
             window.minimize();
             break;
@@ -203,6 +206,7 @@ document.addEventListener(
           case "Profiles:CreateProfile":
           case "Profiles:ManageProfiles":
           case "Profiles:LaunchProfile":
+          case "Profiles:MoveTabsToProfile":
             gProfiles.handleCommand(event);
             break;
           case "Tools:Search":
@@ -213,9 +217,24 @@ document.addEventListener(
             break;
           case "Tools:Addons":
             BrowserAddonUI.openAddonsMgr();
+            if (event.sourceEvent?.target.id == "key_openAddons") {
+              Services.prefs.setStringPref(
+                "browser.keys.openAddons.lastUsed",
+                new Date().toISOString()
+              );
+            }
             break;
           case "cmd_openUnifiedExtensionsPanel":
             gUnifiedExtensions.openPanel(event);
+            break;
+          case "Tools:ClassicWindow":
+            OpenBrowserWindow({ aiWindow: false });
+            break;
+          case "Tools:AIWindow":
+            AIWindow.launchWindow(gBrowser?.selectedBrowser, true);
+            break;
+          case "Tools:ChatsHistory":
+            FirefoxViewHandler.openTab("chats");
             break;
           case "Tools:Sanitize":
             Sanitizer.showUI(window);

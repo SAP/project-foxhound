@@ -7,10 +7,10 @@ import os
 import re
 import subprocess
 import sys
+from urllib.parse import urljoin
+from urllib.request import pathname2url
 
 import mozinfo
-from six.moves.urllib.parse import urljoin
-from six.moves.urllib.request import pathname2url
 
 from mach.decorators import (
     CommandArgument,

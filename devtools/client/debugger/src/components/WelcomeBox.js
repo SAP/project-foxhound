@@ -15,7 +15,9 @@ import { primaryPaneTabs } from "../constants";
 
 import actions from "../actions/index";
 import { getPaneCollapse } from "../selectors/index";
-import { formatKeyShortcut } from "../utils/text";
+const {
+  stringifyFromElectronKey,
+} = require("resource://devtools/client/shared/key-shortcuts.js");
 
 export class WelcomeBox extends Component {
   static get propTypes() {
@@ -28,15 +30,15 @@ export class WelcomeBox extends Component {
   }
 
   render() {
-    const searchSourcesShortcut = formatKeyShortcut(
+    const searchSourcesShortcut = stringifyFromElectronKey(
       L10N.getStr("sources.search.key2")
     );
 
-    const searchProjectShortcut = formatKeyShortcut(
+    const searchProjectShortcut = stringifyFromElectronKey(
       L10N.getStr("projectTextSearch.key")
     );
 
-    const allShortcutsShortcut = formatKeyShortcut(
+    const allShortcutsShortcut = stringifyFromElectronKey(
       L10N.getStr("allShortcut.key")
     );
 

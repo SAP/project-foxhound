@@ -7,16 +7,15 @@
 #ifndef TABMESSAGE_UTILS_H
 #define TABMESSAGE_UTILS_H
 
-#include "ipc/EnumSerializer.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/dom/Event.h"
-#include "nsIRemoteTab.h"
-#include "nsPIDOMWindow.h"
-#include "nsCOMPtr.h"
-#include "mozilla/dom/EffectsInfo.h"
-#include "mozilla/layers/LayersMessageUtils.h"
 #include "TabMessageTypes.h"
 #include "X11UndefineNone.h"
+#include "ipc/EnumSerializer.h"
+#include "mozilla/dom/EffectsInfo.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/layers/LayersMessageUtils.h"
+#include "nsCOMPtr.h"
+#include "nsIRemoteTab.h"
+#include "nsPIDOMWindow.h"
 
 namespace IPC {
 
@@ -80,7 +79,6 @@ struct ParamTraits<mozilla::ScrollAxis> {
   static void Write(MessageWriter* aWriter, const paramType& aParam) {
     WriteParam(aWriter, aParam.mWhereToScroll);
     WriteParam(aWriter, aParam.mWhenToScroll);
-    WriteParam(aWriter, aParam.mOnlyIfPerceivedScrollableDirection);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -90,15 +88,6 @@ struct ParamTraits<mozilla::ScrollAxis> {
     if (!ReadParam(aReader, &aResult->mWhenToScroll)) {
       return false;
     }
-
-    // We can't set mOnlyIfPerceivedScrollableDirection directly since it's
-    // a bitfield.
-    bool value;
-    if (!ReadParam(aReader, &value)) {
-      return false;
-    }
-    aResult->mOnlyIfPerceivedScrollableDirection = value;
-
     return true;
   }
 };

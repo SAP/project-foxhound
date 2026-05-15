@@ -23,7 +23,7 @@ function startTest(test, token) {
   manager.started(token);
   element.src = test.name;
   element.test = test;
-  element.stream = element.mozCaptureStream();
+  element.stream = element.captureStream?.() || element.mozCaptureStream();
 
   mMediaRecorder = new MediaRecorder(element.stream);
   is(mMediaRecorder.mimeType, '', 'Expected MediaRecorder mimetype');

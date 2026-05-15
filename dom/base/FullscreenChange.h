@@ -14,9 +14,9 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/PendingFullscreenEvent.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Document.h"
 #include "nsIScriptError.h"
 #include "nsRefreshDriver.h"
 

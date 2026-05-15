@@ -42,15 +42,13 @@ def generateTalosConfig(command_line, browser_config, test_config, pid=None):
         browser_config["xperf_stackwalk"] = test_config["xperf_stackwalk"]
         browser_config["processID"] = pid
         browser_config["approot"] = os.path.dirname(browser_config["browser_path"])
-        bcontroller_vars.extend(
-            [
-                "xperf_providers",
-                "xperf_user_providers",
-                "xperf_stackwalk",
-                "processID",
-                "approot",
-            ]
-        )
+        bcontroller_vars.extend([
+            "xperf_providers",
+            "xperf_user_providers",
+            "xperf_stackwalk",
+            "processID",
+            "approot",
+        ])
 
     content = writeConfigFile(browser_config, bcontroller_vars)
 

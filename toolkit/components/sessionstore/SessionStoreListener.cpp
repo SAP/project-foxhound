@@ -242,7 +242,8 @@ void TabListener::AddTimerForUpdate() {
           self->StopTimerForUpdate();
         }
       },
-      mUpdateInterval, nsITimer::TYPE_ONE_SHOT, "TabListener::TimerCallback");
+      mUpdateInterval, nsITimer::TYPE_ONE_SHOT,
+      "TabListener::TimerCallback"_ns);
 }
 
 NS_IMETHODIMP TabListener::PrivateModeChanged(bool aEnabled) {

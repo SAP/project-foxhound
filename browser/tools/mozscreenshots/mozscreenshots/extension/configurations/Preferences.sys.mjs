@@ -109,7 +109,9 @@ async function browsingGroup(aBrowser) {
     aBrowser,
     [],
     async function () {
-      content.document.getElementById("browsingGroup").scrollIntoView();
+      content.document
+        .querySelector('setting-group[groupid="browsing"]')
+        .scrollIntoView();
     }
   );
 }
@@ -119,7 +121,9 @@ async function cacheGroup(aBrowser) {
     aBrowser,
     [],
     async function () {
-      content.document.getElementById("cacheGroup").scrollIntoView();
+      content.document
+        .querySelector('setting-group[groupid="cookiesAndSiteData"]')
+        .scrollIntoView();
     }
   );
 }

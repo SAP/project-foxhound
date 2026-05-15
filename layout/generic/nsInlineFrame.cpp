@@ -16,7 +16,6 @@
 #include "mozilla/SVGTextFrame.h"
 #include "mozilla/ServoStyleSet.h"
 #include "nsBlockFrame.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsDisplayList.h"
 #include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
@@ -262,10 +261,10 @@ void nsInlineFrame::AddInlinePrefISize(const IntrinsicSizeInput& aInput,
 
 /* virtual */
 nsIFrame::SizeComputationResult nsInlineFrame::ComputeSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   // Inlines and text don't compute size before reflow.
   return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),
           AspectRatioUsage::None};
@@ -315,11 +314,6 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext,
     AutoFrameListPtr prevOverflowFrames(aPresContext,
                                         prevInFlow->StealOverflowFrames());
     if (prevOverflowFrames) {
-      // When pushing and pulling frames we need to check for whether any
-      // views need to be reparented.
-      nsContainerFrame::ReparentFrameViewList(*prevOverflowFrames, prevInFlow,
-                                              this);
-
       // Check if we should do the lazilySetParentPointer optimization.
       // Only do it in simple cases where we're being reflowed for the
       // first time, nothing (e.g. bidi resolution) has already given
@@ -377,7 +371,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext,
   if (mFrames.IsEmpty()) {
     // Try to pull over one frame before starting so that we know
     // whether we have an anonymous block or not.
-    Unused << PullOneFrame(aPresContext, irs);
+    (void)PullOneFrame(aPresContext, irs);
   }
 
   ReflowFrames(aPresContext, aReflowInput, irs, aReflowOutput, aStatus);
@@ -389,7 +383,8 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext,
 }
 
 nsresult nsInlineFrame::AttributeChanged(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType) {
+                                         nsAtom* aAttribute,
+                                         AttrModType aModType) {
   nsresult rv =
       nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 
@@ -458,9 +453,6 @@ void nsInlineFrame::PullOverflowsFromPrevInFlow() {
     AutoFrameListPtr prevOverflowFrames(presContext,
                                         prevInFlow->StealOverflowFrames());
     if (prevOverflowFrames) {
-      // Assume that our prev-in-flow has the same line container that we do.
-      nsContainerFrame::ReparentFrameViewList(*prevOverflowFrames, prevInFlow,
-                                              this);
       mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
     }
   }
@@ -785,7 +777,6 @@ nsIFrame* nsInlineFrame::PullOneFrame(nsPresContext* aPresContext,
       if (irs.mLineLayout) {
         irs.mLineLayout->SetDirtyNextLine();
       }
-      nsContainerFrame::ReparentFrameView(frame, nextInFlow, this);
       break;
     }
     nextInFlow = static_cast<nsInlineFrame*>(nextInFlow->GetNextInFlow());
@@ -914,7 +905,7 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
   // ComputedStyle.
   RefPtr<ComputedStyle> newContext =
       aRestyleState.StyleSet().ResolveInheritingAnonymousBoxStyle(
-          PseudoStyleType::mozBlockInsideInlineWrapper, ourStyle);
+          PseudoStyleType::MozBlockInsideInlineWrapper, ourStyle);
 
   // We're guaranteed that newContext only differs from the old ComputedStyle on
   // the block in things they might inherit from us.  And changehint processing
@@ -927,7 +918,7 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
                "Must be first continuation");
 
     MOZ_ASSERT(blockFrame->Style()->GetPseudoType() ==
-                   PseudoStyleType::mozBlockInsideInlineWrapper,
+                   PseudoStyleType::MozBlockInsideInlineWrapper,
                "Unexpected kind of ComputedStyle");
 
     for (nsIFrame* cont = blockFrame; cont;
@@ -962,13 +953,13 @@ void nsFirstLineFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                             nsIFrame* aPrevInFlow) {
   nsInlineFrame::Init(aContent, aParent, aPrevInFlow);
   if (!aPrevInFlow) {
-    MOZ_ASSERT(Style()->GetPseudoType() == PseudoStyleType::firstLine);
+    MOZ_ASSERT(Style()->GetPseudoType() == PseudoStyleType::FirstLine);
     return;
   }
 
   // This frame is a continuation - fixup the computed style if aPrevInFlow
   // is the first-in-flow (the only one with a ::first-line pseudo).
-  if (aPrevInFlow->Style()->GetPseudoType() == PseudoStyleType::firstLine) {
+  if (aPrevInFlow->Style()->GetPseudoType() == PseudoStyleType::FirstLine) {
     MOZ_ASSERT(FirstInFlow() == aPrevInFlow);
     // Create a new ComputedStyle that is a child of the parent
     // ComputedStyle thus removing the ::first-line style. This way
@@ -977,12 +968,12 @@ void nsFirstLineFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     ComputedStyle* parentContext = aParent->Style();
     RefPtr<ComputedStyle> newSC =
         PresContext()->StyleSet()->ResolveInheritingAnonymousBoxStyle(
-            PseudoStyleType::mozLineFrame, parentContext);
+            PseudoStyleType::MozLineFrame, parentContext);
     SetComputedStyle(newSC);
   } else {
     MOZ_ASSERT(FirstInFlow() != aPrevInFlow);
     MOZ_ASSERT(aPrevInFlow->Style()->GetPseudoType() ==
-               PseudoStyleType::mozLineFrame);
+               PseudoStyleType::MozLineFrame);
   }
 }
 

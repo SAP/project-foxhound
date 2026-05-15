@@ -73,7 +73,7 @@ should get your an accurate list that you can replicate.
 Cross-compilation
 =================
 
-There is now support for cross-compilation for both ``armhf`` and ``arm64``.
+There is now support for cross-compilation for ``arm64``.
 To produce cross-compiled version locally:
 
  - follow the steps above for building, except you need to pass

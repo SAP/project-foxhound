@@ -18,7 +18,7 @@ add_task(async function test_monthyear_close_date() {
     `data:text/html, <input type="date" value=${inputValue}>`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
 
   // Move focus from the selected date to the month-year toggle button:
@@ -49,7 +49,7 @@ add_task(async function test_monthyear_close_datetime() {
     `data:text/html, <input type="datetime-local" value=${inputValue}>`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
 
   // Move focus from the selected date to the month-year toggle button:
@@ -78,7 +78,7 @@ add_task(async function test_monthyear_escape_date() {
     `data:text/html, <input type="date" value=${inputValue}>`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
 
   // Move focus from the today's date to the month-year toggle button:
@@ -150,7 +150,7 @@ add_task(async function test_monthyear_escape_datetime() {
     `data:text/html, <input type="datetime-local" value=${inputValue}>`
   );
   let pickerDoc = helper.panel.querySelector(
-    "#dateTimePopupFrame"
+    "#DateTimePickerPanelPopupFrame"
   ).contentDocument;
 
   // Move focus from the today's date to the month-year toggle button:

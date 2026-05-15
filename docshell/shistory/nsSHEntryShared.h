@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsSHEntryShared_h__
-#define nsSHEntryShared_h__
+#ifndef nsSHEntryShared_h_
+#define nsSHEntryShared_h_
 
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
@@ -18,7 +18,6 @@
 #include "nsStructuredCloneContainer.h"
 #include "nsStubMutationObserver.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
 
 class nsSHEntry;
@@ -65,8 +64,7 @@ struct SHEntrySharedState {
         mPrincipalToInherit(aPrincipalToInherit),
         mPartitionedPrincipalToInherit(aPartitionedPrincipalToInherit),
         mPolicyContainer(aPolicyContainer),
-        mContentType(aContentType),
-        mNavigationState(MakeRefPtr<nsStructuredCloneContainer>()) {}
+        mContentType(aContentType) {}
 
   // These members aren't copied by SHEntrySharedParentState::CopyFrom() because
   // they're specific to a particular content viewer.
@@ -85,8 +83,6 @@ struct SHEntrySharedState {
   uint32_t mCacheKey = 0;
   bool mIsFrameNavigation = false;
   bool mSaveLayoutState = true;
-
-  RefPtr<nsStructuredCloneContainer> mNavigationState;
 
  protected:
   static uint64_t GenerateId();

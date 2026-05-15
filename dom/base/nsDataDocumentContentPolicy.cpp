@@ -10,16 +10,17 @@
  * via XMLHttpRequest).
  */
 
+#include "nsDataDocumentContentPolicy.h"
+
+#include "mozilla/ScopeExit.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
-#include "nsDataDocumentContentPolicy.h"
-#include "nsNetUtil.h"
-#include "nsIProtocolHandler.h"
-#include "nsScriptSecurityManager.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/ScopeExit.h"
 #include "nsINode.h"
+#include "nsIProtocolHandler.h"
 #include "nsIURI.h"
+#include "nsNetUtil.h"
+#include "nsScriptSecurityManager.h"
 
 using namespace mozilla;
 

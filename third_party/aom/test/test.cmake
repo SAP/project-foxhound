@@ -141,6 +141,7 @@ if(NOT BUILD_SHARED_LIBS)
               "${AOM_ROOT}/test/aom_mem_test.cc"
               "${AOM_ROOT}/test/av1_common_int_test.cc"
               "${AOM_ROOT}/test/av1_scale_test.cc"
+              "${AOM_ROOT}/test/bitwriter_buffer_test.cc"
               "${AOM_ROOT}/test/cdef_test.cc"
               "${AOM_ROOT}/test/cfl_test.cc"
               "${AOM_ROOT}/test/convolve_test.cc"
@@ -615,7 +616,8 @@ function(setup_aom_test_targets)
           "Duplicate AOM_TEST_SOURCE_VARS entry: ${aom_test_source_var}")
     endif()
     foreach(file ${${aom_test_source_var}})
-      if(NOT "${file}" MATCHES "${AOM_CONFIG_DIR}")
+      string(FIND "${file}" "${AOM_CONFIG_DIR}" aom_find_substring_index)
+      if(aom_find_substring_index EQUAL -1)
         string(REPLACE "${AOM_ROOT}/" "" file "${file}")
         file(APPEND "${libaom_test_srcs_txt_file}" "${file}\n")
       endif()
@@ -634,7 +636,8 @@ function(setup_aom_test_targets)
          "\n${aom_test_source_var_lowercase} = [\n")
 
     foreach(file ${${aom_test_source_var}})
-      if(NOT "${file}" MATCHES "${AOM_CONFIG_DIR}")
+      string(FIND "${file}" "${AOM_CONFIG_DIR}" aom_find_substring_index)
+      if(aom_find_substring_index EQUAL -1)
         string(REPLACE "${AOM_ROOT}/" "//third_party/libaom/source/libaom/" file
                        "${file}")
         file(APPEND "${libaom_test_srcs_gni_file}" "  \"${file}\",\n")

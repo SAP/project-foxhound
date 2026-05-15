@@ -10,8 +10,8 @@
 #include "nsIContent.h"
 #include "nsINamed.h"
 #include "nsIRunnable.h"
-#include "nsString.h"
 #include "nsISupportsImpl.h"
+#include "nsString.h"
 #include "nsTString.h"
 
 namespace mozilla::dom {

@@ -1,0 +1,99 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --button-background: linear-gradient(235deg, #d6b4fd -57%, #8341ca 219%);
+  --button-background-dark: linear-gradient(65deg, #4e2e9d -5%, #c1a9ff 135%);
+  --button-border-color: color-mix(in srgb, white 20%, transparent);
+  --button-border-width: var(--border-width);
+  --button-box-shadow: inset 0 0 0 var(--button-border-width) var(--button-border-color);
+  --button-separator-color: color-mix(in srgb, white 60%, transparent);
+  --panel-icon-fill-color: light-dark(var(--color-violet-70), white);
+  --panel-icon-stroke-color: light-dark(var(--color-pink-0), var(--button-separator-color));
+  display: inline-flex;
+}
+
+moz-button.input-cta {
+  --button-background-color-active: color-mix(in srgb, black 25%, transparent);
+  --button-background-color-disabled: light-dark(var(--color-gray-20), var(--color-gray-60));
+  --button-background-color-hover: color-mix(in srgb, black 15%, transparent);
+  --button-background-color-selected: color-mix(in srgb, black 25%, transparent);
+  --button-background-color: transparent;
+  --button-border-radius: var(--border-radius-circle);
+  --button-icon-fill: light-dark(var(--color-gray-60), white);
+  --button-padding: 0 var(--space-small) 0 var(--space-large);
+  --button-text-color-active: white;
+  --button-text-color-disabled: white;
+  --button-text-color-hover: white;
+  --button-text-color-selected: white;
+  --button-text-color: white;
+  border-radius: var(--button-border-radius);
+}
+
+moz-button[type="split"].input-cta {
+  --button-icon-fill: white;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background: light-dark(var(--button-background), var(--button-background-dark));
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow: var(--button-box-shadow);
+  gap: 0;
+}
+
+moz-button[type="split"].input-cta::part(chevron-button) {
+  padding-inline-end: var(--space-xsmall);
+}
+
+moz-button[type="split"].input-cta::part(chevron-button)::before {
+  background: var(--button-separator-color);
+  border-radius: var(--border-radius-circle);
+  content: "";
+  display: block;
+  height: var(--size-item-small);
+  inset-inline-start: 0;
+  position: absolute;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  margin-inline-start: calc(-1 * var(--button-border-width));
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: var(--button-border-width);
+}
+
+:host(:dir(rtl)) moz-button.input-cta::part(button) {
+  padding-inline-end: var(--space-xsmall);
+}
+
+:host([action=""]) moz-button.input-cta::part(button) {
+  min-width: var(--size-item-xlarge);
+}
+
+:host([action="search"]) moz-button.input-cta::part(button) {
+  background-image: var(--search-icon);
+  background-position: left var(--space-small) center;
+  background-repeat: no-repeat;
+  background-size: var(--size-item-small);
+  padding-inline-start: calc(var(--space-small) + var(--size-item-small) + var(--space-xsmall));
+}
+
+:host([action="search"]:dir(rtl)) moz-button.input-cta::part(button) {
+  background-position-x: right var(--space-small);
+}
+
+panel-item::part(button) {
+  -moz-context-properties: fill, stroke;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  fill: var(--panel-icon-fill-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  stroke: var(--panel-icon-stroke-color);
+}
+
+panel-item[icon="chat"]::part(button) {
+  background-image: url("chrome://browser/content/aiwindow/assets/ask-icon.svg");
+}
+
+panel-item[icon="navigate"]::part(button) {
+  background-image: url("chrome://browser/skin/forward.svg");
+}
+
+panel-item[icon="search"]::part(button) {
+  background-image: var(--search-icon);
+}

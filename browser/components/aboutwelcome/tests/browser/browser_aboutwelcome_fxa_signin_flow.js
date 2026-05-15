@@ -7,6 +7,10 @@ const { UIState } = ChromeUtils.importESModule(
   "resource://services-sync/UIState.sys.mjs"
 );
 
+const { ON_SERVICE_ENABLED_NOTIFICATION } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsCommon.sys.mjs"
+);
+
 const TEST_ROOT = "https://example.com/";
 
 add_setup(async () => {
@@ -43,6 +47,54 @@ add_task(async function test_fxa_sign_success() {
       email: "email@example.com",
     });
 
+    Services.obs.notifyObservers(null, UIState.ON_UPDATE);
+
+    await fxaTabClosing;
+    Assert.ok(true, "FxA tab automatically closed.");
+    let result = await resultPromise;
+    Assert.ok(result, "FXA_SIGNIN_FLOW action's result should be true");
+  });
+
+  sandbox.restore();
+});
+
+/**
+ * Tests that the FXA_SIGNIN_FLOW special action resolves to `true` and
+ * closes the FxA sign-in tab if sign-in is successful when a 'service'
+ * param is supplied in `extraParams`
+ */
+add_task(async function test_fxa_sign_with_service_success() {
+  let sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => {
+    sandbox.restore();
+  });
+
+  await BrowserTestUtils.withNewTab("about:welcome", async browser => {
+    let fxaTabPromise = BrowserTestUtils.waitForNewTab(gBrowser);
+    let resultPromise = SpecialPowers.spawn(browser, [], async () => {
+      return content.wrappedJSObject.AWSendToParent("SPECIAL_ACTION", {
+        type: "FXA_SIGNIN_FLOW",
+        data: {
+          extraParams: {
+            service: "sync",
+          },
+        },
+      });
+    });
+    let fxaTab = await fxaTabPromise;
+    let fxaTabClosing = BrowserTestUtils.waitForTabClosing(fxaTab);
+
+    // We'll fake-out the UIState being in the STATUS_SIGNED_IN status
+    // and not test the actual FxA sign-in mechanism.
+    sandbox.stub(UIState, "get").returns({
+      status: UIState.STATUS_SIGNED_IN,
+      syncEnabled: true,
+      email: "email@example.com",
+    });
+
+    // Ideally we'd send UIState.ON_UPDATE and test the tab did *not* close, but
+    // that's tricky.
+    Services.obs.notifyObservers(null, ON_SERVICE_ENABLED_NOTIFICATION, "sync");
     Services.obs.notifyObservers(null, UIState.ON_UPDATE);
 
     await fxaTabClosing;

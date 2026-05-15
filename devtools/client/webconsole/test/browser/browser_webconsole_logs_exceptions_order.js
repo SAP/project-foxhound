@@ -16,7 +16,7 @@ add_task(async function () {
   await checkConsoleOutput(hud);
 
   info("Reload the content window");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await checkConsoleOutput(hud);
 });
 

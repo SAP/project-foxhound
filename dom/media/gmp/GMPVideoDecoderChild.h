@@ -6,12 +6,12 @@
 #ifndef GMPVideoDecoderChild_h_
 #define GMPVideoDecoderChild_h_
 
-#include "nsString.h"
-#include "mozilla/gmp/PGMPVideoDecoderChild.h"
-#include "gmp-video-decode.h"
 #include "GMPSharedMemManager.h"
 #include "GMPVideoHost.h"
+#include "gmp-video-decode.h"
 #include "mozilla/gmp/GMPTypes.h"
+#include "mozilla/gmp/PGMPVideoDecoderChild.h"
+#include "nsString.h"
 
 namespace mozilla::gmp {
 

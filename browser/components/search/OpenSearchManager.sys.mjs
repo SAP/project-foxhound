@@ -2,10 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/**
+ *  @import { SearchEngine } from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs";
+ */
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
 });
 
 /**
@@ -23,12 +28,12 @@ class _OpenSearchManager {
    */
 
   /**
-   * @type {WeakMap<XULBrowserElement, OpenSearchData[]>}
+   * @type {WeakMap<MozBrowser, OpenSearchData[]>}
    */
   #offeredEngines = new WeakMap();
 
   /**
-   * @type {WeakMap<XULBrowserElement, OpenSearchData[]>}
+   * @type {WeakMap<MozBrowser, OpenSearchData[]>}
    */
   #hiddenEngines = new WeakMap();
 
@@ -39,15 +44,16 @@ class _OpenSearchManager {
   /**
    * Observer for browser-search-engine-modified.
    *
-   * @param {nsISearchEngine} engine
+   * @param {{wrappedJSObject: SearchEngine}} subject
    *   The modified engine.
    * @param {string} _topic
    *   Always browser-search-engine-modified.
    * @param {string} data
    *   The type of modification.
    */
-  observe(engine, _topic, data) {
-    // There are two kinds of search engine objects: nsISearchEngine objects
+  observe(subject, _topic, data) {
+    let engine = subject.wrappedJSObject;
+    // There are two kinds of search engine objects: SearchEngine objects
     // and plain OpenSearchData objects. `engine` in this observer is the
     // former and the arrays in #offeredEngines and #hiddenEngines contain the
     // latter. They are related by their names.
@@ -72,13 +78,13 @@ class _OpenSearchManager {
    * If an engine with that name is already installed, adds it to the list
    * of hidden engines instead.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser offering the engine.
    * @param {{title: string, href: string}} engine
    *   The title of the engine and the url to the opensearch XML.
    */
   addEngine(browser, engine) {
-    if (!Services.search.hasSuccessfullyInitialized) {
+    if (!lazy.SearchService.hasSuccessfullyInitialized) {
       // We haven't finished initializing search yet. This means we can't
       // call getEngineByName here. Since this is only on start-up and unlikely
       // to happen in the normal case, we'll just return early rather than
@@ -92,7 +98,7 @@ class _OpenSearchManager {
 
     // If this engine (identified by title) is already in the list, add it
     // to the list of hidden engines rather than to the main list.
-    let shouldBeHidden = !!Services.search.getEngineByName(engine.title);
+    let shouldBeHidden = !!lazy.SearchService.getEngineByName(engine.title);
 
     let engines =
       (shouldBeHidden
@@ -103,7 +109,6 @@ class _OpenSearchManager {
       uri: engine.href,
       title: engine.title,
       get icon() {
-        // @ts-expect-error - Bug 1957641
         return browser.mIconURL;
       },
     });
@@ -129,10 +134,17 @@ class _OpenSearchManager {
    */
   updateOpenSearchBadge(win) {
     let engines = this.#offeredEngines.get(win.gBrowser.selectedBrowser);
-    win.gURLBar.addSearchEngineHelper.setEnginesFromBrowser(
-      win.gBrowser.selectedBrowser,
-      engines || []
-    );
+    for (let urlbar of win.document.querySelectorAll("moz-urlbar")) {
+      if (!urlbar.controller) {
+        // This means it is not initialized and happens
+        // if the new searchbar is disabled.
+        continue;
+      }
+      urlbar.addSearchEngineHelper.setEnginesFromBrowser(
+        win.gBrowser.selectedBrowser,
+        engines || []
+      );
+    }
 
     let searchBar = win.document.getElementById("searchbar");
     if (!searchBar) {
@@ -197,7 +209,7 @@ class _OpenSearchManager {
   /**
    * Get the open search engines offered by a certain browser.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser for which to get the engines.
    * @returns {OpenSearchData[]}
    *   The open search engines.

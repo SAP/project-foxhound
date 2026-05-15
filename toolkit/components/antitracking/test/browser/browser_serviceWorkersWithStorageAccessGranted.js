@@ -1,17 +1,18 @@
-/** This tests that the service worker can be used if we have storage access
- *  permission. We manually write the storage access permission into the
- *  permission manager to simulate the storage access has been granted. We would
- *  test the service worker three times. The fist time is to check the service
- *  work is allowed. The second time is to load again and check it won't hit
- *  assertion, this assertion would only be hit if we have registered a service
- *  worker, see Bug 1631234.
+/**
+ * This tests that the service worker can be used if we have storage access
+ * permission. We manually write the storage access permission into the
+ * permission manager to simulate the storage access has been granted. We would
+ * test the service worker three times. The fist time is to check the service
+ * work is allowed. The second time is to load again and check it won't hit
+ * assertion, this assertion would only be hit if we have registered a service
+ * worker, see Bug 1631234.
  *
- *  The third time is to load again but in a sandbox iframe to check it won't
- *  hit the assertion. See Bug 1637226 for details.
+ * The third time is to load again but in a sandbox iframe to check it won't
+ * hit the assertion. See Bug 1637226 for details.
  *
- *  The fourth time is to load again in a nested iframe to check it won't hit
- *  the assertion. See Bug 1641153 for details.
- *  */
+ * The fourth time is to load again in a nested iframe to check it won't hit
+ * the assertion. See Bug 1641153 for details.
+ */
 
 add_task(async _ => {
   // Manually add the storage permission.

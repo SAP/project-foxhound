@@ -8,6 +8,8 @@ import android.util.AtomicFile
 import android.util.JsonWriter
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.browser.state.state.TabGroup
+import mozilla.components.browser.state.state.TabPartition
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.concept.engine.EngineSessionState
 import mozilla.components.support.ktx.util.streamJSON
@@ -54,6 +56,16 @@ private fun JsonWriter.state(
 
     state.tabs.filter { !it.content.private }.forEachIndexed { _, tab ->
         tab(tab)
+    }
+
+    endArray()
+
+    name(Keys.TAB_PARTITIONS_KEY)
+
+    beginArray()
+
+    state.tabPartitions.values.forEach { partition ->
+        partition(partition)
     }
 
     endArray()
@@ -150,6 +162,57 @@ private fun JsonWriter.tab(
 
     name(Keys.ENGINE_SESSION_KEY)
     engineSession(tab.engineState.engineSessionState)
+
+    endObject()
+}
+
+/**
+ * Writes a [TabPartition] to [JsonWriter].
+ */
+private fun JsonWriter.partition(
+    partition: TabPartition,
+) {
+    beginObject()
+
+    name(Keys.TAB_PARTITION_ID_KEY)
+    value(partition.id)
+
+    name(Keys.TAB_PARTITION_GROUPS_KEY)
+
+    beginArray()
+
+    partition.tabGroups.forEach { group ->
+        group(group)
+    }
+
+    endArray()
+
+    endObject()
+}
+
+/**
+ * Writes a [TabGroup] to [JsonWriter].
+ */
+private fun JsonWriter.group(
+    group: TabGroup,
+) {
+    beginObject()
+
+    name(Keys.TAB_GROUP_ID_KEY)
+    value(group.id)
+
+    name(Keys.TAB_GROUP_NAME_KEY)
+    value(group.name)
+
+    name(Keys.TAB_GROUP_TAB_IDS_KEY)
+
+    beginArray()
+
+    group.tabIds.forEach { tabId ->
+        value(tabId)
+    }
+
+    endArray()
 
     endObject()
 }

@@ -117,12 +117,6 @@ class CSSFilterInstance {
   const StyleFilter& mFilter;
 
   /**
-   * The color that should be used for drop-shadow() filters that don't
-   * specify a shadow color.
-   */
-  nscolor mShadowFallbackColor;
-
-  /**
    * The pre-filter overflow rect of the frame being filtered, in filter space.
    * Used for input bounds if this CSS filter is the first in the filter chain.
    */
@@ -133,6 +127,12 @@ class CSSFilterInstance {
    * filter space. Used to transform style values to filter space.
    */
   gfxMatrix mFrameSpaceInCSSPxToFilterSpaceTransform;
+
+  /**
+   * The color that should be used for drop-shadow() filters that don't
+   * specify a shadow color.
+   */
+  nscolor mShadowFallbackColor;
 };
 
 }  // namespace mozilla

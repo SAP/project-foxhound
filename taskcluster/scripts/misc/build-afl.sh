@@ -8,7 +8,7 @@ scripts="$(realpath "${0%/*}")"
 
 # these lists are copied from AFLplusplus/GNUmakefile
 PROGS="afl-fuzz afl-showmap afl-tmin afl-gotcpu afl-analyze"
-SH_PROGS="afl-plot afl-cmin afl-cmin.bash afl-whatsup afl-addseeds afl-system-config afl-persistent-config"
+SH_PROGS="afl-plot afl-cmin.awk afl-cmin.bash afl-cmin.py afl-whatsup afl-addseeds afl-system-config afl-persistent-config"
 
 cd "$MOZ_FETCHES_DIR/AFLplusplus"
 patch -p1 -i "$scripts/afl-nyx.patch"
@@ -21,6 +21,7 @@ make -f GNUmakefile $PROGS \
     PREFIX=/
 mkdir -p "$dir/bin"
 install -m 755 $PROGS $SH_PROGS "$dir/bin"
+install -m 644 ./utils/dynamic_covfilter/make_symbol_list.py "$dir/bin/"
 
 make -f GNUmakefile.llvm install \
     CODE_COVERAGE=1 \

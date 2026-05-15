@@ -1,7 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env browser */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
 
 "use strict";
@@ -11,6 +10,11 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
   this
 );
+
+// Cleanup preferences that may be set by tests when interacting with the UI
+registerCleanupFunction(function () {
+  Services.prefs.clearUserPref("devtools.application.selectedSidebar");
+});
 
 /**
  * Set all preferences needed to enable service worker debugging and testing.
@@ -127,8 +131,9 @@ async function waitForWorkerRegistration(swTab) {
 function selectPage(panel, page) {
   /**
    * Select a page by simulating a user click in the sidebar.
+   *
    * @param {string} page The page we want to select (see `PAGE_TYPES`)
-   **/
+   */
   info(`Selecting application page: ${page}`);
   const doc = panel.panelWin.document;
   const navItem = doc.querySelector(`.js-sidebar-${page}`);

@@ -6,79 +6,75 @@
 
 #include <stdint.h>
 
-#include <vector>
-#include <string>
 #include <set>
+#include <string>
+#include <vector>
 
-#include "call/call.h"
-#include "call/audio_receive_stream.h"
-#include "call/video_receive_stream.h"
-#include "api/rtp_parameters.h"
-#include "api/units/timestamp.h"
-#include "api/units/time_delta.h"
-#include "system_wrappers/include/clock.h"
-#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
-
-#include "RTCRtpTransceiver.h"
+#include "ErrorList.h"
+#include "MainThreadUtils.h"
+#include "MediaSegment.h"
+#include "MediaTrackGraph.h"
+#include "MediaTransportHandler.h"
 #include "PeerConnectionImpl.h"
+#include "PerformanceRecorder.h"
+#include "PrincipalHandle.h"
+#include "RTCRtpTransceiver.h"
 #include "RTCStatsReport.h"
-#include "mozilla/dom/RTCRtpReceiverBinding.h"
-#include "mozilla/dom/RTCRtpSourcesBinding.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "RemoteTrackSource.h"
+#include "api/rtp_parameters.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "call/audio_receive_stream.h"
+#include "call/call.h"
+#include "call/video_receive_stream.h"
+#include "js/RootingAPI.h"
 #include "jsep/JsepTransceiver.h"
 #include "libwebrtcglue/MediaConduitControl.h"
 #include "libwebrtcglue/MediaConduitInterface.h"
-#include "transportbridge/MediaPipeline.h"
-#include "sdp/SdpEnum.h"
-#include "sdp/SdpAttribute.h"
-#include "MediaTransportHandler.h"
-#include "RemoteTrackSource.h"
-
-#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
-#include "mozilla/dom/MediaStreamTrack.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Nullable.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/AudioStreamTrack.h"
-#include "mozilla/dom/VideoStreamTrack.h"
-#include "mozilla/dom/RTCRtpScriptTransform.h"
-
-#include "nsPIDOMWindow.h"
-#include "PrincipalHandle.h"
-#include "nsIPrincipal.h"
-#include "MediaTrackGraph.h"
-#include "nsStringFwd.h"
-#include "MediaSegment.h"
-#include "nsLiteralString.h"
-#include "nsTArray.h"
-#include "nsDOMNavigationTiming.h"
-#include "MainThreadUtils.h"
-#include "ErrorList.h"
-#include "nsWrapperCache.h"
-#include "nsISupports.h"
-#include "nsCOMPtr.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsDebug.h"
-#include "nsThreadUtils.h"
-#include "PerformanceRecorder.h"
-
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "mozilla/AbstractThread.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StateMirroring.h"
-#include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/AbstractThread.h"
+#include "mozilla/StateMirroring.h"
 #include "mozilla/StateWatching.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/MozPromise.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/AudioStreamTrack.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/MediaStreamTrack.h"
+#include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
+#include "mozilla/dom/RTCRtpReceiverBinding.h"
+#include "mozilla/dom/RTCRtpScriptTransform.h"
+#include "mozilla/dom/RTCRtpSourcesBinding.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/fallible.h"
 #include "mozilla/mozalloc_oom.h"
-#include "mozilla/ErrorResult.h"
-#include "js/RootingAPI.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDOMNavigationTiming.h"
+#include "nsDebug.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsISupports.h"
+#include "nsLiteralString.h"
+#include "nsPIDOMWindow.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
+#include "nsWrapperCache.h"
+#include "sdp/SdpAttribute.h"
+#include "sdp/SdpEnum.h"
+#include "system_wrappers/include/clock.h"
+#include "transportbridge/MediaPipeline.h"
 
 namespace mozilla::dom {
 
@@ -948,14 +944,14 @@ void RTCRtpReceiver::SyncFromJsep(const JsepTransceiver& aJsepTransceiver) {
         }
         RTCRtpCodecParameters codec;
         RTCRtpTransceiver::ToDomRtpCodecParameters(*jsepCodec, &codec);
-        Unused << mParameters.mCodecs.Value().AppendElement(codec, fallible);
+        (void)mParameters.mCodecs.Value().AppendElement(codec, fallible);
         if (jsepCodec->Type() == SdpMediaSection::kVideo) {
           const JsepVideoCodecDescription& videoJsepCodec =
               static_cast<JsepVideoCodecDescription&>(*jsepCodec);
           if (videoJsepCodec.mRtxEnabled) {
             RTCRtpCodecParameters rtx;
             RTCRtpTransceiver::ToDomRtpCodecParametersRtx(videoJsepCodec, &rtx);
-            Unused << mParameters.mCodecs.Value().AppendElement(rtx, fallible);
+            (void)mParameters.mCodecs.Value().AppendElement(rtx, fallible);
           }
         }
       }

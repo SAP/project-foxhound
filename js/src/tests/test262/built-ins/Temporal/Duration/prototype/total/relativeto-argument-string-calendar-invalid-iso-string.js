@@ -1,0 +1,27 @@
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
+// Copyright (C) 2025 Igalia, S.L. All rights reserved.
+// This code is governed by the BSD license found in the LICENSE file.
+
+/*---
+esid: sec-temporal.duration.prototype.total
+description: Invalid ISO string as calendar in relativeTo option should throw RangeError
+features: [Temporal]
+---*/
+
+const instance = new Temporal.Duration(1, 0, 0, 0, 24);
+
+const invalidStrings = [
+  ["", "empty string"],
+  ["1997-12-04[u-ca=notacal]", "Unknown calendar"],
+];
+
+for (const [arg, description] of invalidStrings) {
+  assert.throws(
+    RangeError,
+    () => instance.total({ unit: "months", relativeTo: arg }),
+    `${description} is not a valid calendar ID`
+  );
+}
+
+
+reportCompare(0, 0);

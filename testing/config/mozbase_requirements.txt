@@ -20,6 +20,8 @@
 ../mozbase/mozrunner
 ../mozbase/mozserve
 ../mozbase/mozscreenshot
+../mozbase/mozshellutil
+../mozbase/mozsystemmonitor
 ../mozbase/moztest
 ../mozbase/mozversion
 

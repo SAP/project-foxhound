@@ -9,15 +9,8 @@ import org.junit.Test
 
 class LoginsReducerTest {
     @Test
-    fun `WHEN store initializes THEN no changes to state`() {
-        val state = LoginsState()
-
-        assertEquals(state, loginsReducer(state, Init))
-    }
-
-    @Test
     fun `WHEN logins are loaded THEN they are added to state`() {
-        val state = LoginsState()
+        val state = LoginsState.default
         val items = List(5) {
             LoginItem(
                 guid = "$it",
@@ -43,7 +36,7 @@ class LoginsReducerTest {
 
     @Test
     fun `GIVEN we are on the list logins screen WHEN add login is clicked THEN initialize the add login state`() {
-        val state = LoginsState().copy(
+        val state = LoginsState.default.copy(
             loginsAddLoginState = LoginsAddLoginState(
                 host = "",
                 username = "",
@@ -65,11 +58,11 @@ class LoginsReducerTest {
 
     @Test
     fun `GIVEN there is no substate screen present WHEN back is clicked THEN state is unchanged`() {
-        val state = LoginsState()
+        val state = LoginsState.default
 
         val result = loginsReducer(state, LoginsListBackClicked)
 
-        assertEquals(LoginsState(), result)
+        assertEquals(LoginsState.default, result)
     }
 
     @Test
@@ -84,7 +77,7 @@ class LoginsReducerTest {
             )
         }
 
-        val state = LoginsState().copy(loginItems = items)
+        val state = LoginsState.default.copy(loginItems = items)
 
         val alphabetical = loginsReducer(state, LoginsListSortMenuAction.OrderByNameClicked)
         assertEquals(listOf(items[0], items[1], items[2]), alphabetical.loginItems)
@@ -102,7 +95,7 @@ class LoginsReducerTest {
             )
         }
 
-        val state = LoginsState().copy(loginItems = items)
+        val state = LoginsState.default.copy(loginItems = items)
 
         val newest = loginsReducer(state, LoginsListSortMenuAction.OrderByLastUsedClicked)
         assertEquals(listOf(items[2], items[1], items[0]), newest.loginItems)
@@ -119,13 +112,26 @@ class LoginsReducerTest {
                 timeLastUsed = System.currentTimeMillis(),
             )
         }
+        val itemsList = items.toMutableList()
+        itemsList.add(
+            LoginItem(
+                guid = "7",
+                url = "7 uri",
+                username = "user7-url",
+                password = "pass7",
+                timeLastUsed = System.currentTimeMillis(),
+            ),
+        )
 
-        val state = LoginsState().copy(loginItems = items)
+        val state = LoginsState.default.copy(loginItems = itemsList)
 
-        val filterUrl = loginsReducer(state, SearchLogins("url", items))
+        val filterUrl = loginsReducer(state, SearchLogins("url", itemsList))
         assertEquals("url", filterUrl.searchText)
-        assertEquals(4, filterUrl.loginItems.size)
-        assertEquals(listOf(items[0], items[2], items[4], items[6]), filterUrl.loginItems)
+        assertEquals(5, filterUrl.loginItems.size)
+        assertEquals(
+            listOf(itemsList[0], itemsList[2], itemsList[4], itemsList[6], itemsList[7]),
+            filterUrl.loginItems,
+        )
     }
 
     @Test
@@ -140,7 +146,7 @@ class LoginsReducerTest {
             )
         }
 
-        val state = LoginsState().copy(loginItems = items)
+        val state = LoginsState.default.copy(loginItems = items)
         val result = loginsReducer(state, LoginClicked(items[1]))
         val expectedState = state.copy(loginsLoginDetailState = LoginsLoginDetailState(items[1]))
 
@@ -150,7 +156,7 @@ class LoginsReducerTest {
 
     @Test
     fun `WHEN login is clicked THEN it is added to state`() {
-        val state = LoginsState()
+        val state = LoginsState.default
         val loginItem = LoginItem(
             guid = "guid123",
             url = "url123",
@@ -182,13 +188,41 @@ class LoginsReducerTest {
             )
         }
 
-        val state = LoginsState().copy(loginItems = items)
+        val state = LoginsState.default.copy(loginItems = items)
         loginsReducer(state, LoginClicked(items[1]))
 
         val resultListStateAfterBackClick = loginsReducer(state, LoginsListBackClicked)
         val expectedListStateAfterBackClick = state.copy(loginsLoginDetailState = null)
 
         assertEquals(resultListStateAfterBackClick, expectedListStateAfterBackClick)
+    }
+
+    @Test
+    fun `GIVEN we are on the login details screen WHEN the delete item from the 3 dot menu is tapped THEN show the deletion dialog`() {
+        val items = List(7) {
+            LoginItem(
+                guid = "$it",
+                url = if (it % 2 == 0) "$it url" else "$it uri",
+                username = "user$it",
+                password = "pass$it",
+                timeLastUsed = System.currentTimeMillis(),
+            )
+        }
+
+        val state = LoginsState.default.copy(
+            loginItems = items,
+            loginsLoginDetailState = LoginsLoginDetailState(items[1]),
+        )
+
+        val resultDeletionDialogStateAfterDeleteClick =
+            loginsReducer(state, DetailLoginMenuAction.DeleteLoginMenuItemClicked(items[1]))
+        val expectedDeletionDialogStateAfterDeleteClick =
+            state.copy(loginDeletionDialogState = LoginDeletionDialogState.Presenting(items[1].guid))
+
+        assertEquals(
+            resultDeletionDialogStateAfterDeleteClick,
+            expectedDeletionDialogStateAfterDeleteClick,
+        )
     }
 
     @Test
@@ -203,7 +237,7 @@ class LoginsReducerTest {
             )
         }
 
-        val state = LoginsState().copy(loginItems = items)
+        val state = LoginsState.default.copy(loginItems = items)
         loginsReducer(state, AddLoginAction.InitAdd)
 
         val resultListStateAfterBackClick = loginsReducer(state, AddLoginBackClicked)
@@ -218,7 +252,7 @@ class LoginsReducerTest {
         val username = "user1234"
         val password = "pass1234"
 
-        val state = LoginsState().copy(
+        val state = LoginsState.default.copy(
             loginsAddLoginState = LoginsAddLoginState(
                 host = host,
                 username = username,
@@ -248,7 +282,7 @@ class LoginsReducerTest {
         val username = "user1234"
         val password = "pass1234"
 
-        val state = LoginsState().copy(
+        val state = LoginsState.default.copy(
             loginItems = listOf(
                 LoginItem(
                     guid = guid,
@@ -294,7 +328,7 @@ class LoginsReducerTest {
             )
         }
 
-        val state = LoginsState().copy(
+        val state = LoginsState.default.copy(
             loginItems = items,
             loginsLoginDetailState = LoginsLoginDetailState(items[1]),
             loginsEditLoginState = LoginsEditLoginState(
@@ -329,7 +363,7 @@ class LoginsReducerTest {
             newPassword = "newPassword",
             isPasswordVisible = true,
         )
-        val state = LoginsState().copy(
+        val state = LoginsState.default.copy(
             loginItems = items,
             loginsLoginDetailState = LoginsLoginDetailState(items[1]),
             loginsEditLoginState = loginsEditState,
@@ -366,7 +400,7 @@ class LoginsReducerTest {
             newPassword = "newPassword",
             isPasswordVisible = true,
         )
-        val state = LoginsState().copy(
+        val state = LoginsState.default.copy(
             loginItems = items,
             loginsLoginDetailState = LoginsLoginDetailState(items[1]),
             loginsEditLoginState = loginsEditState,
@@ -403,7 +437,7 @@ class LoginsReducerTest {
             newPassword = "newPassword",
             isPasswordVisible = false,
         )
-        val state = LoginsState().copy(
+        val state = LoginsState.default.copy(
             loginItems = items,
             loginsLoginDetailState = LoginsLoginDetailState(items[1]),
             loginsEditLoginState = loginsEditState,
@@ -420,5 +454,92 @@ class LoginsReducerTest {
         )
 
         assertEquals(resultListStateAfterBackClick, expectedListStateAfterSaveClick)
+    }
+
+    @Test
+    fun `GIVEN we are on the edit login screen WHEN we want to save a login without changing the username THEN this is not a duplicate`() {
+        val loginItem = LoginItem(
+            guid = "guid1234",
+            url = "https://www.yahoo.com",
+            username = "user1234",
+            password = "pass1234",
+        )
+
+        val state = LoginsState.default.copy(
+            loginItems = listOf(
+                loginItem,
+            ),
+            loginsEditLoginState = LoginsEditLoginState(
+                login = loginItem,
+                newUsername = "user1234",
+                newPassword = "password1234",
+                isPasswordVisible = false,
+            ),
+            updateLoginState = UpdateLoginState.None,
+        )
+
+        val resultEditStateForDuplicateLogin =
+            loginsReducer(state, EditLoginAction.UsernameChanged(usernameChanged = "user1234"))
+
+        val expectedEditStateForDuplicateLogin = state.copy(
+            loginsEditLoginState = LoginsEditLoginState(
+                login = loginItem,
+                newUsername = "user1234",
+                newPassword = "password1234",
+                isPasswordVisible = false,
+            ),
+            updateLoginState = UpdateLoginState.None,
+        )
+
+        assertEquals(
+            resultEditStateForDuplicateLogin.updateLoginState,
+            expectedEditStateForDuplicateLogin.updateLoginState,
+        )
+    }
+
+    @Test
+    fun `GIVEN we are on the edit login screen WHEN we want to save a duplicate login THEN this is reflected in the state`() {
+        val loginItem1 = LoginItem(
+            guid = "guid1",
+            url = "https://www.yahoo.com",
+            username = "user1",
+            password = "pass1",
+        )
+
+        val loginItem2 = LoginItem(
+            guid = "guid2",
+            url = "https://www.yahoo.com",
+            username = "user2",
+            password = "pass2",
+        )
+
+        val state = LoginsState.default.copy(
+            loginItems = listOf(loginItem1, loginItem2),
+            loginsEditLoginState = LoginsEditLoginState(
+                login = loginItem1,
+                newUsername = "user2",
+                newPassword = "password1",
+                isPasswordVisible = false,
+            ),
+            updateLoginState = UpdateLoginState.None,
+        )
+
+        val resultEditStateForDuplicateLogin =
+            loginsReducer(state, EditLoginAction.UsernameChanged(usernameChanged = "user2"))
+
+        val expectedEditStateForDuplicateLogin = state.copy(
+            loginsEditLoginState = LoginsEditLoginState(
+                login = loginItem1,
+                newUsername = "user2",
+                newPassword = "password1",
+                isPasswordVisible = false,
+            ),
+            updateLoginState = UpdateLoginState.Duplicate,
+        )
+
+        assertEquals(
+            resultEditStateForDuplicateLogin.updateLoginState,
+            expectedEditStateForDuplicateLogin.updateLoginState,
+        )
     }
 }

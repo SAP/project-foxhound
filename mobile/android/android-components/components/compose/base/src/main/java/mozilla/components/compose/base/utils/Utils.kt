@@ -6,6 +6,7 @@ package mozilla.components.compose.base.utils
 
 import androidx.annotation.AttrRes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 
@@ -14,6 +15,7 @@ import androidx.compose.ui.platform.LocalInspectionMode
  */
 val inComposePreview: Boolean
     @Composable
+    @ReadOnlyComposable
     get() = LocalInspectionMode.current
 
 /**
@@ -24,7 +26,9 @@ val inComposePreview: Boolean
  * @param attrId The attribute resource ID (e.g. R.attr.image)
  */
 @Composable
-fun getResolvedAttrResId(@AttrRes attrId: Int): Int {
+fun getResolvedAttrResId(
+    @AttrRes attrId: Int,
+): Int {
     val typedArray = LocalContext.current.obtainStyledAttributes(intArrayOf(attrId))
     val newResId = typedArray.getResourceId(0, 0)
     typedArray.recycle()

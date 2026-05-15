@@ -1,7 +1,7 @@
 import pytest
 
 URL = "https://hiskin.care/pages/complete-booking"
-IFRAME_CSS = "iframe[src='https://booking-v3.hiskin.care/']"
+IFRAME_CSS = "iframe[src*='booking-v3.hiskin.care']"
 
 
 async def is_frame_visible(client):

@@ -7,6 +7,8 @@
 const TEST_URI = URL_ROOT + "doc_media_queries.html";
 
 add_task(async function () {
+  await pushPref("layout.css.custom-media.enabled", true);
+
   const tab = await addTab(TEST_URI);
   const { inspector, view } = await openRuleView();
 
@@ -17,9 +19,9 @@ add_task(async function () {
 
   // Define functions checking if the rule view display the expected property.
   const divHasDefaultStyling = async () =>
-    (await getPropertiesForRuleIndex(view, 1)).has("background-color:yellow");
+    (await getPropertiesForRuleIndex(view, 2)).has("background-color:yellow");
   const divHasDarkSchemeStyling = async () =>
-    (await getPropertiesForRuleIndex(view, 1)).has("background-color:darkblue");
+    (await getPropertiesForRuleIndex(view, 2)).has("background-color:darkblue");
 
   info(
     "Select the div that will change according to conditions in prefered color scheme"

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Test duplicate bad URI import doesn't crash</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="modulepreload" href="./bug_2009204_module_a.mjs" />
+<link rel="modulepreload" href="./bug_2009204_module_b.mjs" />
+
+<script>
+  SimpleTest.waitForExplicitFinish();
+
+  // The test passes if we reach here without crashing due to an assertion
+  // failure in PreloaderBase::NotifyOpen. The bug was that when two modules
+  // are both modulepreloaded and they both import the same bad URI (node:async_hooks),
+  // both preloads start simultaneously and both try to load the dependency.
+  // The first load would fail with NS_ERROR_DOM_BAD_URI after registering the
+  // preload, then the second load would try to register the preload again,
+  // hitting an assertion.
+
+  window.addEventListener("load", () => {
+    ok(true, "Page loaded without assertion failure");
+    SimpleTest.finish();
+  });
+</script>
+
+<body>
+  Test for Bug 2009204 - duplicate bad URI import should not crash
+</body>

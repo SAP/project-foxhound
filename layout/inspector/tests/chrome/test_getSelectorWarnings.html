@@ -9,6 +9,10 @@ function unconstrainedHas(index) {
   return { index: index, kind: "UnconstrainedHas" };
 }
 
+function siblingCombinatorAfterScope(index) {
+  return { index: index, kind: "SiblingCombinatorAfterScope" };
+}
+
 function testRule(rule, expected) {
   const index = sheet.insertRule(rule);
   const warnings = sheet.rules[index].getSelectorWarnings();
@@ -40,4 +44,13 @@ testRule(".bar:has(:is(* .bar) .foo), .bar:has(:is(:where(* .baz) .bar) .foo) {}
 testRule(".bar:has(:is(*, .bar) .foo) {}", [unconstrainedHas(0)]);
 testRule(":is(:has(*) .bar):has(.foo) {}", [unconstrainedHas(0)]);
 testRule(":is(:has(*)):has(.foo) {}", [unconstrainedHas(0)]);
+// `:scope` selector with sibling
+testRule(":scope ~ .foo {}", [siblingCombinatorAfterScope(0)]);
+testRule(":scope ~ .foo, :scope + .foo {}", [siblingCombinatorAfterScope(0), siblingCombinatorAfterScope(1)]);
+testRule(":scope .foo, :scope ~ .foo {}", [siblingCombinatorAfterScope(1)]);
+testRule(":is(.foo :scope) ~ .bar, :is(.foo :scope) + .bar {}", [siblingCombinatorAfterScope(0), siblingCombinatorAfterScope(1)]);
+testRule(":is(:scope .foo) ~ .bar, :is(:scope > .foo) ~ .bar {}", []);
+testRule(":is(.foo :is(.bar :is(.baz :scope))) ~ .baa {}", [siblingCombinatorAfterScope(0)]);
+testRule(".foo:has(:scope ~ .bar) {}", []);
+testRule(".foo:has(:scope) ~ .bar {}", []);
 </script>

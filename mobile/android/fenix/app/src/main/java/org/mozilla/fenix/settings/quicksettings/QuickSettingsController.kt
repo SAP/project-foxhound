@@ -174,7 +174,7 @@ class DefaultQuickSettingsController(
             }
             val sitePermissions =
                 autoplayValue.createSitePermissionsFromCustomRules(origin, settings)
-            handleAutoplayAdd(sitePermissions, tab?.content?.private ?: false)
+            handleAutoplayAdd(sitePermissions, tab.content.private)
             sitePermissions
         } else {
             val newPermission = autoplayValue.updateSitePermissions(permissions)

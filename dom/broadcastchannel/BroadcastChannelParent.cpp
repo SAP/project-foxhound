@@ -5,12 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BroadcastChannelParent.h"
+
 #include "BroadcastChannelService.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -31,7 +31,7 @@ BroadcastChannelParent::~BroadcastChannelParent() {
 }
 
 mozilla::ipc::IPCResult BroadcastChannelParent::RecvPostMessage(
-    const MessageData& aData) {
+    NotNull<SharedMessageBody*> aData) {
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(!mService)) {
@@ -52,7 +52,7 @@ mozilla::ipc::IPCResult BroadcastChannelParent::RecvClose() {
   mService->UnregisterActor(this, mOriginChannelKey);
   mService = nullptr;
 
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
 
   return IPC_OK();
 }

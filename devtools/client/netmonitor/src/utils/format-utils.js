@@ -107,7 +107,7 @@ function getFormattedIPAndPort(ip, port) {
  * Based on unix conventions
  * See xpcom/threads/nsISupportsPriority.idl
  *
- * @param {Number} priority - request priority
+ * @param {number} priority - request priority
  */
 function getRequestPriorityAsText(priority) {
   if (priority < PRIORITY_HIGH) {

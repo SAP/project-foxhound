@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _NSDATAOBJ_H_
-#define _NSDATAOBJ_H_
+#ifndef NSDATAOBJ_H_
+#define NSDATAOBJ_H_
 
 #include <oleidl.h>
 #include <shldisp.h>
@@ -313,4 +313,4 @@ class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
                       LPFORMATETC aFormat, BOOL aSetData);
 };
 
-#endif  // _NSDATAOBJ_H_
+#endif  // NSDATAOBJ_H_

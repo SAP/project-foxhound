@@ -7,7 +7,6 @@
 #include "nsPageSequenceFrame.h"
 
 #include <algorithm>
-#include <limits>
 
 #include "gfxContext.h"
 #include "mozilla/Logging.h"
@@ -121,16 +120,15 @@ nsPageSequenceFrame::nsPageSequenceFrame(ComputedStyle* aStyle,
       mScrollportSize(mWritingMode),
       mCalledBeginPage(false),
       mCurrentCanvasListSetup(false) {
-  mPageData = MakeUnique<nsSharedPageData>();
-  mPageData->mHeadFootFont =
+  mPageData.mHeadFootFont =
       *PresContext()
            ->Document()
            ->GetFontPrefsForLang(aStyle->StyleFont()->mLanguage)
            ->GetDefaultFont(StyleGenericFontFamily::Serif);
-  mPageData->mHeadFootFont.size =
+  mPageData.mHeadFootFont.size =
       Length::FromPixels(CSSPixel::FromPoints(10.0f));
-  mPageData->mPrintSettings = aPresContext->GetPrintSettings();
-  MOZ_RELEASE_ASSERT(mPageData->mPrintSettings, "How?");
+  mPageData.mPrintSettings = aPresContext->GetPrintSettings();
+  MOZ_RELEASE_ASSERT(mPageData.mPrintSettings, "How?");
 
   // Doing this here so we only have to go get these formats once
   SetPageNumberFormat("pagenumber", "%1$d", true);
@@ -306,9 +304,9 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
   }
 
   nsIntMargin unwriteableTwips =
-      mPageData->mPrintSettings->GetUnwriteableMarginInTwips();
+      mPageData.mPrintSettings->GetUnwriteableMarginInTwips();
 
-  nsIntMargin edgeTwips = mPageData->mPrintSettings->GetEdgeInTwips();
+  nsIntMargin edgeTwips = mPageData.mPrintSettings->GetEdgeInTwips();
 
   // sanity check the values. three inches are sometimes needed
   int32_t threeInches = NS_INCHES_TO_INT_TWIPS(3.0);
@@ -316,10 +314,10 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
       nsIntMargin(threeInches, threeInches, threeInches, threeInches));
   edgeTwips.EnsureAtLeast(unwriteableTwips);
 
-  mPageData->mEdgePaperMargin = nsPresContext::CSSTwipsToAppUnits(edgeTwips);
+  mPageData.mEdgePaperMargin = nsPresContext::CSSTwipsToAppUnits(edgeTwips);
 
   // Get the custom page-range state:
-  mPageData->mPrintSettings->GetPageRanges(mPageData->mPageRanges);
+  mPageData.mPrintSettings->GetPageRanges(mPageData.mPageRanges);
 
   // We use the CSS "margin" property on the -moz-printed-sheet pseudoelement
   // to determine the space between each printed sheet in print preview.
@@ -337,7 +335,7 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
     MOZ_ASSERT(kidFrame->IsPrintedSheetFrame(),
                "we're only expecting PrintedSheetFrame as children");
     auto* sheet = static_cast<PrintedSheetFrame*>(kidFrame);
-    sheet->SetSharedPageData(mPageData.get());
+    sheet->SetSharedPageData(&mPageData);
 
     // If we want to reliably access the nsPageFrame before reflowing the sheet
     // frame, we need to call this:
@@ -470,15 +468,15 @@ nsresult nsPageSequenceFrame::StartPrint(nsPresContext* aPresContext,
   NS_ENSURE_ARG_POINTER(aPresContext);
   NS_ENSURE_ARG_POINTER(aPrintSettings);
 
-  if (!mPageData->mPrintSettings) {
-    mPageData->mPrintSettings = aPrintSettings;
+  if (!mPageData.mPrintSettings) {
+    mPageData.mPrintSettings = aPrintSettings;
   }
 
   if (!aDocTitle.IsEmpty()) {
-    mPageData->mDocTitle = aDocTitle;
+    mPageData.mDocTitle = aDocTitle;
   }
   if (!aDocURL.IsEmpty()) {
-    mPageData->mDocURL = aDocURL;
+    mPageData.mDocURL = aDocURL;
   }
 
   // Begin printing of the document
@@ -770,18 +768,14 @@ void nsPageSequenceFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 //------------------------------------------------------------------------------
 void nsPageSequenceFrame::SetPageNumberFormat(const nsAString& aFormatStr,
                                               bool aForPageNumOnly) {
-  NS_ASSERTION(mPageData != nullptr, "mPageData string cannot be null!");
-
   if (aForPageNumOnly) {
-    mPageData->mPageNumFormat = aFormatStr;
+    mPageData.mPageNumFormat = aFormatStr;
   } else {
-    mPageData->mPageNumAndTotalsFormat = aFormatStr;
+    mPageData.mPageNumAndTotalsFormat = aFormatStr;
   }
 }
 
 //------------------------------------------------------------------------------
 void nsPageSequenceFrame::SetDateTimeStr(const nsAString& aDateTimeStr) {
-  NS_ASSERTION(mPageData != nullptr, "mPageData string cannot be null!");
-
-  mPageData->mDateTimeStr = aDateTimeStr;
+  mPageData.mDateTimeStr = aDateTimeStr;
 }

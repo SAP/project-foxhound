@@ -27,7 +27,7 @@ add_setup(async function () {
   let server = useHttpServer("");
   server.registerContentType("sjs", "sjs");
   ENGINE_NO_ICONS = `${gHttpURL}/opensearch/fr-domain-iso8859-1.xml`;
-  await Services.search.init();
+  await SearchService.init();
 });
 
 add_task(async function test_icon_types() {
@@ -54,8 +54,6 @@ add_task(async function test_icon_types() {
       url: `${gHttpURL}/sjs/engineMaker.sjs?${JSON.stringify(engineData)}`,
     });
     let engine = await promiseEngineAdded;
-    // Ensure this is a nsISearchEngine.
-    engine.QueryInterface(Ci.nsISearchEngine);
     await promiseIconChanged;
 
     Assert.ok(await engine.getIconURL(), `${test.name} engine has an icon`);
@@ -75,8 +73,8 @@ add_task(async function test_multiple_icons_in_file() {
   });
 
   await TestUtils.waitForCondition(
-    () => Object.keys(engine.wrappedJSObject._iconMapObj).length == 3,
-    "Not all added todo"
+    () => Object.keys(engine._iconMapObj).length == 3,
+    "Should have added all the items to the map"
   );
 
   Assert.equal(await engine.getIconURL(), ico16, "Default should be 16.");
@@ -102,17 +100,17 @@ add_task(async function test_icon_not_in_opensearch_file_invalid_svg() {
     SearchUtils.MODIFIED_TYPE.ICON_CHANGED,
     SearchUtils.TOPIC_ENGINE_MODIFIED
   );
-  let engine = await Services.search.addOpenSearchEngine(
+  let engine = await SearchService.addOpenSearchEngine(
     ENGINE_NO_ICONS,
     // We still add the icon even if we cannot determine the size.
     "data:image/svg+xml;base64,invalid+svg"
   );
 
   await promiseIconChanged;
-  let sizes = Object.keys(engine.wrappedJSObject._iconMapObj);
+  let sizes = Object.keys(engine._iconMapObj);
   Assert.deepEqual(sizes, ["16"], "Defaulted to 16x16");
 
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });
 
 add_task(async function test_icon_not_in_opensearch_file_invalid_ico() {
@@ -120,17 +118,17 @@ add_task(async function test_icon_not_in_opensearch_file_invalid_ico() {
     SearchUtils.MODIFIED_TYPE.ICON_CHANGED,
     SearchUtils.TOPIC_ENGINE_MODIFIED
   );
-  let engine = await Services.search.addOpenSearchEngine(
+  let engine = await SearchService.addOpenSearchEngine(
     ENGINE_NO_ICONS,
     // We still add the icon even if we cannot determine the size.
     "data:image/x-icon;base64,invalid+ico"
   );
 
   await promiseIconChanged;
-  let sizes = Object.keys(engine.wrappedJSObject._iconMapObj);
+  let sizes = Object.keys(engine._iconMapObj);
   Assert.deepEqual(sizes, ["16"], "Defaulted to 16x16");
 
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });
 
 add_task(async function test_icon_not_in_opensearch_file_svg() {
@@ -142,16 +140,16 @@ add_task(async function test_icon_not_in_opensearch_file_svg() {
     `${gHttpURL}/icons/svgIcon.svg`
   );
 
-  let engine = await Services.search.addOpenSearchEngine(
+  let engine = await SearchService.addOpenSearchEngine(
     ENGINE_NO_ICONS,
     icoIconDataUrl
   );
 
   await promiseIconChanged;
-  let sizes = Object.keys(engine.wrappedJSObject._iconMapObj);
+  let sizes = Object.keys(engine._iconMapObj);
   Assert.deepEqual(sizes, ["16"], "Icon size was correctly detected.");
   Assert.equal(await engine.getIconURL(16), icoIconDataUrl, "Correct icon");
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });
 
 add_task(async function test_icon_not_in_opensearch_file_ico() {
@@ -163,14 +161,14 @@ add_task(async function test_icon_not_in_opensearch_file_ico() {
     `${gHttpURL}/icons/multipleSizes.ico`
   );
 
-  let engine = await Services.search.addOpenSearchEngine(
+  let engine = await SearchService.addOpenSearchEngine(
     ENGINE_NO_ICONS,
     icoIconDataUrl
   );
 
   await promiseIconChanged;
-  let sizes = Object.keys(engine.wrappedJSObject._iconMapObj);
+  let sizes = Object.keys(engine._iconMapObj);
   Assert.deepEqual(sizes, ["32"], "Icon size was correctly detected.");
   Assert.equal(await engine.getIconURL(32), icoIconDataUrl, "Correct icon");
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 });

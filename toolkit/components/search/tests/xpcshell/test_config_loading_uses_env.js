@@ -50,20 +50,20 @@ add_setup(async function () {
 add_task(async function test_locale_selection() {
   Services.locale.requestedLocales = ["de"];
 
-  await Services.search.init();
+  await SearchService.init();
 
-  Assert.ok(Services.search.isInitialized, "search initialized");
+  Assert.ok(SearchService.isInitialized, "search initialized");
 
-  let sortedEngines = await Services.search.getEngines();
+  let sortedEngines = await SearchService.getEngines();
   Assert.equal(sortedEngines.length, 1, "Should have only one engine");
 
   Assert.equal(
-    Services.search.defaultEngine.identifier,
+    SearchService.defaultEngine.id,
     "appDefault",
     "Should have the correct default engine"
   );
   Assert.equal(
-    Services.search.defaultPrivateEngine.identifier,
+    SearchService.defaultPrivateEngine.id,
     // 'de' only displays google, so we'll be using the same engine as the
     // normal default.
     "appDefault",
@@ -74,9 +74,9 @@ add_task(async function test_locale_selection() {
 add_task(async function test_switch_locales() {
   await promiseSetLocale("fr");
 
-  Assert.ok(Services.search.isInitialized, "search initialized");
+  Assert.ok(SearchService.isInitialized, "search initialized");
 
-  let sortedEngines = await Services.search.getEngines();
+  let sortedEngines = await SearchService.getEngines();
   Assert.deepEqual(
     sortedEngines.map(e => e.name),
     ["appDefault", "localeFR", "notDELocale"],
@@ -84,12 +84,12 @@ add_task(async function test_switch_locales() {
   );
 
   Assert.equal(
-    Services.search.defaultEngine.identifier,
+    SearchService.defaultEngine.id,
     "appDefault",
     "Should have the correct default engine"
   );
   Assert.equal(
-    Services.search.defaultPrivateEngine.identifier,
+    SearchService.defaultPrivateEngine.id,
     "localeFR",
     "Should have the correct private default engine"
   );
@@ -98,22 +98,22 @@ add_task(async function test_switch_locales() {
 add_task(async function test_region_selection() {
   await promiseSetHomeRegion("GB");
 
-  Assert.ok(Services.search.isInitialized, "search initialized");
+  Assert.ok(SearchService.isInitialized, "search initialized");
 
-  let sortedEngines = await Services.search.getEngines();
+  let sortedEngines = await SearchService.getEngines();
   Assert.deepEqual(
-    sortedEngines.map(e => e.identifier),
+    sortedEngines.map(e => e.id),
     ["appDefault", "localeFR", "notDELocale", "regionGB"],
     "Should have the correct engine list"
   );
 
   Assert.equal(
-    Services.search.defaultEngine.identifier,
+    SearchService.defaultEngine.id,
     "appDefault",
     "Should have the correct default engine"
   );
   Assert.equal(
-    Services.search.defaultPrivateEngine.identifier,
+    SearchService.defaultPrivateEngine.id,
     "localeFR",
     "Should have the correct private default engine"
   );

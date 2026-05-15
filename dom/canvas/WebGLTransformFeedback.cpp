@@ -6,11 +6,11 @@
 #include "WebGLTransformFeedback.h"
 
 #include "GLContext.h"
-#include "mozilla/dom/WebGL2RenderingContextBinding.h"
-#include "mozilla/IntegerRange.h"
 #include "WebGL2Context.h"
 #include "WebGLBuffer.h"
 #include "WebGLProgram.h"
+#include "mozilla/IntegerRange.h"
+#include "mozilla/dom/WebGL2RenderingContextBinding.h"
 
 namespace mozilla {
 

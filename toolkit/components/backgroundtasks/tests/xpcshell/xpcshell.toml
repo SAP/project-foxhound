@@ -1,6 +1,8 @@
 [DEFAULT]
 firefox-appdir = "browser"
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 head = "head.js"
 support-files = [
   "CatBackgroundTaskRegistrationComponents.manifest",
@@ -8,15 +10,22 @@ support-files = [
 ]
 
 ["test_backgroundtask_automaticrestart.js"]
-run-if = ["os == 'win'"]
+requesttimeoutfactor = 2  # Slow on Windows
+run-if = [
+  "os == 'win'",
+]
 
 ["test_backgroundtask_deletes_profile.js"]
 
 ["test_backgroundtask_exitcodes.js"]
+requesttimeoutfactor = 2  # Slow on Windows
 
 ["test_backgroundtask_experiments.js"]
+requesttimeoutfactor = 6  # Slow on Linux and Windows
 tags = "remote-settings"
-run-if = ["buildapp == 'browser'"]
+run-if = [
+  "buildapp == 'browser'",
+]
 reason = "ASRouter is Firefox-only."
 
 ["test_backgroundtask_help.js"]
@@ -28,11 +37,14 @@ reason = "ASRouter is Firefox-only."
 ["test_backgroundtask_minruntime.js"]
 
 ["test_backgroundtask_no_output.js"]
-skip-if = ["ccov"]
+requesttimeoutfactor = 2  # Slow on Windows
+skip-if = [
+  "ccov",
+]
 reason = "Bug 1804825: code coverage harness prints [CodeCoverage] output in early startup."
 
 ["test_backgroundtask_not_ephemeral_profile.js"]
-run-sequentially = "Uses global profile directory `DefProfRt`"
+run-sequentially = ["true"] # Uses global profile directory `DefProfRt`
 
 ["test_backgroundtask_policies.js"]
 
@@ -41,21 +53,32 @@ run-sequentially = "Uses global profile directory `DefProfRt`"
 ["test_backgroundtask_profile_service_configuration.js"]
 
 ["test_backgroundtask_removeDirectory.js"]
-skip-if = ["os == 'android'"] # MultiInstanceLock doesn't work on Android
+requesttimeoutfactor = 4  # Slow on Linux and Windows
+skip-if = [
+  "os == 'android'", # MultiInstanceLock doesn't work on Android
+]
 
 ["test_backgroundtask_shouldprocessupdates.js"]
+run-sequentially = ["true"] # perma-fail in parallel
+skip-if = [
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'", # Bug 1937351
+  "os == 'win' && os_version == '11.26100'", # Bug 1937351
+]
 
 ["test_backgroundtask_simultaneous_instances.js"]
 
 ["test_backgroundtask_specific_pref.js"]
 
 ["test_backgroundtask_targeting.js"]
-run-if = ["buildapp == 'browser'"]
+run-if = [
+  "buildapp == 'browser'",
+]
 reason = "ASRouter is Firefox-only."
 
 ["test_backgroundtask_unique_profile.js"]
 
 ["test_backgroundtask_update_sync_manager.js"]
+requesttimeoutfactor = 2  # Slow on Windows
 
 ["test_backgroundtasksutils.js"]
 

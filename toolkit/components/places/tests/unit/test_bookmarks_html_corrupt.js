@@ -44,12 +44,10 @@ add_task(async function test_corrupt_database() {
   await database_check();
 });
 
-/*
+/**
  * Check for imported bookmarks correctness
  *
- * @return {Promise}
- * @resolves When the checks are finished.
- * @rejects Never.
+ * @returns {Promise<void>}
  */
 var database_check = async function () {
   // BOOKMARKS MENU

@@ -39,7 +39,6 @@ interface nsIDOMWindow;
 interface nsIFile;
 interface nsIURI;
 interface nsIRunnable;
-interface nsITranslationNodeList;
 interface nsIJSRAIIHelper;
 interface nsIContentPermissionRequest;
 
@@ -318,179 +317,14 @@ interface nsIDOMWindowUtils : nsISupports {
   const long MODIFIER_SYMBOL     = 0x0400;
   const long MODIFIER_SYMBOLLOCK = 0x0800;
 
-  /** Synthesize a mouse event. The event types supported are:
-   *    mousedown, mouseup, mousemove, mouseover, mouseout, mousecancel,
-   *    contextmenu, MozMouseHittest
-   *
-   * Events are sent in coordinates offset by aX and aY from the window.
-   *
-   * Note that additional events may be fired as a result of this call. For
-   * instance, typically a click event will be fired as a result of a
-   * mousedown and mouseup in sequence.
-   *
-   * Normally at this level of events, the mouseover and mouseout events are
-   * only fired when the window is entered or exited. For inter-element
-   * mouseover and mouseout events, a movemove event fired on the new element
-   * should be sufficient to generate the correct over and out events as well.
-   *
-   * Cannot be accessed from unprivileged context (not content-accessible)
-   * Will throw a DOM security error if called without chrome privileges.
-   *
-   * The event is dispatched via the toplevel window, so it could go to any
-   * window under the toplevel window, in some cases it could never reach this
-   * window at all.
-   *
-   * NOTE: mousecancel is used to represent the vanishing of an input device
-   * such as a pen leaving its digitizer by synthesizing a WidgetMouseEvent,
-   * whose mMessage is eMouseExitFromWidget and mExitFrom is
-   * WidgetMouseEvent::eTopLevel.
-   *
-   * @param aType event type
-   * @param aX x offset in CSS pixels
-   * @param aY y offset in CSS pixels
-   * @param aButton button to synthesize
-   * @param aClickCount number of clicks that have been performed
-   * @param aModifiers modifiers pressed, using constants defined as MODIFIER_*
-   * @param aIgnoreRootScrollFrame whether the event should ignore viewport bounds
-   *                           during dispatch
-   * @param aPressure touch input pressure: 0.0 -> 1.0
-   * @param aInputSourceArg input source, see MouseEvent for values,
-   *        defaults to mouse input.
-   * @param aIsDOMEventSynthesized controls Event.isSynthesized value
-   *                               that helps identifying test related events,
-   *                               defaults to true
-   * @param aIsWidgetEventSynthesized controls WidgetMouseEvent.mReason value
-   *                                  defaults to false (WidgetMouseEvent::eReal)
-   * @param aIdentifier A unique identifier for the pointer causing the event,
-   *                    defaulting to nsIDOMWindowUtils::DEFAULT_MOUSE_POINTER_ID.
-   *
-   * returns true if the page called prevent default on this event
-   */
-  [optional_argc, can_run_script]
-  boolean sendMouseEvent(in AString aType,
-                         in float aX,
-                         in float aY,
-                         in long aButton,
-                         in long aClickCount,
-                         in long aModifiers,
-                         [optional] in boolean aIgnoreRootScrollFrame,
-                         [optional] in float aPressure,
-                         [optional] in unsigned short aInputSourceArg,
-                         [optional] in boolean aIsDOMEventSynthesized,
-                         [optional] in boolean aIsWidgetEventSynthesized,
-                         [optional] in long aButtons,
-                         [optional] in unsigned long aIdentifier);
-
-/**
- * AsyncEnabledOption is passed to functions to enable or disable
- * asynchronous event dispatching. Default is disabled.
- */
-cenum AsyncEnabledOption : 8 {
-  ASYNC_DISABLED = 0,
-  ASYNC_ENABLED = 1
-};
-
-  /** Synthesize a touch event. The event types supported are:
-   *    touchstart, touchend, touchmove, and touchcancel
-   *
-   * Events are sent in coordinates offset by aX and aY from the window.
-   *
-   * Cannot be accessed from unprivileged context (not content-accessible)
-   * Will throw a DOM security error if called without chrome privileges.
-   *
-   * The event is dispatched via the toplevel window, so it could go to any
-   * window under the toplevel window, in some cases it could never reach this
-   * window at all.
-   *
-   * @param aType event type
-   * @param aIdentifiers array of touch IDs
-   * @param aXs array of offsets in CSS pixels for each touch to be sent
-   * @param aYs array of offsets in CSS pixels for each touch to be sent
-   * @param aRxs array of radii in CSS pixels for each touch to be sent
-   * @param aRys array of radii in CSS pixels for each touch to be sent
-   * @param aRotationAngles array of angles in degrees for each touch to be sent
-   * @param aForces array of forces (floats from 0 to 1) for each touch to be sent
-   * @param aTiltXs array of tiltX for each touch to be sent
-   * @param aTiltYs array of tiltY for each touch to be sent
-   * @param aTwists array of twist for each touch to be sent
-   * @param aModifiers modifiers pressed, using constants defined as MODIFIER_*
-   * @param aAsyncEnabled Enable or disable asynchronous event dispatching
-   * through APZ without being injected into the OS event queue
-   *
-   * returns true if the page called prevent default on this touch event
-   */
-  [can_run_script]
-  boolean sendTouchEvent(in AString aType,
-                         in Array<uint32_t> aIdentifiers,
-                         in Array<int32_t> aXs,
-                         in Array<int32_t> aYs,
-                         in Array<uint32_t> aRxs,
-                         in Array<uint32_t> aRys,
-                         in Array<float> aRotationAngles,
-                         in Array<float> aForces,
-                         in Array<long> aTiltXs,
-                         in Array<long> aTiltYs,
-                         in Array<long> aTwists,
-                         in long aModifiers,
-                         [optional] in nsIDOMWindowUtils_AsyncEnabledOption aAsyncEnabled);
-
   /**
-   * The same as sendTouchEvent but sets input source to "pen" to mock Windows behavior.
-   *
-   * NOTE(krosylight):
-   * This is currently a separate function solely because of the PARAM_BUFFER_COUNT cap,
-   * but we might ultimately want to make this to a separate sendPenEvent that selects
-   * either sendMouseEvent or sendTouchEvent.
+   * AsyncEnabledOption is passed to functions to enable or disable
+   * asynchronous event dispatching. Default is disabled.
    */
-  [can_run_script]
-  boolean sendTouchEventAsPen(in AString aType,
-                              in uint32_t aIdentifier,
-                              in int32_t aX,
-                              in int32_t aY,
-                              in uint32_t aRx,
-                              in uint32_t aRy,
-                              in float aRotationAngle,
-                              in float aForce,
-                              in long aTiltX,
-                              in long aTiltY,
-                              in long aTwist,
-                              in long aModifier,
-                              [optional] in nsIDOMWindowUtils_AsyncEnabledOption aAsyncEnabled);
-
-  /** The same as sendMouseEvent but ensures that the event is dispatched to
-   *  this DOM window or one of its children.
-   */
-  [optional_argc, can_run_script]
-  void sendMouseEventToWindow(in AString aType,
-                              in float aX,
-                              in float aY,
-                              in long aButton,
-                              in long aClickCount,
-                              in long aModifiers,
-                              [optional] in boolean aIgnoreRootScrollFrame,
-                              [optional] in float aPressure,
-                              [optional] in unsigned short aInputSourceArg,
-                              [optional] in boolean aIsDOMEventSynthesized,
-                              [optional] in boolean aIsWidgetEventSynthesized,
-                              [optional] in long aButtons,
-                              [optional] in unsigned long aIdentifier);
-
-  /** The same as sendTouchEvent but ensures that the event is dispatched to
-   *  this DOM window or one of its children.
-   */
-  [can_run_script]
-  boolean sendTouchEventToWindow(in AString aType,
-                                 in Array<uint32_t> aIdentifiers,
-                                 in Array<int32_t> aXs,
-                                 in Array<int32_t> aYs,
-                                 in Array<uint32_t> aRxs,
-                                 in Array<uint32_t> aRys,
-                                 in Array<float> aRotationAngles,
-                                 in Array<float> aForces,
-                                 in Array<long> aTiltXs,
-                                 in Array<long> aTiltYs,
-                                 in Array<long> aTwists,
-                                 in long aModifiers);
+  cenum AsyncEnabledOption : 8 {
+    ASYNC_DISABLED = 0,
+    ASYNC_ENABLED = 1
+  };
 
   /** Synthesize a wheel event for a window. The event types supported is only
    *  wheel.
@@ -985,15 +819,6 @@ cenum AsyncEnabledOption : 8 {
                          in boolean aOnlyVisible,
                          [optional] in float aTransparencyThreshold);
 
-
-  /**
-   * Get a list of nodes that have meaningful textual content to
-   * be translated. The implementation of this algorithm is in flux
-   * as we experiment and refine which approach works best.
-   *
-   * This method requires chrome privileges.
-   */
-  nsITranslationNodeList getTranslationNodes(in Node aRoot);
 
   /**
    * Compare the two canvases, returning the number of differing pixels and
@@ -1728,6 +1553,11 @@ cenum AsyncEnabledOption : 8 {
   void disableApzForElement(in Element aElement);
 
   /**
+   * Returns whether APZ is being disabled on the given |aElement|.
+   */
+  boolean isApzDisabledForElement(in Element aElement);
+
+  /**
    * Ask APZ to pan and zoom to the focused input element.
    */
   [can_run_script] void zoomToFocusedInput();
@@ -1805,6 +1635,12 @@ cenum AsyncEnabledOption : 8 {
    * clears the display list flags if they have.
    */
   boolean checkAndClearDisplayListState(in Element aElement);
+
+  /**
+   * Check if WebRender rasterized any tiles during the last frame, and
+   * clear the state. Used by reftests with reftest-no-wr-raster class.
+   */
+  boolean checkAndClearWRDidRasterize();
 
   /**
    * Get internal id of the stored blob, file or file handle.
@@ -1966,8 +1802,7 @@ cenum AsyncEnabledOption : 8 {
 
   /**
    * In certain cases the event handling of nodes, form controls in practice,
-   * may be disabled. Such cases are for example the existence of disabled
-   * attribute or -moz-user-input: none.
+   * may be disabled. For example, by the existence of the disabled attribute.
    */
   boolean isNodeDisabledForEvents(in Node aNode);
 
@@ -2313,8 +2148,6 @@ cenum AsyncEnabledOption : 8 {
   // Typically, "forward" button being right side of 5-button
   // mice, see "buttons" attribute document of DOM3 Events.
   const long MOUSE_BUTTONS_5TH_BUTTON = 0x10;
-  // Buttons are not specified, will be calculated from |aButton|.
-  const long MOUSE_BUTTONS_NOT_SPECIFIED = -1;
 
   // Return values for getDirectionFromText().
   const long DIRECTION_LTR = 0;
@@ -2363,16 +2196,6 @@ cenum AsyncEnabledOption : 8 {
   // Get/Set microtask level. If you don't know how microtasks work both in the
   // specification and Gecko, please don't use this.
   attribute unsigned long microTaskLevel;
-};
-
-[scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]
-interface nsITranslationNodeList : nsISupports {
-  readonly attribute unsigned long length;
-  Node item(in unsigned long index);
-
-  // A translation root is a block element, or an inline element
-  // which its parent is not a translation node.
-  boolean isTranslationRootAtIndex(in unsigned long index);
 };
 
 /**

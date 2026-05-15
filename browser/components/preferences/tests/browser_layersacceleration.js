@@ -6,10 +6,7 @@ add_task(async function () {
     set: [["preferences.force-disable.check.once.policy", true]],
   });
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["gfx.direct2d.disabled", false],
-      ["layers.acceleration.disabled", false],
-    ],
+    set: [["layers.acceleration.disabled", false]],
   });
 
   let prefs = await openPreferencesViaOpenPreferencesAPI("paneGeneral", {

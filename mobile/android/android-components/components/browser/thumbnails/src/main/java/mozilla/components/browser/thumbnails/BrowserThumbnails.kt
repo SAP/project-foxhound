@@ -6,9 +6,10 @@ package mozilla.components.browser.thumbnails
 
 import android.content.Context
 import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.selector.selectedTab
@@ -33,6 +34,7 @@ class BrowserThumbnails(
     private val context: Context,
     private val engineView: EngineView,
     private val store: BrowserStore,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature {
 
     private var scope: CoroutineScope? = null
@@ -41,7 +43,7 @@ class BrowserThumbnails(
      * Starts observing the selected session to listen for when a session finishes loading.
      */
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = dispatcher) { flow ->
             flow.map { it.selectedTab }
                 .ifAnyChanged { arrayOf(it?.content?.loading, it?.content?.firstContentfulPaint) }
                 .collect { state ->

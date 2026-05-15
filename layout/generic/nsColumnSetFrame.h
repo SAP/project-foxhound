@@ -4,12 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsColumnSetFrame_h___
-#define nsColumnSetFrame_h___
+#ifndef nsColumnSetFrame_h_
+#define nsColumnSetFrame_h_
 
 /* rendering object for css3 multi-column layout */
 
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 
 class nsCSSBorderRenderer;
@@ -118,6 +117,10 @@ class nsColumnSetFrame final : public nsContainerFrame {
     // columns. We set it to true at the end of FindBestBalanceBSize().
     bool mIsLastBalancingReflow = false;
 
+    // A boolean indicates whether or not we use an unconstrained available
+    // block-size to perform a measuring reflow.
+    bool mIsInMeasuringReflow = false;
+
     // The last known column block-size that was 'feasible'. A column bSize is
     // feasible if all child content fits within the specified bSize.
     nscoord mKnownFeasibleBSize = NS_UNCONSTRAINEDSIZE;
@@ -204,4 +207,4 @@ class nsColumnSetFrame final : public nsContainerFrame {
   nscoord PrefISize(const mozilla::IntrinsicSizeInput& aInput);
 };
 
-#endif  // nsColumnSetFrame_h___
+#endif  // nsColumnSetFrame_h_

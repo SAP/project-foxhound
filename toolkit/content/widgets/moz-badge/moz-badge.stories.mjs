@@ -9,7 +9,10 @@ export default {
   title: "UI Widgets/Badge",
   component: "moz-badge",
   argTypes: {
-    label: { table: { disable: true } },
+    type: {
+      control: "select",
+      options: ["default", "new"],
+    },
   },
   parameters: {
     status: "in-development",
@@ -21,12 +24,13 @@ moz-badge =
   },
 };
 
-const Template = ({ label, iconSrc, title, l10nId }) => html`
+const Template = ({ label, iconSrc, title, l10nId, type }) => html`
   <moz-badge
     label=${label}
     iconSrc=${ifDefined(iconSrc)}
     title=${ifDefined(title)}
     data-l10n-id=${l10nId}
+    type=${ifDefined(type)}
   ></moz-badge>
 `;
 
@@ -40,5 +44,12 @@ export const WithIcon = Template.bind({});
 WithIcon.args = {
   label: "Beta",
   iconSrc: "chrome://global/skin/icons/info.svg",
+  l10nId: "moz-badge",
+};
+
+export const New = Template.bind({});
+New.args = {
+  label: "New",
+  type: "new",
   l10nId: "moz-badge",
 };

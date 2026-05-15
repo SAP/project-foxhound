@@ -1,7 +1,6 @@
 [DEFAULT]
 prefs = [
   "gfx.font_loader.delay=0",
-  "dom.w3c_pointer_events.getcoalescedevents_only_in_securecontext=false",
   "ui.dragThresholdX=4", # Bug 1873142
   "ui.dragThresholdY=4", # Bug 1873142
 ]
@@ -27,15 +26,15 @@ support-files = [
 ["test_bug1293174_implicit_pointer_capture_for_touch_1.html"]
 support-files = ["bug1293174_implicit_pointer_capture_for_touch_1.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1293174_implicit_pointer_capture_for_touch_2.html"]
 support-files = ["bug1293174_implicit_pointer_capture_for_touch_2.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug1303704.html"]
@@ -59,8 +58,10 @@ support-files = ["bug_1420589_iframe1.html"]
 support-files = ["bug_1420589_iframe1.html"]
 
 ["test_bug1725416.html"]
-skip-if = ["os == 'android'"] # Bug 1312791
 support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js"]
+skip-if = [
+  "os == 'android'", # Bug 1312791
+]
 
 ["test_click_pointerId_of_single_tap.html"]
 
@@ -69,30 +70,41 @@ support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js
 ["test_contextmenu_pointerId_of_long_tap.html"]
 skip-if = [
   "os == 'linux' && display == 'x11' && opt && !xorigin && !verify", # Bug 1969768 - Linux-opt passes only in the xorigin and verify mode
-  "os == 'linux' && display == 'x11' && debug && headless", # Linux-debug may not pass in the headless mode
-  "os == 'linux' && asan", # Linux-asan may not pass in the any modes except the verify mode
-  "os == 'linux' && ccov && !xorigin", # Linux-ccov passes only in the xorigin mode
-  "display == 'wayland' && opt && !xorigin", # Linux-Wayland-opt passes only in the xorigin mode
-  "display == 'wayland' && debug && !fission", # Linux-Wayland-debug may not pass in the non-fission mode
-  "os == 'win' && opt && fission && !xorigin && !verify", # Windows-opt may not pass in the normal mode
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug && !fission", # Linux-Wayland-debug may not pass in the non-fission mode
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt && !xorigin", # Linux-Wayland-opt passes only in the xorigin mode
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Linux-asan may not pass in the any modes except the verify mode
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov && !xorigin", # Linux-ccov passes only in the xorigin mode
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && headless", # Linux-debug may not pass in the headless mode
   "os == 'win' && ccov && fission && !xorigin", # Windows-CCov may not pass in the normal mode
+  "os == 'win' && opt && fission && !xorigin && !verify", # Windows-opt may not pass in the normal mode
 ]
 
 ["test_getCoalescedEvents.html"]
-skip-if = ["xorigin"] # Bug 1953695, Bug 1958029
+scheme = "https"
+skip-if = [
+  "xorigin", # Bug 1953695, Bug 1958029
+]
 
 ["test_getCoalescedEvents_during_button_press.html"]
-skip-if = ["xorigin"] # Bug 1953695, Bug 1958029
+scheme = "https"
+skip-if = [
+  "xorigin", # Bug 1953695, Bug 1958029
+]
 
 ["test_getCoalescedEvents_touch.html"]
+scheme = "https"
 skip-if = [
   "os == 'android'", # Bug 1312791
-  "win11_2009", # Bug 1781388
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1781388
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1781388
 ]
 support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js"]
 
 ["test_multiple_touches.html"]
+
+["test_pointer_boundary_events_iframe.html"]
+skip-if = [
+  "os == 'android'", # Bug 2014260
+]
 
 ["test_pointercancel_target_at_dragstart.html"]
 
@@ -112,10 +124,16 @@ support-files = [
   "file_pointercapture_xorigin_iframe_pointerlock.html",
   "file_pointercapture_xorigin_iframe_touch.html",
 ]
-skip-if = ["display == 'wayland' && os_version == '22.04'"] # Bug 1856971
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && display == 'wayland'", # Bug 1856971
+]
+
+["test_pointerevent_altitude_azimuth_angle.html"]
 
 ["test_pointermove_drag_scrollbar.html"]
-skip-if = ["os == 'android'"] # scrollbar not showed on mobile
+run-if = [
+  "os != 'android'", # scrollbar not showed on mobile
+]
 
 ["test_pointermove_isPrimary_subsequent_pens.html"]
 
@@ -128,12 +146,11 @@ skip-if = [
 
 ["test_pointerrawupdate_event_count_touch.html"]
 scheme = "https"
+support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js"]
 skip-if = [
   "os == 'android'", # Bug 1312791
-  "win11_2009", # Bug 1781388
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1781388
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1781388
 ]
-support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js"]
 
 ["test_remove_frame_when_got_pointer_capture.html"]
 
@@ -148,8 +165,8 @@ support-files = [
   "wpt/resources/pointerevent_attributes_hoverable_pointers-iframe.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_attributes_nohover_pointers-manual.html"]
@@ -158,15 +175,15 @@ support-files = [
   "wpt/resources/pointerevent_attributes_hoverable_pointers-iframe.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_drag_interaction-manual.html"]
 support-files = ["wpt/html/pointerevent_drag_interaction-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_movementxy-manual.html"]
@@ -175,8 +192,8 @@ support-files = [
   "wpt/pointerlock/resources/pointerevent_movementxy-iframe.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_multiple_primary_pointers_boundary_events-manual.html"]
@@ -186,56 +203,56 @@ disabled = "should be investigated"
 ["test_wpt_pointerevent_pointercancel_touch-manual.html"]
 support-files = ["wpt/pointerevent_pointercancel_touch-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_pointerleave_after_pointercancel_touch-manual.html"]
 support-files = ["wpt/pointerevent_pointerleave_after_pointercancel_touch-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_pointerleave_pen-manual.html"]
 support-files = ["wpt/pointerevent_pointerleave_pen-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_pointerout_after_pointercancel_touch-manual.html"]
 support-files = ["wpt/pointerevent_pointerout_after_pointercancel_touch-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_pointerout_pen-manual.html"]
 support-files = ["wpt/pointerevent_pointerout_pen-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_releasepointercapture_onpointercancel_touch-manual.html"]
 support-files = ["wpt/pointerevent_releasepointercapture_onpointercancel_touch-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_pointerevent_sequence_at_implicit_release_on_drag-manual.html"]
 support-files = ["wpt/pointerevent_sequence_at_implicit_release_on_drag-manual.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_wpt_touch_action.html"]
 skip-if = [
   "os == 'android'", # Bug 1312791
-  "os == 'linux' && headless", # Bug 1722906
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && headless", # Bug 1722906
 ]
 support-files = [
   "../../../../gfx/layers/apz/test/mochitest/apz_test_utils.js",

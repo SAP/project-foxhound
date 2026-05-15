@@ -11,7 +11,6 @@
 #include "nsCRT.h"
 #include "nsStreamUtils.h"
 #include "nsConverterInputStream.h"
-#include "mozilla/Attributes.h"
 #include <fcntl.h>
 #if defined(XP_WIN)
 #  include <io.h>

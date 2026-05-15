@@ -9,7 +9,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
+  UrlbarProviderTopSites:
+    "moz-src:///browser/components/urlbar/UrlbarProviderTopSites.sys.mjs",
 });
 
 const TEST_URLS = [];
@@ -118,7 +119,7 @@ add_task(async function topSites_otherEmptySearch() {
     Assert.ok(!win.gURLBar.view.isOpen, "View is not open");
     await searchPromise;
     await UrlbarTestUtils.assertSearchMode(win, {
-      engineName: Services.search.defaultEngine.name,
+      engineName: SearchService.defaultEngine.name,
       isGeneralPurposeEngine: true,
       source: UrlbarUtils.RESULT_SOURCE.SEARCH,
       isPreview: false,
@@ -196,19 +197,18 @@ add_task(async function topSites_nonTopSitesResults() {
     let provider = new UrlbarTestUtils.TestProvider({
       priority: lazy.UrlbarProviderTopSites.PRIORITY,
       results: [
-        Object.assign(
-          new UrlbarResult(
-            UrlbarUtils.RESULT_TYPE.URL,
-            UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-            {
-              url: suggestedIndexURL,
-            }
-          ),
-          { suggestedIndex: 0 }
-        ),
+        new UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          suggestedIndex: 0,
+          payload: {
+            url: suggestedIndexURL,
+          },
+        }),
       ],
     });
-    UrlbarProvidersManager.registerProvider(provider);
+    let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+    providersManager.registerProvider(provider);
 
     // Open the view. It should open synchronously and the cached top-sites
     // context should be used. The suggested-index result should not be
@@ -243,7 +243,7 @@ add_task(async function topSites_nonTopSitesResults() {
       urls: [suggestedIndexURL, ...TEST_URLS],
     });
 
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
   });
 });
 

@@ -12,11 +12,6 @@ DIRS = [
     "pingsender",
 ]
 
-if CONFIG["COMPILE_ENVIRONMENT"]:
-    EXPORTS.mozilla += ["!dap_ffi_generated.h"]
-
-    CbindgenHeader("dap_ffi_generated.h", inputs=["dap/ffi"])
-
 DEFINES["MOZ_APP_VERSION"] = '"%s"' % CONFIG["MOZ_APP_VERSION"]
 
 LOCAL_INCLUDES += [
@@ -29,20 +24,15 @@ SPHINX_TREES["/toolkit/components/telemetry"] = "docs"
 with Files("docs/**"):
     SCHEDULES.exclusive = ["docs"]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
-
-TEST_DIRS += ["tests", "dap/ffi-gtest"]
+TEST_DIRS += ["tests/gtest", "tests"]
 
 XPCSHELL_TESTS_MANIFESTS += [
-    "dap/tests/xpcshell/xpcshell.toml",
     "tests/unit/xpcshell.toml",
 ]
 BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 
 XPIDL_SOURCES += [
     "core/nsITelemetry.idl",
-    "dap/nsIDAPTelemetry.idl",
 ]
 
 XPIDL_MODULE = "telemetry"
@@ -55,8 +45,6 @@ EXPORTS.mozilla += [
     "core/ipc/TelemetryComms.h",
     "core/ipc/TelemetryIPC.h",
     "core/Telemetry.h",
-    "dap/DAPTelemetry.h",
-    "dap/DAPTelemetryBindings.h",
     "other/CombinedStacks.h",
     "other/ProcessedStack.h",
 ]
@@ -73,7 +61,6 @@ UNIFIED_SOURCES += [
     "core/TelemetryHistogram.cpp",
     "core/TelemetryScalar.cpp",
     "core/TelemetryUserInteraction.cpp",
-    "dap/DAPTelemetry.cpp",
     "other/CombinedStacks.cpp",
     "other/ProcessedStack.cpp",
     "other/TelemetryIOInterposeObserver.cpp",
@@ -101,7 +88,6 @@ if CONFIG["OS_ARCH"] == "WINNT":
 XPCOM_MANIFESTS += [
     "components.conf",
     "core/components.conf",
-    "dap/components.conf",
 ]
 
 EXTRA_COMPONENTS += ["TelemetryStartup.manifest"]
@@ -121,9 +107,6 @@ EXTRA_JS_MODULES += [
     "app/TelemetryTimestamps.sys.mjs",
     "app/TelemetryUtils.sys.mjs",
     "app/UsageReporting.sys.mjs",
-    "dap/DAPReportController.sys.mjs",
-    "dap/DAPTelemetrySender.sys.mjs",
-    "dap/DAPVisitCounter.sys.mjs",
     "pings/CoveragePing.sys.mjs",
     "pings/EventPing.sys.mjs",
     "pings/HealthPing.sys.mjs",
@@ -148,7 +131,6 @@ TESTING_JS_MODULES += [
 ]
 
 PYTHON_UNITTEST_MANIFESTS += [
-    "tests/integration/tests/python.toml",
     "tests/python/python.toml",
 ]
 

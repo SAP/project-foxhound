@@ -5,6 +5,9 @@ subsuite = "ci"
 
 ["test_autoland_backstop.py"]
 
+["test_decision_verify.py"]
+subsuite = "decision"
+
 ["test_generate_params.py"]
 
 ["test_mach_try_auto.py"]

@@ -188,9 +188,9 @@ dictionary ReceiveMessageArgument
    */
   any json = null;
 
-  sequence<MessagePort> ports;
+  required sequence<MessagePort> ports;
 
-  FrameLoader targetFrameLoader;
+  FrameLoader? targetFrameLoader = null;
 };
 
 [Exposed=Window]
@@ -244,31 +244,10 @@ interface mixin MessageListenerManagerMixin
   /**
    * Undo an |addMessageListener| call -- that is, calling this causes us to no
    * longer invoke |listener| when |messageName| is received.
-   *
-   * removeMessageListener does not remove a message listener added via
-   * addWeakMessageListener; use removeWeakMessageListener for that.
    */
   [Throws]
   undefined removeMessageListener(DOMString messageName,
                                   MessageListener listener);
-
-  /**
-   * This is just like addMessageListener, except the message manager holds a
-   * weak ref to |listener|.
-   *
-   * If you have two weak message listeners for the same message, they may be
-   * called in any order.
-   */
-  [Throws]
-  undefined addWeakMessageListener(DOMString messageName,
-                                   MessageListener listener);
-
-  /**
-   * This undoes an |addWeakMessageListener| call.
-   */
-  [Throws]
-  undefined removeWeakMessageListener(DOMString messageName,
-                                      MessageListener listener);
 };
 
 /**

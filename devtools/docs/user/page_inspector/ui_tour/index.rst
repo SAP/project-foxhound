@@ -55,7 +55,7 @@ In 2-pane mode, the Inspector includes the HTML Pane, and the CSS Pane, which ca
 - Fonts view
 - Animations view
 
-The following image shows the 3-pane mode (available from Firefox 62 onwards) which moves the CSS Rules view into a separate pane in the center of the Inspector. The following image shows 3-pane mode:
+The following image shows the 3-pane mode which moves the CSS Rules view into a separate pane in the center of the Inspector:
 
 .. image:: inspector_tool.png
   :class: border
@@ -85,7 +85,7 @@ The Layout view displays the box model of the page. If the page includes any sec
 .. image:: inspector_layout.png
   :class: border
 
-To learn more about the Layout view, see :doc:`Examine and edit the box model <../how_to/examine_and_edit_the_box_model/index>`. Note that before Firefox 50, the box model view did not appear in the "Layout view" tab, but had its own tab.
+To learn more about the Layout view, see :doc:`Examine and edit the box model <../how_to/examine_and_edit_the_box_model/index>`.
 
 
 Changes view

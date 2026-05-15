@@ -12,7 +12,7 @@
     --tabpanel-background-color: #2b2a33;
   }
   &[privatebrowsingmode="temporary"] {
-    /* Value for --in-content-page-background in aboutPrivateBrowsing.css.
+    /* Value for --background-color-canvas in aboutPrivateBrowsing.css.
        !important overrides the direct setting of this variable in
        ThemeVariableMap.sys.mjs when the user has a theme that defines
        ntp_background. */
@@ -70,26 +70,6 @@
   position: relative;
   z-index: var(--browser-area-z-index-tabbox);
   margin: 0;
-
-  /* stylelint-disable-next-line media-query-no-invalid */
-  @media -moz-pref("sidebar.revamp") {
-    outline: 0.01px solid var(--chrome-content-separator-color);
-    box-shadow: var(--content-area-shadow);
-
-    /* stylelint-disable-next-line media-query-no-invalid */
-    @media -moz-pref("sidebar.revamp.round-content-area") {
-      :root:not([inDOMFullscreen]) &[sidebar-shown] {
-        overflow: clip;
-        border-start-end-radius: var(--border-radius-medium);
-
-        /* stylelint-disable-next-line media-query-no-invalid */
-        @media -moz-pref("sidebar.position_start") {
-          border-start-start-radius: var(--border-radius-medium);
-          border-start-end-radius: 0;
-        }
-      }
-    }
-  }
 }
 
 /* We set large flex on both containers to allow the devtools toolbox to
@@ -107,6 +87,37 @@
 
   /* .browserContainer only contains the devtools when docked horizontally */
   min-height: 0;
+
+  /* We want to be able to show the frame color behind the clipped radiused corner */
+  background: var(--tabpanel-background-color);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.revamp") {
+    outline: 0.01px solid var(--chrome-content-separator-color);
+    box-shadow: var(--content-area-shadow);
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.revamp") and -moz-pref("sidebar.revamp.round-content-area") {
+    overflow: clip;
+
+    :root:not([inDOMFullscreen]) #tabbrowser-tabbox[sidebar-shown] & {
+      /* stylelint-disable-next-line media-query-no-invalid */
+      @media -moz-pref("sidebar.position_start") {
+        border-start-start-radius: var(--border-radius-medium);
+      }
+      /* stylelint-disable-next-line media-query-no-invalid */
+      @media not -moz-pref("sidebar.position_start") {
+        border-start-end-radius: var(--border-radius-medium);
+      }
+    }
+  }
+}
+
+.browserSidebarContainer {
+  position: absolute;
+  inset: 0;
+  anchor-scope: --browser-with-dialog;
 }
 
 .sidebar-browser-stack {
@@ -124,7 +135,7 @@
   appearance: none;
   padding: 0;
   color-scheme: unset;
-  background: var(--tabpanel-background-color);
+  display: flex;
 
   &[pendingpaint] {
     background-image: url("chrome://global/skin/icons/pendingpaint.png");
@@ -137,13 +148,145 @@
     opacity: 0;
   }
 
-  browser[type="content"] {
+  /* Exclude browsers with smartwindow-content attribute which inherit
+     color-scheme from chrome to follow the browser theme */
+  browser[type="content"]:not([smartwindow-content]) {
     color-scheme: env(-moz-content-preferred-color-scheme);
   }
 
   browser[tabDialogShowing] {
     -moz-user-focus: none !important;
+    /* Used to position .dialogStack on top of this <browser> element so it doesn't overlap
+       the DevTools toolbox */
+    anchor-name: --browser-with-dialog;
   }
+
+  .split-view-panel {
+    --panel-min-width: 140px;
+    min-width: var(--panel-min-width);
+    max-width: calc(100% - var(--panel-min-width));
+    flex: 1;
+    width: 49.4%;
+  }
+
+  &[splitview] {
+    .split-view-panel.split-view-panel-active {
+      margin: var(--space-xsmall);
+      position: relative;
+      width: unset;
+    }
+
+    /* Ensure any dialogs are clipped in an inactive/not-selected panel. */
+    :root:not([inDOMFullscreen]) & > .split-view-panel:not(.deck-selected) {
+      overflow: clip;
+    }
+
+    /* Ensure split view panels can display in fullscreen mode */
+    :root[inDOMFullscreen] & > .split-view-panel-active:not(.deck-selected) {
+      -moz-subtree-hidden-only-visually: 1;
+    }
+
+    :root[inDOMFullscreen] & > .split-view-splitter {
+      display: none;
+    }
+
+    :root[inDOMFullscreen] & > .split-view-panel-active.deck-selected {
+      margin: 0;
+      position: absolute;
+      max-width: none;
+      width: 100% !important;
+
+      & > .browserContainer {
+        border-radius: 0;
+      }
+    }
+
+    .browserContainer {
+      border-radius: var(--border-radius-medium);
+      overflow: clip;
+      outline: var(--border-width) solid var(--border-color);
+
+      /* The selected panel's dialogs need to sit above the non-selected tab panels. */
+      .deck-selected > & {
+        z-index: 1;
+        outline: var(--focus-outline);
+      }
+    }
+
+    .split-view-panel[column="0"] {
+      order: 0;
+      margin-inline-end: 0;
+    }
+
+    .split-view-splitter {
+      order: 1;
+      flex: none;
+      -moz-user-focus: normal;
+
+      &:focus-visible {
+        outline: auto;
+      }
+    }
+
+    .split-view-panel[column="1"] {
+      order: 2;
+      margin-inline-start: 0;
+    }
+
+    /* Panels with a custom width shouldn't grow. */
+    .split-view-panel[width] {
+      flex: none;
+    }
+
+    /* Display split view footer within inactive panels. */
+    .split-view-panel:not(.deck-selected) > .browserContainer > .browserStack > split-view-footer {
+      display: flex;
+
+      &[hidden] {
+        display: none;
+      }
+    }
+  }
+}
+
+/* Split view */
+
+split-view-footer {
+  max-width: calc(100% - var(--space-xsmall));
+  display: none;
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+
+  border-block-start: 1px solid var(--border-color);
+  border-inline-start: 1px solid var(--border-color);
+  border-start-start-radius: var(--border-radius-medium);
+  border-start-end-radius: 0;
+  border-end-end-radius: var(--border-radius-medium);
+  border-end-start-radius: 0;
+
+  padding-block: var(--space-xxsmall);
+  padding-inline: var(--space-small) var(--space-xsmall);
+
+  -moz-context-properties: fill;
+  fill: var(--button-icon-fill);
+}
+
+.split-view-icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+}
+
+.split-view-uri {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+split-view-footer,
+.split-view-security-warning {
+  align-items: center;
+  gap: var(--space-small);
+  white-space: nowrap;
 }
 
 /* Status panel */
@@ -203,15 +346,18 @@
   @media -moz-pref("browser.tabs.hideStatusPanel") {
     visibility: hidden;
   }
+
+  /* Ensure that this appears on top of the split view footer. */
+  .split-view-panel & {
+    z-index: 1;
+  }
 }
 
-#statuspanel-label {
+#statuspanel-label,
+split-view-footer {
   color-scheme: env(-moz-content-preferred-color-scheme);
-  margin: 0;
-  padding: 2px 4px;
   background-color: -moz-dialog;
-  border: 1px none ThreeDShadow;
-  border-top-style: solid;
+  border-color: ThreeDShadow;
   color: -moz-dialogText;
   text-shadow: none;
 
@@ -220,6 +366,14 @@
     border-color: light-dark(#ddd, hsl(240, 1%, 40%));
     color: light-dark(#444, rgb(249, 249, 250));
   }
+}
+
+#statuspanel-label {
+  margin: 0;
+  padding: 2px 4px;
+  border-width: 1px;
+  border-style: none;
+  border-top-style: solid;
 
   #statuspanel:not([mirror]) > &:-moz-locale-dir(ltr),
   #statuspanel[mirror] > &:-moz-locale-dir(rtl) {
@@ -257,6 +411,7 @@
 }
 
 #ask-chat-shortcuts {
+  font: menu;
   max-width: 345px;
 }
 
@@ -278,6 +433,12 @@
   z-index: var(--browser-stack-z-index-dialog-stack);
   position: absolute;
   inset: 0;
+  /* --browser-with-dialog set on browser[tabDialogShowing], we want to position the overlay
+     only on the top of the <browser> element so it doesn't overlap the DevTools toolbox */
+  position-anchor: --browser-with-dialog;
+  position-area: center;
+  width: 100%;
+  height: 100%;
 
   /* Hide tab-modal dialogs when a window-modal one is up. */
   :root[window-modal-open] .browserStack > &,
@@ -323,7 +484,7 @@
 
   &:not(.spotlightBox) {
     box-shadow: var(--box-shadow-popup);
-    border-radius: 8px;
+    border-radius: var(--border-radius-medium);
   }
 
   /*
@@ -360,6 +521,11 @@
     /* Make dialogs overlap with upper chrome UI. Not necessary for Spotlight
     dialogs that are intended to be centered above the window or content area. */
     margin-top: -5px;
+
+    /* When the dialog is in a splitview, the offset is a little larger */
+    .deck-selected.split-view-panel & {
+      margin-top: -8px;
+    }
   }
 
   /* Spotlight dialogs are full-size on the content or window area */
@@ -416,9 +582,23 @@
   width: 34em;
 }
 
+/* Radius the backdrop so it doesnt occlude the radiused .browserContainer below it */
+:root:not([inDOMFullscreen]) #tabbrowser-tabbox[sidebar-shown] .dialogOverlay[topmost="true"] {
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.revamp.round-content-area") {
+    border-start-end-radius: var(--border-radius-medium);
+
+    /* stylelint-disable-next-line media-query-no-invalid */
+    @media -moz-pref("sidebar.position_start") {
+      border-start-start-radius: var(--border-radius-medium);
+      border-start-end-radius: 0;
+    }
+  }
+}
+
 .dialogOverlay[topmost="true"],
 #window-modal-dialog::backdrop {
-  background-color: rgba(28, 27, 34, 0.45);
+  background-color: var(--background-color-overlay);
 }
 
 .dialogOverlay[hideContent="true"][topmost="true"] {

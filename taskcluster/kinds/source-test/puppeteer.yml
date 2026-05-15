@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
+    run-on-repo-type: [hg]
     platform: linux2404-64/opt
     require-build:
         by-project:
@@ -15,10 +16,11 @@ task-defaults:
             - target.tar.xz
         toolchain:
             - linux64-node
+            - puppeteer-build
     treeherder:
         kind: test
         tier: 1
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: ubuntu2404-test}
         max-run-time: 3600
@@ -43,5 +45,6 @@ puppeteer-{this_chunk}:
         using: run-task
         command: >
             cd $GECKO_PATH/ &&
+            cp -r $MOZ_FETCHES_DIR/puppeteer remote/test/ &&
             $MOZ_FETCHES_DIR/firefox/firefox --screenshot http://example.org &&
-            ./mach puppeteer-test --ci -vv --binary $MOZ_FETCHES_DIR/firefox/firefox --headless --log-tbpl - --log-errorsummary /builds/worker/pup_errorsummary.json --this-chunk={this_chunk} --total-chunks={total_chunks}
+            ./mach puppeteer-test --ci --no-install -vv --binary $MOZ_FETCHES_DIR/firefox/firefox --headless --log-tbpl - --log-errorsummary /builds/worker/pup_errorsummary.json --this-chunk={this_chunk} --total-chunks={total_chunks}

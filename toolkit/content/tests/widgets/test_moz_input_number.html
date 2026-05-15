@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MozInputNumber Tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-input-number.mjs"
+    ></script>
+    <script src="lit-test-helpers.js"></script>
+    <script class="testbody" type="application/javascript">
+      let testHelpers = new InputTestHelpers();
+      let html;
+
+      add_setup(async function setup() {
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: (attrs, children) =>
+            html`<moz-input-number ${attrs}>${children}</moz-input-number>`,
+        });
+      });
+
+      add_task(async function testMozInputNumberProperties() {
+        await testHelpers.verifyLabel("moz-input-number");
+        await testHelpers.verifyAriaLabel("moz-input-number");
+        await testHelpers.verifyAriaDescription("moz-input-number");
+        await testHelpers.verifyName("moz-input-number");
+
+        // Custom value test for number inputs
+        const INITIAL_VALUE = "42";
+        const NEW_VALUE = "100";
+        let valueTemplate = testHelpers.templateFn({
+          label: "Testing value",
+          value: INITIAL_VALUE,
+        });
+        let renderTarget = await testHelpers.renderTemplate(valueTemplate);
+        let input = renderTarget.querySelector("moz-input-number");
+
+        is(input.inputEl.value, INITIAL_VALUE, "Input value is set.");
+        input.value = NEW_VALUE;
+        await input.updateComplete;
+        is(input.inputEl.value, NEW_VALUE, "Input value is updated.");
+
+        await testHelpers.verifyIcon("moz-input-number");
+        await testHelpers.verifyDisabled("moz-input-number");
+        await testHelpers.verifyDescription("moz-input-number");
+        await testHelpers.verifySupportPage("moz-input-number");
+        await testHelpers.verifyAccesskey("moz-input-number");
+        await testHelpers.verifyNoWhitespace("moz-input-number");
+        await testHelpers.verifyType("moz-input-number", "number");
+      });
+
+      add_task(async function testMozInputNumberEvents() {
+        let { trackEvent, verifyEvents } = testHelpers.getInputEventHelpers();
+        let target = await testHelpers.renderTemplate();
+        let input = target.querySelector("moz-input-number");
+
+        input.addEventListener("click", trackEvent);
+        input.addEventListener("change", trackEvent);
+        input.addEventListener("input", trackEvent);
+
+        const TEST_NUMBER = "42";
+        synthesizeMouseAtCenter(input.inputEl, {});
+        sendString(TEST_NUMBER);
+        input.blur();
+        await TestUtils.waitForTick();
+
+        verifyEvents([
+          { type: "click", localName: "moz-input-number", value: "" },
+          ...Array.from(TEST_NUMBER).map((char, i) => ({
+            type: "input",
+            localName: "moz-input-number",
+            value: TEST_NUMBER.substring(0, i + 1),
+          })),
+          { type: "change", localName: "moz-input-number", value: TEST_NUMBER },
+        ]);
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

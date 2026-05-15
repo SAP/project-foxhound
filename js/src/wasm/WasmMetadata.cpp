@@ -9,8 +9,7 @@
 #include "mozilla/BinarySearch.h"
 #include "mozilla/CheckedInt.h"
 
-#include "jsnum.h"  // Int32ToCStringBuf
-
+#include "builtin/Number.h"  // Int32ToCStringBuf
 #include "vm/Logging.h"
 
 using mozilla::CheckedInt;

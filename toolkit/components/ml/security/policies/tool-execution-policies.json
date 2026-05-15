@@ -1,0 +1,28 @@
+{
+  "description": "Security policies for Smart Window tool execution",
+  "policies": [
+    {
+      "id": "block-unseen-links",
+      "phase": "tool.execution",
+      "enabled": true,
+      "description": "Prevent tools from accessing URLs not in trusted page context. This is the core 'explicit seeding' policy that blocks prompt injection attacks by ensuring tools can only access URLs that the user has explicitly made available (current page, @mentioned tabs, etc.)",
+      "match": {
+        "action.type": "tool.call",
+        "action.tool": "get_page_content"
+      },
+      "conditions": [
+        {
+          "type": "allUrlsIn",
+          "urls": "action.urls",
+          "ledger": "context.linkLedger",
+          "description": "All URLs must be present in the request-scoped ledger (merged from current tab + @mentioned tabs)"
+        }
+      ],
+      "effect": "deny",
+      "onDeny": {
+        "code": "UNSEEN_LINK",
+        "reason": "URL not in selected request context"
+      }
+    }
+  ]
+}

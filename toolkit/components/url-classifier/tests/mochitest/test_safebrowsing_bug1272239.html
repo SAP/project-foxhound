@@ -33,6 +33,7 @@ var providers = {};
 
 var branch = SpecialPowers.Services.prefs.getBranch("browser.safebrowsing.provider.");
 var children = branch.getChildList("");
+var googleV5Enabled = SpecialPowers.getBoolPref("browser.safebrowsing.provider.google5.enabled");
 
 for (var child of children) {
   var prefComponents =  child.split(".");
@@ -41,14 +42,29 @@ for (var child of children) {
 }
 
 // Get lists from |browser.safebrowsing.provider.PROVIDER_NAME.lists| preference.
-var listsWithProvider = [];
-var listsToProvider = [];
+var listsWithProvider = {};
 for (let provider in providers) {
-  let pref = "browser.safebrowsing.provider." + provider + ".lists";
-  let list = SpecialPowers.getCharPref(pref).split(",");
+  // Skip google5 if it is not enabled.
+  if (provider == "google5" && !googleV5Enabled) {
+    continue;
+  }
 
-  listsToProvider = listsToProvider.concat(list.map( () => { return provider; }));
-  listsWithProvider = listsWithProvider.concat(list);
+  let pref = "browser.safebrowsing.provider." + provider + ".lists";
+  let lists = SpecialPowers.getCharPref(pref).split(",");
+
+  for (let list of lists) {
+    if (!listsWithProvider[list]) {
+      listsWithProvider[list] = provider;
+      continue;
+    }
+
+    // If both google4 and google5 provide the same list, prefer google5 as the
+    // provider.
+    if (provider == "google5" &&
+        listsWithProvider[list] == "google4") {
+      listsWithProvider[list] = provider;
+    }
+  }
 }
 
 // Get all the lists
@@ -70,11 +86,10 @@ for (let list of lists) {
   // For lists without a provider, for example, moztest-malware-simple, it should not
   // have a gethash url.
   var url = listmanager.getGethashUrl(list);
-  var index = listsWithProvider.indexOf(list);
-  if (index >= 0) {
-    let provider = listsToProvider[index];
+  var provider = listsWithProvider[list];
+  if (provider) {
     let pref = "browser.safebrowsing.provider." + provider + ".gethashURL";
-    if ((provider == "google" || provider == "google4") &&
+    if (["google", "google4", "google5"].includes(provider) &&
         (!googleKey || googleKey == "no-google-safebrowsing-api-key")) {
       is(url, "", "getHash url of " + list + " should be empty");
     } else {

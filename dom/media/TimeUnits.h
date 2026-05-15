@@ -13,9 +13,9 @@
 #include "Intervals.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/IntegerPrintfMacros.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla::media {
@@ -233,10 +233,15 @@ class TimeUnit final {
     double approx = static_cast<double>(mTicks.value()) *
                     static_cast<double>(aTargetBase) /
                     static_cast<double>(mBase);
+    if (approx < static_cast<double>(INT64_MIN) ||
+        approx > static_cast<double>(INT64_MAX)) {
+      aOutError = 1.0;
+      return TimeUnit::Invalid();
+    }
+    double rounded = RoundingPolicy::policy(approx);
     double integer;
     aOutError = modf(approx, &integer);
-    return TimeUnit(AssertedCast<int64_t>(RoundingPolicy::policy(approx)),
-                    aTargetBase);
+    return TimeUnit(mozilla::AssertedCast<int64_t>(rounded), aTargetBase);
   }
 
   bool IsValid() const;

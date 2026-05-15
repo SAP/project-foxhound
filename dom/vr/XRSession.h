@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_XRSession_h_
 #define mozilla_dom_XRSession_h_
 
+#include "gfxVR.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/WebXRBinding.h"
 #include "nsRefreshObservers.h"
-
-#include "gfxVR.h"
 
 class nsRefreshDriver;
 

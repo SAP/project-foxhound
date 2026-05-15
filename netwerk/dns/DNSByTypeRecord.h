@@ -2,11 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DNSByTypeRecord_h__
-#define DNSByTypeRecord_h__
+#ifndef DNSByTypeRecord_h_
+#define DNSByTypeRecord_h_
 
 #include "mozilla/net/HTTPSSVC.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/net/NeckoMessageUtils.h"
 
@@ -38,227 +37,158 @@ struct IPCTypeRecord {
 }  // namespace net
 }  // namespace mozilla
 
-namespace mozilla {
-namespace ipc {
+namespace IPC {
 
 template <>
-struct IPDLParamTraits<mozilla::net::IPCTypeRecord> {
+struct ParamTraits<mozilla::net::IPCTypeRecord> {
   typedef mozilla::net::IPCTypeRecord paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mData);
-    WriteIPDLParam(aWriter, aActor, aParam.mTTL);
-    WriteIPDLParam(aWriter, aActor, aParam.mIsTRR);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mData);
+    WriteParam(aWriter, aParam.mTTL);
+    WriteParam(aWriter, aParam.mIsTRR);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mData)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mTTL)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mIsTRR)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mData) &&
+           ReadParam(aReader, &aResult->mTTL) &&
+           ReadParam(aReader, &aResult->mIsTRR);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::Nothing> {
+struct ParamTraits<mozilla::Nothing> {
   typedef mozilla::Nothing paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
     bool isSome = false;
-    WriteIPDLParam(aWriter, aActor, isSome);
+    WriteParam(aWriter, isSome);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
+  static bool Read(MessageReader* aReader, paramType* aResult) {
     bool isSome;
-    if (!ReadIPDLParam(aReader, aActor, &isSome)) {
+    if (!ReadParam(aReader, &isSome)) {
       return false;
     }
-    *aResult = Nothing();
+    *aResult = mozilla::Nothing();
     return true;
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SVCB> {
+struct ParamTraits<mozilla::net::SVCB> {
   typedef mozilla::net::SVCB paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mSvcFieldPriority);
-    WriteIPDLParam(aWriter, aActor, aParam.mSvcDomainName);
-    WriteIPDLParam(aWriter, aActor, aParam.mEchConfig);
-    WriteIPDLParam(aWriter, aActor, aParam.mODoHConfig);
-    WriteIPDLParam(aWriter, aActor, aParam.mHasIPHints);
-    WriteIPDLParam(aWriter, aActor, aParam.mHasEchConfig);
-    WriteIPDLParam(aWriter, aActor, aParam.mSvcFieldValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mSvcFieldPriority);
+    WriteParam(aWriter, aParam.mSvcDomainName);
+    WriteParam(aWriter, aParam.mEchConfig);
+    WriteParam(aWriter, aParam.mODoHConfig);
+    WriteParam(aWriter, aParam.mHasIPHints);
+    WriteParam(aWriter, aParam.mHasEchConfig);
+    WriteParam(aWriter, aParam.mSvcFieldValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mSvcFieldPriority)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mSvcDomainName)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mEchConfig)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mODoHConfig)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mHasIPHints)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mHasEchConfig)) {
-      return false;
-    }
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mSvcFieldValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mSvcFieldPriority) &&
+           ReadParam(aReader, &aResult->mSvcDomainName) &&
+           ReadParam(aReader, &aResult->mEchConfig) &&
+           ReadParam(aReader, &aResult->mODoHConfig) &&
+           ReadParam(aReader, &aResult->mHasIPHints) &&
+           ReadParam(aReader, &aResult->mHasEchConfig) &&
+           ReadParam(aReader, &aResult->mSvcFieldValue);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamAlpn> {
+struct ParamTraits<mozilla::net::SvcParamAlpn> {
   typedef mozilla::net::SvcParamAlpn paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mValue);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamNoDefaultAlpn> {
+struct ParamTraits<mozilla::net::SvcParamNoDefaultAlpn> {
   typedef mozilla::net::SvcParamNoDefaultAlpn paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {}
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {}
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    return true;
-  }
+  static bool Read(MessageReader* aReader, paramType* aResult) { return true; }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamPort> {
+struct ParamTraits<mozilla::net::SvcParamPort> {
   typedef mozilla::net::SvcParamPort paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mValue);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamIpv4Hint> {
+struct ParamTraits<mozilla::net::SvcParamIpv4Hint> {
   typedef mozilla::net::SvcParamIpv4Hint paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mValue);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamEchConfig> {
+struct ParamTraits<mozilla::net::SvcParamEchConfig> {
   typedef mozilla::net::SvcParamEchConfig paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mValue);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamIpv6Hint> {
+struct ParamTraits<mozilla::net::SvcParamIpv6Hint> {
   typedef mozilla::net::SvcParamIpv6Hint paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mValue);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcParamODoHConfig> {
+struct ParamTraits<mozilla::net::SvcParamODoHConfig> {
   typedef mozilla::net::SvcParamODoHConfig paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mValue);
   }
 };
 
 template <>
-struct IPDLParamTraits<mozilla::net::SvcFieldValue> {
+struct ParamTraits<mozilla::net::SvcFieldValue> {
   typedef mozilla::net::SvcFieldValue paramType;
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    WriteIPDLParam(aWriter, aActor, aParam.mValue);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    WriteParam(aWriter, aParam.mValue);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    if (!ReadIPDLParam(aReader, aActor, &aResult->mValue)) {
-      return false;
-    }
-    return true;
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return ReadParam(aReader, &aResult->mValue);
   }
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
-#endif  // DNSByTypeRecord_h__
+#endif  // DNSByTypeRecord_h_

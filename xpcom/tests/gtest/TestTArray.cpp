@@ -6,7 +6,6 @@
 
 #include "nsTArray.h"
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/RefPtr.h"
 #include "nsTHashMap.h"
 

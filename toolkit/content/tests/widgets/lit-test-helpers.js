@@ -163,10 +163,13 @@ class InputTestHelpers extends LitTestHelpers {
    * all reusable moz- input elements.
    *
    * @param {string} elementName - HTML tag of the element under test.
+   * @param {object} options - Custom properties to assert. Currently only type is supported.
+   * @param {string} options.type - The input type to verify. Defaults to "text".
    */
-  async testCommonInputProperties(elementName) {
+  async testCommonInputProperties(elementName, { type = "text" } = {}) {
     await this.verifyLabel(elementName);
     await this.verifyAriaLabel(elementName);
+    await this.verifyAriaDescription(elementName);
     await this.verifyName(elementName);
     await this.verifyValue(elementName);
     await this.verifyIcon(elementName);
@@ -175,6 +178,7 @@ class InputTestHelpers extends LitTestHelpers {
     await this.verifySupportPage(elementName);
     await this.verifyAccesskey(elementName);
     await this.verifyNoWhitespace(elementName);
+    await this.verifyType(elementName, type);
     if (this.activatedProperty) {
       await this.verifyActivated(elementName);
       await this.verifyNestedFields(elementName);
@@ -253,6 +257,83 @@ class InputTestHelpers extends LitTestHelpers {
     firstInput.value = NEW_VALUE;
     await firstInput.updateComplete;
     is(firstInput.inputEl.value, NEW_VALUE, "Input value is updated.");
+  }
+
+  /**
+   * Verifies input value property remains in sync with its inner HTMLInputElement's value in both directions.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
+  async verifyValueSync(selector) {
+    const INITIAL_VALUE = "value";
+    const USER_INPUT = "new value";
+    const UNIQUE_INPUT = "unique value";
+
+    const valueTemplate = this.templateFn({
+      label: "Testing value",
+      value: INITIAL_VALUE,
+    });
+    const renderTarget = await this.renderTemplate(valueTemplate);
+
+    const wrapper = renderTarget.querySelector(selector);
+    ok(wrapper, `Found ${selector} wrapper`);
+
+    const innerInput = wrapper.inputEl;
+    ok(
+      HTMLInputElement.isInstance(innerInput),
+      "Wrapper inner element is an <input>"
+    );
+
+    is(
+      innerInput.value,
+      INITIAL_VALUE,
+      "Inner input starts with the initial template value."
+    );
+    is(
+      wrapper.value,
+      INITIAL_VALUE,
+      "Wrapper value starts with the initial template value."
+    );
+
+    wrapper.value = INITIAL_VALUE;
+    await wrapper.updateComplete;
+    is(
+      innerInput.value,
+      INITIAL_VALUE,
+      "Inner input value is in sync with wrapper value (after direct set)."
+    );
+
+    wrapper.value = "";
+    await wrapper.updateComplete;
+
+    innerInput.focus();
+    sendString(USER_INPUT);
+    innerInput.blur();
+    await TestUtils.waitForTick();
+
+    is(
+      wrapper.value,
+      USER_INPUT,
+      "Wrapper value is updated after typing into inner input."
+    );
+    is(
+      innerInput.value,
+      USER_INPUT,
+      "Inner input value is updated after typing into inner input."
+    );
+
+    wrapper.value = UNIQUE_INPUT;
+    await wrapper.updateComplete;
+    is(
+      wrapper.value,
+      UNIQUE_INPUT,
+      "Wrapper value is updated to unique value."
+    );
+    is(
+      innerInput.value,
+      UNIQUE_INPUT,
+      "Inner input value is in sync with unique wrapper value."
+    );
   }
 
   /**
@@ -689,6 +770,12 @@ class InputTestHelpers extends LitTestHelpers {
     );
   }
 
+  async verifyType(selector, type) {
+    let renderTarget = await this.renderTemplate();
+    let firstInput = renderTarget.querySelector(selector);
+    is(firstInput.inputEl.type, type, `The input type is ${type}`);
+  }
+
   async testTextBasedInputEvents(selector) {
     let { trackEvent, verifyEvents } = this.getInputEventHelpers();
     let target = await this.renderTemplate();
@@ -717,6 +804,11 @@ class InputTestHelpers extends LitTestHelpers {
     ]);
   }
 
+  /**
+   * Verifies that the aria-label attribute is applied to the input element.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
   async verifyAriaLabel(selector) {
     const ARIA_LABEL = "I'm not visible";
     let ariaLabelTemplate = this.templateFn({
@@ -736,6 +828,32 @@ class InputTestHelpers extends LitTestHelpers {
       input.inputEl.getAttribute("aria-label"),
       ARIA_LABEL,
       "The aria-label is set on the input element."
+    );
+  }
+
+  /**
+   * Verifies that the aria-description attribute is applied to the input element.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
+  async verifyAriaDescription(selector) {
+    const ARIA_DESCRIPTION = "I'm not visible";
+    let ariaDescriptionTemplate = this.templateFn({
+      value: "default",
+      "aria-description": ARIA_DESCRIPTION,
+    });
+    let renderTarget = await this.renderTemplate(ariaDescriptionTemplate);
+    let input = renderTarget.querySelector(selector);
+
+    ok(!input.hasDescription, "No visible description text is rendered.");
+    ok(
+      !input.getAttribute("aria-description"),
+      "aria-description is not set on the outer element."
+    );
+    is(
+      input.inputEl.getAttribute("aria-description"),
+      ARIA_DESCRIPTION,
+      "The aria-description is set on the input element."
     );
   }
 

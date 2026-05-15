@@ -9,11 +9,9 @@
 
 #include "AudioNode.h"
 #include "AudioParam.h"
-#include "nsPrintfCString.h"
-#include "mozilla/dom/PannerNodeBinding.h"
 #include "ThreeDPoint.h"
-#include <limits>
-#include <set>
+#include "mozilla/dom/PannerNodeBinding.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla::dom {
 

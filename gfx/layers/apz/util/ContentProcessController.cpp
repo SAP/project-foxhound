@@ -32,7 +32,7 @@ void ContentProcessController::NotifyLayerTransforms(
 
 void ContentProcessController::RequestContentRepaint(
     const RepaintRequest& aRequest) {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     mBrowser->UpdateFrame(aRequest);
   }
 }
@@ -56,7 +56,7 @@ void ContentProcessController::NotifyPinchGesture(
 void ContentProcessController::NotifyAPZStateChange(
     const ScrollableLayerGuid& aGuid, APZStateChange aChange, int aArg,
     Maybe<uint64_t> aInputBlockId) {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     mBrowser->NotifyAPZStateChange(aGuid.mScrollId, aChange, aArg,
                                    aInputBlockId);
   }
@@ -64,13 +64,13 @@ void ContentProcessController::NotifyAPZStateChange(
 
 void ContentProcessController::NotifyMozMouseScrollEvent(
     const ScrollableLayerGuid::ViewID& aScrollId, const nsString& aEvent) {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     APZCCallbackHelper::NotifyMozMouseScrollEvent(aScrollId, aEvent);
   }
 }
 
 void ContentProcessController::NotifyFlushComplete() {
-  if (mBrowser) {
+  if (mBrowser && !mBrowser->IsDestroyed()) {
     RefPtr<PresShell> presShell = mBrowser->GetTopLevelPresShell();
     APZCCallbackHelper::NotifyFlushComplete(presShell);
   }
@@ -113,7 +113,7 @@ void ContentProcessController::DispatchToRepaintThread(
 }
 
 PresShell* ContentProcessController::GetTopLevelPresShell() const {
-  if (!mBrowser) {
+  if (!mBrowser || mBrowser->IsDestroyed()) {
     return nullptr;
   }
   return mBrowser->GetTopLevelPresShell();

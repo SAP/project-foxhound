@@ -36,12 +36,12 @@ exports.CommandsFactory = {
    * Create commands for a given local tab.
    *
    * @param {Tab} tab: A local Firefox tab, running in this process.
-   * @param {Object} options
+   * @param {object} options
    * @param {DevToolsClient} options.client: An optional DevToolsClient. If none is passed,
    *        a new one will be created.
    * @param {DevToolsClient} options.isWebExtension: An optional boolean to flag commands
    *        that are created for the WebExtension codebase.
-   * @returns {Object} Commands
+   * @returns {object} Commands
    */
   async forTab(tab, { client, isWebExtension } = {}) {
     if (!client) {
@@ -69,11 +69,11 @@ exports.CommandsFactory = {
   /**
    * Create commands for the main process.
    *
-   * @param {Object} options
+   * @param {object} options
    * @param {DevToolsClient} options.client: An optional DevToolsClient. If none is passed,
    *        a new one will be created.
-   * @param {Boolean} enableWindowGlobalThreadActors: An optional boolean for on test.
-   * @returns {Object} Commands
+   * @param {boolean} enableWindowGlobalThreadActors: An optional boolean for on test.
+   * @returns {object} Commands
    */
   async forMainProcess({
     client,
@@ -97,11 +97,11 @@ exports.CommandsFactory = {
    * Note that it can also be used for local tab, but isLocalTab attribute
    * on commands.descriptorFront will be false.
    *
-   * @param {Number} browserId: Identify which tab we should create commands for.
-   * @param {Object} options
+   * @param {number} browserId: Identify which tab we should create commands for.
+   * @param {object} options
    * @param {DevToolsClient} options.client: An optional DevToolsClient. If none is passed,
    *        a new one will be created.
-   * @returns {Object} Commands
+   * @returns {object} Commands
    */
   async forRemoteTab(browserId, { client } = {}) {
     if (!client) {
@@ -116,13 +116,13 @@ exports.CommandsFactory = {
   /**
    * Create commands for a given main process worker.
    *
-   * @param {String} id: WorkerDebugger's id, which is a unique ID computed by the platform code.
+   * @param {string} id: WorkerDebugger's id, which is a unique ID computed by the platform code.
    *        These ids are exposed via WorkerDescriptor's id attributes.
    *        WorkerDescriptors can be retrieved via MainFront.listAllWorkers()/listWorkers().
-   * @param {Object} options
+   * @param {object} options
    * @param {DevToolsClient} options.client: An optional DevToolsClient. If none is passed,
    *        a new one will be created.
-   * @returns {Object} Commands
+   * @returns {object} Commands
    */
   async forWorker(id, { client } = {}) {
     if (!client) {
@@ -137,11 +137,11 @@ exports.CommandsFactory = {
   /**
    * Create commands for a Web Extension.
    *
-   * @param {String} id The Web Extension ID to debug.
-   * @param {Object} options
+   * @param {string} id The Web Extension ID to debug.
+   * @param {object} options
    * @param {DevToolsClient} options.client: An optional DevToolsClient. If none is passed,
    *        a new one will be created.
-   * @returns {Object} Commands
+   * @returns {object} Commands
    */
   async forAddon(id, { client } = {}) {
     if (!client) {

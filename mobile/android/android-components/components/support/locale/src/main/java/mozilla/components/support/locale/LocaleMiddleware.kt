@@ -12,7 +12,6 @@ import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.LocaleAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 import java.util.Locale
@@ -31,12 +30,12 @@ class LocaleMiddleware(
     private var scope = CoroutineScope(coroutineContext)
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
-            is LocaleAction.RestoreLocaleStateAction -> restoreLocale(context.store)
+            is LocaleAction.RestoreLocaleStateAction -> restoreLocale(store)
             is LocaleAction.UpdateLocaleAction -> updateLocale(action.locale)
             else -> {
                 // no-op

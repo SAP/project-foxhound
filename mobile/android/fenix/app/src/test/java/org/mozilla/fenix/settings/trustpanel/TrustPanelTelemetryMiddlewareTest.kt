@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.settings.trustpanel
 
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -12,6 +11,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
+import org.mozilla.fenix.GleanMetrics.TrustPanel
 import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.settings.trustpanel.middleware.TrustPanelTelemetryMiddleware
 import org.mozilla.fenix.settings.trustpanel.store.TrustPanelAction
@@ -34,7 +34,7 @@ class TrustPanelTelemetryMiddlewareTest {
         )
         assertNull(TrackingProtection.exceptionAdded.testGetValue())
 
-        store.dispatch(TrustPanelAction.ToggleTrackingProtection).joinBlocking()
+        store.dispatch(TrustPanelAction.ToggleTrackingProtection)
 
         assertNotNull(TrackingProtection.exceptionAdded.testGetValue())
     }
@@ -48,9 +48,23 @@ class TrustPanelTelemetryMiddlewareTest {
         )
         assertNull(TrackingProtection.exceptionAdded.testGetValue())
 
-        store.dispatch(TrustPanelAction.ToggleTrackingProtection).joinBlocking()
+        store.dispatch(TrustPanelAction.ToggleTrackingProtection)
 
         assertNull(TrackingProtection.exceptionAdded.testGetValue())
+    }
+
+    @Test
+    fun `WHEN security certificate action is dispatched THEN record security certificate telemetry`() {
+        val store = createStore(
+            trustPanelState = TrustPanelState(
+                isTrackingProtectionEnabled = false,
+            ),
+        )
+        assertNull(TrustPanel.securityCertificate.testGetValue())
+
+        store.dispatch(TrustPanelAction.Navigate.SecurityCertificate)
+
+        assertNotNull(TrustPanel.securityCertificate.testGetValue())
     }
 
     private fun createStore(

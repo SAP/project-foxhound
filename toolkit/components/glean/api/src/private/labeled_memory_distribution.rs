@@ -28,14 +28,14 @@ pub enum LabeledMemoryDistributionMetric {
     Child { id: BaseMetricId, label: String },
 }
 
-crate::define_metric_metadata_getter!(
+define_metric_metadata_getter!(
     MemoryDistributionMetric,
     LabeledMemoryDistributionMetric,
     MEMORY_DISTRIBUTION_MAP,
     LABELED_MEMORY_DISTRIBUTION_MAP
 );
 
-crate::define_metric_namer!(LabeledMemoryDistributionMetric, LABELED);
+define_metric_namer!(LabeledMemoryDistributionMetric, LABELED);
 
 impl LabeledMemoryDistributionMetric {
     #[cfg(test)]
@@ -51,7 +51,7 @@ impl LabeledMemoryDistributionMetric {
             LabeledMemoryDistributionMetric::Parent(p) => p.accumulate_samples(samples),
             LabeledMemoryDistributionMetric::Child { id, label } => {
                 #[cfg(feature = "with_gecko")]
-                if gecko_profiler::can_accept_markers() {
+                if gecko_profiler::current_thread_is_being_profiled_for_markers() {
                     gecko_profiler::add_marker(
                         "MemoryDistribution::accumulate",
                         TelemetryProfilerCategory,
@@ -88,7 +88,7 @@ impl MemoryDistribution for LabeledMemoryDistributionMetric {
             LabeledMemoryDistributionMetric::Parent(p) => p.accumulate(sample),
             LabeledMemoryDistributionMetric::Child { id, label } => {
                 #[cfg(feature = "with_gecko")]
-                if gecko_profiler::can_accept_markers() {
+                if gecko_profiler::current_thread_is_being_profiled_for_markers() {
                     gecko_profiler::add_marker(
                         "MemoryDistribution::accumulate",
                         TelemetryProfilerCategory,
@@ -117,18 +117,6 @@ impl MemoryDistribution for LabeledMemoryDistributionMetric {
         }
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<DistributionData> {
-        match self {
-            LabeledMemoryDistributionMetric::Parent(p) => p.test_get_value(ping_name),
-            LabeledMemoryDistributionMetric::Child { id, .. } => {
-                panic!("Cannot get test value for labeled_memory_distribution {:?} in non-parent process!", id)
-            }
-        }
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
             LabeledMemoryDistributionMetric::Parent(p) => p.test_get_num_recorded_errors(error),
@@ -136,6 +124,20 @@ impl MemoryDistribution for LabeledMemoryDistributionMetric {
                 "Cannot get the number of recorded errors for labeled_memory_distribution {:?} in non-parent process!",
                 id
             ),
+        }
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for LabeledMemoryDistributionMetric {
+    type Output = DistributionData;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        match self {
+            LabeledMemoryDistributionMetric::Parent(p) => p.test_get_value(ping_name),
+            LabeledMemoryDistributionMetric::Child { id, .. } => {
+                panic!("Cannot get test value for labeled_memory_distribution {:?} in non-parent process!", id)
+            }
         }
     }
 }

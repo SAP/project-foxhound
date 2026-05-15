@@ -13,9 +13,6 @@ const { Preferences } = ChromeUtils.importESModule(
   "resource://gre/modules/Preferences.sys.mjs"
 );
 
-// eslint-disable-next-line mozilla/reject-importGlobalProperties
-Cu.importGlobalProperties(["PathUtils"]);
-
 this.test = class extends ExtensionAPI {
   onStartup() {
     ChromeUtils.registerWindowActor("TestSupport", {
@@ -277,6 +274,19 @@ this.test = class extends ExtensionAPI {
             "resource://gre/modules/Schemas.sys.mjs"
           );
           return Schemas.getPermissionNames(typeNames);
+        },
+
+        async teardownAlertsService() {
+          const alertsService = Cc["@mozilla.org/alerts-service;1"].getService(
+            Ci.nsIAlertsService
+          );
+          alertsService.teardown();
+        },
+
+        async notifyUserGestureActivation(tabId) {
+          return getActorForTab(tabId, "TestSupport").sendQuery(
+            "NotifyUserGestureActivation"
+          );
         },
       },
     };

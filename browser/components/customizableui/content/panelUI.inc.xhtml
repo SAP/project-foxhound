@@ -97,6 +97,13 @@
           <vbox class="unified-extensions-list">
             <!-- active visible extensions go here -->
           </vbox>
+
+          <vbox id="unified-extensions-empty-state" context="">
+            <!-- Shown when no extensions are listed. -->
+            <html:img src="chrome://browser/skin/addons/extensions-panel-empty-illustration.svg" loading="lazy" />
+            <html:h2 class="subview-subheader" />
+            <description />
+          </vbox>
         </vbox>
 
         <toolbarseparator />
@@ -233,7 +240,6 @@
     <popupnotification id="appMenu-theme-installed-notification"
                        popupid="theme-installed"
                        closebuttonhidden="true"
-                       secondarybuttonhidden="false"
                        data-lazy-l10n-id="appmenu-theme-installed"
                        data-l10n-attrs="secondarybuttonlabel, secondarybuttonaccesskey"
                        dropmarkerhidden="true"

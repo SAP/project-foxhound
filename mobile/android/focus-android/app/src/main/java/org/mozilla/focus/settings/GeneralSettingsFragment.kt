@@ -21,7 +21,6 @@ import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.state.Screen
 import org.mozilla.focus.widget.DefaultBrowserPreference
 
-@Suppress("TooManyFunctions") // code is split into multiple functions with their own purpose.
 class GeneralSettingsFragment :
     BaseSettingsFragment() {
 

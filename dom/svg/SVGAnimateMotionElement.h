@@ -7,9 +7,8 @@
 #ifndef DOM_SVG_SVGANIMATEMOTIONELEMENT_H_
 #define DOM_SVG_SVGANIMATEMOTIONELEMENT_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/SVGAnimationElement.h"
 #include "SVGMotionSMILAnimationFunction.h"
+#include "mozilla/dom/SVGAnimationElement.h"
 
 nsresult NS_NewSVGAnimateMotionElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);

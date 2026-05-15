@@ -37,6 +37,37 @@ const AVATARS = [
   "video-game-controller",
 ];
 
+const AVATAR_TOOLTIP_IDS = {
+  barbell: "barbell-avatar-tooltip",
+  bike: "bike-avatar-tooltip",
+  book: "book-avatar-tooltip",
+  briefcase: "briefcase-avatar-tooltip",
+  canvas: "picture-avatar-tooltip",
+  craft: "craft-avatar-tooltip",
+  "default-favicon": "globe-avatar-tooltip",
+  diamond: "diamond-avatar-tooltip",
+  flower: "flower-avatar-tooltip",
+  folder: "folder-avatar-tooltip",
+  hammer: "hammer-avatar-tooltip",
+  heart: "heart-avatar-tooltip",
+  "heart-rate": "heart-rate-avatar-tooltip",
+  history: "clock-avatar-tooltip",
+  leaf: "leaf-avatar-tooltip",
+  lightbulb: "lightbulb-avatar-tooltip",
+  makeup: "makeup-avatar-tooltip",
+  message: "message-avatar-tooltip",
+  "musical-note": "musical-note-avatar-tooltip",
+  palette: "palette-avatar-tooltip",
+  "paw-print": "paw-print-avatar-tooltip",
+  plane: "plane-avatar-tooltip",
+  present: "present-avatar-tooltip",
+  shopping: "shopping-avatar-tooltip",
+  soccer: "soccer-ball-avatar-tooltip",
+  "sparkle-single": "sparkle-single-avatar-tooltip",
+  star: "star-avatar-tooltip",
+  "video-game-controller": "video-game-controller-avatar-tooltip",
+};
+
 const VIEWS = {
   ICON: "icon",
   CUSTOM: "custom",
@@ -178,7 +209,6 @@ export class ProfileAvatarSelector extends MozLitElement {
     window.removeEventListener("pointerup", this);
     document.documentElement.classList.remove("disable-text-selection");
   }
-
   getAvatarL10nId(value) {
     switch (value) {
       case "barbell":
@@ -190,11 +220,11 @@ export class ProfileAvatarSelector extends MozLitElement {
       case "briefcase":
         return "briefcase-avatar";
       case "canvas":
-        return "canvas-avatar";
+        return "picture-avatar";
       case "craft":
         return "craft-avatar";
       case "default-favicon":
-        return "default-favicon-avatar";
+        return "globe-avatar";
       case "diamond":
         return "diamond-avatar";
       case "flower":
@@ -208,7 +238,7 @@ export class ProfileAvatarSelector extends MozLitElement {
       case "heart-rate":
         return "heart-rate-avatar";
       case "history":
-        return "history-avatar";
+        return "clock-avatar";
       case "leaf":
         return "leaf-avatar";
       case "lightbulb":
@@ -230,7 +260,7 @@ export class ProfileAvatarSelector extends MozLitElement {
       case "shopping":
         return "shopping-avatar";
       case "soccer":
-        return "soccer-avatar";
+        return "soccer-ball-avatar";
       case "sparkle-single":
         return "sparkle-single-avatar";
       case "star":
@@ -279,6 +309,8 @@ export class ProfileAvatarSelector extends MozLitElement {
               type="ghost"
               iconSrc="chrome://browser/content/profiles/assets/16_${avatar}.svg"
               tabindex="-1"
+              data-l10n-id=${AVATAR_TOOLTIP_IDS[avatar]}
+              data-l10n-attrs="tooltiptext"
             ></moz-button
           ></moz-visual-picker-item>`
       )}</moz-visual-picker

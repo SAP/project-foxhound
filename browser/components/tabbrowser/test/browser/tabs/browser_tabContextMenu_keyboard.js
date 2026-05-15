@@ -33,6 +33,9 @@ add_task(async function test() {
   // There should be one tab when we start the test.
   let tab1 = gBrowser.selectedTab;
   let tab2 = BrowserTestUtils.addTab(gBrowser);
+  await BrowserTestUtils.browserLoaded(tab2.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   tab1.focus();
   is(document.activeElement, tab1, "tab1 should be focused");
 
@@ -58,6 +61,7 @@ add_task(async function test() {
   await openContextMenu();
   EventUtils.synthesizeKey("KEY_ArrowUp");
   await closeContextMenu();
+  Assert.notEqual(gBrowser.selectedTab, tab1, "tab1 should not be selected");
   is(gBrowser.selectedTab, tab2, "tab2 should still be active");
 
   gBrowser.removeTab(tab2);

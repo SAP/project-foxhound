@@ -7,6 +7,7 @@ let knownConfigs = new Map();
 export class HPKEConfigManager {
   /**
    * Decodes a base64url-encoded key string.
+   *
    * @param {string} aBase64Key
    * @returns {Uint8Array}
    */

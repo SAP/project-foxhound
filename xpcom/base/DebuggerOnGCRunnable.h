@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "js/GCAPI.h"
-#include "mozilla/UniquePtr.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {

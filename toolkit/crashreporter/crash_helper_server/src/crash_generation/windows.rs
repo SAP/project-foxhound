@@ -32,7 +32,7 @@ use windows_sys::Win32::{
 };
 
 impl CrashGenerator {
-    pub(super) fn generate_wer_minidump(
+    pub(crate) fn generate_wer_minidump(
         &self,
         message: messages::WindowsErrorReportingMinidump,
     ) -> Result<(), ()> {

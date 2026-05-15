@@ -49,11 +49,10 @@ using ::testing::Test;
 using ::testing::ValuesIn;
 using ::testing::WithParamInterface;
 
-rtc::scoped_refptr<const RTCStatsReport> GetStatsAndProcess(
+scoped_refptr<const RTCStatsReport> GetStatsAndProcess(
     PeerScenario& s,
     PeerScenarioClient* client) {
-  auto stats_collector =
-      rtc::make_ref_counted<webrtc::MockRTCStatsCollectorCallback>();
+  auto stats_collector = make_ref_counted<MockRTCStatsCollectorCallback>();
   client->pc()->GetStats(stats_collector.get());
   s.ProcessMessages(TimeDelta::Millis(0));
   RTC_CHECK(stats_collector->called());
@@ -61,7 +60,7 @@ rtc::scoped_refptr<const RTCStatsReport> GetStatsAndProcess(
 }
 
 DataRate GetAvailableSendBitrate(
-    const rtc::scoped_refptr<const RTCStatsReport>& report) {
+    const scoped_refptr<const RTCStatsReport>& report) {
   auto stats = report->GetStatsOfType<RTCIceCandidatePairStats>();
   if (stats.empty()) {
     return DataRate::Zero();
@@ -185,10 +184,11 @@ TEST(BweRampupTest, RampUpWithUndemuxableRtpPackets) {
   DataRate initial_bwe = GetAvailableSendBitrate(GetStatsAndProcess(s, caller));
   s.ProcessMessages(TimeDelta::Seconds(2));
 
+  // Since the packets are undemuxable, no packets will be received preventing
+  // the inbound-rtp stats entry from being created.
   auto callee_inbound_stats =
       GetStatsAndProcess(s, callee)->GetStatsOfType<RTCInboundRtpStreamStats>();
-  ASSERT_THAT(callee_inbound_stats, SizeIs(1));
-  ASSERT_EQ(*callee_inbound_stats[0]->frames_received, 0u);
+  ASSERT_THAT(callee_inbound_stats, SizeIs(0));
 
   DataRate final_bwe = GetAvailableSendBitrate(GetStatsAndProcess(s, caller));
   // Ensure BWE has increased from the initial BWE. BWE will not increase unless
@@ -214,13 +214,13 @@ INSTANTIATE_TEST_SUITE_P(
              .expected_bwe_min = DataRate::KilobitsPerSec(2500),
          },
          {
-             .network_capacity = webrtc::DataRate::KilobitsPerSec(500),
-             .expected_bwe_min = webrtc::DataRate::KilobitsPerSec(400),
+             .network_capacity = DataRate::KilobitsPerSec(500),
+             .expected_bwe_min = DataRate::KilobitsPerSec(400),
          }}));
 
 class MockRtpSenderObserver : public RtpSenderObserverInterface {
  public:
-  MOCK_METHOD(void, OnFirstPacketSent, (webrtc::MediaType));
+  MOCK_METHOD(void, OnFirstPacketSent, (MediaType));
 };
 
 // Test that caller and callee BWE rampup even if no media packets are sent.
@@ -233,7 +233,7 @@ TEST_P(BweRampupWithInitialProbeTest, BweRampUpBothDirectionsWithoutMedia) {
   PeerScenarioClient* caller = s.CreateClient({});
   PeerScenarioClient* callee = s.CreateClient({});
 
-  auto transceiver = caller->pc()->AddTransceiver(webrtc::MediaType::VIDEO);
+  auto transceiver = caller->pc()->AddTransceiver(MediaType::VIDEO);
   ASSERT_TRUE(transceiver.error().ok());
 
   MockRtpSenderObserver observer;
@@ -326,7 +326,7 @@ TEST(BweRampupTest, CanReconfigureBweAfterStopingVideo) {
 
   // Send a TCP messages to the receiver using the same downlink node.
   // This is done just to force a lower BWE than the link capacity.
-  webrtc::TcpMessageRoute* tcp_route = s.net()->CreateTcpRoute(
+  TcpMessageRoute* tcp_route = s.net()->CreateTcpRoute(
       s.net()->CreateRoute({caller_node}), s.net()->CreateRoute({callee_node}));
   DataRate bwe_before_restart = DataRate::Zero();
 

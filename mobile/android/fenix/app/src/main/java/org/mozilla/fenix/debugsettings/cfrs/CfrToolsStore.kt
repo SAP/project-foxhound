@@ -7,7 +7,7 @@ package org.mozilla.fenix.debugsettings.cfrs
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
-import mozilla.components.lib.state.UiStore
+import mozilla.components.lib.state.Store
 
 /**
  * Value type that represents the state of the CFR Tools.
@@ -115,7 +115,6 @@ sealed class CfrToolsAction : Action {
  * Reducer for [CfrToolsStore].
  */
 internal object CfrToolsReducer {
-    @Suppress("ComplexMethod")
     fun reduce(state: CfrToolsState, action: CfrToolsAction): CfrToolsState {
         return when (action) {
             is CfrToolsAction.Init -> state
@@ -145,13 +144,13 @@ internal object CfrToolsReducer {
 }
 
 /**
- * A [UiStore] that holds the [CfrToolsState] for the CFR Tools and reduces [CfrToolsAction]s
+ * A [Store] that holds the [CfrToolsState] for the CFR Tools and reduces [CfrToolsAction]s
  * dispatched to the store.
  */
 class CfrToolsStore(
     initialState: CfrToolsState = CfrToolsState(),
     middlewares: List<Middleware<CfrToolsState, CfrToolsAction>> = emptyList(),
-) : UiStore<CfrToolsState, CfrToolsAction>(
+) : Store<CfrToolsState, CfrToolsAction>(
     initialState,
     CfrToolsReducer::reduce,
     middlewares,

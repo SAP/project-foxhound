@@ -7,24 +7,26 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-#include <math.h>
 
-#include <algorithm>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "api/array_view.h"
+#include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/environment/environment_factory.h"
 #include "api/numerics/samples_stats_counter.h"
+#include "api/scoped_refptr.h"
 #include "api/test/metrics/global_metrics_logger_and_exporter.h"
 #include "api/test/metrics/metric.h"
-#include "modules/audio_processing/audio_processing_impl.h"
-#include "modules/audio_processing/test/test_utils.h"
+#include "api/units/time_delta.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/event.h"
-#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/random.h"
 #include "system_wrappers/include/clock.h"
@@ -33,10 +35,10 @@
 namespace webrtc {
 namespace {
 
-using ::webrtc::test::GetGlobalMetricsLogger;
-using ::webrtc::test::ImprovementDirection;
-using ::webrtc::test::Metric;
-using ::webrtc::test::Unit;
+using test::GetGlobalMetricsLogger;
+using test::ImprovementDirection;
+using test::Metric;
+using test::Unit;
 
 class CallSimulator;
 
@@ -206,7 +208,7 @@ class TimedThreadApiProcessor {
         simulation_config_(simulation_config),
         apm_(apm),
         frame_data_(kMaxFrameSize),
-        clock_(webrtc::Clock::GetRealTimeClock()),
+        clock_(Clock::GetRealTimeClock()),
         num_durations_to_store_(num_durations_to_store),
         api_call_durations_(num_durations_to_store_ - kNumInitializationFrames),
         samples_count_(0),
@@ -232,7 +234,8 @@ class TimedThreadApiProcessor {
   void AddDuration(int64_t duration) {
     if (samples_count_ >= kNumInitializationFrames &&
         samples_count_ < num_durations_to_store_) {
-      api_call_durations_.AddSample(duration);
+      api_call_durations_.AddSample({.value = static_cast<double>(duration),
+                                     .time = clock_->CurrentTime()});
     }
     samples_count_++;
   }
@@ -355,7 +358,7 @@ class TimedThreadApiProcessor {
   const SimulationConfig* const simulation_config_ = nullptr;
   AudioProcessing* apm_ = nullptr;
   AudioFrameData frame_data_;
-  webrtc::Clock* clock_;
+  Clock* clock_;
   const size_t num_durations_to_store_;
   SamplesStatsCounter api_call_durations_;
   size_t samples_count_ = 0;
@@ -514,7 +517,7 @@ class CallSimulator : public ::testing::TestWithParam<SimulationConfig> {
   // Thread related variables.
   Random rand_gen_;
 
-  rtc::scoped_refptr<AudioProcessing> apm_;
+  scoped_refptr<AudioProcessing> apm_;
   const SimulationConfig simulation_config_;
   FrameCounters frame_counters_;
   LockedFlag capture_call_checker_;

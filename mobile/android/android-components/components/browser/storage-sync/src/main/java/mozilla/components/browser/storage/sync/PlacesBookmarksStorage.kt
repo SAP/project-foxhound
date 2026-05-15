@@ -49,11 +49,9 @@ open class PlacesBookmarksStorage(
      * @param recursive Whether to recurse and obtain all levels of children.
      * @return The populated root starting from the guid.
      */
-    override suspend fun getTree(guid: String, recursive: Boolean): BookmarkNode? {
+    override suspend fun getTree(guid: String, recursive: Boolean): Result<BookmarkNode?> {
         return withContext(readScope.coroutineContext) {
-            handlePlacesExceptions("getTree", default = null) {
-                reader.getBookmarksTree(guid, recursive)?.asBookmarkNode()
-            }
+            Result.runCatching { reader.getBookmarksTree(guid, recursive)?.asBookmarkNode() }
         }
     }
 
@@ -63,9 +61,9 @@ open class PlacesBookmarksStorage(
      * @param guid The bookmark guid to obtain.
      * @return The bookmark node or null if it does not exist.
      */
-    override suspend fun getBookmark(guid: String): BookmarkNode? {
+    override suspend fun getBookmark(guid: String): Result<BookmarkNode?> {
         return withContext(readScope.coroutineContext) {
-            handlePlacesExceptions("getBookmark", default = null) {
+            Result.runCatching {
                 reader.getBookmark(guid)?.asBookmarkNode()
             }
         }
@@ -77,9 +75,9 @@ open class PlacesBookmarksStorage(
      * @param url The URL string.
      * @return The list of bookmarks that match the URL
      */
-    override suspend fun getBookmarksWithUrl(url: String): List<BookmarkNode> {
+    override suspend fun getBookmarksWithUrl(url: String): Result<List<BookmarkNode>> {
         return withContext(readScope.coroutineContext) {
-            handlePlacesExceptions("getBookmarkWithUrl", default = emptyList()) {
+            Result.runCatching {
                 reader.getBookmarksWithURL(url).map { it.asBookmarkNode() }
             }
         }
@@ -92,9 +90,9 @@ open class PlacesBookmarksStorage(
      * @param limit The maximum number of entries to return.
      * @return The list of matching bookmark nodes up to the limit number of items.
      */
-    override suspend fun searchBookmarks(query: String, limit: Int): List<BookmarkNode> {
+    override suspend fun searchBookmarks(query: String, limit: Int): Result<List<BookmarkNode>> {
         return withContext(readScope.coroutineContext) {
-            handlePlacesExceptions("searchBookmarks", default = emptyList()) {
+            Result.runCatching {
                 reader.searchBookmarks(query, limit).map { it.asBookmarkNode() }
             }
         }
@@ -112,17 +110,17 @@ open class PlacesBookmarksStorage(
         limit: Int,
         maxAge: Long?,
         @VisibleForTesting currentTime: Long,
-    ): List<BookmarkNode> {
+    ): Result<List<BookmarkNode>> {
         return withContext(readScope.coroutineContext) {
             val threshold = if (maxAge != null) {
                 currentTime - maxAge
             } else {
                 0
             }
-            handlePlacesExceptions("getRecentBookmarks", default = emptyList()) {
+            Result.runCatching {
                 reader.getRecentBookmarks(limit)
-                    .map { it.asBookmarkNode() }
-                    .filter { it.dateAdded >= threshold }
+                .map { it.asBookmarkNode() }
+                .filter { it.dateAdded >= threshold }
             }
         }
     }
@@ -138,22 +136,10 @@ open class PlacesBookmarksStorage(
      * @param position The optional position to add the new node or null to append.
      * @return The guid of the newly inserted bookmark item.
      */
-    override suspend fun addItem(parentGuid: String, url: String, title: String, position: UInt?): String {
+    override suspend fun addItem(parentGuid: String, url: String, title: String, position: UInt?): Result<String> {
         return withContext(writeScope.coroutineContext) {
-            try {
+            Result.runCatching {
                 writer.createBookmarkItem(parentGuid, url, title, position)
-            } catch (e: PlacesApiException.UrlParseFailed) {
-                // We re-throw this exception, it should be handled by the caller
-                throw e
-            } catch (e: PlacesApiException.UnexpectedPlacesException) {
-                // this is a fatal error, and should be rethrown
-                throw e
-            } catch (e: PlacesApiException) {
-                crashReporter?.submitCaughtException(e)
-                logger.warn("Ignoring PlacesApiException while running addItem", e)
-                // Should not return an empty string here. The function should be nullable
-                // however, it is better than the app crashing.
-                ""
             }
         }
     }
@@ -168,9 +154,9 @@ open class PlacesBookmarksStorage(
      * @param position The optional position to add the new node or null to append.
      * @return The guid of the newly inserted bookmark item.
      */
-    override suspend fun addFolder(parentGuid: String, title: String, position: UInt?): String {
+    override suspend fun addFolder(parentGuid: String, title: String, position: UInt?): Result<String> {
         return withContext(writeScope.coroutineContext) {
-            handlePlacesExceptions("addFolder", default = "") {
+            Result.runCatching {
                 writer.createFolder(parentGuid, title, position)
             }
         }
@@ -185,9 +171,9 @@ open class PlacesBookmarksStorage(
      * @param position The optional position to add the new node or null to append.
      * @return The guid of the newly inserted bookmark item.
      */
-    override suspend fun addSeparator(parentGuid: String, position: UInt?): String {
+    override suspend fun addSeparator(parentGuid: String, position: UInt?): Result<String> {
         return withContext(writeScope.coroutineContext) {
-            handlePlacesExceptions("addSeparator", default = "") {
+            Result.runCatching {
                 writer.createSeparator(parentGuid, position)
             }
         }
@@ -201,20 +187,9 @@ open class PlacesBookmarksStorage(
      * @param guid The guid of the item to update.
      * @param info The info to change in the bookmark.
      */
-    override suspend fun updateNode(guid: String, info: BookmarkInfo) {
+    override suspend fun updateNode(guid: String, info: BookmarkInfo): Result<Unit> {
         return withContext(writeScope.coroutineContext) {
-            try {
-                writer.updateBookmark(guid, info.parentGuid, info.position, info.title, info.url)
-            } catch (e: PlacesApiException.InvalidBookmarkOperation) {
-                // We re-throw this exception, it should be handled by the caller
-                throw e
-            } catch (e: PlacesApiException.UnexpectedPlacesException) {
-                // this is a fatal error, and should be rethrown
-                throw e
-            } catch (e: PlacesApiException) {
-                crashReporter?.submitCaughtException(e)
-                logger.warn("Ignoring PlacesApiException while running updateNode", e)
-            }
+            Result.runCatching { writer.updateBookmark(guid, info.parentGuid, info.position, info.title, info.url) }
         }
     }
 
@@ -225,20 +200,8 @@ open class PlacesBookmarksStorage(
      *
      * @return Whether the bookmark existed or not.
      */
-    override suspend fun deleteNode(guid: String): Boolean = withContext(writeScope.coroutineContext) {
-        try {
-            writer.deleteBookmarkNode(guid)
-        } catch (e: PlacesApiException.InvalidBookmarkOperation) {
-            // We re-throw this exception, it should be handled by the caller
-            throw e
-        } catch (e: PlacesApiException.UnexpectedPlacesException) {
-            // this is a fatal error, and should be rethrown
-            throw e
-        } catch (e: PlacesApiException) {
-            crashReporter?.submitCaughtException(e)
-            logger.warn("Ignoring PlacesApiException while running deleteNode", e)
-            false
-        }
+    override suspend fun deleteNode(guid: String): Result<Boolean> = withContext(writeScope.coroutineContext) {
+        Result.runCatching { writer.deleteBookmarkNode(guid) }
     }
 
     /**
@@ -279,21 +242,22 @@ open class PlacesBookmarksStorage(
         places.registerWithSyncManager()
     }
 
-    override suspend fun getAutocompleteSuggestion(query: String): AutocompleteResult? {
-        val bookmarkUrl = searchBookmarks(query, BOOKMARKS_AUTOCOMPLETE_QUERY_LIMIT)
-            .mapNotNull { it.url }
-            .firstOrNull { doesUrlStartsWithText(it, query) }
-            ?: return null
+    override suspend fun getAutocompleteSuggestion(query: String): AutocompleteResult? =
+        searchBookmarks(query, BOOKMARKS_AUTOCOMPLETE_QUERY_LIMIT).getOrNull()?.let { bookmarks ->
+            val bookmarkUrl = bookmarks
+                .mapNotNull { it.url }
+                .firstOrNull { doesUrlStartsWithText(it, query) }
+                ?: return null
 
-        val resultText = segmentAwareDomainMatch(query, arrayListOf(bookmarkUrl))
-        return resultText?.let {
-            AutocompleteResult(
-                input = query,
-                text = it.matchedSegment,
-                url = it.url,
-                source = BOOKMARKS_AUTOCOMPLETE_SOURCE_NAME,
-                totalItems = 1,
-            )
+            val resultText = segmentAwareDomainMatch(query, arrayListOf(bookmarkUrl))
+            resultText?.let {
+                AutocompleteResult(
+                    input = query,
+                    text = it.matchedSegment,
+                    url = it.url,
+                    source = BOOKMARKS_AUTOCOMPLETE_SOURCE_NAME,
+                    totalItems = 1,
+                )
+            }
         }
-    }
 }

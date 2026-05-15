@@ -59,7 +59,8 @@ inline void EmitBaselineLeaveStubFrame(MacroAssembler& masm) {
 
   // Discard the frame descriptor.
   {
-    SecondScratchRegisterScope scratch2(masm);
+    UseScratchRegisterScope temps(masm);
+    Register scratch2 = temps.Acquire();
     masm.Pop(scratch2);
   }
 }

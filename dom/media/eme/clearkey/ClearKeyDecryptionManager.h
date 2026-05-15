@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef __ClearKeyDecryptionManager_h__
-#define __ClearKeyDecryptionManager_h__
+#ifndef ClearKeyDecryptionManager_h_
+#define ClearKeyDecryptionManager_h_
 
 // This include is required in order for content_decryption_module to work
 // on Unix systems.
@@ -23,10 +23,9 @@
 
 #include <map>
 
-#include "content_decryption_module.h"
-
 #include "ClearKeyUtils.h"
 #include "RefCounted.h"
+#include "content_decryption_module.h"
 
 class ClearKeyDecryptor;
 
@@ -108,4 +107,4 @@ class ClearKeyDecryptionManager : public RefCounted {
   std::map<KeyId, ClearKeyDecryptor*> mDecryptors;
 };
 
-#endif  // __ClearKeyDecryptionManager_h__
+#endif  // ClearKeyDecryptionManager_h_

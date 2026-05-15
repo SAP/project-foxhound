@@ -5,40 +5,41 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/XMLDocument.h"
-#include "nsCharsetSource.h"
-#include "nsIXMLContentSink.h"
-#include "nsPresContext.h"
-#include "nsIContent.h"
-#include "nsIDocShell.h"
-#include "nsHTMLParts.h"
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
-#include "nsError.h"
-#include "nsIPrincipal.h"
+
+#include "mozilla/BasicEvents.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/Attr.h"
+#include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/DocumentBinding.h"
+#include "mozilla/dom/DocumentType.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/XMLDocumentBinding.h"
 #include "nsCExternalHandlerService.h"
-#include "nsMimeTypes.h"
-#include "nsContentUtils.h"
-#include "nsThreadUtils.h"
-#include "nsJSUtils.h"
+#include "nsCOMPtr.h"
 #include "nsCRT.h"
+#include "nsCharsetSource.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentPolicyUtils.h"
-#include "nsIConsoleService.h"
-#include "nsIScriptError.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
 #include "nsHTMLDocument.h"
+#include "nsHTMLParts.h"
+#include "nsIConsoleService.h"
+#include "nsIContent.h"
+#include "nsIDocShell.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptError.h"
+#include "nsIURI.h"
+#include "nsIXMLContentSink.h"
+#include "nsJSUtils.h"
+#include "nsMimeTypes.h"
+#include "nsNetUtil.h"
 #include "nsParser.h"
-#include "mozilla/BasicEvents.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/dom/DocumentType.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/DocGroup.h"
-#include "mozilla/dom/XMLDocumentBinding.h"
-#include "mozilla/dom/DocumentBinding.h"
+#include "nsPresContext.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -52,7 +53,8 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
                            const nsAString& aQualifiedName,
                            DocumentType* aDoctype, nsIURI* aDocumentURI,
                            nsIURI* aBaseURI, nsIPrincipal* aPrincipal,
-                           bool aLoadedAsData, nsIGlobalObject* aEventObject,
+                           mozilla::dom::LoadedAsData aLoadedAsData,
+                           nsIGlobalObject* aEventObject,
                            DocumentFlavor aFlavor) {
   // Note: can't require that aDocumentURI/aBaseURI/aPrincipal be non-null,
   // since at least one caller (XMLHttpRequest) doesn't have decent args to
@@ -66,12 +68,15 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
   bool isHTML = false;
   bool isXHTML = false;
   if (aFlavor == DocumentFlavor::SVG) {
-    rv = NS_NewSVGDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+    rv = NS_NewSVGDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                           aLoadedAsData);
   } else if (aFlavor == DocumentFlavor::HTML) {
-    rv = NS_NewHTMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+    rv = NS_NewHTMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                            aLoadedAsData);
     isHTML = true;
   } else if (aFlavor == DocumentFlavor::XML) {
-    rv = NS_NewXMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+    rv = NS_NewXMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                           aLoadedAsData);
   } else if (aFlavor == DocumentFlavor::Plain) {
     rv = NS_NewXMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
                            aLoadedAsData, true);
@@ -89,23 +94,28 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
         publicId.EqualsLiteral("-//W3C//DTD HTML 4.0//EN") ||
         publicId.EqualsLiteral("-//W3C//DTD HTML 4.0 Frameset//EN") ||
         publicId.EqualsLiteral("-//W3C//DTD HTML 4.0 Transitional//EN")) {
-      rv = NS_NewHTMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+      rv = NS_NewHTMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                              aLoadedAsData);
       isHTML = true;
     } else if (publicId.EqualsLiteral("-//W3C//DTD XHTML 1.0 Strict//EN") ||
                publicId.EqualsLiteral(
                    "-//W3C//DTD XHTML 1.0 Transitional//EN") ||
                publicId.EqualsLiteral("-//W3C//DTD XHTML 1.0 Frameset//EN")) {
-      rv = NS_NewHTMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+      rv = NS_NewHTMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                              aLoadedAsData);
       isHTML = true;
       isXHTML = true;
     } else if (publicId.EqualsLiteral("-//W3C//DTD SVG 1.1//EN")) {
-      rv = NS_NewSVGDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+      rv = NS_NewSVGDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                             aLoadedAsData);
     } else {
-      rv = NS_NewXMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+      rv = NS_NewXMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                             aLoadedAsData);
     }
   } else {
     MOZ_ASSERT(aFlavor == DocumentFlavor::LegacyGuess);
-    rv = NS_NewXMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal);
+    rv = NS_NewXMLDocument(getter_AddRefs(d), aPrincipal, aPrincipal,
+                           aLoadedAsData);
   }
 
   if (NS_FAILED(rv)) {
@@ -116,7 +126,8 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
     d->SetCompatibilityMode(eCompatibility_FullStandards);
     d->AsHTMLDocument()->SetIsXHTML(isXHTML);
   }
-  d->SetLoadedAsData(aLoadedAsData, /* aConsiderForMemoryReporting */ true);
+  d->SetLoadedAsData(aLoadedAsData != mozilla::dom::LoadedAsData::No,
+                     /* aConsiderForMemoryReporting */ true);
   d->SetDocumentURI(aDocumentURI);
   d->SetBaseURI(aBaseURI);
 
@@ -147,7 +158,7 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
   if (!aQualifiedName.IsEmpty()) {
     ErrorResult result;
     ElementCreationOptionsOrString options;
-    Unused << options.SetAsString();
+    (void)options.SetAsString();
 
     nsCOMPtr<Element> root =
         d->CreateElementNS(aNamespaceURI, aQualifiedName, options, result);
@@ -173,8 +184,9 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
 nsresult NS_NewXMLDocument(Document** aInstancePtrResult,
                            nsIPrincipal* aPrincipal,
                            nsIPrincipal* aPartitionedPrincipal,
-                           bool aLoadedAsData, bool aIsPlainDocument) {
-  RefPtr<XMLDocument> doc = new XMLDocument();
+                           mozilla::dom::LoadedAsData aLoadedAsData,
+                           bool aIsPlainDocument) {
+  RefPtr<XMLDocument> doc = new XMLDocument("application/xml", aLoadedAsData);
 
   nsresult rv = doc->Init(aPrincipal, aPartitionedPrincipal);
 
@@ -183,7 +195,8 @@ nsresult NS_NewXMLDocument(Document** aInstancePtrResult,
     return rv;
   }
 
-  doc->SetLoadedAsData(aLoadedAsData, /* aConsiderForMemoryReporting */ true);
+  doc->SetLoadedAsData(aLoadedAsData != mozilla::dom::LoadedAsData::No,
+                       /* aConsiderForMemoryReporting */ true);
   doc->mIsPlainDocument = aIsPlainDocument;
   doc.forget(aInstancePtrResult);
 
@@ -192,8 +205,9 @@ nsresult NS_NewXMLDocument(Document** aInstancePtrResult,
 
 namespace mozilla::dom {
 
-XMLDocument::XMLDocument(const char* aContentType)
-    : Document(aContentType),
+XMLDocument::XMLDocument(const char* aContentType,
+                         mozilla::dom::LoadedAsData aLoadedAsData)
+    : Document(aContentType, aLoadedAsData),
       mChannelIsPending(false),
       mIsPlainDocument(false),
       mSuppressParserErrorElement(false),
@@ -313,7 +327,8 @@ nsresult XMLDocument::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const {
   NS_ASSERTION(aNodeInfo->NodeInfoManager() == mNodeInfoManager,
                "Can't import this document into another document!");
 
-  RefPtr<XMLDocument> clone = new XMLDocument();
+  RefPtr<XMLDocument> clone =
+      new XMLDocument("application/xml", LoadedAsData::AsData);
   nsresult rv = CloneDocHelper(clone);
   NS_ENSURE_SUCCESS(rv, rv);
 

@@ -4,10 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_fetcheventopproxychild_h__
-#define mozilla_dom_fetcheventopproxychild_h__
-
-#include "nsISupportsImpl.h"
+#ifndef mozilla_dom_fetcheventopproxychild_h_
+#define mozilla_dom_fetcheventopproxychild_h_
 
 #include "ServiceWorkerOp.h"
 #include "ServiceWorkerOpPromise.h"
@@ -15,6 +13,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/InternalRequest.h"
 #include "mozilla/dom/PFetchEventOpProxyChild.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
 
@@ -81,4 +80,4 @@ class FetchEventOpProxyChild final : public PFetchEventOpProxyChild {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_fetcheventopproxychild_h__
+#endif  // mozilla_dom_fetcheventopproxychild_h_

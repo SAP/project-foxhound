@@ -6,13 +6,13 @@
 
 #include "MFTDecoder.h"
 #include "VideoUtils.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/MFMediaEngineParent.h"
 #include "mozilla/MFMediaEngineUtils.h"
-#include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/RemoteDecoderModule.h"
+#include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/WindowsVersion.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/mscom/EnsureMTA.h"
 
 namespace mozilla {

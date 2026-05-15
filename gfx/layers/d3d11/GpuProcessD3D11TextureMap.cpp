@@ -47,7 +47,7 @@ GpuProcessD3D11TextureMap::~GpuProcessD3D11TextureMap() {}
 void GpuProcessD3D11TextureMap::Register(
     GpuProcessTextureId aTextureId, ID3D11Texture2D* aTexture,
     uint32_t aArrayIndex, const gfx::IntSize& aSize,
-    RefPtr<ZeroCopyUsageInfo> aUsageInfo,
+    ZeroCopyUsageInfo* aUsageInfo,
     RefPtr<gfx::FileHandleWrapper> aSharedHandle) {
   MonitorAutoLock lock(mMonitor);
   Register(lock, aTextureId, aTexture, aArrayIndex, aSize, aUsageInfo,
@@ -56,7 +56,7 @@ void GpuProcessD3D11TextureMap::Register(
 void GpuProcessD3D11TextureMap::Register(
     const MonitorAutoLock& aProofOfLock, GpuProcessTextureId aTextureId,
     ID3D11Texture2D* aTexture, uint32_t aArrayIndex, const gfx::IntSize& aSize,
-    RefPtr<ZeroCopyUsageInfo> aUsageInfo,
+    ZeroCopyUsageInfo* aUsageInfo,
     RefPtr<gfx::FileHandleWrapper> aSharedHandle) {
   MOZ_RELEASE_ASSERT(aTexture);
 
@@ -205,6 +205,25 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
   }
 
   return Some(handle->GetHandle());
+}
+
+void GpuProcessD3D11TextureMap::DisableZeroCopyNV12Texture(
+    GpuProcessTextureId aTextureId) {
+  MonitorAutoLock lock(mMonitor);
+
+  auto it = mD3D11TexturesById.find(aTextureId);
+  if (it == mD3D11TexturesById.end()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return;
+  }
+
+  if (!it->second.mZeroCopyUsageInfo) {
+    return;
+  }
+
+  // Disable no video copy for future decoded video frames. Since
+  // Get SharedHandle of copied Texture() is slow.
+  it->second.mZeroCopyUsageInfo->DisableZeroCopyNV12Texture();
 }
 
 size_t GpuProcessD3D11TextureMap::GetWaitingTextureCount() const {
@@ -393,8 +412,7 @@ RefPtr<ID3D11Texture2D> GpuProcessD3D11TextureMap::UpdateTextureData(
 
 GpuProcessD3D11TextureMap::TextureHolder::TextureHolder(
     ID3D11Texture2D* aTexture, uint32_t aArrayIndex, const gfx::IntSize& aSize,
-    RefPtr<ZeroCopyUsageInfo> aUsageInfo,
-    RefPtr<gfx::FileHandleWrapper> aSharedHandle)
+    ZeroCopyUsageInfo* aUsageInfo, RefPtr<gfx::FileHandleWrapper> aSharedHandle)
     : mTexture(aTexture),
       mArrayIndex(aArrayIndex),
       mSize(aSize),

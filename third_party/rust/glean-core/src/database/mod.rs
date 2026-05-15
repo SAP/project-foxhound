@@ -69,6 +69,7 @@ pub fn rkv_new(path: &Path) -> std::result::Result<(Rkv, RkvLoadState), rkv::Sto
         // In both instances there's not much we can do.
         // Drop the data by removing the file, and start over.
         Err(rkv::StoreError::FileInvalid) => {
+            log::debug!("rkv failed: invalid file. starting from scratch.");
             let safebin = path.join("data.safe.bin");
             fs::remove_file(safebin).map_err(|_| rkv::StoreError::FileInvalid)?;
             // Now try again, we only handle that error once.
@@ -76,6 +77,7 @@ pub fn rkv_new(path: &Path) -> std::result::Result<(Rkv, RkvLoadState), rkv::Sto
             Ok((rkv, RkvLoadState::Err(rkv::StoreError::FileInvalid)))
         }
         Err(rkv::StoreError::DatabaseCorrupted) => {
+            log::debug!("rkv failed: database corrupted. starting from scratch.");
             let safebin = path.join("data.safe.bin");
             fs::remove_file(safebin).map_err(|_| rkv::StoreError::DatabaseCorrupted)?;
             // Try again, only allowing the error once.
@@ -134,7 +136,7 @@ pub struct Database {
     ping_lifetime_max_time: Duration,
 
     /// Initial file size when opening the database.
-    file_size: Option<NonZeroU64>,
+    pub(crate) file_size: Option<NonZeroU64>,
 
     /// RKV load state
     rkv_load_state: RkvLoadState,
@@ -145,30 +147,27 @@ pub struct Database {
 }
 
 impl MallocSizeOf for Database {
-    fn size_of(&self, _ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+    fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
         // TODO(bug 1960592): Fill in gaps.
 
-        /*
         let mut n = 0;
 
-        n += 0; // self.rkv.size_of(ops) -- not implemented.
-        n += 0; // self.user_store.size_of(ops) -- not implemented.
+        n += self.rkv.size_of(ops);
+        n += self.user_store.size_of(ops);
+        n += self.ping_store.size_of(ops);
+        n += self.application_store.size_of(ops);
 
         n += self
             .ping_lifetime_data
             .as_ref()
-            .map(|_data| {
+            .map(|data| {
                 // TODO(bug 1960592): servo's malloc_size_of implements it for BTreeMap.
-                //let lock = data.read().unwrap();
-                //(*lock).size_of(ops)
-                0
+                let lock = data.read().unwrap();
+                (*lock).size_of(ops)
             })
             .unwrap_or(0);
 
         n
-        */
-
-        0
     }
 }
 
@@ -184,7 +183,7 @@ impl std::fmt::Debug for Database {
     }
 }
 
-/// Calculate the  database size from all the files in the directory.
+/// Calculate the database size from all the files in the directory.
 ///
 ///  # Arguments
 ///
@@ -483,7 +482,7 @@ impl Database {
                 if let Err(e) =
                     self.record_per_lifetime(data.inner.lifetime, ping_name, &name, value)
                 {
-                    log::error!(
+                    log::info!(
                         "Failed to record metric '{}' into {}: {:?}",
                         data.base_identifier(),
                         ping_name,
@@ -554,7 +553,7 @@ impl Database {
                     &name,
                     &mut transform,
                 ) {
-                    log::error!(
+                    log::info!(
                         "Failed to record metric '{}' into {}: {:?}",
                         data.base_identifier(),
                         ping_name,

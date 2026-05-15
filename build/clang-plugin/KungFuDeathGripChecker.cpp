@@ -16,7 +16,7 @@ void KungFuDeathGripChecker::check(const MatchFinder::MatchResult &Result) {
   const char *Error = "Unused \"kungFuDeathGrip\" %0 objects constructed from "
                       "%1 are prohibited";
   const char *Note = "Please switch all accesses to this %0 to go through "
-                     "'%1', or explicitly pass '%1' to `mozilla::Unused`";
+                     "'%1', or explicitly cast '%1' to `(void)`";
 
   const VarDecl *D = Result.Nodes.getNodeAs<VarDecl>("decl");
   if (D->isReferenced()) {

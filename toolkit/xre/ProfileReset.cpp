@@ -19,7 +19,6 @@
 #include "mozilla/XREAppData.h"
 
 #include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/Unused.h"
 
 using namespace mozilla;
 
@@ -50,7 +49,7 @@ nsresult ProfileResetCleanup(nsToolkitProfileService* aService,
   if (!sbs) return NS_ERROR_FAILURE;
 
   nsCOMPtr<nsIStringBundle> sb;
-  Unused << sbs->CreateBundle(kProfileProperties, getter_AddRefs(sb));
+  (void)sbs->CreateBundle(kProfileProperties, getter_AddRefs(sb));
   if (!sb) return NS_ERROR_FAILURE;
 
   NS_ConvertUTF8toUTF16 appName(gAppData->name);

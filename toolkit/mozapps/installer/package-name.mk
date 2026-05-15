@@ -97,15 +97,15 @@ MOZSEARCH_JAVA_INDEX_BASENAME = $(PKG_BASENAME).mozsearch-java-index
 MOZHARNESS_PACKAGE = mozharness.zip
 
 # Test package naming
-TEST_PACKAGE = $(PKG_BASENAME).common.tests.tar.gz
-CPP_TEST_PACKAGE = $(PKG_BASENAME).cppunittest.tests.tar.gz
-XPC_TEST_PACKAGE = $(PKG_BASENAME).xpcshell.tests.tar.gz
-MOCHITEST_PACKAGE = $(PKG_BASENAME).mochitest.tests.tar.gz
-REFTEST_PACKAGE = $(PKG_BASENAME).reftest.tests.tar.gz
-WP_TEST_PACKAGE = $(PKG_BASENAME).web-platform.tests.tar.gz
-TALOS_PACKAGE = $(PKG_BASENAME).talos.tests.tar.gz
-AWSY_PACKAGE = $(PKG_BASENAME).awsy.tests.tar.gz
-GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.tar.gz
+TEST_PACKAGE = $(PKG_BASENAME).common.tests.tar.zst
+CPP_TEST_PACKAGE = $(PKG_BASENAME).cppunittest.tests.tar.zst
+XPC_TEST_PACKAGE = $(PKG_BASENAME).xpcshell.tests.tar.zst
+MOCHITEST_PACKAGE = $(PKG_BASENAME).mochitest.tests.tar.zst
+REFTEST_PACKAGE = $(PKG_BASENAME).reftest.tests.tar.zst
+WP_TEST_PACKAGE = $(PKG_BASENAME).web-platform.tests.tar.zst
+TALOS_PACKAGE = $(PKG_BASENAME).talos.tests.tar.zst
+AWSY_PACKAGE = $(PKG_BASENAME).awsy.tests.tar.zst
+GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.tar.zst
 
 # `.xpt` artifacts: for use in artifact builds.
 XPT_ARTIFACTS_ARCHIVE_BASENAME = $(PKG_BASENAME).xpt_artifacts

@@ -5,16 +5,17 @@
 //! Gecko-specific bits for selector-parsing.
 
 use crate::computed_value_flags::ComputedValueFlags;
+use crate::derives::*;
 use crate::invalidation::element::document_state::InvalidationMatchingData;
 use crate::properties::ComputedValues;
 use crate::selector_parser::{Direction, HorizontalDirection, SelectorParser};
 use crate::str::starts_with_ignore_ascii_case;
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
-use crate::values::{AtomIdent, AtomString};
+use crate::values::{AtomIdent, AtomString, CSSInteger, CustomIdent};
+use cssparser::{match_ignore_ascii_case, CowRcStr, SourceLocation, ToCss, Token};
 use cssparser::{BasicParseError, BasicParseErrorKind, Parser};
-use cssparser::{CowRcStr, SourceLocation, ToCss, Token, parse_nth};
 use dom::{DocumentState, ElementState, HEADING_LEVEL_OFFSET};
-use selectors::parser::{SelectorParseErrorKind, AnPlusB};
+use selectors::parser::SelectorParseErrorKind;
 use std::fmt;
 use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss as ToCss_};
 use thin_vec::ThinVec;
@@ -48,11 +49,11 @@ pub struct CustomState(pub AtomIdent);
 /// The properties that comprise a :heading() pseudoclass (e.g. a list of An+Bs).
 /// https://drafts.csswg.org/selectors-5/#headings
 #[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq, ToShmem)]
-pub struct HeadingSelectorData(pub ThinVec<AnPlusB>);
+pub struct HeadingSelectorData(pub ThinVec<CSSInteger>);
 
 impl HeadingSelectorData {
     /// Matches the heading level from the given state against the list of
-    /// heading level AnPlusB selectors. If AnPlusBs intersect with the level packed in
+    /// heading level selectors. If AnPlusBs intersect with the level packed in
     /// ElementState then this will return true.
     pub fn matches_state(&self, state: ElementState) -> bool {
         let bits = state.intersection(ElementState::HEADING_LEVEL_BITS).bits();
@@ -68,7 +69,7 @@ impl HeadingSelectorData {
         }
         let level = (bits >> HEADING_LEVEL_OFFSET) as i32;
         debug_assert!(level > 0 && level < 16);
-        self.0.iter().any(|anb| anb.matches_index(level))
+        self.0.iter().any(|item| *item == level)
     }
 }
 
@@ -89,6 +90,9 @@ macro_rules! pseudo_class_name {
             CustomState(CustomState),
             /// The `:heading` & `:heading()` pseudo-classes.
             Heading(HeadingSelectorData),
+            /// The :active-view-transition-type() pseudo-class:
+            /// https://drafts.csswg.org/css-view-transitions-2/#the-active-view-transition-type-pseudo
+            ActiveViewTransitionType(ThinVec<CustomIdent>),
             /// The non-standard `:-moz-locale-dir` pseudo-class.
             MozLocaleDir(Direction),
         }
@@ -125,6 +129,18 @@ impl ToCss for NonTSPseudoClass {
                         dir.to_css(&mut CssWriter::new(dest))?;
                         return dest.write_char(')')
                     },
+                    NonTSPseudoClass::ActiveViewTransitionType(ref types) => {
+                        dest.write_str(":active-view-transition-type(")?;
+                        let mut first = true;
+                        for ty in types.iter() {
+                            if !first {
+                                dest.write_str(", ")?;
+                            }
+                            first = false;
+                            ty.to_css(&mut CssWriter::new(dest))?;
+                        }
+                        return dest.write_char(')')
+                    },
                     NonTSPseudoClass::Heading(ref levels) => {
                         dest.write_str(":heading")?;
                         if levels.0.is_empty() {
@@ -132,12 +148,12 @@ impl ToCss for NonTSPseudoClass {
                         }
                         dest.write_str("(")?;
                         let mut first = true;
-                        for anb in levels.0.iter() {
+                        for item in levels.0.iter() {
                             if !first {
                                 dest.write_str(", ")?;
                             }
                             first = false;
-                            anb.to_css(dest)?;
+                            ToCss::to_css(item, dest)?;
                         }
                         return dest.write_str(")");
                     },
@@ -191,6 +207,7 @@ impl NonTSPseudoClass {
                     NonTSPseudoClass::CustomState(_) |
                     NonTSPseudoClass::Heading(_) |
                     NonTSPseudoClass::Lang(_) |
+                    NonTSPseudoClass::ActiveViewTransitionType(_) |
                     NonTSPseudoClass::Dir(_) => false,
                 }
             }
@@ -201,11 +218,20 @@ impl NonTSPseudoClass {
     /// Returns whether the pseudo-class is enabled in content sheets.
     #[inline]
     fn is_enabled_in_content(&self) -> bool {
-        if matches!(*self, Self::ActiveViewTransition) {
+        if matches!(
+            *self,
+            Self::ActiveViewTransition | Self::ActiveViewTransitionType(..)
+        ) {
             return static_prefs::pref!("dom.viewTransitions.enabled");
         }
         if matches!(*self, Self::Heading(..)) {
             return static_prefs::pref!("layout.css.heading-selector.enabled");
+        }
+        if matches!(
+            *self,
+            Self::Playing | Self::Paused | Self::Seeking | Self::Buffering | Self::Stalled | Self::Muted | Self::VolumeLocked
+        ) {
+            return static_prefs::pref!("dom.media.pseudo-classes.enabled");
         }
         !self.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME)
     }
@@ -226,6 +252,7 @@ impl NonTSPseudoClass {
                     $(NonTSPseudoClass::$name => flag!($state),)*
                     NonTSPseudoClass::Dir(ref dir) => dir.element_state(),
                     NonTSPseudoClass::Heading(..) => ElementState::HEADING_LEVEL_BITS,
+                    NonTSPseudoClass::ActiveViewTransitionType(..) => ElementState::ACTIVE_VIEW_TRANSITION,
                     NonTSPseudoClass::MozLocaleDir(..) |
                     NonTSPseudoClass::CustomState(..) |
                     NonTSPseudoClass::Lang(..) => ElementState::empty(),
@@ -251,8 +278,8 @@ impl NonTSPseudoClass {
     /// Returns true if the given pseudoclass should trigger style sharing cache
     /// revalidation.
     pub fn needs_cache_revalidation(&self) -> bool {
-        self.state_flag().is_empty() &&
-            !matches!(
+        self.state_flag().is_empty()
+            && !matches!(
                 *self,
                 // :dir() depends on state only, but may have an empty state_flag for invalid
                 // arguments.
@@ -333,14 +360,14 @@ impl<'a> SelectorParser<'a> {
             return true;
         }
 
-        if self.in_user_agent_stylesheet() &&
-            pseudo_class.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS)
+        if self.in_user_agent_stylesheet()
+            && pseudo_class.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS)
         {
             return true;
         }
 
-        if self.chrome_rules_enabled() &&
-            pseudo_class.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_CHROME)
+        if self.chrome_rules_enabled()
+            && pseudo_class.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_CHROME)
         {
             return true;
         }
@@ -508,14 +535,18 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
                 NonTSPseudoClass::CustomState(CustomState(result))
             },
             "heading" => {
-                let result = parser.parse_comma_separated(|input| {
-                    let (a, b) = parse_nth(input)?;
-                    Ok(AnPlusB(a,b))
-                })?;
+                let result = parser.parse_comma_separated(|input| Ok(input.expect_integer()?))?;
                 if result.is_empty() {
                     return Err(parser.new_custom_error(StyleParseErrorKind::UnspecifiedError));
                 }
                 NonTSPseudoClass::Heading(HeadingSelectorData(result.into()))
+            },
+            "active-view-transition-type" => {
+                let result = parser.parse_comma_separated(|input| CustomIdent::parse(input, &[]))?;
+                if result.is_empty() {
+                    return Err(parser.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                }
+                NonTSPseudoClass::ActiveViewTransitionType(result.into())
             },
             "-moz-locale-dir" => {
                 NonTSPseudoClass::MozLocaleDir(Direction::parse(parser)?)

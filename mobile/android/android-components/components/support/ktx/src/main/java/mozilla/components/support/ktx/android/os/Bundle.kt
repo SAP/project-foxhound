@@ -10,7 +10,7 @@ import android.os.Bundle
  * Returns `true` if the two specified bundles are *structurally* equal to one another,
  * i.e. contain the same number of the same elements in the same order.
  */
-@Suppress("ComplexMethod")
+@Suppress("CyclomaticComplexMethod")
 infix fun Bundle.contentEquals(other: Bundle): Boolean {
     if (size() != other.size()) return false
 

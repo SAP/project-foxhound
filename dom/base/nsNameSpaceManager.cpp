@@ -11,17 +11,17 @@
 
 #include "nsNameSpaceManager.h"
 
-#include "nscore.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "nsAtom.h"
 #include "nsCOMArray.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsGkAtoms.h"
-#include "mozilla/dom/Document.h"
 #include "nsString.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/Preferences.h"
+#include "nscore.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

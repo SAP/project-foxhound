@@ -40,7 +40,7 @@ internal object IconResourceComparator : Comparator<IconRequest.Resource> {
     }
 }
 
-@Suppress("MagicNumber", "ComplexMethod")
+@Suppress("MagicNumber")
 private fun IconRequest.Resource.Type.rank(): Int {
     return when (this) {
         // An icon from our "tippy top" list should always be preferred

@@ -9,7 +9,6 @@
 
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 
 #include "mozIStorageBindingParamsArray.h"
 

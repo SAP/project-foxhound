@@ -16,7 +16,7 @@ const {
 
 import actions from "../../../actions/index";
 
-import AccessibleImage from "../../shared/AccessibleImage";
+import DebuggerImage from "../../shared/DebuggerImage";
 const classnames = require("resource://devtools/client/shared/classnames.js");
 const ANONYMOUS_FN_NAME = "<anonymous>";
 
@@ -100,8 +100,9 @@ class ExceptionPopup extends Component {
 
   renderArrowIcon(stacktrace) {
     if (stacktrace.length) {
-      return React.createElement(AccessibleImage, {
-        className: classnames("arrow", {
+      return React.createElement(DebuggerImage, {
+        name: "arrow",
+        className: classnames({
           expanded: this.state.isStacktraceExpanded,
         }),
       });

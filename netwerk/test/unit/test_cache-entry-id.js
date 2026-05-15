@@ -127,6 +127,7 @@ function run_test() {
   do_test_pending();
 
   var targetCacheEntryId = null;
+  var secondCacheEntryId = null;
 
   return (
     Promise.resolve()
@@ -138,10 +139,13 @@ function run_test() {
           responseContent,
           "",
           false,
-          cacheEntryId => cacheEntryId === undefined
+          cacheEntryId => cacheEntryId !== undefined
         )
       )
-      .then(r => writeAltData(r.request))
+      .then(r => {
+        targetCacheEntryId = r.cacheEntryId;
+        writeAltData(r.request);
+      })
 
       // Start testing.
       .then(_ => fetch(altContentType))
@@ -154,7 +158,6 @@ function run_test() {
           cacheEntryId => cacheEntryId !== undefined
         )
       )
-      .then(r => (targetCacheEntryId = r.cacheEntryId))
 
       .then(_ => fetch())
       .then(r =>
@@ -196,9 +199,13 @@ function run_test() {
           responseContent2,
           "",
           false,
-          cacheEntryId => cacheEntryId === undefined
+          cacheEntryId =>
+            cacheEntryId !== undefined && cacheEntryId !== targetCacheEntryId
         )
       )
+      .then(r => {
+        secondCacheEntryId = r.cacheEntryId;
+      })
 
       .then(_ => fetch())
       .then(r =>
@@ -207,8 +214,7 @@ function run_test() {
           responseContent2,
           "",
           true,
-          cacheEntryId =>
-            cacheEntryId !== undefined && cacheEntryId !== targetCacheEntryId
+          cacheEntryId => cacheEntryId === secondCacheEntryId
         )
       )
 

@@ -17,6 +17,9 @@ namespace net {
 
 class AsyncUrlChannelClassifier final {
  public:
+  // Warm up the classifier, i.e. launch the classifier thread and load the DB.
+  static void WarmUp();
+
   static nsresult CheckChannel(nsIChannel* aChannel,
                                std::function<void()>&& aCallback);
 };

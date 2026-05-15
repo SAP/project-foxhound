@@ -10,7 +10,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "nsIProxyInfo.h"

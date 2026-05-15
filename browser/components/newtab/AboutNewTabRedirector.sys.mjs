@@ -56,9 +56,9 @@ const CACHE_WORKER_URL = "resource://newtab/lib/cache.worker.js";
 const IS_PRIVILEGED_PROCESS =
   Services.appinfo.remoteType === E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE;
 
-const PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS =
-  "browser.tabs.remote.separatePrivilegedContentProcess";
 const PREF_ACTIVITY_STREAM_DEBUG = "browser.newtabpage.activity-stream.debug";
+const PREF_NEWTAB_SELF_LOADING =
+  "browser.newtabpage.activity-stream.selfLoading.enabled";
 
 /**
  * The AboutHomeStartupCacheChild is responsible for connecting the
@@ -403,8 +403,8 @@ class BaseAboutNewTabRedirector {
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
-      "privilegedAboutProcessEnabled",
-      PREF_SEPARATE_PRIVILEGEDABOUT_CONTENT_PROCESS,
+      "selfLoadingEnabled",
+      PREF_NEWTAB_SELF_LOADING,
       false
     );
   }
@@ -423,11 +423,8 @@ class BaseAboutNewTabRedirector {
     return [
       "resource://newtab/prerendered/",
       "activity-stream",
-      // Debug version loads dev scripts but noscripts separately loads scripts
-      this.activityStreamDebug && !this.privilegedAboutProcessEnabled
-        ? "-debug"
-        : "",
-      this.privilegedAboutProcessEnabled ? "-noscripts" : "",
+      this.activityStreamDebug && this.selfLoadingEnabled ? "-debug" : "",
+      this.selfLoadingEnabled ? "" : "-noscripts",
       ".html",
     ].join("");
   }
@@ -517,17 +514,12 @@ export class AboutNewTabRedirectorParent extends BaseAboutNewTabRedirector {
   }
 
   /**
-   * Returns a Promise that reoslves when the newtab built-in addon has notified
-   * that it has finished initializing. If this is somehow checked when
-   * BROWSER_NEWTAB_AS_ADDON is not true, then this always resolves.
+   * Returns a Promise that resolves when the newtab built-in addon has notified
+   * that it has finished initializing.
    *
    * @type {Promise<undefined>}
    */
   get promiseBuiltInAddonInitialized() {
-    if (!AppConstants.BROWSER_NEWTAB_AS_ADDON) {
-      return Promise.resolve();
-    }
-
     return this.#addonInitializedPromise;
   }
 
@@ -547,7 +539,7 @@ export class AboutNewTabRedirectorParent extends BaseAboutNewTabRedirector {
     );
     resultChannel.originalURI = uri;
 
-    if (AppConstants.BROWSER_NEWTAB_AS_ADDON && !this.#addonInitialized) {
+    if (!this.#addonInitialized) {
       return this.#getSuspendedChannel(resultChannel);
     }
 

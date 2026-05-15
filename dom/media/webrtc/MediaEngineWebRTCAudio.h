@@ -6,12 +6,12 @@
 #ifndef MediaEngineWebRTCAudio_h
 #define MediaEngineWebRTCAudio_h
 
+#include "AudioDeviceInfo.h"
 #include "AudioPacketizer.h"
 #include "AudioSegment.h"
-#include "AudioDeviceInfo.h"
 #include "DeviceInputTrack.h"
-#include "MediaEngineWebRTC.h"
 #include "MediaEnginePrefs.h"
+#include "MediaEngineWebRTC.h"
 #include "MediaTrackListener.h"
 #include "modules/audio_processing/include/audio_processing.h"
 
@@ -33,6 +33,10 @@ class WebrtcEnvironmentWrapper;
 class MediaEngineWebRTCMicrophoneSource : public MediaEngineSource {
  public:
   explicit MediaEngineWebRTCMicrophoneSource(const MediaDevice* aMediaDevice);
+
+  static already_AddRefed<MediaEngineWebRTCMicrophoneSource> CreateFrom(
+      const MediaEngineWebRTCMicrophoneSource* aSource,
+      const MediaDevice* aMediaDevice);
 
   nsresult Allocate(const dom::MediaTrackConstraints& aConstraints,
                     const MediaEnginePrefs& aPrefs, uint64_t aWindowID,
@@ -131,7 +135,10 @@ class AudioInputProcessing : public AudioDataListener {
            mPlatformProcessingSetParams != CUBEB_INPUT_PROCESSING_PARAM_NONE;
   }
 
+  // Start processing data. Note that ApplySettings must be called prior to
+  // Start().
   void Start(MediaTrackGraph* aGraph);
+  // Stop processing data and reset mAudioProcessing state.
   void Stop(MediaTrackGraph* aGraph);
 
   void DeviceChanged(MediaTrackGraph* aGraph) override;
@@ -179,7 +186,8 @@ class AudioInputProcessing : public AudioDataListener {
                      const MediaEnginePrefs& aSettings);
 
   // The config currently applied to the audio processing module.
-  webrtc::AudioProcessing::Config AppliedConfig(MediaTrackGraph* aGraph) const;
+  const webrtc::AudioProcessing::Config& AppliedConfig(
+      MediaTrackGraph* aGraph) const;
 
   void End();
 
@@ -201,7 +209,7 @@ class AudioInputProcessing : public AudioDataListener {
  private:
   ~AudioInputProcessing() = default;
   webrtc::AudioProcessing::Config ConfigForPrefs(
-      const MediaEnginePrefs& aPrefs) const;
+      MediaTrackGraph* aGraph, const MediaEnginePrefs& aPrefs) const;
   void PassThroughChanged(MediaTrackGraph* aGraph);
   void RequestedInputChannelCountChanged(MediaTrackGraph* aGraph,
                                          CubebUtils::AudioDeviceID aDeviceId);
@@ -226,6 +234,14 @@ class AudioInputProcessing : public AudioDataListener {
   // The current settings from about:config preferences and content-provided
   // constraints.
   MediaEnginePrefs mSettings;
+  // The currently applied audio processing config. Set even if mAudioProcessing
+  // is not. This is needed because ConfigForPrefs(mSettings) is not static --
+  // it relies on mPlatformProcessingSetParams and MTG::OutputForAECIsPrimary(),
+  // which can change between calls to ApplySettingsInternal -- and an
+  // AudioProcessing::Config is available from mAudioProcessing only when that
+  // exists. Initialized as needed -- it is up to the owner to call
+  // ApplySettings prior to Start.
+  webrtc::AudioProcessing::Config mAppliedConfig;
   // When false, RequestedInputProcessingParams() returns no params, resulting
   // in platform processing getting disabled in the platform.
   bool mPlatformProcessingEnabled = false;
@@ -302,9 +318,13 @@ class AudioProcessingTrack : public DeviceInputConsumerTrack {
   void DestroyImpl() override;
   void ProcessInput(GraphTime aFrom, GraphTime aTo, uint32_t aFlags) override;
   uint32_t NumberOfChannels() const override {
-    MOZ_DIAGNOSTIC_ASSERT(
-        mInputProcessing,
-        "Must set mInputProcessing before exposing to content");
+    if (!mInputProcessing) {
+      // There's an async gap between adding the track to the graph
+      // (AudioProcessingTrack::Create) and setting mInputProcessing
+      // (SetInputProcessing on the media manager thread).
+      // Return 0 to indicate the default within this gap.
+      return 0;
+    }
     return mInputProcessing->GetRequestedInputChannelCount();
   }
   // Pass the graph's mixed audio output to mInputProcessing for processing as

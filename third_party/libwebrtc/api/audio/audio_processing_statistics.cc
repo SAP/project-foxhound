@@ -14,8 +14,17 @@ namespace webrtc {
 
 AudioProcessingStats::AudioProcessingStats() = default;
 
+// TODO: https://issues.webrtc.org/42221314 - remove pragma when deprecated
+// field `voice_detected` is removed.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif
 AudioProcessingStats::AudioProcessingStats(const AudioProcessingStats& other) =
     default;
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 AudioProcessingStats::~AudioProcessingStats() = default;
 

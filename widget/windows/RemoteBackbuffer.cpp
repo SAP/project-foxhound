@@ -396,6 +396,12 @@ bool Provider::Initialize(HWND aWindowHandle, DWORD aTargetProcessId) {
 
   mStopServiceThread = false;
 
+  // This matches the stack size used by the SwComposite thread. If we are
+  // compositing in the parent process, it would perform the same operations
+  // done on RemoteBackBuffer thread, so it should be sufficient. This is likely
+  // rounded up to 64kB on Windows, but much smaller than the default.
+  static constexpr PRUint32 kRemoteBackbufferStackSize = 40 * 1024;
+
   // Use a raw NSPR OS-level thread here instead of nsThread because we are
   // performing low-level synchronization across processes using Win32 Events,
   // and nsThread is designed around an incompatible "in-process task queue"
@@ -403,7 +409,7 @@ bool Provider::Initialize(HWND aWindowHandle, DWORD aTargetProcessId) {
   mServiceThread = PR_CreateThread(
       PR_USER_THREAD, [](void* p) { static_cast<Provider*>(p)->ThreadMain(); },
       this, PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD, PR_JOINABLE_THREAD,
-      0 /*default stack size*/);
+      kRemoteBackbufferStackSize);
   return !!mServiceThread;
 }
 

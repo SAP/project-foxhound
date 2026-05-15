@@ -8,6 +8,7 @@
 
 use crate::attr::{AttrIdentifier, AttrValue};
 use crate::computed_value_flags::ComputedValueFlags;
+use crate::derives::*;
 use crate::dom::{OpaqueNode, TElement, TNode};
 use crate::invalidation::element::document_state::InvalidationMatchingData;
 use crate::invalidation::element::element_wrapper::ElementSnapshot;
@@ -17,9 +18,12 @@ use crate::selector_parser::AttrValue as SelectorAttrValue;
 use crate::selector_parser::{PseudoElementCascadeType, SelectorParser};
 use crate::values::{AtomIdent, AtomString};
 use crate::{Atom, CaseSensitivityExt, LocalName, Namespace, Prefix};
-use cssparser::{serialize_identifier, CowRcStr, Parser as CssParser, SourceLocation, ToCss};
+use cssparser::{
+    match_ignore_ascii_case, serialize_identifier, CowRcStr, Parser as CssParser, SourceLocation,
+    ToCss,
+};
 use dom::{DocumentState, ElementState};
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
 use selectors::parser::SelectorParseErrorKind;
 use selectors::visitor::SelectorVisitor;
@@ -50,11 +54,23 @@ pub enum PseudoElement {
     // them.  Also, make sure the UA sheet has the !important rules some of the
     // APPLIES_TO_PLACEHOLDER properties expect!
 
-    Backdrop,
-
     // Non-eager pseudos.
+    Backdrop,
     DetailsSummary,
     DetailsContent,
+    Marker,
+
+    // Implemented pseudos. These pseudo elements are representing the
+    // elements within an UA shadow DOM, and matching the elements with
+    // their appropriate styles.
+    ColorSwatch,
+    Placeholder,
+
+    // Private, Servo-specific implemented pseudos. Only matchable in UA sheet.
+    ServoTextControlInnerContainer,
+    ServoTextControlInnerEditor,
+
+    // Other Servo-specific pseudos.
     ServoAnonymousBox,
     ServoAnonymousTable,
     ServoAnonymousTableCell,
@@ -78,7 +94,12 @@ impl ToCss for PseudoElement {
             Selection => "::selection",
             Backdrop => "::backdrop",
             DetailsSummary => "::-servo-details-summary",
-            DetailsContent => "::-servo-details-content",
+            DetailsContent => "::details-content",
+            Marker => "::marker",
+            ColorSwatch => "::color-swatch",
+            Placeholder => "::placeholder",
+            ServoTextControlInnerContainer => "::-servo-text-control-inner-container",
+            ServoTextControlInnerEditor => "::-servo-text-control-inner-editor",
             ServoAnonymousBox => "::-servo-anonymous-box",
             ServoAnonymousTable => "::-servo-anonymous-table",
             ServoAnonymousTableCell => "::-servo-anonymous-table-cell",
@@ -139,7 +160,7 @@ impl PseudoElement {
     /// Whether this pseudo-element is the ::marker pseudo.
     #[inline]
     pub fn is_marker(&self) -> bool {
-        false
+        *self == PseudoElement::Marker
     }
 
     /// Whether this pseudo-element is the ::selection pseudo.
@@ -172,10 +193,11 @@ impl PseudoElement {
         false
     }
 
-    /// Whether this pseudo-element is the ::-moz-color-swatch pseudo.
+    /// Whether this pseudo-element is representing the color swatch
+    /// inside an `<input>` element.
     #[inline]
     pub fn is_color_swatch(&self) -> bool {
-        false
+        *self == PseudoElement::ColorSwatch
     }
 
     /// Whether this pseudo-element is eagerly-cascaded.
@@ -210,23 +232,31 @@ impl PseudoElement {
 
     /// Returns which kind of cascade type has this pseudo.
     ///
-    /// For more info on cascade types, see docs/components/style.md
+    /// See the documentation for `PseudoElementCascadeType` for how we choose
+    /// which cascade type to use.
     ///
-    /// Note: Keep this in sync with EAGER_PSEUDO_COUNT.
+    /// Note: Keep eager pseudos in sync with `EAGER_PSEUDO_COUNT` and
+    /// `EMPTY_PSEUDO_ARRAY` in `style/data.rs`
     #[inline]
     pub fn cascade_type(&self) -> PseudoElementCascadeType {
         match *self {
             PseudoElement::After | PseudoElement::Before | PseudoElement::Selection => {
                 PseudoElementCascadeType::Eager
             },
-            PseudoElement::Backdrop | PseudoElement::DetailsSummary => PseudoElementCascadeType::Lazy,
-            PseudoElement::DetailsContent |
-            PseudoElement::ServoAnonymousBox |
-            PseudoElement::ServoAnonymousTable |
-            PseudoElement::ServoAnonymousTableCell |
-            PseudoElement::ServoAnonymousTableRow |
-            PseudoElement::ServoTableGrid |
-            PseudoElement::ServoTableWrapper => PseudoElementCascadeType::Precomputed,
+            PseudoElement::Backdrop
+            | PseudoElement::ColorSwatch
+            | PseudoElement::DetailsSummary
+            | PseudoElement::Marker
+            | PseudoElement::Placeholder
+            | PseudoElement::DetailsContent
+            | PseudoElement::ServoTextControlInnerContainer
+            | PseudoElement::ServoTextControlInnerEditor => PseudoElementCascadeType::Lazy,
+            PseudoElement::ServoAnonymousBox
+            | PseudoElement::ServoAnonymousTable
+            | PseudoElement::ServoAnonymousTableCell
+            | PseudoElement::ServoAnonymousTableRow
+            | PseudoElement::ServoTableGrid
+            | PseudoElement::ServoTableWrapper => PseudoElementCascadeType::Precomputed,
         }
     }
 
@@ -298,6 +328,7 @@ pub enum NonTSPseudoClass {
     MozMeterOptimum,
     MozMeterSubOptimum,
     MozMeterSubSubOptimum,
+    Open,
     Optional,
     OutOfRange,
     PlaceholderShown,
@@ -354,6 +385,11 @@ impl ToCss for NonTSPseudoClass {
             Self::AnyLink => ":any-link",
             Self::Autofill => ":autofill",
             Self::Checked => ":checked",
+            Self::CustomState(ref state) => {
+                dest.write_str(":state(")?;
+                state.0.to_css(dest)?;
+                return dest.write_char(')');
+            },
             Self::Default => ":default",
             Self::Defined => ":defined",
             Self::Disabled => ":disabled",
@@ -371,6 +407,7 @@ impl ToCss for NonTSPseudoClass {
             Self::MozMeterOptimum => ":-moz-meter-optimum",
             Self::MozMeterSubOptimum => ":-moz-meter-sub-optimum",
             Self::MozMeterSubSubOptimum => ":-moz-meter-sub-sub-optimum",
+            Self::Open => ":open",
             Self::Optional => ":optional",
             Self::OutOfRange => ":out-of-range",
             Self::PlaceholderShown => ":placeholder-shown",
@@ -384,7 +421,7 @@ impl ToCss for NonTSPseudoClass {
             Self::UserValid => ":user-valid",
             Self::Valid => ":valid",
             Self::Visited => ":visited",
-            Self::Lang(_) | Self::CustomState(_) | Self::Heading(_) => unreachable!(),
+            Self::Lang(_) => unreachable!(),
         })
     }
 }
@@ -415,6 +452,7 @@ impl NonTSPseudoClass {
             Self::MozMeterOptimum => ElementState::OPTIMUM,
             Self::MozMeterSubOptimum => ElementState::SUB_OPTIMUM,
             Self::MozMeterSubSubOptimum => ElementState::SUB_SUB_OPTIMUM,
+            Self::Open => ElementState::OPEN,
             Self::Optional => ElementState::OPTIONAL_,
             Self::OutOfRange => ElementState::OUTOFRANGE,
             Self::PlaceholderShown => ElementState::PLACEHOLDER_SHOWN,
@@ -427,7 +465,9 @@ impl NonTSPseudoClass {
             Self::UserValid => ElementState::USER_VALID,
             Self::Valid => ElementState::VALID,
             Self::Visited => ElementState::VISITED,
-            Self::CustomState(_) | Self::Lang(_) | Self::Heading(_) | Self::ServoNonZeroBorder => ElementState::empty(),
+            Self::CustomState(_) | Self::Lang(_) | Self::ServoNonZeroBorder => {
+                ElementState::empty()
+            },
         }
     }
 
@@ -474,8 +514,8 @@ impl ::selectors::SelectorImpl for SelectorImpl {
     type LocalName = LocalName;
     type NamespacePrefix = Prefix;
     type NamespaceUrl = Namespace;
-    type BorrowedLocalName = markup5ever::LocalName;
-    type BorrowedNamespaceUrl = markup5ever::Namespace;
+    type BorrowedLocalName = web_atoms::LocalName;
+    type BorrowedNamespaceUrl = web_atoms::Namespace;
 }
 
 impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
@@ -499,7 +539,12 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
 
     #[inline]
     fn parse_parent_selector(&self) -> bool {
-        false
+        true
+    }
+
+    #[inline]
+    fn parse_part(&self) -> bool {
+        true
     }
 
     #[inline]
@@ -529,6 +574,8 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
             "indeterminate" => NonTSPseudoClass::Indeterminate,
             "invalid" => NonTSPseudoClass::Invalid,
             "link" => NonTSPseudoClass::Link,
+            "modal" => NonTSPseudoClass::Modal,
+            "open" => NonTSPseudoClass::Open,
             "optional" => NonTSPseudoClass::Optional,
             "out-of-range" => NonTSPseudoClass::OutOfRange,
             "placeholder-shown" => NonTSPseudoClass::PlaceholderShown,
@@ -564,10 +611,13 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
         parser: &mut CssParser<'i, 't>,
         after_part: bool,
     ) -> Result<NonTSPseudoClass, ParseError<'i>> {
-        use self::NonTSPseudoClass::*;
         let pseudo_class = match_ignore_ascii_case! { &name,
             "lang" if !after_part => {
-                Lang(parser.expect_ident_or_string()?.as_ref().into())
+                NonTSPseudoClass::Lang(parser.expect_ident_or_string()?.as_ref().into())
+            },
+            "state" => {
+                let result = AtomIdent::from(parser.expect_ident()?.as_ref());
+                NonTSPseudoClass::CustomState(CustomState(result))
             },
             _ => return Err(parser.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(name.clone()))),
         };
@@ -584,19 +634,34 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
         let pseudo_element = match_ignore_ascii_case! { &name,
             "before" => Before,
             "after" => After,
-            "selection" => Selection,
             "backdrop" => Backdrop,
+            "selection" => Selection,
+            "marker" => Marker,
             "-servo-details-summary" => {
                 if !self.in_user_agent_stylesheet() {
                     return Err(location.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(name.clone())))
                 }
                 DetailsSummary
             },
-            "-servo-details-content" => {
+            "details-content" => DetailsContent,
+            "color-swatch" => ColorSwatch,
+            "placeholder" => {
                 if !self.in_user_agent_stylesheet() {
                     return Err(location.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(name.clone())))
                 }
-                DetailsContent
+                Placeholder
+            },
+            "-servo-text-control-inner-container" => {
+                if !self.in_user_agent_stylesheet() {
+                    return Err(location.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(name.clone())))
+                }
+                ServoTextControlInnerContainer
+            },
+            "-servo-text-control-inner-editor" => {
+                if !self.in_user_agent_stylesheet() {
+                    return Err(location.new_custom_error(SelectorParseErrorKind::UnexpectedIdent(name.clone())))
+                }
+                ServoTextControlInnerEditor
             },
             "-servo-anonymous-box" => {
                 if !self.in_user_agent_stylesheet() {
@@ -786,8 +851,13 @@ impl ElementSnapshot for ServoElementSnapshot {
             .map(|v| v.as_atom())
     }
 
-    fn is_part(&self, _name: &AtomIdent) -> bool {
-        false
+    fn is_part(&self, part_name: &AtomIdent) -> bool {
+        self.get_attr(&ns!(), &local_name!("part"))
+            .is_some_and(|v| {
+                v.as_tokens()
+                    .iter()
+                    .any(|atom| CaseSensitivity::CaseSensitive.eq_atom(atom, part_name))
+            })
     }
 
     fn imported_part(&self, _: &AtomIdent) -> Option<AtomIdent> {
@@ -870,8 +940,8 @@ pub fn extended_filtering(tag: &str, range: &str) -> bool {
         // step 2
         // Note: [Level-4 spec](https://drafts.csswg.org/selectors/#lang-pseudo) check for wild card
         if let (Some(range_subtag), Some(tag_subtag)) = (range_subtags.next(), tag_subtags.next()) {
-            if !(range_subtag.eq_ignore_ascii_case(tag_subtag) ||
-                range_subtag.eq_ignore_ascii_case("*"))
+            if !(range_subtag.eq_ignore_ascii_case(tag_subtag)
+                || range_subtag.eq_ignore_ascii_case("*"))
             {
                 return false;
             }

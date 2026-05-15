@@ -8,9 +8,9 @@
 #define mozilla_dom_EventTarget_h_
 
 #include "mozilla/dom/Nullable.h"
+#include "nsAtom.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "nsAtom.h"
 
 class nsIDOMEventListener;
 class nsIGlobalObject;
@@ -18,6 +18,7 @@ class nsINode;
 class nsPIDOMWindowInner;
 class nsPIDOMWindowOuter;
 class nsPIWindowRoot;
+class nsScreen;
 
 namespace mozilla {
 
@@ -36,6 +37,7 @@ class EventListener;
 class EventListenerOptionsOrBoolean;
 class EventHandlerNonNull;
 class GlobalObject;
+class Navigation;
 class WindowProxyHolder;
 enum class CallerType : uint32_t;
 enum class EventCallbackDebuggerNotificationType : uint8_t;
@@ -136,6 +138,18 @@ class EventTarget : public nsISupports, public nsWrapperCache {
   inline const nsINode* GetAsNode() const;
   inline nsINode* AsNode();
   inline const nsINode* AsNode() const;
+
+  virtual bool IsNavigation() const { return false; }
+  inline Navigation* GetAsNavigation();
+  inline const Navigation* GetAsNavigation() const;
+  inline Navigation* AsNavigation();
+  inline const Navigation* AsNavigation() const;
+
+  virtual bool IsScreen() const { return false; }
+  inline nsScreen* GetAsScreen();
+  inline const nsScreen* GetAsScreen() const;
+  inline nsScreen* AsScreen();
+  inline const nsScreen* AsScreen() const;
 
   virtual bool IsInnerWindow() const { return false; }
   virtual bool IsOuterWindow() const { return false; }

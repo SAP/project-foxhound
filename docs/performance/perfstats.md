@@ -21,8 +21,7 @@ PerfStats::RecordMeasurementCount(PerfStats::Metric::MyMetric, incrementCount)
 [Here's an example of a patch where a new PerfStat was added and used.](https://hg.mozilla.org/mozilla-central/rev/3e85a73d1fa5c816fdaead66ecee603b38f9b725)
 
 ## Enabling collection
-To enable collection, use `ChromeUtils.SetPerfStatsCollectionMask(MetricMask mask)`, where `mask=0` disables all metrics and `mask=0xFFFFFFFF` enables all of them.
-`MetricMask` is a bitmask based on `Metric`, i.e. `Metric::LayerBuilding (2)` is synonymous to `1 << 2` in `MetricMask`.
+To enable collection, use `ChromeUtils.setPerfStatsFeatures(array<string> metrics)`, where passing an empty array disables all metrics. Pass an array of metric names corresponding to the `Metric` enum values, e.g. `["LayerBuilding", "DisplayListBuilding"]`.  To enable all metrics, you may use `ChromeUtils.enableAllPerfStatsFeatures()`.
 
 ## Accessing results
 Results can be accessed with `ChromeUtils.CollectPerfStats()`.

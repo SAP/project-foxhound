@@ -14,7 +14,8 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -1076,15 +1077,13 @@ var gEditItemOverlay = {
       await this._rebuildTagsSelectorList();
 
       // This is a no-op if we've added the listener.
-      tagsSelector.addEventListener("mousedown", this);
-      tagsSelector.addEventListener("keypress", this);
+      tagsSelector.addEventListener("command", this);
     } else {
       document.l10n.setAttributes(expander, "bookmark-overlay-tags-expander2");
       tagsSelectorRow.hidden = true;
 
       // This is a no-op if we've removed the listener.
-      tagsSelector.removeEventListener("mousedown", this);
-      tagsSelector.removeEventListener("keypress", this);
+      tagsSelector.removeEventListener("command", this);
     }
   },
 
@@ -1135,23 +1134,6 @@ var gEditItemOverlay = {
   // EventListener
   handleEvent(event) {
     switch (event.type) {
-      case "mousedown":
-        if (event.button == 0) {
-          // Make sure the event is triggered on an item and not the empty space.
-          let item = event.target.closest("richlistbox,richlistitem");
-          if (item.localName == "richlistitem") {
-            this.toggleItemCheckbox(item);
-          }
-        }
-        break;
-      case "keypress":
-        if (event.key == " ") {
-          let item = event.target.currentItem;
-          if (item) {
-            this.toggleItemCheckbox(item);
-          }
-        }
-        break;
       case "unload":
         this.uninitPanel(false);
         break;
@@ -1178,11 +1160,14 @@ var gEditItemOverlay = {
         }
         break;
       case "command":
-        if (event.currentTarget.id === "editBMPanel_folderMenuList") {
-          this.onFolderMenuListCommand(event).catch(console.error);
-          return;
+        switch (event.currentTarget.id) {
+          case "editBMPanel_folderMenuList":
+            this.onFolderMenuListCommand(event).catch(console.error);
+            return;
+          case "editBMPanel_tagsSelector":
+            this.toggleTagsSelectorItem(event.target);
+            return;
         }
-
         switch (event.target.id) {
           case "editBMPanel_foldersExpander":
             this.toggleFolderTreeVisibility();
@@ -1211,24 +1196,16 @@ var gEditItemOverlay = {
     }
   },
 
-  toggleItemCheckbox(item) {
+  toggleTagsSelectorItem(item) {
     // Update the tags field when items are checked/unchecked in the listbox
     let tags = this._getTagsArrayFromTagsInputField();
-
     let curTagIndex = tags.indexOf(item.label);
-    let tagsSelector = this._element("tagsSelector");
-    tagsSelector.selectedItem = item;
-
-    if (!item.hasAttribute("checked")) {
-      item.setAttribute("checked", "true");
+    if (item.toggleAttribute("checked")) {
       if (curTagIndex == -1) {
         tags.push(item.label);
       }
-    } else {
-      item.removeAttribute("checked");
-      if (curTagIndex != -1) {
-        tags.splice(curTagIndex, 1);
-      }
+    } else if (curTagIndex != -1) {
+      tags.splice(curTagIndex, 1);
     }
     this._element("tagsField").value = tags.join(", ");
     this._updateTags();

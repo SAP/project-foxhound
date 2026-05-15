@@ -8,7 +8,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   GeolocationUtils:
-    "resource:///modules/urlbar/private/GeolocationUtils.sys.mjs",
+    "moz-src:///browser/components/urlbar/private/GeolocationUtils.sys.mjs",
 });
 
 add_setup(async () => {

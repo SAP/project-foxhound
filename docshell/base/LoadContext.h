@@ -8,7 +8,6 @@
 #define LoadContext_h
 
 #include "SerializedLoadContext.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIInterfaceRequestor.h"

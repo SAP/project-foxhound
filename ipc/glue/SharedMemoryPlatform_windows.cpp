@@ -176,14 +176,11 @@ bool Platform::CreateFreezable(FreezableHandle& aHandle, size_t aSize) {
 }
 
 PlatformHandle Platform::CloneHandle(const PlatformHandle& aHandle) {
-  HANDLE h = INVALID_HANDLE_VALUE;
-  if (::DuplicateHandle(::GetCurrentProcess(), aHandle.get(),
-                        ::GetCurrentProcess(), &h, 0, false,
-                        DUPLICATE_SAME_ACCESS)) {
-    return PlatformHandle(h);
+  auto rv = DuplicateFileHandle(aHandle);
+  if (!rv) {
+    NS_WARNING("DuplicateHandle Failed!");
   }
-  NS_WARNING("DuplicateHandle Failed!");
-  return nullptr;
+  return rv;
 }
 
 bool Platform::Freeze(FreezableHandle& aHandle) {

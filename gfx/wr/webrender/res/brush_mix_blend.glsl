@@ -5,7 +5,7 @@
 #define VECS_PER_SPECIFIC_BRUSH 3
 #define WR_FEATURE_TEXTURE_2D
 
-#include shared,prim_shared,brush
+#include shared,prim_shared,brush,image_source
 
 // UV and bounds for the source image
 varying highp vec2 v_src_uv;

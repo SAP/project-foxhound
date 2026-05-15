@@ -55,20 +55,34 @@ impl<'a> MinidumpAnalyzer<'a> {
         self
     }
 
+    /// Return the effective extras file to read.
+    pub fn get_extras_file(&self) -> Cow<'a, Path> {
+        self.extras
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned(extra_path_from_minidump(&self.minidump)))
+    }
+
     /// Analyze the thread(s) and put stacks in the associated .extra file.
     pub fn analyze(self) -> anyhow::Result<()> {
-        let extra_file = self
-            .extras
-            .map(Cow::Borrowed)
-            .unwrap_or_else(|| Cow::Owned(extra_path_from_minidump(&self.minidump)));
+        let extra_file = self.get_extras_file();
         let extra_file = extra_file.as_ref();
 
         log::info!("minidump file path: {}", self.minidump.display());
         log::info!("extra file path: {}", extra_file.display());
 
-        let minidump = Minidump::read_path(&self.minidump).context("while reading minidump")?;
-
         let mut extra_json = parse_extra_file(extra_file)?;
+
+        self.analyze_json(&mut extra_json)?;
+
+        std::fs::write(extra_file, extra_json.to_string())
+            .context("while writing modified extra file")?;
+
+        Ok(())
+    }
+
+    /// Analyze the thread(s) and alter the given extra JSON data.
+    pub fn analyze_json(self, extra_json: &mut JsonValue) -> anyhow::Result<()> {
+        let minidump = Minidump::read_path(&self.minidump).context("while reading minidump")?;
 
         let proc = processor::Processor::new(&minidump)?;
 
@@ -133,9 +147,6 @@ impl<'a> MinidumpAnalyzer<'a> {
                 .unwrap()
                 .into();
         }
-
-        std::fs::write(extra_file, extra_json.to_string())
-            .context("while writing modified extra file")?;
 
         Ok(())
     }
@@ -415,10 +426,32 @@ mod processor {
                 thread.context(&self.system_info, self.misc_info.as_ref())
             }
             .map(|c| c.into_owned());
-            let stack_memory = thread.stack_memory(&self.memory_list);
+
+            let mut stack_memory = thread.stack_memory(&self.memory_list);
+
             let Some(mut call_stack) = context.map(CallStack::with_context) else {
                 return CallStack::with_info(thread.raw.thread_id, CallStackInfo::MissingContext);
             };
+
+            // Always choose the memory region that is referenced by the context,
+            // as the exception context may refer to a different memory region than
+            // the thread context, which in turn would fail to stack walk.
+            if let Some(stack_ptr) = call_stack
+                .frames
+                .first()
+                .map(|frame| frame.context.get_stack_pointer())
+            {
+                let contains_stack_ptr = stack_memory
+                    .as_ref()
+                    .and_then(|memory| memory.get_memory_at_address::<u64>(stack_ptr))
+                    .is_some();
+                if !contains_stack_ptr {
+                    stack_memory = self
+                        .memory_list
+                        .memory_at_address(stack_ptr)
+                        .or(stack_memory);
+                }
+            }
 
             walk_stack(
                 0,
@@ -445,6 +478,16 @@ impl SymbolProvider for BoxedSymbolProvider {
         module: &(dyn Module + Sync),
         frame: &mut (dyn minidump_unwind::FrameSymbolizer + Send),
     ) -> Result<(), minidump_unwind::FillSymbolError> {
+        // Initialize the function name to a dummy value to allow stack scanning to work when the
+        // DebugInfoSymbolProvider is used. It will be overwritten by `fill_symbol` if necessary,
+        // however either way we don't care about symbols at all here. This works around
+        // `minidump-unwind`'s behavior of only doing stack scanning if fill_symbol (1) fails or
+        // (2) succeeds and sets a function name. By always setting a function name, we can ensure
+        // that unwinding will always attempt to scan the stack if necessary.
+        //
+        // TODO: Remove this workaround once minidump-unwind is updated to a version which includes
+        // https://github.com/rust-minidump/rust-minidump/pull/1117.
+        frame.set_function("<unknown>", 0, 0);
         self.0.fill_symbol(module, frame).await
     }
 

@@ -7,7 +7,6 @@ package org.mozilla.fenix.components.appstate.recommendations
 import androidx.annotation.VisibleForTesting
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import mozilla.components.service.pocket.ext.recordNewImpression
 import org.mozilla.fenix.components.appstate.AppAction.ContentRecommendationsAction
@@ -25,7 +24,7 @@ internal object ContentRecommendationsReducer {
     /**
      * Reduces the given [ContentRecommendationsAction] into a new [AppState].
      */
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     fun reduce(state: AppState, action: ContentRecommendationsAction): AppState {
         return when (action) {
             is ContentRecommendationsAction.ContentRecommendationsFetched -> {
@@ -105,24 +104,9 @@ internal object ContentRecommendationsReducer {
                     pocketStoriesCategories = emptyList(),
                     pocketStoriesCategoriesSelections = emptyList(),
                     pocketStories = emptyList(),
-                    pocketSponsoredStories = emptyList(),
                     contentRecommendations = emptyList(),
                     sponsoredContents = emptyList(),
                 )
-            }
-
-            is ContentRecommendationsAction.PocketSponsoredStoriesChange -> {
-                val updatedStoriesState = state.copyWithRecommendationsState {
-                    it.copy(
-                        pocketSponsoredStories = action.sponsoredStories,
-                    )
-                }
-
-                updatedStoriesState.copyWithRecommendationsState {
-                    it.copy(
-                        pocketStories = updatedStoriesState.getStories(),
-                    )
-                }
             }
 
             is ContentRecommendationsAction.SponsoredContentsChange -> {
@@ -134,9 +118,7 @@ internal object ContentRecommendationsReducer {
 
                 updatedSponsoredContentsState.copyWithRecommendationsState {
                     it.copy(
-                        pocketStories = updatedSponsoredContentsState.getStories(
-                            useSponsoredStoriesState = false,
-                        ),
+                        pocketStories = updatedSponsoredContentsState.getStories(),
                     )
                 }
             }
@@ -176,16 +158,6 @@ internal object ContentRecommendationsReducer {
                     }
                 }
 
-                var updatedSponsoredStories = state.recommendationState.pocketSponsoredStories
-                stories.filterIsInstance<PocketSponsoredStory>().forEach { shownStory ->
-                    updatedSponsoredStories = updatedSponsoredStories.map { story ->
-                        when (story.id == shownStory.id) {
-                            true -> story.recordNewImpression()
-                            false -> story
-                        }
-                    }
-                }
-
                 val sponsoredContentShown = stories.filterIsInstance<SponsoredContent>()
                 val updatedSponsoredContents = state.recommendationState.sponsoredContents.map { spoc ->
                     if (sponsoredContentShown.contains(spoc)) {
@@ -198,7 +170,6 @@ internal object ContentRecommendationsReducer {
                 state.copyWithRecommendationsState {
                     it.copy(
                         pocketStoriesCategories = updatedCategories,
-                        pocketSponsoredStories = updatedSponsoredStories,
                         contentRecommendations = updatedRecommendations,
                         sponsoredContents = updatedSponsoredContents,
                     )

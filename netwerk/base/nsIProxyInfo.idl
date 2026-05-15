@@ -30,6 +30,8 @@ interface nsIProxyInfo : nsISupports
    *   "https"    HTTP proxying over TLS connection to proxy
    *   "socks"    SOCKS v5 proxy
    *   "socks4"   SOCKS v4 proxy
+   *   "masque"   Similar to an HTTPS proxy, but supports
+  *               "connect-udp" and/or "connect-tcp" with masqueTemplate
    *   "direct"   no proxy
    *   "unknown"  unknown proxy (see nsIProtocolProxyService::resolve)
    *
@@ -92,6 +94,11 @@ interface nsIProxyInfo : nsISupports
   readonly attribute ACString connectionIsolationKey;
 
   /**
+   * Used when the type is "masque"
+   */
+  attribute AUTF8String masqueTemplate;
+
+  /**
    * The following two constants can be used to compare against
    * network.proxy.socks_version
    */
@@ -110,4 +117,10 @@ interface nsIProxyInfo : nsISupports
    * do any form of DNS lookup ourselves.
    */
   const unsigned short TRANSPARENT_PROXY_RESOLVES_HOST = 1 << 0;
+
+  /**
+   * When set, force all requests to use an HTTP CONNECT tunnel
+   * through the proxy.
+   */
+  const unsigned short ALWAYS_TUNNEL_VIA_PROXY = 1 << 1;
 };

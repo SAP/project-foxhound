@@ -57,8 +57,12 @@
         'dummy_audio_file_devices_no_protobuf':
         'dummy_audio_file_devices_no_protobuf_x64',
         'rtti_no_sctp': 'rtti_no_sctp_x64',
+        'disable_trace_events': 'disable_trace_events_x64',
+        'perfetto': 'perfetto_x64',
         'openssl': 'openssl_x64',
         'libstdcpp': 'libstdcpp_x64',
+        'no_lld': 'no_lld_x64',
+        'no_psnr': 'no_psnr_x64',
       },
       'Linux Asan': 'asan_lsan_clang_release_bot_x64',
       'Linux MSan': 'msan_clang_release_bot_x64',
@@ -98,7 +102,7 @@
       'Win64 Release (Clang)': 'win_clang_release_bot_x64',
 
       # iOS
-      'iOS Debug (simulator)': 'ios_debug_bot_x64',
+      'iOS Debug (simulator)': 'ios_debug_bot_arm64',
       'iOS64 Debug': 'ios_debug_bot_arm64',
       'iOS64 Release': 'ios_release_bot_arm64',
     },
@@ -124,8 +128,7 @@
       'Perf Android32 (R Pixel5)': 'release_bot_x64',
       'Perf Android64 (R Pixel5)': 'release_bot_x64',
       'Perf Fuchsia': 'release_bot_x64_fuchsia',
-      'Perf Linux Bionic': 'release_bot_x64',
-      'Perf Linux Trusty': 'release_bot_x64',
+      'Perf Linux': 'release_bot_x64',
       'Perf Mac 11': 'release_bot_x64',
       'Perf Mac M1 Arm64 12': 'release_bot_x64',
       'Perf Win 10': 'release_bot_x64',
@@ -163,7 +166,7 @@
       # iOS
       'ios_compile_arm64_dbg': 'ios_debug_bot_arm64',
       'ios_compile_arm64_rel': 'ios_release_bot_arm64',
-      'ios_dbg_simulator': 'ios_debug_bot_x64',
+      'ios_dbg_simulator': 'ios_debug_bot_arm64',
 
       # Include What You Use
       'iwyu_verifier': 'release_bot_x64',
@@ -189,6 +192,8 @@
         'perfetto': 'perfetto_x64',
         'openssl': 'openssl_x64',
         'libstdcpp': 'libstdcpp_x64',
+        'no_lld': 'no_lld_x64',
+        'no_psnr': 'no_psnr_x64',
       },
       'linux_msan': 'msan_clang_release_bot_x64',
       'linux_rel': 'release_bot_x64',
@@ -342,14 +347,6 @@
       'ios_simulator',
       'debug_bot',
       'arm64',
-      'no_ios_code_signing',
-      'xctest',
-    ],
-    'ios_debug_bot_x64': [
-      'ios',
-      'ios_simulator',
-      'debug_bot',
-      'x64',
       'xctest',
     ],
     'ios_internal_debug_bot_arm64': [
@@ -387,7 +384,6 @@
     ],
     'libfuzzer_asan_release_bot_x64': [
       'asan',
-      'chromium_base_dependency',
       'h265',
       'libfuzzer',
       'openh264',
@@ -407,6 +403,8 @@
     'msan_clang_release_bot_x64':
     ['msan', 'clang', 'openh264', 'pure_release_bot', 'x64', 'h265'],
     'no_h264_debug_bot_x86': ['debug_bot', 'x86'],
+    'no_lld_x64': ['debug_bot', 'x64', 'no_lld'],
+    'no_psnr_x64': ['debug_bot', 'x64', 'no_psnr'],
     'openssl_x64': ['debug_bot', 'x64', 'no_build_ssl'],
     'perfetto_android_arm': [
       'android',
@@ -490,7 +488,7 @@
   # mb should use. See //tools/mb/docs/user_guide.md for more information.
   'mixins': {
     'android': {
-      'gn_args': 'target_os="android"',
+      'gn_args': 'target_os="android" android_static_analysis="on"',
     },
     'arm': {
       'gn_args': 'target_cpu="arm"',
@@ -500,10 +498,6 @@
     },
     'asan': {
       'gn_args': 'is_asan=true',
-    },
-    # TODO(b/42223878): Remove this code when the dependency on base is gone.
-    'chromium_base_dependency': {
-      'mixins': ['enable_chromium_prelude', 'enable_rust']
     },
     # is_clang=true by default, this is only to guard from upstream changes.
     'clang': {
@@ -522,13 +516,17 @@
       'gn_args': 'is_debug=true',
     },
     'debug_bot': {
-      'mixins': ['debug', 'reclient', 'strict_field_trials'],
+      'mixins': [
+        'debug',
+        'remoteexec',
+        'strict_field_trials',
+      ],
     },
     'debug_static_bot': {
       'mixins': [
         'debug',
         'minimal_symbols',
-        'reclient',
+        'remoteexec',
         'strict_field_trials',
       ],
     },
@@ -537,12 +535,6 @@
     },
     'dummy_audio_file_devices': {
       'gn_args': 'rtc_use_dummy_audio_file_devices=true',
-    },
-    'enable_chromium_prelude': {
-      'gn_args': 'enable_chromium_prelude=true',
-    },
-    'enable_rust': {
-      'gn_args': 'enable_rust=true enable_rust_cxx=true',
     },
     'fuchsia': {
       'gn_args': 'target_os="fuchsia"'
@@ -566,8 +558,8 @@
       'gn_args': 'target_environment="simulator"'
     },
     'libfuzzer': {
-      # TODO(b/42223878): use_fuzztest_wrapper adds a dependency to //base.
-      'gn_args': 'use_libfuzzer=true use_fuzztest_wrapper=true',
+      # use_fuzztest_wrapper=false by default, this is only for visibility.
+      'gn_args': 'use_libfuzzer=true use_fuzztest_wrapper=false',
     },
     'lsan': {
       'gn_args': 'is_lsan=true',
@@ -587,8 +579,14 @@
     'no_ios_code_signing': {
       'gn_args': 'ios_enable_code_signing=false',
     },
+    'no_lld': {
+      'gn_args': 'use_lld=false',
+    },
     'no_protobuf': {
       'gn_args': 'rtc_enable_protobuf=false',
+    },
+    'no_psnr': {
+      'gn_args': 'rtc_video_psnr=false',
     },
     'no_sctp': {
       'gn_args': 'rtc_enable_sctp=false',
@@ -610,10 +608,7 @@
     # 100% release build without DCHECKs while 'release_bot' is a partial
     # release configs since `dcheck_always_on` is set to true.
     'pure_release_bot': {
-      'mixins': ['release', 'reclient', 'dcheck_off'],
-    },
-    'reclient': {
-      'gn_args': 'use_remoteexec=true',
+      'mixins': ['release', 'remoteexec', 'dcheck_off'],
     },
     'release': {
       'gn_args': 'is_debug=false',
@@ -624,6 +619,9 @@
         'dcheck_always_on',
         'strict_field_trials',
       ],
+    },
+    'remoteexec': {
+      'gn_args': 'use_remoteexec=true use_reclient=false use_siso=true',
     },
     'rtc_objc_test_prefix': {
       'gn_args': 'rtc_objc_prefix="RTC_TESTING"',

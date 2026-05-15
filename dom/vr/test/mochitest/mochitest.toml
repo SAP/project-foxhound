@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["true"] # Dependencies for re-enabling these are tracked by meta bug 1555185
+skip-if = [
+  "true", # Dependencies for re-enabling these are tracked by meta bug 1555185
+]
 support-files = [
   "VRSimulationDriver.js",
   "requestPresent.js",

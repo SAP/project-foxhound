@@ -3,16 +3,35 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"
           package="org.mozilla.geckoview">
-    <application>
+    <application
+            android:zygotePreloadName="org.mozilla.gecko.process.ZygotePreload"
+            tools:targetApi="q">
     {% for id in range(0, MOZ_ANDROID_CONTENT_SERVICE_COUNT | int) %}
         <service
                 android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab{{ id }}"
                 android:enabled="true"
                 android:exported="false"
-                android:isolatedProcess="{{ 'true' if MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS else 'false' }}"
+                android:isolatedProcess="false"
                 android:process=":tab{{ id }}">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$isolatedTab{{ id }}"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="true"
+                android:process=":isolatedTab{{ id }}">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$isolatedTabWithZygote{{ id }}"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="true"
+                {% if (id == 0) %}
+                    android:useAppZygote="true"
+                {% endif %}
+                android:process=":isolatedTabWithZygote{{ id }}">
         </service>
     {% endfor %}
     </application>

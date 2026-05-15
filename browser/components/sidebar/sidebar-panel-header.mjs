@@ -27,7 +27,7 @@ export class SidebarPanelHeader extends MozLitElement {
   render() {
     return html`
       <link rel="stylesheet" href="chrome://browser/content/sidebar/sidebar-panel-header.css"></link>
-      <div class="sidebar-panel-header">
+      <div class="sidebar-panel-heading">
         <h4 class="text-truncated-ellipsis">${this.heading}</h4>
         <moz-button
           iconsrc="chrome://global/skin/icons/close.svg"
@@ -40,6 +40,7 @@ export class SidebarPanelHeader extends MozLitElement {
         >
         </moz-button>
       </div>
+      <slot></slot>
     `;
   }
 }

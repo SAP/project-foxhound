@@ -51,7 +51,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="8dp"
-            android:background="?borderPrimary"
+            android:background="?attr/colorOutlineVariant"
             app:layout_constraintBottom_toTopOf="@id/appsShareLayout" />
 
         <View
@@ -59,7 +59,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="8dp"
-            android:background="?borderPrimary"
+            android:background="?attr/colorOutlineVariant"
             app:layout_constraintTop_toBottomOf="@id/appsShareLayout" />
 
         <androidx.compose.ui.platform.ComposeView

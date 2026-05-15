@@ -103,7 +103,6 @@ class EverythingFailsByDefaultTrustDomain : public TrustDomain {
 
   Result CheckRevocation(EndEntityOrCA, const CertID&, Time, Duration,
                          /*optional*/ const Input*,
-                         /*optional*/ const Input*,
                          /*optional*/ const Input*) override {
     ADD_FAILURE();
     return NotReached("CheckRevocation should not be called",
@@ -168,12 +167,6 @@ class EverythingFailsByDefaultTrustDomain : public TrustDomain {
                       Result::FATAL_ERROR_LIBRARY_FAILURE);
   }
 
-  Result NetscapeStepUpMatchesServerAuth(Time, bool&) override {
-    ADD_FAILURE();
-    return NotReached("NetscapeStepUpMatchesServerAuth should not be called",
-                      Result::FATAL_ERROR_LIBRARY_FAILURE);
-  }
-
   virtual void NoteAuxiliaryExtension(AuxiliaryExtension, Input) override {
     ADD_FAILURE();
   }
@@ -218,11 +211,6 @@ class DefaultCryptoTrustDomain : public EverythingFailsByDefaultTrustDomain {
     return Success;
   }
 
-  Result NetscapeStepUpMatchesServerAuth(Time, /*out*/ bool& matches) override {
-    matches = true;
-    return Success;
-  }
-
   void NoteAuxiliaryExtension(AuxiliaryExtension, Input) override {}
 };
 
@@ -251,6 +239,20 @@ const uint8_t tlv_id_kp_codeSigning[] = {0x06, 0x08, 0x2b, 0x06, 0x01,
 
 // python DottedOIDToCode.py --tlv id-ce-extKeyUsage 2.5.29.37
 const uint8_t tlv_id_ce_extKeyUsage[] = {0x06, 0x03, 0x55, 0x1d, 0x25};
+
+// python DottedOIDToCode.py --tlv id-kp-documentSigning 1.3.6.1.5.5.7.3.36
+static const uint8_t tlv_id_kp_documentSigning[] = {
+    0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x24};
+
+// python DottedOIDToCode.py --tlv
+// id-kp-documentSigningAdobe 1.2.840.113583.1.1.5
+static const uint8_t tlv_id_kp_documentSigningAdobe[] = {
+    0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x2f, 0x01, 0x01, 0x05};
+
+// python DottedOIDToCode.py --tlv
+// id-kp-documentSigningMicrosoft 1.3.6.1.4.1.311.10.3.12
+static const uint8_t tlv_id_kp_documentSigningMicrosoft[] = {
+    0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x0a, 0x03, 0x0c};
 
 inline ByteString CreateEKUExtension(ByteString ekuOIDs) {
   return TLV(der::SEQUENCE,

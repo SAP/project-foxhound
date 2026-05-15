@@ -36,9 +36,8 @@ nsMacFinderProgress::Init(
                                                    path.BeginReading())
                                         length:path.Length()]];
   NSDictionary* userInfo = @{
-    @"NSProgressFileOperationKindKey" :
-        @"NSProgressFileOperationKindDownloading",
-    @"NSProgressFileURLKey" : pathUrl
+    NSProgressFileOperationKindKey : NSProgressFileOperationKindDownloading,
+    NSProgressFileURLKey : pathUrl
   };
 
   mProgress = [[NSProgress alloc] initWithParent:nil userInfo:userInfo];

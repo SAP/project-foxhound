@@ -234,66 +234,71 @@ Maybe<std::pair<int32_t, int32_t>> AccessibleWrap::NavigateText(
   return Some(std::make_pair(startOffset, endOffset));
 }
 
-uint32_t AccessibleWrap::GetFlags(role aRole, uint64_t aState,
-                                  uint8_t aActionCount) {
+uint32_t AccessibleWrap::GetFlags(Accessible* aAccessible) {
   uint32_t flags = 0;
-  if (aState & states::CHECKABLE) {
+  uint64_t state = aAccessible->State();
+  role role = aAccessible->Role();
+  if (aAccessible->IsScrollable()) {
+    flags |= java::SessionAccessibility::FLAG_SCROLLABLE;
+  }
+
+  if (state & states::CHECKABLE) {
     flags |= java::SessionAccessibility::FLAG_CHECKABLE;
   }
 
-  if (aState & states::CHECKED) {
+  if (state & states::CHECKED) {
     flags |= java::SessionAccessibility::FLAG_CHECKED;
   }
 
-  if (aState & states::INVALID) {
+  if (state & states::INVALID) {
     flags |= java::SessionAccessibility::FLAG_CONTENT_INVALID;
   }
 
-  if (aState & states::EDITABLE) {
+  if (state & states::EDITABLE) {
     flags |= java::SessionAccessibility::FLAG_EDITABLE;
   }
 
-  if (aActionCount && aRole != roles::TEXT_LEAF) {
+  if (aAccessible->ActionCount() && role != roles::TEXT_LEAF) {
     flags |= java::SessionAccessibility::FLAG_CLICKABLE;
   }
 
-  if (aState & states::ENABLED) {
+  if (state & states::ENABLED) {
     flags |= java::SessionAccessibility::FLAG_ENABLED;
   }
 
-  if (aState & states::FOCUSABLE) {
+  if (state & states::FOCUSABLE) {
     flags |= java::SessionAccessibility::FLAG_FOCUSABLE;
   }
 
-  if (aState & states::FOCUSED) {
+  if (state & states::FOCUSED) {
     flags |= java::SessionAccessibility::FLAG_FOCUSED;
   }
 
-  if (aState & states::MULTI_LINE) {
+  if (state & states::MULTI_LINE) {
     flags |= java::SessionAccessibility::FLAG_MULTI_LINE;
   }
 
-  if (aState & states::SELECTABLE) {
+  if (state & states::SELECTABLE) {
     flags |= java::SessionAccessibility::FLAG_SELECTABLE;
   }
 
-  if (aState & states::SELECTED) {
+  if (state & states::SELECTED) {
     flags |= java::SessionAccessibility::FLAG_SELECTED;
   }
 
-  if (aState & states::EXPANDABLE) {
+  if (state & states::EXPANDABLE) {
     flags |= java::SessionAccessibility::FLAG_EXPANDABLE;
   }
 
-  if (aState & states::EXPANDED) {
+  if (state & states::EXPANDED) {
     flags |= java::SessionAccessibility::FLAG_EXPANDED;
   }
 
-  if ((aState & (states::INVISIBLE | states::OFFSCREEN)) == 0) {
+  if ((state & (states::INVISIBLE | states::OFFSCREEN)) == 0) {
     flags |= java::SessionAccessibility::FLAG_VISIBLE_TO_USER;
   }
 
-  if (aRole == roles::PASSWORD_TEXT) {
+  if (role == roles::PASSWORD_TEXT) {
     flags |= java::SessionAccessibility::FLAG_PASSWORD;
   }
 
@@ -362,7 +367,7 @@ int32_t AccessibleWrap::GetAndroidClass(role aRole) {
     return androidClass;
 
   switch (aRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
     default:
       return java::SessionAccessibility::CLASSNAME_VIEW;
   }

@@ -31,6 +31,37 @@ class CookieServiceParent : public PCookieServiceParent {
   friend class PCookieServiceParent;
 
  public:
+  // A RAII class to set and unset the cookie processing flag.
+  class MOZ_STACK_CLASS CookieProcessingGuard final {
+   public:
+    explicit CookieProcessingGuard(CookieServiceParent* aActor = nullptr) {
+      if (aActor) {
+        Initialize(aActor);
+      }
+    }
+
+    void Initialize(CookieServiceParent* aActor) {
+      MOZ_ASSERT(!mActor && aActor);
+
+      mActor = aActor;
+
+      if (mActor) {
+        MOZ_ASSERT(!mActor->mProcessingCookie);
+        mActor->mProcessingCookie = true;
+      }
+    }
+
+    ~CookieProcessingGuard() {
+      if (mActor) {
+        MOZ_ASSERT(mActor->mProcessingCookie);
+        mActor->mProcessingCookie = false;
+      }
+    }
+
+   private:
+    CookieServiceParent* mActor = nullptr;
+  };
+
   explicit CookieServiceParent(dom::ContentParent* aContentParent);
   virtual ~CookieServiceParent() = default;
 

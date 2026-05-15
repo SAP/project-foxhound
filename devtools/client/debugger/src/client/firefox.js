@@ -137,7 +137,7 @@ async function onToggleContentScripts() {
       targetCommand.TYPES.CONTENT_SCRIPT,
     ]);
     for (const targetFront of existingTargets) {
-      actions.removeTarget(targetFront);
+      await actions.removeTarget(targetFront);
     }
     targetCommand.unwatchTargets({
       types: [targetCommand.TYPES.CONTENT_SCRIPT],
@@ -217,8 +217,8 @@ async function onTargetAvailable({ targetFront }) {
   await actions.addTarget(targetFront);
 }
 
-function onTargetDestroyed({ targetFront }) {
-  actions.removeTarget(targetFront);
+async function onTargetDestroyed({ targetFront }) {
+  await actions.removeTarget(targetFront);
 }
 
 async function onSourceAvailable(sources) {

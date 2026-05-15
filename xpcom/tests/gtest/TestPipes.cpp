@@ -1027,15 +1027,12 @@ TEST(Pipes, Interfaces)
   nsCOMPtr<nsITellableStream> readerType2 = do_QueryInterface(reader);
   ASSERT_TRUE(readerType2);
 
-  nsCOMPtr<nsISearchableInputStream> readerType3 = do_QueryInterface(reader);
+  nsCOMPtr<nsICloneableInputStream> readerType3 = do_QueryInterface(reader);
   ASSERT_TRUE(readerType3);
 
-  nsCOMPtr<nsICloneableInputStream> readerType4 = do_QueryInterface(reader);
+  nsCOMPtr<nsIClassInfo> readerType4 = do_QueryInterface(reader);
   ASSERT_TRUE(readerType4);
 
-  nsCOMPtr<nsIClassInfo> readerType5 = do_QueryInterface(reader);
+  nsCOMPtr<nsIBufferedInputStream> readerType5 = do_QueryInterface(reader);
   ASSERT_TRUE(readerType5);
-
-  nsCOMPtr<nsIBufferedInputStream> readerType6 = do_QueryInterface(reader);
-  ASSERT_TRUE(readerType6);
 }

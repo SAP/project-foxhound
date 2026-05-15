@@ -23,7 +23,7 @@ class CacheAPIEncryptionPBM(QuotaTestCase):
     """
 
     def setUp(self):
-        super(CacheAPIEncryptionPBM, self).setUp()
+        super().setUp()
 
         self.testHTML = "dom/cache/basicCacheAPI_PBM.html"
         self.cacheName = "CachePBMTest"
@@ -45,7 +45,7 @@ class CacheAPIEncryptionPBM(QuotaTestCase):
         self.dbCheckpointThresholdBytes = 512 * 1024
 
     def tearDown(self):
-        super(CacheAPIEncryptionPBM, self).setUp()
+        super().tearDown()
 
         self.marionette.set_pref(CACHEAPI_PBM_PREF, self.defaultCacheAPIPBMPref)
         self.marionette.set_pref(QM_TESTING_PREF, self.defaultQMPrefValue)

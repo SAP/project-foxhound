@@ -8,7 +8,6 @@
 #include "mac_utils.h"
 #include "nsXPCOM.h"
 #include "mozilla/MacStringHelpers.h"
-#include "mozilla/Unused.h"
 
 void GetObjCExceptionInfo(void* inException, nsACString& outString) {
   NSException* e = (NSException*)inException;

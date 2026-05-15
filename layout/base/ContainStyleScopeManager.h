@@ -7,8 +7,6 @@
 #ifndef ContainStyleScopeManager_h_
 #define ContainStyleScopeManager_h_
 
-#include <memory>
-
 #include "nsClassHashtable.h"
 #include "nsCounterManager.h"
 #include "nsQuoteList.h"

@@ -46,6 +46,16 @@
                 newChild.value = ""
                 form.append(newChild);
             });
+
+            // Now remove a single field and add a replacement to the end of the form.
+            const email = document.getElementById("email-node-addition-after-form-change");
+            const parent = email.parentNode;
+            parent.removeChild(email);
+
+            const newEmail = document.createElement("input");
+            newEmail.id = "email-node-addition-after-form-change";
+            newEmail.value = "timbl@w3.org";
+            parent.appendChild(newEmail);
         });
     </script>
 </html>

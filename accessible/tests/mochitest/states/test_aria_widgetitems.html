@@ -79,10 +79,11 @@
       testStates("aria_treeitem2", STATE_SELECTED);
       testStates("aria_treeitem3", 0, 0, STATE_SELECTED);
 
-      // selected state when widget item is focused
+      // Test the selected state when a widget item is DOM focused if
+      // aria-selected is explicitly set on at least one of the items.
       gQueue = new eventQueue(EVENT_FOCUS);
 
-      gQueue.push(new focusARIAItem("aria_tab1", true));
+      gQueue.push(new focusARIAItem("aria_tab1", false));
       gQueue.push(new focusARIAItem("aria_tab2", true));
       gQueue.push(new focusARIAItem("aria_tab3", false));
       gQueue.push(new focusARIAItem("aria_option1", false));
@@ -92,9 +93,11 @@
       gQueue.push(new focusARIAItem("aria_treeitem2", true));
       gQueue.push(new focusARIAItem("aria_treeitem3", false));
 
-      // selected state when widget item is focused (by aria-activedescendant)
-      gQueue.push(new focusActiveDescendantItem("aria_tab5", "aria_tablist2", true));
-      gQueue.push(new focusActiveDescendantItem("aria_tab6", "aria_tablist2", true));
+      // Test the selected state when a widget item is focused via
+      // aria-activedescendant if aria-selected is explicitly set on at least
+      // one of the items.
+      gQueue.push(new focusActiveDescendantItem("aria_tab5", "aria_tablist2", false));
+      gQueue.push(new focusActiveDescendantItem("aria_tab6", "aria_tablist2", false));
       gQueue.push(new focusActiveDescendantItem("aria_tab4", "aria_tablist2", false));
 
       gQueue.invoke(); // SimpleTest.finish() will be called in the end

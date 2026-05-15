@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env commonjs */
-
 // I trivial module that depends on an equally trivial module
 var J = require("./moduleJ-dependency.js");
 

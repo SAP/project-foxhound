@@ -127,7 +127,7 @@ def taskcluster_url(logger, commits):
                 return tc_index_url + artifact_path
 
     logger.info(
-        "Can't find a commit-specific manifest so just using the most " "recent one"
+        "Can't find a commit-specific manifest so just using the most recent one"
     )
 
     return default

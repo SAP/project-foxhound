@@ -410,6 +410,8 @@ ${ArchiveUtils.INLINE_MIME_END_MARKER}
       oldBuffer = buffer;
     }
 
+    syncReadFile.close();
+
     if (!contentType) {
       throw new BackupError(
         "Failed to find embedded data in archive",

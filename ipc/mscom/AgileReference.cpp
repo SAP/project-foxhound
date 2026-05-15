@@ -6,7 +6,6 @@
 
 #include "mozilla/mscom/AgileReference.h"
 
-#include <utility>
 #include "mozilla/Assertions.h"
 #include "mozilla/mscom/Utils.h"
 

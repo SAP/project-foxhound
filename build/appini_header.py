@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 """Parses a given application.ini file and outputs the corresponding
-   StaticXREAppData structure as a C++ header file"""
+StaticXREAppData structure as a C++ header file"""
 
 import configparser
 import sys
@@ -60,6 +60,11 @@ def main(output, file):
     if "AppUpdate:url" not in appdata:
         appdata["AppUpdate:url"] = ""
 
+    if sourcestamp := appdata.get("App:sourcestamp"):
+        appdata["App:sourcerevision"] = f'"{sourcestamp}"'
+    else:
+        appdata["App:sourcerevision"] = "NULL"
+
     output.write(
         """#include "mozilla/XREAppData.h"
              static const mozilla::StaticXREAppData sAppData = {
@@ -77,6 +82,7 @@ def main(output, file):
                  %(App:profile)s,
                  NULL, // UAName
                  %(App:sourceurl)s,
+                 %(App:sourcerevision)s,
                  "%(AppUpdate:url)s"
              };"""
         % appdata

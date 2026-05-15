@@ -11,16 +11,59 @@
 
 [package]
 edition = "2021"
+rust-version = "1.83.0"
 name = "bhttp"
-version = "0.3.1"
+version = "0.7.2"
 authors = ["Martin Thomson <mt@lowentropy.net>"]
-description = "Binary HTTP messages (draft-ietf-httpbis-binary-message)"
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "Binary HTTP messages (RFC 9292)"
+homepage = "https://github.com/martinthomson/ohttp"
 readme = "README.md"
+keywords = [
+    "ohttp",
+    "http",
+    "bhttp",
+    "ietf",
+]
+categories = [
+    "network-programming",
+    "web-programming",
+    "security",
+]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/martinthomson/ohttp"
 
+[features]
+default = []
+http = ["dep:url"]
+stream = [
+    "dep:futures",
+    "dep:pin-project",
+]
+
+[lib]
+name = "bhttp"
+path = "src/lib.rs"
+
+[[test]]
+name = "test"
+path = "tests/test.rs"
+
+[dependencies.futures]
+version = "0.3"
+optional = true
+
+[dependencies.pin-project]
+version = "1.1"
+optional = true
+
 [dependencies.thiserror]
-version = "1"
+version = "2"
 
 [dependencies.url]
 version = "2"
@@ -28,18 +71,3 @@ optional = true
 
 [dev-dependencies.hex]
 version = "0.4"
-
-[features]
-bhttp = [
-    "read-bhttp",
-    "write-bhttp",
-]
-default = ["bhttp"]
-http = [
-    "read-http",
-    "write-http",
-]
-read-bhttp = []
-read-http = ["url"]
-write-bhttp = []
-write-http = []

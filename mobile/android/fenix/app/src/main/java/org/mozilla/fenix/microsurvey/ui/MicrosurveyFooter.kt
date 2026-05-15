@@ -4,22 +4,21 @@
 
 package org.mozilla.fenix.microsurvey.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.compose.base.button.FilledButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
@@ -45,7 +44,7 @@ fun MicrosurveyFooter(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
     ) {
         if (!isSubmitted) {
-            PrimaryButton(
+            FilledButton(
                 text = stringResource(id = R.string.micro_survey_submit_button_label),
                 modifier = Modifier.fillMaxWidth(),
                 enabled = isContentAnswerSelected,
@@ -70,37 +69,36 @@ fun MicrosurveyFooter(
     }
 }
 
-@PreviewScreenSizes
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
-private fun ReviewQualityCheckFooterPreview() {
+private fun MicrosurveyFooterPreview() {
     FirefoxTheme {
-        Column(
-            modifier = Modifier
-                .background(FirefoxTheme.colors.layer1)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            MicrosurveyFooter(
-                isSubmitted = false,
-                isContentAnswerSelected = false,
-                onPrivacyPolicyLinkClick = {},
-                onButtonClick = {},
-            )
+        Surface {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                MicrosurveyFooter(
+                    isSubmitted = false,
+                    isContentAnswerSelected = false,
+                    onPrivacyPolicyLinkClick = {},
+                    onButtonClick = {},
+                )
 
-            MicrosurveyFooter(
-                isSubmitted = false,
-                isContentAnswerSelected = true,
-                onPrivacyPolicyLinkClick = {},
-                onButtonClick = {},
-            )
+                MicrosurveyFooter(
+                    isSubmitted = false,
+                    isContentAnswerSelected = true,
+                    onPrivacyPolicyLinkClick = {},
+                    onButtonClick = {},
+                )
 
-            MicrosurveyFooter(
-                isSubmitted = true,
-                isContentAnswerSelected = true,
-                onPrivacyPolicyLinkClick = {},
-                onButtonClick = {},
-            )
+                MicrosurveyFooter(
+                    isSubmitted = true,
+                    isContentAnswerSelected = true,
+                    onPrivacyPolicyLinkClick = {},
+                    onButtonClick = {},
+                )
+            }
         }
     }
 }

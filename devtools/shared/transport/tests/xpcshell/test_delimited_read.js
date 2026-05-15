@@ -21,7 +21,7 @@ function run_test() {
   run_next_test();
 }
 
-/** * Tests ***/
+/*** Tests ***/
 
 function test_delimited_read(input, expected) {
   input = new StringInputStream(input);

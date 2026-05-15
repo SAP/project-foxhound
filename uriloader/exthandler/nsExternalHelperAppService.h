@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsExternalHelperAppService_h__
-#define nsExternalHelperAppService_h__
+#ifndef nsExternalHelperAppService_h_
+#define nsExternalHelperAppService_h_
 
 #include "mozilla/Logging.h"
 #include "prtime.h"
@@ -31,7 +31,6 @@
 #include "nsIObserver.h"
 #include "nsCOMArray.h"
 #include "nsWeakReference.h"
-#include "mozilla/Attributes.h"
 
 class nsExternalAppHandler;
 class nsIMIMEInfo;
@@ -128,6 +127,14 @@ class nsExternalHelperAppService : public nsIExternalHelperAppService,
 
   // Internal method. Only called directly from tests.
   static nsresult EscapeURI(nsIURI* aURI, nsIURI** aResult);
+
+  /**
+   * Check whether `aBrowsingContext` is sandboxed such that external
+   * protocol navigations performed in that context would be blocked.
+   */
+  static bool ExternalProtocolIsBlockedBySandbox(
+      mozilla::dom::BrowsingContext* aBrowsingContext,
+      const bool aHasValidUserGestureActivation);
 
   /**
    * Logging Module. Usage: set MOZ_LOG=HelperAppService:level, where level
@@ -565,4 +572,4 @@ class nsExternalAppHandler final : public nsIStreamListener,
   RefPtr<nsExternalHelperAppService> mExtProtSvc;
 };
 
-#endif  // nsExternalHelperAppService_h__
+#endif  // nsExternalHelperAppService_h_

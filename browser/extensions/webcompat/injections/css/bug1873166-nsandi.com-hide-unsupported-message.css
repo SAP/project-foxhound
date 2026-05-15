@@ -13,6 +13,7 @@
  * yet the message remains. This intervention hides that message.
  */
 .browser-warning-fade,
+#unsupported-browser,
 #unsupported_browser {
   display: none !important;
 }

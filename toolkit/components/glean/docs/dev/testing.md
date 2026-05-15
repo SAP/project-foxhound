@@ -145,8 +145,8 @@ By necessity these can only be integration tests against the compiled crate.
 
 **Note:** When adding a new test file, don't forget to add it to
 `toolkit/components/glean/tests/gtest/moz.build` and use the
-`FOG` prefix in your test names
-(e.g. `TEST(FOG, YourTestName) { ... }`).
+`FOGFixture` fixture
+(e.g. `TEST_F(FOGFixture, YourTestName) { ... }`).
 
 To run FOG's Rust `gtest` suite use `mach gtest FOG.*`
 
@@ -182,7 +182,8 @@ If you add a new file, remember to add it to the
 [`moz.build`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/gtest/moz.build))
 or the test runner won't be able to find it.
 
-All tests should start with `FOG` so that all tests are run with
+All tests should use the `FOGFixture` fixture where possible.
+If not possible, prefix your test name with `FOG` so that all tests are run with
 `./mach gtest FOG*`.
 
 ## JS (Treeherder symbol `X(Xn)` for some number `n`)
@@ -194,8 +195,8 @@ FOG's `xpcshell` tests are in
 [`xpcshell/`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/xpcshell).
 
 You can either add a test case to an existing file or add a new file.
-If you add a new file, remember to add it to the
-[`xpcshell.ini`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/xpcshell/xpcshell.ini)
+If you add a new file, remember to add it to
+{searchfox}`toolkit/components/glean/tests/xpcshell/xpcshell.toml`
 or the test runner will not be able to find it.
 
 To run FOG's JS tests, run:
@@ -209,9 +210,9 @@ To test that and have access to privileged JS (i.e. `Glean` and `FOG` APIs),
 we use browser-chrome-flavoured mochitests you can find in
 [`browser/`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/browser).
 
-If you need to add a new test file, remember to add it to the
-[`browser.ini`](https://hg.mozilla.org/mozilla-central/file/tip/toolkit/components/glean/tests/browser/browser.ini)
-manifest, or the test runner will not be able to find it.
+If you need to add a new test file, remember to add it to
+{searchfox}`toolkit/components/glean/tests/browser/browser.toml`
+or the test runner will not be able to find it.
 
 To run FOG's browser chrome tests, run:
 `./mach test toolkit/components/glean/tests/browser`
@@ -237,7 +238,7 @@ For example, to echo to stdout:
 
 **Note:** Running the `tt(c)` suite in this way ignored skip directives in the manifest.
 This means that you might run tests that are not expected to succeed on your platform.
-Check `toolkit/components/telemetry/tests/marionette/tests/client/manifest.ini` for details.
+Check {searchfox}`toolkit/components/telemetry/tests/marionette/tests/client/manifest.toml` for details.
 
 ## Artifact-build-only failures -- testing JOG
 

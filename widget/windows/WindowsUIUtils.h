@@ -3,14 +3,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_widget_WindowsUIUtils_h__
-#define mozilla_widget_WindowsUIUtils_h__
+#ifndef mozilla_widget_WindowsUIUtils_h_
+#define mozilla_widget_WindowsUIUtils_h_
 
 #include "nsIWindowsUIUtils.h"
 #include "nsString.h"
 #include "nsColor.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
+
+// Avoid including windef.h to get this, which improves
+// build times.
+typedef struct HWND__* HWND;
 
 using SharePromise =
     mozilla::MozPromise<bool, nsresult, /* IsExclusive */ true>;
@@ -55,9 +59,11 @@ class WindowsUIUtils final : public nsIWindowsUIUtils {
   static bool ComputeOverlayScrollbars();
   static double ComputeTextScaleFactor();
   static bool ComputeTransparencyEffects();
+  static void AssociateWithWinAppSDK(HWND aWnd);
+  static void SetIsTitlebarCollapsed(HWND aWnd, bool aIsCollapsed);
 
  protected:
   ~WindowsUIUtils();
 };
 
-#endif  // mozilla_widget_WindowsUIUtils_h__
+#endif  // mozilla_widget_WindowsUIUtils_h_

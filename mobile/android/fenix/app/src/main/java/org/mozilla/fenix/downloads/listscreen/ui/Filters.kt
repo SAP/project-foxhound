@@ -4,14 +4,13 @@
 
 package org.mozilla.fenix.downloads.listscreen.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,7 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import org.mozilla.fenix.compose.SelectableChip
+import mozilla.components.compose.base.SelectableChip
 import org.mozilla.fenix.compose.ext.isItemPartiallyVisible
 import org.mozilla.fenix.downloads.listscreen.store.FileItem
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -55,7 +54,7 @@ internal fun Filters(
         ) { contentTypeParam ->
             SelectableChip(
                 text = stringResource(id = contentTypeParam.stringRes),
-                isSelected = selectedContentTypeFilter == contentTypeParam,
+                selected = selectedContentTypeFilter == contentTypeParam,
                 modifier = Modifier.height(36.dp),
                 onClick = { onContentTypeSelected(contentTypeParam) },
             )
@@ -78,9 +77,7 @@ private fun FiltersPreview() {
     FirefoxTheme {
         var selectedContentTypeFilter by remember { mutableStateOf(FileItem.ContentTypeFilter.All) }
 
-        Box(
-            modifier = Modifier.background(FirefoxTheme.colors.layer1),
-        ) {
+        Surface {
             Filters(
                 selectedContentTypeFilter = selectedContentTypeFilter,
                 contentTypeFilters = FileItem.ContentTypeFilter.entries,

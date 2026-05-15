@@ -4,7 +4,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gProxyService",
   "@mozilla.org/network/protocol-proxy-service;1",
-  "nsIProtocolProxyService"
+  Ci.nsIProtocolProxyService
 );
 
 const TRANSPARENT_PROXY_RESOLVES_HOST =

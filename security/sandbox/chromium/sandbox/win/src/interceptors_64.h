@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,10 +40,15 @@ SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtUnmapViewOfSection64(HANDLE process,
 SANDBOX_INTERCEPT NTSTATUS WINAPI
 TargetNtImpersonateAnonymousToken64(HANDLE thread);
 
+// Interception of NtOpenSection on the child process.
+SANDBOX_INTERCEPT NTSTATUS WINAPI
+TargetNtOpenSection64(PHANDLE section_handle, ACCESS_MASK desired_access,
+                      POBJECT_ATTRIBUTES object_attributes);
+
 // Interception of NtSetInformationThread on the child process.
 SANDBOX_INTERCEPT NTSTATUS WINAPI
 TargetNtSetInformationThread64(HANDLE thread,
-                               NT_THREAD_INFORMATION_CLASS thread_info_class,
+                               THREADINFOCLASS thread_info_class,
                                PVOID thread_information,
                                ULONG thread_information_bytes);
 
@@ -150,32 +155,6 @@ TargetNtOpenProcessTokenEx64(HANDLE process,
                              ULONG handle_attributes,
                              PHANDLE token);
 
-// Interception of CreateProcessW in kernel32.dll.
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetCreateProcessW64(LPCWSTR application_name,
-                       LPWSTR command_line,
-                       LPSECURITY_ATTRIBUTES process_attributes,
-                       LPSECURITY_ATTRIBUTES thread_attributes,
-                       BOOL inherit_handles,
-                       DWORD flags,
-                       LPVOID environment,
-                       LPCWSTR current_directory,
-                       LPSTARTUPINFOW startup_info,
-                       LPPROCESS_INFORMATION process_information);
-
-// Interception of CreateProcessA in kernel32.dll.
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetCreateProcessA64(LPCSTR application_name,
-                       LPSTR command_line,
-                       LPSECURITY_ATTRIBUTES process_attributes,
-                       LPSECURITY_ATTRIBUTES thread_attributes,
-                       BOOL inherit_handles,
-                       DWORD flags,
-                       LPVOID environment,
-                       LPCSTR current_directory,
-                       LPSTARTUPINFOA startup_info,
-                       LPPROCESS_INFORMATION process_information);
-
 // Interception of CreateThread in kernel32.dll.
 SANDBOX_INTERCEPT HANDLE WINAPI
 TargetCreateThread64(LPSECURITY_ATTRIBUTES thread_attributes,
@@ -189,43 +168,20 @@ TargetCreateThread64(LPSECURITY_ATTRIBUTES thread_attributes,
 // Interceptors handled by the registry dispatcher.
 
 // Interception of NtCreateKey on the child process.
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtCreateKey64(PHANDLE key,
-                    ACCESS_MASK desired_access,
-                    POBJECT_ATTRIBUTES object_attributes,
-                    ULONG title_index,
-                    PUNICODE_STRING class_name,
-                    ULONG create_options,
-                    PULONG disposition);
+SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtCreateKey64(
+    PHANDLE key, ACCESS_MASK desired_access,
+    POBJECT_ATTRIBUTES object_attributes, ULONG title_index,
+    PUNICODE_STRING class_name, ULONG create_options, PULONG disposition);
 
 // Interception of NtOpenKey on the child process.
 SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtOpenKey64(PHANDLE key,
-                  ACCESS_MASK desired_access,
+TargetNtOpenKey64(PHANDLE key, ACCESS_MASK desired_access,
                   POBJECT_ATTRIBUTES object_attributes);
 
 // Interception of NtOpenKeyEx on the child process.
 SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtOpenKeyEx64(PHANDLE key,
-                    ACCESS_MASK desired_access,
-                    POBJECT_ATTRIBUTES object_attributes,
-                    ULONG open_options);
-
-// -----------------------------------------------------------------------
-// Interceptors handled by the sync dispatcher.
-
-// Interception of NtCreateEvent/NtOpenEvent on the child process.
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtCreateEvent64(PHANDLE event_handle,
-                      ACCESS_MASK desired_access,
-                      POBJECT_ATTRIBUTES object_attributes,
-                      EVENT_TYPE event_type,
-                      BOOLEAN initial_state);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtOpenEvent64(PHANDLE event_handle,
-                    ACCESS_MASK desired_access,
-                    POBJECT_ATTRIBUTES object_attributes);
+TargetNtOpenKeyEx64(PHANDLE key, ACCESS_MASK desired_access,
+                    POBJECT_ATTRIBUTES object_attributes, ULONG open_options);
 
 // -----------------------------------------------------------------------
 // Interceptors handled by the process mitigations win32k lockdown code.
@@ -242,80 +198,6 @@ SANDBOX_INTERCEPT HWND WINAPI TargetGetForegroundWindow64();
 
 // Interceptor for the RegisterClassW function.
 SANDBOX_INTERCEPT ATOM WINAPI TargetRegisterClassW64(const WNDCLASS* wnd_class);
-
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetEnumDisplayMonitors64(HDC hdc,
-                            LPCRECT lprcClip,
-                            MONITORENUMPROC lpfnEnum,
-                            LPARAM dwData);
-
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetEnumDisplayDevicesA64(LPCSTR lpDevice,
-                            DWORD iDevNum,
-                            PDISPLAY_DEVICEA lpDisplayDevice,
-                            DWORD dwFlags);
-
-SANDBOX_INTERCEPT BOOL WINAPI TargetGetMonitorInfoA64(HMONITOR hMonitor,
-                                                      LPMONITORINFO lpmi);
-
-SANDBOX_INTERCEPT BOOL WINAPI TargetGetMonitorInfoW64(HMONITOR hMonitor,
-                                                      LPMONITORINFO lpmi);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetSuggestedOPMProtectedOutputArraySize64(
-    PUNICODE_STRING device_name,
-    DWORD* suggested_output_array_size);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI TargetCreateOPMProtectedOutputs64(
-    PUNICODE_STRING device_name,
-    DXGKMDT_OPM_VIDEO_OUTPUT_SEMANTICS vos,
-    DWORD protected_output_array_size,
-    DWORD* num_output_handles,
-    OPM_PROTECTED_OUTPUT_HANDLE* protected_output_array);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificate64(PUNICODE_STRING device_name,
-                       DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                       BYTE* certificate,
-                       ULONG certificate_length);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificateSize64(PUNICODE_STRING device_name,
-                           DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                           ULONG* certificate_length);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificateByHandle64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                               DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                               BYTE* certificate,
-                               ULONG certificate_length);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificateSizeByHandle64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                                   DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                                   ULONG* certificate_length);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetDestroyOPMProtectedOutput64(OPM_PROTECTED_OUTPUT_HANDLE protected_output);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetOPMInformation64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                          const DXGKMDT_OPM_GET_INFO_PARAMETERS* parameters,
-                          DXGKMDT_OPM_REQUESTED_INFORMATION* requested_info);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetOPMRandomNumber64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                           DXGKMDT_OPM_RANDOM_NUMBER* random_number);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI TargetSetOPMSigningKeyAndSequenceNumbers64(
-    OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-    const DXGKMDT_OPM_ENCRYPTED_PARAMETERS* parameters);
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI TargetConfigureOPMProtectedOutput64(
-    OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-    const DXGKMDT_OPM_CONFIGURE_PARAMETERS* parameters,
-    ULONG additional_parameters_size,
-    const BYTE* additional_parameters);
 
 // -----------------------------------------------------------------------
 // Interceptors handled by the signed process code.

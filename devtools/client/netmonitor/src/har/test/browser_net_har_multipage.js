@@ -64,11 +64,9 @@ async function testHARWithNavigation({ enableMultipage, filter }) {
     [MULTIPAGE_IFRAME_URL],
     async function (url) {
       const iframe = content.document.createElement("iframe");
-      const onLoad = new Promise(resolve =>
-        iframe.addEventListener("load", resolve, { once: true })
-      );
-      content.content.document.body.appendChild(iframe);
+      const onLoad = ContentTaskUtils.waitForEvent(iframe, "load");
       iframe.setAttribute("src", url);
+      content.content.document.body.appendChild(iframe);
       await onLoad;
     }
   );

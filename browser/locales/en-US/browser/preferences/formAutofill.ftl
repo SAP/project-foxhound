@@ -50,65 +50,65 @@ autofill-add-address-title = Add address
 # The dialog title for editing addresses in browser preferences.
 autofill-edit-address-title = Edit address
 
+## Labels for address fields (e.g. for a mailing address) used as part of the form
+## autofill feature. For more information on the address structure (e.g. levels),
+## see also https://developers.google.com/maps/documentation/javascript/geocoding
+
 autofill-address-name = Name
 autofill-address-organization = Organization
 autofill-address-street-address = Street Address
 
 autofill-address-street = Street Address
 
-## address-level-3 (Sublocality) names
-
-# Used in IR, MX
+# Used in Iran (IR), Mexico (MX) as sublocality (civil entity below a locality, e.g. within a city).
 autofill-address-neighborhood = Neighborhood
-# Used in MY
+# Used in Malaysia (MY) as sublocality (civil entity below a locality, e.g. within a city).
 autofill-address-village-township = Village or Township
 autofill-address-island = Island
-# Used in IE
+# Used in Ireland (IE) as sublocality (civil entity below a locality, e.g. within a city).
 autofill-address-townland = Townland
 
-## address-level-2 names
-
 autofill-address-city = City
-# Used in HK, SD, SY, TR as Address Level-2 and used in KR as Sublocality.
+# Used in Hong Kong (HK), Sudan (SD), Syria (SY), Türkiye (TR) as as secondary address information (2 levels below the country level).
+# Used in Korea as sublocality (civil entity below a locality, e.g. within a city).
 autofill-address-district = District
-# Used in GB, NO, SE
+# Used in United Kingdom (GB), Norway (NO), Sweden (SE) as as secondary address information (2 levels below the country level).
 autofill-address-post-town = Post town
-# Used in AU as Address Level-2 and used in ZZ as Sublocality.
+# Used in Australia (AU) as as secondary address information (below the country level).
+# Used for international addresses as sublocality (civil entity below a locality, e.g. within a city).
 autofill-address-suburb = Suburb
-
-## address-level-1 names
 
 autofill-address-province = Province
 autofill-address-state = State
 autofill-address-county = County
-# Used in BB, JM
+# Used in Barbados (BB), Jamaica (JM) as primary address information (1 level below the country level).
 autofill-address-parish = Parish
-# Used in JP
+# Used in Japan (JP) as primary address information (1 level below the country level).
 autofill-address-prefecture = Prefecture
-# Used in HK
+# Used in Honk Kong (HK) as primary address information (1 level below the country level).
 autofill-address-area = Area
-# Used in KR
+# Used in Korea (KO) as primary address information (1 level below the country level).
 autofill-address-do-si = Do/Si
-# Used in NI, CO
+# Used in Nicaragua (NI), Colombia (CO) as primary address information (1 level below the country level).
 autofill-address-department = Department
-# Used in AE
+# Used in United Arab Emirates (AE) as primary address information (1 level below the country level).
 autofill-address-emirate = Emirate
-# Used in RU and UA
+# Used in Russia (RU), Ukraine (UA) as primary address information (1 level below the country level).
 autofill-address-oblast = Oblast
 
-## Postal code name types
-
-# Used in IN
+# Postal code field used in India (IN).
 autofill-address-pin = Pin
 autofill-address-postal-code = Postal Code
+# Postal code field.
 autofill-address-zip = ZIP Code
-# Used in IE
+# Postal code field used in Ireland (IE).
 autofill-address-eircode = Eircode
-
-##
 
 autofill-address-country = Country or Region
 autofill-address-country-only = Country
+
+##
+
 autofill-address-tel = Phone
 autofill-address-email = Email
 
@@ -129,3 +129,10 @@ autofill-card-expires-month = Exp. Month
 autofill-card-expires-year = Exp. Year
 autofill-card-billing-address = Billing Address
 autofill-card-network = Card Type
+
+# This string is never actually displayed, but is used to make it easier to
+# find the payment methods section of about:settings via the search input. It's
+# simply a comma separated list of additional search keywords for the payment
+# methods section. Localizers should choose terms that make sense for payment
+# methods in their region.
+autofill-card-search-term-credit-cards = credit cards, credit, cards, debit cards, debit, wallet, checkout

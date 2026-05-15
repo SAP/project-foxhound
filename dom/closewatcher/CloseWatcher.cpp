@@ -6,13 +6,13 @@
 
 #include "CloseWatcher.h"
 
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/CloseWatcherBinding.h"
 #include "mozilla/dom/CloseWatcherManager.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventBinding.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/WindowContext.h"
-#include "mozilla/RefPtr.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {

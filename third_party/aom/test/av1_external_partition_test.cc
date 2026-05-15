@@ -31,11 +31,11 @@ namespace {
 constexpr int kFrameNum = 8;
 constexpr int kVersion = 1;
 
-typedef struct TestData {
+struct TestData {
   int version = kVersion;
-} TestData;
+};
 
-typedef struct ToyModel {
+struct ToyModel {
   TestData *data;
   aom_ext_part_config_t config;
   aom_ext_part_funcs_t funcs;
@@ -44,7 +44,7 @@ typedef struct ToyModel {
   int frame_width;
   int frame_height;
   BLOCK_SIZE block_size;
-} ToyModel;
+};
 
 // Note:
 // if CONFIG_PARTITION_SEARCH_ORDER = 0, we test APIs designed for the baseline
@@ -114,7 +114,7 @@ aom_ext_part_status_t ext_part_get_partition_decision_whole_tree(
     ext_part_decision->partition_decision[4] = PARTITION_NONE;
     // The rest blocks inside the top-left 32x32 block.
     for (int i = 5; i < num_blocks - num_4x4_blocks; ++i) {
-      ext_part_decision->partition_decision[0] = PARTITION_SPLIT;
+      ext_part_decision->partition_decision[i] = PARTITION_SPLIT;
     }
     for (int i = num_blocks - num_4x4_blocks; i < num_blocks; ++i) {
       ext_part_decision->partition_decision[i] = PARTITION_NONE;
@@ -138,7 +138,7 @@ aom_ext_part_status_t ext_part_get_partition_decision_whole_tree(
     ext_part_decision->partition_decision[4] = PARTITION_NONE;
     // The rest blocks.
     for (int i = 5; i < num_blocks - num_4x4_blocks; ++i) {
-      ext_part_decision->partition_decision[0] = PARTITION_SPLIT;
+      ext_part_decision->partition_decision[i] = PARTITION_SPLIT;
     }
     for (int i = num_blocks - num_4x4_blocks; i < num_blocks; ++i) {
       ext_part_decision->partition_decision[i] = PARTITION_NONE;
@@ -162,7 +162,7 @@ aom_ext_part_status_t ext_part_get_partition_decision_whole_tree(
     ext_part_decision->partition_decision[4] = PARTITION_NONE;
     // The rest blocks.
     for (int i = 5; i < num_blocks - num_4x4_blocks; ++i) {
-      ext_part_decision->partition_decision[0] = PARTITION_SPLIT;
+      ext_part_decision->partition_decision[i] = PARTITION_SPLIT;
     }
     for (int i = num_blocks - num_4x4_blocks; i < num_blocks; ++i) {
       ext_part_decision->partition_decision[i] = PARTITION_NONE;

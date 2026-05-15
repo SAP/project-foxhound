@@ -10,7 +10,6 @@
 #include <array>
 #include <type_traits>
 #include <utility>
-#include "mozilla/Attributes.h"
 #include "mozilla/BitSet.h"
 #include "mozilla/EnumSet.h"
 #include "nsStringFwd.h"
@@ -25,14 +24,14 @@ namespace IPC {
 class Message;
 class MessageReader;
 class MessageWriter;
+template <typename T>
+struct ParamTraits;
 }  // namespace IPC
 
 namespace mozilla {
 namespace ipc {
 class IProtocol;
 class IPCResult;
-template <typename T>
-struct IPDLParamTraits;
 }  // namespace ipc
 
 namespace dom {
@@ -105,11 +104,10 @@ class Transaction {
   void CommitWithoutSyncing(Context* aOwner);
 
  private:
-  friend struct mozilla::ipc::IPDLParamTraits<Transaction<Context>>;
+  friend struct IPC::ParamTraits<Transaction<Context>>;
 
-  void Write(IPC::MessageWriter* aWriter,
-             mozilla::ipc::IProtocol* aActor) const;
-  bool Read(IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor);
+  void Write(IPC::MessageWriter* aWriter) const;
+  bool Read(IPC::MessageReader* aReader);
 
   // You probably don't want to directly call this method - instead call
   // `Commit`, which will perform the necessary synchronization.
@@ -156,11 +154,10 @@ class FieldValues : public Base {
   }
 
  private:
-  friend struct mozilla::ipc::IPDLParamTraits<FieldValues<Base, Count>>;
+  friend struct IPC::ParamTraits<FieldValues<Base, Count>>;
 
-  void Write(IPC::MessageWriter* aWriter,
-             mozilla::ipc::IProtocol* aActor) const;
-  bool Read(IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor);
+  void Write(IPC::MessageWriter* aWriter) const;
+  bool Read(IPC::MessageReader* aReader);
 
   template <typename F, size_t... Indexes>
   static void EachIndexInner(std::index_sequence<Indexes...> aIndexes,
@@ -363,40 +360,36 @@ using FieldSetterType = typename GetFieldSetterType<T>::SetterArg;
 
 }  // namespace syncedcontext
 }  // namespace dom
+}  // namespace mozilla
 
-namespace ipc {
+namespace IPC {
 
 template <typename Context>
-struct IPDLParamTraits<dom::syncedcontext::Transaction<Context>> {
-  typedef dom::syncedcontext::Transaction<Context> paramType;
+struct ParamTraits<mozilla::dom::syncedcontext::Transaction<Context>> {
+  using paramType = mozilla::dom::syncedcontext::Transaction<Context>;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    aParam.Write(aWriter, aActor);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    aParam.Write(aWriter);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    return aResult->Read(aReader, aActor);
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return aResult->Read(aReader);
   }
 };
 
 template <typename Base, size_t Count>
-struct IPDLParamTraits<dom::syncedcontext::FieldValues<Base, Count>> {
-  typedef dom::syncedcontext::FieldValues<Base, Count> paramType;
+struct ParamTraits<mozilla::dom::syncedcontext::FieldValues<Base, Count>> {
+  using paramType = mozilla::dom::syncedcontext::FieldValues<Base, Count>;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam) {
-    aParam.Write(aWriter, aActor);
+  static void Write(MessageWriter* aWriter, const paramType& aParam) {
+    aParam.Write(aWriter);
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    return aResult->Read(aReader, aActor);
+  static bool Read(MessageReader* aReader, paramType* aResult) {
+    return aResult->Read(aReader);
   }
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
 #endif  // !defined(mozilla_dom_SyncedContext_h)

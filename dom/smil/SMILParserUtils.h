@@ -7,9 +7,9 @@
 #ifndef DOM_SMIL_SMILPARSERUTILS_H_
 #define DOM_SMIL_SMILPARSERUTILS_H_
 
-#include "nsTArray.h"
-#include "nsStringFwd.h"
 #include "SMILTimeValue.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 

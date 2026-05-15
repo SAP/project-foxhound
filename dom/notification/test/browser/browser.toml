@@ -10,6 +10,12 @@ support-files = [
 ["browser_permission_dismiss.js"]
 support-files = ["notification.html"]
 
+["browser_safebrowsing_block.js"]
+support-files = [
+  "file_safebrowsing_test.html",
+  "file_safebrowsing_test.serviceworker.js",
+]
+
 ["browser_userContextId_openWindow.js"]
 support-files = [
   "empty.html",

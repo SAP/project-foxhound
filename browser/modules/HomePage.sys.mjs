@@ -5,7 +5,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
@@ -145,6 +146,59 @@ export let HomePage = {
   },
 
   /**
+   * Convert a pipe-delimited string of custom homepage URLs into an array of
+   * trimmed URLs.
+   *
+   * @param {string} urls
+   * @returns {string[]}
+   */
+  parseCustomHomepageURLs(urls) {
+    return urls
+      .split("|")
+      .map(url => url.trim())
+      .filter(Boolean);
+  },
+
+  /**
+   * Determine if a tab is set to about:preferences or about:settings.
+   *
+   * @param {Element} tab
+   * @returns {boolean}
+   */
+  isPreferencesOrSettingsTab(tab) {
+    return (
+      tab.linkedBrowser.currentURI.spec.startsWith("about:preferences") ||
+      tab.linkedBrowser.currentURI.spec.startsWith("about:settings")
+    );
+  },
+
+  /**
+   * Get the user's current opened tabs for use as a custom homepage.
+   *
+   * @param {DOMWindow} [win]
+   * @returns {Array}
+   */
+  getTabsForCustomHomepage(
+    win = Services.wm.getMostRecentWindow("navigator:browser")
+  ) {
+    let tabs = [];
+
+    if (
+      win &&
+      win.document.documentElement.getAttribute("windowtype") ===
+        "navigator:browser"
+    ) {
+      tabs = win.gBrowser.visibleTabs.slice(win.gBrowser.pinnedTabCount);
+      tabs = tabs.filter(tab => !this.isPreferencesOrSettingsTab(tab));
+
+      // XXX: Bug 1441637 - Fix tabbrowser to report tab.closing before it blurs it
+      tabs = tabs.filter(tab => !tab.closing);
+    }
+
+    return tabs;
+  },
+
+  /**
    * @returns {string}
    *   Returns the application default homepage.
    */
@@ -254,7 +308,7 @@ export let HomePage = {
    * Handles updates of the ignore list, checking the existing preference and
    * correcting it as necessary.
    *
-   * @param {Object} eventData
+   * @param {object} eventData
    *   The event data as received from RemoteSettings.
    */
   async _handleIgnoreListUpdated({ data: { current } }) {

@@ -38,6 +38,13 @@ const skipIfNotBrowser = () => ({
   skip_if: () => AppConstants.MOZ_BUILD_APP != "browser",
 });
 
+add_setup(() => {
+  // In head.js, we force TOU pre-onboarding off in xpcshell so Telemetry isn't
+  // gated on Browser UI. Revert for these tests.
+  const TOS_ENABLED_PREF = "browser.preonboarding.enabled";
+  Services.prefs.clearUserPref(TOS_ENABLED_PREF);
+});
+
 function setupLegacyAndRolloutPrefs({
   acceptedVersion,
   notifiedTime,

@@ -2,7 +2,7 @@
 Aggregate view
 ==============
 
-Before Firefox 48, this was the default view of a heap snapshot. After Firefox 48, the default view is the :doc:`Tree map view <../tree_map_view/index>`, and you can switch to the Aggregate view using the dropdown labeled "View:":
+The default view is the :doc:`Tree map view <../tree_map_view/index>`, and you can switch to the Aggregate view using the dropdown labeled "View:":
 
 .. image:: memory-tool-switch-view.png
   :class: center

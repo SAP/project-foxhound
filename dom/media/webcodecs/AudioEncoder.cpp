@@ -5,21 +5,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/AudioEncoder.h"
-#include "EncoderTraits.h"
-#include "mozilla/dom/AudioEncoderBinding.h"
 
 #include "EncoderConfig.h"
+#include "EncoderTraits.h"
 #include "EncoderTypes.h"
 #include "MediaData.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/AudioDataBinding.h"
+#include "mozilla/dom/AudioEncoderBinding.h"
 #include "mozilla/dom/EncodedAudioChunk.h"
 #include "mozilla/dom/EncodedAudioChunkBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WebCodecsUtils.h"
-#include "EncoderConfig.h"
 
 extern mozilla::LazyLogModule gWebCodecsLog;
 
@@ -384,7 +383,7 @@ AudioEncoder::AudioEncoder(
 
 AudioEncoder::~AudioEncoder() {
   LOG("AudioEncoder %p dtor", this);
-  Unused << ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+  (void)ResetInternal(NS_ERROR_DOM_ABORT_ERR);
 }
 
 JSObject* AudioEncoder::WrapObject(JSContext* aCx,

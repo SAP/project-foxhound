@@ -48,7 +48,7 @@ function mouseout() {
   );
   EventUtils.synthesizeNativeMouseEvent({
     type: "mousemove",
-    target: win.gURLBar.textbox,
+    target: win.gURLBar,
     offsetX: 0,
     offsetY: 0,
     win,
@@ -109,11 +109,7 @@ async function test_bookmarks_popup({
         if (popupEditFn) {
           await popupEditFn();
         }
-        Assert.equal(
-          bookmarkStar.getAttribute("starred"),
-          "true",
-          "Page is starred"
-        );
+        Assert.ok(bookmarkStar.hasAttribute("starred"), "Page is starred");
         Assert.equal(
           bookmarkPanelTitle.dataset.l10nId,
           isNewBookmark ? "bookmarks-add-bookmark" : "bookmarks-edit-bookmark",
@@ -713,4 +709,64 @@ add_task(async function escape_during_autocomplete_should_prevent_autoclose() {
     },
     isBookmarkRemoved: false,
   });
+});
+
+add_task(async function panel_hidden_for_bookmarked_page_by_ESC() {
+  let originalTitle = "Home Page";
+  let originalFolder = await PlacesUIUtils.defaultParentGuid;
+  let originalShowEditorForNewBookmarks = Services.prefs.getBoolPref(
+    "browser.bookmarks.editDialog.showForNewBookmarks"
+  );
+
+  await PlacesUtils.bookmarks.insert({
+    url: TEST_URL,
+    parentGuid: originalFolder,
+    title: originalTitle,
+  });
+
+  let bookmarkTitle = win.document.getElementById("editBMPanel_namePicker");
+  let bookmarkFolder = win.document.getElementById(
+    "editBMPanel_unfiledRootItem"
+  );
+  let bookmarkShowEditorForNewBookmarks = win.document.getElementById(
+    "editBookmarkPanel_showForNewBookmarks"
+  );
+
+  await BrowserTestUtils.withNewTab(
+    { gBrowser: win.gBrowser, url: TEST_URL },
+    async function () {
+      let shownPromise = promisePopupShown(bookmarkPanel);
+      bookmarkStar.click();
+      await shownPromise;
+
+      info("Update title");
+      bookmarkTitle.focus();
+      bookmarkTitle.select();
+      for (let c of "new title".split("")) {
+        EventUtils.synthesizeKey(c, {}, win);
+      }
+
+      info("Update saved folder");
+      bookmarkFolder.click();
+
+      info("Update checkbox for showing editor");
+      bookmarkShowEditorForNewBookmarks.click();
+
+      let hiddenPromise = promisePopupHidden(bookmarkPanel);
+      EventUtils.synthesizeKey("VK_ESCAPE", {}, win);
+      await hiddenPromise;
+    }
+  );
+
+  info("Check whether any data was not updated");
+  let bookmark = await PlacesUtils.bookmarks.fetch({ url: TEST_URL });
+  Assert.equal(bookmark.title, originalTitle);
+  Assert.equal(bookmark.parentGuid, originalFolder);
+  Assert.equal(
+    Services.prefs.getBoolPref(
+      "browser.bookmarks.editDialog.showForNewBookmarks"
+    ),
+    originalShowEditorForNewBookmarks
+  );
+  await PlacesUtils.bookmarks.remove(bookmark);
 });

@@ -26,7 +26,7 @@ class RegisteredPropertyEditor extends EventEmitter {
   /**
    * @param {CssRuleView} ruleView
    *        The CssRuleView containing the document holding this rule editor.
-   * @param {Object} propertyDefinition
+   * @param {object} propertyDefinition
    *        The property definition data as returned by PageStyleActor's getRegisteredProperties
    */
   constructor(ruleView, propertyDefinition) {

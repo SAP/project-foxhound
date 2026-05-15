@@ -45,4 +45,11 @@ internal object Keys {
     const val ENGINE_SESSION_KEY = "engineSession"
 
     const val VERSION_KEY = "version"
+
+    const val TAB_PARTITIONS_KEY = "tabPartitions"
+    const val TAB_PARTITION_ID_KEY = "id"
+    const val TAB_PARTITION_GROUPS_KEY = "tabGroups"
+    const val TAB_GROUP_ID_KEY = "id"
+    const val TAB_GROUP_NAME_KEY = "name"
+    const val TAB_GROUP_TAB_IDS_KEY = "tabIds"
 }

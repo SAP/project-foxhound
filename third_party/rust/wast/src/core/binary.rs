@@ -1,9 +1,9 @@
+use crate::Wat;
 #[cfg(feature = "component-model")]
 use crate::component::Component;
 use crate::core::*;
 use crate::encode::Encode;
 use crate::token::*;
-use crate::Wat;
 use std::borrow::Cow;
 use std::marker;
 #[cfg(feature = "dwarf")]
@@ -161,7 +161,7 @@ pub(crate) fn encode(
     e.typed_section(&globals);
     e.typed_section(&exports);
     e.custom_sections(Before(Start));
-    if let Some(start) = start.get(0) {
+    for start in start {
         e.wasm.section(&wasm_encoder::StartSection {
             function_index: start.unwrap_u32(),
         });
@@ -177,10 +177,11 @@ pub(crate) fn encode(
     // Prepare to and emit the code section. This is where DWARF may optionally
     // be emitted depending on configuration settings. Note that `code_section`
     // will internally emit the branch hints section if necessary.
-    let names = find_names(module_id, module_name, fields);
+    let names = find_names(module_id, module_name, fields, &types);
     let num_import_funcs = imports
         .iter()
-        .filter(|i| matches!(i.item.kind, ItemKind::Func(..)))
+        .flat_map(|group| group.item_sigs())
+        .filter(|sig| matches!(sig.kind, ItemKind::Func(..)))
         .count() as u32;
     let mut dwarf = dwarf::Dwarf::new(num_import_funcs, opts, &names, &types);
     e.code_section(&funcs, num_import_funcs, dwarf.as_mut());
@@ -206,6 +207,23 @@ pub(crate) fn encode(
             })
             .flat_map(|e| e.instrs.iter())
             .any(|i| i.needs_data_count())
+    }
+}
+
+fn func_type<'a>(types: &'a [RecOrType<'a>], ty: u32) -> Option<&'a FunctionType<'a>> {
+    // Iterate through `self.types` which is what was encoded into the
+    // module and find the function type which gives access to the
+    // parameters which gives access to their types.
+    let ty = types
+        .iter()
+        .flat_map(|t| match t {
+            RecOrType::Type(t) => std::slice::from_ref(*t),
+            RecOrType::Rec(r) => &r.types,
+        })
+        .nth(ty as usize)?;
+    match &ty.def.kind {
+        InnerTypeKind::Func(ty) => Some(ty),
+        _ => None,
     }
 }
 
@@ -383,6 +401,8 @@ impl TypeDef<'_> {
                 InnerTypeKind::Cont(ct) => Cont(ct.into()),
             },
             shared: self.shared,
+            descriptor: self.descriptor.map(|i| i.unwrap_u32()),
+            describes: self.describes.map(|i| i.unwrap_u32()),
         };
         wasm_encoder::SubType {
             composite_type,
@@ -438,6 +458,7 @@ impl From<HeapType<'_>> for wasm_encoder::HeapType {
                 Self::Abstract { shared, ty }
             }
             HeapType::Concrete(i) => Self::Concrete(i.unwrap_u32()),
+            HeapType::Exact(i) => Self::Exact(i.unwrap_u32()),
         }
     }
 }
@@ -471,12 +492,35 @@ impl From<StorageType<'_>> for wasm_encoder::StorageType {
     }
 }
 
-impl SectionItem for Import<'_> {
+impl SectionItem for Imports<'_> {
     type Section = wasm_encoder::ImportSection;
     const ANCHOR: CustomPlaceAnchor = CustomPlaceAnchor::Import;
 
     fn encode(&self, section: &mut wasm_encoder::ImportSection) {
-        section.import(self.module, self.field, self.item.to_entity_type());
+        section.imports(match &self.items {
+            ImportItems::Single { module, name, sig } => {
+                wasm_encoder::Imports::Single(wasm_encoder::Import {
+                    module: module,
+                    name,
+                    ty: sig.to_entity_type(),
+                })
+            }
+            ImportItems::Group1 { module, items } => wasm_encoder::Imports::Compact1 {
+                module,
+                items: items
+                    .into_iter()
+                    .map(|foo| wasm_encoder::ImportCompact {
+                        name: foo.name,
+                        ty: foo.sig.to_entity_type(),
+                    })
+                    .collect(),
+            },
+            ImportItems::Group2 { module, sig, items } => wasm_encoder::Imports::Compact2 {
+                module,
+                ty: sig.to_entity_type(),
+                names: items.into_iter().map(|item| item.name).collect(),
+            },
+        });
     }
 }
 
@@ -491,6 +535,7 @@ impl ItemKind<'_> {
         use wasm_encoder::EntityType as ET;
         match self {
             ItemKind::Func(t) => ET::Function(t.unwrap_u32()),
+            ItemKind::FuncExact(t) => ET::FunctionExact(t.unwrap_u32()),
             ItemKind::Table(t) => ET::Table(t.to_table_type()),
             ItemKind::Memory(t) => ET::Memory(t.to_memory_type()),
             ItemKind::Global(t) => ET::Global(t.to_global_type()),
@@ -574,7 +619,7 @@ impl Index<'_> {
     fn unwrap_u32(&self) -> u32 {
         match self {
             Index::Num(n, _) => *n,
-            Index::Id(n) => panic!("unresolved index in emission: {:?}", n),
+            Index::Id(n) => panic!("unresolved index in emission: {n:?}"),
         }
     }
 }
@@ -729,7 +774,9 @@ impl Func<'_> {
     ) -> Vec<wasm_encoder::BranchHint> {
         assert!(self.exports.names.is_empty());
         let (expr, locals) = match &self.kind {
-            FuncKind::Inline { expression, locals } => (expression, locals),
+            FuncKind::Inline {
+                expression, locals, ..
+            } => (expression, locals),
             _ => panic!("should only have inline functions in emission"),
         };
 
@@ -795,7 +842,7 @@ impl Expression<'_> {
             instr.encode(&mut tmp);
         }
         func.raw(tmp.iter().copied());
-        func.instruction(&wasm_encoder::Instruction::End);
+        func.instructions().end();
 
         hints
     }
@@ -973,6 +1020,7 @@ fn find_names<'a>(
     module_id: &Option<Id<'a>>,
     module_name: &Option<NameAnnotation<'a>>,
     fields: &[ModuleField<'a>],
+    types: &'a [RecOrType<'a>],
 ) -> Names<'a> {
     fn get_name<'a>(id: &Option<Id<'a>>, name: &Option<NameAnnotation<'a>>) -> Option<&'a str> {
         name.as_ref().map(|n| n.name).or(id.and_then(|id| {
@@ -1001,17 +1049,19 @@ fn find_names<'a>(
     for field in fields {
         // Extract the kind/id/name from whatever kind of field this is...
         let (kind, id, name) = match field {
-            ModuleField::Import(i) => (
-                match i.item.kind {
-                    ItemKind::Func(_) => Name::Func,
-                    ItemKind::Table(_) => Name::Table,
-                    ItemKind::Memory(_) => Name::Memory,
-                    ItemKind::Global(_) => Name::Global,
-                    ItemKind::Tag(_) => Name::Tag,
-                },
-                &i.item.id,
-                &i.item.name,
-            ),
+            ModuleField::Import(imports) => {
+                for sig in imports.item_sigs() {
+                    let name = match sig.kind {
+                        ItemKind::Func(_) | ItemKind::FuncExact(_) => Name::Func,
+                        ItemKind::Table(_) => Name::Table,
+                        ItemKind::Memory(_) => Name::Memory,
+                        ItemKind::Global(_) => Name::Global,
+                        ItemKind::Tag(_) => Name::Tag,
+                    };
+                    names.push((name, &sig.id, &sig.name, field));
+                }
+                continue;
+            }
             ModuleField::Global(g) => (Name::Global, &g.id, &g.name),
             ModuleField::Table(t) => (Name::Table, &t.id, &t.name),
             ModuleField::Memory(m) => (Name::Memory, &m.id, &m.name),
@@ -1053,19 +1103,40 @@ fn find_names<'a>(
             let mut label_names = Vec::new();
             let mut local_idx = 0;
             let mut label_idx = 0;
+            let mut discard_locals = false;
 
-            // Consult the inline type listed for local names of parameters.
-            // This is specifically preserved during the name resolution
-            // pass, but only for functions, so here we can look at the
-            // original source's names.
             if let Some(ty) = &f.ty.inline {
+                // Consult the inline type listed for local names of parameters.
+                // This is specifically preserved during the name resolution
+                // pass, but only for functions, so here we can look at the
+                // original source's names.
                 for (id, name, _) in ty.params.iter() {
                     if let Some(name) = get_name(id, name) {
                         local_names.push((local_idx, name));
                     }
                     local_idx += 1;
                 }
+            } else {
+                // If the inline type isn't listed then it's either not present
+                // (e.g. no params or results) or it was referenced by index.
+                // Either way we've got the index here, so look it up in the
+                // list of types and see how many parameters this function's
+                // type has.
+                let index = match f.ty.index.as_ref().unwrap() {
+                    Index::Num(n, _) => *n,
+                    _ => unreachable!(),
+                };
+
+                match func_type(types, index) {
+                    Some(ft) => local_idx = ft.params.len() as u32,
+                    // If the function type index is invalid then skip
+                    // preserving names since we don't know how many parameters
+                    // this function will have so we don't know where to start
+                    // indexing at.
+                    None => discard_locals = true,
+                }
             }
+
             if let FuncKind::Inline {
                 locals, expression, ..
             } = &f.kind
@@ -1093,7 +1164,7 @@ fn find_names<'a>(
                     }
                 }
             }
-            if local_names.len() > 0 {
+            if !discard_locals && local_names.len() > 0 {
                 ret.locals.push((*idx, local_names));
             }
             if label_names.len() > 0 {
@@ -1392,6 +1463,7 @@ impl Encode for Dylink0Subsection<'_> {
             Dylink0Subsection::Needed(libs) => libs.encode(e),
             Dylink0Subsection::ExportInfo(list) => list.encode(e),
             Dylink0Subsection::ImportInfo(list) => list.encode(e),
+            Dylink0Subsection::RuntimePath(list) => list.encode(e),
         }
     }
 }
@@ -1510,6 +1582,46 @@ impl Encode for BrOnCastFail<'_> {
     fn encode(&self, e: &mut Vec<u8>) {
         e.push(0xfb);
         e.push(0x19);
+        e.push(br_on_cast_flags(
+            self.from_type.nullable,
+            self.to_type.nullable,
+        ));
+        self.label.encode(e);
+        self.from_type.heap.encode(e);
+        self.to_type.heap.encode(e);
+    }
+}
+
+impl Encode for RefCastDesc<'_> {
+    fn encode(&self, e: &mut Vec<u8>) {
+        e.push(0xfb);
+        if self.r#type.nullable {
+            e.push(0x24);
+        } else {
+            e.push(0x23);
+        }
+        self.r#type.heap.encode(e);
+    }
+}
+
+impl Encode for BrOnCastDesc<'_> {
+    fn encode(&self, e: &mut Vec<u8>) {
+        e.push(0xfb);
+        e.push(0x25);
+        e.push(br_on_cast_flags(
+            self.from_type.nullable,
+            self.to_type.nullable,
+        ));
+        self.label.encode(e);
+        self.from_type.heap.encode(e);
+        self.to_type.heap.encode(e);
+    }
+}
+
+impl Encode for BrOnCastDescFail<'_> {
+    fn encode(&self, e: &mut Vec<u8>) {
+        e.push(0xfb);
+        e.push(0x26);
         e.push(br_on_cast_flags(
             self.from_type.nullable,
             self.to_type.nullable,

@@ -4,8 +4,8 @@
 
 // Original author: ekr@rtfm.com
 
-#ifndef srtpflow_h__
-#define srtpflow_h__
+#ifndef srtpflow_h_
+#define srtpflow_h_
 
 #include "mozilla/RefPtr.h"
 #include "nsISupportsImpl.h"

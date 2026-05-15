@@ -18,7 +18,6 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 
 /**
@@ -29,30 +28,31 @@ internal class EngineDelegateMiddleware(
     private val scope: CoroutineScope,
 ) : Middleware<BrowserState, BrowserAction> {
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
-            is EngineAction.LoadUrlAction -> loadUrl(context.store, action)
-            is EngineAction.LoadDataAction -> loadData(context.store, action)
-            is EngineAction.ReloadAction -> reload(context.store, action)
-            is EngineAction.GoBackAction -> goBack(context.store, action)
-            is EngineAction.GoForwardAction -> goForward(context.store, action)
-            is EngineAction.GoToHistoryIndexAction -> goToHistoryIndex(context.store, action)
-            is EngineAction.ToggleDesktopModeAction -> toggleDesktopMode(context.store, action)
-            is EngineAction.ExitFullScreenModeAction -> exitFullScreen(context.store, action)
-            is EngineAction.SaveToPdfAction -> saveToPdf(context.store, action)
-            is EngineAction.PrintContentAction -> printContent(context.store, action)
-            is EngineAction.ClearDataAction -> clearData(context.store, action)
-            is EngineAction.PurgeHistoryAction -> purgeHistory(context.state)
+            is EngineAction.LoadUrlAction -> loadUrl(store, action)
+            is EngineAction.LoadDataAction -> loadData(store, action)
+            is EngineAction.ReloadAction -> reload(store, action)
+            is EngineAction.GoBackAction -> goBack(store, action)
+            is EngineAction.GoForwardAction -> goForward(store, action)
+            is EngineAction.GoToHistoryIndexAction -> goToHistoryIndex(store, action)
+            is EngineAction.ToggleDesktopModeAction -> toggleDesktopMode(store, action)
+            is EngineAction.ExitFullScreenModeAction -> exitFullScreen(store, action)
+            is EngineAction.SaveToPdfAction -> saveToPdf(store, action)
+            is EngineAction.PrintContentAction -> printContent(store, action)
+            is EngineAction.ClearDataAction -> clearData(store, action)
+            is EngineAction.PurgeHistoryAction -> purgeHistory(store.state)
+            is EngineAction.FlushEngineSessionStateAction -> flushEngineSessionSate(store, action)
             is TranslationsAction.TranslateAction -> {
                 next(action)
-                translate(context.store, action)
+                translate(store, action)
             }
             is TranslationsAction.TranslateRestoreAction -> {
                 next(action)
-                translateRestoreOriginal(context.store, action)
+                translateRestoreOriginal(store, action)
             }
             else -> next(action)
         }
@@ -191,6 +191,14 @@ internal class EngineDelegateMiddleware(
         state.allTabs
             .mapNotNull { tab -> tab.engineState.engineSession }
             .forEach { engineSession -> engineSession.purgeHistory() }
+    }
+
+    private fun flushEngineSessionSate(
+        store: Store<BrowserState, BrowserAction>,
+        action: EngineAction.FlushEngineSessionStateAction,
+    ) = scope.launch {
+        getEngineSessionOrDispatch(store, action)
+            ?.flushSessionState()
     }
 }
 

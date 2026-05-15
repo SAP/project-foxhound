@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.settings.biometric
 
-import android.os.Build.VERSION_CODES.LOLLIPOP_MR1
-import android.os.Build.VERSION_CODES.M
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
@@ -30,7 +28,6 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.settings.biometric.ext.isEnrolled
 import org.mozilla.fenix.settings.biometric.ext.isHardwareAvailable
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 class BiometricPromptFeatureTest {
@@ -44,13 +41,6 @@ class BiometricPromptFeatureTest {
         manager = mockk()
     }
 
-    @Config(sdk = [LOLLIPOP_MR1])
-    @Test
-    fun `canUseFeature checks for SDK compatible`() {
-        assertFalse(BiometricPromptFeature.canUseFeature(manager))
-    }
-
-    @Config(sdk = [M])
     @Test
     fun `canUseFeature checks for hardware capabilities`() {
         every { manager.canAuthenticate(any()) } returns BIOMETRIC_SUCCESS

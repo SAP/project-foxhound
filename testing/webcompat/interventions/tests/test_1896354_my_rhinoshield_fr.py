@@ -18,10 +18,6 @@ async def test_enabled(client):
 
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
-async def test_disabled(client, platform):
-    # right now, the site works fine on Android, but historically did not.
-    if platform == "android":
-        test_enabled(client)
-    else:
-        await client.navigate(URL)
-        assert client.await_text(BLOCKED_TEXT)
+async def test_disabled(client):
+    await client.navigate(URL)
+    assert client.await_text(BLOCKED_TEXT)

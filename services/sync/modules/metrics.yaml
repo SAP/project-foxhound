@@ -101,6 +101,16 @@ fxa_avatar_menu:
         description: >
           Boolean for whether or not sync was configured at the time the event fired.
         type: string
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to (optional, only populated for send_tab)
+        type: string
+      action:
+        description: >
+          The action selected by the user (optional, only populated for send_tab). Possible values
+          are "device" (sent to specific device), "all_devices" (sent to all devices), or
+          "manage_devices" (opened device management).
+        type: string
     telemetry_mirror: Fxa_avatar_menu_Click_AccountSettings
     no_lint:
       - COMMON_PREFIX
@@ -140,16 +150,83 @@ fxa_avatar_menu:
   click_send_tab:
     type: event
     description: >
-      This is recorded on interactions with the FxA avatar menu on the
-      toolbar
+      This is recorded when the user selects a specific action from the Send Tab
+      menu in the FxA avatar menu (e.g., selecting a device, "Send to all devices",
+      or "Manage Devices").
       This event was generated to correspond to the Legacy Telemetry event
       fxa_avatar_menu.click#send_tab.
     bugs: *fxa_avatar_menu_click_bugs
     data_reviews: *fxa_avatar_menu_click_data_reviews
     notification_emails: *fxa_avatar_menu_click_emails
     expires: never
-    extra_keys: *fxa_avatar_menu_click_extra
+    extra_keys:
+      fxa_status:
+        description: >
+          The current state of the user. Possible states are "not_configured", "unverified", "signedin" and "login_failed".
+        type: string
+      fxa_avatar:
+        description: >
+          Boolean for whether or not account has set an avatar
+        type: string
+      fxa_sync_on:
+        description: >
+          Boolean for whether or not sync was configured at the time the event fired.
+        type: string
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+      action:
+        description: >
+          The action selected by the user. Possible values are "device" (sent to specific device),
+          "all_devices" (sent to all devices), or "manage_devices" (opened device management).
+        type: string
     telemetry_mirror: Fxa_avatar_menu_Click_SendTab
+    no_lint:
+      - COMMON_PREFIX
+
+  send_tab_exposed:
+    type: event
+    description: >
+      Recorded when the FxA avatar menu is opened and the Send Tab option
+      is visible to the user.
+    bugs: &fxa_avatar_menu_send_tab_bugs
+      - https://bugzil.la/2005840
+    data_reviews: &fxa_avatar_menu_send_tab_data_reviews
+      - https://bugzil.la/2005840
+    notification_emails: &fxa_avatar_menu_send_tab_emails
+      - sync-dev@mozilla.org
+    expires: never
+    extra_keys: &fxa_avatar_menu_send_tab_extra
+      fxa_status:
+        description: >
+          The current state of the user. Possible states are "not_configured", "unverified", "signedin" and "login_failed".
+        type: string
+      fxa_avatar:
+        description: >
+          Boolean for whether or not account has set an avatar
+        type: string
+      fxa_sync_on:
+        description: >
+          Boolean for whether or not sync was configured at the time the event fired.
+        type: string
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+    no_lint:
+      - COMMON_PREFIX
+
+  send_tab_opened:
+    type: event
+    description: >
+      Recorded when the user opens or expands the Send Tab submenu
+      from the FxA avatar menu to view available devices.
+    bugs: *fxa_avatar_menu_send_tab_bugs
+    data_reviews: *fxa_avatar_menu_send_tab_data_reviews
+    notification_emails: *fxa_avatar_menu_send_tab_emails
+    expires: never
+    extra_keys: *fxa_avatar_menu_send_tab_extra
     no_lint:
       - COMMON_PREFIX
 
@@ -377,6 +454,16 @@ fxa_app_menu:
         description: >
           Boolean for whether or not sync was configured at the time the event fired.
         type: string
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to (optional, only populated for send_tab)
+        type: string
+      action:
+        description: >
+          The action selected by the user (optional, only populated for send_tab). Possible values
+          are "device" (sent to specific device), "all_devices" (sent to all devices), or
+          "manage_devices" (opened device management).
+        type: string
     telemetry_mirror: Fxa_app_menu_Click_AccountSettings
     no_lint:
       - COMMON_PREFIX
@@ -416,16 +503,83 @@ fxa_app_menu:
   click_send_tab:
     type: event
     description: >
-      This is recorded on interactions with the FxA menu in the app
-      (hamburger) menu
+      This is recorded when the user selects a specific action from the Send Tab
+      menu in the FxA app menu (e.g., selecting a device, "Send to all devices",
+      or "Manage Devices").
       This event was generated to correspond to the Legacy Telemetry event
       fxa_app_menu.click#send_tab.
     bugs: *fxa_app_menu_click_bugs
     data_reviews: *fxa_app_menu_click_data_reviews
     notification_emails: *fxa_app_menu_click_emails
     expires: never
-    extra_keys: *fxa_app_menu_click_extra
+    extra_keys:
+      fxa_status:
+        description: >
+          The current state of the user. Possible states are "not_configured", "unverified", "signedin" and "login_failed".
+        type: string
+      fxa_avatar:
+        description: >
+          Boolean for whether or not account has set an avatar
+        type: string
+      fxa_sync_on:
+        description: >
+          Boolean for whether or not sync was configured at the time the event fired.
+        type: string
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+      action:
+        description: >
+          The action selected by the user. Possible values are "device" (sent to specific device),
+          "all_devices" (sent to all devices), or "manage_devices" (opened device management).
+        type: string
     telemetry_mirror: Fxa_app_menu_Click_SendTab
+    no_lint:
+      - COMMON_PREFIX
+
+  send_tab_exposed:
+    type: event
+    description: >
+      Recorded when the FxA app menu (hamburger menu) is opened and the
+      Send Tab option is visible to the user.
+    bugs: &fxa_app_menu_send_tab_bugs
+      - https://bugzil.la/2005840
+    data_reviews: &fxa_app_menu_send_tab_data_reviews
+      - https://bugzil.la/2005840
+    notification_emails: &fxa_app_menu_send_tab_emails
+      - sync-dev@mozilla.org
+    expires: never
+    extra_keys: &fxa_app_menu_send_tab_extra
+      fxa_status:
+        description: >
+          The current state of the user. Possible states are "not_configured", "unverified", "signedin" and "login_failed".
+        type: string
+      fxa_avatar:
+        description: >
+          Boolean for whether or not account has set an avatar
+        type: string
+      fxa_sync_on:
+        description: >
+          Boolean for whether or not sync was configured at the time the event fired.
+        type: string
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+    no_lint:
+      - COMMON_PREFIX
+
+  send_tab_opened:
+    type: event
+    description: >
+      Recorded when the user opens or expands the Send Tab submenu
+      from the FxA app menu to view available devices.
+    bugs: *fxa_app_menu_send_tab_bugs
+    data_reviews: *fxa_app_menu_send_tab_data_reviews
+    notification_emails: *fxa_app_menu_send_tab_emails
+    expires: never
+    extra_keys: *fxa_app_menu_send_tab_extra
     no_lint:
       - COMMON_PREFIX
 
@@ -618,6 +772,185 @@ fxa_app_menu:
     expires: never
     extra_keys: *fxa_app_menu_click_extra
     telemetry_mirror: Fxa_app_menu_Click_SyncCta
+    no_lint:
+      - COMMON_PREFIX
+
+tab_context_menu:
+  send_tab_exposed:
+    type: event
+    description: >
+      Recorded when the tab context menu is opened and the Send Tab option
+      is visible to the user.
+    bugs: &tab_context_menu_send_tab_bugs
+      - https://bugzil.la/2005840
+    data_reviews: &tab_context_menu_send_tab_data_reviews
+      - https://bugzil.la/2005840
+    notification_emails: &tab_context_menu_send_tab_emails
+      - sync-dev@mozilla.org
+    expires: never
+    extra_keys: &tab_context_menu_send_tab_extra
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+    no_lint:
+      - COMMON_PREFIX
+
+  send_tab_opened:
+    type: event
+    description: >
+      Recorded when the user opens or expands the Send Tab submenu
+      from the tab context menu to view available devices.
+    bugs: *tab_context_menu_send_tab_bugs
+    data_reviews: *tab_context_menu_send_tab_data_reviews
+    notification_emails: *tab_context_menu_send_tab_emails
+    expires: never
+    extra_keys: *tab_context_menu_send_tab_extra
+    no_lint:
+      - COMMON_PREFIX
+
+  click_send_tab:
+    type: event
+    description: >
+      Recorded when the user selects a specific action from the Send Tab
+      submenu in the tab context menu (e.g., selecting a device, "Send to all devices",
+      or "Manage Devices").
+    bugs: *tab_context_menu_send_tab_bugs
+    data_reviews: *tab_context_menu_send_tab_data_reviews
+    notification_emails: *tab_context_menu_send_tab_emails
+    expires: never
+    extra_keys:
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+      action:
+        description: >
+          The action selected by the user. Possible values are "device" (sent to specific device),
+          "all_devices" (sent to all devices), or "manage_devices" (opened device management).
+        type: string
+    no_lint:
+      - COMMON_PREFIX
+
+page_context_menu:
+  send_tab_exposed:
+    type: event
+    description: >
+      Recorded when the page context menu is opened and the Send Link/Page to Device
+      option is visible to the user.
+    bugs: &page_context_menu_send_tab_bugs
+      - https://bugzil.la/2005840
+    data_reviews: &page_context_menu_send_tab_data_reviews
+      - https://bugzil.la/2005840
+    notification_emails: &page_context_menu_send_tab_emails
+      - sync-dev@mozilla.org
+    expires: never
+    extra_keys: &page_context_menu_send_tab_extra
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+      context_type:
+        description: >
+          The type of content being sent. Possible values are "link" or "page".
+        type: string
+    no_lint:
+      - COMMON_PREFIX
+
+  send_tab_opened:
+    type: event
+    description: >
+      Recorded when the user opens or expands the Send Link/Page to Device submenu
+      from the page context menu to view available devices.
+    bugs: *page_context_menu_send_tab_bugs
+    data_reviews: *page_context_menu_send_tab_data_reviews
+    notification_emails: *page_context_menu_send_tab_emails
+    expires: never
+    extra_keys: *page_context_menu_send_tab_extra
+    no_lint:
+      - COMMON_PREFIX
+
+  click_send_tab:
+    type: event
+    description: >
+      Recorded when the user selects a specific action from the Send Link/Page to Device
+      submenu in the page context menu (e.g., selecting a device, "Send to all devices",
+      or "Manage Devices").
+    bugs: *page_context_menu_send_tab_bugs
+    data_reviews: *page_context_menu_send_tab_data_reviews
+    notification_emails: *page_context_menu_send_tab_emails
+    expires: never
+    extra_keys:
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+      context_type:
+        description: >
+          The type of content being sent. Possible values are "link" or "page".
+        type: string
+      action:
+        description: >
+          The action selected by the user. Possible values are "device" (sent to specific device),
+          "all_devices" (sent to all devices), or "manage_devices" (opened device management).
+        type: string
+    no_lint:
+      - COMMON_PREFIX
+
+firefoxview:
+  send_tab_exposed:
+    type: event
+    description: >
+      Recorded when the Firefox View context menu is opened and the Send Tab option
+      is visible to the user.
+    bugs: &firefoxview_send_tab_bugs
+      - https://bugzil.la/2005840
+    data_reviews: &firefoxview_send_tab_data_reviews
+      - https://bugzil.la/2005840
+    notification_emails: &firefoxview_send_tab_emails
+      - sync-dev@mozilla.org
+    expires: never
+    extra_keys: &firefoxview_send_tab_extra
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+    no_lint:
+      - COMMON_PREFIX
+
+  send_tab_opened:
+    type: event
+    description: >
+      Recorded when the user opens or expands the Send Tab submenu
+      from the Firefox View context menu to view available devices.
+    bugs: *firefoxview_send_tab_bugs
+    data_reviews: *firefoxview_send_tab_data_reviews
+    notification_emails: *firefoxview_send_tab_emails
+    expires: never
+    extra_keys: *firefoxview_send_tab_extra
+    no_lint:
+      - COMMON_PREFIX
+
+  click_send_tab:
+    type: event
+    description: >
+      Recorded when the user selects a specific action from the Send Tab
+      submenu in the Firefox View context menu (e.g., selecting a device,
+      "Send to all devices", or "Manage Devices").
+    bugs: *firefoxview_send_tab_bugs
+    data_reviews: *firefoxview_send_tab_data_reviews
+    notification_emails: *firefoxview_send_tab_emails
+    expires: never
+    extra_keys:
+      device_count:
+        description: >
+          Number of connected devices available to send tabs to
+        type: string
+      action:
+        description: >
+          The action selected by the user. Possible values are "device" (sent to specific device),
+          "all_devices" (sent to all devices), or "manage_devices" (opened device management).
+        type: string
     no_lint:
       - COMMON_PREFIX
 
@@ -852,7 +1185,7 @@ syncs:
     type: string
     description: |
       Hashed FxA unique ID, or string of 32 zeroes.
-      If this changes between syncs, the "sync" ping is submitted with reason "idchanged".
+      If this changes between syncs, the "sync" ping is submitted with reason "idchange".
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1963812
     data_reviews:
@@ -870,7 +1203,7 @@ syncs:
     description: |
       Hashed FxA device ID, hex string of 64 characters.
       Not included if the user is not logged in.
-      If this changes between syncs, the "sync" ping is submitted with reason "idchanged".
+      If this changes between syncs, the "sync" ping is submitted with reason "idchange".
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1963812
     data_reviews:

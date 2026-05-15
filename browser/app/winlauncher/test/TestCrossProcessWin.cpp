@@ -243,7 +243,7 @@ static DynamicBlockList ConvertStaticBlocklistToDynamic(
             });
 
   Vector<DllBlockInfo> copied;
-  Unused << copied.resize(originalLength + 1);  // aBlockEntries + sentinel
+  (void)copied.resize(originalLength + 1);  // aBlockEntries + sentinel
 
   size_t currentStringOffset = 0;
   for (size_t i = 0; i < originalLength; ++i) {
@@ -467,7 +467,7 @@ class ChildProcess final {
     Vector<std::thread> threads;
     std::atomic<bool> success = true;
     for (int i = 0; i < 10; ++i) {
-      Unused << threads.emplaceBack(
+      (void)threads.emplaceBack(
           [&success](SRWLOCK* aLock) {
             // All threads call GetKernel32Exports(), but only the first thread
             // maps a write-copy section and populates it.

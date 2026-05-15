@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_FileBlobImpl_h
 #define mozilla_dom_FileBlobImpl_h
 
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/BlobImpl.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BlobImpl.h"
 #include "nsCOMPtr.h"
 
 class nsIFile;

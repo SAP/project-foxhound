@@ -38,20 +38,19 @@ add_task(async function extension() {
         name: "ExtensionTest",
         type: UrlbarUtils.PROVIDER_TYPE.EXTENSION,
         results: [
-          Object.assign(
-            new UrlbarResult(
-              UrlbarUtils.RESULT_TYPE.URL,
-              UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-              {
-                url,
-                title: "Test",
-              }
-            ),
-            { heuristic: true }
-          ),
+          new UrlbarResult({
+            type: UrlbarUtils.RESULT_TYPE.URL,
+            source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+            heuristic: true,
+            payload: {
+              url,
+              title: "Test",
+            },
+          }),
         ],
       });
-      UrlbarProvidersManager.registerProvider(provider);
+      let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+      providersManager.registerProvider(provider);
 
       // Do a search that fetches the provider's result and check it.
       let heuristic = await search({
@@ -66,7 +65,7 @@ add_task(async function extension() {
       // Press enter to verify the heuristic result is loaded.
       await synthesizeEnterAndAwaitLoad(url);
 
-      UrlbarProvidersManager.unregisterProvider(provider);
+      providersManager.unregisterProvider(provider);
     });
   });
 });
@@ -382,7 +381,14 @@ async function withVisits(callback) {
   for (let i = 0; i < UrlbarPrefs.get("maxRichResults"); i++) {
     urls.push("http://example.com/foo/" + i);
   }
-  await PlacesTestUtils.addVisits(urls);
+
+  let typedVisits = urls.map(url => {
+    return {
+      url,
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    };
+  });
+  await PlacesTestUtils.addVisits(typedVisits);
 
   // The URLs will appear in the view in reverse order so that newer visits are
   // first. Reverse the array now so callers to `checkVisitResults` or
@@ -410,23 +416,20 @@ async function withEngine(
   callback
 ) {
   await SearchTestUtils.installSearchExtension({ keyword });
-  let engine = Services.search.getEngineByName("Example");
+  let engine = SearchService.getEngineByName("Example");
   let originalEngine;
   if (makeDefault) {
-    originalEngine = await Services.search.getDefault();
-    await Services.search.setDefault(
-      engine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-    );
+    originalEngine = await SearchService.getDefault();
+    await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
   }
   await callback();
   if (originalEngine) {
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       originalEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
   }
-  await Services.search.removeEngine(engine);
+  await SearchService.removeEngine(engine);
 }
 
 /**

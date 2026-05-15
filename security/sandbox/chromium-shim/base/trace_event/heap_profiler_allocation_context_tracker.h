@@ -23,7 +23,8 @@ class BASE_EXPORT AllocationContextTracker {
  public:
   static void SetCurrentThreadName(const char* name) {}
 
-  DISALLOW_COPY_AND_ASSIGN(AllocationContextTracker);
+  AllocationContextTracker(const AllocationContextTracker&) = delete;
+  AllocationContextTracker& operator=(const AllocationContextTracker&) = delete;
 };
 
 }  // namespace trace_event

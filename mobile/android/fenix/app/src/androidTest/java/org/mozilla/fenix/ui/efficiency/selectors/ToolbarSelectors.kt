@@ -4,33 +4,36 @@
 
 package org.mozilla.fenix.ui.efficiency.selectors
 
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_URL_BOX
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.TABS_COUNTER
 import org.mozilla.fenix.ui.efficiency.helpers.Selector
 import org.mozilla.fenix.ui.efficiency.helpers.SelectorStrategy
 
 object ToolbarSelectors {
     val TOOLBAR = Selector(
         strategy = SelectorStrategy.UIAUTOMATOR_WITH_RES_ID,
-        value = "toolbar",
+        value = "composable_toolbar",
         description = "Toolbar",
         groups = listOf("requiredForPage"),
     )
 
     val TAB_COUNTER = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR_WITH_RES_ID,
-        value = "tab_button",
+        strategy = SelectorStrategy.COMPOSE_BY_TAG,
+        value = TABS_COUNTER,
         description = "Tab counter button",
         groups = listOf("requiredForPage"),
     )
 
-    val URL_BAR_PLACE_HOLDER = Selector(
-        strategy = SelectorStrategy.UIAUTOMATOR_WITH_TEXT,
-        value = "Search or enter address",
-        description = "URL bar place holder",
+    val TOOLBAR_URL_BOX = Selector(
+        strategy = SelectorStrategy.COMPOSE_ON_ALL_NODES_BY_TAG_ON_LAST,
+        value = ADDRESSBAR_URL_BOX,
+        description = "URL box",
         groups = listOf("requiredForPage"),
     )
 
     val all = listOf(
         TOOLBAR,
         TAB_COUNTER,
+        TOOLBAR_URL_BOX,
     )
 }

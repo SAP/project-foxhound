@@ -9,8 +9,8 @@
 
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/PaymentResponseBinding.h"  // PaymentComplete
-#include "nsPIDOMWindow.h"
 #include "nsITimer.h"
+#include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
 

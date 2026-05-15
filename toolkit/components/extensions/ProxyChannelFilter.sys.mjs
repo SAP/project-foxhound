@@ -35,6 +35,7 @@ const PROXY_TYPES = Object.freeze({
   HTTP: "http",
   SOCKS: "socks", // SOCKS5
   SOCKS4: "socks4",
+  MASQUE: "masque",
 });
 
 const ProxyInfoData = {
@@ -46,6 +47,7 @@ const ProxyInfoData = {
       "type",
       "host",
       "port",
+      "masqueTemplate",
       "username",
       "password",
       "proxyDNS",
@@ -102,11 +104,33 @@ const ProxyInfoData = {
     proxyData.port = port;
   },
 
+  masqueTemplate(proxyData) {
+    let { masqueTemplate } = proxyData;
+    if (proxyData.type !== PROXY_TYPES.MASQUE) {
+      if (masqueTemplate !== undefined) {
+        throw new ExtensionError(
+          `ProxyInfoData: masqueTemplate can only be used for "masque" proxies`
+        );
+      }
+      return;
+    }
+    if (typeof masqueTemplate !== "string" || !masqueTemplate) {
+      throw new ExtensionError(
+        `ProxyInfoData: Invalid proxy masque template: "${masqueTemplate}"`
+      );
+    }
+  },
+
   username(proxyData) {
     let { username } = proxyData;
     if (username !== undefined && typeof username !== "string") {
       throw new ExtensionError(
         `ProxyInfoData: Invalid proxy server username: "${username}"`
+      );
+    }
+    if (username !== undefined && proxyData.type === PROXY_TYPES.MASQUE) {
+      throw new ExtensionError(
+        `ProxyInfoData: Username not expected for "masque" proxy info`
       );
     }
   },
@@ -116,6 +140,11 @@ const ProxyInfoData = {
     if (password !== undefined && typeof password !== "string") {
       throw new ExtensionError(
         `ProxyInfoData: Invalid proxy server password: "${password}"`
+      );
+    }
+    if (password !== undefined && proxyData.type === PROXY_TYPES.MASQUE) {
+      throw new ExtensionError(
+        `ProxyInfoData: Password not expected for "masque" proxy info`
       );
     }
   },
@@ -162,9 +191,9 @@ const ProxyInfoData = {
         `ProxyInfoData: Invalid proxy server authorization header: "${proxyAuthorizationHeader}"`
       );
     }
-    if (type !== "https" && type !== "http") {
+    if (type !== "https" && type !== "http" && type !== "masque") {
       throw new ExtensionError(
-        `ProxyInfoData: ProxyAuthorizationHeader requires type "https" or "http"`
+        `ProxyInfoData: ProxyAuthorizationHeader requires type "https" or "http" or "masque"`
       );
     }
   },
@@ -198,6 +227,7 @@ const ProxyInfoData = {
       type,
       host,
       port,
+      masqueTemplate,
       username,
       password,
       proxyDNS,
@@ -223,6 +253,17 @@ const ProxyInfoData = {
         port,
         username,
         password,
+        proxyAuthorizationHeader,
+        connectionIsolationKey,
+        proxyDNS ? TRANSPARENT_PROXY_RESOLVES_HOST : 0,
+        failoverTimeout ? failoverTimeout : PROXY_TIMEOUT_SEC,
+        failoverProxy
+      );
+    } else if (type == PROXY_TYPES.MASQUE) {
+      proxyInfo = lazy.ProxyService.newMASQUEProxyInfo(
+        host,
+        port,
+        masqueTemplate,
         proxyAuthorizationHeader,
         connectionIsolationKey,
         proxyDNS ? TRANSPARENT_PROXY_RESOLVES_HOST : 0,

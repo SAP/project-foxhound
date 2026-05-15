@@ -7,7 +7,6 @@
 #ifndef mozilla_Authenticode_h
 #define mozilla_Authenticode_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 

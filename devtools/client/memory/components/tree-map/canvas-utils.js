@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env browser */
-
 "use strict";
 
 /**
@@ -27,24 +25,25 @@ const FULLSCREEN_STYLE = {
 
 /**
  * Create the canvases, resize handlers, and return references to them all
- *
- * @param  {HTMLDivElement} parentEl
- * @param  {Number} debounceRate
- * @return {Object}
  */
-function Canvases(parentEl, debounceRate) {
-  EventEmitter.decorate(this);
-  this.container = createContainingDiv(parentEl);
+class Canvases extends EventEmitter {
+  /**
+   *
+   * @param  {HTMLDivElement} parentEl
+   * @param  {number} debounceRate
+   */
+  constructor(parentEl, debounceRate) {
+    super();
 
-  // This canvas contains all of the treemap
-  this.main = createCanvas(this.container, "main");
-  // This canvas contains only the zoomed in portion, overlaying the main canvas
-  this.zoom = createCanvas(this.container, "zoom");
+    this.container = createContainingDiv(parentEl);
 
-  this.removeHandlers = handleResizes(this, debounceRate);
-}
+    // This canvas contains all of the treemap
+    this.main = createCanvas(this.container, "main");
+    // This canvas contains only the zoomed in portion, overlaying the main canvas
+    this.zoom = createCanvas(this.container, "zoom");
 
-Canvases.prototype = {
+    this.removeHandlers = handleResizes(this, debounceRate);
+  }
   /**
    * Remove the handlers and elements
    *
@@ -54,8 +53,8 @@ Canvases.prototype = {
     this.removeHandlers();
     this.container.removeChild(this.main.canvas);
     this.container.removeChild(this.zoom.canvas);
-  },
-};
+  }
+}
 
 module.exports = Canvases;
 
@@ -76,8 +75,8 @@ function createContainingDiv(parentEl) {
  * Create a canvas and context
  *
  * @param  {HTMLDivElement} container
- * @param  {String} className
- * @return {Object} { canvas, ctx }
+ * @param  {string} className
+ * @return {object} { canvas, ctx }
  */
 function createCanvas(container, className) {
   const window = container.ownerDocument.defaultView;
@@ -100,8 +99,8 @@ function createCanvas(container, className) {
  * Resize the canvases' resolutions, and fires out the onResize callback
  *
  * @param  {HTMLDivElement} container
- * @param  {Object} canvases
- * @param  {Number} debounceRate
+ * @param  {object} canvases
+ * @param  {number} debounceRate
  */
 function handleResizes(canvases, debounceRate) {
   const { container, main, zoom } = canvases;

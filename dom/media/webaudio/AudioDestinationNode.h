@@ -7,9 +7,9 @@
 #ifndef AudioDestinationNode_h_
 #define AudioDestinationNode_h_
 
+#include "AudioChannelAgent.h"
 #include "AudioChannelService.h"
 #include "AudioNode.h"
-#include "AudioChannelAgent.h"
 #include "mozilla/TimeStamp.h"
 
 namespace mozilla::dom {

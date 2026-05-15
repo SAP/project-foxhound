@@ -7,15 +7,15 @@
 #ifndef mozilla_dom_UnderlyingSinkCallbackHelpers_h
 #define mozilla_dom_UnderlyingSinkCallbackHelpers_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/Buffer.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnderlyingSinkBinding.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIAsyncOutputStream.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"
-#include "nsIAsyncOutputStream.h"
 
 /*
  * See the comment in UnderlyingSourceCallbackHelpers.h!

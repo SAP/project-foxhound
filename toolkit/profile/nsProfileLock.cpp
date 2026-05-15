@@ -243,7 +243,7 @@ nsresult nsProfileLock::LockWithFcntl(nsIFile* aLockFile,
         rv = NS_ERROR_FAILURE;
     }
   } else {
-    NS_ERROR("Failed to open lock file.");
+    NS_WARNING("Failed to open lock file.");
     rv = NS_ERROR_FAILURE;
   }
   return rv;

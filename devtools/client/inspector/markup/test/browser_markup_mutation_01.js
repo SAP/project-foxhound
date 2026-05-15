@@ -284,9 +284,7 @@ const TEST_DATA = [
     async test() {
       await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
         const node4 = content.document.querySelector("#node4");
-        while (node4.firstChild) {
-          node4.firstChild.remove();
-        }
+        node4.replaceChildren();
       });
     },
     async check(inspector) {

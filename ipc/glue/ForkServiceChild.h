@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef __FORKSERVICE_CHILD_H_
-#define __FORKSERVICE_CHILD_H_
+#ifndef FORKSERVICE_CHILD_H_
+#define FORKSERVICE_CHILD_H_
 
 #include "base/process_util.h"
 #include "mozilla/GeckoArgs.h"
@@ -132,4 +132,4 @@ class ForkServerLauncher final : public nsIObserver {
 }  // namespace ipc
 }  // namespace mozilla
 
-#endif /* __FORKSERVICE_CHILD_H_ */
+#endif /* FORKSERVICE_CHILD_H_ */

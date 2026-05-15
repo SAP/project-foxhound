@@ -59,6 +59,8 @@ type_policies = {
     "Double": "DoublePolicy",
     "String": "StringPolicy",
     "Symbol": "SymbolPolicy",
+    "NoTypePolicy": "NoTypePolicy",
+    "Slots": "NoTypePolicy",
 }
 
 
@@ -66,15 +68,21 @@ def decide_type_policy(types, no_type_policy):
     if no_type_policy:
         return "public NoTypePolicy::Data"
 
-    if len(types) == 1:
-        return f"public {type_policies[types[0]]}<0>::Data"
-
     type_num = 0
     mixed_type_policies = []
     for mir_type in types:
         policy = type_policies[mir_type]
+        if policy == "NoTypePolicy":
+            type_num += 1
+            continue
         mixed_type_policies.append(f"{policy}<{type_num}>")
         type_num += 1
+
+    if len(mixed_type_policies) == 0:
+        return "public NoTypePolicy::Data"
+
+    if len(mixed_type_policies) == 1:
+        return f"public {mixed_type_policies[0]}::Data"
 
     return "public MixPolicy<{}>::Data".format(", ".join(mixed_type_policies))
 
@@ -85,6 +93,7 @@ mir_base_class = [
     "MBinaryInstruction",
     "MTernaryInstruction",
     "MQuaternaryInstruction",
+    "MQuinaryInstruction",
 ]
 
 
@@ -131,6 +140,7 @@ def gen_mir_class(
     guard,
     movable,
     folds_to,
+    value_hash,
     congruent_to,
     alias_set,
     might_alias,
@@ -139,6 +149,7 @@ def gen_mir_class(
     can_recover,
     clone,
     can_consume_float32,
+    wasm_ref_type,
 ):
     """Generates class definition for a single MIR opcode."""
 
@@ -189,7 +200,7 @@ def gen_mir_class(
 
     class_name = "M" + name
 
-    assert len(mir_operands) < 5
+    assert len(mir_operands) < 6
     base_class = mir_base_class[len(mir_operands)]
     assert base_class
     if base_class != "MNullaryInstruction":
@@ -233,7 +244,11 @@ def gen_mir_class(
         code += "    setGuard();\\\n"
     if movable:
         code += "    setMovable();\\\n"
-    if result:
+    if wasm_ref_type is not None:
+        code += f"    setWasmRefType({wasm_ref_type});\\\n"
+    # Note: MIRType::None is the default MIR result type so don't generate a
+    # setResultType call for it.
+    if result and result != "None":
         code += f"    setResultType(MIRType::{result});\\\n"
     code += "  }\\\n public:\\\n"
     if arguments:
@@ -271,6 +286,9 @@ def gen_mir_class(
                 "  bool congruentTo(const MDefinition* ins) const override { "
                 "return congruentIfOperandsEqual(ins); }\\\n"
             )
+    if value_hash:
+        assert value_hash == "custom"
+        code += "  HashNumber valueHash() const override;\\\n"
     if possibly_calls:
         if possibly_calls == "custom":
             code += "  bool possiblyCalls() const override;\\\n"
@@ -360,6 +378,9 @@ def generate_mir_header(c_out, yaml_path):
             folds_to = op.get("folds_to", None)
             assert folds_to in (None, "custom")
 
+            value_hash = op.get("value_hash", None)
+            assert value_hash in (None, "custom")
+
             congruent_to = op.get("congruent_to", None)
             assert congruent_to in (None, "if_operands_equal", "custom")
 
@@ -384,6 +405,9 @@ def generate_mir_header(c_out, yaml_path):
             can_consume_float32 = op.get("can_consume_float32", None)
             assert can_consume_float32 in (None, True, False)
 
+            wasm_ref_type = op.get("wasm_ref_type", None)
+            assert result is None or isinstance(result, str)
+
             code = gen_mir_class(
                 name,
                 operands,
@@ -393,6 +417,7 @@ def generate_mir_header(c_out, yaml_path):
                 guard,
                 movable,
                 folds_to,
+                value_hash,
                 congruent_to,
                 alias_set,
                 might_alias,
@@ -401,6 +426,7 @@ def generate_mir_header(c_out, yaml_path):
                 can_recover,
                 clone,
                 can_consume_float32,
+                wasm_ref_type,
             )
             mir_op_classes.append(code)
 

@@ -66,166 +66,198 @@ const ElectronKeysMapping = {
  * shortcuts.on("Ctrl+F", event => {
  *   // `event` is the KeyboardEvent which relates to the key shortcuts
  * });
- *
- * @param DOMWindow window
- *        The window object of the document to listen events from.
- * @param DOMElement target
- *        Optional DOM Element on which we should listen events from.
- *        If omitted, we listen for all events fired on `window`.
  */
-function KeyShortcuts({ window, target }) {
-  this.window = window;
-  this.target = target || window;
-  this.keys = new Map();
-  this.eventEmitter = new EventEmitter();
-  this.target.addEventListener("keydown", this);
-}
-
-/*
- * Parse an electron-like key string and return a normalized object which
- * allow efficient match on DOM key event. The normalized object matches DOM
- * API.
- *
- * @param String str
- *        The shortcut string to parse, following this document:
- *        https://github.com/electron/electron/blob/master/docs/api/accelerator.md
- */
-KeyShortcuts.parseElectronKey = function (str) {
-  // If a localized string is found but has no value in the properties file,
-  // getStr will return `null`. See Bug 1569572.
-  if (typeof str !== "string") {
-    console.error("Invalid key passed to parseElectronKey, stacktrace below");
-    console.trace();
-
-    return null;
+class KeyShortcuts {
+  /**
+   * @param {object} options
+   * @param {Window} options.window
+   *        The window object of the document to listen events from.
+   * @param {HTMLElement} options.target
+   *        Optional DOM Element on which we should listen events from.
+   *        If omitted, we listen for all events fired on `window`.
+   */
+  constructor({ window, target }) {
+    this.window = window;
+    this.target = target || window;
+    this.keys = new Map();
+    this.eventEmitter = new EventEmitter();
+    this.target.addEventListener("keydown", this);
   }
+  /**
+   * Parse an electron-like key string and return a normalized object which
+   * allow efficient match on DOM key event. The normalized object matches DOM
+   * API.
+   *
+   * @param {string} str
+   *        The shortcut string to parse, following this document:
+   *        https://github.com/electron/electron/blob/master/docs/api/accelerator.md
+   */
+  static parseElectronKey(str) {
+    // If a localized string is found but has no value in the properties file,
+    // getStr will return `null`. See Bug 1569572.
+    if (typeof str !== "string") {
+      console.error("Invalid key passed to parseElectronKey, stacktrace below");
+      console.trace();
 
-  const modifiers = str.split("+");
-  let key = modifiers.pop();
-
-  const shortcut = {
-    ctrl: false,
-    meta: false,
-    alt: false,
-    shift: false,
-    // Set for character keys
-    key: undefined,
-    // Set for non-character keys
-    keyCode: undefined,
-  };
-  for (const mod of modifiers) {
-    if (mod === "Alt") {
-      shortcut.alt = true;
-    } else if (["Command", "Cmd"].includes(mod)) {
-      shortcut.meta = true;
-    } else if (["CommandOrControl", "CmdOrCtrl"].includes(mod)) {
-      if (isOSX) {
-        shortcut.meta = true;
-      } else {
-        shortcut.ctrl = true;
-      }
-    } else if (["Control", "Ctrl"].includes(mod)) {
-      shortcut.ctrl = true;
-    } else if (mod === "Shift") {
-      shortcut.shift = true;
-    } else {
-      console.error("Unsupported modifier:", mod, "from key:", str);
       return null;
     }
-  }
 
-  // Plus is a special case. It's a character key and shouldn't be matched
-  // against a keycode as it is only accessible via Shift/Capslock
-  if (key === "Plus") {
-    key = "+";
-  }
+    const modifiers = str.split("+");
+    let key = modifiers.pop();
 
-  if (typeof key === "string" && key.length === 1) {
-    if (shortcut.alt) {
-      // When Alt is involved, some platforms (macOS) give different printable characters
-      // for the `key` value, like `®` for the key `R`.  In this case, prefer matching by
-      // `keyCode` instead.
-      shortcut.keyCode = KeyCodes[`DOM_VK_${key.toUpperCase()}`];
-      shortcut.keyCodeString = key;
-    } else {
-      // Match any single character
-      shortcut.key = key.toLowerCase();
-    }
-  } else if (key in ElectronKeysMapping) {
-    // Maps the others manually to DOM API DOM_VK_*
-    key = ElectronKeysMapping[key];
-    shortcut.keyCode = KeyCodes[key];
-    // Used only to stringify the shortcut
-    shortcut.keyCodeString = key;
-    shortcut.key = key;
-  } else {
-    console.error("Unsupported key:", key);
-    return null;
-  }
-
-  return shortcut;
-};
-
-KeyShortcuts.stringify = function (shortcut) {
-  if (shortcut === null) {
-    // parseElectronKey might return null in several situations.
-    return "";
-  }
-
-  const list = [];
-  if (shortcut.alt) {
-    list.push("Alt");
-  }
-  if (shortcut.ctrl) {
-    list.push("Ctrl");
-  }
-  if (shortcut.meta) {
-    list.push("Cmd");
-  }
-  if (shortcut.shift) {
-    list.push("Shift");
-  }
-  let key;
-  if (shortcut.key) {
-    key = shortcut.key.toUpperCase();
-  } else {
-    key = shortcut.keyCodeString;
-  }
-  list.push(key);
-  return list.join("+");
-};
-
-/*
- * Parse an xul-like key string and return an electron-like string.
- */
-KeyShortcuts.parseXulKey = function (modifiers, shortcut) {
-  modifiers = modifiers
-    .split(",")
-    .map(mod => {
-      if (mod == "alt") {
-        return "Alt";
-      } else if (mod == "shift") {
-        return "Shift";
-      } else if (mod == "accel") {
-        return "CmdOrCtrl";
+    const shortcut = {
+      ctrl: false,
+      meta: false,
+      alt: false,
+      shift: false,
+      // Set for character keys
+      key: undefined,
+      // Set for non-character keys
+      keyCode: undefined,
+    };
+    for (const mod of modifiers) {
+      if (mod === "Alt") {
+        shortcut.alt = true;
+      } else if (["Command", "Cmd"].includes(mod)) {
+        shortcut.meta = true;
+      } else if (["CommandOrControl", "CmdOrCtrl"].includes(mod)) {
+        if (isOSX) {
+          shortcut.meta = true;
+        } else {
+          shortcut.ctrl = true;
+        }
+      } else if (["Control", "Ctrl"].includes(mod)) {
+        shortcut.ctrl = true;
+      } else if (mod === "Shift") {
+        shortcut.shift = true;
+      } else {
+        console.error("Unsupported modifier:", mod, "from key:", str);
+        return null;
       }
-      return mod;
-    })
-    .join("+");
+    }
 
-  if (shortcut.startsWith("VK_")) {
-    shortcut = shortcut.substr(3);
+    // Plus is a special case. It's a character key and shouldn't be matched
+    // against a keycode as it is only accessible via Shift/Capslock
+    if (key === "Plus") {
+      key = "+";
+    }
+
+    if (typeof key === "string" && key.length === 1) {
+      if (shortcut.alt) {
+        // When Alt is involved, some platforms (macOS) give different printable characters
+        // for the `key` value, like `®` for the key `R`.  In this case, prefer matching by
+        // `keyCode` instead.
+        shortcut.keyCode = KeyCodes[`DOM_VK_${key.toUpperCase()}`];
+        shortcut.keyCodeString = key;
+      } else {
+        // Match any single character
+        shortcut.key = key.toLowerCase();
+      }
+    } else if (key in ElectronKeysMapping) {
+      // Maps the others manually to DOM API DOM_VK_*
+      key = ElectronKeysMapping[key];
+      shortcut.keyCode = KeyCodes[key];
+      // Used only to stringify the shortcut
+      shortcut.keyCodeString = key;
+      shortcut.key = key;
+    } else {
+      console.error("Unsupported key:", key);
+      return null;
+    }
+
+    return shortcut;
   }
+  static stringifyShortcut(shortcut) {
+    if (shortcut === null) {
+      // parseElectronKey might return null in several situations.
+      return "";
+    }
 
-  return modifiers + "+" + shortcut;
-};
+    const list = [];
+    if (shortcut.alt) {
+      list.push("Alt");
+    }
+    if (shortcut.ctrl) {
+      list.push("Ctrl");
+    }
+    if (shortcut.meta) {
+      list.push("Cmd");
+    }
+    if (shortcut.shift) {
+      list.push("Shift");
+    }
+    let key;
+    if (shortcut.key) {
+      key = shortcut.key.toUpperCase();
+    } else {
+      key = shortcut.keyCodeString;
+    }
+    list.push(key);
+    return list.join("+");
+  }
+  /**
+   * Converts an Electron accelerator string into
+   * a pretty Unicode-based hotkey string
+   *
+   * on MacOS:
+   * CommandOrControl+, CmdOrCtrl+, Command+, Control+ => ⌘
+   * Shift+ => ⇧
+   * Alt+ => ⌥
+   *
+   * on other OS:
+   * CommandOrControl+, CmdOrCtrl+ => Ctrl+
+   * Shift+ => Shift+
+   *
+   * @param {string} electronKeyString
+   *        String containing the Electron accelerator string
+   * @returns Unicode based hotkey string
+   */
+  static stringifyFromElectronKey(electronKeyString) {
+    // Debugger stores its L10N globally
+    const ctrlString = globalThis.L10N
+      ? globalThis.L10N.getStr("ctrl")
+      : "Ctrl";
 
-KeyShortcuts.prototype = {
+    if (isOSX) {
+      return electronKeyString
+        .replace(/Shift\+/g, "\u21E7")
+        .replace(/Command\+|Cmd\+/g, "\u2318")
+        .replace(/CommandOrControl\+|CmdOrCtrl\+/g, "\u2318")
+        .replace(/Alt\+/g, "\u2325");
+    }
+    return electronKeyString
+      .replace(/CommandOrControl\+|CmdOrCtrl\+/g, `${ctrlString}+`)
+      .replace(/Shift\+/g, "Shift+");
+  }
+  /*
+   * Parse an xul-like key string and return an electron-like string.
+   */
+  static parseXulKey(modifiers, shortcut) {
+    modifiers = modifiers
+      .split(",")
+      .map(mod => {
+        if (mod == "alt") {
+          return "Alt";
+        } else if (mod == "shift") {
+          return "Shift";
+        } else if (mod == "accel") {
+          return "CmdOrCtrl";
+        }
+        return mod;
+      })
+      .join("+");
+
+    if (shortcut.startsWith("VK_")) {
+      shortcut = shortcut.substr(3);
+    }
+
+    return modifiers + "+" + shortcut;
+  }
   destroy() {
     this.target.removeEventListener("keydown", this);
     this.keys.clear();
     this.eventEmitter.off();
-  },
+  }
 
   doesEventMatchShortcut(event, shortcut) {
     if (shortcut.meta != event.metaKey) {
@@ -272,7 +304,7 @@ KeyShortcuts.prototype = {
       (shortcut.key.match(/[0-9]/) &&
         event.keyCode == shortcut.key.charCodeAt(0))
     );
-  },
+  }
 
   handleEvent(event) {
     for (const [key, shortcut] of this.keys) {
@@ -280,7 +312,7 @@ KeyShortcuts.prototype = {
         this.eventEmitter.emit(key, event);
       }
     }
-  },
+  }
 
   on(key, listener) {
     if (typeof listener !== "function") {
@@ -297,11 +329,11 @@ KeyShortcuts.prototype = {
       this.keys.set(key, shortcut);
     }
     this.eventEmitter.on(key, listener);
-  },
+  }
 
   off(key, listener) {
     this.eventEmitter.off(key, listener);
-  },
-};
+  }
+}
 
 module.exports = KeyShortcuts;

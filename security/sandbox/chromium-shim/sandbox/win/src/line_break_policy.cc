@@ -17,13 +17,7 @@
 
 namespace sandbox {
 
-bool LineBreakPolicy::GenerateRules(const wchar_t* null,
-                                    TargetPolicy::Semantics semantics,
-                                    LowLevelPolicy* policy) {
-  if (TargetPolicy::LINE_BREAK_ALLOW != semantics) {
-    return false;
-  }
-
+bool LineBreakPolicy::GenerateRules(LowLevelPolicy* policy) {
   PolicyRule line_break_rule(ASK_BROKER);
   if (!policy->AddRule(IpcTag::GETCOMPLEXLINEBREAKS, &line_break_rule)) {
     return false;

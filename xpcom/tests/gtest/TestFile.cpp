@@ -7,19 +7,25 @@
 #include "prsystem.h"
 
 #include "nsIFile.h"
-#ifdef XP_WIN
-#  include "nsILocalFileWin.h"
-#endif
 #include "nsComponentManagerUtils.h"
 #include "nsString.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsPrintfCString.h"
 
+#ifdef XP_WIN
+#  include <aclapi.h>
+#  include "mozilla/RandomNum.h"
+#  include "nsILocalFileWin.h"
+#  include "nsLocalFile.h"
+#  include "nsWindowsHelpers.h"
+#endif
+
 #include "gtest/gtest.h"
 #include "mozilla/gtest/MozAssertions.h"
 
 #ifdef XP_WIN
+using namespace mozilla;
 bool gTestWithPrefix_Win = false;
 #endif
 
@@ -40,6 +46,59 @@ static void SetUseDOSDevicePathSyntax(nsIFile* aFile) {
     winFile->SetUseDOSDevicePathSyntax(true);
   }
 }
+
+static auto GetSecurityInfoStructured(nsIFile* aFile) {
+  nsAutoString pathStr;
+  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(aFile->GetTarget(pathStr)));
+
+  PACL pDacl = nullptr;
+  AutoFreeSecurityDescriptor secDesc;
+  DWORD errCode = ::GetNamedSecurityInfoW(
+      pathStr.getW(), SE_FILE_OBJECT,
+      DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION |
+          GROUP_SECURITY_INFORMATION,
+      nullptr, nullptr, &pDacl, nullptr, getter_Transfers(secDesc));
+  MOZ_RELEASE_ASSERT(errCode == ERROR_SUCCESS && pDacl);
+
+  return std::make_tuple(std::move(pathStr), WrapNotNull(pDacl),
+                         std::move(secDesc));
+}
+
+// SECURITY_SID_SIZE() is not defined in mingw headers
+#  if !defined(__MINGW32__)
+static void AddAcesForRandomSidToDir(nsIFile* aDir) {
+  auto [dirPath, pDirDacl, secDesc] = GetSecurityInfoStructured(aDir);
+
+  constexpr BYTE kSubAuthorityCount = 4;
+  BYTE randomSidBuffer[SECURITY_SID_SIZE(4)];
+  ASSERT_TRUE(
+      GenerateRandomBytesFromOS(randomSidBuffer, sizeof(randomSidBuffer)));
+  auto* randomSid = reinterpret_cast<SID*>(randomSidBuffer);
+  randomSid->Revision = SID_REVISION;
+  randomSid->SubAuthorityCount = kSubAuthorityCount;
+  randomSid->IdentifierAuthority = SECURITY_NULL_SID_AUTHORITY;
+  ASSERT_TRUE(::IsValidSid(randomSid));
+
+  EXPLICIT_ACCESS_W newAccess[2];
+  newAccess[0].grfAccessMode = GRANT_ACCESS;
+  newAccess[0].grfAccessPermissions = GENERIC_READ;
+  newAccess[0].grfInheritance = SUB_OBJECTS_ONLY_INHERIT;
+  ::BuildTrusteeWithSidW(&newAccess[0].Trustee, randomSid);
+  newAccess[1].grfAccessMode = DENY_ACCESS;
+  newAccess[1].grfAccessPermissions = GENERIC_WRITE;
+  newAccess[1].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+  ::BuildTrusteeWithSidW(&newAccess[1].Trustee, randomSid);
+  UniquePtr<ACL, LocalFreeDeleter> newDacl;
+  ASSERT_EQ(::SetEntriesInAclW(std::size(newAccess), newAccess, pDirDacl,
+                               getter_Transfers(newDacl)),
+            (ULONG)ERROR_SUCCESS);
+
+  ASSERT_EQ(::SetNamedSecurityInfoW(dirPath.get(), SE_FILE_OBJECT,
+                                    DACL_SECURITY_INFORMATION, nullptr, nullptr,
+                                    newDacl.get(), nullptr),
+            (ULONG)ERROR_SUCCESS);
+}
+#  endif
 #endif
 
 static already_AddRefed<nsIFile> NewFile(nsIFile* aBase) {
@@ -89,7 +148,7 @@ static bool TestInvalidFileName(nsIFile* aBase, const char* aName) {
 // Test nsIFile::Create, verifying that the file exists and did not exist
 // before, and leaving it there for future tests
 static bool TestCreate(nsIFile* aBase, const char* aName, int32_t aType,
-                       int32_t aPerm) {
+                       int32_t aPerm, nsIFile** aNewFile = nullptr) {
   nsCOMPtr<nsIFile> file = NewFile(aBase);
   if (!file) return false;
 
@@ -113,6 +172,10 @@ static bool TestCreate(nsIFile* aBase, const char* aName, int32_t aType,
   EXPECT_TRUE(exists) << "File " << name.get() << " was not created";
   if (!exists) {
     return false;
+  }
+
+  if (aNewFile) {
+    file.forget(aNewFile);
   }
 
   return true;
@@ -283,6 +346,19 @@ static bool TestMove(nsIFile* aBase, nsIFile* aDestDir, const char* aName,
   if (!exists) {
     return false;
   }
+
+#ifdef XP_WIN
+  // Ensure ACE inheritance is correct.
+  auto [childPathStr, childDacl, childSecDesc] =
+      GetSecurityInfoStructured(file);
+  EXPECT_FALSE(childSecDesc->Control & SE_DACL_PROTECTED)
+      << "SE_DACL_PROTECTED bit should not be set on the security descriptor";
+  bool isDir = false;
+  EXPECT_NS_SUCCEEDED(file->IsDirectory(&isDir));
+  EXPECT_TRUE(nsLocalFile::ChildAclMatchesAclInheritedFromParent(
+      childDacl, isDir, childSecDesc, aDestDir))
+      << newName.get() << " ACL, does not match destination dir";
+#endif
 
   return true;
 }
@@ -531,6 +607,37 @@ static void SetupAndTestFunctions(const nsAString& aDirName,
 
   // Test moving across directories and renaming at the same time
   ASSERT_TRUE(TestMove(subdir, base, "file2.txt", "file4.txt"));
+
+  // SECURITY_SID_SIZE() is not defined in mingw headers
+#if defined(XP_WIN) && !defined(__MINGW32__)
+  // On Windows if we move a file or directory to a directory on the same volume
+  // where the inherited ACLs differ between the source and target dirs, then we
+  // retain the ACEs from the original dir. Add inherited ACEs for random SIDs
+  // to subdir to ensure we reset the inheritance to just the target directory.
+  AddAcesForRandomSidToDir(subdir);
+  ASSERT_TRUE(TestCreate(subdir, "file8.txt", nsIFile::NORMAL_FILE_TYPE, 0600));
+  ASSERT_TRUE(TestMove(subdir, base, "file8.txt", "file8.txt"));
+
+  // Test that dir moves also get the ACL reset when required.
+  ASSERT_TRUE(TestCreate(subdir, "subdir2", nsIFile::DIRECTORY_TYPE, 0700));
+  ASSERT_TRUE(TestMove(subdir, base, "subdir2", "subdir2"));
+
+  // If we set the SE_DACL_PROTECTED bit on the file's security descriptor then
+  // no ACEs will be inherited in the moved file or the new ACL we create to
+  // compare it with. So we need an extra test to catch this case.
+  nsCOMPtr<nsIFile> file9;
+  ASSERT_TRUE(TestCreate(subdir, "file9.txt", nsIFile::NORMAL_FILE_TYPE, 0600,
+                         getter_AddRefs(file9)));
+  auto [file9Path, pFile9Dacl, f9sd] = GetSecurityInfoStructured(file9);
+  ASSERT_EQ(::SetNamedSecurityInfoW(
+                file9Path.get(), SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                nullptr, nullptr, pFile9Dacl.get(), nullptr),
+            (ULONG)ERROR_SUCCESS);
+  auto [f9p, f9d, file9SecDescAfter] = GetSecurityInfoStructured(file9);
+  ASSERT_TRUE(file9SecDescAfter->Control & SE_DACL_PROTECTED);
+  ASSERT_TRUE(TestMove(subdir, base, "file9.txt", "file9.txt"));
+#endif
 
   // Test copying across directories
   ASSERT_TRUE(TestCopy(base, subdir, "file4.txt", "file5.txt"));

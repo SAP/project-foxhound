@@ -100,7 +100,7 @@ MOZ_RUNINIT CanvasManagerParent::ManagerSet CanvasManagerParent::sManagers;
   }
 
   for (const auto& actor : actors) {
-    Unused << NS_WARN_IF(!actor->SendDeactivate());
+    (void)NS_WARN_IF(!actor->SendDeactivate());
   }
 }
 
@@ -147,7 +147,7 @@ CanvasManagerParent::AllocPWebGPUParent() {
     return nullptr;
   }
 
-  return MakeAndAddRef<webgpu::WebGPUParent>();
+  return MakeAndAddRef<webgpu::WebGPUParent>(mContentId);
 }
 
 mozilla::ipc::IPCResult CanvasManagerParent::RecvInitialize(
@@ -164,8 +164,7 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvInitialize(
 
 already_AddRefed<layers::PCanvasParent>
 CanvasManagerParent::AllocPCanvasParent() {
-  if (NS_WARN_IF(!gfx::gfxVars::RemoteCanvasEnabled() &&
-                 !gfx::gfxVars::UseAcceleratedCanvas2D())) {
+  if (NS_WARN_IF(!gfx::gfxVars::UseAcceleratedCanvas2D())) {
     MOZ_ASSERT_UNREACHABLE("AllocPCanvasParent without remote canvas");
     return nullptr;
   }
@@ -180,7 +179,7 @@ CanvasManagerParent::AllocPCanvasParent() {
 mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
     const uint32_t& aManagerId, const ActorId& aProtocolId,
     const Maybe<RemoteTextureOwnerId>& aOwnerId,
-    const Maybe<RawId>& aCommandEncoderId,
+    const Maybe<RawId>& aCommandEncoderId, const Maybe<RawId>& aCommandBufferId,
     webgl::FrontBufferSnapshotIpc* aResult) {
   if (!aManagerId) {
     return IPC_FAIL(this, "invalid id");
@@ -221,9 +220,13 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
       if (aCommandEncoderId.isNothing()) {
         return IPC_FAIL(this, "invalid CommandEncoderId");
       }
+      if (aCommandBufferId.isNothing()) {
+        return IPC_FAIL(this, "invalid CommandBufferId");
+      }
       uint32_t stride = 0;
       mozilla::ipc::IPCResult rv = webgpu->GetFrontBufferSnapshot(
-          this, *aOwnerId, *aCommandEncoderId, buffer.shmem, size, stride);
+          this, *aOwnerId, *aCommandEncoderId, *aCommandBufferId, buffer.shmem,
+          size, stride);
       if (!rv) {
         return rv;
       }
@@ -251,10 +254,11 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
   return actor;
 }
 
-/* static */ already_AddRefed<DataSourceSurface>
+/* static */ already_AddRefed<SourceSurface>
 CanvasManagerParent::GetCanvasSurface(dom::ContentParentId aContentId,
                                       uint32_t aManagerId, ActorId aCanvasId,
-                                      uintptr_t aSurfaceId) {
+                                      uintptr_t aSurfaceId,
+                                      Maybe<layers::SurfaceDescriptor>* aDesc) {
   IProtocol* actor = GetCanvasActor(aContentId, aManagerId, aCanvasId);
   if (!actor) {
     return nullptr;
@@ -262,7 +266,7 @@ CanvasManagerParent::GetCanvasSurface(dom::ContentParentId aContentId,
   switch (actor->GetProtocolId()) {
     case ProtocolId::PCanvasMsgStart:
       return static_cast<layers::CanvasTranslator*>(actor)->WaitForSurface(
-          aSurfaceId);
+          aSurfaceId, aDesc);
     default:
       MOZ_ASSERT_UNREACHABLE("Unsupported protocol");
       break;

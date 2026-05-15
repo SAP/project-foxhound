@@ -1,23 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <tuple>
-
 #include "CubebUtils.h"
-#include "GraphDriver.h"
-
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
-
 #include "MediaTrackGraphImpl.h"
-#include "mozilla/gtest/WaitFor.h"
+#include "MockCubeb.h"
+#include "MockGraphInterface.h"
+#include "gtest/gtest.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/gtest/WaitFor.h"
 #include "nsTArray.h"
-
-#include "MockCubeb.h"
 
 namespace mozilla {
 
@@ -28,87 +23,6 @@ using ::testing::AtMost;
 using ::testing::Eq;
 using ::testing::InSequence;
 using ::testing::NiceMock;
-
-class MockGraphInterface : public GraphInterface {
-  NS_DECL_THREADSAFE_ISUPPORTS
-  explicit MockGraphInterface(TrackRate aSampleRate)
-      : mSampleRate(aSampleRate) {}
-  MOCK_METHOD(void, NotifyInputStopped, ());
-  MOCK_METHOD(void, NotifyInputData,
-              (const AudioDataValue*, size_t, TrackRate, uint32_t, uint32_t));
-  MOCK_METHOD(void, NotifySetRequestedInputProcessingParamsResult,
-              (AudioCallbackDriver*, int,
-               (Result<cubeb_input_processing_params, int>&&)));
-  MOCK_METHOD(void, DeviceChanged, ());
-#ifdef DEBUG
-  MOCK_METHOD(bool, InDriverIteration, (const GraphDriver*), (const));
-#endif
-  /* OneIteration cannot be mocked because IterationResult is non-memmovable and
-   * cannot be passed as a parameter, which GMock does internally. */
-  IterationResult OneIteration(GraphTime aStateComputedTime, GraphTime,
-                               MixerCallbackReceiver* aMixerReceiver) {
-    GraphDriver* driver = mCurrentDriver;
-    if (aMixerReceiver) {
-      mMixer.StartMixing();
-      mMixer.Mix(nullptr, driver->AsAudioCallbackDriver()->OutputChannelCount(),
-                 aStateComputedTime - mStateComputedTime, mSampleRate);
-      aMixerReceiver->MixerCallback(mMixer.MixedChunk(), mSampleRate);
-    }
-    if (aStateComputedTime != mStateComputedTime) {
-      mFramesIteratedEvent.Notify(aStateComputedTime - mStateComputedTime);
-      ++mIterationCount;
-    }
-    mStateComputedTime = aStateComputedTime;
-    if (!mKeepProcessing) {
-      return IterationResult::CreateStop(
-          NS_NewRunnableFunction(__func__, [] {}));
-    }
-    if (auto guard = mNextDriver.Lock(); guard->isSome()) {
-      auto tup = guard->extract();
-      const auto& [driver, switchedRunnable] = tup;
-      return IterationResult::CreateSwitchDriver(driver, switchedRunnable);
-    }
-    if (mEnsureNextIteration) {
-      driver->EnsureNextIteration();
-    }
-    return IterationResult::CreateStillProcessing();
-  }
-  void SetEnsureNextIteration(bool aEnsure) { mEnsureNextIteration = aEnsure; }
-
-  size_t IterationCount() const { return mIterationCount; }
-
-  GraphTime StateComputedTime() const { return mStateComputedTime; }
-  void SetCurrentDriver(GraphDriver* aDriver) { mCurrentDriver = aDriver; }
-
-  void StopIterating() { mKeepProcessing = false; }
-
-  void SwitchTo(RefPtr<GraphDriver> aDriver,
-                RefPtr<Runnable> aSwitchedRunnable = NS_NewRunnableFunction(
-                    "DefaultNoopSwitchedRunnable", [] {})) {
-    auto guard = mNextDriver.Lock();
-    MOZ_RELEASE_ASSERT(guard->isNothing());
-    *guard =
-        Some(std::make_tuple(std::move(aDriver), std::move(aSwitchedRunnable)));
-  }
-  const TrackRate mSampleRate;
-
-  MediaEventSource<uint32_t>& FramesIteratedEvent() {
-    return mFramesIteratedEvent;
-  }
-
- protected:
-  Atomic<size_t> mIterationCount{0};
-  Atomic<GraphTime> mStateComputedTime{0};
-  Atomic<GraphDriver*> mCurrentDriver{nullptr};
-  Atomic<bool> mEnsureNextIteration{false};
-  Atomic<bool> mKeepProcessing{true};
-  DataMutex<Maybe<std::tuple<RefPtr<GraphDriver>, RefPtr<Runnable>>>>
-      mNextDriver{"MockGraphInterface::mNextDriver"};
-  RefPtr<Runnable> mNextDriverSwitchedRunnable;
-  MediaEventProducer<uint32_t> mFramesIteratedEvent;
-  AudioMixer mMixer;
-  virtual ~MockGraphInterface() = default;
-};
 
 NS_IMPL_ISUPPORTS0(MockGraphInterface)
 
@@ -148,7 +62,7 @@ void TestSlowStart(const TrackRate aRate) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   MockCubeb* cubeb = new MockCubeb();
   cubeb->SetStreamStartFreezeEnabled(true);
   auto unforcer = WaitFor(cubeb->ForceAudioThread()).unwrap();
-  Unused << unforcer;
+  (void)unforcer;
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
 
   RefPtr<AudioCallbackDriver> driver;
@@ -157,29 +71,37 @@ void TestSlowStart(const TrackRate aRate) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
 
   nsIThread* mainThread = NS_GetCurrentThread();
   Maybe<int64_t> audioStart;
-  Maybe<uint32_t> alreadyBuffered;
+  Maybe<uint32_t> firstAlreadyBuffered;
   int64_t inputFrameCount = 0;
   int64_t processedFrameCount = -1;
   ON_CALL(*graph, NotifyInputData)
       .WillByDefault([&](const AudioDataValue*, size_t aFrames, TrackRate,
                          uint32_t, uint32_t aAlreadyBuffered) {
         if (!audioStart) {
+          // GraphDrivers advance state computed time only in block size
+          // increments and AudioCallbackDriver first advances state computed
+          // time in the same iteration as NotifyInputData() is first called,
+          // so the frame after firstAlreadyBuffered.value() aligns with a
+          // block boundary in state computed time.
           audioStart = Some(graph->StateComputedTime());
-          alreadyBuffered = Some(aAlreadyBuffered);
+          firstAlreadyBuffered = Some(aAlreadyBuffered);
           mainThread->Dispatch(NS_NewRunnableFunction(__func__, [&] {
             // Start processedFrameCount now, ignoring frames processed while
             // waiting for the fallback driver to stop.
             processedFrameCount = 0;
           }));
         }
-        EXPECT_NEAR(inputFrameCount,
-                    static_cast<int64_t>(graph->StateComputedTime() -
-                                         *audioStart + *alreadyBuffered),
-                    WEBAUDIO_BLOCK_SIZE)
+        EXPECT_EQ(
+            PR_ROUNDUP(
+                inputFrameCount + aAlreadyBuffered - *firstAlreadyBuffered,
+                WEBAUDIO_BLOCK_SIZE),
+            static_cast<int64_t>(graph->StateComputedTime() - *audioStart))
             << "Input should be behind state time, due to the delayed start. "
-               "stateComputedTime="
-            << graph->StateComputedTime() << ", audioStartTime=" << *audioStart
-            << ", alreadyBuffered=" << *alreadyBuffered;
+            << "inputFrameCount=" << inputFrameCount
+            << ", firstAlreadyBuffered=" << *firstAlreadyBuffered
+            << ", aAlreadyBuffered=" << aAlreadyBuffered
+            << ", stateComputedTime=" << graph->StateComputedTime()
+            << ", audioStartTime=" << *audioStart;
         inputFrameCount += aFrames;
       });
 
@@ -237,10 +159,13 @@ void TestSlowStart(const TrackRate aRate) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
   processedListener.Disconnect();
 
   EXPECT_EQ(inputFrameCount, processedFrameCount);
-  EXPECT_NEAR(graph->StateComputedTime() - *audioStart,
-              inputFrameCount + *alreadyBuffered, WEBAUDIO_BLOCK_SIZE)
-      << "Graph progresses while audio driver runs. stateComputedTime="
-      << graph->StateComputedTime() << ", inputFrameCount=" << inputFrameCount;
+  EXPECT_EQ(
+      graph->StateComputedTime() - *audioStart,
+      PR_ROUNDUP(inputFrameCount - *firstAlreadyBuffered, WEBAUDIO_BLOCK_SIZE))
+      << "Graph progresses while audio driver runs. "
+      << "stateComputedTime=" << graph->StateComputedTime()
+      << ", inputFrameCount=" << inputFrameCount
+      << ", firstAlreadyBuffered=" << *firstAlreadyBuffered;
 }
 
 TEST(TestAudioCallbackDriver, SlowStart)

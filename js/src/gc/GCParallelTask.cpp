@@ -83,23 +83,24 @@ void js::GCParallelTask::startOrRunIfIdle(AutoLockHelperThreadState& lock) {
   startWithLockHeld(lock);
 }
 
-void js::GCParallelTask::cancelAndWait() {
+bool js::GCParallelTask::cancelAndWait() {
   MOZ_ASSERT(!isCancelled());
   cancel_ = true;
-  join();
+  bool waited = join();
   cancel_ = false;
+  return waited;
 }
 
-void js::GCParallelTask::join(Maybe<TimeStamp> deadline) {
+bool js::GCParallelTask::join(Maybe<TimeStamp> deadline) {
   AutoLockHelperThreadState lock;
-  joinWithLockHeld(lock, deadline);
+  return joinWithLockHeld(lock, deadline);
 }
 
-void js::GCParallelTask::joinWithLockHeld(AutoLockHelperThreadState& lock,
+bool js::GCParallelTask::joinWithLockHeld(AutoLockHelperThreadState& lock,
                                           Maybe<TimeStamp> deadline) {
   // Task has not been started; there's nothing to do.
   if (isIdle(lock)) {
-    return;
+    return false;
   }
 
   if (lock.hasQueuedTasks()) {
@@ -126,6 +127,8 @@ void js::GCParallelTask::joinWithLockHeld(AutoLockHelperThreadState& lock,
   if (isIdle(lock)) {
     recordDuration();
   }
+
+  return true;
 }
 
 void GCParallelTask::recordDuration() {

@@ -7,8 +7,8 @@
  * Modifications Copyright SAP SE. 2019-2025.  All rights reserved.
  */
 
-#ifndef nsJSUtils_h__
-#define nsJSUtils_h__
+#ifndef nsJSUtils_h_
+#define nsJSUtils_h_
 
 /**
  * This is not a generated file. It contains common utility functions
@@ -17,14 +17,15 @@
  * the generated code itself.
  */
 
-#include "mozilla/Assertions.h"
-#include "mozilla/CheckedInt.h"
 
-#include "jsapi.h"
+
 #include "js/CompileOptions.h"
 #include "js/Conversions.h"
 #include "js/String.h"  // JS::{,Lossy}CopyLinearStringChars, JS::CopyStringChars, JS::Get{,Linear}StringLength, JS::MaxStringLength, JS::StringHasLatin1Chars
 #include "js/Utility.h"  // JS::FreePolicy
+#include "jsapi.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/CheckedInt.h"
 #include "nsString.h"
 #include "xpcpublic.h"
 
@@ -254,4 +255,4 @@ using nsAutoJSString = nsTAutoJSString<char16_t>;
 // Note that this is guaranteed to be UTF-8.
 using nsAutoJSCString = nsTAutoJSString<char>;
 
-#endif /* nsJSUtils_h__ */
+#endif /* nsJSUtils_h_ */

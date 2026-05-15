@@ -7,7 +7,6 @@
 #include "PathSkia.h"
 #include "HelpersSkia.h"
 #include "PathHelpers.h"
-#include "mozilla/UniquePtr.h"
 #include "skia/include/core/SkPathUtils.h"
 #include "skia/src/core/SkGeometry.h"
 

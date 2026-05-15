@@ -5,12 +5,12 @@
 
 #include "MediaTrackConstraints.h"
 
-#include <limits>
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
-#include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/MediaManager.h"
+#include "mozilla/dom/MediaStreamTrackBinding.h"
 
 #ifdef MOZ_WEBRTC
 namespace mozilla {
@@ -89,7 +89,7 @@ void NormalizedConstraintSet::Range<bool>::FinalizeMerge() {
 }
 
 NormalizedConstraintSet::LongRange::LongRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<dom::OwningLongOrConstrainLongRange>& aOther,
     bool advanced)
     : Range<int32_t>(aName,
@@ -111,7 +111,7 @@ NormalizedConstraintSet::LongRange::LongRange(
 }
 
 NormalizedConstraintSet::LongLongRange::LongLongRange(
-    const char* aName, const dom::Optional<int64_t>& aOther)
+    const nsCString& aName, const dom::Optional<int64_t>& aOther)
     : Range<int64_t>(aName,
                      1 + INT64_MIN,  // +1 avoids Windows compiler bug
                      INT64_MAX) {
@@ -121,7 +121,7 @@ NormalizedConstraintSet::LongLongRange::LongLongRange(
 }
 
 NormalizedConstraintSet::DoubleRange::DoubleRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<dom::OwningDoubleOrConstrainDoubleRange>& aOther,
     bool advanced)
     : Range<double>(aName, -std::numeric_limits<double>::infinity(),
@@ -142,7 +142,7 @@ NormalizedConstraintSet::DoubleRange::DoubleRange(
 }
 
 NormalizedConstraintSet::BooleanRange::BooleanRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<dom::OwningBooleanOrConstrainBooleanParameters>& aOther,
     bool advanced)
     : Range<bool>(aName, false, true) {
@@ -169,7 +169,7 @@ NormalizedConstraintSet::BooleanRange::BooleanRange(
 }
 
 NormalizedConstraintSet::StringRange::StringRange(
-    const char* aName,
+    const nsCString& aName,
     const dom::Optional<
         dom::OwningStringOrStringSequenceOrConstrainDOMStringParameters>&
         aOther,
@@ -508,7 +508,7 @@ const char* MediaConstraintsHelper::FindBadConstraint(
 static void LogConstraintStringRange(
     const NormalizedConstraintSet::StringRange& aRange) {
   if (aRange.mExact.size() <= 1 && aRange.mIdeal.size() <= 1) {
-    LOG("  %s: { exact: [%s], ideal: [%s] }", aRange.mName,
+    LOG("  %s: { exact: [%s], ideal: [%s] }", aRange.mName.get(),
         (aRange.mExact.empty()
              ? ""
              : NS_ConvertUTF16toUTF8(*aRange.mExact.begin()).get()),
@@ -516,7 +516,7 @@ static void LogConstraintStringRange(
              ? ""
              : NS_ConvertUTF16toUTF8(*aRange.mIdeal.begin()).get()));
   } else {
-    LOG("  %s: { exact: [", aRange.mName);
+    LOG("  %s: { exact: [", aRange.mName.get());
     for (const auto& entry : aRange.mExact) {
       LOG("      %s,", NS_ConvertUTF16toUTF8(entry).get());
     }
@@ -532,20 +532,22 @@ template <typename T>
 static void LogConstraintRange(
     const NormalizedConstraintSet::Range<T>& aRange) {
   if (aRange.mIdeal.isSome()) {
-    LOG("  %s: { min: %d, max: %d, ideal: %d }", aRange.mName, aRange.mMin,
-        aRange.mMax, aRange.mIdeal.valueOr(0));
+    LOG("  %s: { min: %d, max: %d, ideal: %d }", aRange.mName.get(),
+        aRange.mMin, aRange.mMax, aRange.mIdeal.valueOr(0));
   } else {
-    LOG("  %s: { min: %d, max: %d }", aRange.mName, aRange.mMin, aRange.mMax);
+    LOG("  %s: { min: %d, max: %d }", aRange.mName.get(), aRange.mMin,
+        aRange.mMax);
   }
 }
 
 template <>
 void LogConstraintRange(const NormalizedConstraintSet::Range<double>& aRange) {
   if (aRange.mIdeal.isSome()) {
-    LOG("  %s: { min: %f, max: %f, ideal: %f }", aRange.mName, aRange.mMin,
-        aRange.mMax, aRange.mIdeal.valueOr(0));
+    LOG("  %s: { min: %f, max: %f, ideal: %f }", aRange.mName.get(),
+        aRange.mMin, aRange.mMax, aRange.mIdeal.valueOr(0));
   } else {
-    LOG("  %s: { min: %f, max: %f }", aRange.mName, aRange.mMin, aRange.mMax);
+    LOG("  %s: { min: %f, max: %f }", aRange.mName.get(), aRange.mMin,
+        aRange.mMax);
   }
 }
 
@@ -571,4 +573,33 @@ void MediaConstraintsHelper::LogConstraints(
   }());
 }
 
+/* static */
+Maybe<VideoResizeModeEnum> MediaConstraintsHelper::GetResizeMode(
+    const NormalizedConstraintSet& aConstraints,
+    const MediaEnginePrefs& aPrefs) {
+  if (!aPrefs.mResizeModeEnabled) {
+    return Nothing();
+  }
+  auto defaultResizeMode = aPrefs.mResizeMode;
+  nsString defaultResizeModeString =
+      NS_ConvertASCIItoUTF16(dom::GetEnumString(defaultResizeMode));
+  uint32_t distanceToDefault = MediaConstraintsHelper::FitnessDistance(
+      Some(defaultResizeModeString), aConstraints.mResizeMode);
+  if (distanceToDefault == 0) {
+    return Some(defaultResizeMode);
+  }
+  VideoResizeModeEnum otherResizeMode =
+      (defaultResizeMode == VideoResizeModeEnum::None)
+          ? VideoResizeModeEnum::Crop_and_scale
+          : VideoResizeModeEnum::None;
+  nsString otherResizeModeString =
+      NS_ConvertASCIItoUTF16(dom::GetEnumString(otherResizeMode));
+  uint32_t distanceToOther = MediaConstraintsHelper::FitnessDistance(
+      Some(otherResizeModeString), aConstraints.mResizeMode);
+  return Some((distanceToDefault <= distanceToOther) ? defaultResizeMode
+                                                     : otherResizeMode);
+}
+
 }  // namespace mozilla
+
+#undef LOG

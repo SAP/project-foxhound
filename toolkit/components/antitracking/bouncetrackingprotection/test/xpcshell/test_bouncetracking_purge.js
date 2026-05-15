@@ -16,6 +16,7 @@ let bounceTrackingActivationLifetimeSec;
 
 /**
  * Adds brackets to a host if it's an IPv6 address.
+ *
  * @param {string} host - Host which may be an IPv6.
  * @returns {string} bracketed IPv6 or host if host is not an IPv6.
  */
@@ -23,11 +24,16 @@ function maybeFixupIpv6(host) {
   if (!host.includes(":")) {
     return host;
   }
+  // Already bracketed.
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return host;
+  }
   return `[${host}]`;
 }
 
 /**
  * Adds cookies and indexedDB test data for the given host.
+ *
  * @param {string} host
  */
 async function addStateForHost(host) {
@@ -38,6 +44,7 @@ async function addStateForHost(host) {
 
 /**
  * Checks if the given host as cookies or indexedDB data.
+ *
  * @param {string} host
  * @returns {boolean}
  */
@@ -67,9 +74,6 @@ function assertEmpty() {
 }
 
 add_setup(function () {
-  // Need a profile to data clearing calls.
-  do_get_profile();
-
   Services.prefs.setIntPref(
     "privacy.bounceTrackingProtection.mode",
     Ci.nsIBounceTrackingProtection.MODE_ENABLED
@@ -183,7 +187,7 @@ add_task(async function test_purge() {
       message: "Should purge after grace period (2).",
       shouldPurge: true,
     },
-    "2606:4700:4700::1111": {
+    "[2606:4700:4700::1111]": {
       bounceTime: timestampOutsideGracePeriodThreeDays,
       userActivationTime: null,
       message: "Should purge after grace period (3).",

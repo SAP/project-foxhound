@@ -6,11 +6,10 @@
 
 #include "SVGTransformListParser.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "SVGContentUtils.h"
 #include "SVGTransform.h"
-#include "nsGkAtoms.h"
 #include "nsAtom.h"
+#include "nsGkAtoms.h"
 
 namespace mozilla {
 

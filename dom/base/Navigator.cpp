@@ -5,54 +5,58 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Needs to be first.
-#include "base/basictypes.h"
-
 #include "Navigator.h"
-#include "nsIXULAppInfo.h"
-#include "nsPluginArray.h"
-#include "nsMimeTypeArray.h"
+
+#include "Geolocation.h"
+#include "base/basictypes.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BodyExtractor.h"
 #include "mozilla/dom/FetchBinding.h"
 #include "mozilla/dom/File.h"
-#include "Geolocation.h"
-#include "nsIClassOfService.h"
-#include "nsIHttpProtocolHandler.h"
-#include "nsIContentPolicy.h"
-#include "nsIPrivateAttributionService.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsIClassOfService.h"
+#include "nsIContentPolicy.h"
+#include "nsIHttpProtocolHandler.h"
+#include "nsIPrivateAttributionService.h"
 #include "nsISupportsPriority.h"
 #include "nsIWebProtocolHandlerRegistrar.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsContentUtils.h"
+#include "nsIXULAppInfo.h"
+#include "nsMimeTypeArray.h"
+#include "nsPluginArray.h"
 #include "nsUnicharUtils.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_dom.h"
 #ifdef FUZZING
 #  include "mozilla/StaticPrefs_fuzzing.h"
 #endif
+#include "BatteryManager.h"
+#include "Connection.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Hal.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_pdfjs.h"
 #include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/StorageAccess.h"
-#include "BatteryManager.h"
-#include "mozilla/dom/CredentialsContainer.h"
 #include "mozilla/dom/Clipboard.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/CredentialsContainer.h"
+#include "mozilla/dom/Event.h"  // for Event
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/GamepadServiceTest.h"
-#include "mozilla/dom/MediaCapabilities.h"
-#include "mozilla/dom/MediaSession.h"
-#include "mozilla/dom/power/PowerManagerService.h"
-#include "mozilla/dom/PrivateAttribution.h"
 #include "mozilla/dom/LockManager.h"
 #include "mozilla/dom/MIDIAccessManager.h"
 #include "mozilla/dom/MIDIOptionsBinding.h"
+#include "mozilla/dom/MediaCapabilities.h"
+#include "mozilla/dom/MediaSession.h"
 #include "mozilla/dom/NavigatorLogin.h"
 #include "mozilla/dom/Permissions.h"
+#include "mozilla/dom/PrivateAttribution.h"
 #include "mozilla/dom/ServiceWorkerContainer.h"
 #include "mozilla/dom/StorageManager.h"
 #include "mozilla/dom/TCPSocket.h"
@@ -61,68 +65,55 @@
 #include "mozilla/dom/VRDisplay.h"
 #include "mozilla/dom/VRDisplayEvent.h"
 #include "mozilla/dom/VRServiceTest.h"
-#include "mozilla/dom/XRSystem.h"
-#include "mozilla/dom/workerinternals/RuntimeService.h"
 #include "mozilla/dom/WakeLockJS.h"
-#include "mozilla/Hal.h"
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/StaticPtr.h"
-#include "Connection.h"
-#include "mozilla/dom/Event.h"  // for Event
+#include "mozilla/dom/XRSystem.h"
+#include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/dom/workerinternals/RuntimeService.h"
+#include "nsComponentManagerUtils.h"
 #include "nsGlobalWindowInner.h"
+#include "nsICookieManager.h"
+#include "nsICookieService.h"
+#include "nsIHttpChannel.h"
 #include "nsIPermissionManager.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
 #include "nsRFPService.h"
 #include "nsStringStream.h"
-#include "nsComponentManagerUtils.h"
-#include "nsICookieManager.h"
-#include "nsICookieService.h"
-#include "nsIHttpChannel.h"
 #ifdef ENABLE_WEBDRIVER
 #  include "nsIMarionette.h"
 #  include "nsIRemoteAgent.h"
 #endif
-#include "nsStreamUtils.h"
-#include "WidgetUtils.h"
-#include "nsIScriptError.h"
-#include "ReferrerInfo.h"
-#include "mozilla/PermissionDelegateHandler.h"
-
-#include "nsIExternalProtocolHandler.h"
 #include "BrowserChild.h"
-#include "mozilla/ipc/URIUtils.h"
-
-#include "mozilla/dom/MediaDevices.h"
 #include "MediaManager.h"
-
-#include "nsJSUtils.h"
-#include "nsTaintingUtils.h"
-
-#include "mozilla/dom/Promise.h"
-
-#include "nsIUploadChannel2.h"
+#include "ReferrerInfo.h"
+#include "WidgetUtils.h"
+#include "mozilla/PermissionDelegateHandler.h"
 #include "mozilla/dom/FormData.h"
-#include "nsIDocShell.h"
-
+#include "mozilla/dom/MediaDevices.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/ipc/URIUtils.h"
+#include "nsIDocShell.h"
+#include "nsIExternalProtocolHandler.h"
+#include "nsIScriptError.h"
+#include "nsIUploadChannel2.h"
+#include "nsJSUtils.h"
+#include "nsStreamUtils.h"
+#include "nsTaintingUtils.h"
 
 #if defined(XP_WIN)
 #  include "mozilla/WindowsVersion.h"
 #endif
 
-#include "mozilla/EMEUtils.h"
+#include "AutoplayPolicy.h"
 #include "mozilla/DetailedPromise.h"
-#include "mozilla/Unused.h"
-
-#include "mozilla/webgpu/Instance.h"
-#include "mozilla/dom/WindowGlobalChild.h"
-
-#include "mozilla/intl/LocaleService.h"
+#include "mozilla/EMEUtils.h"
 #include "mozilla/dom/AudioContext.h"
 #include "mozilla/dom/HTMLMediaElement.h"
-#include "AutoplayPolicy.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/intl/LocaleService.h"
+#include "mozilla/webgpu/Instance.h"
 
 namespace mozilla::dom {
 
@@ -348,22 +339,27 @@ void Navigator::GetAppName(nsAString& aAppName) const {
  * for more detail.
  */
 /* static */
-void Navigator::GetAcceptLanguages(nsTArray<nsString>& aLanguages) {
+void Navigator::GetAcceptLanguages(nsTArray<nsString>& aLanguages,
+                                   const nsCString* aLanguageOverride) {
   MOZ_ASSERT(NS_IsMainThread());
 
   aLanguages.Clear();
 
   // E.g. "de-de, en-us,en".
-  nsAutoString acceptLang;
-  Preferences::GetLocalizedString("intl.accept_languages", acceptLang);
+  nsAutoCString acceptLang;
+  if (aLanguageOverride) {
+    acceptLang.Assign(aLanguageOverride->get());
+  } else {
+    intl::LocaleService::GetInstance()->GetAcceptLanguages(acceptLang);
+  }
 
   // Split values on commas.
-  for (nsDependentSubstring lang :
-       nsCharSeparatedTokenizer(acceptLang, ',').ToRange()) {
+  for (nsDependentCSubstring lang :
+       nsCCharSeparatedTokenizer(acceptLang, ',').ToRange()) {
     // Replace "_" with "-" to avoid POSIX/Windows "en_US" notation.
     // NOTE: we should probably rely on the pref being set correctly.
-    if (lang.Length() > 2 && lang[2] == char16_t('_')) {
-      lang.Replace(2, 1, char16_t('-'));
+    if (lang.Length() > 2 && lang[2] == '_') {
+      lang.Replace(2, 1, '-');
     }
 
     // Use uppercase for country part, e.g. "en-US", not "en-us", see BCP47
@@ -372,10 +368,10 @@ void Navigator::GetAcceptLanguages(nsTArray<nsString>& aLanguages) {
     if (lang.Length() > 2) {
       int32_t pos = 0;
       bool first = true;
-      for (const nsAString& code :
-           nsCharSeparatedTokenizer(lang, '-').ToRange()) {
+      for (const nsACString& code :
+           nsCCharSeparatedTokenizer(lang, '-').ToRange()) {
         if (code.Length() == 2 && !first) {
-          nsAutoString upper(code);
+          nsAutoCString upper(code);
           ToUpperCase(upper);
           lang.Replace(pos, code.Length(), upper);
         }
@@ -385,7 +381,7 @@ void Navigator::GetAcceptLanguages(nsTArray<nsString>& aLanguages) {
       }
     }
 
-    aLanguages.AppendElement(lang);
+    aLanguages.AppendElement(NS_ConvertUTF8toUTF16(lang));
   }
   if (aLanguages.Length() == 0) {
     nsTArray<nsCString> locales;
@@ -407,7 +403,18 @@ void Navigator::GetLanguage(nsAString& aLanguage) {
 }
 
 void Navigator::GetLanguages(nsTArray<nsString>& aLanguages) {
-  GetAcceptLanguages(aLanguages);
+  BrowsingContext* bc = mWindow ? mWindow->GetBrowsingContext() : nullptr;
+  if (bc) {
+    const nsCString& languageOverride = bc->Top()->GetLanguageOverride();
+
+    if (!languageOverride.IsEmpty()) {
+      GetAcceptLanguages(aLanguages, &languageOverride);
+
+      return;
+    }
+  }
+
+  GetAcceptLanguages(aLanguages, nullptr);
 
   // The returned value is cached by the binding code. The window listens to the
   // accept languages change and will clear the cache when needed. It has to
@@ -511,7 +518,11 @@ nsPluginArray* Navigator::GetPlugins(ErrorResult& aRv) {
   return mPlugins;
 }
 
-bool Navigator::PdfViewerEnabled() { return !StaticPrefs::pdfjs_disabled(); }
+bool Navigator::PdfViewerEnabled() {
+  return !StaticPrefs::pdfjs_disabled() ||
+         nsContentUtils::ShouldResistFingerprinting(GetDocShell(),
+                                                    RFPTarget::PdfjsSpoof);
+}
 
 Permissions* Navigator::GetPermissions(ErrorResult& aRv) {
   if (!mWindow) {
@@ -685,7 +696,9 @@ uint64_t Navigator::HardwareConcurrency() {
 
   return rts->ClampedHardwareConcurrency(
       nsGlobalWindowInner::Cast(mWindow)->ShouldResistFingerprinting(
-          RFPTarget::NavigatorHWConcurrency));
+          RFPTarget::NavigatorHWConcurrency),
+      nsGlobalWindowInner::Cast(mWindow)->ShouldResistFingerprinting(
+          RFPTarget::NavigatorHWConcurrencyTiered));
 }
 
 namespace {
@@ -880,8 +893,8 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
 
   // Responsive Design Mode overrides the maxTouchPoints property when
   // touch simulation is enabled.
-  if (bc && bc->InRDMPane()) {
-    return bc->GetMaxTouchPointsOverride();
+  if (bc && bc->Top()->InRDMPane()) {
+    return bc->Top()->GetMaxTouchPointsOverride();
   }
 
   // The maxTouchPoints is going to reveal the detail of users' hardware. So,
@@ -1990,6 +2003,11 @@ void Navigator::ClearPlatformCache() {
   Navigator_Binding::ClearCachedPlatformValue(this);
 }
 
+void Navigator::ClearLanguageCache() {
+  Navigator_Binding::ClearCachedLanguageValue(this);
+  Navigator_Binding::ClearCachedLanguagesValue(this);
+}
+
 nsresult Navigator::GetPlatform(nsAString& aPlatform, Document* aCallerDoc,
                                 bool aUsePrefOverriddenValue) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -2148,12 +2166,19 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   }
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(doc->GetChannel());
   if (httpChannel) {
-    nsAutoCString userAgent;
-    rv = httpChannel->GetRequestHeader("User-Agent"_ns, userAgent);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    bool IsUserAgentHeaderOutdated;
+    (void)httpChannel->GetIsUserAgentHeaderOutdated(&IsUserAgentHeaderOutdated);
+
+    // Do not return user agent from the request
+    // if the user agent of the channel is outdated.
+    if (!IsUserAgentHeaderOutdated) {
+      nsAutoCString userAgent;
+      rv = httpChannel->GetRequestHeader("User-Agent"_ns, userAgent);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+      CopyASCIItoUTF16(userAgent, aUserAgent);
     }
-    CopyASCIItoUTF16(userAgent, aUserAgent);
   }
   return NS_OK;
 }
@@ -2184,7 +2209,7 @@ already_AddRefed<Promise> Navigator::RequestMediaKeySystemAccess(
     AutoTArray<nsString, 1> params;
     nsString* uri = params.AppendElement();
     if (doc) {
-      Unused << doc->GetDocumentURI(*uri);
+      (void)doc->GetDocumentURI(*uri);
     }
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Media"_ns,
                                     doc, nsContentUtils::eDOM_PROPERTIES,

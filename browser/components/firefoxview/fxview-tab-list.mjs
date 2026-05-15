@@ -279,23 +279,23 @@ export class FxviewTabListBase extends MozLitElement {
         .currentActiveElementId=${this.currentActiveElementId}
         .favicon=${tabItem.icon}
         .primaryL10nId=${tabItem.primaryL10nId}
-        .primaryL10nArgs=${ifDefined(tabItem.primaryL10nArgs)}
+        .primaryL10nArgs=${tabItem.primaryL10nArgs}
         .secondaryL10nId=${tabItem.secondaryL10nId}
-        .secondaryL10nArgs=${ifDefined(tabItem.secondaryL10nArgs)}
-        .tertiaryL10nId=${ifDefined(tabItem.tertiaryL10nId)}
-        .tertiaryL10nArgs=${ifDefined(tabItem.tertiaryL10nArgs)}
+        .secondaryL10nArgs=${tabItem.secondaryL10nArgs}
+        .tertiaryL10nId=${tabItem.tertiaryL10nId}
+        .tertiaryL10nArgs=${tabItem.tertiaryL10nArgs}
         .secondaryActionClass=${this.secondaryActionClass}
-        .tertiaryActionClass=${ifDefined(this.tertiaryActionClass)}
-        .sourceClosedId=${ifDefined(tabItem.sourceClosedId)}
-        .sourceWindowId=${ifDefined(tabItem.sourceWindowId)}
-        .closedId=${ifDefined(tabItem.closedId || tabItem.closedId)}
+        .tertiaryActionClass=${this.tertiaryActionClass}
+        .sourceClosedId=${tabItem.sourceClosedId}
+        .sourceWindowId=${tabItem.sourceWindowId}
+        .closedId=${tabItem.closedId || tabItem.closedId}
         role="listitem"
-        .tabElement=${ifDefined(tabItem.tabElement)}
-        .time=${ifDefined(time)}
+        .tabElement=${tabItem.tabElement}
+        .time=${time}
         .title=${tabItem.title}
         .url=${tabItem.url}
-        .searchQuery=${ifDefined(this.searchQuery)}
-        .timeMsPref=${ifDefined(this.timeMsPref)}
+        .searchQuery=${this.searchQuery}
+        .timeMsPref=${this.timeMsPref}
         .hasPopup=${this.hasPopup}
         .dateTimeFormat=${this.dateTimeFormat}
       ></fxview-tab-row>
@@ -517,7 +517,9 @@ export class FxviewTabRowBase extends MozLitElement {
 
   formatURIForDisplay(uriString) {
     return !window.IS_STORYBOOK
-      ? lazy.BrowserUtils.formatURIStringForDisplay(uriString)
+      ? lazy.BrowserUtils.formatURIStringForDisplay(uriString, {
+          showFilenameForLocalURIs: true,
+        })
       : uriString;
   }
 
@@ -591,6 +593,21 @@ export class FxviewTabRowBase extends MozLitElement {
           detail: { originalEvent: event, item: this },
         })
       );
+    }
+  }
+
+  auxActionHandler(event) {
+    if (event.type == "auxclick" && event.button == 1) {
+      event.preventDefault();
+      if (!window.IS_STORYBOOK) {
+        this.dispatchEvent(
+          new CustomEvent("fxview-tab-list-middleclick-action", {
+            bubbles: true,
+            composed: true,
+            detail: { originalEvent: event, item: this },
+          })
+        );
+      }
     }
   }
 

@@ -1,4 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +8,13 @@
 #include <iterator>
 #include <thread>
 
-#include "gmock/gmock-matchers.h"
-#include "gtest/gtest.h"
-#include "mozilla/gtest/WaitFor.h"
 #include "MediaEventSource.h"
 #include "VideoFrameConverter.h"
 #include "VideoUtils.h"
 #include "YUVBufferGenerator.h"
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "mozilla/gtest/WaitFor.h"
 #include "rtc_base/ref_counted_object.h"
 
 using namespace mozilla;
@@ -21,7 +22,7 @@ using testing::Not;
 
 class VideoFrameConverterTest;
 
-class FrameListener : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+class FrameListener : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FrameListener)
 
@@ -40,7 +41,7 @@ class FrameListener : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
     mVideoFrameConvertedEvent.Notify(frame, TimeStamp::Now());
   }
 
-  void SetWants(const rtc::VideoSinkWants& aWants) {
+  void SetWants(const webrtc::VideoSinkWants& aWants) {
     mSource->AddOrUpdateSink(this, aWants);
   }
 
@@ -56,12 +57,12 @@ class FrameListener : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
 };
 
 class DebugVideoFrameConverter
-    : public rtc::RefCountedObject<
+    : public webrtc::RefCountedObject<
           VideoFrameConverterImpl<FrameDroppingPolicy::Disabled>> {
  public:
   explicit DebugVideoFrameConverter(
       const dom::RTCStatsTimestampMaker& aTimestampMaker)
-      : rtc::RefCountedObject<VideoFrameConverterImpl>(
+      : webrtc::RefCountedObject<VideoFrameConverterImpl>(
             do_AddRef(GetMainThreadSerialEventTarget()), aTimestampMaker,
             /* aLockScaling= */ false) {}
 
@@ -511,7 +512,7 @@ TEST_F(VideoFrameConverterTest, NoConversionsWhileInactive) {
   auto frames = WaitFor(framesPromise).unwrap();
   ASSERT_EQ(frames.size(), 1U);
   const auto& [frame, conversionTime] = frames[0];
-  Unused << conversionTime;
+  (void)conversionTime;
   EXPECT_EQ(frame.width(), 800);
   EXPECT_EQ(frame.height(), 600);
   EXPECT_GT(frame.timestamp_us(), dom::RTCStatsTimestamp::FromMozTime(
@@ -573,7 +574,7 @@ TEST_F(VideoFrameConverterTest, IgnoreOldFrames) {
   framesPromise = TakeNConvertedFrames(2);
 
   mConverter->SetIdleFrameDuplicationInterval(duplicationInterval);
-  Unused << WaitFor(InvokeAsync(mConverter->mTarget, __func__, [&] {
+  (void)WaitFor(InvokeAsync(mConverter->mTarget, __func__, [&] {
     // Time is now ~t1. This processes an extra frame similar to what
     // `SetActive(false); SetActive(true);` (using t=now()) would do.
     mConverter->mLastFrameQueuedForProcessing.mTime = now + d2;
@@ -682,7 +683,7 @@ TEST_F(VideoFrameConverterTest, SinkWantsResolutionAlignment) {
   TimeStamp now = TimeStamp::Now();
   TimeDuration interval = TimeDuration::FromMilliseconds(1);
   mConverter->SetActive(true);
-  rtc::VideoSinkWants wants;
+  webrtc::VideoSinkWants wants;
   for (uint32_t i = 0; i < alignments.size(); ++i) {
     const TimeStamp t = now + interval * (i + 1);
     // Test that requesting specific alignment always results in the expected

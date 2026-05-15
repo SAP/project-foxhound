@@ -245,7 +245,7 @@ bool IsFirstPartialResponse(nsHttpResponseHead& aResponseHead) {
   MOZ_ASSERT(aResponseHead.Status() == 206);
 
   nsAutoCString contentRange;
-  Unused << aResponseHead.GetHeader(nsHttp::Content_Range, contentRange);
+  (void)aResponseHead.GetHeader(nsHttp::Content_Range, contentRange);
 
   auto rangeOrErr = ParseContentRangeHeaderString(contentRange);
   if (rangeOrErr.isErr()) {
@@ -330,7 +330,7 @@ OpaqueResponseBlocker::OnStartRequest(nsIRequest* aRequest) {
   LOGORB();
 
   if (mState == State::Sniffing) {
-    Unused << EnsureOpaqueResponseIsAllowedAfterSniff(aRequest);
+    (void)EnsureOpaqueResponseIsAllowedAfterSniff(aRequest);
   }
 
   // mState will remain State::Sniffing if we need to wait
@@ -577,7 +577,7 @@ nsresult OpaqueResponseBlocker::ValidateJavaScript(HttpBaseChannel* aChannel,
         RecordTelemetry(startOfValidation, self->mStartOfJavaScriptValidation,
                         aResult);
 
-        Unused << dom::PJSValidatorParent::Send__delete__(self->mJSValidator);
+        (void)dom::PJSValidatorParent::Send__delete__(self->mJSValidator);
         self->mJSValidator = nullptr;
       });
 
@@ -665,3 +665,4 @@ void OpaqueResponseBlocker::MaybeRunOnStopRequest(HttpBaseChannel* aChannel) {
 NS_IMPL_ISUPPORTS(OpaqueResponseBlocker, nsIStreamListener, nsIRequestObserver)
 
 }  // namespace mozilla::net
+#undef LOGORB

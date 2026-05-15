@@ -60,19 +60,16 @@ class LUDivOrMod : public LBinaryMath<0> {
   }
 };
 
-class LDivOrModI64 : public LBinaryMath<1> {
+class LDivOrModI64 : public LBinaryMath<0> {
  public:
-  LIR_HEADER(DivOrModI64)
+  LIR_HEADER(DivOrModI64);
 
-  LDivOrModI64(const LAllocation& lhs, const LAllocation& rhs,
-               const LDefinition& temp)
+  LDivOrModI64(const LAllocation& lhs, const LAllocation& rhs)
       : LBinaryMath(classOpcode) {
     setOperand(0, lhs);
     setOperand(1, rhs);
-    setTemp(0, temp);
   }
 
-  const LDefinition* remainder() { return getTemp(0); }
   MBinaryArithInstruction* mir() const {
     MOZ_ASSERT(mir_->isDiv() || mir_->isMod());
     return static_cast<MBinaryArithInstruction*>(mir_);
@@ -99,19 +96,16 @@ class LDivOrModI64 : public LBinaryMath<1> {
   }
 };
 
-class LUDivOrModI64 : public LBinaryMath<1> {
+class LUDivOrModI64 : public LBinaryMath<0> {
  public:
   LIR_HEADER(UDivOrModI64);
 
-  LUDivOrModI64(const LAllocation& lhs, const LAllocation& rhs,
-                const LDefinition& temp)
+  LUDivOrModI64(const LAllocation& lhs, const LAllocation& rhs)
       : LBinaryMath(classOpcode) {
     setOperand(0, lhs);
     setOperand(1, rhs);
-    setTemp(0, temp);
   }
 
-  const LDefinition* remainder() { return getTemp(0); }
   const char* extraName() const {
     return mir()->isTruncated() ? "Truncated" : nullptr;
   }

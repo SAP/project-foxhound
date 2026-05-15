@@ -151,11 +151,6 @@ addressed or added to this list:
   has the technical capability to observe which websites are loaded by a given
   IP address. Some sites, like [addons.mozilla.org](http://addons.mozilla.org),
   also have special hooks to deliver browser functionality.
-- **The New-Tab Content Feed:** Firefox provides an optional feed of news
-  articles and other content on the Home and New Tab pages. This was originally
-  designed to operate somewhat like a website, so the server is notified when a
-  story is clicked. We are investigating routing these notifications through
-  OHTTP in order to remove this exception.
 
 ## Data Review
 

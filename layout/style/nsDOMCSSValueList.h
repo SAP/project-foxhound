@@ -6,8 +6,8 @@
 
 /* DOM object representing lists of values in DOM computed style */
 
-#ifndef nsDOMCSSValueList_h___
-#define nsDOMCSSValueList_h___
+#ifndef nsDOMCSSValueList_h_
+#define nsDOMCSSValueList_h_
 
 #include "CSSValue.h"
 #include "nsTArray.h"
@@ -36,4 +36,4 @@ class nsDOMCSSValueList final : public mozilla::dom::CSSValue {
   nsTArray<RefPtr<CSSValue>> mCSSValues;
 };
 
-#endif /* nsDOMCSSValueList_h___ */
+#endif /* nsDOMCSSValueList_h_ */

@@ -85,8 +85,6 @@ class ParallelWorker : public GCParallelTask {
   WorkItem item_;
 };
 
-static constexpr size_t MaxParallelWorkers = 8;
-
 // An RAII class that starts a number of ParallelWorkers and waits for them to
 // finish.
 template <typename WorkItem, typename WorkItemIterator>

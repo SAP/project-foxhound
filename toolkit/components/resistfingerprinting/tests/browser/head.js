@@ -215,8 +215,8 @@ function runTestInFirstAndThirdPartyContexts(
         await new content.Promise(resolve => {
           ifr.onload = resolve;
 
-          content.document.body.appendChild(ifr);
           ifr.src = url;
+          content.document.body.appendChild(ifr);
         });
 
         content.open(url);

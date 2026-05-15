@@ -16,10 +16,11 @@ kind-dependencies:
     - generate-baseline-profile-firebase
 
 task-defaults:
+    run-on-repo-type: [hg]
     aab-artifact-template:
         type: file
         name: 'public/build/target.aab'
-        path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/{source_project_name}/app/outputs/bundle/{variant_name}/app-{gradle_build}-{gradle_build_type}.aab'
+        path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/{source_project_name}/app/outputs/bundle/{variant_name}/{aab_filename}'
     attributes:
         build_platform: android
     run:
@@ -64,7 +65,7 @@ tasks:
         description: 'Fenix debug AAB build from source code'
         run:
             gradle-build-type: debug
-            gradle-build-name: fenixDebug
+            gradle-build-name: debug
             gradle-build: fenix
         source-project-name: "fenix"
         treeherder:
@@ -131,7 +132,7 @@ tasks:
         run-on-projects: ["mozilla-release"]
         run:
             gradle-build-type: release
-            gradle-build-name: fenixRelease
+            gradle-build-name: release
             gradle-build: fenix
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
         shipping-phase: promote
@@ -174,7 +175,7 @@ tasks:
         run-on-projects: ["mozilla-central"]
         run:
             gradle-build-type: nightly
-            gradle-build-name: fenixNightly
+            gradle-build-name: nightly
             gradle-build: fenix
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
         source-project-name: "fenix"
@@ -221,7 +222,7 @@ tasks:
         run-on-projects: ["mozilla-beta"]
         run:
             gradle-build-type: beta
-            gradle-build-name: fenixBeta
+            gradle-build-name: beta
             gradle-build: fenix
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
         shipping-phase: promote

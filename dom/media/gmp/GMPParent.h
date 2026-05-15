@@ -9,20 +9,20 @@
 #include "GMPNativeTypes.h"
 #include "GMPProcessParent.h"
 #include "GMPServiceParent.h"
+#include "GMPStorageParent.h"
+#include "GMPTimerParent.h"
 #include "GMPVideoDecoderParent.h"
 #include "GMPVideoEncoderParent.h"
-#include "GMPTimerParent.h"
-#include "GMPStorageParent.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/gmp/PGMPParent.h"
 #include "mozilla/ipc/CrashReporterHelper.h"
 #include "nsCOMPtr.h"
-#include "nscore.h"
+#include "nsIFile.h"
 #include "nsISupports.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsIFile.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/MozPromise.h"
+#include "nscore.h"
 
 namespace mozilla::gmp {
 
@@ -65,6 +65,10 @@ class GMPParent final : public PGMPParent,
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPParent, final)
 
   GMPParent();
+
+#ifdef MOZ_WIDGET_ANDROID
+  void InitForClearkey(GeckoMediaPluginServiceParent* aService);
+#endif
 
   RefPtr<GenericPromise> Init(GeckoMediaPluginServiceParent* aService,
                               nsIFile* aPluginDir);

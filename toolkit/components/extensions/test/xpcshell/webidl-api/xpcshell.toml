@@ -4,7 +4,9 @@ firefox-appdir = "browser"
 tags = "webextensions webextensions-webidl-api"
 # NOTE: these tests seems to be timing out because it takes too much time to
 # run all tests and then fully exiting the test.
-skip-if = ["os == 'android' && verify"]
+skip-if = [
+  "os == 'android' && verify",
+]
 prefs = [
   "extensions.backgroundServiceWorker.enabled=true", # Enable support for the extension background service worker.
   # Enable Extensions API WebIDL bindings for extension windows.
@@ -23,7 +25,9 @@ prefs = [
 ["test_ext_webidl_api.js"]
 
 ["test_ext_webidl_api_event_callback.js"]
-skip-if = ["os == 'android' && processor == 'x86_64' && debug"] # Bug 1716308
+skip-if = [
+  "os == 'android' && arch == 'x86_64' && debug", # Bug 1716308
+]
 
 ["test_ext_webidl_api_request_handler.js"]
 

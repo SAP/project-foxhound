@@ -34,6 +34,7 @@ import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 from pywebsocket3 import msgutil
 
@@ -67,14 +68,14 @@ class DummyEndpointHandler(BaseHTTPRequestHandler):
         }
         msgutil.send_message(
             self.server.websocket_request,
-            json.dumps(
-                {
-                    "messageType": "notification",
-                    "channelID": query["channelID"][0],
-                    "data": base64.urlsafe_b64encode(post_body).decode(),
-                    "headers": headers if len(post_body) > 0 else None,
-                }
-            ),
+            json.dumps({
+                "messageType": "notification",
+                "channelID": query["channelID"][0],
+                "data": base64.urlsafe_b64encode(post_body).decode(),
+                "headers": headers if len(post_body) > 0 else None,
+                # without a version string the push client thinks it's a duplicate
+                "version": str(uuid4()),
+            }),
         )
 
 
@@ -120,37 +121,31 @@ def web_socket_transfer_data(request):
         if messageType == "hello":
             msgutil.send_message(
                 request,
-                json.dumps(
-                    {
-                        "messageType": "hello",
-                        "uaid": UAID,
-                        "status": 200,
-                        "use_webpush": True,
-                    }
-                ),
+                json.dumps({
+                    "messageType": "hello",
+                    "uaid": UAID,
+                    "status": 200,
+                    "use_webpush": True,
+                }),
             )
         elif messageType == "register":
             channelID = message["channelID"]
             msgutil.send_message(
                 request,
-                json.dumps(
-                    {
-                        "messageType": "register",
-                        "uaid": UAID,
-                        "channelID": channelID,
-                        "status": 200,
-                        "pushEndpoint": f"https://web-platform.test:{port}/push_endpoint?channelID={channelID}",
-                    }
-                ),
+                json.dumps({
+                    "messageType": "register",
+                    "uaid": UAID,
+                    "channelID": channelID,
+                    "status": 200,
+                    "pushEndpoint": f"https://web-platform.test:{port}/push_endpoint?channelID={channelID}",
+                }),
             )
         elif messageType == "unregister":
             msgutil.send_message(
                 request,
-                json.dumps(
-                    {
-                        "messageType": "unregister",
-                        "channelID": message["channelID"],
-                        "status": 200,
-                    }
-                ),
+                json.dumps({
+                    "messageType": "unregister",
+                    "channelID": message["channelID"],
+                    "status": 200,
+                }),
             )

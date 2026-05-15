@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<link rel="author" title="Emily McDonough" href="mailto:emcdonough@mozilla.com">
+<link rel="match" href="reference/teal-16x16-masked.html">
+<style>
+*{margin: 0; padding: 0;}
+div{
+    margin: 5px;
+    width: 16px;
+    height: 16px;
+    background: hotpink;
+}
+#mask{
+    margin: 0;
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 14px;
+    height: 14px;
+    border: teal 2px solid;
+    background: initial;
+}
+</style>
+<script>
+function ready(){
+    document.documentElement.removeAttribute("class");
+}
+</script>
+<!-- Mask to hide the edges of the video and try to reduce differences
+  caused by blurriness in PDF output. -->
+<div id="mask"></div>
+<div>
+  <video preload="auto" onloadeddata="ready()" onerror="ready()" src="support/16x16-teal-vp9.webm"></video>
+</div>
+</html>

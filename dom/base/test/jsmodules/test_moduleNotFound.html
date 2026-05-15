@@ -3,16 +3,16 @@
 <title>Test what happens when a top-level module is not found</title>
 <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
 <script>
-  var wasRun = false;
   var errorCount = 0;
   var eventCount = 0;
 
   SimpleTest.waitForExplicitFinish();
 
-  window.onerror = function(message, url, line, column, error) {
+  window.onerror = function(_message, _url, _line, _column, _error) {
     errorCount++;
   }
 
+  // eslint-disable-next-line no-unused-vars
   function testError() {
     ok(eventCount == 1, 'Check that an error event was fired');
     ok(errorCount == 0, 'Check that no error was reported');

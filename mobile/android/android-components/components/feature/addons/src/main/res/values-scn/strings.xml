@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://schemas.android.com/apk/res-auto">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- Description for giving an add-on access to users's data on one site. %1$s  will be replaced by the DNS host name for which a web extension is requesting access (e.g., www.mozilla.org). -->
   <string name="mozac_feature_addons_permissions_one_site_description">Accèdiri ê to dati pi %1$s</string>
   <!-- Description for giving an add-on access to users's data in multiple sites in the domain %1$s. %1$s will be replaced by the DNS domain for which a web extension is requesting access (e.g., mozilla.org). -->
   <string name="mozac_feature_addons_permissions_sites_in_domain_description">Accèdiri ê to dati pî siti nnô duminiu %1$s</string>
-  <!--
-    When an add-on requires access to more than 4 sites, for example the add-on requires access for 5 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
-    then we will show another collapsed entry saying "Access your data on 1 other site". This entry it's for the singular case, when the add-on is only accessing one extra site.
-  -->
-  <string name="mozac_feature_addons_permissions_one_extra_site_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Accèdiri ê to dati nta n’autru situ</string>
   <!--
     When an add-on requires access to more than 4 sites, for example the add-on requires access for 5 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
     then we will show another collapsed entry saying "Access your data on another site".
@@ -16,20 +18,9 @@
   <string name="mozac_feature_addons_permissions_one_extra_site_description_2">Accèdiri ê to dati nta n’autru situ</string>
   <!--
     When an add-on requires access to more than 4 sites, for example the add-on requires access for 6 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
-    then we will show another collapsed entry saying "Access your data on 2 other sites". This entry it's for the plural case, when the add-on is accessing more than one extra site.
-    %1$d will be replaced by an integer indicating the number of additional hosts for which this web extension is requesting permission.
-  -->
-  <string name="mozac_feature_addons_permissions_extra_sites_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Accèdiri ê to dati nta %1$d autri siti</string>
-  <!--
-    When an add-on requires access to more than 4 sites, for example the add-on requires access for 6 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
     then we will show another collapsed entry saying "Access your data on other sites".
   -->
   <string name="mozac_feature_addons_permissions_extra_sites_description_2">Accèdiri ê to dati nta autri siti</string>
-  <!--
-    When an add-on requires access to more than 4 domains, for example the add-on requires access for 5 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
-    then we will show another collapsed entry saying "Access your data on 1 other domain". This entry it's for the singular case, when the add-on is only accessing one extra domain.
-  -->
-  <string name="mozac_feature_addons_permissions_one_extra_domain_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Accèdiri ê to dati nta n’autru duminiu</string>
   <!--
     When an add-on requires access to more than 4 domains, for example the add-on requires access for 5 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
     then we will show another collapsed entry saying "Access your data on another domain.
@@ -37,17 +28,11 @@
   <string name="mozac_feature_addons_permissions_one_extra_domain_description_2">Accèdiri ê to dati nta n’autru duminiu</string>
   <!--
     When an add-on requires access to more than 4 domains, for example the add-on requires access for 6 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
-    then we will show another collapsed entry saying "Access your data on 2 other domains". This entry it's for the plural case, when the add-on is accessing more than one extra domain.
-    %1$d will be replaced by an integer indicating the number of additional domains for which this web extension is requesting permission.
-  -->
-  <string name="mozac_feature_addons_permissions_extra_domains_description_plural" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Accèdiri ê to dati nta %1$d autri dumini</string>
-  <!--
-    When an add-on requires access to more than 4 domains, for example the add-on requires access for 6 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
     then we will show another collapsed entry saying "Access your data on other domains".
   -->
   <string name="mozac_feature_addons_permissions_extra_domains_description_plural_2">Accèdiri ê to dati nta autri dumini</string>
   <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
-  <string name="mozac_feature_addons_permissions_all_domain_count_description" tools:ignore="PluralsCandidate">Accèdiri ê dati dî siti di %1$d dumini</string>
+  <string name="mozac_feature_addons_permissions_all_domain_count_description" moz:removedIn="148" tools:ignore="PluralsCandidate">Accèdiri ê dati dî siti di %1$d dumini</string>
   <!-- Content description for a permission item, for an installed add-on details page. %1$s will be replaced with the permission text name, %2$d will be replaced with the permission position in the list and %3$d will be replaced with the total number of permissions in the list.Taking as an example "Read and modify privacy settings" the whole text will read Read and modify privacy settings, 2 of 6. -->
   <string name="mozac_feature_addons_permissions_content_description_item">%1$s, %2$d di %3$d</string>
   <!-- Description for the "privacy" WebExtensions API permission. -->
@@ -185,8 +170,6 @@
   <!-- The text shown when an extension requests the userScripts permission, near the usual description of the userScripts permission -->
   <string name="mozac_feature_addons_permissions_user_scripts_extra_warning">I prugrammi nun virificati ponnu èssiri un rìsicu pâ sicurizza e pâ privatizza. Abbìa sulu prugrammi di stinneri o funti chi ài fiducia.</string>
   <!-- The sentence used when the extension has data collection permissions. %1$s is a formatted list of permissions. -->
-  <string name="mozac_feature_addons_permissions_required_data_collection_description" moz:removedIn="141" tools:ignore="UnusedResources">U sbiluppaturi dici chi stu stinneriu ricogghi: %1$s.</string>
-  <!-- The sentence used when the extension has data collection permissions. %1$s is a formatted list of permissions. -->
   <string name="mozac_feature_addons_permissions_required_data_collection_description_2">U sbiluppaturi dici chi stu stinneriu ricogghi: %1$s</string>
   <!-- The sentence used when the developer of an extension has explicitly stated that they do not collect any data collection. -->
   <string name="mozac_feature_addons_permissions_none_required_data_collection_description">U sbiluppaturi dici chi stu stinneriu nun abbisogna di ricògghiri dati.</string>
@@ -263,8 +246,6 @@
   <!-- Indicates the add-on is enabled. -->
   <string name="mozac_feature_addons_settings_on">Attiva</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
-  <string name="mozac_feature_addons_settings_allow_in_private_browsing" moz:removedIn="141" tools:ignore="UnusedResources">Pirmetti nnâ navicazzioni privata</string>
-  <!-- Indicates the add-on is allowed in private browsing mode. -->
   <string name="mozac_feature_addons_settings_allow_in_private_browsing_2">Pirmèttici ô stinneriu di abbiàrisi nnâ navicazzioni privata</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
   <string name="mozac_feature_addons_settings_run_in_private_browsing">Aḍḍuma nnâ navicazzioni privata</string>
@@ -291,25 +272,17 @@
   <!-- This is a button to report an add-on. -->
   <string name="mozac_feature_addons_report">Signalija</string>
   <!-- This is the title of a dialog that asks the users if they to install or not an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_permissions_dialog_title" moz:removedIn="141" tools:ignore="UnusedResources">Nzitari %1$s?</string>
-  <!-- This is the title of a dialog that asks the users if they to install or not an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_permissions_dialog_title_2">Junci %1$s</string>
-  <!-- This is the title of a dialog that asks the users to grant optional permissions. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_optional_permissions_dialog_title" moz:removedIn="142" tools:ignore="UnusedResources">%1$s addumanna pirmissi superchiu.</string>
   <!-- This is the title of a dialog that asks the users to grant optional permissions. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_optional_permissions_with_data_collection_dialog_title">%1$s addumanna mpustazzioni superchiu</string>
   <!-- This is the title of a dialog that asks the users to grant optional data collection permissions only. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_optional_permissions_with_data_collection_only_dialog_title">%1$s addumanna na ricota di dati superchiu</string>
-  <!-- This is the subtitle of a dialog that asks the users if they want to install or not an add-on, the subtitle lists the permissions that this add-on requires, the permissions will dynamically be listed after the ":". -->
-  <string name="mozac_feature_addons_permissions_dialog_subtitle" moz:removedIn="141" tools:ignore="UnusedResources">Addumanna u to’ pirmissu pi:</string>
   <!-- Heading for the permissions section in the add-on install dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_required_permissions">Pirmissi nicissari:</string>
   <!-- Heading for the data collection permissions section in the add-on install dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_required_data_collection">Ricota di dati nicissaria:</string>
   <!-- Heading for the optional settings section in the add-on install dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_optional_settings">Paràmitri upziunali:</string>
-  <!-- This is the subtitle of a dialog that asks the users to grant optional permissions, the subtitle lists the permissions that this add-on requests, the permissions will dynamically be listed after the ":". -->
-  <string name="mozac_feature_addons_optional_permissions_dialog_subtitle" moz:removedIn="142" tools:ignore="UnusedResources">Vulissi:</string>
   <!-- Heading for the permissions section in the optional permissions request dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_optional_permissions">Pirmissi novi:</string>
   <!-- Heading for the data collection permissions section in the optional permissions request dialog. -->
@@ -346,22 +319,12 @@
   <string name="mozac_feature_extensions_manager_notification_restart_button">Riabbìa stinneri</string>
   <!-- Button in the extensions manager that opens AMO in a tab -->
   <string name="mozac_feature_addons_find_more_extensions_button_text">Trova autri stinneri</string>
-  <!-- The label of the allow button, this will be shown to the user when an add-on needs new permissions, with the button the user will indicate that they want to accept the new permissions and update the add-on -->
-  <string name="mozac_feature_addons_updater_notification_allow_button" moz:removedIn="142" tools:ignore="UnusedResources">Pirmetti</string>
   <!-- The label of the update button on the system notification shown to the user when an add-on has an update that requires the user to accept new permissions. -->
   <string name="mozac_feature_addons_updater_notification_update_button">Attualizza</string>
-  <!-- The label of the deny button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated -->
-  <string name="mozac_feature_addons_updater_notification_deny_button" moz:removedIn="142" tools:ignore="UnusedResources">Nun pirmèttiri</string>
   <!-- The label of the cancel button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated -->
   <string name="mozac_feature_addons_updater_notification_cancel_button">Sfai</string>
-  <!-- The tile of the notification, this will be shown to the user when an add-on needs new permissions, to be updated. %1$s is the name of the add-ons -->
-  <string name="mozac_feature_addons_updater_notification_title" moz:removedIn="142" tools:ignore="UnusedResources">%1$s àvi n’attualizzu novu</string>
   <!-- The title of the system notification shown to the user when an add-on has a new update that requires new permissions. %1$s is the name of the add-on. -->
   <string name="mozac_feature_addons_updater_notification_title_2">%1$s àvi n’attualizzu novu</string>
-  <!-- The content of the notification, this will be shown when an add-on needs new permissions, to be updated. %1$d is the amount of new permissions -->
-  <string name="mozac_feature_addons_updater_notification_content" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">%1$d addumanna pirmissi novi</string>
-  <!-- The content of the notification displayed when an add-on needs a new permission -->
-  <string name="mozac_feature_addons_updater_notification_content_singular" moz:removedIn="142" tools:ignore="UnusedResources">Cc’è bisognu d’un pirmissu novu</string>
   <!-- A short explanation shown in the notification displayed when an add-on has a new update that requires new permissions. -->
   <string name="mozac_feature_addons_updater_notification_short_intro">Sfai pi usari i mpustazzioni e a virsioni chi usi accamora.</string>
   <!-- The heading for the permissions section in the system notification shown when an add-on has an update that requires user confirmation. %1$s is a list of sentences. -->
@@ -410,18 +373,10 @@
   <string name="mozac_feature_addons_blocklisted_2">%1$s rumpi i pulìtichi di Mozilla e nun po èssiri nzitatu nni %2$s.</string>
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">%1$s nun potti èssiri nzitatu picchì po èssiri nzitatu sulu di n’urganizzazzioni chi usa i pulìtichi di mpria, ma sta chiattafurma nun i supporta.</string>
-  <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_soft_blocked_1">%1$s rumpi i pulìtichi di Mozilla e nun po èssiri nzitatu nni %2$s.</string>
-  <!-- Text shown after successfully enabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_enabled" tools:ignore="UnusedResources" moz:removedIn="142">%1$s fu abbilitatu giustu</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_enable">Mpussìbbili abbilitari a %1$s</string>
-  <!-- Text shown after successfully disabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_disabled" tools:ignore="UnusedResources" moz:removedIn="142">%1$s fu sdisabbilitatu giustu</string>
   <!-- Text shown after failed to disable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_disable">Mpussìbbili sdisabbilitari a %1$s</string>
-  <!-- Text shown after successfully uninstalled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_uninstalled" tools:ignore="UnusedResources" moz:removedIn="142">%1$s fu sdisinzitatu bonu</string>
   <!-- Text shown after failed to uninstall an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_uninstall">Mpussìbbili sdisinzitari a %1$s</string>
   <!-- Text shown after successfully removed an add-on. %1$s is the add-on name. -->
@@ -448,12 +403,8 @@
   <string name="mozac_feature_addons_updater_dialog_last_attempt">Ùrtimu tintativu:</string>
   <!-- Displayed in the "Status" field for the updater when an add-on has been correctly updated -->
   <string name="mozac_feature_addons_updater_dialog_status">Statu:</string>
-  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_installed_dialog_title" moz:removedIn="142" tools:ignore="UnusedResources">%1$s fu junciutu a %2$s</string>
   <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_installed_dialog_title_2">Juncisti %1$s</string>
-  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_installed_dialog_description_2" moz:removedIn="142" tools:ignore="UnusedResources">Accedi a %1$s dû minù %2$s.</string>
   <!-- Used as text for the link in the description of the post-installation dialog. -->
   <string name="mozac_feature_addons_installed_dialog_description_link_text">mpustazzioni dû stinneriu</string>
   <!-- Text shown in the dialog when add-on installation is completed. %1$s is replaced by an active link, using mozac_feature_addons_installed_dialog_description_link_text as text ("extension settings"). -->
@@ -466,10 +417,6 @@
   <string name="mozac_feature_addons_status_see_details">Vidi minutagghi</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_blocklisted_1">Stu stinneriu è bluccatu picchì rumpi i pulìtichi di Mozilla e fu sdisabbilitatu.</string>
-  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
-  <string name="mozac_feature_addons_status_softblocked_1">Stu stinneriu è limitatu picchì rumpi i pulìtichi di Mozilla e fu sdisabbilitatu. U poi abbilitari, ma po’ èssiri un rìsicu.</string>
-  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
-  <string name="mozac_feature_addons_status_softblocked_re_enabled">Stu stinneriu rumpi i pulìtichi di Mozilla. Usallu po èssiri un rìsicu.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">%1$s nun potti èssiri virificatu comu sicuru e fu sdisabbilitatu.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

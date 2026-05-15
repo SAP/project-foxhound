@@ -23,6 +23,7 @@
 #include "api/audio/echo_canceller3_config.h"
 #include "api/environment/environment.h"
 #include "modules/audio_processing/aec3/aec3_common.h"
+#include "modules/audio_processing/aec3/block.h"
 #include "modules/audio_processing/aec3/delay_estimate.h"
 #include "modules/audio_processing/aec3/echo_audibility.h"
 #include "modules/audio_processing/aec3/echo_path_variability.h"
@@ -30,6 +31,7 @@
 #include "modules/audio_processing/aec3/erle_estimator.h"
 #include "modules/audio_processing/aec3/filter_analyzer.h"
 #include "modules/audio_processing/aec3/render_buffer.h"
+#include "modules/audio_processing/aec3/reverb_model.h"
 #include "modules/audio_processing/aec3/reverb_model_estimator.h"
 #include "modules/audio_processing/aec3/subtractor_output.h"
 #include "modules/audio_processing/aec3/subtractor_output_analyzer.h"
@@ -65,7 +67,7 @@ class AecState {
 
   // Returns the appropriate scaling of the residual echo to match the
   // audibility.
-  void GetResidualEchoScaling(rtc::ArrayView<float> residual_scaling) const;
+  void GetResidualEchoScaling(ArrayView<float> residual_scaling) const;
 
   // Returns whether the stationary properties of the signals are used in the
   // aec.
@@ -74,14 +76,13 @@ class AecState {
   }
 
   // Returns the ERLE.
-  rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> Erle(
+  ArrayView<const std::array<float, kFftLengthBy2Plus1>> Erle(
       bool onset_compensated) const {
     return erle_estimator_.Erle(onset_compensated);
   }
 
   // Returns the non-capped ERLE.
-  rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> ErleUnbounded()
-      const {
+  ArrayView<const std::array<float, kFftLengthBy2Plus1>> ErleUnbounded() const {
     return erle_estimator_.ErleUnbounded();
   }
 
@@ -128,7 +129,7 @@ class AecState {
   }
 
   // Return the frequency response of the reverberant echo.
-  rtc::ArrayView<const float> GetReverbFrequencyResponse() const {
+  ArrayView<const float> GetReverbFrequencyResponse() const {
     return reverb_model_estimator_.GetReverbFrequencyResponse();
   }
 
@@ -142,19 +143,22 @@ class AecState {
   // TODO(bugs.webrtc.org/10913): Compute multi-channel ERL.
   void Update(
       const std::optional<DelayEstimate>& external_delay,
-      rtc::ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
+      ArrayView<const std::vector<std::array<float, kFftLengthBy2Plus1>>>
           adaptive_filter_frequency_responses,
-      rtc::ArrayView<const std::vector<float>>
-          adaptive_filter_impulse_responses,
+      ArrayView<const std::vector<float>> adaptive_filter_impulse_responses,
       const RenderBuffer& render_buffer,
-      rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> E2_refined,
-      rtc::ArrayView<const std::array<float, kFftLengthBy2Plus1>> Y2,
-      rtc::ArrayView<const SubtractorOutput> subtractor_output);
+      ArrayView<const std::array<float, kFftLengthBy2Plus1>> E2_refined,
+      ArrayView<const std::array<float, kFftLengthBy2Plus1>> Y2,
+      ArrayView<const SubtractorOutput> subtractor_output);
 
   // Returns filter length in blocks.
   int FilterLengthBlocks() const {
     // All filters have the same length, so arbitrarily return channel 0 length.
     return filter_analyzer_.FilterLengthBlocks();
+  }
+
+  std::optional<DelayEstimate> ExternalDelayBlocks() const {
+    return delay_state_.ExternalDelayBlocks();
   }
 
  private:
@@ -201,11 +205,17 @@ class AecState {
 
     // Returns whether an external delay has been reported to the AecState (from
     // the delay estimator).
-    bool ExternalDelayReported() const { return external_delay_reported_; }
+    bool ExternalDelayReported() const { return external_delay_.has_value(); }
+
+    // Returns the external delay reported to the AecState (from the delay
+    // estimator).
+    std::optional<DelayEstimate> ExternalDelayBlocks() const {
+      return external_delay_;
+    }
 
     // Returns the delay in blocks relative to the beginning of the filter that
     // corresponds to the direct path of the echo.
-    rtc::ArrayView<const int> DirectPathFilterDelays() const {
+    ArrayView<const int> DirectPathFilterDelays() const {
       return filter_delays_blocks_;
     }
 
@@ -214,14 +224,12 @@ class AecState {
     int MinDirectPathFilterDelay() const { return min_filter_delay_; }
 
     // Updates the delay estimates based on new data.
-    void Update(
-        rtc::ArrayView<const int> analyzer_filter_delay_estimates_blocks,
-        const std::optional<DelayEstimate>& external_delay,
-        size_t blocks_with_proper_filter_adaptation);
+    void Update(ArrayView<const int> analyzer_filter_delay_estimates_blocks,
+                const std::optional<DelayEstimate>& external_delay,
+                size_t blocks_with_proper_filter_adaptation);
 
    private:
     const int delay_headroom_blocks_;
-    bool external_delay_reported_ = false;
     std::vector<int> filter_delays_blocks_;
     int min_filter_delay_;
     std::optional<DelayEstimate> external_delay_;
@@ -279,7 +287,7 @@ class AecState {
     void Update(const Block& x,
                 bool saturated_capture,
                 bool usable_linear_estimate,
-                rtc::ArrayView<const SubtractorOutput> subtractor_output,
+                ArrayView<const SubtractorOutput> subtractor_output,
                 float echo_path_gain);
 
    private:

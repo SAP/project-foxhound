@@ -63,6 +63,10 @@ class SVGFEMorphologyElement final : public SVGFEMorphologyElementBase {
 
   void UpdateUseCounter() const;
 
+  enum { RESULT, IN1 };
+  SVGAnimatedString mStringAttributes[2];
+  static StringInfo sStringInfo[2];
+
   enum { RADIUS };
   SVGAnimatedNumberPair mNumberPairAttributes[1];
   static NumberPairInfo sNumberPairInfo[1];
@@ -71,10 +75,6 @@ class SVGFEMorphologyElement final : public SVGFEMorphologyElementBase {
   SVGAnimatedEnumeration mEnumAttributes[1];
   static SVGEnumMapping sOperatorMap[];
   static EnumInfo sEnumInfo[1];
-
-  enum { RESULT, IN1 };
-  SVGAnimatedString mStringAttributes[2];
-  static StringInfo sStringInfo[2];
 };
 
 }  // namespace mozilla::dom

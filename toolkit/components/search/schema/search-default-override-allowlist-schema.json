@@ -16,8 +16,8 @@
     },
     "overridesAppIdv2": {
       "type": "string",
-      "title": "Add-on Id to Override (search-config-v2)",
-      "description": "The identifier of the app-provided add-on to be overridden. This field is for search-config-v2 support.",
+      "title": "Config search engine identifier to Override (search-config-v2)",
+      "description": "The identifier of the config search engine to be overridden. This field is for search-config-v2 support.",
       "pattern": "^[a-zA-Z0-9-._]*$"
     },
     "engineName": {

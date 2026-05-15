@@ -4,33 +4,11 @@
 
 
 class Atom:
-    def __init__(self, ident, string, ty="nsStaticAtom"):
+    def __init__(self, ident, string):
         self.ident = ident
         self.string = string
-        self.ty = ty
-        self.atom_type = self.__class__.__name__
         self.hash = hash_string(string)
         self.is_ascii_lowercase = is_ascii_lowercase(string)
-
-
-class PseudoElementAtom(Atom):
-    def __init__(self, ident, string):
-        Atom.__init__(self, ident, string, ty="nsCSSPseudoElementStaticAtom")
-
-
-class AnonBoxAtom(Atom):
-    def __init__(self, ident, string):
-        Atom.__init__(self, ident, string, ty="nsCSSAnonBoxPseudoStaticAtom")
-
-
-class NonInheritingAnonBoxAtom(AnonBoxAtom):
-    def __init__(self, ident, string):
-        AnonBoxAtom.__init__(self, ident, string)
-
-
-class InheritingAnonBoxAtom(AnonBoxAtom):
-    def __init__(self, ident, string):
-        AnonBoxAtom.__init__(self, ident, string)
 
 
 GOLDEN_RATIO_U32 = 0x9E3779B9

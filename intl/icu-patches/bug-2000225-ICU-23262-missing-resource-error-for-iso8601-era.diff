@@ -1,0 +1,29 @@
+# Add empty era for iso8601 calendar.
+#
+# ICU bug: https://unicode-org.atlassian.net/browse/ICU-23262
+
+diff --git a/intl/icu/source/data/misc/supplementalData.txt b/intl/icu/source/data/misc/supplementalData.txt
+--- a/intl/icu/source/data/misc/supplementalData.txt
++++ b/intl/icu/source/data/misc/supplementalData.txt
+@@ -213,16 +213,21 @@ supplementalData:table(nofallback){
+                         622,
+                         7,
+                         18,
+                     }
+                 }
+             }
+             system{"lunar"}
+         }
++        iso8601{
++            eras{
++            }
++            system{"solar"}
++        }
+         japanese{
+             eras{
+                 0{
+                     start:intvector{
+                         645,
+                         6,
+                         19,
+                     }

@@ -17,7 +17,7 @@ const {
   getFormatStr,
 } = require("resource://devtools/client/inspector/animation/utils/l10n.js");
 
-const PLAYBACK_RATES = [0.1, 0.25, 0.5, 1, 2, 5, 10];
+const PLAYBACK_RATES = [0.01, 0.1, 0.25, 0.5, 1, 2, 5, 10];
 
 class PlaybackRateSelector extends PureComponent {
   static get propTypes() {

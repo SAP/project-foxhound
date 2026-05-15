@@ -10,8 +10,6 @@
 #include "mozilla/SandboxBrokerCommon.h"
 
 #include "base/platform_thread.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsTHashMap.h"
 #include "nsHashKeys.h"
@@ -107,6 +105,9 @@ class SandboxBroker final : private SandboxBrokerCommon,
     // include the root directory, but if the path is given with a
     // trailing slash it includes the path without the slash.)
     void AddAncestors(const char* aPath, int aPerms = MAY_ACCESS);
+    // Removes explicit deny rules, intended for lowering the sandbox for file
+    // processes or lower sandbox levels.
+    void RemoveAllDenyRules();
     // Default: add file if it exists when creating policy or if we're
     // conferring permission to create it (log files, etc.).
     void AddPath(int aPerms, const char* aPath) {

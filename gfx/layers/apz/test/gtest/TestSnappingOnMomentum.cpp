@@ -76,7 +76,7 @@ TEST_F(APZCSnappingOnMomentumTesterMock, Snap_On_Momentum) {
   // After lifting the fingers, the velocity should be zero and a smooth
   // animation should have been triggered for scroll snap.
   EXPECT_EQ(apzc->GetVelocityVector().y, 0);
-  apzc->AssertStateIsSmoothMsdScroll();
+  apzc->AssertInSmoothMsdScroll();
 
   mcc->AdvanceByMillis(5);
 

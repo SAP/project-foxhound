@@ -2,6 +2,16 @@
   * License, v. 2.0. If a copy of the MPL was not distributed with this
   * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+moz-card {
+  background-color: var(--sidebar-box-background);
+  box-shadow: none;
+  color: var(--sidebar-box-color);
+  border: var(--sidebar-box-border);
+  border-radius: var(--border-radius-medium);
+  border-width: var(--sidebar-box-border-width);
+  border-color: var(--sidebar-box-border-color);
+}
+
 .delete-login-button-container {
   display: flex;
   justify-content: end;

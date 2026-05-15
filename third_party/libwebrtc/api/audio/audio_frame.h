@@ -64,6 +64,10 @@ class AudioFrame {
   enum : size_t {
     // Stereo, 32 kHz, 120 ms (2 * 32 * 120)
     // Stereo, 192 kHz, 20 ms (2 * 192 * 20)
+    // 8 channels (kMaxConcurrentChannels), 48 kHz, 20 ms (8 * 48 * 20).
+    // 24 channels (kMaxNumberOfAudioChannels), 32 kHz kHz, 10 ms (24 * 32 * 10)
+    // At 48 kHz, 10 ms buffers, the maximum number of channels AudioFrame can
+    // hold, is 16. (16 * 48 * 10).
     kMaxDataSizeSamples = 7680,
     kMaxDataSizeBytes = kMaxDataSizeSamples * sizeof(int16_t),
   };
@@ -110,17 +114,6 @@ class AudioFrame {
                    size_t num_channels = 1);
 
   void CopyFrom(const AudioFrame& src);
-
-  // Sets a wall-time clock timestamp in milliseconds to be used for profiling
-  // of time between two points in the audio chain.
-  // Example:
-  //   t0: UpdateProfileTimeStamp()
-  //   t1: ElapsedProfileTimeMs() => t1 - t0 [msec]
-  void UpdateProfileTimeStamp();
-  // Returns the time difference between now and when UpdateProfileTimeStamp()
-  // was last called. Returns -1 if UpdateProfileTimeStamp() has not yet been
-  // called.
-  int64_t ElapsedProfileTimeMs() const;
 
   // data() returns a zeroed static buffer if the frame is muted.
   // TODO: b/335805780 - Return InterleavedView.
@@ -185,12 +178,6 @@ class AudioFrame {
   size_t num_channels_ = 0;
   SpeechType speech_type_ = kUndefined;
   VADActivity vad_activity_ = kVadUnknown;
-  // Monotonically increasing timestamp intended for profiling of audio frames.
-  // Typically used for measuring elapsed time between two different points in
-  // the audio path. No lock is used to save resources and we are thread safe
-  // by design.
-  // TODO(nisse@webrtc.org): consider using std::optional.
-  int64_t profile_timestamp_ms_ = 0;
 
   // Information about packets used to assemble this audio frame. This is needed
   // by `SourceTracker` when the frame is delivered to the RTCRtpReceiver's
@@ -212,7 +199,7 @@ class AudioFrame {
   // A permanently zeroed out buffer to represent muted frames. This is a
   // header-only class, so the only way to avoid creating a separate zeroed
   // buffer per translation unit is to wrap a static in an inline function.
-  static rtc::ArrayView<const int16_t> zeroed_data();
+  static ArrayView<const int16_t> zeroed_data();
 
   std::array<int16_t, kMaxDataSizeSamples> data_;
   bool muted_ = true;
@@ -221,7 +208,7 @@ class AudioFrame {
   // Absolute capture timestamp when this audio frame was originally captured.
   // This is only valid for audio frames captured on this machine. The absolute
   // capture timestamp of a received frame is found in `packet_infos_`.
-  // This timestamp MUST be based on the same clock as rtc::TimeMillis().
+  // This timestamp MUST be based on the same clock as TimeMillis().
   std::optional<int64_t> absolute_capture_timestamp_ms_;
 };
 

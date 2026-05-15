@@ -19,12 +19,16 @@ const actionTypes = {
   UNREGISTER_WORKER: "UNREGISTER_WORKER",
   UPDATE_CAN_DEBUG_WORKERS: "UPDATE_CAN_DEBUG_WORKERS",
   UPDATE_WORKERS: "UPDATE_WORKERS",
+  // session history substate
+  UPDATE_SESSION_HISTORY: "UPDATE_SESSION_HISTORY",
+  UPDATE_SESSION_HISTORY_ENTRY: "UPDATE_SESSION_HISTORY_ENTRY",
 };
 
 // NOTE: these const values are used as part of CSS selectors - be mindful of the characters used
 const PAGE_TYPES = {
   MANIFEST: "manifest",
   SERVICE_WORKERS: "service-workers",
+  SESSION_HISTORY: "session-history",
 };
 
 const DEFAULT_PAGE = PAGE_TYPES.SERVICE_WORKERS;

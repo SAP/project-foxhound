@@ -1,4 +1,4 @@
-// |jit-test| --enable-regexp-modifiers
+// |jit-test|
 
 try {
   new RegExp("(?--");

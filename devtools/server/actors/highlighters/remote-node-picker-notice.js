@@ -37,7 +37,11 @@ class RemoteNodePickerNotice {
 
     this.markup = new CanvasFrameAnonymousContentHelper(
       this.#highlighterEnvironment,
-      this.#buildMarkup
+      this.#buildMarkup,
+      {
+        contentRootHostClassName:
+          "devtools-highlighter-remote-node-picker-notice",
+      }
     );
     this.isReady = this.markup.initialize();
   }
@@ -148,9 +152,9 @@ class RemoteNodePickerNotice {
     }
 
     if (targetId === this.hideButtonId) {
-      hideButton.classList.add("hover");
+      hideButton.classList?.add("hover");
     } else {
-      hideButton.classList.remove("hover");
+      hideButton.classList?.remove("hover");
     }
     this.#previousHoveredElement = target;
   }

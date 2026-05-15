@@ -347,7 +347,7 @@ NS_IMETHODIMP nsTreeSelection::TimedSelect(int32_t aIndex, int32_t aMsec) {
       nsIEventTarget* target = GetMainThreadSerialEventTarget();
       NS_NewTimerWithFuncCallback(getter_AddRefs(mSelectTimer), SelectCallback,
                                   this, aMsec, nsITimer::TYPE_ONE_SHOT,
-                                  "nsTreeSelection::SelectCallback", target);
+                                  "nsTreeSelection::SelectCallback"_ns, target);
     }
   }
 

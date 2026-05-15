@@ -9,57 +9,38 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string_view>
 
+#include "js/ProtoKey.h"
 #include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
 #include "js/Utility.h"
 
 namespace mozilla::intl {
 enum class ICUError : uint8_t;
 }
 
-namespace js {
+namespace JS {
+class CallArgs;
+}
 
-class PropertyName;
-
-namespace intl {
-
-/**
- * Initialize a new Intl.* object using the named self-hosted function.
- */
-extern bool InitializeObject(JSContext* cx, JS::Handle<JSObject*> obj,
-                             JS::Handle<PropertyName*> initializer,
-                             JS::Handle<JS::Value> locales,
-                             JS::Handle<JS::Value> options);
-
-enum class DateTimeFormatOptions {
-  Standard,
-  EnableMozExtensions,
-};
+namespace js::intl {
 
 /**
- * Initialize an existing object as an Intl.DateTimeFormat object.
+ * ChainDateTimeFormat ( dateTimeFormat, newTarget, this )
+ * ChainNumberFormat ( numberFormat, newTarget, this )
  */
-extern bool InitializeDateTimeFormatObject(
-    JSContext* cx, JS::Handle<JSObject*> obj, JS::Handle<JS::Value> thisValue,
-    JS::Handle<JS::Value> locales, JS::Handle<JS::Value> options,
-    JS::Handle<JSString*> required, JS::Handle<JSString*> defaults,
-    JS::Handle<JS::Value> toLocaleStringTimeZone,
-    DateTimeFormatOptions dtfOptions, JS::MutableHandle<JS::Value> result);
+extern bool ChainLegacyIntlFormat(JSContext* cx, JSProtoKey protoKey,
+                                  const JS::CallArgs& args,
+                                  JS::Handle<JSObject*> format);
 
 /**
- * Initialize an existing object as an Intl.NumberFormat object.
+ * UnwrapDateTimeFormat ( dtf )
+ * UnwrapNumberFormat ( nf )
  */
-extern bool InitializeNumberFormatObject(JSContext* cx,
-                                         JS::Handle<JSObject*> obj,
-                                         JS::Handle<JS::Value> thisValue,
-                                         JS::Handle<JS::Value> locales,
-                                         JS::Handle<JS::Value> options,
-                                         JS::MutableHandle<JS::Value> result);
-
-/**
- * Returns the object holding the internal properties for obj.
- */
-extern JSObject* GetInternalsObject(JSContext* cx, JS::Handle<JSObject*> obj);
+extern bool UnwrapLegacyIntlFormat(JSContext* cx, JSProtoKey protoKey,
+                                   JS::Handle<JSObject*> format,
+                                   JS::MutableHandle<JS::Value> result);
 
 /** Report an Intl internal error not directly tied to a spec step. */
 extern void ReportInternalError(JSContext* cx);
@@ -74,24 +55,7 @@ extern void ReportInternalError(JSContext* cx, mozilla::intl::ICUError error);
  * an implementation, and that en-GB is more representative of the English used
  * in other locales.
  */
-static inline const char* LastDitchLocale() { return "en-GB"; }
-
-/**
- * Certain old, commonly-used language tags that lack a script, are expected to
- * nonetheless imply one. This object maps these old-style tags to modern
- * equivalents.
- */
-struct OldStyleLanguageTagMapping {
-  const char* const oldStyle;
-  const char* const modernStyle;
-
-  // Provide a constructor to catch missing initializers in the mappings array.
-  constexpr OldStyleLanguageTagMapping(const char* oldStyle,
-                                       const char* modernStyle)
-      : oldStyle(oldStyle), modernStyle(modernStyle) {}
-};
-
-extern const OldStyleLanguageTagMapping oldStyleLanguageTagMappings[5];
+static constexpr std::string_view LastDitchLocale() { return "en-GB"; }
 
 extern JS::UniqueChars EncodeLocale(JSContext* cx, JSString* locale);
 
@@ -105,8 +69,7 @@ void AddICUCellMemory(JSObject* obj, size_t nbytes);
 void RemoveICUCellMemory(JSObject* obj, size_t nbytes);
 
 void RemoveICUCellMemory(JS::GCContext* gcx, JSObject* obj, size_t nbytes);
-}  // namespace intl
 
-}  // namespace js
+}  // namespace js::intl
 
 #endif /* builtin_intl_CommonFunctions_h */

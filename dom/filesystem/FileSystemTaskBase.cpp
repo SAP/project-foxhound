@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/FileSystemTaskBase.h"
 
-#include "nsNetCID.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileSystemBase.h"
 #include "mozilla/dom/FileSystemRequestParent.h"
@@ -15,7 +14,7 @@
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/Unused.h"
+#include "nsNetCID.h"
 #include "nsProxyRelease.h"
 
 namespace mozilla::dom {

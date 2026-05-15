@@ -49,7 +49,7 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveMultiTouchInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
@@ -70,7 +70,7 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveMouseInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
@@ -91,7 +91,7 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceivePanGestureInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
@@ -112,7 +112,7 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceivePinchGestureInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
@@ -133,7 +133,7 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveTapGestureInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
@@ -154,7 +154,7 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveScrollWheelInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 
@@ -175,7 +175,7 @@ mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveKeyboardInputEvent(
     callback = [self = RefPtr<APZInputBridgeParent>(this)](
                    uint64_t aInputBlockId,
                    const APZHandledResult& aHandledResult) {
-      Unused << self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
+      (void)self->SendCallInputBlockCallback(aInputBlockId, aHandledResult);
     };
   }
 

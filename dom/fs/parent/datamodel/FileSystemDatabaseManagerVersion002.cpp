@@ -16,7 +16,6 @@
 #include "ResultStatement.h"
 #include "StartedTransaction.h"
 #include "mozStorageHelper.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/dom/FileSystemDataManager.h"
 #include "mozilla/dom/FileSystemHandle.h"
 #include "mozilla/dom/FileSystemLog.h"

@@ -75,7 +75,6 @@ internal class FilePicker(
      *
      * @param promptRequest The [File] prompt request.
      */
-    @Suppress("ComplexMethod")
     fun handleFileRequest(promptRequest: File) {
         // Track which permissions are needed.
         val neededPermissions = getNecessaryPermissions(promptRequest)

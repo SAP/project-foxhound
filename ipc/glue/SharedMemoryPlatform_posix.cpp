@@ -94,7 +94,7 @@ static int DupReadOnly(int aFd) {
 // operations permitted on a file descriptor.
 
 static int DupReadOnly(int aFd) {
-  int rofd = dup(aFd);
+  int rofd = fcntl(aFd, F_DUPFD_CLOEXEC, 0);
   if (rofd < 0) {
     return -1;
   }
@@ -346,13 +346,12 @@ bool Platform::CreateFreezable(FreezableHandle& aHandle, size_t aSize) {
 }
 
 PlatformHandle Platform::CloneHandle(const PlatformHandle& aHandle) {
-  const int new_fd = dup(aHandle.get());
-  if (new_fd < 0) {
+  auto rv = DuplicateFileHandle(aHandle);
+  if (!rv) {
     MOZ_LOG_FMT(gSharedMemoryLog, LogLevel::Warning,
                 "failed to duplicate file descriptor: {}", strerror(errno));
-    return nullptr;
   }
-  return mozilla::UniqueFileHandle(new_fd);
+  return rv;
 }
 
 bool Platform::Freeze(FreezableHandle& aHandle) {

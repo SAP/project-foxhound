@@ -50,7 +50,8 @@ class RequestListColumnCookies extends Component {
       : "";
     return dom.td(
       {
-        className: "requests-list-column requests-list-cookies",
+        className:
+          "requests-list-column requests-list-number-column requests-list-cookies",
         title: requestCookiesLength,
       },
       requestCookiesLength

@@ -24,11 +24,6 @@ add_heuristic_tests(
             { fieldName: "postal-code" },
             { fieldName: "tel" },
             { fieldName: "email" },
-          ],
-        },
-        {
-          invalid: true,
-          fields: [
             { fieldName: "address-line1", reason:"regex-heuristic" },
           ],
         },
@@ -74,6 +69,7 @@ add_heuristic_tests(
     },
     {
       fixturePath: "Payment.html",
+      useTestYear: 2025,
       expectedResult: [
         {
           default: {
@@ -111,11 +107,6 @@ add_heuristic_tests(
             { fieldName: "postal-code" },
             { fieldName: "tel" },
             { fieldName: "email" },
-          ],
-        },
-        {
-          invalid: true,
-          fields: [
             { fieldName: "address-line1", reason:"regex-heuristic" },
           ],
         },
@@ -136,11 +127,6 @@ add_heuristic_tests(
             { fieldName: "postal-code" },
             { fieldName: "tel" },
             { fieldName: "email" },
-          ],
-        },
-        {
-          invalid: true,
-          fields: [
             { fieldName: "address-line1", reason:"regex-heuristic" },
           ],
         },

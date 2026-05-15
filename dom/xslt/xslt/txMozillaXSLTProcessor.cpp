@@ -4,33 +4,34 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txMozillaXSLTProcessor.h"
-#include "nsError.h"
-#include "mozilla/AutoRestore.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Document.h"
-#include "nsIURI.h"
+
 #include "XPathResult.h"
+#include "jsapi.h"
+#include "mozilla/AutoRestore.h"
+#include "mozilla/Components.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentFragment.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/XSLTProcessorBinding.h"
+#include "mozilla/intl/Localization.h"
+#include "nsError.h"
+#include "nsIPrincipal.h"
+#include "nsIURI.h"
+#include "nsIXPConnect.h"
+#include "nsJSUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsRFPService.h"
+#include "nsTextNode.h"
+#include "nsThreadUtils.h"
+#include "nsVariant.h"
 #include "txExecutionState.h"
+#include "txExprParser.h"
 #include "txMozillaTextOutput.h"
 #include "txMozillaXMLOutput.h"
 #include "txURIUtils.h"
-#include "txXMLUtils.h"
 #include "txUnknownHandler.h"
+#include "txXMLUtils.h"
 #include "txXSLTProcessor.h"
-#include "nsIPrincipal.h"
-#include "nsThreadUtils.h"
-#include "jsapi.h"
-#include "txExprParser.h"
-#include "nsJSUtils.h"
-#include "nsIXPConnect.h"
-#include "nsNameSpaceManager.h"
-#include "nsVariant.h"
-#include "nsTextNode.h"
-#include "mozilla/Components.h"
-#include "mozilla/dom/DocumentFragment.h"
-#include "mozilla/dom/XSLTProcessorBinding.h"
-#include "mozilla/intl/Localization.h"
-#include "nsRFPService.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1139,7 +1140,7 @@ void txMozillaXSLTProcessor::notifyError() {
 
   IgnoredErrorResult rv;
   ElementCreationOptionsOrString options;
-  Unused << options.SetAsString();
+  (void)options.SetAsString();
 
   nsCOMPtr<Element> element =
       document->CreateElementNS(ns, u"parsererror"_ns, options, rv);
@@ -1161,7 +1162,7 @@ void txMozillaXSLTProcessor::notifyError() {
 
   if (!mSourceText.IsEmpty()) {
     ElementCreationOptionsOrString options;
-    Unused << options.SetAsString();
+    (void)options.SetAsString();
 
     nsCOMPtr<Element> sourceElement =
         document->CreateElementNS(ns, u"sourcetext"_ns, options, rv);
@@ -1227,8 +1228,7 @@ void txMozillaXSLTProcessor::CharacterDataChanged(
 
 void txMozillaXSLTProcessor::AttributeChanged(Element* aElement,
                                               int32_t aNameSpaceID,
-                                              nsAtom* aAttribute,
-                                              int32_t aModType,
+                                              nsAtom* aAttribute, AttrModType,
                                               const nsAttrValue* aOldValue) {
   mStylesheet = nullptr;
 }
@@ -1261,8 +1261,13 @@ DocGroup* txMozillaXSLTProcessor::GetDocGroup() const {
 /* static */
 already_AddRefed<txMozillaXSLTProcessor> txMozillaXSLTProcessor::Constructor(
     const GlobalObject& aGlobal) {
+  nsISupports* supports = aGlobal.GetAsSupports();
+  nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(supports);
+  if (win && win->GetExtantDoc()) {
+    win->GetExtantDoc()->WarnOnceAbout(DeprecatedOperations::eXSLTDeprecated);
+  }
   RefPtr<txMozillaXSLTProcessor> processor =
-      new txMozillaXSLTProcessor(aGlobal.GetAsSupports());
+      new txMozillaXSLTProcessor(supports);
   return processor.forget();
 }
 

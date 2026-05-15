@@ -29,8 +29,7 @@ class API_AVAILABLE(macos(14.0)) SckPickerProxy {
     return g_picker;
   }
 
-  bool AtCapacityLocked() const {
-    mutex_.AssertHeld();
+  bool AtCapacityLocked() const RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
     return handle_count_ == kMaximumStreamCount;
   }
 
@@ -39,7 +38,7 @@ class API_AVAILABLE(macos(14.0)) SckPickerProxy {
   }
 
   ABSL_MUST_USE_RESULT std::optional<DesktopCapturer::SourceId>
-  AcquireSourceId() {
+      AcquireSourceId() {
     MutexLock lock(&mutex_);
     if (AtCapacityLocked()) {
       return std::nullopt;

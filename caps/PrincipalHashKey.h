@@ -9,7 +9,6 @@
 
 #include "BasePrincipal.h"
 #include "PLDHashTable.h"
-#include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"
 

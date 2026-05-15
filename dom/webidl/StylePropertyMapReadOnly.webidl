@@ -7,12 +7,13 @@
  * https://drafts.css-houdini.org/css-typed-om-1/#the-stylepropertymap
  */
 
+// https://drafts.css-houdini.org/css-typed-om-1/#stylepropertymapreadonly
 // TODO: Expose to LayoutWorklet
 [Exposed=(Window, Worker, PaintWorklet), Pref="layout.css.typed-om.enabled"]
 interface StylePropertyMapReadOnly {
-    iterable<UTF8String, sequence<CSSStyleValue>>;
-    [Throws] (undefined or CSSStyleValue) get(UTF8String property);
-    [Throws] sequence<CSSStyleValue> getAll(UTF8String property);
-    [Throws] boolean has(UTF8String property);
-    readonly attribute unsigned long size;
+  iterable<UTF8String, sequence<CSSStyleValue>>;
+  [Throws] (undefined or CSSStyleValue) get(UTF8String property);
+  [Throws] sequence<CSSStyleValue> getAll(UTF8String property);
+  [Throws] boolean has(UTF8String property);
+  readonly attribute unsigned long size;
 };

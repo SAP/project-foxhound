@@ -33,7 +33,9 @@ export function WallpaperFeatureHighlight({
   const { messageData } = useSelector(state => state.Messages);
 
   return (
-    <div className="wallpaper-feature-highlight">
+    <div
+      className={`wallpaper-feature-highlight ${messageData.content?.darkModeDismiss ? "is-inverted-dark-dismiss-button" : ""}`}
+    >
       <FeatureHighlight
         position={position}
         data-l10n-id="feature-highlight-wallpaper"
@@ -41,23 +43,62 @@ export function WallpaperFeatureHighlight({
         dispatch={dispatch}
         message={
           <div className="wallpaper-feature-highlight-content">
-            <img
-              src="chrome://newtab/content/data/content/assets/custom-wp-highlight.png"
-              alt=""
-              width="320"
-              height="195"
-            />
-            <p className="title" data-l10n-id={messageData.content.title} />
-            <p
-              className="subtitle"
-              data-l10n-id={messageData.content.subtitle}
-            />
-            <span className="button-wrapper">
-              <moz-button
-                type="default"
-                onClick={() => onToggleClick("open-customize-menu")}
-                data-l10n-id={messageData.content.cta}
+            <picture className="follow-section-button-highlight-image">
+              <source
+                srcSet={
+                  messageData.content?.darkModeImageURL ||
+                  "chrome://newtab/content/data/content/assets/highlights/omc-newtab-wallpapers.svg"
+                }
+                media="(prefers-color-scheme: dark)"
               />
+              <source
+                srcSet={
+                  messageData.content?.imageURL ||
+                  "chrome://newtab/content/data/content/assets/highlights/omc-newtab-wallpapers.svg"
+                }
+                media="(prefers-color-scheme: light)"
+              />
+              <img width="320" height="195" alt="" />
+            </picture>
+            {messageData.content?.cardTitle ? (
+              <p className="title">{messageData.content.cardTitle}</p>
+            ) : (
+              <p
+                className="title"
+                data-l10n-id={
+                  messageData.content.title ||
+                  "newtab-new-user-custom-wallpaper-title"
+                }
+              />
+            )}
+            {messageData.content?.cardMessage ? (
+              <p className="subtitle">{messageData.content.cardMessage}</p>
+            ) : (
+              <p
+                className="subtitle"
+                data-l10n-id={
+                  messageData.content.subtitle ||
+                  "newtab-new-user-custom-wallpaper-subtitle"
+                }
+              />
+            )}
+            <span className="button-wrapper">
+              {messageData.content?.cardCta ? (
+                <moz-button
+                  type="default"
+                  onClick={() => onToggleClick("open-customize-menu")}
+                  label={messageData.content.cardCta}
+                />
+              ) : (
+                <moz-button
+                  type="default"
+                  onClick={() => onToggleClick("open-customize-menu")}
+                  data-l10n-id={
+                    messageData.content.cta ||
+                    "newtab-new-user-custom-wallpaper-cta"
+                  }
+                />
+              )}
             </span>
           </div>
         }

@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NavigationPreloadManager.h"
+
 #include "ServiceWorkerUtils.h"
-#include "nsNetUtil.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/NavigationPreloadManagerBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/ipc/MessageChannel.h"
+#include "nsNetUtil.h"
 
 namespace mozilla::dom {
 

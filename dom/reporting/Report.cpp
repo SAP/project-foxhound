@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/Report.h"
+
 #include "mozilla/dom/ReportBody.h"
 #include "mozilla/dom/ReportingBinding.h"
 #include "nsIGlobalObject.h"
@@ -37,6 +38,8 @@ JSObject* Report::WrapObject(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) {
   return Report_Binding::Wrap(aCx, this, aGivenProto);
 }
+
+const nsString& Report::Type() const { return mType; }
 
 void Report::GetType(nsAString& aType) const { aType = mType; }
 

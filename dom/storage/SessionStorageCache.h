@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_SessionStorageCache_h
 #define mozilla_dom_SessionStorageCache_h
 
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/LSWriteOptimizerImpl.h"
 #include "nsTHashMap.h"
 

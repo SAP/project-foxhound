@@ -37,7 +37,9 @@ support-files = ["file_self_close.html"]
 support-files = ["file_useractivation_sandbox_transient_popup.html"]
 
 ["test_useractivation_scrollbar.html"]
-skip-if = ["os == 'android'"]  # scrollbar not showed on mobile
+run-if = [
+  "os != 'android'", # scrollbar not showed on mobile
+]
 
 ["test_useractivation_transient.html"]
 

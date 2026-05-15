@@ -1,0 +1,10 @@
+[DEFAULT]
+support-files = [
+    "framebusting_intervention_frame.html",
+    "framebusting_intervention_parent.html",
+    "head.js",
+]
+
+["browser_framebusting_identity.js"]
+
+["browser_framebusting_notification.js"]

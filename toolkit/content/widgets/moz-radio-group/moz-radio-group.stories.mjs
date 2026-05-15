@@ -39,6 +39,10 @@ export default {
     accesskeys: {
       if: { arg: "showAccesskeys", truthy: true },
     },
+    headingLevel: {
+      options: ["", "1", "2", "3", "4", "5", "6"],
+      control: { type: "select" },
+    },
   },
   parameters: {
     actions: {
@@ -102,6 +106,7 @@ const Template = ({
   groupSlottedSupportLink,
   nestedFields,
   ellipsized,
+  headingLevel,
 }) => html`
   <moz-radio-group
     name=${groupName}
@@ -109,6 +114,7 @@ const Template = ({
     support-page=${ifDefined(groupSupportPage)}
     ?disabled=${disabled}
     value=${value}
+    .headingLevel=${headingLevel}
   >
     ${groupSlottedSupportLink
       ? html`<a href="/" slot="support-link">Slotted support link</a>`
@@ -160,6 +166,7 @@ Default.args = {
   groupSupportPage: "",
   hasSlottedSupportLinks: false,
   groupSlottedSupportLink: false,
+  headingLevel: "",
 };
 
 export const AllUnchecked = Template.bind({});
@@ -241,4 +248,10 @@ WithEllipsizedLabel.args = {
   ...Default.args,
   ellipsized: true,
   l10nId: "moz-checkbox-long-label",
+};
+
+export const WithHeadingLabel = Template.bind({});
+WithHeadingLabel.args = {
+  ...WithRadioGroupDescription.args,
+  headingLevel: "2",
 };

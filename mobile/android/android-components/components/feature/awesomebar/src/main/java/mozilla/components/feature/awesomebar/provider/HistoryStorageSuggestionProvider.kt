@@ -147,6 +147,7 @@ internal suspend fun Iterable<SearchResult>.into(
             title = result.title,
             description = result.url,
             editSuggestion = if (showEditSuggestion) result.url else null,
+            isRemovalAllowed = true,
             score = result.score,
             onSuggestionClicked = {
                 loadUrlUseCase(result.url)

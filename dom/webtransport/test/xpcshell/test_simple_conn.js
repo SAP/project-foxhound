@@ -21,7 +21,6 @@ const dns = Services.dns;
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref("network.webtransport.enabled");
-  Services.prefs.clearUserPref("network.webtransport.datagrams.enabled");
   Services.prefs.clearUserPref("network.webtransport.redirect.enabled");
 });
 
@@ -51,7 +50,6 @@ function addCertFromFile(certdb, filename, trustString) {
 add_setup(async function setup() {
   Services.prefs.setCharPref("network.dns.localDomains", "foo.example.com");
   Services.prefs.setBoolPref("network.webtransport.enabled", true);
-  Services.prefs.setBoolPref("network.webtransport.datagrams.enabled", true);
   Services.prefs.setBoolPref("network.webtransport.redirect.enabled", true);
 
   h3Port = Services.env.get("MOZHTTP3_PORT");

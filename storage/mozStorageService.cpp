@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BaseVFS.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsIFile.h"
@@ -303,7 +302,7 @@ void Service::minimizeMemory() {
       nsCOMPtr<nsIRunnable> event = NewRunnableMethod<const nsCString>(
           "Connection::ExecuteSimpleSQL", conn, &Connection::ExecuteSimpleSQL,
           shrinkPragma);
-      Unused << conn->eventTargetOpenedOn->Dispatch(event, NS_DISPATCH_NORMAL);
+      (void)conn->eventTargetOpenedOn->Dispatch(event, NS_DISPATCH_NORMAL);
     }
   }
 }

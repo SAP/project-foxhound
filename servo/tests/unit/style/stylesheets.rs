@@ -8,7 +8,6 @@ use parking_lot::RwLock;
 use selectors::attr::*;
 use selectors::parser::*;
 use servo_arc::Arc;
-use stylo_atoms::Atom;
 use servo_config::prefs::{PrefValue, PREFS};
 use servo_url::ServoUrl;
 use std::borrow::ToOwned;
@@ -31,6 +30,7 @@ use style::values::computed::Percentage;
 use style::values::specified::TimingFunction;
 use style::values::specified::{LengthPercentageOrAuto, PositionComponent};
 use style::values::{CustomIdent, KeyframesName};
+use stylo_atoms::Atom;
 
 pub fn block_from<I>(iterable: I) -> PropertyDeclarationBlock
 where

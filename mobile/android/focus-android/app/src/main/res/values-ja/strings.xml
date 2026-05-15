@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ではあなたがすべてをコントロールできます。</p> <p>次のようにプライベートブラウザーとして使えます。 <ul> <li>アプリで適切に検索、閲覧</li> <li>トラッカーをブロック （あるいは設定を更新して許可）</li> <li>検索履歴、閲覧履歴の消去だけでなく Cookie を削除</li> </ul> </p> <p>%1$s は Mozilla が開発しています。私たちのミッションは健全で開かれたインターネットを発展させることです。<br/> <a href=\"%2$s\">詳しくはこちら</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ではあなたがすべてをコントロールできます。</p>\n<p>次のようにプライベートブラウザーとして使えます。\n<ul>\n<li>アプリで適切に検索、閲覧</li>\n<li>トラッカーをブロック （あるいは設定を更新して許可）</li>\n<li>検索履歴、閲覧履歴の消去だけでなく Cookie を削除</li>\n</ul> </p>\n<p>%1$s は Mozilla が開発しています。私たちのミッションは健全で開かれたインターネットを発展させることです。<br/>\n<a href=\"%2$s\">詳しくはこちら</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">詳細情報</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">続けると、%1$s に同意したものとみなされます。</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">続けると、%1$s に同意したものとみなされます。</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefox 利用規約</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefox 利用規約</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox はあなたのプライバシーを重視します。詳細は %1$s をご覧ください。</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox はあなたのプライバシーを重視します。詳細は %1$s をご覧ください。</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">プライバシー通知</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">プライバシー通知</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">閲覧履歴を消去</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">他のタブを閉じる</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">新しいタブを追加</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[サーバーの設定に問題があるか、誰かが正規のサーバーになりすましている可能性があります。<br/><br/> 以前は正常に接続できていた場合、この問題は恐らく一時的なものですので、後で再度試してみてください。]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>誰かがサイトになりすまそうとしている可能性があるため、この先へ進むと危険です。</label> <br><br> <label>証明書の発行者が不明か、証明書が自己署名されているか、サーバーが正しい中間証明書を送信していないため、%1$s は <b>%2$s</b> を信頼できません。</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>誰かがサイトになりすまそうとしている可能性があるため、この先へ進むと危険です。</label> <br><br>\n<label>証明書の発行者が不明か、証明書が自己署名されているか、サーバーが正しい中間証明書を送信していないため、%1$s は <b>%2$s</b> を信頼できません。</label>]]></string>
   <!--
     Sessions List
 

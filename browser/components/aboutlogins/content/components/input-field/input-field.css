@@ -13,7 +13,7 @@
 label {
   grid-area: label;
   display: block;
-  color: var(--in-content-page-color);
+  color: var(--text-color);
   align-self: end;
 }
 

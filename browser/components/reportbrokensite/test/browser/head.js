@@ -14,8 +14,8 @@ const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
 );
 
-const { ReportBrokenSite } = ChromeUtils.importESModule(
-  "resource:///modules/ReportBrokenSite.sys.mjs"
+const { ReportBrokenSite, ViewState } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/reportbrokensite/ReportBrokenSite.sys.mjs"
 );
 
 const BASE_URL =
@@ -26,6 +26,11 @@ const REPORTABLE_PAGE_URL = "https://example.com";
 const REPORTABLE_PAGE_URL2 = REPORTABLE_PAGE_URL.replace(".com", ".org");
 
 const REPORTABLE_PAGE_URL3 = `${BASE_URL}example_report_page.html`;
+
+const SUMO_BASE_URL = Services.urlFormatter.formatURLPref(
+  "app.support.baseURL"
+);
+const LEARN_MORE_TEST_URL = `${SUMO_BASE_URL}report-broken-site`;
 
 const NEW_REPORT_ENDPOINT_TEST_URL = `${BASE_URL}sendMoreInfoTestEndpoint.html`;
 
@@ -43,6 +48,7 @@ function add_common_setup() {
   add_setup(async function () {
     await SpecialPowers.pushPrefEnv({
       set: [
+        ["browser.urlbar.trustPanel.featureGate", false],
         [PREFS.NEW_REPORT_ENDPOINT, NEW_REPORT_ENDPOINT_TEST_URL],
 
         // set touch events to auto-detect, as the pref gets set to 1 somewhere
@@ -54,6 +60,8 @@ function add_common_setup() {
       for (const prefName of Object.values(PREFS)) {
         Services.prefs.clearUserPref(prefName);
       }
+      Services.telemetry.clearEvents();
+      Services.fog.testResetFOG();
     });
   });
 }
@@ -248,6 +256,10 @@ class ReportBrokenSiteHelper {
     return this.getViewNode("report-broken-site-popup-mainView");
   }
 
+  get previewView() {
+    return this.getViewNode("report-broken-site-popup-previewView");
+  }
+
   get sentView() {
     return this.getViewNode("report-broken-site-popup-reportSentView");
   }
@@ -300,6 +312,13 @@ class ReportBrokenSiteHelper {
     await Promise.all(promises);
   }
 
+  async awaitPreviewViewOpened() {
+    await Promise.all([
+      BrowserTestUtils.waitForEvent(this.sentView, "ViewShown"),
+      BrowserTestUtils.waitForEvent(this.okayButton, "focus"),
+    ]);
+  }
+
   async awaitReportSentViewOpened() {
     await Promise.all([
       BrowserTestUtils.waitForEvent(this.sentView, "ViewShown"),
@@ -345,6 +364,21 @@ class ReportBrokenSiteHelper {
 
   async clickOkay() {
     await this.#assertClickAndViewChanges(this.okayButton, this.sentView);
+  }
+
+  async clickPreview() {
+    await this.#assertClickAndViewChanges(
+      this.previewButton,
+      this.mainView,
+      this.previewView
+    );
+  }
+
+  async clickPreviewBack() {
+    await this.#assertClickAndViewChanges(
+      this.previewBackButton,
+      this.sourceMenu.popup
+    );
   }
 
   async clickBack() {
@@ -399,12 +433,30 @@ class ReportBrokenSiteHelper {
     return this.getViewNode("report-broken-site-popup-description");
   }
 
+  get learnMoreLink() {
+    return this.getViewNode("report-broken-site-popup-learn-more-link");
+  }
+
   get sendMoreInfoLink() {
     return this.getViewNode("report-broken-site-popup-send-more-info-link");
   }
 
   get backButton() {
     return this.mainView.querySelector(".subviewbutton-back");
+  }
+
+  get previewBackButton() {
+    return this.previewView.querySelector(".subviewbutton-back");
+  }
+
+  get blockedTrackersCheckbox() {
+    return this.getViewNode(
+      "report-broken-site-popup-blocked-trackers-checkbox"
+    );
+  }
+
+  set blockedTrackersCheckbox(checked) {
+    this.blockedTrackersCheckbox.checked = checked;
   }
 
   get sendButton() {
@@ -417,6 +469,22 @@ class ReportBrokenSiteHelper {
 
   get okayButton() {
     return this.getViewNode("report-broken-site-popup-okay-button");
+  }
+
+  get previewButton() {
+    return this.getViewNode("report-broken-site-popup-preview-button");
+  }
+
+  get previewCancelButton() {
+    return this.getViewNode("report-broken-site-popup-preview-cancel-button");
+  }
+
+  get previewSendButton() {
+    return this.getViewNode("report-broken-site-popup-preview-send-button");
+  }
+
+  get previewItems() {
+    return this.getViewNode("report-broken-site-panel-preview-items");
   }
 
   // Test helpers

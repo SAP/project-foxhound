@@ -4,41 +4,32 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_WindowsLocationChild_h__
-#define mozilla_dom_WindowsLocationChild_h__
+#ifndef mozilla_dom_WindowsLocationChild_h_
+#define mozilla_dom_WindowsLocationChild_h_
 
-#include "mozilla/dom/PWindowsLocationChild.h"
 #include "mozilla/WeakPtr.h"
-
-class ILocation;
+#include "mozilla/dom/PWindowsLocationChild.h"
 
 namespace mozilla::dom {
 
 // Geolocation actor in utility process.
-class WindowsLocationChild final : public PWindowsLocationChild,
-                                   public SupportsWeakPtr {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WindowsLocationChild, override);
-
+class WindowsLocationChild : public PWindowsLocationChild,
+                             public SupportsWeakPtr {
  public:
-  WindowsLocationChild();
-
   using IPCResult = ::mozilla::ipc::IPCResult;
 
   IPCResult RecvStartup();
   IPCResult RecvRegisterForReport();
   IPCResult RecvUnregisterForReport();
-  IPCResult RecvSetHighAccuracy(bool aEnable);
-  void ActorDestroy(ActorDestroyReason aWhy) override;
+  IPCResult RecvSetHighAccuracy(const bool& aEnable);
 
- private:
-  ~WindowsLocationChild() override;
-
-  // The COM object the actors are proxying calls for.
-  RefPtr<ILocation> mLocation;
-
-  bool mHighAccuracy = false;
+ protected:
+  virtual mozilla::ipc::IPCResult Startup() = 0;
+  virtual mozilla::ipc::IPCResult RegisterForReport() = 0;
+  virtual mozilla::ipc::IPCResult UnregisterForReport() = 0;
+  virtual mozilla::ipc::IPCResult SetHighAccuracy(const bool& aEnable) = 0;
 };
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_WindowsLocationChild_h__
+#endif  // mozilla_dom_WindowsLocationChild_h_

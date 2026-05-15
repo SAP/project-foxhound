@@ -4,6 +4,7 @@
 """
 Add notifications via taskcluster-notify for release tasks
 """
+
 from string import Formatter
 
 from taskgraph.transforms.base import TransformSequence
@@ -40,7 +41,18 @@ def add_notifications(config, jobs):
                 notifications, "emails", label, project=config.params["project"]
             )
             resolve_keyed_by(
-                notifications, "message", label, project=config.params["project"]
+                notifications,
+                "message",
+                label,
+                project=config.params["project"],
+                level=config.params["level"],
+            )
+            resolve_keyed_by(
+                notifications,
+                "subject",
+                label,
+                project=config.params["project"],
+                level=config.params["level"],
             )
             emails = notifications["emails"]
             format_kwargs = dict(
@@ -56,20 +68,18 @@ def add_notifications(config, jobs):
             # candidates dir' when cancelling graphs, dummy job failure, etc
             status_types = notifications.get("status-types", ["on-completed"])
             for s in status_types:
-                job.setdefault("routes", []).extend(
-                    [f"notify.email.{email}.{s}" for email in emails]
-                )
+                job.setdefault("routes", []).extend([
+                    f"notify.email.{email}.{s}" for email in emails
+                ])
 
             # Customize the email subject to include release name and build number
-            job.setdefault("extra", {}).update(
-                {
-                    "notify": {
-                        "email": {
-                            "subject": subject,
-                        }
+            job.setdefault("extra", {}).update({
+                "notify": {
+                    "email": {
+                        "subject": subject,
                     }
                 }
-            )
+            })
             if message:
                 job["extra"]["notify"]["email"]["content"] = message
 

@@ -7,12 +7,9 @@
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 import { span } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 
-import {
-  interleave,
-  wrapRender,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import PropRep from "resource://devtools/client/shared/components/reps/reps/prop-rep.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
+import { interleave, wrapRender } from "./rep-utils.mjs";
+import PropRep from "./prop-rep.mjs";
+import { MODE } from "./constants.mjs";
 
 /**
  * Renders generic grip. Grip is client representation
@@ -276,10 +273,10 @@ function propIterator(props, object, max) {
 /**
  * Get props ordered by index.
  *
- * @param {Object} componentProps Grip Component props.
- * @param {Object} properties Properties of the object the Grip describes.
+ * @param {object} componentProps Grip Component props.
+ * @param {object} properties Properties of the object the Grip describes.
  * @param {Array} indexes Indexes of properties.
- * @param {Boolean} suppressQuotes true if we should suppress quotes
+ * @param {boolean} suppressQuotes true if we should suppress quotes
  *                  on property names.
  * @return {Array} Props.
  */
@@ -310,8 +307,8 @@ function getProps(componentProps, properties, indexes, suppressQuotes) {
 /**
  * Get the indexes of props in the object.
  *
- * @param {Object} properties Props object.
- * @param {Number} max The maximum length of indexes array.
+ * @param {object} properties Props object.
+ * @param {number} max The maximum length of indexes array.
  * @param {Function} filter Filter the props you want.
  * @return {Array} Indexes of interesting props in the object.
  */
@@ -345,8 +342,8 @@ function getPropIndexes(properties, max, filter) {
 /**
  * Get the actual value of a property.
  *
- * @param {Object} property
- * @return {Object} Value of the property.
+ * @param {object} property
+ * @return {object} Value of the property.
  */
 function getPropValue(property) {
   let value = property;

@@ -19,14 +19,15 @@
 #include <vector>
 
 #include "api/adaptation/resource.h"
+#include "api/array_view.h"
 #include "api/call/transport.h"
 #include "api/crypto/crypto_options.h"
-#include "api/crypto/frame_encryptor_interface.h"
 #include "api/frame_transformer_interface.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_sender_setparameters_callback.h"
 #include "api/scoped_refptr.h"
 #include "api/units/data_rate.h"
+#include "api/video/encoded_image.h"
 #include "api/video/video_content_type.h"
 #include "api/video/video_frame.h"
 #include "api/video/video_source_interface.h"
@@ -94,6 +95,8 @@ class VideoSendStream {
     double encode_frame_rate = 0.0;
     int frames_encoded = 0;
     std::optional<uint64_t> qp_sum;
+    EncodedImage::Psnr psnr_sum;
+    uint64_t psnr_measurements = 0;
     uint64_t total_encode_time_ms = 0;
     uint64_t total_encoded_bytes_target = 0;
     uint32_t huge_frames_sent = 0;
@@ -203,7 +206,7 @@ class VideoSendStream {
     // An optional custom frame encryptor that allows the entire frame to be
     // encrypted in whatever way the caller chooses. This is not required by
     // default.
-    rtc::scoped_refptr<webrtc::FrameEncryptorInterface> frame_encryptor;
+    scoped_refptr<webrtc::FrameEncryptorInterface> frame_encryptor;
 
     // An optional encoder selector provided by the user.
     // Overrides VideoEncoderFactory::GetEncoderSelector().
@@ -213,7 +216,7 @@ class VideoSendStream {
     // Per PeerConnection cryptography options.
     CryptoOptions crypto_options;
 
-    rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer;
+    scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer;
 
    private:
     // Access to the copy constructor is private to force use of the Copy()
@@ -240,12 +243,11 @@ class VideoSendStream {
   // TODO(https://crbug.com/webrtc/11565): When the ResourceAdaptationProcessor
   // is moved to Call this method could be deleted altogether in favor of
   // Call-level APIs only.
-  virtual void AddAdaptationResource(rtc::scoped_refptr<Resource> resource) = 0;
-  virtual std::vector<rtc::scoped_refptr<Resource>>
-  GetAdaptationResources() = 0;
+  virtual void AddAdaptationResource(scoped_refptr<Resource> resource) = 0;
+  virtual std::vector<scoped_refptr<Resource>> GetAdaptationResources() = 0;
 
   virtual void SetSource(
-      rtc::VideoSourceInterface<webrtc::VideoFrame>* source,
+      VideoSourceInterface<webrtc::VideoFrame>* source,
       const DegradationPreference& degradation_preference) = 0;
 
   // Set which streams to send. Must have at least as many SSRCs as configured
@@ -260,6 +262,9 @@ class VideoSendStream {
 
   // TODO: webrtc:40644448 - Make this pure virtual.
   virtual void SetStats(const Stats& stats) { RTC_CHECK_NOTREACHED(); }
+
+  // Sets the list of CSRCs to be included in every packet.
+  virtual void SetCsrcs(ArrayView<const uint32_t> csrcs) = 0;
 
   virtual void GenerateKeyFrame(const std::vector<std::string>& rids) = 0;
 

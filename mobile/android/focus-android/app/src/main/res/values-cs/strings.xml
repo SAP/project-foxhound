@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -89,7 +96,7 @@
     Text shown in the notification description that pops up to remind the user that a browsing session is active
     for Android 14+.
   -->
-  <string name="notification_erase_text_android_14_1">Klepnutím nebo přejetím po tomto oznámení bezpečně vymažete historii procházení.</string>
+  <string name="notification_erase_text_android_14_1">Klepnutím nebo přejetím prstem po tomto oznámení bezpečně vymažete historii prohlížení.</string>
   <string name="notification_erase_text">Vymazat historii prohlížení</string>
   <!-- Notification action to open Focus and resume the current browsing session. -->
   <string name="notification_action_open">Otevřít</string>
@@ -149,13 +156,13 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vám dává kontrolu.</p> <p>Používejte ho jako soukromý prohlížeč: <ul> <li>Vyhledávejte a prohlížejte přímo v aplikaci</li> <li>Blokujte sledovací prvky (nebo aktualizujte nastavení pro povolení sledovacích prvků)</li> <li>Tlačítkem smažte cookies a historii vyhledávání a prohlížení</li> </ul> </p> <p>%1$s je vyvíjen Mozillou. Naší misí je podporovat zdravý a otevřený internet.<br/> <a href=\"%2$s\">Zjistěte více</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vám dává kontrolu.</p>\n<p>Používejte ho jako soukromý prohlížeč:\n<ul>\n<li>Vyhledávejte a prohlížejte přímo v aplikaci</li>\n<li>Blokujte sledovací prvky (nebo aktualizujte nastavení pro povolení sledovacích prvků)</li>\n<li>Tlačítkem smažte cookies a historii vyhledávání a prohlížení</li>\n</ul> </p>\n<p>%1$s je vyvíjen Mozillou. Naší misí je podporovat zdravý a otevřený internet.<br/>\n<a href=\"%2$s\">Zjistěte více</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Zjistit více</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Soukromí a zabezpečení</string>
   <!-- Preference summary for settings related to privacy and security -->
-  <string name="preference_privacy_and_security_summary">Sledování, soubory cookie, možnosti hlášení</string>
+  <string name="preference_privacy_and_security_summary">Sledování, cookies, možnosti hlášení</string>
   <!--
     Preference category description for settings related to search, set default
     and autocomplete are settings a user can find and change inside the "search" settings screen
@@ -218,15 +225,15 @@
   <!-- Item in autocomplete settings that will open a new preference screen for adding and removing URLs to the user-defined list -->
   <string name="preference_autocomplete_subitem_manage_sites">Spravovat stránky</string>
   <!-- Action at the bottom of the list of custom autocomplete URLs that will open a new screen to add a new URL to the list. -->
-  <string name="preference_autocomplete_action_add">+ Přidat vlastní URL adresu</string>
+  <string name="preference_autocomplete_action_add">+ Přidat vlastní adresu URL</string>
   <!-- Explanation text above the list of custom autocomplete URLs. -->
   <string name="preference_autocomplete_explanation_text">Váš seznam automatického doplňování:</string>
   <!-- Action at the bottom of the list of custom autocomplete URLs that will open a new screen to add a new URL to the list. -->
   <string name="preference_autocomplete_action_add2">Přidat URL</string>
   <!-- Title of the screen for adding custom autocomplete URLs. -->
-  <string name="preference_autocomplete_title_add">Přidat vlastní URL adresu</string>
+  <string name="preference_autocomplete_title_add">Přidat vlastní adresu URL</string>
   <!-- Label for the button to quick add custom autocomplete URLs. -->
-  <string name="custom_autocomplete_quick_add">Přidat vlastní URL adresu</string>
+  <string name="custom_autocomplete_quick_add">Přidat vlastní adresu URL</string>
   <!-- Label for the button to quick add the current URL to the custom autocomplete list -->
   <string name="add_custom_autocomplete_label">Přidat odkaz na našeptávání</string>
   <!-- Preference category for settings about cookies and site data -->
@@ -234,27 +241,27 @@
   <!-- Preference category for settings about data choices -->
   <string name="preference_category_data_choices">Možnosti hlášení</string>
   <!-- Title of the screen for removing custom autocomplete URLs. -->
-  <string name="preference_autocomplete_title_remove">Odebrat vlastní URL adresy</string>
+  <string name="preference_autocomplete_title_remove">Odebrat vlastní adresy URL</string>
   <!-- A link to SUMO at autocomplete settings. -->
   <string name="preference_autocomplete_learn_more">Zjistit více</string>
   <!-- Preference summary: Custom (user-defined) autocomplete URLs. -->
   <string name="preference_autocomplete_custom_summary">Přidání a správa vlastních URL adres pro automatické doplňování.</string>
   <!-- Label for the "custom autocomplete URL" input field -->
-  <string name="preference_autocomplete_add_title">URL adresa k přidání</string>
+  <string name="preference_autocomplete_add_title">Adresa URL k přidání</string>
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
-  <string name="preference_autocomplete_add_hint">Vložte nebo zadejte URL adresu</string>
+  <string name="preference_autocomplete_add_hint">Vložte nebo zadejte adresu URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
   <string name="preference_autocomplete_add_example2">Příklad: mozilla.cz</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Příklad: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
-  <string name="preference_autocomplete_add_confirmation">Vlastní URL adresa přidána.</string>
+  <string name="preference_autocomplete_add_confirmation">Vlastní adresa URL přidána.</string>
   <!-- Menu item to remove existing autocomplete URLs. -->
   <string name="preference_autocomplete_menu_remove">Odebrat</string>
   <!-- Content description (not visible, for screen readers etc.): Button that will delete all selected custom autocomplete URLs. -->
   <string name="preference_autocomplete_action_remove_content_description">Odebrat</string>
   <!-- Error message shown if the entered custom autocomplete URL is not valid or empty. -->
-  <string name="preference_autocomplete_add_error">Zkontrolujte zadanou URL adresu.</string>
+  <string name="preference_autocomplete_add_error">Zkontrolujte zadanou adresu URL.</string>
   <string name="preference_language">Jazyk</string>
   <!--
     This is shown when the user hasn't set a focus specific language, i.e. when Focus
@@ -323,7 +330,7 @@
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
   <string name="preference_mozilla_telemetry_summary2">Mozilla sbírá jenom ty informace, které potřebuje pro další vylepšování aplikace %1$s.</string>
   <!-- Preference switch for daily usage ping data collection -->
-  <string name="preference_daily_usage_ping_title">Ping o denním používání</string>
+  <string name="preference_daily_usage_ping_title">Denní ping o používání</string>
   <string name="preference_daily_usage_ping_description">Toto Mozille pomáhá odhadnout počet aktivních uživatelů.</string>
   <string name="preference_daily_usage_ping_learn_more">Zjistit více</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
@@ -411,7 +418,7 @@
   <!-- Content description (not visible, for screen readers etc.): Navigate forward (browsing history) -->
   <string name="content_description_forward">Přejít vpřed</string>
   <!-- Content description (not visible, for screen readers etc.): Reload current website -->
-  <string name="content_description_reload">Obnovit stránku</string>
+  <string name="content_description_reload">Znovu načíst stránku</string>
   <!-- Content description (not visible, for screen readers etc.): Navigate back (browsing history) -->
   <string name="content_description_back">Návrat zpět</string>
   <!-- Content description (not visible, for screen readers etc.): Stop loading the current website. This button will turn into the refresh button once loading has been completed (see content_description_reload) -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Pokračováním souhlasíte s dokumentem %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Pokračováním souhlasíte s dokumentem %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Podmínky používání Firefoxu.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Podmínky používání Firefoxu</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefoxu záleží na vašem soukromí. Zjistěte více v dokumentu %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefoxu záleží na vašem soukromí. Více se dozvíte v dokumentu %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Zásady ochrany osobních údajů.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Zásady ochrany osobních údajů</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Vymazat historii prohlížení</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Zavřít ostatní panely</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Přidat nový panel</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -583,7 +584,7 @@
   <string name="security_popup_security_verified">Ověřil: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Zabezpečení stránky</string>
-  <string name="preference_autocomplete_duplicate_url_error">URL adresa už existuje</string>
+  <string name="preference_autocomplete_duplicate_url_error">Adresa URL už existuje</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Najít na stránce</string>
   <!-- Watermark/Hint for the find in page input field -->
@@ -609,9 +610,9 @@
   <!-- Checkbox menu item text to request desktop site -->
   <string name="preference_performance_request_desktop_site">Verze stránky pro počítač</string>
   <!-- Checkbox menu item text to request desktop site -->
-  <string name="preference_performance_request_desktop_site2">Verze pro počítač</string>
+  <string name="preference_performance_request_desktop_site2">Verze stránky pro počítač</string>
   <!-- Displayed after a user long presses on the URL in a custom tab to copy the URL -->
-  <string name="custom_tab_copy_url_action">URL adresa zkopírována</string>
+  <string name="custom_tab_copy_url_action">Adresa URL zkopírována</string>
   <!-- Description of what a user may find in the Advanced Setting category, used for debugging -->
   <string name="preference_advanced_summary">Vývojářské nástroje</string>
   <!-- Preference for open links in third party apps -->
@@ -734,7 +735,7 @@
   -->
   <string name="biometric_auth_moved_too_quickly">Pohyb prstem byl příliš rychlý. Zkuste to znovu.</string>
   <!-- Title for the prompt to enable search suggestions -->
-  <string name="enable_search_suggestion_title2">Našeptávat dotazy pro vyhledávač?</string>
+  <string name="enable_search_suggestion_title2">Zobrazovat návrhy vyhledávání?</string>
   <!--
     Description for the prompt to enable search suggestions
     %1$s will be replaced by the app name (e.g. Firefox Focus)
@@ -785,9 +786,9 @@
   <!-- Preference for switching to a new tab immediately after opening -->
   <string name="preference_open_new_tab">Přepnout ihned na odkaz v novém panelu</string>
   <!-- Preference title for safe browsing which when enabled, blocks dangerous or deceptive webpages that may include phishing or malware -->
-  <string name="preference_safe_browsing_title">Blokovat potenciálně nebezpečné a klamavé stránky</string>
+  <string name="preference_safe_browsing_title">Blokovat potenciálně nebezpečné a podvodné stránky</string>
   <!-- Preference summary for safe browsing which when enabled, blocks dangerous or deceptive webpages that may include phishing or malware -->
-  <string name="preference_safe_browsing_summary">Blokuje hlášené klamavé a útočné stránky, stránky s malwarem a stránky s nevyžádaným obsahem.</string>
+  <string name="preference_safe_browsing_summary">Blokuje nahlášené podvodné a útočné stránky, stránky s malwarem a stránky s nevyžádaným obsahem.</string>
   <!-- Title of the preference to enable "HTTPS-Only" mode -->
   <string name="preference_https_only_title">Režim „pouze HTTPS“</string>
   <!-- Description of the preference to enable "HTTPS-Only" mode. -->
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Tato chyba může být způsobena chybnou konfigurací serveru nebo někým, kdo se snaží vydávat za server. <br/><br/> Pokud jste se k tomuto serveru už v minulosti úspěšně připojili, je možná chyba jenom dočasná, a můžete to zkusit znovu později.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Někdo se může snažit vydávat za zmiňovaný server a pokračovaní může být riskantní.</label> <br><br> <label>%1$s serveru <b>%2$s</b> nedůvěřuje, protože vydavatel zaslaného certifikátu je neznámý, certifikát je podepsaný sám sebou nebo server neposílá správné mezilehlé certifikáty.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Někdo se může snažit vydávat za zmiňovaný server a pokračovaní může být riskantní.</label> <br><br>\n<label>%1$s serveru <b>%2$s</b> nedůvěřuje, protože vydavatel zaslaného certifikátu je neznámý, certifikát je podepsaný sám sebou nebo server neposílá správné mezilehlé certifikáty.</label>]]></string>
   <!--
     Sessions List
 

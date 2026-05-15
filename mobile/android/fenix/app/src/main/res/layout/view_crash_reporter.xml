@@ -86,7 +86,6 @@
         android:fontFamily="Sharp Sans"
         android:text="@string/tab_crash_close"
         android:textAllCaps="false"
-        android:textColor="@color/primary_text_light_theme"
         android:textSize="14sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toBottomOf="parent"

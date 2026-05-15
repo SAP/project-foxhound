@@ -10,8 +10,17 @@
 
 #include "rtc_base/ip_address.h"
 
+#include <cstring>
+#include <string>
+
 #include "absl/strings/string_view.h"
+#include "rtc_base/byte_order.h"
+#include "rtc_base/net_helpers.h"
 #include "test/gtest.h"
+
+#if defined(WEBRTC_POSIX)
+#include <netdb.h>
+#endif
 
 namespace webrtc {
 
@@ -522,7 +531,7 @@ TEST(IPAddressTest, TestIPFromAddrInfo) {
   test_info.ai_next = &next_info;
   // Check that we can get an IPv4 address out.
   test_info.ai_addr = reinterpret_cast<struct sockaddr*>(&expected4);
-  expected4.sin_addr.s_addr = webrtc::HostToNetwork32(kIPv4PublicAddr);
+  expected4.sin_addr.s_addr = HostToNetwork32(kIPv4PublicAddr);
   expected4.sin_family = AF_INET;
   IPAddress expected(kIPv4PublicAddr);
   IPAddress addr;

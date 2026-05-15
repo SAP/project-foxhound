@@ -54,30 +54,27 @@ try:
 except ImportError:
     build = None
 
-HARNESS_TIMEOUT = 5 * 60
+HARNESS_TIMEOUT = 30
 TBPL_RETRY = 4  # defined in mozharness
 
-# benchmarking on tbpl revealed that this works best for now
-# TODO: This has been evaluated/set many years ago and we might want to
-# benchmark this again.
-# These days with e10s/fission the number of real processes/threads running
-# can be significantly higher, with both consequences on runtime and memory
-# consumption. So be aware that NUM_THREADS is just saying how many tests will
-# be started maximum in parallel and that depending on the tests there is
-# only a weak correlation to the effective number of processes or threads.
-# Be also aware that we can override this value with the threadCount option
-# on the command line to tweak it for a concrete CPU/memory combination.
-NUM_THREADS = int(cpu_count() * 4)
-if sys.platform == "win32":
-    NUM_THREADS = NUM_THREADS / 2
+# Based on recent benchmarking on highcpu pools, this value gives the best
+# balance between runtime and memory usage
+#
+# Note:
+# - NUM_THREADS defines the maximum number of tests that can run in parallel
+# - With e10s/fission enabled, the actual number of underlying processes/threads
+#   can be much higher, so memory pressure may vary accordingly
+# - For ASan/TSan variants, the thread count is reduced by half to avoid OOM
+#
+# This value can be overridden via the --threadCount CLI option if adjustments
+# are needed for custom CPU/memory configurations
+NUM_THREADS = int(cpu_count() * 2.5)
 
-EXPECTED_LOG_ACTIONS = set(
-    [
-        "crash_reporter_init",
-        "test_status",
-        "log",
-    ]
-)
+EXPECTED_LOG_ACTIONS = set([
+    "crash_reporter_init",
+    "test_status",
+    "log",
+])
 
 # --------------------------------------------------------------
 # TODO: this is a hack for mozbase without virtualenv, remove with bug 849900
@@ -93,6 +90,7 @@ import mozcrash
 import mozfile
 import mozinfo
 from manifestparser import TestManifest
+from manifestparser.expression import parse
 from manifestparser.filters import chunk_by_slice, failures, pathprefix, tags
 from manifestparser.util import normsep
 from mozlog import commandline
@@ -188,7 +186,7 @@ class XPCShellTestThread(Thread):
         if retry is None:
             # Retry in CI, but report results without retry when run locally to
             # avoid confusion and ease local debugging.
-            self.retry = os.environ.get("MOZ_AUTOMATION", 0) != 0
+            self.retry = os.environ.get("MOZ_AUTOMATION") is not None
         self.verbose = verbose
         self.usingTSan = usingTSan
         self.usingCrashReporter = usingCrashReporter
@@ -224,6 +222,7 @@ class XPCShellTestThread(Thread):
         self.extraPrefs = kwargs.get("extraPrefs")
         self.verboseIfFails = kwargs.get("verboseIfFails")
         self.headless = kwargs.get("headless")
+        self.selfTest = kwargs.get("selfTest")
         self.runFailures = kwargs.get("runFailures")
         self.timeoutAsPass = kwargs.get("timeoutAsPass")
         self.crashAsPass = kwargs.get("crashAsPass")
@@ -363,12 +362,17 @@ class XPCShellTestThread(Thread):
         Simple wrapper to check for crashes.
         On a remote system, this is more complex and we need to overload this function.
         """
-        quiet = False
-        if self.crashAsPass:
-            quiet = True
-
+        quiet = self.crashAsPass or self.retry
+        # For selftests, set dump_save_path to prevent crash dumps from being saved
+        # (they intentionally crash and the dumps aren't useful artifacts)
+        dump_save_path = "" if self.selfTest else None
         return mozcrash.log_crashes(
-            self.log, dump_directory, symbols_path, test=test_name, quiet=quiet
+            self.log,
+            dump_directory,
+            symbols_path,
+            test=test_name,
+            quiet=quiet,
+            dump_save_path=dump_save_path,
         )
 
     def logCommand(self, name, completeCmd, testdir):
@@ -419,10 +423,23 @@ class XPCShellTestThread(Thread):
             self.failCount = 1
 
     def testTimeout(self, proc):
+        # Set these flags first to prevent test_end from being logged again
+        # while we output the full log.
+        self.done = True
+        self.timedout = True
+
+        # Kill the test process before calling log_full_output that can take a
+        # a while due to stack fixing.
+        self.killTimeout(proc)
+
         if self.test_object["expected"] == "pass":
             expected = "PASS"
         else:
             expected = "FAIL"
+
+        extra = None
+        if self.timeout_factor > 1:
+            extra = {"timeoutfactor": self.timeout_factor}
 
         if self.retry:
             self.log.test_end(
@@ -430,7 +447,9 @@ class XPCShellTestThread(Thread):
                 "TIMEOUT",
                 expected="TIMEOUT",
                 message="Test timed out",
+                extra=extra,
             )
+            self.log_full_output(mark_failures_as_expected=True)
         else:
             result = "TIMEOUT"
             if self.timeoutAsPass:
@@ -442,12 +461,10 @@ class XPCShellTestThread(Thread):
                 result,
                 expected=expected,
                 message="Test timed out",
+                extra=extra,
             )
             self.log_full_output()
 
-        self.done = True
-        self.timedout = True
-        self.killTimeout(proc)
         self.log.info("xpcshell return code: %s" % self.getReturnCode(proc))
         self.postCheck(proc)
         self.clean_temp_dirs(self.test_object["path"])
@@ -549,7 +566,7 @@ class XPCShellTestThread(Thread):
         """
         if self.conditionedProfileDir:
             profileDir = self.conditioned_profile_copy
-        elif self.interactive or self.singleFile:
+        elif self.interactive or (self.singleFile and not self.selfTest):
             profileDir = os.path.join(gettempdir(), self.profileName, "xpcshellprofile")
             try:
                 # This could be left over from previous runs
@@ -708,31 +725,72 @@ class XPCShellTestThread(Thread):
             line = line.decode("utf-8")
         return line
 
-    def log_line(self, line):
+    def log_line(self, line, time=None):
         """Log a line of output (either a parser json object or text output from
         the test process"""
         if isinstance(line, (str, bytes)):
             line = self.fix_text_output(line).rstrip("\r\n")
-            self.log.process_output(self.proc_ident, line, command=self.command)
+            kwargs = {"command": self.command, "test": self.test_object["id"]}
+            if time is not None:
+                kwargs["time"] = time
+            self.log.process_output(self.proc_ident, line, **kwargs)
         else:
             if "message" in line:
                 line["message"] = self.fix_text_output(line["message"])
             if "xpcshell_process" in line:
-                line["thread"] = " ".join(
-                    [current_thread().name, line["xpcshell_process"]]
-                )
+                line["thread"] = " ".join([
+                    current_thread().name,
+                    line["xpcshell_process"],
+                ])
             else:
                 line["thread"] = current_thread().name
             self.log.log_raw(line)
 
-    def log_full_output(self):
-        """Logs any buffered output from the test process, and clears the buffer."""
+    def log_full_output(self, mark_failures_as_expected=False):
+        """Logs any buffered output from the test process, and clears the buffer.
+
+        Args:
+            mark_failures_as_expected: If True, failures will be marked as expected
+                (TEST-EXPECTED-FAIL instead of TEST-UNEXPECTED-FAIL). This is used
+                when a test will be retried.
+        """
         if not self.output_lines:
             return
-        self.log.info(">>>>>>>")
-        for line in self.output_lines:
-            self.log_line(line)
-        self.log.info("<<<<<<<")
+        log_message = f"full log for {self.test_object['id']}"
+        self.log.info(f">>>>>>> Begin of {log_message}")
+        self.log.group_start("replaying " + log_message)
+        for timestamp, line in self.output_lines:
+            if isinstance(line, dict):
+                # Always ensure the 'test' field is present for resource usage profiles
+                if "test" not in line:
+                    line["test"] = self.test_object["id"]
+
+                if mark_failures_as_expected:
+                    if line.get("action") == "test_status" and "expected" in line:
+                        # Ensure the 'expected' field matches the 'status' to avoid failing the job
+                        line["expected"] = line.get("status")
+                    elif line.get("action") == "log" and line.get("level") == "ERROR":
+                        # Convert ERROR log to test_status so it gets colored
+                        # properly without causing a test failure.
+                        line["action"] = "test_status"
+                        line["status"] = "ERROR"
+                        line["expected"] = "ERROR"
+                        line["subtest"] = ""
+                        del line["level"]
+                self.log_line(line)
+            else:
+                # For text lines, replace text matching error patterns to avoid
+                # mozharness log parsing forcing an error job exit code
+                line = re.sub(
+                    r"ERROR: ((Address|Leak)Sanitizer)", r"ERROR (will retry): \1", line
+                )
+                # Treeherder's log parser catches "fatal error" as an error
+                line = re.sub(r"fatal error", r"error", line)
+                # For text lines, we need to provide the timestamp that was
+                # recorded when appending the message to self.output_lines
+                self.log_line(line, time=timestamp)
+        self.log.info(f"<<<<<<< End of {log_message}")
+        self.log.group_end("replaying " + log_message)
         self.output_lines = []
 
     def report_message(self, message):
@@ -740,7 +798,15 @@ class XPCShellTestThread(Thread):
         if self.verbose:
             self.log_line(message)
         else:
-            self.output_lines.append(message)
+            # Store timestamp only for string messages (dicts already have timestamps)
+            # We need valid timestamps to replay messages correctly in resource
+            # usage profiles.
+            import time
+
+            timestamp = (
+                int(time.time() * 1000) if isinstance(message, (str, bytes)) else None
+            )
+            self.output_lines.append((timestamp, message))
 
     def process_line(self, line_string):
         """Parses a single line of output, determining its significance and
@@ -846,12 +912,17 @@ class XPCShellTestThread(Thread):
         # 3) Arguments for the test file
         self.command.extend(self.buildCmdTestFile(path))
         self.command.extend(["-e", 'const _TEST_NAME = "%s";' % name])
+        self.command.extend([
+            "-e",
+            'const _EXPECTED = "%s";' % self.test_object["expected"],
+        ])
 
         # 4) Arguments for code coverage
         if self.jscovdir:
-            self.command.extend(
-                ["-e", 'const _JSCOV_DIR = "%s";' % self.jscovdir.replace("\\", "/")]
-            )
+            self.command.extend([
+                "-e",
+                'const _JSCOV_DIR = "%s";' % self.jscovdir.replace("\\", "/"),
+            ])
 
         # 5) Runtime arguments
         if "debug" in self.test_object:
@@ -885,15 +956,18 @@ class XPCShellTestThread(Thread):
             self.env["MOZ_HEADLESS"] = "1"
             self.env["DISPLAY"] = "77"  # Set a fake display.
 
-        testTimeoutInterval = self.harness_timeout
         # Allow a test to request a multiple of the timeout if it is expected to take long
+        self.timeout_factor = 1
         if "requesttimeoutfactor" in self.test_object:
-            testTimeoutInterval *= int(self.test_object["requesttimeoutfactor"])
+            self.timeout_factor = int(self.test_object["requesttimeoutfactor"])
+
+        testTimeoutInterval = self.harness_timeout * self.timeout_factor
 
         testTimer = None
         if not self.interactive and not self.debuggerInfo and not self.jsDebuggerInfo:
             testTimer = Timer(testTimeoutInterval, lambda: self.testTimeout(proc))
             testTimer.start()
+            self.env["MOZ_TEST_TIMEOUT_INTERVAL"] = str(testTimeoutInterval)
 
         proc = None
         process_output = None
@@ -991,6 +1065,19 @@ class XPCShellTestThread(Thread):
             if self.timedout:
                 return
 
+            # Check for crashes before logging test_end
+            found_crash = self.checkForCrashes(
+                self.tempDir, self.symbolsPath, test_name=name
+            )
+            if found_crash:
+                status = "CRASH"
+                message = "Test crashed"
+
+            # Include timeout factor in extra data if not default
+            extra = None
+            if self.timeout_factor > 1:
+                extra = {"timeoutfactor": self.timeout_factor}
+
             if status != expected or ended_before_crash_reporter_init:
                 if ended_before_crash_reporter_init:
                     self.log.test_end(
@@ -999,14 +1086,21 @@ class XPCShellTestThread(Thread):
                         expected=expected,
                         message="Test ended before setting up the crash reporter",
                         group=group,
+                        extra=extra,
                     )
                 elif self.retry:
+                    retry_message = (
+                        "Test crashed, will retry"
+                        if status == "CRASH"
+                        else "Test failed or timed out, will retry"
+                    )
                     self.log.test_end(
                         name,
                         status,
                         expected=status,
-                        message="Test failed or timed out, will retry",
+                        message=retry_message,
                         group=group,
+                        extra=extra,
                     )
                     self.clean_temp_dirs(path)
                     if self.verboseIfFails and not self.verbose:
@@ -1014,7 +1108,12 @@ class XPCShellTestThread(Thread):
                     return
                 else:
                     self.log.test_end(
-                        name, status, expected=expected, message=message, group=group
+                        name,
+                        status,
+                        expected=expected,
+                        message=message,
+                        group=group,
+                        extra=extra,
                     )
                 self.log_full_output()
 
@@ -1034,7 +1133,12 @@ class XPCShellTestThread(Thread):
                     self.log_full_output()
 
                 self.log.test_end(
-                    name, status, expected=expected, message=message, group=group
+                    name,
+                    status,
+                    expected=expected,
+                    message=message,
+                    group=group,
+                    extra=extra,
                 )
                 if self.verbose:
                     self.log_full_output()
@@ -1045,16 +1149,6 @@ class XPCShellTestThread(Thread):
                     self.passCount = 1
                 else:
                     self.todoCount = 1
-
-            if self.checkForCrashes(self.tempDir, self.symbolsPath, test_name=name):
-                if self.retry:
-                    self.clean_temp_dirs(path)
-                    return
-
-                # If we assert during shutdown there's a chance the test has passed
-                # but we haven't logged full output, so do so here.
-                self.log_full_output()
-                self.failCount = 1
 
             if self.logfiles and process_output:
                 self.createLogFile(name, process_output)
@@ -1110,10 +1204,15 @@ class XPCShellTests:
     def normalizeTest(self, root, test_object):
         path = test_object.get("file_relpath", test_object["relpath"])
         if "dupe-manifest" in test_object and "ancestor_manifest" in test_object:
-            test_object["id"] = "%s:%s" % (
-                os.path.basename(test_object["ancestor_manifest"]),
-                path,
+            # Use same logic as get_full_group_name() to determine which manifest to use
+            ancestor_manifest = normsep(test_object["ancestor_manifest"])
+            # If ancestor is not the generated root (has path separator), use it
+            manifest_for_id = (
+                test_object["ancestor_manifest"]
+                if "/" in ancestor_manifest
+                else test_object["manifest"]
             )
+            test_object["id"] = "%s:%s" % (os.path.basename(manifest_for_id), path)
         else:
             test_object["id"] = path
 
@@ -1186,7 +1285,10 @@ class XPCShellTests:
             sys.stderr.write("*** offending mozinfo.info: %s\n" % repr(mozinfo.info))
             raise
 
+        # Store missing manifests for later use in structured logging
+        self.missing_manifests = set()
         if path_filter and path_filter.missing:
+            self.missing_manifests = path_filter.missing
             self.log.warning(
                 "The following path(s) didn't resolve any tests:\n  {}".format(
                     "  \n".join(sorted(path_filter.missing))
@@ -1211,8 +1313,10 @@ class XPCShellTests:
                 )
                 sys.exit(1)
 
-        if len(self.alltests) == 1 and not verify:
-            self.singleFile = os.path.basename(self.alltests[0]["path"])
+        # Count non-disabled tests for --profiler validation
+        enabled_tests = [t for t in self.alltests if "disabled" not in t]
+        if len(enabled_tests) == 1 and not verify:
+            self.singleFile = os.path.basename(enabled_tests[0]["path"])
         else:
             self.singleFile = None
 
@@ -1352,13 +1456,13 @@ class XPCShellTests:
             self.env["DYLD_LIBRARY_PATH"] = os.path.join(
                 os.path.dirname(self.xrePath), "MacOS"
             )
-        else:  # unix or linux?
-            if "LD_LIBRARY_PATH" not in self.env or self.env["LD_LIBRARY_PATH"] is None:
-                self.env["LD_LIBRARY_PATH"] = self.xrePath
-            else:
-                self.env["LD_LIBRARY_PATH"] = ":".join(
-                    [self.xrePath, self.env["LD_LIBRARY_PATH"]]
-                )
+        elif "LD_LIBRARY_PATH" not in self.env or self.env["LD_LIBRARY_PATH"] is None:
+            self.env["LD_LIBRARY_PATH"] = self.xrePath
+        else:
+            self.env["LD_LIBRARY_PATH"] = ":".join([
+                self.xrePath,
+                self.env["LD_LIBRARY_PATH"],
+            ])
 
         usingASan = "asan" in self.mozInfo and self.mozInfo["asan"]
         usingTSan = "tsan" in self.mozInfo and self.mozInfo["tsan"]
@@ -1397,16 +1501,15 @@ class XPCShellTests:
         if self.interactive:
             pStdout = None
             pStderr = None
+        elif self.debuggerInfo and self.debuggerInfo.interactive:
+            pStdout = None
+            pStderr = None
         else:
-            if self.debuggerInfo and self.debuggerInfo.interactive:
+            if sys.platform == "os2emx":
                 pStdout = None
-                pStderr = None
             else:
-                if sys.platform == "os2emx":
-                    pStdout = None
-                else:
-                    pStdout = PIPE
-                pStderr = STDOUT
+                pStdout = PIPE
+            pStderr = STDOUT
         return pStdout, pStderr
 
     def verifyDirPath(self, dirname):
@@ -1415,6 +1518,13 @@ class XPCShellTests:
         On a remote system, we need to overload this to work on the remote filesystem.
         """
         return os.path.abspath(dirname)
+
+    def buildNodeEnvironment(self):
+        """
+        Return the environment to use for the node process. This can be overridden
+        by subclasses to filter or modify the environment.
+        """
+        return self.env
 
     def trySetupNode(self):
         """
@@ -1448,6 +1558,8 @@ class XPCShellTests:
 
         self.log.info("Found node at %s" % (nodeBin,))
 
+        node_env = self.buildNodeEnvironment()
+
         def read_streams(name, proc, pipe):
             output = "stdout" if pipe == proc.stdout else "stderr"
             for line in iter(pipe.readline, ""):
@@ -1470,7 +1582,7 @@ class XPCShellTests:
                         stdin=PIPE,
                         stdout=PIPE,
                         stderr=PIPE,
-                        env=self.env,
+                        env=node_env,
                         cwd=os.getcwd(),
                         universal_newlines=True,
                         start_new_session=True,
@@ -1734,6 +1846,7 @@ class XPCShellTests:
 
     def runSelfTest(self):
         import unittest
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         import selftest
 
@@ -1751,17 +1864,90 @@ class XPCShellTests:
         old_info = dict(mozinfo.info)
         try:
             suite = unittest.TestLoader().loadTestsFromTestCase(XPCShellTestsTests)
-            return unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful()
+            test_cases = list(suite)
+            group = "xpcshell-selftest"
+            tests_by_manifest = {
+                "xpcshell-selftest": [tc._testMethodName for tc in test_cases]
+            }
+            self.log.suite_start(tests_by_manifest, name=group)
+            self.log.group_start(name="selftests")
+
+            if self.sequential or len(test_cases) <= 1:
+                return unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful()
+
+            def run_single_test(test_case):
+                result = unittest.TestResult()
+                test_name = test_case._testMethodName
+                this.log.test_start(test_name, group=group)
+                status = "PASS"
+                try:
+                    test_case.run(result)
+                    if not result.wasSuccessful():
+                        status = "FAIL"
+                except Exception as e:
+                    result.addError(test_case, (type(e), e, None))
+                    status = "ERROR"
+                finally:
+                    this.log.test_end(test_name, status, expected="PASS", group=group)
+                    return {
+                        "result": result,
+                        "name": test_name,
+                    }
+
+            success = True
+
+            # Limit parallel self-tests to 32 on macOS to avoid "too many open files" error.
+            max_workers = (
+                min(32, self.threadCount)
+                if sys.platform == "darwin"
+                else self.threadCount
+            )
+
+            self.log.info(
+                f"Running {len(test_cases)} self-tests in parallel with up to {max_workers} workers..."
+            )
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tests
+                future_to_test = {
+                    executor.submit(run_single_test, test): test for test in test_cases
+                }
+
+                # Print the status of tests as they finish
+                for future in as_completed(future_to_test):
+                    try:
+                        test_result = future.result()
+                        result_obj = test_result["result"]
+
+                        if not result_obj.wasSuccessful():
+                            success = False
+                            test_name = test_result["name"]
+                            if result_obj.failures:
+                                self.log.error(f"FAIL: {test_name}")
+                                for test, traceback in result_obj.failures:
+                                    self.log.error(f"  Failure: {traceback}")
+                            if result_obj.errors:
+                                self.log.error(f"ERROR: {test_name}")
+                                for test, traceback in result_obj.errors:
+                                    self.log.error(f"  Error: {traceback}")
+
+                    except Exception as e:
+                        self.log.error(f"Exception in test execution: {e}")
+                        success = False
+
+            return success
+
         finally:
             # The self tests modify mozinfo, so we need to reset it.
             mozinfo.info.clear()
             mozinfo.update(old_info)
 
+            self.log.group_end(name="selftests")
+            self.log.suite_end()
+
     def runTests(self, options, testClass=XPCShellTestThread, mobileArgs=None):
         """
         Run xpcshell tests.
         """
-        global gotSIGINT
 
         # Number of times to repeat test(s) in --verify mode
         VERIFY_REPEAT = 10
@@ -1818,6 +2004,14 @@ class XPCShellTests:
             JSDebuggerInfo = namedtuple("JSDebuggerInfo", ["port"])
             self.jsDebuggerInfo = JSDebuggerInfo(port=options["jsDebuggerPort"])
 
+        # Apply timeout factor
+        timeout_factor = options.get("timeoutFactor", 1.0)
+        self.harness_timeout = int(HARNESS_TIMEOUT * timeout_factor)
+        self.log.info(
+            f"Using harness timeout of {self.harness_timeout}s "
+            f"(base={HARNESS_TIMEOUT}s, factor={timeout_factor})"
+        )
+
         self.app_binary = options.get("app_binary")
         self.xpcshell = options.get("xpcshell")
         self.http3ServerPath = options.get("http3server")
@@ -1843,6 +2037,7 @@ class XPCShellTests:
         self.threadCount = options.get("threadCount") or NUM_THREADS
         self.jscovdir = options.get("jscovdir")
         self.headless = options.get("headless")
+        self.selfTest = options.get("selfTest")
         self.runFailures = options.get("runFailures")
         self.timeoutAsPass = options.get("timeoutAsPass")
         self.crashAsPass = options.get("crashAsPass")
@@ -1855,7 +2050,6 @@ class XPCShellTests:
             self.appPath = options.get("msixAppPath")
             self.xrePath = options.get("msixXrePath")
             self.app_binary = options.get("msix_app_binary")
-            self.threadCount = 2
             self.xpcshell = None
 
         self.testCount = 0
@@ -1943,7 +2137,7 @@ class XPCShellTests:
         self.buildTestList(
             options.get("test_tags"), options.get("testPaths"), options.get("verify")
         )
-        if self.singleFile:
+        if self.singleFile and not self.selfTest:
             self.sequential = True
 
         if options.get("shuffle"):
@@ -1962,25 +2156,35 @@ class XPCShellTests:
                 break
 
         if installNPM:
-            npm = "npm"
+            env = os.environ.copy()
             nodePath = os.environ.get("MOZ_NODE_PATH", "")
             if nodePath:
-                npm = f"PATH=$PATH:{'/'.join(nodePath.split('/')[:-1])} {'/'.join(nodePath.split('/')[:-1])}/npm"
-            command = f"{npm} ci"
-            working_directory = os.path.join(SCRIPT_DIR, "moz-http2")
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=working_directory,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+                node_bin_path = os.path.dirname(nodePath)
+                env["PATH"] = f"{node_bin_path}{os.pathsep}{env.get('PATH', '')}"
 
-            # Print the output
-            self.log.info("npm output: " + result.stdout)
-            self.log.info("npm error: " + result.stderr)
-            self.log.info("npm return code: " + str(result.returncode))
+            # Try to find npm in PATH
+            npm_executable = shutil.which("npm", path=env.get("PATH"))
+
+            if npm_executable:
+                command = [npm_executable, "ci"]
+                working_directory = os.path.join(SCRIPT_DIR, "moz-http2")
+                result = subprocess.run(
+                    command,
+                    cwd=working_directory,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                # Print the output
+                self.log.info("npm output: " + result.stdout)
+                self.log.info("npm error: " + result.stderr)
+                self.log.info("npm return code: " + str(result.returncode))
+            else:
+                self.log.warning(
+                    "npm step was skipped because no executable could be resolved."
+                )
 
         kwargs = {
             "appPath": self.appPath,
@@ -2016,6 +2220,7 @@ class XPCShellTests:
             "extraPrefs": options.get("extraPrefs") or [],
             "verboseIfFails": self.verboseIfFails,
             "headless": self.headless,
+            "selfTest": self.selfTest,
             "runFailures": self.runFailures,
             "timeoutAsPass": self.timeoutAsPass,
             "crashAsPass": self.crashAsPass,
@@ -2023,6 +2228,10 @@ class XPCShellTests:
             "repeat": self.repeat,
             "profiler": self.profiler,
         }
+
+        # Only set retry if explicitly provided (avoid overriding default behavior)
+        if options.get("retry") is not None:
+            kwargs["retry"] = options.get("retry")
 
         if self.sequential:
             # Allow user to kill hung xpcshell subprocess with SIGINT
@@ -2071,6 +2280,10 @@ class XPCShellTests:
         if options.get("repeat", 0) > 0:
             self.sequential = True
 
+        def _match_run_sequentially(value, **values):
+            """Helper function to evaluate run-sequentially conditions like skip-if/run-if"""
+            return any(parse(e, strict=True, **values) for e in value.splitlines() if e)
+
         if not options.get("verify"):
             for test_object in self.alltests:
                 # Test identifiers are provided for the convenience of logging. These
@@ -2094,10 +2307,26 @@ class XPCShellTests:
                         mobileArgs=mobileArgs,
                         **kwargs,
                     )
-                    if "run-sequentially" in test_object or self.sequential:
+                    if (
+                        "run-sequentially" in test_object
+                        and _match_run_sequentially(
+                            test_object["run-sequentially"], **mozinfo.info
+                        )
+                    ) or self.sequential:
                         sequential_tests.append(test)
                     else:
                         tests_queue.append(test)
+
+            # Sort parallel tests by timeout factor (descending) to start slower tests first
+            # This helps optimize parallel execution by avoiding long-running tests at the end
+            if tests_queue:
+                tests_queue = deque(
+                    sorted(
+                        tests_queue,
+                        key=lambda t: int(t.test_object.get("requesttimeoutfactor", 1)),
+                        reverse=True,
+                    )
+                )
 
             status = self.runTestList(
                 tests_queue, sequential_tests, testClass, mobileArgs, **kwargs
@@ -2225,7 +2454,18 @@ class XPCShellTests:
             group = get_full_group_name(test)
             tests_by_manifest[group].append(test["id"])
 
+        # Add missing manifests with empty test lists so they appear in
+        # group_result output with SKIP status
+        for missing_path in self.missing_manifests:
+            tests_by_manifest[missing_path] = []
+
         self.log.suite_start(tests_by_manifest, name="xpcshell")
+
+        # Start group for parallel test execution
+        parallel_group_started = False
+        if tests_queue:
+            self.log.group_start(name="parallel")
+            parallel_group_started = True
 
         while tests_queue or running_tests:
             # if we're not supposed to continue and all of the running tests
@@ -2262,6 +2502,9 @@ class XPCShellTests:
                     if test.retry or test.is_alive():
                         # if the join call timed out, test.is_alive => True
                         self.try_again_list.append(test.test_object)
+                        # Print the failure output now, marking failures as expected
+                        # since we'll retry sequentially
+                        test.log_full_output(mark_failures_as_expected=True)
                         continue
                     # did the test encounter any exception?
                     if test.exception:
@@ -2277,11 +2520,17 @@ class XPCShellTests:
             # make room for new tests to run
             running_tests.difference_update(done_tests)
 
+        # End group for parallel test execution
+        if parallel_group_started:
+            self.log.group_end(name="parallel")
+
         if infra_abort:
             return TBPL_RETRY  # terminate early
 
         if keep_going:
             # run the other tests sequentially
+            if sequential_tests:
+                self.log.group_start(name="sequential")
             for test in sequential_tests:
                 if not keep_going:
                     self.log.error(
@@ -2295,6 +2544,9 @@ class XPCShellTests:
                 self.test_ended(test)
                 if (test.failCount > 0 or test.passCount <= 0) and test.retry:
                     self.try_again_list.append(test.test_object)
+                    # Print the failure output now, marking failures as expected
+                    # since we'll retry sequentially
+                    test.log_full_output(mark_failures_as_expected=True)
                     continue
                 self.addTestResults(test)
                 # did the test encounter any exception?
@@ -2304,9 +2556,13 @@ class XPCShellTests:
                     break
                 keep_going = test.keep_going
 
+            if sequential_tests:
+                self.log.group_end(name="sequential")
+
         # retry tests that failed when run in parallel
         if self.try_again_list:
             self.log.info("Retrying tests that failed when run in parallel.")
+            self.log.group_start(name="retry")
         for test_object in self.try_again_list:
             test = testClass(
                 test_object,
@@ -2326,8 +2582,12 @@ class XPCShellTests:
                 break
             keep_going = test.keep_going
 
+        if self.try_again_list:
+            self.log.group_end(name="retry")
+
         # restore default SIGINT behaviour
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        if self.sequential:
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
 
         # Clean up any slacker directories that might be lying around
         # Some might fail because of windows taking too long to unlock them.

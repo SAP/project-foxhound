@@ -22,7 +22,7 @@ add_setup(async function () {
 add_heuristic_tests([
   {
     description: `All fields are in the same cross-origin iframe`,
-    fixtureData: `<iframe src=${CROSS_ORIGIN_ALL_FIELDS}></iframe>`,
+    fixtureData: `<iframe src=\"${CROSS_ORIGIN_ALL_FIELDS}\"></iframe>`,
     expectedResult: [
       {
         fields: [

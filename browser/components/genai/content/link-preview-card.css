@@ -5,9 +5,10 @@
  */
 
 .og-card {
-  --og-main-font-size: 1.4rem;
+  font: menu;
+  --og-main-font-size: 15px;
   background-color: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.05));
-  font-size: 1.2em;
+  font-size: 13px;
 }
 
 .og-card-img {
@@ -30,7 +31,7 @@
 .og-card-title {
   color: var(--panel-color);
   font-size: var(--og-main-font-size);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   margin: 0;
   overflow: hidden;
   -webkit-line-clamp: 3;
@@ -69,38 +70,47 @@
   .keypoints-header {
     display: flex;
     font-size: var(--og-main-font-size);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     gap: var(--space-xs);
     margin: 0;
     user-select: none;
-    /* TODO: this could have been handled with just ::before with { content: '', icon stuff }*/
-    .chevron-icon {
-      background-image: url("chrome://global/skin/icons/arrow-down.svg");
-      background-position: center;
-      background-repeat: no-repeat;
-      background-size: contain;
-      display: inline-block;
-      fill: currentColor;
-      height: 16px;
-      margin-inline-end: 8px;
-      -moz-context-properties: fill;
-      transform: rotateZ(0deg);
+  }
+  .keypoints-header::before {
+    content: "";
+    background-image: url("chrome://global/skin/icons/arrow-down.svg");
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+    display: inline-block;
+    fill: currentColor;
+    height: var(--icon-size);
+    margin-inline-end: var(--space-small);
+    -moz-context-properties: fill;
+    transform: rotateZ(0deg);
+    width: var(--icon-size);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .keypoints-header::before {
       transition: transform 0.3s ease;
-      width: 16px;
     }
   }
 
-  .keypoints-header:has(+ .keypoints-content:not(.hidden)) .chevron-icon {
+  .keypoints-header:has(+ .keypoints-content:not(.hidden))::before {
+    transform: rotateZ(-180deg);
+  }
+
+  &:dir(rtl) .keypoints-header:has(+ .keypoints-content:not(.hidden))::before {
     transform: rotateZ(180deg);
   }
 
   img.icon {
     fill: currentColor;
-    height: var(--icon-size-default);
+    height: var(--icon-size);
     margin-inline-start: var(--space-xlarge);
     -moz-context-properties: fill;
     pointer-events: none;
-    width: var(--icon-size-default);
+    width: var(--icon-size);
   }
 
   .keypoints-content {
@@ -118,7 +128,7 @@
       font-size: var(--og-main-font-size);
       line-height: 1.15; /* Design requires 18px line-height */
       list-style-type: square;
-      padding-inline-start: var(--space-xlarge);
+      padding-inline: var(--space-xlarge) var(--space-xsmall);
     }
 
     li {
@@ -139,8 +149,26 @@
         align-items: center;
         display: flex;
         font-size: var(--og-main-font-size);
-        font-weight: var(--font-weight-bold);
+        font-weight: var(--font-weight-semibold);
         gap: var(--space-xs);
+      }
+
+      .visit-link::after {
+        content: "";
+        background-image: url("chrome://browser/skin/forward.svg");
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: contain;
+        display: inline-block;
+        fill: currentColor;
+        height: 16px;
+        margin-inline-start: 8px;
+        -moz-context-properties: fill;
+        width: 16px;
+      }
+
+      &:dir(rtl) .visit-link::after {
+        transform: scaleX(-1);
       }
     }
 

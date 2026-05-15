@@ -3,13 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAuthGSSAPI_h__
-#define nsAuthGSSAPI_h__
+#ifndef nsAuthGSSAPI_h_
+#define nsAuthGSSAPI_h_
 
 #include "nsAuth.h"
 #include "nsIAuthModule.h"
 #include "nsString.h"
-#include "mozilla/Attributes.h"
 
 #define GSS_USE_FUNCTION_POINTERS 1
 
@@ -59,4 +58,4 @@ class nsAuthGSSAPI final : public nsIAuthModule {
   bool mComplete;
 };
 
-#endif /* nsAuthGSSAPI_h__ */
+#endif /* nsAuthGSSAPI_h_ */

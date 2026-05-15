@@ -29,7 +29,9 @@
       });
 
       add_task(async function testMozSelectProperties() {
-        await testHelpers.testCommonInputProperties("moz-select");
+        await testHelpers.testCommonInputProperties("moz-select", {
+          type: "select-one",
+        });
       });
 
       add_task(async function testMozSelectChange() {
@@ -131,11 +133,151 @@
 
         let mozOptions = select.querySelectorAll("moz-option");
         mozOptions[0].iconSrc = "chrome://global/skin/icons/info.svg";
+        mozOptions[1].iconSrc = "chrome://global/skin/icons/warning.svg";
         await TestUtils.waitForTick();
         await select.updateComplete;
 
         info("New iconSrc value was added to the selected option.");
         ok(selectWrapper.classList.contains("with-icon"), "Select has an icon");
+        is(
+          select.shadowRoot.querySelector(".select-option-icon").src,
+          mozOptions[0].iconSrc,
+          "Select displays the icon of the selected option"
+        );
+
+        select.value = "value";
+        await select.updateComplete;
+        is(select.value, "value", "Second option is selected");
+        is(
+          select.inputEl.value,
+          select.value,
+          "Select element value is updated"
+        );
+        is(
+          select.shadowRoot.querySelector(".select-option-icon").src,
+          mozOptions[1].iconSrc,
+          "Select displays the icon of the newly selected option"
+        );
+      });
+
+      function openSelectAndGetMenuPopup(select) {
+        let topWindow = window.docShell.chromeEventHandler.ownerGlobal;
+        let pickerOpened = BrowserTestUtils.waitForSelectPopupShown(topWindow);
+        select.focus();
+        synthesizeKey(" ");
+        return pickerOpened;
+      }
+
+      /**
+       * Test that hidden and disabled moz-option are reflected in the popup menu.
+       */
+      add_task(async function testMozSelectHiddenAndDisabledOptions() {
+        let target = await testHelpers.renderTemplate();
+        let select = target.querySelector("moz-select");
+        await select.updateComplete;
+
+        let mozOptions = select.querySelectorAll("moz-option");
+
+        // Open select and verify all elements are visible and enabled.
+        let popup = await openSelectAndGetMenuPopup(select);
+        let popupItems = Array.from(popup.children);
+
+        // Items that are hidden are not included in the popup's children.
+        is(popupItems.length, mozOptions.length, "All options are shown");
+        for (let i = 0; i < popupItems.length; i++) {
+          ok(!popupItems[i].disabled, `Option ${i} is enabled`);
+        }
+
+        // Close popup.
+        let hiddenPromise = BrowserTestUtils.waitForPopupEvent(popup, "hidden");
+        popup.hidePopup();
+        await hiddenPromise;
+
+        await TestUtils.waitForTick();
+        await select.updateComplete;
+
+        // set first option to disabled and second option to hidden.
+        mozOptions[0].disabled = true;
+        mozOptions[1].hidden = true;
+
+        await TestUtils.waitForTick();
+        await select.updateComplete;
+
+        // open select and verify first option is disabled and second option is hidden.
+        popup = await openSelectAndGetMenuPopup(select);
+        popupItems = Array.from(popup.children);
+
+        is(
+          popupItems.length,
+          mozOptions.length - 1,
+          "All but one option shown"
+        );
+
+        ok(popupItems[0].disabled, "First option is disabled");
+        is(popupItems[0].label, mozOptions[0].label, "First option is visible");
+        ok(!popupItems[1].disabled, "Second option is enabled");
+        is(popupItems[1].label, mozOptions[2].label, "Third option is visible");
+        ok(!popupItems[2].disabled, "Third option is enabled");
+        is(
+          popupItems[2].label,
+          mozOptions[3].label,
+          "Fourth option is visible"
+        );
+
+        // Close popup.
+        hiddenPromise = BrowserTestUtils.waitForPopupEvent(popup, "hidden");
+        popup.hidePopup();
+        await hiddenPromise;
+
+        // Reset options
+        mozOptions[0].disabled = false;
+        mozOptions[1].hidden = false;
+      });
+
+      add_task(async function testEmptyMozSelect() {
+        // The only thing we test is that this doesn't throw.
+        await testHelpers.renderTemplate(
+          testHelpers.html`<moz-select></moz-select>`
+        );
+      });
+
+      add_task(async function testMozSelectOptionWithSeparator() {
+        let target = await testHelpers.renderTemplate(
+          testHelpers.html`<moz-select><moz-option value="1" label="One"></moz-option><hr>
+          <moz-option value="2" label="Two"></moz-option></moz-select>`
+        );
+        let mozSelect = target.querySelector("moz-select");
+        await mozSelect.updateComplete;
+
+        const embeddedHr = mozSelect.querySelector("hr");
+        ok(embeddedHr, "Renders the hr");
+        is(mozSelect.children[1], embeddedHr, "Renders hr as the second child");
+
+        target = await testHelpers.renderTemplate(
+          testHelpers.html`<moz-select></moz-select>`
+        );
+
+        mozSelect = target.querySelector("moz-select");
+        await mozSelect.updateComplete;
+        mozSelect.options = [
+          { value: "1", label: "One" },
+          { value: "2", label: "Two" },
+          { separator: true },
+          { value: "3", label: "Three" },
+        ];
+        await mozSelect.updateComplete;
+
+        const renderedHr = mozSelect.shadowRoot.querySelector("hr");
+        ok(renderedHr, "Renders the hr");
+
+        const select = mozSelect.shadowRoot.querySelector("select");
+        is(select.children.length, 4, "moz-select renders four child elements");
+        is(select.children[2], renderedHr, "Renders hr as the third child");
+        is(
+          renderedHr.parentElement,
+          select,
+          "Renders the hr as a direct descendant of select"
+        );
       });
     </script>
   </head>

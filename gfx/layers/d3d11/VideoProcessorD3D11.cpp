@@ -19,8 +19,8 @@ namespace layers {
 
 // TODO: Replace with YUVRangedColorSpace
 static Maybe<DXGI_COLOR_SPACE_TYPE> GetSourceDXGIColorSpace(
-    const gfx::YUVColorSpace aYUVColorSpace,
-    const gfx::ColorRange aColorRange) {
+    const gfx::YUVColorSpace aYUVColorSpace, const gfx::ColorRange aColorRange,
+    const bool aContentIsHDR) {
   if (aYUVColorSpace == gfx::YUVColorSpace::BT601) {
     if (aColorRange == gfx::ColorRange::FULL) {
       return Some(DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P601);
@@ -35,10 +35,22 @@ static Maybe<DXGI_COLOR_SPACE_TYPE> GetSourceDXGIColorSpace(
     }
   } else if (aYUVColorSpace == gfx::YUVColorSpace::BT2020) {
     if (aColorRange == gfx::ColorRange::FULL) {
-      // XXX Add SMPTEST2084 handling. HDR content is not handled yet
-      return Some(DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P2020);
+      if (aContentIsHDR) {
+        // DXGI doesn't have a full range PQ YCbCr format, hopefully we won't
+        // have to deal with this case.
+        gfxCriticalNoteOnce
+            << "GetSourceDXGIColorSpace: DXGI has no full range "
+               "BT2020 PQ YCbCr format, using studio range instead";
+        return Some(DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020);
+      } else {
+        return Some(DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P2020);
+      }
     } else {
-      return Some(DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P2020);
+      if (aContentIsHDR) {
+        return Some(DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020);
+      } else {
+        return Some(DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P2020);
+      }
     }
   }
 
@@ -46,9 +58,9 @@ static Maybe<DXGI_COLOR_SPACE_TYPE> GetSourceDXGIColorSpace(
 }
 
 static Maybe<DXGI_COLOR_SPACE_TYPE> GetSourceDXGIColorSpace(
-    const gfx::YUVRangedColorSpace aYUVColorSpace) {
+    const gfx::YUVRangedColorSpace aYUVColorSpace, const bool aContentIsHDR) {
   const auto info = FromYUVRangedColorSpace(aYUVColorSpace);
-  return GetSourceDXGIColorSpace(info.space, info.range);
+  return GetSourceDXGIColorSpace(info.space, info.range, aContentIsHDR);
 }
 
 /* static */
@@ -167,7 +179,8 @@ bool VideoProcessorD3D11::CallVideoProcessorBlt(
 
   auto yuvRangedColorSpace = gfx::ToYUVRangedColorSpace(
       gfx::ToYUVColorSpace(aTextureInfo.mColorSpace), aTextureInfo.mColorRange);
-  auto sourceColorSpace = GetSourceDXGIColorSpace(yuvRangedColorSpace);
+  auto sourceColorSpace =
+      GetSourceDXGIColorSpace(yuvRangedColorSpace, mContentIsHDR);
   if (sourceColorSpace.isNothing()) {
     gfxCriticalNoteOnce << "Unsupported color space";
     return false;

@@ -7,11 +7,11 @@ task-defaults:
     fetches:
         build:
             - artifact: target.mozinfo.json
-            - artifact: target.common.tests.tar.gz
-            - artifact: target.condprof.tests.tar.gz
-            - artifact: target.mochitest.tests.tar.gz
-            - artifact: target.xpcshell.tests.tar.gz
-            - artifact: target.perftests.tests.tar.gz
+            - artifact: target.common.tests.tar.zst
+            - artifact: target.condprof.tests.tar.zst
+            - artifact: target.mochitest.tests.tar.zst
+            - artifact: target.xpcshell.tests.tar.zst
+            - artifact: target.perftests.tests.tar.zst
             - artifact: target.dmg
               extract: false
         toolchain:
@@ -58,6 +58,27 @@ try-browsertime:
             --flavor desktop-browser
             --browsertime-geckodriver ${MOZ_FETCHES_DIR}/geckodriver
             --output $MOZ_FETCHES_DIR/../artifacts
+
+browsertime-sample:
+    description: Run the sample browsertime sample test in CI
+    treeherder:
+        symbol: perftest(bt-sample)
+        tier: 2
+    attributes:
+        cron: false
+    run-on-projects: [mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 -m venv . &&
+            bin/python3 python/mozperftest/mozperftest/runner.py
+            --browsertime-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --browsertime-node ${MOZ_FETCHES_DIR}/node/bin/node
+            --flavor desktop-browser
+            --browsertime-geckodriver ${MOZ_FETCHES_DIR}/geckodriver
+            --output $MOZ_FETCHES_DIR/../artifacts
+            python/mozperftest/mozperftest/tests/data/samples/perftest_example.js
 
 # We'd like not to have to specify each test separately here.  See bug 1865852.
 service-worker:
@@ -352,6 +373,8 @@ ml-summarizer-perf:
             - qwen2.5-0.5-instruct
             - distilbart-cnn-12-6
     description: Run ML Models Perf Tests
+    worker:
+        max-run-time: 3000
     treeherder:
         symbol: perftest(ml-sum-perf)
         tier: 2
@@ -375,6 +398,7 @@ ml-llama-summarizer-perf:
         fetch:
             - wllama.wasm
             - smollm2-360-instruct-gguf
+            - Qwen3-0.6B-GGUF
     description: Run ML Summarizer Model Using Wllama
     treeherder:
         symbol: perftest(ml-llama-sum-perf)
@@ -382,7 +406,7 @@ ml-llama-summarizer-perf:
     attributes:
         batch: false
         cron: false
-    run-on-projects: []
+    run-on-projects: [autoland, mozilla-central]
     run:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
@@ -393,6 +417,32 @@ ml-llama-summarizer-perf:
             --output $MOZ_FETCHES_DIR/../artifacts
             --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
             toolkit/components/ml/tests/browser/browser_ml_llama_summarizer_perf.js
+
+
+ml-security-perf:
+    fetches:
+        fetch:
+            - wllama.wasm
+            - smollm2-360-instruct-gguf
+    description: Run ML Security Performance Tests
+    treeherder:
+        symbol: perftest(ml-security-perf)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --mochitest-name-change
+            --output $MOZ_FETCHES_DIR/../artifacts
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
+            toolkit/components/ml/tests/browser/browser_ml_security_perf.js
 
 ml-multi-perf:
     fetches:
@@ -439,6 +489,7 @@ ml-perf-semantic-ft:
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
             --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
+            --mochitest-extra-args setenv=MOZ_DISABLE_CONTENT_SANDBOX=1
             --mochitest-name-change
             toolkit/components/ml/tests/browser/browser_ml_semantic_history_search_perf.js
 
@@ -516,16 +567,16 @@ ml-perf-autofill:
             --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
             toolkit/components/ml/tests/browser/browser_ml_autofill_perf.js
 
-tr8ns-perf-es-en:
+tr8ns-perf-tiny:
     fetches:
         fetch:
-            - translations.inference
-            - translations.esen.lex
-            - translations.esen.model
-            - translations.esen.vocab
-    description: Run Full-Page Translations with the Spanish-to-English model
+            - tr8ns.inference
+            - tr8ns.T.enru.lex
+            - tr8ns.T.enru.model
+            - tr8ns.T.enru.vocab
+    description: Run Full-Page Translations with a tiny-architecture model
     treeherder:
-        symbol: perftest(tr8ns-perf-es-en)
+        symbol: perftest(tr8ns-perf-T)
         tier: 2
     attributes:
         batch: false
@@ -539,7 +590,57 @@ tr8ns-perf-es-en:
             --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
-            browser/components/translations/tests/browser/browser_translations_perf_es_en.js
+            browser/components/translations/tests/browser/browser_translations_perf_tiny.js
+
+tr8ns-perf-basememory:
+    fetches:
+        fetch:
+            - tr8ns.inference
+            - tr8ns.BM.enru.lex
+            - tr8ns.BM.enru.model
+            - tr8ns.BM.enru.vocab
+    description: Run Full-Page Translations with a base-memory-architecture model
+    treeherder:
+        symbol: perftest(tr8ns-perf-BM)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            browser/components/translations/tests/browser/browser_translations_perf_basememory.js
+
+tr8ns-perf-base:
+    fetches:
+        fetch:
+            - tr8ns.inference
+            - tr8ns.B.enru.lex
+            - tr8ns.B.enru.model
+            - tr8ns.B.enru.vocab
+    description: Run Full-Page Translations with a base-architecture model
+    treeherder:
+        symbol: perftest(tr8ns-perf-B)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            browser/components/translations/tests/browser/browser_translations_perf_base.js
 
 ml-perf-smart-tab:
     fetches:
@@ -577,7 +678,7 @@ ml-perf-smart-tab-cluster:
         symbol: perftest(ml-perf-stg-cluster)
         tier: 2
     worker:
-        max-run-time: 14400
+        max-run-time: 900
     attributes:
         batch: false
         cron: false
@@ -622,3 +723,57 @@ ml-perf-speecht5-tts:
             --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
             --mochitest-name-change
             toolkit/components/ml/tests/browser/browser_ml_speecht5_tts.js
+
+# XXX: We can consolidate this once bug 1865852 lands.
+perftest-accessibility:
+    description: Run accessibility performance tests
+    treeherder:
+        symbol: perftest(a11y)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            accessible/tests/browser/performance/browser_addManyIds.js
+            && python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            accessible/tests/browser/performance/browser_addManyNodes.js
+            && python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            accessible/tests/browser/performance/browser_reflowPseudoelements.js
+            && python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            accessible/tests/browser/performance/browser_removeManySpellingErrors.js
+
+perftest-places:
+    description: Run Places related performance tests
+    treeherder:
+        symbol: perftest(places)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/target.dmg
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            toolkit/components/places/tests/browser/performance/browser_calculate_frecency_speed.js

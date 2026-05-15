@@ -71,6 +71,7 @@ class URLQueryStringStripper final : public nsIObserver,
   nsTHashSet<nsCString> mAllowList;
   nsCOMPtr<nsIURLQueryStrippingListService> mListService;
   nsTHashMap<nsCString, dom::StripRule> mStripOnShareMap;
+  Maybe<dom::StripRule> mStripOnShareGlobal;
   bool mIsInitialized;
   // Indicates whether or not we currently have registered an observer
   // for the QPS/strip-on-share list updates

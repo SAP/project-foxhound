@@ -30,7 +30,7 @@ import mozilla.components.concept.engine.translate.TranslationPageSettingOperati
 import mozilla.components.concept.engine.translate.TranslationPageSettings
 import mozilla.components.concept.engine.translate.findLanguage
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -47,53 +47,53 @@ class TranslationsMiddleware(
 ) : Middleware<BrowserState, BrowserAction> {
     private val logger = Logger("TranslationsMiddleware")
 
-    @Suppress("LongMethod", "CyclomaticComplexMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         // Pre process actions
         when (action) {
             is InitAction -> if (automaticallyInitialize) {
-                context.store.dispatch(TranslationsAction.InitTranslationsBrowserState)
+                store.dispatch(TranslationsAction.InitTranslationsBrowserState)
             }
             is LocaleAction.UpdateLocaleAction -> {
                 logger.info("Detected app locale change.")
                 scope.launch {
                     // This information is dependent on the app language
-                    requestSupportedLanguages(context, null)
-                    requestLanguageModels(context, null)
+                    requestSupportedLanguages(store, null)
+                    requestLanguageModels(store, null)
                 }
             }
 
             is TranslationsAction.InitTranslationsBrowserState -> {
                 scope.launch {
-                    val engineIsSupported = requestEngineSupport(context)
+                    val engineIsSupported = requestEngineSupport(store)
                     if (engineIsSupported == true) {
-                        initializeBrowserStore(context)
+                        initializeBrowserStore(store)
                     }
                 }
             }
 
             is TranslationsAction.TranslateExpectedAction -> {
-                requestDefaultModelDownloadSize(context, action.tabId)
+                requestDefaultModelDownloadSize(store, action.tabId)
             }
 
             is TranslationsAction.OperationRequestedAction -> {
                 when (action.operation) {
                     TranslationOperation.FETCH_SUPPORTED_LANGUAGES -> {
                         scope.launch {
-                            requestSupportedLanguages(context, action.tabId)
+                            requestSupportedLanguages(store, action.tabId)
                         }
                     }
                     TranslationOperation.FETCH_LANGUAGE_MODELS -> {
                         scope.launch {
-                            requestLanguageModels(context, action.tabId)
+                            requestLanguageModels(store, action.tabId)
                         }
                     }
                     TranslationOperation.FETCH_PAGE_SETTINGS -> {
-                        val tabId = action.tabId ?: context.state.selectedTab?.id
+                        val tabId = action.tabId ?: store.state.selectedTab?.id
                         if (action.tabId == null) {
                             logger.warn(
                                 "Passed null tabId to FETCH_PAGE_SETTINGS, " +
@@ -102,8 +102,8 @@ class TranslationsMiddleware(
                         }
                         if (tabId != null) {
                             scope.launch {
-                                context.state.selectedTab?.let {
-                                    requestPageSettings(context, it.id)
+                                store.state.selectedTab?.let {
+                                    requestPageSettings(store, it.id)
                                 }
                             }
                         } else {
@@ -115,18 +115,18 @@ class TranslationsMiddleware(
                     }
                     TranslationOperation.FETCH_OFFER_SETTING -> {
                         scope.launch {
-                            requestOfferSetting(context, action.tabId)
+                            requestOfferSetting(store, action.tabId)
                         }
                     }
 
                     TranslationOperation.FETCH_AUTOMATIC_LANGUAGE_SETTINGS -> {
                         scope.launch {
-                            requestLanguageSettings(context, action.tabId)
+                            requestLanguageSettings(store, action.tabId)
                         }
                     }
                     TranslationOperation.FETCH_NEVER_TRANSLATE_SITES -> {
                         scope.launch {
-                            requestNeverTranslateSites(context, action.tabId)
+                            requestNeverTranslateSites(store, action.tabId)
                         }
                     }
                     TranslationOperation.TRANSLATE,
@@ -138,7 +138,7 @@ class TranslationsMiddleware(
             is TranslationsAction.FetchTranslationDownloadSizeAction -> {
                 scope.launch {
                     requestTranslationSize(
-                        context = context,
+                        store = store,
                         tabId = action.tabId,
                         fromLanguage = action.fromLanguage,
                         toLanguage = action.toLanguage,
@@ -148,7 +148,7 @@ class TranslationsMiddleware(
 
             is TranslationsAction.RemoveNeverTranslateSiteAction -> {
                 scope.launch {
-                    removeNeverTranslateSite(context, action.origin)
+                    removeNeverTranslateSite(store, action.origin)
                 }
             }
 
@@ -164,7 +164,7 @@ class TranslationsMiddleware(
                     TranslationPageSettingOperation.UPDATE_ALWAYS_TRANSLATE_LANGUAGE ->
                         scope.launch {
                             updateLanguagePageSetting(
-                                context = context,
+                                store = store,
                                 tabId = action.tabId,
                                 setting = action.setting,
                                 settingType = LanguageSetting.ALWAYS,
@@ -174,7 +174,7 @@ class TranslationsMiddleware(
                     TranslationPageSettingOperation.UPDATE_NEVER_TRANSLATE_LANGUAGE ->
                         scope.launch {
                             updateLanguagePageSetting(
-                                context = context,
+                                store = store,
                                 tabId = action.tabId,
                                 setting = action.setting,
                                 settingType = LanguageSetting.NEVER,
@@ -184,7 +184,7 @@ class TranslationsMiddleware(
                     TranslationPageSettingOperation.UPDATE_NEVER_TRANSLATE_SITE ->
                         scope.launch {
                             updateNeverTranslateSitePageSetting(
-                                context = context,
+                                store = store,
                                 tabId = action.tabId,
                                 setting = action.setting,
                             )
@@ -203,7 +203,7 @@ class TranslationsMiddleware(
             is TranslationsAction.UpdateLanguageSettingsAction -> {
                 scope.launch {
                     updateLanguageSetting(
-                        context = context,
+                        store = store,
                         languageCode = action.languageCode,
                         setting = action.setting,
                     )
@@ -213,7 +213,7 @@ class TranslationsMiddleware(
             is TranslationsAction.ManageLanguageModelsAction -> {
                 scope.launch {
                     updateLanguageModel(
-                        context = context,
+                        store = store,
                         options = action.options,
                     )
                 }
@@ -239,33 +239,33 @@ class TranslationsMiddleware(
      * Never Translate Sites List - [requestNeverTranslateSites]
      * Offer Setting - [requestOfferSetting]
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to be initialised.
      */
     private fun initializeBrowserStore(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
     ) {
-        requestSupportedLanguages(context)
-        requestLanguageModels(context)
-        requestLanguageSettings(context)
-        requestNeverTranslateSites(context)
-        requestOfferSetting(context)
+        requestSupportedLanguages(store)
+        requestLanguageModels(store)
+        requestLanguageSettings(store)
+        requestNeverTranslateSites(store)
+        requestOfferSetting(store)
     }
 
     /**
      * Checks if the translations engine supports the device architecture and updates the state on
      * [BrowserState.translationEngine].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to dispatch translation actions to.
      * @return Whether the engine is supported or not, or null when the support cannot be
      * determined.
      */
     private suspend fun requestEngineSupport(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
     ): Boolean? {
         return suspendCoroutine { continuation ->
             engine.isTranslationsEngineSupported(
                 onSuccess = { isEngineSupported ->
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.SetEngineSupportedAction(
                             isEngineSupported = isEngineSupported,
                         ),
@@ -273,9 +273,8 @@ class TranslationsMiddleware(
                     logger.info("Success requesting engine support. isEngineSupported: $isEngineSupported")
                     continuation.resume(isEngineSupported)
                 },
-
                 onError = { error ->
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.EngineExceptionAction(
                             error = TranslationError.UnknownEngineSupportError(error),
                         ),
@@ -301,18 +300,18 @@ class TranslationsMiddleware(
      * to set the error both on the [BrowserState.translationEngine] and
      * [SessionState.translationsState].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId If a Tab ID associated with the request for error handling.
      * If null, this will only dispatch errors on the global translations browser state.
      *
      */
     private fun requestSupportedLanguages(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String? = null,
     ) {
         engine.getSupportedTranslationLanguages(
             onSuccess = {
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.SetSupportedLanguagesAction(
                         supportedLanguages = it,
                     ),
@@ -320,7 +319,7 @@ class TranslationsMiddleware(
 
                 // Ensures error is cleared, if a tab made this request.
                 if (tabId != null) {
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.TranslateSuccessAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_SUPPORTED_LANGUAGES,
@@ -331,14 +330,14 @@ class TranslationsMiddleware(
                 logger.info("Success requesting supported languages.")
             },
             onError = {
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.EngineExceptionAction(
                         error = TranslationError.CouldNotLoadLanguagesError(it),
                     ),
                 )
 
                 if (tabId != null) {
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.TranslateExceptionAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_SUPPORTED_LANGUAGES,
@@ -366,34 +365,33 @@ class TranslationsMiddleware(
      * to set the error both on the [BrowserState.translationEngine] and
      * [SessionState.translationsState].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId If a Tab ID associated with the request for error handling.
      * If null, this will only dispatch errors on the global translations browser state.
      *
      */
     private fun requestLanguageModels(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String? = null,
     ) {
         engine.getTranslationsModelDownloadStates(
             onSuccess = {
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.SetLanguageModelsAction(
                         languageModels = it,
                     ),
                 )
                 logger.info("Success requesting language models.")
             },
-
             onError = { error ->
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.EngineExceptionAction(
                         error = TranslationError.ModelCouldNotRetrieveError(error),
                     ),
                 )
 
                 if (tabId != null) {
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.TranslateExceptionAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_LANGUAGE_MODELS,
@@ -413,31 +411,30 @@ class TranslationsMiddleware(
      * dispatches the failure via [TranslationsAction.EngineExceptionAction] and
      * when a [tabId] is provided, [TranslationsAction.TranslateExceptionAction].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId Tab ID associated with the request.
      */
     private fun requestNeverTranslateSites(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String? = null,
     ) {
         engine.getNeverTranslateSiteList(
             onSuccess = {
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.SetNeverTranslateSitesAction(
                         neverTranslateSites = it,
                     ),
                 )
                 logger.info("Success requesting never translate sites.")
             },
-
             onError = {
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.EngineExceptionAction(
                         error = TranslationError.CouldNotLoadNeverTranslateSites(it),
                     ),
                 )
                 if (tabId != null) {
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.TranslateExceptionAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_NEVER_TRANSLATE_SITES,
@@ -455,11 +452,11 @@ class TranslationsMiddleware(
      * store via [TranslationsAction.SetNeverTranslateSitesAction] or else dispatches the failure
      * [TranslationsAction.TranslateExceptionAction].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param origin A site origin URI that will have the specified never translate permission set.
      */
     private fun removeNeverTranslateSite(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         origin: String,
     ) {
         engine.setNeverTranslateSpecifiedSite(
@@ -472,7 +469,7 @@ class TranslationsMiddleware(
                 logger.error("Error removing site from never translate list: ", it)
                 // Fetch never translate sites to ensure the state matches the engine, because it
                 // was proactively removed in the reducer.
-                requestNeverTranslateSites(context)
+                requestNeverTranslateSites(store)
             },
         )
     }
@@ -482,11 +479,11 @@ class TranslationsMiddleware(
      * store via [TranslationsAction.SetPageSettingsAction] or else dispatches the failure
      * [TranslationsAction.TranslateExceptionAction].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId Tab ID associated with the request.
      */
     private suspend fun requestPageSettings(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String,
     ) {
         logger.info("Requesting page settings.")
@@ -494,14 +491,14 @@ class TranslationsMiddleware(
         val alwaysOfferPopup: Boolean = engine.getTranslationsOfferPopup()
 
         // Page language settings
-        val pageLanguage = context.store.state.findTab(tabId)
+        val pageLanguage = store.state.findTab(tabId)
             ?.translationsState?.translationEngineState?.detectedLanguages?.documentLangTag
         val setting = pageLanguage?.let { getLanguageSetting(it) }
         val alwaysTranslateLanguage = setting?.toBoolean(LanguageSetting.ALWAYS)
         val neverTranslateLanguage = setting?.toBoolean(LanguageSetting.NEVER)
 
         // Never translate site
-        val engineSession = context.store.state.findTab(tabId)
+        val engineSession = store.state.findTab(tabId)
             ?.engineState?.engineSession
         val neverTranslateSite = engineSession?.let { getNeverTranslateSiteSetting(it) }
 
@@ -511,7 +508,7 @@ class TranslationsMiddleware(
             neverTranslateSite != null
         ) {
             logger.info("Successfully found all page settings.")
-            context.store.dispatch(
+            store.dispatch(
                 TranslationsAction.SetPageSettingsAction(
                     tabId = tabId,
                     pageSettings = TranslationPageSettings(
@@ -525,7 +522,7 @@ class TranslationsMiddleware(
         } else {
             logger.error("Could not find all page settings.")
             // Any null values indicate something went wrong, alert an error occurred
-            context.store.dispatch(
+            store.dispatch(
                 TranslationsAction.TranslateExceptionAction(
                     tabId = tabId,
                     operation = TranslationOperation.FETCH_PAGE_SETTINGS,
@@ -540,17 +537,17 @@ class TranslationsMiddleware(
      * store via [TranslationsAction.SetGlobalOfferTranslateSettingAction]. Will additionally
      * dispatch a request to update page settings, when a [tabId] is provided.
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId Tab ID associated with the request.
      */
     private fun requestOfferSetting(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String? = null,
     ) {
         logger.info("Requesting offer setting.")
         val alwaysOfferPopup: Boolean = engine.getTranslationsOfferPopup()
 
-        context.store.dispatch(
+        store.dispatch(
             TranslationsAction.SetGlobalOfferTranslateSettingAction(
                 offerTranslation = alwaysOfferPopup,
             ),
@@ -558,7 +555,7 @@ class TranslationsMiddleware(
 
         if (tabId != null) {
             // Fetch page settings to ensure the state matches the engine.
-            context.store.dispatch(
+            store.dispatch(
                 TranslationsAction.OperationRequestedAction(
                     tabId = tabId,
                     operation = TranslationOperation.FETCH_PAGE_SETTINGS,
@@ -578,12 +575,10 @@ class TranslationsMiddleware(
         return suspendCoroutine { continuation ->
             engine.getLanguageSetting(
                 languageCode = pageLanguage,
-
                 onSuccess = { setting ->
                     logger.info("Success requesting language settings.")
                     continuation.resume(setting)
                 },
-
                 onError = {
                     logger.error("Could not retrieve language settings: $it")
                     continuation.resume(null)
@@ -606,34 +601,32 @@ class TranslationsMiddleware(
      * to set the error both on the [BrowserState.translationEngine] and
      * [SessionState.translationsState].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId If a Tab ID is associated with the request for error handling.
      * If null, this will only dispatch errors on the global translations browser state.
      */
     private fun requestLanguageSettings(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String? = null,
     ) {
         engine.getLanguageSettings(
-
             onSuccess = { settings ->
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.SetLanguageSettingsAction(
                         languageSettings = settings,
                     ),
                 )
                 logger.info("Success requesting language settings.")
             },
-
             onError = {
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.EngineExceptionAction(
                         error = TranslationError.CouldNotLoadLanguageSettingsError(it),
                     ),
                 )
 
                 if (tabId != null) {
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.TranslateExceptionAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_AUTOMATIC_LANGUAGE_SETTINGS,
@@ -674,13 +667,13 @@ class TranslationsMiddleware(
      * [SessionState.translationsState] on the [BrowserStore]
      * via [TranslationsAction.SetTranslationDownloadSizeAction].
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId Tab ID associated with the request.
      * @param fromLanguage The from language to request the translation download size for.
      * @param toLanguage The to language to request the translation download size for.
      */
     private fun requestTranslationSize(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String,
         fromLanguage: Language,
         toLanguage: Language,
@@ -688,9 +681,8 @@ class TranslationsMiddleware(
         engine.getTranslationsPairDownloadSize(
             fromLanguage = fromLanguage.code,
             toLanguage = toLanguage.code,
-
             onSuccess = { size ->
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.SetTranslationDownloadSizeAction(
                         tabId = tabId,
                         translationSize = TranslationDownloadSize(
@@ -703,9 +695,8 @@ class TranslationsMiddleware(
                 )
                 logger.info("Success requesting download size.")
             },
-
             onError = { error ->
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.SetTranslationDownloadSizeAction(
                         tabId = tabId,
                         translationSize = TranslationDownloadSize(
@@ -731,16 +722,16 @@ class TranslationsMiddleware(
      *
      * If no defaults are available, then no action will occur.
      *
-     * @param context Context to use to dispatch to the store.
+     * @param store Store to use to dispatch to the store.
      * @param tabId Tab ID associated with the request.
      */
     private fun requestDefaultModelDownloadSize(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String,
     ) {
-        val fromLanguage = getDefaultFromLanguage(context, tabId) ?: return
-        val toLanguage = getDefaultToLanguage(context, tabId) ?: return
-        context.store.dispatch(
+        val fromLanguage = getDefaultFromLanguage(store, tabId) ?: return
+        val toLanguage = getDefaultToLanguage(store, tabId) ?: return
+        store.dispatch(
             TranslationsAction.FetchTranslationDownloadSizeAction(
                 tabId = tabId,
                 fromLanguage = fromLanguage,
@@ -767,21 +758,21 @@ class TranslationsMiddleware(
      * If an error occurs, then the method will request the page settings be re-fetched and set on
      * the browser store.
      *
-     * @param context The context used to request the page settings.
+     * @param store The store used to request the page settings.
      * @param tabId Tab ID associated with the request.
      * @param setting The value of the always offer setting to update.
      * @param settingType If the boolean to update is from the
      * [LanguageSetting.ALWAYS] or [LanguageSetting.NEVER] perspective.
      */
     private fun updateLanguagePageSetting(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String,
         setting: Boolean,
         settingType: LanguageSetting,
     ) {
         logger.info("Preparing to update the translations language preference.")
 
-        val pageLanguage = context.store.state.findTab(tabId)
+        val pageLanguage = store.state.findTab(tabId)
             ?.translationsState?.translationEngineState?.detectedLanguages?.documentLangTag
         val convertedSetting = settingType.toLanguageSetting(setting)
 
@@ -789,7 +780,7 @@ class TranslationsMiddleware(
             logger.info("An issue occurred while preparing to update the language setting.")
 
             // Fetch page settings to ensure the state matches the engine.
-            context.store.dispatch(
+            store.dispatch(
                 TranslationsAction.OperationRequestedAction(
                     tabId = tabId,
                     operation = TranslationOperation.FETCH_PAGE_SETTINGS,
@@ -797,7 +788,7 @@ class TranslationsMiddleware(
             )
         } else {
             logger.info("Updating language setting.")
-            updateLanguageSetting(context, tabId, pageLanguage, convertedSetting)
+            updateLanguageSetting(store, tabId, pageLanguage, convertedSetting)
         }
     }
 
@@ -807,13 +798,13 @@ class TranslationsMiddleware(
      * If an error occurs, and a [tabId] is known then the method will request the page settings be
      * re-fetched and set on the browser store.
      *
-     * @param context The context used to request the page settings.
+     * @param store The store used to request the page settings.
      * @param tabId Tab ID associated with the request.
      * @param languageCode The BCP-47 language to update.
      * @param setting The new language setting for the [languageCode].
      */
     private fun updateLanguageSetting(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String? = null,
         languageCode: String,
         setting: LanguageSetting,
@@ -823,14 +814,13 @@ class TranslationsMiddleware(
         engine.setLanguageSetting(
             languageCode = languageCode,
             languageSetting = setting,
-
             onSuccess = {
                 // Value was proactively updated in [TranslationsStateReducer] for
                 // [TranslationsBrowserState.languageSettings]
 
                 if (tabId != null) {
                     // Ensure the session's page settings remain in sync with this update.
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.OperationRequestedAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_AUTOMATIC_LANGUAGE_SETTINGS,
@@ -840,16 +830,15 @@ class TranslationsMiddleware(
 
                 logger.info("Successfully updated the language preference.")
             },
-
             onError = {
                 logger.error("Could not update the language preference.", it)
                 // The browser store [TranslationsBrowserState.languageSettings] is out of sync,
                 // re-request to sync the state.
-                requestLanguageSettings(context, tabId)
+                requestLanguageSettings(store, tabId)
 
                 if (tabId != null) {
                     // Fetch page settings to ensure the state matches the engine.
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.OperationRequestedAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_PAGE_SETTINGS,
@@ -869,16 +858,16 @@ class TranslationsMiddleware(
      *
      * Note: This method should be used when on the same page as the requested change.
      *
-     * @param context The context used to request the page settings.
+     * @param store The store used to request the page settings.
      * @param tabId Tab ID associated with the request.
      * @param setting The value of the site setting to update.
      */
     private fun updateNeverTranslateSitePageSetting(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String,
         setting: Boolean,
     ) {
-        val engineSession = context.store.state.findTab(tabId)
+        val engineSession = store.state.findTab(tabId)
             ?.engineState?.engineSession
 
         if (engineSession == null) {
@@ -890,7 +879,7 @@ class TranslationsMiddleware(
                     logger.info("Successfully updated the never translate site preference.")
 
                     // Ensure the global sites store is in-sync with the page settings.
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.OperationRequestedAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_NEVER_TRANSLATE_SITES,
@@ -901,7 +890,7 @@ class TranslationsMiddleware(
                     logger.error("Could not update the never translate site preference.", it)
 
                     // Fetch page settings to ensure the state matches the engine.
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.OperationRequestedAction(
                             tabId = tabId,
                             operation = TranslationOperation.FETCH_PAGE_SETTINGS,
@@ -916,18 +905,18 @@ class TranslationsMiddleware(
      * Helper to find the default "from" language for a site using the page detected language and
      * engine supported languages.
      *
-     * @param context The context used to request the information from the store.
+     * @param store The store used to request the information from the store.
      * @param tabId Tab ID associated with the request.
      * @return The default expected translate "from" language, which is the page language or null
      * if unavailable or an unsupported language by the engine.
      */
     private fun getDefaultFromLanguage(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String,
     ): Language? {
-        val pageLang = context.store.state.findTab(tabId)
+        val pageLang = store.state.findTab(tabId)
             ?.translationsState?.translationEngineState?.detectedLanguages?.documentLangTag ?: return null
-        val supportedLanguages = context.store.state.translationEngine.supportedLanguages ?: return null
+        val supportedLanguages = store.state.translationEngine.supportedLanguages ?: return null
         return supportedLanguages.findLanguage(pageLang)
     }
 
@@ -935,18 +924,18 @@ class TranslationsMiddleware(
      * Helper to find the default "to" language using the user's preferred language and
      * engine supported languages.
      *
-     * @param context The context used to request the information from the store.
+     * @param store The store used to request the information from the store.
      * @param tabId Tab ID associated with the request.
      * @return The default translate "to" language, which is the user's preferred language or null
      * if unavailable or an unsupported language by the engine.
      */
     private fun getDefaultToLanguage(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         tabId: String,
     ): Language? {
-        val userPreferredLang = context.store.state.findTab(tabId)
+        val userPreferredLang = store.state.findTab(tabId)
             ?.translationsState?.translationEngineState?.detectedLanguages?.userPreferredLangTag ?: return null
-        val supportedLanguages = context.store.state.translationEngine.supportedLanguages ?: return null
+        val supportedLanguages = store.state.translationEngine.supportedLanguages ?: return null
         return supportedLanguages.findLanguage(userPreferredLang)
     }
 
@@ -956,11 +945,12 @@ class TranslationsMiddleware(
      * Examples of operations include downloading and deleting individual models, all models,
      * or the cache.
      *
-     * @param context The context used to update the language models.
+     * @param store The store used to update the language models.
      * @param options The change and specified language models that should change state.
      */
+    @Suppress("CognitiveComplexMethod")
     private fun updateLanguageModel(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         options: ModelManagementOptions,
     ) {
         logger.info("Requesting the translations engine update the language model(s).")
@@ -975,13 +965,13 @@ class TranslationsMiddleware(
                     ModelState.NOT_DOWNLOADED
                 }
                 val newModelState = LanguageModel.determineNewLanguageModelState(
-                    appLanguage = context.store.state.locale?.language.toString(),
-                    currentLanguageModels = context.store.state.translationEngine.languageModels,
+                    appLanguage = store.state.locale?.language.toString(),
+                    currentLanguageModels = store.state.translationEngine.languageModels,
                     options = options,
                     newStatus = processState,
                 )
                 if (newModelState != null) {
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.SetLanguageModelsAction(
                             languageModels = newModelState,
                         ),
@@ -989,7 +979,7 @@ class TranslationsMiddleware(
                     if (!areModelsProcessing(newModelState)) {
                         // Refresh state to ensure we have the latest model sizes.
                         // Sizes can change if pivots are required and acquired or deleted.
-                        requestLanguageModels(context)
+                        requestLanguageModels(store)
                     }
 
                     logger.info("Successfully updated the language model(s).")
@@ -1000,10 +990,9 @@ class TranslationsMiddleware(
                             "Re-requesting state be retrieved from the engine.",
                     )
                     // Unexpectedly lost state, so check with the engine to put it back in-sync.
-                    requestLanguageModels(context)
+                    requestLanguageModels(store)
                 }
             },
-
             onError = { error ->
                 logger.error("Could not update the language model(s).", error)
                 // Value was set to a wait state in [TranslationsStateReducer] for
@@ -1014,14 +1003,14 @@ class TranslationsMiddleware(
                     ModelState.ERROR_DELETION
                 }
                 val errorModelState = LanguageModel.determineNewLanguageModelState(
-                    appLanguage = context.store.state.locale?.language.toString(),
-                    currentLanguageModels = context.store.state.translationEngine.languageModels,
+                    appLanguage = store.state.locale?.language.toString(),
+                    currentLanguageModels = store.state.translationEngine.languageModels,
                     options = options,
                     newStatus = errorState,
                 )
 
                 if (errorModelState != null) {
-                    context.store.dispatch(
+                    store.dispatch(
                         TranslationsAction.SetLanguageModelsAction(
                             languageModels = errorModelState,
                         ),
@@ -1033,10 +1022,10 @@ class TranslationsMiddleware(
                             "Re-requesting state be retrieved from the engine.",
                     )
                     // Unexpectedly lost state, so check with the engine to put it back in-sync.
-                    requestLanguageModels(context)
+                    requestLanguageModels(store)
                 }
 
-                context.store.dispatch(
+                store.dispatch(
                     TranslationsAction.EngineExceptionAction(
                         error = TranslationError.LanguageModelUpdateError(error),
                     ),

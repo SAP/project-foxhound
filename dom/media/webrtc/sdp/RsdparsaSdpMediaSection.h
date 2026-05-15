@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _RUSTSDPMEDIASECTION_H_
-#define _RUSTSDPMEDIASECTION_H_
+#ifndef RUSTSDPMEDIASECTION_H_
+#define RUSTSDPMEDIASECTION_H_
 
 #include "mozilla/UniquePtr.h"
-#include "sdp/RsdparsaSdpInc.h"
-#include "sdp/RsdparsaSdpGlue.h"
-#include "sdp/SdpMediaSection.h"
 #include "sdp/RsdparsaSdpAttributeList.h"
+#include "sdp/RsdparsaSdpGlue.h"
+#include "sdp/RsdparsaSdpInc.h"
+#include "sdp/SdpMediaSection.h"
 
 namespace mozilla {
 

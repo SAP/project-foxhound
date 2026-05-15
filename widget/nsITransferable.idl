@@ -26,7 +26,6 @@ interface nsIReferrerInfo;
 #define kRTFMime                    "text/rtf"
 #define kMozTextInternal            "text/x-moz-text-internal"  // text data which isn't suppoed to be parsed by other apps.
 #define kHTMLMime                   "text/html"
-#define kAOLMailMime                "AOLMAIL"
 #define kPNGImageMime               "image/png"
 #define kJPEGImageMime              "image/jpeg"
 #define kJPGImageMime               "image/jpg"

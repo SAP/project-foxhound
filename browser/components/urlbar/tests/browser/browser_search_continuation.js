@@ -92,24 +92,28 @@ add_setup(async () => {
 
 add_task(async function test_trending_results() {
   await check_results([
-    "SearchSuggestions",
-    "SearchSuggestions",
-    "SearchSuggestions",
+    "UrlbarProviderSearchSuggestions",
+    "UrlbarProviderSearchSuggestions",
+    "UrlbarProviderSearchSuggestions",
   ]);
   await doSearch("Testing 1");
   await check_results([
-    "RecentSearches",
-    "SearchSuggestions",
-    "SearchSuggestions",
+    "UrlbarProviderRecentSearches",
+    "UrlbarProviderSearchSuggestions",
+    "UrlbarProviderSearchSuggestions",
   ]);
   await doSearch("Testing 2");
   await check_results([
-    "RecentSearches",
-    "RecentSearches",
-    "SearchSuggestions",
+    "UrlbarProviderRecentSearches",
+    "UrlbarProviderRecentSearches",
+    "UrlbarProviderSearchSuggestions",
   ]);
   await doSearch("Testing 3");
-  await check_results(["RecentSearches", "RecentSearches", "RecentSearches"]);
+  await check_results([
+    "UrlbarProviderRecentSearches",
+    "UrlbarProviderRecentSearches",
+    "UrlbarProviderRecentSearches",
+  ]);
 });
 
 async function check_results(results) {

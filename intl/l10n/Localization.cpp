@@ -164,6 +164,14 @@ Localization::Localization(nsIGlobalObject* aGlobal, bool aIsSync,
   RegisterObservers();
 }
 
+Localization::Localization(nsIGlobalObject* aGlobal, bool aIsSync,
+                           const nsTArray<nsCString>& aLocales)
+    : mGlobal(aGlobal) {
+  nsTArray<ffi::GeckoResourceId> resIds;
+  ffi::localization_new_with_locales(&resIds, aIsSync, nullptr, &aLocales,
+                                     getter_AddRefs(mRaw));
+}
+
 /* static */
 bool Localization::IsAPIEnabled(JSContext* aCx, JSObject* aObject) {
   JS::Rooted<JSObject*> obj(aCx, aObject);

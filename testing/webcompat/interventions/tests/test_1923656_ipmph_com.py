@@ -14,7 +14,7 @@ VPN_MESSAGE = "Possibly region-locked. Please try again using a VPN set to Hong 
 async def test_enabled(client):
     await client.navigate(URL, wait="none")
     try:
-        client.switch_frame(client.await_css(IFRAME_CSS, timeout=30))
+        client.switch_to_frame(client.await_css(IFRAME_CSS, timeout=30))
     except Exception:
         pytest.skip(VPN_MESSAGE)
         return

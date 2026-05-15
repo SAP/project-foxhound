@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/TextClause.h"
-#include "mozilla/dom/TextClauseBinding.h"
+
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/TextClauseBinding.h"
 
 namespace mozilla::dom {
 

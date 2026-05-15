@@ -18,13 +18,15 @@
 #include <vector>
 
 #include "api/field_trials_view.h"
+#include "api/ref_count.h"
 #include "api/scoped_refptr.h"
 #include "api/video/resolution.h"
+#include "api/video/video_codec_type.h"
 #include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/spatial_layer.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
-#include "rtc_base/ref_count.h"
 
 namespace webrtc {
 
@@ -84,6 +86,11 @@ struct VideoStream {
   // e.g. if source only provides lower resolution or
   // if resource adaptation is active.
   std::optional<Resolution> scale_resolution_down_to;
+
+  // The video format for the stream
+  // This should be set for mixed-codec simulcast, while for other cases,
+  // it is optional and can be unset.
+  std::optional<SdpVideoFormat> video_format;
 };
 
 class VideoEncoderConfig {
@@ -172,6 +179,10 @@ class VideoEncoderConfig {
 
   bool HasScaleResolutionDownTo() const;
 
+  bool HasScaleResolutionDownBy() const;
+
+  SdpVideoFormat GetSimulcastVideoFormat(size_t stream_index) const;
+
   // TODO(bugs.webrtc.org/6883): Consolidate on one of these.
   VideoCodecType codec_type;
   SdpVideoFormat video_format;
@@ -179,11 +190,11 @@ class VideoEncoderConfig {
   // Note: This factory can be unset, and VideoStreamEncoder will
   // then use the EncoderStreamFactory. The factory is only set by
   // tests.
-  rtc::scoped_refptr<VideoStreamFactoryInterface> video_stream_factory;
+  scoped_refptr<VideoStreamFactoryInterface> video_stream_factory;
   std::vector<SpatialLayer> spatial_layers;
   ContentType content_type;
   bool frame_drop_enabled;
-  rtc::scoped_refptr<const EncoderSpecificSettings> encoder_specific_settings;
+  scoped_refptr<const EncoderSpecificSettings> encoder_specific_settings;
 
   // Padding will be used up to this bitrate regardless of the bitrate produced
   // by the encoder. Padding above what's actually produced by the encoder helps

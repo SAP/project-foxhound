@@ -44,7 +44,7 @@ ia2AccessibleRelation::get_relationType(BSTR* aRelationType) {
     break;
 
   switch (mType) {
-#include "RelationTypeMap.h"
+#include "RelationTypeMap.inc"
   }
 
   return *aRelationType ? S_OK : E_OUTOFMEMORY;

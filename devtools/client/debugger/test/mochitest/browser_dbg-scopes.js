@@ -27,11 +27,37 @@ add_task(async function testScopeNodes() {
 
   await stepOver(dbg);
   is(getScopeNodeLabel(dbg, 4), "foo()");
-  is(getScopeNodeLabel(dbg, 5), "Window");
-  is(getScopeNodeValue(dbg, 5), "Global");
+  is(getScopeNodeLabel(dbg, 5), "Block");
+  is(getScopeNodeLabel(dbg, 6), "Window");
+  is(getScopeNodeValue(dbg, 6), "Global");
 
   info("Resuming the thread");
   await resume(dbg);
+});
+
+// Test that the scope nodes for destructuring paramters are not displayed.
+add_task(async function testDestructuringParametersScopeNodes() {
+  const dbg = await initDebuggerWithAbsoluteURL(
+    "data:text/html;charset=utf8,<!DOCTYPE html><script>function foo({x}){debugger;};foo({x:2})</script>"
+  );
+
+  info("Reload the page to hit the debugger statement while loading");
+  const onReloaded = reload(dbg);
+  await waitForPaused(dbg);
+  ok(true, "We're paused");
+
+  info(
+    "Checking all the nodes to assert that the scope node for the destructuring parameter is not displayed"
+  );
+  is(getScopeNodeLabel(dbg, 1), "foo");
+  is(getScopeNodeLabel(dbg, 2), "<this>");
+  is(getScopeNodeLabel(dbg, 3), "arguments");
+  is(getScopeNodeLabel(dbg, 4), "x");
+  is(getScopeNodeLabel(dbg, 5), "Window");
+
+  info("Resuming the thread");
+  await resume(dbg);
+  await onReloaded;
 });
 
 // Test scope nodes for anonymous functions display correctly.
@@ -54,4 +80,42 @@ add_task(async function testAnonymousScopeNodes() {
   info("Resuming the thread");
   await resume(dbg);
   await onReloaded;
+});
+
+// Test scope nodes for __proto__ arg and variable
+add_task(async function testProtoScopeNodes() {
+  const dbg = await initDebuggerWithAbsoluteURL(
+    `data:text/html;charset=utf8,<!DOCTYPE html>
+      <script>
+        function testArgName(__proto__) {
+          debugger;
+        }
+        function testVarName(name) {
+          const __proto__ = name;
+          debugger;
+        }
+      </script>`
+  );
+
+  info("Pause in testArgName");
+  invokeInTab("testArgName", "peach");
+  await waitForPaused(dbg);
+
+  is(getScopeNodeLabel(dbg, 1), "testArgName");
+  is(getScopeNodeLabel(dbg, 2), "__proto__");
+  is(getScopeNodeValue(dbg, 2), `"peach"`);
+
+  info("Resuming the thread");
+  await resume(dbg);
+
+  info("Pause in testVarName");
+  invokeInTab("testVarName", "watermelon");
+  await waitForPaused(dbg);
+
+  is(getScopeNodeLabel(dbg, 1), "testVarName");
+  is(getScopeNodeLabel(dbg, 2), "__proto__");
+  is(getScopeNodeValue(dbg, 2), `"watermelon"`);
+
+  info("Resuming the thread");
+  await resume(dbg);
 });

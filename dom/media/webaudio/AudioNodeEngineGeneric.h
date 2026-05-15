@@ -7,7 +7,6 @@
 #define MOZILLA_AUDIONODEENGINEGENERIC_H_
 
 #include "AudioNodeEngine.h"
-
 #include "xsimd/xsimd.hpp"
 
 namespace mozilla {

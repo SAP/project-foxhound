@@ -10,7 +10,6 @@
 #define nsCounterManager_h_
 
 #include "CounterStyleManager.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 #include "nsClassHashtable.h"
 #include "nsGenConList.h"

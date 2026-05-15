@@ -4,15 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_PerformanceEventTiming_h___
-#define mozilla_dom_PerformanceEventTiming_h___
+#ifndef mozilla_dom_PerformanceEventTiming_h_
+#define mozilla_dom_PerformanceEventTiming_h_
 
-#include "mozilla/dom/PerformanceEntry.h"
-#include "mozilla/EventForwards.h"
-#include "nsRFPService.h"
 #include "Performance.h"
-#include "nsIWeakReferenceUtils.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/dom/PerformanceEntry.h"
 #include "nsINode.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsRFPService.h"
 
 namespace mozilla {
 class WidgetEvent;
@@ -73,20 +73,22 @@ class PerformanceEventTiming final
   nsINode* GetTarget() const;
 
   void SetDuration(const DOMHighResTimeStamp aDuration) {
-    // Round the duration to the nearest 8ms.
-    // https://w3c.github.io/event-timing/#set-event-timing-entry-duration
-    mDuration = std::round(aDuration / 8) * 8;
+    mDuration = Some(aDuration);
   }
 
   // nsRFPService::ReduceTimePrecisionAsMSecs might causes
   // some memory overhead, using the raw timestamp internally
   // to avoid calling in unnecessarily.
-  DOMHighResTimeStamp RawDuration() const { return mDuration; }
+  Maybe<DOMHighResTimeStamp> RawDuration() const { return mDuration; }
 
   DOMHighResTimeStamp Duration() const override {
     if (mCachedDuration.isNothing()) {
+      // Round the duration to the nearest 8ms.
+      // https://w3c.github.io/event-timing/#set-event-timing-entry-duration
+      DOMHighResTimeStamp roundedDuration =
+          std::round(mDuration.valueOr(0) / 8) * 8;
       mCachedDuration.emplace(nsRFPService::ReduceTimePrecisionAsMSecs(
-          mDuration, mPerformance->GetRandomTimelineSeed(),
+          roundedDuration, mPerformance->GetRandomTimelineSeed(),
           mPerformance->GetRTPCallerType()));
     }
     return mCachedDuration.value();
@@ -136,7 +138,7 @@ class PerformanceEventTiming final
   DOMHighResTimeStamp mStartTime;
   mutable Maybe<DOMHighResTimeStamp> mCachedStartTime;
 
-  DOMHighResTimeStamp mDuration;
+  Maybe<DOMHighResTimeStamp> mDuration;
   mutable Maybe<DOMHighResTimeStamp> mCachedDuration;
 
   bool mCancelable;

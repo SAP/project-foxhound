@@ -7,10 +7,10 @@
 #include "mozilla/dom/KeyboardEvent.h"
 
 #include "mozilla/BasicEvents.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/LookAndFeel.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsRFPService.h"
@@ -330,9 +330,6 @@ void KeyboardEvent::InitWithKeyboardEventInit(EventTarget* aOwner,
 
 // static
 bool KeyboardEvent::IsInitKeyEventAvailable(JSContext* aCx, JSObject*) {
-  if (StaticPrefs::dom_keyboardevent_init_key_event_enabled()) {
-    return true;
-  }
   if (!StaticPrefs::dom_keyboardevent_init_key_event_enabled_in_addons()) {
     return false;
   }

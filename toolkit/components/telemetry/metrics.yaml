@@ -28,10 +28,12 @@ legacy.telemetry:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1755549
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1921440
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1938183
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2000866
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1755549
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1921440
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1938183
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2000866
     data_sensitivity:
       - technical
       - highly_sensitive
@@ -48,6 +50,10 @@ legacy.telemetry:
       - 'baseline'
       - 'nimbus-targeting-context'
       - 'third-party-modules'
+      - 'temp-fog-initial-state'
+      - 'captcha-detection'
+      - 'health'
+      - 'addons'
 
   profile_group_id:
     type: uuid
@@ -73,6 +79,42 @@ legacy.telemetry:
     no_lint:
       - BASELINE_PING
     send_in_pings: *client_id_pings
+
+  session_id:
+    type: uuid
+    lifetime: application
+    description: |
+      Legacy Telemetry's session identifier.
+      Set near startup and stable until shutdown.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+      - glean-team@mozilla.com
+    expires: never
+
+  session_start_date:
+    type: datetime
+    time_unit: hour
+    lifetime: application
+    description: |
+      Legacy Telemetry's session start time.
+      The time at which the Telemetry session started.
+      Likely near to the (wall-clock) time that the application started.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+      - glean-team@mozilla.com
+    expires: never
 
 telemetry:
   data_upload_optin:
@@ -1044,6 +1086,7 @@ usage:
       - usage-reporting
       - baseline
       - onboarding-opt-out
+      - events
     no_lint:
       - BASELINE_PING
     description: |
@@ -1226,7 +1269,7 @@ termsofuse:
       - metrics
     notification_emails:
       - mviar@mozilla.com
-      - omc@mozilla.com
+      - omc-core@mozilla.com
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1971184
     data_reviews:
@@ -1243,7 +1286,7 @@ termsofuse:
       - metrics
     notification_emails:
       - mviar@mozilla.com
-      - omc@mozilla.com
+      - omc-core@mozilla.com
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1971184
     data_reviews:
@@ -1415,3 +1458,46 @@ third.party.modules:
                     type: array
                     items:
                       type: number
+
+startup.io:
+  read:
+    type: labeled_quantity
+    unit: bytes
+    description: |
+      Windows-only.
+      Cumulative bytes read by the application according to the OS, per startup
+      phase.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    expires: never
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
+    labels:
+      - sessionRestore
+      - windowVisible
+
+  write:
+    type: labeled_quantity
+    unit: bytes
+    description: |
+      Windows-only.
+      Cumulative bytes written by the application according to the OS, per startup
+      phase.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    expires: never
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - chutten@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
+    labels:
+      - sessionRestore
+      - windowVisible

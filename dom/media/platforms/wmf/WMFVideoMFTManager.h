@@ -13,7 +13,6 @@
 #  include "WMF.h"
 #  include "WMFDecoderModule.h"
 #  include "WMFMediaDataDecoder.h"
-#  include "mozilla/Atomics.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/gfx/Rect.h"
 
@@ -70,7 +69,7 @@ class WMFVideoMFTManager : public MFTManager {
   HRESULT CreateD3DVideoFrame(IMFSample* aSample, int64_t aStreamOffset,
                               VideoData** aOutVideoData);
 
-  HRESULT SetDecoderMediaTypes();
+  HRESULT SetDecoderMediaTypes(const GUID& aFallbackSubType);
 
   bool CanUseDXVA(IMFMediaType* aInputType, IMFMediaType* aOutputType);
 
@@ -86,6 +85,11 @@ class WMFVideoMFTManager : public MFTManager {
   // make sense, we also handle that case.
   media::TimeUnit GetSampleDurationOrLastKnownDuration(
       IMFSample* aSample) const;
+
+  bool IsHDR() const {
+    return gfx::IsHDRTransferFunction(
+        mVideoInfo.mTransferFunction.refOr(gfx::TransferFunction::BT709));
+  }
 
   // Video frame geometry.
   const VideoInfo mVideoInfo;

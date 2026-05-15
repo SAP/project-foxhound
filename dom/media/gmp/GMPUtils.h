@@ -6,10 +6,9 @@
 #ifndef GMPUtils_h_
 #define GMPUtils_h_
 
-#include "gmp-errors.h"
 #include "MediaResult.h"
+#include "gmp-errors.h"
 #include "mozilla/AbstractThread.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"

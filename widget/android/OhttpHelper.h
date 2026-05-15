@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef OhttpHelper_h__
-#define OhttpHelper_h__
+#ifndef OhttpHelper_h_
+#define OhttpHelper_h_
 
 #include "mozilla/java/GeckoResultWrappers.h"
 #include "mozilla/java/WebRequestWrappers.h"
@@ -61,12 +61,12 @@ class OhttpHelper final {
   static inline uint8_t sInitializationBitset = 0;
 
   static inline StaticAutoPtr<nsTArray<uint8_t>> sConfigData;
-  MOZ_CONSTINIT static inline nsCString sConfigUrl;
-  MOZ_CONSTINIT static inline nsCString sRelayUrl;
+  constinit static inline nsCString sConfigUrl;
+  constinit static inline nsCString sRelayUrl;
 
   static inline StaticAutoPtr<nsTArray<RefPtr<OhttpRequest>>> sPendingRequests;
 };
 
 }  // namespace mozilla::widget
 
-#endif  // OhttpHelper_h__
+#endif  // OhttpHelper_h_

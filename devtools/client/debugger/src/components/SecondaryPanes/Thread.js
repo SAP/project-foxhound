@@ -9,7 +9,7 @@ import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import actions from "../../actions/index";
 import { getCurrentThread, getIsPaused } from "../../selectors/index";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 
 const classnames = require("resource://devtools/client/shared/classnames.js");
 
@@ -56,8 +56,8 @@ export class Thread extends Component {
         {
           className: "icon",
         },
-        React.createElement(AccessibleImage, {
-          className: iconClassname,
+        React.createElement(DebuggerImage, {
+          name: iconClassname,
         })
       ),
       div(

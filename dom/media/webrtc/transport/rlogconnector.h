@@ -50,8 +50,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    debug purposes on an about:webrtc page or similar.
 */
 
-#ifndef rlogconnector_h__
-#define rlogconnector_h__
+#ifndef rlogconnector_h_
+#define rlogconnector_h_
 
 #include <stdint.h>
 
@@ -59,9 +59,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <string>
 #include <vector>
 
-#include "mozilla/Mutex.h"
-
 #include "m_cpp_utils.h"
+#include "mozilla/Mutex.h"
 
 namespace mozilla {
 
@@ -124,4 +123,4 @@ class RLogConnector {
 
 }  // namespace mozilla
 
-#endif  // rlogconnector_h__
+#endif  // rlogconnector_h_

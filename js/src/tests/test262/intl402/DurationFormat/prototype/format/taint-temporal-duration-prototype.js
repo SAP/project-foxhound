@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!Intl.hasOwnProperty('DurationFormat')||!xulRuntime.shell) -- Temporal,Intl.DurationFormat is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright 2025 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

@@ -22,8 +22,8 @@
  * customers of this class.
  */
 
-#ifndef _NSDEQUE
-#define _NSDEQUE
+#ifndef NSDEQUE
+#define NSDEQUE
 #include <cstddef>
 
 #include "mozilla/AlreadyAddRefed.h"

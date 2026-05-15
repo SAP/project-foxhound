@@ -57,7 +57,7 @@ async function startTest(test) {
   v.preload = "metadata";
   await new Promise(r => v.onloadedmetadata = r);
 
-  vout.srcObject = v.mozCaptureStream();
+  vout.srcObject = v.captureStream?.() || v.mozCaptureStream();
   vout.play();
 
   vout_untilended.srcObject = v.mozCaptureStreamUntilEnded();

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">निजी %s</string>
@@ -10,16 +17,12 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">थप बिकल्पहरु</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">निजी ब्राउजिङ्ग सक्षम पार्नुहोस्</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">निजी ब्राउजिङ्ग असक्षम पार्नुहोस्</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">खोज्नुहोस् वा ठेगाना प्रविष्ट गर्नुहोस्</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">तपाईंका खुलेका ट्याबहरू यहाँ देखाइने छन्।</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">तपाईंका खुलेका ट्याबहरू यहाँ देखाइने छन्।</string>
   <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description">तपाईंका निजी ट्याबहरू यहाँ देखाइने छन्।</string>
+  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">तपाईंका निजी ट्याबहरू यहाँ देखाइने छन्।</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d छनौट गरियो</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -31,21 +34,17 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">बहुछनौट मोडबाट बाहिर निस्कनुहोस्</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description">सङ्कलनमा चयन गरिएका ट्याबहरू बचत गर्नुहोस्</string>
+  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">सङ्कलनमा चयन गरिएका ट्याबहरू बचत गर्नुहोस्</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
   <string name="about_content">%1$s Mozilla द्वारा निर्माण गरिएको हो।</string>
-  <!--
-    Private Browsing
-
-    Explanation for private browsing displayed to users on home view when they first enable private mode.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="private_browsing_placeholder_description_2" moz:removedIn="141" tools:ignore="UnusedResources">%1$s ले तपाइँको खोज र ब्राउजिङ्ग इतिहासलाई निजी ट्याबहरूबाट खाली गर्दछ जब, तपाइँ तिनीहरूलाई बन्द गर्नुहुन्छ वा एप छोड्नुहुन्छ। यद्यपि यसले तपाइँलाई वेबसाइटहरू वा तपाइँको इन्टरनेट सेवा प्रदायकको लागि गुमनाम बनाउँदैन, यसले तपाइँलाई यो यन्त्र प्रयोग गर्ने अरू कसैबाट तपाइँ अनलाइन गर्ने कुरालाई गोप्य राख्न सजिलो बनाउँछ।</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">निजी ब्राउजिङ्ग बारे सामान्य मिथकहरू</string>
   <!-- Text for the positive action button -->
   <string name="open_in_app_cfr_positive_button_text">सेटिङ्गहरुमा जानुहोस्</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">खारेज गर्नुहोस्</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">क्यामरा पहुँच आवश्यक छ। एन्ड्रोइड सेटिङ्गहरूमा जानुहोस्, अनुमतिमा ट्याप गर्नुहोस्, र अनुमति दिन ट्याप गर्नुहोस्।</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -94,9 +93,9 @@
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">रोक्नुहोस्</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">सहयोग</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">सहयोग</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">नयाँ के छ</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">नयाँ के छ</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">सेटिङ्गहरु</string>
   <!-- Browser menu button that opens a user's library -->
@@ -111,11 +110,11 @@
   -->
   <string name="browser_menu_open_in_fenix">%1$s मा खोल्नुहोस्</string>
   <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add">थप्नुहोस्</string>
+  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">थप्नुहोस्</string>
   <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit">सम्पादन गर्नुहोस्</string>
+  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">सम्पादन गर्नुहोस्</string>
   <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1">गृहपृष्ठलाई अनुकुलन गर्नुहोस्</string>
+  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">गृहपृष्ठलाई अनुकुलन गर्नुहोस्</string>
   <!--
     Browser Toolbar
 
@@ -148,6 +147,10 @@
   <string name="search_engine_suggestions_title">%s खोज्नुहोस्</string>
   <!-- Search engine suggestion description text -->
   <string name="search_engine_suggestions_description">ठेगाना पट्टीबाट सिधै खोज्नुहोस्</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!-- Text preview for smaller sized widgets -->
   <string name="search_widget_text_short">खोजी गर्नुहोस्</string>
   <!-- Text preview for larger sized widgets -->
@@ -209,8 +212,6 @@
   <string name="preferences_account_sync_error">सिङ्क पुन: सुचारु गर्न पुन: जडान गर्नुहोस्</string>
   <!-- Preference for language -->
   <string name="preferences_language">भाषा</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">डाटा बिकल्पहरु</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">डाटा सङ्कलन</string>
   <!-- Preference title for switch preference to show search suggestions -->
@@ -233,8 +234,6 @@
   <string name="preferences_enable_autocomplete_urls">स्वतः पुर्ण URLs</string>
   <!-- Preference for open links in third party apps -->
   <string name="preferences_open_links_in_apps">एपहरुमा लिङ्कहरु खोल्नुहोस्</string>
-  <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager" tools:ignore="UnusedResources" moz:removedIn="141">बाहिरी डाउनलोड प्रबन्धक</string>
   <!-- Preference for notifications -->
   <string name="preferences_notifications">सूचनाहरु</string>
   <!-- Button caption to confirm the add-on collection configuration -->
@@ -245,11 +244,7 @@
   <string name="customize_addon_collection_hint">सङ्कलनको नाम</string>
   <!-- Hint displayed on input field for custom collection user ID -->
   <string name="customize_addon_collection_user_hint">सङ्कलन मालिक (प्रयोगकर्ता आईडी)</string>
-  <!--
-    Customize Home
-
-    Header text for jumping back into the recent tab in customize the home screen
-  -->
+  <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">मा फर्केर जानुहोस्</string>
   <!--
     Title for the customize home screen section with recently visited. Recently visited is
@@ -445,17 +440,17 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">निजी ट्याब थप्नुहोस्</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">निजी</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">निजी</string>
   <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync">सिङ्क</string>
+  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">सिङ्क</string>
   <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share">सबै ट्याबहरु सझेदार गर्नुहोस्</string>
+  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">सबै ट्याबहरु सझेदार गर्नुहोस्</string>
   <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark">बुकमार्क</string>
+  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">बुकमार्क</string>
   <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close">बन्द गर्नुहोस्</string>
+  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">बन्द गर्नुहोस्</string>
   <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description">छानिएका ट्याबहरु बन्द गर्नुहोस्</string>
+  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">छानिएका ट्याबहरु बन्द गर्नुहोस्</string>
   <!-- Text for button to enter multiselect mode in tabs tray -->
   <string name="tabs_tray_select_tabs">ट्याबहरु छान्नुहोस्</string>
   <!-- Content description (not visible, for screen readers etc.): Close tab button. Closes the current session when pressed -->
@@ -463,4 +458,10 @@
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

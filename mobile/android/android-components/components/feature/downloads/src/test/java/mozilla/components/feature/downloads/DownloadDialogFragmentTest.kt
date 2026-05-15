@@ -7,6 +7,7 @@ package mozilla.components.feature.downloads
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.feature.downloads.DownloadDialogFragment.Companion.KEY_FILE_NAME
+import mozilla.components.support.utils.FakeDownloadFileUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Before
@@ -34,7 +35,7 @@ class DownloadDialogFragmentTest {
 
     @Test
     fun `when setDownload must set download metadata`() {
-        dialog.setDownload(download)
+        dialog.setDownload(download, "5MB.zip")
 
         assertNotNull(dialog.arguments)
         val fileName = dialog.arguments!!.getString(KEY_FILE_NAME)

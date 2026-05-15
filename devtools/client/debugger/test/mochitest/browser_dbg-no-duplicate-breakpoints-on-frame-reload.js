@@ -8,12 +8,6 @@
 "use strict";
 
 add_task(async function () {
-  // With fission and EFT disabled all the sources are going to be under the Main Thread
-  // and this sceanrio becomes irrelevant
-  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-    return;
-  }
-
   const dbg = await initDebugger(
     "doc_dbg-fission-frame-sources.html",
     "simple2.js"

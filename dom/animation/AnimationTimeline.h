@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_AnimationTimeline_h
 #define mozilla_dom_AnimationTimeline_h
 
-#include "nsISupports.h"
-#include "nsWrapperCache.h"
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/AnimationUtils.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
 #include "nsIGlobalObject.h"
+#include "nsISupports.h"
 #include "nsTHashSet.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

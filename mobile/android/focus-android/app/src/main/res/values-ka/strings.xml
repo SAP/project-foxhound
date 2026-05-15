@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s სრულად გიბრუნებთ მართვის სადავეებს.</p> <p>გამოიყენეთ პირად ბრაუზერად: <ul> <li>მოძებნეთ და დაათვალიერეთ გვერდები პროგრამაშივე</li> <li>შეზღუდეთ მეთვალყურეები (პარამეტრებიდან დაშვებაც შეიძლება)</li> <li>გაასუფთავეთ და წაშალეთ ფუნთუშები, ძიებისა და თვალიერების ისტორია</li> </ul> </p> <p>%1$s შექმნილია Mozilla-ს მიერ. ჩვენი მიზანი, ჯანსაღ და ღია ინტერნეტზე ზრუნვაა.<br/> <a href=\"%2$s\">ვრცლად</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s სრულად გიბრუნებთ მართვის სადავეებს.</p>\n<p>გამოიყენეთ პირად ბრაუზერად:\n<ul>\n<li>მოძებნეთ და დაათვალიერეთ გვერდები პროგრამაშივე</li>\n<li>შეზღუდეთ მეთვალყურეები (პარამეტრებიდან დაშვებაც შეიძლება)</li>\n<li>გაასუფთავეთ და წაშალეთ ფუნთუშები, ძიებისა და თვალიერების ისტორია</li>\n</ul> </p>\n<p>%1$s შექმნილია Mozilla-ს მიერ. ჩვენი მიზანი, ჯანსაღ და ღია ინტერნეტზე ზრუნვაა.<br/>\n<a href=\"%2$s\">ვრცლად</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">ვრცლად</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">თუ განაგრძობთ, თანახმა ხართ მიიღოთ %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">თუ განაგრძობთ, თანახმა ხართ მიიღოთ %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">გამოყენების პირობები, რომელსაც გთავაზობთ Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">გამოყენების პირობები, რომელსაც გთავაზობთ Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox ზრუნავს თქვენს პირადულობაზე. ვრცლად იხილეთ %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox ზრუნავს თქვენს პირადულობაზე. ვრცლად იხილეთ %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">პირადულობის განაცხადი.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">პირადულობის განაცხადი</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">ისტორიის გასუფთავება</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">სხვა ჩანართების დახურვა</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">ახალი ჩანართის დამატება</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[ამას შესაძლოა, საიტის გაუმართაობა ან სხვა საიტად გასაღების მცდელობა იწვევდეს. <br/><br/> თუ აღნიშნულ საიტს მანამდე წარმატებით უკავშირდებოდით, ხარვეზი შეიძლება დროებითი იყოს.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>შესაძლოა, ვიღაც ამ საიტის სხვა საიტად გასაღებას ცდილობდეს და ჯობია, აღარ განაგრძოთ.</label> <br><br> <label>%1$s არ ენდობა <b>%2$s</b>-ს, რადგან მისი უსაფრთხოების სერტიფიკატის გამომცემი უცნობია, შეიძლება თავადვე აქვთ ხელმოწერილი ან სერვერი სათანადოდ არ აგზავნის შუალედურ სერტიფიკატებს.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>შესაძლოა, ვიღაც ამ საიტის სხვა საიტად გასაღებას ცდილობდეს და ჯობია, აღარ განაგრძოთ.</label> <br><br>\n<label>%1$s არ ენდობა <b>%2$s</b>-ს, რადგან მისი უსაფრთხოების სერტიფიკატის გამომცემი უცნობია, შეიძლება თავადვე აქვთ ხელმოწერილი ან სერვერი სათანადოდ არ აგზავნის შუალედურ სერტიფიკატებს.</label>]]></string>
   <!--
     Sessions List
 

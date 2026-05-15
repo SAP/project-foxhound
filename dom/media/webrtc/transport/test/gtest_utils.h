@@ -36,8 +36,8 @@
  */
 
 // Original author: ekr@rtfm.com
-#ifndef gtest_utils__h__
-#define gtest_utils__h__
+#ifndef gtest_utils_h_
+#define gtest_utils_h_
 
 #include <iostream>
 
@@ -47,7 +47,6 @@
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
-
 #include "gtest_ringbuffer_dumper.h"
 #include "mtransport_test_utils.h"
 #include "nss.h"
@@ -111,7 +110,7 @@ class MtransportTest : public ::testing::Test {
     NSS_NoDB_Init(nullptr);
     NSS_SetDomesticPolicy();
 
-    NR_reg_init(NR_REG_MODE_LOCAL);
+    NR_reg_init();
 
     // Attempt to load env vars used by tests.
     GetEnvironment("TURN_SERVER_ADDRESS", turn_server_);

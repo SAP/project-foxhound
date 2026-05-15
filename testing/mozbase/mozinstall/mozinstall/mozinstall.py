@@ -121,12 +121,12 @@ def install(src, dest):
         if src.lower().endswith(".msix"):
             # MSIX packages _are_ ZIP files, so we need to look for them first.
             install_dir = _install_msix(src)
-        elif zipfile.is_zipfile(src) or tarfile.is_tarfile(src):
-            install_dir = mozfile.extract(src, dest)[0]
         elif src.lower().endswith(".dmg"):
             install_dir = _install_dmg(src, dest)
         elif src.lower().endswith(".exe"):
             install_dir = _install_exe(src, dest)
+        elif zipfile.is_zipfile(src) or tarfile.is_tarfile(src):
+            install_dir = mozfile.extract(src, dest)[0]
         else:
             raise InvalidSource(f"{src} is not a valid installer file")
 
@@ -285,7 +285,7 @@ def _install_url(url, dest):
     return result
 
 
-def _install_dmg(src, dest):
+def _install_dmg(src, dest_app):
     """Extract a dmg file into the destination folder and return the
     application folder.
 
@@ -294,44 +294,65 @@ def _install_dmg(src, dest):
 
     """
     if mozinfo.isLinux:
-        return _install_dmg_cross(src, dest)
+        return _install_dmg_cross(src, dest_app)
 
-    appDir = None
+    def _detach_with_retry(volume, retries=4, delay=0.25):
+        for i in range(retries):
+            try:
+                subprocess.check_call(f'hdiutil detach "{volume}" -quiet', shell=True)
+                return
+            except subprocess.CalledProcessError as e:
+                # 16 == EBUSY
+                if e.returncode != 16 or i == retries - 1:
+                    raise
+                time.sleep(delay)
+
+        # Final fallback (CI-safe)
+        subprocess.check_call(f'hdiutil detach "{volume}" -force -quiet', shell=True)
+
+    app_dir = None
     try:
         # According to the Apple doc, the hdiutil output is stable and is based on the tab
         # separators
         # Therefor, $3 should give us the mounted path
-        appDir = (
+        app_dir = (
             subprocess.check_output(
-                'hdiutil attach -nobrowse -noautoopen "%s"'
-                "|grep /Volumes/"
-                "|awk 'BEGIN{FS=\"\t\"} {print $3}'" % str(src),
+                f'hdiutil attach -noautoopen -nobrowse -readonly "{src}"'
+                "| grep /Volumes/ | awk 'BEGIN{FS=\"\t\"} {print $3}'",
                 shell=True,
+                stderr=subprocess.STDOUT,
             )
             .strip()
-            .decode("ascii")
+            .decode("utf-8")
         )
 
-        for appFile in os.listdir(appDir):
-            if appFile.endswith(".app"):
-                appName = appFile
+        app_name = None
+        for entry in os.listdir(app_dir):
+            if entry.endswith(".app"):
+                app_name = entry
                 break
 
-        mounted_path = os.path.join(appDir, appName)
+        if not app_name:
+            raise InstallError(f"No .app bundle found in {src}")
 
-        dest = os.path.join(dest, appName)
+        src_app = os.path.join(app_dir, app_name)
+        dest_app = os.path.join(dest_app, app_name)
 
         # copytree() would fail if dest already exists.
-        if os.path.exists(dest):
-            raise InstallError('App bundle "%s" already exists.' % dest)
+        if os.path.exists(dest_app):
+            raise InstallError(f"App bundle already exists: {dest_app}")
 
-        shutil.copytree(mounted_path, dest, False)
+        shutil.copytree(src_app, dest_app, False)
 
     finally:
-        if appDir:
-            subprocess.check_call('hdiutil detach "%s" -quiet' % appDir, shell=True)
+        if app_dir:
+            try:
+                _detach_with_retry(app_dir)
+            except Exception as e:
+                # Log, but do not override the original exception
+                print(f"Warning: failed to detach {app_dir}: {e}")
 
-    return dest
+    return dest_app
 
 
 def _install_dmg_cross(src, dest):
@@ -463,7 +484,7 @@ def install_cli(argv=sys.argv[1:]):
         "--destination",
         dest="dest",
         default=os.getcwd(),
-        help="Directory to install application into. " '[default: "%default"]',
+        help='Directory to install application into. [default: "%default"]',
     )
     parser.add_option(
         "--app",

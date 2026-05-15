@@ -12,7 +12,7 @@
  * Firefox View Source is the fallback.
  *
  * @param {Toolbox} toolbox
- * @param {string|Object} stylesheetResourceOrGeneratedURL
+ * @param {string | object} stylesheetResourceOrGeneratedURL
  * @param {number} generatedLine
  * @param {number} generatedColumn
  *
@@ -132,6 +132,7 @@ exports.viewSourceInDebugger = async function (
   });
 
   if (openedSourceInDebugger) {
+    toolbox.emitForTests("source-opened-in-debugger");
     return true;
   }
 

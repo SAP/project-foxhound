@@ -11,5 +11,5 @@
  * non-standard -webkit-fill-available CSS value to give it a height.
  */
 iframe#qcid_iframe {
-  height: 100%;
+  height: 100% !important;
 }

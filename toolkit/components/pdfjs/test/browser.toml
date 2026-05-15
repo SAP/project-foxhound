@@ -5,25 +5,40 @@ support-files = [
   "head.js",
 ]
 
+["browser_pdfjs_aifeature_settings.js"]
+
 ["browser_pdfjs_alttext_load_engine.js"]
-run-if = ["nightly_build"] # Bug 1890946
+run-if = [
+  "nightly_build", # Bug 1890946
+]
 
 ["browser_pdfjs_alttext_telemetry.js"]
-run-if = ["nightly_build"] # Bug 1890946
+run-if = [
+  "nightly_build", # Bug 1890946
+]
 
 ["browser_pdfjs_alttext_two_tabs.js"]
-run-if = ["nightly_build"] # Bug 1890946
+run-if = [
+  "nightly_build", # Bug 1890946
+]
 
 ["browser_pdfjs_caret_browsing_mode.js"]
 
-["browser_pdfjs_check_alttext_en.js"]
-
 ["browser_pdfjs_chrome_events.js"]
+
+["browser_pdfjs_comment.js"]
+
+["browser_pdfjs_comment_telemetry.js"]
+run-if = [
+  "!headless",
+]
 
 ["browser_pdfjs_download_button.js"]
 
 ["browser_pdfjs_editing_contextmenu.js"]
-run-if = ["!headless"] # the headless clipboard only recognizes unicode mime type
+run-if = [
+  "!headless", # the headless clipboard only recognizes unicode mime type
+]
 
 ["browser_pdfjs_editing_telemetry.js"]
 
@@ -50,13 +65,18 @@ support-files = ["file_pdfjs_form.pdf"]
 support-files = ["file_pdfjs_hcm.pdf"]
 
 ["browser_pdfjs_highlight_telemetry.js"]
-skip-if = ["true"]
+run-if = [
+  "!headless",
+]
 
 ["browser_pdfjs_jpeg2000.js"]
 support-files = ["file_pdfjs_jp2_image.pdf"]
 
 ["browser_pdfjs_js.js"]
 support-files = ["file_pdfjs_js.pdf"]
+skip-if = [
+  "tsan",
+]
 
 ["browser_pdfjs_load_telemetry.js"]
 
@@ -85,6 +105,11 @@ support-files = [
 
 ["browser_pdfjs_properties.js"]
 
+["browser_pdfjs_response_link.js"]
+support-files = ["pdf_response_link.sjs"]
+
+["browser_pdfjs_rfp_exemption.js"]
+
 ["browser_pdfjs_saveas.js"]
 support-files = [
   "!/toolkit/content/tests/browser/common/mockTransfer.js",
@@ -101,6 +126,11 @@ support-files = [
 
 ["browser_pdfjs_stamp_telemetry.js"]
 support-files = ["moz.png"]
+
+["browser_pdfjs_tagged_telemetry.js"]
+support-files = [
+  "file_pdfjs_tagged.pdf",
+]
 
 ["browser_pdfjs_toolbar_density.js"]
 

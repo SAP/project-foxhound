@@ -45,9 +45,6 @@ newtab-confirm-delete-history-p1 = Bu səhifənin bütün parçalarını tarixç
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Bu əməliyyat geri alına bilməz.
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -77,12 +74,6 @@ newtab-menu-delete-history = Tarixçədən Sil
 newtab-menu-save-to-pocket = { -pocket-brand-name }-ə Saxla
 newtab-menu-delete-pocket = { -pocket-brand-name }-dən sil
 newtab-menu-archive-pocket = { -pocket-brand-name }-də arxivləşdir
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
 
 ##
 
@@ -133,9 +124,6 @@ newtab-section-menu-move-up = Yuxarı daşı
 newtab-section-menu-move-down = Aşağı daşı
 newtab-section-menu-privacy-notice = Məxfilik Bildirişi
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = Qabaqcıl Saytlar
@@ -151,9 +139,6 @@ newtab-empty-section-highlights = İnternetdə gəzməyə başlayın, burada ziy
 #   $provider (string) - Name of the content provider for this section, e.g "Pocket".
 newtab-empty-section-topstories = Hamısını oxudunuz. Yeni { $provider } məqalələri üçün daha sonra təkrar yoxlayın. Gözləyə bilmirsiz? Məşhur mövzu seçərək internetdən daha çox gözəl məqalələr tapın.
 
-## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
-
-
 ## Pocket Content Section.
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
@@ -162,69 +147,8 @@ newtab-pocket-more-recommendations = Daha Çox Tövsiyyələr
 newtab-pocket-cta-button = { -pocket-brand-name } əldə edin
 newtab-pocket-cta-text = Sevdiyiniz məqalələri { -pocket-brand-name }-də saxlayın və möhtəşəm yeni yazıları kəşf edin.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Uups, bu məzmunu yüklərkən nəsə səhv getdi.
 newtab-error-fallback-refresh-link = Təkrar yoxlamaq üçün səhifəni yeniləyin.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

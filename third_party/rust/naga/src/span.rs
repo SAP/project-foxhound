@@ -6,7 +6,7 @@ use alloc::{
 };
 use core::{error::Error, fmt, ops::Range};
 
-use crate::{path_like::PathLike, Arena, Handle, UniqueArena};
+use crate::{error::replace_control_chars, Arena, Handle, UniqueArena};
 
 /// A source code span, used for error reporting.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -178,7 +178,6 @@ impl<E> WithSpan<E> {
     }
 
     /// Reverse of [`Self::new`], discards span information and returns an inner error.
-    #[allow(clippy::missing_const_for_fn)] // ignore due to requirement of #![feature(const_precise_live_drops)]
     pub fn into_inner(self) -> E {
         self.inner
     }
@@ -283,15 +282,13 @@ impl<E> WithSpan<E> {
 
     /// Emits a summary of the error to standard error stream.
     #[cfg(feature = "stderr")]
-    pub fn emit_to_stderr_with_path<P>(&self, source: &str, path: P)
+    pub fn emit_to_stderr_with_path(&self, source: &str, path: &str)
     where
         E: Error,
-        P: PathLike,
     {
         use codespan_reporting::{files, term};
 
-        let path = path.to_string_lossy();
-        let files = files::SimpleFile::new(path, source);
+        let files = files::SimpleFile::new(path, replace_control_chars(source));
         let config = term::Config::default();
 
         cfg_if::cfg_if! {
@@ -315,15 +312,13 @@ impl<E> WithSpan<E> {
     }
 
     /// Emits a summary of the error to a string.
-    pub fn emit_to_string_with_path<P>(&self, source: &str, path: P) -> String
+    pub fn emit_to_string_with_path(&self, source: &str, path: &str) -> String
     where
         E: Error,
-        P: PathLike,
     {
         use codespan_reporting::{files, term};
 
-        let path = path.to_string_lossy();
-        let files = files::SimpleFile::new(path, source);
+        let files = files::SimpleFile::new(path, replace_control_chars(source));
         let config = term::Config::default();
 
         let mut writer = crate::error::DiagnosticBuffer::new();

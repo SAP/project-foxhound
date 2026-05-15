@@ -6,19 +6,19 @@
 //! initially in CSS Conditional Rules Module Level 3, @document has been postponed to the level 4.
 //! We implement the prefixed `@-moz-document`.
 
+use crate::derives::*;
 use crate::media_queries::Device;
 use crate::parser::{Parse, ParserContext};
 use crate::shared_lock::{DeepCloneWithLock, Locked};
 use crate::shared_lock::{SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard};
-use crate::str::CssStringWriter;
 use crate::stylesheets::CssRules;
 use crate::values::CssUrl;
-use cssparser::{BasicParseErrorKind, Parser, SourceLocation};
+use cssparser::{match_ignore_ascii_case, BasicParseErrorKind, Parser, SourceLocation};
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use servo_arc::Arc;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
+use style_traits::{CssStringWriter, CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 #[derive(Debug, ToShmem)]
 /// A @-moz-document rule
@@ -36,8 +36,8 @@ impl DocumentRule {
     #[cfg(feature = "gecko")]
     pub fn size_of(&self, guard: &SharedRwLockReadGuard, ops: &mut MallocSizeOfOps) -> usize {
         // Measurement of other fields may be added later.
-        self.rules.unconditional_shallow_size_of(ops) +
-            self.rules.read_with(guard).size_of(guard, ops)
+        self.rules.unconditional_shallow_size_of(ops)
+            + self.rules.read_with(guard).size_of(guard, ops)
     }
 }
 
@@ -56,11 +56,7 @@ impl ToCssWithGuard for DocumentRule {
 
 impl DeepCloneWithLock for DocumentRule {
     /// Deep clones this DocumentRule.
-    fn deep_clone_with_lock(
-        &self,
-        lock: &SharedRwLock,
-        guard: &SharedRwLockReadGuard,
-    ) -> Self {
+    fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Self {
         let rules = self.rules.read_with(guard);
         DocumentRule {
             condition: self.condition.clone(),
@@ -214,16 +210,16 @@ impl DocumentMatchingFunction {
 
         let pattern = nsCStr::from(match *self {
             DocumentMatchingFunction::Url(ref url) => url.as_str(),
-            DocumentMatchingFunction::UrlPrefix(ref pat) |
-            DocumentMatchingFunction::Domain(ref pat) |
-            DocumentMatchingFunction::Regexp(ref pat) => pat,
+            DocumentMatchingFunction::UrlPrefix(ref pat)
+            | DocumentMatchingFunction::Domain(ref pat)
+            | DocumentMatchingFunction::Regexp(ref pat) => pat,
             DocumentMatchingFunction::MediaDocument(kind) => match kind {
                 MediaDocumentKind::All => "all",
                 MediaDocumentKind::Image => "image",
                 MediaDocumentKind::Video => "video",
             },
-            DocumentMatchingFunction::PlainTextDocument(()) |
-            DocumentMatchingFunction::UnobservableDocument(()) => "",
+            DocumentMatchingFunction::PlainTextDocument(())
+            | DocumentMatchingFunction::UnobservableDocument(()) => "",
         });
         unsafe { Gecko_DocumentRule_UseForPresentation(device.document(), &*pattern, func) }
     }

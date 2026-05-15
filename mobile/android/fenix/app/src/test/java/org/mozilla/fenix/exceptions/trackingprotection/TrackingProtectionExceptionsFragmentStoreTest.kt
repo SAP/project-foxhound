@@ -17,7 +17,7 @@ class TrackingProtectionExceptionsFragmentStoreTest {
         val store = ExceptionsFragmentStore(initialState)
         val newExceptionsItem = ExceptionItem("URL")
 
-        store.dispatch(ExceptionsFragmentAction.Change(listOf(newExceptionsItem))).join()
+        store.dispatch(ExceptionsFragmentAction.Change(listOf(newExceptionsItem)))
         assertNotSame(initialState, store.state)
         assertEquals(
             store.state.items,

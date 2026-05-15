@@ -9,7 +9,6 @@
 
 #include <ostream>
 
-#include "mozilla/Attributes.h"
 #include "mozilla/MathAlgorithms.h"
 
 namespace mozilla::gfx {

@@ -435,7 +435,6 @@ bool js::jit::RecompileBaselineScriptForDebugMode(
 
   // Don't destroy the old baseline script yet, since if we fail any of the
   // recompiles we need to rollback all the old baseline scripts.
-  MOZ_ASSERT(script->baselineScript()->hasDebugInstrumentation() == observing);
   return true;
 }
 

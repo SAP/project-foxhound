@@ -8,6 +8,7 @@ import androidx.annotation.OptIn
 import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import org.mozilla.geckoview.GeckoPreferenceController
 import org.mozilla.geckoview.GeckoPreferenceController.GeckoPreference
+import org.mozilla.geckoview.GeckoPreferenceController.SetGeckoPreference
 import org.mozilla.geckoview.GeckoResult
 
 /**
@@ -21,6 +22,45 @@ import org.mozilla.geckoview.GeckoResult
  * All methods return a [GeckoResult] object, which can be used to check if the operation was successful.
  */
 interface GeckoPreferenceAccessor {
+
+    /**
+     * Registers a Gecko preference for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     * Preferences registered here will be reported when they change value.
+     *
+     * @param pref The name of the preference to register for events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    fun registerGeckoPrefForObservation(pref: String): GeckoResult<Void>
+
+    /**
+     * Registers a list of Gecko preferences for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     * Preferences registered here will be reported when they change value.
+     *
+     * @param prefs A list of preference names to register for events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    fun registerGeckoPrefsForObservation(prefs: List<String>): GeckoResult<Void>
+
+    /**
+     * Unregisters a Gecko preference for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     *
+     * @param pref The name of the preference to stop listening to events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    fun unregisterGeckoPrefForObservation(pref: String): GeckoResult<Void>
+
+    /**
+     * Unregisters a list of Gecko preferences for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     *
+     * @param prefs A list of preference names to stop listening to events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    fun unregisterGeckoPrefsForObservation(prefs: List<String>): GeckoResult<Void>
+
     /**
      * Gets the value of a Gecko preference.
      *
@@ -29,6 +69,15 @@ interface GeckoPreferenceAccessor {
      */
     @OptIn(ExperimentalGeckoViewApi::class)
     fun getGeckoPref(pref: String): GeckoResult<GeckoPreference<*>?>
+
+    /**
+     * Gets the values of a list of Gecko preferences.
+     *
+     * @param prefs The list of the preference to get.
+     * @return A [GeckoResult] object with a list of preference values.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    fun getGeckoPrefs(prefs: List<String>): GeckoResult<List<GeckoPreference<*>>>
 
     /**
      * Sets the value of a Gecko preference.
@@ -61,6 +110,15 @@ interface GeckoPreferenceAccessor {
     fun setGeckoPref(pref: String, value: Boolean, branch: Int): GeckoResult<Void>
 
     /**
+     * Sets the value of a list of Gecko preferences.
+     *
+     * @param prefs The list of the preference to set.
+     * @return A [GeckoResult] object with a map to indicate whether the operation was successful.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    fun setGeckoPrefs(prefs: List<SetGeckoPreference<*>>): GeckoResult<Map<String, Boolean>>
+
+    /**
      * Clears a user branch Gecko preference.
      *
      * @param pref The name of the preference to clear.
@@ -70,6 +128,57 @@ interface GeckoPreferenceAccessor {
 }
 
 internal class DefaultGeckoPreferenceAccessor : GeckoPreferenceAccessor {
+
+    /**
+     * Registers a Gecko preference for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     * Preferences registered here will be reported when they change value.
+     *
+     * @param pref The name of the preference to register for events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun registerGeckoPrefForObservation(pref: String): GeckoResult<Void> {
+        return GeckoPreferenceController.Observer.registerPreference(pref)
+    }
+
+    /**
+     * Registers a list of Gecko preferences for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     * Preferences registered here will be reported when they change value.
+     *
+     * @param prefs A list of preference names to register for events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun registerGeckoPrefsForObservation(prefs: List<String>): GeckoResult<Void> {
+        return GeckoPreferenceController.Observer.registerPreferences(prefs)
+    }
+
+    /**
+     * Unregisters a Gecko preference for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     *
+     * @param pref The name of the preference to stop listening to events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun unregisterGeckoPrefForObservation(pref: String): GeckoResult<Void> {
+        return GeckoPreferenceController.Observer.unregisterPreference(pref)
+    }
+
+    /**
+     * Unregisters a list of Gecko preferences for observation on the
+     * [org.mozilla.geckoview.GeckoPreferenceController.Observer.Delegate].
+     *
+     * @param prefs A list of preference names to stop listening to events.
+     * @return A [GeckoResult] object indicating whether the operation was successful.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun unregisterGeckoPrefsForObservation(prefs: List<String>): GeckoResult<Void> {
+        return GeckoPreferenceController.Observer.unregisterPreferences(prefs)
+    }
+
     /**
      * Gets the value of the Gecko preference with the given name.
      *
@@ -80,6 +189,17 @@ internal class DefaultGeckoPreferenceAccessor : GeckoPreferenceAccessor {
     @OptIn(ExperimentalGeckoViewApi::class)
     override fun getGeckoPref(pref: String): GeckoResult<GeckoPreference<*>?> {
         return GeckoPreferenceController.getGeckoPref(pref)
+    }
+
+    /**
+     * Gets the values of a list of Gecko preferences.
+     *
+     * @param prefs The list of the preference to get.
+     * @return A [GeckoResult] object with a list of preference values.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun getGeckoPrefs(prefs: List<String>): GeckoResult<List<GeckoPreference<*>>> {
+        return GeckoPreferenceController.getGeckoPrefs(prefs)
     }
 
     /**
@@ -131,6 +251,17 @@ internal class DefaultGeckoPreferenceAccessor : GeckoPreferenceAccessor {
         branch: Int,
     ): GeckoResult<Void> {
         return GeckoPreferenceController.setGeckoPref(pref, value, branch)
+    }
+
+    /**
+     * Sets the values of a list of Gecko preferences.
+     *
+     * @param prefs The list of the preference to set.
+     * @return A [GeckoResult] object with a map to indicate whether the operation was successful.
+     */
+    @OptIn(ExperimentalGeckoViewApi::class)
+    override fun setGeckoPrefs(prefs: List<SetGeckoPreference<*>>): GeckoResult<Map<String, Boolean>> {
+        return GeckoPreferenceController.setGeckoPrefs(prefs)
     }
 
     /**

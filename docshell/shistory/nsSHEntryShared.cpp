@@ -17,7 +17,6 @@
 #include "nsSHistory.h"
 #include "nsThreadUtils.h"
 #include "nsFrameLoader.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Preferences.h"
 
 namespace dom = mozilla::dom;
@@ -110,7 +109,6 @@ void SHEntrySharedParentState::CopyFrom(SHEntrySharedParentState* aEntry) {
   mDynamicallyCreated = aEntry->mDynamicallyCreated;
   mCacheKey = aEntry->mCacheKey;
   mLastTouched = aEntry->mLastTouched;
-  mNavigationState = aEntry->mNavigationState;
 }
 
 void dom::SHEntrySharedParentState::NotifyListenersDocumentViewerEvicted() {
@@ -340,7 +338,7 @@ void nsSHEntryShared::CharacterDataChanged(nsIContent* aContent,
 
 void nsSHEntryShared::AttributeChanged(dom::Element* aElement,
                                        int32_t aNameSpaceID, nsAtom* aAttribute,
-                                       int32_t aModType,
+                                       AttrModType,
                                        const nsAttrValue* aOldValue) {
   if (!IgnoreMutationForBfCache(*aElement)) {
     RemoveFromBFCacheAsync();

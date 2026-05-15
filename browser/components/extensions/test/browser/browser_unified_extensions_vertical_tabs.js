@@ -149,9 +149,8 @@ async function unpinFromToolbar(extension, win = window) {
     ".unified-extensions-context-menu-pin-to-toolbar"
   );
   ok(pinToToolbarItem, "expected 'pin to toolbar' menu item");
-  is(
-    pinToToolbarItem.getAttribute("checked"),
-    "true",
+  ok(
+    pinToToolbarItem.hasAttribute("checked"),
     "pin menu item is currently checked"
   );
   const hidden = BrowserTestUtils.waitForEvent(

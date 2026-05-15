@@ -10,7 +10,7 @@
 
 #include <utility>
 
-#include "mozilla/AnimatedPropertyID.h"
+#include "mozilla/CSSPropertyId.h"
 #include "mozilla/SMILCSSValueType.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/ServoBindings.h"
@@ -22,13 +22,13 @@
 namespace mozilla {
 
 // Class Methods
-SMILCSSProperty::SMILCSSProperty(nsCSSPropertyID aPropID,
+SMILCSSProperty::SMILCSSProperty(NonCustomCSSPropertyId aPropId,
                                  dom::Element* aElement,
                                  const ComputedStyle* aBaseComputedStyle)
-    : mPropID(aPropID),
+    : mPropId(aPropId),
       mElement(aElement),
       mBaseComputedStyle(aBaseComputedStyle) {
-  MOZ_ASSERT(IsPropertyAnimatable(mPropID),
+  MOZ_ASSERT(IsPropertyAnimatable(mPropId),
              "Creating a SMILCSSProperty for a property "
              "that's not supported for animation");
 }
@@ -42,7 +42,7 @@ SMILValue SMILCSSProperty::GetBaseValue() const {
   // SPECIAL CASE: (a) Shorthands
   //               (b) 'display'
   //               (c) No base ComputedStyle
-  if (nsCSSProps::IsShorthand(mPropID) || mPropID == eCSSProperty_display ||
+  if (nsCSSProps::IsShorthand(mPropId) || mPropId == eCSSProperty_display ||
       !mBaseComputedStyle) {
     // We can't look up the base (computed-style) value of shorthand
     // properties because they aren't guaranteed to have a consistent computed
@@ -63,7 +63,7 @@ SMILValue SMILCSSProperty::GetBaseValue() const {
   }
 
   AnimationValue computedValue;
-  AnimatedPropertyID property(mPropID);
+  CSSPropertyId property(mPropId);
   MOZ_ASSERT(!property.IsCustom(),
              "Cannot animate custom properties with SMIL");
   computedValue.mServo =
@@ -73,7 +73,7 @@ SMILValue SMILCSSProperty::GetBaseValue() const {
     return baseValue;
   }
 
-  baseValue = SMILCSSValueType::ValueFromAnimationValue(mPropID, mElement,
+  baseValue = SMILCSSValueType::ValueFromAnimationValue(mPropId, mElement,
                                                         computedValue);
   return baseValue;
 }
@@ -81,9 +81,9 @@ SMILValue SMILCSSProperty::GetBaseValue() const {
 nsresult SMILCSSProperty::ValueFromString(
     const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
     SMILValue& aValue, bool& aPreventCachingOfSandwich) const {
-  NS_ENSURE_TRUE(IsPropertyAnimatable(mPropID), NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(IsPropertyAnimatable(mPropId), NS_ERROR_FAILURE);
 
-  SMILCSSValueType::ValueFromString(mPropID, mElement, aStr, aValue,
+  SMILCSSValueType::ValueFromString(mPropId, mElement, aStr, aValue,
                                     &aPreventCachingOfSandwich);
 
   if (aValue.IsNull()) {
@@ -93,24 +93,24 @@ nsresult SMILCSSProperty::ValueFromString(
   // XXX Due to bug 536660 (or at least that seems to be the most likely
   // culprit), when we have animation setting display:none on a <use> element,
   // if we DON'T set the property every sample, chaos ensues.
-  if (!aPreventCachingOfSandwich && mPropID == eCSSProperty_display) {
+  if (!aPreventCachingOfSandwich && mPropId == eCSSProperty_display) {
     aPreventCachingOfSandwich = true;
   }
   return NS_OK;
 }
 
 nsresult SMILCSSProperty::SetAnimValue(const SMILValue& aValue) {
-  NS_ENSURE_TRUE(IsPropertyAnimatable(mPropID), NS_ERROR_FAILURE);
-  return mElement->SMILOverrideStyle()->SetSMILValue(mPropID, aValue);
+  NS_ENSURE_TRUE(IsPropertyAnimatable(mPropId), NS_ERROR_FAILURE);
+  return mElement->SMILOverrideStyle()->SetSMILValue(mPropId, aValue);
 }
 
 void SMILCSSProperty::ClearAnimValue() {
-  mElement->SMILOverrideStyle()->ClearSMILValue(mPropID);
+  mElement->SMILOverrideStyle()->ClearSMILValue(mPropId);
 }
 
 // Based on http://www.w3.org/TR/SVG/propidx.html
 // static
-bool SMILCSSProperty::IsPropertyAnimatable(nsCSSPropertyID aPropID) {
+bool SMILCSSProperty::IsPropertyAnimatable(NonCustomCSSPropertyId aPropId) {
   // NOTE: Right now, Gecko doesn't recognize the following properties from
   // the SVG Property Index:
   //   alignment-baseline
@@ -121,7 +121,7 @@ bool SMILCSSProperty::IsPropertyAnimatable(nsCSSPropertyID aPropID) {
   //   kerning
   //   writing-mode
 
-  switch (aPropID) {
+  switch (aPropId) {
     case eCSSProperty_clip:
     case eCSSProperty_clip_rule:
     case eCSSProperty_clip_path:

@@ -3,6 +3,7 @@
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
+import logging
 import os
 import subprocess
 from urllib.parse import quote
@@ -12,7 +13,12 @@ from mach.decorators import Command, CommandArgument
 
 from mozbuild.backend import backends
 from mozbuild.mozconfig import MozconfigLoader
-from mozbuild.util import MOZBUILD_METRICS_PATH
+from mozbuild.util import (
+    MOZBUILD_METRICS_PATH,
+    ensure_l10n_central,
+    get_latest_file,
+    is_running_under_coding_agent,
+)
 
 BUILD_WHAT_HELP = """
 What to build. Can be a top-level make target or a relative directory. If
@@ -21,7 +27,7 @@ OF THE TREE CAN RESULT IN BAD TREE STATE. USE AT YOUR OWN RISK.
 """.strip()
 
 
-def _set_priority(priority, verbose):
+def _set_priority(command_context, priority, verbose):
     # Choose the Windows API structure to standardize on.
     PRIO_CLASS_BY_KEY = {
         "idle": "IDLE_PRIORITY_CLASS",
@@ -48,7 +54,9 @@ def _set_priority(priority, verbose):
 
         os.nice(niceness)
         if verbose:
-            print(f"os.nice({niceness})")
+            command_context.log(
+                logging.INFO, "priority", {"niceness": niceness}, "os.nice({niceness})"
+            )
         return True
 
     try:
@@ -62,7 +70,12 @@ def _set_priority(priority, verbose):
 
     psutil.Process().nice(prio_class_val)
     if verbose:
-        print(f"psutil.Process().nice(psutil.{prio_class})")
+        command_context.log(
+            logging.INFO,
+            "priority",
+            {"prio_class": prio_class},
+            "psutil.Process().nice(psutil.{prio_class})",
+        )
     return True
 
 
@@ -107,6 +120,14 @@ def _set_priority(priority, verbose):
     help="Verbose output for what commands the build is running.",
 )
 @CommandArgument(
+    "-q",
+    "--quiet",
+    dest="quiet",
+    default=False,
+    action="store_true",
+    help="Suppress most output, showing only errors and warnings.",
+)
+@CommandArgument(
     "--keep-going",
     action="store_true",
     help="Keep building after an error has occurred",
@@ -118,6 +139,12 @@ def _set_priority(priority, verbose):
     type=str,
     help="idle/less/normal/more/high. (Default idle)",
 )
+@CommandArgument(
+    "--show-all-warnings",
+    default=False,
+    action="store_true",
+    help="Show all warnings including third-party and suppressed warnings.",
+)
 def build(
     command_context,
     what=None,
@@ -125,8 +152,10 @@ def build(
     job_size=0,
     directory=None,
     verbose=False,
+    quiet=None,
     keep_going=False,
     priority="idle",
+    show_all_warnings=None,
 ):
     """Build the source tree.
 
@@ -152,21 +181,94 @@ def build(
 
     command_context.log_manager.enable_all_structured_loggers()
 
+    # For coding agents, automatically enable quiet mode
+    if is_running_under_coding_agent():
+        command_context.log(
+            logging.WARNING,
+            "build",
+            {},
+            "AI agent detected. Terminal output limited to warnings and errors.",
+        )
+        quiet = True
+
+        if command_context.log_file_path:
+            command_context.log(
+                logging.WARNING,
+                "build",
+                {"logfile": command_context.log_file_path},
+                "Full output: {logfile}",
+            )
+        else:
+            command_context.log(
+                logging.WARNING,
+                "build",
+                {},
+                "Log file could not be created.",
+            )
+
+    from mach.logging import THIRD_PARTY_WARNING
+
+    if quiet and show_all_warnings:
+        command_context.log(
+            logging.ERROR,
+            "build",
+            {},
+            "--quiet and --show-all-warnings are mutually exclusive.",
+        )
+        return 1
+
+    if quiet:
+        command_context.log_manager.terminal_handler.setLevel(logging.WARNING)
+
+    if show_all_warnings:
+        command_context.log_manager.terminal_handler.setLevel(THIRD_PARTY_WARNING)
+
+    if (
+        command_context.log_manager.terminal_handler.level > THIRD_PARTY_WARNING
+        and not is_running_under_coding_agent()
+    ):
+        warnings_path = os.path.join(
+            command_context.topobjdir, ".mozbuild", "logs", "build", "warnings_*.json"
+        )
+        command_context.log(
+            logging.WARNING,
+            "build",
+            {},
+            "Warnings in third-party code are being suppressed from the terminal output. "
+            "Use --show-all-warnings or --verbose to see them.",
+        )
+        command_context.log(
+            logging.WARNING,
+            "build",
+            {"warnings_path": warnings_path},
+            "All warnings will still be dumped to {warnings_path} at the end of the build.",
+        )
+
     loader = MozconfigLoader(command_context.topsrcdir)
     mozconfig = loader.read_mozconfig(loader.AUTODETECT)
     configure_args = mozconfig["configure_args"]
     doing_pgo = configure_args and "MOZ_PGO=1" in configure_args
     # Force verbosity on automation.
-    verbose = verbose or bool(os.environ.get("MOZ_AUTOMATION", False))
+    verbose = verbose or bool(os.environ.get("MOZ_AUTOMATION"))
     # Keep going by default on automation so that we exhaust as many errors as
     # possible.
-    keep_going = keep_going or bool(os.environ.get("MOZ_AUTOMATION", False))
+    keep_going = keep_going or bool(os.environ.get("MOZ_AUTOMATION"))
     append_env = None
 
     # By setting the current process's priority, by default our child processes
     # will also inherit this same priority.
-    if not _set_priority(priority, verbose):
-        print("--priority not supported on this platform.")
+    if not _set_priority(command_context, priority, verbose):
+        command_context.log(
+            logging.WARNING,
+            "priority",
+            {},
+            "--priority not supported on this platform.",
+        )
+
+    for target in what:
+        if target.startswith("installers-"):
+            ensure_l10n_central(command_context)
+            break
 
     if doing_pgo:
         if what:
@@ -292,16 +394,37 @@ def resource_usage(command_context, address=None, port=None, browser=None, url=N
     if url:
         server.add_resource_json_url("profile", url)
     else:
-        profile = command_context._get_state_filename("profile_build_resources.json")
-        if not os.path.exists(profile):
-            print(
+        from pathlib import Path
+
+        # Find the most recent profile across all log subdirectories
+        profile = None
+        logs_dir = os.path.join(command_context.statedir, "logs")
+
+        if os.path.isdir(logs_dir):
+            for subdir in os.listdir(logs_dir):
+                subdir_path = os.path.join(logs_dir, subdir)
+                if not os.path.isdir(subdir_path):
+                    continue
+                latest_in_subdir = get_latest_file(subdir_path, "profile")
+                if latest_in_subdir and (
+                    not profile
+                    or Path(latest_in_subdir).stat().st_mtime
+                    > Path(profile).stat().st_mtime
+                ):
+                    profile = latest_in_subdir
+
+        if not profile:
+            command_context.log(
+                logging.WARNING,
+                "build_resources",
+                {},
                 "Build resources not available. If you have performed a "
                 "build and receive this message, the psutil Python package "
-                "likely failed to initialize properly."
+                "likely failed to initialize properly.",
             )
             return 1
 
-        server.add_resource_json_file("profile", profile)
+        server.add_resource_json_file("profile", str(profile))
 
     profiler_url = "https://profiler.firefox.com/from-url/" + quote(
         server.url + "resources/profile", ""
@@ -309,11 +432,21 @@ def resource_usage(command_context, address=None, port=None, browser=None, url=N
     try:
         webbrowser.get(browser).open_new_tab(profiler_url)
     except Exception:
-        print("Cannot get browser specified, trying the default instead.")
+        command_context.log(
+            logging.WARNING,
+            "resource_usage",
+            {},
+            "Cannot get browser specified, trying the default instead.",
+        )
         try:
             browser = webbrowser.get().open_new_tab(profiler_url)
         except Exception:
-            print("Please open %s in a browser." % profiler_url)
+            command_context.log(
+                logging.INFO,
+                "resource_usage",
+                {"url": profiler_url},
+                "Please open {url} in a browser.",
+            )
 
     server.run()
 
@@ -346,9 +479,12 @@ def build_backend(command_context, backend, diff=False, verbose=False, dry_run=F
     config_status = os.path.join(command_context.topobjdir, "config.status")
 
     if not os.path.exists(config_status):
-        print(
+        command_context.log(
+            logging.ERROR,
+            "build_backend",
+            {"backend": backend},
             "config.status not found.  Please run |mach configure| "
-            "or |mach build| prior to building the %s build backend." % backend
+            "or |mach build| prior to building the {backend} build backend.",
         )
         return 1
 

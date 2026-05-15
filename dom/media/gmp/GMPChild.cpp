@@ -5,19 +5,17 @@
 
 #include "GMPChild.h"
 
-#include "base/command_line.h"
-#include "base/task.h"
 #include "ChildProfilerController.h"
 #include "ChromiumCDMAdapter.h"
 #include "GeckoProfiler.h"
+#include "base/command_line.h"
+#include "base/task.h"
 #ifdef XP_LINUX
 #  include "dlfcn.h"
 #  if defined(MOZ_SANDBOX)
 #    include "mozilla/Sandbox.h"
 #  endif  // defined(MOZ_SANDBOX)
 #endif    // defined (XP_LINUX)
-#include "gmp-video-decode.h"
-#include "gmp-video-encode.h"
 #include "GMPContentChild.h"
 #include "GMPLoader.h"
 #include "GMPLog.h"
@@ -28,30 +26,33 @@
 #include "GMPVideoDecoderChild.h"
 #include "GMPVideoEncoderChild.h"
 #include "GMPVideoHost.h"
+#include "gmp-video-decode.h"
+#include "gmp-video-encode.h"
 #include "mozilla/Algorithm.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/FOGIPC.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/glean/GleanTestsTestMetrics.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/ProcessChild.h"
-#include "mozilla/TextUtils.h"
 #include "nsDebugImpl.h"
 #include "nsExceptionHandler.h"
 #include "nsIFile.h"
+#include "nsIXULRuntime.h"
 #include "nsReadableUtils.h"
 #include "nsThreadManager.h"
-#include "nsXULAppAPI.h"
-#include "nsIXULRuntime.h"
 #include "nsXPCOM.h"
 #include "nsXPCOMPrivate.h"  // for XUL_DLL
+#include "nsXULAppAPI.h"
 #include "prio.h"
 #ifdef XP_WIN
 #  include <stdlib.h>  // for _exit()
-#  include "nsIObserverService.h"
+
+#  include "WinUtils.h"
 #  include "mozilla/Services.h"
 #  include "mozilla/WinDllServices.h"
-#  include "WinUtils.h"
+#  include "nsIObserverService.h"
 #else
 #  include <unistd.h>  // for _exit()
 #endif
@@ -240,18 +241,21 @@ mozilla::ipc::IPCResult GMPChild::RecvPreloadLibs(const nsCString& aLibs) {
 }
 
 bool GMPChild::GetUTF8LibPath(nsACString& aOutLibPath) {
+#ifdef MOZ_WIDGET_ANDROID
+  aOutLibPath = "lib"_ns + NS_ConvertUTF16toUTF8(mPluginPath) + ".so"_ns;
+#else
   nsCOMPtr<nsIFile> libFile;
 
-#define GMP_PATH_CRASH(explain)                           \
-  do {                                                    \
-    nsAutoString path;                                    \
-    if (!libFile || NS_FAILED(libFile->GetPath(path))) {  \
-      path = mPluginPath;                                 \
-    }                                                     \
-    CrashReporter::RecordAnnotationNSString(              \
-        CrashReporter::Annotation::GMPLibraryPath, path); \
-    MOZ_CRASH(explain);                                   \
-  } while (false)
+#  define GMP_PATH_CRASH(explain)                           \
+    do {                                                    \
+      nsAutoString path;                                    \
+      if (!libFile || NS_FAILED(libFile->GetPath(path))) {  \
+        path = mPluginPath;                                 \
+      }                                                     \
+      CrashReporter::RecordAnnotationNSString(              \
+          CrashReporter::Annotation::GMPLibraryPath, path); \
+      MOZ_CRASH(explain);                                   \
+    } while (false)
 
   nsresult rv = NS_NewLocalFile(mPluginPath, getter_AddRefs(libFile));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -276,15 +280,15 @@ bool GMPChild::GetUTF8LibPath(nsACString& aOutLibPath) {
   nsAutoString baseName;
   baseName = Substring(parentLeafName, 4, parentLeafName.Length() - 1);
 
-#if defined(XP_MACOSX)
+#  if defined(XP_MACOSX)
   nsAutoString binaryName = u"lib"_ns + baseName + u".dylib"_ns;
-#elif defined(XP_UNIX)
+#  elif defined(XP_UNIX)
   nsAutoString binaryName = u"lib"_ns + baseName + u".so"_ns;
-#elif defined(XP_WIN)
+#  elif defined(XP_WIN)
   nsAutoString binaryName = baseName + u".dll"_ns;
-#else
-#  error not defined
-#endif
+#  else
+#    error not defined
+#  endif
   rv = libFile->AppendRelativePath(binaryName);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     GMP_PATH_CRASH("Failed to append lib to plugin file");
@@ -304,10 +308,14 @@ bool GMPChild::GetUTF8LibPath(nsACString& aOutLibPath) {
   }
 
   CopyUTF16toUTF8(path, aOutLibPath);
+#endif
   return true;
 }
 
 bool GMPChild::GetPluginName(nsACString& aPluginName) const {
+#ifdef MOZ_WIDGET_ANDROID
+  aPluginName = NS_ConvertUTF16toUTF8(mPluginPath);
+#else
   // Extract the plugin directory name if possible.
   nsCOMPtr<nsIFile> libFile;
   nsresult rv = NS_NewLocalFile(mPluginPath, getter_AddRefs(libFile));
@@ -322,6 +330,7 @@ bool GMPChild::GetPluginName(nsACString& aPluginName) const {
   NS_ENSURE_SUCCESS(rv, false);
 
   aPluginName.Assign(NS_ConvertUTF16toUTF8(parentLeafName));
+#endif
   return true;
 }
 
@@ -608,7 +617,8 @@ void GMPChild::ActorDestroy(ActorDestroyReason aWhy) {
 void GMPChild::ProcessingError(Result aCode, const char* aReason) {
   switch (aCode) {
     case MsgDropped:
-      _exit(0);  // Don't trigger a crash report.
+      NS_WARNING("MsgDropped in GMPChild");
+      return;
     case MsgNotKnown:
       MOZ_CRASH("aborting because of MsgNotKnown");
     case MsgNotAllowed:

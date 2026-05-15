@@ -633,6 +633,12 @@
         ]
     },
     {
+        "image_url": "https://kagi.com/apple-touch-icon.png",
+        "domains": [
+            "kagi.com"
+        ]
+    },
+    {
         "image_url": "https://m.kiddle.co/icon-kiddle.png",
         "domains": [
             "kiddle.co"
@@ -1413,6 +1419,12 @@
         "image_url": "https://st1.zoom.us/homepage/publish/zoom.ico",
         "domains": [
             "zoom.us"
+        ]
+    },
+    {
+        "image_url": "https://www.perplexity.ai/favicon.ico",
+        "domains": [
+            "perplexity.ai"
         ]
     }
 ]

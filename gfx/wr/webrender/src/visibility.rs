@@ -13,12 +13,14 @@ use std::usize;
 use crate::clip::ClipStore;
 use crate::composite::CompositeState;
 use crate::profiler::TransactionProfile;
+use crate::renderer::GpuBufferBuilder;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::clip::{ClipChainInstance, ClipTree};
 use crate::frame_builder::FrameBuilderConfig;
-use crate::gpu_cache::GpuCache;
-use crate::picture::{PictureCompositeMode, ClusterFlags, SurfaceInfo, TileCacheInstance};
-use crate::picture::{SurfaceIndex, RasterConfig, SubSliceIndex};
+use crate::picture::{PictureCompositeMode, ClusterFlags, SurfaceInfo};
+use crate::tile_cache::TileCacheInstance;
+use crate::picture::{SurfaceIndex, RasterConfig};
+use crate::tile_cache::SubSliceIndex;
 use crate::prim_store::{ClipTaskIndex, PictureIndex, PrimitiveInstanceKind};
 use crate::prim_store::{PrimitiveStore, PrimitiveInstance};
 use crate::render_backend::{DataStores, ScratchBuffer};
@@ -41,7 +43,7 @@ pub struct FrameVisibilityContext<'a> {
 pub struct FrameVisibilityState<'a> {
     pub clip_store: &'a mut ClipStore,
     pub resource_cache: &'a mut ResourceCache,
-    pub gpu_cache: &'a mut GpuCache,
+    pub frame_gpu_data: &'a mut GpuBufferBuilder,
     pub data_stores: &'a mut DataStores,
     pub clip_tree: &'a mut ClipTree,
     pub composite_state: &'a mut CompositeState,
@@ -321,7 +323,7 @@ pub fn update_prim_visibility(
                     &map_local_to_picture,
                     &map_surface_to_vis,
                     &frame_context.spatial_tree,
-                    frame_state.gpu_cache,
+                    &mut frame_state.frame_gpu_data.f32,
                     frame_state.resource_cache,
                     device_pixel_scale,
                     &surface_culling_rect,
@@ -363,7 +365,7 @@ pub fn update_prim_visibility(
                         &store.color_bindings,
                         &frame_state.surface_stack,
                         &mut frame_state.composite_state,
-                        &mut frame_state.gpu_cache,
+                        &mut frame_state.frame_gpu_data.f32,
                         &mut frame_state.scratch.primitive,
                         is_root_tile_cache,
                         frame_state.surfaces,
@@ -377,6 +379,18 @@ pub fn update_prim_visibility(
                     }
                 }
             };
+        }
+    }
+
+    if let Some(snapshot) = &pic.snapshot {
+        if snapshot.detached {
+            // If the snapshot is detached, then the contents of the stacking
+            // context will only be shown via the snapshot, so there is no point
+            // to rendering anything outside of the snapshot area.
+            let prim_surface_index = frame_state.surface_stack.last().unwrap().1;
+            let surface = &mut frame_state.surfaces[prim_surface_index.0];
+            let clip = snapshot.area.round_out().cast_unit();
+            surface.clipped_local_rect = surface.clipped_local_rect.intersection_unchecked(&clip);
         }
     }
 

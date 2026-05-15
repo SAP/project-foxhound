@@ -14,12 +14,12 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/IOUtilsBinding.h"
 #include "mozilla/dom/ONNXBinding.h"
-#include "mozilla/dom/onnxruntime_c_api.h"
-#include "nsISupports.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "mozilla/dom/Record.h"
+#include "mozilla/dom/onnxruntime_c_api.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
+#include "nsISupports.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 OrtApi* GetOrtAPI();

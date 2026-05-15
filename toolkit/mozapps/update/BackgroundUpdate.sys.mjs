@@ -44,10 +44,10 @@ ChromeUtils.defineLazyGetter(lazy, "localization", () => {
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  idleService: ["@mozilla.org/widget/useridleservice;1", "nsIUserIdleService"],
+  idleService: ["@mozilla.org/widget/useridleservice;1", Ci.nsIUserIdleService],
   UpdateService: [
     "@mozilla.org/updates/update-service;1",
-    "nsIApplicationUpdateService",
+    Ci.nsIApplicationUpdateService,
   ],
 });
 
@@ -1003,6 +1003,162 @@ export var BackgroundUpdate = {
       }
     }
   },
+
+  getDaysSinceLastBrowsed(
+    defaultProfileTargetingSnapshot,
+    { nowSeconds = Math.floor(Date.now() / 1000) } = {}
+  ) {
+    let environment = defaultProfileTargetingSnapshot?.environment;
+    if (!environment || !environment.currentDate) {
+      return 0;
+    }
+
+    let secondsSince =
+      nowSeconds -
+      Math.floor(new Date(environment.currentDate).getTime() / 1000);
+    let daysSince = Math.floor(secondsSince / (60 * 60 * 24));
+    return Math.max(-1, daysSince);
+  },
+
+  /**
+   * Runs the specified function with the actions that ought to be performed
+   * as arguments.
+   *
+   * @param  {object}
+   *         A config object with these keys:
+   *           defaultProfileTargetingSnapshot
+   *             The snapshotted Firefox Messaging System targeting from the
+   *             profile.
+   *           nowSeconds
+   *             Optional. The current epoch time in seconds. If specified, this
+   *             will be used as the current time. If not, this will calculate
+   *             the current time itself.
+   * @param  {callbackFn}
+   *         The function to call. It will be passed a single argument: the Set
+   *         of `Action`s that ought to be performed. This will be called
+   *         exactly once by this function.
+   * @return The value that `callbackFn` returned.
+   */
+  async withActionsToPerform(
+    {
+      defaultProfileTargetingSnapshot,
+      nowSeconds = Math.floor(Date.now() / 1000),
+    },
+    callbackFn
+  ) {
+    let SLUG = "withActionsToPerform";
+
+    let actionSet = new Set();
+
+    let throttled = false;
+    let debounced = false;
+
+    // The last time the task ran without throwing or being debounced.
+    let lastTaskRunSeconds = Services.prefs.getIntPref(
+      "app.update.background.lastTaskRunSecondsAfterEpoch",
+      0
+    );
+
+    let daysSinceLastBrowsed = BackgroundUpdate.getDaysSinceLastBrowsed(
+      defaultProfileTargetingSnapshot,
+      { nowSeconds }
+    );
+    // A convenience: it's possible to determine this from existing data, but it
+    // requires non-trivial date/time calculations.  This is simpler and should
+    // be more robust.
+    Glean.backgroundUpdate.daysSinceLastBrowsed.set(daysSinceLastBrowsed);
+
+    let throttleFeature = lazy.NimbusFeatures.backgroundUpdateCheckPolicy;
+    if (throttleFeature.getVariable("throttleEnabled")) {
+      let throttleAfterDays = throttleFeature.getVariable("throttleAfterDays");
+
+      if (throttleAfterDays >= 0 && daysSinceLastBrowsed > throttleAfterDays) {
+        lazy.log.warn(
+          `${SLUG}: last browsed ${daysSinceLastBrowsed} days ago > ${throttleAfterDays} days ago, throttled`
+        );
+        throttled = true;
+      } else {
+        lazy.log.info(
+          `${SLUG}: last browsed ${daysSinceLastBrowsed} days ago < ${throttleAfterDays} days ago, not throttled`
+        );
+      }
+
+      if (throttled) {
+        let throttleDebouncePeriodInHours = throttleFeature.getVariable(
+          "throttleDebouncePeriodInHours"
+        );
+
+        let hoursSinceLastTask = Math.floor(
+          Math.max(nowSeconds - lastTaskRunSeconds, 0) / (60 * 60)
+        );
+
+        lazy.log.debug(
+          `${SLUG}: throttled, checking debounce: last ran task ${hoursSinceLastTask} hours ago`
+        );
+
+        if (
+          throttleDebouncePeriodInHours > 0 &&
+          hoursSinceLastTask < throttleDebouncePeriodInHours
+        ) {
+          lazy.log.warn(
+            `${SLUG}: last ran task ${hoursSinceLastTask} hours ago < ${throttleDebouncePeriodInHours} hours ago, debounced`
+          );
+          debounced = true;
+        } else {
+          lazy.log.info(
+            `${SLUG}: last ran task ${hoursSinceLastTask} hours ago >= ${throttleDebouncePeriodInHours} hours ago, not debounced`
+          );
+        }
+      }
+    } else {
+      lazy.log.warn(`${SLUG}: throttle feature not enabled`);
+    }
+
+    // Throttled will be reported each time we submit.
+    Glean.backgroundUpdate.throttled.set(throttled);
+    // Debounced will be accumulated until we submit.
+    if (debounced) {
+      Glean.backgroundUpdate.debounced.add();
+    }
+
+    let taskCompletedCallback = () => {};
+
+    if (!debounced) {
+      actionSet.add(BackgroundUpdate.ACTION.EXPERIMENTER);
+      actionSet.add(BackgroundUpdate.ACTION.SUBMIT_PING);
+
+      // It's possible for the background update task to crash after this point.
+      // We don't want to debounce crashing tasks prematurely, so we provide a
+      // "task completed" callback to invoke that updates the state.  The
+      // callback captures `nowSeconds` so that it is deterministic.
+      taskCompletedCallback = () => {
+        Services.prefs.setIntPref(
+          "app.update.background.lastTaskRunSecondsAfterEpoch",
+          nowSeconds
+        );
+        lazy.log.warn(
+          `${SLUG}: setting last task run timestamp to ${nowSeconds} after the Unix epoch (${Date(nowSeconds * 1000)})`
+        );
+      };
+
+      if (throttled) {
+        actionSet.add(BackgroundUpdate.ACTION.UPDATE_CHECK);
+      } else {
+        actionSet.add(BackgroundUpdate.ACTION.UPDATE);
+      }
+    }
+
+    let d = Array.from(actionSet).toSorted();
+    lazy.log.warn(`${SLUG}: actions to take: ${JSON.stringify(d)}`);
+
+    let result = await Promise.try(callbackFn, actionSet);
+
+    // The task is considered completed only if and only if the callback
+    // function exits without throwing/rejecting.
+    taskCompletedCallback();
+
+    return result;
+  },
 };
 
 BackgroundUpdate.REASON = {
@@ -1041,4 +1197,20 @@ BackgroundUpdate.EXIT_CODE = {
   DEFAULT_PROFILE_CANNOT_BE_READ: 13,
   // Another instance is running.
   OTHER_INSTANCE: 21,
+};
+
+BackgroundUpdate.ACTION = {
+  // Enables Nimbus and the Firefox Messaging System in order to potentially
+  // show a toast notification to the user.
+  EXPERIMENTER: "ACTION_EXPERIMENTER",
+  // Causes telemetry to be sent by this Background Update Task invocation.
+  SUBMIT_PING: "ACTION_SUBMIT_PING",
+  // This is basically the core action of the Background Update Task. This
+  // action pumps the update loop. If an update is ready and the configuration
+  // has enabled this, the browser may restart as a result of performing this
+  // action.
+  UPDATE: "ACTION_UPDATE",
+  // This is an alternate version of the `UPDATE` action that checks for updates
+  // but only installs them if Balrog specifies an optional forcing flag.
+  UPDATE_CHECK: "ACTION_UPDATE_CHECK",
 };

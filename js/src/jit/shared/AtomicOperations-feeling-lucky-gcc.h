@@ -26,7 +26,6 @@
 #define jit_shared_AtomicOperations_feeling_lucky_gcc_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Types.h"
 
 // Explicitly exclude tier-1 platforms.
 

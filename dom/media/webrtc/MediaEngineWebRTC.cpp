@@ -14,13 +14,13 @@
 
 // Pipewire detection support
 #if defined(WEBRTC_USE_PIPEWIRE)
-#  include "mozilla/StaticPrefs_media.h"
 #  include "modules/desktop_capture/desktop_capturer.h"
+#  include "mozilla/StaticPrefs_media.h"
 #endif
 
 #if defined(WEBRTC_MAC)
-#  include "mozilla/StaticPrefs_media.h"
 #  include "modules/desktop_capture/mac/screen_capturer_sck.h"
+#  include "mozilla/StaticPrefs_media.h"
 #endif
 
 #define FAKE_ONDEVICECHANGE_EVENT_PERIOD_IN_MS 500
@@ -115,7 +115,6 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
     char deviceName[MediaEngineSource::kMaxDeviceNameLength];
     char uniqueId[MediaEngineSource::kMaxUniqueIdLength];
     bool scarySource = false;
-    bool placeholder = false;
 
     // paranoia
     deviceName[0] = '\0';
@@ -124,7 +123,7 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
 
     error = GetChildAndCall(&CamerasChild::GetCaptureDevice, capEngine, i,
                             deviceName, sizeof(deviceName), uniqueId,
-                            sizeof(uniqueId), &scarySource, &placeholder);
+                            sizeof(uniqueId), &scarySource);
     if (error) {
       LOG(("camera:GetCaptureDevice: Failed %d", error));
       continue;
@@ -152,12 +151,11 @@ void MediaEngineWebRTC::EnumerateVideoDevices(
     // device name and higher layers will correlate this with the name of
     // audio devices.
 
-    aDevices->EmplaceBack(
-        new MediaDevice(this, aMediaSource, name, uuid, uuid,
-                        MediaDevice::IsScary(scaryKind || scarySource),
-                        canRequestOsLevelPrompt ? MediaDevice::OsPromptable::Yes
-                                                : MediaDevice::OsPromptable::No,
-                        MediaDevice::IsPlaceholder(placeholder)));
+    aDevices->EmplaceBack(new MediaDevice(
+        this, aMediaSource, name, uuid, uuid,
+        MediaDevice::IsScary(scaryKind || scarySource),
+        canRequestOsLevelPrompt ? MediaDevice::OsPromptable::Yes
+                                : MediaDevice::OsPromptable::No));
   }
 }
 
@@ -295,6 +293,25 @@ RefPtr<MediaEngineSource> MediaEngineWebRTC::CreateSource(
       return new MediaEngineWebRTCAudioCaptureSource(aMediaDevice);
     case MediaSourceEnum::Microphone:
       return new MediaEngineWebRTCMicrophoneSource(aMediaDevice);
+    default:
+      MOZ_CRASH("Unsupported source type");
+      return nullptr;
+  }
+}
+
+RefPtr<MediaEngineSource> MediaEngineWebRTC::CreateSourceFrom(
+    const MediaEngineSource* aSource, const MediaDevice* aMediaDevice) {
+  MOZ_ASSERT(aMediaDevice->mEngine == this);
+  if (MediaEngineSource::IsVideo(aMediaDevice->mMediaSource)) {
+    return MediaEngineRemoteVideoSource::CreateFrom(
+        static_cast<const MediaEngineRemoteVideoSource*>(aSource),
+        aMediaDevice);
+  }
+  switch (aMediaDevice->mMediaSource) {
+    case MediaSourceEnum::Microphone:
+      return MediaEngineWebRTCMicrophoneSource::CreateFrom(
+          static_cast<const MediaEngineWebRTCMicrophoneSource*>(aSource),
+          aMediaDevice);
     default:
       MOZ_CRASH("Unsupported source type");
       return nullptr;

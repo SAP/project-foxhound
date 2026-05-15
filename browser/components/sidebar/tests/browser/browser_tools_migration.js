@@ -17,6 +17,7 @@ add_setup(async () => {
       ],
     ],
   });
+  await ensureSidebarLauncherIsVisible();
 });
 
 add_task(async function test_duplicate_tool() {

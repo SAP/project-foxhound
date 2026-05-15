@@ -38,11 +38,9 @@ def main(args=sys.argv[1:]):
     args.extra_prefs = parse_preferences(args.extra_prefs or [])
 
     if args.enable_marionette_trace:
-        args.extra_prefs.update(
-            {
-                "remote.log.level": "Trace",
-            }
-        )
+        args.extra_prefs.update({
+            "remote.log.level": "Trace",
+        })
 
     args.environment = dict(parse_key_value(args.environment or [], context="--setenv"))
 

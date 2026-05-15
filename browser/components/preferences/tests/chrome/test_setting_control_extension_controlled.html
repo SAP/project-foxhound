@@ -1,0 +1,855 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>setting-control extension controlled tests</title>
+    <style>
+      /* Force text color to ensure settings controls unit tested by
+         this test are visible (eg. to aid investigating test failures
+         that may only be hit in CI). */
+      body {
+        color: black;
+      }
+    </style>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script src="./head.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-group.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-control.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-message-bar.mjs"
+    ></script>
+    <script
+      type="application/javascript"
+      src="chrome://global/content/preferencesBindings.js"
+    ></script>
+    <script src="chrome://mochikit/content/tests/SimpleTest/ExtensionTestUtils.js"></script>
+    <script>
+      const { Assert } = ChromeUtils.importESModule(
+        "resource://testing-common/Assert.sys.mjs"
+      );
+      // Import the ExtensionSettingsStore and AddonManager as we need
+      // them to correctly disable the extension on click and re-enable
+      // the extension in the same task.
+      ChromeUtils.defineESModuleGetters(this, {
+        ExtensionSettingsStore:
+          "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+        AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+        BrowserWindowTracker:
+          "resource:///modules/BrowserWindowTracker.sys.mjs",
+      });
+
+      /* import-globals-from /toolkit/content/preferencesBindings.js */
+      let html, testHelpers;
+
+      const PREF_ID = "test.setting-control.bar";
+      async function renderTemplate(itemConfig) {
+        let config = {
+          items: [itemConfig],
+        };
+        let result = await testHelpers.renderTemplate(html`
+          <setting-group
+            .config=${config}
+            .getSetting=${(...args) => Preferences.getSetting(...args)}
+          ></setting-group>
+        `);
+        if (document.hasPendingL10nMutations) {
+          await BrowserTestUtils.waitForEvent(
+            document,
+            "L10nMutationsFinished"
+          );
+        }
+        return result.querySelector("setting-control");
+      }
+
+      async function disableExtensionByMouse(elem) {
+        await synthesizeMouseAtCenter(elem, {});
+      }
+
+      const getExtensionControlledMessageBar = control =>
+        control.querySelector(".extension-controlled-message-bar");
+      const getReenableExtensionMessageBar = control =>
+        control.querySelector(".reenable-extensions-message-bar");
+
+      add_setup(async function setup() {
+        testHelpers = new InputTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: () => html`<setting-group></setting-group>`,
+        });
+        MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
+        MozXULElement.insertFTLIfNeeded("browser/preferences/preferences.ftl");
+        Preferences.addAll([{ id: PREF_ID }]);
+        // Add mock Fluent source to define the test-fluent-id l10n id
+        // used in these tests.
+        const mockL10nSource = L10nFileSource.createMock(
+          "test",
+          "app",
+          ["en-US"],
+          "/localization/{locale}/",
+          [
+            {
+              path: "/localization/en-US/mock.ftl",
+              source:
+                "test-fluent-id =\n .label = TestLabel\n .description = TestDescription",
+            },
+          ]
+        );
+        L10nRegistry.getInstance().registerSources([mockL10nSource]);
+        MozXULElement.insertFTLIfNeeded("mock.ftl");
+        SimpleTest.registerCleanupFunction(() => {
+          Preferences.onUnload();
+          SpecialPowers.popPrefEnv();
+        });
+      });
+
+      add_task(async function testExtensionControlledConfigBasedControl() {
+        // Setup pre-test items: extension, Preferences, ExtensionSettingStore
+        const SETTING_ID = "extension-controlled-setting";
+        const ADDON_ID = "ext-controlled@mochi.test";
+        const ADDON_NAME = "Ext Controlled";
+        const STORE_ID = "privacy.containers";
+        const TEST_FLUENT_ID = "test-fluent-id";
+        const SUPPORT_PAGE = "support-test";
+        const SUPPORT_URL = Services.prefs.getStringPref("app.support.baseURL");
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF_ID, false]],
+        });
+        let extension = ExtensionTestUtils.loadExtension({
+          manifest: {
+            browser_specific_settings: { gecko: { id: ADDON_ID } },
+            name: ADDON_NAME,
+            permissions: ["contextualIdentities", "cookies"],
+          },
+          // We need to be able to find the extension using AddonManager.
+          useAddonManager: "temporary",
+        });
+        await extension.startup();
+
+        // Assert there is no markup that is generated by pre-test setup since we
+        // don't have a setting that is being controlled by the STORE_ID
+
+        let settingControl = document.getElementById(SETTING_ID);
+        is(
+          settingControl,
+          null,
+          "The setting control under test should not exist yet."
+        );
+
+        // Add setting that is being controlled by our test extension
+        Preferences.addSetting({
+          id: SETTING_ID,
+          pref: PREF_ID,
+          controllingExtensionInfo: {
+            storeId: STORE_ID,
+            l10nId: TEST_FLUENT_ID,
+            supportPage: SUPPORT_PAGE,
+          },
+        });
+
+        // Create itemConfig for expected setting-control element
+        let itemConfig = {
+          l10nId: "test-fluent-id",
+          id: SETTING_ID,
+        };
+
+        // Wait for setting-control element to be rendered
+        let setting = Preferences.getSetting(SETTING_ID);
+        let control = await renderTemplate(itemConfig, setting);
+
+        // Checking if the setting is controlled by an extension
+        // and retrieve the addon details to be shown is asynchronous
+        // and so there is a chance the control may not be immediately
+        // disabled right after being created.
+        await TestUtils.waitForCondition(
+          () => control.controlEl.disabled,
+          "Wait for the control to become disabled as a side-effect of controlling extension metadata to be found"
+        );
+
+        // Assert checkbox control is created and disabled due to extension controlling the pref
+        is(
+          control.controlEl.localName,
+          "moz-checkbox",
+          "The control rendered the default checkbox"
+        );
+        is(
+          control.controlEl.disabled,
+          true,
+          "The control should be disabled since it is controlled by an extension"
+        );
+
+        // Assert that moz-message-bar appears with the correct Fluent attributes/args
+        let messageBar = control.querySelector("moz-message-bar");
+        ok(
+          messageBar,
+          "There should be an extension controlled message bar element"
+        );
+
+        is(
+          messageBar.messageL10nId,
+          TEST_FLUENT_ID,
+          "The l10nId should be the same as the one in the config"
+        );
+        is(
+          messageBar.messageL10nArgs.name,
+          ADDON_NAME,
+          "The name used within the message-bar should be the extension name"
+        );
+
+        // Assert that moz-message-bar appears with an actions button with correct Fluent attributes
+        let disableExtensionButton = messageBar.querySelector(
+          "moz-button[slot='actions']"
+        );
+        ok(
+          disableExtensionButton,
+          "There should be a button to disable the extension"
+        );
+        is(
+          disableExtensionButton.getAttribute("data-l10n-id"),
+          "disable-extension",
+          "The disable extension button should have the correct data-l10n-id"
+        );
+
+        // Assert that moz-message-bar appears with a support link with correct attributes
+        let supportLink = messageBar.querySelector("a[slot='support-link']");
+        ok(supportLink, "There should be a slotted support link element");
+        is(
+          supportLink.getAttribute("support-page"),
+          SUPPORT_PAGE,
+          "The support link should have the correct value for 'support-page'"
+        );
+        is(
+          supportLink.href,
+          `${SUPPORT_URL}${SUPPORT_PAGE}`,
+          "The support link should have the correct generated href value"
+        );
+
+        // Unload the test extension and remove the setting-control element
+        await extension.unload();
+        control.remove();
+      });
+
+      add_task(async function testDisablingExtensionControlledSetting() {
+        // Setup pre-test items like extension, AddonManager, ExtensionSettingStore
+        const SETTING_ID = "extension-controlled-setting";
+        const ADDON_ID = "ext-controlled@mochi.test";
+        const ADDON_NAME = "Ext Controlled";
+        const STORE_ID = "privacy.containers";
+        const TEST_FLUENT_ID = "test-fluent-id";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF_ID, false]],
+        });
+        let extension = ExtensionTestUtils.loadExtension({
+          manifest: {
+            browser_specific_settings: { gecko: { id: ADDON_ID } },
+            name: ADDON_NAME,
+            permissions: ["contextualIdentities", "cookies"],
+          },
+          // We need to be able to find the extension using AddonManager.
+          useAddonManager: "temporary",
+        });
+        await extension.startup();
+
+        // We need to get the addon via the AddonManager to re-enable it later
+        let addon = await AddonManager.getAddonByID(ADDON_ID);
+        await ExtensionSettingsStore.initialize();
+
+        // Assert there is no markup that is generated by pre-test setup since we
+        // don't have a setting that is being controlled by the STORE_ID
+
+        let settingControl = document.getElementById(SETTING_ID);
+        is(
+          settingControl,
+          null,
+          "The setting control under test should not exist yet."
+        );
+
+        // Add setting that is being controlled by our test extension
+        Preferences.addSetting({
+          id: SETTING_ID,
+          pref: PREF_ID,
+          controllingExtensionInfo: {
+            storeId: STORE_ID,
+            l10nId: TEST_FLUENT_ID,
+          },
+        });
+
+        // Create itemConfig for expected setting-control element
+        let itemConfig = {
+          l10nId: "test-fluent-id",
+          id: SETTING_ID,
+        };
+
+        // Wait for setting-control element to be rendered
+        let setting = Preferences.getSetting(SETTING_ID);
+        let control = await renderTemplate(itemConfig, setting);
+        // Assert that moz-message-bar appears with the correct Fluent attributes/args
+        let extensionControlledMessageBar =
+          getExtensionControlledMessageBar(control);
+
+        ok(
+          extensionControlledMessageBar,
+          "There should be an extension controlled message bar element"
+        );
+
+        is(
+          extensionControlledMessageBar.messageL10nId,
+          TEST_FLUENT_ID,
+          "The l10nId should be the same as the one in the config"
+        );
+        is(
+          extensionControlledMessageBar.messageL10nArgs.name,
+          ADDON_NAME,
+          "The name used within the message-bar should be the extension name"
+        );
+
+        // Assert that moz-message-bar appears with an actions button with correct Fluent attributes
+        let disableExtensionButton =
+          extensionControlledMessageBar.querySelector(
+            "moz-button[slot='actions']"
+          );
+        ok(
+          disableExtensionButton,
+          "There should be a button to disable the extension"
+        );
+        is(
+          disableExtensionButton.getAttribute("data-l10n-id"),
+          "disable-extension",
+          "The disable extension button should have the correct data-l10n-id"
+        );
+
+        await disableExtensionByMouse(disableExtensionButton);
+
+        await TestUtils.waitForCondition(
+          () =>
+            !control.isDisablingExtension &&
+            !getExtensionControlledMessageBar(control),
+          "Wait for the extension controlled message bar to be removed after disabling the only controlling extension"
+        );
+
+        await TestUtils.waitForCondition(
+          () => getReenableExtensionMessageBar(control),
+          "Wait for the re-enable extension message bar to be rendered"
+        );
+        let enableExtensionMessageBar = getReenableExtensionMessageBar(control);
+        ok(
+          enableExtensionMessageBar,
+          "there should be a message bar for re-enabling extensions"
+        );
+
+        let addonsLink = enableExtensionMessageBar.querySelector("[slot] a");
+        is(
+          enableExtensionMessageBar
+            .querySelector("[slot]")
+            .getAttribute("data-l10n-id"),
+          "extension-controlled-enable-2",
+          "The re-enable extension message bar should have a slot with the correct data-l10n-id"
+        );
+
+        is(
+          addonsLink.getAttribute("data-l10n-name"),
+          "addons-link",
+          "The slot within the re-enable extension bar should have the correct data-l10n-name"
+        );
+
+        await addon.enable();
+        await TestUtils.waitForCondition(
+          () => control.controlEl.disabled,
+          "Wait for the control to become disabled as a side-effect of enabling the controlling extension"
+        );
+
+        await TestUtils.waitForCondition(
+          () => !getReenableExtensionMessageBar(control),
+          "The re-enable extension message bar should be removed when the extension is enabled again."
+        );
+        extensionControlledMessageBar =
+          getExtensionControlledMessageBar(control);
+        ok(
+          extensionControlledMessageBar,
+          "The extension controlled message bar should be rendered when the controlling addon is enabled elsewhere."
+        );
+
+        await addon.disable();
+        await TestUtils.waitForCondition(
+          () => !control.controlEl.disabled,
+          "Wait for the control to become mutable as a side-effect of disabling the controlling extension"
+        );
+        enableExtensionMessageBar = getReenableExtensionMessageBar(control);
+        is(
+          enableExtensionMessageBar
+            .querySelector("[slot]")
+            .getAttribute("data-l10n-id"),
+          "extension-controlled-enable-2",
+          "The re-enable extension message bar should have a slot with the correct data-l10n-id"
+        );
+        ok(
+          !getExtensionControlledMessageBar(control),
+          "The message bar should not be rendered when the controlling addon is disabled elsewhere."
+        );
+
+        await addon.enable();
+        await TestUtils.waitForCondition(
+          () => control.controlEl.disabled,
+          "Wait for the control to become disabled as a side-effect of enabling the controlling extension"
+        );
+
+        control.focus();
+        // Assert that action button can be navigated to with keyboard
+        await synthesizeKey("KEY_Tab", {});
+        // Assert that action button can be activated with keyboard
+        await synthesizeKey(" ");
+
+        await TestUtils.waitForCondition(
+          () => !control.isDisablingExtension && !control.controlEl.disabled,
+          "Wait for the control to become mutable as a side-effect of disabling the controlling extension"
+        );
+        extensionControlledMessageBar =
+          getExtensionControlledMessageBar(control);
+        ok(
+          !extensionControlledMessageBar,
+          "The extension controlled message bar should not be rendered after hitting Space on the disable extension button."
+        );
+
+        enableExtensionMessageBar = getReenableExtensionMessageBar(control);
+        ok(
+          enableExtensionMessageBar,
+          "The message bar to re-enable the extension should be rendered"
+        );
+
+        // Unload the test extension and remove the setting control
+        await extension.unload();
+        control.remove();
+      });
+
+      add_task(async function testMultipleControllingExtensions() {
+        const SETTING_ID = "extension-controlled-setting";
+        const ADDON_ID = "ext-controlled@mochi.test";
+        const ADDON_NAME = "Ext Controlled";
+        const STORE_ID = "privacy.containers";
+        const TEST_FLUENT_ID = "test-fluent-id";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF_ID, false]],
+        });
+        let extension = ExtensionTestUtils.loadExtension({
+          manifest: {
+            browser_specific_settings: { gecko: { id: ADDON_ID } },
+            name: ADDON_NAME,
+            permissions: ["contextualIdentities", "cookies"],
+          },
+          // We need to be able to find the extension using AddonManager.
+          useAddonManager: "temporary",
+        });
+        await extension.startup();
+
+        const ADDON_ID_2 = "ext-controlled2@mochi.test";
+        const ADDON_NAME_2 = "Ext Controlled 2";
+
+        let secondExtension = ExtensionTestUtils.loadExtension({
+          manifest: {
+            browser_specific_settings: { gecko: { id: ADDON_ID_2 } },
+            name: ADDON_NAME_2,
+            permissions: [
+              "browserSettings",
+              "contextualIdentities",
+              "privacy",
+              "proxy",
+              "storage",
+              "<all_urls>",
+            ],
+          },
+          useAddonManager: "temporary",
+        });
+        await secondExtension.startup();
+
+        // Assert there is no markup that is generated by pre-test setup since we
+        // don't have a setting that is being controlled by the STORE_ID
+
+        let settingControl = document.getElementById(SETTING_ID);
+        is(
+          settingControl,
+          null,
+          "The setting control under test should not exist yet."
+        );
+
+        // Add setting that is being controlled by both our test extensions
+        Preferences.addSetting({
+          id: SETTING_ID,
+          pref: PREF_ID,
+          controllingExtensionInfo: {
+            storeId: STORE_ID,
+            l10nId: TEST_FLUENT_ID,
+          },
+        });
+
+        // Create itemConfig for expected setting-control element
+        let itemConfig = {
+          l10nId: "test-fluent-id",
+          id: SETTING_ID,
+        };
+
+        // Wait for setting-control element to be rendered
+        let setting = Preferences.getSetting(SETTING_ID);
+        let control = await renderTemplate(itemConfig, setting);
+
+        // Assert checkbox control is created and disabled due to extensions controlling the pref
+        is(
+          control.controlEl.localName,
+          "moz-checkbox",
+          "The control rendered the default checkbox"
+        );
+        is(
+          control.controlEl.disabled,
+          true,
+          "The control should be disabled since it is controlled by an extension"
+        );
+
+        // Assert that moz-message-bar appears with the correct Fluent attributes/args
+        let extensionControlledMessageBar =
+          getExtensionControlledMessageBar(control);
+        ok(
+          extensionControlledMessageBar,
+          "There should be an extension controlled message bar element"
+        );
+        is(
+          extensionControlledMessageBar.messageL10nId,
+          TEST_FLUENT_ID,
+          "The l10nId should be the same as the one in the config"
+        );
+        is(
+          extensionControlledMessageBar.messageL10nArgs.name,
+          ADDON_NAME_2,
+          "The name used within the message-bar should be the most recently enabled extension name"
+        );
+
+        // Assert that moz-message-bar appears with an actions button with correct Fluent attributes
+        let disableExtensionButton =
+          extensionControlledMessageBar.querySelector(
+            "moz-button[slot='actions']"
+          );
+        ok(
+          disableExtensionButton,
+          "There should be a button to disable the extension"
+        );
+        is(
+          disableExtensionButton.getAttribute("data-l10n-id"),
+          "disable-extension",
+          "The disable extension button should have the correct data-l10n-id"
+        );
+
+        await disableExtensionByMouse(disableExtensionButton);
+
+        await TestUtils.waitForCondition(
+          () =>
+            !control.isDisablingExtension &&
+            getExtensionControlledMessageBar(control)?.messageL10nArgs.name ===
+              ADDON_NAME,
+          "Wait for the message bar to be refreshed after disabling the controlling extension"
+        );
+
+        extensionControlledMessageBar =
+          getExtensionControlledMessageBar(control);
+        disableExtensionButton = extensionControlledMessageBar.querySelector(
+          "moz-button[slot='actions']"
+        );
+        ok(
+          extensionControlledMessageBar,
+          "The message bar should still be present due to multiple extensions controlling the setting"
+        );
+
+        is(
+          extensionControlledMessageBar.messageL10nArgs.name,
+          ADDON_NAME,
+          "The name used within the message-bar should be the oldest enabled extension name"
+        );
+
+        is(
+          control.controlEl.disabled,
+          true,
+          "The control element should still be disabled since there is still a controlling extension"
+        );
+
+        await disableExtensionByMouse(disableExtensionButton);
+
+        await TestUtils.waitForCondition(
+          () => !getExtensionControlledMessageBar(control),
+          "Wait for the message bar to be removed after disabling the last controlling extension"
+        );
+
+        is(
+          control.controlEl.disabled,
+          false,
+          "The control element should not be disabled since there are no more controlling extensions"
+        );
+
+        await TestUtils.waitForCondition(
+          () => getReenableExtensionMessageBar(control),
+          "Wait for the re-enable extension message bar to render"
+        );
+        let enableExtensionMessageBar = getReenableExtensionMessageBar(control);
+        ok(
+          enableExtensionMessageBar,
+          "The message bar for enabling extensions should be rendered"
+        );
+        is(
+          enableExtensionMessageBar
+            .querySelector("[slot]")
+            .getAttribute("data-l10n-id"),
+          "extension-controlled-enable-2",
+          "The re-enable extension message bar should have a slot with the correct data-l10n-id"
+        );
+
+        // Clean up extensions and rendered setting control element
+        await extension.unload();
+        await secondExtension.unload();
+        control.remove();
+      });
+
+      add_task(async function test_no_initial_controlling_extension() {
+        // Setup pre-test items: extension, Preferences, ExtensionSettingStore
+        const SETTING_ID = "extension-controlled-setting";
+        const STORE_ID = "privacy.containers";
+        const TEST_FLUENT_ID = "test-fluent-id";
+        const ADDON_ID = "ext-controlled@mochi.test";
+        const ADDON_NAME = "Ext Controlled";
+
+        // Assert there is no markup that is generated by pre-test setup since we
+        // don't have a setting that is being controlled by the STORE_ID
+
+        let settingControl = document.getElementById(SETTING_ID);
+        is(
+          settingControl,
+          null,
+          "The setting control under test should not exist yet."
+        );
+
+        // Add setting that is not initially controlled by an extension,
+        // but is configured so that it can be controlled.
+        Preferences.addSetting({
+          id: SETTING_ID,
+          pref: PREF_ID,
+          controllingExtensionInfo: {
+            storeId: STORE_ID,
+            l10nId: TEST_FLUENT_ID,
+          },
+        });
+
+        // Create itemConfig for expected setting-control element
+        let itemConfig = {
+          l10nId: "test-fluent-id",
+          id: SETTING_ID,
+        };
+
+        // Wait for setting-control element to be rendered
+        let setting = Preferences.getSetting(SETTING_ID);
+        let control = await renderTemplate(itemConfig, setting);
+        ok(await control.updateComplete, "No pending updates");
+
+        // Assert checkbox control is created and NOT disabled due to
+        // no extension controlling the pref.
+
+        is(
+          control.controlEl.localName,
+          "moz-checkbox",
+          "The control rendered the default checkbox"
+        );
+        is(
+          control.controlEl.disabled,
+          false,
+          "The control should not disabled since it is not controlled by an extension"
+        );
+
+        // Assert that there are no moz-message-bar elements rendered since
+        // the setting is not controlled by an extension
+        let messageBars = control.querySelectorAll("moz-message-bar");
+
+        ok(
+          !messageBars.length,
+          "There should be no rendered message bar elements"
+        );
+
+        let extension = ExtensionTestUtils.loadExtension({
+          manifest: {
+            browser_specific_settings: { gecko: { id: ADDON_ID } },
+            name: ADDON_NAME,
+            permissions: ["contextualIdentities", "cookies"],
+          },
+          // We need to be able to find the extension using AddonManager.
+          useAddonManager: "temporary",
+        });
+
+        let settingChanged = waitForSettingChange(setting);
+        await extension.startup();
+        await settingChanged;
+        await control.updateComplete;
+
+        is(
+          control.controlEl.disabled,
+          true,
+          "Control is now disabled due to extension"
+        );
+
+        let messageBar = control.querySelector("moz-message-bar");
+        ok(messageBar, "Message bar was rendered");
+
+        settingChanged = waitForSettingChange(setting);
+        await extension.unload();
+        await settingChanged;
+        await control.updateComplete;
+
+        is(control.controlEl.disabled, false, "Control is enabled again");
+        messageBar = control.querySelector("moz-message-bar");
+        ok(!messageBar, "Message bar was removed");
+
+        control.remove();
+      });
+
+      add_task(async function test_addons_link_in_message_bar() {
+        // Setup pre-test items like extension, AddonManager, ExtensionSettingStore
+        const SETTING_ID = "extension-controlled-setting";
+        const ADDON_ID = "ext-controlled@mochi.test";
+        const ADDON_NAME = "Ext Controlled";
+        const STORE_ID = "privacy.containers";
+        const TEST_FLUENT_ID = "test-fluent-id";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF_ID, false]],
+        });
+        let extension = ExtensionTestUtils.loadExtension({
+          manifest: {
+            browser_specific_settings: { gecko: { id: ADDON_ID } },
+            name: ADDON_NAME,
+            permissions: ["contextualIdentities", "cookies"],
+          },
+          // We need to be able to find the extension using AddonManager.
+          useAddonManager: "temporary",
+        });
+        await extension.startup();
+
+        await ExtensionSettingsStore.initialize();
+
+        // Assert there is no markup that is generated by pre-test setup since we
+        // don't have a setting that is being controlled by the STORE_ID
+
+        let settingControl = document.getElementById(SETTING_ID);
+        is(
+          settingControl,
+          null,
+          "The setting control under test should not exist yet."
+        );
+
+        // Add setting that is being controlled by our test extension
+        Preferences.addSetting({
+          id: SETTING_ID,
+          pref: PREF_ID,
+          controllingExtensionInfo: {
+            storeId: STORE_ID,
+            l10nId: TEST_FLUENT_ID,
+          },
+        });
+
+        // Create itemConfig for expected setting-control element
+        let itemConfig = {
+          l10nId: "test-fluent-id",
+          id: SETTING_ID,
+        };
+
+        // Wait for setting-control element to be rendered
+        let setting = Preferences.getSetting(SETTING_ID);
+        let control = await renderTemplate(itemConfig, setting);
+        let messageBar = control.querySelector("moz-message-bar");
+        let disableExtensionButton = messageBar.querySelector(
+          "moz-button[slot='actions']"
+        );
+
+        await disableExtensionByMouse(disableExtensionButton);
+
+        await TestUtils.waitForCondition(
+          () => !getExtensionControlledMessageBar(control),
+          "Wait for the extension controlled message bar to be removed after disabling the only controlling extension"
+        );
+
+        await TestUtils.waitForCondition(
+          () => getReenableExtensionMessageBar(control),
+          "Wait for the re-enable extension message bar to be rendered"
+        );
+        let enableExtensionMessageBar = getReenableExtensionMessageBar(control);
+        ok(
+          enableExtensionMessageBar,
+          "there should be a message bar for re-enabling extensions"
+        );
+        let addonsLink = enableExtensionMessageBar.querySelector("[slot] a");
+
+        is(
+          enableExtensionMessageBar
+            .querySelector("[slot]")
+            .getAttribute("data-l10n-id"),
+          "extension-controlled-enable-2",
+          "The re-enable extension message bar should have a slot with the correct data-l10n-id"
+        );
+
+        is(
+          addonsLink.getAttribute("data-l10n-name"),
+          "addons-link",
+          "The slot within the re-enable extension bar should have the correct data-l10n-name"
+        );
+
+        let gBrowser = BrowserWindowTracker.getTopWindow().top.gBrowser;
+        let addonsTabPromise = BrowserTestUtils.waitForNewTab(
+          gBrowser,
+          "about:addons"
+        );
+        await synthesizeMouseAtCenter(addonsLink, {});
+
+        let tab = await addonsTabPromise;
+        is(
+          tab.linkedBrowser.currentURI.spec,
+          "about:addons",
+          "addons link correctly navigates to about:addons"
+        );
+
+        BrowserTestUtils.removeTab(tab);
+        enableExtensionMessageBar = getReenableExtensionMessageBar(control);
+        addonsLink = enableExtensionMessageBar.querySelector("[slot] a");
+
+        ok(
+          enableExtensionMessageBar,
+          "there should still be a message bar for re-enabling extensions after navigating back to about:preferences"
+        );
+        is(
+          enableExtensionMessageBar
+            .querySelector("[slot]")
+            .getAttribute("data-l10n-id"),
+          "extension-controlled-enable-2",
+          "The re-enable extension message bar should have a slot with the correct data-l10n-id after navigating back to about:preferences"
+        );
+
+        is(
+          addonsLink.getAttribute("data-l10n-name"),
+          "addons-link",
+          "The slot within the re-enable extension bar should have the correct data-l10n-name after navigating back to about:preferences"
+        );
+
+        // Unload the test extension and remove the setting control
+        await extension.unload();
+        control.remove();
+      });
+    </script>
+  </head>
+
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

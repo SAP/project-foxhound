@@ -5,11 +5,6 @@
 
 #include "ImageConversion.h"
 
-#include "skia/include/core/SkBitmap.h"
-#include "skia/include/core/SkColorSpace.h"
-#include "skia/include/core/SkImage.h"
-#include "skia/include/core/SkImageInfo.h"
-
 #include "ImageContainer.h"
 #include "YCbCrUtils.h"
 #include "libyuv/convert.h"
@@ -17,12 +12,15 @@
 #include "libyuv/scale_argb.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Result.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "nsThreadUtils.h"
+#include "skia/include/core/SkBitmap.h"
+#include "skia/include/core/SkColorSpace.h"
+#include "skia/include/core/SkImage.h"
+#include "skia/include/core/SkImageInfo.h"
 
 using mozilla::ImageFormat;
 using mozilla::dom::ImageBitmapFormat;

@@ -3,26 +3,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsICanvasRenderingContextInternal_h___
-#define nsICanvasRenderingContextInternal_h___
+#ifndef nsICanvasRenderingContextInternal_h_
+#define nsICanvasRenderingContextInternal_h_
 
 #include "gfxRect.h"
-#include "mozilla/gfx/2D.h"
-#include "nsISupports.h"
-#include "nsIInputStream.h"
-#include "nsIDocShell.h"
-#include "nsRefreshObservers.h"
-#include "nsRFPService.h"
-#include "mozilla/dom/HTMLCanvasElement.h"
-#include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StateWatching.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/dom/OffscreenCanvas.h"
+#include "mozilla/gfx/2D.h"
 #include "mozilla/layers/LayersSurfaces.h"
+#include "nsIDocShell.h"
+#include "nsIInputStream.h"
+#include "nsISupports.h"
+#include "nsRefreshObservers.h"
 
 #define NS_ICANVASRENDERINGCONTEXTINTERNAL_IID \
   {0xb84f2fed, 0x9d4b, 0x430b, {0xbd, 0xfb, 0x85, 0x57, 0x8a, 0xc2, 0xb4, 0x4b}}
@@ -113,6 +112,7 @@ class nsICanvasRenderingContextInternal : public nsISupports,
 
   // Creates an image buffer. Returns null on failure.
   virtual mozilla::UniquePtr<uint8_t[]> GetImageBuffer(
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
       int32_t* out_format, mozilla::gfx::IntSize* out_imageSize) = 0;
 
   // Gives you a stream containing the image represented by this context.
@@ -121,9 +121,10 @@ class nsICanvasRenderingContextInternal : public nsISupports,
   // If the image format does not support transparency or includeTransparency
   // is false, alpha will be discarded and the result will be the image
   // composited on black.
-  NS_IMETHOD GetInputStream(const char* mimeType,
-                            const nsAString& encoderOptions,
-                            nsIInputStream** stream) = 0;
+  NS_IMETHOD GetInputStream(
+      const char* mimeType, const nsAString& encoderOptions,
+      mozilla::CanvasUtils::ImageExtraction extractionBehavior,
+      const nsACString& randomizationKey, nsIInputStream** stream) = 0;
 
   // This gets an Azure SourceSurface for the canvas, this will be a snapshot
   // of the canvas at the time it was called.
@@ -230,10 +231,13 @@ class nsICanvasRenderingContextInternal : public nsISupports,
   bool DispatchEvent(const nsAString& eventName, mozilla::CanBubble aCanBubble,
                      mozilla::Cancelable aIsCancelable) const;
 
+  void RecordCanvasUsage(mozilla::CanvasExtractionAPI aAPI,
+                         mozilla::CSSIntSize size) const;
+
  protected:
   RefPtr<mozilla::dom::HTMLCanvasElement> mCanvasElement;
   RefPtr<mozilla::dom::OffscreenCanvas> mOffscreenCanvas;
   RefPtr<nsRefreshDriver> mRefreshDriver;
 };
 
-#endif /* nsICanvasRenderingContextInternal_h___ */
+#endif /* nsICanvasRenderingContextInternal_h_ */

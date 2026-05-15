@@ -157,7 +157,7 @@ add_task(async function test_logins_store_missing_or_corrupt_with_backup() {
 
   TelemetryTestUtils.assertEvents(
     [
-      ["jsonfile", "load", "logins", ""],
+      ["jsonfile", "load", "logins", "error_syntaxerror"],
       ["jsonfile", "load", "logins", "invalid_json"],
       ["jsonfile", "load", "logins", "used_backup"],
     ],

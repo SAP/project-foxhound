@@ -17,38 +17,39 @@ restricted list and both checks have to pass.
 diff --git a/sandbox/win/src/restricted_token_utils.cc b/sandbox/win/src/restricted_token_utils.cc
 --- a/sandbox/win/src/restricted_token_utils.cc
 +++ b/sandbox/win/src/restricted_token_utils.cc
-@@ -157,30 +157,32 @@ DWORD CreateRestrictedToken(HANDLE effec
+@@ -128,32 +128,34 @@ DWORD CreateRestrictedToken(HANDLE effec
+         // created by other processes.
          restricted_token.AddRestrictingSidLogonSession();
        } else {
          restricted_token.AddUserSidForDenyOnly();
        }
        break;
-     }
-     case USER_RESTRICTED: {
-       privilege_exceptions.push_back(SE_CHANGE_NOTIFY_NAME);
+     case USER_RESTRICTED:
 -      restricted_token.AddUserSidForDenyOnly();
        if (use_restricting_sids) {
-         restricted_token.AddRestrictingSid(WinRestrictedCodeSid);
-         if (unique_restricted_sid)
-           restricted_token.AddRestrictingSid(Sid(unique_restricted_sid));
+         restricted_token.AddRestrictingSid(base::win::WellKnownSid::kRestricted);
+         if (unique_restricted_sid) {
+           restricted_token.AddRestrictingSid(*unique_restricted_sid);
+         }
 +      } else {
 +        restricted_token.AddUserSidForDenyOnly();
        }
        break;
-     }
-     case USER_LOCKDOWN: {
+     case USER_LOCKDOWN:
+       remove_traverse_privilege = true;
 -      restricted_token.AddUserSidForDenyOnly();
        if (use_restricting_sids) {
-         restricted_token.AddRestrictingSid(WinNullSid);
-         if (unique_restricted_sid)
-           restricted_token.AddRestrictingSid(Sid(unique_restricted_sid));
+         restricted_token.AddRestrictingSid(base::win::WellKnownSid::kNull);
+         if (unique_restricted_sid) {
+           restricted_token.AddRestrictingSid(*unique_restricted_sid);
+         }
 +      } else {
 +        restricted_token.AddUserSidForDenyOnly();
        }
        break;
-     }
-     default: { return ERROR_BAD_ARGUMENTS; }
+     case USER_LAST:
+       return absl::nullopt;
    }
  
-   DWORD err_code = ERROR_SUCCESS;
    if (deny_sids) {
+     restricted_token.AddAllSidsForDenyOnly(sid_exceptions);

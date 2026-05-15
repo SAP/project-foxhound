@@ -8,7 +8,6 @@
 
 #include "FileSystemEntryMetadataArray.h"
 #include "fs/FileSystemConstants.h"
-#include "mozilla/ResultVariant.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/File.h"

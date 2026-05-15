@@ -91,10 +91,13 @@ interface WindowGlobalParent : WindowContext {
   // embedder is in a different process.
   readonly attribute boolean isProcessRoot;
 
-  // Is the document loaded in this WindowGlobalParent the initial document
-  // implicitly created while "creating a new browsing context".
-  // https://html.spec.whatwg.org/multipage/browsers.html#creating-a-new-browsing-context
+  // True if the document loaded in this WindowGlobalParent has the
+  // isInitialDocument flag set.
   readonly attribute boolean isInitialDocument;
+
+  // True if the document loaded in this WindowGlobalParent has the
+  // isUncommittedInitialDocument flag set.
+  readonly attribute boolean isUncommittedInitialDocument;
 
   readonly attribute FrameLoader? rootFrameLoader; // Embedded (browser) only
 

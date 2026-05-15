@@ -4,12 +4,12 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OSXRunLoopSingleton.h"
-#include <mozilla/StaticMutex.h>
 
 #include <AudioUnit/AudioUnit.h>
 #include <CoreAudio/AudioHardware.h>
 #include <CoreAudio/HostTime.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <mozilla/StaticMutex.h>
 
 static bool gRunLoopSet = false;
 static mozilla::StaticMutex gMutex MOZ_UNANNOTATED;

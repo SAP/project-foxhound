@@ -6,7 +6,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
+  UrlbarProviderOpenTabs:
+    "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
 });
 
 export function getOpenTabs() {
@@ -17,6 +18,9 @@ export function getOpenTabs() {
 
 export function switchToOpenTab(url) {
   // We only want public tabs, so skip private top windows
-  let win = lazy.BrowserWindowTracker.getTopWindow({ private: false });
+  let win = lazy.BrowserWindowTracker.getTopWindow({
+    allowFromInactiveWorkspace: true,
+    private: false,
+  });
   win?.switchToTabHavingURI(url);
 }

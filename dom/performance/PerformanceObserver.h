@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_PerformanceObserver_h__
-#define mozilla_dom_PerformanceObserver_h__
+#ifndef mozilla_dom_PerformanceObserver_h_
+#define mozilla_dom_PerformanceObserver_h_
 
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/PerformanceObserverBinding.h"
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
-#include "mozilla/dom/PerformanceObserverBinding.h"
-#include "mozilla/RefPtr.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"

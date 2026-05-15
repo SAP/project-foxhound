@@ -11,13 +11,14 @@
  */
 add_task(
   async function test_select_translations_panel_lexical_shortlist_starting_false() {
-    const { cleanup, runInPage, resolveDownloads } = await loadTestPage({
+    const { cleanup, runInPage } = await loadTestPage({
       page: SELECT_TEST_PAGE_URL,
       languagePairs: LANGUAGE_PAIRS,
       prefs: [
         ["browser.translations.select.enable", true],
         ["browser.translations.useLexicalShortlist", false],
       ],
+      autoDownloadFromRemoteSettings: true,
     });
 
     await SelectTranslationsTestUtils.openPanel(runInPage, {
@@ -25,7 +26,6 @@ add_task(
       openAtFrenchSentence: true,
       expectedFromLanguage: "fr",
       expectedToLanguage: "en",
-      downloadHandler: resolveDownloads,
       onOpenPanel: SelectTranslationsTestUtils.assertPanelViewTranslated,
     });
 
@@ -43,7 +43,6 @@ add_task(
       openAtFrenchSentence: true,
       expectedFromLanguage: "fr",
       expectedToLanguage: "en",
-      downloadHandler: resolveDownloads,
       onOpenPanel: SelectTranslationsTestUtils.assertPanelViewTranslated,
     });
 
@@ -61,13 +60,14 @@ add_task(
  */
 add_task(
   async function test_select_translations_panel_lexical_shortlist_starting_true() {
-    const { cleanup, runInPage, resolveDownloads } = await loadTestPage({
+    const { cleanup, runInPage } = await loadTestPage({
       page: SELECT_TEST_PAGE_URL,
       languagePairs: LANGUAGE_PAIRS,
       prefs: [
         ["browser.translations.select.enable", true],
         ["browser.translations.useLexicalShortlist", true],
       ],
+      autoDownloadFromRemoteSettings: true,
     });
 
     await SelectTranslationsTestUtils.openPanel(runInPage, {
@@ -75,7 +75,6 @@ add_task(
       openAtFrenchSentence: true,
       expectedFromLanguage: "fr",
       expectedToLanguage: "en",
-      downloadHandler: resolveDownloads,
       onOpenPanel: SelectTranslationsTestUtils.assertPanelViewTranslated,
     });
 
@@ -93,7 +92,6 @@ add_task(
       openAtFrenchSentence: true,
       expectedFromLanguage: "fr",
       expectedToLanguage: "en",
-      downloadHandler: resolveDownloads,
       onOpenPanel: SelectTranslationsTestUtils.assertPanelViewTranslated,
     });
 

@@ -32,6 +32,8 @@ const float EPSILON = 0.0001f;
  */
 bool FuzzyEqualsCoordinate(CSSCoord aValue1, CSSCoord aValue2);
 
+bool FuzzyEqualsPoint(const CSSPoint& aValue1, const CSSPoint& aValue2);
+
 struct FrameMetrics;
 class AsyncPanZoomController;
 

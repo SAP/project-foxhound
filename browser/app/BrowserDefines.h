@@ -7,7 +7,6 @@
 #ifndef mozilla_BrowserDefines_h
 #define mozilla_BrowserDefines_h
 
-#include <cstddef>
 #include "mozilla/CmdLineAndEnvUtils.h"
 
 namespace mozilla {

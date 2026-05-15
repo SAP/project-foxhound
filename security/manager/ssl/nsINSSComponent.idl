@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsISerialEventTarget.idl"
 #include "nsISupports.idl"
 
 %{C++
@@ -104,4 +105,11 @@ interface nsINSSComponent : nsISupports {
    */
   [implicit_jscontext]
   Promise asyncClearSSLExternalAndInternalSessionCache();
+
+  /**
+   * Provides a common background serial event target on which to do any
+   * operations that modify the NSS module DB.
+   * Only available from the main thread.
+   */
+  readonly attribute nsISerialEventTarget nssTaskQueue;
 };

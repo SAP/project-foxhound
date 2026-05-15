@@ -9,7 +9,6 @@
 
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/dom/GamepadMessageUtils.h"
 #include "mozilla/ParamTraits_IsEnumCase.h"

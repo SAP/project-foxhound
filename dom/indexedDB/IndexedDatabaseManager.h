@@ -4,19 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_indexeddatabasemanager_h__
-#define mozilla_dom_indexeddatabasemanager_h__
+#ifndef mozilla_dom_indexeddatabasemanager_h_
+#define mozilla_dom_indexeddatabasemanager_h_
 
-#include "js/TypeDecls.h"
 #include "MainThreadUtils.h"
+#include "SafeRefPtr.h"
+#include "js/TypeDecls.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
 #include "nsIIndexedDatabaseManager.h"
-#include "SafeRefPtr.h"
 
 namespace mozilla {
 
@@ -182,4 +182,4 @@ class IndexedDatabaseManager final : public nsIIndexedDatabaseManager {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_indexeddatabasemanager_h__
+#endif  // mozilla_dom_indexeddatabasemanager_h_

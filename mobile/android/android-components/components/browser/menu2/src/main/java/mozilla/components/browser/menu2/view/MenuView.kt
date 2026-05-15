@@ -5,8 +5,6 @@
 package mozilla.components.browser.menu2.view
 
 import android.content.Context
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
@@ -69,14 +67,7 @@ class MenuView @JvmOverloads constructor(
      * Displays either the start or the end of the list.
      */
     fun setVisibleSide(side: Side) {
-        if (SDK_INT >= Build.VERSION_CODES.N) {
-            layoutManager.stackFromEnd = side == Side.END
-        } else {
-            // In devices with Android 6 and below stackFromEnd is not working properly,
-            // as a result, we have to provided a backwards support.
-            // See: https://github.com/mozilla-mobile/android-components/issues/3211
-            if (side == Side.END) scrollOnceToTheBottom(recyclerView)
-        }
+        layoutManager.stackFromEnd = side == Side.END
     }
 
     /**

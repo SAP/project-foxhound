@@ -1,7 +1,7 @@
 diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
 --- a/expat/lib/xmlparse.c
 +++ b/expat/lib/xmlparse.c
-@@ -2328,6 +2328,10 @@ XML_ResumeParser(XML_Parser parser) {
+@@ -2536,6 +2536,10 @@ XML_ParseBuffer(XML_Parser parser, int len, int isFinal) {
    XmlUpdatePosition(parser->m_encoding, parser->m_positionPtr,
                      parser->m_bufferPtr, &parser->m_position);
    parser->m_positionPtr = parser->m_bufferPtr;

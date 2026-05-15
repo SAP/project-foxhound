@@ -1,0 +1,21 @@
+<html>
+  <head>
+    <script>
+      window.addEventListener("load", async () => {
+        const buffer = new ArrayBuffer(1984769183);
+        const audioData = new AudioData({
+          format: "u8-planar",
+          sampleRate: 48000,
+          numberOfFrames: 496192295,
+          numberOfChannels: 4,
+          timestamp: 2356749,
+          data: buffer,
+        });
+        audioData.copyTo(buffer, {
+          planeIndex: 0,
+          format: "f32",
+        });
+      });
+    </script>
+  </head>
+</html>

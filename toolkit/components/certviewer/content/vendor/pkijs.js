@@ -35,7 +35,7 @@
 /*!
  * MIT License
  * 
- * Copyright (c) 2017-2022 Peculiar Ventures, LLC
+ * Copyright (c) 2017-2024 Peculiar Ventures, LLC
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -69,7 +69,12 @@ class BufferSourceConverter {
         if (data.byteLength === data.buffer.byteLength) {
             return data.buffer;
         }
-        return this.toUint8Array(data).slice().buffer;
+        if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) {
+            return data.buffer;
+        }
+        return this.toUint8Array(data.buffer)
+            .slice(data.byteOffset, data.byteOffset + data.byteLength)
+            .buffer;
     }
     static toUint8Array(data) {
         return this.toView(data, Uint8Array);
@@ -108,30 +113,43 @@ class BufferSourceConverter {
         return true;
     }
     static concat(...args) {
-        if (Array.isArray(args[0])) {
-            const buffers = args[0];
-            let size = 0;
-            for (const buffer of buffers) {
-                size += buffer.byteLength;
-            }
-            const res = new Uint8Array(size);
-            let offset = 0;
-            for (const buffer of buffers) {
-                const view = this.toUint8Array(buffer);
-                res.set(view, offset);
-                offset += view.length;
-            }
-            if (args[1]) {
-                return this.toView(res, args[1]);
-            }
-            return res.buffer;
+        let buffers;
+        if (Array.isArray(args[0]) && !(args[1] instanceof Function)) {
+            buffers = args[0];
+        }
+        else if (Array.isArray(args[0]) && args[1] instanceof Function) {
+            buffers = args[0];
         }
         else {
-            return this.concat(args);
+            if (args[args.length - 1] instanceof Function) {
+                buffers = args.slice(0, args.length - 1);
+            }
+            else {
+                buffers = args;
+            }
         }
+        let size = 0;
+        for (const buffer of buffers) {
+            size += buffer.byteLength;
+        }
+        const res = new Uint8Array(size);
+        let offset = 0;
+        for (const buffer of buffers) {
+            const view = this.toUint8Array(buffer);
+            res.set(view, offset);
+            offset += view.length;
+        }
+        if (args[args.length - 1] instanceof Function) {
+            return this.toView(res, args[args.length - 1]);
+        }
+        return res.buffer;
     }
 }
 
+const STRING_TYPE = "string";
+const HEX_REGEX = /^[0-9a-f\s]+$/i;
+const BASE64_REGEX = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64URL_REGEX = /^[a-zA-Z0-9-_]+$/;
 class Utf8Converter {
     static fromString(text) {
         const s = unescape(encodeURIComponent(text));
@@ -173,16 +191,16 @@ class Utf16Converter {
 }
 class Convert {
     static isHex(data) {
-        return typeof data === "string"
-            && /^[a-z0-9]+$/i.test(data);
+        return typeof data === STRING_TYPE
+            && HEX_REGEX.test(data);
     }
     static isBase64(data) {
-        return typeof data === "string"
-            && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data);
+        return typeof data === STRING_TYPE
+            && BASE64_REGEX.test(data);
     }
     static isBase64Url(data) {
-        return typeof data === "string"
-            && /^[a-zA-Z0-9-_]+$/i.test(data);
+        return typeof data === STRING_TYPE
+            && BASE64URL_REGEX.test(data);
     }
     static ToString(buffer, enc = "utf8") {
         const buf = BufferSourceConverter.toUint8Array(buffer);
@@ -318,14 +336,16 @@ class Convert {
     }
     static ToHex(buffer) {
         const buf = BufferSourceConverter.toUint8Array(buffer);
-        const splitter = "";
-        const res = [];
+        let result = "";
         const len = buf.length;
         for (let i = 0; i < len; i++) {
-            const char = buf[i].toString(16).padStart(2, "0");
-            res.push(char);
+            const byte = buf[i];
+            if (byte < 16) {
+                result += "0";
+            }
+            result += byte.toString(16);
         }
-        return res.join(splitter);
+        return result;
     }
     static FromHex(hexString) {
         let formatted = this.formatString(hexString);
@@ -369,6 +389,7 @@ Convert.DEFAULT_UTF8_ENCODING = "utf8";
 /*!
  Copyright (c) Peculiar Ventures, LLC
 */
+
 function getParametersValue(parameters, name, defaultValue) {
     var _a;
     if ((parameters instanceof Object) === false) {
@@ -711,6 +732,7 @@ function clearProps(object, propsArray) {
  * 
  */
 
+
 function assertBigInt() {
     if (typeof BigInt === "undefined") {
         throw new Error("BigInt is not defined. Your environment doesn't implement BigInt.");
@@ -789,18 +811,18 @@ const BIT_STRING_NAME = "BIT STRING";
 function HexBlock(BaseClass) {
     var _a;
     return _a = class Some extends BaseClass {
-            constructor(...args) {
-                var _a;
-                super(...args);
-                const params = args[0] || {};
-                this.isHexOnly = (_a = params.isHexOnly) !== null && _a !== void 0 ? _a : false;
-                this.valueHexView = params.valueHex ? BufferSourceConverter.toUint8Array(params.valueHex) : EMPTY_VIEW;
-            }
             get valueHex() {
                 return this.valueHexView.slice().buffer;
             }
             set valueHex(value) {
                 this.valueHexView = new Uint8Array(value);
+            }
+            constructor(...args) {
+                var _b;
+                super(...args);
+                const params = args[0] || {};
+                this.isHexOnly = (_b = params.isHexOnly) !== null && _b !== void 0 ? _b : false;
+                this.valueHexView = params.valueHex ? BufferSourceConverter.toUint8Array(params.valueHex) : EMPTY_VIEW;
             }
             fromBER(inputBuffer, inputOffset, inputLength) {
                 const view = inputBuffer instanceof ArrayBuffer ? new Uint8Array(inputBuffer) : inputBuffer;
@@ -841,12 +863,6 @@ function HexBlock(BaseClass) {
 }
 
 class LocalBaseBlock {
-    constructor({ blockLength = 0, error = EMPTY_STRING$1, warnings = [], valueBeforeDecode = EMPTY_VIEW, } = {}) {
-        this.blockLength = blockLength;
-        this.error = error;
-        this.warnings = warnings;
-        this.valueBeforeDecodeView = BufferSourceConverter.toUint8Array(valueBeforeDecode);
-    }
     static blockName() {
         return this.NAME;
     }
@@ -855,6 +871,12 @@ class LocalBaseBlock {
     }
     set valueBeforeDecode(value) {
         this.valueBeforeDecodeView = new Uint8Array(value);
+    }
+    constructor({ blockLength = 0, error = EMPTY_STRING$1, warnings = [], valueBeforeDecode = EMPTY_VIEW, } = {}) {
+        this.blockLength = blockLength;
+        this.error = error;
+        this.warnings = warnings;
+        this.valueBeforeDecodeView = BufferSourceConverter.toUint8Array(valueBeforeDecode);
     }
     toJSON() {
         return {
@@ -869,22 +891,24 @@ class LocalBaseBlock {
 LocalBaseBlock.NAME = "baseBlock";
 
 class ValueBlock extends LocalBaseBlock {
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(_inputBuffer, _inputOffset, _inputLength) {
         throw TypeError("User need to make a specific function in a class which extends 'ValueBlock'");
     }
-    toBER(sizeOnly, writer) {
+    toBER(_sizeOnly, _writer) {
         throw TypeError("User need to make a specific function in a class which extends 'ValueBlock'");
     }
 }
 ValueBlock.NAME = "valueBlock";
 
 class LocalIdentificationBlock extends HexBlock(LocalBaseBlock) {
-    constructor({ idBlock = {}, } = {}) {
+    constructor({ idBlock = {} } = {}) {
         var _a, _b, _c, _d;
         super();
         if (idBlock) {
             this.isHexOnly = (_a = idBlock.isHexOnly) !== null && _a !== void 0 ? _a : false;
-            this.valueHexView = idBlock.valueHex ? BufferSourceConverter.toUint8Array(idBlock.valueHex) : EMPTY_VIEW;
+            this.valueHexView = idBlock.valueHex
+                ? BufferSourceConverter.toUint8Array(idBlock.valueHex)
+                : EMPTY_VIEW;
             this.tagClass = (_b = idBlock.tagClass) !== null && _b !== void 0 ? _b : -1;
             this.tagNumber = (_c = idBlock.tagNumber) !== null && _c !== void 0 ? _c : -1;
             this.isConstructed = (_d = idBlock.isConstructed) !== null && _d !== void 0 ? _d : false;
@@ -1017,8 +1041,8 @@ class LocalIdentificationBlock extends HexBlock(LocalBaseBlock) {
                 this.warnings.push("Tag too long, represented as hex-coded");
             }
         }
-        if (((this.tagClass === 1)) &&
-            (this.isConstructed)) {
+        if (((this.tagClass === 1))
+            && (this.isConstructed)) {
             switch (this.tagNumber) {
                 case 1:
                 case 2:
@@ -1051,7 +1075,7 @@ class LocalIdentificationBlock extends HexBlock(LocalBaseBlock) {
 LocalIdentificationBlock.NAME = "identificationBlock";
 
 class LocalLengthBlock extends LocalBaseBlock {
-    constructor({ lenBlock = {}, } = {}) {
+    constructor({ lenBlock = {} } = {}) {
         var _a, _b, _c;
         super();
         this.isIndefiniteForm = (_a = lenBlock.isIndefiniteForm) !== null && _a !== void 0 ? _a : false;
@@ -1164,7 +1188,9 @@ class BaseBlock extends LocalBaseBlock {
         this.valueBlock = valueBlockType ? new valueBlockType(parameters) : new ValueBlock(parameters);
     }
     fromBER(inputBuffer, inputOffset, inputLength) {
-        const resultOffset = this.valueBlock.fromBER(inputBuffer, inputOffset, (this.lenBlock.isIndefiniteForm) ? inputLength : this.lenBlock.length);
+        const resultOffset = this.valueBlock.fromBER(inputBuffer, inputOffset, (this.lenBlock.isIndefiniteForm)
+            ? inputLength
+            : this.lenBlock.length);
         if (resultOffset === -1) {
             this.error = this.valueBlock.error;
             return resultOffset;
@@ -1221,7 +1247,9 @@ class BaseBlock extends LocalBaseBlock {
         return Convert.ToHex(this.toBER());
     }
     onAsciiEncoding() {
-        return `${this.constructor.NAME} : ${Convert.ToHex(this.valueBlock.valueBeforeDecodeView)}`;
+        const name = this.constructor.NAME;
+        const value = Convert.ToHex(this.valueBlock.valueBeforeDecodeView);
+        return `${name} : ${value}`;
     }
     isEqual(other) {
         if (this === other) {
@@ -1237,6 +1265,7 @@ class BaseBlock extends LocalBaseBlock {
 }
 BaseBlock.NAME = "BaseBlock";
 function prepareIndefiniteForm(baseBlock) {
+    var _a;
     if (baseBlock instanceof typeStore.Constructed) {
         for (const value of baseBlock.valueBlock.value) {
             if (prepareIndefiniteForm(value)) {
@@ -1244,24 +1273,26 @@ function prepareIndefiniteForm(baseBlock) {
             }
         }
     }
-    return !!baseBlock.lenBlock.isIndefiniteForm;
+    return !!((_a = baseBlock.lenBlock) === null || _a === void 0 ? void 0 : _a.isIndefiniteForm);
 }
 
 class BaseStringBlock extends BaseBlock {
-    constructor({ value = EMPTY_STRING$1, ...parameters } = {}, stringValueBlockType) {
-        super(parameters, stringValueBlockType);
-        if (value) {
-            this.fromString(value);
-        }
-    }
     getValue() {
         return this.valueBlock.value;
     }
     setValue(value) {
         this.valueBlock.value = value;
     }
+    constructor({ value = EMPTY_STRING$1, ...parameters } = {}, stringValueBlockType) {
+        super(parameters, stringValueBlockType);
+        if (value) {
+            this.fromString(value);
+        }
+    }
     fromBER(inputBuffer, inputOffset, inputLength) {
-        const resultOffset = this.valueBlock.fromBER(inputBuffer, inputOffset, (this.lenBlock.isIndefiniteForm) ? inputLength : this.lenBlock.length);
+        const resultOffset = this.valueBlock.fromBER(inputBuffer, inputOffset, (this.lenBlock.isIndefiniteForm)
+            ? inputLength
+            : this.lenBlock.length);
         if (resultOffset === -1) {
             this.error = this.valueBlock.error;
             return resultOffset;
@@ -1321,7 +1352,7 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
         returnObject.error = baseBlock.error;
         return {
             offset: -1,
-            result: returnObject
+            result: returnObject,
         };
     }
     const intBuffer = inputBuffer.subarray(inputOffset, inputOffset + inputLength);
@@ -1329,7 +1360,7 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
         returnObject.error = "Zero buffer length";
         return {
             offset: -1,
-            result: returnObject
+            result: returnObject,
         };
     }
     let resultOffset = returnObject.idBlock.fromBER(inputBuffer, inputOffset, inputLength);
@@ -1340,7 +1371,7 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
         returnObject.error = returnObject.idBlock.error;
         return {
             offset: -1,
-            result: returnObject
+            result: returnObject,
         };
     }
     inputOffset = resultOffset;
@@ -1353,38 +1384,38 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
         returnObject.error = returnObject.lenBlock.error;
         return {
             offset: -1,
-            result: returnObject
+            result: returnObject,
         };
     }
     inputOffset = resultOffset;
     inputLength -= returnObject.lenBlock.blockLength;
-    if (!returnObject.idBlock.isConstructed &&
-        returnObject.lenBlock.isIndefiniteForm) {
+    if (!returnObject.idBlock.isConstructed
+        && returnObject.lenBlock.isIndefiniteForm) {
         returnObject.error = "Indefinite length form used for primitive encoding form";
         return {
             offset: -1,
-            result: returnObject
+            result: returnObject,
         };
     }
     let newASN1Type = BaseBlock;
     switch (returnObject.idBlock.tagClass) {
         case 1:
-            if ((returnObject.idBlock.tagNumber >= 37) &&
-                (returnObject.idBlock.isHexOnly === false)) {
+            if ((returnObject.idBlock.tagNumber >= 37)
+                && (returnObject.idBlock.isHexOnly === false)) {
                 returnObject.error = "UNIVERSAL 37 and upper tags are reserved by ASN.1 standard";
                 return {
                     offset: -1,
-                    result: returnObject
+                    result: returnObject,
                 };
             }
             switch (returnObject.idBlock.tagNumber) {
                 case 0:
-                    if ((returnObject.idBlock.isConstructed) &&
-                        (returnObject.lenBlock.length > 0)) {
+                    if ((returnObject.idBlock.isConstructed)
+                        && (returnObject.lenBlock.length > 0)) {
                         returnObject.error = "Type [UNIVERSAL 0] is reserved";
                         return {
                             offset: -1,
-                            result: returnObject
+                            result: returnObject,
                         };
                     }
                     newASN1Type = typeStore.EndOfContent;
@@ -1423,7 +1454,7 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
                     returnObject.error = "[UNIVERSAL 15] is reserved by ASN.1 standard";
                     return {
                         offset: -1,
-                        result: returnObject
+                        result: returnObject,
                     };
                 case 16:
                     newASN1Type = typeStore.Sequence;
@@ -1507,7 +1538,7 @@ function localFromBER(inputBuffer, inputOffset = 0, inputLength = inputBuffer.le
     returnObject.valueBeforeDecodeView = inputBuffer.subarray(incomingOffset, incomingOffset + returnObject.blockLength);
     return {
         offset: resultOffset,
-        result: returnObject
+        result: returnObject,
     };
 }
 function fromBER(inputBuffer) {
@@ -1516,7 +1547,7 @@ function fromBER(inputBuffer) {
         result.error = "Input buffer has zero length";
         return {
             offset: -1,
-            result
+            result,
         };
     }
     return localFromBER(BufferSourceConverter.toUint8Array(inputBuffer).slice(), 0, inputBuffer.byteLength);
@@ -1618,7 +1649,7 @@ class Constructed extends BaseBlock {
     onAsciiEncoding() {
         const values = [];
         for (const value of this.valueBlock.value) {
-            values.push(value.toString("ascii").split("\n").map(o => `  ${o}`).join("\n"));
+            values.push(value.toString("ascii").split("\n").map((o) => `  ${o}`).join("\n"));
         }
         const blockName = this.idBlock.tagClass === 3
             ? `[${this.idBlock.tagNumber}]`
@@ -1635,10 +1666,10 @@ _a$v = Constructed;
 Constructed.NAME = "CONSTRUCTED";
 
 class LocalEndOfContentValueBlock extends ValueBlock {
-    fromBER(inputBuffer, inputOffset, inputLength) {
+    fromBER(inputBuffer, inputOffset, _inputLength) {
         return inputOffset;
     }
-    toBER(sizeOnly) {
+    toBER(_sizeOnly) {
         return EMPTY_BUFFER$1;
     }
 }
@@ -1702,6 +1733,17 @@ _a$t = Null;
 Null.NAME = "NULL";
 
 class LocalBooleanValueBlock extends HexBlock(ValueBlock) {
+    get value() {
+        for (const octet of this.valueHexView) {
+            if (octet > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    set value(value) {
+        this.valueHexView[0] = value ? 0xFF : 0x00;
+    }
     constructor({ value, ...parameters } = {}) {
         super(parameters);
         if (parameters.valueHex) {
@@ -1713,17 +1755,6 @@ class LocalBooleanValueBlock extends HexBlock(ValueBlock) {
         if (value) {
             this.value = value;
         }
-    }
-    get value() {
-        for (const octet of this.valueHexView) {
-            if (octet > 0) {
-                return true;
-            }
-        }
-        return false;
-    }
-    set value(value) {
-        this.valueHexView[0] = value ? 0xFF : 0x00;
     }
     fromBER(inputBuffer, inputOffset, inputLength) {
         const inputView = BufferSourceConverter.toUint8Array(inputBuffer);
@@ -1752,16 +1783,16 @@ LocalBooleanValueBlock.NAME = "BooleanValueBlock";
 
 var _a$s;
 class Boolean extends BaseBlock {
-    constructor(parameters = {}) {
-        super(parameters, LocalBooleanValueBlock);
-        this.idBlock.tagClass = 1;
-        this.idBlock.tagNumber = 1;
-    }
     getValue() {
         return this.valueBlock.value;
     }
     setValue(value) {
         this.valueBlock.value = value;
+    }
+    constructor(parameters = {}) {
+        super(parameters, LocalBooleanValueBlock);
+        this.idBlock.tagClass = 1;
+        this.idBlock.tagNumber = 1;
     }
     onAsciiEncoding() {
         return `${this.constructor.NAME} : ${this.getValue}`;
@@ -1864,7 +1895,7 @@ class OctetString extends BaseBlock {
                     }
                 }
             }
-            catch (e) {
+            catch {
             }
         }
         return super.fromBER(inputBuffer, inputOffset, inputLength);
@@ -1873,7 +1904,9 @@ class OctetString extends BaseBlock {
         if (this.valueBlock.isConstructed || (this.valueBlock.value && this.valueBlock.value.length)) {
             return Constructed.prototype.onAsciiEncoding.call(this);
         }
-        return `${this.constructor.NAME} : ${Convert.ToHex(this.valueBlock.valueHexView)}`;
+        const name = this.constructor.NAME;
+        const value = Convert.ToHex(this.valueBlock.valueHexView);
+        return `${name} : ${value}`;
     }
     getValue() {
         if (!this.idBlock.isConstructed) {
@@ -1881,7 +1914,7 @@ class OctetString extends BaseBlock {
         }
         const array = [];
         for (const content of this.valueBlock.value) {
-            if (content instanceof OctetString) {
+            if (content instanceof _a$r) {
                 array.push(content.valueBlock.valueHexView);
             }
         }
@@ -1953,7 +1986,7 @@ class LocalBitStringValueBlock extends HexBlock(LocalConstructedValueBlock) {
                     }
                 }
             }
-            catch (e) {
+            catch {
             }
         }
         this.valueHexView = intBuffer.subarray(1);
@@ -2020,7 +2053,9 @@ class BitString extends BaseBlock {
                 bits.push(byte.toString(2).padStart(8, "0"));
             }
             const bitsStr = bits.join("");
-            return `${this.constructor.NAME} : ${bitsStr.substring(0, bitsStr.length - this.valueBlock.unusedBits)}`;
+            const name = this.constructor.NAME;
+            const value = bitsStr.substring(0, bitsStr.length - this.valueBlock.unusedBits);
+            return `${name} : ${value}`;
         }
     }
 }
@@ -2119,16 +2154,6 @@ function viewSub(first, second) {
     return firstViewCopy.slice();
 }
 class LocalIntegerValueBlock extends HexBlock(ValueBlock) {
-    constructor({ value, ...parameters } = {}) {
-        super(parameters);
-        this._valueDec = 0;
-        if (parameters.valueHex) {
-            this.setValueHex();
-        }
-        if (value !== undefined) {
-            this.valueDec = value;
-        }
-    }
     setValueHex() {
         if (this.valueHexView.length >= 4) {
             this.warnings.push("Too big Integer for decoding, hex only");
@@ -2140,6 +2165,16 @@ class LocalIntegerValueBlock extends HexBlock(ValueBlock) {
             if (this.valueHexView.length > 0) {
                 this._valueDec = utilDecodeTC.call(this);
             }
+        }
+    }
+    constructor({ value, ...parameters } = {}) {
+        super(parameters);
+        this._valueDec = 0;
+        if (parameters.valueHex) {
+            this.setValueHex();
+        }
+        if (value !== undefined) {
+            this.valueDec = value;
         }
     }
     set valueDec(v) {
@@ -2289,18 +2324,16 @@ class Integer extends BaseBlock {
             }
             writer.write(view);
         }
-        const res = new Integer({
-            valueHex: writer.final(),
-        });
+        const res = new _a$o({ valueHex: writer.final() });
         return res;
     }
     convertToDER() {
-        const integer = new Integer({ valueHex: this.valueBlock.valueHexView });
+        const integer = new _a$o({ valueHex: this.valueBlock.valueHexView });
         integer.valueBlock.toDER();
         return integer;
     }
     convertFromDER() {
-        return new Integer({
+        return new _a$o({
             valueHex: this.valueBlock.valueHexView[0] === 0
                 ? this.valueBlock.valueHexView.subarray(1)
                 : this.valueBlock.valueHexView,
@@ -2574,16 +2607,16 @@ LocalObjectIdentifierValueBlock.NAME = "ObjectIdentifierValueBlock";
 
 var _a$m;
 class ObjectIdentifier extends BaseBlock {
-    constructor(parameters = {}) {
-        super(parameters, LocalObjectIdentifierValueBlock);
-        this.idBlock.tagClass = 1;
-        this.idBlock.tagNumber = 6;
-    }
     getValue() {
         return this.valueBlock.toString();
     }
     setValue(value) {
         this.valueBlock.fromString(value);
+    }
+    constructor(parameters = {}) {
+        super(parameters, LocalObjectIdentifierValueBlock);
+        this.idBlock.tagClass = 1;
+        this.idBlock.tagNumber = 6;
     }
     onAsciiEncoding() {
         return `${this.constructor.NAME} : ${this.valueBlock.toString() || "empty"}`;
@@ -2706,7 +2739,7 @@ class LocalRelativeObjectIdentifierValueBlock extends ValueBlock {
         }
         return resultOffset;
     }
-    toBER(sizeOnly, writer) {
+    toBER(sizeOnly, _writer) {
         const retBuffers = [];
         for (let i = 0; i < this.value.length; i++) {
             const valueBuf = this.value[i].toBER(sizeOnly);
@@ -2770,16 +2803,16 @@ LocalRelativeObjectIdentifierValueBlock.NAME = "RelativeObjectIdentifierValueBlo
 
 var _a$l;
 class RelativeObjectIdentifier extends BaseBlock {
-    constructor(parameters = {}) {
-        super(parameters, LocalRelativeObjectIdentifierValueBlock);
-        this.idBlock.tagClass = 1;
-        this.idBlock.tagNumber = 13;
-    }
     getValue() {
         return this.valueBlock.toString();
     }
     setValue(value) {
         this.valueBlock.fromString(value);
+    }
+    constructor(parameters = {}) {
+        super(parameters, LocalRelativeObjectIdentifierValueBlock);
+        this.idBlock.tagClass = 1;
+        this.idBlock.tagNumber = 13;
     }
     onAsciiEncoding() {
         return `${this.constructor.NAME} : ${this.valueBlock.toString() || "empty"}`;
@@ -3200,7 +3233,8 @@ class GeneralizedTime extends UTCTime {
         this.millisecond = inputDate.getUTCMilliseconds();
     }
     toDate() {
-        return (new Date(Date.UTC(this.year, this.month - 1, this.day, this.hour, this.minute, this.second, this.millisecond)));
+        const utcDate = Date.UTC(this.year, this.month - 1, this.day, this.hour, this.minute, this.second, this.millisecond);
+        return (new Date(utcDate));
     }
     fromString(inputString) {
         let isUTC = false;
@@ -3369,13 +3403,13 @@ _a$5 = GeneralizedTime;
 GeneralizedTime.NAME = "GeneralizedTime";
 
 var _a$4;
-class DATE$2 extends Utf8String {
+let DATE$2 = class DATE extends Utf8String {
     constructor(parameters = {}) {
         super(parameters);
         this.idBlock.tagClass = 1;
         this.idBlock.tagNumber = 31;
     }
-}
+};
 _a$4 = DATE$2;
 (() => {
     typeStore.DATE = _a$4;
@@ -3439,7 +3473,7 @@ _a$x = TIME;
 TIME.NAME = "TIME";
 
 class Any {
-    constructor({ name = EMPTY_STRING$1, optional = false, } = {}) {
+    constructor({ name = EMPTY_STRING$1, optional = false } = {}) {
         this.name = name;
         this.optional = optional;
     }
@@ -3461,42 +3495,40 @@ class Repeated extends Any {
 }
 
 class RawData {
-    constructor({ data = EMPTY_VIEW } = {}) {
-        this.dataView = BufferSourceConverter.toUint8Array(data);
-    }
     get data() {
         return this.dataView.slice().buffer;
     }
     set data(value) {
         this.dataView = BufferSourceConverter.toUint8Array(value);
     }
+    constructor({ data = EMPTY_VIEW } = {}) {
+        this.dataView = BufferSourceConverter.toUint8Array(data);
+    }
     fromBER(inputBuffer, inputOffset, inputLength) {
         const endLength = inputOffset + inputLength;
         this.dataView = BufferSourceConverter.toUint8Array(inputBuffer).subarray(inputOffset, endLength);
         return endLength;
     }
-    toBER(sizeOnly) {
+    toBER(_sizeOnly) {
         return this.dataView.slice().buffer;
     }
 }
 
 function compareSchema(root, inputData, inputSchema) {
     if (inputSchema instanceof Choice) {
-        for (let j = 0; j < inputSchema.value.length; j++) {
-            const result = compareSchema(root, inputData, inputSchema.value[j]);
+        for (const element of inputSchema.value) {
+            const result = compareSchema(root, inputData, element);
             if (result.verified) {
                 return {
                     verified: true,
-                    result: root
+                    result: root,
                 };
             }
         }
         {
             const _result = {
                 verified: false,
-                result: {
-                    error: "Wrong values for Choice type"
-                },
+                result: { error: "Wrong values for Choice type" },
             };
             if (inputSchema.hasOwnProperty(NAME))
                 _result.name = inputSchema.name;
@@ -3508,112 +3540,112 @@ function compareSchema(root, inputData, inputSchema) {
             root[inputSchema.name] = inputData;
         return {
             verified: true,
-            result: root
+            result: root,
         };
     }
     if ((root instanceof Object) === false) {
         return {
             verified: false,
-            result: { error: "Wrong root object" }
+            result: { error: "Wrong root object" },
         };
     }
     if ((inputData instanceof Object) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 data" }
+            result: { error: "Wrong ASN.1 data" },
         };
     }
     if ((inputSchema instanceof Object) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     if ((ID_BLOCK in inputSchema) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     if ((FROM_BER in inputSchema.idBlock) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     if ((TO_BER in inputSchema.idBlock) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     const encodedId = inputSchema.idBlock.toBER(false);
     if (encodedId.byteLength === 0) {
         return {
             verified: false,
-            result: { error: "Error encoding idBlock for ASN.1 schema" }
+            result: { error: "Error encoding idBlock for ASN.1 schema" },
         };
     }
     const decodedOffset = inputSchema.idBlock.fromBER(encodedId, 0, encodedId.byteLength);
     if (decodedOffset === -1) {
         return {
             verified: false,
-            result: { error: "Error decoding idBlock for ASN.1 schema" }
+            result: { error: "Error decoding idBlock for ASN.1 schema" },
         };
     }
     if (inputSchema.idBlock.hasOwnProperty(TAG_CLASS) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     if (inputSchema.idBlock.tagClass !== inputData.idBlock.tagClass) {
         return {
             verified: false,
-            result: root
+            result: root,
         };
     }
     if (inputSchema.idBlock.hasOwnProperty(TAG_NUMBER) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     if (inputSchema.idBlock.tagNumber !== inputData.idBlock.tagNumber) {
         return {
             verified: false,
-            result: root
+            result: root,
         };
     }
     if (inputSchema.idBlock.hasOwnProperty(IS_CONSTRUCTED) === false) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     if (inputSchema.idBlock.isConstructed !== inputData.idBlock.isConstructed) {
         return {
             verified: false,
-            result: root
+            result: root,
         };
     }
     if (!(IS_HEX_ONLY in inputSchema.idBlock)) {
         return {
             verified: false,
-            result: { error: "Wrong ASN.1 schema" }
+            result: { error: "Wrong ASN.1 schema" },
         };
     }
     if (inputSchema.idBlock.isHexOnly !== inputData.idBlock.isHexOnly) {
         return {
             verified: false,
-            result: root
+            result: root,
         };
     }
     if (inputSchema.idBlock.isHexOnly) {
         if ((VALUE_HEX_VIEW in inputSchema.idBlock) === false) {
             return {
                 verified: false,
-                result: { error: "Wrong ASN.1 schema" }
+                result: { error: "Wrong ASN.1 schema" },
             };
         }
         const schemaView = inputSchema.idBlock.valueHexView;
@@ -3621,14 +3653,14 @@ function compareSchema(root, inputData, inputSchema) {
         if (schemaView.length !== asn1View.length) {
             return {
                 verified: false,
-                result: root
+                result: root,
             };
         }
         for (let i = 0; i < schemaView.length; i++) {
             if (schemaView[i] !== asn1View[1]) {
                 return {
                     verified: false,
-                    result: root
+                    result: root,
                 };
             }
         }
@@ -3642,9 +3674,7 @@ function compareSchema(root, inputData, inputSchema) {
         let admission = 0;
         let result = {
             verified: false,
-            result: {
-                error: "Unknown error",
-            }
+            result: { error: "Unknown error" },
         };
         let maxLength = inputSchema.valueBlock.value.length;
         if (maxLength > 0) {
@@ -3655,18 +3685,18 @@ function compareSchema(root, inputData, inputSchema) {
         if (maxLength === 0) {
             return {
                 verified: true,
-                result: root
+                result: root,
             };
         }
-        if ((inputData.valueBlock.value.length === 0) &&
-            (inputSchema.valueBlock.value.length !== 0)) {
+        if ((inputData.valueBlock.value.length === 0)
+            && (inputSchema.valueBlock.value.length !== 0)) {
             let _optional = true;
             for (let i = 0; i < inputSchema.valueBlock.value.length; i++)
                 _optional = _optional && (inputSchema.valueBlock.value[i].optional || false);
             if (_optional) {
                 return {
                     verified: true,
-                    result: root
+                    result: root,
                 };
             }
             if (inputSchema.name) {
@@ -3677,7 +3707,7 @@ function compareSchema(root, inputData, inputSchema) {
             root.error = "Inconsistent object length";
             return {
                 verified: false,
-                result: root
+                result: root,
             };
         }
         for (let i = 0; i < maxLength; i++) {
@@ -3685,7 +3715,7 @@ function compareSchema(root, inputData, inputSchema) {
                 if (inputSchema.valueBlock.value[i].optional === false) {
                     const _result = {
                         verified: false,
-                        result: root
+                        result: root,
                     };
                     root.error = "Inconsistent length between ASN.1 data and schema";
                     if (inputSchema.name) {
@@ -3744,7 +3774,7 @@ function compareSchema(root, inputData, inputSchema) {
         if (result.verified === false) {
             const _result = {
                 verified: false,
-                result: root
+                result: root,
             };
             if (inputSchema.name) {
                 inputSchema.name = inputSchema.name.replace(/^\s+|\s+$/g, EMPTY_STRING$1);
@@ -3757,16 +3787,16 @@ function compareSchema(root, inputData, inputSchema) {
         }
         return {
             verified: true,
-            result: root
+            result: root,
         };
     }
-    if (inputSchema.primitiveSchema &&
-        (VALUE_HEX_VIEW in inputData.valueBlock)) {
+    if (inputSchema.primitiveSchema
+        && (VALUE_HEX_VIEW in inputData.valueBlock)) {
         const asn1 = localFromBER(inputData.valueBlock.valueHexView);
         if (asn1.offset === -1) {
             const _result = {
                 verified: false,
-                result: asn1.result
+                result: asn1.result,
             };
             if (inputSchema.name) {
                 inputSchema.name = inputSchema.name.replace(/^\s+|\s+$/g, EMPTY_STRING$1);
@@ -3781,7 +3811,7 @@ function compareSchema(root, inputData, inputSchema) {
     }
     return {
         verified: true,
-        result: root
+        result: root,
     };
 }
 
@@ -3826,20 +3856,6 @@ class ArgumentError extends TypeError {
 ArgumentError.NAME = "ArgumentError";
 
 class ParameterError extends TypeError {
-    constructor(field, target = null, message) {
-        super();
-        this.name = ParameterError.NAME;
-        this.field = field;
-        if (target) {
-            this.target = target;
-        }
-        if (message) {
-            this.message = message;
-        }
-        else {
-            this.message = `Absent mandatory parameter '${field}' ${target ? ` in '${target}'` : EMPTY_STRING}`;
-        }
-    }
     static assert(...args) {
         let target = null;
         let params;
@@ -3864,6 +3880,20 @@ class ParameterError extends TypeError {
     static assertEmpty(value, name, target) {
         if (value === undefined || value === null) {
             throw new ParameterError(name, target);
+        }
+    }
+    constructor(field, target = null, message) {
+        super();
+        this.name = ParameterError.NAME;
+        this.field = field;
+        if (target) {
+            this.target = target;
+        }
+        if (message) {
+            this.message = message;
+        }
+        else {
+            this.message = `Absent mandatory parameter '${field}' ${target ? ` in '${target}'` : EMPTY_STRING}`;
         }
     }
 }
@@ -3914,7 +3944,7 @@ class PkiObject {
         try {
             schema = this.toSchema();
         }
-        catch (_a) {
+        catch {
             schema = this.toSchema(true);
         }
         return Convert.ToString(schema.toBER(), encoding);
@@ -4633,7 +4663,7 @@ class GeneralName extends PkiObject {
             try {
                 _object.value = this.value.toJSON();
             }
-            catch (ex) {
+            catch {
             }
         }
         return _object;
@@ -7944,6 +7974,7 @@ class ByteStream {
     }
 }
 
+const pow2_24 = 16777216;
 class SeqStream {
     constructor(parameters = {}) {
         this._stream = new ByteStream();
@@ -8330,55 +8361,40 @@ class SeqStream {
         const block = this.getBlock(2, changeLength);
         if (block.length < 2)
             return 0;
-        const value = new Uint16Array(1);
-        const view = new Uint8Array(value.buffer);
-        view[0] = block[1];
-        view[1] = block[0];
-        return value[0];
+        return (block[0] << 8) | block[1];
     }
     getInt16(changeLength = true) {
-        const block = this.getBlock(2, changeLength);
-        if (block.length < 2)
-            return 0;
-        const value = new Int16Array(1);
-        const view = new Uint8Array(value.buffer);
-        view[0] = block[1];
-        view[1] = block[0];
-        return value[0];
+        const num = this.getUint16(changeLength);
+        const negative = 0x8000;
+        if (num & negative) {
+            return -(negative - (num ^ negative));
+        }
+        return num;
     }
     getUint24(changeLength = true) {
-        const block = this.getBlock(3, changeLength);
+        const block = this.getBlock(4, changeLength);
         if (block.length < 3)
             return 0;
-        const value = new Uint32Array(1);
-        const view = new Uint8Array(value.buffer);
-        for (let i = 3; i >= 1; i--) {
-            view[3 - i] = block[i - 1];
-        }
-        return value[0];
+        return (block[0] << 16) |
+            (block[1] << 8) |
+            block[2];
     }
     getUint32(changeLength = true) {
         const block = this.getBlock(4, changeLength);
-        if (block.length < 4) {
-            return 0;
-        }
-        const value = new Uint32Array(1);
-        const view = new Uint8Array(value.buffer);
-        for (let i = 3; i >= 0; i--) {
-            view[3 - i] = block[i];
-        }
-        return value[0];
-    }
-    getInt32(changeLength = true) {
-        const block = this.getBlock(4, changeLength);
         if (block.length < 4)
             return 0;
-        const value = new Int32Array(1);
-        const view = new Uint8Array(value.buffer);
-        for (let i = 3; i >= 0; i--) {
-            view[3 - i] = block[i];
+        return (block[0] * pow2_24) +
+            (block[1] << 16) +
+            (block[2] << 8) +
+            block[3];
+    }
+    getInt32(changeLength = true) {
+        const num = this.getUint32(changeLength);
+        const negative = 0x80000000;
+        if (num & negative) {
+            return -(negative - (num ^ negative));
         }
-        return value[0];
+        return num;
     }
     beforeAppend(size) {
         if ((this._start + size) > this._stream.length) {
@@ -8391,30 +8407,621 @@ class SeqStream {
 }
 SeqStream.APPEND_BLOCK = 1000;
 
-/******************************************************************************
-Copyright (c) Microsoft Corporation.
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THIS SOFTWARE.
-***************************************************************************** */
-
-function __awaiter(thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
+// copied from utils
+function isBytes(a) {
+    return (a instanceof Uint8Array ||
+        (a != null && typeof a === 'object' && a.constructor.name === 'Uint8Array'));
 }
+function bytes(b, ...lengths) {
+    if (!isBytes(b))
+        throw new Error('Uint8Array expected');
+    if (lengths.length > 0 && !lengths.includes(b.length))
+        throw new Error(`Uint8Array expected of length ${lengths}, not of length=${b.length}`);
+}
+function exists(instance, checkFinished = true) {
+    if (instance.destroyed)
+        throw new Error('Hash instance has been destroyed');
+    if (checkFinished && instance.finished)
+        throw new Error('Hash#digest() has already been called');
+}
+function output(out, instance) {
+    bytes(out);
+    const min = instance.outputLen;
+    if (out.length < min) {
+        throw new Error(`digestInto() expects output buffer of length at least ${min}`);
+    }
+}
+
+/*! noble-hashes - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+// We use WebCrypto aka globalThis.crypto, which exists in browsers and node.js 16+.
+// node.js versions earlier than v19 don't declare it in global scope.
+// For node.js, package.json#exports field mapping rewrites import
+// from `crypto` to `cryptoNode`, which imports native module.
+// Makes the utils un-importable in browsers without a bundler.
+// Once node.js 18 is deprecated (2025-04-30), we can just drop the import.
+// Cast array to view
+const createView = (arr) => new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+// The rotate right (circular right shift) operation for uint32
+const rotr = (word, shift) => (word << (32 - shift)) | (word >>> shift);
+// The rotate left (circular left shift) operation for uint32
+const rotl = (word, shift) => (word << shift) | ((word >>> (32 - shift)) >>> 0);
+new Uint8Array(new Uint32Array([0x11223344]).buffer)[0] === 0x44;
+/**
+ * @example utf8ToBytes('abc') // new Uint8Array([97, 98, 99])
+ */
+function utf8ToBytes(str) {
+    if (typeof str !== 'string')
+        throw new Error(`utf8ToBytes expected string, got ${typeof str}`);
+    return new Uint8Array(new TextEncoder().encode(str)); // https://bugzil.la/1681809
+}
+/**
+ * Normalizes (non-hex) string or Uint8Array to Uint8Array.
+ * Warning: when Uint8Array is passed, it would NOT get copied.
+ * Keep in mind for future mutable operations.
+ */
+function toBytes(data) {
+    if (typeof data === 'string')
+        data = utf8ToBytes(data);
+    bytes(data);
+    return data;
+}
+// For runtime check if class implements interface
+class Hash {
+    // Safe version that clones internal state
+    clone() {
+        return this._cloneInto();
+    }
+}
+function wrapConstructor(hashCons) {
+    const hashC = (msg) => hashCons().update(toBytes(msg)).digest();
+    const tmp = hashCons();
+    hashC.outputLen = tmp.outputLen;
+    hashC.blockLen = tmp.blockLen;
+    hashC.create = () => hashCons();
+    return hashC;
+}
+
+// Polyfill for Safari 14
+function setBigUint64(view, byteOffset, value, isLE) {
+    if (typeof view.setBigUint64 === 'function')
+        return view.setBigUint64(byteOffset, value, isLE);
+    const _32n = BigInt(32);
+    const _u32_max = BigInt(0xffffffff);
+    const wh = Number((value >> _32n) & _u32_max);
+    const wl = Number(value & _u32_max);
+    const h = isLE ? 4 : 0;
+    const l = isLE ? 0 : 4;
+    view.setUint32(byteOffset + h, wh, isLE);
+    view.setUint32(byteOffset + l, wl, isLE);
+}
+// Choice: a ? b : c
+const Chi = (a, b, c) => (a & b) ^ (~a & c);
+// Majority function, true if any two inpust is true
+const Maj = (a, b, c) => (a & b) ^ (a & c) ^ (b & c);
+/**
+ * Merkle-Damgard hash construction base class.
+ * Could be used to create MD5, RIPEMD, SHA1, SHA2.
+ */
+class HashMD extends Hash {
+    constructor(blockLen, outputLen, padOffset, isLE) {
+        super();
+        this.blockLen = blockLen;
+        this.outputLen = outputLen;
+        this.padOffset = padOffset;
+        this.isLE = isLE;
+        this.finished = false;
+        this.length = 0;
+        this.pos = 0;
+        this.destroyed = false;
+        this.buffer = new Uint8Array(blockLen);
+        this.view = createView(this.buffer);
+    }
+    update(data) {
+        exists(this);
+        const { view, buffer, blockLen } = this;
+        data = toBytes(data);
+        const len = data.length;
+        for (let pos = 0; pos < len;) {
+            const take = Math.min(blockLen - this.pos, len - pos);
+            // Fast path: we have at least one block in input, cast it to view and process
+            if (take === blockLen) {
+                const dataView = createView(data);
+                for (; blockLen <= len - pos; pos += blockLen)
+                    this.process(dataView, pos);
+                continue;
+            }
+            buffer.set(data.subarray(pos, pos + take), this.pos);
+            this.pos += take;
+            pos += take;
+            if (this.pos === blockLen) {
+                this.process(view, 0);
+                this.pos = 0;
+            }
+        }
+        this.length += data.length;
+        this.roundClean();
+        return this;
+    }
+    digestInto(out) {
+        exists(this);
+        output(out, this);
+        this.finished = true;
+        // Padding
+        // We can avoid allocation of buffer for padding completely if it
+        // was previously not allocated here. But it won't change performance.
+        const { buffer, view, blockLen, isLE } = this;
+        let { pos } = this;
+        // append the bit '1' to the message
+        buffer[pos++] = 0b10000000;
+        this.buffer.subarray(pos).fill(0);
+        // we have less than padOffset left in buffer, so we cannot put length in
+        // current block, need process it and pad again
+        if (this.padOffset > blockLen - pos) {
+            this.process(view, 0);
+            pos = 0;
+        }
+        // Pad until full block byte with zeros
+        for (let i = pos; i < blockLen; i++)
+            buffer[i] = 0;
+        // Note: sha512 requires length to be 128bit integer, but length in JS will overflow before that
+        // You need to write around 2 exabytes (u64_max / 8 / (1024**6)) for this to happen.
+        // So we just write lowest 64 bits of that value.
+        setBigUint64(view, blockLen - 8, BigInt(this.length * 8), isLE);
+        this.process(view, 0);
+        const oview = createView(out);
+        const len = this.outputLen;
+        // NOTE: we do division by 4 later, which should be fused in single op with modulo by JIT
+        if (len % 4)
+            throw new Error('_sha2: outputLen should be aligned to 32bit');
+        const outLen = len / 4;
+        const state = this.get();
+        if (outLen > state.length)
+            throw new Error('_sha2: outputLen bigger than state');
+        for (let i = 0; i < outLen; i++)
+            oview.setUint32(4 * i, state[i], isLE);
+    }
+    digest() {
+        const { buffer, outputLen } = this;
+        this.digestInto(buffer);
+        const res = buffer.slice(0, outputLen);
+        this.destroy();
+        return res;
+    }
+    _cloneInto(to) {
+        to || (to = new this.constructor());
+        to.set(...this.get());
+        const { blockLen, buffer, length, finished, destroyed, pos } = this;
+        to.length = length;
+        to.pos = pos;
+        to.finished = finished;
+        to.destroyed = destroyed;
+        if (length % blockLen)
+            to.buffer.set(buffer);
+        return to;
+    }
+}
+
+// SHA1 (RFC 3174) was cryptographically broken. It's still used. Don't use it for a new protocol.
+// Initial state
+const SHA1_IV = /* @__PURE__ */ new Uint32Array([
+    0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0,
+]);
+// Temporary buffer, not used to store anything between runs
+// Named this way because it matches specification.
+const SHA1_W = /* @__PURE__ */ new Uint32Array(80);
+let SHA1$1 = class SHA1 extends HashMD {
+    constructor() {
+        super(64, 20, 8, false);
+        this.A = SHA1_IV[0] | 0;
+        this.B = SHA1_IV[1] | 0;
+        this.C = SHA1_IV[2] | 0;
+        this.D = SHA1_IV[3] | 0;
+        this.E = SHA1_IV[4] | 0;
+    }
+    get() {
+        const { A, B, C, D, E } = this;
+        return [A, B, C, D, E];
+    }
+    set(A, B, C, D, E) {
+        this.A = A | 0;
+        this.B = B | 0;
+        this.C = C | 0;
+        this.D = D | 0;
+        this.E = E | 0;
+    }
+    process(view, offset) {
+        for (let i = 0; i < 16; i++, offset += 4)
+            SHA1_W[i] = view.getUint32(offset, false);
+        for (let i = 16; i < 80; i++)
+            SHA1_W[i] = rotl(SHA1_W[i - 3] ^ SHA1_W[i - 8] ^ SHA1_W[i - 14] ^ SHA1_W[i - 16], 1);
+        // Compression function main loop, 80 rounds
+        let { A, B, C, D, E } = this;
+        for (let i = 0; i < 80; i++) {
+            let F, K;
+            if (i < 20) {
+                F = Chi(B, C, D);
+                K = 0x5a827999;
+            }
+            else if (i < 40) {
+                F = B ^ C ^ D;
+                K = 0x6ed9eba1;
+            }
+            else if (i < 60) {
+                F = Maj(B, C, D);
+                K = 0x8f1bbcdc;
+            }
+            else {
+                F = B ^ C ^ D;
+                K = 0xca62c1d6;
+            }
+            const T = (rotl(A, 5) + F + E + K + SHA1_W[i]) | 0;
+            E = D;
+            D = C;
+            C = rotl(B, 30);
+            B = A;
+            A = T;
+        }
+        // Add the compressed chunk to the current hash value
+        A = (A + this.A) | 0;
+        B = (B + this.B) | 0;
+        C = (C + this.C) | 0;
+        D = (D + this.D) | 0;
+        E = (E + this.E) | 0;
+        this.set(A, B, C, D, E);
+    }
+    roundClean() {
+        SHA1_W.fill(0);
+    }
+    destroy() {
+        this.set(0, 0, 0, 0, 0);
+        this.buffer.fill(0);
+    }
+};
+const sha1 = /* @__PURE__ */ wrapConstructor(() => new SHA1$1());
+
+// SHA2-256 need to try 2^128 hashes to execute birthday attack.
+// BTC network is doing 2^67 hashes/sec as per early 2023.
+// Round constants:
+// first 32 bits of the fractional parts of the cube roots of the first 64 primes 2..311)
+// prettier-ignore
+const SHA256_K = /* @__PURE__ */ new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+]);
+// Initial state:
+// first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19
+// prettier-ignore
+const SHA256_IV = /* @__PURE__ */ new Uint32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+]);
+// Temporary buffer, not used to store anything between runs
+// Named this way because it matches specification.
+const SHA256_W = /* @__PURE__ */ new Uint32Array(64);
+let SHA256$1 = class SHA256 extends HashMD {
+    constructor() {
+        super(64, 32, 8, false);
+        // We cannot use array here since array allows indexing by variable
+        // which means optimizer/compiler cannot use registers.
+        this.A = SHA256_IV[0] | 0;
+        this.B = SHA256_IV[1] | 0;
+        this.C = SHA256_IV[2] | 0;
+        this.D = SHA256_IV[3] | 0;
+        this.E = SHA256_IV[4] | 0;
+        this.F = SHA256_IV[5] | 0;
+        this.G = SHA256_IV[6] | 0;
+        this.H = SHA256_IV[7] | 0;
+    }
+    get() {
+        const { A, B, C, D, E, F, G, H } = this;
+        return [A, B, C, D, E, F, G, H];
+    }
+    // prettier-ignore
+    set(A, B, C, D, E, F, G, H) {
+        this.A = A | 0;
+        this.B = B | 0;
+        this.C = C | 0;
+        this.D = D | 0;
+        this.E = E | 0;
+        this.F = F | 0;
+        this.G = G | 0;
+        this.H = H | 0;
+    }
+    process(view, offset) {
+        // Extend the first 16 words into the remaining 48 words w[16..63] of the message schedule array
+        for (let i = 0; i < 16; i++, offset += 4)
+            SHA256_W[i] = view.getUint32(offset, false);
+        for (let i = 16; i < 64; i++) {
+            const W15 = SHA256_W[i - 15];
+            const W2 = SHA256_W[i - 2];
+            const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ (W15 >>> 3);
+            const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ (W2 >>> 10);
+            SHA256_W[i] = (s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16]) | 0;
+        }
+        // Compression function main loop, 64 rounds
+        let { A, B, C, D, E, F, G, H } = this;
+        for (let i = 0; i < 64; i++) {
+            const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
+            const T1 = (H + sigma1 + Chi(E, F, G) + SHA256_K[i] + SHA256_W[i]) | 0;
+            const sigma0 = rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22);
+            const T2 = (sigma0 + Maj(A, B, C)) | 0;
+            H = G;
+            G = F;
+            F = E;
+            E = (D + T1) | 0;
+            D = C;
+            C = B;
+            B = A;
+            A = (T1 + T2) | 0;
+        }
+        // Add the compressed chunk to the current hash value
+        A = (A + this.A) | 0;
+        B = (B + this.B) | 0;
+        C = (C + this.C) | 0;
+        D = (D + this.D) | 0;
+        E = (E + this.E) | 0;
+        F = (F + this.F) | 0;
+        G = (G + this.G) | 0;
+        H = (H + this.H) | 0;
+        this.set(A, B, C, D, E, F, G, H);
+    }
+    roundClean() {
+        SHA256_W.fill(0);
+    }
+    destroy() {
+        this.set(0, 0, 0, 0, 0, 0, 0, 0);
+        this.buffer.fill(0);
+    }
+};
+/**
+ * SHA2-256 hash function
+ * @param message - data that would be hashed
+ */
+const sha256 = /* @__PURE__ */ wrapConstructor(() => new SHA256$1());
+
+const U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
+const _32n = /* @__PURE__ */ BigInt(32);
+// We are not using BigUint64Array, because they are extremely slow as per 2022
+function fromBig(n, le = false) {
+    if (le)
+        return { h: Number(n & U32_MASK64), l: Number((n >> _32n) & U32_MASK64) };
+    return { h: Number((n >> _32n) & U32_MASK64) | 0, l: Number(n & U32_MASK64) | 0 };
+}
+function split(lst, le = false) {
+    let Ah = new Uint32Array(lst.length);
+    let Al = new Uint32Array(lst.length);
+    for (let i = 0; i < lst.length; i++) {
+        const { h, l } = fromBig(lst[i], le);
+        [Ah[i], Al[i]] = [h, l];
+    }
+    return [Ah, Al];
+}
+const toBig = (h, l) => (BigInt(h >>> 0) << _32n) | BigInt(l >>> 0);
+// for Shift in [0, 32)
+const shrSH = (h, _l, s) => h >>> s;
+const shrSL = (h, l, s) => (h << (32 - s)) | (l >>> s);
+// Right rotate for Shift in [1, 32)
+const rotrSH = (h, l, s) => (h >>> s) | (l << (32 - s));
+const rotrSL = (h, l, s) => (h << (32 - s)) | (l >>> s);
+// Right rotate for Shift in (32, 64), NOTE: 32 is special case.
+const rotrBH = (h, l, s) => (h << (64 - s)) | (l >>> (s - 32));
+const rotrBL = (h, l, s) => (h >>> (s - 32)) | (l << (64 - s));
+// Right rotate for shift===32 (just swaps l&h)
+const rotr32H = (_h, l) => l;
+const rotr32L = (h, _l) => h;
+// Left rotate for Shift in [1, 32)
+const rotlSH = (h, l, s) => (h << s) | (l >>> (32 - s));
+const rotlSL = (h, l, s) => (l << s) | (h >>> (32 - s));
+// Left rotate for Shift in (32, 64), NOTE: 32 is special case.
+const rotlBH = (h, l, s) => (l << (s - 32)) | (h >>> (64 - s));
+const rotlBL = (h, l, s) => (h << (s - 32)) | (l >>> (64 - s));
+// JS uses 32-bit signed integers for bitwise operations which means we cannot
+// simple take carry out of low bit sum by shift, we need to use division.
+function add(Ah, Al, Bh, Bl) {
+    const l = (Al >>> 0) + (Bl >>> 0);
+    return { h: (Ah + Bh + ((l / 2 ** 32) | 0)) | 0, l: l | 0 };
+}
+// Addition with more than 2 elements
+const add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
+const add3H = (low, Ah, Bh, Ch) => (Ah + Bh + Ch + ((low / 2 ** 32) | 0)) | 0;
+const add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
+const add4H = (low, Ah, Bh, Ch, Dh) => (Ah + Bh + Ch + Dh + ((low / 2 ** 32) | 0)) | 0;
+const add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
+const add5H = (low, Ah, Bh, Ch, Dh, Eh) => (Ah + Bh + Ch + Dh + Eh + ((low / 2 ** 32) | 0)) | 0;
+// prettier-ignore
+const u64 = {
+    fromBig, split, toBig,
+    shrSH, shrSL,
+    rotrSH, rotrSL, rotrBH, rotrBL,
+    rotr32H, rotr32L,
+    rotlSH, rotlSL, rotlBH, rotlBL,
+    add, add3L, add3H, add4L, add4H, add5H, add5L,
+};
+
+// Round contants (first 32 bits of the fractional parts of the cube roots of the first 80 primes 2..409):
+// prettier-ignore
+const [SHA512_Kh, SHA512_Kl] = /* @__PURE__ */ (() => u64.split([
+    '0x428a2f98d728ae22', '0x7137449123ef65cd', '0xb5c0fbcfec4d3b2f', '0xe9b5dba58189dbbc',
+    '0x3956c25bf348b538', '0x59f111f1b605d019', '0x923f82a4af194f9b', '0xab1c5ed5da6d8118',
+    '0xd807aa98a3030242', '0x12835b0145706fbe', '0x243185be4ee4b28c', '0x550c7dc3d5ffb4e2',
+    '0x72be5d74f27b896f', '0x80deb1fe3b1696b1', '0x9bdc06a725c71235', '0xc19bf174cf692694',
+    '0xe49b69c19ef14ad2', '0xefbe4786384f25e3', '0x0fc19dc68b8cd5b5', '0x240ca1cc77ac9c65',
+    '0x2de92c6f592b0275', '0x4a7484aa6ea6e483', '0x5cb0a9dcbd41fbd4', '0x76f988da831153b5',
+    '0x983e5152ee66dfab', '0xa831c66d2db43210', '0xb00327c898fb213f', '0xbf597fc7beef0ee4',
+    '0xc6e00bf33da88fc2', '0xd5a79147930aa725', '0x06ca6351e003826f', '0x142929670a0e6e70',
+    '0x27b70a8546d22ffc', '0x2e1b21385c26c926', '0x4d2c6dfc5ac42aed', '0x53380d139d95b3df',
+    '0x650a73548baf63de', '0x766a0abb3c77b2a8', '0x81c2c92e47edaee6', '0x92722c851482353b',
+    '0xa2bfe8a14cf10364', '0xa81a664bbc423001', '0xc24b8b70d0f89791', '0xc76c51a30654be30',
+    '0xd192e819d6ef5218', '0xd69906245565a910', '0xf40e35855771202a', '0x106aa07032bbd1b8',
+    '0x19a4c116b8d2d0c8', '0x1e376c085141ab53', '0x2748774cdf8eeb99', '0x34b0bcb5e19b48a8',
+    '0x391c0cb3c5c95a63', '0x4ed8aa4ae3418acb', '0x5b9cca4f7763e373', '0x682e6ff3d6b2b8a3',
+    '0x748f82ee5defb2fc', '0x78a5636f43172f60', '0x84c87814a1f0ab72', '0x8cc702081a6439ec',
+    '0x90befffa23631e28', '0xa4506cebde82bde9', '0xbef9a3f7b2c67915', '0xc67178f2e372532b',
+    '0xca273eceea26619c', '0xd186b8c721c0c207', '0xeada7dd6cde0eb1e', '0xf57d4f7fee6ed178',
+    '0x06f067aa72176fba', '0x0a637dc5a2c898a6', '0x113f9804bef90dae', '0x1b710b35131c471b',
+    '0x28db77f523047d84', '0x32caab7b40c72493', '0x3c9ebe0a15c9bebc', '0x431d67c49c100d4c',
+    '0x4cc5d4becb3e42b6', '0x597f299cfc657e2a', '0x5fcb6fab3ad6faec', '0x6c44198c4a475817'
+].map(n => BigInt(n))))();
+// Temporary buffer, not used to store anything between runs
+const SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
+const SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
+let SHA512$1 = class SHA512 extends HashMD {
+    constructor() {
+        super(128, 64, 16, false);
+        // We cannot use array here since array allows indexing by variable which means optimizer/compiler cannot use registers.
+        // Also looks cleaner and easier to verify with spec.
+        // Initial state (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
+        // h -- high 32 bits, l -- low 32 bits
+        this.Ah = 0x6a09e667 | 0;
+        this.Al = 0xf3bcc908 | 0;
+        this.Bh = 0xbb67ae85 | 0;
+        this.Bl = 0x84caa73b | 0;
+        this.Ch = 0x3c6ef372 | 0;
+        this.Cl = 0xfe94f82b | 0;
+        this.Dh = 0xa54ff53a | 0;
+        this.Dl = 0x5f1d36f1 | 0;
+        this.Eh = 0x510e527f | 0;
+        this.El = 0xade682d1 | 0;
+        this.Fh = 0x9b05688c | 0;
+        this.Fl = 0x2b3e6c1f | 0;
+        this.Gh = 0x1f83d9ab | 0;
+        this.Gl = 0xfb41bd6b | 0;
+        this.Hh = 0x5be0cd19 | 0;
+        this.Hl = 0x137e2179 | 0;
+    }
+    // prettier-ignore
+    get() {
+        const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+        return [Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl];
+    }
+    // prettier-ignore
+    set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
+        this.Ah = Ah | 0;
+        this.Al = Al | 0;
+        this.Bh = Bh | 0;
+        this.Bl = Bl | 0;
+        this.Ch = Ch | 0;
+        this.Cl = Cl | 0;
+        this.Dh = Dh | 0;
+        this.Dl = Dl | 0;
+        this.Eh = Eh | 0;
+        this.El = El | 0;
+        this.Fh = Fh | 0;
+        this.Fl = Fl | 0;
+        this.Gh = Gh | 0;
+        this.Gl = Gl | 0;
+        this.Hh = Hh | 0;
+        this.Hl = Hl | 0;
+    }
+    process(view, offset) {
+        // Extend the first 16 words into the remaining 64 words w[16..79] of the message schedule array
+        for (let i = 0; i < 16; i++, offset += 4) {
+            SHA512_W_H[i] = view.getUint32(offset);
+            SHA512_W_L[i] = view.getUint32((offset += 4));
+        }
+        for (let i = 16; i < 80; i++) {
+            // s0 := (w[i-15] rightrotate 1) xor (w[i-15] rightrotate 8) xor (w[i-15] rightshift 7)
+            const W15h = SHA512_W_H[i - 15] | 0;
+            const W15l = SHA512_W_L[i - 15] | 0;
+            const s0h = u64.rotrSH(W15h, W15l, 1) ^ u64.rotrSH(W15h, W15l, 8) ^ u64.shrSH(W15h, W15l, 7);
+            const s0l = u64.rotrSL(W15h, W15l, 1) ^ u64.rotrSL(W15h, W15l, 8) ^ u64.shrSL(W15h, W15l, 7);
+            // s1 := (w[i-2] rightrotate 19) xor (w[i-2] rightrotate 61) xor (w[i-2] rightshift 6)
+            const W2h = SHA512_W_H[i - 2] | 0;
+            const W2l = SHA512_W_L[i - 2] | 0;
+            const s1h = u64.rotrSH(W2h, W2l, 19) ^ u64.rotrBH(W2h, W2l, 61) ^ u64.shrSH(W2h, W2l, 6);
+            const s1l = u64.rotrSL(W2h, W2l, 19) ^ u64.rotrBL(W2h, W2l, 61) ^ u64.shrSL(W2h, W2l, 6);
+            // SHA256_W[i] = s0 + s1 + SHA256_W[i - 7] + SHA256_W[i - 16];
+            const SUMl = u64.add4L(s0l, s1l, SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
+            const SUMh = u64.add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
+            SHA512_W_H[i] = SUMh | 0;
+            SHA512_W_L[i] = SUMl | 0;
+        }
+        let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+        // Compression function main loop, 80 rounds
+        for (let i = 0; i < 80; i++) {
+            // S1 := (e rightrotate 14) xor (e rightrotate 18) xor (e rightrotate 41)
+            const sigma1h = u64.rotrSH(Eh, El, 14) ^ u64.rotrSH(Eh, El, 18) ^ u64.rotrBH(Eh, El, 41);
+            const sigma1l = u64.rotrSL(Eh, El, 14) ^ u64.rotrSL(Eh, El, 18) ^ u64.rotrBL(Eh, El, 41);
+            //const T1 = (H + sigma1 + Chi(E, F, G) + SHA256_K[i] + SHA256_W[i]) | 0;
+            const CHIh = (Eh & Fh) ^ (~Eh & Gh);
+            const CHIl = (El & Fl) ^ (~El & Gl);
+            // T1 = H + sigma1 + Chi(E, F, G) + SHA512_K[i] + SHA512_W[i]
+            // prettier-ignore
+            const T1ll = u64.add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
+            const T1h = u64.add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
+            const T1l = T1ll | 0;
+            // S0 := (a rightrotate 28) xor (a rightrotate 34) xor (a rightrotate 39)
+            const sigma0h = u64.rotrSH(Ah, Al, 28) ^ u64.rotrBH(Ah, Al, 34) ^ u64.rotrBH(Ah, Al, 39);
+            const sigma0l = u64.rotrSL(Ah, Al, 28) ^ u64.rotrBL(Ah, Al, 34) ^ u64.rotrBL(Ah, Al, 39);
+            const MAJh = (Ah & Bh) ^ (Ah & Ch) ^ (Bh & Ch);
+            const MAJl = (Al & Bl) ^ (Al & Cl) ^ (Bl & Cl);
+            Hh = Gh | 0;
+            Hl = Gl | 0;
+            Gh = Fh | 0;
+            Gl = Fl | 0;
+            Fh = Eh | 0;
+            Fl = El | 0;
+            ({ h: Eh, l: El } = u64.add(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
+            Dh = Ch | 0;
+            Dl = Cl | 0;
+            Ch = Bh | 0;
+            Cl = Bl | 0;
+            Bh = Ah | 0;
+            Bl = Al | 0;
+            const All = u64.add3L(T1l, sigma0l, MAJl);
+            Ah = u64.add3H(All, T1h, sigma0h, MAJh);
+            Al = All | 0;
+        }
+        // Add the compressed chunk to the current hash value
+        ({ h: Ah, l: Al } = u64.add(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
+        ({ h: Bh, l: Bl } = u64.add(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
+        ({ h: Ch, l: Cl } = u64.add(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
+        ({ h: Dh, l: Dl } = u64.add(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
+        ({ h: Eh, l: El } = u64.add(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
+        ({ h: Fh, l: Fl } = u64.add(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
+        ({ h: Gh, l: Gl } = u64.add(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
+        ({ h: Hh, l: Hl } = u64.add(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
+        this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
+    }
+    roundClean() {
+        SHA512_W_H.fill(0);
+        SHA512_W_L.fill(0);
+    }
+    destroy() {
+        this.buffer.fill(0);
+        this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+};
+let SHA384$1 = class SHA384 extends SHA512$1 {
+    constructor() {
+        super();
+        // h -- high 32 bits, l -- low 32 bits
+        this.Ah = 0xcbbb9d5d | 0;
+        this.Al = 0xc1059ed8 | 0;
+        this.Bh = 0x629a292a | 0;
+        this.Bl = 0x367cd507 | 0;
+        this.Ch = 0x9159015a | 0;
+        this.Cl = 0x3070dd17 | 0;
+        this.Dh = 0x152fecd8 | 0;
+        this.Dl = 0xf70e5939 | 0;
+        this.Eh = 0x67332667 | 0;
+        this.El = 0xffc00b31 | 0;
+        this.Fh = 0x8eb44a87 | 0;
+        this.Fl = 0x68581511 | 0;
+        this.Gh = 0xdb0c2e0d | 0;
+        this.Gl = 0x64f98fa7 | 0;
+        this.Hh = 0x47b5481d | 0;
+        this.Hl = 0xbefa4fa4 | 0;
+        this.outputLen = 48;
+    }
+};
+const sha512 = /* @__PURE__ */ wrapConstructor(() => new SHA512$1());
+const sha384 = /* @__PURE__ */ wrapConstructor(() => new SHA384$1());
 
 var _a;
 class ECNamedCurves {
@@ -8615,6 +9222,43 @@ const ALGORITHM$1 = "algorithm";
 const SUBJECT_PUBLIC_KEY = "subjectPublicKey";
 const CLEAR_PROPS$1a = [ALGORITHM$1, SUBJECT_PUBLIC_KEY];
 class PublicKeyInfo extends PkiObject {
+    get parsedKey() {
+        if (this._parsedKey === undefined) {
+            switch (this.algorithm.algorithmId) {
+                case "1.2.840.10045.2.1":
+                    if ("algorithmParams" in this.algorithm) {
+                        if (this.algorithm.algorithmParams.constructor.blockName() === ObjectIdentifier.blockName()) {
+                            try {
+                                this._parsedKey = new ECPublicKey({
+                                    namedCurve: this.algorithm.algorithmParams.valueBlock.toString(),
+                                    schema: this.subjectPublicKey.valueBlock.valueHexView
+                                });
+                            }
+                            catch {
+                            }
+                        }
+                    }
+                    break;
+                case "1.2.840.113549.1.1.1":
+                    {
+                        const publicKeyASN1 = fromBER(this.subjectPublicKey.valueBlock.valueHexView);
+                        if (publicKeyASN1.offset !== -1) {
+                            try {
+                                this._parsedKey = new RSAPublicKey({ schema: publicKeyASN1.result });
+                            }
+                            catch {
+                            }
+                        }
+                    }
+                    break;
+            }
+            this._parsedKey || (this._parsedKey = null);
+        }
+        return this._parsedKey || undefined;
+    }
+    set parsedKey(value) {
+        this._parsedKey = value;
+    }
     constructor(parameters = {}) {
         super();
         this.algorithm = getParametersValue(parameters, ALGORITHM$1, PublicKeyInfo.defaultValues(ALGORITHM$1));
@@ -8629,43 +9273,6 @@ class PublicKeyInfo extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    get parsedKey() {
-        if (this._parsedKey === undefined) {
-            switch (this.algorithm.algorithmId) {
-                case "1.2.840.10045.2.1":
-                    if ("algorithmParams" in this.algorithm) {
-                        if (this.algorithm.algorithmParams.constructor.blockName() === ObjectIdentifier.blockName()) {
-                            try {
-                                this._parsedKey = new ECPublicKey({
-                                    namedCurve: this.algorithm.algorithmParams.valueBlock.toString(),
-                                    schema: this.subjectPublicKey.valueBlock.valueHexView
-                                });
-                            }
-                            catch (ex) {
-                            }
-                        }
-                    }
-                    break;
-                case "1.2.840.113549.1.1.1":
-                    {
-                        const publicKeyASN1 = fromBER(this.subjectPublicKey.valueBlock.valueHexView);
-                        if (publicKeyASN1.offset !== -1) {
-                            try {
-                                this._parsedKey = new RSAPublicKey({ schema: publicKeyASN1.result });
-                            }
-                            catch (ex) {
-                            }
-                        }
-                    }
-                    break;
-            }
-            this._parsedKey || (this._parsedKey = null);
-        }
-        return this._parsedKey || undefined;
-    }
-    set parsedKey(value) {
-        this._parsedKey = value;
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -8754,26 +9361,24 @@ class PublicKeyInfo extends PkiObject {
             this.subjectPublicKey = new BitString({ valueHex: this.parsedKey.toSchema().toBER(false) });
         }
     }
-    importKey(publicKey, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
+    async importKey(publicKey, crypto = getCrypto(true)) {
+        try {
+            if (!publicKey) {
+                throw new Error("Need to provide publicKey input parameter");
+            }
+            const exportedKey = await crypto.exportKey("spki", publicKey);
+            const asn1 = fromBER(exportedKey);
             try {
-                if (!publicKey) {
-                    throw new Error("Need to provide publicKey input parameter");
-                }
-                const exportedKey = yield crypto.exportKey("spki", publicKey);
-                const asn1 = fromBER(exportedKey);
-                try {
-                    this.fromSchema(asn1.result);
-                }
-                catch (exception) {
-                    throw new Error("Error during initializing object from schema");
-                }
+                this.fromSchema(asn1.result);
             }
-            catch (e) {
-                const message = e instanceof Error ? e.message : `${e}`;
-                throw new Error(`Error during exporting public key: ${message}`);
+            catch {
+                throw new Error("Error during initializing object from schema");
             }
-        });
+        }
+        catch (e) {
+            const message = e instanceof Error ? e.message : `${e}`;
+            throw new Error(`Error during exporting public key: ${message}`);
+        }
     }
 }
 PublicKeyInfo.CLASS_NAME = "PublicKeyInfo";
@@ -9420,6 +10025,7 @@ const CLEAR_PROPS$15 = [
     CONTENT_ENCRYPTION_ALGORITHM,
     ENCRYPTED_CONTENT,
 ];
+const PIECE_SIZE = 1024;
 class EncryptedContentInfo extends PkiObject {
     constructor(parameters = {}) {
         super();
@@ -9429,7 +10035,7 @@ class EncryptedContentInfo extends PkiObject {
             this.encryptedContent = parameters.encryptedContent;
             if ((this.encryptedContent.idBlock.tagClass === 1) &&
                 (this.encryptedContent.idBlock.tagNumber === 4)) {
-                if (this.encryptedContent.idBlock.isConstructed === false) {
+                if (this.encryptedContent.idBlock.isConstructed === false && !parameters.disableSplit) {
                     const constrString = new OctetString({
                         idBlock: { isConstructed: true },
                         isConstructed: true
@@ -9437,9 +10043,8 @@ class EncryptedContentInfo extends PkiObject {
                     let offset = 0;
                     const valueHex = this.encryptedContent.valueBlock.valueHexView.slice().buffer;
                     let length = valueHex.byteLength;
-                    const pieceSize = 1024;
                     while (length > 0) {
-                        const pieceView = new Uint8Array(valueHex, offset, ((offset + pieceSize) > valueHex.byteLength) ? (valueHex.byteLength - offset) : pieceSize);
+                        const pieceView = new Uint8Array(valueHex, offset, ((offset + PIECE_SIZE) > valueHex.byteLength) ? (valueHex.byteLength - offset) : PIECE_SIZE);
                         const _array = new ArrayBuffer(pieceView.length);
                         const _view = new Uint8Array(_array);
                         for (let i = 0; i < _view.length; i++)
@@ -9955,53 +10560,35 @@ class AbstractCryptoEngine {
             : parameters.crypto.subtle;
         this.name = getParametersValue(parameters, "name", EMPTY_STRING);
     }
-    encrypt(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.encrypt(...args);
-        });
+    async encrypt(...args) {
+        return this.subtle.encrypt(...args);
     }
-    decrypt(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.decrypt(...args);
-        });
+    async decrypt(...args) {
+        return this.subtle.decrypt(...args);
     }
     sign(...args) {
         return this.subtle.sign(...args);
     }
-    verify(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.verify(...args);
-        });
+    async verify(...args) {
+        return this.subtle.verify(...args);
     }
-    digest(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.digest(...args);
-        });
+    async digest(...args) {
+        return this.subtle.digest(...args);
     }
-    generateKey(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.generateKey(...args);
-        });
+    async generateKey(...args) {
+        return this.subtle.generateKey(...args);
     }
-    deriveKey(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.deriveKey(...args);
-        });
+    async deriveKey(...args) {
+        return this.subtle.deriveKey(...args);
     }
-    deriveBits(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.deriveBits(...args);
-        });
+    async deriveBits(...args) {
+        return this.subtle.deriveBits(...args);
     }
-    wrapKey(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.wrapKey(...args);
-        });
+    async wrapKey(...args) {
+        return this.subtle.wrapKey(...args);
     }
-    unwrapKey(...args) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.subtle.unwrapKey(...args);
-        });
+    async unwrapKey(...args) {
+        return this.subtle.unwrapKey(...args);
     }
     exportKey(...args) {
         return this.subtle.exportKey(...args);
@@ -10010,452 +10597,418 @@ class AbstractCryptoEngine {
         return this.subtle.importKey(...args);
     }
     getRandomValues(array) {
+        if (array === null) {
+            throw new Error("Argument \"array\" must not be null");
+        }
         return this.crypto.getRandomValues(array);
     }
 }
 
-function makePKCS12B2Key(cryptoEngine, hashAlgorithm, keyLength, password, salt, iterationCount) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let u;
-        let v;
-        const result = [];
-        switch (hashAlgorithm.toUpperCase()) {
-            case "SHA-1":
-                u = 20;
-                v = 64;
-                break;
-            case "SHA-256":
-                u = 32;
-                v = 64;
-                break;
-            case "SHA-384":
-                u = 48;
-                v = 128;
-                break;
-            case "SHA-512":
-                u = 64;
-                v = 128;
-                break;
-            default:
-                throw new Error("Unsupported hashing algorithm");
+async function makePKCS12B2Key(hashAlgorithm, keyLength, password, salt, iterationCount) {
+    let u;
+    let v;
+    let md;
+    switch (hashAlgorithm.toUpperCase()) {
+        case "SHA-1":
+            u = 20;
+            v = 64;
+            md = sha1;
+            break;
+        case "SHA-256":
+            u = 32;
+            v = 64;
+            md = sha256;
+            break;
+        case "SHA-384":
+            u = 48;
+            v = 128;
+            md = sha384;
+            break;
+        case "SHA-512":
+            u = 64;
+            v = 128;
+            md = sha512;
+            break;
+        default:
+            throw new Error("Unsupported hashing algorithm");
+    }
+    const originalPassword = new Uint8Array(password);
+    let decodedPassword = new TextDecoder().decode(password);
+    const encodedPassword = new TextEncoder().encode(decodedPassword);
+    if (encodedPassword.some((byte, i) => byte !== originalPassword[i])) {
+        decodedPassword = String.fromCharCode(...originalPassword);
+    }
+    const passwordTransformed = new Uint8Array(decodedPassword.length * 2 + 2);
+    const passwordView = new DataView(passwordTransformed.buffer);
+    for (let i = 0; i < decodedPassword.length; i++) {
+        passwordView.setUint16(i * 2, decodedPassword.charCodeAt(i), false);
+    }
+    passwordView.setUint16(decodedPassword.length * 2, 0, false);
+    const D = new Uint8Array(v).fill(3);
+    const saltView = new Uint8Array(salt);
+    const S = new Uint8Array(v * Math.ceil(saltView.length / v)).map((_, i) => saltView[i % saltView.length]);
+    const P = new Uint8Array(v * Math.ceil(passwordTransformed.length / v)).map((_, i) => passwordTransformed[i % passwordTransformed.length]);
+    let I = new Uint8Array(S.length + P.length);
+    I.set(S);
+    I.set(P, S.length);
+    const c = Math.ceil((keyLength >> 3) / u);
+    const result = [];
+    for (let i = 0; i < c; i++) {
+        let A = new Uint8Array(D.length + I.length);
+        A.set(D);
+        A.set(I, D.length);
+        for (let j = 0; j < iterationCount; j++) {
+            A = md(A);
         }
-        const passwordViewInitial = new Uint8Array(password);
-        const passwordTransformed = new ArrayBuffer((password.byteLength * 2) + 2);
-        const passwordTransformedView = new Uint8Array(passwordTransformed);
-        for (let i = 0; i < passwordViewInitial.length; i++) {
-            passwordTransformedView[i * 2] = 0x00;
-            passwordTransformedView[i * 2 + 1] = passwordViewInitial[i];
+        const B = new Uint8Array(v).map((_, i) => A[i % A.length]);
+        const k = Math.ceil(saltView.length / v) + Math.ceil(passwordTransformed.length / v);
+        const iRound = [];
+        for (let j = 0; j < k; j++) {
+            const chunk = Array.from(I.slice(j * v, (j + 1) * v));
+            let x = 0x1ff;
+            for (let l = B.length - 1; l >= 0; l--) {
+                x >>= 8;
+                x += B[l] + (chunk[l] || 0);
+                chunk[l] = x & 0xff;
+            }
+            iRound.push(...chunk);
         }
-        passwordTransformedView[passwordTransformedView.length - 2] = 0x00;
-        passwordTransformedView[passwordTransformedView.length - 1] = 0x00;
-        password = passwordTransformed.slice(0);
-        const D = new ArrayBuffer(v);
-        const dView = new Uint8Array(D);
-        for (let i = 0; i < D.byteLength; i++)
-            dView[i] = 3;
-        const saltLength = salt.byteLength;
-        const sLen = v * Math.ceil(saltLength / v);
-        const S = new ArrayBuffer(sLen);
-        const sView = new Uint8Array(S);
-        const saltView = new Uint8Array(salt);
-        for (let i = 0; i < sLen; i++)
-            sView[i] = saltView[i % saltLength];
-        const passwordLength = password.byteLength;
-        const pLen = v * Math.ceil(passwordLength / v);
-        const P = new ArrayBuffer(pLen);
-        const pView = new Uint8Array(P);
-        const passwordView = new Uint8Array(password);
-        for (let i = 0; i < pLen; i++)
-            pView[i] = passwordView[i % passwordLength];
-        const sPlusPLength = S.byteLength + P.byteLength;
-        let I = new ArrayBuffer(sPlusPLength);
-        let iView = new Uint8Array(I);
-        iView.set(sView);
-        iView.set(pView, sView.length);
-        const c = Math.ceil((keyLength >> 3) / u);
-        let internalSequence = Promise.resolve(I);
-        for (let i = 0; i <= c; i++) {
-            internalSequence = internalSequence.then(_I => {
-                const dAndI = new ArrayBuffer(D.byteLength + _I.byteLength);
-                const dAndIView = new Uint8Array(dAndI);
-                dAndIView.set(dView);
-                dAndIView.set(iView, dView.length);
-                return dAndI;
-            });
-            for (let j = 0; j < iterationCount; j++)
-                internalSequence = internalSequence.then(roundBuffer => cryptoEngine.digest({ name: hashAlgorithm }, new Uint8Array(roundBuffer)));
-            internalSequence = internalSequence.then(roundBuffer => {
-                const B = new ArrayBuffer(v);
-                const bView = new Uint8Array(B);
-                for (let j = 0; j < B.byteLength; j++)
-                    bView[j] = roundBuffer[j % roundBuffer.byteLength];
-                const k = Math.ceil(saltLength / v) + Math.ceil(passwordLength / v);
-                const iRound = [];
-                let sliceStart = 0;
-                let sliceLength = v;
-                for (let j = 0; j < k; j++) {
-                    const chunk = Array.from(new Uint8Array(I.slice(sliceStart, sliceStart + sliceLength)));
-                    sliceStart += v;
-                    if ((sliceStart + v) > I.byteLength)
-                        sliceLength = I.byteLength - sliceStart;
-                    let x = 0x1ff;
-                    for (let l = (B.byteLength - 1); l >= 0; l--) {
-                        x >>= 8;
-                        x += bView[l] + chunk[l];
-                        chunk[l] = (x & 0xff);
-                    }
-                    iRound.push(...chunk);
-                }
-                I = new ArrayBuffer(iRound.length);
-                iView = new Uint8Array(I);
-                iView.set(iRound);
-                result.push(...(new Uint8Array(roundBuffer)));
-                return I;
-            });
-        }
-        internalSequence = internalSequence.then(() => {
-            const resultBuffer = new ArrayBuffer(keyLength >> 3);
-            const resultView = new Uint8Array(resultBuffer);
-            resultView.set((new Uint8Array(result)).slice(0, keyLength >> 3));
-            return resultBuffer;
-        });
-        return internalSequence;
-    });
+        I = new Uint8Array(iRound);
+        result.push(...A);
+    }
+    return new Uint8Array(result.slice(0, keyLength >> 3)).buffer;
 }
 function prepareAlgorithm(data) {
     const res = typeof data === "string"
         ? { name: data }
         : data;
     if ("hash" in res) {
-        return Object.assign(Object.assign({}, res), { hash: prepareAlgorithm(res.hash) });
+        return {
+            ...res,
+            hash: prepareAlgorithm(res.hash)
+        };
     }
     return res;
 }
 class CryptoEngine extends AbstractCryptoEngine {
-    importKey(format, keyData, algorithm, extractable, keyUsages) {
+    async importKey(format, keyData, algorithm, extractable, keyUsages) {
         var _a, _b, _c, _d, _e, _f;
-        return __awaiter(this, void 0, void 0, function* () {
-            let jwk = {};
-            const alg = prepareAlgorithm(algorithm);
-            switch (format.toLowerCase()) {
-                case "raw":
-                    return this.subtle.importKey("raw", keyData, algorithm, extractable, keyUsages);
-                case "spki":
-                    {
-                        const asn1 = fromBER(BufferSourceConverter.toArrayBuffer(keyData));
-                        AsnError.assert(asn1, "keyData");
-                        const publicKeyInfo = new PublicKeyInfo();
-                        try {
-                            publicKeyInfo.fromSchema(asn1.result);
-                        }
-                        catch (_g) {
-                            throw new ArgumentError("Incorrect keyData");
-                        }
-                        switch (alg.name.toUpperCase()) {
-                            case "RSA-PSS":
-                                {
+        let jwk = {};
+        const alg = prepareAlgorithm(algorithm);
+        switch (format.toLowerCase()) {
+            case "raw":
+                return this.subtle.importKey("raw", keyData, algorithm, extractable, keyUsages);
+            case "spki":
+                {
+                    const asn1 = fromBER(BufferSourceConverter.toArrayBuffer(keyData));
+                    AsnError.assert(asn1, "keyData");
+                    const publicKeyInfo = new PublicKeyInfo();
+                    try {
+                        publicKeyInfo.fromSchema(asn1.result);
+                    }
+                    catch {
+                        throw new ArgumentError("Incorrect keyData");
+                    }
+                    switch (alg.name.toUpperCase()) {
+                        case "RSA-PSS":
+                            {
+                                if (!alg.hash) {
+                                    throw new ParameterError("hash", "algorithm.hash", "Incorrect hash algorithm: Hash algorithm is missed");
+                                }
+                                switch (alg.hash.name.toUpperCase()) {
+                                    case "SHA-1":
+                                        jwk.alg = "PS1";
+                                        break;
+                                    case "SHA-256":
+                                        jwk.alg = "PS256";
+                                        break;
+                                    case "SHA-384":
+                                        jwk.alg = "PS384";
+                                        break;
+                                    case "SHA-512":
+                                        jwk.alg = "PS512";
+                                        break;
+                                    default:
+                                        throw new Error(`Incorrect hash algorithm: ${alg.hash.name.toUpperCase()}`);
+                                }
+                            }
+                        case "RSASSA-PKCS1-V1_5":
+                            {
+                                keyUsages = ["verify"];
+                                jwk.kty = "RSA";
+                                jwk.ext = extractable;
+                                jwk.key_ops = keyUsages;
+                                if (publicKeyInfo.algorithm.algorithmId !== "1.2.840.113549.1.1.1")
+                                    throw new Error(`Incorrect public key algorithm: ${publicKeyInfo.algorithm.algorithmId}`);
+                                if (!jwk.alg) {
                                     if (!alg.hash) {
                                         throw new ParameterError("hash", "algorithm.hash", "Incorrect hash algorithm: Hash algorithm is missed");
                                     }
                                     switch (alg.hash.name.toUpperCase()) {
                                         case "SHA-1":
-                                            jwk.alg = "PS1";
+                                            jwk.alg = "RS1";
                                             break;
                                         case "SHA-256":
-                                            jwk.alg = "PS256";
+                                            jwk.alg = "RS256";
                                             break;
                                         case "SHA-384":
-                                            jwk.alg = "PS384";
+                                            jwk.alg = "RS384";
                                             break;
                                         case "SHA-512":
-                                            jwk.alg = "PS512";
+                                            jwk.alg = "RS512";
                                             break;
                                         default:
                                             throw new Error(`Incorrect hash algorithm: ${alg.hash.name.toUpperCase()}`);
                                     }
                                 }
-                            case "RSASSA-PKCS1-V1_5":
-                                {
-                                    keyUsages = ["verify"];
-                                    jwk.kty = "RSA";
-                                    jwk.ext = extractable;
-                                    jwk.key_ops = keyUsages;
-                                    if (publicKeyInfo.algorithm.algorithmId !== "1.2.840.113549.1.1.1")
-                                        throw new Error(`Incorrect public key algorithm: ${publicKeyInfo.algorithm.algorithmId}`);
-                                    if (!jwk.alg) {
-                                        if (!alg.hash) {
-                                            throw new ParameterError("hash", "algorithm.hash", "Incorrect hash algorithm: Hash algorithm is missed");
-                                        }
-                                        switch (alg.hash.name.toUpperCase()) {
-                                            case "SHA-1":
-                                                jwk.alg = "RS1";
-                                                break;
-                                            case "SHA-256":
-                                                jwk.alg = "RS256";
-                                                break;
-                                            case "SHA-384":
-                                                jwk.alg = "RS384";
-                                                break;
-                                            case "SHA-512":
-                                                jwk.alg = "RS512";
-                                                break;
-                                            default:
-                                                throw new Error(`Incorrect hash algorithm: ${alg.hash.name.toUpperCase()}`);
-                                        }
+                                const publicKeyJSON = publicKeyInfo.toJSON();
+                                Object.assign(jwk, publicKeyJSON);
+                            }
+                            break;
+                        case "ECDSA":
+                            keyUsages = ["verify"];
+                        case "ECDH":
+                            {
+                                jwk = {
+                                    kty: "EC",
+                                    ext: extractable,
+                                    key_ops: keyUsages
+                                };
+                                if (publicKeyInfo.algorithm.algorithmId !== "1.2.840.10045.2.1") {
+                                    throw new Error(`Incorrect public key algorithm: ${publicKeyInfo.algorithm.algorithmId}`);
+                                }
+                                const publicKeyJSON = publicKeyInfo.toJSON();
+                                Object.assign(jwk, publicKeyJSON);
+                            }
+                            break;
+                        case "RSA-OAEP":
+                            {
+                                jwk.kty = "RSA";
+                                jwk.ext = extractable;
+                                jwk.key_ops = keyUsages;
+                                if (this.name.toLowerCase() === "safari")
+                                    jwk.alg = "RSA-OAEP";
+                                else {
+                                    if (!alg.hash) {
+                                        throw new ParameterError("hash", "algorithm.hash", "Incorrect hash algorithm: Hash algorithm is missed");
                                     }
-                                    const publicKeyJSON = publicKeyInfo.toJSON();
-                                    Object.assign(jwk, publicKeyJSON);
-                                }
-                                break;
-                            case "ECDSA":
-                                keyUsages = ["verify"];
-                            case "ECDH":
-                                {
-                                    jwk = {
-                                        kty: "EC",
-                                        ext: extractable,
-                                        key_ops: keyUsages
-                                    };
-                                    if (publicKeyInfo.algorithm.algorithmId !== "1.2.840.10045.2.1") {
-                                        throw new Error(`Incorrect public key algorithm: ${publicKeyInfo.algorithm.algorithmId}`);
-                                    }
-                                    const publicKeyJSON = publicKeyInfo.toJSON();
-                                    Object.assign(jwk, publicKeyJSON);
-                                }
-                                break;
-                            case "RSA-OAEP":
-                                {
-                                    jwk.kty = "RSA";
-                                    jwk.ext = extractable;
-                                    jwk.key_ops = keyUsages;
-                                    if (this.name.toLowerCase() === "safari")
-                                        jwk.alg = "RSA-OAEP";
-                                    else {
-                                        if (!alg.hash) {
-                                            throw new ParameterError("hash", "algorithm.hash", "Incorrect hash algorithm: Hash algorithm is missed");
-                                        }
-                                        switch (alg.hash.name.toUpperCase()) {
-                                            case "SHA-1":
-                                                jwk.alg = "RSA-OAEP";
-                                                break;
-                                            case "SHA-256":
-                                                jwk.alg = "RSA-OAEP-256";
-                                                break;
-                                            case "SHA-384":
-                                                jwk.alg = "RSA-OAEP-384";
-                                                break;
-                                            case "SHA-512":
-                                                jwk.alg = "RSA-OAEP-512";
-                                                break;
-                                            default:
-                                                throw new Error(`Incorrect hash algorithm: ${alg.hash.name.toUpperCase()}`);
-                                        }
-                                    }
-                                    const publicKeyJSON = publicKeyInfo.toJSON();
-                                    Object.assign(jwk, publicKeyJSON);
-                                }
-                                break;
-                            case "RSAES-PKCS1-V1_5":
-                                {
-                                    jwk.kty = "RSA";
-                                    jwk.ext = extractable;
-                                    jwk.key_ops = keyUsages;
-                                    jwk.alg = "PS1";
-                                    const publicKeyJSON = publicKeyInfo.toJSON();
-                                    Object.assign(jwk, publicKeyJSON);
-                                }
-                                break;
-                            default:
-                                throw new Error(`Incorrect algorithm name: ${alg.name.toUpperCase()}`);
-                        }
-                    }
-                    break;
-                case "pkcs8":
-                    {
-                        const privateKeyInfo = new PrivateKeyInfo();
-                        const asn1 = fromBER(BufferSourceConverter.toArrayBuffer(keyData));
-                        AsnError.assert(asn1, "keyData");
-                        try {
-                            privateKeyInfo.fromSchema(asn1.result);
-                        }
-                        catch (ex) {
-                            throw new Error("Incorrect keyData");
-                        }
-                        if (!privateKeyInfo.parsedKey)
-                            throw new Error("Incorrect keyData");
-                        switch (alg.name.toUpperCase()) {
-                            case "RSA-PSS":
-                                {
-                                    switch ((_a = alg.hash) === null || _a === void 0 ? void 0 : _a.name.toUpperCase()) {
+                                    switch (alg.hash.name.toUpperCase()) {
                                         case "SHA-1":
-                                            jwk.alg = "PS1";
+                                            jwk.alg = "RSA-OAEP";
                                             break;
                                         case "SHA-256":
-                                            jwk.alg = "PS256";
+                                            jwk.alg = "RSA-OAEP-256";
                                             break;
                                         case "SHA-384":
-                                            jwk.alg = "PS384";
+                                            jwk.alg = "RSA-OAEP-384";
                                             break;
                                         case "SHA-512":
-                                            jwk.alg = "PS512";
+                                            jwk.alg = "RSA-OAEP-512";
                                             break;
                                         default:
-                                            throw new Error(`Incorrect hash algorithm: ${(_b = alg.hash) === null || _b === void 0 ? void 0 : _b.name.toUpperCase()}`);
+                                            throw new Error(`Incorrect hash algorithm: ${alg.hash.name.toUpperCase()}`);
                                     }
                                 }
-                            case "RSASSA-PKCS1-V1_5":
-                                {
-                                    keyUsages = ["sign"];
-                                    jwk.kty = "RSA";
-                                    jwk.ext = extractable;
-                                    jwk.key_ops = keyUsages;
-                                    if (privateKeyInfo.privateKeyAlgorithm.algorithmId !== "1.2.840.113549.1.1.1")
-                                        throw new Error(`Incorrect private key algorithm: ${privateKeyInfo.privateKeyAlgorithm.algorithmId}`);
-                                    if (("alg" in jwk) === false) {
-                                        switch ((_c = alg.hash) === null || _c === void 0 ? void 0 : _c.name.toUpperCase()) {
-                                            case "SHA-1":
-                                                jwk.alg = "RS1";
-                                                break;
-                                            case "SHA-256":
-                                                jwk.alg = "RS256";
-                                                break;
-                                            case "SHA-384":
-                                                jwk.alg = "RS384";
-                                                break;
-                                            case "SHA-512":
-                                                jwk.alg = "RS512";
-                                                break;
-                                            default:
-                                                throw new Error(`Incorrect hash algorithm: ${(_d = alg.hash) === null || _d === void 0 ? void 0 : _d.name.toUpperCase()}`);
-                                        }
-                                    }
-                                    const privateKeyJSON = privateKeyInfo.toJSON();
-                                    Object.assign(jwk, privateKeyJSON);
-                                }
-                                break;
-                            case "ECDSA":
-                                keyUsages = ["sign"];
-                            case "ECDH":
-                                {
-                                    jwk = {
-                                        kty: "EC",
-                                        ext: extractable,
-                                        key_ops: keyUsages
-                                    };
-                                    if (privateKeyInfo.privateKeyAlgorithm.algorithmId !== "1.2.840.10045.2.1")
-                                        throw new Error(`Incorrect algorithm: ${privateKeyInfo.privateKeyAlgorithm.algorithmId}`);
-                                    const privateKeyJSON = privateKeyInfo.toJSON();
-                                    Object.assign(jwk, privateKeyJSON);
-                                }
-                                break;
-                            case "RSA-OAEP":
-                                {
-                                    jwk.kty = "RSA";
-                                    jwk.ext = extractable;
-                                    jwk.key_ops = keyUsages;
-                                    if (this.name.toLowerCase() === "safari")
-                                        jwk.alg = "RSA-OAEP";
-                                    else {
-                                        switch ((_e = alg.hash) === null || _e === void 0 ? void 0 : _e.name.toUpperCase()) {
-                                            case "SHA-1":
-                                                jwk.alg = "RSA-OAEP";
-                                                break;
-                                            case "SHA-256":
-                                                jwk.alg = "RSA-OAEP-256";
-                                                break;
-                                            case "SHA-384":
-                                                jwk.alg = "RSA-OAEP-384";
-                                                break;
-                                            case "SHA-512":
-                                                jwk.alg = "RSA-OAEP-512";
-                                                break;
-                                            default:
-                                                throw new Error(`Incorrect hash algorithm: ${(_f = alg.hash) === null || _f === void 0 ? void 0 : _f.name.toUpperCase()}`);
-                                        }
-                                    }
-                                    const privateKeyJSON = privateKeyInfo.toJSON();
-                                    Object.assign(jwk, privateKeyJSON);
-                                }
-                                break;
-                            case "RSAES-PKCS1-V1_5":
-                                {
-                                    keyUsages = ["decrypt"];
-                                    jwk.kty = "RSA";
-                                    jwk.ext = extractable;
-                                    jwk.key_ops = keyUsages;
-                                    jwk.alg = "PS1";
-                                    const privateKeyJSON = privateKeyInfo.toJSON();
-                                    Object.assign(jwk, privateKeyJSON);
-                                }
-                                break;
-                            default:
-                                throw new Error(`Incorrect algorithm name: ${alg.name.toUpperCase()}`);
-                        }
+                                const publicKeyJSON = publicKeyInfo.toJSON();
+                                Object.assign(jwk, publicKeyJSON);
+                            }
+                            break;
+                        case "RSAES-PKCS1-V1_5":
+                            {
+                                jwk.kty = "RSA";
+                                jwk.ext = extractable;
+                                jwk.key_ops = keyUsages;
+                                jwk.alg = "PS1";
+                                const publicKeyJSON = publicKeyInfo.toJSON();
+                                Object.assign(jwk, publicKeyJSON);
+                            }
+                            break;
+                        default:
+                            throw new Error(`Incorrect algorithm name: ${alg.name.toUpperCase()}`);
                     }
-                    break;
-                case "jwk":
-                    jwk = keyData;
-                    break;
-                default:
-                    throw new Error(`Incorrect format: ${format}`);
-            }
-            if (this.name.toLowerCase() === "safari") {
-                try {
-                    return this.subtle.importKey("jwk", stringToArrayBuffer(JSON.stringify(jwk)), algorithm, extractable, keyUsages);
                 }
-                catch (_h) {
-                    return this.subtle.importKey("jwk", jwk, algorithm, extractable, keyUsages);
-                }
-            }
-            return this.subtle.importKey("jwk", jwk, algorithm, extractable, keyUsages);
-        });
-    }
-    exportKey(format, key) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let jwk = yield this.subtle.exportKey("jwk", key);
-            if (this.name.toLowerCase() === "safari") {
-                if (jwk instanceof ArrayBuffer) {
-                    jwk = JSON.parse(arrayBufferToString(jwk));
-                }
-            }
-            switch (format.toLowerCase()) {
-                case "raw":
-                    return this.subtle.exportKey("raw", key);
-                case "spki": {
-                    const publicKeyInfo = new PublicKeyInfo();
-                    try {
-                        publicKeyInfo.fromJSON(jwk);
-                    }
-                    catch (ex) {
-                        throw new Error("Incorrect key data");
-                    }
-                    return publicKeyInfo.toSchema().toBER(false);
-                }
-                case "pkcs8": {
+                break;
+            case "pkcs8":
+                {
                     const privateKeyInfo = new PrivateKeyInfo();
+                    const asn1 = fromBER(BufferSourceConverter.toArrayBuffer(keyData));
+                    AsnError.assert(asn1, "keyData");
                     try {
-                        privateKeyInfo.fromJSON(jwk);
+                        privateKeyInfo.fromSchema(asn1.result);
                     }
-                    catch (ex) {
-                        throw new Error("Incorrect key data");
+                    catch {
+                        throw new Error("Incorrect keyData");
                     }
-                    return privateKeyInfo.toSchema().toBER(false);
+                    if (!privateKeyInfo.parsedKey)
+                        throw new Error("Incorrect keyData");
+                    switch (alg.name.toUpperCase()) {
+                        case "RSA-PSS":
+                            {
+                                switch ((_a = alg.hash) === null || _a === void 0 ? void 0 : _a.name.toUpperCase()) {
+                                    case "SHA-1":
+                                        jwk.alg = "PS1";
+                                        break;
+                                    case "SHA-256":
+                                        jwk.alg = "PS256";
+                                        break;
+                                    case "SHA-384":
+                                        jwk.alg = "PS384";
+                                        break;
+                                    case "SHA-512":
+                                        jwk.alg = "PS512";
+                                        break;
+                                    default:
+                                        throw new Error(`Incorrect hash algorithm: ${(_b = alg.hash) === null || _b === void 0 ? void 0 : _b.name.toUpperCase()}`);
+                                }
+                            }
+                        case "RSASSA-PKCS1-V1_5":
+                            {
+                                keyUsages = ["sign"];
+                                jwk.kty = "RSA";
+                                jwk.ext = extractable;
+                                jwk.key_ops = keyUsages;
+                                if (privateKeyInfo.privateKeyAlgorithm.algorithmId !== "1.2.840.113549.1.1.1")
+                                    throw new Error(`Incorrect private key algorithm: ${privateKeyInfo.privateKeyAlgorithm.algorithmId}`);
+                                if (("alg" in jwk) === false) {
+                                    switch ((_c = alg.hash) === null || _c === void 0 ? void 0 : _c.name.toUpperCase()) {
+                                        case "SHA-1":
+                                            jwk.alg = "RS1";
+                                            break;
+                                        case "SHA-256":
+                                            jwk.alg = "RS256";
+                                            break;
+                                        case "SHA-384":
+                                            jwk.alg = "RS384";
+                                            break;
+                                        case "SHA-512":
+                                            jwk.alg = "RS512";
+                                            break;
+                                        default:
+                                            throw new Error(`Incorrect hash algorithm: ${(_d = alg.hash) === null || _d === void 0 ? void 0 : _d.name.toUpperCase()}`);
+                                    }
+                                }
+                                const privateKeyJSON = privateKeyInfo.toJSON();
+                                Object.assign(jwk, privateKeyJSON);
+                            }
+                            break;
+                        case "ECDSA":
+                            keyUsages = ["sign"];
+                        case "ECDH":
+                            {
+                                jwk = {
+                                    kty: "EC",
+                                    ext: extractable,
+                                    key_ops: keyUsages
+                                };
+                                if (privateKeyInfo.privateKeyAlgorithm.algorithmId !== "1.2.840.10045.2.1")
+                                    throw new Error(`Incorrect algorithm: ${privateKeyInfo.privateKeyAlgorithm.algorithmId}`);
+                                const privateKeyJSON = privateKeyInfo.toJSON();
+                                Object.assign(jwk, privateKeyJSON);
+                            }
+                            break;
+                        case "RSA-OAEP":
+                            {
+                                jwk.kty = "RSA";
+                                jwk.ext = extractable;
+                                jwk.key_ops = keyUsages;
+                                if (this.name.toLowerCase() === "safari")
+                                    jwk.alg = "RSA-OAEP";
+                                else {
+                                    switch ((_e = alg.hash) === null || _e === void 0 ? void 0 : _e.name.toUpperCase()) {
+                                        case "SHA-1":
+                                            jwk.alg = "RSA-OAEP";
+                                            break;
+                                        case "SHA-256":
+                                            jwk.alg = "RSA-OAEP-256";
+                                            break;
+                                        case "SHA-384":
+                                            jwk.alg = "RSA-OAEP-384";
+                                            break;
+                                        case "SHA-512":
+                                            jwk.alg = "RSA-OAEP-512";
+                                            break;
+                                        default:
+                                            throw new Error(`Incorrect hash algorithm: ${(_f = alg.hash) === null || _f === void 0 ? void 0 : _f.name.toUpperCase()}`);
+                                    }
+                                }
+                                const privateKeyJSON = privateKeyInfo.toJSON();
+                                Object.assign(jwk, privateKeyJSON);
+                            }
+                            break;
+                        case "RSAES-PKCS1-V1_5":
+                            {
+                                keyUsages = ["decrypt"];
+                                jwk.kty = "RSA";
+                                jwk.ext = extractable;
+                                jwk.key_ops = keyUsages;
+                                jwk.alg = "PS1";
+                                const privateKeyJSON = privateKeyInfo.toJSON();
+                                Object.assign(jwk, privateKeyJSON);
+                            }
+                            break;
+                        default:
+                            throw new Error(`Incorrect algorithm name: ${alg.name.toUpperCase()}`);
+                    }
                 }
-                case "jwk":
-                    return jwk;
-                default:
-                    throw new Error(`Incorrect format: ${format}`);
+                break;
+            case "jwk":
+                jwk = keyData;
+                break;
+            default:
+                throw new Error(`Incorrect format: ${format}`);
+        }
+        if (this.name.toLowerCase() === "safari") {
+            try {
+                return this.subtle.importKey("jwk", stringToArrayBuffer(JSON.stringify(jwk)), algorithm, extractable, keyUsages);
             }
-        });
+            catch {
+                return this.subtle.importKey("jwk", jwk, algorithm, extractable, keyUsages);
+            }
+        }
+        return this.subtle.importKey("jwk", jwk, algorithm, extractable, keyUsages);
     }
-    convert(inputFormat, outputFormat, keyData, algorithm, extractable, keyUsages) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (inputFormat.toLowerCase() === outputFormat.toLowerCase()) {
-                return keyData;
+    async exportKey(format, key) {
+        let jwk = await this.subtle.exportKey("jwk", key);
+        if (this.name.toLowerCase() === "safari") {
+            if (jwk instanceof ArrayBuffer) {
+                jwk = JSON.parse(arrayBufferToString(jwk));
             }
-            const key = yield this.importKey(inputFormat, keyData, algorithm, extractable, keyUsages);
-            return this.exportKey(outputFormat, key);
-        });
+        }
+        switch (format.toLowerCase()) {
+            case "raw":
+                return this.subtle.exportKey("raw", key);
+            case "spki": {
+                const publicKeyInfo = new PublicKeyInfo();
+                try {
+                    publicKeyInfo.fromJSON(jwk);
+                }
+                catch {
+                    throw new Error("Incorrect key data");
+                }
+                return publicKeyInfo.toSchema().toBER(false);
+            }
+            case "pkcs8": {
+                const privateKeyInfo = new PrivateKeyInfo();
+                try {
+                    privateKeyInfo.fromJSON(jwk);
+                }
+                catch {
+                    throw new Error("Incorrect key data");
+                }
+                return privateKeyInfo.toSchema().toBER(false);
+            }
+            case "jwk":
+                return jwk;
+            default:
+                throw new Error(`Incorrect format: ${format}`);
+        }
+    }
+    async convert(inputFormat, outputFormat, keyData, algorithm, extractable, keyUsages) {
+        if (inputFormat.toLowerCase() === outputFormat.toLowerCase()) {
+            return keyData;
+        }
+        const key = await this.importKey(inputFormat, keyData, algorithm, extractable, keyUsages);
+        return this.exportKey(outputFormat, key);
     }
     getAlgorithmByOID(oid, safety = false, target) {
         switch (oid) {
@@ -11297,251 +11850,244 @@ class CryptoEngine extends AbstractCryptoEngine {
                         else
                             result = "SHA-1";
                     }
-                    catch (_a) {
+                    catch {
                     }
                 }
                 break;
         }
         return result;
     }
-    encryptEncryptedContentInfo(parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ParameterError.assert(parameters, "password", "contentEncryptionAlgorithm", "hmacHashAlgorithm", "iterationCount", "contentToEncrypt", "contentToEncrypt", "contentType");
-            const contentEncryptionOID = this.getOIDByAlgorithm(parameters.contentEncryptionAlgorithm, true, "contentEncryptionAlgorithm");
-            const pbkdf2OID = this.getOIDByAlgorithm({
-                name: "PBKDF2"
-            }, true, "PBKDF2");
-            const hmacOID = this.getOIDByAlgorithm({
-                name: "HMAC",
-                hash: {
-                    name: parameters.hmacHashAlgorithm
-                }
-            }, true, "hmacHashAlgorithm");
-            const ivBuffer = new ArrayBuffer(16);
-            const ivView = new Uint8Array(ivBuffer);
-            this.getRandomValues(ivView);
-            const saltBuffer = new ArrayBuffer(64);
-            const saltView = new Uint8Array(saltBuffer);
-            this.getRandomValues(saltView);
-            const contentView = new Uint8Array(parameters.contentToEncrypt);
-            const pbkdf2Params = new PBKDF2Params({
-                salt: new OctetString({ valueHex: saltBuffer }),
-                iterationCount: parameters.iterationCount,
-                prf: new AlgorithmIdentifier({
-                    algorithmId: hmacOID,
-                    algorithmParams: new Null()
-                })
-            });
-            const passwordView = new Uint8Array(parameters.password);
-            const pbkdfKey = yield this.importKey("raw", passwordView, "PBKDF2", false, ["deriveKey"]);
-            const derivedKey = yield this.deriveKey({
-                name: "PBKDF2",
-                hash: {
-                    name: parameters.hmacHashAlgorithm
-                },
-                salt: saltView,
-                iterations: parameters.iterationCount
-            }, pbkdfKey, parameters.contentEncryptionAlgorithm, false, ["encrypt"]);
-            const encryptedData = yield this.encrypt({
-                name: parameters.contentEncryptionAlgorithm.name,
-                iv: ivView
-            }, derivedKey, contentView);
-            const pbes2Parameters = new PBES2Params({
-                keyDerivationFunc: new AlgorithmIdentifier({
-                    algorithmId: pbkdf2OID,
-                    algorithmParams: pbkdf2Params.toSchema()
-                }),
-                encryptionScheme: new AlgorithmIdentifier({
-                    algorithmId: contentEncryptionOID,
-                    algorithmParams: new OctetString({ valueHex: ivBuffer })
-                })
-            });
-            return new EncryptedContentInfo({
-                contentType: parameters.contentType,
-                contentEncryptionAlgorithm: new AlgorithmIdentifier({
-                    algorithmId: "1.2.840.113549.1.5.13",
-                    algorithmParams: pbes2Parameters.toSchema()
-                }),
-                encryptedContent: new OctetString({ valueHex: encryptedData })
-            });
+    async encryptEncryptedContentInfo(parameters) {
+        ParameterError.assert(parameters, "password", "contentEncryptionAlgorithm", "hmacHashAlgorithm", "iterationCount", "contentToEncrypt", "contentToEncrypt", "contentType");
+        const contentEncryptionOID = this.getOIDByAlgorithm(parameters.contentEncryptionAlgorithm, true, "contentEncryptionAlgorithm");
+        const pbkdf2OID = this.getOIDByAlgorithm({
+            name: "PBKDF2"
+        }, true, "PBKDF2");
+        const hmacOID = this.getOIDByAlgorithm({
+            name: "HMAC",
+            hash: {
+                name: parameters.hmacHashAlgorithm
+            }
+        }, true, "hmacHashAlgorithm");
+        const ivBuffer = new ArrayBuffer(16);
+        const ivView = new Uint8Array(ivBuffer);
+        this.getRandomValues(ivView);
+        const saltBuffer = new ArrayBuffer(64);
+        const saltView = new Uint8Array(saltBuffer);
+        this.getRandomValues(saltView);
+        const contentView = new Uint8Array(parameters.contentToEncrypt);
+        const pbkdf2Params = new PBKDF2Params({
+            salt: new OctetString({ valueHex: saltBuffer }),
+            iterationCount: parameters.iterationCount,
+            prf: new AlgorithmIdentifier({
+                algorithmId: hmacOID,
+                algorithmParams: new Null()
+            })
+        });
+        const passwordView = new Uint8Array(parameters.password);
+        const pbkdfKey = await this.importKey("raw", passwordView, "PBKDF2", false, ["deriveKey"]);
+        const derivedKey = await this.deriveKey({
+            name: "PBKDF2",
+            hash: {
+                name: parameters.hmacHashAlgorithm
+            },
+            salt: saltView,
+            iterations: parameters.iterationCount
+        }, pbkdfKey, parameters.contentEncryptionAlgorithm, false, ["encrypt"]);
+        const encryptedData = await this.encrypt({
+            name: parameters.contentEncryptionAlgorithm.name,
+            iv: ivView
+        }, derivedKey, contentView);
+        const pbes2Parameters = new PBES2Params({
+            keyDerivationFunc: new AlgorithmIdentifier({
+                algorithmId: pbkdf2OID,
+                algorithmParams: pbkdf2Params.toSchema()
+            }),
+            encryptionScheme: new AlgorithmIdentifier({
+                algorithmId: contentEncryptionOID,
+                algorithmParams: new OctetString({ valueHex: ivBuffer })
+            })
+        });
+        return new EncryptedContentInfo({
+            contentType: parameters.contentType,
+            contentEncryptionAlgorithm: new AlgorithmIdentifier({
+                algorithmId: "1.2.840.113549.1.5.13",
+                algorithmParams: pbes2Parameters.toSchema()
+            }),
+            encryptedContent: new OctetString({ valueHex: encryptedData })
         });
     }
-    decryptEncryptedContentInfo(parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ParameterError.assert(parameters, "password", "encryptedContentInfo");
-            if (parameters.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId !== "1.2.840.113549.1.5.13")
-                throw new Error(`Unknown "contentEncryptionAlgorithm": ${parameters.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId}`);
-            let pbes2Parameters;
-            try {
-                pbes2Parameters = new PBES2Params({ schema: parameters.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams });
-            }
-            catch (ex) {
-                throw new Error("Incorrectly encoded \"pbes2Parameters\"");
-            }
-            let pbkdf2Params;
-            try {
-                pbkdf2Params = new PBKDF2Params({ schema: pbes2Parameters.keyDerivationFunc.algorithmParams });
-            }
-            catch (ex) {
-                throw new Error("Incorrectly encoded \"pbkdf2Params\"");
-            }
-            const contentEncryptionAlgorithm = this.getAlgorithmByOID(pbes2Parameters.encryptionScheme.algorithmId, true);
-            const ivBuffer = pbes2Parameters.encryptionScheme.algorithmParams.valueBlock.valueHex;
-            const ivView = new Uint8Array(ivBuffer);
-            const saltBuffer = pbkdf2Params.salt.valueBlock.valueHex;
-            const saltView = new Uint8Array(saltBuffer);
-            const iterationCount = pbkdf2Params.iterationCount;
-            let hmacHashAlgorithm = "SHA-1";
-            if (pbkdf2Params.prf) {
-                const algorithm = this.getAlgorithmByOID(pbkdf2Params.prf.algorithmId, true);
-                hmacHashAlgorithm = algorithm.hash.name;
-            }
-            const pbkdfKey = yield this.importKey("raw", parameters.password, "PBKDF2", false, ["deriveKey"]);
-            const result = yield this.deriveKey({
-                name: "PBKDF2",
-                hash: {
-                    name: hmacHashAlgorithm
-                },
-                salt: saltView,
-                iterations: iterationCount
-            }, pbkdfKey, contentEncryptionAlgorithm, false, ["decrypt"]);
-            const dataBuffer = parameters.encryptedContentInfo.getEncryptedContent();
-            return this.decrypt({
-                name: contentEncryptionAlgorithm.name,
-                iv: ivView
-            }, result, dataBuffer);
-        });
+    async decryptEncryptedContentInfo(parameters) {
+        ParameterError.assert(parameters, "password", "encryptedContentInfo");
+        if (parameters.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId !== "1.2.840.113549.1.5.13")
+            throw new Error(`Unknown "contentEncryptionAlgorithm": ${parameters.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId}`);
+        let pbes2Parameters;
+        try {
+            pbes2Parameters = new PBES2Params({ schema: parameters.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams });
+        }
+        catch {
+            throw new Error("Incorrectly encoded \"pbes2Parameters\"");
+        }
+        let pbkdf2Params;
+        try {
+            pbkdf2Params = new PBKDF2Params({ schema: pbes2Parameters.keyDerivationFunc.algorithmParams });
+        }
+        catch {
+            throw new Error("Incorrectly encoded \"pbkdf2Params\"");
+        }
+        const contentEncryptionAlgorithm = this.getAlgorithmByOID(pbes2Parameters.encryptionScheme.algorithmId, true);
+        const ivBuffer = pbes2Parameters.encryptionScheme.algorithmParams.valueBlock.valueHex;
+        const ivView = new Uint8Array(ivBuffer);
+        const saltBuffer = pbkdf2Params.salt.valueBlock.valueHex;
+        const saltView = new Uint8Array(saltBuffer);
+        const iterationCount = pbkdf2Params.iterationCount;
+        let hmacHashAlgorithm = "SHA-1";
+        if (pbkdf2Params.prf) {
+            const algorithm = this.getAlgorithmByOID(pbkdf2Params.prf.algorithmId, true);
+            hmacHashAlgorithm = algorithm.hash.name;
+        }
+        const pbkdfKey = await this.importKey("raw", parameters.password, "PBKDF2", false, ["deriveKey"]);
+        const result = await this.deriveKey({
+            name: "PBKDF2",
+            hash: {
+                name: hmacHashAlgorithm
+            },
+            salt: saltView,
+            iterations: iterationCount
+        }, pbkdfKey, contentEncryptionAlgorithm, false, ["decrypt"]);
+        const dataBuffer = parameters.encryptedContentInfo.getEncryptedContent();
+        return this.decrypt({
+            name: contentEncryptionAlgorithm.name,
+            iv: ivView
+        }, result, dataBuffer);
     }
-    stampDataWithPassword(parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if ((parameters instanceof Object) === false)
-                throw new Error("Parameters must have type \"Object\"");
-            ParameterError.assert(parameters, "password", "hashAlgorithm", "iterationCount", "salt", "contentToStamp");
-            let length;
-            switch (parameters.hashAlgorithm.toLowerCase()) {
-                case "sha-1":
-                    length = 160;
-                    break;
-                case "sha-256":
-                    length = 256;
-                    break;
-                case "sha-384":
-                    length = 384;
-                    break;
-                case "sha-512":
-                    length = 512;
-                    break;
-                default:
-                    throw new Error(`Incorrect "parameters.hashAlgorithm" parameter: ${parameters.hashAlgorithm}`);
+    async stampDataWithPassword(parameters) {
+        if ((parameters instanceof Object) === false)
+            throw new Error("Parameters must have type \"Object\"");
+        ParameterError.assert(parameters, "password", "hashAlgorithm", "iterationCount", "salt", "contentToStamp");
+        let length;
+        switch (parameters.hashAlgorithm.toLowerCase()) {
+            case "sha-1":
+                length = 160;
+                break;
+            case "sha-256":
+                length = 256;
+                break;
+            case "sha-384":
+                length = 384;
+                break;
+            case "sha-512":
+                length = 512;
+                break;
+            default:
+                throw new Error(`Incorrect "parameters.hashAlgorithm" parameter: ${parameters.hashAlgorithm}`);
+        }
+        const hmacAlgorithm = {
+            name: "HMAC",
+            length,
+            hash: {
+                name: parameters.hashAlgorithm
             }
-            const hmacAlgorithm = {
-                name: "HMAC",
-                length,
-                hash: {
-                    name: parameters.hashAlgorithm
-                }
-            };
-            const pkcsKey = yield makePKCS12B2Key(this, parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
-            const hmacKey = yield this.importKey("raw", new Uint8Array(pkcsKey), hmacAlgorithm, false, ["sign"]);
-            return this.sign(hmacAlgorithm, hmacKey, new Uint8Array(parameters.contentToStamp));
-        });
+        };
+        const pkcsKey = await makePKCS12B2Key(parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
+        const hmacKey = await this.importKey("raw", new Uint8Array(pkcsKey), hmacAlgorithm, false, ["sign"]);
+        return this.sign(hmacAlgorithm, hmacKey, new Uint8Array(parameters.contentToStamp));
     }
-    verifyDataStampedWithPassword(parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ParameterError.assert(parameters, "password", "hashAlgorithm", "salt", "iterationCount", "contentToVerify", "signatureToVerify");
-            let length = 0;
-            switch (parameters.hashAlgorithm.toLowerCase()) {
-                case "sha-1":
-                    length = 160;
-                    break;
-                case "sha-256":
-                    length = 256;
-                    break;
-                case "sha-384":
-                    length = 384;
-                    break;
-                case "sha-512":
-                    length = 512;
-                    break;
-                default:
-                    throw new Error(`Incorrect "parameters.hashAlgorithm" parameter: ${parameters.hashAlgorithm}`);
+    async verifyDataStampedWithPassword(parameters) {
+        ParameterError.assert(parameters, "password", "hashAlgorithm", "salt", "iterationCount", "contentToVerify", "signatureToVerify");
+        let length = 0;
+        switch (parameters.hashAlgorithm.toLowerCase()) {
+            case "sha-1":
+                length = 160;
+                break;
+            case "sha-256":
+                length = 256;
+                break;
+            case "sha-384":
+                length = 384;
+                break;
+            case "sha-512":
+                length = 512;
+                break;
+            default:
+                throw new Error(`Incorrect "parameters.hashAlgorithm" parameter: ${parameters.hashAlgorithm}`);
+        }
+        const hmacAlgorithm = {
+            name: "HMAC",
+            length,
+            hash: {
+                name: parameters.hashAlgorithm
             }
-            const hmacAlgorithm = {
-                name: "HMAC",
-                length,
-                hash: {
-                    name: parameters.hashAlgorithm
-                }
-            };
-            const pkcsKey = yield makePKCS12B2Key(this, parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
-            const hmacKey = yield this.importKey("raw", new Uint8Array(pkcsKey), hmacAlgorithm, false, ["verify"]);
-            return this.verify(hmacAlgorithm, hmacKey, new Uint8Array(parameters.signatureToVerify), new Uint8Array(parameters.contentToVerify));
-        });
+        };
+        const pkcsKey = await makePKCS12B2Key(parameters.hashAlgorithm, length, parameters.password, parameters.salt, parameters.iterationCount);
+        const hmacKey = await this.importKey("raw", new Uint8Array(pkcsKey), hmacAlgorithm, false, ["verify"]);
+        return this.verify(hmacAlgorithm, hmacKey, new Uint8Array(parameters.signatureToVerify), new Uint8Array(parameters.contentToVerify));
     }
-    getSignatureParameters(privateKey, hashAlgorithm = "SHA-1") {
-        return __awaiter(this, void 0, void 0, function* () {
-            this.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
-            const signatureAlgorithm = new AlgorithmIdentifier();
-            const parameters = this.getAlgorithmParameters(privateKey.algorithm.name, "sign");
-            if (!Object.keys(parameters.algorithm).length) {
-                throw new Error("Parameter 'algorithm' is empty");
-            }
-            const algorithm = parameters.algorithm;
+    async getSignatureParameters(privateKey, hashAlgorithm = "SHA-1") {
+        this.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
+        const signatureAlgorithm = new AlgorithmIdentifier();
+        const parameters = this.getAlgorithmParameters(privateKey.algorithm.name, "sign");
+        if (!Object.keys(parameters.algorithm).length) {
+            throw new Error("Parameter 'algorithm' is empty");
+        }
+        const algorithm = parameters.algorithm;
+        if ("hash" in privateKey.algorithm && privateKey.algorithm.hash && privateKey.algorithm.hash.name) {
+            algorithm.hash.name = privateKey.algorithm.hash.name;
+        }
+        else {
             algorithm.hash.name = hashAlgorithm;
-            switch (privateKey.algorithm.name.toUpperCase()) {
-                case "RSASSA-PKCS1-V1_5":
-                case "ECDSA":
-                    signatureAlgorithm.algorithmId = this.getOIDByAlgorithm(algorithm, true);
-                    break;
-                case "RSA-PSS":
-                    {
-                        switch (hashAlgorithm.toUpperCase()) {
-                            case "SHA-256":
-                                algorithm.saltLength = 32;
-                                break;
-                            case "SHA-384":
-                                algorithm.saltLength = 48;
-                                break;
-                            case "SHA-512":
-                                algorithm.saltLength = 64;
-                                break;
-                        }
-                        const paramsObject = {};
-                        if (hashAlgorithm.toUpperCase() !== "SHA-1") {
-                            const hashAlgorithmOID = this.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
-                            paramsObject.hashAlgorithm = new AlgorithmIdentifier({
-                                algorithmId: hashAlgorithmOID,
-                                algorithmParams: new Null()
-                            });
-                            paramsObject.maskGenAlgorithm = new AlgorithmIdentifier({
-                                algorithmId: "1.2.840.113549.1.1.8",
-                                algorithmParams: paramsObject.hashAlgorithm.toSchema()
-                            });
-                        }
-                        if (algorithm.saltLength !== 20)
-                            paramsObject.saltLength = algorithm.saltLength;
-                        const pssParameters = new RSASSAPSSParams(paramsObject);
-                        signatureAlgorithm.algorithmId = "1.2.840.113549.1.1.10";
-                        signatureAlgorithm.algorithmParams = pssParameters.toSchema();
+        }
+        switch (privateKey.algorithm.name.toUpperCase()) {
+            case "RSASSA-PKCS1-V1_5":
+            case "ECDSA":
+                signatureAlgorithm.algorithmId = this.getOIDByAlgorithm(algorithm, true);
+                break;
+            case "RSA-PSS":
+                {
+                    switch (algorithm.hash.name.toUpperCase()) {
+                        case "SHA-256":
+                            algorithm.saltLength = 32;
+                            break;
+                        case "SHA-384":
+                            algorithm.saltLength = 48;
+                            break;
+                        case "SHA-512":
+                            algorithm.saltLength = 64;
+                            break;
                     }
-                    break;
-                default:
-                    throw new Error(`Unsupported signature algorithm: ${privateKey.algorithm.name}`);
-            }
-            return {
-                signatureAlgorithm,
-                parameters
-            };
-        });
+                    const paramsObject = {};
+                    if (algorithm.hash.name.toUpperCase() !== "SHA-1") {
+                        const hashAlgorithmOID = this.getOIDByAlgorithm({ name: algorithm.hash.name }, true, "hashAlgorithm");
+                        paramsObject.hashAlgorithm = new AlgorithmIdentifier({
+                            algorithmId: hashAlgorithmOID,
+                            algorithmParams: new Null()
+                        });
+                        paramsObject.maskGenAlgorithm = new AlgorithmIdentifier({
+                            algorithmId: "1.2.840.113549.1.1.8",
+                            algorithmParams: paramsObject.hashAlgorithm.toSchema()
+                        });
+                    }
+                    if (algorithm.saltLength !== 20)
+                        paramsObject.saltLength = algorithm.saltLength;
+                    const pssParameters = new RSASSAPSSParams(paramsObject);
+                    signatureAlgorithm.algorithmId = "1.2.840.113549.1.1.10";
+                    signatureAlgorithm.algorithmParams = pssParameters.toSchema();
+                }
+                break;
+            default:
+                throw new Error(`Unsupported signature algorithm: ${privateKey.algorithm.name}`);
+        }
+        return {
+            signatureAlgorithm,
+            parameters
+        };
     }
-    signWithPrivateKey(data, privateKey, parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const signature = yield this.sign(parameters.algorithm, privateKey, data);
-            if (parameters.algorithm.name === "ECDSA") {
-                return createCMSECDSASignature(signature);
-            }
-            return signature;
-        });
+    async signWithPrivateKey(data, privateKey, parameters) {
+        const signature = await this.sign(parameters.algorithm, privateKey, data);
+        if (parameters.algorithm.name === "ECDSA") {
+            return createCMSECDSASignature(signature);
+        }
+        return signature;
     }
     fillPublicKeyParameters(publicKeyInfo, signatureAlgorithm) {
         const parameters = {};
@@ -11573,79 +12119,75 @@ class CryptoEngine extends AbstractCryptoEngine {
         }
         return parameters;
     }
-    getPublicKey(publicKeyInfo, signatureAlgorithm, parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!parameters) {
-                parameters = this.fillPublicKeyParameters(publicKeyInfo, signatureAlgorithm);
-            }
-            const publicKeyInfoBuffer = publicKeyInfo.toSchema().toBER(false);
-            return this.importKey("spki", publicKeyInfoBuffer, parameters.algorithm.algorithm, true, parameters.algorithm.usages);
-        });
+    async getPublicKey(publicKeyInfo, signatureAlgorithm, parameters) {
+        if (!parameters) {
+            parameters = this.fillPublicKeyParameters(publicKeyInfo, signatureAlgorithm);
+        }
+        const publicKeyInfoBuffer = publicKeyInfo.toSchema().toBER(false);
+        return this.importKey("spki", publicKeyInfoBuffer, parameters.algorithm.algorithm, true, parameters.algorithm.usages);
     }
-    verifyWithPublicKey(data, signature, publicKeyInfo, signatureAlgorithm, shaAlgorithm) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let publicKey;
-            if (!shaAlgorithm) {
-                shaAlgorithm = this.getHashAlgorithm(signatureAlgorithm);
-                if (!shaAlgorithm)
-                    throw new Error(`Unsupported signature algorithm: ${signatureAlgorithm.algorithmId}`);
-                publicKey = yield this.getPublicKey(publicKeyInfo, signatureAlgorithm);
-            }
-            else {
-                const parameters = {};
-                let algorithmId;
-                if (signatureAlgorithm.algorithmId === "1.2.840.113549.1.1.10")
-                    algorithmId = signatureAlgorithm.algorithmId;
-                else
-                    algorithmId = publicKeyInfo.algorithm.algorithmId;
-                const algorithmObject = this.getAlgorithmByOID(algorithmId, true);
-                parameters.algorithm = this.getAlgorithmParameters(algorithmObject.name, "importKey");
-                if ("hash" in parameters.algorithm.algorithm)
-                    parameters.algorithm.algorithm.hash.name = shaAlgorithm;
-                if (algorithmObject.name === "ECDSA") {
-                    let algorithmParamsChecked = false;
-                    if (("algorithmParams" in publicKeyInfo.algorithm) === true) {
-                        if ("idBlock" in publicKeyInfo.algorithm.algorithmParams) {
-                            if ((publicKeyInfo.algorithm.algorithmParams.idBlock.tagClass === 1) && (publicKeyInfo.algorithm.algorithmParams.idBlock.tagNumber === 6))
-                                algorithmParamsChecked = true;
-                        }
+    async verifyWithPublicKey(data, signature, publicKeyInfo, signatureAlgorithm, shaAlgorithm) {
+        let publicKey;
+        if (!shaAlgorithm) {
+            shaAlgorithm = this.getHashAlgorithm(signatureAlgorithm);
+            if (!shaAlgorithm)
+                throw new Error(`Unsupported signature algorithm: ${signatureAlgorithm.algorithmId}`);
+            publicKey = await this.getPublicKey(publicKeyInfo, signatureAlgorithm);
+        }
+        else {
+            const parameters = {};
+            let algorithmId;
+            if (signatureAlgorithm.algorithmId === "1.2.840.113549.1.1.10")
+                algorithmId = signatureAlgorithm.algorithmId;
+            else
+                algorithmId = publicKeyInfo.algorithm.algorithmId;
+            const algorithmObject = this.getAlgorithmByOID(algorithmId, true);
+            parameters.algorithm = this.getAlgorithmParameters(algorithmObject.name, "importKey");
+            if ("hash" in parameters.algorithm.algorithm)
+                parameters.algorithm.algorithm.hash.name = shaAlgorithm;
+            if (algorithmObject.name === "ECDSA") {
+                let algorithmParamsChecked = false;
+                if (("algorithmParams" in publicKeyInfo.algorithm) === true) {
+                    if ("idBlock" in publicKeyInfo.algorithm.algorithmParams) {
+                        if ((publicKeyInfo.algorithm.algorithmParams.idBlock.tagClass === 1) && (publicKeyInfo.algorithm.algorithmParams.idBlock.tagNumber === 6))
+                            algorithmParamsChecked = true;
                     }
-                    if (algorithmParamsChecked === false) {
-                        throw new Error("Incorrect type for ECDSA public key parameters");
-                    }
-                    const curveObject = this.getAlgorithmByOID(publicKeyInfo.algorithm.algorithmParams.valueBlock.toString(), true);
-                    parameters.algorithm.algorithm.namedCurve = curveObject.name;
                 }
-                publicKey = yield this.getPublicKey(publicKeyInfo, null, parameters);
-            }
-            const algorithm = this.getAlgorithmParameters(publicKey.algorithm.name, "verify");
-            if ("hash" in algorithm.algorithm)
-                algorithm.algorithm.hash.name = shaAlgorithm;
-            let signatureValue = signature.valueBlock.valueHexView;
-            if (publicKey.algorithm.name === "ECDSA") {
-                const namedCurve = ECNamedCurves.find(publicKey.algorithm.namedCurve);
-                if (!namedCurve) {
-                    throw new Error("Unsupported named curve in use");
+                if (algorithmParamsChecked === false) {
+                    throw new Error("Incorrect type for ECDSA public key parameters");
                 }
-                const asn1 = fromBER(signatureValue);
-                AsnError.assert(asn1, "Signature value");
-                signatureValue = createECDSASignatureFromCMS(asn1.result, namedCurve.size);
+                const curveObject = this.getAlgorithmByOID(publicKeyInfo.algorithm.algorithmParams.valueBlock.toString(), true);
+                parameters.algorithm.algorithm.namedCurve = curveObject.name;
             }
-            if (publicKey.algorithm.name === "RSA-PSS") {
-                const pssParameters = new RSASSAPSSParams({ schema: signatureAlgorithm.algorithmParams });
-                if ("saltLength" in pssParameters)
-                    algorithm.algorithm.saltLength = pssParameters.saltLength;
-                else
-                    algorithm.algorithm.saltLength = 20;
-                let hashAlgo = "SHA-1";
-                if ("hashAlgorithm" in pssParameters) {
-                    const hashAlgorithm = this.getAlgorithmByOID(pssParameters.hashAlgorithm.algorithmId, true);
-                    hashAlgo = hashAlgorithm.name;
-                }
-                algorithm.algorithm.hash.name = hashAlgo;
+            publicKey = await this.getPublicKey(publicKeyInfo, null, parameters);
+        }
+        const algorithm = this.getAlgorithmParameters(publicKey.algorithm.name, "verify");
+        if ("hash" in algorithm.algorithm)
+            algorithm.algorithm.hash.name = shaAlgorithm;
+        let signatureValue = signature.valueBlock.valueHexView;
+        if (publicKey.algorithm.name === "ECDSA") {
+            const namedCurve = ECNamedCurves.find(publicKey.algorithm.namedCurve);
+            if (!namedCurve) {
+                throw new Error("Unsupported named curve in use");
             }
-            return this.verify(algorithm.algorithm, publicKey, signatureValue, data);
-        });
+            const asn1 = fromBER(signatureValue);
+            AsnError.assert(asn1, "Signature value");
+            signatureValue = createECDSASignatureFromCMS(asn1.result, namedCurve.size);
+        }
+        if (publicKey.algorithm.name === "RSA-PSS") {
+            const pssParameters = new RSASSAPSSParams({ schema: signatureAlgorithm.algorithmParams });
+            if ("saltLength" in pssParameters)
+                algorithm.algorithm.saltLength = pssParameters.saltLength;
+            else
+                algorithm.algorithm.saltLength = 20;
+            let hashAlgo = "SHA-1";
+            if ("hashAlgorithm" in pssParameters) {
+                const hashAlgorithm = this.getAlgorithmByOID(pssParameters.hashAlgorithm.algorithmId, true);
+                hashAlgo = hashAlgorithm.name;
+            }
+            algorithm.algorithm.hash.name = hashAlgo;
+        }
+        return this.verify(algorithm.algorithm, publicKey, signatureValue, data);
     }
 }
 
@@ -11720,7 +12262,7 @@ function getEngine() {
         try {
             _engine = global[process.pid].pkijs.engine;
         }
-        catch (ex) {
+        catch {
             throw new Error("Please call 'setEngine' before call to 'getEngine'");
         }
         return _engine;
@@ -11781,98 +12323,94 @@ function getAlgorithmByOID(oid, safety = false, target) {
 function getHashAlgorithm(signatureAlgorithm) {
     return getCrypto(true).getHashAlgorithm(signatureAlgorithm);
 }
-function kdfWithCounter(hashFunction, zBuffer, Counter, SharedInfo, crypto) {
-    return __awaiter(this, void 0, void 0, function* () {
-        switch (hashFunction.toUpperCase()) {
-            case "SHA-1":
-            case "SHA-256":
-            case "SHA-384":
-            case "SHA-512":
-                break;
-            default:
-                throw new ArgumentError(`Unknown hash function: ${hashFunction}`);
-        }
-        ArgumentError.assert(zBuffer, "zBuffer", "ArrayBuffer");
-        if (zBuffer.byteLength === 0)
-            throw new ArgumentError("'zBuffer' has zero length, error");
-        ArgumentError.assert(SharedInfo, "SharedInfo", "ArrayBuffer");
-        if (Counter > 255)
-            throw new ArgumentError("Please set 'Counter' argument to value less or equal to 255");
-        const counterBuffer = new ArrayBuffer(4);
-        const counterView = new Uint8Array(counterBuffer);
-        counterView[0] = 0x00;
-        counterView[1] = 0x00;
-        counterView[2] = 0x00;
-        counterView[3] = Counter;
-        let combinedBuffer = EMPTY_BUFFER;
-        combinedBuffer = utilConcatBuf(combinedBuffer, zBuffer);
-        combinedBuffer = utilConcatBuf(combinedBuffer, counterBuffer);
-        combinedBuffer = utilConcatBuf(combinedBuffer, SharedInfo);
-        const result = yield crypto.digest({ name: hashFunction }, combinedBuffer);
-        return {
-            counter: Counter,
-            result
-        };
-    });
+async function kdfWithCounter(hashFunction, zBuffer, Counter, SharedInfo, crypto) {
+    switch (hashFunction.toUpperCase()) {
+        case "SHA-1":
+        case "SHA-256":
+        case "SHA-384":
+        case "SHA-512":
+            break;
+        default:
+            throw new ArgumentError(`Unknown hash function: ${hashFunction}`);
+    }
+    ArgumentError.assert(zBuffer, "zBuffer", "ArrayBuffer");
+    if (zBuffer.byteLength === 0)
+        throw new ArgumentError("'zBuffer' has zero length, error");
+    ArgumentError.assert(SharedInfo, "SharedInfo", "ArrayBuffer");
+    if (Counter > 255)
+        throw new ArgumentError("Please set 'Counter' argument to value less or equal to 255");
+    const counterBuffer = new ArrayBuffer(4);
+    const counterView = new Uint8Array(counterBuffer);
+    counterView[0] = 0x00;
+    counterView[1] = 0x00;
+    counterView[2] = 0x00;
+    counterView[3] = Counter;
+    let combinedBuffer = EMPTY_BUFFER;
+    combinedBuffer = utilConcatBuf(combinedBuffer, zBuffer);
+    combinedBuffer = utilConcatBuf(combinedBuffer, counterBuffer);
+    combinedBuffer = utilConcatBuf(combinedBuffer, SharedInfo);
+    const result = await crypto.digest({ name: hashFunction }, combinedBuffer);
+    return {
+        counter: Counter,
+        result
+    };
 }
-function kdf(hashFunction, Zbuffer, keydatalen, SharedInfo, crypto = getCrypto(true)) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let hashLength = 0;
-        let maxCounter = 1;
-        switch (hashFunction.toUpperCase()) {
-            case "SHA-1":
-                hashLength = 160;
+async function kdf(hashFunction, Zbuffer, keydatalen, SharedInfo, crypto = getCrypto(true)) {
+    let hashLength = 0;
+    let maxCounter = 1;
+    switch (hashFunction.toUpperCase()) {
+        case "SHA-1":
+            hashLength = 160;
+            break;
+        case "SHA-256":
+            hashLength = 256;
+            break;
+        case "SHA-384":
+            hashLength = 384;
+            break;
+        case "SHA-512":
+            hashLength = 512;
+            break;
+        default:
+            throw new ArgumentError(`Unknown hash function: ${hashFunction}`);
+    }
+    ArgumentError.assert(Zbuffer, "Zbuffer", "ArrayBuffer");
+    if (Zbuffer.byteLength === 0)
+        throw new ArgumentError("'Zbuffer' has zero length, error");
+    ArgumentError.assert(SharedInfo, "SharedInfo", "ArrayBuffer");
+    const quotient = keydatalen / hashLength;
+    if (Math.floor(quotient) > 0) {
+        maxCounter = Math.floor(quotient);
+        if ((quotient - maxCounter) > 0)
+            maxCounter++;
+    }
+    const incomingResult = [];
+    for (let i = 1; i <= maxCounter; i++)
+        incomingResult.push(await kdfWithCounter(hashFunction, Zbuffer, i, SharedInfo, crypto));
+    let combinedBuffer = EMPTY_BUFFER;
+    let currentCounter = 1;
+    let found = true;
+    while (found) {
+        found = false;
+        for (const result of incomingResult) {
+            if (result.counter === currentCounter) {
+                combinedBuffer = utilConcatBuf(combinedBuffer, result.result);
+                found = true;
                 break;
-            case "SHA-256":
-                hashLength = 256;
-                break;
-            case "SHA-384":
-                hashLength = 384;
-                break;
-            case "SHA-512":
-                hashLength = 512;
-                break;
-            default:
-                throw new ArgumentError(`Unknown hash function: ${hashFunction}`);
-        }
-        ArgumentError.assert(Zbuffer, "Zbuffer", "ArrayBuffer");
-        if (Zbuffer.byteLength === 0)
-            throw new ArgumentError("'Zbuffer' has zero length, error");
-        ArgumentError.assert(SharedInfo, "SharedInfo", "ArrayBuffer");
-        const quotient = keydatalen / hashLength;
-        if (Math.floor(quotient) > 0) {
-            maxCounter = Math.floor(quotient);
-            if ((quotient - maxCounter) > 0)
-                maxCounter++;
-        }
-        const incomingResult = [];
-        for (let i = 1; i <= maxCounter; i++)
-            incomingResult.push(yield kdfWithCounter(hashFunction, Zbuffer, i, SharedInfo, crypto));
-        let combinedBuffer = EMPTY_BUFFER;
-        let currentCounter = 1;
-        let found = true;
-        while (found) {
-            found = false;
-            for (const result of incomingResult) {
-                if (result.counter === currentCounter) {
-                    combinedBuffer = utilConcatBuf(combinedBuffer, result.result);
-                    found = true;
-                    break;
-                }
             }
-            currentCounter++;
         }
-        keydatalen >>= 3;
-        if (combinedBuffer.byteLength > keydatalen) {
-            const newBuffer = new ArrayBuffer(keydatalen);
-            const newView = new Uint8Array(newBuffer);
-            const combinedView = new Uint8Array(combinedBuffer);
-            for (let i = 0; i < keydatalen; i++)
-                newView[i] = combinedView[i];
-            return newBuffer;
-        }
-        return combinedBuffer;
-    });
+        currentCounter++;
+    }
+    keydatalen >>= 3;
+    if (combinedBuffer.byteLength > keydatalen) {
+        const newBuffer = new ArrayBuffer(keydatalen);
+        const newView = new Uint8Array(newBuffer);
+        const combinedView = new Uint8Array(combinedBuffer);
+        for (let i = 0; i < keydatalen; i++)
+            newView[i] = combinedView[i];
+        return newBuffer;
+    }
+    return combinedBuffer;
 }
 
 const VERSION$i = "version";
@@ -11923,7 +12461,7 @@ class SignedCertificateTimestamp extends PkiObject {
             case SIGNATURE_ALGORITHM$8:
                 return EMPTY_STRING;
             case SIGNATURE$7:
-                return new Any();
+                return EMPTY_BUFFER;
             default:
                 return super.defaultValues(memberName);
         }
@@ -11988,10 +12526,7 @@ class SignedCertificateTimestamp extends PkiObject {
                     throw new Error("Object's stream was not correct for SignedCertificateTimestamp");
             }
             const signatureLength = stream.getUint16();
-            const signatureData = new Uint8Array(stream.getBlock(signatureLength)).buffer.slice(0);
-            const asn1 = fromBER(signatureData);
-            AsnError.assert(asn1, "SignedCertificateTimestamp");
-            this.signature = asn1.result;
+            this.signature = new Uint8Array(stream.getBlock(signatureLength)).buffer.slice(0);
             if (blockLength !== (47 + extensionsLength + signatureLength)) {
                 throw new Error("Object's stream was not correct for SignedCertificateTimestamp");
             }
@@ -12003,7 +12538,7 @@ class SignedCertificateTimestamp extends PkiObject {
     }
     toStream() {
         const stream = new SeqStream();
-        stream.appendUint16(47 + this.extensions.byteLength + this.signature.valueBeforeDecodeView.byteLength);
+        stream.appendUint16(47 + this.extensions.byteLength + this.signature.byteLength);
         stream.appendChar(this.version);
         stream.appendView(new Uint8Array(this.logID));
         const timeBuffer = new ArrayBuffer(8);
@@ -12059,9 +12594,8 @@ class SignedCertificateTimestamp extends PkiObject {
                 throw new Error(`Incorrect data for signatureAlgorithm: ${this.signatureAlgorithm}`);
         }
         stream.appendChar(_signatureAlgorithm);
-        const _signature = this.signature.toBER(false);
-        stream.appendUint16(_signature.byteLength);
-        stream.appendView(new Uint8Array(_signature));
+        stream.appendUint16(this.signature.byteLength);
+        stream.appendView(new Uint8Array(this.signature));
         return stream;
     }
     toJSON() {
@@ -12072,49 +12606,47 @@ class SignedCertificateTimestamp extends PkiObject {
             extensions: bufferToHexCodes(this.extensions),
             hashAlgorithm: this.hashAlgorithm,
             signatureAlgorithm: this.signatureAlgorithm,
-            signature: this.signature.toJSON()
+            signature: bufferToHexCodes(this.signature),
         };
     }
-    verify(logs, data, dataType = 0, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const logId = toBase64(arrayBufferToString(this.logID));
-            let publicKeyBase64 = null;
-            const stream = new SeqStream();
-            for (const log of logs) {
-                if (log.log_id === logId) {
-                    publicKeyBase64 = log.key;
-                    break;
-                }
+    async verify(logs, data, dataType = 0, crypto = getCrypto(true)) {
+        const logId = toBase64(arrayBufferToString(this.logID));
+        let publicKeyBase64 = null;
+        const stream = new SeqStream();
+        for (const log of logs) {
+            if (log.log_id === logId) {
+                publicKeyBase64 = log.key;
+                break;
             }
-            if (!publicKeyBase64) {
-                throw new Error(`Public key not found for CT with logId: ${logId}`);
-            }
-            const pki = stringToArrayBuffer(fromBase64(publicKeyBase64));
-            const publicKeyInfo = PublicKeyInfo.fromBER(pki);
-            stream.appendChar(0x00);
-            stream.appendChar(0x00);
-            const timeBuffer = new ArrayBuffer(8);
-            const timeView = new Uint8Array(timeBuffer);
-            const baseArray = utilToBase(this.timestamp.valueOf(), 8);
-            timeView.set(new Uint8Array(baseArray), 8 - baseArray.byteLength);
-            stream.appendView(timeView);
-            stream.appendUint16(dataType);
-            if (dataType === 0)
-                stream.appendUint24(data.byteLength);
-            stream.appendView(new Uint8Array(data));
-            stream.appendUint16(this.extensions.byteLength);
-            if (this.extensions.byteLength !== 0)
-                stream.appendView(new Uint8Array(this.extensions));
-            return crypto.verifyWithPublicKey(stream.buffer.slice(0, stream.length), new OctetString({ valueHex: this.signature.toBER(false) }), publicKeyInfo, { algorithmId: EMPTY_STRING }, "SHA-256");
-        });
+        }
+        if (!publicKeyBase64) {
+            throw new Error(`Public key not found for CT with logId: ${logId}`);
+        }
+        const pki = stringToArrayBuffer(fromBase64(publicKeyBase64));
+        const publicKeyInfo = PublicKeyInfo.fromBER(pki);
+        stream.appendChar(0x00);
+        stream.appendChar(0x00);
+        const timeBuffer = new ArrayBuffer(8);
+        const timeView = new Uint8Array(timeBuffer);
+        const baseArray = utilToBase(this.timestamp.valueOf(), 8);
+        timeView.set(new Uint8Array(baseArray), 8 - baseArray.byteLength);
+        stream.appendView(timeView);
+        stream.appendUint16(dataType);
+        if (dataType === 0)
+            stream.appendUint24(data.byteLength);
+        stream.appendView(new Uint8Array(data));
+        stream.appendUint16(this.extensions.byteLength);
+        if (this.extensions.byteLength !== 0)
+            stream.appendView(new Uint8Array(this.extensions));
+        return crypto.verifyWithPublicKey(stream.buffer.slice(0, stream.length), new OctetString({ valueHex: this.signature }), publicKeyInfo, { algorithmId: EMPTY_STRING }, "SHA-256");
     }
 }
 SignedCertificateTimestamp.CLASS_NAME = "SignedCertificateTimestamp";
-function verifySCTsForCertificate(certificate, issuerCertificate, logs, index = (-1), crypto = getCrypto(true)) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let parsedValue = null;
-        const stream = new SeqStream();
-        for (let i = 0; certificate.extensions && i < certificate.extensions.length; i++) {
+async function verifySCTsForCertificate(certificate, issuerCertificate, logs, index = (-1), crypto = getCrypto(true)) {
+    let parsedValue = null;
+    const stream = new SeqStream();
+    if (certificate.extensions) {
+        for (let i = certificate.extensions.length - 1; i >= 0; i--) {
             switch (certificate.extensions[i].extnID) {
                 case id_SignedCertificateTimestampList:
                     {
@@ -12126,26 +12658,26 @@ function verifySCTsForCertificate(certificate, issuerCertificate, logs, index = 
                     break;
             }
         }
-        if (parsedValue === null)
-            throw new Error("No SignedCertificateTimestampList extension in the specified certificate");
-        const tbs = certificate.encodeTBS().toBER();
-        const issuerId = yield crypto.digest({ name: "SHA-256" }, new Uint8Array(issuerCertificate.subjectPublicKeyInfo.toSchema().toBER(false)));
-        stream.appendView(new Uint8Array(issuerId));
-        stream.appendUint24(tbs.byteLength);
-        stream.appendView(new Uint8Array(tbs));
-        const preCert = stream.stream.slice(0, stream.length);
-        if (index === (-1)) {
-            const verifyArray = [];
-            for (const timestamp of parsedValue.timestamps) {
-                const verifyResult = yield timestamp.verify(logs, preCert.buffer, 1, crypto);
-                verifyArray.push(verifyResult);
-            }
-            return verifyArray;
+    }
+    if (parsedValue === null)
+        throw new Error("No SignedCertificateTimestampList extension in the specified certificate");
+    const tbs = certificate.encodeTBS().toBER();
+    const issuerId = await crypto.digest({ name: "SHA-256" }, new Uint8Array(issuerCertificate.subjectPublicKeyInfo.toSchema().toBER(false)));
+    stream.appendView(new Uint8Array(issuerId));
+    stream.appendUint24(tbs.byteLength);
+    stream.appendView(new Uint8Array(tbs));
+    const preCert = stream.stream.slice(0, stream.length);
+    if (index === (-1)) {
+        const verifyArray = [];
+        for (const timestamp of parsedValue.timestamps) {
+            const verifyResult = await timestamp.verify(logs, preCert.buffer, 1, crypto);
+            verifyArray.push(verifyResult);
         }
-        if (index >= parsedValue.timestamps.length)
-            index = (parsedValue.timestamps.length - 1);
-        return [yield parsedValue.timestamps[index].verify(logs, preCert.buffer, 1, crypto)];
-    });
+        return verifyArray;
+    }
+    if (index >= parsedValue.timestamps.length)
+        index = (parsedValue.timestamps.length - 1);
+    return [await parsedValue.timestamps[index].verify(logs, preCert.buffer, 1, crypto)];
 }
 
 const TIMESTAMPS = "timestamps";
@@ -12316,7 +12848,7 @@ class ExtensionValueFactory {
             try {
                 return new item.type({ schema: asn1.result });
             }
-            catch (ex) {
+            catch {
                 const res = new item.type();
                 res.parsingError = `Incorrectly formatted value of extension ${item.name} (${id})`;
                 return res;
@@ -12343,6 +12875,16 @@ const CLEAR_PROPS$10 = [
     EXTN_VALUE
 ];
 class Extension extends PkiObject {
+    get parsedValue() {
+        if (this._parsedValue === undefined) {
+            const parsedValue = ExtensionValueFactory.fromBER(this.extnID, this.extnValue.valueBlock.valueHexView);
+            this._parsedValue = parsedValue;
+        }
+        return this._parsedValue || undefined;
+    }
+    set parsedValue(value) {
+        this._parsedValue = value;
+    }
     constructor(parameters = {}) {
         super();
         this.extnID = getParametersValue(parameters, EXTN_ID, Extension.defaultValues(EXTN_ID));
@@ -12359,16 +12901,6 @@ class Extension extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    get parsedValue() {
-        if (this._parsedValue === undefined) {
-            const parsedValue = ExtensionValueFactory.fromBER(this.extnID, this.extnValue.valueBlock.valueHexView);
-            this._parsedValue = parsedValue;
-        }
-        return this._parsedValue || undefined;
-    }
-    set parsedValue(value) {
-        this._parsedValue = value;
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -13881,6 +14413,12 @@ function tbsCertificate(parameters = {}) {
     }));
 }
 class Certificate extends PkiObject {
+    get tbs() {
+        return BufferSourceConverter.toArrayBuffer(this.tbsView);
+    }
+    set tbs(value) {
+        this.tbsView = new Uint8Array(value);
+    }
     constructor(parameters = {}) {
         super();
         this.tbsView = new Uint8Array(getParametersValue(parameters, TBS$4, Certificate.defaultValues(TBS$4)));
@@ -13906,12 +14444,6 @@ class Certificate extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    get tbs() {
-        return BufferSourceConverter.toArrayBuffer(this.tbsView);
-    }
-    set tbs(value) {
-        this.tbsView = new Uint8Array(value);
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -14107,44 +14639,36 @@ class Certificate extends PkiObject {
         }
         return res;
     }
-    getPublicKey(parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return crypto.getPublicKey(this.subjectPublicKeyInfo, this.signatureAlgorithm, parameters);
-        });
+    async getPublicKey(parameters, crypto = getCrypto(true)) {
+        return crypto.getPublicKey(this.subjectPublicKeyInfo, this.signatureAlgorithm, parameters);
     }
-    getKeyHash(hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return crypto.digest({ name: hashAlgorithm }, this.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
-        });
+    async getKeyHash(hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
+        return crypto.digest({ name: hashAlgorithm }, this.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
     }
-    sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!privateKey) {
-                throw new Error("Need to provide a private key for signing");
-            }
-            const signatureParameters = yield crypto.getSignatureParameters(privateKey, hashAlgorithm);
-            const parameters = signatureParameters.parameters;
-            this.signature = signatureParameters.signatureAlgorithm;
-            this.signatureAlgorithm = signatureParameters.signatureAlgorithm;
-            this.tbsView = new Uint8Array(this.encodeTBS().toBER());
-            const signature = yield crypto.signWithPrivateKey(this.tbsView, privateKey, parameters);
-            this.signatureValue = new BitString({ valueHex: signature });
-        });
+    async sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
+        if (!privateKey) {
+            throw new Error("Need to provide a private key for signing");
+        }
+        const signatureParameters = await crypto.getSignatureParameters(privateKey, hashAlgorithm);
+        const parameters = signatureParameters.parameters;
+        this.signature = signatureParameters.signatureAlgorithm;
+        this.signatureAlgorithm = signatureParameters.signatureAlgorithm;
+        this.tbsView = new Uint8Array(this.encodeTBS().toBER());
+        const signature = await crypto.signWithPrivateKey(this.tbsView, privateKey, parameters);
+        this.signatureValue = new BitString({ valueHex: signature });
     }
-    verify(issuerCertificate, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let subjectPublicKeyInfo;
-            if (issuerCertificate) {
-                subjectPublicKeyInfo = issuerCertificate.subjectPublicKeyInfo;
-            }
-            else if (this.issuer.isEqual(this.subject)) {
-                subjectPublicKeyInfo = this.subjectPublicKeyInfo;
-            }
-            if (!(subjectPublicKeyInfo instanceof PublicKeyInfo)) {
-                throw new Error("Please provide issuer certificate as a parameter");
-            }
-            return crypto.verifyWithPublicKey(this.tbsView, this.signatureValue, subjectPublicKeyInfo, this.signatureAlgorithm);
-        });
+    async verify(issuerCertificate, crypto = getCrypto(true)) {
+        let subjectPublicKeyInfo;
+        if (issuerCertificate) {
+            subjectPublicKeyInfo = issuerCertificate.subjectPublicKeyInfo;
+        }
+        else if (this.issuer.isEqual(this.subject)) {
+            subjectPublicKeyInfo = this.subjectPublicKeyInfo;
+        }
+        if (!(subjectPublicKeyInfo instanceof PublicKeyInfo)) {
+            throw new Error("Please provide issuer certificate as a parameter");
+        }
+        return crypto.verifyWithPublicKey(this.tbsView, this.signatureValue, subjectPublicKeyInfo, this.signatureAlgorithm);
     }
 }
 Certificate.CLASS_NAME = "Certificate";
@@ -14246,7 +14770,7 @@ class CertBag extends PkiObject {
                     try {
                         this.parsedValue = Certificate.fromBER(certValueHex);
                     }
-                    catch (ex) {
+                    catch {
                         AttributeCertificateV2.fromBER(certValueHex);
                     }
                 }
@@ -14485,6 +15009,12 @@ const WELL_KNOWN_EXTENSIONS = [
     id_CertificateIssuer,
 ];
 class CertificateRevocationList extends PkiObject {
+    get tbs() {
+        return BufferSourceConverter.toArrayBuffer(this.tbsView);
+    }
+    set tbs(value) {
+        this.tbsView = new Uint8Array(value);
+    }
     constructor(parameters = {}) {
         super();
         this.tbsView = new Uint8Array(getParametersValue(parameters, TBS$3, CertificateRevocationList.defaultValues(TBS$3)));
@@ -14506,12 +15036,6 @@ class CertificateRevocationList extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    get tbs() {
-        return BufferSourceConverter.toArrayBuffer(this.tbsView);
-    }
-    set tbs(value) {
-        this.tbsView = new Uint8Array(value);
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -14667,45 +15191,41 @@ class CertificateRevocationList extends PkiObject {
         }
         return false;
     }
-    sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!privateKey) {
-                throw new Error("Need to provide a private key for signing");
-            }
-            const signatureParameters = yield crypto.getSignatureParameters(privateKey, hashAlgorithm);
-            const { parameters } = signatureParameters;
-            this.signature = signatureParameters.signatureAlgorithm;
-            this.signatureAlgorithm = signatureParameters.signatureAlgorithm;
-            this.tbsView = new Uint8Array(this.encodeTBS().toBER());
-            const signature = yield crypto.signWithPrivateKey(this.tbsView, privateKey, parameters);
-            this.signatureValue = new BitString({ valueHex: signature });
-        });
+    async sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
+        if (!privateKey) {
+            throw new Error("Need to provide a private key for signing");
+        }
+        const signatureParameters = await crypto.getSignatureParameters(privateKey, hashAlgorithm);
+        const { parameters } = signatureParameters;
+        this.signature = signatureParameters.signatureAlgorithm;
+        this.signatureAlgorithm = signatureParameters.signatureAlgorithm;
+        this.tbsView = new Uint8Array(this.encodeTBS().toBER());
+        const signature = await crypto.signWithPrivateKey(this.tbsView, privateKey, parameters);
+        this.signatureValue = new BitString({ valueHex: signature });
     }
-    verify(parameters = {}, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let subjectPublicKeyInfo;
-            if (parameters.issuerCertificate) {
-                subjectPublicKeyInfo = parameters.issuerCertificate.subjectPublicKeyInfo;
-                if (!this.issuer.isEqual(parameters.issuerCertificate.subject)) {
-                    return false;
+    async verify(parameters = {}, crypto = getCrypto(true)) {
+        let subjectPublicKeyInfo;
+        if (parameters.issuerCertificate) {
+            subjectPublicKeyInfo = parameters.issuerCertificate.subjectPublicKeyInfo;
+            if (!this.issuer.isEqual(parameters.issuerCertificate.subject)) {
+                return false;
+            }
+        }
+        if (parameters.publicKeyInfo) {
+            subjectPublicKeyInfo = parameters.publicKeyInfo;
+        }
+        if (!subjectPublicKeyInfo) {
+            throw new Error("Issuer's certificate must be provided as an input parameter");
+        }
+        if (this.crlExtensions) {
+            for (const extension of this.crlExtensions.extensions) {
+                if (extension.critical) {
+                    if (!WELL_KNOWN_EXTENSIONS.includes(extension.extnID))
+                        return false;
                 }
             }
-            if (parameters.publicKeyInfo) {
-                subjectPublicKeyInfo = parameters.publicKeyInfo;
-            }
-            if (!subjectPublicKeyInfo) {
-                throw new Error("Issuer's certificate must be provided as an input parameter");
-            }
-            if (this.crlExtensions) {
-                for (const extension of this.crlExtensions.extensions) {
-                    if (extension.critical) {
-                        if (!WELL_KNOWN_EXTENSIONS.includes(extension.extnID))
-                            return false;
-                    }
-                }
-            }
-            return crypto.verifyWithPublicKey(this.tbsView, this.signatureValue, subjectPublicKeyInfo, this.signatureAlgorithm);
-        });
+        }
+        return crypto.verifyWithPublicKey(this.tbsView, this.signatureValue, subjectPublicKeyInfo, this.signatureAlgorithm);
     }
 }
 CertificateRevocationList.CLASS_NAME = "CertificateRevocationList";
@@ -14932,19 +15452,21 @@ class EncryptedData extends PkiObject {
             res.unprotectedAttrs = Array.from(this.unprotectedAttrs, o => o.toJSON());
         return res;
     }
-    encrypt(parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ArgumentError.assert(parameters, "parameters", "object");
-            const encryptParams = Object.assign(Object.assign({}, parameters), { contentType: "1.2.840.113549.1.7.1" });
-            this.encryptedContentInfo = yield getCrypto(true).encryptEncryptedContentInfo(encryptParams);
-        });
+    async encrypt(parameters, crypto = getCrypto(true)) {
+        ArgumentError.assert(parameters, "parameters", "object");
+        const encryptParams = {
+            ...parameters,
+            contentType: "1.2.840.113549.1.7.1",
+        };
+        this.encryptedContentInfo = await crypto.encryptEncryptedContentInfo(encryptParams);
     }
-    decrypt(parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ArgumentError.assert(parameters, "parameters", "object");
-            const decryptParams = Object.assign(Object.assign({}, parameters), { encryptedContentInfo: this.encryptedContentInfo });
-            return crypto.decryptEncryptedContentInfo(decryptParams);
-        });
+    async decrypt(parameters, crypto = getCrypto(true)) {
+        ArgumentError.assert(parameters, "parameters", "object");
+        const decryptParams = {
+            ...parameters,
+            encryptedContentInfo: this.encryptedContentInfo,
+        };
+        return crypto.decryptEncryptedContentInfo(decryptParams);
     }
 }
 EncryptedData.CLASS_NAME = "EncryptedData";
@@ -15047,32 +15569,31 @@ class PKCS8ShroudedKeyBag extends PkiObject {
             encryptedData: this.encryptedData.toJSON(),
         };
     }
-    parseInternalValues(parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const cmsEncrypted = new EncryptedData({
-                encryptedContentInfo: new EncryptedContentInfo({
-                    contentEncryptionAlgorithm: this.encryptionAlgorithm,
-                    encryptedContent: this.encryptedData
-                })
-            });
-            const decryptedData = yield cmsEncrypted.decrypt(parameters, crypto);
-            this.parsedValue = PrivateKeyInfo.fromBER(decryptedData);
+    async parseInternalValues(parameters, crypto = getCrypto(true)) {
+        const cmsEncrypted = new EncryptedData({
+            encryptedContentInfo: new EncryptedContentInfo({
+                contentEncryptionAlgorithm: this.encryptionAlgorithm,
+                encryptedContent: this.encryptedData
+            })
         });
+        const decryptedData = await cmsEncrypted.decrypt(parameters, crypto);
+        this.parsedValue = PrivateKeyInfo.fromBER(decryptedData);
     }
-    makeInternalValues(parameters) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!this.parsedValue) {
-                throw new Error("Please initialize \"parsedValue\" first");
-            }
-            const cmsEncrypted = new EncryptedData();
-            const encryptParams = Object.assign(Object.assign({}, parameters), { contentToEncrypt: this.parsedValue.toSchema().toBER(false) });
-            yield cmsEncrypted.encrypt(encryptParams);
-            if (!cmsEncrypted.encryptedContentInfo.encryptedContent) {
-                throw new Error("The filed `encryptedContent` in EncryptedContentInfo is empty");
-            }
-            this.encryptionAlgorithm = cmsEncrypted.encryptedContentInfo.contentEncryptionAlgorithm;
-            this.encryptedData = cmsEncrypted.encryptedContentInfo.encryptedContent;
-        });
+    async makeInternalValues(parameters, crypto = getCrypto(true)) {
+        if (!this.parsedValue) {
+            throw new Error("Please initialize \"parsedValue\" first");
+        }
+        const cmsEncrypted = new EncryptedData();
+        const encryptParams = {
+            ...parameters,
+            contentToEncrypt: this.parsedValue.toSchema().toBER(false),
+        };
+        await cmsEncrypted.encrypt(encryptParams, crypto);
+        if (!cmsEncrypted.encryptedContentInfo.encryptedContent) {
+            throw new Error("The filed `encryptedContent` in EncryptedContentInfo is empty");
+        }
+        this.encryptionAlgorithm = cmsEncrypted.encryptedContentInfo.contentEncryptionAlgorithm;
+        this.encryptedData = cmsEncrypted.encryptedContentInfo.encryptedContent;
     }
 }
 PKCS8ShroudedKeyBag.CLASS_NAME = "PKCS8ShroudedKeyBag";
@@ -17857,6 +18378,9 @@ class EnvelopedData extends PkiObject {
         if (UNPROTECTED_ATTRS in parameters) {
             this.unprotectedAttrs = getParametersValue(parameters, UNPROTECTED_ATTRS, EnvelopedData.defaultValues(UNPROTECTED_ATTRS));
         }
+        this.policy = {
+            disableSplit: !!parameters.disableSplit,
+        };
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
@@ -18217,76 +18741,262 @@ class EnvelopedData extends PkiObject {
             value: keyInfo
         }));
     }
-    encrypt(contentEncryptionAlgorithm, contentToEncrypt, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const ivBuffer = new ArrayBuffer(16);
-            const ivView = new Uint8Array(ivBuffer);
-            crypto.getRandomValues(ivView);
-            const contentView = new Uint8Array(contentToEncrypt);
-            const contentEncryptionOID = crypto.getOIDByAlgorithm(contentEncryptionAlgorithm, true, "contentEncryptionAlgorithm");
-            const sessionKey = yield crypto.generateKey(contentEncryptionAlgorithm, true, ["encrypt"]);
-            const encryptedContent = yield crypto.encrypt({
-                name: contentEncryptionAlgorithm.name,
-                iv: ivView
-            }, sessionKey, contentView);
-            const exportedSessionKey = yield crypto.exportKey("raw", sessionKey);
-            this.version = 2;
-            this.encryptedContentInfo = new EncryptedContentInfo({
-                contentType: "1.2.840.113549.1.7.1",
-                contentEncryptionAlgorithm: new AlgorithmIdentifier({
-                    algorithmId: contentEncryptionOID,
-                    algorithmParams: new OctetString({ valueHex: ivBuffer })
-                }),
-                encryptedContent: new OctetString({ valueHex: encryptedContent })
-            });
-            const SubKeyAgreeRecipientInfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                let recipientCurve;
-                let recipientPublicKey;
-                if (recipientInfo.recipientPublicKey) {
-                    recipientCurve = recipientInfo.recipientPublicKey.algorithm.namedCurve;
-                    recipientPublicKey = recipientInfo.recipientPublicKey;
+    async encrypt(contentEncryptionAlgorithm, contentToEncrypt, crypto = getCrypto(true)) {
+        const ivBuffer = new ArrayBuffer(16);
+        const ivView = new Uint8Array(ivBuffer);
+        crypto.getRandomValues(ivView);
+        const contentView = new Uint8Array(contentToEncrypt);
+        const contentEncryptionOID = crypto.getOIDByAlgorithm(contentEncryptionAlgorithm, true, "contentEncryptionAlgorithm");
+        const sessionKey = await crypto.generateKey(contentEncryptionAlgorithm, true, ["encrypt"]);
+        const encryptedContent = await crypto.encrypt({
+            name: contentEncryptionAlgorithm.name,
+            iv: ivView
+        }, sessionKey, contentView);
+        const exportedSessionKey = await crypto.exportKey("raw", sessionKey);
+        this.version = 2;
+        this.encryptedContentInfo = new EncryptedContentInfo({
+            disableSplit: this.policy.disableSplit,
+            contentType: "1.2.840.113549.1.7.1",
+            contentEncryptionAlgorithm: new AlgorithmIdentifier({
+                algorithmId: contentEncryptionOID,
+                algorithmParams: new OctetString({ valueHex: ivBuffer })
+            }),
+            encryptedContent: new OctetString({ valueHex: encryptedContent })
+        });
+        const SubKeyAgreeRecipientInfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            let recipientCurve;
+            let recipientPublicKey;
+            if (recipientInfo.recipientPublicKey) {
+                recipientCurve = recipientInfo.recipientPublicKey.algorithm.namedCurve;
+                recipientPublicKey = recipientInfo.recipientPublicKey;
+            }
+            else if (recipientInfo.recipientCertificate) {
+                const curveObject = recipientInfo.recipientCertificate.subjectPublicKeyInfo.algorithm.algorithmParams;
+                if (curveObject.constructor.blockName() !== ObjectIdentifier.blockName())
+                    throw new Error(`Incorrect "recipientCertificate" for index ${index}`);
+                const curveOID = curveObject.valueBlock.toString();
+                switch (curveOID) {
+                    case "1.2.840.10045.3.1.7":
+                        recipientCurve = "P-256";
+                        break;
+                    case "1.3.132.0.34":
+                        recipientCurve = "P-384";
+                        break;
+                    case "1.3.132.0.35":
+                        recipientCurve = "P-521";
+                        break;
+                    default:
+                        throw new Error(`Incorrect curve OID for index ${index}`);
                 }
-                else if (recipientInfo.recipientCertificate) {
-                    const curveObject = recipientInfo.recipientCertificate.subjectPublicKeyInfo.algorithm.algorithmParams;
-                    if (curveObject.constructor.blockName() !== ObjectIdentifier.blockName())
-                        throw new Error(`Incorrect "recipientCertificate" for index ${index}`);
-                    const curveOID = curveObject.valueBlock.toString();
-                    switch (curveOID) {
-                        case "1.2.840.10045.3.1.7":
-                            recipientCurve = "P-256";
-                            break;
-                        case "1.3.132.0.34":
-                            recipientCurve = "P-384";
-                            break;
-                        case "1.3.132.0.35":
-                            recipientCurve = "P-521";
-                            break;
-                        default:
-                            throw new Error(`Incorrect curve OID for index ${index}`);
-                    }
-                    recipientPublicKey = yield recipientInfo.recipientCertificate.getPublicKey({
+                recipientPublicKey = await recipientInfo.recipientCertificate.getPublicKey({
+                    algorithm: {
                         algorithm: {
-                            algorithm: {
-                                name: "ECDH",
-                                namedCurve: recipientCurve
-                            },
-                            usages: []
-                        }
-                    }, crypto);
+                            name: "ECDH",
+                            namedCurve: recipientCurve
+                        },
+                        usages: []
+                    }
+                }, crypto);
+            }
+            else {
+                throw new Error("Unsupported RecipientInfo");
+            }
+            const recipientCurveLength = curveLengthByName[recipientCurve];
+            const ecdhKeys = await crypto.generateKey({ name: "ECDH", namedCurve: recipientCurve }, true, ["deriveBits"]);
+            const exportedECDHPublicKey = await crypto.exportKey("spki", ecdhKeys.publicKey);
+            const derivedBits = await crypto.deriveBits({
+                name: "ECDH",
+                public: recipientPublicKey
+            }, ecdhKeys.privateKey, recipientCurveLength);
+            const aesKWAlgorithm = new AlgorithmIdentifier({ schema: recipientInfo.keyEncryptionAlgorithm.algorithmParams });
+            const kwAlgorithm = crypto.getAlgorithmByOID(aesKWAlgorithm.algorithmId, true, "aesKWAlgorithm");
+            let kwLength = kwAlgorithm.length;
+            const kwLengthBuffer = new ArrayBuffer(4);
+            const kwLengthView = new Uint8Array(kwLengthBuffer);
+            for (let j = 3; j >= 0; j--) {
+                kwLengthView[j] = kwLength;
+                kwLength >>= 8;
+            }
+            const eccInfo = new ECCCMSSharedInfo({
+                keyInfo: new AlgorithmIdentifier({
+                    algorithmId: aesKWAlgorithm.algorithmId
+                }),
+                entityUInfo: recipientInfo.ukm,
+                suppPubInfo: new OctetString({ valueHex: kwLengthBuffer })
+            });
+            const encodedInfo = eccInfo.toSchema().toBER(false);
+            const ecdhAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "ecdhAlgorithm");
+            const derivedKeyRaw = await kdf(ecdhAlgorithm.kdf, derivedBits, kwAlgorithm.length, encodedInfo, crypto);
+            const awsKW = await crypto.importKey("raw", derivedKeyRaw, { name: "AES-KW" }, true, ["wrapKey"]);
+            const wrappedKey = await crypto.wrapKey("raw", sessionKey, awsKW, { name: "AES-KW" });
+            const originator = new OriginatorIdentifierOrKey();
+            originator.variant = 3;
+            originator.value = OriginatorPublicKey.fromBER(exportedECDHPublicKey);
+            recipientInfo.originator = originator;
+            recipientInfo.recipientEncryptedKeys.encryptedKeys[0].encryptedKey = new OctetString({ valueHex: wrappedKey });
+            return { ecdhPrivateKey: ecdhKeys.privateKey };
+        };
+        const SubKeyTransRecipientInfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            const algorithmParameters = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "keyEncryptionAlgorithm");
+            if (algorithmParameters.name === "RSA-OAEP") {
+                const schema = recipientInfo.keyEncryptionAlgorithm.algorithmParams;
+                const rsaOAEPParams = new RSAESOAEPParams({ schema });
+                algorithmParameters.hash = crypto.getAlgorithmByOID(rsaOAEPParams.hashAlgorithm.algorithmId);
+                if (("name" in algorithmParameters.hash) === false)
+                    throw new Error(`Incorrect OID for hash algorithm: ${rsaOAEPParams.hashAlgorithm.algorithmId}`);
+            }
+            try {
+                const publicKey = await recipientInfo.recipientCertificate.getPublicKey({
+                    algorithm: {
+                        algorithm: algorithmParameters,
+                        usages: ["encrypt", "wrapKey"]
+                    }
+                }, crypto);
+                const encryptedKey = await crypto.encrypt(publicKey.algorithm, publicKey, exportedSessionKey);
+                recipientInfo.encryptedKey = new OctetString({ valueHex: encryptedKey });
+            }
+            catch {
+            }
+        };
+        const SubKEKRecipientInfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "kekAlgorithm");
+            const kekKey = await crypto.importKey("raw", new Uint8Array(recipientInfo.preDefinedKEK), kekAlgorithm, true, ["wrapKey"]);
+            const wrappedKey = await crypto.wrapKey("raw", sessionKey, kekKey, kekAlgorithm);
+            recipientInfo.encryptedKey = new OctetString({ valueHex: wrappedKey });
+        };
+        const SubPasswordRecipientinfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            let pbkdf2Params;
+            if (!recipientInfo.keyDerivationAlgorithm)
+                throw new Error("Please append encoded \"keyDerivationAlgorithm\"");
+            if (!recipientInfo.keyDerivationAlgorithm.algorithmParams)
+                throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
+            try {
+                pbkdf2Params = new PBKDF2Params({ schema: recipientInfo.keyDerivationAlgorithm.algorithmParams });
+            }
+            catch {
+                throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
+            }
+            const passwordView = new Uint8Array(recipientInfo.password);
+            const derivationKey = await crypto.importKey("raw", passwordView, "PBKDF2", false, ["deriveKey"]);
+            const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "kekAlgorithm");
+            let hmacHashAlgorithm = "SHA-1";
+            if (pbkdf2Params.prf) {
+                const prfAlgorithm = crypto.getAlgorithmByOID(pbkdf2Params.prf.algorithmId, true, "prfAlgorithm");
+                hmacHashAlgorithm = prfAlgorithm.hash.name;
+            }
+            const saltView = new Uint8Array(pbkdf2Params.salt.valueBlock.valueHex);
+            const iterations = pbkdf2Params.iterationCount;
+            const derivedKey = await crypto.deriveKey({
+                name: "PBKDF2",
+                hash: {
+                    name: hmacHashAlgorithm
+                },
+                salt: saltView,
+                iterations
+            }, derivationKey, kekAlgorithm, true, ["wrapKey"]);
+            const wrappedKey = await crypto.wrapKey("raw", sessionKey, derivedKey, kekAlgorithm);
+            recipientInfo.encryptedKey = new OctetString({ valueHex: wrappedKey });
+        };
+        const res = [];
+        for (let i = 0; i < this.recipientInfos.length; i++) {
+            switch (this.recipientInfos[i].variant) {
+                case 1:
+                    res.push(await SubKeyTransRecipientInfo(i));
+                    break;
+                case 2:
+                    res.push(await SubKeyAgreeRecipientInfo(i));
+                    break;
+                case 3:
+                    res.push(await SubKEKRecipientInfo(i));
+                    break;
+                case 4:
+                    res.push(await SubPasswordRecipientinfo(i));
+                    break;
+                default:
+                    throw new Error(`Unknown recipient type in array with index ${i}`);
+            }
+        }
+        return res;
+    }
+    async decrypt(recipientIndex, parameters, crypto = getCrypto(true)) {
+        const decryptionParameters = parameters || {};
+        if ((recipientIndex + 1) > this.recipientInfos.length) {
+            throw new Error(`Maximum value for "index" is: ${this.recipientInfos.length - 1}`);
+        }
+        const SubKeyAgreeRecipientInfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            let curveOID;
+            let recipientCurve;
+            let recipientCurveLength;
+            const originator = recipientInfo.originator;
+            if (decryptionParameters.recipientCertificate) {
+                const curveObject = decryptionParameters.recipientCertificate.subjectPublicKeyInfo.algorithm.algorithmParams;
+                if (curveObject.constructor.blockName() !== ObjectIdentifier.blockName()) {
+                    throw new Error(`Incorrect "recipientCertificate" for index ${index}`);
                 }
-                else {
-                    throw new Error("Unsupported RecipientInfo");
+                curveOID = curveObject.valueBlock.toString();
+            }
+            else if (originator.value.algorithm.algorithmParams) {
+                const curveObject = originator.value.algorithm.algorithmParams;
+                if (curveObject.constructor.blockName() !== ObjectIdentifier.blockName()) {
+                    throw new Error(`Incorrect originator for index ${index}`);
                 }
-                const recipientCurveLength = curveLengthByName[recipientCurve];
-                const ecdhKeys = yield crypto.generateKey({ name: "ECDH", namedCurve: recipientCurve }, true, ["deriveBits"]);
-                const exportedECDHPublicKey = yield crypto.exportKey("spki", ecdhKeys.publicKey);
-                const derivedBits = yield crypto.deriveBits({
+                curveOID = curveObject.valueBlock.toString();
+            }
+            else {
+                throw new Error("Parameter \"recipientCertificate\" is mandatory for \"KeyAgreeRecipientInfo\" if algorithm params are missing from originator");
+            }
+            if (!decryptionParameters.recipientPrivateKey)
+                throw new Error("Parameter \"recipientPrivateKey\" is mandatory for \"KeyAgreeRecipientInfo\"");
+            switch (curveOID) {
+                case "1.2.840.10045.3.1.7":
+                    recipientCurve = "P-256";
+                    recipientCurveLength = 256;
+                    break;
+                case "1.3.132.0.34":
+                    recipientCurve = "P-384";
+                    recipientCurveLength = 384;
+                    break;
+                case "1.3.132.0.35":
+                    recipientCurve = "P-521";
+                    recipientCurveLength = 528;
+                    break;
+                default:
+                    throw new Error(`Incorrect curve OID for index ${index}`);
+            }
+            let ecdhPrivateKey;
+            let keyCrypto = crypto;
+            if (BufferSourceConverter.isBufferSource(decryptionParameters.recipientPrivateKey)) {
+                ecdhPrivateKey = await crypto.importKey("pkcs8", decryptionParameters.recipientPrivateKey, {
                     name: "ECDH",
-                    public: recipientPublicKey
-                }, ecdhKeys.privateKey, recipientCurveLength);
+                    namedCurve: recipientCurve
+                }, true, ["deriveBits"]);
+            }
+            else {
+                ecdhPrivateKey = decryptionParameters.recipientPrivateKey;
+                if ("crypto" in decryptionParameters && decryptionParameters.crypto) {
+                    keyCrypto = decryptionParameters.crypto.subtle;
+                }
+            }
+            if (("algorithmParams" in originator.value.algorithm) === false)
+                originator.value.algorithm.algorithmParams = new ObjectIdentifier({ value: curveOID });
+            const buffer = originator.value.toSchema().toBER(false);
+            const ecdhPublicKey = await crypto.importKey("spki", buffer, {
+                name: "ECDH",
+                namedCurve: recipientCurve
+            }, true, []);
+            const sharedSecret = await keyCrypto.deriveBits({
+                name: "ECDH",
+                public: ecdhPublicKey
+            }, ecdhPrivateKey, recipientCurveLength);
+            async function applyKDF(includeAlgorithmParams) {
+                includeAlgorithmParams = includeAlgorithmParams || false;
                 const aesKWAlgorithm = new AlgorithmIdentifier({ schema: recipientInfo.keyEncryptionAlgorithm.algorithmParams });
-                const kwAlgorithm = crypto.getAlgorithmByOID(aesKWAlgorithm.algorithmId, true, "aesKWAlgorithm");
+                const kwAlgorithm = crypto.getAlgorithmByOID(aesKWAlgorithm.algorithmId, true, "kwAlgorithm");
                 let kwLength = kwAlgorithm.length;
                 const kwLengthBuffer = new ArrayBuffer(4);
                 const kwLengthView = new Uint8Array(kwLengthBuffer);
@@ -18294,324 +19004,153 @@ class EnvelopedData extends PkiObject {
                     kwLengthView[j] = kwLength;
                     kwLength >>= 8;
                 }
+                const keyInfoAlgorithm = {
+                    algorithmId: aesKWAlgorithm.algorithmId
+                };
+                if (includeAlgorithmParams) {
+                    keyInfoAlgorithm.algorithmParams = new Null();
+                }
                 const eccInfo = new ECCCMSSharedInfo({
-                    keyInfo: new AlgorithmIdentifier({
-                        algorithmId: aesKWAlgorithm.algorithmId
-                    }),
+                    keyInfo: new AlgorithmIdentifier(keyInfoAlgorithm),
                     entityUInfo: recipientInfo.ukm,
                     suppPubInfo: new OctetString({ valueHex: kwLengthBuffer })
                 });
                 const encodedInfo = eccInfo.toSchema().toBER(false);
                 const ecdhAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "ecdhAlgorithm");
-                const derivedKeyRaw = yield kdf(ecdhAlgorithm.kdf, derivedBits, kwAlgorithm.length, encodedInfo, crypto);
-                const awsKW = yield crypto.importKey("raw", derivedKeyRaw, { name: "AES-KW" }, true, ["wrapKey"]);
-                const wrappedKey = yield crypto.wrapKey("raw", sessionKey, awsKW, { name: "AES-KW" });
-                const originator = new OriginatorIdentifierOrKey();
-                originator.variant = 3;
-                originator.value = OriginatorPublicKey.fromBER(exportedECDHPublicKey);
-                recipientInfo.originator = originator;
-                recipientInfo.recipientEncryptedKeys.encryptedKeys[0].encryptedKey = new OctetString({ valueHex: wrappedKey });
-                return { ecdhPrivateKey: ecdhKeys.privateKey };
-            });
-            const SubKeyTransRecipientInfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                const algorithmParameters = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "keyEncryptionAlgorithm");
-                if (algorithmParameters.name === "RSA-OAEP") {
-                    const schema = recipientInfo.keyEncryptionAlgorithm.algorithmParams;
-                    const rsaOAEPParams = new RSAESOAEPParams({ schema });
-                    algorithmParameters.hash = crypto.getAlgorithmByOID(rsaOAEPParams.hashAlgorithm.algorithmId);
-                    if (("name" in algorithmParameters.hash) === false)
-                        throw new Error(`Incorrect OID for hash algorithm: ${rsaOAEPParams.hashAlgorithm.algorithmId}`);
+                if (!ecdhAlgorithm.name) {
+                    throw new Error(`Incorrect OID for key encryption algorithm: ${recipientInfo.keyEncryptionAlgorithm.algorithmId}`);
                 }
-                try {
-                    const publicKey = yield recipientInfo.recipientCertificate.getPublicKey({
-                        algorithm: {
-                            algorithm: algorithmParameters,
-                            usages: ["encrypt", "wrapKey"]
-                        }
-                    }, crypto);
-                    const encryptedKey = yield crypto.encrypt(publicKey.algorithm, publicKey, exportedSessionKey);
-                    recipientInfo.encryptedKey = new OctetString({ valueHex: encryptedKey });
-                }
-                catch (_a) {
-                }
-            });
-            const SubKEKRecipientInfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "kekAlgorithm");
-                const kekKey = yield crypto.importKey("raw", new Uint8Array(recipientInfo.preDefinedKEK), kekAlgorithm, true, ["wrapKey"]);
-                const wrappedKey = yield crypto.wrapKey("raw", sessionKey, kekKey, kekAlgorithm);
-                recipientInfo.encryptedKey = new OctetString({ valueHex: wrappedKey });
-            });
-            const SubPasswordRecipientinfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                let pbkdf2Params;
-                if (!recipientInfo.keyDerivationAlgorithm)
-                    throw new Error("Please append encoded \"keyDerivationAlgorithm\"");
-                if (!recipientInfo.keyDerivationAlgorithm.algorithmParams)
-                    throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
-                try {
-                    pbkdf2Params = new PBKDF2Params({ schema: recipientInfo.keyDerivationAlgorithm.algorithmParams });
-                }
-                catch (ex) {
-                    throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
-                }
-                const passwordView = new Uint8Array(recipientInfo.password);
-                const derivationKey = yield crypto.importKey("raw", passwordView, "PBKDF2", false, ["deriveKey"]);
-                const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "kekAlgorithm");
-                let hmacHashAlgorithm = "SHA-1";
-                if (pbkdf2Params.prf) {
-                    const prfAlgorithm = crypto.getAlgorithmByOID(pbkdf2Params.prf.algorithmId, true, "prfAlgorithm");
-                    hmacHashAlgorithm = prfAlgorithm.hash.name;
-                }
-                const saltView = new Uint8Array(pbkdf2Params.salt.valueBlock.valueHex);
-                const iterations = pbkdf2Params.iterationCount;
-                const derivedKey = yield crypto.deriveKey({
-                    name: "PBKDF2",
-                    hash: {
-                        name: hmacHashAlgorithm
-                    },
-                    salt: saltView,
-                    iterations
-                }, derivationKey, kekAlgorithm, true, ["wrapKey"]);
-                const wrappedKey = yield crypto.wrapKey("raw", sessionKey, derivedKey, kekAlgorithm);
-                recipientInfo.encryptedKey = new OctetString({ valueHex: wrappedKey });
-            });
-            const res = [];
-            for (let i = 0; i < this.recipientInfos.length; i++) {
-                switch (this.recipientInfos[i].variant) {
-                    case 1:
-                        res.push(yield SubKeyTransRecipientInfo(i));
-                        break;
-                    case 2:
-                        res.push(yield SubKeyAgreeRecipientInfo(i));
-                        break;
-                    case 3:
-                        res.push(yield SubKEKRecipientInfo(i));
-                        break;
-                    case 4:
-                        res.push(yield SubPasswordRecipientinfo(i));
-                        break;
-                    default:
-                        throw new Error(`Unknown recipient type in array with index ${i}`);
-                }
+                return kdf(ecdhAlgorithm.kdf, sharedSecret, kwAlgorithm.length, encodedInfo, crypto);
             }
-            return res;
-        });
-    }
-    decrypt(recipientIndex, parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const decryptionParameters = parameters || {};
-            if ((recipientIndex + 1) > this.recipientInfos.length) {
-                throw new Error(`Maximum value for "index" is: ${this.recipientInfos.length - 1}`);
-            }
-            const SubKeyAgreeRecipientInfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                let curveOID;
-                let recipientCurve;
-                let recipientCurveLength;
-                const originator = recipientInfo.originator;
-                if (decryptionParameters.recipientCertificate) {
-                    const curveObject = decryptionParameters.recipientCertificate.subjectPublicKeyInfo.algorithm.algorithmParams;
-                    if (curveObject.constructor.blockName() !== ObjectIdentifier.blockName()) {
-                        throw new Error(`Incorrect "recipientCertificate" for index ${index}`);
-                    }
-                    curveOID = curveObject.valueBlock.toString();
-                }
-                else if (originator.value.algorithm.algorithmParams) {
-                    const curveObject = originator.value.algorithm.algorithmParams;
-                    if (curveObject.constructor.blockName() !== ObjectIdentifier.blockName()) {
-                        throw new Error(`Incorrect originator for index ${index}`);
-                    }
-                    curveOID = curveObject.valueBlock.toString();
-                }
-                else {
-                    throw new Error("Parameter \"recipientCertificate\" is mandatory for \"KeyAgreeRecipientInfo\" if algorithm params are missing from originator");
-                }
-                if (!decryptionParameters.recipientPrivateKey)
-                    throw new Error("Parameter \"recipientPrivateKey\" is mandatory for \"KeyAgreeRecipientInfo\"");
-                switch (curveOID) {
-                    case "1.2.840.10045.3.1.7":
-                        recipientCurve = "P-256";
-                        recipientCurveLength = 256;
-                        break;
-                    case "1.3.132.0.34":
-                        recipientCurve = "P-384";
-                        recipientCurveLength = 384;
-                        break;
-                    case "1.3.132.0.35":
-                        recipientCurve = "P-521";
-                        recipientCurveLength = 528;
-                        break;
-                    default:
-                        throw new Error(`Incorrect curve OID for index ${index}`);
-                }
-                const ecdhPrivateKey = yield crypto.importKey("pkcs8", decryptionParameters.recipientPrivateKey, {
-                    name: "ECDH",
-                    namedCurve: recipientCurve
-                }, true, ["deriveBits"]);
-                if (("algorithmParams" in originator.value.algorithm) === false)
-                    originator.value.algorithm.algorithmParams = new ObjectIdentifier({ value: curveOID });
-                const buffer = originator.value.toSchema().toBER(false);
-                const ecdhPublicKey = yield crypto.importKey("spki", buffer, {
-                    name: "ECDH",
-                    namedCurve: recipientCurve
-                }, true, []);
-                const sharedSecret = yield crypto.deriveBits({
-                    name: "ECDH",
-                    public: ecdhPublicKey
-                }, ecdhPrivateKey, recipientCurveLength);
-                function applyKDF(includeAlgorithmParams) {
-                    return __awaiter(this, void 0, void 0, function* () {
-                        includeAlgorithmParams = includeAlgorithmParams || false;
-                        const aesKWAlgorithm = new AlgorithmIdentifier({ schema: recipientInfo.keyEncryptionAlgorithm.algorithmParams });
-                        const kwAlgorithm = crypto.getAlgorithmByOID(aesKWAlgorithm.algorithmId, true, "kwAlgorithm");
-                        let kwLength = kwAlgorithm.length;
-                        const kwLengthBuffer = new ArrayBuffer(4);
-                        const kwLengthView = new Uint8Array(kwLengthBuffer);
-                        for (let j = 3; j >= 0; j--) {
-                            kwLengthView[j] = kwLength;
-                            kwLength >>= 8;
-                        }
-                        const keyInfoAlgorithm = {
-                            algorithmId: aesKWAlgorithm.algorithmId
-                        };
-                        if (includeAlgorithmParams) {
-                            keyInfoAlgorithm.algorithmParams = new Null();
-                        }
-                        const eccInfo = new ECCCMSSharedInfo({
-                            keyInfo: new AlgorithmIdentifier(keyInfoAlgorithm),
-                            entityUInfo: recipientInfo.ukm,
-                            suppPubInfo: new OctetString({ valueHex: kwLengthBuffer })
-                        });
-                        const encodedInfo = eccInfo.toSchema().toBER(false);
-                        const ecdhAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "ecdhAlgorithm");
-                        if (!ecdhAlgorithm.name) {
-                            throw new Error(`Incorrect OID for key encryption algorithm: ${recipientInfo.keyEncryptionAlgorithm.algorithmId}`);
-                        }
-                        return kdf(ecdhAlgorithm.kdf, sharedSecret, kwAlgorithm.length, encodedInfo, crypto);
-                    });
-                }
-                const kdfResult = yield applyKDF();
-                const importAesKwKey = (kdfResult) => __awaiter(this, void 0, void 0, function* () {
-                    return crypto.importKey("raw", kdfResult, { name: "AES-KW" }, true, ["unwrapKey"]);
-                });
-                const aesKwKey = yield importAesKwKey(kdfResult);
-                const unwrapSessionKey = (aesKwKey) => __awaiter(this, void 0, void 0, function* () {
-                    const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
-                    const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
-                    return crypto.unwrapKey("raw", recipientInfo.recipientEncryptedKeys.encryptedKeys[0].encryptedKey.valueBlock.valueHexView, aesKwKey, { name: "AES-KW" }, contentEncryptionAlgorithm, true, ["decrypt"]);
-                });
-                try {
-                    return yield unwrapSessionKey(aesKwKey);
-                }
-                catch (_a) {
-                    const kdfResult = yield applyKDF(true);
-                    const aesKwKey = yield importAesKwKey(kdfResult);
-                    return unwrapSessionKey(aesKwKey);
-                }
-            });
-            const SubKeyTransRecipientInfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                if (!decryptionParameters.recipientPrivateKey) {
-                    throw new Error("Parameter \"recipientPrivateKey\" is mandatory for \"KeyTransRecipientInfo\"");
-                }
-                const algorithmParameters = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "keyEncryptionAlgorithm");
-                if (algorithmParameters.name === "RSA-OAEP") {
-                    const schema = recipientInfo.keyEncryptionAlgorithm.algorithmParams;
-                    const rsaOAEPParams = new RSAESOAEPParams({ schema });
-                    algorithmParameters.hash = crypto.getAlgorithmByOID(rsaOAEPParams.hashAlgorithm.algorithmId);
-                    if (("name" in algorithmParameters.hash) === false)
-                        throw new Error(`Incorrect OID for hash algorithm: ${rsaOAEPParams.hashAlgorithm.algorithmId}`);
-                }
-                const privateKey = yield crypto.importKey("pkcs8", decryptionParameters.recipientPrivateKey, algorithmParameters, true, ["decrypt"]);
-                const sessionKey = yield crypto.decrypt(privateKey.algorithm, privateKey, recipientInfo.encryptedKey.valueBlock.valueHexView);
+            const kdfResult = await applyKDF();
+            const importAesKwKey = async (kdfResult) => {
+                return crypto.importKey("raw", kdfResult, { name: "AES-KW" }, true, ["unwrapKey"]);
+            };
+            const aesKwKey = await importAesKwKey(kdfResult);
+            const unwrapSessionKey = async (aesKwKey) => {
                 const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
                 const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
-                if (("name" in contentEncryptionAlgorithm) === false)
-                    throw new Error(`Incorrect "contentEncryptionAlgorithm": ${algorithmId}`);
-                return crypto.importKey("raw", sessionKey, contentEncryptionAlgorithm, true, ["decrypt"]);
-            });
-            const SubKEKRecipientInfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                if (!decryptionParameters.preDefinedData)
-                    throw new Error("Parameter \"preDefinedData\" is mandatory for \"KEKRecipientInfo\"");
-                const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "kekAlgorithm");
-                const importedKey = yield crypto.importKey("raw", decryptionParameters.preDefinedData, kekAlgorithm, true, ["unwrapKey"]);
-                const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
-                const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
-                if (!contentEncryptionAlgorithm.name) {
-                    throw new Error(`Incorrect "contentEncryptionAlgorithm": ${algorithmId}`);
-                }
-                return crypto.unwrapKey("raw", recipientInfo.encryptedKey.valueBlock.valueHexView, importedKey, kekAlgorithm, contentEncryptionAlgorithm, true, ["decrypt"]);
-            });
-            const SubPasswordRecipientinfo = (index) => __awaiter(this, void 0, void 0, function* () {
-                const recipientInfo = this.recipientInfos[index].value;
-                let pbkdf2Params;
-                if (!decryptionParameters.preDefinedData) {
-                    throw new Error("Parameter \"preDefinedData\" is mandatory for \"KEKRecipientInfo\"");
-                }
-                if (!recipientInfo.keyDerivationAlgorithm) {
-                    throw new Error("Please append encoded \"keyDerivationAlgorithm\"");
-                }
-                if (!recipientInfo.keyDerivationAlgorithm.algorithmParams) {
-                    throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
-                }
-                try {
-                    pbkdf2Params = new PBKDF2Params({ schema: recipientInfo.keyDerivationAlgorithm.algorithmParams });
-                }
-                catch (ex) {
-                    throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
-                }
-                const pbkdf2Key = yield crypto.importKey("raw", decryptionParameters.preDefinedData, "PBKDF2", false, ["deriveKey"]);
-                const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "keyEncryptionAlgorithm");
-                const hmacHashAlgorithm = pbkdf2Params.prf
-                    ? crypto.getAlgorithmByOID(pbkdf2Params.prf.algorithmId, true, "prfAlgorithm").hash.name
-                    : "SHA-1";
-                const saltView = new Uint8Array(pbkdf2Params.salt.valueBlock.valueHex);
-                const iterations = pbkdf2Params.iterationCount;
-                const kekKey = yield crypto.deriveKey({
-                    name: "PBKDF2",
-                    hash: {
-                        name: hmacHashAlgorithm
-                    },
-                    salt: saltView,
-                    iterations
-                }, pbkdf2Key, kekAlgorithm, true, ["unwrapKey"]);
-                const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
-                const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
-                return crypto.unwrapKey("raw", recipientInfo.encryptedKey.valueBlock.valueHexView, kekKey, kekAlgorithm, contentEncryptionAlgorithm, true, ["decrypt"]);
-            });
-            let unwrappedKey;
-            switch (this.recipientInfos[recipientIndex].variant) {
-                case 1:
-                    unwrappedKey = yield SubKeyTransRecipientInfo(recipientIndex);
-                    break;
-                case 2:
-                    unwrappedKey = yield SubKeyAgreeRecipientInfo(recipientIndex);
-                    break;
-                case 3:
-                    unwrappedKey = yield SubKEKRecipientInfo(recipientIndex);
-                    break;
-                case 4:
-                    unwrappedKey = yield SubPasswordRecipientinfo(recipientIndex);
-                    break;
-                default:
-                    throw new Error(`Unknown recipient type in array with index ${recipientIndex}`);
+                return crypto.unwrapKey("raw", recipientInfo.recipientEncryptedKeys.encryptedKeys[0].encryptedKey.valueBlock.valueHexView, aesKwKey, { name: "AES-KW" }, contentEncryptionAlgorithm, true, ["decrypt"]);
+            };
+            try {
+                return await unwrapSessionKey(aesKwKey);
             }
+            catch {
+                const kdfResult = await applyKDF(true);
+                const aesKwKey = await importAesKwKey(kdfResult);
+                return unwrapSessionKey(aesKwKey);
+            }
+        };
+        const SubKeyTransRecipientInfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            if (!decryptionParameters.recipientPrivateKey) {
+                throw new Error("Parameter \"recipientPrivateKey\" is mandatory for \"KeyTransRecipientInfo\"");
+            }
+            const algorithmParameters = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "keyEncryptionAlgorithm");
+            if (algorithmParameters.name === "RSA-OAEP") {
+                const schema = recipientInfo.keyEncryptionAlgorithm.algorithmParams;
+                const rsaOAEPParams = new RSAESOAEPParams({ schema });
+                algorithmParameters.hash = crypto.getAlgorithmByOID(rsaOAEPParams.hashAlgorithm.algorithmId);
+                if (("name" in algorithmParameters.hash) === false)
+                    throw new Error(`Incorrect OID for hash algorithm: ${rsaOAEPParams.hashAlgorithm.algorithmId}`);
+            }
+            let privateKey;
+            let keyCrypto = crypto;
+            if (BufferSourceConverter.isBufferSource(decryptionParameters.recipientPrivateKey)) {
+                privateKey = await crypto.importKey("pkcs8", decryptionParameters.recipientPrivateKey, algorithmParameters, true, ["decrypt"]);
+            }
+            else {
+                privateKey = decryptionParameters.recipientPrivateKey;
+                if ("crypto" in decryptionParameters && decryptionParameters.crypto) {
+                    keyCrypto = decryptionParameters.crypto.subtle;
+                }
+            }
+            const sessionKey = await keyCrypto.decrypt(privateKey.algorithm, privateKey, recipientInfo.encryptedKey.valueBlock.valueHexView);
             const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
             const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
-            const ivBuffer = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams.valueBlock.valueHex;
-            const ivView = new Uint8Array(ivBuffer);
-            if (!this.encryptedContentInfo.encryptedContent) {
-                throw new Error("Required property `encryptedContent` is empty");
+            if (("name" in contentEncryptionAlgorithm) === false)
+                throw new Error(`Incorrect "contentEncryptionAlgorithm": ${algorithmId}`);
+            return crypto.importKey("raw", sessionKey, contentEncryptionAlgorithm, true, ["decrypt"]);
+        };
+        const SubKEKRecipientInfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            if (!decryptionParameters.preDefinedData)
+                throw new Error("Parameter \"preDefinedData\" is mandatory for \"KEKRecipientInfo\"");
+            const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "kekAlgorithm");
+            const importedKey = await crypto.importKey("raw", decryptionParameters.preDefinedData, kekAlgorithm, true, ["unwrapKey"]);
+            const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
+            const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
+            if (!contentEncryptionAlgorithm.name) {
+                throw new Error(`Incorrect "contentEncryptionAlgorithm": ${algorithmId}`);
             }
-            const dataBuffer = this.encryptedContentInfo.getEncryptedContent();
-            return crypto.decrypt({
-                name: contentEncryptionAlgorithm.name,
-                iv: ivView
-            }, unwrappedKey, dataBuffer);
-        });
+            return crypto.unwrapKey("raw", recipientInfo.encryptedKey.valueBlock.valueHexView, importedKey, kekAlgorithm, contentEncryptionAlgorithm, true, ["decrypt"]);
+        };
+        const SubPasswordRecipientinfo = async (index) => {
+            const recipientInfo = this.recipientInfos[index].value;
+            let pbkdf2Params;
+            if (!decryptionParameters.preDefinedData) {
+                throw new Error("Parameter \"preDefinedData\" is mandatory for \"KEKRecipientInfo\"");
+            }
+            if (!recipientInfo.keyDerivationAlgorithm) {
+                throw new Error("Please append encoded \"keyDerivationAlgorithm\"");
+            }
+            if (!recipientInfo.keyDerivationAlgorithm.algorithmParams) {
+                throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
+            }
+            try {
+                pbkdf2Params = new PBKDF2Params({ schema: recipientInfo.keyDerivationAlgorithm.algorithmParams });
+            }
+            catch {
+                throw new Error("Incorrectly encoded \"keyDerivationAlgorithm\"");
+            }
+            const pbkdf2Key = await crypto.importKey("raw", decryptionParameters.preDefinedData, "PBKDF2", false, ["deriveKey"]);
+            const kekAlgorithm = crypto.getAlgorithmByOID(recipientInfo.keyEncryptionAlgorithm.algorithmId, true, "keyEncryptionAlgorithm");
+            const hmacHashAlgorithm = pbkdf2Params.prf
+                ? crypto.getAlgorithmByOID(pbkdf2Params.prf.algorithmId, true, "prfAlgorithm").hash.name
+                : "SHA-1";
+            const saltView = new Uint8Array(pbkdf2Params.salt.valueBlock.valueHex);
+            const iterations = pbkdf2Params.iterationCount;
+            const kekKey = await crypto.deriveKey({
+                name: "PBKDF2",
+                hash: {
+                    name: hmacHashAlgorithm
+                },
+                salt: saltView,
+                iterations
+            }, pbkdf2Key, kekAlgorithm, true, ["unwrapKey"]);
+            const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
+            const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
+            return crypto.unwrapKey("raw", recipientInfo.encryptedKey.valueBlock.valueHexView, kekKey, kekAlgorithm, contentEncryptionAlgorithm, true, ["decrypt"]);
+        };
+        let unwrappedKey;
+        switch (this.recipientInfos[recipientIndex].variant) {
+            case 1:
+                unwrappedKey = await SubKeyTransRecipientInfo(recipientIndex);
+                break;
+            case 2:
+                unwrappedKey = await SubKeyAgreeRecipientInfo(recipientIndex);
+                break;
+            case 3:
+                unwrappedKey = await SubKEKRecipientInfo(recipientIndex);
+                break;
+            case 4:
+                unwrappedKey = await SubPasswordRecipientinfo(recipientIndex);
+                break;
+            default:
+                throw new Error(`Unknown recipient type in array with index ${recipientIndex}`);
+        }
+        const algorithmId = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
+        const contentEncryptionAlgorithm = crypto.getAlgorithmByOID(algorithmId, true, "contentEncryptionAlgorithm");
+        const ivBuffer = this.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams.valueBlock.valueHex;
+        const ivView = new Uint8Array(ivBuffer);
+        if (!this.encryptedContentInfo.encryptedContent) {
+            throw new Error("Required property `encryptedContent` is empty");
+        }
+        const dataBuffer = this.encryptedContentInfo.getEncryptedContent();
+        return crypto.decrypt({
+            name: contentEncryptionAlgorithm.name,
+            iv: ivView
+        }, unwrappedKey, dataBuffer);
     }
 }
 EnvelopedData.CLASS_NAME = "EnvelopedData";
@@ -18684,142 +19223,138 @@ class AuthenticatedSafe extends PkiObject {
             safeContents: Array.from(this.safeContents, o => o.toJSON())
         };
     }
-    parseInternalValues(parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ParameterError.assert(parameters, SAFE_CONTENTS);
-            ArgumentError.assert(parameters.safeContents, SAFE_CONTENTS, "Array");
-            if (parameters.safeContents.length !== this.safeContents.length) {
-                throw new ArgumentError("Length of \"parameters.safeContents\" must be equal to \"this.safeContents.length\"");
+    async parseInternalValues(parameters, crypto = getCrypto(true)) {
+        ParameterError.assert(parameters, SAFE_CONTENTS);
+        ArgumentError.assert(parameters.safeContents, SAFE_CONTENTS, "Array");
+        if (parameters.safeContents.length !== this.safeContents.length) {
+            throw new ArgumentError("Length of \"parameters.safeContents\" must be equal to \"this.safeContents.length\"");
+        }
+        this.parsedValue = {
+            safeContents: [],
+        };
+        for (const [index, content] of this.safeContents.entries()) {
+            const safeContent = parameters.safeContents[index];
+            const errorTarget = `parameters.safeContents[${index}]`;
+            switch (content.contentType) {
+                case id_ContentType_Data:
+                    {
+                        ArgumentError.assert(content.content, "this.safeContents[j].content", OctetString);
+                        const authSafeContent = content.content.getValue();
+                        this.parsedValue.safeContents.push({
+                            privacyMode: 0,
+                            value: SafeContents.fromBER(authSafeContent)
+                        });
+                    }
+                    break;
+                case id_ContentType_EnvelopedData:
+                    {
+                        const cmsEnveloped = new EnvelopedData({ schema: content.content });
+                        ParameterError.assert(errorTarget, safeContent, "recipientCertificate", "recipientKey");
+                        const envelopedData = safeContent;
+                        const recipientCertificate = envelopedData.recipientCertificate;
+                        const recipientKey = envelopedData.recipientKey;
+                        const decrypted = await cmsEnveloped.decrypt(0, {
+                            recipientCertificate,
+                            recipientPrivateKey: recipientKey
+                        }, crypto);
+                        this.parsedValue.safeContents.push({
+                            privacyMode: 2,
+                            value: SafeContents.fromBER(decrypted),
+                        });
+                    }
+                    break;
+                case id_ContentType_EncryptedData:
+                    {
+                        const cmsEncrypted = new EncryptedData({ schema: content.content });
+                        ParameterError.assert(errorTarget, safeContent, "password");
+                        const password = safeContent.password;
+                        const decrypted = await cmsEncrypted.decrypt({
+                            password
+                        }, crypto);
+                        this.parsedValue.safeContents.push({
+                            privacyMode: 1,
+                            value: SafeContents.fromBER(decrypted),
+                        });
+                    }
+                    break;
+                default:
+                    throw new Error(`Unknown "contentType" for AuthenticatedSafe: " ${content.contentType}`);
             }
-            this.parsedValue = {
-                safeContents: [],
-            };
-            for (const [index, content] of this.safeContents.entries()) {
-                const safeContent = parameters.safeContents[index];
-                const errorTarget = `parameters.safeContents[${index}]`;
-                switch (content.contentType) {
-                    case id_ContentType_Data:
-                        {
-                            ArgumentError.assert(content.content, "this.safeContents[j].content", OctetString);
-                            const authSafeContent = content.content.getValue();
-                            this.parsedValue.safeContents.push({
-                                privacyMode: 0,
-                                value: SafeContents.fromBER(authSafeContent)
-                            });
-                        }
-                        break;
-                    case id_ContentType_EnvelopedData:
-                        {
-                            const cmsEnveloped = new EnvelopedData({ schema: content.content });
-                            ParameterError.assert(errorTarget, safeContent, "recipientCertificate", "recipientKey");
-                            const envelopedData = safeContent;
-                            const recipientCertificate = envelopedData.recipientCertificate;
-                            const recipientKey = envelopedData.recipientKey;
-                            const decrypted = yield cmsEnveloped.decrypt(0, {
-                                recipientCertificate,
-                                recipientPrivateKey: recipientKey
-                            }, crypto);
-                            this.parsedValue.safeContents.push({
-                                privacyMode: 2,
-                                value: SafeContents.fromBER(decrypted),
-                            });
-                        }
-                        break;
-                    case id_ContentType_EncryptedData:
-                        {
-                            const cmsEncrypted = new EncryptedData({ schema: content.content });
-                            ParameterError.assert(errorTarget, safeContent, "password");
-                            const password = safeContent.password;
-                            const decrypted = yield cmsEncrypted.decrypt({
-                                password
-                            }, crypto);
-                            this.parsedValue.safeContents.push({
-                                privacyMode: 1,
-                                value: SafeContents.fromBER(decrypted),
-                            });
-                        }
-                        break;
-                    default:
-                        throw new Error(`Unknown "contentType" for AuthenticatedSafe: " ${content.contentType}`);
-                }
-            }
-        });
+        }
     }
-    makeInternalValues(parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!(this.parsedValue)) {
-                throw new Error("Please run \"parseValues\" first or add \"parsedValue\" manually");
-            }
-            ArgumentError.assert(this.parsedValue, "this.parsedValue", "object");
-            ArgumentError.assert(this.parsedValue.safeContents, "this.parsedValue.safeContents", "Array");
-            ArgumentError.assert(parameters, "parameters", "object");
-            ParameterError.assert(parameters, "safeContents");
-            ArgumentError.assert(parameters.safeContents, "parameters.safeContents", "Array");
-            if (parameters.safeContents.length !== this.parsedValue.safeContents.length) {
-                throw new ArgumentError("Length of \"parameters.safeContents\" must be equal to \"this.parsedValue.safeContents\"");
-            }
-            this.safeContents = [];
-            for (const [index, content] of this.parsedValue.safeContents.entries()) {
-                ParameterError.assert("content", content, "privacyMode", "value");
-                ArgumentError.assert(content.value, "content.value", SafeContents);
-                switch (content.privacyMode) {
-                    case 0:
-                        {
-                            const contentBuffer = content.value.toSchema().toBER(false);
-                            this.safeContents.push(new ContentInfo({
-                                contentType: "1.2.840.113549.1.7.1",
-                                content: new OctetString({ valueHex: contentBuffer })
-                            }));
+    async makeInternalValues(parameters, crypto = getCrypto(true)) {
+        if (!(this.parsedValue)) {
+            throw new Error("Please run \"parseValues\" first or add \"parsedValue\" manually");
+        }
+        ArgumentError.assert(this.parsedValue, "this.parsedValue", "object");
+        ArgumentError.assert(this.parsedValue.safeContents, "this.parsedValue.safeContents", "Array");
+        ArgumentError.assert(parameters, "parameters", "object");
+        ParameterError.assert(parameters, "safeContents");
+        ArgumentError.assert(parameters.safeContents, "parameters.safeContents", "Array");
+        if (parameters.safeContents.length !== this.parsedValue.safeContents.length) {
+            throw new ArgumentError("Length of \"parameters.safeContents\" must be equal to \"this.parsedValue.safeContents\"");
+        }
+        this.safeContents = [];
+        for (const [index, content] of this.parsedValue.safeContents.entries()) {
+            ParameterError.assert("content", content, "privacyMode", "value");
+            ArgumentError.assert(content.value, "content.value", SafeContents);
+            switch (content.privacyMode) {
+                case 0:
+                    {
+                        const contentBuffer = content.value.toSchema().toBER(false);
+                        this.safeContents.push(new ContentInfo({
+                            contentType: "1.2.840.113549.1.7.1",
+                            content: new OctetString({ valueHex: contentBuffer })
+                        }));
+                    }
+                    break;
+                case 1:
+                    {
+                        const cmsEncrypted = new EncryptedData();
+                        const currentParameters = parameters.safeContents[index];
+                        currentParameters.contentToEncrypt = content.value.toSchema().toBER(false);
+                        await cmsEncrypted.encrypt(currentParameters, crypto);
+                        this.safeContents.push(new ContentInfo({
+                            contentType: "1.2.840.113549.1.7.6",
+                            content: cmsEncrypted.toSchema()
+                        }));
+                    }
+                    break;
+                case 2:
+                    {
+                        const cmsEnveloped = new EnvelopedData();
+                        const contentToEncrypt = content.value.toSchema().toBER(false);
+                        const safeContent = parameters.safeContents[index];
+                        ParameterError.assert(`parameters.safeContents[${index}]`, safeContent, "encryptingCertificate", "encryptionAlgorithm");
+                        switch (true) {
+                            case (safeContent.encryptionAlgorithm.name.toLowerCase() === "aes-cbc"):
+                            case (safeContent.encryptionAlgorithm.name.toLowerCase() === "aes-gcm"):
+                                break;
+                            default:
+                                throw new Error(`Incorrect parameter "encryptionAlgorithm" in "parameters.safeContents[i]": ${safeContent.encryptionAlgorithm}`);
                         }
-                        break;
-                    case 1:
-                        {
-                            const cmsEncrypted = new EncryptedData();
-                            const currentParameters = parameters.safeContents[index];
-                            currentParameters.contentToEncrypt = content.value.toSchema().toBER(false);
-                            yield cmsEncrypted.encrypt(currentParameters);
-                            this.safeContents.push(new ContentInfo({
-                                contentType: "1.2.840.113549.1.7.6",
-                                content: cmsEncrypted.toSchema()
-                            }));
+                        switch (true) {
+                            case (safeContent.encryptionAlgorithm.length === 128):
+                            case (safeContent.encryptionAlgorithm.length === 192):
+                            case (safeContent.encryptionAlgorithm.length === 256):
+                                break;
+                            default:
+                                throw new Error(`Incorrect parameter "encryptionAlgorithm.length" in "parameters.safeContents[i]": ${safeContent.encryptionAlgorithm.length}`);
                         }
-                        break;
-                    case 2:
-                        {
-                            const cmsEnveloped = new EnvelopedData();
-                            const contentToEncrypt = content.value.toSchema().toBER(false);
-                            const safeContent = parameters.safeContents[index];
-                            ParameterError.assert(`parameters.safeContents[${index}]`, safeContent, "encryptingCertificate", "encryptionAlgorithm");
-                            switch (true) {
-                                case (safeContent.encryptionAlgorithm.name.toLowerCase() === "aes-cbc"):
-                                case (safeContent.encryptionAlgorithm.name.toLowerCase() === "aes-gcm"):
-                                    break;
-                                default:
-                                    throw new Error(`Incorrect parameter "encryptionAlgorithm" in "parameters.safeContents[i]": ${safeContent.encryptionAlgorithm}`);
-                            }
-                            switch (true) {
-                                case (safeContent.encryptionAlgorithm.length === 128):
-                                case (safeContent.encryptionAlgorithm.length === 192):
-                                case (safeContent.encryptionAlgorithm.length === 256):
-                                    break;
-                                default:
-                                    throw new Error(`Incorrect parameter "encryptionAlgorithm.length" in "parameters.safeContents[i]": ${safeContent.encryptionAlgorithm.length}`);
-                            }
-                            const encryptionAlgorithm = safeContent.encryptionAlgorithm;
-                            cmsEnveloped.addRecipientByCertificate(safeContent.encryptingCertificate, {}, undefined, crypto);
-                            yield cmsEnveloped.encrypt(encryptionAlgorithm, contentToEncrypt, crypto);
-                            this.safeContents.push(new ContentInfo({
-                                contentType: "1.2.840.113549.1.7.3",
-                                content: cmsEnveloped.toSchema()
-                            }));
-                        }
-                        break;
-                    default:
-                        throw new Error(`Incorrect value for "content.privacyMode": ${content.privacyMode}`);
-                }
+                        const encryptionAlgorithm = safeContent.encryptionAlgorithm;
+                        cmsEnveloped.addRecipientByCertificate(safeContent.encryptingCertificate, {}, undefined, crypto);
+                        await cmsEnveloped.encrypt(encryptionAlgorithm, contentToEncrypt, crypto);
+                        this.safeContents.push(new ContentInfo({
+                            contentType: "1.2.840.113549.1.7.3",
+                            content: cmsEnveloped.toSchema()
+                        }));
+                    }
+                    break;
+                default:
+                    throw new Error(`Incorrect value for "content.privacyMode": ${content.privacyMode}`);
             }
-            return this;
-        });
+        }
+        return this;
     }
 }
 AuthenticatedSafe.CLASS_NAME = "AuthenticatedSafe";
@@ -18835,6 +19370,11 @@ const CLEAR_PROPS$j = [
     SERIAL_NUMBER$1,
 ];
 class CertID extends PkiObject {
+    static async create(certificate, parameters, crypto = getCrypto(true)) {
+        const certID = new CertID();
+        await certID.createForCertificate(certificate, parameters, crypto);
+        return certID;
+    }
     constructor(parameters = {}) {
         super();
         this.hashAlgorithm = getParametersValue(parameters, HASH_ALGORITHM$1, CertID.defaultValues(HASH_ALGORITHM$1));
@@ -18844,13 +19384,6 @@ class CertID extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    static create(certificate, parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const certID = new CertID();
-            yield certID.createForCertificate(certificate, parameters, crypto);
-            return certID;
-        });
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -18942,22 +19475,20 @@ class CertID extends PkiObject {
         }
         return true;
     }
-    createForCertificate(certificate, parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ParameterError.assert(parameters, HASH_ALGORITHM$1, "issuerCertificate");
-            const hashOID = crypto.getOIDByAlgorithm({ name: parameters.hashAlgorithm }, true, "hashAlgorithm");
-            this.hashAlgorithm = new AlgorithmIdentifier({
-                algorithmId: hashOID,
-                algorithmParams: new Null()
-            });
-            const issuerCertificate = parameters.issuerCertificate;
-            this.serialNumber = certificate.serialNumber;
-            const hashIssuerName = yield crypto.digest({ name: parameters.hashAlgorithm }, issuerCertificate.subject.toSchema().toBER(false));
-            this.issuerNameHash = new OctetString({ valueHex: hashIssuerName });
-            const issuerKeyBuffer = issuerCertificate.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView;
-            const hashIssuerKey = yield crypto.digest({ name: parameters.hashAlgorithm }, issuerKeyBuffer);
-            this.issuerKeyHash = new OctetString({ valueHex: hashIssuerKey });
+    async createForCertificate(certificate, parameters, crypto = getCrypto(true)) {
+        ParameterError.assert(parameters, HASH_ALGORITHM$1, "issuerCertificate");
+        const hashOID = crypto.getOIDByAlgorithm({ name: parameters.hashAlgorithm }, true, "hashAlgorithm");
+        this.hashAlgorithm = new AlgorithmIdentifier({
+            algorithmId: hashOID,
+            algorithmParams: new Null()
         });
+        const issuerCertificate = parameters.issuerCertificate;
+        this.serialNumber = certificate.serialNumber;
+        const hashIssuerName = await crypto.digest({ name: parameters.hashAlgorithm }, issuerCertificate.subject.toSchema().toBER(false));
+        this.issuerNameHash = new OctetString({ valueHex: hashIssuerName });
+        const issuerKeyBuffer = issuerCertificate.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView;
+        const hashIssuerKey = await crypto.digest({ name: parameters.hashAlgorithm }, issuerKeyBuffer);
+        this.issuerKeyHash = new OctetString({ valueHex: hashIssuerKey });
     }
 }
 CertID.CLASS_NAME = "CertID";
@@ -19127,8 +19658,12 @@ class SingleResponse extends PkiObject {
             }));
         }
         if (this.singleExtensions) {
-            outputArray.push(new Sequence({
-                value: Array.from(this.singleExtensions, o => o.toSchema())
+            outputArray.push(new Constructed({
+                idBlock: {
+                    tagClass: 3,
+                    tagNumber: 1
+                },
+                value: [new Sequence({ value: Array.from(this.singleExtensions, o => o.toSchema()) })]
             }));
         }
         return (new Sequence({
@@ -19173,6 +19708,12 @@ const CLEAR_PROPS$h = [
     RESPONSE_DATA_RESPONSE_EXTENSIONS
 ];
 class ResponseData extends PkiObject {
+    get tbs() {
+        return BufferSourceConverter.toArrayBuffer(this.tbsView);
+    }
+    set tbs(value) {
+        this.tbsView = new Uint8Array(value);
+    }
     constructor(parameters = {}) {
         super();
         this.tbsView = new Uint8Array(getParametersValue(parameters, TBS$2, ResponseData.defaultValues(TBS$2)));
@@ -19188,12 +19729,6 @@ class ResponseData extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    get tbs() {
-        return BufferSourceConverter.toArrayBuffer(this.tbsView);
-    }
-    set tbs(value) {
-        this.tbsView = new Uint8Array(value);
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -19447,90 +19982,88 @@ class CertificateChainValidationEngine {
         }
         return "Unknown";
     }
-    defaultFindIssuer(certificate, validationEngine, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const result = [];
-            let keyIdentifier = null;
-            let authorityCertIssuer = null;
-            let authorityCertSerialNumber = null;
-            if (certificate.subject.isEqual(certificate.issuer)) {
-                try {
-                    const verificationResult = yield certificate.verify(undefined, crypto);
-                    if (verificationResult) {
-                        return [certificate];
-                    }
-                }
-                catch (ex) {
+    async defaultFindIssuer(certificate, validationEngine, crypto = getCrypto(true)) {
+        const result = [];
+        let keyIdentifier = null;
+        let authorityCertIssuer = null;
+        let authorityCertSerialNumber = null;
+        if (certificate.subject.isEqual(certificate.issuer)) {
+            try {
+                const verificationResult = await certificate.verify(undefined, crypto);
+                if (verificationResult) {
+                    return [certificate];
                 }
             }
-            if (certificate.extensions) {
-                for (const extension of certificate.extensions) {
-                    if (extension.extnID === id_AuthorityKeyIdentifier && extension.parsedValue instanceof AuthorityKeyIdentifier) {
-                        if (extension.parsedValue.keyIdentifier) {
-                            keyIdentifier = extension.parsedValue.keyIdentifier;
+            catch {
+            }
+        }
+        if (certificate.extensions) {
+            for (const extension of certificate.extensions) {
+                if (extension.extnID === id_AuthorityKeyIdentifier && extension.parsedValue instanceof AuthorityKeyIdentifier) {
+                    if (extension.parsedValue.keyIdentifier) {
+                        keyIdentifier = extension.parsedValue.keyIdentifier;
+                    }
+                    else {
+                        if (extension.parsedValue.authorityCertIssuer) {
+                            authorityCertIssuer = extension.parsedValue.authorityCertIssuer;
                         }
-                        else {
-                            if (extension.parsedValue.authorityCertIssuer) {
-                                authorityCertIssuer = extension.parsedValue.authorityCertIssuer;
-                            }
-                            if (extension.parsedValue.authorityCertSerialNumber) {
-                                authorityCertSerialNumber = extension.parsedValue.authorityCertSerialNumber;
-                            }
+                        if (extension.parsedValue.authorityCertSerialNumber) {
+                            authorityCertSerialNumber = extension.parsedValue.authorityCertSerialNumber;
                         }
-                        break;
+                    }
+                    break;
+                }
+            }
+        }
+        function checkCertificate(possibleIssuer) {
+            if (keyIdentifier !== null) {
+                if (possibleIssuer.extensions) {
+                    let extensionFound = false;
+                    for (const extension of possibleIssuer.extensions) {
+                        if (extension.extnID === id_SubjectKeyIdentifier && extension.parsedValue) {
+                            extensionFound = true;
+                            if (BufferSourceConverter.isEqual(extension.parsedValue.valueBlock.valueHex, keyIdentifier.valueBlock.valueHexView)) {
+                                result.push(possibleIssuer);
+                            }
+                            break;
+                        }
+                    }
+                    if (extensionFound) {
+                        return;
                     }
                 }
             }
-            function checkCertificate(possibleIssuer) {
-                if (keyIdentifier !== null) {
-                    if (possibleIssuer.extensions) {
-                        let extensionFound = false;
-                        for (const extension of possibleIssuer.extensions) {
-                            if (extension.extnID === id_SubjectKeyIdentifier && extension.parsedValue) {
-                                extensionFound = true;
-                                if (BufferSourceConverter.isEqual(extension.parsedValue.valueBlock.valueHex, keyIdentifier.valueBlock.valueHexView)) {
-                                    result.push(possibleIssuer);
-                                }
-                                break;
-                            }
-                        }
-                        if (extensionFound) {
-                            return;
-                        }
-                    }
-                }
-                let authorityCertSerialNumberEqual = false;
-                if (authorityCertSerialNumber !== null)
-                    authorityCertSerialNumberEqual = possibleIssuer.serialNumber.isEqual(authorityCertSerialNumber);
-                if (authorityCertIssuer !== null) {
-                    if (possibleIssuer.subject.isEqual(authorityCertIssuer)) {
-                        if (authorityCertSerialNumberEqual)
-                            result.push(possibleIssuer);
-                    }
-                }
-                else {
-                    if (certificate.issuer.isEqual(possibleIssuer.subject))
+            let authorityCertSerialNumberEqual = false;
+            if (authorityCertSerialNumber !== null)
+                authorityCertSerialNumberEqual = possibleIssuer.serialNumber.isEqual(authorityCertSerialNumber);
+            if (authorityCertIssuer !== null) {
+                if (possibleIssuer.subject.isEqual(authorityCertIssuer)) {
+                    if (authorityCertSerialNumberEqual)
                         result.push(possibleIssuer);
                 }
             }
-            for (const trustedCert of validationEngine.trustedCerts) {
-                checkCertificate(trustedCert);
+            else {
+                if (certificate.issuer.isEqual(possibleIssuer.subject))
+                    result.push(possibleIssuer);
             }
-            for (const intermediateCert of validationEngine.certs) {
-                checkCertificate(intermediateCert);
-            }
-            for (let i = 0; i < result.length; i++) {
-                try {
-                    const verificationResult = yield certificate.verify(result[i], crypto);
-                    if (verificationResult === false)
-                        result.splice(i, 1);
-                }
-                catch (ex) {
+        }
+        for (const trustedCert of validationEngine.trustedCerts) {
+            checkCertificate(trustedCert);
+        }
+        for (const intermediateCert of validationEngine.certs) {
+            checkCertificate(intermediateCert);
+        }
+        for (let i = result.length - 1; i >= 0; i--) {
+            try {
+                const verificationResult = await certificate.verify(result[i], crypto);
+                if (verificationResult === false)
                     result.splice(i, 1);
-                }
             }
-            return result;
-        });
+            catch {
+                result.splice(i, 1);
+            }
+        }
+        return result;
     }
     defaultValues(memberName) {
         switch (memberName) {
@@ -19552,686 +20085,679 @@ class CertificateChainValidationEngine {
                 throw new Error(`Invalid member name for CertificateChainValidationEngine class: ${memberName}`);
         }
     }
-    sort(passedWhenNotRevValues = false, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const localCerts = [];
-            const buildPath = (certificate, crypto) => __awaiter(this, void 0, void 0, function* () {
-                const result = [];
-                function checkUnique(array) {
-                    let unique = true;
-                    for (let i = 0; i < array.length; i++) {
-                        for (let j = 0; j < array.length; j++) {
-                            if (j === i)
-                                continue;
-                            if (array[i] === array[j]) {
-                                unique = false;
-                                break;
-                            }
-                        }
-                        if (!unique)
+    async sort(passedWhenNotRevValues = false, crypto = getCrypto(true)) {
+        const localCerts = [];
+        const buildPath = async (certificate, crypto) => {
+            const result = [];
+            function checkUnique(array) {
+                let unique = true;
+                for (let i = 0; i < array.length; i++) {
+                    for (let j = 0; j < array.length; j++) {
+                        if (j === i)
+                            continue;
+                        if (array[i] === array[j]) {
+                            unique = false;
                             break;
-                    }
-                    return unique;
-                }
-                if (isTrusted(certificate, this.trustedCerts)) {
-                    return [[certificate]];
-                }
-                const findIssuerResult = yield this.findIssuer(certificate, this, crypto);
-                if (findIssuerResult.length === 0) {
-                    throw new Error("No valid certificate paths found");
-                }
-                for (let i = 0; i < findIssuerResult.length; i++) {
-                    if (BufferSourceConverter.isEqual(findIssuerResult[i].tbsView, certificate.tbsView)) {
-                        result.push([findIssuerResult[i]]);
-                        continue;
-                    }
-                    const buildPathResult = yield buildPath(findIssuerResult[i], crypto);
-                    for (let j = 0; j < buildPathResult.length; j++) {
-                        const copy = buildPathResult[j].slice();
-                        copy.splice(0, 0, findIssuerResult[i]);
-                        if (checkUnique(copy))
-                            result.push(copy);
-                        else
-                            result.push(buildPathResult[j]);
-                    }
-                }
-                return result;
-            });
-            const findCRL = (certificate) => __awaiter(this, void 0, void 0, function* () {
-                const issuerCertificates = [];
-                const crls = [];
-                const crlsAndCertificates = [];
-                issuerCertificates.push(...localCerts.filter(element => certificate.issuer.isEqual(element.subject)));
-                if (issuerCertificates.length === 0) {
-                    return {
-                        status: 1,
-                        statusMessage: "No certificate's issuers"
-                    };
-                }
-                crls.push(...this.crls.filter(o => o.issuer.isEqual(certificate.issuer)));
-                if (crls.length === 0) {
-                    return {
-                        status: 2,
-                        statusMessage: "No CRLs for specific certificate issuer"
-                    };
-                }
-                for (let i = 0; i < crls.length; i++) {
-                    const crl = crls[i];
-                    if (crl.nextUpdate && crl.nextUpdate.value < this.checkDate) {
-                        continue;
-                    }
-                    for (let j = 0; j < issuerCertificates.length; j++) {
-                        try {
-                            const result = yield crls[i].verify({ issuerCertificate: issuerCertificates[j] }, crypto);
-                            if (result) {
-                                crlsAndCertificates.push({
-                                    crl: crls[i],
-                                    certificate: issuerCertificates[j]
-                                });
-                                break;
-                            }
-                        }
-                        catch (ex) {
                         }
                     }
+                    if (!unique)
+                        break;
                 }
-                if (crlsAndCertificates.length) {
-                    return {
-                        status: 0,
-                        statusMessage: EMPTY_STRING,
-                        result: crlsAndCertificates
-                    };
-                }
-                return {
-                    status: 3,
-                    statusMessage: "No valid CRLs found"
-                };
-            });
-            const findOCSP = (certificate, issuerCertificate) => __awaiter(this, void 0, void 0, function* () {
-                const hashAlgorithm = crypto.getAlgorithmByOID(certificate.signatureAlgorithm.algorithmId);
-                if (!hashAlgorithm.name) {
-                    return 1;
-                }
-                if (!hashAlgorithm.hash) {
-                    return 1;
-                }
-                for (let i = 0; i < this.ocsps.length; i++) {
-                    const ocsp = this.ocsps[i];
-                    const result = yield ocsp.getCertificateStatus(certificate, issuerCertificate, crypto);
-                    if (result.isForCertificate) {
-                        if (result.status === 0)
-                            return 0;
-                        return 1;
-                    }
-                }
-                return 2;
-            });
-            function checkForCA(certificate, needToCheckCRL = false) {
-                return __awaiter(this, void 0, void 0, function* () {
-                    let isCA = false;
-                    let mustBeCA = false;
-                    let keyUsagePresent = false;
-                    let cRLSign = false;
-                    if (certificate.extensions) {
-                        for (let j = 0; j < certificate.extensions.length; j++) {
-                            const extension = certificate.extensions[j];
-                            if (extension.critical && !extension.parsedValue) {
-                                return {
-                                    result: false,
-                                    resultCode: 6,
-                                    resultMessage: `Unable to parse critical certificate extension: ${extension.extnID}`
-                                };
-                            }
-                            if (extension.extnID === id_KeyUsage) {
-                                keyUsagePresent = true;
-                                const view = new Uint8Array(extension.parsedValue.valueBlock.valueHex);
-                                if ((view[0] & 0x04) === 0x04)
-                                    mustBeCA = true;
-                                if ((view[0] & 0x02) === 0x02)
-                                    cRLSign = true;
-                            }
-                            if (extension.extnID === id_BasicConstraints) {
-                                if ("cA" in extension.parsedValue) {
-                                    if (extension.parsedValue.cA === true)
-                                        isCA = true;
-                                }
-                            }
-                        }
-                        if ((mustBeCA === true) && (isCA === false)) {
-                            return {
-                                result: false,
-                                resultCode: 3,
-                                resultMessage: "Unable to build certificate chain - using \"keyCertSign\" flag set without BasicConstraints"
-                            };
-                        }
-                        if ((keyUsagePresent === true) && (isCA === true) && (mustBeCA === false)) {
-                            return {
-                                result: false,
-                                resultCode: 4,
-                                resultMessage: "Unable to build certificate chain - \"keyCertSign\" flag was not set"
-                            };
-                        }
-                        if ((isCA === true) && (keyUsagePresent === true) && ((needToCheckCRL) && (cRLSign === false))) {
-                            return {
-                                result: false,
-                                resultCode: 5,
-                                resultMessage: "Unable to build certificate chain - intermediate certificate must have \"cRLSign\" key usage flag"
-                            };
-                        }
-                    }
-                    if (isCA === false) {
-                        return {
-                            result: false,
-                            resultCode: 7,
-                            resultMessage: "Unable to build certificate chain - more than one possible end-user certificate"
-                        };
-                    }
-                    return {
-                        result: true,
-                        resultCode: 0,
-                        resultMessage: EMPTY_STRING
-                    };
-                });
+                return unique;
             }
-            const basicCheck = (path, checkDate) => __awaiter(this, void 0, void 0, function* () {
-                for (let i = 0; i < path.length; i++) {
-                    if ((path[i].notBefore.value > checkDate) ||
-                        (path[i].notAfter.value < checkDate)) {
-                        return {
-                            result: false,
-                            resultCode: 8,
-                            resultMessage: "The certificate is either not yet valid or expired"
-                        };
+            if (isTrusted(certificate, this.trustedCerts)) {
+                return [[certificate]];
+            }
+            const findIssuerResult = await this.findIssuer(certificate, this, crypto);
+            if (findIssuerResult.length === 0) {
+                throw new Error("No valid certificate paths found");
+            }
+            for (let i = 0; i < findIssuerResult.length; i++) {
+                if (BufferSourceConverter.isEqual(findIssuerResult[i].tbsView, certificate.tbsView)) {
+                    result.push([findIssuerResult[i]]);
+                    continue;
+                }
+                const buildPathResult = await buildPath(findIssuerResult[i], crypto);
+                for (let j = 0; j < buildPathResult.length; j++) {
+                    const copy = buildPathResult[j].slice();
+                    copy.splice(0, 0, findIssuerResult[i]);
+                    if (checkUnique(copy))
+                        result.push(copy);
+                    else
+                        result.push(buildPathResult[j]);
+                }
+            }
+            return result;
+        };
+        const findCRL = async (certificate) => {
+            const issuerCertificates = [];
+            const crls = [];
+            const crlsAndCertificates = [];
+            issuerCertificates.push(...localCerts.filter(element => certificate.issuer.isEqual(element.subject)));
+            if (issuerCertificates.length === 0) {
+                return {
+                    status: 1,
+                    statusMessage: "No certificate's issuers"
+                };
+            }
+            crls.push(...this.crls.filter(o => o.issuer.isEqual(certificate.issuer)));
+            if (crls.length === 0) {
+                return {
+                    status: 2,
+                    statusMessage: "No CRLs for specific certificate issuer"
+                };
+            }
+            for (let i = 0; i < crls.length; i++) {
+                const crl = crls[i];
+                if (crl.nextUpdate && crl.nextUpdate.value < this.checkDate) {
+                    continue;
+                }
+                for (let j = 0; j < issuerCertificates.length; j++) {
+                    try {
+                        const result = await crls[i].verify({ issuerCertificate: issuerCertificates[j] }, crypto);
+                        if (result) {
+                            crlsAndCertificates.push({
+                                crl: crls[i],
+                                certificate: issuerCertificates[j]
+                            });
+                            break;
+                        }
+                    }
+                    catch {
                     }
                 }
-                if (path.length < 2) {
+            }
+            if (crlsAndCertificates.length) {
+                return {
+                    status: 0,
+                    statusMessage: EMPTY_STRING,
+                    result: crlsAndCertificates
+                };
+            }
+            return {
+                status: 3,
+                statusMessage: "No valid CRLs found"
+            };
+        };
+        const findOCSP = async (certificate, issuerCertificate) => {
+            const hashAlgorithm = crypto.getAlgorithmByOID(certificate.signatureAlgorithm.algorithmId);
+            if (!hashAlgorithm.name) {
+                return 1;
+            }
+            if (!hashAlgorithm.hash) {
+                return 1;
+            }
+            for (let i = 0; i < this.ocsps.length; i++) {
+                const ocsp = this.ocsps[i];
+                const result = await ocsp.getCertificateStatus(certificate, issuerCertificate, crypto);
+                if (result.isForCertificate) {
+                    if (result.status === 0)
+                        return 0;
+                    return 1;
+                }
+            }
+            return 2;
+        };
+        async function checkForCA(certificate, needToCheckCRL = false) {
+            let isCA = false;
+            let mustBeCA = false;
+            let keyUsagePresent = false;
+            let cRLSign = false;
+            if (certificate.extensions) {
+                for (let j = 0; j < certificate.extensions.length; j++) {
+                    const extension = certificate.extensions[j];
+                    if (extension.critical && !extension.parsedValue) {
+                        return {
+                            result: false,
+                            resultCode: 6,
+                            resultMessage: `Unable to parse critical certificate extension: ${extension.extnID}`
+                        };
+                    }
+                    if (extension.extnID === id_KeyUsage) {
+                        keyUsagePresent = true;
+                        const view = new Uint8Array(extension.parsedValue.valueBlock.valueHex);
+                        if ((view[0] & 0x04) === 0x04)
+                            mustBeCA = true;
+                        if ((view[0] & 0x02) === 0x02)
+                            cRLSign = true;
+                    }
+                    if (extension.extnID === id_BasicConstraints) {
+                        if ("cA" in extension.parsedValue) {
+                            if (extension.parsedValue.cA === true)
+                                isCA = true;
+                        }
+                    }
+                }
+                if ((mustBeCA === true) && (isCA === false)) {
                     return {
                         result: false,
-                        resultCode: 9,
-                        resultMessage: "Too short certificate path"
+                        resultCode: 3,
+                        resultMessage: "Unable to build certificate chain - using \"keyCertSign\" flag set without BasicConstraints"
                     };
                 }
-                for (let i = (path.length - 2); i >= 0; i--) {
-                    if (path[i].issuer.isEqual(path[i].subject) === false) {
-                        if (path[i].issuer.isEqual(path[i + 1].subject) === false) {
-                            return {
-                                result: false,
-                                resultCode: 10,
-                                resultMessage: "Incorrect name chaining"
-                            };
-                        }
+                if ((keyUsagePresent === true) && (isCA === true) && (mustBeCA === false)) {
+                    return {
+                        result: false,
+                        resultCode: 4,
+                        resultMessage: "Unable to build certificate chain - \"keyCertSign\" flag was not set"
+                    };
+                }
+                if ((isCA === true) && (keyUsagePresent === true) && ((needToCheckCRL) && (cRLSign === false))) {
+                    return {
+                        result: false,
+                        resultCode: 5,
+                        resultMessage: "Unable to build certificate chain - intermediate certificate must have \"cRLSign\" key usage flag"
+                    };
+                }
+            }
+            if (isCA === false) {
+                return {
+                    result: false,
+                    resultCode: 7,
+                    resultMessage: "Unable to build certificate chain - more than one possible end-user certificate"
+                };
+            }
+            return {
+                result: true,
+                resultCode: 0,
+                resultMessage: EMPTY_STRING
+            };
+        }
+        const basicCheck = async (path, checkDate) => {
+            for (let i = 0; i < path.length; i++) {
+                if ((path[i].notBefore.value > checkDate) ||
+                    (path[i].notAfter.value < checkDate)) {
+                    return {
+                        result: false,
+                        resultCode: 8,
+                        resultMessage: "The certificate is either not yet valid or expired"
+                    };
+                }
+            }
+            if (path.length < 2) {
+                return {
+                    result: false,
+                    resultCode: 9,
+                    resultMessage: "Too short certificate path"
+                };
+            }
+            for (let i = (path.length - 2); i >= 0; i--) {
+                if (path[i].issuer.isEqual(path[i].subject) === false) {
+                    if (path[i].issuer.isEqual(path[i + 1].subject) === false) {
+                        return {
+                            result: false,
+                            resultCode: 10,
+                            resultMessage: "Incorrect name chaining"
+                        };
                     }
                 }
-                if ((this.crls.length !== 0) || (this.ocsps.length !== 0)) {
-                    for (let i = 0; i < (path.length - 1); i++) {
-                        let ocspResult = 2;
-                        let crlResult = {
-                            status: 0,
-                            statusMessage: EMPTY_STRING
-                        };
-                        if (this.ocsps.length !== 0) {
-                            ocspResult = yield findOCSP(path[i], path[i + 1]);
-                            switch (ocspResult) {
-                                case 0:
-                                    continue;
-                                case 1:
+            }
+            if ((this.crls.length !== 0) || (this.ocsps.length !== 0)) {
+                for (let i = 0; i < (path.length - 1); i++) {
+                    let ocspResult = 2;
+                    let crlResult = {
+                        status: 0,
+                        statusMessage: EMPTY_STRING
+                    };
+                    if (this.ocsps.length !== 0) {
+                        ocspResult = await findOCSP(path[i], path[i + 1]);
+                        switch (ocspResult) {
+                            case 0:
+                                continue;
+                            case 1:
+                                return {
+                                    result: false,
+                                    resultCode: 12,
+                                    resultMessage: "One of certificates was revoked via OCSP response"
+                                };
+                        }
+                    }
+                    if (this.crls.length !== 0) {
+                        crlResult = await findCRL(path[i]);
+                        if (crlResult.status === 0 && crlResult.result) {
+                            for (let j = 0; j < crlResult.result.length; j++) {
+                                const isCertificateRevoked = crlResult.result[j].crl.isCertificateRevoked(path[i]);
+                                if (isCertificateRevoked) {
                                     return {
                                         result: false,
                                         resultCode: 12,
-                                        resultMessage: "One of certificates was revoked via OCSP response"
+                                        resultMessage: "One of certificates had been revoked"
                                     };
-                            }
-                        }
-                        if (this.crls.length !== 0) {
-                            crlResult = yield findCRL(path[i]);
-                            if (crlResult.status === 0 && crlResult.result) {
-                                for (let j = 0; j < crlResult.result.length; j++) {
-                                    const isCertificateRevoked = crlResult.result[j].crl.isCertificateRevoked(path[i]);
-                                    if (isCertificateRevoked) {
-                                        return {
-                                            result: false,
-                                            resultCode: 12,
-                                            resultMessage: "One of certificates had been revoked"
-                                        };
-                                    }
-                                    const isCertificateCA = yield checkForCA(crlResult.result[j].certificate, true);
-                                    if (isCertificateCA.result === false) {
-                                        return {
-                                            result: false,
-                                            resultCode: 13,
-                                            resultMessage: "CRL issuer certificate is not a CA certificate or does not have crlSign flag"
-                                        };
-                                    }
                                 }
-                            }
-                            else {
-                                if (passedWhenNotRevValues === false) {
-                                    throw new ChainValidationError(ChainValidationCode.noRevocation, `No revocation values found for one of certificates: ${crlResult.statusMessage}`);
+                                const isCertificateCA = await checkForCA(crlResult.result[j].certificate, true);
+                                if (isCertificateCA.result === false) {
+                                    return {
+                                        result: false,
+                                        resultCode: 13,
+                                        resultMessage: "CRL issuer certificate is not a CA certificate or does not have crlSign flag"
+                                    };
                                 }
                             }
                         }
                         else {
-                            if (ocspResult === 2) {
-                                return {
-                                    result: false,
-                                    resultCode: 11,
-                                    resultMessage: "No revocation values found for one of certificates"
-                                };
-                            }
-                        }
-                        if ((ocspResult === 2) && (crlResult.status === 2) && passedWhenNotRevValues) {
-                            const issuerCertificate = path[i + 1];
-                            let extensionFound = false;
-                            if (issuerCertificate.extensions) {
-                                for (const extension of issuerCertificate.extensions) {
-                                    switch (extension.extnID) {
-                                        case id_CRLDistributionPoints:
-                                        case id_FreshestCRL:
-                                        case id_AuthorityInfoAccess:
-                                            extensionFound = true;
-                                            break;
-                                    }
-                                }
-                            }
-                            if (extensionFound) {
+                            if (passedWhenNotRevValues === false) {
                                 throw new ChainValidationError(ChainValidationCode.noRevocation, `No revocation values found for one of certificates: ${crlResult.statusMessage}`);
                             }
                         }
                     }
-                }
-                for (const [i, cert] of path.entries()) {
-                    if (!i) {
-                        continue;
-                    }
-                    const result = yield checkForCA(cert);
-                    if (!result.result) {
-                        return {
-                            result: false,
-                            resultCode: 14,
-                            resultMessage: "One of intermediate certificates is not a CA certificate"
-                        };
-                    }
-                }
-                return {
-                    result: true
-                };
-            });
-            localCerts.push(...this.trustedCerts);
-            localCerts.push(...this.certs);
-            for (let i = 0; i < localCerts.length; i++) {
-                for (let j = 0; j < localCerts.length; j++) {
-                    if (i === j)
-                        continue;
-                    if (BufferSourceConverter.isEqual(localCerts[i].tbsView, localCerts[j].tbsView)) {
-                        localCerts.splice(j, 1);
-                        i = 0;
-                        break;
-                    }
-                }
-            }
-            const leafCert = localCerts[localCerts.length - 1];
-            let result;
-            const certificatePath = [leafCert];
-            result = yield buildPath(leafCert, crypto);
-            if (result.length === 0) {
-                throw new ChainValidationError(ChainValidationCode.noPath, "Unable to find certificate path");
-            }
-            for (let i = 0; i < result.length; i++) {
-                let found = false;
-                for (let j = 0; j < (result[i]).length; j++) {
-                    const certificate = (result[i])[j];
-                    for (let k = 0; k < this.trustedCerts.length; k++) {
-                        if (BufferSourceConverter.isEqual(certificate.tbsView, this.trustedCerts[k].tbsView)) {
-                            found = true;
-                            break;
+                    else {
+                        if (ocspResult === 2) {
+                            return {
+                                result: false,
+                                resultCode: 11,
+                                resultMessage: "No revocation values found for one of certificates"
+                            };
                         }
                     }
-                    if (found)
-                        break;
+                    if ((ocspResult === 2) && (crlResult.status === 2) && passedWhenNotRevValues) {
+                        const issuerCertificate = path[i + 1];
+                        let extensionFound = false;
+                        if (issuerCertificate.extensions) {
+                            for (const extension of issuerCertificate.extensions) {
+                                switch (extension.extnID) {
+                                    case id_CRLDistributionPoints:
+                                    case id_FreshestCRL:
+                                    case id_AuthorityInfoAccess:
+                                        extensionFound = true;
+                                        break;
+                                }
+                            }
+                        }
+                        if (extensionFound) {
+                            throw new ChainValidationError(ChainValidationCode.noRevocation, `No revocation values found for one of certificates: ${crlResult.statusMessage}`);
+                        }
+                    }
                 }
-                if (!found) {
-                    result.splice(i, 1);
+            }
+            for (const [i, cert] of path.entries()) {
+                if (!i) {
+                    continue;
+                }
+                const result = await checkForCA(cert);
+                if (!result.result) {
+                    return {
+                        result: false,
+                        resultCode: 14,
+                        resultMessage: "One of intermediate certificates is not a CA certificate"
+                    };
+                }
+            }
+            return {
+                result: true
+            };
+        };
+        localCerts.push(...this.trustedCerts);
+        localCerts.push(...this.certs);
+        for (let i = 0; i < localCerts.length; i++) {
+            for (let j = 0; j < localCerts.length; j++) {
+                if (i === j)
+                    continue;
+                if (BufferSourceConverter.isEqual(localCerts[i].tbsView, localCerts[j].tbsView)) {
+                    localCerts.splice(j, 1);
                     i = 0;
+                    break;
                 }
             }
-            if (result.length === 0) {
-                throw new ChainValidationError(ChainValidationCode.noValidPath, "No valid certificate paths found");
-            }
-            let shortestLength = result[0].length;
-            let shortestIndex = 0;
-            for (let i = 0; i < result.length; i++) {
-                if (result[i].length < shortestLength) {
-                    shortestLength = result[i].length;
-                    shortestIndex = i;
+        }
+        const leafCert = localCerts[localCerts.length - 1];
+        let result;
+        const certificatePath = [leafCert];
+        result = await buildPath(leafCert, crypto);
+        if (result.length === 0) {
+            throw new ChainValidationError(ChainValidationCode.noPath, "Unable to find certificate path");
+        }
+        for (let i = result.length - 1; i >= 0; i--) {
+            let found = false;
+            for (let j = 0; j < (result[i]).length; j++) {
+                const certificate = (result[i])[j];
+                for (let k = 0; k < this.trustedCerts.length; k++) {
+                    if (BufferSourceConverter.isEqual(certificate.tbsView, this.trustedCerts[k].tbsView)) {
+                        found = true;
+                        break;
+                    }
                 }
+                if (found)
+                    break;
             }
-            for (let i = 0; i < result[shortestIndex].length; i++)
-                certificatePath.push((result[shortestIndex])[i]);
-            result = yield basicCheck(certificatePath, this.checkDate);
-            if (result.result === false)
-                throw result;
-            return certificatePath;
-        });
+            if (!found) {
+                result.splice(i, 1);
+            }
+        }
+        if (result.length === 0) {
+            throw new ChainValidationError(ChainValidationCode.noValidPath, "No valid certificate paths found");
+        }
+        let shortestLength = result[0].length;
+        let shortestIndex = 0;
+        for (let i = 0; i < result.length; i++) {
+            if (result[i].length < shortestLength) {
+                shortestLength = result[i].length;
+                shortestIndex = i;
+            }
+        }
+        for (let i = 0; i < result[shortestIndex].length; i++)
+            certificatePath.push((result[shortestIndex])[i]);
+        result = await basicCheck(certificatePath, this.checkDate);
+        if (result.result === false)
+            throw result;
+        return certificatePath;
     }
-    verify(parameters = {}, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            function compareDNSName(name, constraint) {
-                const namePrepared = stringPrep(name);
-                const constraintPrepared = stringPrep(constraint);
-                const nameSplitted = namePrepared.split(".");
-                const constraintSplitted = constraintPrepared.split(".");
-                const nameLen = nameSplitted.length;
-                const constrLen = constraintSplitted.length;
-                if ((nameLen === 0) || (constrLen === 0) || (nameLen < constrLen)) {
+    async verify(parameters = {}, crypto = getCrypto(true)) {
+        function compareDNSName(name, constraint) {
+            const namePrepared = stringPrep(name);
+            const constraintPrepared = stringPrep(constraint);
+            const nameSplitted = namePrepared.split(".");
+            const constraintSplitted = constraintPrepared.split(".");
+            const nameLen = nameSplitted.length;
+            const constrLen = constraintSplitted.length;
+            if ((nameLen === 0) || (constrLen === 0) || (nameLen < constrLen)) {
+                return false;
+            }
+            for (let i = 0; i < nameLen; i++) {
+                if (nameSplitted[i].length === 0) {
                     return false;
                 }
-                for (let i = 0; i < nameLen; i++) {
-                    if (nameSplitted[i].length === 0) {
-                        return false;
-                    }
-                }
-                for (let i = 0; i < constrLen; i++) {
-                    if (constraintSplitted[i].length === 0) {
-                        if (i === 0) {
-                            if (constrLen === 1) {
-                                return false;
-                            }
-                            continue;
+            }
+            for (let i = 0; i < constrLen; i++) {
+                if (constraintSplitted[i].length === 0) {
+                    if (i === 0) {
+                        if (constrLen === 1) {
+                            return false;
                         }
-                        return false;
-                    }
-                }
-                for (let i = 0; i < constrLen; i++) {
-                    if (constraintSplitted[constrLen - 1 - i].length === 0) {
                         continue;
                     }
-                    if (nameSplitted[nameLen - 1 - i].localeCompare(constraintSplitted[constrLen - 1 - i]) !== 0) {
-                        return false;
+                    return false;
+                }
+            }
+            for (let i = 0; i < constrLen; i++) {
+                if (constraintSplitted[constrLen - 1 - i].length === 0) {
+                    continue;
+                }
+                if (nameSplitted[nameLen - 1 - i].localeCompare(constraintSplitted[constrLen - 1 - i]) !== 0) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        function compareRFC822Name(name, constraint) {
+            const namePrepared = stringPrep(name);
+            const constraintPrepared = stringPrep(constraint);
+            const nameSplitted = namePrepared.split("@");
+            const constraintSplitted = constraintPrepared.split("@");
+            if ((nameSplitted.length === 0) || (constraintSplitted.length === 0) || (nameSplitted.length < constraintSplitted.length))
+                return false;
+            if (constraintSplitted.length === 1) {
+                const result = compareDNSName(nameSplitted[1], constraintSplitted[0]);
+                if (result) {
+                    const ns = nameSplitted[1].split(".");
+                    const cs = constraintSplitted[0].split(".");
+                    if (cs[0].length === 0)
+                        return true;
+                    return ns.length === cs.length;
+                }
+                return false;
+            }
+            return (namePrepared.localeCompare(constraintPrepared) === 0);
+        }
+        function compareUniformResourceIdentifier(name, constraint) {
+            let namePrepared = stringPrep(name);
+            const constraintPrepared = stringPrep(constraint);
+            const ns = namePrepared.split("/");
+            const cs = constraintPrepared.split("/");
+            if (cs.length > 1)
+                return false;
+            if (ns.length > 1) {
+                for (let i = 0; i < ns.length; i++) {
+                    if ((ns[i].length > 0) && (ns[i].charAt(ns[i].length - 1) !== ":")) {
+                        const nsPort = ns[i].split(":");
+                        namePrepared = nsPort[0];
+                        break;
                     }
+                }
+            }
+            const result = compareDNSName(namePrepared, constraintPrepared);
+            if (result) {
+                const nameSplitted = namePrepared.split(".");
+                const constraintSplitted = constraintPrepared.split(".");
+                if (constraintSplitted[0].length === 0)
+                    return true;
+                return nameSplitted.length === constraintSplitted.length;
+            }
+            return false;
+        }
+        function compareIPAddress(name, constraint) {
+            const nameView = name.valueBlock.valueHexView;
+            const constraintView = constraint.valueBlock.valueHexView;
+            if ((nameView.length === 4) && (constraintView.length === 8)) {
+                for (let i = 0; i < 4; i++) {
+                    if ((nameView[i] ^ constraintView[i]) & constraintView[i + 4])
+                        return false;
                 }
                 return true;
             }
-            function compareRFC822Name(name, constraint) {
-                const namePrepared = stringPrep(name);
-                const constraintPrepared = stringPrep(constraint);
-                const nameSplitted = namePrepared.split("@");
-                const constraintSplitted = constraintPrepared.split("@");
-                if ((nameSplitted.length === 0) || (constraintSplitted.length === 0) || (nameSplitted.length < constraintSplitted.length))
-                    return false;
-                if (constraintSplitted.length === 1) {
-                    const result = compareDNSName(nameSplitted[1], constraintSplitted[0]);
-                    if (result) {
-                        const ns = nameSplitted[1].split(".");
-                        const cs = constraintSplitted[0].split(".");
-                        if (cs[0].length === 0)
-                            return true;
-                        return ns.length === cs.length;
-                    }
-                    return false;
-                }
-                return (namePrepared.localeCompare(constraintPrepared) === 0);
-            }
-            function compareUniformResourceIdentifier(name, constraint) {
-                let namePrepared = stringPrep(name);
-                const constraintPrepared = stringPrep(constraint);
-                const ns = namePrepared.split("/");
-                const cs = constraintPrepared.split("/");
-                if (cs.length > 1)
-                    return false;
-                if (ns.length > 1) {
-                    for (let i = 0; i < ns.length; i++) {
-                        if ((ns[i].length > 0) && (ns[i].charAt(ns[i].length - 1) !== ":")) {
-                            const nsPort = ns[i].split(":");
-                            namePrepared = nsPort[0];
-                            break;
-                        }
-                    }
-                }
-                const result = compareDNSName(namePrepared, constraintPrepared);
-                if (result) {
-                    const nameSplitted = namePrepared.split(".");
-                    const constraintSplitted = constraintPrepared.split(".");
-                    if (constraintSplitted[0].length === 0)
-                        return true;
-                    return nameSplitted.length === constraintSplitted.length;
-                }
-                return false;
-            }
-            function compareIPAddress(name, constraint) {
-                const nameView = name.valueBlock.valueHexView;
-                const constraintView = constraint.valueBlock.valueHexView;
-                if ((nameView.length === 4) && (constraintView.length === 8)) {
-                    for (let i = 0; i < 4; i++) {
-                        if ((nameView[i] ^ constraintView[i]) & constraintView[i + 4])
-                            return false;
-                    }
-                    return true;
-                }
-                if ((nameView.length === 16) && (constraintView.length === 32)) {
-                    for (let i = 0; i < 16; i++) {
-                        if ((nameView[i] ^ constraintView[i]) & constraintView[i + 16])
-                            return false;
-                    }
-                    return true;
-                }
-                return false;
-            }
-            function compareDirectoryName(name, constraint) {
-                if ((name.typesAndValues.length === 0) || (constraint.typesAndValues.length === 0))
-                    return true;
-                if (name.typesAndValues.length < constraint.typesAndValues.length)
-                    return false;
-                let result = true;
-                let nameStart = 0;
-                for (let i = 0; i < constraint.typesAndValues.length; i++) {
-                    let localResult = false;
-                    for (let j = nameStart; j < name.typesAndValues.length; j++) {
-                        localResult = name.typesAndValues[j].isEqual(constraint.typesAndValues[i]);
-                        if (name.typesAndValues[j].type === constraint.typesAndValues[i].type)
-                            result = result && localResult;
-                        if (localResult === true) {
-                            if ((nameStart === 0) || (nameStart === j)) {
-                                nameStart = j + 1;
-                                break;
-                            }
-                            else
-                                return false;
-                        }
-                    }
-                    if (localResult === false)
+            if ((nameView.length === 16) && (constraintView.length === 32)) {
+                for (let i = 0; i < 16; i++) {
+                    if ((nameView[i] ^ constraintView[i]) & constraintView[i + 16])
                         return false;
                 }
-                return (nameStart === 0) ? false : result;
+                return true;
             }
-            try {
-                if (this.certs.length === 0)
-                    throw new Error("Empty certificate array");
-                const passedWhenNotRevValues = parameters.passedWhenNotRevValues || false;
-                const initialPolicySet = parameters.initialPolicySet || [id_AnyPolicy];
-                const initialExplicitPolicy = parameters.initialExplicitPolicy || false;
-                const initialPolicyMappingInhibit = parameters.initialPolicyMappingInhibit || false;
-                const initialInhibitPolicy = parameters.initialInhibitPolicy || false;
-                const initialPermittedSubtreesSet = parameters.initialPermittedSubtreesSet || [];
-                const initialExcludedSubtreesSet = parameters.initialExcludedSubtreesSet || [];
-                const initialRequiredNameForms = parameters.initialRequiredNameForms || [];
-                let explicitPolicyIndicator = initialExplicitPolicy;
-                let policyMappingInhibitIndicator = initialPolicyMappingInhibit;
-                let inhibitAnyPolicyIndicator = initialInhibitPolicy;
-                const pendingConstraints = [
-                    false,
-                    false,
-                    false,
-                ];
-                let explicitPolicyPending = 0;
-                let policyMappingInhibitPending = 0;
-                let inhibitAnyPolicyPending = 0;
-                let permittedSubtrees = initialPermittedSubtreesSet;
-                let excludedSubtrees = initialExcludedSubtreesSet;
-                const requiredNameForms = initialRequiredNameForms;
-                let pathDepth = 1;
-                this.certs = yield this.sort(passedWhenNotRevValues, crypto);
-                const allPolicies = [];
-                allPolicies.push(id_AnyPolicy);
-                const policiesAndCerts = [];
-                const anyPolicyArray = new Array(this.certs.length - 1);
-                for (let ii = 0; ii < (this.certs.length - 1); ii++)
-                    anyPolicyArray[ii] = true;
-                policiesAndCerts.push(anyPolicyArray);
-                const policyMappings = new Array(this.certs.length - 1);
-                const certPolicies = new Array(this.certs.length - 1);
-                let explicitPolicyStart = (explicitPolicyIndicator) ? (this.certs.length - 1) : (-1);
-                for (let i = (this.certs.length - 2); i >= 0; i--, pathDepth++) {
-                    const cert = this.certs[i];
-                    if (cert.extensions) {
-                        for (let j = 0; j < cert.extensions.length; j++) {
-                            const extension = cert.extensions[j];
-                            if (extension.extnID === id_CertificatePolicies) {
-                                certPolicies[i] = extension.parsedValue;
-                                for (let s = 0; s < allPolicies.length; s++) {
-                                    if (allPolicies[s] === id_AnyPolicy) {
-                                        delete (policiesAndCerts[s])[i];
-                                        break;
-                                    }
-                                }
-                                for (let k = 0; k < extension.parsedValue.certificatePolicies.length; k++) {
-                                    let policyIndex = (-1);
-                                    const policyId = extension.parsedValue.certificatePolicies[k].policyIdentifier;
-                                    for (let s = 0; s < allPolicies.length; s++) {
-                                        if (policyId === allPolicies[s]) {
-                                            policyIndex = s;
-                                            break;
-                                        }
-                                    }
-                                    if (policyIndex === (-1)) {
-                                        allPolicies.push(policyId);
-                                        const certArray = new Array(this.certs.length - 1);
-                                        certArray[i] = true;
-                                        policiesAndCerts.push(certArray);
-                                    }
-                                    else
-                                        (policiesAndCerts[policyIndex])[i] = true;
-                                }
-                            }
-                            if (extension.extnID === id_PolicyMappings) {
-                                if (policyMappingInhibitIndicator) {
-                                    return {
-                                        result: false,
-                                        resultCode: 98,
-                                        resultMessage: "Policy mapping prohibited"
-                                    };
-                                }
-                                policyMappings[i] = extension.parsedValue;
-                            }
-                            if (extension.extnID === id_PolicyConstraints) {
-                                if (explicitPolicyIndicator === false) {
-                                    if (extension.parsedValue.requireExplicitPolicy === 0) {
-                                        explicitPolicyIndicator = true;
-                                        explicitPolicyStart = i;
-                                    }
-                                    else {
-                                        if (pendingConstraints[0] === false) {
-                                            pendingConstraints[0] = true;
-                                            explicitPolicyPending = extension.parsedValue.requireExplicitPolicy;
-                                        }
-                                        else
-                                            explicitPolicyPending = (explicitPolicyPending > extension.parsedValue.requireExplicitPolicy) ? extension.parsedValue.requireExplicitPolicy : explicitPolicyPending;
-                                    }
-                                    if (extension.parsedValue.inhibitPolicyMapping === 0)
-                                        policyMappingInhibitIndicator = true;
-                                    else {
-                                        if (pendingConstraints[1] === false) {
-                                            pendingConstraints[1] = true;
-                                            policyMappingInhibitPending = extension.parsedValue.inhibitPolicyMapping + 1;
-                                        }
-                                        else
-                                            policyMappingInhibitPending = (policyMappingInhibitPending > (extension.parsedValue.inhibitPolicyMapping + 1)) ? (extension.parsedValue.inhibitPolicyMapping + 1) : policyMappingInhibitPending;
-                                    }
-                                }
-                            }
-                            if (extension.extnID === id_InhibitAnyPolicy) {
-                                if (inhibitAnyPolicyIndicator === false) {
-                                    if (extension.parsedValue.valueBlock.valueDec === 0)
-                                        inhibitAnyPolicyIndicator = true;
-                                    else {
-                                        if (pendingConstraints[2] === false) {
-                                            pendingConstraints[2] = true;
-                                            inhibitAnyPolicyPending = extension.parsedValue.valueBlock.valueDec;
-                                        }
-                                        else
-                                            inhibitAnyPolicyPending = (inhibitAnyPolicyPending > extension.parsedValue.valueBlock.valueDec) ? extension.parsedValue.valueBlock.valueDec : inhibitAnyPolicyPending;
-                                    }
-                                }
-                            }
+            return false;
+        }
+        function compareDirectoryName(name, constraint) {
+            if ((name.typesAndValues.length === 0) || (constraint.typesAndValues.length === 0))
+                return true;
+            if (name.typesAndValues.length < constraint.typesAndValues.length)
+                return false;
+            let result = true;
+            let nameStart = 0;
+            for (let i = 0; i < constraint.typesAndValues.length; i++) {
+                let localResult = false;
+                for (let j = nameStart; j < name.typesAndValues.length; j++) {
+                    localResult = name.typesAndValues[j].isEqual(constraint.typesAndValues[i]);
+                    if (name.typesAndValues[j].type === constraint.typesAndValues[i].type)
+                        result = result && localResult;
+                    if (localResult === true) {
+                        if ((nameStart === 0) || (nameStart === j)) {
+                            nameStart = j + 1;
+                            break;
                         }
-                        if (inhibitAnyPolicyIndicator === true) {
-                            let policyIndex = (-1);
-                            for (let searchAnyPolicy = 0; searchAnyPolicy < allPolicies.length; searchAnyPolicy++) {
-                                if (allPolicies[searchAnyPolicy] === id_AnyPolicy) {
-                                    policyIndex = searchAnyPolicy;
+                        else
+                            return false;
+                    }
+                }
+                if (localResult === false)
+                    return false;
+            }
+            return (nameStart === 0) ? false : result;
+        }
+        try {
+            if (this.certs.length === 0)
+                throw new Error("Empty certificate array");
+            const passedWhenNotRevValues = parameters.passedWhenNotRevValues || false;
+            const initialPolicySet = parameters.initialPolicySet || [id_AnyPolicy];
+            const initialExplicitPolicy = parameters.initialExplicitPolicy || false;
+            const initialPolicyMappingInhibit = parameters.initialPolicyMappingInhibit || false;
+            const initialInhibitPolicy = parameters.initialInhibitPolicy || false;
+            const initialPermittedSubtreesSet = parameters.initialPermittedSubtreesSet || [];
+            const initialExcludedSubtreesSet = parameters.initialExcludedSubtreesSet || [];
+            const initialRequiredNameForms = parameters.initialRequiredNameForms || [];
+            let explicitPolicyIndicator = initialExplicitPolicy;
+            let policyMappingInhibitIndicator = initialPolicyMappingInhibit;
+            let inhibitAnyPolicyIndicator = initialInhibitPolicy;
+            const pendingConstraints = [
+                false,
+                false,
+                false,
+            ];
+            let explicitPolicyPending = 0;
+            let policyMappingInhibitPending = 0;
+            let inhibitAnyPolicyPending = 0;
+            let permittedSubtrees = initialPermittedSubtreesSet;
+            let excludedSubtrees = initialExcludedSubtreesSet;
+            const requiredNameForms = initialRequiredNameForms;
+            let pathDepth = 1;
+            this.certs = await this.sort(passedWhenNotRevValues, crypto);
+            const allPolicies = [];
+            allPolicies.push(id_AnyPolicy);
+            const policiesAndCerts = [];
+            const anyPolicyArray = new Array(this.certs.length - 1);
+            for (let ii = 0; ii < (this.certs.length - 1); ii++)
+                anyPolicyArray[ii] = true;
+            policiesAndCerts.push(anyPolicyArray);
+            const policyMappings = new Array(this.certs.length - 1);
+            const certPolicies = new Array(this.certs.length - 1);
+            let explicitPolicyStart = (explicitPolicyIndicator) ? (this.certs.length - 1) : (-1);
+            for (let i = (this.certs.length - 2); i >= 0; i--, pathDepth++) {
+                const cert = this.certs[i];
+                if (cert.extensions) {
+                    for (let j = 0; j < cert.extensions.length; j++) {
+                        const extension = cert.extensions[j];
+                        if (extension.extnID === id_CertificatePolicies) {
+                            certPolicies[i] = extension.parsedValue;
+                            for (let s = 0; s < allPolicies.length; s++) {
+                                if (allPolicies[s] === id_AnyPolicy) {
+                                    delete (policiesAndCerts[s])[i];
                                     break;
                                 }
                             }
-                            if (policyIndex !== (-1))
-                                delete (policiesAndCerts[0])[i];
+                            for (let k = 0; k < extension.parsedValue.certificatePolicies.length; k++) {
+                                let policyIndex = (-1);
+                                const policyId = extension.parsedValue.certificatePolicies[k].policyIdentifier;
+                                for (let s = 0; s < allPolicies.length; s++) {
+                                    if (policyId === allPolicies[s]) {
+                                        policyIndex = s;
+                                        break;
+                                    }
+                                }
+                                if (policyIndex === (-1)) {
+                                    allPolicies.push(policyId);
+                                    const certArray = new Array(this.certs.length - 1);
+                                    certArray[i] = true;
+                                    policiesAndCerts.push(certArray);
+                                }
+                                else
+                                    (policiesAndCerts[policyIndex])[i] = true;
+                            }
                         }
-                        if (explicitPolicyIndicator === false) {
-                            if (pendingConstraints[0] === true) {
-                                explicitPolicyPending--;
-                                if (explicitPolicyPending === 0) {
+                        if (extension.extnID === id_PolicyMappings) {
+                            if (policyMappingInhibitIndicator) {
+                                return {
+                                    result: false,
+                                    resultCode: 98,
+                                    resultMessage: "Policy mapping prohibited"
+                                };
+                            }
+                            policyMappings[i] = extension.parsedValue;
+                        }
+                        if (extension.extnID === id_PolicyConstraints) {
+                            if (explicitPolicyIndicator === false) {
+                                if (extension.parsedValue.requireExplicitPolicy === 0) {
                                     explicitPolicyIndicator = true;
                                     explicitPolicyStart = i;
-                                    pendingConstraints[0] = false;
                                 }
-                            }
-                        }
-                        if (policyMappingInhibitIndicator === false) {
-                            if (pendingConstraints[1] === true) {
-                                policyMappingInhibitPending--;
-                                if (policyMappingInhibitPending === 0) {
+                                else {
+                                    if (pendingConstraints[0] === false) {
+                                        pendingConstraints[0] = true;
+                                        explicitPolicyPending = extension.parsedValue.requireExplicitPolicy;
+                                    }
+                                    else
+                                        explicitPolicyPending = (explicitPolicyPending > extension.parsedValue.requireExplicitPolicy) ? extension.parsedValue.requireExplicitPolicy : explicitPolicyPending;
+                                }
+                                if (extension.parsedValue.inhibitPolicyMapping === 0)
                                     policyMappingInhibitIndicator = true;
-                                    pendingConstraints[1] = false;
+                                else {
+                                    if (pendingConstraints[1] === false) {
+                                        pendingConstraints[1] = true;
+                                        policyMappingInhibitPending = extension.parsedValue.inhibitPolicyMapping + 1;
+                                    }
+                                    else
+                                        policyMappingInhibitPending = (policyMappingInhibitPending > (extension.parsedValue.inhibitPolicyMapping + 1)) ? (extension.parsedValue.inhibitPolicyMapping + 1) : policyMappingInhibitPending;
                                 }
                             }
                         }
-                        if (inhibitAnyPolicyIndicator === false) {
-                            if (pendingConstraints[2] === true) {
-                                inhibitAnyPolicyPending--;
-                                if (inhibitAnyPolicyPending === 0) {
+                        if (extension.extnID === id_InhibitAnyPolicy) {
+                            if (inhibitAnyPolicyIndicator === false) {
+                                if (extension.parsedValue.valueBlock.valueDec === 0)
                                     inhibitAnyPolicyIndicator = true;
-                                    pendingConstraints[2] = false;
+                                else {
+                                    if (pendingConstraints[2] === false) {
+                                        pendingConstraints[2] = true;
+                                        inhibitAnyPolicyPending = extension.parsedValue.valueBlock.valueDec;
+                                    }
+                                    else
+                                        inhibitAnyPolicyPending = (inhibitAnyPolicyPending > extension.parsedValue.valueBlock.valueDec) ? extension.parsedValue.valueBlock.valueDec : inhibitAnyPolicyPending;
                                 }
                             }
                         }
                     }
+                    if (inhibitAnyPolicyIndicator === true) {
+                        let policyIndex = (-1);
+                        for (let searchAnyPolicy = 0; searchAnyPolicy < allPolicies.length; searchAnyPolicy++) {
+                            if (allPolicies[searchAnyPolicy] === id_AnyPolicy) {
+                                policyIndex = searchAnyPolicy;
+                                break;
+                            }
+                        }
+                        if (policyIndex !== (-1))
+                            delete (policiesAndCerts[0])[i];
+                    }
+                    if (explicitPolicyIndicator === false) {
+                        if (pendingConstraints[0] === true) {
+                            explicitPolicyPending--;
+                            if (explicitPolicyPending === 0) {
+                                explicitPolicyIndicator = true;
+                                explicitPolicyStart = i;
+                                pendingConstraints[0] = false;
+                            }
+                        }
+                    }
+                    if (policyMappingInhibitIndicator === false) {
+                        if (pendingConstraints[1] === true) {
+                            policyMappingInhibitPending--;
+                            if (policyMappingInhibitPending === 0) {
+                                policyMappingInhibitIndicator = true;
+                                pendingConstraints[1] = false;
+                            }
+                        }
+                    }
+                    if (inhibitAnyPolicyIndicator === false) {
+                        if (pendingConstraints[2] === true) {
+                            inhibitAnyPolicyPending--;
+                            if (inhibitAnyPolicyPending === 0) {
+                                inhibitAnyPolicyIndicator = true;
+                                pendingConstraints[2] = false;
+                            }
+                        }
+                    }
                 }
-                for (let i = 0; i < (this.certs.length - 1); i++) {
-                    if ((i < (this.certs.length - 2)) && (typeof policyMappings[i + 1] !== "undefined")) {
-                        for (let k = 0; k < policyMappings[i + 1].mappings.length; k++) {
-                            if ((policyMappings[i + 1].mappings[k].issuerDomainPolicy === id_AnyPolicy) || (policyMappings[i + 1].mappings[k].subjectDomainPolicy === id_AnyPolicy)) {
-                                return {
-                                    result: false,
-                                    resultCode: 99,
-                                    resultMessage: "The \"anyPolicy\" should not be a part of policy mapping scheme"
-                                };
-                            }
-                            let issuerDomainPolicyIndex = (-1);
-                            let subjectDomainPolicyIndex = (-1);
-                            for (let n = 0; n < allPolicies.length; n++) {
-                                if (allPolicies[n] === policyMappings[i + 1].mappings[k].issuerDomainPolicy)
-                                    issuerDomainPolicyIndex = n;
-                                if (allPolicies[n] === policyMappings[i + 1].mappings[k].subjectDomainPolicy)
-                                    subjectDomainPolicyIndex = n;
-                            }
-                            if (typeof (policiesAndCerts[issuerDomainPolicyIndex])[i] !== "undefined")
-                                delete (policiesAndCerts[issuerDomainPolicyIndex])[i];
-                            for (let j = 0; j < certPolicies[i].certificatePolicies.length; j++) {
-                                if (policyMappings[i + 1].mappings[k].subjectDomainPolicy === certPolicies[i].certificatePolicies[j].policyIdentifier) {
-                                    if ((issuerDomainPolicyIndex !== (-1)) && (subjectDomainPolicyIndex !== (-1))) {
-                                        for (let m = 0; m <= i; m++) {
-                                            if (typeof (policiesAndCerts[subjectDomainPolicyIndex])[m] !== "undefined") {
-                                                (policiesAndCerts[issuerDomainPolicyIndex])[m] = true;
-                                                delete (policiesAndCerts[subjectDomainPolicyIndex])[m];
-                                            }
+            }
+            for (let i = 0; i < (this.certs.length - 1); i++) {
+                if ((i < (this.certs.length - 2)) && (typeof policyMappings[i + 1] !== "undefined")) {
+                    for (let k = 0; k < policyMappings[i + 1].mappings.length; k++) {
+                        if ((policyMappings[i + 1].mappings[k].issuerDomainPolicy === id_AnyPolicy) || (policyMappings[i + 1].mappings[k].subjectDomainPolicy === id_AnyPolicy)) {
+                            return {
+                                result: false,
+                                resultCode: 99,
+                                resultMessage: "The \"anyPolicy\" should not be a part of policy mapping scheme"
+                            };
+                        }
+                        let issuerDomainPolicyIndex = (-1);
+                        let subjectDomainPolicyIndex = (-1);
+                        for (let n = 0; n < allPolicies.length; n++) {
+                            if (allPolicies[n] === policyMappings[i + 1].mappings[k].issuerDomainPolicy)
+                                issuerDomainPolicyIndex = n;
+                            if (allPolicies[n] === policyMappings[i + 1].mappings[k].subjectDomainPolicy)
+                                subjectDomainPolicyIndex = n;
+                        }
+                        if (typeof (policiesAndCerts[issuerDomainPolicyIndex])[i] !== "undefined")
+                            delete (policiesAndCerts[issuerDomainPolicyIndex])[i];
+                        for (let j = 0; j < certPolicies[i].certificatePolicies.length; j++) {
+                            if (policyMappings[i + 1].mappings[k].subjectDomainPolicy === certPolicies[i].certificatePolicies[j].policyIdentifier) {
+                                if ((issuerDomainPolicyIndex !== (-1)) && (subjectDomainPolicyIndex !== (-1))) {
+                                    for (let m = 0; m <= i; m++) {
+                                        if (typeof (policiesAndCerts[subjectDomainPolicyIndex])[m] !== "undefined") {
+                                            (policiesAndCerts[issuerDomainPolicyIndex])[m] = true;
+                                            delete (policiesAndCerts[subjectDomainPolicyIndex])[m];
                                         }
                                     }
                                 }
@@ -20239,303 +20765,303 @@ class CertificateChainValidationEngine {
                         }
                     }
                 }
-                for (let i = 0; i < allPolicies.length; i++) {
-                    if (allPolicies[i] === id_AnyPolicy) {
-                        for (let j = 0; j < explicitPolicyStart; j++)
-                            delete (policiesAndCerts[i])[j];
-                    }
+            }
+            for (let i = 0; i < allPolicies.length; i++) {
+                if (allPolicies[i] === id_AnyPolicy) {
+                    for (let j = 0; j < explicitPolicyStart; j++)
+                        delete (policiesAndCerts[i])[j];
                 }
-                const authConstrPolicies = [];
-                for (let i = 0; i < policiesAndCerts.length; i++) {
-                    let found = true;
-                    for (let j = 0; j < (this.certs.length - 1); j++) {
-                        let anyPolicyFound = false;
-                        if ((j < explicitPolicyStart) && (allPolicies[i] === id_AnyPolicy) && (allPolicies.length > 1)) {
+            }
+            const authConstrPolicies = [];
+            for (let i = 0; i < policiesAndCerts.length; i++) {
+                let found = true;
+                for (let j = 0; j < (this.certs.length - 1); j++) {
+                    let anyPolicyFound = false;
+                    if ((j < explicitPolicyStart) && (allPolicies[i] === id_AnyPolicy) && (allPolicies.length > 1)) {
+                        found = false;
+                        break;
+                    }
+                    if (typeof (policiesAndCerts[i])[j] === "undefined") {
+                        if (j >= explicitPolicyStart) {
+                            for (let k = 0; k < allPolicies.length; k++) {
+                                if (allPolicies[k] === id_AnyPolicy) {
+                                    if ((policiesAndCerts[k])[j] === true)
+                                        anyPolicyFound = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!anyPolicyFound) {
                             found = false;
                             break;
                         }
-                        if (typeof (policiesAndCerts[i])[j] === "undefined") {
-                            if (j >= explicitPolicyStart) {
-                                for (let k = 0; k < allPolicies.length; k++) {
-                                    if (allPolicies[k] === id_AnyPolicy) {
-                                        if ((policiesAndCerts[k])[j] === true)
-                                            anyPolicyFound = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (!anyPolicyFound) {
-                                found = false;
-                                break;
-                            }
-                        }
                     }
-                    if (found === true)
-                        authConstrPolicies.push(allPolicies[i]);
                 }
-                let userConstrPolicies = [];
-                if ((initialPolicySet.length === 1) && (initialPolicySet[0] === id_AnyPolicy) && (explicitPolicyIndicator === false))
+                if (found === true)
+                    authConstrPolicies.push(allPolicies[i]);
+            }
+            let userConstrPolicies = [];
+            if ((initialPolicySet.length === 1) && (initialPolicySet[0] === id_AnyPolicy) && (explicitPolicyIndicator === false))
+                userConstrPolicies = initialPolicySet;
+            else {
+                if ((authConstrPolicies.length === 1) && (authConstrPolicies[0] === id_AnyPolicy))
                     userConstrPolicies = initialPolicySet;
                 else {
-                    if ((authConstrPolicies.length === 1) && (authConstrPolicies[0] === id_AnyPolicy))
-                        userConstrPolicies = initialPolicySet;
-                    else {
-                        for (let i = 0; i < authConstrPolicies.length; i++) {
-                            for (let j = 0; j < initialPolicySet.length; j++) {
-                                if ((initialPolicySet[j] === authConstrPolicies[i]) || (initialPolicySet[j] === id_AnyPolicy)) {
-                                    userConstrPolicies.push(authConstrPolicies[i]);
-                                    break;
-                                }
+                    for (let i = 0; i < authConstrPolicies.length; i++) {
+                        for (let j = 0; j < initialPolicySet.length; j++) {
+                            if ((initialPolicySet[j] === authConstrPolicies[i]) || (initialPolicySet[j] === id_AnyPolicy)) {
+                                userConstrPolicies.push(authConstrPolicies[i]);
+                                break;
                             }
                         }
                     }
                 }
-                const policyResult = {
-                    result: (userConstrPolicies.length > 0),
-                    resultCode: 0,
-                    resultMessage: (userConstrPolicies.length > 0) ? EMPTY_STRING : "Zero \"userConstrPolicies\" array, no intersections with \"authConstrPolicies\"",
-                    authConstrPolicies,
-                    userConstrPolicies,
-                    explicitPolicyIndicator,
-                    policyMappings,
-                    certificatePath: this.certs
-                };
-                if (userConstrPolicies.length === 0)
-                    return policyResult;
-                if (policyResult.result === false)
-                    return policyResult;
-                pathDepth = 1;
-                for (let i = (this.certs.length - 2); i >= 0; i--, pathDepth++) {
-                    const cert = this.certs[i];
-                    let subjectAltNames = [];
-                    let certPermittedSubtrees = [];
-                    let certExcludedSubtrees = [];
-                    if (cert.extensions) {
-                        for (let j = 0; j < cert.extensions.length; j++) {
-                            const extension = cert.extensions[j];
-                            if (extension.extnID === id_NameConstraints) {
-                                if ("permittedSubtrees" in extension.parsedValue)
-                                    certPermittedSubtrees = certPermittedSubtrees.concat(extension.parsedValue.permittedSubtrees);
-                                if ("excludedSubtrees" in extension.parsedValue)
-                                    certExcludedSubtrees = certExcludedSubtrees.concat(extension.parsedValue.excludedSubtrees);
-                            }
-                            if (extension.extnID === id_SubjectAltName)
-                                subjectAltNames = subjectAltNames.concat(extension.parsedValue.altNames);
+            }
+            const policyResult = {
+                result: (userConstrPolicies.length > 0),
+                resultCode: 0,
+                resultMessage: (userConstrPolicies.length > 0) ? EMPTY_STRING : "Zero \"userConstrPolicies\" array, no intersections with \"authConstrPolicies\"",
+                authConstrPolicies,
+                userConstrPolicies,
+                explicitPolicyIndicator,
+                policyMappings,
+                certificatePath: this.certs
+            };
+            if (userConstrPolicies.length === 0)
+                return policyResult;
+            if (policyResult.result === false)
+                return policyResult;
+            pathDepth = 1;
+            for (let i = (this.certs.length - 2); i >= 0; i--, pathDepth++) {
+                const cert = this.certs[i];
+                let subjectAltNames = [];
+                let certPermittedSubtrees = [];
+                let certExcludedSubtrees = [];
+                if (cert.extensions) {
+                    for (let j = 0; j < cert.extensions.length; j++) {
+                        const extension = cert.extensions[j];
+                        if (extension.extnID === id_NameConstraints) {
+                            if ("permittedSubtrees" in extension.parsedValue)
+                                certPermittedSubtrees = certPermittedSubtrees.concat(extension.parsedValue.permittedSubtrees);
+                            if ("excludedSubtrees" in extension.parsedValue)
+                                certExcludedSubtrees = certExcludedSubtrees.concat(extension.parsedValue.excludedSubtrees);
                         }
+                        if (extension.extnID === id_SubjectAltName)
+                            subjectAltNames = subjectAltNames.concat(extension.parsedValue.altNames);
                     }
-                    let formFound = (requiredNameForms.length <= 0);
-                    for (let j = 0; j < requiredNameForms.length; j++) {
-                        switch (requiredNameForms[j].base.type) {
-                            case 4:
-                                {
-                                    if (requiredNameForms[j].base.value.typesAndValues.length !== cert.subject.typesAndValues.length)
-                                        continue;
-                                    formFound = true;
-                                    for (let k = 0; k < cert.subject.typesAndValues.length; k++) {
-                                        if (cert.subject.typesAndValues[k].type !== requiredNameForms[j].base.value.typesAndValues[k].type) {
-                                            formFound = false;
-                                            break;
-                                        }
-                                    }
-                                    if (formFound === true)
+                }
+                let formFound = (requiredNameForms.length <= 0);
+                for (let j = 0; j < requiredNameForms.length; j++) {
+                    switch (requiredNameForms[j].base.type) {
+                        case 4:
+                            {
+                                if (requiredNameForms[j].base.value.typesAndValues.length !== cert.subject.typesAndValues.length)
+                                    continue;
+                                formFound = true;
+                                for (let k = 0; k < cert.subject.typesAndValues.length; k++) {
+                                    if (cert.subject.typesAndValues[k].type !== requiredNameForms[j].base.value.typesAndValues[k].type) {
+                                        formFound = false;
                                         break;
+                                    }
                                 }
-                                break;
-                            default:
-                        }
-                    }
-                    if (formFound === false) {
-                        policyResult.result = false;
-                        policyResult.resultCode = 21;
-                        policyResult.resultMessage = "No necessary name form found";
-                        throw policyResult;
-                    }
-                    const constrGroups = [
-                        [],
-                        [],
-                        [],
-                        [],
-                        [],
-                    ];
-                    for (let j = 0; j < permittedSubtrees.length; j++) {
-                        switch (permittedSubtrees[j].base.type) {
-                            case 1:
-                                constrGroups[0].push(permittedSubtrees[j]);
-                                break;
-                            case 2:
-                                constrGroups[1].push(permittedSubtrees[j]);
-                                break;
-                            case 4:
-                                constrGroups[2].push(permittedSubtrees[j]);
-                                break;
-                            case 6:
-                                constrGroups[3].push(permittedSubtrees[j]);
-                                break;
-                            case 7:
-                                constrGroups[4].push(permittedSubtrees[j]);
-                                break;
-                            default:
-                        }
-                    }
-                    for (let p = 0; p < 5; p++) {
-                        let groupPermitted = false;
-                        let valueExists = false;
-                        const group = constrGroups[p];
-                        for (let j = 0; j < group.length; j++) {
-                            switch (p) {
-                                case 0:
-                                    if (subjectAltNames.length > 0) {
-                                        for (let k = 0; k < subjectAltNames.length; k++) {
-                                            if (subjectAltNames[k].type === 1) {
-                                                valueExists = true;
-                                                groupPermitted = groupPermitted || compareRFC822Name(subjectAltNames[k].value, group[j].base.value);
-                                            }
-                                        }
-                                    }
-                                    else {
-                                        for (let k = 0; k < cert.subject.typesAndValues.length; k++) {
-                                            if ((cert.subject.typesAndValues[k].type === "1.2.840.113549.1.9.1") ||
-                                                (cert.subject.typesAndValues[k].type === "0.9.2342.19200300.100.1.3")) {
-                                                valueExists = true;
-                                                groupPermitted = groupPermitted || compareRFC822Name(cert.subject.typesAndValues[k].value.valueBlock.value, group[j].base.value);
-                                            }
-                                        }
-                                    }
+                                if (formFound === true)
                                     break;
-                                case 1:
-                                    if (subjectAltNames.length > 0) {
-                                        for (let k = 0; k < subjectAltNames.length; k++) {
-                                            if (subjectAltNames[k].type === 2) {
-                                                valueExists = true;
-                                                groupPermitted = groupPermitted || compareDNSName(subjectAltNames[k].value, group[j].base.value);
-                                            }
-                                        }
-                                    }
-                                    break;
-                                case 2:
-                                    valueExists = true;
-                                    groupPermitted = compareDirectoryName(cert.subject, group[j].base.value);
-                                    break;
-                                case 3:
-                                    if (subjectAltNames.length > 0) {
-                                        for (let k = 0; k < subjectAltNames.length; k++) {
-                                            if (subjectAltNames[k].type === 6) {
-                                                valueExists = true;
-                                                groupPermitted = groupPermitted || compareUniformResourceIdentifier(subjectAltNames[k].value, group[j].base.value);
-                                            }
-                                        }
-                                    }
-                                    break;
-                                case 4:
-                                    if (subjectAltNames.length > 0) {
-                                        for (let k = 0; k < subjectAltNames.length; k++) {
-                                            if (subjectAltNames[k].type === 7) {
-                                                valueExists = true;
-                                                groupPermitted = groupPermitted || compareIPAddress(subjectAltNames[k].value, group[j].base.value);
-                                            }
-                                        }
-                                    }
-                                    break;
-                                default:
                             }
-                            if (groupPermitted)
-                                break;
-                        }
-                        if ((groupPermitted === false) && (group.length > 0) && valueExists) {
-                            policyResult.result = false;
-                            policyResult.resultCode = 41;
-                            policyResult.resultMessage = "Failed to meet \"permitted sub-trees\" name constraint";
-                            throw policyResult;
-                        }
+                            break;
+                        default:
                     }
-                    let excluded = false;
-                    for (let j = 0; j < excludedSubtrees.length; j++) {
-                        switch (excludedSubtrees[j].base.type) {
-                            case 1:
-                                if (subjectAltNames.length >= 0) {
+                }
+                if (formFound === false) {
+                    policyResult.result = false;
+                    policyResult.resultCode = 21;
+                    policyResult.resultMessage = "No necessary name form found";
+                    throw policyResult;
+                }
+                const constrGroups = [
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                ];
+                for (let j = 0; j < permittedSubtrees.length; j++) {
+                    switch (permittedSubtrees[j].base.type) {
+                        case 1:
+                            constrGroups[0].push(permittedSubtrees[j]);
+                            break;
+                        case 2:
+                            constrGroups[1].push(permittedSubtrees[j]);
+                            break;
+                        case 4:
+                            constrGroups[2].push(permittedSubtrees[j]);
+                            break;
+                        case 6:
+                            constrGroups[3].push(permittedSubtrees[j]);
+                            break;
+                        case 7:
+                            constrGroups[4].push(permittedSubtrees[j]);
+                            break;
+                        default:
+                    }
+                }
+                for (let p = 0; p < 5; p++) {
+                    let groupPermitted = false;
+                    let valueExists = false;
+                    const group = constrGroups[p];
+                    for (let j = 0; j < group.length; j++) {
+                        switch (p) {
+                            case 0:
+                                if (subjectAltNames.length > 0) {
                                     for (let k = 0; k < subjectAltNames.length; k++) {
-                                        if (subjectAltNames[k].type === 1)
-                                            excluded = excluded || compareRFC822Name(subjectAltNames[k].value, excludedSubtrees[j].base.value);
+                                        if (subjectAltNames[k].type === 1) {
+                                            valueExists = true;
+                                            groupPermitted = groupPermitted || compareRFC822Name(subjectAltNames[k].value, group[j].base.value);
+                                        }
                                     }
                                 }
                                 else {
                                     for (let k = 0; k < cert.subject.typesAndValues.length; k++) {
                                         if ((cert.subject.typesAndValues[k].type === "1.2.840.113549.1.9.1") ||
-                                            (cert.subject.typesAndValues[k].type === "0.9.2342.19200300.100.1.3"))
-                                            excluded = excluded || compareRFC822Name(cert.subject.typesAndValues[k].value.valueBlock.value, excludedSubtrees[j].base.value);
+                                            (cert.subject.typesAndValues[k].type === "0.9.2342.19200300.100.1.3")) {
+                                            valueExists = true;
+                                            groupPermitted = groupPermitted || compareRFC822Name(cert.subject.typesAndValues[k].value.valueBlock.value, group[j].base.value);
+                                        }
+                                    }
+                                }
+                                break;
+                            case 1:
+                                if (subjectAltNames.length > 0) {
+                                    for (let k = 0; k < subjectAltNames.length; k++) {
+                                        if (subjectAltNames[k].type === 2) {
+                                            valueExists = true;
+                                            groupPermitted = groupPermitted || compareDNSName(subjectAltNames[k].value, group[j].base.value);
+                                        }
                                     }
                                 }
                                 break;
                             case 2:
+                                valueExists = true;
+                                groupPermitted = compareDirectoryName(cert.subject, group[j].base.value);
+                                break;
+                            case 3:
                                 if (subjectAltNames.length > 0) {
                                     for (let k = 0; k < subjectAltNames.length; k++) {
-                                        if (subjectAltNames[k].type === 2)
-                                            excluded = excluded || compareDNSName(subjectAltNames[k].value, excludedSubtrees[j].base.value);
+                                        if (subjectAltNames[k].type === 6) {
+                                            valueExists = true;
+                                            groupPermitted = groupPermitted || compareUniformResourceIdentifier(subjectAltNames[k].value, group[j].base.value);
+                                        }
                                     }
                                 }
                                 break;
                             case 4:
-                                excluded = excluded || compareDirectoryName(cert.subject, excludedSubtrees[j].base.value);
-                                break;
-                            case 6:
                                 if (subjectAltNames.length > 0) {
                                     for (let k = 0; k < subjectAltNames.length; k++) {
-                                        if (subjectAltNames[k].type === 6)
-                                            excluded = excluded || compareUniformResourceIdentifier(subjectAltNames[k].value, excludedSubtrees[j].base.value);
-                                    }
-                                }
-                                break;
-                            case 7:
-                                if (subjectAltNames.length > 0) {
-                                    for (let k = 0; k < subjectAltNames.length; k++) {
-                                        if (subjectAltNames[k].type === 7)
-                                            excluded = excluded || compareIPAddress(subjectAltNames[k].value, excludedSubtrees[j].base.value);
+                                        if (subjectAltNames[k].type === 7) {
+                                            valueExists = true;
+                                            groupPermitted = groupPermitted || compareIPAddress(subjectAltNames[k].value, group[j].base.value);
+                                        }
                                     }
                                 }
                                 break;
                             default:
                         }
-                        if (excluded)
+                        if (groupPermitted)
                             break;
                     }
-                    if (excluded === true) {
+                    if ((groupPermitted === false) && (group.length > 0) && valueExists) {
                         policyResult.result = false;
-                        policyResult.resultCode = 42;
-                        policyResult.resultMessage = "Failed to meet \"excluded sub-trees\" name constraint";
+                        policyResult.resultCode = 41;
+                        policyResult.resultMessage = "Failed to meet \"permitted sub-trees\" name constraint";
                         throw policyResult;
                     }
-                    permittedSubtrees = permittedSubtrees.concat(certPermittedSubtrees);
-                    excludedSubtrees = excludedSubtrees.concat(certExcludedSubtrees);
                 }
-                return policyResult;
-            }
-            catch (error) {
-                if (error instanceof Error) {
-                    if (error instanceof ChainValidationError) {
-                        return {
-                            result: false,
-                            resultCode: error.code,
-                            resultMessage: error.message,
-                            error: error,
-                        };
+                let excluded = false;
+                for (let j = 0; j < excludedSubtrees.length; j++) {
+                    switch (excludedSubtrees[j].base.type) {
+                        case 1:
+                            if (subjectAltNames.length >= 0) {
+                                for (let k = 0; k < subjectAltNames.length; k++) {
+                                    if (subjectAltNames[k].type === 1)
+                                        excluded = excluded || compareRFC822Name(subjectAltNames[k].value, excludedSubtrees[j].base.value);
+                                }
+                            }
+                            else {
+                                for (let k = 0; k < cert.subject.typesAndValues.length; k++) {
+                                    if ((cert.subject.typesAndValues[k].type === "1.2.840.113549.1.9.1") ||
+                                        (cert.subject.typesAndValues[k].type === "0.9.2342.19200300.100.1.3"))
+                                        excluded = excluded || compareRFC822Name(cert.subject.typesAndValues[k].value.valueBlock.value, excludedSubtrees[j].base.value);
+                                }
+                            }
+                            break;
+                        case 2:
+                            if (subjectAltNames.length > 0) {
+                                for (let k = 0; k < subjectAltNames.length; k++) {
+                                    if (subjectAltNames[k].type === 2)
+                                        excluded = excluded || compareDNSName(subjectAltNames[k].value, excludedSubtrees[j].base.value);
+                                }
+                            }
+                            break;
+                        case 4:
+                            excluded = excluded || compareDirectoryName(cert.subject, excludedSubtrees[j].base.value);
+                            break;
+                        case 6:
+                            if (subjectAltNames.length > 0) {
+                                for (let k = 0; k < subjectAltNames.length; k++) {
+                                    if (subjectAltNames[k].type === 6)
+                                        excluded = excluded || compareUniformResourceIdentifier(subjectAltNames[k].value, excludedSubtrees[j].base.value);
+                                }
+                            }
+                            break;
+                        case 7:
+                            if (subjectAltNames.length > 0) {
+                                for (let k = 0; k < subjectAltNames.length; k++) {
+                                    if (subjectAltNames[k].type === 7)
+                                        excluded = excluded || compareIPAddress(subjectAltNames[k].value, excludedSubtrees[j].base.value);
+                                }
+                            }
+                            break;
+                        default:
                     }
+                    if (excluded)
+                        break;
+                }
+                if (excluded === true) {
+                    policyResult.result = false;
+                    policyResult.resultCode = 42;
+                    policyResult.resultMessage = "Failed to meet \"excluded sub-trees\" name constraint";
+                    throw policyResult;
+                }
+                permittedSubtrees = permittedSubtrees.concat(certPermittedSubtrees);
+                excludedSubtrees = excludedSubtrees.concat(certExcludedSubtrees);
+            }
+            return policyResult;
+        }
+        catch (error) {
+            if (error instanceof Error) {
+                if (error instanceof ChainValidationError) {
                     return {
                         result: false,
-                        resultCode: ChainValidationCode.unknown,
+                        resultCode: error.code,
                         resultMessage: error.message,
                         error: error,
                     };
                 }
-                if (error && typeof error === "object" && "resultMessage" in error) {
-                    return error;
-                }
                 return {
                     result: false,
-                    resultCode: -1,
-                    resultMessage: `${error}`,
+                    resultCode: ChainValidationCode.unknown,
+                    resultMessage: error.message,
+                    error: error,
                 };
             }
-        });
+            if (error && typeof error === "object" && "resultMessage" in error) {
+                return error;
+            }
+            return {
+                result: false,
+                resultCode: -1,
+                resultMessage: `${error}`,
+            };
+        }
     }
 }
 
@@ -20681,124 +21207,118 @@ class BasicOCSPResponse extends PkiObject {
         }
         return res;
     }
-    getCertificateStatus(certificate, issuerCertificate, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const result = {
-                isForCertificate: false,
-                status: 2
-            };
-            const hashesObject = {};
-            const certIDs = [];
-            for (const response of this.tbsResponseData.responses) {
-                const hashAlgorithm = crypto.getAlgorithmByOID(response.certID.hashAlgorithm.algorithmId, true, "CertID.hashAlgorithm");
-                if (!hashesObject[hashAlgorithm.name]) {
-                    hashesObject[hashAlgorithm.name] = 1;
-                    const certID = new CertID();
-                    certIDs.push(certID);
-                    yield certID.createForCertificate(certificate, {
-                        hashAlgorithm: hashAlgorithm.name,
-                        issuerCertificate
-                    }, crypto);
-                }
+    async getCertificateStatus(certificate, issuerCertificate, crypto = getCrypto(true)) {
+        const result = {
+            isForCertificate: false,
+            status: 2
+        };
+        const hashesObject = {};
+        const certIDs = [];
+        for (const response of this.tbsResponseData.responses) {
+            const hashAlgorithm = crypto.getAlgorithmByOID(response.certID.hashAlgorithm.algorithmId, true, "CertID.hashAlgorithm");
+            if (!hashesObject[hashAlgorithm.name]) {
+                hashesObject[hashAlgorithm.name] = 1;
+                const certID = new CertID();
+                certIDs.push(certID);
+                await certID.createForCertificate(certificate, {
+                    hashAlgorithm: hashAlgorithm.name,
+                    issuerCertificate
+                }, crypto);
             }
-            for (const response of this.tbsResponseData.responses) {
-                for (const id of certIDs) {
-                    if (response.certID.isEqual(id)) {
-                        result.isForCertificate = true;
-                        try {
-                            switch (response.certStatus.idBlock.isConstructed) {
-                                case true:
-                                    if (response.certStatus.idBlock.tagNumber === 1)
-                                        result.status = 1;
-                                    break;
-                                case false:
-                                    switch (response.certStatus.idBlock.tagNumber) {
-                                        case 0:
-                                            result.status = 0;
-                                            break;
-                                        case 2:
-                                            result.status = 2;
-                                            break;
-                                        default:
-                                    }
-                                    break;
-                                default:
-                            }
+        }
+        for (const response of this.tbsResponseData.responses) {
+            for (const id of certIDs) {
+                if (response.certID.isEqual(id)) {
+                    result.isForCertificate = true;
+                    try {
+                        switch (response.certStatus.idBlock.isConstructed) {
+                            case true:
+                                if (response.certStatus.idBlock.tagNumber === 1)
+                                    result.status = 1;
+                                break;
+                            case false:
+                                switch (response.certStatus.idBlock.tagNumber) {
+                                    case 0:
+                                        result.status = 0;
+                                        break;
+                                    case 2:
+                                        result.status = 2;
+                                        break;
+                                    default:
+                                }
+                                break;
+                            default:
                         }
-                        catch (ex) {
-                        }
-                        return result;
                     }
+                    catch {
+                    }
+                    return result;
                 }
             }
-            return result;
-        });
+        }
+        return result;
     }
-    sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!privateKey) {
-                throw new Error("Need to provide a private key for signing");
-            }
-            const signatureParams = yield crypto.getSignatureParameters(privateKey, hashAlgorithm);
-            const algorithm = signatureParams.parameters.algorithm;
-            if (!("name" in algorithm)) {
-                throw new Error("Empty algorithm");
-            }
-            this.signatureAlgorithm = signatureParams.signatureAlgorithm;
-            this.tbsResponseData.tbsView = new Uint8Array(this.tbsResponseData.toSchema(true).toBER());
-            const signature = yield crypto.signWithPrivateKey(this.tbsResponseData.tbsView, privateKey, { algorithm });
-            this.signature = new BitString({ valueHex: signature });
-        });
+    async sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
+        if (!privateKey) {
+            throw new Error("Need to provide a private key for signing");
+        }
+        const signatureParams = await crypto.getSignatureParameters(privateKey, hashAlgorithm);
+        const algorithm = signatureParams.parameters.algorithm;
+        if (!("name" in algorithm)) {
+            throw new Error("Empty algorithm");
+        }
+        this.signatureAlgorithm = signatureParams.signatureAlgorithm;
+        this.tbsResponseData.tbsView = new Uint8Array(this.tbsResponseData.toSchema(true).toBER());
+        const signature = await crypto.signWithPrivateKey(this.tbsResponseData.tbsView, privateKey, { algorithm });
+        this.signature = new BitString({ valueHex: signature });
     }
-    verify(params = {}, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let signerCert = null;
-            let certIndex = -1;
-            const trustedCerts = params.trustedCerts || [];
-            if (!this.certs) {
-                throw new Error("No certificates attached to the BasicOCSPResponse");
-            }
-            switch (true) {
-                case (this.tbsResponseData.responderID instanceof RelativeDistinguishedNames):
-                    for (const [index, certificate] of this.certs.entries()) {
-                        if (certificate.subject.isEqual(this.tbsResponseData.responderID)) {
-                            certIndex = index;
-                            break;
-                        }
+    async verify(params = {}, crypto = getCrypto(true)) {
+        let signerCert = null;
+        let certIndex = -1;
+        const trustedCerts = params.trustedCerts || [];
+        if (!this.certs) {
+            throw new Error("No certificates attached to the BasicOCSPResponse");
+        }
+        switch (true) {
+            case (this.tbsResponseData.responderID instanceof RelativeDistinguishedNames):
+                for (const [index, certificate] of this.certs.entries()) {
+                    if (certificate.subject.isEqual(this.tbsResponseData.responderID)) {
+                        certIndex = index;
+                        break;
                     }
-                    break;
-                case (this.tbsResponseData.responderID instanceof OctetString):
-                    for (const [index, cert] of this.certs.entries()) {
-                        const hash = yield crypto.digest({ name: "sha-1" }, cert.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
-                        if (isEqualBuffer(hash, this.tbsResponseData.responderID.valueBlock.valueHex)) {
-                            certIndex = index;
-                            break;
-                        }
-                    }
-                    break;
-                default:
-                    throw new Error("Wrong value for responderID");
-            }
-            if (certIndex === (-1))
-                throw new Error("Correct certificate was not found in OCSP response");
-            signerCert = this.certs[certIndex];
-            const additionalCerts = [signerCert];
-            for (const cert of this.certs) {
-                const caCert = yield checkCA(cert, signerCert);
-                if (caCert) {
-                    additionalCerts.push(caCert);
                 }
+                break;
+            case (this.tbsResponseData.responderID instanceof OctetString):
+                for (const [index, cert] of this.certs.entries()) {
+                    const hash = await crypto.digest({ name: "sha-1" }, cert.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
+                    if (isEqualBuffer(hash, this.tbsResponseData.responderID.valueBlock.valueHex)) {
+                        certIndex = index;
+                        break;
+                    }
+                }
+                break;
+            default:
+                throw new Error("Wrong value for responderID");
+        }
+        if (certIndex === (-1))
+            throw new Error("Correct certificate was not found in OCSP response");
+        signerCert = this.certs[certIndex];
+        const additionalCerts = [signerCert];
+        for (const cert of this.certs) {
+            const caCert = await checkCA(cert, signerCert);
+            if (caCert) {
+                additionalCerts.push(caCert);
             }
-            const certChain = new CertificateChainValidationEngine({
-                certs: additionalCerts,
-                trustedCerts,
-            });
-            const verificationResult = yield certChain.verify({}, crypto);
-            if (!verificationResult.result) {
-                throw new Error("Validation of signer's certificate failed");
-            }
-            return crypto.verifyWithPublicKey(this.tbsResponseData.tbsView, this.signature, this.certs[certIndex].subjectPublicKeyInfo, this.signatureAlgorithm);
+        }
+        const certChain = new CertificateChainValidationEngine({
+            certs: additionalCerts,
+            trustedCerts,
         });
+        const verificationResult = await certChain.verify({}, crypto);
+        if (!verificationResult.result) {
+            throw new Error("Validation of signer's certificate failed");
+        }
+        return crypto.verifyWithPublicKey(this.tbsResponseData.tbsView, this.signature, this.certs[certIndex].subjectPublicKeyInfo, this.signatureAlgorithm);
     }
 }
 BasicOCSPResponse.CLASS_NAME = "BasicOCSPResponse";
@@ -20858,6 +21378,12 @@ function CertificationRequestInfo(parameters = {}) {
     }));
 }
 class CertificationRequest extends PkiObject {
+    get tbs() {
+        return BufferSourceConverter.toArrayBuffer(this.tbsView);
+    }
+    set tbs(value) {
+        this.tbsView = new Uint8Array(value);
+    }
     constructor(parameters = {}) {
         super();
         this.tbsView = new Uint8Array(getParametersValue(parameters, TBS$1, CertificationRequest.defaultValues(TBS$1)));
@@ -20872,12 +21398,6 @@ class CertificationRequest extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    get tbs() {
-        return BufferSourceConverter.toArrayBuffer(this.tbsView);
-    }
-    set tbs(value) {
-        this.tbsView = new Uint8Array(value);
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -20983,28 +21503,22 @@ class CertificationRequest extends PkiObject {
         }
         return object;
     }
-    sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!privateKey) {
-                throw new Error("Need to provide a private key for signing");
-            }
-            const signatureParams = yield crypto.getSignatureParameters(privateKey, hashAlgorithm);
-            const parameters = signatureParams.parameters;
-            this.signatureAlgorithm = signatureParams.signatureAlgorithm;
-            this.tbsView = new Uint8Array(this.encodeTBS().toBER());
-            const signature = yield crypto.signWithPrivateKey(this.tbsView, privateKey, parameters);
-            this.signatureValue = new BitString({ valueHex: signature });
-        });
+    async sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
+        if (!privateKey) {
+            throw new Error("Need to provide a private key for signing");
+        }
+        const signatureParams = await crypto.getSignatureParameters(privateKey, hashAlgorithm);
+        const parameters = signatureParams.parameters;
+        this.signatureAlgorithm = signatureParams.signatureAlgorithm;
+        this.tbsView = new Uint8Array(this.encodeTBS().toBER());
+        const signature = await crypto.signWithPrivateKey(this.tbsView, privateKey, parameters);
+        this.signatureValue = new BitString({ valueHex: signature });
     }
-    verify(crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return crypto.verifyWithPublicKey(this.tbsView, this.signatureValue, this.subjectPublicKeyInfo, this.signatureAlgorithm);
-        });
+    async verify(crypto = getCrypto(true)) {
+        return crypto.verifyWithPublicKey(this.tbsView, this.signatureValue, this.subjectPublicKeyInfo, this.signatureAlgorithm);
     }
-    getPublicKey(parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return crypto.getPublicKey(this.subjectPublicKeyInfo, this.signatureAlgorithm, parameters);
-        });
+    async getPublicKey(parameters, crypto = getCrypto(true)) {
+        return crypto.getPublicKey(this.subjectPublicKeyInfo, this.signatureAlgorithm, parameters);
     }
 }
 CertificationRequest.CLASS_NAME = "CertificationRequest";
@@ -21341,6 +21855,18 @@ const CLEAR_PROPS$b = [
     HASHED_MESSAGE,
 ];
 class MessageImprint extends PkiObject {
+    static async create(hashAlgorithm, message, crypto = getCrypto(true)) {
+        const hashAlgorithmOID = crypto.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
+        const hashedMessage = await crypto.digest(hashAlgorithm, message);
+        const res = new MessageImprint({
+            hashAlgorithm: new AlgorithmIdentifier({
+                algorithmId: hashAlgorithmOID,
+                algorithmParams: new Null(),
+            }),
+            hashedMessage: new OctetString({ valueHex: hashedMessage })
+        });
+        return res;
+    }
     constructor(parameters = {}) {
         super();
         this.hashAlgorithm = getParametersValue(parameters, HASH_ALGORITHM, MessageImprint.defaultValues(HASH_ALGORITHM));
@@ -21348,20 +21874,6 @@ class MessageImprint extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    static create(hashAlgorithm, message, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const hashAlgorithmOID = crypto.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
-            const hashedMessage = yield crypto.digest(hashAlgorithm, message);
-            const res = new MessageImprint({
-                hashAlgorithm: new AlgorithmIdentifier({
-                    algorithmId: hashAlgorithmOID,
-                    algorithmParams: new Null(),
-                }),
-                hashedMessage: new OctetString({ valueHex: hashedMessage })
-            });
-            return res;
-        });
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -21475,7 +21987,7 @@ class Request extends PkiObject {
                         tagClass: 3,
                         tagNumber: 0
                     },
-                    value: [Extension.schema(names.extensions || {
+                    value: [Extensions.schema(names.extensions || {
                             names: {
                                 blockName: (names.singleRequestExtensions || EMPTY_STRING)
                             }
@@ -21557,6 +22069,12 @@ const CLEAR_PROPS$9 = [
     TBS_REQUEST_REQUEST_EXTENSIONS
 ];
 class TBSRequest extends PkiObject {
+    get tbs() {
+        return BufferSourceConverter.toArrayBuffer(this.tbsView);
+    }
+    set tbs(value) {
+        this.tbsView = new Uint8Array(value);
+    }
     constructor(parameters = {}) {
         super();
         this.tbsView = new Uint8Array(getParametersValue(parameters, TBS, TBSRequest.defaultValues(TBS)));
@@ -21573,12 +22091,6 @@ class TBSRequest extends PkiObject {
         if (parameters.schema) {
             this.fromSchema(parameters.schema);
         }
-    }
-    get tbs() {
-        return BufferSourceConverter.toArrayBuffer(this.tbsView);
-    }
-    set tbs(value) {
-        this.tbsView = new Uint8Array(value);
     }
     static defaultValues(memberName) {
         switch (memberName) {
@@ -21969,28 +22481,24 @@ class OCSPRequest extends PkiObject {
         }
         return res;
     }
-    createForCertificate(certificate, parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const certID = new CertID();
-            yield certID.createForCertificate(certificate, parameters, crypto);
-            this.tbsRequest.requestList.push(new Request({
-                reqCert: certID,
-            }));
-        });
+    async createForCertificate(certificate, parameters, crypto = getCrypto(true)) {
+        const certID = new CertID();
+        await certID.createForCertificate(certificate, parameters, crypto);
+        this.tbsRequest.requestList.push(new Request({
+            reqCert: certID,
+        }));
     }
-    sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ParameterError.assertEmpty(privateKey, "privateKey", "OCSPRequest.sign method");
-            if (!this.optionalSignature) {
-                throw new Error("Need to create \"optionalSignature\" field before signing");
-            }
-            const signatureParams = yield crypto.getSignatureParameters(privateKey, hashAlgorithm);
-            const parameters = signatureParams.parameters;
-            this.optionalSignature.signatureAlgorithm = signatureParams.signatureAlgorithm;
-            const tbs = this.tbsRequest.toSchema(true).toBER(false);
-            const signature = yield crypto.signWithPrivateKey(tbs, privateKey, parameters);
-            this.optionalSignature.signature = new BitString({ valueHex: signature });
-        });
+    async sign(privateKey, hashAlgorithm = "SHA-1", crypto = getCrypto(true)) {
+        ParameterError.assertEmpty(privateKey, "privateKey", "OCSPRequest.sign method");
+        if (!this.optionalSignature) {
+            throw new Error("Need to create \"optionalSignature\" field before signing");
+        }
+        const signatureParams = await crypto.getSignatureParameters(privateKey, hashAlgorithm);
+        const parameters = signatureParams.parameters;
+        this.optionalSignature.signatureAlgorithm = signatureParams.signatureAlgorithm;
+        const tbs = this.tbsRequest.toSchema(true).toBER(false);
+        const signature = await crypto.signWithPrivateKey(tbs, privateKey, parameters);
+        this.optionalSignature.signature = new BitString({ valueHex: signature });
     }
     verify() {
     }
@@ -22164,55 +22672,49 @@ class OCSPResponse extends PkiObject {
         }
         return res;
     }
-    getCertificateStatus(certificate, issuerCertificate, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let basicResponse;
-            const result = {
-                isForCertificate: false,
-                status: 2
-            };
-            if (!this.responseBytes)
-                return result;
-            if (this.responseBytes.responseType !== id_PKIX_OCSP_Basic)
-                return result;
-            try {
-                const asn1Basic = fromBER(this.responseBytes.response.valueBlock.valueHexView);
-                AsnError.assert(asn1Basic, "Basic OCSP response");
-                basicResponse = new BasicOCSPResponse({ schema: asn1Basic.result });
-            }
-            catch (ex) {
-                return result;
-            }
-            return basicResponse.getCertificateStatus(certificate, issuerCertificate, crypto);
-        });
+    async getCertificateStatus(certificate, issuerCertificate, crypto = getCrypto(true)) {
+        let basicResponse;
+        const result = {
+            isForCertificate: false,
+            status: 2
+        };
+        if (!this.responseBytes)
+            return result;
+        if (this.responseBytes.responseType !== id_PKIX_OCSP_Basic)
+            return result;
+        try {
+            const asn1Basic = fromBER(this.responseBytes.response.valueBlock.valueHexView);
+            AsnError.assert(asn1Basic, "Basic OCSP response");
+            basicResponse = new BasicOCSPResponse({ schema: asn1Basic.result });
+        }
+        catch {
+            return result;
+        }
+        return basicResponse.getCertificateStatus(certificate, issuerCertificate, crypto);
     }
-    sign(privateKey, hashAlgorithm, crypto = getCrypto(true)) {
+    async sign(privateKey, hashAlgorithm, crypto = getCrypto(true)) {
         var _a;
-        return __awaiter(this, void 0, void 0, function* () {
-            if (this.responseBytes && this.responseBytes.responseType === id_PKIX_OCSP_Basic) {
-                const basicResponse = BasicOCSPResponse.fromBER(this.responseBytes.response.valueBlock.valueHexView);
-                return basicResponse.sign(privateKey, hashAlgorithm, crypto);
-            }
-            throw new Error(`Unknown ResponseBytes type: ${((_a = this.responseBytes) === null || _a === void 0 ? void 0 : _a.responseType) || "Unknown"}`);
-        });
+        if (this.responseBytes && this.responseBytes.responseType === id_PKIX_OCSP_Basic) {
+            const basicResponse = BasicOCSPResponse.fromBER(this.responseBytes.response.valueBlock.valueHexView);
+            return basicResponse.sign(privateKey, hashAlgorithm, crypto);
+        }
+        throw new Error(`Unknown ResponseBytes type: ${((_a = this.responseBytes) === null || _a === void 0 ? void 0 : _a.responseType) || "Unknown"}`);
     }
-    verify(issuerCertificate = null, crypto = getCrypto(true)) {
+    async verify(issuerCertificate = null, crypto = getCrypto(true)) {
         var _a;
-        return __awaiter(this, void 0, void 0, function* () {
-            if ((RESPONSE_BYTES in this) === false)
-                throw new Error("Empty ResponseBytes field");
-            if (this.responseBytes && this.responseBytes.responseType === id_PKIX_OCSP_Basic) {
-                const basicResponse = BasicOCSPResponse.fromBER(this.responseBytes.response.valueBlock.valueHexView);
-                if (issuerCertificate !== null) {
-                    if (!basicResponse.certs) {
-                        basicResponse.certs = [];
-                    }
-                    basicResponse.certs.push(issuerCertificate);
+        if ((RESPONSE_BYTES in this) === false)
+            throw new Error("Empty ResponseBytes field");
+        if (this.responseBytes && this.responseBytes.responseType === id_PKIX_OCSP_Basic) {
+            const basicResponse = BasicOCSPResponse.fromBER(this.responseBytes.response.valueBlock.valueHexView);
+            if (issuerCertificate !== null) {
+                if (!basicResponse.certs) {
+                    basicResponse.certs = [];
                 }
-                return basicResponse.verify({}, crypto);
+                basicResponse.certs.push(issuerCertificate);
             }
-            throw new Error(`Unknown ResponseBytes type: ${((_a = this.responseBytes) === null || _a === void 0 ? void 0 : _a.responseType) || "Unknown"}`);
-        });
+            return basicResponse.verify({}, crypto);
+        }
+        throw new Error(`Unknown ResponseBytes type: ${((_a = this.responseBytes) === null || _a === void 0 ? void 0 : _a.responseType) || "Unknown"}`);
     }
 }
 OCSPResponse.CLASS_NAME = "OCSPResponse";
@@ -22778,24 +23280,22 @@ class TSTInfo extends PkiObject {
             res.extensions = Array.from(this.extensions, o => o.toJSON());
         return res;
     }
-    verify(params, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!params.data) {
-                throw new Error("\"data\" is a mandatory attribute for TST_INFO verification");
-            }
-            const data = params.data;
-            if (params.notBefore) {
-                if (this.genTime < params.notBefore)
-                    throw new Error("Generation time for TSTInfo object is less than notBefore value");
-            }
-            if (params.notAfter) {
-                if (this.genTime > params.notAfter)
-                    throw new Error("Generation time for TSTInfo object is more than notAfter value");
-            }
-            const shaAlgorithm = crypto.getAlgorithmByOID(this.messageImprint.hashAlgorithm.algorithmId, true, "MessageImprint.hashAlgorithm");
-            const hash = yield crypto.digest(shaAlgorithm.name, new Uint8Array(data));
-            return BufferSourceConverter.isEqual(hash, this.messageImprint.hashedMessage.valueBlock.valueHexView);
-        });
+    async verify(params, crypto = getCrypto(true)) {
+        if (!params.data) {
+            throw new Error("\"data\" is a mandatory attribute for TST_INFO verification");
+        }
+        const data = params.data;
+        if (params.notBefore) {
+            if (this.genTime < params.notBefore)
+                throw new Error("Generation time for TSTInfo object is less than notBefore value");
+        }
+        if (params.notAfter) {
+            if (this.genTime > params.notAfter)
+                throw new Error("Generation time for TSTInfo object is more than notAfter value");
+        }
+        const shaAlgorithm = crypto.getAlgorithmByOID(this.messageImprint.hashAlgorithm.algorithmId, true, "MessageImprint.hashAlgorithm");
+        const hash = await crypto.digest(shaAlgorithm.name, new Uint8Array(data));
+        return BufferSourceConverter.isEqual(hash, this.messageImprint.hashedMessage.valueBlock.valueHexView);
     }
 }
 TSTInfo.CLASS_NAME = "TSTInfo";
@@ -23047,322 +23547,324 @@ class SignedData extends PkiObject {
         }
         return res;
     }
-    verify({ signer = (-1), data = (EMPTY_BUFFER), trustedCerts = [], checkDate = (new Date()), checkChain = false, passedWhenNotRevValues = false, extendedMode = false, findOrigin = null, findIssuer = null } = {}, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let signerCert = null;
-            let timestampSerial = null;
-            try {
-                let messageDigestValue = EMPTY_BUFFER;
-                let shaAlgorithm = EMPTY_STRING;
-                let certificatePath = [];
-                const signerInfo = this.signerInfos[signer];
-                if (!signerInfo) {
+    async verify({ signer = (-1), data = (EMPTY_BUFFER), trustedCerts = [], checkDate = (new Date()), checkChain = false, passedWhenNotRevValues = false, extendedMode = false, findOrigin = null, findIssuer = null } = {}, crypto = getCrypto(true)) {
+        let signerCert = null;
+        let timestampSerial = null;
+        try {
+            let messageDigestValue = EMPTY_BUFFER;
+            let shaAlgorithm = EMPTY_STRING;
+            let certificatePath = [];
+            const signerInfo = this.signerInfos[signer];
+            if (!signerInfo) {
+                throw new SignedDataVerifyError({
+                    date: checkDate,
+                    code: 1,
+                    message: "Unable to get signer by supplied index",
+                });
+            }
+            if (!this.certificates) {
+                throw new SignedDataVerifyError({
+                    date: checkDate,
+                    code: 2,
+                    message: "No certificates attached to this signed data",
+                });
+            }
+            if (signerInfo.sid instanceof IssuerAndSerialNumber) {
+                for (const certificate of this.certificates) {
+                    if (!(certificate instanceof Certificate))
+                        continue;
+                    if ((certificate.issuer.isEqual(signerInfo.sid.issuer)) &&
+                        (certificate.serialNumber.isEqual(signerInfo.sid.serialNumber))) {
+                        signerCert = certificate;
+                        break;
+                    }
+                }
+            }
+            else {
+                const sid = signerInfo.sid;
+                const keyId = sid.idBlock.isConstructed
+                    ? sid.valueBlock.value[0].valueBlock.valueHex
+                    : sid.valueBlock.valueHex;
+                for (const certificate of this.certificates) {
+                    if (!(certificate instanceof Certificate)) {
+                        continue;
+                    }
+                    const digest = await crypto.digest({ name: "sha-1" }, certificate.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
+                    if (isEqualBuffer(digest, keyId)) {
+                        signerCert = certificate;
+                        break;
+                    }
+                }
+            }
+            if (!signerCert) {
+                throw new SignedDataVerifyError({
+                    date: checkDate,
+                    code: 3,
+                    message: "Unable to find signer certificate",
+                });
+            }
+            if (this.encapContentInfo.eContentType === id_eContentType_TSTInfo) {
+                if (!this.encapContentInfo.eContent) {
                     throw new SignedDataVerifyError({
                         date: checkDate,
-                        code: 1,
-                        message: "Unable to get signer by supplied index",
+                        code: 15,
+                        message: "Error during verification: TSTInfo eContent is empty",
+                        signatureVerified: null,
+                        signerCertificate: signerCert,
+                        timestampSerial,
+                        signerCertificateVerified: true
                     });
                 }
-                if (!this.certificates) {
+                let tstInfo;
+                try {
+                    tstInfo = TSTInfo.fromBER(this.encapContentInfo.eContent.valueBlock.valueHexView);
+                }
+                catch {
                     throw new SignedDataVerifyError({
                         date: checkDate,
-                        code: 2,
-                        message: "No certificates attached to this signed data",
+                        code: 15,
+                        message: "Error during verification: TSTInfo wrong ASN.1 schema ",
+                        signatureVerified: null,
+                        signerCertificate: signerCert,
+                        timestampSerial,
+                        signerCertificateVerified: true
                     });
                 }
-                if (signerInfo.sid instanceof IssuerAndSerialNumber) {
-                    for (const certificate of this.certificates) {
-                        if (!(certificate instanceof Certificate))
-                            continue;
-                        if ((certificate.issuer.isEqual(signerInfo.sid.issuer)) &&
-                            (certificate.serialNumber.isEqual(signerInfo.sid.serialNumber))) {
-                            signerCert = certificate;
-                            break;
+                checkDate = tstInfo.genTime;
+                timestampSerial = tstInfo.serialNumber.valueBlock.valueHexView.slice().buffer;
+                if (data.byteLength === 0) {
+                    throw new SignedDataVerifyError({
+                        date: checkDate,
+                        code: 4,
+                        message: "Missed detached data input array",
+                    });
+                }
+                if (!(await tstInfo.verify({ data }, crypto))) {
+                    throw new SignedDataVerifyError({
+                        date: checkDate,
+                        code: 15,
+                        message: "Error during verification: TSTInfo verification is failed",
+                        signatureVerified: false,
+                        signerCertificate: signerCert,
+                        timestampSerial,
+                        signerCertificateVerified: true
+                    });
+                }
+            }
+            if (checkChain) {
+                const certs = this.certificates.filter(certificate => (certificate instanceof Certificate && !!checkCA(certificate, signerCert)));
+                const chainParams = {
+                    checkDate,
+                    certs,
+                    trustedCerts,
+                };
+                if (findIssuer) {
+                    chainParams.findIssuer = findIssuer;
+                }
+                if (findOrigin) {
+                    chainParams.findOrigin = findOrigin;
+                }
+                const chainEngine = new CertificateChainValidationEngine(chainParams);
+                chainEngine.certs.push(signerCert);
+                if (this.crls) {
+                    for (const crl of this.crls) {
+                        if ("thisUpdate" in crl)
+                            chainEngine.crls.push(crl);
+                        else {
+                            if (crl.otherRevInfoFormat === id_PKIX_OCSP_Basic)
+                                chainEngine.ocsps.push(new BasicOCSPResponse({ schema: crl.otherRevInfo }));
                         }
                     }
                 }
-                else {
-                    const sid = signerInfo.sid;
-                    const keyId = sid.idBlock.isConstructed
-                        ? sid.valueBlock.value[0].valueBlock.valueHex
-                        : sid.valueBlock.valueHex;
-                    for (const certificate of this.certificates) {
-                        if (!(certificate instanceof Certificate)) {
-                            continue;
-                        }
-                        const digest = yield crypto.digest({ name: "sha-1" }, certificate.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
-                        if (isEqualBuffer(digest, keyId)) {
-                            signerCert = certificate;
-                            break;
-                        }
-                    }
+                if (this.ocsps) {
+                    chainEngine.ocsps.push(...(this.ocsps));
                 }
-                if (!signerCert) {
+                const verificationResult = await chainEngine.verify({ passedWhenNotRevValues }, crypto)
+                    .catch(e => {
                     throw new SignedDataVerifyError({
                         date: checkDate,
-                        code: 3,
-                        message: "Unable to find signer certificate",
+                        code: 5,
+                        message: `Validation of signer's certificate failed with error: ${((e instanceof Object) ? e.resultMessage : e)}`,
+                        signerCertificate: signerCert,
+                        signerCertificateVerified: false
                     });
+                });
+                if (verificationResult.certificatePath) {
+                    certificatePath = verificationResult.certificatePath;
                 }
-                if (this.encapContentInfo.eContentType === id_eContentType_TSTInfo) {
-                    if (!this.encapContentInfo.eContent) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 15,
-                            message: "Error during verification: TSTInfo eContent is empty",
-                            signatureVerified: null,
-                            signerCertificate: signerCert,
-                            timestampSerial,
-                            signerCertificateVerified: true
-                        });
-                    }
-                    let tstInfo;
-                    try {
-                        tstInfo = TSTInfo.fromBER(this.encapContentInfo.eContent.valueBlock.valueHexView);
-                    }
-                    catch (ex) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 15,
-                            message: "Error during verification: TSTInfo wrong ASN.1 schema ",
-                            signatureVerified: null,
-                            signerCertificate: signerCert,
-                            timestampSerial,
-                            signerCertificateVerified: true
-                        });
-                    }
-                    checkDate = tstInfo.genTime;
-                    timestampSerial = tstInfo.serialNumber.valueBlock.valueHexView.slice();
-                    if (data.byteLength === 0) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 4,
-                            message: "Missed detached data input array",
-                        });
-                    }
-                    if (!(yield tstInfo.verify({ data }, crypto))) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 15,
-                            message: "Error during verification: TSTInfo verification is failed",
-                            signatureVerified: false,
-                            signerCertificate: signerCert,
-                            timestampSerial,
-                            signerCertificateVerified: true
-                        });
-                    }
-                }
-                if (checkChain) {
-                    const certs = this.certificates.filter(certificate => (certificate instanceof Certificate && !!checkCA(certificate, signerCert)));
-                    const chainParams = {
-                        checkDate,
-                        certs,
-                        trustedCerts,
-                    };
-                    if (findIssuer) {
-                        chainParams.findIssuer = findIssuer;
-                    }
-                    if (findOrigin) {
-                        chainParams.findOrigin = findOrigin;
-                    }
-                    const chainEngine = new CertificateChainValidationEngine(chainParams);
-                    chainEngine.certs.push(signerCert);
-                    if (this.crls) {
-                        for (const crl of this.crls) {
-                            if ("thisUpdate" in crl)
-                                chainEngine.crls.push(crl);
-                            else {
-                                if (crl.otherRevInfoFormat === id_PKIX_OCSP_Basic)
-                                    chainEngine.ocsps.push(new BasicOCSPResponse({ schema: crl.otherRevInfo }));
-                            }
-                        }
-                    }
-                    if (this.ocsps) {
-                        chainEngine.ocsps.push(...(this.ocsps));
-                    }
-                    const verificationResult = yield chainEngine.verify({ passedWhenNotRevValues }, crypto)
-                        .catch(e => {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 5,
-                            message: `Validation of signer's certificate failed with error: ${((e instanceof Object) ? e.resultMessage : e)}`,
-                            signerCertificate: signerCert,
-                            signerCertificateVerified: false
-                        });
-                    });
-                    if (verificationResult.certificatePath) {
-                        certificatePath = verificationResult.certificatePath;
-                    }
-                    if (!verificationResult.result)
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 5,
-                            message: `Validation of signer's certificate failed: ${verificationResult.resultMessage}`,
-                            signerCertificate: signerCert,
-                            signerCertificateVerified: false
-                        });
-                }
-                const signerInfoHashAlgorithm = crypto.getAlgorithmByOID(signerInfo.digestAlgorithm.algorithmId);
-                if (!("name" in signerInfoHashAlgorithm)) {
+                if (!verificationResult.result)
                     throw new SignedDataVerifyError({
                         date: checkDate,
-                        code: 7,
-                        message: `Unsupported signature algorithm: ${signerInfo.digestAlgorithm.algorithmId}`,
+                        code: 5,
+                        message: `Validation of signer's certificate failed: ${verificationResult.resultMessage}`,
+                        signerCertificate: signerCert,
+                        signerCertificateVerified: false
+                    });
+            }
+            const signerInfoHashAlgorithm = crypto.getAlgorithmByOID(signerInfo.digestAlgorithm.algorithmId);
+            if (!("name" in signerInfoHashAlgorithm)) {
+                throw new SignedDataVerifyError({
+                    date: checkDate,
+                    code: 7,
+                    message: `Unsupported signature algorithm: ${signerInfo.digestAlgorithm.algorithmId}`,
+                    signerCertificate: signerCert,
+                    signerCertificateVerified: true
+                });
+            }
+            shaAlgorithm = signerInfoHashAlgorithm.name;
+            const eContent = this.encapContentInfo.eContent;
+            if (eContent) {
+                if ((eContent.idBlock.tagClass === 1) &&
+                    (eContent.idBlock.tagNumber === 4)) {
+                    data = eContent.getValue();
+                }
+                else
+                    data = eContent.valueBlock.valueBeforeDecodeView.slice().buffer;
+            }
+            else {
+                if (data.byteLength === 0) {
+                    throw new SignedDataVerifyError({
+                        date: checkDate,
+                        code: 8,
+                        message: "Missed detached data input array",
                         signerCertificate: signerCert,
                         signerCertificateVerified: true
                     });
                 }
-                shaAlgorithm = signerInfoHashAlgorithm.name;
-                const eContent = this.encapContentInfo.eContent;
-                if (eContent) {
-                    if ((eContent.idBlock.tagClass === 1) &&
-                        (eContent.idBlock.tagNumber === 4)) {
-                        data = eContent.getValue();
+            }
+            if (signerInfo.signedAttrs) {
+                let foundContentType = false;
+                let foundMessageDigest = false;
+                for (const attribute of signerInfo.signedAttrs.attributes) {
+                    if (attribute.type === "1.2.840.113549.1.9.3")
+                        foundContentType = true;
+                    if (attribute.type === "1.2.840.113549.1.9.4") {
+                        foundMessageDigest = true;
+                        messageDigestValue = attribute.values[0].valueBlock.valueHex;
                     }
-                    else
-                        data = eContent.valueBlock.valueBeforeDecodeView;
+                    if (foundContentType && foundMessageDigest)
+                        break;
                 }
-                else {
-                    if (data.byteLength === 0) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 8,
-                            message: "Missed detached data input array",
-                            signerCertificate: signerCert,
-                            signerCertificateVerified: true
-                        });
-                    }
-                }
-                if (signerInfo.signedAttrs) {
-                    let foundContentType = false;
-                    let foundMessageDigest = false;
-                    for (const attribute of signerInfo.signedAttrs.attributes) {
-                        if (attribute.type === "1.2.840.113549.1.9.3")
-                            foundContentType = true;
-                        if (attribute.type === "1.2.840.113549.1.9.4") {
-                            foundMessageDigest = true;
-                            messageDigestValue = attribute.values[0].valueBlock.valueHex;
-                        }
-                        if (foundContentType && foundMessageDigest)
-                            break;
-                    }
-                    if (foundContentType === false) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 9,
-                            message: "Attribute \"content-type\" is a mandatory attribute for \"signed attributes\"",
-                            signerCertificate: signerCert,
-                            signerCertificateVerified: true
-                        });
-                    }
-                    if (foundMessageDigest === false) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 10,
-                            message: "Attribute \"message-digest\" is a mandatory attribute for \"signed attributes\"",
-                            signatureVerified: null,
-                            signerCertificate: signerCert,
-                            signerCertificateVerified: true
-                        });
-                    }
-                }
-                if (signerInfo.signedAttrs) {
-                    const messageDigest = yield crypto.digest(shaAlgorithm, new Uint8Array(data));
-                    if (!isEqualBuffer(messageDigest, messageDigestValue)) {
-                        throw new SignedDataVerifyError({
-                            date: checkDate,
-                            code: 15,
-                            message: "Error during verification: Message digest doesn't match",
-                            signatureVerified: null,
-                            signerCertificate: signerCert,
-                            timestampSerial,
-                            signerCertificateVerified: true
-                        });
-                    }
-                    data = signerInfo.signedAttrs.encodedValue;
-                }
-                const verifyResult = yield crypto.verifyWithPublicKey(data, signerInfo.signature, signerCert.subjectPublicKeyInfo, signerCert.signatureAlgorithm, shaAlgorithm);
-                if (extendedMode) {
-                    return {
+                if (foundContentType === false) {
+                    throw new SignedDataVerifyError({
                         date: checkDate,
-                        code: 14,
-                        message: EMPTY_STRING,
-                        signatureVerified: verifyResult,
+                        code: 9,
+                        message: "Attribute \"content-type\" is a mandatory attribute for \"signed attributes\"",
+                        signerCertificate: signerCert,
+                        signerCertificateVerified: true
+                    });
+                }
+                if (foundMessageDigest === false) {
+                    throw new SignedDataVerifyError({
+                        date: checkDate,
+                        code: 10,
+                        message: "Attribute \"message-digest\" is a mandatory attribute for \"signed attributes\"",
+                        signatureVerified: null,
+                        signerCertificate: signerCert,
+                        signerCertificateVerified: true
+                    });
+                }
+            }
+            if (signerInfo.signedAttrs) {
+                const messageDigest = await crypto.digest(shaAlgorithm, new Uint8Array(data));
+                if (!isEqualBuffer(messageDigest, messageDigestValue)) {
+                    throw new SignedDataVerifyError({
+                        date: checkDate,
+                        code: 15,
+                        message: "Error during verification: Message digest doesn't match",
+                        signatureVerified: null,
                         signerCertificate: signerCert,
                         timestampSerial,
-                        signerCertificateVerified: true,
-                        certificatePath
-                    };
+                        signerCertificateVerified: true
+                    });
                 }
-                else {
-                    return verifyResult;
-                }
+                data = signerInfo.signedAttrs.encodedValue;
             }
-            catch (e) {
-                if (e instanceof SignedDataVerifyError) {
-                    throw e;
-                }
-                throw new SignedDataVerifyError({
+            const verifyResult = signerInfo.signatureAlgorithm.algorithmId === "1.2.840.113549.1.1.1"
+                ? await crypto.verifyWithPublicKey(data, signerInfo.signature, signerCert.subjectPublicKeyInfo, signerInfo.signatureAlgorithm, shaAlgorithm)
+                : await crypto.verifyWithPublicKey(data, signerInfo.signature, signerCert.subjectPublicKeyInfo, signerInfo.signatureAlgorithm);
+            if (extendedMode) {
+                return {
                     date: checkDate,
-                    code: 15,
-                    message: `Error during verification: ${e instanceof Error ? e.message : e}`,
-                    signatureVerified: null,
+                    code: 14,
+                    message: EMPTY_STRING,
+                    signatureVerified: verifyResult,
                     signerCertificate: signerCert,
                     timestampSerial,
-                    signerCertificateVerified: true
-                });
-            }
-        });
-    }
-    sign(privateKey, signerIndex, hashAlgorithm = "SHA-1", data = (EMPTY_BUFFER), crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!privateKey)
-                throw new Error("Need to provide a private key for signing");
-            const hashAlgorithmOID = crypto.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
-            if ((this.digestAlgorithms.filter(algorithm => algorithm.algorithmId === hashAlgorithmOID)).length === 0) {
-                this.digestAlgorithms.push(new AlgorithmIdentifier({
-                    algorithmId: hashAlgorithmOID,
-                    algorithmParams: new Null()
-                }));
-            }
-            const signerInfo = this.signerInfos[signerIndex];
-            if (!signerInfo) {
-                throw new RangeError("SignerInfo index is out of range");
-            }
-            signerInfo.digestAlgorithm = new AlgorithmIdentifier({
-                algorithmId: hashAlgorithmOID,
-                algorithmParams: new Null()
-            });
-            const signatureParams = yield crypto.getSignatureParameters(privateKey, hashAlgorithm);
-            const parameters = signatureParams.parameters;
-            signerInfo.signatureAlgorithm = signatureParams.signatureAlgorithm;
-            if (signerInfo.signedAttrs) {
-                if (signerInfo.signedAttrs.encodedValue.byteLength !== 0)
-                    data = signerInfo.signedAttrs.encodedValue;
-                else {
-                    data = signerInfo.signedAttrs.toSchema().toBER();
-                    const view = BufferSourceConverter.toUint8Array(data);
-                    view[0] = 0x31;
-                }
+                    signerCertificateVerified: true,
+                    certificatePath
+                };
             }
             else {
-                const eContent = this.encapContentInfo.eContent;
-                if (eContent) {
-                    if ((eContent.idBlock.tagClass === 1) &&
-                        (eContent.idBlock.tagNumber === 4)) {
-                        data = eContent.getValue();
-                    }
-                    else
-                        data = eContent.valueBlock.valueBeforeDecodeView;
-                }
-                else {
-                    if (data.byteLength === 0)
-                        throw new Error("Missed detached data input array");
-                }
+                return verifyResult;
             }
-            const signature = yield crypto.signWithPrivateKey(data, privateKey, parameters);
-            signerInfo.signature = new OctetString({ valueHex: signature });
+        }
+        catch (e) {
+            if (e instanceof SignedDataVerifyError) {
+                throw e;
+            }
+            throw new SignedDataVerifyError({
+                date: checkDate,
+                code: 15,
+                message: `Error during verification: ${e instanceof Error ? e.message : e}`,
+                signatureVerified: null,
+                signerCertificate: signerCert,
+                timestampSerial,
+                signerCertificateVerified: true
+            });
+        }
+    }
+    async sign(privateKey, signerIndex, hashAlgorithm = "SHA-1", data = (EMPTY_BUFFER), crypto = getCrypto(true)) {
+        var _a;
+        if (!privateKey)
+            throw new Error("Need to provide a private key for signing");
+        const signerInfo = this.signerInfos[signerIndex];
+        if (!signerInfo) {
+            throw new RangeError("SignerInfo index is out of range");
+        }
+        if (!((_a = signerInfo.signedAttrs) === null || _a === void 0 ? void 0 : _a.attributes.length) && "hash" in privateKey.algorithm && "hash" in privateKey.algorithm && privateKey.algorithm.hash) {
+            hashAlgorithm = privateKey.algorithm.hash.name;
+        }
+        const hashAlgorithmOID = crypto.getOIDByAlgorithm({ name: hashAlgorithm }, true, "hashAlgorithm");
+        if ((this.digestAlgorithms.filter(algorithm => algorithm.algorithmId === hashAlgorithmOID)).length === 0) {
+            this.digestAlgorithms.push(new AlgorithmIdentifier({
+                algorithmId: hashAlgorithmOID,
+                algorithmParams: new Null()
+            }));
+        }
+        signerInfo.digestAlgorithm = new AlgorithmIdentifier({
+            algorithmId: hashAlgorithmOID,
+            algorithmParams: new Null()
         });
+        const signatureParams = await crypto.getSignatureParameters(privateKey, hashAlgorithm);
+        const parameters = signatureParams.parameters;
+        signerInfo.signatureAlgorithm = signatureParams.signatureAlgorithm;
+        if (signerInfo.signedAttrs) {
+            if (signerInfo.signedAttrs.encodedValue.byteLength !== 0)
+                data = signerInfo.signedAttrs.encodedValue;
+            else {
+                data = signerInfo.signedAttrs.toSchema().toBER();
+                const view = BufferSourceConverter.toUint8Array(data);
+                view[0] = 0x31;
+            }
+        }
+        else {
+            const eContent = this.encapContentInfo.eContent;
+            if (eContent) {
+                if ((eContent.idBlock.tagClass === 1) &&
+                    (eContent.idBlock.tagNumber === 4)) {
+                    data = eContent.getValue();
+                }
+                else
+                    data = eContent.valueBlock.valueBeforeDecodeView.slice().buffer;
+            }
+            else {
+                if (data.byteLength === 0)
+                    throw new Error("Missed detached data input array");
+            }
+        }
+        const signature = await crypto.signWithPrivateKey(data, privateKey, parameters);
+        signerInfo.signature = new OctetString({ valueHex: signature });
     }
 }
 SignedData.CLASS_NAME = "SignedData";
@@ -23488,161 +23990,157 @@ class PFX extends PkiObject {
         }
         return output;
     }
-    makeInternalValues(parameters = {}, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ArgumentError.assert(parameters, "parameters", "object");
-            if (!this.parsedValue) {
-                throw new Error("Please call \"parseValues\" function first in order to make \"parsedValue\" data");
-            }
-            ParameterError.assertEmpty(this.parsedValue.integrityMode, "integrityMode", "parsedValue");
-            ParameterError.assertEmpty(this.parsedValue.authenticatedSafe, "authenticatedSafe", "parsedValue");
-            switch (this.parsedValue.integrityMode) {
-                case 0:
-                    {
-                        if (!("iterations" in parameters))
-                            throw new ParameterError("iterations");
-                        ParameterError.assertEmpty(parameters.pbkdf2HashAlgorithm, "pbkdf2HashAlgorithm");
-                        ParameterError.assertEmpty(parameters.hmacHashAlgorithm, "hmacHashAlgorithm");
-                        ParameterError.assertEmpty(parameters.password, "password");
-                        const saltBuffer = new ArrayBuffer(64);
-                        const saltView = new Uint8Array(saltBuffer);
-                        crypto.getRandomValues(saltView);
-                        const data = this.parsedValue.authenticatedSafe.toSchema().toBER(false);
-                        this.authSafe = new ContentInfo({
-                            contentType: ContentInfo.DATA,
-                            content: new OctetString({ valueHex: data })
-                        });
-                        const result = yield crypto.stampDataWithPassword({
-                            password: parameters.password,
-                            hashAlgorithm: parameters.hmacHashAlgorithm,
-                            salt: saltBuffer,
-                            iterationCount: parameters.iterations,
-                            contentToStamp: data
-                        });
-                        this.macData = new MacData({
-                            mac: new DigestInfo({
-                                digestAlgorithm: new AlgorithmIdentifier({
-                                    algorithmId: crypto.getOIDByAlgorithm({ name: parameters.hmacHashAlgorithm }, true, "hmacHashAlgorithm"),
-                                }),
-                                digest: new OctetString({ valueHex: result })
+    async makeInternalValues(parameters = {}, crypto = getCrypto(true)) {
+        ArgumentError.assert(parameters, "parameters", "object");
+        if (!this.parsedValue) {
+            throw new Error("Please call \"parseValues\" function first in order to make \"parsedValue\" data");
+        }
+        ParameterError.assertEmpty(this.parsedValue.integrityMode, "integrityMode", "parsedValue");
+        ParameterError.assertEmpty(this.parsedValue.authenticatedSafe, "authenticatedSafe", "parsedValue");
+        switch (this.parsedValue.integrityMode) {
+            case 0:
+                {
+                    if (!("iterations" in parameters))
+                        throw new ParameterError("iterations");
+                    ParameterError.assertEmpty(parameters.pbkdf2HashAlgorithm, "pbkdf2HashAlgorithm");
+                    ParameterError.assertEmpty(parameters.hmacHashAlgorithm, "hmacHashAlgorithm");
+                    ParameterError.assertEmpty(parameters.password, "password");
+                    const saltBuffer = new ArrayBuffer(64);
+                    const saltView = new Uint8Array(saltBuffer);
+                    crypto.getRandomValues(saltView);
+                    const data = this.parsedValue.authenticatedSafe.toSchema().toBER(false);
+                    this.authSafe = new ContentInfo({
+                        contentType: ContentInfo.DATA,
+                        content: new OctetString({ valueHex: data })
+                    });
+                    const result = await crypto.stampDataWithPassword({
+                        password: parameters.password,
+                        hashAlgorithm: parameters.hmacHashAlgorithm,
+                        salt: saltBuffer,
+                        iterationCount: parameters.iterations,
+                        contentToStamp: data
+                    });
+                    this.macData = new MacData({
+                        mac: new DigestInfo({
+                            digestAlgorithm: new AlgorithmIdentifier({
+                                algorithmId: crypto.getOIDByAlgorithm({ name: parameters.hmacHashAlgorithm }, true, "hmacHashAlgorithm"),
                             }),
-                            macSalt: new OctetString({ valueHex: saltBuffer }),
-                            iterations: parameters.iterations
-                        });
+                            digest: new OctetString({ valueHex: result })
+                        }),
+                        macSalt: new OctetString({ valueHex: saltBuffer }),
+                        iterations: parameters.iterations
+                    });
+                }
+                break;
+            case 1:
+                {
+                    if (!("signingCertificate" in parameters)) {
+                        throw new ParameterError("signingCertificate");
                     }
-                    break;
-                case 1:
-                    {
-                        if (!("signingCertificate" in parameters)) {
-                            throw new ParameterError("signingCertificate");
-                        }
-                        ParameterError.assertEmpty(parameters.privateKey, "privateKey");
-                        ParameterError.assertEmpty(parameters.hashAlgorithm, "hashAlgorithm");
-                        const toBeSigned = this.parsedValue.authenticatedSafe.toSchema().toBER(false);
-                        const cmsSigned = new SignedData({
-                            version: 1,
-                            encapContentInfo: new EncapsulatedContentInfo({
-                                eContentType: "1.2.840.113549.1.7.1",
-                                eContent: new OctetString({ valueHex: toBeSigned })
-                            }),
-                            certificates: [parameters.signingCertificate]
-                        });
-                        const result = yield crypto.digest({ name: parameters.hashAlgorithm }, new Uint8Array(toBeSigned));
-                        const signedAttr = [];
-                        signedAttr.push(new Attribute({
-                            type: "1.2.840.113549.1.9.3",
-                            values: [
-                                new ObjectIdentifier({ value: "1.2.840.113549.1.7.1" })
-                            ]
-                        }));
-                        signedAttr.push(new Attribute({
-                            type: "1.2.840.113549.1.9.5",
-                            values: [
-                                new UTCTime({ valueDate: new Date() })
-                            ]
-                        }));
-                        signedAttr.push(new Attribute({
-                            type: "1.2.840.113549.1.9.4",
-                            values: [
-                                new OctetString({ valueHex: result })
-                            ]
-                        }));
-                        cmsSigned.signerInfos.push(new SignerInfo({
-                            version: 1,
-                            sid: new IssuerAndSerialNumber({
-                                issuer: parameters.signingCertificate.issuer,
-                                serialNumber: parameters.signingCertificate.serialNumber
-                            }),
-                            signedAttrs: new SignedAndUnsignedAttributes({
-                                type: 0,
-                                attributes: signedAttr
-                            })
-                        }));
-                        yield cmsSigned.sign(parameters.privateKey, 0, parameters.hashAlgorithm, undefined, crypto);
-                        this.authSafe = new ContentInfo({
-                            contentType: "1.2.840.113549.1.7.2",
-                            content: cmsSigned.toSchema(true)
-                        });
-                    }
-                    break;
-                default:
-                    throw new Error(`Parameter "integrityMode" has unknown value: ${this.parsedValue.integrityMode}`);
-            }
-        });
+                    ParameterError.assertEmpty(parameters.privateKey, "privateKey");
+                    ParameterError.assertEmpty(parameters.hashAlgorithm, "hashAlgorithm");
+                    const toBeSigned = this.parsedValue.authenticatedSafe.toSchema().toBER(false);
+                    const cmsSigned = new SignedData({
+                        version: 1,
+                        encapContentInfo: new EncapsulatedContentInfo({
+                            eContentType: "1.2.840.113549.1.7.1",
+                            eContent: new OctetString({ valueHex: toBeSigned })
+                        }),
+                        certificates: [parameters.signingCertificate]
+                    });
+                    const result = await crypto.digest({ name: parameters.hashAlgorithm }, new Uint8Array(toBeSigned));
+                    const signedAttr = [];
+                    signedAttr.push(new Attribute({
+                        type: "1.2.840.113549.1.9.3",
+                        values: [
+                            new ObjectIdentifier({ value: "1.2.840.113549.1.7.1" })
+                        ]
+                    }));
+                    signedAttr.push(new Attribute({
+                        type: "1.2.840.113549.1.9.5",
+                        values: [
+                            new UTCTime({ valueDate: new Date() })
+                        ]
+                    }));
+                    signedAttr.push(new Attribute({
+                        type: "1.2.840.113549.1.9.4",
+                        values: [
+                            new OctetString({ valueHex: result })
+                        ]
+                    }));
+                    cmsSigned.signerInfos.push(new SignerInfo({
+                        version: 1,
+                        sid: new IssuerAndSerialNumber({
+                            issuer: parameters.signingCertificate.issuer,
+                            serialNumber: parameters.signingCertificate.serialNumber
+                        }),
+                        signedAttrs: new SignedAndUnsignedAttributes({
+                            type: 0,
+                            attributes: signedAttr
+                        })
+                    }));
+                    await cmsSigned.sign(parameters.privateKey, 0, parameters.hashAlgorithm, undefined, crypto);
+                    this.authSafe = new ContentInfo({
+                        contentType: "1.2.840.113549.1.7.2",
+                        content: cmsSigned.toSchema(true)
+                    });
+                }
+                break;
+            default:
+                throw new Error(`Parameter "integrityMode" has unknown value: ${this.parsedValue.integrityMode}`);
+        }
     }
-    parseInternalValues(parameters, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            ArgumentError.assert(parameters, "parameters", "object");
-            if (parameters.checkIntegrity === undefined) {
-                parameters.checkIntegrity = true;
-            }
-            this.parsedValue = {};
-            switch (this.authSafe.contentType) {
-                case ContentInfo.DATA:
-                    {
-                        ParameterError.assertEmpty(parameters.password, "password");
-                        this.parsedValue.integrityMode = 0;
-                        ArgumentError.assert(this.authSafe.content, "authSafe.content", OctetString);
-                        const authSafeContent = this.authSafe.content.getValue();
-                        this.parsedValue.authenticatedSafe = AuthenticatedSafe.fromBER(authSafeContent);
-                        if (parameters.checkIntegrity) {
-                            if (!this.macData) {
-                                throw new Error("Absent \"macData\" value, can not check PKCS#12 data integrity");
-                            }
-                            const hashAlgorithm = crypto.getAlgorithmByOID(this.macData.mac.digestAlgorithm.algorithmId, true, "digestAlgorithm");
-                            const result = yield crypto.verifyDataStampedWithPassword({
-                                password: parameters.password,
-                                hashAlgorithm: hashAlgorithm.name,
-                                salt: BufferSourceConverter.toArrayBuffer(this.macData.macSalt.valueBlock.valueHexView),
-                                iterationCount: this.macData.iterations || 1,
-                                contentToVerify: authSafeContent,
-                                signatureToVerify: BufferSourceConverter.toArrayBuffer(this.macData.mac.digest.valueBlock.valueHexView),
-                            });
-                            if (!result) {
-                                throw new Error("Integrity for the PKCS#12 data is broken!");
-                            }
+    async parseInternalValues(parameters, crypto = getCrypto(true)) {
+        ArgumentError.assert(parameters, "parameters", "object");
+        if (parameters.checkIntegrity === undefined) {
+            parameters.checkIntegrity = true;
+        }
+        this.parsedValue = {};
+        switch (this.authSafe.contentType) {
+            case ContentInfo.DATA:
+                {
+                    ParameterError.assertEmpty(parameters.password, "password");
+                    this.parsedValue.integrityMode = 0;
+                    ArgumentError.assert(this.authSafe.content, "authSafe.content", OctetString);
+                    const authSafeContent = this.authSafe.content.getValue();
+                    this.parsedValue.authenticatedSafe = AuthenticatedSafe.fromBER(authSafeContent);
+                    if (parameters.checkIntegrity) {
+                        if (!this.macData) {
+                            throw new Error("Absent \"macData\" value, can not check PKCS#12 data integrity");
                         }
-                    }
-                    break;
-                case ContentInfo.SIGNED_DATA:
-                    {
-                        this.parsedValue.integrityMode = 1;
-                        const cmsSigned = new SignedData({ schema: this.authSafe.content });
-                        const eContent = cmsSigned.encapContentInfo.eContent;
-                        ParameterError.assert(eContent, "eContent", "cmsSigned.encapContentInfo");
-                        ArgumentError.assert(eContent, "eContent", OctetString);
-                        const data = eContent.getValue();
-                        this.parsedValue.authenticatedSafe = AuthenticatedSafe.fromBER(data);
-                        const ok = yield cmsSigned.verify({ signer: 0, checkChain: false }, crypto);
-                        if (!ok) {
+                        const hashAlgorithm = crypto.getAlgorithmByOID(this.macData.mac.digestAlgorithm.algorithmId, true, "digestAlgorithm");
+                        const result = await crypto.verifyDataStampedWithPassword({
+                            password: parameters.password,
+                            hashAlgorithm: hashAlgorithm.name,
+                            salt: BufferSourceConverter.toArrayBuffer(this.macData.macSalt.valueBlock.valueHexView),
+                            iterationCount: this.macData.iterations || 1,
+                            contentToVerify: authSafeContent,
+                            signatureToVerify: BufferSourceConverter.toArrayBuffer(this.macData.mac.digest.valueBlock.valueHexView),
+                        });
+                        if (!result) {
                             throw new Error("Integrity for the PKCS#12 data is broken!");
                         }
                     }
-                    break;
-                default:
-                    throw new Error(`Incorrect value for "this.authSafe.contentType": ${this.authSafe.contentType}`);
-            }
-        });
+                }
+                break;
+            case ContentInfo.SIGNED_DATA:
+                {
+                    this.parsedValue.integrityMode = 1;
+                    const cmsSigned = new SignedData({ schema: this.authSafe.content });
+                    const eContent = cmsSigned.encapContentInfo.eContent;
+                    ParameterError.assert(eContent, "eContent", "cmsSigned.encapContentInfo");
+                    ArgumentError.assert(eContent, "eContent", OctetString);
+                    const data = eContent.getValue();
+                    this.parsedValue.authenticatedSafe = AuthenticatedSafe.fromBER(data);
+                    const ok = await cmsSigned.verify({ signer: 0, checkChain: false }, crypto);
+                    if (!ok) {
+                        throw new Error("Integrity for the PKCS#12 data is broken!");
+                    }
+                }
+                break;
+            default:
+                throw new Error(`Incorrect value for "this.authSafe.contentType": ${this.authSafe.contentType}`);
+        }
     }
 }
 PFX.CLASS_NAME = "PFX";
@@ -24036,19 +24534,15 @@ class TimeStampResp extends PkiObject {
         }
         return res;
     }
-    sign(privateKey, hashAlgorithm, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            this.assertContentType();
-            const signed = new SignedData({ schema: this.timeStampToken.content });
-            return signed.sign(privateKey, 0, hashAlgorithm, undefined, crypto);
-        });
+    async sign(privateKey, hashAlgorithm, crypto = getCrypto(true)) {
+        this.assertContentType();
+        const signed = new SignedData({ schema: this.timeStampToken.content });
+        return signed.sign(privateKey, 0, hashAlgorithm, undefined, crypto);
     }
-    verify(verificationParameters = { signer: 0, trustedCerts: [], data: EMPTY_BUFFER }, crypto = getCrypto(true)) {
-        return __awaiter(this, void 0, void 0, function* () {
-            this.assertContentType();
-            const signed = new SignedData({ schema: this.timeStampToken.content });
-            return signed.verify(verificationParameters, crypto);
-        });
+    async verify(verificationParameters = { signer: 0, trustedCerts: [], data: EMPTY_BUFFER }, crypto = getCrypto(true)) {
+        this.assertContentType();
+        const signed = new SignedData({ schema: this.timeStampToken.content });
+        return signed.verify(verificationParameters, crypto);
     }
     assertContentType() {
         if (!this.timeStampToken) {
@@ -24062,14 +24556,12 @@ class TimeStampResp extends PkiObject {
 TimeStampResp.CLASS_NAME = "TimeStampResp";
 
 function initCryptoEngine() {
-    if (typeof self !== "undefined") {
-        if ("crypto" in self) {
-            let engineName = "webcrypto";
-            if ("webkitSubtle" in self.crypto) {
-                engineName = "safari";
-            }
-            setEngine(engineName, new CryptoEngine({ name: engineName, crypto: crypto }));
+    if (typeof globalThis !== "undefined" && "crypto" in globalThis) {
+        let engineName = "webcrypto";
+        if ("webkitSubtle" in globalThis.crypto) {
+            engineName = "safari";
         }
+        setEngine(engineName, new CryptoEngine({ name: engineName, crypto: globalThis.crypto }));
     }
     else if (typeof crypto !== "undefined" && "webcrypto" in crypto) {
         const name = "NodeJS ^15";

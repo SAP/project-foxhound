@@ -580,6 +580,15 @@ display items created or not. These classes are useful for checking the behaviou
 of retained display lists, where the display list is incrementally updated by
 changes, rather than thrown out and rebuilt from scratch.
 
+WebRender Invalidation Tests: class="reftest-no-wr-raster"
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Works similar to reftest-no-paint. If a test should not result in webrender
+rasterizing any content, this attribute can be added to the html element.
+This is useful for ensuring that webrender correctly handles cases such as
+external scroll coordinate changes or fractional coordinate changes that
+shouldn't results in any new content being rasterized.
+
 Opaque Layer Tests: class="reftest-opaque-layer"
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

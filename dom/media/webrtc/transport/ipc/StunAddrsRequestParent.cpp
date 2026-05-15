@@ -4,16 +4,14 @@
 
 #include "StunAddrsRequestParent.h"
 
+#include "../mdns_service/mdns_service.h"
 #include "../runnable_utils.h"
 #include "mozilla/StaticPtr.h"
 #include "nsIThread.h"
 #include "nsNetUtil.h"
-
 #include "transport/nricectx.h"
 #include "transport/nricemediastream.h"  // needed only for including nricectx.h
 #include "transport/nricestunaddr.h"
-
-#include "../mdns_service/mdns_service.h"
 
 extern "C" {
 #include "local_addr.h"
@@ -192,7 +190,7 @@ void StunAddrsRequestParent::SendStunAddrs_m(const NrIceStunAddrArray& addrs) {
   }
 
   // send the new addresses back to the child
-  Unused << SendOnStunAddrsAvailable(addrs);
+  (void)SendOnStunAddrsAvailable(addrs);
 }
 
 void StunAddrsRequestParent::OnQueryComplete_m(
@@ -205,7 +203,7 @@ void StunAddrsRequestParent::OnQueryComplete_m(
   }
 
   // send the hostname and address back to the child
-  Unused << SendOnMDNSQueryComplete(hostname, address);
+  (void)SendOnMDNSQueryComplete(hostname, address);
 }
 
 StaticRefPtr<StunAddrsRequestParent::MDNSServiceWrapper>

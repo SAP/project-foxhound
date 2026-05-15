@@ -3,13 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAboutProtocolHandler_h___
-#define nsAboutProtocolHandler_h___
+#ifndef nsAboutProtocolHandler_h_
+#define nsAboutProtocolHandler_h_
 
 #include "nsIProtocolHandler.h"
 #include "nsSimpleNestedURI.h"
 #include "nsWeakReference.h"
-#include "mozilla/Attributes.h"
 #include "nsIURIMutator.h"
 
 class nsIURI;
@@ -135,4 +134,4 @@ class nsNestedAboutURI final : public nsSimpleNestedURI {
 }  // namespace net
 }  // namespace mozilla
 
-#endif /* nsAboutProtocolHandler_h___ */
+#endif /* nsAboutProtocolHandler_h_ */

@@ -4,6 +4,7 @@
 
 #include "base/win/win_util.h"
 
+#if !defined(MOZ_ZUCCHINI)
 #include <aclapi.h>
 #include <cfgmgr32.h>
 #include <initguid.h>
@@ -36,7 +37,6 @@
 #include <memory>
 #include <utility>
 
-#if !defined(MOZ_ZUCCHINI)
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -62,6 +62,8 @@
 #include "base/win/static_constants.h"
 #include "base/win/windows_version.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#else
+#include <processthreadsapi.h>
 #endif  // !defined(MOZ_ZUCCHINI)
 
 namespace base {

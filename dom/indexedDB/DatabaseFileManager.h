@@ -9,11 +9,11 @@
 
 #include "FileInfoManager.h"
 #include "IndexedDBCipherKeyManager.h"
+#include "mozilla/InitializedOnce.h"
 #include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/UsageInfo.h"
-#include "mozilla/InitializedOnce.h"
 
 class nsIFile;
 class mozIStorageConnection;

@@ -5,6 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include IPCNavigationPreloadState;
+include "mozilla/dom/cache/IPCUtils.h";
+include "mozilla/dom/WorkerIPCUtils.h";
+
+include IPCStream;
+
+using mozilla::dom::WorkerType
+  from "mozilla/dom/WorkerBinding.h";
 include PBackgroundSharedTypes;
 
 namespace mozilla {
@@ -12,7 +19,12 @@ namespace dom {
 
 struct ServiceWorkerRegistrationData
 {
+  int64_t numberOfAttemptedActivations;
+  bool isBroken;
+  int64_t cacheAPIId;
   nsCString scope;
+  WorkerType type;
+
   nsCString currentWorkerURL;
   bool currentWorkerHandlesFetch;
 

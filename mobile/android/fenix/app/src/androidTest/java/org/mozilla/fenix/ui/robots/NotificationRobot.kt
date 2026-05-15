@@ -9,6 +9,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.uiautomator.UiObject
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
@@ -80,18 +81,13 @@ class NotificationRobot {
     }
 
     fun verifyPrivateTabsNotification() {
-        when (Build.VERSION.SDK_INT) {
-            // For API 34 the notification is slightly different
-            Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-                {
-                    verifySystemNotificationExists(getStringResource(R.string.notification_erase_title_android_14))
-                    verifySystemNotificationExists(getStringResource(R.string.notification_erase_text_android_14))
-                }
-            else ->
-                {
-                    verifySystemNotificationExists("$appName (Private)")
-                    verifySystemNotificationExists("Close private tabs")
-                }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // For API 34+ the notification is slightly different
+            verifySystemNotificationExists(getStringResource(R.string.notification_erase_title_android_14))
+            verifySystemNotificationExists(getStringResource(R.string.notification_erase_text_android_14))
+        } else {
+            verifySystemNotificationExists("$appName (Private)")
+            verifySystemNotificationExists("Close private tabs")
         }
     }
 
@@ -173,6 +169,7 @@ class NotificationRobot {
 
     // Performs swipe action on download system notifications
     fun swipeDownloadNotification(
+        composeTestRule: ComposeTestRule,
         direction: String,
         shouldDismissNotification: Boolean,
         canExpandNotification: Boolean = true,
@@ -189,6 +186,7 @@ class NotificationRobot {
 
                 var retries = 0
                 while (itemContainingText(appName).exists() && retries++ < 3) {
+                    Log.i(TAG, "swipeDownloadNotification: Started try #$retries to swipe $direction the download notification")
                     // Swipe left the download system notification
                     if (direction == "Left") {
                         itemContainingText(appName)
@@ -235,13 +233,13 @@ class NotificationRobot {
                 }
 
                 break
-            } catch (e: AssertionError) {
+            } catch (e: Throwable) {
                 Log.i(TAG, "swipeDownloadNotification: AssertionError caught, executing fallback methods")
                 if (i == RETRY_COUNT) {
                     throw e
                 } else {
                     notificationShade {
-                    }.closeNotificationTray {
+                    }.closeNotificationTray(composeTestRule) {
                     }.openNotificationShade {
                         // The download complete system notification can't be expanded
                         if (canExpandNotification) {
@@ -270,9 +268,9 @@ class NotificationRobot {
         Log.i(TAG, "clickNotification: Clicked the $notificationMessage notification and waited for $waitingTimeShort ms for a new window")
     }
 
-    class Transition {
+    class Transition() {
 
-        fun clickClosePrivateTabsNotification(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+        fun clickClosePrivateTabsNotification(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             try {
                 assertUIObjectExists(closePrivateTabsNotification())
             } catch (e: AssertionError) {
@@ -284,17 +282,17 @@ class NotificationRobot {
             closePrivateTabsNotification().click()
             Log.i(TAG, "clickClosePrivateTabsNotification: Clicked the close private tabs notification")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
-        fun closeNotificationTray(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun closeNotificationTray(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "closeNotificationTray: Trying to click device back button")
             mDevice.pressBack()
             Log.i(TAG, "closeNotificationTray: Clicked device back button")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
     }
 }
@@ -305,17 +303,12 @@ fun notificationShade(interact: NotificationRobot.() -> Unit): NotificationRobot
 }
 
 private fun closePrivateTabsNotification(): UiObject {
-    lateinit var privateTabsNotification: UiObject
-
-    when (Build.VERSION.SDK_INT) {
-        // For API 34 the notification is slightly different
-        Build.VERSION_CODES.UPSIDE_DOWN_CAKE ->
-            privateTabsNotification = mDevice.findObject(UiSelector().text(getStringResource(R.string.notification_erase_title_android_14)))
-        else ->
-            privateTabsNotification = mDevice.findObject(UiSelector().text("Close private tabs"))
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        // For API 34+ the notification is slightly different
+        mDevice.findObject(UiSelector().text(getStringResource(R.string.notification_erase_title_android_14)))
+    } else {
+        mDevice.findObject(UiSelector().text("Close private tabs"))
     }
-
-    return privateTabsNotification
 }
 
 private fun downloadSystemNotificationButton(action: String) =

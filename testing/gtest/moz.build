@@ -18,4 +18,4 @@ if CONFIG["ENABLE_TESTS"]:
         "mozilla/MozGTestBench.h",
     ]
 
-    DIRS += ["benchmark", "mozilla", "../../third_party/googletest"]
+TEST_DIRS += ["benchmark", "mozilla", "../../third_party/googletest"]

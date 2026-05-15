@@ -36,7 +36,11 @@ For options that accept ``true`` or ``false``, ``=true`` can be left off to get 
   Set to ``false`` to disable pinning a shortcut to the taskbar. ``true`` by default.
 
 ``/DesktopShortcut={true,false}``
-  Set to ``false`` to disable creating a shortcut on the desktop. ``true`` by default.
+  Set to ``false`` to disable creating a shortcut on the desktop. ``true`` by default. This option has no effect if ``/DesktopLauncher=true`` is specified.
+
+``/DesktopLauncher={true,false}``
+  Set to ``true`` to install a desktop launcher app to the user's Desktop instead of a traditional shortcut. ``false`` by default. This option overrides ``/DesktopShortcut=true``,
+  causing the desktop launcher app to be installed instead of the desktop shortcut.
 
 ``/StartMenuShortcut={true,false}``
   Set to ``false`` to disable creating a Start menu shortcut. ``true`` by default.

@@ -4,21 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsString.h"
+#include "nsCommandManager.h"
 
+#include "nsCOMArray.h"
+#include "nsContentUtils.h"
 #include "nsIController.h"
 #include "nsIControllers.h"
 #include "nsIObserver.h"
-
-#include "nsServiceManagerUtils.h"
-
-#include "nsContentUtils.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-
-#include "nsCOMArray.h"
-
-#include "nsCommandManager.h"
+#include "nsServiceManagerUtils.h"
+#include "nsString.h"
 
 nsCommandManager::nsCommandManager(mozIDOMWindowProxy* aWindow)
     : mWindow(aWindow) {

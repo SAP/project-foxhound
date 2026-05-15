@@ -1,15 +1,15 @@
 Limit dependencies in file_path.cc
 
-This removes a dependency on safe_base_name.h, pickle.h and sys_string_conversions.h.
+This removes dependencies on safe_base_name.h and pickle.h.
 ---
- base/files/file_path.cc | 10 ++++++++++
- 1 file changed, 10 insertions(+)
+ third_party/zucchini/chromium/base/files/file_path.cc | 8 ++++++++
+ 1 file changed, 8 insertions(+)
 
 diff --git a/base/files/file_path.cc b/base/files/file_path.cc
-index 71ca2666bb97..8b840a62b2f4 100644
+index 71ca2666bb97..cf2a38bd8247 100644
 --- a/base/files/file_path.cc
 +++ b/base/files/file_path.cc
-@@ -9,14 +9,20 @@
+@@ -9,9 +9,13 @@
  #include <algorithm>
  
  #include "base/check_op.h"
@@ -23,14 +23,7 @@ index 71ca2666bb97..8b840a62b2f4 100644
  #include "base/ranges/algorithm.h"
  #include "base/strings/strcat.h"
  #include "base/strings/string_piece.h"
- #include "base/strings/string_util.h"
-+#if !defined(MOZ_ZUCCHINI)
- #include "base/strings/sys_string_conversions.h"
-+#endif  // !defined(MOZ_ZUCCHINI)
- #include "base/strings/utf_string_conversions.h"
- #include "base/trace_event/base_tracing.h"
- 
-@@ -561,9 +567,11 @@ FilePath FilePath::Append(const FilePath& component) const {
+@@ -561,9 +565,11 @@ FilePath FilePath::Append(const FilePath& component) const {
    return Append(component.value());
  }
  
@@ -42,7 +35,7 @@ index 71ca2666bb97..8b840a62b2f4 100644
  
  FilePath FilePath::AppendASCII(StringPiece component) const {
    DCHECK(base::IsStringASCII(component));
-@@ -723,6 +731,7 @@ FilePath FilePath::FromUTF16Unsafe(StringPiece16 utf16) {
+@@ -723,6 +729,7 @@ FilePath FilePath::FromUTF16Unsafe(StringPiece16 utf16) {
  
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -50,7 +43,7 @@ index 71ca2666bb97..8b840a62b2f4 100644
  void FilePath::WriteToPickle(Pickle* pickle) const {
  #if BUILDFLAG(IS_WIN)
    pickle->WriteString16(AsStringPiece16(path_));
-@@ -751,6 +760,7 @@ bool FilePath::ReadFromPickle(PickleIterator* iter) {
+@@ -751,6 +758,7 @@ bool FilePath::ReadFromPickle(PickleIterator* iter) {
  
    return true;
  }

@@ -1,5 +1,3 @@
-import asyncio
-
 import pytest
 
 URL = "https://g1.globo.com/jogos/caca-palavras/"
@@ -24,6 +22,7 @@ async def are_buttons_clipped_or_selection_is_misaligned(client):
             client.css(INTRO_BUTTON_CSS),
         ],
         is_displayed=True,
+        timeout=20,
     )
     if fullsize:
         client.soft_click(fullsize)
@@ -36,32 +35,7 @@ async def are_buttons_clipped_or_selection_is_misaligned(client):
 
     # check that the rightmost button isn't clipped away (isn't just the bgcolor)
     clipped_button = client.await_css(CLIPPED_BUTTON_CSS, is_displayed=True)
-    if client.is_one_solid_color(clipped_button):
-        return True
-
-    letter = client.await_css(FIRST_LETTER_CSS, is_displayed=True)
-    coords = client.get_element_screen_position(letter)
-    coords = [coords[0] + 10, coords[1] + 10]
-    await client.send_apz_mouse_event("down", coords=coords)
-    for i in range(25):
-        await asyncio.sleep(0.01)
-        coords[0] += 5
-        await client.send_apz_mouse_event("move", coords=coords)
-
-    selection = client.await_css(SELECTION_CSS, is_displayed=True)
-    return client.execute_script(
-        """
-        // The letter's CSS boxes are always bigger than their text, and also the selection.
-        // we check that it's more or less centered (possibly off by a pixel).
-        const letter = arguments[0].getBoundingClientRect();
-        const selection = arguments[1].getBoundingClientRect();
-        const halfHeightDiff = ((letter.height - selection.height) / 2) + 1; // can be off by one
-        return Math.abs(selection.bottom - letter.bottom) > halfHeightDiff ||
-               Math.abs(selection.top - letter.top) > halfHeightDiff;
-    """,
-        letter,
-        selection,
-    )
+    return client.is_one_solid_color(clipped_button)
 
 
 @pytest.mark.asyncio

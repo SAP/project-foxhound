@@ -39,6 +39,14 @@ function test() {
   let sandboxTestDone = () => {
     remainingTests = remainingTests - 1;
     if (remainingTests == 0) {
+      // Clean up test file
+      if (homeTestFile.exists()) {
+        ok(homeTestFile.isFile(), "homeTestFile should be a file");
+        if (homeTestFile.isFile()) {
+          homeTestFile.remove(false);
+        }
+      }
+
       Services.obs.removeObserver(sandboxTestResult, "sandbox-test-result");
       Services.obs.removeObserver(sandboxTestDone, "sandbox-test-done");
 
@@ -54,6 +62,17 @@ function test() {
   var comp = Cc["@mozilla.org/sandbox/sandbox-test;1"].getService(
     Ci.mozISandboxTest
   );
+
+  let homeTestFile;
+  try {
+    homeTestFile = Services.dirsvc.get("Home", Ci.nsIFile);
+    homeTestFile.append(".mozilla_gpu_sandbox_read_test");
+    if (!homeTestFile.exists()) {
+      homeTestFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o600);
+    }
+  } catch (e) {
+    ok(false, "Failed to create home test file: " + e);
+  }
 
   comp.startTests(processTypes);
 }

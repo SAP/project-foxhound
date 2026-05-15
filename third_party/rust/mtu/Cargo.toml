@@ -11,10 +11,10 @@
 
 [package]
 edition = "2021"
-rust-version = "1.81.0"
+rust-version = "1.87.0"
 name = "mtu"
-version = "0.2.9"
-authors = ["The Mozilla Necko Team <necko@mozilla.com>"]
+version = "0.3.0"
+authors = ["The Neqo Authors <necko@mozilla.com>"]
 build = "build.rs"
 autolib = false
 autobins = false
@@ -22,8 +22,8 @@ autoexamples = false
 autotests = false
 autobenches = false
 description = "Obtain the local network interface MTU towards a given IP address."
-homepage = "https://github.com/mozilla/mtu/"
-readme = "README.md"
+homepage = "https://github.com/mozilla/neqo/"
+readme = "../README.md"
 keywords = [
     "mozilla",
     "interface",
@@ -34,19 +34,13 @@ categories = [
     "web-programming",
 ]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/mozilla/mtu/"
+repository = "https://github.com/mozilla/neqo/"
 
-[badges.codecov]
-branch = "main"
-repository = "mozilla/mtu"
-
-[badges.is-it-maintained-issue-resolution]
-branch = "main"
-repository = "mozilla/mtu"
-
-[badges.is-it-maintained-open-issues]
-branch = "main"
-repository = "mozilla/mtu"
+[package.metadata.cargo-machete]
+ignored = [
+    "bindgen",
+    "cfg_aliases",
+]
 
 [badges.maintenance]
 branch = "main"
@@ -58,6 +52,12 @@ gecko = ["dep:mozbuild"]
 [lib]
 name = "mtu"
 path = "src/lib.rs"
+bench = false
+
+[[bin]]
+name = "mtu-lookup"
+path = "src/bin/mtu-lookup.rs"
+bench = false
 
 [dependencies.libc]
 version = "0.2"
@@ -68,7 +68,7 @@ version = "1.1"
 default-features = false
 
 [build-dependencies.bindgen]
-version = "0.69"
+version = "0.72"
 features = ["runtime"]
 default-features = false
 
@@ -82,13 +82,14 @@ optional = true
 default-features = false
 
 [target."cfg(windows)".dependencies.windows]
-version = ">=0.58,<0.60"
+version = ">=0.60,<0.63"
 features = [
     "Win32_Foundation",
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
     "Win32_Networking_WinSock",
 ]
+default-features = false
 
 [lints.clippy]
 allow_attributes = "warn"
@@ -99,25 +100,35 @@ create_dir = "warn"
 dbg_macro = "warn"
 empty_drop = "warn"
 empty_enum_variants_with_brackets = "warn"
+field_scoped_visibility_modifiers = "warn"
 filetype_is_file = "warn"
 float_cmp_const = "warn"
 fn_to_numeric_cast_any = "warn"
 get_unwrap = "warn"
 if_then_some_else_none = "warn"
+impl_trait_in_params = "warn"
 infinite_loop = "warn"
+iter_over_hash_type = "warn"
 large_include_file = "warn"
 let_underscore_must_use = "warn"
 let_underscore_untyped = "warn"
-literal_string_with_formatting_args = "allow"
+literal_string_with_formatting_args = "warn"
 lossy_float_literal = "warn"
+map_with_unused_argument_over_ranges = "warn"
 mem_forget = "warn"
+missing_asserts_for_indexing = "warn"
 mixed_read_write_in_expression = "warn"
+module_name_repetitions = "warn"
 multiple_crate_versions = "allow"
 multiple_inherent_impl = "warn"
 mutex_atomic = "warn"
 mutex_integer = "warn"
 needless_raw_strings = "warn"
+non_ascii_literal = "warn"
+non_zero_suggestions = "warn"
+partial_pub_fields = "warn"
 pathbuf_init_then_push = "warn"
+precedence_bits = "warn"
 pub_without_shorthand = "warn"
 rc_buffer = "warn"
 rc_mutex = "warn"
@@ -125,10 +136,10 @@ redundant_type_annotations = "warn"
 ref_patterns = "warn"
 renamed_function_params = "warn"
 rest_pat_in_fully_bound_structs = "warn"
+return_and_then = "warn"
 self_named_module_files = "warn"
 semicolon_inside_block = "warn"
 string_lit_chars_any = "warn"
-string_to_string = "warn"
 suspicious_xor_used_as_pow = "warn"
 try_err = "warn"
 unnecessary_safety_comment = "warn"
@@ -155,10 +166,12 @@ priority = -1
 
 [lints.rust]
 absolute_paths_not_starting_with_crate = "warn"
+ambiguous_negative_literals = "warn"
 explicit_outlives_requirements = "warn"
 macro_use_extern_crate = "warn"
 missing_abi = "warn"
 non_ascii_idents = "warn"
+redundant_imports = "warn"
 redundant_lifetimes = "warn"
 trivial_numeric_casts = "warn"
 unit_bindings = "warn"
@@ -166,3 +179,8 @@ unused_import_braces = "warn"
 unused_lifetimes = "warn"
 unused_macro_rules = "warn"
 unused_qualifications = "warn"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(coverage,coverage_nightly,fuzzing)"]

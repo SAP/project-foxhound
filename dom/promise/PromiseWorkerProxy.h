@@ -8,6 +8,7 @@
 #define mozilla_dom_PromiseWorkerProxy_h
 
 #include <cstdint>
+
 #include "js/TypeDecls.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Mutex.h"

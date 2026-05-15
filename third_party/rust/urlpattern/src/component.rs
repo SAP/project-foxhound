@@ -1,21 +1,22 @@
 // Copyright 2018-2021 the Deno authors. All rights reserved. MIT license.
 
+use crate::Error;
 use crate::canonicalize_and_process::escape_pattern_string;
 use crate::matcher::InnerMatcher;
 use crate::matcher::Matcher;
+use crate::parser::FULL_WILDCARD_REGEXP_VALUE;
 use crate::parser::Options;
 use crate::parser::Part;
 use crate::parser::PartModifier;
 use crate::parser::PartType;
-use crate::parser::FULL_WILDCARD_REGEXP_VALUE;
+use crate::parser::RegexSyntax;
 use crate::regexp::RegExp;
 use crate::tokenizer::is_valid_name_codepoint;
-use crate::Error;
 use std::fmt::Write;
 
 // Ref: https://wicg.github.io/urlpattern/#component
 #[derive(Debug)]
-pub(crate) struct Component<R: RegExp> {
+pub struct Component<R: RegExp> {
   pub pattern_string: String,
   pub regexp: Result<R, Error>,
   pub group_name_list: Vec<String>,
@@ -38,11 +39,18 @@ impl<R: RegExp> Component<R> {
       &options,
       encoding_callback,
     )?;
-    let part_list = part_list.iter().collect::<Vec<_>>();
     let (regexp_string, name_list) =
       generate_regular_expression_and_name_list(&part_list, &options);
     let flags = if options.ignore_case { "ui" } else { "u" };
-    let regexp = R::parse(&regexp_string, flags).map_err(Error::RegExp);
+    let mut regexp =
+      R::parse(&regexp_string, flags, false).map_err(Error::RegExp);
+    if regexp.is_ok() && R::syntax() == RegexSyntax::EcmaScript {
+      for part in part_list.iter() {
+        if part.kind == PartType::Regexp {
+          regexp = R::parse(&regexp_string, flags, true).map_err(Error::RegExp);
+        }
+      }
+    }
     let pattern_string = generate_pattern_string(&part_list, &options);
     let matcher = generate_matcher::<R>(&part_list, &options, flags);
     Ok(Component {
@@ -60,11 +68,9 @@ impl<R: RegExp> Component<R> {
   pub(crate) fn protocol_component_matches_special_scheme(&self) -> bool {
     const SPECIAL_SCHEMES: [&str; 6] =
       ["ftp", "file", "http", "https", "ws", "wss"];
-    if let Ok(regex) = &self.regexp {
-      for scheme in SPECIAL_SCHEMES {
-        if regex.matches(scheme).is_some() {
-          return true;
-        }
+    for scheme in SPECIAL_SCHEMES {
+      if self.matcher.matches(scheme).is_some() {
+        return true;
       }
     }
     false
@@ -98,7 +104,7 @@ impl<R: RegExp> Component<R> {
 
 // Ref: https://wicg.github.io/urlpattern/#generate-a-regular-expression-and-name-list
 fn generate_regular_expression_and_name_list(
-  part_list: &[&Part],
+  part_list: &[Part],
   options: &Options,
 ) -> (String, Vec<String>) {
   let mut result = String::from("^");
@@ -172,15 +178,12 @@ fn generate_regular_expression_and_name_list(
 }
 
 // Ref: https://wicg.github.io/urlpattern/#generate-a-pattern-string
-fn generate_pattern_string(part_list: &[&Part], options: &Options) -> String {
+fn generate_pattern_string(part_list: &[Part], options: &Options) -> String {
   let mut result = String::new();
   for (i, part) in part_list.iter().enumerate() {
-    let prev_part: Option<&Part> = if i == 0 {
-      None
-    } else {
-      part_list.get(i - 1).copied()
-    };
-    let next_part: Option<&Part> = part_list.get(i + 1).copied();
+    let prev_part: Option<&Part> =
+      if i == 0 { None } else { part_list.get(i - 1) };
+    let next_part: Option<&Part> = part_list.get(i + 1);
     if part.kind == PartType::FixedText {
       if part.modifier == PartModifier::None {
         result.push_str(&escape_pattern_string(&part.value));
@@ -223,7 +226,7 @@ fn generate_pattern_string(part_list: &[&Part], options: &Options) -> String {
           kind: PartType::FixedText,
           value,
           ..
-        }) if value.chars().last().unwrap().to_string() == options.prefix_code_point
+        }) if !value.is_empty() && value.chars().last().unwrap().to_string() == options.prefix_code_point
       )
     {
       needs_grouping = true;
@@ -277,7 +280,7 @@ fn generate_pattern_string(part_list: &[&Part], options: &Options) -> String {
 
 /// This function generates a matcher for a given parts list.
 fn generate_matcher<R: RegExp>(
-  mut part_list: &[&Part],
+  mut part_list: &[Part],
   options: &Options,
   flags: &str,
 ) -> Matcher<R> {
@@ -350,7 +353,8 @@ fn generate_matcher<R: RegExp>(
     part_list => {
       let (regexp_string, _) =
         generate_regular_expression_and_name_list(part_list, options);
-      let regexp = R::parse(&regexp_string, flags).map_err(Error::RegExp);
+      let regexp =
+        R::parse(&regexp_string, flags, false).map_err(Error::RegExp);
       InnerMatcher::RegExp { regexp }
     }
   };

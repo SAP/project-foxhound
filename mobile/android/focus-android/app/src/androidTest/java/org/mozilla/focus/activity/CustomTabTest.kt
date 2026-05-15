@@ -21,7 +21,7 @@ import org.mozilla.focus.activity.robots.browserScreen
 import org.mozilla.focus.activity.robots.customTab
 import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MockWebServerHelper
-import org.mozilla.focus.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
 import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
 import org.mozilla.focus.helpers.TestHelper.createCustomTabIntent
 import org.mozilla.focus.helpers.TestHelper.mDevice
@@ -69,7 +69,7 @@ class CustomTabTest : TestSetup() {
     @SmokeTest
     @Test
     fun testCustomTabUI() {
-        val customTabPage = getGenericAsset(webServer)
+        val customTabPage = webServer.genericAsset
         val customTabActivity =
             launchActivity<IntentReceiverActivity>(
                 createCustomTabIntent(customTabPage.url, menuItemTestLabel, actionButtonDescription),
@@ -97,7 +97,7 @@ class CustomTabTest : TestSetup() {
     @SmokeTest
     @Test
     fun openCustomTabInFocusTest() {
-        val customTabPage = getGenericTabAsset(webServer, 1)
+        val customTabPage = webServer.getGenericTabAsset(1)
 
         launchActivity<IntentReceiverActivity>(createCustomTabIntent(customTabPage.url))
         customTab {
@@ -112,8 +112,8 @@ class CustomTabTest : TestSetup() {
     @SmokeTest
     @Test
     fun customTabNavigationButtonsTest() {
-        val firstPage = getGenericTabAsset(webServer, 1)
-        val secondPage = getGenericTabAsset(webServer, 2)
+        val firstPage = webServer.getGenericTabAsset(1)
+        val secondPage = webServer.getGenericTabAsset(2)
 
         launchActivity<IntentReceiverActivity>(createCustomTabIntent(firstPage.url))
         customTab {

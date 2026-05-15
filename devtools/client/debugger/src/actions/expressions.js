@@ -13,7 +13,9 @@ import {
   getCurrentThread,
   isMapScopesEnabled,
 } from "../selectors/index";
-import { PROMISE } from "./utils/middleware/promise";
+const {
+  PROMISE,
+} = require("resource://devtools/client/shared/redux/middleware/promise.js");
 import { wrapExpression } from "../utils/expressions";
 import { features } from "../utils/prefs";
 

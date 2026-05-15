@@ -27,10 +27,7 @@ export class ContentDelegateChild extends GeckoViewActorChild {
           return;
         }
         this.lastViewportFit = viewportFit;
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:DOMMetaViewportFit",
-          viewportfit: viewportFit,
-        });
+        this.sendAsyncMessage("GeckoView:DOMMetaViewportFit", viewportFit);
       }
     );
   }
@@ -179,7 +176,6 @@ export class ContentDelegateChild extends GeckoViewActorChild {
 
         if (uri || isImage || isMedia) {
           const msg = {
-            type: "GeckoView:ContextMenu",
             // We don't have full zoom on Android, so using CSS coordinates
             // here is fine, since the CSS coordinate spaces match between the
             // child and parent processes.
@@ -198,15 +194,19 @@ export class ContentDelegateChild extends GeckoViewActorChild {
               (node.textContent &&
                 node.textContent.substring(0, MAX_TEXT_LENGTH)) ||
               null,
+            linkText:
+              (node.innerText &&
+                node.innerText.substring(0, MAX_TEXT_LENGTH)) ||
+              null,
           };
 
-          this.eventDispatcher.sendRequest(msg);
+          this.sendAsyncMessage("GeckoView:ContextMenu", msg);
           aEvent.preventDefault();
         }
         break;
       }
       case "MozDOMFullscreen:Request": {
-        this.sendAsyncMessage("GeckoView:DOMFullscreenRequest", {});
+        this.sendAsyncMessage("GeckoView:DOMFullscreenRequest");
         break;
       }
       case "MozDOMFullscreen:Entered":
@@ -219,7 +219,7 @@ export class ContentDelegateChild extends GeckoViewActorChild {
         }
       // fall-through
       case "MozDOMFullscreen:Exit":
-        this.sendAsyncMessage("GeckoView:DOMFullscreenExit", {});
+        this.sendAsyncMessage("GeckoView:DOMFullscreenExit");
         break;
       case "DOMMetaViewportFitChanged":
         if (aEvent.originalTarget.ownerGlobal == this.contentWindow) {
@@ -241,24 +241,17 @@ export class ContentDelegateChild extends GeckoViewActorChild {
             this.contentWindow
           );
           if (manifest) {
-            this.eventDispatcher.sendRequest({
-              type: "GeckoView:WebAppManifest",
-              manifest,
-            });
+            this.sendAsyncMessage("GeckoView:WebAppManifest", manifest);
           }
         });
         break;
       }
       case "MozFirstContentfulPaint": {
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:FirstContentfulPaint",
-        });
+        this.sendAsyncMessage("GeckoView:FirstContentfulPaint");
         break;
       }
       case "MozPaintStatusReset": {
-        this.eventDispatcher.sendRequest({
-          type: "GeckoView:PaintStatusReset",
-        });
+        this.sendAsyncMessage("GeckoView:PaintStatusReset");
         break;
       }
     }

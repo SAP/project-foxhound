@@ -26,7 +26,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /**
  * Generates an hash for the given string.
  *
- * @note The generated hash is returned in base64 form.  Mind the fact base64
+ * Note: The generated hash is returned in base64 form.  Mind the fact base64
  * is case-sensitive if you are going to reuse this code.
  */
 function generateHash(aString, hashAlg) {

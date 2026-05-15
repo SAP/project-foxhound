@@ -42,7 +42,7 @@ var systemStatusBarService = {
 /**
  * Helper to test if the indicators are shown based on the params
  *
- * @param {Object}
+ * @param {object}
  *   expectedCount (number) - expected number of indicators turned on
  *   cameraState (boolean) - if the camera indicator should be shown
  *   microphoneState (boolean) - if the microphone indicator should be shown

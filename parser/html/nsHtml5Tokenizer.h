@@ -43,8 +43,10 @@
 #include "nsHtml5NamedCharacters.h"
 #include "nsHtml5NamedCharactersAccel.h"
 #include "nsHtml5String.h"
+#include "nsHtml5TreeBuilder.h"
 #include "nsIContent.h"
 #include "nsTraceRefcnt.h"
+#include "mozilla/htmlaccel/htmlaccelEnabled.h"
 
 class nsHtml5StreamParser;
 
@@ -339,16 +341,12 @@ class nsHtml5Tokenizer {
   void setLineNumber(int32_t line);
   inline int32_t getLineNumber() { return line; }
 
-  nsHtml5HtmlAttributes* emptyAttributes();
-
- private:
-  inline void appendCharRefBuf(char16_t c, const TaintFlow& flow) {
-    MOZ_RELEASE_ASSERT(charRefBufLen < charRefBuf.length,
-                       "Attempted to overrun charRefBuf!");
-    charRefTaint.concat(flow, charRefBufLen);
-    charRefBuf[charRefBufLen++] = c;
+  inline nsHtml5HtmlAttributes* emptyAttributes() {
+    return nsHtml5HtmlAttributes::EMPTY_ATTRIBUTES;
   }
 
+ private:
+  void appendCharRefBuf(char16_t c, const TaintFlow& flow);
   void emitOrAppendCharRefBuf(int32_t returnState);
   inline void clearStrBufAfterUse() { strBufLen = 0; strBufTaint.clear(); }
 
@@ -369,20 +367,45 @@ class nsHtml5Tokenizer {
     MOZ_ASSERT(strBufLen < strBuf.length,
                "Previous buffer length insufficient.");
     if (MOZ_UNLIKELY(strBufLen == strBuf.length)) {
-      if (MOZ_UNLIKELY(!EnsureBufferSpace(1))) {
-        MOZ_CRASH("Unable to recover from buffer reallocation failure");
-      }
+      EnsureBufferSpaceShouldNeverHappen(1);
     }
     strBufTaint.concat(flow, strBufLen);
     strBuf[strBufLen++] = c;
   }
 
  protected:
-  nsHtml5String strBufToString();
+  inline nsHtml5String strBufToString() {
+    nsHtml5String digitAtom = TryAtomizeForSingleDigit();
+    if (digitAtom) {
+      return digitAtom;
+    }
+    bool maybeAtomize = false;
+    if (!newAttributesEachTime) {
+      if (attributeName == nsHtml5AttributeName::ATTR_CLASS ||
+          attributeName == nsHtml5AttributeName::ATTR_TYPE) {
+        maybeAtomize = true;
+      }
+    }
+    nsHtml5String str = nsHtml5Portability::newStringFromBuffer(
+        strBuf, 0, strBufLen, strBufTaint, tokenHandler, maybeAtomize);
+    clearStrBufAfterUse();
+    return str;
+  }
 
  private:
-  void strBufToDoctypeName();
-  void emitStrBuf();
+  inline void strBufToDoctypeName() {
+    doctypeName =
+        nsHtml5Portability::newLocalNameFromBuffer(strBuf, strBufLen, interner);
+    clearStrBufAfterUse();
+  }
+
+  inline void emitStrBuf() {
+    if (strBufLen > 0) {
+      tokenHandler->characters(strBuf, 0, strBufLen);
+      clearStrBufAfterUse();
+    }
+  }
+
   inline void appendSecondHyphenToBogusComment() { appendStrBuf('-', TaintFlow()); }
 
   inline void adjustDoubleHyphenAndAppendToStrBufAndErr(
@@ -391,6 +414,8 @@ class nsHtml5Tokenizer {
   }
 
   void appendStrBuf(char16_t* buffer, int32_t offset, int32_t length, const StringTaint& taint);
+
+
   inline void appendCharRefBufToStrBuf() {
     appendStrBuf(charRefBuf, 0, charRefBufLen, charRefTaint);
     charRefBufLen = 0;
@@ -419,19 +444,45 @@ class nsHtml5Tokenizer {
                     bool reconsume, int32_t returnState, int32_t endPos);
   void initDoctypeFields();
   template <class P>
-  void adjustDoubleHyphenAndAppendToStrBufCarriageReturn();
+  inline void adjustDoubleHyphenAndAppendToStrBufCarriageReturn() {
+    P::silentCarriageReturn(this);
+    adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
+  }
+
   template <class P>
-  void adjustDoubleHyphenAndAppendToStrBufLineFeed();
+  inline void adjustDoubleHyphenAndAppendToStrBufLineFeed() {
+    P::silentLineFeed(this);
+    adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
+  }
+
   template <class P>
-  void appendStrBufLineFeed();
+  inline void appendStrBufLineFeed() {
+    P::silentLineFeed(this);
+    appendStrBuf('\n');
+  }
+
   template <class P>
-  void appendStrBufCarriageReturn();
+  inline void appendStrBufCarriageReturn() {
+    P::silentCarriageReturn(this);
+    appendStrBuf('\n');
+  }
+
   template <class P>
-  void emitCarriageReturn(char16_t* buf, const StringTaint& taint, int32_t pos);
+  inline void emitCarriageReturn(char16_t* buf, const StringTaint& taint, int32_t pos) {
+    P::silentCarriageReturn(this);
+    flushChars(buf, taint, pos);
+    tokenHandler->characters(nsHtml5Tokenizer::LF, 0, 1);
+    cstart = INT32_MAX;
+  }
+
   void emitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
   void maybeEmitReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
   void emitPlaintextReplacementCharacter(char16_t* buf, const StringTaint& taint, int32_t pos);
-  void setAdditionalAndRememberAmpersandLocation(char16_t add);
+  inline void setAdditionalAndRememberAmpersandLocation(char16_t add) {
+    additional = add;
+  }
+
+
   void bogusDoctype();
   void bogusDoctypeWithoutQuirks();
   void handleNcrValue(int32_t returnState);
@@ -441,7 +492,13 @@ class nsHtml5Tokenizer {
 
  private:
   void emitDoctypeToken(int32_t pos);
-  void suspendIfRequestedAfterCurrentNonTextToken();
+  inline void suspendIfRequestedAfterCurrentNonTextToken() {
+    if (suspendAfterCurrentNonTextToken) {
+      suspendAfterCurrentNonTextToken = false;
+      shouldSuspend = true;
+    }
+  }
+
   void suspendAfterCurrentTokenIfNotInText();
   bool suspensionAfterCurrentNonTextTokenPending();
 
@@ -453,8 +510,10 @@ class nsHtml5Tokenizer {
   void emitOrAppendOne(const char16_t* val, const StringTaint& taint, int32_t returnState);
  public:
   void end();
-  void requestSuspension();
-  bool isInDataState();
+  inline void requestSuspension() { shouldSuspend = true; }
+
+  inline bool isInDataState() { return (stateSave == DATA); }
+
   void resetToDataState();
   void loadState(nsHtml5Tokenizer* other);
   void initializeWithoutStarting();

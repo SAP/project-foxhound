@@ -13,10 +13,8 @@ LOCAL_INCLUDES += [
     "/dom/media/webrtc/transport/third_party/nICEr/src/stun",
     "/dom/media/webrtc/transport/third_party/nrappkit/src/event",
     "/dom/media/webrtc/transport/third_party/nrappkit/src/log",
-    "/dom/media/webrtc/transport/third_party/nrappkit/src/plugin",
     "/dom/media/webrtc/transport/third_party/nrappkit/src/port/darwin/include",
     "/dom/media/webrtc/transport/third_party/nrappkit/src/share",
-    "/dom/media/webrtc/transport/third_party/nrappkit/src/stats",
     "/dom/media/webrtc/transport/third_party/nrappkit/src/util/libekr",
     "/ipc/chromium/src",
 ]

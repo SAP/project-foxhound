@@ -33,7 +33,9 @@
       });
 
       add_task(async function testMozToggleProperties() {
-        await testHelpers.testCommonInputProperties("moz-toggle");
+        await testHelpers.testCommonInputProperties("moz-toggle", {
+          type: "button",
+        });
       });
 
       add_task(async function testMozToggleInteraction() {

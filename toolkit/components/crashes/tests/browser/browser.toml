@@ -1,6 +1,6 @@
 [DEFAULT]
 prefs = [
-  "browser.crashReports.crashPull=true",
+  "browser.crashReports.onDemand=true",
   "browser.crashReports.unsubmittedCheck.enabled=true"
 ]
 

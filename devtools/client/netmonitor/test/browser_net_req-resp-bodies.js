@@ -42,7 +42,7 @@ add_task(async function () {
 
   // Reload debugee.
   const wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   // Perform another batch of requests.

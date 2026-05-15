@@ -89,19 +89,27 @@ struct TaskMarker : BaseMarkerType<TaskMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"name", MS::InputType::CString, "Task Name", MS::Format::String,
-       MS::PayloadFlags::Searchable},
+      {
+          "name",
+          MS::InputType::CString,
+          "Task Name",
+          MS::Format::String,
+      },
       {"priority", MS::InputType::Uint32, "Priority level",
        MS::Format::Integer},
-      {"task", MS::InputType::Uint64, "Task", MS::Format::TerminatingFlow,
-       MS::PayloadFlags::Searchable},
+      {
+          "task",
+          MS::InputType::Uint64,
+          "Task",
+          MS::Format::TerminatingFlow,
+      },
       {"priorityName", MS::InputType::CString, "Priority Name"}};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
   static constexpr const char* TableLabel =
-      "{marker.name} - {marker.data.name} - priority: "
+      "{marker.data.name} - priority: "
       "{marker.data.priorityName} ({marker.data.priority})"
       " task: {marker.data.task}";
 
@@ -144,19 +152,27 @@ struct IncompleteTaskMarker : BaseMarkerType<IncompleteTaskMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"name", MS::InputType::CString, "Task Name", MS::Format::String,
-       MS::PayloadFlags::Searchable},
+      {
+          "name",
+          MS::InputType::CString,
+          "Task Name",
+          MS::Format::String,
+      },
       {"priority", MS::InputType::Uint32, "Priority level",
        MS::Format::Integer},
-      {"task", MS::InputType::Uint64, "Task", MS::Format::Flow,
-       MS::PayloadFlags::Searchable},
+      {
+          "task",
+          MS::InputType::Uint64,
+          "Task",
+          MS::Format::Flow,
+      },
       {"priorityName", MS::InputType::CString, "Priority Name"}};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* ChartLabel = "{marker.data.name}";
   static constexpr const char* TableLabel =
-      "{marker.name} - {marker.data.name} - priority: "
+      "{marker.data.name} - priority: "
       "{marker.data.priorityName} ({marker.data.priority})"
       " task: {marker.data.task}";
 
@@ -517,8 +533,10 @@ void TaskController::AddTask(already_AddRefed<Task>&& aTask) {
 #endif
 
   LogTask::LogDispatch(task);
-  PROFILER_MARKER("TaskController::AddTask", OTHER, {}, FlowMarker,
-                  Flow::FromPointer(task.get()));
+  PROFILER_MARKER("TaskController::AddTask", OTHER,
+                  {MarkerStack::MaybeCapture(
+                      profiler_feature_active(ProfilerFeature::Flows))},
+                  FlowMarker, Flow::FromPointer(task.get()));
 
   std::pair<std::set<RefPtr<Task>, Task::PriorityCompare>::iterator, bool>
       insertion;
@@ -888,24 +906,37 @@ void ScheduleWantsLaterTimer(uint32_t aWantsLaterDelay) {
     sIdleMemoryCleanupRunner->Cancel();
     sIdleMemoryCleanupRunner = nullptr;
   }
+  nsresult timerInitOK = NS_OK;
   if (!sIdleMemoryCleanupWantsLater) {
     auto res = NS_NewTimerWithFuncCallback(
         CheckIdleMemoryCleanupNeeded, (void*)"IdleMemoryCleanupWantsLaterCheck",
         aWantsLaterDelay, nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
-        "IdleMemoryCleanupWantsLaterCheck");
+        "IdleMemoryCleanupWantsLaterCheck"_ns);
     if (res.isOk()) {
       sIdleMemoryCleanupWantsLater = res.unwrap().forget();
+    } else {
+      timerInitOK = res.unwrapErr();
     }
   } else {
     if (sIdleMemoryCleanupWantsLaterScheduled) {
       sIdleMemoryCleanupWantsLater->Cancel();
     }
-    sIdleMemoryCleanupWantsLater->InitWithNamedFuncCallback(
+    timerInitOK = sIdleMemoryCleanupWantsLater->InitWithNamedFuncCallback(
         CheckIdleMemoryCleanupNeeded, (void*)"IdleMemoryCleanupWantsLaterCheck",
         aWantsLaterDelay, nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
-        "IdleMemoryCleanupWantsLaterCheck");
+        "IdleMemoryCleanupWantsLaterCheck"_ns);
   }
-  sIdleMemoryCleanupWantsLaterScheduled = true;
+  if (NS_SUCCEEDED(timerInitOK)) {
+    sIdleMemoryCleanupWantsLaterScheduled = true;
+  } else {
+    // Under normal conditions, we would never expect this to fail.
+    MOZ_ASSERT_UNREACHABLE(
+        "ScheduleWantsLaterTimer could not create the timer.");
+    // If we were not able to create/init the timer, we will retry the next
+    // time the main thread is about to fall idle. But if we were to stay
+    // idle, we would never purge without this emergency purge.
+    jemalloc_free_dirty_pages();
+  }
 }
 
 void ScheduleIdleMemoryCleanup(uint32_t aWantsLaterDelay) {
@@ -919,7 +950,7 @@ void ScheduleIdleMemoryCleanup(uint32_t aWantsLaterDelay) {
       [aWantsLaterDelay](TimeStamp aDeadline) {
         return RunIdleMemoryCleanup(aDeadline, aWantsLaterDelay);
       },
-      "TaskController::IdlePurgeRunner", TimeDuration(), maxPurgeDelay,
+      "TaskController::IdlePurgeRunner"_ns, TimeDuration(), maxPurgeDelay,
       minPurgeBudget, true, nullptr, nullptr);
 }
 }  // namespace mozilla
@@ -1032,7 +1063,8 @@ struct IdlePurgeMarker : mozilla::BaseMarkerType<IdlePurgeMarker> {
   static constexpr MS::PayloadField PayloadFields[] = {
       {"num_calls", MS::InputType::Uint32, "Number of PurgeNow() calls",
        MS::Format::Integer},
-      {"next", MS::InputType::CString, "Last result", MS::Format::String}};
+      {"last_result", MS::InputType::CString, "Last result",
+       MS::Format::String}};
 
   static void StreamJSONMarkerData(
       mozilla::baseprofiler::SpliceableJSONWriter& aWriter, uint32_t aNumCalls,
@@ -1479,26 +1511,22 @@ void TaskController::ProcessUpdatedPriorityModifier(TaskManager* aManager) {
 
   int32_t modifier = aManager->mCurrentPriorityModifier;
 
-  std::vector<RefPtr<Task>> storedTasks;
-  // Find all relevant tasks.
-  for (auto iter = mMainThreadTasks.begin(); iter != mMainThreadTasks.end();) {
-    if ((*iter)->mTaskManager == aManager) {
-      storedTasks.push_back(*iter);
-      iter = mMainThreadTasks.erase(iter);
-    } else {
-      iter++;
+  // Find all relevant task nodes and move them to a temporary set with the
+  // new priority modifier.
+  PrioritySortedTasks managerTasks;
+  auto cur = mMainThreadTasks.begin();
+  while (cur != mMainThreadTasks.end()) {
+    // Keep a valid iterator before potentially extracting the current task.
+    auto next = std::next(cur);
+    if (cur->get()->mTaskManager == aManager) {
+      auto task = mMainThreadTasks.extract(cur);
+      task.value()->mPriorityModifier = modifier;
+      managerTasks.insert(std::move(task));
     }
+    cur = std::move(next);
   }
-
-  // Reinsert found tasks with their new priorities.
-  for (RefPtr<Task>& ref : storedTasks) {
-    // Kept alive at first by the vector and then by mMainThreadTasks.
-    Task* task = ref;
-    task->mPriorityModifier = modifier;
-    auto insertion = mMainThreadTasks.insert(std::move(ref));
-    MOZ_ASSERT(insertion.second);
-    task->mIterator = insertion.first;
-  }
+  // Merge the temporary set back to the main set.
+  mMainThreadTasks.merge(std::move(managerTasks));
 }
 
 }  // namespace mozilla

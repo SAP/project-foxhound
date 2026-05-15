@@ -31,11 +31,6 @@ const PACKET_HEADER_MAX = 200;
  * (However, for intra-process connections, LocalDebuggerTransport, below,
  * is more efficient than using an nsIPipe pair with DebuggerTransport.)
  *
- * @param input nsIAsyncInputStream
- *        The input stream.
- * @param output nsIAsyncOutputStream
- *        The output stream.
- *
  * Given a DebuggerTransport instance dt:
  * 1) Set dt.hooks to a packet handler object (described below).
  * 2) Call dt.ready() to begin watching for input packets.
@@ -67,6 +62,7 @@ const PACKET_HEADER_MAX = 200;
  *   * copyTo:       A helper function for getting your data out of the stream that
  *                   meets the stream handling requirements above, and has the
  *                   following signature:
+ *
  *     @param  output nsIAsyncOutputStream
  *                   The stream to copy to.
  *     @return Promise
@@ -91,29 +87,35 @@ const PACKET_HEADER_MAX = 200;
  * See ./packets.js and the Remote Debugging Protocol specification for more
  * details on the format of these packets.
  */
-function DebuggerTransport(input, output) {
-  this._input = input;
-  this._scriptableInput = new ScriptableInputStream(input);
-  this._output = output;
+class DebuggerTransport {
+  /**
+   * @param {nsIAsyncInputStream} input
+   *        The input stream.
+   * @param {nsIAsyncOutputStream} output
+   *        The output stream.
+   */
+  constructor(input, output) {
+    this._input = input;
+    this._scriptableInput = new ScriptableInputStream(input);
+    this._output = output;
 
-  // The current incoming (possibly partial) header, which will determine which
-  // type of Packet |_incoming| below will become.
-  this._incomingHeader = "";
-  // The current incoming Packet object
-  this._incoming = null;
-  // A queue of outgoing Packet objects
-  this._outgoing = [];
+    // The current incoming (possibly partial) header, which will determine which
+    // type of Packet |_incoming| below will become.
+    this._incomingHeader = "";
+    // The current incoming Packet object
+    this._incoming = null;
+    // A queue of outgoing Packet objects
+    this._outgoing = [];
 
-  this.hooks = null;
-  this.active = false;
+    this.hooks = null;
+    this.active = false;
 
-  this._incomingEnabled = true;
-  this._outgoingEnabled = true;
+    this._incomingEnabled = true;
+    this._outgoingEnabled = true;
 
-  this.close = this.close.bind(this);
-}
+    this.close = this.close.bind(this);
+  }
 
-DebuggerTransport.prototype = {
   /**
    * Transmit an object as a JSON packet.
    *
@@ -127,7 +129,7 @@ DebuggerTransport.prototype = {
     packet.object = object;
     this._outgoing.push(packet);
     this._flushOutgoing();
-  },
+  }
 
   /**
    * Transmit streaming data via a bulk packet.
@@ -139,13 +141,13 @@ DebuggerTransport.prototype = {
    * continue to be used by this transport afterwards.  Most users should
    * instead use the provided |copyFrom| or |copyFromBuffer| functions instead.
    *
-   * @param header Object
+   * @param {object} header
    *        This is modeled after the format of JSON packets above, but does not
    *        actually contain the data, but is instead just a routing header:
    *          * actor:  Name of actor that will receive the packet
    *          * type:   Name of actor's method that should be called on receipt
    *          * length: Size of the data to be sent
-   * @return Promise
+   * @return {Promise}
    *         The promise will be resolved when you are allowed to write to the
    *         stream with an object containing:
    *           * stream:         This output stream should only be used directly if
@@ -188,10 +190,11 @@ DebuggerTransport.prototype = {
     this._outgoing.push(packet);
     this._flushOutgoing();
     return packet.streamReadyForWriting;
-  },
+  }
 
   /**
    * Close the transport.
+   *
    * @param reason nsresult / object (optional)
    *        The status code or error message that corresponds to the reason for
    *        closing the transport (likely because a stream closed or failed).
@@ -212,14 +215,14 @@ DebuggerTransport.prototype = {
     } else {
       dumpn("Transport closed.");
     }
-  },
+  }
 
   /**
    * The currently outgoing packet (at the top of the queue).
    */
   get _currentOutgoing() {
     return this._outgoing[0];
-  },
+  }
 
   /**
    * Flush data to the outgoing stream.  Waits until the output stream notifies
@@ -239,7 +242,7 @@ DebuggerTransport.prototype = {
       const threadManager = Cc["@mozilla.org/thread-manager;1"].getService();
       this._output.asyncWait(this, 0, 0, threadManager.currentThread);
     }
-  },
+  }
 
   /**
    * Pause this transport's attempts to write to the output stream.  This is
@@ -248,7 +251,7 @@ DebuggerTransport.prototype = {
    */
   pauseOutgoing() {
     this._outgoingEnabled = false;
-  },
+  }
 
   /**
    * Resume this transport's attempts to write to the output stream.
@@ -256,7 +259,7 @@ DebuggerTransport.prototype = {
   resumeOutgoing() {
     this._outgoingEnabled = true;
     this._flushOutgoing();
-  },
+  }
 
   // nsIOutputStreamCallback
   /**
@@ -264,7 +267,7 @@ DebuggerTransport.prototype = {
    * The current outgoing packet will attempt to write some amount of data, but
    * may not complete.
    */
-  onOutputStreamReady: DevToolsUtils.makeInfallible(function (stream) {
+  onOutputStreamReady = DevToolsUtils.makeInfallible(function (stream) {
     if (!this._outgoingEnabled || this._outgoing.length === 0) {
       return;
     }
@@ -280,7 +283,7 @@ DebuggerTransport.prototype = {
     }
 
     this._flushOutgoing();
-  }, "DebuggerTransport.prototype.onOutputStreamReady"),
+  }, "DebuggerTransport.prototype.onOutputStreamReady");
 
   /**
    * Remove the current outgoing packet from the queue upon completion.
@@ -290,7 +293,7 @@ DebuggerTransport.prototype = {
       this._currentOutgoing.destroy();
       this._outgoing.shift();
     }
-  },
+  }
 
   /**
    * Clear the entire outgoing queue.
@@ -300,7 +303,7 @@ DebuggerTransport.prototype = {
       packet.destroy();
     }
     this._outgoing = [];
-  },
+  }
 
   /**
    * Initialize the input stream for reading. Once this method has been called,
@@ -310,7 +313,7 @@ DebuggerTransport.prototype = {
   ready() {
     this.active = true;
     this._waitForIncoming();
-  },
+  }
 
   /**
    * Asks the input stream to notify us (via onInputStreamReady) when it is
@@ -321,7 +324,7 @@ DebuggerTransport.prototype = {
       const threadManager = Cc["@mozilla.org/thread-manager;1"].getService();
       this._input.asyncWait(this, 0, 0, threadManager.currentThread);
     }
-  },
+  }
 
   /**
    * Pause this transport's attempts to read from the input stream.  This is
@@ -330,7 +333,7 @@ DebuggerTransport.prototype = {
    */
   pauseIncoming() {
     this._incomingEnabled = false;
-  },
+  }
 
   /**
    * Resume this transport's attempts to read from the input stream.
@@ -339,13 +342,13 @@ DebuggerTransport.prototype = {
     this._incomingEnabled = true;
     this._flushIncoming();
     this._waitForIncoming();
-  },
+  }
 
   // nsIInputStreamCallback
   /**
    * Called when the stream is either readable or closed.
    */
-  onInputStreamReady: DevToolsUtils.makeInfallible(function (stream) {
+  onInputStreamReady = DevToolsUtils.makeInfallible(function (stream) {
     try {
       while (
         stream.available() &&
@@ -362,7 +365,7 @@ DebuggerTransport.prototype = {
         throw e;
       }
     }
-  }, "DebuggerTransport.prototype.onInputStreamReady"),
+  }, "DebuggerTransport.prototype.onInputStreamReady");
 
   /**
    * Process the incoming data.  Will create a new currently incoming Packet if
@@ -370,7 +373,8 @@ DebuggerTransport.prototype = {
    * reading may not complete.  The Packet signals that its data is ready for
    * delivery by calling one of this transport's _on*Ready methods (see
    * ./packets.js and the _on*Ready methods below).
-   * @return boolean
+   *
+   * @return {boolean}
    *         Whether incoming stream processing should continue for any
    *         remaining data.
    */
@@ -425,12 +429,13 @@ DebuggerTransport.prototype = {
     // Ready for next packet
     this._flushIncoming();
     return true;
-  },
+  }
 
   /**
    * Read as far as we can into the incoming data, attempting to build up a
    * complete packet header (which terminates with ":").  We'll only read up to
    * PACKET_HEADER_MAX characters.
+   *
    * @return boolean
    *         True if we now have a complete header.
    */
@@ -458,7 +463,7 @@ DebuggerTransport.prototype = {
 
     // Not enough data yet.
     return false;
-  },
+  }
 
   /**
    * If the incoming packet is done, log it as needed and clear the buffer.
@@ -471,7 +476,7 @@ DebuggerTransport.prototype = {
       dumpn("Got: " + this._incoming);
     }
     this._destroyIncoming();
-  },
+  }
 
   /**
    * Handler triggered by an incoming JSONPacket completing it's |read| method.
@@ -486,7 +491,7 @@ DebuggerTransport.prototype = {
         }
       }, "DebuggerTransport instance's this.hooks.onPacket")
     );
-  },
+  }
 
   /**
    * Handler triggered by an incoming BulkPacket entering the |read| phase for
@@ -503,7 +508,7 @@ DebuggerTransport.prototype = {
         }
       }, "DebuggerTransport instance's this.hooks.onBulkPacket")
     );
-  },
+  }
 
   /**
    * Remove all handlers and references related to the current incoming packet,
@@ -515,7 +520,7 @@ DebuggerTransport.prototype = {
     }
     this._incomingHeader = "";
     this._incoming = null;
-  },
-};
+  }
+}
 
 exports.DebuggerTransport = DebuggerTransport;

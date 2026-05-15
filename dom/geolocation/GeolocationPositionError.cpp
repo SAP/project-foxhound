@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/GeolocationPositionError.h"
-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
-#include "mozilla/CycleCollectedJSContext.h"  // for nsAutoMicroTask
+
 #include "Geolocation.h"
+#include "mozilla/CycleCollectedJSContext.h"  // for nsAutoMicroTask
+#include "mozilla/dom/GeolocationPositionErrorBinding.h"
 
 extern mozilla::LazyLogModule gGeolocationLog;
 

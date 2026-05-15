@@ -143,7 +143,7 @@ function populateWebGLCanvases(contextOptions = {}) {
   // with some minor modifications
 
   const data = {};
-  const suffix = contextOptions.forceSoftwareRendering ? "software" : "";
+  const suffix = contextOptions.forceSoftwareRendering ? "Software" : "";
 
   // --------------------------------------------------------------------
   // initBuffers
@@ -453,6 +453,9 @@ function populateWebGLCanvases(contextOptions = {}) {
     pixels
   );
   data["canvasdata11Webgl" + suffix] = sha1Uint8Array(pixels);
+  data["canvasdata11Webgl" + suffix + "Raw"] = btoa(
+    String.fromCharCode.apply(null, pixels)
+  );
 
   return data;
 }
@@ -638,6 +641,7 @@ async function populateMediaCapabilities() {
 async function populateAudioFingerprint() {
   // Trimmed down version of https://github.com/fingerprintjs/fingerprintjs/blob/c463ca034747df80d95cc96a0a9c686d8cd001a5/src/sources/audio.ts
   // At that time, fingerprintjs was licensed with MIT.
+  // Extended with detailed metrics from CreepJS audio fingerprinting
   const hashFromIndex = 4500;
   const hashToIndex = 5000;
   const context = new window.OfflineAudioContext(1, hashToIndex, 44100);
@@ -653,7 +657,12 @@ async function populateAudioFingerprint() {
   compressor.attack.value = 0;
   compressor.release.value = 0.25;
 
+  // Create analyser for frequency/time domain data
+  const analyser = context.createAnalyser();
+
+  // Connect audio graph: oscillator → compressor → analyser → destination
   oscillator.connect(compressor);
+  compressor.connect(analyser);
   compressor.connect(context.destination);
   oscillator.start(0);
 
@@ -665,6 +674,60 @@ async function populateAudioFingerprint() {
         return "TIMEOUT";
       }
       throw error;
+    }
+  );
+
+  // Collect detailed metrics from analyser and compressor
+  const detailedMetricsPromise = renderPromise.then(
+    buffer => {
+      const bins = buffer.getChannelData(0);
+
+      // 1. Compressor Gain Reduction
+      const compressorGainReduction = String(
+        compressor.reduction?.value ?? compressor.reduction ?? 0
+      );
+
+      // 2. Float Frequency Data Sum
+      const floatFrequencyData = new Float32Array(analyser.frequencyBinCount);
+      analyser.getFloatFrequencyData(floatFrequencyData);
+      const floatFrequencySum = String(
+        [...floatFrequencyData].reduce((acc, n) => acc + Math.abs(n), 0)
+      );
+
+      // 3. Float Time Domain Data Sum
+      let floatTimeDomainSum = "0";
+      if ("getFloatTimeDomainData" in analyser) {
+        const floatTimeDomainData = new Float32Array(analyser.fftSize);
+        analyser.getFloatTimeDomainData(floatTimeDomainData);
+        floatTimeDomainSum = String(
+          [...floatTimeDomainData].reduce((acc, n) => acc + Math.abs(n), 0)
+        );
+      }
+
+      // 4. Sample Snapshot Hash (100 samples from 4500-4600)
+      const sampleSnapshot = [...bins].slice(4500, 4600);
+      const sampleHash = hashAudioSamples(sampleSnapshot);
+
+      // 5. Unique Sample Count
+      const uniqueSamples = new Set(bins).size;
+
+      return {
+        audioCompressorGainReduction: compressorGainReduction,
+        audioFloatFrequencySum: floatFrequencySum,
+        audioFloatTimeDomainSum: floatTimeDomainSum,
+        audioFingerprint2: sampleHash,
+        audioUniqueSamples: uniqueSamples,
+      };
+    },
+    _error => {
+      // Return empty values on error
+      return {
+        audioCompressorGainReduction: "0",
+        audioFloatFrequencySum: "0",
+        audioFloatTimeDomainSum: "0",
+        audioFingerprint2: "00000000",
+        audioUniqueSamples: 0,
+      };
     }
   );
 
@@ -758,17 +821,413 @@ async function populateAudioFingerprint() {
     return hash * 10e13;
   }
 
+  function hashAudioSamples(samples) {
+    // Sum absolute values of samples (matching CreepJS approach), then convert to hex
+    const sum = samples.reduce((acc, n) => acc + Math.abs(n), 0);
+    const hash = Math.floor(sum * 1000000)
+      .toString(16)
+      .substring(0, 8);
+    return hash;
+  }
+
   finishRendering();
 
-  return {
-    audioFingerprint: fingerprintPromise,
-  };
+  // Wait for both promises and merge results
+  const combinedPromise = Promise.all([
+    fingerprintPromise,
+    detailedMetricsPromise,
+  ]).then(([fingerprint, detailedMetrics]) => ({
+    audioFingerprint: fingerprint,
+    ...detailedMetrics,
+  }));
+
+  return combinedPromise;
 }
 
 async function populateCSSQueries() {
   return {
     monochrome: matchMedia("(monochrome)").matches,
   };
+}
+
+async function populateCSSSystemColors() {
+  const systemColors = [
+    "Canvas",
+    "CanvasText",
+    "LinkText",
+    "VisitedText",
+    "ActiveText",
+    "ButtonFace",
+    "ButtonText",
+    "ButtonBorder",
+    "ButtonHighlight",
+    "Field",
+    "FieldText",
+    "Highlight",
+    "HighlightText",
+    "SelectedItem",
+    "SelectedItemText",
+    "AccentColor",
+    "AccentColorText",
+    "Mark",
+    "MarkText",
+    "GrayText",
+    "ActiveBorder",
+    "ActiveCaption",
+    "AppWorkspace",
+    "Background",
+    "ButtonShadow",
+    "CaptionText",
+    "InactiveBorder",
+    "InactiveCaption",
+    "InactiveCaptionText",
+    "InfoBackground",
+    "InfoText",
+    "Menu",
+    "MenuText",
+    "Scrollbar",
+    "ThreeDDarkShadow",
+    "ThreeDFace",
+    "ThreeDHighlight",
+    "ThreeDLightShadow",
+    "ThreeDShadow",
+    "Window",
+    "WindowFrame",
+    "WindowText",
+  ];
+
+  const rgbToHex = rgb => {
+    const match = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!match) {
+      return rgb;
+    }
+    const [, r, g, b] = match;
+    return [r, g, b]
+      .map(x => parseInt(x, 10).toString(16).padStart(2, "0"))
+      .join("")
+      .toUpperCase();
+  };
+
+  const div = document.createElement("div");
+  document.body.appendChild(div);
+
+  const results = [];
+  for (const colorName of systemColors) {
+    div.style.backgroundColor = "";
+    div.style.backgroundColor = colorName;
+    if (!div.style.backgroundColor) {
+      results.push({ [colorName]: null });
+    } else {
+      results.push({
+        [colorName]: rgbToHex(getComputedStyle(div).backgroundColor),
+      });
+    }
+  }
+
+  document.body.removeChild(div);
+
+  return {
+    cssSystemColors: JSON.stringify(results),
+  };
+}
+
+async function populateCSSSystemFonts() {
+  const systemFonts = [
+    "caption",
+    "icon",
+    "menu",
+    "message-box",
+    "small-caption",
+    "status-bar",
+    "serif",
+    "sans-serif",
+    "monospace",
+    "cursive",
+    "fantasy",
+    "system-ui",
+    "Arial",
+    "Helvetica",
+    "Times New Roman",
+    "Courier New",
+    "Verdana",
+    "Georgia",
+  ];
+
+  const div = document.createElement("div");
+  div.textContent = "Test";
+  document.body.appendChild(div);
+
+  const results = [];
+  for (const fontName of systemFonts) {
+    div.style.fontFamily = fontName;
+    const computed = getComputedStyle(div);
+    const value = computed.fontSize + " " + computed.fontFamily;
+    results.push({ [fontName]: value });
+  }
+
+  document.body.removeChild(div);
+
+  return {
+    cssSystemFonts: JSON.stringify(results),
+  };
+}
+
+async function populateClientRects() {
+  function serializeDOMRect(rect) {
+    if (!rect) {
+      return null;
+    }
+    return {
+      b: rect.bottom,
+      h: rect.height,
+      l: rect.left,
+      r: rect.right,
+      t: rect.top,
+      w: rect.width,
+      x: rect.x,
+      y: rect.y,
+    };
+  }
+
+  const container = document.createElement("div");
+  container.style.cssText = "position: absolute; left: -9999px; width: 100px;";
+  document.body.appendChild(container);
+
+  const testElements = [
+    { border: "2.715px", padding: "3.98px", marginLeft: "12.12px" },
+    { border: "5px", padding: "10px", marginLeft: "20px" },
+    { border: "1.5px", padding: "2.5px", marginLeft: "5.5px" },
+    { border: "3px", padding: "7px", marginLeft: "15px" },
+    { border: "4.25px", padding: "6.75px", marginLeft: "10.5px" },
+    { border: "2px", padding: "5px", marginLeft: "8px" },
+    { border: "6px", padding: "12px", marginLeft: "25px" },
+    { border: "1px", padding: "1px", marginLeft: "3px" },
+    { border: "3.5px", padding: "8.5px", marginLeft: "18.5px" },
+    { border: "4px", padding: "9px", marginLeft: "22px" },
+    { border: "2.25px", padding: "4.25px", marginLeft: "7.25px" },
+    { border: "5.5px", padding: "11.5px", marginLeft: "28.5px" },
+  ];
+
+  const elementMeasurements = [];
+  for (let i = 0; i < testElements.length; i++) {
+    const elem = document.createElement("div");
+    const style = testElements[i];
+    elem.style.cssText = `
+      border: ${style.border} solid red;
+      padding: ${style.padding};
+      margin-left: ${style.marginLeft};
+      width: 50px;
+      height: 20px;
+    `;
+    elem.textContent = "test";
+    container.appendChild(elem);
+    elementMeasurements.push(elem);
+  }
+
+  const results = {};
+
+  for (let i = 0; i < elementMeasurements.length; i++) {
+    const elem = elementMeasurements[i];
+    const metricNum = String(i + 1).padStart(2, "0");
+
+    const elemGCR = elem.getClientRects()[0];
+    results[`clientrectsElementGcr${metricNum}`] = JSON.stringify(
+      serializeDOMRect(elemGCR)
+    );
+
+    const elemGBCR = elem.getBoundingClientRect();
+    results[`clientrectsElementGbcr${metricNum}`] = JSON.stringify(
+      serializeDOMRect(elemGBCR)
+    );
+
+    const range = document.createRange();
+    range.selectNodeContents(elem);
+    const rangeGCR = range.getClientRects()[0];
+    results[`clientrectsRangeGcr${metricNum}`] = JSON.stringify(
+      serializeDOMRect(rangeGCR)
+    );
+
+    const rangeNode = document.createRange();
+    rangeNode.selectNode(elem);
+    const rangeNodeGBCR = rangeNode.getBoundingClientRect();
+    results[`clientrectsRangeGbcr${metricNum}`] = JSON.stringify(
+      serializeDOMRect(rangeNodeGBCR)
+    );
+  }
+
+  const knownElement = document.createElement("div");
+  knownElement.style.cssText =
+    "width: 100px; height: 100px; border: 10px solid red;";
+  knownElement.textContent = "known";
+  container.appendChild(knownElement);
+  const knownRect = knownElement.getBoundingClientRect();
+  results.clientrectsKnownDimensions = JSON.stringify(
+    serializeDOMRect(knownRect)
+  );
+
+  const ghostElement = document.createElement("div");
+  ghostElement.style.cssText = "width: 0; height: 0;";
+  container.appendChild(ghostElement);
+  const ghostRect = ghostElement.getBoundingClientRect();
+  results.clientrectsGhostDimensions = JSON.stringify(
+    serializeDOMRect(ghostRect)
+  );
+
+  results.clientrectsTextFontFamily = getComputedStyle(knownElement).fontFamily;
+
+  const emojiDiv = document.createElement("div");
+  emojiDiv.style.cssText = "font-size: 200px;";
+  container.appendChild(emojiDiv);
+
+  const emojis = ["👾", "🤖", "🦄", "🎃", "🎨", "🌈"];
+
+  for (let i = 0; i < emojis.length; i++) {
+    emojiDiv.textContent = emojis[i];
+    const rect = emojiDiv.getBoundingClientRect();
+    const metricNum = String(i + 1).padStart(2, "0");
+    results[`clientrectsEmoji${metricNum}`] = JSON.stringify(
+      serializeDOMRect(rect)
+    );
+  }
+  results.clientrectsEmojiFontFamily = getComputedStyle(emojiDiv).fontFamily;
+
+  document.body.removeChild(container);
+
+  return results;
+}
+
+async function populateSVGRect() {
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  const EMOJIS = [
+    "\u{1F600}",
+    "\u263A",
+    "\u{1F9D5}\u200D\u2642\uFE0F",
+    "\u2670",
+    "\u2638",
+    "\u26A7",
+    "\u2049",
+    "\u2139",
+    "\u{1F3F3}\uFE0F\u200D\u26A7\uFE0F",
+    "\u{1F972}",
+    "\u2639",
+    "\u2620",
+    "\u{1F9D1}\u200D\u{1F9B0}",
+    "\u{1F9CF}\u200D\u2642\uFE0F",
+    "\u26F7",
+    "\u{1F9D1}\u200D\u{1F91D}\u200D\u{1F9D1}",
+    "\u2618",
+    "\u26F0",
+    "\u26E9",
+    "\u26F4",
+    "\u2708",
+    "\u23F1",
+    "\u26C8",
+    "\u26C2",
+    "\u26F1",
+    "\u26C3",
+    "\u26C4",
+    "\u26F8",
+    "\u264F",
+    "\u26D1",
+    "\u2328",
+    "\u26F9",
+    "\u270F",
+  ];
+
+  const CSS_FONT_FAMILY = `
+    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji', 'EmojiOne Color', 'Android Emoji',
+    sans-serif
+  `.trim();
+
+  const container = document.createElement("div");
+  container.id = "svg-container";
+  container.style.cssText = "position: absolute; left: -9999px; height: auto;";
+  document.body.appendChild(container);
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  const g = document.createElementNS(SVG_NS, "g");
+  g.id = "svgBox";
+  svg.appendChild(g);
+
+  const textElements = [];
+  for (const emoji of EMOJIS) {
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", "32");
+    text.setAttribute("y", "32");
+    text.setAttribute("class", "svgrect-emoji");
+    text.style.cssText = `
+      font-family: ${CSS_FONT_FAMILY};
+      font-size: 200px;
+      position: absolute;
+      transform: scale(1.000999);
+    `;
+    text.textContent = emoji;
+    g.appendChild(text);
+    textElements.push(text);
+  }
+
+  container.appendChild(svg);
+
+  function serializeSVGRect(rect) {
+    if (!rect) {
+      return null;
+    }
+    return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
+  }
+
+  const results = {};
+
+  try {
+    const bbox = g.getBBox();
+    results.svgBbox = JSON.stringify(serializeSVGRect(bbox));
+  } catch {
+    results.svgBbox = null;
+  }
+
+  try {
+    results.svgComputedTextLength = textElements[0]
+      .getComputedTextLength()
+      .toString();
+  } catch {
+    results.svgComputedTextLength = null;
+  }
+
+  try {
+    const extent = textElements[0].getExtentOfChar(0);
+    results.svgExtentOfChar = JSON.stringify(serializeSVGRect(extent));
+  } catch {
+    results.svgExtentOfChar = null;
+  }
+
+  try {
+    const numChars = textElements[0].getNumberOfChars();
+    results.svgSubstringLength = textElements[0]
+      .getSubStringLength(0, Math.min(10, numChars))
+      .toString();
+  } catch {
+    results.svgSubstringLength = null;
+  }
+
+  const pattern = new Set();
+  const emojiSet = [];
+  for (let i = 0; i < textElements.length; i++) {
+    try {
+      const dimensions = String(textElements[i].getComputedTextLength());
+      if (!pattern.has(dimensions)) {
+        pattern.add(dimensions);
+        emojiSet.push(EMOJIS[i]);
+      }
+    } catch {
+      // Skip failed measurements
+    }
+  }
+  results.svgEmojiSet = JSON.stringify(emojiSet);
+
+  document.body.removeChild(container);
+
+  return results;
 }
 
 async function populateNavigatorProperties() {
@@ -863,7 +1322,16 @@ async function populateICEFoundations() {
       })
       .catch(reject);
 
-    return promise;
+    // Add timeout to prevent hanging indefinitely
+    const timeout = setTimeout(() => {
+      pc.close();
+      resolve(result);
+    }, 5000);
+
+    return promise.then(res => {
+      clearTimeout(timeout);
+      return res;
+    });
   }
 
   // Run get candidates multiple times to see if foundation order changes
@@ -896,6 +1364,54 @@ async function populateICEFoundations() {
     iceSd: sd,
     iceOrder: Object.keys(foundations).length,
   };
+}
+
+async function populateSDPCodecList() {
+  if (!window.RTCPeerConnection) {
+    return {};
+  }
+  if (window.location.hash === "#automation") {
+    return {};
+  }
+
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  pc.createDataChannel("fp");
+
+  const offer = await pc.createOffer();
+  pc.close();
+
+  // Extract codec-related SDP lines (strip session-specific values)
+  const lines = offer.sdp.split("\r\n");
+  const codecLines = lines.filter(
+    l =>
+      l.startsWith("m=") ||
+      l.startsWith("a=rtpmap:") ||
+      l.startsWith("a=fmtp:") ||
+      l.startsWith("a=rtcp-fb:")
+  );
+
+  return { sdpCodecList: JSON.stringify(codecLines) };
+}
+
+async function populateWebAuthnCapabilities() {
+  if (!window.PublicKeyCredential) {
+    return {};
+  }
+  if (!PublicKeyCredential.getClientCapabilities) {
+    return {};
+  }
+
+  const caps = await PublicKeyCredential.getClientCapabilities();
+  return { webauthnCapabilities: JSON.stringify(caps) };
+}
+
+async function populateStorageQuota() {
+  if (!navigator.storage || !navigator.storage.estimate) {
+    return {};
+  }
+
+  const estimate = await navigator.storage.estimate();
+  return { storageQuota: Math.round(estimate.quota / 1048576) };
 }
 
 async function populateSensorInfo() {
@@ -971,29 +1487,82 @@ async function populateMathML() {
   // FPJS reports that height of elements fluctuates.
   // https://github.com/fingerprintjs/fingerprintjs/blob/143479cba3d4bfd6f2cd773c61c26e8e74a70c06/src/sources/font_preferences.ts#L128-L132
   // We use getBoundingClientRect().width and not offsetWidth as math elements don't have a offsetWidth property.
-  const mathElements = [...document.querySelectorAll("math[id]")];
 
-  return mathElements.reduce((acc, el) => {
-    // We multiply by 10^15 to include the decimal part.
+  // Old metrics: collect elements with numeric IDs (1-10)
+  const oldMathElements = [...document.querySelectorAll("math[id]")].filter(
+    el => /^\d+$/.test(el.id)
+  );
+  const oldMetrics = oldMathElements.reduce((acc, el) => {
     acc["mathml" + el.id] = el.getBoundingClientRect().width.toString();
     return acc;
   }, {});
+
+  // New metrics: collect elements with "new-" prefix as an array
+  const newMathElements = [...document.querySelectorAll("math[id^='new-']")];
+  const mathmlValues = newMathElements.map(
+    el => el.getBoundingClientRect().width
+  );
+
+  // Get the actual font-family being used for MathML rendering
+  const firstMathElement = document.querySelector("math");
+  const mathmlFontFamily = firstMathElement
+    ? getComputedStyle(firstMathElement).fontFamily
+    : "";
+
+  return {
+    ...oldMetrics,
+    mathmlDiagValues: mathmlValues,
+    mathmlDiagFontFamily: mathmlFontFamily,
+  };
 }
 
 async function populateAudioDeviceProperties() {
   const ctx = new AudioContext();
-  await ctx.resume();
+
+  try {
+    // Add a timeout to prevent hanging indefinitely if the user has no audio hardware
+    await Promise.race([
+      ctx.resume(),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("AudioContext.resume() timeout")),
+          5000
+        )
+      ),
+    ]);
+  } catch (e) {
+    throw new Error(
+      "AudioContext.resume error, probably a timeout, user may not have audio hardware"
+    );
+  }
 
   // Give firefox some time to calculate latency
   await new Promise(resolve => setTimeout(resolve, 2000));
 
   // All the other properties (min/max decibels, smoothingTimeConstant,
   // fftSize, frequencyBinCount, baseLatency) are hardcoded.
-  return {
+  const result = {
     audioFrames: ctx.outputLatency * ctx.sampleRate,
     audioRate: ctx.sampleRate,
     audioChannels: ctx.destination.maxChannelCount,
   };
+  return result;
+}
+
+async function populateTimezoneWeb() {
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const offset = new Date().getTimezoneOffset();
+    return {
+      timezoneWeb: timezone || "",
+      timezoneOffsetWeb: String(offset),
+    };
+  } catch (e) {
+    return {
+      timezoneWeb: "",
+      timezoneOffsetWeb: "0",
+    };
+  }
 }
 
 // A helper function to generate an array of asynchronous functions to populate
@@ -1058,11 +1627,19 @@ async function startPopulating() {
     populateAudioFingerprint,
     populatePointerInfo,
     populateICEFoundations,
+    populateSDPCodecList,
+    populateWebAuthnCapabilities,
+    populateStorageQuota,
     populateSensorInfo,
     populateMathML,
     populateCSSQueries,
+    populateCSSSystemColors,
+    populateCSSSystemFonts,
+    populateClientRects,
+    populateSVGRect,
     populateNavigatorProperties,
     populateAudioDeviceProperties,
+    populateTimezoneWeb,
   ];
   // Catches errors in promise-creating functions. E.g. if populateVoiceList
   // throws an error before returning any of its `key: (Promise<any> | any)`

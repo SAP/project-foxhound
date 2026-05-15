@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsAutoWindowStateHelper_h
-#define __nsAutoWindowStateHelper_h
+#ifndef _nsAutoWindowStateHelper_h
+#define _nsAutoWindowStateHelper_h
 
 #include "nsCOMPtr.h"
 #include "nsPIDOMWindow.h"

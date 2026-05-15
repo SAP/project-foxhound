@@ -418,7 +418,7 @@ add_task(async function test_cfr_notification_minimize_2() {
 
   Assert.ok(
     document.getElementById("contextual-feature-recommendation-notification"),
-    "The notification should not dissapear"
+    "The notification should not disappear"
   );
 
   await BrowserTestUtils.waitForCondition(
@@ -635,6 +635,62 @@ add_task(async function test_matchPattern() {
   await BrowserTestUtils.waitForCondition(
     () => frequentVisitsTrigger._visits.get("example.com").length === 1,
     "Registered pattern matched the current location"
+  );
+
+  BrowserTestUtils.startLoadingURIString(browser, "about:config");
+  await BrowserTestUtils.browserLoaded(browser, false, "about:config");
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "Navigated to a new page but not a match"
+  );
+
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
+  await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "Navigated to a location that matches the pattern but within 15 mins"
+  );
+
+  BrowserTestUtils.startLoadingURIString(browser, "http://www.example.com/");
+  await BrowserTestUtils.browserLoaded(
+    browser,
+    false,
+    "http://www.example.com/"
+  );
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("www.example.com").length === 1,
+    "www.example.com is a different host that also matches the pattern."
+  );
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "www.example.com is a different host that also matches the pattern."
+  );
+
+  ASRouterTriggerListeners.get("frequentVisits").uninit();
+  Services.fog.testResetFOG();
+});
+
+add_task(async function test_matchRegex() {
+  let count = 0;
+  const triggerHandler = () => ++count;
+  const frequentVisitsTrigger = ASRouterTriggerListeners.get("frequentVisits");
+  await frequentVisitsTrigger.init(
+    triggerHandler,
+    [],
+    [],
+    ["example\\.com/?$"]
+  );
+
+  const browser = gBrowser.selectedBrowser;
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
+  await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "Registered regex matched the current location"
   );
 
   BrowserTestUtils.startLoadingURIString(browser, "about:config");

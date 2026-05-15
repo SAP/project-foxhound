@@ -8,15 +8,12 @@ import android.content.Context
 import androidx.annotation.VisibleForTesting
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import mozilla.components.service.pocket.mars.SponsoredContentsUseCases
 import mozilla.components.service.pocket.recommendations.ContentRecommendationsUseCases
-import mozilla.components.service.pocket.spocs.SpocsUseCases
 import mozilla.components.service.pocket.stories.PocketStoriesUseCases
 import mozilla.components.service.pocket.update.ContentRecommendationsRefreshScheduler
 import mozilla.components.service.pocket.update.PocketStoriesRefreshScheduler
-import mozilla.components.service.pocket.update.SpocsRefreshScheduler
 import mozilla.components.service.pocket.update.SponsoredContentsRefreshScheduler
 
 /**
@@ -33,9 +30,6 @@ class PocketStoriesService(
     internal var storiesRefreshScheduler = PocketStoriesRefreshScheduler(pocketStoriesConfig)
 
     @VisibleForTesting
-    internal var spocsRefreshscheduler = SpocsRefreshScheduler(pocketStoriesConfig)
-
-    @VisibleForTesting
     internal var contentRecommendationsRefreshScheduler =
         ContentRecommendationsRefreshScheduler(pocketStoriesConfig)
 
@@ -48,21 +42,6 @@ class PocketStoriesService(
         appContext = context,
         fetchClient = pocketStoriesConfig.client,
     )
-
-    @VisibleForTesting
-    internal var spocsUseCases = when (pocketStoriesConfig.profile) {
-        null -> {
-            logger.debug("Missing profile for sponsored stories")
-            null
-        }
-        else -> SpocsUseCases(
-            appContext = context,
-            fetchClient = pocketStoriesConfig.client,
-            profileId = pocketStoriesConfig.profile.profileId,
-            appId = pocketStoriesConfig.profile.appId,
-            sponsoredStoriesParams = pocketStoriesConfig.sponsoredStoriesParams,
-        )
-    }
 
     @VisibleForTesting
     internal var contentRecommendationsUseCases = ContentRecommendationsUseCases(
@@ -117,69 +96,6 @@ class PocketStoriesService(
     }
 
     /**
-     * Entry point to start fetching Pocket sponsored stories in the background.
-     *
-     * Use this at an as high as possible level in your application.
-     * Must be paired in a similar way with the [stopPeriodicSponsoredStoriesRefresh] method.
-     *
-     * This starts the process of downloading and caching Pocket sponsored stories in the background,
-     * making them available for the [getSponsoredStories] method.
-     */
-    fun startPeriodicSponsoredStoriesRefresh() {
-        val useCases = spocsUseCases
-        if (useCases == null) {
-            logger.warn("Cannot start sponsored stories refresh. Service has incomplete setup")
-            return
-        }
-
-        GlobalDependencyProvider.SponsoredStories.initialize(useCases)
-        spocsRefreshscheduler.stopProfileDeletion(context)
-        spocsRefreshscheduler.schedulePeriodicRefreshes(context)
-    }
-
-    /**
-     * Single stopping point for the "refresh sponsored Pocket stories" functionality.
-     *
-     * Use this at an as high as possible level in your application.
-     * Must be paired in a similar way with the [startPeriodicSponsoredStoriesRefresh] method.
-     *
-     * This stops the process of downloading and caching Pocket sponsored stories in the background.
-     */
-    fun stopPeriodicSponsoredStoriesRefresh() {
-        spocsRefreshscheduler.stopPeriodicRefreshes(context)
-    }
-
-    /**
-     * Fetch sponsored Pocket stories and refresh the locally persisted list.
-     */
-    suspend fun refreshSponsoredStories() {
-        spocsUseCases?.refreshStories?.invoke()
-    }
-
-    /**
-     * Get a list of Pocket sponsored stories based on the initial configuration.
-     */
-    suspend fun getSponsoredStories(): List<PocketSponsoredStory> {
-        return spocsUseCases?.getStories?.invoke() ?: emptyList()
-    }
-
-    /**
-     * Delete all stored user data used for downloading personalized sponsored stories.
-     * This returns immediately but will handle the profile deletion in background.
-     */
-    fun deleteProfile() {
-        val useCases = spocsUseCases
-        if (useCases == null) {
-            logger.warn("Cannot delete sponsored stories profile. Service has incomplete setup")
-            return
-        }
-
-        GlobalDependencyProvider.SponsoredStories.initialize(useCases)
-        spocsRefreshscheduler.stopPeriodicRefreshes(context)
-        spocsRefreshscheduler.scheduleProfileDeletion(context)
-    }
-
-    /**
      * Update how many times certain stories were shown to the user.
      *
      * Safe to call from any background thread.
@@ -187,15 +103,6 @@ class PocketStoriesService(
      */
     suspend fun updateStoriesTimesShown(updatedStories: List<PocketRecommendedStory>) {
         storiesUseCases.updateTimesShown(updatedStories)
-    }
-
-    /**
-     * Persist locally that the sponsored Pocket stories containing the ids from [storiesShown]
-     * were shown to the user.
-     * This is safe to call with any ids, even ones for stories not currently persisted anymore.
-     */
-    suspend fun recordStoriesImpressions(storiesShown: List<Int>) {
-        spocsUseCases?.recordImpression?.invoke(storiesShown)
     }
 
     /**

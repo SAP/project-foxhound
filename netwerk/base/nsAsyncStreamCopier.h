@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAsyncStreamCopier_h__
-#define nsAsyncStreamCopier_h__
+#ifndef nsAsyncStreamCopier_h_
+#define nsAsyncStreamCopier_h_
 
 #include "nsIAsyncStreamCopier.h"
 #include "nsIAsyncStreamCopier2.h"
@@ -73,4 +73,4 @@ class nsAsyncStreamCopier final : public nsIAsyncStreamCopier,
   friend class AsyncApplyBufferingPolicyEvent;
 };
 
-#endif  // !nsAsyncStreamCopier_h__
+#endif  // !nsAsyncStreamCopier_h_

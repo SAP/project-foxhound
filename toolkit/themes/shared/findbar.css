@@ -64,7 +64,7 @@ xul|findbar {
   background-color: var(--input-bgcolor, var(--toolbar-field-background-color));
   color: var(--input-color, var(--toolbar-field-color));
   border: 1px solid var(--input-border-color);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   outline: none;
   margin: 0;
   padding: 2px 5px;
@@ -115,7 +115,7 @@ xul|findbar {
   -moz-context-properties: fill;
   fill: var(--toolbarbutton-icon-fill);
   color: inherit;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 
   &:focus-visible {
     outline: var(--focus-outline);
@@ -130,7 +130,7 @@ xul|findbar {
     background-color: var(--toolbarbutton-active-background, rgba(190, 190, 190, 0.4));
   }
 
-  &[disabled="true"] > .toolbarbutton-icon {
+  &[disabled] > .toolbarbutton-icon {
     opacity: var(--toolbarbutton-disabled-opacity);
   }
 }
@@ -159,10 +159,16 @@ xul|findbar {
 }
 
 .findbar-find-status[status="notfound"] {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .find-status-icon {
+  display: none;
+}
+
+/* Since the find bar is not fully responsive, and most checkboxes cannot fit
+ * within the width of a single split-view panel, we hide them. */
+.split-view-panel .findbar-container > checkbox {
   display: none;
 }
 

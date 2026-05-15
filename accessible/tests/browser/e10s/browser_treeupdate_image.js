@@ -159,7 +159,7 @@ addAccessibleTask(
     // Remove the presentation role. The accessible should be created.
     info(`Removing presentation role from img id ${IMG_ID}`);
     const shown = waitForEvent(EVENT_SHOW, IMG_ID);
-    await invokeSetAttribute(browser, IMG_ID, "role", "");
+    await invokeSetAttribute(browser, IMG_ID, "role");
     await shown;
     let tree = {
       role: ROLE_GRAPHIC,

@@ -17,7 +17,7 @@
         android:layout_height="wrap_content"
         android:paddingBottom="@dimen/preference_padding_vertical"
         android:text="@string/preference_exceptions_description"
-        android:textAppearance="?android:attr/textAppearanceListItemSecondary"
+        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
         android:textColor="?android:attr/textColorSecondary" />
 
     <androidx.recyclerview.widget.RecyclerView

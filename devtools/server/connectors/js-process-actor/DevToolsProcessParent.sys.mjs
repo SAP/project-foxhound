@@ -206,7 +206,7 @@ export class DevToolsProcessParent extends JSProcessActorParent {
 
   #onConnectionClosed = (status, prefix) => {
     for (const watcherInfo of this.#watchers.values()) {
-      if (watcherInfo.watcher.conn.prefix == prefix) {
+      if (watcherInfo.watcher.conn?.prefix == prefix) {
         this.#unregisterWatcher(watcherInfo.watcher);
       }
     }

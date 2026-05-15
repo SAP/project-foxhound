@@ -10,7 +10,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1412485
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  /** Test for Bug 1412485 **/
+  /** Test for Bug 1412485 */
   SimpleTest.waitForExplicitFinish();
 
   function testExistenceOfLegacyTouchAPIs(win, enabled) {
@@ -43,11 +43,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1412485
                                        ["dom.w3c_touch_events.legacy_apis.enabled", true]]},
       function() {
         var iframe = document.createElement("iframe");
-        document.body.appendChild(iframe);
         iframe.onload = function() {
           testExistenceOfLegacyTouchAPIs(iframe.contentWindow, true);
           SimpleTest.finish();
         }
+        document.body.appendChild(iframe);
       });
   }
 

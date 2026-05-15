@@ -10,29 +10,45 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import mozilla.components.compose.base.snackbar.SnackbarTimeout
 import org.mozilla.fenix.compose.core.Action
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.ext.settings
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal const val UNDO_DELAY = 3000L
-internal const val ACCESSIBLE_UNDO_DELAY = 15000L
-
 /**
  * Get the recommended time an "undo" action should be available until it can automatically be
  * dismissed. The delay may be different based on the accessibility settings of the device.
+ *
+ * @return The undo delay as a [Long] in milliseconds.
  */
 fun Context.getUndoDelay(): Long {
     return if (settings().accessibilityServicesEnabled) {
-        ACCESSIBLE_UNDO_DELAY
+        SnackbarTimeout.Accessible.value
     } else {
-        UNDO_DELAY
+        SnackbarTimeout.Action.value
     }
 }
 
 /**
- * Runs [operation] after giving user time (see [UNDO_DELAY]) to cancel it.
+ * Get the recommended [SnackbarTimeout] a Snackbar should be displayed for.
+ * The timeout may be different based on the accessibility settings of the device.
+ *
+ * @return The undo delay as a [SnackbarTimeout].
+ */
+fun Context.getSnackbarTimeout(hasAction: Boolean = false): SnackbarTimeout {
+    return if (settings().accessibilityServicesEnabled) {
+        SnackbarTimeout.Accessible
+    } else if (hasAction) {
+        SnackbarTimeout.Action
+    } else {
+        SnackbarTimeout.Default
+    }
+}
+
+/**
+ * Runs [operation] after giving user time (see [Context.getUndoDelay]) to cancel it.
  * In case of cancellation, [onCancel] is executed.
  *
  * Execution of suspend blocks happens on [Dispatchers.Main].

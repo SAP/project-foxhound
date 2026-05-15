@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HTTPSRecordResolver_h__
-#define HTTPSRecordResolver_h__
+#ifndef HTTPSRecordResolver_h_
+#define HTTPSRecordResolver_h_
 
 #include "mozilla/Mutex.h"
 #include "nsICancelable.h"
@@ -52,4 +52,4 @@ class HTTPSRecordResolver : public nsIDNSListener {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // HTTPSRecordResolver_h__
+#endif  // HTTPSRecordResolver_h_

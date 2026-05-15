@@ -9,12 +9,8 @@ with Files("**"):
 
 XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.toml"]
 
-EXTRA_JS_MODULES["services-crypto"] += [
+MOZ_SRC_FILES += [
     "modules/jwcrypto.sys.mjs",
     "modules/utils.sys.mjs",
     "modules/WeaveCrypto.sys.mjs",
-]
-
-EXTRA_COMPONENTS += [
-    "cryptoComponents.manifest",
 ]

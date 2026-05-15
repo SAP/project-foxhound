@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AndroidNativeWindow_h__
-#define AndroidNativeWindow_h__
+#ifndef AndroidNativeWindow_h_
+#define AndroidNativeWindow_h_
 
 #include <jni.h>
 #include <android/native_window.h>
@@ -47,4 +47,4 @@ class AndroidNativeWindow final {
 }  // namespace gl
 }  // namespace mozilla
 
-#endif  // AndroidNativeWindow_h__
+#endif  // AndroidNativeWindow_h_

@@ -120,8 +120,7 @@ For example, in this code block:
 There should exist a ``us`` and ``uk`` folder in the ``locales`` directory
 of the extension, ``web``.
 
-If a locale is not provided, ``webExtension.locales`` is set to
-``SearchUtils.DEFAULT_TAG``.
+If a locale is not provided, ``webExtension.locales`` is set to ``default``.
 
 `Search Extensions directory <https://searchfox.org/mozilla-central/source/browser/components/search/extensions>`__
 

@@ -29,7 +29,7 @@ class ParserAtomsTable;
 // the same node (unchanged or modified in place) or a new node.
 //
 // Usage:
-//    MOZ_TRY_VAR(pn, parser->statement());
+//    pn = MOZ_TRY(parser->statement());
 //    if (!FoldConstants(fc, parserAtoms, bigInts, &pn, parser)) {
 //        return errorResult();
 //    }

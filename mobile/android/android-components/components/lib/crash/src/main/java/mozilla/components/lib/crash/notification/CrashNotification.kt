@@ -17,7 +17,6 @@ import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.crash.R
 import mozilla.components.lib.crash.prompt.CrashPrompt
 import mozilla.components.support.base.ids.SharedIdsHelper
-import mozilla.components.support.utils.PendingIntentUtils
 
 private const val NOTIFICATION_SDK_LEVEL = 29 // On Android Q+ we show a notification instead of a prompt
 
@@ -37,7 +36,7 @@ internal class CrashNotification(
             context,
             SharedIdsHelper.getNextIdForTag(context, PENDING_INTENT_TAG),
             CrashPrompt.createIntent(context, crash),
-            getNotificationFlag(),
+            PendingIntent.FLAG_IMMUTABLE,
         )
 
         val channel = ensureChannelExists(context)
@@ -107,23 +106,19 @@ internal class CrashNotification(
         }
 
         fun ensureChannelExists(context: Context): String {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val notificationManager: NotificationManager = context.getSystemService(
-                    Context.NOTIFICATION_SERVICE,
-                ) as NotificationManager
+            val notificationManager: NotificationManager = context.getSystemService(
+                Context.NOTIFICATION_SERVICE,
+            ) as NotificationManager
 
-                val channel = NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    context.getString(R.string.mozac_lib_crash_channel),
-                    NotificationManager.IMPORTANCE_DEFAULT,
-                )
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                context.getString(R.string.mozac_lib_crash_channel),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            )
 
-                notificationManager.createNotificationChannel(channel)
-            }
+            notificationManager.createNotificationChannel(channel)
 
             return NOTIFICATION_CHANNEL_ID
         }
     }
-
-    private fun getNotificationFlag() = PendingIntentUtils.defaultFlags
 }

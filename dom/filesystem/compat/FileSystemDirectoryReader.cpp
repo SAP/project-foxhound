@@ -5,16 +5,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileSystemDirectoryReader.h"
+
 #include "CallbackRunnables.h"
 #include "FileSystemFileEntry.h"
 #include "js/Array.h"               // JS::NewArrayObject
 #include "js/PropertyAndElement.h"  // JS_GetElement
+#include "mozilla/dom/Directory.h"
+#include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/FileSystem.h"
 #include "mozilla/dom/FileSystemDirectoryReaderBinding.h"
 #include "mozilla/dom/FileSystemUtils.h"
-#include "mozilla/dom/Directory.h"
-#include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 

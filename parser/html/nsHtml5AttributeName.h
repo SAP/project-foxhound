@@ -283,6 +283,7 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_RENDERING_INTENT;
   static nsHtml5AttributeName* ATTR_SHADOWROOTMODE;
   static nsHtml5AttributeName* ATTR_SEED;
+  static nsHtml5AttributeName* ATTR_SHADOWROOTREFERENCETARGET;
   static nsHtml5AttributeName* ATTR_SHADOWROOTCLONABLE;
   static nsHtml5AttributeName* ATTR_SHADOWROOTSERIALIZABLE;
   static nsHtml5AttributeName* ATTR_SRCDOC;

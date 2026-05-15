@@ -6,8 +6,8 @@
 #define mozilla_dom_RemoteWorkerOp_h
 
 #include "mozilla/RefPtr.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/Variant.h"
+#include "mozilla/dom/WorkerPrivate.h"
 
 namespace mozilla::dom {
 

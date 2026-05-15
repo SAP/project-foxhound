@@ -11,8 +11,8 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "nsPIDOMWindow.h"
+#include "nsWrapperCache.h"
 
 namespace IPC {
 template <class P>

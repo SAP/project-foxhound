@@ -69,20 +69,27 @@ fn status_to_nsresult(status: &Result<Result<JobStatus, HResultMessage>, PipeErr
 
 /// This function takes the output of BitsMonitorClient::get_status() and uses
 /// it to determine the result value of the request. This will take the form of
-/// an Optional ErrorType value with a None value indicating success.
+/// an Optional ErrorType value with a None value indicating success, along with
+/// an Option<i32> error code if available.
 fn status_to_request_result(
     status: &Result<Result<JobStatus, HResultMessage>, PipeError>,
-) -> Option<ErrorType> {
+) -> (Option<ErrorType>, Option<i32>) {
     match status.as_ref() {
         Ok(Ok(job_status)) => match job_status.state {
-            BitsJobState::Transferred | BitsJobState::Acknowledged => None,
-            BitsJobState::Cancelled => Some(ErrorType::BitsStateCancelled),
-            BitsJobState::Error => Some(ErrorType::BitsStateError),
-            BitsJobState::TransientError => Some(ErrorType::BitsStateTransientError),
-            _ => Some(ErrorType::BitsStateUnexpected),
+            BitsJobState::Transferred | BitsJobState::Acknowledged => (None, None),
+            BitsJobState::Cancelled => (Some(ErrorType::BitsStateCancelled), None),
+            BitsJobState::Error => {
+                let error_code = job_status.error.as_ref().map(|e| e.error.hr);
+                (Some(ErrorType::BitsStateError), error_code)
+            }
+            BitsJobState::TransientError => {
+                let error_code = job_status.error.as_ref().map(|e| e.error.hr);
+                (Some(ErrorType::BitsStateTransientError), error_code)
+            }
+            _ => (Some(ErrorType::BitsStateUnexpected), None),
         },
-        Ok(Err(_)) => Some(ErrorType::FailedToGetJobStatus),
-        Err(pipe_error) => Some(pipe_error.into()),
+        Ok(Err(_)) => (Some(ErrorType::FailedToGetJobStatus), None),
+        Err(pipe_error) => (Some(pipe_error.into()), None),
     }
 }
 
@@ -210,10 +217,8 @@ impl MonitorRunnable {
                 }
 
                 if transfer_completed(&status) {
-                    request.on_stop(Some((
-                        status_to_nsresult(&status),
-                        status_to_request_result(&status),
-                    )));
+                    let (error_type, error_code) = status_to_request_result(&status);
+                    request.on_stop(Some((status_to_nsresult(&status), error_type, error_code)));
 
                     // Transfer completed. No need to dispatch back to the monitor thread.
                     None

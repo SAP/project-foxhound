@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env mozilla/browser-window */
 
 "use strict";
 
@@ -23,7 +22,6 @@
           <html:button id="visible-page" class="screenshot-button footer-button" data-l10n-id="screenshots-save-visible-button"></html:button>
           <html:button id="full-page" class="screenshot-button footer-button primary" data-l10n-id="screenshots-save-page-button"></html:button>
         </html:moz-button-group>
-
       `;
     }
 
@@ -36,55 +34,62 @@
       return ScreenshotsButtons.#template;
     }
 
+    get buttonGroup() {
+      return this.shadowRoot?.querySelector("moz-button-group");
+    }
+    get visibleButton() {
+      return this.shadowRoot?.getElementById("visible-page");
+    }
+    get fullpageButton() {
+      return this.shadowRoot?.getElementById("full-page");
+    }
+
     connectedCallback() {
-      const shadowRoot = this.attachShadow({ mode: "open" });
-      document.l10n.connectRoot(shadowRoot);
-
-      this.shadowRoot.append(ScreenshotsButtons.fragment);
-
-      let visibleButton = shadowRoot.getElementById("visible-page");
-      visibleButton.onclick = function () {
-        ScreenshotsUtils.takeScreenshot(gBrowser.selectedBrowser, "Visible");
-      };
-
-      let fullpageButton = shadowRoot.getElementById("full-page");
-      fullpageButton.onclick = function () {
-        ScreenshotsUtils.takeScreenshot(gBrowser.selectedBrowser, "FullPage");
-      };
+      if (this.shadowRoot) {
+        this.ownerDocument.l10n.connectRoot(this.shadowRoot);
+      } else {
+        const shadowRoot = this.attachShadow({ mode: "open" });
+        this.ownerDocument.l10n.connectRoot(shadowRoot);
+        shadowRoot.append(ScreenshotsButtons.fragment.cloneNode(true));
+      }
+      this.buttonGroup.addEventListener("click", this);
     }
 
     disconnectedCallback() {
-      document.l10n.disconnectRoot(this.shadowRoot);
+      this.ownerDocument.l10n.disconnectRoot(this.shadowRoot);
+      this.buttonGroup.removeEventListener("click", this);
+    }
+
+    handleEvent(event) {
+      switch (event.target) {
+        case this.visibleButton:
+          ScreenshotsUtils.takeScreenshot(gBrowser.selectedBrowser, "Visible");
+          break;
+        case this.fullpageButton:
+          ScreenshotsUtils.takeScreenshot(gBrowser.selectedBrowser, "FullPage");
+          break;
+      }
     }
 
     /**
      * Focus the last used button.
      * This will default to the visible page button.
-     * @param {String} buttonToFocus
+     *
+     * @param {string} buttonToFocus
      */
     async focusButton(buttonToFocus) {
-      await this.shadowRoot.querySelector("moz-button-group").updateComplete;
+      await this.buttonGroup.updateComplete;
       if (buttonToFocus === "fullpage") {
-        this.shadowRoot
-          .getElementById("full-page")
-          .focus({ focusVisible: true });
+        this.fullpageButton.focus({ focusVisible: true });
       } else if (buttonToFocus === "first") {
-        this.shadowRoot
-          .querySelector("moz-button-group")
-          .firstElementChild.focus({ focusVisible: true });
+        this.buttonGroup.firstElementChild.focus({ focusVisible: true });
       } else if (buttonToFocus === "last") {
-        this.shadowRoot
-          .querySelector("moz-button-group")
-          .lastElementChild.focus({ focusVisible: true });
+        this.buttonGroup.lastElementChild.focus({ focusVisible: true });
       } else {
-        this.shadowRoot
-          .getElementById("visible-page")
-          .focus({ focusVisible: true });
+        this.visibleButton.focus({ focusVisible: true });
       }
     }
   }
 
-  customElements.define("screenshots-buttons", ScreenshotsButtons, {
-    extends: "toolbar",
-  });
+  customElements.define("screenshots-buttons", ScreenshotsButtons);
 }

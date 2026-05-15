@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import org.mozilla.gecko.util.GeckoBundle;
 
+/** Configuration settings for a GeckoSession. */
 @AnyThread
 public final class GeckoSessionSettings implements Parcelable {
 
@@ -26,12 +27,16 @@ public final class GeckoSessionSettings implements Parcelable {
   public static final class Builder {
     private final GeckoSessionSettings mSettings;
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /** Creates a new Builder with default settings. */
     public Builder() {
       mSettings = new GeckoSessionSettings();
     }
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Creates a Builder initialized from an existing GeckoSessionSettings instance.
+     *
+     * @param settings the existing settings to copy
+     */
     public Builder(final GeckoSessionSettings settings) {
       mSettings = new GeckoSessionSettings(settings);
     }
@@ -195,6 +200,7 @@ public final class GeckoSessionSettings implements Parcelable {
 
   /** This value is for the display member of Web App Manifests */
   @Retention(RetentionPolicy.SOURCE)
+  /** Display mode type definitions for web app manifest display modes. */
   @IntDef({
     DISPLAY_MODE_BROWSER,
     DISPLAY_MODE_MINIMAL_UI,
@@ -216,7 +222,7 @@ public final class GeckoSessionSettings implements Parcelable {
   /** "fullscreen" value of the display member in Web App Manifests */
   public static final int DISPLAY_MODE_FULLSCREEN = 3;
 
-  /** The user agent string mode */
+  /** User agent mode type definitions for user agent string modes. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     USER_AGENT_MODE_MOBILE,
@@ -254,6 +260,11 @@ public final class GeckoSessionSettings implements Parcelable {
    */
   public static final int VIEWPORT_MODE_DESKTOP = 1;
 
+  /**
+   * Typed key for GeckoSessionSettings entries.
+   *
+   * @param <T> the type of values allowed for this key
+   */
   public static class Key<T> {
     /* package */ final String name;
     /* package */ final boolean initOnly;
@@ -348,12 +359,16 @@ public final class GeckoSessionSettings implements Parcelable {
   private final GeckoSession mSession;
   private final GeckoBundle mBundle;
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /** Creates a new GeckoSessionSettings with default configuration. */
   public GeckoSessionSettings() {
     this(null, null);
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Creates a copy of the given GeckoSessionSettings.
+   *
+   * @param settings The existing settings to copy.
+   */
   public GeckoSessionSettings(final @NonNull GeckoSessionSettings settings) {
     this(settings, null);
   }
@@ -709,12 +724,16 @@ public final class GeckoSessionSettings implements Parcelable {
     mBundle.writeToParcel(out, flags);
   }
 
-  // AIDL code may call readFromParcel even though it's not part of Parcelable.
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Reads session settings from the given Parcel. This may be called by AIDL code.
+   *
+   * @param source Parcel containing the serialized GeckoSessionSettings.
+   */
   public void readFromParcel(final @NonNull Parcel source) {
     mBundle.readFromParcel(source);
   }
 
+  /** Creator used by the Android framework to deserialize GeckoSessionSettings from a Parcel. */
   public static final Parcelable.Creator<GeckoSessionSettings> CREATOR =
       new Parcelable.Creator<GeckoSessionSettings>() {
         @Override

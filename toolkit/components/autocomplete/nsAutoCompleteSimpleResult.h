@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsAutoCompleteSimpleResult__
-#define __nsAutoCompleteSimpleResult__
+#ifndef _nsAutoCompleteSimpleResult_
+#define _nsAutoCompleteSimpleResult_
 
 #include "nsIAutoCompleteResult.h"
 #include "nsIAutoCompleteSimpleResult.h"
@@ -11,7 +11,6 @@
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 
 struct AutoCompleteSimpleResultMatch {
   AutoCompleteSimpleResultMatch(const nsAString& aValue,
@@ -60,4 +59,4 @@ class nsAutoCompleteSimpleResult final : public nsIAutoCompleteSimpleResult {
   nsCOMPtr<nsIAutoCompleteSimpleResultListener> mListener;
 };
 
-#endif  // __nsAutoCompleteSimpleResult__
+#endif  // _nsAutoCompleteSimpleResult_

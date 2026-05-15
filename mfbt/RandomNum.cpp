@@ -6,8 +6,8 @@
 
 #include "mozilla/RandomNum.h"
 
-#include <fcntl.h>
 #ifdef XP_UNIX
+#  include <fcntl.h>
 #  include <unistd.h>
 #endif
 
@@ -30,7 +30,6 @@ extern "C" BOOLEAN NTAPI RtlGenRandom(PVOID RandomBuffer,
 #if defined(ANDROID) || defined(XP_DARWIN) || defined(__DragonFly__) ||    \
     defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || \
     defined(__wasi__)
-#  include <stdlib.h>
 #  define USE_ARC4RANDOM
 #endif
 

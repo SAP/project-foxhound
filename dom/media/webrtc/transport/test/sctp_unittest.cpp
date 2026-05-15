@@ -9,15 +9,12 @@
 #include <iostream>
 #include <string>
 
-#include "sigslot.h"
-
 #include "nsITimer.h"
-
+#include "runnable_utils.h"
+#include "sigslot.h"
 #include "transportflow.h"
 #include "transportlayer.h"
 #include "transportlayerloopback.h"
-
-#include "runnable_utils.h"
 #include "usrsctp.h"
 
 #define GTEST_HAS_RTTI 0

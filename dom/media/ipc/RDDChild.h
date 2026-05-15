@@ -39,7 +39,7 @@ class RDDChild final : public PRDDChild,
   bool Init();
 
   void OnCompositorUnexpectedShutdown() override;
-  void OnVarChanged(const GfxVarUpdate& aVar) override;
+  void OnVarChanged(const nsTArray<GfxVarUpdate>& aVar) override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

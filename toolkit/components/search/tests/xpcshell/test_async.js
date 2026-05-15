@@ -9,22 +9,22 @@ add_setup(async function () {
 });
 
 add_task(async function test_async() {
-  Assert.ok(!Services.search.isInitialized);
+  Assert.ok(!SearchService.isInitialized);
 
-  let aStatus = await Services.search.init();
+  let aStatus = await SearchService.init();
   Assert.ok(Components.isSuccessCode(aStatus));
-  Assert.ok(Services.search.isInitialized);
+  Assert.ok(SearchService.isInitialized);
 
   // test engines from dir are not loaded.
-  let engines = await Services.search.getEngines();
+  let engines = await SearchService.getEngines();
   Assert.equal(engines.length, 2);
 
   // test jar engine is loaded ok.
-  let engine = Services.search.getEngineByName("engine-1");
+  let engine = SearchService.getEngineByName("engine-1");
   Assert.notEqual(engine, null);
   Assert.ok(engine.isAppProvided, "Should be shown as an app-provided engine");
 
-  engine = Services.search.getEngineByName("engine-2");
+  engine = SearchService.getEngineByName("engine-2");
   Assert.notEqual(engine, null);
   Assert.ok(engine.isAppProvided, "Should be shown as an app-provided engine");
 

@@ -4,57 +4,61 @@
 
 package mozilla.components.browser.state.action
 
+import mozilla.components.browser.state.reducer.BrowserStateReducer
 import mozilla.components.browser.state.state.AwesomeBarState
 import mozilla.components.browser.state.state.BrowserState
-import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.awesomebar.AwesomeBar
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class AwesomeBarActionTest {
+    private lateinit var state: BrowserState
+
+    @Before
+    fun setUp() {
+        state = BrowserState()
+    }
+
     @Test
     fun `VisibilityStateUpdated - Stores updated visibility state`() {
-        val store = BrowserStore()
-
-        assertTrue(store.state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
-        assertNull(store.state.awesomeBarState.clickedSuggestion)
+        assertTrue(state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
+        assertNull(state.awesomeBarState.clickedSuggestion)
 
         val provider: AwesomeBar.SuggestionProvider = mock()
         val providerGroup = AwesomeBar.SuggestionProviderGroup(listOf(provider))
         val providerGroupSuggestions = listOf(AwesomeBar.Suggestion(provider))
 
-        store.dispatch(
+        state = BrowserStateReducer.reduce(
+            state,
             AwesomeBarAction.VisibilityStateUpdated(
                 AwesomeBar.VisibilityState(
                     visibleProviderGroups = mapOf(providerGroup to providerGroupSuggestions),
                 ),
             ),
-        ).joinBlocking()
+        )
 
-        assertEquals(1, store.state.awesomeBarState.visibilityState.visibleProviderGroups.size)
-        assertEquals(providerGroupSuggestions, store.state.awesomeBarState.visibilityState.visibleProviderGroups[providerGroup])
-        assertNull(store.state.awesomeBarState.clickedSuggestion)
+        assertEquals(1, state.awesomeBarState.visibilityState.visibleProviderGroups.size)
+        assertEquals(providerGroupSuggestions, state.awesomeBarState.visibilityState.visibleProviderGroups[providerGroup])
+        assertNull(state.awesomeBarState.clickedSuggestion)
     }
 
     @Test
     fun `SuggestionClicked - Stores clicked suggestion`() {
-        val store = BrowserStore()
-
-        assertTrue(store.state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
-        assertNull(store.state.awesomeBarState.clickedSuggestion)
+        assertTrue(state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
+        assertNull(state.awesomeBarState.clickedSuggestion)
 
         val provider: AwesomeBar.SuggestionProvider = mock()
         val suggestion = AwesomeBar.Suggestion(provider)
 
-        store.dispatch(AwesomeBarAction.SuggestionClicked(suggestion)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, AwesomeBarAction.SuggestionClicked(suggestion))
 
-        assertTrue(store.state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
-        assertEquals(suggestion, store.state.awesomeBarState.clickedSuggestion)
+        assertTrue(state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
+        assertEquals(suggestion, state.awesomeBarState.clickedSuggestion)
     }
 
     @Test
@@ -63,24 +67,22 @@ class AwesomeBarActionTest {
         val suggestion = AwesomeBar.Suggestion(provider)
         val providerGroup = AwesomeBar.SuggestionProviderGroup(listOf(provider))
         val providerGroupSuggestions = listOf(suggestion)
-        val store = BrowserStore(
-            initialState = BrowserState(
-                awesomeBarState = AwesomeBarState(
-                    visibilityState = AwesomeBar.VisibilityState(
-                        visibleProviderGroups = mapOf(providerGroup to providerGroupSuggestions),
-                    ),
-                    clickedSuggestion = suggestion,
+        state = BrowserState(
+            awesomeBarState = AwesomeBarState(
+                visibilityState = AwesomeBar.VisibilityState(
+                    visibleProviderGroups = mapOf(providerGroup to providerGroupSuggestions),
                 ),
+                clickedSuggestion = suggestion,
             ),
         )
 
-        assertTrue(store.state.awesomeBarState.visibilityState.visibleProviderGroups.isNotEmpty())
-        assertNotNull(store.state.awesomeBarState.clickedSuggestion)
+        assertTrue(state.awesomeBarState.visibilityState.visibleProviderGroups.isNotEmpty())
+        assertNotNull(state.awesomeBarState.clickedSuggestion)
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = false)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, AwesomeBarAction.EngagementFinished(abandoned = false))
 
-        assertTrue(store.state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
-        assertNull(store.state.awesomeBarState.clickedSuggestion)
+        assertTrue(state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
+        assertNull(state.awesomeBarState.clickedSuggestion)
     }
 
     @Test
@@ -89,23 +91,21 @@ class AwesomeBarActionTest {
         val suggestion = AwesomeBar.Suggestion(provider)
         val providerGroup = AwesomeBar.SuggestionProviderGroup(listOf(provider))
         val providerGroupSuggestions = listOf(suggestion)
-        val store = BrowserStore(
-            initialState = BrowserState(
-                awesomeBarState = AwesomeBarState(
-                    visibilityState = AwesomeBar.VisibilityState(
-                        visibleProviderGroups = mapOf(providerGroup to providerGroupSuggestions),
-                    ),
-                    clickedSuggestion = suggestion,
+        state = BrowserState(
+            awesomeBarState = AwesomeBarState(
+                visibilityState = AwesomeBar.VisibilityState(
+                    visibleProviderGroups = mapOf(providerGroup to providerGroupSuggestions),
                 ),
+                clickedSuggestion = suggestion,
             ),
         )
 
-        assertTrue(store.state.awesomeBarState.visibilityState.visibleProviderGroups.isNotEmpty())
-        assertNotNull(store.state.awesomeBarState.clickedSuggestion)
+        assertTrue(state.awesomeBarState.visibilityState.visibleProviderGroups.isNotEmpty())
+        assertNotNull(state.awesomeBarState.clickedSuggestion)
 
-        store.dispatch(AwesomeBarAction.EngagementFinished(abandoned = true)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, AwesomeBarAction.EngagementFinished(abandoned = true))
 
-        assertTrue(store.state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
-        assertNull(store.state.awesomeBarState.clickedSuggestion)
+        assertTrue(state.awesomeBarState.visibilityState.visibleProviderGroups.isEmpty())
+        assertNull(state.awesomeBarState.clickedSuggestion)
     }
 }

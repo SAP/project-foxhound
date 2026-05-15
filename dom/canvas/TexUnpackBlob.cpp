@@ -7,6 +7,12 @@
 
 #include "GLBlitHelper.h"
 #include "GLContext.h"
+#include "WebGLBuffer.h"
+#include "WebGLContext.h"
+#include "WebGLFormats.h"
+#include "WebGLTexelConversions.h"
+#include "WebGLTexture.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/gfx/CanvasManagerParent.h"
@@ -15,13 +21,7 @@
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/VideoBridgeParent.h"
-#include "mozilla/RefPtr.h"
 #include "nsLayoutUtils.h"
-#include "WebGLBuffer.h"
-#include "WebGLContext.h"
-#include "WebGLFormats.h"
-#include "WebGLTexelConversions.h"
-#include "WebGLTexture.h"
 
 namespace mozilla {
 
@@ -350,18 +350,7 @@ std::unique_ptr<TexUnpackBlob> TexUnpackBlob::Create(
         return nullptr;
     }
 
-    if (desc.sd) {
-      // Shmem buffers need to be treated as if they were a DataSourceSurface.
-      // Otherwise, TexUnpackImage will try to blit the surface descriptor as
-      // if it can be mapped as a framebuffer, whereas the Shmem is still CPU
-      // data.
-      if (SDIsRGBBuffer(*desc.sd) || SDIsNullRemoteDecoder(*desc.sd) ||
-          SDIsExternalImage(*desc.sd) || SDIsCanvasSurface(*desc.sd)) {
-        return new TexUnpackSurface(desc);
-      }
-      return new TexUnpackImage(desc);
-    }
-    if (desc.sourceSurf) {
+    if (desc.sd || desc.sourceSurf) {
       return new TexUnpackSurface(desc);
     }
 
@@ -405,6 +394,21 @@ bool TexUnpackBlob::ConvertIfNeeded(
   const auto& unpacking = mDesc.unpacking;
 
   if (!rowLength || !rowCount) return true;
+
+  auto minSrcStride =
+      CheckedInt<size_t>(
+          WebGLTexelConversions::TexelBytesForFormat(srcFormat)) *
+      rowLength;
+  auto minDstStride =
+      CheckedInt<size_t>(
+          WebGLTexelConversions::TexelBytesForFormat(dstFormat)) *
+      rowLength;
+  if (srcStride <= 0 || dstStride <= 0 || !minSrcStride.isValid() ||
+      !minDstStride.isValid() || size_t(srcStride) < minSrcStride.value() ||
+      size_t(dstStride) < minDstStride.value()) {
+    webgl->ErrorInvalidOperation("Invalid stride.");
+    return false;
+  }
 
   const auto srcIsPremult = (mDesc.srcAlphaType == gfxAlphaType::Premult);
   auto dstIsPremult = unpacking.premultiplyAlpha;
@@ -565,7 +569,7 @@ bool TexUnpackBytes::TexOrSubImage(bool isSubImage, bool needsRespec,
     const auto& unpacking = unpackingRes.inspect();
     const auto stride = unpacking.metrics.bytesPerRowStride;
     // clang-format off
-    if (!ConvertIfNeeded(webgl, unpacking.state.rowLength,
+    if (!ConvertIfNeeded(webgl, unpacking.metrics.usedPixelsPerRow,
                          unpacking.metrics.totalRows,
                          format, uploadPtr, AutoAssertCast(stride),
                          format, AutoAssertCast(stride), &uploadPtr, &tempBuffer)) {
@@ -652,7 +656,10 @@ bool TexUnpackBytes::TexOrSubImage(bool isSubImage, bool needsRespec,
 
   const auto lastRowOffset =
       unpacking.metrics.totalBytesStrided - unpacking.metrics.bytesPerRowStride;
-  const auto lastRowPtr = uploadPtr + lastRowOffset;
+  const auto lastRowPtr =
+      mDesc.pboOffset
+          ? reinterpret_cast<const uint8_t*>(*mDesc.pboOffset + lastRowOffset)
+          : (uploadPtr ? uploadPtr + lastRowOffset : nullptr);
 
   gl->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1);    // No stride padding.
   gl->fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);   // No padding in general.
@@ -671,16 +678,16 @@ bool TexUnpackBytes::TexOrSubImage(bool isSubImage, bool needsRespec,
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-// TexUnpackImage
+// TexUnpackSurface
 
-TexUnpackImage::~TexUnpackImage() = default;
+TexUnpackSurface::~TexUnpackSurface() = default;
 
-bool TexUnpackImage::Validate(const WebGLContext* const webgl,
-                              const webgl::PackingInfo& pi) {
+bool TexUnpackSurface::Validate(const WebGLContext* const webgl,
+                                const webgl::PackingInfo& pi) {
   if (!ValidatePIForDOM(webgl, pi)) return false;
 
   if (!mDesc.structuredSrcSize) {
-    gfxCriticalError() << "TexUnpackImage missing structuredSrcSize.";
+    gfxCriticalError() << "TexUnpackSurface missing structuredSrcSize.";
     return false;
   }
   const auto& elemSize = *mDesc.structuredSrcSize;
@@ -689,7 +696,7 @@ bool TexUnpackImage::Validate(const WebGLContext* const webgl,
     const auto surfSize2 = ivec2::FromSize(surfSize)->StaticCast<uvec2>();
     if (uvec2{elemSize.x, elemSize.y} != surfSize2) {
       gfxCriticalError()
-          << "TexUnpackImage mismatched structuredSrcSize for sourceSurf.";
+          << "TexUnpackSurface mismatched structuredSrcSize for sourceSurf.";
       return false;
     }
   }
@@ -698,158 +705,228 @@ bool TexUnpackImage::Validate(const WebGLContext* const webgl,
   return ValidateUnpackPixels(webgl, pi, fullRows, *this);
 }
 
-Maybe<std::string> BlitPreventReason(
-    const int32_t level, const ivec3& offset, const GLenum internalFormat,
+const char* BlitPreventReason(
+    GLenum target, int32_t level, const ivec3& offset, GLenum internalFormat,
     const webgl::PackingInfo& pi, const TexUnpackBlobDesc& desc,
-    const OptionalRenderableFormatBits optionalRenderableFormatBits,
-    bool sameColorSpace, bool allowConversion) {
+    OptionalRenderableFormatBits optionalRenderableFormatBits,
+    bool sameColorSpace, bool allowConversion, bool allowSRGB, bool allow3D) {
   const auto& size = desc.size;
   const auto& unpacking = desc.unpacking;
 
-  const auto ret = [&]() -> const char* {
-    if (size.z != 1) {
-      return "depth is not 1";
+  if (size.z != 1) {
+    return "depth is not 1";
+  }
+  if (offset.z != 0) {
+    return "zOffset is not 0";
+  }
+
+  if (unpacking.skipPixels || unpacking.skipRows || unpacking.skipImages) {
+    return "non-zero UNPACK_SKIP_* not yet supported";
+  }
+
+  if (desc.srcAlphaType != gfxAlphaType::Opaque) {
+    const bool srcIsPremult = (desc.srcAlphaType == gfxAlphaType::Premult);
+    const auto& dstIsPremult = unpacking.premultiplyAlpha;
+    if (srcIsPremult != dstIsPremult && !allowConversion) {
+      return dstIsPremult ? "UNPACK_PREMULTIPLY_ALPHA_WEBGL is not true"
+                          : "UNPACK_PREMULTIPLY_ALPHA_WEBGL is not false";
     }
-    if (offset.x != 0 || offset.y != 0 || offset.z != 0) {
-      return "x/y/zOffset is not 0";
-    }
+  }
 
-    if (unpacking.skipPixels || unpacking.skipRows || unpacking.skipImages) {
-      return "non-zero UNPACK_SKIP_* not yet supported";
-    }
+  if (!sameColorSpace) {
+    return "not same colorSpace";
+  }
 
-    const auto premultReason = [&]() -> const char* {
-      if (desc.srcAlphaType == gfxAlphaType::Opaque) return nullptr;
-
-      const bool srcIsPremult = (desc.srcAlphaType == gfxAlphaType::Premult);
-      const auto& dstIsPremult = unpacking.premultiplyAlpha;
-      if (srcIsPremult == dstIsPremult || allowConversion) return nullptr;
-
-      if (dstIsPremult) {
-        return "UNPACK_PREMULTIPLY_ALPHA_WEBGL is not true";
-      } else {
-        return "UNPACK_PREMULTIPLY_ALPHA_WEBGL is not false";
-      }
-    }();
-    if (premultReason) return premultReason;
-
-    if (!sameColorSpace) {
-      return "not same colorSpace";
+  const auto formatReason = [&]() -> const char* {
+    if (pi.type != LOCAL_GL_UNSIGNED_BYTE) {
+      return "`unpackType` must be `UNSIGNED_BYTE`";
     }
 
-    const auto formatReason = [&]() -> const char* {
-      if (pi.type != LOCAL_GL_UNSIGNED_BYTE) {
-        return "`unpackType` must be `UNSIGNED_BYTE`";
-      }
+    // GL_FRAMEBUFFER_SRGB is not available in some GLES implementations,
+    // which is required for blitting to emulate Tex(Sub)Image, which does no
+    // encoding when uploading to an sRGB texture. In GLES (but not desktop
+    // GL) blitting to an sRGB framebuffer encodes by default unless
+    // explicitly disabled. To workaround the availability of this extension,
+    // just disallow it for now. Note, this is also an optional boolean as
+    // some internal data transfers intentionally rely on this conversion.
+    switch (internalFormat) {
+      case LOCAL_GL_SRGB:
+      case LOCAL_GL_SRGB8:
+      case LOCAL_GL_SRGB_ALPHA:
+      case LOCAL_GL_SRGB8_ALPHA8:
+        if (!allowSRGB) {
+          return "sRGB-encoded internal formats are not supported";
+        }
+        break;
+    }
 
-      switch (pi.format) {
-        case LOCAL_GL_RGBA:
-          return nullptr;  // All internalFormats for unpackFormat=RGBA are
-                           // renderable.
+    switch (pi.format) {
+      case LOCAL_GL_RGBA:
+        return nullptr;  // All internalFormats for unpackFormat=RGBA are
+                         // renderable.
 
-        case LOCAL_GL_RGB:
-          break;
+      case LOCAL_GL_RGB:
+        break;
 
-        default:
-          return "`unpackFormat` must be `RGBA` or maybe `RGB`";
-      }
+      default:
+        return "`unpackFormat` must be `RGBA` or maybe `RGB`";
+    }
 
-      // -
+    // -
 
-      struct {
-        OptionalRenderableFormatBits bits;
-        const char* errorMsg;
-      } required;
+    struct {
+      OptionalRenderableFormatBits bits;
+      const char* errorMsg;
+    } required;
 
-      switch (internalFormat) {
-        case LOCAL_GL_RGB565:
-          return nullptr;
-        case LOCAL_GL_RGB:
-        case LOCAL_GL_RGB8:
-          required = {
-              OptionalRenderableFormatBits::RGB8,
-              "Unavailable, as blitting internalFormats RGB or RGB8 requires "
-              "that RGB8 must be a renderable format.",
-          };
-          break;
-        case LOCAL_GL_SRGB:
-        case LOCAL_GL_SRGB8:
-          required = {
-              OptionalRenderableFormatBits::SRGB8,
-              "Unavailable, as blitting internalFormats SRGB or SRGB8 requires "
-              "that SRGB8 must be a renderable format.",
-          };
-          break;
-        case 0:
-          // texSubImage, so internalFormat is unknown, and could be anything!
-          required = {
-              OptionalRenderableFormatBits::RGB8 |
-                  OptionalRenderableFormatBits::SRGB8,
-              "Unavailable, as blitting texSubImage with unpackFormat=RGB "
-              "requires that RGB8 and SRGB8 must be renderable formats.",
-          };
-          break;
-        default:
-          gfxCriticalError()
-              << "Unexpected internalFormat for unpackFormat=RGB: 0x"
-              << gfx::hexa(internalFormat);
-          return "Unexpected internalFormat for unpackFormat=RGB";
-      }
+    switch (internalFormat) {
+      case LOCAL_GL_RGB565:
+        return nullptr;
+      case LOCAL_GL_RGB:
+      case LOCAL_GL_RGB8:
+        required = {
+            OptionalRenderableFormatBits::RGB8,
+            "Unavailable, as blitting internalFormats RGB or RGB8 requires "
+            "that RGB8 must be a renderable format.",
+        };
+        break;
+      case LOCAL_GL_SRGB:
+      case LOCAL_GL_SRGB8:
+        required = {
+            OptionalRenderableFormatBits::SRGB8,
+            "Unavailable, as blitting internalFormats SRGB or SRGB8 requires "
+            "that SRGB8 must be a renderable format.",
+        };
+        break;
+      case 0:
+        // texSubImage, so internalFormat is unknown, and could be anything!
+        required = {
+            OptionalRenderableFormatBits::RGB8 |
+                OptionalRenderableFormatBits::SRGB8,
+            "Unavailable, as blitting texSubImage with unpackFormat=RGB "
+            "requires that RGB8 and SRGB8 must be renderable formats.",
+        };
+        break;
+      default:
+        gfxCriticalError()
+            << "Unexpected internalFormat for unpackFormat=RGB: 0x"
+            << gfx::hexa(internalFormat);
+        return "Unexpected internalFormat for unpackFormat=RGB";
+    }
 
-      const auto availableBits = optionalRenderableFormatBits;
-      if ((required.bits | availableBits) != availableBits) {
-        return required.errorMsg;
-      }
+    const auto availableBits = optionalRenderableFormatBits;
+    if ((required.bits | availableBits) != availableBits) {
+      return required.errorMsg;
+    }
 
-      // -
-
-      return nullptr;
-    }();
-    if (formatReason) return formatReason;
+    // -
 
     return nullptr;
   }();
-  if (ret) {
-    return Some(std::string(ret));
+  if (formatReason) return formatReason;
+
+  // If the texture has multiple faces or layers that are not allocated,
+  // then the framebuffer attachment required to blit the descriptor may
+  // be determined incomplete. Avoid this for now by restricting to 2D
+  // targets.
+  if (!allow3D) {
+    bool is2D = ImageToTexTarget(target) == target && !IsTexTarget3D(target);
+    if (!is2D) {
+      return "texture is not 2D";
+    }
   }
-  return {};
+
+  return nullptr;
 }
 
-bool TexUnpackImage::TexOrSubImage(bool isSubImage, bool needsRespec,
-                                   WebGLTexture* tex, GLint level,
-                                   const webgl::DriverUnpackInfo* dui,
-                                   GLint xOffset, GLint yOffset, GLint zOffset,
+bool TexUnpackSurface::AllowBlitSd(WebGLContext* const webgl,
+                                   const GLenum target, const int32_t level,
+                                   const ivec3& offset,
+                                   const GLenum internalFormat,
                                    const webgl::PackingInfo& pi,
-                                   GLenum* const out_error) const {
+                                   bool allowConversion, bool allowSRGB,
+                                   bool allow3D, bool warn) const {
+  dom::PredefinedColorSpace srcColorSpace = dom::PredefinedColorSpace::Srgb;
+  dom::PredefinedColorSpace dstColorSpace =
+      webgl->mUnpackColorSpace ? *webgl->mUnpackColorSpace
+                               : dom::PredefinedColorSpace::Srgb;
+  bool sameColorSpace = srcColorSpace == dstColorSpace;
+  if (const char* reason = BlitPreventReason(
+          target, level, offset, internalFormat, pi, mDesc,
+          webgl->mOptionalRenderableFormatBits, sameColorSpace, allowConversion,
+          allowSRGB, allow3D)) {
+    if (warn) {
+      webgl->GeneratePerfWarning(
+          "Failed to hit GPU-copy fast-path."
+          " (%s) Falling back to CPU upload.",
+          reason);
+    }
+    return false;
+  }
+  return true;
+}
+
+// The texture may be mipmap incomplete which will prevent the framebuffer
+// from being complete while drawing to it. To avoid this scenario, override
+// the texture base and max level temporarily to ignore incomplete mipmaps
+// while blitting to it. Depending on GL implementation (desktop vs ES), the
+// min filter may contribute to mipmap completeness.
+struct AutoRestoreMipmapState {
+  AutoRestoreMipmapState(gl::GLContext* gl, GLenum target, GLint level)
+      : mGL(gl), mTarget(target), mLevel(level) {
+    mGL->fGetTexParameteriv(mTarget, LOCAL_GL_TEXTURE_MIN_FILTER, &mMinFilter);
+    if (IsTexMipmapFilter(mMinFilter)) {
+      mGL->fTexParameteri(mTarget, LOCAL_GL_TEXTURE_MIN_FILTER,
+                          LOCAL_GL_NEAREST);
+    }
+    if (mGL->HasTexParamMipmapLevel()) {
+      mGL->fGetTexParameteriv(mTarget, LOCAL_GL_TEXTURE_BASE_LEVEL,
+                              &mLevelBase);
+      mGL->fGetTexParameteriv(mTarget, LOCAL_GL_TEXTURE_MAX_LEVEL, &mLevelMax);
+      if (mLevelBase != mLevel) {
+        mGL->fTexParameteri(mTarget, LOCAL_GL_TEXTURE_BASE_LEVEL, mLevel);
+      }
+      if (mLevelMax != mLevel) {
+        mGL->fTexParameteri(mTarget, LOCAL_GL_TEXTURE_MAX_LEVEL, mLevel);
+      }
+    }
+  }
+
+  ~AutoRestoreMipmapState() {
+    if (IsTexMipmapFilter(mMinFilter)) {
+      mGL->fTexParameteri(mTarget, LOCAL_GL_TEXTURE_MIN_FILTER, mMinFilter);
+    }
+    if (mGL->HasTexParamMipmapLevel()) {
+      if (mLevelBase != mLevel) {
+        mGL->fTexParameteri(mTarget, LOCAL_GL_TEXTURE_BASE_LEVEL, mLevelBase);
+      }
+      if (mLevelMax != mLevel) {
+        mGL->fTexParameteri(mTarget, LOCAL_GL_TEXTURE_MAX_LEVEL, mLevelMax);
+      }
+    }
+  }
+
+  gl::GLContext* mGL = nullptr;
+  GLenum mTarget = 0;
+  GLint mLevel = 0;
+  GLint mMinFilter = 0;
+  GLint mLevelBase = 0;
+  GLint mLevelMax = 0;
+};
+
+bool TexUnpackSurface::BlitSd(
+    const layers::SurfaceDescriptor& sd, bool isSubImage, bool needsRespec,
+    WebGLTexture* tex, GLint level, const webgl::DriverUnpackInfo* dui,
+    GLint xOffset, GLint yOffset, GLint zOffset, const webgl::PackingInfo& pi,
+    GLenum* const out_error, bool allowFallback) const {
   MOZ_ASSERT_IF(needsRespec, !isSubImage);
 
   const auto& webgl = tex->mContext;
   const auto& target = mDesc.imageTarget;
   const auto& size = mDesc.size;
-  const auto& sd = *(mDesc.sd);
   const auto& unpacking = mDesc.unpacking;
 
   const auto& gl = webgl->GL();
-
-  // -
-
-  // TODO (Bug 754256): Figure out the source colorSpace.
-  dom::PredefinedColorSpace srcColorSpace = dom::PredefinedColorSpace::Srgb;
-  dom::PredefinedColorSpace dstColorSpace =
-      webgl->mUnpackColorSpace ? *webgl->mUnpackColorSpace
-                               : dom::PredefinedColorSpace::Srgb;
-  bool sameColorSpace = (srcColorSpace == dstColorSpace);
-
-  const auto reason = BlitPreventReason(
-      level, {xOffset, yOffset, zOffset}, dui->internalFormat, pi, mDesc,
-      webgl->mOptionalRenderableFormatBits, sameColorSpace);
-  if (reason) {
-    webgl->GeneratePerfWarning(
-        "Failed to hit GPU-copy fast-path."
-        " (%s) Falling back to CPU upload.",
-        reason->c_str());
-    return false;
-  }
 
   // -
 
@@ -861,6 +938,9 @@ bool TexUnpackImage::TexOrSubImage(bool isSubImage, bool needsRespec,
   }
 
   {
+    gl::ScopedBindTexture scopedTex(gl, tex->mGLName, target);
+    AutoRestoreMipmapState restoreMipmapState(gl, target, level);
+
     gl::ScopedFramebuffer scopedFB(gl);
     gl::ScopedBindFramebuffer bindFB(gl, scopedFB.FB());
 
@@ -872,18 +952,46 @@ bool TexUnpackImage::TexOrSubImage(bool isSubImage, bool needsRespec,
                                 tex->mGLName, level);
 
       const auto err = errorScope.GetError();
-      MOZ_ALWAYS_TRUE(!err);
+      if (err) {
+        if (allowFallback) {
+          return false;
+        }
+        MOZ_DIAGNOSTIC_CRASH("BlitSd failed attaching texture to framebuffer");
+      }
     }
 
     const GLenum status = gl->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
-    MOZ_ALWAYS_TRUE(status == LOCAL_GL_FRAMEBUFFER_COMPLETE);
+    if (status != LOCAL_GL_FRAMEBUFFER_COMPLETE) {
+      if (allowFallback) {
+        return false;
+      }
+      MOZ_DIAGNOSTIC_CRASH("BlitSd framebuffer is not complete");
+    }
 
     const auto dstOrigin =
         (unpacking.flipY ? gl::OriginPos::TopLeft : gl::OriginPos::BottomLeft);
-    if (!gl->BlitHelper()->BlitSdToFramebuffer(sd, {size.x, size.y},
-                                               dstOrigin)) {
+    gfx::IntSize fbSize(size.x, size.y);
+    if (isSubImage) {
+      const auto& imageInfo = tex->ImageInfoAt(target, level);
+      fbSize = gfx::IntSize(imageInfo.mWidth, imageInfo.mHeight);
+    }
+    Maybe<gfxAlphaType> convertAlpha;
+    if (mDesc.srcAlphaType != gfxAlphaType::Opaque) {
+      const bool srcIsPremult = mDesc.srcAlphaType == gfxAlphaType::Premult;
+      const bool dstIsPremult = unpacking.premultiplyAlpha;
+      if (srcIsPremult != dstIsPremult) {
+        convertAlpha = Some(dstIsPremult ? gfxAlphaType::Premult
+                                         : gfxAlphaType::NonPremult);
+      }
+    }
+    if (!gl->BlitHelper()->BlitSdToFramebuffer(
+            sd, {xOffset, yOffset, size.x, size.y}, dstOrigin, fbSize,
+            convertAlpha)) {
       gfxCriticalNote << "BlitSdToFramebuffer failed for type "
                       << int(sd.type());
+      if (allowFallback) {
+        return false;
+      }
       // Maybe the resource isn't valid anymore?
       gl->fClearColor(0.2, 0.0, 0.2, 1.0);
       gl->fClear(LOCAL_GL_COLOR_BUFFER_BIT);
@@ -897,14 +1005,6 @@ bool TexUnpackImage::TexOrSubImage(bool isSubImage, bool needsRespec,
 
   return true;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-// TexUnpackSurface
-
-TexUnpackSurface::~TexUnpackSurface() = default;
-
-//////////
 
 static bool GetFormatForSurf(const gfx::SourceSurface* surf,
                              WebGLTexelFormat* const out_texelFormat,
@@ -953,31 +1053,6 @@ static bool GetFormatForSurf(const gfx::SourceSurface* surf,
   }
 }
 
-//////////
-
-bool TexUnpackSurface::Validate(const WebGLContext* const webgl,
-                                const webgl::PackingInfo& pi) {
-  if (!ValidatePIForDOM(webgl, pi)) return false;
-
-  if (!mDesc.structuredSrcSize) {
-    gfxCriticalError() << "TexUnpackSurface missing structuredSrcSize.";
-    return false;
-  }
-  const auto& elemSize = *mDesc.structuredSrcSize;
-  if (mDesc.sourceSurf) {
-    const auto& surfSize = mDesc.sourceSurf->GetSize();
-    const auto surfSize2 = ivec2::FromSize(surfSize)->StaticCast<uvec2>();
-    if (uvec2{elemSize.x, elemSize.y} != surfSize2) {
-      gfxCriticalError()
-          << "TexUnpackSurface mismatched structuredSrcSize for sourceSurf.";
-      return false;
-    }
-  }
-
-  const auto fullRows = elemSize.y;
-  return ValidateUnpackPixels(webgl, pi, fullRows, *this);
-}
-
 bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
                                      WebGLTexture* tex, GLint level,
                                      const webgl::DriverUnpackInfo* dui,
@@ -989,17 +1064,58 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
   const auto& size = mDesc.size;
   RefPtr<gfx::DataSourceSurface> surf;
   if (mDesc.sd) {
-    // If we get here, we assume the SD describes an RGBA Shmem.
+    // First check if the SD describes an RGBA Shmem.
     const auto& sd = *(mDesc.sd);
-    if (SDIsRGBBuffer(sd)) {
+    if (SDIsCanvasSurface(sd)) {
+      // The canvas surface resides on a 2D canvas within the same content
+      // process as the WebGL canvas. Query it for the surface.
+      const auto& sdc = sd.get_SurfaceDescriptorCanvasSurface();
+      uint32_t managerId = sdc.managerId();
+      mozilla::ipc::ActorId canvasId = sdc.canvasId();
+      uintptr_t surfaceId = sdc.surfaceId();
+      Maybe<layers::SurfaceDescriptor> exportSd;
+      // If the texture has multiple faces or layers that are not allocated,
+      // then the framebuffer attachment required to blit the descriptor may
+      // be determined incomplete. Avoid this for now by restricting to 2D
+      // targets.
+      bool allowBlit = AllowBlitSd(
+          webgl, mDesc.imageTarget, level, {xOffset, yOffset, zOffset},
+          dui->internalFormat, dstPI, true, false, false, false);
+      if (RefPtr<gfx::SourceSurface> data =
+              gfx::CanvasManagerParent::GetCanvasSurface(
+                  webgl->GetContentId(), managerId, canvasId, surfaceId,
+                  allowBlit ? &exportSd : nullptr)) {
+        if (exportSd && !SDIsRGBBuffer(*exportSd) &&
+            BlitSd(*exportSd, isSubImage, needsRespec, tex, level, dui, xOffset,
+                   yOffset, zOffset, dstPI, out_error, true)) {
+          return true;
+        }
+        surf = data->GetDataSurface();
+      }
+      if (!surf) {
+        gfxCriticalError() << "TexUnpackSurface failed to get CanvasSurface";
+        return false;
+      }
+    } else if (SDIsRGBBuffer(sd)) {
       const auto& sdb = sd.get_SurfaceDescriptorBuffer();
       const auto& rgb = sdb.desc().get_RGBDescriptor();
       const auto& data = sdb.data();
       MOZ_ASSERT(data.type() == layers::MemoryOrShmem::TShmem);
       const auto& shmem = data.get_Shmem();
-      surf = gfx::Factory::CreateWrappingDataSourceSurface(
-          shmem.get<uint8_t>(), layers::ImageDataSerializer::GetRGBStride(rgb),
+      size_t shmemSize = shmem.Size<uint8_t>();
+      int32_t stride = layers::ImageDataSerializer::GetRGBStride(rgb);
+      if (stride <= 0) {
+        gfxCriticalError() << "TexUnpackSurface failed to get rgb stride";
+        return false;
+      }
+      size_t bufSize = layers::ImageDataSerializer::ComputeRGBBufferSize(
           rgb.size(), rgb.format());
+      if (!bufSize || bufSize > shmemSize) {
+        gfxCriticalError() << "TexUnpackSurface failed to get rgb buffer size";
+        return false;
+      }
+      surf = gfx::Factory::CreateWrappingDataSourceSurface(
+          shmem.get<uint8_t>(), stride, rgb.size(), rgb.format());
     } else if (SDIsNullRemoteDecoder(sd)) {
       const auto& sdrd = sd.get_SurfaceDescriptorGPUVideo()
                              .get_SurfaceDescriptorRemoteDecoder();
@@ -1027,49 +1143,22 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
         gfxCriticalNote << "TexUnpackSurface failed to get ExternalImage";
         return false;
       }
-    } else if (SDIsCanvasSurface(sd)) {
-      // The canvas surface resides on a 2D canvas within the same content
-      // process as the WebGL canvas. Query it for the surface.
-      const auto& sdc = sd.get_SurfaceDescriptorCanvasSurface();
-      uint32_t managerId = sdc.managerId();
-      mozilla::ipc::ActorId canvasId = sdc.canvasId();
-      uintptr_t surfaceId = sdc.surfaceId();
-      surf = gfx::CanvasManagerParent::GetCanvasSurface(
-          webgl->GetContentId(), managerId, canvasId, surfaceId);
-      if (!surf) {
-        gfxCriticalNote << "TexUnpackSurface failed to get CanvasSurface";
-        return false;
-      }
-      if (NS_WARN_IF(surf->GetSize().width < GLint(size.x)) ||
-          NS_WARN_IF(surf->GetSize().height < GLint(size.y))) {
-        RefPtr<gfx::DrawTarget> adjusted = gfx::Factory::CreateDrawTarget(
-            gfx::BackendType::SKIA, gfx::IntSize(size.x, size.y),
-            surf->GetFormat());
-        if (!adjusted) {
-          gfxCriticalNote
-              << "Failed to created adjusted target for CanvasSurface";
-          return false;
-        }
-        adjusted->CopySurface(surf, surf->GetRect(), gfx::IntPoint(0, 0));
-        if (RefPtr<gfx::SourceSurface> snapshot = adjusted->Snapshot()) {
-          surf = snapshot->GetDataSurface();
-          if (!surf) {
-            gfxCriticalNote
-                << "Failed to get adjusted snapshot data for CanvasSurface";
-            return false;
-          }
-        } else {
-          gfxCriticalNote
-              << "Failed to create adjusted snapshot for CanvasSurface";
-          return false;
-        }
-      }
-    } else {
-      MOZ_ASSERT_UNREACHABLE("Unexpected surface descriptor!");
+    } else if (AllowBlitSd(webgl, mDesc.imageTarget, level,
+                           {xOffset, yOffset, zOffset}, dui->internalFormat,
+                           dstPI, false, true, true, true) &&
+               BlitSd(sd, isSubImage, needsRespec, tex, level, dui, xOffset,
+                      yOffset, zOffset, dstPI, out_error)) {
+      // The SD wasn't an RGBA shmem, but were able to blit the SD directly to
+      // the texture.
+      return true;
+    } else if (mDesc.sourceSurf) {
+      // In case neither a wrapper was created nor a blit succeeded, check for a
+      // backup source surface.
+      surf = mDesc.sourceSurf->GetDataSurface();
     }
     if (!surf) {
-      gfxCriticalError() << "TexUnpackSurface failed to create wrapping "
-                            "DataSourceSurface for Shmem.";
+      gfxCriticalNote << "TexUnpackSurface failed to create wrapping "
+                         "DataSourceSurface.";
       return false;
     }
   } else if (mDesc.sourceSurf) {
@@ -1082,6 +1171,8 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
   }
 
   ////
+
+  const auto surfSize = surf->GetSize();
 
   WebGLTexelFormat srcFormat;
   uint8_t srcBPP;
@@ -1106,12 +1197,10 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
   // -
 
   const auto dstFormat = FormatForPackingInfo(dstPI);
-  const auto dstBpp = BytesPerPixel(dstPI);
-  const size_t dstUsedBytesPerRow = dstBpp * surf->GetSize().width;
-  auto dstStride = dstUsedBytesPerRow;
-  if (dstFormat == srcFormat) {
-    dstStride = srcStride;  // Try to match.
-  }
+  const size_t dstBpp = BytesPerPixel(dstPI);
+  const size_t dstUsedBytesPerRow = dstBpp * surfSize.width;
+  size_t dstStride = dstFormat == srcFormat ? srcStride  // Try To match
+                                            : dstUsedBytesPerRow;
 
   // -
 
@@ -1135,12 +1224,18 @@ bool TexUnpackSurface::TexOrSubImage(bool isSubImage, bool needsRespec,
   const auto& dstUnpacking = dstUnpackingRes.inspect();
   MOZ_ASSERT(dstUnpacking.metrics.bytesPerRowStride == dstStride);
 
+  if (uint32_t(surfSize.width) < dstUnpacking.metrics.usedPixelsPerRow ||
+      uint32_t(surfSize.height) < dstUnpacking.metrics.totalRows) {
+    gfxCriticalError() << "Source surface size too small for upload.";
+    return false;
+  }
+
   // -
 
   const uint8_t* dstBegin = srcBegin;
   UniqueBuffer tempBuffer;
   // clang-format off
-  if (!ConvertIfNeeded(webgl, surf->GetSize().width, surf->GetSize().height,
+  if (!ConvertIfNeeded(webgl, surfSize.width, surfSize.height,
                        srcFormat, srcBegin, AutoAssertCast(srcStride),
                        dstFormat, AutoAssertCast(dstUnpacking.metrics.bytesPerRowStride), &dstBegin,
                        &tempBuffer)) {

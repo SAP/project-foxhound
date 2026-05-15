@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_net_DNSAdditionalInfo_h__
-#define mozilla_net_DNSAdditionalInfo_h__
+#ifndef mozilla_net_DNSAdditionalInfo_h_
+#define mozilla_net_DNSAdditionalInfo_h_
 
 #include "nsIDNSAdditionalInfo.h"
 #include "nsString.h"
@@ -41,4 +41,4 @@ class DNSAdditionalInfo : public nsIDNSAdditionalInfo {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // mozilla_net_DNSAdditionalInfo_h__
+#endif  // mozilla_net_DNSAdditionalInfo_h_

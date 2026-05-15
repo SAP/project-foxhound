@@ -16,7 +16,6 @@
 #  include "mozilla/Maybe.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/TypedEnumBits.h"
-#  include "mozilla/Unused.h"
 #  include "mozilla/Variant.h"
 #  include "mozilla/Vector.h"
 #  include "mozilla/WinHeaderOnlyUtils.h"

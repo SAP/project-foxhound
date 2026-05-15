@@ -112,28 +112,6 @@ export var Authentication = {
     }
   },
 
-  async shortWaitForVerification(ms) {
-    LOG("shortWaitForVerification");
-    let userData = await this.getSignedInUser();
-    let timeoutID;
-    LOG("set a timeout");
-    let timeoutPromise = new Promise(resolve => {
-      timeoutID = lazy.setTimeout(() => {
-        LOG(`Warning: no verification after ${ms}ms.`);
-        resolve();
-      }, ms);
-    });
-    LOG("set a fxAccounts.whenVerified");
-    await Promise.race([
-      lazy.fxAccounts
-        .whenVerified(userData)
-        .finally(() => lazy.clearTimeout(timeoutID)),
-      timeoutPromise,
-    ]);
-    LOG("done");
-    return this.isReady();
-  },
-
   async _confirmUser(uri) {
     LOG("Open new tab and load verification page");
     let mainWindow = Services.wm.getMostRecentWindow("navigator:browser");
@@ -178,7 +156,7 @@ export var Authentication = {
       });
     });
     LOG("Page Loaded");
-    let didVerify = await this.shortWaitForVerification(10000);
+    let didVerify = false;
     LOG("remove tab");
     mainWindow.gBrowser.removeTab(newtab);
     return didVerify;
@@ -195,7 +173,6 @@ export var Authentication = {
     )}`;
     let triedAlready = new Set();
     const tries = 10;
-    const normalWait = 4000;
     for (let i = 0; i < tries; ++i) {
       let resp = await fetch(restmailURI);
       let messages = await resp.json();
@@ -230,12 +207,9 @@ export var Authentication = {
         LOG("resendVerificationEmail");
         await lazy.fxAccounts.resendVerificationEmail();
       }
-      if (await this.shortWaitForVerification(normalWait)) {
-        return true;
-      }
     }
-    // One last try.
-    return this.shortWaitForVerification(normalWait);
+    // this is all old, we need verification codes now.
+    return false;
   },
 
   async signIn(username, password) {

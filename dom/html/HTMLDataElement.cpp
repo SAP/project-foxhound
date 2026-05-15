@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLDataElement.h"
+
 #include "mozilla/dom/HTMLDataElementBinding.h"
 #include "nsGenericHTMLElement.h"
 

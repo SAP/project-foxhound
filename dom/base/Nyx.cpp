@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Nyx.h"
+
 #include "mozilla/dom/TypedArray.h"
 
 namespace mozilla::dom {

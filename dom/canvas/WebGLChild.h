@@ -6,12 +6,12 @@
 #ifndef WEBGLCHILD_H_
 #define WEBGLCHILD_H_
 
-#include "mozilla/dom/PWebGLChild.h"
-#include "mozilla/ipc/BigBuffer.h"
+#include <string>
+
 #include "mozilla/Maybe.h"
 #include "mozilla/WeakPtr.h"
-
-#include <string>
+#include "mozilla/dom/PWebGLChild.h"
+#include "mozilla/ipc/BigBuffer.h"
 
 namespace mozilla {
 

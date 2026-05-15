@@ -7,8 +7,6 @@
 #ifndef mozilla_dom_HTMLParagraphElement_h
 #define mozilla_dom_HTMLParagraphElement_h
 
-#include "mozilla/Attributes.h"
-
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {

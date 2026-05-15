@@ -2,13 +2,166 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+.discovery-stream.ds-layout.ds-layout-widgets {
+  margin-inline: 0;
+}
+
+.widgets-wrapper {
+  margin-inline: auto;
+  padding-block-end: var(--space-large);
+  max-width: max-content;
+}
+
+.widgets-section-container {
+  padding-block: var(--space-xsmall) var(--space-large);
+  padding-inline: var(--space-large);
+  background-color: var(--button-background-color);
+  border-radius: var(--border-radius-large);
+  // Bug 1908010 - This overwrites the design system color because of a
+  // known transparency issue with color-mix syntax when a wallpaper is set
+  .lightWallpaper &,
+  .darkWallpaper & {
+    background-color: var(--newtab-weather-background-color); // stylelint-disable-line stylelint-plugin-mozilla/use-design-tokens
+
+    @media (prefers-contrast) {
+      background-color: var(--background-color-box);
+    }
+  }
+
+  .widgets-title-container {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--space-medium);
+
+    // Helper class around the <h1> element to position the FeatureHighlight message
+    .widgets-title-container-text {
+      display: inline-block;
+      margin-inline-end: auto;
+      position: relative;
+    }
+  }
+
+  // Mirrors the grid-gap spacing used on
+  // .ds-outer-wrapper-breakpoint-override .ds-card-grid
+  @media(min-width: $break-point-widest) {
+    padding-block-end: var(--space-xlarge);
+    padding-inline: var(--space-xlarge);
+  }
+
+  // Sections Layout Override
+  .has-sections-grid & {
+    @media(min-width: $break-point-widest) {
+      padding-block-end: var(--space-large);
+      padding-inline: var(--space-large);
+    }
+  }
+
+  h1 {
+    font-size: var(--font-size-large);
+    font-weight: var(--font-weight-bold);
+  }
+}
+
+// Bug 1996308: This layout is somewhat brittle as the design dictates the parent container (.widgets-wrapper)
+// be only as wide as the width of this container (.widgets-container) while still being responsive.
+// Once we have four widgets, we can revert most of this logic as the container will be 100%.
 .widgets-container {
+  --widgets-card-width: var(--newtab-card-grid-layout-width);
+  // This is the maximum number of widgets the Widgets row can support
+  --widgets-max-cols: 3;
+  --widgets-grid-gap: var(--space-large);
+  --widgets-small-card-height: var(--newtab-card-height-small);
+
+  // Update the card width when Sections is enabled
+  .has-sections-grid & {
+    --widgets-card-width: var(--newtab-card-width-medium);
+  }
+
   &:has(.lists),
   &:has(.focus-timer) {
     display: grid;
-    border: 1px solid var(--border-color-card);
-    grid-template-columns: 1fr 1fr;
-    column-gap: var(--space-large);
-    width: 100%;
+    grid-template-columns: repeat(auto-fit, var(--widgets-card-width));
+    gap: var(--widgets-grid-gap);
+
+    // The max-width logic is only necessary when displaying more than one column
+    @media(min-width: $break-point-medium) {
+      max-width: calc(var(--widgets-max-cols) * var(--widgets-card-width) + (var(--widgets-max-cols) - 1) * var(--widgets-grid-gap));
+      justify-content: center;
+    }
+
+    // Mirrors the grid-gap spacing used on
+    // .ds-outer-wrapper-breakpoint-override .ds-card-grid
+    @media(min-width: $break-point-widest) {
+      --widgets-grid-gap: var(--space-xlarge);
+    }
+
+    // Sections Layout Override
+    .has-sections-grid & {
+      @media(min-width: $break-point-widest) {
+        --widgets-grid-gap: var(--space-large);
+      }
+    }
   }
+
+  .small-widget {
+    height: var(--widgets-small-card-height);
+  }
+}
+
+.feature-highlight .feature-highlight-modal.widget-highlight-wrapper {
+  width: auto;
+  max-width: min-content;
+  border-radius: var(--border-radius-medium);
+
+  // Custom Positioning
+  &.inset-block-end {
+    margin-block-start: var(--space-large);
+  }
+
+  .content-wrapper {
+    margin: 0;
+    padding: var(--space-medium);
+  }
+
+  .widget-highlight {
+    img {
+      border-radius: var(--border-radius-medium);
+      margin-block-end: var(--space-small);
+    }
+
+    h3 {
+      margin-block: 0 var(--space-xsmall);
+      font-size: var(--font-size-root);
+    }
+
+    p {
+      margin-block: 0;
+      font-size: var(--font-size-root);
+    }
+  }
+
+  .message-icon {
+    display: none;
+  }
+
+  // The "X" dismiss button overlays the image in the message
+  moz-button {
+    position: absolute;
+    inset-inline-end: var(--space-medium);
+    inset-block-start: var(--space-medium);
+    // Custom contrast override
+    --button-icon-fill: var(--color-gray-05);
+  }
+
+  // If not image is not included, use the default icon color to maintain proper viz contrast
+  &.no-image {
+    min-width: 370px;
+    padding-block-start: var(--space-small);
+
+    moz-button {
+      --button-icon-fill: var(--icon-color);
+    }
+  }
+
 }

@@ -10,8 +10,8 @@
 #include "DebuggerNotificationObserver.h"
 
 #include "DebuggerNotification.h"
-#include "nsIGlobalObject.h"
 #include "WrapperFactory.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla::dom {
 

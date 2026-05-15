@@ -5,8 +5,6 @@
 // This module is the stateful server side of test_http2.js and is meant
 // to have node be restarted in between each invocation
 
-/* eslint-env node */
-
 var node_http2_root = "../node-http2";
 if (process.env.NODE_HTTP2_ROOT) {
   node_http2_root = process.env.NODE_HTTP2_ROOT;
@@ -15,12 +13,10 @@ var http2 = require(node_http2_root);
 var fs = require("fs");
 var url = require("url");
 var crypto = require("crypto");
-const dnsPacket = require(`${node_http2_root}/../dns-packet`);
 const ip = require(`${node_http2_root}/../node_ip`);
 const { fork } = require("child_process");
 const { spawn } = require("child_process");
 const path = require("path");
-const zlib = require("zlib");
 
 // Hook into the decompression code to log the decompressed name-value pairs
 var compression_module = node_http2_root + "/lib/protocol/compressor";
@@ -73,6 +69,26 @@ var newTransform = function (frame) {
     }
 
     // Reset to the original version for later uses
+    Serializer.prototype._transform = originalTransform;
+  }
+  originalTransform.apply(this, arguments);
+};
+
+// Injects a raw CONTINUATION frame with stream ID 0 before the first HEADERS
+// frame. Since there is no pending HEADERS or PUSH_PROMISE, mExpectedHeaderID
+// and mExpectedPushPromiseID are both 0, so the pre-dispatch checks are
+// skipped and RecvContinuation is called with mInputFrameID = 0.
+var newTransformContinuationStreamZero = function (frame) {
+  if (frame.type == "HEADERS") {
+    const contFrame = Buffer.alloc(9);
+    contFrame[0] = 0x00; // length high
+    contFrame[1] = 0x00; // length mid
+    contFrame[2] = 0x00; // length low (no payload)
+    contFrame[3] = 0x09; // type = CONTINUATION
+    contFrame[4] = 0x04; // flags = END_HEADERS
+    // stream ID bytes 5-8 remain 0x00 — stream ID = 0 (protocol error)
+    this.push(contFrame);
+
     Serializer.prototype._transform = originalTransform;
   }
   originalTransform.apply(this, arguments);
@@ -208,10 +224,6 @@ var didRst = false;
 var rstConnection = null;
 var illegalheader_conn = null;
 
-var gDoHPortsLog = [];
-var gDoHNewConnLog = {};
-var gDoHRequestCount = 0;
-
 // eslint-disable-next-line complexity
 function handleRequest(req, res) {
   var u = "";
@@ -219,318 +231,7 @@ function handleRequest(req, res) {
     u = url.parse(req.url, true);
   }
   var content = getHttpContent(u.pathname);
-  var push, push1, push1a, push2, push3;
-
-  // PushService tests.
-  var pushPushServer1, pushPushServer2, pushPushServer3, pushPushServer4;
-
-  function createCNameContent(payload) {
-    let packet = dnsPacket.decode(payload);
-    if (
-      packet.questions[0].name == "cname.example.com" &&
-      packet.questions[0].type == "A"
-    ) {
-      return dnsPacket.encode({
-        id: 0,
-        type: "response",
-        flags: dnsPacket.RECURSION_DESIRED,
-        questions: [{ name: packet.questions[0].name, type: "A", class: "IN" }],
-        answers: [
-          {
-            name: packet.questions[0].name,
-            ttl: 55,
-            type: "CNAME",
-            flush: false,
-            data: "pointing-elsewhere.example.com",
-          },
-        ],
-      });
-    }
-    if (
-      packet.questions[0].name == "pointing-elsewhere.example.com" &&
-      packet.questions[0].type == "A"
-    ) {
-      return dnsPacket.encode({
-        id: 0,
-        type: "response",
-        flags: dnsPacket.RECURSION_DESIRED,
-        questions: [{ name: packet.questions[0].name, type: "A", class: "IN" }],
-        answers: [
-          {
-            name: packet.questions[0].name,
-            ttl: 55,
-            type: "A",
-            flush: false,
-            data: "99.88.77.66",
-          },
-        ],
-      });
-    }
-
-    return dnsPacket.encode({
-      id: 0,
-      type: "response",
-      flags: dnsPacket.RECURSION_DESIRED | dnsPacket.rcodes.toRcode("NXDOMAIN"),
-      questions: [
-        {
-          name: packet.questions[0].name,
-          type: packet.questions[0].type,
-          class: "IN",
-        },
-      ],
-      answers: [],
-    });
-  }
-
-  function createCNameARecord() {
-    // test23 asks for cname-a.example.com
-    // this responds with a CNAME to here.example.com *and* an A record
-    // for here.example.com
-    let rContent;
-
-    rContent = Buffer.from(
-      "0000" +
-        "0100" +
-        "0001" + // QDCOUNT
-        "0002" + // ANCOUNT
-        "00000000" + // NSCOUNT + ARCOUNT
-        "07636E616D652d61" + // cname-a
-        "076578616D706C6503636F6D00" + // .example.com
-        "00010001" + // question type (A) + question class (IN)
-        // answer record 1
-        "C00C" + // name pointer to cname-a.example.com
-        "0005" + // type (CNAME)
-        "0001" + // class
-        "00000037" + // TTL
-        "0012" + // RDLENGTH
-        "0468657265" + // here
-        "076578616D706C6503636F6D00" + // .example.com
-        // answer record 2, the A entry for the CNAME above
-        "0468657265" + // here
-        "076578616D706C6503636F6D00" + // .example.com
-        "0001" + // type (A)
-        "0001" + // class
-        "00000037" + // TTL
-        "0004" + // RDLENGTH
-        "09080706", // IPv4 address
-      "hex"
-    );
-
-    return rContent;
-  }
-
-  function responseType(packet, responseIP) {
-    if (
-      !!packet.questions.length &&
-      packet.questions[0].name == "confirm.example.com" &&
-      packet.questions[0].type == "NS"
-    ) {
-      return "NS";
-    }
-
-    return ip.isV4Format(responseIP) ? "A" : "AAAA";
-  }
-
-  function handleAuth() {
-    // There's a Set-Cookie: header in the response for "/dns" , which this
-    // request subsequently would include if the http channel wasn't
-    // anonymous. Thus, if there's a cookie in this request, we know Firefox
-    // mishaved. If there's not, we're fine.
-    if (req.headers.cookie) {
-      res.writeHead(403);
-      res.end("cookie for me, not for you");
-      return false;
-    }
-    if (req.headers.authorization != "user:password") {
-      res.writeHead(401);
-      res.end("bad boy!");
-      return false;
-    }
-
-    return true;
-  }
-
-  function createDNSAnswer(response, packet, responseIP, requestPayload) {
-    // This shuts down the connection so we can test if the client reconnects
-    if (packet.questions.length && packet.questions[0].name == "closeme.com") {
-      response.stream.connection.close("INTERNAL_ERROR", response.stream.id);
-      return null;
-    }
-
-    let answers = [];
-    if (packet.questions.length && packet.questions[0].name.endsWith(".pd")) {
-      // Bug 1543811: test edns padding extension. Return whether padding was
-      // included via the first half of the ip address (1.1 vs 2.2) and the
-      // size of the request in the second half of the ip address allowing to
-      // verify that the correct amount of padding was added.
-      if (
-        !!packet.additionals.length &&
-        packet.additionals[0].type == "OPT" &&
-        packet.additionals[0].options.some(o => o.type === "PADDING")
-      ) {
-        // add padding to the response, because the client must be able ignore it
-        answers.push({
-          name: ".",
-          type: "PADDING",
-          data: Buffer.from(
-            // PADDING_PADDING_PADDING
-            "50414444494e475f50414444494e475f50414444494e47",
-            "hex"
-          ),
-        });
-        responseIP =
-          "1.1." +
-          ((requestPayload.length >> 8) & 0xff) +
-          "." +
-          (requestPayload.length & 0xff);
-      } else {
-        responseIP =
-          "2.2." +
-          ((requestPayload.length >> 8) & 0xff) +
-          "." +
-          (requestPayload.length & 0xff);
-      }
-    }
-
-    if (u.query.corruptedAnswer) {
-      // DNS response header is 12 bytes, we check for this minimum length
-      // at the start of decoding so this is the simplest way to force
-      // a decode error.
-      return "\xFF\xFF\xFF\xFF";
-    }
-
-    // Because we send two TRR requests (A and AAAA), skip the first two
-    // requests when testing retry.
-    if (u.query.retryOnDecodeFailure && gDoHRequestCount < 2) {
-      gDoHRequestCount++;
-      return "\xFF\xFF\xFF\xFF";
-    }
-
-    function responseData() {
-      if (
-        !!packet.questions.length &&
-        packet.questions[0].name == "confirm.example.com" &&
-        packet.questions[0].type == "NS"
-      ) {
-        return "ns.example.com";
-      }
-
-      return responseIP;
-    }
-
-    if (
-      responseIP != "none" &&
-      responseType(packet, responseIP) == packet.questions[0].type
-    ) {
-      answers.push({
-        name: u.query.hostname ? u.query.hostname : packet.questions[0].name,
-        ttl: 55,
-        type: responseType(packet, responseIP),
-        flush: false,
-        data: responseData(),
-      });
-    }
-
-    // for use with test_dns_by_type_resolve.js
-    if (packet.questions[0].type == "TXT") {
-      answers.push({
-        name: packet.questions[0].name,
-        type: packet.questions[0].type,
-        ttl: 55,
-        class: "IN",
-        flush: false,
-        data: Buffer.from(
-          "62586B67646D39705932556761584D6762586B676347467A63336476636D513D",
-          "hex"
-        ),
-      });
-    }
-
-    if (u.query.cnameloop) {
-      answers.push({
-        name: "cname.example.com",
-        type: "CNAME",
-        ttl: 55,
-        class: "IN",
-        flush: false,
-        data: "pointing-elsewhere.example.com",
-      });
-    }
-
-    if (req.headers["accept-language"] || req.headers["user-agent"]) {
-      // If we get this header, don't send back any response. This should
-      // cause the tests to fail. This is easier then actually sending back
-      // the header value into test_trr.js
-      answers = [];
-    }
-
-    let buf = dnsPacket.encode({
-      type: "response",
-      id: packet.id,
-      flags: dnsPacket.RECURSION_DESIRED,
-      questions: packet.questions,
-      answers,
-    });
-
-    return buf;
-  }
-
-  function getDelayFromPacket(packet, type) {
-    let delay = 0;
-    if (packet.questions[0].type == "A") {
-      delay = parseInt(u.query.delayIPv4);
-    } else if (packet.questions[0].type == "AAAA") {
-      delay = parseInt(u.query.delayIPv6);
-    }
-
-    if (u.query.slowConfirm && type == "NS") {
-      delay += 1000;
-    }
-
-    return delay;
-  }
-
-  function writeDNSResponse(response, buf, delay, contentType) {
-    function writeResponse(resp, buffer) {
-      resp.setHeader("Set-Cookie", "trackyou=yes; path=/; max-age=100000;");
-      resp.setHeader("Content-Type", contentType);
-      if (req.headers["accept-encoding"].includes("gzip")) {
-        zlib.gzip(buffer, function (err, result) {
-          resp.setHeader("Content-Encoding", "gzip");
-          resp.setHeader("Content-Length", result.length);
-          try {
-            resp.writeHead(200);
-            resp.end(result);
-          } catch (e) {
-            // connection was closed by the time we started writing.
-          }
-        });
-      } else {
-        const output = Buffer.from(buffer, "utf-8");
-        resp.setHeader("Content-Length", output.length);
-        try {
-          resp.writeHead(200);
-          resp.write(output);
-          resp.end("");
-        } catch (e) {
-          // connection was closed by the time we started writing.
-        }
-      }
-    }
-
-    if (delay) {
-      setTimeout(
-        arg => {
-          writeResponse(arg[0], arg[1]);
-        },
-        delay + 1,
-        [response, buf]
-      );
-      return;
-    }
-
-    writeResponse(response, buf);
-  }
+  var push;
 
   if (req.httpVersionMajor === 2) {
     res.setHeader("X-Connection-Http2", "yes");
@@ -615,104 +316,6 @@ function handleRequest(req, res) {
     return;
   } else if (u.pathname === "/cookie_crumbling") {
     res.setHeader("X-Received-Header-Pairs", JSON.stringify(decompressedPairs));
-  } else if (u.pathname === "/push") {
-    push = res.push("/push.js");
-    push.writeHead(200, {
-      "content-type": "application/javascript",
-      pushed: "yes",
-      "content-length": 11,
-      "X-Connection-Http2": "yes",
-    });
-    push.end("// comments");
-    content = '<head> <script src="push.js"/></head>body text';
-  } else if (u.pathname === "/push.js") {
-    content = "// comments";
-    res.setHeader("pushed", "no");
-  } else if (u.pathname === "/push2") {
-    push = res.push("/push2.js");
-    push.writeHead(200, {
-      "content-type": "application/javascript",
-      pushed: "yes",
-      // no content-length
-      "X-Connection-Http2": "yes",
-    });
-    push.end("// comments");
-    content = '<head> <script src="push2.js"/></head>body text';
-  } else if (u.pathname === "/push5") {
-    push = res.push("/push5.js");
-    push.writeHead(200, {
-      "content-type": "application/javascript",
-      pushed: "yes",
-      // no content-length
-      "X-Connection-Http2": "yes",
-    });
-    content = generateContent(1024 * 150);
-    push.write(content);
-    push.end();
-    content = '<head> <script src="push5.js"/></head>body text';
-  } else if (u.pathname === "/pushapi1") {
-    push1 = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushapi1/1",
-      method: "GET",
-      headers: { "x-pushed-request": "true", "x-foo": "bar" },
-    });
-    push1.writeHead(200, {
-      pushed: "yes",
-      "content-length": 1,
-      subresource: "1",
-      "X-Connection-Http2": "yes",
-    });
-    push1.end("1");
-
-    push1a = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushapi1/1",
-      method: "GET",
-      headers: { "x-foo": "bar", "x-pushed-request": "true" },
-    });
-    push1a.writeHead(200, {
-      pushed: "yes",
-      "content-length": 1,
-      subresource: "1a",
-      "X-Connection-Http2": "yes",
-    });
-    push1a.end("1");
-
-    push2 = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushapi1/2",
-      method: "GET",
-      headers: { "x-pushed-request": "true" },
-    });
-    push2.writeHead(200, {
-      pushed: "yes",
-      subresource: "2",
-      "content-length": 1,
-      "X-Connection-Http2": "yes",
-    });
-    push2.end("2");
-
-    push3 = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushapi1/3",
-      method: "GET",
-      headers: { "x-pushed-request": "true", "Accept-Encoding": "br" },
-    });
-    push3.writeHead(200, {
-      pushed: "yes",
-      "content-length": 6,
-      subresource: "3",
-      "content-encoding": "br",
-      "X-Connection-Http2": "yes",
-    });
-    push3.end(Buffer.from([0x8b, 0x00, 0x80, 0x33, 0x0a, 0x03])); // '3\n'
-
-    content = "0";
   } else if (u.pathname === "/big") {
     content = generateContent(128 * 1024);
     var hash = crypto.createHash("md5");
@@ -918,357 +521,6 @@ function handleRequest(req, res) {
       "Alt-Svc",
       "h3-29=" + req.headers["x-altsvc"] + ",h3=" + req.headers["x-altsvc"]
     );
-  }
-  // for use with test_trr.js
-  else if (u.pathname === "/dns-cname") {
-    // asking for cname.example.com
-
-    function emitResponse(response, payload) {
-      let pcontent = createCNameContent(payload);
-      response.setHeader("Content-Type", "application/dns-message");
-      response.setHeader("Content-Length", pcontent.length);
-      response.writeHead(200);
-      response.write(pcontent);
-      response.end("");
-    }
-
-    let payload = Buffer.from("");
-    req.on("data", function receiveData(chunk) {
-      payload = Buffer.concat([payload, chunk]);
-    });
-    req.on("end", function finishedData() {
-      emitResponse(res, payload);
-    });
-    return;
-  } else if (u.pathname == "/get-doh-req-port-log") {
-    let rContent = JSON.stringify(gDoHPortsLog);
-    res.setHeader("Content-Type", "text/plain");
-    res.setHeader("Content-Length", rContent.length);
-    res.writeHead(400);
-    res.end(rContent);
-    return;
-  } else if (u.pathname == "/reset-doh-request-count") {
-    gDoHRequestCount = 0;
-    res.setHeader("Content-Type", "text/plain");
-    res.setHeader("Content-Length", "ok".length);
-    res.writeHead(200);
-    res.write("ok");
-    res.end("");
-    return;
-  } else if (u.pathname == "/doh") {
-    let responseIP = u.query.responseIP;
-    if (!responseIP) {
-      responseIP = "5.5.5.5";
-    }
-
-    let redirect = u.query.redirect;
-    if (redirect) {
-      responseIP = redirect;
-      if (u.query.dns) {
-        res.setHeader(
-          "Location",
-          "https://localhost:" +
-            serverPort +
-            "/doh?responseIP=" +
-            responseIP +
-            "&dns=" +
-            u.query.dns
-        );
-      } else {
-        res.setHeader(
-          "Location",
-          "https://localhost:" + serverPort + "/doh?responseIP=" + responseIP
-        );
-      }
-      res.writeHead(307);
-      res.end("");
-      return;
-    }
-
-    if (u.query.auth) {
-      if (!handleAuth()) {
-        return;
-      }
-    }
-
-    if (u.query.noResponse) {
-      return;
-    }
-
-    if (u.query.push) {
-      // push.example.org has AAAA entry 2018::2018
-      let pcontent = dnsPacket.encode({
-        id: 0,
-        type: "response",
-        flags: dnsPacket.RECURSION_DESIRED,
-        questions: [{ name: "push.example.org", type: "AAAA", class: "IN" }],
-        answers: [
-          {
-            name: "push.example.org",
-            type: "AAAA",
-            ttl: 55,
-            class: "IN",
-            flush: false,
-            data: "2018::2018",
-          },
-        ],
-      });
-      push = res.push({
-        hostname: "foo.example.com:" + serverPort,
-        port: serverPort,
-        path: "/dns-pushed-response?dns=AAAAAAABAAAAAAAABHB1c2gHZXhhbXBsZQNvcmcAABwAAQ",
-        method: "GET",
-        headers: {
-          accept: "application/dns-message",
-        },
-      });
-      push.writeHead(200, {
-        "content-type": "application/dns-message",
-        pushed: "yes",
-        "content-length": pcontent.length,
-        "X-Connection-Http2": "yes",
-      });
-      push.end(pcontent);
-    }
-
-    let payload = Buffer.from("");
-
-    function emitResponse(response, requestPayload, decodedPacket, delay) {
-      let packet = decodedPacket || dnsPacket.decode(requestPayload);
-      let answer = createDNSAnswer(
-        response,
-        packet,
-        responseIP,
-        requestPayload
-      );
-      if (!answer) {
-        return;
-      }
-      writeDNSResponse(
-        response,
-        answer,
-        delay || getDelayFromPacket(packet, responseType(packet, responseIP)),
-        "application/dns-message"
-      );
-    }
-
-    if (u.query.dns) {
-      payload = Buffer.from(u.query.dns, "base64");
-      emitResponse(res, payload);
-      return;
-    }
-
-    req.on("data", function receiveData(chunk) {
-      payload = Buffer.concat([payload, chunk]);
-    });
-    req.on("end", function finishedData() {
-      // parload is empty when we send redirect response.
-      if (payload.length) {
-        let packet = dnsPacket.decode(payload);
-        let delay;
-        if (u.query.conncycle) {
-          let name = packet.questions[0].name;
-          if (name.startsWith("newconn")) {
-            // If we haven't seen a req for this newconn name before,
-            // or if we've seen one for the same name on the same port,
-            // synthesize a timeout.
-            if (
-              !gDoHNewConnLog[name] ||
-              gDoHNewConnLog[name] == req.remotePort
-            ) {
-              delay = 1000;
-            }
-            if (!gDoHNewConnLog[name]) {
-              gDoHNewConnLog[name] = req.remotePort;
-            }
-          }
-          gDoHPortsLog.push([packet.questions[0].name, req.remotePort]);
-        } else {
-          gDoHPortsLog = [];
-          gDoHNewConnLog = {};
-        }
-        emitResponse(res, payload, packet, delay);
-      }
-    });
-    return;
-  } else if (u.pathname === "/httpssvc") {
-    let payload = Buffer.from("");
-    req.on("data", function receiveData(chunk) {
-      payload = Buffer.concat([payload, chunk]);
-    });
-    req.on("end", function finishedData() {
-      let packet = dnsPacket.decode(payload);
-      let answers = [];
-      answers.push({
-        name: packet.questions[0].name,
-        type: packet.questions[0].type,
-        ttl: 55,
-        class: "IN",
-        flush: false,
-        data: {
-          priority: 1,
-          name: "h3pool",
-          values: [
-            { key: "alpn", value: ["h2", "h3"] },
-            { key: "no-default-alpn" },
-            { key: "port", value: 8888 },
-            { key: "ipv4hint", value: "1.2.3.4" },
-            { key: "echconfig", value: "123..." },
-            { key: "ipv6hint", value: "::1" },
-            { key: 30, value: "somelargestring" },
-            { key: "odoh", value: "456..." },
-          ],
-        },
-      });
-      answers.push({
-        name: packet.questions[0].name,
-        type: packet.questions[0].type,
-        ttl: 55,
-        class: "IN",
-        flush: false,
-        data: {
-          priority: 2,
-          name: ".",
-          values: [
-            { key: "alpn", value: "h2" },
-            { key: "ipv4hint", value: ["1.2.3.4", "5.6.7.8"] },
-            { key: "echconfig", value: "abc..." },
-            { key: "ipv6hint", value: ["::1", "fe80::794f:6d2c:3d5e:7836"] },
-            { key: "odoh", value: "def..." },
-          ],
-        },
-      });
-      answers.push({
-        name: packet.questions[0].name,
-        type: packet.questions[0].type,
-        ttl: 55,
-        class: "IN",
-        flush: false,
-        data: {
-          priority: 3,
-          name: "hello",
-          values: [],
-        },
-      });
-      let buf = dnsPacket.encode({
-        type: "response",
-        id: packet.id,
-        flags: dnsPacket.RECURSION_DESIRED,
-        questions: packet.questions,
-        answers,
-      });
-
-      res.setHeader("Content-Type", "application/dns-message");
-      res.setHeader("Content-Length", buf.length);
-      res.writeHead(200);
-      res.write(buf);
-      res.end("");
-    });
-    return;
-  } else if (u.pathname === "/httpssvc_as_altsvc") {
-    let payload = Buffer.from("");
-    req.on("data", function receiveData(chunk) {
-      payload = Buffer.concat([payload, chunk]);
-    });
-    req.on("end", function finishedData() {
-      let packet = dnsPacket.decode(payload);
-      let answers = [];
-      if (packet.questions[0].type == "HTTPS") {
-        let priority = 1;
-        // Set an invalid priority to test the case when receiving a corrupted
-        // response.
-        if (packet.questions[0].name === "foo.notexisted.com") {
-          priority = 0;
-        }
-        answers.push({
-          name: packet.questions[0].name,
-          type: packet.questions[0].type,
-          ttl: 55,
-          class: "IN",
-          flush: false,
-          data: {
-            priority,
-            name: packet.questions[0].name,
-            values: [
-              { key: "alpn", value: "h2" },
-              { key: "port", value: serverPort },
-              { key: 30, value: "somelargestring" },
-            ],
-          },
-        });
-      } else {
-        answers.push({
-          name: packet.questions[0].name,
-          type: "A",
-          ttl: 55,
-          flush: false,
-          data: "127.0.0.1",
-        });
-      }
-
-      let buf = dnsPacket.encode({
-        type: "response",
-        id: packet.id,
-        flags: dnsPacket.RECURSION_DESIRED,
-        questions: packet.questions,
-        answers,
-      });
-
-      res.setHeader("Content-Type", "application/dns-message");
-      res.setHeader("Content-Length", buf.length);
-      res.writeHead(200);
-      res.write(buf);
-      res.end("");
-    });
-    return;
-  } else if (u.pathname === "/httpssvc_use_iphint") {
-    let payload = Buffer.from("");
-    req.on("data", function receiveData(chunk) {
-      payload = Buffer.concat([payload, chunk]);
-    });
-    req.on("end", function finishedData() {
-      let packet = dnsPacket.decode(payload);
-      let answers = [];
-      answers.push({
-        name: packet.questions[0].name,
-        type: "HTTPS",
-        ttl: 55,
-        class: "IN",
-        flush: false,
-        data: {
-          priority: 1,
-          name: ".",
-          values: [
-            { key: "alpn", value: "h2" },
-            { key: "port", value: serverPort },
-            { key: "ipv4hint", value: "127.0.0.1" },
-          ],
-        },
-      });
-
-      let buf = dnsPacket.encode({
-        type: "response",
-        id: packet.id,
-        flags: dnsPacket.RECURSION_DESIRED,
-        questions: packet.questions,
-        answers,
-      });
-
-      res.setHeader("Content-Type", "application/dns-message");
-      res.setHeader("Content-Length", buf.length);
-      res.writeHead(200);
-      res.write(buf);
-      res.end("");
-    });
-    return;
-  } else if (u.pathname === "/dns-cname-a") {
-    let rContent = createCNameARecord();
-    res.setHeader("Content-Type", "application/dns-message");
-    res.setHeader("Content-Length", rContent.length);
-    res.writeHead(200);
-    res.write(rContent);
-    res.end("");
-    return;
   } else if (u.pathname === "/websocket") {
     res.setHeader("Upgrade", "websocket");
     res.setHeader("Connection", "Upgrade");
@@ -1279,43 +531,6 @@ function handleRequest(req, res) {
     res.setHeader("Sec-WebSocket-Accept", key);
     res.writeHead(101);
     res.end("something....");
-    return;
-  }
-  // for use with test_dns_by_type_resolve.js
-  else if (u.pathname === "/txt-dns-push") {
-    // _esni_push.example.com has A entry 127.0.0.1
-    let rContent = Buffer.from(
-      "0000010000010001000000000A5F65736E695F70757368076578616D706C6503636F6D0000010001C00C000100010000003700047F000001",
-      "hex"
-    );
-
-    // _esni_push.example.com has TXT entry 2062586B67646D39705932556761584D6762586B676347467A63336476636D513D
-    var pcontent = Buffer.from(
-      "0000818000010001000000000A5F65736E695F70757368076578616D706C6503636F6D0000100001C00C001000010000003700212062586B67646D39705932556761584D6762586B676347467A63336476636D513D",
-      "hex"
-    );
-
-    push = res.push({
-      hostname: "foo.example.com:" + serverPort,
-      port: serverPort,
-      path: "/dns-pushed-response?dns=AAABAAABAAAAAAABCl9lc25pX3B1c2gHZXhhbXBsZQNjb20AABAAAQAAKRAAAAAAAAAIAAgABAABAAA",
-      method: "GET",
-      headers: {
-        accept: "application/dns-message",
-      },
-    });
-    push.writeHead(200, {
-      "content-type": "application/dns-message",
-      pushed: "yes",
-      "content-length": pcontent.length,
-      "X-Connection-Http2": "yes",
-    });
-    push.end(pcontent);
-    res.setHeader("Content-Type", "application/dns-message");
-    res.setHeader("Content-Length", rContent.length);
-    res.writeHead(200);
-    res.write(rContent);
-    res.end("");
     return;
   } else if (u.pathname === "/.well-known/http-opportunistic") {
     res.setHeader("Cache-Control", "no-cache");
@@ -1333,189 +548,6 @@ function handleRequest(req, res) {
     res.setHeader("Content-Length", "1");
     res.writeHead(200, "OK");
     res.end("1");
-    return;
-  }
-
-  // for PushService tests.
-  else if (u.pathname === "/pushSubscriptionSuccess/subscribe") {
-    res.setHeader(
-      "Location",
-      "https://localhost:" + serverPort + "/pushSubscriptionSuccesss"
-    );
-    res.setHeader(
-      "Link",
-      '</pushEndpointSuccess>; rel="urn:ietf:params:push", ' +
-        '</receiptPushEndpointSuccess>; rel="urn:ietf:params:push:receipt"'
-    );
-    res.writeHead(201, "OK");
-    res.end("");
-    return;
-  } else if (u.pathname === "/pushSubscriptionSuccesss") {
-    // do nothing.
-    return;
-  } else if (u.pathname === "/pushSubscriptionMissingLocation/subscribe") {
-    res.setHeader(
-      "Link",
-      '</pushEndpointMissingLocation>; rel="urn:ietf:params:push", ' +
-        '</receiptPushEndpointMissingLocation>; rel="urn:ietf:params:push:receipt"'
-    );
-    res.writeHead(201, "OK");
-    res.end("");
-    return;
-  } else if (u.pathname === "/pushSubscriptionMissingLink/subscribe") {
-    res.setHeader(
-      "Location",
-      "https://localhost:" + serverPort + "/subscriptionMissingLink"
-    );
-    res.writeHead(201, "OK");
-    res.end("");
-    return;
-  } else if (u.pathname === "/pushSubscriptionLocationBogus/subscribe") {
-    res.setHeader("Location", "1234");
-    res.setHeader(
-      "Link",
-      '</pushEndpointLocationBogus; rel="urn:ietf:params:push", ' +
-        '</receiptPushEndpointLocationBogus>; rel="urn:ietf:params:push:receipt"'
-    );
-    res.writeHead(201, "OK");
-    res.end("");
-    return;
-  } else if (u.pathname === "/pushSubscriptionMissingLink1/subscribe") {
-    res.setHeader(
-      "Location",
-      "https://localhost:" + serverPort + "/subscriptionMissingLink1"
-    );
-    res.setHeader(
-      "Link",
-      '</receiptPushEndpointMissingLink1>; rel="urn:ietf:params:push:receipt"'
-    );
-    res.writeHead(201, "OK");
-    res.end("");
-    return;
-  } else if (u.pathname === "/pushSubscriptionMissingLink2/subscribe") {
-    res.setHeader(
-      "Location",
-      "https://localhost:" + serverPort + "/subscriptionMissingLink2"
-    );
-    res.setHeader(
-      "Link",
-      '</pushEndpointMissingLink2>; rel="urn:ietf:params:push"'
-    );
-    res.writeHead(201, "OK");
-    res.end("");
-    return;
-  } else if (u.pathname === "/subscriptionMissingLink2") {
-    // do nothing.
-    return;
-  } else if (u.pathname === "/pushSubscriptionNot201Code/subscribe") {
-    res.setHeader(
-      "Location",
-      "https://localhost:" + serverPort + "/subscriptionNot2xxCode"
-    );
-    res.setHeader(
-      "Link",
-      '</pushEndpointNot201Code>; rel="urn:ietf:params:push", ' +
-        '</receiptPushEndpointNot201Code>; rel="urn:ietf:params:push:receipt"'
-    );
-    res.writeHead(200, "OK");
-    res.end("");
-    return;
-  } else if (u.pathname === "/pushNotifications/subscription1") {
-    pushPushServer1 = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushNotificationsDeliver1",
-      method: "GET",
-      headers: {
-        "Encryption-Key":
-          'keyid="notification1"; dh="BO_tgGm-yvYAGLeRe16AvhzaUcpYRiqgsGOlXpt0DRWDRGGdzVLGlEVJMygqAUECarLnxCiAOHTP_znkedrlWoU"',
-        Encryption: 'keyid="notification1";salt="uAZaiXpOSfOLJxtOCZ09dA"',
-        "Content-Encoding": "aesgcm128",
-      },
-    });
-    pushPushServer1.writeHead(200, {
-      subresource: "1",
-    });
-
-    pushPushServer1.end(
-      "370aeb3963f12c4f12bf946bd0a7a9ee7d3eaff8f7aec62b530fc25cfa",
-      "hex"
-    );
-    return;
-  } else if (u.pathname === "/pushNotifications/subscription2") {
-    pushPushServer2 = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushNotificationsDeliver3",
-      method: "GET",
-      headers: {
-        "Encryption-Key":
-          'keyid="notification2"; dh="BKVdQcgfncpNyNWsGrbecX0zq3eHIlHu5XbCGmVcxPnRSbhjrA6GyBIeGdqsUL69j5Z2CvbZd-9z1UBH0akUnGQ"',
-        Encryption: 'keyid="notification2";salt="vFn3t3M_k42zHBdpch3VRw"',
-        "Content-Encoding": "aesgcm128",
-      },
-    });
-    pushPushServer2.writeHead(200, {
-      subresource: "1",
-    });
-
-    pushPushServer2.end(
-      "66df5d11daa01e5c802ff97cdf7f39684b5bf7c6418a5cf9b609c6826c04b25e403823607ac514278a7da945",
-      "hex"
-    );
-    return;
-  } else if (u.pathname === "/pushNotifications/subscription3") {
-    pushPushServer3 = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushNotificationsDeliver3",
-      method: "GET",
-      headers: {
-        "Encryption-Key":
-          'keyid="notification3";dh="BD3xV_ACT8r6hdIYES3BJj1qhz9wyv7MBrG9vM2UCnjPzwE_YFVpkD-SGqE-BR2--0M-Yf31wctwNsO1qjBUeMg"',
-        Encryption:
-          'keyid="notification3"; salt="DFq188piWU7osPBgqn4Nlg"; rs=24',
-        "Content-Encoding": "aesgcm128",
-      },
-    });
-    pushPushServer3.writeHead(200, {
-      subresource: "1",
-    });
-
-    pushPushServer3.end(
-      "2caaeedd9cf1059b80c58b6c6827da8ff7de864ac8bea6d5775892c27c005209cbf9c4de0c3fbcddb9711d74eaeebd33f7275374cb42dd48c07168bc2cc9df63e045ce2d2a2408c66088a40c",
-      "hex"
-    );
-    return;
-  } else if (u.pathname == "/pushNotifications/subscription4") {
-    pushPushServer4 = res.push({
-      hostname: "localhost:" + serverPort,
-      port: serverPort,
-      path: "/pushNotificationsDeliver4",
-      method: "GET",
-      headers: {
-        "Crypto-Key":
-          'keyid="notification4";dh="BJScXUUTcs7D8jJWI1AOxSgAKkF7e56ay4Lek52TqDlWo1yGd5czaxFWfsuP4j7XNWgGYm60-LKpSUMlptxPFVQ"',
-        Encryption: 'keyid="notification4"; salt="sn9p2QqF3V6KBclda8vx7w"',
-        "Content-Encoding": "aesgcm",
-      },
-    });
-    pushPushServer4.writeHead(200, {
-      subresource: "1",
-    });
-
-    pushPushServer4.end(
-      "9eba7ba6192544a39bd9e9b58e702d0748f1776b27f6616cdc55d29ed5a015a6db8f2dd82cd5751a14315546194ff1c18458ab91eb36c9760ccb042670001fd9964557a079553c3591ee131ceb259389cfffab3ab873f873caa6a72e87d262b8684c3260e5940b992234deebf57a9ff3a8775742f3cbcb152d249725a28326717e19cce8506813a155eff5df9bdba9e3ae8801d3cc2b7e7f2f1b6896e63d1fdda6f85df704b1a34db7b2dd63eba11ede154300a318c6f83c41a3d32356a196e36bc905b99195fd91ae4ff3f545c42d17f1fdc1d5bd2bf7516d0765e3a859fffac84f46160b79cedda589f74c25357cf6988cd8ba83867ebd86e4579c9d3b00a712c77fcea3b663007076e21f9819423faa830c2176ff1001c1690f34be26229a191a938517",
-      "hex"
-    );
-    return;
-  } else if (
-    u.pathname === "/pushNotificationsDeliver1" ||
-    u.pathname === "/pushNotificationsDeliver2" ||
-    u.pathname === "/pushNotificationsDeliver3"
-  ) {
-    res.writeHead(410, "GONE");
-    res.end("");
     return;
   } else if (u.pathname === "/illegalhpacksoft") {
     // This will cause the compressor to compress a header that is not legal,
@@ -1549,6 +581,8 @@ function handleRequest(req, res) {
     // empty DATA frame at the beginning of the stream response, then fall
     // through to the default response behavior.
     Serializer.prototype._transform = newTransform;
+  } else if (u.pathname === "/continuation_stream_zero") {
+    Serializer.prototype._transform = newTransformContinuationStreamZero;
   }
 
   // for use with test_immutable.js
@@ -1585,113 +619,16 @@ function handleRequest(req, res) {
     if (req.headers["if-none-match"]) {
       res.setHeader("x-conditional", "true");
     }
-  } else if (u.pathname === "/origin-4") {
-    let originList = [];
-    req.stream.connection.originFrame(originList);
-    res.setHeader("x-client-port", req.remotePort);
-  } else if (u.pathname === "/origin-6") {
-    let originList = [
-      "https://alt1.example.com:" + serverPort,
-      "https://alt2.example.com:" + serverPort,
-      "https://bar.example.com:" + serverPort,
-    ];
-    req.stream.connection.originFrame(originList);
-    res.setHeader("x-client-port", req.remotePort);
-  } else if (u.pathname === "/origin-11-a") {
-    res.setHeader("x-client-port", req.remotePort);
-
-    const pushb = res.push({
-      hostname: "foo.example.com:" + serverPort,
-      port: serverPort,
-      path: "/origin-11-b",
-      method: "GET",
-      headers: { "x-pushed-request": "true", "x-foo": "bar" },
-    });
-    pushb.writeHead(200, {
-      pushed: "yes",
-      "content-length": 1,
-    });
-    pushb.end("1");
-
-    const pushc = res.push({
-      hostname: "bar.example.com:" + serverPort,
-      port: serverPort,
-      path: "/origin-11-c",
-      method: "GET",
-      headers: { "x-pushed-request": "true", "x-foo": "bar" },
-    });
-    pushc.writeHead(200, {
-      pushed: "yes",
-      "content-length": 1,
-    });
-    pushc.end("1");
-
-    const pushd = res.push({
-      hostname: "madeup.example.com:" + serverPort,
-      port: serverPort,
-      path: "/origin-11-d",
-      method: "GET",
-      headers: { "x-pushed-request": "true", "x-foo": "bar" },
-    });
-    pushd.writeHead(200, {
-      pushed: "yes",
-      "content-length": 1,
-    });
-    pushd.end("1");
-
-    const pushe = res.push({
-      hostname: "alt1.example.com:" + serverPort,
-      port: serverPort,
-      path: "/origin-11-e",
-      method: "GET",
-      headers: { "x-pushed-request": "true", "x-foo": "bar" },
-    });
-    pushe.writeHead(200, {
-      pushed: "yes",
-      "content-length": 1,
-    });
-    pushe.end("1");
-  } else if (u.pathname.substring(0, 8) === "/origin-") {
-    // test_origin.js coalescing
-    res.setHeader("x-client-port", req.remotePort);
   } else if (u.pathname === "/statusphrase") {
     // Fortunately, the node-http2 API is dumb enough to allow this right on
     // through, so we can easily test rejecting this on gecko's end.
     res.writeHead("200 OK");
     res.end(content);
     return;
-  } else if (u.pathname === "/doublepush") {
-    push1 = res.push("/doublypushed");
-    push1.writeHead(200, {
-      "content-type": "text/plain",
-      pushed: "yes",
-      "content-length": 6,
-      "X-Connection-Http2": "yes",
-    });
-    push1.end("pushed");
-
-    push2 = res.push("/doublypushed");
-    push2.writeHead(200, {
-      "content-type": "text/plain",
-      pushed: "yes",
-      "content-length": 6,
-      "X-Connection-Http2": "yes",
-    });
-    push2.end("pushed");
   } else if (u.pathname === "/doublypushed") {
     content = "not pushed";
   } else if (u.pathname === "/diskcache") {
     content = "this was pulled via h2";
-  } else if (u.pathname === "/pushindisk") {
-    var pushedContent = "this was pushed via h2";
-    push = res.push("/diskcache");
-    push.writeHead(200, {
-      "content-type": "text/html",
-      pushed: "yes",
-      "content-length": pushedContent.length,
-      "X-Connection-Http2": "yes",
-    });
-    push.end(pushedContent);
   }
 
   // For test_header_Server_Timing.js
@@ -1709,14 +646,6 @@ function handleRequest(req, res) {
         "metric3; dur=789.11; desc=description2, metric4; dur=1112.13; desc=description3",
     });
     res.end();
-    return;
-  } else if (u.pathname === "/redirect_to_http") {
-    res.setHeader(
-      "Location",
-      `http://test.httpsrr.redirect.com:${u.query.port}/redirect_to_http?port=${u.query.port}`
-    );
-    res.writeHead(307);
-    res.end("");
     return;
   } else if (u.pathname === "/103_response") {
     let link_val = req.headers["link-to-set"];
@@ -1747,14 +676,6 @@ function handleRequest(req, res) {
 
     res.writeHead(200);
     res.end("");
-    return;
-  } else if (u.pathname === "/origin_header") {
-    let originHeader = req.headers.origin;
-    res.setHeader("Content-Length", originHeader.length);
-    res.setHeader("Content-Type", "text/plain");
-    res.writeHead(200);
-    res.write(originHeader);
-    res.end();
     return;
   }
 
@@ -1904,10 +825,10 @@ let httpServer = http.createServer((req, res) => {
         return;
       }
 
+      let messageId = makeid(6);
       new Promise((resolve, reject) => {
-        forked.resolve = resolve;
-        forked.reject = reject;
-        forked.send({ code });
+        forked.messageHandlers[messageId] = { resolve, reject };
+        forked.send({ code, messageId });
       })
         .then(x => sendBackResponse(x))
         .catch(e => computeAndSendBackResponse(undefined, e));
@@ -1956,11 +877,13 @@ function forkProcess() {
 function forkProcessInternal(forked) {
   let id = makeid(6);
   forked.errors = "";
+  forked.messageHandlers = {};
   globalObjects[id] = forked;
   forked.on("message", msg => {
-    if (forked.resolve) {
-      forked.resolve(msg);
-      forked.resolve = null;
+    if (msg.messageId && forked.messageHandlers[msg.messageId]) {
+      let handler = forked.messageHandlers[msg.messageId];
+      delete forked.messageHandlers[msg.messageId];
+      handler.resolve(msg);
     } else {
       console.log(
         `forked process without handler sent: ${JSON.stringify(msg)}`
@@ -1979,22 +902,27 @@ function forkProcessInternal(forked) {
       return;
     }
 
-    if (!forked.reject) {
-      console.log(
-        `child process ${id} closing code: ${code} signal: ${signal}`
-      );
-      return;
-    }
-
+    let errorMsg = `child process exit closing code: ${code} signal: ${signal}`;
     if (forked.errors != "") {
-      forked.reject(forked.errors);
+      errorMsg = forked.errors;
       forked.errors = "";
+    }
+
+    // Handle /kill/ case where forked.reject is set
+    if (forked.reject) {
+      forked.reject(errorMsg);
       forked.reject = null;
+      forked.resolve = null;
+    }
+
+    if (Object.keys(forked.messageHandlers).length === 0) {
       return;
     }
 
-    forked.reject(`child process exit closing code: ${code} signal: ${signal}`);
-    forked.reject = null;
+    for (let messageId in forked.messageHandlers) {
+      forked.messageHandlers[messageId].reject(errorMsg);
+    }
+    forked.messageHandlers = {};
   };
 
   forked.on("error", exitFunction);

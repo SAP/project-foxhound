@@ -7,53 +7,47 @@ with either `platform` or a list of `platforms`, and set the appropriate
 treeherder configuration and attributes for that platform.
 """
 
-
 import copy
 import os
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import keymatch
-from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
 from taskgraph.util.treeherder import join_symbol, split_symbol
 from voluptuous import Any, Extra, Optional, Required
 
 from gecko_taskgraph.transforms.job import job_description_schema
 
-source_test_description_schema = Schema(
-    {
-        # most fields are passed directly through as job fields, and are not
-        # repeated here
-        Extra: object,
-        # The platform on which this task runs.  This will be used to set up attributes
-        # (for try selection) and treeherder metadata (for display).  If given as a list,
-        # the job will be "split" into multiple tasks, one with each platform.
-        Required("platform"): Any(str, [str]),
-        # Build labels required for the task. If this key is provided it must
-        # contain a build label for the task platform.
-        # The task will then depend on a build task, and the installer url will be
-        # saved to the GECKO_INSTALLER_URL environment variable.
-        Optional("require-build"): optionally_keyed_by("project", {str: str}),
-        # These fields can be keyed by "platform", and are otherwise identical to
-        # job descriptions.
-        Required("worker-type"): optionally_keyed_by(
-            "platform", job_description_schema["worker-type"]
-        ),
-        Required("worker"): optionally_keyed_by(
-            "platform", job_description_schema["worker"]
-        ),
-        Optional("python-version"): [int],
-        Optional("dependencies"): {
-            k: optionally_keyed_by("platform", v)
-            for k, v in job_description_schema["dependencies"].items()
-        },
-        # A list of artifacts to install from 'fetch' tasks.
-        Optional("fetches"): {
-            str: optionally_keyed_by(
-                "platform", job_description_schema["fetches"][str]
-            ),
-        },
-    }
-)
+source_test_description_schema = LegacySchema({
+    # most fields are passed directly through as job fields, and are not
+    # repeated here
+    Extra: object,
+    # The platform on which this task runs.  This will be used to set up attributes
+    # (for try selection) and treeherder metadata (for display).  If given as a list,
+    # the job will be "split" into multiple tasks, one with each platform.
+    Required("platform"): Any(str, [str]),
+    # Build labels required for the task. If this key is provided it must
+    # contain a build label for the task platform.
+    # The task will then depend on a build task, and the installer url will be
+    # saved to the GECKO_INSTALLER_URL environment variable.
+    Optional("require-build"): optionally_keyed_by("project", {str: str}),
+    # These fields can be keyed by "platform", and are otherwise identical to
+    # job descriptions.
+    Required("worker-type"): optionally_keyed_by(
+        "platform", job_description_schema["worker-type"]
+    ),
+    Required("worker"): optionally_keyed_by(
+        "platform", job_description_schema["worker"]
+    ),
+    Optional("dependencies"): {
+        k: optionally_keyed_by("platform", v)
+        for k, v in job_description_schema["dependencies"].items()
+    },
+    # A list of artifacts to install from 'fetch' tasks.
+    Optional("fetches"): {
+        str: optionally_keyed_by("platform", job_description_schema["fetches"][str]),
+    },
+})
 
 transforms = TransformSequence()
 
@@ -85,27 +79,6 @@ def expand_platforms(config, jobs):
             else:
                 pjob["label"] = "{}-{}".format(pjob["label"], platform)
             yield pjob
-
-
-@transforms.add
-def split_python(config, jobs):
-    for job in jobs:
-        key = "python-version"
-        versions = job.pop(key, [])
-        if not versions:
-            yield job
-            continue
-        for version in versions:
-            group = f"py{version}"
-            pyjob = copy.deepcopy(job)
-            if "name" in pyjob:
-                pyjob["name"] += f"-{group}"
-            else:
-                pyjob["label"] += f"-{group}"
-            symbol = split_symbol(pyjob["treeherder"]["symbol"])[1]
-            pyjob["treeherder"]["symbol"] = join_symbol(group, symbol)
-            pyjob["run"][key] = version
-            yield pyjob
 
 
 @transforms.add

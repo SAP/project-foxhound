@@ -39,10 +39,6 @@ enum class BuiltinObjectKind : uint8_t {
   FunctionPrototype,
   IteratorPrototype,
 
-  // Built-in Intl prototypes.
-  DateTimeFormatPrototype,
-  NumberFormatPrototype,
-
   // Invalid placeholder.
   None,
 };

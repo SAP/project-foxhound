@@ -62,12 +62,7 @@ add_setup(() => {
   server = new HttpServer();
   server.start(-1);
 
-  // Pretend we are in nightly channel to make sure all telemetry events are sent.
-  let oldGetChannel = Policy.getChannel;
-  Policy.getChannel = () => "nightly";
-
   registerCleanupFunction(() => {
-    Policy.getChannel = oldGetChannel;
     server.stop(() => {});
   });
 });
@@ -78,7 +73,7 @@ add_task(async function test_an_event_is_sent_on_start() {
   server.registerPathHandler(CHANGES_PATH, (request, response) => {
     response.write(JSON.stringify({ timestamp: 42, changes: [] }));
     response.setHeader("Content-Type", "application/json; charset=UTF-8");
-    response.setHeader("ETag", '"42"');
+    response.setHeader("ETag", "42");
     response.setHeader("Date", new Date().toUTCString());
     response.setStatusLine(null, 200, "OK");
   });
@@ -178,7 +173,7 @@ add_task(async function test_check_success() {
   Assert.ok(maybeSyncCalled, "maybeSync was called");
   Assert.ok(notificationObserved, "a notification should have been observed");
   // Last timestamp was saved. An ETag header value is a quoted string.
-  Assert.equal(Services.prefs.getStringPref(PREF_LAST_ETAG), '"1100"');
+  Assert.equal(Services.prefs.getStringPref(PREF_LAST_ETAG), "1100");
   // check the last_update is updated
   Assert.equal(Services.prefs.getIntPref(PREF_LAST_UPDATE), serverTime / 1000);
 
@@ -243,7 +238,7 @@ add_task(async function test_update_timer_interface() {
   });
 
   // Everything went fine.
-  Assert.equal(Services.prefs.getStringPref(PREF_LAST_ETAG), '"42"');
+  Assert.equal(Services.prefs.getStringPref(PREF_LAST_ETAG), "42");
   Assert.equal(Services.prefs.getIntPref(PREF_LAST_UPDATE), serverTime / 1000);
 });
 add_task(clear_state);
@@ -258,7 +253,7 @@ add_task(async function test_check_up_to_date() {
   const serverTime = 4000;
   server.registerPathHandler(CHANGES_PATH, serveChangesEntries(serverTime, []));
 
-  Services.prefs.setStringPref(PREF_LAST_ETAG, '"1100"');
+  Services.prefs.setStringPref(PREF_LAST_ETAG, "1100");
 
   // Ensure that the remote-settings:changes-poll-end notification is sent.
   let notificationObserved = false;
@@ -419,7 +414,7 @@ add_task(async function test_age_of_data_is_reported_in_uptake_status() {
           source: TELEMETRY_SOURCE_SYNC,
           duration: () => true,
           trigger: "manual",
-          timestamp: `"${recordsTimestamp}"`,
+          timestamp: `${recordsTimestamp}`,
         },
       ],
     ],
@@ -498,7 +493,7 @@ add_task(async function test_success_with_partial_list() {
         collection: "poll-test-collection",
       },
     ];
-    if (request.queryString.includes(`_since=${encodeURIComponent('"42"')}`)) {
+    if (request.queryString.includes(`_since=42`)) {
       response.write(
         JSON.stringify({
           timestamp: 43,
@@ -1313,7 +1308,7 @@ add_task(
           timestamp: 42,
         })
       );
-      response.setHeader("ETag", '"42"');
+      response.setHeader("ETag", "42");
       response.setStatusLine(null, 200, "OK");
       response.setHeader("Content-Type", "application/json; charset=UTF-8");
       response.setHeader("Date", new Date().toUTCString());

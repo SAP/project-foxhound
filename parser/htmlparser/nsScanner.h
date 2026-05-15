@@ -23,7 +23,6 @@
 #include "nsIParser.h"
 #include "mozilla/Encoding.h"
 #include "nsScannerString.h"
-#include "mozilla/CheckedInt.h"
 
 class nsReadEndCondition {
  public:

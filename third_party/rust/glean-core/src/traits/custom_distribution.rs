@@ -2,14 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::ErrorType;
+use crate::{DistributionData, ErrorType, TestGetValue};
 
 /// A description for the
 /// [`CustomDistributionMetric`](crate::metrics::CustomDistributionMetric) type.
 ///
 /// When changing this trait, make sure all the operations are
 /// implemented in the related type in `../metrics/`.
-pub trait CustomDistribution {
+pub trait CustomDistribution: TestGetValue<Output = DistributionData> {
     /// Accumulates the provided signed samples in the metric.
     ///
     /// This is required so that the platform-specific code can provide us with
@@ -24,8 +24,7 @@ pub trait CustomDistribution {
     /// ## Notes
     ///
     /// Discards any negative value in `samples` and report an
-    /// [`ErrorType::InvalidValue`](crate::ErrorType::InvalidValue) for each of
-    /// them.
+    /// [`ErrorType::InvalidValue`] for each of them.
     fn accumulate_samples_signed(&self, samples: Vec<i64>);
 
     /// Accumulates precisely one signed sample in the metric.
@@ -41,23 +40,8 @@ pub trait CustomDistribution {
     /// ## Notes
     ///
     /// Discards any negative value of `sample` and reports an
-    /// [`ErrorType::InvalidValue`](crate::ErrorType::InvalidValue).
+    /// [`ErrorType::InvalidValue`].
     fn accumulate_single_sample_signed(&self, sample: i64);
-
-    /// **Exported for test purposes.**
-    ///
-    /// Gets the currently stored histogram.
-    ///
-    /// This doesn't clear the stored value.
-    ///
-    /// # Arguments
-    ///
-    /// * `ping_name` - represents the optional name of the ping to retrieve the
-    ///   metric for. Defaults to the first value in `send_in_pings`.
-    fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<crate::metrics::DistributionData>;
 
     /// **Exported for test purposes.**
     ///

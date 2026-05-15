@@ -1,0 +1,16 @@
+{
+  "include": ["*.sys.mjs", "types/*.ts"],
+  "exclude": ["Interactions.sys.mjs", "PlacesUIUtils.sys.mjs"],
+  "extends": "../../../tools/@types/tsconfig.json",
+
+  "compilerOptions": {
+    "checkJs": true,
+
+    "plugins": [
+      {
+        "transform": "../../../tools/ts/plugins/checkRootOnly.js",
+        "transformProgram": true
+      }
+    ]
+  }
+}

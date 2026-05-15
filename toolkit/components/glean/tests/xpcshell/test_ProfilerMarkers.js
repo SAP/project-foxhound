@@ -2061,3 +2061,98 @@ add_task(
     ]);
   }
 );
+
+add_task(async function test_fog_static_dual_labeled_counter_markers() {
+  let markers = await runWithProfilerAndGetMarkers("IntLikeMetric", () => {
+    // Statically labeled counter submetrics
+    Glean.testOnly.keyedCategories.get("rei", "cut").add(1);
+    Glean.testOnly.keyedCategories.get("gong", "lasered").add(4);
+  });
+
+  Assert.deepEqual(markers, [
+    {
+      type: "IntLikeMetric",
+      cat: "test_only",
+      id: "keyed_categories",
+      label: "rei, cut",
+      val: 1,
+    },
+    {
+      type: "IntLikeMetric",
+      cat: "test_only",
+      id: "keyed_categories",
+      label: "gong, lasered",
+      val: 4,
+    },
+  ]);
+});
+
+add_task(async function test_jog_dual_labeled_counter_markers() {
+  Services.fog.testRegisterRuntimeMetric(
+    "dual_labeled_counter",
+    "jog_cat",
+    "jog_dlc",
+    ["test-ping"],
+    `"ping"`,
+    false
+  );
+
+  let markers = await runWithProfilerAndGetMarkers("IntLikeMetric", () => {
+    Glean.jogCat.jogDlc.get("saunter", "thisaway").add(8);
+    Glean.jogCat.jogDlc.get("it be", "somewhat difficult").add(16);
+  });
+
+  Assert.deepEqual(markers, [
+    {
+      type: "IntLikeMetric",
+      cat: "jog_cat",
+      id: "jog_dlc",
+      label: "saunter, thisaway",
+      val: 8,
+    },
+    {
+      type: "IntLikeMetric",
+      cat: "jog_cat",
+      id: "jog_dlc",
+      label: "it be, somewhat difficult",
+      val: 16,
+    },
+  ]);
+});
+
+add_task(
+  async function test_jog_dual_labeled_counter_with_static_keys_markers() {
+    Services.fog.testRegisterRuntimeMetric(
+      "dual_labeled_counter",
+      "jog_cat",
+      "jog_dlc_keys",
+      ["test-ping"],
+      `"ping"`,
+      false,
+      JSON.stringify({ ordered_keys: ["raising heck", "duke of pop"] })
+    );
+    let markers = await runWithProfilerAndGetMarkers("IntLikeMetric", () => {
+      Glean.jogCat.jogDlcKeys
+        .get("raising heck", "you are out of whack")
+        .add(32);
+      Glean.jogCat.jogDlcKeys.get("duke of pop", "you speak in excess").add(64);
+    });
+
+    Assert.deepEqual(markers, [
+      {
+        type: "IntLikeMetric",
+        cat: "jog_cat",
+        id: "jog_dlc_keys",
+        label: "raising heck, you are out of whack",
+        val: 32,
+      },
+      {
+        type: "IntLikeMetric",
+        cat: "jog_cat",
+        id: "jog_dlc_keys",
+        label: "duke of pop, you speak in excess",
+        val: 64,
+      },
+    ]);
+  }
+);

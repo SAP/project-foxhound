@@ -69,9 +69,6 @@ var CustomTitlebar = {
       !Object.keys(this._disallowed).length;
 
     document.documentElement.toggleAttribute("customtitlebar", allowed);
-    if (AppConstants.platform == "macosx") {
-      document.documentElement.toggleAttribute("drawtitle", !allowed);
-    }
 
     ToolbarIconColor.inferFromText("customtitlebar", allowed);
     TabBarVisibility.update(true);

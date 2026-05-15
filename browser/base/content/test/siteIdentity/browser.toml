@@ -1,8 +1,15 @@
 [DEFAULT]
 support-files = [
+  "2-qwac.binding",
+  "2-qwac.html",
+  "2-qwac.html^headers^",
   "head.js",
   "dummy_page.html",
   "!/image/test/mochitest/blue.png",
+]
+prefs = [
+  "browser.urlbar.trustPanel.featureGate=false",
+  "security.certerrors.felt-privacy-v1=true"
 ]
 
 ["browser_about_blank_same_document_tabswitch.js"]
@@ -10,7 +17,9 @@ https_first_disabled = true
 support-files = ["open-self-from-frame.html"]
 
 ["browser_check_identity_state.js"]
-skip-if = ["os == 'win' && !debug && msix"] # Bug 1895285
+skip-if = [
+  "os == 'win' && opt && msix", # Bug 1895285
+]
 https_first_disabled = true
 
 ["browser_check_identity_state_pdf.js"]
@@ -50,7 +59,10 @@ support-files = [
 ["browser_identityPopup_HttpsOnlyMode.js"]
 
 ["browser_identityPopup_clearSiteData.js"]
-skip-if = ["os == 'linux' && bits == 64"] # Bug 1577395
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1577395
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1577395
+]
 
 ["browser_identityPopup_clearSiteData_extensions.js"]
 
@@ -62,9 +74,10 @@ https_first_disabled = true
 
 ["browser_identityPopup_focus.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && asan", # Bug 1723899
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan", # Bug 1723899
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1723899
 ]
+
+["browser_identityPopup_qwacs.js"]
 
 ["browser_identity_UI.js"]
 https_first_disabled = true
@@ -91,7 +104,9 @@ support-files = [
   "test_mcb_redirect.js",
   "test_mcb_redirect.sjs",
 ]
-skip-if = ["a11y_checks"] # Bugs 1858041 and 1824058 for causing intermittent crashes
+skip-if = [
+  "a11y_checks", # Bugs 1858041 and 1824058 for causing intermittent crashes
+]
 
 ["browser_mixedContentFramesOnHttp.js"]
 https_first_disabled = true
@@ -112,6 +127,10 @@ support-files = [
 
 ["browser_mixed_content_cert_override.js"]
 tags = "mcb"
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1997430
+]
+
 support-files = ["test-mixedcontent-securityerrors.html"]
 
 ["browser_mixed_content_with_navigation.js"]

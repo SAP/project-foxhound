@@ -9,7 +9,6 @@ import android.media.MediaCodecInfo.CodecCapabilities;
 import android.media.MediaCrypto;
 import android.media.MediaFormat;
 import android.os.Binder;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -86,11 +85,7 @@ import org.mozilla.gecko.util.HardwareCodecCapabilityUtils;
 
       private void onError(final MediaCodec.CodecException e) {
         e.printStackTrace();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-          notify(obtainMessage(MSG_ERROR, e.getErrorCode()));
-        } else {
-          notify(obtainMessage(MSG_ERROR, e.getLocalizedMessage()));
-        }
+        notify(obtainMessage(MSG_ERROR, e.getErrorCode()));
       }
     }
 

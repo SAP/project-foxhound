@@ -22,7 +22,7 @@ In addition, if you open the panel for one of these tools, you will also see a w
 Scratchpad
 **********
 
-Scratchpad is deprecated as of Firefox 70 (`bug 1565380 <https://bugzilla.mozilla.org/show_bug.cgi?id=1565380>`_), and will be removed as of Firefox 72 (`bug 1519103 <https://bugzilla.mozilla.org/show_bug.cgi?id=1519103>`_).
+Scratchpad was removed in Firefox 72 (`bug 1519103 <https://bugzilla.mozilla.org/show_bug.cgi?id=1519103>`_).
 
 
 Description
@@ -37,7 +37,7 @@ Scratchpad provided an environment for experimenting with JavaScript code. You c
 Alternatives
 ------------
 
-In Firefox 71+, you can write multi-line JavaScript code in the Web Console Editor Mode, making it similar to the Scratchpad. The Editor Mode can be triggered clicking on the icon on the right of the console input, or with :kbd:`Ctrl` + :kbd:`B` (:kbd:`Cmd` + :kbd:`B` on macOS)
+You can write multi-line JavaScript code in the Web Console Editor Mode, making it similar to the Scratchpad. The Editor Mode can be triggered clicking on the icon on the right of the console input, or with :kbd:`Ctrl` + :kbd:`B` (:kbd:`Cmd` + :kbd:`B` on macOS)
 
 
 .. image:: editor_mode_toggle_icon.png
@@ -52,17 +52,13 @@ When evaluating, the input isn't cleared, which makes it possible to quickly ite
 
 The results are displayed in the console output, to the right of the input, providing immediate feedback. Unlike in Scratchpad, errors are properly displayed in the output with an expandable stacktrace, making it easier to debug the code you're currently writing.
 
-Starting Firefox 72, you can import a Javascript file content in the console input with :kbd:`Ctrl` + :kbd:`O` (:kbd:`Cmd` + :kbd:`O` on macOS), as well as saving the console input content to a file using :kbd:`Ctrl` + :kbd:`S` (:kbd:`Cmd` + :kbd:`S` on macOS).
+You can import a Javascript file content in the console input with :kbd:`Ctrl` + :kbd:`O` (:kbd:`Cmd` + :kbd:`O` on macOS), as well as saving the console input content to a file using :kbd:`Ctrl` + :kbd:`S` (:kbd:`Cmd` + :kbd:`S` on macOS).
 
 
 WebIDE and Connect page
 ***********************
 
-WebIDE was deprecated as of Firefox 69
-
-Disabled as of Firefox 70 (`bug 1539451 <https://bugzilla.mozilla.org/show_bug.cgi?id=1539451>`_).
-
-Removed as of Firefox 71 (`bug 1539462 <https://bugzilla.mozilla.org/show_bug.cgi?id=1539462>`_).
+WebIDE was removed as of Firefox 71 (`bug 1539462 <https://bugzilla.mozilla.org/show_bug.cgi?id=1539462>`_).
 
 
 Description
@@ -76,7 +72,7 @@ WebIDE allowed you to connect the Firefox Developer Tools to remote browsers, su
 Alternatives
 ------------
 
-Remote debugging is available in about:debugging as of Firefox 68. Features not ported to about:debugging are: WiFi debugging for Firefox for Android, application development. Features that are planned but not ported yet: remote browser screenshots and edit remote browser configuration. More details on the `mailing-list thread <https://groups.google.com/forum/#!topic/mozilla.dev.developer-tools/aWA7JJ-TpRw>`_.
+Remote debugging is available in about:debugging. Features not ported to about:debugging are: WiFi debugging for Firefox for Android, application development. Features that are planned but not ported yet: remote browser screenshots and edit remote browser configuration. More details on the `mailing-list thread <https://groups.google.com/forum/#!topic/mozilla.dev.developer-tools/aWA7JJ-TpRw>`_.
 
 Wireless debugging over Wi-Fi is possible and documented at :ref:`about-colon-debugging-connecting-to-android-over-wi-fi`.
 

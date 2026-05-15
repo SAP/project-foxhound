@@ -11,18 +11,22 @@ pub fn run(fields: &mut Vec<ModuleField>) {
                     fields.push(export(f.span, name, ExportKind::Func, &mut f.id));
                 }
                 match f.kind {
-                    FuncKind::Import(import) => {
-                        item = ModuleField::Import(Import {
-                            span: f.span,
-                            module: import.module,
-                            field: import.field,
-                            item: ItemSig {
+                    FuncKind::Import(import, exact) => {
+                        item = ModuleField::Import(Imports::single(
+                            f.span,
+                            import.module,
+                            import.field,
+                            ItemSig {
                                 span: f.span,
                                 id: f.id,
                                 name: f.name,
-                                kind: ItemKind::Func(f.ty.clone()),
+                                kind: if exact {
+                                    ItemKind::FuncExact(f.ty.clone())
+                                } else {
+                                    ItemKind::Func(f.ty.clone())
+                                },
                             },
-                        });
+                        ));
                     }
                     FuncKind::Inline { .. } => {}
                 }
@@ -34,23 +38,31 @@ pub fn run(fields: &mut Vec<ModuleField>) {
                 }
                 match m.kind {
                     MemoryKind::Import { import, ty } => {
-                        item = ModuleField::Import(Import {
-                            span: m.span,
-                            module: import.module,
-                            field: import.field,
-                            item: ItemSig {
+                        item = ModuleField::Import(Imports::single(
+                            m.span,
+                            import.module,
+                            import.field,
+                            ItemSig {
                                 span: m.span,
                                 id: m.id,
                                 name: None,
                                 kind: ItemKind::Memory(ty),
                             },
-                        });
+                        ));
                     }
                     // If data is defined inline insert an explicit `data` module
                     // field here instead, switching this to a `Normal` memory.
-                    MemoryKind::Inline { is64, ref data } => {
+                    MemoryKind::Inline {
+                        is64,
+                        ref data,
+                        page_size_log2,
+                    } => {
                         let len = data.iter().map(|l| l.len()).sum::<usize>() as u64;
-                        let pages = (len + default_page_size() - 1) / default_page_size();
+                        let page_size = match page_size_log2 {
+                            Some(page_size_log2) => 2_u64.pow(page_size_log2),
+                            None => default_page_size(),
+                        };
+                        let pages = (len + page_size - 1) / page_size;
                         let kind = MemoryKind::Normal(MemoryType {
                             limits: Limits {
                                 is64,
@@ -58,7 +70,7 @@ pub fn run(fields: &mut Vec<ModuleField>) {
                                 max: Some(pages),
                             },
                             shared: false,
-                            page_size_log2: None,
+                            page_size_log2,
                         });
                         let data = match mem::replace(&mut m.kind, kind) {
                             MemoryKind::Inline { data, .. } => data,
@@ -91,17 +103,17 @@ pub fn run(fields: &mut Vec<ModuleField>) {
                 }
                 match &mut t.kind {
                     TableKind::Import { import, ty } => {
-                        item = ModuleField::Import(Import {
-                            span: t.span,
-                            module: import.module,
-                            field: import.field,
-                            item: ItemSig {
+                        item = ModuleField::Import(Imports::single(
+                            t.span,
+                            import.module,
+                            import.field,
+                            ItemSig {
                                 span: t.span,
                                 id: t.id,
                                 name: None,
                                 kind: ItemKind::Table(*ty),
                             },
-                        });
+                        ));
                     }
                     // If data is defined inline insert an explicit `data`
                     // module field here instead, switching this to a `Normal`
@@ -160,17 +172,17 @@ pub fn run(fields: &mut Vec<ModuleField>) {
                 }
                 match g.kind {
                     GlobalKind::Import(import) => {
-                        item = ModuleField::Import(Import {
-                            span: g.span,
-                            module: import.module,
-                            field: import.field,
-                            item: ItemSig {
+                        item = ModuleField::Import(Imports::single(
+                            g.span,
+                            import.module,
+                            import.field,
+                            ItemSig {
                                 span: g.span,
                                 id: g.id,
                                 name: None,
                                 kind: ItemKind::Global(g.ty),
                             },
-                        });
+                        ));
                     }
                     GlobalKind::Inline { .. } => {}
                 }
@@ -182,17 +194,17 @@ pub fn run(fields: &mut Vec<ModuleField>) {
                 }
                 match e.kind {
                     TagKind::Import(import) => {
-                        item = ModuleField::Import(Import {
-                            span: e.span,
-                            module: import.module,
-                            field: import.field,
-                            item: ItemSig {
+                        item = ModuleField::Import(Imports::single(
+                            e.span,
+                            import.module,
+                            import.field,
+                            ItemSig {
                                 span: e.span,
                                 id: e.id,
                                 name: None,
                                 kind: ItemKind::Tag(e.ty.clone()),
                             },
-                        });
+                        ));
                     }
                     TagKind::Inline { .. } => {}
                 }

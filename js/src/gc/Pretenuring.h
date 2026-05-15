@@ -38,7 +38,7 @@ class PretenuringNursery;
 
 // Number of trace kinds supportd by the nursery. These are arranged at the
 // start of JS::TraceKind.
-static constexpr size_t NurseryTraceKinds = 3;
+static constexpr size_t NurseryTraceKinds = 4;
 
 // The number of nursery allocations at which to pay attention to an allocation
 // site. This must be large enough to ensure we have enough information to infer

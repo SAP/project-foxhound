@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_XULMenuAccessible_h__
-#define mozilla_a11y_XULMenuAccessible_h__
+#ifndef mozilla_a11y_XULMenuAccessible_h_
+#define mozilla_a11y_XULMenuAccessible_h_
 
 #include "AccessibleWrap.h"
 #include "XULSelectControlAccessible.h"
@@ -22,8 +22,9 @@ class XULMenuitemAccessible : public AccessibleWrap {
   XULMenuitemAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // LocalAccessible
-  virtual ENameValueFlag Name(nsString& aName) const override;
-  virtual void Description(nsString& aDescription) const override;
+  virtual ENameValueFlag DirectName(nsString& aName) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
   virtual uint64_t NativeInteractiveState() const override;

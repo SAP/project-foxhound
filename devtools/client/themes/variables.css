@@ -160,8 +160,8 @@
 
   /* Toolbar buttons */
   --toolbarbutton-background: light-dark(var(--grey-10), var(--grey-70));
-  --toolbarbutton-hover-background: light-dark(var(--grey-20), var(--grey-70));
-  --toolbarbutton-hover-color: inherit;
+  --toolbarbutton-hover-background: light-dark(var(--grey-20), var(--grey-60));
+  --toolbarbutton-hover-color: light-dark(var(--grey-80), var(--grey-30));
   --toolbarbutton-checked-background: var(--toolbarbutton-hover-background);
   --toolbarbutton-checked-color: var(--theme-icon-checked-color);
 
@@ -282,6 +282,8 @@
   --theme-search-results-background: var(--theme-contrast-background);
   --theme-search-results-color: var(--theme-contrast-color);
   --theme-search-results-border-color: var(--theme-contrast-border);
+
+  --table-zebra-background: light-dark(rgba(247, 247, 247, 0.8), rgba(255, 255, 255, 0.05));
 
   &[forced-colors-active] {
     /* Color picked from HCM palette created by a11y team */

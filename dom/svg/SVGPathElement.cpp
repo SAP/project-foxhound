@@ -8,22 +8,22 @@
 
 #include <algorithm>
 
+#include "SVGArcConverter.h"
 #include "SVGGeometryProperty.h"
+#include "SVGPathSegUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
 #include "mozAutoDocUpdate.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/SVGContentUtils.h"
+#include "mozilla/dom/SVGPathElementBinding.h"
+#include "mozilla/dom/SVGPathSegment.h"
+#include "mozilla/gfx/2D.h"
 #include "nsGkAtoms.h"
 #include "nsIFrame.h"
 #include "nsStyleConsts.h"
 #include "nsStyleStruct.h"
 #include "nsWindowSizes.h"
-#include "mozilla/dom/SVGPathElementBinding.h"
-#include "mozilla/dom/SVGPathSegment.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/SVGContentUtils.h"
-#include "SVGArcConverter.h"
-#include "SVGPathSegUtils.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Path)
 
@@ -41,11 +41,11 @@ class MOZ_RAII AutoChangePathSegListNotifier : public mozAutoDocUpdate {
       : mozAutoDocUpdate(aSVGPathElement->GetComposedDoc(), true),
         mSVGElement(aSVGPathElement) {
     MOZ_ASSERT(mSVGElement, "Expecting non-null value");
-    mEmptyOrOldValue = mSVGElement->WillChangePathSegList(*this);
+    mSVGElement->WillChangePathSegList(*this);
   }
 
   ~AutoChangePathSegListNotifier() {
-    mSVGElement->DidChangePathSegList(mEmptyOrOldValue, *this);
+    mSVGElement->DidChangePathSegList(*this);
     if (mSVGElement->GetAnimPathSegList()->IsAnimating()) {
       mSVGElement->AnimationNeedsResample();
     }
@@ -53,7 +53,6 @@ class MOZ_RAII AutoChangePathSegListNotifier : public mozAutoDocUpdate {
 
  private:
   SVGPathElement* const mSVGElement;
-  nsAttrValue mEmptyOrOldValue;
 };
 
 JSObject* SVGPathElement::WrapNode(JSContext* aCx,
@@ -138,10 +137,10 @@ static void CreatePathSegments(SVGPathElement* aPathElement,
           Point cp1, cp2;
           while (converter.GetNextSegment(&cp1, &cp2, &segEnd)) {
             auto curve = StylePathCommand::CubicCurve(
-                StyleByTo::To,
-                StyleCoordinatePair<StyleCSSFloat>{segEnd.x, segEnd.y},
-                StyleCoordinatePair<StyleCSSFloat>{cp1.x, cp1.y},
-                StyleCoordinatePair<StyleCSSFloat>{cp2.x, cp2.y});
+                StyleEndPoint<StyleCSSFloat>::ToPosition({segEnd.x, segEnd.y}),
+                StyleCurveControlPoint<StyleCSSFloat>::Absolute({cp1.x, cp1.y}),
+                StyleCurveControlPoint<StyleCSSFloat>::Absolute(
+                    {cp2.x, cp2.y}));
             aValues.AppendElement(new SVGPathSegment(aPathElement, curve));
           }
           break;

@@ -136,8 +136,9 @@ class HTMLButtonElement final : public nsGenericHTMLFormControlElementWithState,
   void SetCustomValidity(const nsAString& aError);
 
   // Command & CommandFor
-  Element* GetCommandForElement() const;
-  void SetCommandForElement(Element*);
+  Element* GetCommandForElementForBindings() const;
+  Element* GetCommandForElementInternal() const;
+  void SetCommandForElementForBindings(Element*);
   void GetCommand(nsAString& aCommand) const;
   Element::Command GetCommand() const;
   void SetCommand(const nsAString& aValue) {

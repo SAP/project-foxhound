@@ -25,14 +25,10 @@
 
 #![deny(missing_docs)]
 
+pub(crate) use cssparser;
+
 #[macro_use]
 extern crate bitflags;
-#[macro_use]
-extern crate cssparser;
-#[macro_use]
-extern crate debug_unreachable;
-#[macro_use]
-extern crate derive_more;
 #[macro_use]
 #[cfg(feature = "gecko")]
 extern crate gecko_profiler;
@@ -40,26 +36,7 @@ extern crate gecko_profiler;
 #[macro_use]
 pub mod gecko_string_cache;
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate log;
-#[macro_use]
-extern crate malloc_size_of;
-#[macro_use]
-extern crate malloc_size_of_derive;
-#[cfg(feature = "servo")]
-#[macro_use]
-extern crate markup5ever;
-#[allow(unused_extern_crates)]
-#[macro_use]
-extern crate matches;
-#[cfg(feature = "gecko")]
-pub use nsstring;
-#[cfg(feature = "gecko")]
-extern crate num_cpus;
-#[macro_use]
-extern crate num_derive;
-#[macro_use]
 extern crate serde;
 pub use servo_arc;
 #[cfg(feature = "servo")]
@@ -67,22 +44,22 @@ pub use servo_arc;
 extern crate stylo_atoms;
 #[macro_use]
 extern crate static_assertions;
-#[macro_use]
-extern crate style_derive;
-#[cfg(feature = "gecko")]
-#[macro_use]
-extern crate thin_vec;
-#[macro_use]
-extern crate to_shmem_derive;
 
 #[macro_use]
 mod macros;
 
-pub mod animation;
+mod derives {
+    pub(crate) use derive_more::{Add, AddAssign, Deref, DerefMut, From};
+    pub(crate) use malloc_size_of_derive::MallocSizeOf;
+    pub(crate) use num_derive::FromPrimitive;
+    pub(crate) use style_derive::{
+        Animate, ComputeSquaredDistance, Parse, SpecifiedValueInfo, ToAnimatedValue,
+        ToAnimatedZero, ToComputedValue, ToCss, ToResolvedValue, ToTyped,
+    };
+    pub(crate) use to_shmem_derive::ToShmem;
+}
+
 pub mod applicable_declarations;
-#[allow(missing_docs)] // TODO.
-#[cfg(feature = "servo")]
-pub mod attr;
 pub mod author_styles;
 pub mod bezier;
 pub mod bloom;
@@ -97,8 +74,6 @@ pub mod data;
 pub mod dom;
 pub mod dom_apis;
 pub mod driver;
-#[cfg(feature = "servo")]
-mod encoding_support;
 pub mod error_reporting;
 pub mod font_face;
 pub mod font_metrics;
@@ -125,6 +100,7 @@ pub mod selector_map;
 pub mod selector_parser;
 pub mod shared_lock;
 pub mod sharing;
+mod simple_buckets_map;
 pub mod str;
 pub mod style_adjuster;
 pub mod style_resolver;
@@ -134,8 +110,8 @@ pub mod stylist;
 pub mod thread_state;
 pub mod traversal;
 pub mod traversal_flags;
+pub mod typed_om;
 pub mod use_counters;
-mod simple_buckets_map;
 
 #[macro_use]
 #[allow(non_camel_case_types)]
@@ -159,13 +135,13 @@ pub use stylo_atoms::Atom;
 
 #[cfg(feature = "servo")]
 #[allow(missing_docs)]
-pub type LocalName = crate::values::GenericAtomIdent<markup5ever::LocalNameStaticSet>;
+pub type LocalName = crate::values::GenericAtomIdent<web_atoms::LocalNameStaticSet>;
 #[cfg(feature = "servo")]
 #[allow(missing_docs)]
-pub type Namespace = crate::values::GenericAtomIdent<markup5ever::NamespaceStaticSet>;
+pub type Namespace = crate::values::GenericAtomIdent<web_atoms::NamespaceStaticSet>;
 #[cfg(feature = "servo")]
 #[allow(missing_docs)]
-pub type Prefix = crate::values::GenericAtomIdent<markup5ever::PrefixStaticSet>;
+pub type Prefix = crate::values::GenericAtomIdent<web_atoms::PrefixStaticSet>;
 
 pub use style_traits::arc_slice::ArcSlice;
 pub use style_traits::owned_slice::OwnedSlice;
@@ -184,6 +160,8 @@ pub mod gecko;
 #[cfg(feature = "servo")]
 #[allow(unsafe_code)]
 pub mod servo;
+#[cfg(feature = "servo")]
+pub use servo::{animation, attr};
 
 macro_rules! reexport_computed_values {
     ( $( { $name: ident } )+ ) => {

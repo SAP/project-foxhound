@@ -27,7 +27,7 @@ function getArrayTypeNames() {
  * side (with getGrip).
  *
  * @param {Message} parameters
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isSupportedByConsoleTable(parameters) {
   const supportedClasses = [

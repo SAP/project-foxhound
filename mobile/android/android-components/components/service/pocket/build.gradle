@@ -4,19 +4,16 @@
 
 buildscript {
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
     dependencies {
-        classpath  libs.plugin.serialization
+        classpath libs.kotlin.serialization
     }
+}
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
 }
 
 apply plugin: 'com.android.library'
@@ -26,21 +23,9 @@ apply plugin: 'kotlinx-serialization'
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas".toString())
             arg("room.generateKotlin", "true")
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -57,41 +42,39 @@ android {
 }
 
 dependencies {
-    implementation libs.kotlin.coroutines
-    implementation libs.kotlin.json
+    implementation project(':components:concept-fetch')
+    implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
 
     implementation libs.androidx.core.ktx
-    implementation libs.androidx.work.runtime
     implementation libs.androidx.room.runtime
     ksp libs.androidx.room.compiler
+    implementation libs.androidx.work.runtime
+    implementation libs.kotlinx.coroutines
+    implementation libs.kotlinx.serialization.json
 
-    implementation project(':components:support-ktx')
-    implementation project(':components:support-base')
-    implementation project(':components:concept-fetch')
-
-    testImplementation libs.kotlin.reflect
+    testImplementation project(':components:lib-fetch-httpurlconnection')
+    testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.arch.core.testing
     testImplementation libs.androidx.concurrent
+    testImplementation libs.androidx.room.testing
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.robolectric
-    testImplementation libs.androidx.room.testing
     testImplementation libs.androidx.work.testing
-
-    testImplementation project(':components:support-test')
-    testImplementation project(':components:lib-fetch-httpurlconnection')
+    testImplementation libs.kotlin.reflect
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 
     androidTestImplementation project(':components:support-android-test')
 
-    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.arch.core.testing
+    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.runner
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

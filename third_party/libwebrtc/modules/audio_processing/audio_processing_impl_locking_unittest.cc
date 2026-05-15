@@ -9,19 +9,22 @@
  */
 
 #include <algorithm>
-#include <memory>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "api/array_view.h"
+#include "api/audio/audio_processing.h"
 #include "api/audio/builtin_audio_processing_builder.h"
 #include "api/environment/environment_factory.h"
-#include "modules/audio_processing/audio_processing_impl.h"
-#include "modules/audio_processing/test/test_utils.h"
+#include "api/scoped_refptr.h"
+#include "api/units/time_delta.h"
 #include "rtc_base/event.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/random.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "system_wrappers/include/sleep.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/thread_annotations.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -163,16 +166,16 @@ struct TestConfig {
       };
 
       const AllowedApiCallCombinations api_calls[] = {
-          {RenderApiImpl::ProcessReverseStreamImplInteger,
-           CaptureApiImpl::ProcessStreamImplInteger},
-          {RenderApiImpl::ProcessReverseStreamImplFloat,
-           CaptureApiImpl::ProcessStreamImplFloat},
-          {RenderApiImpl::AnalyzeReverseStreamImplFloat,
-           CaptureApiImpl::ProcessStreamImplFloat},
-          {RenderApiImpl::ProcessReverseStreamImplInteger,
-           CaptureApiImpl::ProcessStreamImplFloat},
-          {RenderApiImpl::ProcessReverseStreamImplFloat,
-           CaptureApiImpl::ProcessStreamImplInteger}};
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplInteger,
+           .capture_api = CaptureApiImpl::ProcessStreamImplInteger},
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplFloat,
+           .capture_api = CaptureApiImpl::ProcessStreamImplFloat},
+          {.render_api = RenderApiImpl::AnalyzeReverseStreamImplFloat,
+           .capture_api = CaptureApiImpl::ProcessStreamImplFloat},
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplInteger,
+           .capture_api = CaptureApiImpl::ProcessStreamImplFloat},
+          {.render_api = RenderApiImpl::ProcessReverseStreamImplFloat,
+           .capture_api = CaptureApiImpl::ProcessStreamImplInteger}};
       std::vector<TestConfig> out;
       for (auto api_call : api_calls) {
         test_config.render_api_function = api_call.render_api;
@@ -227,8 +230,8 @@ struct TestConfig {
         auto available_rates =
             (test_config.aec_type ==
                      AecType::BasicWebRtcAecSettingsWithAecMobile
-                 ? rtc::ArrayView<const int>(sample_rates, 2)
-                 : rtc::ArrayView<const int>(sample_rates));
+                 ? ArrayView<const int>(sample_rates, 2)
+                 : ArrayView<const int>(sample_rates));
 
         for (auto rate : available_rates) {
           test_config.initial_sample_rate_hz = rate;
@@ -428,7 +431,7 @@ class AudioProcessingImplLockTest
   mutable RandomGenerator rand_gen_;
 
   const TestConfig test_config_;
-  rtc::scoped_refptr<AudioProcessing> apm_;
+  scoped_refptr<AudioProcessing> apm_;
   FrameCounters frame_counters_;
   RenderProcessor render_thread_state_;
   CaptureProcessor capture_thread_state_;
@@ -441,7 +444,7 @@ class AudioProcessingImplLockTest
 // Sleeps a random time between 0 and max_sleep milliseconds.
 void SleepRandomMs(int max_sleep, RandomGenerator* rand_gen) {
   int sleeptime = rand_gen->RandInt(0, max_sleep);
-  SleepMs(sleeptime);
+  Thread::SleepMs(sleeptime);
 }
 
 // Populates a float audio frame with random data.
@@ -462,7 +465,7 @@ void PopulateAudioFrame(float** frame,
 void PopulateAudioFrame(float amplitude,
                         size_t num_channels,
                         size_t samples_per_channel,
-                        rtc::ArrayView<int16_t> frame,
+                        ArrayView<int16_t> frame,
                         RandomGenerator* rand_gen) {
   ASSERT_GT(amplitude, 0);
   ASSERT_LE(amplitude, 32767);

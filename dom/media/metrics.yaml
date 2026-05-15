@@ -14,15 +14,6 @@ gmp:
   update_xml_fetch_result:
     type: labeled_counter
     labels:
-      - cert_pin_success
-      - cert_pin_net_request_error
-      - cert_pin_net_timeout
-      - cert_pin_abort
-      - cert_pin_missing_data
-      - cert_pin_failed
-      - cert_pin_invalid
-      - cert_pin_xml_parse_error
-      - cert_pin_unknown_error
       - content_sig_success
       - content_sig_net_request_error
       - content_sig_net_timeout
@@ -34,9 +25,8 @@ gmp:
       - content_sig_unknown_error
     description: >
       The result of Gecko fetching an update.xml from Balrog.
-      This captures 3 different data points: success or failure of the request,
-      if cert pinning or content signatures were used to verify the result, and
-      the reason for failure, if the request failed.
+      This captures 2 different data points: success or failure of the request,
+      and the reason for failure, if the request failed.
     metadata:
       tags:
         - 'Core :: Audio/Video: GMP'
@@ -244,6 +234,59 @@ media.playback:
         type: boolean
     expires: never
 
+media.recorder:
+  mime_type_query:
+    type: labeled_counter
+    description: >
+      Count the amount of times where a mime type is queried via
+      MediaRecorder.isTypeSupported() or passed to the MediaRecorder constructor.
+      The result is accumulated per mime type.
+    labels:
+      - mp4_av1
+      - mp4_h264
+      - mp4_h265
+      - mp4_vp9
+      - mp4_aac
+      - mp4_flac
+      - mp4_opus
+      - mp4_unspecified # no codec specified (codecs string is empty but valid)
+      - mp4_others # invalid/unrecognized codec
+      - webm_av1
+      - webm_vp8
+      - webm_vp9
+      - webm_opus
+      - webm_vorbis
+      - webm_unspecified # no codec specified (codecs string is empty but valid)
+      - webm_others # invalid codec
+      - mkv_av1
+      - mkv_h264
+      - mkv_h265
+      - mkv_vp8
+      - mkv_vp9
+      - mkv_aac
+      - mkv_flac
+      - mkv_opus
+      - mkv_pcm
+      - mkv_vorbis
+      - mkv_unspecified # no codec specified (codecs string is empty but valid)
+      - mkv_others # invalid/unrecognized codec
+      - ogg_vp8
+      - ogg_vp9
+      - ogg_flac
+      - ogg_opus
+      - ogg_vorbis
+      - ogg_unspecified # no codec specified (codecs string is empty but valid)
+      - ogg_others # invalid/unrecognized codec
+      - empty # The whole MIME string is empty but valid
+      - others # invalid container
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1986763
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1986763
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: never
+
 media:
   element_in_page_count:
     type: counter
@@ -269,6 +312,45 @@ media:
       - media-alerts@mozilla.com
     expires: never
     telemetry_mirror: MEDIA_ELEMENT_IN_PAGE_COUNT
+
+  mkv_content_count:
+    type: counter
+    description: >
+      The number of times MKV content is detected as a source for media playback.
+      This metric does not determine whether the MKV file is valid; it is simply
+      a count based on the sniffed MIME type.
+    bugs:
+      - https://bugzil.la/2016198
+    data_reviews:
+      - https://bugzil.la/2016198
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: 156
+
+  mkv_codec_type:
+    type: labeled_counter
+    description: >
+      Count the amount of the real world codec usage inside Matroska.
+    labels:
+      - VideoAv1
+      - VideoAvc
+      - VideoHevc
+      - VideoVp8
+      - VideoVp9
+      - AudioAac
+      - AudioMp3
+      - AudioOpus
+      - AudioVorbis
+      - AudioFlac
+      - AudioPcm
+      - NoCodecSpecified
+    bugs:
+      - https://bugzil.la/2016198
+    data_reviews:
+      - https://bugzil.la/2016198
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: 156
 
   video_hardware_decoding_support:
     type: labeled_boolean
@@ -734,3 +816,23 @@ media:
       - media-alerts@mozilla.com
     expires: never
     telemetry_mirror: h#MSE_SOURCE_BUFFER_TYPE
+
+  capture_stream_usage:
+    type: labeled_counter
+    description: >
+      Count the usage of MediaStream captured from HTMLMediaElement by different
+      capture methods.
+    labels:
+      - CaptureStream
+      - MozCaptureStream
+      - MozCaptureStreamUntilEnded
+      - MozAudioCaptured
+      - AudioSourceNodeCaptured
+      - WindowAudioCaptured
+    bugs:
+      - https://bugzil.la/2007596
+    data_reviews:
+      - https://bugzil.la/2007596
+    notification_emails:
+      - media-alerts@mozilla.com
+    expires: 159

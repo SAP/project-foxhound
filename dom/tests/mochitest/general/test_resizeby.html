@@ -12,51 +12,46 @@
 <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1369627">Mozilla Bug 1369627</a>
 <p id="display"></p>
 <div id="content">
-  <button id="clicky">clicky</button>
 </div>
 <pre id="test">
 </pre>
 
 <script>
-  /** Test for Bug 1369627 **/
+  /** Test for Bug 1369627 */
   add_task(async function resizeby() {
     await SimpleTest.promiseFocus();
 
-    let clicky = document.querySelector("#clicky");
+    const popup = window.open("about:blank", "_blank", "width=500,height=500");
 
-    let popupPromise = new Promise(resolve => {
-      let linkclick = () => {
-        clicky.removeEventListener('click', linkclick);
-        let popup = window.open("about:blank", "_blank", "width=500,height=500");
-        function loaded() {
-          is(popup.innerHeight, 500, "starting height is 500");
-          is(popup.innerWidth, 500, "starting width in 500");
+    is(popup.document.location.href, "about:blank");
+    is(popup.document.readyState, "complete");
 
-          popup.resizeBy(50, 0);
+    // This fails flakily, see bug 1974454
+    is(popup.innerHeight, 500, "starting height is 500");
+    is(popup.innerWidth, 500, "starting width in 500");
 
-          // We resized synchronously. If this happened, we sometimes won't fire
-          // an resize event, so we resolve immediately.
-          if (popup.innerWidth == 550) {
-            resolve(popup);
-            return;
-          }
-          let popupresize = () => {
-            info(`Got resize event ${popup.innerWidth}\n`);
-            resolve(popup);
-          };
-          popup.addEventListener('resize', popupresize, { once: true });
-        };
-        popup.addEventListener("load", loaded, { once: true })
-      };
-
-      clicky.addEventListener('click', linkclick);
+    // When this test was written, it said that resizeBy can occur sync without a resize event.
+    // Since bug 543435, window.open can fire a resize event.
+    // So there can be up to two resize, we only care for the correct innerWidth.
+    const resizeByDone = new Promise(resolve => {
+      const checkResized = () => {
+        info(`Checking target width: ${popup.innerWidth} vs ${550}`);
+        if (popup.innerWidth == 550) {
+          popup.removeEventListener("resize", checkResized);
+          resolve();
+        }
+      }
+      popup.addEventListener("resize", checkResized);
+      checkResized();
     });
 
-    synthesizeMouseAtCenter(clicky, {}, window);
+    popup.resizeBy(50, 0);
 
-    let popup = await popupPromise;
+    await resizeByDone;
+
     is(popup.innerHeight, 500, "ending height is 500");
     is(popup.innerWidth, 550, "ending width is 550");
+
     popup.close();
   });
 </script>

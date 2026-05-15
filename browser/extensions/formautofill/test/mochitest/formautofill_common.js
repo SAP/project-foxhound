@@ -282,12 +282,11 @@ async function onStorageChanged(type) {
   });
 }
 
-function makeAddressComment({ primary, secondary, status }) {
+function makeAddressComment({ primary, secondary }) {
   return JSON.stringify({
     primary,
     secondary,
-    status,
-    ariaLabel: primary + " " + secondary + " " + status,
+    ariaLabel: primary + " " + secondary,
   });
 }
 

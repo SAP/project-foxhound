@@ -209,6 +209,12 @@ void GPUVideoTextureHost::NotifyNotUsed() {
   TextureHost::NotifyNotUsed();
 }
 
+void GPUVideoTextureHost::SetReadFence(Fence* aReadFence) {
+  if (EnsureWrappedTextureHost()) {
+    EnsureWrappedTextureHost()->SetReadFence(aReadFence);
+  }
+}
+
 BufferTextureHost* GPUVideoTextureHost::AsBufferTextureHost() {
   if (EnsureWrappedTextureHost()) {
     return EnsureWrappedTextureHost()->AsBufferTextureHost();
@@ -249,6 +255,13 @@ bool GPUVideoTextureHost::NeedsDeferredDeletion() const {
     return TextureHost::NeedsDeferredDeletion();
   }
   return mWrappedTextureHost->NeedsDeferredDeletion();
+}
+
+bool GPUVideoTextureHost::NeedsYFlip() const {
+  if (!mWrappedTextureHost) {
+    return TextureHost::NeedsYFlip();
+  }
+  return mWrappedTextureHost->NeedsYFlip();
 }
 
 }  // namespace layers

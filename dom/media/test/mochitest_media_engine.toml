@@ -1,7 +1,9 @@
 [DEFAULT]
 subsuite = "media"
 tags = "media-engine-compatible"
-skip-if = ["!wmfme"]
+skip-if = [
+  "!wmfme",
+]
 
 support-files = [
   "tearsofsteel_1frame_encrypted.mp4",

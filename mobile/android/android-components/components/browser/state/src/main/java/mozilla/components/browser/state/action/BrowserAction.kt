@@ -19,15 +19,17 @@ import mozilla.components.browser.state.state.LoadRequestState
 import mozilla.components.browser.state.state.MediaSessionState
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.SearchState
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabGroup
+import mozilla.components.browser.state.state.TabPartition
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.TrackingProtectionState
 import mozilla.components.browser.state.state.UndoHistoryState
 import mozilla.components.browser.state.state.WebExtensionState
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.state.content.FindResultState
+import mozilla.components.browser.state.state.content.PermissionHighlightsState
 import mozilla.components.browser.state.state.content.ShareResourceState
 import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
 import mozilla.components.browser.state.state.recover.RecoverableTab
@@ -233,11 +235,14 @@ sealed class TabListAction : BrowserAction() {
      *
      * @property tabs the [TabSessionState]s to restore.
      * @property selectedTabId the ID of the tab to select.
+     * @property restoreLocation [RestoreLocation] indicating where to restore [tabs].
+     * @property tabPartitions a mapping of IDs to the corresponding [TabPartition].
      */
     data class RestoreAction(
         val tabs: List<RecoverableTab>,
         val selectedTabId: String? = null,
         val restoreLocation: RestoreLocation,
+        val tabPartitions: Map<String, TabPartition> = emptyMap(),
     ) : TabListAction() {
 
         /**
@@ -324,7 +329,7 @@ sealed class TabGroupAction : BrowserAction() {
     data class AddTabsAction(
         val partition: String,
         val group: String,
-        val tabIds: List<String>,
+        val tabIds: Set<String>,
     ) : TabGroupAction()
 
     /**
@@ -350,7 +355,7 @@ sealed class TabGroupAction : BrowserAction() {
     data class RemoveTabsAction(
         val partition: String,
         val group: String,
-        val tabIds: List<String>,
+        val tabIds: Set<String>,
     ) : TabGroupAction()
 }
 
@@ -512,6 +517,28 @@ sealed class ContentAction : BrowserAction() {
             UpdatePermissionHighlightsStateAction()
 
         /**
+         * Updates the [PermissionHighlightsState.localDeviceAccessChanged] property with the
+         * given [tabId]
+         *
+         * @property tabId The affected tab id
+         * @property value The value indicating whether or not the local device access permission
+         * has changed
+         */
+        data class LocalDeviceAccessChangedAction(val tabId: String, val value: Boolean) :
+            UpdatePermissionHighlightsStateAction()
+
+        /**
+         * Updates the [PermissionHighlightsState.localNetworkAccessChanged] property with the
+         * given [tabId]
+         *
+         * @property tabId The affected tab id
+         * @property value The value indicating whether or not the local network access permission
+         * has changed
+         */
+        data class LocalNetworkAccessChangedAction(val tabId: String, val value: Boolean) :
+            UpdatePermissionHighlightsStateAction()
+
+        /**
          * Updates the autoPlayAudibleChanged property of the [PermissionHighlightsState]
          * with the given [tabId].
          */
@@ -583,11 +610,11 @@ sealed class ContentAction : BrowserAction() {
     ) : ContentAction()
 
     /**
-     * Updates the [SecurityInfoState] of the [ContentState] with the given [sessionId].
+     * Updates the [SecurityInfo] of the [ContentState] with the given [sessionId].
      */
     data class UpdateSecurityInfoAction(
         val sessionId: String,
-        val securityInfo: SecurityInfoState,
+        val securityInfo: SecurityInfo,
     ) : ContentAction()
 
     /**
@@ -1528,6 +1555,13 @@ sealed class EngineAction : BrowserAction() {
      * Purges the back/forward history of all tabs and custom tabs.
      */
     object PurgeHistoryAction : EngineAction()
+
+    /**
+     * Flushes the most recent state of the session with the provided [tabId].
+     */
+    data class FlushEngineSessionStateAction(
+        override val tabId: String,
+    ) : EngineAction(), ActionWithTab
 }
 
 /**

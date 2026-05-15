@@ -58,7 +58,6 @@ EXPORTS.mozilla.widget += [
     "nsWindowLoggedMessages.h",
     "WinCompositorWidget.h",
     "WinCompositorWindowThread.h",
-    "WindowsEMF.h",
     "WindowsSMTCProvider.h",
     "WinEventObserver.h",
     "WinMessages.h",
@@ -114,6 +113,7 @@ UNIFIED_SOURCES += [
     "WinCompositorWindowThread.cpp",
     "WindowHook.cpp",
     "WindowsConsole.cpp",
+    "WindowsTestDebug.cpp",
     "WinEventObserver.cpp",
     "WinIMEHandler.cpp",
     "WinMouseScrollHandler.cpp",
@@ -146,6 +146,13 @@ SOURCES += [
     "TSFUtils.cpp",
 ]
 
+# Needs winrt exceptions since we're calling into the
+# Windows App SDK.
+SOURCES["WindowsUIUtils.cpp"].flags += [
+    "-Xclang",
+    "-fcxx-exceptions",
+]
+
 if CONFIG["NS_PRINTING"]:
     UNIFIED_SOURCES += [
         "nsDeviceContextSpecWin.cpp",
@@ -158,13 +165,9 @@ if CONFIG["NS_PRINTING"]:
         "nsPrintDialogUtil.cpp",
     ]
 
-if CONFIG["MOZ_ENABLE_SKIA_PDF"]:
-    UNIFIED_SOURCES += [
-        "WindowsEMF.cpp",
-    ]
-
 XPIDL_SOURCES += [
     "nsIAlertsServiceRust.idl",
+    "nsIWindowsTestDebug.idl",
 ]
 
 XPIDL_MODULE = "widget_windows"
@@ -208,6 +211,7 @@ USE_LIBS += [
 OS_LIBS += [
     "ktmw32",
     "rpcrt4",
+    "shcore",
     "urlmon",
     "winmm",
 ]
@@ -220,3 +224,20 @@ if CONFIG["CC_TYPE"] == "clang-cl":
     ]
 
 SPHINX_TREES["/widget/windows"] = "docs"
+
+if CONFIG["MOZ_WINDOWSAPPSDK_DIR"]:
+    # These are the few DLLs that Firefox needs instead of the
+    # whole Windows App SDK.
+    FINAL_TARGET_FILES += [
+        f'%{CONFIG["MOZ_WINDOWSAPPSDK_DIR"]}/{f}'
+        for f in (
+            "CoreMessagingXP.dll",
+            "marshal.dll",
+            "Microsoft.InputStateManager.dll",
+            "Microsoft.Internal.FrameworkUdk.dll",
+            "Microsoft.UI.Composition.OSSupport.dll",
+            "Microsoft.UI.Input.dll",
+            "Microsoft.UI.Windowing.Core.dll",
+            "Microsoft.UI.Windowing.dll",
+        )
+    ]

@@ -62,17 +62,7 @@ fuzzy(4,62000) == filter-drop-shadow-blur-clamping.yaml filter-drop-shadow-blur-
 == filter-blur-scaled.yaml filter-blur-scaled-ref.yaml
 fuzzy(5,72000) == filter-blur-clamping.yaml filter-blur-clamping-ref.yaml
 skip_on(android,device) skip_on(win) fuzzy(1,104) fuzzy-if(platform(swgl),4,18484) == filter-blur-scaled-xonly.yaml filter-blur-scaled-xonly.png  # fails on  Pixel2
-== svg-filter-component-transfer.yaml filter-component-transfer-ref.yaml
 == svg-filter-flood.yaml svg-filter-flood-ref.yaml
-skip_on(android,device) == svg-filter-blend.yaml svg-filter-blend-ref.yaml
-skip_on(android,device) == svg-filter-color-matrix.yaml filter-color-matrix-ref.yaml  # fails on Pixel2
-platform(linux,mac) == draw_calls(8) color_targets(8) alpha_targets(0) svg-filter-blur.yaml filter-blur.png # Extra draw call is due to render task graph workaround
-platform(linux,mac) == svg-filter-drop-shadow.yaml svg-filter-drop-shadow.png
-== fuzzy(1,10000) svg-srgb-to-linear.yaml srgb-to-linear-ref.yaml
-platform(linux,mac) == fuzzy(6,36790) svg-filter-drop-shadow-rotate.yaml svg-filter-drop-shadow-rotate-ref.yaml
-platform(linux,mac) fuzzy(3,3550) == svg-filter-blur-transforms.yaml svg-filter-blur-transforms.png
-platform(linux,mac) == svg-filter-drop-shadow-on-viewport-edge.yaml svg-filter-drop-shadow-on-viewport-edge.png
-fuzzy(1,1) platform(linux,mac) == svg-filter-drop-shadow-perspective.yaml svg-filter-drop-shadow-perspective.png
 == backdrop-filter-basic.yaml backdrop-filter-basic-ref.yaml
 platform(linux,mac) == backdrop-filter-perspective.yaml backdrop-filter-perspective.png
 == backdrop-filter-on-child-surface.yaml backdrop-filter-on-child-surface-ref.yaml
@@ -88,8 +78,6 @@ platform(linux,mac) == backdrop-filter-blur-across-tiles.yaml backdrop-filter-bl
 == backdrop-filter-culled-filter.yaml backdrop-filter-culled-filter-ref.yaml
 == backdrop-filter-nested.yaml blank.yaml		# just don't crash
 platform(linux,mac) == backdrop-filter-transformed-filter.yaml backdrop-filter-transformed-filter.png
-platform(linux,max) == svg-filter-offset.yaml svg-filter-offset-ref.yaml
-skip_on(android,device) == fuzzy(1,100) svg-filter-composite.yaml svg-filter-composite-ref.yaml
 skip_on(android,device) == filter-mix-blend-scaling.yaml filter-mix-blend-scaling-ref.yaml
 platform(linux) == blend-clipped-raster-root.yaml blend-clipped-raster-root.png
 == drop-shadow-inverse-scale.yaml blank.yaml

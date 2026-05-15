@@ -1,0 +1,48 @@
+[
+  {
+    "domains": ["youtube.com"],
+    "l10nId": "ipp-activator-breakage-sign-in-warning",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "not",
+          "condition": {
+            "type": "cookie",
+            "domain": "accounts.google.com",
+            "name": "SID"
+          }
+        },
+        {
+          "type": "not",
+          "condition": {
+            "type": "cookie",
+            "domain": "youtube.com",
+            "name": "SID"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "domains": ["reddit.com"],
+    "l10nId": "ipp-activator-breakage-sign-in-warning",
+    "condition": {
+      "type": "not",
+      "condition": {
+        "type": "cookie",
+        "domain": ".reddit.com",
+        "name": "reddit_session"
+      }
+    }
+  },
+  {
+    "domains": [
+      "disneyplus.com",
+      "netflix.com",
+      "wiki.mozilla.org",
+      "bugs.webkit.org"
+    ],
+    "l10nId": "ipp-activator-breakage-turn-off-warning"
+  }
+]

@@ -19,6 +19,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestHelper.mDevice
@@ -31,6 +32,9 @@ import org.mozilla.fenix.helpers.click
 class SettingsSubMenuEnhancedTrackingProtectionExceptionsRobot {
 
     fun verifyTPExceptionsDefaultView() {
+        Log.i(TAG, "verifyTPExceptionsDefaultView: Waiting for default ETP exceptions text to appear")
+        itemWithResId("$packageName:id/exceptions_empty_message").waitForExists(waitingTime)
+
         assertUIObjectExists(
             itemWithText("Exceptions let you disable tracking protection for selected sites."),
         )
@@ -46,18 +50,18 @@ class SettingsSubMenuEnhancedTrackingProtectionExceptionsRobot {
     }
 
     fun removeOneSiteException(siteHost: String) {
-        Log.i(TAG, "removeOneSiteException: Waiting for $waitingTime ms for exceptions list to exist to exist")
+        Log.i(TAG, "removeOneSiteException: Waiting for $waitingTime ms for exceptions list to exist")
         exceptionsList().waitForExists(waitingTime)
-        Log.i(TAG, "removeOneSiteException: Waited for $waitingTime ms for exceptions list to exist to exist")
+        Log.i(TAG, "removeOneSiteException: Waited for $waitingTime ms for exceptions list to exist")
         Log.i(TAG, "removeOneSiteException: Trying to click the delete site exception button")
         removeSiteExceptionButton(siteHost).click()
         Log.i(TAG, "removeOneSiteException: Clicked the delete site exception button")
     }
 
     fun verifySiteExceptionExists(siteUrl: String, shouldExist: Boolean) {
-        Log.i(TAG, "verifySiteExceptionExists: Waiting for $waitingTime ms for exceptions list to exist to exist")
+        Log.i(TAG, "verifySiteExceptionExists: Waiting for $waitingTime ms for exceptions list to exist")
         exceptionsList().waitForExists(waitingTime)
-        Log.i(TAG, "verifySiteExceptionExists: Waited for $waitingTime ms for exceptions list to exist to exist")
+        Log.i(TAG, "verifySiteExceptionExists: Waited for $waitingTime ms for exceptions list to exist")
         assertUIObjectExists(itemContainingText(siteUrl), exists = shouldExist)
     }
 
@@ -75,6 +79,12 @@ class SettingsSubMenuEnhancedTrackingProtectionExceptionsRobot {
             Log.i(TAG, "disableExceptions: Trying to click the \"Turn on for all sites\" button")
             disableAllExceptionsButton().click()
             Log.i(TAG, "disableExceptions: Clicked the \"Turn on for all sites\" button")
+
+            if (itemWithResId("$packageName:id/removeAllExceptions").exists()) {
+                Log.i(TAG, "disableExceptions: Retrying to click the \"Turn on for all sites\" button")
+                disableAllExceptionsButton().click()
+                Log.i(TAG, "disableExceptions: Retried clicking on  the \"Turn on for all sites\" button")
+            }
 
             SettingsSubMenuEnhancedTrackingProtectionExceptionsRobot().interact()
             return Transition()

@@ -80,7 +80,15 @@ public class WebPushSubscription implements Parcelable {
    */
   @NonNull public final byte[] authSecret;
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Construct a new WebPushSubscription.
+   *
+   * @param scope The scope of the service worker
+   * @param endpoint The push endpoint URL
+   * @param appServerKey The application server key
+   * @param browserPublicKey The browser's public key
+   * @param authSecret The authentication secret
+   */
   public WebPushSubscription(
       final @NonNull String scope,
       final @NonNull String endpoint,
@@ -163,6 +171,7 @@ public class WebPushSubscription implements Parcelable {
     out.writeByteArray(authSecret);
   }
 
+  /** Parcelable creator for WebPushSubscription instances. */
   public static final Parcelable.Creator<WebPushSubscription> CREATOR =
       new Parcelable.Creator<WebPushSubscription>() {
         @Override

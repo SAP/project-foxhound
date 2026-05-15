@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_ConstructibleEventTarget_h_
 #define mozilla_dom_ConstructibleEventTarget_h_
 
-#include "mozilla/DOMEventTargetHelper.h"
 #include "js/RootingAPI.h"
+#include "mozilla/DOMEventTargetHelper.h"
 
 namespace mozilla::dom {
 

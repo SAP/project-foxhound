@@ -21,7 +21,7 @@
   --gap: 16px;
   display: flex;
   flex-direction: column;
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   width: 412px;
   gap: var(--gap) 0;
   padding-block: var(--gap);
@@ -32,7 +32,7 @@
 }
 
 .textRecognitionHeader {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -86,7 +86,7 @@
   display: inline-block;
   background-color: #2ac3a2;
   border: 3px solid #2ac3a2;
-  fill: var(--in-content-page-background);
+  fill: var(--background-color-canvas);
   -moz-context-properties: fill;
   border-radius: 10px;
   width: 12px;
@@ -113,7 +113,7 @@
   .textRecognitionSuccessIcon {
     background-color: currentColor;
     border-color: currentColor;
-    fill: var(--in-content-page-background);
+    fill: var(--background-color-canvas);
   }
 
   .textRecognitionNoResultIcon {

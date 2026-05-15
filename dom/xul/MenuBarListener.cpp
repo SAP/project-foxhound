@@ -5,20 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MenuBarListener.h"
+
 #include "XULButtonElement.h"
 #include "mozilla/Attributes.h"
 #include "nsISound.h"
 
 // Drag & Drop, Clipboard
-#include "nsWidgetsCID.h"
-#include "nsCOMPtr.h"
-
-#include "nsContentUtils.h"
-#include "nsPIWindowRoot.h"
-#include "nsIFrame.h"
 #include "mozilla/BasicEvents.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Document.h"
@@ -29,6 +24,11 @@
 #include "mozilla/dom/XULButtonElement.h"
 #include "mozilla/dom/XULMenuBarElement.h"
 #include "mozilla/dom/XULMenuParentElement.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsIFrame.h"
+#include "nsPIWindowRoot.h"
+#include "nsWidgetsCID.h"
 #include "nsXULPopupManager.h"
 
 namespace mozilla::dom {

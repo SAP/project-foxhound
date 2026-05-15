@@ -205,6 +205,33 @@ doh:
     extra_keys: *doh_state_extra
     telemetry_mirror: Doh_State_Shutdown
 
+  region_changed:
+    type: event
+    description: >
+      Recorded when the DoH region changes. This helps us understand
+      how often users roam between regions.
+    bugs:
+      - https://bugzil.la/1886225
+    data_reviews:
+      - https://bugzil.la/1886225
+    notification_emails:
+      - necko@mozilla.com
+      - vgosu@mozilla.com
+    expires: never
+    extra_keys:
+      old_region:
+        description: >
+          The previous DoH region.
+        type: string
+      new_region:
+        description: >
+          The new DoH region.
+        type: string
+      trigger:
+        description: >
+          What triggered the region change (idle-daily, timezone-changed).
+        type: string
+
 security.doh.trr_performance:
   resolved_record:
     type: event

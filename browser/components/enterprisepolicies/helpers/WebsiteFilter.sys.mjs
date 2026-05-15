@@ -44,6 +44,8 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
 });
 
 export let WebsiteFilter = {
+  _observerAdded: false,
+
   init(blocklist, exceptionlist) {
     let blockArray = [],
       exceptionArray = [];
@@ -102,7 +104,11 @@ export let WebsiteFilter = {
     }
     // We have to do this to catch 30X redirects.
     // See bug 456957.
-    Services.obs.addObserver(this, "http-on-examine-response", true);
+    if (!this._observerAdded) {
+      this._observerAdded = true;
+      // We rely on weak references, so we never remove this observer.
+      Services.obs.addObserver(this, "http-on-examine-response", true);
+    }
   },
 
   shouldLoad(contentLocation, loadInfo) {

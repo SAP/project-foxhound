@@ -24,23 +24,6 @@ add_task(async function test_telemetry_basic() {
   equal(Services.policies.isEnterprise, true);
 });
 
-add_task(async function test_telemetry_just_roots() {
-  await setupPolicyEngineWithJson({
-    policies: {
-      Certificates: {
-        ImportEnterpriseRoots: true,
-      },
-    },
-  });
-
-  TelemetryTestUtils.assertScalar(
-    TelemetryTestUtils.getProcessScalars("parent"),
-    "policies.is_enterprise",
-    AppConstants.IS_ESR
-  );
-  equal(Services.policies.isEnterprise, AppConstants.IS_ESR);
-});
-
 add_task(async function test_telemetry_roots_plus_policy() {
   await setupPolicyEngineWithJson({
     policies: {

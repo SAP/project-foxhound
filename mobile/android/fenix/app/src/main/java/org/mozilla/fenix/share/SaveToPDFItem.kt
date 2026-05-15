@@ -11,54 +11,54 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * A save to PDF item.
  *
- *  @param onClick event handler when the save to PDF item is clicked.
+ * @param onClick event handler when the save to PDF item is clicked.
  */
 @Composable
 fun SaveToPDFItem(
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .height(56.dp)
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Spacer(Modifier.width(16.dp))
+    Surface {
+        Row(
+            modifier = Modifier
+                .height(56.dp)
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(Modifier.width(16.dp))
 
-        Icon(
-            painter = painterResource(R.drawable.ic_download),
-            contentDescription = null,
-            tint = FirefoxTheme.colors.iconPrimary,
-        )
+            Icon(
+                painter = painterResource(iconsR.drawable.mozac_ic_download_24),
+                contentDescription = null,
+            )
 
-        Spacer(Modifier.width(32.dp))
+            Spacer(Modifier.width(32.dp))
 
-        Text(
-            color = FirefoxTheme.colors.textPrimary,
-            text = stringResource(R.string.share_save_to_pdf),
-            style = FirefoxTheme.typography.subtitle1,
-        )
+            Text(
+                text = stringResource(R.string.share_save_to_pdf),
+                style = FirefoxTheme.typography.subtitle1,
+            )
+        }
     }
 }
 
 @Composable
-@Preview
 @PreviewLightDark
 private fun SaveToPDFItemPreview() {
     FirefoxTheme {

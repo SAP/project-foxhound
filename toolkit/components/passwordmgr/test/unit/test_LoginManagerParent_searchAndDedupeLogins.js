@@ -178,7 +178,7 @@ add_task(async function test_searchAndDedupeLogins_acceptDifferentSubdomains() {
       Assert.ok(actual[i].equals(login), `Check index ${i}`);
     }
 
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 });
 
@@ -202,6 +202,6 @@ add_task(async function test_reject_duplicates() {
     const result = await Services.logins.addLogins(tc.logins);
     Assert.equal(result.length, 1, "only single login added");
 
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
   }
 });

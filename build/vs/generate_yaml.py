@@ -6,7 +6,7 @@
 import sys
 
 import yaml
-from mozbuild.shellutil import quote as shellquote
+from mozshellutil import quote as shellquote
 from vsdownload import (
     getArgsParser,
     getManifest,
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     lowercaseIgnores(args)
 
-    packages = getPackages(getManifest(args))
+    packages = getPackages(getManifest(args), "x64")
     setPackageSelection(args, packages)
     selected = getSelectedPackages(packages, args)
     reduced = []

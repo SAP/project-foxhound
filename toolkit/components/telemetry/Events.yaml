@@ -46,8 +46,6 @@ activity_stream:
       "DRAG",
       "DROP",
       "IMPRESSION",
-      "FAKESPOT_CATEGORY",
-      "FAKESPOT_CLICK",
       "MIGRATION_CANCEL",
       "MIGRATION_START",
       "OPEN_NEWTAB_PREFS",
@@ -118,21 +116,6 @@ activity_stream:
       session_id: The ID of the Activity Stream session in which the event occurred
       page: about:home or about_newtab - the page where the event occurred
       user_prefs: An integer representaing a user's A-S settings.
-
-aboutprivatebrowsing:
-  click:
-    objects: ["info_link", "promo_link", "dismiss_button"]
-    release_channel_collection: opt-out
-    record_in_processes: ["content"]
-    description: >
-      This is recorded when a user clicks a link on the private browsing newtab.
-    bug_numbers: [1709344, 1754635, 1781973, 1811146, 1841925, 1871197, 1922596, 1952111]
-    notification_emails:
-      - "emz@mozilla.com"
-      - "tihuang@mozilla.com"
-    expiry_version: "145"
-    products:
-      - "firefox"
 
 readermode:
   view:
@@ -215,13 +198,13 @@ addonsManager:
           - site_warning, site_blocked, install_disabled_warning
           - download_started, download_completed, download_failed
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "147"
+    expiry_version: "154"
     products:
       - "firefox"
       - "fennec"
       - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1958151]
+    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1958151, 1994595]
     release_channel_collection: opt-out
   install_stats:
     description: >
@@ -290,13 +273,13 @@ addonsManager:
         The add-on blocklistState (0 not-blocked, 1 soft-blocked, 2
         hard-blocked) at the time the manage event was being collected.
     notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "147"
+    expiry_version: "154"
     products:
       - "firefox"
       - "fennec"
       - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1917859, 1958149]
+    bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295, 1912166, 1917859, 1958149, 1994595]
     release_channel_collection: opt-out
 addonsSearchDetection:
   etld_change:
@@ -776,7 +759,7 @@ normandy:
       This is different from enrollment or experiment activation because it
       registers when a user actually gets exposed to the experiment feature.
     bug_numbers: [1675104]
-    notification_emails: ["ujet@mozilla.com"]
+    notification_emails: ["omc-core@mozilla.com"]
     expiry_version: "never"
     extra_keys:
       branchSlug: The slug for the branch the user is enrolled in.
@@ -1209,36 +1192,6 @@ pwmgr:
     products:
       - "firefox"
     record_in_processes: [content, main]
-  doorhanger_submitted:
-    description: >
-      A login is saved or updated via the capture doorhanger. Carries information about whether
-      the username and password _that were saved/updated by the user_ were modified in the
-      doorhanger, selected from the suggestion autocomplete, or neither. `did_edit_X` and
-      `did_select_X` will never both be true in the same event.
-
-      The `object` describes the type of doorhanger when it was originally created. Note that user
-      updates to the doorhanger may change whether a login is actually saved or updated, but will
-      not impact the sent object.
-    objects: ["save", "update"]
-    bug_numbers: [1650929, 1650941, 1678200, 1714252, 1754637, 1850872, 1969169]
-    expiry_version: "148"
-    release_channel_collection: opt-out
-    products: ["firefox"]
-    record_in_processes: [main]
-    notification_emails: ["passwords-dev@mozilla.org"]
-    extra_keys:
-      did_edit_un: >
-        Whether or not the saved/updated username was modified by the user typing into the
-        username field.
-      did_select_un: >
-        Whether or not the saved/updated username was selected by the user choosing a suggested
-        value from the autocomplete popup.
-      did_edit_pw: >
-        Whether or not the saved/updated password was modified by the user typing into the
-        password field.
-      did_select_pw: >
-        Whether or not the saved/updated password was selected by the user choosing a suggested
-        value from the autocomplete popup.
 
 # Record telemetry based on individual Firefox relay UI (autocomplete popup, notification panel)
 relay_integration:
@@ -1367,6 +1320,12 @@ fxa_avatar_menu:
         "signedin" and "login_failed".
       fxa_avatar: Boolean for whether or not account has set an avatar
       fxa_sync_on: Boolean for whether or not sync was configured at the time the event fired
+      device_count: >
+        Number of connected devices available to send tabs to (optional, only populated for send_tab)
+      action: >
+        The action selected by the user (optional, only populated for send_tab). Possible values
+        are "device" (sent to specific device), "all_devices" (sent to all devices), or
+        "manage_devices" (opened device management).
 
 fxa_app_menu:
   click:
@@ -1403,6 +1362,12 @@ fxa_app_menu:
         "signedin" and "login_failed".
       fxa_avatar: Boolean for whether or not account has set an avatar
       fxa_sync_on: Boolean for whether or not sync was configured at the time the event fired.
+      device_count: >
+        Number of connected devices available to send tabs to (optional, only populated for send_tab)
+      action: >
+        The action selected by the user (optional, only populated for send_tab). Possible values
+        are "device" (sent to specific device), "all_devices" (sent to all devices), or
+        "manage_devices" (opened device management).
 
 messaging_experiments:
   reach:
@@ -1427,7 +1392,17 @@ messaging_experiments:
       "fxms_message_12",
       "fxms_message_13",
       "fxms_message_14",
-      "fxms_message_15"
+      "fxms_message_15",
+      "fxms_message_16",
+      "fxms_message_17",
+      "fxms_message_18",
+      "fxms_message_19",
+      "fxms_message_20",
+      "fxms_message_21",
+      "fxms_message_22",
+      "fxms_message_23",
+      "fxms_message_24",
+      "fxms_message_25"
     ]
     methods: ["reach"]
     release_channel_collection: opt-out
@@ -1439,7 +1414,7 @@ messaging_experiments:
       experiments. All qualified branch ID(s) will be recorded in the 'extra_keys'
       for each active experiment, and the event 'value' will be the experiment ID
     bug_numbers: [1471318]
-    notification_emails: ["ujet@mozilla.com"]
+    notification_emails: ["omc-core@mozilla.com"]
     expiry_version: "never"
     extra_keys:
       branches: >
@@ -1465,7 +1440,7 @@ messaging_experiments:
     bug_numbers:
       - 1644743
     notification_emails:
-      - ujet@mozilla.com
+      - omc-core@mozilla.com
     expiry_version: never
 
 # This category contains event entries used for Telemetry tests.
@@ -2473,8 +2448,9 @@ intl.ui.browserLanguage:
       installId: The id for an install.
     products:
       - firefox
-    expiry_version: "148"
+    expiry_version: "161"
     notification_emails:
+      - bolsson@mozilla.com
       - earo@mozilla.com
       - flod@mozilla.com
       - mstriemer@mozilla.com
@@ -2490,6 +2466,7 @@ intl.ui.browserLanguage:
       - 1861299
       - 1911321
       - 1928262
+      - 1999880
 
 network.dns:
   trrConfirmation:
@@ -2624,24 +2601,6 @@ security:
       - all
     extra_keys:
       fileinfo: Information about the file that triggered eval
-  javascriptLoad:
-    objects: ["parentProcess"]
-    bug_numbers:
-      - 1582512
-    description: >
-      The javascript engine requested to load a filename that was not allowed.
-      Expected values, and fileinfo key, are the same possible values as above in 'evalUsage'
-    notification_emails:
-      - tom@mozilla.com
-      - gijs@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - firefox
-    expiry_version: "never"
-    record_in_processes:
-      - main
-    extra_keys:
-      fileinfo: Information about the filename that was requested to be loaded
   unexpectedload:
     objects: ["systemprincipal"]
     bug_numbers:
@@ -3285,7 +3244,7 @@ avif:
 mfcdm:
   eme_playback:
     objects: ["gecko"]
-    bug_numbers: [1873394, 1902169]
+    bug_numbers: [1873394, 1902169, 1989168]
     description:
       Record the information about the EME playback when using the media engine.
       The value of this event is the key system name.
@@ -3293,7 +3252,7 @@ mfcdm:
       - firefox
     record_in_processes: ["all"]
     release_channel_collection: opt-out
-    expiry_version: "146"
+    expiry_version: "152"
     notification_emails:
       - media-alerts@mozilla.com
     extra_keys:
@@ -3305,7 +3264,7 @@ mfcdm:
       dropped_frames: The amount of video frames don't get rendered but dropped
   error:
     objects: ["gecko"]
-    bug_numbers: [1873394, 1902169]
+    bug_numbers: [1873394, 1902169, 1989168]
     description:
       Record the error or crash happened while using the media engine playback.
       The value of this event is the name of error.
@@ -3313,7 +3272,7 @@ mfcdm:
       - firefox
     record_in_processes: ["all"]
     release_channel_collection: opt-out
-    expiry_version: "146"
+    expiry_version: "152"
     notification_emails:
       - media-alerts@mozilla.com
     extra_keys:
@@ -3872,6 +3831,13 @@ browser.backup:
     record_in_processes: [main]
     release_channel_collection: opt-out
     expiry_version: never
+    extra_keys:
+      encrypted: Whether or not encryption is enabled for the backup.
+      location: >
+        The location of the backup. This can be either "onedrive",
+        "documents", or "other". "other" will be sent if the parent directory
+        of the backup doesn't match the default "documents" or "onedrive"
+        save paths.
   toggle_off:
     objects: ["BackupService"]
     description: >
@@ -3898,6 +3864,16 @@ browser.backup:
     record_in_processes: [main]
     release_channel_collection: opt-out
     expiry_version: never
+    extra_keys:
+      encrypted: Whether or not encryption is enabled for the backup.
+      location: >
+        The location of the backup. This can be either "onedrive",
+        "documents", or "other". "other" will be sent if the parent directory
+        of the backup doesn't match the default "documents" or "onedrive"
+        save paths.
+      size: >
+        The size-on-disk of the created backup. This is rounded to the
+        nearest mebibyte to reduce fingerprintability.
   change_location:
     objects: ["BackupService"]
     description: >
@@ -4015,7 +3991,7 @@ profiles:
     products:
       - "firefox"
   existing:
-    objects: ["alert", "avatar", "closed", "deleted", "displayed", "learn_more", "name", "theme"]
+    objects: ["alert", "avatar", "closed", "deleted", "displayed", "learn_more", "name", "shortcut", "theme"]
     release_channel_collection: opt-out
     record_in_processes:
       - main
@@ -4030,6 +4006,7 @@ profiles:
       - "nbaumgardner@mozilla.com"
     bug_numbers:
       - 1927607
+      - 1997471
     expiry_version: never
     products:
       - "firefox"

@@ -1,0 +1,103 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    description: "embedded-uniffi-bindgen toolchain build"
+    worker-type: b-linux-docker-amd
+    worker:
+        max-run-time: 1800
+        env:
+            CRATE_PATH: services/app-services-tools/embedded-uniffi-bindgen
+    attributes:
+        local-toolchain: true
+    run:
+        script: build-rust-based-toolchain.sh
+        toolchain-artifact: public/build/embedded-uniffi-bindgen.tar.zst
+        sparse-profile: null
+        resources:
+            - 'services/app-services-tools/embedded-uniffi-bindgen'
+
+# For Linux platforms target "*-musl" so that the binary will be statically linked.
+
+linux64-embedded-uniffi-bindgen:
+    treeherder:
+        symbol: TL(eub)
+        platform: linux64/opt
+    run:
+        arguments: ['x86_64-unknown-linux-musl']
+    attributes:
+        build_platform: linux64-embedded-uniffi-bindgen
+    fetches:
+        toolchain:
+            - linux64-rust-static
+
+macosx64-embedded-uniffi-bindgen:
+    treeherder:
+        symbol: TM(eub)
+        platform: macosx64/opt
+    run:
+        arguments: ['x86_64-apple-darwin']
+    attributes:
+        build_platform: macosx64-embedded-uniffi-bindgen
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-macos
+            - macosx64-sdk-toolchain
+
+macosx64-aarch64-embedded-uniffi-bindgen:
+    treeherder:
+        symbol: TMA64(eub)
+        platform: macosx64-aarch64/opt
+    run:
+        arguments: ['aarch64-apple-darwin']
+    attributes:
+        build_platform: macosx64-aarch64-embedded-uniffi-bindgen
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-macos
+            - macosx64-sdk-toolchain
+
+win32-embedded-uniffi-bindgen:
+    treeherder:
+        symbol: TW32(eub)
+        platform: win32/opt
+    run:
+        arguments: ['i686-pc-windows-msvc']
+    attributes:
+        build_platform: win32-embedded-uniffi-bindgen
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-windows
+            - vs-toolchain
+
+win64-aarch64-embedded-uniffi-bindgen:
+    treeherder:
+        symbol: TWA64(eub)
+        platform: windows2012-aarch64/opt
+    run:
+        arguments: ['aarch64-pc-windows-msvc']
+    attributes:
+        build_platform: win64-aarch64-embedded-uniffi-bindgen
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-windows
+            - vs-toolchain
+
+win64-embedded-uniffi-bindgen:
+    treeherder:
+        symbol: TW64(eub)
+        platform: win64/opt
+    run:
+        arguments: ['x86_64-pc-windows-msvc']
+    attributes:
+        build_platform: win64-embedded-uniffi-bindgen
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-windows
+            - vs-toolchain

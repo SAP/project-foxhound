@@ -89,8 +89,6 @@ support-files = [
 
 ["test_bug1161721.html"]
 
-["test_bug1170911.html"]
-
 ["test_bug1208217.html"]
 
 ["test_bug1313753.html"]
@@ -103,7 +101,9 @@ support-files = [
 
 ["test_clipboard_events.html"]
 support-files = ["window_clipboard_events.html"]
-skip-if = ["headless"] # bug 1403542
+skip-if = [
+  "headless", # bug 1403542
+]
 
 ["test_consoleAPI.html"]
 
@@ -117,8 +117,8 @@ skip-if = ["headless"] # bug 1403542
 
 ["test_domWindowUtils_scrollbarSize.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_donottrack.html"]
@@ -131,22 +131,22 @@ skip-if = [
 
 ["test_frameElementWrapping.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_framedhistoryframes.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_img_mutations.html"]
 
 ["test_interfaces.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = [
   "test_interfaces.js",
@@ -179,8 +179,8 @@ support-files = ["test_offsets.js"]
 
 ["test_performance_timeline.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_picture_apng.html"]
@@ -195,92 +195,93 @@ skip-if = [
 
 ["test_resizeby.html"]
 skip-if = [
-  "display == 'wayland'", # Decorations arrive async and mess up the resize intermittently on automation.
   "os == 'android'", # Window sizes cannot be controled on android; Windows
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1604152
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1604152
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Decorations arrive async and mess up the resize intermittently on automation.
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1604152, 1974454
 ]
 
 ["test_resource_timing.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_resource_timing_cross_origin.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_resource_timing_cross_origin_navigate.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_resource_timing_frameset.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_resource_timing_nocors.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_selectevents.html"]
-skip-if = ["os == 'android'"] # bug 1627523
+skip-if = [
+  "os == 'android'", # bug 1627523
+]
 
 ["test_showModalDialog_removed.html"]
 
 ["test_storagePermissionsAccept.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storagePermissionsLimitForeign.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storagePermissionsReject.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_storagePermissionsRejectForeign.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_stylesheetPI.html"]
 
 ["test_toggling_performance_navigation_timing.html"]
 skip-if = [
-  "win10_2009 && bits == 64 && opt", # Bug 1730152
-  "win11_2009 && bits == 64 && opt", # Bug 1730152
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1730152
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt", # Bug 1730152
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1730152
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && opt", # Bug 1730152
 ]
 
 ["test_vibrator.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_windowProperties.html"]
 
 ["test_windowedhistoryframes.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]

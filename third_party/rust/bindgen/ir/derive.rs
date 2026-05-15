@@ -3,10 +3,10 @@
 //! These traits tend to come in pairs:
 //!
 //! 1. A "trivial" version, whose implementations aren't allowed to recursively
-//! look at other types or the results of fix point analyses.
+//!    look at other types or the results of fix point analyses.
 //!
 //! 2. A "normal" version, whose implementations simply query the results of a
-//! fix point analysis.
+//!    fix point analysis.
 //!
 //! The former is used by the analyses when creating the results queried by the
 //! second.
@@ -92,9 +92,10 @@ pub(crate) trait CanDeriveOrd {
 ///
 /// Initially we assume that we can derive trait for all types and then
 /// update our understanding as we learn more about each type.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum CanDerive {
     /// Yes, we can derive automatically.
+    #[default]
     Yes,
 
     /// The only thing that stops us from automatically deriving is that
@@ -105,12 +106,6 @@ pub enum CanDerive {
 
     /// No, we cannot.
     No,
-}
-
-impl Default for CanDerive {
-    fn default() -> CanDerive {
-        CanDerive::Yes
-    }
 }
 
 impl CanDerive {
@@ -130,6 +125,6 @@ impl ops::BitOr for CanDerive {
 
 impl ops::BitOrAssign for CanDerive {
     fn bitor_assign(&mut self, rhs: Self) {
-        *self = self.join(rhs)
+        *self = self.join(rhs);
     }
 }

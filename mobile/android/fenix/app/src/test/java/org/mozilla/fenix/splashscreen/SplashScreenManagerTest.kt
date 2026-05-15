@@ -4,64 +4,36 @@
 package org.mozilla.fenix.splashscreen
 
 import androidx.core.splashscreen.SplashScreen
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.Assert
-import org.junit.Before
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class SplashScreenManagerTest {
-    private val coroutineScope = TestScope()
-
-    @Before
-    fun setup() {
-        Dispatchers.setMain(StandardTestDispatcher(coroutineScope.testScheduler))
-    }
 
     @Test
-    fun `GIVEN a device that does not support a splash screen WHEN maybeShowSplashScreen is called THEN we should get a did not show the splash screen result`() {
-        var splashScreenShown = false
+    fun `GIVEN splash screen already shown WHEN showSplashScreen is called THEN do not present splash screen`() = runTest {
         var result: SplashScreenManagerResult? = null
         val splashScreenManager = buildSplashScreen(
-            showSplashScreen = { _ -> splashScreenShown = true },
-            isDeviceSupported = { false },
+            isFirstSplashScreenShown = true,
             onSplashScreenFinished = { result = it },
         )
 
-        Assert.assertNull(result)
+        assertNull(result)
         splashScreenManager.showSplashScreen()
 
-        Assert.assertFalse(splashScreenShown)
-        Assert.assertEquals(SplashScreenManagerResult.DidNotPresentSplashScreen, result)
+        assertEquals(SplashScreenManagerResult.DidNotPresentSplashScreen, result)
     }
 
     @Test
-    fun `WHEN a user has already seen the splash screen THEN do not show splash screen`() {
-        val storage = object : SplashScreenStorage {
-            override var isFirstSplashScreenShown = true
-        }
-        var result: SplashScreenManagerResult? = null
-        val splashScreenManager = buildSplashScreen(
-            storage = storage,
-            onSplashScreenFinished = { result = it },
-        )
-
-        Assert.assertNull(result)
-        splashScreenManager.showSplashScreen()
-
-        Assert.assertEquals(SplashScreenManagerResult.DidNotPresentSplashScreen, result)
-    }
-
-    @Test
-    fun `WHEN a device is supported and the splash screen has not been shown yet THEN show the splash screen`() {
+    fun `GIVEN splash screen not yet shown WHEN showSplashScreen is called THEN present the splash screen`() = runTest {
         var splashScreenShown = false
         val splashScreenManager = buildSplashScreen(
             showSplashScreen = { _ -> splashScreenShown = true },
@@ -69,11 +41,11 @@ class SplashScreenManagerTest {
 
         splashScreenManager.showSplashScreen()
 
-        Assert.assertTrue(splashScreenShown)
+        assertTrue(splashScreenShown)
     }
 
     @Test
-    fun `WHEN a user has not seen the splash screen THEN show splash screen and update storage`() {
+    fun `GIVEN splash screen not yet shown WHEN showSplashScreen is called THEN present splash screen and update storage`() = runTest {
         var splashScreenShown = false
         val storage = object : SplashScreenStorage {
             override var isFirstSplashScreenShown = false
@@ -83,97 +55,89 @@ class SplashScreenManagerTest {
             showSplashScreen = { _ -> splashScreenShown = true },
         )
 
-        Assert.assertFalse(splashScreenShown)
-        Assert.assertFalse(storage.isFirstSplashScreenShown)
+        assertFalse(splashScreenShown)
+        assertFalse(storage.isFirstSplashScreenShown)
+
         splashScreenManager.showSplashScreen()
 
-        Assert.assertTrue(splashScreenShown)
-        Assert.assertTrue(storage.isFirstSplashScreenShown)
+        assertTrue(splashScreenShown)
+        assertTrue(storage.isFirstSplashScreenShown)
     }
 
     @Test
-    fun `GIVEN an operation shorter than the splashscreen timeout WHEN splash screen is shown THEN we should get an operation completed result`() = runTest {
-        val operationTime = 400L
-        val splashScreenTimeout = 2_500L
-        val fastOperation = object : SplashScreenOperation {
-            override val type: String
-                get() = "so operation much fast"
-            override val dataFetched: Boolean
-                get() = false
-
-            override suspend fun run() {
-                delay(operationTime)
-            }
-        }
+    fun `GIVEN operation finishes before timeout WHEN showSplashScreen is called THEN return OperationFinished and dispose operation`() = runTest {
+        val operationTime = 100L
+        val splashScreenTimeout = 200L
+        val operation = MockedSplashScreenOperation(operationTime)
         var result: SplashScreenManagerResult? = null
         val splashScreenManager = buildSplashScreen(
-            splashScreenOperation = fastOperation,
+            splashScreenOperation = operation,
             splashScreenTimeout = splashScreenTimeout,
             onSplashScreenFinished = { result = it },
         )
 
         splashScreenManager.showSplashScreen()
 
-        Assert.assertNull(result)
-        coroutineScope.advanceUntilIdle()
-        Assert.assertTrue(result is SplashScreenManagerResult.OperationFinished)
+        assertNull(result)
+        testScheduler.advanceUntilIdle()
+        assertTrue(operation.disposed)
+        assertTrue(result is SplashScreenManagerResult.OperationFinished)
     }
 
     @Test
-    fun `GIVEN a splash manager with an operation running longer than the splashscreen timeout WHEN splash screen is shown THEN we should get an timeout exceeded result`() = runTest {
-        val operationTime = 11_000L
-        val splashScreenTimeout = 2_500L
-        val slowOperation = object : SplashScreenOperation {
-            override val type: String
-                get() = "so slow much trouble"
-            override val dataFetched: Boolean
-                get() = false
-
-            override suspend fun run() {
-                delay(operationTime)
-            }
-        }
+    fun `WHEN operation completes THEN operation is disposed`() = runTest {
+        val operationTime = 100L
+        val splashScreenTimeout = 200L
+        val operation = MockedSplashScreenOperation(operationTime)
         var result: SplashScreenManagerResult? = null
         val splashScreenManager = buildSplashScreen(
-            splashScreenOperation = slowOperation,
+            splashScreenOperation = operation,
             splashScreenTimeout = splashScreenTimeout,
             onSplashScreenFinished = { result = it },
         )
 
         splashScreenManager.showSplashScreen()
 
-        Assert.assertNull(result)
-        coroutineScope.advanceUntilIdle()
-        Assert.assertTrue(result is SplashScreenManagerResult.TimeoutExceeded)
+        assertNull(result)
+        testScheduler.advanceUntilIdle()
+        assertTrue(result is SplashScreenManagerResult.OperationFinished)
+        assertTrue(operation.disposed)
     }
 
-    private fun buildSplashScreen(
-        splashScreenOperation: SplashScreenOperation = object : SplashScreenOperation {
-            override val type: String
-                get() = "test"
-            override val dataFetched: Boolean
-                get() = false
+    internal class MockedSplashScreenOperation(
+        val operationTimeMillis: Long,
+    ) : SplashScreenOperation {
+        var disposed: Boolean = false
+        override val type: String
+            get() = "mock"
+        override val dataFetched: Boolean
+            get() = false
 
-            override suspend fun run() {
-                delay(2_400)
-            }
-        },
-        splashScreenTimeout: Long = 2_500,
+        override suspend fun run() = delay(operationTimeMillis)
+
+        override fun dispose() {
+           disposed = true
+        }
+    }
+
+    private fun TestScope.buildSplashScreen(
+        splashScreenOperation: SplashScreenOperation = MockedSplashScreenOperation(100),
+        splashScreenTimeout: Long = 200,
+        isFirstSplashScreenShown: Boolean = false,
         showSplashScreen: (SplashScreen.KeepOnScreenCondition) -> Unit = { _ -> },
         onSplashScreenFinished: (SplashScreenManagerResult) -> Unit = { _ -> },
         storage: SplashScreenStorage = object : SplashScreenStorage {
-            override var isFirstSplashScreenShown = false
+            override var isFirstSplashScreenShown = isFirstSplashScreenShown
         },
-        isDeviceSupported: () -> Boolean = { true },
     ): SplashScreenManager {
         return SplashScreenManager(
-            splashScreenTimeout = splashScreenTimeout,
             splashScreenOperation = splashScreenOperation,
+            splashScreenTimeout = splashScreenTimeout,
+            storage = storage,
+            scope = this,
+            coroutineContext = this.coroutineContext,
             showSplashScreen = showSplashScreen,
             onSplashScreenFinished = onSplashScreenFinished,
-            storage = storage,
-            isDeviceSupported = isDeviceSupported,
-            scope = coroutineScope,
         )
     }
 }

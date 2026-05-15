@@ -15,20 +15,16 @@
 #include "base/waitable_event.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Fuzzing.h"
 #include "mozilla/FlowMarkers.h"
 #include "mozilla/IntentionalCrash.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ProfilerMarkers.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/glean/IpcMetrics.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ipc/NodeController.h"
 #include "mozilla/ipc/ProcessChild.h"
@@ -634,7 +630,7 @@ bool MessageChannel::Open(ScopedPort aPort, Side aSide,
     MOZ_ASSERT(mSide == UnknownSide);
 
     mMessageChannelId = aMessageChannelId;
-    mWorkerThread = eventTarget;
+    mWorkerThread = std::move(eventTarget);
     mShutdownTask = shutdownTask;
     mLink = MakeUnique<PortLink>(this, std::move(aPort));
     mChannelState = ChannelConnected;
@@ -954,15 +950,23 @@ class IPCFlowMarker : public BaseMarkerType<IPCFlowMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"name", MS::InputType::CString, "Details", MS::Format::String,
-       MS::PayloadFlags::Searchable},
-      {"flow", MS::InputType::Uint64, "Flow", MS::Format::Flow,
-       MS::PayloadFlags::Searchable}};
+      {
+          "name",
+          MS::InputType::CString,
+          "Details",
+          MS::Format::String,
+      },
+      {
+          "flow",
+          MS::InputType::Uint64,
+          "Flow",
+          MS::Format::Flow,
+      }};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* TableLabel =
-      "{marker.name} - {marker.data.name}(flow={marker.data.flow})";
+      "{marker.data.name}(flow={marker.data.flow})";
   static constexpr const char* ChartLabel = "{marker.name}";
 
   static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Generic;
@@ -1517,6 +1521,8 @@ NS_IMPL_ISUPPORTS_INHERITED(MessageChannel::MessageTask, CancelableRunnable,
 
 static uint32_t ToRunnablePriority(IPC::Message::PriorityValue aPriority) {
   switch (aPriority) {
+    case IPC::Message::LOW_PRIORITY:
+      return nsIRunnablePriority::PRIORITY_LOW;
     case IPC::Message::NORMAL_PRIORITY:
       return nsIRunnablePriority::PRIORITY_NORMAL;
     case IPC::Message::INPUT_PRIORITY:

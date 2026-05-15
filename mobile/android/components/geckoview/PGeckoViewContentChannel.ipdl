@@ -1,0 +1,43 @@
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set sw=2 ts=2 sts=2 et tw=80 ft=cpp : */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include protocol PNecko;
+include NeckoChannelParams;
+
+[RefCounted] using class nsIURI from "mozilla/ipc/URIUtils.h";
+
+namespace mozilla {
+namespace net {
+
+async protocol PGeckoViewContentChannel
+{
+  manager PNecko;
+
+parent:
+  // Note: channels are opened during construction, so no open method here:
+  // see PNecko.ipdl
+  async __delete__();
+
+  async Cancel(nsresult status);
+  async Suspend();
+  async Resume();
+
+child:
+  async OnStartRequest(nsresult aChannelStatus,
+                       nsCString aContentType,
+                       nsCString aEntityID,
+                       nsIURI aURI);
+  async OnDataAvailable(nsresult channelStatus,
+                        nsCString data,
+                        uint64_t offset,
+                        uint32_t count);
+  async OnStopRequest(nsresult channelStatus);
+  async OnAsyncOpenFailed(nsresult aResult);
+  async DeleteSelf();
+};
+
+} // namespace net
+} // namespace mozilla

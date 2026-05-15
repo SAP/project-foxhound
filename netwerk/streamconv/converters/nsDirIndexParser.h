@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __NSDIRINDEX_H_
-#define __NSDIRINDEX_H_
+#ifndef NSDIRINDEX_H_
+#define NSDIRINDEX_H_
 
 #include "nsString.h"
 #include "nsCOMPtr.h"

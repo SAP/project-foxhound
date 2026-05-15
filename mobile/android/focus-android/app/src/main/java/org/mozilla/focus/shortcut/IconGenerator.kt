@@ -6,11 +6,9 @@ package org.mozilla.focus.shortcut
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.os.Build
 import android.util.TypedValue
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
@@ -37,23 +35,7 @@ object IconGenerator {
      * on top of a generic launcher icon shape that we provide.
      */
     private fun generateCharacterIcon(context: Context, character: Char) =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             generateAdaptiveLauncherIcon(context, character)
-        } else {
-            generateLauncherIconPreOreo(context, character)
-        }
-
-    /**
-     * This method needs to be separate from generateAdaptiveLauncherIcon so that we can generate
-     * the pre-Oreo icon to display in the Add To Home screen Dialog
-     */
-    @JvmStatic
-    fun generateLauncherIconPreOreo(context: Context, character: Char): Bitmap {
-        val options = BitmapFactory.Options()
-        options.inMutable = true
-        val shape = BitmapFactory.decodeResource(context.resources, R.drawable.ic_homescreen_shape, options)
-        return drawCharacterOnBitmap(context, character, shape)
-    }
 
     /**
      * Generates a launcher icon for versions of Android that support Adaptive Icons (Oreo+):

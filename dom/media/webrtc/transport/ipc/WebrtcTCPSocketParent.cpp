@@ -6,10 +6,9 @@
 
 #include "WebrtcTCPSocketParent.h"
 
-#include "mozilla/net/NeckoParent.h"
-
 #include "WebrtcTCPSocket.h"
 #include "WebrtcTCPSocketLog.h"
+#include "mozilla/net/NeckoParent.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
@@ -90,7 +89,7 @@ void WebrtcTCPSocketParent::OnClose(nsresult aReason) {
   LOG(("WebrtcTCPSocketParent::OnClose %p\n", this));
 
   if (mChannel) {
-    Unused << SendOnClose(aReason);
+    (void)SendOnClose(aReason);
   }
 
   CleanupChannel();

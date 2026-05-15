@@ -7,11 +7,11 @@
 #include "SerializedStackHolder.h"
 
 #include "js/SavedFrameAPI.h"
-#include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/Services.h"
-#include "nsJSPrincipals.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "nsIObserverService.h"
+#include "nsJSPrincipals.h"
 #include "xpcpublic.h"
 
 namespace mozilla::dom {
@@ -78,7 +78,7 @@ JSObject* SerializedStackHolder::ReadStack(JSContext* aCx) {
 
   JS::Rooted<JS::Value> stackValue(aCx);
 
-  mHolder.Read(xpc::CurrentNativeGlobal(aCx), aCx, &stackValue, IgnoreErrors());
+  mHolder.Read(aCx, &stackValue, IgnoreErrors());
 
   return stackValue.isObject() ? &stackValue.toObject() : nullptr;
 }

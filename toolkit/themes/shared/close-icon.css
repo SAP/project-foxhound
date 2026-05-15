@@ -6,7 +6,7 @@
   appearance: none;
   -moz-context-properties: fill, fill-opacity;
   list-style-image: url(chrome://global/skin/icons/close.svg);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   color: inherit;
   fill: currentColor;
   padding: 2px;

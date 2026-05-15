@@ -6,8 +6,8 @@
 
 #include "MouseScrollEvent.h"
 
-#include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/dom/MouseEventBinding.h"
 
 namespace mozilla::dom {
 

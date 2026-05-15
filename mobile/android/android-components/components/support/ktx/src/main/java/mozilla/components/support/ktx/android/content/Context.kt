@@ -4,6 +4,7 @@
 
 package mozilla.components.support.ktx.android.content
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.ClipData
@@ -46,7 +47,7 @@ import mozilla.components.support.base.log.Log
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.R
 import mozilla.components.support.ktx.android.content.res.resolveAttribute
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import java.io.File
 
 /**
@@ -54,7 +55,7 @@ import java.io.File
  * attribute. E.g. "2.0". Returns an empty string if versionName is null.
  */
 val Context.appVersionName: String
-    get() = packageManager.getPackageInfoCompat(packageName, 0).versionName ?: ""
+    get() = packageManagerCompatHelper.getPackageInfoCompat(packageName, 0).versionName ?: ""
 
 /**
  * Returns the name (label) of the application or the package name as a fallback.
@@ -341,15 +342,19 @@ internal var isMainProcess: Boolean? = null
 /**
  *  Returns true if we are running in the main process false otherwise.
  */
+@SuppressLint("NewApi")
 fun Context.isMainProcess(): Boolean {
     if (isMainProcess != null) return isMainProcess as Boolean
 
     val pid = Process.myPid()
     val activityManager: ActivityManager? = getSystemService()
 
-    isMainProcess = activityManager?.runningAppProcesses.orEmpty().any { processInfo ->
-        processInfo.pid == pid && processInfo.processName == packageName
-    }
+    // SDK document says isIsolated is available since API 28, but it is actually available on older versions.
+    isMainProcess =
+        !android.os.Process.isIsolated() &&
+        activityManager?.runningAppProcesses.orEmpty().any { processInfo ->
+            processInfo.pid == pid && processInfo.processName == packageName
+        }
 
     return isMainProcess as Boolean
 }
@@ -368,7 +373,9 @@ inline fun Context.runOnlyInMainProcess(block: () -> Unit) {
  * Returns the color int corresponding to the attribute.
  */
 @ColorInt
-fun Context.getColorFromAttr(@AttrRes attr: Int) =
+fun Context.getColorFromAttr(
+    @AttrRes attr: Int,
+) =
     ContextCompat.getColor(this, theme.resolveAttribute(attr))
 
 /**
@@ -388,7 +395,10 @@ fun Context.getStatusBarColor() =
  * @param resId ID of the drawable to load.
  * @param tint Tint color int to apply to the drawable.
  */
-fun Context.getDrawableWithTint(@DrawableRes resId: Int, @ColorInt tint: Int) =
+fun Context.getDrawableWithTint(
+    @DrawableRes resId: Int,
+    @ColorInt tint: Int,
+) =
     AppCompatResources.getDrawable(this, resId)?.apply {
         mutate()
         setTint(tint)

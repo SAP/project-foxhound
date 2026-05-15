@@ -24,7 +24,6 @@ first_startup:
     data_sensitivity:
       - technical
     notification_emails:
-      - rhelmer@mozilla.com
       - mconley@mozilla.com
     expires: never
     send_in_pings:
@@ -42,7 +41,6 @@ first_startup:
     data_sensitivity:
       - technical
     notification_emails:
-      - rhelmer@mozilla.com
       - mconley@mozilla.com
     expires: never
     send_in_pings:
@@ -60,7 +58,6 @@ first_startup:
     data_sensitivity:
       - technical
     notification_emails:
-      - rhelmer@mozilla.com
       - mconley@mozilla.com
     expires: never
     send_in_pings:
@@ -78,7 +75,24 @@ first_startup:
     data_sensitivity:
       - technical
     notification_emails:
-      - rhelmer@mozilla.com
+      - mconley@mozilla.com
+    expires: never
+    send_in_pings:
+      - first-startup
+
+  category_tasks_time:
+    type: quantity
+    unit: milliseconds
+    description: >
+      Number of milliseconds until the tasks registered for first-startup-new-profile-task
+      have resolved.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2001387
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2001387
+    data_sensitivity:
+      - technical
+    notification_emails:
       - mconley@mozilla.com
     expires: never
     send_in_pings:
@@ -98,7 +112,6 @@ first_startup:
     data_sensitivity:
       - technical
     notification_emails:
-      - rhelmer@mozilla.com
       - mconley@mozilla.com
     expires: never
     send_in_pings:

@@ -123,10 +123,7 @@ add_task(async function test_getExtensionVersionWithoutValidation() {
 
 add_task(
   {
-    pref_set: [
-      ["extensions.manifestV3.enabled", true],
-      ["extensions.webextensions.warnings-as-errors", false],
-    ],
+    pref_set: [["extensions.webextensions.warnings-as-errors", false]],
   },
   async function test_applications_no_longer_valid_in_mv3() {
     let id = "some@id";

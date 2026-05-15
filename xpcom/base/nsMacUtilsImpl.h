@@ -4,12 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMacUtilsImpl_h___
-#define nsMacUtilsImpl_h___
+#ifndef nsMacUtilsImpl_h_
+#define nsMacUtilsImpl_h_
 
 #include "nsString.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 
@@ -71,4 +70,4 @@ CodeSignatureType GetSignatureType(const nsCString& aPath);
 
 }  // namespace nsMacUtilsImpl
 
-#endif /* nsMacUtilsImpl_h___ */
+#endif /* nsMacUtilsImpl_h_ */

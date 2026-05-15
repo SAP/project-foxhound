@@ -10,7 +10,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"

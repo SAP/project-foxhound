@@ -48,8 +48,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // nICEr includes
 extern "C" {
-#include "nr_api.h"
 #include "ice_util.h"
+#include "nr_api.h"
 #include "transport_addr.h"
 }
 

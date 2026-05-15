@@ -7,8 +7,6 @@
 #ifndef DOM_SERVICEWORKERS_SERVICEWORKERSHUTDOWNSTATE_H_
 #define DOM_SERVICEWORKERS_SERVICEWORKERSHUTDOWNSTATE_H_
 
-#include <cstdint>
-
 #include "ipc/EnumSerializer.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
 

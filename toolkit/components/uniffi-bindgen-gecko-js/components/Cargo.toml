@@ -24,6 +24,10 @@ search = "0.1"
 suggest = "0.1"
 relevancy = "0.1"
 webext-storage = "0.1"
+error-support = { version = "0.1" }
+tracing-support = "0.1"
+logins = { version = "0.1", features = ["keydb"] }
+init_rust_components = { version = "0.1", features = ["keydb"] }
 
 [features]
 # Should we depend on xpcom crates?

@@ -178,8 +178,26 @@ export const listing = [
       "api",
       "operation",
       "command_buffer",
+      "queries",
+      "timestampQuery"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
       "render",
       "dynamic_state"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
+      "render",
+      "render_bundle"
     ]
   },
   {
@@ -366,6 +384,14 @@ export const listing = [
       "operation",
       "render_pass",
       "storeop2"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "render_pass",
+      "transient_attachment"
     ]
   },
   {
@@ -573,6 +599,14 @@ export const listing = [
       "api",
       "operation",
       "texture_view",
+      "texture_component_swizzle"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "texture_view",
       "write"
     ]
   },
@@ -686,6 +720,15 @@ export const listing = [
       "validation",
       "capability_checks",
       "features",
+      "texture_component_swizzle"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
       "texture_formats"
     ]
   },
@@ -714,7 +757,7 @@ export const listing = [
       "capability_checks",
       "limits"
     ],
-    "readme": "Test everything that shouldn't be valid without a higher-than-specified limit.\n\n- x= that limit {default, max supported (if different), lower than default (TODO: if allowed)}\n\nOne file for each limit name.\n\nTODO: implement\nTODO: Also test that \"alignment\" limits require a power of 2."
+    "readme": "Test everything that shouldn't be valid without a higher-than-specified limit.\n\nOne file for each limit name.\n\nTODO: Test that \"alignment\" limits require a power of 2."
   },
   {
     "file": [
@@ -1260,6 +1303,15 @@ export const listing = [
       "api",
       "validation",
       "encoding",
+      "cmds",
+      "setImmediates"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
       "createRenderBundleEncoder"
     ]
   },
@@ -1286,6 +1338,15 @@ export const listing = [
       "encoding",
       "programmable",
       "pipeline_bind_group_compat"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "encoding",
+      "programmable",
+      "pipeline_immediate"
     ]
   },
   {
@@ -4022,6 +4083,13 @@ export const listing = [
     "file": [
       "shader",
       "execution",
+      "override"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
       "padding"
     ]
   },
@@ -4137,6 +4205,14 @@ export const listing = [
     "file": [
       "shader",
       "execution",
+      "statement",
+      "swizzle_assignment"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
       "value_init"
     ]
   },
@@ -4167,6 +4243,14 @@ export const listing = [
       "validation",
       "const_assert",
       "const_assert"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "decl",
+      "assignment_statement"
     ]
   },
   {
@@ -5944,6 +6028,14 @@ export const listing = [
       "validation",
       "statement",
       "switch"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "statement",
+      "swizzle_assignment"
     ]
   },
   {

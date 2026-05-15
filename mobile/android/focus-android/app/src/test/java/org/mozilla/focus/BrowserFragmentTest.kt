@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
+import kotlinx.coroutines.flow.flowOf
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.CustomTabConfig
 import mozilla.components.browser.state.state.CustomTabSessionState
@@ -109,6 +110,9 @@ class DummyEngineView(context: Context) : View(context), EngineView {
     init {
         id = R.id.engineView
     }
+
+    override val verticalScrollPosition = flowOf(0f)
+    override val verticalScrollDelta = flowOf(0f)
 
     override fun render(session: EngineSession) {
         // no-op

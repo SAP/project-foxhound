@@ -6,8 +6,8 @@
 
 #include "ClientValidation.h"
 
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/MozURL.h"
 
 namespace mozilla::dom {

@@ -10,7 +10,6 @@
 #include "ClientManagerOpChild.h"
 #include "ClientNavigateOpChild.h"
 #include "ClientSourceChild.h"
-
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 

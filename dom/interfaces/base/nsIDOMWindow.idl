@@ -3,12 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "domstubs.idl"
-
-interface nsIControllers;
-interface nsIPrompt;
-interface nsIVariant;
-
+#include "nsISupports.idl"
 /**
  * Empty interface for compatibility with older versions.
  * @deprecated Use WebIDL for script visible features,

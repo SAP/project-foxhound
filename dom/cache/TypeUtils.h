@@ -36,12 +36,41 @@ class RequestOrUTF8String;
 class Response;
 
 namespace cache {
-
+class BoundStorageKeyChild;
+class CacheChild;
+class CacheStorageChild;
 class CacheQueryParams;
 class CacheReadStream;
 class CacheRequest;
 class CacheResponse;
+class CacheStorageChild;
 class HeadersEntry;
+
+// common base class for below listeners
+class Listener {
+ public:
+  virtual ~Listener() = default;
+};
+
+// Cache registers itself as the listener of it's actor, CacheChild.
+class CacheChildListener : public Listener {
+ public:
+  virtual void OnActorDestroy(CacheChild* aActor) = 0;
+};
+
+// CacheStorage registers itself as the listener of it's actor,
+// CacheStorageChild.
+class CacheStorageChildListener : public Listener {
+ public:
+  virtual void OnActorDestroy(CacheStorageChild* aActor) = 0;
+};
+
+// BoundStorageKey registers itself as the listener of it's actor,
+// BoundStorageKeyChild.
+class BoundStorageKeyChildListener : public Listener {
+ public:
+  virtual void OnActorDestroy(BoundStorageKeyChild* aActor) = 0;
+};
 
 class TypeUtils {
  public:
@@ -56,12 +85,6 @@ class TypeUtils {
 #else
   inline void AssertOwningThread() const {}
 #endif
-
-  // This is mainly declared to support serializing body streams.  Some
-  // TypeUtils implementations do not expect to be used for this kind of
-  // serialization.  These classes will MOZ_CRASH() if you try to call
-  // GetIPCManager().
-  virtual mozilla::ipc::PBackgroundChild* GetIPCManager() = 0;
 
   SafeRefPtr<InternalRequest> ToInternalRequest(JSContext* aCx,
                                                 const RequestOrUTF8String& aIn,

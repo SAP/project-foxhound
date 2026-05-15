@@ -14,13 +14,23 @@ each step is detailed below:
 .. mermaid::
 
      graph TD;
-         Preparation --> c[Working on a patch];
+         Preparation --> Bugzilla[(Bugzilla)];
+         Bugzilla[(Bugzilla)] --> Git[(Git)];
+         Git[(Git)] --> c[Working on a patch];
          c[Working on a patch] --> Testing;
          Testing --> c[Working on a patch];
          Testing --> e[Submit the patch];
-         e[Submit the patch] --> d[Getting Reviews]
+         e[Submit the patch] --> Phabricator[(Phabricator)];
+         Phabricator[(Phabricator)] --> d[Getting Reviews];
          d[Getting Reviews] -- Addressing Review comment --> c[Working on a patch];
-         d[Getting Reviews] --> h[Push the change];
+         d[Getting Reviews] --> Lando[(Lando)];
+         Lando[(Lando)] --> h[Push the change];
+         h[Push the change] --> Git2[(Git)];
+         style Bugzilla fill:#e1f5ff,stroke:#0366d6
+         style Git fill:#e1f5ff,stroke:#0366d6
+         style Phabricator fill:#e1f5ff,stroke:#0366d6
+         style Lando fill:#e1f5ff,stroke:#0366d6
+         style Git2 fill:#e1f5ff,stroke:#0366d6
 
 
 
@@ -122,8 +132,7 @@ require.
 Testing
 -------
 
-All changes must be tested. In most cases, an `automated
-test <https://developer.mozilla.org/docs/Mozilla/QA/Automated_testing>`__ is required for every
+All changes must be tested. In most cases, :ref:`Automated Testing` is required for every
 change to the code.
 
 While we desire to have automated tests for all code, we also have a

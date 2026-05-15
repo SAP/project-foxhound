@@ -5,6 +5,8 @@
 import React, { useEffect } from "react";
 
 import { Localized } from "./MSLocalized";
+import { TileButton } from "./TileButton";
+import { TileList } from "./TileList";
 import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils.mjs";
 
 // This component was formerly "Themes" and continues to support theme
@@ -97,17 +99,20 @@ export const SingleSelect = ({
           {content.tiles.data.map(
             ({
               description,
+              inert,
               icon,
               id,
               label = "",
+              body = "",
               theme,
               tooltip,
               type = "",
               flair,
               style,
+              tilebutton,
             }) => {
               const value = id || theme;
-              let inputName = "select-item";
+              let inputName = `select-item-${id}`;
               if (!isSingleSelect) {
                 inputName = category === "theme" ? "theme" : id; // unique names per item are currently used in the wallpaper picker
               }
@@ -141,7 +146,6 @@ export const SingleSelect = ({
                   {/* eslint-disable jsx-a11y/no-noninteractive-element-interactions */}
                   <label
                     className={`select-item ${type}`}
-                    title={value}
                     onKeyDown={e => handleKeyDown(e)}
                     style={{
                       ...AboutWelcomeUtils.getValidStyle(
@@ -153,7 +157,9 @@ export const SingleSelect = ({
                   >
                     {flair ? (
                       <Localized text={valOrObj(flair.text)}>
-                        <span className="flair"></span>
+                        <span
+                          className={`flair ${flair.centered ? "centered" : ""} ${flair.spacer ? "spacer" : ""} ${type}`}
+                        ></span>
                       </Localized>
                     ) : (
                       ""
@@ -165,6 +171,7 @@ export const SingleSelect = ({
                         name={inputName}
                         checked={selected}
                         className="sr-only input"
+                        disabled={inert}
                         onClick={e => handleClick(e)}
                       />
                     </Localized>
@@ -176,8 +183,24 @@ export const SingleSelect = ({
                       )}
                     />
                     <Localized text={label}>
-                      <div className="text" />
+                      <div className="text label-text" />
                     </Localized>
+                    {body.items ? (
+                      <TileList content={body} />
+                    ) : (
+                      <Localized text={body}>
+                        <div className="text body-text" />
+                      </Localized>
+                    )}
+                    {tilebutton ? (
+                      <TileButton
+                        content={tilebutton}
+                        handleAction={handleAction}
+                        inputName={inputName}
+                      />
+                    ) : (
+                      ""
+                    )}
                   </label>
                 </Localized>
               );

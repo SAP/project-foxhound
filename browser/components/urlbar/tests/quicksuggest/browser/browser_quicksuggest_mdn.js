@@ -50,6 +50,23 @@ add_task(async function basic() {
     );
     Assert.equal(result.payload.provider, "Mdn");
 
+    const row = element.row;
+    Assert.ok(!row.hasAttribute("sponsored"));
+    const icon = row.querySelector(".urlbarView-favicon");
+    Assert.equal(icon.src, "chrome://global/skin/icons/mdn.svg");
+    const title = row.querySelector(".urlbarView-title");
+    Assert.equal(title.textContent, suggestion.title);
+    const subtitle = row.querySelector(".urlbarView-subtitle");
+    Assert.equal(subtitle.textContent, "MDN Web Docs");
+    const description = row.querySelector(".urlbarView-row-body-description");
+    Assert.equal(description.textContent, suggestion.description);
+    const bottomLabel = row.querySelector(".urlbarView-bottom-label");
+    Assert.equal(bottomLabel.textContent, "Recommended");
+    const bottomUrl = row.querySelector(".urlbarView-url");
+    const expectedUrl = makeExpectedUrl(suggestion.url);
+    const displayUrl = expectedUrl.replace(/^https:\/\//, "");
+    Assert.equal(bottomUrl.textContent, displayUrl);
+
     const onLoad = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser,
       false,
@@ -73,7 +90,7 @@ add_task(async function rowLabel() {
 
   const { element } = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   const row = element.row;
-  Assert.equal(row.getAttribute("label"), "Recommended resource");
+  Assert.ok(!row.hasAttribute("label"), "Row should not have a label");
 
   await UrlbarTestUtils.promisePopupClose(window);
 });
@@ -90,7 +107,7 @@ add_task(async function disable() {
   Assert.equal(UrlbarTestUtils.getResultCount(window), 1);
 
   const { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
-  Assert.equal(result.providerName, "HeuristicFallback");
+  Assert.equal(result.providerName, "UrlbarProviderHeuristicFallback");
 
   await SpecialPowers.popPrefEnv();
   await QuickSuggestTestUtils.forceSync();
@@ -165,11 +182,10 @@ async function doDismissTest(command) {
   let dismissalPromise = TestUtils.topicObserved(
     "quicksuggest-dismissals-changed"
   );
-  await UrlbarTestUtils.openResultMenuAndClickItem(
-    window,
-    ["[data-l10n-id=firefox-suggest-command-dont-show-mdn]", command],
-    { resultIndex, openByMouse: true }
-  );
+  await UrlbarTestUtils.openResultMenuAndClickItem(window, [command], {
+    resultIndex,
+    openByMouse: true,
+  });
   info("Awaiting dismissal promise");
   await dismissalPromise;
 
@@ -243,4 +259,16 @@ async function doDismissTest(command) {
   await UrlbarTestUtils.promisePopupClose(window);
 
   return result;
+}
+
+function makeExpectedUrl(originalUrl) {
+  let url = new URL(originalUrl);
+  url.searchParams.set("utm_medium", "firefox-desktop");
+  url.searchParams.set("utm_source", "firefox-suggest");
+  url.searchParams.set(
+    "utm_campaign",
+    "firefox-mdn-web-docs-suggestion-experiment"
+  );
+  url.searchParams.set("utm_content", "treatment");
+  return url.href;
 }

@@ -7,14 +7,13 @@
 #define NSDOMMEDIASTREAM_H_
 
 #include "ImageContainer.h"
-
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "nsIPrincipal.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RelativeTimeline.h"
 #include "mozilla/WeakPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIPrincipal.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 

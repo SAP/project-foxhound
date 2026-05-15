@@ -12,6 +12,7 @@ import androidx.annotation.MainThread
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.activity.ActivityDelegate
 import mozilla.components.concept.engine.activity.OrientationDelegate
+import mozilla.components.concept.engine.autofill.AddressStructureRuntime
 import mozilla.components.concept.engine.content.blocking.TrackerLog
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionExceptionStorage
 import mozilla.components.concept.engine.preferences.BrowserPreferencesRuntime
@@ -27,8 +28,12 @@ import org.json.JSONObject
 /**
  * Entry point for interacting with the engine implementation.
  */
-interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesRuntime, DataCleanable {
-
+interface Engine :
+    WebExtensionRuntime,
+    TranslationsRuntime,
+    BrowserPreferencesRuntime,
+    AddressStructureRuntime,
+    DataCleanable {
     /**
      * Describes a combination of browsing data types stored by the engine.
      */
@@ -108,6 +113,31 @@ interface Engine : WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesR
          * DoH is disabled, corresponds to TRR_MODE_DISABLED (5) from GeckoView.
          */
         OFF,
+    }
+
+    /**
+     * Firefox Relay feature mode for controlling the state of the integration.
+     */
+    enum class FirefoxRelayMode {
+        /**
+         * Firefox Relay is available but not yet offered to the user.
+         */
+        AVAILABLE,
+
+        /**
+         * Firefox Relay has been offered to the user.
+         */
+        OFFERED,
+
+        /**
+         * Firefox Relay is enabled.
+         */
+        ENABLED,
+
+        /**
+         * Firefox Relay is disabled.
+         */
+        DISABLED,
     }
 
     /**

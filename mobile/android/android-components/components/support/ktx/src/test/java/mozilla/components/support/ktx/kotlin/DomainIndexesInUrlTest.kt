@@ -6,7 +6,7 @@ package mozilla.components.support.ktx.kotlin
 
 import android.net.InetAddresses
 import android.util.Patterns
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.test.robolectric.testContext
@@ -21,6 +21,9 @@ import org.robolectric.annotation.Implements
 @RunWith(RobolectricTestRunner::class)
 @Config(shadows = [ShadowInetAddresses::class])
 class DomainIndexesInUrlTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+
     @Test
     fun `GIVEN a simple URL WHEN getting the domain indexes THEN get the start and end indexes of the domain in URL`() =
         testDomainIndexesInURL(
@@ -116,9 +119,9 @@ class DomainIndexesInUrlTest {
     private fun testDomainIndexesInURL(
         url: String,
         expectedIndexes: Pair<Int, Int>?,
-    ) = runTest {
+    ) = runTest(testDispatcher) {
         val urlWithMarkedDomain = url.applyRegistrableDomainSpan(
-            publicSuffixList = PublicSuffixList(testContext, Dispatchers.Unconfined, this),
+            publicSuffixList = PublicSuffixList(testContext, testDispatcher),
         )
 
         assertEquals(expectedIndexes, urlWithMarkedDomain.getRegistrableDomainIndexRange())

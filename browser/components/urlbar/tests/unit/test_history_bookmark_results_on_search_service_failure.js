@@ -10,12 +10,10 @@ const { PromiseTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 
-const searchService = Services.search.wrappedJSObject;
-
 add_setup(async function setup() {
   UrlbarPrefs.set("suggest.quickactions", false);
 
-  searchService.errorToThrowInTest.type = "Settings";
+  SearchService.errorToThrowInTest.type = "Settings";
 
   // When search service fails, we want the promise rejection to be uncaught
   // so we can continue running the test.
@@ -24,7 +22,7 @@ add_setup(async function setup() {
   );
 
   registerCleanupFunction(async () => {
-    searchService.errorToThrowInTest.type = null;
+    SearchService.errorToThrowInTest.type = null;
     await cleanupPlaces();
   });
 });
@@ -32,7 +30,7 @@ add_setup(async function setup() {
 add_task(
   async function test_bookmark_results_are_shown_when_search_service_failed() {
     Assert.equal(
-      searchService.isInitialized,
+      SearchService.isInitialized,
       false,
       "Search Service should not be initialized."
     );
@@ -56,7 +54,7 @@ add_task(
           uri: "http://cat/",
           heuristic: true,
           source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-          fallbackTitle: "cat/",
+          title: "cat/",
         }),
         makeBookmarkResult(context, {
           title: "cat",
@@ -67,13 +65,13 @@ add_task(
     });
 
     Assert.equal(
-      searchService.isInitialized,
+      SearchService.isInitialized,
       true,
       "Search Service should have finished its attempt to initialize."
     );
 
     Assert.equal(
-      searchService.hasSuccessfullyInitialized,
+      SearchService.hasSuccessfullyInitialized,
       false,
       "Search Service should have failed to initialize."
     );
@@ -84,13 +82,13 @@ add_task(
 add_task(
   async function test_history_results_are_shown_when_search_service_failed() {
     Assert.equal(
-      searchService.isInitialized,
+      SearchService.isInitialized,
       true,
       "Search Service should have finished its attempt to initialize in the previous test."
     );
 
     Assert.equal(
-      searchService.hasSuccessfullyInitialized,
+      SearchService.hasSuccessfullyInitialized,
       false,
       "Search Service should have failed to initialize."
     );
@@ -107,9 +105,15 @@ add_task(
       matches: [
         makeVisitResult(context, {
           type: 3,
+          title: "example/",
+          uri: "http://example/",
+          heuristic: true,
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        }),
+        makeVisitResult(context, {
+          type: 3,
           title: "example",
           uri: "http://example.com/",
-          heuristic: true,
           source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         }),
       ],

@@ -10,14 +10,22 @@
 
 #include "modules/audio_device/dummy/file_audio_device.h"
 
-#include <string.h>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
 #include "absl/strings/string_view.h"
+#include "api/audio/audio_device.h"
+#include "api/audio/audio_device_defines.h"
+#include "modules/audio_device/audio_device_buffer.h"
+#include "modules/audio_device/audio_device_generic.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/platform_thread.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/system/file_wrapper.h"
+#include "rtc_base/thread.h"
 #include "rtc_base/time_utils.h"
-#include "system_wrappers/include/sleep.h"
 
 namespace webrtc {
 
@@ -32,9 +40,9 @@ const size_t kRecordingBufferSize =
 
 FileAudioDevice::FileAudioDevice(absl::string_view inputFilename,
                                  absl::string_view outputFilename)
-    : _ptrAudioBuffer(NULL),
-      _recordingBuffer(NULL),
-      _playoutBuffer(NULL),
+    : _ptrAudioBuffer(nullptr),
+      _recordingBuffer(nullptr),
+      _playoutBuffer(nullptr),
       _recordingFramesLeft(0),
       _playoutFramesLeft(0),
       _recordingBufferSizeIn10MS(0),
@@ -212,7 +220,7 @@ int32_t FileAudioDevice::StartPlayout() {
       RTC_LOG(LS_ERROR) << "Failed to open playout file: " << _outputFilename;
       _playing = false;
       delete[] _playoutBuffer;
-      _playoutBuffer = NULL;
+      _playoutBuffer = nullptr;
       return -1;
     }
   }
@@ -244,7 +252,7 @@ int32_t FileAudioDevice::StopPlayout() {
 
   _playoutFramesLeft = 0;
   delete[] _playoutBuffer;
-  _playoutBuffer = NULL;
+  _playoutBuffer = nullptr;
   _outputFile.Close();
 
   RTC_LOG(LS_INFO) << "Stopped playout capture to output file: "
@@ -273,7 +281,7 @@ int32_t FileAudioDevice::StartRecording() {
                         << _inputFilename;
       _recording = false;
       delete[] _recordingBuffer;
-      _recordingBuffer = NULL;
+      _recordingBuffer = nullptr;
       return -1;
     }
   }
@@ -304,7 +312,7 @@ int32_t FileAudioDevice::StopRecording() {
   _recordingFramesLeft = 0;
   if (_recordingBuffer) {
     delete[] _recordingBuffer;
-    _recordingBuffer = NULL;
+    _recordingBuffer = nullptr;
   }
   _inputFile.Close();
 
@@ -466,7 +474,7 @@ bool FileAudioDevice::PlayThreadProcess() {
 
   int64_t deltaTimeMillis = TimeMillis() - currentTime;
   if (deltaTimeMillis < 10) {
-    SleepMs(10 - deltaTimeMillis);
+    Thread::SleepMs(10 - deltaTimeMillis);
   }
 
   return true;
@@ -499,7 +507,7 @@ bool FileAudioDevice::RecThreadProcess() {
 
   int64_t deltaTimeMillis = TimeMillis() - currentTime;
   if (deltaTimeMillis < 10) {
-    SleepMs(10 - deltaTimeMillis);
+    Thread::SleepMs(10 - deltaTimeMillis);
   }
 
   return true;

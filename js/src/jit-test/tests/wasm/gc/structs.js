@@ -573,7 +573,7 @@ assertErrorMessage(() => wasmEvalText(`
  (type $f (func (param i32) (result i32)))
  (func (type 0) (param i32) (result i32) (unreachable)))
 `),
-WebAssembly.CompileError, /signature index references non-signature/);
+SyntaxError, /not a function type/);
 
 // Can't set immutable fields from JS
 

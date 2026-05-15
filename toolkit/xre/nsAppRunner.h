@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppRunner_h__
-#define nsAppRunner_h__
+#ifndef nsAppRunner_h_
+#define nsAppRunner_h_
 
 #ifdef XP_WIN
 #  include <windows.h>
@@ -175,4 +175,4 @@ void setASanReporterPath(nsIFile* aDir);
 
 bool IsWaylandEnabled();
 
-#endif  // nsAppRunner_h__
+#endif  // nsAppRunner_h_

@@ -15,7 +15,7 @@
 #include "jit/JitSpewer.h"
 #include "jit/shared/IonAssemblerBuffer.h"
 
-// [SMDOC] JIT AssemblerBuffer constant pooling (ARM/ARM64/MIPS)
+// [SMDOC] JIT AssemblerBuffer constant pooling (ARM/ARM64/RISCV64)
 //
 // This code extends the AssemblerBuffer to support the pooling of values loaded
 // using program-counter relative addressing modes. This is necessary with the
@@ -69,9 +69,9 @@
 // leaveNoPool().
 
 // The only planned instruction sets that require inline constant pools are the
-// ARM, ARM64, and MIPS, and these all have fixed 32-bit sized instructions so
-// for simplicity the code below is specialized for fixed 32-bit sized
-// instructions and makes no attempt to support variable length
+// ARM, ARM64, RISCV64 (and historically MIPS), and these all have fixed 32-bit
+// sized instructions so for simplicity the code below is specialized for fixed
+// 32-bit sized instructions and makes no attempt to support variable length
 // instructions. The base assembler buffer which supports variable width
 // instruction is used by the x86 and x64 backends.
 
@@ -620,6 +620,11 @@ struct AssemblerBufferWithConstantPools
   // The maximum number of word sized instructions declared for the outermost
   // nesting level no-pool region.  Set to zero when invalid.
   size_t inhibitPoolsMaxInst_;
+  // The maximum number of new deadlines that are allowed to register in the
+  // no-pool region.
+  size_t inhibitPoolsMaxNewDeadlines_;
+  // The actual number of new deadlines registered in the no-pool region.
+  size_t inhibitPoolsActualNewDeadlines_;
 #endif
 
   // Instruction to use for alignment fill.
@@ -660,6 +665,8 @@ struct AssemblerBufferWithConstantPools
 #ifdef DEBUG
         inhibitPoolsStartOffset_(~size_t(0) /*"invalid"*/),
         inhibitPoolsMaxInst_(0),
+        inhibitPoolsMaxNewDeadlines_(0),
+        inhibitPoolsActualNewDeadlines_(0),
 #endif
         alignFillInst_(alignFillInst),
         nopFillInst_(nopFillInst),
@@ -703,7 +710,8 @@ struct AssemblerBufferWithConstantPools
 
   // Check if it is possible to add numInst instructions and numPoolEntries
   // constant pool entries without needing to flush the current pool.
-  bool hasSpaceForInsts(unsigned numInsts, unsigned numPoolEntries) const {
+  bool hasSpaceForInsts(unsigned numInsts, unsigned numPoolEntries,
+                        unsigned numNewDeadlines = 0) const {
     size_t nextOffset = sizeExcludingCurrentPool();
     // Earliest starting offset for the current pool after adding numInsts.
     // This is the beginning of the pool entries proper, after inserting a
@@ -746,8 +754,11 @@ struct AssemblerBufferWithConstantPools
       // secondary range veneers assuming the worst case deadlines.
 
       // Total pending secondary range veneer size.
-      size_t secondaryVeneers = guardSize_ * (branchDeadlines_.size() -
-                                              branchDeadlines_.maxRangeSize());
+      size_t secondaryVeneers =
+          guardSize_ *
+          (branchDeadlines_.size() - branchDeadlines_.maxRangeSize() +
+           numNewDeadlines) *
+          InstSize;
 
       if (deadline < poolEnd + secondaryVeneers) {
         return false;
@@ -917,6 +928,13 @@ struct AssemblerBufferWithConstantPools
     if (!this->oom() && !branchDeadlines_.addDeadline(rangeIdx, deadline)) {
       this->fail_oom();
     }
+#ifdef DEBUG
+    if (inhibitPools_ > 0) {
+      inhibitPoolsActualNewDeadlines_++;
+      MOZ_ASSERT(inhibitPoolsActualNewDeadlines_ <=
+                 inhibitPoolsMaxNewDeadlines_);
+    }
+#endif
   }
 
   // Un-register a short-range branch deadline.
@@ -930,6 +948,12 @@ struct AssemblerBufferWithConstantPools
     if (!this->oom()) {
       branchDeadlines_.removeDeadline(rangeIdx, deadline);
     }
+#ifdef DEBUG
+    if (inhibitPools_ > 0) {
+      MOZ_ASSERT(inhibitPoolsMaxNewDeadlines_ > 0);
+      inhibitPoolsActualNewDeadlines_--;
+    }
+#endif
   }
 
  private:
@@ -1054,7 +1078,7 @@ struct AssemblerBufferWithConstantPools
     finishPool(SIZE_MAX);
   }
 
-  void enterNoPool(size_t maxInst) {
+  void enterNoPool(size_t maxInst, size_t maxNewDeadlines = 0) {
     // Calling this with a zero arg is pointless.
     MOZ_ASSERT(maxInst > 0);
 
@@ -1075,6 +1099,8 @@ struct AssemblerBufferWithConstantPools
                  inhibitPoolsStartOffset_);
       MOZ_ASSERT(size_t(this->nextOffset().getOffset()) + maxInst * InstSize <=
                  inhibitPoolsStartOffset_ + inhibitPoolsMaxInst_ * InstSize);
+      MOZ_ASSERT(inhibitPoolsActualNewDeadlines_ + maxNewDeadlines <=
+                 inhibitPoolsMaxNewDeadlines_);
       inhibitPools_++;
       return;
     }
@@ -1083,6 +1109,8 @@ struct AssemblerBufferWithConstantPools
     MOZ_ASSERT(inhibitPools_ == 0);
     MOZ_ASSERT(inhibitPoolsStartOffset_ == ~size_t(0));
     MOZ_ASSERT(inhibitPoolsMaxInst_ == 0);
+    MOZ_ASSERT(inhibitPoolsMaxNewDeadlines_ == 0);
+    MOZ_ASSERT(inhibitPoolsActualNewDeadlines_ == 0);
 
     insertNopFill();
 
@@ -1090,14 +1118,14 @@ struct AssemblerBufferWithConstantPools
     // so then finish the pool before entering the no-pool region. It is
     // assumed that no pool entries are allocated in a no-pool region and
     // this is asserted when allocating entries.
-    if (!hasSpaceForInsts(maxInst, 0)) {
+    if (!hasSpaceForInsts(maxInst, 0, maxNewDeadlines)) {
       JitSpew(JitSpew_Pools, "No-Pool instruction(%zu) caused a spill.",
               sizeExcludingCurrentPool());
       finishPool(maxInst * InstSize);
       if (this->oom()) {
         return;
       }
-      MOZ_ASSERT(hasSpaceForInsts(maxInst, 0));
+      MOZ_ASSERT(hasSpaceForInsts(maxInst, 0, maxNewDeadlines));
     }
 
 #ifdef DEBUG
@@ -1105,6 +1133,8 @@ struct AssemblerBufferWithConstantPools
     // the region.
     inhibitPoolsStartOffset_ = this->nextOffset().getOffset();
     inhibitPoolsMaxInst_ = maxInst;
+    inhibitPoolsMaxNewDeadlines_ = maxNewDeadlines;
+    inhibitPoolsActualNewDeadlines_ = 0;
     MOZ_ASSERT(inhibitPoolsStartOffset_ != ~size_t(0));
 #endif
 
@@ -1134,10 +1164,13 @@ struct AssemblerBufferWithConstantPools
     // where we are leaving the outermost nesting level.
     MOZ_ASSERT(this->nextOffset().getOffset() - inhibitPoolsStartOffset_ <=
                inhibitPoolsMaxInst_ * InstSize);
+    MOZ_ASSERT(inhibitPoolsActualNewDeadlines_ <= inhibitPoolsMaxNewDeadlines_);
 
 #ifdef DEBUG
     inhibitPoolsStartOffset_ = ~size_t(0);
     inhibitPoolsMaxInst_ = 0;
+    inhibitPoolsMaxNewDeadlines_ = 0;
+    inhibitPoolsActualNewDeadlines_ = 0;
 #endif
 
     inhibitPools_ = 0;

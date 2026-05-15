@@ -11,7 +11,13 @@
 #include "rtc_base/platform_thread.h"
 
 #include <algorithm>
-#include <memory>
+#include <functional>
+#include <optional>
+#include <string>
+#include <utility>
+
+#include "absl/strings/string_view.h"
+#include "rtc_base/platform_thread_types.h"
 
 #if !defined(WEBRTC_WIN)
 #include <sched.h>
@@ -43,7 +49,7 @@ bool SetPriority(ThreadPriority priority) {
 #if defined(WEBRTC_WIN)
   return SetThreadPriority(GetCurrentThread(),
                            Win32PriorityFromThreadPriority(priority)) != FALSE;
-#elif defined(__native_client__) || defined(WEBRTC_FUCHSIA) || \
+#elif defined(WEBRTC_FUCHSIA) || \
     (defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__))
   // Setting thread priorities is not supported in NaCl, Fuchsia or Emscripten
   // without pthreads.
@@ -107,7 +113,7 @@ void* RunPlatformThread(void* param) {
   auto function = static_cast<std::function<void()>*>(param);
   (*function)();
   delete function;
-  return 0;
+  return nullptr;
 }
 #endif  // defined(WEBRTC_WIN)
 
@@ -187,7 +193,7 @@ PlatformThread PlatformThread::SpawnThread(
   auto start_thread_function_ptr =
       new std::function<void()>([thread_function = std::move(thread_function),
                                  name = std::string(name), attributes] {
-        rtc::SetCurrentThreadName(name.c_str());
+        SetCurrentThreadName(name.c_str());
 
         char stacktop;
         AutoRegisterProfiler profiler(name.c_str(), &stacktop);

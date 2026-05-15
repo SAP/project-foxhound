@@ -10,7 +10,6 @@
 
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ContainStyleScopeManager.h"
-#include "mozilla/IntegerRange.h"
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"

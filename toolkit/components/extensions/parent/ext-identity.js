@@ -8,8 +8,6 @@
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["XMLHttpRequest", "ChannelWrapper"]);
 
-var { promiseDocumentLoaded } = ExtensionUtils;
-
 const checkRedirected = (url, redirectURI) => {
   return new Promise((resolve, reject) => {
     let xhr = new XMLHttpRequest({ mozAnon: false });
@@ -79,7 +77,7 @@ const openOAuthWindow = (details, redirectURI) => {
       // Early exit if channel isn't related to the oauth dialog.
       let wrapper = ChannelWrapper.get(channel);
       if (
-        !wrapper.browserElement &&
+        !wrapper.browserElement ||
         wrapper.browserElement !== window.gBrowser.selectedBrowser
       ) {
         return;
@@ -111,14 +109,17 @@ const openOAuthWindow = (details, redirectURI) => {
 
     // If the user just closes the window we need to reject
     unloadListener = () => {
+      if (window.document.isUncommittedInitialDocument) {
+        // The "unload" event also fires when the initial "about:blank"
+        // document transitions to the browser document, ignore it.
+        return;
+      }
       window.removeEventListener("unload", unloadListener);
       httpActivityDistributor.removeObserver(httpObserver);
       reject({ message: "User cancelled or denied access." });
     };
 
-    promiseDocumentLoaded(window.document).then(() => {
-      window.addEventListener("unload", unloadListener);
-    });
+    window.addEventListener("unload", unloadListener);
   });
 };
 

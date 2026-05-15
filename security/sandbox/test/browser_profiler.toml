@@ -1,8 +1,9 @@
 [DEFAULT]
 skip-if = [
-  "ccov",
   "!gecko_profiler",
-  "os == 'linux' && (asan || tsan)", # bug 1784517 for sandbox, bug 1885381 for profiler
+  "ccov",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # bug 1784517 for sandbox, bug 1885381 for profiler
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # bug 1784517 for sandbox, bug 1885381 for profiler
 ]
 tags = "contentsandbox"
 
@@ -16,4 +17,6 @@ prefs = [
 environment = "MOZ_SANDBOX_LOGGING_FOR_TESTS=1"
 
 ["browser_sandbox_profiler.js"]
-run-if = ["os == 'linux'"]
+run-if = [
+  "os == 'linux'",
+]

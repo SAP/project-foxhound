@@ -5,7 +5,7 @@ prefs = [
   "gfx.font_loader.delay=0",
 ]
 # Support files for chrome tests that we want to load over HTTP need
-# to go in here, not chrome.ini.
+# to go in here, not chrome.toml.
 support-files = [
   "chrome/file_animate_xrays.html",
   "mozilla/xhr_doc.html",
@@ -19,23 +19,28 @@ support-files = [
 
 ["document-timeline/test_document-timeline.html"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && opt", # Bug 1784938
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1784938
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1784938
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt && !xorigin", # Bug 1784938
-  "os == 'mac' && os_version == '15.00' && processor == 'aarch64' && opt", # Bug 1784938
-  "os == 'win' && os_version == '10.2009' && processor == 'x86_64' && opt", # Bug 1784938
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1784938
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1784938
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt", # Bug 1784938
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt && !xorigin", # Bug 1784938
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1784938
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64' && opt", # Bug 1784938
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1784938
 ]
 
 ["document-timeline/test_request_animation_frame.html"]
+
+["mozilla/test_animations_playback_rate_multiplier.html"]
+
+["mozilla/test_animations_playback_rate_multiplier_on_compositor.html"]
 
 ["mozilla/test_cascade.html"]
 
 ["mozilla/test_cubic_bezier_limits.html"]
 
 ["mozilla/test_deferred_start.html"]
-skip-if = ["os == 'win' && bits == 64"] # Bug 1363957
+skip-if = [
+  "os == 'win' && arch == 'x86_64'", # Bug 1363957
+]
 
 ["mozilla/test_disabled_properties.html"]
 
@@ -52,6 +57,9 @@ skip-if = ["os == 'win' && bits == 64"] # Bug 1363957
 ["mozilla/test_document_timeline_origin_time_range.html"]
 
 ["mozilla/test_event_listener_leaks.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && xorigin && verify-standalone",
+]
 
 ["mozilla/test_get_animations_on_scroll_animations.html"]
 
@@ -65,11 +73,11 @@ support-files = [
   "mozilla/empty.html",
 ]
 skip-if = [
-  "os == 'android' && debug", # Bug 1784931
-  "os == 'linux' && tsan", # Bug 1784931
-  "display == 'wayland' && os_version == '22.04' && debug", # Bug 1856969
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # Bug 1784931
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Bug 1856969
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1784931
 ]
 
 ["mozilla/test_restyling_xhr_doc.html"]
@@ -81,7 +89,9 @@ skip-if = [
 ["mozilla/test_transform_limits.html"]
 
 ["mozilla/test_transition_finish_on_compositor.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["mozilla/test_underlying_discrete_value.html"]
 
@@ -94,12 +104,16 @@ skip-if = ["os == 'android'"]
 ["style/test_animation-setting-effect.html"]
 
 ["style/test_composite.html"]
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 
 ["style/test_interpolation-from-interpolatematrix-to-none.html"]
 
 ["style/test_missing-keyframe-on-compositor.html"]
-skip-if = ["fission && xorigin"] # Bug 1716403 - New fission platform triage
+skip-if = [
+  "fission && xorigin", # Bug 1716403 - New fission platform triage
+]
 
 ["style/test_missing-keyframe.html"]
 

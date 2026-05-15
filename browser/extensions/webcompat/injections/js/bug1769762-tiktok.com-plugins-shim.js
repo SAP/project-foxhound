@@ -18,15 +18,15 @@
  * (note that the first 2 are still broken if you open devtools even with this intervention)
  */
 
-/* globals exportFunction */
+if (navigator.plugins.length) {
+  console.info(
+    "The PluginArray has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1753874 for details."
+  );
 
-console.info(
-  "The PluginArray has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1753874 for details."
-);
-
-const pluginsArray = new window.wrappedJSObject.Array();
-Object.setPrototypeOf(pluginsArray, PluginArray.prototype);
-const navProto = Object.getPrototypeOf(navigator.wrappedJSObject);
-const pluginsDesc = Object.getOwnPropertyDescriptor(navProto, "plugins");
-pluginsDesc.get = exportFunction(() => pluginsArray, window);
-Object.defineProperty(navProto, "plugins", pluginsDesc);
+  const pluginsArray = [];
+  Object.setPrototypeOf(pluginsArray, PluginArray.prototype);
+  const navProto = Object.getPrototypeOf(navigator);
+  const pluginsDesc = Object.getOwnPropertyDescriptor(navProto, "plugins");
+  pluginsDesc.get = () => pluginsArray;
+  Object.defineProperty(navProto, "plugins", pluginsDesc);
+}

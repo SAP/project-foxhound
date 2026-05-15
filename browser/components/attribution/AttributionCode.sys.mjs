@@ -15,7 +15,8 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  MacAttribution: "resource:///modules/MacAttribution.sys.mjs",
+  MacAttribution:
+    "moz-src:///browser/components/attribution/MacAttribution.sys.mjs",
 });
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
@@ -43,6 +44,7 @@ const ATTR_CODE_MAX_LENGTH = 1010;
 const ATTR_CODE_VALUE_REGEX = /[a-zA-Z0-9_%\\-\\.\\(\\)]*/;
 const ATTR_CODE_FIELD_SEPARATOR = "%26"; // URL-encoded &
 const ATTR_CODE_KEY_VALUE_SEPARATOR = "%3D"; // URL-encoded =
+const MSCLKID_KEY_PREFIX = "storeBingAd_";
 const ATTR_CODE_KEYS = [
   "source",
   "medium",
@@ -53,6 +55,7 @@ const ATTR_CODE_KEYS = [
   "ua",
   "dltoken",
   "msstoresignedin",
+  "msclkid",
   "dlsource",
 ];
 
@@ -88,7 +91,8 @@ export var AttributionCode = {
 
   /**
    * Write the given attribution code to the attribution file.
-   * @param {String} code to write.
+   *
+   * @param {string} code to write.
    */
   async writeAttributionFile(code) {
     // Writing attribution files is only used as part of test code
@@ -143,6 +147,10 @@ export var AttributionCode = {
             parsed[key] = value;
           }
         }
+      } else if (param.startsWith(MSCLKID_KEY_PREFIX)) {
+        // Microsoft Store Ads uses `_` to separate the key and value, therefore
+        // requires special handling.
+        parsed.msclkid = param.substring(MSCLKID_KEY_PREFIX.length);
       } else {
         lazy.log.debug(
           `parseAttributionCode: "${code}" => isValid = false: "${key}", "${value}"`
@@ -339,6 +347,7 @@ export var AttributionCode = {
   /**
    * Return the cached attribution data synchronously without hitting
    * the disk.
+   *
    * @returns A dictionary with the attribution data if it's available,
    *          null otherwise.
    */

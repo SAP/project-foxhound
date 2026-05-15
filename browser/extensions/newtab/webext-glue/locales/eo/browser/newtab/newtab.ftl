@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = Personcecigi
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Ignori
+    .aria-label = Ignori
 
 ## Search box component.
 
@@ -56,6 +59,9 @@ newtab-topsites-add-shortcut-header = Nova ŝparvojo
 newtab-topsites-edit-topsites-header = Redakti oftan retejon
 newtab-topsites-edit-shortcut-header = Redakti ŝparvojon
 newtab-topsites-add-shortcut-label = Aldoni ŝparvojon
+newtab-topsites-add-shortcut-title =
+    .title = Aldoni ŝparvojon
+    .aria-label = Aldoni ŝparvojon
 newtab-topsites-title-label = Titolo
 newtab-topsites-title-input =
     .placeholder = Tajpu titolon
@@ -85,6 +91,14 @@ newtab-confirm-delete-history-p2 = Tiu ĉi ago ne estas malfarebla.
 
 newtab-topsite-sponsored = Patronita
 
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (alpinglita)
+    .title = { $title }
+
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -103,8 +117,8 @@ newtab-menu-content-tooltip =
     .aria-label = Malfermi kuntekstan menu por { $title }
 # Tooltip on an empty topsite box to open the New Top Site dialog.
 newtab-menu-topsites-placeholder-tooltip =
-    .title = Redakti ĉi tiun retejon
-    .aria-label = Redakti ĉi tiun retejon
+    .title = Modifi tiun ĉi retejon
+    .aria-label = Modifi tiun ĉi retejon
 
 ## Context Menu: These strings are displayed in a context menu and are meant as a call to action for a given page.
 
@@ -304,19 +318,32 @@ newtab-custom-pocket-subtitle = Eksterordinara  enhavo reviziita de  { -pocket-b
 newtab-custom-stories-toggle =
     .label = Rekomenditaj artikoloj
     .description = Eksterordinara enhavo elekita de la familio de { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Artikoloj
+newtab-custom-stories-personalized-checkbox-label = Personecigitaj artikoloj laŭ via retumo
 newtab-custom-pocket-sponsored = Patronitaj artikoloj
 newtab-custom-pocket-show-recent-saves = Montri ĵusajn konservojn
 newtab-custom-recent-title = Ĵusa agado
 newtab-custom-recent-subtitle = Elekto de ĵusaj retejoj kaj enhavoj
-newtab-custom-recent-toggle =
-    .label = Ĵusa agado
-    .description = Elekto de ĵusaj retejoj kaj enhavoj
 newtab-custom-weather-toggle =
     .label = Vetero
     .description = Rapida rigardo al la veterprognozo hodiaŭa
-newtab-custom-trending-search-toggle =
-    .label = Popularaj serĉoj
-    .description = Popularaj kaj ofte serĉitaj temoj
+newtab-custom-widget-weather-toggle =
+    .label = Vetero
+newtab-custom-widget-lists-toggle =
+    .label = Listoj
+newtab-custom-widget-timer-toggle =
+    .label = Tempumilo
+newtab-custom-widget-section-title = Komponantoj
+newtab-custom-widget-section-toggle =
+    .label = Komponantoj
+newtab-widget-manage-title = Komponantoj
+newtab-widget-manage-widget-button =
+    .label = Administri komponantojn
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Fermi
+    .aria-label = Fermi menuon
 newtab-custom-close-button = Fermi
 newtab-custom-settings = Administri aliajn agordojn
 
@@ -329,6 +356,7 @@ newtab-wallpaper-custom-color = Elekti koloron
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = La grando de la bildo superas la maksimuman grandon de dosiero, kiu estas { $file_size }MO. Bonvolu provi alŝuti pli etan dosieron.
+newtab-wallpaper-error-upload-file-type = Ni ne povis alŝuti vian dosieron. Bonvolu provi denove per bilda dosiero.
 newtab-wallpaper-error-file-type = Ni ne povis alŝuti vian dosieron. Bonvolu provi denove per alia tipo de dosiero.
 newtab-wallpaper-light-red-panda = Ruĝa pando
 newtab-wallpaper-light-mountain = Blanka monto
@@ -378,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Gradiento luma purpura kaj verda
 newtab-wallpaper-abstract-blue-purple-waves = Bluaj kaj purpuraj ondaj formoj
 newtab-wallpaper-abstract-black-waves = Nigraj ondaj formoj
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotoj
 newtab-wallpaper-beach-at-sunrise = Strando dum suneliro
@@ -408,6 +436,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -434,8 +466,9 @@ newtab-weather-menu-change-location = Ŝanĝi lokon
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Serĉi lokon
     .aria-label = Serĉi lokon
-newtab-weather-change-location-search-input = Serĉi lokon
 newtab-weather-menu-weather-display = Montro de vetero
+newtab-weather-todays-forecast = Hodiaŭa veterprognozo
+newtab-weather-see-full-forecast = Vidi kompletan prognozon
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -448,10 +481,24 @@ newtab-weather-menu-temperature-option-fahrenheit = Fahrenheit
 newtab-weather-menu-temperature-option-celsius = Celsius
 newtab-weather-menu-change-temperature-units-fahrenheit = Ŝanĝi al Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Ŝanĝi al Celsius
+newtab-weather-menu-hide-weather-v2 = Kaŝi veterprognozon
 newtab-weather-menu-hide-weather = Kaŝi veteron en nova langeto
 newtab-weather-menu-learn-more = Pli da informo
+newtab-weather-menu-detect-my-location = Trovi mian pozicion
 # This message is shown if user is working offline
 newtab-weather-error-not-available = En tiu ĉi momento ne haveblas veteraj datumoj.
+newtab-weather-opt-in-see-weather = Ĉu vi volas vidi la veteron por via loko?
+newtab-weather-opt-in-not-now =
+    .label = Ne nun
+newtab-weather-opt-in-yes =
+    .label = Jes
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Novjorko
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Vidi veterprognozon en { $provider }
+    .aria-description = { $provider } ∙ Patronita
 
 ## Topic Labels
 
@@ -535,6 +582,12 @@ newtab-custom-wallpaper-title = Tie ĉi troviĝas personecigitaj ekranfonoj
 newtab-custom-wallpaper-subtitle = Alŝutu vian propran ekranfonon aŭ elektu koloron por personecigi { -brand-product-name }.
 newtab-custom-wallpaper-cta = Provi
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Elekti ekranfonon por personecigi vian { -brand-product-name }
+newtab-new-user-custom-wallpaper-subtitle = Igu ĉiun novan langeton propra per personecigitaj ekranfonoj kaj koloroj.
+newtab-new-user-custom-wallpaper-cta = Provu nun
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Elŝutu { -brand-product-name } por poŝaparatoj
@@ -550,7 +603,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Viaj plej ŝatataj retejoj ĉemane
 newtab-shortcuts-highlight-subtitle = Aldonu ŝparvojon por havi viajn plej ŝatatajn retejojn je unu alklako.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Kial vi raportas tion ĉi?
@@ -568,20 +621,123 @@ newtab-report-content-inappropriate-offensive =
     .label = Neadekvata aŭ ofenda
 newtab-report-content-spam-misleading =
     .label = Truda aŭ trompa
+newtab-report-content-requires-payment-subscription =
+    .label = Postulata pago aŭ abono
+newtab-report-content-requires-payment-subscription-learn-more = Pli da informo
 newtab-report-cancel = Nuligi
 newtab-report-submit = Sendi
 newtab-toast-thanks-for-reporting =
     .message = Dankon pro via raporto.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Popularaĵoj en Google
-newtab-trending-searches-show-trending =
-    .title = Montri popularajn serĉojn
-newtab-trending-searches-hide-trending =
-    .title = Kaŝi popularajn serĉojn
-newtab-trending-searches-learn-more = Pli da informo
-newtab-trending-searches-dismiss = Kaŝi popularajn serĉojn
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Popularaj serĉoj
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Estas senfinaj ebloj. Aldonu taskon.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Nova
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Plenumitaj ({ $number })
+newtab-widget-task-list-menu-copy = Kopii
+newtab-widget-lists-menu-edit = Modifi nomon de listo
+newtab-widget-lists-menu-create = Krei novan liston
+newtab-widget-lists-menu-delete = Forigi tiun ĉi liston
+newtab-widget-lists-menu-copy = Kopii liston al tondujo
+newtab-widget-lists-menu-hide = Kaŝi ĉiujn listojn
+newtab-widget-lists-menu-learn-more = Pli da informo
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Aldoni elementon
+newtab-widget-lists-input-error = Bonvolu enigi tekston por aldoni elementon.
+newtab-widget-lists-input-menu-open-link = Malfermi ligilon
+newtab-widget-lists-input-menu-move-up = Movi supren
+newtab-widget-lists-input-menu-move-down = Movi malsupren
+newtab-widget-lists-input-menu-delete = Forigi
+newtab-widget-lists-input-menu-edit = Modifi
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Krei novan liston
+newtab-widget-lists-name-label-default =
+    .label = Listo de taskoj
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Listo de taskoj
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Nova listo
+newtab-widget-section-title = Komponantoj
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Kaŝi komponantojn
+    .aria-label = Kaŝi ĉiujn komponantojn
+newtab-widget-section-maximize =
+    .title = Malfaldi komponantojn
+    .aria-label = Malfaldi ĉiujn komponantojn al normala grando
+newtab-widget-section-minimize =
+    .title = Plejetigi komponantojn
+    .aria-label = Faldi ĉiujn komponantojn en kompakta grando
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Tempumilo
+newtab-widget-timer-notification-focus = La koncentriĝa periodo finiĝis. Bone farita. Ĉu fari paŭzon?
+newtab-widget-timer-notification-break = Via paŭzo estas finita. Ĉu preta rekoncentriĝi?
+newtab-widget-timer-notification-warning = Sciigoj malŝaltitaj
+newtab-widget-timer-mode-focus =
+    .label = Koncentriĝo
+newtab-widget-timer-mode-break =
+    .label = Paŭzo
+newtab-widget-timer-label-play =
+    .label = Komenci
+newtab-widget-timer-label-pause =
+    .label = Paŭzigi
+newtab-widget-timer-reset =
+    .title = Rekomenci
+newtab-widget-timer-menu-notifications = Malŝalti sciigojn
+newtab-widget-timer-menu-notifications-on = Ŝalti sciigojn
+newtab-widget-timer-menu-hide = Kaŝi tempumilon
+newtab-widget-timer-menu-learn-more = Pli da informo
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Ĉefaj titoloj
+newtab-daily-briefing-card-menu-dismiss = Ignori
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp =
+    { $minutes ->
+        [one] Ĝisdatigita antaŭ minuto
+       *[other] Ĝisdatigita antaŭ { $minutes } minutoj
+    }
+newtab-widget-message-title = Resti koncentrita danke al listoj kaj integrita tempumilo
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Rapidaj memorigaĵoj, ĉiutagaj farendaĵoj, koncentriĝaj seancoj kaj ripozaj paŭzoj — akurate plenumu taskojn.
+newtab-promo-card-title = Subtenu { -brand-product-name }
+newtab-promo-card-body = Niaj patronoj subtenas nian mision: krei pli bonan interreton.
+newtab-promo-card-cta = Pli da informo
+newtab-promo-card-dismiss-button =
+    .title = Ignori
+    .aria-label = Ignori
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Ignori
+    .aria-label = Ignori
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Personecigu tiun ĉi lokon
+newtab-activation-window-message-customization-focus-message = Elektu novan ekranfonon, aldoni ŝparvojojn al viaj plej ŝatataj retejoj kaj restu informita pri la temoj, kiuj interesas vin.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Komenci personecigi
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Tiu ĉi loko sekvas viajn regulojn
+newtab-activation-window-message-values-focus-message = { -brand-product-name } permesas al vi retumi kiel vi ŝatas, per pli persona maniero komenci vian tagan retumon. Personecigu { -brand-product-name }.

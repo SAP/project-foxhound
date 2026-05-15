@@ -13,8 +13,7 @@
   background-color: transparent;
 }
 
-.downloadButton:not([disabled="true"]):hover,
-.downloadButton:not([disabled="true"]):hover:active,
+.downloadButton:not([disabled]):hover,
 .downloadButton:not([disabled]):hover:active {
   background: transparent;
   border: none;

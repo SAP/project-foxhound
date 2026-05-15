@@ -5,6 +5,9 @@
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
 );
+const { SearchService } = ChromeUtils.importESModule(
+  "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+);
 
 const SEARCH_TERM = "test";
 const SEARCH_URL = "https://example.org/?q={searchTerms}";
@@ -77,7 +80,7 @@ add_task(async function test_search() {
   await AddonTestUtils.waitForSearchProviderStartup(extension);
 
   let addonEngines = await extension.awaitMessage("engines");
-  let engines = (await Services.search.getEngines()).filter(
+  let engines = (await SearchService.getEngines()).filter(
     engine => !engine.hidden
   );
   is(addonEngines.length, engines.length, "Engine lengths are the same.");
@@ -85,7 +88,7 @@ add_task(async function test_search() {
   is(defaultEngine.length, 1, "One default engine");
   is(
     defaultEngine[0].name,
-    (await Services.search.getDefault()).name,
+    (await SearchService.getDefault()).name,
     "Default engine is correct"
   );
 

@@ -68,9 +68,9 @@ rm -f "preprocessed.zip"
 
 # If the extension is hosted on Github or other supported platforms, you want
 # to use `mach vendor` for it, rather than manually downloading it here.
-# The same is valid for SQLite owned extensions that don't need preprocessing
-# (e.g. carray.c/h). In general anything that is in sqlite-src archive is also
-# in their official Github repo.
+# The same is valid for SQLite owned extensions that don't need preprocessing.
+# In general anything that is in sqlite-src archive is also in the official
+# Github repo (https://github.com/sqlite/sqlite).
 
 echo ""
 echo "Update complete, please commit and check in your changes."

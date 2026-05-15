@@ -50,7 +50,7 @@ const MAX_AUTOCOMPLETIONS = (exports.MAX_AUTOCOMPLETIONS = 1500);
  * Provides a list of properties, that are possible matches based on the passed
  * Debugger.Environment/Debugger.Object and inputValue.
  *
- * @param {Object} An object of the following shape:
+ * @param {object} An object of the following shape:
  * - {Object} dbgObject
  *        When the debugger is not paused this Debugger.Object wraps
  *        the scope for autocompletion.
@@ -379,7 +379,7 @@ function hasArrayIndex(str) {
  * prototype.
  *
  * @param {Environment} env
- * @param {String} name: Name of the constructor object we want the prototype of.
+ * @param {string} name: Name of the constructor object we want the prototype of.
  * @returns {Debugger.Object|null} the prototype, or null if it not found.
  */
 function getContentPrototypeObject(env, name) {
@@ -398,7 +398,7 @@ function getContentPrototypeObject(env, name) {
 }
 
 /**
- * @param {Object} ast: An AST representing a property access (e.g. `foo.bar["baz"].x`)
+ * @param {object} ast: An AST representing a property access (e.g. `foo.bar["baz"].x`)
  * @returns {Array|null} An array representing the property access
  *                       (e.g. ["foo", "bar", "baz", "x"]).
  */

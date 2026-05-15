@@ -14,9 +14,9 @@ const CanvasUtils = require("resource://devtools/client/memory/components/tree-m
  * Start the tree map visualization
  *
  * @param  {HTMLDivElement} container
- * @param  {Object} report
+ * @param  {object} report
  *                  the report from a census
- * @param  {Number} debounceRate
+ * @param  {number} debounceRate
  */
 module.exports = function startVisualization(
   parentEl,

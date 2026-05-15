@@ -52,7 +52,7 @@ add_task(async function load_page_without_persisted_search() {
   let { tab } = await searchWithTab(
     SEARCH_STRING,
     null,
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     false
   );
 
@@ -285,7 +285,7 @@ add_task(async function popup_in_urlbar_without_feature() {
   let { tab } = await searchWithTab(
     SEARCH_STRING,
     null,
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     false
   );
   let promisePopupShown = BrowserTestUtils.waitForEvent(

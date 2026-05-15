@@ -6,6 +6,8 @@
 
 #include "BodyConsumer.h"
 
+#include "mozilla/ScopeExit.h"
+#include "mozilla/TaskQueue.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -22,12 +24,11 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/TaskQueue.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIFile.h"
-#include "nsIThreadRetargetableRequest.h"
+#include "nsIInputStream.h"
 #include "nsIStreamLoader.h"
+#include "nsIThreadRetargetableRequest.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 #include "nsIInputStream.h"
@@ -619,7 +620,7 @@ void BodyConsumer::DispatchContinueConsumeBlobBody(
   RefPtr<AbortConsumeBlobBodyControlRunnable> r =
       new AbortConsumeBlobBodyControlRunnable(this, aWorkerRef->Private());
 
-  Unused << NS_WARN_IF(!r->Dispatch(aWorkerRef->Private()));
+  (void)NS_WARN_IF(!r->Dispatch(aWorkerRef->Private()));
 }
 
 /*

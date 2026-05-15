@@ -7,8 +7,8 @@
 #ifndef DOM_SVG_SVGMPATHELEMENT_H_
 #define DOM_SVG_SVGMPATHELEMENT_H_
 
-#include "mozilla/dom/SVGElement.h"
 #include "SVGAnimatedString.h"
+#include "mozilla/dom/SVGElement.h"
 
 nsresult NS_NewSVGMPathElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);

@@ -22,7 +22,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   UpdateTimerManager: [
     "@mozilla.org/updates/timer-manager;1",
-    "nsIUpdateTimerManager",
+    Ci.nsIUpdateTimerManager,
   ],
 });
 

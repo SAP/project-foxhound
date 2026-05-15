@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsSpeechTask.h"
+
 #include "AudioChannelService.h"
 #include "AudioSegment.h"
-#include "nsSpeechTask.h"
-#include "nsSynthVoiceRegistry.h"
-#include "nsXULAppAPI.h"
 #include "SharedBuffer.h"
 #include "SpeechSynthesis.h"
 #include "nsGlobalWindowInner.h"
+#include "nsSynthVoiceRegistry.h"
+#include "nsXULAppAPI.h"
 
 #undef LOG
 extern mozilla::LogModule* GetSpeechSynthLog();

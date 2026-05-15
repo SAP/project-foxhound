@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txResultRecycler_h__
-#define txResultRecycler_h__
+#ifndef txResultRecycler_h_
+#define txResultRecycler_h_
 
 #include "nsCOMPtr.h"
 #include "txStack.h"
@@ -73,4 +73,4 @@ class txResultRecycler {
   RefPtr<BooleanResult> mFalseResult;
 };
 
-#endif  // txResultRecycler_h__
+#endif  // txResultRecycler_h_

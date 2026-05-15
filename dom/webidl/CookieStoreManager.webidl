@@ -14,7 +14,7 @@
 
 [Exposed=(ServiceWorker,Window),
  SecureContext,
- Pref="dom.cookieStore.manager.enabled"]
+ Pref="dom.cookieStore.enabled"]
 interface CookieStoreManager {
   [Throws]
   Promise<undefined> subscribe(sequence<CookieStoreGetOptions> subscriptions);

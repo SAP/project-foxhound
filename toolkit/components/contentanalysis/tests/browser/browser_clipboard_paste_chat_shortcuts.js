@@ -109,7 +109,7 @@ add_task(async function testClipboardPasteIntoChatShortcut() {
   const shortcuts = document.querySelector("#ai-action-button");
   const popup = document.getElementById("chat-shortcuts-options-panel");
 
-  EventUtils.sendMouseEvent({ type: "mouseover" }, shortcuts);
+  shortcuts.click();
   await BrowserTestUtils.waitForEvent(popup, "popupshown");
 
   const shortcutTextArea = document.querySelector(

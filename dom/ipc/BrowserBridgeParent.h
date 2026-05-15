@@ -8,8 +8,8 @@
 #define mozilla_dom_BrowserBridgeParent_h
 
 #include "mozilla/dom/PBrowserBridgeParent.h"
-#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/WindowGlobalTypes.h"
+#include "mozilla/dom/ipc/IdType.h"
 
 namespace mozilla {
 

@@ -17,7 +17,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "PushService",
   "@mozilla.org/push/Service;1",
-  "nsIPushService"
+  Ci.nsIPushService
 );
 
 /**

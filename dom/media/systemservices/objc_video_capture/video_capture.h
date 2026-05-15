@@ -11,19 +11,21 @@
 #ifndef MODULES_VIDEO_CAPTURE_OBJC_VIDEO_CAPTURE_H_
 #define MODULES_VIDEO_CAPTURE_OBJC_VIDEO_CAPTURE_H_
 
-#include "modules/video_capture/video_capture_impl.h"
 #include "api/scoped_refptr.h"
+#include "modules/video_capture/video_capture_impl.h"
+#include "system_wrappers/include/clock.h"
 
 @class RTCVideoCaptureIosObjC;
 
 namespace webrtc::videocapturemodule {
 class VideoCaptureIos : public VideoCaptureImpl {
  public:
-  VideoCaptureIos();
+  VideoCaptureIos(Clock* _Nonnull clock);
   virtual ~VideoCaptureIos();
 
-  static rtc::scoped_refptr<VideoCaptureModule> Create(
-      const char* device_unique_id_utf8);
+  static webrtc::scoped_refptr<VideoCaptureModule> Create(
+      Clock* _Nonnull clock,
+      const char* _Null_unspecified device_unique_id_utf8);
 
   // Implementation of VideoCaptureImpl.
   int32_t StartCapture(const VideoCaptureCapability& capability) override;
@@ -32,7 +34,7 @@ class VideoCaptureIos : public VideoCaptureImpl {
   int32_t CaptureSettings(VideoCaptureCapability& settings) override;
 
  private:
-  RTCVideoCaptureIosObjC* capture_device_;
+  RTCVideoCaptureIosObjC* _Null_unspecified capture_device_;
   bool is_capturing_;
   VideoCaptureCapability capability_;
 };

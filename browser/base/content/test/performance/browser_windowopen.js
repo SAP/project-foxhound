@@ -17,6 +17,14 @@ const EXPECTED_REFLOWS = [
    */
 ];
 
+add_setup(async function setup() {
+  SpecialPowers.pushPrefEnv({
+    set: [["ui.prefersReducedMotion", 1]],
+  });
+});
+
+const SIDEBAR_REVAMP = Services.prefs.getBoolPref("sidebar.revamp");
+
 /*
  * This test ensures that there are no unexpected
  * uninterruptible reflows or flickering areas when opening new windows.
@@ -42,6 +50,7 @@ add_task(async function () {
   let alreadyFocused = false;
   let inRange = (val, min, max) => min <= val && val <= max;
   let tabBoundingRect = undefined;
+  let urlbarBoundingRect = undefined;
   let expectations = {
     expectedReflows: EXPECTED_REFLOWS,
     frames: {
@@ -62,11 +71,17 @@ add_task(async function () {
       exceptions: [
         {
           name: "bug 1421463 - reload toolbar icon shouldn't flicker",
-          condition: r =>
-            inRange(r.h, 13, 14) &&
-            inRange(r.w, 14, 16) && // icon size
-            inRange(r.y1, 40, 80) && // in the toolbar
-            inRange(r.x1, 65, 100), // near the left side of the screen
+          condition: r => {
+            // sidebar.revamp places the sidebar button in the toolbar,
+            // which offsets the position of the reload button by about 36px.
+            const xOffset = SIDEBAR_REVAMP ? 36 : 0;
+            return (
+              inRange(r.h, 13, 14) &&
+              inRange(r.w, 14, 16) && // icon size
+              inRange(r.y1, 40, 80) && // in the toolbar
+              inRange(r.x1, 65 + xOffset, 100 + xOffset) // near the left side of the screen
+            );
+          },
         },
         {
           name: "bug 1555842 - the urlbar shouldn't flicker",
@@ -84,6 +99,17 @@ add_task(async function () {
           },
         },
         {
+          name: "Pixel snapping on urlbar bottom border on MacOS & Windows",
+          condition(r) {
+            if (!urlbarBoundingRect) {
+              urlbarBoundingRect = document
+                .getElementById("urlbar")
+                .getBoundingClientRect();
+            }
+            return rectMatchesBottomBorder(r, urlbarBoundingRect);
+          },
+        },
+        {
           name: "Initial bookmark icon appearing after startup",
           condition: r =>
             r.w == 16 &&
@@ -96,18 +122,19 @@ add_task(async function () {
             inRange(r.x1, 11, 13), // very close to the left of the screen
         },
         {
-          // Note that the length and x values here are a bit weird because on
-          // some fonts, we appear to detect the two words separately.
-          name: "Initial bookmark text ('Getting Started' or 'Get Involved') appearing after startup",
+          // Note that the ranges for width and x values are a bit wide because
+          // for larger fonts (Linux) we detect words as separate rects and for
+          // smaller fonts we have one rect for the entire line of text.
+          name: "Initial bookmark toolbar text appearing after startup",
           condition: r =>
-            inRange(r.w, 25, 120) && // length of text
-            inRange(r.h, 9, 15) && // height of text
+            inRange(r.w, 8, 510) && // length of text segments or full text
+            inRange(r.h, 8, 16) && // height of text
             inRange(
               r.y1,
               bookmarksToolbarRect.top,
               bookmarksToolbarRect.top + bookmarksToolbarRect.height / 2
             ) && // in the toolbar
-            inRange(r.x1, 30, 90), // close to the left of the screen
+            inRange(r.x1, 10, 500), // left portion of the toolbar
         },
         {
           name: "Shadow around active tab should not flicker on macOS (bug 1960967)",

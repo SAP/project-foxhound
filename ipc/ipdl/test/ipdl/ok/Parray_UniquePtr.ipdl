@@ -1,0 +1,7 @@
+[ChildProc=any]
+protocol Parray_UniquePtr {
+child:
+  async Msg1(UniquePtr<int>[] aa);
+  async Msg2(UniquePtr<int[]>[] aa);
+  async Msg3(UniquePtr<UniquePtr<int[]>[]>[] aa);
+};

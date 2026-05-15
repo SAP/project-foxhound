@@ -1,0 +1,52 @@
+diff --git a/opentelemetry/proto/collector/trace/v1/trace_service.proto b/opentelemetry/proto/collector/trace/v1/trace_service.proto
+index efbbedbe4545..6a439642915c 100644
+--- a/opentelemetry/proto/collector/trace/v1/trace_service.proto
++++ b/opentelemetry/proto/collector/trace/v1/trace_service.proto
+@@ -14,6 +14,8 @@
+
+ syntax = "proto3";
+
++option optimize_for = LITE_RUNTIME;
++
+ package opentelemetry.proto.collector.trace.v1;
+
+ import "opentelemetry/proto/trace/v1/trace.proto";
+diff --git a/opentelemetry/proto/common/v1/common.proto b/opentelemetry/proto/common/v1/common.proto
+index 57c9f86e0067..452f27edca95 100644
+--- a/opentelemetry/proto/common/v1/common.proto
++++ b/opentelemetry/proto/common/v1/common.proto
+@@ -14,6 +14,8 @@
+
+ syntax = "proto3";
+
++option optimize_for = LITE_RUNTIME;
++
+ package opentelemetry.proto.common.v1;
+
+ option csharp_namespace = "OpenTelemetry.Proto.Common.V1";
+diff --git a/opentelemetry/proto/resource/v1/resource.proto b/opentelemetry/proto/resource/v1/resource.proto
+index 05d4456840f4..54c9471466f2 100644
+--- a/opentelemetry/proto/resource/v1/resource.proto
++++ b/opentelemetry/proto/resource/v1/resource.proto
+@@ -14,6 +14,8 @@
+
+ syntax = "proto3";
+
++option optimize_for = LITE_RUNTIME;
++
+ package opentelemetry.proto.resource.v1;
+
+ import "opentelemetry/proto/common/v1/common.proto";
+diff --git a/opentelemetry/proto/trace/v1/trace.proto b/opentelemetry/proto/trace/v1/trace.proto
+index 24442853edcf..c6470638a97a 100644
+--- a/opentelemetry/proto/trace/v1/trace.proto
++++ b/opentelemetry/proto/trace/v1/trace.proto
+@@ -14,6 +14,8 @@
+
+ syntax = "proto3";
+
++option optimize_for = LITE_RUNTIME;
++
+ package opentelemetry.proto.trace.v1;
+
+ import "opentelemetry/proto/common/v1/common.proto";

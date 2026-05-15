@@ -50,7 +50,7 @@ class SpeechProcessingIntentProcessor(
     }
 
     private fun launchToBrowser(searchEngine: SearchEngine, text: String) {
-        activity.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        activity.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             MetricsUtils.recordSearchMetrics(
                 searchEngine,
                 searchEngine == store.state.search.selectedOrDefaultSearchEngine,

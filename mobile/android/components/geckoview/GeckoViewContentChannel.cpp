@@ -19,6 +19,8 @@ NS_IMETHODIMP
 GeckoViewContentChannel::OpenContentStream(bool aAsync,
                                            nsIInputStream** aResult,
                                            nsIChannel** aChannel) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, NS_ERROR_MALFORMED_URI);

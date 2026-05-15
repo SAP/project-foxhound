@@ -540,9 +540,6 @@ class IDLExposureMixins:
         workerScopes = self.parentScope.globalNameMapping["Worker"]
         return len(workerScopes.difference(self.exposureSet)) > 0
 
-    def isExposedInShadowRealms(self):
-        return "ShadowRealmGlobalScope" in self.exposureSet
-
     def getWorkerExposureSet(self):
         workerScopes = self._globalScope.globalNameMapping["Worker"]
         return workerScopes.intersection(self.exposureSet)
@@ -2694,6 +2691,9 @@ class IDLType(IDLObject):
         return False
 
     def isJSString(self):
+        return False
+
+    def isInteger(self):
         return False
 
     def isUndefined(self):
@@ -5165,7 +5165,7 @@ class IDLAsyncIterable(IDLMaplikeOrSetlikeOrIterableBase):
         self.argList = argList
 
     def __str__(self):
-        return "declared async iterable with key '%s' and value '%s'" % (
+        return "declared async_iterable with key '%s' and value '%s'" % (
             self.keyType,
             self.valueType,
         )
@@ -6534,6 +6534,13 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
                 [location],
             )
 
+        # See https://github.com/whatwg/webidl/issues/1516
+        if (setter or deleter) and not returnType.isUndefined():
+            raise WebIDLError(
+                "The return type of a setter or deleter operation must be 'undefined'",
+                [location],
+            )
+
         self.assertSignatureConstraints()
 
     def __str__(self):
@@ -6570,6 +6577,7 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
             if not self.underlyingAttr:
                 assert (
                     overload.returnType == BuiltinTypes[IDLBuiltinType.Types.domstring]
+                    or overload.returnType == BuiltinTypes[IDLBuiltinType.Types.utf8string]
                 )
 
     def isStatic(self):
@@ -7439,10 +7447,10 @@ class Tokenizer(object):
         "maplike": "MAPLIKE",
         "setlike": "SETLIKE",
         "iterable": "ITERABLE",
+        "async_iterable": "ASYNC_ITERABLE",
         "namespace": "NAMESPACE",
         "constructor": "CONSTRUCTOR",
         "symbol": "SYMBOL",
-        "async": "ASYNC",
     }
 
     tokens.extend(keywords.values())
@@ -8256,30 +8264,30 @@ class Parser(Tokenizer):
 
     def p_AsyncIterable(self, p):
         """
-        AsyncIterable : ASYNC ITERABLE LT TypeWithExtendedAttributes GT SEMICOLON
-                      | ASYNC ITERABLE LT TypeWithExtendedAttributes COMMA TypeWithExtendedAttributes GT SEMICOLON
-                      | ASYNC ITERABLE LT TypeWithExtendedAttributes GT LPAREN ArgumentList RPAREN SEMICOLON
-                      | ASYNC ITERABLE LT TypeWithExtendedAttributes COMMA TypeWithExtendedAttributes GT LPAREN ArgumentList RPAREN SEMICOLON
+        AsyncIterable : ASYNC_ITERABLE LT TypeWithExtendedAttributes GT SEMICOLON
+                      | ASYNC_ITERABLE LT TypeWithExtendedAttributes COMMA TypeWithExtendedAttributes GT SEMICOLON
+                      | ASYNC_ITERABLE LT TypeWithExtendedAttributes GT LPAREN ArgumentList RPAREN SEMICOLON
+                      | ASYNC_ITERABLE LT TypeWithExtendedAttributes COMMA TypeWithExtendedAttributes GT LPAREN ArgumentList RPAREN SEMICOLON
         """
-        location = self.getLocation(p, 2)
+        location = self.getLocation(p, 1)
         identifier = IDLUnresolvedIdentifier(
-            location, "__iterable", allowDoubleUnderscore=True
+            location, "__async_iterable", allowDoubleUnderscore=True
         )
-        if len(p) == 12:
-            keyType = p[4]
-            valueType = p[6]
-            argList = p[9]
-        elif len(p) == 10:
-            keyType = None
-            valueType = p[4]
-            argList = p[7]
+        if len(p) == 11:
+            keyType = p[3]
+            valueType = p[5]
+            argList = p[8]
         elif len(p) == 9:
-            keyType = p[4]
-            valueType = p[6]
+            keyType = None
+            valueType = p[3]
+            argList = p[6]
+        elif len(p) == 8:
+            keyType = p[3]
+            valueType = p[5]
             argList = []
         else:
             keyType = None
-            valueType = p[4]
+            valueType = p[3]
             argList = []
 
         p[0] = IDLAsyncIterable(
@@ -8476,9 +8484,17 @@ class Parser(Tokenizer):
                     "stringifier has wrong number of arguments",
                     [self.getLocation(p, 2)],
                 )
-            if not returnType.isDOMString():
+            if returnType.isDOMString() and not identifier:
                 raise WebIDLError(
-                    "stringifier must have DOMString return type",
+                    "Use `stringifier;` for DOMString unnamed stringifiers",
+                    [self.getLocation(p, 2)],
+                )
+            if (
+                not returnType.isDOMString()
+                and not returnType.isUTF8String()
+            ):
+                raise WebIDLError(
+                    "stringifier must have {DOM,UTF8}String return type",
                     [self.getLocation(p, 2)],
                 )
 
@@ -8720,8 +8736,7 @@ class Parser(Tokenizer):
 
     def p_ArgumentNameKeyword(self, p):
         """
-        ArgumentNameKeyword : ASYNC
-                            | ATTRIBUTE
+        ArgumentNameKeyword : ATTRIBUTE
                             | CALLBACK
                             | CONST
                             | CONSTRUCTOR
@@ -8760,8 +8775,7 @@ class Parser(Tokenizer):
 
     def p_AttributeNameKeyword(self, p):
         """
-        AttributeNameKeyword : ASYNC
-                             | REQUIRED
+        AttributeNameKeyword : REQUIRED
         """
         p[0] = p[1]
 

@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/dom/XULTooltipElement.h"
-#include "mozilla/dom/NodeInfo.h"
+
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/NodeInfo.h"
+#include "nsCOMPtr.h"
+#include "nsCTooltipTextProvider.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
-#include "nsCTooltipTextProvider.h"
 #include "nsITooltipTextProvider.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"

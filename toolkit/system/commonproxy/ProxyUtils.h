@@ -12,8 +12,10 @@ namespace mozilla {
 namespace toolkit {
 namespace system {
 
+nsresult GetProxyFromEnvironment(const nsACString& aScheme,
+                                 const nsACString& aHost, int32_t aPort,
+                                 nsACString& aResult);
 bool IsHostProxyEntry(const nsACString& aHost, const nsACString& aOverride);
-
 }  // namespace system
 }  // namespace toolkit
 }  // namespace mozilla

@@ -11,11 +11,12 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     treeherder:
         kind: build
         platform: packages/opt
         tier: 1
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         max-run-time: 1800
     run-on-projects: []

@@ -11,12 +11,14 @@
 
 // Setting prefs.
 SpecialPowers.pushPrefEnv({ set: [
+  ["dom.reporting.enabled", true],
+  ["dom.reporting.header.enabled", true],
   ["dom.reporting.delivering.timeout", 1],
   ["dom.reporting.delivering.maxFailures", 2],
   ["dom.reporting.delivering.maxReports", 3],
 ]})
 
-// Tests run in iframes because the origin must be secure for report-to header.
+// Tests run in iframes because the origin must be secure for Reporting-Endpoints header.
 .then(_ => {
   window.addEventListener("message", e => {
     if (e.data.type == "finish") {
@@ -33,7 +35,7 @@ SpecialPowers.pushPrefEnv({ set: [
   });
 
   let ifr = document.createElement("iframe");
-  ifr.src = "https://example.org/tests/dom/reporting/tests/iframe_delivering.html";
+  ifr.src = "https://example.org/tests/dom/reporting/tests/delivering.sjs?task=iframe";
 
   document.body.appendChild(ifr);
 });

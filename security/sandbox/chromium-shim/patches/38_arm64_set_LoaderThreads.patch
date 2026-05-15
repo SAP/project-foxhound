@@ -9,31 +9,7 @@ Bug 1515088 Part 2: Set LoaderThreads to 1 in the RTL_USER_PROCESS_PARAMETERS st
 diff --git a/sandbox/win/src/win_utils.cc b/sandbox/win/src/win_utils.cc
 --- a/sandbox/win/src/win_utils.cc
 +++ b/sandbox/win/src/win_utils.cc
-@@ -456,20 +456,21 @@ bool GetNtPathFromWin32Path(const std::w
-   bool rv = GetPathFromHandle(file, nt_path);
-   ::CloseHandle(file);
-   return rv;
- }
- 
- bool WriteProtectedChildMemory(HANDLE child_process,
-                                void* address,
-                                const void* buffer,
--                               size_t length) {
-+                               size_t length,
-+                               DWORD writeProtection) {
-   // First, remove the protections.
-   DWORD old_protection;
--  if (!::VirtualProtectEx(child_process, address, length, PAGE_WRITECOPY,
-+  if (!::VirtualProtectEx(child_process, address, length, writeProtection,
-                           &old_protection))
-     return false;
- 
-   SIZE_T written;
-   bool ok =
-       ::WriteProcessMemory(child_process, address, buffer, length, &written) &&
-       (length == written);
- 
-@@ -544,16 +545,40 @@ void* GetProcessBaseAddress(HANDLE proce
+@@ -170,16 +170,50 @@ void* GetProcessBaseAddress(HANDLE proce
                             &bytes_read) ||
        (sizeof(magic) != bytes_read)) {
      return nullptr;
@@ -60,40 +36,27 @@ diff --git a/sandbox/win/src/win_utils.cc b/sandbox/win/src/win_utils.cc
 +  if (memoryRead && (sizeof(maxLoaderThreads) == bytes_read) &&
 +      (maxLoaderThreads == 0)) {
 +    maxLoaderThreads = 1;
-+    WriteProtectedChildMemory(process, processParameters + loaderThreadsOffset,
-+                              &maxLoaderThreads, sizeof(maxLoaderThreads),
-+                              PAGE_READWRITE);
++    auto address = processParameters + loaderThreadsOffset;
++    auto length = sizeof(maxLoaderThreads);
++
++    // First, remove the protection.
++    DWORD old_protection;
++    if (::VirtualProtectEx(process, address, length, PAGE_READWRITE,
++                           &old_protection)) {
++      ::WriteProcessMemory(process, address, &maxLoaderThreads, length, NULL);
++
++      // Attempt to restore the original protection.
++      ::VirtualProtectEx(process, address, length, old_protection,
++                         &old_protection);
++    }
 +  }
 +#endif
 +
    return base_address;
  }
  
- DWORD GetTokenInformation(HANDLE token,
-                           TOKEN_INFORMATION_CLASS info_class,
-                           std::unique_ptr<BYTE[]>* buffer) {
-   // Get the required buffer size.
-   DWORD size = 0;
-diff --git a/sandbox/win/src/win_utils.h b/sandbox/win/src/win_utils.h
---- a/sandbox/win/src/win_utils.h
-+++ b/sandbox/win/src/win_utils.h
-@@ -111,17 +111,18 @@ HKEY GetReservedKeyFromName(const std::w
- bool ResolveRegistryName(std::wstring name, std::wstring* resolved_name);
+ absl::optional<ProcessHandleMap> GetCurrentProcessHandles() {
+   DWORD handle_count;
+   if (!::GetProcessHandleCount(::GetCurrentProcess(), &handle_count))
+     return absl::nullopt;
  
- // Writes |length| bytes from the provided |buffer| into the address space of
- // |child_process|, at the specified |address|, preserving the original write
- // protection attributes. Returns true on success.
- bool WriteProtectedChildMemory(HANDLE child_process,
-                                void* address,
-                                const void* buffer,
--                               size_t length);
-+                               size_t length,
-+                               DWORD writeProtection = PAGE_WRITECOPY);
- 
- // Allocates |buffer_bytes| in child (PAGE_READWRITE) and copies data
- // from |local_buffer| in this process into |child|. |remote_buffer|
- // contains the address in the chile.  If a zero byte copy is
- // requested |true| is returned and no allocation or copying is
- // attempted.  Returns false if allocation or copying fails. If
- // copying fails, the allocation will be reversed.
- bool CopyToChildMemory(HANDLE child,

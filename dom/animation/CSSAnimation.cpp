@@ -7,9 +7,9 @@
 #include "CSSAnimation.h"
 
 #include "mozilla/AnimationEventDispatcher.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/dom/CSSAnimationBinding.h"
 #include "mozilla/dom/KeyframeEffectBinding.h"
-#include "mozilla/TimeStamp.h"
 #include "nsPresContext.h"
 
 namespace mozilla::dom {

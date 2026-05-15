@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDragService_h__
-#define nsDragService_h__
+#ifndef nsDragService_h_
+#define nsDragService_h_
 
 #include "mozilla/RefPtr.h"
 #include "nsBaseDragService.h"
@@ -130,6 +130,8 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   };
 
   static int GetLoopDepth() { return sEventLoopDepth; };
+
+  static bool IsTextFlavor(GdkAtom aFlavor);
 
  protected:
   // mScheduledTask indicates what signal has been received from GTK and
@@ -330,10 +332,17 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   // set the drag icon during drag-begin
   void SetDragIcon(GdkDragContext* aContext);
 
+  void MarkAsActive();
+  bool IsActive() const;
+  RefPtr<GdkDragContext> GetSourceDragContext();
+
  protected:
   virtual ~nsDragSession();
 
  private:
+  // Used to cancel initiated D&D operation from nsWindow.
+  RefPtr<GdkDragContext> mSourceDragContext;
+
   // target/destination side vars
   // These variables keep track of the state of the current drag.
 
@@ -405,4 +414,4 @@ class nsDragService : public nsBaseDragService {
   already_AddRefed<nsIDragSession> CreateDragSession() override;
 };
 
-#endif  // nsDragService_h__
+#endif  // nsDragService_h_

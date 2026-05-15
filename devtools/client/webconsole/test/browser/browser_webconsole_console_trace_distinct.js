@@ -54,6 +54,7 @@ add_task(async function () {
 
 /**
  * Get all the stacktrace `.frames` elements  displayed in the console output.
+ *
  * @returns {Array<HTMLElement>}
  */
 function getFrames(hud) {
@@ -62,8 +63,9 @@ function getFrames(hud) {
 
 /**
  * Given a stacktrace element, return an array of the frame names displayed in it.
+ *
  * @param {HTMLElement} traceEl
- * @returns {Array<String>}
+ * @returns {Array<string>}
  */
 function getFramesTitleFromTrace(traceEl) {
   return Array.from(traceEl.querySelectorAll(".frame .title")).map(

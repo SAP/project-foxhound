@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_storage_VacuumManager_h__
-#define mozilla_storage_VacuumManager_h__
+#ifndef mozilla_storage_VacuumManager_h_
+#define mozilla_storage_VacuumManager_h_
 
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "mozIStorageVacuumParticipant.h"
 #include "nsCategoryCache.h"
-#include "mozilla/Attributes.h"
 
 namespace mozilla {
 namespace storage {

@@ -1,0 +1,60 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  --multiline-editor-border-color: var(--border-color-interactive);
+  --multiline-editor-border-radius: var(--border-radius-medium);
+  --multiline-editor-border: var(--border-width) solid var(--multiline-editor-border-color);
+  --multiline-editor-color: var(--text-color);
+  --multiline-editor-focus-outline: var(--focus-outline);
+
+  display: inline-flex;
+  width: 100%;
+}
+
+.multiline-editor {
+  border-radius: var(--multiline-editor-border-radius);
+  border: var(--multiline-editor-border);
+  color: var(--multiline-editor-color);
+  flex: 1;
+  padding: var(--space-small) var(--space-medium);
+}
+
+.multiline-editor:focus-within {
+  outline: var(--multiline-editor-focus-outline);
+}
+
+.multiline-editor .ProseMirror {
+  height: 100%;
+}
+
+.multiline-editor .ProseMirror:focus {
+  outline: none;
+}
+
+.multiline-editor .ProseMirror p {
+  margin: 0;
+  padding: 0;
+}
+
+/* Force empty paragraphs to not collapse */
+.multiline-editor .ProseMirror p BR.ProseMirror-trailingBreak,
+.multiline-editor .ProseMirror p br.ProseMirror-trailingBreak {
+  display: inline-flex;
+}
+
+.multiline-editor .ProseMirror p.placeholder::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  pointer-events: none;
+  color: var(--text-color-deemphasized);
+  user-select: none;
+}
+
+.multiline-editor .ProseMirror .mention {
+  cursor: default;
+  display: inline-flex;
+  line-height: inherit;
+  user-select: all;
+}

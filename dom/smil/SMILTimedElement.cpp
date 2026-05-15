@@ -6,6 +6,8 @@
 
 #include "SMILTimedElement.h"
 
+#include <algorithm>
+
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/DebugOnly.h"
@@ -19,15 +21,14 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "nsAttrValueInlines.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsGkAtoms.h"
-#include "nsReadableUtils.h"
 #include "nsMathUtils.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
 #include "nsThreadUtils.h"
 #include "prdtoa.h"
 #include "prtime.h"
-#include "nsString.h"
-#include "nsCharSeparatedTokenizer.h"
-#include <algorithm>
 
 using namespace mozilla::dom;
 
@@ -190,39 +191,10 @@ void SMILTimedElement::RemoveInstanceTimes(InstanceTimeList& aArray,
 }
 
 //----------------------------------------------------------------------
-// Static members
-
-// The thresholds at which point we start filtering intervals and instance times
-// indiscriminately.
-// See FilterIntervals and FilterInstanceTimes.
-const uint8_t SMILTimedElement::sMaxNumIntervals = 20;
-const uint8_t SMILTimedElement::sMaxNumInstanceTimes = 100;
-
-// Detect if we arrive in some sort of undetected recursive syncbase dependency
-// relationship
-const uint8_t SMILTimedElement::sMaxUpdateIntervalRecursionDepth = 20;
-
-//----------------------------------------------------------------------
 // Ctor, dtor
 
-SMILTimedElement::SMILTimedElement()
-    : mAnimationElement(nullptr),
-      mFillMode(FILL_REMOVE),
-      mRestartMode(RESTART_ALWAYS),
-      mInstanceSerialIndex(0),
-      mClient(nullptr),
-      mCurrentInterval(nullptr),
-      mCurrentRepeatIteration(0),
-      mPrevRegisteredMilestone(sMaxMilestone),
-      mElementState(STATE_STARTUP),
-      mSeekState(SEEK_NOT_SEEKING),
-      mDeferIntervalUpdates(false),
-      mDoDeferredUpdate(false),
-      mIsDisabled(false),
-      mDeleteCount(0),
-      mUpdateIntervalRecursionDepth(0) {
+SMILTimedElement::SMILTimedElement() {
   mSimpleDur.SetIndefinite();
-  mMin = SMILTimeValue::Zero();
   mMax.SetIndefinite();
 }
 
@@ -307,7 +279,8 @@ nsresult SMILTimedElement::EndElementAt(double aOffsetSeconds) {
 // SVGAnimationElement methods
 
 SMILTimeValue SMILTimedElement::GetStartTime() const {
-  return mElementState == STATE_WAITING || mElementState == STATE_ACTIVE
+  return mElementState == SMILElementState::Waiting ||
+                 mElementState == SMILElementState::Active
              ? mCurrentInterval->Begin()->Time()
              : SMILTimeValue();
 }
@@ -318,7 +291,7 @@ SMILTimeValue SMILTimedElement::GetStartTime() const {
 SMILTimeValue SMILTimedElement::GetHyperlinkTime() const {
   SMILTimeValue hyperlinkTime;  // Default ctor creates unresolved time
 
-  if (mElementState == STATE_ACTIVE) {
+  if (mElementState == SMILElementState::Active) {
     hyperlinkTime = mCurrentInterval->Begin()->Time();
   } else if (!mBeginInstances.IsEmpty()) {
     hyperlinkTime = mBeginInstances[0]->Time();
@@ -336,7 +309,7 @@ void SMILTimedElement::AddInstanceTime(SMILInstanceTime* aInstanceTime,
 
   // Event-sensitivity: If an element is not active (but the parent time
   // container is), then events are only handled for begin specifications.
-  if (mElementState != STATE_ACTIVE && !aIsBegin &&
+  if (mElementState != SMILElementState::Active && !aIsBegin &&
       aInstanceTime->IsDynamic()) {
     // No need to call Unlink here--dynamic instance times shouldn't be linked
     // to anything that's going to miss them
@@ -476,7 +449,8 @@ void SMILTimedElement::SampleEndAt(SMILTime aContainerTime) {
   // because we want to resolve all the instance times before committing to an
   // initial interval. Therefore an end sample from the startup state is also
   // acceptable.
-  if (mElementState == STATE_ACTIVE || mElementState == STATE_STARTUP) {
+  if (mElementState == SMILElementState::Active ||
+      mElementState == SMILElementState::Startup) {
     DoSampleAt(aContainerTime, true);  // End sample
   } else {
     // Even if this was an unnecessary milestone sample we want to be sure that
@@ -496,7 +470,7 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
   // start) we transfer a node from another document fragment that has already
   // started. In such a case we might receive milestone samples registered with
   // the already active container.
-  if (GetTimeContainer()->IsPausedByType(SMILTimeContainer::PAUSE_BEGIN))
+  if (GetTimeContainer()->IsPausedByType(SMILTimeContainer::PauseType::Begin))
     return;
 
   // We use an end-sample to start animation since an end-sample lets us
@@ -510,13 +484,17 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
   // a milestone before time t=0 and are then re-bound to the tree (which sends
   // us back to the STARTUP state). In such a case we should just ignore the
   // sample and wait for our real initial sample which will be an end-sample.
-  if (mElementState == STATE_STARTUP && !aEndOnly) return;
+  if (mElementState == SMILElementState::Startup && !aEndOnly) {
+    return;
+  }
 
   bool finishedSeek = false;
-  if (GetTimeContainer()->IsSeeking() && mSeekState == SEEK_NOT_SEEKING) {
-    mSeekState = mElementState == STATE_ACTIVE ? SEEK_FORWARD_FROM_ACTIVE
-                                               : SEEK_FORWARD_FROM_INACTIVE;
-  } else if (mSeekState != SEEK_NOT_SEEKING &&
+  if (GetTimeContainer()->IsSeeking() &&
+      mSeekState == SMILSeekState::NotSeeking) {
+    mSeekState = mElementState == SMILElementState::Active
+                     ? SMILSeekState::ForwardFromActive
+                     : SMILSeekState::ForwardFromInactive;
+  } else if (mSeekState != SMILSeekState::NotSeeking &&
              !GetTimeContainer()->IsSeeking()) {
     finishedSeek = true;
   }
@@ -527,7 +505,8 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
   do {
 #ifdef DEBUG
     // Check invariant
-    if (mElementState == STATE_STARTUP || mElementState == STATE_POSTACTIVE) {
+    if (mElementState == SMILElementState::Startup ||
+        mElementState == SMILElementState::PostActive) {
       MOZ_ASSERT(!mCurrentInterval,
                  "Shouldn't have current interval in startup or postactive "
                  "states");
@@ -540,27 +519,27 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
     stateChanged = false;
 
     switch (mElementState) {
-      case STATE_STARTUP: {
+      case SMILElementState::Startup: {
         SMILInterval firstInterval;
         mElementState =
             GetNextInterval(nullptr, nullptr, nullptr, firstInterval)
-                ? STATE_WAITING
-                : STATE_POSTACTIVE;
+                ? SMILElementState::Waiting
+                : SMILElementState::PostActive;
         stateChanged = true;
-        if (mElementState == STATE_WAITING) {
-          mCurrentInterval = MakeUnique<SMILInterval>(firstInterval);
+        if (mElementState == SMILElementState::Waiting) {
+          mCurrentInterval = std::make_unique<SMILInterval>(firstInterval);
           NotifyNewInterval();
         }
       } break;
 
-      case STATE_WAITING: {
+      case SMILElementState::Waiting: {
         if (mCurrentInterval->Begin()->Time() <= sampleTime) {
-          mElementState = STATE_ACTIVE;
+          mElementState = SMILElementState::Active;
           mCurrentInterval->FixBegin();
           if (mClient) {
             mClient->Activate(mCurrentInterval->Begin()->Time().GetMillis());
           }
-          if (mSeekState == SEEK_NOT_SEEKING) {
+          if (mSeekState == SMILSeekState::NotSeeking) {
             FireTimeEventAsync(eSMILBeginEvent, 0);
           }
           if (HasPlayed()) {
@@ -578,7 +557,7 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
         }
       } break;
 
-      case STATE_ACTIVE: {
+      case SMILElementState::Active: {
         // Ending early will change the interval but we don't notify dependents
         // of the change until we have closed off the current interval (since we
         // don't want dependencies to un-end our early end).
@@ -588,27 +567,27 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
           SMILInterval newInterval;
           mElementState = GetNextInterval(mCurrentInterval.get(), nullptr,
                                           nullptr, newInterval)
-                              ? STATE_WAITING
-                              : STATE_POSTACTIVE;
+                              ? SMILElementState::Waiting
+                              : SMILElementState::PostActive;
           if (mClient) {
-            mClient->Inactivate(mFillMode == FILL_FREEZE);
+            mClient->Inactivate(mFillMode == SMILFillMode::Freeze);
           }
           mCurrentInterval->FixEnd();
-          if (mSeekState == SEEK_NOT_SEEKING) {
+          if (mSeekState == SMILSeekState::NotSeeking) {
             FireTimeEventAsync(eSMILEndEvent, 0);
           }
           mCurrentRepeatIteration = 0;
           mOldIntervals.AppendElement(std::move(mCurrentInterval));
           SampleFillValue();
-          if (mElementState == STATE_WAITING) {
-            mCurrentInterval = MakeUnique<SMILInterval>(newInterval);
+          if (mElementState == SMILElementState::Waiting) {
+            mCurrentInterval = std::make_unique<SMILInterval>(newInterval);
           }
           // We are now in a consistent state to dispatch notifications
           if (didApplyEarlyEnd) {
             NotifyChangedInterval(mOldIntervals.LastElement().get(), false,
                                   true);
           }
-          if (mElementState == STATE_WAITING) {
+          if (mElementState == SMILElementState::Waiting) {
             NotifyNewInterval();
           }
           FilterHistory();
@@ -623,7 +602,7 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
           // In that extended period we apply the fill mode.
           if (GetRepeatDuration() <= SMILTimeValue(activeTime)) {
             if (mClient && mClient->IsActive()) {
-              mClient->Inactivate(mFillMode == FILL_FREEZE);
+              mClient->Inactivate(mFillMode == SMILFillMode::Freeze);
             }
             SampleFillValue();
           } else {
@@ -638,7 +617,8 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
             if (ActiveTimeToSimpleTime(activeTime, mCurrentRepeatIteration) ==
                     0 &&
                 mCurrentRepeatIteration != prevRepeatIteration &&
-                mCurrentRepeatIteration && mSeekState == SEEK_NOT_SEEKING) {
+                mCurrentRepeatIteration &&
+                mSeekState == SMILSeekState::NotSeeking) {
               FireTimeEventAsync(eSMILRepeatEvent,
                                  static_cast<int32_t>(mCurrentRepeatIteration));
             }
@@ -651,7 +631,7 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
         // In that case we should just ignore the sample.
       } break;
 
-      case STATE_POSTACTIVE:
+      case SMILElementState::PostActive:
         break;
     }
 
@@ -661,8 +641,9 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
     // to any new interval (by transitioning to the active state) until all the
     // end samples have finished and we then have complete information about the
     // available instance times upon which to base our next interval.
-  } while (stateChanged && (!aEndOnly || (mElementState != STATE_WAITING &&
-                                          mElementState != STATE_POSTACTIVE)));
+  } while (stateChanged &&
+           (!aEndOnly || (mElementState != SMILElementState::Waiting &&
+                          mElementState != SMILElementState::PostActive)));
 
   if (finishedSeek) {
     DoPostSeek();
@@ -676,7 +657,8 @@ void SMILTimedElement::HandleContainerTimeChange() {
   // containers. For now we don't bother because when we re-resolve the time in
   // the SMILTimeValueSpec we'll check if anything has changed and if not, we
   // won't go any further.
-  if (mElementState == STATE_WAITING || mElementState == STATE_ACTIVE) {
+  if (mElementState == SMILElementState::Waiting ||
+      mElementState == SMILElementState::Active) {
     NotifyChangedInterval(mCurrentInterval.get(), false, false);
   }
 }
@@ -707,12 +689,13 @@ void SMILTimedElement::Rewind() {
   // However, it should currently be impossible to get a rewind in the middle of
   // a forwards seek since forwards seeks are detected and processed within the
   // same (re)sample.
-  if (mSeekState == SEEK_NOT_SEEKING) {
-    mSeekState = mElementState == STATE_ACTIVE ? SEEK_BACKWARD_FROM_ACTIVE
-                                               : SEEK_BACKWARD_FROM_INACTIVE;
+  if (mSeekState == SMILSeekState::NotSeeking) {
+    mSeekState = mElementState == SMILElementState::Active
+                     ? SMILSeekState::BackwardFromActive
+                     : SMILSeekState::BackwardFromInactive;
   }
-  MOZ_ASSERT(mSeekState == SEEK_BACKWARD_FROM_INACTIVE ||
-                 mSeekState == SEEK_BACKWARD_FROM_ACTIVE,
+  MOZ_ASSERT(mSeekState == SMILSeekState::BackwardFromInactive ||
+                 mSeekState == SMILSeekState::BackwardFromActive,
              "Rewind in the middle of a forwards seek?");
 
   ClearTimingState(RemoveNonDynamic);
@@ -931,14 +914,14 @@ void SMILTimedElement::UnsetMax() {
 nsresult SMILTimedElement::SetRestart(const nsAString& aRestartSpec) {
   nsAttrValue temp;
   bool parseResult = temp.ParseEnumValue(aRestartSpec, sRestartModeTable, true);
-  mRestartMode =
-      parseResult ? SMILRestartMode(temp.GetEnumValue()) : RESTART_ALWAYS;
+  mRestartMode = parseResult ? SMILRestartMode(temp.GetEnumValue())
+                             : SMILRestartMode::Always;
   UpdateCurrentInterval();
   return parseResult ? NS_OK : NS_ERROR_FAILURE;
 }
 
 void SMILTimedElement::UnsetRestart() {
-  mRestartMode = RESTART_ALWAYS;
+  mRestartMode = SMILRestartMode::Always;
   UpdateCurrentInterval();
 }
 
@@ -990,15 +973,16 @@ void SMILTimedElement::UnsetRepeatDur() {
 }
 
 nsresult SMILTimedElement::SetFillMode(const nsAString& aFillModeSpec) {
-  uint16_t previousFillMode = mFillMode;
+  SMILFillMode previousFillMode = mFillMode;
 
   nsAttrValue temp;
   bool parseResult = temp.ParseEnumValue(aFillModeSpec, sFillModeTable, true);
-  mFillMode = parseResult ? SMILFillMode(temp.GetEnumValue()) : FILL_REMOVE;
+  mFillMode =
+      parseResult ? SMILFillMode(temp.GetEnumValue()) : SMILFillMode::Remove;
 
   // Update fill mode of client
   if (mFillMode != previousFillMode && HasClientInFillRange()) {
-    mClient->Inactivate(mFillMode == FILL_FREEZE);
+    mClient->Inactivate(mFillMode == SMILFillMode::Freeze);
     SampleFillValue();
   }
 
@@ -1006,9 +990,9 @@ nsresult SMILTimedElement::SetFillMode(const nsAString& aFillModeSpec) {
 }
 
 void SMILTimedElement::UnsetFillMode() {
-  uint16_t previousFillMode = mFillMode;
-  mFillMode = FILL_REMOVE;
-  if (previousFillMode == FILL_FREEZE && HasClientInFillRange()) {
+  SMILFillMode previousFillMode = mFillMode;
+  mFillMode = SMILFillMode::Remove;
+  if (previousFillMode == SMILFillMode::Freeze && HasClientInFillRange()) {
     mClient->Inactivate(false);
   }
 }
@@ -1052,8 +1036,8 @@ void SMILTimedElement::BindToTree(Element& aContextElement) {
 
   // If we were already active then clear all our timing information and start
   // afresh
-  if (mElementState != STATE_STARTUP) {
-    mSeekState = SEEK_NOT_SEEKING;
+  if (mElementState != SMILElementState::Startup) {
+    mSeekState = SMILSeekState::NotSeeking;
     Rewind();
   }
 
@@ -1062,11 +1046,11 @@ void SMILTimedElement::BindToTree(Element& aContextElement) {
     AutoIntervalUpdateBatcher updateBatcher(*this);
 
     // Resolve references to other parts of the tree
-    for (UniquePtr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
+    for (std::unique_ptr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
       beginSpec->ResolveReferences(aContextElement);
     }
 
-    for (UniquePtr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
+    for (std::unique_ptr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
       endSpec->ResolveReferences(aContextElement);
     }
   }
@@ -1077,22 +1061,22 @@ void SMILTimedElement::BindToTree(Element& aContextElement) {
 void SMILTimedElement::HandleTargetElementChange(Element* aNewTarget) {
   AutoIntervalUpdateBatcher updateBatcher(*this);
 
-  for (UniquePtr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
+  for (std::unique_ptr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
     beginSpec->HandleTargetElementChange(aNewTarget);
   }
 
-  for (UniquePtr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
+  for (std::unique_ptr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
     endSpec->HandleTargetElementChange(aNewTarget);
   }
 }
 
 void SMILTimedElement::Traverse(nsCycleCollectionTraversalCallback* aCallback) {
-  for (UniquePtr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
+  for (std::unique_ptr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
     MOZ_ASSERT(beginSpec, "null SMILTimeValueSpec in list of begin specs");
     beginSpec->Traverse(aCallback);
   }
 
-  for (UniquePtr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
+  for (std::unique_ptr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
     MOZ_ASSERT(endSpec, "null SMILTimeValueSpec in list of end specs");
     endSpec->Traverse(aCallback);
   }
@@ -1102,12 +1086,12 @@ void SMILTimedElement::Unlink() {
   AutoIntervalUpdateBatcher updateBatcher(*this);
 
   // Remove dependencies on other elements
-  for (UniquePtr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
+  for (std::unique_ptr<SMILTimeValueSpec>& beginSpec : mBeginSpecs) {
     MOZ_ASSERT(beginSpec, "null SMILTimeValueSpec in list of begin specs");
     beginSpec->Unlink();
   }
 
-  for (UniquePtr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
+  for (std::unique_ptr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
     MOZ_ASSERT(endSpec, "null SMILTimeValueSpec in list of end specs");
     endSpec->Unlink();
   }
@@ -1139,7 +1123,7 @@ nsresult SMILTimedElement::SetBeginOrEndSpec(const nsAString& aSpec,
 
   bool hadFailure = false;
   while (tokenizer.hasMoreTokens()) {
-    auto spec = MakeUnique<SMILTimeValueSpec>(*this, aIsBegin);
+    auto spec = std::make_unique<SMILTimeValueSpec>(*this, aIsBegin);
     nsresult rv = spec->SetSpec(tokenizer.nextToken(), aContextElement);
     if (NS_SUCCEEDED(rv)) {
       timeSpecsList.AppendElement(std::move(spec));
@@ -1178,7 +1162,7 @@ void SMILTimedElement::ClearSpecs(TimeValueSpecList& aSpecs,
                                   RemovalTestFunction aRemove) {
   AutoIntervalUpdateBatcher updateBatcher(*this);
 
-  for (UniquePtr<SMILTimeValueSpec>& spec : aSpecs) {
+  for (std::unique_ptr<SMILTimeValueSpec>& spec : aSpecs) {
     spec->Unlink();
   }
   aSpecs.Clear();
@@ -1188,8 +1172,8 @@ void SMILTimedElement::ClearSpecs(TimeValueSpecList& aSpecs,
 }
 
 void SMILTimedElement::ClearIntervals() {
-  if (mElementState != STATE_STARTUP) {
-    mElementState = STATE_POSTACTIVE;
+  if (mElementState != SMILElementState::Startup) {
+    mElementState = SMILElementState::PostActive;
   }
   mCurrentRepeatIteration = 0;
   ResetCurrentInterval();
@@ -1203,7 +1187,7 @@ void SMILTimedElement::ClearIntervals() {
 
 bool SMILTimedElement::ApplyEarlyEnd(const SMILTimeValue& aSampleTime) {
   // This should only be called within DoSampleAt as a helper function
-  MOZ_ASSERT(mElementState == STATE_ACTIVE,
+  MOZ_ASSERT(mElementState == SMILElementState::Active,
              "Unexpected state to try to apply an early end");
 
   bool updated = false;
@@ -1259,7 +1243,7 @@ void SMILTimedElement::Reset() {
 }
 
 void SMILTimedElement::ClearTimingState(RemovalTestFunction aRemove) {
-  mElementState = STATE_STARTUP;
+  mElementState = SMILElementState::Startup;
   ClearIntervals();
 
   UnsetBeginSpec(aRemove);
@@ -1274,7 +1258,7 @@ void SMILTimedElement::RebuildTimingState(RemovalTestFunction aRemove) {
   MOZ_ASSERT(mAnimationElement,
              "Attempting to enable a timed element not attached to an "
              "animation element");
-  MOZ_ASSERT(mElementState == STATE_STARTUP,
+  MOZ_ASSERT(mElementState == SMILElementState::Startup,
              "Rebuilding timing state from non-startup state");
 
   if (mAnimationElement->HasAttr(nsGkAtoms::begin)) {
@@ -1295,8 +1279,8 @@ void SMILTimedElement::RebuildTimingState(RemovalTestFunction aRemove) {
 
 void SMILTimedElement::DoPostSeek() {
   // Finish backwards seek
-  if (mSeekState == SEEK_BACKWARD_FROM_INACTIVE ||
-      mSeekState == SEEK_BACKWARD_FROM_ACTIVE) {
+  if (mSeekState == SMILSeekState::BackwardFromInactive ||
+      mSeekState == SMILSeekState::BackwardFromActive) {
     // Previously some dynamic instance times may have been marked to be
     // preserved because they were endpoints of an historic interval (which may
     // or may not have been filtered). Now that we've finished a seek we should
@@ -1316,26 +1300,26 @@ void SMILTimedElement::DoPostSeek() {
   }
 
   switch (mSeekState) {
-    case SEEK_FORWARD_FROM_ACTIVE:
-    case SEEK_BACKWARD_FROM_ACTIVE:
-      if (mElementState != STATE_ACTIVE) {
+    case SMILSeekState::ForwardFromActive:
+    case SMILSeekState::BackwardFromActive:
+      if (mElementState != SMILElementState::Active) {
         FireTimeEventAsync(eSMILEndEvent, 0);
       }
       break;
 
-    case SEEK_FORWARD_FROM_INACTIVE:
-    case SEEK_BACKWARD_FROM_INACTIVE:
-      if (mElementState == STATE_ACTIVE) {
+    case SMILSeekState::ForwardFromInactive:
+    case SMILSeekState::BackwardFromInactive:
+      if (mElementState == SMILElementState::Active) {
         FireTimeEventAsync(eSMILBeginEvent, 0);
       }
       break;
 
-    case SEEK_NOT_SEEKING:
+    case SMILSeekState::NotSeeking:
       /* Do nothing */
       break;
   }
 
-  mSeekState = SEEK_NOT_SEEKING;
+  mSeekState = SMILSeekState::NotSeeking;
 }
 
 void SMILTimedElement::UnpreserveInstanceTimes(InstanceTimeList& aList) {
@@ -1485,7 +1469,7 @@ bool SMILTimedElement::GetNextInterval(const SMILInterval* aPrevInterval,
              "Unresolved or indefinite begin time given for interval start");
   static const SMILTimeValue zeroTime(0L);
 
-  if (mRestartMode == RESTART_NEVER && aPrevInterval) return false;
+  if (mRestartMode == SMILRestartMode::Never && aPrevInterval) return false;
 
   // Calc starting point
   SMILTimeValue beginAfter;
@@ -1617,7 +1601,7 @@ bool SMILTimedElement::GetNextInterval(const SMILInterval* aPrevInterval,
       return true;
     }
 
-    if (mRestartMode == RESTART_NEVER) {
+    if (mRestartMode == SMILRestartMode::Never) {
       // tempEnd <= 0 so we're going to loop which effectively means restarting
       return false;
     }
@@ -1765,7 +1749,7 @@ SMILInstanceTime* SMILTimedElement::CheckForEarlyEnd(
     const SMILTimeValue& aContainerTime) const {
   MOZ_ASSERT(mCurrentInterval,
              "Checking for an early end but the current interval is not set");
-  if (mRestartMode != RESTART_ALWAYS) return nullptr;
+  if (mRestartMode != SMILRestartMode::Always) return nullptr;
 
   int32_t position = 0;
   SMILInstanceTime* nextBegin = GetNextGreater(
@@ -1794,7 +1778,7 @@ void SMILTimedElement::UpdateCurrentInterval(bool aForceChangeNotice) {
   // The disadvantage of deferring resolving the interval is that DOM calls to
   // to getStartTime will throw an INVALID_STATE_ERR exception until the
   // document timeline begins since the start time has not yet been resolved.
-  if (mElementState == STATE_STARTUP) return;
+  if (mElementState == SMILElementState::Startup) return;
 
   // Although SMIL gives rules for detecting cycles in change notifications,
   // some configurations can lead to create-delete-create-delete-etc. cycles
@@ -1808,7 +1792,7 @@ void SMILTimedElement::UpdateCurrentInterval(bool aForceChangeNotice) {
     // if we're not post active here then something other than
     // UpdateCurrentInterval has updated the element state in between and all
     // bets are off.
-    MOZ_ASSERT(mElementState == STATE_POSTACTIVE,
+    MOZ_ASSERT(mElementState == SMILElementState::PostActive,
                "Expected to be in post-active state after performing double "
                "delete");
     return;
@@ -1827,23 +1811,24 @@ void SMILTimedElement::UpdateCurrentInterval(bool aForceChangeNotice) {
   }
 
   // If the interval is active the begin time is fixed.
-  const SMILInstanceTime* beginTime =
-      mElementState == STATE_ACTIVE ? mCurrentInterval->Begin() : nullptr;
+  const SMILInstanceTime* beginTime = mElementState == SMILElementState::Active
+                                          ? mCurrentInterval->Begin()
+                                          : nullptr;
   SMILInterval updatedInterval;
   if (GetNextInterval(GetPreviousInterval(), mCurrentInterval.get(), beginTime,
                       updatedInterval)) {
-    if (mElementState == STATE_POSTACTIVE) {
+    if (mElementState == SMILElementState::PostActive) {
       MOZ_ASSERT(!mCurrentInterval,
                  "In postactive state but the interval has been set");
-      mCurrentInterval = MakeUnique<SMILInterval>(updatedInterval);
-      mElementState = STATE_WAITING;
+      mCurrentInterval = std::make_unique<SMILInterval>(updatedInterval);
+      mElementState = SMILElementState::Waiting;
       NotifyNewInterval();
 
     } else {
       bool beginChanged = false;
       bool endChanged = false;
 
-      if (mElementState != STATE_ACTIVE &&
+      if (mElementState != SMILElementState::Active &&
           !updatedInterval.Begin()->SameTimeAndBase(
               *mCurrentInterval->Begin())) {
         mCurrentInterval->SetBegin(*updatedInterval.Begin());
@@ -1864,7 +1849,7 @@ void SMILTimedElement::UpdateCurrentInterval(bool aForceChangeNotice) {
     // container
     RegisterMilestone();
   } else {  // GetNextInterval failed: Current interval is no longer valid
-    if (mElementState == STATE_ACTIVE) {
+    if (mElementState == SMILElementState::Active) {
       // The interval is active so we can't just delete it, instead trim it so
       // that begin==end.
       if (!mCurrentInterval->End()->SameTimeAndBase(
@@ -1875,10 +1860,10 @@ void SMILTimedElement::UpdateCurrentInterval(bool aForceChangeNotice) {
       // The transition to the postactive state will take place on the next
       // sample (along with firing end events, clearing intervals etc.)
       RegisterMilestone();
-    } else if (mElementState == STATE_WAITING) {
+    } else if (mElementState == SMILElementState::Waiting) {
       AutoRestore<uint8_t> deleteCountRestorer(mDeleteCount);
       ++mDeleteCount;
-      mElementState = STATE_POSTACTIVE;
+      mElementState = SMILElementState::PostActive;
       ResetCurrentInterval();
     }
   }
@@ -1893,12 +1878,13 @@ void SMILTimedElement::SampleSimpleTime(SMILTime aActiveTime) {
 }
 
 void SMILTimedElement::SampleFillValue() {
-  if (mFillMode != FILL_FREEZE || !mClient) return;
+  if (mFillMode != SMILFillMode::Freeze || !mClient) return;
 
   SMILTime activeTime;
   SMILTimeValue repeatDuration = GetRepeatDuration();
 
-  if (mElementState == STATE_WAITING || mElementState == STATE_POSTACTIVE) {
+  if (mElementState == SMILElementState::Waiting ||
+      mElementState == SMILElementState::PostActive) {
     const SMILInterval* prevInterval = GetPreviousInterval();
     MOZ_ASSERT(prevInterval,
                "Attempting to sample fill value but there is no previous "
@@ -1919,9 +1905,9 @@ void SMILTimedElement::SampleFillValue() {
     }
   } else {
     MOZ_ASSERT(
-        mElementState == STATE_ACTIVE,
+        mElementState == SMILElementState::Active,
         "Attempting to sample fill value when we're in an unexpected state "
-        "(probably STATE_STARTUP)");
+        "(probably SMILElementState::Startup)");
 
     if (!repeatDuration.IsDefinite()) {
       // Normally we'd expect a definite repeat duration here so presumably
@@ -1949,8 +1935,8 @@ void SMILTimedElement::AddInstanceTimeFromCurrentTime(SMILTime aCurrentTime,
   SMILTimeValue timeVal(std::clamp<SMILTime>(
       aCurrentTime + offset, 0, std::numeric_limits<SMILTime>::max()));
 
-  RefPtr<SMILInstanceTime> instanceTime =
-      new SMILInstanceTime(timeVal, SMILInstanceTime::SOURCE_DOM);
+  RefPtr<SMILInstanceTime> instanceTime = new SMILInstanceTime(
+      timeVal, SMILInstanceTime::SMILInstanceTimeSource::DOM);
 
   AddInstanceTime(instanceTime, aIsBegin);
 }
@@ -1991,24 +1977,24 @@ bool SMILTimedElement::GetNextMilestone(SMILMilestone& aNextMilestone) const {
   // point.
 
   switch (mElementState) {
-    case STATE_STARTUP:
+    case SMILElementState::Startup:
       // All elements register for an initial end sample at t=0 where we resolve
       // our initial interval.
       aNextMilestone.mIsEnd = true;  // Initial sample should be an end sample
       aNextMilestone.mTime = 0;
       return true;
 
-    case STATE_WAITING:
+    case SMILElementState::Waiting:
       MOZ_ASSERT(mCurrentInterval,
                  "In waiting state but the current interval has not been set");
       aNextMilestone.mIsEnd = false;
       aNextMilestone.mTime = mCurrentInterval->Begin()->Time().GetMillis();
       return true;
 
-    case STATE_ACTIVE: {
+    case SMILElementState::Active: {
       // Work out what comes next: the interval end or the next repeat iteration
       SMILTimeValue nextRepeat;
-      if (mSeekState == SEEK_NOT_SEEKING && mSimpleDur.IsDefinite()) {
+      if (mSeekState == SMILSeekState::NotSeeking && mSimpleDur.IsDefinite()) {
         SMILTime nextRepeatActiveTime =
             (mCurrentRepeatIteration + 1) * mSimpleDur.GetMillis();
         // Check that the repeat fits within the repeat duration
@@ -2038,7 +2024,7 @@ bool SMILTimedElement::GetNextMilestone(SMILMilestone& aNextMilestone) const {
       return false;
     }
 
-    case STATE_POSTACTIVE:
+    case SMILElementState::PostActive:
       return false;
   }
   MOZ_CRASH("Invalid element state");
@@ -2108,14 +2094,14 @@ void SMILTimedElement::FireTimeEventAsync(EventMessage aMsg, int32_t aDetail) {
 
 const SMILInstanceTime* SMILTimedElement::GetEffectiveBeginInstance() const {
   switch (mElementState) {
-    case STATE_STARTUP:
+    case SMILElementState::Startup:
       return nullptr;
 
-    case STATE_ACTIVE:
+    case SMILElementState::Active:
       return mCurrentInterval->Begin();
 
-    case STATE_WAITING:
-    case STATE_POSTACTIVE: {
+    case SMILElementState::Waiting:
+    case SMILElementState::PostActive: {
       const SMILInterval* prevInterval = GetPreviousInterval();
       return prevInterval ? prevInterval->Begin() : nullptr;
     }
@@ -2129,12 +2115,13 @@ const SMILInterval* SMILTimedElement::GetPreviousInterval() const {
 
 bool SMILTimedElement::HasClientInFillRange() const {
   // Returns true if we have a client that is in the range where it will fill
-  return mClient && ((mElementState != STATE_ACTIVE && HasPlayed()) ||
-                     (mElementState == STATE_ACTIVE && !mClient->IsActive()));
+  return mClient &&
+         ((mElementState != SMILElementState::Active && HasPlayed()) ||
+          (mElementState == SMILElementState::Active && !mClient->IsActive()));
 }
 
 bool SMILTimedElement::EndHasEventConditions() const {
-  for (const UniquePtr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
+  for (const std::unique_ptr<SMILTimeValueSpec>& endSpec : mEndSpecs) {
     if (endSpec->IsEventBased()) return true;
   }
   return false;

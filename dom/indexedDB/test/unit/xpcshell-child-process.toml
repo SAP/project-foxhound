@@ -3,7 +3,9 @@ dupe-manifest = ""
 head = "xpcshell-head-child-process.js"
 tags = "inc-origin-init"
 tail =  ""
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "GlobalObjectsChild.js",
   "GlobalObjectsModule.sys.mjs",

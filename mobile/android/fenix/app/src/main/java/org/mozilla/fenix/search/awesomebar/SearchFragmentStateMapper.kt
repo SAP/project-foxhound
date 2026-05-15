@@ -17,7 +17,7 @@ fun SearchFragmentState.toSearchProviderState() = SearchProviderState(
     showAllHistorySuggestions = showAllHistorySuggestions,
     showBookmarksSuggestionsForCurrentEngine = showBookmarksSuggestionsForCurrentEngine,
     showAllBookmarkSuggestions = showAllBookmarkSuggestions,
-    showSearchSuggestions = showSearchSuggestions,
+    showSearchSuggestions = showSearchSuggestionsFromCurrentEngine,
     showSyncedTabsSuggestionsForCurrentEngine = showSyncedTabsSuggestionsForCurrentEngine,
     showAllSyncedTabsSuggestions = showAllSyncedTabsSuggestions,
     showSessionSuggestionsForCurrentEngine = showSessionSuggestionsForCurrentEngine,
@@ -26,6 +26,5 @@ fun SearchFragmentState.toSearchProviderState() = SearchProviderState(
     showNonSponsoredSuggestions = showNonSponsoredSuggestions,
     showTrendingSearches = showTrendingSearches,
     showRecentSearches = showRecentSearches,
-    showShortcutsSuggestions = showShortcutsSuggestions,
     searchEngineSource = searchEngineSource,
 )

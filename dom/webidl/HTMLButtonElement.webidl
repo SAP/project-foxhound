@@ -17,8 +17,8 @@ interface HTMLButtonElement : HTMLElement {
 
   [CEReactions, SetterThrows, Pure]
            attribute boolean disabled;
-  [Pure]
-  readonly attribute HTMLFormElement? form;
+  [Pure, BinaryName=formForBindings]
+  readonly attribute Element? form;
   [CEReactions, SetterThrows, Pure]
            attribute DOMString formAction;
   [CEReactions, SetterThrows, Pure]
@@ -44,9 +44,10 @@ interface HTMLButtonElement : HTMLElement {
   boolean reportValidity();
   undefined setCustomValidity(DOMString error);
 
+  [BinaryName=labelsForBindings]
   readonly attribute NodeList labels;
 
-  [Pref="dom.element.commandfor.enabled", CEReactions] attribute Element? commandForElement;
+  [Pref="dom.element.commandfor.enabled", BinaryName="commandForElementForBindings", CEReactions] attribute Element? commandForElement;
   [Pref="dom.element.commandfor.enabled", CEReactions] attribute DOMString command;
 };
 

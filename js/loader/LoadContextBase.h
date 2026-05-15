@@ -7,7 +7,7 @@
 #ifndef js_loader_BaseLoadContext_h
 #define js_loader_BaseLoadContext_h
 
-#include "js/loader/ScriptLoadRequest.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsIStringBundle.h"
 
 namespace mozilla::dom {
@@ -39,7 +39,7 @@ class LoadContextBase : public nsISupports {
   ContextKind mKind;
 
  protected:
-  virtual ~LoadContextBase() = default;
+  virtual ~LoadContextBase();
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -47,7 +47,7 @@ class LoadContextBase : public nsISupports {
 
   explicit LoadContextBase(ContextKind kind);
 
-  void SetRequest(JS::loader::ScriptLoadRequest* aRequest);
+  void SetRequest(ScriptLoadRequest* aRequest);
 
   // Used to output a string for the Gecko Profiler.
   virtual void GetProfilerLabel(nsACString& aOutString);
@@ -69,7 +69,7 @@ class LoadContextBase : public nsISupports {
   bool IsWorkletContext() const { return mKind == ContextKind::Worklet; }
   mozilla::dom::WorkletLoadContext* AsWorkletContext();
 
-  RefPtr<JS::loader::ScriptLoadRequest> mRequest;
+  RefPtr<ScriptLoadRequest> mRequest;
 };
 
 }  // namespace JS::loader

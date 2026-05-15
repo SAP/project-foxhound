@@ -10,14 +10,14 @@
 #include "GMPCrashHelper.h"
 #include "GMPCrashHelperHolder.h"
 #include "GMPMessageUtils.h"
-#include "mozilla/gmp/PChromiumCDMParent.h"
-#include "mozilla/RefPtr.h"
-#include "nsTHashMap.h"
-#include "PlatformDecoderModule.h"
 #include "ImageContainer.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Span.h"
+#include "PlatformDecoderModule.h"
 #include "ReorderQueue.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
+#include "mozilla/gmp/PChromiumCDMParent.h"
+#include "nsTHashMap.h"
 
 class ChromiumCDMCallback;
 

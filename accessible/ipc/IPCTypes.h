@@ -16,6 +16,7 @@
 #  include "mozilla/GfxMessageUtils.h"
 #  include "ipc/EnumSerializer.h"
 #  include "ipc/IPCMessageUtilsSpecializations.h"
+#  include "ipc/nsGUIEventIPC.h"
 
 namespace IPC {
 

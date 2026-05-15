@@ -40,8 +40,10 @@ const PR_SYNC = 0x40;
 // exists, no action and NULL is returned.
 const PR_EXCL = 0x80;
 
-/** Init the file logger with the absolute path to the file.
-    It will create and append if the file already exists **/
+/**
+ * Init the file logger with the absolute path to the file.
+ * It will create and append if the file already exists.
+ */
 var MozillaFileLogger = {};
 
 MozillaFileLogger.init = function (path) {

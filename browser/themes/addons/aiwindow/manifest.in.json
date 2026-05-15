@@ -1,0 +1,77 @@
+{
+  "manifest_version": 2,
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "firefox-aiwindow@mozilla.org"
+    }
+  },
+
+  "name": "Firefox AI Window",
+  "description": "Base theme for AI Window",
+  "author": "Mozilla",
+  "version": "1.0.0",
+
+  "theme": {
+    "properties": {
+      "color_scheme": "light",
+      "ai_gradient": "radial-gradient(circle at 50% 90%, rgba(253, 244, 243, 1) 0%, rgba(253, 244, 243, 1) 30%, rgba(216, 202, 247, 1) 100%)",
+      "link_color": "#623ac3"
+    },
+    "colors": {
+      "frame": "hsla(240, 20%, 98%, 1)",
+      "toolbar": "transparent",
+      "tab_background_text": "#15141A",
+      "toolbar_text": "rgba(21, 20, 26, 0.69)",
+      "icon_color": "#5B5B66",
+      "toolbar_field_text": "rgba(21, 20, 26, 0.69)",
+      "toolbar_field_text_focus": "rgba(21, 20, 26, 1)",
+      "toolbar_bottom_separator": "transparent",
+      "toolbar_top_separator": "transparent",
+      "tab_line": "white",
+      "tab_selected": "rgba(255, 255, 255, 0.3)",
+      "popup": "white",
+      "popup_highlight": "#efe9ff",
+      "popup_highlight_text": "rgba(21, 20, 26, 1)",
+      "popup_text": "rgba(21, 20, 26, 1)"
+    }
+  },
+
+  "dark_theme": {
+    "properties": {
+      "ai_gradient": "radial-gradient(ellipse 110% 130% at 100% 100%, rgba(255, 124, 31, 0.2), transparent 45%), radial-gradient(ellipse 90% 70% at -10% 10%, rgba(115, 90, 245, 0.32), transparent 60%), radial-gradient(ellipse 100% 100% at 50% 0%, rgba(106, 50, 140, 0.5), rgba(33, 3, 64, 0.25) 50%, transparent 80%), linear-gradient(236deg, #31143C 5.34%, #1F133C 98.24%)",
+      "link_color": "#ae90fe"
+    },
+    "colors": {
+      "frame": "#1f133c",
+      "toolbar": "transparent",
+      "tab_background_text": "#E1DCF7",
+      "toolbar_text": "#E4DCF7",
+      "icon_color": "#E4DCF7",
+      "toolbar_field_text": "#E4DCF7",
+      "toolbar_field_text_focus": "#E4DCF7",
+      "toolbar_field": "#191622",
+      "toolbar_field_border": "rgba(191, 191, 191, 0.40)",
+      "toolbar_field_border_focus": "rgba(191, 191, 191, 0.60)",
+      "toolbar_field_focus": "#191622",
+      "toolbar_bottom_separator": "transparent",
+      "toolbar_top_separator": "transparent",
+      "tab_background_separator": "transparent",
+      "tab_line": "rgba(191, 191, 191, 0.4)",
+      "tab_selected": "transparent",
+      "popup": "#191622",
+      "popup_border": "rgba(240, 240, 244, 0.4)",
+      "popup_highlight": "rgba(160, 140, 212, 0.24)",
+      "popup_highlight_text": "#D3C9EF",
+      "popup_text": "#D3C9EF"
+    }
+  },
+
+  "theme_experiment": {
+    "stylesheet": "aiwindow-theme.css",
+    "properties": {
+      "ai_gradient": "--ai-gradient",
+      "link_color": "--link-color"
+    }
+  }
+}

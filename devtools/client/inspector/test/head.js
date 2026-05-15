@@ -41,8 +41,9 @@ registerCleanupFunction(function () {
 
 /**
  * Start the element picker and focus the content window.
+ *
  * @param {Toolbox} toolbox
- * @param {Boolean} skipFocus - Allow tests to bypass the focus event.
+ * @param {boolean} skipFocus - Allow tests to bypass the focus event.
  */
 var startPicker = async function (toolbox, skipFocus) {
   info("Start the element picker");
@@ -59,6 +60,7 @@ var startPicker = async function (toolbox, skipFocus) {
 
 /**
  * Stop the element picker using the Escape keyboard shortcut
+ *
  * @param {Toolbox} toolbox
  */
 var stopPickerWithEscapeKey = async function (toolbox) {
@@ -69,6 +71,7 @@ var stopPickerWithEscapeKey = async function (toolbox) {
 
 /**
  * Start the eye dropper tool.
+ *
  * @param {Toolbox} toolbox
  */
 var startEyeDropper = async function (toolbox) {
@@ -82,11 +85,11 @@ var startEyeDropper = async function (toolbox) {
  *
  * @param {Inspector} inspector
  *        Inspector instance
- * @param {String} selector
+ * @param {string} selector
  *        CSS selector to identify the click target
- * @param {Number} x
+ * @param {number} x
  *        X-offset from the top-left corner of the element matching the provided selector
- * @param {Number} y
+ * @param {number} y
  *        Y-offset from the top-left corner of the element matching the provided selector
  * @return {Promise} promise that resolves when the selection is updated with the picked
  *         node.
@@ -111,7 +114,7 @@ function pickElement(inspector, selector, x, y) {
  *
  * @param {Inspector} inspector
  *        Inspector instance
- * @param {String|Array} selector
+ * @param {string | Array} selector
  *        CSS selector to identify the hover target.
  *        Example: ".target"
  *        If the element is at the bottom of a nested iframe stack, the selector should
@@ -119,11 +122,11 @@ function pickElement(inspector, selector, x, y) {
  *        The last item of the array should be the element selector within the deepest
  *        nested iframe.
           Example: ["iframe#top", "iframe#nested", ".target"]
- * @param {Number} x
+ * @param {number} x
  *        X-offset from the top-left corner of the element matching the provided selector
- * @param {Number} y
+ * @param {number} y
  *        Y-offset from the top-left corner of the element matching the provided selector
- * @param {Object} eventOptions
+ * @param {object} eventOptions
  *        Options that will be passed to synthesizeMouse
  * @return {Promise} promise that resolves when both the "picker-node-hovered" and
  *                   "highlighter-shown" events are emitted.
@@ -213,7 +216,8 @@ async function getBrowsingContextForNestedFrame(selectorArray = []) {
 /**
  * Highlight a node and set the inspector's current selection to the node or
  * the first match of the given css selector.
- * @param {String|NodeFront} selector
+ *
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector
  *        The instance of InspectorPanel currently loaded in the toolbox
  * @return a promise that resolves when the inspector is updated with the new
@@ -233,7 +237,8 @@ async function selectAndHighlightNode(selector, inspector) {
 /**
  * Select node for a given selector, make it focusable and set focus in its
  * container element.
- * @param {String|NodeFront} selector
+ *
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector The current inspector-panel instance.
  * @return {MarkupContainer}
  */
@@ -262,7 +267,8 @@ function clearCurrentNodeSelection(inspector) {
 
 /**
  * Right click on a node in the test page and click on the inspect menu item.
- * @param {String} selector The selector for the node to click on in the page.
+ *
+ * @param {string} selector The selector for the node to click on in the page.
  * @return {Promise} Resolves to the inspector when it has opened and is updated
  */
 var clickOnInspectMenuItem = async function (selector) {
@@ -293,7 +299,7 @@ var clickOnInspectMenuItem = async function (selector) {
 /**
  * Get the NodeFront for the document node inside a given iframe.
  *
- * @param {String|NodeFront} frameSelector
+ * @param {string | NodeFront} frameSelector
  *        A selector that matches the iframe the document node is in
  * @param {InspectorPanel} inspector
  *        The instance of InspectorPanel currently loaded in the toolbox
@@ -311,7 +317,7 @@ var getFrameDocument = async function (frameSelector, inspector) {
 /**
  * Get the NodeFront for the shadowRoot of a shadow host.
  *
- * @param {String|NodeFront} hostSelector
+ * @param {string | NodeFront} hostSelector
  *        Selector or front of the element to which the shadow root is attached.
  * @param {InspectorPanel} inspector
  *        The instance of InspectorPanel currently loaded in the toolbox
@@ -329,9 +335,9 @@ var getShadowRoot = async function (hostSelector, inspector) {
 /**
  * Get the NodeFront for a node that matches a given css selector inside a shadow root.
  *
- * @param {String} selector
+ * @param {string} selector
  *        CSS selector of the node inside the shadow root.
- * @param {String|NodeFront} hostSelector
+ * @param {string | NodeFront} hostSelector
  *        Selector or front of the element to which the shadow root is attached.
  * @param {InspectorPanel} inspector
  *        The instance of InspectorPanel currently loaded in the toolbox
@@ -372,6 +378,7 @@ var focusSearchBoxUsingShortcut = async function (panelWin, callback) {
 /**
  * Get the MarkupContainer object instance that corresponds to the given
  * NodeFront
+ *
  * @param {NodeFront} nodeFront
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
@@ -384,10 +391,11 @@ function getContainerForNodeFront(nodeFront, { markup }) {
 /**
  * Get the MarkupContainer object instance that corresponds to the given
  * selector
- * @param {String|NodeFront} selector
+ *
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
- * @param {Boolean} Set to true in the event that the node shouldn't be found.
+ * @param {boolean} Set to true in the event that the node shouldn't be found.
  * @return {MarkupContainer}
  */
 var getContainerForSelector = async function (
@@ -411,7 +419,8 @@ var getContainerForSelector = async function (
 /**
  * Simulate a mouse-over on the markup-container (a line in the markup-view)
  * that corresponds to the selector passed.
- * @param {String|NodeFront} selector
+ *
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return {Promise} Resolves when the container is hovered and the higlighter
@@ -438,7 +447,8 @@ var hoverContainer = async function (selector, inspector) {
 /**
  * Simulate a click on the markup-container (a line in the markup-view)
  * that corresponds to the selector passed.
- * @param {String|NodeFront} selector
+ *
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return {Promise} Resolves when the node has been selected.
@@ -465,6 +475,7 @@ var clickContainer = async function (selector, inspector) {
 
 /**
  * Simulate the mouse leaving the markup-view area
+ *
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return a promise when done
@@ -498,6 +509,7 @@ function fireCopyEvent(element) {
 /**
  * Undo the last markup-view action and wait for the corresponding mutation to
  * occur
+ *
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return a promise that resolves when the markup-mutation has been treated or
@@ -518,6 +530,7 @@ function undoChange(inspector) {
 /**
  * Redo the last markup-view action and wait for the corresponding mutation to
  * occur
+ *
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return a promise that resolves when the markup-mutation has been treated or
@@ -552,11 +565,12 @@ async function getNodeFrontForSelector(selector, inspector) {
 
 /**
  * A simple polling helper that executes a given function until it returns true.
+ *
  * @param {Function} check A generator function that is expected to return true at some
  * stage.
- * @param {String} desc A text description to be displayed when the polling starts.
- * @param {Number} attemptes Optional number of times we poll. Defaults to 10.
- * @param {Number} timeBetweenAttempts Optional time to wait between each attempt.
+ * @param {string} desc A text description to be displayed when the polling starts.
+ * @param {number} attemptes Optional number of times we poll. Defaults to 10.
+ * @param {number} timeBetweenAttempts Optional time to wait between each attempt.
  * Defaults to 200ms.
  */
 async function poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
@@ -577,7 +591,7 @@ async function poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
  * the tests cleaner, without exposing directly `inspector`, `highlighter`, and
  * `highlighterTestFront` if not needed.
  *
- * @param  {String}
+ * @param  {string}
  *    The highlighter's type
  * @return
  *    A generator function that takes an object with `inspector` and `highlighterTestFront`
@@ -737,15 +751,15 @@ const getHighlighterHelperFor = type =>
  *
  * @param  {Inspector} inspector
  *         Inspector client object instance.
- * @return {Object} Object with helper methods
+ * @return {object} Object with helper methods
  */
 function getHighlighterTestHelpers(inspector) {
   /**
    * Return a promise which resolves when a highlighter triggers the given event.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type.
-   * @param  {String} eventName
+   * @param  {string} eventName
    *         Name of the event to listen to.
    * @return {Promise}
    *         Promise which resolves when the highlighter event occurs.
@@ -792,7 +806,7 @@ function getHighlighterTestHelpers(inspector) {
  * editor
  *
  * @param {Toolbox} toolbox
- * @param {String} href
+ * @param {string} href
  *        Optional, if not provided, wait for the first editor to be ready
  * @return a promise that resolves to the editor when the stylesheet editor is
  * ready
@@ -843,9 +857,10 @@ function waitForStyleEditor(toolbox, href) {
 
 /**
  * Checks if document's active element is within the given element.
+ *
  * @param  {HTMLDocument}  doc document with active element in question
  * @param  {DOMNode}       container element tested on focus containment
- * @return {Boolean}
+ * @return {boolean}
  */
 function containsFocus(doc, container) {
   let elm = doc.activeElement;
@@ -876,7 +891,7 @@ var waitForTab = async function () {
 /**
  * Simulate the key input for the given input in the window.
  *
- * @param {String} input
+ * @param {string} input
  *        The string value to input
  * @param {Window} win
  *        The window containing the panel
@@ -892,7 +907,7 @@ function synthesizeKeys(input, win) {
  *
  * @param {Window} win
  *        The window containing the panel
- * @param {String} key
+ * @param {string} key
  *        The string value to input
  */
 function focusAndSendKey(win, key) {
@@ -994,26 +1009,26 @@ async function assertTooltipHiddenOnMouseOut(tooltip, target) {
  * Check the content of a `var()` tooltip on a given rule and property name.
  *
  * @param {CssRuleView} view
- * @param {String} ruleSelector
- * @param {String} propertyName
- * @param {Object} tooltipExpected
- * @param {String} tooltipExpected.header: The HTML for the top section
+ * @param {string} ruleSelector
+ * @param {string} propertyName
+ * @param {object} tooltipExpected
+ * @param {string} tooltipExpected.header: The HTML for the top section
  *        (might be the only section when the variable is not a registered property and
  *        there is no starting-style, nor computed value).
- * @param {Array<String>} tooltipExpected.headerClasses: Classes applied on the header element
+ * @param {Array<string>} tooltipExpected.headerClasses: Classes applied on the header element
  *        (no need to include `variable-value` which is always added).
- * @param {String} tooltipExpected.computed: The HTML for the computed value section.
- * @param {Array<String>} tooltipExpected.computedClasses: Classes applied on the computed value element.
+ * @param {string} tooltipExpected.computed: The HTML for the computed value section.
+ * @param {Array<string>} tooltipExpected.computedClasses: Classes applied on the computed value element.
  * @param {Integer} tooltipExpected.index: The index in the property value for the variable
  *        element we want to check. Defaults to 0 so we can quickly check values when only
  *        one variable is used.
- * @param {Boolean} tooltipExpected.isMatched: Is the element matched or unmatched, defaults
+ * @param {boolean} tooltipExpected.isMatched: Is the element matched or unmatched, defaults
  *        to true.
- * @param {String} tooltipExpected.startingStyle: The HTML for the starting-style section.
+ * @param {string} tooltipExpected.startingStyle: The HTML for the starting-style section.
  *        Pass undefined if the tooltip isn't supposed to have a `@starting-style` section.
- * @param {Array<String>} tooltipExpected.startingStyleClasses: Classes applied on the
+ * @param {Array<string>} tooltipExpected.startingStyleClasses: Classes applied on the
  *        starting-style value element.
- * @param {Object} tooltipExpected.registeredProperty: Object whose properties should match
+ * @param {object} tooltipExpected.registeredProperty: Object whose properties should match
  *        the displayed registered property fields, e.g:
  *        {syntax:`"&lt;color&gt;"`, inherits:"true", "initial-value": "10px"}
  *        The properties values are the HTML of the dd elements.
@@ -1155,9 +1170,9 @@ async function assertVariableTooltipForProperty(
  * Get the text displayed for a given DOM Element's textContent within the
  * markup view.
  *
- * @param {String} selector
+ * @param {string} selector
  * @param {InspectorPanel} inspector
- * @return {String} The text displayed in the markup view
+ * @return {string} The text displayed in the markup view
  */
 async function getDisplayedNodeTextContent(selector, inspector) {
   // We have to ensure that the textContent is displayed, for that the DOM
@@ -1169,7 +1184,7 @@ async function getDisplayedNodeTextContent(selector, inspector) {
   await waitForMultipleChildrenUpdates(inspector);
   if (container) {
     const textContainer = container.elt.querySelector("pre");
-    return textContainer.textContent;
+    return textContainer?.textContent;
   }
   return null;
 }
@@ -1180,11 +1195,11 @@ async function getDisplayedNodeTextContent(selector, inspector) {
  *
  * @param {CssRuleView} view
  *        The instance of the rule-view panel
- * @param {String} selector
+ * @param {string} selector
  *        The selector in the rule-view to look for the property in
- * @param {String} property
+ * @param {string} property
  *        The name of the property
- * @param {Boolean} show
+ * @param {boolean} show
  *        If true, the shapes highlighter is being shown. If false, it is being hidden
  * @param {Options} options
  *        Config option for the shapes highlighter. Contains:
@@ -1237,7 +1252,7 @@ async function toggleShapesHighlighter(
  *        The current inspector instance.
  * @param {MarkupContainer} container
  *        The markup container to click on.
- * @param {Object} modifiers
+ * @param {object} modifiers
  *        options.altKey {Boolean} Use the altKey modifier, to recursively apply
  *        the action to all the children of the container.
  */
@@ -1279,7 +1294,7 @@ async function simulateColorPickerChange(colorPicker, newRgba) {
 /**
  * Assert method to compare the current content of the markupview to a text based tree.
  *
- * @param {String} tree
+ * @param {string} tree
  *        Multiline string representing the markup view tree, for instance:
  *        `root
  *           child1
@@ -1293,7 +1308,7 @@ async function simulateColorPickerChange(colorPicker, newRgba) {
  *        node in the markup view. Some suffixes are supported:
  *        - !slotted -> indicates that the line corresponds to the slotted version
  *        - !ignore-children -> the node might have children but do not assert them
- * @param {String} selector
+ * @param {string} selector
  *        A CSS selector that will uniquely match the "root" element from the tree
  * @param {Inspector} inspector
  *        The inspector instance.
@@ -1312,8 +1327,7 @@ async function assertMarkupViewAsTree(tree, selector, inspector) {
 
 async function _checkMarkupViewNode(treeNode, container, inspector) {
   const { node, children, path } = treeNode;
-  info("Checking [" + path + "]");
-  info("Checking node: " + node);
+  info(`Checking [${path}]`);
 
   const ignoreChildren = node.includes("!ignore-children");
   const slotted = node.includes("!slotted");
@@ -1394,7 +1408,7 @@ function _parseMarkupViewTree(inputString) {
       children: [],
       parent,
       level,
-      path: parent.path + " " + nodeString,
+      path: (parent.path ? parent.path + " > " : "") + nodeString,
     };
 
     parent.children.push(node);
@@ -1423,7 +1437,7 @@ function assertContainerHasText(container, expectedText) {
   const textContent = container.elt.textContent;
   ok(
     textContent.includes(expectedText),
-    "Container has expected text: " + expectedText
+    `Container has expected text "${expectedText}"${!textContent.includes(expectedText) ? ` - got "${textContent}"` : ""}`
   );
 }
 
@@ -1451,10 +1465,10 @@ function waitForNMutations(inspector, type, count) {
  * in the eyedropper label.
  *
  * @param {HighlighterTestFront} highlighterTestFront
- * @param {Number} x
- * @param {Number} y
- * @param {String} expectedColor: Hexa string of the expected color
- * @param {String} assertionDescription
+ * @param {number} x
+ * @param {number} y
+ * @param {string} expectedColor: Hexa string of the expected color
+ * @param {string} assertionDescription
  */
 async function checkEyeDropperColorAt(
   highlighterTestFront,
@@ -1524,8 +1538,9 @@ function reflowContentPage() {
 
 /**
  * Get all box-model regions' adjusted boxquads for the given element
- * @param {String|Array} selector The node selector to target a given element
- * @return {Promise<Object>} A promise that resolves with an object with each property of
+ *
+ * @param {string | Array} selector The node selector to target a given element
+ * @return {Promise<object>} A promise that resolves with an object with each property of
  *         a box-model region, each of them being an object with the p1/p2/p3/p4 properties.
  */
 async function getAllAdjustedQuadsForContentPageElement(
@@ -1572,7 +1587,7 @@ async function getAllAdjustedQuadsForContentPageElement(
  * given node boxquads.
  *
  * @param {HighlighterTestFront} highlighterTestFront
- * @param {String} selector The node selector to get the boxQuads from
+ * @param {string} selector The node selector to get the boxQuads from
  */
 async function isNodeCorrectlyHighlighted(highlighterTestFront, selector) {
   const boxModel = await highlighterTestFront.getBoxModelStatus();
@@ -1603,8 +1618,8 @@ async function isNodeCorrectlyHighlighted(highlighterTestFront, selector) {
 /**
  * Get the position and size of the measuring tool.
  *
- * @param {Object} Object returned by getHighlighterHelperFor()
- * @return {Promise<Object>} A promise that resolves with an object containing
+ * @param {object} Object returned by getHighlighterHelperFor()
+ * @return {Promise<object>} A promise that resolves with an object containing
  *    the x, y, width, and height properties of the measuring tool which has
  *    been drawn on-screen
  */

@@ -1,0 +1,104 @@
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Tue, 2 Nov 2021 14:35:00 +0000
+Subject: Bug 1729455 - Inject RTCStatsTimestampMakerRealtimeClock into Call
+ instances. r=bwc
+
+This patch makes libwebrtc use our clock for timestamps.
+It also makes sure there's no use of the libwebrtc realtime clock, other than
+for relative time tracking (like timeouts), and that future libwebrtc updates
+don't introduce unaudited use of it.
+
+Differential Revision: https://phabricator.services.mozilla.com/D127714
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/0744d68b8c944e69945de4ac5c4ca71332e78ad8
+---
+ modules/rtp_rtcp/include/flexfec_receiver.h | 2 ++
+ modules/rtp_rtcp/source/flexfec_receiver.cc | 2 ++
+ rtc_base/task_utils/repeating_task.h        | 4 ++--
+ system_wrappers/include/clock.h             | 2 +-
+ system_wrappers/source/clock.cc             | 2 +-
+ 5 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/modules/rtp_rtcp/include/flexfec_receiver.h b/modules/rtp_rtcp/include/flexfec_receiver.h
+index a869c8ad41..b6a33882d1 100644
+--- a/modules/rtp_rtcp/include/flexfec_receiver.h
++++ b/modules/rtp_rtcp/include/flexfec_receiver.h
+@@ -30,9 +30,11 @@ class Clock;
+ 
+ class FlexfecReceiver {
+  public:
++  /* Mozilla: Avoid this since it could use GetRealTimeClock().
+   FlexfecReceiver(uint32_t ssrc,
+                   uint32_t protected_media_ssrc,
+                   RecoveredPacketReceiver* recovered_packet_receiver);
++   */
+   FlexfecReceiver(Clock* clock,
+                   uint32_t ssrc,
+                   uint32_t protected_media_ssrc,
+diff --git a/modules/rtp_rtcp/source/flexfec_receiver.cc b/modules/rtp_rtcp/source/flexfec_receiver.cc
+index bde365fe18..5df6b2a8af 100644
+--- a/modules/rtp_rtcp/source/flexfec_receiver.cc
++++ b/modules/rtp_rtcp/source/flexfec_receiver.cc
+@@ -38,6 +38,7 @@ constexpr TimeDelta kPacketLogInterval = TimeDelta::Seconds(10);
+ 
+ }  // namespace
+ 
++/* Mozilla: Avoid this since it could use GetRealTimeClock().
+ FlexfecReceiver::FlexfecReceiver(
+     uint32_t ssrc,
+     uint32_t protected_media_ssrc,
+@@ -46,6 +47,7 @@ FlexfecReceiver::FlexfecReceiver(
+                       ssrc,
+                       protected_media_ssrc,
+                       recovered_packet_receiver) {}
++ */
+ 
+ FlexfecReceiver::FlexfecReceiver(
+     Clock* clock,
+diff --git a/rtc_base/task_utils/repeating_task.h b/rtc_base/task_utils/repeating_task.h
+index 3f738fcebc..d9536b71be 100644
+--- a/rtc_base/task_utils/repeating_task.h
++++ b/rtc_base/task_utils/repeating_task.h
+@@ -57,7 +57,7 @@ class RepeatingTaskHandle {
+       absl::AnyInvocable<TimeDelta()> closure,
+       TaskQueueBase::DelayPrecision precision =
+           TaskQueueBase::DelayPrecision::kLow,
+-      Clock* clock = Clock::GetRealTimeClock(),
++      Clock* clock = Clock::GetRealTimeClockRaw(),
+       const Location& location = Location::Current());
+ 
+   // DelayedStart is equivalent to Start except that the first invocation of the
+@@ -68,7 +68,7 @@ class RepeatingTaskHandle {
+       absl::AnyInvocable<TimeDelta()> closure,
+       TaskQueueBase::DelayPrecision precision =
+           TaskQueueBase::DelayPrecision::kLow,
+-      Clock* clock = Clock::GetRealTimeClock(),
++      Clock* clock = Clock::GetRealTimeClockRaw(),
+       const Location& location = Location::Current());
+ 
+   // Stops future invocations of the repeating task closure. Can only be called
+diff --git a/system_wrappers/include/clock.h b/system_wrappers/include/clock.h
+index 5f1c665cfe..61af59782d 100644
+--- a/system_wrappers/include/clock.h
++++ b/system_wrappers/include/clock.h
+@@ -66,7 +66,7 @@ class RTC_EXPORT Clock {
+   }
+ 
+   // Returns an instance of the real-time system clock implementation.
+-  static Clock* GetRealTimeClock();
++  static Clock* GetRealTimeClockRaw();
+ };
+ 
+ class SimulatedClock : public Clock {
+diff --git a/system_wrappers/source/clock.cc b/system_wrappers/source/clock.cc
+index 9290d19f4d..8b69b25362 100644
+--- a/system_wrappers/source/clock.cc
++++ b/system_wrappers/source/clock.cc
+@@ -62,7 +62,7 @@ class RealTimeClock : public Clock {
+   }
+ };
+ 
+-Clock* Clock::GetRealTimeClock() {
++Clock* Clock::GetRealTimeClockRaw() {
+   static Clock* const clock = new RealTimeClock();
+   return clock;
+ }

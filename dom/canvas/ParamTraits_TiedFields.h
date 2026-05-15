@@ -6,9 +6,8 @@
 #ifndef MOZILLA_PARAMTRAITS_TIEDFIELDS_H
 #define MOZILLA_PARAMTRAITS_TIEDFIELDS_H
 
-#include "ipc/IPCMessageUtils.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "TiedFields.h"
+#include "ipc/IPCMessageUtils.h"
 
 namespace IPC {
 

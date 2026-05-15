@@ -84,8 +84,17 @@ exclude = [
   "NS_LogDtor",
   "SelectorList",
   "AuthorStyles",
+  "LockedStyleRule",
+  "LockedImportRule",
+  "LockedFontFaceRule",
+  "LockedCounterStyleRule",
+  "LockedKeyframesRule",
+  "LockedPageRule",
+  "LockedPositionTryRule",
+  "LockedNestedDeclarationsRule",
 ]
 include = [
+  "AlignmentBaseline",
   "AnchorName",
   "AnchorScope",
   "AnimationName",
@@ -100,12 +109,14 @@ include = [
   "Au",
   "BreakBetween",
   "BreakWithin",
+  "BorderSideWidth",
   "BorderStyle",
   "BorderSpacing",
   "BoolInteger",
   "OutlineStyle",
   "CaptionSide",
   "ColorGamut",
+  "DominantBaseline",
   "FontSizeAdjust",
   "FontPalette",
   "FontLanguageOverride",
@@ -126,6 +137,8 @@ include = [
   "Platform",
   "PositionAnchor",
   "PositionArea",
+  "PositionAreaAxis",
+  "PositionAreaTrack",
   "PositionAreaKeyword",
   "PositionTryFallbacks",
   "PositionTryOrder",
@@ -153,7 +166,6 @@ include = [
   "OffsetRotate",
   "RayFunction",
   "UnicodeRange",
-  "UserInput",
   "UserFocus",
   "UserSelect",
   "PointerEvents",
@@ -170,12 +182,12 @@ include = [
   "TransitionBehavior",
   "ViewTimelineInset",
   "OverflowAnchor",
-  "OverflowClipBox",
+  "OverflowClipMargin",
   "Resize",
   "Overflow",
   "LengthPercentage",
   "LetterSpacing",
-  "LikelyBaseUriDependency",
+  "NonLocalUriDependency",
   "NonNegativeLengthPercentage",
   "LengthPercentageOrAuto",
   "LineHeight",
@@ -183,8 +195,11 @@ include = [
   "NonNegativeLengthPercentageOrNormal",
   "LengthOrAuto",
   "NonNegativeLengthOrAuto",
+  "TextBoxEdge",
+  "TextBoxTrim",
   "TextDecorationSkipInk",
   "TextDecorationLength",
+  "TextDecorationInset",
   "Time",
   "Rect",
   "InitialLetter",
@@ -195,6 +210,7 @@ include = [
   "Position",
   "PositionOrAuto",
   "BackgroundSize",
+  "BaselineShift",
   "BaselineSource",
   "BorderImageSlice",
   "BorderImageRepeat",
@@ -203,6 +219,7 @@ include = [
   "BorderRadius",
   "ColorScheme",
   "ColumnCount",
+  "CssRuleRef",
   "NonNegativeLengthOrNumberRect",
   "Perspective",
   "ZIndex",
@@ -242,7 +259,6 @@ include = [
   "SystemColorScheme",
   "SystemFont",
   "GradientItem",
-  "VerticalAlign",
   "BasicShape",
   "InsetRect",
   "ShapeRadius",
@@ -284,9 +300,9 @@ include = [
   "WritingModeProperty",
   "Content",
   "ContentItem",
-  "AlignSelf",
-  "JustifySelf",
-  "AlignItems",
+  "ContentDistribution",
+  "SelfAlignment",
+  "ItemPlacement",
   "ComputedJustifyItems",
   "AlignContent",
   "JustifyContent",
@@ -302,6 +318,7 @@ include = [
   "SVGWidth",
   "TextAlign",
   "TextAlignLast",
+  "TextAutospace",
   "FontSizeKeyword",
   "AspectRatio",
   "DefaultFontSizes",
@@ -367,9 +384,9 @@ renaming_overrides_prefixing = true
 "ComputedTiming" = "ComputedTiming"
 "CountedUnknownProperty" = "CountedUnknownProperty"
 "RefPtr" = "RefPtr"
-"nsCSSPropertyID" = "nsCSSPropertyID"
+"NonCustomCSSPropertyId" = "NonCustomCSSPropertyId"
 "nsCSSPropertyIDSet" = "nsCSSPropertyIDSet"
-"AnimatedPropertyID" = "AnimatedPropertyID"
+"CSSPropertyId" = "CSSPropertyId"
 "nsCSSValueSharedList" = "nsCSSValueSharedList"
 "AnimationPropertySegment" = "AnimationPropertySegment"
 "RawServoAnimationValueTable" = "RawServoAnimationValueTable"
@@ -520,6 +537,7 @@ renaming_overrides_prefixing = true
   inline bool BehavesLikeInitialValue(LogicalAxis) const;
   inline bool HasAnchorPositioningFunction() const;
   inline explicit StyleGenericSize(const LengthPercent &);
+  static inline StyleGenericSize FromAppUnits(nscoord);
 """
 
 "GenericFlexBasis" = """
@@ -545,6 +563,10 @@ renaming_overrides_prefixing = true
   inline bool HasPercent() const;
   inline bool DependsOnPositioningAreaSize() const;
   static inline StyleGenericPosition FromPercentage(float);
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
 """
 
 "GenericBackgroundSize" = """
@@ -844,6 +866,38 @@ renaming_overrides_prefixing = true
   };
 """
 
+"CommandEndPoint" = """
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
+"""
+
+"AxisEndPoint" = """
+  inline gfx::Coord ToGfxCoord(const float* aBasis = nullptr) const;
+  gfx::Coord ToGfxCoord(const float& aBasis) const {
+    return ToGfxCoord(&aBasis);
+  };
+"""
+
+"ControlPoint" = """
+  inline gfx::Point ToGfxPoint(
+    const gfx::Point aStatePos, const gfx::Point aEndPoint,
+    const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(
+    const gfx::Point aStatePos, const gfx::Point aEndPoint,
+    const CSSSize& aBasis) const {
+    return ToGfxPoint(aStatePos, aEndPoint, &aBasis);
+  }
+"""
+
+"ArcRadii" = """
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
+"""
+
 "TextOverflow" = """
   StyleTextOverflow()
     : first(StyleTextOverflowSide::Clip()),
@@ -965,7 +1019,9 @@ renaming_overrides_prefixing = true
   //
   // The resolution is in dppx, and should be used to impact the intrinsic
   // size of the image.
-  ImageResolution GetResolution(const ComputedStyle&) const;
+  //
+  // @param aStyleForZoom a style, if CSS zoom should be considered as well.
+  ImageResolution GetResolution(const ComputedStyle* aStyleForZoom) const;
 
   // If this is an image-set(), the final image we've selected, otherwise it
   // returns *this.
@@ -1033,6 +1089,7 @@ renaming_overrides_prefixing = true
  bool IsNormal() const { return *this == NORMAL; }
 
  inline bool IsBold() const;
+ inline bool PreferBold() const;
 """
 
 "FontStyle" = """
@@ -1170,7 +1227,7 @@ renaming_overrides_prefixing = true
 "TransitionProperty" = """
   bool IsAll() const {
     return IsNonCustom() &&
-           nsCSSPropertyID(AsNonCustom()._0) == eCSSProperty_all;
+           NonCustomCSSPropertyId(AsNonCustom()._0) == eCSSProperty_all;
   }
 """
 
@@ -1198,4 +1255,27 @@ renaming_overrides_prefixing = true
 
 "PositionArea" = """
   inline bool IsNone() const;
+  constexpr StylePositionArea()
+    : first(StylePositionAreaKeyword::None),
+      second(StylePositionAreaKeyword::None)
+  {}
+"""
+
+"CascadeLevel" = """
+  inline static StyleCascadeLevel Default() {
+    return AuthorNormal(0);
+  }
+"""
+
+"TreeScoped" = """
+  inline StyleTreeScoped()
+    : value(T()),
+      scope(StyleCascadeLevel::Default())
+  {}
+  inline explicit StyleTreeScoped(T&& aValue)
+    : value(std::move(aValue)),
+      scope(StyleCascadeLevel::Default())
+  {}
+  inline bool IsEmpty() const;
+  inline Span<const mozilla::StyleAtom> AsSpan() const;
 """

@@ -5,7 +5,6 @@ assertEq(m.importEntries, undefined);
 assertEq(m.localExportEntries, undefined);
 assertEq(m.indirectExportEntries, undefined);
 assertEq(m.starExportEntries, undefined);
-assertEq(m.dfsIndex, undefined);
 assertEq(m.dfsAncestorIndex, undefined);
 assertEq(m.hasTopLevelAwait, undefined);
 assertEq(m.topLevelCapability, undefined);

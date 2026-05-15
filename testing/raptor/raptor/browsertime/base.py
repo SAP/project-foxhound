@@ -63,7 +63,7 @@ class Browsertime(Perftest, metaclass=ABCMeta):
             # use the chrome-m profile class for both chrome-m and CaR-m
             profile_class = "chrome-m"
 
-        super(Browsertime, self).__init__(
+        super().__init__(
             app,
             binary,
             profile_class=profile_class,
@@ -101,7 +101,7 @@ class Browsertime(Perftest, metaclass=ABCMeta):
         return self._crash_directory
 
     def build_browser_profile(self):
-        super(Browsertime, self).build_browser_profile()
+        super().build_browser_profile()
         if self.profile is not None:
             self.remove_mozprofile_delimiters_from_profile()
 
@@ -157,7 +157,7 @@ class Browsertime(Perftest, metaclass=ABCMeta):
         if test.get("preferences", ""):
             test["preferences"] = self._convert_prefs_to_dict(test["preferences"])
 
-        super(Browsertime, self).run_test_setup(test)
+        super().run_test_setup(test)
 
         if test.get("type") == "benchmark" or test.get("benchmark_webserver", False):
             # benchmark-type tests require the benchmark test to be served out
@@ -171,9 +171,10 @@ class Browsertime(Perftest, metaclass=ABCMeta):
         # TODO: geckodriver/chromedriver from tasks.
         self.driver_paths = []
         if self.browsertime_geckodriver:
-            self.driver_paths.extend(
-                ["--firefox.geckodriverPath", self.browsertime_geckodriver]
-            )
+            self.driver_paths.extend([
+                "--firefox.geckodriverPath",
+                self.browsertime_geckodriver,
+            ])
         if self.browsertime_chromedriver and self.config["app"] in (
             "chrome",
             "chrome-m",
@@ -240,9 +241,10 @@ class Browsertime(Perftest, metaclass=ABCMeta):
                         "being tested: %s" % self.browsertime_chromedriver
                     )
 
-            self.driver_paths.extend(
-                ["--chrome.chromedriverPath", self.browsertime_chromedriver]
-            )
+            self.driver_paths.extend([
+                "--chrome.chromedriverPath",
+                self.browsertime_chromedriver,
+            ])
 
         # YTP tests fail in mozilla-release due to the `MOZ_DISABLE_NONLOCAL_CONNECTIONS`
         # environment variable. This logic changes this variable for the browsertime test
@@ -253,7 +255,7 @@ class Browsertime(Perftest, metaclass=ABCMeta):
         LOG.info(f"test: {test}")
 
     def run_test_teardown(self, test):
-        super(Browsertime, self).run_test_teardown(test)
+        super().run_test_teardown(test)
 
         # If we were using a playback tool, stop it
         if self.playback is not None:
@@ -269,13 +271,13 @@ class Browsertime(Perftest, metaclass=ABCMeta):
             test.get("support_class").clean_up()
 
     def check_for_crashes(self):
-        super(Browsertime, self).check_for_crashes()
+        super().check_for_crashes()
         self.crashes += mozcrash.log_crashes(
             LOG, self.crash_directory, self.config["symbols_path"]
         )
 
     def clean_up(self):
-        super(Browsertime, self).clean_up()
+        super().clean_up()
 
     def _expose_browser_profiler(self, extra_profiler_run, test):
         """Use this method to check if we will use an exposed gecko profiler via browsertime.
@@ -442,19 +444,18 @@ class Browsertime(Perftest, metaclass=ABCMeta):
 
         if self.config["app"] in ("fenix",):
             # Fenix can take a lot of time to startup
-            browsertime_options.extend(
-                [
-                    "--browsertime.browserRestartTries",
-                    "10",
-                    "--timeouts.browserStart",
-                    "180000",
-                ]
-            )
+            browsertime_options.extend([
+                "--browsertime.browserRestartTries",
+                "10",
+                "--timeouts.browserStart",
+                "180000",
+            ])
 
         if test.get("secondary_url"):
-            browsertime_options.extend(
-                ["--browsertime.secondary_url", test.get("secondary_url")]
-            )
+            browsertime_options.extend([
+                "--browsertime.secondary_url",
+                test.get("secondary_url"),
+            ])
 
         # These options can have multiple entries in a browsertime command
         MULTI_OPTS = [
@@ -500,20 +501,20 @@ class Browsertime(Perftest, metaclass=ABCMeta):
         if not extra_profiler_run:
             # must happen before --firefox.profileTemplate and --resultDir
             self.results_handler.remove_result_dir_for_test(test)
-            priority1_options.extend(
-                ["--resultDir", self.results_handler.result_dir_for_test(test)]
-            )
+            priority1_options.extend([
+                "--resultDir",
+                self.results_handler.result_dir_for_test(test),
+            ])
         else:
-            priority1_options.extend(
-                [
-                    "--resultDir",
-                    self.results_handler.result_dir_for_test_profiling(test),
-                ]
-            )
+            priority1_options.extend([
+                "--resultDir",
+                self.results_handler.result_dir_for_test_profiling(test),
+            ])
         if self.profile is not None:
-            priority1_options.extend(
-                ["--firefox.profileTemplate", str(self.profile.profile)]
-            )
+            priority1_options.extend([
+                "--firefox.profileTemplate",
+                str(self.profile.profile),
+            ])
 
         # This argument can have duplicates of the value "--firefox.env" so we do not need
         # to check if it conflicts
@@ -529,22 +530,20 @@ class Browsertime(Perftest, metaclass=ABCMeta):
             browsertime_options.append("-vvv")
 
         if self.browsertime_video:
-            priority1_options.extend(
-                [
-                    "--video",
-                    "true",
-                    "--visualMetrics",
-                    "true" if self.browsertime_visualmetrics else "false",
-                    "--visualMetricsContentful",
-                    "true",
-                    "--visualMetricsPerceptual",
-                    "true",
-                    "--visualMetricsPortable",
-                    "true",
-                    "--videoParams.keepOriginalVideo",
-                    "true",
-                ]
-            )
+            priority1_options.extend([
+                "--video",
+                "true",
+                "--visualMetrics",
+                "true" if self.browsertime_visualmetrics else "false",
+                "--visualMetricsContentful",
+                "true",
+                "--visualMetricsPerceptual",
+                "true",
+                "--visualMetricsPortable",
+                "true",
+                "--videoParams.keepOriginalVideo",
+                "true",
+            ])
 
             if self.browsertime_no_ffwindowrecorder or self.config["app"] in (
                 "chrome-m",
@@ -552,24 +551,20 @@ class Browsertime(Perftest, metaclass=ABCMeta):
                 "custom-car",
                 "cstm-car-m",
             ):
-                priority1_options.extend(
-                    [
-                        "--firefox.windowRecorder",
-                        "false",
-                        "--xvfbParams.display",
-                        "0",
-                    ]
-                )
+                priority1_options.extend([
+                    "--firefox.windowRecorder",
+                    "false",
+                    "--xvfbParams.display",
+                    "0",
+                ])
                 LOG.info(
                     "Using adb screenrecord for mobile, or ffmpeg on desktop for videos"
                 )
             else:
-                priority1_options.extend(
-                    [
-                        "--firefox.windowRecorder",
-                        "true",
-                    ]
-                )
+                priority1_options.extend([
+                    "--firefox.windowRecorder",
+                    "true",
+                ])
                 LOG.info("Using Firefox Window Recorder for videos")
         else:
             priority1_options.extend(["--video", "false", "--visualMetrics", "false"])
@@ -649,12 +644,10 @@ class Browsertime(Perftest, metaclass=ABCMeta):
         self._init_gecko_profiling(test)
         priority1_options.append("--firefox.geckoProfiler")
         if self._expose_browser_profiler(self.config.get("extra_profiler_run"), test):
-            priority1_options.extend(
-                [
-                    "--firefox.geckoProfilerRecordingType",
-                    "custom",
-                ]
-            )
+            priority1_options.extend([
+                "--firefox.geckoProfilerRecordingType",
+                "custom",
+            ])
         for option, browsertime_option, default in (
             (
                 "gecko_profile_features",
@@ -732,9 +725,10 @@ class Browsertime(Perftest, metaclass=ABCMeta):
         as a safety precaution when doing a live login site.
         """
         browsertime_options.extend(["--browsertime.testName", str(test.get("name"))])
-        browsertime_options.extend(
-            ["--browsertime.liveSite", str(self.config["live_sites"])]
-        )
+        browsertime_options.extend([
+            "--browsertime.liveSite",
+            str(self.config["live_sites"]),
+        ])
 
         login_required = self.is_live_login_site(test.get("name"))
         browsertime_options.extend(["--browsertime.loginRequired", str(login_required)])
@@ -823,7 +817,7 @@ class Browsertime(Perftest, metaclass=ABCMeta):
                     break
                 except ValueError:
                     raise Exception(
-                        f"Received a non-int value for the iterations: {cmd[i+1]}"
+                        f"Received a non-int value for the iterations: {cmd[i + 1]}"
                     )
         bt_timeout = bt_timeout * iterations
 

@@ -107,12 +107,12 @@ void InitPrefs() {
   TTokenizer<char_path_t> p(forbidden);
   while (!p.CheckEOF()) {
     nsTString<char_path_t> path;
-    Unused << p.ReadUntil(TTokenizer<char_path_t>::Token::Char(','), path);
+    (void)p.ReadUntil(TTokenizer<char_path_t>::Token::Char(','), path);
     path.Trim(" ");
     if (!path.IsEmpty()) {
       ForbiddenPaths().AppendElement(path);
     }
-    Unused << p.CheckChar(',');
+    (void)p.CheckChar(',');
   }
 
   sForbiddenPathsEmptyQuickCheck =

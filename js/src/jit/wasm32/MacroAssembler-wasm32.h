@@ -380,6 +380,7 @@ class MacroAssemblerWasm32 : public Assembler {
 
   void boxDouble(FloatRegister, ValueOperand, FloatRegister) { MOZ_CRASH(); }
   void boxNonDouble(JSValueType, Register, ValueOperand) { MOZ_CRASH(); }
+  void boxNonDouble(Register, Register, ValueOperand) { MOZ_CRASH(); }
 
   template <typename T>
   void boxDouble(FloatRegister src, const T& dest) {
@@ -449,11 +450,6 @@ class MacroAssemblerWasm32 : public Assembler {
 
   void getWasmAnyRefGCThingChunk(Register, Register) { MOZ_CRASH(); }
 
-  template <typename T>
-  void unboxObjectOrNull(const T& src, Register dest) {
-    MOZ_CRASH();
-  }
-
   void notBoolean(ValueOperand) { MOZ_CRASH(); }
   [[nodiscard]] Register extractObject(Address, Register) { MOZ_CRASH(); }
   [[nodiscard]] Register extractObject(ValueOperand, Register) { MOZ_CRASH(); }
@@ -500,11 +496,6 @@ class MacroAssemblerWasm32 : public Assembler {
 
   template <typename T>
   void loadUnboxedValue(T, MIRType, AnyRegister) {
-    MOZ_CRASH();
-  }
-
-  template <typename T>
-  void storeUnboxedPayload(ValueOperand value, T, size_t, JSValueType) {
     MOZ_CRASH();
   }
 

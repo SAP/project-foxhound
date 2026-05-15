@@ -23,8 +23,6 @@ prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
 
 ["browser_quicksuggest_dynamicSuggestions.js"]
 
-["browser_quicksuggest_fakespot.js"]
-
 ["browser_quicksuggest_indexes.js"]
 
 ["browser_quicksuggest_mdn.js"]
@@ -40,6 +38,16 @@ tags = "search-telemetry"
 ["browser_quicksuggest_ping_merinoAndNullValues.js"]
 tags = "search-telemetry"
 
+["browser_quicksuggest_realtime_flight_status.js"]
+
+["browser_quicksuggest_realtime_market.js"]
+
+["browser_quicksuggest_realtime_optin.js"]
+
+["browser_quicksuggest_realtime_yelp.js"]
+
+["browser_quicksuggest_sports.js"]
+
 ["browser_quicksuggest_yelp.js"]
 
 ["browser_telemetry_environment.js"]
@@ -47,5 +55,12 @@ tags = "search-telemetry"
 
 ["browser_telemetry_suggestMetrics.js"]
 tags = "search-telemetry"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1971091
+  "os == 'win' && os_version == '11.26100'", # Bug 1971091
+]
 
 ["browser_weather.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100'", # Bug 1885264
+]

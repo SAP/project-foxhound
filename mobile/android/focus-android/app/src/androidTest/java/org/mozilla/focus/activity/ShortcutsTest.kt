@@ -17,8 +17,8 @@ import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
-import org.mozilla.focus.helpers.TestAssetHelper
-import org.mozilla.focus.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
+import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
 import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 import java.io.IOException
@@ -55,9 +55,9 @@ class ShortcutsTest : TestSetup() {
     @Test
     fun renameShortcutTest() {
         val webPage = object {
-            val url = getGenericAsset(webServer).url
-            val title = getGenericAsset(webServer).title
-            val content = getGenericAsset(webServer).content
+            val url = webServer.genericAsset.url
+            val title = webServer.genericAsset.title
+            val content = webServer.genericAsset.content
             val newTitle = "TestShortcut"
         }
 
@@ -80,8 +80,8 @@ class ShortcutsTest : TestSetup() {
     @SmokeTest
     @Test
     fun shortcutsDoNotOpenInNewTabTest() {
-        val tab1 = TestAssetHelper.getGenericTabAsset(webServer, 1)
-        val tab2 = TestAssetHelper.getGenericTabAsset(webServer, 2)
+        val tab1 = webServer.getGenericTabAsset(1)
+        val tab2 = webServer.getGenericTabAsset(2)
 
         searchScreen {
         }.loadPage(tab1.url) {
@@ -100,6 +100,9 @@ class ShortcutsTest : TestSetup() {
 
         homeScreen {
         }.clickPageShortcut(tab1.title) {
+        }.openTabsTray {
+            verifyTabsOrder("Add new tab", tab1.title)
+        }.closeTab(tab1.title) {
             verifyTabsCounterNotShown()
         }
     }
@@ -107,7 +110,7 @@ class ShortcutsTest : TestSetup() {
     @SmokeTest
     @Test
     fun searchBarShowsPageShortcutsTest() {
-        val webPage = getGenericAsset(webServer)
+        val webPage = webServer.genericAsset
 
         searchScreen {
         }.loadPage(webPage.url) {

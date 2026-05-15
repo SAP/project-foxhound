@@ -6,40 +6,18 @@
 # Parent  6413cb580dccd986c61e6dbdc72fc370765b8f10
 Bug 1431797 Correct the capitalization of headers inside the chromium code so MinGW can compile
 
-diff --git a/base/rand_util_win.cc b/base/rand_util_win.cc
---- a/base/rand_util_win.cc
-+++ b/base/rand_util_win.cc
-@@ -7,17 +7,17 @@
- #include <windows.h>
- #include <stddef.h>
- #include <stdint.h>
- 
- // #define needed to link in RtlGenRandom(), a.k.a. SystemFunction036.  See the
- // "Community Additions" comment on MSDN here:
- // http://msdn.microsoft.com/en-us/library/windows/desktop/aa387694.aspx
- #define SystemFunction036 NTAPI SystemFunction036
--#include <NTSecAPI.h>
-+#include <ntsecapi.h>
- #undef SystemFunction036
- 
- #include <algorithm>
- #include <limits>
- 
- #include "base/logging.h"
- 
- namespace base {
 diff --git a/base/win/pe_image.h b/base/win/pe_image.h
 --- a/base/win/pe_image.h
 +++ b/base/win/pe_image.h
-@@ -14,17 +14,17 @@
+@@ -10,17 +10,17 @@
+ 
+ #ifndef BASE_WIN_PE_IMAGE_H_
+ #define BASE_WIN_PE_IMAGE_H_
+ 
  #include <windows.h>
  
  #include <stdint.h>
  
- #if defined(_WIN32_WINNT_WIN8)
- // The Windows 8 SDK defines FACILITY_VISUALCPP in winerror.h.
- #undef FACILITY_VISUALCPP
- #endif
 -#include <DelayIMP.h>
 +#include <delayimp.h>
  
@@ -48,27 +26,46 @@ diff --git a/base/win/pe_image.h b/base/win/pe_image.h
  
  // This class is a wrapper for the Portable Executable File Format (PE).
  // Its main purpose is to provide an easy way to work with imports and exports
- // from a file, mapped in memory as image.
- class PEImage {
-diff --git a/sandbox/win/src/sandbox_rand.cc b/sandbox/win/src/sandbox_rand.cc
---- a/sandbox/win/src/sandbox_rand.cc
-+++ b/sandbox/win/src/sandbox_rand.cc
-@@ -5,17 +5,17 @@
- #include "sandbox/win/src/sandbox_rand.h"
+ // from a file, mapped in memory as image. A PEImage object is constructed from
+ // a loaded PE file by passing the HMODULE to the constructor. Loading a PE file
+diff --git a/sandbox/win/src/startup_information_helper.cc b/sandbox/win/src/startup_information_helper.cc
+--- a/sandbox/win/src/startup_information_helper.cc
++++ b/sandbox/win/src/startup_information_helper.cc
+@@ -1,15 +1,15 @@
+ // Copyright 2020 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
  
- #include <windows.h>
+ #include "sandbox/win/src/startup_information_helper.h"
  
- // #define needed to link in RtlGenRandom(), a.k.a. SystemFunction036.  See the
- // "Community Additions" comment on MSDN here:
- // http://msdn.microsoft.com/en-us/library/windows/desktop/aa387694.aspx
- #define SystemFunction036 NTAPI SystemFunction036
--#include <NTSecAPI.h>
-+#include <ntsecapi.h>
- #undef SystemFunction036
+-#include <Windows.h>
++#include <windows.h>
  
- namespace sandbox {
+ #include <vector>
  
- bool GetRandom(unsigned int* random_value) {
-   return RtlGenRandom(random_value, sizeof(unsigned int)) != false;
- }
+ #include "base/check.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/ranges/algorithm.h"
+ #include "base/win/startup_information.h"
+ #include "base/win/windows_version.h"
+diff --git a/sandbox/win/src/startup_information_helper.h b/sandbox/win/src/startup_information_helper.h
+--- a/sandbox/win/src/startup_information_helper.h
++++ b/sandbox/win/src/startup_information_helper.h
+@@ -1,16 +1,16 @@
+ // Copyright 2020 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
  
+ #ifndef SANDBOX_WIN_SRC_STARTUP_INFORMATION_HELPER_H_
+ #define SANDBOX_WIN_SRC_STARTUP_INFORMATION_HELPER_H_
+ 
+-#include <Windows.h>
++#include <windows.h>
+ 
+ #include <vector>
+ 
+ #include "base/memory/scoped_refptr.h"
+ #include "base/win/startup_information.h"
+ #include "sandbox/win/src/app_container_base.h"
+ #include "sandbox/win/src/process_mitigations.h"
+ #include "sandbox/win/src/security_capabilities.h"

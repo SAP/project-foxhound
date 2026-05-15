@@ -476,18 +476,18 @@ struct VRDisplayState {
   VRDisplayBlendMode blendMode;
   std::array<uint8_t, 5> _padding2;
   std::array<VRFieldOfView, VRDisplayState::NumEyes> eyeFOV;
-  static_assert(std::is_pod<VRFieldOfView>::value);
+  static_assert(std::is_trivial_v<VRFieldOfView>);
   std::array<Point3D_POD, VRDisplayState::NumEyes> eyeTranslation;
-  static_assert(std::is_pod<Point3D_POD>::value);
+  static_assert(std::is_trivial_v<Point3D_POD>);
   IntSize_POD eyeResolution;
-  static_assert(std::is_pod<IntSize_POD>::value);
+  static_assert(std::is_trivial_v<IntSize_POD>);
   float nativeFramebufferScaleFactor;
   bool suppressFrames;
   bool isConnected;
   bool isMounted;
   uint8_t _padding3;
   FloatSize_POD stageSize;
-  static_assert(std::is_pod<FloatSize_POD>::value);
+  static_assert(std::is_trivial_v<FloatSize_POD>);
   // We can't use a Matrix4x4 here unless we ensure it's a POD type
   std::array<float, 16> sittingToStandingTransform;
   uint64_t lastSubmittedFrameId;
@@ -518,7 +518,7 @@ struct VRDisplayState {
   void Clear() { memset(this, 0, sizeof(VRDisplayState)); }
 #endif
 };
-static_assert(std::is_pod<VRDisplayState>::value);
+static_assert(std::is_trivial_v<VRDisplayState>);
 
 struct VRControllerState {
   std::array<char, kVRControllerNameMaxLen> controllerName;
@@ -709,11 +709,10 @@ struct VRSystemState {
   VRHMDSensorState sensorState;
   std::array<VRControllerState, kVRControllerMaxCount> controllerState;
 };
-static_assert(std::is_pod<VRDisplayState>::value);
-static_assert(std::is_pod<VRHMDSensorState>::value);
-static_assert(std::is_pod<VRControllerState>::value);
-
-static_assert(std::is_pod<VRSystemState>::value);
+static_assert(std::is_trivial_v<VRDisplayState>);
+static_assert(std::is_trivial_v<VRHMDSensorState>);
+static_assert(std::is_trivial_v<VRControllerState>);
+static_assert(std::is_trivial_v<VRSystemState>);
 
 enum class VRFxEventType : uint8_t {
   NONE = 0,
@@ -842,13 +841,12 @@ struct VRExternalShmem {
 
 // As we are memcpy'ing VRExternalShmem and its members around, it must be a POD
 // type
-static_assert(std::is_pod<VRSystemState>::value);
-static_assert(std::is_pod<VRBrowserState>::value);
-static_assert(std::is_pod<VRWindowState>::value);
-static_assert(std::is_pod<VRTelemetryState>::value);
-
-static_assert(std::is_pod<VRExternalShmem>::value,
-              "VRExternalShmem must be a POD type.");
+static_assert(std::is_trivial_v<VRSystemState>);
+static_assert(std::is_trivial_v<VRBrowserState>);
+static_assert(std::is_trivial_v<VRWindowState>);
+static_assert(std::is_trivial_v<VRTelemetryState>);
+static_assert(std::is_trivial_v<VRExternalShmem>,
+              "VRExternalShmem must be a trivial type.");
 
 }  // namespace gfx
 }  // namespace mozilla

@@ -5,15 +5,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileBlockCache.h"
+
+#include <algorithm>
+
 #include "MediaCache.h"
 #include "VideoUtils.h"
-#include "prio.h"
-#include <algorithm>
+#include "mozilla/ScopeExit.h"
+#include "mozilla/dom/ContentChild.h"
 #include "nsAnonymousTemporaryFile.h"
 #include "nsIThreadManager.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/ScopeExit.h"
 #include "nsXULAppAPI.h"
+#include "prio.h"
 
 namespace mozilla {
 
@@ -379,8 +381,8 @@ void FileBlockCache::PerformBlockIOs() {
   mIsWriteScheduled = false;
 }
 
-nsresult FileBlockCache::Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
-                              int32_t* aBytes) {
+nsresult FileBlockCache::Read(int64_t aOffset, uint8_t* aData,
+                              int32_t aLength) {
   MutexAutoLock mon(mDataMutex);
 
   if (!mBackgroundET || (aOffset / BLOCK_SIZE) > INT32_MAX) {
@@ -447,7 +449,6 @@ nsresult FileBlockCache::Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
     offset += bytesRead;
     bytesToRead -= bytesRead;
   }
-  *aBytes = aLength - bytesToRead;
   return NS_OK;
 }
 

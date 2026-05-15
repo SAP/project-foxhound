@@ -15,7 +15,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   navigate: "chrome://remote/content/marionette/navigate.sys.mjs",
   print: "chrome://remote/content/shared/PDF.sys.mjs",
-  windowManager: "chrome://remote/content/shared/WindowManager.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
@@ -71,6 +70,11 @@ reftest.Runner = class {
     this.lastURL = null;
     this.useRemoteTabs = lazy.AppInfo.browserTabsRemoteAutostart;
     this.useRemoteSubframes = lazy.AppInfo.fissionAutostart;
+    this.cacheScreenshots = true;
+    this.useDrawSnapshot = Services.prefs.getBoolPref(
+      "reftest.use-draw-snapshot",
+      false
+    );
   }
 
   /**
@@ -86,7 +90,7 @@ reftest.Runner = class {
    * @param {string} screenshotMode
    *     String enum representing when screenshots should be taken
    */
-  setup(urlCount, screenshotMode, isPrint = false) {
+  setup(urlCount, screenshotMode, isPrint = false, cacheScreenshots = true) {
     this.isPrint = isPrint;
 
     lazy.assert.open(this.driver.getBrowsingContext({ top: true }));
@@ -103,6 +107,8 @@ reftest.Runner = class {
     if (isPrint) {
       this.loadPdfJs();
     }
+
+    this.cacheScreenshots = cacheScreenshots;
 
     ChromeUtils.registerWindowActor("MarionetteReftest", {
       kind: "JSWindowActor",
@@ -163,7 +169,7 @@ reftest.Runner = class {
     this.windowUtils = reftestWin.windowUtils;
     this.reftestWin = reftestWin;
 
-    let windowHandle = lazy.windowManager.getWindowProperties(reftestWin);
+    let windowHandle = this.driver.getWindowProperties(reftestWin);
     await this.driver.setWindowHandle(windowHandle, true);
 
     const url = await this.driver._getCurrentURL();
@@ -236,9 +242,7 @@ reftest.Runner = class {
   async abort() {
     if (this.reftestWin && this.reftestWin != this.parentWindow) {
       await this.driver.closeChromeWindow();
-      let parentHandle = lazy.windowManager.getWindowProperties(
-        this.parentWindow
-      );
+      let parentHandle = this.driver.getWindowProperties(this.parentWindow);
       await this.driver.setWindowHandle(parentHandle);
     }
     this.reftestWin = null;
@@ -703,7 +707,7 @@ reftest.Runner = class {
     let browserRect = win.gBrowser.getBoundingClientRect();
     let canvas = null;
     let remainingCount = this.urlCount.get(url) || 1;
-    let cache = remainingCount > 1;
+    let cache = this.cacheScreenshots && remainingCount > 1;
     let cacheKey = browserRect.width + "x" + browserRect.height;
     lazy.logger.debug(
       `screenshot ${url} remainingCount: ` +
@@ -763,7 +767,7 @@ reftest.Runner = class {
         0, // top
         browserRect.width,
         browserRect.height,
-        { canvas, flags, readback: true }
+        { canvas, flags, readback: !this.useDrawSnapshot }
       );
     }
     if (

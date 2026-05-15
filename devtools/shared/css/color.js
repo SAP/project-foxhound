@@ -53,7 +53,7 @@ const SPECIALVALUES = new Set([
  */
 class CssColor {
   /**
-   * @param  {String} colorValue: Any valid color string
+   * @param  {string} colorValue: Any valid color string
    */
   constructor(colorValue) {
     // Store a lower-cased version of the color to help with format
@@ -61,6 +61,9 @@ class CssColor {
     // returned when needed.
     this.#lowerCased = colorValue.toLowerCase();
     this.#authored = colorValue;
+    this.specialValue = SPECIALVALUES.has(this.#lowerCased)
+      ? this.#authored
+      : null;
   }
 
   /**
@@ -127,10 +130,6 @@ class CssColor {
     } catch (e) {
       return false;
     }
-  }
-
-  get specialValue() {
-    return SPECIALVALUES.has(this.#lowerCased) ? this.#authored : null;
   }
 
   get name() {
@@ -316,7 +315,7 @@ class CssColor {
    * Check whether the current color value is in the special list e.g.
    * transparent or invalid.
    *
-   * @return {String|Boolean}
+   * @return {string | boolean}
    *         - If the current color is a special value e.g. "transparent" then
    *           return the color.
    *         - If the current color is a system value e.g. "accentcolor" then
@@ -460,7 +459,7 @@ class CssColor {
   /**
    * Check whether the color is fully transparent (alpha === 0).
    *
-   * @return {Boolean} True if the color is transparent and valid.
+   * @return {boolean} True if the color is transparent and valid.
    */
   isTransparent() {
     return this.getRGBATuple().a === 0;
@@ -470,9 +469,9 @@ class CssColor {
 /**
  * Convert rgb value to hsl
  *
- * @param {array} rgb
+ * @param {Array} rgb
  *         Array of rgb values
- * @return {array}
+ * @return {Array}
  *         Array of hsl values.
  */
 function rgbToHsl([r, g, b]) {
@@ -515,9 +514,9 @@ function rgbToHsl([r, g, b]) {
 /**
  * Convert RGB value to HWB
  *
- * @param {array} rgb
+ * @param {Array} rgb
  *         Array of RGB values
- * @return {array}
+ * @return {Array}
  *         Array of HWB values.
  */
 function rgbToHwb([r, g, b]) {
@@ -532,66 +531,6 @@ function rgbToHwb([r, g, b]) {
   return [roundTo(hsl[0], 1), roundTo(white * 100, 1), roundTo(black * 100, 1)];
 }
 
-/**
- * Convert rgb value to CIE LAB colorspace (https://en.wikipedia.org/wiki/CIELAB_color_space).
- * Formula from http://www.easyrgb.com/en/math.php.
- *
- * @param {array} rgb
- *        Array of rgb values
- * @return {array}
- *         Array of lab values.
- */
-function rgbToLab([r, g, b]) {
-  // Convert rgb values to xyz coordinates.
-  r = r / 255;
-  g = g / 255;
-  b = b / 255;
-
-  r = r > 0.04045 ? Math.pow((r + 0.055) / 1.055, 2.4) : r / 12.92;
-  g = g > 0.04045 ? Math.pow((g + 0.055) / 1.055, 2.4) : g / 12.92;
-  b = b > 0.04045 ? Math.pow((b + 0.055) / 1.055, 2.4) : b / 12.92;
-
-  r = r * 100;
-  g = g * 100;
-  b = b * 100;
-
-  let [x, y, z] = [
-    r * 0.4124 + g * 0.3576 + b * 0.1805,
-    r * 0.2126 + g * 0.7152 + b * 0.0722,
-    r * 0.0193 + g * 0.1192 + b * 0.9505,
-  ];
-
-  // Convert xyz coordinates to lab values.
-  // Divisors used are X_10, Y_10, Z_10 (CIE 1964) reference values for D65
-  // illuminant (Daylight, sRGB, Adobe-RGB) taken from http://www.easyrgb.com/en/math.php
-  x = x / 94.811;
-  y = y / 100;
-  z = z / 107.304;
-
-  x = x > 0.008856 ? Math.pow(x, 1 / 3) : 7.787 * x + 16 / 116;
-  y = y > 0.008856 ? Math.pow(y, 1 / 3) : 7.787 * y + 16 / 116;
-  z = z > 0.008856 ? Math.pow(z, 1 / 3) : 7.787 * z + 16 / 116;
-
-  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
-}
-
-/**
- * Calculates the CIE Delta-E value for two lab values (http://www.colorwiki.com/wiki/Delta_E%3a_The_Color_Difference#Delta-E_1976).
- * Formula from http://www.easyrgb.com/en/math.php.
- *
- * @param {array} lab1
- *        Array of lab values for the first color
- * @param {array} lab2
- *        Array of lab values for the second color
- * @return {Number}
- *         DeltaE value between the two colors
- */
-function calculateDeltaE([l1, a1, b1], [l2, a2, b2]) {
-  return Math.sqrt(
-    Math.pow(l1 - l2, 2) + Math.pow(a1 - a2, 2) + Math.pow(b1 - b2, 2)
-  );
-}
-
 function roundTo(number, digits) {
   const multiplier = Math.pow(10, digits);
   return Math.round(number * multiplier) / multiplier;
@@ -601,9 +540,9 @@ function roundTo(number, digits) {
  * Given a color, classify its type as one of the possible color
  * units, as known by |CssColor.COLORUNIT|.
  *
- * @param  {String} value
+ * @param  {string} value
  *         The color, in any form accepted by CSS.
- * @return {String}
+ * @return {string}
  *         The color classification, one of "rgb", "hsl", "hwb",
  *         "hex", "name", or if no format is recognized, "authored".
  */
@@ -626,10 +565,10 @@ function classifyColor(value) {
 /**
  * A helper function to convert a hex string like "F0C" or "F0C8" to a color.
  *
- * @param {String} name the color string
- * @param {Boolean} highResolution Forces returned alpha value to be in the
+ * @param {string} name the color string
+ * @param {boolean} highResolution Forces returned alpha value to be in the
  *                  range 0 - 255 as opposed to 0.0 - 1.0.
- * @return {Object} an object of the form {r, g, b, a}; or null if the
+ * @return {object} an object of the form {r, g, b, a}; or null if the
  *         name was not a valid color
  */
 function hexToRGBA(name, highResolution) {
@@ -678,25 +617,8 @@ function hexToRGBA(name, highResolution) {
 }
 
 /**
- * Calculates the luminance of a rgba tuple based on the formula given in
- * https://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
- *
- * @param {Array} rgba An array with [r,g,b,a] values.
- * @return {Number} The calculated luminance.
- */
-function calculateLuminance(rgba) {
-  for (let i = 0; i < 3; i++) {
-    rgba[i] /= 255;
-    rgba[i] =
-      rgba[i] < 0.03928
-        ? rgba[i] / 12.92
-        : Math.pow((rgba[i] + 0.055) / 1.055, 2.4);
-  }
-  return 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2];
-}
-
-/**
  * Blend background and foreground colors takign alpha into account.
+ *
  * @param  {Array} foregroundColor
  *         An array with [r,g,b,a] values containing the foreground color.
  * @param  {Array} backgroundColor
@@ -721,6 +643,8 @@ function blendColors(foregroundColor, backgroundColor = [255, 255, 255, 1]) {
 }
 
 /**
+ * TODO: Replace with RelativeLuminanceUtils::ContrastRatio, see bug 1984999.
+ *
  * Calculates the contrast ratio of 2 rgba tuples based on the formula in
  * https://www.w3.org/TR/2008/REC-WCAG20-20081211/#visual-audio-contrast7
  *
@@ -728,7 +652,7 @@ function blendColors(foregroundColor, backgroundColor = [255, 255, 255, 1]) {
  * the background color.
  * @param {Array} textColor An array with [r,g,b,a] values containing
  * the text color.
- * @return {Number} The calculated luminance.
+ * @return {number} The calculated luminance.
  */
 function calculateContrastRatio(backgroundColor, textColor) {
   // Do not modify given colors.
@@ -738,8 +662,12 @@ function calculateContrastRatio(backgroundColor, textColor) {
   backgroundColor = blendColors(backgroundColor);
   textColor = blendColors(textColor, backgroundColor);
 
-  const backgroundLuminance = calculateLuminance(backgroundColor);
-  const textLuminance = calculateLuminance(textColor);
+  const backgroundLuminance = InspectorUtils.relativeLuminance(
+    ...backgroundColor.map(c => c / 255)
+  );
+  const textLuminance = InspectorUtils.relativeLuminance(
+    ...textColor.map(c => c / 255)
+  );
   const ratio = (textLuminance + 0.05) / (backgroundLuminance + 0.05);
 
   return ratio > 1.0 ? ratio : 1 / ratio;
@@ -756,11 +684,8 @@ module.exports.colorUtils = {
   CssColor,
   rgbToHsl,
   rgbToHwb,
-  rgbToLab,
   classifyColor,
   calculateContrastRatio,
-  calculateDeltaE,
-  calculateLuminance,
   blendColors,
   colorIsUppercase,
 };

@@ -67,6 +67,7 @@ const KEYBOARD_FOCUSABLE_ROLES = new Set([
   Ci.nsIAccessibleRole.ROLE_PUSHBUTTON,
   Ci.nsIAccessibleRole.ROLE_RADIOBUTTON,
   Ci.nsIAccessibleRole.ROLE_SLIDER,
+  Ci.nsIAccessibleRole.ROLE_SEARCHBOX,
   Ci.nsIAccessibleRole.ROLE_SPINBUTTON,
   Ci.nsIAccessibleRole.ROLE_SUMMARY,
   Ci.nsIAccessibleRole.ROLE_SWITCH,
@@ -110,7 +111,7 @@ const INTERACTIVE_IF_FOCUSABLE_ROLES = new Set([
  * @param   {DOMNode} node
  *          Node to be tested for validity.
  *
- * @returns {Boolean}
+ * @returns {boolean}
  *          True if the node is either dead or is not an element node.
  */
 function isInvalidNode(node) {
@@ -128,7 +129,7 @@ function isInvalidNode(node) {
  * @param   {nsIAccessible} accessible
  *          Accessible for which to determine if it is keyboard focusable.
  *
- * @returns {Boolean}
+ * @returns {boolean}
  *          True if focusable with the keyboard.
  */
 function isKeyboardFocusable(accessible) {
@@ -153,10 +154,10 @@ function isKeyboardFocusable(accessible) {
  *          Node to apply focus-related pseudo class to.
  * @param   {DOMNode} currentNode
  *          Node to be checked for having focus specific styling.
- * @param   {String} pseudoClass
+ * @param   {string} pseudoClass
  *          A focus related pseudo-class to be simulated for style comparison.
  *
- * @returns {Boolean}
+ * @returns {boolean}
  *          True if the currentNode has focus specific styling.
  */
 function hasStylesForFocusRelatedPseudoClass(
@@ -218,7 +219,7 @@ function hasStylesForFocusRelatedPseudoClass(
  * @param   {DOMNode} currentNode
  *          Node to be checked for having focus specific styling.
  *
- * @returns {Boolean}
+ * @returns {boolean}
  *          True if the node or its descendant has distinct focus styling.
  */
 function hasFocusStyling(focusableNode, currentNode) {
@@ -269,7 +270,7 @@ function hasFocusStyling(focusableNode, currentNode) {
  *         Accessible to be checked for being focusable and having focus
  *         styling.
  *
- * @return {null|Object}
+ * @return {null | object}
  *         Null if accessible has keyboard focus styling, audit report object
  *         otherwise.
  */
@@ -306,7 +307,7 @@ function focusStyleRule(accessible) {
  *         Accessible to be checked for being interactive and having accessible
  *         actions.
  *
- * @return {null|Object}
+ * @return {null | object}
  *         Null if accessible is not interactive or if it is and it has
  *         accessible action associated with it, audit report object otherwise.
  */
@@ -330,7 +331,7 @@ function interactiveRule(accessible) {
  *         Accessible to be checked for being interactive and being focusable
  *         when enabled.
  *
- * @return {null|Object}
+ * @return {null | object}
  *         Null if accessible is not interactive or if it is and it is focusable
  *         when enabled, audit report object otherwise.
  */
@@ -371,7 +372,7 @@ function focusableRule(accessible) {
  *         Accessible to be checked for having an interactive role if it is
  *         focusable.
  *
- * @return {null|Object}
+ * @return {null | object}
  *         Null if accessible is not interactive or if it is and it has an
  *         interactive role, audit report object otherwise.
  */
@@ -437,7 +438,7 @@ function semanticsRule(accessible) {
  *         Accessible to be checked for having an element with positive tabindex
  *         attribute.
  *
- * @return {null|Object}
+ * @return {null | object}
  *         Null if accessible is not focusable or if it is and its element's
  *         tabindex attribute is less than 1, audit report object otherwise.
  */

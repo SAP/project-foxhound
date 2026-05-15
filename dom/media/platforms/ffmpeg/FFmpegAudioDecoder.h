@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FFmpegAACDecoder_h__
-#define __FFmpegAACDecoder_h__
+#ifndef FFmpegAACDecoder_h_
+#define FFmpegAACDecoder_h_
 
 #include "FFmpegDataDecoder.h"
 #include "FFmpegLibWrapper.h"
@@ -25,7 +25,7 @@ class FFmpegAudioDecoder<LIBAV_VER>
     : public FFmpegDataDecoder<LIBAV_VER>,
       public DecoderDoctorLifeLogger<FFmpegAudioDecoder<LIBAV_VER>> {
  public:
-  FFmpegAudioDecoder(FFmpegLibWrapper* aLib,
+  FFmpegAudioDecoder(const FFmpegLibWrapper* aLib,
                      const CreateDecoderParams& aDecoderParams);
   virtual ~FFmpegAudioDecoder();
 
@@ -58,4 +58,4 @@ class FFmpegAudioDecoder<LIBAV_VER>
 
 }  // namespace mozilla
 
-#endif  // __FFmpegAACDecoder_h__
+#endif  // FFmpegAACDecoder_h_

@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 #ifndef jit_riscv64_extension_Extension_riscv_c_h_
 #define jit_riscv64_extension_Extension_riscv_c_h_
-#include "mozilla/Assertions.h"
 
 #include <stdint.h>
 
@@ -61,16 +60,16 @@ class AssemblerRISCVC : public AssemblerRiscvBase {
   static bool IsCBranch(Instr instr);
   static bool IsCJal(Instr instr);
 
-  inline int16_t cjump_offset(Label* L) {
-    return (int16_t)branch_offset_helper(L, OffsetSize::kOffset11);
+  inline int16_t cjumpOffset(Label* L) {
+    return (int16_t)branchOffsetHelper(L, OffsetSize::kOffset11);
   }
-  inline int32_t cbranch_offset(Label* L) {
-    return branch_offset_helper(L, OffsetSize::kOffset9);
+  inline int32_t cbranchOffset(Label* L) {
+    return branchOffsetHelper(L, OffsetSize::kOffset9);
   }
 
-  void c_j(Label* L) { c_j(cjump_offset(L)); }
-  void c_bnez(Register rs1, Label* L) { c_bnez(rs1, cbranch_offset(L)); }
-  void c_beqz(Register rs1, Label* L) { c_beqz(rs1, cbranch_offset(L)); }
+  void c_j(Label* L) { c_j(cjumpOffset(L)); }
+  void c_bnez(Register rs1, Label* L) { c_bnez(rs1, cbranchOffset(L)); }
+  void c_beqz(Register rs1, Label* L) { c_beqz(rs1, cbranchOffset(L)); }
 };
 }  // namespace jit
 }  // namespace js

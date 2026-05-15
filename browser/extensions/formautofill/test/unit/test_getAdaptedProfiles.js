@@ -1273,6 +1273,7 @@ for (let testcase of TESTCASES) {
     handler.setIdentifiedFieldDetails(fieldDetails);
 
     let adaptedRecords = handler.getAdaptedProfiles(testcase.profileData);
+    adaptedRecords.forEach(record => delete record._original);
     Assert.deepEqual(adaptedRecords, testcase.expectedResult);
 
     if (testcase.expectedOptionElements) {

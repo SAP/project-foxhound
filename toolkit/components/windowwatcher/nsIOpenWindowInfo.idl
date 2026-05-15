@@ -4,9 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsILoadInfo.idl"
 #include "nsISupports.idl"
 
 webidl BrowsingContext;
+
+interface nsIPrincipal;
+interface nsIPolicyContainer;
+interface nsIURI;
 
 %{ C++
 namespace mozilla {
@@ -18,6 +23,7 @@ class BrowserParent;
 %}
 [ref] native const_OriginAttributes(const mozilla::OriginAttributes);
 [ptr] native BrowserParent(mozilla::dom::BrowserParent);
+[ref] native MaybeCOEPRef(const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>);
 
 /*
  * nsIBrowsingContextReadyCallback.browsingContextReady() is called within
@@ -79,6 +85,36 @@ interface nsIOpenWindowInfo : nsISupports {
   [infallible]
   readonly attribute boolean textDirectiveUserActivation;
 
+  /**
+   * The principal to inherit into the initial about:blank.
+   */
+  [notxpcom, nostdcall, binaryname(PrincipalToInheritForAboutBlank)]
+  nsIPrincipal binaryGetPrincipalToInheritForAboutBlank();
+
+  /**
+   * The partitioned principal to inherit into the initial about:blank.
+   */
+  [notxpcom, nostdcall, binaryname(PartitionedPrincipalToInheritForAboutBlank)]
+  nsIPrincipal binaryGetPartitionedPrincipalToInheritForAboutBlank();
+
+  /**
+   * The base URI to inherit into the initial about:blank.
+   */
+  [notxpcom, nostdcall, binaryname(BaseUriToInheritForAboutBlank)]
+  nsIURI binaryGetBaseUriToInheritForAboutBlank();
+
+  /**
+   * The CSP to inherit into the initial about:blank.
+   */
+  [notxpcom, nostdcall, binaryname(PolicyContainerToInheritForAboutBlank)]
+  nsIPolicyContainer binaryGetPolicyContainerToInheritForAboutBlank();
+
+  /**
+   * The COEP to inherit into the initial about:blank.
+   */
+  [notxpcom, nostdcall, binaryname(CoepToInheritForAboutBlank)]
+  MaybeCOEPRef binaryGetCoepToInheritForAboutBlank();
+
   /** BrowserParent instance to use in the new window */
   [notxpcom, nostdcall]
   BrowserParent getNextRemoteBrowser();
@@ -99,4 +135,10 @@ interface nsIOpenWindowInfo : nsISupports {
    * callback. If no callback, do nothing.
    */
   void cancel();
+
+  /**
+   * Clone this open window info and update the princpals to be inherited by the
+   * initial about:blank document.
+   */
+  nsIOpenWindowInfo cloneWithPrincipals(in nsIPrincipal aPrincipal, in nsIPrincipal aPartitionedPrincipal);
 };

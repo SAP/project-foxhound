@@ -53,14 +53,14 @@ class RtcEventBeginLog final : public RtcEvent {
   Type GetType() const override { return kType; }
   bool IsConfigEvent() const override { return false; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> batch);
+  static std::string Encode(ArrayView<const RtcEvent*> batch);
 
   static RtcEventLogParseStatus Parse(absl::string_view encoded_bytes,
                                       bool batched,
                                       std::vector<LoggedStartEvent>& output);
 
  private:
-  RtcEventBeginLog(const RtcEventBeginLog& other);
+  RtcEventBeginLog(const RtcEventBeginLog&) = default;
 
   int64_t utc_start_time_ms_;
 

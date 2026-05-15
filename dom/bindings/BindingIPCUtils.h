@@ -6,9 +6,9 @@
 #ifndef _mozilla_dom_BindingIPCUtils_h
 #define _mozilla_dom_BindingIPCUtils_h
 
+#include "ipc/EnumSerializer.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "ipc/EnumSerializer.h"
 
 namespace mozilla::dom {
 

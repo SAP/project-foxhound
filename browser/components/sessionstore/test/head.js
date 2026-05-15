@@ -577,29 +577,31 @@ function setPropertyOfFormField(browserContext, selector, propName, newValue) {
 }
 
 function promiseOnHistoryReplaceEntry(browser) {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     let sessionHistory = browser.browsingContext?.sessionHistory;
-    if (sessionHistory) {
-      var historyListener = {
-        OnHistoryNewEntry() {},
-        OnHistoryGotoIndex() {},
-        OnHistoryPurge() {},
-        OnHistoryReload() {
-          return true;
-        },
-
-        OnHistoryReplaceEntry() {
-          resolve();
-        },
-
-        QueryInterface: ChromeUtils.generateQI([
-          "nsISHistoryListener",
-          "nsISupportsWeakReference",
-        ]),
-      };
-
-      sessionHistory.addSHistoryListener(historyListener);
+    if (!sessionHistory) {
+      reject("No session history?");
     }
+
+    var historyListener = {
+      OnHistoryNewEntry() {},
+      OnHistoryGotoIndex() {},
+      OnHistoryPurge() {},
+      OnHistoryReload() {
+        return true;
+      },
+
+      OnHistoryReplaceEntry() {
+        resolve();
+      },
+
+      QueryInterface: ChromeUtils.generateQI([
+        "nsISHistoryListener",
+        "nsISupportsWeakReference",
+      ]),
+    };
+
+    sessionHistory.addSHistoryListener(historyListener);
   });
 }
 

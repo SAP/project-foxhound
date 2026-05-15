@@ -8,15 +8,14 @@
 #define mozilla_dom_ByteLengthQueuingStrategy_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BaseQueuingStrategy.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/FunctionBinding.h"
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
 #include "nsIGlobalObject.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 class ByteLengthQueuingStrategy final : public BaseQueuingStrategy,

@@ -264,6 +264,42 @@ add_task(async function test_notification_clear() {
   await extension.unload();
 });
 
+add_task(async function test_notification_clear_before_shown() {
+  function background() {
+    let opts = {
+      type: "image",
+      title: "Testing Icon Notification",
+      message: "Test",
+      iconUrl: "https://example.com/foobar"
+    };
+
+    let createdId = "before_shown";
+
+    browser.notifications.onShown.addListener(async () => {
+      browser.test.assertTrue(false, "onShown should not happen");
+    });
+
+    browser.notifications.onClosed.addListener(id => {
+      browser.test.assertEq(createdId, id, "onClosed received the expected id.");
+      browser.test.notifyPass("background test passed");
+    });
+
+    browser.notifications.create(createdId, opts);
+    browser.notifications.clear(createdId);
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["notifications"],
+    },
+    background,
+  });
+
+  await extension.startup();
+  await extension.awaitFinish();
+  await extension.unload();
+})
+
 add_task(async function test_notifications_empty_getAll() {
   async function background() {
     let notifications = await browser.notifications.getAll();

@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = 个性化
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = 知道了
+    .aria-label = 知道了
 
 ## Search box component.
 
@@ -56,6 +59,9 @@ newtab-topsites-add-shortcut-header = 新建快捷方式
 newtab-topsites-edit-topsites-header = 编辑常用网站
 newtab-topsites-edit-shortcut-header = 编辑快捷方式
 newtab-topsites-add-shortcut-label = 添加快捷方式
+newtab-topsites-add-shortcut-title =
+    .title = 添加快捷方式
+    .aria-label = 添加快捷方式
 newtab-topsites-title-label = 标题
 newtab-topsites-title-input =
     .placeholder = 输入标题
@@ -84,6 +90,14 @@ newtab-confirm-delete-history-p2 = 此操作无法撤销。
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = 赞助推广
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title }（已固定）
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -303,19 +317,32 @@ newtab-custom-pocket-subtitle = 由 { -brand-product-name } 旗下 { -pocket-bra
 newtab-custom-stories-toggle =
     .label = 推荐文章
     .description = 由 { -brand-product-name } 推荐的精选内容
+newtab-custom-stories-personalized-toggle =
+    .label = 文章
+newtab-custom-stories-personalized-checkbox-label = 根据您的阅读记录为您推荐文章
 newtab-custom-pocket-sponsored = 赞助内容
 newtab-custom-pocket-show-recent-saves = 显示近期保存内容
 newtab-custom-recent-title = 近期动态
 newtab-custom-recent-subtitle = 近期访问的网站与内容精选
-newtab-custom-recent-toggle =
-    .label = 近期动态
-    .description = 近期访问的网站与内容精选
 newtab-custom-weather-toggle =
     .label = 天气
     .description = 速览今日天气预报
-newtab-custom-trending-search-toggle =
-    .label = 热门搜索
-    .description = 流行及常搜主题
+newtab-custom-widget-weather-toggle =
+    .label = 天气
+newtab-custom-widget-lists-toggle =
+    .label = 清单
+newtab-custom-widget-timer-toggle =
+    .label = 计时器
+newtab-custom-widget-section-title = 小组件
+newtab-custom-widget-section-toggle =
+    .label = 小组件
+newtab-widget-manage-title = 小组件
+newtab-widget-manage-widget-button =
+    .label = 管理小组件
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = 关闭
+    .aria-label = 关闭菜单
 newtab-custom-close-button = 关闭
 newtab-custom-settings = 管理更多设置
 
@@ -328,6 +355,7 @@ newtab-wallpaper-custom-color = 选择颜色
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = 图像超出文件大小上限（{ $file_size }MB），请尝试上传较小的文件。
+newtab-wallpaper-error-upload-file-type = 无法上传文件，请尝试使用图像文件。
 newtab-wallpaper-error-file-type = 无法上传文件，请尝试使用其他文件类型。
 newtab-wallpaper-light-red-panda = 小熊猫
 newtab-wallpaper-light-mountain = 白山山脉
@@ -377,7 +405,7 @@ newtab-wallpaper-abstract-purple-green = 紫绿光渐变
 newtab-wallpaper-abstract-blue-purple-waves = 蓝色和紫色的波浪形状
 newtab-wallpaper-abstract-black-waves = 黑色波浪形状
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = 摄影
 newtab-wallpaper-beach-at-sunrise = 海滩日出
@@ -407,6 +435,10 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
@@ -433,8 +465,9 @@ newtab-weather-menu-change-location = 更改位置
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = 搜索位置
     .aria-label = 搜索位置
-newtab-weather-change-location-search-input = 搜索位置
 newtab-weather-menu-weather-display = 天气信息显示方式
+newtab-weather-todays-forecast = 今日预报
+newtab-weather-see-full-forecast = 查看完整预报
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -447,10 +480,24 @@ newtab-weather-menu-temperature-option-fahrenheit = 华氏度
 newtab-weather-menu-temperature-option-celsius = 摄氏度
 newtab-weather-menu-change-temperature-units-fahrenheit = 切换为华氏度
 newtab-weather-menu-change-temperature-units-celsius = 切换为摄氏度
+newtab-weather-menu-hide-weather-v2 = 隐藏天气
 newtab-weather-menu-hide-weather = 隐藏新标签页上的天气信息
 newtab-weather-menu-learn-more = 详细了解
+newtab-weather-menu-detect-my-location = 检测我的位置
 # This message is shown if user is working offline
 newtab-weather-error-not-available = 目前无法获取天气数据。
+newtab-weather-opt-in-see-weather = 您想看到当前位置的天气信息吗？
+newtab-weather-opt-in-not-now =
+    .label = 暂时不要
+newtab-weather-opt-in-yes =
+    .label = 好的
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = 纽约市
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = 在“{ $provider }”上查看天气预报
+    .aria-description = { $provider } ∙ 赞助
 
 ## Topic Labels
 
@@ -534,6 +581,12 @@ newtab-custom-wallpaper-title = 在此处自定义壁纸
 newtab-custom-wallpaper-subtitle = 自行上传壁纸或选取自定义颜色，让 { -brand-product-name } 更有个性。
 newtab-custom-wallpaper-cta = 试试看
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = 选张壁纸，让 { -brand-product-name } 独具个性
+newtab-new-user-custom-wallpaper-subtitle = 自定义壁纸和颜色，让新标签页亲切如家。
+newtab-new-user-custom-wallpaper-cta = 现在就试试
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = 下载移动版 { -brand-product-name }
@@ -549,7 +602,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = 顺手就能打开常用网站
 newtab-shortcuts-highlight-subtitle = 添加快捷方式，一键打开常用网站。
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = 此内容存在什么问题？
@@ -567,20 +620,118 @@ newtab-report-content-inappropriate-offensive =
     .label = 不适宜或具有冒犯性
 newtab-report-content-spam-misleading =
     .label = 垃圾信息或具有误导性
+newtab-report-content-requires-payment-subscription =
+    .label = 需要付款或订阅
+newtab-report-content-requires-payment-subscription-learn-more = 详细了解
 newtab-report-cancel = 取消
 newtab-report-submit = 提交
 newtab-toast-thanks-for-reporting =
     .message = 感谢反馈。
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
-# "Trending on Google" refers to the trending topics coming from Google Search, usually seen when a user is focused on the search bar
-newtab-trending-searches-trending-on-google = Google 热门搜索
-newtab-trending-searches-show-trending =
-    .title = 显示热门搜索
-newtab-trending-searches-hide-trending =
-    .title = 隐藏热门搜索
-newtab-trending-searches-learn-more = 详细了解
-newtab-trending-searches-dismiss = 隐藏热门搜索
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = 热门搜索
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = 立即添加任务，开启无限可能。
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = 新功能
+newtab-widget-lists-label-beta =
+    .label = 测试版
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = 已完成（{ $number }）
+newtab-widget-task-list-menu-copy = 复制
+newtab-widget-lists-menu-edit = 编辑清单名称
+newtab-widget-lists-menu-create = 创建新清单
+newtab-widget-lists-menu-delete = 删除此清单
+newtab-widget-lists-menu-copy = 复制清单到剪贴板
+newtab-widget-lists-menu-hide = 隐藏所有清单
+newtab-widget-lists-menu-learn-more = 详细了解
+newtab-widget-lists-input-add-an-item =
+    .placeholder = 添加项目
+newtab-widget-lists-input-error = 请输入项目名称
+newtab-widget-lists-input-menu-open-link = 打开链接
+newtab-widget-lists-input-menu-move-up = 上移
+newtab-widget-lists-input-menu-move-down = 下移
+newtab-widget-lists-input-menu-delete = 删除
+newtab-widget-lists-input-menu-edit = 编辑
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + 创建新清单
+newtab-widget-lists-name-label-default =
+    .label = 任务清单
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = 任务清单
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = 新清单
+newtab-widget-section-title = 小组件
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = 隐藏小组件
+    .aria-label = 隐藏所有小组件
+newtab-widget-section-maximize =
+    .title = 展开小组件
+    .aria-label = 将所有小组件展开为完整大小
+newtab-widget-section-minimize =
+    .title = 最小化小组件
+    .aria-label = 将所有小组件收缩为紧凑大小
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = 计时器
+newtab-widget-timer-notification-focus = 专注时间结束，真棒！要休息一下吗？
+newtab-widget-timer-notification-break = 休息时间结束。准备好继续专注了吗？
+newtab-widget-timer-notification-warning = 通知已关闭
+newtab-widget-timer-mode-focus =
+    .label = 专注
+newtab-widget-timer-mode-break =
+    .label = 休息
+newtab-widget-timer-label-play =
+    .label = 开始
+newtab-widget-timer-label-pause =
+    .label = 暂停
+newtab-widget-timer-reset =
+    .title = 重置
+newtab-widget-timer-menu-notifications = 关闭通知
+newtab-widget-timer-menu-notifications-on = 开启通知
+newtab-widget-timer-menu-hide = 隐藏计时器
+newtab-widget-timer-menu-learn-more = 详细了解
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = 头条新闻
+newtab-daily-briefing-card-menu-dismiss = 知道了
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = { $minutes } 分钟前更新
+newtab-widget-message-title = 借助清单和内置计时器，聚焦重点、保持专注。
+# to-dos stands for "things to do".
+newtab-widget-message-copy = 从快捷提醒到日常待办，从专注时段到放松片刻，既能帮您管理任务，又可助您把握时间。
+newtab-promo-card-title = 支持 { -brand-product-name }
+newtab-promo-card-body = 建设一个更好的互联网的使命，离不开我们赞助商的支持
+newtab-promo-card-cta = 详细了解
+newtab-promo-card-dismiss-button =
+    .title = 知道了
+    .aria-label = 知道了
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = 知道了
+    .aria-label = 知道了
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = 定制这片空间，打造专属天地
+newtab-activation-window-message-customization-focus-message = 挑选新壁纸、添加常用网站的快捷方式、随时关注您感兴趣的文章。
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = 开始定制
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = 这片空间，由您做主

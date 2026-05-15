@@ -28,12 +28,12 @@
 
 #include "Biquad.h"
 
-#include "DenormalDisabler.h"
-
 #include <float.h>
-#include <algorithm>
 #include <math.h>
 
+#include <algorithm>
+
+#include "DenormalDisabler.h"
 #include "fdlibm.h"
 
 namespace WebCore {

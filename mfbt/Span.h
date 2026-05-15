@@ -22,6 +22,7 @@
 #ifndef mozilla_Span_h
 #define mozilla_Span_h
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -382,6 +383,7 @@ class MOZ_GSL_POINTER Span {
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   constexpr static const index_type extent = Extent;
+  constexpr static const index_type npos = index_type(-1);
 
   // [Span.cons], Span constructors, copy, assignment, and destructor
   // "Dependent" is needed to make "std::enable_if_t<(Dependent ||
@@ -658,7 +660,7 @@ class MOZ_GSL_POINTER Span {
   constexpr Span<element_type, Count> Subspan() const {
     const size_t len = size();
     MOZ_RELEASE_ASSERT(Offset <= len &&
-                       (Count == dynamic_extent || (Offset + Count <= len)));
+                       (Count == dynamic_extent || (Count <= len - Offset)));
     return {data() + Offset, Count == dynamic_extent ? len - Offset : Count};
   }
 
@@ -686,7 +688,7 @@ class MOZ_GSL_POINTER Span {
       index_type aStart, index_type aLength = dynamic_extent) const {
     const size_t len = size();
     MOZ_RELEASE_ASSERT(aStart <= len && (aLength == dynamic_extent ||
-                                         (aStart + aLength <= len)));
+                                         (aLength <= len - aStart)));
     return {data() + aStart,
             aLength == dynamic_extent ? len - aStart : aLength};
   }
@@ -831,6 +833,18 @@ class MOZ_GSL_POINTER Span {
     return {Elements(), Length()};
   }
 
+  // Returns the index of the given element in the span, or `npos` otherwise.
+  template <typename Item>
+  index_type IndexOf(const Item& aItem) const {
+    auto begin = this->begin();
+    auto end = this->end();
+    auto it = std::find(begin, end, aItem);
+    if (it == end) {
+      return npos;
+    }
+    return index_type(it - begin);
+  }
+
  private:
   // this implementation detail class lets us take advantage of the
   // empty base class optimization to pay for only storage of a single
@@ -847,9 +861,8 @@ class MOZ_GSL_POINTER Span {
           ,
           data_(elements ? elements
                          : reinterpret_cast<pointer>(alignof(element_type))) {
-      const size_t extentSize = ExtentType::size();
-      MOZ_RELEASE_ASSERT((!elements && extentSize == 0) ||
-                         (elements && extentSize != dynamic_extent));
+      MOZ_ASSERT((!elements && ExtentType::size() == 0) ||
+                 (elements && ExtentType::size() != dynamic_extent));
     }
 
     constexpr pointer data() const { return data_; }

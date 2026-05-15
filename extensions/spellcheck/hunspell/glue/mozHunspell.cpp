@@ -74,7 +74,6 @@
 #include "mozilla/Services.h"
 #include "mozilla/dom/ContentParent_NotifyUpdatedDictionaries.h"
 
-#include <stdlib.h>
 #include <tuple>
 
 using namespace mozilla;

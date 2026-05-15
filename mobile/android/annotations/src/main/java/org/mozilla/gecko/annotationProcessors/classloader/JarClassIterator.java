@@ -19,6 +19,11 @@ public class JarClassIterator implements Iterator<ClassWithOptions> {
 
   private ClassWithOptions lookAhead;
 
+  /**
+   * Constructor for JarClassIterator.
+   *
+   * @param aTarget The jar class loader to iterate over
+   */
   public JarClassIterator(IterableJarLoadingURLClassLoader aTarget) {
     mTarget = aTarget;
     mTargetClassListIterator = aTarget.classNames.iterator();

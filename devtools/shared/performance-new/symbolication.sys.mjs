@@ -19,10 +19,14 @@ const lazy = {};
  * @typedef {import("perf").SymbolicationWorkerReplyData<R>} SymbolicationWorkerReplyData<R>
  */
 
-ChromeUtils.defineESModuleGetters(lazy, {
-  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
-  setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
+ChromeUtils.defineESModuleGetters(
+  lazy,
+  {
+    clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+    setTimeout: "resource://gre/modules/Timer.sys.mjs",
+  },
+  { global: "contextual" }
+);
 
 /** @type {any} */
 const global = globalThis;

@@ -30,8 +30,10 @@ runTest(() => getUserMedia({audio: { echoCancellation: false }})
 
     info("Capturing");
 
-    analyser = new AudioStreamAnalyser(audioContext,
-                                       gUMAudioElement.mozCaptureStream());
+    analyser = new AudioStreamAnalyser(
+      audioContext,
+      gUMAudioElement.captureStream?.() || gUMAudioElement.mozCaptureStream()
+    );
     analyser.enableDebugCanvas();
     return analyser.waitForAnalysisSuccess(array =>
       array[analyser.binIndexForFrequency(50)]              < 50 &&

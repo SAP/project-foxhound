@@ -19,7 +19,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/FunctionRef.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/MoveOnlyFunction.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
@@ -439,7 +438,14 @@ class IToplevelProtocol : public IRefCountedProtocol {
 
  public:
   // Shadows the method on IProtocol, which will forward to the top.
-  IProtocol* Lookup(Shmem::id_t aId);
+  IProtocol* Lookup(ActorId aId);
+
+  // Ensures aId is from the remote side's range, and reserves a slot in
+  // mActorMap for a future call to SetManagerAndRegister.
+  [[nodiscard]] bool TryReserve(ActorId aId);
+
+  // Abandon a reservation if SetManagerAndRegister will never be called.
+  void ClearReservation(ActorId aId);
 
   Shmem CreateSharedMemory(size_t aSize, bool aUnsafe);
   Shmem::Segment* LookupSharedMemory(Shmem::id_t aId);
@@ -520,7 +526,7 @@ class IToplevelProtocol : public IRefCountedProtocol {
   void OnIPCChannelOpened() {
     // Leak the returned ActorLifecycleProxy reference. It will be destroyed in
     // `OnChannelClose` or `OnChannelError`.
-    Unused << ActorConnected();
+    ActorConnected().leak();
   }
   void OnChannelClose() {
     // Re-acquire the ActorLifecycleProxy reference acquired in

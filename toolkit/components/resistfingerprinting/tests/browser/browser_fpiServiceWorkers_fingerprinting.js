@@ -44,7 +44,8 @@ runTestInFirstAndThirdPartyContexts(
     );
   },
   async win => {
-    let SPOOFED_HW_CONCURRENCY = 2;
+    let SPOOFED_HW_CONCURRENCY =
+      SpecialPowers.Services.appinfo.OS == "Darwin" ? 8 : 4;
 
     // Register service worker for the third-party window.
     if (!win.sw) {

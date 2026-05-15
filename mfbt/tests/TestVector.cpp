@@ -126,7 +126,7 @@ struct S {
 
   S(S&& rhs) : j(rhs.j), k(std::move(rhs.k)) {
     rhs.j = 0;
-    rhs.k.reset(0);
+    rhs.k.reset(nullptr);
     moveCount++;
   }
 

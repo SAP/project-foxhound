@@ -3,22 +3,22 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#if !defined(MediaInfo_h)
-#  define MediaInfo_h
+#ifndef MediaInfo_h
+#define MediaInfo_h
 
-#  include "mozilla/UniquePtr.h"
-#  include "mozilla/RefPtr.h"
-#  include "mozilla/Variant.h"
-#  include "nsTHashMap.h"
-#  include "nsString.h"
-#  include "nsTArray.h"
-#  include "AudioConfig.h"
-#  include "ImageTypes.h"
-#  include "MediaData.h"
-#  include "TimeUnits.h"
-#  include "mozilla/gfx/Point.h"  // for gfx::IntSize
-#  include "mozilla/gfx/Rect.h"   // for gfx::IntRect
-#  include "mozilla/gfx/Types.h"  // for gfx::ColorDepth
+#include "AudioConfig.h"
+#include "ImageTypes.h"
+#include "MediaData.h"
+#include "TimeUnits.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/Variant.h"
+#include "mozilla/gfx/Point.h"  // for gfx::IntSize
+#include "mozilla/gfx/Rect.h"   // for gfx::IntRect
+#include "mozilla/gfx/Types.h"  // for gfx::ColorDepth
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsTHashMap.h"
 
 namespace mozilla {
 

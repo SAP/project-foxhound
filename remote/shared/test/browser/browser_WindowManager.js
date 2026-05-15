@@ -64,7 +64,7 @@ add_task(async function test_adjustWindowGeometry_invalid_values() {
   const originalWidth = testWin.outerWidth;
   const originalHeight = testWin.outerHeight;
   const originalX = testWin.screenX;
-  const originalY = testWin.screenY;
+  const originalY = testWin.screenY; // codespell:ignore
 
   let minWidth, minHeight;
 
@@ -78,7 +78,7 @@ add_task(async function test_adjustWindowGeometry_invalid_values() {
       originalWidth,
       originalHeight,
       originalX,
-      originalY
+      originalY // codespell:ignore
     );
 
     await windowManager.adjustWindowGeometry(testWin, 100, 100, 100, 100);
@@ -102,30 +102,6 @@ add_task(async function test_adjustWindowGeometry_invalid_values() {
     }
   } finally {
     await BrowserTestUtils.closeWindow(testWin);
-  }
-});
-
-add_task(async function test_windows() {
-  const win1 = await BrowserTestUtils.openNewBrowserWindow();
-  const win2 = await BrowserTestUtils.openNewBrowserWindow();
-  const win3 = await BrowserTestUtils.openNewBrowserWindow();
-
-  const expectedWindows = [gBrowser.ownerGlobal, win1, win2, win3];
-
-  try {
-    is(
-      windowManager.windows.length,
-      5,
-      "All browser windows and the Mochikit harness window were returned"
-    );
-    ok(
-      expectedWindows.every(win => windowManager.windows.includes(win)),
-      "Expected windows were returned"
-    );
-  } finally {
-    await BrowserTestUtils.closeWindow(win3);
-    await BrowserTestUtils.closeWindow(win2);
-    await BrowserTestUtils.closeWindow(win1);
   }
 });
 
@@ -267,3 +243,181 @@ add_task(async function test_setFullscreen() {
     await BrowserTestUtils.closeWindow(testWin);
   }
 });
+
+add_task(async function test_windows() {
+  const win1 = await BrowserTestUtils.openNewBrowserWindow();
+  const win2 = await BrowserTestUtils.openNewBrowserWindow();
+  const win3 = await BrowserTestUtils.openNewBrowserWindow();
+
+  const expectedWindows = [gBrowser.ownerGlobal, win1, win2, win3];
+
+  try {
+    is(
+      windowManager.windows.length,
+      5,
+      "All browser windows and the Mochikit harness window were returned"
+    );
+    ok(
+      expectedWindows.every(win => windowManager.windows.includes(win)),
+      "Expected windows were returned"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win3);
+    await BrowserTestUtils.closeWindow(win2);
+    await BrowserTestUtils.closeWindow(win1);
+  }
+});
+
+add_task(async function test_getIdForWindow() {
+  const win1 = await BrowserTestUtils.openNewBrowserWindow();
+  const win2 = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    windowManager.startTracking();
+
+    const win1Id = windowManager.getIdForWindow(win1);
+    Assert.stringMatches(
+      win1Id,
+      uuidRegex,
+      "The first window id is a valid UUID"
+    );
+    is(
+      windowManager.getIdForWindow(win1),
+      win1Id,
+      "getIdForWindow returns the same id when called multiple times for the same window"
+    );
+
+    const win2Id = windowManager.getIdForWindow(win2);
+    Assert.stringMatches(
+      win2Id,
+      uuidRegex,
+      "The second window id is a valid UUID"
+    );
+    isnot(
+      win1Id,
+      win2Id,
+      "getIdForWindow returns different ids for different windows"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win2);
+    await BrowserTestUtils.closeWindow(win1);
+
+    windowManager.destroy();
+  }
+});
+
+add_task(async function test_getWindowById() {
+  windowManager.startTracking();
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    const winId = windowManager.getIdForWindow(win);
+    is(
+      windowManager.getWindowById(winId),
+      win,
+      "getWindowById returns the correct window for a valid id"
+    );
+    is(
+      windowManager.getWindowById("non-existent-id"),
+      undefined,
+      "getWindowById returns undefined for a non-existent id"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win);
+
+    windowManager.destroy();
+  }
+});
+
+add_task(async function test_waitForChromeWindowLoaded_newBrowserWindow() {
+  const win = Services.ww.openWindow(
+    null,
+    AppConstants.BROWSER_CHROME_URL,
+    "_blank",
+    "chrome,all,dialog=no",
+    null
+  );
+
+  try {
+    ok(
+      !win.gBrowserInit?.delayedStartupFinished,
+      "Browser window not finished delayed startup"
+    );
+
+    await windowManager.waitForChromeWindowLoaded(win);
+
+    ok(
+      win.gBrowserInit.delayedStartupFinished,
+      "Browser window finished delayed startup"
+    );
+    is(
+      win.document.readyState,
+      "complete",
+      "Window document is in complete state"
+    );
+    ok(
+      !win.document.isUncommittedInitialDocument,
+      "Window document is not an uncommitted initial document"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win);
+  }
+});
+
+add_task(async function test_waitForChromeWindowLoaded_alreadyLoadedWindow() {
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  try {
+    ok(
+      win.gBrowserInit.delayedStartupFinished,
+      "Browser window is already fully loaded"
+    );
+
+    await windowManager.waitForChromeWindowLoaded(win);
+
+    is(
+      win.document.readyState,
+      "complete",
+      "Window document is in complete state"
+    );
+    ok(
+      !win.document.isUncommittedInitialDocument,
+      "Window document is not an uncommitted initial document"
+    );
+  } finally {
+    await BrowserTestUtils.closeWindow(win);
+  }
+});
+
+add_task(
+  async function test_waitForChromeWindowLoaded_nonBrowserChromeWindow() {
+    const win = Services.ww.openWindow(
+      gBrowser.ownerGlobal,
+      "chrome://browser/content/pageinfo/pageInfo.xhtml",
+      "_blank",
+      "chrome,dialog=no,all",
+      null
+    );
+
+    try {
+      await windowManager.waitForChromeWindowLoaded(win);
+
+      isnot(
+        win.document.documentURI,
+        AppConstants.BROWSER_CHROME_URL,
+        "Window is not a browser window"
+      );
+      is(
+        win.document.readyState,
+        "complete",
+        "Window document is in complete state"
+      );
+      ok(
+        !win.document.isUncommittedInitialDocument,
+        "Window document is not an uncommitted initial document"
+      );
+    } finally {
+      await BrowserTestUtils.closeWindow(win);
+    }
+  }
+);

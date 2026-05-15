@@ -8,8 +8,8 @@
 #define mozilla_dom_MLSGroup_h
 
 #include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/MLS.h"
+#include "mozilla/dom/Promise.h"
 
 class nsIGlobalObject;
 

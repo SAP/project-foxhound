@@ -75,6 +75,7 @@ const KEYED_BOOLS = [
   ["tur", "true"],
   ["chun", "false"],
 ];
+const QUANTITY = 91;
 
 add_task({ skip_if: () => runningInParent }, async function run_child_stuff() {
   let oldCanRecordBase = Telemetry.canRecordBase;
@@ -167,6 +168,8 @@ add_task({ skip_if: () => runningInParent }, async function run_child_stuff() {
     Glean.testOnlyIpc.anotherDualLabeledCounter.get(key, buul).add(1);
   }
 
+  Glean.testOnlyIpc.anUnorderedQuantity.set(QUANTITY);
+
   Telemetry.canRecordBase = oldCanRecordBase;
 });
 
@@ -183,12 +186,13 @@ add_task(
     // Wait for both IPC mechanisms to flush.
     await Services.fog.testFlushAllChildren();
     await ContentTaskUtils.waitForCondition(() => {
-      let snapshot = Telemetry.getSnapshotForKeyedScalars();
+      let snapshot = Telemetry.getSnapshotForScalars();
       return (
         "content" in snapshot &&
         // Update this to be the mirrored-to probe of the bottom-most call in
         // run_child_stuff().
-        "telemetry.test.mirror_for_unordered_labeled_bool" in snapshot.content
+        // Watch out for "keyed"-ness agreement.
+        "telemetry.test.mirror_for_unordered_quantity" in snapshot.content
       );
     }, "failed to find content telemetry in parent");
 
@@ -383,7 +387,15 @@ add_task(
     Assert.equal(2, memoryHist.values["1"], "Samples are in the right bucket");
 
     // quantity
-    // Doesn't work over IPC
+    Assert.equal(
+      QUANTITY,
+      Glean.testOnlyIpc.anUnorderedQuantity.testGetValue()
+    );
+    Assert.equal(
+      QUANTITY,
+      scalarValue("telemetry.test.mirror_for_unordered_quantity", "content"),
+      "content-process Scalar has expected quantity value"
+    );
 
     // rate
     Assert.deepEqual(

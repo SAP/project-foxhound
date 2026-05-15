@@ -2,7 +2,11 @@
 head = "head.js"
 
 ["browser_backgroundtask_specific_pref.js"]
-run-if = ["appname == 'firefox'"] # Prefs are Firefox specific, e.g. not Thunderbird
+run-if = [
+  "appname == 'firefox'", # Prefs are Firefox specific, e.g. not Thunderbird
+]
 
 ["browser_xpcom_graph_wait.js"]
-skip-if = ["tsan"] # TSan times out on pretty much all profiler-consuming tests.
+skip-if = [
+  "tsan", # TSan times out on pretty much all profiler-consuming tests.
+]

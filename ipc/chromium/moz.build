@@ -24,6 +24,7 @@ UNIFIED_SOURCES += [
     "src/base/time.cc",
     "src/base/timer.cc",
     "src/chrome/common/chrome_switches.cc",
+    "src/chrome/common/ipc_channel.cc",
     "src/chrome/common/ipc_channel_utils.cc",
     "src/chrome/common/ipc_message.cc",
     "src/chrome/common/ipc_message_utils.cc",
@@ -54,14 +55,18 @@ if CONFIG["TARGET_KERNEL"] == "WINNT":
         "src/chrome/common/process_watcher_win.cc",
     ]
 
-elif not CONFIG["MOZ_SYSTEM_LIBEVENT"]:
-    DIRS += ["src/third_party"]
+elif CONFIG["TARGET_KERNEL"] != "Darwin":
+    UNIFIED_SOURCES += [
+        "src/base/message_pump_libevent.cc",
+    ]
+
+    if not CONFIG["MOZ_SYSTEM_LIBEVENT"]:
+        DIRS += ["src/third_party"]
 
 if CONFIG["TARGET_KERNEL"] != "WINNT":
     UNIFIED_SOURCES += [
         "src/base/condition_variable_posix.cc",
         "src/base/lock_impl_posix.cc",
-        "src/base/message_pump_libevent.cc",
         "src/base/platform_thread_posix.cc",
         "src/base/process_util_posix.cc",
         "src/base/string16.cc",
@@ -81,10 +86,12 @@ if CONFIG["TARGET_KERNEL"] != "WINNT":
 
 if CONFIG["TARGET_KERNEL"] == "Darwin":
     UNIFIED_SOURCES += [
+        "src/base/message_pump_kqueue.cc",
         "src/base/message_pump_mac.mm",
         "src/base/scoped_nsautorelease_pool.mm",
         "src/base/sys_string_conversions_mac.mm",
         "src/base/time_mac.cc",
+        "src/chrome/common/ipc_channel_mach.cc",
         "src/chrome/common/mach_ipc_mac.cc",
         "src/chrome/common/mach_message_source_mac.cc",
     ]
@@ -97,7 +104,6 @@ if CONFIG["TARGET_KERNEL"] == "Darwin":
 if CONFIG["TARGET_OS"] == "OSX":
     UNIFIED_SOURCES += [
         "src/base/chrome_application_mac.mm",
-        "src/base/mac_util.mm",
         "src/base/process_util_mac.mm",
     ]
 

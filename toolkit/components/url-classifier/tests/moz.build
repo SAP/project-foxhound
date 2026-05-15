@@ -14,5 +14,4 @@ TESTING_JS_MODULES += [
     "UrlClassifierTestUtils.sys.mjs",
 ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["gtest"]
+TEST_DIRS += ["gtest"]

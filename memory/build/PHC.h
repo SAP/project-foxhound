@@ -7,7 +7,6 @@
 #ifndef PHC_h
 #define PHC_h
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -129,6 +128,10 @@ enum PHCState {
 
 MOZ_JEMALLOC_API void SetPHCState(PHCState aState);
 
+// Set the maximum allowed memory usage of PHC, including fragmentation and
+// metadata.
+MOZ_JEMALLOC_API void SetPHCSize(size_t aNumPHCBytes);
+
 MOZ_JEMALLOC_API void SetPHCProbabilities(int64_t aAvgDelayFirst,
                                           int64_t aAvgDelayNormal,
                                           int64_t aAvgDelayPageReuse);
@@ -141,6 +144,9 @@ struct MemoryUsage {
   // The amount of memory lost due to rounding allocation sizes up to the
   // nearest page.  AKA internal fragmentation.
   size_t mFragmentationBytes = 0;
+
+  // The amount of memory allocated from PHC.
+  size_t mAllocatedBytes = 0;
 };
 
 MOZ_JEMALLOC_API void PHCMemoryUsage(MemoryUsage& aMemoryUsage);
@@ -156,5 +162,8 @@ MOZ_JEMALLOC_API void GetPHCStats(PHCStats& aStats);
 
 }  // namespace phc
 }  // namespace mozilla
+
+// Initialise PHC (called from mozjemalloc's initialisation.
+void phc_init();
 
 #endif /* PHC_h */

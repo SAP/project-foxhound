@@ -1,0 +1,9 @@
+import android.support.annotation.MainThread;
+import not_allowed.Annotation;
+
+package test {
+  public class TestClass {
+    method public @MainThread void testMethod(@Annotation int);
+  }
+}
+

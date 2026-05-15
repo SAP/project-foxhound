@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_DeviceMotionEvent_h_
 #define mozilla_dom_DeviceMotionEvent_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/DeviceMotionEventBinding.h"
 #include "mozilla/dom/Event.h"
 

@@ -5,27 +5,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkerLoadInfo.h"
-#include "WorkerPrivate.h"
 
+#include "WorkerPrivate.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsContentUtils.h"
+#include "nsIBrowserChild.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsICookieJarSettings.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIProtocolHandler.h"
 #include "nsIReferrerInfo.h"
-#include "nsIBrowserChild.h"
-#include "nsScriptSecurityManager.h"
 #include "nsNetUtil.h"
+#include "nsScriptSecurityManager.h"
 
 namespace mozilla {
 

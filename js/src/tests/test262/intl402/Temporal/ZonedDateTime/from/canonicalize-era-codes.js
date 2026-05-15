@@ -1,33 +1,33 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.zoneddatetime.from
 description: Calendar era code is canonicalized
-features: [Temporal]
+features: [Temporal, Intl.Era-monthcode]
 ---*/
 
 const date1 = Temporal.ZonedDateTime.from({
   calendar: "gregory",
-  era: "ce",
+  era: "ad",
   eraYear: 2024,
   year: 2024,
   month: 1,
   day: 1,
   timeZone: "UTC",
 });
-assert.sameValue(date1.era, "gregory", "'ce' is accepted as alias for 'gregory'");
+assert.sameValue(date1.era, "ce", "'ad' is accepted as alias for 'ce'");
 
 const date2 = Temporal.ZonedDateTime.from({
   calendar: "gregory",
-  era: "bce",
+  era: "bc",
   eraYear: 44,
   year: -43,
   month: 3,
   day: 15,
   timeZone: "Europe/Rome",
 });
-assert.sameValue(date2.era, "gregory-inverse", "'bce' is accepted as alias for 'gregory-inverse'");
+assert.sameValue(date2.era, "bce", "'bc' is accepted as alias for 'bce'");
 
 reportCompare(0, 0);

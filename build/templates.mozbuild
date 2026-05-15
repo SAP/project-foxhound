@@ -123,10 +123,13 @@ def RustLibrary(name, features=None, output_category=None, is_gkrust=False):
 
 
 @template
-def RustProgram(name):
+def RustProgram(name, features=None):
     """Template for Rust programs."""
     RUST_PROGRAMS += [name]
     DisableWarningsForRust()
+
+    if features:
+        RUST_PROGRAM_FEATURES = features
 
 
 @template
@@ -202,6 +205,16 @@ def HostRustLibrary(name, features=None):
 
 
 @template
+def HostRustProgram(name, features=None):
+    """Template for host Rust programs."""
+    HOST_RUST_PROGRAMS += [name]
+    DisableWarningsForRust()
+
+    if features:
+        HOST_RUST_PROGRAM_FEATURES = features
+
+
+@template
 def DisableStlWrapping():
     COMPILE_FLAGS["STL"] = []
 
@@ -254,6 +267,19 @@ def GeneratedFile(name, *names, **kwargs):
     generated_file.inputs = inputs
     generated_file.flags = flags
     generated_file.force = force
+
+
+@template
+def LegacyTest(*args, **kwargs):
+    """Add one test to LEGACY_RUN_TESTS with the given attributes."""
+
+    LEGACY_RUN_TESTS += [{"args": args}]
+    test = LEGACY_RUN_TESTS[-1]
+    test["env"] = kwargs.pop("env", None)
+    test["description"] = kwargs.pop("description", None)
+    test["depends"] = kwargs.pop("depends", ())
+    if kwargs:
+        error("Unrecognized argument(s) to LegacyTest: %s" % ", ".join(kwargs))
 
 
 @template

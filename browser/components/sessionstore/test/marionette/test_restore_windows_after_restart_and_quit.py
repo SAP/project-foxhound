@@ -21,9 +21,7 @@ class TestSessionStoreEnabledAllWindows(SessionStoreTestCase):
 
         :param include_private: Whether to open private windows.
         """
-        super(TestSessionStoreEnabledAllWindows, self).setUp(
-            include_private=include_private, startup_page=3
-        )
+        super().setUp(include_private=include_private, startup_page=3)
 
     def test_with_variety(self):
         """Test opening and restoring both standard and private windows.
@@ -48,9 +46,7 @@ class TestSessionStoreEnabledAllWindows(SessionStoreTestCase):
 
 class TestSessionStoreEnabledNoPrivateWindows(TestSessionStoreEnabledAllWindows):
     def setUp(self):
-        super(TestSessionStoreEnabledNoPrivateWindows, self).setUp(
-            include_private=False
-        )
+        super().setUp(include_private=False)
 
 
 class TestSessionStoreDisabled(SessionStoreTestCase):

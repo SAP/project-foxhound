@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <shlwapi.h>
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"

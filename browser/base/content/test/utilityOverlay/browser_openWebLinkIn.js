@@ -162,3 +162,24 @@ add_task(async function test_open_non_private_tab_from_only_private_window() {
   await BrowserTestUtils.closeWindow(nonPrivateWindow);
   await BrowserTestUtils.closeWindow(privateWindow);
 });
+
+add_task(async function test_open_ai_window_tab_in_ai_window() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.smartwindow.enabled", true]],
+  });
+  let win = await BrowserTestUtils.openNewBrowserWindow({ aiWindow: true });
+
+  let tabPromise = BrowserTestUtils.waitForNewTab(win.gBrowser);
+  win.BrowserCommands.openTab({});
+  let tab = await tabPromise;
+
+  Assert.equal(
+    tab.linkedBrowser.currentURI.spec,
+    AIWindow.newTabURL,
+    "New tab in an AI Window should load AIWindow.newTabURL"
+  );
+
+  await BrowserTestUtils.removeTab(tab);
+  await BrowserTestUtils.closeWindow(win);
+  await SpecialPowers.popPrefEnv();
+});

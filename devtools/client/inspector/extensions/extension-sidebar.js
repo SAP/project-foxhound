@@ -36,15 +36,15 @@ const {
  *
  * @param {Inspector} inspector
  *        The inspector where the sidebar should be hooked to.
- * @param {Object} options
- * @param {String} options.id
+ * @param {object} options
+ * @param {string} options.id
  *        The unique id of the sidebar.
- * @param {String} options.title
+ * @param {string} options.title
  *        The title of the sidebar.
  */
-class ExtensionSidebar {
+class ExtensionSidebar extends EventEmitter {
   constructor(inspector, { id, title }) {
-    EventEmitter.decorate(this);
+    super();
     this.inspector = inspector;
     this.store = inspector.store;
     this.id = id;

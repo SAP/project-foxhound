@@ -11,7 +11,7 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper
 import org.mozilla.fenix.helpers.AppAndSystemHelper.clickSystemHomeScreenShortcutAddButton
 import org.mozilla.fenix.helpers.DataGenerationHelper
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.restartApp
 import org.mozilla.fenix.helpers.TestSetup
@@ -25,7 +25,7 @@ class SettingsPrivateBrowsingTest : TestSetup() {
     private val pageShortcutName = DataGenerationHelper.generateRandomString(5)
 
     @get:Rule
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(
                 skipOnboarding = true,
@@ -38,9 +38,9 @@ class SettingsPrivateBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/555822
     @Test
     fun verifyPrivateBrowsingMenuItemsTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openPrivateBrowsingSubMenu {
             verifyAddPrivateBrowsingShortcutButton()
             verifyOpenLinksInPrivateTab()
@@ -53,36 +53,47 @@ class SettingsPrivateBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/420086
     @Test
     fun launchLinksInAPrivateTabTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.getGenericAsset(2)
 
-        setOpenLinksInPrivateOn()
-
-        homeScreen {
-            verifyHomeComponent(activityTestRule)
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openPrivateBrowsingSubMenu {
+            verifyOpenLinksInPrivateTabEnabled()
+            clickOpenLinksInPrivateTabSwitch()
+        }.goBack {
+        }.goBack(composeTestRule) {
         }
 
-        AppAndSystemHelper.openAppFromExternalLink(firstWebPage.url.toString())
+        homeScreen(composeTestRule) {
+            verifyHomeComponent()
+        }
 
-        browserScreen {
+        AppAndSystemHelper.openAppFromExternalLink(composeTestRule, firstWebPage.url.toString())
+
+        browserScreen(composeTestRule) {
             verifyUrl(firstWebPage.url.toString())
-        }.openTabDrawer(activityTestRule) {
+        }.openTabDrawer(composeTestRule) {
             verifyPrivateBrowsingButtonIsSelected()
         }.closeTabDrawer {
-        }.goToHomescreen(activityTestRule) { }
-
-        setOpenLinksInPrivateOff()
-
-        homeScreen {
-            verifyHomeComponent(activityTestRule)
+        }.goToHomescreen(isPrivateModeEnabled = true) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openPrivateBrowsingSubMenu {
+            clickOpenLinksInPrivateTabSwitch()
+            verifyOpenLinksInPrivateTabOff()
+        }.goBack {
+        }.goBack(composeTestRule) {
+            verifyHomeComponent()
         }
 
         // We need to open a different link, otherwise it will open the same session
-        AppAndSystemHelper.openAppFromExternalLink(secondWebPage.url.toString())
+        AppAndSystemHelper.openAppFromExternalLink(composeTestRule, secondWebPage.url.toString())
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             verifyUrl(secondWebPage.url.toString())
-        }.openTabDrawer(activityTestRule) {
+        }.openTabDrawer(composeTestRule) {
             verifyNormalBrowsingButtonIsSelected()
         }
     }
@@ -90,18 +101,27 @@ class SettingsPrivateBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/555776
     @Test
     fun launchPageShortcutInPrivateBrowsingTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        setOpenLinksInPrivateOn()
-
-        homeScreen {
-            verifyHomeComponent(activityTestRule)
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openPrivateBrowsingSubMenu {
+            verifyOpenLinksInPrivateTabEnabled()
+            clickOpenLinksInPrivateTabSwitch()
+        }.goBack {
+        }.goBack(composeTestRule) {
         }
 
-        navigationToolbar {
+        homeScreen(composeTestRule) {
+            verifyHomeComponent()
+        }
+
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openThreeDotMenu {
-        }.openAddToHomeScreen {
+            clickTheMoreButton()
+        }.clickAddToHomeScreenButton {
             addShortcutName(pageShortcutName)
             clickAddShortcutButton()
             clickSystemHomeScreenShortcutAddButton()
@@ -110,30 +130,38 @@ class SettingsPrivateBrowsingTest : TestSetup() {
 
         mDevice.waitForIdle()
         // We need to close the existing tab here, to open a different session
-        restartApp(activityTestRule.activityRule)
+        restartApp(composeTestRule.activityRule)
 
-        browserScreen {
-        }.openTabDrawer(activityTestRule) {
+        browserScreen(composeTestRule) {
+        }.openTabDrawer(composeTestRule) {
             verifyNormalBrowsingButtonIsSelected()
             closeTab()
         }
 
-        addToHomeScreen {
+        addToHomeScreen(composeTestRule) {
         }.searchAndOpenHomeScreenShortcut(pageShortcutName) {
-        }.openTabDrawer(activityTestRule) {
+        }.openTabDrawer(composeTestRule) {
             verifyPrivateBrowsingButtonIsSelected()
             closeTab()
         }
 
-        setOpenLinksInPrivateOff()
-
-        homeScreen {
-            verifyHomeComponent(activityTestRule)
+        homeScreen(composeTestRule) {
+        }.openThreeDotMenu {
+        }.clickSettingsButton {
+        }.openPrivateBrowsingSubMenu {
+            clickOpenLinksInPrivateTabSwitch()
+            verifyOpenLinksInPrivateTabOff()
+        }.goBack {
+        }.goBack(composeTestRule) {
         }
 
-        addToHomeScreen {
+        homeScreen(composeTestRule) {
+            verifyHomeComponent()
+        }
+
+        addToHomeScreen(composeTestRule) {
         }.searchAndOpenHomeScreenShortcut(pageShortcutName) {
-        }.openTabDrawer(activityTestRule) {
+        }.openTabDrawer(composeTestRule) {
             verifyNormalBrowsingButtonIsSelected()
         }
     }
@@ -141,42 +169,17 @@ class SettingsPrivateBrowsingTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/414583
     @Test
     fun addPrivateBrowsingShortcutFromSettingsTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openPrivateBrowsingSubMenu {
             cancelPrivateShortcutAddition()
             addPrivateShortcutToHomescreen()
             verifyPrivateBrowsingShortcutIcon()
-        }.openPrivateBrowsingShortcut {
-            verifySearchView()
-        }.openBrowser {
-        }.openTabDrawer(activityTestRule) {
-            verifyPrivateBrowsingButtonIsSelected()
+        }.openPrivateBrowsingShortcut(composeTestRule) {
         }
-    }
-}
-
-private fun setOpenLinksInPrivateOn() {
-    homeScreen {
-    }.openThreeDotMenu {
-    }.openSettings {
-    }.openPrivateBrowsingSubMenu {
-        verifyOpenLinksInPrivateTabEnabled()
-        clickOpenLinksInPrivateTabSwitch()
-    }.goBack {
-    }.goBack {
-    }
-}
-
-private fun setOpenLinksInPrivateOff() {
-    homeScreen {
-    }.openThreeDotMenu {
-    }.openSettings {
-    }.openPrivateBrowsingSubMenu {
-        clickOpenLinksInPrivateTabSwitch()
-        verifyOpenLinksInPrivateTabOff()
-    }.goBack {
-    }.goBack {
+        homeScreen(composeTestRule) {
+            verifyIfInPrivateOrNormalMode(privateBrowsingEnabled = true)
+        }
     }
 }

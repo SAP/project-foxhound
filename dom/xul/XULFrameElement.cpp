@@ -4,16 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/XULFrameElement.h"
+
+#include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/HTMLIFrameElement.h"
+#include "mozilla/dom/UnbindContext.h"
+#include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/dom/XULFrameElementBinding.h"
 #include "nsCOMPtr.h"
+#include "nsFrameLoader.h"
 #include "nsIBrowser.h"
 #include "nsIContent.h"
 #include "nsIOpenWindowInfo.h"
-#include "nsFrameLoader.h"
-#include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/dom/HTMLIFrameElement.h"
-#include "mozilla/dom/WindowProxyHolder.h"
-#include "mozilla/dom/XULFrameElement.h"
-#include "mozilla/dom/XULFrameElementBinding.h"
 
 namespace mozilla::dom {
 
@@ -149,7 +153,7 @@ void XULFrameElement::SwapFrameLoaders(nsFrameLoaderOwner* aOtherLoaderOwner,
 nsresult XULFrameElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   MOZ_TRY(nsXULElement::BindToTree(aContext, aParent));
 
-  if (IsInComposedDoc()) {
+  if (IsInComposedDoc() && !aContext.IsMove()) {
     NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                  "Missing a script blocker!");
     // We're in a document now.  Kick off the frame load.
@@ -160,10 +164,12 @@ nsresult XULFrameElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 }
 
 void XULFrameElement::UnbindFromTree(UnbindContext& aContext) {
-  if (RefPtr<nsFrameLoader> frameLoader = GetFrameLoader()) {
-    frameLoader->Destroy();
+  if (!aContext.IsMove()) {
+    if (RefPtr<nsFrameLoader> frameLoader = GetFrameLoader()) {
+      frameLoader->Destroy();
+      mFrameLoader = nullptr;
+    }
   }
-  mFrameLoader = nullptr;
 
   nsXULElement::UnbindFromTree(aContext);
 }
@@ -189,6 +195,11 @@ void XULFrameElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
     } else if (aName == nsGkAtoms::disablefullscreen && mFrameLoader) {
       if (auto* bc = mFrameLoader->GetExtantBrowsingContext()) {
         MOZ_ALWAYS_SUCCEEDS(bc->SetFullscreenAllowedByOwner(!aValue));
+      }
+    } else if (aName == nsGkAtoms::transparent && mFrameLoader &&
+               (!!aValue != !!aOldValue)) {
+      if (auto* bp = mFrameLoader->GetBrowserParent()) {
+        bp->NotifyTransparencyChanged();
       }
     }
   }

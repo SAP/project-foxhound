@@ -9,7 +9,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
-  "nsINetworkLinkService"
+  Ci.nsINetworkLinkService
 );
 
 function getLinkType() {

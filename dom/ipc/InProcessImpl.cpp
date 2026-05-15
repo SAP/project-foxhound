@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/InProcessParent.h"
+#include "mozilla/Services.h"
 #include "mozilla/dom/InProcessChild.h"
+#include "mozilla/dom/InProcessParent.h"
 #include "mozilla/dom/JSProcessActorBinding.h"
 #include "nsIObserverService.h"
-#include "mozilla/Services.h"
 
 using namespace mozilla::ipc;
 

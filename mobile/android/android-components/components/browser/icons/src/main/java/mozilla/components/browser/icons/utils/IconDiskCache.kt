@@ -50,7 +50,7 @@ class IconDiskCache :
 
     override fun getResources(context: Context, request: IconRequest): List<IconRequest.Resource> {
         val key = createKey(request.url)
-        val snapshot: DiskLruCache.Snapshot = getIconResourcesCache(context).get(key)
+        val snapshot: DiskLruCache.Snapshot = getIconResourcesCache(context)?.get(key)
             ?: return emptyList()
 
         try {
@@ -73,7 +73,7 @@ class IconDiskCache :
             synchronized(iconResourcesCacheWriteLock) {
                 val key = createKey(request.url)
                 val editor = getIconResourcesCache(context)
-                    .edit(key) ?: return
+                    ?.edit(key) ?: return
 
                 val data = request.resources.toJSON().toString()
                 editor.set(0, data)
@@ -94,7 +94,7 @@ class IconDiskCache :
     override fun getIconData(context: Context, resource: IconRequest.Resource): ByteArray? {
         val key = createKey(resource.url)
 
-        val snapshot = getIconDataCache(context).get(key)
+        val snapshot = getIconDataCache(context)?.get(key)
             ?: return null
 
         return try {
@@ -117,7 +117,7 @@ class IconDiskCache :
         try {
             synchronized(iconDataCacheWriteLock) {
                 val editor = getIconDataCache(context)
-                    .edit(createKey(resource.url)) ?: return
+                    ?.edit(createKey(resource.url)) ?: return
 
                 editor.newOutputStream(0).use { stream ->
                     bitmap.compress(compressFormat, WEBP_QUALITY, stream)
@@ -131,32 +131,42 @@ class IconDiskCache :
     }
 
     internal fun clear(context: Context) {
-        try {
-            getIconResourcesCache(context).delete()
-        } catch (e: IOException) {
-            logger.warn("Icon resource cache could not be cleared. Perhaps there is none?")
+        synchronized(iconResourcesCacheWriteLock) {
+            try {
+                getIconResourcesCache(context)?.delete()
+            } catch (e: IOException) {
+                logger.warn("Icon resource cache could not be cleared. Perhaps there is none?")
+            }
+
+            iconResourcesCache = null
         }
 
-        try {
-            getIconDataCache(context).delete()
-        } catch (e: IOException) {
-            logger.warn("Icon data cache could not be cleared. Perhaps there is none?")
-        }
+        synchronized(iconDataCacheWriteLock) {
+            try {
+                getIconDataCache(context)?.delete()
+            } catch (e: IOException) {
+                logger.warn("Icon data cache could not be cleared. Perhaps there is none?")
+            }
 
-        iconResourcesCache = null
-        iconDataCache = null
+            iconDataCache = null
+        }
     }
 
     @Synchronized
-    private fun getIconResourcesCache(context: Context): DiskLruCache {
+    private fun getIconResourcesCache(context: Context): DiskLruCache? {
         iconResourcesCache?.let { return it }
 
-        return DiskLruCache.open(
-            getIconResourcesCacheDirectory(context),
-            RESOURCES_DISK_CACHE_VERSION,
-            1,
-            MAXIMUM_CACHE_RESOURCES_BYTES,
-        ).also { iconResourcesCache = it }
+        return try {
+            DiskLruCache.open(
+                getIconResourcesCacheDirectory(context),
+                RESOURCES_DISK_CACHE_VERSION,
+                1,
+                MAXIMUM_CACHE_RESOURCES_BYTES,
+            ).also { iconResourcesCache = it }
+        } catch (e: IOException) {
+            logger.warn("Icon resources cache could not be created.", e)
+            null
+        }
     }
 
     private fun getIconResourcesCacheDirectory(context: Context): File {
@@ -165,15 +175,20 @@ class IconDiskCache :
     }
 
     @Synchronized
-    private fun getIconDataCache(context: Context): DiskLruCache {
+    private fun getIconDataCache(context: Context): DiskLruCache? {
         iconDataCache?.let { return it }
 
-        return DiskLruCache.open(
-            getIconDataCacheDirectory(context),
-            ICON_DATA_DISK_CACHE_VERSION,
-            1,
-            MAXIMUM_CACHE_ICON_DATA_BYTES,
-        ).also { iconDataCache = it }
+        return try {
+            DiskLruCache.open(
+                getIconDataCacheDirectory(context),
+                ICON_DATA_DISK_CACHE_VERSION,
+                1,
+                MAXIMUM_CACHE_ICON_DATA_BYTES,
+            ).also { iconDataCache = it }
+        } catch (e: IOException) {
+            logger.warn("Icon data cache could not be created.", e)
+            null
+        }
     }
 
     private fun getIconDataCacheDirectory(context: Context): File {

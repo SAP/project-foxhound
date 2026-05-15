@@ -4,9 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ActorsChild.h"
+
+#include <mozIRemoteLazyInputStream.h>
+
 #include <type_traits>
 
-#include "ActorsChild.h"
 #include "BackgroundChildImpl.h"
 #include "IDBDatabase.h"
 #include "IDBEvents.h"
@@ -15,32 +18,33 @@
 #include "IDBObjectStore.h"
 #include "IDBRequest.h"
 #include "IDBTransaction.h"
+#include "IndexedDBCommon.h"
 #include "IndexedDatabase.h"
 #include "IndexedDatabaseInlines.h"
-#include "IndexedDBCommon.h"
+#include "ProfilerHelpers.h"
+#include "ReportInternalError.h"
+#include "ThreadLocal.h"
 #include "js/Array.h"               // JS::NewArrayObject, JS::SetArrayLength
 #include "js/Date.h"                // JS::NewDateObject, JS::TimeClip
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty
-#include <mozIRemoteLazyInputStream.h>
 #include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/dom/BlobImpl.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/PermissionMessageUtils.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/indexedDB/PBackgroundIDBDatabaseFileChild.h"
-#include "mozilla/dom/IPCBlobUtils.h"
-#include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/dom/BlobImpl.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/IPCBlobUtils.h"
+#include "mozilla/dom/PermissionMessageUtils.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/indexedDB/PBackgroundIDBDatabaseFileChild.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncInputStream.h"
@@ -50,9 +54,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsThreadUtils.h"
 #include "nsTraceRefcnt.h"
-#include "ProfilerHelpers.h"
-#include "ReportInternalError.h"
-#include "ThreadLocal.h"
 
 #ifdef DEBUG
 #  include "IndexedDatabaseManager.h"
@@ -900,7 +901,7 @@ void BackgroundFactoryRequestChild::HandleResponse(
   IDBDatabase* const database = [this, databaseActor]() -> IDBDatabase* {
     IDBDatabase* database = databaseActor->GetDOMObject();
     if (!database) {
-      Unused << this;
+      (void)this;
 
       if (NS_WARN_IF(!databaseActor->EnsureDOMObject())) {
         return nullptr;
@@ -1191,11 +1192,10 @@ BackgroundDatabaseChild::RecvPBackgroundIDBVersionChangeTransactionConstructor(
     // XXX This is a hack to ensure that transaction/request serial numbers stay
     // in sync between parent and child. Actually, it might be better to create
     // an IDBTransaction in the child and abort that.
-    Unused
-        << mozilla::ipc::BackgroundChildImpl::GetThreadLocalForCurrentThread()
-               ->mIndexedDBThreadLocal->NextTransactionSN(
-                   IDBTransaction::Mode::VersionChange);
-    Unused << IDBRequest::NextSerialNumber();
+    (void)mozilla::ipc::BackgroundChildImpl::GetThreadLocalForCurrentThread()
+        ->mIndexedDBThreadLocal->NextTransactionSN(
+            IDBTransaction::Mode::VersionChange);
+    (void)IDBRequest::NextSerialNumber();
 
     // No reason to IPC_FAIL here.
     return IPC_OK();
@@ -2366,7 +2366,7 @@ void BackgroundCursorChild<CursorType>::SendContinueInternal(
           if constexpr (!CursorTypeTraits<CursorType>::IsObjectStoreCursor) {
             currentObjectStoreKey = currentCachedResponse.mObjectStoreKey;
           } else {
-            Unused << currentObjectStoreKey;
+            (void)currentObjectStoreKey;
           }
         }
         return res;
@@ -2735,9 +2735,9 @@ mozilla::ipc::IPCResult BackgroundCursorChild<CursorType>::RecvResponse(
   MaybeCollectGarbageOnIPCMessage();
 
   const RefPtr<IDBRequest> request = std::move(mStrongRequest);
-  Unused << request;  // XXX see Bug 1605075
+  (void)request;  // XXX see Bug 1605075
   const RefPtr<IDBCursor> cursor = std::move(mStrongCursor);
-  Unused << cursor;  // XXX see Bug 1605075
+  (void)cursor;  // XXX see Bug 1605075
 
   const auto transaction =
       SafeRefPtr{&mTransaction.ref(), AcquireStrongRefFromRawPtr{}};

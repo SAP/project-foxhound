@@ -2,8 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef CellData_h__
-#define CellData_h__
+#ifndef CellData_h_
+#define CellData_h_
 
 #include <stdint.h>
 
@@ -164,7 +164,7 @@ class BCData {
  public:
   BCData();
 
-  ~BCData();
+  ~BCData() = default;
 
   nscoord GetIStartEdge(BCBorderOwner& aOwner, bool& aStart) const;
 
@@ -340,8 +340,6 @@ inline BCData::BCData() {
   mCornerSide = static_cast<uint8_t>(mozilla::LogicalSide::BStart);
   mCornerBevel = false;
 }
-
-inline BCData::~BCData() = default;
 
 inline nscoord BCData::GetIStartEdge(BCBorderOwner& aOwner,
                                      bool& aStart) const {

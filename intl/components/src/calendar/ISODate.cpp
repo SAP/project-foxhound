@@ -6,7 +6,6 @@
 #include "mozilla/intl/calendar/ISODate.h"
 
 #include <array>
-#include <stddef.h>
 #include <stdint.h>
 
 namespace mozilla::intl::calendar {

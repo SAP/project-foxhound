@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAboutCacheEntry_h__
-#define nsAboutCacheEntry_h__
+#ifndef nsAboutCacheEntry_h_
+#define nsAboutCacheEntry_h_
 
 #include "nsIAboutModule.h"
 #include "nsICacheEntryOpenCallback.h"
@@ -83,4 +83,4 @@ class nsAboutCacheEntry final : public nsIAboutModule {
    0x438f,                                    \
    {0x9e, 0x50, 0xca, 0x01, 0x66, 0xe6, 0x37, 0x88}}
 
-#endif  // nsAboutCacheEntry_h__
+#endif  // nsAboutCacheEntry_h_

@@ -13,6 +13,7 @@
 #include "AudioNodeTrack.h"
 #include "CubebUtils.h"
 #include "MediaTrackGraph.h"
+#include "Tracing.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/AudioDestinationNodeBinding.h"
 #include "mozilla/dom/BaseAudioContextBinding.h"
@@ -23,7 +24,6 @@
 #include "mozilla/dom/power/PowerManagerService.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "Tracing.h"
 
 extern mozilla::LazyLogModule gAudioChannelLog;
 

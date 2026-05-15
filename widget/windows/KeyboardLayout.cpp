@@ -749,10 +749,10 @@ static const nsCString ToString(const MSG& aMSG) {
           "transition state=%s",
           GetVirtualKeyCodeName(aMSG.wParam).get(), aMSG.lParam & 0xFFFF,
           WinUtils::GetScanCode(aMSG.lParam),
-          GetBoolName(WinUtils::IsExtendedScanCode(aMSG.lParam)),
-          GetBoolName((aMSG.lParam & (1 << 29)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 30)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 31)) != 0));
+          TrueOrFalse(WinUtils::IsExtendedScanCode(aMSG.lParam)),
+          TrueOrFalse((aMSG.lParam & (1 << 29)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 30)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 31)) != 0));
       break;
     case WM_CHAR:
     case WM_DEADCHAR:
@@ -766,10 +766,10 @@ static const nsCString ToString(const MSG& aMSG) {
           "transition state=%s",
           GetCharacterCodeName(aMSG.wParam).get(), aMSG.lParam & 0xFFFF,
           WinUtils::GetScanCode(aMSG.lParam),
-          GetBoolName(WinUtils::IsExtendedScanCode(aMSG.lParam)),
-          GetBoolName((aMSG.lParam & (1 << 29)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 30)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 31)) != 0));
+          TrueOrFalse(WinUtils::IsExtendedScanCode(aMSG.lParam)),
+          TrueOrFalse((aMSG.lParam & (1 << 29)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 30)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 31)) != 0));
       break;
     case WM_APPCOMMAND:
       result.AppendPrintf(
@@ -1318,11 +1318,11 @@ NativeKey::NativeKey(nsWindow* aWidget, const MSG& aMessage,
            ToString(mShiftedString).get(), ToString(mUnshiftedString).get(),
            GetCharacterCodeName(mShiftedLatinChar).get(),
            GetCharacterCodeName(mUnshiftedLatinChar).get(), mScanCode,
-           GetBoolName(mIsExtended), GetBoolName(mIsRepeat),
-           GetBoolName(mIsDeadKey), GetBoolName(mIsPrintableKey),
-           GetBoolName(mIsSkippableInRemoteProcess),
-           GetBoolName(mCharMessageHasGone),
-           GetBoolName(mIsOverridingKeyboardLayout)));
+           TrueOrFalse(mIsExtended), TrueOrFalse(mIsRepeat),
+           TrueOrFalse(mIsDeadKey), TrueOrFalse(mIsPrintableKey),
+           TrueOrFalse(mIsSkippableInRemoteProcess),
+           TrueOrFalse(mCharMessageHasGone),
+           TrueOrFalse(mIsOverridingKeyboardLayout)));
 }
 
 void NativeKey::InitIsSkippableForKeyOrChar(const MSG& aLastKeyMSG) {
@@ -1601,7 +1601,7 @@ void NativeKey::InitWithKeyOrChar() {
                this, ToString(charMsg).get()));
       NS_WARNING_ASSERTION(
           charMsg.hwnd == mMsg.hwnd,
-          "The retrieved char message was targeted to differnet window");
+          "The retrieved char message was targeted to different window");
       mFollowingCharMsgs.AppendElement(charMsg);
     }
     if (mFollowingCharMsgs.Length() == 1) {
@@ -1745,7 +1745,7 @@ void NativeKey::InitWithAppCommand() {
     mKeyNameIndex = aKeyNameIndex;                                      \
     break;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_APPCOMMAND_TO_DOM_KEY_NAME_INDEX
 
@@ -2137,7 +2137,7 @@ nsEventStatus NativeKey::InitKeyEvent(
        GetDOMKeyCodeName(aKeyEvent.mKeyCode).get(),
        GetKeyLocationName(aKeyEvent.mLocation).get(),
        GetModifiersName(aKeyEvent.mModifiers).get(),
-       GetBoolName(aKeyEvent.DefaultPrevented())));
+       TrueOrFalse(aKeyEvent.DefaultPrevented())));
 
   return aKeyEvent.DefaultPrevented() ? nsEventStatus_eConsumeNoDefault
                                       : nsEventStatus_eIgnore;
@@ -2230,7 +2230,7 @@ bool NativeKey::DispatchCommandEvent(uint32_t aEventCommand) const {
       gKeyLog, LogLevel::Info,
       ("%p   NativeKey::DispatchCommandEvent(), dispatched app command event, "
        "result=%s, mWidget->Destroyed()=%s",
-       this, GetBoolName(ok), GetBoolName(mWidget->Destroyed())));
+       this, SucceededOrFailed(ok), TrueOrFalse(mWidget->Destroyed())));
   return ok;
 }
 
@@ -2306,7 +2306,7 @@ bool NativeKey::HandleAppCommandMessage() const {
     MOZ_LOG(gKeyLog, LogLevel::Info,
             ("%p   NativeKey::HandleAppCommandMessage(), keydown event was "
              "dispatched, consumed=%s",
-             this, GetBoolName(consumed)));
+             this, TrueOrFalse(consumed)));
     sDispatchedKeyOfAppCommand = mVirtualKeyCode;
     if (mWidget->Destroyed()) {
       MOZ_LOG(
@@ -2553,7 +2553,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
         gKeyLog, LogLevel::Info,
         ("%p   NativeKey::HandleKeyDownMessage(), dispatched keydown event, "
          "dispatched=%s, defaultPrevented=%s",
-         this, GetBoolName(dispatched), GetBoolName(defaultPrevented)));
+         this, TrueOrFalse(dispatched), TrueOrFalse(defaultPrevented)));
 
     // If IMC wasn't associated to the window but is associated it now (i.e.,
     // focus is moved from a non-editable editor to an editor by keydown
@@ -2621,7 +2621,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
             ("%p   NativeKey::HandleKeyDownMessage(), not dispatching keypress "
              "event because the key was already handled by IME, "
              "defaultPrevented=%s",
-             this, GetBoolName(defaultPrevented)));
+             this, TrueOrFalse(defaultPrevented)));
     return defaultPrevented;
   }
 
@@ -2825,7 +2825,7 @@ bool NativeKey::HandleCharMessage(const MSG& aCharMsg,
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::HandleCharMessage(), dispatched keypress event, "
            "dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -2898,7 +2898,7 @@ bool NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const {
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::HandleKeyUpMessage(), dispatched keyup event, "
            "dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -3482,8 +3482,8 @@ void NativeKey::ComputeInputtingStringWithKeyboardLayout() {
   mUnshiftedString.Clear();
   mShiftedLatinChar = mUnshiftedLatinChar = 0;
 
-  // XXX How about when Win key is pressed?
-  if (!mModKeyState.IsControl() && !mModKeyState.IsAlt()) {
+  if (!mModKeyState.IsControl() && !mModKeyState.IsAlt() &&
+      !mModKeyState.IsWin()) {
     return;
   }
 
@@ -3592,8 +3592,8 @@ bool NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages() const {
   ModifierKeyState modKeyState(mModKeyState);
   if (mCanIgnoreModifierStateAtKeyPress && IsFollowedByPrintableCharMessage()) {
     // If eKeyPress event should cause inputting text in focused editor,
-    // we need to remove Alt and Ctrl state.
-    modKeyState.Unset(MODIFIER_ALT | MODIFIER_CONTROL);
+    // we need to remove Alt and Ctrl and Meta state.
+    modKeyState.Unset(MODIFIER_ALT | MODIFIER_CONTROL | MODIFIER_META);
   }
   // We don't need to send char message here if there are two or more retrieved
   // messages because we need to set each message to each eKeyPress event.
@@ -3617,7 +3617,7 @@ bool NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages() const {
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages(), "
            "dispatched keypress event(s), dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -3666,7 +3666,7 @@ bool NativeKey::DispatchKeyPressEventsWithoutCharMessage() const {
       gKeyLog, LogLevel::Info,
       ("%p   NativeKey::DispatchKeyPressEventsWithoutCharMessage(), dispatched "
        "keypress event(s), dispatched=%s, consumed=%s",
-       this, GetBoolName(dispatched), GetBoolName(consumed)));
+       this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -5081,7 +5081,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                     \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5101,7 +5101,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                  \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_JAPANESE_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5115,7 +5115,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                            \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_KOREAN_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5130,7 +5130,7 @@ KeyNameIndex KeyboardLayout::ConvertNativeKeyCodeToKeyNameIndex(
   case aNativeKey:                                                           \
     return aKeyNameIndex;
 
-#include "NativeKeyToDOMKeyName.h"
+#include "NativeKeyToDOMKeyName.inc"
 
 #undef NS_OTHER_NATIVE_KEY_TO_DOM_KEY_NAME_INDEX
 
@@ -5146,7 +5146,7 @@ CodeNameIndex KeyboardLayout::ConvertScanCodeToCodeNameIndex(UINT aScanCode) {
   case aNativeKey:                                                       \
     return aCodeNameIndex;
 
-#include "NativeKeyToDOMCodeName.h"
+#include "NativeKeyToDOMCodeName.inc"
 
 #undef NS_NATIVE_KEY_TO_DOM_CODE_NAME_INDEX
 

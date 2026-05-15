@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_gamepad_GamepadHapticActuator_h
 #define mozilla_dom_gamepad_GamepadHapticActuator_h
 
-#include "nsCOMPtr.h"
-#include "nsWrapperCache.h"
-#include "mozilla/dom/GamepadHapticActuatorBinding.h"
 #include "mozilla/dom/Gamepad.h"
 #include "mozilla/dom/GamepadHandle.h"
+#include "mozilla/dom/GamepadHapticActuatorBinding.h"
+#include "nsCOMPtr.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 class Promise;

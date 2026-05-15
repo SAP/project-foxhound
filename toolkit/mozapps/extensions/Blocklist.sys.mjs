@@ -11,7 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
-  jexlFilterFunc: "resource://services-settings/remote-settings.sys.mjs",
+  jexlFilterCreator: "resource://services-settings/remote-settings.sys.mjs",
 });
 
 const CascadeFilter = Components.Constructor(
@@ -224,7 +224,7 @@ const Utils = {
    * its comma separated list for it to be valid. Similarly for the
    * xpcomabi property.
    *
-   * @param {Object} item
+   * @param {object} item
    *        The blocklist item.
    * @returns {bool}
    *        Whether the entry matches the current OS.
@@ -249,6 +249,7 @@ const Utils = {
   /**
    * Checks if a version is higher than or equal to the minVersion (if provided)
    * and lower than or equal to the maxVersion (if provided).
+   *
    * @param {string} version
    *        The version to test.
    * @param {string?} minVersion
@@ -273,7 +274,8 @@ const Utils = {
   /**
    * Tests if this versionRange matches the item specified, and has a matching
    * targetApplication id and version.
-   * @param {Object} versionRange
+   *
+   * @param {object} versionRange
    *        The versionRange to check against
    * @param {string} itemVersion
    *        The version of the actual addon/plugin to test for.
@@ -331,7 +333,7 @@ const Utils = {
    * If there *are* targetApplications, if any of them don't have a guid property,
    * assign them the current app's guid.
    *
-   * @param {Object} entry
+   * @param {object} entry
    *                 blocklist entry object.
    */
   ensureVersionRangeIsSane(entry) {
@@ -358,8 +360,9 @@ const Utils = {
 
   /**
    * Create a blocklist URL for the given blockID
-   * @param {String} id the blockID to use
-   * @returns {String} the blocklist URL.
+   *
+   * @param {string} id the blockID to use
+   * @returns {string} the blocklist URL.
    */
   _createBlocklistURL(id) {
     let url = Services.urlFormatter.formatURLPref(PREF_BLOCKLIST_ITEM_URL);
@@ -368,80 +371,101 @@ const Utils = {
 };
 
 /**
+ * This custom filter is used to limit the entries returned
+ * by `RemoteSettings("...").get()` depending on the target app information
+ * defined on entries.
+ */
+class TargetAppFilter {
+  constructor(jexlFilter) {
+    this._jexlFilter = jexlFilter;
+  }
+
+  /**
+   * Filter the entry.
+   *
+   * @param {object} entry
+   *    A Remote Settings record. If it has a filter_expression, we'll pass it
+   *    straight to the default JEXL filter. Otherwise, we'll do custom
+   *    version range processing for target apps.
+   * @returns {?object} The entry if it matches, `null` otherwise.
+   */
+  async filterEntry(entry) {
+    // If the entry has a JEXL filter expression, it should prevail.
+    // The legacy target app mechanism will be kept in place for old entries.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1463377
+    const { filter_expression } = entry;
+    if (filter_expression) {
+      return this._jexlFilter.filterEntry(entry);
+    }
+
+    // Keep entries without target information.
+    if (!("versionRange" in entry)) {
+      return entry;
+    }
+
+    const { versionRange } = entry;
+
+    // Everywhere in this method, we avoid checking the minVersion, because
+    // we want to retain items whose minVersion is higher than the current
+    // app version, so that we have the items around for app updates.
+
+    // Gfx blocklist has a specific versionRange object, which is not a list.
+    if (!Array.isArray(versionRange)) {
+      const { maxVersion = "*" } = versionRange;
+      const matchesRange =
+        Services.vc.compare(lazy.gApp.version, maxVersion) <= 0;
+      return matchesRange ? entry : null;
+    }
+
+    // Iterate the targeted applications, at least one of them must match.
+    // If no target application, keep the entry.
+    if (!versionRange.length) {
+      return entry;
+    }
+    for (const vr of versionRange) {
+      const { targetApplication = [] } = vr;
+      if (!targetApplication.length) {
+        return entry;
+      }
+      for (const ta of targetApplication) {
+        const { guid } = ta;
+        if (!guid) {
+          return entry;
+        }
+        const { maxVersion = "*" } = ta;
+        if (
+          guid == lazy.gAppID &&
+          Services.vc.compare(lazy.gApp.version, maxVersion) <= 0
+        ) {
+          return entry;
+        }
+        if (
+          guid == "toolkit@mozilla.org" &&
+          Services.vc.compare(Services.appinfo.platformVersion, maxVersion) <= 0
+        ) {
+          return entry;
+        }
+      }
+    }
+    // Skip this entry.
+    return null;
+  }
+}
+
+/**
  * This custom filter function is used to limit the entries returned
  * by `RemoteSettings("...").get()` depending on the target app information
  * defined on entries.
  *
- * Note that this is async because `jexlFilterFunc` is async.
+ * Note that this is async because `jexlFilterCreator` is async.
  *
- * @param {Object} entry
- *    A Remote Settings record. If it has a filter_expression, we'll pass it
- *    straight to the default jexlFilterFunc. Otherwise, we'll do custom
- *    version range processing for target apps.
- * @param {...any} rest
- *    Unused, or if we invoke the default jexl filter, forwarded as-is.
- * @returns {Object} The entry if it matches, `null` otherwise.
+ * @param {ClientEnvironment} environment Forarded as-is to the JEXL filter
+ * @param {string}            collectionName Forarded as-is to the JEXL filter
+ * @returns {object} The entry if it matches, `null` otherwise.
  */
-async function targetAppFilter(entry, ...rest) {
-  // If the entry has a JEXL filter expression, it should prevail.
-  // The legacy target app mechanism will be kept in place for old entries.
-  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1463377
-  const { filter_expression } = entry;
-  if (filter_expression) {
-    return lazy.jexlFilterFunc(entry, ...rest);
-  }
-
-  // Keep entries without target information.
-  if (!("versionRange" in entry)) {
-    return entry;
-  }
-
-  const { versionRange } = entry;
-
-  // Everywhere in this method, we avoid checking the minVersion, because
-  // we want to retain items whose minVersion is higher than the current
-  // app version, so that we have the items around for app updates.
-
-  // Gfx blocklist has a specific versionRange object, which is not a list.
-  if (!Array.isArray(versionRange)) {
-    const { maxVersion = "*" } = versionRange;
-    const matchesRange =
-      Services.vc.compare(lazy.gApp.version, maxVersion) <= 0;
-    return matchesRange ? entry : null;
-  }
-
-  // Iterate the targeted applications, at least one of them must match.
-  // If no target application, keep the entry.
-  if (!versionRange.length) {
-    return entry;
-  }
-  for (const vr of versionRange) {
-    const { targetApplication = [] } = vr;
-    if (!targetApplication.length) {
-      return entry;
-    }
-    for (const ta of targetApplication) {
-      const { guid } = ta;
-      if (!guid) {
-        return entry;
-      }
-      const { maxVersion = "*" } = ta;
-      if (
-        guid == lazy.gAppID &&
-        Services.vc.compare(lazy.gApp.version, maxVersion) <= 0
-      ) {
-        return entry;
-      }
-      if (
-        guid == "toolkit@mozilla.org" &&
-        Services.vc.compare(Services.appinfo.platformVersion, maxVersion) <= 0
-      ) {
-        return entry;
-      }
-    }
-  }
-  // Skip this entry.
-  return null;
+async function createTargetAppFilter(environment, collectionName) {
+  const jexlFilter = await lazy.jexlFilterCreator(environment, collectionName);
+  return new TargetAppFilter(jexlFilter);
 }
 
 /**
@@ -475,7 +499,7 @@ const GfxBlocklistRS = {
     this._initialized = true;
     this._client = lazy.RemoteSettings("gfx", {
       bucketName: BLOCKLIST_BUCKET,
-      filterFunc: targetAppFilter,
+      filterCreator: createTargetAppFilter,
     });
     this.checkForEntries = this.checkForEntries.bind(this);
     this._client.on("sync", this.checkForEntries);
@@ -633,6 +657,31 @@ const GfxBlocklistRS = {
 };
 
 /**
+ * A filter which builds on top of TargetAppFilter.
+ */
+class AddonItemBlocklistFilter {
+  constructor(targetAppAndJexlFilter) {
+    this._targetAppAndJexlFilter = targetAppAndJexlFilter;
+  }
+
+  async filterEntry(entry) {
+    if (!(await this._targetAppAndJexlFilter.filterEntry(entry))) {
+      return null;
+    }
+    if (!Utils.matchesOSABI(entry)) {
+      return null;
+    }
+    // Need something to filter on - at least a guid or name (either could be a regex):
+    if (!entry.guid && !entry.name) {
+      let blockID = entry.blockID || entry.id;
+      Cu.reportError(new Error(`Nothing to filter add-on item ${blockID} on`));
+      return null;
+    }
+    return entry;
+  }
+}
+
+/**
  * The extensions blocklist implementation. The JSON objects for extension
  * blocks look something like:
  *
@@ -701,22 +750,6 @@ const ExtensionBlocklistRS = {
     BlocklistTelemetry.recordRSBlocklistLastModified("addons", this._client);
   },
 
-  async _filterItem(entry, ...rest) {
-    if (!(await targetAppFilter(entry, ...rest))) {
-      return null;
-    }
-    if (!Utils.matchesOSABI(entry)) {
-      return null;
-    }
-    // Need something to filter on - at least a guid or name (either could be a regex):
-    if (!entry.guid && !entry.name) {
-      let blockID = entry.blockID || entry.id;
-      Cu.reportError(new Error(`Nothing to filter add-on item ${blockID} on`));
-      return null;
-    }
-    return entry;
-  },
-
   sync() {
     this.ensureInitialized();
     return this._client.sync();
@@ -729,7 +762,13 @@ const ExtensionBlocklistRS = {
     this._initialized = true;
     this._client = lazy.RemoteSettings("addons", {
       bucketName: BLOCKLIST_BUCKET,
-      filterFunc: this._filterItem,
+      filterCreator: async (environment, collectionName) => {
+        const targetAppFilter = await createTargetAppFilter(
+          environment,
+          collectionName
+        );
+        return new AddonItemBlocklistFilter(targetAppFilter);
+      },
     });
     this._onUpdate = this._onUpdate.bind(this);
     this._client.on("sync", this._onUpdate);
@@ -1411,7 +1450,7 @@ var gBlocklistLevel = DEFAULT_LEVEL;
  * extensions/plugins.
  */
 /**
- * @method prompt
+ * @function prompt
  *
  * Prompt the user about newly blocked addons. The prompt is then resposible
  * for soft-blocking any addons that need to be afterwards
@@ -1457,6 +1496,7 @@ ChromeUtils.defineLazyGetter(lazy, "gAppOS", function () {
 
 /**
  * Logs a string to the error console.
+ *
  * @param {string} string
  *        The string to write to the error console..
  */

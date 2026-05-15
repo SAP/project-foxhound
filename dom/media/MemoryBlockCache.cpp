@@ -168,7 +168,7 @@ nsresult MemoryBlockCache::WriteBlock(uint32_t aBlockIndex,
 }
 
 nsresult MemoryBlockCache::Read(int64_t aOffset, uint8_t* aData,
-                                int32_t aLength, int32_t* aBytes) {
+                                int32_t aLength) {
   MutexAutoLock lock(mMutex);
 
   MOZ_ASSERT(aOffset >= 0);
@@ -178,8 +178,6 @@ nsresult MemoryBlockCache::Read(int64_t aOffset, uint8_t* aData,
   }
 
   memcpy(aData, mBuffer.Elements() + aOffset, aLength);
-  *aBytes = aLength;
-
   return NS_OK;
 }
 

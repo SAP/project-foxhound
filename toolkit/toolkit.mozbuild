@@ -58,10 +58,11 @@ if CONFIG["MOZ_AUTH_EXTENSION"]:
     DIRS += ["/extensions/auth"]
 
 if CONFIG["MOZ_UPDATER"] and CONFIG["OS_TARGET"] != "Android":
-    DIRS += [
-        "/toolkit/mozapps/update/updater/bspatch",
-        "/other-licenses/bsdiff",
-    ]
+    if CONFIG["MOZ_BSPATCH"]:
+        DIRS += [
+            "/toolkit/mozapps/update/updater/bspatch",
+            "/other-licenses/bsdiff",
+        ]
     if CONFIG["MOZ_ZUCCHINI"]:
         DIRS += [
             "/third_party/zucchini",
@@ -104,7 +105,6 @@ DIRS += [
     "/gfx",
     "/image",
     "/dom",
-    "/view",
     "/widget",
     "/editor",
     "/layout",

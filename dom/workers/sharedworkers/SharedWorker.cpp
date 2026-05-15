@@ -10,6 +10,7 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/MessageChannel.h"
@@ -29,7 +30,6 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/StorageAccess.h"
 #include "nsGlobalWindowInner.h"
 #include "nsPIDOMWindow.h"
 

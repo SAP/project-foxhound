@@ -31,13 +31,18 @@ const TEST_URI = `
       font-size: 100px;
     }
 
-    section {
+    .color-mix {
       color: color-mix(in srgb, blue, var(--title-color) 50%);
+    }
+
+    .contrast-color {
+      color: contrast-color(gold);
     }
   </style>
   <h1>Testing the color picker contrast ratio data</h1>
   <div>————</div>
-  <section>mixed colors</section>
+  <section class="color-mix">mixed colors</section>
+  <section class="contrast-color">mixed colors</section>
 `;
 
 add_task(async function () {
@@ -92,12 +97,12 @@ add_task(async function () {
     expectedMaxContrastValueScore: "19.77",
   });
 
-  await selectNode("section", inspector);
+  await selectNode(".color-mix", inspector);
   await checkColorPickerConstrastData({
     view,
     label:
       "Does not displays contrast information on color within color-mix function (#1)",
-    ruleViewPropertyEl: getRuleViewProperty(view, "section", "color"),
+    ruleViewPropertyEl: getRuleViewProperty(view, ".color-mix", "color"),
     swatchIndex: 0,
     expectVisibleContrast: false,
   });
@@ -105,8 +110,18 @@ add_task(async function () {
     view,
     label:
       "Does not displays contrast information on color within color-mix function (#2)",
-    ruleViewPropertyEl: getRuleViewProperty(view, "section", "color"),
+    ruleViewPropertyEl: getRuleViewProperty(view, ".color-mix", "color"),
     swatchIndex: 1,
+    expectVisibleContrast: false,
+  });
+
+  await selectNode(".contrast-color", inspector);
+  await checkColorPickerConstrastData({
+    view,
+    label:
+      "Does not displays contrast information on color within `contrast-color` function",
+    ruleViewPropertyEl: getRuleViewProperty(view, ".contrast-color", "color"),
+    swatchIndex: 0,
     expectVisibleContrast: false,
   });
 });

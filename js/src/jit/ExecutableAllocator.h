@@ -30,7 +30,6 @@
 
 #include "mozilla/EnumeratedArray.h"
 
-#include <limits>
 #include <stddef.h>  // for ptrdiff_t
 
 #include "jit/ProcessExecutableMemory.h"

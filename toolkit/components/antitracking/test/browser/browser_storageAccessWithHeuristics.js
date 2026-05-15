@@ -124,8 +124,8 @@ async function runTestWindowOpenHeuristic(disableHeuristics) {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
     }
   );
@@ -209,8 +209,8 @@ add_task(async function testDoublyNestedWindowOpenHeuristic() {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
     }
   );
@@ -264,11 +264,9 @@ async function runTestUserInteractionHeuristic(disableHeuristics) {
       info("Checking if storage access is denied");
 
       let ifr = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loading = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = obj.page;
+      content.document.body.appendChild(ifr);
       await loading;
 
       info(
@@ -384,11 +382,9 @@ async function runTestUserInteractionHeuristic(disableHeuristics) {
       info("Checking if storage access is denied");
 
       let ifr = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loading = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = obj.page;
+      content.document.body.appendChild(ifr);
       await loading;
 
       info(
@@ -536,11 +532,9 @@ add_task(async function testDoublyNestedUserInteractionHeuristic() {
       info("Checking if storage access is denied");
 
       let ifr = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loading = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = obj.page;
+      content.document.body.appendChild(ifr);
       await loading;
 
       info(
@@ -644,11 +638,9 @@ add_task(async function testDoublyNestedUserInteractionHeuristic() {
       info("Checking if storage access is denied");
 
       let ifr = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loading = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = obj.page;
+      content.document.body.appendChild(ifr);
       await loading;
 
       info(
@@ -805,9 +797,9 @@ async function runTestFirstPartyWindowOpenHeuristic(disableHeuristics) {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.id = "ifr";
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
     }
   );
@@ -823,11 +815,9 @@ async function runTestFirstPartyWindowOpenHeuristic(disableHeuristics) {
     ],
     async obj => {
       let ifr = content.document.createElement("iframe");
-      let loading = new content.Promise(resolve => {
-        ifr.onload = resolve;
-      });
-      content.document.body.appendChild(ifr);
+      const loading = ContentTaskUtils.waitForEvent(ifr, "load");
       ifr.src = obj.page;
+      content.document.body.appendChild(ifr);
       await loading;
 
       info("Opening a window from the iframe.");

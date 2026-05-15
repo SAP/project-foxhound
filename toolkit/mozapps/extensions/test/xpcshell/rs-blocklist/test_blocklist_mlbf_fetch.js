@@ -4,7 +4,7 @@
 "use strict";
 
 /**
- * @fileOverview Tests the MLBF and RemoteSettings synchronization logic.
+ * @file Tests the MLBF and RemoteSettings synchronization logic.
  */
 
 Services.prefs.setBoolPref("extensions.blocklist.useMLBF", true);

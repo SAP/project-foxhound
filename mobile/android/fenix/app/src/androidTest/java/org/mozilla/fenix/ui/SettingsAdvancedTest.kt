@@ -4,7 +4,9 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
@@ -13,7 +15,9 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper.assertYoutubeAppOpens
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
+import org.mozilla.fenix.helpers.OpenLinksInApp
 import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.externalLinksAsset
 import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
@@ -35,19 +39,30 @@ class SettingsAdvancedTest : TestSetup() {
     private val playStoreUrl = "play.google.com"
 
     @get:Rule
-    val activityIntentTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides()
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
     @get:Rule
     val memoryLeaksRule = DetectMemoryLeaksRule()
+
+    lateinit var externalLinksPage: TestAssetHelper.TestAsset
+
+    @Before
+    override fun setUp() {
+        super.setUp()
+        externalLinksPage = mockWebServer.externalLinksAsset
+    }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2092699
     // Walks through settings menu and sub-menus to ensure all items are present
     @Test
     fun verifyAdvancedSettingsSectionItemsTest() {
         // ADVANCED
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
             verifySettingsToolbar()
             verifyAdvancedHeading()
             verifyAddons()
@@ -68,22 +83,15 @@ class SettingsAdvancedTest : TestSetup() {
     @SmokeTest
     @Test
     fun askBeforeOpeningOpenLinkInAppTest() {
-        val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
-
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyOpenLinksInAppsView("Ask before opening")
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.openLinksInExternalApp = OpenLinksInApp.ASK
         }
 
         exitMenu()
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
-            clickPageObject(playStoreLink)
+            clickPageObject(composeTestRule, playStoreLink)
             verifyUrl(playStoreUrl)
         }
     }
@@ -92,25 +100,13 @@ class SettingsAdvancedTest : TestSetup() {
     // Assumes Youtube is installed and enabled
     @Test
     fun privateBrowsingAskBeforeOpeningOpenLinkInAppTest() {
-        val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
-
-        homeScreen {
-        }.togglePrivateBrowsingMode()
-
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyPrivateOpenLinksInAppsView("Ask before opening")
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.openLinksInExternalApp = OpenLinksInApp.ASK
         }
 
-        exitMenu()
-
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
-            clickPageObject(playStoreLink)
+            clickPageObject(composeTestRule, playStoreLink)
             verifyUrl(playStoreUrl)
         }
     }
@@ -120,27 +116,15 @@ class SettingsAdvancedTest : TestSetup() {
     @SmokeTest
     @Test
     fun askBeforeOpeningLinkInAppCancelTest() {
-        val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
-
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyOpenLinksInAppsView("Ask before opening")
-            verifySelectedOpenLinksInAppOption("Ask before opening")
-        }.goBack {
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.openLinksInExternalApp = OpenLinksInApp.ASK
         }
 
-        exitMenu()
-
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
-            clickPageObject(youTubeSchemaLink)
+            clickPageObject(composeTestRule, youTubeSchemaLink)
             verifyOpenLinkInAnotherAppPrompt(appName = "YouTube")
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(composeTestRule, itemWithResIdAndText("android:id/button2", "Cancel"))
             verifyUrl(externalLinksPage.url.toString())
         }
     }
@@ -150,28 +134,16 @@ class SettingsAdvancedTest : TestSetup() {
     @SmokeTest
     @Test
     fun askBeforeOpeningLinkInAppOpenTest() {
-        val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
-
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyOpenLinksInAppsView("Ask before opening")
-            verifySelectedOpenLinksInAppOption("Ask before opening")
-        }.goBack {
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.openLinksInExternalApp = OpenLinksInApp.ASK
         }
 
-        exitMenu()
-
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
-            clickPageObject(youTubeSchemaLink)
+            clickPageObject(composeTestRule, youTubeSchemaLink)
             verifyOpenLinkInAnotherAppPrompt(appName = "YouTube")
             waitForAppWindowToBeUpdated()
-            clickPageObject(itemWithResIdAndText("android:id/button1", "OPEN"))
+            clickPageObject(composeTestRule, itemWithResIdAndText("android:id/button1", "Open"))
             mDevice.waitForIdle()
             assertYoutubeAppOpens()
         }
@@ -182,34 +154,22 @@ class SettingsAdvancedTest : TestSetup() {
     @Test
     fun privateBrowsingAskBeforeOpeningLinkInAppCancelTest() {
         TestHelper.appContext.settings().shouldShowCookieBannersCFR = false
-        val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
-
-        homeScreen {
-        }.togglePrivateBrowsingMode()
-
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyPrivateOpenLinksInAppsView("Ask before opening")
-            verifySelectedOpenLinksInAppOption("Ask before opening")
-        }.goBack {
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.openLinksInExternalApp = OpenLinksInApp.ASK
         }
 
-        exitMenu()
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode()
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
-            clickPageObject(youTubeSchemaLink)
+            clickPageObject(composeTestRule, youTubeSchemaLink)
             verifyPrivateBrowsingOpenLinkInAnotherAppPrompt(
                 appName = "YouTube",
                 url = "youtube",
                 pageObject = youTubeSchemaLink,
             )
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(composeTestRule, itemWithResIdAndText("android:id/button2", "Cancel"))
             verifyUrl(externalLinksPage.url.toString())
         }
     }
@@ -218,35 +178,25 @@ class SettingsAdvancedTest : TestSetup() {
     // Assumes Youtube is installed and enabled
     @Test
     fun privateBrowsingAskBeforeOpeningLinkInAppOpenTest() {
-        val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
-
-        homeScreen {
-        }.togglePrivateBrowsingMode()
-
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyPrivateOpenLinksInAppsView("Ask before opening")
-            verifySelectedOpenLinksInAppOption("Ask before opening")
-        }.goBack {
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.openLinksInExternalApp = OpenLinksInApp.ASK
         }
+
+        homeScreen(composeTestRule) {
+        }.togglePrivateBrowsingMode()
 
         exitMenu()
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
-            clickPageObject(youTubeSchemaLink)
+            clickPageObject(composeTestRule, youTubeSchemaLink)
             verifyPrivateBrowsingOpenLinkInAnotherAppPrompt(
                 appName = "YouTube",
                 url = "youtube",
                 pageObject = youTubeSchemaLink,
             )
             waitForAppWindowToBeUpdated()
-            clickPageObject(itemWithResIdAndText("android:id/button1", "OPEN"))
+            clickPageObject(composeTestRule, itemWithResIdAndText("android:id/button1", "Open"))
             mDevice.waitForIdle()
             assertYoutubeAppOpens()
         }
@@ -256,26 +206,13 @@ class SettingsAdvancedTest : TestSetup() {
     // Assumes Youtube is installed and enabled
     @Test
     fun alwaysOpenLinkInAppTest() {
-        val externalLinksPage = TestAssetHelper.getExternalLinksAsset(mockWebServer)
-
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyOpenLinksInAppsView("Ask before opening")
-            clickOpenLinkInAppOption("Always")
-            verifySelectedOpenLinksInAppOption("Always")
-        }.goBack {
-            verifySettingsOptionSummary("Open links in apps", "Always")
+        composeTestRule.activityRule.applySettingsExceptions {
+            it.openLinksInExternalApp = OpenLinksInApp.ALWAYS
         }
 
-        exitMenu()
-
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(externalLinksPage.url) {
-            clickPageObject(youTubeSchemaLink)
+            clickPageObject(composeTestRule, youTubeSchemaLink)
             mDevice.waitForIdle()
             assertYoutubeAppOpens()
         }
@@ -284,25 +221,12 @@ class SettingsAdvancedTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1058617
     @Test
     fun dismissOpenLinksInAppCFRTest() {
-        activityIntentTestRule.applySettingsExceptions {
+        composeTestRule.activityRule.applySettingsExceptions {
             it.isOpenInAppBannerEnabled = true
+            it.openLinksInExternalApp = OpenLinksInApp.NEVER
         }
 
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyOpenLinksInAppsView("Ask before opening")
-            clickOpenLinkInAppOption("Never")
-            verifySelectedOpenLinksInAppOption("Never")
-        }.goBack {
-            verifySettingsOptionSummary("Open links in apps", "Never")
-        }
-
-        exitMenu()
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser("https://m.youtube.com/".toUri()) {
             verifyPageContent("youtube")
             verifyOpenLinksInAppsCFRExists(true)
@@ -314,26 +238,12 @@ class SettingsAdvancedTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2288331
     @Test
     fun goToSettingsFromOpenLinksInAppCFRTest() {
-        activityIntentTestRule.applySettingsExceptions {
+        composeTestRule.activityRule.applySettingsExceptions {
             it.isOpenInAppBannerEnabled = true
+            it.openLinksInExternalApp = OpenLinksInApp.NEVER
         }
 
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-            verifyOpenLinksInAppsButton()
-            verifySettingsOptionSummary("Open links in apps", "Ask before opening")
-        }.openOpenLinksInAppsMenu {
-            verifyOpenLinksInAppsView("Ask before opening")
-            clickOpenLinkInAppOption("Never")
-            verifySelectedOpenLinksInAppOption("Never")
-        }.goBack {
-            verifySettingsOptionSummary("Open links in apps", "Never")
-        }
-
-        exitMenu()
-
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser("https://m.youtube.com/".toUri()) {
             verifyPageContent("youtube")
             verifyOpenLinksInAppsCFRExists(true)

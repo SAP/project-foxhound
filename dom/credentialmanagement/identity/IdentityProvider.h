@@ -10,10 +10,10 @@
 #include "ErrorList.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/IdentityCredentialBinding.h"
+#include "nsCOMPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "nsCOMPtr.h"
 
 namespace mozilla::dom {
 

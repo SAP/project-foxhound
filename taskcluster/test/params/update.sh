@@ -133,5 +133,5 @@ for f in $files; do
             ;;
     esac
 
-    curl -f -L ${TASKCLUSTER_ROOT_URL}/api/${service}/v1/task/${task}/artifacts/public%2Fparameters.yml | yq -y "$filter" > "${f}"
+    curl -f -L ${TASKCLUSTER_ROOT_URL}/api/${service}/v1/task/${task}/artifacts/public%2Fparameters.yml | yq -oy "$filter" > "${f}"
 done

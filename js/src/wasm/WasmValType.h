@@ -19,10 +19,7 @@
 #ifndef wasm_valtype_h
 #define wasm_valtype_h
 
-#include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"
-
-#include <type_traits>
 
 #include "jit/IonTypes.h"
 #include "wasm/WasmConstants.h"
@@ -444,6 +441,17 @@ class RefType {
   static bool isSubTypeOf(RefType subType, RefType superType);
   static bool castPossible(RefType sourceType, RefType destType);
 
+  // If we have two references, one of type `a` and one of type `b`, return
+  // true if there is any possibility that they might point at the same thing.
+  // That can only happen if either they are the same type or if one type is a
+  // subtype of the other.  Note, this can only be used for types in the same
+  // hierarchy.
+  static bool valuesMightAlias(RefType a, RefType b) {
+    MOZ_RELEASE_ASSERT(a.hierarchy() == b.hierarchy());
+    // The exact-same-type case is subsumed by `isSubTypeOf`.
+    return RefType::isSubTypeOf(a, b) || RefType::isSubTypeOf(b, a);
+  }
+
   // Gets the top of the given type's hierarchy, e.g. Any for structs and
   // arrays, and Func for funcs.
   RefType topType() const;
@@ -453,6 +461,7 @@ class RefType {
   RefType bottomType() const;
 
   static RefType leastUpperBound(RefType a, RefType b);
+  static RefType greatestLowerBound(RefType a, RefType b);
 
   // Gets the TypeDefKind associated with this RefType, e.g. TypeDefKind::Struct
   // for RefType::Struct.
@@ -1004,11 +1013,30 @@ class MaybeRefType {
     return mozilla::Nothing();
   }
 
+  // Takes the least upper bound of two ref types. Returns Nothing if either
+  // input is Nothing. This is because the LUB is the "conservative" choice, for
+  // when you need to find a common type for two different values.
+  // (Conceptually, Nothing is above the top type in each wasm type hierarchy.)
   static MaybeRefType leastUpperBound(MaybeRefType a, MaybeRefType b) {
     if (a.isSome() && b.isSome()) {
       return MaybeRefType(RefType::leastUpperBound(a.value(), b.value()));
     }
     return MaybeRefType();
+  }
+
+  // Takes the greatest lower bound of two ref types. Returns Nothing only if
+  // *both* inputs are Nothing. This is because the GLB is the "aggressive"
+  // choice, for when two values are determined to be equal and we want the
+  // tightest possible type to describe them. (Conceptually, Nothing is above
+  // the top type in each wasm type hierarchy.)
+  static MaybeRefType greatestLowerBound(MaybeRefType a, MaybeRefType b) {
+    if (!a.isSome()) {
+      return b;
+    }
+    if (!b.isSome()) {
+      return a;
+    }
+    return MaybeRefType(RefType::greatestLowerBound(a.value(), b.value()));
   }
 };
 

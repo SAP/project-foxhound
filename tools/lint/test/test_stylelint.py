@@ -38,8 +38,8 @@ def test_no_files_to_lint(stylelint, config, paths):
 
 def test_stylelint(stylelint, config, create_temp_file):
     contents = """#foo {
-    font-size: 12px;
-    font-size: 12px;
+    text-transform: uppercase;
+    text-transform: uppercase;
 }
 """
     path = create_temp_file(contents, "bad.css")
@@ -50,8 +50,8 @@ def test_stylelint(stylelint, config, create_temp_file):
 
 def test_stylelint_fix(stylelint, config, create_temp_file):
     contents = """#foo {
-    font-size: 12px;
-    font-size: 12px;
+    text-transform: uppercase;
+    text-transform: uppercase;
 }
 """
     path = create_temp_file(contents, "bad.css")

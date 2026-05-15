@@ -13,6 +13,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Ignore
 import org.junit.Test
@@ -159,6 +160,41 @@ class StringTest {
         val urlTest = "notarealurl"
         val new = urlTest.tryGetHostFromUrl()
         assertEquals(new, "notarealurl")
+    }
+
+    @Test
+    fun `Extract host from a complete Url`() {
+        val urlTest = "https://www.mozilla.com:1080/docs/resource1.html"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "www.mozilla.com")
+    }
+
+    @Test
+    fun `Extract host from a Url without www`() {
+        val urlTest = "http://mozinlla.org/someoteher/domainthing/with/?=skdfjk"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "mozinlla.org")
+    }
+
+    @Test
+    fun `Extract host from a Url with new line character`() {
+        val urlTest = "\nhttp://mozi\nlla.org:1080/docs/resource1.html\n"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "mozilla.org")
+    }
+
+    @Test
+    fun `Extract host from a malformed Url returns trimmed input`() {
+        val urlTest = "  notarealurl  "
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "notarealurl")
+    }
+
+    @Test
+    fun `Extract host from IPv4 Url`() {
+        val urlTest = "http://192.168.0.1/some/path"
+        val new = urlTest.extractHostUrl()
+        assertEquals(new, "192.168.0.1")
     }
 
     @Test

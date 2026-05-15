@@ -5,8 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <glib.h>
-#include "mozilla/Types.h"
 #include "prlink.h"
 
 #include <pipewire/pipewire.h>
@@ -17,34 +15,6 @@
 
 #define IS_FUNC_LOADED(func)                                          \
     (func != nullptr)                                                 \
-
-struct GUnixFDList;
-
-extern "C" gint
-g_unix_fd_list_get(struct GUnixFDList *list,
-                   gint index_,
-                   GError **error)
-{
-  static PRLibrary* gioLib = nullptr;
-  static bool gioInitialized = false;
-  static gint (*g_unix_fd_list_get_fn)(struct GUnixFDList *list,
-               gint index_, GError **error) = nullptr;
-
-  if (!gioInitialized) {
-    gioInitialized = true;
-    gioLib = PR_LoadLibrary("libgio-2.0.so.0");
-    if (!gioLib) {
-      return -1;
-    }
-    GET_FUNC(g_unix_fd_list_get, gioLib);
-  }
-
-  if (!g_unix_fd_list_get_fn) {
-    return -1;
-  }
-
-  return g_unix_fd_list_get_fn(list, index_, error);
-}
 
 static struct pw_core * (*pw_context_connect_fn)(struct pw_context *context,
                                               struct pw_properties *properties,

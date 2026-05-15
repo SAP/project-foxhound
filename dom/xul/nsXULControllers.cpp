@@ -10,12 +10,12 @@
 
 */
 
-#include "nsString.h"
-
-#include "nsIControllers.h"
 #include "nsXULControllers.h"
-#include "nsIController.h"
+
 #include "mozilla/RefPtr.h"
+#include "nsIController.h"
+#include "nsIControllers.h"
+#include "nsString.h"
 
 //----------------------------------------------------------------------
 

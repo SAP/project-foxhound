@@ -5,6 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BlobURLChannel.h"
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/BasePrincipal.h"
+#endif
+
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/BlobURL.h"
 #include "mozilla/dom/BlobURLInputStream.h"

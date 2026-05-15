@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_CSSAnimation_h
 #define mozilla_dom_CSSAnimation_h
 
+#include "AnimationCommon.h"
+#include "mozilla/StyleAnimationValue.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/MutationObservers.h"
-#include "mozilla/StyleAnimationValue.h"
-#include "AnimationCommon.h"
 
 namespace mozilla {
 // Properties of CSS Animations that can be overridden by the Web Animations API

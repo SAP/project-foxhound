@@ -39,8 +39,8 @@ async function testFilterOverriddenProperty(inspector, ruleView) {
     "width property is not overridden."
   );
   ok(
-    textPropEditor.filterProperty.hidden,
-    "Overridden search button is hidden."
+    !textPropEditor.filterProperty,
+    "Overridden search button is not rendered."
   );
 
   rule = getRuleViewRuleEditor(ruleView, 2).rule;

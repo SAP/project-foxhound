@@ -1,4 +1,4 @@
-function run_test() {
+add_task(function test() {
   Assert.ok(!Services.profiler.IsActive());
 
   // The function is entered with the profiler disabled.
@@ -11,4 +11,4 @@ function run_test() {
     // profiler stack was misbalanced.
   })();
   Services.profiler.StopProfiler();
-}
+});

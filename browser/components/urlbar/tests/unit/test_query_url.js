@@ -2,15 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const PLACES_PROVIDERNAME = "Places";
+const PLACES_PROVIDERNAME = "UrlbarProviderPlaces";
 
 testEngine_setup();
 
 add_task(async function test_no_slash() {
   info("Searching for host match without slash should match host");
   await PlacesTestUtils.addVisits([
-    { uri: "http://file.org/test/" },
-    { uri: "file:///c:/test.html" },
+    {
+      uri: "http://file.org/test/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+    {
+      uri: "file:///c:/test.html",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
   ]);
   let context = createContext("file", { isPrivate: false });
   await check_results({
@@ -20,7 +26,7 @@ add_task(async function test_no_slash() {
     matches: [
       makeVisitResult(context, {
         uri: "http://file.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://file.org/"),
+        title: UrlbarTestUtils.trimURL("http://file.org/"),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -43,9 +49,11 @@ add_task(async function test_w_slash() {
   await PlacesTestUtils.addVisits(
     {
       uri: Services.io.newURI("http://file.org/test/"),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
     {
       uri: Services.io.newURI("file:///c:/test.html"),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     }
   );
   let context = createContext("file.org/", { isPrivate: false });
@@ -56,7 +64,7 @@ add_task(async function test_w_slash() {
     matches: [
       makeVisitResult(context, {
         uri: "http://file.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://file.org/", {
+        title: UrlbarTestUtils.trimURL("http://file.org/", {
           removeSingleTrailingSlash: false,
         }),
         heuristic: true,
@@ -76,9 +84,11 @@ add_task(async function test_middle() {
   await PlacesTestUtils.addVisits(
     {
       uri: Services.io.newURI("http://file.org/test/"),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     },
     {
       uri: Services.io.newURI("file:///c:/test.html"),
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     }
   );
   let context = createContext("file.org/t", { isPrivate: false });

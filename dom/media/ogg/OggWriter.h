@@ -6,9 +6,10 @@
 #ifndef OggWriter_h_
 #define OggWriter_h_
 
+#include <ogg/ogg.h>
+
 #include "ContainerWriter.h"
 #include "OpusTrackEncoder.h"
-#include <ogg/ogg.h>
 
 namespace mozilla {
 /**

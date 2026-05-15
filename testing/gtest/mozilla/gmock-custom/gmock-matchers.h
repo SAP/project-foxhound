@@ -33,4 +33,47 @@
 
 #ifndef GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_MATCHERS_H_
 #define GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_MATCHERS_H_
+
+#include "nsTArray.h"
+#include "mozilla/media/MediaUtils.h"
+
+namespace testing {
+namespace internal {
+
+// Wrapper class that adds size() method to nsTArray for gmock compatibility
+template <typename T>
+class NsTArrayWrapper {
+ public:
+  using value_type = T;
+  using const_iterator = typename nsTArray<T>::const_iterator;
+  using size_type = typename nsTArray<T>::size_type;
+
+  explicit NsTArrayWrapper(const nsTArray<T>& array) : array_(array) {}
+
+  const_iterator begin() const { return array_.begin(); }
+  const_iterator end() const { return array_.end(); }
+  size_type size() const { return array_.Length(); }
+
+  const T& operator[](size_type index) const { return array_[index]; }
+
+ private:
+  const nsTArray<T>& array_;
+};
+
+// StlContainerView specialization for Refcountable<nsTArray>
+template <typename T>
+class StlContainerView<nsTArray<T>> {
+ public:
+  using type = NsTArrayWrapper<T>;
+  using const_reference = NsTArrayWrapper<T>;
+
+  static const_reference ConstReference(const nsTArray<T>& array) {
+    return NsTArrayWrapper<T>(array);
+  }
+  static nsTArray<T> Copy(const nsTArray<T>& array) { return array.Clone(); }
+};
+
+}  // namespace internal
+}  // namespace testing
+
 #endif  // GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_MATCHERS_H_

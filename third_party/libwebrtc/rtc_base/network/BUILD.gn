@@ -9,17 +9,12 @@
 import("../../webrtc.gni")
 
 rtc_library("sent_packet") {
+  visibility = [ "*" ]
   sources = [
     "sent_packet.cc",
     "sent_packet.h",
   ]
   deps = [ "../system:rtc_export" ]
-}
-
-rtc_source_set("ecn_marking") {
-  visibility = [ "*" ]
-  sources = [ "ecn_marking.h" ]
-  deps = [ "../../api/transport:ecn_marking" ]
 }
 
 rtc_library("received_packet") {
@@ -29,9 +24,10 @@ rtc_library("received_packet") {
     "received_packet.h",
   ]
   deps = [
-    ":ecn_marking",
+    "..:checks",
     "..:socket_address",
     "../../api:array_view",
+    "../../api/transport:ecn_marking",
     "../../api/units:timestamp",
     "../system:rtc_export",
   ]

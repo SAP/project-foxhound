@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s puts you in control.</p> <p>Use it as a private browser: <ul> <li>Search and browse right in the app</li> <li>Block trackers (or update settings to allow trackers)</li> <li>Erase to delete cookies as well as search and browsing history</li> </ul> </p> <p>%1$s is produced by Mozilla. Our mission is to foster a healthy, open Internet.<br/> <a href=\"%2$s\">Learn more</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s puts you in control.</p>\n<p>Use it as a private browser:\n<ul>\n<li>Search and browse right in the app</li>\n<li>Block trackers (or update settings to allow trackers)</li>\n<li>Erase to delete cookies as well as search and browsing history</li>\n</ul> </p>\n<p>%1$s is produced by Mozilla. Our mission is to foster a healthy, open Internet.<br/>\n<a href=\"%2$s\">Learn more</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Learn more</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">By continuing, you agree to the %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">By continuing, you agree to the %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefox Terms of Use.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefox Terms of Use</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox cares about your privacy. Learn more in our %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox cares about your privacy. Learn more in our %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Privacy Notice.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Privacy Notice</string>
   <!-- New Onboarding flow first screen button label -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[This could be a problem with the server’s configuration, or it could be someone trying to impersonate the server. <br/><br/> If you’ve connected to this server successfully in the past, the error may be temporary.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Someone could be trying to impersonate the site and continuing could be risky.</label> <br><br> <label>%1$s does not trust <b>%2$s</b> because its certificate issuer is unknown, the certificate is self-signed, or the server is not sending the correct intermediate certificates.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Someone could be trying to impersonate the site and continuing could be risky.</label> <br><br>\n<label>%1$s does not trust <b>%2$s</b> because its certificate issuer is unknown, the certificate is self-signed, or the server is not sending the correct intermediate certificates.</label>]]></string>
   <!--
     Sessions List
 

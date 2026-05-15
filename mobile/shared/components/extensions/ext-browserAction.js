@@ -79,6 +79,10 @@ class BrowserAction extends BrowserActionBase {
   dispatchClick() {
     this.clickDelegate.onClick();
   }
+
+  isPanelShownBlockingOpenPopup(_window) {
+    return ExtensionActionHelper.isShowingAnyExtensionActionPopup();
+  }
 }
 
 this.browserAction = class extends ExtensionAPIPersistent {
@@ -198,12 +202,16 @@ this.browserAction = class extends ExtensionAPIPersistent {
               : currentWindow;
 
           if (window !== currentWindow) {
-            throw new ExtensionError(
-              "Only the current window is supported on Android."
-            );
+            // openPopup only supports one window on Android (bug 1795956).
+            // On desktop we restrict support to the currently focused window
+            // only, and use the same error message here (despite the concept
+            // of "window" being unnsupported on Android - bug 1817772).
+            throw new ExtensionError(BrowserActionBase.ERROR_WIN_NOT_FOCUSED);
           }
 
-          if (this.action.getPopupUrl(window.tab, true)) {
+          if (action.getPopupUrl(window.tab, true)) {
+            action.throwIfOpenPopupIsBlockedByAnyAction(window);
+            // TODO bug 1817809: openPopup works in GeckoView but not in Fenix.
             action.openPopup(window.tab, !isHandlingUserInput);
           }
         },

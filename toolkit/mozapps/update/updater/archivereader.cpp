@@ -277,7 +277,7 @@ int ArchiveReader::ExtractItemToStream(const MarItem* item, FILE* fp) {
   /* decompress the data chunk by chunk */
 
   int offset, inlen, ret = OK;
-  struct xz_buf strm = {0};
+  struct xz_buf strm = {nullptr};
   enum xz_ret xz_rv;
 
   struct xz_dec* dec = xz_dec_init(XZ_DYNALLOC, 64 * 1024 * 1024);

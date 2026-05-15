@@ -26,8 +26,6 @@ class ProcessActor : public JSActorManager {
   already_AddRefed<JSActorProtocol> MatchingJSActorProtocol(
       JSActorService* aActorSvc, const nsACString& aName,
       ErrorResult& aRv) final;
-
-  virtual const nsACString& GetRemoteType() const = 0;
 };
 
 }  // namespace dom

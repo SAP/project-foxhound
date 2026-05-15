@@ -518,3 +518,96 @@ addUiaTask(
   },
   { uiaEnabled: true, uiaDisabled: true }
 );
+
+/**
+ * Test the IsPassword property.
+ */
+addUiaTask(
+  `
+<input type="text" id="text">
+<input type="password" id="password">
+  `,
+  async function testIsPassword() {
+    await definePyVar("doc", `getDocUia()`);
+    ok(
+      !(await runPython(`findUiaByDomId(doc, "text").CurrentIsPassword`)),
+      "text has correct IsPassword"
+    );
+    ok(
+      await runPython(`findUiaByDomId(doc, "password").CurrentIsPassword`),
+      "password has correct IsPassword"
+    );
+    ok(
+      !(await runPython(`doc.CurrentIsPassword`)),
+      "doc has correct IsPassword"
+    );
+  },
+  { uiaEnabled: true, uiaDisabled: true }
+);
+
+/**
+ * Test exposure of aria-current via the AriaProperties property.
+ */
+addUiaTask(
+  `
+<button id="missing">missing</button>
+<button id="false" aria-current="false">false</button>
+<button id="undefined" aria-current="undefined">undefined</button>
+<button id="true" aria-current="true">false</button>
+<button id="page" aria-current="page">page</button>
+<button id="unrecognized" aria-current="unrecognized">unrecognized</button>
+  `,
+  async function testCurrent() {
+    await definePyVar("doc", `getDocUia()`);
+    let result = await runPython(
+      `findUiaByDomId(doc, "missing").CurrentAriaProperties`
+    );
+    is(
+      result.indexOf("current="),
+      -1,
+      "AriaProperties for missing doesn't contain current"
+    );
+    result = await runPython(
+      `findUiaByDomId(doc, "false").CurrentAriaProperties`
+    );
+    is(
+      result.indexOf("current="),
+      -1,
+      "AriaProperties for false doesn't contain current"
+    );
+    result = await runPython(
+      `findUiaByDomId(doc, "undefined").CurrentAriaProperties`
+    );
+    is(
+      result.indexOf("current="),
+      -1,
+      "AriaProperties for undefined doesn't contain current"
+    );
+    result = await runPython(
+      `findUiaByDomId(doc, "true").CurrentAriaProperties`
+    );
+    isnot(
+      result.indexOf("current=true"),
+      -1,
+      "AriaProperties for true contains current=true"
+    );
+    result = await runPython(
+      `findUiaByDomId(doc, "page").CurrentAriaProperties`
+    );
+    isnot(
+      result.indexOf("current=page"),
+      -1,
+      "AriaProperties for page contains current=page"
+    );
+    result = await runPython(
+      `findUiaByDomId(doc, "unrecognized").CurrentAriaProperties`
+    );
+    isnot(
+      result.indexOf("current=true"),
+      -1,
+      "AriaProperties for unrecognized contains current=true"
+    );
+  },
+  // The IA2 -> UIA proxy doesn't support aria-current.
+  { uiaEnabled: true, uiaDisabled: false }
+);

@@ -8,7 +8,8 @@
 #define gc_ParallelMarking_h
 
 #include "mozilla/Atomics.h"
-#include "mozilla/DoublyLinkedList.h"
+#include "mozilla/BitSet.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 
 #include "gc/GCMarker.h"
@@ -24,74 +25,25 @@ class AutoLockHelperThreadState;
 
 namespace gc {
 
-class ParallelMarkTask;
+class ParallelMarker;
 
-// Per-runtime parallel marking state.
-//
-// This class is used on the main thread and coordinates parallel marking using
-// several helper threads running ParallelMarkTasks.
-//
-// This uses a work-requesting approach. Threads mark until they run out of
-// work and then add themselves to a list of waiting tasks and block. Running
-// tasks with enough work may donate work to a waiting task and resume it.
-class MOZ_STACK_CLASS ParallelMarker {
- public:
-  explicit ParallelMarker(GCRuntime* gc);
-
-  bool mark(const JS::SliceBudget& sliceBudget);
-
-  using AtomicCount = mozilla::Atomic<uint32_t, mozilla::Relaxed>;
-  AtomicCount& waitingTaskCountRef() { return waitingTaskCount; }
-  bool hasWaitingTasks() { return waitingTaskCount != 0; }
-  void donateWorkFrom(GCMarker* src);
-
- private:
-  bool markOneColor(MarkColor color, const JS::SliceBudget& sliceBudget);
-
-  bool hasWork(MarkColor color) const;
-
-  void addTask(ParallelMarkTask* task, const AutoLockHelperThreadState& lock);
-
-  void addTaskToWaitingList(ParallelMarkTask* task,
-                            const AutoLockHelperThreadState& lock);
-#ifdef DEBUG
-  bool isTaskInWaitingList(const ParallelMarkTask* task,
-                           const AutoLockHelperThreadState& lock) const;
-#endif
-
-  bool hasActiveTasks(const AutoLockHelperThreadState& lock) const {
-    return activeTasks;
-  }
-  void incActiveTasks(ParallelMarkTask* task,
-                      const AutoLockHelperThreadState& lock);
-  void decActiveTasks(ParallelMarkTask* task,
-                      const AutoLockHelperThreadState& lock);
-
-  size_t workerCount() const;
-
-  friend class ParallelMarkTask;
-
-  GCRuntime* const gc;
-
-  using ParallelMarkTaskList = mozilla::DoublyLinkedList<ParallelMarkTask>;
-  HelperThreadLockData<ParallelMarkTaskList> waitingTasks;
-  AtomicCount waitingTaskCount;
-
-  HelperThreadLockData<size_t> activeTasks;
-};
+using ParallelTaskBitset = mozilla::BitSet<MaxParallelWorkers, uint32_t>;
 
 // A helper thread task that performs parallel marking.
-class alignas(TypicalCacheLineSize) ParallelMarkTask
-    : public GCParallelTask,
-      public mozilla::DoublyLinkedListElement<ParallelMarkTask> {
+class alignas(TypicalCacheLineSize) ParallelMarkTask : public GCParallelTask {
  public:
   friend class ParallelMarker;
 
   ParallelMarkTask(ParallelMarker* pm, GCMarker* marker, MarkColor color,
-                   const JS::SliceBudget& budget);
+                   uint32_t id, const JS::SliceBudget& budget);
   ~ParallelMarkTask();
 
   void run(AutoLockHelperThreadState& lock) override;
+
+  using AtomicCount = mozilla::Atomic<uint32_t, mozilla::Relaxed>;
+  AtomicCount& waitingTaskCountRef();
+
+  void donateWork();
 
   void recordDuration() override;
 
@@ -112,12 +64,81 @@ class alignas(TypicalCacheLineSize) ParallelMarkTask
   JS::SliceBudget budget;
   ConditionVariable resumed;
 
+  const uint32_t id;
+
   HelperThreadLockData<bool> isWaiting;
 
   // Length of time this task spent blocked waiting for work.
   MainThreadOrGCTaskData<mozilla::TimeDuration> markTime;
   MainThreadOrGCTaskData<mozilla::TimeDuration> waitTime;
 };
+
+// Per-runtime parallel marking state.
+//
+// This class is used on the main thread and coordinates parallel marking using
+// several helper threads running ParallelMarkTasks.
+//
+// This uses a work-requesting approach. Threads mark until they run out of
+// work and then add themselves to a list of waiting tasks and block. Running
+// tasks with enough work may donate work to a waiting task and resume it.
+class MOZ_STACK_CLASS ParallelMarker {
+ public:
+  static bool mark(GCRuntime* gc, const JS::SliceBudget& sliceBudget);
+
+  bool hasWaitingTasks() const { return !waitingTasks.IsEmpty(); }
+
+  void donateWorkFrom(GCMarker* src);
+
+ private:
+  static bool markOneColor(GCRuntime* gc, MarkColor color,
+                           const JS::SliceBudget& sliceBudget);
+
+  explicit ParallelMarker(GCRuntime* gc, MarkColor color);
+
+  bool mark(const JS::SliceBudget& sliceBudget);
+
+  bool hasWork(MarkColor color) const;
+
+  void addTask(ParallelMarkTask* task, const AutoLockHelperThreadState& lock);
+
+  void addTaskToWaitingList(ParallelMarkTask* task,
+                            const AutoLockHelperThreadState& lock);
+#ifdef DEBUG
+  bool isTaskInWaitingList(const ParallelMarkTask* task,
+                           const AutoLockHelperThreadState& lock) const;
+#endif
+  ParallelMarkTask* takeWaitingTask();
+
+  bool hasActiveTasks(const AutoLockHelperThreadState& lock) const {
+    return !activeTasks.ref().IsEmpty();
+  }
+  void setTaskActive(ParallelMarkTask* task,
+                     const AutoLockHelperThreadState& lock);
+  void setTaskInactive(ParallelMarkTask* task,
+                       const AutoLockHelperThreadState& lock);
+
+  size_t workerCount() const;
+
+  friend class ParallelMarkTask;
+
+  GCRuntime* const gc;
+
+  mozilla::Maybe<ParallelMarkTask> tasks[MaxParallelWorkers];
+
+  // waitingTasks is written to with the lock held but can be read without.
+  using WaitingTaskSet =
+      mozilla::BitSet<MaxParallelWorkers,
+                      mozilla::Atomic<uint32_t, mozilla::Relaxed>>;
+  WaitingTaskSet waitingTasks;
+
+  HelperThreadLockData<ParallelTaskBitset> activeTasks;
+
+  const MarkColor color;
+};
+
+inline ParallelMarkTask::AtomicCount& ParallelMarkTask::waitingTaskCountRef() {
+  return pm->waitingTasks.Storage()[0];
+}
 
 }  // namespace gc
 }  // namespace js

@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerNonLifeCycleOpControllerParent.h"
+
 #include "mozilla/dom/RemoteWorkerController.h"
 
 namespace mozilla::dom {
@@ -19,7 +20,7 @@ RemoteWorkerNonLifeCycleOpControllerParent::
 
 void RemoteWorkerNonLifeCycleOpControllerParent::Shutdown() {
   if (CanSend()) {
-    Unused << SendShutdown();
+    (void)SendShutdown();
   }
   if (mController) {
     mController = nullptr;

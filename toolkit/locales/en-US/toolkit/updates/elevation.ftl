@@ -26,3 +26,6 @@ sandbox-unprivileged-namespaces-dismiss-button =
   .label = Don’t show again
   .accesskey = D
 sandbox-unprivileged-namespaces-howtofix = How to fix this issue
+
+sandbox-content-disabled-warning =
+  The security sandbox is disabled. Your configuration is unsupported and less secure.

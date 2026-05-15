@@ -43,6 +43,8 @@
   --devtools-searchinput-clear-hover-cross-color: transparent;
   --devtools-searchinput-clear-opacity: 0.8;
 
+  --devtools-twisty-size: 14px;
+
   /* Don't allow forced colors in DevTools if they're not supported */
   &:not([forced-colors-active]) {
     forced-color-adjust: none;
@@ -411,15 +413,18 @@ iframe {
 }
 
 /* Standalone buttons */
-.devtools-button[data-standalone] {
+.devtools-button.devtools-button-standalone {
   min-height: 28px;
   padding: 4px 6px;
-  border: 1px solid transparent;
+  border: 1px solid light-dark(rgba(138, 161, 180, 0.2), var(--grey-50));
   background: var(--toolbarbutton-background);
-}
-
-.theme-light .devtools-button[data-standalone] {
-  border-color: rgba(138, 161, 180, 0.2);
+  /* prettier-ignore */
+  color: light-dark(
+    var(--grey-70),
+    /* In dark mode, --grey-40 will only give us a AA contrast score, but --grey-30
+       is a bit too harsh, so we mix the color just enough to get a AAA score */
+    color-mix(in srgb, var(--grey-30) 70%, var(--grey-40))
+  );
 }
 
 /* Selectable button which is unchecked. */
@@ -662,8 +667,8 @@ iframe {
 /* Twisty and checkbox controls */
 
 .theme-twisty {
-  width: 14px;
-  height: 14px;
+  width: var(--devtools-twisty-size);
+  height: var(--devtools-twisty-size);
   cursor: pointer;
   background-image: url("chrome://devtools/skin/images/arrow.svg");
   background-position: center;
@@ -888,4 +893,41 @@ html[dir="rtl"] .devtools-checkbox-toggle:checked {
   background-position:
     0 0,
     10px 10px;
+}
+
+/******************************************************************************/
+/* Jump to definition button */
+
+button.jump-definition {
+  display: inline-block;
+  height: 16px;
+  width: 20px;
+  margin-left: 0.25em;
+  vertical-align: middle;
+  background: center url("chrome://devtools/content/shared/components/reps/images/jump-definition.svg") no-repeat;
+  border-color: transparent;
+  stroke: var(--theme-icon-color);
+  -moz-context-properties: stroke;
+  cursor: pointer;
+}
+
+button.jump-definition:hover {
+  stroke: var(--theme-icon-checked-color);
+}
+
+:root[forced-colors-active] button.jump-definition {
+  border: 1px solid ButtonText;
+  border-radius: 2px;
+  background-color: ButtonFace;
+}
+
+:root[forced-colors-active] button.jump-definition:hover {
+  stroke: var(--theme-icon-hover-color);
+  border-color: var(--theme-icon-hover-color);
+}
+
+/* In High Contrast Mode, the button has a solid background, so we only need
+    to set a different color for the icon when we are not in HCM */
+:root:not([forced-colors-active]) .tree-node.focused button.jump-definition {
+  stroke: currentColor;
 }

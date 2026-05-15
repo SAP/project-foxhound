@@ -8,30 +8,29 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Text
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment.Companion.Start
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Job
+import org.mozilla.focus.R
 import org.mozilla.focus.ui.theme.focusColors
 import org.mozilla.focus.ui.theme.focusTypography
 
 /**
  * Composable function that displays a "Learn More" link.
  *
- * @param learnMore The text to display for the "Learn More" link (e.g., "Learn More", "Read More").
  * @param openLearnMore A lambda function that defines the action to be performed when the link is clicked.
  * @param modifier Optional [Modifier] to be applied to the [Text] composable.
  */
 @Composable
 fun ColumnScope.LearnMoreLink(
-    learnMore: String,
-    openLearnMore: () -> Job,
+    openLearnMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Text(
-        text = learnMore,
+        text = stringResource(R.string.about_screen_learn_more),
         color = focusColors.aboutPageLink,
         style = focusTypography.links,
         modifier = modifier

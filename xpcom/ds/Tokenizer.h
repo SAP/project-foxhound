@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef Tokenizer_h__
-#define Tokenizer_h__
+#ifndef Tokenizer_h_
+#define Tokenizer_h_
 
 #include <type_traits>
 
@@ -91,10 +91,10 @@ class TokenizerBase {
 
     TokenType Type() const { return mType; }
     TChar AsChar() const;
-    TDependentSubstring AsString() const;
+    TDependentSubstring const& AsString() const;
     uint64_t AsInteger() const;
 
-    TDependentSubstring Fragment() const { return mFragment; }
+    TDependentSubstring const& Fragment() const { return mFragment; }
   };
 
   /**
@@ -581,4 +581,4 @@ typedef TTokenizer<char16_t> Tokenizer16;
 
 }  // namespace mozilla
 
-#endif  // Tokenizer_h__
+#endif  // Tokenizer_h_

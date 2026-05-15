@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef storage_test_harness_h__
-#define storage_test_harness_h__
+#ifndef storage_test_harness_h_
+#define storage_test_harness_h_
 
 #include "gtest/gtest.h"
 
@@ -223,4 +223,4 @@ class ThreadWedger : public mozilla::Runnable {
  */
 already_AddRefed<nsIThread> get_conn_async_thread(mozIStorageConnection* db);
 
-#endif  // storage_test_harness_h__
+#endif  // storage_test_harness_h_

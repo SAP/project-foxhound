@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width; initial-scale=1.0">
+<title>Test that touch scrolling keeps working with a smooth scroll operation by JS</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<style>
+body {
+  margin: 0px;
+  padding: 0px;
+}
+</style>
+<div style="width: 100vw; height: 300vh;"></div>
+<script>
+async function test() {
+  let scrollYInEventHandler;
+  window.addEventListener("scroll", () => {
+    scrollYInEventHandler = window.scrollY;
+    // Trigger a smooth scroll.
+    window.scrollTo({top: 0, behavior: "smooth"});
+  }, { once: true });
+
+  // Send touch events to scroll down the content.
+  // Note that each touch event needs to be sent in each frame to
+  // give a chance to receive a scroll event while sending the evets.
+  for (let y = 200; y > 0; y -= 10) {
+    await synthesizeNativeTouch(window, 100, y, SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+    await promiseFrame();
+  }
+
+  ok(scrollYInEventHandler * 2 <= window.scrollY,
+    `The last scroll position ${window.scrollY} should be greater than the
+     double of the position in scroll event handler ${scrollYInEventHandler}`);
+
+  await synthesizeNativeTouch(window, 100, 0, SpecialPowers.DOMWindowUtils.TOUCH_REMOVE);
+}
+
+waitUntilApzStable()
+.then(test)
+.then(subtestDone, subtestFailed);
+</script>
+</html>

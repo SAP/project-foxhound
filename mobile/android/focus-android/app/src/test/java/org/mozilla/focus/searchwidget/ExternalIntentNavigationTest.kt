@@ -12,7 +12,6 @@ import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.feature.search.widget.BaseVoiceSearchActivity
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertNotNull
@@ -52,7 +51,6 @@ internal class ExternalIntentNavigationTest {
         activity.settings.isFirstRun = true
 
         ExternalIntentNavigation.handleAppOpened(null, activity)
-        appStore.waitUntilIdle()
 
         assertEquals(Screen.FirstRun, appStore.state.screen)
     }
@@ -62,11 +60,9 @@ internal class ExternalIntentNavigationTest {
     fun `GIVEN the onboarding should be shown and the app is used in a performance test WHEN the app is opened THEN show the homescreen`() {
         // The AppStore is initialized before the test runs. By default isFirstRun is true. Simulate it being false.
         appStore.dispatch(AppAction.ShowHomeScreen)
-        appStore.waitUntilIdle()
         activity.settings.isFirstRun = true
 
         ExternalIntentNavigation.handleAppOpened(null, activity)
-        appStore.waitUntilIdle()
 
         assertEquals(Screen.Home, appStore.state.screen)
     }
@@ -76,11 +72,9 @@ internal class ExternalIntentNavigationTest {
     fun `GIVEN the onboarding should not be shown and in a performance test WHEN the app is opened THEN show the home screen`() {
         // The AppStore is initialized before the test runs. By default isFirstRun is true. Simulate it being false.
         appStore.dispatch(AppAction.ShowHomeScreen)
-        appStore.waitUntilIdle()
         activity.settings.isFirstRun = false
 
         ExternalIntentNavigation.handleAppOpened(null, activity)
-        appStore.waitUntilIdle()
 
         assertEquals(Screen.Home, appStore.state.screen)
     }
@@ -89,21 +83,17 @@ internal class ExternalIntentNavigationTest {
     fun `GIVEN the onboarding should not be shown and not in a performance test WHEN the app is opened THEN show the home screen`() {
         // The AppStore is initialized before the test runs. By default isFirstRun is true. Simulate it being false.
         appStore.dispatch(AppAction.ShowHomeScreen)
-        appStore.waitUntilIdle()
         activity.settings.isFirstRun = false
 
         ExternalIntentNavigation.handleAppOpened(null, activity)
-        appStore.waitUntilIdle()
 
         assertEquals(Screen.Home, appStore.state.screen)
     }
 
     @Test
     fun `GIVEN a tab is already open WHEN trying to navigate to the current tab THEN navigate to it and return true`() {
-        activity.components.tabsUseCases.addTab(url = "https://mozilla.com")
-        activity.components.store.waitUntilIdle()
+        activity.components.tabsUseCases.addTab(url = "https://mozilla.com", private = true)
         val result = ExternalIntentNavigation.handleBrowserTabAlreadyOpen(activity)
-        activity.components.appStore.waitUntilIdle()
 
         assertTrue(result)
         val selectedTabId = activity.components.store.state.selectedTabId!!
@@ -114,9 +104,7 @@ internal class ExternalIntentNavigationTest {
     fun `GIVEN no tabs are currently open WHEN trying to navigate to the current tab THEN navigate home and return false`() {
         // The AppStore is initialized before the test runs. By default isFirstRun is true. Simulate it being false.
         appStore.dispatch(AppAction.ShowHomeScreen)
-        appStore.waitUntilIdle()
         val result = ExternalIntentNavigation.handleBrowserTabAlreadyOpen(activity)
-        activity.components.appStore.waitUntilIdle()
 
         assertFalse(result)
         assertEquals(Screen.Home, activity.components.appStore.state.screen)
@@ -129,7 +117,6 @@ internal class ExternalIntentNavigationTest {
         }
 
         val result = ExternalIntentNavigation.handleWidgetTextSearch(bundle, activity)
-        appStore.waitUntilIdle()
 
         assertTrue(result)
         assertNotNull(SearchWidget.newTabButton.testGetValue())
@@ -140,11 +127,9 @@ internal class ExternalIntentNavigationTest {
     fun `GIVEN no text search from the search widget WHEN handling widget interactions THEN don't record telemetry, show the home screen and false true`() {
         // The AppStore is initialized before the test runs. By default isFirstRun is true. Simulate it being false.
         appStore.dispatch(AppAction.ShowHomeScreen)
-        appStore.waitUntilIdle()
         val bundle = Bundle()
 
         val result = ExternalIntentNavigation.handleWidgetTextSearch(bundle, activity)
-        appStore.waitUntilIdle()
 
         assertFalse(result)
         assertNull(SearchWidget.newTabButton.testGetValue())
@@ -162,7 +147,6 @@ internal class ExternalIntentNavigationTest {
         val result = ExternalIntentNavigation.handleWidgetVoiceSearch(bundle, activity)
 
         assertTrue(result)
-        browserStore.waitUntilIdle()
         assertEquals(1, browserStore.state.allTabs.size)
         assertEquals(1, browserStore.state.privateTabs.size)
         val voiceSearchTab = browserStore.state.privateTabs[0]
@@ -170,7 +154,6 @@ internal class ExternalIntentNavigationTest {
         assertEquals(SearchUtils.createSearchUrl(activity, searchArgument), voiceSearchTab.content.url)
         assertEquals(SessionState.Source.External.ActionSend(null), voiceSearchTab.source)
         assertEquals(searchArgument, voiceSearchTab.content.searchTerms)
-        appStore.waitUntilIdle()
         assertEquals(Screen.Browser(voiceSearchTab.id, false), appStore.state.screen)
     }
 
@@ -178,16 +161,13 @@ internal class ExternalIntentNavigationTest {
     fun `GIVEN no voice search WHEN handling widget interactions THEN don't open a new tab and return false`() {
         // The AppStore is initialized before the test runs. By default isFirstRun is true. Simulate it being false.
         appStore.dispatch(AppAction.ShowHomeScreen)
-        appStore.waitUntilIdle()
         val browserStore = activity.components.store
         val bundle = Bundle()
 
         val result = ExternalIntentNavigation.handleWidgetVoiceSearch(bundle, activity)
 
         assertFalse(result)
-        browserStore.waitUntilIdle()
         assertEquals(0, browserStore.state.allTabs.size)
-        appStore.waitUntilIdle()
         assertEquals(Screen.Home, appStore.state.screen)
     }
 }

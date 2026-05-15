@@ -26,7 +26,7 @@ label {
   padding-top: 15px;
 }
 #ctap-listen-result {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: 1.5em;
   padding-inline-start: 15px;
   height: 1.5em;

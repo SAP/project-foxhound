@@ -114,6 +114,7 @@ add_task(async function testTempPermissionRequestAfterExpiry() {
 
 /**
  * Test whether the identity UI shows the permission granted state.
+ *
  * @param {boolean} state - true = Shows permission granted, false otherwise.
  */
 async function testIdentityPermissionGrantedState(state) {

@@ -52,7 +52,7 @@ class MoveEmitterMIPSShared {
   void emit(const MoveOp& move);
 
  public:
-  MoveEmitterMIPSShared(MacroAssembler& masm)
+  explicit MoveEmitterMIPSShared(MacroAssembler& masm)
       : inCycle_(0),
         masm(masm),
         pushedAtStart_(masm.framePushed()),

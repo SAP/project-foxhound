@@ -1,7 +1,5 @@
 "use strict";
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const server = createHttpServer({ hosts: ["example.com", "example.org"] });
 server.registerDirectory("/data/", do_get_file("data"));
 

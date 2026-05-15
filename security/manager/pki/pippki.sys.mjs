@@ -233,6 +233,7 @@ export function asyncDetermineUsages(cert) {
           0,
           null,
           now,
+          [],
           (aPRErrorCode, aVerifiedChain) => {
             resolve({
               usageString,

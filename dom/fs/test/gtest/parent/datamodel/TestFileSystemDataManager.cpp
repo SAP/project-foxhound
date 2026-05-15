@@ -149,7 +149,7 @@ TEST_F(TestFileSystemDataManager,
 
     RefPtr<data::FileSystemDataManager> dm = rdm.unwrap();
 
-    Unused << dm;
+    (void)dm;
 
     {
       bool done = false;

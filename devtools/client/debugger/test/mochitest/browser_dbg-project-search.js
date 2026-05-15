@@ -25,7 +25,7 @@ add_task(async function testProjectSearchCloseOnNavigation() {
 
   await doProjectSearch(dbg, "function", 2);
 
-  is(getExpandedResultsCount(dbg), 6);
+  is(getExpandedResultsCount(dbg), 9);
 
   is(dbg.selectors.getActiveSearch(), "project");
 
@@ -44,7 +44,7 @@ add_task(async function testProjectSearchCloseOnNavigation() {
   // Project search is still visible after navigation
   is(dbg.selectors.getActiveSearch(), "project");
   // With same search results
-  is(getExpandedResultsCount(dbg), 6);
+  is(getExpandedResultsCount(dbg), 9);
 
   ok(
     refreshButton.classList.contains("highlight"),
@@ -254,7 +254,7 @@ add_task(async function testSearchExcludePatterns() {
   );
 
   info("Assert that the exclude pattern is persisted across reloads");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await openProjectSearch(dbg);
 
   const excludePatternsInputElement = await waitForElement(

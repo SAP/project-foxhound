@@ -11,22 +11,27 @@
 #include "modules/rtp_rtcp/source/rtp_packetizer_h265.h"
 
 #include <algorithm>
-#include <optional>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
+#include "api/array_view.h"
 #include "common_video/h264/h264_common.h"
 #include "common_video/h265/h265_common.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "modules/rtp_rtcp/source/rtp_packet_h265_common.h"
-#include "rtc_base/logging.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 
-RtpPacketizerH265::RtpPacketizerH265(rtc::ArrayView<const uint8_t> payload,
+RtpPacketizerH265::RtpPacketizerH265(ArrayView<const uint8_t> payload,
                                      PayloadSizeLimits limits)
     : limits_(limits), num_packets_left_(0) {
-  for (const auto& nalu : H264::FindNaluIndices(payload)) {
-    if (!nalu.payload_size) {
+  for (const H264::NaluIndex& nalu : H264::FindNaluIndices(payload)) {
+    if (nalu.payload_size < 2) {
+      // Payload size has to include NALU header which is fixed 2 bytes.
       input_fragments_.clear();
       return;
     }
@@ -79,7 +84,7 @@ bool RtpPacketizerH265::GeneratePackets() {
 bool RtpPacketizerH265::PacketizeFu(size_t fragment_index) {
   // Fragment payload into packets (FU).
   // Strip out the original header and leave room for the FU header.
-  rtc::ArrayView<const uint8_t> fragment = input_fragments_[fragment_index];
+  ArrayView<const uint8_t> fragment = input_fragments_[fragment_index];
   PayloadSizeLimits limits = limits_;
   // Refer to section 4.4.3 in RFC7798, each FU fragment will have a 2-bytes
   // payload header and a one-byte FU header. DONL is not supported so ignore
@@ -135,30 +140,26 @@ bool RtpPacketizerH265::PacketizeFu(size_t fragment_index) {
 
 int RtpPacketizerH265::PacketizeAp(size_t fragment_index) {
   // Aggregate fragments into one packet.
+  const bool includes_first = fragment_index == 0;
   size_t payload_size_left = limits_.max_payload_len;
-  if (input_fragments_.size() == 1) {
-    payload_size_left -= limits_.single_packet_reduction_len;
-  } else if (fragment_index == 0) {
-    payload_size_left -= limits_.first_packet_reduction_len;
-  }
   int aggregated_fragments = 0;
   size_t fragment_headers_length = 0;
-  rtc::ArrayView<const uint8_t> fragment = input_fragments_[fragment_index];
+  ArrayView<const uint8_t> fragment = input_fragments_[fragment_index];
   RTC_CHECK_GE(payload_size_left, fragment.size());
   ++num_packets_left_;
 
   auto payload_size_needed = [&] {
     size_t fragment_size = fragment.size() + fragment_headers_length;
-    if (input_fragments_.size() == 1) {
-      // Single fragment, single packet, payload_size_left already adjusted
-      // with limits_.single_packet_reduction_len.
+    bool includes_last = (fragment_index == input_fragments_.size() - 1);
+    if (includes_first && includes_last) {
+      return fragment_size + limits_.single_packet_reduction_len;
+    } else if (includes_first) {
+      return fragment_size + limits_.first_packet_reduction_len;
+    } else if (includes_last) {
+      return fragment_size + limits_.last_packet_reduction_len;
+    } else {
       return fragment_size;
     }
-    if (fragment_index == input_fragments_.size() - 1) {
-      // Last fragment, so this might be the last packet.
-      return fragment_size + limits_.last_packet_reduction_len;
-    }
-    return fragment_size;
   };
 
   uint16_t header = (fragment[0] << 8) | fragment[1];
@@ -206,9 +207,7 @@ bool RtpPacketizerH265::NextPacket(RtpPacketToSend* rtp_packet) {
   if (packet.first_fragment && packet.last_fragment) {
     // Single NAL unit packet. Do not support DONL for single NAL unit packets,
     // DONL field is not present.
-    size_t bytes_to_send = packet.source_fragment.size();
-    uint8_t* buffer = rtp_packet->AllocatePayload(bytes_to_send);
-    memcpy(buffer, packet.source_fragment.data(), bytes_to_send);
+    rtp_packet->SetPayload(packet.source_fragment);
     packets_.pop();
     input_fragments_.pop_front();
   } else if (packet.aggregated) {
@@ -248,7 +247,7 @@ void RtpPacketizerH265::NextAggregatePacket(RtpPacketToSend* rtp_packet) {
   uint8_t temporal_id_min = kH265MaxTemporalId;
   while (packet->aggregated) {
     // Add NAL unit length field.
-    rtc::ArrayView<const uint8_t> fragment = packet->source_fragment;
+    ArrayView<const uint8_t> fragment = packet->source_fragment;
     uint8_t layer_id = ((fragment[0] & kH265LayerIDHMask) << 5) |
                        ((fragment[1] & kH265LayerIDLMask) >> 3);
     layer_id_min = std::min(layer_id_min, layer_id);
@@ -311,7 +310,7 @@ void RtpPacketizerH265::NextFragmentPacket(RtpPacketToSend* rtp_packet) {
   // Now update payload_hdr_h with FU type.
   payload_hdr_h = (payload_hdr_h & kH265TypeMaskN) |
                   (H265::NaluType::kFu << 1) | layer_id_h;
-  rtc::ArrayView<const uint8_t> fragment = packet->source_fragment;
+  ArrayView<const uint8_t> fragment = packet->source_fragment;
   uint8_t* buffer = rtp_packet->AllocatePayload(
       kH265FuHeaderSizeBytes + kH265PayloadHeaderSizeBytes + fragment.size());
   RTC_CHECK(buffer);

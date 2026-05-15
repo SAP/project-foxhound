@@ -8,6 +8,19 @@ task-defaults:
     worker-type: b-osx-1015
     worker:
         max-run-time: 7200
+        artifacts:
+            - name: public/build/security/{browser_entitlement}.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/{browser_entitlement}.xml
+              type: file
+            - name: public/build/security/media-plugin-helper.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/media-plugin-helper.xml
+              type: file
+            - name: public/build/security/plugin-container.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/plugin-container.xml
+              type: file
+            - name: public/build/security/security-module-helper.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/security-module-helper.xml
+              type: file
     run:
         using: mozharness
         script: "mozharness/scripts/fx_desktop_build.py"

@@ -6,13 +6,13 @@
 
 #include "mozilla/dom/WebTransportStreams.h"
 
-#include "mozilla/dom/WebTransportLog.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/WebTransport.h"
 #include "mozilla/dom/WebTransportBidirectionalStream.h"
+#include "mozilla/dom/WebTransportLog.h"
 #include "mozilla/dom/WebTransportReceiveStream.h"
 #include "mozilla/dom/WebTransportSendStream.h"
-#include "mozilla/Result.h"
 
 using namespace mozilla::ipc;
 

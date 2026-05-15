@@ -17,6 +17,7 @@ CreateDecoderParamsForAsync::CreateDecoderParamsForAsync(
       mImageContainer(aParams.mImageContainer),
       mKnowsCompositor(aParams.mKnowsCompositor),
       mCrashHelper(aParams.mCrashHelper),
+      mCDM(aParams.mCDM),
       mUseNullDecoder(aParams.mUseNullDecoder),
       mWrappers(aParams.mWrappers),
       mType(aParams.mType),

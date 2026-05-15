@@ -21,6 +21,7 @@ if CONFIG["MOZ_WEBRTC"]:
         "VideoFrameUtils.cpp",
     ]
     LOCAL_INCLUDES += [
+        "!/dist/include/libwebrtc_overrides",
         "/dom/media/webrtc",
         "/media/libyuv/libyuv/include",
         "/mfbt",

@@ -11,6 +11,8 @@
 // for definition of MFBT_DATA
 #include "mozilla/Types.h"
 
+#include <cstdint>
+
 /**
  * The public interface of this header consists of a set of macros and
  * functions for Intel CPU features.
@@ -156,6 +158,14 @@
 // It's ok to use SHA-512 instructions based on the -march option.
 #    define MOZILLA_PRESUME_SHA512 1
 #  endif
+#  ifdef __BMI__
+// It's ok to use BMI1 instructions based on the -march option.
+#    define MOZILLA_PRESUME_BMI 1
+#  endif
+#  ifdef __BMI2__
+// It's ok to use BMI2 instructions based on the -march option.
+#    define MOZILLA_PRESUME_BMI2 1
+#  endif
 
 #  ifdef HAVE_CPUID_H
 #    define MOZILLA_SSE_HAVE_CPUID_DETECTION
@@ -249,6 +259,12 @@ extern bool MFBT_DATA sha_enabled;
 #  endif
 #  if !defined(MOZILLA_PRESUME_SHA512)
 extern bool MFBT_DATA sha512_enabled;
+#  endif
+#  if !defined(MOZILLA_PRESUME_BMI)
+extern bool MFBT_DATA bmi_enabled;
+#  endif
+#  if !defined(MOZILLA_PRESUME_BMI2)
+extern bool MFBT_DATA bmi2_enabled;
 #  endif
 
 extern bool MFBT_DATA has_constant_tsc;
@@ -412,6 +428,26 @@ inline bool supports_sha512() { return true; }
 inline bool supports_sha512() { return sse_private::sha512_enabled; }
 #else
 inline bool supports_sha512() { return false; }
+#endif
+
+#if defined(MOZILLA_PRESUME_BMI)
+#  define MOZILLA_MAY_SUPPORT_BMI 1
+inline bool supports_bmi() { return true; }
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#  define MOZILLA_MAY_SUPPORT_BMI 1
+inline bool supports_bmi() { return sse_private::bmi_enabled; }
+#else
+inline bool supports_bmi() { return false; }
+#endif
+
+#if defined(MOZILLA_PRESUME_BMI2)
+#  define MOZILLA_MAY_SUPPORT_BMI2 1
+inline bool supports_bmi2() { return true; }
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#  define MOZILLA_MAY_SUPPORT_BMI2 1
+inline bool supports_bmi2() { return sse_private::bmi2_enabled; }
+#else
+inline bool supports_bmi2() { return false; }
 #endif
 
 #ifdef MOZILLA_SSE_HAVE_CPUID_DETECTION

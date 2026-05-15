@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 const { FormHistory } = ChromeUtils.importESModule(
   "resource://gre/modules/FormHistory.sys.mjs"
 );

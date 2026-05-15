@@ -67,9 +67,9 @@ def add_optimization(
     subs["build_date_long"] = time.strftime(
         "%Y.%m.%d.%Y%m%d%H%M%S", time.gmtime(config.params["build_date"])
     )
-    taskdesc["routes"].extend(
-        [f"index.{route.format(**subs)}" for route in EXTRA_CACHE_INDEXES]
-    )
+    taskdesc["routes"].extend([
+        f"index.{route.format(**subs)}" for route in EXTRA_CACHE_INDEXES
+    ])
 
     taskdesc["attributes"]["cached_task"] = {
         "type": cache_type,

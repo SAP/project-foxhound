@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<meta name="viewport" content="width=device-width; initial-scale=1.0">
+<title>Tests that :hover state is changed with an active `touchmove` event listener</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+ <script src="/tests/SimpleTest/paint_listener.js"></script>
+<script src="apz_test_utils.js"></script>
+<script src="apz_test_native_event_utils.js"></script>
+<style>
+  html { height:200vh; }
+  .test:hover { background:lime; }
+  .test {
+    border: 5px solid black;
+    height: 100px;
+    margin:  50px;
+    display: block;
+  }
+</style>
+<div class="test">DIV: Tap me and scroll</div>
+<script>
+async function test() {
+  // Setup an active touchmove event listener to delay handling a touchstart
+  // event in the target APZC.
+  window.addEventListener("touchmove", () => {
+    info("Got a touchmove event");
+  }, { passive: false });
+
+  const target = document.querySelector(".test");
+  const touchStartPromise =  promiseOneEvent(target, "touchstart");
+  const touchEndPromise =  promiseOneEvent(target, "touchend");
+  await promiseApzFlushedRepaints();
+
+  await synthesizeNativeTouch(target, 10, 10, SpecialPowers.DOMWindowUtils.TOUCH_CONTACT);
+  await touchStartPromise;
+
+  await promiseFrame();
+  await promiseFrame();
+  ok(target.matches(":hover"), "should be hover");
+
+  await synthesizeNativeTouch(target, 10, 10, SpecialPowers.DOMWindowUtils.TOUCH_REMOVE);
+  await touchEndPromise;
+
+  await promiseFrame();
+  await promiseFrame();
+  ok(target.matches(":hover"), "should be still hover");
+}
+
+if (getPlatform() == "windows") {
+  // Bug 1875916. On Windows synthesizeNativeTouch(TOUCH_REMOVE) causes
+  // `InjectTouchInput failure` with ERROR_TIMEOUT.
+  ok(true, "Test doesn't need to run on Windows");
+  subtestDone();
+} else {
+  waitUntilApzStable()
+  .then(test)
+  .then(subtestDone, subtestFailed);
+}
+</script>
+</html>

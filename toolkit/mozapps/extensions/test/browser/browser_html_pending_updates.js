@@ -390,6 +390,8 @@ add_task(async function test_pending_update_no_prompted_permission() {
 
   await completePostponedUpdate({ id, win });
 
+  expectUpdatesAvailableBadgeCount({ win, expectedNumber: 0 });
+
   info("Reopen about:addons again and verify postponed bar hidden");
   await closeView(win);
   win = await loadInitialView("extension");
@@ -406,6 +408,51 @@ add_task(async function test_hidden_addon_pending_update() {
   expectUpdatesAvailableBadgeCount({ win, expectedNumber: 0 });
 
   await closeView(win);
+});
+
+add_task(async function test_pending_update_ignored_manual_install() {
+  const id = "test-update-ignored-manual-install@mochi.test";
+
+  const { extension, updateXpi } = createTestExtension({ id });
+
+  await extension.startup();
+  await extension.awaitMessage("bgpage-ready");
+
+  const win = await loadInitialView("extension");
+
+  info("Force about:addons to check for updates");
+  win.checkForUpdates();
+  await promiseUpdateAvailable(extension);
+
+  expectUpdatesAvailableBadgeCount({ win, expectedNumber: 1 });
+
+  info("Manually install new xpi over the existing extension");
+  const promiseInstalled = AddonTestUtils.promiseInstallFile(updateXpi);
+  await promiseUpdateAvailable(extension);
+
+  // At this point, internally there may be two AddonInstall instances for the
+  // same extension, but we should count only one update.
+  expectUpdatesAvailableBadgeCount({ win, expectedNumber: 1 });
+
+  await completePostponedUpdate({ id, win });
+  await promiseInstalled;
+
+  expectUpdatesAvailableBadgeCount({ win, expectedNumber: 0 });
+
+  await closeView(win);
+  await extension.unload();
+
+  // We do currently not clean up stale AddonInstall instances when another
+  // one is created and completed (bug 2007749), so we have to manually cancel
+  // the remaining install. Not doing so would cause a test-only check in
+  // registerCleanupFunction at toolkit/mozapps/extensions/test/browser/head.js
+  // to fail with "Should not have seen an install of <url to XPI> in state 7".
+  const unwantedInstalls = (await AddonManager.getAllInstalls()).filter(
+    install => install.addon?.id === id || install.existingAddon?.id === id
+  );
+  is(unwantedInstalls.length, 1, "Found unwanted remaining install");
+  is(unwantedInstalls[0].state, AddonManager.STATE_POSTPONED, "Got state");
+  unwantedInstalls[0].cancel();
 });
 
 add_task(async function test_pending_update_with_prompted_data_permission() {

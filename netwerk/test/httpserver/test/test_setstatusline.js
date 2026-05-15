@@ -30,7 +30,7 @@ function run_test() {
   runHttpTests(tests, testComplete(srv));
 }
 
-/** ***********
+/*************
  * UTILITIES *
  *************/
 
@@ -51,7 +51,7 @@ function checkStatusLine(
   Assert.equal(respMin.value, httpMinVer);
 }
 
-/** *******
+/*********
  * TESTS *
  *********/
 

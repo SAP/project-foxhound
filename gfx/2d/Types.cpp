@@ -23,10 +23,6 @@ std::ostream& operator<<(std::ostream& aOut, const Side& aSide) {
     Emit(eSideBottom);
     Emit(eSideLeft);
     Emit(eSideRight);
-    default:
-      NS_ERROR("unknown side");
-      aOut << int(aSide);
-      break;
   }
 
 #undef Emit
@@ -51,11 +47,15 @@ std::ostream& operator<<(std::ostream& aOut, const SurfaceFormat& aFormat) {
     Emit(SurfaceFormat::R8G8B8);
     Emit(SurfaceFormat::B8G8R8);
     Emit(SurfaceFormat::R5G6B5_UINT16);
+    Emit(SurfaceFormat::R10G10B10A2_UINT32);
+    Emit(SurfaceFormat::R10G10B10X2_UINT32);
+    Emit(SurfaceFormat::R16G16B16A16F);
     Emit(SurfaceFormat::A8);
     Emit(SurfaceFormat::A16);
     Emit(SurfaceFormat::R8G8);
     Emit(SurfaceFormat::R16G16);
     Emit(SurfaceFormat::YUV420);
+    Emit(SurfaceFormat::YUV420P10);
     Emit(SurfaceFormat::YUV422P10);
     Emit(SurfaceFormat::NV12);
     Emit(SurfaceFormat::P016);
@@ -65,9 +65,7 @@ std::ostream& operator<<(std::ostream& aOut, const SurfaceFormat& aFormat) {
     Emit(SurfaceFormat::HSV);
     Emit(SurfaceFormat::Lab);
     Emit(SurfaceFormat::Depth);
-    default:
-      NS_ERROR("unknown surface format");
-      aOut << "???";
+    Emit(SurfaceFormat::UNKNOWN);
   }
 
 #undef Emit
@@ -94,8 +92,27 @@ std::ostream& operator<<(std::ostream& aOut, const SamplingFilter& aFilter) {
     case SamplingFilter::POINT:
       aOut << "SamplingFilter::POINT";
       break;
-    default:
+    case SamplingFilter::SENTINEL:
       aOut << "???";
+      break;
+  }
+  return aOut;
+}
+
+std::ostream& operator<<(std::ostream& aOut, const ColorDepth& aColorDepth) {
+  switch (aColorDepth) {
+    case ColorDepth::COLOR_8:
+      aOut << "ColorDepth::COLOR_8";
+      break;
+    case ColorDepth::COLOR_10:
+      aOut << "ColorDepth::COLOR_10";
+      break;
+    case ColorDepth::COLOR_12:
+      aOut << "ColorDepth::COLOR_12";
+      break;
+    case ColorDepth::COLOR_16:
+      aOut << "ColorDepth::COLOR_16";
+      break;
   }
   return aOut;
 }

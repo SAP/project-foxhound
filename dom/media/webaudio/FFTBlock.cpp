@@ -30,8 +30,9 @@
 
 #include "FFTBlock.h"
 
-#include "FFVPXRuntimeLinker.h"
 #include <complex>
+
+#include "FFVPXRuntimeLinker.h"
 
 namespace mozilla {
 

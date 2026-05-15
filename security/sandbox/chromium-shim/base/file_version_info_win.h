@@ -11,9 +11,9 @@
 #define BASE_FILE_VERSION_INFO_WIN_H_
 
 #include <memory>
+#include <minwindef.h>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/version.h"
 
 #include "mozilla/Assertions.h"
@@ -27,6 +27,9 @@ class FilePath;
 
 class FileVersionInfoWin {
  public:
+  FileVersionInfoWin(const FileVersionInfoWin&) = delete;
+  FileVersionInfoWin& operator=(const FileVersionInfoWin&) = delete;
+
   static std::unique_ptr<FileVersionInfoWin> CreateFileVersionInfoWin(
       const base::FilePath& file_path);
 
@@ -47,8 +50,6 @@ class FileVersionInfoWin {
 
   // This is a reference for a portion of |data_|.
   const VS_FIXEDFILEINFO& fixed_file_info_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileVersionInfoWin);
 };
 
 #endif  // BASE_FILE_VERSION_INFO_WIN_H_

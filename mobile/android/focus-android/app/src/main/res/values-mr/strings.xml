@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -118,7 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s आपल्याला नियंत्रण देतो.</p> <p>खाजगी ब्राउझर म्हणून वापरा: <ul> <li>अँप मध्येच शोध व ब्राउझ करा</li> <li>मागोवा यंत्रणा अडवा(किंवा सेटिंग बदलून मागोवा यंत्रणेला परवानगी द्या)</li> <li>कुकीज, सर्च व ब्राऊझिंग इतिहास नष्ट करण्यासाठी खोडून टाका</li> </ul> </p> <p>%1$s Mozilla ने उत्पादित केला आहे. खुले व सुधृढ इंटरनेट जोपासणे आमचे ध्येय आहे.<br/> <a href=\"%2$s\">अधिक जाणून घ्या</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s आपल्याला नियंत्रण देतो.</p>\n<p>खाजगी ब्राउझर म्हणून वापरा:\n<ul>\n<li>अँप मध्येच शोध व ब्राउझ करा</li>\n<li>मागोवा यंत्रणा अडवा(किंवा सेटिंग बदलून मागोवा यंत्रणेला परवानगी द्या)</li>\n<li>कुकीज, सर्च व ब्राऊझिंग इतिहास नष्ट करण्यासाठी खोडून टाका</li>\n</ul> </p>\n<p>%1$s Mozilla ने उत्पादित केला आहे. खुले व सुधृढ इंटरनेट जोपासणे आमचे ध्येय आहे.<br/>\n<a href=\"%2$s\">अधिक जाणून घ्या</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">गोपनीयता आणि सुरक्षा</string>
   <!-- Preference summary for settings related to privacy and security -->

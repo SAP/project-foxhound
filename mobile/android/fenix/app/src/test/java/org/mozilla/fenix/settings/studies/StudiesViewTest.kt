@@ -15,12 +15,12 @@ import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.spyk
 import io.mockk.verify
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import mozilla.components.service.nimbus.NimbusApi
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.experiments.nimbus.internal.EnrolledExperiment
@@ -44,29 +44,28 @@ class StudiesViewTest {
     private lateinit var settings: Settings
 
     private lateinit var view: StudiesView
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val testCoroutineScope = coroutinesTestRule.scope
+    private val testDispatcher = StandardTestDispatcher()
+    private val testScope = TestScope(testDispatcher)
 
     @Before
     fun setup() {
         MockKAnnotations.init(this)
         view = spyk(
             StudiesView(
-                testCoroutineScope,
+                testScope,
                 testContext,
                 binding,
                 interactor,
                 settings,
                 experiments,
+                testDispatcher,
                 isAttached = { true },
             ),
         )
     }
 
     @Test
-    fun `WHEN calling bind THEN bind all the related information`() = runTestOnMain {
+    fun `WHEN calling bind THEN bind all the related information`() = runTest(testDispatcher) {
         val studiesTitle = mockk<TextView>(relaxed = true)
         val studiesSwitch = mockk<SwitchCompat>(relaxed = true)
         val studiesList = mockk<RecyclerView>(relaxed = true)
@@ -79,6 +78,7 @@ class StudiesViewTest {
         every { view.getSwitchTitle() } returns "Title"
 
         view.bind()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify {
             studiesTitle.text = "Title"
@@ -89,7 +89,7 @@ class StudiesViewTest {
     }
 
     @Test
-    fun `WHEN calling onRemoveButtonClicked THEN delegate to the interactor`() = runTestOnMain {
+    fun `WHEN calling onRemoveButtonClicked THEN delegate to the interactor`() {
         val experiment = mockk<EnrolledExperiment>()
         val adapter = mockk<StudiesAdapter>(relaxed = true)
 

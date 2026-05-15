@@ -11,37 +11,42 @@
 #include "rtc_base/async_tcp_socket.h"
 
 #include <memory>
-#include <string>
+#include <utility>
 
-#include "rtc_base/gunit.h"
+#include "rtc_base/async_packet_socket.h"
+#include "rtc_base/net_helpers.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/virtual_socket_server.h"
+#include "test/create_test_environment.h"
+#include "test/gmock.h"
+#include "test/gtest.h"
 
-namespace rtc {
+namespace webrtc {
+namespace {
 
-class AsyncTCPSocketTest : public ::testing::Test, public sigslot::has_slots<> {
- public:
-  AsyncTCPSocketTest()
-      : vss_(new rtc::VirtualSocketServer()),
-        socket_(vss_->CreateSocket(SOCK_STREAM)),
-        tcp_socket_(new AsyncTCPSocket(socket_, true)),
-        ready_to_send_(false) {
-    tcp_socket_->SignalReadyToSend.connect(this,
-                                           &AsyncTCPSocketTest::OnReadyToSend);
-  }
+using ::testing::NotNull;
 
-  void OnReadyToSend(rtc::AsyncPacketSocket* socket) { ready_to_send_ = true; }
+struct AsyncTCPSocketObserver : public sigslot::has_slots<> {
+  void OnReadyToSend(AsyncPacketSocket* socket) { ready_to_send = true; }
 
- protected:
-  std::unique_ptr<VirtualSocketServer> vss_;
-  Socket* socket_;
-  std::unique_ptr<AsyncTCPSocket> tcp_socket_;
-  bool ready_to_send_;
+  bool ready_to_send = false;
 };
 
-TEST_F(AsyncTCPSocketTest, OnWriteEvent) {
-  EXPECT_FALSE(ready_to_send_);
-  socket_->SignalWriteEvent(socket_);
-  EXPECT_TRUE(ready_to_send_);
+TEST(AsyncTCPSocketTest, OnWriteEvent) {
+  VirtualSocketServer vss;
+  std::unique_ptr<Socket> socket = vss.Create(AF_INET, SOCK_STREAM);
+  ASSERT_THAT(socket, NotNull());
+  Socket& socket_ref = *socket;
+  AsyncTCPSocketObserver observer;
+  AsyncTCPSocket tcp_socket(webrtc::CreateTestEnvironment(), std::move(socket));
+  tcp_socket.SignalReadyToSend.connect(&observer,
+                                       &AsyncTCPSocketObserver::OnReadyToSend);
+
+  EXPECT_FALSE(observer.ready_to_send);
+  socket_ref.SignalWriteEvent(&socket_ref);
+  EXPECT_TRUE(observer.ready_to_send);
 }
 
-}  // namespace rtc
+}  // namespace
+}  // namespace webrtc

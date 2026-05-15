@@ -4,7 +4,7 @@
 
 package mozilla.components.support.ktx.kotlin
 
-import android.text.SpannableString
+import android.text.Spanned
 import mozilla.components.support.base.utils.MAX_URI_LENGTH
 import mozilla.components.support.ktx.util.RegistrableDomainSpan
 
@@ -20,12 +20,10 @@ fun CharSequence.trimmed(): CharSequence {
  * Extract the start and end indexes of the [RegistrableDomainSpan] marker if present
  * in this string representing an URL.
  */
-fun CharSequence.getRegistrableDomainIndexRange() = when (this is SpannableString) {
-    true -> {
-        val domainSpan = getSpans(0, length, RegistrableDomainSpan::class.java)
-            .firstOrNull() ?: return null
+fun CharSequence.getRegistrableDomainIndexRange(): Pair<Int, Int>? {
+    val spanned = this as? Spanned ?: return null
+    val domainSpan = spanned.getSpans(0, spanned.length, RegistrableDomainSpan::class.java)
+        .firstOrNull() ?: return null
 
-        getSpanStart(domainSpan) to getSpanEnd(domainSpan)
-    }
-    else -> null
+    return spanned.getSpanStart(domainSpan) to spanned.getSpanEnd(domainSpan)
 }

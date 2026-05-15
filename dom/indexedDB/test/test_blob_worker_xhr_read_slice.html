@@ -71,7 +71,6 @@
     info("Sending blob to a worker");
 
     function workerScript() {
-      /* eslint-env worker */
       onmessage = function(event) {
         var blob = event.data;
         var slicedBlob = blob.slice(0, 3, "text/plain");

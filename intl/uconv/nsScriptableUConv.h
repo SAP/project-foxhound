@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsScriptableUConv_h_
-#define __nsScriptableUConv_h_
+#ifndef _nsScriptableUConv_h_
+#define _nsScriptableUConv_h_
 
 #include "nsIScriptableUConv.h"
 #include "nsCOMPtr.h"

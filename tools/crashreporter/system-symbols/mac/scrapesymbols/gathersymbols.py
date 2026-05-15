@@ -36,7 +36,9 @@ def should_process(f, platform=sys.platform):
         prematurely when this happens.
         """
         try:
-            filetype = subprocess.check_output(["file", "-Lb", f], text=True)
+            filetype = subprocess.check_output(
+                ["file", "-Lb", f], encoding="utf-8", errors="replace"
+            )
         except subprocess.CalledProcessError:
             return False
         """Skip kernel extensions"""
@@ -44,7 +46,9 @@ def should_process(f, platform=sys.platform):
             return False
         return filetype.startswith("Mach-O")
     else:
-        return subprocess.check_output(["file", "-Lb", f], text=True).startswith("ELF")
+        return subprocess.check_output(
+            ["file", "-Lb", f], encoding="utf-8", errors="replace"
+        ).startswith("ELF")
     return False
 
 
@@ -54,15 +58,18 @@ def get_archs(filename, platform=sys.platform):
     list on non-OS X.
     """
     architectures = []
-    output = subprocess.check_output(["file", "-Lb", filename], text=True)
+    output = subprocess.check_output(
+        ["file", "-Lb", filename], encoding="utf-8", errors="replace"
+    )
     for string in output.split(" "):
-        if string == "arm64e":
+        cleaned = string.strip("[]():,")
+        if cleaned == "arm64e":
             architectures.append("arm64e")
-        elif string == "x86_64_haswell":
+        elif cleaned == "x86_64_haswell":
             architectures.append("x86_64h")
-        elif string == "x86_64":
+        elif cleaned == "x86_64":
             architectures.append("x86_64")
-        elif string == "i386":
+        elif cleaned == "i386":
             architectures.append("i386")
 
     return architectures
@@ -88,7 +95,7 @@ def process_file(dump_syms, path, arch, verbose, write_all):
         stdout = subprocess.check_output([dump_syms] + arch_arg + [path], stderr=stderr)
     except subprocess.CalledProcessError:
         if verbose:
-            print("Processing %s%s...failed." % (path, " [%s]" % arch if arch else ""))
+            print(f"Processing {path}{f' [{arch}]' if arch else ''}...failed.")
         return None, None
     module = stdout.splitlines()[0]
     bits = module.split(b" ", 4)
@@ -96,7 +103,7 @@ def process_file(dump_syms, path, arch, verbose, write_all):
         return None, None
     _, platform, cpu_arch, debug_id, debug_file = bits
     if verbose:
-        sys.stdout.write("Processing %s [%s]..." % (path, arch))
+        sys.stdout.write(f"Processing {path} [{arch}]...")
     filename = os.path.join(debug_file, debug_id, debug_file + b".sym")
     # see if the server already has this symbol file
     if not write_all:
@@ -150,7 +157,7 @@ def process_paths(
             yield job.result()
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
-            print("Error: %s" % str(e), file=sys.stderr)
+            print(f"Error: {str(e)}", file=sys.stderr)
 
 
 def main():
@@ -176,7 +183,7 @@ def main():
         or not os.access(args.dump_syms, os.X_OK)
     ):
         print(
-            "Error: can't find dump_syms binary at %s!" % args.dump_syms,
+            f"Error: can't find dump_syms binary at {args.dump_syms}!",
             file=sys.stderr,
         )
         return 1
@@ -203,7 +210,7 @@ def main():
         )
     if file_list:
         if args.verbose:
-            print("Generated %s with %d symbols" % (zip_path, len(file_list)))
+            print(f"Generated {zip_path} with {len(file_list)} symbols")
     else:
         os.unlink("symbols.zip")
 

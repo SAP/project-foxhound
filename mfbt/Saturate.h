@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "mozilla/Attributes.h"
+#include "mozilla/CheckedArithmetic.h"
 
 namespace mozilla {
 namespace detail {
@@ -53,46 +54,21 @@ class SaturateOp {
   T operator-(const T& aRhs) const { return T(mValue) -= aRhs; }
 
   // Compound operators
-
-#if defined(__has_builtin)
-#  if __has_builtin(__builtin_add_overflow)
-#    define MOZ_ADD_OVERFLOW __builtin_add_overflow
-#  endif
-#  if __has_builtin(__builtin_sub_overflow)
-#    define MOZ_SUB_OVERFLOW __builtin_sub_overflow
-#  endif
-#endif
-
   const T& operator+=(const T& aRhs) const {
     constexpr T min = std::numeric_limits<T>::min();
     constexpr T max = std::numeric_limits<T>::max();
-#ifdef MOZ_ADD_OVERFLOW
-    if (MOZ_ADD_OVERFLOW(mValue, aRhs, &mValue))
+    if (!mozilla::SafeAdd(mValue, aRhs, &mValue)) {
       return mValue = (aRhs > 0 ? max : min);
-#else
-
-    if (aRhs > static_cast<T>(0)) {
-      mValue = (max - aRhs) < mValue ? max : mValue + aRhs;
-    } else {
-      mValue = (min - aRhs) > mValue ? min : mValue + aRhs;
     }
-#endif
     return mValue;
   }
 
   const T& operator-=(const T& aRhs) const {
     constexpr T min = std::numeric_limits<T>::min();
     constexpr T max = std::numeric_limits<T>::max();
-#ifdef MOZ_SUB_OVERFLOW
-    if (MOZ_SUB_OVERFLOW(mValue, aRhs, &mValue))
+    if (!mozilla::SafeSub(mValue, aRhs, &mValue)) {
       return mValue = (aRhs > 0 ? min : max);
-#else
-    if (aRhs > static_cast<T>(0)) {
-      mValue = (min + aRhs) > mValue ? min : mValue - aRhs;
-    } else {
-      mValue = (max + aRhs) < mValue ? max : mValue - aRhs;
     }
-#endif
     return mValue;
   }
 
@@ -250,6 +226,10 @@ typedef detail::Saturate<int32_t> SaturateInt32;
 typedef detail::Saturate<uint8_t> SaturateUint8;
 typedef detail::Saturate<uint16_t> SaturateUint16;
 typedef detail::Saturate<uint32_t> SaturateUint32;
+typedef detail::Saturate<intptr_t> SaturateIntPtr;
+typedef detail::Saturate<uintptr_t> SaturateUintPtr;
+
+using detail::Saturate;
 
 }  // namespace mozilla
 

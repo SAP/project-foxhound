@@ -4,12 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["privacy.sanitize.useOldClearHistoryDialog", false]],
-  });
-});
-
 // Test checking "clear cookies and site data when firefox shuts down" does a migration
 // before making any pref changes (Bug 1894933)
 add_task(async function testMigrationForDeleteOnClose() {
@@ -37,6 +31,8 @@ add_task(async function testMigrationForDeleteOnClose() {
   ok(!alwaysClearBox.checked, "AlwaysClear initial state is deselected");
 
   deleteOnCloseBox.click();
+  // Wait for change to take effect.
+  await new Promise(resolve => requestAnimationFrame(resolve));
 
   ok(deleteOnCloseBox.checked, "DeleteOnClose is selected");
   is(
@@ -46,7 +42,6 @@ add_task(async function testMigrationForDeleteOnClose() {
   );
   // We are done changing settings in about:preferences, remove the tab
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
-
   // Open the clear on shutdown preferences dialog
   let dh = new ClearHistoryDialogHelper({ mode: "clearOnShutdown" });
   dh.onload = function () {

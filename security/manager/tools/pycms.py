@@ -12,6 +12,9 @@ The specification format is as follows:
 
 sha1:<hex string>
 sha256:<hex string>
+md5:<hex string>
+tamperDigest:sha1 - Only sha1 is supported
+erase:{certificate, signerInfo}
 signer:
 <pycert specification>
 
@@ -24,10 +27,14 @@ the SignedData. If neither hash is specified, the signerInfos
 will be an empty SET (i.e. there will be no actual signature
 information).
 The certificate specification must come last.
+The script provides a possibility to tamper the hash while generating
+SignedAttributes, such that the SignedAttributes signature will be incorrect
+Erase allows specifying which PKCS7 field to strip (supports certificate or signerInfo)
 """
 
 import base64
 import sys
+from enum import Enum
 from io import StringIO
 
 import pycert
@@ -48,11 +55,20 @@ class UnknownDirectiveError(Error):
     directives."""
 
     def __init__(self, directive):
-        super(UnknownDirectiveError, self).__init__()
+        super().__init__()
         self.directive = directive
 
     def __str__(self):
         return "Unknown directive %s" % repr(self.directive)
+
+
+class FieldStrip(Enum):
+    CERTIFICATE = "certificate"
+    SIGNER_INFO = "signerInfo"
+
+
+class HashToTamper(Enum):
+    SHA1 = "sha1"
 
 
 class CMS:
@@ -62,6 +78,11 @@ class CMS:
     def __init__(self, paramStream):
         self.sha1 = ""
         self.sha256 = ""
+        self.md5 = ""
+
+        self.fieldStrip = ""
+        self.tamperDigest = ""
+
         signerSpecification = StringIO()
         readingSignerSpecification = False
         for line in paramStream.readlines():
@@ -73,6 +94,20 @@ class CMS:
                 self.sha1 = line.strip()[len("sha1:") :]
             elif line.startswith("sha256:"):
                 self.sha256 = line.strip()[len("sha256:") :]
+            elif line.startswith("md5:"):
+                self.md5 = line.strip()[len("md5:") :]
+            elif line.startswith("erase:"):
+                if line.strip()[len("erase:") :] == FieldStrip.CERTIFICATE.value:
+                    self.fieldStrip = FieldStrip.CERTIFICATE
+                elif line.strip()[len("erase:") :] == FieldStrip.SIGNER_INFO.value:
+                    self.fieldStrip = FieldStrip.SIGNER_INFO
+                else:
+                    raise UnknownDirectiveError(line.strip())
+            elif line.startswith("tamperDigest"):
+                if line.strip()[len("tamperDigest:") :] == HashToTamper.SHA1.value:
+                    self.tamperDigest = HashToTamper.SHA1
+                else:
+                    raise UnknownDirectiveError(line.strip())
             else:
                 raise UnknownDirectiveError(line.strip())
         signerSpecification.seek(0)
@@ -115,6 +150,8 @@ class CMS:
             oidString = "1.3.14.3.2.26"
         elif pykeyHash == pykey.HASH_SHA256:
             oidString = "2.16.840.1.101.3.4.2.1"
+        elif pykeyHash == pykey.HASH_MD5:
+            oidString = "1.2.840.113549.2.5"
         else:
             raise pykey.UnknownHashAlgorithmError(pykeyHash)
         algorithmIdentifier = rfc2459.AlgorithmIdentifier()
@@ -149,6 +186,19 @@ class CMS:
         signerInfo["digestEncryptionAlgorithm"] = rsa
         authenticatedAttributesEncoded = encoder.encode(authenticatedAttributesTBS)
         signature = self.signingKey.sign(authenticatedAttributesEncoded, pykeyHash)
+        if self.tamperDigest == HashToTamper.SHA1 and pykeyHash == pykey.HASH_SHA1:
+            digestValue = hex((int(digestValue[0], 16) + 1) % 16)[2:] + digestValue[1:]
+            authenticatedAttributesTBSTamperedHash = self.buildAuthenticatedAttributes(
+                digestValue
+            )
+            authenticatedAttributesTamperedEncoded = encoder.encode(
+                authenticatedAttributesTBSTamperedHash
+            )
+            # The signerInfo has an attribute with the initial hash
+            # But the tampered hash attributes are signed
+            signature = self.signingKey.sign(
+                authenticatedAttributesTamperedEncoded, pykeyHash
+            )
         # signature will be a hexified bit string of the form
         # "'<hex bytes>'H". For some reason that's what BitString wants,
         # but since this is an OCTET STRING, we have to strip off the
@@ -180,19 +230,26 @@ class CMS:
         )[0]
         extendedCertificateOrCertificate["certificate"] = certificate
         certificates[0] = extendedCertificateOrCertificate
-        signedData["certificates"] = certificates
 
-        signerInfos = rfc2315.SignerInfos()
+        if self.fieldStrip != FieldStrip.CERTIFICATE:
+            signedData["certificates"] = certificates
 
-        if len(self.sha1) > 0:
-            signerInfos[len(signerInfos)] = self.buildSignerInfo(
-                certificate, pykey.HASH_SHA1, self.sha1
-            )
-        if len(self.sha256) > 0:
-            signerInfos[len(signerInfos)] = self.buildSignerInfo(
-                certificate, pykey.HASH_SHA256, self.sha256
-            )
-        signedData["signerInfos"] = signerInfos
+        if self.fieldStrip != FieldStrip.SIGNER_INFO:
+            signerInfos = rfc2315.SignerInfos()
+
+            if len(self.sha1) > 0:
+                signerInfos[len(signerInfos)] = self.buildSignerInfo(
+                    certificate, pykey.HASH_SHA1, self.sha1
+                )
+            if len(self.sha256) > 0:
+                signerInfos[len(signerInfos)] = self.buildSignerInfo(
+                    certificate, pykey.HASH_SHA256, self.sha256
+                )
+            if len(self.md5) > 0:
+                signerInfos[len(signerInfos)] = self.buildSignerInfo(
+                    certificate, pykey.HASH_MD5, self.md5
+                )
+            signedData["signerInfos"] = signerInfos
 
         encoded = encoder.encode(signedData)
         anyTag = univ.Any(encoded).subtype(
@@ -207,13 +264,22 @@ class CMS:
         der = self.toDER()
         b64 = base64.b64encode(der)
         while b64:
-            output += "\n" + b64[:64]
+            output += "\n" + b64[:64].decode("utf-8")
             b64 = b64[64:]
         output += "\n-----END PKCS7-----\n"
         return output
 
 
+# The build harness will call this function with an output
+# file-like object and a path to a file containing a
+# specification. This will read the specification and output
+# the cms message as PEM.
+def main(output, inputPath):
+    with open(inputPath) as configStream:
+        output.write(CMS(configStream).toPEM() + "\n")
+
+
 # When run as a standalone program, this will read a specification from
-# stdin and output the certificate as PEM to stdout.
+# stdin and output the cms message as PEM.
 if __name__ == "__main__":
     print(CMS(sys.stdin).toPEM())

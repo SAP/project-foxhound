@@ -22,17 +22,20 @@ import androidx.core.content.edit
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.feature.search.widget.BaseVoiceSearchActivity
 import mozilla.components.lib.auth.canUseBiometricFeature
 import mozilla.components.lib.crash.Crash
+import mozilla.components.lib.state.ext.flow
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.utils.SafeIntent
 import mozilla.components.support.utils.StatusBarUtils
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.experiments.nimbus.initializeTooling
+import org.mozilla.experiments.nimbus.internal.FeatureHolder
 import org.mozilla.focus.GleanMetrics.AppOpened
 import org.mozilla.focus.GleanMetrics.Notifications
 import org.mozilla.focus.R
@@ -44,9 +47,13 @@ import org.mozilla.focus.ext.settings
 import org.mozilla.focus.ext.updateSecureWindowFlags
 import org.mozilla.focus.fragment.BrowserFragment
 import org.mozilla.focus.fragment.UrlInputFragment
+import org.mozilla.focus.fragment.onboarding.OnboardingStorage
 import org.mozilla.focus.navigation.MainActivityNavigation
 import org.mozilla.focus.navigation.Navigator
+import org.mozilla.focus.nimbus.FocusNimbus
+import org.mozilla.focus.nimbus.Onboarding
 import org.mozilla.focus.searchwidget.ExternalIntentNavigation
+import org.mozilla.focus.searchwidget.SearchWidgetUtils
 import org.mozilla.focus.session.IntentProcessor
 import org.mozilla.focus.session.PrivateNotificationFeature
 import org.mozilla.focus.shortcut.HomeScreen
@@ -55,20 +62,33 @@ import org.mozilla.focus.state.Screen
 import org.mozilla.focus.telemetry.startuptelemetry.StartupPathProvider
 import org.mozilla.focus.telemetry.startuptelemetry.StartupTypeTelemetry
 import org.mozilla.focus.utils.SupportUtils
+import org.mozilla.focus.utils.ViewUtils
 
 private const val REQUEST_TIME_OUT = 2000L
 
-@Suppress("TooManyFunctions", "LargeClass")
-/**
- * The main entry point for the app.
- */
+@Suppress("LargeClass")
+// The main entry point for the app.
 open class MainActivity : EdgeToEdgeActivity() {
     private var isToolbarInflated = false
     private val intentProcessor by lazy {
         IntentProcessor(this, components.tabsUseCases, components.customTabsUseCases)
     }
+    private val onboardingStorage by lazy { OnboardingStorage(this) }
+    private val navigator by lazy {
+        Navigator(
+            stateFlow = components.appStore.flow(),
+            navigation = MainActivityNavigation(
+                supportFragmentManager = supportFragmentManager,
+                onboardingStorage = onboardingStorage,
+                isInPictureInPictureMode = { isInPictureInPictureMode },
+                shouldAnimateHome = ::shouldAnimateHome,
+                showStartBrowsingCfr = ::showStartBrowsingCfr,
+                onEraseAction = ::reactToEraseAction,
+            ),
+            scope = lifecycleScope,
+        )
+    }
 
-    private val navigator by lazy { Navigator(components.appStore, MainActivityNavigation(this)) }
     private val tabCount: Int
         get() = components.store.state.privateTabs.size
 
@@ -118,7 +138,7 @@ open class MainActivity : EdgeToEdgeActivity() {
         }
 
         if (savedInstanceState == null && intent.hasExtra(HomeScreen.ADD_TO_HOMESCREEN_TAG)) {
-            intentProcessor.handleNewIntent(this, safeIntent)
+            intentProcessor.handleNewIntent(safeIntent)
         }
 
         if (safeIntent.isLauncherIntent) {
@@ -183,7 +203,7 @@ open class MainActivity : EdgeToEdgeActivity() {
     }
 
     private fun checkAndExitPiP() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode && intent != null) {
+        if (isInPictureInPictureMode && intent != null) {
             // Exit PiP mode
             moveTaskToBack(false)
             startActivity(Intent(this, this::class.java).setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
@@ -249,7 +269,7 @@ open class MainActivity : EdgeToEdgeActivity() {
         val action = intent.action
 
         if (intent.hasExtra(HomeScreen.ADD_TO_HOMESCREEN_TAG)) {
-            intentProcessor.handleNewIntent(this, intent)
+            intentProcessor.handleNewIntent(intent)
         }
 
         if (ACTION_OPEN == action) {
@@ -307,6 +327,92 @@ open class MainActivity : EdgeToEdgeActivity() {
         if (fromNotificationAction) {
             Notifications.eraseOpenButtonTapped.record(Notifications.EraseOpenButtonTappedExtra(tabCount))
         }
+    }
+
+    /**
+     * Display the widget promo at first data clearing action and if it wasn't added after 5th Focus session
+     * or display branded snackbar when widget promo is not shown.
+     */
+    private fun reactToEraseAction() {
+        val onboardingFeature = FocusNimbus.features.onboarding
+
+        val clearBrowsingSessions = components.settings.getClearBrowsingSessions()
+        components.settings.addClearBrowsingSessions(INCREMENT_CLEAR_BROWSING_SESSIONS_BY)
+
+        if (shouldShowWidgetPromo(onboardingFeature, clearBrowsingSessions)) {
+            showWidgetPromo(onboardingFeature)
+        } else {
+            showBrandedFeedbackSnackbar()
+        }
+    }
+
+    /**
+     * Determines if the widget promo should be displayed based on feature flags,
+     * widget installation status, and the number of data clearing actions.
+     *
+     * @param onboardingFeature The feature holder for onboarding.
+     * @param clearCount The number of times data has been cleared.
+     * @return True if the widget promo should be shown, false otherwise.
+     */
+    private fun shouldShowWidgetPromo(
+        onboardingFeature: FeatureHolder<Onboarding>,
+        clearCount: Int,
+    ): Boolean {
+        val isPromoEnabled = onboardingFeature.value().isPromoteSearchWidgetDialogEnabled
+        val isWidgetNotInstalled = !settings.searchWidgetInstalled
+        val isEligibleSessionCount =
+            clearCount == FIRST_DATA_CLEARING_ACTION_COUNT ||
+                    clearCount == FIFTH_FOCUS_SESSION_THRESHOLD_FOR_PROMO
+        return isPromoEnabled && isWidgetNotInstalled && isEligibleSessionCount
+    }
+
+    private fun showWidgetPromo(onboardingFeature: FeatureHolder<Onboarding>) {
+        onboardingFeature.recordExposure()
+        SearchWidgetUtils.showPromoteSearchWidgetDialog(this)
+    }
+
+    /**
+     * Shows a branded snackbar to provide feedback to the user after an erase action.
+     * This is typically shown when the widget promo is not displayed.
+     */
+    private fun showBrandedFeedbackSnackbar() {
+        val rootView = findViewById<View>(android.R.id.content)
+        ViewUtils.showBrandedSnackbar(
+            rootView,
+            R.string.feedback_erase2,
+            resources.getInteger(R.integer.erase_snackbar_delay),
+        )
+    }
+
+    /**
+     * Shows the "Start Browsing" CFR if the conditions are met.
+     *
+     * This function checks if:
+     * - The CFR feature is enabled in Nimbus.
+     * - It's not the first run of the app.
+     * - The app settings indicate that the CFR should be shown.
+     *
+     * If all conditions are true, it sends an exposure event for the onboarding feature
+     * and dispatches an action to show the CFR.
+     */
+    private fun showStartBrowsingCfr() {
+        val onboardingConfig = FocusNimbus.features.onboarding.value()
+        if (onboardingConfig.isCfrEnabled &&
+            !settings.isFirstRun &&
+            settings.shouldShowStartBrowsingCfr
+        ) {
+            FocusNimbus.features.onboarding.recordExposure()
+            components.appStore.dispatch(
+                AppAction.ShowStartBrowsingCfrChange(true),
+            )
+        }
+    }
+
+    private fun shouldAnimateHome(): Boolean {
+        val browserFragment =
+            supportFragmentManager.findFragmentByTag(BrowserFragment.FRAGMENT_TAG) as? BrowserFragment
+                ?: return false
+        return browserFragment.isResumed
     }
 
     override fun onCreateView(parent: View?, name: String, context: Context, attrs: AttributeSet): View? {
@@ -383,6 +489,16 @@ open class MainActivity : EdgeToEdgeActivity() {
         }
     }
 
+    /**
+     * Gets the [ActionBar] for this activity.
+     *
+     * This function lazily inflates the toolbar from a `ViewStub` the first time it's called,
+     * sets it as the `supportActionBar`, and adjusts its padding and height to account for the
+     * status bar, ensuring content is not obscured. On subsequent calls, it returns the
+     * already inflated and configured `ActionBar`.
+     *
+     * @return The configured [ActionBar] for the activity.
+     */
     fun getToolbar(): ActionBar {
         return if (isToolbarInflated) {
             supportActionBar!!
@@ -414,6 +530,12 @@ open class MainActivity : EdgeToEdgeActivity() {
         components.notificationsDelegate.unBindActivity(this)
     }
 
+    /**
+     * Represents the different ways an application can be opened, used for telemetry purposes.
+     * This helps distinguish between a fresh start and resuming from the background.
+     *
+     * @property type The string representation of the open type, used for metrics.
+     */
     enum class AppOpenType(val type: String) {
         LAUNCH("Launch"),
         RESUME("Resume"),
@@ -424,5 +546,9 @@ open class MainActivity : EdgeToEdgeActivity() {
         const val ACTION_OPEN = "open"
 
         const val EXTRA_NOTIFICATION = "notification"
+
+        private const val FIRST_DATA_CLEARING_ACTION_COUNT = 0
+        private const val FIFTH_FOCUS_SESSION_THRESHOLD_FOR_PROMO = 4
+        private const val INCREMENT_CLEAR_BROWSING_SESSIONS_BY = 1
     }
 }

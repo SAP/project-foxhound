@@ -551,6 +551,9 @@ class MOZ_STACK_CLASS PerHandlerParser : public ParserBase {
   inline bool processExport(Node node);
   inline bool processExportFrom(BinaryNodeType node);
   inline bool processImport(BinaryNodeType node);
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  inline bool processImportSource(BinaryNodeType node);
+#endif
 
   // If ParseHandler is SyntaxParseHandler:
   //   Do nothing.
@@ -791,6 +794,9 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
   using Base::processExport;
   using Base::processExportFrom;
   using Base::processImport;
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  using Base::processImportSource;
+#endif
   using Base::setFunctionEndFromCurrentToken;
 
  private:
@@ -1538,7 +1544,7 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
                                TokenPos pos);
 
  private:
-  inline bool asmJS(ListNodeType list);
+  inline bool asmJS(TokenPos directivePos, ListNodeType list);
 };
 
 template <typename Unit>
@@ -1673,7 +1679,7 @@ class MOZ_STACK_CLASS Parser<SyntaxParseHandler, Unit> final
   bool skipLazyInnerFunction(FunctionNodeType funNode, uint32_t toStringStart,
                              bool tryAnnexB);
 
-  bool asmJS(ListNodeType list);
+  bool asmJS(TokenPos directivePos, ListNodeType list);
 
   // Functions present only in Parser<SyntaxParseHandler, Unit>.
 };
@@ -1857,7 +1863,7 @@ class MOZ_STACK_CLASS Parser<FullParseHandler, Unit> final
     return checkLabelOrIdentifierReference(ident, offset, YieldIsName);
   }
 
-  bool asmJS(ListNodeType list);
+  bool asmJS(TokenPos directivePos, ListNodeType list);
 };
 
 template <class Parser>

@@ -21,7 +21,7 @@ Network request columns
 
 You can toggle columns on and off by right-clicking on the table header and choosing the specific column from the context menu. A **Reset Columns** command is available on the context menu to reset the columns to their initial configuration.
 
-You can also change the width of the columns to help make the information you are looking for easier to view. The mouse pointer changes to a resize icon when you move it over the border of a column. You can drag to manually set the size of column. Starting in Firefox 76 you can double-click a column divider to resize the column to the left of it to fit its contents.
+You can also change the width of the columns to help make the information you are looking for easier to view. The mouse pointer changes to a resize icon when you move it over the border of a column. You can drag to manually set the size of column. You can double-click a column divider to resize the column to the left of it to fit its contents.
 
 The **Reset Columns** command on the context menu also resets the width of the columns to the default values.
 
@@ -59,7 +59,7 @@ Here is a list of all available columns:
 
 - **File**: The basename of the file requested.
 
-  - (Starting in Firefox 80) On the right edge of the File column, a turtle icon appears if the server waiting time exceeds a threshold (default: 500 ms). A tooltip explains the problem. You can configure the threshold in the `Configuration Editor <https://support.mozilla.org/en-US/kb/about-config-editor-firefox>`_ (about:config) by modifying the ``devtools.netmonitor.audits.slow`` setting.
+  - On the right edge of the File column, a turtle icon appears if the server waiting time exceeds a threshold (default: 500 ms). A tooltip explains the problem. You can configure the threshold in the `Configuration Editor <https://support.mozilla.org/en-US/kb/about-config-editor-firefox>`_ (about:config) by modifying the ``devtools.netmonitor.audits.slow`` setting.
   - |image2|
 
 - **URL**: The `URL <https://developer.mozilla.org/en-US/docs/Glossary/URL>`_ of the file requested.
@@ -67,12 +67,12 @@ Here is a list of all available columns:
 - **Scheme:** The scheme (https/http/ftp/...) of the path requested. This column is hidden by default.
 - **Remote IP**: The IP address of the server answering the request. This column is hidden by default.
 - **Type**: ``Content-type`` of the response.
-- **Cookies:** The number of request cookies associated to the request. This column is hidden by default. This is new in Firefox 55.
-- **Set-Cookies:** The number of response cookies associated to the request. This column is hidden by default. This is new in Firefox 55.
+- **Cookies:** The number of request cookies associated to the request. This column is hidden by default.
+- **Set-Cookies:** The number of response cookies associated to the request. This column is hidden by default.
 - **Transferred**: The number of bytes that were actually transferred to load the resource, or a message about why the resource was not transferred. A number value is less than **Size** if the resource was compressed.
 
   - If the resource was fetched from a `service worker <https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API>`_ cache, then this cell displays "service worker".
-  - Cached resources may be fetched from the cache and the network simultaneously, which may improve load time for slow caches. `Starting with Firefox 68 <https://bugzilla.mozilla.org/show_bug.cgi?id=1358038>`_, the transferred column lists either "cached (raced)" or "[size] (raced)" depending on the faster source. This feature is called `Race Cache With Network (RCWN) <https://slides.com/valentingosu/race-cache-with-network-2017#>`_.
+  - Cached resources may be fetched from the cache and the network simultaneously, which may improve load time for slow caches. The transferred column lists either "cached (raced)" or "[size] (raced)" depending on the faster source. This feature is called `Race Cache With Network (RCWN) <https://slides.com/valentingosu/race-cache-with-network-2017#>`_.
   - If the resource was blocked, the message indicates why it was blocked. For example, "CSP", "Malware", "CORS Missing Allow Origin", "Blocked by [Name of Extension]".
 
 - **Size**: The size of the transferred resource.
@@ -156,7 +156,7 @@ The request list also displays a timeline for the different parts of each reques
 
 Each timeline is given a horizontal position in its row relative to the other network requests, so you can see the total time taken to load the page. For more details on the color-coding used here, see the section on the :ref:`Timings <network-monitor-request-details-timings-tab>` page.
 
-Starting in Firefox 45, the timeline also contains two vertical lines:
+The timeline also contains two vertical lines:
 
 
 - The blue line marks the point at which thepage's `DOMContentLoaded <https://developer.mozilla.org/en-US/docs/Web/API/Window/DOMContentLoaded_event>`_ event is triggered.
@@ -187,7 +187,7 @@ Other actions you can take with Request Blocking:
 - To turn all request blocking off or on: Toggle the checkbox next to Enable Request Blocking.
 - To turn a specific block off or on: Toggle the checkbox next to that item.
 - To delete a blocked item, click the X icon that appears when you focus the item.
-- (Starting with Firefox 77) Right-click any item in the list and choose from the context menu:
+- Right-click any item in the list and choose from the context menu:
 
   - **Enable all** enables blocking of all items in the list.
   - **Disable all** disables blocking of all items in the list.
@@ -223,7 +223,7 @@ Stop blocking a URL from the Request List
 
 
 .. note::
-  (Starting in Firefox 80) You can also block and unblock URLs from the :doc:`Web Console <../../web_console/index>`, using the ``:block`` and ``:unblock`` helper commands. These accept any string, and affect any URL containing the string.
+  You can also block and unblock URLs from the :doc:`Web Console <../../web_console/index>`, using the ``:block`` and ``:unblock`` helper commands. These accept any string, and affect any URL containing the string.
 
 
 .. _request-list-filtering-requests:
@@ -252,7 +252,7 @@ You can filter requests by content type, by whether they are XMLHttpRequests or 
     - Use the **XHR** button in the :doc:`toolbar <../toolbar/index>`.
 
   * - `WebSocket <https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API>`_ connections
-    - Use the **WS** button in the :doc:`toolbar <../toolbar/index>`. You can filter by plain text (in which case the text is used to find partial matches; entering "for" will match any message that contains the word "for") or—as of `Firefox 75 <https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/75>`_ — using `regular expressions <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions>`_ (by writing the regexp bracketed within slashes; "/.+Corp.*/" will look for any occurrence of "Corp" which has at least one character before it and may or may not have any characters after it, for example). |br| |br| The third-party add-on `WebSocket Sniffer <https://addons.mozilla.org/en-US/firefox/addon/websocketsniff>`_ may be helpful as well.
+    - Use the **WS** button in the :doc:`toolbar <../toolbar/index>`. You can filter by plain text (in which case the text is used to find partial matches; entering "for" will match any message that contains the word "for") — using `regular expressions <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions>`_ (by writing the regexp bracketed within slashes; "/.+Corp.*/" will look for any occurrence of "Corp" which has at least one character before it and may or may not have any characters after it, for example). |br| |br| The third-party add-on `WebSocket Sniffer <https://addons.mozilla.org/en-US/firefox/addon/websocketsniff>`_ may be helpful as well.
 
   * - URL
     - Use the *Filter URLs* box in the :doc:`toolbar <../toolbar/index>`. You can focus it by clicking in the filter box, or by pressing :kbd:`Ctrl` + :kbd:`F` (or :kbd:`Cmd` + :kbd:`F` on a Mac); then start typing. The list of network requests is filtered to include only requests that contain your filter string, in either the Domain or the File portions. |br| |br| You can filter requests that *don't* contain your filter string by prefixing your query with the "-" operator. For example, the query "-google.com" will show all requests that don't have "google.com" in the URL.
@@ -470,7 +470,7 @@ The command may include the following options:
 
 
   * - ``--globoff``
-    - Suppresses cURL's globbing (wildcard matching) feature if the copied URL includes square bracket characters (``[`` or ``]``). (Starting in Firefox 76)
+    - Suppresses cURL's globbing (wildcard matching) feature if the copied URL includes square bracket characters (``[`` or ``]``).
 
 
 

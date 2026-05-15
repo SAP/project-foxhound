@@ -26,22 +26,31 @@ namespace gfx {
 static inline SkColorType GfxFormatToSkiaColorType(SurfaceFormat format) {
   switch (format) {
     case SurfaceFormat::B8G8R8A8:
-      return kBGRA_8888_SkColorType;
     case SurfaceFormat::B8G8R8X8:
-      // We probably need to do something here.
       return kBGRA_8888_SkColorType;
     case SurfaceFormat::R5G6B5_UINT16:
       return kRGB_565_SkColorType;
     case SurfaceFormat::A8:
       return kAlpha_8_SkColorType;
     case SurfaceFormat::R8G8B8A8:
+    case SurfaceFormat::R8G8B8X8:
       return kRGBA_8888_SkColorType;
     case SurfaceFormat::A8R8G8B8:
+    case SurfaceFormat::X8R8G8B8:
+#ifndef FUZZING
       MOZ_DIAGNOSTIC_CRASH("A8R8G8B8 unsupported by Skia");
+#endif
       return kRGBA_8888_SkColorType;
     default:
+#ifndef FUZZING
       MOZ_DIAGNOSTIC_CRASH("Unknown surface format");
-      return kRGBA_8888_SkColorType;
+#endif
+      switch (BytesPerPixel(format)) {
+        case 4:
+          return kRGBA_8888_SkColorType;
+        default:
+          return kAlpha_8_SkColorType;
+      }
   }
 }
 
@@ -61,13 +70,7 @@ static inline SurfaceFormat SkiaColorTypeToGfxFormat(
 }
 
 static inline SkAlphaType GfxFormatToSkiaAlphaType(SurfaceFormat format) {
-  switch (format) {
-    case SurfaceFormat::B8G8R8X8:
-    case SurfaceFormat::R5G6B5_UINT16:
-      return kOpaque_SkAlphaType;
-    default:
-      return kPremul_SkAlphaType;
-  }
+  return IsOpaque(format) ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
 }
 
 static inline SkImageInfo MakeSkiaImageInfo(const IntSize& aSize,
@@ -150,7 +153,7 @@ static inline bool StrokeOptionsToPaint(SkPaint& aPaint,
           SkFloatToScalar(aOptions.mDashPattern[i % aOptions.mDashLength]);
     }
 
-    auto dash = SkDashPathEffect::Make(&pattern.front(), dashCount,
+    auto dash = SkDashPathEffect::Make({&pattern.front(), dashCount},
                                        SkFloatToScalar(aOptions.mDashOffset));
     aPaint.setPathEffect(dash);
   }
@@ -323,7 +326,7 @@ static inline FillRule GetFillRule(SkPathFillType aFillType) {
     case SkPathFillType::kInverseWinding:
     case SkPathFillType::kInverseEvenOdd:
     default:
-      NS_WARNING("Unsupported fill type\n");
+      NS_WARNING("Unsupported fill type");
       break;
   }
 

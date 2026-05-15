@@ -16,7 +16,6 @@ use style::gecko_bindings::structs::{
 use style::gecko_bindings::sugar::refptr::RefPtr;
 use style::global_style_data::GLOBAL_STYLE_DATA;
 use style::media_queries::MediaList;
-use style::parser::ParserContext;
 use style::shared_lock::{Locked, SharedRwLock};
 use style::stylesheets::import_rule::{ImportLayer, ImportSheet, ImportSupportsCondition};
 use style::stylesheets::AllowImportRules;
@@ -47,7 +46,6 @@ impl StyleStylesheetLoader for StylesheetLoader {
         &self,
         url: CssUrl,
         source_location: SourceLocation,
-        _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
         supports: Option<ImportSupportsCondition>,
@@ -135,10 +133,7 @@ impl AsyncStylesheetParser {
         );
 
         unsafe {
-            bindings::Gecko_StyleSheet_FinishAsyncParse(
-                self.load_data.get(),
-                sheet.into(),
-            );
+            bindings::Gecko_StyleSheet_FinishAsyncParse(self.load_data.get(), sheet.into());
         }
     }
 }
@@ -148,7 +143,6 @@ impl StyleStylesheetLoader for AsyncStylesheetParser {
         &self,
         url: CssUrl,
         source_location: SourceLocation,
-        _context: &ParserContext,
         lock: &SharedRwLock,
         media: Arc<Locked<MediaList>>,
         supports: Option<ImportSupportsCondition>,

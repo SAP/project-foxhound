@@ -13,14 +13,14 @@
 
 #include "api/candidate.h"
 
-namespace cricket {
+namespace webrtc {
 
 class CandidatePairInterface {
  public:
   virtual ~CandidatePairInterface() {}
 
-  virtual const webrtc::Candidate& local_candidate() const = 0;
-  virtual const webrtc::Candidate& remote_candidate() const = 0;
+  virtual const Candidate& local_candidate() const = 0;
+  virtual const Candidate& remote_candidate() const = 0;
 };
 
 // Specific implementation of the interface, suitable for being a
@@ -28,13 +28,14 @@ class CandidatePairInterface {
 struct CandidatePair final : public CandidatePairInterface {
   ~CandidatePair() override = default;
 
-  const webrtc::Candidate& local_candidate() const override { return local; }
-  const webrtc::Candidate& remote_candidate() const override { return remote; }
+  const Candidate& local_candidate() const override { return local; }
+  const Candidate& remote_candidate() const override { return remote; }
 
-  webrtc::Candidate local;
-  webrtc::Candidate remote;
+  Candidate local;
+  Candidate remote;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // P2P_BASE_CANDIDATE_PAIR_INTERFACE_H_

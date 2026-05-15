@@ -4,11 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPVideoHost.h"
-#include "mozilla/Assertions.h"
+
 #include "GMPSharedMemManager.h"
+#include "GMPVideoEncodedFrameImpl.h"
 #include "GMPVideoPlaneImpl.h"
 #include "GMPVideoi420FrameImpl.h"
-#include "GMPVideoEncodedFrameImpl.h"
+#include "mozilla/Assertions.h"
 
 namespace mozilla::gmp {
 
@@ -93,6 +94,9 @@ void GMPVideoHostImpl::DecodedFrameCreated(
 
 void GMPVideoHostImpl::DecodedFrameDestroyed(GMPVideoi420FrameImpl* aFrame) {
   MOZ_ALWAYS_TRUE(mDecodedFrames.RemoveElement(aFrame));
+  if (mSharedMemMgr && aFrame->mReportPolicy == HostReportPolicy::Destroyed) {
+    mSharedMemMgr->MgrDecodedFrameDestroyed(aFrame);
+  }
 }
 
 }  // namespace mozilla::gmp

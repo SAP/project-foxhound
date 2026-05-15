@@ -14,12 +14,11 @@ EXPORTS += [
     "nsControllerCommandTable.h",
 ]
 
+EXPORTS.mozilla += ["ControllerCommand.h"]
+
 XPIDL_SOURCES += [
     "nsICommandManager.idl",
     "nsICommandParams.idl",
-    "nsIControllerCommand.idl",
-    "nsIControllerCommandTable.idl",
-    "nsIControllerContext.idl",
 ]
 
 XPIDL_MODULE = "commandhandler"

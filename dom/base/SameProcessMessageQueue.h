@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_SameProcessMessageQueue_h
 #define mozilla_dom_SameProcessMessageQueue_h
 
-#include "nsIRunnable.h"
 #include "mozilla/RefPtr.h"
+#include "nsIRunnable.h"
 #include "nsTArray.h"
 
 namespace mozilla::dom {

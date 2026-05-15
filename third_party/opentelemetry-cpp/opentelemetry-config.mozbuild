@@ -6,8 +6,12 @@
 
 LOCAL_INCLUDES += [
     "/third_party/opentelemetry-cpp/api/include",
-    "/third_party/opentelemetry-cpp/exporters/ostream/include",
+    "/third_party/opentelemetry-cpp/exporters/otlp/include",
     "/third_party/opentelemetry-cpp/sdk/include",
 ]
 
+if CONFIG["ENABLE_TESTS"]:
+    LOCAL_INCLUDES += ["/third_party/opentelemetry-cpp/exporters/memory/include"]
+
 DEFINES["OPENTELEMETRY_STL_VERSION"] = 2017
+DEFINES["OPENTELEMETRY_ABI_VERSION_NO"] = 2

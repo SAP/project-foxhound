@@ -56,13 +56,13 @@ class SVGFEGaussianBlurElement final : public SVGFEGaussianBlurElementBase {
   NumberPairAttributesInfo GetNumberPairInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
-  enum { STD_DEV };
-  SVGAnimatedNumberPair mNumberPairAttributes[1];
-  static NumberPairInfo sNumberPairInfo[1];
-
   enum { RESULT, IN1 };
   SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
+
+  enum { STD_DEV };
+  SVGAnimatedNumberPair mNumberPairAttributes[1];
+  static NumberPairInfo sNumberPairInfo[1];
 };
 
 }  // namespace mozilla::dom

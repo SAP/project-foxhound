@@ -35,10 +35,6 @@ add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.suggest.searches", true],
-      [
-        "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
-        true,
-      ],
       // Ensure to add search suggestion telemetry as search_suggestion not search_formhistory.
       ["browser.urlbar.maxHistoricalSearchSuggestions", 0],
     ],
@@ -118,14 +114,7 @@ async function track_ad_click(
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
         source: expectedScalarSource,
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       engagements: [
         {

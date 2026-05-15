@@ -4,10 +4,10 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 #[cfg(feature = "buffer_provider")]
 pub mod ffi {
     use alloc::boxed::Box;
+    use diplomat_runtime::DiplomatByte;
     use icu_provider::buf::BufferProvider;
 
     use crate::unstable::errors::ffi::DataError;
@@ -43,6 +43,7 @@ pub mod ffi {
             &self,
         ) -> Result<
             icu_provider::buf::DeserializingBufferProvider<
+                '_,
                 (dyn icu_provider::buf::BufferProvider + 'static),
             >,
             icu_provider::DataError,
@@ -73,7 +74,10 @@ pub mod ffi {
         }
 
         /// Constructs a `BlobDataProvider` and returns it as an [`DataProvider`].
-        #[diplomat::rust_link(icu_provider_blob::BlobDataProvider, Struct)]
+        #[diplomat::rust_link(
+            icu_provider_blob::BlobDataProvider::try_new_from_static_blob,
+            FnInStruct
+        )]
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor)]
         #[diplomat::attr(not(supports = static_slices), disable)]
         pub fn from_byte_slice(
@@ -81,6 +85,18 @@ pub mod ffi {
         ) -> Result<Box<DataProvider>, DataError> {
             Ok(Box::new(DataProvider(Some(Box::new(
                 icu_provider_blob::BlobDataProvider::try_new_from_static_blob(blob)?,
+            )))))
+        }
+
+        #[diplomat::rust_link(icu_provider_blob::BlobDataProvider::try_new_from_blob, FnInStruct)]
+        #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor)]
+        #[diplomat::attr(supports = static_slices, disable)]
+        #[diplomat::attr(*, rename = "from_byte_slice")]
+        pub fn from_owned_byte_slice(
+            blob: Box<[DiplomatByte]>,
+        ) -> Result<Box<DataProvider>, DataError> {
+            Ok(Box::new(DataProvider(Some(Box::new(
+                icu_provider_blob::BlobDataProvider::try_new_from_blob(blob)?,
             )))))
         }
 

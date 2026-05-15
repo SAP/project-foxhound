@@ -5,7 +5,7 @@
 use super::*;
 use heck::ToUpperCamelCase;
 
-pub fn pass(module: &mut Module) -> Result<()> {
-    module.js_filename = format!("Rust{}.sys.mjs", module.name.to_upper_camel_case());
+pub fn pass(namespace: &mut Namespace) -> Result<()> {
+    namespace.js_filename = format!("Rust{}.sys.mjs", namespace.name.to_upper_camel_case());
     Ok(())
 }

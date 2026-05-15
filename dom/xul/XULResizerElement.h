@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_XULResizerElement_h
 #define mozilla_dom_XULResizerElement_h
 
-#include "nsXULElement.h"
 #include "Units.h"
+#include "nsXULElement.h"
 
 namespace mozilla::dom {
 

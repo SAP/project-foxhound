@@ -4,6 +4,8 @@ const { AboutMessagePreviewParent } = ChromeUtils.importESModule(
   "resource:///actors/AboutWelcomeParent.sys.mjs"
 );
 
+let messageSandbox;
+
 const TEST_INFOBAR_MESSAGE = {
   content: {
     text: "Test infobar text",
@@ -30,19 +32,21 @@ const TEST_INFOBAR_MESSAGE = {
   provider: "cfr",
 };
 
-add_task(async function test_show_infobar_message() {
-  const messageSandbox = sinon.createSandbox();
-  let { cleanup, browser } = await openMessagePreviewTab();
-  let aboutMessagePreviewActor = await getAboutMessagePreviewParent(browser);
-  messageSandbox.spy(aboutMessagePreviewActor, "showMessage");
+add_setup(async function () {
+  messageSandbox = sinon.createSandbox();
   registerCleanupFunction(() => {
     messageSandbox.restore();
   });
+});
 
-  await aboutMessagePreviewActor.receiveMessage({
-    name: "MessagePreview:SHOW_MESSAGE",
-    data: JSON.stringify(TEST_INFOBAR_MESSAGE),
-  });
+add_task(async function test_show_infobar_message() {
+  let { cleanup, browser } = await openMessagePreviewTab();
+  let aboutMessagePreviewActor = await getAboutMessagePreviewParent(browser);
+  messageSandbox.spy(aboutMessagePreviewActor, "showMessage");
+
+  await SpecialPowers.spawn(browser, [TEST_INFOBAR_MESSAGE], message =>
+    content.wrappedJSObject.MPShowMessage(JSON.stringify(message))
+  );
 
   const { callCount } = aboutMessagePreviewActor.showMessage;
   Assert.greaterOrEqual(callCount, 1, "showMessage was called");
@@ -62,5 +66,6 @@ add_task(async function test_show_infobar_message() {
     "Notification id should match the test message"
   );
 
+  messageSandbox.restore();
   await cleanup();
 });

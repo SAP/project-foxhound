@@ -24,7 +24,7 @@
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/fec_controller.h"
-#include "api/field_trials_view.h"
+#include "api/field_trials.h"
 #include "api/ice_transport_interface.h"
 #include "api/neteq/neteq_factory.h"
 #include "api/peer_connection_interface.h"
@@ -40,6 +40,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/network.h"
 #include "rtc_base/rtc_certificate_generator.h"
+#include "rtc_base/socket_factory.h"
 #include "rtc_base/ssl_certificate.h"
 #include "rtc_base/thread.h"
 
@@ -56,7 +57,7 @@ namespace webrtc_pc_e2e {
 // can override only some parts of media engine like video encoder/decoder
 // factories.
 struct PeerConnectionFactoryComponents {
-  std::unique_ptr<rtc::NetworkManager> network_manager;
+  std::unique_ptr<NetworkManager> network_manager;
   SocketFactory* socket_factory = nullptr;
   std::unique_ptr<RtcEventLogFactoryInterface> event_log_factory;
   std::unique_ptr<FecControllerFactoryInterface> fec_controller_factory;
@@ -65,13 +66,13 @@ struct PeerConnectionFactoryComponents {
 
   std::unique_ptr<VideoEncoderFactory> video_encoder_factory;
   std::unique_ptr<VideoDecoderFactory> video_decoder_factory;
-  rtc::scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory;
-  rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory;
+  scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory;
+  scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory;
 
-  std::unique_ptr<FieldTrialsView> trials;
+  std::unique_ptr<FieldTrials> field_trials;
 
-  rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing;
-  rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer;
+  std::unique_ptr<AudioProcessingBuilderInterface> audio_processing;
+  scoped_refptr<webrtc::AudioMixer> audio_mixer;
 };
 
 // Contains most parts from PeerConnectionDependencies. Also all fields are
@@ -86,7 +87,7 @@ struct PeerConnectionComponents {
   std::unique_ptr<webrtc::AsyncDnsResolverFactoryInterface>
       async_dns_resolver_factory;
   std::unique_ptr<RTCCertificateGeneratorInterface> cert_generator;
-  std::unique_ptr<rtc::SSLCertificateVerifier> tls_cert_verifier;
+  std::unique_ptr<SSLCertificateVerifier> tls_cert_verifier;
   std::unique_ptr<IceTransportFactory> ice_transport_factory;
 };
 
@@ -94,7 +95,7 @@ struct PeerConnectionComponents {
 // has a network thread, that will be used to communicate with another peers.
 struct InjectableComponents {
   InjectableComponents(Thread* network_thread,
-                       std::unique_ptr<rtc::NetworkManager> network_manager,
+                       std::unique_ptr<NetworkManager> network_manager,
                        SocketFactory* socket_factory)
       : network_thread(network_thread),
         worker_thread(nullptr),
@@ -124,7 +125,7 @@ struct Params {
   //
   // IMPORTANT: if you use WebRTC Network Emulation
   // (api/test/network_emulation_manager.h) and set this field, remember to set
-  // cricket::PORTALLOCATOR_DISABLE_TCP.
+  // webrtc::PORTALLOCATOR_DISABLE_TCP.
   uint32_t port_allocator_flags = PORTALLOCATOR_DISABLE_TCP;
   // If `rtc_event_log_path` is set, an RTCEventLog will be saved in that
   // location and it will be available for further analysis.
@@ -176,9 +177,6 @@ struct RunParams {
   // it will be shut downed.
   TimeDelta run_duration;
 
-  // If set to true peers will be able to use Flex FEC, otherwise they won't
-  // be able to negotiate it even if it's enabled on per peer level.
-  bool enable_flex_fec_support = false;
   // If true will set conference mode in SDP media section for all video
   // tracks for all peers.
   bool use_conference_mode = false;

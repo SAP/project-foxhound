@@ -6,10 +6,10 @@
 
 #include "SVGMotionSMILPathUtils.h"
 
-#include "nsCharSeparatedTokenizer.h"
-#include "nsContentUtils.h"  // for NS_ENSURE_FINITE2
 #include "SVGContentUtils.h"
 #include "SVGLength.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"  // for NS_ENSURE_FINITE2
 
 using namespace mozilla::gfx;
 
@@ -102,8 +102,8 @@ bool SVGMotionSMILPathUtils::PathGenerator::ParseCoordinatePair(
     return false;
   }
 
-  float xRes = x.GetValueInPixels(mSVGElement, SVGContentUtils::X);
-  float yRes = y.GetValueInPixels(mSVGElement, SVGContentUtils::Y);
+  float xRes = x.GetValueInPixels(mSVGElement, SVGLength::Axis::X);
+  float yRes = y.GetValueInPixels(mSVGElement, SVGLength::Axis::Y);
 
   NS_ENSURE_FINITE2(xRes, yRes, false);
 

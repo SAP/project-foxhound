@@ -5,7 +5,6 @@
 package mozilla.components.browser.storage.sync
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.appservices.remotetabs.ClientRemoteTabs
 import mozilla.appservices.remotetabs.RemoteTab
@@ -27,7 +26,6 @@ import org.mockito.Mockito.`when`
 import mozilla.appservices.remotetabs.TabsApiException as RemoteTabProviderException
 import mozilla.appservices.remotetabs.TabsStore as RemoteTabsProvider
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class RemoteTabsStorageTest {
     private lateinit var remoteTabs: RemoteTabsStorage
@@ -103,6 +101,8 @@ class RemoteTabsStorageTest {
                     listOf(
                         RemoteTab("Foo", listOf("https://foo/1/1", "https://foo/1", "https://foo"), "https://foo/icon", 1574457405635),
                     ),
+                    emptyMap(), // tabGroups
+                    emptyMap(), // windows
                 ),
                 ClientRemoteTabs(
                     "client2",
@@ -113,6 +113,8 @@ class RemoteTabsStorageTest {
                         RemoteTab("Bar", listOf("https://bar"), null, 1574458165555),
                         RemoteTab("Foo Bar", listOf("https://foo.bar"), "https://foo.bar/icon", 0),
                     ),
+                    emptyMap(), // tabGroups
+                    emptyMap(), // windows
                 ),
             ),
         )

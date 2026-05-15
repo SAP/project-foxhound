@@ -3,84 +3,229 @@
 
 "use strict";
 
-// runInPage calls ContentTask.spawn, which injects ContentTaskUtils in the
-// scope of the callback. Eslint doesn't know about that.
-/* global ContentTaskUtils */
+add_task(
+  async function test_about_translations_script_directions_with_translations() {
+    const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations(
+      {
+        languagePairs: [
+          // English (en) is LTR and Arabic (ar) is RTL.
+          { fromLang: "en", toLang: "ar" },
+          { fromLang: "ar", toLang: "en" },
+        ],
+      }
+    );
 
-add_task(async function test_about_translations_language_directions() {
-  const { runInPage, cleanup } = await openAboutTranslations({
-    languagePairs: [
-      // English (en) is LTR and Arabic (ar) is RTL.
-      { fromLang: "en", toLang: "ar" },
-      { fromLang: "ar", toLang: "en" },
-    ],
-    autoDownloadFromRemoteSettings: true,
-  });
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      value: "detect",
+      options: ["detect", "ar", "en"],
+    });
 
-  await runInPage(async ({ selectors }) => {
-    const { document, window } = content;
-    Cu.waiveXrays(window).DEBOUNCE_DELAY = 5; // Make the timer run faster for tests.
+    await aboutTranslationsTestUtils.assertSourceTextArea({
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
 
-    await ContentTaskUtils.waitForCondition(
-      () => {
-        return document.body.hasAttribute("ready");
+    await aboutTranslationsTestUtils.assertTargetLanguageSelector({
+      value: "",
+      options: ["", "ar", "en"],
+    });
+
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.setSourceLanguageSelectorValue("en");
+    await aboutTranslationsTestUtils.assertSourceTextArea({
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.setTargetLanguageSelectorValue("ar");
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      // Even though we've switch to "ar", it is still displaying an English placeholder.
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.TranslationRequested,
+            { translationId: 1 },
+          ],
+          [AboutTranslationsTestUtils.Events.ShowTranslatingPlaceholder],
+        ],
+        unexpected: [AboutTranslationsTestUtils.Events.TranslationComplete],
       },
-      "Waiting for the document to be ready.",
-      100,
-      200
+      async () => {
+        await aboutTranslationsTestUtils.setSourceTextAreaValue("Hello world");
+      }
     );
 
-    /** @type {HTMLSelectElement} */
-    const fromSelect = document.querySelector(selectors.fromLanguageSelect);
-    /** @type {HTMLSelectElement} */
-    const toSelect = document.querySelector(selectors.toLanguageSelect);
-    /** @type {HTMLTextAreaElement} */
-    const translationTextarea = document.querySelector(
-      selectors.translationTextarea
-    );
-    /** @type {HTMLDivElement} */
-    const translationResult = document.querySelector(
-      selectors.translationResult
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      scriptDirection: "ltr",
+      value: "Translating…",
+    });
+
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.TranslationComplete,
+            { translationId: 1 },
+          ],
+        ],
+      },
+      async () => {
+        await aboutTranslationsTestUtils.resolveDownloads(1);
+      }
     );
 
-    fromSelect.value = "en";
-    fromSelect.dispatchEvent(new Event("input"));
-    toSelect.value = "ar";
-    toSelect.dispatchEvent(new Event("input"));
-    translationTextarea.value = "This text starts as LTR.";
-    translationTextarea.dispatchEvent(new Event("input"));
+    await aboutTranslationsTestUtils.assertTranslatedText({
+      sourceLanguage: "en",
+      targetLanguage: "ar",
+      sourceText: "Hello world",
+    });
 
-    is(
-      window.getComputedStyle(translationTextarea).direction,
-      "ltr",
-      "The English input is LTR"
-    );
-    is(
-      window.getComputedStyle(translationResult).direction,
-      "rtl",
-      "The Arabic results are RTL"
+    await aboutTranslationsTestUtils.assertSourceTextArea({
+      scriptDirection: "ltr",
+      value: "Hello world",
+    });
+
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      scriptDirection: "rtl",
+      value: "HELLO WORLD [en to ar]",
+    });
+
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.TranslationRequested,
+            { translationId: 2 },
+          ],
+          [AboutTranslationsTestUtils.Events.ShowTranslatingPlaceholder],
+        ],
+        unexpected: [AboutTranslationsTestUtils.Events.TranslationComplete],
+      },
+      async () => {
+        info("Swap languages to Arabic source and English target");
+        await aboutTranslationsTestUtils.clickSwapLanguagesButton();
+        await aboutTranslationsTestUtils.assertSourceTextArea({
+          // The source textarea should already be in RTL even though translation has not completed.
+          scriptDirection: "rtl",
+          value: "HELLO WORLD [en to ar]",
+        });
+        await aboutTranslationsTestUtils.assertTargetTextArea({
+          // Even though the target language is RTL, the translating placeholder is still LTR.
+          scriptDirection: "ltr",
+          value: "Translating…",
+        });
+      }
     );
 
-    toSelect.value = "";
-    toSelect.dispatchEvent(new Event("input"));
-    fromSelect.value = "ar";
-    fromSelect.dispatchEvent(new Event("input"));
-    toSelect.value = "en";
-    toSelect.dispatchEvent(new Event("input"));
-    translationTextarea.value = "This text starts as RTL.";
-    translationTextarea.dispatchEvent(new Event("input"));
-
-    is(
-      window.getComputedStyle(translationTextarea).direction,
-      "rtl",
-      "The Arabic input is RTL"
+    await aboutTranslationsTestUtils.assertEvents(
+      {
+        expected: [
+          [
+            AboutTranslationsTestUtils.Events.TranslationComplete,
+            { translationId: 2 },
+          ],
+        ],
+      },
+      async () => {
+        await aboutTranslationsTestUtils.resolveDownloads(1);
+      }
     );
-    is(
-      window.getComputedStyle(translationResult).direction,
-      "ltr",
-      "The English results are LTR"
-    );
-  });
 
-  await cleanup();
-});
+    await aboutTranslationsTestUtils.assertTranslatedText({
+      translationId: 2,
+      sourceLanguage: "ar",
+      targetLanguage: "en",
+      sourceText: "HELLO WORLD [en to ar]",
+    });
+
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      scriptDirection: "ltr",
+      value: "HELLO WORLD [EN TO AR] [ar to en]",
+    });
+
+    await cleanup();
+  }
+);
+
+add_task(
+  async function test_about_translations_script_directions_placeholders_only() {
+    const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations(
+      {
+        languagePairs: [
+          // English (en) is LTR and Arabic (ar) is RTL.
+          { fromLang: "en", toLang: "ar" },
+          { fromLang: "ar", toLang: "en" },
+        ],
+      }
+    );
+
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      value: "detect",
+      options: ["detect", "ar", "en"],
+    });
+
+    await aboutTranslationsTestUtils.assertTargetLanguageSelector({
+      value: "",
+      options: ["", "ar", "en"],
+    });
+
+    await aboutTranslationsTestUtils.assertSourceTextArea({
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.setSourceLanguageSelectorValue("en");
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      value: "en",
+    });
+    await aboutTranslationsTestUtils.assertSourceTextArea({
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.setTargetLanguageSelectorValue("ar");
+    await aboutTranslationsTestUtils.assertTargetLanguageSelector({
+      value: "ar",
+    });
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      // Even though we've switch to "ar", it is still displaying an English placeholder.
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.clickSwapLanguagesButton();
+
+    await aboutTranslationsTestUtils.assertSourceLanguageSelector({
+      value: "ar",
+    });
+    await aboutTranslationsTestUtils.assertSourceTextArea({
+      // Even though we've switch to "ar", it is still displaying an English placeholder.
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await aboutTranslationsTestUtils.assertTargetLanguageSelector({
+      value: "en",
+    });
+    await aboutTranslationsTestUtils.assertTargetTextArea({
+      scriptDirection: "ltr",
+      showsPlaceholder: true,
+    });
+
+    await cleanup();
+  }
+);

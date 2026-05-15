@@ -81,7 +81,7 @@ add_task(async function aboutAboutAndAboutAddons() {
         title: "about:addons",
         iconUri: "page-icon:about:addons",
         tags: null,
-        providerName: "AboutPages",
+        providerName: "UrlbarProviderAboutPages",
       }),
     ],
   });
@@ -100,7 +100,7 @@ add_task(async function aboutColonMatchesOnlyAboutPages() {
         title: aboutPageName,
         iconUri: "page-icon:" + aboutPageName,
         tags: null,
-        providerName: "AboutPages",
+        providerName: "UrlbarProviderAboutPages",
       });
     });
     return aboutPageResults;
@@ -113,7 +113,7 @@ add_task(async function aboutColonMatchesOnlyAboutPages() {
     matches: [
       makeSearchResult(context, {
         engineName: SUGGESTIONS_ENGINE_NAME,
-        providerName: "HeuristicFallback",
+        providerName: "UrlbarProviderHeuristicFallback",
         heuristic: true,
       }),
       ...getFirst9AboutPages(),
@@ -139,7 +139,7 @@ add_task(async function aboutResultsDoNotMatchTitlesInHistory() {
         uri: "about:config",
         title: "about:config",
         heuristic: true,
-        providerName: "Autofill",
+        providerName: "UrlbarProviderAutofill",
       }),
     ],
   });
@@ -162,7 +162,7 @@ add_task(async function after_general() {
         uri: "about:about",
         title: "about:about",
         heuristic: true,
-        providerName: "Autofill",
+        providerName: "UrlbarProviderAutofill",
       }),
       makeVisitResult(context, {
         uri: "http://example.com/guide/aboutaddons/",
@@ -174,7 +174,7 @@ add_task(async function after_general() {
         title: "about:addons",
         iconUri: "page-icon:about:addons",
         tags: null,
-        providerName: "AboutPages",
+        providerName: "UrlbarProviderAboutPages",
       }),
     ],
   });

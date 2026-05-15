@@ -142,7 +142,7 @@ var connectHandler = {
 
 function dataAvailable(data) {
   switch (state) {
-    case STATE_READ_CONNECT_REQUEST:
+    case STATE_READ_CONNECT_REQUEST: {
       connectRequest += String.fromCharCode.apply(String, data);
       const headerEnding = connectRequest.indexOf("\r\n\r\n");
       const alpnHeaderIndex = connectRequest.indexOf(`ALPN: ${ALPN}`);
@@ -158,6 +158,7 @@ function dataAvailable(data) {
       }
 
       break;
+    }
     case STATE_CHECK_WRITE_READ:
       checkWriteData += String.fromCharCode.apply(String, data);
 

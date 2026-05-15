@@ -16,7 +16,7 @@ if (rtc_enable_protobuf) {
     proto_out_dir = "api/test/network_emulation/"
   }
 
-  rtc_source_set("schedulable_network_node_builder") {
+  rtc_library("schedulable_network_node_builder") {
     visibility = [ "*" ]
     sources = [
       "schedulable_network_node_builder.cc",
@@ -57,6 +57,7 @@ rtc_library("network_emulation") {
     "../../units:data_size",
     "../../units:time_delta",
     "../../units:timestamp",
+    "//third_party/abseil-cpp/absl/functional:any_invocable",
   ]
 }
 
@@ -73,5 +74,50 @@ rtc_library("create_cross_traffic") {
     ":network_emulation",
     "../..:network_emulation_manager_api",
     "../../../test/network:emulated_network",
+  ]
+}
+
+rtc_library("network_queue") {
+  visibility = [ "*" ]
+
+  sources = [
+    "dual_pi2_network_queue.cc",
+    "dual_pi2_network_queue.h",
+    "leaky_bucket_network_queue.cc",
+    "leaky_bucket_network_queue.h",
+    "network_queue.h",
+  ]
+
+  deps = [
+    "../..:sequence_checker",
+    "../..:simulated_network_api",
+    "../../../rtc_base:checks",
+    "../../../rtc_base:logging",
+    "../../../rtc_base:macromagic",
+    "../../../rtc_base:random",
+    "../../transport:ecn_marking",
+    "../../units:data_rate",
+    "../../units:data_size",
+    "../../units:time_delta",
+    "../../units:timestamp",
+  ]
+}
+
+rtc_library("network_queue_unittests") {
+  sources = [
+    "dual_pi2_network_queue_unittest.cc",
+    "leaky_bucket_network_queue_unittest.cc",
+  ]
+
+  testonly = true
+  deps = [
+    ":network_queue",
+    "../..:simulated_network_api",
+    "../../../test:test_support",
+    "../../transport:ecn_marking",
+    "../../units:data_rate",
+    "../../units:data_size",
+    "../../units:time_delta",
+    "../../units:timestamp",
   ]
 }

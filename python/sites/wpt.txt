@@ -1,5 +1,6 @@
 requires-python:>=3.9
 pypi:aioquic==1.2.0
+pypi:pillow==11.3.0
 # Bug 1823701 - tomli is a pytest dependency that isn't pulled into WPT's
 # vendor dir for some reason
 pypi:tomli==2.2.1

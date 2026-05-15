@@ -16,7 +16,7 @@
 #include "media/base/codec_list.h"
 #include "media/base/media_engine.h"
 
-namespace cricket {
+namespace webrtc {
 
 // This class vends codecs of a specific type only.
 // It is intended to eventually be owned by the RtpSender and RtpReceiver
@@ -26,11 +26,11 @@ class TypedCodecVendor {
   // Constructor for the case where media engine is not provided. The resulting
   // vendor will always return an empty codec list.
   TypedCodecVendor() {}
-  TypedCodecVendor(MediaEngineInterface* media_engine,
-                   webrtc::MediaType type,
+  TypedCodecVendor(const MediaEngineInterface* media_engine,
+                   MediaType type,
                    bool is_sender,
                    bool rtx_enabled,
-                   const webrtc::FieldTrialsView& trials);
+                   const FieldTrialsView& trials);
   const CodecList& codecs() const { return codecs_; }
   void set_codecs(const CodecList& codecs) { codecs_ = codecs; }
   // For easy initialization, copying is allowed.
@@ -41,6 +41,7 @@ class TypedCodecVendor {
   CodecList codecs_;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // PC_TYPED_CODEC_VENDOR_H_

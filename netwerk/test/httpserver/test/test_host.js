@@ -190,7 +190,7 @@ add_task(async function run_test_3() {
   await new Promise(resolve => srv.stop(resolve));
 });
 
-/** *******************
+/*********************
  * UTILITY FUNCTIONS *
  *********************/
 
@@ -238,7 +238,7 @@ function check400(aData) {
   Assert.equal(firstLine.substring(0, HTTP_400_LEADER_LENGTH), HTTP_400_LEADER);
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

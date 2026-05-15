@@ -73,6 +73,12 @@ async protocol PWebTransport
     returns(uint64_t maxDatagramSize);
 
   /**
+  * Get the http channel id 
+  */
+  async GetHttpChannelID()
+    returns(uint64_t httpChannelID);
+
+  /**
   * Set the sendOrder for an existing stream
   */
   async SetSendOrder(uint64_t streamId, int64_t? sendOrder);

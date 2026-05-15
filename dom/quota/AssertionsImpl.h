@@ -7,10 +7,10 @@
 #ifndef DOM_QUOTA_ASSERTIONSIMPL_H_
 #define DOM_QUOTA_ASSERTIONSIMPL_H_
 
-#include "mozilla/dom/quota/Assertions.h"
-
 #include <type_traits>
+
 #include "mozilla/Assertions.h"
+#include "mozilla/dom/quota/Assertions.h"
 
 namespace mozilla::dom::quota {
 

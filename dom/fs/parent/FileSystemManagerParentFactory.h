@@ -7,6 +7,7 @@
 #ifndef DOM_FS_PARENT_FILESYSTEMMANAGER_H_
 #define DOM_FS_PARENT_FILESYSTEMMANAGER_H_
 
+#include <cstdint>
 #include <functional>
 
 enum class nsresult : uint32_t;

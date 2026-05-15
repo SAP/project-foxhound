@@ -6,24 +6,44 @@
 
 #include "EventStateManager.h"
 
+#include "ContentEventHandler.h"
+#include "IMEContentObserver.h"
+#include "RemoteDragStartData.h"
+#include "Units.h"
+#include "WheelHandlingHelper.h"
+#include "imgIContainer.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ConnectedAncestorTracker.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/Hal.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/Hal.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/Likely.h"
-#include "mozilla/FocusModel.h"
-#include "mozilla/MiscEvents.h"
+#include "mozilla/Logging.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PointerLockManager.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ScrollTypes.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_mousewheel.h"
+#include "mozilla/StaticPrefs_ui.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
@@ -32,101 +52,77 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMIntersectionObserver.h"
+#include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DragEvent.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/FrameLoaderBinding.h"
 #include "mozilla/dom/HTMLDialogElement.h"
-#include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/PointerEventHandler.h"
+#include "mozilla/dom/PopoverData.h"
+#include "mozilla/dom/Record.h"
+#include "mozilla/dom/Selection.h"
 #include "mozilla/dom/UIEvent.h"
 #include "mozilla/dom/UIEventBinding.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WheelEventBinding.h"
 #include "mozilla/glean/ProcesstoolsMetrics.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPrefs_accessibility.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/StaticPrefs_mousewheel.h"
-#include "mozilla/StaticPrefs_ui.h"
-#include "mozilla/StaticPrefs_zoom.h"
-
-#include "ContentEventHandler.h"
-#include "IMEContentObserver.h"
-#include "WheelHandlingHelper.h"
-#include "RemoteDragStartData.h"
-
-#include "nsCommandParams.h"
 #include "nsCOMPtr.h"
+#include "nsComboboxControlFrame.h"
+#include "nsCommandParams.h"
+#include "nsContentAreaDragDrop.h"
+#include "nsContentUtils.h"
 #include "nsCopySupport.h"
 #include "nsFocusManager.h"
+#include "nsFontMetrics.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsFrameManager.h"
+#include "nsFrameSelection.h"
 #include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsIBaseWindow.h"
+#include "nsIBrowserChild.h"
 #include "nsIClipboard.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
+#include "nsIController.h"
 #include "nsICookieJarSettings.h"
-#include "nsIFrame.h"
-#include "nsFrameLoaderOwner.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsIWidget.h"
-#include "nsLiteralString.h"
-#include "nsPresContext.h"
-#include "nsTArray.h"
-#include "nsGkAtoms.h"
-#include "nsIFormControl.h"
-#include "nsComboboxControlFrame.h"
 #include "nsIDOMXULControlElement.h"
-#include "nsNameSpaceManager.h"
-#include "nsIBaseWindow.h"
-#include "nsFrameSelection.h"
-#include "nsPIDOMWindow.h"
-#include "nsPIWindowRoot.h"
-#include "nsIWebNavigation.h"
-#include "nsIDocumentViewer.h"
-#include "nsFrameManager.h"
-#include "nsIBrowserChild.h"
-#include "nsMenuPopupFrame.h"
-
-#include "nsIObserverService.h"
 #include "nsIDocShell.h"
-
-#include "nsSubDocumentFrame.h"
-#include "nsLayoutUtils.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsUnicharUtils.h"
-#include "nsContentUtils.h"
-
-#include "imgIContainer.h"
-#include "nsIProperties.h"
-#include "nsISupportsPrimitives.h"
-
-#include "nsServiceManagerUtils.h"
-#include "nsITimer.h"
-#include "nsFontMetrics.h"
+#include "nsIDocumentViewer.h"
 #include "nsIDragService.h"
 #include "nsIDragSession.h"
-#include "mozilla/dom/DataTransfer.h"
-#include "nsContentAreaDragDrop.h"
+#include "nsIFormControl.h"
+#include "nsIFrame.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsIObserverService.h"
+#include "nsIProperties.h"
+#include "nsISupportsPrimitives.h"
+#include "nsITimer.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsIWebNavigation.h"
+#include "nsIWidget.h"
+#include "nsLayoutUtils.h"
+#include "nsLiteralString.h"
+#include "nsMenuPopupFrame.h"
+#include "nsNameSpaceManager.h"
+#include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
+#include "nsPresContext.h"
+#include "nsServiceManagerUtils.h"
+#include "nsSubDocumentFrame.h"
+#include "nsTArray.h"
 #include "nsTreeBodyFrame.h"
-#include "nsIController.h"
-#include "mozilla/Services.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/Record.h"
-#include "mozilla/dom/Selection.h"
-
-#include "mozilla/Preferences.h"
-#include "mozilla/LookAndFeel.h"
-#include "mozilla/ProfilerLabels.h"
-#include "Units.h"
+#include "nsUnicharUtils.h"
 
 #ifdef XP_MACOSX
 #  import <ApplicationServices/ApplicationServices.h>
@@ -136,6 +132,19 @@ namespace mozilla {
 
 using namespace dom;
 
+// Log the mouse cursor updates.  That should be updated only by the events for
+// the last pointer which is actually handled as a user input.  I.e., should not
+// be updated by synthesized mouse/pointer move events which are not for the
+// last pointer.
+// - MouseCursorUpdate:3 logs only when EventStateManager and BrowserParent
+// updated the cursor.
+// - MouseCursorUpdate:4 logs any results when BrowserParent handles that.
+// - MouseCursorUpdate:5 logs when UpdateCursor() stopped updating the cursor.
+//
+// NOTE: This can work only on debug builds for avoiding to the damage to the
+// performance.
+LazyLogModule gMouseCursorUpdates("MouseCursorUpdates");
+
 static const LayoutDeviceIntPoint kInvalidRefPoint =
     LayoutDeviceIntPoint(-1, -1);
 
@@ -144,7 +153,7 @@ static nsITimer* gUserInteractionTimer = nullptr;
 static nsITimerCallback* gUserInteractionTimerCallback = nullptr;
 
 static const double kCursorLoadingTimeout = 1000;  // ms
-MOZ_RUNINIT static AutoWeakFrame gLastCursorSourceFrame;
+constinit static AutoWeakFrame gLastCursorSourceFrame;
 static TimeStamp gLastCursorUpdateTime;
 static TimeStamp gTypingStartTime;
 static TimeStamp gTypingEndTime;
@@ -303,7 +312,10 @@ NS_IMPL_ISUPPORTS(UITimerCallback, nsITimerCallback, nsINamed)
 NS_IMETHODIMP
 UITimerCallback::Notify(nsITimer* aTimer) {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (!obs) return NS_ERROR_FAILURE;
+  // ObserverService shutdown happens after XPCOMShutdownThreads.
+  if (!obs || AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads)) {
+    return NS_ERROR_FAILURE;
+  }
   if ((gMouseOrKeyboardEventCounter == mPreviousCount) || !aTimer) {
     gMouseOrKeyboardEventCounter = 0;
     obs->NotifyObservers(nullptr, "user-interaction-inactive", nullptr);
@@ -605,14 +617,16 @@ bool EventStateManager::sNormalLMouseEventInProcess = false;
 int16_t EventStateManager::sCurrentMouseBtn = MouseButton::eNotPressed;
 EventStateManager* EventStateManager::sActiveESM = nullptr;
 EventStateManager* EventStateManager::sCursorSettingManager = nullptr;
-MOZ_RUNINIT AutoWeakFrame EventStateManager::sLastDragOverFrame = nullptr;
+constinit AutoWeakFrame EventStateManager::sLastDragOverFrame{};
 LayoutDeviceIntPoint EventStateManager::sPreLockScreenPoint =
     LayoutDeviceIntPoint(0, 0);
 LayoutDeviceIntPoint EventStateManager::sLastRefPoint = kInvalidRefPoint;
+LayoutDeviceIntPoint EventStateManager::sLastRefPointOfRawUpdate =
+    kInvalidRefPoint;
 CSSIntPoint EventStateManager::sLastScreenPoint = CSSIntPoint(0, 0);
 LayoutDeviceIntPoint EventStateManager::sSynthCenteringPoint = kInvalidRefPoint;
 CSSIntPoint EventStateManager::sLastClientPoint = CSSIntPoint(0, 0);
-MOZ_RUNINIT nsCOMPtr<nsIContent> EventStateManager::sDragOverContent = nullptr;
+constinit nsCOMPtr<nsIContent> EventStateManager::sDragOverContent;
 
 EventStateManager::WheelPrefs* EventStateManager::WheelPrefs::sInstance =
     nullptr;
@@ -644,6 +658,11 @@ EventStateManager::EventStateManager()
   ++sESMInstanceCount;
 }
 
+// static
+LazyLogModule& EventStateManager::MouseCursorUpdateLogRef() {
+  return gMouseCursorUpdates;
+}
+
 nsresult EventStateManager::UpdateUserActivityTimer() {
   if (!gUserInteractionTimerCallback) return NS_OK;
 
@@ -660,14 +679,12 @@ nsresult EventStateManager::UpdateUserActivityTimer() {
   return NS_OK;
 }
 
-nsresult EventStateManager::Init() {
+void EventStateManager::Init() {
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
-  if (!observerService) return NS_ERROR_FAILURE;
-
-  observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
-
-  return NS_OK;
+  if (observerService) {
+    observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
+  }
 }
 
 bool EventStateManager::ShouldAlwaysUseLineDeltas() {
@@ -735,10 +752,7 @@ EventStateManager::~EventStateManager() {
   }
 }
 
-nsresult EventStateManager::Shutdown() {
-  m_haveShutdown = true;
-  return NS_OK;
-}
+void EventStateManager::Shutdown() { m_haveShutdown = true; }
 
 NS_IMETHODIMP
 EventStateManager::Observe(nsISupports* aSubject, const char* aTopic,
@@ -1136,6 +1150,10 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
         // will be generated by GenerateMouseEnterExit
         mouseEvent->mMessage = eMouseMove;
         mouseEvent->mReason = WidgetMouseEvent::eSynthesized;
+        // We need to generate pointer boundary events here because there is no
+        // preceding pointer event dispatched for the eMouseExitFromWidget
+        // event.
+        GeneratePointerEnterExit(ePointerMove, mouseEvent);
         // then fall through...
       } else {
         MOZ_ASSERT_IF(XRE_IsParentProcess(),
@@ -1146,6 +1164,8 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
         // We should synthetize corresponding pointer events
         GeneratePointerEnterExit(ePointerLeave, mouseEvent);
         GenerateMouseEnterExit(mouseEvent);
+        // Remove the pointer from the active pointerId table.
+        PointerEventHandler::UpdatePointerActiveState(mouseEvent);
         // This is really an exit and should stop here
         aEvent->mMessage = eVoidEvent;
         break;
@@ -1509,7 +1529,16 @@ void EventStateManager::LightDismissOpenPopovers(WidgetEvent* aEvent,
     return;
   }
 
-  Element* topmostPopover = aTargetContent->OwnerDoc()->GetTopmostAutoPopover();
+  RefPtr<Document> targetDoc(aTargetContent->OwnerDoc());
+
+  RefPtr<Element> topmostPopover =
+      targetDoc->GetTopmostPopoverOf(PopoverAttributeState::Hint);
+
+  if (!topmostPopover) {
+    topmostPopover =
+        targetDoc->GetTopmostPopoverOf(PopoverAttributeState::Auto);
+  }
+
   if (!topmostPopover) {
     return;
   }
@@ -2113,8 +2142,8 @@ void EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
         MOZ_ASSERT(remote->GetBrowserHost());
 
         if (oldRemote && oldRemote != remote) {
-          Unused << NS_WARN_IF(nsContentUtils::GetCommonBrowserParentAncestor(
-                                   remote, oldRemote) != remote);
+          (void)NS_WARN_IF(nsContentUtils::GetCommonBrowserParentAncestor(
+                               remote, oldRemote) != remote);
           remote = oldRemote;
         }
 
@@ -2349,7 +2378,7 @@ void EventStateManager::CreateClickHoldTimer(nsPresContext* inPresContext,
   int32_t clickHoldDelay = StaticPrefs::ui_click_hold_context_menus_delay();
   NS_NewTimerWithFuncCallback(
       getter_AddRefs(mClickHoldTimer), sClickHoldCallback, this, clickHoldDelay,
-      nsITimer::TYPE_ONE_SHOT, "EventStateManager::CreateClickHoldTimer");
+      nsITimer::TYPE_ONE_SHOT, "EventStateManager::CreateClickHoldTimer"_ns);
 }  // CreateClickHoldTimer
 
 //
@@ -3630,16 +3659,16 @@ void EventStateManager::DoScrollText(
   nsIntSize devPixelPageSize(pc->AppUnitsToDevPixels(pageSize.width),
                              pc->AppUnitsToDevPixels(pageSize.height));
   if (!WheelPrefs::GetInstance()->IsOverOnePageScrollAllowedX(aEvent) &&
-      DeprecatedAbs(actualDevPixelScrollAmount.x.value) >
-          devPixelPageSize.width) {
+      Abs(actualDevPixelScrollAmount.x.value) >
+          (unsigned)std::max(devPixelPageSize.width, 0)) {
     actualDevPixelScrollAmount.x = (actualDevPixelScrollAmount.x >= 0)
                                        ? devPixelPageSize.width
                                        : -devPixelPageSize.width;
   }
 
   if (!WheelPrefs::GetInstance()->IsOverOnePageScrollAllowedY(aEvent) &&
-      DeprecatedAbs(actualDevPixelScrollAmount.y.value) >
-          devPixelPageSize.height) {
+      Abs(actualDevPixelScrollAmount.y.value) >
+          (unsigned)std::max(devPixelPageSize.height, 0)) {
     actualDevPixelScrollAmount.y = (actualDevPixelScrollAmount.y >= 0)
                                        ? devPixelPageSize.height
                                        : -devPixelPageSize.height;
@@ -3653,8 +3682,6 @@ void EventStateManager::DoScrollText(
     case WidgetWheelEvent::SCROLL_DEFAULT:
       if (isDeltaModePixel) {
         mode = ScrollMode::Normal;
-      } else if (aEvent->mFlags.mHandledByAPZ) {
-        mode = ScrollMode::SmoothMsd;
       } else {
         mode = ScrollMode::Smooth;
       }
@@ -4639,7 +4666,8 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
       break;
 
     case eMouseExitFromWidget:
-      PointerEventHandler::UpdatePointerActiveState(aEvent->AsMouseEvent());
+      MOZ_ASSERT_UNREACHABLE(
+          "Should've already been handled in PreHandleEvent()");
       break;
 
 #ifdef XP_MACOSX
@@ -4838,7 +4866,7 @@ static CursorImage ComputeCustomCursor(nsPresContext* aPresContext,
                           : Nothing();
     gfx::IntPoint hotspot = ComputeHotspot(container, specifiedHotspot);
     CursorImage result{hotspot, std::move(container),
-                       image.image.GetResolution(style), loading};
+                       image.image.GetResolution(&style), loading};
     if (ShouldBlockCustomCursor(aPresContext, aEvent, result)) {
       continue;
     }
@@ -4852,6 +4880,23 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
                                      WidgetMouseEvent* aEvent,
                                      nsIFrame* aTargetFrame,
                                      nsEventStatus* aStatus) {
+  if (!PointerEventHandler::IsLastPointerId(aEvent->pointerId)) {
+    MOZ_LOG_DEBUG_ONLY(
+        gMouseCursorUpdates, LogLevel::Verbose,
+        ("EventStateManager::UpdateCursor(aEvent=${pointerId=%u, source=%s, "
+         "message=%s, reason=%s}): Stopped updating cursor for the pointer "
+         "because of %s, ESM: %p, in-process root PresShell: %p",
+         aEvent->pointerId, InputSourceToString(aEvent->mInputSource).get(),
+         ToChar(aEvent->mMessage), aEvent->IsReal() ? "Real" : "Synthesized",
+         !PointerEventHandler::GetLastPointerId()
+             ? "no last pointerId"
+             : nsPrintfCString("different from last pointerId (%u)",
+                               *PointerEventHandler::GetLastPointerId())
+                   .get(),
+         this, GetRootPresShell()));
+    return;
+  }
+
   // XXX This is still not entirely correct, e.g. when mouse hover over the
   // broder of a cross-origin iframe, we should show the cursor specified on the
   // iframe (see bug 1943530).
@@ -4859,6 +4904,15 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
     if (auto* fl = f->FrameLoader();
         fl && fl->IsRemoteFrame() && f->ContentReactsToPointerEvents()) {
       // The sub-frame will update the cursor if needed.
+      MOZ_LOG_DEBUG_ONLY(
+          gMouseCursorUpdates, LogLevel::Verbose,
+          ("EventStateManager::UpdateCursor(aEvent=${pointerId=%u, source=%s, "
+           "message=%s, reason=%s}): Stopped updating cursor for the pointer "
+           "because of over a remote frame, ESM: %p, in-process root "
+           "PresShell: %p",
+           aEvent->pointerId, InputSourceToString(aEvent->mInputSource).get(),
+           ToChar(aEvent->mMessage), RealOrSynthesized(aEvent->IsReal()), this,
+           GetRootPresShell()));
       return;
     }
   }
@@ -4911,6 +4965,14 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
               aTargetFrame->GetNearestWidget(), false);
     gLastCursorSourceFrame = aTargetFrame;
     gLastCursorUpdateTime = TimeStamp::NowLoRes();
+    MOZ_LOG_DEBUG_ONLY(
+        gMouseCursorUpdates, LogLevel::Info,
+        ("EventStateManager::UpdateCursor(aEvent=${pointerId=%u, source=%s, "
+         "message=%s, reason=%s}): Updated the cursor to %u, ESM: %p, "
+         "in-process root PresShell: %p",
+         aEvent->pointerId, InputSourceToString(aEvent->mInputSource).get(),
+         ToChar(aEvent->mMessage), aEvent->IsReal() ? "Real" : "Synthesized",
+         static_cast<uint32_t>(cursor), this, GetRootPresShell()));
   }
 
   if (mLockCursor != kInvalidCursorKind || StyleCursorKind::Auto != cursor) {
@@ -5587,6 +5649,10 @@ void EventStateManager::UpdateLastRefPointOfMouseEvent(
     return;
   }
 
+  const LayoutDeviceIntPoint& lastRefPoint =
+      aMouseEvent->mMessage == ePointerRawUpdate ? sLastRefPointOfRawUpdate
+                                                 : sLastRefPoint;
+
   // Mouse movement is reported on the MouseEvent.movement{X,Y} fields.
   // Movement is calculated in UIEvent::GetMovementPoint() as:
   //   previous_mousemove_mRefPoint - current_mousemove_mRefPoint.
@@ -5600,14 +5666,14 @@ void EventStateManager::UpdateLastRefPointOfMouseEvent(
     aMouseEvent->mLastRefPoint =
         GetWindowClientRectCenter(aMouseEvent->mWidget);
 
-  } else if (sLastRefPoint == kInvalidRefPoint) {
+  } else if (lastRefPoint == kInvalidRefPoint) {
     // We don't have a valid previous mousemove mRefPoint. This is either
     // the first move we've encountered, or the mouse has just re-entered
     // the application window. We should report (0,0) movement for this
     // case, so make the current and previous mRefPoints the same.
     aMouseEvent->mLastRefPoint = aMouseEvent->mRefPoint;
   } else {
-    aMouseEvent->mLastRefPoint = sLastRefPoint;
+    aMouseEvent->mLastRefPoint = lastRefPoint;
   }
 }
 
@@ -5661,10 +5727,21 @@ void EventStateManager::ResetPointerToWindowCenterWhilePointerLocked(
 /* static */
 void EventStateManager::UpdateLastPointerPosition(
     WidgetMouseEvent* aMouseEvent) {
-  if (aMouseEvent->mMessage != eMouseMove) {
+  if (aMouseEvent->IsSynthesized()) {
     return;
   }
-  sLastRefPoint = aMouseEvent->mRefPoint;
+  if (aMouseEvent->mMessage == eMouseMove) {
+    sLastRefPoint = aMouseEvent->mRefPoint;
+  } else if (aMouseEvent->mMessage == ePointerRawUpdate ||
+             // FYI: ePointerRawUpdate is handled only when there are some
+             // `pointerrawupdate` event listeners.  Therefore, we need to
+             // update the last ref point for ePointerRawUpdate when we dispatch
+             // ePointerMove too since the first `pointerrawupdate` event
+             // listener may be added after the ePointerMove.
+             aMouseEvent->mMessage == ePointerMove) {
+    // XXX Shouldn't we store last refpoint of PointerEvent per pointerId?
+    sLastRefPointOfRawUpdate = aMouseEvent->mRefPoint;
+  }
 }
 
 void EventStateManager::GenerateMouseEnterExit(WidgetMouseEvent* aMouseEvent) {
@@ -5746,9 +5823,9 @@ void EventStateManager::GenerateMouseEnterExit(WidgetMouseEvent* aMouseEvent) {
         }
       }
 
-      // Reset sLastRefPoint, so that we'll know not to report any
-      // movement the next time we re-enter the window.
-      sLastRefPoint = kInvalidRefPoint;
+      // Reset sLastRefPoint and sLastRefPointOfRawUpdate, so that we'll know
+      // not to report any movement the next time we re-enter the window.
+      sLastRefPoint = sLastRefPointOfRawUpdate = kInvalidRefPoint;
 
       NotifyMouseOut(aMouseEvent, nullptr);
       break;
@@ -5805,7 +5882,8 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
     // XXX Cannot we do synthesize the native mousemove in the parent process
     //     with calling LockNativePointer below?  Then, we could make this API
     //     work only in the automation mode.
-    sLastRefPoint = GetWindowClientRectCenter(aWidget);
+    sLastRefPoint = sLastRefPointOfRawUpdate =
+        GetWindowClientRectCenter(aWidget);
     aWidget->SynthesizeNativeMouseMove(
         sLastRefPoint + aWidget->WidgetToScreenOffset(), nullptr);
 
@@ -5827,10 +5905,11 @@ void EventStateManager::SetPointerLock(nsIWidget* aWidget,
     sSynthCenteringPoint = kInvalidRefPoint;
     if (aWidget) {
       // Unlocking, so return pointer to the original position by firing a
-      // synthetic mouse event. We first reset sLastRefPoint to its
-      // pre-pointerlock position, so that the synthetic mouse event reports
-      // no movement.
-      sLastRefPoint = sPreLockScreenPoint - aWidget->WidgetToScreenOffset();
+      // synthetic mouse event. We first reset sLastRefPoint and
+      // sLastRefPointOfRawUpdate to its pre-pointerlock position, so that the
+      // synthetic mouse event reports no movement.
+      sLastRefPoint = sLastRefPointOfRawUpdate =
+          sPreLockScreenPoint - aWidget->WidgetToScreenOffset();
       // XXX Cannot we do synthesize the native mousemove in the parent process
       //     with calling `UnlockNativePointer` above?  Then, we could make this
       //     API work only in the automation mode.
@@ -6462,7 +6541,7 @@ static Element* GetLabelTarget(nsIContent* aPossibleLabel) {
       mozilla::dom::HTMLLabelElement::FromNode(aPossibleLabel);
   if (!label) return nullptr;
 
-  return label->GetLabeledElement();
+  return label->GetLabeledElementInternal();
 }
 
 /* static */
@@ -6551,13 +6630,6 @@ bool EventStateManager::SetContentState(nsIContent* aContent,
   if (aState == ElementState::HOVER || aState == ElementState::ACTIVE) {
     // Hover and active are hierarchical
     updateAncestors = true;
-
-    // check to see that this state is allowed by style. Check dragover too?
-    // XXX Is this even what we want?
-    if (mCurrentTarget &&
-        mCurrentTarget->StyleUI()->UserInput() == StyleUserInput::None) {
-      return false;
-    }
 
     if (aState == ElementState::ACTIVE) {
       if (aContent && !CanContentHaveActiveState(*aContent)) {
@@ -6724,8 +6796,22 @@ void EventStateManager::NativeAnonymousContentRemoved(nsIContent* aContent) {
   }
 }
 
+void EventStateManager::ContentInserted(nsIContent* aChild,
+                                        const ContentInsertInfo& aInfo) {
+  if (nsFocusManager* fm = nsFocusManager::GetFocusManager()) {
+    fm->ContentInserted(aChild, aInfo);
+  }
+}
+void EventStateManager::ContentAppended(nsIContent* aFirstNewContent,
+                                        const ContentAppendInfo& aInfo) {
+  if (nsFocusManager* fm = nsFocusManager::GetFocusManager()) {
+    fm->ContentAppended(aFirstNewContent, aInfo);
+  }
+}
+
 void EventStateManager::ContentRemoved(Document* aDocument,
-                                       nsIContent* aContent) {
+                                       nsIContent* aContent,
+                                       const ContentRemoveInfo& aInfo) {
   /*
    * Anchor and area elements when focused or hovered might make the UI to show
    * the current link. We want to make sure that the UI gets informed when they
@@ -6749,7 +6835,7 @@ void EventStateManager::ContentRemoved(Document* aDocument,
   // inform the focus manager that the content is being removed. If this
   // content is focused, the focus will be removed without firing events.
   if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
-    fm->ContentRemoved(aDocument, aContent);
+    fm->ContentRemoved(aDocument, aContent, aInfo);
   }
 
   RemoveNodeFromChainIfNeeded(ElementState::HOVER, aContent, true);
@@ -6762,7 +6848,9 @@ void EventStateManager::ContentRemoved(Document* aDocument,
     sDragOverContent = nullptr;
   }
 
-  PointerEventHandler::ReleaseIfCaptureByDescendant(aContent);
+  if (!aInfo.mNewParent) {
+    PointerEventHandler::ReleaseIfCaptureByDescendant(aContent);
+  }
 
   if (mMouseEnterLeaveHelper) {
     const bool hadMouseOutTarget =
@@ -6851,6 +6939,11 @@ uint32_t EventStateManager::GetRegisteredAccessKey(Element* aElement) {
   nsAutoString accessKey;
   aElement->GetAttr(nsGkAtoms::accesskey, accessKey);
   return accessKey.First();
+}
+
+PresShell* EventStateManager::GetRootPresShell() const {
+  PresShell* const presShell = GetPresShell();
+  return presShell ? presShell->GetRootPresShell() : nullptr;
 }
 
 void EventStateManager::EnsureDocument(nsPresContext* aPresContext) {
@@ -7085,7 +7178,7 @@ nsresult EventStateManager::DoContentCommandReplaceTextEvent(
     // Handle it in focused content process if there is.
     if (BrowserParent* remote = BrowserParent::GetFocused()) {
       if (!aEvent->mOnlyEnabledCheck) {
-        Unused << remote->SendReplaceText(*aEvent);
+        (void)remote->SendReplaceText(*aEvent);
       }
       // XXX The remote process may be not editable right now.  Therefore, this
       // may be different from actual state in the remote process.
@@ -7658,6 +7751,10 @@ void EventStateManager::GetUserPrefsForWheelEvent(
 
 bool EventStateManager::WheelPrefs::IsOverOnePageScrollAllowedX(
     const WidgetWheelEvent* aEvent) {
+  if (StaticPrefs::mousewheel_allow_scrolling_more_than_one_page()) {
+    return true;
+  }
+
   Index index = GetIndexFor(aEvent);
   Init(index);
   return Abs(mMultiplierX[index]) >=
@@ -7666,6 +7763,10 @@ bool EventStateManager::WheelPrefs::IsOverOnePageScrollAllowedX(
 
 bool EventStateManager::WheelPrefs::IsOverOnePageScrollAllowedY(
     const WidgetWheelEvent* aEvent) {
+  if (StaticPrefs::mousewheel_allow_scrolling_more_than_one_page()) {
+    return true;
+  }
+
   Index index = GetIndexFor(aEvent);
   Init(index);
   return Abs(mMultiplierY[index]) >=

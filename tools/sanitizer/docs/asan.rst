@@ -97,11 +97,6 @@ Run ``mach bootstrap`` to get an updated clang-cl in your
    ac_add_options --enable-address-sanitizer
    ac_add_options --disable-jemalloc
 
-   export LDFLAGS="clang_rt.asan_dynamic-x86_64.lib clang_rt.asan_dynamic_runtime_thunk-x86_64.lib"
-   CLANG_LIB_DIR="$(cd ~/.mozbuild/clang/lib/clang/*/lib/windows && pwd)"
-   export MOZ_CLANG_RT_ASAN_LIB_PATH="${CLANG_LIB_DIR}/clang_rt.asan_dynamic-x86_64.dll"
-   export PATH=$CLANG_LIB_DIR:$PATH
-
 If you launch an ASan build under WinDbg, you may see spurious
 first-chance Access Violation exceptions. These come from ASan creating
 shadow memory pages on demand, and can be ignored. Run ``sxi av`` to
@@ -206,7 +201,6 @@ subdirectory with that name.
    elif [ -d $1 ] ; then
         echo "directory $1 already exists"
    else
-        autoconf2.13
         mkdir $1
         cd $1
         CC="clang" \

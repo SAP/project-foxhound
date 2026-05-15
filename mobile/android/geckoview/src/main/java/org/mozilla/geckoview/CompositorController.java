@@ -14,6 +14,7 @@ import java.util.List;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Controller for managing compositor-related functionality. */
 @UiThread
 public final class CompositorController {
   private final GeckoSession.Compositor mCompositor;

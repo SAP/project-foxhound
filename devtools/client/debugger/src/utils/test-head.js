@@ -4,6 +4,7 @@
 
 /**
  * Utils for Jest
+ *
  * @module utils/test-head
  */
 
@@ -38,18 +39,15 @@ import sourceMapLoader from "devtools/client/shared/source-map-loader/source-map
 function createStore(client, initialState = {}, sourceMapLoaderMock) {
   const store = configureStore({
     log: false,
-    makeThunkArgs: args => {
-      return {
-        ...args,
-        client,
-        sourceMapLoader:
-          sourceMapLoaderMock !== undefined
-            ? sourceMapLoaderMock
-            : sourceMapLoader,
-        parserWorker,
-        prettyPrintWorker,
-        searchWorker,
-      };
+    thunkArgs: {
+      client,
+      sourceMapLoader:
+        sourceMapLoaderMock !== undefined
+          ? sourceMapLoaderMock
+          : sourceMapLoader,
+      parserWorker,
+      prettyPrintWorker,
+      searchWorker,
     },
   })(combineReducers(reducers), initialState);
   sourceQueue.clear();

@@ -2,13 +2,47 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-friend struct nsHtml5ViewSourcePolicy;
-friend struct nsHtml5LineColPolicy;
-friend struct nsHtml5FastestPolicy;
+friend struct nsHtml5ViewSourcePolicySIMD;
+friend struct nsHtml5ViewSourcePolicyALU;
+friend struct nsHtml5LineColPolicySIMD;
+friend struct nsHtml5LineColPolicyALU;
+friend struct nsHtml5FastestPolicySIMD;
+friend struct nsHtml5FastestPolicyALU;
 
 private:
 int32_t col;
 bool nextCharOnNewLine;
+
+// These functions are wrappers for template parametrized stateLoop and
+// stateLoopCompilerWorkaround so that the instantiations can go into
+// separate compilation units both to allow different compiler flags
+// and to make LLVM perform LICM on SIMD constants in functions whose size
+// isn't too large for LLVM to perform LICM before LLVM looks for inlining
+// opportunities.
+
+int32_t StateLoopFastestSIMD(int32_t state, char16_t c, int32_t pos,
+                             char16_t* buf, bool reconsume, int32_t returnState,
+                             int32_t endPos);
+
+int32_t StateLoopFastestALU(int32_t state, char16_t c, int32_t pos,
+                            char16_t* buf, bool reconsume, int32_t returnState,
+                            int32_t endPos);
+
+int32_t StateLoopLineColSIMD(int32_t state, char16_t c, int32_t pos,
+                             char16_t* buf, bool reconsume, int32_t returnState,
+                             int32_t endPos);
+
+int32_t StateLoopLineColALU(int32_t state, char16_t c, int32_t pos,
+                            char16_t* buf, bool reconsume, int32_t returnState,
+                            int32_t endPos);
+
+int32_t StateLoopViewSourceSIMD(int32_t state, char16_t c, int32_t pos,
+                                char16_t* buf, bool reconsume,
+                                int32_t returnState, int32_t endPos);
+
+int32_t StateLoopViewSourceALU(int32_t state, char16_t c, int32_t pos,
+                               char16_t* buf, bool reconsume,
+                               int32_t returnState, int32_t endPos);
 
 public:
 inline int32_t getColumnNumber() { return col; }
@@ -32,6 +66,11 @@ inline nsHtml5HtmlAttributes* GetAttributes() { return attributes; }
  * @return true if successful; false if out of memory
  */
 bool EnsureBufferSpace(int32_t aLength);
+
+MOZ_COLD MOZ_NEVER_INLINE void EnsureBufferSpaceShouldNeverHappen(
+    int32_t aLength);
+
+nsHtml5String TryAtomizeForSingleDigit();
 
 bool TemplatePushedOrHeadPopped();
 

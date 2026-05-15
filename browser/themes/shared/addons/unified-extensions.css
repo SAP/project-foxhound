@@ -28,6 +28,32 @@
   width: var(--menu-panel-width-wide);
 }
 
+#unified-extensions-empty-state {
+  > img {
+    /* The parent is a vbox using flexbox, which causes the img to grow to the full width by default. Avoid that: */
+    align-self: center;
+  }
+  > h2 {
+    color: inherit; /* undo var(--text-color-deemphasized) from panelUI-shared.css */
+    font-weight: var(--heading-font-weight); /* undo inherit from panelUI-shared.css that overrode h2's font-weight */
+  }
+
+  > description {
+    /* Horizontally align the text with the "Manage extensions" button/item at the bottom */
+    margin: var(--arrowpanel-menuitem-margin);
+    padding: var(--arrowpanel-menuitem-padding);
+  }
+}
+
+#unified-extensions-discover-extensions {
+  width: auto; /* full width instead of fit-content */
+
+  + toolbarseparator,
+  + toolbarseparator + #unified-extensions-manage-extensions {
+    display: none;
+  }
+}
+
 /* Align extensions rendered with custom elements. */
 unified-extensions-item {
   display: flex;
@@ -93,20 +119,13 @@ unified-extensions-item {
   list-style-image: var(--webextension-toolbar-image, inherit);
 
   toolbar[brighttext] & {
-    list-style-image: var(--webextension-toolbar-image-light, inherit);
-  }
-  :root[lwtheme] toolbar:not([brighttext]) & {
+    /* separate image used for dark toolbars */
     list-style-image: var(--webextension-toolbar-image-dark, inherit);
   }
   toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > .unified-extensions-item-row-wrapper > & {
     list-style-image: var(--webextension-menupanel-image, inherit);
-    /* TODO: This feels a bit odd, why do we have three images? It feels we
-     * should probably have only two (light/dark), and choose based on
-     * prefers-color-scheme + lwt-popup */
     :root[lwt-popup="dark"] & {
-      list-style-image: var(--webextension-menupanel-image-light, inherit);
-    }
-    :root[lwt-popup="light"] & {
+      /* separate image used for dark toolbars */
       list-style-image: var(--webextension-menupanel-image-dark, inherit);
     }
   }

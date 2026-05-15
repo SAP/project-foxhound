@@ -1,3 +1,7 @@
+// |jit-test| skip-variant-if: --ion-eager, getBuildConfiguration("simulator")
+
+// Slow in simulators with --ion-eager.
+
 // Lowering provides a specialisation when the base operand is a constant which
 // is a power of two.
 
@@ -14,7 +18,7 @@ function test(x, y, z) {
             // values are the same.)
             var ys = [${y}, ${y}];
             var zs = [${z}, ${z}];
-            for (var i = 0; i < 1000; ++i) {
+            for (var i = 0; i < 200; ++i) {
                 assertNear(${fn(x, "ys[i & 1]")}, zs[i & 1]);
             }
         `);

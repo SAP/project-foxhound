@@ -57,7 +57,12 @@ add_task(async function () {
 
   await selectNode("body", inspector);
   checkRuleViewContent(view, [
-    { selector: "element", ancestorRulesData: null, declarations: [] },
+    {
+      selector: "element",
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
     {
       selector: "",
       ancestorRulesData: [`body {`],
@@ -84,7 +89,12 @@ add_task(async function () {
 
   await selectNode("h1", inspector);
   checkRuleViewContent(view, [
-    { selector: "element", ancestorRulesData: null, declarations: [] },
+    {
+      selector: "element",
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
     {
       selector: `& h1`,
       // prettier-ignore
@@ -98,7 +108,12 @@ add_task(async function () {
 
   await selectNode("h1 > .foo", inspector);
   checkRuleViewContent(view, [
-    { selector: "element", ancestorRulesData: null, declarations: [] },
+    {
+      selector: "element",
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
     {
       selector: `& .foo`,
       // prettier-ignore
@@ -113,7 +128,12 @@ add_task(async function () {
 
   await selectNode("h1 > #bar", inspector);
   checkRuleViewContent(view, [
-    { selector: "element", ancestorRulesData: null, declarations: [] },
+    {
+      selector: "element",
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
     {
       selector: `& #bar`,
       // prettier-ignore
@@ -128,7 +148,12 @@ add_task(async function () {
 
   await selectNode("nav", inspector);
   checkRuleViewContent(view, [
-    { selector: "element", ancestorRulesData: null, declarations: [] },
+    {
+      selector: "element",
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
     {
       selector: `& + nav`,
       ancestorRulesData: [
@@ -143,7 +168,12 @@ add_task(async function () {
 
   await selectNode("nav a", inspector);
   checkRuleViewContent(view, [
-    { selector: "element", ancestorRulesData: null, declarations: [] },
+    {
+      selector: "element",
+      selectorEditable: false,
+      ancestorRulesData: null,
+      declarations: [],
+    },
     {
       selector: `& [href]`,
       ancestorRulesData: [
@@ -157,62 +187,3 @@ add_task(async function () {
     },
   ]);
 });
-
-function checkRuleViewContent(view, expectedRules) {
-  const rulesInView = Array.from(view.element.children);
-  is(
-    rulesInView.length,
-    expectedRules.length,
-    "All expected rules are displayed"
-  );
-
-  for (let i = 0; i < expectedRules.length; i++) {
-    const expectedRule = expectedRules[i];
-    info(`Checking rule #${i}: ${expectedRule.selector}`);
-
-    const ruleInView = rulesInView[i];
-    const selector = ruleInView.querySelector(
-      ".ruleview-selectors-container"
-    ).innerText;
-    is(selector, expectedRule.selector, `Expected selector for ${selector}`);
-
-    if (expectedRule.ancestorRulesData == null) {
-      is(
-        getRuleViewAncestorRulesDataElementByIndex(view, i),
-        null,
-        `No ancestor rules data displayed for ${selector}`
-      );
-    } else {
-      is(
-        getRuleViewAncestorRulesDataTextByIndex(view, i),
-        expectedRule.ancestorRulesData.join("\n"),
-        `Expected ancestor rules data displayed for ${selector}`
-      );
-    }
-
-    const declarations = ruleInView.querySelectorAll(".ruleview-property");
-    is(
-      declarations.length,
-      expectedRule.declarations.length,
-      "Got the expected number of declarations"
-    );
-    for (let j = 0; j < declarations.length; j++) {
-      const expectedDeclaration = expectedRule.declarations[j];
-      const [propName, propValue] = Array.from(
-        declarations[j].querySelectorAll(
-          ".ruleview-propertyname, .ruleview-propertyvalue"
-        )
-      );
-      is(
-        propName.innerText,
-        expectedDeclaration?.name,
-        "Got expected property name"
-      );
-      is(
-        propValue.innerText,
-        expectedDeclaration?.value,
-        "Got expected property value"
-      );
-    }
-  }
-}

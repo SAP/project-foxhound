@@ -14,63 +14,32 @@ from itertools import chain
 from operator import itemgetter
 
 # Skip all tests which use features not supported in SpiderMonkey.
-UNSUPPORTED_FEATURES = set(
-    [
-        "tail-call-optimization",
-        "Intl.Locale-info",  # Bug 1693576
-        "legacy-regexp",  # Bug 1306461
-        "source-phase-imports",
-        "source-phase-imports-module-source",
-        "import-defer",
-    ]
-)
+UNSUPPORTED_FEATURES = set([
+    "tail-call-optimization",
+    "Intl.Locale-info",  # Bug 1693576
+    "source-phase-imports",
+    "source-phase-imports-module-source",
+    "import-defer",
+    "nonextensible-applies-to-private",  # Bug 1991478
+    "ShadowRealm",
+])
 FEATURE_CHECK_NEEDED = {
     "Atomics": "!this.hasOwnProperty('Atomics')",
-    "FinalizationRegistry": "!this.hasOwnProperty('FinalizationRegistry')",
     "SharedArrayBuffer": "!this.hasOwnProperty('SharedArrayBuffer')",
     "Temporal": "!this.hasOwnProperty('Temporal')",
-    "WeakRef": "!this.hasOwnProperty('WeakRef')",
     "decorators": "!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('decorators'))",  # Bug 1435869
-    "iterator-helpers": "!this.hasOwnProperty('Iterator')",  # Bug 1568906
-    "Intl.Segmenter": "!Intl.Segmenter",  # Bug 1423593
-    "Intl.DurationFormat": "!Intl.hasOwnProperty('DurationFormat')",  # Bug 1648139
-    "uint8array-base64": "!Uint8Array.fromBase64",  # Bug 1862220
-    "json-parse-with-source": "!JSON.hasOwnProperty('isRawJSON')",  # Bug 1658310
-    "RegExp.escape": "!RegExp.escape",
-    "promise-try": "!Promise.try",
     "explicit-resource-management": "!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('explicit-resource-management'))",  # Bug 1569081
-    "Atomics.pause": "!this.hasOwnProperty('Atomics')||!Atomics.pause",
-    "Error.isError": "!Error.isError",
-    "iterator-sequencing": "!Iterator.concat",
-    "Math.sumPrecise": "!Math.sumPrecise",  # Bug 1918708
-    "upsert": "!Map.prototype.getOrInsertComputed",
-    "immutable-arraybuffer": "!ArrayBuffer.prototype.sliceToImmutable",
+    "Atomics.pause": "!this.hasOwnProperty('Atomics')||!Atomics.pause",  # Bug 1918717
+    "Error.isError": "!Error.isError",  # Bug 1923733
+    "iterator-sequencing": "!Iterator.concat",  # Bug 1923732
+    "immutable-arraybuffer": "!ArrayBuffer.prototype.sliceToImmutable",  # Bug 1952253
 }
-RELEASE_OR_BETA = set(
-    [
-        "regexp-modifiers",
-        "symbols-as-weakmap-keys",
-    ]
-)
+RELEASE_OR_BETA = set(["legacy-regexp"])
 SHELL_OPTIONS = {
-    "import-attributes": "--enable-import-attributes",
-    "ShadowRealm": "--enable-shadow-realms",
-    "iterator-helpers": "--enable-iterator-helpers",
     "symbols-as-weakmap-keys": "--enable-symbols-as-weakmap-keys",
-    "uint8array-base64": "--enable-uint8array-base64",
-    "json-parse-with-source": "--enable-json-parse-with-source",
-    "regexp-duplicate-named-groups": "--enable-regexp-duplicate-named-groups",
-    "RegExp.escape": "--enable-regexp-escape",
-    "regexp-modifiers": "--enable-regexp-modifiers",
-    "promise-try": "--enable-promise-try",
     "explicit-resource-management": "--enable-explicit-resource-management",
-    "Atomics.pause": "--enable-atomics-pause",
-    "Temporal": "--enable-temporal",
-    "Error.isError": "--enable-error-iserror",
     "iterator-sequencing": "--enable-iterator-sequencing",
-    "Math.sumPrecise": "--enable-math-sumprecise",
     "Atomics.waitAsync": "--setpref=atomics_wait_async",
-    "upsert": "--enable-upsert",
     "immutable-arraybuffer": "--enable-arraybuffer-immutable",
 }
 
@@ -322,9 +291,15 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
     # Test262 tests cannot be both "negative" and "async".  (In principle a
     # negative async test is permitted when the error phase is not "parse" or
     # the error type is not SyntaxError, but no such tests exist now.)
-    assert not (isNegative and isAsync), (
-        "Can't have both async and negative attributes: %s" % testName
-    )
+    # assert not (isNegative and isAsync), (
+    #     "Can't have both async and negative attributes: %s" % testName
+    # )
+    # TODO: Print a warning instead of asserting until
+    # <https://github.com/tc39/test262/issues/4638> is fixed.
+    if isNegative and isAsync:
+        print(
+            f"bad isnegative + async: {testName} (https://github.com/tc39/test262/issues/4638)"
+        )
 
     # Only async tests may use the $DONE or asyncTest function. However,
     # negative parse tests may "use" the $DONE (or asyncTest) function (of
@@ -338,7 +313,7 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
         or isAsync
         or isNegative
         or testName.split(os.path.sep)[0] == "harness"
-    ), ("Missing async attribute in: %s" % testName)
+    ), "Missing async attribute in: %s" % testName
 
     # When the "module" attribute is set, the source code is module code.
     isModule = "module" in testRec
@@ -361,38 +336,29 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
         else:
             releaseOrBeta = [f for f in testRec["features"] if f in RELEASE_OR_BETA]
             if releaseOrBeta:
-                refTestSkipIf.append(
-                    (
-                        "release_or_beta",
-                        "%s is not released yet" % ",".join(releaseOrBeta),
-                    )
-                )
+                refTestSkipIf.append((
+                    "release_or_beta",
+                    "%s is not released yet" % ",".join(releaseOrBeta),
+                ))
 
             featureCheckNeeded = [
                 f for f in testRec["features"] if f in FEATURE_CHECK_NEEDED
             ]
             if featureCheckNeeded:
-                refTestSkipIf.append(
-                    (
-                        "||".join(
-                            [FEATURE_CHECK_NEEDED[f] for f in featureCheckNeeded]
-                        ),
-                        "%s is not enabled unconditionally"
-                        % ",".join(featureCheckNeeded),
-                    )
-                )
+                refTestSkipIf.append((
+                    "||".join([FEATURE_CHECK_NEEDED[f] for f in featureCheckNeeded]),
+                    "%s is not enabled unconditionally" % ",".join(featureCheckNeeded),
+                ))
 
             if (
                 "Atomics" in testRec["features"]
                 and "SharedArrayBuffer" in testRec["features"]
             ):
-                refTestSkipIf.append(
-                    (
-                        "(this.hasOwnProperty('getBuildConfiguration')"
-                        "&&getBuildConfiguration('arm64-simulator'))",
-                        "ARM64 Simulator cannot emulate atomics",
-                    )
-                )
+                refTestSkipIf.append((
+                    "(this.hasOwnProperty('getBuildConfiguration')"
+                    "&&getBuildConfiguration('arm64-simulator'))",
+                    "ARM64 Simulator cannot emulate atomics",
+                ))
 
             shellOptions = {
                 SHELL_OPTIONS[f] for f in testRec["features"] if f in SHELL_OPTIONS
@@ -597,12 +563,10 @@ def process_test262(test262Dir, test262OutDir, strictTests, externManifests):
                 writeTestFile(test262OutDir, newFileName, newSource)
 
                 if externRefTest is not None:
-                    externManifests.append(
-                        {
-                            "name": newFileName,
-                            "reftest": externRefTest,
-                        }
-                    )
+                    externManifests.append({
+                        "name": newFileName,
+                        "reftest": externRefTest,
+                    })
 
         # Remove "sm/non262.js" because it overwrites our test harness with stub
         # functions.
@@ -804,12 +768,7 @@ def fetch_pr_files(inDir, outDir, prNumber, strictTests):
                 assert pageUrl.startswith("https://api.github.com/")
 
                 # Ensure the relative URL marker has the expected format.
-                assert (
-                    rel == 'rel="prev"'
-                    or rel == 'rel="next"'
-                    or rel == 'rel="first"'
-                    or rel == 'rel="last"'
-                )
+                assert rel in {'rel="prev"', 'rel="next"', 'rel="first"', 'rel="last"'}
 
                 # We only need the URL for the next page.
                 if rel == 'rel="next"':
@@ -898,13 +857,23 @@ def update_test262(args):
             return fetch_local_changes(inDir, outDir, srcDir, strictTests)
 
         if revision == "HEAD":
-            subprocess.check_call(
-                ["git", "clone", "--depth=1", "--branch=%s" % branch, url, inDir]
-            )
+            subprocess.check_call([
+                "git",
+                "clone",
+                "--depth=1",
+                "--branch=%s" % branch,
+                url,
+                inDir,
+            ])
         else:
-            subprocess.check_call(
-                ["git", "clone", "--single-branch", "--branch=%s" % branch, url, inDir]
-            )
+            subprocess.check_call([
+                "git",
+                "clone",
+                "--single-branch",
+                "--branch=%s" % branch,
+                url,
+                inDir,
+            ])
             subprocess.check_call(["git", "-C", inDir, "reset", "--hard", revision])
 
         # If a PR number is provided, fetches only the new and modified files

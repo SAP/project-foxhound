@@ -4,6 +4,7 @@
 
 import asyncio
 import contextlib
+import math
 import time
 import zipfile
 from base64 import b64decode, b64encode
@@ -31,6 +32,33 @@ class Client:
             and platform_override != session.capabilities["platformName"]
         ):
             self.platform_override = platform_override
+
+        self._start_collecting_alerts()
+
+    async def set_page_zoom_level(self, level):
+        with self.using_context("chrome"):
+            self.execute_script(
+                r"""
+                    const [ level ] = arguments;
+                    const win = browser.ownerGlobal;
+                    win.ZoomManager.setZoomForBrowser(win.gBrowser.selectedTab.linkedBrowser, level);
+                    """,
+                level,
+            )
+
+    async def maybe_enable_font_inflation(self):
+        # GVE does not enable font inflation by default. We want to match Fenix.
+        if self.session.capabilities["platformName"] != "android":
+            return
+        with self.using_context("chrome"):
+            self.execute_script(
+                r"""
+                  const minTwips = "font.size.inflation.minTwips";
+                  if (!Services.prefs.getIntPref(minTwips)) {
+                    Services.prefs.setIntPref(minTwips, 120);
+                  }
+                """
+            )
 
     async def maybe_override_platform(self):
         if hasattr(self, "_platform_override_checked"):
@@ -500,7 +528,7 @@ class Client:
             wait="interactive",
         )
         await self.session.bidi_session.script.evaluate(
-            expression=f"window.browser.extension.getBackgroundPage().{waitFor}.ready()",
+            expression=f"window.browser.extension.getBackgroundPage().{waitFor}.allSettled()",
             target=ContextTarget(context["context"]),
             await_promise=True,
         )
@@ -511,6 +539,7 @@ class Client:
     async def navigate(self, url, timeout=90, no_skip=False, **kwargs):
         await self.await_interventions_started()
         await self.maybe_override_platform()
+        await self.maybe_enable_font_inflation()
         try:
             return await asyncio.wait_for(
                 asyncio.ensure_future(self._navigate(url, **kwargs)), timeout=timeout
@@ -683,6 +712,9 @@ class Client:
 
         return find_in([await self.top_context()], url)
 
+    def stall(self, delay):
+        return asyncio.sleep(delay)
+
     class Context:
         def __init__(self, client, id):
             self.client = client
@@ -817,7 +849,7 @@ class Client:
                 out.append({"type": "string", "value": arg})
             else:
                 if "type" in arg:
-                    out.push(arg)
+                    out.append(arg)
                     continue
                 raise ValueError(f"Unhandled argument type: {t}")
         return out
@@ -878,45 +910,129 @@ class Client:
             )
         return self.prompts_preload_script
 
-    async def await_alert(self, texts, timeout=10):
-        if type(texts) is not list:
-            texts = [texts]
-        if not hasattr(self, "alert_preload_script"):
-            self.alert_preload_script = await self.make_preload_script(
+    def _start_collecting_alerts(self):
+        # WebDriver doesn't make it easy to just wait for an alert, because while you can
+        # listen for the events, there is no guarantee that UnexpectedAlertExceptions won't
+        # be thrown while you're doing other things. So we just tell Gecko to collect the
+        # prompts as they come in, and immediately dismiss them to prevent the exceptions.
+        with self.using_context("chrome"):
+            self.execute_script(
                 """
-                    window.__alerts = [];
-                    window.wrappedJSObject.alert = function(text) {
-                        window.__alerts.push(text);
+                const lazy = {};
+
+                ChromeUtils.defineESModuleGetters(lazy, {
+                  EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
+                  modal: "chrome://remote/content/shared/Prompt.sys.mjs",
+                  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
+                  PromptListener: "chrome://remote/content/shared/listeners/PromptListener.sys.mjs",
+                  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
+                });
+
+                async function tryClosePrompt(contextId) {
+                    const context = lazy.NavigableManager.getBrowsingContextById(contextId);
+                    if (!context) {
+                      return;
                     }
-                """,
-                "alert_detector",
-            )
-        return self.alert_preload_script.run(
-            """(timeout, ...msgs) => new Promise(done => {
-                    const interval = 200;
-                    let count = 0;
-                    const to = setInterval(() => {
-                        for (const a of window.__alerts || []) {
-                            for (const msg of msgs) {
-                                if (a.includes(msg)) {
-                                    clearInterval(to);
-                                    done(a);
-                                    return;
-                                }
+
+                    const tab = lazy.TabManager.getTabForBrowsingContext(context);
+                    const browser = lazy.TabManager.getBrowserForTab(tab);
+                    const window = lazy.TabManager.getWindowForTab(tab);
+                    const dialog = lazy.modal.findPrompt({
+                      window,
+                      contentBrowser: browser,
+                    });
+
+                    const closePrompt = async callback => {
+                      const dialogClosed = new lazy.EventPromise(
+                        window,
+                        "DOMModalDialogClosed"
+                      );
+                      callback();
+                      await dialogClosed;
+                    };
+
+                    if (dialog && dialog.isOpen) {
+                      switch (dialog.promptType) {
+                        case "alert":
+                          await closePrompt(() => dialog.accept());
+                          return;
+
+                        case "beforeunload":
+                        case "confirm":
+                          await closePrompt(() => {
+                            if (accept) {
+                              dialog.accept();
+                            } else {
+                              dialog.dismiss();
                             }
-                        }
-                        count += interval;
-                        if (timeout && timeout * 1000 < count) {
-                            clearInterval(to);
-                            done(false);
-                        }
-                    }, interval);
-               })
-            """,
-            timeout,
-            *texts,
-            await_promise=True,
-        )
+                          });
+                          return;
+
+                        case "prompt":
+                          await closePrompt(() => {
+                            if (accept) {
+                              dialog.text = userText;
+                              dialog.accept();
+                            } else {
+                              dialog.dismiss();
+                            }
+                          });
+                          return;
+                      }
+                   }
+                }
+
+                const alerts = [];
+                const promptListener = new lazy.PromptListener();
+                promptListener.on("opened", async (eventName, data) => {
+                    const { contentBrowser, prompt } = data;
+                    const type = prompt.promptType;
+                    const context = lazy.NavigableManager.getIdForBrowser(contentBrowser);
+                    const message = await prompt.getText();
+                    alerts.push({type, context, message});
+                    tryClosePrompt(context);
+                    Services.ppmm.sharedData.set("WebCompatTests:Prompts", alerts);
+                    console.error(`**** Closed ${type} in context ${context} with message: ${message}`);
+                });
+                promptListener.startListening();
+            """
+            )
+
+    def _get_prompts(self):
+        with self.using_context("chrome"):
+            return self.execute_script(
+                "return Services.cpmm.sharedData.get('WebCompatTests:Prompts')"
+            )
+
+    def _check_prompts(self, specific_messages, prompts):
+        if not prompts:
+            return
+        for prompt in prompts:
+            message = prompt["message"]
+            if not specific_messages:
+                return message
+            else:
+                for specific_message in specific_messages:
+                    if specific_message in prompt["message"]:
+                        return prompt["message"]
+
+    async def find_alert(self, specific_messages=None, delay=None):
+        if delay:
+            await asyncio.sleep(delay)
+        found = self._check_prompts(specific_messages, self._get_prompts())
+        if found is not None:
+            return found
+
+    async def await_alert(
+        self, specific_messages=None, timeout=20, polling_interval=0.2
+    ):
+        with self.using_context("chrome"):
+            print(math.ceil(timeout / polling_interval))
+            for _ in range(math.ceil(timeout / polling_interval)):
+                found = self._check_prompts(specific_messages, self._get_prompts())
+                if found is not None:
+                    return found
+                await asyncio.sleep(polling_interval)
 
     async def await_popup(self, url=None):
         if not hasattr(self, "popup_preload_script"):
@@ -1407,17 +1523,9 @@ class Client:
             )
             time.sleep(0.5)
             without_scrollbar = trending_list.screenshot()
-            assert (
-                with_scrollbar == without_scrollbar
-            ), "scrollbar does not cover any text"
-
-    async def test_nicescroll_breaks_scrolling(self, url):
-        await self.navigate(url)
-        return self.execute_script(
-            """
-              return document.querySelector("html").style.overflow == "hidden"
-          """
-        )
+            assert with_scrollbar == without_scrollbar, (
+                "scrollbar does not cover any text"
+            )
 
     def test_for_fastclick(self, element):
         # FastClick cancels touchend, breaking default actions on Fenix.
@@ -1449,6 +1557,38 @@ class Client:
             pass
         return self.execute_script("return window.fastclicked")
 
+    async def test_aceomni_pan_and_zoom_works(self, url):
+        await self.navigate(url, wait="none")
+        img = self.await_css("#imageZoom", is_displayed=True)
+        await self.stall(2)
+
+        def get_zoom_x():
+            return self.execute_script(
+                "return arguments[0].style.cssText.match(/--zoom-x:\\s?(\\d+(\\.\\d+)?)%/)?.[1]",
+                img,
+            )
+
+        if get_zoom_x() is not None:
+            return False
+
+        await self.stall(0.5)
+        coords = self.get_element_screen_position(img)
+        coords = [coords[0] + 50, coords[1] + 100]
+        await self.apz_move(coords=coords)
+        await self.stall(0.5)
+        old_x = float(get_zoom_x())
+
+        for i in range(20):
+            coords = [coords[0] + 10, coords[1]]
+            await self.apz_move(coords=coords)
+            await self.stall(0.01)
+            x = float(get_zoom_x())
+            if x < old_x:
+                return False
+            old_x = x
+
+        return True
+
     def is_displayed(self, element):
         if element is None:
             return False
@@ -1459,8 +1599,9 @@ class Client:
                   const e = arguments[0],
                   s = window.getComputedStyle(e),
                   v = s.visibility === "visible",
-                  o = Math.abs(parseFloat(s.opacity));
-                  return e.getClientRects().length > 0 && v && (isNaN(o) || o === 1.0);
+                  o = Math.abs(parseFloat(s.opacity)),
+                  d = s.display === "contents" || e.getClientRects().length > 0;
+                  return d && v && (isNaN(o) || o === 1.0);
               """,
                 args=[element],
             )
@@ -1481,7 +1622,12 @@ class Client:
             """
            const s = document.createElement("style");
            s.textContent = arguments[0];
-           document.head.appendChild(s);
+           const timer = setInterval(() => {
+             if (document.head) {
+                document.head.appendChild(s);
+                clearInterval(timer);
+             }
+           }, 50);
         """,
             sheet,
         )

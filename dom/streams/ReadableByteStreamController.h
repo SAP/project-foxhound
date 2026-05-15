@@ -8,24 +8,25 @@
 #define mozilla_dom_ReadableByteStreamController_h
 
 #include <cstddef>
+
 #include "UnderlyingSourceCallbackHelpers.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/QueuingStrategyBinding.h"
+#include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/QueueWithSizes.h"
-#include "mozilla/dom/ReadableStream.h"
+#include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/ReadRequest.h"
+#include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBYOBRequest.h"
 #include "mozilla/dom/ReadableStreamControllerBase.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "mozilla/dom/Nullable.h"
-#include "nsTArray.h"
 #include "nsISupportsImpl.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

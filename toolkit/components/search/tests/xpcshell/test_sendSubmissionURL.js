@@ -51,45 +51,39 @@ async function addAndMakeDefault(name, search_url, search_url_get_params) {
     search_url_get_params,
   });
 
-  let engine = Services.search.getEngineByName(name);
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  let engine = SearchService.getEngineByName(name);
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
   return engine;
 }
 
 add_task(async function test_submission_url_matching() {
-  Assert.ok(!Services.search.isInitialized);
+  Assert.ok(!SearchService.isInitialized);
   let engineInfo;
   let engine;
 
   for (let [name, searchURL, searchParams] of SUBMISSION_YES) {
     engine = await addAndMakeDefault(name, searchURL, searchParams);
-    engineInfo = Services.search.getDefaultEngineInfo();
+    engineInfo = SearchService.getDefaultEngineInfo();
     Assert.equal(
       engineInfo.defaultSearchEngineData.submissionURL,
       (searchURL + "?" + searchParams).replace("{searchTerms}", "")
     );
-    await Services.search.removeEngine(engine);
+    await SearchService.removeEngine(engine);
   }
 
   for (let [name, searchURL, searchParams] of SUBMISSION_NO) {
     engine = await addAndMakeDefault(name, searchURL, searchParams);
-    engineInfo = Services.search.getDefaultEngineInfo();
+    engineInfo = SearchService.getDefaultEngineInfo();
     Assert.equal(engineInfo.defaultSearchEngineData.submissionURL, null);
-    await Services.search.removeEngine(engine);
+    await SearchService.removeEngine(engine);
   }
 });
 
 add_task(async function test_submission_url_built_in() {
-  const engine = await Services.search.getEngineById("engine");
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  const engine = await SearchService.getEngineById("engine");
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
-  const engineInfo = Services.search.getDefaultEngineInfo();
+  const engineInfo = SearchService.getDefaultEngineInfo();
   Assert.equal(
     engineInfo.defaultSearchEngineData.submissionURL,
     "https://1.example.com/?q=",

@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_HTMLDNSPrefetch_h___
-#define mozilla_dom_HTMLDNSPrefetch_h___
+#ifndef mozilla_dom_HTMLDNSPrefetch_h_
+#define mozilla_dom_HTMLDNSPrefetch_h_
 
 #include "nsCOMPtr.h"
+#include "nsIDNSService.h"
 #include "nsIRequest.h"
 #include "nsString.h"
-#include "nsIDNSService.h"
 
 class nsITimer;
 class nsIURI;

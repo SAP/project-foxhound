@@ -4,15 +4,14 @@
 
 //! Data needed to style a Gecko document.
 
-use crate::dom::TElement;
+use crate::derives::*;
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs::{
     self, ServoStyleSetSizes, StyleSheet as DomStyleSheet, StyleSheetInfo,
 };
-use crate::invalidation::media_queries::{MediaListKey, ToMediaListKey};
+use crate::invalidation::stylesheets::StylesheetInvalidationSet;
 use crate::media_queries::{Device, MediaList};
 use crate::properties::ComputedValues;
-use crate::selector_parser::SnapshotMap;
 use crate::shared_lock::{SharedRwLockReadGuard, StylesheetGuards};
 use crate::stylesheets::scope_rule::ImplicitScopeRoot;
 use crate::stylesheets::{StylesheetContents, StylesheetInDocument};
@@ -41,19 +40,12 @@ unsafe impl Sync for GeckoStyleSheet {}
 
 impl fmt::Debug for GeckoStyleSheet {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        let contents = self.contents();
+        let contents = self.raw_contents();
         formatter
             .debug_struct("GeckoStyleSheet")
             .field("origin", &contents.origin)
-            .field("url_data", &*contents.url_data.read())
+            .field("url_data", &contents.url_data)
             .finish()
-    }
-}
-
-impl ToMediaListKey for crate::gecko::data::GeckoStyleSheet {
-    fn to_media_list_key(&self) -> MediaListKey {
-        use std::mem;
-        unsafe { MediaListKey::from_raw(mem::transmute(self.0)) }
     }
 }
 
@@ -88,6 +80,11 @@ impl GeckoStyleSheet {
 
     fn inner(&self) -> &StyleSheetInfo {
         unsafe { &*(self.raw().mInner as *const StyleSheetInfo) }
+    }
+
+    fn raw_contents(&self) -> &StylesheetContents {
+        debug_assert!(!self.inner().mContents.mRawPtr.is_null());
+        unsafe { &*self.inner().mContents.mRawPtr }
     }
 }
 
@@ -125,9 +122,8 @@ impl StylesheetInDocument for GeckoStyleSheet {
     }
 
     #[inline]
-    fn contents(&self) -> &StylesheetContents {
-        debug_assert!(!self.inner().mContents.mRawPtr.is_null());
-        unsafe { &*self.inner().mContents.mRawPtr }
+    fn contents<'a>(&'a self, _: &'a SharedRwLockReadGuard) -> &'a StylesheetContents {
+        self.raw_contents()
     }
 
     fn implicit_scope_root(&self) -> Option<ImplicitScopeRoot> {
@@ -189,29 +185,23 @@ impl PerDocumentStyleData {
     }
 
     /// Get an immutable reference to this style data.
-    pub fn borrow(&self) -> AtomicRef<PerDocumentStyleDataImpl> {
+    pub fn borrow(&self) -> AtomicRef<'_, PerDocumentStyleDataImpl> {
         self.0.borrow()
     }
 
     /// Get an mutable reference to this style data.
-    pub fn borrow_mut(&self) -> AtomicRefMut<PerDocumentStyleDataImpl> {
+    pub fn borrow_mut(&self) -> AtomicRefMut<'_, PerDocumentStyleDataImpl> {
         self.0.borrow_mut()
     }
 }
 
 impl PerDocumentStyleDataImpl {
     /// Recreate the style data if the stylesheets have changed.
-    pub fn flush_stylesheets<E>(
+    pub fn flush_stylesheets(
         &mut self,
         guard: &SharedRwLockReadGuard,
-        document_element: Option<E>,
-        snapshots: Option<&SnapshotMap>,
-    ) -> bool
-    where
-        E: TElement,
-    {
-        self.stylist
-            .flush(&StylesheetGuards::same(guard), document_element, snapshots)
+    ) -> StylesheetInvalidationSet {
+        self.stylist.flush(&StylesheetGuards::same(guard))
     }
 
     /// Get the default computed values for this document.

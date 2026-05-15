@@ -6,7 +6,9 @@ package mozilla.components.feature.toolbar
 
 import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
@@ -30,6 +32,7 @@ class ToolbarPresenter(
     private val customTabId: String? = null,
     private val shouldDisplaySearchTerms: Boolean = false,
     urlRenderConfiguration: ToolbarFeature.UrlRenderConfiguration? = null,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
     @VisibleForTesting
     internal var renderer = URLRenderer(toolbar, urlRenderConfiguration)
@@ -42,7 +45,7 @@ class ToolbarPresenter(
     fun start() {
         renderer.start()
 
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.distinctUntilChangedBy { it.findCustomTabOrSelectedTab(customTabId) }
                 .collect { state ->
                     render(state)
@@ -71,7 +74,7 @@ class ToolbarPresenter(
 
             toolbar.siteInfo = if (tab.content.url.isContentUrl()) {
                 Toolbar.SiteInfo.LOCAL_PDF
-            } else if (tab.content.securityInfo.secure) {
+            } else if (tab.content.securityInfo.isSecure) {
                 Toolbar.SiteInfo.SECURE
             } else {
                 Toolbar.SiteInfo.INSECURE

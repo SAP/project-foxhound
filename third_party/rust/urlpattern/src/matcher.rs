@@ -1,10 +1,10 @@
-use crate::regexp::RegExp;
 use crate::Error;
+use crate::regexp::RegExp;
 
 #[derive(Debug)]
 /// A structured representation of a URLPattern matcher, which can be used to
 /// match a URL against a pattern quickly.
-pub(crate) struct Matcher<R: RegExp> {
+pub struct Matcher<R: RegExp> {
   pub prefix: String,
   pub suffix: String,
   pub inner: InnerMatcher<R>,
@@ -12,7 +12,7 @@ pub(crate) struct Matcher<R: RegExp> {
 }
 
 #[derive(Debug)]
-pub(crate) enum InnerMatcher<R: RegExp> {
+pub enum InnerMatcher<R: RegExp> {
   /// A literal string matcher.
   ///
   /// # Examples
@@ -94,7 +94,7 @@ impl<R: RegExp> Matcher<R> {
         Some(vec![Some(input)])
       }
       InnerMatcher::RegExp { regexp, .. } => {
-        regexp.as_ref().unwrap().matches(input)
+        regexp.as_ref().ok()?.matches(input)
       }
     }
   }

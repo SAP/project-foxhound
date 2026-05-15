@@ -8,7 +8,6 @@
 
 #include "mozilla/SMILValue.h"
 #include "nsDebug.h"
-#include <math.h>
 
 namespace mozilla {
 

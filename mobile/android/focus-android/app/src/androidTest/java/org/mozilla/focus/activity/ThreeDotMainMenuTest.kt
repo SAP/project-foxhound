@@ -14,9 +14,8 @@ import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.RetryTestRule
-import org.mozilla.focus.helpers.TestAssetHelper
-import org.mozilla.focus.helpers.TestHelper.mDevice
-import org.mozilla.focus.helpers.TestHelper.waitingTime
+import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
+import org.mozilla.focus.helpers.TestHelper
 import org.mozilla.focus.helpers.TestSetup
 import org.mozilla.focus.testAnnotations.SmokeTest
 
@@ -63,7 +62,7 @@ class ThreeDotMainMenuTest : TestSetup() {
     @SmokeTest
     @Test
     fun browserMenuItemsTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServer.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
@@ -82,26 +81,26 @@ class ThreeDotMainMenuTest : TestSetup() {
     @SmokeTest
     @Test
     fun shareTabTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServer.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
         }.openMainMenu {
         }.openShareScreen {
             verifyShareAppsListOpened()
-            mDevice.pressBack()
+            TestHelper.mDevice.pressBack()
         }
     }
 
     @SmokeTest
     @Test
     fun findInPageTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServer.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
         }.openMainMenu {
         }.openFindInPage {
             enterFindInPageQuery("tab")
@@ -121,15 +120,15 @@ class ThreeDotMainMenuTest : TestSetup() {
     @SmokeTest
     @Test
     fun switchDesktopModeTest() {
-        val pageUrl = TestAssetHelper.getGenericTabAsset(webServer, 1).url
+        val pageUrl = webServer.getGenericTabAsset(1).url
 
         searchScreen {
         }.loadPage(pageUrl) {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
             verifyPageContent("mobile-site")
         }.openMainMenu {
         }.switchDesktopSiteMode {
-            progressBar.waitUntilGone(waitingTime)
+            progressBar.waitUntilGone(TestHelper.waitingTime)
             verifyPageContent("desktop-site")
         }.openMainMenu {
             verifyRequestDesktopSiteIsEnabled(true)

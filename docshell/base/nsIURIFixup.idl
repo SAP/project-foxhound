@@ -74,7 +74,7 @@ interface nsIURIFixupInfo : nsISupports
   attribute AUTF8String originalInput;
 
   /**
-   * The POST data to submit with the returned URI (see nsISearchSubmission).
+   * The POST data to submit with the returned URI.
    */
   attribute nsIInputStream postData;
 };

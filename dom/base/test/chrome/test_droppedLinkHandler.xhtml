@@ -1,0 +1,58 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <title>droppedLinkHandler test</title>
+  <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+  <script><![CDATA[
+    add_task(async function test_plaintext() {
+      let dataTransfer = new DataTransfer();
+      let plaintext, links;
+      const threeURIs = `
+https://example.com/1
+https://example.com/2
+https://example.com/3
+      `;
+
+      plaintext = "\n \t\r\n";
+      dataTransfer.setData("text/plain", plaintext);
+      links = Services.droppedLinkHandler.queryLinks(dataTransfer);
+      ok(!links.length, "No URI is added for pure whitespace.");
+
+      plaintext = "not a uri\nnot a uri";
+      dataTransfer.setData("text/plain", plaintext);
+      links = Services.droppedLinkHandler.queryLinks(dataTransfer);
+      ok(links.length == 1, "Text is added as a single entry.");
+
+      plaintext = threeURIs
+      dataTransfer.setData("text/plain", plaintext);
+      links = Services.droppedLinkHandler.queryLinks(dataTransfer);
+      ok(links.length == 3, "Each URI is added.");
+
+      let manyComments = Array(100).fill("# comment").join("\n");
+      plaintext = manyComments + "\n" + plaintext;
+      dataTransfer.setData("text/plain", plaintext);
+      links = Services.droppedLinkHandler.queryLinks(dataTransfer);
+      ok(links.length == 3, "Comments are ignored.");
+
+      plaintext = [
+        threeURIs,
+        ...Array(5).fill("This is not a URI."),
+        threeURIs,
+        ...Array(100).fill("This is not a URI."),
+        threeURIs,
+      ].join("\n");
+      dataTransfer.setData("text/plain", plaintext);
+      links = Services.droppedLinkHandler.queryLinks(dataTransfer);
+      console.log(links)
+      ok(links.length == 6, "Stops adding URIs after seeing too much junk.");
+    });
+  ]]></script>
+</head>
+<body>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<pre id="test"></pre>
+</body>
+</html>

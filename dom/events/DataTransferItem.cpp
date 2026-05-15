@@ -5,8 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DataTransferItem.h"
-#include "DataTransferItemList.h"
 
+#include "DataTransferItemList.h"
+#include "imgIContainer.h"
+#include "imgITools.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
@@ -18,18 +20,16 @@
 #include "mozilla/dom/FileSystem.h"
 #include "mozilla/dom/FileSystemDirectoryEntry.h"
 #include "mozilla/dom/FileSystemFileEntry.h"
-#include "imgIContainer.h"
-#include "imgITools.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIClipboard.h"
 #include "nsIFile.h"
 #include "nsIInputStream.h"
-#include "nsISupportsPrimitives.h"
 #include "nsIScriptObjectPrincipal.h"
+#include "nsISupportsPrimitives.h"
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
-#include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "nsVariant.h"
 

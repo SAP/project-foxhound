@@ -45,10 +45,22 @@ add_task(async function () {
 
   await waitUntil(() => doc.querySelector(".js-manifest-page") !== null);
   ok(true, "Manifest page was selected.");
+  await commands.client.waitForRequestsToSettle();
+
+  info(
+    "Restart the toolbox to make sure the last selected page is the one that gets selected"
+  );
+  await panel.toolbox.closeToolbox();
+  const toolbox = await gDevTools.showToolboxForTab(tab, {
+    toolId: "application",
+  });
+  const newPanel = toolbox.getCurrentPanel();
+  const newDoc = newPanel.panelWin.document;
+  await waitUntil(() => newDoc.querySelector(".js-manifest-page") !== null);
+  ok(true, "Manifest page was selected on re-opening.");
 
   // close the tab
   info("Closing the tab.");
-  await commands.client.waitForRequestsToSettle();
   await BrowserTestUtils.removeTab(tab);
 });
 

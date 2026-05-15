@@ -4,19 +4,16 @@
 
 buildscript {
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
     dependencies {
-        classpath  libs.plugin.serialization
+        classpath libs.kotlin.serialization
     }
+}
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
 }
 
 apply plugin: 'com.android.library'
@@ -24,42 +21,31 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlinx-serialization'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.service.mars'
 }
 
 dependencies {
-    implementation libs.kotlin.coroutines
-    implementation libs.kotlin.json
-    implementation libs.androidx.work.runtime
+    implementation ComponentsDependencies.mozilla_appservices_ads_client
 
     implementation project(':components:concept-fetch')
-    implementation project(':components:support-ktx')
-    implementation project(':components:support-base')
     implementation project(':components:feature-top-sites')
+    implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
+
+    implementation libs.androidx.work.runtime
+    implementation libs.kotlinx.coroutines
+    implementation libs.kotlinx.serialization.json
+
+    testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.concurrent
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
     testImplementation libs.androidx.work.testing
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
-
-    testImplementation project(':components:support-test')
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

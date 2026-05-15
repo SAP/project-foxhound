@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XMLHttpRequest.h"
+
 #include "XMLHttpRequestMainThread.h"
 #include "XMLHttpRequestWorker.h"
 #include "mozilla/BasePrincipal.h"

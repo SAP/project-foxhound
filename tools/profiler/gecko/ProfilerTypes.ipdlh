@@ -4,7 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
-using struct mozilla::ProfileGenerationAdditionalInformation from "ProfileAdditionalInformation.h";
+[MoveOnly] using struct mozilla::ProfileGenerationAdditionalInformation from
+    "ProfileAdditionalInformation.h";
 
 namespace mozilla {
 

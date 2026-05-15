@@ -1,5 +1,3 @@
-/* eslint-env mozilla/chrome-script */
-
 const { ComponentUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/ComponentUtils.sys.mjs"
 );

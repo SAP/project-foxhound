@@ -13,8 +13,8 @@
 
 #import <AVFoundation/AVFoundation.h>
 
-#include "modules/video_capture/video_capture_defines.h"
 #include "device_info.h"
+#include "modules/video_capture/video_capture_defines.h"
 
 @interface DeviceInfoIosObjC : NSObject {
   NSArray* _observers;

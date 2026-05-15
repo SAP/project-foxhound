@@ -8,9 +8,9 @@
 #define DOMIntersectionObserver_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/IntersectionObserverBinding.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/Variant.h"
+#include "mozilla/dom/IntersectionObserverBinding.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsTArray.h"
 #include "nsTHashSet.h"
@@ -102,6 +102,10 @@ struct IntersectionOutput {
   const nsRect mRootBounds;
   const nsRect mTargetRect;
   const Maybe<nsRect> mIntersectionRect;
+  // See aPreservesAxisAlignedRectangles of
+  // nsLayoutUtils::TransformFrameRectToAncestor().
+  // https://searchfox.org/firefox-main/rev/e2cbda2dd0f622553b5c825f319832db4863f6a4/layout/base/nsLayoutUtils.h#829-830
+  const bool mPreservesAxisAlignedRectangles;
 
   bool Intersects() const { return mIntersectionRect.isSome(); }
 };
@@ -145,14 +149,14 @@ class DOMIntersectionObserver final : public nsISupports,
   void GetThresholds(nsTArray<double>& aRetVal);
   void Observe(Element& aTarget);
   void Unobserve(Element& aTarget);
+  [[nodiscard]] bool Observes(Element& aTarget) const;
 
   void UnlinkTarget(Element& aTarget);
   void Disconnect();
 
   void TakeRecords(nsTArray<RefPtr<DOMIntersectionObserverEntry>>& aRetVal);
 
-  static StyleRect<LengthPercentage> LazyLoadingRootMargin();
-
+  static IntersectionInput ComputeInputForIframeThrottling(const Document&);
   static IntersectionInput ComputeInput(
       const Document& aDocument, const nsINode* aRoot,
       const StyleRect<LengthPercentage>* aRootMargin,
@@ -166,6 +170,9 @@ class DOMIntersectionObserver final : public nsISupports,
   };
   static IntersectionOutput Intersect(
       const IntersectionInput&, const Element&, BoxToUse = BoxToUse::Border,
+      IsForProximityToViewport = IsForProximityToViewport::No);
+  static IntersectionOutput Intersect(
+      const IntersectionInput&, nsIFrame*, BoxToUse = BoxToUse::Border,
       IsForProximityToViewport = IsForProximityToViewport::No);
   // Intersects with a given rect, already relative to the root frame.
   static IntersectionOutput Intersect(const IntersectionInput&, const nsRect&);

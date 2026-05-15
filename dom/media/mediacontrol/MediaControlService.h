@@ -5,11 +5,9 @@
 #ifndef DOM_MEDIA_MEDIACONTROL_MEDIACONTROLSERVICE_H_
 #define DOM_MEDIA_MEDIACONTROL_MEDIACONTROLSERVICE_H_
 
-#include "mozilla/AlreadyAddRefed.h"
-
 #include "AudioFocusManager.h"
-#include "MediaController.h"
 #include "MediaControlKeyManager.h"
+#include "MediaController.h"
 #include "mozilla/dom/MediaControllerBinding.h"
 #include "nsIObserver.h"
 #include "nsTArray.h"

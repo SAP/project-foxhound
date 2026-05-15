@@ -13,7 +13,7 @@ const TEST_URI = `
     user-modify: read-only;
   }
   div {
-    scrollbar-color: auto;
+    user-select: auto;
   }
   </style>
   <body>
@@ -24,19 +24,19 @@ const TEST_URI = `
 const TEST_DATA_SELECTED = [
   {
     property: "overflow-anchor",
-    url: "https://developer.mozilla.org/docs/Web/CSS/overflow-anchor",
+    url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/overflow-anchor",
   },
   {
     property: "user-modify",
-    url: "https://developer.mozilla.org/docs/Web/CSS/user-modify",
+    url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-modify",
   },
 ];
 
 const TEST_DATA_ALL = [
   ...TEST_DATA_SELECTED,
   {
-    property: "scrollbar-color",
-    url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+    property: "user-select",
+    url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/user-select",
   },
 ];
 

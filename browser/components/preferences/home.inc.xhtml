@@ -9,7 +9,8 @@
 <hbox id="firefoxHomeCategory"
       class="subcategory"
       hidden="true"
-      data-category="paneHome">
+      data-category="paneHome"
+      data-srd-groupid="homepage">
   <html:h1 style="flex: 1;" data-l10n-id="pane-home-title"/>
   <button id="restoreDefaultHomePageBtn"
           is="highlightable-button"
@@ -21,6 +22,7 @@
 
 <groupbox id="homepageGroup"
           data-category="paneHome"
+          data-srd-groupid="homepage"
           hidden="true">
   <label><html:h2 data-l10n-id="home-new-windows-tabs-header"/></label>
   <description class="description-deemphasized" data-l10n-id="home-new-windows-tabs-description2" />
@@ -92,13 +94,13 @@
 <groupbox id="homeContentsGroup"
           data-category="paneHome"
           data-subcategory="contents"
+          data-srd-groupid="home"
           hidden="true">
   <label><html:h2 data-l10n-id="home-prefs-content-header2" /></label>
   <description class="description-deemphasized" data-l10n-id="home-prefs-content-description2" />
 
-  <vbox id="search" />
+  <vbox id="web-search" />
   <vbox id="weather" />
-  <vbox id="trending-searches" />
   <vbox id="topsites" />
   <vbox id="topstories" />
   <vbox id="support-firefox" />
@@ -112,4 +114,18 @@
 
   <vbox id="highlights" />
 </groupbox>
+
+<html:setting-group
+  groupid="homepage"
+  hidden="true"
+  data-category="paneHome"
+  data-subcategory="contents"
+  />
+
+<html:setting-group
+        groupid="home"
+        hidden="true"
+        data-category="paneHome"
+        data-subcategory="contents" />
+
 </html:template>

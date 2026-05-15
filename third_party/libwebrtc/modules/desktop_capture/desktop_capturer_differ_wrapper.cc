@@ -10,14 +10,20 @@
 
 #include "modules/desktop_capture/desktop_capturer_differ_wrapper.h"
 
-#include <stdint.h>
-#include <string.h>
-
+#include <cstdint>
+#include <cstring>
+#include <memory>
 #include <utility>
 
+#include "modules/desktop_capture/desktop_capture_metadata.h"
+#include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/desktop_region.h"
 #include "modules/desktop_capture/differ_block.h"
+#include "modules/desktop_capture/shared_desktop_frame.h"
+#include "modules/desktop_capture/shared_memory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/time_utils.h"
 
@@ -117,6 +123,7 @@ void CompareFrames(const DesktopFrame& old_frame,
                    DesktopRegion* const output) {
   RTC_DCHECK(old_frame.size().equals(new_frame.size()));
   RTC_DCHECK_EQ(old_frame.stride(), new_frame.stride());
+  RTC_CHECK_EQ(old_frame.pixel_format(), new_frame.pixel_format());
   rect.IntersectWith(DesktopRect::MakeSize(old_frame.size()));
 
   const int y_block_count = (rect.height() - 1) / kBlockSize;

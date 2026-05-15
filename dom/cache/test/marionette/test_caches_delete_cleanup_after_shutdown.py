@@ -33,13 +33,13 @@ class CachesDeleteCleanupAtShutdownTestCase(MarionetteTestCase):
     """
 
     def setUp(self):
-        super(CachesDeleteCleanupAtShutdownTestCase, self).setUp()
+        super().setUp()
         self.marionette.restart(in_app=False, clean=True)
         self.marionette.set_pref(QM_TESTING_PREF, True)
 
     def tearDown(self):
         self.marionette.restart(in_app=False, clean=True)
-        super(CachesDeleteCleanupAtShutdownTestCase, self).tearDown()
+        super().tearDown()
         self.marionette.set_pref(QM_TESTING_PREF, False)
 
     def getUsage(self):

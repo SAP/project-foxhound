@@ -110,15 +110,6 @@ interface nsIHTMLEditor : nsISupports
   void insertHTML(in AString aInputString);
 
   /**
-   *  Rebuild the entire document from source HTML
-   *  Needed to be able to edit HEAD and other outside-of-BODY content
-   *
-   *  @param aSourceString   HTML source string of the entire new document
-   */
-  [can_run_script]
-  void rebuildDocumentFromSource(in AString aSourceString);
-
-  /**
     * Insert an element, which may have child nodes, at the selection
     * Used primarily to insert a new element for various insert element dialogs,
     *   but it enforces the HTML 4.0 DTD "CanContain" rules, so it should

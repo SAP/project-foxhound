@@ -2,17 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _WEBRTC_GLOBAL_H_
-#define _WEBRTC_GLOBAL_H_
+#ifndef WEBRTC_GLOBAL_H_
+#define WEBRTC_GLOBAL_H_
 
 #include "WebrtcIPCTraits.h"
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-#include "mozilla/dom/BindingIPCUtils.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BindingIPCUtils.h"
 #include "mozilla/dom/RTCDataChannelBinding.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
-#include "mozilla/UniquePtr.h"
 
 typedef mozilla::dom::RTCStatsReportInternal StatsReport;
 typedef nsTArray<mozilla::UniquePtr<StatsReport>> RTCReports;
@@ -226,4 +226,4 @@ struct ParamTraits<mozilla::dom::RTCCodecType>
     : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::RTCCodecType> {};
 }  // namespace IPC
 
-#endif  // _WEBRTC_GLOBAL_H_
+#endif  // WEBRTC_GLOBAL_H_

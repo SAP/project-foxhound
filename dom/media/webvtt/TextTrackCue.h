@@ -8,14 +8,14 @@
 #define mozilla_dom_TextTrackCue_h
 
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/StateWatching.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/DocumentFragment.h"
+#include "mozilla/dom/HTMLDivElement.h"
+#include "mozilla/dom/TextTrack.h"
 #include "mozilla/dom/VTTCueBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIWebVTTParserWrapper.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/dom/HTMLDivElement.h"
-#include "mozilla/dom/TextTrack.h"
-#include "mozilla/StateWatching.h"
 
 namespace mozilla::dom {
 

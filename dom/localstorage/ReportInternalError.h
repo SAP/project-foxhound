@@ -8,6 +8,7 @@
 #define mozilla_dom_localstorage_ReportInternalError_h
 
 #include <cstdint>
+
 #include "mozilla/Attributes.h"
 #include "nsDebug.h"
 

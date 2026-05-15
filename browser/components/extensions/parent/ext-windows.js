@@ -301,7 +301,11 @@ this.windows = class extends ExtensionAPIPersistent {
               );
             }
 
-            args.appendElement(tab);
+            // If the tab is part of a split view, move the whole split view
+            // instead of just that single tab.
+            const tabToAdopt = tab.splitview ?? tab;
+            // For tab adoption logic, see getTabToAdopt() in browser-init.js.
+            args.appendElement(tabToAdopt);
           } else if (createData.url !== null) {
             if (Array.isArray(createData.url)) {
               let array = Cc["@mozilla.org/array;1"].createInstance(
@@ -324,7 +328,7 @@ this.windows = class extends ExtensionAPIPersistent {
             } else {
               let url = context.uri.resolve(createData.url);
               args.appendElement(mkstr(url));
-              isOnlyMozExtensionUrl = url.startsWith("moz-extension://");
+              isOnlyMozExtensionUrl = ExtensionUtils.isExtensionUrl(url);
               if (!context.checkLoadURL(url, { dontReportErrors: true })) {
                 if (isOnlyMozExtensionUrl) {
                   // For backwards-compatibility (also in tabs APIs), we allow
@@ -343,7 +347,7 @@ this.windows = class extends ExtensionAPIPersistent {
                 ? "about:privatebrowsing"
                 : HomePage.get().split("|", 1)[0];
             args.appendElement(mkstr(url));
-            isOnlyMozExtensionUrl = url.startsWith("moz-extension://");
+            isOnlyMozExtensionUrl = ExtensionUtils.isExtensionUrl(url);
 
             if (!context.checkLoadURL(url, { dontReportErrors: true })) {
               // The extension principal cannot directly load about:-URLs,

@@ -3,7 +3,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-/* eslint-env worker */
 onconnect = e => {
   e.ports[0].onmessage = event => {
     const url = event.data;

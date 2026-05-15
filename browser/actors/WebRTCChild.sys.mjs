@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "MediaManagerService",
   "@mozilla.org/mediaManagerService;1",
-  "nsIMediaManagerService"
+  Ci.nsIMediaManagerService
 );
 
 const kBrowserURL = AppConstants.BROWSER_CHROME_URL;

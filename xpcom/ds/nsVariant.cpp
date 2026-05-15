@@ -13,7 +13,6 @@
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsCRTGlue.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Printf.h"
 

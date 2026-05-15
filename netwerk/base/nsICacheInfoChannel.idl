@@ -12,7 +12,7 @@ interface nsIInputStream;
 namespace mozilla {
 namespace net {
 class PreferredAlternativeDataTypeParams;
-}
+} // namespace net
 } // namespace mozilla
 %}
 
@@ -22,6 +22,23 @@ class PreferredAlternativeDataTypeParams;
 interface nsIInputStreamReceiver : nsISupports
 {
   void onInputStreamReady(in nsIInputStream aStream);
+};
+
+
+/**
+ * A light variant of nsICacheInfoChannel, retrievable from
+ * nsICacheInfoChannel::getCacheEntryWriteHandle.
+ *
+ * When an alternate data is written asynchronously after the response,
+ * this can be used in order to avoid keeping the channels alive longer.
+ */
+[scriptable, builtinclass, uuid(0da1249c-d5f5-494e-842b-2c3197c92511)]
+interface nsICacheEntryWriteHandle : nsISupports
+{
+  /**
+   * Same as nsICacheInfoChannel::openAlternativeOutputStream.
+   */
+  nsIAsyncOutputStream openAlternativeOutputStream(in ACString type, in long long predictedSize);
 };
 
 [scriptable, builtinclass, uuid(72c34415-c6eb-48af-851f-772fa9ee5972)]
@@ -48,6 +65,12 @@ interface nsICacheInfoChannel : nsISupports
    * and after the channel fires its OnStopRequest notification.
    */
   boolean isFromCache();
+
+  /**
+   * True if this channel has a corresponding cache entry.  This can be true
+   * even if isFromCache() is false.
+   */
+  boolean hasCacheEntry();
 
   /**
    * Returns true if the channel raced the cache and network requests.
@@ -118,6 +141,17 @@ interface nsICacheInfoChannel : nsISupports
     SERIALIZE = 2,
   };
 
+  cenum CacheDisposition : 8 {
+      kCacheUnresolved = 0,
+      kCacheHit = 1,
+      kCacheHitViaReval = 2,
+      kCacheMissedViaReval = 3,
+      kCacheMissed = 4,
+      kCacheUnknown = 5,
+      // Insert new values here
+      kCacheDispositionEnd
+  };
+
   /**
    * Tells the channel to be force validated during soft reload.
    */
@@ -175,6 +209,11 @@ interface nsICacheInfoChannel : nsISupports
   void getOriginalInputStream(in nsIInputStreamReceiver aReceiver);
 
   /**
+   * Get a handle to open the alternative output stream for later use.
+   */
+  nsICacheEntryWriteHandle getCacheEntryWriteHandle();
+
+  /**
    * Opens and returns an output stream that a consumer may use to save an
    * alternate representation of the data.
    * Must be called after the OnStopRequest that delivered the real data.
@@ -194,6 +233,11 @@ interface nsICacheInfoChannel : nsISupports
    *        passed.
    */
   nsIAsyncOutputStream openAlternativeOutputStream(in ACString type, in long long predictedSize);
+
+  /**
+   * Returns the cache disposition for this channel.
+   */
+  nsICacheInfoChannel_CacheDisposition getCacheDisposition();
 };
 
 %{ C++

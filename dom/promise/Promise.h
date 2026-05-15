@@ -10,6 +10,7 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
+
 #include "ErrorList.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
@@ -33,6 +34,10 @@ class nsIGlobalObject;
 
 namespace JS {
 class Value;
+}
+
+namespace mozilla::webgpu {
+class PipelineError;
 }
 
 namespace mozilla::dom {
@@ -120,6 +125,7 @@ class Promise : public SupportsWeakPtr, public JSHolderBase {
   }
 
   void MaybeReject(const RefPtr<MediaStreamError>& aArg);
+  void MaybeReject(const RefPtr<webgpu::PipelineError>& aArg);
 
   void MaybeRejectWithUndefined();
 
@@ -134,11 +140,11 @@ class Promise : public SupportsWeakPtr, public JSHolderBase {
     MaybeReject(std::move(res));                                  \
   }                                                               \
   template <int N>                                                \
-  void MaybeRejectWith##name(const char(&aMessage)[N]) {          \
+  void MaybeRejectWith##name(const char (&aMessage)[N]) {         \
     MaybeRejectWith##name(nsLiteralCString(aMessage));            \
   }
 
-#include "mozilla/dom/DOMExceptionNames.h"
+#include "mozilla/dom/DOMExceptionNames.inc"
 
 #undef DOMEXCEPTION
 
@@ -220,6 +226,29 @@ class Promise : public SupportsWeakPtr, public JSHolderBase {
       ErrorResult& aRv,
       PropagateUserInteraction aPropagateUserInteraction =
           eDontPropagateUserInteraction);
+
+  // Do the equivalent of Promise.resolve in the compartment of aGlobal.
+  // The promise is resolved with the JS value corresponding to aValue.
+  // If this fails, the promise is rejected with the exception.
+  template <typename T>
+  static already_AddRefed<Promise> Resolve(
+      nsIGlobalObject* aGlobal, T&& aValue, ErrorResult& aError,
+      PropagateUserInteraction aPropagateUserInteraction =
+          eDontPropagateUserInteraction) {
+    AutoJSAPI jsapi;
+    if (!jsapi.Init(aGlobal)) {
+      aError.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    JSContext* cx = jsapi.cx();
+    JS::Rooted<JS::Value> val(cx);
+    if (!ToJSValue(cx, std::forward<T>(aValue), &val)) {
+      return Promise::RejectWithExceptionFromContext(aGlobal, cx, aError);
+    }
+
+    return Resolve(aGlobal, cx, val, aError, aPropagateUserInteraction);
+  }
 
   // Do the equivalent of Promise.reject in the compartment of aGlobal.  The
   // compartment of aCx is ignored.  Errors are reported on the ErrorResult; if

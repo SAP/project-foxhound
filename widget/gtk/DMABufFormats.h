@@ -5,10 +5,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MOZ_DMABUF_FORMATS_H__
-#define __MOZ_DMABUF_FORMATS_H__
+#ifndef MOZ_DMABUF_FORMATS_H_
+#define MOZ_DMABUF_FORMATS_H_
 
 #include "nsTArray.h"
+#include "mozilla/gfx/Types.h"
 
 #ifdef MOZ_WAYLAND
 struct zwp_linux_dmabuf_v1;
@@ -113,7 +114,7 @@ class GlobalDMABufFormats final {
 
   GlobalDMABufFormats();
 
-  bool SupportsHDRComposition() { return !!mFormatP010 && !!mFormatNV12; }
+  bool SupportsDirectComposition(mozilla::gfx::SurfaceFormat aFormat) const;
 
  private:
   void LoadFormatModifiers();
@@ -127,10 +128,11 @@ class GlobalDMABufFormats final {
   RefPtr<DRMFormat> mFormatRGBX;
   RefPtr<DRMFormat> mFormatP010;
   RefPtr<DRMFormat> mFormatNV12;
+  RefPtr<DRMFormat> mFormatYUV420;
 };
 
 GlobalDMABufFormats* GetGlobalDMABufFormats();
 
 }  // namespace mozilla::widget
 
-#endif  // __MOZ_DMABUF_FORMATS_H__
+#endif  // MOZ_DMABUF_FORMATS_H_

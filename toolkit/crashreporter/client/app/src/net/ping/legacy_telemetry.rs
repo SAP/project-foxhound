@@ -103,7 +103,9 @@ impl<'a> Ping<'a> {
             .map(|map| {
                 map.iter()
                     .filter_map(|(k, v)| {
-                        annotations::send_in_ping(k)
+                        // Exclude "MinidumpSha256Hash" because there is a separate explicit field
+                        // for it.
+                        (annotations::send_in_ping(k) && k != "MinidumpSha256Hash")
                             .then(|| k.as_str())
                             .zip(v.as_str())
                     })

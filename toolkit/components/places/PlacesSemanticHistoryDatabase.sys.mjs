@@ -22,7 +22,7 @@ ChromeUtils.defineLazyGetter(lazy, "logger", function () {
 // Remember to:
 // 1. Bump up the version number
 // 2. Add a migration function to migrate the data to the new schema.
-// 3. Update #createDatabaseEntities and #checkDatabaseEntities
+// 3. Update #createDatabaseEntities and #checkDatabaseHealth
 // 4. Add a test to check that the migration works correctly.
 
 // Note downgrades are not supported, so when you bump up the version and the
@@ -31,6 +31,15 @@ ChromeUtils.defineLazyGetter(lazy, "logger", function () {
 
 const CURRENT_SCHEMA_VERSION = 2;
 
+// Maximum percentage of wasted space before defragmenting the database.
+const MAX_WASTED_SPACE_PERC = 0.6;
+
+// Maximum number of _chunksNN tables in sqlite-vec.
+const MAX_CHUNKS_TABLES = 100;
+
+/**
+ * Handles the database connection, reading and writing for semantic history.
+ */
 export class PlacesSemanticHistoryDatabase {
   #asyncShutdownBlocker;
   #conn;
@@ -135,6 +144,7 @@ export class PlacesSemanticHistoryDatabase {
 
   /**
    * Closes the connection to the database, if it's open.
+   *
    * @returns {Promise<void>} resolves when done.
    */
   async closeConnection() {
@@ -159,7 +169,7 @@ export class PlacesSemanticHistoryDatabase {
       throw new Error("Downgrade of the schema is not supported");
     }
     if (version == CURRENT_SCHEMA_VERSION) {
-      let healthy = await this.#checkDatabaseEntities(this.#embeddingSize);
+      let healthy = await this.#checkDatabaseHealth();
       if (!healthy) {
         lazy.logger.error(`Database schema is not healthy`);
         throw new Error("Database schema is not healthy");
@@ -171,7 +181,7 @@ export class PlacesSemanticHistoryDatabase {
       if (version == 0) {
         // This is a newly created database, just create the entities.
         lazy.logger.info("Creating database schema");
-        await this.#createDatabaseEntities(this.#embeddingSize);
+        await this.#createDatabaseEntities();
         await this.#conn.setSchemaVersion(CURRENT_SCHEMA_VERSION);
         // eslint-disable-next-line no-useless-return
         return;
@@ -194,32 +204,40 @@ export class PlacesSemanticHistoryDatabase {
   }
 
   /**
+   * Get SQL to create the embeddings virtual table.
+   */
+  get #createVirtualTableSQL() {
+    return `
+      CREATE VIRTUAL TABLE vec_history USING vec0(
+        embedding FLOAT[${this.#embeddingSize}],
+        embedding_coarse bit[${this.#embeddingSize}]
+      );
+    `;
+  }
+
+  /**
    * Creates the necessary virtual tables in the semantic.sqlite database.
-   * @param {number} embeddingSize - The size of the embedding.
+   *
    * @returns {Promise<void>} resolves when done.
    */
-  async #createDatabaseEntities(embeddingSize) {
-    await this.#conn.execute(`
-      CREATE VIRTUAL TABLE vec_history USING vec0(
-      embedding FLOAT[${embeddingSize}],
-      embedding_coarse bit[${embeddingSize}]
-      );
-    `);
+  async #createDatabaseEntities() {
+    // Modifying this will also require to modify #defragmentDatabase.
+    await this.#conn.execute(this.#createVirtualTableSQL);
     await this.#conn.execute(`
       CREATE TABLE vec_history_mapping (
-      rowid INTEGER PRIMARY KEY,
-      url_hash INTEGER NOT NULL UNIQUE
+        rowid INTEGER PRIMARY KEY,
+        url_hash INTEGER NOT NULL UNIQUE
       );
     `);
   }
 
   /**
    * Verifies that the schema is current, there's no missing entities or
-   * changed embedding size.
-   * @param {number} embeddingSize - The size of the embedding.
+   * changed embedding size, and there's not excessive fragmentation.
+   *
    * @returns {Promise<boolean>} whether the schema is consistent or not.
    */
-  async #checkDatabaseEntities(embeddingSize) {
+  async #checkDatabaseHealth() {
     let tables = await this.#conn.execute(
       `SELECT name FROM sqlite_master WHERE type='table'`
     );
@@ -238,7 +256,7 @@ export class PlacesSemanticHistoryDatabase {
       await this.#conn.execute(
         `SELECT INSTR(sql, :needle) > 0
        FROM sqlite_master WHERE name = 'vec_history'`,
-        { needle: `FLOAT[${embeddingSize}]` }
+        { needle: `FLOAT[${this.#embeddingSize}]` }
       )
     )[0].getResultByIndex(0);
     if (!embeddingSizeMatches) {
@@ -246,11 +264,103 @@ export class PlacesSemanticHistoryDatabase {
       return false;
     }
 
+    try {
+      let wasted = await this.#measureDatabaseFragmentation();
+      lazy.logger.info(
+        `Database initialized, wasted space: ${Math.round(wasted * 100)}%`
+      );
+      if (wasted > MAX_WASTED_SPACE_PERC) {
+        await this.#defragmentDatabase();
+      }
+    } catch (e) {
+      lazy.logger.error(`Error checking database fragmentation: ${e}`);
+      return false;
+    }
+
     return true;
   }
 
   /**
+   * Evaluates space wasted in the database
+   *
+   * @returns {Promise<number>} The percentage of space wasted.
+   */
+  async #measureDatabaseFragmentation() {
+    // Evaluate space wasted by the database.
+    // The last chunk is the one being filled, it is expected to be mostly empty
+    // so we don't consider it.
+    let rows = await this.#conn.execute(`
+      WITH chunks (chunk_id, size) AS (
+        SELECT chunk_id, size FROM vec_history_chunks ORDER BY chunk_id DESC LIMIT -1 OFFSET 1
+      )
+      SELECT 1 - IFNULL(
+        CAST((
+            SELECT count(*) FROM vec_history_rowids JOIN chunks USING (chunk_id)
+          ) AS REAL)
+        / (SELECT SUM(size) FROM chunks)
+        , 1)
+    `);
+    let wasted = rows[0].getResultByIndex(0);
+    Glean.places.databaseSemanticHistoryWastedPercentage.set(
+      Math.round(wasted * 100)
+    );
+    return wasted;
+  }
+
+  /**
+   * Defragments the database contents.
+   *
+   * Due to https://github.com/asg017/sqlite-vec/issues/220 the database may
+   * grow unbound if continuous insertions and removals are made, because the
+   * space left by embeddings removed from chunks is not reused. The only
+   * workaround for now is to create a new virtual table and copy the data over.
+   * Then a VACUUM is necessary to compact the leftover space.
+   *
+   * Updating sqlite-vec in the future may make this obsolete, or require deep
+   * changes.
+   */
+  async #defragmentDatabase() {
+    lazy.logger.info(`Defragmenting the database`);
+    let timer = Glean.places.databaseSemanticHistoryDefragmentTime.start();
+    await this.#conn.executeTransaction(async () => {
+      // sqlite-vec supports removing shadow tables on DROP, but unfortunately
+      // doesn't rename them on ALTER, so we must do it manually.
+      for (let suffix of ["", "_info", "_chunks", "_rowids"]) {
+        await this.#conn.execute(`
+          ALTER TABLE vec_history${suffix} RENAME TO old_vec_history${suffix}
+        `);
+      }
+      for (let i = 0; i < MAX_CHUNKS_TABLES; ++i) {
+        try {
+          await this.#conn.execute(`
+              ALTER TABLE vec_history_vector_chunks${`${i}`.padStart(2, "0")}
+              RENAME TO old_vec_history_vector_chunks${`${i}`.padStart(2, "0")}
+            `);
+        } catch (e) {
+          break;
+        }
+      }
+      await this.#conn.execute(this.#createVirtualTableSQL);
+      await this.#conn.execute(`
+          INSERT INTO vec_history(rowid, embedding, embedding_coarse)
+          SELECT rowid, embedding, embedding_coarse FROM old_vec_history
+        `);
+      await this.#conn.execute(`
+          DROP TABLE old_vec_history
+        `);
+    });
+
+    // Cannot VACUUM from within a transaction.
+    await this.#conn.execute(`
+      VACUUM
+    `);
+
+    Glean.places.databaseSemanticHistoryDefragmentTime.stopAndAccumulate(timer);
+  }
+
+  /**
    * Returns the path to the semantic database.
+   *
    * @returns {string} The path to the semantic database.
    */
   get databaseFilePath() {
@@ -259,6 +369,7 @@ export class PlacesSemanticHistoryDatabase {
 
   /**
    * Removes the semantic database file and auxiliary files.
+   *
    * @returns {Promise<void>} resolves when done.
    */
   async removeDatabaseFiles() {

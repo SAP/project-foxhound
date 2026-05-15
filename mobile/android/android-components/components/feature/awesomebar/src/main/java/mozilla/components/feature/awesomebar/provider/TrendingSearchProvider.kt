@@ -23,8 +23,8 @@ import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-// Return 4 trending searches by default.
-const val DEFAULT_TRENDING_SEARCHES_LIMIT = 4
+// Number of trending searches to display by default.
+const val DEFAULT_TRENDING_SEARCHES_LIMIT = 5
 const val TRENDING_SEARCHES_MAXIMUM_ALLOWED_SUGGESTIONS_LIMIT: Int = 1000
 
 /**

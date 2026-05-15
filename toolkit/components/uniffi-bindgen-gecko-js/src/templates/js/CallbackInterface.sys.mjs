@@ -11,7 +11,7 @@ export class {{ cbi.self_type.ffi_converter }} extends FfiConverter {
     }
 
     static lift(handleId) {
-        return {{ cbi.vtable.js_handler_var }}.getCallbackObj(handleId)
+        return {{ cbi.vtable.js_handler_var }}.takeCallbackObj(handleId)
     }
 
     static read(dataStream) {

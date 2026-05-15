@@ -46,7 +46,7 @@ button:-moz-locale-dir(rtl) {
   display: block;
   width: 5px;
   height: 5px;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
   background-color: var(--color-accent-primary);
   position: absolute;
   top: 4px;

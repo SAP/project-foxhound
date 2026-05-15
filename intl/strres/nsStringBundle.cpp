@@ -28,7 +28,6 @@
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/URLPreloader.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/ContentParent.h"
@@ -755,6 +754,7 @@ nsStringBundleService::Observe(nsISupports* aSubject, const char* aTopic,
       strcmp("chrome-flush-caches", aTopic) == 0 ||
       strcmp("intl:app-locales-changed", aTopic) == 0) {
     flushBundleCache(/* ignoreShared = */ false);
+    mBundleMap.Clear();
   } else if (strcmp("memory-pressure", aTopic) == 0) {
     flushBundleCache(/* ignoreShared = */ true);
   }
@@ -796,7 +796,7 @@ void nsStringBundleService::SendContentBundles(ContentParent* aContentParent) {
     }
   }
 
-  Unused << aContentParent->SendRegisterStringBundles(std::move(bundles));
+  (void)aContentParent->SendRegisterStringBundles(std::move(bundles));
 }
 
 void nsStringBundleService::RegisterContentBundle(

@@ -19,20 +19,20 @@
   </head>
 
   <body>
-    <div id="categories">
-      <div class="category" selected="true" id="category-about-glean">
+    <div id="categories" role="menu">
+      <div class="category" selected="true" id="category-about-glean" role="menuitem" tabindex="0">
         <span class="category-name" data-l10n-id="about-glean-category-about-glean"></span>
       </div>
-      <div class="category" id="category-manual-testing">
+      <div class="category" id="category-manual-testing" role="menuitem" tabindex="0">
         <span class="category-name" data-l10n-id="about-glean-category-manual-testing"></span>
       </div>
-      <div class="category" id="category-adhoc-testing">
+      <div class="category" id="category-adhoc-testing" role="menuitem" tabindex="0">
         <span class="category-name" data-l10n-id="about-glean-category-adhoc-testing"></span>
       </div>
-      <div class="category" id="category-profiler">
+      <div class="category" id="category-profiler" role="menuitem" tabindex="0">
         <span class="category-name" data-l10n-id="about-glean-category-profiler"></span>
       </div>
-      <div class="category" id="category-about-data">
+      <div class="category" id="category-about-data" role="menuitem" tabindex="0">
         <span class="category-name" data-l10n-id="about-glean-category-about-data"></span>
       </div>
     </div>
@@ -58,6 +58,9 @@
           </ul>
         </p>
         <p data-l10n-id="about-glean-additional-links"></p>
+        <moz-promo id="promo" type="vibrant" data-l10n-id="about-glean-enable-new-features-promo">
+          <moz-button id="enable-new-features" slot="actions"></moz-button>
+        </moz-promo>
       </div>
       <!-- manual testing tab -->
       <div id="manual-testing" class="tab" hidden="true">
@@ -72,7 +75,10 @@
             <label for="tag-pings" data-l10n-id="about-glean-label-for-tag-pings-with-requirements"></label>
           </li>
           <li>
-            <select name="ping-names" id="ping-names"></select>
+            <select name="ping-names" id="ping-names">
+              <optgroup id="builtin-pings" data-l10n-id="about-glean-ping-list-optgroup-built-in"></optgroup>
+              <optgroup id="custom-pings" data-l10n-id="about-glean-ping-list-optgroup-custom"></optgroup>
+            </select>
             <label for="ping-names" data-l10n-id="about-glean-label-for-ping-names">
               <a data-l10n-name="custom-ping-link" href="https://mozilla.github.io/glean/book/user/pings/custom.html"></a>
             </label>
@@ -127,6 +133,114 @@
             <a data-l10n-name="about-glean-firefox-profiler" href="https://profiler.firefox.com/"></a>
           </li>
         </ul>
+      </div>
+      <div id="metrics-table" class="tab" hidden="true">
+        <div id="metrics-table-header">
+          <h2 data-l10n-id="about-glean-metrics-table-header"></h2>
+          <button name="metrics-table-settings-button" id="metrics-table-settings-button" data-l10n-id="about-glean-metrics-table-settings-button"></button>
+        </div>
+        <div id="metrics-table-settings" hidden="true">
+          <h2 data-l10n-id="about-glean-metrics-table-settings-title"></h2>
+          <div class="content">
+            <div>
+              <h3 data-l10n-id="about-glean-metrics-table-settings-category-general"></h3>
+              <input type="checkbox" name="settings-hide-empty-value-rows" id="settings-hide-empty-value-rows" data-form-control="hideEmptyValueRows"/>
+              <label for="settings-hide-empty-value-rows" data-l10n-id="about-glean-metrics-table-settings-hide-empty-value-rows"></label>
+            </div>
+            <div>
+              <h3 data-l10n-id="about-glean-metrics-table-settings-category-visualizations"></h3>
+              <div class="box" data-form-group="histograms">
+                <h4 data-l10n-id="about-glean-metrics-table-settings-category-visualizations-histogram"></h4>
+
+                <div class="vertical-flex">
+                  <div>
+                    <label for="settings-histograms-box-padding" data-l10n-id="about-glean-metrics-table-settings-histograms-box-padding"></label>
+                    <input name="settings-histograms-box-padding" id="settings-histograms-box-padding" type="number" data-form-control="boxPadding"/>
+                  </div>
+                  <div>
+                    <label for="settings-histograms-left-padding" data-l10n-id="about-glean-metrics-table-settings-histograms-left-padding"></label>
+                    <input name="settings-histograms-left-padding" id="settings-histograms-left-padding" type="number" data-form-control="leftPadding"/>
+                  </div>
+                  <div>
+                    <label for="settings-histograms-chart-padding" data-l10n-id="about-glean-metrics-table-settings-histograms-chart-padding"></label>
+                    <input name="settings-histograms-chart-padding" id="settings-histograms-chart-padding" type="number" data-form-control="chartPadding"/>
+                  </div>
+                  <div>
+                    <label for="settings-histograms-scaled-max" data-l10n-id="about-glean-metrics-table-settings-histograms-scaled-max"></label>
+                    <input name="settings-histograms-scaled-max" id="settings-histograms-scaled-max" type="number" data-form-control="scaledMax"/>
+                  </div>
+                  <div>
+                    <label for="settings-histograms-chart-max" data-l10n-id="about-glean-metrics-table-settings-histograms-chart-max"></label>
+                    <input name="settings-histograms-chart-max" id="settings-histograms-chart-max" type="number" data-form-control="chartMax"/>
+                  </div>
+                </div>
+
+                <h4 data-l10n-id="about-glean-metrics-table-settings-visualization-example"></h4>
+                <div id="metrics-table-settings-histogram-example" class="chart-display"></div>
+              </div>
+              <div class="box" data-form-group="timelines">
+                <h4 data-l10n-id="about-glean-metrics-table-settings-category-visualizations-timeline"></h4>
+
+                <div class="vertical-flex">
+                  <div>
+                    <label for="settings-timelines-height" data-l10n-id="about-glean-metrics-table-settings-timelines-height"></label>
+                    <input name="settings-timelines-height" id="settings-timelines-height" type="number" data-form-control="height"/>
+                  </div>
+                  <div>
+                    <label for="settings-timelines-width" data-l10n-id="about-glean-metrics-table-settings-timelines-width"></label>
+                    <input name="settings-timelines-width" id="settings-timelines-width" type="number" data-form-control="width"/>
+                  </div>
+                  <div>
+                    <label for="settings-timelines-chart-padding" data-l10n-id="about-glean-metrics-table-settings-timelines-chart-padding"></label>
+                    <input name="settings-timelines-chart-padding" id="settings-timelines-chart-padding" type="number" data-form-control="chartPadding"/>
+                  </div>
+                  <div>
+                    <label for="settings-timelines-circle-radius" data-l10n-id="about-glean-metrics-table-settings-timelines-circle-radius"></label>
+                    <input name="settings-timelines-circle-radius" id="settings-timelines-circle-radius" type="number" data-form-control="circleRadius"/>
+                  </div>
+                  <div>
+                    <label for="settings-timelines-vertical-line-x-offset" data-l10n-id="about-glean-metrics-table-settings-timelines-vertical-line-x-offset"></label>
+                    <input name="settings-timelines-vertical-line-x-offset" id="settings-timelines-vertical-line-x-offset" type="number" data-form-control="verticalLineXOffset"/>
+                  </div>
+                  <div>
+                    <label for="settings-timelines-vertical-line-y-offset" data-l10n-id="about-glean-metrics-table-settings-timelines-vertical-line-y-offset"></label>
+                    <input name="settings-timelines-vertical-line-y-offset" id="settings-timelines-vertical-line-y-offset" type="number" data-form-control="verticalLineYOffset"/>
+                  </div>
+                </div>
+
+                <h4 data-l10n-id="about-glean-metrics-table-settings-visualization-example"></h4>
+                <div id="metrics-table-settings-timeline-example" class="chart-display"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="metrics-table-controls">
+          <div class="input">
+            <label for="filter-metrics" data-l10n-id="about-glean-label-for-filter-metrics"></label>
+            <input type="text" name="filter-metrics" id="filter-metrics" pattern="[a-zA-Z0-9\-]*">
+            <small data-l10n-id="about-glean-description-for-filter-metrics"></small>
+          </div>
+          <div>
+            <button name="load-all" id="load-all" data-l10n-id="about-glean-button-load-all"></button>
+            <button name="export-data" id="export-data" data-l10n-id="about-glean-button-export-data"></button>
+          </div>
+        </div>
+        <hr>
+        <div id="metrics-table-instance" hidden="true">
+          <table>
+            <thead>
+              <tr>
+                <th data-d3-cell="actions" data-l10n-id="about-glean-metrics-table-header-actions"></th>
+                <th data-d3-cell="category" data-l10n-id="about-glean-metrics-table-header-category"></th>
+                <th data-d3-cell="name" data-l10n-id="about-glean-metrics-table-header-name"></th>
+                <th data-d3-cell="type" data-l10n-id="about-glean-metrics-table-header-type"></th>
+                <th data-d3-cell="value" data-l10n-id="about-glean-metrics-table-header-value"></th>
+              </tr>
+            </thead>
+            <tbody id="metrics-table-body">
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
     <moz-message-bar type="success" id="feedback" data-l10n-id="about-glean-feedback-settings-only"></moz-message-bar>

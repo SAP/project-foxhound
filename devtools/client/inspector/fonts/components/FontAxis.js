@@ -30,11 +30,11 @@ class FontAxis extends PureComponent {
    * Naive implementation to get increment step for variable font axis that ensures
    * fine grained control based on range of values between min and max.
    *
-   * @param  {Number} min
+   * @param  {number} min
    *         Minumum value for range.
-   * @param  {Number} max
+   * @param  {number} max
    *         Maximum value for range.
-   * @return {Number}
+   * @return {number}
    *         Step value used in range input for font axis.
    */
   getAxisStep(min, max) {

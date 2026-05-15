@@ -44,7 +44,7 @@ class SessionStoreRestoreData final : public nsISessionStoreRestoreData {
   nsTArray<Entry> mEntries;
   nsTArray<RefPtr<SessionStoreRestoreData>> mChildren;
 
-  friend struct mozilla::ipc::IPDLParamTraits<SessionStoreRestoreData*>;
+  friend struct IPC::ParamTraits<SessionStoreRestoreData*>;
 };
 
 }  // namespace mozilla::dom

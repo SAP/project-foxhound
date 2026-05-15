@@ -13,9 +13,7 @@
 #include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
 #include "mozilla/TimeStamp.h"                 // for TimeStamp
 #include "mozilla/TimingParams.h"
-#include "mozilla/Types.h"  // for SideBits
 #include "X11UndefineNone.h"
-#include <unordered_map>
 
 namespace mozilla::layers {
 class Animation;

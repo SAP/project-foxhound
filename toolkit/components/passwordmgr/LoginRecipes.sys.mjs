@@ -32,10 +32,9 @@ ChromeUtils.defineLazyGetter(lazy, "log", () =>
  * Consumers should wait until {@link initializationPromise} resolves before
  * calling methods on the object.
  *
- * @constructor
- * @param {String} [aOptions.defaults=null] the URI to load the recipes from.
+ * @class
+ * @param {string} [aOptions.defaults=null] the URI to load the recipes from.
  *                                          If it's null, nothing is loaded.
- *
  */
 export function LoginRecipesParent(aOptions = { defaults: null }) {
   if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
@@ -67,13 +66,13 @@ LoginRecipesParent.prototype = {
   _recipesByHost: null,
 
   /**
-   * @type {Object} Instance of Remote Settings client that has access to the
+   * @type {object} Instance of Remote Settings client that has access to the
    *                "password-recipes" collection
    */
   _rsClient: null,
 
   /**
-   * @param {Object} aRecipes an object containing recipes to load for use. The object
+   * @param {object} aRecipes an object containing recipes to load for use. The object
    *                          should be compatible with JSON (e.g. no RegExp).
    * @return {Promise} resolving when the recipes are loaded
    */
@@ -142,7 +141,7 @@ LoginRecipesParent.prototype = {
   /**
    * Validate the recipe is sane and then add it to the set of recipes.
    *
-   * @param {Object} recipe
+   * @param {object} recipe
    */
   add(recipe) {
     let recipeKeys = Object.keys(recipe);
@@ -198,7 +197,7 @@ LoginRecipesParent.prototype = {
   /**
    * Currently only exact host matches are returned but this will eventually handle parent domains.
    *
-   * @param {String} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
+   * @param {string} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
    * @return {Set} of recipes that apply to the host ordered by host priority
    */
   getRecipesForHost(aHost) {
@@ -213,7 +212,7 @@ LoginRecipesParent.prototype = {
   /**
    * Handles the Remote Settings sync event for the "password-recipes" collection.
    *
-   * @param {Object} aEvent
+   * @param {object} aEvent
    * @param {Array} event.current Records in the "password-recipes" collection after the sync event
    * @param {Array} event.created Records that were created with this particular sync
    * @param {Array} event.updated Records that were updated with this particular sync
@@ -243,8 +242,8 @@ export const LoginRecipesContent = {
   /**
    * Locally caches recipes for a given host.
    *
-   * @param {String} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
-   * @param {Object} win - the window of the host
+   * @param {string} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
+   * @param {object} win - the window of the host
    * @param {Set} recipes - recipes that apply to the host
    */
   cacheRecipes(aHost, win, recipes) {
@@ -262,8 +261,8 @@ export const LoginRecipesContent = {
    * Tries to fetch recipes for a given host, using a local cache if possible.
    * Otherwise, the recipes are cached for later use.
    *
-   * @param {String} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
-   * @param {Object} win - the window of the host
+   * @param {string} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
+   * @param {object} win - the window of the host
    * @return {Set} of recipes that apply to the host
    */
   getRecipes(aHost, win) {
@@ -324,7 +323,7 @@ export const LoginRecipesContent = {
    *
    * @param {Set} aRecipes The set of recipes to consider for the form
    * @param {FormLike} aForm The form where login fields exist.
-   * @return {Object} The recipe that is most applicable for the form.
+   * @return {object} The recipe that is most applicable for the form.
    */
   getFieldOverrides(aRecipes, aForm) {
     let recipes = this._filterRecipesForForm(aRecipes, aForm);

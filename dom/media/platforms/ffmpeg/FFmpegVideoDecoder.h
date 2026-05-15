@@ -4,17 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __FFmpegVideoDecoder_h__
-#define __FFmpegVideoDecoder_h__
+#ifndef FFmpegVideoDecoder_h_
+#define FFmpegVideoDecoder_h_
 
 #include <atomic>
 
-#include "ImageContainer.h"
+#include "AndroidSurfaceTexture.h"
 #include "FFmpegDataDecoder.h"
 #include "FFmpegLibWrapper.h"
+#include "ImageContainer.h"
 #include "PerformanceRecorder.h"
 #include "SimpleMap.h"
-#include "mozilla/ScopeExit.h"
 #include "nsTHashSet.h"
 #if LIBAVCODEC_VERSION_MAJOR >= 57 && LIBAVUTIL_VERSION_MAJOR >= 56
 #  include "mozilla/layers/TextureClient.h"
@@ -25,6 +25,14 @@
 #include "libavutil/pixfmt.h"
 #if LIBAVCODEC_VERSION_MAJOR < 54
 #  define AVPixelFormat PixelFormat
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/java/GeckoSurfaceWrappers.h"
+#endif
+
+#if LIBAVCODEC_VERSION_MAJOR < 58 || defined(MOZ_WIDGET_ANDROID)
+#  define MOZ_FFMPEG_USE_INPUT_INFO_MAP
 #endif
 
 struct _VADRMPRIMESurfaceDescriptor;
@@ -56,14 +64,13 @@ class FFmpegVideoDecoder<LIBAV_VER>
   typedef mozilla::layers::Image Image;
   typedef mozilla::layers::ImageContainer ImageContainer;
   typedef mozilla::layers::KnowsCompositor KnowsCompositor;
-  typedef SimpleMap<int64_t, int64_t, ThreadSafePolicy> DurationMap;
 
  public:
-  FFmpegVideoDecoder(FFmpegLibWrapper* aLib, const VideoInfo& aConfig,
+  FFmpegVideoDecoder(const FFmpegLibWrapper* aLib, const VideoInfo& aConfig,
                      KnowsCompositor* aAllocator,
                      ImageContainer* aImageContainer, bool aLowLatency,
                      bool aDisableHardwareDecoding, bool a8BitOutput,
-                     Maybe<TrackingId> aTrackingId);
+                     Maybe<TrackingId> aTrackingId, PRemoteCDMActor* aCDM);
 
   ~FFmpegVideoDecoder();
 
@@ -78,14 +85,25 @@ class FFmpegVideoDecoder<LIBAV_VER>
   }
   nsCString GetCodecName() const override;
   ConversionRequired NeedsConversion() const override {
-#if LIBAVCODEC_VERSION_MAJOR >= 55
+#ifdef MOZ_WIDGET_ANDROID
+    return mCodecID == AV_CODEC_ID_H264 || mCodecID == AV_CODEC_ID_HEVC
+               ? ConversionRequired::kNeedAnnexB
+               : ConversionRequired::kNeedNone;
+#else
+#  if LIBAVCODEC_VERSION_MAJOR >= 55
     if (mCodecID == AV_CODEC_ID_HEVC) {
       return ConversionRequired::kNeedHVCC;
     }
-#endif
+#  endif
     return mCodecID == AV_CODEC_ID_H264 ? ConversionRequired::kNeedAVCC
                                         : ConversionRequired::kNeedNone;
+#endif
   }
+
+#ifdef MOZ_WIDGET_ANDROID
+  Maybe<MediaDataDecoder::PropertyValue> GetDecodeProperty(
+      MediaDataDecoder::PropertyName aName) const override;
+#endif
 
   static AVCodecID GetCodecId(const nsACString& aMimeType);
 
@@ -144,11 +162,13 @@ class FFmpegVideoDecoder<LIBAV_VER>
 #endif
 
   RefPtr<KnowsCompositor> mImageAllocator;
+  RefPtr<ImageContainer> mImageContainer;
+  VideoInfo mInfo;
 
 #ifdef MOZ_USE_HWDECODE
  public:
   static AVCodec* FindVideoHardwareAVCodec(
-      FFmpegLibWrapper* aLib, AVCodecID aCodec,
+      const FFmpegLibWrapper* aLib, AVCodecID aCodec,
       AVHWDeviceType aDeviceType = AV_HWDEVICE_TYPE_NONE);
 
  private:
@@ -156,11 +176,14 @@ class FFmpegVideoDecoder<LIBAV_VER>
   void InitHWDecoderIfAllowed();
 
   enum class ContextType {
-    D3D11VA,
-    VAAPI,
-    V4L2,
+    D3D11VA,     // Windows
+    MediaCodec,  // Android
+    VAAPI,       // Linux Desktop
+    V4L2,        // Linux embedded
   };
   void InitHWCodecContext(ContextType aType);
+
+  bool ShouldDisableHWDecoding(bool aDisableHardwareDecoding) const;
 
   // True if hardware decoding is disabled explicitly.
   const bool mHardwareDecodingDisabled;
@@ -180,8 +203,24 @@ class FFmpegVideoDecoder<LIBAV_VER>
   std::atomic<uint8_t> mNumOfHWTexturesInUse{0};
 #endif
 
+#ifdef MOZ_WIDGET_ANDROID
+#  ifdef USING_MOZFFVPX
+  MediaResult AllocateExtraData();
+#  endif
+  MediaResult InitMediaCodecDecoder();
+  MediaResult CreateImageMediaCodec(int64_t aOffset, int64_t aPts,
+                                    int64_t aTimecode, int64_t aDuration,
+                                    MediaDataDecoder::DecodedData& aResults);
+  bool ReleaseFrameMediaCodec(void* aKey, bool aRender);
+  void ReleaseFramesMediaCodec();
+  int32_t mTextureAlignment;
+  AVBufferRef* mMediaCodecDeviceContext = nullptr;
+  java::GeckoSurface::GlobalRef mSurface;
+  AndroidSurfaceTextureHandle mSurfaceHandle{};
+  SimpleMap<void*, AVFrame*, ThreadSafePolicy> mFrameMap;
+#endif
+
 #if defined(MOZ_USE_HWDECODE) && defined(MOZ_WIDGET_GTK)
-  bool ShouldEnableLinuxHWDecoding() const;
   bool UploadSWDecodeToDMABuf() const;
   bool IsLinuxHDR() const;
   MediaResult InitVAAPIDecoder();
@@ -209,14 +248,11 @@ class FFmpegVideoDecoder<LIBAV_VER>
   static nsTArray<AVCodecID> mAcceleratedFormats;
 #endif
 
-  RefPtr<ImageContainer> mImageContainer;
-  VideoInfo mInfo;
-
 #if LIBAVCODEC_VERSION_MAJOR >= 58
   class DecodeStats {
    public:
     void DecodeStart();
-    void UpdateDecodeTimes(const AVFrame* aFrame);
+    void UpdateDecodeTimes(int64_t aDuration);
     bool IsDecodingSlow() const;
 
    private:
@@ -241,6 +277,10 @@ class FFmpegVideoDecoder<LIBAV_VER>
   DecodeStats mDecodeStats;
 #endif
 
+#if LIBAVCODEC_VERSION_MAJOR >= 58
+  bool mHasSentDrainPacket = false;
+#endif
+
 #if LIBAVCODEC_VERSION_MAJOR < 58
   class PtsCorrectionContext {
    public:
@@ -257,13 +297,81 @@ class FFmpegVideoDecoder<LIBAV_VER>
   };
 
   PtsCorrectionContext mPtsContext;
-  DurationMap mDurationMap;
+#endif
+
+#ifdef MOZ_FFMPEG_USE_INPUT_INFO_MAP
+  struct InputInfo {
+    explicit InputInfo(const MediaRawData* aSample)
+        : mDuration(aSample->mDuration.ToMicroseconds())
+#  ifdef MOZ_WIDGET_ANDROID
+          ,
+          mTimecode(aSample->mTimecode.ToMicroseconds())
+#  endif
+    {
+    }
+
+    int64_t mDuration;
+#  ifdef MOZ_WIDGET_ANDROID
+    int64_t mTimecode;
+#  endif
+  };
+
+  SimpleMap<int64_t, InputInfo, ThreadSafePolicy> mInputInfo;
+
+  static int64_t GetSampleInputKey(const MediaRawData* aSample) {
+#  ifdef MOZ_WIDGET_ANDROID
+    return aSample->mTime.ToMicroseconds();
+#  else
+    return aSample->mTimecode.ToMicroseconds();
+#  endif
+  }
+
+  static int64_t GetFrameInputKey(const AVFrame* aFrame) {
+#  ifdef MOZ_WIDGET_ANDROID
+    return aFrame->pts;
+#  else
+    return aFrame->pkt_dts;
+#  endif
+  }
+
+  void InsertInputInfo(const MediaRawData* aSample) {
+    // LibAV provides no API to retrieve the decoded sample's duration.
+    // (FFmpeg >= 1.0 provides av_frame_get_pkt_duration)
+    // Additionally some platforms (e.g. Android) do not supply a valid duration
+    // after decoding. As such we instead use a map using the given ts as key
+    // that we will retrieve later. The map will have a typical size of 16
+    // entry.
+    mInputInfo.Insert(GetSampleInputKey(aSample), InputInfo(aSample));
+  }
+
+  void TakeInputInfo(const AVFrame* aFrame, InputInfo& aEntry) {
+    // Retrieve duration from the given ts.
+    // We use the first entry found matching this ts (this is done to
+    // handle damaged file with multiple frames with the same ts)
+    if (!mInputInfo.Find(GetFrameInputKey(aFrame), aEntry)) {
+      NS_WARNING("Unable to retrieve input info from map");
+      // dts are probably incorrectly reported ; so clear the map as we're
+      // unlikely to find them in the future anyway. This also guards
+      // against the map becoming extremely big.
+      mInputInfo.Clear();
+    }
+  }
 #endif
 
   const bool mLowLatency;
   const Maybe<TrackingId> mTrackingId;
+
+  void RecordFrame(const MediaRawData* aSample, const MediaData* aData);
+
   PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
-  PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder2;
+
+  bool MaybeQueueDrain(const MediaDataDecoder::DecodedData& aData);
+#ifdef MOZ_WIDGET_ANDROID
+  void QueueResumeDrain();
+  void ResumeDrain();
+
+  Atomic<bool> mShouldResumeDrain{false};
+#endif
 
   // True if we're allocating shmem for ffmpeg decode buffer.
   Maybe<Atomic<bool>> mIsUsingShmemBufferForDecode;
@@ -319,4 +427,4 @@ class ImageBufferWrapper final {
 
 }  // namespace mozilla
 
-#endif  // __FFmpegVideoDecoder_h__
+#endif  // FFmpegVideoDecoder_h_

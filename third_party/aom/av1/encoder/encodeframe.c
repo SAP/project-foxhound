@@ -175,6 +175,8 @@ static const uint8_t *get_var_offs(int use_hbd, int bd) {
 void av1_init_rtc_counters(MACROBLOCK *const x) {
   av1_init_cyclic_refresh_counters(x);
   x->cnt_zeromv = 0;
+  x->sb_col_scroll = 0;
+  x->sb_row_scroll = 0;
 }
 
 void av1_accumulate_rtc_counters(AV1_COMP *cpi, const MACROBLOCK *const x) {
@@ -1281,8 +1283,6 @@ static inline void encode_sb_row(AV1_COMP *cpi, ThreadData *td,
     x->sb_me_block = 0;
     x->sb_me_partition = 0;
     x->sb_me_mv.as_int = 0;
-    x->sb_col_scroll = 0;
-    x->sb_row_scroll = 0;
     x->sb_force_fixed_part = 1;
     x->color_palette_thresh = 64;
     x->force_color_check_block_level = 0;
@@ -1811,16 +1811,9 @@ static void populate_thresh_to_force_zeromv_skip(AV1_COMP *cpi) {
   }
 }
 
-static void free_block_hash_buffers(uint32_t *block_hash_values[2][2],
-                                    int8_t *is_block_same[2][3]) {
-  for (int k = 0; k < 2; ++k) {
-    for (int j = 0; j < 2; ++j) {
-      aom_free(block_hash_values[k][j]);
-    }
-
-    for (int j = 0; j < 3; ++j) {
-      aom_free(is_block_same[k][j]);
-    }
+static void free_block_hash_buffers(uint32_t *block_hash_values[2]) {
+  for (int j = 0; j < 2; ++j) {
+    aom_free(block_hash_values[j]);
   }
 }
 
@@ -2112,61 +2105,51 @@ static inline void encode_frame_internal(AV1_COMP *cpi) {
     // add to hash table
     const int pic_width = cpi->source->y_crop_width;
     const int pic_height = cpi->source->y_crop_height;
-    uint32_t *block_hash_values[2][2] = { { NULL } };
-    int8_t *is_block_same[2][3] = { { NULL } };
-    int k, j;
+    uint32_t *block_hash_values[2] = { NULL };  // two buffers used ping-pong
     bool error = false;
 
-    for (k = 0; k < 2 && !error; ++k) {
-      for (j = 0; j < 2; ++j) {
-        block_hash_values[k][j] = (uint32_t *)aom_malloc(
-            sizeof(*block_hash_values[0][0]) * pic_width * pic_height);
-        if (!block_hash_values[k][j]) {
-          error = true;
-          break;
-        }
-      }
-
-      for (j = 0; j < 3 && !error; ++j) {
-        is_block_same[k][j] = (int8_t *)aom_malloc(
-            sizeof(*is_block_same[0][0]) * pic_width * pic_height);
-        if (!is_block_same[k][j]) error = true;
+    for (int j = 0; j < 2; ++j) {
+      block_hash_values[j] = (uint32_t *)aom_malloc(
+          sizeof(*block_hash_values[j]) * pic_width * pic_height);
+      if (!block_hash_values[j]) {
+        error = true;
+        break;
       }
     }
 
     av1_hash_table_init(intrabc_hash_info);
     if (error ||
         !av1_hash_table_create(&intrabc_hash_info->intrabc_hash_table)) {
-      free_block_hash_buffers(block_hash_values, is_block_same);
+      free_block_hash_buffers(block_hash_values);
       aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                          "Error allocating intrabc_hash_table and buffers");
     }
     hash_table_created = 1;
-    av1_generate_block_2x2_hash_value(intrabc_hash_info, cpi->source,
-                                      block_hash_values[0], is_block_same[0]);
+    av1_generate_block_2x2_hash_value(cpi->source, block_hash_values[0]);
     // Hash data generated for screen contents is used for intraBC ME
     const int min_alloc_size = block_size_wide[mi_params->mi_alloc_bsize];
-    const int max_sb_size =
-        (1 << (cm->seq_params->mib_size_log2 + MI_SIZE_LOG2));
+    int max_sb_size = (1 << (cm->seq_params->mib_size_log2 + MI_SIZE_LOG2));
+
+    if (cpi->sf.mv_sf.hash_max_8x8_intrabc_blocks) {
+      max_sb_size = AOMMIN(8, max_sb_size);
+    }
+
     int src_idx = 0;
     for (int size = 4; size <= max_sb_size; size *= 2, src_idx = !src_idx) {
       const int dst_idx = !src_idx;
-      av1_generate_block_hash_value(
-          intrabc_hash_info, cpi->source, size, block_hash_values[src_idx],
-          block_hash_values[dst_idx], is_block_same[src_idx],
-          is_block_same[dst_idx]);
-      if (size >= min_alloc_size) {
-        if (!av1_add_to_hash_map_by_row_with_precal_data(
-                &intrabc_hash_info->intrabc_hash_table,
-                block_hash_values[dst_idx], is_block_same[dst_idx][2],
-                pic_width, pic_height, size)) {
-          error = true;
-          break;
-        }
+      av1_generate_block_hash_value(intrabc_hash_info, cpi->source, size,
+                                    block_hash_values[src_idx],
+                                    block_hash_values[dst_idx]);
+      if (size >= min_alloc_size &&
+          !av1_add_to_hash_map_by_row_with_precal_data(
+              &intrabc_hash_info->intrabc_hash_table,
+              block_hash_values[dst_idx], pic_width, pic_height, size)) {
+        error = true;
+        break;
       }
     }
 
-    free_block_hash_buffers(block_hash_values, is_block_same);
+    free_block_hash_buffers(block_hash_values);
 
     if (error) {
       aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,

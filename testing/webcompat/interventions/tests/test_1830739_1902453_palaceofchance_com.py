@@ -1,17 +1,15 @@
 import pytest
 
 URL = "https://www.palaceofchance.com/webplay/"
-FIRST_GAME_CSS = ".gamepreview:has(.cta.practice)"
-FIRST_GAME_PRACTICE_CSS = ".gamepreview .cta.practice"
-IFRAME_CSS = "#gameiframe"
+FIRST_GAME_CSS = ".gameitem a"
+IFRAME_CSS = ".gameframe iframe"
 UNSUPPORTED_CSS = ".unsupported-device-box"
 SUPPORTED_CSS = "#game_main"
 
 
 async def get_to_page(client):
     await client.navigate(URL)
-    client.click(client.await_css(FIRST_GAME_CSS, is_displayed=True))
-    client.soft_click(client.await_css(FIRST_GAME_PRACTICE_CSS, is_displayed=True))
+    client.soft_click(client.await_css(FIRST_GAME_CSS, is_displayed=True))
     client.switch_to_frame(client.await_css(IFRAME_CSS))
 
 

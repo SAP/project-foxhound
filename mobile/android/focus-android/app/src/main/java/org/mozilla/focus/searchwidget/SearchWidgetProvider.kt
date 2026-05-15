@@ -12,12 +12,12 @@ import androidx.annotation.VisibleForTesting
 import mozilla.components.feature.search.widget.AppSearchWidgetProvider
 import mozilla.components.feature.search.widget.BaseVoiceSearchActivity
 import mozilla.components.feature.search.widget.SearchWidgetConfig
-import mozilla.components.support.utils.PendingIntentUtils
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.IntentReceiverActivity
 import org.mozilla.focus.ext.components
 import org.mozilla.focus.session.VisibilityLifeCycleCallback
 import org.mozilla.focus.state.AppAction
+import mozilla.components.ui.icons.R as iconsR
 
 class SearchWidgetProvider : AppSearchWidgetProvider() {
 
@@ -37,7 +37,7 @@ class SearchWidgetProvider : AppSearchWidgetProvider() {
     override val config: SearchWidgetConfig =
         SearchWidgetConfig(
             searchWidgetIconResource = R.drawable.ic_splash_screen,
-            searchWidgetMicrophoneResource = R.drawable.mozac_ic_microphone_24,
+            searchWidgetMicrophoneResource = iconsR.drawable.mozac_ic_microphone_24,
             appName = R.string.app_name,
         )
 
@@ -51,7 +51,7 @@ class SearchWidgetProvider : AppSearchWidgetProvider() {
             context,
             REQUEST_CODE_NEW_TAB,
             textSearchIntent,
-            PendingIntentUtils.defaultFlags or
+            PendingIntent.FLAG_IMMUTABLE or
                 PendingIntent.FLAG_UPDATE_CURRENT,
         )
     }

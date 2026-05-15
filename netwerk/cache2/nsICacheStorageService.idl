@@ -10,6 +10,7 @@ interface nsIEventTarget;
 interface nsICacheStorageConsumptionObserver;
 interface nsICacheStorageVisitor;
 interface nsIPrincipal;
+interface nsIURI;
 
 /**
  * Provides access to particual cache storages of the network URI cache.
@@ -74,6 +75,19 @@ interface nsICacheStorageService : nsISupports
    * Evict the whole cache.
    */
   void clear();
+
+  /**
+   * Evict any Dictionary cache entry by site
+   *
+   * @param aURI
+   *   The URI to compare the dictionary entries with.
+   */
+  void clearOriginDictionary(in nsIURI aURI);
+
+  /**
+   * Evict all Dictionary cache entries
+   */
+  void clearAllOriginDictionaries();
 
   /**
    * Purge only data of disk backed entries.  Metadata are left for

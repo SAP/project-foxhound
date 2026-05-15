@@ -7,12 +7,12 @@
 #ifndef DOM_QUOTA_QMRESULTINLINES_H_
 #define DOM_QUOTA_QMRESULTINLINES_H_
 
-#include "nsError.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/dom/QMResult.h"
 #include "mozilla/dom/quota/Config.h"
 #include "mozilla/dom/quota/RemoveParen.h"
+#include "nsError.h"
 
 #ifdef QM_ERROR_STACKS_ENABLED
 #  include "mozilla/ResultVariant.h"

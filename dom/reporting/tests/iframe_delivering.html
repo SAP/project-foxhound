@@ -58,34 +58,15 @@ function runTests(extraParams = "") {
     ok(!!report.body.body, "We have the real report.body");
     is(report.body.body.id, "DeprecatedTestingInterface", "Correct report.body.id");
     is(report.body.body.message, "TestingDeprecatedInterface is a testing-only interface and this is its testing deprecation message.", "We have a report.body.message");
-    is(report.body.body.sourceFile, "https://example.org/tests/dom/reporting/tests/iframe_delivering.html", "report.body.sourceFile");
+    is(report.body.body.sourceFile, "https://example.org/tests/dom/reporting/tests/delivering.sjs?task=iframe", "report.body.sourceFile");
     is(report.body.body.lineNumber, 40, "report.body.lineNumber");
     is(report.body.body.columnNumber, 5, "report.body.columnNumber");
   });
 }
 
-// Let's register a group + endpoint
-fetch("delivering.sjs?task=header")
-.then(r => r.text())
-.then(text => {
-  is(text, "OK", "Report-to header sent");
-})
-.then(_ => {
-  return runTests();
-})
-
-// Let's register a group + endpoint from a worker
-.then(_ => {
-  return new Promise(resolve => {
-    let w = new Worker("worker_delivering.js");
-    w.onmessage = () => resolve();
-  });
-})
-.then(_ => {
-  return runTests("&worker=true");
-})
-
-.then(finish);
+runTests().then(() => {
+  finish();
+});
 
 </script>
 </body>

@@ -60,7 +60,7 @@ class AndroidSetupError(Exception):
 class ADBLoggedDevice(ADBDevice):
     def __init__(self, *args, **kw):
         self._provided_logger = kw.pop("logger")
-        super(ADBLoggedDevice, self).__init__(*args, **kw)
+        super().__init__(*args, **kw)
 
     def _get_logger(self, logger_name, verbose):
         return self._provided_logger
@@ -123,7 +123,7 @@ class AndroidDevice(Layer):
     }
 
     def __init__(self, env, mach_cmd):
-        super(AndroidDevice, self).__init__(env, mach_cmd)
+        super().__init__(env, mach_cmd)
         self.android_activity = self.app_name = self.device = None
         self.capture_logcat = self.capture_file = None
         self._custom_apk_path = None
@@ -201,7 +201,7 @@ class AndroidDevice(Layer):
         for apks in applications:
             apk = apks
             self.info("Uninstalling old version")
-            self.device.uninstall_app(self.get_arg("android-app-name"))
+            self.device.uninstall_app(self.app_name)
             self.info("Installing %s" % apk)
             if str(apk) in _PERMALINKS:
                 apk = _PERMALINKS[apk]

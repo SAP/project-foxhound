@@ -154,7 +154,7 @@ class TestTargetOpenBSD(TargetTest):
     def config_sub(self, stdin, args):
         if args[0] == "amd64-unknown-openbsd6.4":
             return 0, "x86_64-unknown-openbsd6.4", ""
-        return super(TestTargetOpenBSD, self).config_sub(stdin, args)
+        return super().config_sub(stdin, args)
 
 
 class TestMozConfigure(BaseConfigureTest):

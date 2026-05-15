@@ -9,17 +9,18 @@
  */
 
 #include "mozilla/dom/DocumentFragment.h"
+
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentFragmentBinding.h"
 #include "mozilla/dom/Element.h"  // for NS_IMPL_ELEMENT_CLONE
 #include "mozilla/dom/NodeInfo.h"
-#include "nsNodeInfoManager.h"
+#include "nsContentUtils.h"  // for NS_INTERFACE_MAP_ENTRY_TEAROFF
+#include "nsDOMString.h"
 #include "nsError.h"
 #include "nsGkAtoms.h"
-#include "nsDOMString.h"
-#include "nsContentUtils.h"  // for NS_INTERFACE_MAP_ENTRY_TEAROFF
-#include "mozilla/dom/DocumentFragmentBinding.h"
+#include "nsNodeInfoManager.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/IntegerPrintfMacros.h"
 
 namespace mozilla::dom {
 

@@ -38,12 +38,10 @@ void PlatformEvent(Accessible*, uint32_t) {}
 
 void PlatformStateChangeEvent(Accessible*, uint64_t, bool) {}
 
-void PlatformFocusEvent(Accessible* aTarget,
-                        const LayoutDeviceIntRect& aCaretRect) {}
+void PlatformFocusEvent(Accessible* aTarget) {}
 
 void PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
                             bool aIsSelectionCollapsed, int32_t aGranularity,
-                            const LayoutDeviceIntRect& aCaretRect,
                             bool aFromUser) {}
 
 void PlatformTextChangeEvent(Accessible*, const nsAString&, int32_t, uint32_t,
@@ -52,6 +50,10 @@ void PlatformTextChangeEvent(Accessible*, const nsAString&, int32_t, uint32_t,
 void PlatformShowHideEvent(Accessible*, Accessible*, bool, bool) {}
 
 void PlatformSelectionEvent(Accessible*, Accessible*, uint32_t) {}
+
+void PlatformAnnouncementEvent(Accessible* aTarget,
+                               const nsAString& aAnnouncement,
+                               uint16_t aPriority) {}
 
 uint64_t GetCacheDomainsForKnownClients(uint64_t aCacheDomains) {
   return aCacheDomains;

@@ -98,7 +98,8 @@ function _invalidLeaveTarget(target) {
 
 /**
  * Wraps the codemirror mouse events  to generate token events
- * @param {Object} editor
+ *
+ * @param {object} editor
  * @returns {Function}
  */
 export function onMouseOver(editor) {
@@ -155,9 +156,9 @@ export function onMouseOver(editor) {
  * Gets the end position of a token at a specific line/column
  *
  * @param {*} codeMirror
- * @param {Number} line
- * @param {Number} column
- * @returns {Number}
+ * @param {number} line
+ * @param {number} column
+ * @returns {number}
  */
 export function getTokenEnd(codeMirror, line, column) {
   const token = codeMirror.getTokenAt({
@@ -174,7 +175,7 @@ export function getTokenEnd(codeMirror, line, column) {
  *
  * @param {*} editor
  * @param {*} tokenEl
- * @returns {Object} An object of the form { line, column }
+ * @returns {object} An object of the form { line, column }
  */
 export function getTokenLocation(editor, tokenEl) {
   // Get the quad (and not the bounding rect), as the span could wrap on multiple lines

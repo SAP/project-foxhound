@@ -15,9 +15,9 @@ import mozilla.components.feature.findinpage.FindInPageFeature
 import mozilla.components.feature.findinpage.view.FindInPageBar
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.base.feature.UserInteractionHandler
-import org.mozilla.fenix.R
 import org.mozilla.fenix.components.appstate.AppAction.FindInPageAction
 import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.ext.settings
 
 /**
  * BrowserFragment delegate to handle all layout updates needed to show or hide the find in page bar.
@@ -42,7 +42,7 @@ class FindInPageIntegration(
     private val engineView: EngineView,
     private val toolbarsHideCallback: () -> Unit,
     private val toolbarsResetCallback: () -> Unit,
-    private val findInPageHeight: Int = view.context.resources.getDimensionPixelSize(R.dimen.browser_toolbar_height),
+    private val findInPageHeight: Int = view.context.settings().browserToolbarHeight,
 ) : LifecycleAwareFeature, UserInteractionHandler {
     @VisibleForTesting
     internal val feature by lazy { FindInPageFeature(store, view, engineView, ::onClose) }

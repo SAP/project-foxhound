@@ -12,6 +12,13 @@ let { TelemetryTestUtils } = ChromeUtils.importESModule(
 
 let { MockFilePicker } = SpecialPowers;
 
+add_setup(async function () {
+  registerCleanupFunction(async function () {
+    SpecialPowers.clearUserPref("signon.rustMirror.migrationNeeded");
+    SpecialPowers.clearUserPref("signon.rustMirror.poisoned");
+  });
+});
+
 /**
  * A helper class to deal with Login CSV import UI.
  */
@@ -98,7 +105,7 @@ class CsvImportHelper {
    *
    * @param {browser} browser
    *        The browser object.
-   * @returns {Promise<Object>} A promise that contains added, modified, noChange and errors count.
+   * @returns {Promise<object>} A promise that contains added, modified, noChange and errors count.
    */
   static async getCsvImportSuccessDialogData(browser) {
     return SpecialPowers.spawn(browser, [], async () => {
@@ -141,7 +148,7 @@ class CsvImportHelper {
    *
    * @param {browser} browser
    *        The browser object.
-   * @returns {Promise<Object>} A promise that contains the hidden state and l10n id for title, description and focused element.
+   * @returns {Promise<object>} A promise that contains the hidden state and l10n id for title, description and focused element.
    */
   static async getCsvImportErrorDialogData(browser) {
     return SpecialPowers.spawn(browser, [], async () => {
@@ -184,7 +191,7 @@ class CsvImportHelper {
    *
    * @param {browser} browser
    *        The browser object.
-   * @returns {Promise<Object>} A promise that contains the about:loginsimportreport tab.
+   * @returns {Promise<object>} A promise that contains the about:loginsimportreport tab.
    */
   static async clickDetailedReport(browser) {
     let loadedReportTab = BrowserTestUtils.waitForNewTab(
@@ -212,7 +219,7 @@ class CsvImportHelper {
   /**
    * An utility method to fetch data from the about:loginsimportreport page.
    *
-   * @returns {Promise<Object>} A promise that contains the detailed report data like added, modified, noChange, errors and rows.
+   * @returns {Promise<object>} A promise that contains the detailed report data like added, modified, noChange, errors and rows.
    */
   static async getDetailedReportData() {
     const data = await SpecialPowers.spawn(
@@ -249,8 +256,8 @@ class CsvImportHelper {
 const random = Math.round(Math.random() * 100000001);
 
 add_setup(async function () {
-  registerCleanupFunction(() => {
-    Services.logins.removeAllUserFacingLogins();
+  registerCleanupFunction(async () => {
+    await Services.logins.removeAllUserFacingLoginsAsync();
   });
 });
 

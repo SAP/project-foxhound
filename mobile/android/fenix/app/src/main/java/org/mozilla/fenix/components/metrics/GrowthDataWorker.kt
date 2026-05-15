@@ -10,7 +10,7 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.fenix.ext.metrics
 import org.mozilla.fenix.ext.settings
 import java.util.concurrent.TimeUnit
@@ -71,7 +71,7 @@ class GrowthDataWorker(
             return (FULL_WEEK_MILLIS <= timeDifference)
         }
 
-        private fun getInstalledTime(context: Context): Long = context.packageManager
+        private fun getInstalledTime(context: Context): Long = context.packageManagerCompatHelper
             .getPackageInfoCompat(context.packageName, 0)
             .firstInstallTime
     }

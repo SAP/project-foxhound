@@ -12,7 +12,7 @@ h1 {
   display: flex;
   text-align: center;
   border: 1px solid var(--border-color-card);
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--border-radius-small) var(--border-radius-small) 0 0;
   border-bottom: 1px solid var(--border-color-card);
   box-shadow: var(--box-shadow-card);
 }
@@ -40,7 +40,7 @@ h1 {
   border: none;
   border-bottom: 3px solid transparent;
   background-color: var(--background-color-box);
-  color: var(--in-content-text-color);
+  color: var(--text-color);
   flex: 1 1 auto;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -61,7 +61,7 @@ h1 {
 
 .certificate-tab:focus-visible {
   z-index: 1;
-  outline: 2px solid var(--in-content-focus-outline-color);
+  outline: var(--focus-outline);
 }
 
 .tab:hover {

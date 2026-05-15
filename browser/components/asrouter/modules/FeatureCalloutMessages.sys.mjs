@@ -41,10 +41,10 @@ const matchCurrentScreenTargeting = (prefName, screenIdRegEx = ".*") => {
  * Creates a "hasn't been viewed in > 24 hours"
  * JEXL string and adds it to each message specified
  *
- * @param {array} messageIds - IDs of messages that the targeting string will be added to
+ * @param {Array} messageIds - IDs of messages that the targeting string will be added to
  * @param {string} prefix - The prefix of messageIDs that will used to create the JEXL string
- * @param {array} messages - The array of messages that will be edited
- * @returns {array} - The array of messages with the appropriate targeting strings edited
+ * @param {Array} messages - The array of messages that will be edited
+ * @returns {Array} - The array of messages with the appropriate targeting strings edited
  */
 function add24HourImpressionJEXLTargeting(
   messageIds,
@@ -83,6 +83,281 @@ function add24HourImpressionJEXLTargeting(
 // acts as a safety guard against mutations of the original objects
 const MESSAGES = () => {
   let messages = [
+    {
+      weight: 100,
+      id: "IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE",
+      template: "feature_callout",
+      groups: ["cfr"],
+      content: {
+        id: "IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE",
+            anchors: [
+              {
+                selector: "#ipprotection-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+                no_open_on_anchor: true,
+              },
+            ],
+            content: {
+              position: "callout",
+              width: "352px",
+              padding: 16,
+              logo: {
+                imageURL:
+                  "chrome://browser/content/ipprotection/assets/cfr-mozilla-vpn-light.svg",
+                darkModeImageURL:
+                  "chrome://browser/content/ipprotection/assets/cfr-mozilla-vpn-dark.svg",
+                height: "175px",
+                width: "320px",
+              },
+              title: {
+                string_id: "ipprotection-bandwidth-upgrade-title",
+                fontSize: "0.8125em",
+                marginInline: "0 25px",
+              },
+              above_button_content: [
+                {
+                  type: "text",
+                  text: {
+                    string_id: "ipprotection-bandwidth-upgrade-text",
+                    textAlign: "start",
+                    fontSize: "0.8125em",
+                    marginBlock: "-4px 0",
+                  },
+                },
+              ],
+              primary_button: {
+                label: {
+                  string_id: "upgrade-vpn-button",
+                  fontSize: "0.8125em",
+                  paddingBlock: "3px",
+                  paddingInline: "14px",
+                  lineHeight: "24px",
+                },
+                action: {
+                  type: "OPEN_URL",
+                  data: {
+                    args: "https://www.mozilla.org/products/vpn/?utm_medium=firefox-desktop&utm_source=vpn-panel&utm_campaign=fx-vpn&utm_content=upgrade-button#pricing",
+                    where: "tabshifted",
+                  },
+                  dismiss: true,
+                },
+              },
+              secondary_button: {
+                label: {
+                  string_id:
+                    "ipprotection-feature-introduction-button-secondary-not-now",
+                  fontSize: "0.8125em",
+                  paddingBlock: "3px",
+                  paddingInline: "14px",
+                  lineHeight: "24px",
+                },
+                action: {
+                  dismiss: true,
+                },
+              },
+            },
+          },
+        ],
+      },
+      targeting:
+        "'browser.ipProtection.hasUpgraded' | preferenceValue == false && 'browser.ipProtection.bandwidthThreshold' | preferenceValue == 50 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd && (messageImpressions.IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE_SECONDARY || []) | length == 0",
+      trigger: {
+        id: "preferenceObserver",
+        params: ["browser.ipProtection.bandwidthThreshold"],
+      },
+      frequency: {
+        lifetime: 1,
+      },
+      skip_in_tests: "it's not tested in automation",
+    },
+    {
+      weight: 100,
+      id: "IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE_SECONDARY",
+      template: "feature_callout",
+      groups: ["cfr"],
+      content: {
+        id: "IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE_SECONDARY",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE_SECONDARY",
+            anchors: [
+              {
+                selector: "#ipprotection-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+                no_open_on_anchor: true,
+              },
+            ],
+            content: {
+              position: "callout",
+              width: "352px",
+              padding: 16,
+              logo: {
+                imageURL:
+                  "chrome://browser/content/ipprotection/assets/cfr-mozilla-vpn-light.svg",
+                darkModeImageURL:
+                  "chrome://browser/content/ipprotection/assets/cfr-mozilla-vpn-dark.svg",
+                height: "175px",
+                width: "320px",
+              },
+              title: {
+                string_id: "ipprotection-bandwidth-upgrade-title",
+                fontSize: "0.8125em",
+                marginInline: "0 25px",
+              },
+              above_button_content: [
+                {
+                  type: "text",
+                  text: {
+                    string_id: "ipprotection-bandwidth-upgrade-text",
+                    textAlign: "start",
+                    fontSize: "0.8125em",
+                    marginBlock: "-4px 0",
+                  },
+                },
+              ],
+              primary_button: {
+                label: {
+                  string_id: "upgrade-vpn-button",
+                  fontSize: "0.8125em",
+                  paddingBlock: "3px",
+                  paddingInline: "14px",
+                  lineHeight: "24px",
+                },
+                action: {
+                  type: "OPEN_URL",
+                  data: {
+                    args: "https://www.mozilla.org/products/vpn/?utm_medium=firefox-desktop&utm_source=vpn-panel&utm_campaign=fx-vpn&utm_content=upgrade-button#pricing",
+                    where: "tabshifted",
+                  },
+                  dismiss: true,
+                },
+              },
+              secondary_button: {
+                label: {
+                  string_id:
+                    "ipprotection-feature-introduction-button-secondary-not-now",
+                  fontSize: "0.8125em",
+                  paddingBlock: "3px",
+                  paddingInline: "14px",
+                  lineHeight: "24px",
+                },
+                action: {
+                  dismiss: true,
+                },
+              },
+            },
+          },
+        ],
+      },
+      targeting:
+        "'browser.ipProtection.hasUpgraded' | preferenceValue == false && 'browser.ipProtection.bandwidthThreshold' | preferenceValue == 50 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd && (messageImpressions.IP_PROTECTION_CALLOUT_MOZILLA_VPN_UPGRADE || []) | length == 0",
+      trigger: {
+        id: "ipProtectionReady",
+      },
+      frequency: {
+        lifetime: 1,
+      },
+      skip_in_tests: "it's not tested in automation",
+    },
+    {
+      id: "IP_PROTECTION_BANDWIDTH_RESET_CALLOUT",
+      template: "feature_callout",
+      groups: [],
+      content: {
+        id: "IP_PROTECTION_BANDWIDTH_RESET_CALLOUT",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "IP_PROTECTION_BANDWIDTH_RESET_CALLOUT",
+            anchors: [
+              {
+                selector: "#ipprotection-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+                no_open_on_anchor: true,
+              },
+            ],
+            content: {
+              position: "callout",
+              autohide: true,
+              width: "352px",
+              padding: 16,
+              logo: {
+                imageURL:
+                  "chrome://browser/content/ipprotection/assets/cfr-vpn-bandwith-reset-light.svg",
+                darkModeImageURL:
+                  "chrome://browser/content/ipprotection/assets/cfr-vpn-bandwith-reset-dark.svg",
+                height: "175px",
+                width: "320px",
+              },
+              title: {
+                string_id: "ipprotection-bandwidth-reset-title",
+                args: {
+                  maxUsage: "50",
+                },
+                fontSize: "0.8125em",
+                marginInline: "0 25px",
+              },
+              above_button_content: [
+                {
+                  type: "text",
+                  text: {
+                    string_id: "ipprotection-bandwidth-reset-text",
+                    textAlign: "start",
+                    fontSize: "0.8125em",
+                    marginBlock: "-4px 0",
+                  },
+                },
+              ],
+              primary_button: {
+                label: {
+                  string_id: "ipprotection-bandwidth-reset-button",
+                  fontSize: "0.8125em",
+                  paddingBlock: "3px",
+                  paddingInline: "14px",
+                  lineHeight: "24px",
+                },
+                action: {
+                  dismiss: true,
+                },
+              },
+            },
+          },
+        ],
+      },
+      targeting:
+        "'browser.ipProtection.bandwidthThreshold' | preferenceValue == 0 && 'browser.ipProtection.userEnableCount' | preferenceValue > 0 && !hasActiveEnterprisePolicies && !activeNotifications && previousSessionEnd",
+      trigger: {
+        id: "preferenceObserver",
+        params: ["browser.ipProtection.bandwidthThreshold"],
+      },
+      frequency: {
+        lifetime: 2,
+      },
+      skip_in_tests: "it's not tested in automation",
+    },
     {
       id: "TAB_GROUP_ONBOARDING_CALLOUT",
       template: "feature_callout",
@@ -261,206 +536,6 @@ const MESSAGES = () => {
       frequency: {
         lifetime: 1,
       },
-      skip_in_tests: "it's not tested in automation",
-    },
-    {
-      id: "DESKTOP_TO_MOBILE_ADOPTION_SIGNED_INTO_ACCOUNT_NON_EU",
-      template: "feature_callout",
-      groups: ["cfr"],
-      content: {
-        id: "DESKTOP_TO_MOBILE_ADOPTION_SIGNED_INTO_ACCOUNT_NON_EU",
-        padding: "16",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        disableHistoryUpdates: true,
-        screens: [
-          {
-            id: "DESKTOP_TO_MOBILE_ADOPTION_SIGNED_INTO_ACCOUNT_NON_EU",
-            anchors: [
-              {
-                selector: "#fxa-toolbar-menu-button",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topright",
-                },
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "400px",
-              padding: 16,
-              title: {
-                string_id: "desktop-to-mobile-headline",
-                marginInline: "4px 0",
-              },
-              logo: {
-                height: "128px",
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/desktop-to-mobile-banner.svg",
-              },
-              subtitle: {
-                string_id: "desktop-to-mobile-subtitle",
-                marginBlock: "-44px 0",
-                marginInline: "84px 0",
-              },
-              title_logo: {
-                height: "103px",
-                width: "75px",
-                alignment: "top",
-                marginBlock: "40px 0",
-                marginInline: "32px",
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/desktop-to-mobile-non-eu-QR.svg",
-                alt: {
-                  string_id: "desktop-to-mobile-qr-code-alt",
-                },
-              },
-              additional_button: {
-                action: {
-                  dismiss: true,
-                },
-                label: {
-                  string_id: "dismiss-button-label",
-                  fontWeight: "590",
-                  fontSize: "11px",
-                },
-                style: "secondary",
-              },
-              secondary_button: {
-                action: {
-                  type: "OPEN_ABOUT_PAGE",
-                  data: {
-                    args: "preferences?action=pair#sync",
-                    where: "tab",
-                  },
-                  dismiss: true,
-                },
-                label: {
-                  string_id: "sync-to-mobile-button-label",
-                  fontWeight: "590",
-                  fontSize: "11px",
-                },
-                style: "secondary",
-              },
-            },
-          },
-        ],
-      },
-      frequency: {
-        custom: [
-          {
-            cap: 1,
-            period: 2628000000,
-          },
-        ],
-        lifetime: 3,
-      },
-      trigger: {
-        id: "defaultBrowserCheck",
-      },
-      targeting:
-        "(region in ['CA', 'US']) && isFxASignedIn && previousSessionEnd && !willShowDefaultPrompt && !activeNotifications && userPrefs.cfrFeatures && !(sync || {}).mobileDevices",
-      skip_in_tests: "it's not tested in automation",
-    },
-    {
-      id: "DESKTOP_TO_MOBILE_ADOPTION_SIGNED_INTO_ACCOUNT_EU",
-      template: "feature_callout",
-      groups: ["cfr"],
-      content: {
-        id: "DESKTOP_TO_MOBILE_ADOPTION_SIGNED_INTO_ACCOUNT_EU",
-        padding: "16",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        disableHistoryUpdates: true,
-        screens: [
-          {
-            id: "DESKTOP_TO_MOBILE_ADOPTION_SIGNED_INTO_ACCOUNT_EU",
-            anchors: [
-              {
-                selector: "#fxa-toolbar-menu-button",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topright",
-                },
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "400px",
-              padding: 16,
-              title: {
-                string_id: "desktop-to-mobile-headline",
-                marginInline: "4px 0",
-              },
-              logo: {
-                height: "128px",
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/desktop-to-mobile-banner.svg",
-              },
-              subtitle: {
-                string_id: "desktop-to-mobile-subtitle",
-                marginBlock: "-44px 0",
-                marginInline: "84px 0",
-              },
-              title_logo: {
-                height: "103px",
-                width: "75px",
-                alignment: "top",
-                marginBlock: "40px 0",
-                marginInline: "32px",
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/desktop-to-mobile-eu-QR.svg",
-                alt: {
-                  string_id: "desktop-to-mobile-qr-code-alt",
-                },
-              },
-              additional_button: {
-                action: {
-                  dismiss: true,
-                },
-                label: {
-                  string_id: "dismiss-button-label",
-                  fontWeight: "590",
-                  fontSize: "11px",
-                },
-                style: "secondary",
-              },
-              secondary_button: {
-                action: {
-                  type: "OPEN_ABOUT_PAGE",
-                  data: {
-                    args: "preferences?action=pair#sync",
-                    where: "tab",
-                  },
-                  dismiss: true,
-                },
-                label: {
-                  string_id: "sync-to-mobile-button-label",
-                  fontWeight: "590",
-                  fontSize: "11px",
-                },
-                style: "secondary",
-              },
-            },
-          },
-        ],
-      },
-      frequency: {
-        custom: [
-          {
-            cap: 1,
-            period: 2628000000,
-          },
-        ],
-        lifetime: 3,
-      },
-      trigger: {
-        id: "defaultBrowserCheck",
-      },
-      targeting:
-        "(locale in ['de', 'en-CA', 'en-GB', 'en-US', 'fr']) && (region in ['DE', 'FR', 'GB']) && isFxASignedIn && previousSessionEnd && !willShowDefaultPrompt && !activeNotifications && userPrefs.cfrFeatures && !(sync || {}).mobileDevices",
       skip_in_tests: "it's not tested in automation",
     },
     // Appears the first time a user uses the "save and close" action on a tab group,
@@ -912,80 +987,6 @@ const MESSAGES = () => {
       },
     },
     {
-      id: "FIREFOX_VIEW_TAB_PICKUP_REMINDER",
-      template: "feature_callout",
-      content: {
-        id: "FIREFOX_VIEW_TAB_PICKUP_REMINDER",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        disableHistoryUpdates: true,
-        screens: [
-          {
-            id: "FIREFOX_VIEW_TAB_PICKUP_REMINDER",
-            anchors: [
-              {
-                selector: "#tab-pickup-container",
-                arrow_position: "top",
-              },
-            ],
-            content: {
-              position: "callout",
-              title: {
-                string_id:
-                  "continuous-onboarding-firefox-view-tab-pickup-title",
-              },
-              subtitle: {
-                string_id:
-                  "continuous-onboarding-firefox-view-tab-pickup-subtitle",
-              },
-              logo: {
-                imageURL: "chrome://browser/content/callout-tab-pickup.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/callout-tab-pickup-dark.svg",
-                height: "128px",
-              },
-              primary_button: {
-                label: {
-                  string_id: "mr1-onboarding-get-started-primary-button-label",
-                },
-                style: "secondary",
-                action: {
-                  type: "CLICK_ELEMENT",
-                  navigate: true,
-                  data: {
-                    selector:
-                      "#tab-pickup-container button.primary:not(#error-state-button)",
-                  },
-                },
-              },
-              dismiss_button: {
-                action: {
-                  navigate: true,
-                },
-              },
-              page_event_listeners: [
-                {
-                  params: {
-                    type: "toggle",
-                    selectors: "#tab-pickup-container",
-                  },
-                  action: { reposition: true },
-                },
-              ],
-            },
-          },
-        ],
-      },
-      priority: 2,
-      targeting: `source == "about:firefoxview" && "browser.firefox-view.view-count" | preferenceValue > 2
-    && (("identity.fxaccounts.enabled" | preferenceValue == false) || !(("services.sync.engine.tabs" | preferenceValue == true) && ("services.sync.username" | preferenceValue))) && (!messageImpressions.FIREFOX_VIEW_SPOTLIGHT[messageImpressions.FIREFOX_VIEW_SPOTLIGHT | length - 1] || messageImpressions.FIREFOX_VIEW_SPOTLIGHT[messageImpressions.FIREFOX_VIEW_SPOTLIGHT | length - 1] < currentDate|date - ${ONE_DAY_IN_MS})`,
-      frequency: {
-        lifetime: 1,
-      },
-      trigger: { id: "featureCalloutCheck" },
-    },
-    {
       id: "PDFJS_FEATURE_TOUR_A",
       template: "feature_callout",
       content: {
@@ -1303,589 +1304,133 @@ const MESSAGES = () => {
       targeting: `'cookiebanners.ui.desktop.enabled'|preferenceValue == true && 'cookiebanners.ui.desktop.showCallout'|preferenceValue == true && 'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue != false`,
     },
     {
-      id: "FX_VIEW_DISCOVERABILITY_ALL_USERS",
-      template: "feature_callout",
-      groups: ["cfr"],
-      content: {
-        id: "FX_VIEW_DISCOVERABILITY_ALL_USERS",
-        template: "multistage",
-        backdrop: "transparent",
-        transitions: false,
-        screens: [
-          {
-            id: "FX_VIEW_DISCOVERABILITY_ALL_USERS_SCREEN",
-            anchors: [
-              {
-                selector: "#firefox-view-button",
-                panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topleft",
-                },
-                no_open_on_anchor: true,
-                arrow_width: "15.5563",
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "342px",
-              padding: 16,
-              page_event_listeners: [
-                {
-                  params: {
-                    type: "click",
-                    selectors: "#firefox-view-button",
-                  },
-                  action: {
-                    dismiss: true,
-                  },
-                },
-              ],
-              title_logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/fox-question-mark-icon.svg",
-                width: "25px",
-                height: "29px",
-                marginInline: "4px 14px",
-                alignment: "top",
-              },
-              title: {
-                string_id: "fx-view-discoverability-title",
-                marginInline: "0 16px",
-              },
-              subtitle: {
-                string_id: "fx-view-discoverability-subtitle",
-                paddingInline: "34px 0",
-                marginBlock: "-8px -4px",
-              },
-              additional_button: {
-                label: {
-                  string_id: "fx-view-discoverability-secondary-button-label",
-                },
-                style: "secondary",
-                action: {
-                  type: "BLOCK_MESSAGE",
-                  data: {
-                    id: "FX_VIEW_DISCOVERABILITY_ALL_USERS",
-                  },
-                  dismiss: true,
-                },
-              },
-              secondary_button: {
-                label: {
-                  string_id: "fx-view-discoverability-primary-button-label",
-                },
-                style: "primary",
-                action: {
-                  type: "OPEN_FIREFOX_VIEW",
-                  navigate: true,
-                },
-              },
-              submenu_button: {
-                submenu: [
-                  {
-                    type: "action",
-                    label: {
-                      string_id: "split-dismiss-button-dont-show-option",
-                    },
-                    action: {
-                      type: "BLOCK_MESSAGE",
-                      data: {
-                        id: "FX_VIEW_DISCOVERABILITY_ALL_USERS",
-                      },
-                      dismiss: true,
-                    },
-                    id: "block_recommendation",
-                  },
-                  {
-                    type: "action",
-                    label: {
-                      string_id: "split-dismiss-button-show-fewer-option",
-                    },
-                    action: {
-                      type: "MULTI_ACTION",
-                      dismiss: true,
-                      data: {
-                        actions: [
-                          {
-                            type: "SET_PREF",
-                            data: {
-                              pref: {
-                                name: "messaging-system-action.firefox-view-recommendations",
-                                value: true,
-                              },
-                            },
-                          },
-                          {
-                            type: "BLOCK_MESSAGE",
-                            data: {
-                              id: "FX_VIEW_DISCOVERABILITY_ALL_USERS",
-                            },
-                          },
-                        ],
-                      },
-                    },
-                    id: "show_fewer_recommendations",
-                  },
-                  {
-                    type: "separator",
-                  },
-                  {
-                    type: "action",
-                    label: {
-                      string_id: "split-dismiss-button-manage-settings-option",
-                    },
-                    action: {
-                      type: "OPEN_ABOUT_PAGE",
-                      data: {
-                        args: "preferences#general-cfrfeatures",
-                        where: "tab",
-                      },
-                      dismiss: true,
-                    },
-                    id: "manage_settings",
-                  },
-                ],
-                attached_to: "additional_button",
-              },
-            },
-          },
-        ],
+      id: "NEW_PROFILE_APP_MENU_TOUR",
+      groups: [],
+      profileScope: "single",
+      targeting:
+        "'browser.profiles.profile-name.updated' | preferenceValue == true && userPrefs.cfrFeatures",
+      trigger: {
+        id: "preferenceObserver",
+        params: ["browser.profiles.profile-name.updated"],
       },
       frequency: {
         lifetime: 1,
       },
       skip_in_tests: "it's not tested in automation",
-      targeting:
-        "!isMajorUpgrade && !willShowDefaultPrompt && !activeNotifications && previousSessionEnd && fxViewButtonAreaType != null && tabsClosedCount >= 5 && (currentDate|date - profileAgeCreated|date) / 86400000 >= 7 && 'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue != false",
-      trigger: {
-        id: "nthTabClosed",
-      },
-    },
-    {
-      id: "RECOMMEND_BOOKMARKS_TOOLBAR",
-      groups: ["cfr"],
       template: "feature_callout",
       content: {
-        id: "RECOMMEND_BOOKMARKS_TOOLBAR",
+        id: "NEW_PROFILE_APP_MENU_TOUR",
         template: "multistage",
         backdrop: "transparent",
         transitions: false,
         disableHistoryUpdates: true,
         screens: [
           {
-            id: "RECOMMEND_BOOKMARKS_TOOLBAR_1",
-            force_hide_steps_indicator: true,
+            id: "NEW_PROFILE_APP_MENU_TOUR",
             anchors: [
               {
-                selector:
-                  "#tabbrowser-tabs:not([overflow]) %triggerTab%[visuallyselected] .tab-content .tab-icon-stack",
+                selector: "#PanelUI-button",
                 panel_position: {
-                  anchor_attachment: "bottomcenter",
-                  callout_attachment: "topleft",
-                  offset_x: -3,
-                  offset_y: 4,
+                  anchor_attachment: "leftcenter",
+                  callout_attachment: "topright",
                 },
               },
             ],
             content: {
               position: "callout",
-              width: "370px",
-              padding: 16,
               logo: {
                 imageURL:
-                  "chrome://browser/content/asrouter/assets/recommend-bookmarks-toolbar/bookmarks-toolbar-light.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/asrouter/assets/recommend-bookmarks-toolbar/bookmarks-toolbar-dark.svg",
-                height: "170px",
-                width: "338px",
-              },
-              title_logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/smiling-fox-icon.svg",
-                alignment: "top",
-                width: "24px",
-                height: "24px",
-                marginInline: "0 12px",
+                  "chrome://browser/content/asrouter/assets/fox-with-profiles.svg",
+                height: "100%",
+                width: "100%",
               },
               title: {
-                string_id: "bookmarks-toolbar-callout-1-title",
+                string_id: "profiles-appmenu-callout-tour-title",
+                paddingBlock: "8px",
               },
               subtitle: {
-                string_id: "bookmarks-toolbar-callout-1-subtitle",
-                marginInline: "28px 0",
-                marginBlock: "-8px 0",
+                string_id: "profiles-appmenu-callout-tour-subtitle",
               },
-              additional_button: {
-                label: {
-                  string_id:
-                    "bookmarks-toolbar-callout-1-secondary-button-label",
-                },
-                style: "secondary",
+              dismiss_button: {
+                size: "small",
+                background: true,
+                marginInline: "0 21px",
+                marginBlock: "21px 0",
                 action: {
-                  type: "SET_BOOKMARKS_TOOLBAR_VISIBILITY",
-                  data: {
-                    visibility: "always",
-                  },
-                  advance_screens: {
-                    id: "RECOMMEND_BOOKMARKS_TOOLBAR_2B_DECLINE",
-                  },
-                  navigate: true,
-                },
-              },
-              submenu_button: {
-                submenu: [
-                  {
-                    type: "action",
-                    label: {
-                      string_id: "split-dismiss-button-dont-show-option",
-                    },
-                    action: {
-                      type: "BLOCK_MESSAGE",
-                      data: {
-                        id: "RECOMMEND_BOOKMARKS_TOOLBAR",
-                      },
-                      dismiss: true,
-                    },
-                    id: "block_recommendation",
-                  },
-                  {
-                    type: "action",
-                    label: {
-                      string_id: "split-dismiss-button-show-fewer-option",
-                    },
-                    action: {
-                      type: "MULTI_ACTION",
-                      dismiss: true,
-                      data: {
-                        actions: [
-                          {
-                            type: "SET_PREF",
-                            data: {
-                              pref: {
-                                name: "messaging-system-action.show-fewer-bookmarks-recommendations",
-                                value: true,
-                              },
-                            },
-                          },
-                          {
-                            type: "BLOCK_MESSAGE",
-                            data: {
-                              id: "RECOMMEND_BOOKMARKS_TOOLBAR",
-                            },
-                          },
-                        ],
-                      },
-                    },
-                    id: "show_fewer_recommendations",
-                  },
-                  {
-                    type: "separator",
-                  },
-                  {
-                    type: "action",
-                    label: {
-                      string_id: "split-dismiss-button-manage-settings-option",
-                    },
-                    action: {
-                      type: "OPEN_ABOUT_PAGE",
-                      data: {
-                        args: "preferences#general-cfrfeatures",
-                        where: "tab",
-                      },
-                      dismiss: true,
-                    },
-                    id: "manage_settings",
-                  },
-                ],
-                attached_to: "additional_button",
-              },
-              secondary_button: {
-                label: {
-                  string_id: "bookmarks-toolbar-callout-1-primary-button-label",
-                },
-                style: "primary",
-                action: {
-                  type: "MULTI_ACTION",
-                  advance_screens: {
-                    id: "RECOMMEND_BOOKMARKS_TOOLBAR_2A_ACCEPT",
-                  },
-                  navigate: true,
-                  data: {
-                    actions: [
-                      {
-                        type: "BOOKMARK_CURRENT_TAB",
-                        data: {
-                          shouldHideDialog: true,
-                          shouldHideConfirmationHint: true,
-                        },
-                      },
-                      {
-                        type: "SET_BOOKMARKS_TOOLBAR_VISIBILITY",
-                        data: {
-                          visibility: "always",
-                        },
-                      },
-                    ],
-                  },
-                },
-              },
-            },
-          },
-          {
-            id: "RECOMMEND_BOOKMARKS_TOOLBAR_2A_ACCEPT",
-            force_hide_steps_indicator: true,
-            anchors: [
-              {
-                selector: "%triggeredTabBookmark%",
-                panel_position: {
-                  offset_x: 12,
-                  anchor_attachment: "bottomleft",
-                  callout_attachment: "topleft",
-                },
-              },
-              {
-                selector: "#PlacesToolbarItems",
-                panel_position: {
-                  anchor_attachment: "bottomleft",
-                  callout_attachment: "topleft",
-                },
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "370px",
-              padding: 16,
-              logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/recommend-bookmarks-toolbar/drag-drop-bookmark-light.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/asrouter/assets/recommend-bookmarks-toolbar/drag-drop-bookmark-dark.svg",
-                height: "170px",
-                width: "338px",
-              },
-              title_logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/double-star-icon.svg",
-                alignment: "top",
-                width: "24px",
-                height: "24px",
-                marginInline: "0 12px",
-              },
-              title: {
-                string_id: "bookmarks-toolbar-callout-2a-title",
-              },
-              subtitle: {
-                string_id: "bookmarks-toolbar-callout-2a-subtitle",
-                marginInline: "28px 0",
-                marginBlock: "-8px 0",
-              },
-              secondary_button: {
-                label: {
-                  string_id:
-                    "bookmarks-toolbar-callout-2a-primary-button-label",
-                },
-                style: "primary",
-                action: {
-                  type: "BLOCK_MESSAGE",
-                  data: {
-                    id: "RECOMMEND_BOOKMARKS_TOOLBAR",
-                  },
                   dismiss: true,
                 },
               },
               primary_button: {
                 label: {
-                  string_id:
-                    "bookmarks-toolbar-callout-2a-secondary-button-label",
+                  string_id: "profiles-appmenu-callout-tour-primary-button",
                 },
-                style: "secondary",
                 action: {
-                  type: "MULTI_ACTION",
-                  dismiss: true,
-                  data: {
-                    actions: [
-                      {
-                        type: "SET_BOOKMARKS_TOOLBAR_VISIBILITY",
-                        data: {
-                          visibility: "newtab",
-                        },
-                      },
-                      {
-                        type: "BLOCK_MESSAGE",
-                        data: {
-                          id: "RECOMMEND_BOOKMARKS_TOOLBAR",
-                        },
-                      },
-                    ],
-                  },
-                },
-              },
-            },
-          },
-          {
-            id: "RECOMMEND_BOOKMARKS_TOOLBAR_2B_DECLINE",
-            force_hide_steps_indicator: true,
-            anchors: [
-              {
-                selector:
-                  "#PersonalToolbar:has(#import-button) #PlacesToolbarItems",
-                panel_position: {
-                  anchor_attachment: "bottomleft",
-                  callout_attachment: "topleft",
-                },
-              },
-              {
-                selector: "#PlacesToolbarItems",
-                panel_position: {
-                  anchor_attachment: "bottomleft",
-                  callout_attachment: "topleft",
-                  offset_x: 24,
-                },
-              },
-            ],
-            content: {
-              position: "callout",
-              width: "370px",
-              padding: 16,
-              logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/recommend-bookmarks-toolbar/drag-drop-bookmark-light.svg",
-                darkModeImageURL:
-                  "chrome://browser/content/asrouter/assets/recommend-bookmarks-toolbar/drag-drop-bookmark-dark.svg",
-                height: "170px",
-                width: "338px",
-              },
-              title_logo: {
-                imageURL:
-                  "chrome://browser/content/asrouter/assets/double-star-icon.svg",
-                alignment: "top",
-                width: "24px",
-                height: "24px",
-                marginInline: "0 12px",
-              },
-              title: {
-                string_id: "bookmarks-toolbar-callout-2b-title",
-              },
-              subtitle: {
-                string_id: "bookmarks-toolbar-callout-2b-subtitle",
-                marginInline: "28px 0",
-                marginBlock: "-8px 0",
-              },
-              secondary_button: {
-                label: {
-                  string_id:
-                    "bookmarks-toolbar-callout-2b-primary-button-label",
-                },
-                style: "primary",
-                action: {
-                  type: "BLOCK_MESSAGE",
-                  data: {
-                    id: "RECOMMEND_BOOKMARKS_TOOLBAR",
-                  },
-                  dismiss: true,
-                },
-              },
-              primary_button: {
-                label: {
-                  string_id:
-                    "bookmarks-toolbar-callout-2b-secondary-button-label",
-                },
-                style: "secondary",
-                action: {
-                  type: "MULTI_ACTION",
-                  dismiss: true,
-                  data: {
-                    actions: [
-                      {
-                        type: "SET_BOOKMARKS_TOOLBAR_VISIBILITY",
-                        data: {
-                          visibility: "newtab",
-                        },
-                      },
-                      {
-                        type: "BLOCK_MESSAGE",
-                        data: {
-                          id: "RECOMMEND_BOOKMARKS_TOOLBAR",
-                        },
-                      },
-                    ],
-                  },
+                  navigate: true,
+                  type: "HIGHLIGHT_FEATURE",
+                  data: { args: "profilesAppMenuButton" },
                 },
               },
             },
           },
         ],
+      },
+    },
+    {
+      id: "SMARTWINDOW_NEWTAB_CALLOUT",
+      template: "feature_callout",
+      groups: ["cfr"],
+      content: {
+        id: "SMARTWINDOW_NEWTAB_CALLOUT",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        screens: [
+          {
+            id: "SMARTWINDOW_SWITCHER_BUTTON_CALLOUT",
+            anchors: [
+              {
+                selector: "#ai-window-toggle > .toolbarbutton-icon",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+                arrow_width: 23,
+                arrow_corner_distance: 4,
+              },
+            ],
+            content: {
+              padding: 12,
+              position: "callout",
+              width: "248px",
+              title: {
+                string_id: "smartwindow-switcher-callout",
+                fontSize: "15px",
+                fontWeight: "400",
+                letterSpacing: "normal",
+                lineHeight: "normal",
+                marginInline: "0 18px",
+              },
+              dismiss_button: {
+                size: "x-small",
+                marginBlock: "8px 0",
+                marginInline: "0 8px",
+                action: {
+                  dismiss: true,
+                },
+              },
+            },
+          },
+        ],
+      },
+      targeting:
+        "isAIWindow && 'browser.smartwindow.firstrun.hasCompleted' | preferenceValue",
+      skip_in_tests: "it's not tested in automation",
+      trigger: {
+        id: "smartWindowNewTab",
       },
       frequency: {
         lifetime: 1,
       },
-      priority: 1,
-      targeting:
-        "'browser.toolbars.bookmarks.visibility'|preferenceIsUserSet == false && visitsCount >= 3 && (currentDate|date - profileAgeCreated|date) / 86400000 >= 7 && !os.isLinux && !willShowDefaultPrompt && !activeNotifications && previousSessionEnd && 'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue != false",
-      trigger: {
-        id: "openURL",
-        patterns: [
-          "https://mail.google.com/*",
-          "https://mail.aol.com/*",
-          "https://outlook.live.com/*",
-          "https://app.neo.space/mail/*",
-          "https://mail.yahoo.com/*",
-          "https://www.icloud.com/mail/*",
-          "https://www.zoho.com/mail/*",
-          "https://account.proton.me/mail/*",
-          "https://navigator-bs.gmx.com/mail/*",
-          "https://tuta.com/*",
-          "https://mailfence.com/*",
-          "https://360.yandex.com/mail/*",
-          "https://titan.email/*",
-          "https://posteo.de/en/*",
-          "https://runbox.com/*",
-          "https://webmail.countermail.com/*",
-          "https://kolabnow.com/*",
-          "https://soverin.net/mail/*",
-          "https://calendar.google.com/*",
-          "https://www.calendar.com/*",
-          "https://www.icloud.com/calendar/*",
-          "https://www.zoho.com/calendar/*",
-          "https://www.cozi.com/*",
-          "https://kalender.digital/*",
-          "https://www.kalender.com/*",
-          "https://proton.me/de/calendar/*",
-          "https://www.stackfield.com/de/*",
-          "https://www.any.do/*",
-          "https://zeeg.me/en/*",
-          "https://www.pandora.com/*",
-          "https://open.spotify.com/*",
-          "https://tunein.com/radio/home/*",
-          "https://www.iheart.com/*",
-          "https://www.accuradio.com/*",
-          "https://www.siriusxm.com/*",
-          "https://www.jango.com/*",
-          "https://live365.com/*",
-          "https://www.radioguide.fm/*",
-          "https://worldwidefm.net/*",
-          "https://www.radio.net/s/fip/*",
-          "https://www.nts.live/*",
-          "https://vintagefm.com.au/*",
-          "https://www.kcrw.com/music/shows/eclectic24/*",
-          "https://sohoradiolondon.com/*",
-          "https://power1051.iheart.com/*",
-          "https://www.balamii.com/*",
-          "https://www.cinemix.us/*",
-          "https://www.kexp.org/*",
-          "https://www.dublab.com/*",
-          "https://www.facebook.com/*",
-          "https://www.reddit.com/*",
-          "https://www.instagram.com/*",
-          "https://www.TikTok.com/*",
-          "https://www.Pinterest.com/*",
-          "https://twitter.com/*",
-          "https://www.linkedin.com/*",
-          "https://www.quora.com/*",
-          "https://www.tumblr.com/*",
-        ],
-      },
-      skip_in_tests: "it's not tested in automation",
     },
   ];
   messages = add24HourImpressionJEXLTargeting(

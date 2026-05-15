@@ -22,7 +22,7 @@
 </div>
 <pre id="test">
 <script class="testbody" type="text/javascript"><![CDATA[
-  /** Originally written by Ian Hickson. **/
+  /** Originally written by Ian Hickson. */
 
   function check(f, e, label) {
     var eid = e.id;
@@ -49,7 +49,7 @@
       p.removeChild(a);
   }
 
-  /** Removal of nodes that should have no effect **/
+  /** Removal of nodes that should have no effect */
   (function () {
     var root = $('root1');
     var A = $('A');
@@ -79,7 +79,7 @@
     check(iterator.nextNode(), D, '1.4');
   })();
 
-  /** Removal of the reference node **/
+  /** Removal of the reference node */
   (function () {
     var root = $('root2');
     var F = $('F');
@@ -99,7 +99,7 @@
     check(iterator.nextNode(), H, '2.5');
   })();
 
-  /** Removal of the reference node (deep check) **/
+  /** Removal of the reference node (deep check) */
   (function () {
     var root = $('root3');
     var I = $('I');
@@ -126,7 +126,7 @@
     check(iterator.nextNode(), KK, '3.9');
   })();
 
-  /** Removal of an ancestor of the Reference Node (forwards) **/
+  /** Removal of an ancestor of the Reference Node (forwards) */
   (function () {
     var root = $('root4');
     var L = $('L');
@@ -144,7 +144,7 @@
     check(iterator.previousNode(), L, '4.5');
   })();
 
-  /** Removal of an ancestor of the Reference Node (forwards) (deep check) **/
+  /** Removal of an ancestor of the Reference Node (forwards) (deep check) */
   (function () {
     var root = $('root5');
     var O = $('O');
@@ -163,7 +163,7 @@
     check(iterator.nextNode(), X, '5.5');
   })();
 
-  /** Removal of an ancestor of the Reference Node (backwards) **/
+  /** Removal of an ancestor of the Reference Node (backwards) */
   (function () {
     var root = $('root6');
     var R = $('R');
@@ -182,7 +182,7 @@
     check(iterator.nextNode(), T, '6.6');
   })();
 
-  /** Removal of an ancestor of the Reference Node (backwards) (deep check) **/
+  /** Removal of an ancestor of the Reference Node (backwards) (deep check) */
   (function () {
     var root = $('root7');
     var U = $('U');

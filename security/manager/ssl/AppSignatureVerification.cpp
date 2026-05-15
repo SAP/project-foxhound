@@ -6,6 +6,7 @@
 
 #include "nsNSSCertificateDB.h"
 
+#include "AppSignatureVerification.h"
 #include "AppTrustDomain.h"
 #include "CryptoTask.h"
 #include "NSSCertDBTrustDomain.h"
@@ -20,8 +21,6 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDependentString.h"
@@ -46,6 +45,143 @@ using namespace mozilla;
 using namespace mozilla::psm;
 
 extern mozilla::LazyLogModule gPIPNSSLog;
+
+Span<const uint8_t> GetPKCS7SignerCert(
+    NSSCMSSignerInfo* signerInfo,
+    nsTArray<Span<const uint8_t>>& collectedCerts) {
+  if (!signerInfo) {
+    return {};
+  }
+  // The NSS APIs use the term "CMS", but since these are all signed by Mozilla
+  // infrastructure, we know they are actually PKCS7. This means that this only
+  // needs to handle issuer/serial number signer identifiers.
+  if (signerInfo->signerIdentifier.identifierType != NSSCMSSignerID_IssuerSN) {
+    return {};
+  }
+  CERTIssuerAndSN* issuerAndSN = signerInfo->signerIdentifier.id.issuerAndSN;
+  if (!issuerAndSN) {
+    return {};
+  }
+  Input issuer;
+  mozilla::pkix::Result result =
+      issuer.Init(issuerAndSN->derIssuer.data, issuerAndSN->derIssuer.len);
+  if (result != Success) {
+    return {};
+  }
+  Input serialNumber;
+  result = serialNumber.Init(issuerAndSN->serialNumber.data,
+                             issuerAndSN->serialNumber.len);
+  if (result != Success) {
+    return {};
+  }
+  for (const auto& certDER : collectedCerts) {
+    Input certInput;
+    result = certInput.Init(certDER.Elements(), certDER.Length());
+    if (result != Success) {
+      continue;  // probably too big
+    }
+    // Since this only decodes the certificate and doesn't attempt to build a
+    // verified chain with it, the EndEntityOrCA parameter doesn't matter.
+    BackCert cert(certInput, EndEntityOrCA::MustBeEndEntity, nullptr);
+    result = cert.Init();
+    if (result != Success) {
+      continue;
+    }
+    if (InputsAreEqual(issuer, cert.GetIssuer()) &&
+        InputsAreEqual(serialNumber, cert.GetSerialNumber())) {
+      return certDER;
+    }
+  }
+  return {};
+}
+
+NSSCMSSignedData* GetSignedDataContent(NSSCMSMessage* cmsg) {
+  NSSCMSContentInfo* cinfo = NSS_CMSMessage_ContentLevel(cmsg, 0);
+  if (!cinfo) {
+    return nullptr;
+  }
+
+  if (NSS_CMSContentInfo_GetContentTypeTag(cinfo) !=
+      SEC_OID_PKCS7_SIGNED_DATA) {
+    return nullptr;
+  }
+
+  return static_cast<NSSCMSSignedData*>(NSS_CMSContentInfo_GetContent(cinfo));
+}
+
+void CollectCertificates(NSSCMSSignedData* signedData,
+                         nsTArray<Span<const uint8_t>>& collectedCerts) {
+  if (signedData->rawCerts) {
+    for (size_t i = 0; signedData->rawCerts[i]; ++i) {
+      Span<const uint8_t> cert(signedData->rawCerts[i]->data,
+                               signedData->rawCerts[i]->len);
+      collectedCerts.AppendElement(std::move(cert));
+    }
+  }
+}
+
+nsresult VerifySignatureFromCertificate(Span<const uint8_t> signerCertSpan,
+                                        NSSCMSSignerInfo* signerInfo,
+                                        SECItem* detachedDigest) {
+  // Ensure that the PKCS#7 data OID is present as the PKCS#9 contentType.
+  const char* pkcs7DataOidString = "1.2.840.113549.1.7.1";
+  ScopedAutoSECItem pkcs7DataOid;
+  if (SEC_StringToOID(nullptr, &pkcs7DataOid, pkcs7DataOidString, 0) !=
+      SECSuccess) {
+    return NS_ERROR_CMS_VERIFY_ERROR_PROCESSING;
+  }
+
+  // NSS_CMSSignerInfo_Verify relies on NSS_CMSSignerInfo_GetSigningCertificate
+  // having been called already. This relies on the signing certificate being
+  // decoded as a CERTCertificate.
+  // This assertion should never fail, as this certificate has been
+  // successfully verified, which means it fits in the size of an unsigned int.
+  SECItem signingCertificateItem = {
+      siBuffer, const_cast<unsigned char*>(signerCertSpan.Elements()),
+      AssertedCast<unsigned int>(signerCertSpan.Length())};
+  UniqueCERTCertificate signingCertificateHandle(CERT_NewTempCertificate(
+      CERT_GetDefaultCertDB(), &signingCertificateItem, nullptr, false, true));
+  if (!signingCertificateHandle) {
+    return mozilla::psm::GetXPCOMFromNSSError(SEC_ERROR_PKCS7_BAD_SIGNATURE);
+  }
+  // NB: This function does not return an owning reference, unlike with many
+  // other NSS APIs.
+  if (!NSS_CMSSignerInfo_GetSigningCertificate(signerInfo,
+                                               CERT_GetDefaultCertDB())) {
+    return mozilla::psm::GetXPCOMFromNSSError(SEC_ERROR_PKCS7_BAD_SIGNATURE);
+  }
+  return MapSECStatus(NSS_CMSSignerInfo_Verify(
+      signerInfo, const_cast<SECItem*>(detachedDigest), &pkcs7DataOid));
+}
+
+void GetAllSignerInfosForSupportedDigestAlgorithms(
+    NSSCMSSignedData* signedData,
+    /* out */ nsTArray<std::tuple<NSSCMSSignerInfo*, SECOidTag>>& signerInfos) {
+  static constexpr SECOidTag kSupportedDigestAlgorithms[] = {SEC_OID_SHA256,
+                                                             SEC_OID_SHA1};
+
+  int numSigners = NSS_CMSSignedData_SignerInfoCount(signedData);
+  if (numSigners < 1) {
+    return;
+  }
+
+  for (const auto& digestAlgorithm : kSupportedDigestAlgorithms) {
+    for (int i = 0; i < numSigners; i++) {
+      NSSCMSSignerInfo* signerInfo =
+          NSS_CMSSignedData_GetSignerInfo(signedData, i);
+      // NSS_CMSSignerInfo_GetDigestAlgTag isn't exported from NSS.
+      SECOidData* digestAlgOID =
+          SECOID_FindOID(&signerInfo->digestAlg.algorithm);
+      if (!digestAlgOID) {
+        continue;
+      }
+
+      if (digestAlgOID->offset == digestAlgorithm) {
+        signerInfos.AppendElement(std::make_tuple(signerInfo, digestAlgorithm));
+      }
+    }
+  }
+}
 
 namespace {
 
@@ -665,89 +801,6 @@ nsresult VerifyCertificate(Span<const uint8_t> signerCert,
   return NS_OK;
 }
 
-// Given a SECOidTag representing a digest algorithm (either SEC_OID_SHA1 or
-// SEC_OID_SHA256), returns the first signerInfo in the given signedData that
-// purports to have been created using that digest algorithm, or nullptr if
-// there is none.
-// The returned signerInfo is owned by signedData, so the caller must ensure
-// that the lifetime of the signerInfo is contained by the lifetime of the
-// signedData.
-NSSCMSSignerInfo* GetSignerInfoForDigestAlgorithm(NSSCMSSignedData* signedData,
-                                                  SECOidTag digestAlgorithm) {
-  MOZ_ASSERT(digestAlgorithm == SEC_OID_SHA1 ||
-             digestAlgorithm == SEC_OID_SHA256);
-  if (digestAlgorithm != SEC_OID_SHA1 && digestAlgorithm != SEC_OID_SHA256) {
-    return nullptr;
-  }
-
-  int numSigners = NSS_CMSSignedData_SignerInfoCount(signedData);
-  if (numSigners < 1) {
-    return nullptr;
-  }
-  for (int i = 0; i < numSigners; i++) {
-    NSSCMSSignerInfo* signerInfo =
-        NSS_CMSSignedData_GetSignerInfo(signedData, i);
-    // NSS_CMSSignerInfo_GetDigestAlgTag isn't exported from NSS.
-    SECOidData* digestAlgOID = SECOID_FindOID(&signerInfo->digestAlg.algorithm);
-    if (!digestAlgOID) {
-      continue;
-    }
-    if (digestAlgorithm == digestAlgOID->offset) {
-      return signerInfo;
-    }
-  }
-  return nullptr;
-}
-
-Span<const uint8_t> GetPKCS7SignerCert(
-    NSSCMSSignerInfo* signerInfo,
-    nsTArray<Span<const uint8_t>>& collectedCerts) {
-  if (!signerInfo) {
-    return {};
-  }
-  // The NSS APIs use the term "CMS", but since these are all signed by Mozilla
-  // infrastructure, we know they are actually PKCS7. This means that this only
-  // needs to handle issuer/serial number signer identifiers.
-  if (signerInfo->signerIdentifier.identifierType != NSSCMSSignerID_IssuerSN) {
-    return {};
-  }
-  CERTIssuerAndSN* issuerAndSN = signerInfo->signerIdentifier.id.issuerAndSN;
-  if (!issuerAndSN) {
-    return {};
-  }
-  Input issuer;
-  mozilla::pkix::Result result =
-      issuer.Init(issuerAndSN->derIssuer.data, issuerAndSN->derIssuer.len);
-  if (result != Success) {
-    return {};
-  }
-  Input serialNumber;
-  result = serialNumber.Init(issuerAndSN->serialNumber.data,
-                             issuerAndSN->serialNumber.len);
-  if (result != Success) {
-    return {};
-  }
-  for (const auto& certDER : collectedCerts) {
-    Input certInput;
-    result = certInput.Init(certDER.Elements(), certDER.Length());
-    if (result != Success) {
-      continue;  // probably too big
-    }
-    // Since this only decodes the certificate and doesn't attempt to build a
-    // verified chain with it, the EndEntityOrCA parameter doesn't matter.
-    BackCert cert(certInput, EndEntityOrCA::MustBeEndEntity, nullptr);
-    result = cert.Init();
-    if (result != Success) {
-      continue;
-    }
-    if (InputsAreEqual(issuer, cert.GetIssuer()) &&
-        InputsAreEqual(serialNumber, cert.GetSerialNumber())) {
-      return certDER;
-    }
-  }
-  return {};
-}
-
 nsresult VerifySignature(AppTrustedRoot trustedRoot, const SECItem& buffer,
                          nsTArray<uint8_t>& detachedSHA1Digest,
                          nsTArray<uint8_t>& detachedSHA256Digest,
@@ -770,47 +823,39 @@ nsresult VerifySignature(AppTrustedRoot trustedRoot, const SECItem& buffer,
     return NS_ERROR_CMS_VERIFY_NOT_SIGNED;
   }
 
-  NSSCMSContentInfo* cinfo = NSS_CMSMessage_ContentLevel(cmsMsg.get(), 0);
-  if (!cinfo) {
-    return NS_ERROR_CMS_VERIFY_NO_CONTENT_INFO;
-  }
-
-  // We're expecting this to be a PKCS#7 signedData content info.
-  if (NSS_CMSContentInfo_GetContentTypeTag(cinfo) !=
-      SEC_OID_PKCS7_SIGNED_DATA) {
-    return NS_ERROR_CMS_VERIFY_NO_CONTENT_INFO;
-  }
-
-  // signedData is non-owning
-  NSSCMSSignedData* signedData =
-      static_cast<NSSCMSSignedData*>(NSS_CMSContentInfo_GetContent(cinfo));
+  NSSCMSSignedData* signedData = GetSignedDataContent(cmsMsg.get());
   if (!signedData) {
     return NS_ERROR_CMS_VERIFY_NO_CONTENT_INFO;
   }
 
   nsTArray<Span<const uint8_t>> collectedCerts;
-  if (signedData->rawCerts) {
-    for (size_t i = 0; signedData->rawCerts[i]; ++i) {
-      Span<const uint8_t> cert(signedData->rawCerts[i]->data,
-                               signedData->rawCerts[i]->len);
-      collectedCerts.AppendElement(std::move(cert));
-    }
+  CollectCertificates(signedData, collectedCerts);
+  if (collectedCerts.Length() == 0) {
+    return NS_ERROR_CMS_VERIFY_NOCERT;
   }
 
-  NSSCMSSignerInfo* signerInfo =
-      GetSignerInfoForDigestAlgorithm(signedData, SEC_OID_SHA256);
-  nsTArray<uint8_t>* tmpDetachedDigest = &detachedSHA256Digest;
-  digestAlgorithm = SEC_OID_SHA256;
-  if (!signerInfo) {
-    signerInfo = GetSignerInfoForDigestAlgorithm(signedData, SEC_OID_SHA1);
-    if (!signerInfo) {
-      return NS_ERROR_CMS_VERIFY_NOT_SIGNED;
-    }
+  nsTArray<std::tuple<NSSCMSSignerInfo*, SECOidTag>> signerInfos;
+
+  GetAllSignerInfosForSupportedDigestAlgorithms(signedData, signerInfos);
+
+  if (signerInfos.Length() == 0) {
+    return NS_ERROR_CMS_VERIFY_NOT_SIGNED;
+  }
+
+  // The signerInfo with the hash function with the highest priority is used
+  NSSCMSSignerInfo* signerInfo = std::get<0>(signerInfos[0]);
+  digestAlgorithm = std::get<1>(signerInfos[0]);
+
+  nsTArray<uint8_t>* tmpDetachedDigest;
+  if (digestAlgorithm == SEC_OID_SHA256) {
+    tmpDetachedDigest = &detachedSHA256Digest;
+  } else if (digestAlgorithm == SEC_OID_SHA1) {
     tmpDetachedDigest = &detachedSHA1Digest;
-    digestAlgorithm = SEC_OID_SHA1;
+  } else {
+    return NS_ERROR_CMS_VERIFY_ERROR_PROCESSING;
   }
 
-  const SECItem detachedDigest = {
+  SECItem detachedDigest = {
       siBuffer, tmpDetachedDigest->Elements(),
       static_cast<unsigned int>(tmpDetachedDigest->Length())};
 
@@ -829,35 +874,8 @@ nsresult VerifySignature(AppTrustedRoot trustedRoot, const SECItem& buffer,
   signerCert.Clear();
   signerCert.AppendElements(signerCertSpan);
 
-  // Ensure that the PKCS#7 data OID is present as the PKCS#9 contentType.
-  const char* pkcs7DataOidString = "1.2.840.113549.1.7.1";
-  ScopedAutoSECItem pkcs7DataOid;
-  if (SEC_StringToOID(nullptr, &pkcs7DataOid, pkcs7DataOidString, 0) !=
-      SECSuccess) {
-    return NS_ERROR_CMS_VERIFY_ERROR_PROCESSING;
-  }
-
-  // NSS_CMSSignerInfo_Verify relies on NSS_CMSSignerInfo_GetSigningCertificate
-  // having been called already. This relies on the signing certificate being
-  // decoded as a CERTCertificate.
-  // This assertion should never fail, as this certificate has been
-  // successfully verified, which means it fits in the size of an unsigned int.
-  SECItem signingCertificateItem = {
-      siBuffer, const_cast<unsigned char*>(signerCertSpan.Elements()),
-      AssertedCast<unsigned int>(signerCertSpan.Length())};
-  UniqueCERTCertificate signingCertificateHandle(CERT_NewTempCertificate(
-      CERT_GetDefaultCertDB(), &signingCertificateItem, nullptr, false, true));
-  if (!signingCertificateHandle) {
-    return mozilla::psm::GetXPCOMFromNSSError(SEC_ERROR_PKCS7_BAD_SIGNATURE);
-  }
-  // NB: This function does not return an owning reference, unlike with many
-  // other NSS APIs.
-  if (!NSS_CMSSignerInfo_GetSigningCertificate(signerInfo,
-                                               CERT_GetDefaultCertDB())) {
-    return mozilla::psm::GetXPCOMFromNSSError(SEC_ERROR_PKCS7_BAD_SIGNATURE);
-  }
-  return MapSECStatus(NSS_CMSSignerInfo_Verify(
-      signerInfo, const_cast<SECItem*>(&detachedDigest), &pkcs7DataOid));
+  return VerifySignatureFromCertificate(signerCertSpan, signerInfo,
+                                        &detachedDigest);
 }
 
 class CoseVerificationContext {

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLDataListElement.h"
+
 #include "mozilla/dom/HTMLDataListElementBinding.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(DataList)

@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.schema import resolve_keyed_by
 
 from gecko_taskgraph.util.partners import build_macos_attribution_dmg_command
@@ -14,7 +15,6 @@ resolve_keyed_by_transforms = TransformSequence()
 @resolve_keyed_by_transforms.add
 def attribution_keyed_by(config, jobs):
     keyed_by_fields = (
-        "fetches",
         "attributes.release_artifacts",
         "run.command",
         "properties-with-locale",  # properties-with-locale only exists in the l10n task
@@ -27,20 +27,42 @@ def attribution_keyed_by(config, jobs):
 
 
 @transforms.add
+def remove_attributes(config, jobs):
+    """Remove attributes from parent task that aren't necessary."""
+    for job in jobs:
+        for attr in (
+            "accepted-mar-channel-ids",
+            "l10n_chunk",
+            "mar-channel-id",
+            "repackage_type",
+            "required_signoffs",
+            "shippable",
+            "signed",
+            "stub-installer",
+            "update-channel",
+        ):
+            if attr in job["attributes"]:
+                del job["attributes"][attr]
+        yield job
+
+
+@transforms.add
 def stub_installer(config, jobs):
     """Not all windows builds come with a stub installer (only win32, and not
     on esr), so conditionally add it here based on our dependency's
     stub-installer attribute."""
     for job in jobs:
-        dep_name, dep_label = next(iter(job["dependencies"].items()))
-        dep_task = config.kind_dependencies_tasks[dep_label]
+        dep_task = get_primary_dependency(config, job)
+        assert dep_task
+
         if dep_task.attributes.get("stub-installer"):
             locale = job["attributes"].get("locale")
             if locale:
                 artifact = f"{locale}/target.stub-installer.exe"
             else:
                 artifact = "target.stub-installer.exe"
-            job["fetches"][dep_name].append(artifact)
+
+            job["fetches"][dep_task.kind].append(artifact)
             job["run"]["command"] += [
                 "--input",
                 "/builds/worker/fetches/target.stub-installer.exe",
@@ -48,6 +70,30 @@ def stub_installer(config, jobs):
             job["attributes"]["release_artifacts"].append(
                 "public/build/target.stub-installer.exe"
             )
+        yield job
+
+
+@transforms.add
+def set_treeherder(config, jobs):
+    for job in jobs:
+        th = job.setdefault("treeherder", {})
+        attrs = job["attributes"]
+
+        th["platform"] = f"{attrs['build_platform']}/{attrs['build_type']}"
+        th["symbol"] = th["symbol"].format(**attrs)
+        yield job
+
+
+@transforms.add
+def set_locale_label(config, jobs):
+    for job in jobs:
+        attrs = job["attributes"]
+        if locale := attrs.get("locale"):
+            platform, ship_type = attrs["build_platform"].rsplit("-", 1)
+            job["label"] = (
+                f"attribution-{platform}-{locale}-{ship_type}/{attrs['build_type']}"
+            )
+
         yield job
 
 
@@ -69,5 +115,6 @@ def mac_attribution(config, jobs):
                     }
                 ],
             )
+            job["fetches"].setdefault("toolchain", []).append("linux64-libdmg")
 
         yield job

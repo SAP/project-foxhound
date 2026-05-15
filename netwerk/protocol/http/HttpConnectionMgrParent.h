@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpConnectionMgrParent_h__
-#define HttpConnectionMgrParent_h__
+#ifndef HttpConnectionMgrParent_h_
+#define HttpConnectionMgrParent_h_
 
 #include "HttpConnectionMgrShell.h"
 #include "mozilla/net/PHttpConnectionMgrParent.h"
@@ -40,4 +40,4 @@ class HttpConnectionMgrParent final : public PHttpConnectionMgrParent,
 
 }  // namespace mozilla::net
 
-#endif  // HttpConnectionMgrParent_h__
+#endif  // HttpConnectionMgrParent_h_

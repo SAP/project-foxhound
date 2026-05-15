@@ -4,6 +4,7 @@
 
 //! Specified values for outline properties
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::specified::BorderStyle;
 use cssparser::Parser;
@@ -24,6 +25,7 @@ use style_traits::ParseError;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 /// <https://drafts.csswg.org/css-ui/#propdef-outline-style>

@@ -3,7 +3,7 @@
 
 async function testVal(win, url) {
   info(`Testing ${url}`);
-  win.gURLBar.setURI(makeURI(url));
+  win.gURLBar.setURI({ uri: makeURI(url) });
 
   let urlbar = win.gURLBar;
   urlbar.blur();

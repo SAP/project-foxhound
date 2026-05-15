@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s geeft u de controle.</p> <p>Gebruik als een privébrowser: <ul> <li>Rechtstreeks vanuit de app zoeken en navigeren</li> <li>Trackers blokkeren (of instellingen bijwerken om ze toe te staan)</li> <li>Wissen verwijdert zowel cookies als zoek- en navigatiegeschiedenis</li> </ul> </p> <p>%1$s wordt gemaakt door Mozilla. Onze missie is het verzorgen van een gezond en open internet.<br/> <a href=\"%2$s\">Meer info</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s geeft u de controle.</p>\n<p>Gebruik als een privébrowser:\n<ul>\n<li>Rechtstreeks vanuit de app zoeken en navigeren</li>\n<li>Trackers blokkeren (of instellingen bijwerken om ze toe te staan)</li>\n<li>Wissen verwijdert zowel cookies als zoek- en navigatiegeschiedenis</li>\n</ul> </p>\n<p>%1$s wordt gemaakt door Mozilla. Onze missie is het verzorgen van een gezond en open internet.<br/>\n<a href=\"%2$s\">Meer info</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Meer info</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Door verder te gaan, gaat u akkoord met de %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Door verder te gaan, gaat u akkoord met de %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Gebruiksvoorwaarden van Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Gebruiksvoorwaarden van Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox geeft om uw privacy. Meer info in onze %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox geeft om uw privacy. Meer info in onze %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Privacyverklaring.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Privacyverklaring</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Navigatiegeschiedenis wissen</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Overige tabbladen sluiten</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Nieuw tabblad toevoegen</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Dit kan een probleem zijn met de configuratie van de server, of het kan iemand zijn die probeert zich voor te doen als de server. <br/><br/> Als u in het verleden met succes verbinding hebt gemaakt met deze server, is de fout mogelijk tijdelijk.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Iemand kan proberen de website na te doen en verdergaan kan risicovol zijn.</label> <br><br> <label>%1$s vertrouwt <b>%2$s</b> niet, omdat de certificaatuitgever onbekend is, het certificaat zelfondertekend is, of de server niet de juiste intermediaire certificaten verzendt.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Iemand kan proberen de website na te doen en verdergaan kan risicovol zijn.</label> <br><br>\n<label>%1$s vertrouwt <b>%2$s</b> niet, omdat de certificaatuitgever onbekend is, het certificaat zelfondertekend is, of de server niet de juiste intermediaire certificaten verzendt.</label>]]></string>
   <!--
     Sessions List
 

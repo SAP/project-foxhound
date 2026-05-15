@@ -1,0 +1,132 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  /* Toolbar */
+  --toolbar-start-end-padding: 8px;
+
+  --toolbarbutton-outer-padding: 2px;
+  --toolbarbutton-outer-padding-narrow: 1px;
+
+  --toolbarbutton-inner-padding: 8px;
+  --toolbarbutton-inner-padding-narrow: 7px;
+  --toolbarbutton-inner-padding-compact: 6px;
+  --toolbarbutton-inner-padding-touch: 9px;
+  --toolbarbutton-inner-padding-touch-narrow: 8px;
+
+  --toolbarbutton-icon-fill: currentColor;
+  --toolbarbutton-icon-fill-attention: AccentColor;
+  --toolbarbutton-icon-fill-attention-text: AccentColorText;
+
+  --toolbarbutton-disabled-opacity: 0.4;
+  --toolbarbutton-border-radius: var(--button-border-radius);
+
+  --toolbarbutton-hover-background: color-mix(in srgb, currentColor 17%, transparent);
+  --toolbarbutton-active-background: color-mix(in srgb, currentColor 30%, transparent);
+
+  --toolbarbutton-outline-color: transparent;
+  --toolbarbutton-hover-outline-color: transparent;
+  --toolbarbutton-active-outline-color: transparent;
+  --toolbarbutton-selected-outline-color: var(--toolbarbutton-active-outline-color);
+  --toolbarbutton-outline: var(--border-width) solid var(--toolbarbutton-outline-color);
+  --toolbarbutton-outline-offset: calc(-1 * var(--border-width));
+
+  --toolbar-field-background-color: Field;
+  --toolbar-field-color: FieldText;
+  --toolbar-field-border-color: var(--input-border-color);
+  --toolbar-field-focus-background-color: Field;
+  --toolbar-field-focus-color: FieldText;
+  --toolbar-field-focus-border-color: color-mix(in srgb, var(--focus-outline-color) 50%, transparent);
+
+  --toolbar-bgcolor: color-mix(in srgb, -moz-dialog 85%, var(--color-white));
+  --toolbar-color: -moz-dialogtext;
+  --toolbarseparator-color: color-mix(in srgb, currentColor 60%, transparent);
+
+  /* Toolbox */
+  --toolbox-bgcolor: -moz-headerbar;
+  --toolbox-textcolor: -moz-headerbartext;
+  --toolbox-bgcolor-inactive: -moz-headerbarinactive;
+  --toolbox-textcolor-inactive: -moz-headerbarinactivetext;
+
+  /* Override some toolbar colors when not under prefers-contrast.
+   *
+   * For the light theme we use .05 alpha, to increase the contrast of the
+   * text. For the dark theme, we use a darker background, which works because
+   * the toolbar background applies some white unconditionally.
+   */
+  @media not (prefers-contrast) {
+    --toolbar-field-border-color: var(--border-color-transparent);
+    --toolbar-field-background-color: light-dark(rgba(0, 0, 0, 0.05), var(--color-black-alpha-30));
+    --toolbar-field-color: inherit;
+
+    @media (prefers-color-scheme: light) {
+      --toolbar-bgcolor: var(--color-white);
+    }
+  }
+
+  @media (prefers-contrast) {
+    /* Reduce the opacity of disabled toolbar buttons in order to increase
+       contrast with the enabled state. */
+    --toolbarbutton-disabled-opacity: 0.3;
+    --toolbar-field-focus-border-color: var(--focus-outline-color);
+    --toolbarbutton-hover-outline-color: currentColor;
+    --toolbarbutton-active-outline-color: currentColor;
+  }
+
+  @media (forced-colors) {
+    --toolbarbutton-outline-color: ButtonText;
+    --toolbarbutton-hover-outline-color: SelectedItem;
+    --toolbarbutton-active-outline-color: ButtonText;
+    --toolbarbutton-selected-outline-color: SelectedItem;
+
+    &[lwtheme] {
+      --toolbarbutton-outline-color: currentColor;
+    }
+  }
+
+  &[lwtheme] {
+    --toolbar-bgcolor: var(--color-white-alpha-40);
+    --toolbar-color: var(--lwt-text-color, inherit);
+
+    --toolbarbutton-icon-fill-attention: light-dark(var(--color-blue-60), var(--color-cyan-30));
+    --toolbarbutton-icon-fill-attention-text-light: var(--color-gray-20);
+    --toolbarbutton-icon-fill-attention-text-dark: var(--color-gray-90);
+    --toolbarbutton-icon-fill-attention-text: light-dark(
+      var(--toolbarbutton-icon-fill-attention-text-light),
+      var(--toolbarbutton-icon-fill-attention-text-dark)
+    );
+
+    --toolbox-bgcolor: var(--lwt-accent-color);
+    --toolbox-bgcolor-inactive: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
+    --toolbox-textcolor: var(--lwt-text-color, currentColor);
+    --toolbox-textcolor-inactive: var(--lwt-text-color, currentColor);
+  }
+}
+
+/**
+ * We intentionally do not use the custom colors on linux or macOS with system
+ * theme enabled, instead choosing to fall back to system colors and
+ * transparencies in order to look more native.
+ */
+@media not ((forced-colors) or (-moz-native-theme)) {
+  :root:not([lwtheme]) {
+    --toolbar-color: light-dark(var(--color-gray-100), var(--color-gray-05));
+    --toolbar-bgcolor: light-dark(#f9f9fb, rgb(43, 42, 51));
+
+    --toolbar-field-border-color: var(--border-color-transparent);
+    --toolbar-field-background-color: light-dark(rgba(0, 0, 0, 0.05), var(--color-black-alpha-30));
+    --toolbar-field-color: light-dark(var(--color-gray-100), var(--color-gray-05));
+    --toolbar-field-focus-background-color: light-dark(var(--color-white), rgb(66, 65, 77));
+    --toolbar-field-focus-color: light-dark(var(--color-black), var(--color-gray-05));
+
+    --toolbarbutton-icon-fill: light-dark(var(--color-gray-70), var(--color-gray-05));
+    --toolbarbutton-icon-fill-attention: light-dark(var(--color-blue-60), var(--color-cyan-30));
+    --toolbarbutton-icon-fill-attention-text: light-dark(var(--color-gray-20), var(--color-gray-90));
+
+    --toolbox-bgcolor: light-dark(rgb(234, 234, 237), rgb(28, 27, 34));
+    --toolbox-textcolor: light-dark(rgb(21, 20, 26), rgb(251, 251, 254));
+    --toolbox-bgcolor-inactive: var(--toolbox-bgcolor);
+    --toolbox-textcolor-inactive: var(--toolbox-textcolor);
+  }
+}

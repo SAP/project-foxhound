@@ -7,8 +7,6 @@
 
 #  include "jit/CacheIRHealth.h"
 
-#  include "mozilla/Maybe.h"
-
 #  include "gc/Zone.h"
 #  include "jit/BaselineIC.h"
 #  include "jit/CacheIRCompiler.h"

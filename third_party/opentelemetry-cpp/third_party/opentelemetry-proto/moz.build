@@ -1,0 +1,35 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXPORTS.opentelemetry.proto.common.v1 = [
+   "opentelemetry/proto/common/v1/common.pb.h"
+]
+
+EXPORTS.opentelemetry.proto.resource.v1 = [
+    "opentelemetry/proto/resource/v1/resource.pb.h"
+]
+
+EXPORTS.opentelemetry.proto.trace.v1 = [
+    "opentelemetry/proto/trace/v1/trace.pb.h"
+]
+
+EXPORTS.opentelemetry.proto.collector.trace.v1 = [
+    "opentelemetry/proto/collector/trace/v1/trace_service.pb.h"
+]
+
+DEFINES["GOOGLE_PROTOBUF_NO_RTTI"] = True
+
+SOURCES += [
+    "opentelemetry/proto/collector/trace/v1/trace_service.pb.cc",
+    "opentelemetry/proto/common/v1/common.pb.cc",
+    "opentelemetry/proto/resource/v1/resource.pb.cc",
+    "opentelemetry/proto/trace/v1/trace.pb.cc",
+]
+
+with Files("**"):
+    BUG_COMPONENT = ("Toolkit", "Gecko Trace")
+
+FINAL_LIBRARY = "xul"

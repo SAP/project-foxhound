@@ -2,10 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -17,9 +18,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   UrlbarProviderGlobalActions:
-    "resource:///modules/UrlbarProviderGlobalActions.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderGlobalActions.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "appUpdater", () => new lazy.AppUpdater());
@@ -328,7 +329,7 @@ export class QueryScorer {
     minDistanceByDoc = new Map(),
     queryWordsIndex = 0,
     phraseDistance = 0,
-  } = {}) {
+  }) {
     if (!node.childrenByWord.size) {
       // We reached a leaf node.  The query has matched a phrase.  If the query
       // and the phrase have the same number of words, then queryWordsIndex ==
@@ -430,14 +431,10 @@ function getPayloadForTip(tip) {
  * A provider that returns actionable tip results when the user is performing
  * a search related to those actions.
  */
-class ProviderInterventions extends UrlbarProvider {
-  constructor() {
-    super();
-    // The tip we should currently show.
-    this.currentTip = TIPS.NONE;
-
+export class UrlbarProviderInterventions extends UrlbarProvider {
+  static lazy = XPCOMUtils.declareLazy({
     // This object is used to match the user's queries to tips.
-    ChromeUtils.defineLazyGetter(this, "queryScorer", () => {
+    queryScorer: () => {
       let queryScorer = new QueryScorer({
         variations: new Map([
           // Recognize "fire fox", "fox fire", and "foxfire" as "firefox".
@@ -452,25 +449,22 @@ class ProviderInterventions extends UrlbarProvider {
         queryScorer.addDocument({ id, phrases });
       }
       return queryScorer;
-    });
+    },
+  });
+
+  constructor() {
+    super();
+    // The tip we should currently show.
+    this.currentTip = TIPS.NONE;
   }
 
   /**
    * Enum of the types of intervention tips.
    *
-   * @returns {{ NONE: string; CLEAR: string; REFRESH: string; UPDATE_ASK: string; UPDATE_CHECKING: string; UPDATE_REFRESH: string; UPDATE_RESTART: string; UPDATE_WEB: string; }}
+   * @returns {typeof TIPS}
    */
-  get TIP_TYPE() {
+  static get TIP_TYPE() {
     return TIPS;
-  }
-
-  /**
-   * Unique name for the provider, used by the context to filter on providers.
-   *
-   * @returns {string}
-   */
-  get name() {
-    return "UrlbarProviderInterventions";
   }
 
   /**
@@ -491,12 +485,12 @@ class ProviderInterventions extends UrlbarProvider {
     if (
       !queryContext.searchString ||
       queryContext.searchString.length > UrlbarUtils.MAX_TEXT_LENGTH ||
-      lazy.UrlbarTokenizer.REGEXP_LIKE_PROTOCOL.test(
-        queryContext.searchString
-      ) ||
+      lazy.UrlUtils.REGEXP_LIKE_PROTOCOL.test(queryContext.searchString) ||
       !EN_LOCALE_MATCH.test(Services.locale.appLocaleAsBCP47) ||
       !Services.policies.isAllowed("urlbarinterventions") ||
-      (await lazy.UrlbarProviderGlobalActions.isActive(queryContext))
+      (await this.queryInstance
+        .getProvider(lazy.UrlbarProviderGlobalActions.name)
+        ?.isActive(queryContext))
     ) {
       return false;
     }
@@ -504,7 +498,9 @@ class ProviderInterventions extends UrlbarProvider {
     this.currentTip = TIPS.NONE;
 
     // Get the scores and the top score.
-    let docScores = this.queryScorer.score(queryContext.searchString);
+    let docScores = UrlbarProviderInterventions.lazy.queryScorer.score(
+      queryContext.searchString
+    );
     let topDocScore = docScores[0];
 
     // Multiple docs may have the top score, so collect them all.
@@ -523,7 +519,11 @@ class ProviderInterventions extends UrlbarProvider {
     if (topDocIDs.has("update")) {
       this._setCurrentTipFromAppUpdaterStatus();
     } else if (topDocIDs.has("clear")) {
-      let window = lazy.BrowserWindowTracker.getTopWindow();
+      // bug 1983835 - should this only look for windows on the current
+      // workspace?
+      let window = lazy.BrowserWindowTracker.getTopWindow({
+        allowFromInactiveWorkspace: true,
+      });
       if (!lazy.PrivateBrowsingUtils.isWindowPrivate(window)) {
         this.currentTip = TIPS.CLEAR;
       }
@@ -549,7 +549,7 @@ class ProviderInterventions extends UrlbarProvider {
     // This causes synchronous IO within the updater the first time it's called
     // (at least) so be careful not to do it the first time the urlbar is used.
     try {
-      this.checkForBrowserUpdate();
+      UrlbarProviderInterventions.checkForBrowserUpdate();
     } catch (ex) {
       return;
     }
@@ -593,9 +593,9 @@ class ProviderInterventions extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -643,19 +643,19 @@ class ProviderInterventions extends UrlbarProvider {
     // At this point, this.currentTip != TIPS.UPDATE_CHECKING because we
     // returned early above if it was.
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
+    let result = new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.TIP,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      suggestedIndex: 1,
+      payload: {
         ...getPayloadForTip(this.currentTip),
         type: this.currentTip,
         icon: UrlbarUtils.ICON.TIP,
         helpL10n: {
           id: "urlbar-result-menu-tip-get-help",
         },
-      }
-    );
-    result.suggestedIndex = 1;
+      },
+    });
     addCallback(this, result);
   }
 
@@ -699,7 +699,7 @@ class ProviderInterventions extends UrlbarProvider {
 
   onEngagement(queryContext, controller, details) {
     // `selType` is "tip" when the tip's main button is picked. Ignore clicks on
-    // the help command ("tiphelp"), which is handled by UrlbarInput since we
+    // the help command ("help"), which is handled by UrlbarInput since we
     // set `helpUrl` on the result payload. Currently there aren't any other
     // buttons or commands but this will ignore clicks on them too.
     if (details.selType == "tip") {
@@ -707,6 +707,7 @@ class ProviderInterventions extends UrlbarProvider {
     }
   }
 
+  static _lastUpdateCheckTime;
   /**
    * Checks for app updates.
    *
@@ -714,13 +715,14 @@ class ProviderInterventions extends UrlbarProvider {
    *        already checked within the update-check period.  If true, we check
    *        regardless.
    */
-  checkForBrowserUpdate(force = false) {
+  static checkForBrowserUpdate(force = false) {
     if (
       force ||
-      !this._lastUpdateCheckTime ||
-      Date.now() - this._lastUpdateCheckTime >= UPDATE_CHECK_PERIOD_MS
+      !UrlbarProviderInterventions._lastUpdateCheckTime ||
+      Date.now() - UrlbarProviderInterventions._lastUpdateCheckTime >=
+        UPDATE_CHECK_PERIOD_MS
     ) {
-      this._lastUpdateCheckTime = Date.now();
+      UrlbarProviderInterventions._lastUpdateCheckTime = Date.now();
       lazy.appUpdater.check();
     }
   }
@@ -729,15 +731,13 @@ class ProviderInterventions extends UrlbarProvider {
    * Resets the provider's app updater state by making a new app updater.  This
    * is intended to be used by tests.
    */
-  resetAppUpdater() {
+  static resetAppUpdater() {
     // Reset only if the object has already been initialized.
     if (!Object.getOwnPropertyDescriptor(lazy, "appUpdater").get) {
       lazy.appUpdater = new lazy.AppUpdater();
     }
   }
 }
-
-export var UrlbarProviderInterventions = new ProviderInterventions();
 
 /**
  * Tip callbacks follow.

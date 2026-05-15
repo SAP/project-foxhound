@@ -36,10 +36,10 @@ Returns
 
 The function returns one of the following values:
 
- - :ref:`PR_SUCCESS` indicates either that the monitored object has been
+ - ``PR_SUCCESS`` indicates either that the monitored object has been
    notified or that the interval specified in the timeout parameter has
    been exceeded.
- - :ref:`PR_FAILURE` indicates either that the monitor could not be located
+ - ``PR_FAILURE`` indicates either that the monitor could not be located
    in the cache or that the monitor was located and the calling thread
    was not the thread that held the monitor's mutex.
 

@@ -150,9 +150,12 @@ def test_table_builder_add_row_too_long():
         table_specifications["indent"],
     )
     with pytest.raises(MismatchedRowLengthsException) as error:
-        table.add_row(
-            ["big ones", "small ones", "some as big as your head!", "(and bigger)"]
-        )
+        table.add_row([
+            "big ones",
+            "small ones",
+            "some as big as your head!",
+            "(and bigger)",
+        ])
     assert (
         str(error.value)
         == "Number of items in a row must must number of columns defined."
@@ -170,9 +173,12 @@ def test_table_builder_add_rows_type_error():
         table_specifications["indent"],
     )
     with pytest.raises(TypeError) as error:
-        table.add_rows(
-            ["big ones", "small ones", "some as big as your head!", "(and bigger)"]
-        )
+        table.add_rows([
+            "big ones",
+            "small ones",
+            "some as big as your head!",
+            "(and bigger)",
+        ])
     assert str(error.value) == "add_rows() requires a two-dimensional list of strings."
 
 
@@ -187,9 +193,11 @@ def test_table_builder_validate():
         table_specifications["indent"],
     )
     table.add_row(["big ones", "small ones", "some as big as your head!"])
-    table.add_row(
-        ["Give 'em a twist", "A flick of the wrist", "That's what the showman said!"]
-    )
+    table.add_row([
+        "Give 'em a twist",
+        "A flick of the wrist",
+        "That's what the showman said!",
+    ])
     table = table.finish_table()
     print(table)
     assert (

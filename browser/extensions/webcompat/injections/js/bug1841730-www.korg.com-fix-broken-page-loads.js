@@ -12,6 +12,10 @@
  * This is the fix suggested at https://github.com/CodeByZach/pace/issues/510
  */
 
-/* globals cloneInto */
+if (!window.paceOptions) {
+  console.info(
+    "PACE options are being modified for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1841730 for details."
+  );
 
-window.wrappedJSObject.paceOptions = cloneInto({ eventLag: false }, window);
+  window.paceOptions = { eventLag: false };
+}

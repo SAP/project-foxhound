@@ -12,7 +12,7 @@ use core::num::NonZeroU64;
 /// - max_dynamic_storage_buffers_per_pipeline_layout: 1,
 /// - max_storage_buffers_per_shader_stage: 2,
 /// - max_storage_buffer_binding_size: 3 * min_storage_buffer_offset_alignment,
-/// - max_push_constant_size: 4,
+/// - max_immediate_size: 4,
 /// - max_compute_invocations_per_workgroup 1
 ///
 /// These are all indirectly satisfied by `DownlevelFlags::INDIRECT_EXECUTION`, which is also
@@ -53,7 +53,7 @@ impl Dispatch {
             struct OffsetPc {{
                 inner: u32,
             }}
-            var<push_constant> offset: OffsetPc;
+            var<immediate> offset: OffsetPc;
 
             @compute @workgroup_size(1)
             fn main() {{
@@ -73,15 +73,10 @@ impl Dispatch {
         );
 
         // SAFETY: The value we are passing to `new_unchecked` is not zero, so this is safe.
-        const SRC_BUFFER_SIZE: NonZeroU64 =
-            unsafe { NonZeroU64::new_unchecked(size_of::<u32>() as u64 * 3) };
+        const SRC_BUFFER_SIZE: NonZeroU64 = NonZeroU64::new(size_of::<u32>() as u64 * 3).unwrap();
 
         // SAFETY: The value we are passing to `new_unchecked` is not zero, so this is safe.
-        const DST_BUFFER_SIZE: NonZeroU64 = unsafe {
-            NonZeroU64::new_unchecked(
-                SRC_BUFFER_SIZE.get() * 2, // From above: `dst: array<u32, 6>`
-            )
-        };
+        const DST_BUFFER_SIZE: NonZeroU64 = NonZeroU64::new(SRC_BUFFER_SIZE.get() * 2).unwrap();
 
         #[cfg(feature = "wgsl")]
         let module = naga::front::wgsl::parse_str(&src).map_err(|inner| {
@@ -96,7 +91,7 @@ impl Dispatch {
         let module = panic!("Indirect validation requires the wgsl feature flag to be enabled!");
 
         let info = crate::device::create_validator(
-            wgt::Features::PUSH_CONSTANTS,
+            wgt::Features::IMMEDIATES,
             wgt::DownlevelFlags::empty(),
             naga::valid::ValidationFlags::all(),
         )
@@ -124,7 +119,7 @@ impl Dispatch {
                         CreateShaderModuleError::Device(DeviceError::from_hal(error))
                     }
                     hal::ShaderError::Compilation(ref msg) => {
-                        log::error!("Shader error: {}", msg);
+                        log::error!("Shader error: {msg}");
                         CreateShaderModuleError::Generation
                     }
                 }
@@ -177,10 +172,7 @@ impl Dispatch {
                 dst_bind_group_layout.as_ref(),
                 src_bind_group_layout.as_ref(),
             ],
-            push_constant_ranges: &[wgt::PushConstantRange {
-                stages: wgt::ShaderStages::COMPUTE,
-                range: 0..4,
-            }],
+            immediate_size: 4,
         };
         let pipeline_layout = unsafe {
             device
@@ -241,6 +233,7 @@ impl Dispatch {
             samplers: &[],
             textures: &[],
             acceleration_structures: &[],
+            external_textures: &[],
         };
         let dst_bind_group = unsafe {
             device
@@ -284,6 +277,7 @@ impl Dispatch {
             samplers: &[],
             textures: &[],
             acceleration_structures: &[],
+            external_textures: &[],
         };
         unsafe {
             device
@@ -300,10 +294,10 @@ impl Dispatch {
         // min_storage_buffer_offset_alignment (256 bytes by default).
         //
         // So, we work around this limitation by calculating an aligned offset
-        // and pass the remainder through a push constant.
+        // and pass the remainder through a immediate data.
         //
         // We could bind the whole buffer and only have to pass the offset
-        // through a push constant but we might run into the
+        // through a immediate data but we might run into the
         // max_storage_buffer_binding_size limit.
         //
         // See the inner docs of `calculate_src_buffer_binding_size` to

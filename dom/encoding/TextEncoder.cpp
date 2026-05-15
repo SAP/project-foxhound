@@ -5,9 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/TextEncoder.h"
-#include "mozilla/CheckedInt.h"
+
 #include "mozilla/ErrorResult.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "nsReadableUtils.h"
 
 namespace mozilla::dom {

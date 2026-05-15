@@ -4,7 +4,7 @@ const { NimbusTelemetry } = ChromeUtils.importESModule(
   "resource://nimbus/lib/Telemetry.sys.mjs"
 );
 const { PrefUtils } = ChromeUtils.importESModule(
-  "resource://normandy/lib/PrefUtils.sys.mjs"
+  "moz-src:///toolkit/modules/PrefUtils.sys.mjs"
 );
 
 const TEST_FALLBACK_PREF = "testprefbranch.config";

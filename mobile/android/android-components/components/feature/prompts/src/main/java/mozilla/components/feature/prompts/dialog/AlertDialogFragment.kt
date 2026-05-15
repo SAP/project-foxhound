@@ -7,7 +7,7 @@ package mozilla.components.feature.prompts.dialog
 import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
-import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import mozilla.components.ui.widgets.withCenterAlignedButtons
 
 /**
@@ -16,7 +16,7 @@ import mozilla.components.ui.widgets.withCenterAlignedButtons
 internal class AlertDialogFragment : AbstractPromptTextDialogFragment() {
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
             .setCancelable(true)
             .setPositiveButton(android.R.string.ok) { _, _ ->

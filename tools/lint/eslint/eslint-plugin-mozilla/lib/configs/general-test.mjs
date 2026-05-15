@@ -6,9 +6,15 @@
 // This should be applied by the configuration before any other test
 // configurations.
 
+import noUnsanitizedPlugin from "eslint-plugin-no-unsanitized";
+import sdlPlugin from "@microsoft/eslint-plugin-sdl";
+
 export default {
   name: "mozilla/general-test",
-  plugins: ["mozilla", "@microsoft/sdl", "no-unsanitized"],
+  plugins: {
+    "@microsoft/sdl": sdlPlugin,
+    "no-unsanitized": noUnsanitizedPlugin,
+  },
 
   rules: {
     // No using of insecure url, so no http urls.

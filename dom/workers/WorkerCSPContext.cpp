@@ -4,11 +4,13 @@
 
 #include "WorkerCSPContext.h"
 
-#include "nsNetUtil.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/nsCSPParser.h"
 #include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "nsNetUtil.h"
 
 namespace mozilla::dom {
 
@@ -32,8 +34,16 @@ const nsTArray<UniquePtr<const nsCSPPolicy>>& WorkerCSPContext::Policies() {
 
 bool WorkerCSPContext::IsEvalAllowed(bool& aReportViolation) {
   MOZ_ASSERT(!aReportViolation);
+
+  bool trustedTypesRequired =
+      (mCSPInfo.requireTrustedTypesForDirectiveState() ==
+       RequireTrustedTypesForDirectiveState::ENFORCE);
+
   for (const UniquePtr<const nsCSPPolicy>& policy : Policies()) {
-    if (!policy->allows(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
+    if (!(trustedTypesRequired &&
+          policy->allows(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
+                         CSP_TRUSTED_TYPES_EVAL, u""_ns)) &&
+        !policy->allows(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
                         CSP_UNSAFE_EVAL, u""_ns)) {
       aReportViolation = true;
       if (!policy->getReportOnlyFlag()) {

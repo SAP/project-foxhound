@@ -4,18 +4,71 @@
 
 "use strict";
 
+const { LINKS } = ChromeUtils.importESModule(
+  "chrome://browser/content/ipprotection/ipprotection-constants.mjs"
+);
 const lazy = {};
 
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
 ChromeUtils.defineESModuleGetters(lazy, {
-  IPProtectionWidget: "resource:///modules/ipprotection/IPProtection.sys.mjs",
+  IPProtectionWidget:
+    "moz-src:///browser/components/ipprotection/IPProtection.sys.mjs",
   IPProtectionPanel:
-    "resource:///modules/ipprotection/IPProtectionPanel.sys.mjs",
+    "moz-src:///browser/components/ipprotection/IPProtectionPanel.sys.mjs",
+  IPProtectionService:
+    "moz-src:///browser/components/ipprotection/IPProtectionService.sys.mjs",
+  IPPSignInWatcher:
+    "moz-src:///browser/components/ipprotection/IPPSignInWatcher.sys.mjs",
+  IPPNimbusHelper:
+    "moz-src:///browser/components/ipprotection/IPPNimbusHelper.sys.mjs",
+  IPPEnrollAndEntitleManager:
+    "moz-src:///browser/components/ipprotection/IPPEnrollAndEntitleManager.sys.mjs",
 });
+
+const PANELSTATES = {
+  signedOutVPNOff: {
+    isSignedOut: true,
+    unauthenticated: true,
+    isProtectionEnabled: false,
+  },
+  signedInVPNOff: {
+    isSignedOut: false,
+    unauthenticated: false,
+    isProtectionEnabled: false,
+  },
+  signedInVPNOn: {
+    isSignedOut: false,
+    unauthenticated: false,
+    isProtectionEnabled: true,
+  },
+};
+
+async function setAndUpdateIsAuthenticated(content, isSignedOut, sandbox) {
+  sandbox.stub(lazy.IPPSignInWatcher, "isSignedIn").get(() => !isSignedOut);
+  sandbox.stub(lazy.IPPNimbusHelper, "isEligible").get(() => true);
+  sandbox
+    .stub(lazy.IPPEnrollAndEntitleManager, "isEnrolledAndEntitled")
+    .get(() => true);
+  lazy.IPProtectionService.updateState();
+  content.requestUpdate();
+  await content.updateComplete;
+}
+
+async function resetStateToObj(content, originalState) {
+  content.state = originalState;
+  content.requestUpdate();
+  await content.updateComplete;
+}
 
 /**
  * Tests that the ip protection main panel view has the correct content.
  */
 add_task(async function test_main_content() {
+  let sandbox = sinon.createSandbox();
+
   let button = document.getElementById(lazy.IPProtectionWidget.WIDGET_ID);
   let panelView = PanelMultiView.getViewNode(
     document,
@@ -29,145 +82,150 @@ add_task(async function test_main_content() {
 
   let content = panelView.querySelector(lazy.IPProtectionPanel.CONTENT_TAGNAME);
 
-  content.state.isSignedIn = true;
-  content.requestUpdate();
-  await content.updateComplete;
+  let originalState = structuredClone(content.state);
+
+  await setAndUpdateIsAuthenticated(content, false, sandbox);
 
   Assert.ok(
     BrowserTestUtils.isVisible(content),
     "ipprotection content component should be present"
   );
   Assert.ok(content.statusCardEl, "Status card should be present");
-  Assert.ok(content.upgradeEl, "Upgrade vpn element should be present");
-  Assert.ok(
-    content.upgradeEl.querySelector("#upgrade-vpn-title"),
-    "Upgrade vpn title should be present"
-  );
-  Assert.ok(
-    content.upgradeEl.querySelector("#upgrade-vpn-paragraph"),
-    "Upgrade vpn paragraph should be present"
-  );
-  Assert.ok(
-    content.upgradeEl.querySelector("#upgrade-vpn-button"),
-    "Upgrade vpn button should be present"
-  );
+
+  await resetStateToObj(content, originalState);
 
   // Close the panel
   let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
   EventUtils.synthesizeKey("KEY_Escape");
   await panelHiddenPromise;
+
+  sandbox.restore();
 });
 
 /**
- * Tests UI updates to the status card in the panel after enable/disable.
+ * Tests settings link visibility in different panel states.
  */
-add_task(async function test_status_card() {
-  const l10nIdOn = "ipprotection-connection-status-on";
-  const l10nIdOff = "ipprotection-connection-status-off";
+add_task(async function test_settings_link_visibility() {
+  let content = await openPanel(PANELSTATES.signedOutVPNOff);
 
-  let button = document.getElementById(lazy.IPProtectionWidget.WIDGET_ID);
-  let panelView = PanelMultiView.getViewNode(
-    document,
-    lazy.IPProtectionWidget.PANEL_ID
-  );
-
-  let panelShownPromise = waitForPanelEvent(document, "popupshown");
-  // Open the panel
-  button.click();
-  await panelShownPromise;
-
-  let content = panelView.querySelector(lazy.IPProtectionPanel.CONTENT_TAGNAME);
   Assert.ok(
-    BrowserTestUtils.isVisible(content),
-    "ipprotection content component should be present"
-  );
-  Assert.ok(content.statusCardEl, "Status card should be present");
-  Assert.equal(
-    content.connectionTitleEl?.getAttribute("data-l10n-id"),
-    l10nIdOff,
-    "Status card connection toggle data-l10n-id should be correct by default"
-  );
-  Assert.ok(content.state, "State should be present");
-
-  // Set state as if protection is enabled
-  content.state.isProtectionEnabled = true;
-
-  content.requestUpdate();
-  await content.statusCardEl.updateComplete;
-
-  Assert.equal(
-    content.connectionTitleEl?.getAttribute("data-l10n-id"),
-    l10nIdOn,
-    "Status card connection toggle data-l10n-id should be correct when protection is enabled"
+    !content.settingsButtonEl,
+    "Settings button should NOT be present when not signed in"
   );
 
-  // Set state as if protection is disabled
-  content.state.isProtectionEnabled = false;
+  await closePanel();
 
-  content.requestUpdate();
-  await content.statusCardEl.updateComplete;
+  content = await openPanel(PANELSTATES.signedInVPNOff);
 
-  Assert.equal(
-    content.connectionTitleEl?.getAttribute("data-l10n-id"),
-    l10nIdOff,
-    "Status card connection toggle data-l10n-id should be correct when protection is disabled"
+  Assert.ok(
+    content.settingsButtonEl,
+    "Settings button should be present when VPN is disabled"
   );
 
-  // Close the panel
-  let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape");
-  await panelHiddenPromise;
+  await closePanel();
+
+  content = await openPanel(PANELSTATES.signedInVPNOn);
+
+  Assert.ok(
+    content.settingsButtonEl,
+    "Settings button should be present when VPN is enabled"
+  );
+
+  await closePanel();
 });
 
 /**
- * Tests that the correct IPProtection events are dispatched on toggle.
+ * Tests that clicking the settings button closes the panel and calls
+ * openPreferences with the correct argument.
  */
-add_task(async function test_ipprotection_events_on_toggle() {
-  const userEnableEventName = "IPProtection:UserEnable";
-  const userDisableEventName = "IPProtection:UserDisable";
+add_task(async function test_settings_button_closes_panel() {
+  let content = await openPanel(PANELSTATES.signedInVPNOn);
 
-  let button = document.getElementById(lazy.IPProtectionWidget.WIDGET_ID);
+  Assert.ok(BrowserTestUtils.isVisible(content), "VPN panel should be present");
+
+  Assert.ok(content.settingsButtonEl, "Settings button should be present");
+
+  let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
+
+  const openPreferencesStub = sinon.stub(window, "openPreferences");
+
+  content.settingsButtonEl.click();
+
+  await panelHiddenPromise;
+
   let panelView = PanelMultiView.getViewNode(
     document,
     lazy.IPProtectionWidget.PANEL_ID
   );
+  Assert.ok(!BrowserTestUtils.isVisible(panelView), "Panel should be closed");
 
-  let panelShownPromise = waitForPanelEvent(document, "popupshown");
-  // Open the panel
-  button.click();
-  await panelShownPromise;
-
-  let content = panelView.querySelector(lazy.IPProtectionPanel.CONTENT_TAGNAME);
   Assert.ok(
-    BrowserTestUtils.isVisible(content),
-    "ipprotection content component should be present"
+    openPreferencesStub.calledWith("privacy-vpn"),
+    "openPreferences called with correct argument when settings button clicked"
   );
-  Assert.ok(content.statusCardEl, "Status card should be present");
+  openPreferencesStub.restore();
+});
+
+/**
+ * Tests settings link visibility in different panel states.
+ */
+add_task(async function test_settings_link_visibility() {
+  let content = await openPanel(PANELSTATES.signedOutVPNOff);
+
   Assert.ok(
-    content.connectionToggleEl,
-    "Status card connection toggle should be present"
+    !content.settingsButtonEl,
+    "Settings button should NOT be present when not signed in"
   );
 
-  let enableEventPromise = BrowserTestUtils.waitForEvent(
-    window,
-    userEnableEventName
+  await closePanel();
+
+  content = await openPanel(PANELSTATES.signedInVPNOff);
+
+  Assert.ok(
+    content.settingsButtonEl,
+    "Settings button should be present when VPN is disabled"
   );
-  content.connectionToggleEl.click();
 
-  await enableEventPromise;
-  Assert.ok("Enable event was found after clicking the toggle");
+  await closePanel();
 
-  let disableEventPromise = BrowserTestUtils.waitForEvent(
-    window,
-    userDisableEventName
+  content = await openPanel(PANELSTATES.signedInVPNOn);
+
+  Assert.ok(
+    content.settingsButtonEl,
+    "Settings button should be present when VPN is enabled"
   );
-  content.connectionToggleEl.click();
 
-  await disableEventPromise;
-  Assert.ok("Disable event was found after clicking the toggle");
+  await closePanel();
+});
 
-  // Close the panel
+/**
+ * Tests that clicking the settings button closes the panel and calls
+ * openPreferences with the correct argument.
+ */
+add_task(async function test_settings_button_closes_panel() {
+  let content = await openPanel(PANELSTATES.signedInVPNOn);
+
+  Assert.ok(BrowserTestUtils.isVisible(content), "VPN panel should be present");
+
+  Assert.ok(content.settingsButtonEl, "Settings button should be present");
+
   let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape");
+
+  const openPreferencesStub = sinon.stub(window, "openPreferences");
+
+  content.settingsButtonEl.click();
+
   await panelHiddenPromise;
+
+  let panelView = PanelMultiView.getViewNode(
+    document,
+    lazy.IPProtectionWidget.PANEL_ID
+  );
+  Assert.ok(!BrowserTestUtils.isVisible(panelView), "Panel should be closed");
+
+  Assert.ok(
+    openPreferencesStub.calledWith("privacy-vpn"),
+    "openPreferences called with correct argument when settings button clicked"
+  );
+  openPreferencesStub.restore();
 });

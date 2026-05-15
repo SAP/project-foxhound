@@ -9,6 +9,7 @@
 #include "mozilla/KeySystemConfig.h"
 #include "mozilla/dom/BindingIPCUtils.h"
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"
+#include "mozilla/dom/MediaKeySessionBinding.h"
 #include "mozilla/dom/MediaKeyStatusMapBinding.h"
 
 namespace IPC {
@@ -46,6 +47,11 @@ struct ParamTraits<mozilla::dom::MediaKeyStatus>
 template <>
 struct ParamTraits<mozilla::dom::HDCPVersion>
     : public mozilla::dom::WebIDLEnumSerializer<mozilla::dom::HDCPVersion> {};
+
+template <>
+struct ParamTraits<mozilla::dom::MediaKeySessionClosedReason>
+    : public mozilla::dom::WebIDLEnumSerializer<
+          mozilla::dom::MediaKeySessionClosedReason> {};
 
 }  // namespace IPC
 

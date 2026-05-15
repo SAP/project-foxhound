@@ -6,10 +6,10 @@
 
 #include "PerformanceObserverEntryList.h"
 
+#include "PerformanceResourceTiming.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceObserverEntryListBinding.h"
 #include "nsString.h"
-#include "PerformanceResourceTiming.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

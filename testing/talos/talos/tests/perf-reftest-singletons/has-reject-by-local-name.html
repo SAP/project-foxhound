@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<style>
+#anchor:has(section[class*=nonexistent].bar .item) {
+  color: green;
+}
+</style>
+<script src="util.js"></script>
+<script>
+window.onload = function() {
+  function create_tree(depth, width) {
+    const d = document.createElement("div");
+    if (depth != 0) {
+      for (let i = 0; i < width; i++) {
+        d.appendChild(create_tree(depth - 1, width));
+      }
+    } else {
+      d.classList.add("item");
+    }
+    return d;
+  }
+  anchor.appendChild(create_tree(4, 30));
+  flush_layout();
+  perf_start();
+  for (const d of anchor.children[0].children) {
+    d.classList.add("bar");
+  }
+  flush_layout();
+  perf_finish();
+};
+</script>
+<div id=anchor></div>

@@ -11,7 +11,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ProfileService",
   "@mozilla.org/toolkit/profile-service;1",
-  "nsIToolkitProfileService"
+  Ci.nsIToolkitProfileService
 );
 
 // Usage:

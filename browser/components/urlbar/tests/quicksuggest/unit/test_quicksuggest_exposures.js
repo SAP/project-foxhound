@@ -113,7 +113,7 @@ add_setup(async function () {
         "quicksuggest.dynamicSuggestionTypes",
         "test-exposure-aaa,test-exposure-bbb",
       ],
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["quicksuggest.ampTopPickCharThreshold", 0],
     ],
   });
@@ -322,11 +322,11 @@ add_task(async function maxResults_exposuresHistory() {
       makeExpectedResult({ rsSuggestionType: "test-exposure-maxresults-" + i })
     );
     historyResults.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/history/" + i }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: { url: "http://example.com/history/" + i },
+      })
     );
   }
 
@@ -356,6 +356,7 @@ add_task(async function maxResults_exposuresAmp() {
         keyword: "maxresults",
         title: "maxresults 0",
         url: "https://example.com/maxresults/0",
+        suggestedIndex: -1,
       }),
       ...exposureResults,
     ],
@@ -375,11 +376,11 @@ add_task(async function maxResults_exposuresHistoryAmp() {
       makeExpectedResult({ rsSuggestionType: "test-exposure-maxresults-" + i })
     );
     historyResults.push(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        { url: "http://example.com/history/" + i }
-      )
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: { url: "http://example.com/history/" + i },
+      })
     );
   }
 
@@ -387,12 +388,13 @@ add_task(async function maxResults_exposuresHistoryAmp() {
     includeAmp: true,
     includeHistory: true,
     expectedResults: [
+      ...historyResults.slice(0, maxResults - 1),
       QuickSuggestTestUtils.ampResult({
         keyword: "maxresults",
         title: "maxresults 0",
         url: "https://example.com/maxresults/0",
+        suggestedIndex: -1,
       }),
-      ...historyResults.slice(0, maxResults - 1),
       ...exposureResults,
     ],
   });
@@ -409,21 +411,22 @@ async function doMaxResultsTest({
   // If history results should be included, register a test provider that adds a
   // bunch of history results.
   let historyProvider;
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
   let historyResults = [];
   if (includeHistory) {
     for (let i = 0; i < maxResults; i++) {
       historyResults.push(
-        new UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.HISTORY,
-          { url: "http://example.com/history/" + i }
-        )
+        new UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          payload: { url: "http://example.com/history/" + i },
+        })
       );
     }
     historyProvider = new UrlbarTestUtils.TestProvider({
       results: historyResults,
     });
-    UrlbarProvidersManager.registerProvider(historyProvider);
+    providersManager.registerProvider(historyProvider);
     providerNames.push(historyProvider.name);
   }
 
@@ -450,17 +453,17 @@ async function doMaxResultsTest({
   });
 
   if (historyProvider) {
-    UrlbarProvidersManager.unregisterProvider(historyProvider);
+    providersManager.unregisterProvider(historyProvider);
   }
   UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
   await QuickSuggestTestUtils.forceSync();
 }
 
-// Exposure suggestions are neither sponsored nor nonsponsored, so they should
-// be added even when sponsored and nonsponsored are disabled.
-add_task(async function sponsoredAndNonsponsoredDisabled() {
+// Exposure suggestions should automatically bypass the usual `all` and
+// sponsored prefs.
+add_task(async function bypassPrefs() {
+  UrlbarPrefs.set("suggest.quicksuggest.all", false);
   UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", false);
 
   await withSuggestionTypesPref("test-exposure-aaa", async () => {
     await doQueries([
@@ -483,8 +486,8 @@ add_task(async function sponsoredAndNonsponsoredDisabled() {
     ]);
   });
 
+  UrlbarPrefs.set("suggest.quicksuggest.all", true);
   UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
   await QuickSuggestTestUtils.forceSync();
 });
 
@@ -575,6 +578,7 @@ function makeExpectedResult({ rsSuggestionType, telemetryType = "exposure" }) {
       source: "rust",
       dynamicType: "exposure",
       provider: "Dynamic",
+      suggestionType: rsSuggestionType,
       isSponsored: false,
     },
   };

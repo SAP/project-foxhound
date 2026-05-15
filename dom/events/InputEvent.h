@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_InputEvent_h_
 #define mozilla_dom_InputEvent_h_
 
-#include "mozilla/dom/UIEvent.h"
-
+#include "mozilla/EventForwards.h"
 #include "mozilla/dom/InputEventBinding.h"
 #include "mozilla/dom/StaticRange.h"
-#include "mozilla/EventForwards.h"
+#include "mozilla/dom/UIEvent.h"
 #include "nsTArray.h"
 
 namespace mozilla::dom {

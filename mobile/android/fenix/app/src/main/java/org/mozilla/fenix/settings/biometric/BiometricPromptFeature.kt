@@ -5,8 +5,6 @@
 package org.mozilla.fenix.settings.biometric
 
 import android.content.Context
-import android.os.Build.VERSION.SDK_INT
-import android.os.Build.VERSION_CODES.M
 import androidx.annotation.VisibleForTesting
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
@@ -92,12 +90,7 @@ class BiometricPromptFeature(
         /**
          * Checks if the appropriate SDK version and hardware capabilities are met to use the feature.
          */
-        fun canUseFeature(manager: BiometricManager): Boolean {
-            return if (SDK_INT >= M) {
-                manager.isHardwareAvailable() && manager.isEnrolled()
-            } else {
-                false
-            }
-        }
+        fun canUseFeature(manager: BiometricManager): Boolean =
+            manager.isHardwareAvailable() && manager.isEnrolled()
     }
 }

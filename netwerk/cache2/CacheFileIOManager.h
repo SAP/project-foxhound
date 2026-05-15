@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheFileIOManager__h__
-#define CacheFileIOManager__h__
+#ifndef CacheFileIOManager_h_
+#define CacheFileIOManager_h_
 
 #include "CacheIOThread.h"
 #include "CacheStorageService.h"
@@ -20,19 +20,25 @@
 #include "nsString.h"
 #include "nsTHashtable.h"
 #include "prio.h"
+#include "Dictionary.h"
 
 // #define DEBUG_HANDLES 1
+#if !defined(MOZ_WIDGET_ANDROID)
+#  define MOZ_CACHE_ASYNC_IO 1
+#endif
 
 class nsIFile;
 class nsITimer;
 class nsIDirectoryEnumerator;
 class nsILoadContextInfo;
+class nsIRunnable;
 
 namespace mozilla {
 namespace net {
 
 class CacheFile;
 class CacheFileIOListener;
+class PendingItemComparator;
 
 #ifdef DEBUG_HANDLES
 class CacheFileHandlesEntry;
@@ -73,10 +79,19 @@ class CacheFileHandle final : public nsISupports {
   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
+#if defined(MOZ_CACHE_ASYNC_IO)
+  void StartAsyncOperation();
+  void EndAsyncOperation();
+  bool IsAsyncOperationRunning() const { return mAsyncRunning > 0; }
+
+  bool WaitForAsyncCompletion(nsIRunnable* aEvent, uint32_t aLevel);
+#endif
+
  private:
   friend class CacheFileIOManager;
   friend class CacheFileHandles;
   friend class ReleaseNSPRHandleEvent;
+  friend class PendingItemComparator;
 
   virtual ~CacheFileHandle();
 
@@ -113,6 +128,10 @@ class CacheFileHandle final : public nsISupports {
   // already open files quickly as possible (only that renders them actually
   // usable by the cache.)
   bool mKilled : 1;
+#if defined(MOZ_CACHE_ASYNC_IO)
+  // There is a async operation running on this handle.
+  uint32_t mAsyncRunning{0};
+#endif
   // For existing files this is always pre-set to UNKNOWN.  The status is
   // udpated accordingly after the matadata has been parsed. For new files the
   // flag is set according to which storage kind is opening the cache entry and
@@ -125,6 +144,11 @@ class CacheFileHandle final : public nsISupports {
   Atomic<int64_t, Relaxed> mFileSize;
   PRFileDesc* mFD;  // if null then the file doesn't exists on the disk
   nsCString mKey;
+#if defined(MOZ_CACHE_ASYNC_IO)
+  using PendingItem = std::pair<RefPtr<nsIRunnable>, uint32_t>;
+  // Events that are being blocked by an async operation running on this handle.
+  nsTArray<PendingItem> mPendingEvents;
+#endif
 };
 
 class CacheFileHandles {
@@ -384,13 +408,14 @@ class CacheFileIOManager final : public nsITimerCallback, public nsINamed {
                                    CacheFileHandle** _retval);
   void CloseHandleInternal(CacheFileHandle* aHandle);
   nsresult ReadInternal(CacheFileHandle* aHandle, int64_t aOffset, char* aBuf,
-                        int32_t aCount);
+                        int32_t aCount, ReadEvent* aReadEvent);
   nsresult WriteInternal(CacheFileHandle* aHandle, int64_t aOffset,
                          const char* aBuf, int32_t aCount, bool aValidate,
                          bool aTruncate);
   nsresult DoomFileInternal(
       CacheFileHandle* aHandle,
-      PinningDoomRestriction aPinningDoomRestriction = NO_RESTRICTION);
+      PinningDoomRestriction aPinningDoomRestriction = NO_RESTRICTION,
+      bool aClearDirectory = true);
   nsresult DoomFileByKeyInternal(const SHA1Sum::Hash* aHash);
   nsresult MaybeReleaseNSPRHandleInternal(CacheFileHandle* aHandle,
                                           bool aIgnoreShutdownLag = false);
@@ -443,6 +468,10 @@ class CacheFileIOManager final : public nsITimerCallback, public nsINamed {
                              const nsCString& aSecondsToWait,
                              const nsCString& aPurgeExtension);
 
+#if defined(MOZ_CACHE_ASYNC_IO)
+  void DispatchPendingEvents();
+#endif
+
   // Smart size calculation. UpdateSmartCacheSize() must be called on IO thread.
   // It is called in EvictIfOverLimitInternal() just before we decide whether to
   // start overlimit eviction or not and also in OverLimitEvictionInternal()
@@ -453,6 +482,9 @@ class CacheFileIOManager final : public nsITimerCallback, public nsINamed {
   size_t SizeOfExcludingThisInternal(mozilla::MallocSizeOf mallocSizeOf) const;
 
   static StaticRefPtr<CacheFileIOManager> gInstance;
+
+  // Pointer to DictionaryCache singleton
+  RefPtr<DictionaryCache> mDictionaryCache;
 
   TimeStamp mStartTime;
   // Set true on the IO thread, CLOSE level as part of the internal shutdown
@@ -486,6 +518,14 @@ class CacheFileIOManager final : public nsITimerCallback, public nsINamed {
   nsTArray<nsCString> mFailedTrashDirs;
   RefPtr<CacheFileContextEvictor> mContextEvictor;
   TimeStamp mLastSmartSizeTime;
+#if defined(MOZ_CACHE_ASYNC_IO)
+  using PendingItem = std::pair<RefPtr<nsIRunnable>, uint32_t>;
+  nsTArray<PendingItem> mPendingEvents;
+  // This is used to track how many async operations are running.  It
+  // is used to prevent the IO thread from shutting down while there
+  // are still some async operations running.
+  uint32_t mAsyncRunning{0};
+#endif
 };
 
 }  // namespace net

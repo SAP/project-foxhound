@@ -140,6 +140,15 @@ def test_push_to_try(repo, monkeypatch):
         assert repo.vcs == "jj"
         expected = [
             (str(vcs._git._tool), "cinnabar", "--version"),
+            (
+                str(tool),
+                "operation",
+                "log",
+                "-n1",
+                "--no-graph",
+                "-T",
+                "id.short(16)",
+            ),
             (str(tool), "debug", "snapshot"),
             (
                 str(tool),
@@ -150,7 +159,15 @@ def test_push_to_try(repo, monkeypatch):
                 "-T",
                 "id.short(16)",
             ),
-            (str(tool), "new", "-m", "commit message", "latest((@ ~ empty()) | @-)"),
+            (
+                str(tool),
+                "new",
+                "-m",
+                "commit message",
+                'coalesce(@ ~ (empty() & description(exact:"")) ~ bookmarks(), @-)',
+            ),
+            (str(tool), "file", "track", "extra-file"),
+            (str(tool), "file", "track", "other/extra-file"),
             (str(tool), "log", "-n0"),
             (
                 str(tool),

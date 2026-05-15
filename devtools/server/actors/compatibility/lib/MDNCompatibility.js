@@ -162,7 +162,7 @@ class MDNCompatibility {
    *                The terms which is checked the compatibility summary from the
    *                database. The paremeters are passed as `rest parameters`.
    *                e.g. _getCompatSummary(browsers, database, "user-select", ...)
-   * @return {Object}
+   * @return {object}
    *                {
    *                  database: The passed database as a parameter,
    *                  terms: The passed terms as a parameter,
@@ -224,7 +224,7 @@ class MDNCompatibility {
    * @param {Array} browsers
    *                All browsers that to check
    *                e.g. [{ id: "firefox", name: "Firefox", version: "68" }, ...]
-   * @return {Object} compatibility summary
+   * @return {object} compatibility summary
    */
   _getCSSPropertyCompatSummary(browsers, property) {
     const summary = this._getCompatSummary(

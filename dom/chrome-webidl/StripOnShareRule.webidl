@@ -11,5 +11,6 @@
 [GenerateInitFromJSON]
 dictionary StripRule {
   sequence<UTF8String> queryParams = [];
-  sequence<UTF8String> topLevelSites = [];
+  boolean isGlobal = false;
+  sequence<UTF8String> origins = [];
 };

@@ -1,0 +1,40 @@
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+[scriptable, uuid(19904b57-e6b8-4c0f-86eb-5ffce4c8d675)]
+interface nsIWindowsDebugProcessData : nsISupports
+{
+  // "User-friendly name" of the process.
+  readonly attribute AString name;
+
+  // Full path to the executable of the process.
+  readonly attribute AString executablePath;
+
+  // PID of the process.
+  readonly attribute unsigned long pid;
+};
+
+// Useful for debugging Windows errors related to resources in use.  This class
+// should only be used for debugging purposes.
+[scriptable, uuid(15725b2d-08d1-4b18-9e83-0cccfb87b982)]
+interface nsIWindowsTestDebug : nsISupports
+{
+  /**
+   * Get the list of processes that currently have an open handle to aFilename.
+   * This can be used to determine what other processess (if any) are
+   * preventing access to a file, or even if this process still has open
+   * handles to it.  Currently, this list will not include file handles
+   * obtained via memory mapping, which can be kept beyond closing the handle
+   * that they mapped on Windows.  This behavior is obviously racy.
+   *
+   * @param aFilepath  Full path to the file we are querying.
+   * @returns An array of the processes that held handles to aFilename at the
+   *          time the function was executed.
+   */
+  Array<nsIWindowsDebugProcessData> processesThatOpenedFile(in AString aFilename);
+};

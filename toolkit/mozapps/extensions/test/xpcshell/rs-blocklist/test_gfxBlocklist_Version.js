@@ -54,7 +54,7 @@ async function run_test() {
     var failureId = {};
     var status;
 
-    status = gfxInfo.getFeatureStatusStr("DIRECT2D", failureId);
+    status = gfxInfo.getFeatureStatusStr("DX_NV12", failureId);
     Assert.equal(status, "BLOCKED_DRIVER_VERSION");
     Assert.equal(failureId.value, "FEATURE_FAILURE_DL_BLOCKLIST_g1");
 

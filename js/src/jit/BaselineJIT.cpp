@@ -99,6 +99,8 @@ struct EnterJitData {
   RootedValue result;
 
   bool constructing;
+
+  Value& thisv() const { return maxArgv[-1]; }
 };
 
 static JitExecStatus EnterBaseline(JSContext* cx, EnterJitData& data) {
@@ -128,8 +130,8 @@ static JitExecStatus EnterBaseline(JSContext* cx, EnterJitData& data) {
 
   // Caller must construct |this| before invoking the function.
   MOZ_ASSERT_IF(data.constructing,
-                data.maxArgv[0].isObject() ||
-                    data.maxArgv[0].isMagic(JS_UNINITIALIZED_LEXICAL));
+                data.thisv().isObject() ||
+                    data.thisv().isMagic(JS_UNINITIALIZED_LEXICAL));
 
   data.result.setInt32(data.numActualArgs);
   {
@@ -153,8 +155,8 @@ static JitExecStatus EnterBaseline(JSContext* cx, EnterJitData& data) {
   // class constructors, which are forced to do it themselves.
   if (!data.result.isMagic() && data.constructing &&
       data.result.isPrimitive()) {
-    MOZ_ASSERT(data.maxArgv[0].isObject());
-    data.result = data.maxArgv[0];
+    MOZ_ASSERT(data.thisv().isObject());
+    data.result = data.thisv();
   }
 
   // Release temporary buffer used for OSR into Ion.
@@ -184,9 +186,8 @@ JitExecStatus jit::EnterBaselineInterpreterAtBranch(JSContext* cx,
   if (fp->isFunctionFrame()) {
     data.constructing = fp->isConstructing();
     data.numActualArgs = fp->numActualArgs();
-    data.maxArgc = std::max(fp->numActualArgs(), fp->numFormalArgs()) +
-                   1;               // +1 = include |this|
-    data.maxArgv = fp->argv() - 1;  // -1 = include |this|
+    data.maxArgc = std::max(fp->numActualArgs(), fp->numFormalArgs());
+    data.maxArgv = fp->argv();
     data.envChain = nullptr;
     data.calleeToken = CalleeToToken(&fp->callee(), data.constructing);
   } else {
@@ -207,9 +208,9 @@ JitExecStatus jit::EnterBaselineInterpreterAtBranch(JSContext* cx,
   return JitExec_Ok;
 }
 
-static bool OffThreadBaselineCompilationAvailable(JSContext* cx,
-                                                  JSScript* script) {
-  if (!cx->runtime()->canUseOffthreadBaselineCompilation()) {
+bool BaselineCompileTask::OffThreadBaselineCompilationAvailable(
+    JSContext* cx, JSScript* script, bool isEager) {
+  if (!isEager && !cx->runtime()->canUseOffthreadBaselineCompilation()) {
     return false;
   }
   // TODO: Support off-thread scriptcounts?
@@ -222,13 +223,17 @@ static bool OffThreadBaselineCompilationAvailable(JSContext* cx,
   if (script->isDebuggee()) {
     return false;
   }
+  if (JS::Prefs::experimental_self_hosted_cache() && script->selfHosted()) {
+    return false;
+  }
   return CanUseExtraThreads();
 }
 
 static bool DispatchOffThreadBaselineCompile(JSContext* cx,
                                              BaselineSnapshot& snapshot) {
   JSScript* script = snapshot.script();
-  MOZ_ASSERT(OffThreadBaselineCompilationAvailable(cx, script));
+  MOZ_ASSERT(
+      BaselineCompileTask::OffThreadBaselineCompilationAvailable(cx, script));
 
   auto alloc = cx->make_unique<LifoAlloc>(TempAllocator::PreferredLifoChunkSize,
                                           js::BackgroundMallocArena);
@@ -268,7 +273,10 @@ static bool DispatchOffThreadBaselineCompile(JSContext* cx,
   return true;
 }
 
-bool jit::DispatchOffThreadBaselineBatch(JSContext* cx) {
+// Off thread baseline batching can be called from two different locations.
+// Either through stencil instantiation where we perform eager baseline
+// compilations speculatively based on Jit Hints, or on demand through the JIT.
+static bool DispatchOffThreadBaselineBatchImpl(JSContext* cx, bool isEager) {
   BaselineCompileQueue& queue = cx->realm()->baselineCompileQueue();
   MOZ_ASSERT(queue.numQueued() > 0);
 
@@ -291,11 +299,19 @@ bool jit::DispatchOffThreadBaselineBatch(JSContext* cx) {
   Rooted<JSScript*> script(cx);
   while (!queue.isEmpty()) {
     script = queue.pop();
-    script->jitScript()->clearIsBaselineQueued(script);
+    if (script->hasJitScript()) {
+      script->jitScript()->clearIsBaselineQueued(script);
+    }
 
     MOZ_ASSERT(cx->realm() == script->realm());
 
-    if (!OffThreadBaselineCompilationAvailable(cx, script)) {
+    if (!IsBaselineJitEnabled(cx)) {
+      script->disableBaselineCompile();
+      continue;
+    }
+
+    if (!BaselineCompileTask::OffThreadBaselineCompilationAvailable(cx, script,
+                                                                    isEager)) {
       BaselineOptions options({BaselineOption::ForceMainThreadCompilation});
       MethodStatus status = BaselineCompile(cx, script, options);
       if (status != Method_Compiled) {
@@ -351,6 +367,14 @@ bool jit::DispatchOffThreadBaselineBatch(JSContext* cx) {
   return true;
 }
 
+bool jit::DispatchOffThreadBaselineBatchEager(JSContext* cx) {
+  return DispatchOffThreadBaselineBatchImpl(cx, /* isEager = */ true);
+}
+
+bool jit::DispatchOffThreadBaselineBatch(JSContext* cx) {
+  return DispatchOffThreadBaselineBatchImpl(cx, /* isEager = */ false);
+}
+
 MethodStatus jit::BaselineCompile(JSContext* cx, JSScript* script,
                                   BaselineOptions options) {
   cx->check(script);
@@ -390,7 +414,8 @@ MethodStatus jit::BaselineCompile(JSContext* cx, JSScript* script,
                             baseWarmUpThreshold, isIonCompileable,
                             compileDebugInstrumentation);
 
-  if (OffThreadBaselineCompilationAvailable(cx, script) && !forceMainThread) {
+  if (BaselineCompileTask::OffThreadBaselineCompilationAvailable(cx, script) &&
+      !forceMainThread) {
     if (!DispatchOffThreadBaselineCompile(cx, snapshot)) {
       ReportOutOfMemory(cx);
       return Method_Error;
@@ -400,6 +425,11 @@ MethodStatus jit::BaselineCompile(JSContext* cx, JSScript* script,
 
   TempAllocator temp(&cx->tempLifoAlloc());
 
+  mozilla::Maybe<JSAutoNullableRealm> ar;
+  if (JS::Prefs::experimental_self_hosted_cache() && script->selfHosted()) {
+    // realm-independent scripts should not have a realm set
+    ar.emplace(cx, nullptr);
+  }
   StackMacroAssembler masm(cx, temp);
 
   BaselineCompiler compiler(temp, CompileRuntime::get(cx->runtime()), masm,
@@ -1247,6 +1277,7 @@ void jit::ToggleBaselineProfiling(JSContext* cx, bool enable) {
       JSScript* script = jitScript->owningScript();
       if (enable) {
         jitScript->ensureProfileString(cx, script);
+        jitScript->ensureProfilerScriptSource(cx, script);
       }
       if (script->hasBaselineScript()) {
         AutoWritableJitCode awjc(script->baselineScript()->method());

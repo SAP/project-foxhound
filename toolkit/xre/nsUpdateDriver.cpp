@@ -24,7 +24,6 @@
 #include "nsIXULAppInfo.h"
 #include "mozilla/Preferences.h"
 #include "nsPrintfCString.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/Printf.h"
 #include "mozilla/UniquePtr.h"
@@ -138,7 +137,7 @@ static bool GetFile(nsIFile* dir, const nsACString& name,
     return false;
   }
 
-  result = file;
+  result = std::move(file);
   return true;
 }
 

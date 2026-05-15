@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIDocumentTransformer_h__
-#define nsIDocumentTransformer_h__
+#ifndef nsIDocumentTransformer_h_
+#define nsIDocumentTransformer_h_
 
 #include "nsISupports.h"
 #include "nsStringFwd.h"
@@ -58,4 +58,4 @@ class nsIDocumentTransformer : public nsISupports {
                           nsINode* aContextNode) = 0;
 };
 
-#endif  // nsIDocumentTransformer_h__
+#endif  // nsIDocumentTransformer_h_

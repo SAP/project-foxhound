@@ -8,7 +8,7 @@
 // check its value as well.
 
 function test() {
-  /** Tests selected options **/
+  /** Tests selected options */
   requestLongerTimeout(2);
   waitForExplicitFinish();
 

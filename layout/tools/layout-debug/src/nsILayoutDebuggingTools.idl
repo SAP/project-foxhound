@@ -36,7 +36,6 @@ interface nsILayoutDebuggingTools : nsISupports
     void dumpContent(in boolean anonymousSubtrees);
     void dumpFrames(in uint8_t flags);
     void dumpTextRuns();
-    void dumpViews();
     void dumpCounterManager();
     void dumpRetainedDisplayList();
 

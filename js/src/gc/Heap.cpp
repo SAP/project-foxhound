@@ -478,6 +478,8 @@ void ArenaChunk::updateCurrentChunkAfterAlloc(GCRuntime* gc) {
   info.numArenasFreeCommitted--;
   info.numArenasFree--;
 
+  verify();
+
   if (MOZ_UNLIKELY(isFull())) {
     AutoLockGC lock(gc);
     mergePendingFreeArenas(gc, lock);
@@ -570,6 +572,8 @@ void ArenaChunk::mergePendingFreeArenas(GCRuntime* gc, const AutoLockGC& lock) {
 
   info.numArenasFree += count;
   info.numArenasFreeCommitted += count;
+
+  verify();
 }
 
 ArenaChunk* ChunkPool::pop() {

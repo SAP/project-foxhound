@@ -34,7 +34,6 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/Sprintf.h"
@@ -46,7 +45,9 @@
 #include <time.h>
 #include <dlfcn.h>
 
+#define StandardFonts
 #include "StandardFonts-macos.inc"
+#undef StandardFonts
 
 using namespace mozilla;
 using namespace mozilla::gfx;

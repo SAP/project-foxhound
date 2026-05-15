@@ -12,6 +12,7 @@ include HttpChannelParams;
 include PURLClassifierInfo;
 
 include "mozilla/net/NeckoMessageUtils.h";
+using class mozilla::net::nsHttpHeaderArray from "nsHttpHeaderArray.h";
 
 namespace mozilla {
 namespace net {

@@ -9,7 +9,6 @@
 
 #include "js/TypeDecls.h"
 #include "nsTArray.h"
-#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 

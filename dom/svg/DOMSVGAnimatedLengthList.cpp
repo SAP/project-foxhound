@@ -9,9 +9,9 @@
 #include "DOMSVGLengthList.h"
 #include "SVGAnimatedLengthList.h"
 #include "SVGAttrTearoffTable.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/SVGAnimatedLengthListBinding.h"
 #include "mozilla/dom/SVGElement.h"
-#include "mozilla/RefPtr.h"
 
 // See the architecture comment in this file's header.
 
@@ -53,7 +53,8 @@ already_AddRefed<DOMSVGLengthList> DOMSVGAnimatedLengthList::AnimVal() {
 already_AddRefed<DOMSVGAnimatedLengthList>
 DOMSVGAnimatedLengthList::GetDOMWrapper(SVGAnimatedLengthList* aList,
                                         dom::SVGElement* aElement,
-                                        uint8_t aAttrEnum, uint8_t aAxis) {
+                                        uint8_t aAttrEnum,
+                                        SVGLength::Axis aAxis) {
   RefPtr<DOMSVGAnimatedLengthList> wrapper =
       SVGAnimatedLengthListTearoffTable().GetTearoff(aList);
   if (!wrapper) {

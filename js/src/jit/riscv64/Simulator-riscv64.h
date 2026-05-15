@@ -40,6 +40,8 @@
 #  include "jit/riscv64/constant/util-riscv64.h"
 #  include "jit/riscv64/disasm/Disasm-riscv64.h"
 #  include "js/ProfilingFrameIterator.h"
+#  include "js/Utility.h"
+#  include "js/Vector.h"
 #  include "threading/Thread.h"
 #  include "vm/MutexIDs.h"
 #  include "wasm/WasmSignalHandlers.h"
@@ -373,7 +375,7 @@ class SimInstructionBase : public InstructionBase {
 
 class SimInstruction : public InstructionGetters<SimInstructionBase> {
  public:
-  SimInstruction() {}
+  SimInstruction() = default;
 
   explicit SimInstruction(Instruction* instr) { *this = instr; }
 
@@ -383,6 +385,28 @@ class SimInstruction : public InstructionGetters<SimInstructionBase> {
     type_ = InstructionBase::InstructionType();
     MOZ_ASSERT(reinterpret_cast<void*>(&operand_) == this);
     return *this;
+  }
+};
+
+// std::vector shim for breakpoints
+template <typename T>
+class BreakpointVector final {
+  js::Vector<T, 0, js::SystemAllocPolicy> vector_;
+
+ public:
+  BreakpointVector() = default;
+
+  size_t size() const { return vector_.length(); }
+
+  T& at(size_t i) { return vector_[i]; }
+  const T& at(size_t i) const { return vector_[i]; }
+
+  template <typename U>
+  void push_back(U&& u) {
+    js::AutoEnterOOMUnsafeRegion oomUnsafe;
+    if (!vector_.emplaceBack(std::move(u))) {
+      oomUnsafe.crash("breakpoint vector push_back");
+    }
   }
 };
 
@@ -948,7 +972,7 @@ class Simulator {
   bool init();
 
   // Unsupported instructions use Format to print an error and stop execution.
-  void format(SimInstruction* instr, const char* format);
+  void format(const SimInstruction& instr, const char* format);
 
   // Read and write memory.
   // RISCV Memory read/write methods
@@ -964,13 +988,13 @@ class Simulator {
     return lhs;
   }
 
-  inline int32_t loadLinkedW(uint64_t addr, SimInstruction* instr);
+  inline int32_t loadLinkedW(uint64_t addr, const SimInstruction& instr);
   inline int storeConditionalW(uint64_t addr, int32_t value,
-                               SimInstruction* instr);
+                               const SimInstruction& instr);
 
-  inline int64_t loadLinkedD(uint64_t addr, SimInstruction* instr);
+  inline int64_t loadLinkedD(uint64_t addr, const SimInstruction& instr);
   inline int storeConditionalD(uint64_t addr, int64_t value,
-                               SimInstruction* instr);
+                               const SimInstruction& instr);
 
   // Used for breakpoints and traps.
   void SoftwareInterrupt();
@@ -980,7 +1004,7 @@ class Simulator {
   bool IsTracepoint(uint32_t code);
   void printWatchpoint(uint32_t code);
   void handleStop(uint32_t code);
-  bool isStopInstruction(SimInstruction* instr);
+  bool isStopInstruction(const SimInstruction& instr);
   bool isEnabledStop(uint32_t code);
   void enableStop(uint32_t code);
   void disableStop(uint32_t code);
@@ -989,12 +1013,12 @@ class Simulator {
 
   // Simulator breakpoints.
   struct Breakpoint {
-    SimInstruction* location;
+    Instruction* location;
     bool enabled;
     bool is_tbreak;
   };
-  std::vector<Breakpoint> breakpoints_;
-  void SetBreakpoint(SimInstruction* breakpoint, bool is_tbreak);
+  BreakpointVector<Breakpoint> breakpoints_;
+  void SetBreakpoint(const SimInstruction& location, bool is_tbreak);
   void ListBreakpoints();
   void CheckBreakpoints();
 
@@ -1020,7 +1044,7 @@ class Simulator {
   }
 
   // Executes one instruction.
-  void InstructionDecode(Instruction* instr);
+  void InstructionDecode(const SimInstruction& instr);
 
   // ICache.
   // static void CheckICache(base::CustomMatcherHashMap* i_cache,
@@ -1229,7 +1253,7 @@ class SimulatorProcess {
       ICacheCheckingDisableCount;
   static void FlushICache(void* start, size_t size);
 
-  static void checkICacheLocked(SimInstruction* instr);
+  static void checkICacheLocked(const SimInstruction& instr);
 
   static bool initialize() {
     singleton_ = js_new<SimulatorProcess>();

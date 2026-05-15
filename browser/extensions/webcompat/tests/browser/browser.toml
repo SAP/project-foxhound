@@ -11,37 +11,63 @@ support-files = [
   "smartblock_embed_test.html",
   "embed_test.js",
 ]
+prefs = ["extensions.webcompat.disabled_interventions.test6=true","extensions.webcompat.disabled_interventions.test7=false"]
 
 ["browser_aboutcompat.js"]
-skip-if = ["debug"] # disabled until bug 1961939 is fixed.
+skip-if = [
+  "debug", # disabled until bug 1961939 is fixed.
+]
 
 ["browser_custom_functions.js"]
 support-files = ["download_server.sjs", "echo_headers.sjs"]
 
 ["browser_intervention_gating.js"]
-skip-if = ["debug"] # disabled until bug 1961939 is fixed.
+skip-if = [
+  "debug", # disabled until bug 1961939 is fixed.
+]
 
 ["browser_interventions.js"]
 
 ["browser_pref_check.js"]
+
+["browser_remote_settings_updates.js"]
 
 ["browser_shims.js"]
 https_first_disabled = true
 
 ["browser_smartblockembeds.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1945222
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1945222
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1945222
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1945222
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1945222
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1945222
+]
+
+["browser_smartblockembeds_link_preservation.js"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1945222
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1945222
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1945222
 ]
 
 ["browser_smartblockembeds_mutation.js"]
 skip-if = [
-  "os == 'linux' && asan",
-  "os == 'linux' && debug",
-  "os == 'mac' && debug",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1960066
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug",
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && opt && socketprocess_networking", # Bug 1960066
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1960066
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug",
 ] # Bug 1858919, 1960066
+
+["browser_smartblockembeds_trustpanel.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 2001223, Bug 2003484
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1945222
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1945222
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1945222, Bug 2003484
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 2003484
+]
 
 ["browser_ua_helpers.js"]

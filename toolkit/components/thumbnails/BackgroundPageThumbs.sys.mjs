@@ -44,31 +44,40 @@ export const BackgroundPageThumbs = {
    *
    * The page is loaded anonymously, and plug-ins are disabled.
    *
-   * @param url      The URL to capture.
-   * @param options  An optional object that configures the capture.  Its
-   *                 properties are the following, and all are optional:
-   * @opt onDone     A function that will be asynchronously called when the
-   *                 capture is complete or times out.  It's called as
-   *                   onDone(url),
-   *                 where `url` is the captured URL.
-   * @opt timeout    The capture will time out after this many milliseconds have
-   *                 elapsed after the capture has progressed to the head of
-   *                 the queue and started.  Defaults to 30000 (30 seconds).
-   * @opt isImage    If true, backgroundPageThumbsContent will attempt to render
-   *                 the url directly to canvas. Note that images will mostly get
-   *                 detected and rendered as such anyway, but this will ensure it.
-   * @opt targetWidth The target width when capturing an image.
-   * @opt backgroundColor The background colour when capturing an image.
-   * @opt dontStore  If set to true, the image blob won't be stored to disk, an
-   *                 object will instead be passed as third argument to onDone:
-   *                 {
-   *                   data: an ArrayBuffer containing the data
-   *                   contentType: the data content-type
-   *                   originalUrl: the originally requested url
-   *                   currentUrl: the final url after redirects
-   *                 }
-   * @opt contentType can be set to an image contentType for the capture,
-   *                  defaults to PageThumbs.contentType.
+   * @param url
+   *   The URL to capture.
+   * @param {object} [options]
+   *   An optional object that configures the capture.
+   * @param {Function} [options.onDone]
+   *   A function that will be asynchronously called when the capture is
+   *   complete or times out.  It's called as onDone(url), where `url` is the
+   *   captured URL.
+   * @param {number} [options.timeout]
+   *   The capture will time out after this many milliseconds have elapsed after
+   *   the capture has progressed to the head of the queue and started. Defaults
+   *   to 30000 (30 seconds).
+   * @param {boolean} [options.isImage]
+   *   If true, backgroundPageThumbsContent will attempt to render the url
+   *   directly to canvas. Note that images will mostly get detected and rendered
+   *   as such anyway, but this will ensure it.
+   * @param {number} [options.targetWidth]
+   *   The target width when capturing an image.
+   * @param {string} [options.backgroundColor]
+   *   The background colour when capturing an image.
+   * @param {boolean} [options.dontStore]
+   *   If set to true, the image blob won't be stored to disk, an object will
+   *   instead be passed as third argument to onDone:
+   *   ```
+   *   {
+   *     data: an ArrayBuffer containing the data
+   *     contentType: the data content-type
+   *     originalUrl: the originally requested url
+   *     currentUrl: the final url after redirects
+   *   }
+   *   ```
+   * @param {string} [options.contentType]
+   *   Can be set to an image contentType for the capture, defaults to
+   *   PageThumbs.contentType.
    */
   capture(url, options = {}) {
     if (!PageThumbs._prefEnabled()) {
@@ -593,7 +602,8 @@ Capture.prototype = {
             this._done(browser, null, TEL_CAPTURE_DONE_BAD_URI);
           }
         },
-        () => {
+        err => {
+          console.error(err);
           // The query can fail when a crash occurs while loading. The error causes
           // thumbnail crash tests to fail with an uninteresting error message.
         }

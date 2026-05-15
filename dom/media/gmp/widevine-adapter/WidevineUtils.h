@@ -6,11 +6,11 @@
 #ifndef WidevineUtils_h_
 #define WidevineUtils_h_
 
-#include "stddef.h"
 #include "content_decryption_module.h"
+#include "mozilla/Logging.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
-#include "mozilla/Logging.h"
+#include "stddef.h"
 
 namespace mozilla {
 

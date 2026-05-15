@@ -5,6 +5,7 @@
 package org.mozilla.fenix.share.viewholders
 
 import android.view.View
+import androidx.annotation.LayoutRes
 import androidx.annotation.VisibleForTesting
 import androidx.recyclerview.widget.RecyclerView
 import org.mozilla.fenix.R
@@ -35,6 +36,7 @@ class AppViewHolder(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.app_share_list_item
+        @LayoutRes
+        val LAYOUT_ID = R.layout.app_share_list_item
     }
 }

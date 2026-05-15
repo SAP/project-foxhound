@@ -8,11 +8,10 @@
 #define DOM_SVG_DOMSVGLENGTH_H_
 
 #include "DOMSVGLengthList.h"
+#include "SVGLength.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
 #include "nsTArray.h"
-#include "SVGLength.h"
-#include "mozilla/Attributes.h"
 #include "nsWrapperCache.h"
 
 #define MOZ_SVG_LIST_INDEX_BIT_COUNT 21  // supports > 2 million list items

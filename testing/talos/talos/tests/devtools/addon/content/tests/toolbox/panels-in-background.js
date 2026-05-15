@@ -30,10 +30,11 @@ module.exports = async function () {
   let monitor = await toolbox.selectTool("netmonitor");
   const debuggerPanel = await toolbox.selectTool("jsdebugger");
   const dbg = await createContext(debuggerPanel);
-  dump(" Select and pretty print a source");
-  await selectSource(dbg, "eval-script-0");
+
+  dump(" Select and pretty print a source\n");
+  await selectSource(dbg, "eval-script-0.js");
   const prettyPrintButton = await waitUntil(() => {
-    return dbg.win.document.querySelector(".source-footer .prettyPrint.active");
+    return dbg.win.document.querySelector(".source-footer .prettyPrint");
   });
   prettyPrintButton.click();
 
@@ -53,6 +54,11 @@ module.exports = async function () {
   // The HTML page + 2000 eval sources
   await waitForSources(dbg, 2001);
   test.done();
+
+  await toolbox.selectTool("jsdebugger");
+  // Close all tabs so that the test behaves the same on each run and reopen the eval script
+  const sources = dbg.selectors.getSourceList(dbg.getState());
+  await dbg.actions.closeTabsForSources(sources);
 
   await closeToolbox();
   await testTeardown();

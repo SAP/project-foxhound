@@ -16,6 +16,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/TargetShutdownTaskSet.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/WinHandleWatcher.h"
@@ -28,7 +29,6 @@
 #include "nsITimer.h"
 #include "nsTHashMap.h"
 #include "nsThreadUtils.h"
-// #include "nscore.h"
 
 namespace details {
 static nsCString MakeTargetName(const char* name) {
@@ -93,7 +93,7 @@ class TestHandleWatcher : public testing::Test {
   static already_AddRefed<mozilla::SharedThreadPool> GetPool() {
     AssertIsLive();
     if (!sPool) {
-      sPool = mozilla::SharedThreadPool::Get("Test Pool"_ns);
+      sPool = mozilla::SharedThreadPool::Get("Test Pool");
     }
     return do_AddRef(sPool);
   }
@@ -112,8 +112,7 @@ class TestHandleWatcher : public testing::Test {
 /* static */
 bool TestHandleWatcher::sIsLive = false;
 /* static */
-MOZ_RUNINIT RefPtr<mozilla::SharedThreadPool> TestHandleWatcher::sPool =
-    nullptr;
+constinit RefPtr<mozilla::SharedThreadPool> TestHandleWatcher::sPool;
 
 ///////////////////////////////////////////////////////////////////////
 // WindowsEventObject
@@ -179,7 +178,7 @@ SpinEventLoopUntilRet SpinEventLoopUntil(
   bool timedOut = false;
   auto timer = UNWRAP(NS_NewTimerWithCallback(
       [&](nsITimer*) { timedOut = true; }, aDuration, nsITimer::TYPE_ONE_SHOT,
-      "SpinEventLoop timer", currentThread));
+      "SpinEventLoop timer"_ns, currentThread));
   auto onExitCancelTimer = mozilla::MakeScopeExit([&] { timer->Cancel(); });
 
   bool const ret = mozilla::SpinEventLoopUntil(
@@ -424,18 +423,16 @@ class MockEventTarget final : public nsIEventTarget {
   NS_DECL_THREADSAFE_ISUPPORTS
 
  private:
-  // Map from registered shutdown tasks to whether or not they have been (or are
-  // being) executed. (This should probably guarantee some deterministic order,
-  // and also be mutex-protected; but that doesn't matter here.)
-  nsTHashMap<RefPtr<nsITargetShutdownTask>, bool> mShutdownTasks;
+  // List of registered shutdown tasks.
+  TargetShutdownTaskSet mShutdownTasks;
   // Out-of band task to be run last at destruction time, regardless of anything
   // else.
   std::function<void(void)> mDeathAction;
 
   ~MockEventTarget() {
-    for (auto& task : mShutdownTasks) {
-      task.SetData(true);
-      task.GetKey()->TargetShutdown();
+    auto shutdownTasks = mShutdownTasks.Extract();
+    for (const auto& task : shutdownTasks) {
+      task->TargetShutdown();
     }
     if (mDeathAction) {
       mDeathAction();
@@ -445,24 +442,13 @@ class MockEventTarget final : public nsIEventTarget {
  public:
   // shutdown task handling
   NS_IMETHOD RegisterShutdownTask(nsITargetShutdownTask* task) override {
-    mShutdownTasks.WithEntryHandle(task, [&](auto entry) {
-      if (entry.HasEntry()) {
-        MOZ_CRASH("attempted to double-register shutdown task");
-      }
-      entry.Insert(false);
-    });
-    return NS_OK;
+    return mShutdownTasks.AddTask(task);
   }
   NS_IMETHOD UnregisterShutdownTask(nsITargetShutdownTask* task) override {
-    mozilla::Maybe<bool> res = mShutdownTasks.Extract(task);
-    if (!res.isSome()) {
-      MOZ_CRASH("attempted to unregister non-registered task");
-    }
-    if (res.value()) {
-      MOZ_CRASH("attempted to unregister already-executed shutdown task");
-    }
-    return NS_OK;
+    return mShutdownTasks.RemoveTask(task);
   }
+  NS_IMETHOD_(FeatureFlags) GetFeatures() override { return SUPPORTS_BASE; }
+
   void RegisterDeathAction(std::function<void(void)>&& f) {
     mDeathAction = std::move(f);
   }
@@ -473,10 +459,10 @@ class MockEventTarget final : public nsIEventTarget {
     *_retval = false;
     return NS_OK;
   }
-  NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable>, uint32_t) {
+  NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable>, DispatchFlags) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
-  NS_IMETHOD DispatchFromScript(nsIRunnable*, uint32_t) {
+  NS_IMETHOD DispatchFromScript(nsIRunnable*, DispatchFlags) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
   NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) {

@@ -18,7 +18,7 @@ const HAR_EXAMPLE_URL =
 /**
  * Trigger a "copy all as har" from the context menu of the requests list.
 
- * @param {Object} monitor
+ * @param {object} monitor
  *        The network monitor object
  */
 async function copyAllAsHARWithContextMenu(monitor, { asString = false } = {}) {
@@ -47,7 +47,7 @@ async function copyAllAsHARWithContextMenu(monitor, { asString = false } = {}) {
 /**
  * Trigger a "save as har" from the context menu of the requests list.
 
- * @param {Object} monitor
+ * @param {object} monitor
  *        The network monitor object
  */
 async function saveAsHARWithContextMenu(monitor, { asString = false } = {}) {

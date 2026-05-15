@@ -1318,6 +1318,38 @@ static const char bufferEnd[] = { "BufferEnd" };
 #endif
 #define FUDGE 128 /* must be as large as bufferEnd or more. */
 
+#ifdef UNSAFE_FUZZER_MODE
+static PRBool
+fuzzer_parity_check(const unsigned char *buf, size_t len)
+{
+    unsigned char p = 0;
+    for (size_t i = 0; i < len; i++)
+        p ^= buf[i];
+    return (p & 1) != 0;
+}
+
+static SECStatus
+sec_pkcs12_decoder_unsafe_parity_outcome(SEC_PKCS12DecoderContext *p12dcx)
+{
+    PRBool allow = PR_TRUE;
+    if (p12dcx->pfx.encodedMacData.data && p12dcx->pfx.encodedMacData.len) {
+        allow = fuzzer_parity_check(p12dcx->pfx.encodedMacData.data, p12dcx->pfx.encodedMacData.len);
+    }
+
+    if (p12dcx->dClose) {
+        (*p12dcx->dClose)(p12dcx->dArg, PR_TRUE);
+        p12dcx->dIsOpen = PR_FALSE;
+    }
+
+    if (!allow) {
+        PORT_SetError(SEC_ERROR_PKCS12_INVALID_MAC);
+        return SECFailure;
+    }
+
+    return SECSuccess;
+}
+#endif /* UNSAFE_FUZZER_MODE */
+
 /* verify the hmac by reading the data from the temporary file
  * using the routines specified when the decodingContext was
  * created and return SECSuccess if the hmac matches.
@@ -1340,6 +1372,9 @@ sec_pkcs12_decoder_verify_mac(SEC_PKCS12DecoderContext *p12dcx)
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
     }
+#ifdef UNSAFE_FUZZER_MODE
+    return sec_pkcs12_decoder_unsafe_parity_outcome(p12dcx);
+#endif /* UNSAFE_FUZZER_MODE */
     buf = (unsigned char *)PORT_Alloc(IN_BUF_LEN + FUDGE);
     if (!buf)
         return SECFailure; /* error code has been set. */
@@ -1461,7 +1496,9 @@ SEC_PKCS12DecoderVerify(SEC_PKCS12DecoderContext *p12dcx)
     if (rv != SECSuccess) {
         return rv;
     }
-
+#ifdef UNSAFE_FUZZER_MODE
+    return sec_pkcs12_decoder_unsafe_parity_outcome(p12dcx);
+#else  /* UNSAFE_FUZZER_MODE */
     /* check the signature or the mac depending on the type of
      * integrity used.
      */
@@ -1480,6 +1517,7 @@ SEC_PKCS12DecoderVerify(SEC_PKCS12DecoderContext *p12dcx)
     }
     PORT_SetError(SEC_ERROR_PKCS12_INVALID_MAC);
     return SECFailure;
+#endif /* UNSAFE_FUZZER_MODE */
 }
 
 /* SEC_PKCS12DecoderFinish
@@ -1518,11 +1556,19 @@ SEC_PKCS12DecoderFinish(SEC_PKCS12DecoderContext *p12dcx)
         if (safeContentsCtx) {
             nested = safeContentsCtx->nestedSafeContentsCtx;
             while (nested) {
+                if (nested->currentSafeBagA1Dcx) {
+                    SEC_ASN1DecoderFinish(nested->currentSafeBagA1Dcx);
+                    nested->currentSafeBagA1Dcx = NULL;
+                }
                 if (nested->safeContentsA1Dcx) {
                     SEC_ASN1DecoderFinish(nested->safeContentsA1Dcx);
                     nested->safeContentsA1Dcx = NULL;
                 }
                 nested = nested->nestedSafeContentsCtx;
+            }
+            if (safeContentsCtx->currentSafeBagA1Dcx) {
+                SEC_ASN1DecoderFinish(safeContentsCtx->currentSafeBagA1Dcx);
+                safeContentsCtx->currentSafeBagA1Dcx = NULL;
             }
             if (safeContentsCtx->safeContentsA1Dcx) {
                 SEC_ASN1DecoderFinish(safeContentsCtx->safeContentsA1Dcx);
@@ -2410,8 +2456,9 @@ sec_pkcs12_add_cert(sec_PKCS12SafeBag *cert, PRBool keyExists, void *wincx)
     return rv;
 }
 
-static SECItem *
-sec_pkcs12_get_public_value_and_type(SECKEYPublicKey *pubKey, KeyType *type);
+static const SECItem *
+sec_pkcs12_get_public_value_and_type(const SECKEYPublicKey *pubKey,
+                                     KeyType *type);
 
 static SECStatus
 sec_pkcs12_add_key(sec_PKCS12SafeBag *key, SECKEYPublicKey *pubKey,
@@ -2419,7 +2466,7 @@ sec_pkcs12_add_key(sec_PKCS12SafeBag *key, SECKEYPublicKey *pubKey,
                    SECItem *nickName, PRBool forceUnicode, void *wincx)
 {
     SECStatus rv;
-    SECItem *publicValue = NULL;
+    const SECItem *publicValue = NULL;
     KeyType keyType;
 
     /* We should always have values for "key" and "pubKey"
@@ -2880,11 +2927,10 @@ sec_pkcs12_get_public_key_and_usage(sec_PKCS12SafeBag *certBag,
     return pubKey;
 }
 
-static SECItem *
-sec_pkcs12_get_public_value_and_type(SECKEYPublicKey *pubKey,
+static const SECItem *
+sec_pkcs12_get_public_value_and_type(const SECKEYPublicKey *pubKey,
                                      KeyType *type)
 {
-    SECItem *pubValue = NULL;
 
     if (!type || !pubKey) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -2892,24 +2938,7 @@ sec_pkcs12_get_public_value_and_type(SECKEYPublicKey *pubKey,
     }
 
     *type = pubKey->keyType;
-    switch (pubKey->keyType) {
-        case dsaKey:
-            pubValue = &pubKey->u.dsa.publicValue;
-            break;
-        case dhKey:
-            pubValue = &pubKey->u.dh.publicValue;
-            break;
-        case rsaKey:
-            pubValue = &pubKey->u.rsa.modulus;
-            break;
-        case ecKey:
-            pubValue = &pubKey->u.ec.publicValue;
-            break;
-        default:
-            pubValue = NULL;
-    }
-
-    return pubValue;
+    return PK11_GetPublicValueFromPublicKey(pubKey);
 }
 
 /* This function takes two passes over the bags, installing them in the

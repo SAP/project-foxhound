@@ -9,6 +9,7 @@
 #include "imgLoader.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/LoadURIOptionsBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
 #include "nsCharsetSource.h"
@@ -30,6 +31,7 @@
 
 using namespace mozilla;
 using mozilla::dom::Document;
+using mozilla::dom::ForceMediaDocument;
 
 already_AddRefed<nsIDocumentViewer> NS_NewDocumentViewer();
 
@@ -74,6 +76,92 @@ nsContentDLF::~nsContentDLF() = default;
 
 NS_IMPL_ISUPPORTS(nsContentDLF, nsIDocumentLoaderFactory)
 
+enum class CreateDocumentKind { HTML, XML, SVG, Video, Image, None };
+
+static CreateDocumentKind GetCreateDocumentKind(nsACString& aContentType) {
+  // HTML or plaintext; both use the same document CID
+  if (IsTypeInList(aContentType, gHTMLTypes) ||
+      nsContentUtils::IsPlainTextType(aContentType)) {
+    return CreateDocumentKind::HTML;
+  }
+
+  if (IsTypeInList(aContentType, gXMLTypes)) {
+    return CreateDocumentKind::XML;
+  }
+
+  if (IsTypeInList(aContentType, gSVGTypes)) {
+    return CreateDocumentKind::SVG;
+  }
+
+  if (mozilla::DecoderTraits::ShouldHandleMediaType(
+          aContentType,
+          /* DecoderDoctorDiagnostics* */ nullptr)) {
+    return CreateDocumentKind::Video;
+  }
+
+  if (imgLoader::SupportImageWithMimeType(aContentType)) {
+    return CreateDocumentKind::Image;
+  }
+
+  return CreateDocumentKind::None;
+}
+
+static nsresult CreateDocument(const char* aCommand, nsIChannel* aChannel,
+                               nsILoadGroup* aLoadGroup,
+                               nsIDocShell* aContainer,
+                               CreateDocumentKind aKind,
+                               nsIStreamListener** aDocListener,
+                               nsIDocumentViewer** aDocumentViewer) {
+  // Create the document
+  RefPtr<Document> doc;
+  nsresult rv;
+  switch (aKind) {
+    case CreateDocumentKind::HTML:
+      rv = NS_NewHTMLDocument(getter_AddRefs(doc), nullptr, nullptr);
+      break;
+    case CreateDocumentKind::XML:
+      rv = NS_NewXMLDocument(getter_AddRefs(doc), nullptr, nullptr);
+      break;
+    case CreateDocumentKind::SVG:
+      rv = NS_NewSVGDocument(getter_AddRefs(doc), nullptr, nullptr);
+      break;
+    case CreateDocumentKind::Video:
+      rv = NS_NewVideoDocument(getter_AddRefs(doc), nullptr, nullptr);
+      break;
+    case CreateDocumentKind::Image:
+      rv = NS_NewImageDocument(getter_AddRefs(doc), nullptr, nullptr);
+      break;
+    case CreateDocumentKind::None:
+      MOZ_ASSERT_UNREACHABLE("Invalid kind.");
+      rv = NS_ERROR_FAILURE;
+      break;
+  }
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Create the content viewer  XXX: could reuse content viewer here!
+  nsCOMPtr<nsIDocumentViewer> viewer = NS_NewDocumentViewer();
+
+  doc->SetContainer(static_cast<nsDocShell*>(aContainer));
+  doc->SetAllowDeclarativeShadowRoots(true);
+
+  // Initialize the document to begin loading the data.  An
+  // nsIStreamListener connected to the parser is returned in
+  // aDocListener.
+  rv = doc->StartDocumentLoad(aCommand, aChannel, aLoadGroup, aContainer,
+                              aDocListener, true);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Bind the document to the Content Viewer
+  viewer->LoadStart(doc);
+
+  if (aKind != CreateDocumentKind::Image) {
+    viewer->GetDocument()->MakeBrowsingContextNonSynthetic();
+  }
+
+  viewer.forget(aDocumentViewer);
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
                              nsILoadGroup* aLoadGroup,
@@ -95,7 +183,7 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
     // type of the data.  If it's known, use it; otherwise use
     // text/plain.
     nsAutoCString type;
-    mozilla::Unused << viewSourceChannel->GetOriginalContentType(type);
+    (void)viewSourceChannel->GetOriginalContentType(type);
     bool knownType = (!type.EqualsLiteral(VIEWSOURCE_CONTENT_TYPE) &&
                       IsTypeInList(type, gHTMLTypes)) ||
                      nsContentUtils::IsPlainTextType(type) ||
@@ -104,7 +192,7 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
 
     if (knownType) {
       viewSourceChannel->SetContentType(type);
-    } else if (IsImageContentType(type)) {
+    } else if (imgLoader::SupportImageWithMimeType(type)) {
       // If it's an image, we want to display it the same way we normally would.
       contentType = type;
     } else {
@@ -115,83 +203,34 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
     contentType = TEXT_PLAIN;
   }
 
-  nsresult rv;
-  bool imageDocument = false;
-  // Try html or plaintext; both use the same document CID
-  if (IsTypeInList(contentType, gHTMLTypes) ||
-      nsContentUtils::IsPlainTextType(contentType)) {
-    rv = CreateDocument(
-        aCommand, aChannel, aLoadGroup, aContainer,
-        []() -> already_AddRefed<Document> {
-          RefPtr<Document> doc;
-          nsresult rv =
-              NS_NewHTMLDocument(getter_AddRefs(doc), nullptr, nullptr);
-          NS_ENSURE_SUCCESS(rv, nullptr);
-          return doc.forget();
-        },
-        aDocListener, aDocViewer);
-  }  // Try XML
-  else if (IsTypeInList(contentType, gXMLTypes)) {
-    rv = CreateDocument(
-        aCommand, aChannel, aLoadGroup, aContainer,
-        []() -> already_AddRefed<Document> {
-          RefPtr<Document> doc;
-          nsresult rv =
-              NS_NewXMLDocument(getter_AddRefs(doc), nullptr, nullptr);
-          NS_ENSURE_SUCCESS(rv, nullptr);
-          return doc.forget();
-        },
-        aDocListener, aDocViewer);
-  }  // Try SVG
-  else if (IsTypeInList(contentType, gSVGTypes)) {
-    rv = CreateDocument(
-        aCommand, aChannel, aLoadGroup, aContainer,
-        []() -> already_AddRefed<Document> {
-          RefPtr<Document> doc;
-          nsresult rv =
-              NS_NewSVGDocument(getter_AddRefs(doc), nullptr, nullptr);
-          NS_ENSURE_SUCCESS(rv, nullptr);
-          return doc.forget();
-        },
-        aDocListener, aDocViewer);
-  } else if (mozilla::DecoderTraits::ShouldHandleMediaType(
-                 contentType.get(),
-                 /* DecoderDoctorDiagnostics* */ nullptr)) {
-    rv = CreateDocument(
-        aCommand, aChannel, aLoadGroup, aContainer,
-        []() -> already_AddRefed<Document> {
-          RefPtr<Document> doc;
-          nsresult rv =
-              NS_NewVideoDocument(getter_AddRefs(doc), nullptr, nullptr);
-          NS_ENSURE_SUCCESS(rv, nullptr);
-          return doc.forget();
-        },
-        aDocListener, aDocViewer);
-  }  // Try image types
-  else if (IsImageContentType(contentType)) {
-    imageDocument = true;
-    rv = CreateDocument(
-        aCommand, aChannel, aLoadGroup, aContainer,
-        []() -> already_AddRefed<Document> {
-          RefPtr<Document> doc;
-          nsresult rv =
-              NS_NewImageDocument(getter_AddRefs(doc), nullptr, nullptr);
-          NS_ENSURE_SUCCESS(rv, nullptr);
-          return doc.forget();
-        },
-        aDocListener, aDocViewer);
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  CreateDocumentKind kind = CreateDocumentKind::None;
+  // SVGDocumentWrapper::SetupViewer needs to be able to create a proper SVG
+  // document internally even when creating an ImageDocument.
+  if ((!aCommand || strcmp(aCommand, "external-resource") != 0) &&
+      loadInfo->GetForceMediaDocument() != ForceMediaDocument::None) {
+    switch (loadInfo->GetForceMediaDocument()) {
+      case dom::ForceMediaDocument::Video:
+        kind = CreateDocumentKind::Video;
+        break;
+      case dom::ForceMediaDocument::Image:
+        kind = CreateDocumentKind::Image;
+        break;
+      case dom::ForceMediaDocument::None:
+        MOZ_ASSERT_UNREACHABLE("Can't be None");
+        break;
+    }
   } else {
-    // If we get here, then we weren't able to create anything. Sorry!
+    kind = GetCreateDocumentKind(contentType);
+  }
+
+  if (kind == CreateDocumentKind::None) {
+    // We can't handle this content type. Sorry!
     return NS_ERROR_FAILURE;
   }
 
-  if (NS_SUCCEEDED(rv) && !imageDocument) {
-    Document* doc = (*aDocViewer)->GetDocument();
-    MOZ_ASSERT(doc);
-    doc->MakeBrowsingContextNonSynthetic();
-  }
-
-  return rv;
+  return CreateDocument(aCommand, aChannel, aLoadGroup, aContainer, kind,
+                        aDocListener, aDocViewer);
 }
 
 NS_IMETHODIMP
@@ -215,8 +254,7 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
     nsIPrincipal* aPartitionedPrincipal, nsDocShell* aContainer) {
   // create a new blank HTML document
   RefPtr<Document> blankDoc;
-  mozilla::Unused << NS_NewHTMLDocument(getter_AddRefs(blankDoc), nullptr,
-                                        nullptr);
+  (void)NS_NewHTMLDocument(getter_AddRefs(blankDoc), nullptr, nullptr);
 
   if (!blankDoc) {
     return nullptr;
@@ -230,6 +268,8 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
   }
   blankDoc->ResetToURI(uri, aLoadGroup, aPrincipal, aPartitionedPrincipal);
   blankDoc->SetContainer(aContainer);
+
+  blankDoc->SetAllowDeclarativeShadowRoots(true);
 
   // add some simple content structure
   nsNodeInfoManager* nim = blankDoc->NodeInfoManager();
@@ -281,54 +321,4 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
   blankDoc->SetDocumentCharacterSetSource(kCharsetFromDocTypeDefault);
   blankDoc->SetDocumentCharacterSet(UTF_8_ENCODING);
   return blankDoc.forget();
-}
-
-nsresult nsContentDLF::CreateDocument(
-    const char* aCommand, nsIChannel* aChannel, nsILoadGroup* aLoadGroup,
-    nsIDocShell* aContainer, nsContentDLF::DocumentCreator aDocumentCreator,
-    nsIStreamListener** aDocListener, nsIDocumentViewer** aDocumentViewer) {
-  MOZ_ASSERT(aDocumentCreator);
-
-  nsresult rv = NS_ERROR_FAILURE;
-
-  nsCOMPtr<nsIURI> aURL;
-  rv = aChannel->GetURI(getter_AddRefs(aURL));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-#ifdef NOISY_CREATE_DOC
-  if (nullptr != aURL) {
-    nsAutoString tmp;
-    aURL->ToString(tmp);
-    fputs(NS_LossyConvertUTF16toASCII(tmp).get(), stdout);
-    printf(": creating document\n");
-  }
-#endif
-
-  // Create the document
-  RefPtr<Document> doc = aDocumentCreator();
-  NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
-
-  // Create the content viewer  XXX: could reuse content viewer here!
-  nsCOMPtr<nsIDocumentViewer> viewer = NS_NewDocumentViewer();
-
-  doc->SetContainer(static_cast<nsDocShell*>(aContainer));
-  doc->SetAllowDeclarativeShadowRoots(true);
-
-  // Initialize the document to begin loading the data.  An
-  // nsIStreamListener connected to the parser is returned in
-  // aDocListener.
-  rv = doc->StartDocumentLoad(aCommand, aChannel, aLoadGroup, aContainer,
-                              aDocListener, true);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Bind the document to the Content Viewer
-  viewer->LoadStart(doc);
-  viewer.forget(aDocumentViewer);
-  return NS_OK;
-}
-
-bool nsContentDLF::IsImageContentType(const nsACString& aContentType) {
-  return imgLoader::SupportImageWithMimeType(aContentType);
 }

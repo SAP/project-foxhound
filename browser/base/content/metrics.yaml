@@ -64,13 +64,13 @@ security.ui.protectionspopup:
     bugs:
       - https://bugzil.la/1920735
       - https://bugzil.la/1958162
+      - https://bugzil.la/1989192
     data_reviews:
       - https://bugzil.la/1920735
     notification_emails:
       - wwen@mozilla.com
       - emz@mozilla.com
-    expires:
-      146
+    expires: 152
 
   open_protectionspopup_cfr:
     type: event
@@ -303,13 +303,13 @@ security.ui.protectionspopup:
     bugs:
       - https://bugzil.la/1920735
       - https://bugzil.la/1958162
+      - https://bugzil.la/1989192
     data_reviews:
       - https://bugzil.la/1920735
     notification_emails:
       - wwen@mozilla.com
       - emz@mozilla.com
-    expires:
-      146
+    expires: 152
 
   smartblockembeds_shown:
     type: counter
@@ -318,13 +318,13 @@ security.ui.protectionspopup:
     bugs:
       - https://bugzil.la/1920735
       - https://bugzil.la/1958162
+      - https://bugzil.la/1989192
     data_reviews:
       - https://bugzil.la/1920735
     notification_emails:
       - wwen@mozilla.com
       - emz@mozilla.com
-    expires:
-      146
+    expires: 152
 
 browser.engagement:
   bookmarks_toolbar_bookmark_added:
@@ -518,3 +518,26 @@ browser.timings:
       - product-metrics-telemetry-alerts@mozilla.com
     expires: never
     telemetry_mirror: FX_PAGE_RELOAD_SKIP_CACHE_MS
+
+  startup_timeline:
+    type: labeled_quantity
+    unit: milliseconds since process creation
+    lifetime: application
+    description: |
+      Events on the startup timeline, in millis since process creation.
+      Previously carried in the Legacy "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - sefeng@mozilla.com
+      - perf-telemetry-alerts@mozilla.com
+      - product-metrics-telemetry-alerts@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+    labels:
+      - delayedStartupStarted
+      - delayedStartupFinished
+      - blankWindowShown

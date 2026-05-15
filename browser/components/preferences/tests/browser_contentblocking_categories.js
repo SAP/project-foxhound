@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env webextensions */
-
 ChromeUtils.defineESModuleGetters(this, {
   Preferences: "resource://gre/modules/Preferences.sys.mjs",
 });
@@ -644,5 +642,95 @@ add_task(async function testContentBlockingStrictDefinition() {
 
   // cleanup
   defaults.setStringPref(STRICT_DEF_PREF, originalStrictPref);
+  Services.prefs.setStringPref(CAT_PREF, "standard");
+});
+
+// Tests that LNA blocking is controlled by network.lna.etp.enabled pref
+// and is managed by ETP strict/standard categories when enabled.
+add_task(async function testLNABlockingWithETPCategories() {
+  const LNA_BLOCKING_PREF = "network.lna.blocking";
+  const LNA_ETP_ENABLED_PREF = "network.lna.etp.enabled";
+
+  let defaults = Services.prefs.getDefaultBranch("");
+  let originalStrictPref = defaults.getStringPref(STRICT_DEF_PREF);
+
+  let lnaDefault = Services.prefs.getBoolPref(LNA_BLOCKING_PREF);
+  // Test 1: LNA blocking should be disabled when network.lna.etp.enabled is false (default)
+  Services.prefs.setBoolPref(LNA_ETP_ENABLED_PREF, false);
+
+  Services.prefs.setStringPref(CAT_PREF, "strict");
+  is(
+    Services.prefs.getBoolPref(LNA_BLOCKING_PREF),
+    lnaDefault,
+    `${LNA_BLOCKING_PREF} should remain unchanged when LNA_ETP_ENABLED_PREF is false`
+  );
+
+  Services.prefs.setStringPref(CAT_PREF, "standard");
+  is(
+    Services.prefs.getBoolPref(LNA_BLOCKING_PREF),
+    lnaDefault,
+    `${LNA_BLOCKING_PREF} should remain unchanged when switching to standard with LNA_ETP_ENABLED_PREF false`
+  );
+
+  // Test 2: LNA blocking SHOULD be managed when network.lna.etp.enabled is true
+  Services.prefs.setBoolPref(LNA_ETP_ENABLED_PREF, true);
+
+  // Set strict mode with lna enabled
+  defaults.setStringPref(STRICT_DEF_PREF, "lna");
+  Services.prefs.setStringPref(CAT_PREF, "strict");
+
+  is(
+    Services.prefs.getBoolPref(LNA_BLOCKING_PREF),
+    true,
+    `${LNA_BLOCKING_PREF} should be set to true in strict mode with lna feature enabled`
+  );
+
+  // Switch to standard mode - should clear LNA blocking
+  Services.prefs.setStringPref(CAT_PREF, "standard");
+  ok(
+    !Services.prefs.prefHasUserValue(LNA_BLOCKING_PREF),
+    `${LNA_BLOCKING_PREF} should be cleared in standard mode when LNA_ETP_ENABLED_PREF is true`
+  );
+
+  // Test 3: LNA blocking with -lna (disabled) in strict mode
+  defaults.setStringPref(STRICT_DEF_PREF, "-lna");
+  Services.prefs.setStringPref(CAT_PREF, "strict");
+
+  is(
+    Services.prefs.getBoolPref(LNA_BLOCKING_PREF),
+    false,
+    `${LNA_BLOCKING_PREF} should be set to false in strict mode with -lna feature`
+  );
+
+  // Test 4: Switching to custom mode should preserve current LNA blocking value
+  Services.prefs.setBoolPref(LNA_BLOCKING_PREF, true);
+  Services.prefs.setStringPref(CAT_PREF, "custom");
+
+  is(
+    Services.prefs.getBoolPref(LNA_BLOCKING_PREF),
+    true,
+    `${LNA_BLOCKING_PREF} should be preserved when switching to custom mode`
+  );
+
+  // Test 5: Toggling network.lna.etp.enabled should trigger pref expectations update
+  Services.prefs.setStringPref(CAT_PREF, "strict");
+  defaults.setStringPref(STRICT_DEF_PREF, "lna");
+
+  // Disable LNA ETP integration
+  Services.prefs.setBoolPref(LNA_ETP_ENABLED_PREF, false);
+  Services.prefs.setBoolPref(LNA_BLOCKING_PREF, false);
+
+  // Re-enable LNA ETP integration - should apply strict mode settings
+  Services.prefs.setBoolPref(LNA_ETP_ENABLED_PREF, true);
+  is(
+    Services.prefs.getBoolPref(LNA_BLOCKING_PREF),
+    true,
+    `${LNA_BLOCKING_PREF} should be set to true when re-enabling LNA_ETP_ENABLED_PREF in strict mode`
+  );
+
+  // cleanup
+  defaults.setStringPref(STRICT_DEF_PREF, originalStrictPref);
+  Services.prefs.clearUserPref(LNA_ETP_ENABLED_PREF);
+  Services.prefs.clearUserPref(LNA_BLOCKING_PREF);
   Services.prefs.setStringPref(CAT_PREF, "standard");
 });

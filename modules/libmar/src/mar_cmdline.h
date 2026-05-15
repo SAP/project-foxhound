@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MAR_CMDLINE_H__
-#define MAR_CMDLINE_H__
+#ifndef MAR_CMDLINE_H_
+#define MAR_CMDLINE_H_
 
 /* We use NSPR here just to import the definition of uint32_t */
 
@@ -99,4 +99,4 @@ int import_signature(const char* src, uint32_t sigIndex,
 }
 #endif
 
-#endif /* MAR_CMDLINE_H__ */
+#endif /* MAR_CMDLINE_H_ */

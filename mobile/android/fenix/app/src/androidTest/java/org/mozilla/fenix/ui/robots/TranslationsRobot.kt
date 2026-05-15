@@ -23,7 +23,6 @@ import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertItemIsChecked
-import org.mozilla.fenix.helpers.MatcherHelper.assertItemIsEnabledAndVisible
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectIsGone
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
@@ -49,13 +48,13 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
                         throw e
                     } else {
                         if (isRedesignedToolbarEnabled) {
-                            browserScreen {
+                            browserScreen(composeTestRule) {
                                 refreshPageFromRedesignedToolbar()
                             }
                         } else {
-                            navigationToolbar {
+                            browserScreen(composeTestRule) {
                             }.openThreeDotMenu {
-                            }.refreshPage {
+                            }.clickRefreshButton {
                             }
                         }
                     }
@@ -124,28 +123,12 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
         assertItemIsChecked(
             mDevice.findObject(
                 UiSelector()
-                    .index(3)
+                    .index(2)
                     .className("android.view.View"),
             ),
             isChecked = isChecked,
         )
         Log.i(TAG, "verifyAlwaysOfferToTranslateOptionIsChecked: Verified the \"Always offer to translate\" option is checked.")
-    }
-
-    fun verifyAlwaysOfferToTranslateOptionIsEnabled(isEnabled: Boolean) {
-        Log.i(TAG, "verifyAlwaysOfferToTranslateOptionIsEnabled: Waiting for compose test rule to be idle")
-        composeTestRule.waitForIdle()
-        Log.i(TAG, "verifyAlwaysOfferToTranslateOptionIsEnabled: Waited for compose test rule to be idle")
-        Log.i(TAG, "verifyAlwaysOfferToTranslateOptionIsEnabled: Trying to verify the \"Always offer to translate\" option is enabled.")
-        assertItemIsEnabledAndVisible(
-            mDevice.findObject(
-                UiSelector()
-                    .index(3)
-                    .className("android.view.View"),
-            ),
-            isEnabled = isEnabled,
-        )
-        Log.i(TAG, "verifyAlwaysOfferToTranslateOptionIsEnabled: Verified the \"Always offer to translate\" option is enabled.")
     }
 
     fun verifyAlwaysTranslateOptionIsChecked(isChecked: Boolean) {
@@ -164,22 +147,6 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyAlwaysTranslateOptionIsChecked: Verified the \"Always translate\" description is checked.")
     }
 
-    fun verifyAlwaysTranslateOptionIsEnabled(isEnabled: Boolean) {
-        Log.i(TAG, "verifyAlwaysTranslateOptionIsEnabled: Waiting for compose test rule to be idle")
-        composeTestRule.waitForIdle()
-        Log.i(TAG, "verifyAlwaysTranslateOptionIsEnabled: Waited for compose test rule to be idle")
-        Log.i(TAG, "verifyAlwaysTranslateOptionIsEnabled: Trying to verify the \"Always translate\" option is enabled.")
-        assertItemIsEnabledAndVisible(
-            mDevice.findObject(
-                UiSelector()
-                    .index(4)
-                    .className("android.view.View"),
-            ),
-            isEnabled = isEnabled,
-        )
-        Log.i(TAG, "verifyAlwaysTranslateOptionIsEnabled: Verified the \"Always translate\" option is enabled.")
-    }
-
     @OptIn(ExperimentalTestApi::class)
     fun verifyTheNeverTranslateThisSiteOptionIsChecked(isChecked: Boolean) {
         Log.i(TAG, "verifyTheNeverTranslateThisSiteOptionIsChecked: Waiting for $waitingTime ms until the \"Never translate this site\" option exists")
@@ -189,7 +156,7 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
         assertItemIsChecked(
             mDevice.findObject(
                 UiSelector()
-                    .index(6)
+                    .index(5)
                     .className("android.view.View"),
             ),
             isChecked = isChecked,
@@ -205,28 +172,12 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
         assertItemIsChecked(
             mDevice.findObject(
                 UiSelector()
-                    .index(5)
+                    .index(4)
                     .className("android.view.View"),
             ),
             isChecked = isChecked,
         )
         Log.i(TAG, "verifyTheNeverTranslateLanguageOptionIsChecked: Verified the \"Never translate this site\" description is checked.")
-    }
-
-    fun verifyTheNeverTranslateLanguageOptionIsEnabled(isEnabled: Boolean) {
-        Log.i(TAG, "verifyTheNeverTranslateLanguageOptionIsEnabled: Waiting for compose test rule to be idle")
-        composeTestRule.waitForIdle()
-        Log.i(TAG, "verifyTheNeverTranslateLanguageOptionIsEnabled: Waited for compose test rule to be idle")
-        Log.i(TAG, "verifyTheNeverTranslateLanguageOptionIsEnabled: Trying to verify the \"Never translate this site\" description is enabled.")
-        assertItemIsEnabledAndVisible(
-            mDevice.findObject(
-                UiSelector()
-                    .index(5)
-                    .className("android.view.View"),
-            ),
-            isEnabled = isEnabled,
-        )
-        Log.i(TAG, "verifyTheNeverTranslateLanguageOptionIsEnabled: Verified the \"Never translate this site\" description is enabled.")
     }
 
     fun clickTranslateToDropdown() {
@@ -303,8 +254,8 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
                 }
             }
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickShowOriginalButton(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -312,8 +263,8 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.onNodeWithText("Show original").performClick()
             Log.i(TAG, "clickShowOriginalButton: Clicked on the Show Original button.")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickNotNowButton(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -321,8 +272,8 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.onNodeWithText(getStringResource(R.string.translations_bottom_sheet_negative_button)).performClick()
             Log.i(TAG, "clickShowOriginalButton: Clicked on the \"Not now\" button.")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun swipeCloseTranslationsSheet(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -344,8 +295,8 @@ class TranslationsRobot(private val composeTestRule: ComposeTestRule) {
                 }
             }
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickTranslationSettingsButton(interact: SettingsTranslationsRobot.() -> Unit): SettingsTranslationsRobot.Transition {

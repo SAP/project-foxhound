@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesFeed: "resource://newtab/lib/PlacesFeed.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  SearchService: "resource://gre/modules/SearchService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
@@ -606,7 +606,7 @@ add_task(async function test_onAction_FILL_SEARCH_TERM() {
       "on FILL_SEARCH_TERM"
   );
   let sandbox = sinon.createSandbox();
-  sandbox.stub(SearchService.prototype, "getEngineByAlias").resolves(null);
+  sandbox.stub(SearchService, "getEngineByAlias").resolves(null);
 
   let feed = getPlacesFeedForTest(sandbox);
   let locationBar = { search: sandbox.stub() };

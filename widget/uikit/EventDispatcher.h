@@ -24,6 +24,8 @@ class EventDispatcher final : public EventDispatcherBase {
   void Attach(id aDispatcher);
   void Detach();
 
+  void Activate() MOZ_REQUIRES(sMainThreadCapability);
+
   bool HasEmbedderListener(const nsAString& aEvent) override
       MOZ_REQUIRES(sMainThreadCapability);
   nsresult DispatchToEmbedder(JSContext* aCx, const nsAString& aEvent,

@@ -7,10 +7,9 @@
 #ifndef mozilla_dom_TextEvent_h
 #define mozilla_dom_TextEvent_h
 
-#include "mozilla/dom/UIEvent.h"
-
-#include "mozilla/dom/TextEventBinding.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/TextEventBinding.h"
+#include "mozilla/dom/UIEvent.h"
 
 class nsIPrincipal;
 

@@ -1,7 +1,7 @@
 [DEFAULT]
 skip-if = [
   "os == 'android'", # bug 1730213
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && ccov",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov",
 ]
 tags = "resistfingerprinting"
 
@@ -15,6 +15,9 @@ support-files = [
 ["test_animation_api.html"]
 
 ["test_bug863246_resource_uri.html"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["test_bug1354633_media_error.html"]
 support-files = ["decode_error.mp4"]
@@ -24,7 +27,9 @@ support-files = ["decode_error.mp4"]
 ["test_bug1885101_screenwindow_sizes.html"]
 
 ["test_device_sensor_event.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1792846
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1792846
+]
 
 ["test_geolocation.html"]
 scheme = "https"

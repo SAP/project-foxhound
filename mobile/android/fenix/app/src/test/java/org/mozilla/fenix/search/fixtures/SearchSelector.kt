@@ -11,7 +11,9 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.search.SearchEngine.Type.APPLICATION
 import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorAction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarMenu
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuDivider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.mozilla.fenix.R
@@ -23,6 +25,7 @@ import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorA
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.ContentDescription as MenuItemDescription
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.Icon as MenuItemIcon
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.Text as MenuItemText
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Assert the [expected] search selector (and its menu items) is the same as [actual]
@@ -57,6 +60,11 @@ fun assertSearchSelectorEquals(
     val actualMenuItems = actual.menu.items()
     assertEquals(expectedMenuItems.size, actualMenuItems.size)
     for (i in expectedMenuItems.indices) {
+        if (expectedMenuItems[i] is BrowserToolbarMenuDivider) {
+            assertEquals(expectedMenuItems[i], actualMenuItems[i])
+            continue
+        }
+
         val expectedMenuItem = expectedMenuItems[i] as BrowserToolbarMenuButton
         val actualMenuItem = actualMenuItems[i] as BrowserToolbarMenuButton
 
@@ -134,22 +142,45 @@ fun buildExpectedSearchSelectorMenuItems(
             onClick = null,
         ),
     )
-    addAll(
-        searchEnginesShortcuts.map { searchEngine ->
-            BrowserToolbarMenuButton(
-                icon = MenuItemIcon.DrawableIcon(
-                    drawable = searchEngine.icon.toDrawable(resources),
-                    shouldTint = searchEngine.type == APPLICATION,
-                ),
-                text = MenuItemText.StringText(searchEngine.name),
-                contentDescription = MenuItemDescription.StringContentDescription(searchEngine.name),
-                onClick = SearchSelectorItemClicked(searchEngine),
-            )
-        },
-    )
+
+    val searchEngines = searchEnginesShortcuts.filter { it.type != APPLICATION }
+    if (searchEngines.isNotEmpty()) {
+        addAll(
+            searchEngines.map { searchEngine ->
+                BrowserToolbarMenuButton(
+                    icon = MenuItemIcon.DrawableIcon(
+                        drawable = searchEngine.icon.toDrawable(resources),
+                        shouldTint = searchEngine.type == APPLICATION,
+                    ),
+                    text = MenuItemText.StringText(searchEngine.name),
+                    contentDescription = MenuItemDescription.StringContentDescription(searchEngine.name),
+                    onClick = SearchSelectorItemClicked(searchEngine),
+                )
+            },
+        )
+        add(BrowserToolbarMenuDivider)
+    }
+
+    val applicationSearchEngines = searchEnginesShortcuts.filter { it.type == APPLICATION }
+    if (applicationSearchEngines.isNotEmpty()) {
+        addAll(
+            applicationSearchEngines.map { searchEngine ->
+                BrowserToolbarMenuButton(
+                    icon = MenuItemIcon.DrawableIcon(
+                        drawable = searchEngine.icon.toDrawable(resources),
+                        shouldTint = searchEngine.type == APPLICATION,
+                    ),
+                    text = MenuItemText.StringText(searchEngine.name),
+                    contentDescription = MenuItemDescription.StringContentDescription(searchEngine.name),
+                    onClick = SearchSelectorItemClicked(searchEngine),
+                )
+            },
+        )
+        add(BrowserToolbarMenuDivider)
+    }
     add(
         BrowserToolbarMenuButton(
-            icon = MenuItemIcon.DrawableResIcon(R.drawable.mozac_ic_settings_24),
+            icon = MenuItemIcon.DrawableResIcon(iconsR.drawable.mozac_ic_settings_24),
             text = MenuItemText.StringResText(R.string.search_settings_menu_item),
             contentDescription = MenuItemDescription.StringResContentDescription(R.string.search_settings_menu_item),
             onClick = SearchSettingsItemClicked,

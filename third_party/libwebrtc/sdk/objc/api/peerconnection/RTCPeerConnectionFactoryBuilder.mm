@@ -15,10 +15,13 @@
 #include "api/audio/audio_processing.h"
 #include "api/audio_codecs/audio_decoder_factory.h"
 #include "api/audio_codecs/audio_encoder_factory.h"
+#include "api/environment/environment_factory.h"
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder_factory.h"
 
 @implementation RTCPeerConnectionFactoryBuilder {
+  webrtc::scoped_refptr<webrtc::AudioDeviceModule> (^_audioDeviceModuleBuilder)(
+      const webrtc::Environment &);
   webrtc::PeerConnectionFactoryDependencies _dependencies;
 }
 
@@ -27,12 +30,18 @@
 }
 
 - (RTC_OBJC_TYPE(RTCPeerConnectionFactory) *)createPeerConnectionFactory {
+  if (_audioDeviceModuleBuilder != nil) {
+    if (!_dependencies.env.has_value()) {
+      _dependencies.env = webrtc::CreateEnvironment();
+    }
+    _dependencies.adm = _audioDeviceModuleBuilder(*_dependencies.env);
+  }
   return [[RTC_OBJC_TYPE(RTCPeerConnectionFactory) alloc]
-      initWithMediaAndDependencies:std::move(_dependencies)];
+      initWithMediaAndDependencies:_dependencies];
 }
 
 - (void)setFieldTrials:(std::unique_ptr<webrtc::FieldTrialsView>)fieldTrials {
-  _dependencies.trials = std::move(fieldTrials);
+  _dependencies.env = webrtc::CreateEnvironment(std::move(fieldTrials));
 }
 
 - (void)setVideoEncoderFactory:
@@ -46,22 +55,30 @@
 }
 
 - (void)setAudioEncoderFactory:
-    (rtc::scoped_refptr<webrtc::AudioEncoderFactory>)audioEncoderFactory {
+    (webrtc::scoped_refptr<webrtc::AudioEncoderFactory>)audioEncoderFactory {
   _dependencies.audio_encoder_factory = std::move(audioEncoderFactory);
 }
 
 - (void)setAudioDecoderFactory:
-    (rtc::scoped_refptr<webrtc::AudioDecoderFactory>)audioDecoderFactory {
+    (webrtc::scoped_refptr<webrtc::AudioDecoderFactory>)audioDecoderFactory {
   _dependencies.audio_decoder_factory = std::move(audioDecoderFactory);
 }
 
 - (void)setAudioDeviceModule:
-    (rtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModule {
-  _dependencies.adm = std::move(audioDeviceModule);
+    (webrtc::scoped_refptr<webrtc::AudioDeviceModule>)audioDeviceModule {
+  _audioDeviceModuleBuilder = ^(const webrtc::Environment &) {
+    return audioDeviceModule;
+  };
+}
+
+- (void)setAudioDeviceModuleBuilder:
+    (webrtc::scoped_refptr<webrtc::AudioDeviceModule> (^)(
+        const webrtc::Environment &))audioDeviceModuleBuilder {
+  _audioDeviceModuleBuilder = audioDeviceModuleBuilder;
 }
 
 - (void)setAudioProcessingModule:
-    (rtc::scoped_refptr<webrtc::AudioProcessing>)audioProcessingModule {
+    (webrtc::scoped_refptr<webrtc::AudioProcessing>)audioProcessingModule {
   _dependencies.audio_processing_builder =
       CustomAudioProcessing(std::move(audioProcessingModule));
 }

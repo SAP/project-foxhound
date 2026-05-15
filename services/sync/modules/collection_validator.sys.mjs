@@ -242,12 +242,12 @@ export class CollectionValidator {
   }
 
   async validate(engine) {
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     let clientItems = await this.getClientItems();
     let serverItems = await this.getServerItems(engine);
     let serverRecordCount = serverItems.length;
     let result = await this.compareClientWithServer(clientItems, serverItems);
-    let end = Cu.now();
+    let end = ChromeUtils.now();
     let duration = end - start;
     engine._log.debug(`Validated ${this.name} in ${duration}ms`);
     engine._log.debug(`Problem summary`);

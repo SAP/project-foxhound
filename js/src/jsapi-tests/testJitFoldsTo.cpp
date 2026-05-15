@@ -23,7 +23,7 @@ BEGIN_TEST(testJitFoldsTo_DivReciprocal) {
   // return p / 4.0
   MParameter* p = func.createParameter();
   block->add(p);
-  MConstant* c = MConstant::New(func.alloc, DoubleValue(4.0));
+  MConstant* c = MConstant::NewDouble(func.alloc, 4.0);
   block->add(c);
   MDiv* div = MDiv::New(func.alloc, p, c, MIRType::Double);
   block->add(div);
@@ -55,7 +55,7 @@ BEGIN_TEST(testJitFoldsTo_NoDivReciprocal) {
   // return p / 5.0
   MParameter* p = func.createParameter();
   block->add(p);
-  MConstant* c = MConstant::New(func.alloc, DoubleValue(5.0));
+  MConstant* c = MConstant::NewDouble(func.alloc, 5.0);
   block->add(c);
   MDiv* div = MDiv::New(func.alloc, p, c, MIRType::Double);
   block->add(div);
@@ -216,9 +216,9 @@ BEGIN_TEST(testJitFoldsTo_UnsignedDiv) {
   MBasicBlock* block = func.createEntryBlock();
 
   // return 1.0 / 0xffffffff
-  MConstant* c0 = MConstant::New(func.alloc, Int32Value(1));
+  MConstant* c0 = MConstant::NewInt32(func.alloc, 1);
   block->add(c0);
-  MConstant* c1 = MConstant::New(func.alloc, Int32Value(0xffffffff));
+  MConstant* c1 = MConstant::NewInt32(func.alloc, 0xffffffff);
   block->add(c1);
   MDiv* div = MDiv::New(func.alloc, c0, c1, MIRType::Int32, /*unsignd=*/true);
   block->add(div);
@@ -241,9 +241,9 @@ BEGIN_TEST(testJitFoldsTo_UnsignedMod) {
   MBasicBlock* block = func.createEntryBlock();
 
   // return 1.0 % 0xffffffff
-  MConstant* c0 = MConstant::New(func.alloc, Int32Value(1));
+  MConstant* c0 = MConstant::NewInt32(func.alloc, 1);
   block->add(c0);
-  MConstant* c1 = MConstant::New(func.alloc, Int32Value(0xffffffff));
+  MConstant* c1 = MConstant::NewInt32(func.alloc, 0xffffffff);
   block->add(c1);
   MMod* mod = MMod::New(func.alloc, c0, c1, MIRType::Int32, /*unsignd=*/true);
   block->add(mod);

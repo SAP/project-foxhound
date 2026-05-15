@@ -5,6 +5,7 @@
 """
 Module to handle Gecko profiling.
 """
+
 import json
 import os
 import tempfile
@@ -63,7 +64,7 @@ class GeckoProfile(RaptorProfiling):
         # Make sure no archive already exists in the location where
         # we plan to output our profiler archive
         self.profile_arcname = os.path.join(
-            self.upload_dir, "profile_{0}.zip".format(self.test_config["name"])
+            self.upload_dir, "profile_{}.zip".format(self.test_config["name"])
         )
         LOG.info(f"Clearing archive {self.profile_arcname}")
         mozfile.remove(self.profile_arcname)
@@ -90,10 +91,14 @@ class GeckoProfile(RaptorProfiling):
             symbolicator.symbolicate_profile(profile)
             return profile
         except MemoryError:
-            LOG.critical("Ran out of memory while trying to symbolicate profile")
+            LOG.critical(
+                "Ran out of memory while trying to symbolicate profile.", exc_info=True
+            )
             raise
         except Exception:
-            LOG.critical("Encountered an exception during profile symbolication")
+            LOG.critical(
+                "Encountered an exception during profile symbolication.", exc_info=True
+            )
             # Do not raise an exception and return the profile so we won't block
             # the profile capturing pipeline if symbolication fails.
             return profile
@@ -111,32 +116,30 @@ class GeckoProfile(RaptorProfiling):
                 LOG.error("No profiles collected")
             return
 
-        symbolicator = ProfileSymbolicator(
-            {
-                # Trace-level logging (verbose)
-                "enableTracing": 0,
-                # Fallback server if symbol is not found locally
-                "remoteSymbolServer": "https://symbolication.services.mozilla.com/symbolicate/v4",
-                # Maximum number of symbol files to keep in memory
-                "maxCacheEntries": 2000000,
-                # Frequency of checking for recent symbols to
-                # cache (in hours)
-                "prefetchInterval": 12,
-                # Oldest file age to prefetch (in hours)
-                "prefetchThreshold": 48,
-                # Maximum number of library versions to pre-fetch
-                # per library
-                "prefetchMaxSymbolsPerLib": 3,
-                # Default symbol lookup directories
-                "defaultApp": "FIREFOX",
-                "defaultOs": "WINDOWS",
-                # Paths to .SYM files, expressed internally as a
-                # mapping of app or platform names to directories
-                # Note: App & OS names from requests are converted
-                # to all-uppercase internally
-                "symbolPaths": self.symbol_paths,
-            }
-        )
+        symbolicator = ProfileSymbolicator({
+            # Trace-level logging (verbose)
+            "enableTracing": 0,
+            # Fallback server if symbol is not found locally
+            "remoteSymbolServer": "https://symbolication.services.mozilla.com/symbolicate/v4",
+            # Maximum number of symbol files to keep in memory
+            "maxCacheEntries": 2000000,
+            # Frequency of checking for recent symbols to
+            # cache (in hours)
+            "prefetchInterval": 12,
+            # Oldest file age to prefetch (in hours)
+            "prefetchThreshold": 48,
+            # Maximum number of library versions to pre-fetch
+            # per library
+            "prefetchMaxSymbolsPerLib": 3,
+            # Default symbol lookup directories
+            "defaultApp": "FIREFOX",
+            "defaultOs": "WINDOWS",
+            # Paths to .SYM files, expressed internally as a
+            # mapping of app or platform names to directories
+            # Note: App & OS names from requests are converted
+            # to all-uppercase internally
+            "symbolPaths": self.symbol_paths,
+        })
 
         if self.raptor_config.get("symbols_path") is not None:
             if mozfile.is_url(self.raptor_config["symbols_path"]):
@@ -189,7 +192,7 @@ class GeckoProfile(RaptorProfiling):
                     # to clearly indicate without redundant information.
                     # For example, "browser-cycle-1".
                     test_run_type = (
-                        "{0}-{1}".format(test_type, profile_info["type"])
+                        "{}-{}".format(test_type, profile_info["type"])
                         if test_type == "pageload"
                         else test_type
                     )

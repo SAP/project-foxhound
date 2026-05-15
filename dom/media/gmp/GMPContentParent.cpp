@@ -4,16 +4,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPContentParent.h"
+
+#include "ChromiumCDMParent.h"
 #include "GMPLog.h"
 #include "GMPParent.h"
 #include "GMPServiceChild.h"
 #include "GMPVideoDecoderParent.h"
 #include "GMPVideoEncoderParent.h"
-#include "ChromiumCDMParent.h"
+#include "base/task.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Unused.h"
-#include "base/task.h"
 
 namespace mozilla::gmp {
 
@@ -64,7 +64,7 @@ void GMPContentParent::VideoDecoderDestroyed(GMPVideoDecoderParent* aDecoder) {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
   // If the constructor fails, we'll get called before it's added
-  Unused << NS_WARN_IF(!mVideoDecoders.RemoveElement(aDecoder));
+  (void)NS_WARN_IF(!mVideoDecoders.RemoveElement(aDecoder));
   CloseIfUnused();
 }
 
@@ -74,7 +74,7 @@ void GMPContentParent::VideoEncoderDestroyed(GMPVideoEncoderParent* aEncoder) {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
 
   // If the constructor fails, we'll get called before it's added
-  Unused << NS_WARN_IF(!mVideoEncoders.RemoveElement(aEncoder));
+  (void)NS_WARN_IF(!mVideoEncoders.RemoveElement(aEncoder));
   CloseIfUnused();
 }
 

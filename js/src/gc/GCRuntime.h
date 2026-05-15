@@ -8,7 +8,6 @@
 #define gc_GCRuntime_h
 
 #include "mozilla/Atomics.h"
-#include "mozilla/DoublyLinkedList.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
@@ -47,6 +46,7 @@ using BlackGrayEdgeVector = Vector<TenuredCell*, 0, SystemAllocPolicy>;
 using ZoneVector = Vector<JS::Zone*, 4, SystemAllocPolicy>;
 
 class AutoCallGCCallbacks;
+class AutoUpdateBarriersForSweeping;
 class AutoGCSession;
 class AutoHeapSession;
 class AutoTraceSession;
@@ -139,11 +139,18 @@ class ChunkPool {
 class BackgroundMarkTask : public GCParallelTask {
  public:
   explicit BackgroundMarkTask(GCRuntime* gc);
-  void setBudget(const JS::SliceBudget& budget) { this->budget = budget; }
+  void initialize(bool isConcurrent, const JS::SliceBudget& budget,
+                  AutoLockHelperThreadState& lock);
   void run(AutoLockHelperThreadState& lock) override;
+  void pause();
+  void unpause();
+  bool isOverBudget() { return budget.isOverBudget(); }
 
  private:
+  bool isConcurrent;
   JS::SliceBudget budget;
+  JS::SliceBudget::InterruptRequestFlag interruptRequest;
+  friend class GCRuntime;
 };
 
 class BackgroundUnmarkTask : public GCParallelTask {
@@ -358,7 +365,6 @@ class GCRuntime {
 
   void shrinkBuffers();
   void onOutOfMallocMemory();
-  void onOutOfMallocMemory(const AutoLockGC& lock);
 
   Nursery& nursery() { return nursery_.ref(); }
   gc::StoreBuffer& storeBuffer() { return storeBuffer_.ref(); }
@@ -433,19 +439,21 @@ class GCRuntime {
   void waitBackgroundFreeEnd();
   void waitForBackgroundTasks();
   bool isWaitingOnBackgroundTask() const;
+  bool pauseBackgroundMarking();
+  void resumeBackgroundMarking();
 
   void lockGC() { lock.lock(); }
   void unlockGC() { lock.unlock(); }
 
-  void lockStoreBuffer() { storeBufferLock.lock(); }
-  void unlockStoreBuffer() { storeBufferLock.unlock(); }
+  void lockSweepingLock() { sweepingLock.lock(); }
+  void unlockSweepingLock() { sweepingLock.unlock(); }
 
 #ifdef DEBUG
   void assertCurrentThreadHasLockedGC() const {
     lock.assertOwnedByCurrentThread();
   }
-  void assertCurrentThreadHasLockedStoreBuffer() const {
-    storeBufferLock.assertOwnedByCurrentThread();
+  void assertCurrentThreadHasLockedSweepingLock() const {
+    sweepingLock.assertOwnedByCurrentThread();
   }
 #endif  // DEBUG
 
@@ -461,6 +469,14 @@ class GCRuntime {
 
   bool isIncrementalGCInProgress() const {
     return state() != State::NotActive && !isVerifyPreBarriersEnabled();
+  }
+
+  bool isConcurrentMarkingEnabled() const {
+#ifndef JS_GC_CONCURRENT_MARKING
+    return false;
+#else
+    return concurrentMarkingEnabled;
+#endif
   }
 
   bool hasForegroundWork() const;
@@ -510,18 +526,22 @@ class GCRuntime {
 
   bool addFinalizationRegistry(JSContext* cx,
                                Handle<FinalizationRegistryObject*> registry);
-  bool registerWithFinalizationRegistry(JSContext* cx, HandleObject target,
-                                        HandleObject record);
+  bool registerWithFinalizationRegistry(
+      JSContext* cx, HandleValue target,
+      Handle<FinalizationRecordObject*> record);
   void queueFinalizationRegistryForCleanup(FinalizationQueueObject* queue);
-
-  void nukeFinalizationRecordWrapper(JSObject* wrapper,
-                                     FinalizationRecordObject* record);
-  void nukeWeakRefWrapper(JSObject* wrapper, WeakRefObject* weakRef);
 
   void setFullCompartmentChecks(bool enable);
 
-  // Get the main marking tracer.
+  // Get the marking tracer used on the main thread.
   GCMarker& marker() { return *markers[0]; }
+  const GCMarker& marker() const { return *markers[0]; }
+
+  // Get the marking tracer used for concurrent marking.
+  GCMarker& concurrentMarker() {
+    MOZ_ASSERT(isConcurrentMarkingEnabled());
+    return *markers[1];
+  }
 
   JS::Zone* getCurrentSweepGroup() { return currentSweepGroup; }
   unsigned getCurrentSweepGroupIndex() {
@@ -550,7 +570,7 @@ class GCRuntime {
   bool didCompactZones() const { return isCompacting && zonesCompacted; }
 
   bool areGrayBitsValid() const { return grayBitsValid; }
-  void setGrayBitsInvalid() { grayBitsValid = false; }
+  void setGrayBitsInvalid();
 
   mozilla::TimeStamp lastGCStartTime() const { return lastGCStartTime_; }
   mozilla::TimeStamp lastGCEndTime() const { return lastGCEndTime_; }
@@ -671,14 +691,18 @@ class GCRuntime {
   void onParallelTaskEnd(bool wasDispatched,
                          const AutoLockHelperThreadState& lock);
 
-  // Parallel marking.
+  // Parallel and concurrent marking.
   bool setParallelMarkingEnabled(bool enabled);
-  bool initOrDisableParallelMarking();
-  [[nodiscard]] bool updateMarkersVector();
+#ifdef JS_GC_CONCURRENT_MARKING
+  bool setConcurrentMarkingEnabled(bool enabled);
+#endif
+  bool initOrDisableMultiThreadedMarking();
+  [[nodiscard]] bool resizeMarkersVector();
   size_t markingWorkerCount() const;
 
   // WeakRefs
-  bool registerWeakRef(HandleObject target, HandleObject weakRef);
+  bool registerWeakRef(JSContext* cx, HandleValue target,
+                       Handle<WeakRefObject*> weakRef);
   void traceKeptObjects(JSTracer* trc);
 
   JS::GCReason lastStartReason() const { return initialReason; }
@@ -689,7 +713,9 @@ class GCRuntime {
   static void* refillFreeList(JS::Zone* zone, AllocKind thingKind);
   void attemptLastDitchGC();
 
-  bool isSymbolReferencedByUncollectedZone(JS::Symbol* sym);
+  // Return whether |sym| is marked at least |color| in the atom marking state
+  // for uncollected zones.
+  bool isSymbolReferencedByUncollectedZone(JS::Symbol* sym, MarkColor color);
 
   // Test mark queue.
 #ifdef DEBUG
@@ -812,7 +838,6 @@ class GCRuntime {
   [[nodiscard]] bool beginPreparePhase(JS::GCReason reason,
                                        AutoGCSession& session);
   bool prepareZonesForCollection(JS::GCReason reason, bool* isFullOut);
-  void unmarkWeakMaps();
   void endPreparePhase(JS::GCReason reason);
   void beginMarkPhase(AutoGCSession& session);
   bool shouldPreserveJITCode(JS::Realm* realm,
@@ -824,6 +849,7 @@ class GCRuntime {
   void relazifyFunctionsForShrinkingGC();
   void purgePropMapTablesForShrinkingGC();
   void purgeSourceURLsForShrinkingGC();
+  void purgePendingWrapperPreservationBuffersForShrinkingGC();
   void traceRuntimeForMajorGC(JSTracer* trc, AutoGCSession& session);
   void traceRuntimeAtoms(JSTracer* trc);
   void traceRuntimeCommon(JSTracer* trc, TraceOrMarkRuntime traceOrMark);
@@ -835,23 +861,32 @@ class GCRuntime {
   void maybeDoCycleCollection();
   void findDeadCompartments();
 
+  std::tuple<JS::SliceBudget, JS::SliceBudget> budgetConcurrentMarking(
+      const JS::SliceBudget& requestedBudget);
+  void maybeStartConcurrentMarking(JS::SliceBudget& budget);
+  void finishAnyConcurrentMarking(JS::SliceBudget& budget);
   friend class BackgroundMarkTask;
   enum ParallelMarking : bool {
-    SingleThreadedMarking = false,
+    NoParallelMarking = false,
     AllowParallelMarking = true
   };
-  IncrementalProgress markUntilBudgetExhausted(
+  enum ConcurrentMarking : bool {
+    NoConcurrentMarking = false,
+    AllowConcurrentMarking = true
+  };
+  IncrementalProgress markPhase(JS::SliceBudget& sliceBudget);
+  IncrementalProgress markSynchronously(
       JS::SliceBudget& sliceBudget,
-      ParallelMarking allowParallelMarking = SingleThreadedMarking,
+      ParallelMarking allowParallelMarking = NoParallelMarking,
       ShouldReportMarkTime reportTime = ReportMarkTime);
   bool canMarkInParallel() const;
-  bool initParallelMarking();
-  void finishParallelMarkers();
+  bool canMarkConcurrently() const;
+  bool initMultiThreadedMarkers();
 
   bool reserveMarkingThreads(size_t count);
   void releaseMarkingThreads();
 
-  bool hasMarkingWork(MarkColor color) const;
+  bool hasMarkingWork() const;
 
   void drainMarkStack();
 
@@ -871,6 +906,7 @@ class GCRuntime {
 
   template <class ZoneIterT>
   IncrementalProgress markWeakReferences(JS::SliceBudget& budget);
+  void markIncomingGraySymbolEdgesFromUncollectedZones();
   IncrementalProgress markWeakReferencesInCurrentGroup(JS::SliceBudget& budget);
   IncrementalProgress markGrayRoots(JS::SliceBudget& budget,
                                     gcstats::PhaseKind phase);
@@ -942,6 +978,8 @@ class GCRuntime {
   void freeFromBackgroundThread(AutoLockHelperThreadState& lock);
   void sweepBackgroundThings(ZoneList& zones);
   void prepareForSweepSlice(JS::GCReason reason);
+  void disableIncrementalBarriers();
+  void enableIncrementalBarriers();
   void assertBackgroundSweepingFinished();
 #ifdef DEBUG
   bool zoneInCurrentSweepGroup(Zone* zone) const;
@@ -985,6 +1023,9 @@ class GCRuntime {
   void releaseHeldRelocatedArenas();
   void releaseHeldRelocatedArenasWithoutUnlocking(const AutoLockGC& lock);
 #endif
+
+  bool waitForBackgroundTasksOnAllocFailure();
+  void onOutOfMallocMemory(const AutoLockGC& lock);
 
   IncrementalProgress waitForBackgroundTask(GCParallelTask& task,
                                             const JS::SliceBudget& budget,
@@ -1057,6 +1098,9 @@ class GCRuntime {
   GCSchedulingTunables tunables;
   GCSchedulingState schedulingState;
   MainThreadData<bool> fullGCRequested;
+  // If an enterWeakMarking slice takes too long, suppress yielding during the
+  // next slice.
+  MainThreadData<bool> finishMarkingDuringSweeping;
 
   // Helper thread configuration.
   MainThreadData<double> helperThreadRatio;
@@ -1080,6 +1124,12 @@ class GCRuntime {
    * budget for internally-triggered GCs.
    */
   MainThreadData<JS::CreateSliceBudgetCallback> createBudgetCallback;
+
+#ifdef MOZ_TSAN
+  // TSAN doesn't understand use of atomic_thread_fence to synchronize relaxed
+  // atomics so use reads/writes to this atomic instead.
+  mozilla::Atomic<int, mozilla::SequentiallyConsistent> tsanMemoryBarrier;
+#endif
 
  private:
   // Arenas used for permanent things created at startup and shared by child
@@ -1181,6 +1231,9 @@ class GCRuntime {
   /* Whether to use parallel marking. */
   MainThreadData<ParallelMarking> useParallelMarking;
 
+  /* Whether to use concurrent marking. */
+  MainThreadData<ConcurrentMarking> useConcurrentMarking;
+
   /* The invocation kind of the current GC, set at the start of collection. */
   MainThreadOrGCTaskData<mozilla::Maybe<JS::GCOptions>> maybeGcOptions;
 
@@ -1217,6 +1270,14 @@ class GCRuntime {
   // Whether any sweeping and decommitting will run on a separate GC helper
   // thread.
   MainThreadData<bool> useBackgroundThreads;
+
+  /*
+   * We're ready to start sweeping in this slice. Either we just marked roots in
+   * this slice or we called prepareForSweepSlice().
+   */
+  MainThreadData<bool> preparedForSweepInThisSlice;
+
+  MainThreadData<size_t> markSliceCount;
 
 #ifdef DEBUG
   /* Shutdown has started. Further collections must be shutdown collections. */
@@ -1264,6 +1325,8 @@ class GCRuntime {
       weakCachesToSweep;
   MainThreadData<bool> abortSweepAfterCurrentGroup;
   MainThreadOrGCTaskData<IncrementalProgress> sweepMarkResult;
+  MainThreadData<bool> disableBarriersForSweeping;
+  friend class AutoUpdateBarriersForSweeping;
 
   /*
    * During incremental foreground finalization, we may have a list of arenas of
@@ -1294,13 +1357,6 @@ class GCRuntime {
 
   /* The test marking queue might want to be marking a particular color. */
   mozilla::Maybe<js::gc::MarkColor> queueMarkColor;
-
-  // During gray marking, delay AssertCellIsNotGray checks by
-  // recording the cell pointers here and checking after marking has
-  // finished.
-  MainThreadData<Vector<const Cell*, 0, SystemAllocPolicy>>
-      cellsToAssertNotGray;
-  friend void js::gc::detail::AssertCellIsNotGray(const Cell*);
 #endif
 
   friend class SweepGroupsIter;
@@ -1350,6 +1406,15 @@ class GCRuntime {
    * pref: javascript.options.mem.gc_parallel_marking
    */
   MainThreadData<bool> parallelMarkingEnabled;
+
+#ifdef JS_GC_CONCURRENT_MARKING
+  /*
+   * Whether concurrent marking is enabled globally.
+   *
+   * JSGC_CONCURRENT_MARKING_ENABLED
+   */
+  MainThreadOrGCTaskData<bool> concurrentMarkingEnabled;
+#endif
 
   MainThreadData<bool> rootsRemoved;
 
@@ -1436,10 +1501,10 @@ class GCRuntime {
   Mutex lock MOZ_UNANNOTATED;
 
   /*
-   * Lock used to synchronise access to the store buffer during parallel
-   * sweeping.
+   * Lock used to synchronise access to resources that would normally only be
+   * accessed on the main thread during parallel sweeping.
    */
-  Mutex storeBufferLock MOZ_UNANNOTATED;
+  Mutex sweepingLock MOZ_UNANNOTATED;
 
   /* Lock used to synchronise access to delayed marking state. */
   Mutex delayedMarkingLock MOZ_UNANNOTATED;

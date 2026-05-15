@@ -1,0 +1,113 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+
+      <vbox class="panel-subview-body">
+        <hbox class="identity-popup-security-connection identity-popup-section" align="center">
+          <image class="identity-popup-security-connection-icon"/>
+          <description class="identity-popup-connection-not-secure security-view"
+                       when-connection="not-secure secure-cert-user-overridden cert-error-page net-error-page https-only-error-page" data-l10n-id="identity-connection-not-secure-security-view"></description>
+          <description class="identity-popup-connection-secure security-view"
+                       when-connection="secure secure-ev secure-etsi" data-l10n-id="identity-connection-verified"></description>
+          <!-- These descriptions are shown on a seperate subview when trustpanel is disabled and
+               are only visible here under the trustpanel -->
+          <box class="only-trustpanel">
+            <description when-connection="chrome" data-l10n-id="identity-connection-internal"></description>
+            <description when-connection="file" data-l10n-id="identity-connection-file"></description>
+            <description when-connection="associated" data-l10n-id="identity-connection-associated"></description>
+            <description when-connection="extension" data-l10n-id="identity-extension-page"></description >
+            <description class="identity-popup-connection-secure upgraded"
+                         when-httpsonlystatus="upgraded failed-sub"
+                         data-l10n-id="identity-https-only-connection-upgraded"></description>
+          </box>
+        </hbox>
+
+        <vbox id="identity-popup-securityView-extended-info" class="identity-popup-section">
+          <!-- (EV) Certificate Information -->
+          <description id="identity-popup-content-owner-label"
+                       when-connection="secure-ev secure-etsi" data-l10n-id="identity-ev-owner-label"></description>
+          <description id="identity-popup-content-owner"
+                       when-connection="secure-ev secure-etsi"
+                       class="header"/>
+          <description id="identity-popup-content-supplemental"
+                       when-connection="secure-ev secure-etsi"/>
+          <description id="identity-popup-content-verifier"
+                       when-connection="secure secure-ev secure-etsi secure-cert-user-overridden"/>
+          <description id="identity-popup-content-etsi"
+                       when-connection="secure-etsi"
+                       data-l10n-id="identity-etsi"/>
+          <description id="identity-popup-content-verifier-unknown"
+                       class="identity-popup-warning-box identity-popup-warning-gray"
+                       when-customroot="true">
+            <label data-l10n-id="identity-description-custom-root2"/>
+            <html:a is="moz-support-link" id="identity-popup-custom-root-learn-more" support-page="enterprise-roots"/>
+          </description>
+
+          <!-- Remove Certificate Exception -->
+          <button id="identity-popup-remove-cert-exception"
+                  when-connection="secure-cert-user-overridden"
+                  data-l10n-id="identity-remove-cert-exception"
+                  class="panel-button"/>
+
+          <!-- Connection is Not Secure -->
+          <description when-connection="not-secure cert-error-page net-error-page https-only-error-page"
+                       data-l10n-id="identity-description-insecure"></description>
+
+          <!-- Weak Cipher -->
+          <description when-ciphers="weak" data-l10n-id="identity-description-weak-cipher-intro"></description>
+          <description class="identity-popup-warning-box identity-popup-warning-yellow"
+                       when-ciphers="weak" data-l10n-id="identity-description-weak-cipher-risk"></description>
+
+          <!-- Active Mixed Content Blocked -->
+          <description class="identity-popup-warning-box identity-popup-warning-gray"
+                       when-mixedcontent="active-blocked">
+            <label data-l10n-id="identity-description-active-blocked2"/>
+            <html:a is="moz-support-link" class="identity-popup-mcb-learn-more" support-page="mixed-content"/>
+          </description>
+
+          <!-- Passive Mixed Content Loaded -->
+          <description when-mixedcontent="passive-loaded" data-l10n-id="identity-description-passive-loaded"></description>
+          <description class="identity-popup-warning-box identity-popup-warning-yellow"
+                       when-mixedcontent="passive-loaded">
+            <label data-l10n-id="identity-description-passive-loaded-insecure2"/>
+            <html:a is="moz-support-link" class="identity-popup-mcb-learn-more" support-page="mixed-content"/>
+          </description>
+
+          <!-- Passive Mixed Content Loaded, Active Mixed Content Blocked -->
+          <description when-mixedcontent="passive-loaded active-blocked" data-l10n-id="identity-description-passive-loaded"></description>
+          <description when-mixedcontent="passive-loaded active-blocked"
+                       class="identity-popup-warning-box identity-popup-warning-yellow">
+            <label data-l10n-id="identity-description-passive-loaded-mixed2"/>
+            <html:a is="moz-support-link" class="identity-popup-mcb-learn-more" support-page="mixed-content"/>
+          </description>
+
+          <!-- Active Mixed Content Blocking Disabled -->
+          <description when-mixedcontent="active-loaded"
+                       data-l10n-id="identity-description-active-loaded"></description>
+          <description when-mixedcontent="active-loaded"
+                       data-l10n-id="identity-description-active-loaded-insecure"></description>
+          <hbox>
+            <html:a is="moz-support-link" when-mixedcontent="active-loaded"
+                       and-when-loginforms="secure" class="identity-popup-mcb-learn-more" support-page="mixed-content"/>
+          </hbox>
+
+          <!-- This section is only shown here when the trustpanel is active, otherwise it
+               is shown in a seperate subview inside the identityPanel -->
+          <vbox id="trustpanel-popup-security-httpsonlymode" when-httpsonlystatus="exception upgraded failed-top failed-sub" class="only-trustpanel">
+            <label flex="1" data-l10n-id="identity-https-only-label2"></label>
+            <menulist id="trustpanel-popup-security-httpsonlymode-menulist" sizetopopup="none">
+              <menupopup>
+                <menuitem value="0" data-l10n-id="identity-https-only-dropdown-on" />
+                <menuitem value="1" data-l10n-id="identity-https-only-dropdown-off"
+                          id="trustpanel-popup-security-menulist-off-item" />
+                <menuitem value="2" data-l10n-id="identity-https-only-dropdown-off-temporarily" />
+              </menupopup>
+            </menulist>
+            <vbox id="trustpanel-popup-security-httpsonlymode-info">
+              <description when-httpsonlystatus="exception" flex="1" data-l10n-id="identity-https-only-info-turn-on3"></description>
+              <description when-httpsonlystatus="failed-sub" flex="1" data-l10n-id="identity-https-only-info-turn-off3"></description>
+              <description when-httpsonlystatus="failed-top" flex="1" data-l10n-id="identity-https-only-info-no-upgrade"></description>
+            </vbox>
+          </vbox>
+        </vbox>
+      </vbox>

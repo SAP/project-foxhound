@@ -7,6 +7,7 @@ include protocol PBackground;
 include DOMTypes;
 
 using struct nsID from "nsID.h";
+[RefCounted] using class mozilla::dom::SharedMessageBody from "mozilla/dom/SharedMessageBody.h";
 
 namespace mozilla {
 namespace dom {
@@ -18,12 +19,12 @@ protocol PBroadcastChannel
   manager PBackground;
 
 parent:
-  async PostMessage(MessageData message);
+  async PostMessage(SharedMessageBody message);
   async Close();
 
 child:
   // A message must be delivered.
-  async Notify(MessageData message);
+  async Notify(SharedMessageBody message);
 
   // A message has been delivered to other channels. It can be removed after
   // all the actorsOnSamePid have retrieved it.

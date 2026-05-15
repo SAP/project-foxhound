@@ -8,6 +8,7 @@
 
 #include "CSSEditUtils.h"
 #include "EditAction.h"
+#include "EditorDOMAPIWrapper.h"
 #include "EditorLineBreak.h"
 #include "HTMLEditHelpers.h"
 #include "HTMLEditorEventListener.h"
@@ -350,7 +351,7 @@ void HTMLEditor::HideGrabberInternal() {
 
   // Move all members to the local variables first since mutation event
   // listener may try to show grabber while we're hiding them.
-  RefPtr<Element> absolutePositioningObject =
+  const RefPtr<Element> absolutePositioningObject =
       std::move(mAbsolutelyPositionedObject);
   ManualNACPtr grabber = std::move(mGrabber);
   ManualNACPtr positioningShadow = std::move(mPositioningShadow);
@@ -370,11 +371,16 @@ void HTMLEditor::HideGrabberInternal() {
     }
   }
 
-  DebugOnly<nsresult> rv = absolutePositioningObject->UnsetAttr(
-      kNameSpaceID_None, nsGkAtoms::_moz_abspos, true);
-  NS_WARNING_ASSERTION(
-      NS_SUCCEEDED(rv),
-      "Element::UnsetAttr(nsGkAtoms::_moz_abspos) failed, but ignored");
+  {
+    AutoElementAttrAPIWrapper elementWrapper(*this, *absolutePositioningObject);
+    if (NS_FAILED(elementWrapper.UnsetAttr(nsGkAtoms::_moz_abspos, true))) {
+      NS_WARNING("AutoElementAttrAPIWrapper::UnsetAttr() failed, but ignored");
+    } else {
+      NS_WARNING_ASSERTION(
+          elementWrapper.IsExpectedResult(EmptyString()),
+          "Removing _moz_abspos attribute caused other mutations, but ignored");
+    }
+  }
 
   // We allow the pres shell to be null; when it is, we presume there
   // are no document observers to notify, but we still want to
@@ -410,11 +416,17 @@ nsresult HTMLEditor::ShowGrabberInternal(Element& aElement) {
     return rv;
   }
 
-  rv = aElement.SetAttr(kNameSpaceID_None, nsGkAtoms::_moz_abspos, classValue,
-                        true);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Element::SetAttr(nsGkAtoms::_moz_abspos) failed");
-    return rv;
+  {
+    AutoElementAttrAPIWrapper elementWrapper(*this, aElement);
+    nsresult rv =
+        elementWrapper.SetAttr(nsGkAtoms::_moz_abspos, classValue, true);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("AutoElementAttrAPIWrapper::SetAttr() failed");
+      return rv;
+    }
+    NS_WARNING_ASSERTION(
+        elementWrapper.IsExpectedResult(classValue),
+        "Setting _moz_abspos attribute caused other mutations, but ignored");
   }
 
   mAbsolutelyPositionedObject = &aElement;
@@ -481,7 +493,7 @@ nsresult HTMLEditor::StartMoving() {
           nsStyledElement::FromNode(mPositioningShadow.get())) {
     nsresult rv;
     rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
-        *positioningShadowStyledElement, *nsGkAtoms::width,
+        *this, *positioningShadowStyledElement, *nsGkAtoms::width,
         mPositionedObjectWidth);
     if (rv == NS_ERROR_EDITOR_DESTROYED) {
       NS_WARNING(
@@ -493,7 +505,7 @@ nsresult HTMLEditor::StartMoving() {
                          "CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction("
                          "nsGkAtoms::width) failed, but ignored");
     rv = CSSEditUtils::SetCSSPropertyPixelsWithoutTransaction(
-        *positioningShadowStyledElement, *nsGkAtoms::height,
+        *this, *positioningShadowStyledElement, *nsGkAtoms::height,
         mPositionedObjectHeight);
     if (rv == NS_ERROR_EDITOR_DESTROYED) {
       NS_WARNING(
@@ -792,7 +804,7 @@ nsresult HTMLEditor::SetPositionToStatic(Element& aElement) {
       "CSSEditUtils::RemoveCSSPropertyWithTransaction(nsGkAtoms::z_index) "
       "failed, but ignored");
 
-  if (!HTMLEditUtils::IsImage(styledElement)) {
+  if (!HTMLEditUtils::IsImageElement(*styledElement)) {
     // MOZ_KnownLive(*styledElement): aElement's lifetime must be guarantted
     // by the caller because of MOZ_CAN_RUN_SCRIPT method.
     rv = CSSEditUtils::RemoveCSSPropertyWithTransaction(

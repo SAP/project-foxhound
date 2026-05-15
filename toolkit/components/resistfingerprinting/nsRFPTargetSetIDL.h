@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_RFPTargetSetIDL_h__
-#define mozilla_RFPTargetSetIDL_h__
+#ifndef mozilla_RFPTargetSetIDL_h_
+#define mozilla_RFPTargetSetIDL_h_
 
 #include "nsIRFPTargetSetIDL.h"
 #include "nsRFPService.h"
@@ -27,4 +27,4 @@ class nsRFPTargetSetIDL final : public nsIRFPTargetSetIDL {
 };
 }  // namespace mozilla
 
-#endif  // mozilla_RFPTargetSetIDL_h__
+#endif  // mozilla_RFPTargetSetIDL_h_

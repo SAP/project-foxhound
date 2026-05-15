@@ -104,7 +104,7 @@ class RtcEventBweUpdateDelayBased final : public RtcEvent {
   int32_t bitrate_bps() const { return bitrate_bps_; }
   BandwidthUsage detector_state() const { return detector_state_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> batch) {
+  static std::string Encode(ArrayView<const RtcEvent*> batch) {
     return RtcEventBweUpdateDelayBased::definition_.EncodeBatch(batch);
   }
 
@@ -117,7 +117,7 @@ class RtcEventBweUpdateDelayBased final : public RtcEvent {
   }
 
  private:
-  RtcEventBweUpdateDelayBased(const RtcEventBweUpdateDelayBased& other);
+  RtcEventBweUpdateDelayBased(const RtcEventBweUpdateDelayBased&) = default;
 
   const int32_t bitrate_bps_;
   const BandwidthUsage detector_state_;

@@ -10,6 +10,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   MessageManagerDestroyedPromise:
     "chrome://remote/content/marionette/sync.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   windowManager: "chrome://remote/content/shared/WindowManager.sys.mjs",
 });
@@ -105,6 +106,13 @@ browser.Context = class {
     }
 
     return null;
+  }
+
+  /**
+   * Return the unique id of the content browser.
+   */
+  get contentBrowserId() {
+    return lazy.NavigableManager.getIdForBrowser(this.contentBrowser);
   }
 
   get messageManager() {
@@ -265,7 +273,7 @@ browser.Context = class {
    * @param {ChromeWindow=} window
    *     Switch to this window before selecting the tab.
    * @param {boolean=} focus
-   *      A boolean value which determins whether to focus
+   *      A boolean value which determines whether to focus
    *      the window. Defaults to true.
    *
    * @returns {Tab}

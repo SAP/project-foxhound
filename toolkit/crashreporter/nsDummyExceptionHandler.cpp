@@ -207,7 +207,9 @@ void SetNotificationPipeForChild(FileHandle breakpadFd,
 
 CrashPipeType GetChildNotificationPipe() { return nullptr; }
 
-UniqueFileHandle RegisterChildIPCChannel() { return UniqueFileHandle(); }
+bool RegisterChildIPCChannel(mozilla::geckoargs::ChildProcessArgs& aArgs) {
+  return false;
+}
 
 #if defined(MOZ_WIDGET_ANDROID)
 void SetCrashHelperPipes(FileHandle breakpadFd, FileHandle crashHelperFd) {}
@@ -215,10 +217,7 @@ void SetCrashHelperPipes(FileHandle breakpadFd, FileHandle crashHelperFd) {}
 
 bool GetLastRunCrashID(nsAString& id) { return false; }
 
-bool SetRemoteExceptionHandler(CrashPipeType aCrashPipe,
-                               UniqueFileHandle aCrashHelperPipe) {
-  return false;
-}
+bool SetRemoteExceptionHandler(int& aArgc, char** aArgv) { return false; }
 
 bool TakeMinidumpForChild(ProcessId childPid, nsIFile** dump,
                           AnnotationTable& aAnnotations) {

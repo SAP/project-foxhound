@@ -4,17 +4,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "cdm-test-decryptor.h"
-#include "cdm-test-storage.h"
-#include "cdm-test-output-protection.h"
 
-#include <mutex>
-#include <string>
-#include <vector>
 #include <istream>
 #include <iterator>
+#include <mutex>
 #include <set>
 #include <sstream>
+#include <string>
+#include <vector>
 
+#include "cdm-test-output-protection.h"
+#include "cdm-test-storage.h"
 #include "mozilla/Assertions.h"
 
 FakeDecryptor* FakeDecryptor::sInstance = nullptr;

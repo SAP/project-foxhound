@@ -27,7 +27,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/FxAccountsPairingChannel.sys.mjs",
 
   Weave: "resource://services-sync/main.sys.mjs",
-  jwcrypto: "resource://services-crypto/jwcrypto.sys.mjs",
+  jwcrypto: "moz-src:///services/crypto/modules/jwcrypto.sys.mjs",
 });
 
 const PAIRING_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob:pair-auth-webchannel";
@@ -278,7 +278,7 @@ export class FxAccountsPairingFlow {
     const curState = stateMachine.currentState;
     try {
       switch (command) {
-        case COMMAND_PAIR_SUPP_METADATA:
+        case COMMAND_PAIR_SUPP_METADATA: {
           stateMachine.assertState(
             [PendingConfirmations, PendingLocalConfirmation],
             `Wrong state for ${command}`
@@ -291,7 +291,8 @@ export class FxAccountsPairingFlow {
             remote: ipAddress,
           } = curState.sender;
           return { ua, city, region, country, ipAddress };
-        case COMMAND_PAIR_AUTHORIZE:
+        }
+        case COMMAND_PAIR_AUTHORIZE: {
           stateMachine.assertState(
             [PendingConfirmations, PendingLocalConfirmation],
             `Wrong state for ${command}`
@@ -325,10 +326,11 @@ export class FxAccountsPairingFlow {
           });
           curState.localConfirmed();
           break;
+        }
         case COMMAND_PAIR_DECLINE:
           this._onAbort();
           break;
-        case COMMAND_PAIR_HEARTBEAT:
+        case COMMAND_PAIR_HEARTBEAT: {
           if (curState instanceof Errored || this._pairingChannel.closed) {
             return { err: curState.error.message || "Pairing channel closed" };
           }
@@ -337,6 +339,7 @@ export class FxAccountsPairingFlow {
             curState instanceof PendingRemoteConfirmation
           );
           return { suppAuthorized };
+        }
         case COMMAND_PAIR_COMPLETE:
           this.finalize();
           break;
@@ -356,7 +359,7 @@ export class FxAccountsPairingFlow {
     const curState = stateMachine.currentState;
     try {
       switch (message) {
-        case "pair:supp:request":
+        case "pair:supp:request": {
           stateMachine.assertState(
             SuppConnectionPending,
             `Wrong state for ${message}`
@@ -399,6 +402,7 @@ export class FxAccountsPairingFlow {
             keys_jwk,
           });
           break;
+        }
         case "pair:supp:authorize":
           stateMachine.assertState(
             [PendingConfirmations, PendingRemoteConfirmation],
@@ -432,7 +436,7 @@ export class FxAccountsPairingFlow {
   /**
    * Grant an OAuth authorization code for the connecting client.
    *
-   * @param {Object} options
+   * @param {object} options
    * @param options.client_id
    * @param options.state
    * @param options.scope
@@ -440,7 +444,7 @@ export class FxAccountsPairingFlow {
    * @param options.code_challenge_method
    * @param options.code_challenge
    * @param [options.keys_jwe]
-   * @returns {Promise<Object>} Object containing "code" and "state" properties.
+   * @returns {Promise<object>} Object containing "code" and "state" properties.
    */
   _authorizeOAuthCode(options) {
     return this._fxa._withVerifiedAccountState(async state => {
@@ -482,10 +486,10 @@ export class FxAccountsPairingFlow {
    *   * This client must actually have the key.
    *   * The other client must be allowed to request that key.
    *
-   * @param {String} sessionToken the sessionToken to use when fetching key metadata
-   * @param {String} clientId the client requesting access to our keys
-   * @param {String} scopes Space separated requested scopes being requested
-   * @param {Object} jwk Ephemeral JWK provided by the client for secure key transfer
+   * @param {string} sessionToken the sessionToken to use when fetching key metadata
+   * @param {string} clientId the client requesting access to our keys
+   * @param {string} scopes Space separated requested scopes being requested
+   * @param {object} jwk Ephemeral JWK provided by the client for secure key transfer
    */
   async _createKeysJWE(sessionToken, clientId, scopes, jwk) {
     // This checks with the FxA server about what scopes the client is allowed.

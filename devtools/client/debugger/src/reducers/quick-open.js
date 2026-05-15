@@ -4,6 +4,7 @@
 
 /**
  * Quick Open reducer
+ *
  * @module reducers/quick-open
  */
 

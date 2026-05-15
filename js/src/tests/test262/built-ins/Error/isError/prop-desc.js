@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-error-iserror) skip-if(!Error.isError||!xulRuntime.shell) -- Error.isError is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!Error.isError) -- Error.isError is not enabled unconditionally
 // Copyright (C) 2024 Jordan Harband. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 

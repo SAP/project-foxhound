@@ -6,11 +6,9 @@ package mozilla.components.feature.autofill.structure
 
 import android.app.assist.AssistStructure
 import android.app.assist.AssistStructure.ViewNode
-import android.os.Build
 import android.text.InputType
 import android.view.View
 import android.view.autofill.AutofillId
-import androidx.annotation.RequiresApi
 import mozilla.components.feature.autofill.structure.AutofillNodeNavigator.Companion.editTextMask
 import java.util.Locale
 
@@ -85,7 +83,6 @@ internal interface AutofillNodeNavigator<Node, Id> {
  * Original implementation imported from Lockwise:
  * https://github.com/mozilla-lockwise/lockwise-android/blob/f303f8aee7cc96dcdf4e7863fef6c19ae874032e/app/src/main/java/mozilla/lockbox/autofill/ViewNodeNavigator.kt#L72
  */
-@RequiresApi(Build.VERSION_CODES.O)
 internal class ViewNodeNavigator(
     private val structure: AssistStructure,
     override val activityPackageName: String,

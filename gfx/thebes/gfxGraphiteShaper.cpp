@@ -174,8 +174,8 @@ bool gfxGraphiteShaper::ShapeText(DrawTarget* aDrawTarget,
     // determine whether petite-caps falls back to small-caps
     if (style->variantCaps != NS_FONT_VARIANT_CAPS_NORMAL) {
       switch (style->variantCaps) {
-        case NS_FONT_VARIANT_CAPS_ALLPETITE:
-        case NS_FONT_VARIANT_CAPS_PETITECAPS:
+        case NS_FONT_VARIANT_CAPS_ALL_PETITE_CAPS:
+        case NS_FONT_VARIANT_CAPS_PETITE_CAPS:
           bool synLower, synUpper;
           mFont->SupportsVariantCaps(aScript, style->variantCaps,
                                      mFallbackToSmallCaps, synLower, synUpper);

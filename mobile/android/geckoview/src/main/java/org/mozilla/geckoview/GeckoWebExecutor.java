@@ -53,6 +53,7 @@ public class GeckoWebExecutor {
     return ByteBuffer.allocateDirect(capacity);
   }
 
+  /** Fetch flag definitions for network request options. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     FETCH_FLAGS_NONE,

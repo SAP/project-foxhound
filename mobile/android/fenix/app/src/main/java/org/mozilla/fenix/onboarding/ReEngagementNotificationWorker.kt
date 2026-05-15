@@ -74,7 +74,7 @@ class ReEngagementNotificationWorker(
             applicationContext,
             SharedIdsHelper.getNextIdForTag(applicationContext, NOTIFICATION_PENDING_INTENT_TAG),
             intent,
-            IntentUtils.defaultIntentPendingFlags,
+            IntentUtils.DEFAULT_PENDING_INTENT_FLAGS,
         )
 
         with(applicationContext) {

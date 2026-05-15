@@ -5,37 +5,37 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ProcessPriorityManager.h"
+
+#include "StaticPtr.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/BrowserHost.h"
-#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/Hal.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ProfilerState.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_threads.h"
+#include "mozilla/dom/BrowserHost.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/glean/DomMetrics.h"
-#include "mozilla/Unused.h"
-#include "mozilla/Logging.h"
-#include "nsPrintfCString.h"
-#include "nsXULAppAPI.h"
+#include "nsCRT.h"
+#include "nsComponentManagerUtils.h"
 #include "nsFrameLoader.h"
 #include "nsINamed.h"
-#include "nsIObserverService.h"
-#include "StaticPtr.h"
 #include "nsIObserver.h"
-#include "nsITimer.h"
+#include "nsIObserverService.h"
 #include "nsIPropertyBag2.h"
-#include "nsComponentManagerUtils.h"
-#include "nsCRT.h"
-#include "nsTHashSet.h"
+#include "nsITimer.h"
+#include "nsPrintfCString.h"
 #include "nsQueryObject.h"
 #include "nsTHashMap.h"
+#include "nsTHashSet.h"
+#include "nsXULAppAPI.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -848,7 +848,7 @@ void ParticularProcessPriorityManager::SetPriorityNow(
     }
 #endif
 
-    Unused << mContentParent->SendNotifyProcessPriorityChanged(mPriority);
+    (void)mContentParent->SendNotifyProcessPriorityChanged(mPriority);
   }
 
   FireTestOnlyObserverNotification("process-priority-set",

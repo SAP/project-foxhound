@@ -531,7 +531,7 @@ AddonsReconciler.prototype = {
           await this.rectifyStateFromAddon(addon);
           break;
 
-        case "onUninstalled":
+        case "onUninstalled": {
           let id = addon.id;
           let addons = this.addons;
           if (id in addons) {
@@ -544,6 +544,7 @@ AddonsReconciler.prototype = {
             );
             await this._addChange(now, CHANGE_UNINSTALLED, record);
           }
+        }
       }
 
       // See note for _shouldPersist.

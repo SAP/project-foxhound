@@ -8,6 +8,7 @@ add_task(async function test_non_keyword() {
   info("Searching for non-keyworded entry should autoFill it");
   await PlacesTestUtils.addVisits({
     uri: Services.io.newURI("http://mozilla.org/test/"),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
   });
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: Services.io.newURI("http://mozilla.org/test/"),
@@ -20,7 +21,7 @@ add_task(async function test_non_keyword() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://mozilla.org"),
+        title: UrlbarTestUtils.trimURL("http://mozilla.org"),
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -36,6 +37,7 @@ add_task(async function test_keyword() {
   info("Searching for keyworded entry should not autoFill it");
   await PlacesTestUtils.addVisits({
     uri: Services.io.newURI("http://mozilla.org/test/"),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
   });
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: Services.io.newURI("http://mozilla.org/test/"),
@@ -60,6 +62,7 @@ add_task(async function test_more_than_keyword() {
   info("Searching for more than keyworded entry should autoFill it");
   await PlacesTestUtils.addVisits({
     uri: Services.io.newURI("http://mozilla.org/test/"),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
   });
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: Services.io.newURI("http://mozilla.org/test/"),
@@ -73,7 +76,7 @@ add_task(async function test_more_than_keyword() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://mozilla.org"),
+        title: UrlbarTestUtils.trimURL("http://mozilla.org"),
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -89,6 +92,7 @@ add_task(async function test_less_than_keyword() {
   info("Searching for less than keyworded entry should autoFill it");
   await PlacesTestUtils.addVisits({
     uri: Services.io.newURI("http://mozilla.org/test/"),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
   });
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: Services.io.newURI("http://mozilla.org/test/"),
@@ -103,7 +107,7 @@ add_task(async function test_less_than_keyword() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://mozilla.org"),
+        title: UrlbarTestUtils.trimURL("http://mozilla.org"),
         heuristic: true,
       }),
       makeBookmarkResult(context, {
@@ -119,6 +123,7 @@ add_task(async function test_keyword_casing() {
   info("Searching for keyworded entry is case-insensitive");
   await PlacesTestUtils.addVisits({
     uri: Services.io.newURI("http://mozilla.org/test/"),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
   });
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: Services.io.newURI("http://mozilla.org/test/"),
@@ -143,8 +148,12 @@ add_task(async function test_less_then_equal_than_keyword_bug_1124238() {
   info("Searching for less than keyworded entry should autoFill it");
   await PlacesTestUtils.addVisits({
     uri: Services.io.newURI("http://mozilla.org/test/"),
+    transition: PlacesUtils.history.TRANSITION_TYPED,
   });
-  await PlacesTestUtils.addVisits("http://mozilla.com/");
+  await PlacesTestUtils.addVisits({
+    url: "http://mozilla.com/",
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: Services.io.newURI("http://mozilla.com/"),
     keyword: "moz",

@@ -7,18 +7,15 @@
 #ifndef nsDOMWindowUtils_h_
 #define nsDOMWindowUtils_h_
 
-#include "nsWeakReference.h"
-
-#include "nsIDOMWindowUtils.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Result.h"
+#include "nsIDOMWindowUtils.h"
+#include "nsWeakReference.h"
 
 class nsGlobalWindowOuter;
 class nsIDocShell;
 class nsIWidget;
 class nsPresContext;
-class nsView;
 struct nsPoint;
 
 namespace mozilla {
@@ -32,31 +29,6 @@ class LayerTransactionChild;
 class WebRenderBridgeChild;
 }  // namespace layers
 }  // namespace mozilla
-
-class nsTranslationNodeList final : public nsITranslationNodeList {
- public:
-  nsTranslationNodeList() {
-    mNodes.SetCapacity(1000);
-    mNodeIsRoot.SetCapacity(1000);
-    mLength = 0;
-  }
-
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSITRANSLATIONNODELIST
-
-  void AppendElement(nsINode* aElement, bool aIsRoot) {
-    mNodes.AppendElement(aElement);
-    mNodeIsRoot.AppendElement(aIsRoot);
-    mLength++;
-  }
-
- private:
-  ~nsTranslationNodeList() = default;
-
-  nsTArray<nsCOMPtr<nsINode> > mNodes;
-  nsTArray<bool> mNodeIsRoot;
-  uint32_t mLength;
-};
 
 class nsDOMWindowUtils final : public nsIDOMWindowUtils,
                                public nsSupportsWeakReference {
@@ -86,25 +58,6 @@ class nsDOMWindowUtils final : public nsIDOMWindowUtils,
   mozilla::dom::Document* GetDocument();
   mozilla::layers::WebRenderBridgeChild* GetWebRenderBridge();
   mozilla::layers::CompositorBridgeChild* GetCompositorBridge();
-
-  // Until callers are annotated.
-  MOZ_CAN_RUN_SCRIPT
-  NS_IMETHOD SendMouseEventCommon(
-      const nsAString& aType, float aX, float aY, int32_t aButton,
-      int32_t aClickCount, int32_t aModifiers, bool aIgnoreRootScrollFrame,
-      float aPressure, unsigned short aInputSourceArg, uint32_t aIdentifier,
-      bool aToWindow, bool* aPreventDefault, bool aIsDOMEventSynthesized,
-      bool aIsWidgetEventSynthesized, int32_t aButtons);
-
-  MOZ_CAN_RUN_SCRIPT
-  nsresult SendTouchEventCommon(
-      const nsAString& aType, const nsTArray<uint32_t>& aIdentifiers,
-      const nsTArray<int32_t>& aXs, const nsTArray<int32_t>& aYs,
-      const nsTArray<uint32_t>& aRxs, const nsTArray<uint32_t>& aRys,
-      const nsTArray<float>& aRotationAngles, const nsTArray<float>& aForces,
-      const nsTArray<int32_t>& aTiltXs, const nsTArray<int32_t>& aTiltYs,
-      const nsTArray<int32_t>& aTwists, int32_t aModifiers, bool aIsPen,
-      bool aToWindow, AsyncEnabledOption aAsyncEnabled, bool* aPreventDefault);
 
   void ReportErrorMessageForWindow(const nsAString& aErrorMessage,
                                    const char* aClassification,

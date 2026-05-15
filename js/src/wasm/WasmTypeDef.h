@@ -20,7 +20,6 @@
 #define wasm_type_def_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/HashTable.h"
 
 #include "js/RefCounted.h"
@@ -29,6 +28,7 @@
 #include "wasm/WasmCompileArgs.h"
 #include "wasm/WasmConstants.h"
 #include "wasm/WasmSerialize.h"
+#include "wasm/WasmStructLayout.h"
 #include "wasm/WasmUtility.h"
 #include "wasm/WasmValType.h"
 
@@ -298,7 +298,7 @@ struct FieldType {
 
 using FieldTypeVector = Vector<FieldType, 0, SystemAllocPolicy>;
 
-using FieldOffsetVector = Vector<uint32_t, 2, SystemAllocPolicy>;
+using FieldAccessPathVector = Vector<FieldAccessPath, 2, SystemAllocPolicy>;
 using InlineTraceOffsetVector = Vector<uint32_t, 2, SystemAllocPolicy>;
 using OutlineTraceOffsetVector = Vector<uint32_t, 0, SystemAllocPolicy>;
 
@@ -306,24 +306,56 @@ class StructType {
  public:
   // Vector of the fields in this struct
   FieldTypeVector fields_;
-  // The total size of this struct in bytes
-  uint32_t size_;
-  // The offset for every struct field
-  FieldOffsetVector fieldOffsets_;
+  // The access path for every struct field.  Same length as `fields_`.
+  FieldAccessPathVector fieldAccessPaths_;
+
   // The offsets of fields that must be traced in the inline portion of wasm
-  // struct object.
+  // struct object.  Offsets are from the base of the WasmStructObject.
   InlineTraceOffsetVector inlineTraceOffsets_;
   // The offsets of fields that must be traced in the outline portion of wasm
   // struct object.
   OutlineTraceOffsetVector outlineTraceOffsets_;
+
+  // The total block size for the WasmStructObject's OOL data area, or zero if
+  // no OOL data is required.
+  uint32_t totalSizeOOL_;
+  // The offset from the start of the WasmStructObject to the OOL pointer
+  // field, or InvalidOffset if no OOL data is required.
+  uint32_t oolPointerOffset_;
+
+  // The total object size for the WasmStructObject, including fixed overheads
+  // (its header words).
+  uint32_t totalSizeIL_;
+  // The offset from the start of the WasmStructObject to the first payload
+  // byte.
+  uint8_t payloadOffsetIL_;
+
+  // The AllocKind for the object, computed directly from `totalSizeIL_`.  Note
+  // this requires further processing with GetFinalizedAllocKindForClass before
+  // use.
+  gc::AllocKind allocKind_;
+
   // Whether this struct only contains defaultable fields.
   bool isDefaultable_;
 
- public:
-  StructType() : size_(0), isDefaultable_(false) {}
+  static const uint32_t InvalidOffset = 0xFFFFFFFF;
+
+  StructType()
+      : totalSizeOOL_(0),
+        oolPointerOffset_(InvalidOffset),
+        totalSizeIL_(0),
+        payloadOffsetIL_(0),
+        allocKind_(gc::AllocKind::INVALID),
+        isDefaultable_(false) {}
 
   explicit StructType(FieldTypeVector&& fields)
-      : fields_(std::move(fields)), size_(0) {
+      : fields_(std::move(fields)),
+        totalSizeOOL_(0),
+        oolPointerOffset_(InvalidOffset),
+        totalSizeIL_(0),
+        payloadOffsetIL_(0),
+        allocKind_(gc::AllocKind::INVALID),
+        isDefaultable_(false) {
     MOZ_ASSERT(fields_.length() <= MaxStructFields);
   }
 
@@ -334,9 +366,7 @@ class StructType {
 
   bool isDefaultable() const { return isDefaultable_; }
 
-  uint32_t fieldOffset(uint32_t fieldIndex) const {
-    return fieldOffsets_[fieldIndex];
-  }
+  bool hasOOL() const { return totalSizeOOL_ > 0; }
 
   HashNumber hash(const RecGroup* recGroup) const {
     HashNumber hn = 0;
@@ -389,35 +419,6 @@ class StructType {
 };
 
 using StructTypeVector = Vector<StructType, 0, SystemAllocPolicy>;
-
-// Utility for computing field offset and alignments, and total size for
-// structs and tags.  This is complicated by fact that a WasmStructObject has
-// an inline area, which is used first, and if that fills up an optional
-// C++-heap-allocated outline area is used.  We need to be careful not to
-// split any data item across the boundary.  This is ensured as follows:
-//
-// (1) the possible field sizes are 1, 2, 4, 8 and 16 only.
-// (2) each field is "naturally aligned" -- aligned to its size.
-// (3) MaxInlineBytes (the size of the inline area) % 16 == 0.
-//
-// From (1) and (2), it follows that all fields are placed so that their first
-// and last bytes fall within the same 16-byte chunk.  That is,
-// offset_of_first_byte_of_field / 16 == offset_of_last_byte_of_field / 16.
-//
-// Given that, it follows from (3) that all fields fall completely within
-// either the inline or outline areas; no field crosses the boundary.
-class StructLayout {
-  mozilla::CheckedInt32 sizeSoFar = 0;
-  uint32_t structAlignment = 1;
-
- public:
-  // The field adders return the offset of the the field.
-  mozilla::CheckedInt32 addField(StorageType type);
-
-  // The close method rounds up the structure size to the appropriate
-  // alignment and returns that size.
-  mozilla::CheckedInt32 close();
-};
 
 //=========================================================================
 // Array types
@@ -704,8 +705,6 @@ class TypeDef {
   bool isStructType() const { return kind_ == TypeDefKind::Struct; }
 
   bool isArrayType() const { return kind_ == TypeDefKind::Array; }
-
-  bool isGcType() const { return isStructType() || isArrayType(); }
 
   const FuncType& funcType() const {
     MOZ_ASSERT(isFuncType());
@@ -1071,16 +1070,6 @@ class RecGroup : public AtomicRefCounted<RecGroup> {
     return (uint32_t)groupTypeIndex;
   }
 
-  bool hasGcType() const {
-    for (uint32_t groupTypeIndex = 0; groupTypeIndex < numTypes();
-         groupTypeIndex++) {
-      if (type(groupTypeIndex).isGcType()) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   HashNumber hash() const {
     HashNumber hn = 0;
     for (uint32_t i = 0; i < numTypes(); i++) {
@@ -1263,15 +1252,6 @@ class TypeContext : public AtomicRefCounted<TypeContext> {
   uint32_t length() const { return types_.length(); }
 
   const SharedRecGroupVector& groups() const { return recGroups_; }
-
-  bool hasGcType() const {
-    for (const SharedRecGroup& recGroup : groups()) {
-      if (recGroup->hasGcType()) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   // Map from type definition to index
 

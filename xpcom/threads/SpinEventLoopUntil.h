@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef xpcom_threads_SpinEventLoopUntil_h__
-#define xpcom_threads_SpinEventLoopUntil_h__
+#ifndef xpcom_threads_SpinEventLoopUntil_h_
+#define xpcom_threads_SpinEventLoopUntil_h_
 
 #include "MainThreadUtils.h"
 #include "mozilla/Maybe.h"
@@ -188,4 +188,4 @@ bool SpinEventLoopUntil(const nsACString& aVeryGoodReasonToDoThis,
 
 }  // namespace mozilla
 
-#endif  // xpcom_threads_SpinEventLoopUntil_h__
+#endif  // xpcom_threads_SpinEventLoopUntil_h_

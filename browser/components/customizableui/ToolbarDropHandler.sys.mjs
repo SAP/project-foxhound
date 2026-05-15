@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   OpenInTabsUtils:
     "moz-src:///browser/components/tabbrowser/OpenInTabsUtils.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 export var ToolbarDropHandler = {

@@ -5,15 +5,14 @@
 #ifndef MOOF_PARSER_H_
 #define MOOF_PARSER_H_
 
-#include "mozilla/ResultExtensions.h"
-#include "TimeUnits.h"
-#include "mozilla/Variant.h"
 #include "Atom.h"
 #include "AtomType.h"
-#include "SinfParser.h"
 #include "ByteStream.h"
 #include "MP4Interval.h"
 #include "MediaResource.h"
+#include "SinfParser.h"
+#include "TimeUnits.h"
+#include "mozilla/Variant.h"
 
 namespace mozilla {
 
@@ -36,9 +35,14 @@ class Mvhd : public Atom {
  public:
   Mvhd()
       : mCreationTime(0), mModificationTime(0), mTimescale(0), mDuration(0) {}
-  explicit Mvhd(Box& aBox);
+  explicit Mvhd(const Box& aBox);
 
-  Result<media::TimeUnit, nsresult> ToTimeUnit(int64_t aTimescaleUnits) {
+  Result<media::TimeUnit, nsresult> ToTimeUnit(
+      CheckedInt64 aTimescaleUnits) const {
+    if (!aTimescaleUnits.isValid()) {
+      NS_WARNING("invalid aTimescaleUnits");
+      return Err(NS_ERROR_FAILURE);
+    }
     if (!mTimescale) {
       NS_WARNING("invalid mTimescale");
       return Err(NS_ERROR_FAILURE);
@@ -52,24 +56,24 @@ class Mvhd : public Atom {
   uint64_t mDuration;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 class Tkhd : public Mvhd {
  public:
   Tkhd() : mTrackId(0) {}
-  explicit Tkhd(Box& aBox);
+  explicit Tkhd(const Box& aBox);
 
   uint32_t mTrackId;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 class Mdhd : public Mvhd {
  public:
   Mdhd() = default;
-  explicit Mdhd(Box& aBox);
+  explicit Mdhd(const Box& aBox);
 };
 
 class Trex : public Atom {
@@ -82,7 +86,7 @@ class Trex : public Atom {
         mDefaultSampleSize(0),
         mDefaultSampleFlags(0) {}
 
-  explicit Trex(Box& aBox);
+  explicit Trex(const Box& aBox);
 
   uint32_t mFlags;
   uint32_t mTrackId;
@@ -92,38 +96,38 @@ class Trex : public Atom {
   uint32_t mDefaultSampleFlags;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 class Tfhd : public Trex {
  public:
-  explicit Tfhd(Trex& aTrex) : Trex(aTrex), mBaseDataOffset(0) {
+  explicit Tfhd(const Trex& aTrex) : Trex(aTrex), mBaseDataOffset(0) {
     mValid = aTrex.IsValid();
   }
-  Tfhd(Box& aBox, Trex& aTrex);
+  Tfhd(const Box& aBox, const Trex& aTrex);
 
   uint64_t mBaseDataOffset;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 class Tfdt : public Atom {
  public:
   Tfdt() : mBaseMediaDecodeTime(0) {}
-  explicit Tfdt(Box& aBox);
+  explicit Tfdt(const Box& aBox);
 
   uint64_t mBaseMediaDecodeTime;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 class Edts : public Atom {
  public:
   Edts() : mMediaStart(0), mEmptyOffset(0) {}
-  explicit Edts(Box& aBox);
-  virtual bool IsValid() override {
+  explicit Edts(const Box& aBox);
+  virtual bool IsValid() const override {
     // edts is optional
     return true;
   }
@@ -132,11 +136,19 @@ class Edts : public Atom {
   int64_t mEmptyOffset;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 struct Sample {
   mozilla::MediaByteRange mByteRange;
+  // Crypto information coming from senc box: shall be used first
+  CopyableTArray<uint8_t> mIV;
+  CopyableTArray<uint32_t> mPlainSizes;
+  // The number of encrypted bytes in each subsample. The nth element in the
+  // array is the number of encrypted bytes at the start of the nth subsample.
+  CopyableTArray<uint32_t> mEncryptedSizes;
+  // Crypto information coming from saio box: shall be used if no senc
+  // information is present
   mozilla::MediaByteRange mCencRange;
   media::TimeUnit mDecodeTime;
   MP4Interval<media::TimeUnit> mCompositionRange;
@@ -145,26 +157,26 @@ struct Sample {
 
 class Saiz final : public Atom {
  public:
-  Saiz(Box& aBox, AtomType aDefaultType);
+  Saiz(const Box& aBox, AtomType aDefaultType);
 
   AtomType mAuxInfoType;
   uint32_t mAuxInfoTypeParameter;
   FallibleTArray<uint8_t> mSampleInfoSize;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 class Saio final : public Atom {
  public:
-  Saio(Box& aBox, AtomType aDefaultType);
+  Saio(const Box& aBox, AtomType aDefaultType);
 
   AtomType mAuxInfoType;
   uint32_t mAuxInfoTypeParameter;
   FallibleTArray<uint64_t> mOffsets;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 struct SampleToGroupEntry {
@@ -183,14 +195,14 @@ struct SampleToGroupEntry {
 class Sbgp final : public Atom  // SampleToGroup box.
 {
  public:
-  explicit Sbgp(Box& aBox);
+  explicit Sbgp(const Box& aBox);
 
   AtomType mGroupingType;
   uint32_t mGroupingTypeParam;
   FallibleTArray<SampleToGroupEntry> mEntries;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 // Stores information form CencSampleEncryptionInformationGroupEntry (seig).
@@ -214,13 +226,13 @@ struct CencSampleEncryptionInfoEntry final {
 class Sgpd final : public Atom  // SampleGroupDescription box.
 {
  public:
-  explicit Sgpd(Box& aBox);
+  explicit Sgpd(const Box& aBox);
 
   AtomType mGroupingType;
   FallibleTArray<CencSampleEncryptionInfoEntry> mEntries;
 
  protected:
-  Result<Ok, nsresult> Parse(Box& aBox);
+  Result<Ok, nsresult> Parse(const Box& aBox);
 };
 
 // Audio/video entries from the sample description box (stsd). We only need to
@@ -239,12 +251,25 @@ using TrackParseMode = Variant<ParseAllTracks, uint32_t>;
 
 class Moof final : public Atom {
  public:
-  Moof(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
-       Mvhd& aMvhd, Mdhd& aMdhd, Edts& aEdts, Sinf& aSinf,
-       uint64_t* aDecodeTime, bool aIsAudio,
-       nsTArray<TrackEndCts>& aTracksEndCts);
-  bool GetAuxInfo(AtomType aType, FallibleTArray<MediaByteRange>* aByteRanges);
+  Moof(const Box& aBox, const TrackParseMode& aTrackParseMode,
+       const Trex& aTrex, const Mvhd& aMvhd, const Mdhd& aMdhd,
+       const Edts& aEdts, const Sinf& aSinf, const bool aIsAudio,
+       uint64_t* aDecodeTime, nsTArray<TrackEndCts>& aTracksEndCts);
   void FixRounding(const Moof& aMoof);
+
+  // Retrieve CencSampleEncryptionInfoEntry for a given sample number.
+  // Optionally, you can provide track's group boxes (sbgp): they will be used
+  // if the moof fragment does not contain a sbgp box.
+  const CencSampleEncryptionInfoEntry* GetSampleEncryptionEntry(
+      size_t aSample,
+      const FallibleTArray<SampleToGroupEntry>* aTrackSampleToGroupEntries =
+          nullptr,
+      const FallibleTArray<CencSampleEncryptionInfoEntry>*
+          aTrackSampleEncryptionInfoEntries = nullptr) const;
+
+  // Returns true if a senc box has been found, successfully parsed, and
+  // contains crypto info
+  bool SencIsValid() const { return mSencValid; }
 
   mozilla::MediaByteRange mRange;
   mozilla::MediaByteRange mMdatRange;
@@ -262,13 +287,15 @@ class Moof final : public Atom {
 
  private:
   // aDecodeTime is updated to the end of the parsed TRAF on return.
-  void ParseTraf(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
-                 Mvhd& aMvhd, Mdhd& aMdhd, Edts& aEdts, Sinf& aSinf,
-                 uint64_t* aDecodeTime, bool aIsAudio);
+  void ParseTraf(const Box& aBox, const TrackParseMode& aTrackParseMode,
+                 const Trex& aTrex, const Mvhd& aMvhd, const Mdhd& aMdhd,
+                 const Edts& aEdts, const Sinf& aSinf, const bool aIsAudio,
+                 uint64_t* aDecodeTime);
   // aDecodeTime is updated to the end of the parsed TRUN on return.
-  Result<Ok, nsresult> ParseTrun(Box& aBox, Mvhd& aMvhd, Mdhd& aMdhd,
-                                 Edts& aEdts, uint64_t* aDecodeTime,
-                                 bool aIsAudio);
+  Result<Ok, nsresult> ParseTrun(const Box& aBox, const Mvhd& aMvhd,
+                                 const Mdhd& aMdhd, const Edts& aEdts,
+                                 const bool aIsAudio, uint64_t* aDecodeTime);
+  Result<Ok, nsresult> ParseSenc(const Box& aBox, const Sinf& aSinf);
   // Process the sample auxiliary information used by common encryption.
   // aScheme is used to select the appropriate auxiliary information and should
   // be set based on the encryption scheme used by the track being processed.
@@ -276,7 +303,10 @@ class Moof final : public Atom {
   // from that standard. I.e. this function is used to handle up auxiliary
   // information from the cenc and cbcs schemes.
   bool ProcessCencAuxInfo(AtomType aScheme);
+  bool GetAuxInfo(AtomType aType, FallibleTArray<MediaByteRange>* aByteRanges);
+
   media::TimeUnit mMaxRoundingError;
+  bool mSencValid = false;
 };
 
 DDLoggedTypeDeclName(MoofParser);
@@ -284,7 +314,7 @@ DDLoggedTypeDeclName(MoofParser);
 class MoofParser : public DecoderDoctorLifeLogger<MoofParser> {
  public:
   MoofParser(ByteStream* aSource, const TrackParseMode& aTrackParseMode,
-             bool aIsAudio)
+             const bool aIsAudio)
       : mSource(aSource),
         mOffset(0),
         mTrex(aTrackParseMode.is<uint32_t>() ? aTrackParseMode.as<uint32_t>()
@@ -298,6 +328,8 @@ class MoofParser : public DecoderDoctorLifeLogger<MoofParser> {
     // for each.
     DDLINKCHILD("source", aSource);
   }
+  // Advance, looking for additional moov, moof, or mdat boxes in aByteRanges.
+  // Return true or false to indicate whether a new valid moof is seen.
   bool RebuildFragmentedIndex(const mozilla::MediaByteRangeSet& aByteRanges);
   // If *aCanEvict is set to true. then will remove all moofs already parsed
   // from index then rebuild the index. *aCanEvict is set to true upon return if
@@ -308,21 +340,30 @@ class MoofParser : public DecoderDoctorLifeLogger<MoofParser> {
   MP4Interval<media::TimeUnit> GetCompositionRange(
       const mozilla::MediaByteRangeSet& aByteRanges);
   bool ReachedEnd();
-  void ParseMoov(Box& aBox);
-  void ParseTrak(Box& aBox);
-  void ParseMdia(Box& aBox);
-  void ParseMvex(Box& aBox);
+  void ParseMoov(const Box& aBox);
+  void ParseTrak(const Box& aBox);
+  void ParseMdia(const Box& aBox);
+  void ParseMvex(const Box& aBox);
 
-  void ParseMinf(Box& aBox);
-  void ParseStbl(Box& aBox);
-  void ParseStsd(Box& aBox);
-  void ParseEncrypted(Box& aBox);
+  void ParseMinf(const Box& aBox);
+  void ParseStbl(const Box& aBox);
+  void ParseStsd(const Box& aBox);
+  void ParseEncrypted(const Box& aBox);
 
-  bool BlockingReadNextMoof();
+  // Similar to RebuildFragmentedIndex(), but advance only as far as the next
+  // moof, only if there is a next moof, and block, waiting for the read, if
+  // the ByteStream supports blocking reads.
+  // Return NS_OK if a new valid moof is seen or
+  // NS_ERROR_DOM_MEDIA_END_OF_STREAM if no fatal error occurs before reaching
+  // end of stream.
+  nsresult BlockingReadNextMoof();
 
   already_AddRefed<mozilla::MediaByteBuffer> Metadata();
   MediaByteRange FirstCompleteMediaSegment();
   MediaByteRange FirstCompleteMediaHeader();
+
+  const CencSampleEncryptionInfoEntry* GetSampleEncryptionEntry(
+      size_t moofNumber, size_t aMoof) const;
 
   mozilla::MediaByteRange mInitRange;
   RefPtr<ByteStream> mSource;
@@ -346,7 +387,7 @@ class MoofParser : public DecoderDoctorLifeLogger<MoofParser> {
   nsTArray<Moof> mMoofs;
   nsTArray<MediaByteRange> mMediaRanges;
   nsTArray<TrackEndCts> mTracksEndCts;
-  bool mIsAudio;
+  const bool mIsAudio;
   uint64_t mLastDecodeTime;
   // Either a ParseAllTracks if in multitrack mode, or an integer representing
   // the track_id for the track being parsed. If parsing a specific track, mTrex

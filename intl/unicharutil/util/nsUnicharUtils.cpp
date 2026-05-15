@@ -533,10 +533,18 @@ bool IsEastAsianPunctuation(uint32_t u) {
   // Punctuation). So we treat FULLWIDTH TILDE as punctuation here to give the
   // two characters consistent behavior.
   constexpr uint32_t kFullwidthTilde = 0xFF5E;
+  // U+3000 IDEOGRAPHIC SPACE has General Category = Zs (not Punctuation),
+  // but it conflicts with a JLReq rule that space added after
+  // question or exclamation mark is stipulated to be full-width if line is
+  // broken after full-width space following such a punctuation mark but
+  // line break is replaced by a space. So we treat IDEOGRAPHIC SPACE as
+  // punctuation here to allow line breaks after it while maintaining
+  // compatibility with JLReq.
+  constexpr uint32_t kIdeographicSpace = 0x3000;
   return intl::UnicodeProperties::IsEastAsianWidthFHW(u) &&
          ((intl::UnicodeProperties::IsPunctuation(u) &&
            u != kWonCurrencySign) ||
-          u == kFullwidthTilde);
+          u == kFullwidthTilde || u == kIdeographicSpace);
 }
 
 bool IsPunctuationForWordSelect(char16_t aCh) {

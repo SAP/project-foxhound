@@ -37,7 +37,7 @@ add_task(async function () {
   store.dispatch(Actions.batchEnable(false));
 
   const wait = waitForNetworkEvents(monitor, 1, { expectedEventTimings: 1 });
-  reloadBrowser({ waitForLoad: false });
+  reloadSelectedTab({ waitForLoad: false });
   await wait;
 
   const firstItem = document.querySelectorAll(".request-list-item")[0];

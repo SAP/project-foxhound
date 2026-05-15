@@ -7,20 +7,19 @@
 #ifndef mozilla_TextComposition_h
 #define mozilla_TextComposition_h
 
-#include "nsCOMPtr.h"
-#include "nsINode.h"
-#include "nsIWidget.h"
-#include "nsTArray.h"
-#include "nsThreadUtils.h"
-#include "nsPresContext.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/RangeBoundary.h"
 #include "mozilla/TextRange.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/Text.h"
+#include "nsCOMPtr.h"
+#include "nsINode.h"
+#include "nsIWidget.h"
+#include "nsPresContext.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 class nsRange;
 

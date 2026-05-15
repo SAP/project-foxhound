@@ -6,6 +6,7 @@
 #ifndef MOZILLA_MOZGLUE_MISC_WINDOWSDPIINITIALIZATION_H_
 #define MOZILLA_MOZGLUE_MISC_WINDOWSDPIINITIALIZATION_H_
 #include "mozilla/Types.h"
+#include <cstdint>
 
 namespace mozilla {
 

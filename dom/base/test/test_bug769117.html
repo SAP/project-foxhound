@@ -10,28 +10,35 @@
     <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
     <script type="application/javascript">
      SimpleTest.waitForExplicitFinish();
-     /** Test for Bug 769117 **/
+     /** Test for Bug 769117 */
      "use strict";
      function onLoad () {
        SpecialPowers.pushPrefEnv({"set": [["plugins.rewrite_youtube_embeds", true]]}, function() {
 
-         let youtube_url = "https://mochitest.youtube.com/v/Xm5i5kbIXzc";
-         let youtube_changed_url = "https://mochitest.youtube.com/embed/Xm5i5kbIXzc";
+         let test_urls = [{
+           original: "https://mochitest.youtube.com/v/Xm5i5kbIXzc",
+           changed: "https://mochitest.youtube.com/embed/Xm5i5kbIXzc",
+         }, {
+           original: "https://example.com&@mochitest.youtube.com/v/lG7U3fuNw3A",
+           changed: "https://example.com&@mochitest.youtube.com/embed/lG7U3fuNw3A",
+         }];
          let static_iframe = document.getElementById("staticiframe");
 
-         function testEmbed(embed) {
+         function testEmbed(embed, i) {
            ok (embed, "Embed node exists");
            embed = SpecialPowers.wrap(embed);
-           is (embed.srcURI.spec, youtube_changed_url, "Should have src uri of " + youtube_changed_url);
+           is (embed.srcURI.spec, test_urls[i].changed, "Should have src uri of " + test_urls[i].changed);
          }
 
          function testStatic() {
            info("Running static embed youtube rewrite test");
            iframe_doc = static_iframe.contentWindow.document;
-           testEmbed(iframe_doc.getElementById("testembed"));
-           testEmbed(iframe_doc.getElementById("testobject"));
+           testEmbed(iframe_doc.getElementById("testembed"), 0);
+           testEmbed(iframe_doc.getElementById("testobject"), 0);
+           testEmbed(iframe_doc.getElementById("testembed2"), 1);
+           testEmbed(iframe_doc.getElementById("testobject2"), 1);
            SimpleTest.executeSoon(() => {
-             testEmbed(embed_dynamic);
+             testEmbed(embed_dynamic, 0);
              SimpleTest.finish();
            });
          }

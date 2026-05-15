@@ -49,7 +49,7 @@ void nsDisplayItemGenericGeometry::MoveBy(const nsPoint& aOffset) {
 nsDisplayItemBoundsGeometry::nsDisplayItemBoundsGeometry(
     nsDisplayItem* aItem, nsDisplayListBuilder* aBuilder)
     : nsDisplayItemGeometry(aItem, aBuilder) {
-  nscoord radii[8];
+  nsRectCornerRadii radii;
   mHasRoundedCorners = aItem->Frame()->GetBorderRadii(radii);
 }
 

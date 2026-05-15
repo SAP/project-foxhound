@@ -6,9 +6,9 @@
 
 #include "AppleEncoderModule.h"
 
+#include "AppleUtils.h"
 #include "AppleVTEncoder.h"
 #include "VideoUtils.h"
-#include "AppleUtils.h"
 
 using mozilla::media::EncodeSupport;
 using mozilla::media::EncodeSupportSet;

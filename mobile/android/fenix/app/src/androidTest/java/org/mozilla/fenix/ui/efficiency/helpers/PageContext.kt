@@ -14,7 +14,6 @@ import org.mozilla.fenix.ui.efficiency.pageObjects.DownloadsPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.FindInPagePage
 import org.mozilla.fenix.ui.efficiency.pageObjects.HistoryPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.HomePage
-import org.mozilla.fenix.ui.efficiency.pageObjects.MainMenuComposePage
 import org.mozilla.fenix.ui.efficiency.pageObjects.MainMenuPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.MicrosurveysPage
 import org.mozilla.fenix.ui.efficiency.pageObjects.NotificationPage
@@ -67,7 +66,6 @@ class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTest
     val history = HistoryPage(composeRule)
     val home = HomePage(composeRule)
     val mainMenu = MainMenuPage(composeRule)
-    val mainMenuCompose = MainMenuComposePage(composeRule)
     val microsurveys = MicrosurveysPage(composeRule)
     val notifications = NotificationPage(composeRule)
     val readerView = ReaderViewPage(composeRule)
@@ -110,14 +108,12 @@ class PageContext(val composeRule: AndroidComposeTestRule<HomeActivityIntentTest
 
     fun initTestRule(
         skipOnboarding: Boolean = true,
-        isMenuRedesignEnabled: Boolean = true,
         isMenuRedesignCFREnabled: Boolean = false,
         isPageLoadTranslationsPromptEnabled: Boolean = false,
     ): AndroidComposeTestRule<HomeActivityIntentTestRule, *> {
         return AndroidComposeTestRule(
             HomeActivityIntentTestRule(
                 skipOnboarding = skipOnboarding,
-                isMenuRedesignEnabled = isMenuRedesignEnabled,
                 isMenuRedesignCFREnabled = isMenuRedesignCFREnabled,
                 isPageLoadTranslationsPromptEnabled = isPageLoadTranslationsPromptEnabled,
             ),

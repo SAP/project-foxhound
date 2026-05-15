@@ -13,6 +13,14 @@
 #include "nsIProtocolProxyService2.h"
 #include "nsIPrefBranch.h"
 #include "nsIProxyInfo.h"
+#include "nsThreadUtils.h"
+#include "mozilla/ClearOnShutdown.h"
+
+#if defined(XP_WIN)
+#  include <shlobj.h>
+#endif
+
+#include "DNSLogging.h"
 
 namespace mozilla::net {
 
@@ -77,6 +85,39 @@ bool DNSServiceBase::DNSForbiddenByActiveProxy(const nsACString& aHostname,
     }
   }
   return false;
+}
+
+void DNSServiceBase::DoReadEtcHostsFile(ParsingCallback aCallback) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (!StaticPrefs::network_trr_exclude_etc_hosts()) {
+    return;
+  }
+
+  auto readHostsTask = [aCallback]() {
+    MOZ_ASSERT(!NS_IsMainThread(), "Must not run on the main thread");
+#if defined(XP_WIN)
+    nsCString path;
+    path.SetLength(MAX_PATH + 1);
+    if (!SHGetSpecialFolderPathA(NULL, path.BeginWriting(), CSIDL_SYSTEM,
+                                 false)) {
+      LOG(("Calling SHGetSpecialFolderPathA failed"));
+      return;
+    }
+
+    path.SetLength(strlen(path.get()));
+    path.Append("\\drivers\\etc\\hosts");
+#else
+    nsAutoCString path("/etc/hosts"_ns);
+#endif
+
+    LOG(("Reading hosts file at %s", path.get()));
+    rust_parse_etc_hosts(&path, aCallback);
+  };
+
+  (void)NS_DispatchBackgroundTask(
+      NS_NewRunnableFunction("Read /etc/hosts file", readHostsTask),
+      NS_DISPATCH_EVENT_MAY_BLOCK);
 }
 
 }  // namespace mozilla::net

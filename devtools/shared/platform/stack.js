@@ -10,9 +10,9 @@
 /**
  * Return the Nth path from the stack excluding substr.
  *
- * @param {Number}
+ * @param {number}
  *        n the Nth path from the stack to describe.
- * @param {String} substr
+ * @param {string} substr
  *        A segment of the path that should be excluded.
  */
 function getNthPathExcluding(n, substr) {

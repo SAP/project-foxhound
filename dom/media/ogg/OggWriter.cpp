@@ -3,8 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "OggWriter.h"
-#include "prtime.h"
+
 #include "mozilla/ProfilerLabels.h"
+#include "prtime.h"
 
 #define LOG(args, ...)
 

@@ -56,7 +56,7 @@ export var SiteDataManager = {
    *        updated. This can be used to e.g. fill a UI that lists sites without
    *        blocking on the entire update to finish.
    * @returns a Promise that resolves when updating is done.
-   **/
+   */
   async updateSites(entryUpdatedCallback) {
     Services.obs.notifyObservers(null, "sitedatamanager:updating-sites");
     // Clear old data and requests first
@@ -68,6 +68,7 @@ export var SiteDataManager = {
 
   /**
    * Get the base domain of a host on a best-effort basis.
+   *
    * @param {string} host - Host to convert.
    * @returns {string} Computed base domain. If the base domain cannot be
    * determined, because the host is an IP address or does not have enough
@@ -115,9 +116,9 @@ export var SiteDataManager = {
    * Insert site with specific params into the SiteDataManager
    * Currently used for testing purposes
    *
-   * @param {String} baseDomainOrHost
-   * @param {Object} Site info params
-   * @returns {Object} site object
+   * @param {string} baseDomainOrHost
+   * @param {object} Site info params
+   * @returns {object} site object
    */
   _testInsertSite(
     baseDomainOrHost,
@@ -323,8 +324,8 @@ export var SiteDataManager = {
    * in that order. This function is meant to be fast, and thus will
    * end searching and return true once the first trace of site data is found.
    *
-   * @param {String} the ASCII host to check
-   * @returns {Boolean} whether the site has any data associated with it
+   * @param {string} the ASCII host to check
+   * @returns {boolean} whether the site has any data associated with it
    */
   async hasSiteData(asciiHost) {
     if (Services.cookies.countCookiesFromHost(asciiHost)) {
@@ -387,7 +388,7 @@ export var SiteDataManager = {
    *
    * @param {string[]} timeSpanArr - Array of timespan options to get quota usage
    *              from Sanitizer, e.g. ["TIMESPAN_HOUR", "TIMESPAN_2HOURS"]
-   * @returns {Object} bytes used for each timespan
+   * @returns {object} bytes used for each timespan
    */
   async getQuotaUsageForTimeRanges(timeSpanArr) {
     let usage = {};
@@ -454,9 +455,9 @@ export var SiteDataManager = {
    * {@link updateSites} before you can use this method for the first time (and
    * whenever you want to get an updated set of list.)
    *
-   * @param {String} baseDomainOrHost - Base domain or host of the site to get.
+   * @param {string} baseDomainOrHost - Base domain or host of the site to get.
    *
-   * @returns {Promise<Object|null>} Promise that resolves with the site object
+   * @returns {Promise<object | null>} Promise that resolves with the site object
    * or null if no site with given base domain or host stores data.
    */
   async getSite(baseDomainOrHost) {

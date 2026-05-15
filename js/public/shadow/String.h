@@ -23,7 +23,7 @@ class JS_PUBLIC_API JSString;
 
 namespace js {
 namespace gc {
-struct Cell;
+class Cell;
 }  // namespace gc
 }  // namespace js
 

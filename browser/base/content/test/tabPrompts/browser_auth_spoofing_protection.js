@@ -26,11 +26,11 @@ const AUTH_URL = TEST_PATH_AUTH + "auth-route.sjs";
 /**
  * Opens a new tab with a url that ether redirects us cross or same domain
  *
- * @param {Boolean} doConfirmPrompt - true if we want to test the case when the user accepts the prompt,
+ * @param {boolean} doConfirmPrompt - true if we want to test the case when the user accepts the prompt,
  *         false if we want to test the case when the user cancels the prompt.
- * @param {Boolean} crossDomain - if true we will open a url that redirects us to a cross domain url,
+ * @param {boolean} crossDomain - if true we will open a url that redirects us to a cross domain url,
  *        if false, we will open a url that redirects us to a same domain url
- * @param {Boolean} prefEnabled true will enable "privacy.authPromptSpoofingProtection",
+ * @param {boolean} prefEnabled true will enable "privacy.authPromptSpoofingProtection",
  *        false will disable the pref
  */
 async function trigger401AndHandle(doConfirmPrompt, crossDomain, prefEnabled) {
@@ -109,7 +109,7 @@ async function waitForDialog(doConfirmPrompt, crossDomain, prefEnabled) {
       );
       // if the user clears the url bar we again fall back to the location of the prompt if we trigger setURI by a tab switch
       gBrowser.selectedBrowser.userTypedValue = "";
-      gURLBar.setURI(null, true);
+      gURLBar.setURI({ dueToTabSwitch: true });
       Assert.equal(
         window.gURLBar.value,
         UrlbarTestUtils.trimURL(AUTH_URL),
@@ -168,7 +168,7 @@ async function waitForDialog(doConfirmPrompt, crossDomain, prefEnabled) {
   await onDialogClosed;
   // Due to bug 1812014, the url bar will be clear if we have set its value to "" while the prompt was open
   // so we trigger a tab switch again to have the uri displayed to be able to check its value
-  gURLBar.setURI(null, true);
+  gURLBar.setURI({ dueToTabSwitch: true });
   Assert.equal(
     window.gURLBar.value,
     UrlbarTestUtils.trimURL(crossDomain ? CROSS_DOMAIN_URL : SAME_DOMAIN_URL),

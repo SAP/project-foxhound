@@ -33,6 +33,7 @@ class TestTaskclusterYml(unittest.TestCase):
                 "url": "https://hg.mozilla.org/mozilla-central",
                 "project": "mozilla-central",
                 "level": "3",
+                "type": "hg",
             },
             "ownTaskId": slugid.nice(),
         }
@@ -57,6 +58,7 @@ class TestTaskclusterYml(unittest.TestCase):
                 "url": "https://hg.mozilla.org/releases/mozilla-beta",
                 "project": "mozilla-beta",
                 "level": "3",
+                "type": "hg",
             },
             "ownTaskId": slugid.nice(),
         }
@@ -74,6 +76,7 @@ class TestTaskclusterYml(unittest.TestCase):
                 "url": "https://hg.mozilla.org/mozilla-central",
                 "project": "mozilla-central",
                 "level": 3,
+                "type": "hg",
             },
             "push": {
                 "revision": "e8aebe488b2f2e567940577de25013d00e818f7c",
@@ -122,7 +125,9 @@ class TestTaskclusterYml(unittest.TestCase):
                 "cb_name": "test_action",
             },
             "input": {},
-            "parameters": {},
+            "parameters": {
+                "repository_type": "hg",
+            },
             "now": current_json_time(),
             "taskId": slugid.nice(),
             "ownTaskId": slugid.nice(),

@@ -30,14 +30,13 @@
 #include <sstream>
 #include <vector>
 
-#include "pk11pub.h"
-#include "prerror.h"
-#include "secmodt.h"
-
 #include "BigEndian.h"
 #include "ClearKeyBase64.h"
 #include "mozilla/Sprintf.h"
+#include "pk11pub.h"
+#include "prerror.h"
 #include "psshparser/PsshParser.h"
+#include "secmodt.h"
 
 using namespace cdm;
 using std::string;
@@ -189,8 +188,10 @@ bool ClearKeyUtils::DecryptCbcs(const vector<uint8_t>& aKey,
 /* static */
 bool ClearKeyUtils::DecryptAES(const vector<uint8_t>& aKey,
                                vector<uint8_t>& aData, vector<uint8_t>& aIV) {
-  assert(aIV.size() == CENC_KEY_LEN);
-  assert(aKey.size() == CENC_KEY_LEN);
+  if (aKey.size() != CENC_KEY_LEN || aIV.size() != CENC_KEY_LEN) {
+    CK_LOGE("Key and IV size should be 16!");
+    return false;
+  }
 
   PK11SlotInfo* slot = PK11_GetInternalKeySlot();
   if (!slot) {

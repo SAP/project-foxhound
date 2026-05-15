@@ -4,18 +4,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPPlatform.h"
+
+#include "GMPChild.h"
 #include "GMPStorageChild.h"
 #include "GMPTimerChild.h"
+#include "base/task.h"
+#include "base/thread.h"
+#include "base/time.h"
 #include "mozilla/Monitor.h"
-#include "GMPChild.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/StaticMonitor.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "base/task.h"
-#include "base/thread.h"
-#include "base/time.h"
 
 #ifdef XP_WIN
 #  include "mozilla/UntrustedModulesProcessor.h"

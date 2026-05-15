@@ -10,7 +10,6 @@
 #include "mozilla/Utf8.h"        // mozilla::Utf8Unit
 
 #include <algorithm>  // std::all_of, std::equal, std::move, std::transform
-#include <iterator>   // std::size
 #include <memory>     // std::uninitialized_fill_n
 #include <stddef.h>   // size_t
 #include <stdint.h>   // uint32_t

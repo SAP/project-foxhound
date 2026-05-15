@@ -17,6 +17,7 @@ import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Controller for managing web push notifications. */
 public class WebPushController {
   private static final String LOGTAG = "WebPushController";
 

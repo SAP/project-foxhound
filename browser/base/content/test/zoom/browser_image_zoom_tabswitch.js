@@ -19,7 +19,7 @@ function test() {
 
     is(ZoomManager.zoom, 1, "initial zoom level for first should be 1");
 
-    FullZoom.enlarge();
+    await FullZoom.enlarge(tab1.linkedBrowser);
     let zoom = ZoomManager.zoom;
     isnot(zoom, 1, "zoom level should have changed");
 
@@ -32,6 +32,8 @@ function test() {
       zoom,
       "zoom level for first tab should not have changed"
     );
+
+    await FullZoom.reset(tab1.linkedBrowser);
 
     await FullZoomHelper.removeTabAndWaitForLocationChange(tab1);
     await FullZoomHelper.removeTabAndWaitForLocationChange(tab2);

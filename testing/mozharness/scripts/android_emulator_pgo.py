@@ -67,7 +67,7 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
     config_options = copy.deepcopy(testing_config_options)
 
     def __init__(self, require_config_file=False):
-        super(AndroidProfileRun, self).__init__(
+        super().__init__(
             config_options=self.config_options,
             all_actions=[
                 "download",
@@ -94,7 +94,7 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(AndroidProfileRun, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         dirs = {}
 
         dirs["abs_test_install_dir"] = os.path.join(abs_dirs["abs_src_dir"], "testing")
@@ -138,9 +138,9 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
         """
         Install APKs on the device.
         """
-        assert (
-            self.installer_path is not None
-        ), "Either add installer_path to the config or use --installer-path."
+        assert self.installer_path is not None, (
+            "Either add installer_path to the config or use --installer-path."
+        )
         self.install_android_app(self.installer_path)
         self.info("Finished installing apps for %s" % self.device_serial)
 
@@ -152,7 +152,6 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
         from mozdevice import ADBDeviceFactory, ADBTimeoutError
         from mozhttpd import MozHttpd
         from mozprofile import Preferences
-        from six import string_types
 
         app = self.query_package_name()
 
@@ -192,7 +191,7 @@ class AndroidProfileRun(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
 
         interpolation = {"server": "%s:%d" % httpd.httpd.server_address, "OOP": "false"}
         for k, v in prefs.items():
-            if isinstance(v, string_types):
+            if isinstance(v, str):
                 v = v.format(**interpolation)
             prefs[k] = Preferences.cast(v)
 

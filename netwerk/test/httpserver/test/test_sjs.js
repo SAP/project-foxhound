@@ -20,7 +20,7 @@ const BASE = "http://localhost:" + PORT;
 var test;
 var tests = [];
 
-/** *******************
+/*********************
  * UTILITY FUNCTIONS *
  *********************/
 
@@ -36,7 +36,7 @@ function skipCache(ch) {
   ch.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
 }
 
-/** ******************
+/********************
  * DEFINE THE TESTS *
  ********************/
 
@@ -119,7 +119,7 @@ function setupTests(throwing) {
   //     after the two sets will almost certainly fail.
 }
 
-/** ***************
+/*****************
  * ADD THE TESTS *
  *****************/
 
@@ -225,7 +225,7 @@ function onStop(ch, status, data) {
 test = new Test(BASE + "/script.html", setupFileMapping, onStart, onStop);
 tests.push(test);
 
-/** ***************
+/*****************
  * RUN THE TESTS *
  *****************/
 

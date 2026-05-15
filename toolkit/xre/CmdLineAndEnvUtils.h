@@ -17,7 +17,6 @@
 
 #if defined(XP_WIN)
 #  include "mozilla/UniquePtr.h"
-#  include "mozilla/Vector.h"
 #  include "mozilla/WinHeaderOnlyUtils.h"
 
 #  include <wchar.h>
@@ -45,7 +44,8 @@ namespace mozilla {
 enum ArgResult {
   ARG_NONE = 0,
   ARG_FOUND = 1,
-  ARG_BAD = 2  // you wanted a param, but there isn't one
+  ARG_BAD = 2  // you wanted a param, but there isn't one or you didn't want a
+               // param and there is one.
 };
 
 template <typename CharT>
@@ -92,15 +92,20 @@ static inline constexpr char toNarrow(CharT c) {
 
 // Case-insensitively compare a string taken from the command-line (`mixedstr`)
 // to the text of some known command-line option (`lowerstr`).
+// Returns true if mixedstr starts with lowerstr.
 template <typename CharT>
-static inline bool strimatch(const char* lowerstr, const CharT* mixedstr) {
+static inline bool ArgStartsWith(const CharT* mixedstr, const char* lowerstr) {
   while (*lowerstr) {
-    if (!*mixedstr) return false;  // mixedstr is shorter
+    if (!*mixedstr) {
+      return false;  // mixedstr is shorter
+    }
 
     // Non-ASCII strings may compare incorrectly depending on the user's locale.
     // Some ASCII-safe characters are also dispermitted for semantic reasons
     // and simplicity.
-    if (!isValidOptionCharacter(*lowerstr)) return false;
+    if (!isValidOptionCharacter(*lowerstr)) {
+      return false;
+    }
 
     if (toLowercase(toNarrow(*mixedstr)) != *lowerstr) {
       return false;  // no match
@@ -110,9 +115,18 @@ static inline bool strimatch(const char* lowerstr, const CharT* mixedstr) {
     ++mixedstr;
   }
 
-  if (*mixedstr) return false;  // lowerstr is shorter
-
   return true;
+}
+
+// Case-insensitively compare a string taken from the command-line (`mixedstr`)
+// to the text of some known command-line option (`lowerstr`).
+template <typename CharT>
+static inline bool strimatch(const char* lowerstr, const CharT* mixedstr) {
+  if (ArgStartsWith(mixedstr, lowerstr)) {
+    return *(mixedstr + strlen(lowerstr)) == '\0';
+  }
+
+  return false;
 }
 
 // Given a command-line argument, return Nothing if it isn't structurally a
@@ -139,6 +153,7 @@ mozilla::Maybe<const CharT*> ReadAsOption(const CharT* str) {
 
 }  // namespace internal
 
+using internal::ArgStartsWith;
 using internal::strimatch;
 
 const wchar_t kCommandLineDelimiter[] = L" \t";
@@ -153,14 +168,15 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CheckArgFlag)
 
 /**
  * Check for a commandline flag. If the flag takes a parameter, the
- * parameter is returned in aParam. Flags may be in the form -arg or
- * --arg (or /arg on win32).
+ * parameter is returned in aParam. Flags may be in the form -arg, --arg,
+ * /arg (on win32), or in the form -arg=<data> or --arg=<data>.
  *
  * @param aArgc The argc value.
  * @param aArgv The original argv.
  * @param aArg the parameter to check. Must be lowercase.
- * @param aParam if non-null, the -arg <data> will be stored in this pointer.
- *        This is *not* allocated, but rather a pointer to the argv data.
+ * @param aParam if non-null, the -arg <data> or -arg=<data> will be stored in
+ * this pointer. This is *not* allocated, but rather a pointer to the argv data
+ * or the value after '='.
  * @param aFlags Flags @see CheckArgFlag
  */
 template <typename CharT>
@@ -175,34 +191,61 @@ inline ArgResult CheckArg(int& aArgc, CharT** aArgv, const char* aArg,
 
   while (*curarg) {
     if (const auto arg = ReadAsOption(*curarg)) {
-      if (strimatch(aArg, arg.value())) {
-        if (aFlags & CheckArgFlag::RemoveArg) {
-          RemoveArg(aArgc, curarg);
-        } else {
-          ++curarg;
-        }
-
-        if (!aParam) {
-          ar = ARG_FOUND;
-          break;
-        }
-
-        if (*curarg) {
-          if (ReadAsOption(*curarg)) {
-            return ARG_BAD;
-          }
-
-          *aParam = *curarg;
-
+      if (ArgStartsWith(arg.value(), aArg)) {
+        const auto nextChar = arg.value() + strlen(aArg);
+        if (*nextChar == 0) {
+          // Exact match: --flag or -flag. Remove this from aArgv if the
+          // appropriate flag is set.
           if (aFlags & CheckArgFlag::RemoveArg) {
             RemoveArg(aArgc, curarg);
+          } else {
+            ++curarg;
           }
 
-          ar = ARG_FOUND;
-          break;
+          if (!aParam) {
+            ar = ARG_FOUND;
+            break;
+          }
+
+          if (*curarg) {
+            if (ReadAsOption(*curarg)) {
+              return ARG_BAD;
+            }
+
+            *aParam = *curarg;
+
+            // This argument also has a value as a separate command line
+            // argument so we must remove this from aArgv as well.
+            if (aFlags & CheckArgFlag::RemoveArg) {
+              RemoveArg(aArgc, curarg);
+            }
+
+            ar = ARG_FOUND;
+            break;
+          }
+
+          return ARG_BAD;
         }
 
-        return ARG_BAD;
+        if (*nextChar == '=') {
+          if (aParam) {
+            // Here we have an argument with a value, like --foo=bar or
+            // -foo=bar. We need to pass the "value" part of it to `aParam` and
+            // then remove only one item from `aArgv` if the relevant flag was
+            // passed.
+            *aParam = nextChar + 1;  // value after '='
+
+            if (aFlags & CheckArgFlag::RemoveArg) {
+              RemoveArg(aArgc, curarg);
+            }
+
+            ar = ARG_FOUND;
+          } else {
+            ar = ARG_BAD;
+          }
+
+          break;
+        }
       }
     }
 

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsNativeCharsetUtils_h__
-#define nsNativeCharsetUtils_h__
+#ifndef nsNativeCharsetUtils_h_
+#define nsNativeCharsetUtils_h_
 
 /*****************************************************************************\
  *                                                                           *
@@ -49,4 +49,4 @@ inline constexpr bool NS_IsNativeUTF8() {
 #endif
 }
 
-#endif  // nsNativeCharsetUtils_h__
+#endif  // nsNativeCharsetUtils_h_

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Title of a dialog for a notification permission request. %1$s is the domain name of the website. -->
   <string name="mozac_feature_sitepermissions_notification_title">Dozvoliti da %1$s šalje obavijesti?</string>
@@ -10,6 +17,10 @@
   <string name="mozac_feature_sitepermissions_location_title">Dozvoliti da %1$s koristi tvoju lokaciju?</string>
   <!-- Title of a dialog for a camera and microphone permission request. %1$s is the domain name of the website. -->
   <string name="mozac_feature_sitepermissions_camera_and_microphone">Dozvoliti da %1$s koristi tvoju kameru i mikrofon?</string>
+  <!-- Title of a dialog for a local network access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_network_access_title">Dozvoliti da %1$s pristupi aplikacijama i uslugama na uređajima koji su povezani s tvojom lokalnom mrežom?</string>
+  <!-- Title of a dialog for a local device access request. %1$s is the domain name of the website -->
+  <string name="mozac_feature_sitepermissions_local_device_access_title">Dozvoliti da %1$s pristupi drugim aplikacijama i uslugama na ovom uređaju?</string>
   <!--
     Option in a dialog for requesting a microphone permission, this option will give access to
     the first microphone
@@ -35,8 +46,21 @@
     access to this permission
   -->
   <string name="mozac_feature_sitepermissions_not_allow">Nemoj dozvoliti</string>
+  <!--
+    Alternate variant of the text for a negative button in a permission request dialog,
+    this button will not give access to this permission
+  -->
+  <string name="mozac_feature_sitepermissions_block">Blokiraj</string>
+  <!-- Message of a dialog offering more context about the app level notification permission request. %1$s will be replaced with the name of the app. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_message">Za primanje obavijesti od ove web-stranice, moraš dopustiti aplikaciji %1$s da ti šalje obavijesti.</string>
+  <!-- Button label in a notification permission request dialog to dismiss the dialog. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_dismiss_label">Odustani</string>
+  <!-- Button label in a notification permission request dialog. It will let the user go to Android Settings to grant the permission. -->
+  <string name="mozac_feature_sitepermissions_notification_permission_rationale_dialog_settings_label">Idi u postavke</string>
   <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
   <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site2">Zapamti odluku za ovu stranicu</string>
+  <!-- Text for a checkbox in a permission request dialog, this will allow to not show again the prompt -->
+  <string name="mozac_feature_sitepermissions_do_not_ask_again_on_this_site4">Zapamti za ovu web-stranicu</string>
   <!-- Text for a positive button in a permission request dialog. This will always allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->
   <string name="mozac_feature_sitepermissions_always_allow">Uvijek</string>
   <!-- Text for a negative button in a permission request dialog. This will never allow and remember the decision of the user, this is the special case of the notification permission, that is only ask one time -->
@@ -58,5 +82,5 @@
   <!-- Text for a negative button in the storage access permission request dialog. This button will not give access to this permission. -->
   <string name="mozac_feature_sitepermissions_storage_access_not_allow">Blokiraj</string>
   <!-- Clickable text that will open a new tab navigating the user to online documentation about specific features. -->
-  <string name="mozac_feature_sitepermissions_learn_more_title">Saznajte više</string>
+  <string name="mozac_feature_sitepermissions_learn_more_title">Saznaj više</string>
 </resources>

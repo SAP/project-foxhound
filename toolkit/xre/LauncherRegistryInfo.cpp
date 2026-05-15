@@ -7,7 +7,6 @@
 #include "LauncherRegistryInfo.h"
 
 #include "commonupdatedir.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/UniquePtr.h"
@@ -16,6 +15,12 @@
 #include <shlobj.h>
 #include <string>
 #include <type_traits>
+
+// This is how long to wait after the last crash to try using the launcher
+// process again. (bug 1846830) 45 days in 100-nanosecond intervals (FILETIME
+// units)
+static constexpr uint64_t kCrashTimeoutInterval =
+    45ULL * 24 * 60 * 60 * 10000000ULL;
 
 #define EXPAND_STRING_MACRO2(t) t
 #define EXPAND_STRING_MACRO(t) EXPAND_STRING_MACRO2(t)
@@ -148,6 +153,8 @@ const wchar_t LauncherRegistryInfo::kBrowserSuffix[] = L"|Browser";
 const wchar_t LauncherRegistryInfo::kImageTimestampSuffix[] = L"|Image";
 const wchar_t LauncherRegistryInfo::kTelemetrySuffix[] = L"|Telemetry";
 const wchar_t LauncherRegistryInfo::kBlocklistSuffix[] = L"|Blocklist";
+const wchar_t LauncherRegistryInfo::kLauncherCrashTimestampSuffix[] =
+    L"|LauncherCrashTime";
 
 bool LauncherRegistryInfo::sAllowCommit = true;
 
@@ -300,7 +307,45 @@ LauncherResult<LauncherRegistryInfo::ProcessType> LauncherRegistryInfo::Check(
 
   ProcessType typeToRunAs = aDesiredType;
 
-  if (lastLauncherTimestamp.isSome() != lastBrowserTimestamp.isSome()) {
+  // Check for force-disabled state first (browser timestamp = 0)
+  if (lastBrowserTimestamp.isSome() && lastBrowserTimestamp.value() == 0ULL) {
+    // By default, disable the launcher process.
+    typeToRunAs = ProcessType::Browser;
+    LauncherResult<Maybe<uint64_t>> crashTimestampResult =
+        GetLauncherCrashTimestamp();
+    if (crashTimestampResult.isOk() &&
+        crashTimestampResult.inspect().isSome()) {
+      uint64_t crashTimestamp = crashTimestampResult.inspect().value();
+
+      FILETIME currentTime;
+      ::GetSystemTimeAsFileTime(&currentTime);
+      uint64_t currentTimestamp =
+          (static_cast<uint64_t>(currentTime.dwHighDateTime) << 32) |
+          currentTime.dwLowDateTime;
+
+      bool clearForceDisabled =
+          // This is nonsensical, either the clock is messed up or
+          // something messed with the registry value. Clear the force-disabled
+          // state.
+          (crashTimestamp > currentTimestamp) ||
+          // Check if 45 days have elapsed since crash.
+          (currentTimestamp - crashTimestamp >= kCrashTimeoutInterval);
+      if (clearForceDisabled) {
+        // Clear the force-disabled state and crash timestamp
+        LauncherResult<bool> clearedBrowserTimestamp =
+            ClearBrowserStartTimestamp();
+        LauncherResult<bool> clearedCrashTimestamp =
+            ClearLauncherCrashTimestamp();
+
+        if (clearedBrowserTimestamp.isOk() && clearedCrashTimestamp.isOk()) {
+          // Re-enable launcher process
+          sAllowCommit = true;
+          typeToRunAs =
+              aDesiredType;  // Allow the desired type (likely Launcher)
+        }
+      }
+    }
+  } else if (lastLauncherTimestamp.isSome() != lastBrowserTimestamp.isSome()) {
     // If we have a launcher timestamp but no browser timestamp (or vice versa),
     // that's bad because it is indicating that the browser can't run with
     // the launcher process.
@@ -357,6 +402,20 @@ LauncherVoidResult LauncherRegistryInfo::DisableDueToFailure() {
   if (disposition.isErr()) {
     return disposition.propagateErr();
   }
+
+  // Store the current time as crash timestamp
+  FILETIME currentTime;
+  ::GetSystemTimeAsFileTime(&currentTime);
+  uint64_t crashTime =
+      (static_cast<uint64_t>(currentTime.dwHighDateTime) << 32) |
+      currentTime.dwLowDateTime;
+
+  LauncherVoidResult crashTimestampResult =
+      WriteLauncherCrashTimestamp(crashTime);
+  if (crashTimestampResult.isErr()) {
+    return crashTimestampResult.propagateErr();
+  }
+
   LauncherVoidResult result = WriteBrowserStartTimestamp(0ULL);
   if (result.isOk()) {
     // Block commit when we disable the launcher.  It could be allowed
@@ -514,6 +573,18 @@ const std::wstring& LauncherRegistryInfo::ResolveBlocklistValueName() {
   return mBlocklistValueName;
 }
 
+const std::wstring&
+LauncherRegistryInfo::ResolveLauncherCrashTimestampValueName() {
+  if (mLauncherCrashTimestampValueName.empty()) {
+    mLauncherCrashTimestampValueName.assign(mBinPath);
+    mLauncherCrashTimestampValueName.append(
+        kLauncherCrashTimestampSuffix,
+        std::size(kLauncherCrashTimestampSuffix) - 1);
+  }
+
+  return mLauncherCrashTimestampValueName;
+}
+
 LauncherVoidResult LauncherRegistryInfo::WriteLauncherStartTimestamp(
     uint64_t aValue) {
   return WriteRegistryValueData(mRegKey, ResolveLauncherValueName(), REG_QWORD,
@@ -557,6 +628,12 @@ LauncherVoidResult LauncherRegistryInfo::ClearStartTimestamps() {
     return clearedBrowserTimestamp.propagateErr();
   }
 
+  // Also clear crash timestamp when resetting
+  LauncherResult<bool> clearedCrashTimestamp = ClearLauncherCrashTimestamp();
+  if (clearedCrashTimestamp.isErr()) {
+    return clearedCrashTimestamp.propagateErr();
+  }
+
   // Reset both timestamps to align with registry deletion
   mLauncherTimestampToWrite = mBrowserTimestampToWrite = Nothing();
 
@@ -581,6 +658,23 @@ LauncherResult<Maybe<uint64_t>>
 LauncherRegistryInfo::GetBrowserStartTimestamp() {
   return ReadRegistryValueData<uint64_t>(mRegKey, ResolveBrowserValueName(),
                                          REG_QWORD);
+}
+
+LauncherVoidResult LauncherRegistryInfo::WriteLauncherCrashTimestamp(
+    uint64_t aValue) {
+  return WriteRegistryValueData(
+      mRegKey, ResolveLauncherCrashTimestampValueName(), REG_QWORD, aValue);
+}
+
+LauncherResult<Maybe<uint64_t>>
+LauncherRegistryInfo::GetLauncherCrashTimestamp() {
+  return ReadRegistryValueData<uint64_t>(
+      mRegKey, ResolveLauncherCrashTimestampValueName(), REG_QWORD);
+}
+
+LauncherResult<bool> LauncherRegistryInfo::ClearLauncherCrashTimestamp() {
+  return DeleteRegistryValueData(mRegKey,
+                                 ResolveLauncherCrashTimestampValueName());
 }
 
 LauncherResult<std::wstring>

@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
@@ -12,21 +13,6 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     buildFeatures {
         compose = true
     }
@@ -34,38 +20,33 @@ android {
     namespace = 'mozilla.components.lib.state'
 }
 
-tasks.withType(KotlinCompile).configureEach {
-    kotlinOptions.freeCompilerArgs += [
-        "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"
-    ]
-}
-
 dependencies {
-    implementation platform(libs.androidx.compose.bom)
-    implementation libs.kotlin.coroutines
-    implementation libs.androidx.compose.runtime.saveable
-    implementation libs.androidx.fragment
-    implementation libs.androidx.lifecycle.compose
-    implementation libs.androidx.lifecycle.process
-
     implementation project(':components:support-base')
     implementation project(':components:support-ktx')
     implementation project(':components:support-utils')
 
-    testImplementation platform(libs.androidx.compose.bom)
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.runtime.saveable
+    implementation libs.androidx.fragment
+    implementation libs.androidx.lifecycle.compose
+    implementation libs.androidx.lifecycle.process
+    implementation libs.androidx.lifecycle.viewmodel.compose
+    implementation libs.androidx.navigation.fragment
+    implementation libs.kotlinx.coroutines
+
     testImplementation project(':components:support-test')
 
+    testImplementation libs.androidx.compose.ui.test
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.androidx.compose.ui.test
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 
-    androidTestImplementation libs.androidx.test.junit
-    androidTestImplementation libs.androidx.compose.ui.test.manifest
     androidTestImplementation libs.androidx.compose.ui.test
+    androidTestImplementation libs.androidx.compose.ui.test.manifest
+    androidTestImplementation libs.androidx.test.junit
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

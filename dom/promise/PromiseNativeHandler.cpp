@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PromiseNativeHandler.h"
+
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/Promise.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom {

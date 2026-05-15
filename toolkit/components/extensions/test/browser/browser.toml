@@ -13,14 +13,18 @@ support-files = [
 ["browser_ext_eventpage_disableResetIdleForTest.js"]
 
 ["browser_ext_extension_page_tab_navigated.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && socketprocess_networking"] # Bug 1775530
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1775530
+]
 
 ["browser_ext_management_themes.js"]
 
 ["browser_ext_notifications_useSystemBackend_false.js"]
 
 ["browser_ext_process_crash_handling.js"]
-skip-if = ["!crashreporter"]
+run-if = [
+  "crashreporter",
+]
 
 ["browser_ext_test_mock.js"]
 
@@ -99,6 +103,8 @@ support-files = ["!/toolkit/components/thumbnails/test/head.js"]
 
 ["browser_ext_trial_ml.js"]
 support-files = [ "!/toolkit/components/ml/tests/browser/head.js"]
+
+["browser_ext_urlclassifier.js"]
 
 ["browser_ext_webNavigation_eventpage.js"]
 

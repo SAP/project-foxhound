@@ -72,7 +72,7 @@ class FindHandler {
           "GeckoViewPdfjs"
         );
         break;
-      case "GeckoView:FindInPage":
+      case "GeckoView:FindInPage": {
         const type = this.#getFindType(aData);
         this.#browser.sendMessageToActor(
           "PDFJS:Child:handleEvent",
@@ -84,6 +84,7 @@ class FindHandler {
         );
         this.#callbacks.push([aCallback, this.#state]);
         break;
+      }
     }
   }
 

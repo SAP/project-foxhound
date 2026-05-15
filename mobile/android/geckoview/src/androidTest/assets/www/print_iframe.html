@@ -30,7 +30,10 @@
   <!-- The window.print should freeze the page before removing the content, so the background should remain present. -->
   <button
     id="print-button-page"
-    onclick="window.print(); document.getElementById('content').remove()"
+    onclick="
+      window.print();
+      document.getElementById('content').remove();
+    "
   >
     Print
   </button>

@@ -5,6 +5,7 @@
 package org.mozilla.fenix.experimentintegration
 
 import android.content.pm.ActivityInfo
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -23,10 +24,13 @@ class SurveyExperimentIntegrationTest {
     private val experimentName = "Viewpoint"
 
     @get:Rule
-    val activityTestRule = HomeActivityTestRule(
-        isPWAsPromptEnabled = false,
-        isDeleteSitePermissionsEnabled = true,
-    )
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityTestRule(
+                isPWAsPromptEnabled = false,
+                isDeleteSitePermissionsEnabled = true,
+            ),
+        ) { it.activity }
 
     @Before
     fun setUp() {
@@ -39,9 +43,9 @@ class SurveyExperimentIntegrationTest {
     }
 
     fun checkExperimentExists() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openExperimentsMenu {
             verifyExperimentExists(experimentName)
         }
@@ -49,8 +53,8 @@ class SurveyExperimentIntegrationTest {
 
     @Test
     fun checkSurveyNavigatesCorrectly() {
-        surveyScreen {
-            verifySurveyButton()
+        surveyScreen(composeTestRule) {
+            verifySurveyButton(composeTestRule)
         }.clickSurveyButton {
             verifyUrl(surveyURL)
         }
@@ -60,8 +64,8 @@ class SurveyExperimentIntegrationTest {
 
     @Test
     fun checkSurveyNoThanksNavigatesCorrectly() {
-        surveyScreen {
-            verifySurveyNoThanksButton()
+        surveyScreen(composeTestRule) {
+            verifySurveyNoThanksButton(composeTestRule)
         }.clickNoThanksSurveyButton {
             verifyTabCounter("0")
         }
@@ -71,8 +75,8 @@ class SurveyExperimentIntegrationTest {
 
     @Test
     fun checkHomescreenSurveyDismissesCorrectly() {
-        surveyScreen {
-            verifyHomeScreenSurveyCloseButton()
+        surveyScreen(composeTestRule) {
+            verifyHomeScreenSurveyCloseButton(true)
         }.clickHomeScreenSurveyCloseButton {
             verifyTabCounter("0")
             verifySurveyButtonDoesNotExist()
@@ -83,10 +87,10 @@ class SurveyExperimentIntegrationTest {
 
     @Test
     fun checkSurveyLandscapeLooksCorrect() {
-        activityTestRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        surveyScreen {
-            verifySurveyNoThanksButton()
-            verifySurveyButton()
+        composeTestRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        surveyScreen(composeTestRule) {
+            verifySurveyNoThanksButton(composeTestRule)
+            verifySurveyButton(composeTestRule)
         }.clickNoThanksSurveyButton {
             verifyTabCounter("0")
         }

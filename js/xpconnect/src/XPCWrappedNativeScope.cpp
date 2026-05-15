@@ -13,10 +13,8 @@
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "ExpandedPrincipal.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "XPCMaps.h"
-#include "mozilla/Unused.h"
 #include "js/Object.h"              // JS::GetCompartment
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById
 #include "js/RealmIterators.h"
@@ -414,7 +412,7 @@ void XPCWrappedNativeScope::DebugDumpAllScopes(int16_t depth) {
   // get scope count.
   int count = 0;
   for (XPCWrappedNativeScope* cur : AllScopes()) {
-    mozilla::Unused << cur;
+    (void)cur;
     count++;
   }
 

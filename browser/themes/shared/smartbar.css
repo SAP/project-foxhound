@@ -1,0 +1,133 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* TODO (Bug 2008938): Make in-page Smartbar styling not dependent on chrome styles */
+@import url("chrome://browser/skin/urlbar-searchbar.css");
+@import url("chrome://browser/skin/urlbarView.css");
+
+:host,
+:root {
+  --smartbar-border-style-gradient: var(--border-width) solid;
+  --smartbar-border-color-gradient: linear-gradient(172deg, #321bfd -18%, #cf30e2 53%, #ff9900 89%, #f5c451 109%);
+  --smartbar-border-color-gradient-dark: linear-gradient(270deg, var(--color-orange-40) 0%, var(--color-violet-50) 105.15%);
+  --smartbar-glow-color: color-mix(in srgb, var(--color-violet-40) 30%, transparent);
+  --smartbar-max-height: 50vh;
+  --smartbar-max-width: calc(var(--size-item-xlarge) * 12);
+  --smartbar-background-color: light-dark(white, var(--color-violet-110));
+  --smartbar-outline-color: light-dark(var(--color-violet-30), var(--color-violet-50));
+  --smartbar-outline: var(--focus-outline-width) solid var(--smartbar-outline-color);
+}
+
+.smartbar {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--smartbar-max-height);
+  max-width: var(--smartbar-max-width);
+  width: 100%;
+  transition: opacity 0.5s ease-out;
+  > .urlbarView {
+    overflow-y: auto;
+  }
+
+  &[hidden] {
+    display: none;
+  }
+
+  &[open] > .urlbarView {
+    display: block;
+  }
+
+  &[suggestions-position="top"] > .urlbarView {
+    order: -1;
+    z-index: 1;
+  }
+}
+
+.smartbar > .urlbar-input-container {
+  overflow: visible;
+  /**
+   * The search mode switcher won’t be used for the Smartbar. Instead, it is
+   * part of the CTA action panel.
+   */
+  > .searchmode-switcher {
+    display: none;
+  }
+}
+
+.smartbar > .urlbar-background {
+  background-color: white;
+  background-clip: padding-box, border-box;
+  background-image: linear-gradient(var(--smartbar-background-color), var(--smartbar-background-color)), var(--smartbar-border-color-gradient);
+  background-origin: border-box;
+  border-radius: var(--border-radius-large);
+  border: var(--smartbar-border-style-gradient) transparent;
+
+  /* Pseudo-element for glow effect on hover/focus */
+  &::before {
+    border-radius: inherit;
+    content: "";
+    inset: 0;
+    position: absolute;
+    filter: blur(30px);
+    background-color: var(--smartbar-glow-color);
+    opacity: 0;
+    transition: opacity 0.5s ease-out;
+    z-index: -1;
+
+    @media (prefers-color-scheme: dark) {
+      background-image: var(--smartbar-border-color-gradient-dark);
+    }
+  }
+}
+
+/* HOVER and FOCUSED states: Show gradient glow */
+.smartbar:hover:not(:focus-within) > .urlbar-background,
+.smartbar:focus-within > .urlbar-background {
+  &::before {
+    opacity: 0.7;
+    transition: opacity 0.2s ease-in;
+  }
+}
+
+/* FOCUSED_KEYBOARD_EMPTY: Show outline only for keyboard focus on empty input */
+.smartbar:focus-within:not([usertyping]):not([suppress-focus-border]) > .urlbar-background {
+  outline: var(--smartbar-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.smartbar .urlbar-input-box {
+  align-items: stretch;
+}
+
+.smartbar .urlbar-input {
+  box-sizing: border-box;
+  height: auto;
+  white-space: pre-wrap;
+  width: 100%;
+}
+
+.smartbar moz-multiline-editor {
+  --multiline-editor-border: none;
+  --multiline-editor-focus-outline: none;
+  padding: var(--space-xsmall);
+}
+
+.smartbar .urlbar-go-button {
+  display: none;
+}
+
+.smartbar-button-container {
+  padding: 0 var(--space-large) var(--space-medium);
+  position: relative;
+}
+
+.smartbar-button-container input-cta {
+  margin-inline-start: auto;
+}
+
+.smartbar-context-chips-header {
+  position: relative;
+  margin-inline: var(--space-medium);
+  margin-top: var(--space-medium);
+}

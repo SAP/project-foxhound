@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 /**
  * Keeps thumbnails of open web pages up-to-date.
  */
@@ -67,12 +64,13 @@ var gBrowserThumbnails = {
 
   handleEvent: function Thumbnails_handleEvent(aEvent) {
     switch (aEvent.type) {
-      case "scroll":
+      case "scroll": {
         let browser = aEvent.currentTarget;
         if (this._timeouts.has(browser)) {
           this._delayedCapture(browser);
         }
         break;
+      }
       case "TabSelect":
         this._delayedCapture(aEvent.target.linkedBrowser);
         break;

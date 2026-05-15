@@ -3,24 +3,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package org.mozilla.focus.activity.robots
 
-import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import org.junit.Assert.assertTrue
 import org.mozilla.focus.R
 import org.mozilla.focus.helpers.TestHelper.getStringResource
 import org.mozilla.focus.helpers.TestHelper.mDevice
-import org.mozilla.focus.helpers.TestHelper.packageName
 import org.mozilla.focus.helpers.TestHelper.waitingTime
 
 class SettingsRobot {
 
     fun verifySettingsMenuItems() {
-        settingsMenuList.waitForExists(waitingTime)
-        assertTrue(generalSettingsMenu().exists())
-        assertTrue(searchSettingsMenu.exists())
-        assertTrue(privacySettingsMenu.exists())
-        assertTrue(advancedSettingsMenu.exists())
-        assertTrue(mozillaSettingsMenu.exists())
+        assertTrue("General settings item not found", generalSettingsMenu().waitForExists(waitingTime))
+        assertTrue("Search settings item not found", searchSettingsMenu.waitForExists(waitingTime))
+        assertTrue("Privacy settings item not found", privacySettingsMenu.waitForExists(waitingTime))
+        assertTrue("Advanced settings item not found", advancedSettingsMenu.waitForExists(waitingTime))
+        assertTrue("Mozilla settings item not found", mozillaSettingsMenu.waitForExists(waitingTime))
     }
 
     class Transition {
@@ -84,31 +81,28 @@ class SettingsRobot {
     }
 }
 
-private val settingsMenuList =
-    UiScrollable(UiSelector().resourceId("$packageName:id/recycler_view"))
-
 private fun generalSettingsMenu(localizedText: String = getStringResource(R.string.preference_category_general)) =
-    settingsMenuList.getChild(
+    mDevice.findObject(
         UiSelector()
             .text(localizedText),
     )
 
-private val searchSettingsMenu = settingsMenuList.getChild(
+private val searchSettingsMenu = mDevice.findObject(
     UiSelector()
         .text(getStringResource(R.string.preference_category_search)),
 )
 
-private val privacySettingsMenu = settingsMenuList.getChild(
+private val privacySettingsMenu = mDevice.findObject(
     UiSelector()
         .text(getStringResource(R.string.preference_privacy_and_security_header)),
 )
 
-private val advancedSettingsMenu = settingsMenuList.getChild(
+private val advancedSettingsMenu = mDevice.findObject(
     UiSelector()
         .text(getStringResource(R.string.preference_category_advanced)),
 )
 
-private val mozillaSettingsMenu = settingsMenuList.getChild(
+private val mozillaSettingsMenu = mDevice.findObject(
     UiSelector()
-        .text(getStringResource(R.string.preference_mozilla_summary)),
+        .text(getStringResource(R.string.preference_category_mozilla)),
 )

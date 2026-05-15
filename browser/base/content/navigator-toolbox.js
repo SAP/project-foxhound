@@ -3,7 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
+ChromeUtils.defineESModuleGetters(this, {
+  AIWindowUI:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs",
+});
 
 document.addEventListener(
   "DOMContentLoaded",
@@ -185,7 +188,6 @@ document.addEventListener(
         #back-button,
         #forward-button,
         #reload-button ,
-        #urlbar-go-button,
         #reader-mode-button,
         #picture-in-picture-button,
         #urlbar-zoom-button,
@@ -198,7 +200,9 @@ document.addEventListener(
         #tracking-protection-icon-container,
         #identity-icon-box,
         #identity-permission-box,
-        #translations-button
+        #translations-button,
+        #split-view-button,
+        #smartwindow-ask-button
         `);
       if (!element) {
         return;
@@ -215,10 +219,6 @@ document.addEventListener(
         case "forward-button":
         case "reload-button":
           checkForMiddleClick(element, event);
-          break;
-
-        case "urlbar-go-button":
-          gURLBar.handleCommand(event);
           break;
 
         case "reader-mode-button":
@@ -291,6 +291,18 @@ document.addEventListener(
           FullPageTranslationsPanel.open(event);
           break;
 
+        case "split-view-button":
+          if (isLeftClick) {
+            gBrowser.openSplitViewMenu(element);
+          }
+          break;
+
+        case "smartwindow-ask-button":
+          if (isLeftClick) {
+            AIWindowUI.toggleSidebar(window);
+          }
+          break;
+
         default:
           throw new Error(`Missing case for #${element.id}`);
       }
@@ -318,7 +330,9 @@ document.addEventListener(
         #downloads-button,
         #fxa-toolbar-menu-button,
         #unified-extensions-button,
-        #library-button
+        #library-button,
+        #split-view-button,
+        #smartwindow-ask-button
       `);
       if (!element) {
         return;
@@ -402,6 +416,18 @@ document.addEventListener(
 
         case "library-button":
           PanelUI.showSubView("appMenu-libraryView", element, event);
+          break;
+
+        case "split-view-button":
+          if (isLikeLeftClick) {
+            gBrowser.openSplitViewMenu(element);
+          }
+          break;
+
+        case "smartwindow-ask-button":
+          if (isLikeLeftClick) {
+            AIWindowUI.toggleSidebar(window);
+          }
           break;
 
         default:
@@ -496,6 +522,11 @@ document.addEventListener(
 
     document
       .getElementById("identity-box")
+      .addEventListener("dragstart", event => {
+        gIdentityHandler.onDragStart(event);
+      });
+    document
+      .getElementById("trust-icon-container")
       .addEventListener("dragstart", event => {
         gIdentityHandler.onDragStart(event);
       });

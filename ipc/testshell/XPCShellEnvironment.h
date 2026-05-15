@@ -2,12 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _IPC_TESTSHELL_XPCSHELLENVIRONMENT_H_
-#define _IPC_TESTSHELL_XPCSHELLENVIRONMENT_H_
+#ifndef IPC_TESTSHELL_XPCSHELLENVIRONMENT_H_
+#define IPC_TESTSHELL_XPCSHELLENVIRONMENT_H_
 
 #include "base/basictypes.h"
 
-#include <string>
 #include <stdio.h>
 
 #include "nsCOMPtr.h"
@@ -54,4 +53,4 @@ class XPCShellEnvironment {
 } /* namespace ipc */
 } /* namespace mozilla */
 
-#endif /* _IPC_TESTSHELL_XPCSHELLENVIRONMENT_H_ */
+#endif /* IPC_TESTSHELL_XPCSHELLENVIRONMENT_H_ */

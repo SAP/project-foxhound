@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=970964
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 970964 **/
+/** Test for Bug 970964 */
 
 function ok(condition, msg) {
   parent.ok(condition, msg);
@@ -52,7 +52,7 @@ function touchEvent(aOptions) {
   this.changedTouches = aOptions.changedTouches || [];
 }
 
-function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
+function sendTouchEvent(aType, aEvent, aModifiers) {
   var ids = [], xs=[], ys=[], rxs = [], rys = [],
       rotations = [], forces = [], tiltXs = [], tiltYs = [], twists = [];
 
@@ -72,10 +72,18 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
       }
     }
   }
-  return windowUtils.sendTouchEvent(aType,
-                                    ids, xs, ys, rxs, rys,
-                                    rotations, forces, tiltXs, tiltYs, twists,
-                                    aModifiers);
+  return synthesizeTouchAtPoint(xs, ys, {
+    type: aType,
+    id: ids,
+    rx: rxs,
+    ry: rys,
+    angle: rotations,
+    force: forces,
+    tiltX: tiltXs,
+    tiltY: tiltYs,
+    twist: twists,
+    modifiers: aModifiers,
+  });
 }
 
 function getDefaultArgEvent(eventname) {
@@ -167,10 +175,10 @@ function runTests() {
 
   var cwu = SpecialPowers.getDOMWindowUtils(window);
   var event1 = getTouchEventForTarget(d1, cwu, 0);
-  sendTouchEvent(cwu, "touchstart", event1, 0);
-  sendTouchEvent(cwu, "touchmove", event1, 0);
+  sendTouchEvent("touchstart", event1, 0);
+  sendTouchEvent("touchmove", event1, 0);
   // Test Touch to Pointer Cancel
-  sendTouchEvent(cwu, "touchcancel", event1, 0);
+  sendTouchEvent("touchcancel", event1, 0);
 
   // Check Pointer enter/leave from mouse generated event
   var mouseEnterTriggered = 0;
@@ -245,8 +253,8 @@ function runTests() {
   };
 
   synthesizeMouse(d1, 3, 3, { type: "mousemove"});
-  sendTouchEvent(cwu, "touchstart", getTouchEventForTarget(d3, cwu, 3), 0);
-  sendTouchEvent(cwu, "touchmove", getTouchEventForTarget(d3, cwu, 3), 0);
+  sendTouchEvent("touchstart", getTouchEventForTarget(d3, cwu, 3), 0);
+  sendTouchEvent("touchmove", getTouchEventForTarget(d3, cwu, 3), 0);
   is(touchPointerEnterLeaveCount, 1, "Wrong touch enterLeave count for!");
   is(mousePointerEnterLeaveCount, 2, "Wrong mouse enterLeave count for!");
 
@@ -254,7 +262,7 @@ function runTests() {
   is(d2leaveCount, 1, "Wrong leave count for! d2");
   is(d3enterCount, 1, "Wrong enter count for! d3");
 
-  sendTouchEvent(cwu, "touchmove", getTouchEventForTarget(d1, cwu, 3), 0);
+  sendTouchEvent("touchmove", getTouchEventForTarget(d1, cwu, 3), 0);
   synthesizeMouse(d3, 3, 3, { type: "mousemove"});
   is(touchPointerEnterLeaveCount, 1, "Wrong touch enterLeave count for!");
   is(mousePointerEnterLeaveCount, 4, "Wrong mouse enterLeave count for!");
@@ -264,7 +272,7 @@ function runTests() {
   is(d1enterCount, 1, "Wrong enter count for! d1");
   is(d3enterCount, 2, "Wrong enter count for! d3");
 
-  sendTouchEvent(cwu, "touchmove", getTouchEventForTarget(d2, cwu, 3), 0);
+  sendTouchEvent("touchmove", getTouchEventForTarget(d2, cwu, 3), 0);
   synthesizeMouse(d2, 3, 3, { type: "mousemove"});
   is(touchPointerEnterLeaveCount, 1, "Wrong touch enterLeave count for!");
   is(mousePointerEnterLeaveCount, 6, "Wrong mouse enterLeave count for!");
@@ -273,7 +281,7 @@ function runTests() {
   is(d2enterCount, 1, "Wrong enter count for! d2");
   is(d3leaveCount, 1, "Wrong leave count for! d3");
 
-  sendTouchEvent(cwu, "touchmove", getTouchEventForTarget(d1, cwu, 3), 0);
+  sendTouchEvent("touchmove", getTouchEventForTarget(d1, cwu, 3), 0);
   synthesizeMouse(d1, 3, 3, { type: "mousemove"});
   is(touchPointerEnterLeaveCount, 1, "Wrong touch enterLeave count for!");
   is(mousePointerEnterLeaveCount, 8, "Wrong mouse enterLeave count for!");
@@ -287,14 +295,14 @@ function runTests() {
     is(e.button, -1, "Button must be -1 on pointer generated from mousemove when no buttons pressed");
     is(e.pointerType, "mouse", "Pointer type must be mouse");
   };
-  cwu.sendMouseEvent("mousemove", 4, 4, 0, 0, 0, false, 0, 0);
+  synthesizeMouseAtPoint(4, 4, { type: "mousemove" });
 
   d1.onpointermove = function(e) {
     is(e.buttons, 1, "Buttons must be 1 on pointermove generated from touch event");
     is(e.button, -1, "Button must be -1 on pointermove generated from touch event");
     is(e.pointerType, "touch", "Pointer type must be touch");
   };
-  sendTouchEvent(cwu, "touchmove", getTouchEventForTarget(d1, cwu, 2), 0);
+  sendTouchEvent("touchmove", getTouchEventForTarget(d1, cwu, 2), 0);
 
   // Test for cancel trigger pointerOut (Touch Pointer must be at d1 now)
   pointerCancelTriggered = 0;
@@ -321,7 +329,7 @@ function runTests() {
     }
     pointerLeaveTriggeredForCancelEvent = 1;
   }
-  sendTouchEvent(cwu, "touchcancel", getTouchEventForTarget(d1, cwu, 3), 0);
+  sendTouchEvent("touchcancel", getTouchEventForTarget(d1, cwu, 3), 0);
   is(pointerOutTriggeredForCancelEvent, 1, "Pointer Out not dispatched on PointerCancel");
   is(pointerLeaveTriggeredForCancelEvent, 1, "Pointer Leave not dispatched on PointerCancel");
 

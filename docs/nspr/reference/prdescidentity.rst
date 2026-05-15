@@ -25,9 +25,9 @@ recognizes, then predict that it will implement a desired protocol.
 
 There are three well-known identities:
 
- - :ref:`PR_INVALID_IO_LAYER`, an invalid layer identity, for error return
- - :ref:`PR_TOP_IO_LAYER`, the identity of the top of the stack
- - :ref:`PR_NSPR_IO_LAYER`, the identity used by NSPR proper
+ - ``PR_INVALID_IO_LAYER``, an invalid layer identity, for error return
+ - ``PR_TOP_IO_LAYER``, the identity of the top of the stack
+ - ``PR_NSPR_IO_LAYER``, the identity used by NSPR proper
 
 Layers are created by :ref:`PR_GetUniqueIdentity`. A string may be
 associated with a layer when the layer is created. The string is copied

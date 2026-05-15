@@ -116,6 +116,9 @@ void ShareableCanvasRenderer::UpdateCompositableClient() {
   if (IsOpaque()) {
     flags |= TextureFlags::IS_OPAQUE;
   }
+  if (provider) {
+    flags |= TextureFlags::ALLOC_BY_BUFFER_PROVIDER;
+  }
 
   // -
 

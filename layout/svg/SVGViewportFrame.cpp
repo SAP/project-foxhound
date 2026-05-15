@@ -55,6 +55,12 @@ void SVGViewportFrame::ReflowSVG() {
   float x, y, width, height;
   static_cast<SVGViewportElement*>(GetContent())
       ->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  if (width < 0.0f) {
+    width = 0.0f;
+  }
+  if (height < 0.0f) {
+    height = 0.0f;
+  }
   mRect = nsLayoutUtils::RoundGfxRectToAppRect(gfxRect(x, y, width, height),
                                                AppUnitsPerCSSPixel());
 
@@ -67,11 +73,12 @@ void SVGViewportFrame::ReflowSVG() {
   SVGDisplayContainerFrame::ReflowSVG();
 }
 
-void SVGViewportFrame::NotifySVGChanged(uint32_t aFlags) {
-  MOZ_ASSERT(aFlags & (TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED),
+void SVGViewportFrame::NotifySVGChanged(ChangeFlags aFlags) {
+  MOZ_ASSERT(aFlags.contains(ChangeFlag::TransformChanged) ||
+                 aFlags.contains(ChangeFlag::CoordContextChanged),
              "Invalidation logic may need adjusting");
 
-  if (aFlags & COORD_CONTEXT_CHANGED) {
+  if (aFlags.contains(ChangeFlag::CoordContextChanged)) {
     SVGViewportElement* svg = static_cast<SVGViewportElement*>(GetContent());
 
     bool xOrYIsPercentage =
@@ -95,19 +102,19 @@ void SVGViewportFrame::NotifySVGChanged(uint32_t aFlags) {
     // percentage 'x' or 'y', or if we have a percentage 'width' or 'height' AND
     // a 'viewBox'.
 
-    if (!(aFlags & TRANSFORM_CHANGED) &&
+    if (!aFlags.contains(ChangeFlag::TransformChanged) &&
         (xOrYIsPercentage ||
          (widthOrHeightIsPercentage && svg->HasViewBox()))) {
-      aFlags |= TRANSFORM_CHANGED;
+      aFlags += ChangeFlag::TransformChanged;
     }
 
     if (svg->HasViewBox() || !widthOrHeightIsPercentage) {
       // Remove COORD_CONTEXT_CHANGED, since we establish the coordinate
       // context for our descendants and this notification won't change its
       // dimensions:
-      aFlags &= ~COORD_CONTEXT_CHANGED;
+      aFlags -= ChangeFlag::CoordContextChanged;
 
-      if (!aFlags) {
+      if (aFlags.isEmpty()) {
         return;  // No notification flags left
       }
     }
@@ -158,8 +165,7 @@ SVGBBox SVGViewportFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
 }
 
 nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
-                                            nsAtom* aAttribute,
-                                            int32_t aModType) {
+                                            nsAtom* aAttribute, AttrModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       !HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     SVGViewportElement* content =
@@ -175,12 +181,12 @@ nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
         // make sure our cached transform matrix gets (lazily) updated
         mCanvasTM = nullptr;
         content->ChildrenOnlyTransformChanged();
-        SVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
+        SVGUtils::NotifyChildrenOfSVGChange(this, ChangeFlag::TransformChanged);
       } else {
-        uint32_t flags = COORD_CONTEXT_CHANGED;
+        ChangeFlags flags(ChangeFlag::CoordContextChanged);
         if (mCanvasTM && mCanvasTM->IsSingular()) {
           mCanvasTM = nullptr;
-          flags |= TRANSFORM_CHANGED;
+          flags += ChangeFlag::TransformChanged;
         }
         SVGUtils::NotifyChildrenOfSVGChange(this, flags);
       }
@@ -193,8 +199,9 @@ nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
 
       SVGUtils::NotifyChildrenOfSVGChange(
           this, aAttribute == nsGkAtoms::viewBox
-                    ? TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED
-                    : TRANSFORM_CHANGED);
+                    ? ChangeFlags(ChangeFlag::TransformChanged,
+                                  ChangeFlag::CoordContextChanged)
+                    : ChangeFlag::TransformChanged);
 
       if (aAttribute == nsGkAtoms::x || aAttribute == nsGkAtoms::y) {
         nsLayoutUtils::PostRestyleEvent(
@@ -224,7 +231,7 @@ nsIFrame* SVGViewportFrame::GetFrameForPoint(const gfxPoint& aPoint) {
 //----------------------------------------------------------------------
 // ISVGSVGFrame methods:
 
-void SVGViewportFrame::NotifyViewportOrTransformChanged(uint32_t aFlags) {
+void SVGViewportFrame::NotifyViewportOrTransformChanged(ChangeFlags aFlags) {
   // The dimensions of inner-<svg> frames are purely defined by their "width"
   // and "height" attributes, and transform changes can only occur as a result
   // of changes to their "width", "height", "viewBox" or "preserveAspectRatio"

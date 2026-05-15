@@ -15,12 +15,6 @@
 
 DIRS += ["gtest"]
 
-HostSimplePrograms(
-    [
-        "host_ListCSSProperties",
-    ]
-)
-
 MOCHITEST_MANIFESTS += [
     "mochitest.toml",
 ]
@@ -141,11 +135,8 @@ DEFINES["MOZILLA_INTERNAL_API"] = True
 if CONFIG["COMPILE_ENVIRONMENT"]:
     GeneratedFile(
         "css_properties.js",
-        script="gen-css-properties.py",
-        inputs=[
-            "css_properties_like_longhand.js",
-            "!host_ListCSSProperties%s" % CONFIG["HOST_BIN_SUFFIX"],
-        ],
+        script="/layout/style/GenerateCSSProperties.py",
+        entry_point="gen_css_properties_js",
     )
     TEST_HARNESS_FILES.testing.mochitest.tests.layout.style.test += [
         "!css_properties.js"

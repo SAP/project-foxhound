@@ -19,4 +19,14 @@ interface AbstractRange {
   readonly attribute Node endContainer;
   readonly attribute unsigned long endOffset;
   readonly attribute boolean collapsed;
+
+  // Chrome only method to test
+  // SelectionMovementUtils::GetFirstVisiblePointAtLeaf()
+  // and SelectionMovementUtils::GetLastVisiblePointAtLeaf().
+  //
+  // @return {StaticRange} The shrunken range.  Its start boundary is set to the
+  //         result of GetFirstVisiblePointAtLeaf() and its end boundary is set
+  //         to the result of GetLastVisiblePointAtLeaf().
+  [ChromeOnly]
+  StaticRange? getShrunkenRangeToVisibleLeaves();
 };

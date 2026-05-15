@@ -11,9 +11,9 @@
 #ifndef mozilla_dom_NodeIterator_h
 #define mozilla_dom_NodeIterator_h
 
-#include "nsTraversal.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsStubMutationObserver.h"
+#include "nsTraversal.h"
 
 class nsINode;
 

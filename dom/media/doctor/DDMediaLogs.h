@@ -9,8 +9,8 @@
 
 #include "DDLifetimes.h"
 #include "DDMediaLog.h"
-#include "mozilla/MozPromise.h"
 #include "MultiWriterQueue.h"
+#include "mozilla/MozPromise.h"
 
 namespace mozilla {
 

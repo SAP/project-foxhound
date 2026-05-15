@@ -13,9 +13,9 @@ loader.lazyRequireGetter(
   true
 );
 
-class StoragePanel {
+class StoragePanel extends EventEmitter {
   constructor(panelWin, toolbox, commands) {
-    EventEmitter.decorate(this);
+    super();
 
     this._toolbox = toolbox;
     this._commands = commands;

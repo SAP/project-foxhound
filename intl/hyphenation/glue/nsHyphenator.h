@@ -3,12 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHyphenator_h__
-#define nsHyphenator_h__
+#ifndef nsHyphenator_h_
+#define nsHyphenator_h_
 
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Variant.h"
@@ -20,19 +19,17 @@ class nsIURI;
 struct HyphDic;
 struct CompiledData;
 
-namespace mozilla {
+namespace std {
 template <>
-class DefaultDelete<const HyphDic> {
- public:
+struct default_delete<const HyphDic> {
   void operator()(const HyphDic* ptr) const;
 };
 
 template <>
-class DefaultDelete<const CompiledData> {
- public:
+struct default_delete<const CompiledData> {
   void operator()(const CompiledData* ptr) const;
 };
-}  // namespace mozilla
+}  // namespace std
 
 class nsHyphenator {
  public:
@@ -62,4 +59,4 @@ class nsHyphenator {
   bool mHyphenateCapitalized;
 };
 
-#endif  // nsHyphenator_h__
+#endif  // nsHyphenator_h_

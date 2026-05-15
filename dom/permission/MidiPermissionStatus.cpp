@@ -6,8 +6,8 @@
 
 #include "mozilla/dom/MidiPermissionStatus.h"
 
-#include "mozilla/dom/PermissionStatus.h"
 #include "mozilla/Permission.h"
+#include "mozilla/dom/PermissionStatus.h"
 
 namespace mozilla::dom {
 

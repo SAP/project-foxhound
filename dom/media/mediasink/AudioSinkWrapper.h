@@ -7,14 +7,13 @@
 #ifndef AudioSinkWrapper_h_
 #define AudioSinkWrapper_h_
 
+#include "AudioSink.h"
+#include "MediaSink.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/EventTargetCapability.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-
-#include "AudioSink.h"
-#include "MediaSink.h"
 
 namespace mozilla {
 class MediaData;

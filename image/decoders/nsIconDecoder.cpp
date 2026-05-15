@@ -32,7 +32,7 @@ LexerResult nsIconDecoder::DoDecode(SourceBufferIterator& aIterator,
   MOZ_ASSERT(!HasError(), "Shouldn't call DoDecode after error!");
 
   return mLexer.Lex(aIterator, aOnResume,
-                    [=](State aState, const char* aData, size_t aLength) {
+                    [this](State aState, const char* aData, size_t aLength) {
                       switch (aState) {
                         case State::HEADER:
                           return ReadHeader(aData);

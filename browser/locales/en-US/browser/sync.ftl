@@ -23,10 +23,11 @@ fxa-menu-connect-another-device =
     .label = Connect another device…
 # Variables:
 #   $tabCount (Number): The number of tabs sent to the device.
-fxa-menu-send-tab-to-device =
+# The following string intentionally omits the word "tab" from the singular and includes it in the plural.
+fxa-menu-send-to-device =
     .label =
         { $tabCount ->
-            [1] Send tab to device
+            [1] Send to device
            *[other] Send { $tabCount } tabs to device
         }
 

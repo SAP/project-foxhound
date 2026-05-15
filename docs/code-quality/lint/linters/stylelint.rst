@@ -29,6 +29,11 @@ Understanding Rules and Errors
 * If you don't understand a rule, you can look it in `stylelint.io's rule list`_ for more
   information about it.
 
+Enabling new rules and adding plugins
+-------------------------------------
+
+Please see `this page for enabling new rules <stylelint/enabling-rules.html>`_.
+
 Common Issues and How To Solve Them
 -----------------------------------
 

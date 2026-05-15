@@ -22,10 +22,10 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   createEngine: "chrome://global/content/ml/EngineProcess.sys.mjs",
-  EngineProcess: "chrome://global/content/ml/EngineProcess.sys.mjs",
   IndexedDB: "resource://gre/modules/IndexedDB.sys.mjs",
-  ModelHub: "chrome://global/content/ml/ModelHub.sys.mjs",
+  MLUninstallService: "chrome://global/content/ml/Utils.sys.mjs",
   MultiProgressAggregator: "chrome://global/content/ml/Utils.sys.mjs",
+  PdfJsGuessAltTextFeature: "resource://pdf.js/PdfJsAIFeature.sys.mjs",
   Progress: "chrome://global/content/ml/Utils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -34,20 +34,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const IMAGE_TO_TEXT_TASK = "moz-image-to-text";
-const ML_ENGINE_ID = "pdfjs";
 const ML_ENGINE_MAX_TIMEOUT = 60000;
 const PDFJS_DB_NAME = "pdfjs";
 const PDFJS_DB_VERSION = 1;
 const PDFJS_STORE_NAME = "signatures";
 const PDFJS_SIGNATURE_STORAGE_CHANGED_TOPIC = "pdfjs:storedSignaturesChanged";
-
-var Svc = {};
-XPCOMUtils.defineLazyServiceGetter(
-  Svc,
-  "mime",
-  "@mozilla.org/mime;1",
-  "nsIMIMEService"
-);
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -73,13 +64,29 @@ export class PdfjsParent extends JSWindowActorParent {
     "enableNewAltTextWhenAddingImage",
   ]);
 
+  #nextTextRequestId = 0;
+
+  /**
+   * Holds the Promise resolves for getTextContent requests.
+   *
+   * @type {Map<number, (text: string) => void>}
+   */
+  #textRequests = new Map();
+
   constructor() {
     super();
     this._boundToFindbar = null;
     this._findFailedString = null;
     this._lastNotFoundStringLength = 0;
 
-    this.#checkPreferences();
+    if (
+      !Services.prefs.prefHasUserValue("pdfjs.enableAltText") &&
+      !Services.locale.appLocaleAsBCP47.startsWith("en") &&
+      Services.prefs.getBoolPref("pdfjs.enableAltText", true)
+    ) {
+      Services.prefs.setBoolPref("pdfjs.enableAltText", false);
+    }
+
     this._updatedPreference();
   }
 
@@ -104,6 +111,8 @@ export class PdfjsParent extends JSWindowActorParent {
         return this._addEventListener();
       case "PDFJS:Parent:saveURL":
         return this._saveURL(aMsg);
+      case "PDFJS:Parent:reportText":
+        return this._reportText(aMsg);
       case "PDFJS:Parent:recordExposure":
         return this._recordExposure();
       case "PDFJS:Parent:reportTelemetry":
@@ -130,6 +139,22 @@ export class PdfjsParent extends JSWindowActorParent {
 
   get browser() {
     return this.browsingContext.top.embedderElement;
+  }
+
+  /**
+   * Extracts the text content from a PDF.
+   *
+   * @returns {Promise<string>}
+   */
+  getTextContent() {
+    const { promise, resolve } = Promise.withResolvers();
+    const requestId = this.#nextTextRequestId++;
+    this.#textRequests.set(requestId, resolve);
+    this.sendAsyncMessage("PDFJS:Child:handleEvent", {
+      type: "requestTextContent",
+      detail: { requestId },
+    });
+    return promise;
   }
 
   async #openDatabase() {
@@ -238,22 +263,6 @@ export class PdfjsParent extends JSWindowActorParent {
     }
   }
 
-  #checkPreferences() {
-    if (Services.prefs.getBoolPref("pdfjs.enableAltTextForEnglish", true)) {
-      return;
-    }
-    Services.prefs.setBoolPref("pdfjs.enableAltTextForEnglish", true);
-    if (Services.locale.appLocaleAsBCP47.substring(0, 2) !== "en") {
-      return;
-    }
-    if (!Services.prefs.prefHasUserValue("browser.ml.enable")) {
-      Services.prefs.setBoolPref("browser.ml.enable", true);
-    }
-    if (!Services.prefs.prefHasUserValue("pdfjs.enableAltText")) {
-      Services.prefs.setBoolPref("pdfjs.enableAltText", true);
-    }
-  }
-
   _updatedPreference() {
     PdfJsTelemetry.report({
       type: "editing",
@@ -322,7 +331,7 @@ export class PdfjsParent extends JSWindowActorParent {
       return null;
     }
     try {
-      const now = Cu.now();
+      const now = ChromeUtils.now();
 
       let response;
       if (Cu.isInAutomation) {
@@ -332,7 +341,7 @@ export class PdfjsParent extends JSWindowActorParent {
         response = await engine.run(request);
       }
 
-      const time = Cu.now() - now;
+      const time = ChromeUtils.now() - now;
       const length = response?.output.length ?? 0;
       PdfJsTelemetry.report({
         type: "editing",
@@ -479,16 +488,10 @@ export class PdfjsParent extends JSWindowActorParent {
       return null;
     }
     try {
-      // TODO: Temporary workaround to delete the model from the cache.
-      //       See bug 1908941.
-      await lazy.EngineProcess.destroyMLEngine();
-
-      // Deleting all models linked to IMAGE_TO_TEXT_TASK is safe because this is a
-      // Mozilla specific task name.
-      const hub = new lazy.ModelHub();
-      await hub.deleteModels({
-        taskName: service,
-        deletedBy: "pdfjs",
+      await lazy.MLUninstallService.uninstall({
+        engineIds: [lazy.PdfJsGuessAltTextFeature.engineId],
+        // Used only for attribution/telemetry; the specific value is not significant.
+        actor: "pdfjs",
       });
     } catch (e) {
       console.error("Failed to delete AI model", e);
@@ -500,7 +503,12 @@ export class PdfjsParent extends JSWindowActorParent {
   async #createAIEngine(taskName, aggregator) {
     try {
       return await lazy.createEngine(
-        { engineId: ML_ENGINE_ID, taskName, backend: "onnx-native" },
+        {
+          engineId: lazy.PdfJsGuessAltTextFeature.engineId,
+          featureId: lazy.PdfJsGuessAltTextFeature.id,
+          taskName,
+          backend: "onnx-native",
+        },
         aggregator?.aggregateCallback.bind(aggregator) || null
       );
     } catch (e) {
@@ -582,6 +590,25 @@ export class PdfjsParent extends JSWindowActorParent {
       const matchesCount = this._requestMatchesCount(data.matchesCount);
       fb.onMatchesCountResult(matchesCount);
     });
+  }
+
+  /**
+   * Handle the response for extracting text.
+   *
+   * @param {{ data: { text: string, requestId: number } }}
+   */
+  _reportText({ data }) {
+    const resolve = this.#textRequests.get(data.requestId);
+    this.#textRequests.delete(data.requestId);
+    if (!resolve) {
+      console.error(
+        "Unable to find the text content request",
+        data.requestId,
+        this.#textRequests
+      );
+      return;
+    }
+    resolve(data.text);
   }
 
   _updateMatchesCount(aMsg) {

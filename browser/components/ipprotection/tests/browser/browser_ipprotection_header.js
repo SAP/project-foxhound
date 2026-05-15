@@ -7,9 +7,10 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  IPProtectionWidget: "resource:///modules/ipprotection/IPProtection.sys.mjs",
+  IPProtectionWidget:
+    "moz-src:///browser/components/ipprotection/IPProtection.sys.mjs",
   IPProtectionPanel:
-    "resource:///modules/ipprotection/IPProtectionPanel.sys.mjs",
+    "moz-src:///browser/components/ipprotection/IPProtectionPanel.sys.mjs",
 });
 
 /**
@@ -27,20 +28,25 @@ add_task(async function test_header_content() {
   button.click();
   await panelShownPromise;
 
-  let header = panelView.querySelector(lazy.IPProtectionPanel.HEADER_TAGNAME);
-  Assert.ok(
-    BrowserTestUtils.isVisible(header),
-    "ipprotection-header component should be present"
+  let header = panelView.querySelector(
+    `#${lazy.IPProtectionPanel.HEADER_AREA_ID}`
   );
   Assert.ok(
-    header.experimentBadgeEl,
+    BrowserTestUtils.isVisible(header),
+    "ipprotection-header should be present"
+  );
+  Assert.ok(
+    header.querySelector("moz-badge"),
     "ipprotection-header experiment badge should be present"
   );
   Assert.ok(
-    header.helpButtonEl,
+    header.querySelector(`#${IPProtectionPanel.HEADER_BUTTON_ID}`),
     "ipprotection-header help button should be present"
   );
-  Assert.ok(header.titleEl, "ipprotection-header title should be present");
+  Assert.ok(
+    header.querySelector("h1"),
+    "ipprotection-header title should be present"
+  );
 
   // Close the panel
   let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
@@ -52,6 +58,7 @@ add_task(async function test_header_content() {
  * Tests that the help button functions as expected.
  */
 add_task(async function test_help_button() {
+  const openLinkStub = sinon.stub(window, "openWebLinkIn");
   let button = document.getElementById(lazy.IPProtectionWidget.WIDGET_ID);
   let panelView = PanelMultiView.getViewNode(
     document,
@@ -63,27 +70,27 @@ add_task(async function test_help_button() {
   button.click();
   await panelShownPromise;
 
-  let header = panelView.querySelector(lazy.IPProtectionPanel.HEADER_TAGNAME);
+  let header = panelView.querySelector(
+    `#${lazy.IPProtectionPanel.HEADER_AREA_ID}`
+  );
   Assert.ok(
     BrowserTestUtils.isVisible(header),
-    "ipprotection-header component should be present"
+    "ipprotection-header should be present"
   );
 
-  let helpButton = header.helpButtonEl;
+  let helpButton = header.querySelector(
+    `#${IPProtectionPanel.HEADER_BUTTON_ID}`
+  );
   Assert.ok(helpButton, "ipprotection-header help button should be present");
 
-  let helpPageEventPromise = BrowserTestUtils.waitForEvent(
-    document,
-    "IPProtection:ShowHelpPage"
-  );
-
+  let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
   helpButton.click();
 
-  await helpPageEventPromise;
-  Assert.ok(true, "Got IPProtection:ShowHelpPage event");
-
-  // Close the panel
-  let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
-  EventUtils.synthesizeKey("KEY_Escape");
   await panelHiddenPromise;
+  Assert.ok(openLinkStub.calledOnce, "help button should open a link");
+  Assert.ok(
+    !BrowserTestUtils.isVisible(helpButton),
+    "ipprotection-header help button should have closed the panel"
+  );
+  openLinkStub.restore();
 });

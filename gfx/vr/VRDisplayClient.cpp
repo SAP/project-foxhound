@@ -18,7 +18,6 @@
 #include "mozilla/dom/XRSession.h"
 #include "mozilla/dom/XRInputSourceArray.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/WebXRBinding.h"
 #include "nsServiceManagerUtils.h"

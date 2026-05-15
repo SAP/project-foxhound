@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCycleCollectionParticipant_h__
-#define nsCycleCollectionParticipant_h__
+#ifndef nsCycleCollectionParticipant_h_
+#define nsCycleCollectionParticipant_h_
 
 #include <type_traits>
 #include "js/HeapAPI.h"
@@ -1193,4 +1193,4 @@ inline void ImplCycleCollectionTraverse(
       aField);
 }
 
-#endif  // nsCycleCollectionParticipant_h__
+#endif  // nsCycleCollectionParticipant_h_

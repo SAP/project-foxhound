@@ -7,7 +7,6 @@
 
 #include <utility>
 
-#include "mozilla/UniquePtrExtensions.h"
 #include "nsGkAtoms.h"
 #include "txExecutionState.h"
 #include "txStringUtils.h"
@@ -157,7 +156,7 @@ nsresult txUnknownHandler::createHandlerAndFlush(bool aHTMLRoot,
 
   UniquePtr<txAXMLEventHandler> handler;
   nsresult rv = mEs->mOutputHandlerFactory->createHandlerWith(
-      &format, aName, aNsID, getter_Transfers(handler));
+      &format, aName, aNsID, mozilla::getter_Transfers(handler));
   NS_ENSURE_SUCCESS(rv, rv);
 
   mEs->mOutputHandler = handler.get();

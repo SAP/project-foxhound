@@ -6,39 +6,25 @@ import os
 import re
 import shutil
 import sys
-from enum import Enum, auto
+from pathlib import Path
 
 from fetch_github_repo import fetch_repo
-from run_operations import get_last_line, run_git, run_hg, run_shell
+from run_operations import (
+    RepoType,
+    check_repo_status,
+    detect_repo_type,
+    get_last_line,
+    run_git,
+    run_shell,
+)
+
+repo_type = detect_repo_type()
 
 # This script restores the mozilla patch stack and no-op commit tracking
 # files.  In the case of repo corruption or a mistake made during
 # various rebase conflict resolution operations, the patch-stack can be
 # restored rather than requiring the user to restart the fast-forward
 # process from the beginning.
-
-
-class RepoType(Enum):
-    HG = auto()
-    GIT = auto()
-
-
-def detect_repo_type():
-    if os.path.exists(".git"):
-        return RepoType.GIT
-    elif os.path.exists(".hg"):
-        return RepoType.HG
-    return None
-
-
-def check_repo_status(repo_type):
-    if not isinstance(repo_type, RepoType):
-        print("check_repo_status requires type RepoType")
-        raise TypeError
-    if repo_type == RepoType.GIT:
-        return run_git("git status -s third_party/libwebrtc", ".")
-    else:
-        return run_hg("hg status third_party/libwebrtc")
 
 
 def restore_patch_stack(
@@ -48,12 +34,6 @@ def restore_patch_stack(
     state_directory,
     tar_name,
 ):
-    # first, check which repo we're in, git or hg
-    repo_type = detect_repo_type()
-    if repo_type is None:
-        print("Unable to detect repo (git or hg)")
-        sys.exit(1)
-
     # make sure the repo is clean before beginning
     stdout_lines = check_repo_status(repo_type)
     if len(stdout_lines) != 0:
@@ -88,7 +68,18 @@ def restore_patch_stack(
     # restore the patches to moz-libwebrtc repo, use run_shell instead of
     # run_hg to allow filepath wildcard
     print("Restoring patch stack")
-    run_shell(f"cd {github_path} && git am {patch_directory}/*.patch")
+    test_directory = Path(patch_directory)
+    pre_stack_file_cnt = len(
+        list(Path(patch_directory).glob("p[0-9][0-9][0-9][0-9].patch"))
+    )
+    print(f"Restoring {pre_stack_file_cnt} pre-stack patch files")
+    if pre_stack_file_cnt > 0:
+        run_shell(f"cd {github_path} && git am {patch_directory}/p*.patch")
+
+    norm_stack_files = list(test_directory.glob("s*.patch"))
+    norm_stack_file_cnt = len(norm_stack_files)
+    print(f"Restoring {norm_stack_file_cnt} normal patch files")
+    run_shell(f"cd {github_path} && git am {patch_directory}/s*.patch")
 
     # it is also helpful to restore the no-op-cherry-pick-msg files to
     # the state directory so that if we're restoring a patch-stack we
@@ -106,6 +97,11 @@ def restore_patch_stack(
 
 
 if __name__ == "__main__":
+    # first, check which repo we're in, git or hg
+    if repo_type is None or not isinstance(repo_type, RepoType):
+        print("Unable to detect repo (git or hg)")
+        sys.exit(1)
+
     default_patch_dir = "third_party/libwebrtc/moz-patch-stack"
     default_state_dir = ".moz-fast-forward"
     default_tar_name = "moz-libwebrtc.tar.gz"

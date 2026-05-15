@@ -16,11 +16,11 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.RadioButton
-import androidx.compose.material.RadioButtonDefaults
-import androidx.compose.material.Text
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableIntStateOf
@@ -28,8 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -75,10 +75,14 @@ private fun PermissionOptionsListComposablePreview() {
 }
 
 /**
- * Displays a list of Site Permission Options
+ * Displays a list of Site Permission Options.
  *
- * @param optionsListItems The list of Site Permission Options items to be displayed.
- * @param state the current Option
+ * @param optionsListItems The list of [SitePermissionOptionListItem] to be displayed.
+ * @param state The current selected option's preference key ID.
+ * @param permissionLabel The label for the site permission (e.g., "Camera", "Location").
+ * @param goToPhoneSettings A callback function to navigate to the phone's settings screen.
+ * @param componentPermissionBlockedByAndroidVisibility A boolean indicating whether the
+ * "permission blocked by Android" component should be visible.
  */
 @Composable
 fun OptionsPermissionList(
@@ -155,7 +159,7 @@ private fun OptionPermissionDisplayName(sitePermissionOption: SitePermissionOpti
         Text(
             textAlign = TextAlign.Start,
             color = focusColors.settingsTextColor,
-            text = AnnotatedString(LocalContext.current.resources.getString(sitePermissionOption.titleId)),
+            text = AnnotatedString(stringResource(id = sitePermissionOption.titleId)),
             style = TextStyle(
                 fontSize = 16.sp,
             ),
@@ -165,7 +169,7 @@ private fun OptionPermissionDisplayName(sitePermissionOption: SitePermissionOpti
         sitePermissionOption.summaryId?.let {
             Text(
                 textAlign = TextAlign.Start,
-                text = AnnotatedString(LocalContext.current.resources.getString(it)),
+                text = AnnotatedString(stringResource(id = it)),
                 color = focusColors.settingsTextSummaryColor,
                 style = TextStyle(
                     fontSize = 14.sp,
@@ -229,7 +233,7 @@ private fun ComponentPermissionBlockedByAndroidButton(goToPhoneSettings: () -> U
     Button(
         onClick = goToPhoneSettings,
         colors = ButtonDefaults.textButtonColors(
-            backgroundColor = PhotonColors.LightGrey50,
+            containerColor = PhotonColors.LightGrey50,
         ),
         modifier = Modifier
             .padding(16.dp)
@@ -237,11 +241,7 @@ private fun ComponentPermissionBlockedByAndroidButton(goToPhoneSettings: () -> U
     ) {
         Text(
             color = PhotonColors.Ink20,
-            text = AnnotatedString(
-                LocalContext.current.resources.getString(
-                    R.string.phone_feature_go_to_settings,
-                ),
-            ),
+            text = AnnotatedString(stringResource(id = R.string.phone_feature_go_to_settings)),
         )
     }
 }
@@ -255,10 +255,8 @@ private fun ComponentPermissionBlockedByAndroidText(
     Text(
         textAlign = TextAlign.Start,
         color = focusColors.settingsTextColor,
-        text = LocalContext.current.getString(stringRes, permissionLabel).parseBold(),
-        style = TextStyle(
-            fontSize = 16.sp,
-        ),
+        text = stringResource(id = stringRes, permissionLabel ?: "").parseBold(),
+        style = TextStyle(fontSize = 16.sp),
         modifier = Modifier.padding(start = 55.dp, end = 16.dp, bottom = bottomPadding),
     )
 }

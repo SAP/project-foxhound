@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=1980210
+-->
+<title>Test for CSSStyleRule::QuerySelectorAll with @scope</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+
+<main id=main></main>
+
+<template id=test_simple>
+  <style id=s>
+    @scope (.a) {
+      .b {
+        background: green;
+      }
+    }
+  </style>
+  <div class=a>
+    <div id=matched class=b>
+    </div>
+  </div>
+  <div id=notMatched class=b>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_simple.content.cloneNode(true));
+
+  const scopeRule = s.sheet.cssRules[0];
+  const scopedStyleRule = scopeRule.cssRules[0];
+
+  const result = scopedStyleRule.querySelectorAll(document);
+  is(result.length, 1, `1 element matches "${scopedStyleRule.selectorText}"`);
+  is(
+    result[0].id,
+    "matched",
+    `Got expected id for only element matching "${scopedStyleRule.selectorText}"`
+  );
+});
+</script>
+

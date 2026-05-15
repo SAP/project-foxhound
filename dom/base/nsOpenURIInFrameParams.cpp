@@ -5,12 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsOpenURIInFrameParams.h"
-#include "nsIContentSecurityPolicy.h"
-#include "nsIPolicyContainer.h"
-#include "nsIOpenWindowInfo.h"
+
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "nsIContentSecurityPolicy.h"
+#include "nsIOpenWindowInfo.h"
+#include "nsIPolicyContainer.h"
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsOpenURIInFrameParams)
   NS_INTERFACE_MAP_ENTRY(nsIOpenURIInFrameParams)

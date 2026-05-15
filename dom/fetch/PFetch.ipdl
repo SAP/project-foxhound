@@ -46,7 +46,7 @@ protocol PFetch {
 
     async OnFlushConsoleReport(ConsoleReportCollected[] aReports);
 
-    async OnCSPViolationEvent(nsString aJSON);
+    async OnCSPViolationEvent(nsString aJSON, nsString aReportGroupName);
 
     async OnReportPerformanceTiming(ResponseTiming aTiming);
 

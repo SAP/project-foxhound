@@ -54,24 +54,14 @@ function base64UrlDecode(s) {
   return atob(s);
 }
 
-// Register resource alias. Normally done in SyncComponents.manifest.
-function addResourceAlias() {
-  const resProt = Services.io
-    .getProtocolHandler("resource")
-    .QueryInterface(Ci.nsIResProtocolHandler);
-  let uri = Services.io.newURI("resource://gre/modules/services-crypto/");
-  resProt.setSubstitution("services-crypto", uri);
-}
-addResourceAlias();
-
 /**
  * Print some debug message to the console. All arguments will be printed,
  * separated by spaces.
  *
  * @param [arg0, arg1, arg2, ...]
  *        Any number of arguments to print out
- * @usage _("Hello World") -> prints "Hello World"
- * @usage _(1, 2, 3) -> prints "1 2 3"
+ * Usage: _("Hello World") -> prints "Hello World"
+ * Usage: _(1, 2, 3) -> prints "1 2 3"
  */
 var _ = function () {
   print(Array.from(arguments).join(" "));

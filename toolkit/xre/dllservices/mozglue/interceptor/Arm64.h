@@ -16,6 +16,7 @@
 #include "mozilla/Result.h"
 #include "mozilla/Saturate.h"
 #include "mozilla/Types.h"
+#include "mozilla/interceptor/Trampoline.h"
 
 namespace mozilla {
 namespace interceptor {
@@ -138,7 +139,7 @@ MFBT_API LoadOrBranch BUncondImmDecode(const uintptr_t aPC,
  */
 inline static bool IsVeneerRequired(const uintptr_t aPC,
                                     const uintptr_t aTarget) {
-  detail::Saturate<intptr_t> saturated(aTarget);
+  SaturateIntPtr saturated(aTarget);
   saturated -= aPC;
 
   uintptr_t absDiff = Abs(saturated.value());
@@ -152,7 +153,7 @@ inline static bool IsUnconditionalBranchImm(const uint32_t aInst) {
 
 inline static Maybe<uint32_t> BuildUnconditionalBranchImm(
     const uintptr_t aPC, const uintptr_t aTarget) {
-  detail::Saturate<intptr_t> saturated(aTarget);
+  SaturateIntPtr saturated(aTarget);
   saturated -= aPC;
 
   CheckedInt<int32_t> offset(saturated.value());

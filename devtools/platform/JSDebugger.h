@@ -8,7 +8,6 @@
 #define JSDebugger_h
 
 #include "IJSDebugger.h"
-#include "mozilla/Attributes.h"
 
 namespace mozilla {
 namespace jsdebugger {

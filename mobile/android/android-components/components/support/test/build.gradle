@@ -2,59 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt')
-        }
-    }
-
-    // https://issuetracker.google.com/issues/379732901
-    packaging {
-        resources {
-            excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
-        }
-    }
-
     namespace = 'mozilla.components.support.test'
 }
 
 dependencies {
+    api libs.mockito
+
     implementation project(':components:concept-fetch')
     implementation project(':components:support-base')
 
-    implementation libs.kotlin.coroutines
-    implementation libs.kotlin.reflect
-
-    implementation libs.androidx.test.junit
-    api libs.testing.mockito
-    implementation libs.testing.coroutines
     implementation libs.androidx.fragment
-    implementation  (libs.testing.robolectric) {
-        exclude group: 'org.apache.maven'
-    }
-
-    testImplementation libs.testing.maven.ant.tasks
-
     implementation libs.androidx.test.core
+    implementation libs.androidx.test.junit
+    implementation libs.kotlin.reflect
+    implementation libs.kotlinx.coroutines
+    implementation libs.kotlinx.coroutines.test
+    implementation libs.robolectric
+
+    testImplementation project(':components:support-ktx')
 
     testImplementation libs.androidx.core
     testImplementation libs.androidx.test.junit
-    testImplementation project(':components:support-ktx')
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

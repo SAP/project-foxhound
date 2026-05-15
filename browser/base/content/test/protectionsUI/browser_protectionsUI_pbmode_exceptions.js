@@ -107,14 +107,17 @@ add_task(async function testExceptionAddition() {
 
   info("Load a test page containing tracking elements");
   await Promise.all([
-    promiseTabLoadEvent(tab, TRACKING_PAGE),
+    BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: TRACKING_PAGE,
+    }),
     waitForContentBlockingEvent(2, tab.ownerGlobal),
   ]);
 
   testTrackingPage(tab.ownerGlobal);
 
   info("Disable TP for the page (which reloads the page)");
-  let tabReloadPromise = promiseTabLoadEvent(tab);
+  let tabReloadPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   gProtectionsHandler.disableForCurrentPage();
   is(protectionsPopupState(), "closed", "protections popup is closed");
 
@@ -127,7 +130,10 @@ add_task(async function testExceptionAddition() {
   tab = browser.selectedTab = BrowserTestUtils.addTab(browser);
 
   info("Load a test page containing tracking elements");
-  await promiseTabLoadEvent(tab, TRACKING_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: TRACKING_PAGE,
+  });
   testTrackingPageUnblocked();
 
   await BrowserTestUtils.closeWindow(privateWin);
@@ -155,14 +161,17 @@ add_task(async function testExceptionPersistence() {
 
   info("Load a test page containing tracking elements");
   await Promise.all([
-    promiseTabLoadEvent(tab, TRACKING_PAGE),
+    BrowserTestUtils.loadURIString({
+      browser: tab.linkedBrowser,
+      uriString: TRACKING_PAGE,
+    }),
     waitForContentBlockingEvent(2, tab.ownerGlobal),
   ]);
 
   testTrackingPage(tab.ownerGlobal);
 
   info("Disable TP for the page (which reloads the page)");
-  let tabReloadPromise = promiseTabLoadEvent(tab);
+  let tabReloadPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   gProtectionsHandler.disableForCurrentPage();
   is(protectionsPopupState(), "closed", "protections popup is closed");
 

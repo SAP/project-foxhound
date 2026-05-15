@@ -5,11 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocumentL10n.h"
-#include "nsIContentSink.h"
-#include "nsContentUtils.h"
+
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentL10nBinding.h"
+#include "nsContentUtils.h"
+#include "nsIContentSink.h"
 
 using namespace mozilla;
 using namespace mozilla::intl;
@@ -47,8 +48,29 @@ RefPtr<DocumentL10n> DocumentL10n::Create(Document* aDocument, bool aSync) {
   return l10n.forget();
 }
 
+RefPtr<DocumentL10n> DocumentL10n::Create(Document* aDocument, bool aSync,
+                                          const nsTArray<nsCString>& aLocales) {
+  RefPtr<DocumentL10n> l10n = new DocumentL10n(aDocument, aSync, aLocales);
+
+  IgnoredErrorResult rv;
+  l10n->mReady = Promise::Create(l10n->mGlobal, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return nullptr;
+  }
+
+  return l10n.forget();
+}
+
 DocumentL10n::DocumentL10n(Document* aDocument, bool aSync)
     : DOMLocalization(aDocument->GetScopeObject(), aSync),
+      mDocument(aDocument),
+      mState(DocumentL10nState::Constructed) {
+  mContentSink = do_QueryInterface(aDocument->GetCurrentContentSink());
+}
+
+DocumentL10n::DocumentL10n(Document* aDocument, bool aSync,
+                           const nsTArray<nsCString>& aLocales)
+    : DOMLocalization(aDocument->GetScopeObject(), aSync, aLocales),
       mDocument(aDocument),
       mState(DocumentL10nState::Constructed) {
   mContentSink = do_QueryInterface(aDocument->GetCurrentContentSink());

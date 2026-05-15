@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WebrtcMediaDataDecoderCodec_h__
-#define WebrtcMediaDataDecoderCodec_h__
+#ifndef WebrtcMediaDataDecoderCodec_h_
+#define WebrtcMediaDataDecoderCodec_h_
 
 #include "MediaConduitInterface.h"
 #include "MediaInfo.h"
@@ -67,4 +67,4 @@ class WebrtcMediaDataDecoder : public WebrtcVideoDecoder {
 
 }  // namespace mozilla
 
-#endif  // WebrtcMediaDataDecoderCodec_h__
+#endif  // WebrtcMediaDataDecoderCodec_h_

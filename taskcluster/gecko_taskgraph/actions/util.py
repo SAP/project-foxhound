@@ -3,17 +3,17 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import concurrent.futures as futures
 import copy
 import logging
 import os
 import re
+from concurrent import futures
 from functools import reduce
 
 import jsone
 import requests
-from requests.exceptions import HTTPError
 from slugid import nice as slugid
+from taskcluster.exceptions import TaskclusterRestFailure
 from taskgraph import create
 from taskgraph.optimize.base import optimize_task_graph
 from taskgraph.taskgraph import TaskGraph
@@ -177,10 +177,10 @@ def fetch_graph_and_labels(parameters, graph_config):
             try:
                 run_label_to_id = get_artifact(task_id, "public/label-to-taskid.json")
                 label_to_taskid.update(run_label_to_id)
-                for label, task_id in run_label_to_id.items():
-                    label_to_taskids.setdefault(label, []).append(task_id)
-            except HTTPError as e:
-                if e.response.status_code != 404:
+                for label, existing_task_id in run_label_to_id.items():
+                    label_to_taskids.setdefault(label, []).append(existing_task_id)
+            except TaskclusterRestFailure as e:
+                if e.status_code != 404:
                     raise
                 logger.debug(f"No label-to-taskid.json found for {task_id}: {e}")
 
@@ -200,10 +200,10 @@ def fetch_graph_and_labels(parameters, graph_config):
             try:
                 run_label_to_id = get_artifact(task_id, "public/label-to-taskid.json")
                 label_to_taskid.update(run_label_to_id)
-                for label, task_id in run_label_to_id.items():
-                    label_to_taskids.setdefault(label, []).append(task_id)
-            except HTTPError as e:
-                if e.response.status_code != 404:
+                for label, existing_task_id in run_label_to_id.items():
+                    label_to_taskids.setdefault(label, []).append(existing_task_id)
+            except TaskclusterRestFailure as e:
+                if e.status_code != 404:
                     raise
                 logger.debug(f"No label-to-taskid.json found for {task_id}: {e}")
 

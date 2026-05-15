@@ -53,64 +53,68 @@ loader.lazyRequireGetter(
  * provides the means to communicate with the server and exchange the messages
  * required by the protocol in a traditional JavaScript API.
  */
-function DevToolsClient(transport) {
-  this._transport = transport;
-  this._transport.hooks = this;
+class DevToolsClient extends EventEmitter {
+  constructor(transport) {
+    super();
 
-  this._pendingRequests = new Map();
-  this._activeRequests = new Map();
-  this._eventsEnabled = true;
+    this._transport = transport;
+    this._transport.hooks = this;
 
-  this.traits = {};
+    this._pendingRequests = new Map();
+    this._activeRequests = new Map();
+    this._eventsEnabled = true;
 
-  this.request = this.request.bind(this);
+    this.traits = {};
 
-  /*
-   * As the first thing on the connection, expect a greeting packet from
-   * the connection's root actor.
-   */
-  this.mainRoot = null;
-  this.expectReply("root", async packet => {
-    if (packet.error) {
-      console.error("Error when waiting for root actor", packet);
-      return;
-    }
+    this.request = this.request.bind(this);
 
-    this.mainRoot = createRootFront(this, packet);
-
-    // Once the root actor has been communicated by the server,
-    // emit a request to it to also push informations down to the server.
-    //
-    // This request has been added in Firefox 133.
-    try {
-      await this.mainRoot.connect({
-        frontendVersion: AppConstants.MOZ_APP_VERSION,
-      });
-    } catch (e) {
-      // Ignore errors of unsupported packet as the server may not yet support this request.
-      // The request may also fail to complete in tests when closing DevTools quickly after opening.
-      if (!e.message.includes("unrecognizedPacketType")) {
-        throw e;
+    /*
+     * As the first thing on the connection, expect a greeting packet from
+     * the connection's root actor.
+     */
+    this.mainRoot = null;
+    this.expectReply("root", async packet => {
+      if (packet.error) {
+        console.error("Error when waiting for root actor", packet);
+        return;
       }
-    }
 
-    this.emit("connected", packet.applicationType, packet.traits);
-  });
-}
+      this.mainRoot = createRootFront(this, packet);
 
-// Expose these to save callers the trouble of importing DebuggerSocket
-DevToolsClient.socketConnect = function (options) {
-  // Defined here instead of just copying the function to allow lazy-load
-  return DebuggerSocket.connect(options);
-};
-DevToolsUtils.defineLazyGetter(DevToolsClient, "Authenticators", () => {
-  return Authentication.Authenticators;
-});
-DevToolsUtils.defineLazyGetter(DevToolsClient, "AuthenticationResult", () => {
-  return Authentication.AuthenticationResult;
-});
+      // Once the root actor has been communicated by the server,
+      // emit a request to it to also push informations down to the server.
+      //
+      // This request has been added in Firefox 133.
+      try {
+        await this.mainRoot.connect({
+          frontendVersion: AppConstants.MOZ_APP_VERSION,
+        });
+      } catch (e) {
+        // Ignore errors of unsupported packet as the server may not yet support this request.
+        // The request may also fail to complete in tests when closing DevTools quickly after opening.
+        if (!e.message.includes("unrecognizedPacketType")) {
+          throw e;
+        }
+      }
 
-DevToolsClient.prototype = {
+      this.emit("connected", packet.applicationType, packet.traits);
+    });
+  }
+
+  // Expose these to save callers the trouble of importing DebuggerSocket
+  static socketConnect(options) {
+    // Defined here instead of just copying the function to allow lazy-load
+    return DebuggerSocket.connect(options);
+  }
+
+  static get Authenticators() {
+    return Authentication.Authenticators;
+  }
+
+  static get AuthenticationResult() {
+    return Authentication.AuthenticationResult;
+  }
+
   /**
    * Connect to the server and start exchanging protocol messages.
    *
@@ -130,7 +134,7 @@ DevToolsClient.prototype = {
 
       this._transport.ready();
     });
-  },
+  }
 
   /**
    * Shut down communication with the debugging server.
@@ -159,7 +163,7 @@ DevToolsClient.prototype = {
     }
 
     return this._closePromise;
-  },
+  }
 
   /**
    * Send a request to the debugging server.
@@ -267,7 +271,7 @@ DevToolsClient.prototype = {
     request.catch = promise.catch.bind(promise);
 
     return request;
-  },
+  }
 
   /**
    * Transmit streaming data via a bulk request.
@@ -385,7 +389,7 @@ DevToolsClient.prototype = {
     this._sendOrQueueRequest(request);
 
     return request;
-  },
+  }
 
   /**
    * If a new request can be sent immediately, do so.  Otherwise, queue it.
@@ -397,10 +401,11 @@ DevToolsClient.prototype = {
     } else {
       this._queueRequest(request);
     }
-  },
+  }
 
   /**
    * Send a request.
+   *
    * @throws Error if there is already an active request in flight for the same
    *         actor.
    */
@@ -416,7 +421,7 @@ DevToolsClient.prototype = {
     this._transport.startBulkSend(request.request).then((...args) => {
       request.emit("bulk-send-ready", ...args);
     });
-  },
+  }
 
   /**
    * Queue a request to be sent later.  Queues are only drained when an in
@@ -427,7 +432,7 @@ DevToolsClient.prototype = {
     const queue = this._pendingRequests.get(actor) || [];
     queue.push(request);
     this._pendingRequests.set(actor, queue);
-  },
+  }
 
   /**
    * Attempt the next request to a given actor (if any).
@@ -445,7 +450,7 @@ DevToolsClient.prototype = {
       this._pendingRequests.delete(actor);
     }
     this._sendRequest(request);
-  },
+  }
 
   /**
    * Arrange to hand the next reply from |actor| to the handler bound to
@@ -470,7 +475,7 @@ DevToolsClient.prototype = {
     }
 
     this._activeRequests.set(actor, request);
-  },
+  }
 
   // Transport hooks.
 
@@ -547,7 +552,7 @@ DevToolsClient.prototype = {
         emitReply();
       }
     }
-  },
+  }
 
   /**
    * Called by the DebuggerTransport to dispatch incoming bulk packets as
@@ -624,7 +629,7 @@ DevToolsClient.prototype = {
     this._attemptNextRequest(actor);
 
     activeRequest.emit("bulk-reply", packet);
-  },
+  }
 
   /**
    * Called by DebuggerTransport when the underlying stream is closed.
@@ -662,7 +667,7 @@ DevToolsClient.prototype = {
     for (const pool of this._pools) {
       pool.destroy();
     }
-  },
+  }
 
   /**
    * Purge pending and active requests in this client.
@@ -728,7 +733,7 @@ DevToolsClient.prototype = {
         front.baseFrontClassDestroy();
       }
     }
-  },
+  }
 
   /**
    * Search for all requests in process for this client, including those made via
@@ -794,7 +799,7 @@ DevToolsClient.prototype = {
         // Repeat, more requests may have started in response to those we just waited for
         return this.waitForRequestsToSettle({ ignoreOrphanedFronts });
       });
-  },
+  }
 
   getAllFronts() {
     // Use a Set because some fronts (like domwalker) seem to have multiple parents.
@@ -815,36 +820,35 @@ DevToolsClient.prototype = {
       }
     }
     return fronts;
-  },
+  }
 
   /**
    * Actor lifetime management, echos the server's actor pools.
    */
-  __pools: null,
   get _pools() {
     if (this.__pools) {
       return this.__pools;
     }
     this.__pools = new Set();
     return this.__pools;
-  },
+  }
 
   addActorPool(pool) {
     this._pools.add(pool);
-  },
+  }
   removeActorPool(pool) {
     this._pools.delete(pool);
-  },
+  }
 
   /**
    * Return the Front for the Actor whose ID is the one passed in argument.
    *
-   * @param {String} actorID: The actor ID to look for.
+   * @param {string} actorID: The actor ID to look for.
    */
   getFrontByID(actorID) {
     const pool = this.poolFor(actorID);
     return pool ? pool.getActorByID(actorID) : null;
-  },
+  }
 
   poolFor(actorID) {
     for (const pool of this._pools) {
@@ -853,11 +857,12 @@ DevToolsClient.prototype = {
       }
     }
     return null;
-  },
+  }
 
   /**
    * Creates an object front for this DevToolsClient and the grip in parameter,
-   * @param {Object} grip: The grip to create the ObjectFront for.
+   *
+   * @param {object} grip: The grip to create the ObjectFront for.
    * @param {ThreadFront} threadFront
    * @param {Front} parentFront: Optional front that will manage the object front.
    *                             Defaults to threadFront.
@@ -869,11 +874,11 @@ DevToolsClient.prototype = {
     }
 
     return new ObjectFront(this, threadFront.targetFront, parentFront, grip);
-  },
+  }
 
   get transport() {
     return this._transport;
-  },
+  }
 
   /**
    * Boolean flag to help identify client connected to the current runtime,
@@ -881,7 +886,7 @@ DevToolsClient.prototype = {
    */
   get isLocalClient() {
     return !!this._transport.isLocalTransport;
-  },
+  }
 
   dumpPools() {
     for (const pool of this._pools) {
@@ -889,10 +894,8 @@ DevToolsClient.prototype = {
         ...pool.__poolMap.keys(),
       ]);
     }
-  },
-};
-
-EventEmitter.decorate(DevToolsClient.prototype);
+  }
+}
 
 class Request extends EventEmitter {
   constructor(request) {

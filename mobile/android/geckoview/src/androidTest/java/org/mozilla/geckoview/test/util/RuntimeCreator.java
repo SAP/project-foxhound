@@ -13,6 +13,7 @@ import androidx.annotation.UiThread;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONObject;
+import org.mozilla.geckoview.BuildConfig;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.ExperimentDelegate;
 import org.mozilla.geckoview.GeckoPreferenceController;
@@ -187,11 +188,17 @@ public class RuntimeCreator {
             .updateUrl("http://mochi.test:8888/safebrowsing4-dummy/update")
             .build();
 
+    final SafeBrowsingProvider google5 =
+        SafeBrowsingProvider.from(ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER)
+            .getHashUrl("http://mochi.test:8888/safebrowsing5-dummy/gethash")
+            .updateUrl("http://mochi.test:8888/safebrowsing5-dummy/update")
+            .build();
+
     final GeckoRuntimeSettings runtimeSettings =
         new GeckoRuntimeSettings.Builder()
             .contentBlocking(
                 new ContentBlocking.Settings.Builder()
-                    .safeBrowsingProviders(googleLegacy, google)
+                    .safeBrowsingProviders(googleLegacy, google, google5)
                     .build())
             .arguments(new String[] {"-purgecaches"})
             .extras(InstrumentationRegistry.getArguments())
@@ -199,6 +206,8 @@ public class RuntimeCreator {
             .consoleOutput(true)
             .crashHandler(TestCrashHandler.class)
             .experimentDelegate(sRuntimeExperimentDelegateProxy)
+            .isolatedProcessEnabled(BuildConfig.MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS)
+            .appZygoteProcessEnabled(env.isAppZygoteProcess())
             .build();
 
     sRuntime =

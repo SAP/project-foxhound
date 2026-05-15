@@ -197,7 +197,6 @@ subdirectory with that name.
    elif [ -d $1 ] ; then
         echo "directory $1 already exists"
    else
-        autoconf2.13
         mkdir $1
         cd $1
         CC="/path/to/mozbuild/clang" \

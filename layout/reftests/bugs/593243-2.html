@@ -8,7 +8,6 @@
   <title></title>
 <script type="text/javascript">
 function initialPaint() {
-  window.removeEventListener("MozAfterPaint", initialPaint);
   setTimeout(type, 0);
 }
 
@@ -27,7 +26,7 @@ function finish() {
   document.documentElement.removeAttribute("class");
 }
 
-window.addEventListener("MozAfterPaint", initialPaint);
+window.addEventListener("MozReftestInvalidate", initialPaint);
 </script>
 </head>
 

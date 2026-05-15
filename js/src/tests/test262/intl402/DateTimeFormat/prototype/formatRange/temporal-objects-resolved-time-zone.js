@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -14,7 +14,7 @@ features: [Temporal, Intl.DateTimeFormat-formatRange]
 // Temporal and Intl are behaving as expected?
 const usDayPeriodSpace =
   new Intl.DateTimeFormat("en-US", { timeStyle: "short" })
-    .formatToParts(0)
+    .formatRangeToParts(0, 86400)
     .find((part, i, parts) => part.type === "literal" && parts[i + 1].type === "dayPeriod")?.value || "";
 const usDateRangeSeparator = new Intl.DateTimeFormat("en-US", { dateStyle: "short" })
   .formatRangeToParts(1 * 86400 * 1000, 366 * 86400 * 1000)

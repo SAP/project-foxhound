@@ -16,7 +16,6 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/net/BackgroundDataBridgeChild.h"
-#include "mozilla/Unused.h"
 #include "nsSocketTransportService2.h"
 
 using mozilla::ipc::BackgroundChild;

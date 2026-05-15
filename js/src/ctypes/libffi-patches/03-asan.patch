@@ -1,7 +1,7 @@
-diff --git a/js/src/ctypes/libffi/src/x86/ffi64.c b/js/src/ctypes/libffi/src/x86/ffi64.c
+diff --git a/src/x86/ffi64.c b/src/x86/ffi64.c
 index dec331c958c21..b7c7d5218eb14 100644
---- a/js/src/ctypes/libffi/src/x86/ffi64.c
-+++ b/js/src/ctypes/libffi/src/x86/ffi64.c
+--- a/src/x86/ffi64.c
++++ b/src/x86/ffi64.c
 @@ -549,16 +549,26 @@ ffi_prep_cif_machdep (ffi_cif *cif)
      flags |= UNIX64_FLAG_XMM_ARGS;
  
@@ -29,10 +29,10 @@ index dec331c958c21..b7c7d5218eb14 100644
    char *stack, *argp;
    ffi_type **arg_types;
    int gprcount, ssecount, ngpr, nsse, i, avn, flags;
-diff --git a/js/src/ctypes/libffi/src/x86/ffiw64.c b/js/src/ctypes/libffi/src/x86/ffiw64.c
+diff --git a/src/x86/ffiw64.c b/src/x86/ffiw64.c
 index b68f69ccf68a0..5250e3052df1f 100644
---- a/js/src/ctypes/libffi/src/x86/ffiw64.c
-+++ b/js/src/ctypes/libffi/src/x86/ffiw64.c
+--- a/src/x86/ffiw64.c
++++ b/src/x86/ffiw64.c
 @@ -102,16 +102,26 @@ EFI64(ffi_prep_cif_machdep)(ffi_cif *cif)
    n += (flags == FFI_TYPE_STRUCT);
    if (n < 4)
@@ -60,9 +60,9 @@ index b68f69ccf68a0..5250e3052df1f 100644
    UINT64 *stack;
    size_t rsize;
    struct win64_call_frame *frame;
-diff --git a/js/src/ctypes/libffi/src/x86/ffi.c b/js/src/ctypes/libffi/src/x86/ffi.c
---- a/js/src/ctypes/libffi/src/x86/ffi.c
-+++ b/js/src/ctypes/libffi/src/x86/ffi.c
+diff --git a/src/x86/ffi.c b/src/x86/ffi.c
+--- a/src/x86/ffi.c
++++ b/src/x86/ffi.c
 @@ -250,16 +250,26 @@ static const struct abi_params abi_param
      #define FFI_DECLARE_FASTCALL __declspec(fastcall)
    #endif

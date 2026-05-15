@@ -6,12 +6,12 @@
 
 #include "mozilla/dom/CSPViolationData.h"
 
-#include "nsCharTraits.h"
-#include "nsContentUtils.h"
+#include <utility>
+
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/nsCSPContext.h"
-
-#include <utility>
+#include "nsCharTraits.h"
+#include "nsContentUtils.h"
 
 namespace mozilla::dom {
 

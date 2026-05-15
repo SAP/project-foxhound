@@ -7,10 +7,10 @@
 #ifndef js_ProfilingCategory_h
 #define js_ProfilingCategory_h
 
-#include "jstypes.h"  // JS_PUBLIC_API
-
 // The source lives in mozglue/baseprofiler/public/ProfilingCategoryList.h
-#include "js/ProfilingCategoryList.h"  // MOZ_PROFILING_CATEGORY_LIST
+#include "mozilla/ProfilingCategoryList.h"  // MOZ_PROFILING_CATEGORY_LIST
+
+#include "jstypes.h"  // JS_PUBLIC_API
 
 namespace JS {
 

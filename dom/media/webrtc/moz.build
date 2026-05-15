@@ -66,6 +66,7 @@ if CONFIG["MOZ_WEBRTC"]:
         "PWebrtcGlobal.ipdl",
     ]
     LOCAL_INCLUDES += [
+        "!/dist/include/libwebrtc_overrides",
         "/dom/base",
         "/dom/media",
         "/dom/media/webrtc/common",
@@ -81,6 +82,7 @@ if CONFIG["MOZ_WEBRTC_SIGNALING"]:
         "jsapi",
         "jsep",
         "libwebrtcglue",
+        "libwebrtc_overrides",
         "sdp",
         "transportbridge",
         "/third_party/libwebrtc",

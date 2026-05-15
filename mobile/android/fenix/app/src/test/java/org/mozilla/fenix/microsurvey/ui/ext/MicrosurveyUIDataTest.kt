@@ -18,6 +18,7 @@ import org.mozilla.experiments.nimbus.NullVariables
 import org.mozilla.experiments.nimbus.StringHolder
 import org.mozilla.fenix.R
 import org.robolectric.RobolectricTestRunner
+import mozilla.components.ui.icons.R as iconsR
 
 @RunWith(RobolectricTestRunner::class)
 class MicrosurveyUIDataTest {
@@ -123,7 +124,7 @@ class MicrosurveyUIDataTest {
         val expected = MicrosurveyUIData(
             id = "test ID",
             promptTitle = "test title",
-            icon = R.drawable.mozac_ic_lightbulb_24,
+            icon = iconsR.drawable.mozac_ic_lightbulb_24,
             question = "test question",
             answers = orderedAnswersText,
             utmContent = "test utm content",

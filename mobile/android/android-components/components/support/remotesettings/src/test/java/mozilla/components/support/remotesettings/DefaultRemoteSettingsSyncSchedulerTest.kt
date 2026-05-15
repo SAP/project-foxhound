@@ -13,22 +13,17 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
 import junit.framework.TestCase.assertTrue
+import kotlinx.coroutines.test.runTest
 import mozilla.components.support.base.worker.Frequency
 import mozilla.components.support.remotesettings.RemoteSettingsSyncWorker.Companion.REMOTE_SETTINGS_SYNC_WORKER_TAG
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class DefaultRemoteSettingsSyncSchedulerTest {
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Before
     fun setUp() {
@@ -37,7 +32,7 @@ class DefaultRemoteSettingsSyncSchedulerTest {
     }
 
     @Test
-    fun `WHEN registerForSync is called THEN work is scheduled for syncs`() = runTestOnMain {
+    fun `WHEN registerForSync is called THEN work is scheduled for syncs`() = runTest {
         val frequency = Frequency(24, TimeUnit.HOURS)
         val checker = DefaultRemoteSettingsSyncScheduler(testContext, frequency)
 
@@ -56,7 +51,7 @@ class DefaultRemoteSettingsSyncSchedulerTest {
     }
 
     @Test
-    fun `WHEN unregisterForSync is called THEN work is unscheduled for syncs`() = runTestOnMain {
+    fun `WHEN unregisterForSync is called THEN work is unscheduled for syncs`() = runTest {
         val frequency = Frequency(24, TimeUnit.HOURS)
         val checker = DefaultRemoteSettingsSyncScheduler(testContext, frequency)
 

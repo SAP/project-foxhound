@@ -12,9 +12,11 @@ import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
 import mozilla.components.browser.toolbar.BrowserToolbar
+import mozilla.components.concept.engine.EngineView
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
+import mozilla.components.ui.widgets.behavior.DependencyGravity.Bottom
+import mozilla.components.ui.widgets.behavior.EngineViewScrollingGesturesBehavior
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -25,13 +27,12 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
-import mozilla.components.ui.widgets.behavior.ViewPosition as MozacToolbarPosition
 
 @RunWith(RobolectricTestRunner::class)
 class BrowserHomeToolbarViewTest {
     private lateinit var toolbarView: BrowserToolbarView
     private lateinit var toolbar: BrowserToolbar
-    private lateinit var behavior: EngineViewScrollingBehavior
+    private lateinit var behavior: EngineViewScrollingGesturesBehavior
     private lateinit var settings: Settings
 
     @Before
@@ -59,8 +60,11 @@ class BrowserHomeToolbarViewTest {
             tabStripContent = {},
         )
 
+        val engineView: EngineView = mockk {
+            every { asView() } returns View(testContext)
+        }
         toolbarView.toolbar = toolbar
-        behavior = spyk(EngineViewScrollingBehavior(testContext, null, MozacToolbarPosition.BOTTOM))
+        behavior = spyk(EngineViewScrollingGesturesBehavior(engineView, toolbar, Bottom))
         (toolbarView.layout.layoutParams as CoordinatorLayout.LayoutParams).behavior = behavior
     }
 
@@ -74,7 +78,7 @@ class BrowserHomeToolbarViewTest {
 
         toolbarViewSpy.setToolbarBehavior(settings.toolbarPosition, false)
 
-        verify { toolbarViewSpy.setDynamicToolbarBehavior(MozacToolbarPosition.BOTTOM) }
+        verify { toolbarViewSpy.setDynamicToolbarBehavior(true) }
     }
 
     @Test
@@ -100,7 +104,7 @@ class BrowserHomeToolbarViewTest {
 
         toolbarViewSpy.setToolbarBehavior(settings.toolbarPosition, false)
 
-        verify { toolbarViewSpy.setDynamicToolbarBehavior(MozacToolbarPosition.BOTTOM) }
+        verify { toolbarViewSpy.setDynamicToolbarBehavior(true) }
     }
 
     @Test
@@ -128,7 +132,7 @@ class BrowserHomeToolbarViewTest {
 
         toolbarViewSpy.setToolbarBehavior(settings.toolbarPosition, false)
 
-        verify { toolbarViewSpy.setDynamicToolbarBehavior(MozacToolbarPosition.BOTTOM) }
+        verify { toolbarViewSpy.setDynamicToolbarBehavior(true) }
     }
 
     @Test
@@ -154,7 +158,7 @@ class BrowserHomeToolbarViewTest {
 
         toolbarViewSpy.setToolbarBehavior(settings.toolbarPosition, false)
 
-        verify { toolbarViewSpy.setDynamicToolbarBehavior(MozacToolbarPosition.BOTTOM) }
+        verify { toolbarViewSpy.setDynamicToolbarBehavior(true) }
     }
 
     @Test
@@ -231,7 +235,7 @@ class BrowserHomeToolbarViewTest {
         val toolbarViewSpy = spyk(toolbarView)
         (toolbar.layoutParams as CoordinatorLayout.LayoutParams).behavior = null
 
-        toolbarViewSpy.setDynamicToolbarBehavior(MozacToolbarPosition.BOTTOM)
+        toolbarViewSpy.setDynamicToolbarBehavior(true)
 
         assertNotNull((toolbarView.layout.layoutParams as CoordinatorLayout.LayoutParams).behavior)
     }
@@ -241,7 +245,7 @@ class BrowserHomeToolbarViewTest {
         val toolbarViewSpy = spyk(toolbarView)
         (toolbar.layoutParams as CoordinatorLayout.LayoutParams).behavior = null
 
-        toolbarViewSpy.setDynamicToolbarBehavior(MozacToolbarPosition.TOP)
+        toolbarViewSpy.setDynamicToolbarBehavior(false)
 
         assertNotNull((toolbarView.layout.layoutParams as CoordinatorLayout.LayoutParams).behavior)
     }
@@ -266,7 +270,7 @@ class BrowserHomeToolbarViewTest {
 
         toolbarViewSpy.expand()
 
-        verify { behavior.forceExpand(toolbarView.layout) }
+        verify { behavior.forceExpand() }
     }
 
     @Test
@@ -289,7 +293,7 @@ class BrowserHomeToolbarViewTest {
 
         toolbarViewSpy.collapse()
 
-        verify { behavior.forceCollapse(toolbarView.layout) }
+        verify { behavior.forceCollapse() }
     }
 
     @Test

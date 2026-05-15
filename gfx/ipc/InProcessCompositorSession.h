@@ -23,7 +23,7 @@ class WebRenderLayerManager;
 class InProcessCompositorSession final : public CompositorSession {
  public:
   static RefPtr<InProcessCompositorSession> Create(
-      nsBaseWidget* baseWidget, WebRenderLayerManager* aLayerManager,
+      nsIWidget* baseWidget, WebRenderLayerManager* aLayerManager,
       const LayersId& aRootLayerTreeId, CSSToLayoutDeviceScale aScale,
       const CompositorOptions& aOptions, bool aUseExternalSurfaceSize,
       const gfx::IntSize& aSurfaceSize, uint32_t aNamespace,
@@ -38,7 +38,7 @@ class InProcessCompositorSession final : public CompositorSession {
   void NotifySessionLost();
 
  private:
-  InProcessCompositorSession(nsBaseWidget* aWidget,
+  InProcessCompositorSession(nsIWidget* aWidget,
                              widget::CompositorWidget* aCompositorWidget,
                              CompositorBridgeChild* aChild,
                              CompositorBridgeParent* aParent);

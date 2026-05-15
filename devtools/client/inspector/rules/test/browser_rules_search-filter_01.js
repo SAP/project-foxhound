@@ -48,10 +48,10 @@ add_task(async function () {
   await addTab("data:text/html;charset=utf-8," + encodeURIComponent(TEST_URI));
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
-  await testAddTextInFilter(inspector, view);
+  await testAddTextInFilter(view);
 });
 
-async function testAddTextInFilter(inspector, view) {
+async function testAddTextInFilter(view) {
   for (const data of TEST_DATA) {
     info(data.desc);
     await setSearchFilter(view, data.search);
@@ -60,39 +60,68 @@ async function testAddTextInFilter(inspector, view) {
   }
 }
 
-function checkRules(view) {
-  info("Check that the correct rules are visible");
-  is(view.element.children.length, 2, "Should have 2 rules.");
-  is(
-    getRuleViewRuleEditor(view, 0).rule.selectorText,
-    "element",
-    "First rule is inline element."
+async function checkRules(view) {
+  info(
+    "Check that the expected rules are visible and expected declarations are highlighted"
   );
-
-  const rule = getRuleViewRuleEditor(view, 1).rule;
-
-  is(rule.selectorText, "#testid, h1", "Second rule is #testid, h1.");
-  ok(
-    rule.textProps[0].editor.container.classList.contains("ruleview-highlight"),
-    "background-color text property is correctly highlighted."
-  );
+  await checkRuleViewContent(view, [
+    {
+      selector: "element",
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: "#testid, h1",
+      declarations: [
+        {
+          name: "background-color",
+          value: "#00F !important",
+          highlighted: true,
+        },
+      ],
+    },
+  ]);
 }
 
 async function clearSearchAndCheckRules(view) {
-  const doc = view.styleDocument;
   const win = view.styleWindow;
   const searchField = view.searchField;
   const searchClearButton = view.searchClearButton;
 
   info("Clearing the search filter");
+  const onRuleviewFiltered = view.inspector.once("ruleview-filtered");
   EventUtils.synthesizeMouseAtCenter(searchClearButton, {}, win);
-  await view.inspector.once("ruleview-filtered");
+  await onRuleviewFiltered;
 
   info("Check the search filter is cleared and no rules are highlighted");
-  is(view.element.children.length, 3, "Should have 3 rules.");
   ok(!searchField.value, "Search filter is cleared.");
-  ok(
-    !doc.querySelectorAll(".ruleview-highlight").length,
-    "No rules are higlighted."
-  );
+
+  info("Check that all rules are displayed and no declaration is highlighted");
+  await checkRuleViewContent(view, [
+    {
+      selector: "element",
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: "#testid, h1",
+      declarations: [
+        {
+          name: "background-color",
+          value: "#00F !important",
+          highlighted: false,
+        },
+      ],
+    },
+    {
+      selector: ".testclass",
+      declarations: [
+        {
+          name: "width",
+          value: "100%",
+          highlighted: false,
+        },
+      ],
+    },
+  ]);
 }

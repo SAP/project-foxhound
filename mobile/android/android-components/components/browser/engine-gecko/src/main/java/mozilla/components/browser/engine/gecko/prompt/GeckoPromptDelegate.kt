@@ -14,6 +14,8 @@ import mozilla.components.browser.engine.gecko.ext.toAutocompleteAddress
 import mozilla.components.browser.engine.gecko.ext.toAutocompleteCreditCard
 import mozilla.components.browser.engine.gecko.ext.toCreditCardEntry
 import mozilla.components.browser.engine.gecko.ext.toLoginEntry
+import mozilla.components.browser.engine.gecko.prompt.ext.toLoginHint
+import mozilla.components.browser.engine.gecko.prompt.ext.toSelectOption
 import mozilla.components.concept.engine.prompt.Choice
 import mozilla.components.concept.engine.prompt.PromptRequest
 import mozilla.components.concept.engine.prompt.PromptRequest.File.Companion.DEFAULT_UPLOADS_DIR_NAME
@@ -28,11 +30,13 @@ import mozilla.components.concept.storage.CreditCardEntry
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
 import mozilla.components.support.ktx.android.net.toFileUri
+import mozilla.components.support.ktx.kotlin.ifNullOrEmpty
 import mozilla.components.support.ktx.kotlin.toDate
 import mozilla.components.support.utils.TimePicker.shouldShowMillisecondsPicker
 import mozilla.components.support.utils.TimePicker.shouldShowSecondsPicker
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.Autocomplete
+import org.mozilla.geckoview.Autocomplete.SelectOption.Hint
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
@@ -309,33 +313,52 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
         val promptOptions = prompt.options
 
         val generatedPassword = promptOptions
-            .firstOrNull { option -> option.hint == Autocomplete.SelectOption.Hint.GENERATED }?.value?.password
+            .firstOrNull { option -> option.hint == Hint.GENERATED }?.value?.password
 
         val geckoResult = GeckoResult<PromptResponse>()
         val onConfirmSelect: (Login) -> Unit = { login ->
             if (!prompt.isComplete) {
-                var hint = Autocomplete.SelectOption.Hint.NONE
-                if (generatedPassword != null && login.password == generatedPassword) {
-                    hint = Autocomplete.SelectOption.Hint.GENERATED
-                }
-                geckoResult.complete(prompt.confirm(Autocomplete.LoginSelectOption(login.toLoginEntry(), hint)))
+                geckoResult.complete(
+                    prompt.confirm(
+                        Autocomplete.LoginSelectOption(
+                            login.toLoginEntry(),
+                            login.hint.toSelectOption(),
+                        ),
+                    ),
+                )
             }
         }
         val onDismiss: () -> Unit = {
             prompt.dismissSafely(geckoResult)
         }
 
-        // `guid` plus exactly one of `httpRealm` and `formSubmitURL` must be present to be a valid login entry.
-        val loginList = promptOptions.filter { option ->
-            option.value.guid != null && (option.value.formActionOrigin != null || option.value.httpRealm != null)
-        }.map { option ->
+        val loginList = promptOptions.map { option ->
+            /**
+             * N.B: Even though the data structure says we need to always have a guid, the
+             * LoginStorage implementation doesn't seem to care that we don't have a valid one
+             * because it's generated eventually within the `crate::login::LoginDb::add`
+             * in application-services.
+             *
+             * @see [appservices](https://searchfox.org/mozilla-mobile/rev/fc0c36b437d53e65a6d85362c9c981feaf074385/application-services/components/logins/src/db.rs#569)
+             */
+            val guid = option.value.guid.ifNullOrEmpty { "" }
+            // `guid` plus exactly one of `httpRealm` and `formSubmitURL` must be present to be a valid login entry.
+            val hasHttpRealm = !option.value.httpRealm.isNullOrBlank()
+            val hasFormActionOrigin = !option.value.formActionOrigin.isNullOrBlank()
+            val formActionOrigin = if (!hasHttpRealm && !hasFormActionOrigin) {
+                geckoEngineSession.currentUrl
+            } else {
+                option.value.formActionOrigin
+            }
+
             Login(
-                guid = option.value.guid!!,
+                guid = guid,
                 origin = option.value.origin,
-                formActionOrigin = option.value.formActionOrigin,
+                formActionOrigin = formActionOrigin,
                 httpRealm = option.value.httpRealm,
                 username = option.value.username,
                 password = option.value.password,
+                hint = option.hint.toLoginHint(),
             )
         }
 
@@ -532,7 +555,6 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
         return geckoResult
     }
 
-    @Suppress("ComplexMethod")
     override fun onDateTimePrompt(
         session: GeckoSession,
         prompt: PromptDelegate.DateTimePrompt,
@@ -718,6 +740,30 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
         geckoEngineSession.notifyObservers {
             onPromptRequest(
                 PromptRequest.Popup(prompt.targetUri ?: "", onAllow, onDeny),
+            )
+        }
+        return geckoResult
+    }
+
+    override fun onRedirectPrompt(
+        session: GeckoSession,
+        prompt: PromptDelegate.RedirectPrompt,
+    ): GeckoResult<PromptResponse> {
+        val geckoResult = GeckoResult<PromptResponse>()
+        val onAllow: () -> Unit = {
+            if (!prompt.isComplete) {
+                geckoResult.complete(prompt.confirm(AllowOrDeny.ALLOW))
+            }
+        }
+        val onDeny: () -> Unit = {
+            if (!prompt.isComplete) {
+                geckoResult.complete(prompt.confirm(AllowOrDeny.DENY))
+            }
+        }
+
+        geckoEngineSession.notifyObservers {
+            onPromptRequest(
+                PromptRequest.Redirect(prompt.targetUri ?: "", onAllow, onDeny),
             )
         }
         return geckoResult

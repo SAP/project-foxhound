@@ -53,6 +53,7 @@ class URIParams;
 [ptr] native Encoding(const mozilla::Encoding);
 [ref] native URIParams(mozilla::ipc::URIParams);
 interface nsIURIMutator;
+native MallocSizeOf(mozilla::MallocSizeOf);
 
 /**
  * nsIURI - interface for an uniform resource identifier w/ i18n support.
@@ -316,6 +317,18 @@ interface nsIURI : nsISupports
      */
     [noscript, notxpcom] void serialize(in URIParams aParams);
 
+    /**
+     * Measures the size of the object and the things that it points to.
+     *
+     * WARNING: Don't call this more than once on a particular object or you
+     * will end up with overcounting. Having an nsCOMPtr<nsIURI> is not
+     * sufficient to know that you are the only one measuring this object.
+     *
+     * SizeOfExcludingThis does not make sense here because this is a
+     * refcounted object, so it will never be embedded in something else.
+     */
+    [notxpcom, nostdcall] size_t SizeOfIncludingThis(in MallocSizeOf aMallocSizeOf);
+
     %{C++
     // MOZ_DBG support
     friend std::ostream& operator<<(std::ostream& aOut, const nsIURI& aURI) {
@@ -324,3 +337,9 @@ interface nsIURI : nsISupports
     }
     %}
 };
+
+%{C++
+// fmt support
+template <>
+struct fmt::formatter<nsIURI> : ostream_formatter {};
+%}

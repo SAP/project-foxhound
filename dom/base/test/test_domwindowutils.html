@@ -12,7 +12,7 @@
 <script type="application/javascript">
 SimpleTest.waitForExplicitFinish();
 
-var utils = SpecialPowers.getDOMWindowUtils(window);
+var wrappedWindow = SpecialPowers.wrap(window);
 function test_sendMouseEventDefaults() {
   var x = 1, y = 2, button = 1, clickCount = 2,
       modifiers = SpecialPowers.Ci.nsIDOMWindowUtils.MODIFIER_SHIFT;
@@ -35,24 +35,27 @@ function test_sendMouseEventDefaults() {
   }, {once: true});
 
   // Only pass mandatory arguments and check default values
-  utils.sendMouseEvent("mousedown", x, y, button, clickCount, modifiers);
+  wrappedWindow.synthesizeMouseEvent("mousedown", x, y, { button, clickCount, modifiers });
 }
 
 function test_sendMouseEventOptionals() {
   var x = 1, y = 2, button = 1, clickCount = 3,
       modifiers = SpecialPowers.Ci.nsIDOMWindowUtils.MODIFIER_SHIFT,
       pressure = 0.5,
-      source = MouseEvent.MOZ_SOURCE_KEYBOARD;
+      inputSource = MouseEvent.MOZ_SOURCE_KEYBOARD;
 
   window.addEventListener("mouseup", function(evt) {
-    is(evt.mozInputSource, source, "explicit input source is valid");
+    is(evt.mozInputSource, inputSource, "explicit input source is valid");
     is(SpecialPowers.wrap(evt).isSynthesized, false, "we can dispatch event that don't look synthesized");
     SimpleTest.executeSoon(next);
   }, {once: true});
 
   // Check explicit value for optional args
-  utils.sendMouseEvent("mouseup", x, y, button, clickCount, modifiers,
-                       false, pressure, source, false);
+  wrappedWindow.synthesizeMouseEvent(
+    "mouseup", x, y,
+    { button, clickCount, modifiers, pressure, inputSource},
+    { isDOMEventSynthesized: false }
+  );
 }
 
 function test_sendMouseEvent4thButton() {
@@ -63,7 +66,7 @@ function test_sendMouseEvent4thButton() {
     SimpleTest.executeSoon(next);
   }, { once: true });
 
-  utils.sendMouseEvent("mousedown", x, y, button, clickCount, modifiers);
+  wrappedWindow.synthesizeMouseEvent("mousedown", x, y, { button, clickCount, modifiers });
 }
 
 function test_sendMouseEvent5thButton() {
@@ -74,7 +77,7 @@ function test_sendMouseEvent5thButton() {
     SimpleTest.executeSoon(next);
   }, { once: true });
 
-  utils.sendMouseEvent("mousedown", x, y, button, clickCount, modifiers);
+  wrappedWindow.synthesizeMouseEvent("mousedown", x, y, { button, clickCount, modifiers });
 }
 
 function test_getUnanimatedComputedStyle() {

@@ -133,14 +133,7 @@ add_task(async function update_telemetry_tab_already_open() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
         source: "reload",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -186,16 +179,6 @@ add_task(async function update_telemetry_tab_closed() {
   await waitForPageWithAdImpressions();
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
@@ -242,14 +225,7 @@ add_task(async function update_telemetry_multiple_tabs() {
     assertSERPTelemetry([
       {
         impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
           source: "reload",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
         },
         adImpressions: [
           {
@@ -304,14 +280,7 @@ add_task(async function update_telemetry_multiple_processes_and_tabs() {
     assertSERPTelemetry([
       {
         impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
           source: "reload",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
         },
         adImpressions: [
           {

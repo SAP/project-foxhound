@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!--
     TextField Design System Component
@@ -10,4 +17,6 @@
   <string name="text_field_cross_trailing_icon_default_content_description">Alisin ang text</string>
   <!-- Announcement made by the screen reader when the progress bar is shown and a page is loading -->
   <string name="mozac_compose_base_progress_loading">Naglo-load</string>
+  <!-- Content description for the dismiss icon of a Snackbar -->
+  <string name="mozac_compose_base_snackbar_dismiss_content_description">Paalisin ang mensahe</string>
 </resources>

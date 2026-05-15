@@ -4,15 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-with Files("Restyle*"):
-    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
-
-with Files("nsStyle*"):
-    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
-
-with Files("nsChangeHint.h"):
-    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
-
 with Files("nsBidi*"):
     BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
 
@@ -21,8 +12,6 @@ with Files("AccessibleCaret*"):
 
 XPIDL_SOURCES += [
     "nsILayoutHistoryState.idl",
-    "nsIPreloadedStyleSheet.idl",
-    "nsIStyleSheetService.idl",
     "nsISVGPaintContext.idl",
 ]
 
@@ -34,6 +23,7 @@ if CONFIG["MOZ_DEBUG"]:
 XPIDL_MODULE = "layout_base"
 
 EXPORTS += [
+    "AnchorPositioningUtils.h",
     "FrameProperties.h",
     "LayoutConstants.h",
     "LayoutLogging.h",
@@ -41,7 +31,6 @@ EXPORTS += [
     "nsAutoLayoutPhase.h",
     "nsBidiPresUtils.h",
     "nsCaret.h",
-    "nsChangeHint.h",
     "nsCompatibility.h",
     "nsCounterManager.h",
     "nsCSSFrameConstructor.h",
@@ -52,14 +41,12 @@ EXPORTS += [
     "nsIReflowCallback.h",
     "nsLayoutUtils.h",
     "nsPresArena.h",
-    "nsPresArenaObjectList.h",
+    "nsPresArenaObjectList.inc",
     "nsPresContext.h",
     "nsPresContextInlines.h",
     "nsQuoteList.h",
     "nsRefreshDriver.h",
     "nsRefreshObservers.h",
-    "nsStyleChangeList.h",
-    "nsStyleSheetService.h",
     "StackArena.h",
     "TouchManager.h",
     "UniqueOrNonOwningPtr.h",
@@ -88,9 +75,9 @@ EXPORTS.mozilla += [
     "PresShell.h",
     "PresShellForwards.h",
     "PresShellInlines.h",
+    "PresShellWidgetListener.h",
     "RelativeTo.h",
     "RenderingPhase.h",
-    "RestyleManager.h",
     "ScrollStyles.h",
     "ScrollTypes.h",
     "ShapeUtils.h",
@@ -130,11 +117,9 @@ UNIFIED_SOURCES += [
     "nsPresContext.cpp",
     "nsQuoteList.cpp",
     "nsRefreshObservers.cpp",
-    "nsStyleChangeList.cpp",
-    "nsStyleSheetService.cpp",
     "PositionedEventTargeting.cpp",
     "PresShell.cpp",
-    "RestyleManager.cpp",
+    "PresShellWidgetListener.cpp",
     "ScrollStyles.cpp",
     "ShapeUtils.cpp",
     "StackArena.cpp",
@@ -149,8 +134,7 @@ SOURCES += [
     "nsRefreshDriver.cpp",
 ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["gtest"]
+TEST_DIRS += ["gtest"]
 
 include("/ipc/chromium/chromium-config.mozbuild")
 
@@ -169,7 +153,6 @@ LOCAL_INCLUDES += [
     "/dom/html",
     "/dom/svg",
     "/dom/xul",
-    "/view",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":

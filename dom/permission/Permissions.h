@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_Permissions_h_
 #define mozilla_dom_Permissions_h_
 
+#include "mozilla/GlobalTeardownObserver.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "mozilla/GlobalTeardownObserver.h"
 
 class nsIGlobalObject;
 

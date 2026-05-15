@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MozSrcProtocolHandler_h___
-#define MozSrcProtocolHandler_h___
+#ifndef MozSrcProtocolHandler_h_
+#define MozSrcProtocolHandler_h_
 
 #include "nsIProtocolHandler.h"
 #include "nsISubstitutingProtocolHandler.h"
@@ -46,4 +46,4 @@ class MozSrcProtocolHandler final : public nsISubstitutingProtocolHandler,
 }  // namespace net
 }  // namespace mozilla
 
-#endif /* MozSrcProtocolHandler_h___ */
+#endif /* MozSrcProtocolHandler_h_ */

@@ -114,6 +114,62 @@ function validateFeatureValueEnum({ branch }) {
   }
 }
 
+const NimbusLogging = {
+  LOG_LEVEL_PREF: "messaging-system.log",
+
+  originalLogLevel: null,
+  outstandingResets: 0,
+
+  /**
+   * Enable logging, setting the log level to `all`.
+   *
+   * This function may be called multiple times and
+   * {@link NimbusLogging.maybeResetLogLevel} must be called the same number of
+   * time to reset the log level. This ensures that tests that call
+   * {@link NimbusTestUtils.enroll} et al. multiple times do not reset the log
+   * level until every cleanup handler is called.
+   */
+  enableLogging() {
+    if (this.outstandingResets == 0) {
+      if (
+        Services.prefs.getPrefType(this.LOG_LEVEL_PREF) !=
+        Ci.nsIPrefBranch.PREF_INVALID
+      ) {
+        this.originalLogLevel = Services.prefs.getStringPref(
+          this.LOG_LEVEL_PREF
+        );
+      }
+      Services.prefs.setStringPref(this.LOG_LEVEL_PREF, "all");
+    }
+
+    this.outstandingResets += 1;
+  },
+
+  /**
+   * Reset the log level.
+   *
+   * This function must be called once for each call to
+   * {@link NimbusLogging.enableLogging}.
+   */
+  maybeResetLogLevel() {
+    if (this.outstandingResets > 0) {
+      this.outstandingResets -= 1;
+
+      if (this.outstandingResets == 0) {
+        if (this.originalLogLevel !== null) {
+          Services.prefs.setStringPref(
+            this.LOG_LEVEL_PREF,
+            this.originalLogLevel
+          );
+        } else {
+          Services.prefs.clearUserPref(this.LOG_LEVEL_PREF);
+        }
+        this.originalLogLevel = null;
+      }
+    }
+  },
+};
+
 let _testSuite = null;
 
 export const NimbusTestUtils = {
@@ -195,6 +251,36 @@ export const NimbusTestUtils = {
     },
 
     /**
+     * Assert that the only active enrollments have the expected slugs.
+     *
+     * @param {string} expectedSlugs The slugs of the enrollments that we expect to be active.
+     */
+    async activeEnrollments(expectedSlugs) {
+      await NimbusTestUtils.flushStore();
+
+      const conn = await lazy.ProfilesDatastoreService.getConnection();
+      const slugs = await conn
+        .execute(
+          `
+            SELECT
+              slug
+            FROM NimbusEnrollments
+            WHERE
+              active = true AND
+              profileId = :profileId;
+          `,
+          { profileId: ExperimentAPI.profileId }
+        )
+        .then(rows => rows.map(row => row.getResultByName("slug")));
+
+      NimbusTestUtils.Assert.deepEqual(
+        slugs.sort(),
+        expectedSlugs.sort(),
+        "Should only see expected active enrollments"
+      );
+    },
+
+    /**
      * Assert that an enrollment exists in the NimbusEnrollments table.
      *
      * @param {string} slug The slug to check for.
@@ -212,6 +298,8 @@ export const NimbusTestUtils = {
       slug,
       { active: expectedActive, profileId = ExperimentAPI.profileId } = {}
     ) {
+      await NimbusTestUtils.flushStore();
+
       const conn = await lazy.ProfilesDatastoreService.getConnection();
 
       const result = await conn.execute(
@@ -442,6 +530,19 @@ export const NimbusTestUtils = {
   },
 
   migrationState: {
+    /**
+     * A migration state that represents no migrations.
+     *
+     * @type {Record<Phase, number>}
+     */
+    UNMIGRATED: Object.freeze({}),
+
+    /**
+     * A migration state that represents a successful import into the
+     * NimbusEnrollments table.
+     *
+     * @type {Record<Phase, Number}>
+     */
     get IMPORTED_ENROLLMENTS_TO_SQL() {
       const { Phase } = lazy.NimbusMigrations;
 
@@ -451,6 +552,35 @@ export const NimbusTestUtils = {
         [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: "firefox-labs-enrollments",
       });
     },
+
+    get GRADUATED_FIREFOX_LABS_AUTO_PIP() {
+      const { Phase } = lazy.NimbusMigrations;
+
+      return NimbusTestUtils.makeMigrationState({
+        [Phase.INIT_STARTED]: "multi-phase-migrations",
+        [Phase.AFTER_STORE_INITIALIZED]: "graduate-firefox-labs-auto-pip",
+        [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: "firefox-labs-enrollments",
+      });
+    },
+
+    get SEPARATE_ROLLOUT_OPT_OUT() {
+      const { Phase } = lazy.NimbusMigrations;
+
+      return NimbusTestUtils.makeMigrationState({
+        [Phase.INIT_STARTED]: "separate-rollout-opt-out",
+        [Phase.AFTER_STORE_INITIALIZED]: "graduate-firefox-labs-auto-pip",
+        [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: "firefox-labs-enrollments",
+      });
+    },
+
+    /**
+     * A migration state that represents all migrations applied.
+     *
+     * @type {Record<Phase, number>}
+     */
+    get LATEST() {
+      return NimbusTestUtils.migrationState.SEPARATE_ROLLOUT_OPT_OUT;
+    },
   },
 
   /**
@@ -458,6 +588,8 @@ export const NimbusTestUtils = {
    *
    * @param {Record<Phase, string>} migrationsByPhase A map of the latest
    * completed migration by phase.
+   *
+   * @returns {Record<Phase, number>} The values to set for each migration pref.
    */
   makeMigrationState(migrationsByPhase) {
     const state = {};
@@ -538,7 +670,7 @@ export const NimbusTestUtils = {
    * NB: These features will only be visible to the JS Nimbus client. The native
    * Nimbus client will have no access.
    *
-   * @params {...object} features
+   * @param {...object} features
    *         A list of `_NimbusFeature`s.
    *
    * @returns {function(): void}
@@ -588,12 +720,12 @@ export const NimbusTestUtils = {
   /**
    * Unenroll from all the given slugs and assert that the store is now empty.
    *
-   * @params {string[]} slugs
+   * @param {string[]} slugs
    *         The slugs to unenroll from.
    *
-   * @params {object?} options
+   * @param {object?} options
    *
-   * @params {object?} options.manager
+   * @param {object?} options.manager
    *         The ExperimentManager to clean up. Defaults to the global
    *         ExperimentManager.
    *
@@ -666,6 +798,15 @@ export const NimbusTestUtils = {
       `,
       { profileId }
     );
+
+    await conn.execute(
+      `
+        DELETE FROM NimbusSyncTimestamps
+        WHERE
+          profileId = :profileId;
+      `,
+      { profileId }
+    );
   },
 
   /**
@@ -680,6 +821,22 @@ export const NimbusTestUtils = {
     try {
       Services.prefs.deleteBranch(SYNC_DEFAULTS_PREF_BRANCH);
     } catch (e) {}
+  },
+
+  /**
+   * Create a Nimbus store and return its path on disk.
+   *
+   * @param {function(store: ExperimentStore): void} A function that will be
+   * called with the store.
+   *
+   * @returns {string} The path to the Nimbus store, which can be passed to
+   * {@link NimbusTestUtils.setupTest}.
+   */
+  async createStoreWith(fn) {
+    const store = NimbusTestUtils.stubs.store();
+    await store.init();
+    await fn(store);
+    return NimbusTestUtils.saveStore(store);
   },
 
   async deleteEnrollmentsFromProfiles(profileIds) {
@@ -753,8 +910,6 @@ export const NimbusTestUtils = {
    *                 if the recipe fails to enroll.
    */
   async enroll(recipe, { manager, source = "nimbus-test-utils" } = {}) {
-    const experimentManager = manager ?? ExperimentAPI.manager;
-
     if (!recipe?.slug) {
       throw new Error("Experiment with slug is required");
     }
@@ -767,6 +922,9 @@ export const NimbusTestUtils = {
       }
     }
 
+    NimbusLogging.enableLogging();
+
+    const experimentManager = manager ?? ExperimentAPI.manager;
     await experimentManager.store.ready();
 
     const enrollment = await experimentManager.enroll(recipe, source);
@@ -782,6 +940,8 @@ export const NimbusTestUtils = {
       experimentManager.store._deleteForTests(enrollment.slug);
 
       await NimbusTestUtils.flushStore(experimentManager.store);
+
+      NimbusLogging.maybeResetLogLevel();
     };
   },
 
@@ -982,7 +1142,7 @@ export const NimbusTestUtils = {
    * If the store contains active enrollments this function will cause the test
    * to fail.
    *
-   * @params {ExperimentStore} store
+   * @param {ExperimentStore} store
    *         The store to delete.
    */
   async removeStore(store) {
@@ -1043,9 +1203,6 @@ export const NimbusTestUtils = {
    *           An ExperimentManager instance that will validate all enrollments
    *           added to its store.
    *
-   * @property {(function(): void)?} initExperimentAPI
-   *           A function that will complete ExperimentAPI initialization.
-   *
    * @property {function(): Promise<void>} cleanup
    *           A cleanup function that should be called at the end of the test.
    */
@@ -1055,12 +1212,15 @@ export const NimbusTestUtils = {
    * @param {boolean?} options.init
    *        Initialize the Experiment API.
    *
-   *        If false, the returned context will return an `initExperimentAPI` member that
-   *        will complete the initialization.
+   *        If false, the caller must call {@link ExperimentAPI.init} to
+   *        complete initialization.
    *
    * @param {string?} options.storePath
    *        An optional path to an existing ExperimentStore to use for the
    *        ExperimentManager.
+   *
+   *        If provided, the {@link options.migrationState} option must also be
+   *        set.
    *
    * @param {object[]?} options.experiments
    *        If provided, these recipes will be returned by the RemoteSettings
@@ -1078,7 +1238,16 @@ export const NimbusTestUtils = {
    *
    * @param {Record<Phase, number>?} options.migrationState
    *        The value that should be set for the Nimbus migration prefs. If
-   *        not provided, the pref will be unset.
+   *        not provided, {@link NimbusTestUtils.migrationState.LATEST} will be used.
+   *
+   *        Required if {@link options.storePath} is also provided.
+   *
+   *        Most tests will want to use either
+   *        {@link NimbusTestUtils.migrationState.UNMIGRATED} or
+   *        {@link NimbusTestUtils.migrationState.LATEST}, depending on whether
+   *        or not they are writing to the `NimbusEnrollments` database table.
+   *
+   * @throws {Error} If the the arguments to this function are not consistent.
    *
    * @returns {TestContext}
    *          Everything you need to write a test using Nimbus.
@@ -1090,8 +1259,14 @@ export const NimbusTestUtils = {
     secureExperiments,
     clearTelemetry = false,
     features,
-    migrationState,
+    migrationState = undefined,
   } = {}) {
+    if (storePath && typeof migrationState === "undefined") {
+      throw new Error("setupTest: storePath requires migrationState");
+    }
+
+    NimbusLogging.enableLogging();
+
     const sandbox = lazy.sinon.createSandbox();
 
     let cleanupFeatures = null;
@@ -1109,16 +1284,27 @@ export const NimbusTestUtils = {
       .stub(loader.remoteSettingsClients.experiments, "get")
       .resolves(Array.isArray(experiments) ? experiments : []);
     sandbox
+      .stub(loader.remoteSettingsClients.experiments.db, "getLastModified")
+      .resolves(0);
+    sandbox
       .stub(loader.remoteSettingsClients.secureExperiments, "get")
       .resolves(Array.isArray(secureExperiments) ? secureExperiments : []);
+    sandbox
+      .stub(
+        loader.remoteSettingsClients.secureExperiments.db,
+        "getLastModified"
+      )
+      .resolves(0);
 
-    if (migrationState) {
-      for (const [phase, value] of Object.entries(migrationState)) {
-        Services.prefs.setIntPref(
-          lazy.NimbusMigrations.NIMBUS_MIGRATION_PREFS[phase],
-          value
-        );
-      }
+    if (typeof migrationState === "undefined") {
+      migrationState = NimbusTestUtils.migrationState.LATEST;
+    }
+
+    for (const [phase, value] of Object.entries(migrationState)) {
+      Services.prefs.setIntPref(
+        lazy.NimbusMigrations.NIMBUS_MIGRATION_PREFS[phase],
+        value
+      );
     }
 
     const ctx = {
@@ -1145,15 +1331,13 @@ export const NimbusTestUtils = {
 
         // Remove all migration state.
         Services.prefs.deleteBranch("nimbus.migrations.");
+
+        NimbusLogging.maybeResetLogLevel();
       },
     };
 
-    const initExperimentAPI = () => ExperimentAPI.init();
-
     if (init) {
-      await initExperimentAPI();
-    } else {
-      ctx.initExperimentAPI = initExperimentAPI;
+      await ExperimentAPI.init();
     }
 
     return ctx;
@@ -1162,7 +1346,7 @@ export const NimbusTestUtils = {
   /**
    * Validate an enrollment matches the Nimbus enrollment schema.
    *
-   * @params {object} enrollment
+   * @param {object} enrollment
    *         The enrollment to validate.
    *
    * @throws If the enrollment does not validate or its feature configurations
@@ -1216,16 +1400,10 @@ export const NimbusTestUtils = {
     );
   },
 
-  /**
-   * Wait for the given slugs to be the only active enrollments in the
-   * NimbusEnrollments table.
-   *
-   * @param {string[]} expectedSlugs The slugs of the only active enrollments we
-   * expect.
-   */
   async waitForActiveEnrollments(expectedSlugs) {
     const profileId = ExperimentAPI.profileId;
 
+    await this.flushStore();
     await lazy.TestUtils.waitForCondition(async () => {
       const conn = await lazy.ProfilesDatastoreService.getConnection();
       const slugs = await conn
@@ -1244,50 +1422,6 @@ export const NimbusTestUtils = {
 
       return lazy.ObjectUtils.deepEqual(slugs.sort(), expectedSlugs.sort());
     }, `Waiting for enrollments of ${expectedSlugs} to sync to database`);
-  },
-
-  async waitForInactiveEnrollment(slug) {
-    const profileId = ExperimentAPI.profileId;
-
-    await lazy.TestUtils.waitForCondition(async () => {
-      const conn = await lazy.ProfilesDatastoreService.getConnection();
-      const result = await conn.execute(
-        `
-            SELECT
-              active
-            FROM NimbusEnrollments
-            WHERE
-              slug = :slug AND
-              profileId = :profileId;
-          `,
-        { profileId, slug }
-      );
-
-      return result.length === 1 && !result[0].getResultByName("active");
-    }, `Waiting for ${slug} enrollment to exist and be inactive`);
-  },
-
-  async waitForAllUnenrollments() {
-    const profileId = ExperimentAPI.profileId;
-
-    await lazy.TestUtils.waitForCondition(async () => {
-      const conn = await lazy.ProfilesDatastoreService.getConnection();
-      const slugs = await conn
-        .execute(
-          `
-            SELECT
-              slug
-            FROM NimbusEnrollments
-            WHERE
-              active = true AND
-              profileId = :profileId;
-          `,
-          { profileId }
-        )
-        .then(rows => rows.map(row => row.getResultByName("slug")));
-
-      return slugs.length === 0;
-    }, "Waiting for unenrollments to sync to database");
   },
 
   async flushStore(store = null) {

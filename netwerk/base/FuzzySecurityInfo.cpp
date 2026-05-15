@@ -37,8 +37,8 @@ FuzzySecurityInfo::GetErrorCodeString(nsAString& aErrorString) {
 }
 
 NS_IMETHODIMP
-FuzzySecurityInfo::GetFailedCertChain(
-    nsTArray<RefPtr<nsIX509Cert>>& aFailedCertChain) {
+FuzzySecurityInfo::GetHandshakeCertificates(
+    nsTArray<RefPtr<nsIX509Cert>>& aHandshakeCertificates) {
   MOZ_CRASH("Unused");
   return NS_OK;
 }

@@ -10,10 +10,9 @@
 
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 
-#include <stdlib.h>
-#include <string.h>
-
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -22,7 +21,6 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
-#include "absl/strings/match.h"
 #include "api/array_view.h"
 #include "api/crypto/frame_encryptor_interface.h"
 #include "api/field_trials_view.h"
@@ -41,8 +39,6 @@
 #include "api/video/video_layers_allocation.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_timing.h"
-#include "common_video/corruption_detection_converters.h"
-#include "common_video/frame_instrumentation_data.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/absolute_capture_time_sender.h"
 #include "modules/rtp_rtcp/source/corruption_detection_extension.h"
@@ -72,6 +68,8 @@
 namespace webrtc {
 
 namespace {
+using PacketizationFormat = RtpPacketizer::PacketizationFormat;
+
 constexpr size_t kRedForFecHeaderLength = 1;
 constexpr TimeDelta kMaxUnretransmittableFrameInterval =
     TimeDelta::Millis(33 * 4);
@@ -159,6 +157,28 @@ bool PacketWillLikelyBeRequestedForRestransmissionIfLost(
                : false);
 }
 
+PacketizationFormat GetPacketizationFormat(const VideoCodecType codec_type,
+                                           bool raw_packetization) {
+  if (raw_packetization) {
+    return PacketizationFormat::kRaw;
+  }
+
+  switch (codec_type) {
+    case kVideoCodecH264:
+      return PacketizationFormat::kH264;
+    case kVideoCodecVP8:
+      return PacketizationFormat::kVP8;
+    case kVideoCodecVP9:
+      return PacketizationFormat::kVP9;
+    case kVideoCodecAV1:
+      return PacketizationFormat::kAV1;
+    case kVideoCodecH265:
+      return PacketizationFormat::kH265;
+    case kVideoCodecGeneric:
+      return PacketizationFormat::kGeneric;
+  }
+}
+
 }  // namespace
 
 RTPSenderVideo::RTPSenderVideo(const Config& config)
@@ -179,13 +199,13 @@ RTPSenderVideo::RTPSenderVideo(const Config& config)
       post_encode_overhead_bitrate_(/*max_window_size=*/TimeDelta::Seconds(1)),
       frame_encryptor_(config.frame_encryptor),
       require_frame_encryption_(config.require_frame_encryption),
-      generic_descriptor_auth_experiment_(!absl::StartsWith(
-          config.field_trials->Lookup("WebRTC-GenericDescriptorAuth"),
-          "Disabled")),
+      generic_descriptor_auth_experiment_(
+          !config.field_trials->IsDisabled("WebRTC-GenericDescriptorAuth")),
+      raw_packetization_(config.raw_packetization),
       absolute_capture_time_sender_(config.clock),
       frame_transformer_delegate_(
           config.frame_transformer
-              ? rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+              ? make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
                     this,
                     config.frame_transformer,
                     rtp_sender_->SSRC(),
@@ -487,34 +507,17 @@ void RTPSenderVideo::AddRtpHeaderExtensions(const RTPVideoHeader& video_header,
   }
 
   if (last_packet && video_header.frame_instrumentation_data) {
-    std::optional<CorruptionDetectionMessage> message;
-    if (const auto* data = std::get_if<FrameInstrumentationData>(
-            &(*video_header.frame_instrumentation_data))) {
-      message =
-          ConvertFrameInstrumentationDataToCorruptionDetectionMessage(*data);
-    } else if (const auto* sync_data =
-                   std::get_if<FrameInstrumentationSyncData>(
-                       &(*video_header.frame_instrumentation_data))) {
-      message = ConvertFrameInstrumentationSyncDataToCorruptionDetectionMessage(
-          *sync_data);
-    } else {
-      RTC_DCHECK_NOTREACHED();
-    }
-
-    if (message.has_value()) {
-      packet->SetExtension<CorruptionDetectionExtension>(*message);
-    } else {
-      RTC_LOG(LS_WARNING) << "Failed to convert frame instrumentation data to "
-                             "corruption detection message.";
-    }
+    packet->SetExtension<CorruptionDetectionExtension>(
+        CorruptionDetectionMessage::FromFrameInstrumentationData(
+            *video_header.frame_instrumentation_data));
   }
 }
 
 bool RTPSenderVideo::SendVideo(int payload_type,
-                               std::optional<VideoCodecType> codec_type,
+                               VideoCodecType codec_type,
                                uint32_t rtp_timestamp,
                                Timestamp capture_time,
-                               rtc::ArrayView<const uint8_t> payload,
+                               ArrayView<const uint8_t> payload,
                                size_t encoder_output_size,
                                RTPVideoHeader video_header,
                                TimeDelta expected_retransmission_time,
@@ -667,10 +670,10 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     MinimizeDescriptor(&video_header);
   }
 
-  rtc::Buffer encrypted_video_payload;
+  Buffer encrypted_video_payload;
   if (frame_encryptor_ != nullptr) {
     const size_t max_ciphertext_size =
-        frame_encryptor_->GetMaxCiphertextByteSize(webrtc::MediaType::VIDEO,
+        frame_encryptor_->GetMaxCiphertextByteSize(MediaType::VIDEO,
                                                    payload.size());
     encrypted_video_payload.SetSize(max_ciphertext_size);
 
@@ -683,8 +686,8 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     }
 
     if (frame_encryptor_->Encrypt(
-            webrtc::MediaType::VIDEO, first_packet->Ssrc(), additional_data,
-            payload, encrypted_video_payload, &bytes_written) != 0) {
+            MediaType::VIDEO, first_packet->Ssrc(), additional_data, payload,
+            encrypted_video_payload, &bytes_written) != 0) {
       return false;
     }
 
@@ -696,8 +699,9 @@ bool RTPSenderVideo::SendVideo(int payload_type,
            "one is required since require_frame_encryptor is set";
   }
 
-  std::unique_ptr<RtpPacketizer> packetizer =
-      RtpPacketizer::Create(codec_type, payload, limits, video_header);
+  std::unique_ptr<RtpPacketizer> packetizer = RtpPacketizer::Create(
+      GetPacketizationFormat(codec_type, raw_packetization_), payload, limits,
+      video_header);
 
   const size_t num_packets = packetizer->NumPackets();
 
@@ -801,21 +805,22 @@ bool RTPSenderVideo::SendVideo(int payload_type,
 }
 
 bool RTPSenderVideo::SendEncodedImage(int payload_type,
-                                      std::optional<VideoCodecType> codec_type,
+                                      VideoCodecType codec_type,
                                       uint32_t rtp_timestamp,
                                       const EncodedImage& encoded_image,
                                       RTPVideoHeader video_header,
-                                      TimeDelta expected_retransmission_time) {
+                                      TimeDelta expected_retransmission_time,
+                                      const std::vector<uint32_t>& csrcs) {
   if (frame_transformer_delegate_) {
     // The frame will be sent async once transformed.
     return frame_transformer_delegate_->TransformFrame(
         payload_type, codec_type, rtp_timestamp, encoded_image, video_header,
-        expected_retransmission_time);
+        expected_retransmission_time, csrcs);
   }
   return SendVideo(payload_type, codec_type, rtp_timestamp,
                    encoded_image.CaptureTime(), encoded_image,
                    encoded_image.size(), video_header,
-                   expected_retransmission_time, /*csrcs=*/{});
+                   expected_retransmission_time, csrcs);
 }
 
 DataRate RTPSenderVideo::PostEncodeOverhead() const {

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PageThumbProtocolHandler_h___
-#define PageThumbProtocolHandler_h___
+#ifndef PageThumbProtocolHandler_h_
+#define PageThumbProtocolHandler_h_
 
 #include "mozilla/Result.h"
 #include "mozilla/MozPromise.h"
@@ -117,4 +117,4 @@ class PageThumbProtocolHandler final : public nsISubstitutingProtocolHandler,
 }  // namespace net
 }  // namespace mozilla
 
-#endif /* PageThumbProtocolHandler_h___ */
+#endif /* PageThumbProtocolHandler_h_ */

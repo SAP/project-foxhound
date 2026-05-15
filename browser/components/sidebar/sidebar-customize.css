@@ -34,8 +34,8 @@
 .icon {
   -moz-context-properties: fill;
   fill: currentColor;
-  width: var(--icon-size-default);
-  height: var(--icon-size-default);
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
 .extensions {
@@ -62,7 +62,7 @@
 
 .customize-extensions-heading {
   margin: 0;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 }
 
 moz-fieldset {

@@ -54,29 +54,6 @@ htmleditors:
     expires: never
     telemetry_mirror: h#HTMLEDITORS_OVERRIDDEN_BY_BEFOREINPUT_LISTENERS
 
-  with_mutation_listeners_without_beforeinput_listeners:
-    type: labeled_counter
-    description: >
-      Number of HTML editors whose window or a node in it has had mutation event
-      listeners, but has not had beforeinput event listeners
-
-      This metric was generated to correspond to the Legacy Telemetry boolean
-      histogram
-      HTMLEDITORS_WITH_MUTATION_LISTENERS_WITHOUT_BEFOREINPUT_LISTENERS.
-    labels:
-      - "false"
-      - "true"
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1668134
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1665530
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1668134
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1665530
-    notification_emails:
-      - mnakano.birchill@mozilla.com
-    expires: never
-    telemetry_mirror: h#HTMLEDITORS_WITH_MUTATION_LISTENERS_WITHOUT_BEFOREINPUT_LISTENERS
-
   with_mutation_observers_without_beforeinput_listeners:
     type: labeled_counter
     description: >

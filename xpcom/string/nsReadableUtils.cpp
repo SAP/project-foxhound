@@ -9,8 +9,6 @@
 
 #include "nsReadableUtils.h"
 
-#include <algorithm>
-
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Utf8.h"
 

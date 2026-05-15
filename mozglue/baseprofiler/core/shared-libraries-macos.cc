@@ -3,11 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "SharedLibraries.h"
+#include "mozilla/SharedLibraries.h"
 
 #include "platform.h"
 
-#include "mozilla/Unused.h"
 #include <AvailabilityMacros.h>
 
 #include <dlfcn.h>
@@ -20,7 +19,6 @@
 #include <mach/task_info.h>
 #include <mach/task.h>
 #include <sstream>
-#include <stdlib.h>
 #include <string.h>
 #include <vector>
 

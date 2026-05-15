@@ -14,7 +14,6 @@ import org.junit.rules.TestRule
 import org.junit.runner.Description
 import org.junit.runners.model.Statement
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.IdlingResourceHelper.unregisterAllIdlingResources
 import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
@@ -26,75 +25,27 @@ import org.mozilla.fenix.helpers.TestHelper.exitMenu
  *
  */
 class RetryTestRule(private val retryCount: Int = 5) : TestRule {
-    @Suppress("TooGenericExceptionCaught", "ComplexMethod")
+
     override fun apply(base: Statement, description: Description): Statement {
         return statement {
-            for (i in 1..retryCount) {
+            repeat(retryCount) { attempt ->
                 try {
-                    Log.i(TAG, "RetryTestRule: Started try #$i.")
+                    Log.i(TAG, "RetryTestRule: Started try #${attempt + 1}.")
                     base.evaluate()
-                    break
+                    return@statement // success, exit early
                 } catch (t: NoLeakAssertionFailedError) {
                     Log.i(TAG, "RetryTestRule: NoLeakAssertionFailedError caught, not retrying")
-                    unregisterAllIdlingResources()
-                    appContext.components.useCases.tabsUseCases.removeAllTabs()
-                    exitMenu()
+                    cleanup(true)
                     throw t
-                } catch (t: AssertionError) {
-                    Log.i(TAG, "RetryTestRule: AssertionError caught, retrying the UI test")
-                    unregisterAllIdlingResources()
-                    appContext.components.useCases.tabsUseCases.removeAllTabs()
-                    exitMenu()
-                    if (i == retryCount) {
-                        Log.i(TAG, "RetryTestRule: Max numbers of retries reached.")
-                        throw t
-                    }
-                } catch (t: AssertionFailedError) {
-                    Log.i(TAG, "RetryTestRule: AssertionFailedError caught, retrying the UI test")
-                    unregisterAllIdlingResources()
-                    exitMenu()
-                    if (i == retryCount) {
-                        Log.i(TAG, "RetryTestRule: Max numbers of retries reached.")
-                        throw t
-                    }
-                } catch (t: UiObjectNotFoundException) {
-                    Log.i(TAG, "RetryTestRule: UiObjectNotFoundException caught, retrying the UI test")
-                    unregisterAllIdlingResources()
-                    exitMenu()
-                    if (i == retryCount) {
-                        Log.i(TAG, "RetryTestRule: Max numbers of retries reached.")
-                        throw t
-                    }
-                } catch (t: NoMatchingViewException) {
-                    Log.i(TAG, "RetryTestRule: NoMatchingViewException caught, retrying the UI test")
-                    unregisterAllIdlingResources()
-                    exitMenu()
-                    if (i == retryCount) {
-                        Log.i(TAG, "RetryTestRule: Max numbers of retries reached.")
-                        throw t
-                    }
-                } catch (t: IdlingResourceTimeoutException) {
-                    Log.i(TAG, "RetryTestRule: IdlingResourceTimeoutException caught, retrying the UI test")
-                    unregisterAllIdlingResources()
-                    exitMenu()
-                    if (i == retryCount) {
-                        Log.i(TAG, "RetryTestRule: Max numbers of retries reached.")
-                        throw t
-                    }
-                } catch (t: RuntimeException) {
-                    Log.i(TAG, "RetryTestRule: RuntimeException caught, retrying the UI test")
-                    unregisterAllIdlingResources()
-                    exitMenu()
-                    if (i == retryCount) {
-                        Log.i(TAG, "RetryTestRule: Max numbers of retries reached.")
-                        throw t
-                    }
-                } catch (t: NullPointerException) {
-                    Log.i(TAG, "RetryTestRule: NullPointerException caught, retrying the UI test")
-                    unregisterAllIdlingResources()
-                    exitMenu()
-                    if (i == retryCount) {
-                        Log.i(TAG, "RetryTestRule: Max numbers of retries reached.")
+                } catch (t: Throwable) {
+                    if (t.isRetryable()) {
+                        Log.i(TAG, "RetryTestRule: ${t::class.simpleName} caught, retrying the UI test")
+                        cleanup()
+                        if (attempt == retryCount - 1) {
+                            Log.i(TAG, "RetryTestRule: Max number of retries reached.")
+                            throw t
+                        }
+                    } else {
                         throw t
                     }
                 }
@@ -102,9 +53,54 @@ class RetryTestRule(private val retryCount: Int = 5) : TestRule {
         }
     }
 
+    private fun cleanup(removeTabs: Boolean = false) {
+        unregisterAllIdlingResources()
+        if (removeTabs) {
+            appContext.components.useCases.tabsUseCases.removeAllTabs()
+        }
+        exitMenu()
+    }
+
+    private fun Throwable.isRetryable(): Boolean = when (this) {
+        is AssertionError,
+        is AssertionFailedError,
+        is UiObjectNotFoundException,
+        is NoMatchingViewException,
+        is IdlingResourceTimeoutException,
+        is RuntimeException,
+        is NullPointerException,
+        -> true
+        else -> false
+    }
+
+    companion object {
+        private const val TAG = "RetryTestRule"
+    }
+}
+
     private inline fun statement(crossinline eval: () -> Unit): Statement {
         return object : Statement() {
             override fun evaluate() = eval()
         }
     }
-}
+
+    /**
+    * Represents a test case that supplies a Throwable to be thrown during a test.
+    *
+    * @property name A human-readable name for the test case.
+    *                Used for display in test runner output and logs.
+    * @property supplier A lambda that returns a new instance of the Throwable to throw.
+    *                    It's evaluated during the test execution.
+    */
+    data class ThrowableCase(
+        // The display name used in parameterized test output (e.g., "NullPointerException")
+        val name: String,
+        // Function that supplies the Throwable to throw when invoked
+        val supplier: () -> Throwable,
+        ) {
+    /**
+     * Overrides the default toString() so that the test runner displays the 'name'
+     * instead of a default data class string or lambda object ID.
+     */
+    override fun toString(): String = name
+    }

@@ -24,7 +24,8 @@ const STATUS_SUCCESS = 200;
 
 /**
  * Mock request responder
- * @param {String} response
+ *
+ * @param {string} response
  *        Mocked raw response from the server
  * @returns {Function}
  */
@@ -66,6 +67,7 @@ const PROFILE_OPTIONS = {
 
 /**
  * Mock request error responder
+ *
  * @param {Error} error
  *        Error object
  * @returns {Function}
@@ -402,9 +404,9 @@ add_test(function errorTests() {
 /**
  * Quick way to test the "FxAccountsProfileClient" constructor.
  *
- * @param {Object} options
+ * @param {object} options
  *        FxAccountsProfileClient constructor options
- * @param {String} expected
+ * @param {string} expected
  *        Expected error message
  * @returns {*}
  */

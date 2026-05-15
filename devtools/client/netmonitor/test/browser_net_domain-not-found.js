@@ -7,6 +7,7 @@
  * Tests that the request for a domain that is not found shows
  * correctly.
  */
+
 add_task(async function () {
   const URL = "https://not-existed.com/";
   const { monitor } = await initNetMonitor(URL, {
@@ -20,9 +21,9 @@ add_task(async function () {
 
   store.dispatch(Actions.batchEnable(false));
 
-  const wait = waitForNetworkEvents(monitor, 1);
-  reloadBrowser({ waitForLoad: false });
-  await wait;
+  const onNetworkEvents = waitForNetworkEvents(monitor, 1);
+  reloadSelectedTab({ waitForLoad: false });
+  await onNetworkEvents;
 
   const firstItem = document.querySelectorAll(".request-list-item")[0];
 
@@ -31,10 +32,7 @@ add_task(async function () {
     const value = firstItem.querySelector(
       ".requests-list-transferred"
     ).innerText;
-    if (value == "") {
-      return false;
-    }
-    return value;
+    return value.includes("NS_ERROR") ? value : false;
   });
 
   is(
@@ -47,6 +45,15 @@ add_task(async function () {
     "NS_ERROR_UNKNOWN_HOST",
     "The error in the displayed request is correct"
   );
+
+  // Wait to verify there is no extra font request for a data URI which
+  //  should be hidden, Bug 1932818.
+  await wait(1000);
+  const secondItem = document.querySelectorAll(".request-list-item")[1];
+  if (secondItem) {
+    const url = secondItem.querySelector(".requests-list-url").innerText;
+    ok(!url.includes("data:font"), "The url is not a data URI: " + url);
+  }
 
   await teardown(monitor);
 });

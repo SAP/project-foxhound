@@ -4,12 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/UserActivation.h"
-#include "mozilla/dom/UserActivationBinding.h"
-#include "mozilla/dom/WindowGlobalChild.h"
 
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/UserActivationBinding.h"
+#include "mozilla/dom/WindowGlobalChild.h"
 
 namespace mozilla::dom {
 

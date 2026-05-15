@@ -40,7 +40,7 @@
 #include "base/allocator/partition_allocator/partition_alloc_base/debug/debugging_buildflags.h"
 #include "build/build_config.h"
 
-#if defined(__clang__)
+#if defined(__clang__) && (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 9)
 #define PA_THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
 #else
 #define PA_THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op

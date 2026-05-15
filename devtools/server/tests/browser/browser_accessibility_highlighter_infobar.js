@@ -36,13 +36,13 @@ add_task(async function () {
 /**
  * A helper function for testing the accessible's displayed name and roles.
  *
- * @param  {Object} walker
+ * @param  {object} walker
  *         The DOM walker.
- * @param  {String} querySelector
+ * @param  {string} querySelector
  *         The selector for the node to retrieve accessible from.
- * @param  {Object} a11yWalker
+ * @param  {object} a11yWalker
  *         The accessibility walker.
- * @param  {String} expectedName
+ * @param  {string} expectedName
  *         Expected string content for displaying the accessible's name.
  *         We are testing this in particular because name can be truncated.
  */

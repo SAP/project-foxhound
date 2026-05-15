@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TimerThread_h___
-#define TimerThread_h___
+#ifndef TimerThread_h_
+#define TimerThread_h_
 
 #include "nsIObserver.h"
 #include "nsIRunnable.h"
@@ -16,7 +16,6 @@
 
 #include "nsTArray.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/HalTypes.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/ProfilerUtils.h"
@@ -232,4 +231,4 @@ class TimerThread final : public mozilla::Runnable, public nsIObserver {
   void PrintStatistics() const;
 #endif
 };
-#endif /* TimerThread_h___ */
+#endif /* TimerThread_h_ */

@@ -5,8 +5,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "LockManagerParent.h"
-#include "LockRequestParent.h"
 
+#include "LockRequestParent.h"
 #include "mozilla/PrincipalHashKey.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPtr.h"

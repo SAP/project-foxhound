@@ -13,7 +13,7 @@
  */
 
 /**
- * @typedef {Object} State - The mutable state of the popup.
+ * @typedef {object} State - The mutable state of the popup.
  * @property {Array<() => void>} cleanup - Functions to cleanup once the view is hidden.
  * @property {boolean} isInfoCollapsed
  */
@@ -22,7 +22,9 @@ import { createLazyLoaders } from "resource://devtools/client/performance-new/sh
 
 const lazy = createLazyLoaders({
   PanelMultiView: () =>
-    ChromeUtils.importESModule("resource:///modules/PanelMultiView.sys.mjs"),
+    ChromeUtils.importESModule(
+      "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs"
+    ),
   Background: () =>
     ChromeUtils.importESModule(
       "resource://devtools/client/performance-new/shared/background.sys.mjs"
@@ -309,6 +311,7 @@ function addPopupEventHandlers(state, elements, view) {
 
 /**
  * Initialize everything needed for the popup to work fine.
+ *
  * @param {State} panelState
  * @param {XULElement} panelview
  */

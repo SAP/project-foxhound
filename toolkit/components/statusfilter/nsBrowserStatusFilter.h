@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBrowserStatusFilter_h__
-#define nsBrowserStatusFilter_h__
+#ifndef nsBrowserStatusFilter_h_
+#define nsBrowserStatusFilter_h_
 
 #include "nsIWebProgressListener.h"
 #include "nsIWebProgressListener2.h"
@@ -78,4 +78,4 @@ class nsBrowserStatusFilter : public nsIWebProgress,
    0x4215,                                    \
    {0xa8, 0x25, 0xcb, 0xc2, 0x69, 0x2c, 0xa8, 0x7a}}
 
-#endif  // !nsBrowserStatusFilter_h__
+#endif  // !nsBrowserStatusFilter_h_

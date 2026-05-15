@@ -17,7 +17,13 @@ SimpleTest.waitForExplicitFinish();
     "small-shot.m4a",
   ]) {
     try {
-      await runMochitestUtilityAudio(src, { expectUtility: "", expectDecoder: "android decoder", expectContent: false, expectJava: true });
+      if (SpecialPowers.getBoolPref("media.android-media-codec.enabled")) {
+        await runMochitestUtilityAudio(src, { expectUtility: "", expectDecoder: "android decoder", expectContent: false, expectJava: true });
+      } else if (SpecialPowers.getBoolPref("media.ffvpx-hw.enabled")) {
+        await runMochitestUtilityAudio(src, { expectUtility: "Utility Generic", expectDecoder: "ffvpx audio decoder", expectContent: false, expectJava: false });
+      } else {
+        ok(false, `Failure for ${src}, unknown configuration`);
+      }
     } catch (ex) {
       ok(false, `Failure for ${src} ${ex}`);
     }

@@ -36,8 +36,10 @@ rtc_library("primitives") {
 
   deps = [
     "../../api:scoped_refptr",
+    "../../media:video_common",
     "../../rtc_base:checks",
     "../../rtc_base:refcount",
+    "../../rtc_base:stringutils",
     "../../rtc_base/system:rtc_export",
     "//third_party/libyuv",
   ]
@@ -64,8 +66,9 @@ if (rtc_include_tests) {
         ":desktop_capture_mock",
         ":primitives",
         ":screen_drawer",
-        "../../rtc_base/third_party/base64",
-        "../../system_wrappers",
+        "../../api:array_view",
+        "../../rtc_base:base64",
+        "../../rtc_base:threading",
         "../../test:test_support",
       ]
       sources += [
@@ -102,6 +105,7 @@ if (rtc_include_tests) {
         ":desktop_capture",
         ":desktop_capture_mock",
         ":primitives",
+        "../../api:scoped_refptr",
         "../../rtc_base:checks",
         "../../rtc_base:logging",
         "../../rtc_base:random",
@@ -153,16 +157,15 @@ if (rtc_include_tests) {
       ":desktop_capture",
       ":desktop_capture_mock",
       ":primitives",
+      "../../api:array_view",
+      "../../api/units:time_delta",
+      "../../api/units:timestamp",
       "../../rtc_base:checks",
       "../../rtc_base:logging",
-      "../../rtc_base:macromagic",
       "../../rtc_base:random",
-      "../../rtc_base:timeutils",
-
-      # TODO(bugs.webrtc.org/9987): Remove this dep on rtc_base:rtc_base once
-      # rtc_base:threading is fully defined.
       "../../rtc_base:task_queue_for_test",
       "../../rtc_base:threading",
+      "../../rtc_base:timeutils",
       "../../system_wrappers",
       "../../test:test_support",
     ]
@@ -172,6 +175,7 @@ if (rtc_include_tests) {
         "win/cursor_unittest.cc",
         "win/cursor_unittest_resources.h",
         "win/cursor_unittest_resources.rc",
+        "win/full_screen_win_application_handler_unittest.cc",
         "win/screen_capture_utils_unittest.cc",
         "win/screen_capturer_win_directx_unittest.cc",
         "win/test_support/test_window.cc",
@@ -234,7 +238,7 @@ if (rtc_include_tests) {
       "../../api:scoped_refptr",
       "../../rtc_base:checks",
       "../../rtc_base:logging",
-      "../../system_wrappers",
+      "../../rtc_base:threading",
       "//third_party/abseil-cpp/absl/strings:string_view",
     ]
 
@@ -292,6 +296,7 @@ rtc_library("desktop_capture") {
     "delegated_source_list_controller.h",
     "desktop_and_cursor_composer.cc",
     "desktop_and_cursor_composer.h",
+    "desktop_capture_metadata.h",
     "desktop_capture_metrics_helper.cc",
     "desktop_capture_metrics_helper.h",
     "desktop_capture_options.cc",
@@ -329,9 +334,6 @@ rtc_library("desktop_capture") {
     "window_finder.cc",
     "window_finder.h",
   ]
-  if (is_linux && !is_castos && rtc_use_pipewire) {
-    sources += [ "desktop_capture_metadata.h" ]
-  }
   if (is_mac) {
     sources += [
       "mac/desktop_configuration.h",
@@ -392,6 +394,11 @@ rtc_library("desktop_capture") {
     ]
     if (build_with_mozilla) {
       libs -= [ "Xtst" ]
+      # Mozilla provides custom impl of x_error_trap.*
+      sources -= [
+        "linux/x11/x_error_trap.cc",
+        "linux/x11/x_error_trap.h",
+      ]
     }
   }
 
@@ -412,6 +419,7 @@ rtc_library("desktop_capture") {
     "../../api:scoped_refptr",
     "../../api:sequence_checker",
     "../../rtc_base:checks",
+    "../../rtc_base:cpu_info",
     "../../rtc_base:event_tracer",
     "../../rtc_base:logging",
     "../../rtc_base:macromagic",
@@ -422,7 +430,6 @@ rtc_library("desktop_capture") {
     "../../rtc_base/system:arch",
     "../../rtc_base/system:no_unique_address",
     "../../rtc_base/system:rtc_export",
-    "../../system_wrappers",
     "../../system_wrappers:metrics",
   ]
 
@@ -504,6 +511,7 @@ rtc_library("desktop_capture") {
       "shcore.lib",
     ]
     deps += [
+      "../../rtc_base:threading",
       "../../rtc_base:win32",
       "../../rtc_base/containers:flat_map",
       "../../rtc_base/win:create_direct3d_device",
@@ -573,7 +581,9 @@ rtc_library("desktop_capture") {
     ]
     libs += [ "dwmapi.lib" ]
     deps += [
+      "../../api/units:time_delta",
       "../../rtc_base:rtc_event",
+      "../../rtc_base:threading",
       "../../rtc_base/win:hstring",
     ]
   }
@@ -594,6 +604,7 @@ if (is_mac) {
     visibility = [ ":desktop_capture" ]
     sources = [
       "delegated_source_list_controller.h",
+      "desktop_capture_metadata.h",
       "desktop_capture_options.h",
       "desktop_capturer.h",
       "full_screen_application_handler.h",

@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIScriptGlobalObject_h__
-#define nsIScriptGlobalObject_h__
+#ifndef nsIScriptGlobalObject_h_
+#define nsIScriptGlobalObject_h_
 
-#include "nsISupports.h"
-#include "nsIGlobalObject.h"
 #include "js/TypeDecls.h"
 #include "mozilla/EventForwards.h"
+#include "nsIGlobalObject.h"
+#include "nsISupports.h"
 
 class nsIScriptContext;
 class nsIScriptGlobalObject;

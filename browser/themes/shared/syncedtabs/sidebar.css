@@ -250,7 +250,7 @@ body {
   background-color: #0060df;
   color: white;
   border: 0;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   margin: 15px auto;
   padding: 8px;
   text-shadow: none;

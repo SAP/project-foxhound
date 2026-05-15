@@ -395,7 +395,7 @@ function startAndLoadURI(pageURL) {
       gBrowser.loadURI(pageURL, {
         triggeringPrincipal:
           Services.scriptSecurityManager.getSystemPrincipal(),
-        flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE,
+        loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE,
       });
     } else {
       gBrowser.loadURI(pageURL, {

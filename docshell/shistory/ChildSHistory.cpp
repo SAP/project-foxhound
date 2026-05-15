@@ -9,6 +9,7 @@
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentFrameMessageManager.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "nsIXULRuntime.h"
 #include "nsComponentManagerUtils.h"
 #include "nsSHEntry.h"
@@ -20,6 +21,45 @@ extern mozilla::LazyLogModule gSHLog;
 
 namespace mozilla {
 namespace dom {
+
+ChildSHistory::PendingAsyncHistoryNavigation::PendingAsyncHistoryNavigation(
+    ChildSHistory* aHistory, int32_t aOffset, bool aRequireUserInteraction,
+    bool aUserActivation)
+    : Runnable("PendingAsyncHistoryNavigation"),
+      mHistory(aHistory),
+      mRequireUserInteraction(aRequireUserInteraction),
+      mUserActivation(aUserActivation),
+      mOffset(aOffset) {}
+ChildSHistory::PendingAsyncHistoryNavigation::PendingAsyncHistoryNavigation(
+    ChildSHistory* aHistory, const nsID& aKey,
+    BrowsingContext* aBrowsingContext, bool aRequireUserInteraction,
+    bool aUserActivation, bool aCheckForCancelation,
+    std::function<void(nsresult)>&& aResolver)
+    : Runnable("PendingAsyncHistoryNavigation"),
+      mHistory(aHistory),
+      mRequireUserInteraction(aRequireUserInteraction),
+      mUserActivation(aUserActivation),
+      mCheckForCancelation(aCheckForCancelation),
+      mOffset(std::numeric_limits<int32_t>::max()),
+      mKey(Some(aKey)),
+      mBrowsingContext(aBrowsingContext),
+      mResolver(Some(aResolver)) {}
+
+nsresult ChildSHistory::PendingAsyncHistoryNavigation::Run() {
+  if (isInList()) {
+    remove();
+    if (mKey) {
+      RefPtr browsingContext = mBrowsingContext;
+      mHistory->GotoKey(*mKey, browsingContext, mRequireUserInteraction,
+                        mUserActivation, mCheckForCancelation, *mResolver,
+                        IgnoreErrors());
+    } else {
+      mHistory->Go(mOffset, mRequireUserInteraction, mUserActivation,
+                   IgnoreErrors());
+    }
+  }
+  return NS_OK;
+}
 
 ChildSHistory::ChildSHistory(BrowsingContext* aBrowsingContext)
     : mBrowsingContext(aBrowsingContext) {}
@@ -195,6 +235,23 @@ void ChildSHistory::AsyncGo(int32_t aOffset, bool aRequireUserInteraction,
   NS_DispatchToCurrentThread(asyncNav.forget());
 }
 
+void ChildSHistory::AsyncGo(const nsID& aKey, BrowsingContext* aNavigable,
+                            bool aRequireUserInteraction, bool aUserActivation,
+                            bool aCheckForCancelation,
+                            std::function<void(nsresult)>&& aResolver) {
+  CheckedInt<int32_t> index = Index();
+  MOZ_LOG_FMT(gSHLog, LogLevel::Debug,
+              "ChildSHistory::AsyncGo({}), current index = {}",
+              aKey.ToString().get(), index.value());
+
+  RefPtr<PendingAsyncHistoryNavigation> asyncNav =
+      new PendingAsyncHistoryNavigation(
+          this, aKey, aNavigable, aRequireUserInteraction, aUserActivation,
+          aCheckForCancelation, std::move(aResolver));
+  mPendingNavigations.insertBack(asyncNav);
+  NS_DispatchToCurrentThread(asyncNav.forget());
+}
+
 void ChildSHistory::GotoIndex(int32_t aIndex, int32_t aOffset,
                               bool aRequireUserInteraction,
                               bool aUserActivation, ErrorResult& aRv) {
@@ -226,6 +283,30 @@ void ChildSHistory::GotoIndex(int32_t aIndex, int32_t aOffset,
     nsCOMPtr<nsISHistory> shistory = mHistory;
     aRv = shistory->GotoIndex(aIndex, aUserActivation);
   }
+}
+
+void ChildSHistory::GotoKey(const nsID& aKey, BrowsingContext* aNavigable,
+                            bool aRequireUserInteraction, bool aUserActivation,
+                            bool aCheckForCancelation,
+                            const std::function<void(nsresult)>& aResolver,
+                            ErrorResult& aRv) {
+  MOZ_DIAGNOSTIC_ASSERT(mozilla::SessionHistoryInParent());
+
+  if (!mPendingEpoch) {
+    mPendingEpoch = true;
+    RefPtr<ChildSHistory> self(this);
+    NS_DispatchToCurrentThread(
+        NS_NewRunnableFunction("UpdateEpochRunnable", [self] {
+          self->mHistoryEpoch++;
+          self->mPendingEpoch = false;
+        }));
+  }
+
+  nsCOMPtr<nsISHistory> shistory = mHistory;
+  aNavigable->NavigationTraverse(
+      aKey, mHistoryEpoch, aUserActivation,
+      /* aCheckForCancelation */ aCheckForCancelation,
+      [shistory, aResolver](nsresult aResult) { aResolver(aResult); });
 }
 
 void ChildSHistory::RemovePendingHistoryNavigations() {

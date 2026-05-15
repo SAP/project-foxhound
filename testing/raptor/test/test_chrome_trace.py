@@ -43,9 +43,9 @@ def test_browsertime_trace_collection(mock_log_info, mock_log_critical):
     test_config = {"name": "tp6", "type": "pageload"}
     try:
         profile = ChromeTrace(upload_dir, raptor_config, test_config)
-        assert (
-            len(profile.collect_profiles()) == 2
-        ), "We have two profiles for a cold & warm run"
+        assert len(profile.collect_profiles()) == 2, (
+            "We have two profiles for a cold & warm run"
+        )
         profile.output_trace()
         profile.clean()
         arcname = os.environ["RAPTOR_LATEST_GECKO_PROFILE_ARCHIVE"]

@@ -60,9 +60,6 @@ newtab-confirm-delete-history-p1 = An bhfuil tú cinnte gur mhaith leat an leath
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Ní féidir an gníomh seo a chur ar ceal.
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # Tooltip on an empty topsite box to open the New Top Site dialog.
@@ -81,27 +78,12 @@ newtab-menu-unpin = Díphionnáil
 newtab-menu-delete-history = Scrios ón Stair
 newtab-menu-save-to-pocket = Sábháil in { -pocket-brand-name }
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
-
 ##
 
 # Bookmark is a noun in this case, "Remove bookmark".
 newtab-menu-remove-bookmark = Scrios an Leabharmharc
 # Bookmark is a verb here.
 newtab-menu-bookmark = Cruthaigh leabharmharc
-
-## Context Menu - Downloaded Menu. "Download" in these cases is not a verb,
-## it is a noun. As in, "Copy the link that belongs to this downloaded item".
-
-
-## Context Menu - Download Menu: These are platform specific strings found in the context menu of an item that has
-## been downloaded. The intention behind "this action" is that it will show where the downloaded file exists on the file
-## system for each operating system.
-
 
 ## Card Labels: These labels are associated to pages to give
 ## context on how the element is related to the user, e.g. type indicates that
@@ -117,9 +99,6 @@ newtab-label-download = Íoslódáilte
 
 newtab-section-menu-add-search-engine = Cuir Inneall Cuardaigh Leis
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = Barrshuímh
@@ -127,79 +106,11 @@ newtab-section-header-topsites = Barrshuímh
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = Molta ag { $provider }
 
-## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
-
-
-## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
-
-
 ## Pocket Content Section.
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
 newtab-pocket-read-more = Topaicí i mbéal an phobail:
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
-## Error Fallback Content.
-## This message and suggested action link are shown in each section of UI that fails to render.
-
-
 ## Customization Menu
 
 newtab-custom-settings = Bainistigh tuilleadh socruithe
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Strings for custom wallpaper highlight
-
-
-## Strings for download mobile highlight
-
-
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
-
-
-## Strings for trending searches
-

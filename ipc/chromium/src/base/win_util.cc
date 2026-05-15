@@ -6,7 +6,6 @@
 
 #include "base/win_util.h"
 
-#include <map>
 #include <sddl.h>
 
 #include "base/logging.h"

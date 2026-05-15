@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nricestunaddr_h__
-#define nricestunaddr_h__
+#ifndef nricestunaddr_h_
+#define nricestunaddr_h_
 
 #include "nsError.h"  // for nsresult
 
@@ -33,4 +33,4 @@ class NrIceStunAddr {
 
 }  // namespace mozilla
 
-#endif  // nricestunaddr_h__
+#endif  // nricestunaddr_h_

@@ -10,12 +10,15 @@
 
 #include "modules/video_coding/codecs/test/android_codec_factory_helper.h"
 
+#include <bits/pthread_types.h>
 #include <jni.h>
 #include <pthread.h>
 #include <stddef.h>
 
 #include <memory>
 
+#include "api/video_codecs/video_decoder_factory.h"
+#include "api/video_codecs/video_encoder_factory.h"
 #include "modules/utility/include/jvm_android.h"
 #include "rtc_base/checks.h"
 #include "sdk/android/native_api/codecs/wrapper.h"
@@ -54,11 +57,12 @@ std::unique_ptr<VideoEncoderFactory> CreateAndroidEncoderFactory() {
       GetClass(env, "org/webrtc/HardwareVideoEncoderFactory");
   jmethodID factory_constructor = env->GetMethodID(
       factory_class.obj(), "<init>", "(Lorg/webrtc/EglBase$Context;ZZ)V");
-  ScopedJavaLocalRef<jobject> factory_object(
-      env, env->NewObject(factory_class.obj(), factory_constructor,
-                          nullptr /* shared_context */,
-                          false /* enable_intel_vp8_encoder */,
-                          true /* enable_h264_high_profile */));
+  ScopedJavaLocalRef<jobject> factory_object =
+      ScopedJavaLocalRef<jobject>::Adopt(
+          env, env->NewObject(factory_class.obj(), factory_constructor,
+                              nullptr /* shared_context */,
+                              false /* enable_intel_vp8_encoder */,
+                              true /* enable_h264_high_profile */));
   return JavaToNativeVideoEncoderFactory(env, factory_object.obj());
 }
 
@@ -68,9 +72,10 @@ std::unique_ptr<VideoDecoderFactory> CreateAndroidDecoderFactory() {
       GetClass(env, "org/webrtc/HardwareVideoDecoderFactory");
   jmethodID factory_constructor = env->GetMethodID(
       factory_class.obj(), "<init>", "(Lorg/webrtc/EglBase$Context;)V");
-  ScopedJavaLocalRef<jobject> factory_object(
-      env, env->NewObject(factory_class.obj(), factory_constructor,
-                          nullptr /* shared_context */));
+  ScopedJavaLocalRef<jobject> factory_object =
+      ScopedJavaLocalRef<jobject>::Adopt(
+          env, env->NewObject(factory_class.obj(), factory_constructor,
+                              nullptr /* shared_context */));
   return JavaToNativeVideoDecoderFactory(env, factory_object.obj());
 }
 

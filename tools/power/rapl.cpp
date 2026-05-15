@@ -768,15 +768,16 @@ int main(int argc, char** argv) {
   int sampleCount = 0;
 
   struct option longOptions[] = {
-      {"help", no_argument, NULL, 'h'},
-      {"sample-interval", required_argument, NULL, 'i'},
-      {"sample-count", required_argument, NULL, 'n'},
-      {NULL, 0, NULL, 0}};
+      {"help", no_argument, nullptr, 'h'},
+      {"sample-interval", required_argument, nullptr, 'i'},
+      {"sample-count", required_argument, nullptr, 'n'},
+      {nullptr, 0, nullptr, 0}};
   const char* shortOptions = "hi:n:";
 
   int c;
   char* endPtr;
-  while ((c = getopt_long(argc, argv, shortOptions, longOptions, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, shortOptions, longOptions, nullptr)) !=
+         -1) {
     switch (c) {
       case 'h':
         PrintUsage();
@@ -803,7 +804,7 @@ int main(int argc, char** argv) {
         break;
 
       default:
-        CmdLineAbort(NULL);
+        CmdLineAbort(nullptr);
     }
   }
 
@@ -843,11 +844,11 @@ int main(int argc, char** argv) {
     Abort("sigemptyset() failed");
   }
   sa.sa_sigaction = SigAlrmHandler;
-  if (sigaction(SIGALRM, &sa, NULL) < 0) {
+  if (sigaction(SIGALRM, &sa, nullptr) < 0) {
     Abort("sigaction(SIGALRM) failed");
   }
   sa.sa_sigaction = SigIntHandler;
-  if (sigaction(SIGINT, &sa, NULL) < 0) {
+  if (sigaction(SIGINT, &sa, nullptr) < 0) {
     Abort("sigaction(SIGINT) failed");
   }
 
@@ -856,7 +857,7 @@ int main(int argc, char** argv) {
   timer.it_interval.tv_sec = sampleInterval_msec / 1000;
   timer.it_interval.tv_usec = (sampleInterval_msec % 1000) * 1000;
   timer.it_value = timer.it_interval;
-  if (setitimer(ITIMER_REAL, &timer, NULL) < 0) {
+  if (setitimer(ITIMER_REAL, &timer, nullptr) < 0) {
     Abort("setitimer() failed");
   }
 

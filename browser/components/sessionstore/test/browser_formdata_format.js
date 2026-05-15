@@ -4,7 +4,7 @@
 "use strict";
 
 function test() {
-  /** Tests formdata format **/
+  /** Tests formdata format */
   waitForExplicitFinish();
 
   let formData = [
@@ -128,7 +128,9 @@ async function testTabRestoreData(aFormData, aExpectedValue) {
     formdata: aFormData,
   };
 
-  await promiseBrowserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+    wantLoad: "about:blank",
+  });
   await promiseTabState(tab, tabState);
 
   await TabStateFlusher.flush(tab.linkedBrowser);

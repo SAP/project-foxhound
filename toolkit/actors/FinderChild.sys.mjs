@@ -103,11 +103,11 @@ export class FinderChild extends JSWindowActorChild {
 
       case "Finder:MatchesCount":
         return this.finder
-          .requestMatchesCount(
-            data.searchString,
-            data.linksOnly,
-            data.useSubFrames
-          )
+          .requestMatchesCount(data.searchString, {
+            linksOnly: data.linksOnly,
+            useSubFrames: data.useSubFrames,
+            contextRange: data.contextRange,
+          })
           .then(result => {
             if (result) {
               result.browsingContextId = this.browsingContext.id;

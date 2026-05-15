@@ -7,14 +7,14 @@
 #ifndef mozilla_dom_PaymentRequest_h
 #define mozilla_dom_PaymentRequest_h
 
+#include "PaymentRequestUpdateEvent.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/PaymentRequestBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
-#include "mozilla/ErrorResult.h"
 #include "nsIDocumentActivity.h"
 #include "nsWrapperCache.h"
-#include "PaymentRequestUpdateEvent.h"
 
 namespace mozilla::dom {
 

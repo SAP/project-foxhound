@@ -9,8 +9,8 @@
 
 #include "CallbackDebuggerNotification.h"
 #include "DebuggerNotificationManager.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/Event.h"
 
 namespace mozilla::dom {
 

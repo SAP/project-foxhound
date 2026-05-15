@@ -13,7 +13,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CLIENT_NOT_CONFIGURED: "resource://services-sync/constants.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   OpenInTabsUtils:
     "moz-src:///browser/components/tabbrowser/OpenInTabsUtils.sys.mjs",
@@ -21,6 +22,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   Weave: "resource://services-sync/main.sys.mjs",
+  WebNavigationManager: "resource://gre/modules/WebNavigation.sys.mjs",
 });
 
 const ITEM_CHANGED_BATCH_NOTIFICATION_THRESHOLD = 10;
@@ -156,7 +158,7 @@ class BookmarkState {
   /**
    * Create a new bookmark.
    *
-   * @returns {string} The bookmark's GUID.
+   * @returns {Promise<string>} The bookmark's GUID.
    */
   async _createBookmark() {
     let transactions = [
@@ -188,7 +190,7 @@ class BookmarkState {
   /**
    * Create a new folder.
    *
-   * @returns {string} The folder's GUID.
+   * @returns {Promise<string>} The folder's GUID.
    */
   async _createFolder() {
     let transactions = [
@@ -225,7 +227,7 @@ class BookmarkState {
   /**
    * Save() API function for bookmark.
    *
-   * @returns {string} bookmark.guid
+   * @returns {Promise<string>} bookmark.guid
    */
   async save() {
     if (this._guid === lazy.PlacesUtils.bookmarks.unsavedGuid) {
@@ -365,7 +367,7 @@ export var PlacesUIUtils = {
    * Obfuscates a place: URL to use it in xulstore without the risk of
    leaking browsing information. Uses md5 to hash the query string.
    *
-   * @param {URL} url
+   * @param {string} url
    *        the URL for xulstore with place: key pairs.
    * @returns {string} "place:[md5_hash]" hashed url
    */
@@ -386,11 +388,11 @@ export var PlacesUIUtils = {
    * @param {object} aInfo
    *        Describes the item to be edited/added in the dialog.
    *        See documentation at the top of bookmarkProperties.js
-   * @param {DOMWindow} [aParentWindow]
+   * @param {Window} [aParentWindow]
    *        Owner window for the new dialog.
    *
    * @see documentation at the top of bookmarkProperties.js
-   * @returns {string} The guid of the item that was created or edited,
+   * @returns {Promise<string>} The guid of the item that was created or edited,
    *                   undefined otherwise.
    */
   async showBookmarkDialog(aInfo, aParentWindow = null) {
@@ -424,11 +426,11 @@ export var PlacesUIUtils = {
    * Bookmarks one or more pages. If there is more than one, this will create
    * the bookmarks in a new folder.
    *
-   * @param {Array.<nsIURI>} URIList
+   * @param {{uri: nsIURI, title: string}[]} URIList
    *   The list of URIs to bookmark.
-   * @param {Array.<string>} [hiddenRows]
+   * @param {string[]} [hiddenRows]
    *   An array of rows to be hidden.
-   * @param {DOMWindow} [win]
+   * @param {Window} [win]
    *   The window to use as the parent to display the bookmark dialog.
    */
   async showBookmarkPagesDialog(URIList, hiddenRows = [], win = null) {
@@ -497,7 +499,7 @@ export var PlacesUIUtils = {
   /**
    * Returns the active PlacesController for a given command.
    *
-   * @param {DOMWindow} win The window containing the affected view
+   * @param {Window} win The window containing the affected view
    * @param {string} command The command
    * @returns {PlacesController} a places controller
    */
@@ -526,7 +528,7 @@ export var PlacesUIUtils = {
   /**
    * Update all the Places commands for the given window.
    *
-   * @param {DOMWindow} win The window to update.
+   * @param {Window} win The window to update.
    */
   updateCommands(win) {
     // Get the controller for one of the places commands.
@@ -558,7 +560,7 @@ export var PlacesUIUtils = {
   /**
    * Executes the given command on the currently active controller.
    *
-   * @param {DOMWindow} win The window containing the affected view
+   * @param {Window} win The window containing the affected view
    * @param {string} command The command to execute
    */
   doCommand(win, command) {
@@ -623,7 +625,7 @@ export var PlacesUIUtils = {
    *
    * @param {string|URL|nsIURI} url The URL of the page to set the charset on.
    * @param {string} charset character-set value.
-   * @param {DOMWindow} window The window that the charset is being set from.
+   * @param {Window} window The window that the charset is being set from.
    * @returns {Promise}
    */
   async setCharsetForPage(url, charset, window) {
@@ -649,11 +651,11 @@ export var PlacesUIUtils = {
    *
    * @param {object} aURINode
    *        a URI node
-   * @param {DOMWindow} aWindow
+   * @param {Window} aWindow
    *        a window on which a potential error alert is shown on.
    * @returns {boolean} true if it's safe to open the node in the browser, false otherwise.
    */
-  checkURLSecurity: function PUIU_checkURLSecurity(aURINode, aWindow) {
+  checkURLSecurity(aURINode, aWindow) {
     if (lazy.PlacesUtils.nodeIsBookmark(aURINode)) {
       return true;
     }
@@ -748,7 +750,7 @@ export var PlacesUIUtils = {
    *   {uri: string, isBookmark: boolean}
    * @param {object} aEvent
    *   The associated event triggering the open.
-   * @param {DOMWindow} aWindow
+   * @param {Window} aWindow
    *   The window associated with the event.
    */
   openTabset(aItemsToOpen, aEvent, aWindow) {
@@ -808,11 +810,21 @@ export var PlacesUIUtils = {
     // For consistency, we want all the bookmarks to open in new tabs, instead
     // of having one of them replace the currently focused tab.  Hence we call
     // loadTabs with aReplace set to false.
-    browserWindow.gBrowser.loadTabs(urls, {
+    let tabs = browserWindow.gBrowser.loadTabs(urls, {
       inBackground: loadInBackground,
       replace: false,
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
+
+    for (const [i, tab] of tabs.entries()) {
+      let item = aItemsToOpen[i];
+      if (item.isBookmark && !item.uri.startsWith("javascript:")) {
+        lazy.WebNavigationManager.setRecentTabTransitionData(
+          { auto_bookmark: true },
+          tab.linkedBrowser
+        );
+      }
+    }
   },
 
   /**
@@ -927,12 +939,22 @@ export var PlacesUIUtils = {
       }
 
       const isJavaScriptURL = aNode.uri.startsWith("javascript:");
+      let resolveOnContentBrowserCreated;
+      if (isBookmark && !isJavaScriptURL) {
+        resolveOnContentBrowserCreated = browser => {
+          lazy.WebNavigationManager.setRecentTabTransitionData(
+            { auto_bookmark: true },
+            browser
+          );
+        };
+      }
       aWindow.openTrustedLinkIn(aNode.uri, aWhere, {
         allowPopups: isJavaScriptURL,
         inBackground: this.loadBookmarksInBackground,
         allowInheritPrincipal: isJavaScriptURL,
         private: aPrivate,
         userContextId,
+        resolveOnContentBrowserCreated,
       });
       if (aWindow.updateTelemetry) {
         aWindow.updateTelemetry([aNode]);
@@ -983,7 +1005,7 @@ export var PlacesUIUtils = {
           title =
             host +
             (fileName
-              ? (host ? "/" + this.ellipsis + "/" : "") + fileName
+              ? (host ? "/" + Services.locale.ellipsis + "/" : "") + fileName
               : uri.pathQueryRef);
         }
       } catch (e) {
@@ -1005,37 +1027,6 @@ export var PlacesUIUtils = {
   },
 
   /**
-   * WARNING TO ADDON AUTHORS: DO NOT USE THIS METHOD. IT'S LIKELY TO BE REMOVED IN A
-   * FUTURE RELEASE.
-   *
-   * Checks if a place: href represents a folder shortcut.
-   *
-   * @param {string} queryString
-   *        the query string to check (a place: href)
-   * @returns {boolean} whether or not queryString represents a folder shortcut.
-   * @throws if queryString is malformed.
-   */
-  isFolderShortcutQueryString(queryString) {
-    // Based on GetSimpleBookmarksQueryFolder in nsNavHistory.cpp.
-
-    let query = {},
-      options = {};
-    lazy.PlacesUtils.history.queryStringToQuery(queryString, query, options);
-    query = query.value;
-    options = options.value;
-    return (
-      query.folderCount == 1 &&
-      !query.hasBeginTime &&
-      !query.hasEndTime &&
-      !query.hasDomain &&
-      !query.hasURI &&
-      !query.hasSearchTerms &&
-      !query.tags.length == 0 &&
-      options.maxResults == 0
-    );
-  },
-
-  /**
    * Helpers for consumers of editBookmarkOverlay which don't have a node as their input.
    *
    * Given a bookmark object for either a url bookmark or a folder, returned by
@@ -1044,7 +1035,8 @@ export var PlacesUIUtils = {
    *
    * @param {object} aFetchInfo
    *        a bookmark object returned by Bookmarks.fetch.
-   * @returns {object} a node-like object suitable for initialising editBookmarkOverlay.
+   * @returns {Promise<{bookmarkGuid: string, title: string, uri: string, type: nsINavHistoryResultNode.ResultType}>}
+   *   A node-like object suitable for initialising editBookmarkOverlay.
    * @throws if aFetchInfo is representing a separator.
    */
   async promiseNodeLikeFromFetchInfo(aFetchInfo) {
@@ -1072,11 +1064,7 @@ export var PlacesUIUtils = {
         }
 
         if (/^place:/.test(this.uri)) {
-          if (this.isFolderShortcutQueryString(this.uri)) {
-            return Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER_SHORTCUT;
-          }
-
-          return Ci.nsINavHistoryResultNode.RESULT_TYPE_QUERY;
+          throw new Error("Place URIs are not supported.");
         }
 
         return Ci.nsINavHistoryResultNode.RESULT_TYPE_URI;
@@ -1094,12 +1082,13 @@ export var PlacesUIUtils = {
    * to batch mode. If resultNode is not supplied, the function will
    * pass-through to functionToWrap.
    *
+   * @template T
    * @param {nsINavHistoryResult} resultNode The result node to turn on batching.
    * @param {number} itemsBeingChanged The count of items being changed. If the
    *                                    count is lower than a threshold, then
    *                                    batching won't be set.
-   * @param {Function} functionToWrap The function to
-   * @returns {object} forwards the functionToWrap return value.
+   * @param {() => T} functionToWrap The function to
+   * @returns {Promise<T>} forwards the functionToWrap return value.
    */
   async batchUpdatesForNode(resultNode, itemsBeingChanged, functionToWrap) {
     if (!resultNode) {
@@ -1123,13 +1112,17 @@ export var PlacesUIUtils = {
    * Processes a set of transfer items that have been dropped or pasted.
    * Batching will be applied where necessary.
    *
-   * @param {Array} items A list of unwrapped nodes to process.
-   * @param {object} insertionPoint The requested point for insertion.
-   * @param {boolean} doCopy Set to true to copy the items, false will move them
-   *                         if possible.
-   * @param {object} view The view that should be used for batching.
-   * @returns {Array} Returns an empty array when the insertion point is a tag, else
-   *                 returns an array of copied or moved guids.
+   * @param {object[]} items
+   *   A list of unwrapped nodes to process.
+   * @param {object} insertionPoint
+   *   The requested point for insertion.
+   * @param {boolean} doCopy
+   *   Set to true to copy the items, false will move them if possible.
+   * @param {object} view
+   *   The view that should be used for batching.
+   * @returns {Promise<string[]>}
+   *   Returns an empty array when the insertion point is a tag, else returns
+   *   an array of copied or moved guids.
    */
   async handleTransferItems(items, insertionPoint, doCopy, view) {
     let transactions;
@@ -1405,7 +1398,7 @@ export var PlacesUIUtils = {
   },
 
   placesContextShowing(event) {
-    let menupopup = event.target;
+    let menupopup = /** @type {XULPopupElement} */ (event.target);
     if (
       !["placesContext", "sidebar-history-context-menu"].includes(menupopup.id)
     ) {
@@ -1639,9 +1632,9 @@ export var PlacesUIUtils = {
    * infallible, if a speculative connection cannot be initialized, it will be a
    * no-op.
    *
-   * @param {nsIURI|URL|string} url entity to initiate
+   * @param {string} url entity to initiate
    *        a speculative connection for.
-   * @param {window} window the window from where the connection is initialized.
+   * @param {Window} window the window from where the connection is initialized.
    */
   setupSpeculativeConnection(url, window) {
     if (
@@ -1656,7 +1649,7 @@ export var PlacesUIUtils = {
       return;
     }
     try {
-      let uri = url instanceof Ci.nsIURI ? url : Services.io.newURI(url);
+      let uri = Services.io.newURI(url);
       Services.io.speculativeConnect(
         uri,
         window.gBrowser.contentPrincipal,
@@ -1672,7 +1665,7 @@ export var PlacesUIUtils = {
    * Sets up a speculative connection to the target of a
    * clicked places DOM node on left and middle click.
    *
-   * @param {event} event the mousedown event.
+   * @param {MouseEvent} event the mousedown event.
    */
   maybeSpeculativeConnectOnMouseDown(event) {
     if (
@@ -1803,13 +1796,6 @@ ChromeUtils.defineLazyGetter(PlacesUIUtils, "URI_FLAVORS", () => {
 });
 ChromeUtils.defineLazyGetter(PlacesUIUtils, "SUPPORTED_FLAVORS", () => {
   return [...PlacesUIUtils.PLACES_FLAVORS, ...PlacesUIUtils.URI_FLAVORS];
-});
-
-ChromeUtils.defineLazyGetter(PlacesUIUtils, "ellipsis", function () {
-  return Services.prefs.getComplexValue(
-    "intl.ellipsis",
-    Ci.nsIPrefLocalizedString
-  ).data;
 });
 
 ChromeUtils.defineLazyGetter(PlacesUIUtils, "promptLocalization", () => {

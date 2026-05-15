@@ -20,15 +20,12 @@
 #include "certdb.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Casting.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 #include "mozilla/glean/SecurityCertverifierMetrics.h"
 #include "mozpkix/Result.h"
 #include "mozpkix/pkix.h"
@@ -40,6 +37,7 @@
 #include "nsNSSCallbacks.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSCertificateDB.h"
+#include "nsNSSComponent.h"
 #include "nsNSSIOLayer.h"
 #include "nsNetCID.h"
 #include "nsPrintfCString.h"
@@ -63,17 +61,17 @@ namespace mozilla {
 namespace psm {
 
 NSSCertDBTrustDomain::NSSCertDBTrustDomain(
-    SECTrustType certDBTrustType, OCSPFetching ocspFetching,
+    SECTrustType certDBTrustType, RevocationCheckMode ocspFetching,
     OCSPCache& ocspCache, SignatureCache* signatureCache,
-    TrustCache* trustCache,
-    /*optional but shouldn't be*/ void* pinArg, TimeDuration ocspTimeoutSoft,
-    TimeDuration ocspTimeoutHard, uint32_t certShortLifetimeInDays,
-    unsigned int minRSABits, ValidityCheckingMode validityCheckingMode,
-    NetscapeStepUpPolicy netscapeStepUpPolicy, CRLiteMode crliteMode,
-    const OriginAttributes& originAttributes,
+    TrustCache* trustCache, /*optional but shouldn't be*/ void* pinArg,
+    TimeDuration ocspTimeoutSoft, TimeDuration ocspTimeoutHard,
+    uint32_t certShortLifetimeInDays, unsigned int minRSABits,
+    CRLiteMode crliteMode, const OriginAttributes& originAttributes,
     const nsTArray<Input>& thirdPartyRootInputs,
     const nsTArray<Input>& thirdPartyIntermediateInputs,
     const Maybe<nsTArray<nsTArray<uint8_t>>>& extraCertificates,
+    const mozilla::pkix::Input& encodedSCTsFromTLS,
+    const UniquePtr<mozilla::ct::MultiLogCTVerifier>& ctVerifier,
     /*out*/ nsTArray<nsTArray<uint8_t>>& builtChain,
     /*optional*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional*/ const char* hostname)
@@ -87,13 +85,13 @@ NSSCertDBTrustDomain::NSSCertDBTrustDomain(
       mOCSPTimeoutHard(ocspTimeoutHard),
       mCertShortLifetimeInDays(certShortLifetimeInDays),
       mMinRSABits(minRSABits),
-      mValidityCheckingMode(validityCheckingMode),
-      mNetscapeStepUpPolicy(netscapeStepUpPolicy),
       mCRLiteMode(crliteMode),
       mOriginAttributes(originAttributes),
       mThirdPartyRootInputs(thirdPartyRootInputs),
       mThirdPartyIntermediateInputs(thirdPartyIntermediateInputs),
       mExtraCertificates(extraCertificates),
+      mEncodedSCTsFromTLS(encodedSCTsFromTLS),
+      mCTVerifier(ctVerifier),
       mBuiltChain(builtChain),
       mIsBuiltChainRootBuiltInRoot(false),
       mPinningTelemetryInfo(pinningTelemetryInfo),
@@ -600,20 +598,19 @@ Result NSSCertDBTrustDomain::DigestBuf(Input item, DigestAlgorithm digestAlg,
 
 TimeDuration NSSCertDBTrustDomain::GetOCSPTimeout() const {
   switch (mOCSPFetching) {
-    case NSSCertDBTrustDomain::FetchOCSPForDVSoftFail:
+    case NSSCertDBTrustDomain::RevocationCheckMayFetch:
       return mOCSPTimeoutSoft;
-    case NSSCertDBTrustDomain::FetchOCSPForEV:
-    case NSSCertDBTrustDomain::FetchOCSPForDVHardFail:
+    case NSSCertDBTrustDomain::RevocationCheckRequired:
       return mOCSPTimeoutHard;
-    // The rest of these are error cases. Assert in debug builds, but return
-    // the soft timeout value in release builds.
-    case NSSCertDBTrustDomain::NeverFetchOCSP:
-    case NSSCertDBTrustDomain::LocalOnlyOCSPForEV:
-      MOZ_ASSERT_UNREACHABLE("we should never see this OCSPFetching type here");
+    // Reaching this case is an error. Assert in debug builds, but return the
+    // soft timeout value in release builds.
+    case NSSCertDBTrustDomain::RevocationCheckLocalOnly:
+      MOZ_ASSERT_UNREACHABLE(
+          "we should never see this RevocationCheckMode type here");
       break;
   }
 
-  MOZ_ASSERT_UNREACHABLE("we're not handling every OCSPFetching type");
+  MOZ_ASSERT_UNREACHABLE("we're not handling every RevocationCheckMode type");
   return mOCSPTimeoutSoft;
 }
 
@@ -679,26 +676,6 @@ CRLiteTimestamp::GetTimestamp(uint64_t* aTimestamp) {
   return NS_OK;
 }
 
-Result BuildCRLiteTimestampArray(
-    Input sctExtension,
-    /*out*/ nsTArray<RefPtr<nsICRLiteTimestamp>>& timestamps) {
-  Input sctList;
-  Result rv =
-      ExtractSignedCertificateTimestampListFromExtension(sctExtension, sctList);
-  if (rv != Success) {
-    return rv;
-  }
-  std::vector<SignedCertificateTimestamp> decodedSCTs;
-  size_t decodingErrors;
-  DecodeSCTs(sctList, decodedSCTs, decodingErrors);
-  Unused << decodingErrors;
-
-  for (const auto& sct : decodedSCTs) {
-    timestamps.AppendElement(new CRLiteTimestamp(sct));
-  }
-  return Success;
-}
-
 Result NSSCertDBTrustDomain::CheckCRLite(
     const nsTArray<uint8_t>& issuerSubjectPublicKeyInfoBytes,
     const nsTArray<uint8_t>& serialNumberBytes,
@@ -754,8 +731,7 @@ Result NSSCertDBTrustDomain::CheckRevocation(
     EndEntityOrCA endEntityOrCA, const CertID& certID, Time time,
     Duration validityDuration,
     /*optional*/ const Input* stapledOCSPResponse,
-    /*optional*/ const Input* aiaExtension,
-    /*optional*/ const Input* sctExtension) {
+    /*optional*/ const Input* aiaExtension) {
   // Actively distrusted certificates will have already been blocked by
   // GetCertTrust.
 
@@ -768,9 +744,28 @@ Result NSSCertDBTrustDomain::CheckRevocation(
     return Success;
   }
 
-  // Look for an OCSP Authority Information Access URL. Our behavior in
-  // ConfirmRevocations mode depends on whether a synchronous OCSP
-  // request is possible.
+  bool crliteCoversCertificate = false;
+  Result crliteResult = Success;
+  if (mCRLiteMode != CRLiteMode::Disabled) {
+    crliteResult =
+        CheckRevocationByCRLite(certID, time, crliteCoversCertificate);
+
+    // If CheckCRLite returned an error other than "revoked certificate",
+    // propagate that error.
+    if (crliteResult != Success &&
+        crliteResult != Result::ERROR_REVOKED_CERTIFICATE) {
+      return crliteResult;
+    }
+
+    if (crliteCoversCertificate) {
+      mozilla::glean::cert_verifier::cert_revocation_mechanisms.Get("CRLite"_ns)
+          .Add(1);
+      if (mCRLiteMode == CRLiteMode::Enforce) {
+        return crliteResult;
+      }
+    }
+  }
+
   nsCString aiaLocation(VoidCString());
   if (aiaExtension) {
     UniquePLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
@@ -784,57 +779,8 @@ Result NSSCertDBTrustDomain::CheckRevocation(
     }
   }
 
-  bool crliteCoversCertificate = false;
-  Result crliteResult = Success;
-  if (mCRLiteMode != CRLiteMode::Disabled && sctExtension) {
-    crliteResult =
-        CheckRevocationByCRLite(certID, *sctExtension, crliteCoversCertificate);
-
-    // If CheckCRLite returned an error other than "revoked certificate",
-    // propagate that error.
-    if (crliteResult != Success &&
-        crliteResult != Result::ERROR_REVOKED_CERTIFICATE) {
-      return crliteResult;
-    }
-
-    if (crliteCoversCertificate) {
-      mozilla::glean::cert_verifier::cert_revocation_mechanisms.Get("CRLite"_ns)
-          .Add(1);
-      // If we don't return here we will consult OCSP.
-      // In Enforce CRLite mode we can return "Revoked" or "Not Revoked"
-      // without consulting OCSP.
-      if (mCRLiteMode == CRLiteMode::Enforce) {
-        return crliteResult;
-      }
-      // If we don't have a URL for an OCSP responder, then we can return any
-      // result ConfirmRevocations mode. Note that we might have a
-      // stapled or cached OCSP response which we ignore in this case.
-      if (mCRLiteMode == CRLiteMode::ConfirmRevocations &&
-          aiaLocation.IsVoid()) {
-        return crliteResult;
-      }
-      // In ConfirmRevocations mode we can return "Not Revoked"
-      // without consulting OCSP.
-      if (mCRLiteMode == CRLiteMode::ConfirmRevocations &&
-          crliteResult == Success) {
-        return Success;
-      }
-    }
-  }
-
-  bool ocspSoftFailure = false;
-  Result ocspResult = CheckRevocationByOCSP(
-      certID, time, validityDuration, aiaLocation, crliteCoversCertificate,
-      crliteResult, stapledOCSPResponse, ocspSoftFailure);
-
-  // In ConfirmRevocations mode we treat any OCSP failure as confirmation
-  // of a CRLite revoked result.
-  if (crliteCoversCertificate &&
-      crliteResult == Result::ERROR_REVOKED_CERTIFICATE &&
-      mCRLiteMode == CRLiteMode::ConfirmRevocations &&
-      (ocspResult != Success || ocspSoftFailure)) {
-    return Result::ERROR_REVOKED_CERTIFICATE;
-  }
+  Result ocspResult = CheckRevocationByOCSP(certID, time, validityDuration,
+                                            aiaLocation, stapledOCSPResponse);
 
   MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
           ("NSSCertDBTrustDomain: end of CheckRevocation"));
@@ -843,11 +789,11 @@ Result NSSCertDBTrustDomain::CheckRevocation(
 }
 
 Result NSSCertDBTrustDomain::CheckRevocationByCRLite(
-    const CertID& certID, const Input& sctExtension,
-    /*out*/ bool& crliteCoversCertificate) {
+    const CertID& certID, Time time, /*out*/ bool& crliteCoversCertificate) {
   crliteCoversCertificate = false;
   MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
           ("NSSCertDBTrustDomain::CheckRevocation: checking CRLite"));
+
   nsTArray<uint8_t> issuerSubjectPublicKeyInfoBytes;
   issuerSubjectPublicKeyInfoBytes.AppendElements(
       certID.issuerSubjectPublicKeyInfo.UnsafeGetData(),
@@ -857,24 +803,72 @@ Result NSSCertDBTrustDomain::CheckRevocationByCRLite(
                                    certID.serialNumber.GetLength());
 
   nsTArray<RefPtr<nsICRLiteTimestamp>> timestamps;
-  Result rv = BuildCRLiteTimestampArray(sctExtension, timestamps);
-  if (rv != Success) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("decoding SCT extension failed - CRLite will be not be "
-             "consulted"));
-    return Success;
+
+  // CRLite relies on timestamps from SCTs, so we should check signatures on
+  // SCTs before calling into CRLite. However, the risk of using unverified
+  // timestamps (particularly from embedded SCTs) is marginal, and if CT is
+  // disabled we will pass unverified timestamps from embedded SCTs to CRLite.
+  if (GetCertificateTransparencyMode() ==
+      CertVerifier::CertificateTransparencyMode::Disabled) {
+    size_t decodingErrors;
+    std::vector<SignedCertificateTimestamp> decodedSCTsFromExtension;
+    DecodeSCTs(GetSCTListFromCertificate(), decodedSCTsFromExtension,
+               decodingErrors);
+    (void)decodingErrors;
+    for (const auto& sct : decodedSCTsFromExtension) {
+      timestamps.AppendElement(new CRLiteTimestamp(sct));
+    }
+
+    return CheckCRLite(issuerSubjectPublicKeyInfoBytes, serialNumberBytes,
+                       timestamps, crliteCoversCertificate);
   }
+
+  // When CT is enabled, we verify the signatures on all available SCTs and
+  // cache the verification result in the trust domain so that it can be used
+  // for CT policy enforcement. The verification result only depends on the end
+  // entity certificate and the issuer SPKI, so it is path-independent and we
+  // only need to compute it once.
+  if (mCTVerifyResult.isNothing()) {
+    MOZ_ASSERT(mBuiltChain.Length() > 0);
+
+    CTVerifyResult ctVerifyResult;
+    Input leafCertificate;
+    const nsTArray<uint8_t>& endEntityBytes = mBuiltChain.ElementAt(0);
+    Result rv = leafCertificate.Init(endEntityBytes.Elements(),
+                                     endEntityBytes.Length());
+    if (rv != Success) {
+      return rv;
+    }
+
+    Input encodedSCTsFromOCSP;  // empty since we haven't done OCSP yet.
+    rv = mCTVerifier->Verify(leafCertificate, certID.issuerSubjectPublicKeyInfo,
+                             GetSCTListFromCertificate(), encodedSCTsFromOCSP,
+                             mEncodedSCTsFromTLS, time, GetDistrustAfterTime(),
+                             ctVerifyResult);
+    if (rv != Success) {
+      MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
+              ("SCT verification failed with fatal error %" PRId32 "\n",
+               static_cast<uint32_t>(rv)));
+      return rv;
+    }
+
+    mCTVerifyResult.emplace(std::move(ctVerifyResult));
+  }
+
+  if (mCTVerifyResult.isSome()) {
+    for (const auto& sct : mCTVerifyResult->verifiedScts) {
+      timestamps.AppendElement(new CRLiteTimestamp(sct));
+    }
+  }
+
   return CheckCRLite(issuerSubjectPublicKeyInfoBytes, serialNumberBytes,
                      timestamps, crliteCoversCertificate);
 }
 
 Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
     const CertID& certID, Time time, Duration validityDuration,
-    const nsCString& aiaLocation, const bool crliteCoversCertificate,
-    const Result crliteResult,
-    /*optional*/ const Input* stapledOCSPResponse,
-    /*out*/ bool& softFailure) {
-  softFailure = false;
+    const nsCString& aiaLocation,
+    /*optional*/ const Input* stapledOCSPResponse) {
   const uint16_t maxOCSPLifetimeInDays = 10;
   // If we have a stapled OCSP response then the verification of that response
   // determines the result unless the OCSP response is expired. We make an
@@ -993,7 +987,8 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
         .Get("ShortValidity"_ns)
         .Add(1);
   }
-  if ((mOCSPFetching == NeverFetchOCSP) || (validityDuration < shortLifetime)) {
+  if ((mOCSPFetching == RevocationCheckLocalOnly) ||
+      (validityDuration < shortLifetime)) {
     // We're not going to be doing any fetching, so if there was a cached
     // "unknown" response, say so.
     if (cachedResponseResult == Result::ERROR_OCSP_UNKNOWN_CERT) {
@@ -1001,12 +996,11 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
     }
     // If we're doing hard-fail, we want to know if we have a cached response
     // that has expired.
-    if (mOCSPFetching == FetchOCSPForDVHardFail &&
+    if (mOCSPFetching == RevocationCheckRequired &&
         cachedResponseResult == Result::ERROR_OCSP_OLD_RESPONSE) {
       return Result::ERROR_OCSP_OLD_RESPONSE;
     }
 
-    softFailure = true;
     return Success;
   }
 
@@ -1015,27 +1009,18 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
   //  1) the user has not yet downloaded CRLite filters, or
   //  2) the user's CRLite filters are out-of-date, or
   //  3) the certificate has been in CT for < 1 MMD interval.
-  // If we're configured to enforce CRLite (i.e. CRLite is enabled and it is not
-  // in "confirm revocations" mode) and we're configured to tolerate OCSP soft
-  // failures, then it's reasonable to skip the synchronous OCSP request here.
-  // In effect, we're choosing to preserve the privacy of the user at the risk
-  // of potentially allowing them to navigate to a site that is serving a
+  // If we're configured to enforce CRLite and we're configured to tolerate OCSP
+  // soft failures, then it's reasonable to skip the synchronous OCSP request
+  // here. In effect, we're choosing to preserve the privacy of the user at the
+  // risk of potentially allowing them to navigate to a site that is serving a
   // revoked certificate.
-  if (mCRLiteMode == CRLiteMode::Enforce &&
-      mOCSPFetching == FetchOCSPForDVSoftFail && mIsBuiltChainRootBuiltInRoot) {
+  if (mOCSPFetching == RevocationCheckMayFetch &&
+      mCRLiteMode == CRLiteMode::Enforce && mIsBuiltChainRootBuiltInRoot) {
     return Success;
   }
 
-  if (mOCSPFetching == LocalOnlyOCSPForEV) {
-    if (cachedResponseResult != Success) {
-      return cachedResponseResult;
-    }
-    return Result::ERROR_OCSP_UNKNOWN_CERT;
-  }
-
   if (aiaLocation.IsVoid()) {
-    if (mOCSPFetching == FetchOCSPForEV ||
-        cachedResponseResult == Result::ERROR_OCSP_UNKNOWN_CERT) {
+    if (cachedResponseResult == Result::ERROR_OCSP_UNKNOWN_CERT) {
       return Result::ERROR_OCSP_UNKNOWN_CERT;
     }
     if (cachedResponseResult == Result::ERROR_OCSP_OLD_RESPONSE) {
@@ -1048,9 +1033,7 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
     // Nothing to do if we don't have an OCSP responder URI for the cert; just
     // assume it is good. Note that this is the confusing, but intended,
     // interpretation of "strict" revocation checking in the face of a
-    // certificate that lacks an OCSP responder URI. There's no need to set
-    // softFailure here---we check for the presence of an AIA before attempting
-    // OCSP when CRLite is configured in confirm revocations mode.
+    // certificate that lacks an OCSP responder URI.
     return Success;
   }
 
@@ -1062,19 +1045,17 @@ Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
     // responses from a failing server.
     return SynchronousCheckRevocationWithServer(
         certID, aiaLocation, time, maxOCSPLifetimeInDays, cachedResponseResult,
-        stapledOCSPResponseResult, crliteCoversCertificate, crliteResult,
-        softFailure);
+        stapledOCSPResponseResult);
   }
 
   return HandleOCSPFailure(cachedResponseResult, stapledOCSPResponseResult,
-                           cachedResponseResult, softFailure);
+                           cachedResponseResult);
 }
 
 Result NSSCertDBTrustDomain::SynchronousCheckRevocationWithServer(
     const CertID& certID, const nsCString& aiaLocation, Time time,
     uint16_t maxOCSPLifetimeInDays, const Result cachedResponseResult,
-    const Result stapledOCSPResponseResult, const bool crliteCoversCertificate,
-    const Result crliteResult, /*out*/ bool& softFailure) {
+    const Result stapledOCSPResponseResult) {
   if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
     return Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
@@ -1111,16 +1092,8 @@ Result NSSCertDBTrustDomain::SynchronousCheckRevocationWithServer(
       return cacheRV;
     }
 
-    if (crliteCoversCertificate &&
-        crliteResult == Result::ERROR_REVOKED_CERTIFICATE) {
-      // CRLite says the certificate is revoked, but OCSP fetching failed.
-      mozilla::glean::cert_verifier::crlite_vs_ocsp_result
-          .Get("CRLiteRevOCSPFail"_ns)
-          .Add(1);
-    }
-
     return HandleOCSPFailure(cachedResponseResult, stapledOCSPResponseResult,
-                             rv, softFailure);
+                             rv);
   }
 
   // If the response from the network has expired but indicates a revoked
@@ -1130,35 +1103,7 @@ Result NSSCertDBTrustDomain::SynchronousCheckRevocationWithServer(
   rv = VerifyAndMaybeCacheEncodedOCSPResponse(certID, time,
                                               maxOCSPLifetimeInDays, response,
                                               ResponseIsFromNetwork, expired);
-
-  // If CRLite said that this certificate is revoked, report the OCSP
-  // status. OCSP may have succeeded, said the certificate is revoked, said the
-  // certificate doesn't exist, or it may have failed for a reason that results
-  // in a "soft fail" (i.e. there is no indication that the certificate is
-  // either definitely revoked or definitely not revoked, so for usability,
-  // revocation checking says the certificate is valid by default).
-  if (crliteCoversCertificate &&
-      crliteResult == Result::ERROR_REVOKED_CERTIFICATE) {
-    if (rv == Success) {
-      mozilla::glean::cert_verifier::crlite_vs_ocsp_result
-          .Get("CRLiteRevOCSPOk"_ns)
-          .Add(1);
-    } else if (rv == Result::ERROR_REVOKED_CERTIFICATE) {
-      mozilla::glean::cert_verifier::crlite_vs_ocsp_result
-          .Get("CRLiteRevOCSPRev"_ns)
-          .Add(1);
-    } else if (rv == Result::ERROR_OCSP_UNKNOWN_CERT) {
-      mozilla::glean::cert_verifier::crlite_vs_ocsp_result
-          .Get("CRLiteRevOCSPUnk"_ns)
-          .Add(1);
-    } else {
-      mozilla::glean::cert_verifier::crlite_vs_ocsp_result
-          .Get("CRLiteRevOCSPSoft"_ns)
-          .Add(1);
-    }
-  }
-
-  if (rv == Success || mOCSPFetching != FetchOCSPForDVSoftFail) {
+  if (rv == Success || mOCSPFetching == RevocationCheckRequired) {
     MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
             ("NSSCertDBTrustDomain: returning after "
              "VerifyEncodedOCSPResponse"));
@@ -1177,14 +1122,13 @@ Result NSSCertDBTrustDomain::SynchronousCheckRevocationWithServer(
     return stapledOCSPResponseResult;
   }
 
-  softFailure = true;
   return Success;  // Soft fail -> success :(
 }
 
 Result NSSCertDBTrustDomain::HandleOCSPFailure(
     const Result cachedResponseResult, const Result stapledOCSPResponseResult,
-    const Result error, /*out*/ bool& softFailure) {
-  if (mOCSPFetching != FetchOCSPForDVSoftFail) {
+    const Result error) {
+  if (mOCSPFetching == RevocationCheckRequired) {
     MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
             ("NSSCertDBTrustDomain: returning SECFailure after OCSP request "
              "failure"));
@@ -1209,7 +1153,6 @@ Result NSSCertDBTrustDomain::HandleOCSPFailure(
           ("NSSCertDBTrustDomain: returning SECSuccess after OCSP request "
            "failure"));
 
-  softFailure = true;
   return Success;  // Soft fail -> success :(
 }
 
@@ -1506,63 +1449,7 @@ Result NSSCertDBTrustDomain::VerifyECDSASignedData(
 Result NSSCertDBTrustDomain::CheckValidityIsAcceptable(
     Time notBefore, Time notAfter, EndEntityOrCA endEntityOrCA,
     KeyPurposeId keyPurpose) {
-  if (endEntityOrCA != EndEntityOrCA::MustBeEndEntity) {
-    return Success;
-  }
-  if (keyPurpose == KeyPurposeId::id_kp_OCSPSigning) {
-    return Success;
-  }
-
-  Duration DURATION_27_MONTHS_PLUS_SLOP((2 * 365 + 3 * 31 + 7) *
-                                        Time::ONE_DAY_IN_SECONDS);
-  Duration maxValidityDuration(UINT64_MAX);
-  Duration validityDuration(notBefore, notAfter);
-
-  switch (mValidityCheckingMode) {
-    case ValidityCheckingMode::CheckingOff:
-      return Success;
-    case ValidityCheckingMode::CheckForEV:
-      // The EV Guidelines say the maximum is 27 months, but we use a slightly
-      // higher limit here to (hopefully) minimize compatibility breakage.
-      maxValidityDuration = DURATION_27_MONTHS_PLUS_SLOP;
-      break;
-    default:
-      MOZ_ASSERT_UNREACHABLE(
-          "We're not handling every ValidityCheckingMode type");
-  }
-
-  if (validityDuration > maxValidityDuration) {
-    return Result::ERROR_VALIDITY_TOO_LONG;
-  }
-
   return Success;
-}
-
-Result NSSCertDBTrustDomain::NetscapeStepUpMatchesServerAuth(
-    Time notBefore,
-    /*out*/ bool& matches) {
-  // (new Date("2015-08-23T00:00:00Z")).getTime() / 1000
-  static const Time AUGUST_23_2015 = TimeFromEpochInSeconds(1440288000);
-  // (new Date("2016-08-23T00:00:00Z")).getTime() / 1000
-  static const Time AUGUST_23_2016 = TimeFromEpochInSeconds(1471910400);
-
-  switch (mNetscapeStepUpPolicy) {
-    case NetscapeStepUpPolicy::AlwaysMatch:
-      matches = true;
-      return Success;
-    case NetscapeStepUpPolicy::MatchBefore23August2016:
-      matches = notBefore < AUGUST_23_2016;
-      return Success;
-    case NetscapeStepUpPolicy::MatchBefore23August2015:
-      matches = notBefore < AUGUST_23_2015;
-      return Success;
-    case NetscapeStepUpPolicy::NeverMatch:
-      matches = false;
-      return Success;
-    default:
-      MOZ_ASSERT_UNREACHABLE("unhandled NetscapeStepUpPolicy type");
-  }
-  return Result::FATAL_ERROR_LIBRARY_FAILURE;
 }
 
 void NSSCertDBTrustDomain::ResetAccumulatedState() {
@@ -1586,7 +1473,7 @@ static Input SECItemToInput(const UniqueSECItem& item) {
     // As used here, |item| originally comes from an Input,
     // so there should be no issues converting it back.
     MOZ_ASSERT(rv == Success);
-    Unused << rv;  // suppresses warnings in release builds
+    (void)rv;  // suppresses warnings in release builds
   }
   return result;
 }
@@ -1597,6 +1484,10 @@ Input NSSCertDBTrustDomain::GetSCTListFromCertificate() const {
 
 Input NSSCertDBTrustDomain::GetSCTListFromOCSPStapling() const {
   return SECItemToInput(mSCTListFromOCSPStapling);
+}
+
+Maybe<CTVerifyResult>& NSSCertDBTrustDomain::GetCachedCTVerifyResult() {
+  return mCTVerifyResult;
 }
 
 bool NSSCertDBTrustDomain::GetIsBuiltChainRootBuiltInRoot() const {
@@ -1660,7 +1551,7 @@ SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
     if (PK11_NeedUserInit(slot.get())) {
       srv = PK11_InitPin(slot.get(), nullptr, nullptr);
       MOZ_ASSERT(srv == SECSuccess);
-      Unused << srv;
+      (void)srv;
     }
   }
 
@@ -1692,7 +1583,7 @@ bool LoadUserModuleAt(const char* moduleName, const char* libraryName,
   // it. Note that it isn't possible to delete the internal module, so checking
   // the return value would be detrimental in that case.
   int unusedModType;
-  Unused << SECMOD_DeleteModule(moduleName, &unusedModType);
+  (void)SECMOD_DeleteModule(moduleName, &unusedModType);
 
   nsAutoCString fullLibraryPath;
   if (!dir.IsEmpty()) {
@@ -1736,7 +1627,7 @@ bool LoadUserModuleFromXul(const char* moduleName,
   // it. Note that it isn't possible to delete the internal module, so checking
   // the return value would be detrimental in that case.
   int unusedModType;
-  Unused << SECMOD_DeleteModule(moduleName, &unusedModType);
+  (void)SECMOD_DeleteModule(moduleName, &unusedModType);
 
   UniqueSECMODModule userModule(
       SECMOD_LoadUserModuleWithFunction(moduleName, fentry));
@@ -1803,7 +1694,7 @@ bool LoadOSClientCertsModule() {
 
 bool LoadLoadableRoots(const nsCString& dir) {
   int unusedModType;
-  Unused << SECMOD_DeleteModule("Root Certs", &unusedModType);
+  (void)SECMOD_DeleteModule("Root Certs", &unusedModType);
   return LoadUserModuleAt(kRootModuleName.get(), "nssckbi", dir, nullptr);
 }
 
@@ -1821,7 +1712,7 @@ bool LoadLoadableRootsFromXul() {
   // can cause us to fail to load our roots module. In these cases, deleting the
   // "Root Certs" module allows us to load the correct one. See bug 1406396.
   int unusedModType;
-  Unused << SECMOD_DeleteModule("Root Certs", &unusedModType);
+  (void)SECMOD_DeleteModule("Root Certs", &unusedModType);
 
   if (!LoadUserModuleFromXul(kRootModuleName.get(),
                              TRUST_ANCHORS_GetFunctionList)) {

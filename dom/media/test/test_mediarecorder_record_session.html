@@ -23,7 +23,7 @@ function startTest(test, token) {
 
   element.src = test.name;
   element.test = test;
-  element.stream = element.mozCaptureStream();
+  element.stream = element.captureStream?.() || element.mozCaptureStream();
 
   var mStopCount = 0;
   // Start and stop recording session three times continuously.

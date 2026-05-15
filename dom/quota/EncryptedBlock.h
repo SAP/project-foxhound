@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Span.h"
 #include "nsTArray.h"

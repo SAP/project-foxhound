@@ -44,11 +44,11 @@ async function testEditSelector(view, name) {
   EventUtils.synthesizeKey("KEY_Enter");
   await onRuleViewChanged;
 
-  is(view._elementStyle.rules.length, 3, "Should have 3 rules.");
+  is(view.elementStyle.rules.length, 3, "Should have 3 rules.");
   ok(getRuleViewRule(view, name), "Rule with " + name + " selector exists.");
 }
 
 function checkModifiedElement(view, name) {
-  is(view._elementStyle.rules.length, 2, "Should have 2 rules.");
+  is(view.elementStyle.rules.length, 2, "Should have 2 rules.");
   ok(getRuleViewRule(view, name), "Rule with " + name + " selector exists.");
 }

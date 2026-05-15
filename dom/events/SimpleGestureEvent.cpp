@@ -6,8 +6,8 @@
 
 #include "SimpleGestureEvent.h"
 
-#include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/dom/MouseEventBinding.h"
 
 namespace mozilla::dom {
 

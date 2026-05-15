@@ -227,7 +227,7 @@ async function check_results({
     for (let i = 0; i < expectedResults; i++) {
       let { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
       Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.SEARCH);
-      Assert.equal(result.providerName, "SearchSuggestions");
+      Assert.equal(result.providerName, "UrlbarProviderSearchSuggestions");
       Assert.equal(result.payload.engine, "basic");
       Assert.equal(result.payload.trending, true);
     }

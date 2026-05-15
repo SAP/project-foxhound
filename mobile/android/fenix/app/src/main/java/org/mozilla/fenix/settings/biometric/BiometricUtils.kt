@@ -10,13 +10,13 @@ import android.content.Intent
 import android.provider.Settings
 import android.view.View
 import androidx.annotation.StringRes
-import androidx.appcompat.app.AlertDialog
 import androidx.biometric.BiometricManager
 import androidx.core.content.getSystemService
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.findFragment
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
@@ -119,7 +119,7 @@ private fun showPinDialogWarning(
     activity: FragmentActivity,
     onIgnorePinWarning: () -> Unit,
 ) {
-    AlertDialog.Builder(activity).apply {
+    MaterialAlertDialogBuilder(activity).apply {
         setTitle(context.resources.getString(R.string.logins_warning_dialog_title_2))
         setMessage(
             context.resources.getString(R.string.logins_warning_dialog_message_2),

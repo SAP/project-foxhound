@@ -185,12 +185,14 @@ fn test_generic() {
 #[test]
 fn test_generic_enum() {
     #[derive(Clone, Copy, Debug, Default, PartialEq, PeekPoke)]
+    #[allow(dead_code)]
     pub struct PropertyBindingKey<T> {
         pub id: usize,
         _phantom: PhantomData<T>,
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, PeekPoke)]
+    #[allow(dead_code)]
     pub enum PropertyBinding<T> {
         Value(T),
         Binding(PropertyBindingKey<T>, T),

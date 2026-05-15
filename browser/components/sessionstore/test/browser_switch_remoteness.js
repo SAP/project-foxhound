@@ -21,7 +21,7 @@ add_task(async function () {
   // Add a new tab.
   let tab = BrowserTestUtils.addTab(win.gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
   ok(browser.isRemoteBrowser, "browser is remote");
 
   // Get the maximum number of preceding entries to save.

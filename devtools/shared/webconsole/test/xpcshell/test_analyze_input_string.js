@@ -203,6 +203,18 @@ add_task(() => {
       },
     },
     {
+      desc: "string literal with surrogate pair character",
+      input: `"🧑".c`,
+      expected: {
+        isElementAccess: false,
+        isPropertyAccess: true,
+        expressionBeforePropertyAccess: `"🧑"`,
+        lastStatement: `"🧑".c`,
+        mainExpression: `"🧑"`,
+        matchProp: `c`,
+      },
+    },
+    {
       desc: "optional chaining operator with spaces",
       input: `test  ?.    ["propA"]  ?.   [0]  ?.   ["propB"]  ?.  ['to`,
       expected: {

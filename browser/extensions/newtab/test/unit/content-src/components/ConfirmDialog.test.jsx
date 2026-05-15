@@ -23,7 +23,7 @@ describe("<ConfirmDialog>", () => {
     );
   });
   it("should render an overlay", () => {
-    assert.ok(wrapper.find(".modal-overlay").exists());
+    assert.ok(wrapper.find("dialog").exists());
   });
   it("should render a modal", () => {
     assert.ok(wrapper.find(".confirmation-dialog").exists());
@@ -34,7 +34,7 @@ describe("<ConfirmDialog>", () => {
       <ConfirmDialog dispatch={dispatch} {...ConfirmDialogProps} />
     );
 
-    assert.lengthOf(wrapper.find(".confirmation-dialog"), 0);
+    assert.lengthOf(wrapper.find("dialog"), 1);
   });
   it("should display an icon if we provide one in props", () => {
     const iconName = "modal-icon";
@@ -74,7 +74,7 @@ describe("<ConfirmDialog>", () => {
         <ConfirmDialog dispatch={dispatch} {...ConfirmDialogProps} />
       );
 
-      let doneLabel = wrapper.find(".actions").childAt(1);
+      let doneLabel = wrapper.find("moz-button[type='primary']");
       assert.ok(doneLabel.exists());
       assert.equal(
         doneLabel.prop("data-l10n-id"),
@@ -84,10 +84,12 @@ describe("<ConfirmDialog>", () => {
   });
   describe("click events", () => {
     it("should emit AlsoToMain DIALOG_CANCEL when you click the overlay", () => {
-      let overlay = wrapper.find(".modal-overlay");
+      let dialog = wrapper.find("dialog");
 
-      assert.ok(overlay.exists());
-      overlay.simulate("click");
+      assert.ok(dialog.exists());
+      dialog.simulate("click", {
+        target: wrapper.instance().dialogRef.current,
+      });
 
       // Two events are emitted: UserEvent+AlsoToMain.
       assert.calledTwice(dispatch);
@@ -95,10 +97,12 @@ describe("<ConfirmDialog>", () => {
       assert.calledWith(dispatch, { type: at.DIALOG_CANCEL });
     });
     it("should emit UserEvent DIALOG_CANCEL when you click the overlay", () => {
-      let overlay = wrapper.find(".modal-overlay");
+      let dialog = wrapper.find("dialog");
 
-      assert.ok(overlay);
-      overlay.simulate("click");
+      assert.ok(dialog);
+      dialog.simulate("click", {
+        target: wrapper.instance().dialogRef.current,
+      });
 
       // Two events are emitted: UserEvent+AlsoToMain.
       assert.calledTwice(dispatch);
@@ -109,7 +113,9 @@ describe("<ConfirmDialog>", () => {
       );
     });
     it("should emit AlsoToMain DIALOG_CANCEL on cancel", () => {
-      let cancelButton = wrapper.find(".actions").childAt(0);
+      let cancelButton = wrapper
+        .find("moz-button")
+        .filterWhere(n => !n.prop("type"));
 
       assert.ok(cancelButton);
       cancelButton.simulate("click");
@@ -120,7 +126,9 @@ describe("<ConfirmDialog>", () => {
       assert.calledWith(dispatch, { type: at.DIALOG_CANCEL });
     });
     it("should emit UserEvent DIALOG_CANCEL on cancel", () => {
-      let cancelButton = wrapper.find(".actions").childAt(0);
+      let cancelButton = wrapper
+        .find("moz-button")
+        .filterWhere(n => !n.prop("type"));
 
       assert.ok(cancelButton);
       cancelButton.simulate("click");
@@ -144,7 +152,7 @@ describe("<ConfirmDialog>", () => {
       wrapper = shallow(
         <ConfirmDialog dispatch={dispatch} {...ConfirmDialogProps} />
       );
-      let doneButton = wrapper.find(".actions").childAt(1);
+      let doneButton = wrapper.find("moz-button[type='primary']");
 
       assert.ok(doneButton);
       doneButton.simulate("click");
@@ -166,7 +174,7 @@ describe("<ConfirmDialog>", () => {
       wrapper = shallow(
         <ConfirmDialog dispatch={dispatch} {...ConfirmDialogProps} />
       );
-      let doneButton = wrapper.find(".actions").childAt(1);
+      let doneButton = wrapper.find("moz-button[type='primary']");
 
       assert.ok(doneButton);
       doneButton.simulate("click");

@@ -4,6 +4,7 @@
 
 import argparse
 import errno
+import functools
 import itertools
 import json
 import logging
@@ -21,12 +22,16 @@ from os import path
 from pathlib import Path
 
 import mozpack.path as mozpath
+import mozshellutil
+from gtest.reports import AggregatedGTestReport
+from gtest.suites import get_gtest_suites, suite_filters
 from mach.decorators import (
     Command,
     CommandArgument,
     CommandArgumentGroup,
     SubCommand,
 )
+from mozdebug import prepend_debugger_args
 from mozfile import load_source
 
 from mozbuild.base import (
@@ -35,7 +40,12 @@ from mozbuild.base import (
     MozbuildObject,
 )
 from mozbuild.base import MachCommandConditions as conditions
-from mozbuild.util import MOZBUILD_METRICS_PATH, ForwardingArgumentParser
+from mozbuild.util import (
+    MOZBUILD_METRICS_PATH,
+    ForwardingArgumentParser,
+    ensure_l10n_central,
+    get_latest_file,
+)
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -55,18 +65,6 @@ and tell us about your machine and build configuration so we can adjust the
 warning heuristic.
 ===================
 """
-
-
-class MissingL10nError(Exception):
-    """Raised when the l10n repositories haven’t been checked out."""
-
-    pass
-
-
-class NotAGitRepositoryError(Exception):
-    """Raised when the directory isn’t a git repository."""
-
-    pass
 
 
 class StoreDebugParamsAndWarnAction(argparse.Action):
@@ -130,36 +128,34 @@ def _cargo_config_yaml_schema():
         else:
             raise ValueError
 
-    return Schema(
-        {
-            # The name of the command (not checked for now, but maybe
-            #  later)
-            Required("command"): All(str, starts_with_cargo),
-            # Whether `make` should stop immediately in case
-            # of error returned by the command. Default: False
-            "continue_on_error": Boolean,
-            # Whether this command requires pre_export and export build
-            # targets to have run. Defaults to bool(cargo_build_flags).
-            "requires_export": Boolean,
-            # Build flags to use.  If this variable is not
-            # defined here, the build flags are generated automatically and are
-            # the same as for `cargo build`. See available substitutions at the
-            # end.
-            "cargo_build_flags": [str],
-            # Extra build flags to use. These flags are added
-            # after the cargo_build_flags both when they are provided or
-            # automatically generated. See available substitutions at the end.
-            "cargo_extra_flags": [str],
-            # Available substitutions for `cargo_*_flags`:
-            # * {arch}: architecture target
-            # * {crate}: current crate name
-            # * {directory}: Directory of the current crate within the source tree
-            # * {features}: Rust features (for `--features`)
-            # * {manifest}: full path of `Cargo.toml` file
-            # * {target}: `--lib` for library, `--bin CRATE` for executables
-            # * {topsrcdir}: Top directory of sources
-        }
-    )
+    return Schema({
+        # The name of the command (not checked for now, but maybe
+        #  later)
+        Required("command"): All(str, starts_with_cargo),
+        # Whether `make` should stop immediately in case
+        # of error returned by the command. Default: False
+        "continue_on_error": Boolean,
+        # Whether this command requires pre_export and export build
+        # targets to have run. Defaults to bool(cargo_build_flags).
+        "requires_export": Boolean,
+        # Build flags to use.  If this variable is not
+        # defined here, the build flags are generated automatically and are
+        # the same as for `cargo build`. See available substitutions at the
+        # end.
+        "cargo_build_flags": [str],
+        # Extra build flags to use. These flags are added
+        # after the cargo_build_flags both when they are provided or
+        # automatically generated. See available substitutions at the end.
+        "cargo_extra_flags": [str],
+        # Available substitutions for `cargo_*_flags`:
+        # * {arch}: architecture target
+        # * {crate}: current crate name
+        # * {directory}: Directory of the current crate within the source tree
+        # * {features}: Rust features (for `--features`)
+        # * {manifest}: full path of `Cargo.toml` file
+        # * {target}: `--lib` for library, `--bin CRATE` for executables
+        # * {topsrcdir}: Top directory of sources
+    })
 
 
 @Command(
@@ -431,6 +427,7 @@ def cargo_vet(command_context, arguments, stdout=None, env=os.environ):
     try:
         res = subprocess.run(
             [cargo, "vet"] + arguments,
+            check=False,
             cwd=cargo_vet_dir,
             stdout=stdout,
             env=env,
@@ -476,7 +473,7 @@ def doctor(command_context, fix=False, verbose=False):
     )
 
 
-CLOBBER_CHOICES = {"objdir", "python", "gradle"}
+CLOBBER_CHOICES = {"objdir", "python", "gradle", "artifacts"}
 
 
 @Command(
@@ -489,8 +486,9 @@ CLOBBER_CHOICES = {"objdir", "python", "gradle"}
     "what",
     default=["objdir", "python"],
     nargs="*",
-    help="Target to clobber, must be one of {{{}}} (default "
-    "objdir and python).".format(", ".join(CLOBBER_CHOICES)),
+    help="Target to clobber, must be one of {{{}}} (default objdir and python).".format(
+        ", ".join(CLOBBER_CHOICES)
+    ),
 )
 @CommandArgument("--full", action="store_true", help="Perform a full clobber")
 def clobber(command_context, what, full=False):
@@ -511,6 +509,9 @@ def clobber(command_context, what, full=False):
 
     The `gradle` target will remove the "gradle" subdirectory of the object
     directory.
+
+    The `artifacts` target will remove cached artifact files from
+    ~/.mozbuild/package-frontend or $MOZBUILD_STATE_PATH/package-frontend.
 
     By default, the command clobbers the `objdir` and `python` targets.
     """
@@ -574,7 +575,9 @@ def clobber(command_context, what, full=False):
             ret = subprocess.call(cmd, cwd=topsrcdir)
         elif conditions.is_git(command_context) or conditions.is_jj(command_context):
             cmd = ["git", "clean", "-d", "-f", "-x", "*.py[cdo]", "*/__pycache__/*"]
-            result = subprocess.run(cmd, cwd=topsrcdir, stderr=subprocess.DEVNULL)
+            result = subprocess.run(
+                cmd, check=False, cwd=topsrcdir, stderr=subprocess.DEVNULL
+            )
             # We assume the `jj` repo is a colocated `git` repo, if not, fall back to a pure python approach
             if conditions.is_jj(command_context) and result.returncode != 0:
                 _pure_python_clean(topsrcdir)
@@ -607,6 +610,16 @@ def clobber(command_context, what, full=False):
             mozpath.join(command_context.topobjdir, "gradle"), ignore_errors=True
         )
 
+    if "artifacts" in what:
+        from mach.util import get_state_dir
+
+        state_dir = Path(get_state_dir(specific_to_topsrcdir=False))
+        artifact_cache_dir = state_dir / "package-frontend"
+
+        if artifact_cache_dir.exists():
+            print(f"Removing artifact cache directory: {artifact_cache_dir}")
+            shutil.rmtree(artifact_cache_dir, ignore_errors=True)
+
     return ret
 
 
@@ -627,8 +640,28 @@ def show_log(command_context, log_file=None):
     (https://man7.org/linux/man-pages/man1/less.1.html)
     """
     if not log_file:
-        path = command_context._get_state_filename("last_log.json")
-        log_file = open(path, "rb")
+        latest_file = Path(command_context._get_state_filename("latest-command"))
+        if not latest_file.exists():
+            command_context.log(
+                logging.WARNING,
+                "show_log",
+                {},
+                "Could not locate latest log file. You may need to run a command first.",
+            )
+            return
+        command_name = latest_file.read_text().strip()
+        subdir = f"logs/{command_name}"
+        log_dir = Path(command_context._get_state_filename("", subdir=subdir))
+        log_path = get_latest_file(log_dir, command_name)
+        if not log_path:
+            command_context.log(
+                logging.WARNING,
+                "show_log",
+                {},
+                f"No log files found for latest '{command_name}' command. They may have been deleted.",
+            )
+            return
+        log_file = log_path.open("rb")
 
     if os.isatty(sys.stdout.fileno()):
         env = dict(os.environ)
@@ -674,7 +707,7 @@ def show_log(command_context, log_file=None):
         except OSError as os_error:
             # (POSIX)   errno.EPIPE: BrokenPipeError: [Errno 32] Broken pipe
             # (Windows) errno.EINVAL: OSError:        [Errno 22] Invalid argument
-            if os_error.errno == errno.EPIPE or os_error.errno == errno.EINVAL:
+            if os_error.errno in {errno.EPIPE, errno.EINVAL}:
                 # If the user manually terminates 'less' before the entire log file
                 # is piped (without scrolling close enough to the bottom) we will get
                 # one of these errors (depends on the OS) because the logger will still
@@ -699,21 +732,19 @@ def show_log(command_context, log_file=None):
 def handle_log_file(command_context, log_file):
     start_time = 0
     for line in log_file:
-        created, action, params = json.loads(line)
+        created, action, params, msg = json.loads(line)
         if not start_time:
             start_time = created
             command_context.log_manager.terminal_handler.formatter.start_time = created
         if "line" in params:
-            record = logging.makeLogRecord(
-                {
-                    "created": created,
-                    "name": command_context._logger.name,
-                    "levelno": logging.INFO,
-                    "msg": "{line}",
-                    "params": params,
-                    "action": action,
-                }
-            )
+            record = logging.makeLogRecord({
+                "created": created,
+                "name": command_context._logger.name,
+                "levelno": logging.INFO,
+                "msg": msg,
+                "params": params,
+                "action": action,
+            })
             command_context._logger.handle(record)
 
 
@@ -721,7 +752,7 @@ def handle_log_file(command_context, log_file):
 
 
 def database_path(command_context):
-    return command_context._get_state_filename("warnings.json")
+    return get_latest_file(command_context._build_log_dir(), "warnings")
 
 
 def get_warnings_database(command_context):
@@ -731,8 +762,8 @@ def get_warnings_database(command_context):
 
     database = WarningsDatabase()
 
-    if os.path.exists(path):
-        database.load_from_file(path)
+    if path and path.exists():
+        database.load_from_file(str(path))
 
     return database
 
@@ -874,6 +905,13 @@ def join_ensure_dir(dir1, dir2):
     help="Run the tests in parallel using multiple processes.",
 )
 @CommandArgument(
+    "--combine-suites",
+    action="store_true",
+    default=False,
+    help="Run multiple test suites in the same process invocation (as opposed "
+    "to the default behavior of running one process per test suite).",
+)
+@CommandArgument(
     "--tbpl-parser",
     "-t",
     action="store_true",
@@ -977,6 +1015,7 @@ def gtest(
     command_context,
     shuffle,
     jobs,
+    combine_suites,
     gtest_filter,
     list_tests,
     tbpl_parser,
@@ -1021,6 +1060,10 @@ def gtest(
     if conditions.is_android(command_context):
         if jobs != 1:
             print("--jobs is not supported on Android and will be ignored")
+        if combine_suites:
+            print(
+                "--combine-suites is always the behavior on Android and will be ignored"
+            )
         if enable_inc_origin_init:
             print(
                 "--enable-inc-origin-init is not supported on Android and will"
@@ -1069,15 +1112,18 @@ def gtest(
     if list_tests:
         args.append("--gtest_list_tests")
 
-    if debug or debugger or debugger_args:
-        args = _prepend_debugger_args(args, debugger, debugger_args)
+    is_debugging = debug or debugger or debugger_args
+
+    if is_debugging:
+        args = prepend_debugger_args(args, debugger, debugger_args)
         if not args:
             return 1
 
     # Use GTest environment variable to control test execution
     # For details see:
     # https://google.github.io/googletest/advanced.html#running-test-programs-advanced-options
-    gtest_env = {"GTEST_FILTER": gtest_filter}
+    gtest_env = dict(os.environ)
+    gtest_env["GTEST_FILTER"] = gtest_filter
 
     # Note: we must normalize the path here so that gtest on Windows sees
     # a MOZ_GMP_PATH which has only Windows dir seperators, because
@@ -1089,6 +1135,9 @@ def gtest(
     )
 
     gtest_env["MOZ_RUN_GTEST"] = "True"
+
+    # For parity with CI mozharness test runner, provide Python path in an environment variable
+    gtest_env["PYTHON"] = sys.executable
 
     if shuffle:
         gtest_env["GTEST_SHUFFLE"] = "True"
@@ -1124,7 +1173,11 @@ def gtest(
             gtest_filter_sets.list()
             return 1
 
-    if jobs == 1:
+    # Don't bother with multiple processes if:
+    # - listing tests
+    # - running the debugger
+    # - combining suites with one job
+    if list_tests or is_debugging or (combine_suites and jobs == 1):
         return command_context.run_process(
             args=args,
             append_env=gtest_env,
@@ -1133,38 +1186,153 @@ def gtest(
             pass_thru=True,
         )
 
-    import functools
+    report = AggregatedGTestReport()
 
-    from mozprocess import ProcessHandlerMixin
+    with report:
+        from mozprocess import ProcessHandlerMixin
 
-    def handle_line(job_id, line):
-        # Prepend the jobId
-        line = "[%d] %s" % (job_id + 1, line.strip())
-        command_context.log(logging.INFO, "GTest", {"line": line}, "{line}")
+        processes = []
 
-    gtest_env["GTEST_TOTAL_SHARDS"] = str(jobs)
-    processes = {}
-    for i in range(0, jobs):
-        gtest_env["GTEST_SHARD_INDEX"] = str(i)
-        processes[i] = ProcessHandlerMixin(
-            [app_path, "-unittest"],
-            cwd=cwd,
-            env=gtest_env,
-            processOutputLine=[functools.partial(handle_line, i)],
-            universal_newlines=True,
-        )
-        processes[i].run()
+        def add_process(job_id, append_env, **kwargs):
+            def log_line(line):
+                # Prepend the job identifier to output
+                command_context.log(
+                    logging.INFO,
+                    "GTest",
+                    {"job_id": job_id, "line": line.strip()},
+                    "[{job_id}] {line}",
+                )
 
-    exit_code = 0
-    for process in processes.values():
-        status = process.wait()
-        if status:
-            exit_code = status
+            env = os.environ.copy()
+            # Allow the new environment to overwrite system environment variables.
+            env.update(append_env)
 
-    # Clamp error code to 255 to prevent overflowing multiple of
-    # 256 into 0
-    if exit_code > 255:
-        exit_code = 255
+            report.set_output_in_env(env, job_id)
+
+            proc = ProcessHandlerMixin(
+                [app_path, "-unittest"],
+                cwd=cwd,
+                universal_newlines=True,
+                env=env,
+                processOutputLine=log_line,
+                **kwargs,
+            )
+            processes.append(proc)
+            return proc
+
+        if combine_suites:
+            # Use GTest sharding to create `jobs` processes
+            gtest_env["GTEST_TOTAL_SHARDS"] = str(jobs)
+
+            for i in range(0, jobs):
+                env = gtest_env.copy()
+                env["GTEST_SHARD_INDEX"] = str(i)
+                add_process(str(i), env).run()
+        else:
+            # Make one process per test suite
+            suites = get_gtest_suites(args, cwd, gtest_env)
+
+            from threading import Event, Lock
+
+            processes_to_run = []
+            all_processes_run = Event()
+            running_suites = set()
+            process_state_lock = Lock()
+
+            def run_next(finished_suite=None):
+                """
+                Run another test suite process.
+
+                If `finished_suite` is provided, it will be considered as finished.
+                This updates the `running_suites` set and will signal the
+                `all_processes_run` Event when there are no longer any test suites
+                to start (though some may still be running).
+
+                This may be safely called from different threads
+                (ProcessHandlerMixin callbacks occur from separate threads).
+                """
+                # The changes here must be synchronized, so acquire a lock for the
+                # duration of the function.
+                with process_state_lock:
+                    if finished_suite is not None:
+                        running_suites.remove(finished_suite)
+                    if len(processes_to_run) > 0:
+                        next_suite, proc = processes_to_run.pop()
+                        proc.run()
+                        running_suites.add(next_suite)
+                        command_context.log(
+                            logging.DEBUG,
+                            "GTest",
+                            {},
+                            f"Starting {next_suite} tests. {len(processes_to_run)} suites remain.",
+                        )
+                    else:
+                        all_processes_run.set()
+                    if len(running_suites) > 0:
+                        command_context.log(
+                            logging.INFO,
+                            "GTest",
+                            {},
+                            f"Currently running suites: {', '.join(running_suites)}",
+                        )
+
+            for filt in suite_filters(suites):
+                proc = add_process(
+                    filt.suite,
+                    filt(gtest_env.copy()),
+                    onFinish=functools.partial(run_next, filt.suite),
+                )
+                processes_to_run.append((filt.suite, proc))
+
+            # Start a number of processes according to 'jobs'. As they finish,
+            # they'll each kick off another one.
+            for _ in range(jobs):
+                run_next()
+
+            # Wait for all processes to have been started, then wait on completion.
+            all_processes_run.wait()
+
+        # Wait on processes and return a non-zero exit code if any process does so.
+        exit_code = 0
+        for process in processes:
+            status = process.wait()
+            if status:
+                exit_code = status
+
+        # Clamp error code to 255 to prevent overflowing multiple of
+        # 256 into 0
+        exit_code = min(exit_code, 255)
+
+    # Show aggregated report information and any test errors.
+    command_context.log(
+        logging.INFO,
+        "GTest",
+        {
+            "tests": report["tests"] - report["disabled"],
+            "failures": report["failures"],
+            "disabled": report["disabled"],
+            "suites": len(report["testsuites"]),
+        },
+        "Ran {tests} test(s) from {suites} test suite(s) ({disabled} disabled), with {failures} failure(s).",
+    )
+
+    for suite in report["testsuites"]:
+        if suite["failures"] == 0:
+            continue
+        for test in suite["testsuite"]:
+            if "failures" not in test:
+                continue
+            full_name = f"{suite['name']}.{test['name']}"
+            command_context.log(
+                logging.ERROR,
+                "GTest",
+                {
+                    "test": full_name,
+                    "failure_count": len(test["failures"]),
+                    "failures": "\n".join(e["failure"] for e in test["failures"]),
+                },
+                "{test} failed {failure_count} check(s):\n{failures}",
+            )
 
     return exit_code
 
@@ -1226,6 +1394,33 @@ def android_gtest(
     tester.cleanup()
 
     return exit_code
+
+
+@Command(
+    "source-package",
+    category="misc",
+    description="Package source for distribution.",
+)
+def source_package(command_context, verbose=False):
+    if conditions.is_jsshell(command_context):
+        js_src = os.path.join(command_context.topsrcdir, "js", "src")
+        command_context.run_process(
+            [sys.executable, os.path.join(js_src, "make-source-package.py")],
+            cwd=js_src,
+            append_env={
+                "DIST": command_context.substs["DIST"],
+                "MOZJS_MAJOR_VERSION": command_context.substs["MOZJS_MAJOR_VERSION"],
+                "MOZJS_MINOR_VERSION": command_context.substs["MOZJS_MINOR_VERSION"],
+                "MOZJS_PATCH_VERSION": command_context.substs["MOZJS_PATCH_VERSION"],
+                "MOZJS_ALPHA": command_context.substs["MOZJS_ALPHA"],
+            },
+            ensure_exit_code=0,
+        )
+    else:
+        command_context._run_make(
+            directory=".", target="source-package", ensure_exit_code=True
+        )
+    command_context.notify("Packaging complete")
 
 
 @Command(
@@ -1366,6 +1561,10 @@ def install(command_context, **kwargs):
 
         return 0
 
+    elif conditions.is_ios(command_context):
+        from mozrunner.devices.ios_device import verify_ios_device
+
+        ret = verify_ios_device(command_context, install=True, **kwargs) == 0
     else:
         ret = command_context._run_make(
             directory=".", target="install", ensure_exit_code=False
@@ -1428,8 +1627,7 @@ def _get_android_run_parser():
         "--no-wait",
         action="store_true",
         default=False,
-        help="Do not wait for application to start before returning "
-        "(default: False)",
+        help="Do not wait for application to start before returning (default: False)",
     )
     group.add_argument(
         "--enable-fission",
@@ -1548,6 +1746,15 @@ def _get_desktop_run_parser():
         help="Do not pass the --profile argument by default.",
     )
     group.add_argument(
+        "--appdata",
+        "-a",
+        nargs="?",
+        const=True,
+        default=False,
+        help="Overrides the application data storage area defaulting to a "
+        "temporary location in the object directory. Implies --noprofile.",
+    )
+    group.add_argument(
         "--disable-e10s",
         action="store_true",
         help="Run the program with electrolysis disabled.",
@@ -1573,8 +1780,7 @@ def _get_desktop_run_parser():
     group.add_argument(
         "--temp-profile",
         action="store_true",
-        help="Run the program using a new temporary profile created inside "
-        "the objdir.",
+        help="Run the program using a new temporary profile created inside the objdir.",
     )
     group.add_argument(
         "--macos-open",
@@ -2004,13 +2210,13 @@ process attach {continue_flag}-p {pid!s}
                     )
                 )
 
-            our_debugger_args = "-s %s" % tmp_lldb_start_script
+            our_debugger_args = mozshellutil.quote("-s", tmp_lldb_start_script)
             if debugger_args:
                 full_debugger_args = " ".join([debugger_args, our_debugger_args])
             else:
                 full_debugger_args = our_debugger_args
 
-            args = _prepend_debugger_args([], debugger, full_debugger_args)
+            args = prepend_debugger_args([], debugger, full_debugger_args)
             if not args:
                 return 1
 
@@ -2024,6 +2230,38 @@ process attach {continue_flag}-p {pid!s}
         device.shell("pkill -f lldb-server", enable_run_as=True)
         if not use_existing_process:
             device.shell("am clear-debug-app")
+
+
+def _run_ios(command_context, no_install=None, debug=False):
+    from mozdevice.ios import IosDevice
+    from mozrunner.devices.ios_device import (
+        verify_ios_device,
+    )
+
+    app = "org.mozilla.ios.GeckoTestBrowser"
+
+    # `verify_ios_device` respects sets `DEVICE_UUID`
+    verify_ios_device(
+        command_context,
+        app=app,
+        install=not no_install,
+    )
+    device_serial = os.environ.get("DEVICE_UUID")
+    if not device_serial:
+        print("No iOS devices connected.")
+        return 1
+
+    device = IosDevice.select_device(conditions.is_ios_simulator(command_context))
+    if debug:
+        print("Application will pause after starting until a debugger is connected...")
+    proc = device.launch_process(
+        app,
+        wait_for_debugger=debug,
+        stdout=None,
+        stderr=None,
+    )
+    proc.run()
+    proc.wait()
 
 
 def _run_jsshell(command_context, params, debug, debugger, debugger_args):
@@ -2045,24 +2283,9 @@ def _run_jsshell(command_context, params, debug, debugger, debugger_args):
         if "INSIDE_EMACS" in os.environ:
             command_context.log_manager.terminal_handler.setLevel(logging.WARNING)
 
-        import mozdebug
-
-        if not debugger:
-            # No debugger name was provided. Look for the default ones on
-            # current OS.
-            debugger = mozdebug.get_default_debugger_name(
-                mozdebug.DebuggerSearch.KeepLooking
-            )
-
-        if debugger:
-            debuggerInfo = mozdebug.get_debugger_info(debugger, debugger_args)
-
-        if not debugger or not debuggerInfo:
-            print("Could not find a suitable debugger in your PATH.")
+        args = prepend_debugger_args(args, debugger, debugger_args)
+        if not args:
             return 1
-
-        # Prepend the debugger args.
-        args = [debuggerInfo.path] + debuggerInfo.args + args
 
     return command_context.run_process(
         args=args, ensure_exit_code=False, pass_thru=True, append_env=extra_env
@@ -2076,6 +2299,7 @@ def _run_desktop(
     app,
     background,
     noprofile,
+    appdata,
     disable_e10s,
     enable_crash_reporter,
     disable_fission,
@@ -2167,6 +2391,10 @@ def _run_desktop(
     ):
         args.append("-wait-for-browser")
 
+    tmpdir = os.path.join(command_context.topobjdir, "tmp")
+    if not os.path.exists(tmpdir):
+        os.makedirs(tmpdir)
+
     no_profile_option_given = all(
         p not in params for p in ["-profile", "--profile", "-P"]
     )
@@ -2177,6 +2405,7 @@ def _run_desktop(
         no_profile_option_given
         and no_backgroundtask_mode_option_given
         and not noprofile
+        and not appdata
     ):
         prefs = {
             "browser.aboutConfig.showWarning": False,
@@ -2186,10 +2415,6 @@ def _run_desktop(
         prefs.update([p.split("=", 1) for p in setpref])
         for pref in prefs:
             prefs[pref] = Preferences.cast(prefs[pref])
-
-        tmpdir = os.path.join(command_context.topobjdir, "tmp")
-        if not os.path.exists(tmpdir):
-            os.makedirs(tmpdir)
 
         if temp_profile:
             path = tempfile.mkdtemp(dir=tmpdir, prefix="profile-")
@@ -2232,6 +2457,29 @@ def _run_desktop(
         "RUST_BACKTRACE": "full",
     }
 
+    if appdata:
+        if appdata is True:
+            appdata = tmpdir
+
+        extra_env["MOZ_APP_DATA"] = os.path.normpath(
+            os.path.join(appdata, "AppData", "Roaming")
+        )
+        command_context.log(
+            logging.INFO,
+            "run",
+            {"app_data": extra_env["MOZ_APP_DATA"]},
+            "Overriding application data directory to {app_data}",
+        )
+        extra_env["MOZ_LOCAL_APP_DATA"] = os.path.normpath(
+            os.path.join(appdata, "Local")
+        )
+        command_context.log(
+            logging.INFO,
+            "run",
+            {"local_app_data": extra_env["MOZ_LOCAL_APP_DATA"]},
+            "Overriding local application data directory to {local_app_data}",
+        )
+
     if not enable_crash_reporter:
         extra_env["MOZ_CRASHREPORTER_DISABLE"] = "1"
     else:
@@ -2247,38 +2495,9 @@ def _run_desktop(
         if "INSIDE_EMACS" in os.environ:
             command_context.log_manager.terminal_handler.setLevel(logging.WARNING)
 
-        import mozdebug
-
-        if not debugger:
-            # No debugger name was provided. Look for the default ones on
-            # current OS.
-            debugger = mozdebug.get_default_debugger_name(
-                mozdebug.DebuggerSearch.KeepLooking
-            )
-
-        if debugger:
-            debuggerInfo = mozdebug.get_debugger_info(debugger, debugger_args)
-
-        if not debugger or not debuggerInfo:
-            print("Could not find a suitable debugger in your PATH.")
+        args = prepend_debugger_args(args, debugger, debugger_args)
+        if not args:
             return 1
-
-        # Parameters come from the CLI. We need to convert them before
-        # their use.
-        if debugger_args:
-            from mozbuild import shellutil
-
-            try:
-                debugger_args = shellutil.split(debugger_args)
-            except shellutil.MetaCharacterException as e:
-                print(
-                    "The --debugger-args you passed require a real shell to parse them."
-                )
-                print("(We can't handle the %r character.)" % e.char)
-                return 1
-
-        # Prepend the debugger args.
-        args = [debuggerInfo.path] + debuggerInfo.args + args
 
     if dmd:
         dmd_params = []
@@ -2459,7 +2678,7 @@ def repackage(command_context):
     help="Location of the templates used to generate the debian/ directory files",
 )
 @CommandArgument(
-    "--release-product",
+    "--product",
     type=str,
     required=True,
     help="The product being shipped. Used to disambiguate beta/devedition etc.",
@@ -2478,7 +2697,7 @@ def repackage_deb(
     version,
     build_number,
     templates,
-    release_product,
+    product,
     release_type,
 ):
     if not os.path.exists(input):
@@ -2502,7 +2721,7 @@ def repackage_deb(
         arch,
         version,
         build_number,
-        release_product,
+        product,
         release_type,
         FluentLocalization,
         FluentResourceLoader,
@@ -2543,10 +2762,16 @@ def repackage_deb(
     help="Location of the templates used to generate the debian/ directory files",
 )
 @CommandArgument(
-    "--release-product",
+    "--product",
     type=str,
     required=True,
     help="The product being shipped. Used to disambiguate beta/devedition etc.",
+)
+@CommandArgument(
+    "--extensions-dir",
+    type=str,
+    required=True,
+    help="Path to extensions.",
 )
 def repackage_deb_l10n(
     command_context,
@@ -2556,7 +2781,8 @@ def repackage_deb_l10n(
     version,
     build_number,
     templates,
-    release_product,
+    product,
+    extensions_dir,
 ):
     for input_file in (input_xpi_file, input_tar_file):
         if not os.path.exists(input_file):
@@ -2577,7 +2803,8 @@ def repackage_deb_l10n(
         template_dir,
         version,
         build_number,
-        release_product,
+        product,
+        extensions_dir,
     )
 
 
@@ -2624,7 +2851,7 @@ def repackage_deb_l10n(
     help="Location of the templates used to generate the rpm/ directory files",
 )
 @CommandArgument(
-    "--release-product",
+    "--product",
     type=str,
     required=True,
     help="The product being shipped. Used to disambiguate beta/devedition etc.",
@@ -2644,7 +2871,7 @@ def repackage_rpm(
     version,
     build_number,
     templates,
-    release_product,
+    product,
     release_type,
 ):
     if not os.path.exists(input):
@@ -2669,7 +2896,7 @@ def repackage_rpm(
         arch,
         version,
         build_number,
-        release_product,
+        product,
         release_type,
         FluentLocalization,
         FluentResourceLoader,
@@ -2836,7 +3063,7 @@ def repackage_msi(
 @CommandArgument(
     "--channel",
     type=str,
-    choices=["official", "beta", "aurora", "nightly", "unofficial"],
+    choices=["official", "beta", "esr", "aurora", "nightly", "unofficial"],
     help="Release channel.",
 )
 @CommandArgument(
@@ -2913,8 +3140,7 @@ def repackage_msi(
     "--unsigned",
     default=False,
     action="store_true",
-    help="Support `Add-AppxPackage ... -AllowUnsigned` on Windows 11."
-    "(Default: false)",
+    help="Support `Add-AppxPackage ... -AllowUnsigned` on Windows 11.(Default: false)",
 )
 def repackage_msix(
     command_context,
@@ -3357,8 +3583,7 @@ def repackage_snap_install(command_context, snap_file, snap_name, sudo=None):
             logging.ERROR,
             "repackage-snap-install-no-sudo",
             {},
-            "Couldn't find a command to run snap as root; please use the"
-            " --sudo option",
+            "Couldn't find a command to run snap as root; please use the --sudo option",
         )
 
     if not snap_file:
@@ -3405,15 +3630,15 @@ def repackage_snap_install(command_context, snap_file, snap_name, sudo=None):
 @SubCommand(
     "repackage",
     "desktop-file",
-    description="Prepare a firefox.desktop file",
+    description="Prepare a firefox.desktop file for snap",
     virtualenv_name="repackage-desktop-file",
 )
 @CommandArgument("--output", type=str, required=True, help="Output desktop file")
 @CommandArgument(
     "--flavor",
     type=str,
-    required=True,
-    choices=["snap", "flatpak"],
+    required=False,
+    choices=["snap"],
     help="Desktop file flavor to generate.",
 )
 @CommandArgument(
@@ -3442,92 +3667,19 @@ def repackage_desktop_file(
     release_type,
     wmclass,
 ):
-    desktop = None
-    if flavor == "flatpak":
-        from fluent.runtime.fallback import FluentLocalization, FluentResourceLoader
+    from mozbuild.repackaging.snapcraft_transform import (
+        SnapDesktopFile,
+    )
 
-        from mozbuild.repackaging.desktop_file import generate_browser_desktop_entry
-
-        # This relies in existing build variables usage inherited from the
-        # debian repackage code that serves the same purpose on Flatpak, so
-        # it is just directly re-used here.
-        build_variables = {
-            "PKG_NAME": release_product,
-            "DBusActivatable": "false",
-            "Icon": "org.mozilla.firefox",
-            "StartupWMClass": release_product,
-        }
-
-        desktop = "\n".join(
-            generate_browser_desktop_entry(
-                command_context.log,
-                build_variables,
-                release_product,
-                release_type,
-                FluentLocalization,
-                FluentResourceLoader,
-            )
-        )
-
-    if flavor == "snap":
-        from mozbuild.repackaging.snapcraft_transform import (
-            SnapDesktopFile,
-        )
-
-        desktop = SnapDesktopFile(
-            command_context.log,
-            appname=release_product,
-            branchname=release_type,
-            wmclass=wmclass,
-        ).repack()
-
-    if desktop is None:
-        raise NotImplementedError(
-            f"Couldn't generate a desktop file. Unknown flavor: {flavor}"
-        )
+    desktop = SnapDesktopFile(
+        command_context.log,
+        appname=release_product,
+        branchname=release_type,
+        wmclass=wmclass,
+    ).repack()
 
     with open(output, "w") as desktop_file:
         desktop_file.write(desktop)
-
-
-def _ensure_l10n_central(command_context):
-    # For nightly builds, we automatically check out missing localizations
-    # from firefox-l10n.  We never automatically check out in automation:
-    # automation builds check out revisions that have been signed-off by
-    # l10n drivers prior to use.
-    l10n_base_dir = Path(command_context.substs["L10NBASEDIR"])
-    moz_automation = os.environ.get("MOZ_AUTOMATION")
-    if moz_automation:
-        if not l10n_base_dir.exists():
-            raise MissingL10nError(
-                f"Automation requires l10n repositories to be checked out: {l10n_base_dir}"
-            )
-
-    nightly_build = command_context.substs.get("NIGHTLY_BUILD")
-    if nightly_build:
-        git = os.environ.get("GIT", "git")
-        if not l10n_base_dir.exists():
-            l10n_base_dir.mkdir(parents=True)
-            subprocess.run(
-                [
-                    git,
-                    "clone",
-                    "https://github.com/mozilla-l10n/firefox-l10n.git",
-                    str(l10n_base_dir),
-                    "--depth",
-                    "1",
-                ],
-                check=True,
-            )
-        if not moz_automation:
-            if (l10n_base_dir / ".git").exists():
-                subprocess.run(
-                    [git, "-C", str(l10n_base_dir), "pull", "--quiet"], check=True
-                )
-            else:
-                raise NotAGitRepositoryError(
-                    f"Directory is not a git repository: {l10n_base_dir}"
-                )
 
 
 @Command(
@@ -3566,7 +3718,7 @@ def package_l10n(command_context, verbose=False, locales=[]):
         "MOZ_CHROME_MULTILOCALE": " ".join(locales),
     }
 
-    _ensure_l10n_central(command_context)
+    ensure_l10n_central(command_context)
 
     command_context.log(
         logging.INFO,
@@ -3704,7 +3856,7 @@ def repackage_single_locales(command_context, verbose=False, locales=[], dest=No
         # On macOS DMG packaging is slow to work with.
         append_env["MOZ_PKG_FORMAT"] = "TAR"
 
-    _ensure_l10n_central(command_context)
+    ensure_l10n_central(command_context)
 
     command_context.log(
         logging.INFO,
@@ -3799,49 +3951,6 @@ def repackage_single_locales(command_context, verbose=False, locales=[], dest=No
         )
 
     return 0
-
-
-def _prepend_debugger_args(args, debugger, debugger_args):
-    """
-    Given an array with program arguments, prepend arguments to run it under a
-    debugger.
-
-    :param args: The executable and arguments used to run the process normally.
-    :param debugger: The debugger to use, or empty to use the default debugger.
-    :param debugger_args: Any additional parameters to pass to the debugger.
-    """
-
-    import mozdebug
-
-    if not debugger:
-        # No debugger name was provided. Look for the default ones on
-        # current OS.
-        debugger = mozdebug.get_default_debugger_name(
-            mozdebug.DebuggerSearch.KeepLooking
-        )
-
-    if debugger:
-        debuggerInfo = mozdebug.get_debugger_info(debugger, debugger_args)
-
-    if not debugger or not debuggerInfo:
-        print("Could not find a suitable debugger in your PATH.")
-        return None
-
-    # Parameters come from the CLI. We need to convert them before
-    # their use.
-    if debugger_args:
-        from mozbuild import shellutil
-
-        try:
-            debugger_args = shellutil.split(debugger_args)
-        except shellutil.MetaCharacterException as e:
-            print("The --debugger_args you passed require a real shell to parse them.")
-            print("(We can't handle the %r character.)" % e.char)
-            return None
-
-    # Prepend the debugger args.
-    args = [debuggerInfo.path] + debuggerInfo.args + args
-    return args
 
 
 @SubCommand(

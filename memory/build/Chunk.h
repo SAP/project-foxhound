@@ -149,10 +149,10 @@ struct arena_chunk_map_t {
 // Arena chunk header.
 struct arena_chunk_t {
   // Arena that owns the chunk.
-  arena_t* arena;
+  arena_t* mArena;
 
-  // Linkage for the arena's tree of dirty chunks.
-  RedBlackTreeNode<arena_chunk_t> link_dirty;
+  // Linkage for the arena's list of dirty chunks.
+  mozilla::DoublyLinkedListElement<arena_chunk_t> mChunksDirtyElim;
 
 #ifdef MALLOC_DOUBLE_PURGE
   // If we're double-purging, we maintain a linked list of chunks which
@@ -161,17 +161,24 @@ struct arena_chunk_t {
   //
   // We're currently lazy and don't remove a chunk from this list when
   // all its madvised pages are recommitted.
-  mozilla::DoublyLinkedListElement<arena_chunk_t> chunks_madvised_elem;
+  mozilla::DoublyLinkedListElement<arena_chunk_t> mChunksMavisedElim;
 #endif
 
-  // Number of dirty pages.
-  size_t ndirty;
+  // Number of dirty pages that may be purged, the header is never counted
+  // here.
+  uint16_t mNumDirty = 0;
 
-  bool mIsPurging;
-  bool mDying;
+  // This will point to the page index of the first run that may have dirty
+  // pages.
+  uint16_t mDirtyRunHint;
+
+  bool mIsPurging = false;
+  bool mDying = false;
 
   // Map of pages within chunk that keeps track of free/large/small.
-  arena_chunk_map_t map[];  // Dynamically sized.
+  arena_chunk_map_t mPageMap[];  // Dynamically sized.
+
+  explicit arena_chunk_t(arena_t* aArena);
 
   bool IsEmpty();
 };
@@ -192,5 +199,18 @@ void chunk_assert_zero(void* aPtr, size_t aSize);
 extern mozilla::Atomic<size_t> gRecycledSize;
 
 extern AddressRadixTree<(sizeof(void*) << 3) - LOG2(kChunkSize)> gChunkRTree;
+
+enum ShouldCommit {
+  // Reserve address space only, accessing the mapping will crash.
+  ReserveOnly,
+
+  // Reserve the address space and populate it with "valid" page mappings.
+  // On windows this will commit memory, on Linux it populate memory as its
+  // accessed (with overcommit behaviour).
+  ReserveAndCommit,
+};
+
+void* pages_mmap_aligned(size_t size, size_t alignment,
+                         ShouldCommit should_commit);
 
 #endif /* ! CHUNK_H */

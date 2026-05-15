@@ -6,10 +6,11 @@
 
 #include "SVGViewBoxSMILType.h"
 
+#include <math.h>
+
+#include "SVGAnimatedViewBox.h"
 #include "mozilla/SMILValue.h"
 #include "nsDebug.h"
-#include "SVGAnimatedViewBox.h"
-#include <math.h>
 
 namespace mozilla {
 

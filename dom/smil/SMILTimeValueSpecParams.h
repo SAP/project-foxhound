@@ -20,37 +20,43 @@ namespace mozilla {
 
 class SMILTimeValueSpecParams {
  public:
-  SMILTimeValueSpecParams()
-      : mType(INDEFINITE), mSyncBegin(false), mRepeatIteration(0) {}
-
-  // The type of value this specification describes
-  enum { OFFSET, SYNCBASE, EVENT, REPEAT, WALLCLOCK, INDEFINITE } mType;
+  SMILTimeValueSpecParams() = default;
 
   // A clock value that is added to:
-  // - type OFFSET: the document begin
-  // - type SYNCBASE: the timebase's begin or end time
-  // - type EVENT: the event time
-  // - type REPEAT: the repeat time
-  // It is not used for WALLCLOCK or INDEFINITE times
+  // - type Offset: the document begin
+  // - type Syncbase: the timebase's begin or end time
+  // - type Event: the event time
+  // - type Repeat: the repeat time
+  // It is not used for Wallclock or Indefinite times
   SMILTimeValue mOffset;
 
   // The base element that this specification refers to.
-  // For SYNCBASE types, this is the timebase
-  // For EVENT and REPEAT types, this is the eventbase
+  // For Syncbase types, this is the timebase
+  // For Event and Repeat types, this is the eventbase
   RefPtr<nsAtom> mDependentElemID;
 
   // The event to respond to.
-  // Only used for EVENT types.
+  // Only used for Event types.
   RefPtr<nsAtom> mEventSymbol;
+
+  // The repeat iteration to respond to.
+  // Only used for mType=Repeat.
+  uint32_t mRepeatIteration = 0;
+
+  // The type of value this specification describes
+  enum class Type : uint8_t {
+    Offset,
+    Syncbase,
+    Event,
+    Repeat,
+    Wallclock,
+    Indefinite
+  } mType = Type::Indefinite;
 
   // Indicates if this specification refers to the begin or end of the dependent
   // element.
   // Only used for SYNCBASE types.
-  bool mSyncBegin;
-
-  // The repeat iteration to respond to.
-  // Only used for mType=REPEAT.
-  uint32_t mRepeatIteration;
+  bool mSyncBegin = false;
 };
 
 }  // namespace mozilla

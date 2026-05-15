@@ -114,6 +114,12 @@ class BASE_EXPORT MemoryMappedFile {
   // Is file_ a valid file handle that points to an open, memory mapped file?
   bool IsValid() const;
 
+#if defined(MOZ_ZUCCHINI)
+  // Flushes memory-mapped changes to disk. Returns true on success, false on
+  // error. Must be called before unmapping if changes need to be persisted.
+  bool Flush();
+#endif  // MOZ_ZUCCHINI
+
  private:
   // Given the arbitrarily aligned memory region [start, size], returns the
   // boundaries of the region aligned to the granularity specified by the OS,

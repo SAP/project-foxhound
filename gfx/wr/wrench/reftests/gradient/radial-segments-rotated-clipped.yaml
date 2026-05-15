@@ -1,0 +1,18 @@
+---
+root:
+  items:
+    - type: stacking-context
+      bounds: [50, 50, 1000, 1000]
+      transform: rotate(10)
+      items:
+      - type: clip
+        id: 5
+        complex:
+          - rect: [10, 10, 750, 500]
+            radius: 32
+      - type: radial-gradient
+        bounds: 10 10 750 500
+        center: 0 0
+        radius: 400 350
+        stops: [0.0, red, 1.0, blue]
+        clip-chain: [5]

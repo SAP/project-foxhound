@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>setting-control controlAttrs tests</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-group.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-control.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-message-bar.mjs"
+    ></script>
+    <script
+      type="application/javascript"
+      src="chrome://global/content/preferencesBindings.js"
+    ></script>
+    <script>
+      const { Assert } = ChromeUtils.importESModule(
+        "resource://testing-common/Assert.sys.mjs"
+      );
+      /* import-globals-from /toolkit/content/preferencesBindings.js */
+      let html, testHelpers;
+
+      async function renderTemplate(itemConfig) {
+        let config = {
+          items: [itemConfig],
+        };
+        let result = await testHelpers.renderTemplate(html`
+          <setting-group
+            .config=${config}
+            .getSetting=${(...args) => Preferences.getSetting(...args)}
+          ></setting-group>
+        `);
+        await result.firstElementChild.updateComplete;
+        if (document.hasPendingL10nMutations) {
+          await BrowserTestUtils.waitForEvent(
+            document,
+            "L10nMutationsFinished"
+          );
+        }
+        return result.querySelector("setting-control");
+      }
+
+      add_setup(async function setup() {
+        testHelpers = new InputTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: () => html`<setting-group></setting-group>`,
+        });
+        MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
+        MozXULElement.insertFTLIfNeeded("browser/preferences/preferences.ftl");
+      });
+
+      add_task(async function testConfigBasedControlWithControlAttrs() {
+        const SETTING = "setting-control-message-bar";
+
+        Preferences.addSetting({
+          id: SETTING,
+        });
+
+        let itemConfig = {
+          control: "moz-message-bar",
+          l10nId: "preferences-text-zoom-override-warning",
+          id: SETTING,
+        };
+        let setting = Preferences.getSetting(SETTING);
+        let control = await renderTemplate(itemConfig, setting);
+
+        is(
+          control.controlEl.localName,
+          "moz-message-bar",
+          "The control rendered a message bar"
+        );
+        is(control.controlEl.type, "info", "Message bar has the default type");
+
+        itemConfig.controlAttrs = {
+          type: "warning",
+        };
+        control = await renderTemplate(itemConfig, setting);
+
+        is(
+          control.controlEl.type,
+          "warning",
+          "Message bar has type warning after config changes"
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

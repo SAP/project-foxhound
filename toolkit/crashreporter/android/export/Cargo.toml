@@ -1,0 +1,17 @@
+[package]
+name = "crashreporter-android-export"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "crashreporter_android_export"
+crate-type = ["staticlib"]
+path = "lib.rs"
+
+[dependencies]
+android_logger = "0.12"
+log = "0.4"
+minidump-analyzer = { path = "../../minidump-analyzer" }
+mozilla-central-workspace-hack = { version = "0.1", features = ["crashreporter-android-export"], optional = true }
+crashping = { path = "../../crashping" }
+serde_json = "1"

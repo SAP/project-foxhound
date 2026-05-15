@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_CacheExpirationTime_h___
-#define mozilla_dom_CacheExpirationTime_h___
+#ifndef mozilla_dom_CacheExpirationTime_h_
+#define mozilla_dom_CacheExpirationTime_h_
 
-#include <stdint.h>              // uint32_t
+#include <stdint.h>  // uint32_t
+
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "prtime.h"              // PRTime, PR_USEC_PER_SEC
 #include "nsICacheEntry.h"       // nsICacheEntry
+#include "prtime.h"              // PRTime, PR_USEC_PER_SEC
 
 /*
  * The expiration time for sub resource cache.
@@ -67,4 +68,4 @@ struct CacheExpirationTime {
   }
 };
 
-#endif /* mozilla_dom_CacheExpirationTime_h___ */
+#endif /* mozilla_dom_CacheExpirationTime_h_ */

@@ -134,12 +134,11 @@ async function testTabConsoleMessagesResourcesWithIgnoreExistingResources(
   await waitUntil(
     () => availableResources.length === expectedRuntimeConsoleCalls.length
   );
-  const expectedTargetFront =
-    executeInIframe && (isFissionEnabled() || isEveryFrameTargetEnabled())
-      ? targetCommand
-          .getAllTargets([targetCommand.TYPES.FRAME])
-          .find(target => target.url == IFRAME_URL)
-      : targetCommand.targetFront;
+  const expectedTargetFront = executeInIframe
+    ? targetCommand
+        .getAllTargets([targetCommand.TYPES.FRAME])
+        .find(target => target.url == IFRAME_URL)
+    : targetCommand.targetFront;
   for (let i = 0; i < expectedRuntimeConsoleCalls.length; i++) {
     const resource = availableResources[i];
     is(
@@ -185,7 +184,7 @@ async function logExistingMessages(browser, executeInIframe) {
  * preceding stack.
  *
  * @param {BrowsingContext} The browsing context into which the script should be evaluated
- * @param {Function|String} The JS to execute in the browsing context
+ * @param {Function | string} The JS to execute in the browsing context
  *
  * @return {Promise} Which resolves once the JS is done executing in the page
  */

@@ -8,16 +8,16 @@
  * Implementation of DOMTokenList specified by HTML5.
  */
 
-#ifndef nsDOMTokenList_h___
-#define nsDOMTokenList_h___
+#ifndef nsDOMTokenList_h_
+#define nsDOMTokenList_h_
 
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/DOMTokenListSupportedTokens.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsDOMString.h"
 #include "nsWhitespaceTokenizer.h"
 #include "nsWrapperCache.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/DOMTokenListSupportedTokens.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -95,4 +95,4 @@ class nsDOMTokenList : public nsISupports, public nsWrapperCache {
   const mozilla::dom::DOMTokenListSupportedTokenArray mSupportedTokens;
 };
 
-#endif  // nsDOMTokenList_h___
+#endif  // nsDOMTokenList_h_

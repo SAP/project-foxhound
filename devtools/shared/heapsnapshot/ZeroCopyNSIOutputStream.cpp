@@ -6,7 +6,6 @@
 #include "mozilla/devtools/ZeroCopyNSIOutputStream.h"
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 namespace devtools {
@@ -19,7 +18,7 @@ ZeroCopyNSIOutputStream::ZeroCopyNSIOutputStream(nsCOMPtr<nsIOutputStream>& out)
 }
 
 ZeroCopyNSIOutputStream::~ZeroCopyNSIOutputStream() {
-  if (!failed()) Unused << NS_WARN_IF(NS_FAILED(writeBuffer()));
+  if (!failed()) (void)NS_WARN_IF(NS_FAILED(writeBuffer()));
 }
 
 nsresult ZeroCopyNSIOutputStream::writeBuffer() {

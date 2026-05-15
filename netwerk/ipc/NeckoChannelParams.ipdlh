@@ -35,6 +35,7 @@ using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 [RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using nsContentPolicyType from "nsIContentPolicy.h";
 using mozilla::net::PreferredAlternativeDataDeliveryTypeIPC from "nsICacheInfoChannel.h";
+using mozilla::dom::ForceMediaDocument from "mozilla/dom/LoadURIOptionsBinding.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 using nsILoadInfo::StoragePermissionState from "nsILoadInfo.h";
 using nsILoadInfo::IPAddressSpace from "nsILoadInfo.h";
@@ -73,6 +74,17 @@ struct CookieJarSettingsArgs
   bool hasFingerprintingRandomizationKey;
   uint8_t[] fingerprintingRandomizationKey;
   uint64_t topLevelWindowContextId;
+};
+
+//-----------------------------------------------------------------------------
+// CookieChange
+//-----------------------------------------------------------------------------
+
+struct CookieChange
+{
+  bool added;
+  CookieStruct cookie;
+  OriginAttributes originAttributes;
 };
 
 //-----------------------------------------------------------------------------
@@ -130,6 +142,7 @@ struct LoadInfoArgs
   bool                        browserWouldUpgradeInsecureRequests;
   bool                        forceAllowDataURI;
   bool                        allowInsecureRedirectToDataURI;
+  ForceMediaDocument          forceMediaDocument;
   bool                        skipContentPolicyCheckForWebRequest;
   bool                        originalFrameSrcLoad;
   bool                        forceInheritPrincipalDropped;
@@ -210,6 +223,9 @@ struct LoadInfoArgs
   InterceptionInfoArg?        interceptionInfo;
   bool                        isNewWindowTarget;
   UserNavigationInvolvement   userNavigationInvolvement;
+  FeaturePolicyInfo?          containerFeaturePolicyInfo;
+  // https://html.spec.whatwg.org/#dom-location-ancestororigins
+  PrincipalInfo?[]             ancestorOrigins;
 };
 
 /**
@@ -422,6 +438,8 @@ struct ProxyInfoCloneArgs
   nsCString type;
   nsCString host;
   int32_t port;
+  nsCString masqueTemplate;
+  nsCString alpn;
   nsCString username;
   nsCString password;
   uint32_t flags;
@@ -481,9 +499,10 @@ struct CookieStruct
   nsCString value;
   nsCString host;
   nsCString path;
-  int64_t   expiry;
-  int64_t   lastAccessed;
-  int64_t   creationTime;
+  int64_t   expiryInMSec;
+  int64_t   lastAccessedInUSec;
+  int64_t   creationTimeInUSec;
+  int64_t   updateTimeInUSec;
   bool      isHttpOnly;
   bool      isSession;
   bool      isSecure;
@@ -556,6 +575,7 @@ struct RedirectToRealChannelArgs {
   nsCString? originalUriString;
   EarlyHintConnectArgs[] earlyHints;
   uint32_t earlyHintLinkType;
+  nullable nsIReferrerInfo referrerInfo;
 };
 
 struct TimingStructArgs {
@@ -586,6 +606,7 @@ struct ResourceTimingStructArgs {
   TimeStamp redirectEnd;
   uint64_t transferSize;
   uint64_t encodedBodySize;
+  uint64_t decodedBodySize;
 
   // Not actually part of resource timing, but not part of the transaction
   // timings either. These need to be passed to HttpChannelChild along with
@@ -630,7 +651,6 @@ struct TransactionObserverResult
 struct SpeculativeConnectionOverriderArgs {
   uint32_t parallelSpeculativeConnectLimit;
   bool ignoreIdle;
-  bool isFromPredictor;
   bool allow1918;
 };
 
@@ -671,6 +691,28 @@ struct FileChannelInfo
   LoadInfoArgs           loadInfo;
   nsCString              contentType;
   uint64_t               channelId;
+};
+
+//-----------------------------------------------------------------------------
+// GeckoView's Android Content IPDL structs
+//-----------------------------------------------------------------------------
+
+struct GeckoViewContentChannelOpenArgs
+{
+  URIParams uri;
+  LoadInfoArgs loadInfo;
+  uint32_t loadFlags;
+};
+
+struct GeckoViewContentChannelConnectArgs
+{
+  uint32_t channelId;
+};
+
+union GeckoViewContentChannelArgs
+{
+  GeckoViewContentChannelOpenArgs;
+  GeckoViewContentChannelConnectArgs;
 };
 
 struct RemoteStreamInfo {

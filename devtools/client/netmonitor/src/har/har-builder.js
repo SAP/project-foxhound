@@ -24,35 +24,36 @@ const {
  * This object is responsible for building HAR file. See HAR spec:
  * https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/HAR/Overview.html
  * http://www.softwareishard.com/blog/har-12-spec/
- *
- * @param {Object} options
- *        configuration object
- * @param {Boolean} options.connector
- *        Set to true to include HTTP response bodies in the result data
- *        structure.
- * @param {String} options.id
- *        ID of the exported page.
- * @param {Boolean} options.includeResponseBodies
- *        Set to true to include HTTP response bodies in the result data
- *        structure.
- * @param {Array} options.items
- *        List of network events to be exported.
- * @param {Boolean} options.supportsMultiplePages
- *        Set to true to create distinct page entries for each navigation.
  */
-var HarBuilder = function (options) {
-  this._connector = options.connector;
-  this._id = options.id;
-  this._includeResponseBodies = options.includeResponseBodies;
-  this._items = options.items;
-  // Page id counter, only used when options.supportsMultiplePages is true.
-  this._pageId = options.supportsMultiplePages ? 0 : options.id;
-  this._pageMap = [];
-  this._supportsMultiplePages = options.supportsMultiplePages;
-  this._url = this._connector.currentTarget.url;
-};
+class HarBuilder {
+  /**
+   * @param {object} options
+   *        configuration object
+   * @param {boolean} options.connector
+   *        Set to true to include HTTP response bodies in the result data
+   *        structure.
+   * @param {string} options.id
+   *        ID of the exported page.
+   * @param {boolean} options.includeResponseBodies
+   *        Set to true to include HTTP response bodies in the result data
+   *        structure.
+   * @param {Array} options.items
+   *        List of network events to be exported.
+   * @param {boolean} options.supportsMultiplePages
+   *        Set to true to create distinct page entries for each navigation.
+   */
+  constructor(options) {
+    this._connector = options.connector;
+    this._id = options.id;
+    this._includeResponseBodies = options.includeResponseBodies;
+    this._items = options.items;
+    // Page id counter, only used when options.supportsMultiplePages is true.
+    this._pageId = options.supportsMultiplePages ? 0 : options.id;
+    this._pageMap = [];
+    this._supportsMultiplePages = options.supportsMultiplePages;
+    this._url = this._connector.currentTarget.url;
+  }
 
-HarBuilder.prototype = {
   // Public API
 
   /**
@@ -85,10 +86,9 @@ HarBuilder.prototype = {
     await Promise.all(this.promises);
 
     return harLog;
-  },
+  }
 
   // Helpers
-
   buildPages(log) {
     if (this._supportsMultiplePages) {
       this.buildPagesFromTargetTitles(log);
@@ -98,7 +98,7 @@ HarBuilder.prototype = {
       log.pages.push(page);
       this._pageMap[this._id] = page;
     }
-  },
+  }
 
   buildPagesFromTargetTitles(log) {
     // Retrieve the additional HAR data collected by the connector.
@@ -120,7 +120,7 @@ HarBuilder.prototype = {
       const page = this.buildPage(request.url, request);
       log.pages.push(page);
     }
-  },
+  }
 
   buildPage(url, networkEvent) {
     const page = {};
@@ -138,7 +138,7 @@ HarBuilder.prototype = {
     this._pageId++;
 
     return page;
-  },
+  }
 
   getPage(log, entry) {
     const existingPage = log.pages.findLast(
@@ -152,7 +152,7 @@ HarBuilder.prototype = {
     }
 
     return existingPage;
-  },
+  }
 
   async buildEntry(log, networkEvent) {
     const entry = {};
@@ -206,7 +206,7 @@ HarBuilder.prototype = {
     entry.pageref = page.id;
 
     return entry;
-  },
+  }
 
   buildPageTimings() {
     // Event timing info isn't available
@@ -227,13 +227,12 @@ HarBuilder.prototype = {
     }
 
     return timings;
-  },
+  }
 
   async buildRequest(networkEvent) {
     // When using HarAutomation, HarCollector will automatically fetch requestHeaders
     // and requestCookies, but when we use it from netmonitor, FirefoxDataProvider
     // should fetch it itself lazily, via requestData.
-
     let { id, requestHeaders } = networkEvent;
     if (!requestHeaders && this._connector.requestData) {
       requestHeaders = await this._connector.requestData(id, "requestHeaders");
@@ -262,13 +261,13 @@ HarBuilder.prototype = {
     }
 
     return request;
-  },
+  }
 
   /**
    * Fetch all header values from the backend (if necessary) and
    * build the result HAR structure.
    *
-   * @param {Object} input Request or response header object.
+   * @param {object} input Request or response header object.
    */
   buildHeaders(input) {
     if (!input) {
@@ -276,7 +275,7 @@ HarBuilder.prototype = {
     }
 
     return this.buildNameValuePairs(input.headers);
-  },
+  }
 
   appendHeadersPostData(input = [], networkEvent) {
     if (!networkEvent.requestPostData) {
@@ -291,7 +290,7 @@ HarBuilder.prototype = {
     });
 
     return input;
-  },
+  }
 
   buildCookies(input) {
     if (!input) {
@@ -299,7 +298,7 @@ HarBuilder.prototype = {
     }
 
     return this.buildNameValuePairs(input.cookies || input);
-  },
+  }
 
   buildNameValuePairs(entries) {
     const result = [];
@@ -321,7 +320,7 @@ HarBuilder.prototype = {
     });
 
     return result;
-  },
+  }
 
   async buildPostData(networkEvent) {
     // When using HarAutomation, HarCollector will automatically fetch requestPostData
@@ -382,7 +381,7 @@ HarBuilder.prototype = {
     }
 
     return postData;
-  },
+  }
 
   async buildResponse(networkEvent) {
     // When using HarAutomation, HarCollector will automatically fetch responseHeaders
@@ -435,7 +434,7 @@ HarBuilder.prototype = {
     }
 
     return response;
-  },
+  }
 
   async buildContent(networkEvent) {
     const content = {
@@ -478,7 +477,7 @@ HarBuilder.prototype = {
     }
 
     return content;
-  },
+  }
 
   async buildCache(networkEvent) {
     const cache = {};
@@ -505,7 +504,7 @@ HarBuilder.prototype = {
     }
 
     return cache;
-  },
+  }
 
   buildCacheEntry(cacheEntry) {
     const cache = {};
@@ -518,7 +517,6 @@ HarBuilder.prototype = {
       // Har format expects cache entries to provide information about eTag,
       // however this is not currently exposed on nsICacheEntry.
       // This should be stored under cache.eTag. See Bug 1799844.
-
       cache.fetchCount = findKeys(cacheEntry, ["fetchCount"]);
 
       // har-importer.js, along with other files, use buildCacheEntry
@@ -533,10 +531,9 @@ HarBuilder.prototype = {
     }
 
     return cache;
-  },
+  }
 
   // RDP Helpers
-
   fetchData(string) {
     const promise = this._connector.getLongString(string).then(value => {
       return value;
@@ -547,8 +544,8 @@ HarBuilder.prototype = {
     this.promises.push(promise);
 
     return promise;
-  },
-};
+  }
+}
 
 // Helpers
 

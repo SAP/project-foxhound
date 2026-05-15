@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DEFAULT_BROWSER_DEFAULT_PDF_H__
-#define DEFAULT_BROWSER_DEFAULT_PDF_H__
+#ifndef DEFAULT_BROWSER_DEFAULT_PDF_H_
+#define DEFAULT_BROWSER_DEFAULT_PDF_H_
 
 #include <string>
 
@@ -31,4 +31,4 @@ PDFHandler GetPDFHandlerFromString(const std::string& pdfHandlerString);
 
 }  // namespace mozilla::default_agent
 
-#endif  // DEFAULT_BROWSER_DEFAULT_PDF_H__
+#endif  // DEFAULT_BROWSER_DEFAULT_PDF_H_

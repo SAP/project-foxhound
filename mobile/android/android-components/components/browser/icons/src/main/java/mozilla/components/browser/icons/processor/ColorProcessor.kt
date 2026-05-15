@@ -5,7 +5,9 @@
 package mozilla.components.browser.icons.processor
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.annotation.VisibleForTesting
 import androidx.palette.graphics.Palette
 import mozilla.components.browser.icons.Icon
 import mozilla.components.browser.icons.IconRequest
@@ -31,7 +33,22 @@ class ColorProcessor : IconProcessor {
         // If a PWA really want a white background a maskable icon can be used.
         if (request.color != null && request.color != Color.WHITE) return icon.copy(color = request.color)
 
-        val swatch = Palette.from(icon.bitmap).generate().dominantSwatch
-        return swatch?.run { icon.copy(color = rgb) } ?: icon
+        val dominantColor = extractDominantColorFromBitmap(icon.bitmap)
+        return dominantColor?.let { icon.copy(color = it) } ?: icon
+    }
+
+    /**
+     * Extracts the dominant color from a [Bitmap] using the Palette API.
+     *
+     * @param bitmap The [Bitmap] to extract the dominant color from.
+     * @return The dominant color as an [Int], or null if the bitmap is invalid or no dominant color could be found.
+     */
+    @VisibleForTesting
+    internal fun extractDominantColorFromBitmap(bitmap: Bitmap): Int? {
+        // Guard against invalid bitmap for Palette generation
+        if (bitmap.isRecycled || bitmap.width == 0 || bitmap.height == 0) {
+            return null
+        }
+        return Palette.from(bitmap).generate().dominantSwatch?.rgb
     }
 }

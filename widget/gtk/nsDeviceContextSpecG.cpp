@@ -243,18 +243,25 @@ NS_IMETHODIMP nsDeviceContextSpecGTK::Init(nsIPrintSettings* aPS,
   mGtkPageSetup = gtk_page_setup_copy(mGtkPageSetup);
   mGtkPrintSettings = gtk_print_settings_copy(mGtkPrintSettings);
 
-  if (!aPS->GetPrintInColor() && StaticPrefs::print_cups_monochrome_enabled()) {
-    for (const auto& setting : kKnownMonochromeSettings) {
-      gtk_print_settings_set(mGtkPrintSettings, setting.mKey, setting.mValue);
+  if (StaticPrefs::print_cups_monochrome_enabled()) {
+    if (StaticPrefs::print_cups_monochrome_gtk_simple_enabled()) {
+      gtk_print_settings_set(mGtkPrintSettings, "cups-" CUPS_PRINT_COLOR_MODE,
+                             aPS->GetPrintInColor()
+                                 ? CUPS_PRINT_COLOR_MODE_COLOR
+                                 : CUPS_PRINT_COLOR_MODE_MONOCHROME);
+    } else if (!aPS->GetPrintInColor()) {
+      for (const auto& setting : kKnownMonochromeSettings) {
+        gtk_print_settings_set(mGtkPrintSettings, setting.mKey, setting.mValue);
+      }
+      auto applySetting = [&](const nsACString& aKey, const nsACString& aVal) {
+        nsAutoCString extra;
+        extra.AppendASCII("cups-");
+        extra.Append(aKey);
+        gtk_print_settings_set(mGtkPrintSettings, extra.get(),
+                               nsAutoCString(aVal).get());
+      };
+      nsPrinterCUPS::ForEachExtraMonochromeSetting(applySetting);
     }
-    auto applySetting = [&](const nsACString& aKey, const nsACString& aVal) {
-      nsAutoCString extra;
-      extra.AppendASCII("cups-");
-      extra.Append(aKey);
-      gtk_print_settings_set(mGtkPrintSettings, extra.get(),
-                             nsAutoCString(aVal).get());
-    };
-    nsPrinterCUPS::ForEachExtraMonochromeSetting(applySetting);
   }
 
   GtkPaperSize* properPaperSize =

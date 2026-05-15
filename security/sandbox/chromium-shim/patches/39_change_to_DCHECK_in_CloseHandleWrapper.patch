@@ -12,7 +12,7 @@ currently we can't work out how this can happen.
 diff --git a/base/win/scoped_handle_verifier.cc b/base/win/scoped_handle_verifier.cc
 --- a/base/win/scoped_handle_verifier.cc
 +++ b/base/win/scoped_handle_verifier.cc
-@@ -65,17 +65,23 @@ ScopedHandleVerifier* ScopedHandleVerifi
+@@ -111,17 +111,23 @@ ScopedHandleVerifier* ScopedHandleVerifi
    if (!g_active_verifier)
      ScopedHandleVerifier::InstallVerifier();
  
@@ -24,15 +24,15 @@ diff --git a/base/win/scoped_handle_verifier.cc b/base/win/scoped_handle_verifie
 +    // Making this DCHECK on non-Nighly as we are hitting this frequently,
 +    // looks like we are closing handles twice somehow. See bug 1564899.
 +#if defined(NIGHTLY_BUILD)
-     CHECK(false);  // CloseHandle failed.
+     CHECK(false) << "CloseHandle failed";
 +#else
-+    DCHECK(false);  // CloseHandle failed.
++    DCHECK(false) << "CloseHandle failed";
 +#endif
    return true;
  }
  
- // Assigns the g_active_verifier global within the GetLock() lock.
+ // Assigns the g_active_verifier global within the ScopedHandleVerifier lock.
  // If |existing_verifier| is non-null then |enabled| is ignored.
- void ThreadSafeAssignOrCreateScopedHandleVerifier(
+ // static
+ void ScopedHandleVerifier::ThreadSafeAssignOrCreateScopedHandleVerifier(
      ScopedHandleVerifier* existing_verifier,
-     bool enabled) {

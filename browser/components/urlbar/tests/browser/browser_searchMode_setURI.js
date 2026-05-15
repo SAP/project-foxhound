@@ -104,7 +104,7 @@ async function doSetURITest(initialURL, searchString, url, expectSearchMode) {
 
     // Call setURI.
     let uri = url ? Services.io.newURI(url) : null;
-    gURLBar.setURI(uri);
+    gURLBar.setURI({ uri });
 
     await UrlbarTestUtils.assertSearchMode(
       window,

@@ -7,11 +7,12 @@ package org.mozilla.fenix.settings.deletebrowsingdata
 import android.content.DialogInterface
 import android.os.Bundle
 import android.view.View
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.cancel
@@ -48,12 +49,21 @@ class DeleteBrowsingDataFragment : Fragment(R.layout.fragment_delete_browsing_da
 
         _binding = FragmentDeleteBrowsingDataBinding.bind(view)
         controller = DefaultDeleteBrowsingDataController(
-            tabsUseCases.removeAllTabs,
-            downloadUseCases.removeAllDownloads,
-            requireComponents.core.historyStorage,
-            requireComponents.core.permissionStorage,
-            requireComponents.core.store,
-            requireComponents.core.engine,
+            deleteDataUseCases = DefaultDeleteBrowsingDataController.DeleteDataUseCases(
+                removeAllTabs = tabsUseCases.removeAllTabs,
+                removeAllDownloads = downloadUseCases.removeAllDownloads,
+            ),
+            dataStorage = DefaultDeleteBrowsingDataController.DataStorage(
+                history = requireComponents.core.historyStorage,
+                permissions = requireComponents.core.permissionStorage,
+            ),
+            stores = DefaultDeleteBrowsingDataController.Stores(
+                appStore = requireComponents.appStore,
+                browserStore = requireComponents.core.store,
+            ),
+            engine = requireComponents.core.engine,
+            settings = requireComponents.settings,
+            coroutineContext = requireActivity().lifecycleScope.coroutineContext,
         )
         settings = requireContext().settings()
 
@@ -97,7 +107,7 @@ class DeleteBrowsingDataFragment : Fragment(R.layout.fragment_delete_browsing_da
     override fun onStart() {
         super.onStart()
 
-        scope = requireComponents.core.store.flowScoped(viewLifecycleOwner) { flow ->
+        scope = requireComponents.core.store.flowScoped(viewLifecycleOwner, Dispatchers.Main) { flow ->
             flow.map { state -> state.tabs.size }
                 .distinctUntilChanged()
                 .collect { openTabs -> updateTabCount(openTabs) }
@@ -135,7 +145,7 @@ class DeleteBrowsingDataFragment : Fragment(R.layout.fragment_delete_browsing_da
 
     private fun askToDelete() {
         runIfFragmentIsAttached {
-            AlertDialog.Builder(requireContext()).apply {
+            MaterialAlertDialogBuilder(requireContext()).apply {
                 setMessage(
                     requireContext().getString(
                         R.string.delete_browsing_data_prompt_message_3,

@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFmtCString_h___
-#define nsFmtCString_h___
+#ifndef nsFmtCString_h_
+#define nsFmtCString_h_
 
-#include <type_traits>
 #include "fmt/format.h"
 #include "fmt/xchar.h"
 #include "nsString.h"
@@ -16,14 +15,18 @@
  * nsTFmtString lets you create a nsTString using a C++20-style format
  * string.  For example:
  *
- *   NS_WARNING(nsFmtCString(FMT_STRING("Unexpected value: {}"), 13.917).get());
- *   NS_WARNING(nsFmtString(FMT_STRING(u"Unexpected value: {}"),
- *                                     u"weird").get());
+ *   NS_WARNING(nsFmtCString("Unexpected value: {}", 13.917).get());
+ *   NS_WARNING(nsFmtString(u"Unexpected value: {}", u"weird").get());
  *
  * nsTFmtString has a small built-in auto-buffer.  For larger strings, it
  * will allocate on the heap.
  *
  * See also nsTSubstring::AppendFmt().
+ *
+ * Note also that for one-off C strings you can also use fmt::format() directly:
+ *
+ *   NS_WARNING(std::format("Unexpected value: {}", 13.917).c_str());
+ *
  */
 template <typename T>
 class nsTFmtString : public nsTAutoStringN<T, 16> {

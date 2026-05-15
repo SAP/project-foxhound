@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_serviceworkerparent_h__
-#define mozilla_dom_serviceworkerparent_h__
+#ifndef mozilla_dom_serviceworkerparent_h_
+#define mozilla_dom_serviceworkerparent_h_
 
 #include "mozilla/dom/PServiceWorkerParent.h"
 
@@ -26,8 +26,7 @@ class ServiceWorkerParent final : public PServiceWorkerParent {
   mozilla::ipc::IPCResult RecvTeardown() override;
 
   mozilla::ipc::IPCResult RecvPostMessage(
-      const ClonedOrErrorMessageData& aClonedData,
-      const PostMessageSource& aSource) override;
+      StructuredCloneData* aData, const PostMessageSource& aSource) override;
 
  public:
   NS_INLINE_DECL_REFCOUNTING(ServiceWorkerParent, override);
@@ -41,4 +40,4 @@ class ServiceWorkerParent final : public PServiceWorkerParent {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_serviceworkerparent_h__
+#endif  // mozilla_dom_serviceworkerparent_h_

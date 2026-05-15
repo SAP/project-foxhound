@@ -161,6 +161,27 @@ NSSErrorsService::GetErrorClass(nsresult aXPCOMErrorCode,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+NSSErrorsService::IsErrorOverridable(nsresult aXPCOMErrorCode, bool* _retval) {
+  if (!_retval) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (NS_ERROR_GET_MODULE(aXPCOMErrorCode) != NS_ERROR_MODULE_SECURITY ||
+      NS_ERROR_GET_SEVERITY(aXPCOMErrorCode) != NS_ERROR_SEVERITY_ERROR) {
+    return NS_ERROR_FAILURE;
+  }
+
+  int32_t aNSPRCode = -1 * NS_ERROR_GET_CODE(aXPCOMErrorCode);
+
+  if (!mozilla::psm::IsNSSErrorCode(aNSPRCode)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *_retval = ErrorIsOverridable(aNSPRCode);
+  return NS_OK;
+}
+
 bool ErrorIsOverridable(PRErrorCode code) {
   switch (code) {
     // Overridable errors.

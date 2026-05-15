@@ -129,7 +129,7 @@ JS_PUBLIC_API void JS::AssertGCThingMustBeTenured(JSObject* obj) {
 JS_PUBLIC_API void JS::AssertGCThingIsNotNurseryAllocable(Cell* cell) {
   MOZ_ASSERT(cell);
   MOZ_ASSERT(!cell->is<JSObject>() && !cell->is<JSString>() &&
-             !cell->is<JS::BigInt>());
+             !cell->is<JS::BigInt>() && !cell->is<GetterSetter>());
 }
 
 JS_PUBLIC_API void js::gc::AssertGCThingHasType(js::gc::Cell* cell,
@@ -837,14 +837,14 @@ void AutoSelectGCHeap::onNurseryCollectionEnd() {
   heap_ = gc::Heap::Tenured;
 }
 
-JS_PUBLIC_API void js::gc::LockStoreBuffer(JSRuntime* runtime) {
+JS_PUBLIC_API void js::gc::LockSweepingLock(JSRuntime* runtime) {
   MOZ_ASSERT(runtime);
-  runtime->gc.lockStoreBuffer();
+  runtime->gc.lockSweepingLock();
 }
 
-JS_PUBLIC_API void js::gc::UnlockStoreBuffer(JSRuntime* runtime) {
+JS_PUBLIC_API void js::gc::UnlockSweepingLock(JSRuntime* runtime) {
   MOZ_ASSERT(runtime);
-  runtime->gc.unlockStoreBuffer();
+  runtime->gc.unlockSweepingLock();
 }
 
 #ifdef JS_GC_ZEAL

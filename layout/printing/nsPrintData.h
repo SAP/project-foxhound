@@ -4,11 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPrintData_h___
-#define nsPrintData_h___
-
-#include "mozilla/Attributes.h"
-#include "mozilla/UniquePtr.h"
+#ifndef nsPrintData_h_
+#define nsPrintData_h_
 
 // Interfaces
 #include "nsCOMArray.h"
@@ -50,4 +47,4 @@ class nsPrintData {
   ~nsPrintData();  // non-virtual
 };
 
-#endif /* nsPrintData_h___ */
+#endif /* nsPrintData_h_ */

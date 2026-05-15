@@ -16,7 +16,7 @@ import {
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import { features } from "../../utils/prefs";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 
 import * as objectInspector from "resource://devtools/client/shared/components/object-inspector/index.js";
 
@@ -216,7 +216,7 @@ class Expressions extends Component {
         },
         span(
           { className: "info icon" },
-          React.createElement(AccessibleImage, { className: "sourcemap" })
+          React.createElement(DebuggerImage, { name: "sourcemap" })
         ),
         span(
           { className: "message" },
@@ -230,7 +230,7 @@ class Expressions extends Component {
         { className: "pane-info" },
         span(
           { className: "info icon" },
-          React.createElement(AccessibleImage, { className: "loader" })
+          React.createElement(DebuggerImage, { name: "loader" })
         ),
         span(
           { className: "message" },

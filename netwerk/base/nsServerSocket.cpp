@@ -11,10 +11,8 @@
 #include "prnetdb.h"
 #include "prio.h"
 #include "nsThreadUtils.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/net/DNS.h"
-#include "mozilla/Unused.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIFile.h"
 #if defined(XP_WIN)
@@ -381,7 +379,7 @@ nsresult nsServerSocket::InitWithAddressInternal(const PRNetAddr* aAddr,
     }
   }
 #else
-  mozilla::Unused << aDualStack;
+  (void)aDualStack;
 #endif
 
   PR_SetFDInheritable(mFD, false);

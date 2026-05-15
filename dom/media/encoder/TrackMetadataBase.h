@@ -6,8 +6,8 @@
 #ifndef TrackMetadataBase_h_
 #define TrackMetadataBase_h_
 
-#include "nsTArray.h"
 #include "nsCOMPtr.h"
+#include "nsTArray.h"
 namespace mozilla {
 
 // A class represent meta data for various codec format. Only support one track

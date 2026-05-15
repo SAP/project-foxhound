@@ -137,9 +137,8 @@ function promiseWaitForEvent(
  * @param aWindow
  *        The window to focus and wait for.
  *
- * @return {Promise}
- * @resolves When the window is focused.
- * @rejects Never.
+ * @returns {Promise<void>}
+ *   Resolved when the window is focused.
  */
 function promiseWaitForFocus(aWindow) {
   return new Promise(resolve => {
@@ -175,50 +174,6 @@ async function whenNewTabLoaded(aWindow, aCallback) {
     await loadPromise;
   }
   aCallback();
-}
-
-function whenTabLoaded(aTab, aCallback) {
-  promiseTabLoadEvent(aTab).then(aCallback);
-}
-
-function promiseTabLoaded(aTab) {
-  return new Promise(resolve => {
-    whenTabLoaded(aTab, resolve);
-  });
-}
-
-/**
- * Waits for a load (or custom) event to finish in a given tab. If provided
- * load an uri into the tab.
- *
- * @param tab
- *        The tab to load into.
- * @param [optional] url
- *        The url to load, or the current url.
- * @return {Promise} resolved when the event is handled.
- * @resolves to the received event
- * @rejects if a valid load event is not received within a meaningful interval
- */
-function promiseTabLoadEvent(tab, url) {
-  info("Wait tab event: load");
-
-  function handle(loadedUrl) {
-    if (loadedUrl === "about:blank" || (url && loadedUrl !== url)) {
-      info(`Skipping spurious load event for ${loadedUrl}`);
-      return false;
-    }
-
-    info("Tab event received: load");
-    return true;
-  }
-
-  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
-
-  if (url) {
-    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
-  }
-
-  return loaded;
 }
 
 function is_hidden(element) {

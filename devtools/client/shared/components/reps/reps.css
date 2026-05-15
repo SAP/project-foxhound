@@ -83,7 +83,6 @@
   color: currentColor;
   text-decoration: underline;
   text-decoration-skip-ink: none;
-  font-style: italic;
   cursor: pointer;
 }
 
@@ -349,43 +348,6 @@
 .highlight-node:hover,
 .open-inspector:hover {
   color: var(--theme-icon-alternate-hover-color);
-}
-
-/******************************************************************************/
-/* Jump to definition button */
-
-button.jump-definition {
-  display: inline-block;
-  height: 16px;
-  width: 20px;
-  margin-left: 0.25em;
-  vertical-align: middle;
-  background: center url("chrome://devtools/content/shared/components/reps/images/jump-definition.svg") no-repeat;
-  border-color: transparent;
-  stroke: var(--theme-icon-color);
-  -moz-context-properties: stroke;
-  cursor: pointer;
-}
-
-button.jump-definition:hover {
-  stroke: var(--theme-icon-checked-color);
-}
-
-:root[forced-colors-active] button.jump-definition {
-  border: 1px solid ButtonText;
-  border-radius: 2px;
-  background-color: ButtonFace;
-}
-
-:root[forced-colors-active] button.jump-definition:hover {
-  stroke: var(--theme-icon-hover-color);
-  border-color: var(--theme-icon-hover-color);
-}
-
-/* In High Contrast Mode, the button has a solid background, so we only need
-    to set a different color for the icon when we are not in HCM */
-:root:not([forced-colors-active]) .tree-node.focused button.jump-definition {
-  stroke: currentColor;
 }
 
 /******************************************************************************/

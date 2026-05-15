@@ -9,7 +9,6 @@
 
 #include "mozIStorageResultSet.h"
 #include "nsCOMArray.h"
-#include "mozilla/Attributes.h"
 class mozIStorageRow;
 
 namespace mozilla {

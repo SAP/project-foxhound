@@ -25,7 +25,7 @@ async function openTaskbarTabWindow(aTab = null) {
   const userContextId = 0;
 
   const registry = new TaskbarTabsRegistry();
-  const taskbarTab = registry.findOrCreateTaskbarTab(url, userContextId);
+  const taskbarTab = createTaskbarTab(registry, url, userContextId);
   const windowManager = new TaskbarTabsWindowManager();
 
   const windowPromise = BrowserTestUtils.waitForNewWindow();
@@ -37,4 +37,31 @@ async function openTaskbarTabWindow(aTab = null) {
   }
 
   return await windowPromise;
+}
+
+/**
+ * Creates a new Taskbar Tab within the registry, and asserts that it does not
+ * already exist.
+ *
+ * (This function is also in xpcshell/head.js.)
+ *
+ * @param {TaskbarTabsRegistry|TaskbarTabs} aRegistry
+ *   The registry to create the taskbar tab in.
+ * @param {...*} args
+ *   Arguments to findOrCreateTaskbarTab.
+ * @returns {TaskbarTab}
+ *   The newly-created taskbar tab.
+ */
+function createTaskbarTab(aRegistry, ...args) {
+  let result = aRegistry.findOrCreateTaskbarTab(...args);
+  function check({ taskbarTab, created }) {
+    Assert.ok(created, "Created taskbar tab did not exist before");
+    return taskbarTab;
+  }
+
+  if (result.then) {
+    return result.then(check);
+  }
+
+  return check(result);
 }

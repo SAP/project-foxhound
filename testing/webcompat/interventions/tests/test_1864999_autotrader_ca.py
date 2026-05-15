@@ -3,15 +3,15 @@ import time
 import pytest
 from webdriver import NoSuchElementException, WebDriverException
 
-URL = "https://www.autotrader.ca/cars/bc/chilliwack/?rcp=20&rcs=0&srt=4&prx=250&prv=British+Columbia&loc=v2p5p4&kwd=awd%2B-westminster%2B-richmond&fuel=Electric&hprc=True&wcp=False&sts=New&adtype=Dealer&showcpo=1&inMarket=advancedSearch"
+URL = "https://www.autotrader.ca/lst?adtype=Dealer&atype=C&cy=CA&damaged_listing=exclude&desc=0&hprc=True&inMarket=advancedSearch&lat=49.1848258972168&loc=v2p5p4&lon=-121.93928527832031&offer=U&prv=British%20Columbia&prx=250&rcp=20&rcs=0&search_id=hf3of1x3pk&showcpo=1&size=20&sort=price&srt=4&sts=New&wcp=False&zip=V2P5P4%20Chilliwack%2C%20BC&zipr=250"
 
 COOKIES_CSS = "#cookie-banner"
-FILTER_BUTTON_CSS = "#iconFilter[data-was-processed]"
-MAKE_FILTER_CSS = "#faceted-parent-Make"
-MAKE_FILTER_OPTS_CSS = "#faceted-parent-Make ul"
+FILTER_BUTTON_CSS = "button[class^=SearchMaskFilterTags_mobile_filter]"
+MAKE_FILTER_CSS = "[aria-controls=make-model-filter-details]"
+MAKE_FILTER_OPTS_CSS = "#select-make-container"
 
 
-async def are_filters_on_right(client):
+async def are_filter_options_onscreen(client):
     await client.navigate(URL)
 
     try:
@@ -33,11 +33,11 @@ async def are_filters_on_right(client):
     client.scroll_into_view(flt)
     flt.click()
 
-    # check whether the list is offset to the right
+    # check whether the container of the filter is off-screen
     opts = client.await_css(MAKE_FILTER_OPTS_CSS, is_displayed=True)
     return client.execute_script(
         """
-      return arguments[0].getBoundingClientRect().x > 0;
+      return arguments[0].getBoundingClientRect().right > window.innerWidth;
     """,
         opts,
     )
@@ -45,13 +45,6 @@ async def are_filters_on_right(client):
 
 @pytest.mark.only_platforms("android")
 @pytest.mark.asyncio
-@pytest.mark.with_interventions
-async def test_enabled(client):
-    assert not await are_filters_on_right(client)
-
-
-@pytest.mark.only_platforms("android")
-@pytest.mark.asyncio
 @pytest.mark.without_interventions
-async def test_disabled(client):
-    assert await are_filters_on_right(client)
+async def test_regression(client):
+    assert not await are_filter_options_onscreen(client)

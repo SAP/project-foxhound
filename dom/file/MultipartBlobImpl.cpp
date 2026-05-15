@@ -5,20 +5,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MultipartBlobImpl.h"
+
+#include <algorithm>
+
 #include "jsfriendapi.h"
 #include "mozilla/dom/BlobSet.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
 #include "nsIGlobalObject.h"
 #include "nsIMultiplexInputStream.h"
-#include "nsReadableUtils.h"
+#include "nsJSUtils.h"
 #include "nsRFPService.h"
+#include "nsReadableUtils.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
-#include "nsJSUtils.h"
-#include "nsContentUtils.h"
-#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::dom;

@@ -40,6 +40,12 @@ class MappedFileReader {
 
 // A file writer wrapper. The target file is deleted on destruction unless
 // Keep() is called.
+#if defined(MOZ_ZUCCHINI)
+// Calling the constructor with |keep| set to true also prevents deletion on
+// destruction. On Windows, this is the only valid way to use a
+// MappedFileWriter if the handle behind |file| was not created with the DELETE
+// access right.
+#endif  // defined(MOZ_ZUCCHINI)
 class MappedFileWriter {
  public:
   // Maps |file| to memory for writing. |file_path| is needed for auto delete on
@@ -47,7 +53,12 @@ class MappedFileWriter {
   // available via HasError() and error().
   MappedFileWriter(const base::FilePath& file_path,
                    base::File file,
+#if defined(MOZ_ZUCCHINI)
+                   size_t length,
+                   bool keep = false);
+#else
                    size_t length);
+#endif  // defined(MOZ_ZUCCHINI)
   MappedFileWriter(const MappedFileWriter&) = delete;
   const MappedFileWriter& operator=(const MappedFileWriter&) = delete;
   ~MappedFileWriter();
@@ -62,6 +73,12 @@ class MappedFileWriter {
   // Indicates that the file should not be deleted on destruction. Returns true
   // iff the operation succeeds.
   bool Keep();
+
+#if defined(MOZ_ZUCCHINI)
+  // Flushes memory-mapped changes to disk. Returns true on success, false on
+  // error. On error, sets error_ so HasError() will return true.
+  bool Flush();
+#endif  // MOZ_ZUCCHINI
 
  private:
   enum OnCloseDeleteBehavior {

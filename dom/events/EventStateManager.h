@@ -7,21 +7,20 @@
 #ifndef mozilla_EventStateManager_h_
 #define mozilla_EventStateManager_h_
 
-#include "mozilla/EventForwards.h"
-
-#include "nsIObserver.h"
-#include "nsWeakReference.h"
-#include "nsCOMPtr.h"
-#include "nsCOMArray.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsRefPtrHashtable.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/layers/APZPublicUtils.h"
-#include "mozilla/dom/Record.h"
 #include "Units.h"
 #include "WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
+#include "mozilla/Attributes.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/Record.h"
+#include "mozilla/layers/APZPublicUtils.h"
+#include "nsCOMArray.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIObserver.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsRefPtrHashtable.h"
+#include "nsWeakReference.h"
 
 class nsFrameLoader;
 class nsIContent;
@@ -42,6 +41,7 @@ namespace mozilla {
 class EditorBase;
 class EnterLeaveDispatcher;
 class IMEContentObserver;
+class LazyLogModule;
 class ScrollbarsForWheel;
 class ScrollContainerFrame;
 class TextControlElement;
@@ -54,6 +54,7 @@ class Element;
 class Selection;
 class BrowserParent;
 class RemoteDragStartData;
+struct InteractionData;
 
 }  // namespace dom
 
@@ -223,8 +224,10 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
-  nsresult Init();
-  nsresult Shutdown();
+  void Init();
+  void Shutdown();
+
+  static LazyLogModule& MouseCursorUpdateLogRef();
 
   /* The PreHandleEvent method is called before event dispatch to either
    * the DOM or frames.  Any processing which must not be prevented or
@@ -298,8 +301,12 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   nsIContent* GetActiveContent() const { return mActiveContent; }
 
   void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void ContentRemoved(dom::Document* aDocument,
-                                                  nsIContent* aContent);
+  void ContentInserted(nsIContent* aChild, const ContentInsertInfo& aInfo);
+  void ContentAppended(nsIContent* aFirstNewContent,
+                       const ContentAppendInfo& aInfo);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void ContentRemoved(
+      dom::Document* aDocument, nsIContent* aContent,
+      const ContentRemoveInfo& aInfo);
 
   /**
    * Called when a native anonymous <div> element which is root element of
@@ -416,7 +423,17 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    */
   void RecomputeMouseEnterStateForRemoteFrame(dom::Element& aElement);
 
-  nsPresContext* GetPresContext() { return mPresContext; }
+  nsPresContext* GetPresContext() const { return mPresContext; }
+
+  PresShell* GetPresShell() const {
+    return mPresContext ? mPresContext->GetPresShell() : nullptr;
+  }
+
+  /**
+   * Return the in-process root PresShell which is associated with the root
+   * nsPresContext of mPresContext.
+   */
+  PresShell* GetRootPresShell() const;
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(EventStateManager, nsIObserver)
 
@@ -1365,6 +1382,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   // Stores the mRefPoint (the offset from the widget's origin in device
   // pixels) of the last mouse event.
   static LayoutDeviceIntPoint sLastRefPoint;
+  static LayoutDeviceIntPoint sLastRefPointOfRawUpdate;
 
   // member variables for the d&d gesture state machine
   LayoutDeviceIntPoint mGestureDownPoint;  // screen coordinates

@@ -7,7 +7,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  MLSuggest: "resource:///modules/urlbar/private/MLSuggest.sys.mjs",
+  MLSuggest: "moz-src:///browser/components/urlbar/private/MLSuggest.sys.mjs",
 });
 
 const REMOTE_SETTINGS_RECORDS = [
@@ -54,7 +54,7 @@ add_setup(async function init() {
     prefs: [
       ["browser.ml.enable", true],
       ["quicksuggest.mlEnabled", true],
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
       ["yelp.mlEnabled", true],
       ["yelp.serviceResultDistinction", false],
@@ -87,28 +87,28 @@ add_task(async function yelpDisabled() {
     {
       prefs: {
         "suggest.quicksuggest.sponsored": true,
-        "suggest.quicksuggest.nonsponsored": true,
+        "suggest.quicksuggest.all": true,
       },
       expected: true,
     },
     {
       prefs: {
         "suggest.quicksuggest.sponsored": true,
-        "suggest.quicksuggest.nonsponsored": false,
-      },
-      expected: true,
-    },
-    {
-      prefs: {
-        "suggest.quicksuggest.sponsored": false,
-        "suggest.quicksuggest.nonsponsored": true,
+        "suggest.quicksuggest.all": false,
       },
       expected: false,
     },
     {
       prefs: {
         "suggest.quicksuggest.sponsored": false,
-        "suggest.quicksuggest.nonsponsored": false,
+        "suggest.quicksuggest.all": true,
+      },
+      expected: false,
+    },
+    {
+      prefs: {
+        "suggest.quicksuggest.sponsored": false,
+        "suggest.quicksuggest.all": false,
       },
       expected: false,
     },
@@ -559,7 +559,9 @@ function makeExpectedResult({
   source = "ml",
   provider = "yelp_intent",
   originalUrl = undefined,
-  displayUrl = undefined,
+  // Expect index -1 for amp results because we test
+  // without the search suggestions provider.
+  suggestedIndex = -1,
 }) {
   return QuickSuggestTestUtils.yelpResult({
     url,
@@ -567,6 +569,6 @@ function makeExpectedResult({
     source,
     provider,
     originalUrl,
-    displayUrl,
+    suggestedIndex,
   });
 }

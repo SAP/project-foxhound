@@ -877,14 +877,14 @@ Token* RegisterToken::Tokenize(const char* arg) {
     // Is it a X register or alias?
     for (const char** current = kXAliases[i]; *current != NULL; current++) {
       if (strcmp(arg, *current) == 0) {
-        return js_new<RegisterToken>(Register::XRegFromCode(i));
+        return js_new<RegisterToken>(XRegister(i));
       }
     }
 
     // Is it a W register or alias?
     for (const char** current = kWAliases[i]; *current != NULL; current++) {
       if (strcmp(arg, *current) == 0) {
-        return js_new<RegisterToken>(Register::WRegFromCode(i));
+        return js_new<RegisterToken>(WRegister(i));
       }
     }
   }
@@ -921,10 +921,10 @@ Token* FPRegisterToken::Tokenize(const char* arg) {
       VRegister fpreg = NoVReg;
       switch (*arg) {
         case 's':
-          fpreg = VRegister::SRegFromCode(static_cast<unsigned>(code));
+          fpreg = SRegister(static_cast<unsigned>(code));
           break;
         case 'd':
-          fpreg = VRegister::DRegFromCode(static_cast<unsigned>(code));
+          fpreg = DRegister(static_cast<unsigned>(code));
           break;
         default: VIXL_UNREACHABLE();
       }

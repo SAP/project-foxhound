@@ -10,11 +10,7 @@ add_setup(async () => {
 
 add_task(async function testIncognitoViews() {
   // Make sure the mouse isn't hovering over the browserAction widget.
-  EventUtils.synthesizeMouseAtCenter(
-    gURLBar.textbox,
-    { type: "mouseover" },
-    window
-  );
+  EventUtils.synthesizeMouseAtCenter(gURLBar, { type: "mouseover" }, window);
 
   let extension = ExtensionTestUtils.loadExtension({
     incognitoOverride: "spanning",

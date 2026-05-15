@@ -298,7 +298,7 @@ class TabDescriptorFront extends DescriptorMixin(
    */
   async _handleTabEvent(event) {
     switch (event.type) {
-      case "TabClose":
+      case "TabClose": {
         // Always destroy the toolbox opened for this local tab descriptor.
         // When the toolbox is in a Window Host, it won't be removed from the
         // DOM when the tab is closed.
@@ -308,6 +308,7 @@ class TabDescriptorFront extends DescriptorMixin(
           await toolbox.destroy();
         }
         break;
+      }
       case "TabRemotenessChange":
         this._onRemotenessChange();
         break;
@@ -326,5 +327,4 @@ class TabDescriptorFront extends DescriptorMixin(
   }
 }
 
-exports.TabDescriptorFront = TabDescriptorFront;
 registerFront(TabDescriptorFront);

@@ -19,7 +19,7 @@
         null
       );
       await new Promise(resolve => {
-        newWin.addEventListener("load", resolve, { once: true });
+        setTimeout(resolve, 0);
       });
 
       // Wait one tick of the event loop to give the window a chance to focus.

@@ -169,7 +169,7 @@ def WebIDLTest(parser, harness):
         parser.parse(
             """
             interface Foo {
-              async iterable(undefined name);
+              async_iterable(undefined name);
             };
             """
         )
@@ -180,7 +180,7 @@ def WebIDLTest(parser, harness):
     harness.ok(
         threw,
         "undefined must not be used as the type of an argument in any "
-        "circumstance (so not as the argument of an async iterable "
+        "circumstance (so not as the argument of an async_iterable "
         "iterator)",
     )
 

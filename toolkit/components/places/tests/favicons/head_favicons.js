@@ -21,11 +21,11 @@ let uniqueFaviconId = 0;
 /**
  * Checks that the favicon for the given page matches the provided data.
  *
- * @param aPageURI
+ * @param {string|URL|nsIURI} aPageURI
  *        nsIURI object for the page to check.
- * @param aExpectedMimeType
+ * @param {string} aExpectedMimeType
  *        Expected MIME type of the icon, for example "image/png".
- * @param aExpectedData
+ * @param {number[]} aExpectedData
  *        Expected icon data, expressed as an array of byte values.
  *        If set null, skip the test for the favicon data.
  */
@@ -45,8 +45,8 @@ async function checkFaviconDataForPage(
 /**
  * Checks that the given page has no associated favicon.
  *
- * @param aPageURI
- *        nsIURI object for the page to check.
+ * @param {string|URL|nsIURI} aPageURI
+ *   nsIURI object for the page to check.
  */
 async function checkFaviconMissingForPage(aPageURI) {
   let favicon = await PlacesTestUtils.getFaviconForPage(aPageURI);

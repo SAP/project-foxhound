@@ -300,27 +300,24 @@ nsWebBrowserFind::SetMatchDiacritics(bool aMatchDiacritics) {
   return NS_OK;
 }
 
-void nsWebBrowserFind::SetSelectionAndScroll(nsPIDOMWindowOuter* aWindow,
-                                             nsRange* aRange) {
+already_AddRefed<Selection> nsWebBrowserFind::UpdateSelection(
+    nsPIDOMWindowOuter* aWindow, nsRange* aRange) {
   RefPtr<Document> doc = aWindow->GetDoc();
   if (!doc) {
-    return;
+    return nullptr;
   }
 
   PresShell* presShell = doc->GetPresShell();
   if (!presShell) {
-    return;
+    return nullptr;
   }
 
-  nsCOMPtr<nsINode> node = aRange->GetStartContainer();
-  nsCOMPtr<nsIContent> content(do_QueryInterface(node));
-  nsIFrame* frame = content->GetPrimaryFrame();
-  if (!frame) {
-    return;
+  nsCOMPtr<nsIContent> content =
+      nsIContent::FromNodeOrNull(aRange->GetStartContainer());
+  nsIFrame* const frameForStartContainer = content->GetPrimaryFrame();
+  if (!frameForStartContainer) {
+    return nullptr;
   }
-  nsCOMPtr<nsISelectionController> selCon;
-  frame->GetSelectionController(presShell->GetPresContext(),
-                                getter_AddRefs(selCon));
 
   // since the match could be an anonymous textnode inside a
   // <textarea> or text <input>, we need to get the outer frame
@@ -329,7 +326,7 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsPIDOMWindowOuter* aWindow,
     if (!content->IsInNativeAnonymousSubtree()) {
       nsIFrame* f = content->GetPrimaryFrame();
       if (!f) {
-        return;
+        return nullptr;
       }
       if (f->IsTextInputFrame()) {
         tcFrame = f;
@@ -338,11 +335,13 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsPIDOMWindowOuter* aWindow,
     }
   }
 
+  const nsCOMPtr<nsISelectionController> selCon =
+      frameForStartContainer->GetSelectionController();
   selCon->SetDisplaySelection(nsISelectionController::SELECTION_ON);
   RefPtr<Selection> selection =
       selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
   if (!selection) {
-    return;
+    return nullptr;
   }
   selection->RemoveAllRanges(IgnoreErrors());
   selection->AddRangeAndSelectFramesAndNotifyListeners(*aRange, IgnoreErrors());
@@ -357,18 +356,7 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsPIDOMWindowOuter* aWindow,
                     nsIFocusManager::FLAG_NOSCROLL, getter_AddRefs(result));
     }
   }
-
-  // Scroll if necessary to make the selection visible:
-  // Must be the last thing to do - bug 242056
-
-  // After ScrollSelectionIntoView(), the pending notifications might be
-  // flushed and PresShell/PresContext/Frames may be dead. See bug 418470.
-  // FIXME(emilio): Any reason this couldn't do selection->ScrollIntoView()
-  // directly, rather than re-requesting the selection?
-  selCon->ScrollSelectionIntoView(
-      SelectionType::eNormal, nsISelectionController::SELECTION_WHOLE_SELECTION,
-      ScrollAxis(WhereToScroll::Center), ScrollAxis(), ScrollFlags::None,
-      SelectionScrollMode::SyncFlush);
+  return selection.forget();
 }
 
 nsresult nsWebBrowserFind::SetRangeAroundDocument(nsRange* aSearchRange,
@@ -635,9 +623,27 @@ nsresult nsWebBrowserFind::SearchInFrame(nsPIDOMWindowOuter* aWindow,
   if (NS_SUCCEEDED(rv) && foundRange) {
     *aDidFind = true;
     sel->RemoveAllRanges(IgnoreErrors());
-    // Beware! This may flush notifications via synchronous
-    // ScrollSelectionIntoView.
-    SetSelectionAndScroll(aWindow, foundRange);
+    RefPtr<Selection> scrollSelection = UpdateSelection(aWindow, foundRange);
+
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "nsWebBrowserFind::RevealAndScroll",
+        [foundRange = RefPtr{foundRange},
+         scrollSelection = RefPtr{scrollSelection}]()
+            MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
+              // Reveal hidden-until-found and closed details elements.
+              // https://html.spec.whatwg.org/#interaction-with-details-and-hidden=until-found
+              if (RefPtr startNode = foundRange->GetStartContainer()) {
+                startNode->AncestorRevealingAlgorithm(IgnoreErrors());
+              }
+
+              // Scroll to make the selection visible
+              if (scrollSelection) {
+                scrollSelection->ScrollIntoView(
+                    nsISelectionController::SELECTION_WHOLE_SELECTION,
+                    ScrollAxis(WhereToScroll::Center), ScrollAxis(),
+                    ScrollFlags::None, SelectionScrollMode::SyncFlush);
+              }
+            }));
   }
 
   return rv;
@@ -657,40 +663,43 @@ nsresult nsWebBrowserFind::OnEndSearchFrame(nsPIDOMWindowOuter* aWindow) {
 }
 
 already_AddRefed<Selection> nsWebBrowserFind::GetFrameSelection(
-    nsPIDOMWindowOuter* aWindow) {
-  RefPtr<Document> doc = aWindow->GetDoc();
-  if (!doc) {
+    nsPIDOMWindowOuter* aWindow) const {
+  MOZ_ASSERT(aWindow);
+
+  Document* const doc = aWindow->GetDoc();
+  if (MOZ_UNLIKELY(!doc)) {
     return nullptr;
   }
 
-  PresShell* presShell = doc->GetPresShell();
-  if (!presShell) {
+  PresShell* const presShell = doc->GetPresShell();
+  if (MOZ_UNLIKELY(!presShell)) {
     return nullptr;
   }
-
-  // text input controls have their independent selection controllers that we
-  // must use when they have focus.
-  nsPresContext* presContext = presShell->GetPresContext();
 
   nsCOMPtr<nsPIDOMWindowOuter> focusedWindow;
-  nsCOMPtr<nsIContent> focusedContent = nsFocusManager::GetFocusedDescendant(
-      aWindow, nsFocusManager::eOnlyCurrentWindow,
-      getter_AddRefs(focusedWindow));
-
-  nsIFrame* frame =
-      focusedContent ? focusedContent->GetPrimaryFrame() : nullptr;
-
-  nsCOMPtr<nsISelectionController> selCon;
-  RefPtr<Selection> sel;
-  if (frame) {
-    frame->GetSelectionController(presContext, getter_AddRefs(selCon));
-    sel = selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
-    if (sel && sel->RangeCount() > 0) {
-      return sel.forget();
+  if (const nsCOMPtr<nsIContent> focusedContent =
+          nsFocusManager::GetFocusedDescendant(
+              aWindow, nsFocusManager::eOnlyCurrentWindow,
+              getter_AddRefs(focusedWindow))) {
+    nsIFrame* const focusedFrame = focusedContent->GetPrimaryFrame();
+    if (focusedFrame && focusedFrame->PresShell() == presShell) {
+      // While a text control has focus, we should use it instead of the
+      // selection for the document.  nsIFrame::GetSelectionController()
+      // returns the independent selection controller if and only if it's a
+      // TextControlFrame.
+      if (nsISelectionController* const selCon =
+              focusedFrame->GetSelectionController()) {
+        Selection* const sel =
+            selCon->GetSelection(nsISelectionController::SELECTION_NORMAL);
+        if (sel && sel->RangeCount() > 0) {
+          return do_AddRef(sel);
+        }
+      }
     }
   }
 
-  sel = presShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
+  RefPtr<Selection> sel =
+      presShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
   return sel.forget();
 }
 

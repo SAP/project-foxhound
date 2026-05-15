@@ -29,7 +29,7 @@ SimpleTest.requestLongerTimeout(2);
  * other actions here so that this test only tests the value sanitization
  * algorithm for the various input types.
  *
- * XXXjwatt splitting out testing of the value sanitization algorithm and 
+ * XXXjwatt splitting out testing of the value sanitization algorithm and
  * "other things" that affect .value makes it harder to know what we're testing
  * and what we've missed, because what's included in the value sanitization
  * algorithm and what's not is different from input type to input type. It
@@ -246,7 +246,7 @@ function sanitizeValue(aType, aValue)
         return "";
       }
       return aValue;
-    case "week":
+    case "week": {
       // https://html.spec.whatwg.org/multipage/infrastructure.html#valid-week-string
       function isLeapYear(aYear) {
         return ((aYear % 4 == 0) && (aYear % 100 != 0)) || (aYear % 400 == 0);
@@ -277,9 +277,14 @@ function sanitizeValue(aType, aValue)
         return "";
       }
       return 1 <= week && week <= getMaximumWeekInYear(year) ? aValue : "";
+    }
     case "datetime-local":
       return sanitizeDateTimeLocal(aValue);
     case "color":
+      switch (aValue) {
+        case "red": return "#ff0000";
+        case "#0f0": return "#00ff00";
+      }
       return /^#[0-9A-Fa-f]{6}$/.exec(aValue) ? aValue.toLowerCase() : "#000000";
     default:
       return aValue;

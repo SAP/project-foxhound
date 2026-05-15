@@ -14,12 +14,12 @@ function test() {
   } catch (ex) {
     ok(false, "Should not throw exceptions trying to set toolbar visibility.");
   }
-  is(tb.getAttribute("collapsed"), "true", "Toolbar should be collapsed");
+  ok(tb.hasAttribute("collapsed"), "Toolbar should be collapsed");
   try {
     CustomizableUI.setToolbarVisibility(TOOLBARID, true);
   } catch (ex) {
     ok(false, "Should not throw exceptions trying to set toolbar visibility.");
   }
-  is(tb.getAttribute("collapsed"), "false", "Toolbar should be uncollapsed");
+  ok(!tb.hasAttribute("collapsed"), "Toolbar should be uncollapsed");
   tb.remove();
 }

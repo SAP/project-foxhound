@@ -7,15 +7,15 @@
 #ifndef IndexedDatabaseInlines_h
 #define IndexedDatabaseInlines_h
 
-#ifndef mozilla_dom_indexeddatabase_h__
+#ifndef mozilla_dom_indexeddatabase_h_
 #  error Must include IndexedDatabase.h first
 #endif
 
 #include "DatabaseFileInfo.h"
-#include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 
 namespace mozilla::dom::indexedDB {
 
@@ -172,7 +172,7 @@ JSObject* StructuredCloneReadCallback(
                                  StructuredCloneReadInfoChild>) {
       return static_cast<StructuredCloneReadInfoChild*>(aClosure)->Database();
     }
-    Unused << aClosure;
+    (void)aClosure;
     return nullptr;
   }();
   return CommonStructuredCloneReadCallback(

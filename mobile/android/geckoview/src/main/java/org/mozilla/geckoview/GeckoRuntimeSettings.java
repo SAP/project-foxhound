@@ -6,10 +6,9 @@
 
 package org.mozilla.geckoview;
 
-import static android.os.Build.VERSION;
-
 import android.app.Service;
 import android.graphics.Rect;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.LocaleList;
 import android.os.Parcel;
@@ -20,6 +19,7 @@ import androidx.annotation.AnyThread;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringDef;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
@@ -31,6 +31,7 @@ import org.mozilla.gecko.GeckoSystemStateListener;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.LocaleUtils;
 
+/** Settings for configuring the Gecko runtime environment. */
 @AnyThread
 public final class GeckoRuntimeSettings extends RuntimeSettings {
   private static final String LOGTAG = "GeckoRuntimeSettings";
@@ -75,9 +76,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     /**
      * Path to configuration file from which GeckoView will read configuration options such as Gecko
      * process arguments, environment variables, and preferences.
-     *
-     * <p>Note: this feature is only available for <code>{@link VERSION#SDK_INT} &gt; 21</code>, on
-     * older devices this will be silently ignored.
      *
      * @param configFilePath Configuration file path to read from, or <code>null</code> to use
      *     default location <code>/data/local/tmp/$PACKAGE-geckoview-config.yaml</code>.
@@ -442,7 +440,12 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       return this;
     }
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Set the content blocking settings.
+     *
+     * @param cb The ContentBlocking.Settings to use
+     * @return This Builder instance
+     */
     public @NonNull Builder contentBlocking(final @NonNull ContentBlocking.Settings cb) {
       getSettings().mContentBlocking = cb;
       return this;
@@ -568,6 +571,44 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
+     * Sets whether or not the request blocking feature for Local Network / Device Access blocking
+     * is enabled
+     *
+     * @param enabled flag indicating whether or not the request blocking feature for Local Network
+     *     / Device Access blocking is enabled
+     * @return The builder instance
+     */
+    public @NonNull Builder setLnaBlocking(@NonNull final Boolean enabled) {
+      getSettings().setLnaBlocking(enabled);
+      return this;
+    }
+
+    /**
+     * Sets whether or not the tracker blocking feature on Local Network / Device Access blocking
+     * feature is enabled
+     *
+     * @param enabled flag indicating whether or not the tracker blocking feature for Local Network
+     *     / Device Access blocking is enabled
+     * @return The builder instance
+     */
+    public @NonNull Builder setLnaBlockTrackers(@NonNull final Boolean enabled) {
+      getSettings().setLnaBlockTrackers(enabled);
+      return this;
+    }
+
+    /**
+     * Sets whether or not the overall Local Network / Device Access blocking feature is enabled
+     *
+     * @param enabled flag indicating whether or not the overall Local Network / Device Access
+     *     blocking feature is enabled
+     * @return The builder instance
+     */
+    public @NonNull Builder setLnaEnabled(@NonNull final Boolean enabled) {
+      getSettings().setLnaEnabled(enabled);
+      return this;
+    }
+
+    /**
      * Sets whether and how DNS-over-HTTPS (Trusted Recursive Resolver) is configured.
      *
      * @param mode One of the {@link GeckoRuntimeSettings#TRR_MODE_OFF TrustedRecursiveResolverMode}
@@ -652,6 +693,39 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       getSettings().setSameDocumentNavigationOverridesLoadTypeForceDisable(uri);
       return this;
     }
+
+    /**
+     * Set whether content service should be on isolated process or not. This must be set before
+     * startup.
+     *
+     * @param enabled A flag determining whether content service should be on isolated process.
+     * @return The builder instance.
+     */
+    public @NonNull Builder isolatedProcessEnabled(final boolean enabled) {
+      getSettings().mIsolatedProcess = enabled;
+      return this;
+    }
+
+    /**
+     * Set whether App Zygote preloading should be enabled or not. This must be set before startup.
+     *
+     * <p>Will take precedence over{@link #isolatedProcessEnabled(boolean) } if both are enabled.
+     *
+     * <p>Only settable on SDK 29 or higher.
+     *
+     * @param enabled A flag determining whether or not to enable App Zygote preloading.
+     * @return The builder instance.
+     */
+    public @NonNull Builder appZygoteProcessEnabled(final boolean enabled) {
+      if (enabled && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        Log.w(LOGTAG, "Cannot set app Zygote preloading to true below SDK 29 (Android 10)!");
+        getSettings().mAppZygoteProcess = false;
+        return this;
+      }
+      getSettings().mAppZygoteProcess = enabled;
+
+      return this;
+    }
   }
 
   private GeckoRuntime mRuntime;
@@ -661,7 +735,11 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
 
   /* package */ ContentBlocking.Settings mContentBlocking;
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Get the content blocking settings.
+   *
+   * @return The ContentBlocking.Settings for this runtime
+   */
   public @NonNull ContentBlocking.Settings getContentBlocking() {
     return mContentBlocking;
   }
@@ -698,12 +776,21 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new PrefWithoutDefault<>("fission.webContentIsolationStrategy");
   /* package */ final Pref<Boolean> mAutofillLogins =
       new Pref<Boolean>("signon.autofillForms", true);
+  /* package */ final PrefWithoutDefault<String> mFirefoxRelay =
+      new PrefWithoutDefault<>("signon.firefoxRelay.feature");
   /* package */ final Pref<Boolean> mAutomaticallyOfferPopup =
       new Pref<Boolean>("browser.translations.automaticallyPopup", true);
   /* package */ final Pref<Boolean> mHttpsOnly =
       new Pref<Boolean>("dom.security.https_only_mode", false);
   /* package */ final Pref<Boolean> mHttpsOnlyPrivateMode =
       new Pref<Boolean>("dom.security.https_only_mode_pbm", false);
+
+  /* package */ final PrefWithoutDefault<Boolean> mLnaBlocking =
+      new PrefWithoutDefault<>("network.lna.blocking");
+  /* package */ final PrefWithoutDefault<Boolean> mLnaBlockTrackers =
+      new PrefWithoutDefault<>("network.lna.block_trackers");
+  /* package */ final PrefWithoutDefault<Boolean> mLnaEnabled =
+      new PrefWithoutDefault<>("network.lna.enabled");
   /* package */ final PrefWithoutDefault<Integer> mTrustedRecursiveResolverMode =
       new PrefWithoutDefault<>("network.trr.mode");
   /* package */ final PrefWithoutDefault<String> mTrustedRecursiveResolverUri =
@@ -753,8 +840,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<Boolean>("network.cookie.cookieBehavior.optInPartitioning", false);
   /* package */ final Pref<Boolean> mCookieBehaviorOptInPartitioningPBM =
       new Pref<Boolean>("network.cookie.cookieBehavior.optInPartitioning.pbmode", false);
-  /* package */ final Pref<Integer> mCertificateTransparencyMode =
-      new Pref<Integer>("security.pki.certificate_transparency.mode", 0);
+  /* package */ final PrefWithoutDefault<Integer> mCertificateTransparencyMode =
+      new PrefWithoutDefault<Integer>("security.pki.certificate_transparency.mode");
   /* package */ final PrefWithoutDefault<Boolean> mPostQuantumKeyExchangeTLSEnabled =
       new PrefWithoutDefault<Boolean>("security.tls.enable_kyber");
   /* package */ final PrefWithoutDefault<Boolean> mPostQuantumKeyExchangeHttp3Enabled =
@@ -770,6 +857,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<String>("network.security.ports.banned", "");
   /* package */ final PrefWithoutDefault<Boolean> mRemoteSettingCrashPullNeverShowAgain =
       new PrefWithoutDefault<Boolean>("browser.crashReports.requestedNeverShowAgain");
+  /* package */ final PrefWithoutDefault<String> mCrliteChannel =
+      new PrefWithoutDefault<String>("security.pki.crlite_channel");
 
   /* package */ int mPreferredColorScheme = COLOR_SCHEME_SYSTEM;
 
@@ -777,6 +866,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   /* package */ boolean mDebugPause;
   /* package */ boolean mUseMaxScreenDepth;
   /* package */ boolean mLowMemoryDetection = true;
+  /* package */ boolean mIsolatedProcess = false;
+  /* package */ boolean mAppZygoteProcess = false;
   /* package */ float mDisplayDensityOverride = -1.0f;
   /* package */ int mDisplayDpiOverride;
   /* package */ int mScreenWidthOverride;
@@ -828,6 +919,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     mDebugPause = settings.mDebugPause;
     mUseMaxScreenDepth = settings.mUseMaxScreenDepth;
     mLowMemoryDetection = settings.mLowMemoryDetection;
+    mIsolatedProcess = settings.mIsolatedProcess;
+    mAppZygoteProcess = settings.mAppZygoteProcess;
     mDisplayDensityOverride = settings.mDisplayDensityOverride;
     mDisplayDpiOverride = settings.mDisplayDpiOverride;
     mScreenWidthOverride = settings.mScreenWidthOverride;
@@ -864,8 +957,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   /**
    * Path to configuration file from which GeckoView will read configuration options such as Gecko
    * process arguments, environment variables, and preferences.
-   *
-   * <p>Note: this feature is only available for <code>{@link VERSION#SDK_INT} &gt; 21</code>.
    *
    * @return Path to configuration file from which GeckoView will read configuration options, or
    *     <code>null</code> for default location <code>/data/local/tmp/$PACKAGE-geckoview-config.yaml
@@ -1198,7 +1289,9 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    * @return What certificate transparency mode has been set.
    */
   public @NonNull int getCertificateTransparencyMode() {
-    return mCertificateTransparencyMode.get();
+    final Integer MODE_ENFORCE = 2;
+    final Integer certificateTransparencyMode = mCertificateTransparencyMode.get();
+    return certificateTransparencyMode != null ? certificateTransparencyMode : MODE_ENFORCE;
   }
 
   /**
@@ -1336,7 +1429,11 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return null;
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Get the crash handler service class.
+   *
+   * @return The crash handler Service class, if set
+   */
   public @Nullable Class<? extends Service> getCrashHandler() {
     return mCrashHandler;
   }
@@ -1413,7 +1510,18 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
 
   private void commitLocales() {
     final GeckoBundle data = new GeckoBundle(1);
-    data.putStringArray("requestedLocales", mRequestedLocales);
+    if (mRequestedLocales != null) {
+      // Requested locales should be in language or language-region format
+      final String[] normalizedRequestedLocales =
+          Arrays.stream(mRequestedLocales)
+              .map(Locale::forLanguageTag)
+              .map(LocaleUtils::getLanguageRegionLocale)
+              .toArray(String[]::new);
+      data.putStringArray("requestedLocales", normalizedRequestedLocales);
+    } else {
+      data.putStringArray("requestedLocales", (String[]) null);
+    }
+
     data.putString("acceptLanguages", computeAcceptLanguages());
     EventDispatcher.getInstance().dispatch("GeckoView:SetLocale", data);
   }
@@ -1424,7 +1532,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     // Explicitly-set app prefs come first:
     if (mRequestedLocales != null) {
       for (final String locale : mRequestedLocales) {
-        locales.put(locale.toLowerCase(Locale.ROOT), locale);
+        // Requested locales should be in language or language-region format
+        final String normalizedLocale =
+            LocaleUtils.getLanguageRegionLocale(Locale.forLanguageTag(locale));
+        locales.put(normalizedLocale.toLowerCase(Locale.ROOT), normalizedLocale);
       }
     }
     // OS prefs come second:
@@ -1439,18 +1550,12 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   }
 
   private static String[] getSystemLocalesForAcceptLanguage() {
-    if (VERSION.SDK_INT >= 24) {
-      final LocaleList localeList = LocaleList.getDefault();
-      final String[] locales = new String[localeList.size()];
-      for (int i = 0; i < localeList.size(); i++) {
-        // accept-language should be language or language-region format.
-        locales[i] = LocaleUtils.getLanguageTagForAcceptLanguage(localeList.get(i));
-      }
-      return locales;
+    final LocaleList localeList = LocaleList.getDefault();
+    final String[] locales = new String[localeList.size()];
+    for (int i = 0; i < localeList.size(); i++) {
+      // accept-language should be language or language-region format.
+      locales[i] = LocaleUtils.getLanguageRegionLocale(localeList.get(i));
     }
-    final String[] locales = new String[1];
-    final Locale locale = Locale.getDefault();
-    locales[0] = LocaleUtils.getLanguageTagForAcceptLanguage(locale);
     return locales;
   }
 
@@ -1642,6 +1747,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return mFontInflationMinTwips.get() > 0;
   }
 
+  /** Color scheme type definitions for web content theming. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({COLOR_SCHEME_LIGHT, COLOR_SCHEME_DARK, COLOR_SCHEME_SYSTEM})
   public @interface ColorScheme {}
@@ -1926,6 +2032,125 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return this;
   }
 
+  /** Firefox Relay state definitions. */
+  @Retention(RetentionPolicy.SOURCE)
+  @StringDef(
+      value = {
+        FIREFOX_RELAY_AVAILABLE,
+        FIREFOX_RELAY_OFFERED,
+        FIREFOX_RELAY_ENABLED,
+        FIREFOX_RELAY_DISABLED
+      })
+  public @interface FirefoxRelayMode {}
+
+  /** Firefox Relay is available but not yet offered to the user. */
+  public static final String FIREFOX_RELAY_AVAILABLE = "available";
+
+  /** Firefox Relay has been offered to the user. */
+  public static final String FIREFOX_RELAY_OFFERED = "offered";
+
+  /** Firefox Relay is enabled. */
+  public static final String FIREFOX_RELAY_ENABLED = "enabled";
+
+  /** Firefox Relay is disabled. */
+  public static final String FIREFOX_RELAY_DISABLED = "disabled";
+
+  /**
+   * Get the Firefox Relay state.
+   *
+   * <p>This API is experimental because it for Mozilla official builds and will be removed to not
+   * rely on this exposed pref.
+   *
+   * @return The Firefox Relay state, or null if undefined.
+   */
+  @ExperimentalGeckoViewApi
+  public @Nullable @FirefoxRelayMode String getFirefoxRelay() {
+    return mFirefoxRelay.get();
+  }
+
+  /**
+   * Set the Firefox Relay state.
+   *
+   * <p>This API is experimental because it for Mozilla official builds and will be removed to not
+   * rely on this exposed pref.
+   *
+   * @param state The Firefox Relay state.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  @ExperimentalGeckoViewApi
+  public @NonNull GeckoRuntimeSettings setFirefoxRelay(
+      @NonNull final @FirefoxRelayMode String state) {
+    mFirefoxRelay.commit(state);
+    return this;
+  }
+
+  /**
+   * Sets whether or not the request blocking feature of Local Network / Device Access is enabled
+   *
+   * @param enabled flag indicating whether or not the request blocking feature of Local Network /
+   *     Device Access is enabled
+   * @return The updated instance of {@link GeckoRuntimeSettings}
+   */
+  public @NonNull GeckoRuntimeSettings setLnaBlocking(final boolean enabled) {
+    mLnaBlocking.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Gets whether or not the request blocking feature for Local Network / Device Access is enabled
+   *
+   * @return Boolean indicating whether or not the request blocking feature of Local Network /
+   *     Device Access blocking is enabled or not.
+   */
+  public @Nullable Boolean getLnaBlocking() {
+    return mLnaBlocking.get();
+  }
+
+  /**
+   * Sets whether or not the overall Local Network / Device Access blocking feature is enabled
+   *
+   * @param enabled flag indicating whether or not the overall local network / device access
+   *     blocking feature is enabled
+   * @return The updated instance of {@link GeckoRuntimeSettings}
+   */
+  public @NonNull GeckoRuntimeSettings setLnaEnabled(final boolean enabled) {
+    mLnaEnabled.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Gets whether or not the overall Local Network / Device Access blocking feature is enabled
+   *
+   * @return Boolean indicating whether the overall Local Network / Device Access blocking feature
+   *     is enabled or not.
+   */
+  public @Nullable Boolean getLnaEnabled() {
+    return mLnaEnabled.get();
+  }
+
+  /**
+   * Sets whether or not the tracker blocking feature of Local Network / Device Access is enabled
+   *
+   * @param enabled flag indicating whether or not the Local Network / Device Access blocking for
+   *     trackers is enabled
+   * @return The updated instance of {@link GeckoRuntimeSettings}
+   */
+  public @NonNull GeckoRuntimeSettings setLnaBlockTrackers(final boolean enabled) {
+    mLnaBlockTrackers.commit(enabled);
+    return this;
+  }
+
+  /**
+   * Gets whether or not the tracker blocking feature of Local Network / Device Access is enabled
+   *
+   * @return Boolean indicating whether the tracker blocking feature Local Network / Device Access
+   *     is enabled or not.
+   */
+  public @Nullable Boolean getLnaBlockTrackers() {
+    return mLnaBlockTrackers.get();
+  }
+
+  /** HTTPS-only mode type definitions for secure browsing. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({ALLOW_ALL, HTTPS_ONLY_PRIVATE, HTTPS_ONLY})
   public @interface HttpsOnlyMode {}
@@ -2228,6 +2453,27 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return mBannedPorts.get();
   }
 
+  /**
+   * Set the preference that controls the channel from which CRLite certificate blocklists are
+   * downloaded.
+   *
+   * @param channel The name of the CRLite channel
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setCrliteChannel(final @NonNull String channel) {
+    mCrliteChannel.commit(channel);
+    return this;
+  }
+
+  /**
+   * Get the channel from which CRLite certificate blocklists are downloaded.
+   *
+   * @return a String containing the name of the CRLite channel
+   */
+  public @NonNull String getCrliteChannel() {
+    return mCrliteChannel.get();
+  }
+
   // For internal use only
   /* protected */ @NonNull
   GeckoRuntimeSettings setProcessCount(final int processCount) {
@@ -2284,6 +2530,24 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return mSameDocumentNavigationOverridesLoadTypeForceDisable.get();
   }
 
+  /**
+   * Gets whether the content service is isolated process or not.
+   *
+   * @return True if the content service runs on isolated process.
+   */
+  public boolean getIsolatedProcessEnabled() {
+    return mIsolatedProcess;
+  }
+
+  /**
+   * Gets whether the App Zygote process is enabled or not for preloading.
+   *
+   * @return True if App Zygote preloading is enabled.
+   */
+  public boolean getAppZygoteProcessEnabled() {
+    return mAppZygoteProcess;
+  }
+
   @Override // Parcelable
   public void writeToParcel(final Parcel out, final int flags) {
     super.writeToParcel(out, flags);
@@ -2294,6 +2558,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     ParcelableUtils.writeBoolean(out, mDebugPause);
     ParcelableUtils.writeBoolean(out, mUseMaxScreenDepth);
     ParcelableUtils.writeBoolean(out, mLowMemoryDetection);
+    ParcelableUtils.writeBoolean(out, mIsolatedProcess);
+    ParcelableUtils.writeBoolean(out, mAppZygoteProcess);
     out.writeFloat(mDisplayDensityOverride);
     out.writeInt(mDisplayDpiOverride);
     out.writeInt(mScreenWidthOverride);
@@ -2304,7 +2570,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   }
 
   // AIDL code may call readFromParcel even though it's not part of Parcelable.
-  @SuppressWarnings("checkstyle:javadocmethod")
   public void readFromParcel(final @NonNull Parcel source) {
     super.readFromParcel(source);
 
@@ -2314,6 +2579,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     mDebugPause = ParcelableUtils.readBoolean(source);
     mUseMaxScreenDepth = ParcelableUtils.readBoolean(source);
     mLowMemoryDetection = ParcelableUtils.readBoolean(source);
+    mIsolatedProcess = ParcelableUtils.readBoolean(source);
+    mAppZygoteProcess = ParcelableUtils.readBoolean(source);
     mDisplayDensityOverride = source.readFloat();
     mDisplayDpiOverride = source.readInt();
     mScreenWidthOverride = source.readInt();
@@ -2335,6 +2602,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     mConfigFilePath = source.readString();
   }
 
+  /** Parcelable creator for GeckoRuntimeSettings instances. */
   public static final Parcelable.Creator<GeckoRuntimeSettings> CREATOR =
       new Parcelable.Creator<GeckoRuntimeSettings>() {
         @Override

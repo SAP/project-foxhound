@@ -55,36 +55,6 @@ static nsCString MakeStringKey(char aKey) {
   return key;
 }
 
-TEST(MruCache, TestNullChecker)
-{
-  using mozilla::detail::EmptyChecker;
-
-  {
-    int test = 0;
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-
-    test = 42;
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-  }
-
-  {
-    const char* test = "abc";
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-
-    test = nullptr;
-    EXPECT_FALSE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-  }
-
-  {
-    int foo = 42;
-    int* test = &foo;
-    EXPECT_TRUE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-
-    test = nullptr;
-    EXPECT_FALSE(EmptyChecker<decltype(test)>::IsNotEmpty(test));
-  }
-}
-
 TEST(MruCache, TestEmptyCache)
 {
   {

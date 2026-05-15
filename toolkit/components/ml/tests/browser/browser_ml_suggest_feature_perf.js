@@ -29,7 +29,7 @@ const perfMetadata = {
   },
 };
 
-requestLongerTimeout(120);
+requestLongerTimeout(10);
 const CUSTOM_INTENT_OPTIONS = {
   taskName: "text-classification",
   featureId: "suggest-intent-classification",
@@ -55,7 +55,7 @@ const CUSTOM_NER_OPTIONS = {
 const journal = {};
 const runInference2 = async () => {
   ChromeUtils.defineESModuleGetters(this, {
-    MLSuggest: "resource:///modules/urlbar/private/MLSuggest.sys.mjs",
+    MLSuggest: "moz-src:///browser/components/urlbar/private/MLSuggest.sys.mjs",
   });
 
   // Override INTENT and NER options within MLSuggest

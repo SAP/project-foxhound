@@ -64,14 +64,14 @@ nsresult CSSNestedDeclarationsDeclaration::SetCSSDeclaration(
     DeclarationBlock* aDecl, MutationClosureData* aClosureData) {
   CSSNestedDeclarations* rule = Rule();
   RefPtr<DeclarationBlock> oldDecls;
+  if (aDecl != mDecls) {
+    oldDecls = std::move(mDecls);
+    oldDecls->SetOwningRule(nullptr);
+    Servo_NestedDeclarationsRule_SetStyle(rule->Raw(), aDecl->Raw());
+    mDecls = aDecl;
+    mDecls->SetOwningRule(rule);
+  }
   if (StyleSheet* sheet = rule->GetStyleSheet()) {
-    if (aDecl != mDecls) {
-      oldDecls = std::move(mDecls);
-      oldDecls->SetOwningRule(nullptr);
-      Servo_NestedDeclarationsRule_SetStyle(rule->Raw(), aDecl->Raw());
-      mDecls = aDecl;
-      mDecls->SetOwningRule(rule);
-    }
     sheet->RuleChanged(rule, {StyleRuleChangeKind::StyleRuleDeclarations,
                               oldDecls ? oldDecls.get() : aDecl, aDecl});
   }
@@ -80,8 +80,10 @@ nsresult CSSNestedDeclarationsDeclaration::SetCSSDeclaration(
 
 nsDOMCSSDeclaration::ParsingEnvironment
 CSSNestedDeclarationsDeclaration::GetParsingEnvironment(nsIPrincipal*) const {
-  return GetParsingEnvironmentForRule(Rule(),
-                                      StyleCssRuleType::NestedDeclarations);
+  if (auto* parent = Rule()->GetParentRule()) {
+    return GetParsingEnvironmentForRule(parent, parent->Type());
+  }
+  return {};
 }
 
 CSSNestedDeclarations::CSSNestedDeclarations(

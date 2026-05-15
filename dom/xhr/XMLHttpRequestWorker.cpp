@@ -6,20 +6,20 @@
 
 #include "XMLHttpRequestWorker.h"
 
-#include "nsIDOMEventListener.h"
-
 #include "GeckoProfiler.h"
-#include "jsfriendapi.h"
+#include "XMLHttpRequestMainThread.h"
+#include "XMLHttpRequestUpload.h"
 #include "js/ArrayBuffer.h"  // JS::Is{,Detached}ArrayBufferObject
 #include "js/GCPolicyAPI.h"
 #include "js/JSON.h"
 #include "js/RootingAPI.h"  // JS::{Handle,Heap,PersistentRooted}
 #include "js/TracingAPI.h"
 #include "js/Value.h"  // JS::{Undefined,}Value
-#include "mozilla/ArrayUtils.h"
+#include "jsfriendapi.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/dom/Exceptions.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/ProgressEvent.h"
@@ -27,19 +27,15 @@
 #include "mozilla/dom/StreamBlobImpl.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/URLSearchParams.h"
-#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsIDOMEventListener.h"
 #include "nsJSUtils.h"
 #include "nsThreadUtils.h"
-
-#include "XMLHttpRequestMainThread.h"
-#include "XMLHttpRequestUpload.h"
-
-#include "mozilla/UniquePtr.h"
 
 extern mozilla::LazyLogModule gXMLHttpRequestLog;
 

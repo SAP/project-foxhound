@@ -8,6 +8,9 @@
 
 #include <utility>  // for std::swap
 
+#include "DocumentInlines.h"  // for Document and HTMLBodyElement
+#include "ScrollAnimationPhysics.h"
+#include "Units.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/MouseEvents.h"
@@ -17,18 +20,15 @@
 #include "mozilla/StaticPrefs_mousewheel.h"
 #include "mozilla/StaticPrefs_test.h"
 #include "mozilla/TextControlElement.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/WheelEventBinding.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
-#include "DocumentInlines.h"  // for Document and HTMLBodyElement
 #include "nsITimer.h"
 #include "nsPresContext.h"
 #include "prtime.h"
-#include "Units.h"
-#include "ScrollAnimationPhysics.h"
 
 static mozilla::LazyLogModule sWheelTransactionLog("dom.wheeltransaction");
 #define WTXN_LOG(...) \
@@ -118,8 +118,8 @@ WheelHandlingUtils::GetDisregardedWheelScrollDirection(const nsIFrame* aFrame) {
 /* mozilla::WheelTransaction                                      */
 /******************************************************************/
 
-MOZ_CONSTINIT AutoWeakFrame WheelTransaction::sScrollTargetFrame;
-MOZ_CONSTINIT AutoWeakFrame WheelTransaction::sEventTargetFrame;
+constinit AutoWeakFrame WheelTransaction::sScrollTargetFrame;
+constinit AutoWeakFrame WheelTransaction::sEventTargetFrame;
 
 bool WheelTransaction::sHandledByApz(false);
 uint32_t WheelTransaction::sTime = 0;
@@ -415,7 +415,7 @@ void WheelTransaction::SetTimeout() {
   sTimer->Cancel();
   DebugOnly<nsresult> rv = sTimer->InitWithNamedFuncCallback(
       OnTimeout, nullptr, StaticPrefs::mousewheel_transaction_timeout(),
-      nsITimer::TYPE_ONE_SHOT, "WheelTransaction::SetTimeout");
+      nsITimer::TYPE_ONE_SHOT, "WheelTransaction::SetTimeout"_ns);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "nsITimer::InitWithNamedFuncCallback failed");
 }
@@ -474,8 +474,8 @@ DeltaValues WheelTransaction::OverrideSystemScrollSpeed(
 /* mozilla::ScrollbarsForWheel                                    */
 /******************************************************************/
 
-MOZ_CONSTINIT AutoWeakFrame ScrollbarsForWheel::sActiveOwner;
-MOZ_CONSTINIT AutoWeakFrame
+constinit AutoWeakFrame ScrollbarsForWheel::sActiveOwner;
+constinit AutoWeakFrame
     ScrollbarsForWheel::sActivatedScrollTargets[kNumberOfTargets];
 
 bool ScrollbarsForWheel::sHadWheelStart = false;

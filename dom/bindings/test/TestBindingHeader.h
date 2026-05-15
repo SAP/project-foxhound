@@ -8,14 +8,14 @@
 #ifndef TestBindingHeader_h
 #define TestBindingHeader_h
 
+#include "js/Object.h"  // JS::GetClass
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
 #include "nsGenericHTMLElement.h"
 #include "nsWrapperCache.h"
-#include "js/Object.h"  // JS::GetClass
 
 // Forward declare this before we include TestCodeGenBinding.h, because that
 // header relies on including this one for it, for ParentDict. Hopefully it
@@ -1556,11 +1556,11 @@ class TestNamedDeleterWithRetvalInterface : public nsISupports,
   // We need a GetParentObject to make binding codegen happy
   virtual nsISupports* GetParentObject();
 
-  bool NamedDeleter(const nsAString&, bool&);
-  bool NamedDeleter(const nsAString&) = delete;
+  void NamedDeleter(const nsAString&, bool&);
+  void NamedDeleter(const nsAString&) = delete;
   long NamedGetter(const nsAString&, bool&);
-  bool DelNamedItem(const nsAString&);
-  bool DelNamedItem(const nsAString&, bool&) = delete;
+  void DelNamedItem(const nsAString&);
+  void DelNamedItem(const nsAString&, bool&) = delete;
   void GetSupportedNames(nsTArray<nsString>&);
 };
 

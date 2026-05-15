@@ -4,21 +4,23 @@
 
 "use strict";
 
-const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>
-<script>
-let x = 3, y = 4;
-function zzyzx() {
-  x = 10;
-}
-function zzyzx2() {
-  x = 10;
-}
-var obj = {propA: "A", propB: "B"};
-var array = [1, 2, 3];
-var $$ = 42;
-</script>
-<h1>title</h1>
-`;
+const TEST_URI = `https://example.com/document-builder.sjs?html=${encodeURIComponent(`
+  <!DOCTYPE html>
+  <script>
+    let x = 3, y = 4;
+    function zzyzx() {
+      x = 10;
+    }
+    function zzyzx2() {
+      x = 10;
+    }
+    var obj = {propA: "A", propB: "B"};
+    var array = [1, 2, 3];
+    var $$ = 42;
+  </script>
+  <h1>title</h1>
+  <iframe src="https://example.com/document-builder.sjs?html=in iframe"></iframe>
+`)}`;
 
 const EAGER_EVALUATION_PREF = "devtools.webconsole.input.eagerEvaluation";
 
@@ -263,6 +265,80 @@ add_task(async function () {
   setInputValue(hud, "await 1; 2 + 3;");
   await waitForNoEagerEvaluationResult(hud);
   ok(true, "instant evaluation is disabled for top-level await expressions");
+
+  info(
+    "Check that effect-less expression are eagerly evaluated even when going through contentWindow"
+  );
+  setInputValue(
+    hud,
+    `document.querySelector("iframe").contentWindow.Function("return location.search")()`
+  );
+  await waitForEagerEvaluationResult(hud, `"?html=in%20iframe"`);
+  ok(true, "contentWindow expression was eagerly evaluated");
+
+  info(
+    "Check that effectful expression are not eagerly evaluated when going through contentWindow"
+  );
+  setInputValue(
+    hud,
+    `document.querySelector("iframe").contentWindow.Function("globalThis.x = 10; return globalThis.x")()`
+  );
+  await waitForNoEagerEvaluationResult(hud);
+  ok(true, "effectful contentWindow expression was not eagerly evaluated");
+  // double check that the evaluation wasn't done
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    is(
+      content.document.querySelector("iframe").contentWindow.x,
+      undefined,
+      "iframe global x property wasn't set"
+    );
+  });
+
+  info(
+    "Check that effect-less expression are eagerly evaluated even when going through window.parent"
+  );
+  // First, select the iframe as the evaluation target
+  selectTargetInContextSelector(
+    hud,
+    "https://example.com/document-builder.sjs?html=in%20iframe"
+  );
+  setInputValue(
+    hud,
+    `
+    // sanity check to make sure we do evaluate this from the iframe document
+    if (globalThis.parent === globalThis) {
+      throw new Error("unexpected")
+    }
+    globalThis.parent.Function("return array")()
+  `
+  );
+  await waitForEagerEvaluationResult(hud, "Array(3) [ 1, 2, 3 ]");
+  ok(true, "window.parent expression was eagerly evaluated");
+
+  info(
+    "Check that effectful expression are not eagerly evaluated when going through window.parent"
+  );
+  setInputValue(
+    hud,
+    `
+    // sanity check to make sure we do evaluate this from the iframe document
+    if (globalThis.parent === globalThis) {
+      throw new Error("unexpected")
+    }
+    globalThis.parent.Function("return array.push(4)")()
+  `
+  );
+  await waitForNoEagerEvaluationResult(hud);
+  ok(true, "effectful window.parent expression was not eagerly evaluated");
+
+  // double check that the evaluation wasn't done
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    Assert.deepEqual(
+      content.wrappedJSObject.array,
+      [1, 2, 3],
+      "array property wasn't modified"
+    );
+  });
 });
 
 // Test that the currently selected autocomplete result is eagerly evaluated.

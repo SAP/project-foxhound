@@ -11,15 +11,15 @@
 #include "GMPUtils.h"
 #include "MainThreadUtils.h"
 #include "VideoConduit.h"
-#include "gmp-video-frame-encoded.h"
-#include "gmp-video-frame-i420.h"
-#include "mozilla/CheckedInt.h"
-#include "nsServiceManagerUtils.h"
 #include "api/video/video_frame_type.h"
 #include "common_video/include/video_frame_buffer.h"
+#include "gmp-video-frame-encoded.h"
+#include "gmp-video-frame-i420.h"
 #include "media/base/media_constants.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/svc/create_scalability_structure.h"
+#include "mozilla/CheckedInt.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla {
 
@@ -104,7 +104,7 @@ static webrtc::ScalabilityMode GmpCodecParamsToScalabilityMode(
     case 3:
       return webrtc::ScalabilityMode::kL1T3;
     default:
-      NS_WARNING(nsPrintfCString("Expected 1-3 temporal layers but got %d.\n",
+      NS_WARNING(nsPrintfCString("Expected 1-3 temporal layers but got %d.",
                                  aParams.mTemporalLayerNum)
                      .get());
       MOZ_CRASH("Unexpected number of temporal layers");
@@ -159,8 +159,8 @@ int32_t WebrtcGmpVideoEncoder::InitEncode(
   codecParams.mHeight = aCodecSettings->height;
 
   uint32_t maxPayloadSize = aSettings.max_payload_size;
-  if (mFormatParams.count(cricket::kH264FmtpPacketizationMode) == 1 &&
-      mFormatParams.at(cricket::kH264FmtpPacketizationMode) == "1") {
+  if (mFormatParams.count(webrtc::kH264FmtpPacketizationMode) == 1 &&
+      mFormatParams.at(webrtc::kH264FmtpPacketizationMode) == "1") {
     maxPayloadSize = 0;  // No limit, use FUAs
   }
 
@@ -257,6 +257,7 @@ void WebrtcGmpVideoEncoder::Close_g() {
   mGMP = nullptr;
   mHost = nullptr;
   mInitting = false;
+  mInputImageMap.Clear();
 
   if (mCachedPluginId) {
     mReleasePluginEvent.Notify(*mCachedPluginId);
@@ -340,12 +341,27 @@ void WebrtcGmpVideoEncoder::RegetEncoderForResolutionChange(uint32_t aWidth,
 void WebrtcGmpVideoEncoder::Encode_g(
     const webrtc::VideoFrame& aInputImage,
     std::vector<webrtc::VideoFrameType> aFrameTypes) {
+  auto reportDroppedOnExit = MakeScopeExit([&] {
+    MutexAutoLock lock(mCallbackMutex);
+    if (mCallback) {
+      mCallback->OnDroppedFrame(
+          webrtc::EncodedImageCallback::DropReason::kDroppedByEncoder);
+    }
+  });
+
   if (!mGMP) {
     // destroyed via Terminate(), failed to init, or just not initted yet
     GMP_LOG_DEBUG("GMP Encode: not initted yet");
     return;
   }
   MOZ_ASSERT(mHost);
+
+  if (mInputImageMap.Length() >= kMaxImagesInFlight) {
+    GMP_LOG_WARNING(
+        "GMP Encode: Max number of frames already in flight. Dropping this "
+        "one.");
+    return;
+  }
 
   if (static_cast<uint32_t>(aInputImage.width()) != mCodecParams.mWidth ||
       static_cast<uint32_t>(aInputImage.height()) != mCodecParams.mHeight) {
@@ -387,7 +403,9 @@ void WebrtcGmpVideoEncoder::Encode_g(
     GMP_LOG_DEBUG("GMP Encode: failed to create frame");
     return;
   }
-  frame->SetTimestamp(AssertedCast<uint64_t>(aInputImage.ntp_time_ms() * 1000));
+  const auto gmpTimestamp =
+      AssertedCast<uint64_t>(aInputImage.ntp_time_ms() * 1000);
+  frame->SetTimestamp(gmpTimestamp);
 
   GMPCodecSpecificInfo info{};
   info.mCodecType = kGMPVideoCodecH264;
@@ -421,18 +439,23 @@ void WebrtcGmpVideoEncoder::Encode_g(
   MOZ_RELEASE_ASSERT(mInputImageMap.IsEmpty() ||
                      mInputImageMap.LastElement().ntp_timestamp_ms <
                          aInputImage.ntp_time_ms());
-  mInputImageMap.AppendElement(
-      InputImageData{.gmp_timestamp_us = frame->Timestamp(),
-                     .ntp_timestamp_ms = aInputImage.ntp_time_ms(),
-                     .timestamp_us = aInputImage.timestamp_us(),
-                     .rtp_timestamp = aInputImage.rtp_timestamp(),
-                     .frame_config = frameConfigs[0]});
 
   GMP_LOG_DEBUG("GMP Encode: %" PRIu64, (frame->Timestamp()));
   err = mGMP->Encode(std::move(frame), codecSpecificInfo, gmp_frame_types);
   if (err != GMPNoErr) {
     GMP_LOG_DEBUG("GMP Encode: failed to encode frame");
+    return;
   }
+
+  // Once in mInputImageMap, frame drops are reported by GMP callbacks
+  // (Encoded/Dropped).
+  reportDroppedOnExit.release();
+  mInputImageMap.AppendElement(
+      InputImageData{.gmp_timestamp_us = gmpTimestamp,
+                     .ntp_timestamp_ms = aInputImage.ntp_time_ms(),
+                     .timestamp_us = aInputImage.timestamp_us(),
+                     .rtp_timestamp = aInputImage.rtp_timestamp(),
+                     .frame_config = frameConfigs[0]});
 }
 
 int32_t WebrtcGmpVideoEncoder::RegisterEncodeCompleteCallback(
@@ -491,6 +514,8 @@ int32_t WebrtcGmpVideoEncoder::SetRates_g(uint32_t aOldBitRateKbps,
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
+  GMP_LOG_DEBUG("GMP Encoder %p setting rate %ukbps", this, aNewBitRateKbps);
+
   mNeedKeyframe |= (aOldBitRateKbps == 0 && aNewBitRateKbps != 0);
 
   GMPErr err = mGMP->SetRates(
@@ -515,6 +540,7 @@ void WebrtcGmpVideoEncoder::Terminated() {
   mGMP = nullptr;
   mHost = nullptr;
   mInitting = false;
+  mInputImageMap.Clear();
 
   if (gmp) {
     // Do this last, since this could cause us to be destroyed
@@ -524,20 +550,23 @@ void WebrtcGmpVideoEncoder::Terminated() {
   // Could now notify that it's dead
 }
 
+static int32_t GmpTimestampComparator(const InputImageData& aA,
+                                      const InputImageData& aB) {
+  const auto& a = aA.gmp_timestamp_us;
+  const auto& b = aB.gmp_timestamp_us;
+  return a < b ? -1 : a != b;
+}
+
 void WebrtcGmpVideoEncoder::Encoded(
     GMPVideoEncodedFrame* aEncodedFrame,
     const nsTArray<uint8_t>& aCodecSpecificInfo) {
   MOZ_ASSERT(mGMPThread->IsOnCurrentThread());
   Maybe<InputImageData> data;
-  auto gmp_timestamp_comparator = [](const InputImageData& aA,
-                                     const InputImageData& aB) -> int32_t {
-    const auto& a = aA.gmp_timestamp_us;
-    const auto& b = aB.gmp_timestamp_us;
-    return a < b ? -1 : a != b;
-  };
+  MOZ_ASSERT(!mInputImageMap.IsEmpty());
+  MOZ_ASSERT(mInputImageMap.Length() <= kMaxImagesInFlight);
   size_t nextIdx = mInputImageMap.IndexOfFirstElementGt(
       InputImageData{.gmp_timestamp_us = aEncodedFrame->TimeStamp()},
-      gmp_timestamp_comparator);
+      GmpTimestampComparator);
   const size_t numToRemove = nextIdx;
   size_t numFramesDropped = numToRemove;
   MOZ_ASSERT(nextIdx != 0);
@@ -628,8 +657,8 @@ void WebrtcGmpVideoEncoder::Encoded(
   info.codecType = webrtc::kVideoCodecH264;
   info.codecSpecific = {};
   info.codecSpecific.H264.packetization_mode =
-      mFormatParams.count(cricket::kH264FmtpPacketizationMode) == 1 &&
-              mFormatParams.at(cricket::kH264FmtpPacketizationMode) == "1"
+      mFormatParams.count(webrtc::kH264FmtpPacketizationMode) == 1 &&
+              mFormatParams.at(webrtc::kH264FmtpPacketizationMode) == "1"
           ? webrtc::H264PacketizationMode::NonInterleaved
           : webrtc::H264PacketizationMode::SingleNalUnit;
   info.codecSpecific.H264.temporal_idx = webrtc::kNoTemporalIdx;
@@ -672,6 +701,34 @@ void WebrtcGmpVideoEncoder::Encoded(
   unit.qp_ = mH264BitstreamParser.GetLastSliceQp().value_or(-1);
 
   mCallback->OnEncodedImage(unit, &info);
+}
+
+void WebrtcGmpVideoEncoder::Dropped(uint64_t aTimestamp) {
+  MOZ_ASSERT(mGMPThread->IsOnCurrentThread());
+  MOZ_ASSERT(!mInputImageMap.IsEmpty());
+  MOZ_ASSERT(mInputImageMap.Length() <= kMaxImagesInFlight);
+
+  size_t nextIdx = mInputImageMap.IndexOfFirstElementGt(
+      InputImageData{.gmp_timestamp_us = aTimestamp}, GmpTimestampComparator);
+  const size_t numDropped = nextIdx;
+  MOZ_ASSERT(nextIdx != 0);
+  MOZ_ASSERT(mInputImageMap.ElementAt(nextIdx - 1).gmp_timestamp_us ==
+             aTimestamp);
+  mInputImageMap.RemoveElementsAt(0, numDropped);
+
+  GMP_LOG_DEBUG("GMP Dropped: %" PRIu64
+                " dropped by encoder. Reporting %u frames dropped.",
+                aTimestamp, static_cast<uint32_t>(numDropped));
+
+  MutexAutoLock lock(mCallbackMutex);
+  if (!mCallback) {
+    return;
+  }
+
+  for (size_t i = 0; i < numDropped; ++i) {
+    mCallback->OnDroppedFrame(
+        webrtc::EncodedImageCallback::DropReason::kDroppedByEncoder);
+  }
 }
 
 // Decoder.
@@ -853,6 +910,15 @@ int32_t WebrtcGmpVideoDecoder::Decode(const webrtc::EncodedImage& aInputImage,
 }
 
 void WebrtcGmpVideoDecoder::Decode_g(UniquePtr<GMPDecodeData>&& aDecodeData) {
+  CheckedInt<uint32_t> dataSize(aDecodeData->mImage.size());
+  dataSize -= 4;
+  if (!dataSize.isValid()) {
+    GMP_LOG_ERROR("%s: bad input size (%zu)!", __PRETTY_FUNCTION__,
+                  aDecodeData->mImage.size());
+    mDecoderStatus = GMPInvalidArgErr;
+    return;
+  }
+
   if (!mGMP) {
     if (mInitting) {
       // InitDone hasn't been called yet (race)
@@ -1017,7 +1083,7 @@ void WebrtcGmpVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
       // Note: the last parameter to WrapI420Buffer is named no_longer_used,
       // but is currently called in the destructor of WrappedYuvBuffer when
       // the buffer is "no_longer_used".
-      rtc::scoped_refptr<webrtc::I420BufferInterface> video_frame_buffer =
+      webrtc::scoped_refptr<webrtc::I420BufferInterface> video_frame_buffer =
           webrtc::WrapI420Buffer(
               aDecodedFrame->Width(), aDecodedFrame->Height(), buffer_y,
               aDecodedFrame->Stride(kGMPYPlane), buffer_u,

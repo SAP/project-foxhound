@@ -88,7 +88,7 @@ add_task(async function () {
   const waitForHeader = waitForDOM(document, "#request-panel .data-header");
   const waitForSourceEditor = waitForDOM(
     document,
-    "#request-panel .CodeMirror-code"
+    "#request-panel .cm-content"
   );
   EventUtils.sendMouseEvent(
     { type: "mousedown" },
@@ -104,7 +104,7 @@ add_task(async function () {
 
     function checkVisibility(box) {
       is(
-        tabpanel.querySelector(".CodeMirror-code") === null,
+        tabpanel.querySelector(".cm-content") === null,
         !box.includes("editor"),
         "The request post data doesn't have the intended visibility."
       );

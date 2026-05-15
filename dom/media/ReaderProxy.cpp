@@ -4,11 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ReaderProxy.h"
+
+#include "MediaFormatReader.h"
+#include "TimeUnits.h"
 #include "mozilla/CDMProxy.h"
 #include "mozilla/MozPromise.h"
-#include "MediaFormatReader.h"
-#include "ReaderProxy.h"
-#include "TimeUnits.h"
 
 namespace mozilla {
 
@@ -124,7 +125,7 @@ void ReaderProxy::ReleaseResources() {
                         &MediaFormatReader::ReleaseResources);
   nsresult rv = mReader->OwnerThread()->Dispatch(r.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void ReaderProxy::ResetDecode(TrackSet aTracks) {
@@ -134,7 +135,7 @@ void ReaderProxy::ResetDecode(TrackSet aTracks) {
                                   &MediaFormatReader::ResetDecode, aTracks);
   nsresult rv = mReader->OwnerThread()->Dispatch(r.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 RefPtr<ShutdownPromise> ReaderProxy::Shutdown() {
@@ -174,7 +175,7 @@ void ReaderProxy::SetVideoBlankDecode(bool aIsBlankDecode) {
       &MediaFormatReader::SetVideoNullDecode, aIsBlankDecode);
   nsresult rv = mReader->OwnerThread()->Dispatch(r.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void ReaderProxy::UpdateDuration() {
@@ -200,7 +201,7 @@ void ReaderProxy::UpdateMediaEngineId(uint64_t aMediaEngineId) {
       &MediaFormatReader::UpdateMediaEngineId, aMediaEngineId);
   nsresult rv = mReader->OwnerThread()->Dispatch(r.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 RefPtr<SetCDMPromise> ReaderProxy::SetCDMProxy(CDMProxy* aProxy) {

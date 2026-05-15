@@ -62,7 +62,7 @@ exports.allocationTracker = function ({
   watchAllGlobals,
   watchDevToolsGlobals,
 } = {}) {
-  dump("DEVTOOLS ALLOCATION: Start logging allocations\n");
+  logTracker("Start logging allocations");
   let dbg = new global.Debugger();
 
   // Enable allocation site tracking, to have the stack for each allocation
@@ -84,7 +84,7 @@ exports.allocationTracker = function ({
     acceptGlobal = g => {
       // self-hosting-global crashes when trying to call unsafeDereference
       if (g.class == "self-hosting-global") {
-        dump("TRACKER NEW GLOBAL: - : " + g.class + "\n");
+        logTracker("NEW GLOBAL: - : " + g.class);
         return false;
       }
       let ref = g.unsafeDereference();
@@ -107,9 +107,7 @@ exports.allocationTracker = function ({
         accept = false;
       }
 
-      dump(
-        "TRACKER NEW GLOBAL: " + (accept ? "+" : "-") + " : " + location + "\n"
-      );
+      logTracker("NEW GLOBAL: " + (accept ? "+" : "-") + " : " + location);
       return accept;
     };
   }
@@ -336,12 +334,11 @@ exports.allocationTracker = function ({
         })
         // Filter out modules where we only freed objects
         .filter(({ count }) => count > 0);
-      dump(
+      logTracker(
         "DEVTOOLS ALLOCATION: " +
           message +
           ":\n" +
-          JSON.stringify(allocationList, null, 2) +
-          "\n"
+          JSON.stringify(allocationList, null, 2)
       );
       return allocationList;
     },
@@ -413,10 +410,9 @@ exports.allocationTracker = function ({
     },
 
     logCount() {
-      dump(
+      logTracker(
         "DEVTOOLS ALLOCATION: Javascript object allocations: " +
-          this.countAllocations() +
-          "\n"
+          this.countAllocations()
       );
     },
 
@@ -496,143 +492,15 @@ exports.allocationTracker = function ({
       return ChromeUtils.saveHeapSnapshot({ debugger: dbg });
     },
 
-    /**
-     * Print information about why a list of objects are being held in memory.
-     *
-     * @param Array<NodeId> objects
-     *        List of NodeId's of objects to debug. NodeIds can be retrieved
-     *        via ChromeUtils.getObjectNodeId.
-     * @param String snapshotFile
-     *        Absolute path to a Heap snapshot file retrieved via this.getSnapshotFile.
-     *        This is used to trace content process objects. We have to record the snapshot
-     *        from the content process, but can only read it from the parent process because
-     *        of I/O restrictions in content processes.
-     */
-    traceObjects(objects, snapshotFile) {
-      // There is no API to get the heap snapshot at runtime,
-      // the only way is to save it to disk and then load it from disk
-      if (!snapshotFile) {
-        snapshotFile = this.getSnapshotFile();
-      }
-      const snapshot = ChromeUtils.readHeapSnapshot(snapshotFile);
-
-      function getObjectClass(id) {
-        if (!id) {
-          return "<null>";
-        }
-        try {
-          let stack = [...snapshot.describeNode({ by: "allocationStack" }, id)];
-          let line;
-          if (stack) {
-            stack = stack.find(([src]) => src != "noStack");
-            if (stack) {
-              line = stack[0].line;
-              stack = stack[0].source;
-              if (stack) {
-                const pstack = stack;
-                stack = stack.match(/\/([^\/]+)$/);
-                if (stack) {
-                  stack = stack[1];
-                } else {
-                  stack = pstack;
-                }
-              } else {
-                stack = "no-source";
-              }
-            } else {
-              stack = "no-stack";
-            }
-          } else {
-            stack = "no-desc";
-          }
-          return (
-            Object.entries(
-              snapshot.describeNode({ by: "objectClass" }, id)
-            )[0][0] + (stack ? "@" + stack + ":" + line : "")
-          );
-        } catch (e) {
-          if (e.name == "NS_ERROR_ILLEGAL_VALUE") {
-            return "<not-in-memory-snapshot:is-from-untracked-global?>";
-          }
-          return "<invalid:" + id + ":" + e + ">";
-        }
-      }
-      function printPath(src, dst) {
-        let paths;
-        try {
-          paths = snapshot.computeShortestPaths(src, [dst], 10);
-        } catch (e) {}
-        if (paths && paths.has(dst)) {
-          let pathLength = Infinity;
-          for (const path of paths.get(dst)) {
-            // Only print the smaller paths.
-            // The longer ones will only repeat the smaller ones, with some extra edges.
-            if (path.length > pathLength) {
-              continue;
-            }
-            pathLength = path.length;
-            dump(
-              "- " +
-                path
-                  .map(
-                    ({ predecessor, edge }) =>
-                      getObjectClass(predecessor) + "." + edge
-                  )
-                  .join("\n \\--> ") +
-                "\n \\--> " +
-                getObjectClass(dst) +
-                "\n"
-            );
-          }
-        } else {
-          dump("NO-PATH\n");
-        }
-      }
-
-      const tree = snapshot.computeDominatorTree();
-      for (const objectNodeId of objects) {
-        dump(" # Tracing: " + getObjectClass(objectNodeId) + "\n");
-
-        // Print the path from the global object down to leaked object.
-        // This print the allocation site of each object which has a reference
-        // to another object, ultimately leading to our leaked object.
-        dump("### Path(s) from root:\n");
-        printPath(tree.root, objectNodeId);
-
-        /**
-         * This happens to be redundant with printPath, but printed the other way around.
-         *
-        // Print the dominators.
-        // i.e. from the leaked object, print all parent objects whichs
-        // keeps a reference to the previous object, up to a global object.
-        dump("### Dominators:\n");
-        let node = objectNodeId,
-        dump(" " + getObjectClass(node) + "\n");
-        while ((node = tree.getImmediateDominator(node))) {
-          dump(" ^-- " + getObjectClass(node) + "\n");
-        }
-        */
-
-        /**
-         * In case you are not able to figure out what the object is.
-         * This will print all what it keeps allocated,
-         * kinds of list of attributes
-         *
-        dump("### Dominateds:\n");
-        node = objectNodeId,
-        dump(" " + getObjectClass(node) + "\n");
-        for (const n of tree.getImmediatelyDominated(objectNodeId)) {
-          dump(" --> " + getObjectClass(n) + "\n");
-        }
-        */
-      }
-    },
-
     stop() {
-      dump("DEVTOOLS ALLOCATION: Stop logging allocations\n");
+      logTracker("Stop logging allocations");
       dbg.onNewGlobalObject = undefined;
       dbg.removeAllDebuggees();
       dbg = null;
     },
   };
 };
+
+function logTracker(message) {
+  dump(` \x1b[2m[TRACKER]\x1b[0m ${message}\n`);
+}

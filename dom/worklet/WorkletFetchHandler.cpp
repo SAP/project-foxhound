@@ -5,25 +5,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "WorkletFetchHandler.h"
 
-#include "js/loader/ModuleLoadRequest.h"
 #include "js/ContextOptions.h"
+#include "js/loader/ModuleLoadRequest.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/TaskQueue.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptLoadHandler.h"  // ScriptDecoder
+#include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/Worklet.h"
 #include "mozilla/dom/WorkletBinding.h"
 #include "mozilla/dom/WorkletGlobalScope.h"
 #include "mozilla/dom/WorkletImpl.h"
 #include "mozilla/dom/WorkletThread.h"
 #include "mozilla/dom/worklet/WorkletModuleLoader.h"
-#include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/TaskQueue.h"
 #include "nsIInputStreamPump.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "xpcpublic.h"
@@ -112,18 +113,13 @@ NS_IMETHODIMP StartModuleLoadRunnable::RunOnWorkletThread() {
 
   RefPtr<WorkletLoadContext> loadContext = new WorkletLoadContext(mHandlerRef);
 
-  RefPtr<JS::loader::VisitedURLSet> visitedSet =
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(
-          mURI, JS::ModuleType::JavaScript);
-
   // Part of Step 2. This sets the Top-level flag to true
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      mURI, JS::ModuleType::JavaScript, ReferrerPolicy::_empty, fetchOptions,
-      SRIMetadata(), mReferrer, loadContext, ModuleLoadRequest::Kind::TopLevel,
-      moduleLoader, visitedSet, nullptr);
+      JS::ModuleType::JavaScript, SRIMetadata(), mReferrer, loadContext,
+      ModuleLoadRequest::Kind::TopLevel, moduleLoader, nullptr);
 
-  request->mURL = request->mURI->GetSpecOrDefault();
-  request->NoCacheEntryFound();
+  request->mURL = mURI->GetSpecOrDefault();
+  request->NoCacheEntryFound(ReferrerPolicy::_empty, fetchOptions, mURI);
 
   return request->StartModuleLoad();
 }
@@ -166,12 +162,18 @@ class FetchCompleteRunnable final : public Runnable {
  public:
   FetchCompleteRunnable(WorkletImpl* aWorkletImpl, nsIURI* aURI,
                         nsresult aResult,
+#ifdef NIGHTLY_BUILD
+                        bool aHasWasmMimeTypeEssence,
+#endif
                         UniquePtr<uint8_t[]> aScriptBuffer = nullptr,
                         size_t aScriptLength = 0)
       : Runnable("Worklet::FetchCompleteRunnable"),
         mWorkletImpl(aWorkletImpl),
         mURI(aURI),
         mResult(aResult),
+#ifdef NIGHTLY_BUILD
+        mHasWasmMimeTypeEssence(aHasWasmMimeTypeEssence),
+#endif
         mScriptBuffer(std::move(aScriptBuffer)),
         mScriptLength(aScriptLength) {
     MOZ_ASSERT(NS_IsMainThread());
@@ -187,6 +189,9 @@ class FetchCompleteRunnable final : public Runnable {
   RefPtr<WorkletImpl> mWorkletImpl;
   nsCOMPtr<nsIURI> mURI;
   nsresult mResult;
+#ifdef NIGHTLY_BUILD
+  bool mHasWasmMimeTypeEssence;
+#endif
   UniquePtr<uint8_t[]> mScriptBuffer;
   size_t mScriptLength;
 };
@@ -210,6 +215,20 @@ NS_IMETHODIMP FetchCompleteRunnable::RunOnWorkletThread() {
   ModuleLoadRequest* request = moduleLoader->GetRequest(mURI);
   MOZ_ASSERT(request);
 
+#ifdef NIGHTLY_BUILD
+  // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+  // Extract the content-type. If its essence is wasm, we'll attempt to
+  // compile this module as a wasm module. (Steps 13.2, 13.6)
+  if (mHasWasmMimeTypeEssence) {
+    request->SetHasWasmMimeTypeEssence();
+    request->SetWasmBytes();
+    request->SetBaseURL(mURI);
+    request->OnFetchComplete(mResult);
+    moduleLoader->RemoveRequest(mURI);
+    return NS_OK;
+  }
+#endif
+
   // Set the Source type to "text" for decoding.
   request->SetTextSource(request->mLoadContext.get());
 
@@ -223,17 +242,8 @@ NS_IMETHODIMP FetchCompleteRunnable::RunOnWorkletThread() {
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  request->mBaseURL = mURI;
+  request->SetBaseURL(mURI);
   request->OnFetchComplete(mResult);
-
-  if (NS_FAILED(mResult)) {
-    if (request->IsTopLevel()) {
-      request->LoadFailed();
-    } else {
-      request->Cancel();
-    }
-  }
-
   moduleLoader->RemoveRequest(mURI);
   return NS_OK;
 }
@@ -514,8 +524,12 @@ nsresult WorkletFetchHandler::StartFetch(JSContext* aCx, nsIURI* aURI,
 }
 
 void WorkletFetchHandler::HandleFetchFailed(nsIURI* aURI) {
-  nsCOMPtr<nsIRunnable> runnable = new FetchCompleteRunnable(
-      mWorklet->mImpl, aURI, NS_ERROR_FAILURE, nullptr, 0);
+  nsCOMPtr<nsIRunnable> runnable =
+      new FetchCompleteRunnable(mWorklet->mImpl, aURI, NS_ERROR_FAILURE,
+#ifdef NIGHTLY_BUILD
+                                false,
+#endif
+                                nullptr, 0);
 
   if (NS_WARN_IF(
           NS_FAILED(mWorklet->mImpl->SendControlMessage(runnable.forget())))) {
@@ -555,6 +569,18 @@ void WorkletScriptHandler::ResolvedCallback(JSContext* aCx,
     HandleFailure(NS_ERROR_DOM_ABORT_ERR);
     return;
   }
+
+#ifdef NIGHTLY_BUILD
+  nsAutoCString contentType;
+  ErrorResult result;
+  if (response->GetInternalHeaders()) {
+    response->GetInternalHeaders()->Get("Content-Type"_ns, contentType, result);
+    if (!result.Failed()) {
+      mHasWasmMimeTypeEssence = nsContentUtils::HasWasmMimeTypeEssence(
+          NS_ConvertUTF8toUTF16(contentType));
+    }
+  }
+#endif
 
   nsCOMPtr<nsIInputStream> inputStream;
   response->GetBody(getter_AddRefs(inputStream));
@@ -613,8 +639,12 @@ NS_IMETHODIMP WorkletScriptHandler::OnStreamComplete(nsIStreamLoader* aLoader,
   UniquePtr<uint8_t[]> scriptTextBuf = MakeUnique<uint8_t[]>(aStringLen);
   memcpy(scriptTextBuf.get(), aString, aStringLen);
 
-  nsCOMPtr<nsIRunnable> runnable = new FetchCompleteRunnable(
-      mWorklet->mImpl, mURI, NS_OK, std::move(scriptTextBuf), aStringLen);
+  nsCOMPtr<nsIRunnable> runnable =
+      new FetchCompleteRunnable(mWorklet->mImpl, mURI, NS_OK,
+#ifdef NIGHTLY_BUILD
+                                mHasWasmMimeTypeEssence,
+#endif
+                                std::move(scriptTextBuf), aStringLen);
 
   if (NS_FAILED(mWorklet->mImpl->SendControlMessage(runnable.forget()))) {
     HandleFailure(NS_ERROR_FAILURE);
@@ -640,7 +670,11 @@ void WorkletScriptHandler::HandleFailure(nsresult aResult) {
 
 void WorkletScriptHandler::DispatchFetchCompleteToWorklet(nsresult aRv) {
   nsCOMPtr<nsIRunnable> runnable =
-      new FetchCompleteRunnable(mWorklet->mImpl, mURI, aRv, nullptr, 0);
+      new FetchCompleteRunnable(mWorklet->mImpl, mURI, aRv,
+#ifdef NIGHTLY_BUILD
+                                mHasWasmMimeTypeEssence,
+#endif
+                                nullptr, 0);
 
   if (NS_WARN_IF(
           NS_FAILED(mWorklet->mImpl->SendControlMessage(runnable.forget())))) {

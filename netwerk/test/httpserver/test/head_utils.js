@@ -220,7 +220,7 @@ function callLater(msecs, callback) {
   do_timeout(msecs, callback);
 }
 
-/** *****************************************************
+/*******************************************************
  * SIMPLE SUPPORT FOR LOADING/TESTING A SERIES OF URLS *
  *******************************************************/
 
@@ -385,7 +385,7 @@ function runHttpTests(testArray, done) {
   performNextTest();
 }
 
-/** **************************************
+/****************************************
  * RAW REQUEST FORMAT TESTING FUNCTIONS *
  ****************************************/
 

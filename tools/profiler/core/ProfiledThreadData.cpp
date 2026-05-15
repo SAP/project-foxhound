@@ -38,6 +38,7 @@ ProfiledThreadData::~ProfiledThreadData() {
 
 static void StreamTables(UniqueStacks&& aUniqueStacks, JSContext* aCx,
                          SpliceableJSONWriter& aWriter,
+                         SpliceableChunkedJSONWriter* aShapesWriter,
                          const mozilla::TimeStamp& aProcessStartTime,
                          mozilla::ProgressLogger aProgressLogger) {
   aWriter.StartObjectProperty("stackTable");
@@ -89,13 +90,22 @@ static void StreamTables(UniqueStacks&& aUniqueStacks, JSContext* aCx,
     aProgressLogger.SetLocalProgress(90_pc, "Spliced string table");
   }
   aWriter.EndArray();
+
+  if (aShapesWriter) {
+    aWriter.StartArrayProperty("tracedObjectShapes");
+    aWriter.TakeAndSplice(aShapesWriter->TakeChunkedWriteFunc());
+    aWriter.EndArray();
+  }
+
+  aWriter.StringProperty("tracedValues", aUniqueStacks.TracedValues());
 }
 
 mozilla::NotNull<mozilla::UniquePtr<UniqueStacks>>
 ProfiledThreadData::PrepareUniqueStacks(
     const ProfileBuffer& aBuffer, JSContext* aCx,
     mozilla::FailureLatch& aFailureLatch, ProfilerCodeAddressService* aService,
-    mozilla::ProgressLogger aProgressLogger) {
+    mozilla::ProgressLogger aProgressLogger,
+    const nsTHashMap<SourceId, IndexIntoSourceTable>* aSourceIdToIndexMap) {
   if (mJITFrameInfoForPreviousJSContexts &&
       mJITFrameInfoForPreviousJSContexts->HasExpired(
           aBuffer.BufferRangeStart())) {
@@ -118,13 +128,14 @@ ProfiledThreadData::PrepareUniqueStacks(
         *mBufferPositionWhenReceivedJSContext, mThreadInfo.ThreadId(), aCx,
         jitFrameInfo,
         aProgressLogger.CreateSubLoggerTo("Adding JIT info...", 90_pc,
-                                          "Added JIT info"));
+                                          "Added JIT info"),
+        aSourceIdToIndexMap);
   } else {
     aProgressLogger.SetLocalProgress(90_pc, "No JIT info");
   }
 
   return mozilla::MakeNotNull<mozilla::UniquePtr<UniqueStacks>>(
-      aFailureLatch, std::move(jitFrameInfo), aService);
+      aFailureLatch, std::move(jitFrameInfo), aService, aSourceIdToIndexMap);
 }
 
 void ProfiledThreadData::StreamJSON(
@@ -151,7 +162,8 @@ void ProfiledThreadData::StreamJSON(
             90_pc,
             "ProfiledThreadData::StreamJSON: Streamed samples and markers"));
 
-    StreamTables(std::move(*uniqueStacks), aCx, aWriter, aProcessStartTime,
+    StreamTables(std::move(*uniqueStacks), aCx, aWriter, nullptr,
+                 aProcessStartTime,
                  aProgressLogger.CreateSubLoggerTo(
                      99_pc, "Streamed tables and trace logger"));
   }
@@ -180,7 +192,8 @@ void ProfiledThreadData::StreamJSON(
 
     StreamTables(
         std::move(*aThreadStreamingContext.mUniqueStacks),
-        aThreadStreamingContext.mJSContext, aWriter, aProcessStartTime,
+        aThreadStreamingContext.mJSContext, aWriter,
+        &aThreadStreamingContext.mShapesDataWriter, aProcessStartTime,
         aProgressLogger.CreateSubLoggerTo(
             "ProfiledThreadData::StreamJSON(context): Streaming tables...",
             99_pc, "ProfiledThreadData::StreamJSON(context): Streamed tables"));
@@ -253,6 +266,7 @@ ProfilerThreadId DoStreamSamplesAndMarkers(
       schema.WriteField("stack");
       schema.WriteField("time");
       schema.WriteField("eventDelay");
+      schema.WriteField("argumentValues");
 #define RUNNING_TIME_FIELD(index, name, unit, jsonProperty) \
   schema.WriteField(#jsonProperty);
       PROFILER_FOR_EACH_RUNNING_TIME(RUNNING_TIME_FIELD)
@@ -381,16 +395,19 @@ ThreadStreamingContext::ThreadStreamingContext(
     ProfiledThreadData& aProfiledThreadData, const ProfileBuffer& aBuffer,
     JSContext* aCx, mozilla::FailureLatch& aFailureLatch,
     ProfilerCodeAddressService* aService,
-    mozilla::ProgressLogger aProgressLogger)
+    mozilla::ProgressLogger aProgressLogger,
+    const nsTHashMap<SourceId, IndexIntoSourceTable>* aSourceIdToIndexMap)
     : mProfiledThreadData(aProfiledThreadData),
       mJSContext(aCx),
       mSamplesDataWriter(aFailureLatch),
       mMarkersDataWriter(aFailureLatch),
+      mShapesDataWriter(aFailureLatch),
       mUniqueStacks(mProfiledThreadData.PrepareUniqueStacks(
           aBuffer, aCx, aFailureLatch, aService,
           aProgressLogger.CreateSubLoggerFromTo(
               0_pc, "Preparing thread streaming context unique stacks...",
-              99_pc, "Prepared thread streaming context Unique stacks"))) {
+              99_pc, "Prepared thread streaming context Unique stacks"),
+          aSourceIdToIndexMap)) {
   if (aFailureLatch.Failed()) {
     return;
   }
@@ -398,11 +415,13 @@ ThreadStreamingContext::ThreadStreamingContext(
   mSamplesDataWriter.StartBareList();
   mMarkersDataWriter.SetUniqueStrings(mUniqueStacks->UniqueStrings());
   mMarkersDataWriter.StartBareList();
+  mShapesDataWriter.StartBareList();
 }
 
 void ThreadStreamingContext::FinalizeWriter() {
   mSamplesDataWriter.EndBareList();
   mMarkersDataWriter.EndBareList();
+  mShapesDataWriter.EndBareList();
 }
 
 ProcessStreamingContext::ProcessStreamingContext(
@@ -439,7 +458,8 @@ ProcessStreamingContext::~ProcessStreamingContext() {
 void ProcessStreamingContext::AddThreadStreamingContext(
     ProfiledThreadData& aProfiledThreadData, const ProfileBuffer& aBuffer,
     JSContext* aCx, ProfilerCodeAddressService* aService,
-    mozilla::ProgressLogger aProgressLogger) {
+    mozilla::ProgressLogger aProgressLogger,
+    const nsTHashMap<SourceId, IndexIntoSourceTable>* aSourceIdToIndexMap) {
   if (mFailureLatch.Failed()) {
     return;
   }
@@ -451,5 +471,6 @@ void ProcessStreamingContext::AddThreadStreamingContext(
       aProfiledThreadData, aBuffer, aCx, mFailureLatch, aService,
       aProgressLogger.CreateSubLoggerFromTo(
           1_pc, "Prepared streaming thread id", 100_pc,
-          "Added thread streaming context"));
+          "Added thread streaming context"),
+      aSourceIdToIndexMap);
 }

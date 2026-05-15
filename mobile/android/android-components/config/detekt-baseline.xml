@@ -2,205 +2,242 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>ForbiddenSuppress:AMOAddonsProvider.kt$AMOAddonsProvider$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:AMOAddonsProvider.kt$AMOAddonsProvider$@Suppress("NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:AbstractFetchDownloadService.kt$AbstractFetchDownloadService.&lt;no name provided&gt;$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:AcornColorGrid.kt$@Suppress("LongMethod", "MagicNumber")</ID>
+    <ID>ForbiddenSuppress:AcornColorGrid.kt$@Suppress("LongParameterList", "LongMethod", "MagicNumber")</ID>
+    <ID>ForbiddenSuppress:AcornColors.kt$@file:Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:AcornColors.kt$AcornColors$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:AcornTheme.kt$@file:Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:ActionButton.kt$@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Addon.kt$Addon.Companion$@Suppress("MagicNumber", "CognitiveComplexMethod", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:AndroidAssetFinder.kt$AndroidAssetFinder$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:AnimatedProgressBar.kt$@Suppress("LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:AnimatedProgressBar.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:AppLinksInterceptor.kt$AppLinksInterceptor$@Suppress("CognitiveComplexMethod", "ReturnCount", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:AppLinksUseCases.kt$AppLinksUseCases.GetAppLinkRedirect$@Suppress("CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:BaseBrowserFragment.kt$BaseBrowserFragment$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:BrowserDisplayToolbar.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:BrowserFragment.kt$BrowserFragment$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:BrowserMenuPositioning.kt$@Suppress("CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:BrowserScreen.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:BrowserStateReader.kt$@Suppress("LongMethod", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:BrowserToolbarStore.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:Bundle.kt$@Suppress("CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:ByteArray.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:ByteArray.kt$@Suppress("NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:CFRPopupContent.kt$@Suppress("LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:CFRPopupShape.kt$CFRPopupShape$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:ClipboardHandler.kt$ClipboardHandler$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:ColorUtils.kt$ColorUtils$@SuppressWarnings("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:Constants.kt$@Suppress("MagicNumber", "TopLevelPropertyNaming")</ID>
+    <ID>ForbiddenSuppress:ContentStateReducer.kt$ContentStateReducer$@Suppress("LongMethod", "ThrowsCount", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:CrashApplication.kt$GleanBuildInfo$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:CrashMiddleware.kt$CrashMiddleware$@Suppress("CyclomaticComplexMethod", "LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:CreditCardUtils.kt$CreditCardUtils$@Suppress("MagicNumber", "LargeClass")</ID>
+    <ID>ForbiddenSuppress:CustomPlacementPopup.kt$@Suppress("CyclomaticComplexMethod", "ReturnCount", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Dispatchers.kt$Dispatchers$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:DownloadsDatabase.kt$Migrations$@Suppress("MaxLineLength", "MagicNumber")</ID>
+    <ID>ForbiddenSuppress:Dropdown.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:Dropdown.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:DropdownMenu.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:EngineSession.kt$EngineSession.CookieBannerHandlingMode$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:EngineSession.kt$EngineSession.SessionPriority$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:EngineSession.kt$EngineSession.TrackingProtectionPolicy.CookiePolicy$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:EngineStateReducer.kt$EngineStateReducer$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:EngineVersion.kt$EngineVersion.Companion$@Suppress("MagicNumber", "ReturnCount")</ID>
+    <ID>ForbiddenSuppress:ExpandableLayout.kt$ExpandableLayout$@Suppress("ReturnCount", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:FullDisplayToolbar.kt$@Suppress("LongMethod", "LongParameterList", "CyclomaticComplexMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:FxaDeviceConstellation.kt$FxaDeviceConstellation$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:GeckoEngineSession.kt$GeckoEngineSession$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:GeckoEngineSession.kt$GeckoEngineSession$@Suppress("NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:GeckoSitePermissionsStorage.kt$GeckoSitePermissionsStorage$@Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:GeckoSitePermissionsStorage.kt$GeckoSitePermissionsStorage$@Suppress("LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Grammar.kt$Grammar$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:HighlightedDomainUrl.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:HttpIconLoader.kt$HttpIconLoader$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:IconDirectoryEntry.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:IconDirectoryEntry.kt$@Suppress("MagicNumber", "ReturnCount", "CognitiveComplexMethod", "NestedBlockDepth", "ComplexCondition", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:IconDirectoryEntry.kt$IconDirectoryEntry$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:IconResourceComparator.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:ImageDecoder.kt$ImageDecoder.Companion.ImageMagicNumbers$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:InlineAutocompleteEditText.kt$InlineAutocompleteEditText$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:InlineAutocompleteEditText.kt$InlineAutocompleteEditText$@Suppress("NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:InlineAutocompleteTextField.kt$@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:InputResultDetail.kt$InputResultDetail$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:LanguageModel.kt$LanguageModel.Companion$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Lexer.kt$Lexer$@Suppress("CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:LoginPickerView.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:MainActivity.kt$MainActivity$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:ManifestDatabase.kt$ManifestDatabase.Companion$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:MozillaSocorroService.kt$MozillaSocorroService$@Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:NestedGeckoView.kt$NestedGeckoView$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Origin.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:Parser.kt$Parser$@Suppress("ThrowsCount", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Performance.kt$@SuppressWarnings("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:PermissionsDialogFragment.kt$PermissionsDialogFragment$@Suppress("LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:PopupToMenuItemsMapper.kt$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:PromptFeature.kt$PromptFeature$@Suppress("CognitiveComplexMethod", "LongMethod", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:PromptFeature.kt$PromptFeature$@Suppress("CognitiveComplexMethod", "LongMethod", "ReturnCount", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:PromptFeature.kt$PromptFeature$@Suppress("NestedBlockDepth", "CyclomaticComplexMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:PromptFeature.kt$PromptFeature$@Suppress("UNCHECKED_CAST", "CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:PublicSuffixListLoader.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:QrFragment.kt$QrFragment$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:RemoteSettingsSyncScheduler.kt$DefaultRemoteSettingsSyncScheduler$@SuppressWarnings("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:RemoteTabsStorage.kt$RemoteTabsCommandQueue$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Safelist.kt$Safelist.Companion$@Suppress("NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:SampleApplication.kt$GleanBuildInfo$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:SaveLoginDialogFragment.kt$SaveLoginDialogFragment$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:SearchMiddleware.kt$SearchMiddleware$@SuppressWarnings("LongMethod")</ID>
+    <ID>ForbiddenSuppress:SessionState.kt$SessionState.Source$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:SitePermissionsDatabase.kt$Migrations$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:SitePermissionsFeature.kt$SitePermissionsFeature$@Suppress("CyclomaticComplexMethod")</ID>
+    <ID>ForbiddenSuppress:SitePermissionsFeature.kt$SitePermissionsFeature$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:State.kt$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:String.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:Suggestion.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:SuggestionFetcher.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:SystemEngineView.kt$SystemEngineView$@Suppress("NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:SystemEngineView.kt$SystemEngineView.&lt;no name provided&gt;$@Suppress("ReturnCount", "NestedBlockDepth", "LongMethod")</ID>
+    <ID>ForbiddenSuppress:TabCounter.kt$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:TabListReducer.kt$TabListReducer$@Suppress("LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:ToolbarActivity.kt$ToolbarActivity$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:ToolbarActivity.kt$ToolbarActivity$@Suppress("TooGenericExceptionCaught", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:TopSiteDatabase.kt$Migrations$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:TranslationsMiddleware.kt$TranslationsMiddleware$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:TranslationsMiddleware.kt$TranslationsMiddleware$@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:TranslationsStateReducer.kt$TranslationsStateReducer$@Suppress("LongMethod", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:UrlMatcher.kt$UrlMatcher.Companion$@Suppress("ThrowsCount", "NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:Utils.kt$@Suppress("NestedBlockDepth", "CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:WebAppManifestParser.kt$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:WebExtensionReducer.kt$WebExtensionReducer$@Suppress("LongMethod")</ID>
+    <ID>ForbiddenSuppress:WebExtensionSupport.kt$WebExtensionSupport$@Suppress("CognitiveComplexMethod")</ID>
+    <ID>ForbiddenSuppress:WebPush.kt$WebPushSubscription$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:WebURLFinder.kt$WebURLFinder.Companion$@Suppress("MagicNumber")</ID>
+    <ID>ForbiddenSuppress:WorkManagerSyncManager.kt$WorkManagerSyncWorker$@Suppress("LongMethod", "CyclomaticComplexMethod")</ID>
     <ID>MaxLineLength:ContextCompatDetector.kt$ContextCompatDetector.Companion$explanation = "Using this method can lead to crashes in older Android versions as newer features might not be available"</ID>
+    <ID>MaxLineLength:IconDirectoryEntry.kt$@Suppress("MagicNumber", "ReturnCount", "CognitiveComplexMethod", "NestedBlockDepth", "ComplexCondition", "CyclomaticComplexMethod")</ID>
     <ID>MayBeConst:ConstraintLayoutPerfDetector.kt$private val CUSTOM_VIEW_ISSUE_DESCRIPTION = "Caution regarding custom views extending `ConstraintLayout`"</ID>
     <ID>MayBeConst:ConstraintLayoutPerfDetector.kt$private val CUSTOM_VIEW_ISSUE_MESSAGE = "Custom views extending `ConstraintLayout` are less " + "efficient because they cannot share other `ConstraintLayout` defined in file."</ID>
-    <ID>UndocumentedPublicClass:AbstractAutofillUnlockActivity.kt$AbstractAutofillUnlockActivity$Companion</ID>
-    <ID>UndocumentedPublicClass:AbstractFetchDownloadService.kt$AbstractFetchDownloadService$Companion</ID>
-    <ID>UndocumentedPublicClass:AbstractMediaSessionService.kt$AbstractMediaSessionService$Companion</ID>
-    <ID>UndocumentedPublicClass:AbstractPrivateNotificationService.kt$AbstractPrivateNotificationService$Companion</ID>
-    <ID>UndocumentedPublicClass:ActivityContextWrapper.kt$ActivityContextWrapper$Companion</ID>
-    <ID>UndocumentedPublicClass:AdaptiveIconProcessor.kt$AdaptiveIconProcessor$Companion</ID>
-    <ID>UndocumentedPublicClass:AddMechanismEventProcessor.kt$AddMechanismEventProcessor$Companion</ID>
-    <ID>UndocumentedPublicClass:Addon.kt$Addon$Companion</ID>
-    <ID>UndocumentedPublicClass:AddonInstallationDialogFragment.kt$AddonInstallationDialogFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:AddonManager.kt$AddonManager$Companion</ID>
-    <ID>UndocumentedPublicClass:AddonSettingsActivity.kt$AddonSettingsActivity.AddonSettingsFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:AddonUpdater.kt$DefaultAddonUpdater$Companion</ID>
-    <ID>UndocumentedPublicClass:AddonUpdater.kt$DefaultAddonUpdater.NotificationHandlerService$Companion</ID>
-    <ID>UndocumentedPublicClass:AddonsFragment.kt$AddonsFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:AddressSelectBar.kt$AddressSelectBar$Companion</ID>
-    <ID>UndocumentedPublicClass:AdsTelemetry.kt$AdsTelemetry$Companion</ID>
-    <ID>UndocumentedPublicClass:AndroidAssetFinder.kt$AndroidAssetFinder$Companion</ID>
-    <ID>UndocumentedPublicClass:AndroidPhotoPicker.kt$AndroidPhotoPicker$Companion</ID>
-    <ID>UndocumentedPublicClass:AndroidSrcXmlDetector.kt$AndroidSrcXmlDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:AppLinksInterceptor.kt$AppLinksInterceptor$Companion</ID>
-    <ID>UndocumentedPublicClass:AppLinksUseCases.kt$AppLinksUseCases$Companion</ID>
-    <ID>UndocumentedPublicClass:AppSearchWidgetProvider.kt$AppSearchWidgetProvider$Companion</ID>
-    <ID>UndocumentedPublicClass:AutoPushFeature.kt$AutoPushFeature$Companion</ID>
+    <ID>NoSystemCurrentTimeMillis:AbstractFetchDownloadService.kt$AbstractFetchDownloadService$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:AbstractFetchDownloadService.kt$AbstractFetchDownloadService.&lt;no name provided&gt;$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:AbstractFetchDownloadService.kt$AbstractFetchDownloadService.DownloadJobState$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:BookmarksStorage.kt$BookmarksStorage$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:BrowserAction.kt$LastAccessAction.UpdateLastAccessAction$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:BrowserAction.kt$LastAccessAction.UpdateLastMediaAccessAction$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:ContileTopSitesProvider.kt$ContileTopSitesProvider$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:Crash.kt$Crash.NativeCodeCrash.Companion$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:Crash.kt$Crash.UncaughtExceptionCrash.Companion$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:CrashMiddleware.kt$CrashMiddleware$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:DateTimeProvider.kt$DefaultDateTimeProvider$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:DownloadState.kt$DownloadState$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:EngineViewPresenter.kt$EngineViewPresenter$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:EnvironmentRuntimeProvider.kt$DefaultStartTimeProvider$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:ExceptionHandler.kt$ExceptionHandler$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:FxaPushSupportFeature.kt$VerificationDelegate$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:LastAccessMiddleware.kt$LastAccessMiddleware$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:MainActivity.kt$MainActivity$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:ManifestEntity.kt$ManifestEntity$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:ManifestStorage.kt$ManifestStorage$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:MarsTopSitesProvider.kt$MarsTopSitesProvider$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:MediaSessionState.kt$MediaSessionState$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:Modifier.kt$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:MozillaLocationService.kt$MozillaLocationService$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:MozillaSocorroService.kt$MozillaSocorroService$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:NimbusMessagingStorage.kt$NimbusMessagingStorage$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:PinnedSiteEntity.kt$PinnedSiteEntity$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:PinnedSiteStorage.kt$PinnedSiteStorage$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:PlacesHistoryStorage.kt$PlacesHistoryStorage$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:PocketStory.kt$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:RegionManager.kt$RegionManager$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:RelayFeature.kt$RelayFeature$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:RelayState.kt$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SampleApplication.kt$SampleApplication$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SessionUseCases.kt$SessionUseCases.UpdateLastAccessUseCase$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SharedIds.kt$SharedIds$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SitePermissionsFeature.kt$SitePermissionsFeature$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SitePermissionsRules.kt$SitePermissionsRules$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SpocImpressionEntity.kt$SpocImpressionEntity$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SponsoredContentImpressionEntity.kt$SponsoredContentImpressionEntity$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SponsoredContentsDao.kt$SponsoredContentsDao$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:SyncAuthInfoCache.kt$SyncAuthInfoCache$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:TabCollectionEntity.kt$TabCollectionEntity$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:TabCollectionStorage.kt$TabCollectionStorage$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:TabSessionState.kt$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:TabSessionState.kt$TabSessionState$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:TabsUseCases.kt$TabsUseCases.RestoreUseCase$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:Uri.kt$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:WebAppShortcutManager.kt$WebAppShortcutManager$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:WebAppUseCases.kt$WebAppUseCases.GetInstallStateUseCase$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:WebNotification.kt$WebNotification$System.currentTimeMillis()</ID>
+    <ID>NoSystemCurrentTimeMillis:WorkManagerSyncManager.kt$WorkManagerSyncWorker$System.currentTimeMillis()</ID>
     <ID>UndocumentedPublicClass:AutoSave.kt$AutoSave</ID>
-    <ID>UndocumentedPublicClass:AutoSave.kt$AutoSave$Companion</ID>
     <ID>UndocumentedPublicClass:AutoSave.kt$AutoSave$Storage</ID>
-    <ID>UndocumentedPublicClass:AutofillCrypto.kt$AutofillCrypto$Companion</ID>
     <ID>UndocumentedPublicClass:Base64.kt$Base64</ID>
-    <ID>UndocumentedPublicClass:BaseBrowserFragment.kt$BaseBrowserFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:BaseVoiceSearchActivity.kt$BaseVoiceSearchActivity$Companion</ID>
-    <ID>UndocumentedPublicClass:BookmarksStorage.kt$BookmarksStorage$Companion</ID>
-    <ID>UndocumentedPublicClass:BootUtils.kt$BootUtils$Companion</ID>
-    <ID>UndocumentedPublicClass:BrowserComposeActivity.kt$BrowserComposeActivity$Companion</ID>
-    <ID>UndocumentedPublicClass:BrowserFragment.kt$BrowserFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:BrowserMenu.kt$BrowserMenu$Companion</ID>
     <ID>UndocumentedPublicClass:BrowserMenu.kt$BrowserMenu$Orientation</ID>
     <ID>UndocumentedPublicClass:BrowserMenuAdapter.kt$BrowserMenuItemViewHolder : ViewHolder</ID>
-    <ID>UndocumentedPublicClass:BrowserMenuImageTextCheckboxButton.kt$BrowserMenuImageTextCheckboxButton$Companion</ID>
-    <ID>UndocumentedPublicClass:BrowserToolbar.kt$BrowserToolbar$Companion</ID>
-    <ID>UndocumentedPublicClass:Browsers.kt$Browsers$Companion</ID>
-    <ID>UndocumentedPublicClass:BuildVersionProvider.kt$BuildVersionProvider$Companion</ID>
-    <ID>UndocumentedPublicClass:ButtonStyleXmlDetector.kt$ButtonStyleXmlDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:CFRPopup.kt$CFRPopup$Companion</ID>
-    <ID>UndocumentedPublicClass:CFRPopupShape.kt$CFRPopupShape$Companion</ID>
     <ID>UndocumentedPublicClass:Choice.kt$Choice$CREATOR : Creator</ID>
-    <ID>UndocumentedPublicClass:Client.kt$Client$Companion</ID>
-    <ID>UndocumentedPublicClass:CollectionProcessor.kt$CollectionProcessor$Companion</ID>
     <ID>UndocumentedPublicClass:ColorUtils.kt$ColorUtils</ID>
-    <ID>UndocumentedPublicClass:ConceptFetchDetector.kt$ConceptFetchDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:ConceptFetchHttpUploader.kt$ConceptFetchHttpUploader$Companion</ID>
     <ID>UndocumentedPublicClass:Constants.kt$Constants</ID>
-    <ID>UndocumentedPublicClass:ConstraintLayoutPerfDetector.kt$ConstraintLayoutPerfDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:Consumable.kt$Consumable$Companion</ID>
     <ID>UndocumentedPublicClass:ContextCompatDetector.kt$ContextCompatDetector : DetectorSourceCodeScanner</ID>
-    <ID>UndocumentedPublicClass:ContextCompatDetector.kt$ContextCompatDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:ContextMenuCandidate.kt$ContextMenuCandidate$Companion</ID>
-    <ID>UndocumentedPublicClass:ContextMenuFragment.kt$ContextMenuFragment$Companion</ID>
     <ID>UndocumentedPublicClass:ContextMenuUseCases.kt$ContextMenuUseCases$ConsumeHitResultUseCase</ID>
     <ID>UndocumentedPublicClass:ContextMenuUseCases.kt$ContextMenuUseCases$InjectDownloadUseCase</ID>
-    <ID>UndocumentedPublicClass:ContileTopSitesUpdater.kt$ContileTopSitesUpdater$Companion</ID>
-    <ID>UndocumentedPublicClass:CoordinateScrollingFeature.kt$CoordinateScrollingFeature$Companion</ID>
-    <ID>UndocumentedPublicClass:Crash.kt$Crash$Companion</ID>
-    <ID>UndocumentedPublicClass:Crash.kt$Crash.NativeCodeCrash$Companion</ID>
-    <ID>UndocumentedPublicClass:Crash.kt$Crash.NativeCodeCrash.Companion$ProcessType</ID>
-    <ID>UndocumentedPublicClass:Crash.kt$Crash.UncaughtExceptionCrash$Companion</ID>
     <ID>UndocumentedPublicClass:CrashActivity.kt$CrashActivity : AppCompatActivityOnClickListener</ID>
     <ID>UndocumentedPublicClass:CrashApplication.kt$CrashApplication : Application</ID>
-    <ID>UndocumentedPublicClass:CrashApplication.kt$CrashApplication$Companion</ID>
-    <ID>UndocumentedPublicClass:CrashReporter.kt$CrashReporter$Companion</ID>
     <ID>UndocumentedPublicClass:CrashReporter.kt$CrashReporter$Prompt</ID>
-    <ID>UndocumentedPublicClass:CrashReporterActivity.kt$CrashReporterActivity$Companion</ID>
-    <ID>UndocumentedPublicClass:CreditCardItemViewHolder.kt$CreditCardItemViewHolder$Companion</ID>
-    <ID>UndocumentedPublicClass:CreditCardSelectBar.kt$CreditCardSelectBar$Companion</ID>
-    <ID>UndocumentedPublicClass:CreditCardsAddressesStorage.kt$Address$Companion</ID>
-    <ID>UndocumentedPublicClass:CreditCardsAddressesStorage.kt$CreditCard$Companion</ID>
-    <ID>UndocumentedPublicClass:CreditCardsAddressesStorage.kt$CreditCardEntry$Companion</ID>
     <ID>UndocumentedPublicClass:CustomTabConfig.kt$CustomTabActionButtonConfig</ID>
     <ID>UndocumentedPublicClass:CustomTabConfig.kt$CustomTabMenuItem</ID>
     <ID>UndocumentedPublicClass:CustomTabsAction.kt$CustomTabsAction : Action</ID>
     <ID>UndocumentedPublicClass:CustomTabsService.kt$CustomTabsService : AbstractCustomTabsService</ID>
     <ID>UndocumentedPublicClass:CustomTabsServiceStore.kt$CustomTabsServiceStore : Store</ID>
-    <ID>UndocumentedPublicClass:CustomTabsToolbarFeature.kt$CustomTabsToolbarFeature$Companion</ID>
-    <ID>UndocumentedPublicClass:CustomViewFinder.kt$CustomViewFinder$Companion</ID>
     <ID>UndocumentedPublicClass:DefaultComponents.kt$DefaultComponents</ID>
-    <ID>UndocumentedPublicClass:DefaultComponents.kt$DefaultComponents$Companion</ID>
-    <ID>UndocumentedPublicClass:DefaultIconGenerator.kt$DefaultIconGenerator$Companion</ID>
-    <ID>UndocumentedPublicClass:DeniedPermissionDialogFragment.kt$DeniedPermissionDialogFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:DeviceCommandQueue.kt$DeviceCommandQueue.FlushResult$Companion</ID>
     <ID>UndocumentedPublicClass:DeviceRecyclerViewAdapter.kt$DeviceRecyclerViewAdapter$ViewHolder : ViewHolder</ID>
-    <ID>UndocumentedPublicClass:DialogColors.kt$DialogColors$Companion</ID>
-    <ID>UndocumentedPublicClass:DigitalAssetLinksApi.kt$DigitalAssetLinksApi$Companion</ID>
     <ID>UndocumentedPublicClass:DiskIconLoader.kt$DiskIconLoader$LoaderDiskCache</ID>
     <ID>UndocumentedPublicClass:DiskIconPreparer.kt$DiskIconPreparer$PreparerDiskCache</ID>
     <ID>UndocumentedPublicClass:DiskIconProcessor.kt$DiskIconProcessor$ProcessorDiskCache</ID>
-    <ID>UndocumentedPublicClass:Domain.kt$Domain$Companion</ID>
     <ID>UndocumentedPublicClass:DomainAutoCompleteProvider.kt$DomainAutoCompleteProvider$AutocompleteSource</ID>
     <ID>UndocumentedPublicClass:DomainMatcher.kt$DomainMatch</ID>
-    <ID>UndocumentedPublicClass:DownloadCancelDialogFragment.kt$DownloadCancelDialogFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:DownloadDialogFragment.kt$DownloadDialogFragment$Companion</ID>
     <ID>UndocumentedPublicClass:DownloadManager.kt$DownloadManager</ID>
     <ID>UndocumentedPublicClass:DownloadService.kt$DownloadService : AbstractFetchDownloadService</ID>
-    <ID>UndocumentedPublicClass:DownloadState.kt$DownloadState$Companion</ID>
-    <ID>UndocumentedPublicClass:DownloadStorage.kt$DownloadStorage$Companion</ID>
     <ID>UndocumentedPublicClass:DownloadUtils.kt$DownloadUtils</ID>
     <ID>UndocumentedPublicClass:DownloadsUseCases.kt$DownloadsUseCases$ConsumeDownloadUseCase</ID>
     <ID>UndocumentedPublicClass:DrawableUtils.kt$DrawableUtils</ID>
-    <ID>UndocumentedPublicClass:Engine.kt$Engine.BrowsingData$Companion</ID>
-    <ID>UndocumentedPublicClass:EngineSession.kt$EngineSession.LoadUrlFlags$Companion</ID>
-    <ID>UndocumentedPublicClass:EngineSession.kt$EngineSession.TrackingProtectionPolicy$Companion</ID>
     <ID>UndocumentedPublicClass:EngineSession.kt$EngineSession.TrackingProtectionPolicy$TrackingCategory</ID>
-    <ID>UndocumentedPublicClass:EngineVersion.kt$EngineVersion$Companion</ID>
     <ID>UndocumentedPublicClass:ErrorPages.kt$ErrorPages</ID>
-    <ID>UndocumentedPublicClass:ExternalAppBrowserFragment.kt$ExternalAppBrowserFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:FactCollectDetector.kt$FactCollectDetector$Companion</ID>
     <ID>UndocumentedPublicClass:FindInPageView.kt$FindInPageView$Listener</ID>
-    <ID>UndocumentedPublicClass:FirefoxAccount.kt$FirefoxAccount$Companion</ID>
-    <ID>UndocumentedPublicClass:FxaPushSupportFeature.kt$FxaPushSupportFeature$Companion</ID>
-    <ID>UndocumentedPublicClass:FxaWebChannelFeature.kt$FxaWebChannelFeature$Companion</ID>
-    <ID>UndocumentedPublicClass:FxaWebChannelFeature.kt$FxaWebChannelFeature.Companion$WebChannelCommand</ID>
-    <ID>UndocumentedPublicClass:GeckoEngineSession.kt$GeckoEngineSession$Companion</ID>
     <ID>UndocumentedPublicClass:GeckoEngineSessionState.kt$GeckoEngineSessionState : EngineSessionState</ID>
-    <ID>UndocumentedPublicClass:GeckoEngineSessionState.kt$GeckoEngineSessionState$Companion</ID>
-    <ID>UndocumentedPublicClass:GeckoEngineView.kt$GeckoEngineView$Companion</ID>
-    <ID>UndocumentedPublicClass:GeckoPermissionRequest.kt$GeckoPermissionRequest.App$Companion</ID>
-    <ID>UndocumentedPublicClass:GeckoPermissionRequest.kt$GeckoPermissionRequest.Content$Companion</ID>
-    <ID>UndocumentedPublicClass:GeckoPermissionRequest.kt$GeckoPermissionRequest.Media$Companion</ID>
-    <ID>UndocumentedPublicClass:GeckoSelectionActionDelegate.kt$GeckoSelectionActionDelegate$Companion</ID>
-    <ID>UndocumentedPublicClass:GeckoViewFetchClient.kt$GeckoViewFetchClient$Companion</ID>
-    <ID>UndocumentedPublicClass:GeckoWebExtensionException.kt$GeckoWebExtensionException$Companion</ID>
     <ID>UndocumentedPublicClass:GleanApplication.kt$GleanApplication : Application</ID>
-    <ID>UndocumentedPublicClass:GleanApplication.kt$GleanApplication$Companion</ID>
-    <ID>UndocumentedPublicClass:GleanCrashReporterService.kt$GleanCrashReporterService$Companion</ID>
     <ID>UndocumentedPublicClass:Grammar.kt$GrammarElement</ID>
-    <ID>UndocumentedPublicClass:HttpURLConnectionClient.kt$HttpURLConnectionClient$Companion</ID>
     <ID>UndocumentedPublicClass:IconLoader.kt$IconLoader$Result</ID>
     <ID>UndocumentedPublicClass:IconLoader.kt$IconLoader.Result$BitmapResult : Result</ID>
     <ID>UndocumentedPublicClass:IconLoader.kt$IconLoader.Result$BytesResult : Result</ID>
     <ID>UndocumentedPublicClass:IconLoader.kt$IconLoader.Result$NoResult : Result</ID>
     <ID>UndocumentedPublicClass:IconMemoryCache.kt$IconMemoryCache : ProcessorMemoryCacheLoaderMemoryCachePreparerMemoryCache</ID>
-    <ID>UndocumentedPublicClass:ImageDecoder.kt$ImageDecoder$Companion</ID>
-    <ID>UndocumentedPublicClass:ImageDecoder.kt$ImageDecoder.Companion$ImageMagicNumbers</ID>
-    <ID>UndocumentedPublicClass:ImageViewAndroidTintXmlDetector.kt$ImageViewAndroidTintXmlDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:ImeInsetsSynchronizer.kt$ImeInsetsSynchronizer$Companion</ID>
-    <ID>UndocumentedPublicClass:InContentTelemetry.kt$InContentTelemetry$Companion</ID>
     <ID>UndocumentedPublicClass:InlineAutocompleteEditText.kt$InlineAutocompleteEditText$AutocompleteResult</ID>
-    <ID>UndocumentedPublicClass:InlineAutocompleteEditText.kt$InlineAutocompleteEditText$Companion</ID>
-    <ID>UndocumentedPublicClass:InputResultDetail.kt$InputResultDetail$Companion</ID>
     <ID>UndocumentedPublicClass:IntentReceiverActivity.kt$IntentReceiverActivity : Activity</ID>
     <ID>UndocumentedPublicClass:Jexl.kt$Jexl</ID>
-    <ID>UndocumentedPublicClass:LanguageModel.kt$LanguageModel$Companion</ID>
-    <ID>UndocumentedPublicClass:LanguageSetting.kt$LanguageSetting$Companion</ID>
-    <ID>UndocumentedPublicClass:LazyComponent.kt$LazyComponent$Companion</ID>
-    <ID>UndocumentedPublicClass:LibrariesListFragment.kt$LibrariesListFragment$Companion</ID>
     <ID>UndocumentedPublicClass:LicenseCommentChecker.kt$LicenseCommentChecker : UElementHandler</ID>
-    <ID>UndocumentedPublicClass:LicenseCommentChecker.kt$LicenseCommentChecker$Companion</ID>
     <ID>UndocumentedPublicClass:LicenseDetector.kt$LicenseDetector : DetectorSourceCodeScanner</ID>
-    <ID>UndocumentedPublicClass:LicenseDetector.kt$LicenseDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:LintLogChecks.kt$LintLogChecks$Companion</ID>
-    <ID>UndocumentedPublicClass:LocationService.kt$LocationService$Companion</ID>
-    <ID>UndocumentedPublicClass:Logger.kt$Logger$Companion</ID>
     <ID>UndocumentedPublicClass:LoginFragment.kt$LoginFragment : Fragment</ID>
-    <ID>UndocumentedPublicClass:LoginFragment.kt$LoginFragment$Companion</ID>
     <ID>UndocumentedPublicClass:LoginFragment.kt$LoginFragment$OnLoginCompleteListener</ID>
-    <ID>UndocumentedPublicClass:LoginsCrypto.kt$LoginsCrypto$Companion</ID>
     <ID>UndocumentedPublicClass:MainActivity.kt$MainActivity : AppCompatActivity</ID>
     <ID>UndocumentedPublicClass:MainActivity.kt$MainActivity : AppCompatActivityOnLoginCompleteListenerCoroutineScope</ID>
     <ID>UndocumentedPublicClass:MainActivity.kt$MainActivity : AppCompatActivityOnLoginCompleteListenerCoroutineScopeSyncStatusObserver</ID>
-    <ID>UndocumentedPublicClass:MainActivity.kt$MainActivity : AppCompatActivityOnLoginCompleteListenerOnDeviceListInteractionListenerCoroutineScope</ID>
-    <ID>UndocumentedPublicClass:MainActivity.kt$MainActivity$Companion</ID>
-    <ID>UndocumentedPublicClass:ManifestStorage.kt$ManifestStorage$Companion</ID>
-    <ID>UndocumentedPublicClass:MediaSession.kt$MediaSession.Feature$Companion</ID>
     <ID>UndocumentedPublicClass:MemoryIconLoader.kt$MemoryIconLoader$LoaderMemoryCache</ID>
     <ID>UndocumentedPublicClass:MemoryIconPreparer.kt$MemoryIconPreparer$PreparerMemoryCache</ID>
     <ID>UndocumentedPublicClass:MemoryIconProcessor.kt$MemoryIconProcessor$ProcessorMemoryCache</ID>
-    <ID>UndocumentedPublicClass:NotYetSupportedAddonActivity.kt$NotYetSupportedAddonActivity.NotYetSupportedAddonFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:NotificationManagerChecks.kt$NotificationManagerChecks$Companion</ID>
     <ID>UndocumentedPublicClass:OAuthAccount.kt$AuthType</ID>
     <ID>UndocumentedPublicClass:OAuthAccount.kt$Avatar</ID>
     <ID>UndocumentedPublicClass:OAuthAccount.kt$Profile</ID>
-    <ID>UndocumentedPublicClass:OkHttpClient.kt$OkHttpClient$Companion</ID>
-    <ID>UndocumentedPublicClass:Orientation.kt$Orientation$Companion</ID>
-    <ID>UndocumentedPublicClass:OriginVerifier.kt$OriginVerifier$Companion</ID>
     <ID>UndocumentedPublicClass:OriginVerifierFeature.kt$OriginVerifierFeature</ID>
     <ID>UndocumentedPublicClass:Parser.kt$ParserException : Exception</ID>
-    <ID>UndocumentedPublicClass:PasswordGeneratorDialogColors.kt$PasswordGeneratorDialogColors$Companion</ID>
-    <ID>UndocumentedPublicClass:PermissionsDialogFragment.kt$PermissionsDialogFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:PreferredColorScheme.kt$PreferredColorScheme$Companion</ID>
     <ID>UndocumentedPublicClass:PreferredColorScheme.kt$PreferredColorScheme$Dark : PreferredColorScheme</ID>
     <ID>UndocumentedPublicClass:PreferredColorScheme.kt$PreferredColorScheme$Light : PreferredColorScheme</ID>
     <ID>UndocumentedPublicClass:PreferredColorScheme.kt$PreferredColorScheme$System : PreferredColorScheme</ID>
-    <ID>UndocumentedPublicClass:PromptAbuserDetector.kt$PromptAbuserDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:PromptFeature.kt$PromptFeature$Companion</ID>
     <ID>UndocumentedPublicClass:PromptRequest.kt$PromptRequest$Dismissible</ID>
     <ID>UndocumentedPublicClass:PromptRequest.kt$PromptRequest.Authentication$Level</ID>
     <ID>UndocumentedPublicClass:PromptRequest.kt$PromptRequest.Authentication$Method</ID>
-    <ID>UndocumentedPublicClass:PromptRequest.kt$PromptRequest.File$Companion</ID>
     <ID>UndocumentedPublicClass:PromptRequest.kt$PromptRequest.File$FacingMode</ID>
     <ID>UndocumentedPublicClass:PromptRequest.kt$PromptRequest.TimeSelection$Type</ID>
     <ID>UndocumentedPublicClass:ProtectedDataAdapter.kt$ProtectedDataAdapter : Adapter</ID>
@@ -210,50 +247,28 @@
     <ID>UndocumentedPublicClass:PushProcessor.kt$PushError$Network : PushError</ID>
     <ID>UndocumentedPublicClass:PushProcessor.kt$PushError$Registration : PushError</ID>
     <ID>UndocumentedPublicClass:PushProcessor.kt$PushError$ServiceUnavailable : PushError</ID>
-    <ID>UndocumentedPublicClass:PushProcessor.kt$PushProcessor$Companion</ID>
-    <ID>UndocumentedPublicClass:PushService.kt$PushService$Companion</ID>
-    <ID>UndocumentedPublicClass:QrFeature.kt$QrFeature$Companion</ID>
-    <ID>UndocumentedPublicClass:QrFragment.kt$QrFragment$Companion</ID>
     <ID>UndocumentedPublicClass:ReaderViewControlsView.kt$ReaderViewControlsView$Listener</ID>
     <ID>UndocumentedPublicClass:ReaderViewFeature.kt$ReaderViewFeature$ColorScheme</ID>
-    <ID>UndocumentedPublicClass:ReaderViewFeature.kt$ReaderViewFeature$Companion</ID>
     <ID>UndocumentedPublicClass:ReaderViewFeature.kt$ReaderViewFeature$FontType</ID>
-    <ID>UndocumentedPublicClass:RedirectDialogFragment.kt$RedirectDialogFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:RegionState.kt$RegionState$Companion</ID>
-    <ID>UndocumentedPublicClass:ReportSiteDomainsRepository.kt$ReportSiteDomainsRepository$Companion</ID>
     <ID>UndocumentedPublicClass:Request.kt$Request$CookiePolicy</ID>
     <ID>UndocumentedPublicClass:Request.kt$Request$Redirect</ID>
-    <ID>UndocumentedPublicClass:Request.kt$Request.Body$Companion</ID>
     <ID>UndocumentedPublicClass:RequestInterceptor.kt$RequestInterceptor.InterceptionResponse$AppIntent : InterceptionResponse</ID>
     <ID>UndocumentedPublicClass:RequestInterceptor.kt$RequestInterceptor.InterceptionResponse$Content : InterceptionResponse</ID>
-    <ID>UndocumentedPublicClass:Response.kt$Response$Companion</ID>
-    <ID>UndocumentedPublicClass:Response.kt$Response.Body$Companion</ID>
-    <ID>UndocumentedPublicClass:ReversibleString.kt$ReversibleString$Companion</ID>
     <ID>UndocumentedPublicClass:RustLog.kt$RustLog</ID>
     <ID>UndocumentedPublicClass:SampleApplication.kt$SampleApplication : Application</ID>
     <ID>UndocumentedPublicClass:SampleToolbarHelpers.kt$ConfigurationAdapter : Adapter</ID>
     <ID>UndocumentedPublicClass:SampleToolbarHelpers.kt$ConfigurationViewHolder : ViewHolder</ID>
     <ID>UndocumentedPublicClass:SampleToolbarHelpers.kt$Extra</ID>
     <ID>UndocumentedPublicClass:SampleToolbarHelpers.kt$ToolbarConfiguration</ID>
-    <ID>UndocumentedPublicClass:SampleToolbarHelpers.kt$UrlBoxProgressView$Companion</ID>
-    <ID>UndocumentedPublicClass:SearchEngineSuggestionProvider.kt$SearchEngineSuggestionProvider$Companion</ID>
     <ID>UndocumentedPublicClass:SearchSuggestionClient.kt$SearchSuggestionClient$ResponseParserException : Exception</ID>
-    <ID>UndocumentedPublicClass:SearchSuggestionProvider.kt$SearchSuggestionProvider$Companion</ID>
     <ID>UndocumentedPublicClass:SearchSuggestionProvider.kt$SearchSuggestionProvider$Mode</ID>
     <ID>UndocumentedPublicClass:SearchUseCases.kt$SearchUseCases$DefaultSearchUseCase : SearchUseCase</ID>
     <ID>UndocumentedPublicClass:SearchUseCases.kt$SearchUseCases$NewTabSearchUseCase : SearchUseCase</ID>
     <ID>UndocumentedPublicClass:SearchUseCases.kt$SearchUseCases$SearchUseCase</ID>
-    <ID>UndocumentedPublicClass:SecurePrefsReliabilityExperiment.kt$SecurePrefsReliabilityExperiment$Companion</ID>
-    <ID>UndocumentedPublicClass:SecurePrefsReliabilityExperiment.kt$SecurePrefsReliabilityExperiment.Companion$Actions</ID>
-    <ID>UndocumentedPublicClass:SecurePrefsReliabilityExperiment.kt$SecurePrefsReliabilityExperiment.Companion$Values</ID>
     <ID>UndocumentedPublicClass:SendCrashReportService.kt$SendCrashReportService : Service</ID>
-    <ID>UndocumentedPublicClass:SendCrashReportService.kt$SendCrashReportService$Companion</ID>
     <ID>UndocumentedPublicClass:SendCrashTelemetryService.kt$SendCrashTelemetryService : Service</ID>
-    <ID>UndocumentedPublicClass:SendCrashTelemetryService.kt$SendCrashTelemetryService$Companion</ID>
     <ID>UndocumentedPublicClass:SendTabUseCases.kt$SendTabUseCases$SendToAllUseCase</ID>
     <ID>UndocumentedPublicClass:SendTabUseCases.kt$SendTabUseCases$SendToDeviceUseCase</ID>
-    <ID>UndocumentedPublicClass:SessionState.kt$PackageCategory$Companion</ID>
-    <ID>UndocumentedPublicClass:SessionState.kt$SessionState.Source$Companion</ID>
     <ID>UndocumentedPublicClass:SessionUseCases.kt$SessionUseCases$DefaultLoadUrlUseCase : LoadUrlUseCase</ID>
     <ID>UndocumentedPublicClass:SessionUseCases.kt$SessionUseCases$ExitFullScreenUseCase</ID>
     <ID>UndocumentedPublicClass:SessionUseCases.kt$SessionUseCases$GoBackUseCase</ID>
@@ -264,63 +279,26 @@
     <ID>UndocumentedPublicClass:SessionUseCases.kt$SessionUseCases$StopLoadingUseCase</ID>
     <ID>UndocumentedPublicClass:SettingUpdater.kt$SettingUpdater&lt;T&gt;</ID>
     <ID>UndocumentedPublicClass:Settings.kt$UnsupportedSetting&lt;T&gt;</ID>
-    <ID>UndocumentedPublicClass:SimpleDownloadDialogFragment.kt$SimpleDownloadDialogFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:SimpleRedirectDialogFragment.kt$SimpleRedirectDialogFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:SiteControlsBuilder.kt$SiteControlsBuilder.CopyAndRefresh$Companion</ID>
-    <ID>UndocumentedPublicClass:SiteControlsBuilder.kt$SiteControlsBuilder.Default$Companion</ID>
     <ID>UndocumentedPublicClass:SitePermissions.kt$SitePermissions$Status</ID>
     <ID>UndocumentedPublicClass:SitePermissionsFeature.kt$SitePermissionsFeature$PromptsStyling</ID>
-    <ID>UndocumentedPublicClass:SitePermissionsFeature.kt$SitePermissionsFeature.DialogConfig$Companion</ID>
     <ID>UndocumentedPublicClass:SitePermissionsRules.kt$SitePermissionsRules$Action</ID>
     <ID>UndocumentedPublicClass:SitePermissionsStorage.kt$SitePermissionsStorage$Permission</ID>
-    <ID>UndocumentedPublicClass:Size.kt$Size$Companion</ID>
-    <ID>UndocumentedPublicClass:StatementRelationChecker.kt$StatementRelationChecker$Companion</ID>
     <ID>UndocumentedPublicClass:StatusBarUtils.kt$StatusBarUtils</ID>
-    <ID>UndocumentedPublicClass:StickyItemLayoutManager.kt$StickyItemsLinearLayoutManager$Companion</ID>
-    <ID>UndocumentedPublicClass:StorageMaintenanceWorker.kt$StorageMaintenanceWorker$Companion</ID>
     <ID>UndocumentedPublicClass:StorageUtils.kt$StorageUtils</ID>
     <ID>UndocumentedPublicClass:Store.kt$Store.Subscription$Binding</ID>
-    <ID>UndocumentedPublicClass:StringLintXmlDetector.kt$StringLintXmlDetector$Companion</ID>
-    <ID>UndocumentedPublicClass:SupportedAddonsChecker.kt$DefaultSupportedAddonsChecker$Companion</ID>
-    <ID>UndocumentedPublicClass:SyncEnginesStorage.kt$SyncEnginesStorage$Companion</ID>
-    <ID>UndocumentedPublicClass:SystemEngine.kt$SystemEngine$Companion</ID>
-    <ID>UndocumentedPublicClass:SystemEngineSession.kt$SystemEngineSession$Companion</ID>
     <ID>UndocumentedPublicClass:SystemEngineSession.kt$SystemEngineSession$WebSetting&lt;T&gt;</ID>
     <ID>UndocumentedPublicClass:SystemEngineSessionState.kt$SystemEngineSessionState : EngineSessionState</ID>
-    <ID>UndocumentedPublicClass:SystemEngineSessionState.kt$SystemEngineSessionState$Companion</ID>
-    <ID>UndocumentedPublicClass:SystemEngineView.kt$SystemEngineView$Companion</ID>
     <ID>UndocumentedPublicClass:SystemEngineView.kt$SystemEngineView$ImageHandler : Handler</ID>
-    <ID>UndocumentedPublicClass:SystemPermissionRequest.kt$SystemPermissionRequest$Companion</ID>
     <ID>UndocumentedPublicClass:TabCounterView.kt$TabCounterView : RelativeLayout</ID>
-    <ID>UndocumentedPublicClass:TabCounterView.kt$TabCounterView$Companion</ID>
     <ID>UndocumentedPublicClass:TabThumbnailView.kt$TabThumbnailView : AppCompatImageView</ID>
-    <ID>UndocumentedPublicClass:TabViewHolder.kt$DefaultTabViewHolder$Companion</ID>
-    <ID>UndocumentedPublicClass:TabsAdapter.kt$TabsAdapter$Companion</ID>
     <ID>UndocumentedPublicClass:TabsUseCases.kt$TabsUseCases$AddNewTabUseCase : LoadUrlUseCase</ID>
     <ID>UndocumentedPublicClass:TabsUseCases.kt$TabsUseCases$DefaultSelectTabUseCase : SelectTabUseCase</ID>
     <ID>UndocumentedPublicClass:TabsUseCases.kt$TabsUseCases$RemoveAllTabsUseCase</ID>
-    <ID>UndocumentedPublicClass:TextViewAndroidSrcXmlDetector.kt$TextViewAndroidSrcXmlDetector$Companion</ID>
     <ID>UndocumentedPublicClass:ThreadUtils.kt$ThreadUtils</ID>
     <ID>UndocumentedPublicClass:Token.kt$Token$Type</ID>
-    <ID>UndocumentedPublicClass:ToolbarActivity.kt$ToolbarActivity$Companion</ID>
-    <ID>UndocumentedPublicClass:ToolbarFeature.kt$ToolbarFeature.RenderStyle$ColoredUrl : RenderStyle</ID>
-    <ID>UndocumentedPublicClass:ToolbarFeature.kt$ToolbarFeature.RenderStyle$RegistrableDomain : RenderStyle</ID>
-    <ID>UndocumentedPublicClass:ToolbarFeature.kt$ToolbarFeature.RenderStyle$UncoloredUrl : RenderStyle</ID>
-    <ID>UndocumentedPublicClass:Trie.kt$Trie$Companion</ID>
     <ID>UndocumentedPublicClass:URLStringUtils.kt$URLStringUtils</ID>
-    <ID>UndocumentedPublicClass:UrlMatcher.kt$UrlMatcher$Companion</ID>
-    <ID>UndocumentedPublicClass:WebAppIntentProcessor.kt$WebAppIntentProcessor$Companion</ID>
-    <ID>UndocumentedPublicClass:WebAppLauncherActivity.kt$WebAppLauncherActivity$Companion</ID>
     <ID>UndocumentedPublicClass:WebAppManifest.kt$WebAppManifest.Icon$Purpose</ID>
-    <ID>UndocumentedPublicClass:WebAppSiteControlsFeature.kt$WebAppSiteControlsFeature$Companion</ID>
-    <ID>UndocumentedPublicClass:WebAuthnFeature.kt$WebAuthnFeature$Companion</ID>
-    <ID>UndocumentedPublicClass:WebExtension.kt$DisabledFlags$Companion</ID>
-    <ID>UndocumentedPublicClass:WebExtension.kt$Incognito$Companion</ID>
-    <ID>UndocumentedPublicClass:WebExtensionActionPopupActivity.kt$WebExtensionActionPopupActivity.WebExtensionActionPopupFragment$Companion</ID>
-    <ID>UndocumentedPublicClass:WebExtensionBrowserMenu.kt$WebExtensionBrowserMenu$Companion</ID>
-    <ID>UndocumentedPublicClass:WebExtensionPlaceholderMenuItem.kt$WebExtensionPlaceholderMenuItem$Companion</ID>
-    <ID>UndocumentedPublicClass:WebURLFinder.kt$WebURLFinder$Companion</ID>
-    <ID>UndocumentedPublicFunction:AppLinksUseCases.kt$AppLinksUseCases.GetAppLinkRedirect$operator fun invoke(url: String): AppLinkRedirect</ID>
+    <ID>UndocumentedPublicFunction:AppLinksUseCases.kt$AppLinksUseCases.GetAppLinkRedirect$@Suppress("CyclomaticComplexMethod") operator fun invoke(url: String): AppLinkRedirect</ID>
     <ID>UndocumentedPublicFunction:Base64.kt$Base64$fun encodeToUriString(data: String)</ID>
     <ID>UndocumentedPublicFunction:BrowserFragment.kt$BrowserFragment.Companion$fun create(sessionId: String? = null)</ID>
     <ID>UndocumentedPublicFunction:BrowserMenu.kt$BrowserMenu$fun dismiss()</ID>
@@ -371,7 +349,6 @@
     <ID>UndocumentedPublicFunction:EngineSession.kt$EngineSession.Observer$fun onProgress(progress: Int)</ID>
     <ID>UndocumentedPublicFunction:EngineSession.kt$EngineSession.Observer$fun onPromptRequest(promptRequest: PromptRequest)</ID>
     <ID>UndocumentedPublicFunction:EngineSession.kt$EngineSession.Observer$fun onRecordingStateChanged(devices: List&lt;RecordingDevice&gt;)</ID>
-    <ID>UndocumentedPublicFunction:EngineSession.kt$EngineSession.Observer$fun onSecurityChange(secure: Boolean, host: String? = null, issuer: String? = null)</ID>
     <ID>UndocumentedPublicFunction:EngineSession.kt$EngineSession.Observer$fun onTitleChange(title: String)</ID>
     <ID>UndocumentedPublicFunction:EngineSession.kt$EngineSession.Observer$fun onTrackerBlocked(tracker: Tracker)</ID>
     <ID>UndocumentedPublicFunction:EngineSession.kt$EngineSession.Observer$fun onTrackerBlockingEnabledChange(enabled: Boolean)</ID>
@@ -388,7 +365,6 @@
     <ID>UndocumentedPublicFunction:FindInPageView.kt$FindInPageView.Listener$fun onFindAll(query: String)</ID>
     <ID>UndocumentedPublicFunction:FindInPageView.kt$FindInPageView.Listener$fun onNextResult()</ID>
     <ID>UndocumentedPublicFunction:FindInPageView.kt$FindInPageView.Listener$fun onPreviousResult()</ID>
-    <ID>UndocumentedPublicFunction:GeckoEngineSession.kt$GeckoEngineSession$@Suppress("ComplexMethod") fun handleLongClick(elementSrc: String?, elementType: Int, uri: String? = null, title: String? = null): HitResult?</ID>
     <ID>UndocumentedPublicFunction:GeckoEngineSessionState.kt$GeckoEngineSessionState.Companion$fun fromJSON(json: JSONObject): GeckoEngineSessionState</ID>
     <ID>UndocumentedPublicFunction:GeckoPermissionRequest.kt$GeckoPermissionRequest.Media.Companion$fun mapPermission(mediaSource: MediaSource): Permission</ID>
     <ID>UndocumentedPublicFunction:Headers.kt$fun List&lt;Header&gt;.toMutableHeaders()</ID>
@@ -429,6 +405,7 @@
     <ID>UndocumentedPublicFunction:MemoryIconLoader.kt$MemoryIconLoader.LoaderMemoryCache$fun getBitmap(request: IconRequest, resource: IconRequest.Resource): Bitmap?</ID>
     <ID>UndocumentedPublicFunction:MemoryIconPreparer.kt$MemoryIconPreparer.PreparerMemoryCache$fun getResources(request: IconRequest): List&lt;IconRequest.Resource&gt;</ID>
     <ID>UndocumentedPublicFunction:MemoryIconProcessor.kt$MemoryIconProcessor.ProcessorMemoryCache$fun put(request: IconRequest, resource: IconRequest.Resource, icon: Icon)</ID>
+    <ID>UndocumentedPublicFunction:Nodes.kt$AstNode$open fun toString(level: Int, isTopLevel: Boolean = true): String</ID>
     <ID>UndocumentedPublicFunction:OkHttpClient.kt$OkHttpClient.Companion$fun getOrCreateCookieManager(): CookieManager</ID>
     <ID>UndocumentedPublicFunction:OriginVerifierFeature.kt$OriginVerifierFeature$suspend fun verify( state: CustomTabState, token: CustomTabsSessionToken, @Relation relation: Int, origin: Uri, ): Boolean</ID>
     <ID>UndocumentedPublicFunction:PermissionRequest.kt$PermissionRequest$fun containsVideoAndAudioSources()</ID>
@@ -496,7 +473,5 @@
     <ID>UndocumentedPublicFunction:Types.kt$fun mozilla.components.concept.sync.TabData.into(): TabHistoryEntry</ID>
     <ID>UndocumentedPublicFunction:WebAppManifestParser.kt$WebAppManifestParser$fun serialize(manifest: WebAppManifest)</ID>
     <ID>UndocumentedPublicFunction:WorkManagerSyncManager.kt$fun getLastSynced(context: Context): Long</ID>
-    <ID>UndocumentedPublicFunction:nodes.kt$AstNode$open fun toString(level: Int, isTopLevel: Boolean = true): String</ID>
-    <ID>WildcardImport:ContextCompatDetector.kt$import com.android.tools.lint.detector.api.*</ID>
   </CurrentIssues>
 </SmellBaseline>

@@ -18,6 +18,7 @@
 #include "gc/ZoneAllocator.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_INTERNAL_INTL_ERROR
 #include "js/Value.h"
+#include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
@@ -26,91 +27,89 @@
 #include "vm/StringType.h"
 
 #include "gc/GCContext-inl.h"
+#include "vm/JSObject-inl.h"
+#include "vm/ObjectOperations-inl.h"
 
-bool js::intl::InitializeObject(JSContext* cx, JS::Handle<JSObject*> obj,
-                                JS::Handle<PropertyName*> initializer,
-                                JS::Handle<JS::Value> locales,
-                                JS::Handle<JS::Value> options) {
-  FixedInvokeArgs<3> args(cx);
+/**
+ * ChainDateTimeFormat ( dateTimeFormat, newTarget, this )
+ * ChainNumberFormat ( numberFormat, newTarget, this )
+ */
+bool js::intl::ChainLegacyIntlFormat(JSContext* cx, JSProtoKey protoKey,
+                                     const JS::CallArgs& args,
+                                     JS::Handle<JSObject*> format) {
+  // Step 1.
+  if (!args.isConstructing() && args.thisv().isObject()) {
+    Rooted<JSObject*> thisValue(cx, &args.thisv().toObject());
 
-  args[0].setObject(*obj);
-  args[1].set(locales);
-  args[2].set(options);
+    Rooted<JSObject*> proto(cx,
+                            GlobalObject::getOrCreatePrototype(cx, protoKey));
+    if (!proto) {
+      return false;
+    }
 
-  RootedValue ignored(cx);
-  if (!CallSelfHostedFunction(cx, initializer, JS::NullHandleValue, args,
-                              &ignored)) {
-    return false;
+    bool isPrototype;
+    if (!IsPrototypeOf(cx, proto, thisValue, &isPrototype)) {
+      return false;
+    }
+
+    if (isPrototype) {
+      auto* fallback = cx->global()->globalIntlData().fallbackSymbol(cx);
+      if (!fallback) {
+        return false;
+      }
+
+      // Step 1.a.
+      Rooted<PropertyKey> id(cx, JS::PropertyKey::Symbol(fallback));
+      Rooted<Value> value(cx, ObjectValue(*format));
+      if (!DefineDataProperty(cx, thisValue, id, value,
+                              JSPROP_READONLY | JSPROP_PERMANENT)) {
+        return false;
+      }
+
+      // Step 1.b.
+      args.rval().set(args.thisv());
+      return true;
+    }
   }
 
-  MOZ_ASSERT(ignored.isUndefined(),
-             "Unexpected return value from Intl object initializer");
+  // Step 2.
+  args.rval().setObject(*format);
   return true;
 }
 
-bool js::intl::InitializeDateTimeFormatObject(
-    JSContext* cx, JS::Handle<JSObject*> obj, JS::Handle<JS::Value> thisValue,
-    JS::Handle<JS::Value> locales, JS::Handle<JS::Value> options,
-    JS::Handle<JSString*> required, JS::Handle<JSString*> defaults,
-    JS::Handle<JS::Value> toLocaleStringTimeZone,
-    DateTimeFormatOptions dtfOptions, JS::MutableHandle<JS::Value> result) {
-  Handle<PropertyName*> initializer = cx->names().InitializeDateTimeFormat;
+/**
+ * UnwrapDateTimeFormat ( dtf )
+ * UnwrapNumberFormat ( nf )
+ */
+bool js::intl::UnwrapLegacyIntlFormat(JSContext* cx, JSProtoKey protoKey,
+                                      JS::Handle<JSObject*> format,
+                                      JS::MutableHandle<JS::Value> result) {
+  // Step 1. (Performed in caller)
 
-  FixedInvokeArgs<8> args(cx);
-
-  args[0].setObject(*obj);
-  args[1].set(thisValue);
-  args[2].set(locales);
-  args[3].set(options);
-  args[4].setString(required);
-  args[5].setString(defaults);
-  args[6].set(toLocaleStringTimeZone);
-  args[7].setBoolean(dtfOptions == DateTimeFormatOptions::EnableMozExtensions);
-
-  if (!CallSelfHostedFunction(cx, initializer, NullHandleValue, args, result)) {
+  // Step 2. (Partial)
+  Rooted<JSObject*> proto(cx, GlobalObject::getOrCreatePrototype(cx, protoKey));
+  if (!proto) {
     return false;
   }
 
-  MOZ_ASSERT(result.isObject(),
-             "Intl.DateTimeFormat initializer must return an object");
-  return true;
-}
-
-bool js::intl::InitializeNumberFormatObject(
-    JSContext* cx, JS::Handle<JSObject*> obj, JS::Handle<JS::Value> thisValue,
-    JS::Handle<JS::Value> locales, JS::Handle<JS::Value> options,
-    JS::MutableHandle<JS::Value> result) {
-  Handle<PropertyName*> initializer = cx->names().InitializeNumberFormat;
-
-  FixedInvokeArgs<4> args(cx);
-
-  args[0].setObject(*obj);
-  args[1].set(thisValue);
-  args[2].set(locales);
-  args[3].set(options);
-
-  if (!CallSelfHostedFunction(cx, initializer, NullHandleValue, args, result)) {
+  bool isPrototype;
+  if (!IsPrototypeOf(cx, proto, format, &isPrototype)) {
     return false;
   }
 
-  MOZ_ASSERT(result.isObject(),
-             "Intl.NumberFormat initializer must return an object");
-  return true;
-}
+  if (isPrototype) {
+    auto* fallback = cx->global()->globalIntlData().fallbackSymbol(cx);
+    if (!fallback) {
+      return false;
+    }
 
-JSObject* js::intl::GetInternalsObject(JSContext* cx,
-                                       JS::Handle<JSObject*> obj) {
-  FixedInvokeArgs<1> args(cx);
-
-  args[0].setObject(*obj);
-
-  RootedValue v(cx);
-  if (!js::CallSelfHostedFunction(cx, cx->names().getInternals, NullHandleValue,
-                                  args, &v)) {
-    return nullptr;
+    Rooted<PropertyKey> id(cx, JS::PropertyKey::Symbol(fallback));
+    return GetProperty(cx, format, format, id, result);
   }
 
-  return &v.toObject();
+  // Step 3.
+  result.setObject(*format);
+  return true;
 }
 
 void js::intl::ReportInternalError(JSContext* cx) {
@@ -134,31 +133,19 @@ void js::intl::ReportInternalError(JSContext* cx,
   MOZ_CRASH("Unexpected ICU error");
 }
 
-const js::intl::OldStyleLanguageTagMapping
-    js::intl::oldStyleLanguageTagMappings[] = {
-        {"pa-PK", "pa-Arab-PK"}, {"zh-CN", "zh-Hans-CN"},
-        {"zh-HK", "zh-Hant-HK"}, {"zh-SG", "zh-Hans-SG"},
-        {"zh-TW", "zh-Hant-TW"},
-};
-
 js::UniqueChars js::intl::EncodeLocale(JSContext* cx, JSString* locale) {
   MOZ_ASSERT(locale->length() > 0);
 
   js::UniqueChars chars = EncodeAscii(cx, locale);
-
-#ifdef DEBUG
-  // Ensure the returned value contains only valid BCP 47 characters.
-  // (Lambdas can't be placed inside MOZ_ASSERT, so move the checks in an
-  // #ifdef block.)
-  if (chars) {
-    auto alnumOrDash = [](char c) {
-      return mozilla::IsAsciiAlphanumeric(c) || c == '-';
-    };
-    MOZ_ASSERT(mozilla::IsAsciiAlpha(chars[0]));
-    MOZ_ASSERT(
-        std::all_of(chars.get(), chars.get() + locale->length(), alnumOrDash));
+  if (!chars) {
+    return nullptr;
   }
-#endif
+
+  // Ensure the returned value contains only valid BCP 47 characters.
+  MOZ_ASSERT(mozilla::IsAsciiAlpha(chars[0]));
+  MOZ_ASSERT(std::all_of(
+      chars.get(), chars.get() + locale->length(),
+      [](char c) { return mozilla::IsAsciiAlphanumeric(c) || c == '-'; }));
 
   return chars;
 }

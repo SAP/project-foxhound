@@ -111,7 +111,7 @@ class APIObject {
    *  - Only non-internal errors are exposed to the caller
    *
    * @param {string} apiRequest The command to invoke in the parent process.
-   * @param {array<cloneable>} apiArgs The arguments to include with the
+   * @param {Array<cloneable>} apiArgs The arguments to include with the
    *                                   request to the parent process.
    * @param {function} resultConvert If provided, a function called with the
    *                                 result from the parent process as an

@@ -11,7 +11,10 @@
 // Loading a toplevel frameset
 add_task(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.navigation.requireUserInteraction", false]],
+    set: [
+      ["browser.navigation.requireUserInteraction", false],
+      ["dom.navigation.webidl.enabled", true],
+    ],
   });
 
   let testURL =
@@ -67,6 +70,20 @@ add_task(async function () {
       "frame " + i + " has the right url"
     );
   }
+
+  let expectedUrls = ["c", "c1", "c2"].map(
+    url => `${getRootDirectory(gTestPath)}browser_frame_history_${url}.html`
+  );
+  let entryUrls = frames[2].contentWindow.navigation
+    .entries()
+    .map(entry => entry.url);
+  for (const [entryUrl, expectedUrl] of expectedUrls.map((url, i) => [
+    entryUrls[i],
+    url,
+  ])) {
+    is(entryUrl, expectedUrl, "frame 2 NHE has correct url");
+  }
+
   gBrowser.removeTab(newTab);
 });
 

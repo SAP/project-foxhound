@@ -20,6 +20,12 @@ function closeIdentityPopup() {
   return promise;
 }
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.trustPanel.featureGate", false]],
+  });
+});
+
 // This test checks applied WebExtension themes that attempt to change
 // popup properties
 

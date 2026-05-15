@@ -4,15 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "zlib.h"
 #include "ScriptLoadRequest.h"
 #include "ScriptLoader.h"
 #include "mozilla/PerfStats.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/Vector.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/Vector.h"
+#include "zlib.h"
 
 using namespace mozilla;
 

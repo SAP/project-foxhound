@@ -107,14 +107,14 @@ add_setup(async function () {
   }
 
   SearchTestUtils.setRemoteSettingsConfig(partialConfig);
-  await Services.search.init();
+  await SearchService.init();
 });
 
 for (let test of TESTS) {
   add_task(async function () {
     info("Testing engine: " + test.engineId);
 
-    let engine = Services.search.getEngineById(test.engineId);
+    let engine = SearchService.getEngineById(test.engineId);
     if (test.icons) {
       for (let icon of test.icons) {
         let engineIconURL = await engine.getIconURL(icon.imageSize);

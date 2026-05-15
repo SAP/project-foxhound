@@ -62,7 +62,7 @@ add_task(async function test_region_detect() {
   // current region is supported, the autocomplete items from a unsupported
   // region should not appear in the dropdown. If the current region is not
   // supported, then address autocomplete is not available.
-  await performTest("CA", 4);
+  await performTest("CA", 3);
   await performTest("DE", 0);
 
   await SpecialPowers.popPrefEnv();
@@ -79,8 +79,8 @@ add_task(async function test_region_on() {
 
   // When extensions.formautofill.addresses.supported is "on", all of the
   // autocomplete items should appear in the list.
-  await performTest("CA", 5);
-  await performTest("DE", 5);
+  await performTest("CA", 4);
+  await performTest("DE", 4);
 
   await SpecialPowers.popPrefEnv();
 });
@@ -95,8 +95,8 @@ add_task(async function test_region_experiments_enabled() {
   });
 
   // When experiments are enabled, autocomplete is enabled in all regions.
-  await performTest("CA", 5);
-  await performTest("DE", 5);
+  await performTest("CA", 4);
+  await performTest("DE", 4);
 
   await SpecialPowers.popPrefEnv();
 });

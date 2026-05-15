@@ -1,7 +1,7 @@
 import pytest
 
 URL = "https://www.beterbed.nl/matrassen/m-line?SelectedFacetIds[1dfabd26b0e444e68fc92fd50281f0be]=M%20line&SortBy=DiscountPercentage"
-CONTAINER_CSS = ".top-navigation__items.slider-content"
+CONTAINER_CSS = ".slider-content"
 
 
 async def is_scrollbar_visible(client):

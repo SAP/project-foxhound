@@ -17,7 +17,6 @@ server.registerPathHandler("/", (req, res) => {
 let gTabLookupSpy;
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
 
   // Install a spy on WebRequest.getTabIdForChannelWrapper.

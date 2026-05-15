@@ -9,6 +9,7 @@
     android:layout_height="wrap_content"
     android:minHeight="48dp"
     android:paddingEnd="15dp"
+    android:textColor="?attr/colorOnSurface"
     android:paddingStart="15dp"
     android:gravity="center_vertical"
     android:background="@drawable/etp_spinner_item_background"

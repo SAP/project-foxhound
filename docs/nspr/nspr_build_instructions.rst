@@ -7,7 +7,7 @@ Prerequisites
 On Windows, the NSPR build system needs GNU make and a Unix command-line
 utility suite such as MKS Toolkit, Cygwin, and MSYS. The easiest way to
 get these tools is to install the
-:ref:`MozillaBuild` package.
+``MozillaBuild`` package.
 
 Introduction
 ~~~~~~~~~~~~

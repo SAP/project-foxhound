@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 import mozfile
-from gecko_taskgraph.target_tasks import filter_by_uncommon_try_tasks
 from mach.util import get_state_dir
 from mozboot.util import http_download_and_save
 from mozbuild.base import MozbuildObject
@@ -19,10 +18,6 @@ from packaging.version import Version
 
 from ..push import check_working_directory
 from ..tasks import generate_tasks
-from ..util.manage_estimates import (
-    download_task_history_data,
-    make_trimmed_taskgraph_cache,
-)
 
 terminal = Terminal()
 
@@ -321,9 +316,9 @@ def format_header():
 
 def run_fzf(cmd, tasks):
     env = dict(os.environ)
-    env.update(
-        {"PYTHONPATH": os.pathsep.join([p for p in sys.path if "requests" in p])}
-    )
+    env.update({
+        "PYTHONPATH": os.pathsep.join([p for p in sys.path if "requests" in p])
+    })
     # Make sure fzf uses Windows' shell rather than MozillaBuild bash or
     # whatever our caller uses, since it doesn't quote the arguments properly
     # and thus windows paths like: C:\moz\foo end up as C:mozfoo...
@@ -355,8 +350,9 @@ def setup_tasks_for_fzf(
     parameters,
     full=False,
     disable_target_task_filter=False,
-    show_estimates=True,
 ):
+    from gecko_taskgraph.target_tasks import filter_by_uncommon_try_tasks
+
     check_working_directory(push)
     tg = generate_tasks(
         parameters, full=full, disable_target_task_filter=disable_target_task_filter
@@ -367,30 +363,16 @@ def setup_tasks_for_fzf(
     cache_dir = os.path.join(
         get_state_dir(specific_to_topsrcdir=True), "cache", "taskgraph"
     )
-    if full:
-        graph_cache = os.path.join(cache_dir, "full_task_graph")
-        dep_cache = os.path.join(cache_dir, "full_task_dependencies")
-        target_set = os.path.join(cache_dir, "full_task_set")
-    else:
-        graph_cache = os.path.join(cache_dir, "target_task_graph")
-        dep_cache = os.path.join(cache_dir, "target_task_dependencies")
-        target_set = os.path.join(cache_dir, "target_task_set")
-
-    if show_estimates:
-        download_task_history_data(cache_dir=cache_dir)
-        make_trimmed_taskgraph_cache(graph_cache, dep_cache, target_file=target_set)
 
     if not full and not disable_target_task_filter:
         # Put all_tasks into a list because it's used multiple times, and "filter()"
         # returns a consumable iterator.
         all_tasks = list(filter(filter_by_uncommon_try_tasks, all_tasks))
 
-    return all_tasks, dep_cache, cache_dir
+    return all_tasks, cache_dir
 
 
-def build_base_cmd(
-    fzf, dep_cache, cache_dir, show_estimates=True, preview_script=PREVIEW_SCRIPT
-):
+def build_base_cmd(fzf, preview_script=PREVIEW_SCRIPT):
     key_shortcuts = [k + ":" + v for k, v in fzf_shortcuts.items()]
     base_cmd = [
         fzf,
@@ -401,21 +383,8 @@ def build_base_cmd(
         format_header(),
         "--preview-window=right:30%",
         "--print-query",
+        "--preview",
+        f'{sys.executable} {preview_script} -t "{{+f}}"',
     ]
-
-    if show_estimates:
-        base_cmd.extend(
-            [
-                "--preview",
-                f'{sys.executable} {preview_script} -g {dep_cache} -s -c {cache_dir} -t "{{+f}}"',
-            ]
-        )
-    else:
-        base_cmd.extend(
-            [
-                "--preview",
-                f'{sys.executable} {preview_script} -t "{{+f}}"',
-            ]
-        )
 
     return base_cmd

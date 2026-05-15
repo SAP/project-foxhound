@@ -38,6 +38,19 @@ function getURL() {
   return url;
 }
 
+function getAddonName() {
+  var url = document.documentURI;
+  var match = url.match(/&a=([^&]+)/);
+
+  // match == null if not found; if so, return an empty string
+  // instead of what would turn out to be portions of the URI
+  if (!match) {
+    return "";
+  }
+
+  return decodeURIComponent(match[1]);
+}
+
 /**
  * Check whether this warning page is overridable or not, in which case
  * the "ignore the risk" suggestion in the error description
@@ -72,6 +85,7 @@ function initPage() {
     deceptiveBlocked: "phishing",
     unwantedBlocked: "unwanted",
     harmfulBlocked: "harmful",
+    addonBlocked: "addon",
   };
   const error = errorMap[getErrorCode()];
   if (error === undefined) {
@@ -108,6 +122,25 @@ function initPage() {
       innerDescNoOverride: "safeb-blocked-harmful-page-error-desc-no-override",
       learnMore: "safeb-blocked-harmful-page-learn-more",
     },
+    addon: {
+      title: "safeb-blocked-addon-page-title",
+      shortDesc: "safeb-blocked-addon-page-short-desc",
+      innerDescOverride: [
+        "safeb-blocked-addon-page-error-desc-override",
+        "safeb-blocked-addon-page-error-desc2-override",
+        "",
+        "safeb-blocked-addon-page-error-desc3-override",
+        "safeb-blocked-addon-page-error-desc4-override",
+      ],
+      innerDescNoOverride: [
+        "safeb-blocked-addon-page-error-desc-override",
+        "safeb-blocked-addon-page-error-desc2-override",
+        "",
+        "safeb-blocked-addon-page-error-desc3-override",
+        "safeb-blocked-addon-page-error-desc4-override",
+      ],
+      learnMore: "safeb-blocked-addon-page-learn-more3",
+    },
   };
 
   // Set page contents depending on type of blocked page
@@ -126,14 +159,35 @@ function initPage() {
   } else {
     innerDescL10nID = messageIDs[error].innerDescOverride;
   }
-  if (error == "unwanted" || error == "harmful") {
+  if (error == "unwanted" || error == "harmful" || error == "addon") {
     document.getElementById("report_detection").remove();
   }
 
-  // Add the inner description:
-  document.l10n.setAttributes(innerDesc, innerDescL10nID, {
+  const descArgs = {
     sitename: getHostString(),
-  });
+    addonName: getAddonName(),
+  };
+
+  // Add the inner description:
+  if (Array.isArray(innerDescL10nID)) {
+    const template = innerDesc.cloneNode(true);
+
+    while (innerDesc.firstChild) {
+      innerDesc.firstChild.remove();
+    }
+
+    for (const id of innerDescL10nID) {
+      if (id === "") {
+        innerDesc.appendChild(document.createElement("br"));
+      }
+
+      const node = template.cloneNode(true);
+      document.l10n.setAttributes(node, id, descArgs);
+      innerDesc.appendChild(node);
+    }
+  } else {
+    document.l10n.setAttributes(innerDesc, innerDescL10nID, descArgs);
+  }
 
   // Add the learn more content:
   let learnMore = document.getElementById("learn_more");

@@ -7,7 +7,7 @@ import { BaseAction } from "resource://normandy/actions/BaseAction.sys.mjs";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionSchemas: "resource://normandy/actions/schemas/index.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   PreferenceRollouts: "resource://normandy/lib/PreferenceRollouts.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.sys.mjs",
@@ -142,6 +142,7 @@ export class PreferenceRolloutAction extends BaseAction {
    * Check that all the preferences in a rollout are ok to set. This means 1) no
    * other rollout is managing them, and 2) they match the types of the builtin
    * values.
+   *
    * @param {PreferenceRollout} rollout The arguments from a rollout recipe.
    * @throws If the preferences are not valid, with details in the error message.
    */

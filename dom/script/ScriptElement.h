@@ -8,9 +8,11 @@
 #define mozilla_dom_ScriptElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsIScriptLoaderObserver.h"
 #include "nsIScriptElement.h"
+#include "nsIScriptLoaderObserver.h"
 #include "nsStubMutationObserver.h"
+
+class nsIParser;
 
 namespace mozilla::dom {
 
@@ -47,10 +49,16 @@ class ScriptElement : public nsIScriptElement, public nsStubMutationObserver {
    */
   virtual bool HasExternalScriptContent() = 0;
 
-  virtual bool MaybeProcessScript() override;
+  virtual bool MaybeProcessScript(nsCOMPtr<nsIParser> aParser) override;
 
+  virtual MOZ_CAN_RUN_SCRIPT nsresult
+  GetTrustedTypesCompliantInlineScriptText(nsString& aSourceText) override;
+
+ private:
   // https://github.com/w3c/trusted-types/pull/579
   void UpdateTrustWorthiness(MutationEffectOnScript aMutationEffectOnScript);
+
+  bool MaybeProcessScript(const nsAString& aSourceText);
 };
 
 }  // namespace mozilla::dom

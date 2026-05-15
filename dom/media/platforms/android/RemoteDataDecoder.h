@@ -8,6 +8,7 @@
 #include "AndroidDecoderModule.h"
 #include "SurfaceTexture.h"
 #include "TimeUnits.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/java/CodecProxyWrappers.h"
 
@@ -54,10 +55,7 @@ class RemoteDataDecoder : public MediaDataDecoder,
   }
 
   enum class State { DRAINED, DRAINABLE, DRAINING, SHUTDOWN };
-  void SetState(State aState) {
-    AssertOnThread();
-    mState = aState;
-  }
+  void SetState(State aState);
   State GetState() const {
     AssertOnThread();
     return mState;
@@ -103,6 +101,7 @@ class RemoteDataDecoder : public MediaDataDecoder,
   MozPromiseHolder<DecodePromise> mDecodePromise;
   MozPromiseHolder<DecodePromise> mDrainPromise;
   DecodedData mDecodedData;
+  Maybe<MediaResult> mDecodeError;
   State mState = State::DRAINED;
   size_t mNumPendingInputs;
 };

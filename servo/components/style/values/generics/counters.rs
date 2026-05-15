@@ -8,6 +8,7 @@
 use crate::computed_values::list_style_type::T as ListStyleType;
 #[cfg(feature = "gecko")]
 use crate::counter_style::CounterStyle;
+use crate::derives::*;
 use crate::values::specified::Attr;
 use crate::values::CustomIdent;
 use std::fmt::{self, Write};
@@ -72,6 +73,7 @@ where
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct GenericCounterIncrement<I>(#[css(field_bound)] pub GenericCounters<I>);
@@ -106,6 +108,7 @@ impl<I> Deref for CounterIncrement<I> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct GenericCounterSet<I>(#[css(field_bound)] pub GenericCounters<I>);
@@ -140,6 +143,7 @@ impl<I> Deref for CounterSet<I> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct GenericCounterReset<I>(#[css(field_bound)] pub GenericCounters<I>);
@@ -242,7 +246,16 @@ where
 ///
 /// https://drafts.csswg.org/css-content/#propdef-content
 #[derive(
-    Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToShmem,
+    Clone,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum GenericContent<Image> {

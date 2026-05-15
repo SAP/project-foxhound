@@ -63,8 +63,7 @@ bool OffThreadPromiseTask::init(JSContext* cx,
   OffThreadPromiseRuntimeState& state = runtime_->offThreadPromiseState.ref();
   MOZ_ASSERT(state.initialized());
 
-  state.numRegistered_++;
-  registered_ = true;
+  state.registerTask(cx, this);
   return true;
 }
 
@@ -88,14 +87,22 @@ bool OffThreadPromiseTask::InitCancellable(
     return false;
   }
 
-  OffThreadPromiseTask* rawTask = task.release();
-  if (!state.cancellable().putNew(rawTask)) {
-    state.numRegistered_--;
-    rawTask->registered_ = false;
+  if (!state.cancellable().putNew(task.get())) {
+    // The task will be freed because it's only owned by this function. Eagerly
+    // unregister it now using the provided helper thread lock so that it
+    // doesn't need to be reacquired.
+    task->unregister(state, lock);
     ReportOutOfMemory(cx);
     return false;
   }
+
+  // We're infallible from this point on.
+  OffThreadPromiseTask* rawTask = task.release();
+
+  // Only mark the task as cancellable once we've added it to the cancellable
+  // set. The destructor will remove from the set if this flag is set.
   rawTask->cancellable_ = true;
+
   return true;
 }
 
@@ -106,12 +113,7 @@ void OffThreadPromiseTask::unregister(OffThreadPromiseRuntimeState& state) {
 void OffThreadPromiseTask::unregister(OffThreadPromiseRuntimeState& state,
                                       const AutoLockHelperThreadState& lock) {
   MOZ_ASSERT(registered_);
-  if (cancellable_) {
-    cancellable_ = false;
-    state.cancellable().remove(this);
-  }
-  state.numRegistered_--;
-  registered_ = false;
+  state.unregisterTask(this);
 }
 
 void OffThreadPromiseTask::run(JSContext* cx,
@@ -229,8 +231,7 @@ void OffThreadPromiseTask::DispatchResolveAndDestroy(
   {
     // Hazard analysis can't tell that the callback does not GC.
     JS::AutoSuppressGCAnalysis nogc;
-    if (state.dispatchToEventLoopCallback_(state.dispatchToEventLoopClosure_,
-                                           std::move(task))) {
+    if (state.dispatchToEventLoop(std::move(task))) {
       return;
     }
   }
@@ -248,24 +249,34 @@ void OffThreadPromiseTask::DispatchResolveAndDestroy(
 OffThreadPromiseRuntimeState::OffThreadPromiseRuntimeState()
     : dispatchToEventLoopCallback_(nullptr),
       delayedDispatchToEventLoopCallback_(nullptr),
+      asyncTaskStartedCallback_(nullptr),
+      asyncTaskFinishedCallback_(nullptr),
       dispatchToEventLoopClosure_(nullptr),
+#ifdef DEBUG
+      forceQuitting_(false),
+#endif
       numRegistered_(0),
-      internalDispatchQueueClosed_(false) {}
+      internalDispatchQueueClosed_(false) {
+}
 
 OffThreadPromiseRuntimeState::~OffThreadPromiseRuntimeState() {
-  MOZ_ASSERT(numRegistered_ == 0);
-  MOZ_ASSERT(numDelayed_ == 0);
-  MOZ_ASSERT(internalDispatchQueue_.refNoCheck().empty());
+  MOZ_ASSERT_IF(!forceQuitting_, numRegistered_ == 0);
+  MOZ_ASSERT_IF(!forceQuitting_, numDelayed_ == 0);
+  MOZ_ASSERT_IF(!forceQuitting_, internalDispatchQueue_.refNoCheck().empty());
   MOZ_ASSERT(!initialized());
 }
 
 void OffThreadPromiseRuntimeState::init(
-    JS::DispatchToEventLoopCallback callback,
-    JS::DelayedDispatchToEventLoopCallback delayedCallback, void* closure) {
+    JS::DispatchToEventLoopCallback dispatchCallback,
+    JS::DelayedDispatchToEventLoopCallback delayedDispatchCallback,
+    JS::AsyncTaskStartedCallback asyncTaskStartedCallback,
+    JS::AsyncTaskFinishedCallback asyncTaskFinishedCallback, void* closure) {
   MOZ_ASSERT(!initialized());
 
-  dispatchToEventLoopCallback_ = callback;
-  delayedDispatchToEventLoopCallback_ = delayedCallback;
+  dispatchToEventLoopCallback_ = dispatchCallback;
+  delayedDispatchToEventLoopCallback_ = delayedDispatchCallback;
+  asyncTaskStartedCallback_ = asyncTaskStartedCallback;
+  asyncTaskFinishedCallback_ = asyncTaskFinishedCallback;
   dispatchToEventLoopClosure_ = closure;
 
   MOZ_ASSERT(initialized());
@@ -281,6 +292,46 @@ bool OffThreadPromiseRuntimeState::delayedDispatchToEventLoop(
     js::UniquePtr<JS::Dispatchable>&& dispatchable, uint32_t delay) {
   return delayedDispatchToEventLoopCallback_(dispatchToEventLoopClosure_,
                                              std::move(dispatchable), delay);
+}
+
+void OffThreadPromiseRuntimeState::registerTask(JSContext* cx,
+                                                OffThreadPromiseTask* task) {
+  // Track the total number of pending async tasks
+  numRegistered_++;
+
+  // Mark the task as registered
+  task->registered_ = true;
+
+  if (!asyncTaskStartedCallback_) {
+    return;
+  }
+
+  // The embedder must not perform a GC, suppress GC analysis here.
+  JS::AutoSuppressGCAnalysis nogc(cx);
+  asyncTaskStartedCallback_(dispatchToEventLoopClosure_, task);
+}
+
+void OffThreadPromiseRuntimeState::unregisterTask(OffThreadPromiseTask* task) {
+  // Track the total number of pending async tasks
+  MOZ_ASSERT(numRegistered_ != 0);
+  numRegistered_--;
+
+  // Mark the task as unregistered
+  task->registered_ = false;
+
+  // If the task was cancellable, remove from our cancellable set.
+  if (task->cancellable_) {
+    task->cancellable_ = false;
+    cancellable().remove(task);
+  }
+
+  if (!asyncTaskFinishedCallback_) {
+    return;
+  }
+
+  // The embedder must not perform a GC, suppress GC analysis here.
+  JS::AutoSuppressGCAnalysis nogc;
+  asyncTaskFinishedCallback_(dispatchToEventLoopClosure_, task);
 }
 
 /* static */
@@ -350,8 +401,13 @@ void OffThreadPromiseRuntimeState::dispatchDelayedTasks() {
     return;
   }
 
-  mozilla::TimeStamp now = mozilla::TimeStamp::Now();
   auto& queue = internalDelayedDispatchPriorityQueue();
+
+  if (queue.empty()) {
+    return;
+  }
+
+  mozilla::TimeStamp now = mozilla::TimeStamp::Now();
 
   while (!queue.empty() && queue.highest().endTime() <= now) {
     DelayedDispatchable d(std::move(queue.highest()));
@@ -371,7 +427,8 @@ bool OffThreadPromiseRuntimeState::usingInternalDispatchQueue() const {
 }
 
 void OffThreadPromiseRuntimeState::initInternalDispatchQueue() {
-  init(internalDispatchToEventLoop, internalDelayedDispatchToEventLoop, this);
+  init(internalDispatchToEventLoop, internalDelayedDispatchToEventLoop, nullptr,
+       nullptr, this);
   MOZ_ASSERT(usingInternalDispatchQueue());
 }
 
@@ -437,6 +494,32 @@ void OffThreadPromiseRuntimeState::stealFailedTask(JS::Dispatchable* task) {
   }
 }
 
+void OffThreadPromiseRuntimeState::cancelTasks(
+    js::AutoLockHelperThreadState& lock, JSContext* cx) {
+  MOZ_ASSERT(initialized());
+  if (!initialized()) {
+    return;
+  }
+
+  // Cancel all undispatched tasks that are cancellable.
+  for (auto iter = cancellable().modIter(); !iter.done(); iter.next()) {
+    OffThreadPromiseTask* task = iter.get();
+    MOZ_ASSERT(task->cancellable_);
+    iter.remove();
+
+    OffThreadPromiseTask::DestroyUndispatchedTask(task, *this, lock);
+  }
+}
+
+void OffThreadPromiseRuntimeState::cancelTasks(JSContext* cx) {
+  if (!initialized()) {
+    return;
+  }
+
+  AutoLockHelperThreadState lock;
+  cancelTasks(lock, cx);
+}
+
 void OffThreadPromiseRuntimeState::shutdown(JSContext* cx) {
   if (!initialized()) {
     return;
@@ -445,13 +528,7 @@ void OffThreadPromiseRuntimeState::shutdown(JSContext* cx) {
   AutoLockHelperThreadState lock;
 
   // Cancel all undispatched tasks.
-  for (auto iter = cancellable().modIter(); !iter.done(); iter.next()) {
-    OffThreadPromiseTask* task = iter.get();
-    MOZ_ASSERT(task->cancellable_);
-    iter.remove();
-
-    OffThreadPromiseTask::DestroyUndispatchedTask(task, *this, lock);
-  }
+  cancelTasks(lock, cx);
   MOZ_ASSERT(cancellable().empty());
 
   // When the shell is using the internal event loop, we must simulate our
@@ -527,18 +604,11 @@ js::PromiseObject* OffThreadPromiseTask::ExtractAndForget(
       task->runtime()->offThreadPromiseState.ref();
   MOZ_ASSERT(state.initialized());
   MOZ_ASSERT(task->registered_);
-
-  // TODO: This has overlap with removeFromCancellableListAndDispatch.
-  // The two methods should be refactored so that they are consistant and
-  // we don't have unnecessary repetition or distribution of responsibilities.
-  state.numRegistered_--;
-  if (task->cancellable_) {
-    state.cancellable().remove(task);
-  }
-  task->registered_ = false;
-
   js::PromiseObject* promise = task->promise_;
+  // Call the unregister method manually with our provided lock, otherwise the
+  // destructor will try to acquire it and fail.
+  task->unregister(state, lock);
+  // Now we can call the destructor.
   js_delete(task);
-
   return promise;
 }

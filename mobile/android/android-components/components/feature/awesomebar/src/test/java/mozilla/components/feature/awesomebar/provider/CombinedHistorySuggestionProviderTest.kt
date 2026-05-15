@@ -6,7 +6,6 @@ package mozilla.components.feature.awesomebar.provider
 
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.storage.DocumentType
 import mozilla.components.concept.storage.HistoryMetadata
@@ -29,7 +28,6 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class CombinedHistorySuggestionProviderTest {
 

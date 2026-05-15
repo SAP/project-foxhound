@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ExtraFileParser_h__
-#define ExtraFileParser_h__
+#ifndef ExtraFileParser_h_
+#define ExtraFileParser_h_
 
 #include "js/JSON.h"  // JS::JSONParseHandler
 
@@ -53,4 +53,4 @@ class ExtraFileParser : public JS::JSONParseHandler {
 
 }  // namespace CrashReporter
 
-#endif  // ExtraFileParser_h__
+#endif  // ExtraFileParser_h_

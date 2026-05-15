@@ -349,13 +349,11 @@ if target_platform() == "WINNT":
             self.add_test_files(test_files)
             # mock calls to `dump_syms`, `hg parent` and
             # `hg showconfig paths.default`
-            mock_Popen.return_value.stdout = iter(
-                [
-                    "MODULE os x86 %s %s" % ("X" * 33, test_files[0]),
-                    "FILE 0 %s" % sourcefile,
-                    "PUBLIC xyz 123",
-                ]
-            )
+            mock_Popen.return_value.stdout = iter([
+                "MODULE os x86 %s %s" % ("X" * 33, test_files[0]),
+                "FILE 0 %s" % sourcefile,
+                "PUBLIC xyz 123",
+            ])
             mock_Popen.return_value.wait.return_value = 0
             mock_communicate = mock_Popen.return_value.communicate
             mock_communicate.side_effect = [

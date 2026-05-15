@@ -5,11 +5,13 @@
 package org.mozilla.fenix.ui
 
 import android.content.Intent
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import mozilla.components.service.nimbus.messaging.FxNimbusMessaging
 import mozilla.components.service.nimbus.messaging.MessageData
 import mozilla.components.service.nimbus.messaging.Messaging
 import mozilla.components.service.nimbus.messaging.StyleData
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.experiments.nimbus.Res
@@ -27,7 +29,6 @@ import org.mozilla.fenix.ui.robots.homeScreen
  *
  *  Verifies a message can be displayed with all of the correct components
 **/
-
 class NimbusMessagingHomescreenTest : TestSetup() {
     private var messageButtonLabel = "CLICK ME"
     private var messageText = "Some Nimbus Messaging text"
@@ -45,6 +46,9 @@ class NimbusMessagingHomescreenTest : TestSetup() {
     @Rule
     @JvmField
     val retryTestRule = RetryTestRule(3)
+
+    val composeTestRule =
+        AndroidComposeTestRule(HomeActivityIntentTestRule.withDefaultSettingsOverrides()) { it.activity }
 
     @Before
     override fun setUp() {
@@ -97,7 +101,7 @@ class NimbusMessagingHomescreenTest : TestSetup() {
     @Test
     fun testNimbusMessageIsDisplayed() {
         // Checks the home screen card message is displayed correctly
-        homeScreen {
+        homeScreen(composeTestRule) {
             verifyNimbusMessageCard(messageTitle, messageText, messageButtonLabel)
         }
     }

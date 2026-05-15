@@ -22,12 +22,12 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "finalizationService",
   "@mozilla.org/toolkit/finalizationwitness;1",
-  "nsIFinalizationWitnessService"
+  Ci.nsIFinalizationWitnessService
 );
 
 /**
  * @typedef {number} ElementID
- * @typedef {Object} ElementIdentifier
+ * @typedef {object} ElementIdentifier
  */
 
 const FINALIZATION_TOPIC = "content-dom-reference-finalized";

@@ -8,7 +8,7 @@ task-defaults:
         name: xpcshell
     target:
         by-test-platform:
-            android-em-7.*: geckoview-test_runner.apk
+            android-em.*: geckoview-test_runner.apk
             windows11-64-24h2.*:
                 by-variant:
                     msix: target.installer.msix
@@ -21,9 +21,9 @@ task-defaults:
                 default: desktop_unittest.py
         config:
             by-test-platform:
-                android-em-7.*:
+                android-em-14.*:
                     - android/android_common.py
-                    - android/android-x86_64.py
+                    - android/android14-x86_64.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - unittests/linux_dbus-python.py
@@ -45,43 +45,30 @@ xpcshell:
     treeherder-symbol: X(X)
     variants:
         - conditioned_profile
-        - socketprocess_networking+no-fission
-        - socketprocess_networking
         - no-fission
         - msix
         - geckoview-no-fission-no-ship
         - inc-origin-init
     instance-size:
         by-variant:
-            conditioned_profile: large
-            default: large-noscratch
+            conditioned_profile:
+                by-test-platform:
+                    linux.*: large-legacy
+                    default: large
+            default: highcpu
     run-on-projects:
         by-variant:
             conditioned_profile:
                 by-test-platform:
                     .*-asan.*: []
                     .*-ccov.*: []
-                    linux1804-64.*/opt: ['trunk']
                     linux2404-64.*/opt: ['trunk']
                     windows11-64.*/opt: ['trunk']
                     default: []
-            socketprocess_networking+no-fission:
-                by-test-platform:
-                    linux1804-64.*: ['mozilla-central']
-                    linux2404-64.*: ['mozilla-central']
-                    default: []
-            socketprocess_networking:
-                by-test-platform:
-                    macosx1015.*: ['trunk']  # All Mac variants
-                    macosx1470.*: ['trunk']  # All Mac variants
-                    windows.*-asan.*: []
-                    windows11.*: ['trunk']   # All Windows11 except ASAN
-                    default: []
             no-fission:
                 by-test-platform:
-                    android-em-7.0-x86_64(-qr)?/debug-isolated-process: []
+                    android-em.*/debug-isolated-process: []
                     android.*: built-projects
-                    linux1804-64.*: ['mozilla-central']
                     linux2404-64.*: ['mozilla-central']
                     default: []
             msix:
@@ -91,7 +78,7 @@ xpcshell:
                     default: []
             geckoview-no-fission-no-ship:
                 by-test-platform:
-                    android-em-7.0-x86_64(-qr)?/debug-isolated-process: []
+                    android-em.*/debug-isolated-process: []
                     android-em.*: built-projects
                     default: []
             inc-origin-init: []
@@ -109,12 +96,28 @@ xpcshell:
                     .*-asan.*/opt: 4
                     .*-ccov.*: 8
                     .*-tsan(-qr)?/opt: 10
+                    android-em-14.*/debug: 16
+                    android-em-14.*/opt: 8
                     android.*/debug: 10
                     android.*/opt: 5
                     macosx.*: 2
-                    linux1804-64.*/opt: 2
                     linux2404-64.*/opt: 2
                     default: 4
+    timeoutfactor:
+        by-test-platform:
+            android-em-14.*: 2
+            linux2404-64-asan/opt: 2
+            linux2404-64-ccov/opt: 4
+            linux2404-64-tsan/opt: 3
+            linux2404-64/debug: 2
+            linux2204-64-wayland/debug: 2
+            macosx1015-64.*: 6
+            macosx1470-64/debug: 6
+            macosx1470-64.*/opt: 4
+            windows.*/debug: 2
+            windows11-64-24h2-asan/opt: 2
+            windows11-64-24h2-ccov/opt: 3
+            default: 1
     max-run-time:
         by-variant:
             msix: 7200
@@ -131,30 +134,16 @@ xpcshell:
                 by-test-platform:
                     linux.*: 2
                     default: default
-            socketprocess_networking+no-fission:
-                by-test-platform:
-                    linux.*: 2
-                    default: default
             default:
                 by-test-platform:
                     windows.*-asan.*: 3
-                    android-em-7.0-x86_64(-qr)?/debug-isolated-process: 2
+                    android-em.*/debug-isolated-process: 2
                     default: default
     mozharness:
-        extra-options:
-            by-test-platform:
-                windows1.*:
-                    - --threads=2
-                default: []
+        extra-options: []
     fetches:
         toolchain:
             by-test-platform:
-                linux1804.*:
-                    - linux64-node
-                    - linux64-minidump-stackwalk
-                    - linux64-fix-stacks
-                    - linux-python-dbusmock
-                    - linux64-1804-dbus-python
                 linux2204.*:
                     - linux64-node
                     - linux64-minidump-stackwalk
@@ -183,9 +172,9 @@ xpcshell:
                     - win32-node
                     - win32-minidump-stackwalk
                     - win32-fix-stacks
-                android-em-7.*:
-                    - android-system-image-x86_64-linux
-                    - android-avd-x86_64-linux
+                android-em-14.*:
+                    - android34-system-image-x86_64-linux
+                    - android34-avd-x86_64-linux
                     - android-emulator-linux
                     - linux64-node
                     - linux64-minidump-stackwalk

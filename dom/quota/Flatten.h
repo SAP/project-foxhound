@@ -36,6 +36,12 @@ struct FlatIter {
   using InnerIterator =
       decltype(begin(*begin(std::declval<const std::decay_t<NestedRange>&>())));
 
+  using iterator_category = std::input_iterator_tag;
+  using value_type = T;
+  using difference_type = std::ptrdiff_t;
+  using pointer = const T*;
+  using reference = const T&;
+
   explicit FlatIter(const NestedRange& aRange, OuterIterator aIter)
       : mOuterIter{std::move(aIter)}, mOuterEnd{end(aRange)} {
     InitInner();
@@ -56,6 +62,8 @@ struct FlatIter {
     return mOuterIter != aOther.mOuterIter ||
            (mOuterIter != mOuterEnd && mInnerIter != aOther.mInnerIter);
   }
+
+  bool operator==(const FlatIter& aOther) const { return !(*this != aOther); }
 
  private:
   void InitInner() {

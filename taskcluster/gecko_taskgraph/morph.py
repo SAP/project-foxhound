@@ -17,7 +17,6 @@ the graph.
 # `{'relative-datestamp': '..'}` is handled at the last possible moment during
 # task creation.
 
-
 import copy
 import logging
 import os
@@ -93,6 +92,14 @@ def derive_misc_task(
             "source": target_task.task["metadata"]["source"],
         },
         "scopes": [],
+        "tags": {
+            "createdForUser": parameters["owner"],
+            "kind": "misc",
+            "label": label,
+            "project": parameters["project"],
+            "trust-domain": graph_config["trust-domain"],
+            "worker-implementation": "docker-worker",
+        },
         "payload": {
             "image": {
                 "path": "public/image.tar.zst",
@@ -170,7 +177,7 @@ def make_index_task(
     task.task["payload"]["command"] = ["insert-indexes.js"] + index_paths
     task.task["payload"]["env"] = {
         "TARGET_TASKID": parent_task.task_id,
-        "INDEX_RANK": index_rank,
+        "INDEX_RANK": f"{index_rank}",
     }
     return task
 
@@ -260,8 +267,7 @@ def add_try_task_duplicates(taskgraph, label_to_taskid, parameters, graph_config
 
 
 # this shim function exists so we can call it from the unittests.
-# this works around an issue with
-# third_party/python/taskcluster_taskgraph/taskgraph/morph.py#40
+# this works around an issue with the morph in upstream Taskgraph
 def _add_try_task_duplicates(taskgraph, label_to_taskid, parameters, graph_config):
     try_config = parameters.get("try_task_config", {})
     tasks = try_config.get("tasks", [])

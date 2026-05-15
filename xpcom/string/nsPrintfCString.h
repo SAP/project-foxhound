@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPrintfCString_h___
-#define nsPrintfCString_h___
+#ifndef nsPrintfCString_h_
+#define nsPrintfCString_h_
 
 #include "nsString.h"
 
@@ -69,4 +69,4 @@ template <>
 struct fmt::formatter<nsVprintfCString, char>
     : fmt::formatter<nsCString, char> {};
 
-#endif  // !defined(nsPrintfCString_h___)
+#endif  // !defined(nsPrintfCString_h_)

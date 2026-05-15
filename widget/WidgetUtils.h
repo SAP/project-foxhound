@@ -18,7 +18,7 @@ class nsPIDOMWindowOuter;
 namespace mozilla {
 
 // NB: these must match up with pseudo-enum in nsIScreen.idl.
-enum ScreenRotation {
+enum ScreenRotation : uint8_t {
   ROTATION_0 = 0,
   ROTATION_90,
   ROTATION_180,

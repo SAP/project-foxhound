@@ -25,14 +25,12 @@ struct IPC::ParamTraits<mozilla::ipc::NodeChannel::Introduction> {
   static void Write(MessageWriter* aWriter, paramType&& aParam) {
     WriteParam(aWriter, aParam.mName);
     WriteParam(aWriter, std::move(aParam.mHandle));
-    WriteParam(aWriter, aParam.mMode);
     WriteParam(aWriter, aParam.mMyPid);
     WriteParam(aWriter, aParam.mOtherPid);
   }
   static bool Read(MessageReader* aReader, paramType* aResult) {
     return ReadParam(aReader, &aResult->mName) &&
            ReadParam(aReader, &aResult->mHandle) &&
-           ReadParam(aReader, &aResult->mMode) &&
            ReadParam(aReader, &aResult->mMyPid) &&
            ReadParam(aReader, &aResult->mOtherPid);
   }
@@ -40,9 +38,8 @@ struct IPC::ParamTraits<mozilla::ipc::NodeChannel::Introduction> {
 
 namespace mozilla::ipc {
 
-NodeChannel::NodeChannel(const NodeName& aName,
-                         UniquePtr<IPC::Channel> aChannel, Listener* aListener,
-                         base::ProcessId aPid,
+NodeChannel::NodeChannel(const NodeName& aName, IPC::Channel* aChannel,
+                         Listener* aListener, base::ProcessId aPid,
                          GeckoChildProcessHost* aChildProcessHost)
     : mListener(aListener),
       mName(aName),

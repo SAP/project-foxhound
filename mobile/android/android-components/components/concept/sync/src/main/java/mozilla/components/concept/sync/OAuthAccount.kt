@@ -150,6 +150,15 @@ interface OAuthAccount : AutoCloseable {
     suspend fun getAccessToken(singleScope: String): AccessTokenInfo?
 
     /**
+     * Get the list of all client applications attached to the user's account.
+     *
+     * This method returns a list of AttachedClient structs representing all the applications
+     * connected to the user's account. This includes applications that are registered as a
+     * device as well as server-side services that the user has connected.
+     */
+    suspend fun getAttachedClient(): List<AttachedClient>
+
+    /**
      * Call this whenever an authentication error was encountered while using an access token
      * issued by [getAccessToken].
      */
@@ -374,4 +383,18 @@ data class AccessTokenInfo(
     val token: String,
     val key: OAuthScopedKey?,
     val expiresAt: Long,
+)
+
+/**
+ * The result of a request to get attached clients.
+ */
+data class AttachedClient(
+    val clientId: String?,
+    val deviceId: String?,
+    val deviceType: DeviceType,
+    val isCurrentSession: Boolean,
+    val name: String?,
+    val createdTime: Long?,
+    val lastAccessTime: Long?,
+    val scope: List<String>?,
 )

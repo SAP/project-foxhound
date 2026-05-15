@@ -3,10 +3,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // This plugin supports finding files with particular resource:// URIs
-// and translating the uri into a relative filesytem path where the file may be
+// and translating the uri into a relative filesystem path where the file may be
 // found when running within the Karma / Mocha test framework.
 
-/* eslint-env node */
 const path = require("path");
 
 module.exports = {

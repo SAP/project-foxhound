@@ -58,6 +58,11 @@ public class WebResponse extends WebMessage {
    */
   public final @Nullable boolean skipConfirmation;
 
+  /**
+   * Construct a new WebResponse from the given builder.
+   *
+   * @param builder Builder instance containing the response parameters
+   */
   protected WebResponse(final @NonNull Builder builder) {
     super(builder);
     this.statusCode = builder.mStatusCode;

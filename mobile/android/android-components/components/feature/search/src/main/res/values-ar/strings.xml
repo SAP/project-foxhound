@@ -1,15 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!--
     Search Widget
 
     Content description for searching with a widget. %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="search_widget_content_description">افتح لسان %1$s جديد</string>
+  <string name="search_widget_content_description">فتح تبويب %1$s جديد</string>
   <!-- Text preview for smaller sized widgets. -->
-  <string name="search_widget_text_short">ابحث</string>
+  <string name="search_widget_text_short">بحث</string>
   <!-- Text preview for larger sized widgets. -->
-  <string name="search_widget_text_long">ابحث في الوِب</string>
+  <string name="search_widget_text_long">بحث في الويب</string>
   <!-- Content description (not visible, for screen readers etc.): Voice search. -->
   <string name="search_widget_voice">البحث الصوتي</string>
 </resources>

@@ -266,3 +266,60 @@ add_task(async function test_recover() {
   gFakeOSKeyStore.asyncDecryptBytes.resetHistory();
   gFakeOSKeyStore.asyncEncryptBytes.resetHistory();
 });
+
+add_task(async function test_recover_without_autofill_profiles() {
+  let credentialsAndSecurityBackupResource =
+    new CredentialsAndSecurityBackupResource();
+  let recoveryPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "CredentialsAndSecurityBackupResource-recovery-test"
+  );
+  let destProfilePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "CredentialsAndSecurityBackupResource-test-profile"
+  );
+
+  const files = [
+    { path: "logins.json" },
+    { path: "logins-backup.json" },
+    { path: "credentialstate.sqlite" },
+    { path: "cert9.db" },
+    { path: "key4.db" },
+    { path: "pkcs11.txt" },
+  ];
+  await createTestFiles(recoveryPath, files);
+
+  const ENCRYPTED_CARD_AFTER_RECOVERY = "ThisIsAnEncryptedCardAfterRecovery";
+  const PLAINTEXT_CARD = "ThisIsAPlaintextCard";
+
+  let plaintextBytes = new Uint8Array(PLAINTEXT_CARD.length);
+  for (let i = 0; i < PLAINTEXT_CARD.length; i++) {
+    plaintextBytes[i] = PLAINTEXT_CARD.charCodeAt(i);
+  }
+
+  // Now we'll prepare the native OSKeyStore to accept a single call to
+  // asyncDecryptBytes, and then a single call to asyncEncryptBytes.
+  gFakeOSKeyStore.asyncDecryptBytes.resolves(plaintextBytes);
+  gFakeOSKeyStore.asyncEncryptBytes.resolves(ENCRYPTED_CARD_AFTER_RECOVERY);
+
+  // The backup method is expected to have returned a null ManifestEntry
+  let postRecoveryEntry = await credentialsAndSecurityBackupResource.recover(
+    null /* manifestEntry */,
+    recoveryPath,
+    destProfilePath
+  );
+
+  Assert.equal(
+    postRecoveryEntry,
+    null,
+    "CredentialsAndSecurityBackupResource.recover should return null as its post " +
+      "recovery entry"
+  );
+
+  await assertFilesExist(destProfilePath, files);
+  await maybeRemovePath(recoveryPath);
+  await maybeRemovePath(destProfilePath);
+
+  gFakeOSKeyStore.asyncDecryptBytes.resetHistory();
+  gFakeOSKeyStore.asyncEncryptBytes.resetHistory();
+});

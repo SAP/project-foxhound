@@ -17,8 +17,10 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsInputStreamPump.h"
+#include "nsISocketTransport.h"
 #include "nsITransportSecurityInfo.h"
 #include "nsHttpHandler.h"
+#include "nsHttpTransaction.h"
 #include "nsNetUtil.h"
 #include "nsProxyInfo.h"
 #include "nsProxyRelease.h"
@@ -100,7 +102,7 @@ nsresult HttpTransactionChild::InitInternal(
     return rv;
   }
 
-  Unused << mTransaction->AsyncRead(this, getter_AddRefs(mTransactionPump));
+  (void)mTransaction->AsyncRead(this, getter_AddRefs(mTransactionPump));
   return rv;
 }
 
@@ -464,7 +466,7 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
   HttpConnectionInfoCloneArgs infoArgs;
   nsHttpConnectionInfo::SerializeHttpConnectionInfo(connInfo, infoArgs);
 
-  Unused << SendOnStartRequest(
+  (void)SendOnStartRequest(
       status, std::move(optionalHead), securityInfo,
       mTransaction->ProxyConnectFailed(),
       ToTimingStructArgs(mTransaction->Timings()), proxyConnectResponseCode,
@@ -490,6 +492,7 @@ ResourceTimingStructArgs HttpTransactionChild::GetTimingAttributes() {
   args.responseEnd() = mTransaction->GetResponseEnd();
   args.transferSize() = mTransaction->GetTransferSize();
   args.encodedBodySize() = mLogicalOffset;
+  args.decodedBodySize() = 0;
   args.redirectStart() = mRedirectStart;
   args.redirectEnd() = mRedirectEnd;
   args.transferSize() = mTransaction->GetTransferSize();
@@ -546,11 +549,11 @@ HttpTransactionChild::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     mDataBridgeParent = nullptr;
   }
 
-  Unused << SendOnStopRequest(aStatus, mTransaction->ResponseIsComplete(),
-                              mTransaction->GetTransferSize(),
-                              ToTimingStructArgs(mTransaction->Timings()),
-                              responseTrailers, mTransactionObserverResult,
-                              lastActTabOpt, TimeStamp::Now());
+  (void)SendOnStopRequest(aStatus, mTransaction->ResponseIsComplete(),
+                          mTransaction->GetTransferSize(),
+                          ToTimingStructArgs(mTransaction->Timings()),
+                          responseTrailers, mTransactionObserverResult,
+                          lastActTabOpt, TimeStamp::Now());
 
   return NS_OK;
 }
@@ -598,7 +601,7 @@ HttpTransactionChild::OnTransportStatus(nsITransport* aTransport,
     arg.emplace(selfAddr, peerAddr, isTrr, mode, reason, echConfigUsed);
   }
 
-  Unused << SendOnTransportStatus(aStatus, aProgress, aProgressMax, arg);
+  (void)SendOnTransportStatus(aStatus, aProgress, aProgressMax, arg);
   return NS_OK;
 }
 
@@ -637,7 +640,7 @@ HttpTransactionChild::EarlyHint(const nsACString& aValue,
                                 const nsACString& aCSPHeader) {
   LOG(("HttpTransactionChild::EarlyHint"));
   if (CanSend()) {
-    Unused << SendEarlyHint(aValue, aReferrerPolicy, aCSPHeader);
+    (void)SendEarlyHint(aValue, aReferrerPolicy, aCSPHeader);
   }
   return NS_OK;
 }

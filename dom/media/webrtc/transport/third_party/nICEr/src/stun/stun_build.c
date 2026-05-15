@@ -74,7 +74,7 @@ nr_stun_form_request_or_indication(int mode, int msg_type, nr_stun_message **msg
    default:
        if ((r=nr_stun_message_add_fingerprint_attribute(req)))
            ABORT(r);
-       /* fall through */
+       [[fallthrough]];
    case NR_STUN_MODE_STUN_NO_AUTH:
        req->header.magic_cookie = NR_STUN_MAGIC_COOKIE;
        break;
@@ -566,9 +566,9 @@ nr_stun_form_success_response(nr_stun_message *req, nr_transport_addr *from, Dat
 
 /* draft-ietf-behave-rfc3489bis-10.txt S 7.3.1.1 */
 void
-nr_stun_form_error_response(nr_stun_message *req, nr_stun_message* res, int number, char* msg)
+nr_stun_form_error_response(nr_stun_message *req, nr_stun_message* res, int number, const char* msg)
 {
-    char *str;
+    const char *str;
     int request_method;
     char server_name[NR_STUN_MAX_SERVER_BYTES+1]; /* +1 for \0 */
 

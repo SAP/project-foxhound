@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLStyleElement_h
 #define mozilla_dom_HTMLStyleElement_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStubMutationObserver.h"
@@ -38,9 +37,11 @@ class HTMLStyleElement final : public nsGenericHTMLElement,
                            mozilla::ErrorResult& aError) override;
 
  public:
-  virtual void SetTextContentInternal(const nsAString& aTextContent,
-                                      nsIPrincipal* aSubjectPrincipal,
-                                      mozilla::ErrorResult& aError) override;
+  virtual void SetTextContentInternal(
+      const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+      mozilla::ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
   /**
    * Mark this style element with a devtools-specific principal that
    * skips Content Security Policy unsafe-inline checks. This triggering

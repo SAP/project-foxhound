@@ -22,6 +22,7 @@ const altTextPref = "pdfjs.enableAltText";
 const guessAltTextPref = "pdfjs.enableGuessAltText";
 const newFlowPref = "pdfjs.enableUpdatedAddImage";
 const browserMLPref = "browser.ml.enable";
+const altTextModelDownloadPref = "pdfjs.enableAltTextModelDownload";
 
 add_setup(async function () {
   MockFilePicker.init(window.browsingContext);
@@ -67,6 +68,7 @@ add_task(async function test_telemetry_new_alt_text_settings() {
           [guessAltTextPref, true],
           [newFlowPref, true],
           [browserMLPref, true],
+          [altTextModelDownloadPref, true],
         ],
       });
 
@@ -143,12 +145,12 @@ add_task(async function test_telemetry_new_alt_text_settings() {
       ]);
 
       telemetryPromise = getPromise("model_deleted");
-      await clickOn(browser, "#deleteModelButton");
+      await clickOn(browser, "#createModelButton");
       await telemetryPromise;
       await testTelemetryEventExtra(Glean.pdfjsImageAltText.modelDeleted, [{}]);
 
       telemetryPromise = getPromise("model_download_complete");
-      await clickOn(browser, "#downloadModelButton");
+      await clickOn(browser, "#createModelButton");
       await telemetryPromise;
       await testTelemetryEventExtra(
         Glean.pdfjsImageAltText.modelDownloadStart,
@@ -181,6 +183,7 @@ add_task(async function test_telemetry_new_alt_text_dialog() {
           [guessAltTextPref, true],
           [newFlowPref, true],
           [browserMLPref, true],
+          [altTextModelDownloadPref, true],
         ],
       });
 
@@ -352,7 +355,7 @@ add_task(async function test_telemetry_new_alt_text_dialog() {
       );
 
       // Remove the image.
-      await clickOn(browser, ".delete");
+      await clickOn(browser, ".deleteButton");
 
       await clickOn(browser, `#editorStampAddImage`);
 
@@ -409,6 +412,7 @@ add_task(async function test_telemetry_new_alt_text_count() {
           [guessAltTextPref, true],
           [newFlowPref, true],
           [browserMLPref, true],
+          [altTextModelDownloadPref, true],
         ],
       });
 
@@ -458,7 +462,7 @@ add_task(async function test_telemetry_new_alt_text_count() {
       await clickOn(browser, "#newAltTextNotNow");
 
       // Delete the editor and create a new one but without AI.
-      await clickOn(browser, ".delete");
+      await clickOn(browser, ".deleteButton");
       Services.fog.testResetFOG();
 
       for (const string of ["Hello", "", "World", "", ""]) {

@@ -2,8 +2,6 @@
 
 This section of docs is designed to be helpful to people instrumenting Firefox Desktop.
 You may wish to begin with the [Getting Started](getting_started.md) docs.
-Or, if you're already acquainted with Glean concepts and what FOG is,
-you might want to know [how to migrate a piece of Firefox Telemetry to Glean](migration.md).
 
 ```{toctree}
 :titlesonly:

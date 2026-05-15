@@ -22,7 +22,7 @@ from service_worker_testutils import (
 
 class PurgeExtensionServiceWorkersOnPrefDisabled(MarionetteServiceWorkerTestCase):
     def setUp(self):
-        super(PurgeExtensionServiceWorkersOnPrefDisabled, self).setUp()
+        super().setUp()
         self.test_extension_id = EXT_ID
         # Flip the "mirror: once" pref and restart Firefox to be able
         # to run the extension successfully.
@@ -32,7 +32,7 @@ class PurgeExtensionServiceWorkersOnPrefDisabled(MarionetteServiceWorkerTestCase
 
     def tearDown(self):
         self.marionette.restart(in_app=False, clean=True)
-        super(PurgeExtensionServiceWorkersOnPrefDisabled, self).tearDown()
+        super().tearDown()
 
     def test_unregistering_service_worker_when_clearing_data(self):
         self.install_extension_with_service_worker()

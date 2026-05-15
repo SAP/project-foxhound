@@ -24,12 +24,11 @@ struct Sides final {
     mBits = aSideBits;
   }
   bool IsEmpty() const { return mBits == SideBits::eNone; }
-  bool Top() const { return (mBits & SideBits::eTop) == SideBits::eTop; }
-  bool Right() const { return (mBits & SideBits::eRight) == SideBits::eRight; }
-  bool Bottom() const {
-    return (mBits & SideBits::eBottom) == SideBits::eBottom;
-  }
-  bool Left() const { return (mBits & SideBits::eLeft) == SideBits::eLeft; }
+  bool Intersects(SideBits aSideBits) const { return bool(mBits & aSideBits); }
+  bool Top() const { return Intersects(SideBits::eTop); }
+  bool Right() const { return Intersects(SideBits::eRight); }
+  bool Bottom() const { return Intersects(SideBits::eBottom); }
+  bool Left() const { return Intersects(SideBits::eLeft); }
   bool Contains(SideBits aSideBits) const {
     MOZ_ASSERT(!(aSideBits & ~SideBits::eAll), "illegal side bits");
     return (mBits & aSideBits) == aSideBits;
@@ -120,9 +119,13 @@ struct BaseMargin {
     left = std::min(left, aMargin.left);
   }
 
-  bool IsAllZero() const {
-    return left == 0 && top == 0 && right == 0 && bottom == 0;
+  bool IsAll(Coord aCoord) const {
+    return left == aCoord && top == aCoord && right == aCoord &&
+           bottom == aCoord;
   }
+
+  bool IsAllZero() const { return IsAll(0); }
+  bool IsAllEqual() const { return IsAll(top); }
 
   // Overloaded operators. Note that '=' isn't defined so we'll get the
   // compiler generated default assignment operator

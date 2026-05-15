@@ -19,3 +19,5 @@ EXTRA_JS_MODULES += [
 ]
 
 MOCHITEST_MANIFESTS += ["tests/mochitest/mochitest.toml"]
+
+SPHINX_TREES["captcha-detection"] = "docs"

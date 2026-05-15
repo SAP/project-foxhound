@@ -6,9 +6,9 @@ package mozilla.components.support.test.ext
 
 import android.content.Context
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.R
 import androidx.appcompat.view.ContextThemeWrapper
 import mozilla.components.support.test.robolectric.testContext
+import androidx.appcompat.R as appcompatR
 
 /**
  * `testContext` wrapped with AppCompat theme.
@@ -16,4 +16,4 @@ import mozilla.components.support.test.robolectric.testContext
  * Useful for views that uses theme attributes, for example.
  */
 @VisibleForTesting val appCompatContext: Context
-    get() = ContextThemeWrapper(testContext, R.style.Theme_AppCompat)
+    get() = ContextThemeWrapper(testContext, appcompatR.style.Theme_AppCompat)

@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef GFX_2D_FILTERPROCESSINGSIMD_INL_H_
+#define GFX_2D_FILTERPROCESSINGSIMD_INL_H_
+
 #include "FilterProcessing.h"
 
 #include "SIMD.h"
@@ -25,7 +28,7 @@ inline already_AddRefed<DataSourceSurface> ConvertToB8G8R8A8_SIMD(
   RefPtr<DataSourceSurface> input = aSurface->GetDataSurface();
   DataSourceSurface::ScopedMap inputMap(input, DataSourceSurface::READ);
   DataSourceSurface::ScopedMap outputMap(output, DataSourceSurface::READ_WRITE);
-  uint8_t* inputData = inputMap.GetData();
+  const uint8_t* inputData = inputMap.GetData();
   uint8_t* outputData = outputMap.GetData();
   int32_t inputStride = inputMap.GetStride();
   int32_t outputStride = outputMap.GetStride();
@@ -105,7 +108,7 @@ inline already_AddRefed<DataSourceSurface> ConvertToB8G8R8A8_SIMD(
 }
 
 template <typename u8x16_t>
-inline void ExtractAlpha_SIMD(const IntSize& size, uint8_t* sourceData,
+inline void ExtractAlpha_SIMD(const IntSize& size, const uint8_t* sourceData,
                               int32_t sourceStride, uint8_t* alphaData,
                               int32_t alphaStride) {
   for (int32_t y = 0; y < size.height; y++) {
@@ -337,8 +340,8 @@ inline void ApplyBlending_SIMD(const DataSourceSurface::ScopedMap& aInputMap1,
                                const DataSourceSurface::ScopedMap& aInputMap2,
                                const DataSourceSurface::ScopedMap& aOutputMap,
                                const IntSize& aSize) {
-  uint8_t* source1Data = aInputMap1.GetData();
-  uint8_t* source2Data = aInputMap2.GetData();
+  const uint8_t* source1Data = aInputMap1.GetData();
+  const uint8_t* source2Data = aInputMap2.GetData();
   uint8_t* targetData = aOutputMap.GetData();
   int32_t targetStride = aOutputMap.GetStride();
   int32_t source1Stride = aInputMap1.GetStride();
@@ -440,7 +443,7 @@ static u8x16_t Morph8(u8x16_t a, u8x16_t b) {
 // it that are up to aRadius pixels away from it (horizontally).
 template <MorphologyOperator op, typename i16x8_t, typename u8x16_t>
 inline void ApplyMorphologyHorizontal_SIMD(
-    uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
+    const uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
     int32_t aDestStride, const IntRect& aDestRect, int32_t aRadius) {
   static_assert(
       op == MORPHOLOGY_OPERATOR_ERODE || op == MORPHOLOGY_OPERATOR_DILATE,
@@ -497,7 +500,7 @@ inline void ApplyMorphologyHorizontal_SIMD(
 
 template <typename i16x8_t, typename u8x16_t>
 inline void ApplyMorphologyHorizontal_SIMD(
-    uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
+    const uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
     int32_t aDestStride, const IntRect& aDestRect, int32_t aRadius,
     MorphologyOperator aOp) {
   if (aOp == MORPHOLOGY_OPERATOR_ERODE) {
@@ -514,7 +517,7 @@ inline void ApplyMorphologyHorizontal_SIMD(
 // it that are up to aRadius pixels away from it (vertically).
 template <MorphologyOperator op, typename i16x8_t, typename u8x16_t>
 static void ApplyMorphologyVertical_SIMD(
-    uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
+    const uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
     int32_t aDestStride, const IntRect& aDestRect, int32_t aRadius) {
   static_assert(
       op == MORPHOLOGY_OPERATOR_ERODE || op == MORPHOLOGY_OPERATOR_DILATE,
@@ -542,7 +545,7 @@ static void ApplyMorphologyVertical_SIMD(
 
 template <typename i16x8_t, typename u8x16_t>
 inline void ApplyMorphologyVertical_SIMD(
-    uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
+    const uint8_t* aSourceData, int32_t aSourceStride, uint8_t* aDestData,
     int32_t aDestStride, const IntRect& aDestRect, int32_t aRadius,
     MorphologyOperator aOp) {
   if (aOp == MORPHOLOGY_OPERATOR_ERODE) {
@@ -595,7 +598,7 @@ static already_AddRefed<DataSourceSurface> ApplyColorMatrix_SIMD(
   DataSourceSurface::ScopedMap inputMap(aInput, DataSourceSurface::READ);
   DataSourceSurface::ScopedMap outputMap(target, DataSourceSurface::READ_WRITE);
 
-  uint8_t* sourceData = inputMap.GetData();
+  const uint8_t* sourceData = inputMap.GetData();
   uint8_t* targetData = outputMap.GetData();
   int32_t sourceStride = inputMap.GetStride();
   int32_t targetStride = outputMap.GetStride();
@@ -813,7 +816,7 @@ static void ApplyComposition(DataSourceSurface* aSource,
   DataSourceSurface::ScopedMap input(aSource, DataSourceSurface::READ);
   DataSourceSurface::ScopedMap output(aDest, DataSourceSurface::READ_WRITE);
 
-  uint8_t* sourceData = input.GetData();
+  const uint8_t* sourceData = input.GetData();
   uint8_t* destData = output.GetData();
   uint32_t sourceStride = input.GetStride();
   uint32_t destStride = output.GetStride();
@@ -882,7 +885,7 @@ static void ApplyComposition_SIMD(DataSourceSurface* aSource,
 
 template <typename u8x16_t>
 static void SeparateColorChannels_SIMD(
-    const IntSize& size, uint8_t* sourceData, int32_t sourceStride,
+    const IntSize& size, const uint8_t* sourceData, int32_t sourceStride,
     uint8_t* channel0Data, uint8_t* channel1Data, uint8_t* channel2Data,
     uint8_t* channel3Data, int32_t channelStride) {
   for (int32_t y = 0; y < size.height; y++) {
@@ -954,8 +957,8 @@ static void SeparateColorChannels_SIMD(
 template <typename u8x16_t>
 static void CombineColorChannels_SIMD(
     const IntSize& size, int32_t resultStride, uint8_t* resultData,
-    int32_t channelStride, uint8_t* channel0Data, uint8_t* channel1Data,
-    uint8_t* channel2Data, uint8_t* channel3Data) {
+    int32_t channelStride, uint8_t* channel0Data, const uint8_t* channel1Data,
+    const uint8_t* channel2Data, const uint8_t* channel3Data) {
   for (int32_t y = 0; y < size.height; y++) {
     for (int32_t x = 0; x < size.width; x += 16) {
       // Process 16 pixels at a time.
@@ -1003,123 +1006,11 @@ static void CombineColorChannels_SIMD(
   }
 }
 
-template <typename i32x4_t, typename u16x8_t, typename u8x16_t>
-static void DoPremultiplicationCalculation_SIMD(const IntSize& aSize,
-                                                uint8_t* aTargetData,
-                                                int32_t aTargetStride,
-                                                uint8_t* aSourceData,
-                                                int32_t aSourceStride) {
-  const u8x16_t alphaMask = simd::From8<u8x16_t>(0, 0, 0, 0xff, 0, 0, 0, 0xff,
-                                                 0, 0, 0, 0xff, 0, 0, 0, 0xff);
-  for (int32_t y = 0; y < aSize.height; y++) {
-    for (int32_t x = 0; x < aSize.width; x += 4) {
-      int32_t inputIndex = y * aSourceStride + 4 * x;
-      int32_t targetIndex = y * aTargetStride + 4 * x;
-
-      u8x16_t p1234 = simd::Load8<u8x16_t>(&aSourceData[inputIndex]);
-      u16x8_t p12 = simd::UnpackLo8x8ToU16x8(p1234);
-      u16x8_t p34 = simd::UnpackHi8x8ToU16x8(p1234);
-
-      // Multiply all components with alpha.
-      p12 = simd::Mul16(p12, simd::Splat16<3, 3>(p12));
-      p34 = simd::Mul16(p34, simd::Splat16<3, 3>(p34));
-
-      // Divide by 255 and pack.
-      u8x16_t result = simd::PackAndSaturate16To8(
-          simd::FastDivideBy255_16(p12), simd::FastDivideBy255_16(p34));
-
-      // Get the original alpha channel value back from p1234.
-      result = simd::Pick(alphaMask, result, p1234);
-
-      simd::Store8(&aTargetData[targetIndex], result);
-    }
-  }
-}
-
-// We use a table of precomputed factors for unpremultiplying.
-// We want to compute round(r / (alpha / 255.0f)) for arbitrary values of
-// r and alpha in constant time. This table of factors has the property that
-// (r * sAlphaFactors[alpha] + 128) >> 8 roughly gives the result we want (with
-// a maximum deviation of 1).
-//
-// sAlphaFactors[alpha] == round(255.0 * (1 << 8) / alpha)
-//
-// This table has been created using the python code
-// ", ".join("%d" % (round(255.0 * 256 / alpha) if alpha > 0 else 0) for alpha
-// in range(256))
-static const uint16_t sAlphaFactors[256] = {
-    0,    65280, 32640, 21760, 16320, 13056, 10880, 9326, 8160, 7253, 6528,
-    5935, 5440,  5022,  4663,  4352,  4080,  3840,  3627, 3436, 3264, 3109,
-    2967, 2838,  2720,  2611,  2511,  2418,  2331,  2251, 2176, 2106, 2040,
-    1978, 1920,  1865,  1813,  1764,  1718,  1674,  1632, 1592, 1554, 1518,
-    1484, 1451,  1419,  1389,  1360,  1332,  1306,  1280, 1255, 1232, 1209,
-    1187, 1166,  1145,  1126,  1106,  1088,  1070,  1053, 1036, 1020, 1004,
-    989,  974,   960,   946,   933,   919,   907,   894,  882,  870,  859,
-    848,  837,   826,   816,   806,   796,   787,   777,  768,  759,  750,
-    742,  733,   725,   717,   710,   702,   694,   687,  680,  673,  666,
-    659,  653,   646,   640,   634,   628,   622,   616,  610,  604,  599,
-    593,  588,   583,   578,   573,   568,   563,   558,  553,  549,  544,
-    540,  535,   531,   526,   522,   518,   514,   510,  506,  502,  498,
-    495,  491,   487,   484,   480,   476,   473,   470,  466,  463,  460,
-    457,  453,   450,   447,   444,   441,   438,   435,  432,  429,  427,
-    424,  421,   418,   416,   413,   411,   408,   405,  403,  400,  398,
-    396,  393,   391,   389,   386,   384,   382,   380,  377,  375,  373,
-    371,  369,   367,   365,   363,   361,   359,   357,  355,  353,  351,
-    349,  347,   345,   344,   342,   340,   338,   336,  335,  333,  331,
-    330,  328,   326,   325,   323,   322,   320,   318,  317,  315,  314,
-    312,  311,   309,   308,   306,   305,   304,   302,  301,  299,  298,
-    297,  295,   294,   293,   291,   290,   289,   288,  286,  285,  284,
-    283,  281,   280,   279,   278,   277,   275,   274,  273,  272,  271,
-    270,  269,   268,   266,   265,   264,   263,   262,  261,  260,  259,
-    258,  257,   256};
-
-template <typename u16x8_t, typename u8x16_t>
-static void DoUnpremultiplicationCalculation_SIMD(const IntSize& aSize,
-                                                  uint8_t* aTargetData,
-                                                  int32_t aTargetStride,
-                                                  uint8_t* aSourceData,
-                                                  int32_t aSourceStride) {
-  for (int32_t y = 0; y < aSize.height; y++) {
-    for (int32_t x = 0; x < aSize.width; x += 4) {
-      int32_t inputIndex = y * aSourceStride + 4 * x;
-      int32_t targetIndex = y * aTargetStride + 4 * x;
-      union {
-        u8x16_t p1234;
-        uint8_t u8[4][4];
-      };
-      p1234 = simd::Load8<u8x16_t>(&aSourceData[inputIndex]);
-
-      // Prepare the alpha factors.
-      uint16_t aF1 = sAlphaFactors[u8[0][B8G8R8A8_COMPONENT_BYTEOFFSET_A]];
-      uint16_t aF2 = sAlphaFactors[u8[1][B8G8R8A8_COMPONENT_BYTEOFFSET_A]];
-      uint16_t aF3 = sAlphaFactors[u8[2][B8G8R8A8_COMPONENT_BYTEOFFSET_A]];
-      uint16_t aF4 = sAlphaFactors[u8[3][B8G8R8A8_COMPONENT_BYTEOFFSET_A]];
-      u16x8_t aF12 =
-          simd::FromU16<u16x8_t>(aF1, aF1, aF1, 1 << 8, aF2, aF2, aF2, 1 << 8);
-      u16x8_t aF34 =
-          simd::FromU16<u16x8_t>(aF3, aF3, aF3, 1 << 8, aF4, aF4, aF4, 1 << 8);
-
-      u16x8_t p12 = simd::UnpackLo8x8ToU16x8(p1234);
-      u16x8_t p34 = simd::UnpackHi8x8ToU16x8(p1234);
-
-      // Multiply with the alpha factors, add 128 for rounding, and shift right
-      // by 8 bits.
-      p12 = simd::ShiftRight16<8>(
-          simd::Add16(simd::Mul16(p12, aF12), simd::FromU16<u16x8_t>(128)));
-      p34 = simd::ShiftRight16<8>(
-          simd::Add16(simd::Mul16(p34, aF34), simd::FromU16<u16x8_t>(128)));
-
-      u8x16_t result = simd::PackAndSaturate16To8(p12, p34);
-      simd::Store8(&aTargetData[targetIndex], result);
-    }
-  }
-}
-
 template <typename u16x8_t, typename u8x16_t>
 static void DoOpacityCalculation_SIMD(const IntSize& aSize,
                                       uint8_t* aTargetData,
                                       int32_t aTargetStride,
-                                      uint8_t* aSourceData,
+                                      const uint8_t* aSourceData,
                                       int32_t aSourceStride, Float aOpacity) {
   uint8_t alphaValue = uint8_t(roundf(255.f * aOpacity));
   u16x8_t alphaValues =
@@ -1216,8 +1107,8 @@ static void ApplyArithmeticCombine_SIMD(
     const DataSourceSurface::ScopedMap& aInputMap2,
     const DataSourceSurface::ScopedMap& aOutputMap, const IntSize& aSize,
     Float aK1, Float aK2, Float aK3, Float aK4) {
-  uint8_t* source1Data = aInputMap1.GetData();
-  uint8_t* source2Data = aInputMap2.GetData();
+  const uint8_t* source1Data = aInputMap1.GetData();
+  const uint8_t* source2Data = aInputMap2.GetData();
   uint8_t* targetData = aOutputMap.GetData();
   uint32_t source1Stride = aInputMap1.GetStride();
   uint32_t source2Stride = aInputMap2.GetStride();
@@ -1302,3 +1193,5 @@ static already_AddRefed<DataSourceSurface> ApplyArithmeticCombine_SIMD(
 
 }  // namespace gfx
 }  // namespace mozilla
+
+#endif  // GFX_2D_FILTERPROCESSINGSIMD_INL_H_

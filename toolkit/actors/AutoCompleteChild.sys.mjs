@@ -112,6 +112,9 @@ export class AutoCompleteChild extends JSWindowActorChild {
       element.ownerDocument.documentURI
     );
     let inputElementIdentifier = lazy.ContentDOMReference.get(element);
+    // If the input element isn't focused, we select the first item by default
+    // for accessibility reason.
+    let selectedIndex = Services.focus.focusedElement == element ? -1 : 0;
 
     this.sendAsyncMessage("AutoComplete:MaybeOpenPopup", {
       results,
@@ -119,6 +122,7 @@ export class AutoCompleteChild extends JSWindowActorChild {
       dir,
       inputElementIdentifier,
       formOrigin,
+      selectedIndex,
     });
 
     this._input = input;

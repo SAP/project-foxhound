@@ -91,7 +91,7 @@ class WebCryptoTask : public CancelableRunnable {
                                        CryptoKey& aKey,
                                        const CryptoOperationData& aData) {
     CryptoOperationData dummy;
-    Unused << dummy.SetAsArrayBuffer(aCx);
+    (void)dummy.SetAsArrayBuffer(aCx);
     return CreateSignVerifyTask(aCx, aAlgorithm, aKey, dummy, aData, true);
   }
 

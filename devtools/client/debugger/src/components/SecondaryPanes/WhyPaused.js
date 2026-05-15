@@ -11,7 +11,7 @@ import React, { PureComponent } from "devtools/client/shared/vendor/react";
 import { div, span } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 import actions from "../../actions/index";
 
 const Reps = ChromeUtils.importESModule(
@@ -191,8 +191,8 @@ class WhyPaused extends PureComponent {
           {
             className: "info icon",
           },
-          React.createElement(AccessibleImage, {
-            className: "info",
+          React.createElement(DebuggerImage, {
+            name: "info",
           })
         ),
         div(

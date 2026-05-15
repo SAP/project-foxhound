@@ -20,24 +20,20 @@ namespace layers {
 class Image;
 }  // namespace layers
 
-enum class CodecType {
-  _BeginVideo_,
-  H264,
-  H265,
-  VP8,
-  VP9,
-  AV1,
-  _EndVideo_,
-  _BeginAudio_ = _EndVideo_,
-  Opus,
-  Vorbis,
-  Flac,
-  AAC,
-  PCM,
-  G722,
-  _EndAudio_,
-  Unknown,
-};
+MOZ_DEFINE_ENUM_CLASS_WITH_TOSTRING(CodecType,
+                                    (_BeginVideo_, H264, H265, VP8, VP9, AV1,
+                                     _EndVideo_, _BeginAudio_, Opus, Vorbis,
+                                     Flac, AAC, PCM, G722, _EndAudio_,
+                                     Unknown));
+
+constexpr bool IsVideo(CodecType aCodecType) {
+  return aCodecType > CodecType::_BeginVideo_ &&
+         aCodecType < CodecType::_EndVideo_;
+}
+constexpr bool IsAudio(CodecType aCodecType) {
+  return aCodecType > CodecType::_BeginAudio_ &&
+         aCodecType < CodecType::_EndAudio_;
+}
 
 enum class Usage {
   Realtime,  // Low latency prefered
@@ -48,10 +44,8 @@ enum class BitrateMode { Constant, Variable };
 // https://www.w3.org/TR/webrtc-svc/
 enum class ScalabilityMode { None, L1T2, L1T3 };
 
-enum class HardwarePreference { RequireHardware, RequireSoftware, None };
+enum class HardwarePreference { None, RequireHardware, RequireSoftware };
 
-// TODO: Automatically generate this (Bug 1865896)
-const char* GetCodecTypeString(const CodecType& aCodecType);
 const char* YUVColorSpaceToString(const gfx::YUVColorSpace& aYUVColorSpace);
 const char* ColorSpace2ToString(const gfx::ColorSpace2& aColorSpace2);
 const char* TransferFunctionToString(
@@ -167,7 +161,6 @@ class EncoderConfig final {
         : mPixelFormat(aPixelFormat), mColorSpace(aColorSpace) {}
     explicit SampleFormat(const dom::ImageBitmapFormat& aPixelFormat)
         : mPixelFormat(aPixelFormat) {}
-    SampleFormat() = default;
 
     bool operator==(const SampleFormat& aOther) const {
       return mPixelFormat == aOther.mPixelFormat &&
@@ -235,17 +228,11 @@ class EncoderConfig final {
     MOZ_ASSERT(IsAudio());
   }
 
-  static CodecType CodecTypeForMime(const nsACString& aMimeType);
-
   nsCString ToString() const;
 
-  bool IsVideo() const {
-    return mCodec > CodecType::_BeginVideo_ && mCodec < CodecType::_EndVideo_;
-  }
+  bool IsVideo() const { return mozilla::IsVideo(mCodec); }
 
-  bool IsAudio() const {
-    return mCodec > CodecType::_BeginAudio_ && mCodec < CodecType::_EndAudio_;
-  }
+  bool IsAudio() const { return mozilla::IsAudio(mCodec); }
 
   CodecType mCodec{};
   gfx::IntSize mSize{};
@@ -253,10 +240,10 @@ class EncoderConfig final {
   uint32_t mBitrate{};
   uint32_t mMinBitrate{};
   uint32_t mMaxBitrate{};
-  Usage mUsage{};
+  Usage mUsage{Usage::Record};
   // Video-only
-  HardwarePreference mHardwarePreference{};
-  SampleFormat mFormat{};
+  HardwarePreference mHardwarePreference{HardwarePreference::None};
+  SampleFormat mFormat{dom::ImageBitmapFormat::YUV420P};
   ScalabilityMode mScalabilityMode{};
   uint32_t mFramerate{};
   size_t mKeyframeInterval{};

@@ -1076,11 +1076,13 @@ let $24 = instantiate(`(module
   )
 )`);
 
-// ./test/core/align.wast:864
-assert_trap(() => invoke($24, `store`, [65532, -1n]), `out of bounds memory access`);
+if (!partialOobWriteMayWritePartialData()) {
+  // ./test/core/align.wast:864
+  assert_trap(() => invoke($24, `store`, [65532, -1n]), `out of bounds memory access`);
 
-// ./test/core/align.wast:866
-assert_return(() => invoke($24, `load`, [65532]), [value("i32", 0)]);
+  // ./test/core/align.wast:866
+  assert_return(() => invoke($24, `load`, [65532]), [value("i32", 0)]);
+}
 
 // ./test/core/align.wast:872
 assert_invalid(
@@ -1216,17 +1218,20 @@ assert_malformed(
 );
 
 // Suppressed because wasm-tools cannot parse these offsets.
-// // ./test/core/align.wast:1005
-// let $25 = instantiate(`(module
-//   (memory i64 1)
-//   (func
-//     i64.const 0
-//     i32.load offset=0xFFFF_FFFF_FFFF_FFFF
-//     drop
-//   )
-// )`);
+// // ./test/core/align.wast:1004
+// assert_invalid(
+//   () => instantiate(`(module
+//     (memory 1)
+//     (func
+//       i32.const 0
+//       i32.load offset=0xFFFF_FFFF_FFFF_FFFF
+//       drop
+//     )
+//   )`),
+//   `offset out of range`,
+// );
 //
-// // ./test/core/align.wast:1014
+// // ./test/core/align.wast:1016
 // assert_invalid(
 //   () => instantiate(`(module
 //     (memory 1)

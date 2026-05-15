@@ -3,13 +3,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsStreamLoader_h__
-#define nsStreamLoader_h__
+#ifndef nsStreamLoader_h_
+#define nsStreamLoader_h_
 
 #include "nsIThreadRetargetableStreamListener.h"
 #include "nsIStreamLoader.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Vector.h"
 
 class nsIRequest;
@@ -54,4 +54,4 @@ class nsStreamLoader final : public nsIStreamLoader {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsStreamLoader_h__
+#endif  // nsStreamLoader_h_

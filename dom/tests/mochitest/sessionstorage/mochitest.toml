@@ -15,20 +15,20 @@ support-files = [
 
 ["test_sessionStorageClone.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_sessionStorageHttpHttps.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_sessionStorageReplace.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_sessionStorageUsage.html"]

@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env mozilla/worker */
-
 // Trivial worker definition
 
 import { PromiseWorker } from "resource://gre/modules/workers/PromiseWorker.mjs";

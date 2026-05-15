@@ -6,7 +6,6 @@
 
 #include "jit/x86/MacroAssembler-x86.h"
 
-#include "mozilla/Alignment.h"
 #include "mozilla/Casting.h"
 
 #include "jit/AtomicOp.h"
@@ -311,9 +310,24 @@ void MacroAssemblerX86::vmulpdSimd128(const SimdConstant& v, FloatRegister lhs,
   vpPatchOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX86::vmulpd_mr);
 }
 
+void MacroAssemblerX86::vandpsSimd128(const SimdConstant& v, FloatRegister lhs,
+                                      FloatRegister dest) {
+  vpPatchOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX86::vandps_mr);
+}
+
 void MacroAssemblerX86::vandpdSimd128(const SimdConstant& v, FloatRegister lhs,
                                       FloatRegister dest) {
   vpPatchOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX86::vandpd_mr);
+}
+
+void MacroAssemblerX86::vxorpsSimd128(const SimdConstant& v, FloatRegister lhs,
+                                      FloatRegister dest) {
+  vpPatchOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX86::vxorps_mr);
+}
+
+void MacroAssemblerX86::vxorpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                                      FloatRegister dest) {
+  vpPatchOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX86::vxorpd_mr);
 }
 
 void MacroAssemblerX86::vminpdSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -510,6 +524,75 @@ void MacroAssemblerX86::finish() {
   }
 }
 
+void MacroAssemblerX86::boxNonDouble(JSValueType type, Register src,
+                                     const ValueOperand& dest) {
+  MOZ_ASSERT(type != JSVAL_TYPE_UNDEFINED && type != JSVAL_TYPE_NULL);
+  MOZ_ASSERT(dest.typeReg() != dest.payloadReg());
+
+#ifdef DEBUG
+  if (type == JSVAL_TYPE_BOOLEAN) {
+    Label upperBitsZeroed;
+    cmp32(src, Imm32(1));
+    j(Assembler::BelowOrEqual, &upperBitsZeroed);
+    breakpoint();
+    bind(&upperBitsZeroed);
+  }
+#endif
+
+  if (src != dest.payloadReg()) {
+    movl(src, dest.payloadReg());
+  }
+  movl(ImmType(type), dest.typeReg());
+}
+
+void MacroAssemblerX86::boxNonDouble(Register type, Register src,
+                                     const ValueOperand& dest) {
+  MOZ_ASSERT(type != dest.payloadReg() && src != dest.typeReg());
+
+#ifdef DEBUG
+  Label ok, isNullOrUndefined, isBoolean;
+
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_NULL),
+                    &isNullOrUndefined);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_UNDEFINED),
+                    &isNullOrUndefined);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BOOLEAN),
+                    &isBoolean);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_INT32), &ok);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_MAGIC), &ok);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_STRING), &ok);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_SYMBOL), &ok);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_PRIVATE_GCTHING),
+                    &ok);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BIGINT), &ok);
+  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_OBJECT), &ok);
+  breakpoint();
+  {
+    bind(&isNullOrUndefined);
+    cmp32(src, src);
+    j(Assembler::Zero, &ok);
+    breakpoint();
+  }
+  {
+    bind(&isBoolean);
+    cmp32(src, Imm32(1));
+    j(Assembler::BelowOrEqual, &ok);
+    breakpoint();
+  }
+  bind(&ok);
+#endif
+
+  if (src != dest.payloadReg()) {
+    movl(src, dest.payloadReg());
+  }
+  if (type != dest.typeReg()) {
+    movl(Imm32(JSVAL_TAG_CLEAR), dest.typeReg());
+    orl(type, dest.typeReg());
+  } else {
+    orl(Imm32(JSVAL_TAG_CLEAR), dest.typeReg());
+  }
+}
+
 void MacroAssemblerX86::handleFailureWithHandlerTail(
     Label* profilerExitTail, Label* bailoutTail,
     uint32_t* returnValueCheckOffset) {
@@ -686,6 +769,34 @@ const MacroAssembler& MacroAssemblerX86::asMasm() const {
   return *static_cast<const MacroAssembler*>(this);
 }
 
+void MacroAssemblerX86::minMax32(Register lhs, Register rhs, Register dest,
+                                 bool isMax) {
+  if (rhs == dest) {
+    std::swap(lhs, rhs);
+  }
+
+  auto cond = isMax ? Assembler::GreaterThan : Assembler::LessThan;
+  if (lhs != dest) {
+    movl(lhs, dest);
+  }
+  cmpl(lhs, rhs);
+  cmovCCl(cond, rhs, dest);
+}
+
+void MacroAssemblerX86::minMax32(Register lhs, Imm32 rhs, Register dest,
+                                 bool isMax) {
+  auto cond =
+      isMax ? Assembler::GreaterThanOrEqual : Assembler::LessThanOrEqual;
+  if (lhs != dest) {
+    movl(lhs, dest);
+  }
+  Label done;
+  cmpl(rhs, lhs);
+  j(cond, &done);
+  move32(rhs, dest);
+  bind(&done);
+}
+
 void MacroAssembler::subFromStackPtr(Imm32 imm32) {
   if (imm32.value) {
     // On windows, we cannot skip very far down the stack without touching the
@@ -777,22 +888,23 @@ void MacroAssembler::callWithABIPre(uint32_t* stackAdjust, bool callFromWasm) {
   assertStackAlignment(ABIStackAlignment);
 }
 
-void MacroAssembler::callWithABIPost(uint32_t stackAdjust, ABIType result,
-                                     bool callFromWasm) {
+void MacroAssembler::callWithABIPost(uint32_t stackAdjust, ABIType result) {
   freeStack(stackAdjust);
 
-  // Calls to native functions in wasm pass through a thunk which already
-  // fixes up the return value for us.
-  if (result == ABIType::Float64) {
-    reserveStack(sizeof(double));
-    fstp(Operand(esp, 0));
-    loadDouble(Operand(esp, 0), ReturnDoubleReg);
-    freeStack(sizeof(double));
-  } else if (result == ABIType::Float32) {
-    reserveStack(sizeof(float));
-    fstp32(Operand(esp, 0));
-    loadFloat32(Operand(esp, 0), ReturnFloat32Reg);
-    freeStack(sizeof(float));
+  // If this was a call to a system ABI function, we need to adapt the FP
+  // results to the expected return registers for JIT code.
+  if (abiArgs_.abi() == ABIKind::System) {
+    if (result == ABIType::Float64) {
+      reserveStack(sizeof(double));
+      fstp(Operand(esp, 0));
+      loadDouble(Operand(esp, 0), ReturnDoubleReg);
+      freeStack(sizeof(double));
+    } else if (result == ABIType::Float32) {
+      reserveStack(sizeof(float));
+      fstp32(Operand(esp, 0));
+      loadFloat32(Operand(esp, 0), ReturnFloat32Reg);
+      freeStack(sizeof(float));
+    }
   }
 
   if (dynamicAlignment_) {
@@ -863,15 +975,15 @@ void MacroAssembler::moveValue(const Value& src, const ValueOperand& dest) {
 // Arithmetic functions
 
 void MacroAssembler::flexibleQuotientPtr(
-    Register rhs, Register srcDest, bool isUnsigned,
+    Register lhs, Register rhs, Register dest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
-  flexibleQuotient32(rhs, srcDest, isUnsigned, volatileLiveRegs);
+  flexibleQuotient32(lhs, rhs, dest, isUnsigned, volatileLiveRegs);
 }
 
 void MacroAssembler::flexibleRemainderPtr(
-    Register rhs, Register srcDest, bool isUnsigned,
+    Register lhs, Register rhs, Register dest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
-  flexibleRemainder32(rhs, srcDest, isUnsigned, volatileLiveRegs);
+  flexibleRemainder32(lhs, rhs, dest, isUnsigned, volatileLiveRegs);
 }
 
 // ===============================================================
@@ -1879,21 +1991,26 @@ void MacroAssembler::patchNearAddressMove(CodeLocationLabel loc,
 }
 
 void MacroAssembler::wasmBoundsCheck64(Condition cond, Register64 index,
-                                       Register64 boundsCheckLimit, Label* ok) {
-  Label notOk;
+                                       Register64 boundsCheckLimit,
+                                       Label* label) {
+  MOZ_ASSERT(cond == Assembler::AboveOrEqual || cond == Assembler::Below);
+  Label rejoin;
+  Label* failLabel = cond == Assembler::AboveOrEqual ? label : &rejoin;
   cmp32(index.high, Imm32(0));
-  j(Assembler::NonZero, &notOk);
-  wasmBoundsCheck32(cond, index.low, boundsCheckLimit.low, ok);
-  bind(&notOk);
+  j(Assembler::NonZero, failLabel);
+  wasmBoundsCheck32(cond, index.low, boundsCheckLimit.low, label);
+  bind(&rejoin);
 }
 
 void MacroAssembler::wasmBoundsCheck64(Condition cond, Register64 index,
-                                       Address boundsCheckLimit, Label* ok) {
-  Label notOk;
+                                       Address boundsCheckLimit, Label* label) {
+  MOZ_ASSERT(cond == Assembler::AboveOrEqual || cond == Assembler::Below);
+  Label rejoin;
+  Label* failLabel = cond == Assembler::AboveOrEqual ? label : &rejoin;
   cmp32(index.high, Imm32(0));
-  j(Assembler::NonZero, &notOk);
-  wasmBoundsCheck32(cond, index.low, boundsCheckLimit, ok);
-  bind(&notOk);
+  j(Assembler::NonZero, failLabel);
+  wasmBoundsCheck32(cond, index.low, boundsCheckLimit, label);
+  bind(&rejoin);
 }
 
 void MacroAssembler::wasmMarkCallAsSlow() {

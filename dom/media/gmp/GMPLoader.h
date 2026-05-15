@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GMP_LOADER_H__
-#define GMP_LOADER_H__
+#ifndef GMP_LOADER_H_
+#define GMP_LOADER_H_
 
 #include <stdint.h>
-#include "prlink.h"
+
 #include "gmp-entrypoints.h"
 #include "mozilla/UniquePtr.h"
 #include "nsString.h"
+#include "prlink.h"
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Sandbox.h"
@@ -77,4 +78,4 @@ class GMPLoader {
 
 }  // namespace mozilla::gmp
 
-#endif  // GMP_LOADER_H__
+#endif  // GMP_LOADER_H_

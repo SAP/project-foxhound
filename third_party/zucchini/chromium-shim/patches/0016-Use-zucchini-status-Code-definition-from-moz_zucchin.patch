@@ -1,0 +1,43 @@
+Use zucchini::status::Code definition from moz_zucchini.h
+
+By defining the status codes in moz_zucchini.h we avoid having to expose the
+full standard zucchini interface to the updater, which it does not need to know
+about.
+---
+ components/zucchini/zucchini.h | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/components/zucchini/zucchini.h b/components/zucchini/zucchini.h
+index 9d4a3a874a74..9f5f1d63fdb4 100644
+--- a/components/zucchini/zucchini.h
++++ b/components/zucchini/zucchini.h
+@@ -11,6 +11,10 @@
+ #include "components/zucchini/patch_reader.h"
+ #include "components/zucchini/patch_writer.h"
+ 
++#if defined(MOZ_ZUCCHINI)
++#  include "mozilla/moz_zucchini.h"
++#endif  // defined(MOZ_ZUCCHINI)
++
+ // Core Zucchini library, consisting of:
+ // - Global constants.
+ // - Patch gen and apply functions, where "old" and "new" data are represented
+@@ -19,6 +23,7 @@
+ 
+ namespace zucchini {
+ 
++#if !defined(MOZ_ZUCCHINI)
+ namespace status {
+ 
+ // Zucchini status code, which can also be used as process exit code. Therefore
+@@ -38,6 +43,7 @@ enum Code {
+ };
+ 
+ }  // namespace status
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ // Generates ensemble patch from |old_image| to |new_image| using the default
+ // element detection and matching heuristics, writes the results to
+-- 
+2.42.0.windows.2
+

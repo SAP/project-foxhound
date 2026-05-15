@@ -1,7 +1,5 @@
 "use strict";
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const server = createHttpServer({ hosts: ["example.com"] });
 
 server.registerPathHandler("/dummy", (request, response) => {
@@ -16,25 +14,41 @@ server.registerPathHandler("/worker.js", (request, response) => {
   response.write("let x = true;");
 });
 
-const baseCSP = [];
-// Keep in sync with extensions.webextensions.base-content-security-policy
-baseCSP[2] = {
-  "script-src": [
-    "'unsafe-eval'",
-    "'wasm-unsafe-eval'",
-    "'unsafe-inline'",
-    "blob:",
-    "filesystem:",
-    "http://localhost:*",
-    "http://127.0.0.1:*",
-    "https://*",
-    "moz-extension:",
-    "'self'",
-  ],
-};
-// Keep in sync with extensions.webextensions.base-content-security-policy.v3
-baseCSP[3] = {
-  "script-src": ["'self'", "'wasm-unsafe-eval'"],
+server.registerPathHandler("/local.js", (request, response) => {
+  response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "application/javascript", false);
+  response.write("let y = true;");
+});
+
+const baseCSP = {
+  // Keep in sync with extensions.webextensions.base-content-security-policy
+  v2: {
+    "script-src": [
+      "'unsafe-eval'",
+      "'wasm-unsafe-eval'",
+      "'unsafe-inline'",
+      "blob:",
+      "filesystem:",
+      "http://localhost:*",
+      "http://127.0.0.1:*",
+      "https://*",
+      "moz-extension:",
+      "'self'",
+    ],
+  },
+  // Keep in sync with extensions.webextensions.base-content-security-policy.v3
+  v3: {
+    "script-src": ["'self'", "'wasm-unsafe-eval'"],
+  },
+  // Keep in sync with extensions.webextensions.base-content-security-policy.v3-with-localhost
+  v3_with_localhost: {
+    "script-src": [
+      "'self'",
+      "'wasm-unsafe-eval'",
+      "http://localhost:*",
+      "http://127.0.0.1:*",
+    ],
+  },
 };
 
 /**
@@ -43,6 +57,7 @@ baseCSP[3] = {
  * @param {boolean} workerEvalAllowed
  * @param {boolean} workerImportScriptsAllowed
  * @param {boolean} workerWasmAllowed
+ * @param {boolean} localhostAllowed
  */
 
 /**
@@ -55,16 +70,19 @@ baseCSP[3] = {
  * @param {number} [options.manifest_version]
  * @param {object} [options.customCSP]
  * @param {TestPolicyExpects} options.expects
+ * @param {boolean} [options.temporarilyInstalled]
  */
 async function testPolicy({
   manifest_version = 2,
   customCSP = null,
   expects = {},
+  temporarilyInstalled = false,
 }) {
   info(
     `Enter tests for extension CSP with ${JSON.stringify({
       manifest_version,
       customCSP,
+      temporarilyInstalled,
     })}`
   );
 
@@ -103,11 +121,23 @@ async function testPolicy({
     );
   }
 
+  function getBaseCsp() {
+    if (manifest_version === 2) {
+      return baseCSP.v2;
+    }
+
+    if (temporarilyInstalled) {
+      return baseCSP.v3_with_localhost;
+    }
+
+    return baseCSP.v3;
+  }
+
   function checkCSP(csp, location) {
     let policies = csp["csp-policies"];
 
     info(`Base policy for ${location}`);
-    let base = baseCSP[manifest_version];
+    let base = getBaseCsp();
 
     equal(policies[0]["report-only"], false, "Policy is not report-only");
     for (let key in base) {
@@ -138,6 +168,8 @@ async function testPolicy({
     worker.onmessage = event => {
       browser.test.sendMessage("worker-csp", event.data);
     };
+
+    browser.test.sendMessage("localhost-csp", typeof y !== "undefined");
 
     worker.postMessage({});
   }
@@ -193,7 +225,9 @@ async function testPolicy({
 
     files: {
       "tab.html": `<html><head><meta charset="utf-8">
-                   <script src="tab.js"></${"script"}></head></html>`,
+                   <script src="http://127.0.0.1:${server.identity.primaryPort}/local.js"></${"script"}>
+                   <script src="tab.js"></${"script"}>
+                   </head><body></body></html>`,
 
       "tab.js": tabScript,
 
@@ -206,6 +240,7 @@ async function testPolicy({
       content_security_policy,
       web_accessible_resources,
     },
+    temporarilyInstalled,
   });
 
   function frameScript() {
@@ -228,7 +263,16 @@ async function testPolicy({
 
   info(`Testing CSP for policy: ${JSON.stringify(content_security_policy)}`);
 
+  // As temporarily installed manifest V3 extensions will intentionally
+  // present warnings when localhost URLs are specified in the CSP,
+  // we want to disable failure-by-warning for these tests.
+  ExtensionTestUtils.failOnSchemaWarnings(
+    !temporarilyInstalled || manifest_version !== 3 || !expects.localhostAllowed
+  );
+
   await extension.startup();
+
+  ExtensionTestUtils.failOnSchemaWarnings(true);
 
   baseURL = await extension.awaitMessage("base-url");
 
@@ -266,6 +310,9 @@ async function testPolicy({
 
   checkCSP(contentCSP, "content frame");
 
+  let localhostAllowed = await extension.awaitMessage("localhost-csp");
+  equal(localhostAllowed, expects.localhostAllowed, "localhost allowed");
+
   let workerCSP = await extension.awaitMessage("worker-csp");
   equal(
     workerCSP.importScriptsAllowed,
@@ -291,6 +338,7 @@ add_task(async function testCSP() {
       workerEvalAllowed: false,
       workerImportAllowed: false,
       workerWasmAllowed: true,
+      localhostAllowed: false,
     },
   });
 
@@ -306,6 +354,7 @@ add_task(async function testCSP() {
       workerEvalAllowed: true,
       workerImportAllowed: false,
       workerWasmAllowed: true,
+      localhostAllowed: false,
     },
   });
 
@@ -318,6 +367,21 @@ add_task(async function testCSP() {
       workerEvalAllowed: false,
       workerImportAllowed: false,
       workerWasmAllowed: true,
+      localhostAllowed: false,
+    },
+  });
+
+  await testPolicy({
+    manifest_version: 2,
+    customCSP: {
+      "script-src": `'self' http://127.0.0.1:${server.identity.primaryPort}`,
+    },
+    expects: {
+      workerEvalAllowed: false,
+      // importScripts() of localhost URL is allowed by the CSP
+      workerImportAllowed: true,
+      workerWasmAllowed: true,
+      localhostAllowed: true,
     },
   });
 
@@ -331,6 +395,7 @@ add_task(async function testCSP() {
       workerEvalAllowed: false,
       workerImportAllowed: false,
       workerWasmAllowed: false,
+      localhostAllowed: false,
     },
   });
 
@@ -344,6 +409,7 @@ add_task(async function testCSP() {
       workerEvalAllowed: false,
       workerImportAllowed: false,
       workerWasmAllowed: false,
+      localhostAllowed: false,
     },
   });
 
@@ -357,6 +423,33 @@ add_task(async function testCSP() {
       workerEvalAllowed: false,
       workerImportAllowed: false,
       workerWasmAllowed: true,
+      localhostAllowed: false,
     },
+  });
+
+  await testPolicy({
+    manifest_version: 3,
+    customCSP: null,
+    expects: {
+      workerEvalAllowed: false,
+      workerImportAllowed: false,
+      workerWasmAllowed: false,
+      localhostAllowed: false,
+    },
+    temporarilyInstalled: true,
+  });
+
+  await testPolicy({
+    manifest_version: 3,
+    customCSP: {
+      "script-src": `'self' http://127.0.0.1:${server.identity.primaryPort}`,
+    },
+    expects: {
+      workerEvalAllowed: false,
+      workerImportAllowed: true,
+      workerWasmAllowed: false,
+      localhostAllowed: true,
+    },
+    temporarilyInstalled: true,
   });
 });

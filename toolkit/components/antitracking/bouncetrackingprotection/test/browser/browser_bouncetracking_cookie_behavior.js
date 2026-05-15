@@ -10,8 +10,8 @@ requestLongerTimeout(3);
  * Helper function for testing that BTP gets enabled/disabled for a specific
  * cookie behavior.
  *
- * @param {Number} cookieBehavior - One of Ci.nsICookieService.BEHAVIOR* values.
- * @param {Number} privateBrowsingId - Run test in private/non-private mode.
+ * @param {number} cookieBehavior - One of Ci.nsICookieService.BEHAVIOR* values.
+ * @param {number} privateBrowsingId - Run test in private/non-private mode.
  */
 async function runTestCookieBehavior(
   cookieBehavior,

@@ -19,7 +19,8 @@ class CacheParent final : public PCacheParent {
   friend class PCacheParent;
 
  public:
-  CacheParent(SafeRefPtr<cache::Manager> aManager, CacheId aCacheId);
+  CacheParent(const WeakRefParentType& aManagingActor,
+              SafeRefPtr<cache::Manager> aManager, CacheId aCacheId);
 
  private:
   virtual ~CacheParent();
@@ -35,6 +36,7 @@ class CacheParent final : public PCacheParent {
 
   mozilla::ipc::IPCResult RecvTeardown();
 
+  const WeakRefParentType mManagingActor;
   SafeRefPtr<cache::Manager> mManager;
   const CacheId mCacheId;
 

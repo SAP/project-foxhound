@@ -20,7 +20,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=741666
 <pre id="test">
 <script class="testbody" type="application/javascript">
 
-/** Test for Bug 306008 - Touch events with a reference held should retain their touch lists **/
+/** Test for Bug 306008 - Touch events with a reference held should retain their touch lists */
 
 let tests = [], testTarget, parent;
 
@@ -71,7 +71,7 @@ function checkTouch(aFakeTouch, aTouch) {
   is(aFakeTouch.force, aTouch.force, "Touch has correct force");
 }
 
-function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
+function sendTouchEvent(aType, aEvent, aModifiers) {
   var ids = [], xs=[], ys=[], rxs = [], rys = [],
       rotations = [], forces = [], tiltXs = [], tiltYs = [], twists = [];
 
@@ -91,10 +91,18 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
       }
     }
   }
-  return windowUtils.sendTouchEvent(aType,
-                                    ids, xs, ys, rxs, rys,
-                                    rotations, forces, tiltXs, tiltYs, twists,
-                                    aModifiers);
+  return synthesizeTouchAtPoint(xs, ys, {
+    type: aType,
+    id: ids,
+    rx: rxs,
+    ry: rys,
+    angle: rotations,
+    force: forces,
+    tiltX: tiltXs,
+    tiltY: tiltYs,
+    twist: twists,
+    modifiers: aModifiers,
+  });
 }
 
 function touchEvent(aOptions) {
@@ -122,7 +130,6 @@ function testtouch(aOptions) {
 }
 
 function testPreventDefault(name) {
-  let cwu = SpecialPowers.getDOMWindowUtils(window);
   let target = document.getElementById("testTarget");
   let bcr = target.getBoundingClientRect();
 
@@ -152,12 +159,12 @@ function testPreventDefault(name) {
 
       event.touches = [];
       event.targetTouches = [];
-      sendTouchEvent(cwu, "touchend", event, 0);
+      sendTouchEvent("touchend", event, 0);
 
       nextTest();
     }, 0);
   });
-  sendTouchEvent(cwu, "touchstart", event, 0);
+  sendTouchEvent("touchstart", event, 0);
 }
 
 async function doTest() {

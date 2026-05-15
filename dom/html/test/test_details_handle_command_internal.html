@@ -1,0 +1,126 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for HTMLDetailsElement HandleCommandInternal</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+
+<details id="details">
+  <summary>Summary</summary>
+  <p>Details content</p>
+</details>
+
+<button id="toggleBtn" commandfor="details" command="toggle">Toggle</button>
+<button id="openBtn" commandfor="details" command="open">Open</button>
+<button id="closeBtn" commandfor="details" command="close">Close</button>
+
+<details id="popoverDetails" popover>
+  <summary>Popover Summary</summary>
+  <p>Popover details content</p>
+</details>
+
+<button id="showPopoverBtn" commandfor="popoverDetails" command="show-popover">Show Popover</button>
+<button id="hidePopoverBtn" commandfor="popoverDetails" command="hide-popover">Hide Popover</button>
+<button id="togglePopoverBtn" commandfor="popoverDetails" command="toggle-popover">Toggle Popover</button>
+
+<script>
+(async () => {
+  SimpleTest.waitForExplicitFinish();
+
+  // Test with details pref disabled - details commands should have no effect
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["dom.element.commandfor.enabled", true],
+      ["dom.element.commandfor.on_details.enabled", false],
+    ]
+  });
+
+  details.removeAttribute("open");
+  ok(!details.open, "[pref=false] Details should start closed");
+
+  toggleBtn.click();
+  ok(!details.open, "[pref=false] Toggle should have no effect on closed details");
+
+  details.setAttribute("open", "");
+  ok(details.open, "[pref=false] Details manually opened");
+
+  toggleBtn.click();
+  ok(details.open, "[pref=false] Toggle should have no effect on open details");
+
+  closeBtn.click();
+  ok(details.open, "[pref=false] Close should have no effect");
+
+  details.removeAttribute("open");
+  openBtn.click();
+  ok(!details.open, "[pref=false] Open should have no effect");
+
+  // Test popover commands with pref disabled - should still work (handled by base class)
+  ok(!popoverDetails.matches(":popover-open"), "[pref=false] Popover details should start hidden");
+
+  showPopoverBtn.click();
+  ok(popoverDetails.matches(":popover-open"), "[pref=false] show-popover should show popover details");
+
+  showPopoverBtn.click();
+  ok(popoverDetails.matches(":popover-open"), "[pref=false] show-popover on visible popover should keep it visible");
+
+  hidePopoverBtn.click();
+  ok(!popoverDetails.matches(":popover-open"), "[pref=false] hide-popover should hide popover details");
+
+  hidePopoverBtn.click();
+  ok(!popoverDetails.matches(":popover-open"), "[pref=false] hide-popover on hidden popover should keep it hidden");
+
+  togglePopoverBtn.click();
+  ok(popoverDetails.matches(":popover-open"), "[pref=false] toggle-popover should show hidden popover");
+
+  togglePopoverBtn.click();
+  ok(!popoverDetails.matches(":popover-open"), "[pref=false] toggle-popover should hide visible popover");
+
+  // Test with details pref enabled - details commands should work
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.element.commandfor.on_details.enabled", true]]
+  });
+
+  details.removeAttribute("open");
+  ok(!details.open, "[pref=true] Details should start closed");
+
+  toggleBtn.click();
+  ok(details.open, "[pref=true] Toggle on closed details should open it");
+
+  toggleBtn.click();
+  ok(!details.open, "[pref=true] Toggle on open details should close it");
+
+  openBtn.click();
+  ok(details.open, "[pref=true] Open command should open closed details");
+
+  openBtn.click();
+  ok(details.open, "[pref=true] Open command on open details should keep it open");
+
+  closeBtn.click();
+  ok(!details.open, "[pref=true] Close command should close open details");
+
+  closeBtn.click();
+  ok(!details.open, "[pref=true] Close command on closed details should keep it closed");
+
+  // Test popover commands with pref enabled - should still work
+  ok(!popoverDetails.matches(":popover-open"), "[pref=true] Popover details should start hidden");
+
+  showPopoverBtn.click();
+  ok(popoverDetails.matches(":popover-open"), "[pref=true] show-popover should show popover details");
+
+  hidePopoverBtn.click();
+  ok(!popoverDetails.matches(":popover-open"), "[pref=true] hide-popover should hide popover details");
+
+  togglePopoverBtn.click();
+  ok(popoverDetails.matches(":popover-open"), "[pref=true] toggle-popover should show hidden popover");
+
+  togglePopoverBtn.click();
+  ok(!popoverDetails.matches(":popover-open"), "[pref=true] toggle-popover should hide visible popover");
+
+  SimpleTest.finish();
+})();
+</script>
+</body>
+</html>

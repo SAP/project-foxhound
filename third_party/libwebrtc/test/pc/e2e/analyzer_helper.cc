@@ -10,8 +10,13 @@
 
 #include "test/pc/e2e/analyzer_helper.h"
 
+#include <optional>
 #include <string>
 #include <utility>
+
+#include "absl/strings/string_view.h"
+#include "api/sequence_checker.h"
+#include "rtc_base/checks.h"
 
 namespace webrtc {
 namespace webrtc_pc_e2e {
@@ -39,7 +44,8 @@ void AnalyzerHelper::AddTrackToStreamMapping(std::string track_id,
                                              std::string stream_label) {
   RTC_DCHECK_RUN_ON(&signaling_sequence_checker_);
   track_to_stream_map_.insert(
-      {std::move(track_id), StreamInfo{stream_label, stream_label}});
+      {std::move(track_id), StreamInfo{.receiver_peer = stream_label,
+                                       .stream_label = stream_label}});
 }
 
 void AnalyzerHelper::AddTrackToStreamMapping(std::string track_id,
@@ -47,8 +53,8 @@ void AnalyzerHelper::AddTrackToStreamMapping(std::string track_id,
                                              std::string sync_group) {
   RTC_DCHECK_RUN_ON(&signaling_sequence_checker_);
   track_to_stream_map_.insert(
-      {std::move(track_id),
-       StreamInfo{std::move(stream_label), std::move(sync_group)}});
+      {std::move(track_id), StreamInfo{.receiver_peer = std::move(stream_label),
+                                       .stream_label = std::move(sync_group)}});
 }
 
 AnalyzerHelper::StreamInfo AnalyzerHelper::GetStreamInfoFromTrackId(

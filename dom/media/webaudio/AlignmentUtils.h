@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AlignmentUtils_h__
-#define AlignmentUtils_h__
+#ifndef AlignmentUtils_h_
+#define AlignmentUtils_h_
 
 #define IS_ALIGNED16(ptr) ((((uintptr_t)ptr + 15) & ~0x0F) == (uintptr_t)ptr)
 

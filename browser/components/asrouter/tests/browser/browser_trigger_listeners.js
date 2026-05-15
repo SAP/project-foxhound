@@ -15,11 +15,19 @@ ChromeUtils.defineLazyGetter(this, "SearchTestUtils", () => {
   return module;
 });
 
+ChromeUtils.defineESModuleGetters(this, {
+  IPProtection:
+    "moz-src:///browser/components/ipprotection/IPProtection.sys.mjs",
+});
+
 const mockIdleService = {
   _observers: new Set(),
   _fireObservers(state) {
     for (let observer of this._observers.values()) {
-      observer.observe(this, state, null);
+      // Pass idle time in seconds as a string in the data parameter,
+      // matching the real nsIUserIdleService behavior
+      const data = state === "idle" ? "1200" : null;
+      observer.observe(this, state, data);
     }
   },
   QueryInterface: ChromeUtils.generateQI(["nsIUserIdleService"]),
@@ -40,6 +48,94 @@ async function waitForUrlLoad(url) {
   let browser = gBrowser.selectedBrowser;
   BrowserTestUtils.startLoadingURIString(browser, url);
   await BrowserTestUtils.browserLoaded(browser, false, url);
+}
+
+async function test_formAutofillTrigger(settingsRedesignEnabled) {
+  const sandbox = sinon.createSandbox();
+  const handlerStub = sandbox.stub();
+  const formAutofillTrigger = ASRouterTriggerListeners.get("formAutofill");
+  sandbox.stub(formAutofillTrigger, "_triggerDelay").value(0);
+  formAutofillTrigger.uninit();
+  formAutofillTrigger.init(handlerStub);
+
+  function notifyCreditCardSaved() {
+    Services.obs.notifyObservers(
+      {
+        wrappedJSObject: { sourceSync: false, collectionName: "creditCards" },
+      },
+      formAutofillTrigger._topic,
+      "add"
+    );
+  }
+
+  // Saving credit cards for autofill currently fails for some hardware
+  // configurations, so mock the event instead of really adding a card.
+  notifyCreditCardSaved();
+  await sleepMs(1);
+  Assert.ok(handlerStub.called, "Called after event");
+
+  // Test that the trigger doesn't fire when the credit card manager is open.
+  handlerStub.resetHistory();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.settings-redesign.enabled", settingsRedesignEnabled]],
+  });
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:preferences#privacy" },
+    async browser => {
+      const redesignEnabled = Services.prefs.getBoolPref(
+        "browser.settings-redesign.enabled",
+        false
+      );
+      if (!redesignEnabled) {
+        await SpecialPowers.spawn(browser, [], async () =>
+          (
+            await ContentTaskUtils.waitForCondition(
+              () =>
+                content.document.querySelector(
+                  "setting-group[groupid=payments] #savedPaymentsButton"
+                ),
+              "Waiting for credit card manager button"
+            )
+          )?.click()
+        );
+        await BrowserTestUtils.waitForCondition(
+          () => browser.contentWindow?.gSubDialog?.dialogs.length
+        );
+      } else {
+        const savedPaymentsBtn = content.document.querySelector(
+          "#savedPaymentsButton"
+        );
+        savedPaymentsBtn.click();
+        const paymentsPage = content.document.querySelector(
+          '[data-category="paneManagePayments"]'
+        );
+        await BrowserTestUtils.waitForCondition(
+          () => !paymentsPage.hidden,
+          "Payments page failed to show."
+        );
+      }
+
+      notifyCreditCardSaved();
+      await sleepMs(1);
+
+      if (!redesignEnabled) {
+        Assert.ok(
+          handlerStub.notCalled,
+          "Not called when credit card manager is open"
+        );
+      }
+    }
+  );
+
+  formAutofillTrigger.uninit();
+  handlerStub.resetHistory();
+  notifyCreditCardSaved();
+  await sleepMs(1);
+  Assert.ok(handlerStub.notCalled, "Not called after uninit");
+
+  sandbox.restore();
+  formAutofillTrigger.uninit();
 }
 
 add_setup(async function () {
@@ -378,63 +474,9 @@ add_task(async function test_activityAfterIdleWake() {
   restore();
 });
 
-add_task(async function test_formAutofillTrigger() {
-  const sandbox = sinon.createSandbox();
-  const handlerStub = sandbox.stub();
-  const formAutofillTrigger = ASRouterTriggerListeners.get("formAutofill");
-  sandbox.stub(formAutofillTrigger, "_triggerDelay").value(0);
-  formAutofillTrigger.uninit();
-  formAutofillTrigger.init(handlerStub);
-
-  function notifyCreditCardSaved() {
-    Services.obs.notifyObservers(
-      {
-        wrappedJSObject: { sourceSync: false, collectionName: "creditCards" },
-      },
-      formAutofillTrigger._topic,
-      "add"
-    );
-  }
-
-  // Saving credit cards for autofill currently fails for some hardware
-  // configurations, so mock the event instead of really adding a card.
-  notifyCreditCardSaved();
-  await sleepMs(1);
-  Assert.ok(handlerStub.called, "Called after event");
-
-  // Test that the trigger doesn't fire when the credit card manager is open.
-  handlerStub.resetHistory();
-  await BrowserTestUtils.withNewTab(
-    { gBrowser, url: "about:preferences#privacy" },
-    async browser => {
-      await SpecialPowers.spawn(browser, [], async () =>
-        (
-          await ContentTaskUtils.waitForCondition(
-            () => content.document.querySelector("#creditCardAutofill button"),
-            "Waiting for credit card manager button"
-          )
-        )?.click()
-      );
-      await BrowserTestUtils.waitForCondition(
-        () => browser.contentWindow?.gSubDialog?.dialogs.length
-      );
-      notifyCreditCardSaved();
-      await sleepMs(1);
-      Assert.ok(
-        handlerStub.notCalled,
-        "Not called when credit card manager is open"
-      );
-    }
-  );
-
-  formAutofillTrigger.uninit();
-  handlerStub.resetHistory();
-  notifyCreditCardSaved();
-  await sleepMs(1);
-  Assert.ok(handlerStub.notCalled, "Not called after uninit");
-
-  sandbox.restore();
-  formAutofillTrigger.uninit();
+add_task(async function test_formAutofill() {
+  await test_formAutofillTrigger(false);
+  await test_formAutofillTrigger(true);
 });
 
 add_task(async function test_pageActionInUrlbarTrigger() {
@@ -552,6 +594,36 @@ add_task(async function test_onSearchTrigger() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_selectableProfilesUpdated_remote_vs_local() {
+  const handlerStub = sinon.stub();
+  const trigger = ASRouterTriggerListeners.get("selectableProfilesUpdated");
+  trigger.uninit();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.discovery.enabled", false]],
+  });
+
+  trigger.init(handlerStub);
+
+  // Send remote notification with tracked pref change, which should trigger firing
+  Services.prefs.setBoolPref("browser.discovery.enabled", true);
+  Services.obs.notifyObservers(null, "sps-profiles-updated", "remote");
+  Assert.ok(
+    handlerStub.calledOnce,
+    "Fired on remote when tracked pref changed"
+  );
+  Assert.deepEqual(handlerStub.firstCall.args[1].param, { type: "remote" });
+
+  // Send local notification with tracked pref change, which should not trigger firing
+  handlerStub.resetHistory();
+  Services.prefs.setBoolPref("browser.discovery.enabled", false);
+  Services.obs.notifyObservers(null, "sps-profiles-updated", "local");
+  Assert.ok(handlerStub.notCalled, "Did not fire on local");
+
+  trigger.uninit();
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function test_elementClicked_trigger() {
   const handlerStub = sinon.stub();
   const xulElButtonId = "PanelUI-menu-button";
@@ -662,4 +734,129 @@ add_task(async function test_elementClicked_trigger() {
 
   buttonClickTrigger.uninit();
   document.documentElement.removeChild(button);
+});
+
+add_task(async function test_ipprotection_ready() {
+  const sandbox = sinon.createSandbox();
+  const receivedTrigger = new Promise(resolve => {
+    sandbox.stub(ASRouter, "sendTriggerMessage").callsFake(({ id }) => {
+      if (id === "ipProtectionReady") {
+        resolve(true);
+      }
+    });
+  });
+
+  IPProtection.init();
+
+  let ipProtectionReadyTrigger = await receivedTrigger;
+  Assert.ok(ipProtectionReadyTrigger, "ipProtectionReady trigger sent");
+
+  IPProtection.uninit();
+  sandbox.restore();
+});
+
+add_task(async function test_tabSwitch() {
+  const sandbox = sinon.createSandbox();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tabs.splitview.hasUsed", false]],
+  });
+
+  const receivedTrigger = new Promise(resolve => {
+    sandbox.stub(ASRouter, "sendTriggerMessage").callsFake(triggerData => {
+      if (triggerData.id === "tabSwitch") {
+        resolve(triggerData);
+      }
+    });
+  });
+
+  let tab1 = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com"
+  );
+  let tab2 = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.org"
+  );
+
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+  await BrowserTestUtils.switchTab(gBrowser, tab2);
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+
+  const triggerData = await receivedTrigger;
+  Assert.ok(
+    ASRouter.sendTriggerMessage.calledWith(sinon.match({ id: "tabSwitch" })),
+    "tabSwitch trigger sent after switching between tabs 3 times"
+  );
+  Assert.ok(
+    triggerData.context &&
+      typeof triggerData.context.currentTabsOpen === "number",
+    "tabSwitch trigger includes currentTabsOpen in context"
+  );
+  Assert.equal(triggerData.context.currentTabsOpen, 3, "currentTabsOpen is 3");
+
+  ASRouter.sendTriggerMessage.resetHistory();
+
+  let aboutTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:blank"
+  );
+
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+  await BrowserTestUtils.switchTab(gBrowser, aboutTab);
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+
+  await sleepMs(100);
+  Assert.ok(
+    !ASRouter.sendTriggerMessage.calledWith(sinon.match({ id: "tabSwitch" })),
+    "tabSwitch trigger not sent when switching to/from about: pages"
+  );
+
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
+  BrowserTestUtils.removeTab(aboutTab);
+
+  await SpecialPowers.popPrefEnv();
+  sandbox.restore();
+});
+
+add_task(async function test_ipprotection_panel_closed() {
+  const sandbox = sinon.createSandbox();
+  const receivedTrigger = new Promise(resolve => {
+    sandbox.stub(ASRouter, "sendTriggerMessage").callsFake(({ id }) => {
+      if (id === "ipProtectionPanelClosed") {
+        resolve(true);
+      }
+    });
+  });
+
+  IPProtection.init();
+
+  // Get the panel for the window
+  const panel = IPProtection.getPanel(window);
+
+  // Open the panel
+  await panel.open(window);
+
+  // Close the panel, which should trigger ipProtectionPanelClosed
+  panel.close();
+
+  Assert.ok(
+    await receivedTrigger,
+    "ipProtectionPanelClosed trigger sent on closing IP Protection panel"
+  );
+
+  // Open and close the panel again
+  await panel.open(window);
+  panel.close();
+
+  await TestUtils.waitForTick();
+
+  // Clean up prefs
+  Services.prefs.clearUserPref("browser.ipProtection.added");
+  Services.prefs.clearUserPref("browser.ipProtection.everOpenedPanel");
+
+  IPProtection.uninit();
+  await SpecialPowers.popPrefEnv();
+  sandbox.restore();
 });

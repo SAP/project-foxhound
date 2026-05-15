@@ -28,6 +28,7 @@ MIRGenerator::MIRGenerator(CompileRealm* realm,
       runtime(realm ? realm->runtime() : nullptr),
       outerInfo_(info),
       optimizationInfo_(optimizationInfo),
+      wasmCodeMeta_(wasmCodeMeta),
       alloc_(alloc),
       graph_(graph),
       offThreadStatus_(Ok()),
@@ -41,9 +42,8 @@ MIRGenerator::MIRGenerator(CompileRealm* realm,
                                    : false),
       bigIntsCanBeInNursery_(realm ? realm->zone()->canNurseryAllocateBigInts()
                                    : false),
-      minWasmMemory0Length_(0),
       options(options),
-      gs_(alloc, wasmCodeMeta) {}
+      jitSpewer_(alloc, wasmCodeMeta) {}
 
 bool MIRGenerator::licmEnabled() const {
   return optimizationInfo().licmEnabled() && !disableLICM_ &&
@@ -72,6 +72,54 @@ mozilla::GenericErrorResult<AbortReason> MIRGenerator::abort(AbortReason r) {
     }
   }
   return Err(std::move(r));
+}
+
+void MIRGenerator::spewBeginFunction(JSScript* function) {
+  jitSpewer_.init(&graph(), function);
+  jitSpewer_.beginFunction(function);
+#ifdef JS_JITSPEW
+  if (graphSpewer_) {
+    graphSpewer_->beginFunction(function);
+  }
+#endif
+  perfSpewer().startRecording();
+}
+
+void MIRGenerator::spewBeginWasmFunction(unsigned funcIndex) {
+  jitSpewer_.init(&graph(), nullptr);
+  jitSpewer_.beginWasmFunction(funcIndex);
+#ifdef JS_JITSPEW
+  if (graphSpewer_) {
+    graphSpewer_->beginWasmFunction(funcIndex);
+  }
+#endif
+  perfSpewer().startRecording(wasmCodeMeta_);
+}
+
+void MIRGenerator::spewPass(const char* name, BacktrackingAllocator* ra) {
+  jitSpewer_.spewPass(name, ra);
+#ifdef JS_JITSPEW
+  if (graphSpewer_) {
+    graphSpewer_->spewPass(name, &graph(), ra);
+  }
+#endif
+  perfSpewer().recordPass(name, &graph(), ra);
+}
+
+void MIRGenerator::spewEndFunction() {
+  jitSpewer_.endFunction();
+#ifdef JS_JITSPEW
+  if (graphSpewer_) {
+    graphSpewer_->endFunction();
+  }
+#endif
+  perfSpewer().endRecording();
+}
+
+AutoSpewEndFunction::~AutoSpewEndFunction() {
+  if (mir_) {
+    mir_->spewEndFunction();
+  }
 }
 
 mozilla::GenericErrorResult<AbortReason> MIRGenerator::abortFmt(
@@ -748,7 +796,7 @@ MConstant* MBasicBlock::optimizedOutConstant(TempAllocator& alloc) {
     return ins->toConstant();
   }
 
-  MConstant* constant = MConstant::New(alloc, MagicValue(JS_OPTIMIZED_OUT));
+  MConstant* constant = MConstant::NewMagic(alloc, JS_OPTIMIZED_OUT);
   insertBefore(ins, constant);
   return constant;
 }

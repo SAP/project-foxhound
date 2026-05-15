@@ -1,0 +1,12 @@
+[package]
+name = "random-crate"
+version = "0.1.0"
+authors = [
+  "The Mozilla Project Developers",
+]
+
+[[bin]]
+name = "random-crate"
+
+[dependencies]
+mozilla-central-workspace-hack = { version = "0.1", features = ["random-crate"], optional = true }

@@ -1,0 +1,729 @@
+Support build-linux64-base-toolchains[-clang] jobs
+
+These changes remove the use of certain features that are not available
+in the old compiler versions used by these build jobs. Other minor
+changes prevent warnings, which are treated as errors. None of these
+should affect normal builds.
+---
+ .../partition_alloc_base/compiler_specific.h  |  8 +++--
+ .../cxx20_is_constant_evaluated.h             |  8 +++++
+ .../partition_alloc_base/thread_annotations.h |  2 +-
+ .../partition_alloc_forward.h                 |  2 ++
+ base/compiler_specific.h                      | 11 ++++---
+ base/cxx20_is_constant_evaluated.h            |  8 +++++
+ base/files/file_enumerator_posix.cc           |  4 +++
+ base/files/file_path.cc                       |  4 +++
+ base/files/file_path.h                        |  4 +++
+ base/files/file_posix.cc                      |  3 ++
+ base/files/memory_mapped_file.cc              |  6 ++++
+ base/functional/callback_internal.cc          |  3 ++
+ base/location.cc                              |  7 +++++
+ base/location.h                               | 19 ++++++++++++
+ base/memory/ref_counted.h                     | 18 +++++++++++
+ base/numerics/safe_conversions_impl.h         |  8 +++++
+ base/strings/string_util_impl_helpers.h       |  8 +++++
+ base/thread_annotations.h                     |  2 +-
+ base/trace_event/trace_event_stub.h           |  2 ++
+ components/zucchini/abs32_utils_unittest.cc   |  2 ++
+ components/zucchini/algorithm_unittest.cc     | 12 ++++++++
+ components/zucchini/arm_utils_unittest.cc     |  4 +++
+ .../binary_data_histogram_unittest.cc         | 12 ++++++++
+ .../imposed_ensemble_matcher_unittest.cc      | 30 +++++++++++++++++++
+ components/zucchini/main_utils.cc             |  5 ++++
+ components/zucchini/patch_reader.cc           |  4 +++
+ components/zucchini/rel32_utils_unittest.cc   |  2 ++
+ components/zucchini/suffix_array_unittest.cc  |  8 +++++
+ 28 files changed, 197 insertions(+), 9 deletions(-)
+
+diff --git a/base/allocator/partition_allocator/partition_alloc_base/compiler_specific.h b/base/allocator/partition_allocator/partition_alloc_base/compiler_specific.h
+index 77ec1fe9b64c..3a1d17d8fa39 100644
+--- a/base/allocator/partition_allocator/partition_alloc_base/compiler_specific.h
++++ b/base/allocator/partition_allocator/partition_alloc_base/compiler_specific.h
+@@ -24,7 +24,8 @@
+ // Annotate a function indicating it should not be inlined.
+ // Use like:
+ //   NOINLINE void DoStuff() { ... }
+-#if defined(__clang__) && PA_HAS_ATTRIBUTE(noinline)
++#if defined(__clang__) && PA_HAS_ATTRIBUTE(noinline) && \
++    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
+ #define PA_NOINLINE [[clang::noinline]]
+ #elif defined(COMPILER_GCC) && PA_HAS_ATTRIBUTE(noinline)
+ #define PA_NOINLINE __attribute__((noinline))
+@@ -34,7 +35,8 @@
+ #define PA_NOINLINE
+ #endif
+ 
+-#if defined(__clang__) && defined(NDEBUG) && PA_HAS_ATTRIBUTE(always_inline)
++#if defined(__clang__) && defined(NDEBUG) && PA_HAS_ATTRIBUTE(always_inline) && \
++    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
+ #define PA_ALWAYS_INLINE [[clang::always_inline]] inline
+ #elif defined(COMPILER_GCC) && defined(NDEBUG) && \
+     PA_HAS_ATTRIBUTE(always_inline)
+@@ -224,7 +226,7 @@ inline constexpr bool AnalyzerAssumeTrue(bool arg) {
+ #define PA_CONSTINIT
+ #endif
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 13)
+ #define PA_GSL_POINTER [[gsl::Pointer]]
+ #else
+ #define PA_GSL_POINTER
+diff --git a/base/allocator/partition_allocator/partition_alloc_base/cxx20_is_constant_evaluated.h b/base/allocator/partition_allocator/partition_alloc_base/cxx20_is_constant_evaluated.h
+index a0bb2e4af215..8d6f99c151bd 100644
+--- a/base/allocator/partition_allocator/partition_alloc_base/cxx20_is_constant_evaluated.h
++++ b/base/allocator/partition_allocator/partition_alloc_base/cxx20_is_constant_evaluated.h
+@@ -17,13 +17,21 @@ using std::is_constant_evaluated;
+ 
+ #else
+ 
++#if defined(MOZ_ZUCCHINI)
++#include "base/compiler_specific.h"
++#endif  // defined(MOZ_ZUCCHINI)
++
+ // Implementation of C++20's std::is_constant_evaluated.
+ //
+ // References:
+ // - https://en.cppreference.com/w/cpp/types/is_constant_evaluated
+ // - https://wg21.link/meta.const.eval
+ constexpr bool is_constant_evaluated() noexcept {
++#if !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
+   return __builtin_is_constant_evaluated();
++#else
++  return false;
++#endif  // !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
+ }
+ 
+ #endif
+diff --git a/base/allocator/partition_allocator/partition_alloc_base/thread_annotations.h b/base/allocator/partition_allocator/partition_alloc_base/thread_annotations.h
+index 5cf5ea0d288f..b5de5ea7fcb5 100644
+--- a/base/allocator/partition_allocator/partition_alloc_base/thread_annotations.h
++++ b/base/allocator/partition_allocator/partition_alloc_base/thread_annotations.h
+@@ -40,7 +40,7 @@
+ #include "base/allocator/partition_allocator/partition_alloc_base/debug/debugging_buildflags.h"
+ #include "build/build_config.h"
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 9)
+ #define PA_THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
+ #else
+ #define PA_THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op
+diff --git a/base/allocator/partition_allocator/partition_alloc_forward.h b/base/allocator/partition_allocator/partition_alloc_forward.h
+index aa808f28b4dc..e00ec9e6dfe5 100644
+--- a/base/allocator/partition_allocator/partition_alloc_forward.h
++++ b/base/allocator/partition_allocator/partition_alloc_forward.h
+@@ -28,12 +28,14 @@ namespace internal {
+ // the second one 16. We could technically return something different for
+ // malloc() and operator new(), but this would complicate things, and most of
+ // our allocations are presumably coming from operator new() anyway.
++#if !defined(MOZ_ZUCCHINI)
+ constexpr size_t kAlignment =
+     std::max(alignof(max_align_t),
+              static_cast<size_t>(__STDCPP_DEFAULT_NEW_ALIGNMENT__));
+ static_assert(kAlignment <= 16,
+               "PartitionAlloc doesn't support a fundamental alignment larger "
+               "than 16 bytes.");
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ struct SlotSpanMetadata;
+ class PA_LOCKABLE Lock;
+diff --git a/base/compiler_specific.h b/base/compiler_specific.h
+index 26bf04f26f15..ad65ae00c1dd 100644
+--- a/base/compiler_specific.h
++++ b/base/compiler_specific.h
+@@ -41,7 +41,8 @@
+ // Annotate a function indicating it should not be inlined.
+ // Use like:
+ //   NOINLINE void DoStuff() { ... }
+-#if defined(__clang__) && HAS_ATTRIBUTE(noinline)
++#if defined(__clang__) && HAS_ATTRIBUTE(noinline) && \
++    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
+ #define NOINLINE [[clang::noinline]]
+ #elif defined(COMPILER_GCC) && HAS_ATTRIBUTE(noinline)
+ #define NOINLINE __attribute__((noinline))
+@@ -51,7 +52,8 @@
+ #define NOINLINE
+ #endif
+ 
+-#if defined(__clang__) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline)
++#if defined(__clang__) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline) && \
++    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
+ #define ALWAYS_INLINE [[clang::always_inline]] inline
+ #elif defined(COMPILER_GCC) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline)
+ #define ALWAYS_INLINE inline __attribute__((__always_inline__))
+@@ -69,7 +71,8 @@
+ // prevent code folding, see NO_CODE_FOLDING() in base/debug/alias.h.
+ // Use like:
+ //   NOT_TAIL_CALLED void FooBar();
+-#if defined(__clang__) && HAS_ATTRIBUTE(not_tail_called)
++#if defined(__clang__) && HAS_ATTRIBUTE(not_tail_called) && \
++    (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 15)
+ #define NOT_TAIL_CALLED [[clang::not_tail_called]]
+ #else
+ #define NOT_TAIL_CALLED
+@@ -393,7 +396,7 @@ inline constexpr bool AnalyzerAssumeTrue(bool arg) {
+ #define CONSTINIT
+ #endif
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 13)
+ #define GSL_OWNER [[gsl::Owner]]
+ #define GSL_POINTER [[gsl::Pointer]]
+ #else
+diff --git a/base/cxx20_is_constant_evaluated.h b/base/cxx20_is_constant_evaluated.h
+index 16a5d4d963de..f87d7ab6a591 100644
+--- a/base/cxx20_is_constant_evaluated.h
++++ b/base/cxx20_is_constant_evaluated.h
+@@ -5,6 +5,10 @@
+ #ifndef BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+ #define BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+ 
++#if defined(MOZ_ZUCCHINI)
++#include "base/compiler_specific.h"
++#endif  // defined(MOZ_ZUCCHINI)
++
+ namespace base {
+ 
+ // Implementation of C++20's std::is_constant_evaluated.
+@@ -13,7 +17,11 @@ namespace base {
+ // - https://en.cppreference.com/w/cpp/types/is_constant_evaluated
+ // - https://wg21.link/meta.const.eval
+ constexpr bool is_constant_evaluated() noexcept {
++#if !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
+   return __builtin_is_constant_evaluated();
++#else
++  return false;
++#endif  // !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
+ }
+ 
+ }  // namespace base
+diff --git a/base/files/file_enumerator_posix.cc b/base/files/file_enumerator_posix.cc
+index e329b88a0d94..129ffd89b6d8 100644
+--- a/base/files/file_enumerator_posix.cc
++++ b/base/files/file_enumerator_posix.cc
+@@ -186,7 +186,11 @@ FilePath FileEnumerator::Next() {
+     // reached with no errors, null is returned and errno is not changed.
+     // Therefore we must reset errno to zero before calling readdir() if we
+     // wish to know whether a null result indicates an error condition.
++#if !defined(MOZ_ZUCCHINI)
+     while (errno = 0, dent = readdir(dir)) {
++#else
++    while ((void)(errno = 0), dent = readdir(dir)) {
++#endif  // !defined(MOZ_ZUCCHINI)
+       FileInfo info;
+       info.filename_ = FilePath(dent->d_name);
+ 
+diff --git a/base/files/file_path.cc b/base/files/file_path.cc
+index cf2a38bd8247..b449a34caab6 100644
+--- a/base/files/file_path.cc
++++ b/base/files/file_path.cc
+@@ -193,7 +193,11 @@ FilePath::~FilePath() = default;
+ 
+ FilePath& FilePath::operator=(const FilePath& that) = default;
+ 
++#if !defined(MOZ_ZUCCHINI)
+ FilePath& FilePath::operator=(FilePath&& that) noexcept = default;
++#else
++FilePath& FilePath::operator=(FilePath&& that) = default;
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ bool FilePath::operator==(const FilePath& that) const {
+ #if defined(FILE_PATH_USES_DRIVE_LETTERS)
+diff --git a/base/files/file_path.h b/base/files/file_path.h
+index e8c5022db3fb..44e04fefec37 100644
+--- a/base/files/file_path.h
++++ b/base/files/file_path.h
+@@ -202,7 +202,11 @@ class BASE_EXPORT FilePath {
+   FilePath(FilePath&& that) noexcept;
+   // Replaces the contents with those of |that|, which is left in valid but
+   // unspecified state.
++#if !defined(MOZ_ZUCCHINI)
+   FilePath& operator=(FilePath&& that) noexcept;
++#else
++  FilePath& operator=(FilePath&& that);
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+   bool operator==(const FilePath& that) const;
+ 
+diff --git a/base/files/file_posix.cc b/base/files/file_posix.cc
+index 342fa566f8ec..0d04e00f4820 100644
+--- a/base/files/file_posix.cc
++++ b/base/files/file_posix.cc
+@@ -87,6 +87,9 @@ short FcntlFlockType(absl::optional<File::LockMode> mode) {
+       return F_WRLCK;
+   }
+   NOTREACHED();
++#if defined(MOZ_ZUCCHINI)
++  return F_RDLCK;
++#endif  // defined(MOZ_ZUCCHINI)
+ }
+ 
+ File::Error CallFcntlFlock(PlatformFile file,
+diff --git a/base/files/memory_mapped_file.cc b/base/files/memory_mapped_file.cc
+index a62cdacd29a9..ee2b3a9e81b2 100644
+--- a/base/files/memory_mapped_file.cc
++++ b/base/files/memory_mapped_file.cc
+@@ -115,7 +115,13 @@ bool MemoryMappedFile::Initialize(File file,
+     return false;
+ 
+   if (region != Region::kWholeFile)
++#if defined(MOZ_ZUCCHINI)
++  {
++#endif  // defined(MOZ_ZUCCHINI)
+     DCHECK_GE(region.offset, 0);
++#if defined(MOZ_ZUCCHINI)
++  }
++#endif  // defined(MOZ_ZUCCHINI)
+ 
+   file_ = std::move(file);
+ 
+diff --git a/base/functional/callback_internal.cc b/base/functional/callback_internal.cc
+index be05f6bde69e..56f071d5b62f 100644
+--- a/base/functional/callback_internal.cc
++++ b/base/functional/callback_internal.cc
+@@ -22,6 +22,9 @@ bool QueryCancellationTraitsForNonCancellables(
+       return true;
+   }
+   NOTREACHED();
++#if defined(MOZ_ZUCCHINI)
++  return false;
++#endif  // defined(MOZ_ZUCCHINI)
+ }
+ 
+ }  // namespace
+diff --git a/base/location.cc b/base/location.cc
+index 552e774edc7b..ecc194c10b94 100644
+--- a/base/location.cc
++++ b/base/location.cc
+@@ -133,6 +133,7 @@ void Location::WriteIntoTrace(perfetto::TracedValue context) const {
+ #define RETURN_ADDRESS() nullptr
+ #endif
+ 
++#if !defined(MOZ_ZUCCHINI) || SUPPORTS_LOCATION_BUILTINS
+ // static
+ NOINLINE Location Location::Current(const char* function_name,
+                                     const char* file_name,
+@@ -140,6 +141,12 @@ NOINLINE Location Location::Current(const char* function_name,
+   return Location(function_name, file_name + kStrippedPrefixLength, line_number,
+                   RETURN_ADDRESS());
+ }
++#else
++// static
++NOINLINE Location Location::Current() {
++  return Location(nullptr, RETURN_ADDRESS());
++}
++#endif  // !defined(MOZ_ZUCCHINI) || SUPPORTS_LOCATION_BUILTINS
+ 
+ //------------------------------------------------------------------------------
+ NOINLINE const void* GetProgramCounter() {
+diff --git a/base/location.h b/base/location.h
+index fcc1fd3e70b4..ee1ffd30aa3a 100644
+--- a/base/location.h
++++ b/base/location.h
+@@ -13,6 +13,21 @@
+ #include "base/trace_event/base_tracing_forward.h"
+ #include "build/build_config.h"
+ 
++#if defined(MOZ_ZUCCHINI)
++#if defined(__has_builtin)
++// Clang allows detection of these builtins.
++#  define SUPPORTS_LOCATION_BUILTINS                                       \
++    (__has_builtin(__builtin_FUNCTION) && __has_builtin(__builtin_FILE) && \
++     __has_builtin(__builtin_LINE))
++#elif defined(COMPILER_GCC) && __GNUC__ >= 7
++// GCC has supported these for a long time, but they point at the function
++// declaration in the case of default arguments, rather than at the call site.
++#  define SUPPORTS_LOCATION_BUILTINS 1
++#else
++#  define SUPPORTS_LOCATION_BUILTINS 0
++#endif
++#endif  // defined(MOZ_ZUCCHINI)
++
+ namespace base {
+ 
+ // Location provides basic info where of an object was constructed, or was
+@@ -72,9 +87,13 @@ class BASE_EXPORT Location {
+   // Write a representation of this object into a trace.
+   void WriteIntoTrace(perfetto::TracedValue context) const;
+ 
++#if !defined(MOZ_ZUCCHINI) || SUPPORTS_LOCATION_BUILTINS
+   static Location Current(const char* function_name = __builtin_FUNCTION(),
+                           const char* file_name = __builtin_FILE(),
+                           int line_number = __builtin_LINE());
++#else
++  static Location Current();
++#endif  // !defined(MOZ_ZUCCHINI) || SUPPORTS_LOCATION_BUILTINS
+ 
+  private:
+   // Only initializes the file name and program counter, the source information
+diff --git a/base/memory/ref_counted.h b/base/memory/ref_counted.h
+index 6658dbab5077..a023856a8460 100644
+--- a/base/memory/ref_counted.h
++++ b/base/memory/ref_counted.h
+@@ -77,12 +77,30 @@ class BASE_EXPORT RefCountedBase {
+ #if DCHECK_IS_ON()
+     DCHECK(!in_dtor_);
+     if (ref_count_ == 0)
++#if defined(MOZ_ZUCCHINI)
++    {
++#endif  // defined(MOZ_ZUCCHINI)
+       in_dtor_ = true;
++#if defined(MOZ_ZUCCHINI)
++    }
++#endif  // defined(MOZ_ZUCCHINI)
+ 
+     if (ref_count_ >= 1)
++#if defined(MOZ_ZUCCHINI)
++    {
++#endif  // defined(MOZ_ZUCCHINI)
+       DCHECK(CalledOnValidSequence());
++#if defined(MOZ_ZUCCHINI)
++    }
++#endif  // defined(MOZ_ZUCCHINI)
+     if (ref_count_ == 1)
++#if defined(MOZ_ZUCCHINI)
++    {
++#endif  // defined(MOZ_ZUCCHINI)
+       sequence_checker_.DetachFromSequence();
++#if defined(MOZ_ZUCCHINI)
++    }
++#endif  // defined(MOZ_ZUCCHINI)
+ #endif
+ 
+     return ref_count_ == 0;
+diff --git a/base/numerics/safe_conversions_impl.h b/base/numerics/safe_conversions_impl.h
+index d0a9d1a9beee..6a75b3a33049 100644
+--- a/base/numerics/safe_conversions_impl.h
++++ b/base/numerics/safe_conversions_impl.h
+@@ -10,6 +10,10 @@
+ #include <limits>
+ #include <type_traits>
+ 
++#if defined(MOZ_ZUCCHINI)
++#include "base/compiler_specific.h"
++#endif  // defined(MOZ_ZUCCHINI)
++
+ #if defined(__GNUC__) || defined(__clang__)
+ #define BASE_NUMERICS_LIKELY(x) __builtin_expect(!!(x), 1)
+ #define BASE_NUMERICS_UNLIKELY(x) __builtin_expect(!!(x), 0)
+@@ -88,7 +92,11 @@ constexpr typename std::make_unsigned<T>::type SafeUnsignedAbs(T value) {
+ 
+ // TODO(jschuh): Switch to std::is_constant_evaluated() once C++20 is supported.
+ // Alternately, the usage could be restructured for "consteval if" in C++23.
++#if !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
+ #define IsConstantEvaluated() (__builtin_is_constant_evaluated())
++#else
++#define IsConstantEvaluated() false
++#endif  // !defined(MOZ_ZUCCHINI) || HAS_BUILTIN(__builtin_is_constant_evaluated)
+ 
+ // TODO(jschuh): Debug builds don't reliably propagate constants, so we restrict
+ // some accelerated runtime paths to release builds until this can be forced
+diff --git a/base/strings/string_util_impl_helpers.h b/base/strings/string_util_impl_helpers.h
+index 9741ef97b821..c9a8e1741e35 100644
+--- a/base/strings/string_util_impl_helpers.h
++++ b/base/strings/string_util_impl_helpers.h
+@@ -230,6 +230,10 @@ bool StartsWithT(T str, T search_for, CompareCase case_sensitivity) {
+       return std::equal(search_for.begin(), search_for.end(), source.begin(),
+                         CaseInsensitiveCompareASCII<CharT>());
+   }
++
++#if defined(MOZ_ZUCCHINI)
++  return false;
++#endif  // defined(MOZ_ZUCCHINI)
+ }
+ 
+ template <typename T, typename CharT = typename T::value_type>
+@@ -248,6 +252,10 @@ bool EndsWithT(T str, T search_for, CompareCase case_sensitivity) {
+       return std::equal(source.begin(), source.end(), search_for.begin(),
+                         CaseInsensitiveCompareASCII<CharT>());
+   }
++
++#if defined(MOZ_ZUCCHINI)
++  return false;
++#endif  // defined(MOZ_ZUCCHINI)
+ }
+ 
+ // A Matcher for DoReplaceMatchesAfterOffset() that matches substrings.
+diff --git a/base/thread_annotations.h b/base/thread_annotations.h
+index 4fadaeecb618..6dd4b8c0cc38 100644
+--- a/base/thread_annotations.h
++++ b/base/thread_annotations.h
+@@ -40,7 +40,7 @@
+ #include "base/dcheck_is_on.h"
+ #include "build/build_config.h"
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && (!defined(MOZ_ZUCCHINI) || __clang_major__ >= 9)
+ #define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
+ #else
+ #define THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op
+diff --git a/base/trace_event/trace_event_stub.h b/base/trace_event/trace_event_stub.h
+index 4ef0a315b492..95c3d89c3117 100644
+--- a/base/trace_event/trace_event_stub.h
++++ b/base/trace_event/trace_event_stub.h
+@@ -130,7 +130,9 @@ class BASE_EXPORT TracedValueJSON : public TracedValue {
+  public:
+   explicit TracedValueJSON(size_t capacity = 0) : TracedValue(capacity) {}
+ 
++#if !defined(MOZ_ZUCCHINI)
+   std::unique_ptr<base::Value> ToBaseValue() const { return nullptr; }
++#endif  // !defined(MOZ_ZUCCHINI)
+   std::string ToJSON() const { return ""; }
+   std::string ToFormattedJSON() const { return ""; }
+ };
+diff --git a/components/zucchini/abs32_utils_unittest.cc b/components/zucchini/abs32_utils_unittest.cc
+index 3759cdbf32f4..f5c4df6d9bc9 100644
+--- a/components/zucchini/abs32_utils_unittest.cc
++++ b/components/zucchini/abs32_utils_unittest.cc
+@@ -24,7 +24,9 @@ namespace {
+ class TestAddressTranslator : public AddressTranslator {
+  public:
+   TestAddressTranslator(size_t image_size, rva_t rva_begin) {
++#if !defined(MOZ_ZUCCHINI) // This DCHECK is always true
+     DCHECK_GE(rva_begin, 0U);
++#endif  // !defined(MOZ_ZUCCHINI)
+     CHECK_EQ(AddressTranslator::kSuccess,
+              Initialize({{0, base::checked_cast<offset_t>(image_size),
+                           rva_begin, base::checked_cast<rva_t>(image_size)}}));
+diff --git a/components/zucchini/algorithm_unittest.cc b/components/zucchini/algorithm_unittest.cc
+index 48d906f0ae2a..1761101e1740 100644
+--- a/components/zucchini/algorithm_unittest.cc
++++ b/components/zucchini/algorithm_unittest.cc
+@@ -158,7 +158,13 @@ TEST(AlgorithmTest, IncrementForAlignCeil) {
+   for (const auto& test_case : kTestCases2) {
+     EXPECT_EQ(test_case.exp, IncrementForAlignCeil2<int32_t>(test_case.pos));
+     if (test_case.pos >= 0)
++#if defined(MOZ_ZUCCHINI)
++    {
++#endif  // defined(MOZ_ZUCCHINI)
+       EXPECT_EQ(test_case.exp, IncrementForAlignCeil2<uint32_t>(test_case.pos));
++#if defined(MOZ_ZUCCHINI)
++    }
++#endif  // defined(MOZ_ZUCCHINI)
+   }
+   TestCase kTestCases4[] = {
+       {0, 0},    {3, 1},    {2, 2},   {1, 3},   {0, 4},   {3, 5},
+@@ -168,7 +174,13 @@ TEST(AlgorithmTest, IncrementForAlignCeil) {
+   for (const auto& test_case : kTestCases4) {
+     EXPECT_EQ(test_case.exp, IncrementForAlignCeil4<int32_t>(test_case.pos));
+     if (test_case.pos >= 0)
++#if defined(MOZ_ZUCCHINI)
++    {
++#endif  // defined(MOZ_ZUCCHINI)
+       EXPECT_EQ(test_case.exp, IncrementForAlignCeil4<uint32_t>(test_case.pos));
++#if defined(MOZ_ZUCCHINI)
++    }
++#endif  // defined(MOZ_ZUCCHINI)
+   }
+ }
+ 
+diff --git a/components/zucchini/arm_utils_unittest.cc b/components/zucchini/arm_utils_unittest.cc
+index 3860e588adc1..fe5e289b8052 100644
+--- a/components/zucchini/arm_utils_unittest.cc
++++ b/components/zucchini/arm_utils_unittest.cc
+@@ -157,7 +157,11 @@ class ArmTranslatorEncodeDecodeTest {
+     ArmAlign (*decode_fun)(CODE_T, arm_disp_t*) = TRAITS::Decode;
+     bool (*encode_fun)(arm_disp_t, CODE_T*) = TRAITS::Encode;
+ 
++#if !defined(MOZ_ZUCCHINI)
+     for (const ArmRelInstruction<CODE_T> instr : instr_list) {
++#else
++    for (const ArmRelInstruction<CODE_T>& instr : instr_list) {
++#endif  // !defined(MOZ_ZUCCHINI)
+       // Parse clean slate code bytes, and ensure it's well-formed.
+       std::map<std::string, uint32_t> clean_slate_code_components;
+       EXPECT_TRUE(SplitBits(instr.code_pattern, instr.clean_slate_code,
+diff --git a/components/zucchini/binary_data_histogram_unittest.cc b/components/zucchini/binary_data_histogram_unittest.cc
+index 02a189c8a325..4e77d3eb2eea 100644
+--- a/components/zucchini/binary_data_histogram_unittest.cc
++++ b/components/zucchini/binary_data_histogram_unittest.cc
+@@ -110,7 +110,13 @@ TEST(BinaryDataHistogramTest, Basic) {
+     EXPECT_EQ(score, prefix_histograms[n].Distance(prefix_histograms[i]));
+     // Distance should decrease as prefix gets nearer to full data.
+     if (prev_prefix_score != kUninitScore)
++#if defined(MOZ_ZUCCHINI)
++    {
++#endif  // defined(MOZ_ZUCCHINI)
+       EXPECT_LT(score, prev_prefix_score);
++#if defined(MOZ_ZUCCHINI)
++    }
++#endif  // defined(MOZ_ZUCCHINI)
+     prev_prefix_score = score;
+   }
+ 
+@@ -124,7 +130,13 @@ TEST(BinaryDataHistogramTest, Basic) {
+     EXPECT_EQ(score, suffix_histograms[0].Distance(suffix_histograms[i]));
+     // Distance should increase as suffix gets farther from full data.
+     if (prev_suffix_score != kUninitScore)
++#if defined(MOZ_ZUCCHINI)
++    {
++#endif  // defined(MOZ_ZUCCHINI)
+       EXPECT_GT(score, prev_suffix_score);
++#if defined(MOZ_ZUCCHINI)
++    }
++#endif  // defined(MOZ_ZUCCHINI)
+     prev_suffix_score = score;
+   }
+ }
+diff --git a/components/zucchini/imposed_ensemble_matcher_unittest.cc b/components/zucchini/imposed_ensemble_matcher_unittest.cc
+index 248ded5e87de..0bf292aaccd7 100644
+--- a/components/zucchini/imposed_ensemble_matcher_unittest.cc
++++ b/components/zucchini/imposed_ensemble_matcher_unittest.cc
+@@ -21,6 +21,10 @@
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "third_party/abseil-cpp/absl/types/optional.h"
+ 
++#if defined(MOZ_ZUCCHINI)
++using namespace std::string_literals;
++#endif  // defined(MOZ_ZUCCHINI)
++
+ namespace zucchini {
+ 
+ namespace {
+@@ -109,9 +113,15 @@ TEST(ImposedMatchParserTest, ImposedMatchParser) {
+ 
+   // Full matches. Different permutations give same result.
+   for (const std::string& imposed_matches :
++#if !defined(MOZ_ZUCCHINI)
+        {"1+2=12+4,4+2=5+2,6+4=2+3", "1+2=12+4,6+4=2+3,4+2=5+2",
+         "4+2=5+2,1+2=12+4,6+4=2+3", "4+2=5+2,6+4=2+3,1+2=12+4",
+         "6+4=2+3,1+2=12+4,4+2=5+2", "6+4=2+3,1+2=12+4,4+2=5+2"}) {
++#else
++       {"1+2=12+4,4+2=5+2,6+4=2+3"s, "1+2=12+4,6+4=2+3,4+2=5+2"s,
++        "4+2=5+2,1+2=12+4,6+4=2+3"s, "4+2=5+2,6+4=2+3,1+2=12+4"s,
++        "6+4=2+3,1+2=12+4,4+2=5+2"s, "6+4=2+3,1+2=12+4,4+2=5+2"s}) {
++#endif  // !defined(MOZ_ZUCCHINI)
+     EXPECT_TRUE(run_test(imposed_matches));
+     EXPECT_EQ(1U, num_identical);  // "4+2=5+2"
+     EXPECT_EQ(2U, matches.size());
+@@ -173,32 +183,52 @@ TEST(ImposedMatchParserTest, ImposedMatchParser) {
+ 
+   // Test invalid delimiter.
+   for (const std::string& imposed_matches :
++#if !defined(MOZ_ZUCCHINI)
+        {"1+2=12+4,4+2=5+2x", "1+2=12+4 4+2=5+2", "1+2=12+4,4+2=5+2 ",
+         "1+2=12+4 "}) {
++#else
++       {"1+2=12+4,4+2=5+2x"s, "1+2=12+4 4+2=5+2"s, "1+2=12+4,4+2=5+2 "s,
++        "1+2=12+4 "s}) {
++#endif  // !defined(MOZ_ZUCCHINI)
+     EXPECT_FALSE(run_test(imposed_matches));
+     EXPECT_EQ(ImposedMatchParser::kInvalidDelimiter, status);
+   }
+ 
+   // Test parse errors, including uint32_t overflow.
+   for (const std::string& imposed_matches :
++#if !defined(MOZ_ZUCCHINI)
+        {"x1+2=12+4,4+2=5+2,6+4=2+3", "x1+2=12+4,4+2=5+2,6+4=2+3x", ",", " ",
+         "+2=12+4", "1+2+12+4", "1=2+12+4", " 1+2=12+4", "1+2= 12+4", "1", "1+2",
+         "1+2=", "1+2=12", "1+2=12+", "4294967296+2=12+4"}) {
++#else
++       {"x1+2=12+4,4+2=5+2,6+4=2+3"s, "x1+2=12+4,4+2=5+2,6+4=2+3x"s, ","s, " "s,
++        "+2=12+4"s, "1+2+12+4"s, "1=2+12+4"s, " 1+2=12+4"s, "1+2= 12+4"s, "1"s, "1+2"s,
++        "1+2="s, "1+2=12"s, "1+2=12+"s, "4294967296+2=12+4"s}) {
++#endif  // !defined(MOZ_ZUCCHINI)
+     EXPECT_FALSE(run_test(imposed_matches));
+     EXPECT_EQ(ImposedMatchParser::kParseError, status);
+   }
+ 
+   // Test bound errors, include 0-size.
+   for (const std::string& imposed_matches :
++#if !defined(MOZ_ZUCCHINI)
+        {"1+10=12+4", "1+2=12+7", "0+11=0+18", "0+12=0+17", "10+1=0+18",
+         "0+10=18+1", "0+0=0+18", "0+10=0+0", "1000000000+1=0+1000000000"}) {
++#else
++       {"1+10=12+4"s, "1+2=12+7"s, "0+11=0+18"s, "0+12=0+17"s, "10+1=0+18"s,
++        "0+10=18+1"s, "0+0=0+18"s, "0+10=0+0"s, "1000000000+1=0+1000000000"s}) {
++#endif  // !defined(MOZ_ZUCCHINI)
+     EXPECT_FALSE(run_test(imposed_matches));
+     EXPECT_EQ(ImposedMatchParser::kOutOfBound, status);
+   }
+ 
+   // Test overlap errors. Matches that get ignored are still tested.
+   for (const std::string& imposed_matches :
++#if !defined(MOZ_ZUCCHINI)
+        {"1+2=12+4,4+2=5+2,6+4=2+4", "0+10=0+18,1+2=12+4", "6+4=2+10,3+2=5+2"}) {
++#else
++       {"1+2=12+4,4+2=5+2,6+4=2+4"s, "0+10=0+18,1+2=12+4"s, "6+4=2+10,3+2=5+2"s}) {
++#endif  // !defined(MOZ_ZUCCHINI)
+     EXPECT_FALSE(run_test(imposed_matches));
+     EXPECT_EQ(ImposedMatchParser::kOverlapInNew, status);
+   }
+diff --git a/components/zucchini/main_utils.cc b/components/zucchini/main_utils.cc
+index b073a209bcf8..50e62aefea90 100644
+--- a/components/zucchini/main_utils.cc
++++ b/components/zucchini/main_utils.cc
+@@ -209,8 +209,13 @@ bool CheckAndGetFilePathParams(const base::CommandLine& command_line,
+ 
+ // Prints main Zucchini usage text.
+ void PrintUsage(std::ostream& err) {
++#if !defined(MOZ_ZUCCHINI)
+   err << "Version: " << zucchini::kMajorVersion << "."
+       << zucchini::kMinorVersion << std::endl;
++#else
++  err << "Version: " << static_cast<uint16_t>(zucchini::kMajorVersion) << "."
++      << static_cast<uint16_t>(zucchini::kMinorVersion) << std::endl;
++#endif
+   err << "Usage:" << std::endl;
+   for (const Command& command : kCommands)
+     err << "  zucchini " << command.usage << std::endl;
+diff --git a/components/zucchini/patch_reader.cc b/components/zucchini/patch_reader.cc
+index f94a2753a1a8..9c65fcba88d8 100644
+--- a/components/zucchini/patch_reader.cc
++++ b/components/zucchini/patch_reader.cc
+@@ -344,7 +344,11 @@ bool EnsemblePatchReader::Initialize(BufferSource* source) {
+   }
+   if (header_.major_version != kMajorVersion) {
+     LOG(ERROR) << "Patch major version doesn't match. Expected: "
++#if !defined(MOZ_ZUCCHINI)
+                << kMajorVersion << ", Actual: " << header_.major_version << ".";
++#else
++               << static_cast<uint16_t>(kMajorVersion) << ", Actual: " << header_.major_version << ".";
++#endif   // !defined(MOZ_ZUCCHINI)
+     return false;
+   }
+   // |header_| is assumed to be safe from this point forward.
+diff --git a/components/zucchini/rel32_utils_unittest.cc b/components/zucchini/rel32_utils_unittest.cc
+index 55decf5e73ae..c7912a3c72b6 100644
+--- a/components/zucchini/rel32_utils_unittest.cc
++++ b/components/zucchini/rel32_utils_unittest.cc
+@@ -26,7 +26,9 @@ namespace {
+ class TestAddressTranslator : public AddressTranslator {
+  public:
+   TestAddressTranslator(offset_t image_size, rva_t rva_begin) {
++#if !defined(MOZ_ZUCCHINI) // This DCHECK is always true
+     DCHECK_GE(rva_begin, 0U);
++#endif  // !defined(MOZ_ZUCCHINI)
+     CHECK_EQ(AddressTranslator::kSuccess,
+              Initialize({{0, image_size, rva_begin, image_size}}));
+   }
+diff --git a/components/zucchini/suffix_array_unittest.cc b/components/zucchini/suffix_array_unittest.cc
+index efd5fb2821e2..57775b047ea1 100644
+--- a/components/zucchini/suffix_array_unittest.cc
++++ b/components/zucchini/suffix_array_unittest.cc
+@@ -193,7 +193,11 @@ void TestSuffixSort(ustring test_str) {
+   }
+ }
+ 
++#if !defined(MOZ_ZUCCHINI)
+ constexpr const char* test_strs[] = {
++#else
++std::vector<std::string> test_strs = std::initializer_list<std::string>({
++#endif  // !defined(MOZ_ZUCCHINI)
+     "",
+     "a",
+     "aa",
+@@ -214,7 +218,11 @@ constexpr const char* test_strs[] = {
+     "9876543210123456789",
+     "aababcabcdabcdeabcdefabcdefg",
+     "asdhklgalksdjghalksdjghalksdjgh",
++#if !defined(MOZ_ZUCCHINI)
+ };
++#else
++});
++#endif  // !defined(MOZ_ZUCCHINI)
+ 
+ TEST(SuffixSortTest, NaiveSuffixSort) {
+   for (const std::string& test_str : test_strs) {
+-- 
+2.42.0.windows.2
+

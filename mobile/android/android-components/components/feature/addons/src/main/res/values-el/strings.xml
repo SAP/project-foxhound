@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://schemas.android.com/apk/res-auto">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- Description for giving an add-on access to users's data on one site. %1$s  will be replaced by the DNS host name for which a web extension is requesting access (e.g., www.mozilla.org). -->
   <string name="mozac_feature_addons_permissions_one_site_description">Πρόσβαση στα δεδομένα σας για το %1$s</string>
   <!-- Description for giving an add-on access to users's data in multiple sites in the domain %1$s. %1$s will be replaced by the DNS domain for which a web extension is requesting access (e.g., mozilla.org). -->
   <string name="mozac_feature_addons_permissions_sites_in_domain_description">Πρόσβαση στα δεδομένα σας για ιστοτόπους του τομέα %1$s</string>
-  <!--
-    When an add-on requires access to more than 4 sites, for example the add-on requires access for 5 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
-    then we will show another collapsed entry saying "Access your data on 1 other site". This entry it's for the singular case, when the add-on is only accessing one extra site.
-  -->
-  <string name="mozac_feature_addons_permissions_one_extra_site_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Πρόσβαση στα δεδομένα σας σε άλλη 1 σελίδα</string>
   <!--
     When an add-on requires access to more than 4 sites, for example the add-on requires access for 5 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
     then we will show another collapsed entry saying "Access your data on another site".
@@ -16,20 +18,9 @@
   <string name="mozac_feature_addons_permissions_one_extra_site_description_2">Πρόσβαση στα δεδομένα σας σε άλλο ιστότοπο</string>
   <!--
     When an add-on requires access to more than 4 sites, for example the add-on requires access for 6 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
-    then we will show another collapsed entry saying "Access your data on 2 other sites". This entry it's for the plural case, when the add-on is accessing more than one extra site.
-    %1$d will be replaced by an integer indicating the number of additional hosts for which this web extension is requesting permission.
-  -->
-  <string name="mozac_feature_addons_permissions_extra_sites_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Πρόσβαση στα δεδομένα σας σε %1$d ακόμη ιστοτόπους</string>
-  <!--
-    When an add-on requires access to more than 4 sites, for example the add-on requires access for 6 sites. We will show the first 4 sites in individual entries, as in mozac_feature_addons_permissions_one_site_description,
     then we will show another collapsed entry saying "Access your data on other sites".
   -->
   <string name="mozac_feature_addons_permissions_extra_sites_description_2">Πρόσβαση στα δεδομένα σας σε άλλους ιστοτόπους</string>
-  <!--
-    When an add-on requires access to more than 4 domains, for example the add-on requires access for 5 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
-    then we will show another collapsed entry saying "Access your data on 1 other domain". This entry it's for the singular case, when the add-on is only accessing one extra domain.
-  -->
-  <string name="mozac_feature_addons_permissions_one_extra_domain_description" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Πρόσβαση στα δεδομένα σας σε 1 ακόμα τομέα</string>
   <!--
     When an add-on requires access to more than 4 domains, for example the add-on requires access for 5 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
     then we will show another collapsed entry saying "Access your data on another domain.
@@ -37,17 +28,15 @@
   <string name="mozac_feature_addons_permissions_one_extra_domain_description_2">Πρόσβαση στα δεδομένα σας σε άλλο τομέα</string>
   <!--
     When an add-on requires access to more than 4 domains, for example the add-on requires access for 6 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
-    then we will show another collapsed entry saying "Access your data on 2 other domains". This entry it's for the plural case, when the add-on is accessing more than one extra domain.
-    %1$d will be replaced by an integer indicating the number of additional domains for which this web extension is requesting permission.
-  -->
-  <string name="mozac_feature_addons_permissions_extra_domains_description_plural" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Πρόσβαση στα δεδομένα σας σε %1$d ακόμα τομείς</string>
-  <!--
-    When an add-on requires access to more than 4 domains, for example the add-on requires access for 6 domains. We will show the first 4 domains in individual entries, as in mozac_feature_addons_permissions_sites_in_domain_description,
     then we will show another collapsed entry saying "Access your data on other domains".
   -->
   <string name="mozac_feature_addons_permissions_extra_domains_description_plural_2">Πρόσβαση στα δεδομένα σας σε άλλους τομείς</string>
   <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
-  <string name="mozac_feature_addons_permissions_all_domain_count_description" tools:ignore="PluralsCandidate">Πρόσβαση στα δεδομένα σας για ιστοτόπους σε %1$d τομείς</string>
+  <string name="mozac_feature_addons_permissions_all_domain_count_description" moz:removedIn="148" tools:ignore="PluralsCandidate">Πρόσβαση στα δεδομένα σας για ιστοτόπους σε %1$d τομείς</string>
+  <plurals name="mozac_feature_addons_permissions_all_domain_count_description_2">
+    <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
+    <item quantity="other">Πρόσβαση στα δεδομένα σας για ιστοτόπους σε %1$d τομείς</item>
+  </plurals>
   <!-- Content description for a permission item, for an installed add-on details page. %1$s will be replaced with the permission text name, %2$d will be replaced with the permission position in the list and %3$d will be replaced with the total number of permissions in the list.Taking as an example "Read and modify privacy settings" the whole text will read Read and modify privacy settings, 2 of 6. -->
   <string name="mozac_feature_addons_permissions_content_description_item">%1$s, %2$d από %3$d</string>
   <!-- Description for the "privacy" WebExtensions API permission. -->
@@ -185,8 +174,6 @@
   <!-- The text shown when an extension requests the userScripts permission, near the usual description of the userScripts permission -->
   <string name="mozac_feature_addons_permissions_user_scripts_extra_warning">Τα μη επαληθευμένα σενάρια μπορούν να θέσουν σε κίνδυνο την ασφάλεια και το απόρρητό σας. Να εκτελείτε σενάρια μόνο από επεκτάσεις ή πηγές που εμπιστεύεστε.</string>
   <!-- The sentence used when the extension has data collection permissions. %1$s is a formatted list of permissions. -->
-  <string name="mozac_feature_addons_permissions_required_data_collection_description" moz:removedIn="141" tools:ignore="UnusedResources">Ο δημιουργός δηλώνει ότι αυτή η επέκταση συλλέγει: %1$s.</string>
-  <!-- The sentence used when the extension has data collection permissions. %1$s is a formatted list of permissions. -->
   <string name="mozac_feature_addons_permissions_required_data_collection_description_2">Ο δημιουργός δηλώνει ότι αυτή η επέκταση συλλέγει: %1$s</string>
   <!-- The sentence used when the developer of an extension has explicitly stated that they do not collect any data collection. -->
   <string name="mozac_feature_addons_permissions_none_required_data_collection_description">Ο δημιουργός δηλώνει ότι αυτή η επέκταση δεν απαιτεί συλλογή δεδομένων.</string>
@@ -263,8 +250,6 @@
   <!-- Indicates the add-on is enabled. -->
   <string name="mozac_feature_addons_settings_on">Ενεργό</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
-  <string name="mozac_feature_addons_settings_allow_in_private_browsing" moz:removedIn="141" tools:ignore="UnusedResources">Να επιτρέπεται στην ιδιωτική περιήγηση</string>
-  <!-- Indicates the add-on is allowed in private browsing mode. -->
   <string name="mozac_feature_addons_settings_allow_in_private_browsing_2">Να επιτρέπεται η εκτέλεση της επέκτασης στην ιδιωτική περιήγηση</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
   <string name="mozac_feature_addons_settings_run_in_private_browsing">Εκτέλεση στην ιδιωτική περιήγηση</string>
@@ -291,25 +276,17 @@
   <!-- This is a button to report an add-on. -->
   <string name="mozac_feature_addons_report">Αναφορά</string>
   <!-- This is the title of a dialog that asks the users if they to install or not an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_permissions_dialog_title" moz:removedIn="141" tools:ignore="UnusedResources">Προσθήκη του %1$s;</string>
-  <!-- This is the title of a dialog that asks the users if they to install or not an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_permissions_dialog_title_2">Προσθήκη του %1$s</string>
-  <!-- This is the title of a dialog that asks the users to grant optional permissions. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_optional_permissions_dialog_title" moz:removedIn="142" tools:ignore="UnusedResources">Το %1$s απαιτεί επιπρόσθετα δικαιώματα.</string>
   <!-- This is the title of a dialog that asks the users to grant optional permissions. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_optional_permissions_with_data_collection_dialog_title">Το %1$s απαιτεί επιπρόσθετες ρυθμίσεις</string>
   <!-- This is the title of a dialog that asks the users to grant optional data collection permissions only. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_optional_permissions_with_data_collection_only_dialog_title">Το %1$s απαιτεί συλλογή επιπρόσθετων δεδομένων</string>
-  <!-- This is the subtitle of a dialog that asks the users if they want to install or not an add-on, the subtitle lists the permissions that this add-on requires, the permissions will dynamically be listed after the ":". -->
-  <string name="mozac_feature_addons_permissions_dialog_subtitle" moz:removedIn="141" tools:ignore="UnusedResources">Απαιτεί την άδειά σας για:</string>
   <!-- Heading for the permissions section in the add-on install dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_required_permissions">Απαιτούμενα δικαιώματα:</string>
   <!-- Heading for the data collection permissions section in the add-on install dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_required_data_collection">Συλλογή υποχρεωτικών δεδομένων:</string>
   <!-- Heading for the optional settings section in the add-on install dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_optional_settings">Προαιρετικές ρυθμίσεις:</string>
-  <!-- This is the subtitle of a dialog that asks the users to grant optional permissions, the subtitle lists the permissions that this add-on requests, the permissions will dynamically be listed after the ":". -->
-  <string name="mozac_feature_addons_optional_permissions_dialog_subtitle" moz:removedIn="142" tools:ignore="UnusedResources">Θέλει να:</string>
   <!-- Heading for the permissions section in the optional permissions request dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_optional_permissions">Νέα δικαιώματα:</string>
   <!-- Heading for the data collection permissions section in the optional permissions request dialog. -->
@@ -346,22 +323,12 @@
   <string name="mozac_feature_extensions_manager_notification_restart_button">Επαναφορά επεκτάσεων</string>
   <!-- Button in the extensions manager that opens AMO in a tab -->
   <string name="mozac_feature_addons_find_more_extensions_button_text">Εύρεση περισσότερων επεκτάσεων</string>
-  <!-- The label of the allow button, this will be shown to the user when an add-on needs new permissions, with the button the user will indicate that they want to accept the new permissions and update the add-on -->
-  <string name="mozac_feature_addons_updater_notification_allow_button" moz:removedIn="142" tools:ignore="UnusedResources">Αποδοχή</string>
   <!-- The label of the update button on the system notification shown to the user when an add-on has an update that requires the user to accept new permissions. -->
   <string name="mozac_feature_addons_updater_notification_update_button">Ενημέρωση</string>
-  <!-- The label of the deny button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated -->
-  <string name="mozac_feature_addons_updater_notification_deny_button" moz:removedIn="142" tools:ignore="UnusedResources">Άρνηση</string>
   <!-- The label of the cancel button on a notification, this will be shown to the user when an add-on needs new permissions. Indicates the user denies the new permissions and prevents the add-on from be updated -->
   <string name="mozac_feature_addons_updater_notification_cancel_button">Ακύρωση</string>
-  <!-- The tile of the notification, this will be shown to the user when an add-on needs new permissions, to be updated. %1$s is the name of the add-ons -->
-  <string name="mozac_feature_addons_updater_notification_title" moz:removedIn="142" tools:ignore="UnusedResources">Το %1$s έχει νέα ενημέρωση</string>
   <!-- The title of the system notification shown to the user when an add-on has a new update that requires new permissions. %1$s is the name of the add-on. -->
   <string name="mozac_feature_addons_updater_notification_title_2">Το %1$s έχει ενημέρωση</string>
-  <!-- The content of the notification, this will be shown when an add-on needs new permissions, to be updated. %1$d is the amount of new permissions -->
-  <string name="mozac_feature_addons_updater_notification_content" tools:ignore="PluralsCandidate,UnusedResources" moz:removedIn="142">Απαιτούνται %1$d νέα δικαιώματα</string>
-  <!-- The content of the notification displayed when an add-on needs a new permission -->
-  <string name="mozac_feature_addons_updater_notification_content_singular" moz:removedIn="142" tools:ignore="UnusedResources">Απαιτείται ένα νέο δικαίωμα</string>
   <!-- A short explanation shown in the notification displayed when an add-on has a new update that requires new permissions. -->
   <string name="mozac_feature_addons_updater_notification_short_intro">Κάντε ακύρωση για να διατηρήσετε την τρέχουσα έκδοση και τις ρυθμίσεις σας.</string>
   <!-- The heading for the permissions section in the system notification shown when an add-on has an update that requires user confirmation. %1$s is a list of sentences. -->
@@ -411,17 +378,11 @@
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">Δεν ήταν δυνατή η εγκατάσταση του %1$s, επειδή μπορεί να εγκατασταθεί μόνο από έναν οργανισμό που χρησιμοποιεί εταιρικές πολιτικές, κάτι που δεν υποστηρίζεται σε αυτήν την πλατφόρμα.</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_soft_blocked_1">Το %1$s παραβιάζει τις πολιτικές της Mozilla και δεν είναι δυνατή η εγκατάστασή του στο %2$s.</string>
-  <!-- Text shown after successfully enabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_enabled" tools:ignore="UnusedResources" moz:removedIn="142">Επιτυχής ενεργοποίηση του %1$s</string>
+  <string name="mozac_feature_addons_soft_blocked_2">Το %1$s είναι περιορισμένο και δεν μπορεί να εγκατασταθεί στο %2$s.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_enable">Αποτυχία ενεργοποίησης του %1$s</string>
-  <!-- Text shown after successfully disabled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_disabled" tools:ignore="UnusedResources" moz:removedIn="142">Επιτυχής απενεργοποίηση του %1$s</string>
   <!-- Text shown after failed to disable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_disable">Αποτυχία απενεργοποίησης του %1$s</string>
-  <!-- Text shown after successfully uninstalled an add-on. %1$s is the add-on name. -->
-  <string name="mozac_feature_addons_successfully_uninstalled" tools:ignore="UnusedResources" moz:removedIn="142">Επιτυχής απεγκατάσταση του %1$s</string>
   <!-- Text shown after failed to uninstall an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_uninstall">Αποτυχία απεγκατάστασης του %1$s</string>
   <!-- Text shown after successfully removed an add-on. %1$s is the add-on name. -->
@@ -448,12 +409,8 @@
   <string name="mozac_feature_addons_updater_dialog_last_attempt">Τελευταία προσπάθεια:</string>
   <!-- Displayed in the "Status" field for the updater when an add-on has been correctly updated -->
   <string name="mozac_feature_addons_updater_dialog_status">Κατάσταση:</string>
-  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_installed_dialog_title" moz:removedIn="142" tools:ignore="UnusedResources">Το %1$s έχει προστεθεί στο %2$s</string>
   <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_installed_dialog_title_2">Το «%1$s» προστέθηκε</string>
-  <!-- Text shown in the dialog when add-on installation is completed. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_installed_dialog_description_2" moz:removedIn="142" tools:ignore="UnusedResources">Αποκτήστε πρόσβαση στο %1$s από το μενού του %2$s.</string>
   <!-- Used as text for the link in the description of the post-installation dialog. -->
   <string name="mozac_feature_addons_installed_dialog_description_link_text">ρυθμίσεις της επέκτασης</string>
   <!-- Text shown in the dialog when add-on installation is completed. %1$s is replaced by an active link, using mozac_feature_addons_installed_dialog_description_link_text as text ("extension settings"). -->
@@ -467,9 +424,9 @@
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_blocklisted_1">Αυτή η επέκταση έχει αποκλειστεί επειδή παραβιάζει τις πολιτικές της Mozilla και έχει απενεργοποιηθεί.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
-  <string name="mozac_feature_addons_status_softblocked_1">Αυτή η επέκταση περιορίζεται επειδή παραβιάζει τις πολιτικές της Mozilla και έχει απενεργοποιηθεί. Μπορείτε να το ενεργοποιήσετε, αλλά αυτό ενδέχεται να είναι επικίνδυνο.</string>
+  <string name="mozac_feature_addons_status_softblocked_2">Αυτή η επέκταση είναι περιορισμένη και έχει απενεργοποιηθεί. Μπορείτε να την ενεργοποιήσετε, αλλά αυτό ενδέχεται να είναι επικίνδυνο.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
-  <string name="mozac_feature_addons_status_softblocked_re_enabled">Αυτή η επέκταση παραβιάζει τις πολιτικές της Mozilla. Η χρήση της ενδέχεται να είναι επικίνδυνη.</string>
+  <string name="mozac_feature_addons_status_softblocked_re_enabled_2">Αυτή η επέκταση είναι περιορισμένη. Η χρήση της ενδέχεται να είναι επικίνδυνη.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">Το %1$s δεν ήταν δυνατό να επαληθευτεί ως ασφαλές και έχει απενεργοποιηθεί.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

@@ -81,7 +81,7 @@ void ContentMediaAgent::NotifyMediaPlaybackChanged(uint64_t aBrowsingContextId,
   LOG("Notify media %s in BC %" PRId64, ToString(aState).c_str(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaPlaybackChanged(bc, aState);
+    (void)contentChild->SendNotifyMediaPlaybackChanged(bc, aState);
   } else {
     // Currently this only happen when we disable e10s, otherwise all controlled
     // media would be run in the content process.
@@ -105,7 +105,7 @@ void ContentMediaAgent::NotifyMediaAudibleChanged(uint64_t aBrowsingContextId,
       bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaAudibleChanged(bc, aState);
+    (void)contentChild->SendNotifyMediaAudibleChanged(bc, aState);
   } else {
     // Currently this only happen when we disable e10s, otherwise all controlled
     // media would be run in the content process.
@@ -128,7 +128,7 @@ void ContentMediaAgent::SetIsInPictureInPictureMode(
       aIsInPictureInPictureMode ? "enabled" : "disabled", bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyPictureInPictureModeChanged(
+    (void)contentChild->SendNotifyPictureInPictureModeChanged(
         bc, aIsInPictureInPictureMode);
   } else {
     // Currently this only happen when we disable e10s, otherwise all controlled
@@ -151,8 +151,7 @@ void ContentMediaAgent::SetDeclaredPlaybackState(
       ToMediaSessionPlaybackStateStr(aState), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionPlaybackStateChanged(bc,
-                                                                       aState);
+    (void)contentChild->SendNotifyMediaSessionPlaybackStateChanged(bc, aState);
     return;
   }
   // This would only happen when we disable e10s.
@@ -171,7 +170,7 @@ void ContentMediaAgent::NotifySessionCreated(uint64_t aBrowsingContextId) {
   LOG("Notify media session being created in BC %" PRId64, bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionUpdated(bc, true);
+    (void)contentChild->SendNotifyMediaSessionUpdated(bc, true);
     return;
   }
   // This would only happen when we disable e10s.
@@ -190,7 +189,7 @@ void ContentMediaAgent::NotifySessionDestroyed(uint64_t aBrowsingContextId) {
   LOG("Notify media session being destroyed in BC %" PRId64, bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionUpdated(bc, false);
+    (void)contentChild->SendNotifyMediaSessionUpdated(bc, false);
     return;
   }
   // This would only happen when we disable e10s.
@@ -210,7 +209,7 @@ void ContentMediaAgent::UpdateMetadata(
   LOG("Notify media session metadata change in BC %" PRId64, bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyUpdateMediaMetadata(bc, aMetadata);
+    (void)contentChild->SendNotifyUpdateMediaMetadata(bc, aMetadata);
     return;
   }
   // This would only happen when we disable e10s.
@@ -231,7 +230,7 @@ void ContentMediaAgent::EnableAction(uint64_t aBrowsingContextId,
       GetEnumString(aAction).get(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
+    (void)contentChild->SendNotifyMediaSessionSupportedActionChanged(
         bc, aAction, true);
     return;
   }
@@ -253,7 +252,7 @@ void ContentMediaAgent::DisableAction(uint64_t aBrowsingContextId,
       GetEnumString(aAction).get(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
+    (void)contentChild->SendNotifyMediaSessionSupportedActionChanged(
         bc, aAction, false);
     return;
   }
@@ -275,7 +274,7 @@ void ContentMediaAgent::NotifyMediaFullScreenState(uint64_t aBrowsingContextId,
       aIsInFullScreen ? "entered" : "left", bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaFullScreenState(bc, aIsInFullScreen);
+    (void)contentChild->SendNotifyMediaFullScreenState(bc, aIsInFullScreen);
     return;
   }
   // This would only happen when we disable e10s.
@@ -293,7 +292,7 @@ void ContentMediaAgent::UpdatePositionState(
   }
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyPositionStateChanged(bc, aState);
+    (void)contentChild->SendNotifyPositionStateChanged(bc, aState);
     return;
   }
   // This would only happen when we disable e10s.
@@ -323,8 +322,8 @@ void ContentMediaAgent::UpdateGuessedPositionState(
 
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyGuessedPositionStateChanged(bc, aMediaId,
-                                                                  aState);
+    (void)contentChild->SendNotifyGuessedPositionStateChanged(bc, aMediaId,
+                                                              aState);
     return;
   }
   // This would only happen when we disable e10s.

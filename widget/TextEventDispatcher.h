@@ -486,14 +486,13 @@ class TextEventDispatcher final {
   /**
    * DispatchEvent() dispatches aEvent on aWidget.
    */
-  nsresult DispatchEvent(nsIWidget* aWidget, WidgetGUIEvent& aEvent,
-                         nsEventStatus& aStatus);
+  nsEventStatus DispatchEvent(nsIWidget* aWidget, WidgetGUIEvent& aEvent);
 
   /**
    * DispatchInputEvent() dispatches aEvent on aWidget.
    */
-  nsresult DispatchInputEvent(nsIWidget* aWidget, WidgetInputEvent& aEvent,
-                              nsEventStatus& aStatus);
+  nsEventStatus DispatchInputEvent(nsIWidget* aWidget,
+                                   WidgetInputEvent& aEvent);
 
   /**
    * StartCompositionAutomaticallyIfNecessary() starts composition if it hasn't

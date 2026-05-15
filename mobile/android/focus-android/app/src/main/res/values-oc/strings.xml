@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vos dòna lo contraròtla.</p> <p>Utiliza-lo coma un navegador privat : <ul> <li>Recercatz e navegatz dins l’aplicacion</li> <li>Blocatz los traçadors (o cambiatz lo paramètre per autorizar los traçadors)</li> <li>Escafatz los cookies e los istorics de recèrcas e navegacion</li> </ul> </p> <p>%1$s es produch per Mozilla. Nòstra mission es d’encoratjar un Internet en bona santat e dobèrt.<br/> <a href=\"%2$s\">Ne saber mai</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vos dòna lo contraròtla.</p>\n<p>Utiliza-lo coma un navegador privat :\n<ul>\n<li>Recercatz e navegatz dins l’aplicacion</li>\n<li>Blocatz los traçadors (o cambiatz lo paramètre per autorizar los traçadors)</li>\n<li>Escafatz los cookies e los istorics de recèrcas e navegacion</li>\n</ul> </p>\n<p>%1$s es produch per Mozilla. Nòstra mission es d’encoratjar un Internet en bona santat e dobèrt.<br/>\n<a href=\"%2$s\">Ne saber mai</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Ne saber mai</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">En contunhant, acceptatz las %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">En contunhant, acceptatz las %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Condicions d’utilizacion de Firefox</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">condicions d’utilizacion de Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox se tracha per vòstra vida privada. Legissètz mai tocant aquò dins nòstra %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox se tracha per vòstra vida privada. Legissètz mai tocant aquò dins nòstra %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Politica de confidencialitat.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Politica de confidencialitat</string>
   <!-- New Onboarding flow first screen button label -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Aquò pòt èsser degut a un problèma de configuracion del servidor o a una persona qu’ensaja d’usurpar l’identitat del servidor. <br/><br/> Se ja sètz connectat(ada) amb succès a aqueste servidor, benlèu l’error es temporària e podètz ensajar tornamai pus tard.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Qualqu’un poiriá usurpar l’identitat del site, contunhar la navegacion poiriá èsser perilhós.</label> <br><br> <label>Los sites web pròvan lor identitat via de certificats. %1$s se fisa pas de <b>%2$s</b> perque lo seu emissor de certificats es desconegut, lo certificat es auto-signat, o lo servidor envia pas los certificats intermediari corrèctes.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Qualqu’un poiriá usurpar l’identitat del site, contunhar la navegacion poiriá èsser perilhós.</label> <br><br>\n<label>Los sites web pròvan lor identitat via de certificats. %1$s se fisa pas de <b>%2$s</b> perque lo seu emissor de certificats es desconegut, lo certificat es auto-signat, o lo servidor envia pas los certificats intermediari corrèctes.</label>]]></string>
   <!--
     Sessions List
 

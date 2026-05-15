@@ -30,11 +30,9 @@
 #  include "jit/riscv64/Simulator-riscv64.h"
 
 #  include "mozilla/Casting.h"
-#  include "mozilla/FloatingPoint.h"
 #  include "mozilla/IntegerPrintfMacros.h"
-#  include "mozilla/Likely.h"
-#  include "mozilla/MathAlgorithms.h"
 
+#  include <cinttypes>
 #  include <float.h>
 #  include <iostream>
 #  include <limits>
@@ -493,13 +491,10 @@ void RiscvDebugger::Debug() {
             "%" XSTR(ARG_SIZE) "s",
             cmd, arg1, arg2);
       if ((strcmp(cmd, "si") == 0) || (strcmp(cmd, "stepi") == 0)) {
-        SimInstruction* instr =
-            reinterpret_cast<SimInstruction*>(sim_->get_pc());
-        if (!(instr->IsTrap()) ||
-            instr->InstructionBits() == rtCallRedirInstr) {
+        SimInstruction instr(reinterpret_cast<Instruction*>(sim_->get_pc()));
+        if (!(instr.IsTrap()) || instr.InstructionBits() == rtCallRedirInstr) {
           sim_->icount_++;
-          sim_->InstructionDecode(
-              reinterpret_cast<Instruction*>(sim_->get_pc()));
+          sim_->InstructionDecode(instr);
         } else {
           // Allow si to jump over generated breakpoints.
           printf("/!\\ Jumping over generated breakpoint.\n");
@@ -668,8 +663,9 @@ void RiscvDebugger::Debug() {
         if (argc == 2) {
           int64_t value;
           if (GetValue(arg1, &value)) {
-            sim_->SetBreakpoint(reinterpret_cast<SimInstruction*>(value),
-                                is_tbreak);
+            sim_->SetBreakpoint(
+                SimInstruction(reinterpret_cast<Instruction*>(value)),
+                is_tbreak);
           } else {
             printf("%s unrecognized\n", arg1);
           }
@@ -799,27 +795,27 @@ void RiscvDebugger::Debug() {
 #  undef XSTR
 }
 
-void Simulator::SetBreakpoint(SimInstruction* location, bool is_tbreak) {
+void Simulator::SetBreakpoint(const SimInstruction& location, bool is_tbreak) {
   for (unsigned i = 0; i < breakpoints_.size(); i++) {
-    if (breakpoints_.at(i).location == location) {
+    if (breakpoints_.at(i).location == location.instr()) {
       if (breakpoints_.at(i).is_tbreak != is_tbreak) {
         printf("Change breakpoint at %p to %s breakpoint\n",
-               reinterpret_cast<void*>(location),
+               reinterpret_cast<void*>(location.instr()),
                is_tbreak ? "temporary" : "regular");
         breakpoints_.at(i).is_tbreak = is_tbreak;
         return;
       }
       printf("Existing breakpoint at %p was %s\n",
-             reinterpret_cast<void*>(location),
+             reinterpret_cast<void*>(location.instr()),
              breakpoints_.at(i).enabled ? "disabled" : "enabled");
       breakpoints_.at(i).enabled = !breakpoints_.at(i).enabled;
       return;
     }
   }
-  Breakpoint new_breakpoint = {location, true, is_tbreak};
+  Breakpoint new_breakpoint = {location.instr(), true, is_tbreak};
   breakpoints_.push_back(new_breakpoint);
   printf("Set a %sbreakpoint at %p\n", is_tbreak ? "temporary " : "",
-         reinterpret_cast<void*>(location));
+         reinterpret_cast<void*>(location.instr()));
 }
 
 void Simulator::ListBreakpoints() {
@@ -835,9 +831,10 @@ void Simulator::ListBreakpoints() {
 void Simulator::CheckBreakpoints() {
   bool hit_a_breakpoint = false;
   bool is_tbreak = false;
-  SimInstruction* pc_ = reinterpret_cast<SimInstruction*>(get_pc());
+  SimInstruction pc_(reinterpret_cast<Instruction*>(get_pc()));
   for (unsigned i = 0; i < breakpoints_.size(); i++) {
-    if ((breakpoints_.at(i).location == pc_) && breakpoints_.at(i).enabled) {
+    if ((breakpoints_.at(i).location == pc_.instr()) &&
+        breakpoints_.at(i).enabled) {
       hit_a_breakpoint = true;
       if (breakpoints_.at(i).is_tbreak) {
         // Disable a temporary breakpoint.
@@ -849,7 +846,7 @@ void Simulator::CheckBreakpoints() {
   }
   if (hit_a_breakpoint) {
     printf("Hit %sa breakpoint at %p.\n", is_tbreak ? "and disabled " : "",
-           reinterpret_cast<void*>(pc_));
+           reinterpret_cast<void*>(pc_.instr()));
     RiscvDebugger dbg(this);
     dbg.Debug();
   }
@@ -916,8 +913,8 @@ static void FlushICacheLocked(SimulatorProcess::ICacheMap& i_cache,
 }
 
 /* static */
-void SimulatorProcess::checkICacheLocked(SimInstruction* instr) {
-  intptr_t address = reinterpret_cast<intptr_t>(instr);
+void SimulatorProcess::checkICacheLocked(const SimInstruction& instr) {
+  intptr_t address = reinterpret_cast<intptr_t>(instr.instr());
   void* page = reinterpret_cast<void*>(address & (~CachePage::kPageMask));
   void* line = reinterpret_cast<void*>(address & (~CachePage::kLineMask));
   int offset = (address & CachePage::kPageMask);
@@ -928,8 +925,9 @@ void SimulatorProcess::checkICacheLocked(SimInstruction* instr) {
 
   if (cache_hit) {
     // Check that the data in memory matches the contents of the I-cache.
-    int cmpret = memcmp(reinterpret_cast<void*>(instr),
-                        cache_page->cachedData(offset), kInstrSize);
+    mozilla::DebugOnly<int> cmpret =
+        memcmp(reinterpret_cast<void*>(instr.instr()),
+               cache_page->cachedData(offset), kInstrSize);
     MOZ_ASSERT(cmpret == 0);
   } else {
     // Cache miss.  Load memory into the cache.
@@ -1556,9 +1554,9 @@ bool Simulator::overRecursedWithExtra(uint32_t extra) const {
 }
 
 // Unsupported instructions use format to print an error and stop execution.
-void Simulator::format(SimInstruction* instr, const char* format) {
-  printf("Simulator found unsupported instruction:\n 0x%016lx: %s\n",
-         reinterpret_cast<intptr_t>(instr), format);
+void Simulator::format(const SimInstruction& instr, const char* format) {
+  printf("Simulator found unsupported instruction:\n 0x%016" PRIxPTR ": %s\n",
+         reinterpret_cast<intptr_t>(instr.instr()), format);
   MOZ_CRASH();
 }
 
@@ -1573,10 +1571,10 @@ static inline uint32_t get_ebreak_code(Instruction* instr) {
   MOZ_ASSERT(instr->InstructionBits() == kBreakInstr);
   uint8_t* cur = reinterpret_cast<uint8_t*>(instr);
   Instruction* next_instr = reinterpret_cast<Instruction*>(cur + kInstrSize);
-  if (next_instr->BaseOpcodeFieldRaw() == LUI)
+  if (next_instr->BaseOpcodeFieldRaw() == LUI) {
     return (next_instr->Imm20UValue());
-  else
-    return -1;
+  }
+  return -1;
 }
 
 // Software interrupt instructions are used by the simulator to call into C++.
@@ -1617,11 +1615,11 @@ void Simulator::SoftwareInterrupt() {
       single_step_callback_(single_step_callback_arg_, this, nullptr);
     }
     if (FLAG_trace_sim) {
-      printf(
-          "Call to host function at %p with args %ld, %ld, %ld, %ld, %ld, %ld, "
-          "%ld, %ld\n",
-          reinterpret_cast<void*>(external), arg0, arg1, arg2, arg3, arg4, arg5,
-          arg6, arg7);
+      printf("Call to host function at %p with args %" PRIdPTR ", %" PRIdPTR
+             ", %" PRIdPTR ", %" PRIdPTR ", %" PRIdPTR ", %" PRIdPTR
+             ", %" PRIdPTR ", %" PRIdPTR "\n",
+             reinterpret_cast<void*>(external), arg0, arg1, arg2, arg3, arg4,
+             arg5, arg6, arg7);
     }
     switch (redirection->type()) {
       ABI_FUNCTION_TYPE_RISCV64_SIM_DISPATCH
@@ -1720,9 +1718,9 @@ void Simulator::handleStop(uint32_t code) {
   }
 }
 
-bool Simulator::isStopInstruction(SimInstruction* instr) {
-  if (instr->InstructionBits() != kBreakInstr) return false;
-  int32_t code = get_ebreak_code(instr->instr());
+bool Simulator::isStopInstruction(const SimInstruction& instr) {
+  if (instr.InstructionBits() != kBreakInstr) return false;
+  int32_t code = get_ebreak_code(instr.instr());
   return code != -1 && static_cast<uint32_t>(code) > kMaxWatchpointCode &&
          static_cast<uint32_t>(code) <= kMaxStopCode;
 }
@@ -1798,10 +1796,11 @@ void Simulator::DieOrDebug() {
 }
 
 // Executes the current instruction.
-void Simulator::InstructionDecode(Instruction* instr) {
-  // if (FLAG_check_icache) {
-  //   CheckICache(SimulatorProcess::icache(), instr);
-  // }
+void Simulator::InstructionDecode(const SimInstruction& instr) {
+  if (!SimulatorProcess::ICacheCheckingDisableCount) {
+    AutoLockSimulatorCache als;
+    SimulatorProcess::checkICacheLocked(instr);
+  }
   pc_modified_ = false;
 
   EmbeddedVector<char, 256> buffer;
@@ -1811,13 +1810,10 @@ void Simulator::InstructionDecode(Instruction* instr) {
     disasm::NameConverter converter;
     disasm::Disassembler dasm(converter);
     // Use a reasonably large buffer.
-    dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(instr));
-
-    // printf("EXECUTING  0x%08" PRIxPTR "   %-44s\n",
-    //        reinterpret_cast<intptr_t>(instr), buffer.begin());
+    dasm.InstructionDecode(buffer, reinterpret_cast<byte*>(instr.instr()));
   }
 
-  instr_ = instr;
+  instr_ = instr.instr();
   switch (instr_.InstructionType()) {
     case Instruction::kRType:
       DecodeRVRType();
@@ -1878,12 +1874,13 @@ void Simulator::InstructionDecode(Instruction* instr) {
 
   if (FLAG_trace_sim) {
     printf("  0x%012" PRIxPTR "      %-44s\t%s\n",
-           reinterpret_cast<intptr_t>(instr), buffer.start(),
+           reinterpret_cast<intptr_t>(instr.instr()), buffer.start(),
            trace_buf_.start());
   }
 
   if (!pc_modified_) {
-    setRegister(pc, reinterpret_cast<sreg_t>(instr) + instr->InstructionSize());
+    setRegister(
+        pc, reinterpret_cast<sreg_t>(instr.instr()) + instr.InstructionSize());
   }
 
   if (watch_address_ != nullptr) {
@@ -1935,7 +1932,7 @@ void Simulator::execute() {
       single_step_callback_(single_step_callback_arg_, this,
                             (void*)program_counter);
     }
-    Instruction* instr = reinterpret_cast<Instruction*>(program_counter);
+    SimInstruction instr(reinterpret_cast<Instruction*>(program_counter));
     InstructionDecode(instr);
     icount_++;
     program_counter = get_pc();
@@ -1989,11 +1986,23 @@ void Simulator::DecodeRVRType() {
       set_rd(rs1() & rs2());
       break;
     }
+    case RO_ANDN:
+      set_rd(rs1() & ~rs2());
+      break;
+    case RO_ORN:
+      set_rd(rs1() | (~rs2()));
+      break;
+    case RO_XNOR:
+      set_rd((~rs1()) ^ (~rs2()));
+      break;
 #  ifdef JS_CODEGEN_RISCV64
     case RO_ADDW: {
       set_rd(sext32(rs1() + rs2()));
       break;
     }
+    case RO_ADDUW:
+      set_rd(zext32(rs1()) + rs2());
+      break;
     case RO_SUBW: {
       set_rd(sext32(rs1() - rs2()));
       break;
@@ -2008,6 +2017,30 @@ void Simulator::DecodeRVRType() {
     }
     case RO_SRAW: {
       set_rd(sext32(int32_t(rs1()) >> (rs2() & 0x1F)));
+      break;
+    }
+    case RO_SH1ADDUW: {
+      set_rd(rs2() + (zext32(rs1()) << 1));
+      break;
+    }
+    case RO_SH2ADDUW: {
+      set_rd(rs2() + (zext32(rs1()) << 2));
+      break;
+    }
+    case RO_SH3ADDUW: {
+      set_rd(rs2() + (zext32(rs1()) << 3));
+      break;
+    }
+    case RO_ROLW: {
+      reg_t extz_rs1 = zext32(rs1());
+      sreg_t shamt = rs2() & 31;
+      set_rd(sext32((extz_rs1 << shamt) | (extz_rs1 >> (32 - shamt))));
+      break;
+    }
+    case RO_RORW: {
+      reg_t extz_rs1 = zext32(rs1());
+      sreg_t shamt = rs2() & 31;
+      set_rd(sext32((extz_rs1 >> shamt) | (extz_rs1 << (32 - shamt))));
       break;
     }
 #  endif /* JS_CODEGEN_RISCV64 */
@@ -2122,6 +2155,64 @@ void Simulator::DecodeRVRType() {
       break;
     }
 #  endif /*JS_CODEGEN_RISCV64*/
+    case RO_SH1ADD:
+      set_rd(rs2() + (rs1() << 1));
+      break;
+    case RO_SH2ADD:
+      set_rd(rs2() + (rs1() << 2));
+      break;
+    case RO_SH3ADD:
+      set_rd(rs2() + (rs1() << 3));
+      break;
+    case RO_MAX:
+      set_rd(rs1() < rs2() ? rs2() : rs1());
+      break;
+    case RO_MAXU:
+      set_rd(static_cast<reg_t>(rs1()) < static_cast<reg_t>(rs2()) ? rs2()
+                                                                   : rs1());
+      break;
+    case RO_MIN:
+      set_rd(rs1() < rs2() ? rs1() : rs2());
+      break;
+    case RO_MINU:
+      set_rd(static_cast<reg_t>(rs1()) < static_cast<reg_t>(rs2()) ? rs1()
+                                                                   : rs2());
+      break;
+    case RO_ZEXTH:
+      set_rd(zext_xlen(uint16_t(rs1())));
+      break;
+    case RO_ROL: {
+      sreg_t shamt = rs2() & (xlen - 1);
+      set_rd((static_cast<reg_t>(rs1()) << shamt) |
+             (static_cast<reg_t>(rs1()) >> (xlen - shamt)));
+      break;
+    }
+    case RO_ROR: {
+      sreg_t shamt = rs2() & (xlen - 1);
+      set_rd((static_cast<reg_t>(rs1()) >> shamt) |
+             (static_cast<reg_t>(rs1()) << (xlen - shamt)));
+      break;
+    }
+    case RO_BCLR: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd(rs1() & ~(1l << index));
+      break;
+    }
+    case RO_BEXT: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd((rs1() >> index) & 1);
+      break;
+    }
+    case RO_BINV: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd(rs1() ^ (1 << index));
+      break;
+    }
+    case RO_BSET: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd(rs1() | (1 << index));
+      break;
+    }
       // TODO(riscv): End Add RISCV M extension macro
     default: {
       switch (instr_.BaseOpcode()) {
@@ -2408,7 +2499,7 @@ static inline bool is_invalid_fsqrt(T src1) {
   return (src1 < 0);
 }
 
-int Simulator::loadLinkedW(uint64_t addr, SimInstruction* instr) {
+int Simulator::loadLinkedW(uint64_t addr, const SimInstruction& instr) {
   if ((addr & 3) == 0) {
     if (handleWasmSegFault(addr, 4)) {
       return -1;
@@ -2424,20 +2515,20 @@ int Simulator::loadLinkedW(uint64_t addr, SimInstruction* instr) {
     return value;
   }
   printf("Unaligned write at 0x%016" PRIx64 ", pc=0x%016" PRIxPTR "\n", addr,
-         reinterpret_cast<intptr_t>(instr));
+         reinterpret_cast<intptr_t>(instr.instr()));
   MOZ_CRASH();
   return 0;
 }
 
 int Simulator::storeConditionalW(uint64_t addr, int value,
-                                 SimInstruction* instr) {
+                                 const SimInstruction& instr) {
   // Correct behavior in this case, as defined by architecture, is to just
   // return 0, but there is no point at allowing that. It is certainly an
   // indicator of a bug.
   if (addr != LLAddr_) {
     printf("SC to bad address: 0x%016" PRIx64 ", pc=0x%016" PRIxPTR
            ", expected: 0x%016" PRIxPTR "\n",
-           addr, reinterpret_cast<intptr_t>(instr), LLAddr_);
+           addr, reinterpret_cast<intptr_t>(instr.instr()), LLAddr_);
     MOZ_CRASH();
   }
 
@@ -2457,12 +2548,12 @@ int Simulator::storeConditionalW(uint64_t addr, int value,
     return (old == expected) ? 0 : 1;
   }
   printf("Unaligned SC at 0x%016" PRIx64 ", pc=0x%016" PRIxPTR "\n", addr,
-         reinterpret_cast<intptr_t>(instr));
+         reinterpret_cast<intptr_t>(instr.instr()));
   MOZ_CRASH();
   return 0;
 }
 
-int64_t Simulator::loadLinkedD(uint64_t addr, SimInstruction* instr) {
+int64_t Simulator::loadLinkedD(uint64_t addr, const SimInstruction& instr) {
   if ((addr & kPointerAlignmentMask) == 0) {
     if (handleWasmSegFault(addr, 8)) {
       return -1;
@@ -2478,20 +2569,20 @@ int64_t Simulator::loadLinkedD(uint64_t addr, SimInstruction* instr) {
     return value;
   }
   printf("Unaligned write at 0x%016" PRIx64 ", pc=0x%016" PRIxPTR "\n", addr,
-         reinterpret_cast<intptr_t>(instr));
+         reinterpret_cast<intptr_t>(instr.instr()));
   MOZ_CRASH();
   return 0;
 }
 
 int Simulator::storeConditionalD(uint64_t addr, int64_t value,
-                                 SimInstruction* instr) {
+                                 const SimInstruction& instr) {
   // Correct behavior in this case, as defined by architecture, is to just
   // return 0, but there is no point at allowing that. It is certainly an
   // indicator of a bug.
   if (addr != LLAddr_) {
     printf("SC to bad address: 0x%016" PRIx64 ", pc=0x%016" PRIxPTR
            ", expected: 0x%016" PRIxPTR "\n",
-           addr, reinterpret_cast<intptr_t>(instr), LLAddr_);
+           addr, reinterpret_cast<intptr_t>(instr.instr()), LLAddr_);
     MOZ_CRASH();
   }
 
@@ -2511,7 +2602,7 @@ int Simulator::storeConditionalD(uint64_t addr, int64_t value,
     return (old == expected) ? 0 : 1;
   }
   printf("Unaligned SC at 0x%016" PRIx64 ", pc=0x%016" PRIxPTR "\n", addr,
-         reinterpret_cast<intptr_t>(instr));
+         reinterpret_cast<intptr_t>(instr.instr()));
   MOZ_CRASH();
   return 0;
 }
@@ -2524,7 +2615,7 @@ void Simulator::DecodeRVRAType() {
   switch (instr_.InstructionBits() & kRATypeMask) {
     case RO_LR_W: {
       sreg_t addr = rs1();
-      set_rd(loadLinkedW(addr, &instr_));
+      set_rd(loadLinkedW(addr, instr_));
       TraceLr(addr, getRegister(rd_reg()), getRegister(rd_reg()));
       break;
     }
@@ -2532,7 +2623,7 @@ void Simulator::DecodeRVRAType() {
       sreg_t addr = rs1();
       auto value = static_cast<int32_t>(rs2());
       auto result =
-          storeConditionalW(addr, static_cast<int32_t>(rs2()), &instr_);
+          storeConditionalW(addr, static_cast<int32_t>(rs2()), instr_);
       set_rd(result);
       if (!result) {
         TraceSc(addr, value);
@@ -2623,7 +2714,7 @@ void Simulator::DecodeRVRAType() {
 #  ifdef JS_CODEGEN_RISCV64
     case RO_LR_D: {
       sreg_t addr = rs1();
-      set_rd(loadLinkedD(addr, &instr_));
+      set_rd(loadLinkedD(addr, instr_));
       TraceLr(addr, getRegister(rd_reg()), getRegister(rd_reg()));
       break;
     }
@@ -2631,7 +2722,7 @@ void Simulator::DecodeRVRAType() {
       sreg_t addr = rs1();
       auto value = static_cast<int64_t>(rs2());
       auto result =
-          storeConditionalD(addr, static_cast<int64_t>(rs2()), &instr_);
+          storeConditionalD(addr, static_cast<int64_t>(rs2()), instr_);
       set_rd(result);
       if (!result) {
         TraceSc(addr, value);
@@ -3488,18 +3579,137 @@ void Simulator::DecodeRVIType() {
       set_rd(imm12() & rs1());
       break;
     }
-    case RO_SLLI: {
-      require(shamt6() < xlen);
-      set_rd(sext_xlen(rs1() << shamt6()));
+    case OP_SHL: {
+      switch (instr_.Funct6FieldRaw() | OP_SHL) {
+        case RO_SLLI:
+          require(shamt6() < xlen);
+          set_rd(sext_xlen(rs1() << shamt6()));
+          break;
+        case RO_BCLRI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd(rs1() & ~(1l << index));
+          break;
+        }
+        case RO_BINVI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd(rs1() ^ (1l << index));
+          break;
+        }
+        case RO_BSETI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd(rs1() | (1l << index));
+          break;
+        }
+        case OP_COUNT:
+          switch (instr_.Shamt()) {
+            case 0: {  // clz
+              sreg_t x = rs1();
+              int highest_setbit = -1;
+              for (auto i = xlen - 1; i >= 0; i--) {
+                if ((x & (1l << i))) {
+                  highest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(xlen - 1 - highest_setbit);
+              break;
+            }
+            case 1: {  // ctz
+              sreg_t x = rs1();
+              int lowest_setbit = xlen;
+              for (auto i = 0; i < xlen; i++) {
+                if ((x & (1l << i))) {
+                  lowest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(lowest_setbit);
+              break;
+            }
+            case 2: {  // cpop
+              int i = 0;
+              sreg_t n = rs1();
+              while (n) {
+                n &= (n - 1);
+                i++;
+              }
+              set_rd(i);
+              break;
+            }
+            case 4:
+              set_rd(static_cast<int8_t>(rs1()));
+              break;
+            case 5:
+              set_rd(static_cast<int16_t>(rs1()));
+              break;
+            default:
+              UNSUPPORTED();
+          }
+          break;
+        default:
+          UNSUPPORTED();
+      }
       break;
     }
-    case RO_SRLI: {  //  RO_SRAI
-      if (!instr_.IsArithShift()) {
-        require(shamt6() < xlen);
-        set_rd(sext_xlen(zext_xlen(rs1()) >> shamt6()));
-      } else {
-        require(shamt6() < xlen);
-        set_rd(sext_xlen(sext_xlen(rs1()) >> shamt6()));
+    case OP_SHR: {  //  RO_SRAI
+      switch (instr_.Funct6FieldRaw() | OP_SHR) {
+        case RO_SRLI:
+          require(shamt6() < xlen);
+          set_rd(sext_xlen(zext_xlen(rs1()) >> shamt6()));
+          break;
+        case RO_SRAI:
+          require(shamt6() < xlen);
+          set_rd(sext_xlen(sext_xlen(rs1()) >> shamt6()));
+          break;
+        case RO_BEXTI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd((rs1() >> index) & 1);
+          break;
+        }
+        case RO_ORCB&(kFunct6Mask | OP_SHR): {
+          reg_t rs1_val = rs1();
+          reg_t result = 0;
+          reg_t mask = 0xFF;
+          reg_t step = 8;
+          for (reg_t i = 0; i < xlen; i += step) {
+            if ((rs1_val & mask) != 0) {
+              result |= mask;
+            }
+            mask <<= step;
+          }
+          set_rd(result);
+          break;
+        }
+        case RO_RORI: {
+#  ifdef JS_CODEGEN_RISCV64
+          int16_t shamt = shamt6();
+#  else
+          int16_t shamt = shamt5();
+#  endif
+          set_rd((static_cast<reg_t>(rs1()) >> shamt) |
+                 (static_cast<reg_t>(rs1()) << (xlen - shamt)));
+          break;
+        }
+        case RO_REV8: {
+          if (imm12() == RO_REV8_IMM12) {
+            reg_t input = rs1();
+            reg_t output = 0;
+            reg_t j = xlen - 1;
+            for (int i = 0; i < xlen; i += 8) {
+              output |= ((input >> (j - 7)) & 0xff) << i;
+              j -= 8;
+            }
+            set_rd(output);
+            break;
+          }
+          UNSUPPORTED();
+        }
+        default:
+          UNSUPPORTED();
       }
       break;
     }
@@ -3508,15 +3718,75 @@ void Simulator::DecodeRVIType() {
       set_rd(sext32(rs1() + imm12()));
       break;
     }
-    case RO_SLLIW: {
-      set_rd(sext32(rs1() << shamt5()));
+    case OP_SHLW:
+      switch (instr_.Funct7FieldRaw() | OP_SHLW) {
+        case RO_SLLIW:
+          set_rd(sext32(rs1() << shamt5()));
+          break;
+        case RO_SLLIUW:
+          set_rd(zext32(rs1()) << shamt6());
+          break;
+        case OP_COUNTW: {
+          switch (instr_.Shamt()) {
+            case 0: {  // clzw
+              sreg_t x = rs1();
+              int highest_setbit = -1;
+              for (auto i = 31; i >= 0; i--) {
+                if ((x & (1l << i))) {
+                  highest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(31 - highest_setbit);
+              break;
+            }
+            case 1: {  // ctzw
+              sreg_t x = rs1();
+              int lowest_setbit = 32;
+              for (auto i = 0; i < 32; i++) {
+                if ((x & (1l << i))) {
+                  lowest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(lowest_setbit);
+              break;
+            }
+            case 2: {  // cpopw
+              int i = 0;
+              int32_t n = static_cast<int32_t>(rs1());
+              while (n) {
+                n &= (n - 1);
+                i++;
+              }
+              set_rd(i);
+              break;
+            }
+            default:
+              UNSUPPORTED();
+          }
+          break;
+        }
+        default:
+          UNSUPPORTED();
+      }
       break;
-    }
-    case RO_SRLIW: {  //  RO_SRAIW
-      if (!instr_.IsArithShift()) {
-        set_rd(sext32(uint32_t(rs1()) >> shamt5()));
-      } else {
-        set_rd(sext32(int32_t(rs1()) >> shamt5()));
+    case OP_SHRW: {  //  RO_SRAI
+      switch (instr_.Funct7FieldRaw() | OP_SHRW) {
+        case RO_SRLIW:
+          set_rd(sext32(uint32_t(rs1()) >> shamt5()));
+          break;
+        case RO_SRAIW:
+          set_rd(sext32(int32_t(rs1()) >> shamt5()));
+          break;
+        case RO_RORIW: {
+          reg_t extz_rs1 = zext32(rs1());
+          int16_t shamt = shamt5();
+          set_rd(sext32((extz_rs1 >> shamt) | (extz_rs1 << (32 - shamt))));
+          break;
+        }
+        default:
+          UNSUPPORTED();
       }
       break;
     }

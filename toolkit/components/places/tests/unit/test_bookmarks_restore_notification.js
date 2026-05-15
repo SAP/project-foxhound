@@ -46,10 +46,10 @@ async function addBookmarks() {
 /**
  * Creates an file in the profile directory.
  *
- * @param  aBasename
- *         e.g., "foo.txt" in the path /some/long/path/foo.txt
- * @return {Promise}
- * @resolves to an OS.File path
+ * @param {string} aBasename
+ *   e.g., "foo.txt" in the path /some/long/path/foo.txt
+ * @returns {Promise<string>}
+ *   The path of the file.
  */
 async function promiseFile(aBasename) {
   let path = PathUtils.join(PathUtils.profileDir, aBasename);
@@ -63,7 +63,7 @@ async function promiseFile(aBasename) {
  * Register observers via promiseTopicObserved helper.
  *
  * @param  {boolean} expectSuccess pass true when expect a success notification
- * @return {Promise[]}
+ * @returns {Promise[]}
  */
 function registerObservers(expectSuccess) {
   let promiseBegin = promiseTopicObserved(NSIOBSERVER_TOPIC_BEGIN);
@@ -114,6 +114,8 @@ async function checkObservers(expectPromises, expectedData) {
 
 /**
  * Run after every test cases.
+ *
+ * @param {string} file
  */
 async function teardown(file) {
   // On restore failed, file may not exist, so wrap in try-catch.

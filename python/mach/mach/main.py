@@ -477,11 +477,9 @@ To see more help for a specific command, run:
         fh.write(ERROR_FOOTER)
         fh.write("\n")
 
-        for l in traceback.format_exception_only(exc_type, exc_value):
-            fh.write(l)
-
-        fh.write("\n")
-        for l in traceback.format_list(stack):
+        for l in traceback.format_exception(
+            exc_type, exc_value, exc_value.__traceback__
+        ):
             fh.write(l)
 
         if not sentry_event_id:
@@ -530,7 +528,7 @@ def get_argument_parser(context=None, action=CommandAction, topsrcdir=None):
 
     parser = ArgumentParser(
         add_help=False,
-        usage="%(prog)s [global arguments] " "command [command arguments]",
+        usage="%(prog)s [global arguments] command [command arguments]",
     )
 
     # WARNING!!! If you add a global argument here, also add it to the
@@ -549,6 +547,7 @@ def get_argument_parser(context=None, action=CommandAction, topsrcdir=None):
         help="Print verbose output.",
     )
     verbosity.add_argument(
+        "-q",
         "--quiet",
         dest="quiet",
         action="store_true",

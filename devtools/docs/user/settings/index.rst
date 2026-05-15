@@ -7,7 +7,7 @@ Settings
 Opening Settings
 ****************
 
-Beginning with Firefox 62, the icon to open Developer Tools settings has been moved into a menu accessed by clicking/touching ... (the ellipsis) on the right of the tab.
+The Developer Tools settings can be opened by clicking the ... (ellipsis) icon on the right of the tab.
 
 .. image:: devtools_layoutmenu.png
   :class: center
@@ -51,9 +51,7 @@ Available Toolbox Buttons
 
 This group of checkboxes determines which tools get :ref:`an icon in the Toolbox's toolbar <tools-toolbox-extra-tools>`.
 
-As of Firefox 62, if the option to "Select an iframe as the currently targeted document" is checked, the icon will appear in the toolbar while the Settings tab is displayed, even if the current page doesn't include any iframes.
-
-Note that in Firefox 52 we removed the checkbox to toggle the :ref:`"Select element" button <page_inspector_select_element_button>`. The "Select element" button is now always shown.
+If the option to "Select an iframe as the currently targeted document" is checked, the icon will appear in the toolbar while the Settings tab is displayed, even if the current page doesn't include any iframes.
 
 
 .. _settings-themes:
@@ -97,7 +95,7 @@ Inspector
 ---------
 
 *Show browser styles*
-  A setting to control whether styles applied by the browser (`user-agent styles <https://developer.mozilla.org/en-US/docs/Web/CSS/Cascade>`_) should be displayed in the Inspector's :doc:`Rules view <../page_inspector/how_to/examine_and_edit_css/index>`. Note that this setting is independent of the "Browser styles" checkbox in the Inspector's :ref:`Computed view <page_inspector_how_to_examine_and_edit_css_examine_computed_css>`.
+  A setting to control whether styles applied by the browser (`user-agent styles <https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Cascade/Introduction>`_) should be displayed in the Inspector's :doc:`Rules view <../page_inspector/how_to/examine_and_edit_css/index>`. Note that this setting is independent of the "Browser styles" checkbox in the Inspector's :ref:`Computed view <page_inspector_how_to_examine_and_edit_css_examine_computed_css>`.
 
 *Truncate DOM attributes*
   By default, the Inspector truncates DOM attributes that are more than 120 characters long. Uncheck this box to prevent this behavior. This setting works by toggling the about:config preference ``devtools.markup.collapseAttributes``. To change the threshold at which attributes are truncated, you can edit the about:config preference ``devtools.markup.collapseAttributeLength``.
@@ -121,6 +119,9 @@ Inspector
 
 Web Console
 -----------
+
+*Enable split console*
+  Enables or disables the split console feature, disabling it will remove it from the Toolbar menu and disable its hotkey :kbd:`Esc`
 
 *Enable timestamps*
   Controls whether the Web Console displays timestamps. The Web Console defaults to hiding timestamps.
@@ -158,10 +159,10 @@ Screenshot Behavior
 -------------------
 
 *Screenshot to clipboard*
-  When you click the icon for the :doc:`Screenshot tool <../taking_screenshots/index>`, copy the screenshot image to the clipboard (the image will still be saved to your Downloads directory). New in Firefox 53.
+  When you click the icon for the :doc:`Screenshot tool <../taking_screenshots/index>`, copy the screenshot image to the clipboard (the image will still be saved to your Downloads directory).
 
 *Play camera shutter sound*
-  When you click the icon for the :doc:`Screenshot tool <../taking_screenshots/index>`, play a shutter sound. New in Firefox 53.
+  When you click the icon for the :doc:`Screenshot tool <../taking_screenshots/index>`, play a shutter sound.
 
 
 
@@ -218,11 +219,6 @@ Advanced settings
 
 *Enable remote debugging*
   Enable the developer tools debug remote Firefox instances.
-
-*Enable worker debugging*
-  Enable a panel within the debugger to debug workers.
-
-  Note: This option got removed from the UI in Firefox 56, because this version ships with a :doc:`new Debugger UI <../debugger/index>`, but it can still be enabled for the old UI by setting the preference ``devtools.debugger.workers`` to ``true``.
 
 *Enable custom formatters*
   Allow websites to define :doc:`custom formatters <../custom_formatters/index>` for JavaScript objects.

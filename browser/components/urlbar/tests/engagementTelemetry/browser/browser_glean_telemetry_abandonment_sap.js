@@ -24,6 +24,13 @@ add_task(async function urlbar() {
   });
 });
 
+add_task(async function searchbar() {
+  await doSearchbarTest({
+    trigger: () => doBlur(SearchbarTestUtils),
+    assert: () => assertAbandonmentTelemetry([{ sap: "searchbar" }]),
+  });
+});
+
 add_task(async function handoff() {
   await doHandoffTest({
     trigger: () => doBlur(),

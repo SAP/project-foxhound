@@ -6,39 +6,44 @@
 #ifndef GPU_CommandBuffer_H_
 #define GPU_CommandBuffer_H_
 
+#include "ObjectModel.h"
+#include "mozilla/Span.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
-#include "ObjectModel.h"
 
 namespace mozilla::webgpu {
 
 class CanvasContext;
+class CommandEncoder;
 class Device;
+class ExternalTexture;
 
-class CommandBuffer final : public ObjectBase, public ChildOf<Device> {
+class CommandBuffer final : public nsWrapperCache,
+                            public ObjectBase,
+                            public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(CommandBuffer)
   GPU_DECL_JS_WRAP(CommandBuffer)
 
   CommandBuffer(Device* const aParent, RawId aId,
                 nsTArray<WeakPtr<CanvasContext>>&& aPresentationContexts,
-                RefPtr<CommandEncoder>&& aEncoder);
+                nsTArray<RefPtr<ExternalTexture>>&& aExternalTextures);
 
-  Maybe<RawId> Commit();
+  Span<const RefPtr<ExternalTexture>> GetExternalTextures() const {
+    return mExternalTextures;
+  }
+
+  RawId Commit();
 
  private:
-  CommandBuffer() = delete;
-  ~CommandBuffer();
-  void Cleanup();
+  virtual ~CommandBuffer();
 
-  const RawId mId;
   const nsTArray<WeakPtr<CanvasContext>> mPresentationContexts;
-  // Command buffers and encoders share the same identity (this is a
-  // simplifcation currently made by wgpu). To avoid dropping the same ID twice,
-  // the wgpu resource lifetime is tied to the encoder which is held alive by
-  // the command buffer.
-  RefPtr<CommandEncoder> mEncoder;
+
+  // List of external textures used in this command buffer.
+  nsTArray<RefPtr<ExternalTexture>> mExternalTextures;
 };
 
 }  // namespace mozilla::webgpu

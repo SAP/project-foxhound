@@ -20,6 +20,7 @@ export const Spotlight = {
     const ping = {
       message_id: message.content.id,
       event,
+      event_context: { writeInMicrosurvey: message.content.writeInMicrosurvey },
     };
     dispatch({
       type: "SPOTLIGHT_TELEMETRY",
@@ -36,6 +37,7 @@ export const Spotlight = {
 
   /**
    * Shows spotlight tab or window modal specific to the given browser
+   *
    * @param browser             The browser for spotlight display
    * @param message             Message containing content to show
    * @param dispatchCFRAction   A function to dispatch resulting actions

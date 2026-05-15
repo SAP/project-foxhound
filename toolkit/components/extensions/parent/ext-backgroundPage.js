@@ -1052,7 +1052,7 @@ var IdleManager = class IdleManager {
     // in clearState() below, while also not keeping the originalPromise alive.
     let { promise, resolve } = Promise.withResolvers();
     originalPromise.finally(() => resolve());
-    let start = Cu.now();
+    let start = ChromeUtils.now();
 
     this.keepAlive.set(promise, { reason, resolve });
     promise.finally(() => {
@@ -1064,8 +1064,10 @@ var IdleManager = class IdleManager {
         this.resetTimer();
       }
 
-      if (Cu.now() - start > backgroundIdleTimeout) {
-        let value = Math.round((Cu.now() - start) / backgroundIdleTimeout);
+      if (ChromeUtils.now() - start > backgroundIdleTimeout) {
+        let value = Math.round(
+          (ChromeUtils.now() - start) / backgroundIdleTimeout
+        );
         // GIFFT doesn't support mirroring to a categorical histogram with
         // values that are not 1, so do the histogramAdd call as many times
         // as needed. It will be once most of the time, sometimes twice.
@@ -1093,14 +1095,14 @@ var IdleManager = class IdleManager {
   }
 
   resetTimer() {
-    this.sleepTime = Cu.now() + backgroundIdleTimeout;
+    this.sleepTime = ChromeUtils.now() + backgroundIdleTimeout;
     if (!this.timer) {
       this.createTimer();
     }
   }
 
   createTimer() {
-    let timeLeft = this.sleepTime - Cu.now();
+    let timeLeft = this.sleepTime - ChromeUtils.now();
     this.timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     this.timer.init(() => this.timeout(), timeLeft, Ci.nsITimer.TYPE_ONE_SHOT);
   }
@@ -1108,7 +1110,7 @@ var IdleManager = class IdleManager {
   timeout() {
     this.clearTimer();
     if (!this.keepAlive.size) {
-      if (Cu.now() < this.sleepTime) {
+      if (ChromeUtils.now() < this.sleepTime) {
         this.createTimer();
       } else {
         // As explained in the comment before the IdleManager class, the timer

@@ -6,20 +6,24 @@
 "use strict";
 
 /**
+ * @import { MLEngineParent } from "resource://gre/actors/MLEngineParent.sys.mjs"
+ * @import { StatusByEngineId } from "../../ml/ml.d.ts"
+ */
+
+/**
  * Imports necessary modules from ChromeUtils.
  */
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
-  HttpInference: "chrome://global/content/ml/HttpInference.sys.mjs",
   ModelHub: "chrome://global/content/ml/ModelHub.sys.mjs",
   getInferenceProcessInfo: "chrome://global/content/ml/Utils.sys.mjs",
   getOptimalCPUConcurrency: "chrome://global/content/ml/Utils.sys.mjs",
   BACKENDS: "chrome://global/content/ml/EngineProcess.sys.mjs",
 });
 
-const { ExecutionPriority, EngineProcess, PipelineOptions } =
+const { ExecutionPriority, EngineProcess, PipelineOptions, createEngine } =
   ChromeUtils.importESModule(
     "chrome://global/content/ml/EngineProcess.sys.mjs"
   );
@@ -43,6 +47,7 @@ const TASKS = [
   "question-answering",
   "fill-mask",
   "summarization",
+  "static-embeddings",
   "translation",
   "text2text-generation",
   "text-generation",
@@ -63,6 +68,7 @@ const TASKS = [
   "feature-extraction",
   "image-feature-extraction",
   "wllama-text-generation",
+  "moz-text-to-goal",
 ];
 
 const DTYPE = ["fp32", "fp16", "q8", "int8", "uint8", "q4", "bnb4", "q4f16"];
@@ -74,6 +80,7 @@ function getNumThreadsArray() {
   );
 }
 
+/** @type {MLEngineParent | null} */
 let engineParent = null;
 
 const TINY_ARTICLE =
@@ -310,7 +317,54 @@ const INFERENCE_PAD_PRESETS = {
     device: "cpu",
     backend: "onnx",
   },
-
+  "static-embeddings": {
+    inputArgs: [
+      "This is an example of encoding",
+      "The quick brown fox jumps over the lazy dog.",
+      "Curaçao, naïve fiancé, jalapeño, déjà vu.",
+      "Привет, как дела?",
+      "Бързата кафява лисица прескача мързеливото куче.",
+      "Γρήγορη καφέ αλεπού πηδάει πάνω από τον τεμπέλη σκύλο.",
+      "اللغة العربية جميلة وغنية بالتاريخ.",
+      "مرحبا بالعالم!",
+      "Simplified: 快速的棕色狐狸跳过懒狗。",
+      "Traditional: 快速的棕色狐狸跳過懶狗。",
+      "素早い茶色の狐が怠け者の犬を飛び越える。",
+      "コンピュータープログラミング",
+      "빠른 갈색 여우가 게으른 개를 뛰어넘습니다.",
+      "तेज़ भूरी लोमड़ी आलसी कुत्ते के ऊपर कूदती है।",
+      "দ্রুত বাদামী শিয়াল অলস কুকুরের উপর দিয়ে লাফ দেয়।",
+      "வேகமான பழுப்பு நரி சோம்பேறி நாயின் மேல் குதிக்கிறது.",
+      "สุนัขจิ้งจอกสีน้ำตาลกระโดดข้ามสุนัขขี้เกียจ.",
+      "ብሩክ ቡናማ ቀበሮ ሰነፍ ውሻን ተዘልሏል።",
+      // Mixed scripts:
+      "Hello 世界 مرحبا 🌍",
+      "123, αβγ, абв, العربية, 中文, हिन्दी.",
+    ],
+    runOptions: {
+      // Use mean pooling, where each static embedding is averaged together into
+      // a new vector.
+      pooling: "mean",
+      // Normalize the resulting vector.
+      normalize: true,
+    },
+    task: "static-embeddings",
+    modelHub: "mozilla",
+    modelId: "mozilla/static-embeddings",
+    modelRevision: "v1.0.0",
+    backend: "static-embeddings",
+    staticEmbeddingsOptions: {
+      // View the available models here:
+      //   https://huggingface.co/gregtatum/static-embeddings/tree/main/models
+      subfolder: "models/minishlab/potion-retrieval-32M",
+      // The precision of the embeddings: fp32, fp16, fp8_e5m2, fp8_e4m3
+      dtype: "fp8_e4m3",
+      // The dimensions available: 32, 64, 128, 256.
+      dimensions: 128,
+      // Whether or not to use ZST compression.
+      compression: true,
+    },
+  },
   "link-preview": {
     inputArgs: `Summarize this: ${TINY_ARTICLE}`,
     runOptions: {
@@ -326,6 +380,26 @@ const INFERENCE_PAD_PRESETS = {
     dtype: "q8",
     device: "cpu",
     backend: "onnx",
+  },
+  openai: {
+    inputArgs: [
+      {
+        role: "system",
+        content:
+          "You are a helpful assistant that summarizes text clearly and concisely.",
+      },
+      {
+        role: "user",
+        content: `Please summarize the following text:\n\n ${TINY_ARTICLE} /no_think`,
+      },
+    ],
+    runOptions: {},
+    task: "text-generation",
+    modelId: "qwen3:0.6b",
+    modelRevision: "main",
+    apiKey: "ollama",
+    baseURL: "http://localhost:11434/v1",
+    backend: "openai",
   },
 };
 
@@ -392,25 +466,30 @@ function ts2str(ts) {
  */
 
 async function updateStatus() {
+  const engineParent = await getEngineParent();
   if (!engineParent) {
+    // The engine parent is not available.
     return;
   }
 
-  let info;
+  /**
+   * @type {StatusByEngineId}
+   */
+  let statusByEngineId;
 
   // Fetch the engine status info
   try {
-    info = await engineParent.getStatus();
-  } catch (e) {
-    engineParent = null; // let's re-create it on errors.
-    info = new Map();
+    statusByEngineId = await engineParent.getStatusByEngineId();
+  } catch (error) {
+    console.error("Failed to get the engine status", error);
+    statusByEngineId = new Map();
   }
 
   // Get the container where the table will be displayed
   let tableContainer = document.getElementById("statusTableContainer");
 
   // Clear the container if the map is empty
-  if (info.size === 0) {
+  if (statusByEngineId.size === 0) {
     tableContainer.innerHTML = ""; // Clear any existing table
     if (updateStatusInterval) {
       clearInterval(updateStatusInterval); // Clear the interval if it exists
@@ -452,7 +531,7 @@ async function updateStatus() {
   let tbody = document.createElement("tbody");
 
   // Iterate over the info map
-  for (let [engineId, engineInfo] of info.entries()) {
+  for (let [engineId, { status, options }] of statusByEngineId.entries()) {
     let row = document.createElement("tr");
 
     // Create a cell for each piece of data
@@ -461,23 +540,23 @@ async function updateStatus() {
     row.appendChild(engineIdCell);
 
     let statusCell = document.createElement("td");
-    statusCell.textContent = engineInfo.status;
+    statusCell.textContent = status;
     row.appendChild(statusCell);
 
     let modelIdCell = document.createElement("td");
-    modelIdCell.textContent = engineInfo.options?.modelId || "N/A";
+    modelIdCell.textContent = options?.modelId || "N/A";
     row.appendChild(modelIdCell);
 
     let dtypeCell = document.createElement("td");
-    dtypeCell.textContent = engineInfo.options?.dtype || "N/A";
+    dtypeCell.textContent = options?.dtype || "N/A";
     row.appendChild(dtypeCell);
 
     let deviceCell = document.createElement("td");
-    deviceCell.textContent = engineInfo.options?.device || "N/A";
+    deviceCell.textContent = options?.device || "N/A";
     row.appendChild(deviceCell);
 
     let timeoutCell = document.createElement("td");
-    timeoutCell.textContent = engineInfo.options?.timeoutMS || "N/A";
+    timeoutCell.textContent = options?.timeoutMS || "N/A";
     row.appendChild(timeoutCell);
 
     // Append the row to the table body
@@ -645,6 +724,10 @@ async function displayInfo() {
   await refreshPage();
 }
 
+/**
+ * @param {string} selectId
+ * @param {string} optionValue
+ */
 function setSelectOption(selectId, optionValue) {
   const selectElement = document.getElementById(selectId);
   if (!selectElement) {
@@ -665,7 +748,9 @@ function setSelectOption(selectId, optionValue) {
     }
   }
 
-  console.warn(`No option found with value: ${optionValue}`);
+  console.warn(
+    `No option found for "${selectId}" with value: "${optionValue}"`
+  );
 }
 
 function loadExample(name) {
@@ -777,6 +862,13 @@ async function runInference() {
     };
   }
 
+  if (taskName == "static-embeddings") {
+    const config = INFERENCE_PAD_PRESETS["static-embeddings"];
+    additionalEngineOptions = {
+      staticEmbeddingsOptions: config.staticEmbeddingsOptions,
+    };
+  }
+
   const initData = {
     featureId: "about-inference",
     modelId,
@@ -808,8 +900,7 @@ async function runInference() {
   try {
     const pipelineOptions = new PipelineOptions(initData);
     startTime = performance.now();
-    const engineParent = await getEngineParent();
-    engine = await engineParent.getEngine(pipelineOptions, progressData => {
+    engine = await createEngine(pipelineOptions, progressData => {
       engineNotification(progressData).catch(err => {
         console.error("Error in engineNotification:", err);
       });
@@ -1024,56 +1115,6 @@ class TextareaConsole {
   }
 }
 
-async function runHttpInference() {
-  const output = document.getElementById("http.output");
-  output.value = "…";
-  output.value = await lazy.HttpInference.completion(
-    ["bearer", "endpoint", "model", "prompt"].reduce(
-      (config, key) => {
-        config[key] = document.getElementById("http." + key).value;
-        return config;
-      },
-      { onStream: val => (output.value = val) }
-    ),
-    await updateHttpContext()
-  );
-}
-
-async function updateHttpContext() {
-  const limit = document.getElementById("http.limit").value;
-  const { AboutNewTab, gBrowser, isBlankPageURL } =
-    window.browsingContext.topChromeWindow;
-  const recentTabs = gBrowser.tabs
-    .filter(
-      tab =>
-        !isBlankPageURL(tab.linkedBrowser.currentURI.spec) &&
-        tab != gBrowser.selectedTab
-    )
-    .toSorted((a, b) => b.lastSeenActive - a.lastSeenActive)
-    .slice(0, limit)
-    .map(tab => tab.label);
-  const context = {
-    recentTabs,
-    stories: Object.values(
-      AboutNewTab.activityStream.store.getState().DiscoveryStream.feeds.data
-    )[0]
-      ?.data.recommendations.slice(0, limit)
-      .map(rec => rec.title),
-    tabTitle: recentTabs[0],
-  };
-
-  const output = document.getElementById("http.context");
-  output.innerHTML = "";
-  const table = output.appendChild(document.createElement("table"));
-  Object.entries(context).forEach(([key, val]) => {
-    const tr = table.appendChild(document.createElement("tr"));
-    tr.appendChild(document.createElement("td")).textContent = `%${key}%`;
-    tr.appendChild(document.createElement("td")).textContent = val;
-  });
-
-  return context;
-}
-
 var selectedHub;
 var selectedPreset;
 
@@ -1103,9 +1144,16 @@ function showTab(button) {
   button.setAttribute("selected", "true");
 }
 
+/**
+ * @returns {Promise<MLEngineParent | null>}
+ */
 async function getEngineParent() {
   if (!engineParent) {
-    engineParent = await EngineProcess.getMLEngineParent();
+    try {
+      engineParent = await EngineProcess.getMLEngineParent();
+    } catch (error) {
+      return null;
+    }
   }
   return engineParent;
 }
@@ -1121,7 +1169,7 @@ async function runBenchmark() {
   benchmarkConsole.addText("Starting benchmark...\n");
   let backend = document.getElementById("benchmark.backend").value;
   if (backend === "all") {
-    backend = lazy.BACKENDS;
+    backend = Object.values(lazy.BACKENDS);
   } else {
     backend = [backend];
   }
@@ -1141,7 +1189,7 @@ async function runBenchmark() {
       name: "ner-small",
       inputArgs: ["Sarah lives in the United States of America"],
       runOptions: {},
-      compatibleBackends: ["onnx"],
+      compatibleBackends: [lazy.BACKENDS.onnx],
       pipelineOptions: {
         taskName: "token-classification",
         modelId: "Xenova/bert-base-NER",
@@ -1154,7 +1202,7 @@ async function runBenchmark() {
     {
       name: "feature-extraction-large",
       inputArgs: [repeatedSentences],
-      compatibleBackends: ["onnx"],
+      compatibleBackends: [lazy.BACKENDS.onnx],
       runOptions: { pooling: "mean", normalize: true },
       pipelineOptions: {
         taskName: "feature-extraction",
@@ -1167,7 +1215,7 @@ async function runBenchmark() {
     },
     {
       name: "image-to-text",
-      compatibleBackends: ["onnx"],
+      compatibleBackends: [lazy.BACKENDS.onnx],
       inputArgs: [
         "https://huggingface.co/datasets/mishig/sample_images/resolve/main/football-match.jpg",
       ],
@@ -1183,7 +1231,7 @@ async function runBenchmark() {
     },
     {
       name: "link-preview",
-      compatibleBackends: ["wllama"],
+      compatibleBackends: [lazy.BACKENDS.wllama],
       inputArgs: `Summarize this: ${TINY_ARTICLE}`,
       runOptions: {
         nPredict: 100,
@@ -1240,7 +1288,7 @@ async function runBenchmark() {
 
         bench.initDuration = await measure(async () => {
           const pipelineOptions = new PipelineOptions(workload.pipelineOptions);
-          engine = await engineParent.getEngine(pipelineOptions);
+          engine = await engineParent.getEngine({ pipelineOptions });
         });
 
         benchmarkConsole.addText("\nRunning 25 iterations ");
@@ -1305,8 +1353,8 @@ window.onload = async function () {
   fillSelect("taskName", TASKS);
   fillSelect("numThreads", getNumThreadsArray());
   fillSelect("predefined", PREDEFINED);
-  fillSelect("benchmark.backend", ["all"].concat(lazy.BACKENDS));
-  fillSelect("backend", lazy.BACKENDS);
+  fillSelect("benchmark.backend", ["all"].concat(Object.values(lazy.BACKENDS)));
+  fillSelect("backend", Object.values(lazy.BACKENDS));
 
   document.getElementById("predefined").value = "feature-large";
   loadExample("feature-large");
@@ -1326,18 +1374,10 @@ window.onload = async function () {
   });
 
   document
-    .getElementById("http.button")
-    .addEventListener("click", runHttpInference);
-  document
-    .getElementById("http.limit")
-    .addEventListener("change", updateHttpContext);
-
-  document
     .getElementById("benchmark.button")
     .addEventListener("click", runBenchmark);
 
   document.getElementById("benchmark.output").value = "";
 
-  updateHttpContext();
   await refreshPage();
 };

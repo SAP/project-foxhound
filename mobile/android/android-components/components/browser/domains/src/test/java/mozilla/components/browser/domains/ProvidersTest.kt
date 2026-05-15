@@ -4,7 +4,6 @@
 
 package mozilla.components.browser.domains
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.domains.autocomplete.BaseDomainAutocompleteProvider
 import mozilla.components.browser.domains.autocomplete.CustomDomainsProvider
@@ -60,7 +59,6 @@ class ProvidersTest {
         assertNoCompletion(filter, "mozilla")
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     private fun assertCompletion(
         provider: BaseDomainAutocompleteProvider,
         text: String,
@@ -78,7 +76,6 @@ class ProvidersTest {
         assertEquals(sourceSize, result.totalItems)
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     private fun assertNoCompletion(provider: BaseDomainAutocompleteProvider, text: String) = runTest {
         assertNull(provider.getAutocompleteSuggestion(text))
     }

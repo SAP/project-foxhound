@@ -6,6 +6,7 @@
 
 #include "harfbuzz/hb.h"
 #include "harfbuzz/hb-ot.h"
+#include "mozilla/StaticPrefs_mathml.h"
 
 #define FloatToFixed(f) (65536 * (f))
 #define FixedToFloat(f) ((f) * (1.0 / 65536.0))
@@ -14,6 +15,7 @@ using namespace mozilla;
 
 gfxMathTable::gfxMathTable(hb_face_t* aFace, gfxFloat aSize) {
   mMathVariantCache.vertical = false;
+  mMathVariantCache.isRTL = false;
   mHBFont = hb_font_create(aFace);
   if (mHBFont) {
     hb_font_set_ppem(mHBFont, aSize, aSize);
@@ -48,15 +50,17 @@ gfxFloat gfxMathTable::ItalicsCorrection(uint32_t aGlyphID) const {
 }
 
 uint32_t gfxMathTable::VariantsSize(uint32_t aGlyphID, bool aVertical,
-                                    uint16_t aSize) const {
-  UpdateMathVariantCache(aGlyphID, aVertical);
+                                    bool aRTL, uint16_t aSize) const {
+  UpdateMathVariantCache(aGlyphID, aVertical, aRTL);
   if (aSize < kMaxCachedSizeCount) {
     return mMathVariantCache.sizes[aSize];
   }
 
   // If the size index exceeds the cache size, we just read the value with
   // hb_ot_math_get_glyph_variants.
-  hb_direction_t direction = aVertical ? HB_DIRECTION_BTT : HB_DIRECTION_LTR;
+  hb_direction_t direction = aVertical
+                                 ? HB_DIRECTION_BTT
+                                 : (aRTL ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
   hb_ot_math_glyph_variant_t variant;
   unsigned int count = 1;
   hb_ot_math_get_glyph_variants(mHBFont, aGlyphID, direction, aSize, &count,
@@ -64,9 +68,9 @@ uint32_t gfxMathTable::VariantsSize(uint32_t aGlyphID, bool aVertical,
   return count > 0 ? variant.glyph : 0;
 }
 
-bool gfxMathTable::VariantsParts(uint32_t aGlyphID, bool aVertical,
+bool gfxMathTable::VariantsParts(uint32_t aGlyphID, bool aVertical, bool aRTL,
                                  uint32_t aGlyphs[4]) const {
-  UpdateMathVariantCache(aGlyphID, aVertical);
+  UpdateMathVariantCache(aGlyphID, aVertical, aRTL);
   memcpy(aGlyphs, mMathVariantCache.parts, sizeof(mMathVariantCache.parts));
   return mMathVariantCache.arePartsValid;
 }
@@ -77,18 +81,26 @@ void gfxMathTable::ClearCache() const {
   mMathVariantCache.arePartsValid = false;
 }
 
-void gfxMathTable::UpdateMathVariantCache(uint32_t aGlyphID,
-                                          bool aVertical) const {
+void gfxMathTable::UpdateMathVariantCache(uint32_t aGlyphID, bool aVertical,
+                                          bool aRTL) const {
+  if (!StaticPrefs::mathml_rtl_operator_mirroring_enabled()) {
+    aRTL = false;
+  }
+
   if (aGlyphID == mMathVariantCache.glyphID &&
-      aVertical == mMathVariantCache.vertical)
+      aVertical == mMathVariantCache.vertical &&
+      aRTL == mMathVariantCache.isRTL)
     return;
 
   mMathVariantCache.glyphID = aGlyphID;
   mMathVariantCache.vertical = aVertical;
+  mMathVariantCache.isRTL = aRTL;
   ClearCache();
 
   // Cache the first size variants.
-  hb_direction_t direction = aVertical ? HB_DIRECTION_BTT : HB_DIRECTION_LTR;
+  hb_direction_t direction = aVertical
+                                 ? HB_DIRECTION_BTT
+                                 : (aRTL ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
   hb_ot_math_glyph_variant_t variant[kMaxCachedSizeCount];
   unsigned int count = kMaxCachedSizeCount;
   hb_ot_math_get_glyph_variants(mHBFont, aGlyphID, direction, 0, &count,

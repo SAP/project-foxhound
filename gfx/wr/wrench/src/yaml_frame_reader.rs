@@ -154,7 +154,8 @@ impl ExternalImageHandler for LocalExternalImageHandler {
         &mut self,
         key: ExternalImageId,
         _channel_index: u8,
-    ) -> ExternalImage {
+        _is_composited: bool,
+    ) -> ExternalImage<'_> {
         let (id, desc) = self.texture_ids[key.0 as usize];
         ExternalImage {
             uv: TexelRect::new(0.0, 0.0, desc.size.width as f32, desc.size.height as f32),
@@ -848,16 +849,6 @@ impl YamlFrameReader {
         dl.push_rect(info, bounds, color);
     }
 
-    fn handle_clear_rect(
-        &self,
-        dl: &mut DisplayListBuilder,
-        item: &Yaml,
-        info: &CommonItemProperties,
-    ) {
-        let bounds = item["bounds"].as_rect().expect("clear-rect type must have bounds");
-        dl.push_clear_rect(info, bounds);
-    }
-
     fn handle_hit_test(
         &mut self,
         dl: &mut DisplayListBuilder,
@@ -1219,6 +1210,31 @@ impl YamlFrameReader {
         } else {
             BoxShadowClipMode::Outset
         };
+        let shadow_radius = item["shadow-radius"].as_border_radius().unwrap_or_else(|| {
+            let adjust_radius = |border_radius: f32, spread_amount: f32| {
+                if border_radius > 0.0 {
+                    (border_radius + spread_amount).max(0.0)
+                } else {
+                    0.0
+                }
+            };
+            let adjust_corner = |corner: LayoutSize, spread_amount: f32| {
+                LayoutSize::new(
+                    adjust_radius(corner.width, spread_amount),
+                    adjust_radius(corner.height, spread_amount),
+                )
+            };
+            let spread_amount = match clip_mode {
+                BoxShadowClipMode::Outset => spread_radius,
+                BoxShadowClipMode::Inset => -spread_radius,
+            };
+            BorderRadius {
+                top_left: adjust_corner(border_radius.top_left, spread_amount),
+                top_right: adjust_corner(border_radius.top_right, spread_amount),
+                bottom_right: adjust_corner(border_radius.bottom_right, spread_amount),
+                bottom_left: adjust_corner(border_radius.bottom_left, spread_amount),
+            }
+        });
 
         dl.push_box_shadow(
             info,
@@ -1228,6 +1244,7 @@ impl YamlFrameReader {
             blur_radius,
             spread_radius,
             border_radius,
+            shadow_radius,
             clip_mode,
         );
     }
@@ -1580,6 +1597,7 @@ impl YamlFrameReader {
                 ("backface-visible", PrimitiveFlags::IS_BACKFACE_VISIBLE),
                 ("scrollbar-container", PrimitiveFlags::IS_SCROLLBAR_CONTAINER),
                 ("prefer-compositor-surface", PrimitiveFlags::PREFER_COMPOSITOR_SURFACE),
+                ("checkerboard-background", PrimitiveFlags::CHECKERBOARD_BACKGROUND),
             ] {
                 if let Some(value) = item[key].as_bool() {
                     flags.set(flag, value);
@@ -1597,7 +1615,6 @@ impl YamlFrameReader {
             match item_type {
                 "rect" => self.handle_rect(dl, item, &info),
                 "hit-test" => self.handle_hit_test(dl, item, &mut info),
-                "clear-rect" => self.handle_clear_rect(dl, item, &info),
                 "line" => self.handle_line(dl, item, &mut info),
                 "image" => self.handle_image(dl, wrench, item, &mut info),
                 "yuv-image" => self.handle_yuv_image(dl, wrench, item, &mut info),
@@ -1904,12 +1921,15 @@ impl YamlFrameReader {
             .as_point()
             .unwrap_or(default_transform_origin);
 
+        let is_2d = yaml["is-2d"].as_bool().unwrap_or(false);
+        let should_snap = yaml["should-snap"].as_bool().unwrap_or(false);
+
         let reference_frame_kind = if !yaml["perspective"].is_badvalue() {
             ReferenceFrameKind::Perspective { scrolling_relative_to: None }
         } else {
             ReferenceFrameKind::Transform {
-                is_2d_scale_translation: false,
-                should_snap: false,
+                is_2d_scale_translation: is_2d,
+                should_snap,
                 paired_with_perspective: yaml["paired-with-perspective"].as_bool().unwrap_or(false),
             }
         };
@@ -2058,7 +2078,6 @@ impl YamlFrameReader {
 
         let filters = yaml["filters"].as_vec_filter_op().unwrap_or_default();
         let filter_datas = yaml["filter-datas"].as_vec_filter_data().unwrap_or_default();
-        let filter_primitives = yaml["filter-primitives"].as_vec_filter_primitive().unwrap_or_default();
 
         let snapshot = if !yaml["snapshot"].is_badvalue() {
             let yaml = &yaml["snapshot"];
@@ -2094,7 +2113,6 @@ impl YamlFrameReader {
             mix_blend_mode,
             &filters,
             &filter_datas,
-            &filter_primitives,
             raster_space,
             flags,
             snapshot,
@@ -2125,13 +2143,11 @@ impl YamlFrameReader {
 
         let filters = item["filters"].as_vec_filter_op().unwrap_or_default();
         let filter_datas = item["filter-datas"].as_vec_filter_data().unwrap_or_default();
-        let filter_primitives = item["filter-primitives"].as_vec_filter_primitive().unwrap_or_default();
 
         dl.push_backdrop_filter(
             info,
             &filters,
             &filter_datas,
-            &filter_primitives,
         );
     }
 }

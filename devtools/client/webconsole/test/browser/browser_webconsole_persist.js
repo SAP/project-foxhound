@@ -40,7 +40,7 @@ add_task(async function () {
   await logAndAssertInitialMessages(hud);
 
   const onReloaded = hud.ui.once("reloaded");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await onReloaded;
 
   info("Wait for messages to be cleared");
@@ -238,7 +238,7 @@ add_task(async function () {
   // Because will-navigate DOCUMENT_EVENT timestamp is shifted to workaround some other limitation,
   // the reported time of navigation may actually be slightly off and be older than the real navigation start
   let timeBeforeNavigation = Date.now() - WILL_NAVIGATE_TIME_SHIFT;
-  reloadBrowser();
+  reloadSelectedTab();
   await onNavigatedMessage;
   await onReloaded;
 

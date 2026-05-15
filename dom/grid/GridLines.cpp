@@ -8,8 +8,8 @@
 
 #include "GridDimension.h"
 #include "GridLine.h"
-#include "mozilla/dom/GridBinding.h"
 #include "mozilla/dom/GridArea.h"
+#include "mozilla/dom/GridBinding.h"
 #include "nsGridContainerFrame.h"
 
 namespace mozilla::dom {

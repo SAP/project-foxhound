@@ -7,13 +7,11 @@
 #ifndef mozilla_dom_BodyUtil_h
 #define mozilla_dom_BodyUtil_h
 
-#include "nsString.h"
-#include "nsError.h"
-
+#include "js/Utility.h"  // JS::FreePolicy
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
-
-#include "js/Utility.h"  // JS::FreePolicy
+#include "nsError.h"
+#include "nsString.h"
 
 namespace mozilla {
 class ErrorResult;

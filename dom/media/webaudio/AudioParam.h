@@ -7,14 +7,14 @@
 #ifndef AudioParam_h_
 #define AudioParam_h_
 
-#include "AudioParamTimeline.h"
-#include "mozilla/ErrorResult.h"
-#include "nsWrapperCache.h"
-#include "nsCycleCollectionParticipant.h"
 #include "AudioNode.h"
-#include "mozilla/dom/TypedArray.h"
+#include "AudioParamTimeline.h"
 #include "WebAudioUtils.h"
 #include "js/TypeDecls.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/TypedArray.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

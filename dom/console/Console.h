@@ -8,13 +8,13 @@
 #define mozilla_dom_Console_h
 
 #include "domstubs.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/dom/ConsoleBinding.h"
 #include "mozilla/dom/ConsoleInstanceBinding.h"
-#include "mozilla/TimeStamp.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsIObserver.h"
+#include "nsTHashMap.h"
 #include "nsWeakReference.h"
 
 class nsIConsoleAPIStorage;
@@ -356,7 +356,15 @@ class Console final : public nsIObserver, public nsSupportsWeakReference {
                       const Sequence<JS::Value>& aData,
                       DOMHighResTimeStamp* aTimeStamp);
 
+  mozilla::TimeStamp GetCreationTimeStamp() const;
+
   void StringifyElement(Element* aElement, nsAString& aOut);
+
+  MOZ_CAN_RUN_SCRIPT
+  void LogToMozLog(JSContext* aCx, MethodName aMethodName,
+                   const nsAString& aMethodString,
+                   const Sequence<JS::Value>& aData, nsIStackFrame* aStack,
+                   DOMHighResTimeStamp aMonotonicTimer);
 
   MOZ_CAN_RUN_SCRIPT
   void MaybeExecuteDumpFunction(JSContext* aCx, MethodName aMethodName,
@@ -377,11 +385,14 @@ class Console final : public nsIObserver, public nsSupportsWeakReference {
   void ExecuteDumpFunction(const nsAString& aMessage);
 
   bool ShouldProceed(MethodName aName) const;
+  bool ShouldLogToMozLog(MethodName aName) const;
+  bool ShouldLogToMozLog(ConsoleLogLevel aLevel) const;
 
   uint32_t WebIDLLogLevelToInteger(ConsoleLogLevel aLevel) const;
+  uint32_t ConsoleMethodNameToInteger(MethodName aName) const;
 
-  uint32_t InternalLogLevelToInteger(MethodName aName) const;
-  LogLevel InternalLogLevelToMozLog(MethodName aName) const;
+  LogLevel ConsoleMethodNameToMozLog(MethodName aName) const;
+  LogLevel ConsoleLevelIntegerToMozLog(uint32_t aLevel) const;
 
   class ArgumentData {
    public:

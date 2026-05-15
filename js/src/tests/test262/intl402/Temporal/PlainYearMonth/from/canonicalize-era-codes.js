@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -6,12 +6,12 @@
 esid: sec-temporal.plainyearmonth.from
 description: Calendar era code is canonicalized
 includes: [temporalHelpers.js]
-features: [Temporal]
+features: [Temporal, Intl.Era-monthcode]
 ---*/
 
 const date1 = Temporal.PlainYearMonth.from({
   calendar: "gregory",
-  era: "ce",
+  era: "ad",
   eraYear: 2024,
   year: 2024,
   month: 1,
@@ -19,13 +19,13 @@ const date1 = Temporal.PlainYearMonth.from({
 TemporalHelpers.assertPlainYearMonth(
   date1,
   2024, 1, "M01",
-  "'ce' is accepted as alias for 'gregory'",
-  "gregory", 2024
+  "'ad' is accepted as alias for 'ce'",
+  "ce", 2024
 );
 
 const date2 = Temporal.PlainYearMonth.from({
   calendar: "gregory",
-  era: "bce",
+  era: "bc",
   eraYear: 44,
   year: -43,
   month: 3,
@@ -33,8 +33,8 @@ const date2 = Temporal.PlainYearMonth.from({
 TemporalHelpers.assertPlainYearMonth(
   date2,
   -43, 3, "M03",
-  "'bce' is accepted as alias for 'gregory-inverse'",
-  "gregory-inverse", 44
+  "'bc' is accepted as alias for 'bce'",
+  "bce", 44
 );
 
 reportCompare(0, 0);

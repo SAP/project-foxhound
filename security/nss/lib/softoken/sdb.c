@@ -129,9 +129,9 @@ const CK_ATTRIBUTE_TYPE sftkdb_known_attributes[] = {
     CKA_X2RATCHET_ISALICE, CKA_X2RATCHET_NHKR, CKA_X2RATCHET_NHKS,
     CKA_X2RATCHET_NR, CKA_X2RATCHET_NS, CKA_X2RATCHET_PNS, CKA_X2RATCHET_RK,
     CKA_HSS_LEVELS, CKA_HSS_LMS_TYPE, CKA_HSS_LMOTS_TYPE, CKA_HSS_LMS_TYPES,
-    CKA_HSS_LMOTS_TYPES, CKA_HSS_KEYS_REMAINING, CKA_OBJECT_VALIDATION_FLAGS,
-    CKA_VALIDATION_TYPE, CKA_VALIDATION_VERSION, CKA_VALIDATION_LEVEL,
-    CKA_VALIDATION_MODULE_ID, CKA_VALIDATION_FLAG,
+    CKA_HSS_LMOTS_TYPES, CKA_HSS_KEYS_REMAINING, CKA_PARAMETER_SET,
+    CKA_OBJECT_VALIDATION_FLAGS, CKA_VALIDATION_TYPE, CKA_VALIDATION_VERSION,
+    CKA_VALIDATION_LEVEL, CKA_VALIDATION_MODULE_ID, CKA_VALIDATION_FLAG,
     CKA_VALIDATION_AUTHORITY_TYPE, CKA_VALIDATION_COUNTRY,
     CKA_VALIDATION_CERTIFICATE_IDENTIFIER, CKA_VALIDATION_CERTIFICATE_URI,
     CKA_VALIDATION_PROFILE, CKA_VALIDATION_VENDOR_URI, CKA_ENCAPSULATE_TEMPLATE,
@@ -158,7 +158,7 @@ const CK_ATTRIBUTE_TYPE sftkdb_known_attributes[] = {
 };
 // clang-format on
 
-const int sftkdb_known_attributes_size = PR_ARRAY_SIZE(sftkdb_known_attributes);
+const size_t sftkdb_known_attributes_size = PR_ARRAY_SIZE(sftkdb_known_attributes);
 
 /*
  * Note on use of sqlReadDB: Only one thread at a time may have an actual
@@ -2024,8 +2024,8 @@ sdb_update_column(sqlite3 *sqlDB, const char *table, sdbDataType type)
     }
     /* we have more attributes than in the database, so we know things
      * are missing, find what was missing */
-    for (int i = 0; i < sftkdb_known_attributes_size; i++) {
-        char *typeString = sqlite3_mprintf("a%x", sftkdb_known_attributes[i]);
+    for (size_t i = 0; i < sftkdb_known_attributes_size; i++) {
+        char *typeString = sqlite3_mprintf("a%lx", sftkdb_known_attributes[i]);
         PRBool found = PR_FALSE;
         /* this one index is important, we skip the first column (id), since
          * it will never match, starting at zero isn't a bug,
@@ -2072,7 +2072,6 @@ CK_RV
 sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
          int *newInit, int inFlags, PRUint32 accessOps, SDB **pSdb)
 {
-    int i;
     char *initStr = NULL;
     char *newStr;
     char *queryStr = NULL;
@@ -2136,8 +2135,9 @@ sdb_init(char *dbname, char *table, sdbDataType type, int *inUpdate,
             goto loser;
         }
         initStr = sqlite3_mprintf("");
-        for (i = 0; initStr && i < sftkdb_known_attributes_size; i++) {
-            newStr = sqlite3_mprintf("%s, a%x", initStr, sftkdb_known_attributes[i]);
+        for (size_t i = 0; initStr && i < sftkdb_known_attributes_size; i++) {
+            newStr = sqlite3_mprintf("%s, a%lx", initStr,
+                                     sftkdb_known_attributes[i]);
             sqlite3_free(initStr);
             initStr = newStr;
         }

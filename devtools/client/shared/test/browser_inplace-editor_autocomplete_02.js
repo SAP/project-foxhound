@@ -206,7 +206,7 @@ add_task(async function () {
  *
  * @param {Document} doc
  * @param {Window} win
- * @param {String} property - The property name
+ * @param {string} property - The property name
  * @param {Array} testData - The data passed to helper_inplace_editor.js `testComplation`.
  *         format :
  *         [

@@ -197,14 +197,14 @@ skip-if(Android) == webgl-hanging-scissor-test.html?aa  wrapper.html?green.png
 # RGB565 dithers 127 to [123,132]. (Max error: 5)
 # RGBA4444 dithers 128 to [119,136], and 191 to [192]. (Max error: 9)
 # Bug 1285531 - tests disabled for memory corruption
-fuzzy(0-5,0-30000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&________&_______&_____  wrapper.html?colors-no-alpha.png
-fuzzy(0-5,0-30000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&readback&_______&_____  wrapper.html?colors-no-alpha.png
-fuzzy(0-5,0-30000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&________&premult&_____  wrapper.html?colors-no-alpha.png
-fuzzy(0-5,0-30000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&readback&premult&_____  wrapper.html?colors-no-alpha.png
-fuzzy(0-9,0-40000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&________&_______&alpha  wrapper.html?colors-non-premult.png
-fuzzy(0-9,0-40000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&readback&_______&alpha  wrapper.html?colors-non-premult.png
-fuzzy(0-9,0-40000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&________&premult&alpha  wrapper.html?colors-premult.png
-fuzzy(0-9,0-40000) skip pref(webgl.prefer-16bpp,true) == webgl-color-test.html?16bpp&readback&premult&alpha  wrapper.html?colors-premult.png
+fuzzy(0-5,0-30000) skip == webgl-color-test.html?16bpp&________&_______&_____  wrapper.html?colors-no-alpha.png
+fuzzy(0-5,0-30000) skip == webgl-color-test.html?16bpp&readback&_______&_____  wrapper.html?colors-no-alpha.png
+fuzzy(0-5,0-30000) skip == webgl-color-test.html?16bpp&________&premult&_____  wrapper.html?colors-no-alpha.png
+fuzzy(0-5,0-30000) skip == webgl-color-test.html?16bpp&readback&premult&_____  wrapper.html?colors-no-alpha.png
+fuzzy(0-9,0-40000) skip == webgl-color-test.html?16bpp&________&_______&alpha  wrapper.html?colors-non-premult.png
+fuzzy(0-9,0-40000) skip == webgl-color-test.html?16bpp&readback&_______&alpha  wrapper.html?colors-non-premult.png
+fuzzy(0-9,0-40000) skip == webgl-color-test.html?16bpp&________&premult&alpha  wrapper.html?colors-premult.png
+fuzzy(0-9,0-40000) skip == webgl-color-test.html?16bpp&readback&premult&alpha  wrapper.html?colors-premult.png
 
 # Force native GL (Windows):
 skip pref(webgl.disable-angle,true) == webgl-color-test.html?native-gl wrapper.html?colors-no-alpha.png
@@ -247,3 +247,5 @@ skip-if(isDebugBuild) == draw-large-image.html draw-large-image-ref.html
 == 1768521-1.html 1768521-1-ref.html
 == 1851943.html 1851943-ref.html
 == 1937751-cached-stroked-paths-1.html 1937751-cached-stroked-paths-1-ref.html
+== 1984014-1.html 1984014-1-ref.html
+== 1911583-1.html 1911583-1-ref.html

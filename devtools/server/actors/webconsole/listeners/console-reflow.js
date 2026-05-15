@@ -7,37 +7,33 @@
 /**
  * A ReflowObserver that listens for reflow events from the page.
  * Implements nsIReflowObserver.
- *
- * @constructor
- * @param object window
- *        The window for which we need to track reflow.
- * @param object owner
- *        The listener owner which needs to implement:
- *        - onReflowActivity(reflowInfo)
  */
+class ConsoleReflowListener {
+  /**
+   * @param {object} window
+   *        The window for which we need to track reflow.
+   * @param {object} listener
+   *        The listener owner which needs to implement `onReflowActivity(reflowInfo)`
+   */
+  constructor(window, listener) {
+    this.docshell = window.docShell;
+    this.listener = listener;
+    this.docshell.addWeakReflowObserver(this);
+  }
 
-function ConsoleReflowListener(window, listener) {
-  this.docshell = window.docShell;
-  this.listener = listener;
-  this.docshell.addWeakReflowObserver(this);
-}
-
-exports.ConsoleReflowListener = ConsoleReflowListener;
-
-ConsoleReflowListener.prototype = {
-  QueryInterface: ChromeUtils.generateQI([
+  QueryInterface = ChromeUtils.generateQI([
     "nsIReflowObserver",
     "nsISupportsWeakReference",
-  ]),
-  docshell: null,
-  listener: null,
+  ]);
+  docshell = null;
+  listener = null;
 
   /**
    * Forward reflow event to listener.
    *
-   * @param DOMHighResTimeStamp start
-   * @param DOMHighResTimeStamp end
-   * @param boolean interruptible
+   * @param {DOMHighResTimeStamp} start
+   * @param {DOMHighResTimeStamp} end
+   * @param {boolean} interruptible
    */
   sendReflow(start, end, interruptible) {
     const frame = Components.stack.caller.caller;
@@ -58,27 +54,27 @@ ConsoleReflowListener.prototype = {
       sourceLine: frame ? frame.lineNumber : null,
       functionName: frame ? frame.name : null,
     });
-  },
+  }
 
   /**
    * On uninterruptible reflow
    *
-   * @param DOMHighResTimeStamp start
-   * @param DOMHighResTimeStamp end
+   * @param {DOMHighResTimeStamp} start
+   * @param {DOMHighResTimeStamp} end
    */
   reflow(start, end) {
     this.sendReflow(start, end, false);
-  },
+  }
 
   /**
    * On interruptible reflow
    *
-   * @param DOMHighResTimeStamp start
-   * @param DOMHighResTimeStamp end
+   * @param {DOMHighResTimeStamp} start
+   * @param {DOMHighResTimeStamp} end
    */
   reflowInterruptible(start, end) {
     this.sendReflow(start, end, true);
-  },
+  }
 
   /**
    * Unregister listener.
@@ -86,5 +82,7 @@ ConsoleReflowListener.prototype = {
   destroy() {
     this.docshell.removeWeakReflowObserver(this);
     this.listener = this.docshell = null;
-  },
-};
+  }
+}
+
+exports.ConsoleReflowListener = ConsoleReflowListener;

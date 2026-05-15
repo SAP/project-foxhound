@@ -8,9 +8,9 @@
 #define StereoPannerNode_h_
 
 #include "AudioNode.h"
-#include "nsPrintfCString.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/dom/StereoPannerNodeBinding.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla::dom {
 

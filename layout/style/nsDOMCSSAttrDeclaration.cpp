@@ -11,12 +11,10 @@
 #include "ActiveLayerTracker.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/DeclarationBlock.h"
-#include "mozilla/InternalMutationEvent.h"
 #include "mozilla/SMILCSSValueType.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/layers/ScrollLinkedEffectDetector.h"
 #include "nsIFrame.h"
@@ -135,7 +133,7 @@ nsDOMCSSAttributeDeclaration::GetParsingEnvironment(
   return {
       mElement->GetURLDataForStyleAttr(aSubjectPrincipal),
       mElement->OwnerDoc()->GetCompatibilityMode(),
-      mElement->OwnerDoc()->CSSLoader(),
+      mElement->OwnerDoc()->GetExistingCSSLoader(),  // For error reporting only
   };
 }
 
@@ -166,26 +164,26 @@ nsresult nsDOMCSSAttributeDeclaration::SetSMILValueHelper(SetterFunc aFunc) {
 }
 
 nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
-    const nsCSSPropertyID aPropID, const SMILValue& aValue) {
+    const NonCustomCSSPropertyId aPropId, const SMILValue& aValue) {
   MOZ_ASSERT(aValue.mType == &SMILCSSValueType::sSingleton,
              "We should only try setting a CSS value type");
   return SetSMILValueHelper([&](DeclarationBlock& aDecl) {
-    return SMILCSSValueType::SetPropertyValues(aPropID, aValue, aDecl);
+    return SMILCSSValueType::SetPropertyValues(aPropId, aValue, aDecl);
   });
 }
 
 nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
-    const nsCSSPropertyID aPropID, const SVGAnimatedLength& aLength) {
-  return SetSMILValueHelper([aPropID, &aLength](DeclarationBlock& aDecl) {
+    const NonCustomCSSPropertyId aPropId, const SVGAnimatedLength& aLength) {
+  return SetSMILValueHelper([aPropId, &aLength](DeclarationBlock& aDecl) {
     MOZ_ASSERT(aDecl.IsMutable());
     return SVGElement::UpdateDeclarationBlockFromLength(
-        *aDecl.Raw(), aPropID, aLength, SVGElement::ValToUse::Anim);
+        *aDecl.Raw(), aPropId, aLength, SVGElement::ValToUse::Anim);
   });
 }
 
 nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
-    const nsCSSPropertyID aPropID, const SVGAnimatedPathSegList& aPath) {
-  MOZ_ASSERT(aPropID == eCSSProperty_d);
+    const NonCustomCSSPropertyId aPropId, const SVGAnimatedPathSegList& aPath) {
+  MOZ_ASSERT(aPropId == eCSSProperty_d);
   return SetSMILValueHelper([&aPath](DeclarationBlock& aDecl) {
     MOZ_ASSERT(aDecl.IsMutable());
     return SVGElement::UpdateDeclarationBlockFromPath(
@@ -194,9 +192,10 @@ nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
 }
 
 nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
-    const nsCSSPropertyID aPropID, const SVGAnimatedTransformList* aTransform,
+    const NonCustomCSSPropertyId aPropId,
+    const SVGAnimatedTransformList* aTransform,
     const gfx::Matrix* aAnimateMotionTransform) {
-  MOZ_ASSERT(aPropID == eCSSProperty_transform);
+  MOZ_ASSERT(aPropId == eCSSProperty_transform);
   return SetSMILValueHelper(
       [aTransform, aAnimateMotionTransform](DeclarationBlock& aDecl) {
         MOZ_ASSERT(aDecl.IsMutable());
@@ -213,8 +212,8 @@ nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
 //
 // FIXME: This is missing the margin shorthand and the logical versions of
 // the margin properties, see bug 1266287.
-static bool IsActiveLayerProperty(nsCSSPropertyID aPropID) {
-  switch (aPropID) {
+static bool IsActiveLayerProperty(NonCustomCSSPropertyId aPropId) {
+  switch (aPropId) {
     case eCSSProperty_opacity:
     case eCSSProperty_transform:
     case eCSSProperty_translate:
@@ -232,14 +231,15 @@ static bool IsActiveLayerProperty(nsCSSPropertyID aPropID) {
 }
 
 void nsDOMCSSAttributeDeclaration::SetPropertyValue(
-    const nsCSSPropertyID aPropID, const nsACString& aValue,
+    const NonCustomCSSPropertyId aPropId, const nsACString& aValue,
     nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
-  nsDOMCSSDeclaration::SetPropertyValue(aPropID, aValue, aSubjectPrincipal,
+  nsDOMCSSDeclaration::SetPropertyValue(aPropId, aValue, aSubjectPrincipal,
                                         aRv);
 }
 
-static bool IsScrollLinkedEffectiveProperty(const nsCSSPropertyID aPropID) {
-  switch (aPropID) {
+static bool IsScrollLinkedEffectiveProperty(
+    const NonCustomCSSPropertyId aPropId) {
+  switch (aPropId) {
     case eCSSProperty_background_position:
     case eCSSProperty_background_position_x:
     case eCSSProperty_background_position_y:
@@ -272,7 +272,7 @@ static bool IsScrollLinkedEffectiveProperty(const nsCSSPropertyID aPropID) {
 }
 
 void nsDOMCSSAttributeDeclaration::MutationClosureFunction(
-    void* aData, nsCSSPropertyID aPropID) {
+    void* aData, NonCustomCSSPropertyId aPropId) {
   auto* data = static_cast<MutationClosureData*>(aData);
   MOZ_ASSERT(
       data->mShouldBeCalled,
@@ -280,12 +280,12 @@ void nsDOMCSSAttributeDeclaration::MutationClosureFunction(
   if (data->mWasCalled) {
     return;
   }
-  if (IsScrollLinkedEffectiveProperty(aPropID)) {
+  if (IsScrollLinkedEffectiveProperty(aPropId)) {
     mozilla::layers::ScrollLinkedEffectDetector::PositioningPropertyMutated();
   }
-  if (IsActiveLayerProperty(aPropID)) {
+  if (IsActiveLayerProperty(aPropId)) {
     if (nsIFrame* frame = data->mElement->GetPrimaryFrame()) {
-      ActiveLayerTracker::NotifyInlineStyleRuleModified(frame, aPropID);
+      ActiveLayerTracker::NotifyInlineStyleRuleModified(frame, aPropId);
     }
   }
 

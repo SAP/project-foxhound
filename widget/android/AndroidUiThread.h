@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AndroidUiThread_h__
-#define AndroidUiThread_h__
+#ifndef AndroidUiThread_h_
+#define AndroidUiThread_h_
 
 #include <mozilla/RefPtr.h>
 #include <nsThread.h>
@@ -22,4 +22,4 @@ RefPtr<nsThread> GetAndroidUiThread();
 
 }  // namespace mozilla
 
-#endif  // AndroidUiThread_h__
+#endif  // AndroidUiThread_h_

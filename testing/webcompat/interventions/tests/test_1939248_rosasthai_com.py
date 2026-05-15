@@ -1,41 +1,38 @@
-import asyncio
-
 import pytest
+from webdriver.error import NoSuchElementException, StaleElementReferenceException
 
 URL = "https://rosasthai.com/locations"
 
-NEAR_ME_CSS = "#near-me"
-LOADING_CSS = ".loading-location"
+COOKIES_CSS = "#ccc"
+VIEW_ALL_CSS = "#view-all"
+FIRST_CARD_CSS = "#location-results [id^=card-]"
 
 
-async def is_geoloc_checked(client):
-    await client.make_preload_script(
-        """
-        const { prototype } = EventTarget;
-        const { addEventListener } = prototype;
-        prototype.addEventListener = function (type, b, c, d) {
-          if (!b?.toString().includes("Delay loading immediately to prevent booking popup from breaking")) {
-            return addEventListener.call(this, type, b, c, d);
-          }
-        };
-        navigator.geolocation.getCurrentPosition = function() {
-          window.geolocCalled = true;
-        };
-    """
-    )
-    await client.navigate(URL)
-    client.await_css(NEAR_ME_CSS, is_displayed=True).click()
-    await asyncio.sleep(2)
-    return client.execute_script("return !!window.geolocCalled")
+async def does_clicking_work(client):
+    await client.navigate(URL, wait="none")
+    client.await_css(COOKIES_CSS, is_displayed=True)
+    client.hide_elements(COOKIES_CSS)
+    # on failure, the location cards don't load. we also confirm that the
+    # cards change after clicking "view all", just in case.
+    try:
+        first_card = client.await_css(FIRST_CARD_CSS, is_displayed=True)
+    except NoSuchElementException:
+        return False
+    client.await_css(VIEW_ALL_CSS, is_displayed=True).click()
+    try:
+        first_card.click()
+        return False
+    except StaleElementReferenceException:
+        return True
 
 
 @pytest.mark.asyncio
 @pytest.mark.with_interventions
 async def test_enabled(client):
-    assert await is_geoloc_checked(client)
+    assert await does_clicking_work(client)
 
 
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):
-    assert not await is_geoloc_checked(client)
+    assert not await does_clicking_work(client)

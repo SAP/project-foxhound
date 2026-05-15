@@ -32,6 +32,9 @@ vendoring:
       from: '{vendor_dir}/code/include'
       to: '{vendor_dir}/include'
 
+  patches:
+    - fix-includes.patch
+
 updatebot:
   maintainer-phab: shravanrn
   maintainer-bz: shravanrn@gmail.com

@@ -13,6 +13,14 @@ add_task(async function verify_distribution_info_hides() {
 
   defaultBranch.setCharPref("distribution.id", "mozilla-test-distribution-id");
   defaultBranch.setCharPref("distribution.version", "1.0");
+  if (
+    !(
+      AppConstants.platform === "win" &&
+      Services.sysinfo.getProperty("hasWinPackageId")
+    )
+  ) {
+    defaultBranch.setCharPref("distribution.about", "");
+  }
 
   let aboutDialog = await waitForAboutDialog();
 

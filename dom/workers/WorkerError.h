@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_workers_WorkerError_h
 #define mozilla_dom_workers_WorkerError_h
 
+#include "jsapi.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/WorkerCommon.h"
-#include "jsapi.h"
 
 namespace mozilla {
 

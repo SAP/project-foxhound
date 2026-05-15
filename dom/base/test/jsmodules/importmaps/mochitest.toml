@@ -10,7 +10,13 @@ support-files = [
   "bug_1894631_module_2.mjs",
   "bug_1894631_module_3.mjs",
   "bug_1894631_module_4.mjs",
+  "bug_2009204_module_a.mjs",
+  "bug_2009204_module_b.mjs",
   "classic_script.js",
+  "bug_1820594_module1.mjs",
+  "bug_1820594_module2-1.mjs",
+  "bug_1820594_module2-2.mjs",
+  "bug_1820594_module2-3.mjs",
   "module_chain_1.mjs",
   "module_chain_2.mjs",
   "module_importMap_with_external_script_0.mjs",
@@ -37,11 +43,15 @@ support-files = [
   "circular_dependency.mjs",
 ]
 
+["test_bug_1820594.html"]
+
 ["test_bug_1865410.html"]
 
 ["test_bug_1873417.html"]
 
 ["test_bug_1893164.html"]
+
+["test_duplicate_modulepreload_bad_uri.html"]
 
 ["test_dynamic_importMap_load_completes.html"]
 

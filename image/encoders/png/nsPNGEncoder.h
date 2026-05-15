@@ -51,10 +51,12 @@ class nsPNGEncoder final : public imgIEncoder {
   static void WriteCallback(png_structp png, png_bytep data, png_size_t size);
   void NullOutImageBuffer();
   void NotifyListener();
+  nsresult MaybeAddCustomMetadata(const nsACString& aRandomizationKey);
 
   png_struct* mPNG;
   png_info* mPNGinfo;
 
+  bool mAddCustomMetadata;
   bool mIsAnimation;
   bool mFinished;
 
@@ -62,6 +64,7 @@ class nsPNGEncoder final : public imgIEncoder {
   uint8_t* mImageBuffer;
   uint32_t mImageBufferSize;
   uint32_t mImageBufferUsed;
+  uint32_t mImageBufferHash;
 
   uint32_t mImageBufferReadPoint;
 

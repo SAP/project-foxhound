@@ -13,11 +13,12 @@ loadScripts(
 ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  UrlbarProvider: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarProvider: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  ProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 function isEventForAutocompleteItem(event) {
@@ -330,16 +331,16 @@ async function runTests() {
 // with the main test.
 async function runTipTests() {
   let matches = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
       // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      { url: "http://mozilla.org/a" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
+      payload: { url: "http://mozilla.org/a" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.TIP,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      payload: {
         // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         helpUrl: "http://example.com/",
         type: "test",
@@ -351,30 +352,31 @@ async function runTipTests() {
             l10n: { id: "urlbar-search-tips-confirm" },
           },
         ],
-      }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
+      },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
       // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      { url: "http://mozilla.org/b" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/b" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
       // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      { url: "http://mozilla.org/c" }
-    ),
+      payload: { url: "http://mozilla.org/c" },
+    }),
   ];
 
   // Ensure the tip appears in the expected position.
   matches[1].suggestedIndex = 2;
 
   let provider = new TipTestProvider(matches);
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   registerCleanupFunction(async function () {
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
   });
 
   let focused = waitForEvent(

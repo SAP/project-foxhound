@@ -37,8 +37,8 @@ add_setup(async function () {
     },
     { setAsDefault: true }
   );
-  let engine = Services.search.getEngineByName("Example");
-  await Services.search.moveEngine(engine, 0);
+  let engine = SearchService.getEngineByName("Example");
+  await SearchService.moveEngine(engine, 0);
 
   const REMOTE_TAB = {
     id: "7cqCr77ptzX3",
@@ -162,7 +162,7 @@ add_task(async function malformedEngine() {
     name: "TestMalformed",
     search_url: "https://example.foobar/",
   });
-  let badEngine = Services.search.getEngineByName("TestMalformed");
+  let badEngine = SearchService.getEngineByName("TestMalformed");
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,

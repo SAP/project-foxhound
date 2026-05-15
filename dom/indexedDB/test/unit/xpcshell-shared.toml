@@ -3,7 +3,9 @@
 ["test_abort_deleted_index.js"]
 
 ["test_abort_deleted_objectStore.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug && socketprocess_networking"] # Bug TBD
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug && socketprocess_networking",
+]
 
 ["test_add_put.js"]
 
@@ -34,7 +36,9 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && deb
 ["test_cursor_cycle.js"]
 
 ["test_cursor_mutation.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug TBD
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
 
 ["test_cursor_update_updates_indexes.js"]
 
@@ -43,12 +47,16 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && deb
 ["test_deleteDatabase.js"]
 
 ["test_deleteDatabase_interactions.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug TBD (secondary)
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
 
 ["test_deleteDatabase_onblocked.js"]
 
 ["test_deleteDatabase_onblocked_duringVersionChange.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug TBD (secondary)
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
 
 ["test_event_source.js"]
 
@@ -57,14 +65,18 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && deb
 ["test_globalObjects_other.js"]
 skip-if = [
   "os == 'android'", # bug 1079278
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug && socketprocess_networking", # Bug TBD (secondary)
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug && socketprocess_networking",
 ]
 
 ["test_globalObjects_xpc.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug && socketprocess_networking"] # Bug TBD (secondary)
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug && socketprocess_networking",
+]
 
 ["test_global_data.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug && socketprocess_networking"] # Bug TBD (secondary)
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug && socketprocess_networking",
+]
 
 ["test_index_empty_keyPath.js"]
 
@@ -89,6 +101,7 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && deb
 ["test_key_requirements.js"]
 
 ["test_keys.js"]
+requesttimeoutfactor = 2  # Slow on Linux TSan
 
 ["test_locale_aware_index_getAll.js"]
 
@@ -105,7 +118,9 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && deb
 ["test_objectCursors.js"]
 
 ["test_objectStore_getAllKeys.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug TBD (secondary)
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
 
 ["test_objectStore_inline_autoincrement_key_added_on_put.js"]
 
@@ -130,18 +145,23 @@ skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && deb
 ["test_overlapping_transactions.js"]
 
 ["test_put_get_values.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug TBD (secondary)
 
 ["test_put_get_values_autoIncrement.js"]
-skip-if = ["verify && debug && os == 'win'"]
+skip-if = [
+  "os == 'win' && debug && verify",
+]
 
 ["test_readonly_transactions.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug TBD (secondary)
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
 
 ["test_remove_index.js"]
 
 ["test_remove_objectStore.js"]
-skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug"] # Bug TBD (secondary)
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug",
+]
 
 ["test_rename_index.js"]
 

@@ -32,6 +32,22 @@ static uint64_t ToNanoSeconds(const FILETIME& aFileTime) {
   return usec.QuadPart * 100;
 }
 
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  if (!aResult) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  PROCESS_MEMORY_COUNTERS_EX pmc;
+  if (!GetProcessMemoryInfo(GetCurrentProcess(),
+                            reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&pmc),
+                            sizeof(pmc))) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *aResult = static_cast<uint64_t>(pmc.PrivateUsage);
+  return NS_OK;
+}
+
 int GetCpuFrequencyMHz() {
   static const int frequency = []() {
     // Get the nominal CPU frequency.

@@ -7,11 +7,10 @@ import wasm from "./diplomat-wasm.mjs";
 import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
 
+
 /**
- * See the [Rust documentation for `CollatorOptions`](https://docs.rs/icu/latest/icu/collator/options/struct.CollatorOptions.html) for more information.
+ * See the [Rust documentation for `CollatorOptions`](https://docs.rs/icu/2.1.1/icu/collator/options/struct.CollatorOptions.html) for more information.
  */
-
-
 export class CollatorOptions {
     #strength;
     get strength() {
@@ -41,9 +40,7 @@ export class CollatorOptions {
     set caseLevel(value){
         this.#caseLevel = value;
     }
-    /** Create `CollatorOptions` from an object that contains all of `CollatorOptions`s fields.
-    * Optional fields do not need to be included in the provided object.
-    */
+    /** @internal */
     static fromFields(structObj) {
         return new CollatorOptions(structObj);
     }
@@ -86,7 +83,13 @@ export class CollatorOptions {
         functionCleanupArena,
         appendArrayMap
     ) {
-        return [...diplomatRuntime.optionToArgsForCalling(this.#strength, 4, 4, (arrayBuffer, offset, jsValue) => [diplomatRuntime.writeToArrayBuffer(arrayBuffer, offset + 0, jsValue.ffiValue, Int32Array)]), ...diplomatRuntime.optionToArgsForCalling(this.#alternateHandling, 4, 4, (arrayBuffer, offset, jsValue) => [diplomatRuntime.writeToArrayBuffer(arrayBuffer, offset + 0, jsValue.ffiValue, Int32Array)]), ...diplomatRuntime.optionToArgsForCalling(this.#maxVariable, 4, 4, (arrayBuffer, offset, jsValue) => [diplomatRuntime.writeToArrayBuffer(arrayBuffer, offset + 0, jsValue.ffiValue, Int32Array)]), ...diplomatRuntime.optionToArgsForCalling(this.#caseLevel, 4, 4, (arrayBuffer, offset, jsValue) => [diplomatRuntime.writeToArrayBuffer(arrayBuffer, offset + 0, jsValue.ffiValue, Int32Array)])]
+        let buffer = diplomatRuntime.DiplomatBuf.struct(wasm, 32, 4);
+
+        this._writeToArrayBuffer(wasm.memory.buffer, buffer.ptr, functionCleanupArena, appendArrayMap);
+
+        functionCleanupArena.alloc(buffer);
+
+        return buffer.ptr;
     }
 
     static _fromSuppliedValue(internalConstructor, obj) {

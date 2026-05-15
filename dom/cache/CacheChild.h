@@ -8,38 +8,41 @@
 #define mozilla_dom_cache_CacheChild_h
 
 #include "mozilla/dom/cache/ActorChild.h"
+#include "mozilla/dom/cache/CacheOpChild.h"
 #include "mozilla/dom/cache/PCacheChild.h"
 
 class nsIAsyncInputStream;
 class nsIGlobalObject;
 
-namespace mozilla::dom {
-
-class Promise;
-
-namespace cache {
-
+namespace mozilla::dom::cache {
 class Cache;
 class CacheOpArgs;
+class Listener;
 
-class CacheChild final : public PCacheChild, public ActorChild {
+class CacheChild final : public PCacheChild, public CacheActorChild {
   friend class PCacheChild;
 
  public:
   friend class mozilla::detail::BaseAutoLock<CacheChild&>;
   using AutoLock = mozilla::detail::BaseAutoLock<CacheChild&>;
 
-  CacheChild();
+  explicit CacheChild(ActorChild* aParentActor = nullptr);
 
-  void SetListener(Cache* aListener);
+  void SetListener(CacheChildListener* aListener);
 
-  // Must be called by the associated Cache listener in its DestroyInternal()
+  // Must be called by the associated Cache listener in its OnActorDestroy()
   // method.  Also, Cache must call StartDestroyFromListener() on the actor in
   // its destructor to trigger ActorDestroy() if it has not been called yet.
   void ClearListener();
 
-  void ExecuteOp(nsIGlobalObject* aGlobal, Promise* aPromise,
-                 nsISupports* aParent, const CacheOpArgs& aArgs);
+  template <typename PromiseType>
+  void ExecuteOp(nsIGlobalObject* aGlobal, PromiseType& aPromise,
+                 nsISupports* aParent, const CacheOpArgs& aArgs) {
+    MOZ_ALWAYS_TRUE(SendPCacheOpConstructor(
+        new CacheOpChild(GetWorkerRefPtr().clonePtr(), aGlobal, aParent,
+                         aPromise, this),
+        aArgs));
+  }
 
   // Our parent Listener object has gone out of scope and is being destroyed.
   void StartDestroyFromListener();
@@ -70,15 +73,16 @@ class CacheChild final : public PCacheChild, public ActorChild {
 
   void Unlock();
 
+  ActorChild* mParentActor;
   // Use a weak ref so actor does not hold DOM object alive past content use.
   // The Cache object must call ClearListener() to null this before its
   // destroyed.
-  Cache* MOZ_NON_OWNING_REF mListener;
+  CacheChildListener* MOZ_NON_OWNING_REF mListener;
+
   bool mLocked;
   bool mDelayedDestroy;
 };
 
-}  // namespace cache
-}  // namespace mozilla::dom
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_CacheChild_h

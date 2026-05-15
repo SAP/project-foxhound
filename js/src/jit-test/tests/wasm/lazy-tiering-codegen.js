@@ -53,8 +53,8 @@ let t = `
 `;
 
 let expected =
-`41 83 ae .. 0. 00 00 03   subl \\$0x03, 0x...\\(%r14\\)
- 0f 88 .. .. 00 00         js 0x000000000000....`;
+`subl \\$0x03, 0x...\\(%r14\\)
+ js 0x000000000000....`;
 
 codegenTestX64_adhoc(t, "f", expected,
                      {no_prefix:true, no_suffix:true, baseline:true});

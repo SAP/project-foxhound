@@ -24,6 +24,7 @@ const UPDATED_STATUS_PROPS = [
   "fromServiceWorker",
   "status",
   "statusText",
+  "blockedReason",
 ];
 
 /**

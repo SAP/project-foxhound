@@ -72,14 +72,14 @@ class CodeCoverageMixin(SingleTestMixin):
     per_test_reports = {}
 
     def __init__(self, **kwargs):
-        if mozinfo.os == "linux" or mozinfo.os == "mac":
+        if mozinfo.os in {"linux", "mac"}:
             self.grcov_bin = "grcov"
         elif mozinfo.os == "win":
             self.grcov_bin = "grcov.exe"
         else:
             raise Exception(f"Unexpected OS: {mozinfo.os}")
 
-        super(CodeCoverageMixin, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     @property
     def code_coverage_enabled(self):
@@ -308,6 +308,7 @@ class CodeCoverageMixin(SingleTestMixin):
         # Run grcov on the zipped .gcno and .gcda files.
         grcov_command = [
             os.path.join(self.grcov_dir, self.grcov_bin),
+            "--llvm",
             "-t",
             output_format,
             "-p",
@@ -323,9 +324,6 @@ class CodeCoverageMixin(SingleTestMixin):
 
         if merge:
             grcov_command += [jsvm_output_file]
-
-        if mozinfo.os == "win" or mozinfo.os == "mac":
-            grcov_command += ["--llvm"]
 
         if filter_covered:
             grcov_command += ["--filter", "covered"]

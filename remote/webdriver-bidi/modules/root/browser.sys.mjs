@@ -9,6 +9,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
   Certificates: "chrome://remote/content/shared/webdriver/Certificates.sys.mjs",
+  DownloadBehaviorManager:
+    "chrome://remote/content/webdriver-bidi/DownloadBehaviorManager.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   getWebDriverSessionById:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
@@ -73,12 +75,39 @@ ChromeUtils.defineESModuleGetters(lazy, {
  *     Array of UserContextInfo for the current user contexts.
  */
 
+/**
+ * Enum of download behavior types supported by the browser.setDownloadBehavior
+ * command.
+ *
+ * @readonly
+ * @enum {DownloadBehaviorType}
+ */
+const DownloadBehaviorType = {
+  allowed: "allowed",
+  denied: "denied",
+};
+
+/**
+ * Used as an argument for browser.setDownloadBehavior command
+ * to represent an object which holds information about download behavior.
+ *
+ * @typedef DownloadBehavior
+ *
+ * @property {DownloadBehaviorType} type
+ *     A type of download behavior to set.
+ * @property {string=} destinationFolder
+ *     Optional destination folder to save the downloaded file.
+ */
+
 class BrowserModule extends RootBiDiModule {
+  #downloadBehaviorManager;
   #proxyManager;
   #userContextsWithInsecureCertificatesOverrides;
 
   constructor(messageHandler) {
     super(messageHandler);
+
+    this.#downloadBehaviorManager = new lazy.DownloadBehaviorManager();
 
     this.#proxyManager = new lazy.ProxyPerUserContextManager();
 
@@ -88,6 +117,9 @@ class BrowserModule extends RootBiDiModule {
   }
 
   destroy() {
+    this.#downloadBehaviorManager.destroy();
+    this.#downloadBehaviorManager = null;
+
     // Reset "allowInsecureCerts" for the userContexts,
     // which were created in the scope of this session.
     for (const userContext of this
@@ -125,7 +157,7 @@ class BrowserModule extends RootBiDiModule {
     }
 
     // Close all open top-level browsing contexts by not prompting for beforeunload.
-    for (const tab of lazy.TabManager.tabs) {
+    for (const tab of lazy.TabManager.allTabs) {
       lazy.TabManager.removeTab(tab, { skipPermitUnload: true });
     }
   }
@@ -233,6 +265,97 @@ class BrowserModule extends RootBiDiModule {
   }
 
   /**
+   * Set the download behavior globally or per user context.
+   *
+   * @param {object=} options
+   * @param {DownloadBehavior|null} options.downloadBehavior
+   *     The download behavior configuration, or null to reset.
+   * @param {Array<string>=} options.userContexts
+   *     Optional list of user context ids to apply the behavior to.
+   *     If not provided the download behavior configuration will
+   *     apply globally.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchUserContextError}
+   *     Raised if a user context id could not be found.
+   */
+  async setDownloadBehavior(options = {}) {
+    const {
+      downloadBehavior = undefined,
+      userContexts: userContextIds = undefined,
+    } = options;
+    let behavior = null;
+
+    if (downloadBehavior !== null) {
+      lazy.assert.object(
+        downloadBehavior,
+        lazy.pprint`Expected "downloadBehavior" to be an object or null, got ${downloadBehavior}`
+      );
+
+      const type = downloadBehavior.type;
+      lazy.assert.string(
+        type,
+        lazy.pprint`Expected "type" to be a string, got ${type}`
+      );
+
+      const behaviorTypes = Object.values(DownloadBehaviorType);
+      lazy.assert.that(
+        value => behaviorTypes.includes(value),
+        lazy.pprint`Expected "type" to be one of ${behaviorTypes}, got ${type}`
+      )(type);
+
+      behavior = { allowed: type === "allowed" };
+
+      if ("destinationFolder" in downloadBehavior) {
+        const destinationFolder = downloadBehavior.destinationFolder;
+        lazy.assert.string(
+          destinationFolder,
+          lazy.pprint`Expected "destinationFolder" to be a string, got ${destinationFolder}`
+        );
+
+        behavior.destinationFolder = destinationFolder;
+      }
+    }
+
+    const userContexts = new Set();
+
+    if (userContextIds !== undefined) {
+      lazy.assert.isNonEmptyArray(
+        userContextIds,
+        lazy.pprint`Expected "userContexts" to be a non-empty array, got ${userContextIds}`
+      );
+
+      for (const userContextId of userContextIds) {
+        lazy.assert.string(
+          userContextId,
+          lazy.pprint`Expected elements of "userContexts" to be strings, got ${userContextId}`
+        );
+
+        const internalId =
+          lazy.UserContextManager.getInternalIdById(userContextId);
+
+        if (internalId === null) {
+          throw new lazy.error.NoSuchUserContextError(
+            `User Context with id ${userContextId} was not found`
+          );
+        }
+
+        userContexts.add(internalId);
+      }
+
+      for (const userContext of userContexts) {
+        this.#downloadBehaviorManager.setUserContextBehavior(
+          userContext,
+          behavior
+        );
+      }
+    } else {
+      this.#downloadBehaviorManager.setDefaultBehavior(behavior);
+    }
+  }
+
+  /**
    * Closes a user context and all browsing contexts in it without running
    * beforeunload handlers.
    *
@@ -276,6 +399,8 @@ class BrowserModule extends RootBiDiModule {
     this.#userContextsWithInsecureCertificatesOverrides.delete(internalId);
 
     this.#proxyManager.deleteConfiguration(internalId);
+
+    this.#downloadBehaviorManager.setUserContextBehavior(internalId, null);
   }
 
   #getClientWindowInfo(window) {

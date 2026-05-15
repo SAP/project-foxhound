@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/BarProps.h"
+
 #include "mozilla/dom/BarPropBinding.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
@@ -57,7 +58,9 @@ bool BarProp::GetVisibleByFlag(uint32_t aChromeFlag, CallerType aCallerType,
   }
 
   nsCOMPtr<nsIWebBrowserChrome> browserChrome = GetBrowserChrome();
-  NS_ENSURE_TRUE(browserChrome, false);
+  if (!browserChrome) {
+    return false;
+  }
 
   uint32_t chromeFlags;
 

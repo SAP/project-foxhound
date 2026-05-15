@@ -30,13 +30,12 @@
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "nsISupports.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/dom/IterableIteratorBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/WeakPtr.h"
+#include "nsISupports.h"
 
 namespace mozilla::dom {
 

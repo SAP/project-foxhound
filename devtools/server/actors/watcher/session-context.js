@@ -54,7 +54,7 @@ const SESSION_TYPES = {
  * - all privileges: privileged/chrome and content/web,
  * - all components/targets: HTML documents, processes, workers, add-ons,...
  *
- * @param {Object} config
+ * @param {object} config
  *        An object with optional configuration. Only supports "enableWindowGlobalThreadActors" attribute.
  *        See jsdoc in this file header for more info.
  */
@@ -80,7 +80,7 @@ function createBrowserSessionContext({
  *
  * @param {BrowserElement} browserElement
  *        The tab to debug. It should be a reference to a <browser> element.
- * @param {Object} config
+ * @param {object} config
  *        An object with optional configuration. Only supports "isServerTargetSwitchingEnabled" attribute.
  *        See jsdoc in this file header for more info.
  */
@@ -103,11 +103,11 @@ function createBrowserElementSessionContext(browserElement, config) {
 /**
  * Create the SessionContext used by the web extension toolboxes.
  *
- * @param {Object} addon
+ * @param {object} addon
  *        First object argument to describe the add-on.
- * @param {String} addon.addonId
+ * @param {string} addon.addonId
  *        The web extension ID, to uniquely identify the debugged add-on.
- * @param {Object} config
+ * @param {object} config
  *        An object with optional configuration. Only supports "isServerTargetSwitchingEnabled" attribute.
  *        See jsdoc in this file header for more info.
  */
@@ -151,8 +151,8 @@ function createWorkerSessionContext() {
 /**
  * Get the supported targets by the watcher given a session context type.
  *
- * @param {String} type
- * @returns {Object}
+ * @param {string} type
+ * @returns {object}
  */
 function getWatcherSupportedTargets(type) {
   return {
@@ -175,21 +175,13 @@ function getWatcherSupportedTargets(type) {
 /**
  * Get the supported resources by the watcher given a session context type.
  *
- * @param {String} type
- * @returns {Object}
+ * @param {string} _type
+ * @returns {object}
  */
-function getWatcherSupportedResources(type) {
-  // All resources types are supported for tab debugging and web extensions.
-  // Some watcher classes are still disabled for the Multiprocess Browser Toolbox (type=SESSION_TYPES.ALL).
-  // And they may also be disabled for workers once we start supporting them by the watcher.
-  // So set the traits to false for all the resources that we don't support yet
-  // and keep using the legacy listeners.
-  const isTabOrWebExtensionToolbox =
-    type == SESSION_TYPES.BROWSER_ELEMENT || type == SESSION_TYPES.WEBEXTENSION;
-
+function getWatcherSupportedResources(_type) {
   return {
     [Resources.TYPES.CONSOLE_MESSAGE]: true,
-    [Resources.TYPES.CSS_CHANGE]: isTabOrWebExtensionToolbox,
+    [Resources.TYPES.CSS_CHANGE]: true,
     [Resources.TYPES.CSS_MESSAGE]: true,
     [Resources.TYPES.CSS_REGISTERED_PROPERTIES]: true,
     [Resources.TYPES.DOCUMENT_EVENT]: true,
@@ -209,6 +201,7 @@ function getWatcherSupportedResources(type) {
     [Resources.TYPES.THREAD_STATE]: true,
     [Resources.TYPES.SERVER_SENT_EVENT]: true,
     [Resources.TYPES.WEBSOCKET]: true,
+    [Resources.TYPES.WEBTRANSPORT]: true,
     [Resources.TYPES.JSTRACER_TRACE]: true,
     [Resources.TYPES.JSTRACER_STATE]: true,
     [Resources.TYPES.LAST_PRIVATE_CONTEXT_EXIT]: true,

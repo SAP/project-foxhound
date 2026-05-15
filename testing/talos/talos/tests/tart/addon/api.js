@@ -6,14 +6,14 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "aomStartup",
   "@mozilla.org/addons/addon-manager-startup;1",
-  "amIAddonManagerStartup"
+  Ci.amIAddonManagerStartup
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 /* globals ExtensionAPI */

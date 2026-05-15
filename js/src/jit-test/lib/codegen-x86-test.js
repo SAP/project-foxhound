@@ -9,9 +9,6 @@ load(libdir + "codegen-test-common.js");
 // Absolute address (disp32) following the instruction mnemonic.
 var ABS = `0x${HEXES}`;
 
-// Absolute address (disp32) in the binary encoding.
-var ABSADDR = `${HEX}{2} ${HEX}{2} ${HEX}{2} ${HEX}{2}`;
-
 // End of prologue. The move from esi to rbp is writing the callee's wasm
 // instance into the frame for debug checks -- see WasmFrame.h. The mov to eax
 // is debug code, inserted by the register allocator to clobber eax before a
@@ -19,18 +16,18 @@ var ABSADDR = `${HEX}{2} ${HEX}{2} ${HEX}{2} ${HEX}{2}`;
 //
 // -0x21524111 is 0xDEADBEEF.
 var x86_prefix = `
-8b ec            mov %esp, %ebp(
-89 75 08         movl %esi, 0x08\\(%rbp\\))?(
-b8 ef be ad de   mov \\$-0x21524111, %eax)?
+mov %esp, %ebp(
+movl %esi, 0x08\\(%rbp\\))?(
+mov \\$-0x21524111, %eax)?
 `
 
 // `.bp` because zydis chooses 'rbp' even on 32-bit systems
 var x86_loadarg0 = `
-f3 0f 6f 45 ${HEX}{2}            movdqux 0x${HEXES}\\(%.bp\\), %xmm0
+movdqux 0x${HEXES}\\(%.bp\\), %xmm0
 `;
 
 // Start of epilogue.  `.bp` for the same reason as above.
-var x86_suffix = `5d      pop %.bp`;
+var x86_suffix = `pop %.bp`;
 
 // v128 OP literal -> v128
 // inputs: [[complete-opname, rhs-literal, expected-pattern], ...]
@@ -62,7 +59,8 @@ function codegenTestX86_adhoc(module_text, export_name, expected, options = {}) 
         expected = expected + '\n' + x86_suffix;
     expected = fixlines(expected);
 
-    const output_matches_expected = output.match(new RegExp(expected)) != null;
+    const output_simple = stripencoding(output, `(?:${HEX}{2} )*`);
+    const output_matches_expected = output_simple.match(new RegExp(expected)) != null;
     if (!output_matches_expected) {
         print("---- codegen-x86-test.js: TEST FAILED ----");
     }

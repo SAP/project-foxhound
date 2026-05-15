@@ -8,6 +8,15 @@
 // See Bug 885054: https://bugzilla.mozilla.org/show_bug.cgi?id=885054
 
 function test() {
+  let isRevampEnabled = Services.prefs.getBoolPref("sidebar.revamp", false);
+  if (isRevampEnabled) {
+    ok(isRevampEnabled, "Sidebar revamp is enabled.");
+    info(
+      "Expected behaviour for the revamped sidebar in a private window is to adopt the state of the opener window"
+    );
+    return;
+  }
+
   waitForExplicitFinish();
 
   // opens a sidebar

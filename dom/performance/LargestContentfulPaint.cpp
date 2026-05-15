@@ -3,23 +3,24 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "mozilla/dom/Element.h"
-#include "nsContentUtils.h"
-#include "nsLayoutUtils.h"
-#include "nsRFPService.h"
-#include "Performance.h"
-#include "imgRequest.h"
-#include "PerformanceMainThread.h"
 #include "LargestContentfulPaint.h"
 
+#include "GeckoProfiler.h"
+#include "Performance.h"
+#include "PerformanceMainThread.h"
+#include "imgRequest.h"
+#include "mozilla/Logging.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
-
-#include "mozilla/PresShell.h"
-#include "mozilla/Logging.h"
 #include "mozilla/nsVideoFrame.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
+#include "nsRFPService.h"
 
 namespace mozilla::dom {
 
@@ -61,7 +62,7 @@ LargestContentfulPaint::LargestContentfulPaint(
     const Maybe<TimeStamp>& aLoadTime, const unsigned long aSize, nsIURI* aURI,
     Element* aElement, bool aShouldExposeRenderTime)
     : PerformanceEntry(aPerformance->GetParentObject(), u""_ns,
-                       kLargestContentfulPaintName),
+                       nsGkAtoms::largestContentfulPaint),
       mPerformance(aPerformance),
       mRenderTime(aRenderTime),
       mLoadTime(aLoadTime),
@@ -152,9 +153,8 @@ void LargestContentfulPaint::MaybeProcessImageForElementTiming(
     return;
   }
 
-  nsPresContext* pc =
-      aElement->GetPresContext(Element::PresContextFor::eForComposedDoc);
-  if (!pc) {
+  nsPresContext* pc = document->GetPresContext();
+  if (!pc || pc->HasStoppedGeneratingLCP()) {
     return;
   }
 
@@ -530,7 +530,26 @@ void LargestContentfulPaint::ReportLCPToNavigationTimings() {
   if (!document->IsTopLevelContentDocument()) {
     return;
   }
+
+  // These values are going to be used for the LCP profiler markers. Don't
+  // compute them if the profiler is not running.
+  nsAutoString elementStr;
+  nsCString imageURL;
+  if (profiler_is_active_and_unpaused()) {
+    element->NodeInfo()->NameAtom()->ToString(elementStr);
+    if (mId) {
+      elementStr.Append(u'#');
+      nsAutoString idStr;
+      mId->ToString(idStr);
+      elementStr.Append(idStr);
+    }
+
+    imageURL = mURI ? nsContentUtils::TruncatedURLForDisplay(mURI, 1024)
+                    : EmptyCString();
+  }
+
   timing->NotifyLargestContentfulRenderForRootContentDocument(
-      GetReducedTimePrecisionDOMHighRes(mPerformance, mRenderTime));
+      GetReducedTimePrecisionDOMHighRes(mPerformance, mRenderTime), elementStr,
+      imageURL);
 }
 }  // namespace mozilla::dom

@@ -1,0 +1,6 @@
+package test {
+  public class TestClass {
+    ctor public TestClass();
+    ctor public TestClass(int);
+  }
+}

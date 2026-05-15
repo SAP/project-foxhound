@@ -57,8 +57,8 @@
  *
  ******* END LICENSE BLOCK *******/
 
-#ifndef mozHunspell_h__
-#define mozHunspell_h__
+#ifndef mozHunspell_h_
+#define mozHunspell_h_
 
 #include "RLBoxHunspell.h"
 #include "mozISpellCheckingEngine.h"

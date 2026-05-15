@@ -1,0 +1,31 @@
+# Version of this schema
+schema: 1
+
+bugzilla:
+  product: Toolkit
+  component: General
+
+origin:
+  name: qrcode
+  description: QR Code encoder and decoder library
+  url: https://github.com/kazuhikoarase/qrcode-generator
+  release: 83b7e8fe3fddd3b0368dbafd6ce56995bd25e3c8 (2025-08-07T14:10:49Z).
+  revision: 83b7e8fe3fddd3b0368dbafd6ce56995bd25e3c8
+  license: MIT
+  license-file: LICENSE
+
+vendoring:
+  url: https://github.com/kazuhikoarase/qrcode-generator
+  source-hosting: github
+  flavor: individual-files
+
+  individual-files:
+    - upstream: js/README.md
+      destination: README.md
+    - upstream: js/dist/qrcode.mjs
+      destination: qrcode.mjs
+    - upstream: js/dist/qrcode.d.ts
+      destination: qrcode.d.ts
+
+  patches:
+    - add_exports.patch

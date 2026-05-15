@@ -38,6 +38,8 @@ add_setup(async function setup() {
     true
   );
 
+  trrServer = new TRRServer();
+  await trrServer.start();
   trr_test_setup();
 
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
@@ -59,26 +61,26 @@ add_setup(async function setup() {
   h3EchConfig = Services.env.get("MOZHTTP3_ECH");
   Assert.notEqual(h3EchConfig, null);
   Assert.notEqual(h3EchConfig, "");
-});
 
-registerCleanupFunction(async () => {
-  trr_clear_prefs();
-  Services.prefs.clearUserPref("network.trr.mode");
-  Services.prefs.clearUserPref("network.trr.uri");
-  Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
-  Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
-  Services.prefs.clearUserPref("network.dns.echconfig.enabled");
-  Services.prefs.clearUserPref("network.dns.http3_echconfig.enabled");
-  Services.prefs.clearUserPref(
-    "network.dns.echconfig.fallback_to_origin_when_all_failed"
-  );
-  Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
-  Services.prefs.clearUserPref("network.dns.port_prefixed_qname_https_rr");
-  Services.prefs.clearUserPref("security.tls.ech.grease_http3");
-  Services.prefs.clearUserPref("security.tls.ech.grease_probability");
-  if (trrServer) {
-    await trrServer.stop();
-  }
+  registerCleanupFunction(async () => {
+    trr_clear_prefs();
+    Services.prefs.clearUserPref("network.trr.mode");
+    Services.prefs.clearUserPref("network.trr.uri");
+    Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
+    Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
+    Services.prefs.clearUserPref("network.dns.echconfig.enabled");
+    Services.prefs.clearUserPref("network.dns.http3_echconfig.enabled");
+    Services.prefs.clearUserPref(
+      "network.dns.echconfig.fallback_to_origin_when_all_failed"
+    );
+    Services.prefs.clearUserPref("network.http.speculative-parallel-limit");
+    Services.prefs.clearUserPref("network.dns.port_prefixed_qname_https_rr");
+    Services.prefs.clearUserPref("security.tls.ech.grease_http3");
+    Services.prefs.clearUserPref("security.tls.ech.grease_probability");
+    if (trrServer) {
+      await trrServer.stop();
+    }
+  });
 });
 
 function makeChan(url) {
@@ -233,7 +235,6 @@ add_task(async function testConnectWithECH() {
     HandshakeTelemetryHelpers.checkEmpty(["_CONSERVATIVE", "_ECH_GREASE"]);
   }
 
-  await trrServer.stop();
   observerService.removeObserver(observer);
   observerService.observeConnection = false;
 
@@ -252,9 +253,6 @@ add_task(async function testEchRetry() {
 
   const ECH_CONFIG_TRUSTED_RETRY =
     "AEn+DQBFTQAgACCKB1Y5SfrGIyk27W82xPpzWTDs3q72c04xSurDWlb9CgAEAAMAA2QWZWNoLXB1YmxpYy5leGFtcGxlLmNvbQAA";
-  trrServer = new TRRServer();
-  await trrServer.start();
-
   Services.prefs.setIntPref("network.trr.mode", 3);
   Services.prefs.setCharPref(
     "network.trr.uri",
@@ -323,8 +321,6 @@ add_task(async function testEchRetry() {
     HandshakeTelemetryHelpers.checkEntry(["_FIRST_TRY"], 188, 1);
     HandshakeTelemetryHelpers.checkEmpty(["_CONSERVATIVE", "_ECH_GREASE"]);
   }
-
-  await trrServer.stop();
 });
 
 async function H3ECHTest(
@@ -338,8 +334,6 @@ async function H3ECHTest(
   /* eslint-disable mozilla/no-arbitrary-setTimeout */
   await new Promise(resolve => setTimeout(resolve, 1000));
   resetEchTelemetry();
-  trrServer = new TRRServer();
-  await trrServer.start();
 
   Services.prefs.setCharPref(
     "network.trr.uri",
@@ -409,8 +403,6 @@ async function H3ECHTest(
   req.QueryInterface(Ci.nsIHttpChannel);
   Assert.equal(req.protocolVersion, "h3");
   checkSecurityInfo(chan, true, advertiseECH);
-
-  await trrServer.stop();
 
   observerService.removeObserver(observer);
   observerService.observeConnection = false;

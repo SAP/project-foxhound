@@ -30,6 +30,8 @@ static const char kPHCAvgDelayContentNormal[] =
 static const char kPHCAvgDelayContentPageReuse[] =
     "memory.phc.avg_delay.content.page_reuse";
 
+static const char kPHCSizePref[] = "memory.phc.size_kb";
+
 // True if PHC has ever been enabled for this process.
 static bool sWasPHCEnabled = false;
 
@@ -59,6 +61,8 @@ static void UpdatePHCState() {
                           StaticPrefs::memory_phc_avg_delay_page_reuse());
     }
 
+    SetPHCSize(StaticPrefs::memory_phc_size_kb() * 1024);
+
     SetPHCState(Enabled);
     sWasPHCEnabled = true;
   } else {
@@ -74,7 +78,8 @@ static void PrefChangeCallback(const char* aPrefName, void* aNull) {
              (0 == strcmp(aPrefName, kPHCAvgDelayPageReuse)) ||
              (0 == strcmp(aPrefName, kPHCAvgDelayContentFirst)) ||
              (0 == strcmp(aPrefName, kPHCAvgDelayContentNormal)) ||
-             (0 == strcmp(aPrefName, kPHCAvgDelayContentPageReuse)));
+             (0 == strcmp(aPrefName, kPHCAvgDelayContentPageReuse)) ||
+             (0 == strcmp(aPrefName, kPHCSizePref)));
 
   UpdatePHCState();
 }
@@ -89,6 +94,7 @@ void InitPHCState() {
   Preferences::RegisterCallback(PrefChangeCallback, kPHCAvgDelayContentNormal);
   Preferences::RegisterCallback(PrefChangeCallback,
                                 kPHCAvgDelayContentPageReuse);
+  Preferences::RegisterCallback(PrefChangeCallback, kPHCSizePref);
   UpdatePHCState();
 }
 

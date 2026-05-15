@@ -59,8 +59,7 @@ involved a little easier:
 -  `Student Projects <https://bugzil.la/kw:student-project>`_ - are
    larger projects, such as might be suitable for a university student
    for credit. Of course, if you are not a student, feel free to fix one
-   of these bugs. We maintain two lists: one for projects `based on the
-   existing codebase <https://bugzil.la/kw:student-project>`_.
+   of these bugs. See `our project list <https://bugzil.la/kw:student-project>`_.
 
 Fix that one bug
 ~~~~~~~~~~~~~~~~

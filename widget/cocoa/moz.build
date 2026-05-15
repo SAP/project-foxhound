@@ -22,8 +22,18 @@ EXPORTS += [
     "nsCocoaUtils.h",
 ]
 
+EXPORTS.mozilla.widget += [
+    "CocoaCompositorWidget.h",
+    "CompositorWidgetChild.h",
+    "CompositorWidgetParent.h",
+]
+
 UNIFIED_SOURCES += [
+    "CocoaCompositorWidget.cpp",
+    "CompositorWidgetChild.cpp",
+    "CompositorWidgetParent.cpp",
     "GfxInfo.mm",
+    "MOZDynamicCursor.mm",
     "MOZIconHelper.mm",
     "MOZMenuOpeningCoordinator.mm",
     "NativeKeyBindings.mm",
@@ -35,11 +45,9 @@ UNIFIED_SOURCES += [
     "nsCocoaUtils.mm",
     "nsCocoaWindow.mm",
     "nsColorPicker.mm",
-    "nsCursorManager.mm",
     "nsDeviceContextSpecX.mm",
     "nsFilePicker.mm",
     "nsLookAndFeel.mm",
-    "nsMacCursor.mm",
     "nsMacDockSupport.mm",
     "nsMacFinderProgress.mm",
     "nsMacSharingService.mm",

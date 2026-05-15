@@ -41,7 +41,7 @@ class AndroidWrench(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
         # the wrench source code.
         self.wrench_dir = "/data/data/org.mozilla.wrench/files/wrench"
 
-        super(AndroidWrench, self).__init__()
+        super().__init__()
 
         # Override AndroidMixin's use_root to ensure we use run-as instead of
         # root to push and pull files from the device, as the latter fails due
@@ -82,7 +82,7 @@ class AndroidWrench(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
         abs_dirs["abs_work_dir"] = os.path.expanduser("~/.wrench")
         if os.environ.get("MOZ_AUTOMATION", "0") == "1":
             # In automation use the standard work dir if there is one
-            parent_abs_dirs = super(AndroidWrench, self).query_abs_dirs()
+            parent_abs_dirs = super().query_abs_dirs()
             if "abs_work_dir" in parent_abs_dirs:
                 abs_dirs["abs_work_dir"] = parent_abs_dirs["abs_work_dir"]
 
@@ -129,7 +129,7 @@ class AndroidWrench(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
         logcat_cmd = [self.adb_path, "-s", self.device_serial, "logcat", "-c"]
         self.info(" ".join(logcat_cmd))
         subprocess.check_call(logcat_cmd)
-        super(AndroidWrench, self).logcat_start()
+        super().logcat_start()
 
     def wait_until_process_done(self, process_name, timeout):
         """Waits until the specified process has exited. Polls the process list
@@ -279,7 +279,7 @@ class AndroidWrench(TestingMixin, BaseScript, MozbaseMixin, AndroidMixin):
     def check_errors(self):
         if self._errored:
             self.info("Errors encountered, terminating with error code...")
-            exit(EXIT_STATUS_DICT[TBPL_FAILURE])
+            sys.exit(EXIT_STATUS_DICT[TBPL_FAILURE])
 
 
 if __name__ == "__main__":

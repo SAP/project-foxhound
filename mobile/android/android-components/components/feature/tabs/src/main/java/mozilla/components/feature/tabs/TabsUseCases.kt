@@ -11,6 +11,7 @@ import mozilla.components.browser.session.storage.SessionStorage
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.RestoreCompleteAction
+import mozilla.components.browser.state.action.TabGroupAction
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.action.TabListAction.RestoreAction.RestoreLocation
 import mozilla.components.browser.state.action.UndoAction
@@ -19,6 +20,8 @@ import mozilla.components.browser.state.selector.findNormalOrPrivateTabByUrlIgno
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.browser.state.state.TabGroup
+import mozilla.components.browser.state.state.TabPartition
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.state.recover.RecoverableTab
@@ -307,17 +310,20 @@ class TabsUseCases(
          * @param tabs The list of tabs to restore.
          * @param selectTabId The ID of the selected tab in [tabs]. Or `null` if no selection was restored.
          * @param restoreLocation [RestoreLocation] indicating where to restore [tabs].
+         * @param tabPartitions a mapping of IDs to the corresponding [TabPartition].
          */
         operator fun invoke(
             tabs: List<RecoverableTab>,
             selectTabId: String? = null,
             restoreLocation: RestoreLocation = RestoreLocation.END,
+            tabPartitions: Map<String, TabPartition> = emptyMap(),
         ) {
             store.dispatch(
                 TabListAction.RestoreAction(
                     tabs = tabs,
                     selectedTabId = selectTabId,
                     restoreLocation = restoreLocation,
+                    tabPartitions = tabPartitions,
                 ),
             )
         }
@@ -334,6 +340,7 @@ class TabsUseCases(
         ) {
             invoke(
                 tabs = state.tabs,
+                tabPartitions = state.tabPartitions,
                 selectTabId = state.selectedTabId,
                 restoreLocation = restoreLocation,
             )
@@ -578,6 +585,170 @@ class TabsUseCases(
         }
     }
 
+    /**
+     * Use case for adding a tab group to a tab partition.
+     */
+    class AddTabGroupUseCase(
+        private val store: BrowserStore,
+    ) {
+        /**
+         * Adds a new tab group. If the corresponding partition doesn't exist it will be created.
+         *
+         * @property group The [TabGroup] to add.
+         */
+        operator fun invoke(
+            group: TabGroup,
+        ) {
+            store.dispatch(
+                TabGroupAction.AddTabGroupAction(
+                    partition = TabPartitionKeys.TAB_GROUPS,
+                    group = group,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Use case for closing a tab group and its associated tabs in a tab partition.
+     */
+    class CloseTabGroupUseCase(
+        private val store: BrowserStore,
+    ) {
+        /**
+         * Removes a tab group and provided list of tabs.
+         *
+         * @property group The [TabGroup] to remove.
+         * @property tabIds The IDs of the tabs to remove.
+         */
+        operator fun invoke(
+            group: String,
+            tabIds: List<String>,
+        ) {
+            store.dispatch(TabListAction.RemoveTabsAction(tabIds = tabIds))
+            store.dispatch(
+                TabGroupAction.RemoveTabGroupAction(
+                    partition = TabPartitionKeys.TAB_GROUPS,
+                    group = group,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Use case for removing a tab group in a tab partition. This will ungroup the tabs in the group.
+     */
+    class RemoveTabGroupUseCase(
+        private val store: BrowserStore,
+    ) {
+        /**
+         * Removes a tab group in a tab partition.
+         *
+         * @property group The [TabGroup] to remove.
+         */
+        operator fun invoke(
+            group: String,
+        ) {
+            store.dispatch(
+                TabGroupAction.RemoveTabGroupAction(
+                    partition = TabPartitionKeys.TAB_GROUPS,
+                    group = group,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Use case for adding tabs to a group.
+     */
+    class AddTabsInGroupUseCase(
+        private val store: BrowserStore,
+    ) {
+        /**
+         * Adds the provided tab to a group.
+         *
+         * @property group The ID of the group.
+         * @property tabId The ID of the tab to add to the group. If the corresponding tab is
+         * already in the group, it won't be added again.
+         */
+        operator fun invoke(
+            group: String,
+            tabId: String,
+        ) {
+            store.dispatch(
+                TabGroupAction.AddTabAction(
+                    partition = TabPartitionKeys.TAB_GROUPS,
+                    group = group,
+                    tabId = tabId,
+                ),
+            )
+        }
+
+        /**
+         * Adds the provided tabs to a group.
+         *
+         * @property group The ID of the group.
+         * @property tabIds The IDs of the tabs to add to the group. If a tab is already in the
+         * group, it won't be added again.
+         */
+        operator fun invoke(
+            group: String,
+            tabIds: Set<String>,
+        ) {
+            store.dispatch(
+                TabGroupAction.AddTabsAction(
+                    partition = TabPartitionKeys.TAB_GROUPS,
+                    group = group,
+                    tabIds = tabIds,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Use case for removing tabs from a group.
+     */
+    class RemoveTabsInGroupUseCase(
+        private val store: BrowserStore,
+    ) {
+        /**
+         * Removes the provided tab from a group.
+         *
+         * @property group The ID of the group.
+         * @property tabId The ID of the tab to remove from the group.
+         */
+        operator fun invoke(
+            group: String,
+            tabId: String,
+        ) {
+            store.dispatch(
+                TabGroupAction.RemoveTabAction(
+                    partition = TabPartitionKeys.TAB_GROUPS,
+                    group = group,
+                    tabId = tabId,
+                ),
+            )
+        }
+
+        /**
+         * Removes the provided tabs from a group.
+         *
+         * @property group The ID of the group.
+         * @property tabIds The IDs of the tabs to remove from the group.
+         */
+        operator fun invoke(
+            group: String,
+            tabIds: Set<String>,
+        ) {
+            store.dispatch(
+                TabGroupAction.RemoveTabsAction(
+                    partition = TabPartitionKeys.TAB_GROUPS,
+                    group = group,
+                    tabIds = tabIds,
+                ),
+            )
+        }
+    }
+
     val selectTab: SelectTabUseCase by lazy { DefaultSelectTabUseCase(store) }
     val removeTab: RemoveTabUseCase by lazy { DefaultRemoveTabUseCase(store) }
     val addTab: AddNewTabUseCase by lazy { AddNewTabUseCase(store) }
@@ -591,4 +762,9 @@ class TabsUseCases(
     val duplicateTab: DuplicateTabUseCase by lazy { DuplicateTabUseCase(store) }
     val moveTabs: MoveTabsUseCase by lazy { MoveTabsUseCase(store) }
     val migratePrivateTabUseCase: MigratePrivateTabUseCase by lazy { MigratePrivateTabUseCase(store) }
+    val addTabGroup: AddTabGroupUseCase by lazy { AddTabGroupUseCase(store) }
+    val closeTabGroup: CloseTabGroupUseCase by lazy { CloseTabGroupUseCase(store) }
+    val removeTabGroup: RemoveTabGroupUseCase by lazy { RemoveTabGroupUseCase(store) }
+    val addTabsInGroup: AddTabsInGroupUseCase by lazy { AddTabsInGroupUseCase(store) }
+    val removeTabsInGroup: RemoveTabsInGroupUseCase by lazy { RemoveTabsInGroupUseCase(store) }
 }

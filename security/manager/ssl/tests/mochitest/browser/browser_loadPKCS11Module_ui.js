@@ -14,7 +14,12 @@ const gMockPKCS11ModuleDB = {
   expectedModuleName: "",
   throwOnAddModule: false,
 
-  addModule(moduleName, libraryFullPath, cryptoMechanismFlags, cipherFlags) {
+  async addModule(
+    moduleName,
+    libraryFullPath,
+    cryptoMechanismFlags,
+    cipherFlags
+  ) {
     this.addModuleCallCount++;
     Assert.equal(
       moduleName,
@@ -38,32 +43,12 @@ const gMockPKCS11ModuleDB = {
     }
   },
 
-  deleteModule() {
-    Assert.ok(false, `deleteModule: should not be called`);
+  async deleteModule() {
+    throw new Error("not expecting deleteModule() to be called");
   },
 
-  getInternal() {
-    throw new Error("not expecting getInternal() to be called");
-  },
-
-  getInternalFIPS() {
-    throw new Error("not expecting getInternalFIPS() to be called");
-  },
-
-  listModules() {
+  async listModules() {
     throw new Error("not expecting listModules() to be called");
-  },
-
-  get canToggleFIPS() {
-    throw new Error("not expecting get canToggleFIPS() to be called");
-  },
-
-  toggleFIPSMode() {
-    throw new Error("not expecting toggleFIPSMode() to be called");
-  },
-
-  get isFIPSEnabled() {
-    throw new Error("not expecting get isFIPSEnabled() to be called");
   },
 
   QueryInterface: ChromeUtils.generateQI(["nsIPKCS11ModuleDB"]),
@@ -289,8 +274,8 @@ async function testModuleNameHelper(moduleName, acceptButtonShouldBeDisabled) {
 
   let dialogNode = win.document.querySelector("dialog");
   Assert.equal(
-    dialogNode.getAttribute("buttondisabledaccept"),
-    acceptButtonShouldBeDisabled ? "true" : null,
+    dialogNode.hasAttribute("buttondisabledaccept"),
+    acceptButtonShouldBeDisabled,
     `dialog accept button should ${
       acceptButtonShouldBeDisabled ? "" : "not "
     }be disabled`

@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "chromium/safebrowsing.pb.h"
+#include "chromium/safebrowsing_v5.pb.h"
 #include "nsEscape.h"
 #include "nsString.h"
 #include "nsIURI.h"
@@ -330,6 +331,58 @@ static const struct {
     {"test-unwanted-proto", UNWANTED_SOFTWARE},          // 3
 };
 
+// The table for the list naming conversion between the local list name and the
+// SafeBrowsing V5 server list name. In the SafeBrowsing V5, the list name is
+// represented as a string of the form "uws-4b", "pha-4b", etc.
+//
+// See
+// https://developers.google.com/safe-browsing/reference/Local.Database#available-lists
+// for the current available lists for SafeBrowsing V5.
+static const struct {
+  const char* mLocalListName;
+  const char* mServerListName;
+} THREAT_NAME_CONV_TABLE_V5[] = {
+    {"goog-malware-proto", "mw-4b"},
+// Unlike the SafeBrowsing V4, the SafeBrowsing V5 only has one social
+// engineering list. We need to map the goog-phish-proto and googpub-phish-proto
+// to the V5 social engineering list name according to the official build flag
+// because the official build uses goog-phish-proto. This is also needed for
+// the backward compatibility.
+#ifdef MOZILLA_OFFICIAL
+    {"goog-phish-proto", "se-4b"},
+#else
+    {"googpub-phish-proto", "se-4b"},
+#endif
+// Map the goog-unwanted-proto to different V5 list name on Android because
+// SafeBrowsing V5 provides a different unwanted list for Android.
+#ifndef MOZ_WIDGET_ANDROID
+    {"goog-unwanted-proto", "uws-4b"},
+#else
+    {"goog-unwanted-proto", "uwsa-4b"},
+#endif
+    {"goog-harmful-proto", "pha-4b"},
+    {"goog-badbinurl-proto", "mwb-4b"},
+    {"goog-downloadwhite-proto", "csdda-32b"},
+    {"goog-globalcache-proto", "gc-32b"},
+    {"test-google5-malware-proto", "test-4b"},
+    {"test-globalcache-proto", "test-32b"},
+};
+
+static const struct {
+  const char* mListName;
+  uint32_t mThreatType;
+} THREAT_TYPE_CONV_TABLE_V5[] = {
+    {"goog-malware-proto", v5::MALWARE},
+#ifdef MOZILLA_OFFICIAL
+    {"goog-phish-proto", v5::SOCIAL_ENGINEERING},
+#else
+    {"googpub-phish-proto", v5::SOCIAL_ENGINEERING},
+#endif
+    {"goog-unwanted-proto", v5::UNWANTED_SOFTWARE},
+    {"goog-harmful-proto", v5::POTENTIALLY_HARMFUL_APPLICATION},
+    {"test-google5-malware-proto", v5::MALWARE},
+};
+
 NS_IMETHODIMP
 nsUrlClassifierUtils::ConvertThreatTypeToListNames(uint32_t aThreatType,
                                                    nsACString& aListNames) {
@@ -359,6 +412,51 @@ nsUrlClassifierUtils::ConvertListNameToThreatType(const nsACString& aListName,
 }
 
 NS_IMETHODIMP
+nsUrlClassifierUtils::ConvertServerListNameToLocalListNameV5(
+    const nsACString& aServerListName, nsACString& aLocalListName) {
+  for (uint32_t i = 0; i < std::size(THREAT_NAME_CONV_TABLE_V5); i++) {
+    if (aServerListName.EqualsASCII(
+            THREAT_NAME_CONV_TABLE_V5[i].mServerListName)) {
+      aLocalListName = THREAT_NAME_CONV_TABLE_V5[i].mLocalListName;
+      return NS_OK;
+    }
+  }
+
+  return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsUrlClassifierUtils::ConvertLocalListNameToServerListNameV5(
+    const nsACString& aLocalListName, nsACString& aServerListName) {
+  for (uint32_t i = 0; i < std::size(THREAT_NAME_CONV_TABLE_V5); i++) {
+    if (aLocalListName.EqualsASCII(
+            THREAT_NAME_CONV_TABLE_V5[i].mLocalListName)) {
+      aServerListName = THREAT_NAME_CONV_TABLE_V5[i].mServerListName;
+      return NS_OK;
+    }
+  }
+
+  return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsUrlClassifierUtils::ConvertThreatTypeToListNamesV5(uint32_t aThreatType,
+                                                     nsACString& aListNames) {
+  bool found = false;
+  for (uint32_t i = 0; i < std::size(THREAT_TYPE_CONV_TABLE_V5); i++) {
+    if (aThreatType == THREAT_TYPE_CONV_TABLE_V5[i].mThreatType) {
+      if (!aListNames.IsEmpty()) {
+        aListNames.AppendLiteral(",");
+      }
+      aListNames += THREAT_TYPE_CONV_TABLE_V5[i].mListName;
+      found = true;
+    }
+  }
+
+  return found ? NS_OK : NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
 nsUrlClassifierUtils::GetProvider(const nsACString& aTableName,
                                   nsACString& aProvider) {
   MutexAutoLock lock(mProviderDictLock);
@@ -381,8 +479,9 @@ nsUrlClassifierUtils::GetTelemetryProvider(const nsACString& aTableName,
   // Exceptionlist known providers to avoid reporting on private ones.
   // An empty provider is treated as "other"
   if (!"mozilla"_ns.Equals(aProvider) && !"google"_ns.Equals(aProvider) &&
-      !"google4"_ns.Equals(aProvider) && !"baidu"_ns.Equals(aProvider) &&
-      !"mozcn"_ns.Equals(aProvider) && !"yandex"_ns.Equals(aProvider) &&
+      !"google4"_ns.Equals(aProvider) && !"google5"_ns.Equals(aProvider) &&
+      !"baidu"_ns.Equals(aProvider) && !"mozcn"_ns.Equals(aProvider) &&
+      !"yandex"_ns.Equals(aProvider) &&
       !nsLiteralCString(TESTING_TABLE_PROVIDER_NAME).Equals(aProvider)) {
     aProvider.AssignLiteral("other");
   }
@@ -450,6 +549,52 @@ nsUrlClassifierUtils::MakeUpdateRequestV4(
   NS_ENSURE_SUCCESS(rv, rv);
 
   aRequest = out;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsUrlClassifierUtils::MakeUpdateRequestV5(
+    const nsTArray<nsCString>& aListNames,
+    const nsTArray<nsCString>& aStatesBase64, nsACString& aRequest) {
+  using namespace mozilla::safebrowsing::v5;
+
+  // Verify the number of list names and states are the same.
+  if (aListNames.Length() != aStatesBase64.Length()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsTArray<nsCString> serverListNames;
+
+  // Fill the request with list names and states.
+  for (uint32_t i = 0; i < aListNames.Length(); i++) {
+    nsAutoCString serverListName;
+    nsresult rv =
+        ConvertLocalListNameToServerListNameV5(aListNames[i], serverListName);
+    if (NS_FAILED(rv)) {
+      continue;
+    }
+
+    serverListNames.AppendElement(serverListName);
+  }
+
+  // We omit the size_constraints to indicates that there is no size constraints
+  // for the request.
+
+  // Then serialize into query parameters.
+  nsAutoCString query;
+
+  for (const auto& listName : serverListNames) {
+    query.Append("&names=");
+    query.Append(listName);
+  }
+
+  for (const auto& stateBase64 : aStatesBase64) {
+    query.Append("&version=");
+    query.Append(stateBase64);
+  }
+
+  aRequest = query;
 
   return NS_OK;
 }
@@ -531,6 +676,29 @@ nsUrlClassifierUtils::MakeFindFullHashRequestV4(
   NS_ENSURE_SUCCESS(rv, rv);
 
   aRequest = out;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsUrlClassifierUtils::MakeFindFullHashRequestV5(
+    const nsTArray<nsCString>& aHashPrefixes, nsACString& aRequest) {
+  if (aHashPrefixes.IsEmpty()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  aRequest.Truncate();
+
+  // See
+  // https://developers.google.com/safe-browsing/reference/rest/v5/hashes/search
+  // for the query parameter format.
+  for (uint32_t i = 0; i < aHashPrefixes.Length(); i++) {
+    aRequest.AppendLiteral("hashPrefixes=");
+    aRequest.Append(aHashPrefixes[i]);
+    if (i != aHashPrefixes.Length() - 1) {
+      aRequest.AppendLiteral("&");
+    }
+  }
 
   return NS_OK;
 }
@@ -688,7 +856,7 @@ static nsresult AddTabThreatSources(ThreatHit& aHit, nsIChannel* aChannel) {
   // Set top level tab_url threat source
   rv = AddThreatSourceFromChannel(aHit, topChannel,
                                   ThreatHit_ThreatSourceType_TAB_URL);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   // Set tab_redirect threat sources if there's any
   nsCOMPtr<nsILoadInfo> topLoadInfo = topChannel->LoadInfo();
@@ -735,10 +903,10 @@ nsUrlClassifierUtils::MakeThreatHitReport(nsIChannel* aChannel,
   // Set matching source
   rv = AddThreatSourceFromChannel(hit, aChannel,
                                   ThreatHit_ThreatSourceType_MATCHING_URL);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
   // Set tab url, tab resource url and redirect sources
   rv = AddTabThreatSources(hit, aChannel);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   hit.set_allocated_client_info(CreateClientInfo());
 
@@ -804,6 +972,49 @@ nsUrlClassifierUtils::ParseFindFullHashResponseV4(
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsUrlClassifierUtils::ParseFindFullHashResponseV5(
+    const nsACString& aResponse,
+    nsIUrlClassifierParseFindFullHashCallback* aCallback) {
+  v5::SearchHashesResponse response;
+
+  if (!response.ParseFromArray(aResponse.BeginReading(), aResponse.Length())) {
+    NS_WARNING("Invalid V5 find full hash response");
+    return NS_ERROR_FAILURE;
+  }
+
+  auto cacheDurationSec = response.cache_duration().seconds();
+
+  for (auto& fullHash : response.full_hashes()) {
+    auto& hash = fullHash.full_hash();
+
+    nsAutoCString tableNames;
+
+    for (auto& fullHashDetail : fullHash.full_hash_details()) {
+      const auto& threatType = fullHashDetail.threat_type();
+
+      nsresult rv = ConvertThreatTypeToListNamesV5(threatType, tableNames);
+      // Ignore un-convertable threat type.
+      if (NS_FAILED(rv)) {
+        continue;
+      }
+    }
+
+    aCallback->OnCompleteHashFound(
+        nsDependentCString(hash.c_str(), hash.length()), tableNames,
+        cacheDurationSec);
+  }
+
+  // In V5, the hashes::search API use the single cache duration for all. There
+  // is no negative_cache_duration field in the response. In addition, the field
+  // 'minimum_wait_duration' is not present in the response, which means the
+  // client can always issue a new request on an as-needed basis. Therefore, we
+  // set the value to 0.
+  aCallback->OnResponseParsed(0, cacheDurationSec);
+
+  return NS_OK;
+}
+
 //////////////////////////////////////////////////////////
 // nsIObserver
 
@@ -857,12 +1068,22 @@ nsresult nsUrlClassifierUtils::ReadProvidersFromPrefs(ProviderDictType& aDict) {
     providers.Insert(provider);
   }
 
+  // Sort the providers to ensure the google5 provider is always after the
+  // google4 provider.
+  nsTArray<nsCString> sortedProviders;
+  for (auto& provider : providers) {
+    sortedProviders.AppendElement(provider);
+  }
+  sortedProviders.Sort();
+
+  bool isGoogle5Enabled = mozilla::Preferences::GetBool(
+      "browser.safebrowsing.provider.google5.enabled");
+
   // Now we have all providers. Check which one owns |aTableName|.
   // e.g. The owning lists of provider "google" is defined in
   // "browser.safebrowsing.provider.google.lists".
-  for (const auto& provider : providers) {
-    nsPrintfCString owninListsPref("%s.lists",
-                                   nsPromiseFlatCString{provider}.get());
+  for (const auto& provider : sortedProviders) {
+    nsPrintfCString owninListsPref("%s.lists", provider.get());
 
     nsAutoCString owningLists;
     nsresult rv = prefBranch->GetCharPref(owninListsPref.get(), owningLists);
@@ -874,8 +1095,15 @@ nsresult nsUrlClassifierUtils::ReadProvidersFromPrefs(ProviderDictType& aDict) {
     // Build the dictionary for the owning list and the current provider.
     nsTArray<nsCString> tables;
     Classifier::SplitTables(owningLists, tables);
+    nsAutoCString providerToUse(provider);
     for (auto tableName : tables) {
-      aDict.InsertOrUpdate(tableName, MakeUnique<nsCString>(provider));
+      // If the Safe Browsing V5 is disabled, we will use V4 instead. This means
+      // that we will put the V5 lists to the V4 provider to instruct using
+      // Safe Browsing V4 for those tables.
+      if (!isGoogle5Enabled && providerToUse.EqualsLiteral("google5")) {
+        providerToUse.AssignLiteral("google4");
+      }
+      aDict.InsertOrUpdate(tableName, MakeUnique<nsCString>(providerToUse));
     }
   }
 

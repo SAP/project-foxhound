@@ -10,7 +10,6 @@
 #include "mozIStorageRow.h"
 #include "nsCOMArray.h"
 #include "nsTHashMap.h"
-#include "mozilla/Attributes.h"
 class nsIVariant;
 struct sqlite3_stmt;
 

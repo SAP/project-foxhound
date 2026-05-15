@@ -8,7 +8,7 @@
 // Ensure that the appropriate initialization has happened.
 do_get_profile();
 
-function run_test() {
+add_task(async function run_test() {
   let libraryFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
   libraryFile.append("pkcs11testmodule");
   libraryFile.append(ctypes.libraryName("pkcs11testmodule"));
@@ -17,6 +17,7 @@ function run_test() {
   let moduleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
     Ci.nsIPKCS11ModuleDB
   );
+  // NB: These throw before the promise is created.
   throws(
     () => moduleDB.addModule("Root Certs", libraryFile.path, 0, 0),
     /NS_ERROR_ILLEGAL_VALUE/,
@@ -33,7 +34,7 @@ function run_test() {
   );
   let rootsModuleName = bundle.GetStringFromName("RootCertModuleName");
   let foundRootsModule = false;
-  for (let module of moduleDB.listModules()) {
+  for (let module of await moduleDB.listModules()) {
     if (module.name == rootsModuleName) {
       foundRootsModule = true;
       break;
@@ -43,4 +44,4 @@ function run_test() {
     foundRootsModule,
     "Should be able to find builtin roots module by localized name."
   );
-}
+});

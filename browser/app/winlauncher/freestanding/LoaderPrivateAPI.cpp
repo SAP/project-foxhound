@@ -7,8 +7,6 @@
 #include "LoaderPrivateAPI.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Types.h"
-#include "mozilla/Unused.h"
 #include "../DllBlocklistInit.h"
 #include "../ErrorHandler.h"
 #include "SharedSection.h"
@@ -141,7 +139,7 @@ void DefaultLoaderObserver::OnEndDllLoad(void* aContext, NTSTATUS aNtStatus,
     }
   }
 
-  Unused << mModuleLoads->emplaceBack(
+  (void)mModuleLoads->emplaceBack(
       std::forward<ModuleLoadInfo>(aModuleLoadInfo));
 }
 

@@ -10,6 +10,14 @@ const certOverrideService = Cc[
   "@mozilla.org/security/certoverride;1"
 ].getService(Ci.nsICertOverrideService);
 
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
+const { NodeHTTPServer, NodeHTTPSServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
 const DOMAIN = "example.org";
 
 function makeChan(url, expected) {

@@ -17,8 +17,8 @@ add_task(async function activeTab() {
     {},
     { skipUnload: true }
   );
-  let engine = Services.search.getEngineByName("Example");
-  await Services.search.moveEngine(engine, 0);
+  let engine = SearchService.getEngineByName("Example");
+  await SearchService.moveEngine(engine, 0);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -42,8 +42,8 @@ add_task(async function backgroundTab() {
     {},
     { skipUnload: true }
   );
-  let engine = Services.search.getEngineByName("Example");
-  await Services.search.moveEngine(engine, 0);
+  let engine = SearchService.getEngineByName("Example");
+  await SearchService.moveEngine(engine, 0);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -80,8 +80,8 @@ add_task(async function backgroundWindow() {
     {},
     { skipUnload: true }
   );
-  let engine = Services.search.getEngineByName("Example");
-  await Services.search.moveEngine(engine, 0);
+  let engine = SearchService.getEngineByName("Example");
+  await SearchService.moveEngine(engine, 0);
 
   let win1 = window;
   await UrlbarTestUtils.promiseAutocompleteResultPopup({

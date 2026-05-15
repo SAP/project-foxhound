@@ -3,21 +3,18 @@
 
 "use strict";
 
-const {
-  CLIENT_IS_THUNDERBIRD,
-  ON_PROFILE_CHANGE_NOTIFICATION,
-  WEBCHANNEL_ID,
-  log,
-} = ChromeUtils.importESModule(
-  "resource://gre/modules/FxAccountsCommon.sys.mjs"
-);
+const { ON_PROFILE_CHANGE_NOTIFICATION, WEBCHANNEL_ID, log } =
+  ChromeUtils.importESModule("resource://gre/modules/FxAccountsCommon.sys.mjs");
 const { CryptoUtils } = ChromeUtils.importESModule(
-  "resource://services-crypto/utils.sys.mjs"
+  "moz-src:///services/crypto/modules/utils.sys.mjs"
 );
 const { FxAccountsWebChannel, FxAccountsWebChannelHelpers } =
   ChromeUtils.importESModule(
     "resource://gre/modules/FxAccountsWebChannel.sys.mjs"
   );
+
+const { PREF_LAST_FXA_USER_EMAIL, PREF_LAST_FXA_USER_UID } =
+  ChromeUtils.importESModule("resource://gre/modules/FxAccountsCommon.sys.mjs");
 
 const URL_STRING = "https://example.com";
 
@@ -69,7 +66,7 @@ add_task(async function test_rejection_reporting() {
   let mockMessage = {
     command: "fxaccounts:login",
     messageId: "1234",
-    data: { email: "testuser@testuser.com" },
+    data: { email: "testuser@testuser.com", uid: "testuser" },
   };
 
   let channel = new FxAccountsWebChannel({
@@ -338,19 +335,18 @@ add_test(function test_delete_message() {
 add_test(function test_can_link_account_message() {
   let mockMessage = {
     command: "fxaccounts:can_link_account",
-    data: { email: "testuser@testuser.com" },
+    data: { email: "testuser@testuser.com", uid: "testuser" },
   };
 
   let channel = new FxAccountsWebChannel({
     channel_id: WEBCHANNEL_ID,
     content_uri: URL_STRING,
     helpers: {
-      shouldAllowRelink(email) {
-        Assert.equal(email, "testuser@testuser.com");
-        run_next_test();
+      _selectableProfilesEnabled() {
+        return false;
       },
-      promptProfileSyncWarningIfNeeded(acctName) {
-        Assert.equal(acctName, "testuser@testuser.com");
+      shouldAllowRelink(acctData) {
+        Assert.deepEqual(acctData, mockMessage.data);
         run_next_test();
       },
     },
@@ -441,45 +437,7 @@ add_test(function test_fxa_status_message() {
   channel._channelCallback(WEBCHANNEL_ID, mockMessage, mockSendingContext);
 });
 
-add_test(function test_respond_to_device_commands() {
-  let mockMessageLoggedOut = {
-    command: "fxaccounts:logout",
-    messageId: 123,
-    data: {},
-  };
-  let mockMessageLoggedIn = {
-    command: "fxaccounts:login",
-    messageId: 123,
-    data: {},
-  };
-
-  let channel = new FxAccountsWebChannel({
-    channel_id: WEBCHANNEL_ID,
-    content_uri: URL_STRING,
-  });
-  channel._channel = {
-    send(response) {
-      Assert.ok(!!response.data);
-      Assert.equal(response.data.ok, true);
-
-      run_next_test();
-    },
-  };
-
-  channel._channelCallback(
-    WEBCHANNEL_ID,
-    mockMessageLoggedOut,
-    mockSendingContext
-  );
-
-  channel._channelCallback(
-    WEBCHANNEL_ID,
-    mockMessageLoggedIn,
-    mockSendingContext
-  );
-});
-
-add_test(function test_respond_to_incorrect_device_commands() {
+add_test(function test_respond_to_invalid_commands() {
   let mockMessageLogout = {
     command: "fxaccounts:lagaut", // intentional typo.
     messageId: 123,
@@ -523,11 +481,16 @@ add_test(function test_unrecognized_message() {
   run_next_test();
 });
 
-add_test(function test_helpers_should_allow_relink_same_email() {
+add_test(function test_helpers_should_allow_relink_same_account() {
   let helpers = new FxAccountsWebChannelHelpers();
 
-  helpers.setPreviousAccountNameHashPref("testuser@testuser.com");
-  Assert.ok(helpers.shouldAllowRelink("testuser@testuser.com"));
+  helpers.setPreviousAccountHashPref("testuser");
+  Assert.ok(
+    helpers.shouldAllowRelink({
+      email: "testuser@testuser.com",
+      uid: "testuser",
+    })
+  );
 
   run_next_test();
 });
@@ -535,14 +498,24 @@ add_test(function test_helpers_should_allow_relink_same_email() {
 add_test(function test_helpers_should_allow_relink_different_email() {
   let helpers = new FxAccountsWebChannelHelpers();
 
-  helpers.setPreviousAccountNameHashPref("testuser@testuser.com");
+  helpers.setPreviousAccountHashPref("testuser");
 
   helpers._promptForRelink = acctName => {
     return acctName === "allowed_to_relink@testuser.com";
   };
 
-  Assert.ok(helpers.shouldAllowRelink("allowed_to_relink@testuser.com"));
-  Assert.ok(!helpers.shouldAllowRelink("not_allowed_to_relink@testuser.com"));
+  Assert.ok(
+    helpers.shouldAllowRelink({
+      uid: "uid",
+      email: "allowed_to_relink@testuser.com",
+    })
+  );
+  Assert.ok(
+    !helpers.shouldAllowRelink({
+      uid: "uid",
+      email: "not_allowed_to_relink@testuser.com",
+    })
+  );
 
   run_next_test();
 });
@@ -581,9 +554,10 @@ add_task(async function test_helpers_login_without_customize_sync() {
   });
 
   // ensure the previous account pref is overwritten.
-  helpers.setPreviousAccountNameHashPref("lastuser@testuser.com");
+  helpers.setPreviousAccountHashPref("lastuser");
 
   await helpers.login({
+    uid: "testuser",
     email: "testuser@testuser.com",
     verifiedCanLinkAccount: true,
     customizeSync: false,
@@ -593,7 +567,7 @@ add_task(async function test_helpers_login_without_customize_sync() {
   );
 });
 
-add_task(async function test_helpers_login_set_previous_account_name_hash() {
+add_task(async function test_helpers_login_set_previous_account_hash() {
   let helpers = new FxAccountsWebChannelHelpers({
     fxAccounts: {
       getSignedInUser() {
@@ -604,8 +578,12 @@ add_task(async function test_helpers_login_set_previous_account_name_hash() {
           return new Promise(resolve => {
             // previously signed in user preference is updated.
             Assert.equal(
-              helpers.getPreviousAccountNameHashPref(),
-              CryptoUtils.sha256Base64("newuser@testuser.com")
+              Services.prefs.getStringPref(PREF_LAST_FXA_USER_UID),
+              CryptoUtils.sha256Base64("new_uid")
+            );
+            Assert.equal(
+              Services.prefs.getStringPref(PREF_LAST_FXA_USER_EMAIL, ""),
+              ""
             );
             resolve();
           });
@@ -626,9 +604,10 @@ add_task(async function test_helpers_login_set_previous_account_name_hash() {
   });
 
   // ensure the previous account pref is overwritten.
-  helpers.setPreviousAccountNameHashPref("lastuser@testuser.com");
+  helpers.setPreviousAccountHashPref("last_uid");
 
   await helpers.login({
+    uid: "new_uid",
     email: "newuser@testuser.com",
     verifiedCanLinkAccount: true,
     customizeSync: false,
@@ -667,6 +646,7 @@ add_task(async function test_helpers_login_another_user_signed_in() {
   helpers._disconnect = sinon.spy();
 
   await helpers.login({
+    uid: "testuser",
     email: "testuser@testuser.com",
     verifiedCanLinkAccount: true,
     customizeSync: false,
@@ -677,49 +657,64 @@ add_task(async function test_helpers_login_another_user_signed_in() {
   Assert.ok(helpers._disconnect.called);
 });
 
-add_task(
-  async function test_helpers_login_dont_set_previous_account_name_hash_for_unverified_emails() {
-    let helpers = new FxAccountsWebChannelHelpers({
-      fxAccounts: {
-        _internal: {
-          setSignedInUser() {
-            return new Promise(resolve => {
-              // previously signed in user preference should not be updated.
-              Assert.equal(
-                helpers.getPreviousAccountNameHashPref(),
-                CryptoUtils.sha256Base64("lastuser@testuser.com")
-              );
-              resolve();
-            });
-          },
+// The FxA server sends the `login` command after the user is signed in
+// when upgrading from third-party auth to password + sync
+add_task(async function test_helpers_login_same_user_signed_in() {
+  let updateUserAccountDataCalled = false;
+  let setSignedInUserCalled = false;
+
+  let helpers = new FxAccountsWebChannelHelpers({
+    fxAccounts: {
+      getSignedInUser() {
+        return Promise.resolve({
+          uid: "testuser",
+          email: "testuser@testuser.com",
+        });
+      },
+      _internal: {
+        updateUserAccountData(accountData) {
+          updateUserAccountDataCalled = true;
+          Assert.equal(accountData.email, "testuser@testuser.com");
+          Assert.equal(accountData.uid, "testuser");
+          return Promise.resolve();
         },
-        getSignedInUser() {
-          return Promise.resolve(null);
-        },
-        telemetry: {
-          recordConnection() {},
+        setSignedInUser() {
+          setSignedInUserCalled = true;
+          return Promise.resolve();
         },
       },
-      weaveXPCOM: {
-        whenLoaded() {},
-        Weave: {
-          Service: {
-            configure() {},
-          },
+      telemetry: {
+        recordConnection: sinon.spy(),
+      },
+    },
+    weaveXPCOM: {
+      whenLoaded() {},
+      Weave: {
+        Service: {
+          configure() {},
         },
       },
-    });
+    },
+  });
+  helpers._disconnect = sinon.spy();
 
-    // ensure the previous account pref is overwritten.
-    helpers.setPreviousAccountNameHashPref("lastuser@testuser.com");
+  await helpers.login({
+    uid: "testuser",
+    email: "testuser@testuser.com",
+    verifiedCanLinkAccount: true,
+    customizeSync: false,
+  });
 
-    await helpers.login({
-      email: "newuser@testuser.com",
-      verifiedCanLinkAccount: true,
-      customizeSync: false,
-    });
-  }
-);
+  Assert.ok(
+    updateUserAccountDataCalled,
+    "updateUserAccountData should be called"
+  );
+  Assert.ok(!setSignedInUserCalled, "setSignedInUser should not be called");
+  Assert.ok(!helpers._disconnect.called, "_disconnect should not be called");
+  Assert.ok(
+    helpers._fxAccounts.telemetry.recordConnection.calledWith([], "webchannel")
+  );
+});
 
 add_task(async function test_helpers_login_with_customize_sync() {
   let helpers = new FxAccountsWebChannelHelpers({
@@ -755,6 +750,7 @@ add_task(async function test_helpers_login_with_customize_sync() {
   });
 
   await helpers.login({
+    uid: "testuser",
     email: "testuser@testuser.com",
     verifiedCanLinkAccount: true,
     customizeSync: true,
@@ -764,245 +760,17 @@ add_task(async function test_helpers_login_with_customize_sync() {
   );
 });
 
-add_task(
-  { skip_if: () => CLIENT_IS_THUNDERBIRD },
-  async function test_helpers_login_with_customize_sync_and_declined_engines() {
-    ensureOauthNotConfigured();
-    let configured = false;
-    let helpers = new FxAccountsWebChannelHelpers({
-      fxAccounts: {
-        _internal: {
-          setSignedInUser(accountData) {
-            return new Promise(resolve => {
-              // ensure fxAccounts is informed of the new user being signed in.
-              Assert.equal(accountData.email, "testuser@testuser.com");
-
-              // customizeSync should be stripped in the data.
-              Assert.equal(false, "customizeSync" in accountData);
-              Assert.equal(false, "services" in accountData);
-              resolve();
-            });
-          },
-        },
-        getSignedInUser() {
-          return Promise.resolve(null);
-        },
-        telemetry: {
-          recordConnection: sinon.spy(),
-        },
-      },
-      weaveXPCOM: {
-        whenLoaded() {},
-        Weave: {
-          Service: {
-            configure() {
-              configured = true;
-            },
-          },
-        },
-      },
-    });
-
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.addons"),
-      true
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.bookmarks"),
-      true
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.history"),
-      true
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.passwords"),
-      true
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.prefs"),
-      true
-    );
-    Assert.equal(Services.prefs.getBoolPref("services.sync.engine.tabs"), true);
-    await helpers.login({
-      email: "testuser@testuser.com",
-      verifiedCanLinkAccount: true,
-      customizeSync: true,
-      services: {
-        sync: {
-          offeredEngines: [
-            "addons",
-            "bookmarks",
-            "history",
-            "passwords",
-            "prefs",
-          ],
-          declinedEngines: ["addons", "prefs"],
-        },
-      },
-    });
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.addons"),
-      false
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.bookmarks"),
-      true
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.history"),
-      true
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.passwords"),
-      true
-    );
-    Assert.equal(
-      Services.prefs.getBoolPref("services.sync.engine.prefs"),
-      false
-    );
-    Assert.equal(Services.prefs.getBoolPref("services.sync.engine.tabs"), true);
-    Assert.ok(configured, "sync was configured");
-    Assert.ok(
-      helpers._fxAccounts.telemetry.recordConnection.calledWith(
-        ["sync"],
-        "webchannel"
-      )
-    );
-  }
-);
-
-add_task(async function test_helpers_login_with_offered_sync_engines() {
-  let helpers;
-  let configured = false;
-  const setSignedInUserCalled = new Promise(resolve => {
-    helpers = new FxAccountsWebChannelHelpers({
-      fxAccounts: {
-        _internal: {
-          async setSignedInUser(accountData) {
-            resolve(accountData);
-          },
-        },
-        getSignedInUser() {
-          return Promise.resolve(null);
-        },
-        telemetry: {
-          recordConnection() {},
-        },
-      },
-      weaveXPCOM: {
-        whenLoaded() {},
-        Weave: {
-          Service: {
-            configure() {
-              configured = true;
-            },
-          },
-        },
-      },
-    });
-  });
-
-  Services.prefs.setBoolPref("services.sync.engine.creditcards", false);
-  Services.prefs.setBoolPref("services.sync.engine.addresses", false);
-
-  await helpers.login({
-    email: "testuser@testuser.com",
-    verifiedCanLinkAccount: true,
-    customizeSync: true,
-    services: {
-      sync: {
-        declinedEngines: ["addresses"],
-        offeredEngines: ["creditcards", "addresses"],
-      },
-    },
-  });
-
-  const accountData = await setSignedInUserCalled;
-
-  // ensure fxAccounts is informed of the new user being signed in.
-  equal(accountData.email, "testuser@testuser.com");
-
-  // services should be stripped in the data.
-  ok(!("services" in accountData));
-  // credit cards was offered but not declined.
-  equal(Services.prefs.getBoolPref("services.sync.engine.creditcards"), true);
-  // addresses was offered and explicitely declined.
-  equal(Services.prefs.getBoolPref("services.sync.engine.addresses"), false);
-  ok(configured);
-});
-
-add_task(async function test_helpers_login_nothing_offered() {
-  let helpers;
-  let configured = false;
-  const setSignedInUserCalled = new Promise(resolve => {
-    helpers = new FxAccountsWebChannelHelpers({
-      fxAccounts: {
-        _internal: {
-          async setSignedInUser(accountData) {
-            resolve(accountData);
-          },
-        },
-        getSignedInUser() {
-          return Promise.resolve(null);
-        },
-        telemetry: {
-          recordConnection() {},
-        },
-      },
-      weaveXPCOM: {
-        whenLoaded() {},
-        Weave: {
-          Service: {
-            configure() {
-              configured = true;
-            },
-          },
-        },
-      },
-    });
-  });
-
-  // doesn't really matter if it's *all* engines...
-  const allEngines = [
-    "addons",
-    "addresses",
-    "bookmarks",
-    "creditcards",
-    "history",
-    "passwords",
-    "prefs",
-  ];
-  for (let name of allEngines) {
-    Services.prefs.clearUserPref("services.sync.engine." + name);
-  }
-
-  await helpers.login({
-    email: "testuser@testuser.com",
-    verifiedCanLinkAccount: true,
-    services: {
-      sync: {},
-    },
-  });
-
-  const accountData = await setSignedInUserCalled;
-  // ensure fxAccounts is informed of the new user being signed in.
-  equal(accountData.email, "testuser@testuser.com");
-
-  for (let name of allEngines) {
-    Assert.ok(!Services.prefs.prefHasUserValue("services.sync.engine." + name));
-  }
-  Assert.ok(configured);
-});
-
 add_task(async function test_helpers_persist_requested_services() {
-  ensureOauthConfigured();
   let accountData = null;
   const helpers = new FxAccountsWebChannelHelpers({
     fxAccounts: {
       _internal: {
         async setSignedInUser(newAccountData) {
           accountData = newAccountData;
+          return accountData;
+        },
+        async updateUserAccountData(updatedFields) {
+          accountData = { ...accountData, ...updatedFields };
           return accountData;
         },
       },
@@ -1053,8 +821,46 @@ add_task(async function test_helpers_persist_requested_services() {
     sync: { important: true },
     new: { name: "opted in" },
   });
+});
 
-  resetOauthConfig();
+add_task(async function test_helpers_oauth_login_defers_sync_without_keys() {
+  const accountState = {
+    uid: "uid123",
+    sessionToken: "session-token",
+    email: "user@example.com",
+    requestedServices: "",
+  };
+  const destroyOAuthToken = sinon.stub().resolves();
+  const completeOAuthFlow = sinon
+    .stub()
+    .resolves({ scopedKeys: null, refreshToken: "refresh-token" });
+  const setScopedKeys = sinon.spy();
+  const setUserVerified = sinon.spy();
+  const updateUserAccountData = sinon.stub().resolves();
+
+  const helpers = new FxAccountsWebChannelHelpers({
+    fxAccounts: {
+      _internal: {
+        async getUserAccountData() {
+          return accountState;
+        },
+        completeOAuthFlow,
+        destroyOAuthToken,
+        setScopedKeys,
+        updateUserAccountData,
+        setUserVerified,
+      },
+    },
+  });
+
+  await helpers.oauthLogin({ code: "code", state: "state" });
+
+  Assert.ok(setScopedKeys.notCalled);
+  Assert.ok(updateUserAccountData.calledOnce);
+  Assert.deepEqual(
+    JSON.parse(updateUserAccountData.firstCall.args[0].requestedServices),
+    null
+  );
 });
 
 add_test(function test_helpers_open_sync_preferences() {
@@ -1073,40 +879,6 @@ add_test(function test_helpers_open_sync_preferences() {
   };
 
   helpers.openSyncPreferences(mockBrowser, "fxa:verification_complete");
-});
-
-add_task(async function test_helpers_getFxAStatus_extra_engines() {
-  let helpers = new FxAccountsWebChannelHelpers({
-    fxAccounts: {
-      _internal: {
-        getUserAccountData() {
-          return Promise.resolve({
-            email: "testuser@testuser.com",
-            sessionToken: "sessionToken",
-            uid: "uid",
-            verified: true,
-          });
-        },
-      },
-    },
-    privateBrowsingUtils: {
-      isBrowserPrivate: () => true,
-    },
-  });
-
-  ensureOauthNotConfigured();
-  Services.prefs.setBoolPref(
-    "services.sync.engine.creditcards.available",
-    true
-  );
-  // Not defining "services.sync.engine.addresses.available" on purpose.
-
-  let fxaStatus = await helpers.getFxaStatus("sync", mockSendingContext);
-  ok(!!fxaStatus);
-  ok(!!fxaStatus.signedInUser);
-  // in the non-oauth flows we only expect "extra" engines.
-  deepEqual(fxaStatus.capabilities.engines, ["creditcards"]);
-  resetOauthConfig();
 });
 
 add_task(async function test_helpers_getFxAStatus_engines_oauth() {
@@ -1130,7 +902,6 @@ add_task(async function test_helpers_getFxAStatus_engines_oauth() {
 
   // disable the "addresses" engine.
   Services.prefs.setBoolPref("services.sync.engine.addresses.available", false);
-  ensureOauthConfigured();
   let fxaStatus = await helpers.getFxaStatus("sync", mockSendingContext);
   ok(!!fxaStatus);
   ok(!!fxaStatus.signedInUser);
@@ -1158,8 +929,6 @@ add_task(async function test_helpers_getFxAStatus_engines_oauth() {
     "prefs",
     "tabs",
   ]);
-
-  resetOauthConfig();
 });
 
 add_task(async function test_helpers_getFxaStatus_allowed_signedInUser() {
@@ -1586,6 +1355,94 @@ add_task(async function test_helpers_change_password_with_error() {
     Assert.ok(wasCalled.updateUserAccountData);
     Assert.ok(!wasCalled.updateDeviceRegistration);
   }
+});
+
+add_test(function test_oauth_flow_is_active() {
+  let mockMessage = {
+    command: "fxaccounts:oauth_flow_is_active",
+    messageId: "12345",
+    data: {},
+  };
+
+  let channel = new FxAccountsWebChannel({
+    channel_id: WEBCHANNEL_ID,
+    content_uri: URL_STRING,
+  });
+
+  channel._channel = {
+    send(response, context) {
+      Assert.equal(response.command, "fxaccounts:oauth_flow_is_active");
+      Assert.equal(response.messageId, "12345");
+      Assert.equal(response.data.isActive, false);
+      Assert.equal(context, mockSendingContext);
+      run_next_test();
+    },
+  };
+
+  channel._channelCallback(WEBCHANNEL_ID, mockMessage, mockSendingContext);
+});
+
+add_test(function test_oauth_flow_begin() {
+  let mockMessage = {
+    command: "fxaccounts:oauth_flow_begin",
+    messageId: "12347",
+    data: {
+      scopes: ["profile", "https://identity.mozilla.com/apps/oldsync"],
+    },
+  };
+
+  let channel = new FxAccountsWebChannel({
+    channel_id: WEBCHANNEL_ID,
+    content_uri: URL_STRING,
+  });
+
+  channel._channel = {
+    send(response, context) {
+      Assert.equal(response.command, "fxaccounts:oauth_flow_begin");
+      Assert.equal(response.messageId, "12347");
+      Assert.ok(response.data);
+
+      Assert.equal(response.data.action, "email");
+      Assert.equal(response.data.response_type, "code");
+      Assert.equal(response.data.access_type, "offline");
+      Assert.equal(
+        response.data.scope,
+        "profile https://identity.mozilla.com/apps/oldsync"
+      );
+      Assert.ok(response.data.client_id);
+      Assert.ok(response.data.state);
+
+      Assert.equal(context, mockSendingContext);
+
+      // Now verify that a flow is in progress
+      let inProgressMessage = {
+        command: "fxaccounts:oauth_flow_is_active",
+        messageId: "12348",
+        data: {},
+      };
+
+      channel._channel = {
+        send(inProgressResponse, inProgressContext) {
+          Assert.equal(
+            inProgressResponse.command,
+            "fxaccounts:oauth_flow_is_active"
+          );
+          Assert.equal(inProgressResponse.messageId, "12348");
+          Assert.equal(inProgressResponse.data.isActive, true);
+          Assert.equal(inProgressContext, mockSendingContext);
+          run_next_test();
+        },
+      };
+
+      channel._channelCallback(
+        WEBCHANNEL_ID,
+        inProgressMessage,
+        mockSendingContext
+      );
+    },
+  };
+
+  channel._channelCallback(WEBCHANNEL_ID, mockMessage, mockSendingContext);
 });
 
 function makeObserver(aObserveTopic, aObserveFunc) {

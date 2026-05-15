@@ -193,8 +193,9 @@ add_task(async function test_BackupService_location_on_device() {
   );
 
   Services.telemetry.clearScalars();
-  // The system "Docs" folder is considered the default location.
-  bs.setParentDirPath(Services.dirsvc.get("Docs", Ci.nsIFile).path);
+  // The default will be either the test machine's OneDrive folder, if present,
+  // or else the Docs folder.
+  bs.setParentDirPath(BackupService.DEFAULT_PARENT_DIR_PATH);
 
   await bs.takeMeasurements();
   Assert.equal(

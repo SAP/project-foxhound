@@ -17,17 +17,17 @@ feature whenever it makes sense (or all the time. Up to you.).
 
 Linking to other external documentation is [easy][reference link].
 Linking to other pieces of documentation in the source docs requires a
-link to the source file in the sphinx tree.
+link to the source file in the sphinx tree, omitting its extension.
 
 Links can be relative e.g. to link to the [preferences] docs:
 
 ```md
-[preferences](preferences.md)
+[preferences](preferences)
 ```
 
 Or they can be absolute e.g. to link to the [Telemetry] docs:
 ```md
-[Telemetry](/toolkit/components/telemetry/index.rst)
+[Telemetry](/toolkit/components/telemetry/index)
 ```
 
 Sphinx will automagically transform that to an
@@ -45,5 +45,3 @@ Prefer use of "main" when it is accurate.
 [semantic linefeeds]: https://rhodesmill.org/brandon/2012/one-sentence-per-line/
 [reference link]: https://spec.commonmark.org/0.29/#reference-link
 [Telemetry]: /toolkit/components/telemetry/index.rst
-[#firefox-source-docs:mozilla.org]: https://chat.mozilla.org/#/room/#firefox-source-docs:mozilla.org
-[bug 1621950]: https://bugzilla.mozilla.org/show_bug.cgi?id=1621950

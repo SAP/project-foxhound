@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MacIOSurface_h__
-#define MacIOSurface_h__
+#ifndef MacIOSurface_h_
+#define MacIOSurface_h_
 #ifdef XP_DARWIN
 #  include <CoreVideo/CoreVideo.h>
 #  include <IOSurface/IOSurfaceRef.h>
@@ -39,7 +39,6 @@ typedef realGLboolean GLboolean;
 
 #  include "2D.h"
 #  include "mozilla/RefCounted.h"
-#  include "mozilla/RefPtr.h"
 
 class MacIOSurface final
     : public mozilla::external::AtomicRefCounted<MacIOSurface> {
@@ -75,6 +74,8 @@ class MacIOSurface final
       IOSurfaceID aSurfaceID, bool aHasAlpha = true,
       mozilla::gfx::YUVColorSpace aColorSpace =
           mozilla::gfx::YUVColorSpace::Identity);
+  static mozilla::gfx::SurfaceFormat SurfaceFormatForPixelFormat(
+      OSType aPixelFormat, bool aHasAlpha);
 
   explicit MacIOSurface(CFTypeRefPtr<IOSurfaceRef> aIOSurfaceRef,
                         bool aHasAlpha = true,

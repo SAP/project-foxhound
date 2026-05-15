@@ -523,8 +523,8 @@ add_task(async function test_beacon_request() {
 
       await new content.Promise(resolve => {
         ifr.onload = resolve;
-        content.document.body.appendChild(ifr);
         ifr.src = url;
+        content.document.body.appendChild(ifr);
       });
 
       await SpecialPowers.spawn(ifr, [url], url => {

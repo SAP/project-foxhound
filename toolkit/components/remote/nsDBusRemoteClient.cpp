@@ -14,6 +14,7 @@
 #include "mozilla/Base64.h"
 #include "nsPrintfCString.h"
 #include "mozilla/GUniquePtr.h"
+#include "nsAppShell.h"
 
 #include <dlfcn.h>
 
@@ -138,6 +139,7 @@ nsresult nsDBusRemoteClient::DoSendDBusCommandLine(const char* aProfile,
   LOG("  DBus path: %s\n", pathName.get());
   LOG("  DBus interface: %s\n", remoteInterfaceName.get());
 
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GDBusProxy> proxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
       G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
       destinationName.get(), pathName.get(), remoteInterfaceName.get(), nullptr,

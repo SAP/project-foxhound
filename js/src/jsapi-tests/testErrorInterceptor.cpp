@@ -1,4 +1,3 @@
-#include <iterator>
 
 #include "js/ErrorInterceptor.h"
 #include "jsapi-tests/tests.h"

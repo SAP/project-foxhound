@@ -65,7 +65,7 @@ add_setup(async function () {
   await EnterprisePolicyTesting.setupPolicyEngineWithJson(enterprisePolicy);
   // Setting the enterprise policy starts the search service initialising,
   // so we wait for that to complete before starting the test.
-  await Services.search.init();
+  await SearchService.init();
 });
 
 /**
@@ -74,7 +74,7 @@ add_setup(async function () {
  * @param {object} expectedData The expected data for the engine
  */
 async function assertInstalledEngineMatches(expectedData) {
-  let engine = await Services.search.getEngineByName(expectedData.name);
+  let engine = await SearchService.getEngineByName(expectedData.name);
 
   Assert.ok(engine, `Should have found the ${expectedData.type} engine`);
   if (expectedData.idLength) {
@@ -94,8 +94,8 @@ add_task(async function test_migration_from_pre_ids() {
 
   const settingsFileWritten = promiseAfterSettings();
 
-  await Services.search.wrappedJSObject.reset();
-  await Services.search.init();
+  await SearchService.reset();
+  await SearchService.init();
 
   await settingsFileWritten;
 

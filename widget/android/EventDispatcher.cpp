@@ -15,7 +15,6 @@
 #include "js/Warnings.h"            // JS::WarnUTF8
 #include "xpcpublic.h"
 
-#include "mozilla/fallible.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/java/EventCallbackWrappers.h"

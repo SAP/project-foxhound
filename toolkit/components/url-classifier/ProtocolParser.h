@@ -3,11 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ProtocolParser_h__
-#define ProtocolParser_h__
+#ifndef ProtocolParser_h_
+#define ProtocolParser_h_
 
 #include "HashStore.h"
 #include "chromium/safebrowsing.pb.h"
+#include "chromium/safebrowsing_v5.pb.h"
 
 namespace mozilla {
 namespace safebrowsing {
@@ -193,6 +194,45 @@ class ProtocolParserProtobuf final : public ProtocolParser {
 
   nsresult ProcessEncodedRemoval(TableUpdateV4& aTableUpdate,
                                  const ThreatEntrySet& aRemoval);
+};
+
+class ProtocolParserProtobufV5 final : public ProtocolParser {
+ public:
+  ProtocolParserProtobufV5();
+
+  virtual void SetCurrentTable(const nsACString& aTable) override;
+  virtual nsresult AppendStream(const nsACString& aData) override;
+  virtual void End() override;
+
+ private:
+  virtual ~ProtocolParserProtobufV5();
+
+  virtual RefPtr<TableUpdate> CreateTableUpdate(
+      const nsACString& aTableName) const override;
+
+  // Process a single hash list in the response.
+  nsresult ProcessOneResponse(const v5::HashList& aHashList,
+                              nsACString& aListName);
+
+  // Process the additions for a 4-byte encoded prefixes.
+  nsresult ProcessAddition4Bytes(TableUpdateV4& aTableUpdate,
+                                 const v5::RiceDeltaEncoded32Bit& aAddition);
+
+  // Process the additions for a 8-byte encoded prefixes.
+  nsresult ProcessAddition8Bytes(TableUpdateV4& aTableUpdate,
+                                 const v5::RiceDeltaEncoded64Bit& aAddition);
+
+  // Process the additions for a 16-byte encoded prefixes.
+  nsresult ProcessAddition16Bytes(TableUpdateV4& aTableUpdate,
+                                  const v5::RiceDeltaEncoded128Bit& aAddition);
+
+  // Process the additions for a 32-byte encoded prefixes.
+  nsresult ProcessAddition32Bytes(TableUpdateV4& aTableUpdate,
+                                  const v5::RiceDeltaEncoded256Bit& aAddition);
+
+  // Process the removals for a encoded prefixes.
+  nsresult ProcessRemoval(TableUpdateV4& aTableUpdate,
+                          const v5::RiceDeltaEncoded32Bit& aRemoval);
 };
 
 }  // namespace safebrowsing

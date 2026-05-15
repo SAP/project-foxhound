@@ -93,7 +93,7 @@ const removeAnimatedElementsExcept = function (selectors) {
  * @param {AnimationInspector} animationInspector.
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} index
+ * @param {number} index
  *        The index of the animation to click on.
  */
 const clickOnAnimation = async function (animationInspector, panel, index) {
@@ -111,7 +111,7 @@ const clickOnAnimation = async function (animationInspector, panel, index) {
  * @param {AnimationInspector} animationInspector.
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {String} selector
+ * @param {string} selector
  *        Selector of node which is target element of animation.
  */
 const clickOnAnimationByTargetSelector = async function (
@@ -182,7 +182,7 @@ const clickOnRewindButton = function (animationInspector, panel) {
  *
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} mouseDownPosition
+ * @param {number} mouseDownPosition
  *        rate on scrubber controller pane.
  *        This method calculates
  *        `mouseDownPosition * offsetWidth + offsetLeft of scrubber controller pane`
@@ -213,7 +213,7 @@ const clickOnCurrentTimeScrubberController = function (
  * @param {AnimationInspector} animationInspector.
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} index
+ * @param {number} index
  *        The index of the AnimationTargetComponent to click on.
  */
 const clickOnInspectIcon = async function (animationInspector, panel, index) {
@@ -234,7 +234,7 @@ const clickOnInspectIcon = async function (animationInspector, panel, index) {
  * @param {AnimationInspector} animationInspector
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} rate
+ * @param {number} rate
  */
 const changePlaybackRateSelector = async function (
   animationInspector,
@@ -296,7 +296,7 @@ const clickOnSummaryGraph = function (
  * @param {AnimationInspector} animationInspector.
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} index
+ * @param {number} index
  *        The index of the AnimationTargetComponent to click on.
  */
 const clickOnTargetNode = async function (animationInspector, panel, index) {
@@ -316,13 +316,48 @@ const clickOnTargetNode = async function (animationInspector, panel, index) {
 };
 
 /**
+ * Click on the target node for the given AnimationTargetComponent target element text
+ *
+ * @param {AnimationInspector} animationInspector.
+ * @param {DOMElement} panel
+ *        #animation-container element.
+ * @param {string} targetText
+ *        text displayed to represent the animation target in the panel.
+ */
+const clickOnTargetNodeByTargetText = async function (
+  animationInspector,
+  panel,
+  targetText
+) {
+  const { inspector } = animationInspector;
+  const { waitForHighlighterTypeShown } = getHighlighterTestHelpers(inspector);
+  info(`Click on a target node in animation target "${targetText}"`);
+
+  const animationItemEl = await findAnimationItemByTargetText(
+    panel,
+    targetText
+  );
+  if (!animationItemEl) {
+    throw new Error(`Couln't find target "${targetText}"`);
+  }
+  const targetEl = animationItemEl.querySelector(
+    ".animation-target .objectBox"
+  );
+  const onHighlight = waitForHighlighterTypeShown(
+    inspector.highlighters.TYPES.BOXMODEL
+  );
+  EventUtils.synthesizeMouseAtCenter(targetEl, {}, targetEl.ownerGlobal);
+  await onHighlight;
+};
+
+/**
  * Drag on the scrubber to update the animation current time.
  *
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} mouseMovePixel
+ * @param {number} mouseMovePixel
  *        Dispatch mousemove event with mouseMovePosition after mousedown.
- * @param {Number} mouseYPixel
+ * @param {number} mouseYPixel
  *        Y of mouse in pixel.
  */
 const dragOnCurrentTimeScrubber = async function (
@@ -369,12 +404,12 @@ const dragOnCurrentTimeScrubber = async function (
  *
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} mouseDownPosition
+ * @param {number} mouseDownPosition
  *        rate on scrubber controller pane.
  *        This method calculates
  *        `mouseDownPosition * offsetWidth + offsetLeft of scrubber controller pane`
  *        as the clientX of MouseEvent.
- * @param {Number} mouseMovePosition
+ * @param {number} mouseMovePosition
  *        Dispatch mousemove event with mouseMovePosition after mousedown.
  *        Calculation for clinetX is same to above.
  */
@@ -428,8 +463,8 @@ const dragOnCurrentTimeScrubberController = async function (
  * @param {AnimationInspector} animationInspector
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} pixels
- * @return {Object}
+ * @param {number} pixels
+ * @return {object}
  *         {
  *           duration,
  *           rate,
@@ -450,7 +485,7 @@ const getDurationAndRate = function (animationInspector, panel, pixels) {
  * @param {AnimationInspector} animationInspector.
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} index
+ * @param {number} index
  *        The index of the AnimationTargetComponent to click on.
  */
 const mouseOverOnTargetNode = function (animationInspector, panel, index) {
@@ -466,7 +501,7 @@ const mouseOverOnTargetNode = function (animationInspector, panel, index) {
  * @param {AnimationInspector} animationInspector.
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} index
+ * @param {number} index
  *        The index of the AnimationTargetComponent to click on.
  */
 const mouseOutOnTargetNode = function (animationInspector, panel, index) {
@@ -484,7 +519,7 @@ const mouseOutOnTargetNode = function (animationInspector, panel, index) {
 const selectAnimationInspector = async function (inspector) {
   await inspector.toolbox.selectTool("inspector");
   const onDispatched = waitForDispatch(inspector.store, "UPDATE_ANIMATIONS");
-  inspector.sidebar.select("animationinspector");
+  await inspector.sidebar.select("animationinspector");
   await onDispatched;
 };
 
@@ -503,8 +538,8 @@ const sendSpaceKeyEvent = function (animationInspector, element) {
  * Set a node class attribute to the given selector.
  *
  * @param {AnimationInspector} animationInspector
- * @param {String} selector
- * @param {String} cls
+ * @param {string} selector
+ * @param {string} cls
  *        e.g. ".ball.still"
  */
 const setClassAttribute = async function (animationInspector, selector, cls) {
@@ -526,8 +561,8 @@ const setClassAttribute = async function (animationInspector, selector, cls) {
  * Set a new style properties to the node for the given selector.
  *
  * @param {AnimationInspector} animationInspector
- * @param {String} selector
- * @param {Object} properties
+ * @param {string} selector
+ * @param {object} properties
  *        e.g. {
  *               animationDuration: "1000ms",
  *               animationTimingFunction: "linear",
@@ -565,7 +600,7 @@ const setEffectTimingAndPlayback = async function (
 /**
  * Set the sidebar width by given parameter.
  *
- * @param {String} width
+ * @param {string} width
  *        Change sidebar width by given parameter.
  * @param {InspectorPanel} inspector
  *        The instance of InspectorPanel currently loaded in the toolbox
@@ -581,10 +616,10 @@ const setSidebarWidth = async function (width, inspector) {
  * Set a new style property declaration to the node for the given selector.
  *
  * @param {AnimationInspector} animationInspector
- * @param {String} selector
- * @param {String} propertyName
+ * @param {string} selector
+ * @param {string} propertyName
  *        e.g. "animationDuration"
- * @param {String} propertyValue
+ * @param {string} propertyValue
  *        e.g. "5.5s"
  */
 const setStyle = async function (
@@ -611,8 +646,8 @@ const setStyle = async function (
  * Set a new style properties to the node for the given selector.
  *
  * @param {AnimationInspector} animationInspector
- * @param {String} selector
- * @param {Object} properties
+ * @param {string} selector
+ * @param {object} properties
  *        e.g. {
  *               animationDuration: "1000ms",
  *               animationTimingFunction: "linear",
@@ -640,7 +675,7 @@ const setStyles = async function (animationInspector, selector, properties) {
  * Wait until current time of animations will be changed to given current time.
  *
  * @param {AnimationInspector} animationInspector
- * @param {Number} currentTime
+ * @param {number} currentTime
  */
 const waitUntilCurrentTimeChangedAt = async function (
   animationInspector,
@@ -658,7 +693,7 @@ const waitUntilCurrentTimeChangedAt = async function (
  * Wait until animations' play state will be changed to given state.
  *
  * @param {Array} animationInspector
- * @param {String} state
+ * @param {string} state
  */
 const waitUntilAnimationsPlayState = async function (
   animationInspector,
@@ -675,7 +710,7 @@ const waitUntilAnimationsPlayState = async function (
  *
  * @param {AnimationInspector} animationInspector
  * @param {DOMElement} panel
- * @return {Number} count
+ * @return {number} count
  */
 const getDisplayedGraphCount = (animationInspector, panel) => {
   const animationLength = animationInspector.state.animations.length;
@@ -736,9 +771,9 @@ function assertAnimationsRunning(animationInspector) {
  *
  * @param {Element} linearGradientEl
           <linearGradient> element which has <stop> element.
- * @param {Number} offset
+ * @param {number} offset
  *        float which represents the "offset" attribute of <stop>.
- * @param {String} expectedColor
+ * @param {string} expectedColor
  *        e.g. rgb(0, 0, 255)
  */
 function assertLinearGradient(linearGradientEl, offset, expectedColor) {
@@ -759,7 +794,7 @@ function assertLinearGradient(linearGradientEl, offset, expectedColor) {
  *        <path> element.
  * @param {boolean} hasClosePath
  *        Set true if the path shoud be closing.
- * @param {Object} expectedValues
+ * @param {object} expectedValues
  *        JSON object format. We can test the vertex and color.
  *        e.g.
  *        [
@@ -840,13 +875,17 @@ function isPassingThrough(pathData, x, y) {
  *
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {Number} index
+ * @param {number} index
  * @return {DOMElement}
  *        Animation item element.
  */
 async function findAnimationItemByIndex(panel, index) {
   const itemEls = [...panel.querySelectorAll(".animation-item")];
   const itemEl = itemEls[index];
+  if (!itemEl) {
+    return null;
+  }
+
   itemEl.scrollIntoView(false);
 
   await waitUntil(
@@ -865,7 +904,7 @@ async function findAnimationItemByIndex(panel, index) {
  *
  * @param {DOMElement} panel
  *        #animation-container element.
- * @param {String} selector
+ * @param {string} selector
  *        Selector of tested element.
  * @return {DOMElement}
  *        Animation item element.
@@ -891,11 +930,40 @@ async function findAnimationItemByTargetSelector(panel, selector) {
 }
 
 /**
+ * Return animation item element by given target element text of animation.
+ *
+ * @param {DOMElement} panel
+ *        #animation-container element.
+ * @param {string} targetText
+ *        text displayed to represent the animation target in the panel.
+ * @return {DOMElement|null}
+ *        Animation item element.
+ */
+async function findAnimationItemByTargetText(panel, targetText) {
+  for (const itemEl of panel.querySelectorAll(".animation-item")) {
+    itemEl.scrollIntoView(false);
+
+    await waitUntil(
+      () =>
+        itemEl.querySelector(".animation-target .attrName") &&
+        itemEl.querySelector(".animation-computed-timing-path")
+    );
+
+    const attrNameEl = itemEl.querySelector(".animation-target .attrName");
+    if (attrNameEl.textContent.trim() === targetText) {
+      return itemEl;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Find the <stop> element which has the given offset in the given linearGradientEl.
  *
  * @param {Element} linearGradientEl
  *        <linearGradient> element which has <stop> element.
- * @param {Number} offset
+ * @param {number} offset
  *        Float which represents the "offset" attribute of <stop>.
  * @return {Element}
  *         If can't find suitable element, returns null.

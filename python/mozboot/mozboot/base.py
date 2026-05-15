@@ -169,12 +169,6 @@ class BaseBootstrapper:
         to the user, if necessary.
         """
 
-    def suggest_install_pip3(self):
-        """Called if pip3 can't be found."""
-        print(
-            "Try installing pip3 with your system's package manager.", file=sys.stderr
-        )
-
     def install_system_packages(self):
         """
         Install packages shared by all applications. These are usually
@@ -438,6 +432,7 @@ class BaseBootstrapper:
 
         process = subprocess.run(
             [str(path), version_param],
+            check=False,
             env=env,
             text=True,
             stdout=subprocess.PIPE,
@@ -666,18 +661,16 @@ class BaseBootstrapper:
             rustup_init.chmod(mode | stat.S_IRWXU)
             print("Ok")
             print("Running rustup-init...")
-            subprocess.check_call(
-                [
-                    str(rustup_init),
-                    "-y",
-                    "--default-toolchain",
-                    "stable",
-                    "--default-host",
-                    platform,
-                    "--component",
-                    "rustfmt",
-                ]
-            )
+            subprocess.check_call([
+                str(rustup_init),
+                "-y",
+                "--default-toolchain",
+                "stable",
+                "--default-host",
+                platform,
+                "--component",
+                "rustfmt",
+            ])
             cargo_home, cargo_bin = self.cargo_home()
             self.print_rust_path_advice(RUST_INSTALL_COMPLETE, cargo_home, cargo_bin)
         finally:

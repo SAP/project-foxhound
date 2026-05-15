@@ -31,6 +31,7 @@
 #include "api/rtp_headers.h"
 #include "api/rtp_packet_info.h"
 #include "api/scoped_refptr.h"
+#include "api/units/timestamp.h"
 #include "modules/audio_coding/neteq/audio_multi_vector.h"
 #include "modules/audio_coding/neteq/packet.h"
 #include "modules/audio_coding/neteq/packet_buffer.h"
@@ -63,7 +64,7 @@ struct DtmfEvent;
 struct ExpandFactory;
 struct PreemptiveExpandFactory;
 
-class NetEqImpl : public webrtc::NetEq {
+class NetEqImpl : public NetEq {
  public:
   enum class OutputType {
     kNormalSpeech,
@@ -74,7 +75,7 @@ class NetEqImpl : public webrtc::NetEq {
     kCodecPLC
   };
 
-  enum ErrorCodes {
+  enum Error : int {
     kNoError = 0,
     kOtherError,
     kUnknownRtpPayloadType,
@@ -91,7 +92,7 @@ class NetEqImpl : public webrtc::NetEq {
     kSampleUnderrun,
     kDecodedTooMuch,
     kRedundancySplitError,
-    kPacketBufferCorruption
+    kPacketBufferCorruption,
   };
 
   struct Dependencies {
@@ -132,7 +133,7 @@ class NetEqImpl : public webrtc::NetEq {
   NetEqImpl& operator=(const NetEqImpl&) = delete;
 
   int InsertPacket(const RTPHeader& rtp_header,
-                   rtc::ArrayView<const uint8_t> payload) override {
+                   ArrayView<const uint8_t> payload) override {
     return InsertPacket(
         rtp_header, payload,
         RtpPacketInfo(rtp_header, /*receive_time=*/Timestamp::MinusInfinity()));
@@ -140,7 +141,7 @@ class NetEqImpl : public webrtc::NetEq {
 
   // Inserts a new packet into NetEq. Returns 0 on success, -1 on failure.
   int InsertPacket(const RTPHeader& rtp_header,
-                   rtc::ArrayView<const uint8_t> payload,
+                   ArrayView<const uint8_t> payload,
                    const RtpPacketInfo& packet_info) override;
 
   void InsertEmptyPacket(const RTPHeader& rtp_header) override;
@@ -155,6 +156,8 @@ class NetEqImpl : public webrtc::NetEq {
 
   bool RegisterPayloadType(int rtp_payload_type,
                            const SdpAudioFormat& audio_format) override;
+
+  bool CreateDecoder(int rtp_payload_type) override;
 
   // Removes `rtp_payload_type` from the codec database. Returns 0 on success,
   // -1 on failure.
@@ -216,9 +219,9 @@ class NetEqImpl : public webrtc::NetEq {
   // Inserts a new packet into NetEq. This is used by the InsertPacket method
   // above. Returns 0 on success, otherwise an error code.
   // TODO(hlundin): Merge this with InsertPacket above?
-  int InsertPacketInternal(const RTPHeader& rtp_header,
-                           rtc::ArrayView<const uint8_t> payload,
-                           const RtpPacketInfo& packet_info)
+  Error InsertPacketInternal(const RTPHeader& rtp_header,
+                             ArrayView<const uint8_t> payload,
+                             const RtpPacketInfo& packet_info)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Returns true if the payload type changed (this should be followed by
@@ -333,6 +336,8 @@ class NetEqImpl : public webrtc::NetEq {
 
   // Resets various variables and objects to new values based on the sample rate
   // `fs_hz` and `channels` number audio channels.
+  // If the sample rate, the number of channels or a combination thereof aren't
+  // supported, the function will fail on an RTC_CHECK.
   void SetSampleRateAndChannels(int fs_hz, size_t channels)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
@@ -408,7 +413,7 @@ class NetEqImpl : public webrtc::NetEq {
       RTC_GUARDED_BY(mutex_);
   std::vector<RtpPacketInfo> last_decoded_packet_infos_ RTC_GUARDED_BY(mutex_);
   bool no_time_stretching_ RTC_GUARDED_BY(mutex_);  // Only used for test.
-  rtc::BufferT<int16_t> concealment_audio_ RTC_GUARDED_BY(mutex_);
+  BufferT<int16_t> concealment_audio_ RTC_GUARDED_BY(mutex_);
 };
 
 }  // namespace webrtc

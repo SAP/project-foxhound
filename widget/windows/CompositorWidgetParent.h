@@ -22,9 +22,10 @@ class Client;
 class CompositorWidgetParent final : public PCompositorWidgetParent,
                                      public WinCompositorWidget {
  public:
+  NS_INLINE_DECL_REFCOUNTING_INHERITED(CompositorWidgetParent, CompositorWidget)
+
   explicit CompositorWidgetParent(const CompositorWidgetInitData& aInitData,
                                   const layers::CompositorOptions& aOptions);
-  ~CompositorWidgetParent() override;
 
   bool Initialize(const RemoteBackbufferHandles& aRemoteHandles);
 
@@ -65,6 +66,8 @@ class CompositorWidgetParent final : public PCompositorWidgetParent,
   void SetRootLayerTreeID(const layers::LayersId& aRootLayerTreeId) override;
 
  private:
+  ~CompositorWidgetParent() override;
+
   RefPtr<VsyncObserver> mVsyncObserver;
   Maybe<layers::LayersId> mRootLayerTreeID;
 

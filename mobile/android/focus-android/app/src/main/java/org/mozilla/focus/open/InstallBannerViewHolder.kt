@@ -6,6 +6,7 @@ package org.mozilla.focus.open
 
 import android.view.View
 import android.widget.ImageView
+import androidx.annotation.LayoutRes
 import androidx.recyclerview.widget.RecyclerView
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.FirefoxInstallationHelper.open
@@ -34,6 +35,7 @@ class InstallBannerViewHolder(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.item_install_banner
+        @LayoutRes
+        val LAYOUT_ID = R.layout.item_install_banner
     }
 }

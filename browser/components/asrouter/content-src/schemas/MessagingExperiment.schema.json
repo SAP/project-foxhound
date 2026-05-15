@@ -564,14 +564,36 @@
                 {
                   "allOf": [
                     {
-                      "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText"
-                    },
-                    {
-                      "not": {
-                        "required": [
-                          "href"
-                        ]
-                      }
+                      "allOf": [
+                        {
+                          "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText"
+                        },
+                        {
+                          "not": {
+                            "required": [
+                              "href"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "description": "Additional arguments, only a `where` override is currently allowed",
+                          "properties": {
+                            "args": {
+                              "type": "object",
+                              "description": "Where to open ('tab', 'tabshifted', 'current', etc.)",
+                              "properties": {
+                                "where": {
+                                  "type": "string",
+                                  "description": "Where to open - e.g. 'tab', 'window', etc."
+                                }
+                              },
+                              "additionalProperties": false
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
                     }
                   ]
                 },
@@ -622,6 +644,69 @@
             "dismissable": {
               "description": "Should the infobar include an X dismiss button, defaults to true",
               "type": "boolean"
+            },
+            "dismissOnPrefChange": {
+              "description": "If set, one or more prefs to observe. The infobar will automatically dismiss when any of these prefs is set for the first time or when its value changes.",
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              ]
+            },
+            "impression_action": {
+              "oneOf": [
+                {
+                  "$ref": "file:///InfoBar.schema.json#/$defs/impressionActionItem"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "const": "MULTI_ACTION"
+                    },
+                    "orderedExecution": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "actions": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": {
+                            "$ref": "file:///InfoBar.schema.json#/$defs/impressionActionItem"
+                          }
+                        }
+                      },
+                      "required": [
+                        "actions"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "canReplace": {
+              "description": "IDs of other infobar messages this infobar may replace",
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
             },
             "buttons": {
               "type": "array",
@@ -677,6 +762,29 @@
               "type": "object",
               "additionalProperties": {
                 "$ref": "#/$defs/linkUrl"
+              }
+            },
+            "linkActions": {
+              "description": "Map of Fluent data-l10n-name keys to a Special Message Action dispatched when the link is clicked (in addition to opening the URL).",
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "SpecialMessageActions action type"
+                  },
+                  "data": {
+                    "type": "object"
+                  },
+                  "dismiss": {
+                    "type": "boolean",
+                    "description": "If true, dismiss the infobar after handling this link's action. Defaults to false."
+                  }
+                },
+                "required": [
+                  "type"
+                ]
               }
             },
             "style": {
@@ -757,6 +865,44 @@
             "href"
           ],
           "additionalProperties": false
+        },
+        "impressionActionItem": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "SET_PREF"
+            },
+            "once": {
+              "type": "boolean",
+              "description": "If true, only fire on first impression."
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "pref": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "name"
+                  ]
+                }
+              },
+              "required": [
+                "pref"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "type",
+            "data"
+          ],
+          "additionalProperties": false
         }
       }
     },
@@ -777,9 +923,10 @@
           "properties": {
             "messageType": {
               "type": "string",
-              "description": "The subtype of the message.",
+              "description": "The subtype of the message. 'fxa_cta' is used for Firefox Accounts messaging and is only visible when signed out, unless 'allowWhenSignedIn' property is provided. It replaces the fxa menu item when displayed. 'default_cta' is used for general messages, regardless of sign in state and only visible within the App Menu.",
               "enum": [
-                "fxa_cta"
+                "fxa_cta",
+                "default_cta"
               ]
             },
             "primaryText": {
@@ -788,7 +935,7 @@
             },
             "secondaryText": {
               "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
-              "description": "The second text for the message, which offers more detail on the value proposition to the user."
+              "description": "The secondary text for the message, which offers more detail on the value proposition to the user. Not displayed when layout is 'simple'."
             },
             "closeAction": {
               "type": "object",
@@ -828,6 +975,14 @@
               "$ref": "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json#/$defs/localizableText",
               "description": "The label for the primary action."
             },
+            "primaryButtonSize": {
+              "type": "string",
+              "enum": [
+                "default",
+                "small"
+              ],
+              "description": "The size of the primary button, default is 'default'."
+            },
             "imageURL": {
               "type": "string",
               "description": "URL for image to use with the content."
@@ -836,9 +991,17 @@
               "type": "number",
               "description": "The image width in pixels. Default is 120px."
             },
+            "logoURL": {
+              "type": "string",
+              "description": "URL for logo to use with the content."
+            },
+            "logoWidth": {
+              "type": "number",
+              "description": "The logo width in pixels. Default is 18px."
+            },
             "imageVerticalTopOffset": {
               "type": "number",
-              "description": "The margin-block-start value to apply to the image in pixels, used in 'column' layouts."
+              "description": "The margin-block-start value to apply to the image in pixels."
             },
             "imageVerticalBottomOffset": {
               "type": "number",
@@ -848,13 +1011,22 @@
               "type": "number",
               "description": "The container's margin-block-end value in pixels. Used to visually offset the image in 'row' layouts when 'imageVerticalBottomOffset' is applied."
             },
+            "containerPaddingBottom": {
+              "type": "number",
+              "description": "The container's padding-block-end value in pixels."
+            },
             "layout": {
               "type": "string",
-              "description": "The layout of the message content and illustration. Row displays the image to the inline to the right of the text, column displays the image above the text.",
+              "description": "The layout of the message content and illustration. Row displays the image inline to the right of the text, column displays the image above the text. Simple layout only displays primary text and primary button on one row.",
               "enum": [
                 "row",
-                "column"
+                "column",
+                "simple"
               ]
+            },
+            "allowWhenSignedIn": {
+              "type": "boolean",
+              "description": "If true, the message will be shown even when the user is signed in. For 'fxa_cta' messages. Defaults to false."
             }
           }
         },
@@ -1154,6 +1326,10 @@
             "disableEscClose": {
               "type": "boolean",
               "description": "Don't allow the message to be dismissed using the ESC key - for limited use in Spotlight modals only when the message content clearly informs the user that a decision is required to proceed"
+            },
+            "write_in_microsurvey": {
+              "type": "boolean",
+              "description": "Set to true to apply the write-in microsurvey data policy. This is required for write-in microsurveys. Messages using the textarea tile should always set this to true. It prevents client_id from being recorded with any telemetry events for the message, recording a unique impression_id instead. It also sends the events on the more restrictive microsurvey ping instead of the messaging-system ping."
             },
             "disableHistoryUpdates": {
               "type": "boolean",

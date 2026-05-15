@@ -16,12 +16,13 @@ import io.mockk.slot
 import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.utils.Settings
@@ -36,6 +37,9 @@ import java.util.Date
 import kotlin.random.Random
 
 class WallpapersUseCasesTest {
+
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
 
     // initialize this once, so it can be shared throughout tests
     private val baseFakeDate = Date()
@@ -64,7 +68,7 @@ class WallpapersUseCasesTest {
         coEvery { clean(any(), any()) } returns mockk()
     }
 
-    private val mockFolder: File = mockk()
+    private val mockFolder: File by lazy { temporaryFolder.newFolder() }
     private val downloadWallpaper: (Wallpaper) -> Wallpaper.ImageFileState = mockk(relaxed = true)
 
     @Before
@@ -92,7 +96,6 @@ class WallpapersUseCasesTest {
 
         WallpapersUseCases.DefaultFetchCurrentWallpaperUseCase(mockSettings, appStore).invoke()
 
-        appStore.waitUntilIdle()
         assertEquals(chosenWallpaper, appStore.state.wallpaperState.currentWallpaper)
     }
 
@@ -116,7 +119,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
         coVerify(exactly = 0) { mockDownloader.downloadWallpaper(Wallpaper.Default) }
     }
 
@@ -140,7 +142,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.availableWallpapers.contains(Wallpaper.Default))
     }
 
@@ -169,7 +170,6 @@ class WallpapersUseCasesTest {
         ).invoke()
 
         val expectedFilteredWallpaper = fakeExpiredRemoteWallpapers[0]
-        appStore.waitUntilIdle()
         assertFalse(appStore.state.wallpaperState.availableWallpapers.contains(expectedFilteredWallpaper))
         coVerify { mockFileManager.clean(Wallpaper.Default, fakeRemoteWallpapers) }
     }
@@ -199,7 +199,6 @@ class WallpapersUseCasesTest {
         val expectedWallpaper = expiredWallpaper.copy(
             thumbnailFileState = Wallpaper.ImageFileState.Downloaded,
         )
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.availableWallpapers.contains(expectedWallpaper))
         assertEquals(expiredWallpaper, appStore.state.wallpaperState.currentWallpaper)
     }
@@ -228,8 +227,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
-
         verify { mockMigrationHelper.migrateExpiredWallpaperCardColors() }
         verify { mockSettings.currentWallpaperCardColorLight = TURNING_RED_PANDA_WALLPAPER_CARD_COLOR_LIGHT.toHexColor() }
         verify { mockSettings.currentWallpaperCardColorDark = TURNING_RED_PANDA_WALLPAPER_CARD_COLOR_DARK.toHexColor() }
@@ -255,9 +252,10 @@ class WallpapersUseCasesTest {
             locale,
         ).invoke()
 
-        appStore.waitUntilIdle()
-        assertEquals(1, appStore.state.wallpaperState.availableWallpapers.size)
-        assertEquals(Wallpaper.Default, appStore.state.wallpaperState.availableWallpapers[0])
+        assertEquals(
+            listOf(Wallpaper.EdgeToEdge, Wallpaper.Default),
+            appStore.state.wallpaperState.availableWallpapers,
+        )
     }
 
     @Test
@@ -308,7 +306,6 @@ class WallpapersUseCasesTest {
         for (fakeRemoteWallpaper in fakeRemoteWallpapers) {
             coVerify { mockDownloader.downloadThumbnail(fakeRemoteWallpaper) }
         }
-        appStore.waitUntilIdle()
         assertTrue(
             appStore.state.wallpaperState.availableWallpapers.all {
                 it.thumbnailFileState == Wallpaper.ImageFileState.Downloaded
@@ -339,7 +336,6 @@ class WallpapersUseCasesTest {
         ).invoke()
 
         val expectedWallpaper = failedWallpaper.copy(thumbnailFileState = Wallpaper.ImageFileState.Error)
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.availableWallpapers.contains(expectedWallpaper))
     }
 
@@ -363,7 +359,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.currentWallpaper == Wallpaper.Default)
     }
 
@@ -389,10 +384,9 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        val expectedWallpapers = (listOf(Wallpaper.Default) + possibleWallpapers).map {
+        val expectedWallpapers = (listOf(Wallpaper.EdgeToEdge, Wallpaper.Default) + possibleWallpapers).map {
             it.copy(thumbnailFileState = Wallpaper.ImageFileState.Downloaded)
         }
-        appStore.waitUntilIdle()
         assertEquals(selectedWallpaper, appStore.state.wallpaperState.currentWallpaper)
         assertEquals(expectedWallpapers, appStore.state.wallpaperState.availableWallpapers)
     }
@@ -413,7 +407,6 @@ class WallpapersUseCasesTest {
             mockDownloader,
         ).invoke(selectedWallpaper)
 
-        appStore.waitUntilIdle()
         assertEquals(selectedWallpaper.name, slot.captured)
         assertEquals(selectedWallpaper, appStore.state.wallpaperState.currentWallpaper)
         assertEquals(wallpaperFileState, Wallpaper.ImageFileState.Downloaded)

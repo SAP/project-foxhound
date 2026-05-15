@@ -9,7 +9,6 @@
 #include "js/ArrayBuffer.h"  // JS::{GetArrayBuffer{ByteLength,Data},IsArrayBufferObject}
 #include "js/RootingAPI.h"  // JS::{Handle,Rooted}
 #include "js/Value.h"       // JS::Value
-#include "mozilla/Span.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/ScriptSettings.h"
 

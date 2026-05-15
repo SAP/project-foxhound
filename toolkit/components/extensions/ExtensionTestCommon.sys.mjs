@@ -781,6 +781,8 @@ export var ExtensionTestCommon = class ExtensionTestCommon {
       id = Services.uuid.generateUUID().number;
     }
 
+    let version = data.manifest?.version;
+
     let signedState = lazy.AddonManager.SIGNEDSTATE_SIGNED;
     if (data.isPrivileged) {
       signedState = lazy.AddonManager.SIGNEDSTATE_PRIVILEGED;
@@ -798,6 +800,7 @@ export var ExtensionTestCommon = class ExtensionTestCommon {
     return new lazy.Extension(
       {
         id,
+        version,
         resourceURI: jarURI,
         cleanupFile: file,
         signedState,

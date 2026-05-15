@@ -4,7 +4,6 @@
 
 import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundary";
 import { FluentOrText } from "content-src/components/FluentOrText/FluentOrText";
-import { SponsoredContentHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight";
 import React from "react";
 import { connect } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
@@ -79,7 +78,6 @@ export class _CollapsibleSection extends React.PureComponent {
       collapsed,
       title,
       subTitle,
-      mayHaveSponsoredStories,
       mayHaveTopicsSelection,
       sectionsEnabled,
     } = this.props;
@@ -125,13 +123,6 @@ export class _CollapsibleSection extends React.PureComponent {
                   <FluentOrText message={subTitle} />
                 </span>
               )}
-              {mayHaveSponsoredStories &&
-                this.props.spocMessageVariant === "variant-a" && (
-                  <SponsoredContentHighlight
-                    position="inset-block-start inset-inline-start"
-                    dispatch={this.props.dispatch}
-                  />
-                )}
             </h2>
             {mayHaveTopicsSelection && (
               <div className="button-topic-selection">

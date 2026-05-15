@@ -10,12 +10,17 @@
 
 #include "modules/desktop_capture/blank_detector_desktop_capturer_wrapper.h"
 
-#include <stdint.h>
-
+#include <cstdint>
+#include <memory>
 #include <utility>
 
+#include "modules/desktop_capture/desktop_capture_types.h"
+#include "modules/desktop_capture/desktop_capturer.h"
+#include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/desktop_region.h"
+#include "modules/desktop_capture/rgba_color.h"
+#include "modules/desktop_capture/shared_memory.h"
 #include "rtc_base/checks.h"
 #include "system_wrappers/include/metrics.h"
 
@@ -114,6 +119,9 @@ void BlankDetectorDesktopCapturerWrapper::OnCaptureResult(
 
 bool BlankDetectorDesktopCapturerWrapper::IsBlankFrame(
     const DesktopFrame& frame) const {
+  // TODO(bugs.webrtc.org/436974448): Support other pixel formats.
+  RTC_CHECK_EQ(FOURCC_ARGB, frame.pixel_format());
+
   // We will check 7489 pixels for a frame with 1024 x 768 resolution.
   for (int i = 0; i < frame.size().width() * frame.size().height(); i += 105) {
     const int x = i % frame.size().width();

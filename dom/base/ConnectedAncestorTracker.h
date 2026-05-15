@@ -7,7 +7,6 @@
 #ifndef mozilla_ConnectedAncestorTracker_h
 #define mozilla_ConnectedAncestorTracker_h
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"

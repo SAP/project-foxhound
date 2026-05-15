@@ -1,0 +1,24 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.ai-chat-search-button {
+  max-width: 100%;
+  --button-background-color: color-mix(in srgb, var(--color-white) 80%, transparent);
+  --button-background-color-hover: var(--color-purple-0);
+  --button-border: var(--border-width) solid var(--color-purple-0);
+  --button-border-color-hover: color-mix(in srgb, var(--color-violet-10) 50%, transparent);
+  --button-border-radius: var(--border-radius-medium);
+  --button-font-size-small: var(--font-size-large);
+  --button-font-weight: normal;
+  --button-padding: var(--space-xsmall) var(--space-small);
+  --button-text-color: color-mix(in srgb, var(--color-gray-100) 69%, transparent);
+  --button-text-color-hover: var(--color-gray-100);
+
+  &::part(moz-button-label) {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

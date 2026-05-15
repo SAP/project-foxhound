@@ -6,13 +6,13 @@
 
 # This file exposes these lists:
 # ALL_PROCESSES, BROWSER_PROCESS, CHILD_PROCESSES, GMPLUGIN_PROCESSES,
-# GPU_PROCESSES, UTILITY_PROCESSES, and SOCKET_PROCESSES
+# GPU_PROCESSES, UTILITY_PROCESSES, SOCKET_PROCESSES, and RDD_PROCESSES.
 #
 # In addition, each of those lists supports a special variant for test-only
 # entries:
 # ALL_PROCESSES_TESTS, BROWSER_PROCESS_TESTS, CHILD_PROCESSES_TESTS,
-# GMPLUGIN_PROCESSES_TESTS, GPU_PROCESSES_TESTS, UTILITY_PROCESSES_TESTS, and
-# SOCKET_PROCESSES_TESTS
+# GMPLUGIN_PROCESSES_TESTS, GPU_PROCESSES_TESTS, UTILITY_PROCESSES_TESTS,
+# SOCKET_PROCESSES_TESTS, and RDD_PROCESSES_TESTS.
 #
 # Choose the list that is applicable to the applicable process type(s) for your
 # DLL block.
@@ -256,6 +256,12 @@ ALL_PROCESSES += [
 
     # Qihoo 360 Internet Security, bug 1958112
     DllBlocklistEntry("chromesafe64.dll", (2, 0, 0, 42)),
+
+    # Meta Quest Link App, bug 1986922
+    DllBlocklistEntry("magicdsfilterQuest3.dll", ALL_VERSIONS),
+    DllBlocklistEntry("magicdsfilterQuest3s.dll", ALL_VERSIONS),
+    DllBlocklistEntry("magicdsfilterQuest2.dll", ALL_VERSIONS),
+    DllBlocklistEntry("magicdsfilterQuestPro.dll", ALL_VERSIONS),
 ]
 
 # Shell extensions that result in crashes when the file-dialog is opened. (These
@@ -281,6 +287,12 @@ ALL_PROCESSES += [
 
     # ExplorerPatcher (bug 1798707)
     DllBlocklistEntry("explorerpatcher.amd64.dll", ALL_VERSIONS),
+
+    # Idera Delphi DLL (bug 1400169)
+    DllBlocklistEntry("evpComponentsXE.bpl", ALL_VERSIONS),
+
+    # Intuit DLLs (bug 1400169)
+    DllBlocklistEntry("FtuEngine.dll", ALL_VERSIONS),
 ]
 
 ALL_PROCESSES_TESTS += [
@@ -354,6 +366,18 @@ BROWSER_PROCESS += [
     # old AMD JPEG decoder DLLs (bug 1328838)
     DllBlocklistEntry("amf-wic-jpeg-decoder64.dll", ALL_VERSIONS),
     DllBlocklistEntry("amf-wic-jpeg-decoder32.dll", ALL_VERSIONS),
+
+    # old versions of KeyScrambler (bug 1994657)
+    DllBlocklistEntry("KeyScramblerIE.dll", (3, 17, 0, 4)),
+
+    # 123SyncCloud/123CloudStorage shell extension (bug 1996038)
+    DllBlocklistEntry("MFCopyHook.dll", ALL_VERSIONS),
+
+    # Print Guard by MWStory (bug 2011909)
+    DllBlocklistEntry("printguard64.dll", (25, 11, 21, 1)),
+
+    # Esafenet (bug 2019298)
+    DllBlocklistEntry("dynamicdll64.dll", ALL_VERSIONS),
 ]
 
 CHILD_PROCESSES += [
@@ -388,6 +412,12 @@ CHILD_PROCESSES += [
 
     # Causes crashes in the content process with USER_RESTRICTED, bug 1930468
     DllBlocklistEntry("AppMonitorDll.dll", (36, 30, 0, 0)),
+
+    # Trend Micro DLLs that cause crashes in the content process, bug 1872261 and bug 1990299
+    DllBlocklistEntry("tmmon64.dll", ALL_VERSIONS),
+    DllBlocklistEntry("TmUmEvt64.dll", ALL_VERSIONS),
+    DllBlocklistEntry("tmmon.dll", ALL_VERSIONS),
+    DllBlocklistEntry("TmUmEvt.dll", ALL_VERSIONS),
 ]
 
 GPU_PROCESSES += [
@@ -408,6 +438,9 @@ SOCKET_PROCESSES += [
 
     # Causes crashes in the socket process, bug 1807038 and bug 1845111
     DllBlocklistEntry("kwsui64.dll", ALL_VERSIONS),
+
+    # Bug 2007362
+    DllBlocklistEntry("windhawk.dll", (1, 6, 1, 0)),
 ]
 
 SOCKET_PROCESSES_TESTS += [
@@ -426,6 +459,9 @@ UTILITY_PROCESSES += [
 
     # Causes crashes in the LPAC utility process for PlayReady, bug 1895174
     DllBlocklistEntry("WRusr.dll", ALL_VERSIONS),
+
+    # Bug 2007362
+    DllBlocklistEntry("windhawk.dll", (1, 6, 1, 0)),
 ]
 
 UTILITY_PROCESSES_TESTS += [
@@ -446,4 +482,24 @@ GMPLUGIN_PROCESSES += [
 GMPLUGIN_PROCESSES_TESTS += [
     # DLLs used by TestDllBlocklist* gTests
     DllBlocklistEntry("testdllblocklist_gmpluginprocessonly.dll", ALL_VERSIONS),
+]
+
+RDD_PROCESSES += [
+    # McAfee/Musarubra DLLs, bug 1994743
+    DllBlocklistEntry("epclient64.dll", ALL_VERSIONS),
+    DllBlocklistEntry("EpMPApi.dll", ALL_VERSIONS),
+    DllBlocklistEntry("EpMPThe.dll", ALL_VERSIONS),
+    DllBlocklistEntry("fcagpph64.dll", ALL_VERSIONS),
+    DllBlocklistEntry("fcagff64.dll", ALL_VERSIONS),
+    DllBlocklistEntry("mfehcinj.dll", ALL_VERSIONS),
+    DllBlocklistEntry("mfehcthe.dll", ALL_VERSIONS),
+    DllBlocklistEntry("mvcairo_x64.dll", ALL_VERSIONS),
+
+    # Bug 2007362
+    DllBlocklistEntry("windhawk.dll", (1, 6, 1, 0)),
+]
+
+RDD_PROCESSES_TESTS += [
+    # DLLs used by TestDllBlocklist* gTests
+    DllBlocklistEntry("testdllblocklist_rddprocessonly.dll", ALL_VERSIONS),
 ]

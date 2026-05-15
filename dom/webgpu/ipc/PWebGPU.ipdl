@@ -15,6 +15,7 @@ using mozilla::dom::GPUErrorFilter from "mozilla/dom/WebGPUBinding.h";
 using mozilla::dom::GPURequestAdapterOptions from "mozilla/dom/WebGPUBinding.h";
 using mozilla::dom::GPUCommandBufferDescriptor from "mozilla/dom/WebGPUBinding.h";
 using mozilla::dom::GPUBufferDescriptor from "mozilla/dom/WebGPUBinding.h";
+using mozilla::webgpu::ExternalTextureSourceDescriptor from "mozilla/webgpu/WebGPUTypes.h";
 using mozilla::webgpu::PopErrorScopeResult from "mozilla/webgpu/WebGPUTypes.h";
 using mozilla::webgpu::WebGPUCompilationMessage from "mozilla/webgpu/WebGPUTypes.h";
 [MoveOnly] using mozilla::ipc::MutableSharedMemoryHandle from "mozilla/ipc/SharedMemoryHandle.h";
@@ -42,10 +43,20 @@ async protocol PWebGPU
 parent:
   async Messages(uint32_t nrOfMessages, ByteBuf serializedMessages, ByteBuf[] dataBuffers, MutableSharedMemoryHandle[] shmems);
 
+  // Ideally this would be sent in Messages(), but we need to implement
+  // SurfaceDescriptor serialization first.
+  async CreateExternalTextureSource(
+    RawId deviceId,
+    RawId queueId,
+    RawId externalTextureSourceId,
+    ExternalTextureSourceDescriptor aDesc
+  );
+
+
 child:
   async ServerMessage(ByteBuf buf);
 
-  async UncapturedError(RawId aDeviceId, nsCString message);
+  async UncapturedError(RawId aDeviceId, GPUErrorFilter type, nsCString message);
   async DeviceLost(RawId aDeviceId, uint8_t reason, nsCString message);
   async __delete__();
 };

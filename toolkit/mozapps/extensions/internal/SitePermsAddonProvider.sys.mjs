@@ -104,7 +104,7 @@ class SitePermsAddonWrapper {
   /**
    * Returns the list of gated permissions types granted for the instance's origin
    *
-   * @return {Array<String>}
+   * @return {Array<string>}
    */
   get sitePermissions() {
     return Array.from(new Set(this.#permissions.map(perm => perm.type)));
@@ -116,7 +116,7 @@ class SitePermsAddonWrapper {
    * permission.
    *
    * @param {nsIPermission} permission: The permission being added/removed
-   * @param {String} action: The action perm-changed notifies us about
+   * @param {string} action: The action perm-changed notifies us about
    */
   handlePermissionChange(permission, action) {
     if (action == "added") {
@@ -348,7 +348,7 @@ class SitePermsAddonInstall {
 
   /**
    * @param {nsIPrincipal} installingPrincipal
-   * @param {String} sitePerm
+   * @param {string} sitePerm
    */
   constructor(installingPrincipal, sitePerm) {
     this.principal = installingPrincipal;
@@ -437,7 +437,7 @@ class SitePermsAddonInstall {
   /**
    * Add a listener for the install events
    *
-   * @param {Object} listener
+   * @param {object} listener
    * @param {Function} [listener.onDownloadEnded]
    * @param {Function} [listener.onInstallCancelled]
    * @param {Function} [listener.onInstallEnded]
@@ -450,7 +450,7 @@ class SitePermsAddonInstall {
   /**
    * Remove a listener
    *
-   * @param {Object} listener: The same object reference that was used for `addListener`
+   * @param {object} listener: The same object reference that was used for `addListener`
    */
   removeListener(listener) {
     this.#listeners.delete(listener);
@@ -459,7 +459,7 @@ class SitePermsAddonInstall {
   /**
    * Call the listeners callbacks for a given event.
    *
-   * @param {String} eventName: The event to fire. Should be one of `this.#installEvents`
+   * @param {string} eventName: The event to fire. Should be one of `this.#installEvents`
    */
   #callInstallListeners(eventName) {
     if (!Object.values(this.#installEvents).includes(eventName)) {
@@ -486,7 +486,7 @@ const SitePermsAddonProvider = {
    * Update wrappersMapByOrigin on perm-changed
    *
    * @param {nsIPermission} permission: The permission being added/removed
-   * @param {String} action: The action perm-changed notifies us about
+   * @param {string} action: The action perm-changed notifies us about
    */
   handlePermissionChange(permission, action = "added") {
     // Bail out if it it's not a gated perm
@@ -577,7 +577,7 @@ const SitePermsAddonProvider = {
   /**
    * Get a SitePermsAddonWrapper from an extension id
    *
-   * @param {String|null|undefined} id: The extension id,
+   * @param {string | null | undefined} id: The extension id,
    * @returns {SitePermsAddonWrapper|undefined}
    */
   async getAddonByID(id) {
@@ -597,7 +597,7 @@ const SitePermsAddonProvider = {
   /**
    * Get a list of SitePermsAddonWrapper for a given list of extension types.
    *
-   * @param {Array<String>|null|undefined} types: If null or undefined is passed,
+   * @param {Array<string> | null | undefined} types: If null or undefined is passed,
    *        the callsites expect to get all the addons from the provider, without
    *        any filtering.
    * @returns {Array<SitePermsAddonWrapper>}
@@ -619,7 +619,7 @@ const SitePermsAddonProvider = {
    * Create and return a SitePermsAddonInstall instance for a permission on a given principal
    *
    * @param {nsIPrincipal} installingPrincipal
-   * @param {String} sitePerm
+   * @param {string} sitePerm
    * @returns {SitePermsAddonInstall}
    */
   getSitePermsAddonInstallForWebpage(installingPrincipal, sitePerm) {

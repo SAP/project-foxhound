@@ -16,7 +16,13 @@ const {
 loader.lazyRequireGetter(
   this,
   "UPDATE_GENERAL",
-  "resource://devtools/server/actors/utils/stylesheets-manager.js",
+  "resource://devtools/server/actors/stylesheets/stylesheets-manager.js",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "getIndentationFromString",
+  "resource://devtools/shared/indentation.js",
   true
 );
 
@@ -74,7 +80,12 @@ class StyleSheetsActor extends Actor {
    */
   async addStyleSheet(text, fileName = null) {
     const styleSheetsManager = this._getStyleSheetsManager();
-    await styleSheetsManager.addStyleSheet(this.document, text, fileName);
+    await styleSheetsManager.addStyleSheet(
+      this.document,
+      this.document.documentElement,
+      text,
+      fileName
+    );
   }
 
   _getStyleSheetsManager() {
@@ -90,6 +101,14 @@ class StyleSheetsActor extends Actor {
     const styleSheetsManager = this._getStyleSheetsManager();
     const text = await styleSheetsManager.getText(resourceId);
     return new LongStringActor(this.conn, text || "");
+  }
+
+  async getStyleSheetIndentation(resourceId) {
+    const styleSheetsManager = this._getStyleSheetsManager();
+    const text = await styleSheetsManager.getText(resourceId);
+
+    const { indentUnit, indentWithTabs } = getIndentationFromString(text);
+    return indentWithTabs ? "\t" : " ".repeat(indentUnit);
   }
 
   update(resourceId, text, transition, cause = "") {

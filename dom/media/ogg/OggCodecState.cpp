@@ -4,22 +4,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <string.h>
+#include "OggCodecState.h"
 
-#include "mozilla/EndianUtils.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/Utf8.h"
-#include <stdint.h>
-#include <algorithm>
 #include <opus/opus.h>
 #include <opus/opus_multistream.h>
+#include <stdint.h>
+#include <string.h>
 
-#include "OggCodecState.h"
+#include <algorithm>
+
 #include "OggRLBox.h"
 #include "OpusParser.h"
 #include "VideoUtils.h"
 #include "XiphExtradata.h"
+#include "mozilla/EndianUtils.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/TextUtils.h"
+#include "mozilla/Utf8.h"
 #include "nsDebug.h"
 
 namespace mozilla {
@@ -1418,7 +1419,7 @@ bool SkeletonState::DecodeFisbone(ogg_packet* aPacket) {
 
           if ((i == 0 && IsAscii(strMsg)) || (i != 0 && IsUtf8(strMsg))) {
             EMsgHeaderType eHeaderType = kFieldTypeMaps[i].mMsgHeaderType;
-            Unused << field->mValuesStore.LookupOrInsertWith(
+            (void)field->mValuesStore.LookupOrInsertWith(
                 eHeaderType, [i, msgHead, msgProbe]() {
                   uint32_t nameLen =
                       strlen(kFieldTypeMaps[i].mPatternToRecognize);

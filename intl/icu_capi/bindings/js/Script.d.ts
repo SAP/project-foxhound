@@ -2,17 +2,18 @@
 import type { pointer, codepoint } from "./diplomat-runtime.d.ts";
 
 
+
 /**
- * See the [Rust documentation for `Script`](https://docs.rs/icu/latest/icu/properties/props/struct.Script.html) for more information.
+ * See the [Rust documentation for `Script`](https://docs.rs/icu/2.1.1/icu/properties/props/struct.Script.html) for more information.
  */
-
-
 export class Script {
 
+    /** @internal */
     static fromValue(value: Script | string): Script;
 
     get value(): string;
 
+    /** @internal */
     get ffiValue(): number;
 
     static Adlam : Script;
@@ -26,6 +27,7 @@ export class Script {
     static BassaVah : Script;
     static Batak : Script;
     static Bengali : Script;
+    static BeriaErfe : Script;
     static Bhaiksuki : Script;
     static Bopomofo : Script;
     static Brahmi : Script;
@@ -38,6 +40,7 @@ export class Script {
     static Chakma : Script;
     static Cham : Script;
     static Cherokee : Script;
+    static Chisoi : Script;
     static Chorasmian : Script;
     static Common : Script;
     static Coptic : Script;
@@ -147,6 +150,7 @@ export class Script {
     static Sharada : Script;
     static Shavian : Script;
     static Siddham : Script;
+    static Sidetic : Script;
     static SignWriting : Script;
     static Sinhala : Script;
     static Sogdian : Script;
@@ -160,6 +164,7 @@ export class Script {
     static TaiLe : Script;
     static TaiTham : Script;
     static TaiViet : Script;
+    static TaiYo : Script;
     static Takri : Script;
     static Tamil : Script;
     static Tangsa : Script;
@@ -170,6 +175,7 @@ export class Script {
     static Tibetan : Script;
     static Tifinagh : Script;
     static Tirhuta : Script;
+    static TolongSiki : Script;
     static Toto : Script;
     static Ugaritic : Script;
     static Unknown : Script;
@@ -183,35 +189,35 @@ export class Script {
 
 
     /**
-     * See the [Rust documentation for `for_char`](https://docs.rs/icu/latest/icu/properties/props/trait.EnumeratedProperty.html#tymethod.for_char) for more information.
+     * See the [Rust documentation for `for_char`](https://docs.rs/icu/2.1.1/icu/properties/props/trait.EnumeratedProperty.html#tymethod.for_char) for more information.
      */
     static forChar(ch: codepoint): Script;
 
     /**
      * Get the "long" name of this property value (returns empty if property value is unknown)
      *
-     * See the [Rust documentation for `get`](https://docs.rs/icu/latest/icu/properties/struct.PropertyNamesLongBorrowed.html#method.get) for more information.
+     * See the [Rust documentation for `get`](https://docs.rs/icu/2.1.1/icu/properties/struct.PropertyNamesLongBorrowed.html#method.get) for more information.
      */
     longName(): string | null;
 
     /**
      * Get the "short" name of this property value (returns empty if property value is unknown)
      *
-     * See the [Rust documentation for `get`](https://docs.rs/icu/latest/icu/properties/struct.PropertyNamesShortBorrowed.html#method.get) for more information.
+     * See the [Rust documentation for `get`](https://docs.rs/icu/2.1.1/icu/properties/struct.PropertyNamesShortBorrowed.html#method.get) for more information.
      */
     shortName(): string | null;
 
     /**
      * Convert to an integer value usable with ICU4C and CodePointMapData
      *
-     * See the [Rust documentation for `to_icu4c_value`](https://docs.rs/icu/latest/icu/properties/props/struct.Script.html#method.to_icu4c_value) for more information.
+     * See the [Rust documentation for `to_icu4c_value`](https://docs.rs/icu/2.1.1/icu/properties/props/struct.Script.html#method.to_icu4c_value) for more information.
      */
     toIntegerValue(): number;
 
     /**
      * Convert from an integer value from ICU4C or CodePointMapData
      *
-     * See the [Rust documentation for `from_icu4c_value`](https://docs.rs/icu/latest/icu/properties/props/struct.Script.html#method.from_icu4c_value) for more information.
+     * See the [Rust documentation for `from_icu4c_value`](https://docs.rs/icu/2.1.1/icu/properties/props/struct.Script.html#method.from_icu4c_value) for more information.
      */
     static fromIntegerValue(other: number): Script | null;
 

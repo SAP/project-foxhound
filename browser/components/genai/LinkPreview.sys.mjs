@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
+import { AIFeature } from "chrome://global/content/ml/AIFeature.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -10,8 +11,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   LinkPreviewModel:
     "moz-src:///browser/components/genai/LinkPreviewModel.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  MLUninstallService: "chrome://global/content/ml/Utils.sys.mjs",
 });
 
 export const LABS_STATE = Object.freeze({
@@ -74,12 +76,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
-  "onboardingCooldownPeriodMs",
-  "browser.ml.linkPreview.onboardingCooldownPeriodMs",
-  7 * 24 * 60 * 60 * 1000 // Constant for onboarding reactivation cooldown period (7 days in milliseconds)
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
   "onboardingHoverLinkMs",
   "browser.ml.linkPreview.onboardingHoverLinkMs",
   1000
@@ -88,7 +84,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "onboardingMaxShowFreq",
   "browser.ml.linkPreview.onboardingMaxShowFreq",
-  2
+  0
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -135,10 +131,16 @@ XPCOMUtils.defineLazyPreferenceGetter(
   null,
   (_pref, _old, val) => LinkPreview.onShiftAltPrefChange(val)
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "supportedLocales",
+  "browser.ml.linkPreview.supportedLocales"
+);
 
 export const LinkPreview = {
   // Shared downloading state to use across multiple previews
   progress: -1, // -1 = off, 0-100 = download progress
+  _abortController: null,
 
   cancelLongPress: null,
   keyboardComboActive: false,
@@ -146,6 +148,120 @@ export const LinkPreview = {
   recentTyping: 0,
   _windowStates: new Map(),
   linkPreviewPanelId: "link-preview-panel",
+
+  /**
+   * Returns the unique identifier for this AI feature.
+   *
+   * @returns {string}
+   */
+  get id() {
+    return lazy.LinkPreviewModel.id;
+  },
+
+  /**
+   * Enable the feature by setting its preference.
+   * Also enables opt-in pref.
+   * The preference observer will handle the actual setup.
+   */
+  async enable() {
+    Services.prefs.setBoolPref("browser.ml.linkPreview.enabled", true);
+    Services.prefs.setBoolPref("browser.ml.linkPreview.optin", true);
+  },
+
+  /**
+   * Disable the feature by setting its preference.
+   * Also disables opt-in pref and uninstalls models.
+   * Waits for model uninstallation to complete before resolving.
+   */
+  async disable() {
+    // Disable both feature and opt-in prefs (triggers onEnabledPref to remove listeners)
+    Services.prefs.setBoolPref("browser.ml.linkPreview.enabled", false);
+    Services.prefs.setBoolPref("browser.ml.linkPreview.optin", false);
+
+    // Uninstall models and wait for completion
+    try {
+      await this.uninstallModel();
+    } catch (error) {
+      console.error("Failed to uninstall model during disable:", error);
+    }
+  },
+
+  /**
+   * Reset the feature to its default state.
+   * Clears all user prefs to restore factory defaults and uninstalls models.
+   */
+  async reset() {
+    // Clear all related prefs (returns to default values, triggers onEnabledPref if enabled was true)
+    const prefs = [
+      "browser.ml.linkPreview.enabled",
+      "browser.ml.linkPreview.optin",
+      "browser.ml.linkPreview.collapsed",
+      "browser.ml.linkPreview.shift",
+      "browser.ml.linkPreview.shiftAlt",
+      "browser.ml.linkPreview.longPress",
+      "browser.ml.linkPreview.labs",
+      "browser.ml.linkPreview.onboardingTimes",
+      "browser.ml.linkPreview.nimbus",
+    ];
+
+    for (const pref of prefs) {
+      if (Services.prefs.prefHasUserValue(pref)) {
+        Services.prefs.clearUserPref(pref);
+      }
+    }
+
+    // Uninstall models and wait for completion
+    try {
+      await this.uninstallModel();
+    } catch (error) {
+      console.error("Failed to uninstall model during reset:", error);
+    }
+  },
+
+  /**
+   * Check if the feature is currently enabled.
+   *
+   * @returns {boolean}
+   */
+  get isEnabled() {
+    const enabled = Services.prefs.getBoolPref(
+      "browser.ml.linkPreview.enabled",
+      false
+    );
+    const optin = Services.prefs.getBoolPref(
+      "browser.ml.linkPreview.optin",
+      false
+    );
+
+    return enabled && optin;
+  },
+
+  /**
+   * Check if the feature is allowed to be enabled.
+   *
+   * @returns {boolean}
+   */
+  get isAllowed() {
+    return this._isRegionSupported() && this._isLocaleSupported();
+  },
+
+  /**
+   * Check if the feature is blocked from being enabled.
+   *
+   * @returns {boolean}
+   */
+  get isBlocked() {
+    return !this.canShowKeyPoints;
+  },
+
+  /**
+   * Check if the feature is managed by enterprise policy.
+   *
+   * @returns {boolean}
+   */
+  get isManagedByPolicy() {
+    return Services.prefs.prefIsLocked("browser.ml.linkPreview.optin");
+  },
 
   /**
    * Gets the context value for the current tab.
@@ -166,7 +282,11 @@ export const LinkPreview = {
   },
 
   get canShowKeyPoints() {
-    return this._isRegionSupported();
+    return (
+      this._isRegionSupported() &&
+      this._isLocaleSupported() &&
+      !this._isDisabledByPolicy()
+    );
   },
 
   get canShowLegacy() {
@@ -174,24 +294,12 @@ export const LinkPreview = {
   },
 
   get canShowPreferences() {
-    // Show preferences if the user has ever enabled link previews.
-    // This is true if the feature is currently enabled, or if the onboarding UI
-    // was shown previously (which populates `onboardingTimes`).
-    // Note: showing onboarding requires link previews to be enabled at the time.
-    // This ensures users who later disable the feature can still access the settings.
-    return lazy.enabled || !!lazy.onboardingTimes.length;
+    // The setting is always shown.
+    return true;
   },
 
   get showOnboarding() {
-    const timesArray = lazy.onboardingTimes;
-
-    const lastValidTime = timesArray.at(-1) || 0;
-    const timeSinceLastOnboarding = Date.now() - lastValidTime;
-
-    return (
-      timesArray.length < lazy.onboardingMaxShowFreq &&
-      timeSinceLastOnboarding >= lazy.onboardingCooldownPeriodMs
-    );
+    return false;
   },
 
   shouldShowContextMenu(nsContextMenu) {
@@ -322,6 +430,12 @@ export const LinkPreview = {
       expand: !collapsed,
     });
     Glean.genaiLinkpreview.keyPoints.set(!collapsed);
+
+    // If user collapses while a model download is in progress, stop showing the progress bar.
+    if (collapsed && this.progress >= 0) {
+      this.progress = -1;
+      this.updateCardProperty("progress", this.progress);
+    }
   },
 
   /**
@@ -604,7 +718,6 @@ export const LinkPreview = {
     const doc = win.document;
     const onboardingCard = doc.createElement("link-preview-card-onboarding");
     onboardingCard.style.width = "100%";
-    onboardingCard.onboardingType = lazy.longPress ? "longPress" : "shiftKey";
 
     // Telemetry for onboarding card view
     Glean.genaiLinkpreview.onboardingCard.record({
@@ -757,6 +870,31 @@ export const LinkPreview = {
   },
 
   /**
+   * Checks if the user's locale is supported for key points generation.
+   *
+   * @returns {boolean} True if the locale is supported, false otherwise.
+   */
+  _isLocaleSupported() {
+    const supportedLocales = lazy.supportedLocales
+      .split(",")
+      .map(locale => locale.trim().toLowerCase());
+
+    const userLocale = Services.locale.appLocaleAsBCP47.toLowerCase();
+    return supportedLocales.some(locale => userLocale.startsWith(locale));
+  },
+
+  /**
+   * Checks if key points generation is disabled by policy.
+   *
+   * @returns {boolean} True if disabled by policy, false otherwise.
+   */
+  _isDisabledByPolicy() {
+    return (
+      !lazy.optin && Services.prefs.prefIsLocked("browser.ml.linkPreview.optin")
+    );
+  },
+
+  /**
    * Creates an Open Graph (OG) card using meta information from the page.
    *
    * @param {Document} doc - The document object where the OG card will be
@@ -772,9 +910,14 @@ export const LinkPreview = {
     ogCard.style.width = "100%";
     ogCard.pageData = pageData;
 
+    ogCard.addEventListener("LinkPreviewCard:cancelDownload", () => {
+      this._abortController?.abort();
+      Services.prefs.setBoolPref("browser.ml.linkPreview.collapsed", true);
+    });
+
     ogCard.optin = lazy.optin;
     ogCard.collapsed = lazy.collapsed;
-    ogCard.regionSupported = this._isRegionSupported();
+    ogCard.canShowKeyPoints = this.canShowKeyPoints;
 
     // Reflect the shared download progress to this preview.
     const updateProgress = () => {
@@ -788,15 +931,10 @@ export const LinkPreview = {
       }
     };
     updateProgress();
-
-    if (!this._isRegionSupported()) {
-      // Region not supported, just don't show key points section
-      return ogCard;
-    }
-
     // Generate key points if we have content, language and configured for any
-    // language or restricted.
+    // language or restricted, and if key points can be shown.
     if (
+      this.canShowKeyPoints &&
       pageData.article.textContent &&
       pageData.article.detectedLanguage &&
       (!lazy.allowedLanguages ||
@@ -824,6 +962,7 @@ export const LinkPreview = {
     if (!lazy.optin || lazy.collapsed) {
       return;
     }
+    this._abortController = new AbortController();
 
     // Support prefetching without a card by mocking expected properties.
     let outcome = ogCard ? "success" : "prefetch";
@@ -839,7 +978,7 @@ export const LinkPreview = {
     const previous = this.lastRequest;
     const { promise, resolve } = Promise.withResolvers();
     this.lastRequest = promise;
-    await previous;
+    await Promise.allSettled([previous]); // Wait on previous without failing current
     const delay = Date.now() - startTime;
 
     // No need to generate if already removed.
@@ -857,6 +996,7 @@ export const LinkPreview = {
       await lazy.LinkPreviewModel.generateTextAI(
         ogCard.pageData?.article.textContent ?? "",
         {
+          abortSignal: this._abortController.signal,
           onDownload: (downloading, percentage) => {
             // Initial percentage is NaN, so set to 0.
             percentage = isNaN(percentage) ? 0 : percentage;
@@ -866,6 +1006,16 @@ export const LinkPreview = {
             download = Date.now() - startTime;
           },
           onError: error => {
+            if (
+              error.name === "AbortError" ||
+              error.message?.includes("AbortError")
+            ) {
+              // This is an expected error when the user cancels the download.
+              // We don't need to show an error state.
+              outcome = "aborted";
+              this.lastRequest = Promise.resolve();
+              return;
+            }
             console.error(error);
             outcome = error;
             ogCard.generationError = error;
@@ -1070,4 +1220,31 @@ export const LinkPreview = {
     }
     Glean.genaiLinkpreview.shortcut.set(activeShortcuts.join(","));
   },
+
+  /**
+   * Remove all model files created by the Link Preview feature.
+   *
+   * This triggers removal of all ML Engine artifacts associated with
+   * the feature's engine ID. Link Preview does not cache engine instances, so
+   * no additional in-memory cleanup is required.
+   *
+   * @returns {Promise<void>}
+   */
+  async uninstallModel() {
+    // Remove all ML Engine files associated with this feature.
+    await lazy.MLUninstallService.uninstall({
+      engineIds: [lazy.LinkPreviewModel.engineId],
+      // Used only for attribution/telemetry; the specific value is not significant.
+      actor: "LinkPreview",
+    });
+
+    // No cached engine cleanup is required for Link Preview.
+    // All engine file and artifact cleanup is fully handled by MLUninstallService above.
+    //
+    // IMPORTANT: After uninstall completes, any cached engine instance must be
+    // considered invalid and MUST NOT be reused. No methods may be called on it;
+    // the only permitted action is to drop the reference (e.g. set it to null).
+  },
 };
+
+Object.setPrototypeOf(LinkPreview, AIFeature);

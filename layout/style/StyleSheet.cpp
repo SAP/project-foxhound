@@ -7,6 +7,7 @@
 #include "mozilla/StyleSheet.h"
 
 #include "mozAutoDocUpdate.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ComputedStyleInlines.h"
@@ -38,6 +39,7 @@ StyleSheet::StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
     : mParentSheet(nullptr),
       mConstructorDocument(nullptr),
       mDocumentOrShadowRoot(nullptr),
+      mURLData{URLExtraData::Dummy()},
       mParsingMode(aParsingMode),
       mState(static_cast<State>(0)),
       mInner(new StyleSheetInfo(aCORSMode, aIntegrity, aParsingMode)) {
@@ -51,6 +53,8 @@ StyleSheet::StyleSheet(const StyleSheet& aCopy, StyleSheet* aParentSheetToUse,
       mConstructorDocument(aConstructorDocToUse),
       mTitle(aCopy.mTitle),
       mDocumentOrShadowRoot(aDocOrShadowRootToUse),
+      mURLData(aCopy.mURLData),
+      mOriginalSheetURI(aCopy.mOriginalSheetURI),
       mParsingMode(aCopy.mParsingMode),
       mState(aCopy.mState),
       // Shallow copy, but concrete subclasses will fix up.
@@ -97,52 +101,8 @@ already_AddRefed<StyleSheet> StyleSheet::Constructor(
     return nullptr;
   }
 
-  // 1. Construct a sheet and set its properties (see spec).
-  auto sheet =
-      MakeRefPtr<StyleSheet>(css::SheetParsingMode::eAuthorSheetFeatures,
-                             CORSMode::CORS_NONE, dom::SRIMetadata());
-
-  // baseURL not yet in the spec. Implemented based on the following discussion:
-  // https://github.com/WICG/construct-stylesheets/issues/95#issuecomment-594217180
-  RefPtr<nsIURI> baseURI;
-  if (!aOptions.mBaseURL.WasPassed()) {
-    baseURI = constructorDocument->GetBaseURI();
-  } else {
-    nsresult rv = NS_NewURI(getter_AddRefs(baseURI), aOptions.mBaseURL.Value(),
-                            nullptr, constructorDocument->GetBaseURI());
-    if (NS_FAILED(rv)) {
-      aRv.ThrowNotAllowedError(
-          "Constructed style sheets must have a valid base URL");
-      return nullptr;
-    }
-  }
-
-  nsIURI* sheetURI = constructorDocument->GetDocumentURI();
-  nsIURI* originalURI = nullptr;
-  sheet->SetURIs(sheetURI, originalURI, baseURI);
-
-  sheet->SetPrincipal(constructorDocument->NodePrincipal());
-  auto referrerInfo = MakeRefPtr<ReferrerInfo>(*constructorDocument);
-  sheet->SetReferrerInfo(referrerInfo);
-  sheet->mConstructorDocument = constructorDocument;
-
-  // 2. Set the sheet's media according to aOptions.
-  if (aOptions.mMedia.IsUTF8String()) {
-    sheet->SetMedia(MediaList::Create(aOptions.mMedia.GetAsUTF8String()));
-  } else {
-    sheet->SetMedia(aOptions.mMedia.GetAsMediaList()->Clone());
-  }
-
-  // 3. Set the sheet's disabled flag according to aOptions.
-  sheet->SetDisabled(aOptions.mDisabled);
-  sheet->SetURLExtraData();
-  sheet->SetComplete();
-
-  sheet->ReplaceSync(""_ns, aRv);
-  MOZ_ASSERT(!aRv.Failed());
-
-  // 4. Return sheet.
-  return sheet.forget();
+  return CreateConstructedSheet(
+      *constructorDocument, constructorDocument->GetBaseURI(), aOptions, aRv);
 }
 
 StyleSheet::~StyleSheet() {
@@ -372,11 +332,6 @@ void StyleSheet::SetDisabled(bool aDisabled) {
   }
 }
 
-void StyleSheet::SetURLExtraData() {
-  Inner().mURLData =
-      new URLExtraData(GetBaseURI(), GetReferrerInfo(), Principal());
-}
-
 nsISupports* StyleSheet::GetRelevantGlobal() const {
   const StyleSheet& outer = OutermostSheet();
   return outer.mRelevantGlobal;
@@ -385,31 +340,22 @@ nsISupports* StyleSheet::GetRelevantGlobal() const {
 StyleSheetInfo::StyleSheetInfo(CORSMode aCORSMode,
                                const SRIMetadata& aIntegrity,
                                css::SheetParsingMode aParsingMode)
-    : mPrincipal(NullPrincipal::CreateWithoutOriginAttributes()),
-      mCORSMode(aCORSMode),
-      mReferrerInfo(new ReferrerInfo(nullptr)),
+    : mCORSMode(aCORSMode),
       mIntegrity(aIntegrity),
-      mContents(Servo_StyleSheet_Empty(aParsingMode).Consume()),
-      mURLData(URLExtraData::Dummy()) {
-  if (!mPrincipal) {
-    MOZ_CRASH("NullPrincipal::Init failed");
-  }
+      mContents(Servo_StyleSheet_Empty(aParsingMode).Consume()) {
   MOZ_COUNT_CTOR(StyleSheetInfo);
 }
 
 StyleSheetInfo::StyleSheetInfo(StyleSheetInfo& aCopy, StyleSheet* aPrimarySheet)
-    : mSheetURI(aCopy.mSheetURI),
-      mOriginalSheetURI(aCopy.mOriginalSheetURI),
-      mBaseURI(aCopy.mBaseURI),
-      mPrincipal(aCopy.mPrincipal),
-      mCORSMode(aCopy.mCORSMode),
-      mReferrerInfo(aCopy.mReferrerInfo),
+    : mCORSMode(aCopy.mCORSMode),
       mIntegrity(aCopy.mIntegrity),
+      mOriginClean(aCopy.mOriginClean),
       // We don't rebuild the child because we're making a copy without
       // children.
       mSourceMapURL(aCopy.mSourceMapURL),
-      mContents(Servo_StyleSheet_Clone(aCopy.mContents.get()).Consume()),
-      mURLData(aCopy.mURLData)
+      mContents(Servo_StyleSheet_Clone(aCopy.mContents.get(),
+                                       aPrimarySheet->URLData())
+                    .Consume())
 #ifdef DEBUG
       ,
       mPrincipalSet(aCopy.mPrincipalSet)
@@ -462,13 +408,13 @@ void StyleSheetInfo::RemoveSheet(StyleSheet* aSheet) {
     return;
   }
 
-  mSheets.RemoveElement(aSheet);
+  mSheets.UnorderedRemoveElement(aSheet);
 }
 
 void StyleSheet::GetType(nsAString& aType) { aType.AssignLiteral("text/css"); }
 
 void StyleSheet::GetHref(nsAString& aHref, ErrorResult& aRv) {
-  if (nsIURI* sheetURI = Inner().mOriginalSheetURI) {
+  if (nsIURI* sheetURI = mOriginalSheetURI) {
     nsAutoCString str;
     nsresult rv = sheetURI->GetSpec(str);
     if (NS_FAILED(rv)) {
@@ -509,10 +455,10 @@ void StyleSheet::AddStyleSet(ServoStyleSet* aStyleSet) {
 }
 
 void StyleSheet::DropStyleSet(ServoStyleSet* aStyleSet) {
-  bool found = mStyleSets.RemoveElement(aStyleSet);
+  bool found = mStyleSets.UnorderedRemoveElement(aStyleSet);
   MOZ_DIAGNOSTIC_ASSERT(found, "didn't find style set");
 #ifndef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-  Unused << found;
+  (void)found;
 #endif
 }
 
@@ -522,7 +468,7 @@ void StyleSheet::DropStyleSet(ServoStyleSet* aStyleSet) {
   do {                                                                    \
     StyleSheet* current = this;                                           \
     do {                                                                  \
-      for (ServoStyleSet * set : current->mStyleSets) {                   \
+      for (ServoStyleSet* set : current->mStyleSets) {                    \
         set->function_ args_;                                             \
       }                                                                   \
       if (auto* docOrShadow = current->mDocumentOrShadowRoot) {           \
@@ -726,9 +672,9 @@ already_AddRefed<dom::Promise> StyleSheet::Replace(const nsACString& aText,
 
   // TODO(emilio, 1642227): Should constructable stylesheets notify global
   // observers (i.e., set mMustNotify to true)?
-  auto* loader = mConstructorDocument->CSSLoader();
+  css::Loader& loader = mConstructorDocument->EnsureCSSLoader();
   auto loadData = MakeRefPtr<css::SheetLoadData>(
-      loader, /* aURI = */ nullptr, this, css::SyncLoad::No,
+      &loader, /* aURI = */ nullptr, this, css::SyncLoad::No,
       css::Loader::UseSystemPrincipal::No, css::StylePreloadKind::None,
       /* aPreloadEncoding */ nullptr, /* aObserver */ nullptr,
       mConstructorDocument->NodePrincipal(), GetReferrerInfo(),
@@ -743,7 +689,7 @@ already_AddRefed<dom::Promise> StyleSheet::Replace(const nsACString& aText,
   MOZ_ASSERT(!mReplacePromise);
   mReplacePromise = promise;
   auto holder = MakeRefPtr<css::SheetLoadDataHolder>(__func__, loadData, false);
-  ParseSheet(*loader, aText, holder)
+  ParseSheet(loader, aText, holder)
       ->Then(
           target, __func__,
           [loadData] { loadData->SheetFinishedParsingAsync(); },
@@ -771,11 +717,10 @@ void StyleSheet::ReplaceSync(const nsACString& aText, ErrorResult& aRv) {
 
   // 3. Parse aText into rules.
   // 4. If rules contain @imports, skip them and continue parsing.
-  auto* loader = mConstructorDocument->CSSLoader();
   RefPtr<const StyleStylesheetContents> rawContent =
       Servo_StyleSheet_FromUTF8Bytes(
-          loader, this,
-          /* load_data = */ nullptr, &aText, mParsingMode, URLData(),
+          &mConstructorDocument->EnsureCSSLoader(), this,
+          /* load_data = */ nullptr, &aText, mParsingMode, mURLData,
           mConstructorDocument->GetCompatibilityMode(),
           /* reusable_sheets = */ nullptr, StyleAllowImportRules::No,
           StyleSanitizationKind::None,
@@ -920,9 +865,7 @@ void StyleSheet::RemoveFromParent() {
 
 void StyleSheet::SubjectSubsumesInnerPrincipal(nsIPrincipal& aSubjectPrincipal,
                                                ErrorResult& aRv) {
-  StyleSheetInfo& info = Inner();
-
-  if (aSubjectPrincipal.Subsumes(info.mPrincipal)) {
+  if (aSubjectPrincipal.Subsumes(Principal())) {
     return;
   }
 
@@ -933,26 +876,12 @@ void StyleSheet::SubjectSubsumesInnerPrincipal(nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  // Now make sure we set the principal of our inner to the subjectPrincipal.
-  // We do this because we're in a situation where the caller would not normally
-  // be able to access the sheet, but the sheet has opted in to being read.
-  // Unfortunately, that means it's also opted in to being _edited_, and if the
-  // caller now makes edits to the sheet we want the resulting resource loads,
-  // if any, to look as if they are coming from the caller's principal, not the
-  // original sheet principal.
-  //
-  // That means we need a unique inner, of course.  But we don't want to do that
-  // if we're not complete yet.  Luckily, all the callers of this method throw
-  // anyway if not complete, so we can just do that here too.
+  // Make sure we're complete.
   if (!IsComplete()) {
     aRv.ThrowInvalidAccessError(
         "Not allowed to access still-loading stylesheet");
     return;
   }
-
-  WillDirty();
-
-  info.mPrincipal = &aSubjectPrincipal;
 }
 
 bool StyleSheet::IsDirectlyAssociatedTo(
@@ -986,10 +915,19 @@ bool StyleSheet::AreRulesAvailable(nsIPrincipal& aSubjectPrincipal,
         "Can't access rules of still-loading style sheet");
     return false;
   }
-  //-- Security check: Only scripts whose principal subsumes that of the
-  //   style sheet can access rule collections.
-  SubjectSubsumesInnerPrincipal(aSubjectPrincipal, aRv);
-  if (NS_WARN_IF(aRv.Failed())) {
+  if (aSubjectPrincipal.IsSystemPrincipal()) {
+    // System principal should always allow access to rules. Devtools needs this
+    // for example.
+    return true;
+  }
+  if (aSubjectPrincipal.GetIsAddonOrExpandedAddonPrincipal() &&
+      aSubjectPrincipal.Subsumes(URLData()->Principal())) {
+    // Extensions should be able to access their own stylesheets even if they're
+    // not origin-clean.
+    return true;
+  }
+  if (!Inner().mOriginClean && !nsContentUtils::BypassCSSOMOriginCheck()) {
+    aRv.ThrowSecurityError("Not allowed to access cross-origin stylesheet");
     return false;
   }
   return true;
@@ -1055,7 +993,9 @@ void StyleSheet::List(FILE* aOut, int32_t aIndent) {
   line.AppendLiteral("/* ");
 
   nsCString url;
-  GetSheetURI()->GetSpec(url);
+  if (auto* uri = GetOriginalURI()) {
+    uri->GetSpec(url);
+  }
   if (url.IsEmpty()) {
     line.AppendLiteral("(no URL)");
   } else {
@@ -1196,6 +1136,54 @@ void StyleSheet::FixUpAfterInnerClone() {
   }
 }
 
+/* static */
+// https://wicg.github.io/construct-stylesheets/#dom-cssstylesheet-cssstylesheet
+already_AddRefed<StyleSheet> StyleSheet::CreateConstructedSheet(
+    dom::Document& aConstructorDocument, nsIURI* aBaseURI,
+    const dom::CSSStyleSheetInit& aOptions, ErrorResult& aRv) {
+  // 1. Construct a sheet and set its properties (see spec).
+  auto sheet =
+      MakeRefPtr<StyleSheet>(css::SheetParsingMode::eAuthorSheetFeatures,
+                             CORSMode::CORS_NONE, dom::SRIMetadata());
+
+  // baseURL not yet in the spec. Implemented based on the following discussion:
+  // https://github.com/WICG/construct-stylesheets/issues/95#issuecomment-594217180
+  RefPtr<nsIURI> baseURI;
+  if (!aOptions.mBaseURL.WasPassed()) {
+    baseURI = aBaseURI;
+  } else {
+    nsresult rv = NS_NewURI(getter_AddRefs(baseURI), aOptions.mBaseURL.Value(),
+                            nullptr, aConstructorDocument.GetBaseURI());
+    if (NS_FAILED(rv)) {
+      aRv.ThrowNotAllowedError(
+          "Constructed style sheets must have a valid base URL");
+      return nullptr;
+    }
+  }
+
+  auto referrerInfo = MakeRefPtr<ReferrerInfo>(aConstructorDocument);
+  sheet->SetURIs(nullptr, baseURI, referrerInfo,
+                 aConstructorDocument.NodePrincipal());
+  sheet->mConstructorDocument = &aConstructorDocument;
+
+  // 2. Set the sheet's media according to aOptions.
+  if (aOptions.mMedia.IsUTF8String()) {
+    sheet->SetMedia(MediaList::Create(aOptions.mMedia.GetAsUTF8String()));
+  } else {
+    sheet->SetMedia(aOptions.mMedia.GetAsMediaList()->Clone());
+  }
+
+  // 3. Set the sheet's disabled flag according to aOptions.
+  sheet->SetDisabled(aOptions.mDisabled);
+  sheet->SetComplete();
+
+  sheet->ReplaceSync(""_ns, aRv);
+  MOZ_ASSERT(!aRv.Failed());
+
+  // 4. Return sheet.
+  return sheet.forget();
+}
+
 already_AddRefed<StyleSheet> StyleSheet::CreateEmptyChildSheet(
     already_AddRefed<dom::MediaList> aMediaList) const {
   auto child =
@@ -1217,19 +1205,17 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
                                   __func__);
   }
   BlockParsePromise();
-  SetURLExtraData();
   // @import rules are disallowed due to this decision:
   // https://github.com/WICG/construct-stylesheets/issues/119#issuecomment-588352418
   // We may allow @import rules again in the future.
   auto allowImportRules = SelfOrAncestorIsConstructed()
                               ? StyleAllowImportRules::No
                               : StyleAllowImportRules::Yes;
-  URLExtraData* urlData = URLData();
   if (aLoadData->get()->mRecordErrors) {
     MOZ_ASSERT(NS_IsMainThread());
     RefPtr<StyleStylesheetContents> contents =
         Servo_StyleSheet_FromUTF8Bytes(
-            &aLoader, this, aLoadData->get(), &aBytes, mParsingMode, urlData,
+            &aLoader, this, aLoadData->get(), &aBytes, mParsingMode, mURLData,
             aLoadData->get()->mCompatMode,
             /* reusable_sheets = */ nullptr, allowImportRules,
             StyleSanitizationKind::None,
@@ -1238,7 +1224,7 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
     FinishAsyncParse(contents.forget());
   } else {
     Servo_StyleSheet_FromUTF8BytesAsync(
-        aLoadData, urlData, &aBytes, mParsingMode,
+        aLoadData, mURLData, &aBytes, mParsingMode,
         aLoadData->get()->mCompatMode, allowImportRules);
   }
 
@@ -1254,29 +1240,50 @@ void StyleSheet::FinishAsyncParse(
   UnblockParsePromise();
 }
 
-StyleLikelyBaseUriDependency StyleSheet::OriginalContentsBaseUriDependency()
-    const {
+StyleNonLocalUriDependency StyleSheet::OriginalContentsUriDependency() const {
   const auto* counters = UseCounters();
   if (Servo_IsCustomUseCounterRecorded(
           counters, StyleCustomUseCounter::MaybeHasFullBaseUriDependency)) {
-    return StyleLikelyBaseUriDependency::Full;
+    return StyleNonLocalUriDependency::Full;
   }
   if (Servo_IsCustomUseCounterRecorded(
           counters, StyleCustomUseCounter::MaybeHasPathBaseUriDependency)) {
-    return StyleLikelyBaseUriDependency::Path;
+    return StyleNonLocalUriDependency::Path;
   }
-  return StyleLikelyBaseUriDependency::No;
+  if (Servo_IsCustomUseCounterRecorded(
+          counters, StyleCustomUseCounter::HasNonLocalUriDependency)) {
+    return StyleNonLocalUriDependency::Absolute;
+  }
+  return StyleNonLocalUriDependency::No;
 }
 
 const StyleUseCounters* StyleSheet::UseCounters() const {
   return Servo_StyleSheet_UseCounters(RawContents());
 }
 
+void StyleSheet::SetURIs(nsIURI* aOriginalSheetURI, nsIURI* aBaseURI,
+                         nsIReferrerInfo* aReferrerInfo,
+                         nsIPrincipal* aPrincipal) {
+  MOZ_ASSERT(aBaseURI);
+  MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(aReferrerInfo);
+  mURLData = MakeAndAddRef<URLExtraData>(aBaseURI, aReferrerInfo, aPrincipal);
+  mOriginalSheetURI = aOriginalSheetURI;
+}
+
+nsIURI* StyleSheet::GetBaseURI() const { return URLData()->BaseURI(); }
+
+nsIReferrerInfo* StyleSheet::GetReferrerInfo() const {
+  return URLData()->ReferrerInfo();
+}
+
+nsIPrincipal* StyleSheet::Principal() const { return URLData()->Principal(); }
+
 void StyleSheet::PropagateUseCountersTo(Document* aDoc) const {
   if (!aDoc || URLData()->ChromeRulesEnabled()) {
     return;
   }
-  if (auto* counters = aDoc->GetStyleUseCounters()) {
+  if (const auto* counters = aDoc->GetStyleUseCounters()) {
     Servo_UseCounters_Merge(counters, UseCounters());
   }
 }
@@ -1295,16 +1302,13 @@ void StyleSheet::ParseSheetSync(
     return eCompatibility_FullStandards;
   }();
 
-  SetURLExtraData();
-
-  URLExtraData* urlData = URLData();
   auto allowImportRules = SelfOrAncestorIsConstructed()
                               ? StyleAllowImportRules::No
                               : StyleAllowImportRules::Yes;
 
   Inner().mContents =
       Servo_StyleSheet_FromUTF8Bytes(
-          aLoader, this, aLoadData, &aBytes, mParsingMode, urlData, compatMode,
+          aLoader, this, aLoadData, &aBytes, mParsingMode, mURLData, compatMode,
           aReusableSheets, allowImportRules, StyleSanitizationKind::None,
           /* sanitized_output = */ nullptr)
           .Consume();
@@ -1327,9 +1331,9 @@ void StyleSheet::ReparseSheet(const nsACString& aInput, ErrorResult& aRv) {
   // kills the document
   RefPtr<css::Loader> loader;
   if (Document* doc = GetAssociatedDocument()) {
-    loader = doc->CSSLoader();
-    NS_ASSERTION(loader, "Document with no CSS loader!");
-  } else {
+    loader = &doc->EnsureCSSLoader();
+  }
+  if (!loader) {
     loader = new css::Loader;
   }
 
@@ -1496,10 +1500,8 @@ StyleOrigin StyleSheet::GetOrigin() const {
 void StyleSheet::SetSharedContents(const StyleLockedCssRules* aSharedRules) {
   MOZ_ASSERT(!IsComplete());
 
-  SetURLExtraData();
-
   Inner().mContents =
-      Servo_StyleSheet_FromSharedData(URLData(), aSharedRules).Consume();
+      Servo_StyleSheet_FromSharedData(mURLData, aSharedRules).Consume();
 }
 
 const StyleLockedCssRules* StyleSheet::ToShared(
@@ -1532,3 +1534,4 @@ bool StyleSheet::IsReadOnly() const {
 }
 
 }  // namespace mozilla
+//

@@ -18,7 +18,7 @@ class HeadersTest {
         val headers = MutableHeaders(
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Encoding" to "gzip, deflate",
-            "Accept-Language" to "en-US,en;q=0.5",
+            "Accept-Language" to "en-US,en;q=0.9",
             "Connection" to "keep-alive",
             "Dnt" to "1",
             "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0",
@@ -35,7 +35,7 @@ class HeadersTest {
 
         assertEquals("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", headers[0].value)
         assertEquals("gzip, deflate", headers[1].value)
-        assertEquals("en-US,en;q=0.5", headers[2].value)
+        assertEquals("en-US,en;q=0.9", headers[2].value)
         assertEquals("keep-alive", headers[3].value)
         assertEquals("1", headers[4].value)
         assertEquals("Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0", headers[5].value)
@@ -92,7 +92,7 @@ class HeadersTest {
         }
 
         headers[2] = Header("Dnt", "0")
-        headers[0] = Header("Accept-Language", "en-US,en;q=0.5")
+        headers[0] = Header("Accept-Language", "en-US,en;q=0.9")
 
         assertEquals(3, headers.size)
 
@@ -100,7 +100,7 @@ class HeadersTest {
         assertEquals("Connection", headers[1].name)
         assertEquals("Dnt", headers[2].name)
 
-        assertEquals("en-US,en;q=0.5", headers[0].value)
+        assertEquals("en-US,en;q=0.9", headers[0].value)
         assertEquals("keep-alive", headers[1].value)
         assertEquals("0", headers[2].value)
     }
@@ -166,7 +166,7 @@ class HeadersTest {
         val headers = MutableHeaders(
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Encoding" to "gzip, deflate",
-            "Accept-Language" to "en-US,en;q=0.5",
+            "Accept-Language" to "en-US,en;q=0.9",
             "Connection" to "keep-alive",
             "Dnt" to "1",
             "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0",
@@ -188,7 +188,7 @@ class HeadersTest {
 
         assertEquals("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", headers[0].value)
         assertEquals("gzip, deflate", headers[1].value)
-        assertEquals("en-US,en;q=0.5", headers[2].value)
+        assertEquals("en-US,en;q=0.9", headers[2].value)
         assertEquals("keep-alive", headers[3].value)
         assertEquals("0", headers[4].value)
         assertEquals("Mozilla/6.0", headers[5].value)

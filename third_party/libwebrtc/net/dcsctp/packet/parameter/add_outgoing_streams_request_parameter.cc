@@ -9,17 +9,15 @@
  */
 #include "net/dcsctp/packet/parameter/add_outgoing_streams_request_parameter.h"
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 #include "api/array_view.h"
+#include "net/dcsctp/common/internal_types.h"
 #include "net/dcsctp/packet/bounded_byte_reader.h"
 #include "net/dcsctp/packet/bounded_byte_writer.h"
-#include "net/dcsctp/packet/tlv_trait.h"
 #include "rtc_base/strings/string_builder.h"
 
 namespace dcsctp {
@@ -35,10 +33,10 @@ namespace dcsctp {
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //  |      Number of new streams    |         Reserved              |
 //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-constexpr int AddOutgoingStreamsRequestParameter::kType;
 
 std::optional<AddOutgoingStreamsRequestParameter>
-AddOutgoingStreamsRequestParameter::Parse(rtc::ArrayView<const uint8_t> data) {
+AddOutgoingStreamsRequestParameter::Parse(
+    webrtc::ArrayView<const uint8_t> data) {
   std::optional<BoundedByteReader<kHeaderSize>> reader = ParseTLV(data);
   if (!reader.has_value()) {
     return std::nullopt;

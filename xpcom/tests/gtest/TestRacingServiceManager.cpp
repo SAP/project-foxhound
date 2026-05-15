@@ -14,7 +14,6 @@
 #include "pratom.h"
 #include "prmon.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/gtest/MozAssertions.h"
 
 #include "mozilla/ReentrantMonitor.h"

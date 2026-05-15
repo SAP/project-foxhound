@@ -59,6 +59,8 @@ export var TelemetryEventPing = {
 
   _processStartTimestamp: 0,
 
+  _observerRegistered: false,
+
   get dataset() {
     return Services.telemetry.canRecordPrereleaseData
       ? Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
@@ -74,7 +76,10 @@ export var TelemetryEventPing = {
         (Date.now() - TelemetryUtils.monotonicNow()) / MS_IN_A_MINUTE
       ) * MS_IN_A_MINUTE;
 
-    Services.obs.addObserver(this, EVENT_LIMIT_REACHED_TOPIC);
+    if (!this._observerRegistered) {
+      Services.obs.addObserver(this, EVENT_LIMIT_REACHED_TOPIC);
+      this._observerRegistered = true;
+    }
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
@@ -96,7 +101,10 @@ export var TelemetryEventPing = {
     this._log.trace("Shutting down.");
     // removeObserver may throw, which could interrupt shutdown.
     try {
-      Services.obs.removeObserver(this, EVENT_LIMIT_REACHED_TOPIC);
+      if (this._observerRegistered) {
+        Services.obs.removeObserver(this, EVENT_LIMIT_REACHED_TOPIC);
+        this._observerRegistered = false;
+      }
     } catch (ex) {}
 
     this._submitPing(this.Reason.SHUTDOWN, true /* discardLeftovers */);
@@ -105,7 +113,7 @@ export var TelemetryEventPing = {
 
   observe(aSubject, aTopic) {
     switch (aTopic) {
-      case EVENT_LIMIT_REACHED_TOPIC:
+      case EVENT_LIMIT_REACHED_TOPIC: {
         this._log.trace("event limit reached");
         let now = Utils.monotonicNow();
         if (now - this._lastSendTime < this.maxFrequency) {
@@ -120,6 +128,7 @@ export var TelemetryEventPing = {
           this._submitPing(this.Reason.MAX);
         }
         break;
+      }
     }
   },
 
@@ -145,7 +154,7 @@ export var TelemetryEventPing = {
   /**
    * Submits an "event" ping and restarts the timer for the next interval.
    *
-   * @param {String} reason The reason we're sending the ping. One of TelemetryEventPing.Reason.
+   * @param {string} reason The reason we're sending the ping. One of TelemetryEventPing.Reason.
    * @param {bool} discardLeftovers Whether to discard event records left over from a previous ping.
    */
   _submitPing(reason, discardLeftovers = false) {

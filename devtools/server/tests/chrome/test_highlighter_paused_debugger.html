@@ -29,34 +29,32 @@ window.onload = async function() {
   await highlighter.isReady;
   const anonymousContent = highlighter.markup.content;
 
-  const id = elementID => `${highlighter.ID_CLASS_PREFIX}${elementID}`;
-
   function isHidden(elementID) {
-    const attr = anonymousContent.root.getElementById(id(elementID)).getAttribute("hidden");
+    const attr = anonymousContent.root.getElementById(elementID).getAttribute("hidden");
     return typeof attr === "string" && attr == "true";
   }
 
   function getReason() {
-    return anonymousContent.root.getElementById(id("reason")).textContent;
+    return anonymousContent.root.getElementById("paused-dbg-reason").textContent;
   }
 
   function isOverlayShown() {
-    const attr = anonymousContent.root.getElementById(id("root")).getAttribute("overlay");
+    const attr = anonymousContent.root.getElementById("paused-dbg-root").getAttribute("overlay");
     return typeof attr === "string" && attr == "true";
   }
 
   info("Test that the various elements with IDs exist");
-  ok(highlighter.getElement("root"), "The root wrapper element exists");
-  ok(highlighter.getElement("toolbar"), "The toolbar element exists");
-  ok(highlighter.getElement("reason"), "The reason label element exists");
+  ok(highlighter.getElement("paused-dbg-root"), "The root wrapper element exists");
+  ok(highlighter.getElement("paused-dbg-toolbar"), "The toolbar element exists");
+  ok(highlighter.getElement("paused-dbg-reason"), "The reason label element exists");
 
   info("Test that the highlighter is hidden by default");
-  ok(isHidden("root"), "The highlighter is hidden");
+  ok(isHidden("paused-dbg-root"), "The highlighter is hidden");
 
   info("Show the highlighter with overlay and toolbar");
   let didShow = highlighter.show("breakpoint");
   ok(didShow, "Calling show returned true");
-  ok(!isHidden("root"), "The highlighter is shown");
+  ok(!isHidden("paused-dbg-root"), "The highlighter is shown");
   ok(isOverlayShown(), "The overlay is shown");
   is(
     getReason(),
@@ -67,7 +65,7 @@ window.onload = async function() {
   info("Call show again with another reason");
   didShow = highlighter.show("debuggerStatement");
   ok(didShow, "Calling show returned true too");
-  ok(!isHidden("root"), "The highlighter is still shown");
+  ok(!isHidden("paused-dbg-root"), "The highlighter is still shown");
   is(getReason(), "Debugger paused",
      "The reason displayed in the toolbar is correct again");
   ok(isOverlayShown(), "The overlay is still shown too");
@@ -78,7 +76,7 @@ window.onload = async function() {
 
   info("Hide the highlighter");
   highlighter.hide();
-  ok(isHidden("root"), "The highlighter is now hidden");
+  ok(isHidden("paused-dbg-root"), "The highlighter is now hidden");
 
   SimpleTest.finish();
 };

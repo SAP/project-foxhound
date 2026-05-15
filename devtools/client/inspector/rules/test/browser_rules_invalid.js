@@ -25,7 +25,7 @@ add_task(async function () {
   const { inspector, view } = await openRuleView();
   await selectNode("#testid", inspector);
 
-  is(view._elementStyle.rules.length, 2, "Should have 2 rules.");
+  is(view.elementStyle.rules.length, 2, "Should have 2 rules.");
   // Have to actually get the rule in order to ensure that the
   // elements were created.
   ok(getRuleViewRule(view, "div"), "Rule with div selector exists");

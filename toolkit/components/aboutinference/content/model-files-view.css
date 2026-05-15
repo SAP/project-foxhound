@@ -31,7 +31,7 @@ table {
   border-collapse: collapse;
   margin-block-end: var(--space-large);
   border-spacing: 0;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   overflow: hidden;
 }
 
@@ -56,7 +56,7 @@ td {
 }
 
 .total-row {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -73,7 +73,7 @@ td {
   width: 40px;
   height: 40px;
   margin-inline-end: var(--space-large);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 .header {

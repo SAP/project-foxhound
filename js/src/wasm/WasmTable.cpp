@@ -39,7 +39,7 @@ Table::Table(JSContext* cx, const TableDesc& desc,
       observers_(cx->zone()),
       functions_(std::move(functions)),
       addressType_(desc.addressType()),
-      elemType_(desc.elemType),
+      elemType_(desc.elemType()),
       isAsmJS_(desc.isAsmJS),
       length_(desc.initialLength()),
       maximum_(desc.maximumLength()) {
@@ -56,7 +56,7 @@ Table::Table(JSContext* cx, const TableDesc& desc,
       observers_(cx->zone()),
       objects_(std::move(objects)),
       addressType_(desc.addressType()),
-      elemType_(desc.elemType),
+      elemType_(desc.elemType()),
       isAsmJS_(desc.isAsmJS),
       length_(desc.initialLength()),
       maximum_(desc.maximumLength()) {
@@ -78,7 +78,7 @@ SharedTable Table::create(JSContext* cx, const TableDesc& desc,
   // Tables are initialized with init_expr values at Instance::init or
   // WasmTableObject::create.
 
-  switch (desc.elemType.tableRepr()) {
+  switch (desc.elemType().tableRepr()) {
     case TableRepr::Func: {
       FuncRefVector functions;
       if (!functions.resize(desc.initialLength())) {

@@ -26,11 +26,11 @@
   margin: 0;
   padding: 0;
   font: menu;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .update-header-label {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .update-content {
@@ -55,7 +55,7 @@
 }
 
 #updateFinishedName {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   font-size: larger;
 }
 
@@ -65,7 +65,7 @@ update {
 }
 
 .update-name {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .update-label-column {
@@ -73,7 +73,7 @@ update {
 }
 
 .update-type {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   color: #990000;
 }
 

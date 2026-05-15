@@ -9,8 +9,7 @@
 
 #include <iosfwd>
 
-#include "Units.h"  // for CSSRect, CSSPixel, etc
-#include "mozilla/Maybe.h"
+#include "Units.h"                               // for CSSRect, CSSPixel, etc
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
 
 namespace mozilla {

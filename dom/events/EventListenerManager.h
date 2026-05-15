@@ -153,7 +153,6 @@ class EventListenerManagerBase {
 
   EventMessage mNoListenerForEvents[3];
   uint16_t mMayHaveDOMActivateEventListener : 1;
-  uint16_t mMayHaveMutationListeners : 1;
   uint16_t mMayHaveCapturingListeners : 1;
   uint16_t mMayHaveSystemGroupListeners : 1;
   uint16_t mMayHaveTouchEventListener : 1;
@@ -167,7 +166,7 @@ class EventListenerManagerBase {
   uint16_t mClearingListeners : 1;
   uint16_t mIsMainThreadELM : 1;
   uint16_t mMayHaveListenersForUntrustedEvents : 1;
-  // 1 unused flag.
+  // 2 unused flag.
 };
 
 /*
@@ -474,11 +473,6 @@ class EventListenerManager final : public EventListenerManagerBase {
   void Disconnect();
 
   /**
-   * Allows us to quickly determine if we have mutation listeners registered.
-   */
-  bool HasMutationListeners();
-
-  /**
    * Allows us to quickly determine whether we have unload listeners registered.
    */
   bool HasUnloadListeners();
@@ -488,15 +482,6 @@ class EventListenerManager final : public EventListenerManagerBase {
    * registered.
    */
   bool HasBeforeUnloadListeners();
-
-  /**
-   * Returns the mutation bits depending on which mutation listeners are
-   * registered to this listener manager.
-   * @note If a listener is an nsIDOMMutationListener, all possible mutation
-   *       event bits are returned. All bits are also returned if one of the
-   *       event listeners is registered to handle DOMSubtreeModified events.
-   */
-  uint32_t MutationListenerBits();
 
   /**
    * Returns true if there is at least one event listener for aEventName.

@@ -1,5 +1,7 @@
-Telemetry
-=========
+.. _urlbar-telemetry:
+
+Address Bar Telemetry
+=====================
 
 This section describes existing telemetry probes measuring interaction with the
 Address Bar.

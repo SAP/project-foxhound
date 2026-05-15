@@ -72,7 +72,7 @@ export default class MozInputColor extends MozLitElement {
         href="chrome://global/content/elements/moz-input-color.css"
       />
 
-      <label>
+      <label title=${this.value}>
         <input
           type="color"
           name=${ifDefined(this.name)}

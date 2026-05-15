@@ -10,21 +10,18 @@
 #include "mozilla/intl/TimeZone.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Range.h"
-#include "mozilla/Result.h"
 #include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
 
 #include <cmath>
 #include <cstdlib>
-#include <iterator>
 #include <string_view>
 #include <utility>
 
-#include "jsdate.h"
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
+#include "builtin/Date.h"
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/SharedIntlData.h"
@@ -106,13 +103,13 @@ TimeZoneObject* js::temporal::CreateTimeZoneObject(
     return nullptr;
   }
 
-  object->setFixedSlot(TimeZoneObject::IDENTIFIER_SLOT,
-                       StringValue(identifier));
+  object->initFixedSlot(TimeZoneObject::IDENTIFIER_SLOT,
+                        StringValue(identifier));
 
-  object->setFixedSlot(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
-                       StringValue(primaryIdentifier));
+  object->initFixedSlot(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
+                        StringValue(primaryIdentifier));
 
-  object->setFixedSlot(TimeZoneObject::OFFSET_MINUTES_SLOT, UndefinedValue());
+  object->initFixedSlot(TimeZoneObject::OFFSET_MINUTES_SLOT, UndefinedValue());
 
   return object;
 }
@@ -142,27 +139,31 @@ static TimeZoneObject* CreateTimeZoneObject(JSContext* cx,
     return nullptr;
   }
 
-  object->setFixedSlot(TimeZoneObject::IDENTIFIER_SLOT,
-                       StringValue(identifier));
+  object->initFixedSlot(TimeZoneObject::IDENTIFIER_SLOT,
+                        StringValue(identifier));
 
-  object->setFixedSlot(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
-                       UndefinedValue());
+  object->initFixedSlot(TimeZoneObject::PRIMARY_IDENTIFIER_SLOT,
+                        UndefinedValue());
 
-  object->setFixedSlot(TimeZoneObject::OFFSET_MINUTES_SLOT,
-                       Int32Value(offsetMinutes));
+  object->initFixedSlot(TimeZoneObject::OFFSET_MINUTES_SLOT,
+                        Int32Value(offsetMinutes));
 
   return object;
 }
 
 static mozilla::UniquePtr<mozilla::intl::TimeZone> CreateIntlTimeZone(
     JSContext* cx, JSLinearString* identifier) {
-  JS::AutoStableStringChars stableChars(cx);
-  if (!stableChars.initTwoByte(cx, identifier)) {
+  MOZ_ASSERT(StringIsAscii(identifier));
+
+  Vector<char, mozilla::intl::TimeZone::TimeZoneIdentifierLength> chars(cx);
+  if (!chars.resize(identifier->length())) {
     return nullptr;
   }
 
+  js::CopyChars(reinterpret_cast<JS::Latin1Char*>(chars.begin()), *identifier);
+
   auto result = mozilla::intl::TimeZone::TryCreate(
-      mozilla::Some(stableChars.twoByteRange()));
+      mozilla::Some(static_cast<mozilla::Span<const char>>(chars)));
   if (result.isErr()) {
     intl::ReportInternalError(cx, result.unwrapErr());
     return nullptr;
@@ -232,8 +233,7 @@ static bool ValidateAndCanonicalizeTimeZoneName(
 }
 
 static bool SystemTimeZoneOffset(JSContext* cx, int32_t* offset) {
-  auto rawOffset =
-      DateTimeInfo::getRawOffsetMs(DateTimeInfo::forceUTC(cx->realm()));
+  auto rawOffset = DateTimeInfo::getRawOffsetMs(cx->realm()->getDateTimeInfo());
   if (rawOffset.isErr()) {
     intl::ReportInternalError(cx);
     return false;
@@ -250,8 +250,7 @@ static bool SystemTimeZoneOffset(JSContext* cx, int32_t* offset) {
  */
 JSLinearString* js::temporal::ComputeSystemTimeZoneIdentifier(JSContext* cx) {
   TimeZoneIdentifierVector timeZoneId;
-  if (!DateTimeInfo::timeZoneId(DateTimeInfo::forceUTC(cx->realm()),
-                                timeZoneId)) {
+  if (!DateTimeInfo::timeZoneId(cx->realm()->getDateTimeInfo(), timeZoneId)) {
     ReportOutOfMemory(cx);
     return nullptr;
   }
@@ -1065,7 +1064,8 @@ bool js::temporal::DisambiguatePossibleEpochNanoseconds(
                "subtracting nanoseconds is at most one day");
 
     // Step 16.c.
-    auto earlierDate = BalanceISODate(isoDateTime.date, earlierTime.days);
+    auto earlierDate = BalanceISODate(isoDateTime.date,
+                                      static_cast<int32_t>(earlierTime.days));
 
     // Step 16.d.
     auto earlierDateTime = ISODateTime{earlierDate, earlierTime.time};
@@ -1095,7 +1095,8 @@ bool js::temporal::DisambiguatePossibleEpochNanoseconds(
              "adding nanoseconds is at most one day");
 
   // Step 20.
-  auto laterDate = BalanceISODate(isoDateTime.date, laterTime.days);
+  auto laterDate =
+      BalanceISODate(isoDateTime.date, static_cast<int32_t>(laterTime.days));
 
   // Step 21.
   auto laterDateTime = ISODateTime{laterDate, laterTime.time};

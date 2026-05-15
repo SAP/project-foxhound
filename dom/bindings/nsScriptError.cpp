@@ -9,16 +9,17 @@
  */
 
 #include "nsScriptError.h"
-#include "js/Printf.h"
+
 #include "MainThreadUtils.h"
+#include "js/Printf.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/BasePrincipal.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "nsNetUtil.h"
-#include "nsPIDOMWindow.h"
 #include "nsIMutableArray.h"
 #include "nsIScriptError.h"
-#include "mozilla/BasePrincipal.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
 
 nsScriptErrorBase::nsScriptErrorBase()
     : mSourceId(0),

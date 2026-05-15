@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsBinaryStream_h___
-#define nsBinaryStream_h___
+#ifndef nsBinaryStream_h_
+#define nsBinaryStream_h_
 
 #include "nsCOMPtr.h"
 #include "nsAString.h"
@@ -96,4 +96,4 @@ class nsBinaryInputStream final : public nsIObjectInputStream {
   virtual ~nsBinaryInputStream() = default;
 };
 
-#endif  // nsBinaryStream_h___
+#endif  // nsBinaryStream_h_

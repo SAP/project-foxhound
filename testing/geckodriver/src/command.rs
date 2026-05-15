@@ -157,12 +157,6 @@ pub struct GeckoContextParameters {
     pub context: GeckoContext,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct XblLocatorParameters {
-    pub name: String,
-    pub value: String,
-}
-
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct LogOptions {
     pub level: Option<logging::Level>,

@@ -6,13 +6,11 @@
 
 #include "mozilla/dom/GamepadPlatformService.h"
 
+#include "mozilla/Mutex.h"
 #include "mozilla/dom/GamepadEventChannelParent.h"
 #include "mozilla/dom/GamepadMonitoring.h"
 #include "mozilla/dom/GamepadTestChannelParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/Unused.h"
-
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"
 

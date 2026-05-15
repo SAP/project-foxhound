@@ -7,7 +7,6 @@
 #ifndef mozilla_AvailableMemoryWatcherUtils_h
 #define mozilla_AvailableMemoryWatcherUtils_h
 
-#include "mozilla/Attributes.h"
 #include "nsISupportsUtils.h"  // For nsresult
 
 namespace mozilla {
@@ -18,7 +17,7 @@ struct MemoryInfo {
 };
 // Check /proc/meminfo for low memory. Largely C method for reading
 // /proc/meminfo.
-MOZ_MAYBE_UNUSED
+[[maybe_unused]]
 static nsresult ReadMemoryFile(const char* meminfoPath, MemoryInfo& aResult) {
   FILE* fd;
   if ((fd = fopen(meminfoPath, "r")) == nullptr) {

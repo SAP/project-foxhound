@@ -18,16 +18,6 @@ var clickHoldDelay = Services.prefs.getIntPref(
   500
 );
 
-// Touch state constants are derived from values defined in: nsIDOMWindowUtils.idl
-const TOUCH_CONTACT = 0x02;
-const TOUCH_REMOVE = 0x04;
-
-const TOUCH_STATES = {
-  touchstart: TOUCH_CONTACT,
-  touchmove: TOUCH_CONTACT,
-  touchend: TOUCH_REMOVE,
-};
-
 const EVENTS_TO_HANDLE = [
   "mousedown",
   "mousemove",
@@ -96,9 +86,9 @@ class TouchSimulator {
    * In theory only one picker can ever be active at a time, but tracking the
    * different pickers independantly avoids race issues in the client code.
    *
-   * @param {Boolean} state
+   * @param {boolean} state
    *        True if the picker is currently active, false otherwise.
-   * @param {String} pickerType
+   * @param {string} pickerType
    *        One of PICKER_TYPES.
    */
   setElementPickerState(state, pickerType) {
@@ -159,9 +149,7 @@ class TouchSimulator {
           this._contextMenuTimeout = this.sendContextMenu(evt);
         }
 
-        this.startX = evt.pageX;
-        this.startY = evt.pageY;
-        this.previousScreenY = this.startY;
+        this.previousScreenY = evt.screenY;
 
         type = "touchstart";
         break;
@@ -203,7 +191,7 @@ class TouchSimulator {
 
     const target = eventTarget || this.target;
     if (target && type) {
-      this.synthesizeNativeTouch(content, evt.screenX, evt.screenY, type);
+      this.sendTouchEvent(content, evt.clientX, evt.clientY, type);
     }
 
     evt.preventDefault();
@@ -230,24 +218,32 @@ class TouchSimulator {
   }
 
   /**
-   * Synthesizes a native touch action on a given target element.
+   * Sends a touch action on a given target element.
    *
    * @param {Window} win
    *        The target window.
-   * @param {Number} screenX
-   *        The `x` screen coordinate relative to the screen origin.
-   * @param {Number} screenY
-   *        The `y` screen coordinate relative to the screen origin.
-   * @param {String} type
-   *        A key appearing in the TOUCH_STATES associative array.
+   * @param {number} clientX
+   *        The `x` screen coordinate relative to the viewport origin.
+   * @param {number} clientY
+   *        The `y` screen coordinate relative to the viewport origin.
+   * @param {string} type
+   *        The type of the touch event.
    */
-  synthesizeNativeTouch(win, screenX, screenY, type) {
-    // Native events work in device pixels.
-    const utils = win.windowUtils;
-    const deviceScale = win.devicePixelRatio;
-    const pt = { x: screenX * deviceScale, y: screenY * deviceScale };
-
-    utils.sendNativeTouchPoint(0, TOUCH_STATES[type], pt.x, pt.y, 1, 90, null);
+  sendTouchEvent(win, clientX, clientY, type) {
+    win.synthesizeTouchEvent(
+      type,
+      [
+        {
+          identifier: 0,
+          offsetX: clientX,
+          offsetY: clientY,
+          radiiX: 0,
+          radiiY: 0,
+        },
+      ],
+      0,
+      { isAsyncEnabled: true }
+    );
     return true;
   }
 

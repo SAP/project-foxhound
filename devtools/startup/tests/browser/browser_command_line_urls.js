@@ -7,18 +7,18 @@
  * Test command line processing of URLs meant to be intepreted by DevTools.
  */
 
-/* eslint-env browser */
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/shared/test/shared-head.js",
+  this
+);
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
+  this
+);
 
 const { DevToolsStartup } = ChromeUtils.importESModule(
   "resource:///modules/DevToolsStartup.sys.mjs"
 );
-
-const { require } = ChromeUtils.importESModule(
-  "resource://devtools/shared/loader/Loader.sys.mjs"
-);
-const { gDevTools } = require("devtools/client/framework/devtools");
-
-const URL_ROOT = "https://example.org/browser/devtools/startup/tests/browser/";
 
 const startup = new DevToolsStartup();
 // The feature covered here only work when calling firefox from command line
@@ -58,7 +58,7 @@ add_task(async function ignoredUrls() {
  * the url will be ignored
  */
 add_task(async function openingWithDevToolsClosed() {
-  const url = URL_ROOT + "command-line.html:5:2";
+  const url = URL_ROOT_SSL + "command-line.html:5:2";
 
   const tabCount = gBrowser.tabs.length;
   const ignoredUrl = sendUrlViaCommandLine(url);
@@ -75,7 +75,7 @@ add_task(async function openingWithDevToolsClosed() {
  * the url will also be opened via view-source
  */
 add_task(async function openingWithDevToolsButUnknownSource() {
-  const url = URL_ROOT + "command-line.html:5:2";
+  const url = URL_ROOT_SSL + "command-line.html:5:2";
 
   const tab = BrowserTestUtils.addTab(
     gBrowser,
@@ -92,7 +92,7 @@ add_task(async function openingWithDevToolsButUnknownSource() {
   const newTab = await newTabOpened;
   is(
     newTab.linkedBrowser.documentURI.spec,
-    "view-source:" + URL_ROOT + "command-line.html"
+    "view-source:" + URL_ROOT_SSL + "command-line.html"
   );
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
@@ -119,11 +119,11 @@ add_task(async function openingWithDevToolsButUnknownSource() {
 add_task(async function openingWithDevToolsAndKnownSource() {
   const line = 5;
   const column = 2;
-  const url = URL_ROOT + `command-line.js:${line}:${column}`;
+  const url = URL_ROOT_SSL + `command-line.js:${line}:${column}`;
 
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    URL_ROOT + "command-line.html"
+    URL_ROOT_SSL + "command-line.html"
   );
   const toolbox = await gDevTools.showToolboxForTab(tab, {
     toolId: "jsdebugger",
@@ -132,28 +132,16 @@ add_task(async function openingWithDevToolsAndKnownSource() {
   info("Open a first URL with line and column");
   sendUrlViaCommandLine(url);
 
-  const dbg = toolbox.getPanel("jsdebugger");
-  // Wait for the expected location to be selected and ignore any other default ones.
-  const selectedLocation = await BrowserTestUtils.waitForCondition(() => {
-    const location = dbg._selectors.getSelectedLocation(dbg._getState());
-    return location?.line == line ? location : false;
-  });
-
-  is(selectedLocation.source.url, URL_ROOT + "command-line.js");
-  is(selectedLocation.line, line);
-  is(selectedLocation.column, column - 1);
+  const dbg = createDebuggerContext(toolbox);
+  await waitForSelectedSource(dbg, "command-line.js");
+  await waitForSelectedLocation(dbg, line, column);
 
   info("Open another URL with only a line");
   const secondLine = 6;
-  const url2 = URL_ROOT + `command-line.js:${secondLine}`;
+  const url2 = URL_ROOT_SSL + `command-line.js:${secondLine}`;
   sendUrlViaCommandLine(url2);
-  const selectedLocation2 = await BrowserTestUtils.waitForCondition(() => {
-    const location = dbg._selectors.getSelectedLocation(dbg._getState());
-    return location.line == secondLine ? location : false;
-  });
-  is(selectedLocation2.source.url, URL_ROOT + "command-line.js");
-  is(selectedLocation2.line, secondLine);
-  is(selectedLocation2.column, 0);
+  await waitForSelectedSource(dbg, "command-line.js");
+  await waitForSelectedLocation(dbg, secondLine, 1);
 
   await toolbox.destroy();
   await gBrowser.removeTab(tab);

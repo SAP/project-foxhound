@@ -49,16 +49,13 @@ class LIRGeneratorMIPSShared : public LIRGeneratorShared {
                           MDefinition* rhs);
 
   void lowerForFPU(LInstructionHelper<1, 1, 0>* ins, MDefinition* mir,
-                   MDefinition* src);
-  template <size_t Temps>
-  void lowerForFPU(LInstructionHelper<1, 2, Temps>* ins, MDefinition* mir,
+                   MDefinition* input);
+  void lowerForFPU(LInstructionHelper<1, 2, 0>* ins, MDefinition* mir,
                    MDefinition* lhs, MDefinition* rhs);
 
   void lowerWasmBuiltinTruncateToInt32(MWasmBuiltinTruncateToInt32* ins);
   void lowerDivI(MDiv* div);
   void lowerModI(MMod* mod);
-  void lowerNegI(MInstruction* ins, MDefinition* input);
-  void lowerNegI64(MInstruction* ins, MDefinition* input);
   void lowerMulI(MMul* mul, MDefinition* lhs, MDefinition* rhs);
   void lowerUDiv(MDiv* div);
   void lowerUMod(MMod* mod);

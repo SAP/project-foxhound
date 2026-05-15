@@ -88,8 +88,7 @@ DecoderType DecoderFactory::GetDecoderType(const char* aMimeType) {
     // AVIF
   }
 #ifdef MOZ_AV1
-  else if (!strcmp(aMimeType, IMAGE_AVIF) &&
-           StaticPrefs::image_avif_enabled()) {
+  else if (!strcmp(aMimeType, IMAGE_AVIF)) {
     type = DecoderType::AVIF;
   }
 #endif
@@ -100,24 +99,6 @@ DecoderType DecoderFactory::GetDecoderType(const char* aMimeType) {
 #endif
 
   return type;
-}
-
-/* static */
-DecoderFlags DecoderFactory::GetDefaultDecoderFlagsForType(DecoderType aType) {
-  auto flags = DefaultDecoderFlags();
-
-#ifdef MOZ_AV1
-  if (aType == DecoderType::AVIF) {
-    if (StaticPrefs::image_avif_sequence_enabled()) {
-      flags |= DecoderFlags::AVIF_SEQUENCES_ENABLED;
-    }
-    if (StaticPrefs::image_avif_sequence_animate_avif_major_branded_images()) {
-      flags |= DecoderFlags::AVIF_ANIMATE_AVIF_MAJOR;
-    }
-  }
-#endif
-
-  return flags;
 }
 
 /* static */
@@ -249,7 +230,11 @@ nsresult DecoderFactory::CreateAnimationDecoder(
   }
 
   MOZ_ASSERT(aType == DecoderType::GIF || aType == DecoderType::PNG ||
-                 aType == DecoderType::WEBP || aType == DecoderType::AVIF,
+                 aType == DecoderType::WEBP || aType == DecoderType::AVIF
+#ifdef MOZ_JXL
+                 || aType == DecoderType::JXL
+#endif
+             ,
              "Calling CreateAnimationDecoder for non-animating DecoderType");
 
   // Create an anonymous decoder. Interaction with the SurfaceCache and the
@@ -304,7 +289,11 @@ already_AddRefed<Decoder> DecoderFactory::CloneAnimationDecoder(
   // rediscover it is animated).
   DecoderType type = aDecoder->GetType();
   MOZ_ASSERT(type == DecoderType::GIF || type == DecoderType::PNG ||
-                 type == DecoderType::WEBP || type == DecoderType::AVIF,
+                 type == DecoderType::WEBP || type == DecoderType::AVIF
+#ifdef MOZ_JXL
+                 || type == DecoderType::JXL
+#endif
+             ,
              "Calling CloneAnimationDecoder for non-animating DecoderType");
 
   RefPtr<Decoder> decoder = GetDecoder(type, nullptr, /* aIsRedecode = */ true);

@@ -234,8 +234,13 @@ public class GeckoResult<T> {
     private DirectDispatcher() {}
   }
 
+  /** Exception thrown when an uncaught exception occurs in a GeckoResult chain. */
   public static final class UncaughtException extends RuntimeException {
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Construct an UncaughtException.
+     *
+     * @param cause The underlying cause of the exception
+     */
     public UncaughtException(final Throwable cause) {
       super(cause);
     }

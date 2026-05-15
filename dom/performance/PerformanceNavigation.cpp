@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceNavigation.h"
+
 #include "PerformanceTiming.h"
 #include "mozilla/dom/PerformanceNavigationBinding.h"
 

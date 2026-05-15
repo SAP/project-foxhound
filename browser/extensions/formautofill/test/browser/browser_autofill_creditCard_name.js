@@ -41,7 +41,6 @@ add_autofill_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         fields: [
           {
             fieldName: "given-name",
@@ -128,7 +127,6 @@ add_autofill_heuristic_tests([
         ],
       },
       {
-        invalid: true,
         fields: [
           {
             fieldName: "given-name",

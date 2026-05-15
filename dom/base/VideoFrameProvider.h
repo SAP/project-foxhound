@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_VideoFrameProvider_h
 #define mozilla_dom_VideoFrameProvider_h
 
-#include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/dom/HTMLVideoElementBinding.h"
 #include "mozilla/dom/RequestCallbackManager.h"
+#include "mozilla/dom/VideoFrameBinding.h"
 
 namespace mozilla::dom {
 

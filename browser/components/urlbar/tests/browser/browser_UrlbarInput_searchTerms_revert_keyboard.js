@@ -18,8 +18,6 @@ add_setup(async function () {
     set: [
       ["browser.urlbar.showSearchTerms.featureGate", true],
       ["browser.urlbar.scotchBonnet.enableOverride", true],
-      // Bug 1968055 - Temporarily enabled pocket pref while we remove the pref entirely
-      ["extensions.pocket.enabled", true],
     ],
   });
   let cleanup = await installPersistTestEngines();
@@ -32,9 +30,7 @@ add_setup(async function () {
 add_task(async function no_keyboard_trap() {
   let { tab } = await searchWithTab(SEARCH_STRING);
 
-  let leftElement = window.document.getElementById(
-    "urlbar-searchmode-switcher"
-  );
+  let leftElement = gURLBar.querySelector(".searchmode-switcher");
   let inputField = gURLBar.inputField;
   let revertButton = gURLBar.querySelector(".urlbar-revert-button");
 

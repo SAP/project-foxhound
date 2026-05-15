@@ -1,5 +1,5 @@
 [DEFAULT]
-apps = "firefox"
+apps = "firefox,fenix"
 cold = true
 gecko_profile_interval = 1
 lower_is_better = true
@@ -13,8 +13,15 @@ use_live_sites = true
 
 # Keep this list in alphabetical order
 
-["trr-cloudf"]
-browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://mozilla.cloudflare-dns.com/dns-query"
+["dns-multi"]
+browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:0"
+browser_cycles = 3
+test_script = "trr_multi_domain_performance.js"
+test_url = "None"
+custom_data = true
+
+["dns-usatdy"]
+browsertime_args = "--browsertime.test_type=browser_idle --browsertime.test_url=https://www.usatoday.com/ --firefox.preference network.trr.mode:0"
 browser_cycles = 3
 test_script = "trr_performance.js"
 test_url = "None"
@@ -27,8 +34,29 @@ test_script = "trr_performance.js"
 test_url = "None"
 custom_data = true
 
+["trr-cloudf"]
+browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://mozilla.cloudflare-dns.com/dns-query"
+browser_cycles = 3
+test_script = "trr_performance.js"
+test_url = "None"
+custom_data = true
+
 ["trr-comcas"]
 browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://doh.xfinity.com/dns-query"
+browser_cycles = 3
+test_script = "trr_performance.js"
+test_url = "None"
+custom_data = true
+
+["trr-multi"]
+browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://mozilla.cloudflare-dns.com/dns-query"
+browser_cycles = 3
+test_script = "trr_multi_domain_performance.js"
+test_url = "None"
+custom_data = true
+
+["dns-native"]
+browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:0"
 browser_cycles = 3
 test_script = "trr_performance.js"
 test_url = "None"
@@ -41,15 +69,8 @@ test_script = "trr_performance.js"
 test_url = "None"
 custom_data = true
 
-["trr-native"]
-browsertime_args = "--browsertime.test_type=browser_idle --firefox.preference network.trr.mode:0"
-browser_cycles = 3
-test_script = "trr_performance.js"
-test_url = "None"
-custom_data = true
-
-["trr-w-clou"]
-browsertime_args = "--browsertime.test_type=trr_warm --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://mozilla.cloudflare-dns.com/dns-query"
+["trr-usatdy"]
+browsertime_args = "--browsertime.test_type=browser_idle --browsertime.test_url=https://www.usatoday.com/ --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://mozilla.cloudflare-dns.com/dns-query"
 browser_cycles = 3
 test_script = "trr_performance.js"
 test_url = "None"
@@ -57,6 +78,13 @@ custom_data = true
 
 ["trr-w-cira"]
 browsertime_args = "--browsertime.test_type=trr_warm --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://private.canadianshield.cira.ca/dns-query"
+browser_cycles = 3
+test_script = "trr_performance.js"
+test_url = "None"
+custom_data = true
+
+["trr-w-clou"]
+browsertime_args = "--browsertime.test_type=trr_warm --firefox.preference network.trr.mode:3 --firefox.preference network.trr.uri:https://mozilla.cloudflare-dns.com/dns-query"
 browser_cycles = 3
 test_script = "trr_performance.js"
 test_url = "None"

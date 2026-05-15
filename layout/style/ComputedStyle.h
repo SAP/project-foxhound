@@ -6,8 +6,8 @@
 
 /* the interface (to internal code) for retrieving computed style data */
 
-#ifndef _ComputedStyle_h_
-#define _ComputedStyle_h_
+#ifndef ComputedStyle_h_
+#define ComputedStyle_h_
 
 #include "mozilla/Assertions.h"
 #include "mozilla/CachedInheritingStyles.h"
@@ -15,16 +15,15 @@
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/ServoComputedData.h"
 #include "mozilla/ServoStyleConsts.h"
-#include "nsCSSPseudoElements.h"
 #include "nsColor.h"
 #include "nsStyleStructFwd.h"
 
 enum nsChangeHint : uint32_t;
 class nsWindowSizes;
 
-#define STYLE_STRUCT(name_) struct nsStyle##name_;
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+#define FORWARD_STRUCT(name_) struct nsStyle##name_;
+FOR_EACH_STYLE_STRUCT(FORWARD_STRUCT, FORWARD_STRUCT)
+#undef FORWARD_STRUCT
 
 extern "C" {
 void Gecko_ComputedStyle_Destroy(mozilla::ComputedStyle*);
@@ -66,8 +65,15 @@ class ComputedStyle {
                 ServoComputedDataForgotten aComputedValues);
 
   // Returns the computed (not resolved) value of the given property.
-  void GetComputedPropertyValue(nsCSSPropertyID aId, nsACString& aOut) const {
+  void GetComputedPropertyValue(NonCustomCSSPropertyId aId,
+                                nsACString& aOut) const {
     Servo_GetComputedValue(this, aId, &aOut);
+  }
+
+  // Returns the computed typed value of the given property.
+  bool GetPropertyTypedValue(const nsACString& aProperty,
+                             StylePropertyTypedValueResult& aOut) const {
+    return Servo_GetComputedTypedValue(this, &aProperty, &aOut);
   }
 
   // Return the ComputedStyle whose style data should be used for the R,
@@ -90,7 +96,7 @@ class ComputedStyle {
 
   bool IsLazilyCascadedPseudoElement() const {
     return IsPseudoElement() &&
-           !nsCSSPseudoElements::IsEagerlyCascadedInServo(GetPseudoType());
+           !PseudoStyle::IsEagerlyCascadedInServo(GetPseudoType());
   }
 
   PseudoStyleType GetPseudoType() const { return mPseudoType; }
@@ -129,9 +135,9 @@ class ComputedStyle {
     return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_TEXT_COLOR);
   }
 
-  // Whether any margin _and_ font-size are set.
-  bool HasAuthorSpecifiedMarginAndFontSize() const {
-    return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_MARGIN_AND_FONT_SIZE);
+  // Whether there are author-specific rules for text-shadow.
+  bool HasAuthorSpecifiedTextShadow() const {
+    return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_TEXT_SHADOW);
   }
 
   // Does this ComputedStyle or any of its ancestors have text
@@ -177,6 +183,21 @@ class ComputedStyle {
     return bool(Flags() & Flag::SELF_OR_ANCESTOR_HAS_CONTAIN_STYLE);
   }
 
+  // Whether the style uses container query units (cqw, cqh, etc.).
+  bool UsesContainerUnits() const {
+    return bool(Flags() & Flag::USES_CONTAINER_UNITS);
+  }
+
+  // Whether the style uses viewport units (vw, vh, etc.).
+  bool UsesViewportUnits() const {
+    return bool(Flags() & Flag::USES_VIEWPORT_UNITS);
+  }
+
+  // Appends all cached lazy pseudo-element styles to the given array.
+  void GetCachedLazyPseudoStyles(nsTArray<const ComputedStyle*>& aArray) const {
+    mCachedInheritingStyles.AppendTo(aArray);
+  }
+
   // Is the only link whose visitedness is allowed to influence the
   // style of the node this ComputedStyle is for (which is that element
   // or its nearest ancestor that is a link) visited?
@@ -195,21 +216,25 @@ class ComputedStyle {
 
   bool HasAnchorPosReference() const;
 
+  bool MaybeAnchorPosReferencesDiffer(const ComputedStyle* aOther) const;
+
   ComputedStyle* GetCachedInheritingAnonBoxStyle(
       PseudoStyleType aPseudoType) const {
     MOZ_ASSERT(PseudoStyle::IsInheritingAnonBox(aPseudoType));
-    return mCachedInheritingStyles.Lookup(aPseudoType);
+    return mCachedInheritingStyles.Lookup(PseudoStyleRequest(aPseudoType));
   }
 
   void SetCachedInheritedAnonBoxStyle(ComputedStyle* aStyle) {
     mCachedInheritingStyles.Insert(aStyle);
   }
 
-  ComputedStyle* GetCachedLazyPseudoStyle(PseudoStyleType aPseudo) const;
+  ComputedStyle* GetCachedLazyPseudoStyle(const PseudoStyleRequest&) const;
 
-  void SetCachedLazyPseudoStyle(ComputedStyle* aStyle) {
+  void SetCachedLazyPseudoStyle(ComputedStyle* aStyle,
+                                nsAtom* aFunctionalPseudoParameter) {
     MOZ_ASSERT(aStyle->IsPseudoElement());
-    MOZ_ASSERT(!GetCachedLazyPseudoStyle(aStyle->GetPseudoType()));
+    MOZ_ASSERT(!GetCachedLazyPseudoStyle(
+        {aStyle->GetPseudoType(), aFunctionalPseudoParameter}));
     MOZ_ASSERT(aStyle->IsLazilyCascadedPseudoElement());
 
     // Since we're caching lazy pseudo styles on the ComputedValues of the
@@ -221,20 +246,19 @@ class ComputedStyle {
     //
     // The one place this optimization breaks is with pseudo-elements that
     // support state (like :hover). So we just avoid sharing in those cases.
-    if (nsCSSPseudoElements::PseudoElementSupportsUserActionState(
-            aStyle->GetPseudoType())) {
+    if (PseudoStyle::SupportsUserActionState(aStyle->GetPseudoType())) {
       return;
     }
 
-    mCachedInheritingStyles.Insert(aStyle);
+    mCachedInheritingStyles.Insert(aStyle, aFunctionalPseudoParameter);
   }
 
-#define STYLE_STRUCT(name_)                                              \
+#define GENERATE_ACCESSOR(name_)                                         \
   inline const nsStyle##name_* Style##name_() const MOZ_NONNULL_RETURN { \
     return mSource.Style##name_();                                       \
   }
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+  FOR_EACH_STYLE_STRUCT(GENERATE_ACCESSOR, GENERATE_ACCESSOR)
+#undef GENERATE_ACCESSOR
 
   inline mozilla::StylePointerEvents PointerEvents() const;
   inline mozilla::StyleUserSelect UserSelect() const;
@@ -347,6 +371,8 @@ class ComputedStyle {
   ServoComputedData mSource;
 
   // A cache of anonymous box and lazy pseudo styles inheriting from this style.
+  // For functional pseudo-elements like ::highlight(name), the functional
+  // parameter is stored alongside the style in the cache.
   CachedInheritingStyles mCachedInheritingStyles;
 
   const PseudoStyleType mPseudoType;

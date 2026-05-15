@@ -100,10 +100,11 @@ async function runPopupPositionTest(parentDocumentFileName) {
   // On platforms other than MaxOSX the popup menu is positioned below the
   // option element.
   if (!navigator.platform.includes("Mac")) {
-    is(
+    isfuzzy(
       popupRect.top - popupMarginTop,
       tab.linkedBrowser.getBoundingClientRect().top +
         (selectRect.y + selectRect.height) * 2.0,
+      1,
       "select popup position y should be scaled by the desktop zoom"
     );
   } else {
@@ -111,9 +112,10 @@ async function runPopupPositionTest(parentDocumentFileName) {
     const offsetToSelectedItem =
       selectPopup.querySelector("menuitem[selected]").getBoundingClientRect()
         .top - popupRect.top;
-    is(
+    isfuzzy(
       popupRect.top - popupMarginTop + offsetToSelectedItem,
       tab.linkedBrowser.getBoundingClientRect().top + selectRect.y * 2.0,
+      1,
       "select popup position y should be scaled by the desktop zoom"
     );
   }

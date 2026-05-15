@@ -13,7 +13,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Span.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/DOMParser.h"

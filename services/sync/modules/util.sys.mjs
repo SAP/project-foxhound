@@ -5,7 +5,7 @@
 import { Observers } from "resource://services-common/observers.sys.mjs";
 
 import { CommonUtils } from "resource://services-common/utils.sys.mjs";
-import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
+import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 
 import {
   DEVICE_TYPE_DESKTOP,
@@ -25,7 +25,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "cryptoSDR",
   "@mozilla.org/login-manager/crypto/SDR;1",
-  "nsILoginManagerCrypto"
+  Ci.nsILoginManagerCrypto
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -99,11 +99,12 @@ export var Utils = {
   /**
    * Wrap a [promise-returning] function to catch all exceptions and log them.
    *
-   * @usage MyObj._catch = Utils.catch;
-   *        MyObj.foo = function() { this._catch(func)(); }
-   *
    * Optionally pass a function which will be called if an
    * exception occurs.
+   *
+   * @example
+   * MyObj._catch = Utils.catch;
+   * MyObj.foo = function() { this._catch(func)(); }
    */
   catch(func, exceptionCallback) {
     let thisArg = this;
@@ -131,8 +132,9 @@ export var Utils = {
    * Wrap a [promise-returning] function to call lock before calling the function
    * then unlock when it finishes executing or if it threw an error.
    *
-   * @usage MyObj._lock = Utils.lock;
-   *        MyObj.foo = async function() { await this._lock(func)(); }
+   * @example
+   * MyObj._lock = Utils.lock;
+   * MyObj.foo = async function() { await this._lock(func)(); }
    */
   lock(label, func) {
     let thisArg = this;
@@ -162,17 +164,16 @@ export var Utils = {
    * is the function's return value on "finish" or the caught exception on
    * "error". The data argument is the predefined data value.
    *
-   * Example:
-   *
-   * @usage function MyObj(name) {
-   *          this.name = name;
-   *          this._notify = Utils.notify("obj:");
-   *        }
-   *        MyObj.prototype = {
-   *          foo: function() this._notify("func", "data-arg", async function () {
-   *            //...
-   *          }(),
-   *        };
+   * @example
+   * function MyObj(name) {
+   *   this.name = name;
+   *   this._notify = Utils.notify("obj:");
+   * }
+   * MyObj.prototype = {
+   *   foo: function() this._notify("func", "data-arg", async function () {
+   *     //...
+   *   }(),
+   * };
    */
   notify(prefix) {
     return function NotifyMaker(name, data, func) {

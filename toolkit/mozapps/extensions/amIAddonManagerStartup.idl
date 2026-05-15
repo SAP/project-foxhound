@@ -38,9 +38,20 @@ interface amIAddonManagerStartup : nsISupports
   [implicit_jscontext]
   nsIJSRAIIHelper registerChrome(in nsIURI manifestURI, in jsval entries);
 
+  /**
+   * Encodes the data as a binary blob, a magic header followed by
+   * structured clone of the data.
+   */
   [implicit_jscontext]
   jsval encodeBlob(in jsval value);
 
+  /**
+   * Decodes data encoded by encodeBlob.
+   *
+   * Although the serialization format is relatively stable, there is
+   * currently no guarantee of compatibility across browser versions.
+   * See https://bugzilla.mozilla.org/show_bug.cgi?id=2014441
+   */
   [implicit_jscontext]
   jsval decodeBlob(in jsval value);
 

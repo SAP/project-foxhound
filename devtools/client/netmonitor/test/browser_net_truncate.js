@@ -22,7 +22,7 @@ add_task(async function () {
   const { document } = monitor.panelWin;
 
   const wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   // Response content will be updated asynchronously, we should make sure data is updated

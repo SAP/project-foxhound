@@ -18,7 +18,7 @@ add_task(async function () {
   // Prepare a blank tab.
   let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
   let browser = tab.linkedBrowser;
-  await promiseBrowserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
 
   // Fake a post-crash tab.
   ss.setTabState(tab, JSON.stringify(TAB_STATE));

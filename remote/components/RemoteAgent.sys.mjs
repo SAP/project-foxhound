@@ -414,7 +414,7 @@ class RemoteAgentParentProcess {
     cmdLine.handleFlagWithParam("remote-allow-origins", false);
   }
 
-  async observe(subject, topic) {
+  async observe(subject, topic, data) {
     if (this.#enabled) {
       lazy.logger.trace(`Received observer notification ${topic}`);
     }
@@ -442,6 +442,9 @@ class RemoteAgentParentProcess {
           Services.obs.addObserver(this, "browser-idle-startup-tasks-finished");
           Services.obs.addObserver(this, "mail-idle-startup-tasks-finished");
           Services.obs.addObserver(this, "quit-application");
+
+          Services.obs.addObserver(this, "xpcom-shutdown");
+          Services.obs.addObserver(this, "xpcom-shutdown-threads");
 
           // Apply the common set of preferences for all supported protocols
           lazy.RecommendedPreferences.applyPreferences();
@@ -477,7 +480,16 @@ class RemoteAgentParentProcess {
       // and a possible running instance of httpd.js.
       case "quit-application":
         Services.obs.removeObserver(this, topic);
+        lazy.logger.trace(
+          `Application is shutting down with reason: "${data || "unknown"}"`
+        );
         this.#stop();
+        break;
+
+      // Used for logging purposes to help identify slow shutdown sequences.
+      case "xpcom-shutdown":
+      case "xpcom-shutdown-threads":
+        Services.obs.removeObserver(this, topic);
         break;
     }
   }

@@ -13,18 +13,38 @@ support-files = ["file_promise_and_timeout_ordering.js"]
 
 ["test_promise_argument.html"]
 support-files = ["file_promise_argument_tests.js"]
-skip-if = ["!debug"]
+skip-if = [
+  "asan",
+  "ccov",
+  "opt",
+  "tsan",
+]
 
 ["test_promise_callback_retval.html"]
 support-files = ["file_promise_argument_tests.js"]
-skip-if = ["!debug"]
+skip-if = [
+  "asan",
+  "ccov",
+  "opt",
+  "tsan",
+]
 
 ["test_promise_retval.html"]
 support-files = ["file_promise_retval_tests.js"]
-skip-if = ["!debug"]
+skip-if = [
+  "asan",
+  "ccov",
+  "opt",
+  "tsan",
+]
 
 ["test_promise_uncatchable_exception.html"]
-skip-if = ["!debug"]
+skip-if = [
+  "asan",
+  "ccov",
+  "opt",
+  "tsan",
+]
 
 ["test_promise_utils.html"]
 

@@ -31,6 +31,7 @@ import nu.validator.htmlparser.common.Interner;
 
 public final class Portability {
 
+    // [NOCPP[
     public static int checkedAdd(int a, int b) throws SAXException {
         // This can't be translated code, because in C++ signed integer overflow is UB, so the below code would be wrong.
         assert a >= 0;
@@ -41,6 +42,7 @@ public final class Portability {
         }
         return sum;
     }
+    // ]NOCPP]
 
     // Allocating methods
 

@@ -304,6 +304,24 @@ interface nsIXPCComponents_Utils : nsISupports
     [implicit_jscontext]
     void setSandboxMetadata(in jsval sandbox, in jsval metadata);
 
+    /*
+     * setSandboxLocaleOverride is designed to be called from JavaScript only.
+     *
+     * setSandboxLocaleOverride sets the locale override to the realm
+     * of the sandbox.
+     */
+    [implicit_jscontext]
+    void setSandboxLocaleOverride(in jsval sandbox, in string locale);
+
+    /*
+     * setSandboxTimezoneOverride is designed to be called from JavaScript only.
+     *
+     * setSandboxTimezoneOverride sets the timezone override to the realm
+     * of the sandbox.
+     */
+    [implicit_jscontext]
+    void setSandboxTimezoneOverride(in jsval sandbox, in string timezone);
+
     /**
      * Returns true if the ESM is loaded into the system global previously via
      * the ChromeUtils.importESModule method etc. Returns false otherwise.
@@ -705,12 +723,6 @@ interface nsIXPCComponents_Utils : nsISupports
      */
     [implicit_jscontext]
     ACString getRealmLocation(in jsval obj);
-
-    /*
-     * Return a fractional number of milliseconds from process
-     * startup, measured with a monotonic clock.
-     */
-    double now();
 
     /*
      * Reads the given file and returns its contents. If called during early

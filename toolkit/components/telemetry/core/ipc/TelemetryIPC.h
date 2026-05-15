@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TelemetryIPC_h__
-#define TelemetryIPC_h__
+#ifndef TelemetryIPC_h_
+#define TelemetryIPC_h_
 
 #include "mozilla/TelemetryProcessEnums.h"
 #include "nsTArray.h"
@@ -111,4 +111,4 @@ void AddDynamicScalarDefinitions(
 }  // namespace TelemetryIPC
 }  // namespace mozilla
 
-#endif  // TelemetryIPC_h__
+#endif  // TelemetryIPC_h_

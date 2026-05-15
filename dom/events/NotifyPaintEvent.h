@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_NotifyPaintEvent_h_
 #define mozilla_dom_NotifyPaintEvent_h_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/Event.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/dom/NotifyPaintEventBinding.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsPresContext.h"

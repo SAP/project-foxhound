@@ -6,8 +6,6 @@
 
 #include "TrackBuffersManager.h"
 
-#include <limits>
-
 #include "ContainerParser.h"
 #include "MP4Demuxer.h"
 #include "MediaInfo.h"
@@ -155,7 +153,7 @@ void TrackBuffersManager::QueueTask(SourceBufferTask* aTask) {
             "TrackBuffersManager::QueueTask", this,
             &TrackBuffersManager::QueueTask, aTask));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     return;
   }
   mQueue.Push(aTask);
@@ -1743,6 +1741,10 @@ void TrackBuffersManager::OnDemuxFailed(TrackType aTrack,
       }
       break;
     default:
+      // https://w3c.github.io/media-source/#sourcebuffer-segment-parser-loop
+      // 2. If the [[input buffer]] contains bytes that violate the
+      //    SourceBuffer byte stream format specification, then run the append
+      //    error algorithm and abort this algorithm.
       RejectProcessing(aError, __func__);
       break;
   }
@@ -2080,14 +2082,33 @@ void TrackBuffersManager::ProcessFrames(TrackBuffer& aSamples,
     TimeUnit timestampOffset =
         mSourceBufferAttributes->GetTimestampOffset().ToBase(sample->mTime);
 
-    TimeInterval sampleInterval =
-        mSourceBufferAttributes->mGenerateTimestamps
-            ? TimeInterval(timestampOffset, timestampOffset + sampleDuration)
-            : TimeInterval(timestampOffset + sampleTime,
-                           timestampOffset + sampleTime + sampleDuration);
-    TimeUnit decodeTimestamp = mSourceBufferAttributes->mGenerateTimestamps
-                                   ? timestampOffset
-                                   : timestampOffset + sampleTimecode;
+    TimeUnit intervalStart;
+    TimeUnit intervalEnd;
+    TimeUnit decodeTimestamp;
+
+    if (mSourceBufferAttributes->mGenerateTimestamps) {
+      intervalStart = timestampOffset;
+      intervalEnd = timestampOffset + sampleDuration;
+      decodeTimestamp = timestampOffset;
+    } else {
+      intervalStart = timestampOffset + sampleTime;
+      intervalEnd = timestampOffset + sampleTime + sampleDuration;
+      decodeTimestamp = timestampOffset + sampleTimecode;
+    }
+
+    if (!intervalStart.IsValid() || !intervalEnd.IsValid() ||
+        !decodeTimestamp.IsValid()) {
+      SAMPLE_DEBUG(
+          "Skipping sample with invalid timestamp after applying offset "
+          "(intervalStart valid: %s, intervalEnd valid: %s, decodeTimestamp "
+          "valid: %s)",
+          intervalStart.IsValid() ? "yes" : "no",
+          intervalEnd.IsValid() ? "yes" : "no",
+          decodeTimestamp.IsValid() ? "yes" : "no");
+      continue;
+    }
+
+    TimeInterval sampleInterval(intervalStart, intervalEnd);
 
     SAMPLE_DEBUG(
         "Processing %s frame [%" PRId64 "%s,%" PRId64 "%s] (adjusted:[%" PRId64
@@ -2530,7 +2551,7 @@ uint32_t TrackBuffersManager::RemoveFrames(const TimeIntervals& aIntervals,
       bool found = false;
       TimeUnit startTime = intersection.GetStart(&found);
       MOZ_DIAGNOSTIC_ASSERT(found, "Must intersect with added coded frames");
-      Unused << found;
+      (void)found;
       // Signal that this frame should be truncated when decoded.
       if (!sample->mOriginalPresentationWindow) {
         sample->mOriginalPresentationWindow = Some(sampleInterval);

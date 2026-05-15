@@ -78,7 +78,7 @@ pub unsafe extern "C" fn fog_event_test_has_value(id: u32, ping_name: &nsACStrin
             .read()
             .expect("Read lock for dynamic metric map was poisoned");
         match map.get(&id.into()) {
-            Some(m) => m.test_get_value(storage.as_deref()).is_some(),
+            Some(m) => m.test_get_value(storage).is_some(),
             None => panic!("No (dynamic) metric for event with id {}", id),
         }
     } else {
@@ -130,7 +130,7 @@ pub extern "C" fn fog_event_test_get_value(
             .read()
             .expect("Read lock for dynamic metric map was poisoned");
         let events = match map.get(&id.into()) {
-            Some(m) => m.test_get_value(storage.as_deref()),
+            Some(m) => m.test_get_value(storage),
             None => return,
         };
         match events {

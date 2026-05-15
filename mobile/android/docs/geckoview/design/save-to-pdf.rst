@@ -74,7 +74,7 @@ GeckoSession.java
 
 GeckoViewPdf.sys.mjs
 ^^^^^^^^^^^^^^^^^^^^
-.. code:: java
+.. code:: javascript
 
   this.registerListener([
       "GeckoView:SavePdf",
@@ -178,7 +178,7 @@ GeckoViewPdfController.java
 
 geckoview.js
 ^^^^^^^^^^^^
-.. code:: java
+.. code:: javascript
 
   {
     name: "GeckoViewPdf",

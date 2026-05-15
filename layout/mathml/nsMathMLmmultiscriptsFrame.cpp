@@ -85,19 +85,22 @@ nsMathMLmmultiscriptsFrame::TransmitAutomaticData() {
     count++;
     childFrame = childFrame->GetNextSibling();
   }
-  for (int32_t i = subScriptFrames.Length() - 1; i >= 0; i--) {
-    childFrame = subScriptFrames[i];
-    PropagatePresentationDataFor(childFrame, NS_MATHML_COMPRESSED,
-                                 NS_MATHML_COMPRESSED);
+  if (!StaticPrefs::mathml_math_shift_enabled()) {
+    for (int32_t i = subScriptFrames.Length() - 1; i >= 0; i--) {
+      childFrame = subScriptFrames[i];
+      PropagatePresentationDataFor(childFrame,
+                                   MathMLPresentationFlag::Compressed,
+                                   MathMLPresentationFlag::Compressed);
+    }
   }
 
   return NS_OK;
 }
 
 /* virtual */
-nsresult nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
-                                           const PlaceFlags& aFlags,
-                                           ReflowOutput& aDesiredSize) {
+void nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
+                                       const PlaceFlags& aFlags,
+                                       ReflowOutput& aDesiredSize) {
   nscoord subScriptShift = 0;
   nscoord supScriptShift = 0;
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
@@ -109,7 +112,7 @@ nsresult nsMathMLmmultiscriptsFrame::Place(DrawTarget* aDrawTarget,
 
 // exported routine that both munderover and mmultiscripts share.
 // munderover uses this when movablelimits is set.
-nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
+void nsMathMLmmultiscriptsFrame::PlaceMultiScript(
     nsPresContext* aPresContext, DrawTarget* aDrawTarget,
     const PlaceFlags& aFlags, ReflowOutput& aDesiredSize,
     nsMathMLContainerFrame* aFrame, nscoord aUserSubScriptShift,
@@ -213,13 +216,16 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
   nscoord supScriptShift;
   nsPresentationData presentationData;
   aFrame->GetPresentationData(presentationData);
+  bool compressed =
+      StaticPrefs::mathml_math_shift_enabled()
+          ? font->mMathShift == StyleMathShift::Compact
+          : presentationData.flags.contains(MathMLPresentationFlag::Compressed);
   if (mathFont) {
     // Try and get the super script shift from the MATH table. Note that
     // contrary to TeX we only have two parameters.
     supScriptShift = mathFont->MathTable()->Constant(
-        NS_MATHML_IS_COMPRESSED(presentationData.flags)
-            ? gfxMathTable::SuperscriptShiftUpCramped
-            : gfxMathTable::SuperscriptShiftUp,
+        compressed ? gfxMathTable::SuperscriptShiftUpCramped
+                   : gfxMathTable::SuperscriptShiftUp,
         oneDevPixel);
   } else {
     // supScriptShift{1,2,3}
@@ -235,10 +241,10 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
     // get sup script shift depending on current script level and display style
     // Rule 18c, App. G, TeXbook
     if (font->mMathDepth == 0 && font->mMathStyle == StyleMathStyle::Normal &&
-        !NS_MATHML_IS_COMPRESSED(presentationData.flags)) {
+        !compressed) {
       // Style D in TeXbook
       supScriptShift = supScriptShift1;
-    } else if (NS_MATHML_IS_COMPRESSED(presentationData.flags)) {
+    } else if (compressed) {
       // Style C' in TeXbook = D',T',S',SS'
       supScriptShift = supScriptShift3;
     } else {
@@ -280,6 +286,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
   bmMultiSub.ascent = bmMultiSup.ascent = -0x7FFFFFFF;
   bmMultiSub.descent = bmMultiSup.descent = -0x7FFFFFFF;
   nscoord italicCorrection = 0;
+  nscoord largeOpItalicCorrection = 0;
 
   nsBoundingMetrics boundingMetrics;
   boundingMetrics.width = 0;
@@ -332,6 +339,19 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
         // (see TeXbook Ch.11, p.64), as we estimate the italic creation
         // ourselves and it isn't the same as TeX.
         italicCorrection += onePixel;
+      }
+
+      if (tag != nsGkAtoms::msup) {
+        // If the base is a largeop, determine its italic correction.
+        // https://w3c.github.io/mathml-core/#base-with-subscript
+        if (nsIMathMLFrame* mathMLFrame = do_QueryFrame(baseFrame)) {
+          nsEmbellishData baseFrameEmbellishData;
+          mathMLFrame->GetEmbellishData(baseFrameEmbellishData);
+          if (baseFrameEmbellishData.flags.contains(
+                  MathMLEmbellishFlag::LargeOp)) {
+            largeOpItalicCorrection = mathMLFrame->ItalicCorrection();
+          }
+        }
       }
 
       // we update boundingMetrics.{ascent,descent} with that
@@ -668,6 +688,10 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
             // https://bugzilla.mozilla.org/show_bug.cgi?id=928675
             if (isPreScript) {
               x += width - subScriptSize.Width() - subScriptMargin.LeftRight();
+            } else {
+              // post subscripts are shifted by the largeOpItalicCorrection
+              // value.
+              x -= largeOpItalicCorrection;
             }
             dy = aDesiredSize.BlockStartAscent() -
                  subScriptSize.BlockStartAscent() + maxSubScriptShift;
@@ -701,6 +725,4 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
       childFrame = childFrame->GetNextSibling();
     } while (prescriptsFrame != childFrame);
   }
-
-  return NS_OK;
 }

@@ -1,0 +1,39 @@
+# verify that a fractional bounds in a reference frame is correctly snapped
+# if the should_snap field is set by caller
+---
+root:
+  items:
+    - type: clip
+      id: 35
+      complex:
+        - rect: [53.366665, 85.0, 3746.633335, 2075.0]
+          radius:
+            top-left: [8.0, 8.0]
+
+    - type: clip-chain
+      id: 20
+      clips: [35]
+
+    - type: stacking-context
+      bounds: [53.366665, 85.0, 3746.633335, 2075.0]
+      transform: identity()
+      is-2d: true
+      should-snap: true
+      items:
+        - type: stacking-context
+          bounds: [0.0, 0.0, 3746.633335, 2075.0]
+          clip-chain: 20
+          items:
+            - type: scroll-frame
+              id: 2
+              bounds: [0, 0, 3747.0, 14087.066]
+              content-size: [3747.0, 2075.0]
+              items:
+                - type: text
+                  bounds: [47.0, 55.083332, 342.3, 35.0]
+                  clip-rect: [46.0, 54.083332, 344.3, 36.999998000000005]
+                  font: Ahem.ttf
+                  size: 18
+                  color: [21, 20, 26, 1]
+                  glyphs: [55]
+                  offsets: [48.0, 82.083336]

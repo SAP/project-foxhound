@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function test_malformedURI() {
-  /** Test for Bug 514751 (Wallpaper) **/
+  /** Test for Bug 514751 (Wallpaper) */
 
   let state = {
     windows: [

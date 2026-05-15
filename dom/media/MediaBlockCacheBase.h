@@ -43,7 +43,7 @@ class MediaBlockCacheBase {
               std::remove_const<decltype(MediaCacheStream::BLOCK_SIZE)>::type>(
               INT32_MAX),
       "MediaCacheStream::BLOCK_SIZE should fit in 31 bits");
-  static const int32_t BLOCK_SIZE = MediaCacheStream::BLOCK_SIZE;
+  static constexpr int32_t BLOCK_SIZE = MediaCacheStream::BLOCK_SIZE;
 
  protected:
   virtual ~MediaBlockCacheBase() = default;
@@ -67,8 +67,7 @@ class MediaBlockCacheBase {
   // Synchronously reads data from file. May read from file or memory
   // depending on whether written blocks have been flushed to file yet.
   // Not recommended to be called from the main thread, as can cause jank.
-  virtual nsresult Read(int64_t aOffset, uint8_t* aData, int32_t aLength,
-                        int32_t* aBytes) = 0;
+  virtual nsresult Read(int64_t aOffset, uint8_t* aData, int32_t aLength) = 0;
 
   // Moves a block asynchronously. Can be called on any thread.
   // This defers file I/O to a non-main thread.

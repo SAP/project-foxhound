@@ -7,16 +7,16 @@
 #include "FileCreatorHelper.h"
 
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/File.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/FileCreatorChild.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/Promise.h"
 #include "nsContentUtils.h"
+#include "nsIFile.h"
 #include "nsPIDOMWindow.h"
 #include "nsProxyRelease.h"
-#include "nsIFile.h"
 
 // Undefine the macro of CreateFile to avoid FileCreatorHelper#CreateFile being
 // replaced by FileCreatorHelper#CreateFileW.

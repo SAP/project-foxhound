@@ -31,6 +31,7 @@ const {
 
 /**
  * Open the entire HTTP Custom Request panel
+ *
  * @returns {Function}
  */
 function openHTTPCustomRequest(isOpen) {

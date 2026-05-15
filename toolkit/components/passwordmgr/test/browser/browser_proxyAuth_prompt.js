@@ -65,6 +65,7 @@ add_setup(async function () {
 
 /**
  * Create an object for consuming an nsIAuthPromptCallback.
+ *
  * @returns result
  * @returns {nsIAuthPromptCallback} result.callback - Callback to be passed into
  * asyncPromptAuth.

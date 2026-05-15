@@ -67,6 +67,7 @@ NS_INTERFACE_MAP_BEGIN(nsContentTreeOwner)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsIWindowProvider)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END
 
 //*****************************************************************************
@@ -334,16 +335,6 @@ NS_IMETHODIMP nsContentTreeOwner::IsWindowModal(bool* _retval) {
 // nsContentTreeOwner::nsIBaseWindow
 //*****************************************************************************
 
-NS_IMETHODIMP nsContentTreeOwner::InitWindow(nsIWidget* parentWidget, int32_t x,
-                                             int32_t y, int32_t cx,
-                                             int32_t cy) {
-  // Ignore wigdet parents for now.  Don't think those are a vaild thing to
-  // call.
-  NS_ENSURE_SUCCESS(SetPositionAndSize(x, y, cx, cy, 0), NS_ERROR_FAILURE);
-
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsContentTreeOwner::Destroy() {
   NS_ENSURE_STATE(mAppWindow);
   return mAppWindow->Destroy();
@@ -422,11 +413,6 @@ nsContentTreeOwner::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
     return NS_ERROR_NOT_IMPLEMENTED;
   }
   return GetPrimaryContentSize(aCX, aCY);
-}
-
-NS_IMETHODIMP nsContentTreeOwner::Repaint(bool aForce) {
-  NS_ENSURE_STATE(mAppWindow);
-  return mAppWindow->Repaint(aForce);
 }
 
 NS_IMETHODIMP nsContentTreeOwner::GetParentWidget(nsIWidget** aParentWidget) {

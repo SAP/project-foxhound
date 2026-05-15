@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 function test() {
-  /** Test for Bug 345898 **/
+  /** Test for Bug 345898 */
 
   // all of the following calls with illegal arguments should throw NS_ERROR_ILLEGAL_VALUE
   Assert.throws(

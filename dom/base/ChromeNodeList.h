@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef DOM_BASE_CHROMENODELIST_H_
+#define DOM_BASE_CHROMENODELIST_H_
+
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "nsContentList.h"
@@ -34,3 +37,5 @@ class ChromeNodeList final : public nsSimpleContentList {
 
 }  // namespace dom
 }  // namespace mozilla
+
+#endif  // DOM_BASE_CHROMENODELIST_H_

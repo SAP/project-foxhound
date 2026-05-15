@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _ACCESSIBLE_IMAGE_H
-#define _ACCESSIBLE_IMAGE_H
+#ifndef ACCESSIBLE_IMAGE_H
+#define ACCESSIBLE_IMAGE_H
 
 #include "AccessibleImage.h"
 #include "IUnknownImpl.h"

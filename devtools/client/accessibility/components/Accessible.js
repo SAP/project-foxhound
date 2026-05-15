@@ -400,9 +400,10 @@ class Accessible extends Component {
 
 /**
  * Match accessibility object from relations targets to the grip that's being activated.
- * @param  {Object} relations  Object containing relations grouped by type and targets.
- * @param  {String} actorID    Actor ID to match to the relation target.
- * @return {Object}            Accessible front that matches the relation target.
+ *
+ * @param  {object} relations  Object containing relations grouped by type and targets.
+ * @param  {string} actorID    Actor ID to match to the relation target.
+ * @return {object}            Accessible front that matches the relation target.
  */
 const findAccessibleTarget = (relations, actorID) => {
   for (const relationType in relations) {
@@ -420,11 +421,12 @@ const findAccessibleTarget = (relations, actorID) => {
 
 /**
  * Find an item based on a given path.
- * @param  {String} path
+ *
+ * @param  {string} path
  *         Key of the item to be looked up.
  * @param  {Array}  items
  *         Accessibility properties array.
- * @return {Object?}
+ * @return {object?}
  *         Possibly found item.
  */
 const findByPath = (path, items) => {
@@ -443,15 +445,17 @@ const findByPath = (path, items) => {
 
 /**
  * Check if a given property is a DOMNode front.
- * @param  {Object?} value A property to check for being a DOMNode.
- * @return {Boolean}       A flag that indicates whether a property is a DOMNode.
+ *
+ * @param  {object?} value A property to check for being a DOMNode.
+ * @return {boolean}       A flag that indicates whether a property is a DOMNode.
  */
 const isNodeFront = value => value && value.typeName === "domnode";
 
 /**
  * Check if a given property is an Accessible front.
- * @param  {Object?} value A property to check for being an Accessible.
- * @return {Boolean}       A flag that indicates whether a property is an Accessible.
+ *
+ * @param  {object?} value A property to check for being an Accessible.
+ * @return {boolean}       A flag that indicates whether a property is an Accessible.
  */
 const isAccessibleFront = value => value && value.typeName === "accessible";
 
@@ -460,9 +464,9 @@ const isAccessibleFront = value => value && value.typeName === "accessible";
  * translate accessibleFront to a grip-like object that can be used with an Accessible
  * rep.
  *
- * @params  {accessibleFront} accessibleFront
+ * @param {AccessibleFront} accessibleFront
  *          The AccessibleFront for which we want to create a grip-like object.
- * @returns {Object} a grip-like object that can be used with Reps.
+ * @returns {object} a grip-like object that can be used with Reps.
  */
 const translateAccessibleFrontToGrip = accessibleFront => ({
   actor: accessibleFront.actorID,
@@ -482,9 +486,10 @@ const translateNodeFrontToGripWrapper = nodeFront => ({
 
 /**
  * Build props ingestible by VirtualizedTree component.
- * @param  {Object} props      Component properties to be processed.
- * @param  {String} parentPath Unique path that is used to identify a Tree Node.
- * @return {Object}            Processed properties.
+ *
+ * @param  {object} props      Component properties to be processed.
+ * @param  {string} parentPath Unique path that is used to identify a Tree Node.
+ * @return {object}            Processed properties.
  */
 const makeItemsForDetails = (props, parentPath) =>
   Object.getOwnPropertyNames(props).map(name => {

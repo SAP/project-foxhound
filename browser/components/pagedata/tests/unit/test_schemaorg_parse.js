@@ -8,7 +8,7 @@
  */
 
 const { SchemaOrgPageData } = ChromeUtils.importESModule(
-  "resource:///modules/pagedata/SchemaOrgPageData.sys.mjs"
+  "moz-src:///browser/components/pagedata/SchemaOrgPageData.sys.mjs"
 );
 
 /**

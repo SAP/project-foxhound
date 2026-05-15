@@ -4,12 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/DOMParser.h"
+#include "mozilla/dom/Document.h"
 #include "nsCOMPtr.h"
 #include "nsIDocumentEncoder.h"
 #include "nsString.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DOMParser.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

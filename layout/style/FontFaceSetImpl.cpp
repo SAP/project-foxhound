@@ -254,8 +254,6 @@ FontFaceSetLoadStatus FontFaceSetImpl::Status() {
 
 bool FontFaceSetImpl::Add(FontFaceImpl* aFontFace, ErrorResult& aRv) {
   RecursiveMutexAutoLock lock(mMutex);
-  FlushUserFontSet();
-
   if (aFontFace->IsInFontFaceSet(this)) {
     return false;
   }
@@ -288,8 +286,6 @@ bool FontFaceSetImpl::Add(FontFaceImpl* aFontFace, ErrorResult& aRv) {
 
 void FontFaceSetImpl::Clear() {
   RecursiveMutexAutoLock lock(mMutex);
-  FlushUserFontSet();
-
   if (mNonRuleFaces.IsEmpty()) {
     return;
   }
@@ -308,8 +304,6 @@ void FontFaceSetImpl::Clear() {
 
 bool FontFaceSetImpl::Delete(FontFaceImpl* aFontFace) {
   RecursiveMutexAutoLock lock(mMutex);
-  FlushUserFontSet();
-
   if (aFontFace->HasRule()) {
     return false;
   }
@@ -643,19 +637,8 @@ nsresult FontFaceSetImpl::LogMessage(gfxUserFontEntry* aUserFontEntry,
   if (rule) {
     Servo_FontFaceRule_GetSourceLocation(rule, &line, &column);
     // FIXME We need to figure out an approach to get the style sheet
-    // of this raw rule. See bug 1450903.
-#if 0
-    StyleSheet* sheet = rule->GetStyleSheet();
-    // if the style sheet is removed while the font is loading can be null
-    if (sheet) {
-      nsCString spec = sheet->GetSheetURI()->GetSpecOrDefault();
-      CopyUTF8toUTF16(spec, href);
-    } else {
-      NS_WARNING("null parent stylesheet for @font-face rule");
-      href.AssignLiteral("unknown");
-    }
-#endif
-    // Leave href empty if we don't know how to get the correct sheet.
+    // of this raw rule. See bug 1450903. Leave href empty if we don't know how
+    // to get the correct sheet.
   }
 
   nsresult rv;

@@ -39,15 +39,9 @@ AutoInitializeImageLib::AutoInitializeImageLib() {
   EXPECT_TRUE(NS_IsMainThread());
   sImageLibInitialized = true;
 
-  // Ensure AVIF is enabled to run decoder tests.
-  nsresult rv = Preferences::SetBool("image.avif.enabled", true);
-  EXPECT_TRUE(rv == NS_OK);
-  rv = Preferences::SetBool("image.avif.sequence.enabled", true);
-  EXPECT_TRUE(rv == NS_OK);
-
 #ifdef MOZ_JXL
   // Ensure JXL is enabled to run decoder tests.
-  rv = Preferences::SetBool("image.jxl.enabled", true);
+  nsresult rv = Preferences::SetBool("image.jxl.enabled", true);
   EXPECT_TRUE(rv == NS_OK);
 #endif
 
@@ -760,6 +754,14 @@ ImageTestCase GreenFirstFrameAnimatedAVIFTestCase() {
                        /* aFrameCount */ 2);
 }
 
+#ifdef MOZ_JXL
+ImageTestCase GreenFirstFrameAnimatedJXLTestCase() {
+  return ImageTestCase("first-frame-green.jxl", "image/jxl", IntSize(100, 100),
+                       TEST_CASE_IS_TRANSPARENT | TEST_CASE_IS_ANIMATED,
+                       /* aFrameCount */ 2);
+}
+#endif
+
 ImageTestCase BlendAnimatedGIFTestCase() {
   return ImageTestCase("blend.gif", "image/gif", IntSize(100, 100),
                        TEST_CASE_IS_ANIMATED, /* aFrameCount */ 2);
@@ -887,7 +889,8 @@ ImageTestCase ExtraImageSubBlocksAnimatedGIFTestCase() {
   // This is a corrupt GIF that has extra image sub blocks between the first and
   // second frame.
   return ImageTestCase("animated-with-extra-image-sub-blocks.gif", "image/gif",
-                       IntSize(100, 100));
+                       IntSize(100, 100), TEST_CASE_IS_ANIMATED,
+                       /* aFrameCount */ 2);
 }
 
 ImageTestCase DownscaledPNGTestCase() {
@@ -1070,7 +1073,7 @@ RefPtr<Image> TestCaseToDecodedImage(const ImageTestCase& aTestCase) {
   // Use GetFrame() to force a sync decode of the image.
   RefPtr<SourceSurface> surface = image->GetFrame(
       imgIContainer::FRAME_CURRENT, imgIContainer::FLAG_SYNC_DECODE);
-  Unused << surface;
+  (void)surface;
   return image;
 }
 

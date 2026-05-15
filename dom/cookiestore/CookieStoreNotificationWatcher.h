@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_CookieStoreNotificationWatcher_h
 #define mozilla_dom_CookieStoreNotificationWatcher_h
 
+#include "mozilla/MoveOnlyFunction.h"
+#include "mozilla/OriginAttributes.h"
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
-#include "mozilla/OriginAttributes.h"
-#include "mozilla/MoveOnlyFunction.h"
 
 namespace mozilla::dom {
 

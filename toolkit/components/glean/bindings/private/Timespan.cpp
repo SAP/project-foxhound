@@ -95,7 +95,7 @@ static Maybe<TimesToStartsMutex::AutoLock> GetTimesToStartsLock() {
   return Some(std::move(lock));
 }
 
-void TimespanMetric::Start() const {
+void TimespanStandalone::Start() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
@@ -107,7 +107,7 @@ void TimespanMetric::Start() const {
   fog_timespan_start(mId);
 }
 
-void TimespanMetric::Stop() const {
+void TimespanStandalone::Stop() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
@@ -128,7 +128,7 @@ void TimespanMetric::Stop() const {
   fog_timespan_stop(mId);
 }
 
-void TimespanMetric::Cancel() const {
+void TimespanStandalone::Cancel() const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();
@@ -138,7 +138,7 @@ void TimespanMetric::Cancel() const {
   fog_timespan_cancel(mId);
 }
 
-void TimespanMetric::SetRaw(uint32_t aDuration) const {
+void TimespanStandalone::SetRaw(uint32_t aDuration) const {
   auto optScalarId = ScalarIdForMetric(mId);
   if (optScalarId) {
     auto scalarId = optScalarId.extract();

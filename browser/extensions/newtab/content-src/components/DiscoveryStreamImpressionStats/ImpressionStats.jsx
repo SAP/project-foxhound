@@ -55,7 +55,6 @@ export class ImpressionStats extends React.PureComponent {
 
   _dispatchImpressionStats() {
     const { props } = this;
-    const { isFakespot } = props;
     const cards = props.rows;
 
     if (this.props.flightId) {
@@ -80,6 +79,7 @@ export class ImpressionStats extends React.PureComponent {
                 // Keep the 0-based position, can be adjusted by the telemetry
                 // sender if necessary.
                 position: card.pos,
+                attribution: card.attribution,
               },
             })
           );
@@ -88,62 +88,48 @@ export class ImpressionStats extends React.PureComponent {
     }
 
     if (this._needsImpressionStats(cards)) {
-      if (isFakespot) {
-        props.dispatch(
-          ac.DiscoveryStreamImpressionStats({
-            source: props.source.toUpperCase(),
-            window_inner_width: window.innerWidth,
-            window_inner_height: window.innerHeight,
-            tiles: cards.map(link => ({
-              id: link.id,
-              type: "fakespot",
-              category: link.category,
-            })),
-          })
-        );
-      } else {
-        props.dispatch(
-          ac.DiscoveryStreamImpressionStats({
-            source: props.source.toUpperCase(),
-            window_inner_width: window.innerWidth,
-            window_inner_height: window.innerHeight,
-            tiles: cards.map(link => ({
-              id: link.id,
-              pos: link.pos,
-              type: props.flightId ? "spoc" : "organic",
-              ...(link.shim ? { shim: link.shim } : {}),
-              recommendation_id: link.recommendation_id,
-              fetchTimestamp: link.fetchTimestamp,
-              corpus_item_id: link.corpus_item_id,
-              scheduled_corpus_item_id: link.scheduled_corpus_item_id,
-              recommended_at: link.recommended_at,
-              received_rank: link.received_rank,
-              topic: link.topic,
-              features: link.features,
-              is_list_card: link.is_list_card,
-              ...(link.format
-                ? { format: link.format }
-                : {
-                    format: getActiveCardSize(
-                      window.innerWidth,
-                      link.class_names,
-                      link.section,
-                      link.flightId
-                    ),
-                  }),
-              ...(link.section
-                ? {
-                    section: link.section,
-                    section_position: link.section_position,
-                    is_section_followed: link.is_section_followed,
-                  }
-                : {}),
-            })),
-            firstVisibleTimestamp: props.firstVisibleTimestamp,
-          })
-        );
-        this.impressionCardGuids = cards.map(link => link.id);
-      }
+      const impressionData = {
+        source: props.source.toUpperCase(),
+        window_inner_width: window.innerWidth,
+        window_inner_height: window.innerHeight,
+        tiles: cards.map(link => ({
+          id: link.id,
+          pos: link.pos,
+          type: props.flightId ? "spoc" : "organic",
+          ...(link.shim ? { shim: link.shim } : {}),
+          recommendation_id: link.recommendation_id,
+          fetchTimestamp: link.fetchTimestamp,
+          corpus_item_id: link.corpus_item_id,
+          scheduled_corpus_item_id: link.scheduled_corpus_item_id,
+          recommended_at: link.recommended_at,
+          received_rank: link.received_rank,
+          topic: link.topic,
+          features: link.features,
+          attribution: link.attribution,
+          ...(link.format
+            ? { format: link.format }
+            : {
+                format: getActiveCardSize(
+                  window.innerWidth,
+                  link.class_names,
+                  link.section,
+                  link.flightId
+                ),
+              }),
+          ...(link.section
+            ? {
+                section: link.section,
+                section_position: link.section_position,
+                is_section_followed: link.is_section_followed,
+                layout_name: link.sectionLayoutName,
+              }
+            : {}),
+        })),
+        firstVisibleTimestamp: props.firstVisibleTimestamp,
+      };
+
+      props.dispatch(ac.DiscoveryStreamImpressionStats(impressionData));
+      this.impressionCardGuids = cards.map(link => link.id);
     }
   }
 

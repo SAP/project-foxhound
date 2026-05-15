@@ -20,7 +20,7 @@ That's it! To verify correctness, open a new shell, navigate to a directory with
 This works because macOS comes with a `/usr/bin/java` stub which will defer the location of the JDK to the value in the `JAVA_HOME` environment variable.
 
 ### Method #2: install Java 17 from Homebrew
-You can install Java from [Homebrew]([url](https://brew.sh/)) using the command below.
+You can install Java from [Homebrew](https://brew.sh/) using the command below.
 
 ```bash
 brew install openjdk@17

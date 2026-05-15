@@ -95,6 +95,7 @@ class Mitmproxy(Playback):
         # when running locally it comes from obj_path via mozharness/mach
         if self.config.get("obj_path") is not None:
             self.mozproxy_dir = self.config.get("obj_path")
+            self.upload_dir = os.environ.get("MOZ_UPLOAD_DIR", self.mozproxy_dir)
         else:
             # in production it is ../tasks/task_N/build/, in production that dir
             # is not available as an envvar, however MOZ_UPLOAD_DIR is set as
@@ -103,8 +104,10 @@ class Mitmproxy(Playback):
                 os.path.dirname(os.environ["MOZ_UPLOAD_DIR"])
             )
 
+            # Set the upload dir to the internal storage
+            self.upload_dir = os.environ.get("MOZ_INTERNAL_UPLOAD_DIR")
+
         self.mozproxy_dir = os.path.join(self.mozproxy_dir, "testing", "mozproxy")
-        self.upload_dir = os.environ.get("MOZ_UPLOAD_DIR", self.mozproxy_dir)
 
         LOG.info(
             "mozproxy_dir used for mitmproxy downloads and exe files: %s"
@@ -294,96 +297,81 @@ class Mitmproxy(Playback):
         if self.record_mode:
             # generate recording script paths
 
-            command.extend(
-                [
-                    "--save-stream-file",
-                    os.path.normpath(self.recording.recording_path),
-                    "--set",
-                    "websocket=false",
-                ]
-            )
+            command.extend([
+                "--save-stream-file",
+                os.path.normpath(self.recording.recording_path),
+                "--set",
+                "websocket=false",
+            ])
             if "inject_deterministic" in self.config.keys():
-                command.extend(
-                    [
-                        "--scripts",
-                        os.path.join(mitm_folder, "scripts", "inject-deterministic.py"),
-                    ]
-                )
+                command.extend([
+                    "--scripts",
+                    os.path.join(mitm_folder, "scripts", "inject-deterministic.py"),
+                ])
             self.recording.set_metadata(
                 "proxy_version", self.config["playback_version"]
             )
-        else:
-            # playback mode
-            if len(self.playback_files) > 0:
-                if self.config["playback_version"] in ["8.1.1", "11.0.0"]:
-                    command.extend(
-                        [
-                            "--set",
-                            "websocket=false",
-                            "--set",
-                            "connection_strategy=lazy",
-                            "--set",
-                            "alt_server_replay_nopop=true",
-                            "--set",
-                            "alt_server_replay_kill_extra=true",
-                            "--set",
-                            "alt_server_replay_order_reversed=true",
-                            "--set",
-                            "tls_version_client_min=TLS1_2",
-                            "--set",
-                            "alt_server_replay={}".format(
-                                ",".join(
-                                    [
-                                        os.path.normpath(playback_file.recording_path)
-                                        for playback_file in self.playback_files
-                                    ]
-                                )
-                            ),
-                            "--scripts",
-                            os.path.normpath(
-                                os.path.join(
-                                    mitm_folder, "scripts", "alt-serverplayback.py"
-                                )
-                            ),
-                        ]
-                    )
-                elif self.config["playback_version"] in [
-                    "4.0.4",
-                    "5.1.1",
-                    "6.0.2",
-                ]:
-                    command.extend(
-                        [
-                            "--set",
-                            "upstream_cert=false",
-                            "--set",
-                            "upload_dir=" + os.path.normpath(self.upload_dir),
-                            "--set",
-                            "websocket=false",
-                            "--set",
-                            "server_replay_files={}".format(
-                                ",".join(
-                                    [
-                                        os.path.normpath(playback_file.recording_path)
-                                        for playback_file in self.playback_files
-                                    ]
-                                )
-                            ),
-                            "--scripts",
-                            os.path.normpath(
-                                os.path.join(
-                                    mitm_folder, "scripts", "alternate-server-replay.py"
-                                )
-                            ),
-                        ]
-                    )
-                else:
-                    raise Exception("Mitmproxy version is unknown!")
-
+        # playback mode
+        elif len(self.playback_files) > 0:
+            if self.config["playback_version"] in ["8.1.1", "11.0.0"]:
+                command.extend([
+                    "--set",
+                    "websocket=false",
+                    "--set",
+                    "connection_strategy=lazy",
+                    "--set",
+                    "alt_server_replay_nopop=true",
+                    "--set",
+                    "alt_server_replay_kill_extra=true",
+                    "--set",
+                    "alt_server_replay_order_reversed=true",
+                    "--set",
+                    "tls_version_client_min=TLS1_2",
+                    "--set",
+                    "alt_server_replay={}".format(
+                        ",".join([
+                            os.path.normpath(playback_file.recording_path)
+                            for playback_file in self.playback_files
+                        ])
+                    ),
+                    "--scripts",
+                    os.path.normpath(
+                        os.path.join(mitm_folder, "scripts", "alt-serverplayback.py")
+                    ),
+                ])
+            elif self.config["playback_version"] in [
+                "4.0.4",
+                "5.1.1",
+                "6.0.2",
+            ]:
+                command.extend([
+                    "--set",
+                    "upstream_cert=false",
+                    "--set",
+                    "upload_dir=" + os.path.normpath(self.upload_dir),
+                    "--set",
+                    "websocket=false",
+                    "--set",
+                    "server_replay_files={}".format(
+                        ",".join([
+                            os.path.normpath(playback_file.recording_path)
+                            for playback_file in self.playback_files
+                        ])
+                    ),
+                    "--scripts",
+                    os.path.normpath(
+                        os.path.join(
+                            mitm_folder, "scripts", "alternate-server-replay.py"
+                        )
+                    ),
+                ])
             else:
-                raise Exception(
-                    "Mitmproxy can't start playback! Playback settings missing."
-                )
+                raise Exception("Mitmproxy version is unknown!")
+
+        else:
+            raise Exception(
+                "Mitmproxy can't start playback! Playback settings missing."
+            )
 
         # mitmproxy needs some DLL's that are a part of Firefox itself, so add to path
         env = os.environ.copy()

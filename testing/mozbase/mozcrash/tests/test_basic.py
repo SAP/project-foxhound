@@ -5,7 +5,6 @@ from os import walk
 
 import mozunit
 import pytest
-from conftest import fspath
 
 
 def test_no_dump_files(check_for_crashes):
@@ -26,10 +25,10 @@ def test_dump_directory_unicode(request, check_for_crashes, tmpdir, capsys):
     tmpdir = tmpdir.ensure("🍪", dir=1)
     minidump_files = minidump_files(request, tmpdir)
 
-    assert 1 == check_for_crashes(dump_directory=fspath(tmpdir), quiet=False)
+    assert 1 == check_for_crashes(dump_directory=str(tmpdir), quiet=False)
 
     out, _ = capsys.readouterr()
-    assert fspath(minidump_files[0]["dmp"]) in out
+    assert str(minidump_files[0]["dmp"]) in out
     assert "🍪" in out
 
 
@@ -54,7 +53,7 @@ def test_minidump_files_are_cleaned_up_or_preserved_in_original_location(
     minidump_files_in_dir = next(walk(tmpdir), (None, None, []))[2]
     assert len(minidump_files_in_dir) == 2
 
-    check_for_crashes(dump_directory=fspath(tmpdir), quiet=False, keep=keep)
+    check_for_crashes(dump_directory=str(tmpdir), quiet=False, keep=keep)
 
     # Make sure that minidump files are preserved if keep=True or
     # removed otherwise.

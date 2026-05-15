@@ -1,5 +1,5 @@
 .section-empty-state {
-  border: $border-secondary;
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
   display: flex;
   height: $card-height-compact;
@@ -72,7 +72,7 @@
 
   h2 {
     font-size: inherit;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     margin: 0;
   }
 

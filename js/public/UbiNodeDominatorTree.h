@@ -7,8 +7,6 @@
 #ifndef js_UbiNodeDominatorTree_h
 #define js_UbiNodeDominatorTree_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 

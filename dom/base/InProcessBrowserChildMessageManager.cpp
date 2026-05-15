@@ -5,23 +5,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "InProcessBrowserChildMessageManager.h"
-#include "nsContentUtils.h"
-#include "nsDocShell.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsComponentManagerUtils.h"
-#include "nsFrameLoader.h"
-#include "nsFrameLoaderOwner.h"
-#include "nsQueryObject.h"
-#include "xpcpublic.h"
+
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/ChromeMessageSender.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/JSActorService.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/SameProcessMessageQueue.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WindowProxyHolder.h"
-#include "mozilla/dom/JSActorService.h"
-#include "mozilla/HoldDropJSObjects.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsDocShell.h"
+#include "nsFrameLoader.h"
+#include "nsFrameLoaderOwner.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsQueryObject.h"
+#include "xpcpublic.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -46,16 +47,15 @@ InProcessBrowserChildMessageManager::Create(nsDocShell* aShell,
 }
 
 bool InProcessBrowserChildMessageManager::DoSendBlockingMessage(
-    const nsAString& aMessage, StructuredCloneData& aData,
-    nsTArray<StructuredCloneData>* aRetVal) {
+    const nsAString& aMessage, NotNull<StructuredCloneData*> aData,
+    nsTArray<NotNull<RefPtr<StructuredCloneData>>>* aRetVal) {
   SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
   queue->Flush();
 
   if (mChromeMessageManager) {
     RefPtr<nsFrameMessageManager> mm = mChromeMessageManager;
     RefPtr<nsFrameLoader> fl = GetFrameLoader();
-    mm->ReceiveMessage(mOwner, fl, aMessage, true, &aData, aRetVal,
-                       IgnoreErrors());
+    mm->ReceiveMessage(mOwner, fl, aMessage, true, aData, aRetVal);
   }
   return true;
 }
@@ -77,7 +77,7 @@ class nsAsyncMessageToParent : public nsSameProcessAsyncMessageBase,
 };
 
 nsresult InProcessBrowserChildMessageManager::DoSendAsyncMessage(
-    const nsAString& aMessage, StructuredCloneData& aData) {
+    const nsAString& aMessage, NotNull<StructuredCloneData*> aData) {
   SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
   RefPtr<nsAsyncMessageToParent> ev = new nsAsyncMessageToParent(this);
 

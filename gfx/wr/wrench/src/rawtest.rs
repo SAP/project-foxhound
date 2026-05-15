@@ -15,9 +15,9 @@ use crate::reftest::{ReftestImage, ReftestImageComparison};
 use crate::wrench::Wrench;
 
 pub struct RawtestHarness<'a> {
-    wrench: &'a mut Wrench,
-    rx: &'a Receiver<NotifierEvent>,
-    window: &'a mut WindowWrapper,
+    pub wrench: &'a mut Wrench,
+    pub rx: &'a Receiver<NotifierEvent>,
+    pub window: &'a mut WindowWrapper,
 }
 
 
@@ -33,6 +33,7 @@ impl<'a> RawtestHarness<'a> {
     }
 
     pub fn run(mut self) {
+        self.test_snapping();
         self.test_hit_testing();
         self.test_resize_image();
         self.test_retained_blob_images_test();
@@ -50,7 +51,23 @@ impl<'a> RawtestHarness<'a> {
         self.test_clear_cache();
     }
 
-    fn render_and_get_pixels(&mut self, window_rect: FramebufferIntRect) -> Vec<u8> {
+    #[allow(dead_code)]
+    pub fn render_display_list_and_get_pixels(
+        &mut self,
+        builder: DisplayListBuilder,
+        test_size: FramebufferIntSize,
+    ) -> Vec<u8> {
+        let window_size = self.window.get_inner_size();
+        let window_rect = FramebufferIntRect::from_origin_and_size(
+            point2(0, window_size.height - test_size.height),
+            test_size,
+        );
+        let txn = Transaction::new();
+        self.submit_dl(&mut Epoch(0), builder, txn);
+        self.render_and_get_pixels(window_rect)
+    }
+
+    pub fn render_and_get_pixels(&mut self, window_rect: FramebufferIntRect) -> Vec<u8> {
         self.rx.recv().unwrap();
         self.wrench.render();
         self.wrench.renderer.read_pixels_rgba8(window_rect)
@@ -83,7 +100,7 @@ impl<'a> RawtestHarness<'a> {
         }
     }
 
-    fn submit_dl(
+    pub fn submit_dl(
         &mut self,
         epoch: &mut Epoch,
         mut builder: DisplayListBuilder,
@@ -101,7 +118,7 @@ impl<'a> RawtestHarness<'a> {
         self.wrench.api.send_transaction(self.wrench.document_id, txn);
     }
 
-    fn make_common_properties(&self, clip_rect: LayoutRect) -> CommonItemProperties {
+    pub fn make_common_properties(&self, clip_rect: LayoutRect) -> CommonItemProperties {
         let space_and_clip = SpaceAndClipInfo::root_scroll(self.wrench.root_pipeline_id);
         CommonItemProperties {
             clip_rect,
@@ -111,7 +128,7 @@ impl<'a> RawtestHarness<'a> {
         }
     }
 
-    fn make_common_properties_with_clip_and_spatial(
+    pub fn make_common_properties_with_clip_and_spatial(
         &self,
         clip_rect: LayoutRect,
         clip_chain_id: ClipChainId,

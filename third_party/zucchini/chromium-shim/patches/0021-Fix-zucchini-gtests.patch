@@ -1,0 +1,109 @@
+Fix zucchini gtests
+
+We adjust the path to the test data, fix a DEX-dependent test to remove
+the dependency on DEX support, and provide a workaround for an undefined
+behavior potentially leading to false-positive test failures (see
+https://issues.chromium.org/issues/429588215).
+---
+ components/zucchini/integration_test.cc          |  9 +++++++++
+ components/zucchini/patch_read_write_unittest.cc | 11 +++++++++++
+ components/zucchini/patch_utils_unittest.cc      | 14 ++++++++++++++
+ 3 files changed, 34 insertions(+)
+
+diff --git a/components/zucchini/integration_test.cc b/components/zucchini/integration_test.cc
+index b47cb73215c9..d87b197ea00e 100644
+--- a/components/zucchini/integration_test.cc
++++ b/components/zucchini/integration_test.cc
+@@ -23,10 +23,19 @@ namespace zucchini {
+ base::FilePath MakeTestPath(const std::string& filename) {
+   base::FilePath path;
+   DCHECK(base::PathService::Get(base::DIR_SOURCE_ROOT, &path));
++#if !defined(MOZ_ZUCCHINI)
+   return path.AppendASCII("components")
+       .AppendASCII("zucchini")
+       .AppendASCII("testdata")
+       .AppendASCII(filename);
++#else
++  return path.AppendASCII("third_party")
++      .AppendASCII("zucchini")
++      .AppendASCII("tests")
++      .AppendASCII("gtest")
++      .AppendASCII("testdata")
++      .AppendASCII(filename);
++#endif  // !defined(MOZ_ZUCCHINI)
+ }
+ 
+ void TestGenApply(const std::string& old_filename,
+diff --git a/components/zucchini/patch_read_write_unittest.cc b/components/zucchini/patch_read_write_unittest.cc
+index 745616295f04..869138ce2df0 100644
+--- a/components/zucchini/patch_read_write_unittest.cc
++++ b/components/zucchini/patch_read_write_unittest.cc
+@@ -101,7 +101,12 @@ ByteVector CreateElementMatch() {
+       0x02, 0,    0,   0,    // old_length
+       0x03, 0,    0,   0,    // new_offset
+       0x04, 0,    0,   0,    // new_length
++#if !defined(MOZ_ZUCCHINI)
+       'D',  'E',  'X', ' ',  // exe_type = kExeTypeDex
++#else
++      // We need a supported exe_type value (we don't support DEX).
++      'N', 'o', 'O', 'p', // exe_type = kExeTypeNoOp
++#endif  // !defined(MOZ_ZUCCHINI)
+       0x01, 0x00,            // element version
+   };
+ }
+@@ -127,9 +132,15 @@ TEST(PatchTest, ParseSerializeElementMatch) {
+   BufferSource buffer_source(data.data(), data.size());
+   ElementMatch element_match = {};
+   EXPECT_TRUE(patch::ParseElementMatch(&buffer_source, &element_match));
++#if !defined(MOZ_ZUCCHINI)
+   EXPECT_EQ(kExeTypeDex, element_match.exe_type());
+   EXPECT_EQ(kExeTypeDex, element_match.old_element.exe_type);
+   EXPECT_EQ(kExeTypeDex, element_match.new_element.exe_type);
++#else
++  EXPECT_EQ(kExeTypeNoOp, element_match.exe_type());
++  EXPECT_EQ(kExeTypeNoOp, element_match.old_element.exe_type);
++  EXPECT_EQ(kExeTypeNoOp, element_match.new_element.exe_type);
++#endif  // !defined(MOZ_ZUCCHINI)
+   EXPECT_EQ(0x1U, element_match.old_element.offset);
+   EXPECT_EQ(0x2U, element_match.old_element.size);
+   EXPECT_EQ(0x3U, element_match.new_element.offset);
+diff --git a/components/zucchini/patch_utils_unittest.cc b/components/zucchini/patch_utils_unittest.cc
+index 15b1c93367b0..757d4eb9ed52 100644
+--- a/components/zucchini/patch_utils_unittest.cc
++++ b/components/zucchini/patch_utils_unittest.cc
+@@ -51,6 +51,11 @@ void TestEncodeDecodeVarUInt(const std::vector<T>& data) {
+ 
+ template <class T>
+ void TestEncodeDecodeVarInt(const std::vector<T>& data) {
++#if defined(MOZ_ZUCCHINI)
++  // Workaround for https://issues.chromium.org/issues/429588215:
++  // signed integer overflow is undefined behavior, so we cast to unsigned.
++  using unsigned_value_type = typename std::make_unsigned<T>::type;
++#endif  // defined(MOZ_ZUCCHINI)
+   std::vector<uint8_t> buffer;
+ 
+   std::vector<T> values;
+@@ -59,11 +64,20 @@ void TestEncodeDecodeVarInt(const std::vector<T>& data) {
+     // test cases may result in overflow when computing |value|, but we don't
+     // care about that.
+     for (int delta = -4; delta <= 4; ++delta) {
++#if !defined(MOZ_ZUCCHINI)
+       T value = delta + basis;
++#else
++      T value = unsigned_value_type(delta) + unsigned_value_type(basis);
++#endif  // !defined(MOZ_ZUCCHINI)
+       EncodeVarInt(value, std::back_inserter(buffer));
+       values.push_back(value);
+ 
++#if !defined(MOZ_ZUCCHINI)
+       value = delta - basis;
++#else
++      value = unsigned_value_type(delta) + unsigned_value_type(-basis);
++#endif  // !defined(MOZ_ZUCCHINI)
++
+       EncodeVarInt(value, std::back_inserter(buffer));
+       values.push_back(value);
+     }
+-- 
+2.42.0.windows.2
+

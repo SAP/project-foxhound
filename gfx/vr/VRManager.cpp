@@ -19,7 +19,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Unused.h"
 #include "nsIObserverService.h"
 
 #include "gfxVR.h"
@@ -320,7 +319,7 @@ void VRManager::StartTasks() {
     mTaskTimer->InitWithNamedFuncCallback(
         TaskTimerCallback, this, mTaskInterval,
         nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
-        "VRManager::TaskTimerCallback");
+        "VRManager::TaskTimerCallback"_ns);
   }
 }
 
@@ -493,7 +492,7 @@ void VRManager::CheckForPuppetCompletion() {
   // Notify content process about completion of puppet test resets
   if (mState != VRManagerState::Active) {
     for (const auto& key : mManagerParentsWaitingForPuppetReset) {
-      Unused << key->SendNotifyPuppetResetComplete();
+      (void)key->SendNotifyPuppetResetComplete();
     }
     mManagerParentsWaitingForPuppetReset.Clear();
   }
@@ -506,8 +505,8 @@ void VRManager::CheckForPuppetCompletion() {
 void VRManager::NotifyPuppetComplete() {
   // Notify content process about completion of puppet test scripts
   if (mManagerParentRunningPuppet) {
-    Unused << mManagerParentRunningPuppet
-                  ->SendNotifyPuppetCommandBufferCompleted(true);
+    (void)mManagerParentRunningPuppet->SendNotifyPuppetCommandBufferCompleted(
+        true);
     mManagerParentRunningPuppet = nullptr;
   }
 }
@@ -518,7 +517,7 @@ void VRManager::StartFrame() {
   if (mState != VRManagerState::Active) {
     return;
   }
-  AUTO_PROFILER_TRACING_MARKER("VR", "GetSensorState", OTHER);
+  AUTO_PROFILER_MARKER("GetSensorState", OTHER);
 
   /**
    * Do not start more VR frames until the last submitted frame is already
@@ -836,7 +835,7 @@ void VRManager::ProcessManagerState_Active() {
 
 void VRManager::DispatchVRDisplayInfoUpdate() {
   for (VRManagerParent* vmp : mVRManagerParents) {
-    Unused << vmp->SendUpdateDisplayInfo(mDisplayInfo);
+    (void)vmp->SendUpdateDisplayInfo(mDisplayInfo);
   }
   mLastUpdateDisplayInfo = mDisplayInfo;
 }
@@ -852,7 +851,7 @@ void VRManager::DispatchRuntimeCapabilitiesUpdate() {
   }
 
   for (VRManagerParent* vmp : mVRManagerParents) {
-    Unused << vmp->SendUpdateRuntimeCapabilities(flags);
+    (void)vmp->SendUpdateRuntimeCapabilities(flags);
   }
 }
 
@@ -1023,8 +1022,8 @@ void VRManager::ResetPuppet(VRManagerParent* aManagerParent) {
 
   mManagerParentsWaitingForPuppetReset.Insert(aManagerParent);
   if (mManagerParentRunningPuppet != nullptr) {
-    Unused << mManagerParentRunningPuppet
-                  ->SendNotifyPuppetCommandBufferCompleted(false);
+    (void)mManagerParentRunningPuppet->SendNotifyPuppetCommandBufferCompleted(
+        false);
     mManagerParentRunningPuppet = nullptr;
   }
   mServiceHost->PuppetReset();
@@ -1439,7 +1438,7 @@ void VRManager::SubmitFrameInternal(const layers::SurfaceDescriptor& aTexture,
 #if !defined(MOZ_WIDGET_ANDROID)
   MOZ_ASSERT(mSubmitThread->GetThread() == NS_GetCurrentThread());
 #endif  // !defined(MOZ_WIDGET_ANDROID)
-  AUTO_PROFILER_TRACING_MARKER("VR", "SubmitFrameAtVRDisplayExternal", OTHER);
+  AUTO_PROFILER_MARKER("SubmitFrameAtVRDisplayExternal", OTHER);
 
   {  // scope lock
     MonitorAutoLock lock(mCurrentSubmitTaskMonitor);

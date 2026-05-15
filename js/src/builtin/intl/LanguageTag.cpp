@@ -22,7 +22,7 @@
 bool js::intl::ParseLocale(JSContext* cx, Handle<JSLinearString*> str,
                            mozilla::intl::Locale& result) {
   if (StringIsAscii(str)) {
-    intl::StringAsciiChars chars(str);
+    StringAsciiChars chars(str);
     if (!chars.init(cx)) {
       return false;
     }
@@ -191,7 +191,7 @@ static bool IsAsciiAlpha(const JSLinearString* str) {
   return IsAsciiAlpha<char16_t>(str->twoByteRange(nogc));
 }
 
-JS::Result<JSString*> js::intl::ParseStandaloneISO639LanguageTag(
+JS::Result<JSLinearString*> js::intl::ParseStandaloneISO639LanguageTag(
     JSContext* cx, Handle<JSLinearString*> str) {
   // ISO-639 language codes contain either two or three characters.
   size_t length = str->length();
@@ -229,7 +229,7 @@ JS::Result<JSString*> js::intl::ParseStandaloneISO639LanguageTag(
   }
 
   // Take care to replace deprecated subtags with their preferred values.
-  JSString* result;
+  JSLinearString* result;
   if (mozilla::intl::Locale::LanguageMapping(languageTag) || !isLowerCase) {
     result = NewStringCopy<CanGC>(cx, languageTag.Span());
   } else {
@@ -242,23 +242,11 @@ JS::Result<JSString*> js::intl::ParseStandaloneISO639LanguageTag(
 }
 
 JS::UniqueChars js::intl::FormatLocale(
-    JSContext* cx, JS::Handle<JSObject*> internals,
+    JSContext* cx, JS::Handle<JSLinearString*> locale,
     JS::HandleVector<UnicodeExtensionKeyword> keywords) {
-  RootedValue value(cx);
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
-    return nullptr;
-  }
-
   mozilla::intl::Locale tag;
-  {
-    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
-    if (!locale) {
-      return nullptr;
-    }
-
-    if (!ParseLocale(cx, locale, tag)) {
-      return nullptr;
-    }
+  if (!ParseLocale(cx, locale, tag)) {
+    return nullptr;
   }
 
   // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of

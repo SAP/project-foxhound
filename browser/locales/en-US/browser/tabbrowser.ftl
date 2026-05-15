@@ -260,12 +260,23 @@ tab-group-editor-color-selector2-red = Red
 tab-group-description = { $tabGroupName } — Tab Group
 tab-group-label-tooltip-collapsed = { $tabGroupName } — Collapsed
 tab-group-label-tooltip-expanded = { $tabGroupName } — Expanded
+tab-group-preview-name =
+  .aria-label = Tabs in a collapsed group
+
+## When collapsed, the tab group label's aria-description will indicate
+## whether the hover menu is open or closed.
+
+tab-group-preview-open-description = Tabs list open
+tab-group-preview-closed-description = Tabs list closed
+
+##
 
 tab-context-unnamed-group =
     .label = Unnamed group
 
 ## Variables:
 ##  $tabCount (Number): the number of tabs that are affected by the action.
+##  $splitViewCount (Number): the number of split views that are affected by the action.
 
 # When a tab group containing the active tab is collapsed, the active tab
 # remains visible. An indicator appears at the end of the group showing the
@@ -291,8 +302,25 @@ tab-context-move-tab-to-group =
            *[other] Add Tabs to Group
         }
     .accesskey = G
+tab-context-move-split-view-to-new-group =
+    .label =
+        { $splitViewCount ->
+            [1] Add Split View to New Group
+           *[other] Add Split Views to New Group
+        }
+    .accesskey = G
+tab-context-move-split-view-to-group =
+    .label =
+        { $splitViewCount ->
+            [1] Add Split View to Group
+           *[other] Add Split Views to Group
+        }
+    .accesskey = G
 
 ##
+
+tab-splitview-splitter =
+    .aria-label = Resize split view tabs
 
 tab-context-move-tab-to-group-saved-groups =
     .label = Closed Groups
@@ -355,3 +383,85 @@ tab-group-context-open-saved-group-in-this-window =
 # open the tab group in that window.
 tab-group-context-open-saved-group-in-new-window =
     .label = Open Group in New Window
+
+## Tab Notes
+
+tab-context-add-note =
+    .label = Add Note
+    .accesskey = A
+tab-context-update-note =
+    .label = Update Note
+    .accesskey = U
+tab-context-edit-note =
+    .label = Edit Note
+    .accesskey = E
+tab-context-delete-note =
+    .label = Delete Note
+    .accesskey = D
+tab-note-editor-title-create = Add note
+tab-note-editor-title-edit = Edit note
+tab-note-editor-text-field =
+    .placeholder = What do you want to remember about this tab?
+tab-note-editor-button-cancel =
+    .label = Cancel
+    .accesskey = C
+tab-note-editor-button-save =
+    .label = Save
+    .accesskey = S
+# Link to show the full tab note in case it was truncated.
+tab-note-preview-expand = Read more
+tab-note-panel-add-note-new-badge =
+    .label = New
+
+# Displayed within the tab note edit dialog box when the user has entered more
+# characters than are allowed.
+# Variables:
+#   $totalCharacters (Number): the number of characters the user has entered.
+#   $maxAllowedCharacters (Number): the maximum number of characters allowed for a tab note.
+tab-note-editor-character-limit =
+    { $maxAllowedCharacters ->
+         *[other] { NUMBER($totalCharacters, useGrouping: "false") }/{ NUMBER($maxAllowedCharacters, useGrouping: "false") } characters
+    }
+
+## Split View
+
+# Split view tabs display their respective contents side by side
+# Displayed within the tooltip on the left tab inside of a tab split view
+# "left" corresponds to the visual position. Translate literally; do not swap for RTL languages.
+# Variables:
+#   $label (String): the text label of the tab visible in the tab strip
+tabbrowser-tab-label-tab-split-view-left = { $label }, Split view left
+
+# Split view tabs display their respective contents side by side
+# Displayed within the tooltip on the right tab inside of a tab split view
+# "right" corresponds to the visual position. Translate literally; do not swap for RTL languages.
+# Variables:
+#   $label (String): the text label of the tab visible in the tab strip
+tabbrowser-tab-label-tab-split-view-right = { $label }, Split view right
+
+# Open a new tab next to the current tab and display their contents side by side
+tab-context-add-split-view =
+    .label = Add Split View
+    .accesskey = t
+# Display the two selected tabs' contents side by side
+tab-context-open-in-split-view =
+    .label = Open in Split View
+    .accesskey = t
+# Separate the two split view tabs and display the tabs and their contents as normal
+tab-context-separate-split-view =
+    .label = Separate Split View
+    .accesskey = t
+tab-context-badge-new = New
+
+## Manage Split View (icon in the address bar & three-dot menu in the footer)
+
+# "Separate" is a verb, as in "separate the split view tabs and display them normally".
+split-view-menuitem-separate-tabs =
+    .label = Separate Tabs
+# "Reverse" is a verb, as in "reverse the order of split view tabs".
+split-view-menuitem-reverse-tabs =
+    .label = Reverse Tabs
+split-view-menuitem-close-both-tabs =
+    .label = Close Both Tabs
+
+##

@@ -47,9 +47,13 @@ class DocumentL10n final : public DOMLocalization {
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocumentL10n, DOMLocalization)
 
   static RefPtr<DocumentL10n> Create(Document* aDocument, bool aSync);
+  static RefPtr<DocumentL10n> Create(Document* aDocument, bool aSync,
+                                     const nsTArray<nsCString>& aLocales);
 
  protected:
   explicit DocumentL10n(Document* aDocument, bool aSync);
+  explicit DocumentL10n(Document* aDocument, bool aSync,
+                        const nsTArray<nsCString>& aLocales);
   virtual ~DocumentL10n() = default;
 
   RefPtr<Document> mDocument;

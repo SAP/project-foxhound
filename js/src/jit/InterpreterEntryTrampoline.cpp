@@ -192,6 +192,9 @@ void JitRuntime::generateInterpreterEntryTrampoline(MacroAssembler& masm) {
   masm.loadPtr(cxAddr, arg0);
   masm.loadPtr(stateAddr, arg1);
 #else
+#  ifdef JS_USE_LINK_REGISTER
+  masm.pushReturnAddress();
+#  endif
   masm.push(FramePointer);
   masm.moveStackPtrTo(FramePointer);
 

@@ -286,6 +286,7 @@ projects:
     upstream_dependencies:
     - components:browser-errorpages
     - components:browser-state
+    - components:compose-base
     - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
@@ -298,6 +299,7 @@ projects:
     - components:support-test
     - components:support-utils
     - components:tooling-lint
+    - components:ui-colors
     - components:ui-icons
   components:compose-base:
     description: A component containing base Composable components based on Acorn
@@ -324,6 +326,7 @@ projects:
     - components:browser-menu2
     - components:browser-state
     - components:compose-base
+    - components:compose-cfr
     - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
@@ -416,6 +419,12 @@ projects:
     - components:ui-icons
     - components:ui-tabcounter
     - components:ui-widgets
+  components:concept-accelerometer:
+    description: An abstract definition of an accelerometer.
+    path: components/concept/accelerometer
+    publish: true
+    upstream_dependencies:
+    - components:tooling-lint
   components:concept-awesomebar:
     description: An abstract definition of an awesomebar component.
     path: components/concept/awesomebar
@@ -459,6 +468,18 @@ projects:
     - components:concept-base
     - components:support-base
     - components:support-test
+    - components:tooling-lint
+  components:concept-integrity:
+    description: A concept for verifying the integrity of an installation
+    path: components/concept/integrity
+    publish: true
+    upstream_dependencies:
+    - components:tooling-lint
+  components:concept-llm:
+    description: An abstract definition of an LLM request.
+    path: components/concept/llm
+    publish: true
+    upstream_dependencies:
     - components:tooling-lint
   components:concept-menu:
     description: An abstract definition of a browser menu component.
@@ -711,9 +732,11 @@ projects:
     - components:lib-publicsuffixlist
     - components:lib-state
     - components:service-location
+    - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-locale
     - components:support-remotesettings
     - components:support-test
     - components:support-utils
@@ -776,9 +799,11 @@ projects:
     - components:lib-publicsuffixlist
     - components:lib-state
     - components:service-location
+    - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-locale
     - components:support-remotesettings
     - components:support-test
     - components:support-test-libstate
@@ -820,9 +845,11 @@ projects:
     - components:lib-state
     - components:service-digitalassetlinks
     - components:service-location
+    - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-locale
     - components:support-remotesettings
     - components:support-test
     - components:support-test-libstate
@@ -897,6 +924,7 @@ projects:
     - components:lib-publicsuffixlist
     - components:lib-state
     - components:service-nimbus
+    - components:support-appservices
     - components:support-base
     - components:support-ktx
     - components:support-locale
@@ -934,9 +962,11 @@ projects:
     - components:lib-publicsuffixlist
     - components:lib-state
     - components:service-location
+    - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-locale
     - components:support-remotesettings
     - components:support-test
     - components:support-test-libstate
@@ -961,6 +991,7 @@ projects:
     - components:browser-thumbnails
     - components:browser-toolbar
     - components:compose-base
+    - components:compose-cfr
     - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
@@ -1043,6 +1074,7 @@ projects:
     - components:browser-thumbnails
     - components:browser-toolbar
     - components:compose-base
+    - components:compose-cfr
     - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
@@ -1068,6 +1100,12 @@ projects:
     - components:ui-icons
     - components:ui-tabcounter
     - components:ui-widgets
+  components:feature-protection-dashboard:
+    description: Feature that will store global tracking protection information.
+    path: components/feature/protection-dashboard
+    publish: true
+    upstream_dependencies:
+    - components:tooling-lint
   components:feature-push:
     description: Feature that implements push notifications with a supported push
       service.
@@ -1112,9 +1150,11 @@ projects:
     - components:lib-state
     - components:service-digitalassetlinks
     - components:service-location
+    - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-locale
     - components:support-remotesettings
     - components:support-test
     - components:support-test-libstate
@@ -1138,6 +1178,7 @@ projects:
     - components:support-test
     - components:support-utils
     - components:tooling-lint
+    - components:ui-icons
   components:feature-readerview:
     description: Feature implementation providing a Reader View WebExtension.
     path: components/feature/readerview
@@ -1157,6 +1198,7 @@ projects:
     - components:support-base
     - components:support-ktx
     - components:support-test
+    - components:support-test-libstate
     - components:support-utils
     - components:support-webextensions
     - components:tooling-lint
@@ -1227,9 +1269,11 @@ projects:
     - components:lib-publicsuffixlist
     - components:lib-state
     - components:service-location
+    - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-locale
     - components:support-remotesettings
     - components:support-test
     - components:support-test-fakes
@@ -1351,6 +1395,7 @@ projects:
     - components:support-images
     - components:support-ktx
     - components:support-test
+    - components:support-test-libstate
     - components:support-utils
     - components:tooling-lint
     - components:ui-autocomplete
@@ -1358,6 +1403,26 @@ projects:
     - components:ui-icons
     - components:ui-tabcounter
     - components:ui-widgets
+  components:feature-summarize:
+    description: A feature that handles displaying summarized browser content
+    path: components/feature/summarize
+    publish: true
+    upstream_dependencies:
+    - components:browser-errorpages
+    - components:compose-base
+    - components:concept-base
+    - components:concept-engine
+    - components:concept-fetch
+    - components:concept-storage
+    - components:lib-publicsuffixlist
+    - components:lib-state
+    - components:support-base
+    - components:support-ktx
+    - components:support-test-fakes
+    - components:support-utils
+    - components:tooling-lint
+    - components:ui-colors
+    - components:ui-icons
   components:feature-syncedtabs:
     description: Feature that provides access to other devices' tabs in the same account.
     path: components/feature/syncedtabs
@@ -1486,6 +1551,7 @@ projects:
     - components:support-base
     - components:support-ktx
     - components:support-test
+    - components:support-test-libstate
     - components:support-utils
     - components:tooling-lint
     - components:ui-icons
@@ -1599,9 +1665,11 @@ projects:
     - components:lib-publicsuffixlist
     - components:lib-state
     - components:service-location
+    - components:support-appservices
     - components:support-base
     - components:support-images
     - components:support-ktx
+    - components:support-locale
     - components:support-remotesettings
     - components:support-test
     - components:support-utils
@@ -1611,6 +1679,18 @@ projects:
     - components:ui-icons
     - components:ui-tabcounter
     - components:ui-widgets
+  components:lib-accelerometer-sensormanager:
+    description: An implementation of the accelerometer concept that uses the Android
+      SensorManager
+    path: components/lib/accelerometer-sensormanager
+    publish: true
+    upstream_dependencies:
+    - components:concept-accelerometer
+    - components:concept-base
+    - components:concept-fetch
+    - components:support-base
+    - components:support-test
+    - components:tooling-lint
   components:lib-auth:
     description: A component for various kinds of authentication mechanisms.
     path: components/lib/auth
@@ -1627,14 +1707,25 @@ projects:
     path: components/lib/crash
     publish: true
     upstream_dependencies:
+    - components:browser-engine-gecko
+    - components:browser-errorpages
+    - components:browser-state
+    - components:concept-awesomebar
     - components:concept-base
+    - components:concept-engine
     - components:concept-fetch
+    - components:concept-storage
     - components:lib-publicsuffixlist
+    - components:lib-state
+    - components:service-nimbus
+    - components:support-android-test
     - components:support-base
     - components:support-ktx
+    - components:support-locale
     - components:support-test
     - components:support-utils
     - components:tooling-lint
+    - components:ui-icons
   components:lib-crash-sentry:
     description: A crash reporter for Sentry.io that that uses lib-crash.
     path: components/lib/crash-sentry
@@ -1678,12 +1769,47 @@ projects:
     - components:support-test
     - components:tooling-fetch-tests
     - components:tooling-lint
+  components:lib-integrity-googleplay:
+    description: A library for verifying the integrity of an installation using Google
+      Play
+    path: components/lib/integrity-googleplay
+    publish: true
+    upstream_dependencies:
+    - components:concept-base
+    - components:concept-fetch
+    - components:concept-integrity
+    - components:support-base
+    - components:support-test
+    - components:tooling-lint
   components:lib-jexl:
     description: 'Javascript Expression Language: Powerful context-based expression
       parser and evaluator.'
     path: components/lib/jexl
     publish: true
     upstream_dependencies:
+    - components:tooling-lint
+  components:lib-llm-gemininano:
+    description: A Gemini Nano implementation of the LLM concept.
+    path: components/lib/llm-gemininano
+    publish: true
+    upstream_dependencies:
+    - components:concept-base
+    - components:concept-fetch
+    - components:concept-llm
+    - components:support-base
+    - components:support-test
+    - components:tooling-lint
+  components:lib-llm-mlpa:
+    description: An implmentation of  that is backed by MLPA
+    path: components/lib/llm-mlpa
+    publish: true
+    upstream_dependencies:
+    - components:concept-base
+    - components:concept-fetch
+    - components:concept-integrity
+    - components:concept-llm
+    - components:support-base
+    - components:support-test
     - components:tooling-lint
   components:lib-publicsuffixlist:
     description: A library for reading and using the public suffix list.
@@ -1703,6 +1829,17 @@ projects:
     - components:concept-base
     - components:concept-fetch
     - components:concept-push
+    - components:support-base
+    - components:support-test
+    - components:tooling-lint
+  components:lib-shake:
+    description: A library to detect shake gestures from accelerometer data
+    path: components/lib/shake
+    publish: true
+    upstream_dependencies:
+    - components:concept-accelerometer
+    - components:concept-base
+    - components:concept-fetch
     - components:support-base
     - components:support-test
     - components:tooling-lint
@@ -1739,6 +1876,7 @@ projects:
     - components:browser-toolbar
     - components:compose-awesomebar
     - components:compose-base
+    - components:compose-cfr
     - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
@@ -1816,6 +1954,7 @@ projects:
     - components:compose-awesomebar
     - components:compose-base
     - components:compose-browser-toolbar
+    - components:compose-cfr
     - components:compose-engine
     - components:compose-tabstray
     - components:concept-awesomebar
@@ -1899,6 +2038,30 @@ projects:
     - components:support-ktx
     - components:support-utils
     - components:tooling-lint
+    - components:ui-icons
+  components:samples-firefox-relay:
+    description: A simple app demoing Firefox Relay integration.
+    path: samples/firefox-relay
+    publish: false
+    upstream_dependencies:
+    - components:compose-base
+    - components:concept-base
+    - components:concept-fetch
+    - components:concept-storage
+    - components:concept-sync
+    - components:lib-dataprotect
+    - components:lib-fetch-httpurlconnection
+    - components:lib-publicsuffixlist
+    - components:lib-state
+    - components:service-firefox-accounts
+    - components:service-firefox-relay
+    - components:support-appservices
+    - components:support-base
+    - components:support-ktx
+    - components:support-utils
+    - components:tooling-lint
+    - components:ui-colors
+    - components:ui-icons
   components:samples-glean:
     description: An app demoing how to use the Glean library to collect and send telemetry
       data.
@@ -1989,6 +2152,7 @@ projects:
     - components:browser-toolbar
     - components:compose-base
     - components:compose-browser-toolbar
+    - components:compose-cfr
     - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
@@ -2040,6 +2204,27 @@ projects:
     - components:support-test-libstate
     - components:support-utils
     - components:tooling-lint
+  components:service-firefox-relay:
+    description: A library to communicate with the Relay services API
+    path: components/service/firefox-relay
+    publish: false
+    upstream_dependencies:
+    - components:compose-base
+    - components:concept-base
+    - components:concept-fetch
+    - components:concept-storage
+    - components:concept-sync
+    - components:lib-dataprotect
+    - components:lib-publicsuffixlist
+    - components:lib-state
+    - components:service-firefox-accounts
+    - components:support-base
+    - components:support-ktx
+    - components:support-test
+    - components:support-utils
+    - components:tooling-lint
+    - components:ui-colors
+    - components:ui-icons
   components:service-glean:
     description: A client-side telemetry SDK for collecting metrics and sending them
       to the Mozilla telemetry service
@@ -2153,6 +2338,7 @@ projects:
     - components:lib-publicsuffixlist
     - components:support-base
     - components:support-ktx
+    - components:support-test
     - components:support-utils
     - components:tooling-lint
   components:support-android-test:
@@ -2246,6 +2432,7 @@ projects:
     - components:concept-base
     - components:concept-fetch
     - components:lib-publicsuffixlist
+    - components:support-appservices
     - components:support-base
     - components:support-ktx
     - components:support-test
@@ -2378,6 +2565,21 @@ projects:
     publish: true
     upstream_dependencies:
     - components:tooling-lint
+  components:ui-richtext:
+    description: A UI model for display rich text component
+    path: components/ui/richtext
+    publish: true
+    upstream_dependencies:
+    - components:compose-base
+    - components:concept-base
+    - components:concept-fetch
+    - components:lib-publicsuffixlist
+    - components:support-base
+    - components:support-ktx
+    - components:support-utils
+    - components:tooling-lint
+    - components:ui-colors
+    - components:ui-icons
   components:ui-tabcounter:
     description: A tab counter for browsers.
     path: components/ui/tabcounter

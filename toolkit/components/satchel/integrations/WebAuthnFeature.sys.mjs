@@ -15,7 +15,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "webauthnService",
   "@mozilla.org/webauthn/service;1",
-  "nsIWebAuthnService"
+  Ci.nsIWebAuthnService
 );
 
 ChromeUtils.defineLazyGetter(

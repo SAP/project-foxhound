@@ -8,7 +8,8 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
 
 const RESTRICT_TOKENS = [
@@ -85,7 +86,7 @@ async function assertRestrictKeywordResult(window, restrictToken) {
   EventUtils.synthesizeMouseAtCenter(restrictResult, {});
   await searchPromise;
 
-  let searchMode = UrlbarUtils.searchModeForToken(
+  let searchMode = window.gURLBar.searchModeForToken(
     restrictResult.result.payload.keyword
   );
   await UrlbarTestUtils.assertSearchMode(window, {

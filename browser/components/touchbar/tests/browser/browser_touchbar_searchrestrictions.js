@@ -3,8 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
@@ -19,7 +20,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
-  "nsITouchBarHelper"
+  Ci.nsITouchBarHelper
 );
 
 /**
@@ -42,7 +43,7 @@ async function searchAndCheckState({ input, token }) {
   if (Object.values(UrlbarTokenizer.RESTRICT).includes(input[0])) {
     input = input.slice(1).trimStart();
   }
-  let searchMode = UrlbarUtils.searchModeForToken(token);
+  let searchMode = gURLBar.searchModeForToken(token);
   let expectedValue = searchMode ? input : `${token} ${input}`;
   TouchBarHelper.insertRestrictionInUrlbar(token);
 

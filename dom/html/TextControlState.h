@@ -225,6 +225,9 @@ class TextControlState final : public SupportsWeakPtr {
   nsFrameSelection* GetIndependentFrameSelection() const;
   nsresult BindToFrame(nsTextControlFrame* aFrame);
   MOZ_CAN_RUN_SCRIPT void UnbindFromFrame(nsTextControlFrame* aFrame);
+  [[nodiscard]] nsTextControlFrame* GetBoundFrame() const {
+    return mBoundFrame;
+  }
   MOZ_CAN_RUN_SCRIPT nsresult PrepareEditor(const nsAString* aValue = nullptr);
   void InitializeKeyboardEventListeners();
 
@@ -292,7 +295,7 @@ class TextControlState final : public SupportsWeakPtr {
    * GetValue() returns current value either with or without TextEditor.
    * The result never includes \r.
    */
-  void GetValue(nsAString& aValue, bool aIgnoreWrap, bool aForDisplay) const;
+  void GetValue(nsAString& aValue, bool aForDisplay) const;
 
   /**
    * ValueEquals() is designed for internal use so that aValue shouldn't

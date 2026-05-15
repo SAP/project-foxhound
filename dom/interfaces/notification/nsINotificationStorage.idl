@@ -18,7 +18,7 @@ interface nsINotificationStorageEntry : nsISupports {
   readonly attribute AString lang;
   readonly attribute AString body;
   readonly attribute AString tag;
-  readonly attribute AString icon;
+  readonly attribute ACString icon;
   readonly attribute boolean requireInteraction;
   readonly attribute boolean silent;
   readonly attribute AString dataSerialized;

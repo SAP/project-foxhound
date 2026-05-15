@@ -7,7 +7,7 @@
  * https://wicg.github.io/cookie-store/#ExtendableCookieChangeEvent
  */
 
-[Exposed=ServiceWorker, Pref="dom.cookieStore.manager.enabled"]
+[Exposed=ServiceWorker, Pref="dom.cookieStore.enabled"]
 interface ExtendableCookieChangeEvent : ExtendableEvent {
   constructor(DOMString type, optional ExtendableCookieChangeEventInit eventInitDict = {});
   // TODO: Use FrozenArray once available. (Bug 1236777)

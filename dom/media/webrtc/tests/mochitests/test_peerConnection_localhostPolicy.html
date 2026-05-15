@@ -1,0 +1,78 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <script type="application/javascript" src="pc.js"></script>
+  <script type="application/javascript" src="iceTestUtils.js"></script>
+  <script type="application/javascript" src="helpers_from_wpt/sdp.js"></script></head>
+<body>
+<pre id="test">
+<script type="application/javascript">
+  createHTML({
+    bug: "1973521",
+    title: "Test the media.peerconnection.ice.loopback pref"
+  });
+
+  const tests = [
+    // checkNoSrflx takes a while to run, so we want to run similar tests in
+    // one go, but we still want to break them up a bit
+    async function v4IceServerAddresses() {
+      await checkNoSrflx([{urls: ["stun:127.0.0.1", "stun:127.0.0.2", "turn:127.0.0.1", "turn:127.0.0.2"], username, credential}]);
+    },
+
+    async function v6IceServerAddresses() {
+      await checkNoSrflx([{urls: ["stun:[::1]", "turn:[::1]"], username, credential}]);
+    },
+
+    async function localhostIceServerName() {
+      await checkNoSrflx([{urls: ["stun:localhost", "turn:localhost"], username, credential}]);
+    },
+
+    async function v4StunRedirect() {
+      // This is the address we will configure the NAT simulator to respond
+      // with redirects for. We use an address from TEST-NET since it is really
+      // unlikely we'll see that on a real machine, and also because we do not
+      // have special-case code in nICEr for TEST-NET (like we do for
+      // link-local, for example).
+      const redirectAddressV4 = "198.51.100.1";
+
+      await pushPrefs(
+          ["media.peerconnection.nat_simulator.redirect_address", `${redirectAddressV4}`],
+          ["media.peerconnection.nat_simulator.redirect_targets", "127.0.0.1"]);
+      try {
+        await checkNoSrflx([{urls: [`stun:${redirectAddressV4}`, `turn:${redirectAddressV4}`], username, credential}]);
+      } finally {
+        await SpecialPowers.popPrefEnv();
+      }
+    },
+
+  ];
+
+  runNetworkTest(async () => {
+    const turnServer = iceServersArray.find(server => "username" in server);
+    username = turnServer.username;
+    credential = turnServer.credential;
+
+    await pushPrefs(["media.peerconnection.ice.loopback", false]);
+
+    try {
+      for (const test of tests) {
+        info(`Running test: ${test.name}`);
+        try {
+          await test();
+        } catch (e) {
+          ok(false, `Caught ${e.name}: ${e.message} ${e.stack}`);
+        }
+        info(`Done running test: ${test.name}`);
+        // Make sure we don't build up a pile of GC work, and also get PCImpl to
+        // print their timecards.
+        await new Promise(r => SpecialPowers.exactGC(r));
+      }
+    } finally {
+      await SpecialPowers.popPrefEnv();
+    }
+
+  }, { useIceServer: true });
+</script>
+</pre>
+</body>
+</html>

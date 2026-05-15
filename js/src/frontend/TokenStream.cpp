@@ -18,7 +18,6 @@
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Span.h"
-#include "mozilla/TemplateLib.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
@@ -31,7 +30,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "jsnum.h"
+#include "builtin/Number.h"
 #include "Taint.h"
 
 #include "frontend/FrontendContext.h"
@@ -673,7 +672,7 @@ JS::ColumnNumberUnsignedOffset TokenStreamAnyChars::computeColumnOffsetForUTF8(
   // column has offset less than this value.  The most common (non-minified)
   // long line length is likely 80ch, maybe 100ch, so we use that, rounded up to
   // the next power of two for efficient division/multiplication below.
-  constexpr uint32_t ColumnChunkLength = mozilla::tl::RoundUpPow2<100>::value;
+  constexpr uint32_t ColumnChunkLength = mozilla::RoundUpPow2(100);
 
   // The index within any associated |Vector<ChunkInfo>| of |offset|'s chunk.
   const uint32_t chunkIndex = offsetInLine / ColumnChunkLength;
@@ -1621,13 +1620,10 @@ bool TokenStreamCharsBase<Unit>::addLineOfContext(ErrorMetadata* err,
     static_assert(std::is_same_v<Unit, Utf8Unit>, "should only see UTF-8 here");
 
     bool simple = utf16WindowLength == encodedWindowLength;
-#ifdef DEBUG
-    auto isAscii = [](Unit u) { return IsAscii(u); };
     MOZ_ASSERT(std::all_of(encodedWindow, encodedWindow + encodedWindowLength,
-                           isAscii) == simple,
+                           [](Unit u) { return IsAscii(u); }) == simple,
                "equal window lengths in UTF-8 should correspond only to "
                "wholly-ASCII text");
-#endif
     if (simple) {
       err->tokenOffset = encodedTokenOffset;
       err->lineLength = encodedWindowLength;

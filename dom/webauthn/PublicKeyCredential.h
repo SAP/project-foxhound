@@ -8,7 +8,6 @@
 #define mozilla_dom_PublicKeyCredential_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/AuthenticatorAssertionResponse.h"
 #include "mozilla/dom/AuthenticatorAttestationResponse.h"
 #include "mozilla/dom/BindingDeclarations.h"

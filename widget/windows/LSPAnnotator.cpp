@@ -32,7 +32,7 @@ class LSPAnnotationGatherer : public Runnable {
 };
 
 void LSPAnnotationGatherer::Annotate() {
-  Unused << CrashReporter::RecordAnnotationNSCString(
+  (void)CrashReporter::RecordAnnotationNSCString(
       CrashReporter::Annotation::Winsock_LSP, mString);
 }
 
@@ -119,6 +119,7 @@ LSPAnnotationGatherer::Run() {
 }
 
 void LSPAnnotate() {
+  MOZ_ASSERT(XRE_IsParentProcess());
   nsCOMPtr<nsIRunnable> runnable(new LSPAnnotationGatherer());
   NS_DispatchBackgroundTask(runnable.forget());
 }

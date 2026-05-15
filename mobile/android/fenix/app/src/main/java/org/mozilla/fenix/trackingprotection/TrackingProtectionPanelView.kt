@@ -25,7 +25,6 @@ import org.mozilla.fenix.GleanMetrics.TrackingProtection
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.ComponentTrackingProtectionPanelBinding
 import org.mozilla.fenix.ext.addUnderline
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.CROSS_SITE_TRACKING_COOKIES
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.CRYPTOMINERS
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.FINGERPRINTERS
@@ -33,6 +32,7 @@ import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.REDIRECT_
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.SOCIAL_MEDIA_TRACKERS
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.SUSPECTED_FINGERPRINTERS
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory.TRACKING_CONTENT
+import org.mozilla.fenix.utils.Settings
 
 /**
  * Interface for the TrackingProtectionPanelViewInteractor. This interface is implemented by objects that want
@@ -73,6 +73,7 @@ interface TrackingProtectionPanelViewInteractor {
 @SuppressWarnings("TooManyFunctions")
 class TrackingProtectionPanelView(
     val containerView: ViewGroup,
+    val settings: Settings,
     val interactor: TrackingProtectionPanelInteractor,
 ) : View.OnClickListener {
 
@@ -133,10 +134,8 @@ class TrackingProtectionPanelView(
         binding.notBlockingHeader.isGone = bucketedTrackers.loadedIsEmpty()
         binding.blockingHeader.isGone = bucketedTrackers.blockedIsEmpty()
 
-        if (containerView.context.settings().enabledTotalCookieProtection) {
-            binding.crossSiteTracking.text = containerView.context.getString(R.string.etp_cookies_title_2)
-            binding.crossSiteTrackingLoaded.text = containerView.context.getString(R.string.etp_cookies_title_2)
-        }
+        binding.crossSiteTracking.text = containerView.context.getString(R.string.etp_cookies_title_2)
+        binding.crossSiteTrackingLoaded.text = containerView.context.getString(R.string.etp_cookies_title_2)
 
         updateCategoryVisibility()
         focusAccessibilityLastUsedCategory(state.lastAccessedCategory)
@@ -150,9 +149,7 @@ class TrackingProtectionPanelView(
         binding.normalMode.visibility = View.GONE
         binding.detailsMode.visibility = View.VISIBLE
 
-        if (category == CROSS_SITE_TRACKING_COOKIES &&
-            containerView.context.settings().enabledTotalCookieProtection
-        ) {
+        if (category == CROSS_SITE_TRACKING_COOKIES) {
             binding.categoryTitle.setText(R.string.etp_cookies_title_2)
             binding.categoryDescription.setText(R.string.etp_cookies_description_2)
         } else {
@@ -218,6 +215,7 @@ class TrackingProtectionPanelView(
      * visibility, where "..._loaded" titles correspond to "Allowed" permissions and the other
      * corresponds to "Blocked" permissions for each category.
      */
+    @Suppress("CognitiveComplexMethod")
     private fun getLastUsedCategoryView(categoryTitle: String) = when (categoryTitle) {
         CROSS_SITE_TRACKING_COOKIES.name -> {
             if (binding.crossSiteTracking.isGone) binding.crossSiteTrackingLoaded else binding.crossSiteTracking

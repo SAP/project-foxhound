@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef txLog_h__
-#define txLog_h__
+#ifndef txLog_h_
+#define txLog_h_
 
 #include "mozilla/Logging.h"
 

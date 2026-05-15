@@ -109,18 +109,13 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro WriteRegDWORD2
 !insertmacro WriteRegStr2
 
-; This needs to be inserted after InitHashAppModelId because it uses
-; $AppUserModelID and the compiler can't handle using variables lexically before
-; they've been declared.
-!insertmacro GetInstallerRegistryPref
-
 !insertmacro un.ChangeMUIHeaderImage
 !insertmacro un.ChangeMUISidebarImage
 !insertmacro un.CheckForFilesInUse
 !insertmacro un.CleanMaintenanceServiceLogs
 !insertmacro un.CleanVirtualStore
-!insertmacro un.DeleteShortcuts
 !insertmacro un.GetCommonDirectory
+!insertmacro un.DeleteShortcuts
 !insertmacro un.GetLongPath
 !insertmacro un.GetSecondInstallPath
 !insertmacro un.InitHashAppModelId
@@ -137,6 +132,7 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro un.SetBrandNameVars
 
 !include shared.nsh
+!include uninstaller_helpers.nsh
 
 ; Helper macros for ui callbacks. Insert these after shared.nsh
 !insertmacro OnEndCommon
@@ -448,6 +444,18 @@ Section "Uninstall"
     ${DeleteFile} "$INSTDIR\${FileMainEXE}"
     ClearErrors
   ${EndIf}
+
+  ReadRegDWORD $R4 HKCU "Software\Mozilla\${BrandFullNameInternal}" DesktopLauncherAppInstalled
+  ${IfNot} ${Errors}
+  ${AndIf} $R4 == "1"
+    ; The current user had a desktop launcher at some point, so remove it.
+    SetShellVarContext current
+    Delete "$DESKTOP\${BrandShortName}.exe"
+    ${IfNot} ${Errors}
+      DeleteRegValue HKCU "Software\Mozilla\${BrandFullNameInternal}" DesktopLauncherAppInstalled
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
 
   SetShellVarContext current  ; Set SHCTX to HKCU
   ${un.RegCleanMain} "Software\Mozilla"
@@ -1035,6 +1043,8 @@ FunctionEnd
 # Initialization Functions
 
 Function .onInit
+  StrCpy $AddTaskbarSC ""
+
   ; Remove the current exe directory from the search order.
   ; This only effects LoadLibrary calls and not implicitly loaded DLLs.
   System::Call 'kernel32::SetDllDirectoryW(w "")'

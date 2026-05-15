@@ -4,11 +4,13 @@
 
 //! Computed angles.
 
+use crate::derives::*;
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::CSSFloat;
 use crate::Zero;
 use std::f64::consts::PI;
 use std::fmt::{self, Write};
+use std::ops::Neg;
 use std::{f32, f64};
 use style_traits::{CssWriter, ToCss};
 
@@ -97,5 +99,14 @@ impl ComputeSquaredDistance for Angle {
         // https://www.w3.org/TR/SVG/animate.html#complexDistances
         self.radians64()
             .compute_squared_distance(&other.radians64())
+    }
+}
+
+impl Neg for Angle {
+    type Output = Angle;
+
+    #[inline]
+    fn neg(self) -> Angle {
+        Angle(-self.0)
     }
 }

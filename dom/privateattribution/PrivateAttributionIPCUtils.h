@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_PrivateAttributionIPCUtils_h
 #define mozilla_dom_PrivateAttributionIPCUtils_h
 
-#include "mozilla/dom/PrivateAttributionBinding.h"
 #include "mozilla/dom/BindingIPCUtils.h"
+#include "mozilla/dom/PrivateAttributionBinding.h"
 
 namespace IPC {
 

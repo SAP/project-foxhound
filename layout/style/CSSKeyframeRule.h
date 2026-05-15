@@ -10,7 +10,7 @@
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/css/Rule.h"
 
-class nsICSSDeclaration;
+class nsDOMCSSDeclaration;
 
 namespace mozilla::dom {
 
@@ -38,7 +38,7 @@ class CSSKeyframeRule final : public css::Rule {
   void GetCssText(nsACString& aCssText) const final;
   void GetKeyText(nsACString& aKey);
   void SetKeyText(const nsACString& aKey);
-  nsICSSDeclaration* Style();
+  nsDOMCSSDeclaration* Style();
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const final;
 

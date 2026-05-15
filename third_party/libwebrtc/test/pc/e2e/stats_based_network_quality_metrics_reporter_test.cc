@@ -14,23 +14,26 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/test/create_network_emulation_manager.h"
-#include "api/test/create_peer_connection_quality_test_frame_generator.h"
+#include "api/test/metrics/metric.h"
 #include "api/test/metrics/metrics_logger.h"
-#include "api/test/metrics/stdout_metrics_exporter.h"
+#include "api/test/network_emulation/network_emulation_interfaces.h"
 #include "api/test/network_emulation_manager.h"
 #include "api/test/pclf/media_configuration.h"
 #include "api/test/pclf/media_quality_test_params.h"
 #include "api/test/pclf/peer_configurer.h"
 #include "api/test/peerconnection_quality_test_fixture.h"
+#include "api/test/simulated_network.h"
+#include "api/units/data_rate.h"
 #include "api/units/time_delta.h"
+#include "media/base/media_constants.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/pc/e2e/metric_metadata_keys.h"
 #include "test/pc/e2e/peer_connection_quality_test.h"
 
 namespace webrtc {
@@ -39,11 +42,11 @@ namespace {
 
 using ::testing::UnorderedElementsAre;
 
-using ::webrtc::test::DefaultMetricsLogger;
-using ::webrtc::test::ImprovementDirection;
-using ::webrtc::test::Metric;
-using ::webrtc::test::Unit;
-using ::webrtc::webrtc_pc_e2e::PeerConfigurer;
+using test::DefaultMetricsLogger;
+using test::ImprovementDirection;
+using test::Metric;
+using test::Unit;
+using webrtc_pc_e2e::PeerConfigurer;
 
 // Adds a peer with some audio and video (the client should not care about
 // details about audio and video configs).
@@ -60,12 +63,12 @@ void AddDefaultAudioVideoPeer(absl::string_view peer_name,
   peer->SetName(peer_name);
   peer->SetAudioConfig(std::move(audio));
   peer->AddVideoConfig(std::move(video));
-  peer->SetVideoCodecs({VideoCodecConfig(cricket::kVp8CodecName)});
+  peer->SetVideoCodecs({VideoCodecConfig(kVp8CodecName)});
   fixture.AddPeer(std::move(peer));
 }
 
 std::optional<Metric> FindMeetricByName(absl::string_view name,
-                                        rtc::ArrayView<const Metric> metrics) {
+                                        ArrayView<const Metric> metrics) {
   for (const Metric& metric : metrics) {
     if (metric.name == name) {
       return metric;

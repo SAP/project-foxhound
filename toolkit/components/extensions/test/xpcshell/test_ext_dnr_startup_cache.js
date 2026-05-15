@@ -16,7 +16,7 @@ ChromeUtils.defineESModuleGetters(this, {
 XPCOMUtils.defineLazyServiceGetters(this, {
   aomStartup: [
     "@mozilla.org/addons/addon-manager-startup;1",
-    "amIAddonManagerStartup",
+    Ci.amIAddonManagerStartup,
   ],
 });
 
@@ -94,7 +94,6 @@ function getDNRExtension({
 }
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.feedback", true);
 

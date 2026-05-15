@@ -98,6 +98,7 @@ add_task(async function test_network_markers_redirect_simple() {
         id: Expect.number(),
         redirectId: parentStopMarker.data.id,
         pri: Expect.number(),
+        priorityHeader: Expect.string(),
         cache: Expect.stringMatches(/Missed|Unresolved/),
         redirectType: "Permanent",
         isHttpToHttpsRedirect: false,
@@ -133,6 +134,7 @@ add_task(async function test_network_markers_redirect_simple() {
       id: Expect.number(),
       count: Expect.number(),
       pri: Expect.number(),
+      priorityHeader: Expect.string(),
     };
 
     Assert.objectContains(parentStopMarker, expectedProperties);
@@ -245,6 +247,7 @@ add_task(async function test_network_markers_redirect_resources() {
       endTime: Expect.number(),
       id: Expect.number(),
       pri: Expect.number(),
+      priorityHeader: Expect.string(),
       innerWindowID: Expect.number(),
       requestStart: Expect.number(),
       responseStart: Expect.number(),

@@ -111,6 +111,7 @@ export class CookieBannerChild extends JSWindowActorChild {
 
   /**
    * Whether the feature is enabled based on pref state.
+   *
    * @type {boolean} true if feature is enabled, false otherwise.
    */
   get #isEnabled() {
@@ -135,6 +136,7 @@ export class CookieBannerChild extends JSWindowActorChild {
   /**
    * Whether the feature is enabled in detect-only-mode where cookie banner
    * detection events are dispatched, but banners aren't handled.
+   *
    * @type {boolean} true if feature mode is enabled, false otherwise.
    */
   get #isDetectOnly() {
@@ -157,6 +159,7 @@ export class CookieBannerChild extends JSWindowActorChild {
   /**
    * Checks whether we handled a banner for this site by injecting cookies and
    * dispatches events.
+   *
    * @returns {boolean} Whether we handled the banner and dispatched events.
    */
   #dispatchEventsForBannerHandledByInjection() {

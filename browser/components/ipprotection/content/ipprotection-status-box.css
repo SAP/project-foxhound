@@ -1,0 +1,123 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+@import "chrome://global/skin/global.css";
+
+:host {
+  --border-color: var(--border-color-card);
+}
+
+.disconnected,
+.generic-error {
+  background-color: var(--background-color-box-info);
+}
+
+.connected {
+  background-color: var(--background-color-success);
+
+  ::slotted([slot="icon"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color-success);
+  }
+}
+
+.excluded {
+  background-color: var(--background-color-success);
+
+  ::slotted([slot="icon"]) {
+    -moz-context-properties: fill, stroke;
+    fill: transparent;
+    stroke: var(--icon-color-success);
+  }
+}
+
+.connecting {
+  background-color: var(--background-color-box-info);
+
+  ::slotted([slot="icon"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color);
+  }
+}
+
+.network-error {
+  background-color: var(--background-color-critical);
+
+  ::slotted([slot="icon"]) {
+    -moz-context-properties: fill;
+    fill: var(--icon-color-critical);
+  }
+}
+
+#content-container {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--border-radius-medium);
+  padding: var(--space-medium);
+}
+
+#header {
+  display: flex;
+  justify-content: space-between;
+}
+
+#title {
+  font-weight: var(--font-weight-semibold);
+  padding-bottom: var(--space-xsmall);
+  margin-block: 0;
+  /* Intentionally using a larger font size for clearer visual hierarchy */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: 1.4lh;
+}
+
+#description {
+  /* Intentionally using a larger font size for clearer visual hierarchy */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  font-size: 1.23em;
+  color: var(--text-color-deemphasized);
+}
+
+#content {
+  display: flex;
+  flex-direction: column;
+}
+
+#bandwidth,
+#location {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xsmall);
+  margin-top: var(--space-xsmall);
+}
+
+::slotted([slot="content"]) {
+  border-top: var(--border-width) solid var(--border-color-deemphasized);
+  margin-top: var(--space-large);
+}
+
+::slotted([slot="icon"]) {
+  height: var(--icon-size-large);
+  width: var(--icon-size-large);
+}
+
+::slotted([slot="location-icon"]) {
+  -moz-context-properties: fill;
+  /* Intentionally set the icon color to match the deemphasized text */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  fill: var(--text-color-deemphasized);
+
+  @media (prefers-contrast) {
+    fill: currentColor;
+  }
+}
+
+::slotted([slot="bandwidth"]),
+::slotted([slot="location"]) {
+  color: var(--text-color-deemphasized);
+}
+
+::slotted([slot="action"]) {
+  align-self: flex-end;
+  margin-block-start: var(--space-large);
+}

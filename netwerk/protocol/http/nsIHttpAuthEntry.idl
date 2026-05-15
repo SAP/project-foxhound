@@ -1,0 +1,43 @@
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * nsIHttpAuthIdentity
+ * Defines an interface (domain, user, and password)
+ * identifying the HTTP authentication cache entry.
+ *
+ */
+[scriptable, builtinclass, uuid(5a88870b-92bd-4c2f-817a-04132caef74c)]
+interface nsIHttpAuthIdentity : nsISupports
+{
+  readonly attribute AString domain;
+  readonly attribute AString user;
+  readonly attribute AString password;
+};
+
+/**
+ * nsIHttpAuthEntry
+ * Defines an interface representing a cache entry in the HTTP authentication cache.
+ *
+ */
+[scriptable, builtinclass, uuid(9bdf473d-63c2-4cf8-92f8-270e80b8aeba)]
+interface nsIHttpAuthEntry : nsISupports
+{
+  readonly attribute ACString realm;
+
+  readonly attribute ACString creds;
+
+  readonly attribute ACString challenge;
+
+  readonly attribute AString domain;
+
+  readonly attribute AString user;
+
+  readonly attribute AString password;
+
+  readonly attribute nsIHttpAuthIdentity identity;
+};

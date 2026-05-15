@@ -72,12 +72,6 @@ bool ScrollbarDrawing::IsScrollbarWidthThin(const ComputedStyle& aStyle) {
   return scrollbarWidth == StyleScrollbarWidth::Thin;
 }
 
-/*static*/
-bool ScrollbarDrawing::IsScrollbarWidthThin(nsIFrame* aFrame) {
-  ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
-  return IsScrollbarWidthThin(*style);
-}
-
 CSSIntCoord ScrollbarDrawing::GetCSSScrollbarSize(StyleScrollbarWidth aWidth,
                                                   Overlay aOverlay) const {
   return mScrollbarSize[aWidth == StyleScrollbarWidth::Thin]
@@ -194,19 +188,25 @@ bool ScrollbarDrawing::DoPaintDefaultScrollbar(
                                                       ElementState::ACTIVE)) {
     return true;
   }
-  const auto color = ComputeScrollbarTrackColor(aFrame, aStyle, aColors);
-  if (overlay && mKind == Kind::Win11 &&
-      StaticPrefs::widget_non_native_theme_win11_scrollbar_round_track()) {
-    LayoutDeviceCoord radius =
-        (aScrollbarKind == ScrollbarKind::Horizontal ? aRect.height
-                                                     : aRect.width) /
-        2.0f;
-    ThemeDrawing::PaintRoundedRectWithRadius(aPaintData, aRect, color,
-                                             sRGBColor(), 0, radius / aDpiRatio,
-                                             aDpiRatio);
-  } else {
-    ThemeDrawing::FillRect(aPaintData, aRect, color);
-  }
+  const auto backgroundColor =
+      ComputeScrollbarTrackColor(aFrame, aStyle, aColors);
+  auto radius = [&]() -> CSSCoord {
+    if (overlay && mKind == Kind::Win11 &&
+        StaticPrefs::widget_non_native_theme_win11_scrollbar_round_track()) {
+      LayoutDeviceCoord radius =
+          (aScrollbarKind == ScrollbarKind::Horizontal ? aRect.height
+                                                       : aRect.width) /
+          2.0f;
+      return radius / aDpiRatio;
+    }
+    return 0.0f;
+  }();
+  auto borderColor = aColors.System(StyleSystemColor::Buttontext);
+  // Draw an outline around the scrollbar in high contrast mode
+  auto borderWidth = aColors.HighContrast() ? CSSCoord(1.0f) : CSSCoord(0.0f);
+  ThemeDrawing::PaintRoundedRectWithRadius(aPaintData, aRect, backgroundColor,
+                                           borderColor, borderWidth, radius,
+                                           aDpiRatio);
   return true;
 }
 
@@ -356,12 +356,15 @@ bool ScrollbarDrawing::PaintScrollbarButton(
     DrawTarget& aDrawTarget, StyleAppearance aAppearance,
     const LayoutDeviceRect& aRect, ScrollbarKind aScrollbarKind,
     nsIFrame* aFrame, const ComputedStyle& aStyle,
-    const ElementState& aElementState, const Colors& aColors, const DPIRatio&) {
+    const ElementState& aElementState, const Colors& aColors,
+    const DPIRatio& aDpiRatio) {
   auto [buttonColor, arrowColor] = ComputeScrollbarButtonColors(
       aFrame, aAppearance, aStyle, aElementState, aColors);
-  aDrawTarget.FillRect(aRect.ToUnknownRect(),
-                       ColorPattern(ToDeviceColor(buttonColor)));
-
+  auto borderColor = aColors.System(StyleSystemColor::Buttontext);
+  // Draw an outline around the scrollbar in high contrast mode
+  auto borderWidth = aColors.HighContrast() ? CSSCoord(1.0f) : CSSCoord(0.0f);
+  ThemeDrawing::PaintRoundedRectWithRadius(
+      aDrawTarget, aRect, buttonColor, borderColor, borderWidth, 0, aDpiRatio);
   // Start with Up arrow.
   float arrowPolygonX[] = {-4.0f, 0.0f, 4.0f, 4.0f, 0.0f, -4.0f};
   float arrowPolygonY[] = {0.0f, -4.0f, 0.0f, 3.0f, -1.0f, 3.0f};
@@ -396,6 +399,7 @@ bool ScrollbarDrawing::PaintScrollbarButton(
   }
   ThemeDrawing::PaintArrow(aDrawTarget, aRect, arrowPolygonX, arrowPolygonY,
                            kPolygonSize, arrowNumPoints, arrowColor);
+
   return true;
 }
 

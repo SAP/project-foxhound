@@ -6,13 +6,13 @@
 
 #include "mozilla/dom/ReadableStreamBYOBRequest.h"
 
-#include "mozilla/dom/ByteStreamHelpers.h"
 #include "js/ArrayBuffer.h"
 #include "js/TypeDecls.h"
+#include "js/experimental/TypedData.h"
+#include "mozilla/dom/ByteStreamHelpers.h"
 #include "mozilla/dom/ReadableByteStreamController.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBYOBRequestBinding.h"
-#include "js/experimental/TypedData.h"
 #include "mozilla/dom/ReadableStreamControllerBase.h"
 #include "nsCOMPtr.h"
 #include "nsIGlobalObject.h"

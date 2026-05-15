@@ -45,8 +45,8 @@ const gSourceNamesStore = new Map();
  * available on an URL instance, with additional properties (fileName),
  * Leverages caching.
  *
- * @param {String} location
- * @return {Object?} An object containing most properties available
+ * @param {string} location
+ * @return {object?} An object containing most properties available
  *                   in https://developer.mozilla.org/en-US/docs/Web/API/URL
  */
 
@@ -102,10 +102,10 @@ function parseURL(location) {
 /**
  * Parse a source into a short and long name as well as a host name.
  *
- * @param {String} source
+ * @param {string} source
  *        The source to parse. Can be a URI or names like "(eval)" or
  *        "self-hosted".
- * @return {Object}
+ * @return {object}
  *         An object with the following properties:
  *           - {String} short: A short name for the source.
  *             - "http://page.com/test.js#go?q=query" -> "test.js"
@@ -334,6 +334,7 @@ function isWASM(location, i = 0) {
  * A utility method to get the file name from a sourcemapped location
  * The sourcemap location can be in any form. This method returns a
  * formatted file name for different cases like Windows or OSX.
+ *
  * @param source
  * @returns String
  */

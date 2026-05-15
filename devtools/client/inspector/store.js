@@ -38,7 +38,7 @@ module.exports = inspector => {
    * Augment the current Redux store with a slice reducer.
    * Call this method to add reducers on-demand after the initial store creation.
    *
-   * @param {String} key
+   * @param {string} key
    *        Slice name.
    * @param {Function} reducer
    *        Slice reducer function.

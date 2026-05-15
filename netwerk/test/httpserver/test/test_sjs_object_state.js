@@ -26,7 +26,7 @@ function run_test() {
   new HTTPTestLoader(PATH + "?state=initial", initialStart, initialStop);
 }
 
-/** ******************
+/********************
  * OBSERVER METHODS *
  ********************/
 
@@ -239,7 +239,7 @@ function checkForFinish() {
   }
 }
 
-/** *******************************
+/*********************************
  * UTILITY OBSERVABLE URL LOADER *
  *********************************/
 

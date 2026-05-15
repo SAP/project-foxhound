@@ -10,7 +10,6 @@
 #include "CompositionTransaction.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/Logging.h"
-#include "mozilla/ToString.h"
 #include "mozilla/dom/Selection.h"
 #include "nsGkAtoms.h"
 #include "nsQueryObject.h"

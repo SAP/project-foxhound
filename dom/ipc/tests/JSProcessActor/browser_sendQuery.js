@@ -2,7 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
-const ERROR_LINE_NUMBER = 28;
+const ERROR_LINE_NUMBER = 29;
 const EXCEPTION_LINE_NUMBER = ERROR_LINE_NUMBER + 3;
 const ERROR_COLUMN_NUMBER = 31;
 const EXCEPTION_COLUMN_NUMBER = 22;
@@ -83,5 +83,23 @@ declTest("sendQuery testing", {
 
     let { result } = await actorParent.sendQuery("asyncAdd", { a: 10, b: 20 });
     is(result, 30);
+  },
+});
+
+declTest("same process sendQuery inputStream testing", {
+  includeParent: true,
+  url: "about:robots",
+  async test(browser) {
+    await SpecialPowers.spawn(browser, [], async function () {
+      let child = ChromeUtils.domProcessChild;
+      let actorChild = child.getActor("TestProcessActor");
+      Assert.ok(actorChild, "JSProcessActorChild should have value.");
+
+      let inputStream = await actorChild.requestInputStream();
+      Assert.ok(
+        inputStream.QueryInterface(Ci.nsIInputStream),
+        "Got back an nsIInputStream"
+      );
+    });
   },
 });

@@ -30,7 +30,7 @@ function startTest(test, token) {
   element.onloadedmetadata = function() {
     element.onloadedmetadata = null;
 
-    const stream = element.mozCaptureStream();
+    const stream = element.captureStream?.() || element.mozCaptureStream();
     const mediaRecorder =
       new MediaRecorder(stream, {mimeType: expectedMimeType});
 

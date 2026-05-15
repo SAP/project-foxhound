@@ -16,7 +16,6 @@
 #include "mozIStorageStatement.h"
 #include "mozIStorageValueArray.h"
 #include "StorageBaseStatementInternal.h"
-#include "mozilla/Attributes.h"
 
 struct sqlite3_stmt;
 

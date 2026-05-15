@@ -16,7 +16,9 @@ import androidx.appcompat.app.AppCompatDelegate.NightMode
 import androidx.appcompat.content.res.AppCompatResources.getDrawable
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.scale
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.mapNotNull
 import mozilla.components.browser.menu.BrowserMenuBuilder
@@ -35,8 +37,7 @@ import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.ktx.android.content.share
 import mozilla.components.support.ktx.android.util.dpToPx
-import mozilla.components.support.ktx.android.view.setNavigationBarTheme
-import mozilla.components.support.ktx.android.view.setStatusBarTheme
+import mozilla.components.support.ktx.android.view.setSystemBarsBackground
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 import mozilla.components.support.utils.ext.resizeMaintainingAspectRatio
 import mozilla.components.ui.icons.R as iconsR
@@ -77,6 +78,7 @@ class CustomTabsToolbarFeature(
         CustomTabsToolbarButtonConfig(),
     private val customTabsColorsConfig: CustomTabsColorsConfig = CustomTabsColorsConfig(),
     private val customTabsToolbarListeners: CustomTabsToolbarListeners = CustomTabsToolbarListeners(),
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val closeListener: () -> Unit,
 ) : LifecycleAwareFeature, UserInteractionHandler {
     private var initialized: Boolean = false
@@ -105,7 +107,7 @@ class CustomTabsToolbarFeature(
         val tabId = sessionId ?: return
         val tab = store.state.findCustomTab(tabId) ?: return
 
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow
                 .mapNotNull { state -> state.findCustomTab(tabId) }
                 .ifAnyChanged { tab -> arrayOf(tab.content.title, tab.content.url) }
@@ -212,14 +214,20 @@ class CustomTabsToolbarFeature(
             )
         }
 
-        if (customTabsColorsConfig.updateStatusBarColor && toolbarColor != null) {
-            window?.setStatusBarTheme(toolbarColor)
-        }
-
-        val areNavigationBarColorsAvailable = navigationBarColor != null || navigationBarDividerColor != null
-        if (customTabsColorsConfig.updateSystemNavigationBarColor && areNavigationBarColorsAvailable) {
-            window?.setNavigationBarTheme(navigationBarColor, navigationBarDividerColor)
-        }
+        window?.setSystemBarsBackground(
+            statusBarColor = when (customTabsColorsConfig.updateStatusBarColor) {
+                true -> toolbarColor
+                false -> null
+            },
+            navigationBarColor = when (customTabsColorsConfig.updateSystemNavigationBarColor) {
+                true -> navigationBarColor
+                false -> null
+            },
+            navigationBarDividerColor = when (customTabsColorsConfig.updateSystemNavigationBarColor) {
+                true -> navigationBarDividerColor
+                false -> null
+            },
+        )
     }
 
     /**
@@ -227,7 +235,10 @@ class CustomTabsToolbarFeature(
      * When clicked, it calls [closeListener].
      */
     @VisibleForTesting
-    internal fun addCloseButton(@ColorInt readableColor: Int, bitmap: Bitmap?) {
+    internal fun addCloseButton(
+        @ColorInt readableColor: Int,
+        bitmap: Bitmap?,
+    ) {
         val drawableIcon = bitmap?.toDrawable(context.resources)
             ?: getDrawable(context, iconsR.drawable.mozac_ic_cross_24)!!.mutate()
 
@@ -289,7 +300,9 @@ class CustomTabsToolbarFeature(
      * When clicked, it activates [CustomTabsToolbarListeners.refreshListener].
      */
     @VisibleForTesting
-    internal fun addRefreshButton(@ColorInt readableColor: Int) {
+    internal fun addRefreshButton(
+        @ColorInt readableColor: Int,
+    ) {
         val drawableIcon = getDrawable(context, iconsR.drawable.mozac_ic_arrow_clockwise_24)
         drawableIcon?.setTint(readableColor)
 
@@ -310,7 +323,9 @@ class CustomTabsToolbarFeature(
      * and defaults to the [share] KTX helper.
      */
     @VisibleForTesting
-    internal fun addShareButton(@ColorInt readableColor: Int) {
+    internal fun addShareButton(
+        @ColorInt readableColor: Int,
+    ) {
         val drawableIcon = getDrawable(context, iconsR.drawable.mozac_ic_share_android_24)!!
         drawableIcon.setTint(readableColor)
 

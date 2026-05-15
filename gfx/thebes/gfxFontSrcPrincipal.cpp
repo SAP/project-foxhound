@@ -7,7 +7,6 @@
 
 #include "nsURIHashKey.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/HashFunctions.h"
 
 using mozilla::BasePrincipal;
 

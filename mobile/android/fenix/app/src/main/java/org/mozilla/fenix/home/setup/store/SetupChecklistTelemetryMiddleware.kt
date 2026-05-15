@@ -5,7 +5,7 @@
 package org.mozilla.fenix.home.setup.store
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.GleanMetrics.Onboarding
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
@@ -18,7 +18,7 @@ class SetupChecklistTelemetryMiddleware(
     val telemetry: SetupChecklistTelemetryRecorder = DefaultSetupChecklistTelemetryRecorder(),
 ) : Middleware<AppState, AppAction> {
     override fun invoke(
-        context: MiddlewareContext<AppState, AppAction>,
+        store: Store<AppState, AppAction>,
         next: (AppAction) -> Unit,
         action: AppAction,
     ) {
@@ -59,7 +59,9 @@ class DefaultSetupChecklistTelemetryRecorder : SetupChecklistTelemetryRecorder {
      */
     override fun taskClicked(task: ChecklistItem.Task) {
         Onboarding.setupChecklistTaskClicked.record(
-            Onboarding.SetupChecklistTaskClickedExtra(task.type.telemetryName),
+            Onboarding.SetupChecklistTaskClickedExtra(
+                taskId = task.type.telemetryName,
+            ),
         )
     }
 }

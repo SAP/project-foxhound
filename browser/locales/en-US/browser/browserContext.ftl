@@ -181,7 +181,7 @@ main-context-menu-copy-phone =
 
 main-context-menu-preview-link =
     .label = Preview Link
-    .accesskey = r
+    .accesskey = J
 
 # "Copy Clean Link" means that Firefox will remove things from the link you
 # copied, like items that identify you for advertising purposes, and other items
@@ -316,6 +316,12 @@ main-context-menu-image-desc =
     .label = View Description
     .accesskey = D
 
+# Variables
+#   $engine (String) - Name of the search engine that will perform the search.
+main-context-menu-visual-search-2 =
+    .label = Search Image with { $engine }
+    .accesskey = e
+
 main-context-menu-video-save-as =
     .label = Save Video As…
     .accesskey = v
@@ -336,8 +342,8 @@ main-context-menu-audio-email =
     .label = Email Audio…
     .accesskey = a
 
-main-context-menu-send-to-device =
-    .label = Send Page to Device
+main-context-menu-send-to-device-2 =
+    .label = Send to Device
     .accesskey = n
 
 # Displayed when there are saved passwords and the user clicks inside a username or password field
@@ -356,10 +362,6 @@ main-context-menu-suggest-strong-password =
 main-context-menu-manage-passwords =
     .label = Manage Passwords
     .accesskey = M
-
-main-context-menu-keyword =
-    .label = Add a Keyword for this Search…
-    .accesskey = K
 
 main-context-menu-add-engine =
     .label = Add Search Engine
@@ -453,3 +455,6 @@ main-context-menu-open-link-in-container-tab =
 main-context-menu-reveal-password =
     .label = Reveal Password
     .accesskey = v
+
+# The label of a badge shown in menu items to call out new features.
+main-context-menu-new-feature-badge = New

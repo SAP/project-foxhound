@@ -281,9 +281,7 @@ class RaptorGatherer(FrameworkGatherer):
         :return str: A formatted string containing the reference link to the
             documented metric.
         """
-        metric_heading = super(RaptorGatherer, self)._get_metric_heading(
-            metric, metrics_info
-        )
+        metric_heading = super()._get_metric_heading(metric, metrics_info)
         return f"`{metric} <raptor-metrics.html#{metric_heading.lower().replace(' ', '-')}>`__"
 
     def get_test_list(self):
@@ -351,7 +349,7 @@ class RaptorGatherer(FrameworkGatherer):
 
         for idx, description in enumerate(matcher):
             if description["name"] != title:
-                result += f"   {idx+1}. **{description['name']}**\n\n"
+                result += f"   {idx + 1}. **{description['name']}**\n\n"
             if "owner" in description.keys():
                 result += f"   **Owner**: {description['owner']}\n\n"
             if test_description:
@@ -414,8 +412,10 @@ class RaptorGatherer(FrameworkGatherer):
                         values += [
                             (
                                 "\u2705"
-                                if match_run_on_projects(x, task["run_on_projects"])
-                                else "\u274C"
+                                if match_run_on_projects(
+                                    {"project": x}, task["run_on_projects"]
+                                )
+                                else "\u274c"
                             )
                             for x in BRANCHES
                         ]
@@ -505,9 +505,9 @@ class MozperftestGatherer(FrameworkGatherer):
                     cleaned_name = si["name"].replace(".", "")
 
                 self.script_infos[cleaned_name] = si
-                self._test_list.setdefault(suite_name.replace("\\", "/"), {}).update(
-                    {cleaned_name: {"path": str(path)}}
-                )
+                self._test_list.setdefault(suite_name.replace("\\", "/"), {}).update({
+                    cleaned_name: {"path": str(path)}
+                })
 
         return self._test_list
 
@@ -632,8 +632,10 @@ class TalosGatherer(FrameworkGatherer):
                     values += [
                         (
                             "\u2705"
-                            if match_run_on_projects(x, task["run_on_projects"])
-                            else "\u274C"
+                            if match_run_on_projects(
+                                {"project": x}, task["run_on_projects"]
+                            )
+                            else "\u274c"
                         )
                         for x in BRANCHES
                     ]

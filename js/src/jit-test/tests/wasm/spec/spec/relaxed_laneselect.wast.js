@@ -1,4 +1,4 @@
-// |jit-test| --setpref=wasm_relaxed_simd=true; skip-if: !wasmRelaxedSimdEnabled()
+// |jit-test| skip-if: !wasmRelaxedSimdEnabled()
 /* Copyright 2021 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 
 // ./test/core/relaxed-simd/relaxed_laneselect.wast
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:4
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:3
 let $0 = instantiate(`(module
     (func (export "i8x16.relaxed_laneselect") (param v128 v128 v128) (result v128) (i8x16.relaxed_laneselect (local.get 0) (local.get 1) (local.get 2)))
     (func (export "i16x8.relaxed_laneselect") (param v128 v128 v128) (result v128) (i16x8.relaxed_laneselect (local.get 0) (local.get 1) (local.get 2)))
@@ -41,7 +41,7 @@ let $0 = instantiate(`(module
             (i64x2.relaxed_laneselect (local.get 0) (local.get 1) (local.get 2))))
 )`);
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:28
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:27
 assert_return(
   () => invoke($0, `i8x16.relaxed_laneselect`, [
     i8x16([0x0, 0x1, 0x12, 0x12, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf]),
@@ -56,7 +56,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:35
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:34
 assert_return(
   () => invoke($0, `i16x8.relaxed_laneselect`, [
     i16x8([0x0, 0x1, 0x1234, 0x1234, 0x4, 0x5, 0x6, 0x7]),
@@ -71,7 +71,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:43
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:42
 assert_return(
   () => invoke($0, `i16x8.relaxed_laneselect`, [
     i16x8([0x0, 0x1, 0x1234, 0x1234, 0x4, 0x5, 0x6, 0x7]),
@@ -87,7 +87,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:52
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:51
 assert_return(
   () => invoke($0, `i32x4.relaxed_laneselect`, [
     i32x4([0x0, 0x1, 0x12341234, 0x12341234]),
@@ -102,7 +102,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:59
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:58
 assert_return(
   () => invoke($0, `i64x2.relaxed_laneselect`, [
     i64x2([0x0n, 0x1n]),
@@ -112,7 +112,7 @@ assert_return(
   [either(i64x2([0x0n, 0x3n]), i64x2([0x0n, 0x3n]))],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:66
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:65
 assert_return(
   () => invoke($0, `i64x2.relaxed_laneselect`, [
     i64x2([0x1234123412341234n, 0x1234123412341234n]),
@@ -127,7 +127,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:75
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:74
 assert_return(
   () => invoke($0, `i8x16.relaxed_laneselect_cmp`, [
     i8x16([0x0, 0x1, 0x12, 0x12, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf]),
@@ -139,7 +139,7 @@ assert_return(
   ],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:81
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:80
 assert_return(
   () => invoke($0, `i16x8.relaxed_laneselect_cmp`, [
     i16x8([0x0, 0x1, 0x1234, 0x1234, 0x4, 0x5, 0x6, 0x7]),
@@ -149,7 +149,7 @@ assert_return(
   [i16x8([0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:87
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:86
 assert_return(
   () => invoke($0, `i32x4.relaxed_laneselect_cmp`, [
     i32x4([0x0, 0x1, 0x12341234, 0x12341234]),
@@ -159,7 +159,7 @@ assert_return(
   [i32x4([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff])],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:93
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:92
 assert_return(
   () => invoke($0, `i64x2.relaxed_laneselect_cmp`, [
     i64x2([0x0n, 0x1n]),
@@ -169,7 +169,7 @@ assert_return(
   [i64x2([0xffffffffffffffffn, 0xffffffffffffffffn])],
 );
 
-// ./test/core/relaxed-simd/relaxed_laneselect.wast:99
+// ./test/core/relaxed-simd/relaxed_laneselect.wast:98
 assert_return(
   () => invoke($0, `i64x2.relaxed_laneselect_cmp`, [
     i64x2([0x1234123412341234n, 0x1234123412341234n]),

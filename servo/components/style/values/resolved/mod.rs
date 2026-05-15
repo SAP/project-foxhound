@@ -5,11 +5,11 @@
 //! Resolved values. These are almost always computed values, but in some cases
 //! there are used values.
 
-use app_units::Au;
 #[cfg(feature = "gecko")]
 use crate::media_queries::Device;
-use crate::properties::ComputedValues;
+use crate::properties::{ComputedValues, LonghandId, NonCustomPropertyId};
 use crate::ArcSlice;
+use app_units::Au;
 use servo_arc::Arc;
 use smallvec::SmallVec;
 
@@ -37,6 +37,11 @@ pub struct Context<'a> {
     /// The element-specific information to resolve the value.
     #[cfg(feature = "gecko")]
     pub element_info: ResolvedElementInfo<'a>,
+    /// The property we're resolving the value for over-all (might be a shorthand).
+    pub for_property: NonCustomPropertyId,
+    /// The current (physical) longhand we're resolving the value for. Guaranteed to be `Some()`
+    /// inside `ToResolvedValue` implementations.
+    pub current_longhand: Option<LonghandId>,
 }
 
 /// A trait to represent the conversion between resolved and resolved values.

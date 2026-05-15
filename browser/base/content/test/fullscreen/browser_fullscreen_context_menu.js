@@ -26,18 +26,12 @@ async function testContextMenu() {
     let contextMenu = await openContextMenu(panelUIMenuButton);
     let array1 = !Services.appinfo.nativeMenubar
       ? [
-          ".customize-context-moveToPanel",
-          ".customize-context-removeFromToolbar",
-          "#customizationMenuSeparator",
           "#toggle_toolbar-menubar",
           "#toggle_PersonalToolbar",
           "#viewToolbarsMenuSeparator",
           ".viewCustomizeToolbar",
         ]
       : [
-          ".customize-context-moveToPanel",
-          ".customize-context-removeFromToolbar",
-          "#customizationMenuSeparator",
           "#toggle_PersonalToolbar",
           "#viewToolbarsMenuSeparator",
           ".viewCustomizeToolbar",
@@ -67,9 +61,6 @@ async function testContextMenu() {
     info("context menu should be open, verify its menu items");
     let array2 = !Services.appinfo.nativeMenubar
       ? [
-          ".customize-context-moveToPanel",
-          ".customize-context-removeFromToolbar",
-          "#customizationMenuSeparator",
           "#toggle_toolbar-menubar",
           "#toggle_PersonalToolbar",
           "#viewToolbarsMenuSeparator",
@@ -79,9 +70,6 @@ async function testContextMenu() {
           `menuitem[contexttype="fullscreen"]`,
         ]
       : [
-          ".customize-context-moveToPanel",
-          ".customize-context-removeFromToolbar",
-          "#customizationMenuSeparator",
           "#toggle_PersonalToolbar",
           "#viewToolbarsMenuSeparator",
           ".viewCustomizeToolbar",

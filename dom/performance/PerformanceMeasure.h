@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_performancemeasure_h___
-#define mozilla_dom_performancemeasure_h___
+#ifndef mozilla_dom_performancemeasure_h_
+#define mozilla_dom_performancemeasure_h_
 
 #include "mozilla/dom/PerformanceEntry.h"
 
@@ -46,4 +46,4 @@ class PerformanceMeasure final : public PerformanceEntry {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_performancemeasure_h___ */
+#endif /* mozilla_dom_performancemeasure_h_ */

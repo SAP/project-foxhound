@@ -69,6 +69,10 @@ DOMAINS.forEach(domain => {
     // Verify that if localhost hijacking is enabled, the overrides
     // registered above are taken into account.
     Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
+    Services.prefs.setBoolPref(
+      "network.proxy.testing_localhost_is_secure_when_hijacked",
+      false
+    );
     let listener2 = new Listener();
     Services.dns.asyncResolve(
       domain,
@@ -85,7 +89,9 @@ DOMAINS.forEach(domain => {
       `${domain} is overridden`
     );
     Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
-
+    Services.prefs.clearUserPref(
+      "network.proxy.testing_localhost_is_secure_when_hijacked"
+    );
     Services.dns.clearCache(false);
     override.clearOverrides();
   });

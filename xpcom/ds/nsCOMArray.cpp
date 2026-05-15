@@ -6,7 +6,6 @@
 
 #include "nsCOMArray.h"
 
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/OperatorNewExtensions.h"
 
 #include "nsCOMPtr.h"

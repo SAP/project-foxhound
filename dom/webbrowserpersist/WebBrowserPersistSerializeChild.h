@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WebBrowserPersistSerializeChild_h__
-#define WebBrowserPersistSerializeChild_h__
-
-#include "mozilla/PWebBrowserPersistSerializeChild.h"
+#ifndef WebBrowserPersistSerializeChild_h_
+#define WebBrowserPersistSerializeChild_h_
 
 #include "mozilla/PWebBrowserPersistDocument.h"
-#include "nsIWebBrowserPersistDocument.h"
+#include "mozilla/PWebBrowserPersistSerializeChild.h"
 #include "nsIOutputStream.h"
+#include "nsIWebBrowserPersistDocument.h"
 
 namespace mozilla {
 
@@ -35,4 +34,4 @@ class WebBrowserPersistSerializeChild final
 
 }  // namespace mozilla
 
-#endif  // WebBrowserPersistSerializeChild_h__
+#endif  // WebBrowserPersistSerializeChild_h_

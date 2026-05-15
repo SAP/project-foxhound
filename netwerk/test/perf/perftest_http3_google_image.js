@@ -1,7 +1,6 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-/* eslint-env node */
 
 /*
 Ensure the `--firefox.preference=network.http.http3.enable:true` is
@@ -12,7 +11,7 @@ async function getNumImagesLoaded(elementSelector, commands) {
   return commands.js.run(`
     let sum = 0;
     document.querySelectorAll(${elementSelector}).forEach(e => {
-      sum += e.complete & e.naturalHeight != 0;
+      sum += (e.complete && e.naturalHeight != 0) ? 1 : 0;
     });
     return sum;
   `);
@@ -35,8 +34,8 @@ async function waitForImgLoadEnd(
   let stableCount = 0;
 
   while (
-    ((await commands.js.run(`return performance.now();`)) - starttime <
-      timeout) &
+    (await commands.js.run(`return performance.now();`)) - starttime <
+      timeout &&
     changing
   ) {
     // Wait a bit before making another round
@@ -88,8 +87,14 @@ async function test(context, commands) {
   // Make firefox learn of HTTP/3 server
   await commands.navigate(rootUrl);
 
+  await commands.js.runAndWait(`
+    document.cookie =
+      'SOCS=CAESHAgBEhJnd3NfMjAyNjAxMDgtMF9SQzEaAmVuIAEaBgiAlpbLBg; path=/; domain=.google.com; Secure; SameSite=None';
+  `);
+
   let cycles = 1;
   for (let cycle = 0; cycle < cycles; cycle++) {
+    await commands.navigate("about:blank");
     // Measure the pageload
     await commands.measure.start("pageload");
     await commands.navigate(rootUrl);

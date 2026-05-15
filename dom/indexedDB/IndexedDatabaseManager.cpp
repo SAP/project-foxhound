@@ -6,33 +6,6 @@
 
 #include "IndexedDatabaseManager.h"
 
-#include "chrome/common/ipc_channel.h"  // for IPC::Channel::kMaximumMessageSize
-#include "nsIScriptError.h"
-#include "nsIScriptGlobalObject.h"
-
-#include "jsapi.h"
-#include "js/Object.h"              // JS::GetClass
-#include "js/PropertyAndElement.h"  // JS_DefineProperty
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/ContentEvents.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/dom/DOMException.h"
-#include "mozilla/dom/ErrorEvent.h"
-#include "mozilla/dom/ErrorEventBinding.h"
-#include "mozilla/dom/WorkerScope.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/dom/quota/Assertions.h"
-#include "mozilla/dom/quota/PromiseUtils.h"
-#include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/intl/LocaleCanonicalizer.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "nsContentUtils.h"
-#include "mozilla/Logging.h"
-
 #include "ActorsChild.h"
 #include "DatabaseFileManager.h"
 #include "IDBEvents.h"
@@ -42,7 +15,32 @@
 #include "IndexedDBCommon.h"
 #include "ProfilerHelpers.h"
 #include "ScriptErrorHelper.h"
+#include "chrome/common/ipc_channel.h"  // for IPC::Channel::kMaximumMessageSize
+#include "js/Object.h"                  // JS::GetClass
+#include "js/PropertyAndElement.h"      // JS_DefineProperty
+#include "jsapi.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ContentEvents.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/ErrorEvent.h"
+#include "mozilla/dom/ErrorEventBinding.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/quota/Assertions.h"
+#include "mozilla/dom/quota/PromiseUtils.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/intl/LocaleCanonicalizer.h"
+#include "mozilla/intl/LocaleService.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"
+#include "nsIScriptError.h"
+#include "nsIScriptGlobalObject.h"
 
 // Bindings for ResolveConstructors
 #include "mozilla/dom/IDBCursorBinding.h"
@@ -781,7 +779,7 @@ nsresult IndexedDatabaseManager::EnsureLocale() {
   }
 
   nsAutoCString acceptLang;
-  Preferences::GetLocalizedCString("intl.accept_languages", acceptLang);
+  intl::LocaleService::GetInstance()->GetAcceptLanguages(acceptLang);
 
   // Split values on commas.
   for (const auto& lang :

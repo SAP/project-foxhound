@@ -104,6 +104,7 @@ DevToolsWorker.prototype.onError = function ({ message, filename, lineno }) {
 /**
  * Takes a function and returns a Worker-wrapped version of the same function.
  * Returns a promise upon resolution.
+ *
  * @see `./devtools/shared/shared/tests/browser/browser_devtools-worker-03.js
  *
  * ⚠ This should only be used for tests or A/B testing performance ⚠
@@ -128,7 +129,7 @@ export function workerify(fn) {
   );
   // Fetch modules here as we don't want to include it normally.
   // eslint-disable-next-line no-shadow
-  const { URL, Blob } = Services.wm.getMostRecentWindow("navigator:browser");
+  const { URL, Blob } = Services.wm.getMostRecentBrowserWindow();
   const stringifiedFn = createWorkerString(fn);
   const blob = new Blob([stringifiedFn]);
   const url = URL.createObjectURL(blob);

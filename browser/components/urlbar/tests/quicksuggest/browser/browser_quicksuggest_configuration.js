@@ -15,7 +15,7 @@ ChromeUtils.defineESModuleGetters(this, {
 
 // We use this pref in enterprise preference policy tests. We specifically use a
 // pref that's sticky and exposed in the UI to make sure it can be set properly.
-const POLICY_PREF = "suggest.quicksuggest.nonsponsored";
+const POLICY_PREF = "suggest.quicksuggest.sponsored";
 
 let gDefaultBranch = Services.prefs.getDefaultBranch("browser.urlbar.");
 let gUserBranch = Services.prefs.getBranch("browser.urlbar.");
@@ -94,17 +94,14 @@ add_task(async function () {
     {
       initialPrefsToSet: {
         defaultBranch: {
-          "suggest.quicksuggest.nonsponsored": true,
           "suggest.quicksuggest.sponsored": true,
         },
       },
       valueOverrides: {
-        quickSuggestNonSponsoredEnabled: false,
         quickSuggestSponsoredEnabled: false,
       },
       expectedPrefs: {
         defaultBranch: {
-          "suggest.quicksuggest.nonsponsored": false,
           "suggest.quicksuggest.sponsored": false,
         },
       },
@@ -112,21 +109,17 @@ add_task(async function () {
     {
       initialPrefsToSet: {
         userBranch: {
-          "suggest.quicksuggest.nonsponsored": true,
           "suggest.quicksuggest.sponsored": true,
         },
       },
       valueOverrides: {
-        quickSuggestNonSponsoredEnabled: false,
         quickSuggestSponsoredEnabled: false,
       },
       expectedPrefs: {
         defaultBranch: {
-          "suggest.quicksuggest.nonsponsored": false,
           "suggest.quicksuggest.sponsored": false,
         },
         userBranch: {
-          "suggest.quicksuggest.nonsponsored": true,
           "suggest.quicksuggest.sponsored": true,
         },
       },
@@ -146,25 +139,20 @@ add_task(async function () {
   await checkEnrollments({
     initialPrefsToSet: {
       defaultBranch: {
-        "suggest.quicksuggest.nonsponsored": true,
         "suggest.quicksuggest.sponsored": true,
       },
       userBranch: {
-        "suggest.quicksuggest.nonsponsored": false,
         "suggest.quicksuggest.sponsored": false,
       },
     },
     valueOverrides: {
-      quickSuggestNonSponsoredEnabled: true,
       quickSuggestSponsoredEnabled: true,
     },
     expectedPrefs: {
       defaultBranch: {
-        "suggest.quicksuggest.nonsponsored": true,
         "suggest.quicksuggest.sponsored": true,
       },
       userBranch: {
-        "suggest.quicksuggest.nonsponsored": false,
         "suggest.quicksuggest.sponsored": false,
       },
     },
@@ -191,17 +179,14 @@ add_task(async function () {
     {
       initialPrefsToSet: {
         defaultBranch: {
-          "suggest.quicksuggest.nonsponsored": false,
           "suggest.quicksuggest.sponsored": false,
         },
       },
       valueOverrides: {
-        quickSuggestNonSponsoredEnabled: true,
         quickSuggestSponsoredEnabled: true,
       },
       expectedPrefs: {
         defaultBranch: {
-          "suggest.quicksuggest.nonsponsored": true,
           "suggest.quicksuggest.sponsored": true,
         },
       },
@@ -209,21 +194,17 @@ add_task(async function () {
     {
       initialPrefsToSet: {
         userBranch: {
-          "suggest.quicksuggest.nonsponsored": false,
           "suggest.quicksuggest.sponsored": false,
         },
       },
       valueOverrides: {
-        quickSuggestNonSponsoredEnabled: true,
         quickSuggestSponsoredEnabled: true,
       },
       expectedPrefs: {
         defaultBranch: {
-          "suggest.quicksuggest.nonsponsored": true,
           "suggest.quicksuggest.sponsored": true,
         },
         userBranch: {
-          "suggest.quicksuggest.nonsponsored": false,
           "suggest.quicksuggest.sponsored": false,
         },
       },
@@ -243,204 +224,21 @@ add_task(async function () {
   await checkEnrollments({
     initialPrefsToSet: {
       defaultBranch: {
-        "suggest.quicksuggest.nonsponsored": false,
         "suggest.quicksuggest.sponsored": false,
       },
       userBranch: {
-        "suggest.quicksuggest.nonsponsored": true,
         "suggest.quicksuggest.sponsored": true,
       },
     },
     valueOverrides: {
-      quickSuggestNonSponsoredEnabled: false,
       quickSuggestSponsoredEnabled: false,
     },
     expectedPrefs: {
       defaultBranch: {
-        "suggest.quicksuggest.nonsponsored": false,
         "suggest.quicksuggest.sponsored": false,
       },
       userBranch: {
-        "suggest.quicksuggest.nonsponsored": true,
         "suggest.quicksuggest.sponsored": true,
-      },
-    },
-  });
-});
-
-// Initial state:
-// * Data collection on by default and user left them on
-//
-// 1. First enrollment:
-//    * Data collection forced off
-//
-//    Expected:
-//    * Data collection off
-//
-// 2. User turns on data collection
-// 3. Second enrollment:
-//    * Data collection forced off again
-//
-//    Expected:
-//    * Data collection remains on
-add_task(async function () {
-  await checkEnrollments(
-    [
-      {
-        initialPrefsToSet: {
-          defaultBranch: {
-            "quicksuggest.dataCollection.enabled": true,
-          },
-        },
-        valueOverrides: {
-          quickSuggestDataCollectionEnabled: false,
-        },
-        expectedPrefs: {
-          defaultBranch: {
-            "quicksuggest.dataCollection.enabled": false,
-          },
-        },
-      },
-    ],
-    [
-      {
-        initialPrefsToSet: {
-          userBranch: {
-            "quicksuggest.dataCollection.enabled": true,
-          },
-        },
-        valueOverrides: {
-          quickSuggestDataCollectionEnabled: false,
-        },
-        expectedPrefs: {
-          defaultBranch: {
-            "quicksuggest.dataCollection.enabled": false,
-          },
-          userBranch: {
-            "quicksuggest.dataCollection.enabled": true,
-          },
-        },
-      },
-    ]
-  );
-});
-
-// Initial state:
-// * Data collection on by default but user turned it off
-//
-// Enrollment:
-// * Data collection forced on
-//
-// Expected:
-// * Data collection remains off
-add_task(async function () {
-  await checkEnrollments({
-    initialPrefsToSet: {
-      defaultBranch: {
-        "quicksuggest.dataCollection.enabled": true,
-      },
-      userBranch: {
-        "quicksuggest.dataCollection.enabled": false,
-      },
-    },
-    valueOverrides: {
-      quickSuggestDataCollectionEnabled: true,
-    },
-    expectedPrefs: {
-      defaultBranch: {
-        "quicksuggest.dataCollection.enabled": true,
-      },
-      userBranch: {
-        "quicksuggest.dataCollection.enabled": false,
-      },
-    },
-  });
-});
-
-// Initial state:
-// * Data collection off by default and user left it off
-//
-// 1. First enrollment:
-//    * Data collection forced on
-//
-//    Expected:
-//    * Data collection on
-//
-// 2. User turns off data collection
-// 3. Second enrollment:
-//    * Data collection forced on again
-//
-//    Expected:
-//    * Data collection remains off
-add_task(async function () {
-  await checkEnrollments(
-    [
-      {
-        initialPrefsToSet: {
-          defaultBranch: {
-            "quicksuggest.dataCollection.enabled": false,
-          },
-        },
-        valueOverrides: {
-          quickSuggestDataCollectionEnabled: true,
-        },
-        expectedPrefs: {
-          defaultBranch: {
-            "quicksuggest.dataCollection.enabled": true,
-          },
-        },
-      },
-    ],
-    [
-      {
-        initialPrefsToSet: {
-          userBranch: {
-            "quicksuggest.dataCollection.enabled": false,
-          },
-        },
-        valueOverrides: {
-          quickSuggestDataCollectionEnabled: true,
-        },
-        expectedPrefs: {
-          defaultBranch: {
-            "quicksuggest.dataCollection.enabled": false,
-          },
-          userBranch: {
-            "quicksuggest.dataCollection.enabled": false,
-          },
-        },
-      },
-    ]
-  );
-});
-
-// Initial state:
-// * Data collection off by default but user turned it on
-//
-// Enrollment:
-// * Data collection forced off
-//
-// Expected:
-// * Data collection remains on
-add_task(async function () {
-  await checkEnrollments({
-    initialPrefsToSet: {
-      defaultBranch: {
-        "quicksuggest.dataCollection.enabled": false,
-      },
-      userBranch: {
-        "quicksuggest.dataCollection.enabled": true,
-      },
-    },
-    valueOverrides: {
-      quickSuggestDataCollectionEnabled: false,
-    },
-    expectedPrefs: {
-      defaultBranch: {
-        "quicksuggest.dataCollection.enabled": false,
-      },
-      userBranch: {
-        "quicksuggest.dataCollection.enabled": true,
       },
     },
   });
@@ -787,7 +585,7 @@ async function doPolicyTest({
 
   gDefaultBranch.unlockPref(pref);
   gUserBranch.clearUserPref(pref);
-  await QuickSuggest._test_reinit();
+  await QuickSuggest._test_reset();
 
   Assert.ok(
     !gDefaultBranch.prefIsLocked(pref),

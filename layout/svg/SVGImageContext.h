@@ -112,9 +112,7 @@ class SVGImageContext {
            mColorScheme == aOther.mColorScheme;
   }
 
-  bool operator!=(const SVGImageContext& aOther) const {
-    return !(*this == aOther);
-  }
+  bool operator!=(const SVGImageContext&) const = default;
 
   PLDHashNumber Hash() const {
     PLDHashNumber hash = 0;

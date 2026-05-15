@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vi aiuta à stà à e cumande.</p> <p>Impiegatelu cum’è un navigatore privatu : <ul> <li>Fate ricerche è navigate cù l’appiecazione</li> <li>Bluccate i perseguitatori (o mudificà i parametri per auturizalli)</li> <li>Squassate i canistrelli è ancu e cronolugie di navigazione è di ricerca</li> </ul> </p> <p>%1$s hè sviluppatu da Mozilla. A nostra missione hè d’incuragisce un Internet apertu è in bella saluta.<br/> <a href=\"%2$s\">Per sapene di più</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vi aiuta à stà à e cumande.</p>\n<p>Impiegatelu cum’è un navigatore privatu :\n<ul>\n<li>Fate ricerche è navigate cù l’appiecazione</li>\n<li>Bluccate i perseguitatori (o mudificà i parametri per auturizalli)</li>\n<li>Squassate i canistrelli è ancu e cronolugie di navigazione è di ricerca</li>\n</ul> </p>\n<p>%1$s hè sviluppatu da Mozilla. A nostra missione hè d’incuragisce un Internet apertu è in bella saluta.<br/>\n<a href=\"%2$s\">Per sapene di più</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Sapene di più</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -200,12 +207,12 @@
   <!-- Item in settings that will open a new preference screen for configuring the URL autocomplete behavior. -->
   <string name="preference_subitem_autocomplete">Scrittura mezu-autumatica di l’indirizzi</string>
   <!-- Title of "switch" preference that enables/disables autocomplete for the default list -->
-  <string name="preference_switch_autocomplete_topsites">Per i siti i più populari</string>
+  <string name="preference_switch_autocomplete_topsites">Per i siti i più pupulari</string>
   <!--
     Summary for the toggle to enable autocomplete for the topsites list
     %s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
   -->
-  <string name="preference_autocomplete_topsite_summary2">Attivà per chì %s compii autumaticamente più di 450 indirizzi populari in a barra d’indirizzu.</string>
+  <string name="preference_autocomplete_topsite_summary2">Attivà per chì %s compii autumaticamente più di 450 indirizzi pupulari in a barra d’indirizzu.</string>
   <!-- Title of "switch" preference that enables/disables autocomplete for the user-defined list -->
   <string name="preference_switch_autocomplete_user_list">Per i siti chì voi aghjunghjite</string>
   <!--
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Cuntinuendu, vole si dì chì vo accettate e %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Cuntinuendu, vole si dì chì vo accettate e%1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">cundizioni d’utilizazione di Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">cundizioni d’utilizazione di Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox face casu di a vostra vita privata. Sapene di più in a nostra %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox face casu di a vostra vita privata. Sapene di più in a nostra %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">pulitica di cunfidenzialità.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Pulitica di cunfidenzialità</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Squassà a cronolugia di navigazione</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Chjode l’altre unghjette</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Aghjunghje un’unghjetta nova</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -711,7 +712,7 @@
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Spannatura alluntanata via USB/Wi-Fi</string>
   <!-- Text Button for show biometric prompt -->
-  <string name="show_biometric_button_text">Sbluccà</string>
+  <string name="show_biometric_button_text">Spalancà</string>
   <!-- Title text for biometric prompt pop-up -->
   <string name="biometric_prompt_title">Cunfirmate cù a vostra impronta digitale</string>
   <!-- Subtitle text for biometric prompt pop-up -->
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Stu penseru pò pruvene da a cunfigurazione di u servitore, osinnò ghjè qualchissia forse chì prova d’impatruniscesi di u servitore. <br/><br/> S’è vo avete dighjà riesciutu à cunnettevi à stu servitore, u sbagliu pò esse timpurariu.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Qualchissia puderia pruvà d’impatruniscesi di u situ web è cuntinuà puderia esse periculosu.</label> <br><br> <label>%1$s ùn hà micca fidanza in <b>%2$s</b> perchè l’emettore di u so certificatu hè scunnisciutu, u certificatu hè firmatu daperellu, o ancu u servitore ùn manda micca certificati intermediarii curretti.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Qualchissia puderia pruvà d’impatruniscesi di u situ web è cuntinuà puderia esse periculosu.</label> <br><br>\n<label>%1$s ùn hà micca fidanza in <b>%2$s</b> perchè l’emettore di u so certificatu hè scunnisciutu, u certificatu hè firmatu daperellu, o ancu u servitore ùn manda micca certificati intermediarii curretti.</label>]]></string>
   <!--
     Sessions List
 

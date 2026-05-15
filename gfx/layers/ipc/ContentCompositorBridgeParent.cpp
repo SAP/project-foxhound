@@ -28,7 +28,6 @@
 #include "nsDebug.h"           // for NS_ASSERTION, etc
 #include "nsTArray.h"          // for nsTArray
 #include "nsXULAppAPI.h"       // for XRE_GetAsyncIOEventTarget
-#include "mozilla/Unused.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/BaseProfilerMarkerTypes.h"
@@ -187,7 +186,7 @@ ContentCompositorBridgeParent::AllocPWebRenderBridgeParent(
   api = api->Clone();
   RefPtr<AsyncImagePipelineManager> holder = root->AsyncImageManager();
   WebRenderBridgeParent* parent = new WebRenderBridgeParent(
-      this, aPipelineId, nullptr, root->CompositorScheduler(), std::move(api),
+      this, aPipelineId, root->CompositorScheduler(), std::move(api),
       std::move(holder), cbp->GetVsyncInterval());
   parent->AddRef();  // IPDL reference
 
@@ -259,6 +258,36 @@ mozilla::ipc::IPCResult ContentCompositorBridgeParent::RecvCheckContentOnlyTDR(
 #endif
   return IPC_OK();
 };
+
+mozilla::ipc::IPCResult
+ContentCompositorBridgeParent::RecvCheckAndClearWRDidRasterize(
+    const LayersId& aId, bool* aDidRasterize) {
+  *aDidRasterize = false;
+
+  const CompositorBridgeParent::LayerTreeState* state =
+      CompositorBridgeParent::GetIndirectShadowTree(aId);
+  if (!state || !state->mParent) {
+    return IPC_OK();
+  }
+
+  // Forward to the parent compositor which owns the renderer
+  RefPtr<wr::WebRenderAPI> api;
+  {
+    StaticMonitorAutoLock lock(CompositorBridgeParent::sIndirectLayerTreesLock);
+    LayersId rootId = state->mParent->RootLayerTreeId();
+    const CompositorBridgeParent::LayerTreeState& rootState =
+        CompositorBridgeParent::sIndirectLayerTrees[rootId];
+    if (rootState.mWrBridge) {
+      api = rootState.mWrBridge->GetWebRenderAPI();
+    }
+  }
+
+  if (api) {
+    *aDidRasterize = api->CheckAndClearDidRasterize();
+  }
+
+  return IPC_OK();
+}
 
 void ContentCompositorBridgeParent::DidCompositeLocked(
     LayersId aId, const VsyncId& aVsyncId, TimeStamp& aCompositeStart,
@@ -444,7 +473,7 @@ void ContentCompositorBridgeParent::ObserveLayersUpdate(LayersId aLayersId,
     return;
   }
 
-  Unused << state->mParent->SendObserveLayersUpdate(aLayersId, aActive);
+  (void)state->mParent->SendObserveLayersUpdate(aLayersId, aActive);
 }
 
 }  // namespace mozilla::layers

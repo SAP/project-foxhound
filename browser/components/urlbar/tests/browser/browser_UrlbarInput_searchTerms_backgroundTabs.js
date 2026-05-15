@@ -23,7 +23,7 @@ add_setup(async function () {
 // the search term should show when the tab is focused.
 add_task(async function ctrl_open() {
   let [expectedSearchUrl] = UrlbarUtils.getSearchQueryUrl(
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     SEARCH_STRING
   );
   // Search for the term in a new background tab.

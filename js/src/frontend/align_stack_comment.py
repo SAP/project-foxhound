@@ -4,13 +4,13 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-""" Usage: align_stack_comment.py FILE
+"""Usage: align_stack_comment.py FILE
 
-    This script aligns the stack transition comment in BytecodeEmitter and
-    its helper classes.
+This script aligns the stack transition comment in BytecodeEmitter and
+its helper classes.
 
-    The stack transition comment looks like the following:
-      //        [stack] VAL1 VAL2 VAL3
+The stack transition comment looks like the following:
+  //        [stack] VAL1 VAL2 VAL3
 """
 
 import re

@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=874090
   <!-- test code goes here -->
   <script type="application/javascript">
   <![CDATA[
-  /** Test for Bug 874090 **/
+  /** Test for Bug 874090 */
   const MOCK_CID = Components.ID("{2a0f83c4-8818-4914-a184-f1172b4eaaa7}");
   const SYSTEM_CID = Components.ID("{a0ccaaf8-09da-44d8-b250-9ac3e93c8117}");
   const ALERTS_SERVICE_CONTRACT_ID = "@mozilla.org/alerts-service;1";
@@ -28,10 +28,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=874090
       ok(true, "System principal was granted permission and is able to call showAlert.");
       unregisterMock();
       SimpleTest.finish();
-    },
-
-    showAlertNotification() {
-      this.showAlert();
     },
 
     QueryInterface: ChromeUtils.generateQI(["nsIAlertsService"]),

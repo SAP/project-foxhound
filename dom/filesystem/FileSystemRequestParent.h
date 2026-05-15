@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_FileSystemRequestParent_h
 #define mozilla_dom_FileSystemRequestParent_h
 
-#include "mozilla/dom/PFileSystemRequestParent.h"
 #include "mozilla/dom/FileSystemBase.h"
+#include "mozilla/dom/PFileSystemRequestParent.h"
 
 namespace mozilla::dom {
 

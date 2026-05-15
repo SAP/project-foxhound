@@ -5,17 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChannelMediaDecoder.h"
+
+#include "BaseMediaResource.h"
 #include "ChannelMediaResource.h"
 #include "DecoderTraits.h"
 #include "ExternalEngineStateMachine.h"
 #include "MediaDecoderStateMachine.h"
 #include "MediaFormatReader.h"
-#include "BaseMediaResource.h"
 #include "MediaShutdownManager.h"
+#include "VideoUtils.h"
 #include "base/process_util.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "VideoUtils.h"
 
 namespace mozilla {
 
@@ -113,7 +114,7 @@ void ChannelMediaDecoder::ResourceCallback::NotifyDataArrived() {
   mTimerArmed = true;
   mTimer->InitWithNamedFuncCallback(
       TimerCallback, this, sDelay, nsITimer::TYPE_ONE_SHOT,
-      "ChannelMediaDecoder::ResourceCallback::TimerCallback");
+      "ChannelMediaDecoder::ResourceCallback::TimerCallback"_ns);
 }
 
 void ChannelMediaDecoder::ResourceCallback::NotifyDataEnded(nsresult aStatus) {
@@ -221,6 +222,9 @@ MediaDecoderStateMachineBase* ChannelMediaDecoder::CreateStateMachine(
                            sTrackingIdCounter++,
                            TrackingId::TrackAcrossProcesses::Yes);
   mReader = DecoderTraits::CreateReader(ContainerType(), init);
+  if (NS_WARN_IF(!mReader)) {
+    return nullptr;
+  }
 
 #ifdef MOZ_WMF_MEDIA_ENGINE
   // This state machine is mainly used for the encrypted playback. However, for
@@ -319,12 +323,11 @@ void ChannelMediaDecoder::NotifyDownloadEnded(nsresult aStatus) {
         [playbackStats = mPlaybackStatistics,
          res = RefPtr<BaseMediaResource>(mResource),
          duration = mDuration.match(DurationToTimeUnit())]() {
-          Unused << UpdateResourceOfPlaybackByteRate(playbackStats, res,
-                                                     duration);
+          (void)UpdateResourceOfPlaybackByteRate(playbackStats, res, duration);
         });
     nsresult rv = GetStateMachine()->OwnerThread()->Dispatch(r.forget());
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
     owner->DownloadSuspended();
     // NotifySuspendedStatusChanged will tell the element that download
     // has been suspended "by the cache", which is true since we never
@@ -378,12 +381,11 @@ void ChannelMediaDecoder::DurationChanged() {
       [playbackStats = mPlaybackStatistics,
        res = RefPtr<BaseMediaResource>(mResource),
        duration = mDuration.match(DurationToTimeUnit())]() {
-        Unused << UpdateResourceOfPlaybackByteRate(playbackStats, res,
-                                                   duration);
+        (void)UpdateResourceOfPlaybackByteRate(playbackStats, res, duration);
       });
   nsresult rv = GetStateMachine()->OwnerThread()->Dispatch(r.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void ChannelMediaDecoder::DownloadProgressed() {
@@ -413,7 +415,7 @@ void ChannelMediaDecoder::DownloadProgressed() {
               })
       ->Then(
           mAbstractMainThread, __func__,
-          [=,
+          [=, this,
            self = RefPtr<ChannelMediaDecoder>(this)](MediaStatistics aStats) {
             if (IsShutdown()) {
               return;

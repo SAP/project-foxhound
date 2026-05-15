@@ -30,7 +30,7 @@ exports.actorSpecs = actorSpecs;
  *   Either a DevToolsServerConnection or a DevToolsClient.  Must have
  *   addActorPool, removeActorPool, and poolFor.
  *   conn can be null if the subclass provides a conn property.
- * @constructor
+ * @class
  */
 
 class Actor extends Pool {
@@ -101,6 +101,7 @@ class Actor extends Pool {
 
   /**
    * Override this method in subclasses to serialize the actor.
+   *
    * @returns A jsonable object.
    */
   form() {
@@ -139,8 +140,15 @@ class Actor extends Pool {
       fileName: error.fileName || error.filename,
       lineNumber: error.lineNumber,
       columnNumber: error.columnNumber,
-      // Also pass the whole stack as string
-      stack: error.stack,
+      // Also pass the whole stack as string.
+      //
+      // "out of memory" string may be thrown by SpiderMonkey,
+      // in which case getLastOOMStackTrace can return a last resort stack as a string.
+      // https://searchfox.org/firefox-main/rev/33bba5cfe4a89dda0ee07fa9fbac578353713fd3/js/src/vm/JSContext.cpp#296-297
+      stack:
+        error == "out of memory"
+          ? ChromeUtils.getLastOOMStackTrace()
+          : error.stack,
     });
   }
 
@@ -153,9 +161,10 @@ class Actor extends Pool {
   /**
    * Throw an error with the passed message and attach an `error` property to the Error
    * object so it can be consumed by the writeError function.
-   * @param {String} error: A string (usually a single word serving as an id) that will
+   *
+   * @param {string} error: A string (usually a single word serving as an id) that will
    *                        be assign to error.error.
-   * @param {String} message: The string that will be passed to the Error constructor.
+   * @param {string} message: The string that will be passed to the Error constructor.
    * @throws This always throw.
    */
   throwError(error, message) {
@@ -172,10 +181,10 @@ exports.Actor = Actor;
  * When a RDP packet is received for calling an actor method, this lookup for
  * the method name in this object and call the function holded on this attribute.
  *
- * @params {Object} actorSpec
+ * @param {object} actorSpec
  *         The procotol-js actor specific coming from devtools/shared/specs/*.js files
  *         This describes the types for methods and events implemented by all actors.
- * @return {Object} requestTypes
+ * @return {object} requestTypes
  *         An object where attributes are actor method names
  *         and values are function implementing these methods.
  *         These methods receive a RDP Packet (JSON-serializable object) and a DevToolsServerConnection.
@@ -188,7 +197,7 @@ var generateRequestTypes = function (actorSpec) {
   actorSpec.methods.forEach(spec => {
     const handler = function (packet, conn) {
       try {
-        const startTime = isWorker ? null : Cu.now();
+        const startTime = isWorker ? null : ChromeUtils.now();
         let args;
         try {
           args = spec.request.read(packet, this);

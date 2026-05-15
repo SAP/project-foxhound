@@ -14,6 +14,8 @@ import org.mozilla.fenix.components.metrics.MetricServiceType
 class FakeMetricController : MetricController {
     val startedServiceTypes: MutableList<MetricServiceType> = emptyList<MetricServiceType>().toMutableList()
 
+    val trackedEvents: MutableList<Event> = mutableListOf()
+
     override fun start(type: MetricServiceType) {
         startedServiceTypes.add(type)
     }
@@ -23,6 +25,6 @@ class FakeMetricController : MetricController {
     }
 
     override fun track(event: Event) {
-        // no-op
+        trackedEvents.add(event)
     }
 }

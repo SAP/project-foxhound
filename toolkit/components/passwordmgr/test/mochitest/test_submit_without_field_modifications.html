@@ -51,8 +51,8 @@ async function setupWithOneLogin(pageUrl) {
 }
 
 function resetSavedLogins() {
-  let chromeScript = runInParent(function testTeardown() {
-    Services.logins.removeAllUserFacingLogins();
+  let chromeScript = runInParent(async function testTeardown() {
+    await Services.logins.removeAllUserFacingLoginsAsync();
   });
   chromeScript.destroy();
 }
@@ -77,7 +77,7 @@ async function navigateWithoutUserInteraction() {
   let loadPromise = waitForLoad();
   await SpecialPowers.spawn(getIframeBrowsingContext(window), [], function() {
     let doc = this.content.document;
-    let hadInteracted = doc.userHasInteracted;
+    let hadInteracted = doc.hasBeenUserGestureActivated;
     let target = doc.querySelector("a[href]");
     if (target) {
       target.click();
@@ -85,7 +85,7 @@ async function navigateWithoutUserInteraction() {
       target = doc.querySelector("form");
       target.submit();
     }
-    is(doc.userHasInteracted, hadInteracted, "document.userHasInteracted shouldn't have changed");
+    is(doc.hasBeenUserGestureActivated, hadInteracted, "document.userHasInteracted shouldn't have changed");
   });
   await loadPromise;
 }
@@ -93,7 +93,7 @@ async function navigateWithoutUserInteraction() {
 async function userInput(selector, value) {
   await SpecialPowers.spawn(getIframeBrowsingContext(window), [selector, value], async function(sel, val) {
     // use "real" synthesized events rather than setUserInput to ensure
-    // document.userHasInteracted is flipped true
+    // document.hasBeenUserGestureActivated is flipped true
     let EventUtils = ContentTaskUtils.getEventUtils(content);
     let target = this.content.document.querySelector(sel);
     target.focus();
@@ -110,7 +110,7 @@ async function userInput(selector, value) {
 
 function checkDocumentUserHasInteracted() {
   return SpecialPowers.spawn(getIframeBrowsingContext(window), [], function() {
-    return this.content.document.userHasInteracted;
+    return this.content.document.hasBeenUserGestureActivated;
   });
 }
 

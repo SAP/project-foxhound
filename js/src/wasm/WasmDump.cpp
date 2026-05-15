@@ -719,7 +719,7 @@ void wasm::DumpTableDesc(const TableDesc& tableDesc,
   if (tableDesc.maximumLength().isSome()) {
     out.printf("%" PRIu64 " ", tableDesc.maximumLength().value());
   }
-  DumpRefType(tableDesc.elemType, out, codeMeta.types);
+  DumpRefType(tableDesc.elemType(), out, codeMeta.types);
   if (includeInitExpr && tableDesc.initExpr) {
     StructuredPrinter::Scope _(out);
     DumpInitExpr(tableDesc.initExpr.ref(), codeMeta, out);
@@ -744,9 +744,13 @@ void wasm::DumpMemoryDesc(const MemoryDesc& memDesc, StructuredPrinter& out,
   if (memDesc.addressType() == AddressType::I64) {
     out.printf("i64 ");
   }
-  out.printf("%" PRIu64, memDesc.initialPages().value());
+  out.printf("%" PRIu64, memDesc.initialPages().pageCount());
   if (memDesc.maximumPages().isSome()) {
-    out.printf(" %" PRIu64, memDesc.maximumPages().value().value());
+    out.printf(" %" PRIu64, memDesc.maximumPages().value().pageCount());
+  }
+  if (memDesc.initialPages().pageSize() != PageSize::Standard) {
+    out.printf(" (pagesize %d)",
+               PageSizeInBytes(memDesc.initialPages().pageSize()));
   }
   out.printf(")");
 }

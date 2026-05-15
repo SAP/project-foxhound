@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsFind_h__
-#define nsFind_h__
+#ifndef nsFind_h_
+#define nsFind_h_
 
 #include "nsIFind.h"
 
@@ -78,4 +78,4 @@ class nsFind : public nsIFind {
   char32_t PeekNextChar(State&, bool aAlreadyMatching) const;
 };
 
-#endif  // nsFind_h__
+#endif  // nsFind_h_

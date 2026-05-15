@@ -74,6 +74,12 @@ enum class KeyPurposeId {
   id_kp_codeSigning = 3,      // id-kp-codeSigning
   id_kp_emailProtection = 4,  // id-kp-emailProtection
   id_kp_OCSPSigning = 9,      // id-kp-OCSPSigning
+  // RFC 9336 - X.509 Certificate General-Purpose Extended Key Usage (EKU) for
+  // Document Signing
+  id_kp_documentSigning = 36,  // id-kp-documentSigning
+  // Adobe Authentic Documents Trust (1.2.840.113583.1.1.5)
+  id_kp_documentSigningAdobe,
+  id_kp_documentSigningMicrosoft,
 };
 
 struct CertPolicyId final {
@@ -272,8 +278,7 @@ class TrustDomain {
                                  const CertID& certID, Time time,
                                  Duration validityDuration,
                                  /*optional*/ const Input* stapledOCSPresponse,
-                                 /*optional*/ const Input* aiaExtension,
-                                 /*optional*/ const Input* sctExtension) = 0;
+                                 /*optional*/ const Input* aiaExtension) = 0;
 
   // Check that the given digest algorithm is acceptable for use in signatures.
   //
@@ -342,15 +347,6 @@ class TrustDomain {
   virtual Result CheckValidityIsAcceptable(Time notBefore, Time notAfter,
                                            EndEntityOrCA endEntityOrCA,
                                            KeyPurposeId keyPurpose) = 0;
-
-  // For compatibility, a CA certificate with an extended key usage that
-  // contains the id-Netscape-stepUp OID but does not contain the
-  // id-kp-serverAuth OID may be considered valid for issuing server auth
-  // certificates. This function allows TrustDomain implementations to control
-  // this setting based on the start of the validity period of the certificate
-  // in question.
-  virtual Result NetscapeStepUpMatchesServerAuth(Time notBefore,
-                                                 /*out*/ bool& matches) = 0;
 
   // Some certificate or OCSP response extensions do not directly participate
   // in the verification flow, but might still be of interest to the clients

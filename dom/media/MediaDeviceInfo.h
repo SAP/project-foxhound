@@ -6,7 +6,6 @@
 #define mozilla_dom_MediaDeviceInfo_h
 
 #include "js/RootingAPI.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/dom/MediaDeviceInfoBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsID.h"

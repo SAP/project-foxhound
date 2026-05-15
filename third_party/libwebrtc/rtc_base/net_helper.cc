@@ -10,9 +10,12 @@
 
 #include "rtc_base/net_helper.h"
 
+#include <optional>
+
+#include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 
-namespace cricket {
+namespace webrtc {
 
 const char UDP_PROTOCOL_NAME[] = "udp";
 const char TCP_PROTOCOL_NAME[] = "tcp";
@@ -30,4 +33,35 @@ int GetProtocolOverhead(absl::string_view protocol) {
   }
 }
 
-}  // namespace cricket
+absl::string_view ProtoToString(ProtocolType proto) {
+  switch (proto) {
+    case PROTO_UDP:
+      return UDP_PROTOCOL_NAME;
+    case PROTO_TCP:
+      return TCP_PROTOCOL_NAME;
+    case PROTO_SSLTCP:
+      return SSLTCP_PROTOCOL_NAME;
+    case PROTO_TLS:
+      return TLS_PROTOCOL_NAME;
+  }
+}
+
+std::optional<ProtocolType> StringToProto(absl::string_view proto_name) {
+  struct {
+    ProtocolType type;
+    absl::string_view name;
+  } const mappings[] = {
+      {PROTO_UDP, UDP_PROTOCOL_NAME},
+      {PROTO_TCP, TCP_PROTOCOL_NAME},
+      {PROTO_SSLTCP, SSLTCP_PROTOCOL_NAME},
+      {PROTO_TLS, TLS_PROTOCOL_NAME},
+  };
+  for (const auto& m : mappings) {
+    if (absl::EqualsIgnoreCase(m.name, proto_name)) {
+      return m.type;
+    }
+  }
+  return std::nullopt;
+}
+
+}  // namespace webrtc

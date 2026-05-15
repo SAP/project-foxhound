@@ -75,7 +75,7 @@ class MediaStreamAudioSourceNode
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
   // Attaches to aTrack so that its audio content will be used as input.
-  void AttachToTrack(const RefPtr<MediaStreamTrack>& aTrack, ErrorResult& aRv);
+  void AttachToTrack(AudioStreamTrack* aTrack);
 
   // Detaches from the currently attached track if there is one.
   void DetachFromTrack();
@@ -137,7 +137,7 @@ class MediaStreamAudioSourceNode
   RefPtr<DOMMediaStream> mInputStream;
 
   // On construction we set this to the first audio track of mInputStream.
-  RefPtr<MediaStreamTrack> mInputTrack;
+  RefPtr<AudioStreamTrack> mInputTrack;
   RefPtr<TrackListener> mListener;
 };
 

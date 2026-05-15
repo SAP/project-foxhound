@@ -7,8 +7,8 @@
 #define ImageToI420Converter_h
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "nsError.h"
 #include "mozilla/gfx/Point.h"
+#include "nsError.h"
 
 namespace mozilla {
 

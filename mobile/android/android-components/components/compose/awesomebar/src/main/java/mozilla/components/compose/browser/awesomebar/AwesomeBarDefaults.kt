@@ -18,14 +18,16 @@ object AwesomeBarDefaults {
      * @param background The background of the AwesomeBar.
      * @param title The text color for the title of a suggestion.
      * @param description The text color for the description of a suggestion.
+     * @param autocompleteIcon The color for the autocomplete icon.
+     * @param groupTitle The text color for the group title.
      */
     @Composable
     fun colors(
         background: Color = MaterialTheme.colorScheme.background,
         title: Color = MaterialTheme.colorScheme.onBackground,
         description: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-        autocompleteIcon: Color = MaterialTheme.colorScheme.onSurface,
-        groupTitle: Color = MaterialTheme.colorScheme.onBackground,
+        autocompleteIcon: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+        groupTitle: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     ) = AwesomeBarColors(
         background,
         title,

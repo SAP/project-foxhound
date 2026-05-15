@@ -14,6 +14,7 @@
 /**
  * Adds an event listener to the given element, and then removes its event
  * listener once the event is called, returning the event object as a promise.
+ *
  * @param  Element element
  *         The DOM element to listen on
  * @param  String event

@@ -6,7 +6,6 @@
 #define mozilla_dom_RemoteWorkerDebuggerChild_h
 
 #include "mozilla/dom/PRemoteWorkerDebuggerChild.h"
-#include "mozilla/RefPtr.h"
 
 using mozilla::ipc::IPCResult;
 

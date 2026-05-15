@@ -1,6 +1,5 @@
 #!/usr/bin/env python2.4
-"""usage: %progname candidate_path baseline_path
-"""
+"""usage: %progname candidate_path baseline_path"""
 
 import json
 import optparse

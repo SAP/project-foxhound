@@ -36,6 +36,7 @@ RefPtr<ShutdownPromise> WMFMediaDataDecoder::Shutdown() {
   mIsShutDown = true;
 
   return InvokeAsync(mTaskQueue, __func__, [self = RefPtr{this}, this] {
+    AUTO_PROFILER_LABEL("WMFMediaDataDecoder::Shutdown", MEDIA_PLAYBACK);
     if (mMFTManager) {
       mMFTManager->Shutdown();
       mMFTManager = nullptr;
@@ -75,6 +76,7 @@ RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessError(
 
 RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessDecode(
     MediaRawData* aSample) {
+  AUTO_PROFILER_LABEL("WMFMediaDataDecoder::ProcessDecode", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   DecodedData results;
   LOG("ProcessDecode, type=%s, sample=%" PRId64 ", duration=%" PRId64,
@@ -168,6 +170,7 @@ WMFMediaDataDecoder::ProcessOutput(DecodedData& aResults) {
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> WMFMediaDataDecoder::ProcessFlush() {
+  AUTO_PROFILER_LABEL("WMFMediaDataDecoder::ProcessFlush", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   if (mMFTManager) {
     mMFTManager->Flush();
@@ -189,6 +192,7 @@ RefPtr<MediaDataDecoder::FlushPromise> WMFMediaDataDecoder::Flush() {
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> WMFMediaDataDecoder::ProcessDrain() {
+  AUTO_PROFILER_LABEL("WMFMediaDataDecoder::ProcessDrain", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   if (!mMFTManager || mDrainStatus == DrainStatus::DRAINED) {
     return DecodePromise::CreateAndResolve(DecodedData(), __func__);
@@ -271,7 +275,7 @@ void WMFMediaDataDecoder::SetSeekThreshold(const media::TimeUnit& aTime) {
       });
   nsresult rv = mTaskQueue->Dispatch(runnable.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 }  // namespace mozilla

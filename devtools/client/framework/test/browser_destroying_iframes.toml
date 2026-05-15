@@ -1,0 +1,16 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/telemetry-test-helpers.js",
+]
+
+["browser_destroying_iframes.js"]
+skip-if = [
+  "asan", # Getting random unhandled exceptions which aren't crashing DevTools
+  "tsan",
+]
+# This test suite is dedicated to isolate browser_destroying_iframes.js which
+# needs to allow promise rejections, without impacting other tests.

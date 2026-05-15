@@ -6,9 +6,8 @@
 #ifndef MOZILLA_AUDIOCAPTURETRACK_H_
 #define MOZILLA_AUDIOCAPTURETRACK_H_
 
-#include "MediaTrackGraph.h"
 #include "AudioMixer.h"
-#include <algorithm>
+#include "MediaTrackGraph.h"
 
 namespace mozilla {
 

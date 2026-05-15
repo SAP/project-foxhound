@@ -21,9 +21,14 @@ task-defaults:
                             SHELL: /bin/bash
                             JSSHELL: d8/release/d8
                 max-run-time: 3600
+                artifacts:
+                    - type: file
+                      name: public/build/perfherder-data-jsshell.json
+                      path: artifacts/perfherder-data-jsshell.json
     treeherder:
         kind: test
         tier: 2
+    run-on-repo-type: [hg]
     run:
         using: mach
         mach: jsshell-bench --perfherder={shell} --binary=$MOZ_FETCHES_DIR/$JSSHELL {test}

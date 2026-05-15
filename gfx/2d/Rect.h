@@ -90,6 +90,11 @@ struct MarginTyped
                                  int32_t(std::floor(this->bottom + 0.5f)),
                                  int32_t(std::floor(this->left + 0.5f)));
   }
+
+  MarginTyped<UnknownUnits, F> ToUnknownMargin() const {
+    return MarginTyped<UnknownUnits, F>(this->top.value, this->right.value,
+                                        this->bottom.value, this->left.value);
+  }
 };
 typedef MarginTyped<UnknownUnits> Margin;
 typedef MarginTyped<UnknownUnits, double> MarginDouble;
@@ -167,6 +172,11 @@ struct MOZ_EMPTY_BASES IntRectTyped
   static IntRectTyped<Units> Truncate(const RectTyped<Units, float>& aRect) {
     return IntRectTyped::Truncate(aRect.X(), aRect.Y(), aRect.Width(),
                                   aRect.Height());
+  }
+
+  static IntRectTyped<Units> Truncate(const RectTyped<Units, double>& aRect) {
+    return IntRectTyped(int32_t(aRect.X()), int32_t(aRect.Y()),
+                        int32_t(aRect.Width()), int32_t(aRect.Height()));
   }
 
   // Rounding isn't meaningful on an integer rectangle.
@@ -338,10 +348,10 @@ IntRectTyped<Units> RoundedToInt(const RectTyped<Units>& aRect) {
                              int32_t(copy.Width()), int32_t(copy.Height()));
 }
 
-template <class Units>
-bool RectIsInt32Safe(const RectTyped<Units>& aRect) {
-  float min = (float)std::numeric_limits<std::int32_t>::min();
-  float max = (float)std::numeric_limits<std::int32_t>::max();
+template <class Units, class F>
+bool RectIsInt32Safe(const RectTyped<Units, F>& aRect) {
+  F min = (F)std::numeric_limits<int32_t>::min();
+  F max = (F)std::numeric_limits<int32_t>::max();
   return aRect.x > min && aRect.y > min && aRect.width < max &&
          aRect.height < max && aRect.XMost() < max && aRect.YMost() < max;
 }
@@ -356,8 +366,8 @@ IntRectTyped<Units> RoundedOut(const RectTyped<Units>& aRect) {
   return IntRectTyped<Units>::RoundOut(aRect);
 }
 
-template <class Units>
-IntRectTyped<Units> TruncatedToInt(const RectTyped<Units>& aRect) {
+template <class Units, class F>
+IntRectTyped<Units> TruncatedToInt(const RectTyped<Units, F>& aRect) {
   return IntRectTyped<Units>::Truncate(aRect);
 }
 
@@ -389,43 +399,54 @@ Maybe<Rect> UnionMaybeRects(const Maybe<Rect>& a, const Maybe<Rect>& b) {
   }
 }
 
-struct RectCornerRadii final {
+template <typename Coord, typename Size, typename Margin>
+struct BaseRectCornerRadii {
   Size radii[eCornerCount];
 
-  RectCornerRadii() = default;
+  BaseRectCornerRadii() = default;
 
-  explicit RectCornerRadii(Float radius) {
+  explicit BaseRectCornerRadii(Coord radius) {
     for (const auto i : mozilla::AllPhysicalCorners()) {
       radii[i].SizeTo(radius, radius);
     }
   }
 
-  RectCornerRadii(Float radiusX, Float radiusY) {
+  BaseRectCornerRadii(Coord radiusX, Coord radiusY) {
     for (const auto i : mozilla::AllPhysicalCorners()) {
       radii[i].SizeTo(radiusX, radiusY);
     }
   }
 
-  RectCornerRadii(Float tl, Float tr, Float br, Float bl) {
+  BaseRectCornerRadii(Coord tl, Coord tr, Coord br, Coord bl) {
     radii[eCornerTopLeft].SizeTo(tl, tl);
     radii[eCornerTopRight].SizeTo(tr, tr);
     radii[eCornerBottomRight].SizeTo(br, br);
     radii[eCornerBottomLeft].SizeTo(bl, bl);
   }
 
-  RectCornerRadii(const Size& tl, const Size& tr, const Size& br,
-                  const Size& bl) {
+  BaseRectCornerRadii(const Size& tl, const Size& tr, const Size& br,
+                      const Size& bl) {
     radii[eCornerTopLeft] = tl;
     radii[eCornerTopRight] = tr;
     radii[eCornerBottomRight] = br;
     radii[eCornerBottomLeft] = bl;
   }
 
-  const Size& operator[](size_t aCorner) const { return radii[aCorner]; }
+  const Size& operator[](Corner aCorner) const { return radii[aCorner]; }
+  Size& operator[](Corner aCorner) { return radii[aCorner]; }
 
-  Size& operator[](size_t aCorner) { return radii[aCorner]; }
+  const Coord& operator[](HalfCorner aCorner) const {
+    return reinterpret_cast<const Coord*>(&radii)[aCorner];
+  }
+  Coord& operator[](HalfCorner aCorner) {
+    return reinterpret_cast<Coord*>(&radii)[aCorner];
+  }
 
-  bool operator==(const RectCornerRadii& aOther) const {
+  bool operator!=(const BaseRectCornerRadii& aOther) const {
+    return !(*this == aOther);
+  }
+
+  bool operator==(const BaseRectCornerRadii& aOther) const {
     return TopLeft() == aOther.TopLeft() && TopRight() == aOther.TopRight() &&
            BottomRight() == aOther.BottomRight() &&
            BottomLeft() == aOther.BottomLeft();
@@ -437,27 +458,64 @@ struct RectCornerRadii final {
   }
 
   void Scale(Float aXScale, Float aYScale) {
-    for (const auto i : mozilla::AllPhysicalCorners()) {
-      radii[i].Scale(aXScale, aYScale);
+    for (auto& corner : radii) {
+      corner.Scale(aXScale, aYScale);
     }
   }
 
-  const Size TopLeft() const { return radii[eCornerTopLeft]; }
+  const Size& TopLeft() const { return radii[eCornerTopLeft]; }
   Size& TopLeft() { return radii[eCornerTopLeft]; }
 
-  const Size TopRight() const { return radii[eCornerTopRight]; }
+  const Size& TopRight() const { return radii[eCornerTopRight]; }
   Size& TopRight() { return radii[eCornerTopRight]; }
 
-  const Size BottomRight() const { return radii[eCornerBottomRight]; }
+  const Size& BottomRight() const { return radii[eCornerBottomRight]; }
   Size& BottomRight() { return radii[eCornerBottomRight]; }
 
-  const Size BottomLeft() const { return radii[eCornerBottomLeft]; }
+  const Size& BottomLeft() const { return radii[eCornerBottomLeft]; }
   Size& BottomLeft() { return radii[eCornerBottomLeft]; }
 
   bool IsEmpty() const {
     return TopLeft().IsEmpty() && TopRight().IsEmpty() &&
            BottomRight().IsEmpty() && BottomLeft().IsEmpty();
   }
+
+  void AdjustOutwards(const Margin& aMargin) { return Adjust<true>(aMargin); }
+  void AdjustInwards(const Margin& aMargin) { return Adjust<false>(-aMargin); }
+
+ private:
+  template <bool aOut>
+  void Adjust(const Margin& aMargin) {
+    constexpr Coord kZero(0);
+    constexpr auto C_TL = eCornerTopLeft;
+    constexpr auto C_TR = eCornerTopRight;
+    constexpr auto C_BL = eCornerBottomLeft;
+    constexpr auto C_BR = eCornerBottomRight;
+    // round the edges that have radii > 0.0 to start with
+    if (!aOut || (radii[C_TL].width > kZero && radii[C_TL].height > kZero)) {
+      radii[C_TL].width = std::max(kZero, radii[C_TL].width + aMargin.left);
+      radii[C_TL].height = std::max(kZero, radii[C_TL].height + aMargin.top);
+    }
+
+    if (!aOut || (radii[C_TR].width > kZero && radii[C_TR].height > kZero)) {
+      radii[C_TR].width = std::max(kZero, radii[C_TR].width + aMargin.right);
+      radii[C_TR].height = std::max(kZero, radii[C_TR].height + aMargin.top);
+    }
+
+    if (!aOut || (radii[C_BR].width > kZero && radii[C_BR].height > kZero)) {
+      radii[C_BR].width = std::max(kZero, radii[C_BR].width + aMargin.right);
+      radii[C_BR].height = std::max(kZero, radii[C_BR].height + aMargin.bottom);
+    }
+
+    if (!aOut || (radii[C_BL].width > kZero && radii[C_BL].height > kZero)) {
+      radii[C_BL].width = std::max(kZero, radii[C_BL].width + aMargin.left);
+      radii[C_BL].height = std::max(kZero, radii[C_BL].height + aMargin.bottom);
+    }
+  }
+};
+
+struct RectCornerRadii final : public BaseRectCornerRadii<Float, Size, Margin> {
+  using BaseRectCornerRadii::BaseRectCornerRadii;
 };
 
 /* A rounded rectangle abstraction.
@@ -470,8 +528,14 @@ struct RectCornerRadii final {
 struct RoundedRect {
   typedef mozilla::gfx::RectCornerRadii RectCornerRadii;
 
+  RoundedRect() = default;
+
   RoundedRect(const Rect& aRect, const RectCornerRadii& aCorners)
       : rect(aRect), corners(aCorners) {}
+
+  void Deflate(const Margin& aMargin) {
+    Deflate(aMargin.top, aMargin.bottom, aMargin.left, aMargin.right);
+  }
 
   void Deflate(Float aTopWidth, Float aBottomWidth, Float aLeftWidth,
                Float aRightWidth) {

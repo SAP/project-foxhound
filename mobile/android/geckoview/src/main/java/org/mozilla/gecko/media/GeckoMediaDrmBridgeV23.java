@@ -4,14 +4,10 @@
 
 package org.mozilla.gecko.media;
 
-import static android.os.Build.VERSION_CODES.M;
-
-import android.annotation.TargetApi;
 import android.media.MediaDrm;
 import android.util.Log;
 import java.util.List;
 
-@TargetApi(M)
 public class GeckoMediaDrmBridgeV23 extends GeckoMediaDrmBridgeV21 {
   private static final boolean DEBUG = false;
 

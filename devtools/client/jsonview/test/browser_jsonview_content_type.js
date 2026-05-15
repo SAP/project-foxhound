@@ -20,8 +20,9 @@ const contentTypes = {
   invalid: [
     "text/json",
     "text/hal+json",
-    "application/jsona",
-    "application/whatever+jsona",
+    // Disabled, bug 1862935
+    //"application/jsona",
+    //"application/whatever+jsona",
   ],
 };
 
@@ -90,7 +91,8 @@ function testType(isValid, type, params = "") {
       const count = await getElementCount(".jsonPanelBox .treeTable .treeRow");
       is(count, 3, "There must be expected number of rows");
     },
-    function () {
+    function (err) {
+      is(err, "Error: The JSON Viewer did not load.");
       ok(
         !isValid,
         "The JSON Viewer should only not load for invalid content types."

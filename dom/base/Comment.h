@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_Comment_h
 #define mozilla_dom_Comment_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/CharacterData.h"
 
 namespace mozilla::dom {

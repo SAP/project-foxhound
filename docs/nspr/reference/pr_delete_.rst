@@ -1,5 +1,5 @@
-PR_DELETE
-=========
+PR_DELETE (Deprecated)
+======================
 
 
 Allocates memory of a specified size from the heap.

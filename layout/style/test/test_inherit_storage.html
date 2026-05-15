@@ -20,8 +20,10 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=375363
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for parsing, storage, and serialization of CSS 'inherit' on all
-    properties and 'unset' on inherited properties **/
+/**
+ * Test for parsing, storage, and serialization of CSS 'inherit' on all
+ * properties and 'unset' on inherited properties
+ */
 
 var gDeclaration = document.getElementById("testnode").style;
 
@@ -38,6 +40,9 @@ function test_property(property)
       var sinfo = gCSSProperties[sproperty];
       var val = gDeclaration.getPropertyValue(sproperty);
       is(val, "", "value of '" + sproperty + "' before we do anything");
+      if (sinfo.domPropDisabled) {
+        return;
+      }
       is(val, gDeclaration[sinfo.domProp],
          "consistency between decl.getPropertyValue('" + sproperty + "') and decl." + sinfo.domProp);
     }
@@ -53,6 +58,9 @@ function test_property(property)
       val = gDeclaration.getPropertyValue(sproperty);
       is(val, keyword,
          keyword + " reported back for property '" + sproperty + "'");
+      if (sinfo.domPropDisabled) {
+        return;
+      }
       is(val, gDeclaration[sinfo.domProp],
          "consistency between decl.getPropertyValue('" + sproperty +
          "') and decl." + sinfo.domProp);
@@ -84,6 +92,9 @@ function test_property(property)
       var sinfo = gCSSProperties[sproperty];
       var val = gDeclaration.getPropertyValue(sproperty);
       is(val, "", "value of '" + sproperty + "' after removal of value");
+      if (sinfo.domPropDisabled) {
+        return;
+      }
       is(val, gDeclaration[sinfo.domProp],
          "consistency between decl.getPropertyValue('" + sproperty + "') and decl." + sinfo.domProp);
     }

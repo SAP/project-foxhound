@@ -278,42 +278,15 @@ async function runTests() {
   assertNotFound(quotes, "Tardigrade");
   assertNotFound(quotes, "Amoeba");
 
-  // hidden=until-found content is found
+  // nsFind should be able to find text inside hidden=until-found
+  // or closed <details> elements.
+  // Note: nsFind itself does not trigger the reveal algorithm; that is the
+  // responsibility of the caller (e.g., find-in-page, nsTypeAheadFind).
   // https://html.spec.whatwg.org/#attr-hidden-until-found
-  const hiddenUntilFound = document.querySelector("#hidden-until-found");
-  // Create a promise that resolves when the beforematch event fires.
-  const beforematchPromise = new Promise(resolve => {
-    hiddenUntilFound.onbeforematch = () => resolve();
-  });
-  is(
-    getComputedStyle(hiddenUntilFound).contentVisibility,
-    "hidden",
-    "hidden=until-found content has content-visibility: hidden before being found"
-  );
   assertFound(document.body, "hidden until found");
 
-  await beforematchPromise;
-  await new Promise(resolve => requestAnimationFrame(resolve));
-
-  is(
-    getComputedStyle(hiddenUntilFound).contentVisibility,
-    "visible",
-    "hidden=until-found content has content-visibility: visible after being found"
-  );
-
-  // https://html.spec.whatwg.org/#interaction-with-details-and-hidden=until-found
-  const hiddenHiddenUntilFound = document.querySelector("div#hidden-until-found-inside-hidden");
-  hiddenHiddenUntilFound.onbeforematch = () => ok(
-    false,
-    "Beforematch must not be fired for a hidden=until-found element which is inside a content-visibility:hidden element."
-  );
   assertNotFound(document.body, "hidden because of content-visibility: hidden outside of hidden=until-found");
 
-  const nestedHiddenInHiddenUntilFound = document.querySelector("div#hidden-until-found-with-inner-hidden");
-  nestedHiddenInHiddenUntilFound.onbeforematch = () => ok(
-    false,
-    "Beforematch must not be fired for a hidden=until-found element if the matched content is content-visibility:hidden"
-  );
   assertNotFound(document.body, "nested hidden block should not be found");
   assertNotFound(document.body, "nested visibility:hidden should not be found");
 
@@ -371,6 +344,12 @@ async function runTests() {
   assertNotFound(space, "\u{10000A}");
   assertNotFound(space, "\u{3000D}");
   assertNotFound(space, "\u{3000A}");
+
+  // Bug 1951607: Text inside <option> elements within <optgroup> in a <select>
+  // should be findable.
+  var selectElement = document.getElementById("select-with-optgroup");
+  assertFound(selectElement, "optgroup");
+  assertFound(selectElement, "OptionInOptGroup");
 
   // Do these test at the end since they trigger failure screenshots in
   // the test harness, and we want as much information as possible about
@@ -483,6 +462,11 @@ async function runTests() {
 </div>
 <p id="nonspace">&#x2000D;&#x10000A;</p>
 <p id="space"> <br>&nbsp;</p>
+<select id="select-with-optgroup" multiple>
+  <optgroup label="optgroup">
+    <option>OptionInOptGroup</option>
+  </optgroup>
+</select>
 <pre id="test">
 </pre>
 </body>

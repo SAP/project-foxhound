@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_Request_h
 #define mozilla_dom_Request_h
 
-#include "nsISupportsImpl.h"
-#include "nsWrapperCache.h"
-
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/InternalRequest.h"
+#include "nsISupportsImpl.h"
+#include "nsWrapperCache.h"
 // Required here due to certain WebIDL enums/classes being declared in both
 // files.
 #include "mozilla/dom/RequestBinding.h"

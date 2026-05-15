@@ -139,7 +139,7 @@ When we can, we try to extract the relevant object properties in
 the arguments to an event handler or a function:
 
 ```javascript
-const responseListener = ({name, target, json, data}) => { … };
+const responseListener = ({name, target, json, data}) => { // ... };
 ```
 
 Instead of:
@@ -150,7 +150,7 @@ const responseListener = msg => {
   let target = msg.target;
   let json = msg.json;
   let data = msg.data;
-  …
+  // ...
 };
 ```
 

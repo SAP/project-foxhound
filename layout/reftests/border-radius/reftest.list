@@ -50,7 +50,7 @@ skip-if(Android&&emulator) == clipping-5-canvas.html clipping-5-refc.html
 fuzzy-if(winWidget,0-1,0-5) == clipping-5-image.html clipping-5-refi.html
 fuzzy(0-1,0-77) == clipping-5-overflow-hidden.html clipping-5-ref.html
 fuzzy(0-1,0-97) == clipping-5-refi.html clipping-5-ref.html
-skip-if(Android&&emulator) fuzzy(0-1,0-77) fuzzy-if(useDrawSnapshot,1-1,97-97) == clipping-5-refc.html clipping-5-ref.html # bug 732535
+skip-if(Android&&emulator) fuzzy(0-1,0-77) fuzzy-if(useDrawSnapshot,1-1,97-97) fuzzy-if(winWidget,0-255,0-113) == clipping-5-refc.html clipping-5-ref.html # bug 732535
 fuzzy(0-21,0-76) fuzzy-if(winWidget,0-144,0-335) == clipping-6.html clipping-6-ref.html # PaintedLayer and MaskLayer with transforms that aren't identical
 fuzzy(0-28,0-97) == clipping-7.html clipping-7-ref.html # ColorLayer and MaskLayer with transforms that aren't identical. Reference image rendered without using layers (which causes fuzzy failures).
 == clipping-and-zindex-1.html clipping-and-zindex-1-ref.html

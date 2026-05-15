@@ -337,13 +337,11 @@ void nsAppShell::OnRunLoopActivityChanged(CFRunLoopActivity aActivity) {
           profilingStack.pushLabelFrame("Native event loop idle", nullptr,
                                         &variableOnStack,
                                         JS::ProfilingCategoryPair::IDLE, 0);
-          profiler_thread_sleep();
         });
   } else {
     if (mProfilingStackWhileWaiting) {
       mProfilingStackWhileWaiting->pop();
       mProfilingStackWhileWaiting = nullptr;
-      profiler_thread_wake();
     }
   }
 }
@@ -686,14 +684,12 @@ bool nsAppShell::ProcessNextNativeEvent(bool aMayWait) {
 
   NSRunLoop* currentRunLoop = [NSRunLoop currentRunLoop];
 
-  EventQueueRef currentEventQueue = GetCurrentEventQueue();
-
   if (aMayWait) {
     mozilla::BackgroundHangMonitor().NotifyWait();
   }
 
   // Only call -[NSApp sendEvent:] (and indirectly send user-input events to
-  // Gecko) if aMayWait is true.  Tbis ensures most calls to -[NSApp
+  // Gecko) if aMayWait is true.  This ensures most calls to -[NSApp
   // sendEvent:] happen under nsAppShell::Run(), at the lowest level of
   // recursion -- thereby making it less likely Gecko will process user-input
   // events in the wrong order or skip some of them.  It also avoids eating
@@ -783,9 +779,11 @@ bool nsAppShell::ProcessNextNativeEvent(bool aMayWait) {
   } while (mRunningEventLoop);
 
   if (eventProcessed) {
-    moreEvents =
-        (AcquireFirstMatchingEventInQueue(currentEventQueue, 0, NULL,
-                                          kEventQueueOptionsNone) != NULL);
+    NSEvent* nextEvent = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                            untilDate:nil
+                                               inMode:currentMode
+                                              dequeue:NO];
+    moreEvents = !!nextEvent;
   }
 
   mRunningEventLoop = wasRunningEventLoop;

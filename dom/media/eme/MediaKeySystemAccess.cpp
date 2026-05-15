@@ -19,12 +19,12 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/PContent.h"
 #include "mozilla/dom/KeySystemNames.h"
 #include "mozilla/dom/MediaKeySession.h"
 #include "mozilla/dom/MediaKeySystemAccessBinding.h"
 #include "mozilla/dom/MediaKeySystemAccessManager.h"
 #include "mozilla/dom/MediaSource.h"
+#include "mozilla/dom/PContent.h"
 #include "nsDOMString.h"
 #include "nsIObserverService.h"
 #include "nsMimeTypes.h"
@@ -45,7 +45,7 @@ namespace mozilla::dom {
 #ifdef MOZ_WMF_CDM
 #  include "nsIWindowsMediaFoundationCDMOriginsListService.h"
 
-MOZ_RUNINIT static nsTArray<IPCOriginStatusEntry> sOriginStatusEntries;
+constinit static nsTArray<IPCOriginStatusEntry> sOriginStatusEntries;
 #endif
 
 #define LOG(msg, ...) \

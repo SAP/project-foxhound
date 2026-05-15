@@ -6,9 +6,8 @@
 
 #include "SMILAnimationFunction.h"
 
-#include <math.h>
-
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include "mozilla/DebugOnly.h"
@@ -40,20 +39,6 @@ namespace mozilla {
 
 //----------------------------------------------------------------------
 // Constructors etc.
-
-SMILAnimationFunction::SMILAnimationFunction()
-    : mSampleTime(-1),
-      mRepeatIteration(0),
-      mBeginTime(std::numeric_limits<SMILTime>::min()),
-      mAnimationElement(nullptr),
-      mErrorFlags(0),
-      mIsActive(false),
-      mIsFrozen(false),
-      mLastValue(false),
-      mHasChanged(true),
-      mValueNeedsReparsingEverySample(false),
-      mPrevSampleWasSingleValueAnimation(false),
-      mWasSkippedInPrevSample(false) {}
 
 void SMILAnimationFunction::SetAnimationElement(
     SVGAnimationElement* aAnimationElement) {
@@ -146,7 +131,8 @@ void SMILAnimationFunction::SampleAt(SMILTime aSampleTime,
       !IsValueFixedForSimpleDuration();
 
   // Are we on a new repeat and accumulating across repeats?
-  if (!mErrorFlags) {  // (can't call GetAccumulate() if we've had parse errors)
+  if (mErrorFlags.isEmpty()) {  // (can't call GetAccumulate() if we've had
+                                // parse errors)
     mHasChanged |= (mRepeatIteration != aRepeatIteration) && GetAccumulate();
   }
 
@@ -185,7 +171,7 @@ void SMILAnimationFunction::ComposeResult(const SMILAttr& aSMILAttr,
   mWasSkippedInPrevSample = false;
 
   // Skip animations that are inactive or in error
-  if (!IsActiveOrFrozen() || mErrorFlags != 0) return;
+  if (!IsActiveOrFrozen() || !mErrorFlags.isEmpty()) return;
 
   // Get the animation values
   SMILValueArray values;
@@ -194,7 +180,7 @@ void SMILAnimationFunction::ComposeResult(const SMILAttr& aSMILAttr,
 
   // Check that we have the right number of keySplines and keyTimes
   CheckValueListDependentAttrs(values.Length());
-  if (mErrorFlags != 0) return;
+  if (!mErrorFlags.isEmpty()) return;
 
   // If this interval is active, we must have a non-negative mSampleTime
   MOZ_ASSERT(mSampleTime >= 0 || !mIsActive,
@@ -284,7 +270,7 @@ bool SMILAnimationFunction::WillReplace() const {
    * Here, however, we return FALSE for to-animation (i.e. it will NOT replace
    * the underlying value) as it builds on the underlying value.
    */
-  return !mErrorFlags && !(IsAdditive() || IsToAnimation());
+  return mErrorFlags.isEmpty() && !(IsAdditive() || IsToAnimation());
 }
 
 bool SMILAnimationFunction::HasChanged() const {
@@ -348,49 +334,49 @@ nsresult SMILAnimationFunction::InterpolateResult(const SMILValueArray& aValues,
   // CSS.
   if (SMILCSSValueType::PropertyFromValue(aValues[0]) ==
       eCSSProperty_visibility) {
-    calcMode = CALC_DISCRETE;
+    calcMode = SMILCalcMode::Discrete;
   }
 
-  if (calcMode != CALC_DISCRETE) {
+  if (calcMode != SMILCalcMode::Discrete) {
     // Get the normalised progress between adjacent values
     const SMILValue* from = nullptr;
     const SMILValue* to = nullptr;
     // Init to -1 to make sure that if we ever forget to set this, the
     // MOZ_ASSERT that tests that intervalProgress is in range will fail.
-    double intervalProgress = -1.f;
+    double intervalProgress = -1.0;
     if (IsToAnimation()) {
       from = &aBaseValue;
       to = &aValues[0];
-      if (calcMode == CALC_PACED) {
+      if (calcMode == SMILCalcMode::Paced) {
         // Note: key[Times/Splines/Points] are ignored for calcMode="paced"
         intervalProgress = simpleProgress;
       } else {
         double scaledSimpleProgress =
-            ScaleSimpleProgress(simpleProgress, calcMode);
+            ScaleSimpleProgress(simpleProgress, calcMode, 1.0);
         intervalProgress = ScaleIntervalProgress(scaledSimpleProgress, 0);
       }
-    } else if (calcMode == CALC_PACED) {
+    } else if (calcMode == SMILCalcMode::Paced) {
       rv = ComputePacedPosition(aValues, simpleProgress, intervalProgress, from,
                                 to);
       // Note: If the above call fails, we'll skip the "from->Interpolate"
-      // call below, and we'll drop into the CALC_DISCRETE section
+      // call below, and we'll drop into the SMILCalcMode::Discrete section
       // instead. (as the spec says we should, because our failure was
       // presumably due to the values being non-additive)
-    } else {  // calcMode == CALC_LINEAR or calcMode == CALC_SPLINE
+    } else {  // calcMode == SMILCalcMode::Linear or calcMode ==
+              // SMILCalcMode::Spline
       double scaledSimpleProgress =
-          ScaleSimpleProgress(simpleProgress, calcMode);
-      uint32_t index =
-          (uint32_t)floor(scaledSimpleProgress * (aValues.Length() - 1));
+          ScaleSimpleProgress(simpleProgress, calcMode, aValues.Length() - 1);
+      uint32_t index = (uint32_t)std::floor(scaledSimpleProgress);
       from = &aValues[index];
       to = &aValues[index + 1];
-      intervalProgress = scaledSimpleProgress * (aValues.Length() - 1) - index;
-      intervalProgress = ScaleIntervalProgress(intervalProgress, index);
+      intervalProgress =
+          ScaleIntervalProgress(scaledSimpleProgress - index, index);
     }
 
     if (NS_SUCCEEDED(rv)) {
       MOZ_ASSERT(from, "NULL from-value during interpolation");
       MOZ_ASSERT(to, "NULL to-value during interpolation");
-      MOZ_ASSERT(0.0f <= intervalProgress && intervalProgress < 1.0f,
+      MOZ_ASSERT(0.0 <= intervalProgress && intervalProgress < 1.0,
                  "Interval progress should be in the range [0, 1)");
       rv = from->Interpolate(*to, intervalProgress, aResult);
     }
@@ -399,33 +385,20 @@ nsresult SMILAnimationFunction::InterpolateResult(const SMILValueArray& aValues,
   // Discrete-CalcMode case
   // Note: If interpolation failed (isn't supported for this type), the SVG
   // spec says to force discrete mode.
-  if (calcMode == CALC_DISCRETE || NS_FAILED(rv)) {
-    double scaledSimpleProgress =
-        ScaleSimpleProgress(simpleProgress, CALC_DISCRETE);
-
-    // Floating-point errors can mean that, for example, a sample time of 29s in
-    // a 100s duration animation gives us a simple progress of 0.28999999999
-    // instead of the 0.29 we'd expect. Normally this isn't a noticeable
-    // problem, but when we have sudden jumps in animation values (such as is
-    // the case here with discrete animation) we can get unexpected results.
-    //
-    // To counteract this, before we perform a floor() on the animation
-    // progress, we add a tiny fudge factor to push us into the correct interval
-    // in cases where floating-point errors might cause us to fall short.
-    static const double kFloatingPointFudgeFactor = 1.0e-16;
-    if (scaledSimpleProgress + kFloatingPointFudgeFactor <= 1.0) {
-      scaledSimpleProgress += kFloatingPointFudgeFactor;
-    }
-
+  if (calcMode == SMILCalcMode::Discrete || NS_FAILED(rv)) {
     if (IsToAnimation()) {
       // We don't follow SMIL 3, 12.6.4, where discrete to animations
       // are the same as <set> animations.  Instead, we treat it as a
       // discrete animation with two values (the underlying value and
       // the to="" value), and honor keyTimes="" as well.
-      uint32_t index = (uint32_t)floor(scaledSimpleProgress * 2);
+      double scaledSimpleProgress =
+          ScaleSimpleProgress(simpleProgress, SMILCalcMode::Discrete, 2.0);
+      uint32_t index = (uint32_t)std::floor(scaledSimpleProgress);
       aResult = index == 0 ? aBaseValue : aValues[0];
     } else {
-      uint32_t index = (uint32_t)floor(scaledSimpleProgress * aValues.Length());
+      double scaledSimpleProgress = ScaleSimpleProgress(
+          simpleProgress, SMILCalcMode::Discrete, aValues.Length());
+      uint32_t index = (uint32_t)std::floor(scaledSimpleProgress);
       aResult = aValues[index];
 
       // For animation of CSS properties, normally when interpolating we perform
@@ -483,7 +456,7 @@ nsresult SMILAnimationFunction::ComputePacedPosition(
     double& aIntervalProgress, const SMILValue*& aFrom, const SMILValue*& aTo) {
   NS_ASSERTION(0.0f <= aSimpleProgress && aSimpleProgress < 1.0f,
                "aSimpleProgress is out of bounds");
-  NS_ASSERTION(GetCalcMode() == CALC_PACED,
+  NS_ASSERTION(GetCalcMode() == SMILCalcMode::Paced,
                "Calling paced-specific function, but not in paced mode");
   MOZ_ASSERT(aValues.Length() >= 2, "Unexpected number of values");
 
@@ -570,7 +543,7 @@ nsresult SMILAnimationFunction::ComputePacedPosition(
  */
 double SMILAnimationFunction::ComputePacedTotalDistance(
     const SMILValueArray& aValues) const {
-  NS_ASSERTION(GetCalcMode() == CALC_PACED,
+  NS_ASSERTION(GetCalcMode() == SMILCalcMode::Paced,
                "Calling paced-specific function, but not in paced mode");
 
   double totalDistance = 0.0;
@@ -593,44 +566,67 @@ double SMILAnimationFunction::ComputePacedTotalDistance(
 }
 
 double SMILAnimationFunction::ScaleSimpleProgress(double aProgress,
-                                                  SMILCalcMode aCalcMode) {
-  if (!HasAttr(nsGkAtoms::keyTimes)) return aProgress;
+                                                  SMILCalcMode aCalcMode,
+                                                  double aValueMultiplier) {
+  auto Scale = [this](double aProgress, SMILCalcMode aCalcMode) {
+    if (!HasAttr(nsGkAtoms::keyTimes)) return aProgress;
 
-  uint32_t numTimes = mKeyTimes.Length();
+    uint32_t numTimes = mKeyTimes.Length();
 
-  if (numTimes < 2) return aProgress;
+    if (numTimes < 2) return aProgress;
 
-  uint32_t i = 0;
-  for (; i < numTimes - 2 && aProgress >= mKeyTimes[i + 1]; ++i) {
-  }
-
-  if (aCalcMode == CALC_DISCRETE) {
-    // discrete calcMode behaviour differs in that each keyTime defines the time
-    // from when the corresponding value is set, and therefore the last value
-    // needn't be 1. So check if we're in the last 'interval', that is, the
-    // space between the final value and 1.0.
-    if (aProgress >= mKeyTimes[i + 1]) {
-      MOZ_ASSERT(i == numTimes - 2,
-                 "aProgress is not in range of the current interval, yet the "
-                 "current interval is not the last bounded interval either.");
-      ++i;
+    uint32_t i = 0;
+    for (; i < numTimes - 2 && aProgress >= mKeyTimes[i + 1]; ++i) {
     }
-    return (double)i / numTimes;
+
+    if (aCalcMode == SMILCalcMode::Discrete) {
+      // discrete calcMode behaviour differs in that each keyTime defines the
+      // time from when the corresponding value is set, and therefore the last
+      // value needn't be 1. So check if we're in the last 'interval', that is,
+      // the space between the final value and 1.0.
+      if (aProgress >= mKeyTimes[i + 1]) {
+        MOZ_ASSERT(i == numTimes - 2,
+                   "aProgress is not in range of the current interval, yet the "
+                   "current interval is not the last bounded interval either.");
+        ++i;
+      }
+      return (double)i / numTimes;
+    }
+
+    double& intervalStart = mKeyTimes[i];
+    double& intervalEnd = mKeyTimes[i + 1];
+
+    double intervalLength = intervalEnd - intervalStart;
+    if (intervalLength <= 0.0) return intervalStart;
+
+    return (i + (aProgress - intervalStart) / intervalLength) /
+           double(numTimes - 1);
+  };
+
+  double scaledSimpleProgress = Scale(aProgress, aCalcMode);
+
+  // Floating-point errors can mean that, for example, a sample time of 29s in
+  // a 100s duration animation gives us a simple progress of 0.28999999999
+  // instead of the 0.29 we'd expect. Normally this isn't a noticeable
+  // problem, but when we have sudden jumps in animation values (e.g.
+  // discrete animation) we can get unexpected results.
+  //
+  // To counteract this, before we perform a floor() on the animation
+  // progress, we add a tiny fudge factor to push us into the correct interval
+  // in cases where floating-point errors might cause us to fall short.
+  static const double kFloatingPointFudgeFactor = 1.0e-16;
+  if (std::floor(scaledSimpleProgress * aValueMultiplier) !=
+          std::floor((scaledSimpleProgress + kFloatingPointFudgeFactor) *
+                     aValueMultiplier) &&
+      scaledSimpleProgress + kFloatingPointFudgeFactor <= 1.0) {
+    scaledSimpleProgress += kFloatingPointFudgeFactor;
   }
-
-  double& intervalStart = mKeyTimes[i];
-  double& intervalEnd = mKeyTimes[i + 1];
-
-  double intervalLength = intervalEnd - intervalStart;
-  if (intervalLength <= 0.0) return intervalStart;
-
-  return (i + (aProgress - intervalStart) / intervalLength) /
-         double(numTimes - 1);
+  return scaledSimpleProgress * aValueMultiplier;
 }
 
 double SMILAnimationFunction::ScaleIntervalProgress(double aProgress,
                                                     uint32_t aIntervalIndex) {
-  if (GetCalcMode() != CALC_SPLINE) return aProgress;
+  if (GetCalcMode() != SMILCalcMode::Spline) return aProgress;
 
   if (!HasAttr(nsGkAtoms::keySplines)) return aProgress;
 
@@ -792,7 +788,7 @@ void SMILAnimationFunction::CheckKeyTimes(uint32_t aNumValues) {
   SMILCalcMode calcMode = GetCalcMode();
 
   // attribute is ignored for calcMode = paced
-  if (calcMode == CALC_PACED) {
+  if (calcMode == SMILCalcMode::Paced) {
     SetKeyTimesErrorFlag(false);
     return;
   }
@@ -819,7 +815,7 @@ void SMILAnimationFunction::CheckKeyTimes(uint32_t aNumValues) {
   }
 
   // last value must be 1 for linear or spline calcModes
-  if (calcMode != CALC_DISCRETE && numKeyTimes > 1 &&
+  if (calcMode != SMILCalcMode::Discrete && numKeyTimes > 1 &&
       mKeyTimes.LastElement() != 1.0) {
     SetKeyTimesErrorFlag(true);
     return;
@@ -830,7 +826,7 @@ void SMILAnimationFunction::CheckKeyTimes(uint32_t aNumValues) {
 
 void SMILAnimationFunction::CheckKeySplines(uint32_t aNumValues) {
   // attribute is ignored if calc mode is not spline
-  if (GetCalcMode() != CALC_SPLINE) {
+  if (GetCalcMode() != SMILCalcMode::Spline) {
     SetKeySplinesErrorFlag(false);
     return;
   }
@@ -888,7 +884,7 @@ bool SMILAnimationFunction::GetAdditive() const {
 
 SMILAnimationFunction::SMILCalcMode SMILAnimationFunction::GetCalcMode() const {
   const nsAttrValue* value = GetAttr(nsGkAtoms::calcMode);
-  if (!value) return CALC_LINEAR;
+  if (!value) return SMILCalcMode::Linear;
 
   return SMILCalcMode(value->GetEnumValue());
 }

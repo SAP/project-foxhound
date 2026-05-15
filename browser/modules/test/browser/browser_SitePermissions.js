@@ -4,6 +4,10 @@
 
 "use strict";
 
+const LOCAL_NETWORK_ACCESS_ENABLED = Services.prefs.getBoolPref(
+  "network.lna.blocking"
+);
+
 // This tests the SitePermissions.getAllPermissionDetailsForBrowser function.
 add_task(async function testGetAllPermissionDetailsForBrowser() {
   let principal =
@@ -34,6 +38,21 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
     SitePermissions.ALLOW,
     SitePermissions.SCOPE_SESSION
   );
+
+  SitePermissions.setForPrincipal(
+    principal,
+    "localhost",
+    SitePermissions.ALLOW,
+    SitePermissions.SCOPE_SESSION
+  );
+
+  SitePermissions.setForPrincipal(
+    principal,
+    "local-network",
+    SitePermissions.ALLOW,
+    SitePermissions.SCOPE_SESSION
+  );
+
   SitePermissions.setForPrincipal(
     principal,
     "shortcuts",
@@ -70,7 +89,7 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
   let popup = permissions.find(({ id }) => id === "popup");
   Assert.deepEqual(popup, {
     id: "popup",
-    label: "Open pop-up windows",
+    label: "Pop-ups and third-party redirects",
     state: SitePermissions.BLOCK,
     scope: SitePermissions.SCOPE_PERSISTENT,
   });
@@ -82,6 +101,24 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
     state: SitePermissions.ALLOW,
     scope: SitePermissions.SCOPE_SESSION,
   });
+
+  if (LOCAL_NETWORK_ACCESS_ENABLED) {
+    let localhost = permissions.find(({ id }) => id === "localhost");
+    Assert.deepEqual(localhost, {
+      id: "localhost",
+      label: "Access this device",
+      state: SitePermissions.ALLOW,
+      scope: SitePermissions.SCOPE_SESSION,
+    });
+
+    let localNetwork = permissions.find(({ id }) => id === "local-network");
+    Assert.deepEqual(localNetwork, {
+      id: "local-network",
+      label: "Access local network devices",
+      state: SitePermissions.ALLOW,
+      scope: SitePermissions.SCOPE_SESSION,
+    });
+  }
 
   let shortcuts = permissions.find(({ id }) => id === "shortcuts");
   Assert.deepEqual(shortcuts, {
@@ -102,6 +139,8 @@ add_task(async function testGetAllPermissionDetailsForBrowser() {
   SitePermissions.removeFromPrincipal(principal, "cookie");
   SitePermissions.removeFromPrincipal(principal, "popup");
   SitePermissions.removeFromPrincipal(principal, "geo");
+  SitePermissions.removeFromPrincipal(principal, "localhost");
+  SitePermissions.removeFromPrincipal(principal, "local-network");
   SitePermissions.removeFromPrincipal(principal, "shortcuts");
 
   SitePermissions.removeFromPrincipal(principal, "xr");

@@ -21,8 +21,8 @@
 #  include "mozilla/StateMirroring.h"
 #  include "mozilla/StaticPrefs_media.h"
 #  include "mozilla/TaskQueue.h"
-#  include "mozilla/TimeStamp.h"
 #  include "mozilla/ThreadSafeWeakPtr.h"
+#  include "mozilla/TimeStamp.h"
 #  include "mozilla/dom/MediaDebugInfoBinding.h"
 
 namespace mozilla {
@@ -257,6 +257,30 @@ class MediaFormatReader final
   template <typename T>
   friend struct DDLoggedTypeTraits;  // For DecoderData
 
+  class VideoDecodeProperties final {
+   public:
+    void Load(RefPtr<MediaDataDecoder>& aDecoder);
+    void Clear() {
+      mMaxQueueSize.reset();
+      mMinQueueSize.reset();
+      mSendToCompositorSize.reset();
+    }
+
+    Maybe<uint32_t> MaxQueueSize() { return mMaxQueueSize; }
+    Maybe<uint32_t> MinQueueSize() { return mMinQueueSize; }
+    Maybe<uint32_t> SendToCompositorSize() { return mSendToCompositorSize; }
+
+   private:
+    Maybe<uint32_t> mMaxQueueSize;
+    Maybe<uint32_t> mMinQueueSize;
+    Maybe<uint32_t> mSendToCompositorSize;
+  };
+
+  VideoDecodeProperties& GetVideoDecodeProperties() {
+    MutexAutoLock lock(mVideo.mMutex);
+    return mVideo.mVideoDecodeProperties;
+  }
+
  private:
   bool HasVideo() const { return mVideo.mTrackDemuxer; }
   bool HasAudio() const { return mAudio.mTrackDemuxer; }
@@ -415,15 +439,25 @@ class MediaFormatReader final
     RefPtr<TaskQueue> mTaskQueue;
 
     // Mutex protecting mDescription, mDecoder, mTrackDemuxer, mWorkingInfo,
-    // mProcessName and mCodecName as those can be read outside the TaskQueue.
-    // They are only written on the TaskQueue however, as such mMutex doesn't
-    // need to be held when those members are read on the TaskQueue.
+    // mProcessName, mCodecName and mDecodeProperties as those can be read
+    // outside the TaskQueue. They are only written on the TaskQueue however, as
+    // such mMutex doesn't need to be held when those members are read on the
+    // TaskQueue.
     Mutex mMutex MOZ_UNANNOTATED;
     // The platform decoder.
     RefPtr<MediaDataDecoder> mDecoder;
     nsCString mDescription;
     nsCString mProcessName;
     nsCString mCodecName;
+    VideoDecodeProperties mVideoDecodeProperties;
+
+    void LoadDecodeProperties() {
+      MOZ_ASSERT(mOwner->OnTaskQueue());
+      if (mType == MediaData::Type::VIDEO_DATA) {
+        mVideoDecodeProperties.Load(mDecoder);
+      }
+    }
+
     void ShutdownDecoder();
 
     // Only accessed from reader's task queue.
@@ -599,6 +633,9 @@ class MediaFormatReader final
       mNextStreamSourceID.reset();
       if (!HasFatalError()) {
         mError.reset();
+      }
+      if (mType == MediaData::Type::VIDEO_DATA) {
+        mVideoDecodeProperties.Clear();
       }
     }
 

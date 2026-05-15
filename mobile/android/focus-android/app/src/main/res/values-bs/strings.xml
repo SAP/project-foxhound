@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p> <p>Koristi ga kao privatni pretraživač: <ul> <li>traži i pretražuj direktno u aplikaciji</li> <li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li> <li>izbriši sve kolačiće kao i historiju traženja i surfanja</li> </ul> </p> <p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/> <a href=\"%2$s\">Saznajte više</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p>\n<p>Koristi ga kao privatni pretraživač:\n<ul>\n<li>traži i pretražuj direktno u aplikaciji</li>\n<li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li>\n<li>izbriši sve kolačiće kao i historiju traženja i surfanja</li>\n</ul> </p>\n<p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/>\n<a href=\"%2$s\">Saznajte više</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Saznajte više</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Ako nastavite, prihvatate %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Ako nastavite, prihvatate %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Uslovi korištenja Firefoxa.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Uslovi korištenja Firefoxa</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox brine o vašoj privatnosti. Saznajte više u našem %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox brine o vašoj privatnosti. Saznajte više u našem %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Napomena o privatnosti.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Polica privatnosti</string>
   <!-- New Onboarding flow first screen button label -->
@@ -883,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ovo može biti problem s konfiguracijom servera, ili može biti da neko pokušava imitirati server. <br/><br/> Ako ste se u prošlosti uspješno povezali s ovim serverom, greška može biti privremena.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Neko se možda pokušava lažno predstavljati za web stranicu i nastavak bi mogao biti rizičan.</label> <br><br> <label>%1$s nema povjerenja u <b>%2$s</b> jer je njegov izdavalac certifikata nepoznat, certifikat je samopotpisan ili server ne šalje ispravne posredničke certifikate.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Neko se možda pokušava lažno predstavljati za web stranicu i nastavak bi mogao biti rizičan.</label> <br><br>\n<label>%1$s nema povjerenja u <b>%2$s</b> jer je njegov izdavalac certifikata nepoznat, certifikat je samopotpisan ili server ne šalje ispravne posredničke certifikate.</label>]]></string>
   <!--
     Sessions List
 

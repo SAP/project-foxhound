@@ -21,9 +21,31 @@
             {
               "allOf": [
                 {
-                  "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText"
-                },
-                { "not": { "required": ["href"] } }
+                  "allOf": [
+                    {
+                      "$ref": "file:///FxMSCommon.schema.json#/$defs/localizableText"
+                    },
+                    { "not": { "required": ["href"] } },
+                    {
+                      "type": "object",
+                      "description": "Additional arguments, only a `where` override is currently allowed",
+                      "properties": {
+                        "args": {
+                          "type": "object",
+                          "description": "Where to open ('tab', 'tabshifted', 'current', etc.)",
+                          "properties": {
+                            "where": {
+                              "type": "string",
+                              "description": "Where to open - e.g. 'tab', 'window', etc."
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ]
+                }
               ]
             },
             { "$ref": "#/$defs/localizableTextWithHref" },
@@ -57,6 +79,50 @@
         "dismissable": {
           "description": "Should the infobar include an X dismiss button, defaults to true",
           "type": "boolean"
+        },
+        "dismissOnPrefChange": {
+          "description": "If set, one or more prefs to observe. The infobar will automatically dismiss when any of these prefs is set for the first time or when its value changes.",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          ]
+        },
+        "impression_action": {
+          "oneOf": [
+            { "$ref": "#/$defs/impressionActionItem" },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "MULTI_ACTION" },
+                "orderedExecution": { "type": "boolean" },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "actions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": { "$ref": "#/$defs/impressionActionItem" }
+                    }
+                  },
+                  "required": ["actions"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["type", "data"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "canReplace": {
+          "description": "IDs of other infobar messages this infobar may replace",
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
         },
         "buttons": {
           "type": "array",
@@ -107,6 +173,25 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/linkUrl"
+          }
+        },
+        "linkActions": {
+          "description": "Map of Fluent data-l10n-name keys to a Special Message Action dispatched when the link is clicked (in addition to opening the URL).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "SpecialMessageActions action type"
+              },
+              "data": { "type": "object" },
+              "dismiss": {
+                "type": "boolean",
+                "description": "If true, dismiss the infobar after handling this link's action. Defaults to false."
+              }
+            },
+            "required": ["type"]
           }
         },
         "style": {
@@ -167,6 +252,33 @@
         "href": { "$ref": "#/$defs/linkUrl" }
       },
       "required": ["raw", "href"],
+      "additionalProperties": false
+    },
+    "impressionActionItem": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "SET_PREF" },
+        "once": {
+          "type": "boolean",
+          "description": "If true, only fire on first impression."
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "pref": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "value": {}
+              },
+              "required": ["name"]
+            }
+          },
+          "required": ["pref"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["type", "data"],
       "additionalProperties": false
     }
   }

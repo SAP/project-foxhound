@@ -17,7 +17,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=717433
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 717433 **/
+/** Test for Bug 717433 */
 SimpleTest.waitForExplicitFinish();
 var content = document.getElementById("content");
 // Load a subframe containing an editor with language "en". At first
@@ -32,7 +32,6 @@ var script;
 var loadListener = async function(evt) {
   if (firstLoad) {
     script = SpecialPowers.loadChromeScript(function() {
-      /* eslint-env mozilla/chrome-script */
       // eslint-disable-next-line mozilla/use-services
       var dir = Cc["@mozilla.org/file/directory_service;1"]
                   .getService(Ci.nsIProperties)

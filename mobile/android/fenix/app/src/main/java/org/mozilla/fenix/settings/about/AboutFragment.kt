@@ -18,7 +18,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.GleanMetrics.Events
@@ -45,7 +45,7 @@ class AboutFragment(
 ) : Fragment(), AboutPageListener {
 
     private lateinit var appName: String
-    private var aboutPageAdapter: AboutPageAdapter? = AboutPageAdapter(this)
+    private var aboutPageAdapter: AboutPageAdapter? = null
     private var _binding: FragmentAboutBinding? = null
 
     private val binding get() = _binding!!
@@ -89,6 +89,7 @@ class AboutFragment(
 
     override fun onDestroyView() {
         super.onDestroyView()
+        binding.aboutList.adapter = null
         aboutPageAdapter = null
         _binding = null
     }
@@ -155,8 +156,10 @@ class AboutFragment(
 
     private fun populateAboutHeader() {
         val aboutText = try {
-            val packageInfo =
-                requireContext().packageManager.getPackageInfoCompat(requireContext().packageName, 0)
+            val packageInfo = requireContext().packageManagerCompatHelper.getPackageInfoCompat(
+                requireContext().packageName,
+                0,
+            )
             val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo).toString()
             val maybeFenixVcsHash = if (BuildConfig.VCS_HASH.isNotBlank()) ", ${BuildConfig.VCS_HASH}" else ""
             val maybeGecko = getString(R.string.gecko_view_abbreviation)
@@ -217,7 +220,7 @@ class AboutFragment(
             AboutPageItem(
                 AboutItem.ExternalLink(
                     PRIVACY_NOTICE,
-                    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE),
+                    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE),
                 ),
                 getString(R.string.about_privacy_notice),
             ),

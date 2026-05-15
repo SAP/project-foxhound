@@ -1,6 +1,7 @@
 # Feature Callout
 
 ## Table of Contents
+
 - [Feature Callouts](#feature-callouts)
   - [Content Elements](#content-elements)
   - [Arrow Positioning](#arrow-positioning)
@@ -16,7 +17,6 @@
   - [Targeting Considerations](#targeting-considerations)
 - [Triggers](#triggers)
 - [Special Message Actions](#special-message-actions)
-
 
 ## Feature Callouts
 
@@ -43,12 +43,14 @@ The callout's arrow (the triangle-shaped caret pointing to the anchor) can be po
 ## Use Cases
 
 Feature Callouts have been used in a variety of ways. Some common use cases are:
+
 - Highlighting underused functionality
 - Displaying short surveys
 - Displaying informative toast messages
 - Guiding users through new features
 
 ## Examples
+
 A Feature Callout highlighting a feature
 
 ![Feature Callout](./feature-callout.png)
@@ -67,8 +69,8 @@ A Feature Callout displaying a user feedback survey
 4. You should see an example JSON message labeled `TEST_FEATURE_TOUR`. Clicking `Show` next to it should show the callout
 5. You can directly modify the message in the text area with your changes or by pasting your custom message JSON. Clicking `Modify` shows your updated message. Make sure it's valid JSON and be careful not to add unnecessary commas after the final member in an array or the final property of an object, as they will invalidate the message.
 6. For these testing purposes, targeting and trigger are ignored, as the message will be triggered by pressing the "Modify" button. So you won't be able to test triggers and targeting by this method.
-6. Ensure that all required properties are covered according to the schema below
-7. Clicking `Share` copies a link to your clipboard that can be pasted in the urlbar to preview the message and can be shared to get feedback from your team
+7. Ensure that all required properties are covered according to the schema below
+8. Clicking `Share` copies a link to your clipboard that can be pasted in the urlbar to preview the message and can be shared to get feedback from your team
 
 - **Note:** Only one Feature Callout can be shown at a time. You must dismiss existing callouts before new ones can be shown.
 
@@ -140,6 +142,19 @@ interface FeatureCallout {
     template: "multistage";
     backdrop: "transparent";
     transitions: false;
+    // Set to true to apply the write-in microsurvey data policy. This is
+    // REQUIRED for all write-in microsurveys. Messages using the textarea tile
+    // should always set this to true. It prevents `client_id` from being
+    // recorded with any telemetry events for the message, recording a unique
+    // `impression_id` instead. It also sends the events on the `microsurvey`
+    // ping instead of the `messaging-system` ping, which is anonymized by
+    // OHTTP, has stricter access control and is retained for a shorter period.
+    // It still allows counting unique impressions and joining pings from the
+    // same message, but it can't be joined to any other telemetry data. So all
+    // events coming from a message with this set to true will be joinable by
+    // `impression_id`, but disconnected from other datasets. Optional; defaults
+    // to false if omitted.
+    write_in_microsurvey?: boolean;
     disableHistoryUpdates: true;
     // The name of a preference that will be used to store screen progress. Only
     // relevant if your callout has multiple screens and serves as a tour. This
@@ -217,13 +232,16 @@ interface FeatureCallout {
           // default (this corresponds to a triangle with 24px edges). This
           // also affects the height of the arrow.
           arrow_width?: number;
+          // The desired distance between the arrow and the corner of the parent
+          // box element. A number of pixels. Default is 12px.
+          arrow_corner_distance?: number;
           // By default, callouts are not focused when they are shown. The user
           // must use a mouse or the F6 shortcut to interact with the callout.
           // This property allows you to force an element inside the callout to
           // be focused when the callout is shown. Use sparingly, as it can make
           // callouts much more disruptive for users.
           autofocus?: AutoFocusOptions;
-        }
+        },
       ];
       content: {
         position: "callout";
@@ -266,8 +284,10 @@ interface FeatureCallout {
           // since there's no logic to enable the button. However, if your
           // screen uses the "multiselect" tile (see tiles), you can use
           // "hasActiveMultiSelect" to disable the button until the user
-          // selects something.
-          disabled?: boolean | "hasActiveMultiSelect";
+          // selects something. If your screen has a textarea tile, you can use
+          // "hasTextInput" to disable the button while the textarea is empty or
+          // exceeds the character limit.
+          disabled?: boolean | "hasActiveMultiSelect" | "hasTextInput";
           // Primary buttons can have a "primary" or "secondary" style. This
           // is useful because you can't change the order of the buttons, but
           // you can swap the primary and secondary buttons' styles.
@@ -280,7 +300,7 @@ interface FeatureCallout {
           // Extra text to show before the button.
           text: Label;
           has_arrow_icon?: boolean;
-          disabled?: boolean | "hasActiveMultiSelect";
+          disabled?: boolean | "hasActiveMultiSelect" | "hasTextInput";
           style?: "primary" | "secondary";
           action: Action;
         };
@@ -304,8 +324,8 @@ interface FeatureCallout {
           // This can be used to control the ARIA attributes and tooltip.
           // Usually it's omitted, since it has a correct default value.
           label?: Label;
-          // The button can be 32px or 24px. Defaults to 32px.
-          size?: "small" | "large";
+          // The button can be 20px, 24px or 32px. Defaults to 32px.
+          size?: "x-small" | "small" | "large";
           action: Action;
           // CSS overrides.
           marginBlock?: string;
@@ -329,12 +349,11 @@ interface FeatureCallout {
           // button it's attached to. Defaults to "secondary".
           style?: "primary" | "secondary";
         };
-        // Predefined content modules. The only one currently supported in
-        // feature callout is "multiselect", which allows you to show a series
-        // of checkboxes and/or radio buttons.
+        // Predefined content modules. These are poorly documented but can be
+        // investigated in ContentTiles.jsx. The example here is a multiselect
+        // tile, which shows a list of checkboxes or radio buttons.
         tiles?: {
           type: "multiselect";
-          // Depends on the type, but we only support "multiselect" currently.
           data: MultiSelectItem[];
           // Allows CSS overrides of the multiselect container.
           style?: {
@@ -361,6 +380,28 @@ interface FeatureCallout {
             "--some-variable"?: string;
           };
         };
+        tiles_container: {
+          // Position of the tiles container relative to supporting content
+          // like `above_button_content`. By default, it comes before supporting
+          // content. Setting to "after_supporting_content" places it after.
+          position?: null | "after_supporting_content";
+          style?: {
+            padding: string;
+            margin: string;
+            marginBlock: string;
+            marginInline: string;
+            paddingBlock: string;
+            paddingInline: string;
+            flexDirection: string;
+            flexWrap: string;
+            flexFlow: string;
+            flexGrow: string;
+            flexShrink: string;
+            justifyContent: string;
+            alignItems: string;
+            gap: string;
+          };
+        };
         // The dots in the corner that show what screen you're on and how many
         // screens there are in total. This property is only used to override
         // the ARIA attributes or tooltip. Not recommended.
@@ -368,8 +409,8 @@ interface FeatureCallout {
           string_id: string;
         };
         // An extra block of configurable content below the title/subtitle but
-        // above the optional `tiles` section and the main buttons. Styles not
-        // yet implemented; not recommended.
+        // above the main buttons. Can be placed above the `tiles` by setting
+        // `tiles_container.position` to "after_supporting_content".
         above_button_content?: LinkParagraphOrImage[];
         // An optional array of event listeners to add to the page where the
         // feature callout is shown. This can be used to perform actions in
@@ -706,7 +747,7 @@ interface SubmenuItem {
         }
       }
     ]
-  },
+  }
 }
 ```
 

@@ -15,7 +15,7 @@ const ruleTester = new RuleTester();
 // ------------------------------------------------------------------------------
 
 function callError() {
-  return [{ messageId: "useAddSetup", type: "CallExpression" }];
+  return [{ messageId: "useAddSetup" }];
 }
 
 ruleTester.run("no-addtask-setup", rule, {

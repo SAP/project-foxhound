@@ -6,8 +6,8 @@
 
 /* DOM object representing values in DOM computed style */
 
-#ifndef nsROCSSPrimitiveValue_h___
-#define nsROCSSPrimitiveValue_h___
+#ifndef nsROCSSPrimitiveValue_h_
+#define nsROCSSPrimitiveValue_h_
 
 #include "CSSValue.h"
 #include "nsCoord.h"
@@ -78,4 +78,4 @@ inline nsROCSSPrimitiveValue* mozilla::dom::CSSValue::AsPrimitiveValue() {
              : nullptr;
 }
 
-#endif /* nsROCSSPrimitiveValue_h___ */
+#endif /* nsROCSSPrimitiveValue_h_ */

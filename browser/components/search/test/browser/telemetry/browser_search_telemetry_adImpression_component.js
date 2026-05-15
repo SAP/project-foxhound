@@ -123,16 +123,6 @@ add_task(async function test_ad_impressions_with_one_carousel() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -168,16 +158,6 @@ add_task(async function test_ad_impressions_with_two_carousels() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -209,16 +189,6 @@ add_task(
     // visible.
     assertSERPTelemetry([
       {
-        impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
-        },
         adImpressions: [
           {
             component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -261,16 +231,7 @@ add_task(async function test_ad_impressions_with_carousels_tabhistory() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "tabhistory",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
+      impression: { source: "tabhistory" },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -294,16 +255,6 @@ add_task(async function test_ad_impressions_with_hidden_carousels() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -329,16 +280,6 @@ add_task(async function test_ad_impressions_with_carousel_scrolled_left() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -364,16 +305,6 @@ add_task(async function test_ad_impressions_with_carousel_below_the_fold() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -422,16 +353,6 @@ add_task(
 
     assertSERPTelemetry([
       {
-        impression: {
-          provider: "example",
-          tagged: "true",
-          partner_code: "ff",
-          source: "unknown",
-          is_shopping_page: "false",
-          is_private: "false",
-          shopping_tab_displayed: "false",
-          is_signed_in: "false",
-        },
         adImpressions: [
           {
             component: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -458,16 +379,6 @@ add_task(async function test_ad_impressions_with_text_links() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_SITELINK,
@@ -518,16 +429,6 @@ add_task(async function test_ad_visibility() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
@@ -551,16 +452,6 @@ add_task(async function test_impressions_without_ads() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.REFINED_SEARCH_BUTTONS,
@@ -584,16 +475,6 @@ add_task(async function test_ad_impressions_with_cookie_banner() {
 
   assertSERPTelemetry([
     {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
       adImpressions: [
         {
           component: SearchSERPTelemetryUtils.COMPONENTS.COOKIE_BANNER,

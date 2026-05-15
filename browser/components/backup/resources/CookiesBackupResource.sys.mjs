@@ -16,15 +16,16 @@ export class CookiesBackupResource extends BackupResource {
     return true;
   }
 
+  static get canBackupResource() {
+    // We don't backup cookies right now
+    return false;
+  }
+
   async backup(
     stagingPath,
     profilePath = PathUtils.profileDir,
     _isEncrypting = false
   ) {
-    if (!BackupResource.canBackupHistory()) {
-      return null;
-    }
-
     await BackupResource.copySqliteDatabases(profilePath, stagingPath, [
       "cookies.sqlite",
     ]);

@@ -4,7 +4,7 @@
 
 #define VECS_PER_SPECIFIC_BRUSH 1
 
-#include shared,prim_shared,brush,yuv
+#include shared,prim_shared,brush,yuv,image_source
 
 varying highp vec2 vUv_Y;
 flat varying highp vec4 vUvBounds_Y;
@@ -28,7 +28,7 @@ flat varying mediump int vRescaleFactor;
 #ifdef WR_VERTEX_SHADER
 
 YuvPrimitive fetch_yuv_primitive(int address) {
-    vec4 data = fetch_from_gpu_cache_1(address);
+    vec4 data = fetch_from_gpu_buffer_1f(address);
     // From YuvImageData.write_prim_gpu_blocks:
     int channel_bit_depth = int(data.x);
     int color_space = int(data.y);

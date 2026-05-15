@@ -5,9 +5,7 @@
 package mozilla.components.support.utils
 
 import android.content.Context
-import android.os.Build
 import android.provider.Settings
-import androidx.annotation.RequiresApi
 import java.io.File
 
 /**
@@ -17,10 +15,7 @@ interface BootUtils {
 
     /**
      * Gets the device boot count.
-     *
-     * **Only for Android versions N(24) and above.**
      */
-    @RequiresApi(Build.VERSION_CODES.N)
     fun getDeviceBootCount(context: Context): String
 
     val deviceBootId: String?
@@ -31,17 +26,8 @@ interface BootUtils {
         /**
          * @return either the boot count or a boot id depending on the device Android version.
          */
-        fun getBootIdentifier(context: Context, bootUtils: BootUtils = BootUtilsImpl()): String {
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                bootUtils.getDeviceBootCount(context)
-            } else {
-                return if (bootUtils.bootIdFileExists) {
-                    bootUtils.deviceBootId ?: NO_BOOT_IDENTIFIER
-                } else {
-                    NO_BOOT_IDENTIFIER
-                }
-            }
-        }
+        fun getBootIdentifier(context: Context, bootUtils: BootUtils = BootUtilsImpl()): String =
+            bootUtils.getDeviceBootCount(context)
     }
 }
 
@@ -51,7 +37,6 @@ interface BootUtils {
 class BootUtilsImpl : BootUtils {
     private val bootIdFile by lazy { File("/proc/sys/kernel/random/boot_id") }
 
-    @RequiresApi(Build.VERSION_CODES.N)
     override fun getDeviceBootCount(context: Context): String =
         Settings.Global.getString(context.contentResolver, Settings.Global.BOOT_COUNT)
 
@@ -59,5 +44,3 @@ class BootUtilsImpl : BootUtils {
 
     override val bootIdFileExists: Boolean by lazy { bootIdFile.exists() }
 }
-
-private const val NO_BOOT_IDENTIFIER = "no boot identifier available"

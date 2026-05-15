@@ -12,6 +12,16 @@
 
 #include "mozilla/BaseProfilerUtils.h"
 
+#include "mozilla/ResultVariant.h"
+
+enum class ProfilerError {
+  IsInactive,
+  JsonGenerationFailed,
+};
+
+template <typename T>
+using ProfilerResult = mozilla::Result<T, ProfilerError>;
+
 using ProfilerProcessId = mozilla::baseprofiler::BaseProfilerProcessId;
 using ProfilerThreadId = mozilla::baseprofiler::BaseProfilerThreadId;
 

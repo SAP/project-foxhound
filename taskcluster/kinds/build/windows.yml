@@ -3,11 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     run:
         using: mozharness
     fetches:
-        toolchain:
+        fetch:
             - windows-rs
 
 win32/debug:
@@ -56,6 +56,7 @@ win32/debug:
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
+            - winappsdk-x86-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -88,6 +89,7 @@ win32/opt:
             mozconfig_platform: win32
     run-on-projects: ['integration']
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
@@ -105,6 +107,7 @@ win32/opt:
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
+            - winappsdk-x86-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -155,6 +158,7 @@ win32-fuzzing/debug:
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
+            - winappsdk-x86-pc-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -189,6 +193,7 @@ win64/debug:
         extra-config:
             mozconfig_platform: win64
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
@@ -207,6 +212,7 @@ win64/debug:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -222,6 +228,7 @@ win64-non-unified/plain:
     worker:
         max-run-time: 7200
         env:
+            MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
             PERFHERDER_EXTRA_OPTIONS: non-unified
     run:
         options: [append-env-variables-from-configs]
@@ -231,9 +238,11 @@ win64-non-unified/plain:
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_linux_64_builds.py
-        mozconfig-variant: non-unified
+        mozconfig-variant: nightly
         extra-config:
             mozconfig_platform: win64
+            extra_mozconfig_content:
+                - ac_add_options --disable-unified-build
     use-sccache: true
     run-on-projects: ['integration']
     fetches:
@@ -254,6 +263,7 @@ win64-non-unified/plain:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -304,6 +314,7 @@ win64-fuzzing/debug:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -351,6 +362,7 @@ win64-plain/debug:
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -401,6 +413,7 @@ win64/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -446,6 +459,7 @@ win64-plain/opt:
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         skip-unless-expanded: null
 
@@ -463,7 +477,7 @@ win32-shippable/opt:
         by-release-type:
             nightly: true
             beta: true
-            release.*: true
+            release: true
             esr.*: false
             default:
                 by-project:
@@ -509,6 +523,7 @@ win32-shippable/opt:
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
+            - winappsdk-x86-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -529,7 +544,7 @@ win64-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -564,6 +579,7 @@ win64-shippable/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -578,7 +594,7 @@ win64-nightlyasrelease/opt:
     treeherder:
         platform: win64-nightlyasrelease/opt
         symbol: Bpgo(Bnar)
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -616,6 +632,7 @@ win64-nightlyasrelease/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -661,6 +678,7 @@ win32-add-on-devel/opt:
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
+            - winappsdk-x86-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -707,6 +725,7 @@ win64-add-on-devel/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -753,6 +772,7 @@ win64-noopt/debug:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -798,6 +818,7 @@ win32-noopt/debug:
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
+            - winappsdk-x86-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -841,6 +862,7 @@ win32-rusttests/opt:
             - win64-mozmake
             - win64-dump_syms
             - vs
+            - winappsdk-x86-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -884,6 +906,7 @@ win32-rusttests/debug:
             - win64-mozmake
             - win64-dump_syms
             - vs
+            - winappsdk-x86-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -925,6 +948,7 @@ win64-rusttests/opt:
             - win64-dump_syms
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -966,6 +990,7 @@ win64-rusttests/debug:
             - win64-dump_syms
             - vs
             - dxc-x86_64-pc-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
     optimization:
         test-inclusive: [rusttests]
 
@@ -1005,7 +1030,7 @@ win64-ccov/opt:
     fetches:
         toolchain:
             - win64-clang
-            - win64-rust-1.83
+            - win64-rust-dev
             - win64-rust-size
             - win64-cbindgen
             - win64-grcov
@@ -1020,6 +1045,7 @@ win64-ccov/opt:
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-fuzzing-ccov/opt:
     description: "Win64 Fuzzing Opt w/ Coverage"
@@ -1057,7 +1083,7 @@ win64-fuzzing-ccov/opt:
     fetches:
         toolchain:
             - win64-clang
-            - win64-rust-1.83
+            - win64-rust-dev
             - win64-rust-size
             - win64-cbindgen
             - win64-grcov
@@ -1072,6 +1098,7 @@ win64-fuzzing-ccov/opt:
             - sysroot-wasm32-wasi
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
 
 win64-asan/debug:
     description: "Win64 Debug ASAN"
@@ -1118,6 +1145,7 @@ win64-asan/debug:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -1169,6 +1197,7 @@ win64-asan/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1187,7 +1216,7 @@ win64-asan-reporter-shippable/opt:
     treeherder:
         platform: win64-asan-reporter/opt
         symbol: BoR
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 7200
         env:
@@ -1231,6 +1260,7 @@ win64-asan-reporter-shippable/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1278,6 +1308,7 @@ win64-asan-fuzzing/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -1297,7 +1328,7 @@ win32-devedition/opt:
         by-release-type:
             nightly: true
             beta: true
-            release.*: true
+            release: true
             default:
                 by-project:
                     # browser/confvars.sh looks for nightly-try
@@ -1343,6 +1374,7 @@ win32-devedition/opt:
             - sysroot-wasm32-wasi
             - vs
             - onnxruntime-i686-windows-msvc
+            - winappsdk-x86-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1362,7 +1394,7 @@ win64-devedition/opt:
         platform: windows2012-64-devedition/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1399,6 +1431,7 @@ win64-devedition/opt:
             - vs
             - dxc-x86_64-pc-windows-msvc
             - onnxruntime-x86_64-windows-msvc
+            - winappsdk-x86_64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1417,6 +1450,7 @@ win64-aarch64/debug:
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: aarch64
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         options: [append-env-variables-from-configs]
@@ -1447,6 +1481,7 @@ win64-aarch64/debug:
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
+            - winappsdk-aarch64-pc-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -1468,6 +1503,7 @@ win64-aarch64/opt:
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: aarch64
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
     run:
         actions: [get-secrets, build]
         options: [append-env-variables-from-configs]
@@ -1498,6 +1534,7 @@ win64-aarch64/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
+            - winappsdk-aarch64-pc-windows-msvc
         fetch:
             - upx-3.95-win
     optimization:
@@ -1520,7 +1557,7 @@ win64-aarch64-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1554,6 +1591,7 @@ win64-aarch64-shippable/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
+            - winappsdk-aarch64-pc-windows-msvc
         fetch:
             - upx-3.95-win
 
@@ -1573,7 +1611,7 @@ win64-aarch64-devedition/opt:
         platform: windows2012-aarch64-devedition/opt
         symbol: Bpgo(B)
         tier: 1
-    worker-type: b-linux-xlarge-amd
+    worker-type: b-linux-docker-xlarge-amd
     worker:
         max-run-time: 10800
         env:
@@ -1609,5 +1647,6 @@ win64-aarch64-devedition/opt:
             - sysroot-wasm32-wasi
             - vs
             - dxc-aarch64-pc-windows-msvc
+            - winappsdk-aarch64-pc-windows-msvc
         fetch:
             - upx-3.95-win

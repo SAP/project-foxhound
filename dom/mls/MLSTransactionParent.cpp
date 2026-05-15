@@ -5,16 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MLSTransactionParent.h"
+
+#include "MLSLogging.h"
 #include "MLSTransactionMessage.h"
+#include "mozilla/Base64.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/security/mls/mls_gk_ffi_generated.h"
-#include "MLSLogging.h"
-#include "mozilla/Base64.h"
-
+#include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsIPrincipal.h"
 #include "nsString.h"
-#include "nsCOMPtr.h"
 
 using mozilla::dom::quota::QuotaManager;
 

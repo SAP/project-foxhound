@@ -11,10 +11,13 @@
 "use strict";
 const kIsAndroid = navigator.userAgent.includes("Android");
 
+window.oncontextmenu = function (e) {
+  e.preventDefault();
+}
+
 add_task(async function test_click_hold_context_menus_events_and_target() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["test.events.async.enabled", true],
       ["ui.click_hold_context_menus", true],
       ["ui.click_hold_context_menus.delay", 100],
     ],
@@ -61,7 +64,7 @@ add_task(async function test_click_hold_context_menus_events_and_target() {
     target,
     10,
     10,
-    { type: "mousedown" },
+    { type: "mousedown", asyncEnabled: true },
   );
 
   // ensure contextmenu before mouseup.
@@ -71,7 +74,7 @@ add_task(async function test_click_hold_context_menus_events_and_target() {
     target,
     10,
     10,
-    { type: "mouseup" },
+    { type: "mouseup", asyncEnabled: true },
   );
 
   if (kIsAndroid) {
@@ -83,10 +86,6 @@ add_task(async function test_click_hold_context_menus_events_and_target() {
   } else {
     is(seq.toString(), ["mousedown", "contextmenu"].toString(), "Seq should match");
   }
-
-  // Close context menu to prevent blocking other tests.
-  await new Promise(resolve => SimpleTest.executeSoon(resolve));
-  synthesizeKey("VK_ESCAPE", {}, window);
 });
 </script>
 </head>

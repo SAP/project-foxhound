@@ -19,6 +19,8 @@ const CUSTOM_BASELINE_CHECKBOX_ID = "contentBlockingBaselineExceptionsCustom";
 const CUSTOM_CONVENIENCE_CHECKBOX_ID =
   "contentBlockingConvenienceExceptionsCustom";
 
+requestLongerTimeout(2);
+
 async function cleanUp() {
   await SpecialPowers.popPrefEnv();
   gBrowser.removeCurrentTab();
@@ -119,11 +121,12 @@ add_task(
     let doc = gBrowser.contentDocument;
     doc.getElementById(ETP_STRICT_ID).click();
 
-    await clickCheckboxAndWaitForPrefChange(
+    await clickCheckboxWithConfirmDialog(
       doc,
       STRICT_BASELINE_CHECKBOX_ID,
       BASELINE_PREF,
-      false
+      false,
+      1
     );
 
     Assert.ok(
@@ -194,11 +197,12 @@ add_task(async function test_custom_mode_inherits_last_mode() {
     convenienceCheckboxStrict,
     "The convenience checkbox in Strict mode must be visible for this test."
   );
-  await clickCheckboxAndWaitForPrefChange(
+  await clickCheckboxWithConfirmDialog(
     doc,
     STRICT_BASELINE_CHECKBOX_ID,
     BASELINE_PREF,
-    false
+    false,
+    1
   );
   doc.getElementById(ETP_CUSTOM_ID).click();
   let baselineCheckboxCustom = doc.getElementById(CUSTOM_BASELINE_CHECKBOX_ID);
@@ -225,11 +229,12 @@ add_task(async function test_checkbox_state_persists_after_reload() {
   });
   let doc = gBrowser.contentDocument;
   doc.getElementById(ETP_STRICT_ID).click();
-  await clickCheckboxAndWaitForPrefChange(
+  await clickCheckboxWithConfirmDialog(
     doc,
     STRICT_BASELINE_CHECKBOX_ID,
     BASELINE_PREF,
-    false
+    false,
+    1
   );
   is(
     doc.getElementById(STRICT_BASELINE_CHECKBOX_ID).checked,
@@ -257,11 +262,12 @@ add_task(async function test_switching_modes_resets_checkboxes() {
   let standardRadio = doc.getElementById(ETP_STANDARD_ID);
   standardRadio.click();
   doc.getElementById(ETP_STRICT_ID).click();
-  await clickCheckboxAndWaitForPrefChange(
+  await clickCheckboxWithConfirmDialog(
     doc,
     STRICT_BASELINE_CHECKBOX_ID,
     BASELINE_PREF,
-    false
+    false,
+    1
   );
   is(
     doc.getElementById(STRICT_BASELINE_CHECKBOX_ID).checked,
@@ -300,11 +306,12 @@ add_task(async function test_convenience_cannot_be_enabled_if_baseline_false() {
     "The convenience checkbox should be enabled when the baseline checkbox is checked."
   );
 
-  await clickCheckboxAndWaitForPrefChange(
+  await clickCheckboxWithConfirmDialog(
     doc,
     STRICT_BASELINE_CHECKBOX_ID,
     BASELINE_PREF,
-    false
+    false,
+    1
   );
 
   is(
@@ -330,34 +337,22 @@ add_task(async function test_prefs_update_when_toggling_checkboxes_in_custom() {
   });
   let doc = gBrowser.contentDocument;
   doc.getElementById(ETP_CUSTOM_ID).click();
-  let baselineCheckbox = doc.getElementById(CUSTOM_BASELINE_CHECKBOX_ID);
-  let convenienceCheckbox = doc.getElementById(CUSTOM_CONVENIENCE_CHECKBOX_ID);
 
-  // Uncheck both checkboxes if they are checked, to establish a baseline.
-  if (baselineCheckbox.checked) {
-    await clickCheckboxAndWaitForPrefChange(
-      doc,
-      CUSTOM_BASELINE_CHECKBOX_ID,
-      BASELINE_PREF,
-      false
-    );
-  }
-  if (convenienceCheckbox.checked) {
-    await clickCheckboxAndWaitForPrefChange(
-      doc,
-      CUSTOM_CONVENIENCE_CHECKBOX_ID,
-      CONVENIENCE_PREF,
-      false
-    );
-  }
+  await clickCheckboxWithConfirmDialog(
+    doc,
+    CUSTOM_BASELINE_CHECKBOX_ID,
+    BASELINE_PREF,
+    false,
+    1
+  );
 
   Assert.ok(
     !Services.prefs.getBoolPref(BASELINE_PREF),
     "The baseline pref should be false after being unchecked in Custom mode."
   );
   Assert.ok(
-    !Services.prefs.getBoolPref(CONVENIENCE_PREF),
-    "The convenience pref should be false after being unchecked in Custom mode."
+    Services.prefs.getBoolPref(CONVENIENCE_PREF),
+    "The convenience pref should be unchanged after baseline unchecked in Custom mode."
   );
 
   // Check both boxes and verify the preferences are updated.
@@ -367,110 +362,9 @@ add_task(async function test_prefs_update_when_toggling_checkboxes_in_custom() {
     BASELINE_PREF,
     true
   );
-  await clickCheckboxAndWaitForPrefChange(
-    doc,
-    CUSTOM_CONVENIENCE_CHECKBOX_ID,
-    CONVENIENCE_PREF,
-    true
-  );
   Assert.ok(
     Services.prefs.getBoolPref(BASELINE_PREF),
     "The baseline pref should be true after being checked in Custom mode."
   );
-  Assert.ok(
-    Services.prefs.getBoolPref(CONVENIENCE_PREF),
-    "The convenience pref should be true after being checked in Custom mode."
-  );
-  await cleanUp();
-});
-
-add_task(async function test_reload_button_shows_after_prefs_changed_strict() {
-  await setup();
-  await openPreferencesViaOpenPreferencesAPI("privacy", {
-    leaveOpen: true,
-  });
-  let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  let doc = gBrowser.contentDocument;
-
-  doc.getElementById(ETP_STRICT_ID).click();
-
-  let strictReloadButton = doc.querySelector(
-    "#contentBlockingOptionStrict .content-blocking-warning.reload-tabs .reload-tabs-button"
-  );
-
-  is_element_visible(
-    strictReloadButton,
-    "The strict reload button must be visible"
-  );
-
-  strictReloadButton.click();
-
-  is_element_hidden(
-    strictReloadButton,
-    "The strict reload button must be hidden after clicking it"
-  );
-
-  await clickCheckboxAndWaitForPrefChange(
-    doc,
-    STRICT_BASELINE_CHECKBOX_ID,
-    BASELINE_PREF,
-    false
-  );
-
-  is_element_visible(
-    strictReloadButton,
-    "The strict reload button must be visible after baseline pref changes"
-  );
-
-  strictReloadButton.click();
-
-  is_element_hidden(
-    strictReloadButton,
-    "The strict reload button must be hidden after clicking it"
-  );
-
-  BrowserTestUtils.removeTab(tab);
-  await cleanUp();
-});
-
-add_task(async function test_reload_button_shows_after_prefs_changed_custom() {
-  await setup();
-  await openPreferencesViaOpenPreferencesAPI("privacy", {
-    leaveOpen: true,
-  });
-  let tab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  let doc = gBrowser.contentDocument;
-
-  doc.getElementById(ETP_CUSTOM_ID).click();
-
-  let customReloadButton = doc.querySelector(
-    "#contentBlockingOptionCustom .content-blocking-warning.reload-tabs .reload-tabs-button"
-  );
-
-  is_element_hidden(
-    customReloadButton,
-    "The custom reload button must be hidden when switching from strict"
-  );
-
-  await clickCheckboxAndWaitForPrefChange(
-    doc,
-    CUSTOM_BASELINE_CHECKBOX_ID,
-    BASELINE_PREF,
-    false
-  );
-
-  is_element_visible(
-    customReloadButton,
-    "The custom reload button must be visible after baseline checkbox changes"
-  );
-
-  customReloadButton.click();
-
-  is_element_hidden(
-    customReloadButton,
-    "The custom reload button must be hidden after clicking it"
-  );
-
-  BrowserTestUtils.removeTab(tab);
   await cleanUp();
 });

@@ -1,0 +1,6 @@
+[ChildProc=any]
+protocol Parray_Recursive {
+child:
+  async Msg1(int[][] aa);
+  async Msg2(int[][][][][][][] aa);
+};

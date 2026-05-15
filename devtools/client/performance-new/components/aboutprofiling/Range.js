@@ -8,7 +8,7 @@
  */
 
 /**
- * @typedef {Object} Props
+ * @typedef {object} Props
  * @property {number} value
  * @property {React.ReactNode} label
  * @property {string} id
@@ -28,7 +28,8 @@ const {
 
 /**
  * Provide a numeric range slider UI that works off of custom numeric scales.
- * @extends React.PureComponent<Props>
+ *
+ * @augments React.PureComponent<Props>
  */
 class Range extends PureComponent {
   /**

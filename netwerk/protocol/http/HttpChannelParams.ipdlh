@@ -14,13 +14,13 @@ include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
 
-using class mozilla::net::nsHttpHeaderArray from "nsHttpHeaderArray.h";
 using mozilla::net::NetAddr from "mozilla/net/DNS.h";
 using nsILoadInfo::CrossOriginOpenerPolicy from "nsILoadInfo.h";
 [RefCounted] using class nsIReferrerInfo from "nsIReferrerInfo.h";
 [RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
 using nsIRequest::TRRMode from "nsIRequest.h";
 using mozilla::net::TRRSkippedReason from "nsITRRSkipReason.h";
+using nsICacheInfoChannel::CacheDisposition from "nsICacheInfoChannel.h";
 
 namespace mozilla {
 namespace net {
@@ -32,7 +32,7 @@ struct HttpChannelOnStartRequestArgs
   uint64_t cacheEntryId;
   int64_t altDataLength;
   nsCString altDataType;
-  nsCString[] cookieHeaders;
+  CookieChange[] cookieChanges;
   NetAddr selfAddr;
   NetAddr peerAddr;
   ResourceTimingStructArgs timing;
@@ -60,6 +60,7 @@ struct HttpChannelOnStartRequestArgs
   bool isProxyUsed;
   uint8_t redirectCount;
   nsCString protocolVersion;
+  CacheDisposition cacheDisposition;
 };
 
 struct HttpChannelAltDataStream

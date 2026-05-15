@@ -7,18 +7,24 @@
 //!
 //! [position]: https://drafts.csswg.org/css-backgrounds-3/#position
 
-use crate::values::computed::{Integer, LengthPercentage, NonNegativeNumber, Percentage};
-use crate::values::generics::position::{AnchorSideKeyword, GenericAnchorFunction, GenericAnchorSide};
-use crate::values::generics::position::Position as GenericPosition;
-use crate::values::generics::position::PositionComponent as GenericPositionComponent;
-use crate::values::generics::position::PositionOrAuto as GenericPositionOrAuto;
-use crate::values::generics::position::ZIndex as GenericZIndex;
-use crate::values::generics::position::{AspectRatio as GenericAspectRatio, GenericInset};
-pub use crate::values::specified::position::{
-    AnchorName, AnchorScope, DashedIdentAndOrTryTactic, PositionAnchor, PositionArea,
-    PositionAreaKeyword, PositionTryFallbacks, PositionTryOrder, PositionVisibility,
+use crate::logical_geometry::PhysicalSide;
+use crate::values::computed::{
+    Context, Integer, LengthPercentage, NonNegativeNumber, Percentage, ToComputedValue,
 };
-pub use crate::values::specified::position::{GridAutoFlow, GridTemplateAreas, MasonryAutoFlow};
+use crate::values::generics;
+#[cfg(feature = "gecko")]
+use crate::values::generics::position::TreeScoped;
+use crate::values::generics::position::{
+    AnchorSideKeyword, AspectRatio as GenericAspectRatio, GenericAnchorFunction, GenericAnchorSide,
+    GenericInset, Position as GenericPosition, PositionComponent as GenericPositionComponent,
+    PositionOrAuto as GenericPositionOrAuto, ZIndex as GenericZIndex,
+};
+pub use crate::values::specified::position::{
+    AnchorName, AnchorScope, DashedIdentAndOrTryTactic, GridAutoFlow, GridTemplateAreas,
+    MasonryAutoFlow, PositionAnchor, PositionArea, PositionAreaAxis, PositionAreaKeyword,
+    PositionAreaType, PositionTryFallbacks, PositionTryFallbacksTryTactic,
+    PositionTryFallbacksTryTacticKeyword, PositionTryOrder, PositionVisibility,
+};
 use crate::Zero;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
@@ -43,30 +49,31 @@ impl AnchorSide {
     pub fn keyword_and_percentage(&self) -> (AnchorSideKeyword, Percentage) {
         match self {
             Self::Percentage(p) => (AnchorSideKeyword::Start, *p),
-            Self::Keyword(k) => if matches!(k, AnchorSideKeyword::Center) {
-                (AnchorSideKeyword::Start, Percentage(0.5))
-            } else {
-                (*k, Percentage::zero())
+            Self::Keyword(k) => {
+                if matches!(k, AnchorSideKeyword::Center) {
+                    (AnchorSideKeyword::Start, Percentage(0.5))
+                } else {
+                    (*k, Percentage::zero())
+                }
             },
         }
     }
 }
 
 /// The computed value of an `anchor()` function.
-pub type AnchorFunction = GenericAnchorFunction<Percentage, LengthPercentage>;
+pub type AnchorFunction = GenericAnchorFunction<Percentage, Inset>;
 
-#[cfg(feature="gecko")]
+#[cfg(feature = "gecko")]
 use crate::{
     gecko_bindings::structs::AnchorPosOffsetResolutionParams,
-    logical_geometry::PhysicalSide,
-    values::{DashedIdent, computed::Length},
+    values::{computed::Length, DashedIdent},
 };
 
 impl AnchorFunction {
     /// Resolve the anchor function with the given resolver. Returns `Err()` if no anchor is found.
-    #[cfg(feature="gecko")]
+    #[cfg(feature = "gecko")]
     pub fn resolve(
-        anchor_name: &DashedIdent,
+        anchor_name: &TreeScoped<DashedIdent>,
         anchor_side: &AnchorSide,
         prop_side: PhysicalSide,
         params: &AnchorPosOffsetResolutionParams,
@@ -78,7 +85,8 @@ impl AnchorFunction {
         let valid = unsafe {
             Gecko_GetAnchorPosOffset(
                 params,
-                anchor_name.0.as_ptr(),
+                anchor_name.value.0.as_ptr(),
+                &anchor_name.scope,
                 prop_side as u8,
                 keyword as u8,
                 percentage.0,
@@ -94,8 +102,67 @@ impl AnchorFunction {
     }
 }
 
+/// Perform the adjustment of a given value for a given try tactic, as per:
+/// https://drafts.csswg.org/css-anchor-position-1/#swap-due-to-a-try-tactic
+pub(crate) trait TryTacticAdjustment {
+    /// Performs the adjustments necessary given an old side we're relative to, and a new side
+    /// we're relative to.
+    fn try_tactic_adjustment(&mut self, old_side: PhysicalSide, new_side: PhysicalSide);
+}
+
+impl<T: TryTacticAdjustment> TryTacticAdjustment for Box<T> {
+    fn try_tactic_adjustment(&mut self, old_side: PhysicalSide, new_side: PhysicalSide) {
+        (**self).try_tactic_adjustment(old_side, new_side);
+    }
+}
+
+impl<T: TryTacticAdjustment> TryTacticAdjustment for generics::NonNegative<T> {
+    fn try_tactic_adjustment(&mut self, old_side: PhysicalSide, new_side: PhysicalSide) {
+        self.0.try_tactic_adjustment(old_side, new_side);
+    }
+}
+
+impl<Percentage: TryTacticAdjustment> TryTacticAdjustment for GenericAnchorSide<Percentage> {
+    fn try_tactic_adjustment(&mut self, old_side: PhysicalSide, new_side: PhysicalSide) {
+        match self {
+            Self::Percentage(p) => p.try_tactic_adjustment(old_side, new_side),
+            Self::Keyword(side) => side.try_tactic_adjustment(old_side, new_side),
+        }
+    }
+}
+
+impl<Percentage: TryTacticAdjustment, Fallback: TryTacticAdjustment> TryTacticAdjustment
+    for GenericAnchorFunction<Percentage, Fallback>
+{
+    fn try_tactic_adjustment(&mut self, old_side: PhysicalSide, new_side: PhysicalSide) {
+        self.side.try_tactic_adjustment(old_side, new_side);
+        if let Some(fallback) = self.fallback.as_mut() {
+            fallback.try_tactic_adjustment(old_side, new_side);
+        }
+    }
+}
+
 /// A computed type for `inset` properties.
 pub type Inset = GenericInset<Percentage, LengthPercentage>;
+impl TryTacticAdjustment for Inset {
+    // https://drafts.csswg.org/css-anchor-position-1/#swap-due-to-a-try-tactic:
+    //
+    //     For inset properties, change the specified side in anchor() functions to maintain the
+    //     same relative relationship to the new direction that they had to the old.
+    //
+    //     If a <percentage> is used, and directions are opposing, change it to 100% minus the
+    //     original percentage.
+    fn try_tactic_adjustment(&mut self, old_side: PhysicalSide, new_side: PhysicalSide) {
+        match self {
+            Self::Auto => {},
+            Self::AnchorContainingCalcFunction(lp) | Self::LengthPercentage(lp) => {
+                lp.try_tactic_adjustment(old_side, new_side)
+            },
+            Self::AnchorFunction(anchor) => anchor.try_tactic_adjustment(old_side, new_side),
+            Self::AnchorSizeFunction(anchor) => anchor.try_tactic_adjustment(old_side, new_side),
+        }
+    }
+}
 
 impl Position {
     /// `50% 50%`
@@ -131,6 +198,71 @@ impl GenericPositionComponent for LengthPercentage {
             Some(Percentage(per)) => per == 0.5,
             _ => false,
         }
+    }
+}
+
+#[inline]
+fn block_or_inline_to_inferred(keyword: PositionAreaKeyword) -> PositionAreaKeyword {
+    if matches!(
+        keyword.axis(),
+        PositionAreaAxis::Block | PositionAreaAxis::Inline
+    ) {
+        keyword.with_axis(PositionAreaAxis::Inferred)
+    } else {
+        keyword
+    }
+}
+
+#[inline]
+fn inferred_to_block(keyword: PositionAreaKeyword) -> PositionAreaKeyword {
+    keyword.with_inferred_axis(PositionAreaAxis::Block)
+}
+
+#[inline]
+fn inferred_to_inline(keyword: PositionAreaKeyword) -> PositionAreaKeyword {
+    keyword.with_inferred_axis(PositionAreaAxis::Inline)
+}
+
+// This exists because the spec currently says that further simplifications
+// should be made to the computed value. That's confusing though, and probably
+// all these simplifications should be wrapped up into the simplifications that
+// we make to the specified value. I.e. all this should happen in
+// PositionArea::parse_internal().
+// See also https://github.com/w3c/csswg-drafts/issues/12759
+impl ToComputedValue for PositionArea {
+    type ComputedValue = Self;
+
+    fn to_computed_value(&self, _context: &Context) -> Self {
+        let mut computed = self.clone();
+        let pair_type = self.get_type();
+        if pair_type == PositionAreaType::Logical || pair_type == PositionAreaType::SelfLogical {
+            if computed.second != PositionAreaKeyword::None {
+                computed.first = block_or_inline_to_inferred(computed.first);
+                computed.second = block_or_inline_to_inferred(computed.second);
+            }
+        } else if pair_type == PositionAreaType::Inferred
+            || pair_type == PositionAreaType::SelfInferred
+        {
+            if computed.second == PositionAreaKeyword::SpanAll {
+                // We remove the superfluous span-all, converting the inferred
+                // keyword to a logical keyword to avoid ambiguity, per spec.
+                computed.first = inferred_to_block(computed.first);
+                computed.second = PositionAreaKeyword::None;
+            } else if computed.first == PositionAreaKeyword::SpanAll {
+                computed.first = computed.second;
+                computed.first = inferred_to_inline(computed.first);
+                computed.second = PositionAreaKeyword::None;
+            }
+        }
+
+        if computed.first == computed.second {
+            computed.second = PositionAreaKeyword::None;
+        }
+        computed
+    }
+
+    fn from_computed_value(computed: &Self) -> Self {
+        computed.clone()
     }
 }
 

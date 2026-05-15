@@ -8,7 +8,7 @@ task-defaults:
         local-toolchain: true
     treeherder:
         symbol: TL(sccache)
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     run:

@@ -4,36 +4,50 @@
 
 package org.mozilla.fenix.search
 
-import android.os.Handler
-import android.os.Looper
-import androidx.lifecycle.Lifecycle.State.RESUMED
-import androidx.lifecycle.LifecycleOwner
+import android.content.Context
 import androidx.navigation.NavController
 import androidx.navigation.NavDirections
 import io.mockk.Runs
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.spyk
 import io.mockk.verify
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.android.asCoroutineDispatcher
-import kotlinx.coroutines.test.setMain
+import io.mockk.verifyOrder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
+import mozilla.components.browser.domains.autocomplete.BaseDomainAutocompleteProvider
 import mozilla.components.browser.state.action.AwesomeBarAction.EngagementFinished
+import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.SearchAction.ApplicationSearchEnginesLoaded
 import mozilla.components.browser.state.search.RegionState
 import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.SearchState
 import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.browser.storage.sync.PlacesBookmarksStorage
+import mozilla.components.browser.storage.sync.PlacesHistoryStorage
+import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton
+import mozilla.components.compose.browser.toolbar.concept.Action.ActionButtonRes
 import mozilla.components.compose.browser.toolbar.concept.Action.SearchSelectorAction
-import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchAborted
 import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchQueryUpdated
-import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.ToggleEditMode
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.CommitUrl
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.EnterEditMode
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.ExitEditMode
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
-import mozilla.components.compose.browser.toolbar.store.EnvironmentCleared
-import mozilla.components.compose.browser.toolbar.store.EnvironmentRehydrated
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
+import mozilla.components.concept.engine.Engine
+import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.toolbar.AutocompleteProvider
-import mozilla.components.support.test.ext.joinBlocking
+import mozilla.components.concept.toolbar.AutocompleteResult
+import mozilla.components.feature.awesomebar.provider.SessionAutocompleteProvider
+import mozilla.components.feature.syncedtabs.SyncedTabsAutocompleteProvider
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
@@ -46,29 +60,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.GleanMetrics.UnifiedSearch
+import org.mozilla.fenix.GleanMetrics.Events
+import org.mozilla.fenix.GleanMetrics.Toolbar
+import org.mozilla.fenix.NavGraphDirections
+import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BrowserFragmentDirections
+import org.mozilla.fenix.browser.browsingmode.BrowsingMode.Normal
+import org.mozilla.fenix.browser.browsingmode.BrowsingMode.Private
+import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.components.appstate.AppAction.QrScannerAction.QrScannerInputAvailable
+import org.mozilla.fenix.components.appstate.AppAction.QrScannerAction.QrScannerInputConsumed
+import org.mozilla.fenix.components.appstate.AppAction.QrScannerAction.QrScannerRequested
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchEnded
 import org.mozilla.fenix.components.appstate.AppAction.SearchAction.SearchStarted
 import org.mozilla.fenix.components.appstate.AppState
+import org.mozilla.fenix.components.appstate.VoiceSearchAction.VoiceInputRequested
 import org.mozilla.fenix.components.appstate.search.SelectedSearchEngine
 import org.mozilla.fenix.components.search.BOOKMARKS_SEARCH_ENGINE_ID
 import org.mozilla.fenix.components.search.HISTORY_SEARCH_ENGINE_ID
 import org.mozilla.fenix.components.search.TABS_SEARCH_ENGINE_ID
-import org.mozilla.fenix.helpers.lifecycle.TestLifecycleOwner
-import org.mozilla.fenix.home.toolbar.HomeToolbarEnvironment
+import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.search.EditPageEndActionsInteractions.ClearSearchClicked
+import org.mozilla.fenix.search.EditPageEndActionsInteractions.QrScannerClicked
+import org.mozilla.fenix.search.EditPageEndActionsInteractions.VoiceSearchButtonClicked
 import org.mozilla.fenix.search.SearchSelectorEvents.SearchSelectorClicked
 import org.mozilla.fenix.search.SearchSelectorEvents.SearchSelectorItemClicked
 import org.mozilla.fenix.search.SearchSelectorEvents.SearchSettingsItemClicked
 import org.mozilla.fenix.search.ext.searchEngineShortcuts
 import org.mozilla.fenix.search.fixtures.assertSearchSelectorEquals
 import org.mozilla.fenix.search.fixtures.buildExpectedSearchSelector
+import org.mozilla.fenix.settings.SupportUtils
+import org.mozilla.fenix.telemetry.ACTION_CLEAR_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_MICROPHONE_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_QR_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_SEARCH_ENGINE_SELECTOR_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
+import mozilla.components.browser.toolbar.R as toolbarR
+import mozilla.components.feature.qr.R as qrR
+import mozilla.components.ui.icons.R as iconsR
 import org.mozilla.fenix.components.appstate.search.SearchState as AppSearchState
 
 @RunWith(RobolectricTestRunner::class)
@@ -76,34 +110,28 @@ class BrowserToolbarSearchMiddlewareTest {
     @get:Rule
     val gleanTestRule = GleanTestRule(testContext)
 
+    private val testDispatcher = StandardTestDispatcher()
+    private val testScope = CoroutineScope(testDispatcher)
+    private val captureBrowserActionsMiddleware = CaptureActionsMiddleware<BrowserState, BrowserAction>()
+
     val appStore = AppStore()
-    val browserStore: BrowserStore = mockk(relaxed = true) {
-        every { state.search } returns fakeSearchState()
-    }
+    val browserStore = BrowserStore(
+        BrowserState(search = fakeSearchState()),
+        middleware = listOf(captureBrowserActionsMiddleware),
+    )
     val components: Components = mockk()
     val settings: Settings = mockk(relaxed = true)
-    val lifecycleOwner: LifecycleOwner = TestLifecycleOwner(RESUMED)
     val navController: NavController = mockk {
         every { navigate(any<NavDirections>()) } just Runs
+        every { navigate(any<Int>()) } just Runs
     }
-
-    @Test
-    fun `GIVEN an environment was already set WHEN it is cleared THEN reset it to null`() {
-        val (middleware, store) = buildMiddlewareAndAddToStore()
-
-        assertNotNull(middleware.environment)
-
-        store.dispatch(EnvironmentCleared)
-
-        assertNull(middleware.environment)
-        assertEquals(emptyList<AutocompleteProvider>(), store.state.editState.autocompleteProviders)
-    }
+    val browsingModeManager: BrowsingModeManager = mockk()
 
     @Test
     fun `WHEN the toolbar enters in edit mode THEN a new search selector button is added`() {
         val (_, store) = buildMiddlewareAndAddToStore()
 
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(EnterEditMode(false))
 
         assertSearchSelectorEquals(
             expectedSearchSelector(),
@@ -112,12 +140,108 @@ class BrowserToolbarSearchMiddlewareTest {
     }
 
     @Test
+    fun `WHEN the toolbar enters in edit mode with non-blank query THEN a clear button is shown`() {
+        val (_, store) = buildMiddlewareAndAddToStore()
+
+        store.dispatch(EnterEditMode(false))
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+
+        assertEquals(
+            expectedClearButton,
+            store.state.editState.editActionsEnd.last() as ActionButtonRes,
+        )
+    }
+
+    @Test
+    fun `WHEN the toolbar enters in edit mode with blank query THEN a qr scanner button is shown`() {
+        val (_, store) = buildMiddlewareAndAddToStore()
+
+        store.dispatch(EnterEditMode(false))
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("")))
+
+        assertEquals(
+            expectedQrButton,
+            store.state.editState.editActionsEnd.last() as ActionButtonRes,
+        )
+    }
+
+    @Test
+    fun `WHEN the toolbar enters in edit mode with blank query AND user starts typing THEN qr button is replaced by clear button`() {
+        val (_, store) = buildMiddlewareAndAddToStore()
+
+        store.dispatch(EnterEditMode(false))
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("")))
+
+        assertEquals(
+            expectedQrButton,
+            store.state.editState.editActionsEnd.last() as ActionButtonRes,
+        )
+
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("a")))
+
+        assertEquals(
+            expectedClearButton,
+            store.state.editState.editActionsEnd.last() as ActionButtonRes,
+        )
+    }
+
+    @Test
+    fun `WHEN the toolbar enters in edit mode with non-blank query AND the clear button is clicked THEN text is cleared and telemetry is recorded`() {
+        val (_, store) = buildMiddlewareAndAddToStore()
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        store.dispatch(EnterEditMode(false))
+
+        val clearButton = store.state.editState.editActionsEnd.last() as ActionButtonRes
+        assertEquals(expectedClearButton, clearButton)
+
+        store.dispatch(clearButton.onClick as BrowserToolbarEvent)
+        assertEquals(store.state.editState.query.current, "")
+        assertTelemetryRecorded(ACTION_CLEAR_CLICKED)
+    }
+
+    @Test
+    fun `GIVEN a custom search engine WHEN the qr button is clicked THEN start qr recognition and record telemetry`() {
+        val appStore: AppStore = mockk(relaxed = true) {
+            every { state.searchState.selectedSearchEngine?.searchEngine } returns
+                fakeSearchState().customSearchEngines.first()
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+        store.dispatch(EnterEditMode(false))
+
+        val qrButton = store.state.editState.editActionsEnd.last() as ActionButtonRes
+        assertEquals(expectedQrButton, qrButton)
+
+        store.dispatch(qrButton.onClick as BrowserToolbarEvent)
+        assertTelemetryRecorded(ACTION_QR_CLICKED)
+        verify { appStore.dispatch(QrScannerRequested) }
+    }
+
+    @Test
+    fun `WHEN the voice search button is clicked THEN start voice recognition and record telemetry`() {
+        val appStore: AppStore = mockk(relaxed = true) {
+            every { state.searchState.selectedSearchEngine } returns mockk(relaxed = true)
+        }
+        every { settings.shouldShowVoiceSearch } returns true
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val store = buildStore(middleware)
+        store.dispatch(EnterEditMode(false))
+
+        val voiceSearchButton = store.state.editState.editActionsEnd.last() as ActionButtonRes
+        assertEquals(expectedVoiceSearchButton, voiceSearchButton)
+
+        store.dispatch(voiceSearchButton.onClick as BrowserToolbarEvent)
+        assertTelemetryRecorded(ACTION_MICROPHONE_CLICKED)
+        verify { appStore.dispatch(VoiceInputRequested) }
+    }
+
+    @Test
     fun `WHEN the search selector button is clicked THEN record a telemetry event`() {
         val (_, store) = buildMiddlewareAndAddToStore()
 
         store.dispatch(SearchSelectorClicked)
 
-        assertNotNull(UnifiedSearch.searchMenuTapped.testGetValue())
+        assertTelemetryRecorded(ACTION_SEARCH_ENGINE_SELECTOR_CLICKED)
     }
 
     @Test
@@ -126,18 +250,21 @@ class BrowserToolbarSearchMiddlewareTest {
         val appStore = AppStore(middlewares = listOf(captorMiddleware))
         val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
         appStore.dispatch(SearchStarted())
-        store.dispatch(ToggleEditMode(true))
-        store.dispatch(SearchQueryUpdated("test"))
+        store.dispatch(EnterEditMode(false))
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
         assertTrue(store.state.isEditMode())
         assertTrue(appStore.state.searchState.isSearchActive)
-        assertEquals("test", store.state.editState.query)
+        assertEquals("test", store.state.editState.query.current)
 
         store.dispatch(SearchSettingsItemClicked)
 
         assertFalse(appStore.state.searchState.isSearchActive)
-        assertEquals("", store.state.editState.query)
+        assertEquals("", store.state.editState.query.current)
         captorMiddleware.assertLastAction(SearchEnded::class) {}
-        verify { browserStore.dispatch(EngagementFinished(abandoned = true)) }
+        captureBrowserActionsMiddleware.assertFirstAction(EngagementFinished::class) { action ->
+            assertTrue(action.abandoned)
+        }
+
         verify {
             navController.navigate(
                 BrowserFragmentDirections.actionGlobalSearchEngineFragment(),
@@ -149,7 +276,7 @@ class BrowserToolbarSearchMiddlewareTest {
     fun `GIVEN the search selector menu is open WHEN a menu item is clicked THEN update the selected search engine and rebuild the menu`() {
         val (_, store) = buildMiddlewareAndAddToStore()
         val newEngineSelection = fakeSearchState().searchEngineShortcuts.last()
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(EnterEditMode(false))
         assertSearchSelectorEquals(
             expectedSearchSelector(),
             store.state.editState.editActionsStart[0] as SearchSelectorAction,
@@ -167,7 +294,7 @@ class BrowserToolbarSearchMiddlewareTest {
     fun `GIVEN the search selector menu is open while in display mode WHEN a menu item is clicked THEN enter edit mode`() {
         val (_, store) = buildMiddlewareAndAddToStore()
         val newEngineSelection = fakeSearchState().searchEngineShortcuts.last()
-        store.dispatch(ToggleEditMode(false))
+        store.dispatch(ExitEditMode)
         assertFalse(store.state.isEditMode())
 
         store.dispatch(SearchSelectorItemClicked(newEngineSelection))
@@ -176,171 +303,387 @@ class BrowserToolbarSearchMiddlewareTest {
     }
 
     @Test
-    fun `GIVEN default engine selected WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN default engine selected WHEN entering in edit mode THEN set autocomplete suggestions and page end buttons`() = runTest(testDispatcher) {
         every { settings.shouldAutocompleteInAwesomebar } returns true
         every { settings.shouldShowHistorySuggestions } returns true
         every { settings.shouldShowBookmarkSuggestions } returns true
+        every { settings.shouldShowVoiceSearch } returns true
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
         configureAutocompleteProvidersInComponents()
-        val (_, store) = buildMiddlewareAndAddToStore()
+        val middleware = spyk(buildMiddleware())
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val store = buildStore(middleware)
+        val autocompleteProvidersSlot = slot<List<AutocompleteProvider>>()
 
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(EnterEditMode(false))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
+        assertEquals(2, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
+        assertEquals(expectedQrButton, store.state.editState.editActionsEnd.last())
 
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = capture(autocompleteProvidersSlot),
+                input = "test",
+            )
+        }
         assertEquals(
-            listOf(
+            autocompleteProvidersSlot.captured.map { it.javaClass::getSimpleName },
+            listOfNotNull(
                 components.core.historyStorage,
                 components.core.bookmarksStorage,
                 components.core.domainsAutocompleteProvider,
-            ),
-            store.state.editState.autocompleteProviders,
+            ).map { it.javaClass::getSimpleName },
         )
+        assertEquals(store.state.editState.suggestion?.text, "history")
+        verify { engine.speculativeConnect("history.com") }
+        assertEquals(2, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
+        assertEquals(expectedClearButton, store.state.editState.editActionsEnd.last())
     }
 
     @Test
-    fun `GIVEN default engine selected and history suggestions disabled WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN default engine selected and history suggestions disabled WHEN entering in edit mode THEN set autocomplete suggestions`() = runTest(testDispatcher) {
         every { settings.shouldAutocompleteInAwesomebar } returns true
         every { settings.shouldShowHistorySuggestions } returns false
         every { settings.shouldShowBookmarkSuggestions } returns true
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
         configureAutocompleteProvidersInComponents()
-        val (_, store) = buildMiddlewareAndAddToStore()
+        val middleware = spyk(buildMiddleware())
+        val store = buildStore(middleware)
+        val autocompleteProvidersSlot = slot<List<AutocompleteProvider>>()
 
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(EnterEditMode(false))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
 
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = capture(autocompleteProvidersSlot),
+                input = "test",
+            )
+        }
         assertEquals(
-            listOf(
+            autocompleteProvidersSlot.captured.map { it.javaClass::getSimpleName },
+            listOfNotNull(
                 components.core.bookmarksStorage,
                 components.core.domainsAutocompleteProvider,
-            ),
-            store.state.editState.autocompleteProviders,
+            ).map { it.javaClass::getSimpleName },
         )
+        assertEquals(store.state.editState.suggestion?.text, "bookmarks")
+        verify { engine.speculativeConnect("bookmarks.com") }
     }
 
     @Test
-    fun `GIVEN default engine selected and bookmarks suggestions disabled WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN default engine selected and bookmarks suggestions disabled WHEN entering in edit mode THEN set autocomplete suggestions`() = runTest(testDispatcher) {
         every { settings.shouldAutocompleteInAwesomebar } returns true
         every { settings.shouldShowHistorySuggestions } returns true
         every { settings.shouldShowBookmarkSuggestions } returns false
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
         configureAutocompleteProvidersInComponents()
-        val (_, store) = buildMiddlewareAndAddToStore()
+        val middleware = spyk(buildMiddleware())
+        val store = buildStore(middleware)
+        val autocompleteProvidersSlot = slot<List<AutocompleteProvider>>()
 
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(EnterEditMode(false))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
+
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = capture(autocompleteProvidersSlot),
+                input = "test",
+            )
+        }
 
         assertEquals(
-            listOf(
+            autocompleteProvidersSlot.captured.map { it.javaClass::getSimpleName },
+            listOfNotNull(
                 components.core.historyStorage,
                 components.core.domainsAutocompleteProvider,
-            ),
-            store.state.editState.autocompleteProviders,
+            ).map { it.javaClass::getSimpleName },
         )
+        assertEquals(store.state.editState.suggestion?.text, "history")
+        verify { engine.speculativeConnect("history.com") }
     }
 
     @Test
-    fun `GIVEN default engine selected and history + bookmarks suggestions disabled WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN default engine selected and history + bookmarks suggestions disabled WHEN entering in edit mode THEN set autocomplete suggestions`() = runTest(testDispatcher) {
         every { settings.shouldAutocompleteInAwesomebar } returns true
         every { settings.shouldShowHistorySuggestions } returns false
         every { settings.shouldShowBookmarkSuggestions } returns false
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
         configureAutocompleteProvidersInComponents()
-        val (_, store) = buildMiddlewareAndAddToStore()
+        val middleware = spyk(buildMiddleware())
+        val store = buildStore(middleware)
+        val autocompleteProvidersSlot = slot<List<AutocompleteProvider>>()
 
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(EnterEditMode(false))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
 
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        testDispatcher.scheduler.advanceUntilIdle()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = capture(autocompleteProvidersSlot),
+                input = "test",
+            )
+        }
         assertEquals(
-            listOf(components.core.domainsAutocompleteProvider),
-            store.state.editState.autocompleteProviders,
+            autocompleteProvidersSlot.captured.map { it.javaClass::getSimpleName },
+            listOfNotNull(components.core.domainsAutocompleteProvider).map { it.javaClass::getSimpleName },
         )
+        assertEquals(store.state.editState.suggestion?.text, "domains")
+        verify { engine.speculativeConnect("domains.com") }
     }
 
     @Test
-    fun `GIVEN tabs engine selected WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN tabs engine selected WHEN entering in edit mode THEN set autocomplete suggestions and page end buttons`() = runTest(testDispatcher) {
         every { settings.shouldAutocompleteInAwesomebar } returns true
         every { settings.shouldShowHistorySuggestions } returns true
         every { settings.shouldShowBookmarkSuggestions } returns true
-        configureAutocompleteProvidersInComponents()
+        every { settings.shouldShowVoiceSearch } returns true
         val appStore = AppStore()
-        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
+        configureAutocompleteProvidersInComponents()
+        val store = buildStore(middleware)
+        val autocompleteProvidersSlot = slot<List<AutocompleteProvider>>()
 
         store.dispatch(
             SearchSelectorItemClicked(
                 fakeSearchState().applicationSearchEngines.first { it.id == TABS_SEARCH_ENGINE_ID },
             ),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
+        assertEquals(1, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
 
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = capture(autocompleteProvidersSlot),
+                input = "test",
+            )
+        }
         assertEquals(
-            listOf(
+            autocompleteProvidersSlot.captured.map { it.javaClass::getSimpleName },
+            listOfNotNull(
                 components.core.sessionAutocompleteProvider,
                 components.backgroundServices.syncedTabsAutocompleteProvider,
-            ),
-            store.state.editState.autocompleteProviders,
+            ).map { it.javaClass::getSimpleName },
         )
+        assertEquals(store.state.editState.suggestion?.text, "session")
+        verify { engine.speculativeConnect("session.com") }
+        assertEquals(2, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
+        assertEquals(expectedClearButton, store.state.editState.editActionsEnd.last())
     }
 
     @Test
-    fun `GIVEN bookmarks engine selected WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN bookmarks engine selected WHEN entering in edit mode THEN set autocomplete suggestions`() = runTest(testDispatcher) {
         every { settings.shouldAutocompleteInAwesomebar } returns true
         every { settings.shouldShowHistorySuggestions } returns true
         every { settings.shouldShowBookmarkSuggestions } returns true
-        configureAutocompleteProvidersInComponents()
+        every { settings.shouldShowVoiceSearch } returns true
         val appStore = AppStore()
-        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
+        configureAutocompleteProvidersInComponents()
+        val store = buildStore(middleware)
+        val autocompleteProvidersSlot = slot<List<AutocompleteProvider>>()
 
         store.dispatch(
             SearchSelectorItemClicked(
                 fakeSearchState().applicationSearchEngines.first { it.id == BOOKMARKS_SEARCH_ENGINE_ID },
             ),
-        ).joinBlocking()
-
-        assertEquals(
-            listOf(components.core.bookmarksStorage),
-            store.state.editState.autocompleteProviders,
         )
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
+        assertEquals(1, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
+
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        testDispatcher.scheduler.advanceUntilIdle()
+        coVerify {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = capture(autocompleteProvidersSlot),
+                input = "test",
+            )
+        }
+        assertEquals(
+            autocompleteProvidersSlot.captured.map { it.javaClass::getSimpleName },
+            listOfNotNull(components.core.bookmarksStorage).map { it.javaClass::getSimpleName },
+        )
+        assertEquals(store.state.editState.suggestion?.text, "bookmarks")
+        verify { engine.speculativeConnect("bookmarks.com") }
+        assertEquals(2, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
+        assertEquals(expectedClearButton, store.state.editState.editActionsEnd.last())
     }
 
     @Test
-    fun `GIVEN history engine selected WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN history engine selected WHEN entering in edit mode THEN set autocomplete suggestions`() = runTest(testDispatcher) {
         every { settings.shouldAutocompleteInAwesomebar } returns true
         every { settings.shouldShowHistorySuggestions } returns true
         every { settings.shouldShowBookmarkSuggestions } returns true
-        configureAutocompleteProvidersInComponents()
+        every { settings.shouldShowVoiceSearch } returns true
         val appStore = AppStore()
-        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
+        configureAutocompleteProvidersInComponents()
+        val store = buildStore(middleware)
+        val autocompleteProvidersSlot = slot<List<AutocompleteProvider>>()
 
         store.dispatch(
             SearchSelectorItemClicked(
                 fakeSearchState().applicationSearchEngines.first { it.id == HISTORY_SEARCH_ENGINE_ID },
             ),
-        ).joinBlocking()
+        )
+
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
+        assertEquals(1, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
+
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        coVerify {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = capture(autocompleteProvidersSlot),
+                input = "test",
+            )
+        }
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(
-            listOf(components.core.historyStorage),
-            store.state.editState.autocompleteProviders,
+            autocompleteProvidersSlot.captured.map { it.javaClass::getSimpleName },
+            listOfNotNull(components.core.historyStorage).map { it.javaClass::getSimpleName },
         )
+        assertEquals(store.state.editState.suggestion?.text, "history")
+        verify { engine.speculativeConnect("history.com") }
+        assertEquals(2, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
+        assertEquals(expectedClearButton, store.state.editState.editActionsEnd.last())
     }
 
     @Test
-    fun `GIVEN other search engine selected WHEN entering in edit mode THEN set autocomplete providers`() {
+    fun `GIVEN other search engine selected WHEN entering in edit mode THEN set autocomplete suggestions`() {
         every { settings.shouldAutocompleteInAwesomebar } returns true
+        every { settings.shouldShowVoiceSearch } returns true
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val engine: Engine = mockk {
+            every { speculativeConnect(any()) } just Runs
+        }
+        every { components.core.engine } returns engine
         configureAutocompleteProvidersInComponents()
-        val (_, store) = buildMiddlewareAndAddToStore()
+        val store = buildStore(middleware)
 
-        store.dispatch(SearchSelectorItemClicked(mockk(relaxed = true))).joinBlocking()
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(SearchSelectorItemClicked(mockk(relaxed = true)))
+        store.dispatch(EnterEditMode(false))
+        testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(
-            emptyList<AutocompleteProvider>(),
-            store.state.editState.autocompleteProviders,
-        )
+        coVerify(exactly = 0) {
+            middleware.fetchAutocomplete(
+                autocompleteProviders = any(),
+                input = "",
+            )
+        }
+        assertNull(store.state.editState.suggestion)
+        verify(exactly = 0) { engine.speculativeConnect(any()) }
+        assertEquals(1, store.state.editState.editActionsEnd.size)
+        assertEquals(expectedVoiceSearchButton, store.state.editState.editActionsEnd.first())
     }
 
     @Test
     fun `WHEN the search engines are updated in BrowserStore THEN update the search selector and search providers`() {
-        Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher())
-
         val browserStore = BrowserStore()
         val (_, store) = buildMiddlewareAndAddToStore(browserStore = browserStore)
-        store.dispatch(ToggleEditMode(true))
+        store.dispatch(EnterEditMode(false))
         val newSearchEngines = fakeSearchState().applicationSearchEngines
 
-        browserStore.dispatch(ApplicationSearchEnginesLoaded(newSearchEngines)).joinBlocking()
-        shadowOf(Looper.getMainLooper()).idle() // wait for observing and processing the search engines update
+        browserStore.dispatch(ApplicationSearchEnginesLoaded(newSearchEngines))
+        testDispatcher.scheduler.advanceUntilIdle() // wait for observing and processing the search engines update
 
         assertSearchSelectorEquals(
             expectedSearchSelector(newSearchEngines[0], newSearchEngines),
@@ -350,8 +693,6 @@ class BrowserToolbarSearchMiddlewareTest {
 
     @Test
     fun `GIVEN a search engine is already selected WHEN the search engines are updated in BrowserStore THEN don't change the selected search engine`() {
-        Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher())
-
         val selectedSearchEngine = fakeSearchState().applicationSearchEngines.first().copy(id = "test")
         val appStore = AppStore(
             AppState(
@@ -361,12 +702,12 @@ class BrowserToolbarSearchMiddlewareTest {
             ),
         )
         val browserStore = BrowserStore()
-        val (_, store) = buildMiddlewareAndAddToStore(appStore, browserStore)
-        store.dispatch(ToggleEditMode(true))
+        val (_, store) = buildMiddlewareAndAddToStore(testContext, appStore, browserStore)
+        store.dispatch(EnterEditMode(false))
         val newSearchEngines = fakeSearchState().applicationSearchEngines
 
-        browserStore.dispatch(ApplicationSearchEnginesLoaded(newSearchEngines)).joinBlocking()
-        shadowOf(Looper.getMainLooper()).idle() // wait for observing and processing the search engines update
+        browserStore.dispatch(ApplicationSearchEnginesLoaded(newSearchEngines))
+        testDispatcher.scheduler.advanceUntilIdle()
 
         assertSearchSelectorEquals(
             expectedSearchSelector(selectedSearchEngine, newSearchEngines),
@@ -375,15 +716,375 @@ class BrowserToolbarSearchMiddlewareTest {
     }
 
     @Test
-    fun `WHEN the search is aborted THEN sync this in application and browser state`() {
-        val appStore: AppStore = mockk(relaxed = true)
-        val browserStore: BrowserStore = mockk(relaxed = true)
-        val (_, store) = buildMiddlewareAndAddToStore(appStore, browserStore)
+    fun `WHEN the search engine is added by the application THEN do not load URL`() {
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val browserStore = BrowserStore(
+            BrowserState(
+                search = fakeSearchState().copy(
+                    userSelectedSearchEngineId = TABS_SEARCH_ENGINE_ID,
+                ),
+            ),
+        )
 
-        store.dispatch(SearchAborted)
+        val browserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+        val components: Components = mockk(relaxed = true) {
+            every { useCases.fenixBrowserUseCases } returns browserUseCases
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(
+            appStore = appStore,
+            browserStore = browserStore,
+            components = components,
+        )
 
-        verify { appStore.dispatch(SearchEnded) }
-        verify { browserStore.dispatch(EngagementFinished(abandoned = true)) }
+        store.dispatch(CommitUrl("test"))
+
+        verify(exactly = 0) {
+            browserUseCases.loadUrlOrSearch(
+                searchTermOrURL = any(),
+                newTab = any(),
+                forceSearch = any(),
+                private = any(),
+                searchEngine = any(),
+            )
+        }
+        captorMiddleware.assertNotDispatched(SearchEnded::class)
+    }
+
+    @Test
+    fun `WHEN about crashes is searched THEN navigate to crash list fragment`() {
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+
+        store.dispatch(CommitUrl("about:crashes"))
+
+        verify { navController.navigate(NavGraphDirections.actionGlobalCrashListFragment()) }
+        captorMiddleware.assertLastAction(SearchEnded::class) {}
+    }
+
+    @Test
+    fun `WHEN about addons is searched THEN navigate to addons management fragment`() {
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+
+        store.dispatch(CommitUrl("about:addons"))
+
+        verify { navController.navigate(NavGraphDirections.actionGlobalAddonsManagementFragment()) }
+        captureBrowserActionsMiddleware.assertFirstAction(EngagementFinished::class) { action ->
+            assertFalse(action.abandoned)
+        }
+        captorMiddleware.assertLastAction(SearchEnded::class) {}
+    }
+
+    @Test
+    fun `WHEN about glean is searched THEN navigate to glean debug tools fragment`() {
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+
+        store.dispatch(CommitUrl("about:glean"))
+
+        verify { navController.navigate(NavGraphDirections.actionGlobalGleanDebugToolsFragment()) }
+        captorMiddleware.assertLastAction(SearchEnded::class) {}
+    }
+
+    @Test
+    fun `WHEN mozilla manifesto URL is searched THEN navigate to mozilla manifesto page`() {
+        val manifestoUrl = SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.MANIFESTO)
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val browserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+        val components: Components = mockk(relaxed = true) {
+            every { useCases.fenixBrowserUseCases } returns browserUseCases
+        }
+        val browsingModeManager: BrowsingModeManager = mockk(relaxed = true) {
+            every { mode } returns Normal
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(
+            appStore = appStore,
+            components = components,
+            browsingModeManager = browsingModeManager,
+        )
+
+        assertNull(Events.enteredUrl.testGetValue())
+
+        store.dispatch(CommitUrl("moz://a"))
+
+        verifyOrder {
+            navController.navigate(NavGraphDirections.actionGlobalBrowser())
+            browserUseCases.loadUrlOrSearch(
+                searchTermOrURL = manifestoUrl,
+                newTab = true,
+                forceSearch = false,
+                private = false,
+                searchEngine = any(),
+            )
+        }
+        assertNotNull(Events.enteredUrl.testGetValue())
+        assertEquals(1, Events.enteredUrl.testGetValue()!!.size)
+        assertEquals(
+            "false",
+            Events.enteredUrl.testGetValue()!!.single().extra?.getValue("autocomplete"),
+        )
+        captureBrowserActionsMiddleware.assertFirstAction(EngagementFinished::class) { action ->
+            assertFalse(action.abandoned)
+        }
+        captorMiddleware.assertLastAction(SearchEnded::class) {}
+    }
+
+    @Test
+    fun `WHEN empty text is searched THEN finish engagement as abandoned`() {
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val (_, store) = buildMiddlewareAndAddToStore(appStore = appStore)
+
+        store.dispatch(CommitUrl(""))
+
+        captureBrowserActionsMiddleware.assertFirstAction(EngagementFinished::class) { action ->
+            assertTrue(action.abandoned)
+        }
+        captorMiddleware.assertLastAction(SearchEnded::class) {}
+    }
+
+    @Test
+    fun `GIVEN homepage as a new tab is enabled WHEN url is committed THEN perform search in the existing tab`() {
+        val url = "https://www.mozilla.org"
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val browserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+        val components: Components = mockk(relaxed = true) {
+            every { useCases.fenixBrowserUseCases } returns browserUseCases
+        }
+        val settings: Settings = mockk(relaxed = true) {
+            every { enableHomepageAsNewTab } returns true
+        }
+        val browsingModeManager: BrowsingModeManager = mockk(relaxed = true) {
+            every { mode } returns Normal
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(
+            appStore = appStore,
+            components = components,
+            settings = settings,
+            browsingModeManager = browsingModeManager,
+        )
+
+        assertNull(Events.enteredUrl.testGetValue())
+
+        store.dispatch(CommitUrl(url))
+
+        verifyOrder {
+            navController.navigate(NavGraphDirections.actionGlobalBrowser())
+            browserUseCases.loadUrlOrSearch(
+                searchTermOrURL = url,
+                newTab = false,
+                forceSearch = false,
+                private = false,
+                searchEngine = any(),
+            )
+        }
+        assertNotNull(Events.enteredUrl.testGetValue())
+        assertEquals(1, Events.enteredUrl.testGetValue()!!.size)
+        assertEquals(
+            "false",
+            Events.enteredUrl.testGetValue()!!.single().extra?.getValue("autocomplete"),
+        )
+        captureBrowserActionsMiddleware.assertFirstAction(EngagementFinished::class) { action ->
+            assertFalse(action.abandoned)
+        }
+        captorMiddleware.assertLastAction(SearchEnded::class) {}
+    }
+
+    @Test
+    fun `GIVEN homepage as a new tab is enabled WHEN search term is committed THEN perform search in the existing tab`() {
+        val searchTerm = "Firefox"
+        val captorMiddleware = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(captorMiddleware))
+        val browserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+        val components: Components = mockk(relaxed = true) {
+            every { useCases.fenixBrowserUseCases } returns browserUseCases
+        }
+        val settings: Settings = mockk(relaxed = true) {
+            every { enableHomepageAsNewTab } returns true
+        }
+        val browsingModeManager: BrowsingModeManager = mockk(relaxed = true) {
+            every { mode } returns Normal
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(
+            appStore = appStore,
+            components = components,
+            settings = settings,
+            browsingModeManager = browsingModeManager,
+        )
+
+        store.dispatch(CommitUrl(searchTerm))
+
+        verifyOrder {
+            navController.navigate(NavGraphDirections.actionGlobalBrowser())
+            browserUseCases.loadUrlOrSearch(
+                searchTermOrURL = searchTerm,
+                newTab = false,
+                forceSearch = false,
+                private = false,
+                searchEngine = any(),
+            )
+        }
+        captureBrowserActionsMiddleware.assertFirstAction(EngagementFinished::class) { action ->
+            assertFalse(action.abandoned)
+        }
+        captorMiddleware.assertLastAction(SearchEnded::class) {}
+    }
+
+    @Test
+    fun `GIVEN the toolbar is in edit mode WHEN updateSearchActionsEnd is triggered via ToggleEditMode THEN a voice search action button is added to the end actions`() {
+        every { settings.shouldShowVoiceSearch } returns true
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val store = buildStore(middleware)
+        store.dispatch(EnterEditMode(false))
+
+        val actions = store.state.editState.editActionsEnd
+        assertEquals(2, actions.size)
+        val voiceAction = actions.first() as ActionButtonRes
+        assertEquals(expectedVoiceSearchButton, voiceAction)
+    }
+
+    @Test
+    fun `GIVEN the toolbar is in edit mode but speech recognition is not available THEN don't show a voice search action button`() {
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns false
+        val store = buildStore(middleware)
+        store.dispatch(EnterEditMode(false))
+        store.dispatch(SearchQueryUpdated(BrowserToolbarQuery("")))
+
+        val actions = store.state.editState.editActionsEnd
+        assertTrue(actions.size == 1)
+        assertEquals(expectedQrButton, actions.last())
+    }
+
+    @Test
+    fun `GIVEN QR scan while in normal browsing mode WHEN receiving a result THEN open it as a new normal tab`() {
+        val appStoreActionsCaptor = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(appStoreActionsCaptor))
+        val browserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+        every { components.useCases.fenixBrowserUseCases } returns browserUseCases
+        val browsingModeManager: BrowsingModeManager = mockk(relaxed = true) {
+            every { mode } returns Normal
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(
+            appStore = appStore,
+            components = components,
+            browsingModeManager = browsingModeManager,
+        )
+        store.dispatch(EnterEditMode(false))
+        val qrScannerButton = store.state.editState.editActionsEnd.last() as ActionButtonRes
+
+        store.dispatch(qrScannerButton.onClick as BrowserToolbarEvent)
+        appStore.dispatch(QrScannerInputAvailable("mozilla.test"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("mozilla.test", store.state.editState.query.current)
+        appStoreActionsCaptor.assertLastAction(QrScannerInputConsumed::class)
+        verify {
+            browserUseCases.loadUrlOrSearch(
+                searchTermOrURL = "mozilla.test",
+                newTab = true,
+                flags = EngineSession.LoadUrlFlags.external(),
+                private = false,
+            )
+        }
+        verify { navController.navigate(R.id.action_global_browser) }
+    }
+
+    @Test
+    fun `GIVEN QR scan while in private browsing mode WHEN receiving a result THEN open it as a new private tab`() {
+        val appStoreActionsCaptor = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(middlewares = listOf(appStoreActionsCaptor))
+        val browserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+        every { components.useCases.fenixBrowserUseCases } returns browserUseCases
+        val browsingModeManager: BrowsingModeManager = mockk(relaxed = true) {
+            every { mode } returns Private
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(
+            appStore = appStore,
+            components = components,
+            browsingModeManager = browsingModeManager,
+        )
+        store.dispatch(EnterEditMode(true))
+        val qrScannerButton = store.state.editState.editActionsEnd.last() as ActionButtonRes
+
+        store.dispatch(qrScannerButton.onClick as BrowserToolbarEvent)
+        appStore.dispatch(QrScannerInputAvailable("test.mozilla"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("test.mozilla", store.state.editState.query.current)
+        appStoreActionsCaptor.assertLastAction(QrScannerInputConsumed::class)
+        verify {
+            browserUseCases.loadUrlOrSearch(
+                searchTermOrURL = "test.mozilla",
+                newTab = true,
+                flags = EngineSession.LoadUrlFlags.external(),
+                private = true,
+            )
+        }
+        verify { navController.navigate(R.id.action_global_browser) }
+    }
+
+    @Test
+    fun `GIVEN QR scan starteds from browser WHEN receiving a result THEN open it in the same tab`() {
+        val appStoreActionsCaptor = CaptureActionsMiddleware<AppState, AppAction>()
+        val appStore = AppStore(
+            initialState = AppState(
+                searchState = AppSearchState.EMPTY.copy(sourceTabId = "test"),
+            ),
+            middlewares = listOf(appStoreActionsCaptor),
+        )
+        val browserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
+        every { components.useCases.fenixBrowserUseCases } returns browserUseCases
+        val browsingModeManager: BrowsingModeManager = mockk(relaxed = true) {
+            every { mode } returns Normal
+        }
+        val (_, store) = buildMiddlewareAndAddToStore(
+            appStore = appStore,
+            components = components,
+            browsingModeManager = browsingModeManager,
+        )
+        store.dispatch(EnterEditMode(false))
+        val qrScannerButton = store.state.editState.editActionsEnd.last() as ActionButtonRes
+
+        store.dispatch(qrScannerButton.onClick as BrowserToolbarEvent)
+        appStore.dispatch(QrScannerInputAvailable("test.com"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("test.com", store.state.editState.query.current)
+        appStoreActionsCaptor.assertLastAction(QrScannerInputConsumed::class)
+        verify {
+            browserUseCases.loadUrlOrSearch(
+                searchTermOrURL = "test.com",
+                newTab = false,
+                flags = EngineSession.LoadUrlFlags.external(),
+                private = false,
+            )
+        }
+        verify { navController.navigate(R.id.action_global_browser) }
+    }
+
+    @Test
+    fun `WHEN the voice action is tapped THEN add a new voice input request to the AppStore`() {
+        val appStore: AppStore = mockk(relaxed = true) {
+            every { state } returns mockk(relaxed = true)
+        }
+        every { settings.shouldShowVoiceSearch } returns true
+        val middleware = spyk(buildMiddleware(appStore = appStore))
+        every { middleware.isSpeechRecognitionAvailable() } returns true
+        val store = buildStore(middleware)
+        store.dispatch(EnterEditMode(false))
+        val voiceAction = store.state.editState.editActionsEnd.first() as ActionButtonRes
+
+        store.dispatch(voiceAction.onClick as BrowserToolbarEvent)
+
+        verify { appStore.dispatch(VoiceInputRequested) }
     }
 
     private fun expectedSearchSelector(
@@ -395,43 +1096,122 @@ class BrowserToolbarSearchMiddlewareTest {
         testContext.resources,
     )
 
+    private val expectedClearButton = ActionButtonRes(
+        drawableResId = iconsR.drawable.mozac_ic_cross_circle_fill_24,
+        contentDescription = toolbarR.string.mozac_clear_button_description,
+        state = ActionButton.State.DEFAULT,
+        onClick = ClearSearchClicked,
+    )
+
+    private val expectedQrButton = ActionButtonRes(
+        drawableResId = iconsR.drawable.mozac_ic_qr_code_24,
+        contentDescription = qrR.string.mozac_feature_qr_scanner,
+        state = ActionButton.State.DEFAULT,
+        onClick = QrScannerClicked,
+    )
+
+    private val expectedVoiceSearchButton = ActionButtonRes(
+        drawableResId = iconsR.drawable.mozac_ic_microphone_24,
+        contentDescription = R.string.voice_search_content_description,
+        onClick = VoiceSearchButtonClicked,
+    )
+
     private fun buildMiddlewareAndAddToStore(
+        uiContext: Context = testContext,
         appStore: AppStore = this.appStore,
         browserStore: BrowserStore = this.browserStore,
         components: Components = this.components,
-        settings: Settings = this.settings,
-        lifecycleOwner: LifecycleOwner = this.lifecycleOwner,
         navController: NavController = this.navController,
+        browsingModeManager: BrowsingModeManager = this.browsingModeManager,
+        settings: Settings = this.settings,
+        scope: CoroutineScope = testScope,
     ): Pair<BrowserToolbarSearchMiddleware, BrowserToolbarStore> {
-        val middleware = buildMiddleware(appStore, browserStore, components, settings)
-        val store = BrowserToolbarStore(
-            middleware = listOf(middleware),
-        ).also {
-            it.dispatch(
-                EnvironmentRehydrated(
-                    HomeToolbarEnvironment(
-                        testContext, lifecycleOwner, navController, mockk(),
-                    ),
-                ),
-            )
-        }
+        val middleware = buildMiddleware(
+            uiContext = uiContext,
+            appStore = appStore,
+            browserStore = browserStore,
+            components = components,
+            navController = navController,
+            browsingModeManager = browsingModeManager,
+            settings = settings,
+            scope = scope,
+        )
+        val store = buildStore(middleware)
 
         return middleware to store
     }
 
+    private fun buildStore(
+        middleware: BrowserToolbarSearchMiddleware = buildMiddleware(),
+    ) = BrowserToolbarStore(
+        middleware = listOf(middleware),
+    )
+
     private fun buildMiddleware(
+        uiContext: Context = testContext,
         appStore: AppStore = this.appStore,
         browserStore: BrowserStore = this.browserStore,
         components: Components = this.components,
+        navController: NavController = this.navController,
+        browsingModeManager: BrowsingModeManager = this.browsingModeManager,
         settings: Settings = this.settings,
-    ) = BrowserToolbarSearchMiddleware(appStore, browserStore, components, settings)
+        scope: CoroutineScope = testScope,
+    ) = BrowserToolbarSearchMiddleware(
+        uiContext = uiContext,
+        appStore = appStore,
+        browserStore = browserStore,
+        components = components,
+        navController = navController,
+        browsingModeManager = browsingModeManager,
+        settings = settings,
+        scope = scope,
+        autocompleteDispatcher = testDispatcher,
+    )
 
     private fun configureAutocompleteProvidersInComponents() {
-        every { components.core.historyStorage } returns mockk()
-        every { components.core.bookmarksStorage } returns mockk()
-        every { components.core.domainsAutocompleteProvider } returns mockk()
-        every { components.core.sessionAutocompleteProvider } returns mockk()
-        every { components.backgroundServices.syncedTabsAutocompleteProvider } returns mockk()
+        val autocompleteSuggestion = AutocompleteResult(
+            text = "",
+            url = "",
+            input = "",
+            source = "t",
+            totalItems = 1,
+        )
+        val historyStorage: PlacesHistoryStorage = mockk {
+            coEvery { getAutocompleteSuggestion(any()) } returns autocompleteSuggestion.copy(
+                text = "history",
+                url = "history.com",
+            )
+        }
+        val bookmarksStorage: PlacesBookmarksStorage = mockk {
+            coEvery { getAutocompleteSuggestion(any()) } returns autocompleteSuggestion.copy(
+                text = "bookmarks",
+                url = "bookmarks.com",
+            )
+        }
+        val domainsProvider: BaseDomainAutocompleteProvider = mockk {
+            coEvery { getAutocompleteSuggestion(any()) } returns autocompleteSuggestion.copy(
+                text = "domains",
+                url = "domains.com",
+            )
+        }
+        val sessionsProvider: SessionAutocompleteProvider = mockk {
+            coEvery { getAutocompleteSuggestion(any()) } returns autocompleteSuggestion.copy(
+                text = "session",
+                url = "session.com",
+            )
+        }
+        val syncedTabsProvider: SyncedTabsAutocompleteProvider = mockk {
+            coEvery { getAutocompleteSuggestion(any()) } returns autocompleteSuggestion.copy(
+                text = "synced tabs",
+                url = "synced-tabs.com",
+            )
+        }
+
+        every { components.core.historyStorage } returns historyStorage
+        every { components.core.bookmarksStorage } returns bookmarksStorage
+        every { components.core.domainsAutocompleteProvider } returns domainsProvider
+        every { components.core.sessionAutocompleteProvider } returns sessionsProvider
+        every { components.backgroundServices.syncedTabsAutocompleteProvider } returns syncedTabsProvider
     }
 
     private fun fakeSearchState() = SearchState(
@@ -458,7 +1238,15 @@ class BrowserToolbarSearchMiddlewareTest {
             SearchEngine("engine-g", "Engine G", mock(), type = SearchEngine.Type.BUNDLED),
         ),
         regionDefaultSearchEngineId = null,
-        userSelectedSearchEngineId = null,
+        userSelectedSearchEngineId = "engine-c",
         userSelectedSearchEngineName = null,
     )
+
+    private fun assertTelemetryRecorded(item: String) {
+       val values = Toolbar.buttonTapped.testGetValue()
+       assertNotNull(values)
+       val last = values!!.last()
+       assertEquals(item, last.extra?.get("item"))
+       assertEquals(SOURCE_ADDRESS_BAR, last.extra?.get("source"))
+    }
 }

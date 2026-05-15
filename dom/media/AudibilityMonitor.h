@@ -9,10 +9,10 @@
 
 #include <cstdint>
 
-#include "AudioSampleFormat.h"
-#include "WebAudioUtils.h"
 #include "AudioBlock.h"
+#include "AudioSampleFormat.h"
 #include "MediaData.h"
+#include "WebAudioUtils.h"
 
 namespace mozilla {
 

@@ -62,7 +62,7 @@ class RemoteVideoData final {
   const int32_t& frameID() const { return mFrameID; }
 
  private:
-  friend struct ipc::IPDLParamTraits<RemoteVideoData>;
+  friend struct IPC::ParamTraits<RemoteVideoData>;
   MediaDataIPDL mBase;
   IntSize mDisplay;
   RemoteImageHolder mImage;
@@ -105,7 +105,7 @@ class ArrayOfRemoteVideoData final {
 
  private:
   ~ArrayOfRemoteVideoData() = default;
-  friend struct ipc::IPDLParamTraits<mozilla::ArrayOfRemoteVideoData*>;
+  friend struct IPC::ParamTraits<mozilla::ArrayOfRemoteVideoData*>;
   nsTArray<RemoteVideoData> mArray;
 };
 
@@ -196,7 +196,7 @@ class RemoteArrayOfByteBuffer {
   virtual ~RemoteArrayOfByteBuffer();
 
  private:
-  friend struct ipc::IPDLParamTraits<RemoteArrayOfByteBuffer>;
+  friend struct IPC::ParamTraits<RemoteArrayOfByteBuffer>;
   // Allocate shmem, false if an error occurred.
   bool AllocateShmem(size_t aSize,
                      std::function<ShmemBuffer(size_t)>& aAllocator);
@@ -255,7 +255,7 @@ class ArrayOfRemoteMediaRawData {
   };
 
  private:
-  friend struct ipc::IPDLParamTraits<ArrayOfRemoteMediaRawData*>;
+  friend struct IPC::ParamTraits<ArrayOfRemoteMediaRawData*>;
   virtual ~ArrayOfRemoteMediaRawData() = default;
 
   nsTArray<RemoteMediaRawData> mSamples;
@@ -290,7 +290,7 @@ class ArrayOfRemoteAudioData final {
   bool IsValid() const { return mBuffers.IsValid(); }
 
   struct RemoteAudioData {
-    friend struct ipc::IPDLParamTraits<RemoteVideoData>;
+    friend struct IPC::ParamTraits<RemoteVideoData>;
     MediaDataIPDL mBase;
     uint32_t mChannels;
     uint32_t mRate;
@@ -302,111 +302,95 @@ class ArrayOfRemoteAudioData final {
   };
 
  private:
-  friend struct ipc::IPDLParamTraits<ArrayOfRemoteAudioData*>;
+  friend struct IPC::ParamTraits<ArrayOfRemoteAudioData*>;
   ~ArrayOfRemoteAudioData() = default;
 
   nsTArray<RemoteAudioData> mSamples;
   RemoteArrayOfByteBuffer mBuffers;
 };
 
-namespace ipc {
+}  // namespace mozilla
+
+namespace IPC {
 
 template <>
-struct IPDLParamTraits<RemoteVideoData> {
-  typedef RemoteVideoData paramType;
-  static void Write(IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-                    paramType&& aVar) {
-    WriteIPDLParam(aWriter, aActor, std::move(aVar.mBase));
-    WriteIPDLParam(aWriter, aActor, std::move(aVar.mDisplay));
-    WriteIPDLParam(aWriter, aActor, std::move(aVar.mImage));
+struct ParamTraits<mozilla::RemoteVideoData> {
+  using paramType = mozilla::RemoteVideoData;
+  static void Write(MessageWriter* aWriter, paramType&& aVar) {
+    WriteParam(aWriter, std::move(aVar.mBase));
+    WriteParam(aWriter, std::move(aVar.mDisplay));
+    WriteParam(aWriter, std::move(aVar.mImage));
     aWriter->WriteBytes(&aVar.mFrameID, 4);
   }
 
-  static bool Read(IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor,
-                   paramType* aVar) {
-    if (!ReadIPDLParam(aReader, aActor, &aVar->mBase) ||
-        !ReadIPDLParam(aReader, aActor, &aVar->mDisplay) ||
-        !ReadIPDLParam(aReader, aActor, &aVar->mImage) ||
-        !aReader->ReadBytesInto(&aVar->mFrameID, 4)) {
-      return false;
-    }
-    return true;
+  static bool Read(IPC::MessageReader* aReader, paramType* aVar) {
+    return ReadParam(aReader, &aVar->mBase) &&
+           ReadParam(aReader, &aVar->mDisplay) &&
+           ReadParam(aReader, &aVar->mImage) &&
+           aReader->ReadBytesInto(&aVar->mFrameID, 4);
   }
 };
 
 template <>
-struct IPDLParamTraits<ArrayOfRemoteVideoData*> {
-  typedef ArrayOfRemoteVideoData paramType;
-  static void Write(IPC::MessageWriter* aWriter,
-                    mozilla::ipc::IProtocol* aActor, paramType* aVar) {
-    WriteIPDLParam(aWriter, aActor, std::move(aVar->mArray));
+struct ParamTraits<mozilla::ArrayOfRemoteVideoData*> {
+  using paramType = mozilla::ArrayOfRemoteVideoData;
+  static void Write(IPC::MessageWriter* aWriter, paramType* aVar) {
+    WriteParam(aWriter, std::move(aVar->mArray));
   }
 
-  static bool Read(IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-                   RefPtr<paramType>* aVar) {
-    nsTArray<RemoteVideoData> array;
-    if (!ReadIPDLParam(aReader, aActor, &array)) {
+  static bool Read(IPC::MessageReader* aReader, RefPtr<paramType>* aVar) {
+    nsTArray<mozilla::RemoteVideoData> array;
+    if (!ReadParam(aReader, &array)) {
       return false;
     }
-    auto results = MakeRefPtr<ArrayOfRemoteVideoData>(std::move(array));
+    auto results =
+        mozilla::MakeRefPtr<mozilla::ArrayOfRemoteVideoData>(std::move(array));
     *aVar = std::move(results);
     return true;
   }
 };
 
 template <>
-struct IPDLParamTraits<RemoteArrayOfByteBuffer> {
-  typedef RemoteArrayOfByteBuffer paramType;
+struct ParamTraits<mozilla::RemoteArrayOfByteBuffer> {
+  using paramType = mozilla::RemoteArrayOfByteBuffer;
   // We do not want to move the RemoteArrayOfByteBuffer as we want to recycle
   // the shmem it contains for another time.
-  static void Write(IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-                    const paramType& aVar);
+  static void Write(IPC::MessageWriter* aWriter, const paramType& aVar);
 
-  static bool Read(IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-                   paramType* aVar);
+  static bool Read(IPC::MessageReader* aReader, paramType* aVar);
 };
 
 template <>
-struct IPDLParamTraits<ArrayOfRemoteMediaRawData::RemoteMediaRawData> {
-  typedef ArrayOfRemoteMediaRawData::RemoteMediaRawData paramType;
-  static void Write(IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-                    const paramType& aVar);
+struct ParamTraits<mozilla::ArrayOfRemoteMediaRawData::RemoteMediaRawData> {
+  using paramType = mozilla::ArrayOfRemoteMediaRawData::RemoteMediaRawData;
+  static void Write(MessageWriter* aWriter, const paramType& aVar);
 
-  static bool Read(IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-                   paramType* aVar);
+  static bool Read(MessageReader* aReader, paramType* aVar);
 };
 
 template <>
-struct IPDLParamTraits<ArrayOfRemoteMediaRawData*> {
-  typedef ArrayOfRemoteMediaRawData paramType;
-  static void Write(IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-                    paramType* aVar);
+struct ParamTraits<mozilla::ArrayOfRemoteMediaRawData*> {
+  using paramType = mozilla::ArrayOfRemoteMediaRawData;
+  static void Write(MessageWriter* aWriter, paramType* aVar);
 
-  static bool Read(IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-                   RefPtr<paramType>* aVar);
+  static bool Read(MessageReader* aReader, RefPtr<paramType>* aVar);
 };
 
 template <>
-struct IPDLParamTraits<ArrayOfRemoteAudioData::RemoteAudioData> {
-  typedef ArrayOfRemoteAudioData::RemoteAudioData paramType;
-  static void Write(IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-                    const paramType& aVar);
+struct ParamTraits<mozilla::ArrayOfRemoteAudioData::RemoteAudioData> {
+  using paramType = mozilla::ArrayOfRemoteAudioData::RemoteAudioData;
+  static void Write(MessageWriter* aWriter, const paramType& aVar);
 
-  static bool Read(IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-                   paramType* aVar);
+  static bool Read(MessageReader* aReader, paramType* aVar);
 };
 
 template <>
-struct IPDLParamTraits<ArrayOfRemoteAudioData*> {
-  typedef ArrayOfRemoteAudioData paramType;
-  static void Write(IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-                    paramType* aVar);
+struct ParamTraits<mozilla::ArrayOfRemoteAudioData*> {
+  using paramType = mozilla::ArrayOfRemoteAudioData;
+  static void Write(MessageWriter* aWriter, paramType* aVar);
 
-  static bool Read(IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-                   RefPtr<paramType>* aVar);
+  static bool Read(MessageReader* aReader, RefPtr<paramType>* aVar);
 };
-}  // namespace ipc
-
-}  // namespace mozilla
+}  // namespace IPC
 
 #endif  // mozilla_dom_media_ipc_RemoteMediaData_h

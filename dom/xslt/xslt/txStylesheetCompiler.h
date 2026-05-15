@@ -6,14 +6,13 @@
 #ifndef TRANSFRMX_TXSTYLESHEETCOMPILER_H
 #define TRANSFRMX_TXSTYLESHEETCOMPILER_H
 
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
-#include "txStack.h"
-#include "txXSLTPatterns.h"
+#include "nsTArray.h"
 #include "txExpr.h"
 #include "txIXPathContext.h"
+#include "txStack.h"
 #include "txStylesheet.h"
-#include "nsTArray.h"
+#include "txXSLTPatterns.h"
 
 extern bool TX_XSLTFunctionAvailable(nsAtom* aName, int32_t aNameSpaceID);
 

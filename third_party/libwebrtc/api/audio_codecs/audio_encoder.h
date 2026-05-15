@@ -16,20 +16,19 @@
 
 #include <memory>
 #include <optional>
-#include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/base/attributes.h"
+#include "absl/strings/string_view.h"
 #include "api/array_view.h"
+#include "api/audio/audio_view.h"
 #include "api/call/bitrate_allocation.h"
 #include "api/units/data_rate.h"
 #include "api/units/time_delta.h"
 #include "rtc_base/buffer.h"
 
 namespace webrtc {
-
-class RtcEventLog;
 
 // Statistics related to Audio Network Adaptation.
 struct ANAStats {
@@ -151,8 +150,8 @@ class AudioEncoder {
   // EncodeImpl() which does the actual work, and then checks some
   // postconditions.
   EncodedInfo Encode(uint32_t rtp_timestamp,
-                     rtc::ArrayView<const int16_t> audio,
-                     rtc::Buffer* encoded);
+                     ArrayView<const int16_t> audio,
+                     Buffer* encoded);
 
   // Resets the encoder to its starting state, discarding any input that has
   // been fed to the encoder but not yet emitted in a packet.
@@ -197,12 +196,10 @@ class AudioEncoder {
   // not call any methods on this encoder afterwards, except for the
   // destructor. The default implementation just returns an empty array.
   // NOTE: This method is subject to change. Do not call or override it.
-  virtual rtc::ArrayView<std::unique_ptr<AudioEncoder>>
-  ReclaimContainedEncoders();
+  virtual ArrayView<std::unique_ptr<AudioEncoder>> ReclaimContainedEncoders();
 
   // Enables audio network adaptor. Returns true if successful.
-  virtual bool EnableAudioNetworkAdaptor(const std::string& config_string,
-                                         RtcEventLog* event_log);
+  virtual bool EnableAudioNetworkAdaptor(absl::string_view config);
 
   // Disables audio network adaptor.
   virtual void DisableAudioNetworkAdaptor();
@@ -257,14 +254,14 @@ class AudioEncoder {
   }
 
   // The maximum number of audio channels supported by WebRTC encoders.
-  static constexpr int kMaxNumberOfChannels = 24;
+  static constexpr int kMaxNumberOfChannels = kMaxNumberOfAudioChannels;
 
  protected:
   // Subclasses implement this to perform the actual encoding. Called by
   // Encode().
   virtual EncodedInfo EncodeImpl(uint32_t rtp_timestamp,
-                                 rtc::ArrayView<const int16_t> audio,
-                                 rtc::Buffer* encoded) = 0;
+                                 ArrayView<const int16_t> audio,
+                                 Buffer* encoded) = 0;
 };
 }  // namespace webrtc
 #endif  // API_AUDIO_CODECS_AUDIO_ENCODER_H_

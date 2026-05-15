@@ -13,6 +13,7 @@ pdfjs.jar:
  content/web/wasm/openjpeg.wasm (content/web/wasm/openjpeg.wasm)
  content/web/wasm/openjpeg_nowasm_fallback.js (content/web/wasm/openjpeg_nowasm_fallback.js)
  content/web/wasm/qcms_bg.wasm (content/web/wasm/qcms_bg.wasm)
+ content/web/wasm/jbig2.wasm (content/web/wasm/jbig2.wasm)
  content/web/iccs/ (content/web/iccs/*.icc)
 #ifdef ANDROID
  content/GeckoViewPdfjsParent.sys.mjs (content/GeckoViewPdfjsParent.sys.mjs)
@@ -22,6 +23,7 @@ pdfjs.jar:
  content/web/viewer.mjs (content/web/viewer-geckoview.mjs)
  content/web/images/gv-toolbarButton-download.svg	(content/web/images/gv-toolbarButton-download.svg)
 #else
+ content/PdfJsAIFeature.sys.mjs (content/PdfJsAIFeature.sys.mjs)
  content/PdfjsParent.sys.mjs (content/PdfjsParent.sys.mjs)
  content/PdfjsChild.sys.mjs (content/PdfjsChild.sys.mjs)
  content/web/viewer.html (content/web/viewer.html)
@@ -29,6 +31,7 @@ pdfjs.jar:
  content/web/viewer.mjs (content/web/viewer.mjs)
  content/web/debugger.css (content/web/debugger.css)
  content/web/debugger.mjs (content/web/debugger.mjs)
+ content/web/images/checkmark.svg	(content/web/images/checkmark.svg)
  content/web/images/	(content/web/images/secondaryToolbarButton*.svg)
  content/web/images/	(content/web/images/toolbarButton*.svg)
  content/web/images/	(content/web/images/treeitem*.svg)
@@ -38,4 +41,6 @@ pdfjs.jar:
  content/web/images/	(content/web/images/altText*.svg)
  content/web/images/	(content/web/images/editor-toolbar-*.svg)
  content/web/images/	(content/web/images/messageBar_*.svg)
+ content/web/images/	(content/web/images/comment-*.svg)
+ content/web/images/	(content/web/images/pages_*.svg)
 #endif

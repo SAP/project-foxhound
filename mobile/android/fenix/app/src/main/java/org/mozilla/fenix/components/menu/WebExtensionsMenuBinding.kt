@@ -4,12 +4,15 @@
 
 package org.mozilla.fenix.components.menu
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.mapNotNull
-import mozilla.components.browser.state.selector.selectedTab
+import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.state.BrowserState
+import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.WebExtensionState
 import mozilla.components.browser.state.store.BrowserStore
@@ -27,16 +30,21 @@ import org.mozilla.fenix.components.menu.store.WebExtensionMenuItem
  * and [TabSessionState.extensionState].
  *
  * @param browserStore Used to listen for changes to [WebExtensionState].
+ * @param customTabId The ID of the custom tab to observe, or null to observe the selected tab.
  * @param menuStore The [Store] for holding the [MenuState] and applying [MenuAction]s.
  * @param iconSize for [WebExtensionMenuItem].
  * @param onDismiss Callback invoked to dismiss the menu dialog.
+ * @param mainDispatcher The [CoroutineDispatcher] on which the state observation and updates will occur.
+ *                       Defaults to [Dispatchers.Main].
  */
 class WebExtensionsMenuBinding(
     browserStore: BrowserStore,
+    private val customTabId: String?,
     private val menuStore: MenuStore,
     private val iconSize: Int,
     private val onDismiss: () -> Unit,
-) : AbstractBinding<BrowserState>(browserStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<BrowserState>(browserStore, mainDispatcher) {
 
     override suspend fun onState(flow: Flow<BrowserState>) {
         // Browser level flows
@@ -46,7 +54,7 @@ class WebExtensionsMenuBinding(
             }
 
         // Session level flows
-        val sessionFlow = flow.mapNotNull { state -> state.selectedTab }
+        val sessionFlow = flow.mapNotNull { state -> state.findCustomTabOrSelectedTab(customTabId) }
             .distinctUntilChangedBy {
                 it.extensionState
             }
@@ -67,26 +75,28 @@ class WebExtensionsMenuBinding(
                     }
                     .sortedBy { it.name }
 
-                val browserWebExtensionMenuItems = eligibleExtensions.mapNotNull { extension ->
-                    extension.browserAction?.let { browserAction ->
-                        getWebExtensionMenuItem(
-                            extension = extension,
-                            webExtensionsFlowState = webExtensionsFlowState,
-                            globalAction = browserAction,
-                        )
-                    }
-                }
-
-                if (browserWebExtensionMenuItems.isEmpty() && eligibleExtensions.filter { !it.isBuiltIn }
-                        .all { !it.enabled }
-                ) {
-                    menuStore.dispatch(MenuAction.UpdateShowDisabledExtensionsOnboarding(true))
-                } else {
-                    menuStore.dispatch(MenuAction.UpdateShowDisabledExtensionsOnboarding(false))
+                val webExtensionMenuItems = eligibleExtensions.flatMap { extension ->
+                    listOfNotNull(
+                        extension.browserAction?.let { browserAction ->
+                            getWebExtensionMenuItem(
+                                extension = extension,
+                                webExtensionsFlowState = webExtensionsFlowState,
+                                globalAction = browserAction,
+                            )
+                        },
+                        extension.pageAction?.let { pageAction ->
+                            getWebExtensionMenuItem(
+                                extension = extension,
+                                webExtensionsFlowState = webExtensionsFlowState,
+                                globalAction = pageAction,
+                                isPageAction = true,
+                            )
+                        },
+                    )
                 }
 
                 menuStore.dispatch(
-                    MenuAction.UpdateWebExtensionBrowserMenuItems(browserWebExtensionMenuItems),
+                    MenuAction.UpdateWebExtensionBrowserMenuItems(webExtensionMenuItems),
                 )
             }
     }
@@ -96,17 +106,26 @@ class WebExtensionsMenuBinding(
         extension: WebExtensionState,
         webExtensionsFlowState: WebExtensionsFlowState,
         globalAction: Action,
+        isPageAction: Boolean = false,
     ): WebExtensionMenuItem? {
         if (!extension.enabled) {
             return null
         }
 
-        val tabAction = webExtensionsFlowState.sessionState.extensionState[extension.id]?.browserAction
+        val tabAction = if (isPageAction) {
+            webExtensionsFlowState.sessionState.extensionState[extension.id]?.pageAction
+        } else {
+            webExtensionsFlowState.sessionState.extensionState[extension.id]?.browserAction
+        }
 
         // Apply tab-specific override of browser/page action
         val action = tabAction?.let {
             globalAction.copyWithOverride(it)
         } ?: globalAction
+
+        if (isPageAction && action.enabled != true) {
+            return null
+        }
 
         val title = action.title ?: return null
 
@@ -135,6 +154,6 @@ class WebExtensionsMenuBinding(
  * @property browserState The browser or global state.
  */
 private data class WebExtensionsFlowState(
-    val sessionState: TabSessionState,
+    val sessionState: SessionState,
     val browserState: BrowserState,
 )

@@ -1,0 +1,63 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for changing animationsPlayBackRateMultiplier for compositor animation</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/paint_listener.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<style>
+#target {
+  width: 100px;
+  height: 100px;
+}
+</style>
+<body>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<pre id="test"></pre>
+<div id="target"></div>
+<script>
+add_task(async () => {
+  SpecialPowers.DOMWindowUtils.advanceTimeAndRefresh(0);
+  SimpleTest.registerCleanupFunction(() => {
+    SpecialPowers.DOMWindowUtils.restoreNormalRefresh();
+  });
+
+  const anim = target.animate(
+    { opacity: [ 0.5, 0.1 ] },
+    { fill: "forwards", duration: 1000 }
+  );
+  await new Promise(resolve => waitForAllPaintsFlushed(resolve));
+
+  // Now the animation runs on the compositor.
+  is(SpecialPowers.DOMWindowUtils.getOMTAStyle(target, "opacity"),
+     "0.5");
+
+  // Halve the animation playback rate.
+  await SpecialPowers.spawnChrome([], () => {
+    browsingContext.top.animationsPlayBackRateMultiplier = 0.5;
+  });
+  // NOTE: Need to reset the multiplier to 1.0 since the top browsing context
+  // might be persist.
+  SimpleTest.registerCleanupFunction(async () => {
+    await SpecialPowers.spawnChrome([], () => {
+      browsingContext.top.animationsPlayBackRateMultiplier = 1.0;
+    });
+  });
+  is(SpecialPowers.wrap(window).browsingContext.animationsPlayBackRateMultiplier, 0.5);
+
+  // Wait for a paint without flush animations explicitly.
+  await new Promise(resolve => waitForAllPaints(resolve));
+
+  // Advance 500ms, with 0.5 playback multiplier 500ms means 250ms advance,
+  // thus it's 1/4 of the entire duration, i.e. `(0.5 - 0.1) / 4` = 0.1 should
+  // be decreased from the initial opacity value 0.5.
+  SpecialPowers.DOMWindowUtils.advanceTimeAndRefresh(500);
+  is(SpecialPowers.DOMWindowUtils.getOMTAStyle(target, "opacity"),
+     "0.4");
+});
+</script>
+</body>
+</html>

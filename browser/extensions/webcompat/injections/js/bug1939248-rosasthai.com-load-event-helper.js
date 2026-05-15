@@ -14,16 +14,19 @@
  * readyState is already "complete", which fixes this bug.
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixBug1756970) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1756970", {
+    configurable: false,
+    value: true,
+  });
 
-console.info(
-  "running late window load listeners for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1939248 for details."
-);
+  console.info(
+    "running late window load listeners for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1939248 for details."
+  );
 
-(function runLateWindowLoadEventListenersImmediately() {
-  const { prototype } = window.wrappedJSObject.EventTarget;
+  const { prototype } = window.EventTarget;
   const { addEventListener } = prototype;
-  prototype.addEventListener = exportFunction(function (type, b, c, d) {
+  prototype.addEventListener = function (type, b, c, d) {
     if (
       this !== window ||
       document?.readyState !== "complete" ||
@@ -38,5 +41,5 @@ console.info(
       console.error(e);
     }
     return undefined;
-  }, window);
-})();
+  };
+}

@@ -3,14 +3,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-ifeq (,$(MAKE_VERSION))
-$(error GNU Make is required)
-endif
-make_min_ver := 3.81
-ifneq ($(make_min_ver),$(firstword $(sort $(make_min_ver) $(MAKE_VERSION))))
-$(error GNU Make $(make_min_ver) or higher is required)
-endif
-
 export TOPLEVEL_BUILD := 1
 
 default::
@@ -121,11 +113,10 @@ recurse_artifact:
 
 ifdef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
 recurse_android-fat-aar-artifact:
-	$(call py_action,fat_aar,\
-    $(addprefix --armeabi-v7a $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_ARMEABI_V7A)) \
-    $(addprefix --arm64-v8a $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_ARM64_V8A)) \
-    $(addprefix --x86 $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_X86)) \
-    $(addprefix --x86-64 $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_X86_64)) \
+	$(call py_action,fat_aar,$(MOZ_ANDROID_FAT_AAR_ARCHITECTURES) \
+    $(if $(MOZ_ANDROID_FAT_AAR_ARMEABI_V7A),--armeabi-v7a $(MOZ_ANDROID_FAT_AAR_ARMEABI_V7A)) \
+    $(if $(MOZ_ANDROID_FAT_AAR_ARM64_V8A),--arm64-v8a $(MOZ_ANDROID_FAT_AAR_ARM64_V8A)) \
+    $(if $(MOZ_ANDROID_FAT_AAR_X86_64),--x86-64 $(MOZ_ANDROID_FAT_AAR_X86_64)) \
     --distdir $(abspath $(DIST)/fat-aar))
 endif
 
@@ -211,7 +202,7 @@ ifdef JS_STANDALONE
 check-%:
 	$(MAKE) -C js/src $@
 
-source-package install:
+install:
 	$(MAKE) -C js/src $@
 
 # Every export rule depends on config/export, but the rule for config/export

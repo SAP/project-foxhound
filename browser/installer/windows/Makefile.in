@@ -12,22 +12,28 @@ SFX_MODULE = $(topsrcdir)/other-licenses/7zstub/firefox/7zSD.Win32.sfx
 endif
 
 INSTALLER_FILES = \
-	app.tag \
-	nsis/content/installing.html \
-	nsis/content/installing.js \
-	nsis/content/profile_cleanup.html \
-	nsis/content/profile_cleanup.js \
-	nsis/content/stub_common.css \
-	nsis/content/stub_common.js \
-	nsis/installer.nsi \
-	nsis/uninstaller.nsi \
-	nsis/stub.nsi \
-	nsis/stub.nsh \
-	nsis/stub_shared_defs.nsh \
-	nsis/shared.nsh \
-	nsis/test_stub.nsi \
-	stub.tag \
-	$(NULL)
+  app.tag \
+  nsis/content/installing.html \
+  nsis/content/installing.js \
+  nsis/content/profile_cleanup.html \
+  nsis/content/profile_cleanup.js \
+  nsis/content/stub_common.css \
+  nsis/content/stub_common.js \
+  nsis/installer.nsi \
+  nsis/installer_helpers.nsh \
+  nsis/uninstaller.nsi \
+  nsis/uninstaller_helpers.nsh \
+  nsis/stub.nsi \
+  nsis/stub.nsh \
+  nsis/stub_helpers.nsh \
+  nsis/stub_shared_defs.nsh \
+  nsis/shared.nsh \
+  nsis/control_utils.nsh \
+  nsis/postupdate_helper.nsh \
+  nsis/test_stub.nsi \
+  nsis/get_installation_type.nsh \
+  stub.tag \
+  $(NULL)
 
 ifdef MOZ_MAINTENANCE_SERVICE
 INSTALLER_FILES += \

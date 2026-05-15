@@ -24,7 +24,10 @@
 [DEFAULT]
 subsuite = "media"
 tags = "media-engine-compatible"
-skip-if = ["os == 'linux' && (asan || debug)"] # Bug 1476870: common fatal error (shutdown hang) on asan/debug
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1476870: common fatal error (shutdown hang) on asan/debug
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1476870: common fatal error (shutdown hang) on asan/debug
+]
 support-files = [
   "16bit_wave_extrametadata.wav",
   "16bit_wave_extrametadata.wav^headers^",
@@ -694,36 +697,37 @@ support-files = [
 ]
 
 ["test_eme_createMediaKeys_iframes.html"]
-skip-if = ["os == 'android'"] # bug 1149374
+skip-if = [
+  "os == 'android'", # bug 1149374
+]
 scheme = "https"
 
 ["test_eme_detach_media_keys.html"]
-skip-if = ["os == 'android'"]
 scheme = "https"
 
 ["test_eme_getstatusforpolicy.html"]
-skip-if = ["os == 'android'"] # bug 1149374
 scheme = "https"
 
 ["test_eme_requestKeySystemAccess.html"]
-skip-if = ["os == 'android'"] # bug 1149374
 scheme = "https"
 
 ["test_eme_requestMediaKeySystemAccess_origin_check_widevine.html"]
-run-if = ["os == 'win'"] # origin check is only supported on windows
+run-if = [
+  "os == 'win'", # origin check is only supported on windows
+]
 scheme = "https"
 
 ["test_eme_requestMediaKeySystemAccess_with_app_approval.html"]
-skip-if = ["os == 'android'"] # bug 1149374
 scheme = "https"
 
 ["test_eme_request_notifications.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 scheme = "https"
 
 ["test_eme_session_callable_value.html"]
 scheme = "https"
 
 ["test_eme_setMediaKeys_before_attach_MediaSource.html"]
-skip-if = ["os == 'android'"] # bug 1149374
 scheme = "https"

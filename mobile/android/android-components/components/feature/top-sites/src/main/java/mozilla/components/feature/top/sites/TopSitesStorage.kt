@@ -22,6 +22,15 @@ interface TopSitesStorage : Observable<TopSitesStorage.Observer> {
     fun addTopSite(title: String, url: String, isDefault: Boolean = false)
 
     /**
+     * Adds a list of top sites.
+     *
+     * @param topSites A list containing a title to url pair of top sites to be added.
+     * @param isDefault Whether or not the pinned site added should be a default pinned site. This
+     * is used to identify pinned sites that are added by the application.
+     */
+    fun addTopSites(topSites: List<Pair<String, String>>, isDefault: Boolean = false)
+
+    /**
      * Removes the given [TopSite].
      *
      * @param topSite The top site.

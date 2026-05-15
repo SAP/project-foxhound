@@ -7,8 +7,8 @@
 #ifndef nsDOMCaretPosition_h
 #define nsDOMCaretPosition_h
 
-#include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsINode.h"
 #include "nsWrapperCache.h"
 

@@ -702,11 +702,15 @@ prefs = ["media.recorder.video.frame_drops=false"]
 ["test_mediacapabilities_resistfingerprinting.html"]
 
 ["test_mediarecorder_avoid_recursion.html"]
-skip-if = ["os == 'win' && !debug"]
+skip-if = [
+  "os == 'win' && opt",
+]
 scheme = "https"
 
 ["test_mediarecorder_bitrate.html"]
-skip-if = ["os == 'android'"] # bug 1297432, android(bug 1232305)
+skip-if = [
+  "os == 'android'", # bug 1297432, android(bug 1232305)
+]
 
 ["test_mediarecorder_creation.html"]
 tags = "mtg capturestream"
@@ -715,29 +719,37 @@ tags = "mtg capturestream"
 
 ["test_mediarecorder_fires_start_event_once_when_erroring.html"]
 
+["test_mediarecorder_glean.html"]
+
 ["test_mediarecorder_multipletracks.html"]
 
 ["test_mediarecorder_onerror_pause.html"]
 scheme = "https"
 
 ["test_mediarecorder_pause_resume_video.html"]
-skip-if = ["os == 'android'"] # Bug 1232305
+skip-if = [
+  "os == 'android'", # Bug 1232305
+]
 
 ["test_mediarecorder_playback_can_repeat.html"]
 
 ["test_mediarecorder_principals.html"]
 skip-if = [
-  "os == 'win' && os_version == '10.2009'", # Bug 1453375
   "os == 'android'", # Bug 1694645
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1909908
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1909908
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1909908
+  "os == 'win' && os_version == '10.2009'", # Bug 1453375
 ]
 
 ["test_mediarecorder_record_4ch_audiocontext.html"]
-skip-if = ["os == 'linux' && processor == 'x86_64'"] # Bug 1598101
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1598101
+]
 
 ["test_mediarecorder_record_addtracked_stream.html"]
-skip-if = ["os == 'android'"] # Bug 1408241
+skip-if = [
+  "os == 'android'", # Bug 1408241
+]
 tags = "mtg capturestream"
 
 ["test_mediarecorder_record_audiocontext.html"]
@@ -747,16 +759,22 @@ tags = "mtg capturestream"
 ["test_mediarecorder_record_audionode.html"]
 
 ["test_mediarecorder_record_canvas_captureStream.html"]
-skip-if = ["os == 'android'"] # Bug 1232305
+skip-if = [
+  "os == 'android'", # Bug 1232305
+]
 
 ["test_mediarecorder_record_changing_video_resolution.html"]
 skip-if = [
   "os == 'android'", # Bug 1232305
-  "os == 'linux' && (tsan || asan || debug)", # Bug 1770504 (high intermittent failure on Linux tsan)
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1770504 (high intermittent failure on Linux tsan)
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1770504 (high intermittent failure on Linux tsan)
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1770504 (high intermittent failure on Linux tsan)
 ]
 
 ["test_mediarecorder_record_downsize_resolution.html"]
-skip-if = ["os == 'android'"] # Bug 1232305
+skip-if = [
+  "os == 'android'", # Bug 1232305
+]
 
 ["test_mediarecorder_record_getdata_afterstart.html"]
 tags = "mtg capturestream"
@@ -782,7 +800,9 @@ tags = "mtg capturestream"
 tags = "mtg capturestream"
 
 ["test_mediarecorder_record_upsize_resolution.html"]
-skip-if = ["os == 'android'"] # Bug 1232305
+skip-if = [
+  "os == 'android'", # Bug 1232305
+]
 
 ["test_mediarecorder_reload_crash.html"]
 tags = "mtg capturestream"

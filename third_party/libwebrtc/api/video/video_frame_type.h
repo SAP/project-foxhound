@@ -34,11 +34,7 @@ inline constexpr absl::string_view VideoFrameTypeToString(
     case VideoFrameType::kVideoFrameDelta:
       return "delta";
   }
-// Mozilla:
-//   gcc-8 complains about a constexpr function calling a non-constexpr ditto.
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 9)
   RTC_CHECK_NOTREACHED();
-#endif
   return "";
 }
 

@@ -14,7 +14,6 @@
 #include <string_view>
 
 #include "builtin/temporal/Calendar.h"
-#include "builtin/temporal/Crash.h"
 #include "builtin/temporal/Instant.h"
 #include "builtin/temporal/PlainDate.h"
 #include "builtin/temporal/PlainDateTime.h"
@@ -79,7 +78,7 @@ class TemporalStringBuilder {
       case TemporalStringFormat::None:
         break;
     }
-    JS_CONSTEXPR_CRASH("invalid reserve amount");
+    MOZ_CRASH("invalid reserve amount");
   }
 
  public:

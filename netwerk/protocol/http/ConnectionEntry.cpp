@@ -15,7 +15,7 @@
 #include "ConnectionEntry.h"
 #include "HttpConnectionUDP.h"
 #include "nsQueryObject.h"
-#include "mozilla/ChaosMode.h"
+#include "nsHttpConnectionMgr.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsHttpHandler.h"
 #include "mozilla/net/neqo_glue_ffi_generated.h"
@@ -173,6 +173,10 @@ size_t ConnectionEntry::PendingQueueLength() const {
   return mPendingQ.PendingQueueLength();
 }
 
+bool ConnectionEntry::PendingQueueIsEmpty() const {
+  return mPendingQ.PendingQueueIsEmpty();
+}
+
 size_t ConnectionEntry::PendingQueueLengthForWindow(uint64_t windowId) const {
   return mPendingQ.PendingQueueLengthForWindow(windowId);
 }
@@ -265,7 +269,10 @@ bool ConnectionEntry::RestrictConnections() {
   // There is a concern that a host is using a mix of HTTP/1 and SPDY.
   // In that case we don't want to restrict connections just because
   // there is a single active HTTP/1 session in use.
-  if (mUsingSpdy && mActiveConns.Length()) {
+  // When a tunnel is used, we should avoid bypassing connection restrictions.
+  // Otherwise, we might create too many unused tunnels.
+  if (mUsingSpdy && mActiveConns.Length() &&
+      !(mConnInfo->UsingHttpsProxy() && mConnInfo->UsingConnect())) {
     bool confirmedRestrict = false;
     for (uint32_t index = 0; index < mActiveConns.Length(); ++index) {
       HttpConnectionBase* conn = mActiveConns[index];
@@ -297,6 +304,10 @@ uint32_t ConnectionEntry::TotalActiveConnections() const {
 
 size_t ConnectionEntry::UrgentStartQueueLength() {
   return mPendingQ.UrgentStartQueueLength();
+}
+
+bool ConnectionEntry::UrgentStartQueueIsEmpty() const {
+  return mPendingQ.UrgentStartQueueIsEmpty();
 }
 
 void ConnectionEntry::PrintPendingQ() { mPendingQ.PrintPendingQ(); }
@@ -425,6 +436,7 @@ nsresult ConnectionEntry::RemoveActiveConnection(HttpConnectionBase* conn) {
   if (!mActiveConns.RemoveElement(conn)) {
     return NS_ERROR_UNEXPECTED;
   }
+  conn->SetOwner(nullptr);
   gHttpHandler->ConnMgr()->DecrementActiveConnCount(conn);
 
   return NS_OK;
@@ -529,12 +541,14 @@ void ConnectionEntry::VerifyTraffic() {
             StaticPrefs::
                 network_http_move_to_pending_list_after_network_change()) {
           mActiveConns.RemoveElementAt(index);
+          conn->SetOwner(nullptr);
           MakeConnectionPendingAndDontReuse(conn);
         }
       } else if (connUDP &&
                  StaticPrefs::
                      network_http_move_to_pending_list_after_network_change()) {
         mActiveConns.RemoveElementAt(index);
+        connUDP->SetOwner(nullptr);
         MakeConnectionPendingAndDontReuse(connUDP);
       }
     }
@@ -566,6 +580,7 @@ bool ConnectionEntry::IsInActiveConns(HttpConnectionBase* conn) {
 
 void ConnectionEntry::InsertIntoActiveConns(HttpConnectionBase* conn) {
   mActiveConns.AppendElement(conn);
+  conn->SetOwner(this);
   gHttpHandler->ConnMgr()->IncrementActiveConnCount();
 }
 
@@ -711,10 +726,28 @@ HttpConnectionBase* ConnectionEntry::GetH2orH3ActiveConn() {
   return nullptr;
 }
 
+already_AddRefed<nsHttpConnection> ConnectionEntry::GetH2TunnelActiveConn() {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  for (const auto& conn : mActiveConns) {
+    RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
+    if (connTCP && connTCP->UsingSpdy() && connTCP->CanDirectlyActivate()) {
+      LOG(
+          ("GetH2TunnelActiveConn() request for ent %p %s "
+           "found an H2 tunnel connection %p\n",
+           this, mConnInfo->HashKey().get(), connTCP.get()));
+      return connTCP.forget();
+    }
+  }
+
+  return nullptr;
+}
+
 void ConnectionEntry::CloseActiveConnections() {
   while (mActiveConns.Length()) {
     RefPtr<HttpConnectionBase> conn(mActiveConns[0]);
     mActiveConns.RemoveElementAt(0);
+    conn->SetOwner(nullptr);
     gHttpHandler->ConnMgr()->DecrementActiveConnCount(conn);
 
     // Since HttpConnectionBase::Close doesn't break the bond with
@@ -764,6 +797,7 @@ void ConnectionEntry::PruneNoTraffic() {
       RefPtr<nsHttpConnection> conn = do_QueryObject(mActiveConns[index]);
       if (conn && conn->NoTraffic()) {
         mActiveConns.RemoveElementAt(index);
+        conn->SetOwner(nullptr);
         gHttpHandler->ConnMgr()->DecrementActiveConnCount(conn);
         conn->Close(NS_ERROR_ABORT);
         LOG(
@@ -839,6 +873,7 @@ void ConnectionEntry::MoveConnection(HttpConnectionBase* proxyConn,
   RefPtr<HttpConnectionBase> deleteProtector(proxyConn);
   if (mActiveConns.RemoveElement(proxyConn)) {
     otherEnt->mActiveConns.AppendElement(proxyConn);
+    proxyConn->SetOwner(otherEnt);
     return;
   }
 
@@ -924,42 +959,14 @@ Http3ConnectionStatsParams ConnectionEntry::GetHttp3ConnectionStatsData() {
 }
 
 void ConnectionEntry::LogConnections() {
-  if (!mConnInfo->IsHttp3()) {
-    LOG(("active urgent conns ["));
-    for (HttpConnectionBase* conn : mActiveConns) {
-      RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
-      MOZ_ASSERT(connTCP);
-      if (connTCP->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
-    LOG(("] active regular conns ["));
-    for (HttpConnectionBase* conn : mActiveConns) {
-      RefPtr<nsHttpConnection> connTCP = do_QueryObject(conn);
-      MOZ_ASSERT(connTCP);
-      if (!connTCP->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
+  LOG(("active conns ["));
+  for (HttpConnectionBase* conn : mActiveConns) {
+    LOG(("  %p", conn));
+  }
 
-    LOG(("] idle urgent conns ["));
-    for (nsHttpConnection* conn : mIdleConns) {
-      if (conn->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
-    LOG(("] idle regular conns ["));
-    for (nsHttpConnection* conn : mIdleConns) {
-      if (!conn->IsUrgentStartPreferred()) {
-        LOG(("  %p", conn));
-      }
-    }
-  } else {
-    LOG(("active conns ["));
-    for (HttpConnectionBase* conn : mActiveConns) {
-      LOG(("  %p", conn));
-    }
-    MOZ_ASSERT(mIdleConns.Length() == 0);
+  LOG(("] idle conns ["));
+  for (nsHttpConnection* conn : mIdleConns) {
+    LOG(("  %p", conn));
   }
   LOG(("]"));
 }
@@ -1069,14 +1076,14 @@ bool ConnectionEntry::MaybeProcessCoalescingKeys(nsIDNSAddrRecord* dnsRecord,
 
 nsresult ConnectionEntry::CreateDnsAndConnectSocket(
     nsAHttpTransaction* trans, uint32_t caps, bool speculative,
-    bool isFromPredictor, bool urgentStart, bool allow1918,
+    bool urgentStart, bool allow1918,
     PendingTransactionInfo* pendingTransInfo) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   MOZ_ASSERT((speculative && !pendingTransInfo) ||
              (!speculative && pendingTransInfo));
 
-  RefPtr<DnsAndConnectSocket> sock = new DnsAndConnectSocket(
-      mConnInfo, trans, caps, speculative, isFromPredictor, urgentStart);
+  RefPtr<DnsAndConnectSocket> sock =
+      new DnsAndConnectSocket(mConnInfo, trans, caps, speculative, urgentStart);
 
   if (speculative) {
     sock->SetAllow1918(allow1918);
@@ -1102,7 +1109,7 @@ bool ConnectionEntry::AllowToRetryDifferentIPFamilyForHttp3(nsresult aError) {
       ("ConnectionEntry::AllowToRetryDifferentIPFamilyForHttp3 %p "
        "error=%" PRIx32,
        this, static_cast<uint32_t>(aError)));
-  if (!IsHttp3()) {
+  if (!mConnInfo->IsHttp3() && !mConnInfo->IsHttp3ProxyConnection()) {
     MOZ_ASSERT(false, "Should not be called for non Http/3 connection");
     return false;
   }

@@ -8,13 +8,13 @@
 
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
-#include "txCore.h"
 #include "nsString.h"
-#include "txXMLUtils.h"
+#include "nsTArray.h"
+#include "txCore.h"
 #include "txExpandedName.h"
 #include "txNamespaceMap.h"
+#include "txXMLUtils.h"
 #include "txXSLTNumber.h"
-#include "nsTArray.h"
 
 class nsAtom;
 class txExecutionState;

@@ -22,7 +22,6 @@ import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.content.blocking.TrackerLog
 import mozilla.components.feature.session.TrackingProtectionUseCases
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Before
 import org.junit.Rule
@@ -49,6 +48,7 @@ class QuickSettingsSheetDialogFragmentTest {
         store = BrowserStore()
         every { fragment.view } returns mockk(relaxed = true)
         every { fragment.lifecycle } returns lifecycleOwner.lifecycle
+        every { fragment.viewLifecycleOwner } returns lifecycleOwner
         every { fragment.activity } returns mockk(relaxed = true)
     }
 
@@ -67,7 +67,7 @@ class QuickSettingsSheetDialogFragmentTest {
             fragment.updateTrackers(tab)
         }
 
-        store.dispatch(TrackerLoadedAction(tab.id, mockk())).joinBlocking()
+        store.dispatch(TrackerLoadedAction(tab.id, mockk()))
 
         val updatedTab = store.state.findTab(tab.id)!!
 
@@ -93,7 +93,7 @@ class QuickSettingsSheetDialogFragmentTest {
             fragment.updateTrackers(tab)
         }
 
-        store.dispatch(TrackerBlockedAction(tab.id, mockk())).joinBlocking()
+        store.dispatch(TrackerBlockedAction(tab.id, mockk()))
 
         val updatedTab = store.state.findTab(tab.id)!!
 
@@ -159,8 +159,8 @@ class QuickSettingsSheetDialogFragmentTest {
     }
 
     private fun addAndSelectTab(tab: TabSessionState) {
-        store.dispatch(TabListAction.AddTabAction(tab)).joinBlocking()
-        store.dispatch(TabListAction.SelectTabAction(tab.id)).joinBlocking()
+        store.dispatch(TabListAction.AddTabAction(tab))
+        store.dispatch(TabListAction.SelectTabAction(tab.id))
     }
 
     internal class MockedLifecycleOwner(initialState: Lifecycle.State) : LifecycleOwner {

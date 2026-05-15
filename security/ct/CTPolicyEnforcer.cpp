@@ -75,13 +75,11 @@ bool LogWasQualifiedForSct(const VerifiedSCT& verifiedSct,
 // lifetime of the certificate. If the certificate lifetime is less than or
 // equal to 180 days, N is 2. Otherwise, N is 3.
 // Among these SCTs, at least two must be issued from distinct log operators.
-// Additionally, at least one must be issued from an RFC6962 log.
 CTPolicyCompliance EmbeddedSCTsCompliant(const VerifiedSCTList& verifiedScts,
                                          uint64_t certIssuanceTime,
                                          Duration certLifetime) {
   size_t admissibleCount = 0;
   size_t admissibleOrRetiredCount = 0;
-  size_t rfc6962Count = 0;
   std::set<CTLogOperatorId> logOperators;
   std::set<Buffer> logIds;
   for (const auto& verifiedSct : verifiedScts) {
@@ -97,9 +95,6 @@ CTPolicyCompliance EmbeddedSCTsCompliant(const VerifiedSCTList& verifiedScts,
         verifiedSct.sct.leafIndex.isNothing()) {
       continue;
     }
-    if (verifiedSct.logFormat == CTLogFormat::RFC6962) {
-      rfc6962Count++;
-    }
     // Note that a single SCT can count for both the "from a log that was
     // admissible" case and the "from a log that was admissible or retired"
     // case.
@@ -114,8 +109,7 @@ CTPolicyCompliance EmbeddedSCTsCompliant(const VerifiedSCTList& verifiedScts,
   }
 
   size_t requiredEmbeddedScts = GetRequiredEmbeddedSctsCount(certLifetime);
-  if (admissibleCount < 1 || admissibleOrRetiredCount < requiredEmbeddedScts ||
-      rfc6962Count < 1) {
+  if (admissibleCount < 1 || admissibleOrRetiredCount < requiredEmbeddedScts) {
     return CTPolicyCompliance::NotEnoughScts;
   }
   if (logIds.size() < requiredEmbeddedScts || logOperators.size() < 2) {
@@ -128,12 +122,10 @@ CTPolicyCompliance EmbeddedSCTsCompliant(const VerifiedSCTList& verifiedScts,
 // or OCSP response):
 // There must be at least two SCTs from logs that were Admissible (i.e.
 // Qualified, Usable, or ReadOnly) at the time of the check. Among these SCTs,
-// at least two must be issued from distinct log operators. Additionally, at
-// least one must be issued from an RFC6962 log.
+// at least two must be issued from distinct log operators.
 CTPolicyCompliance NonEmbeddedSCTsCompliant(
     const VerifiedSCTList& verifiedScts) {
   size_t admissibleCount = 0;
-  size_t rfc6962Count = 0;
   std::set<CTLogOperatorId> logOperators;
   std::set<Buffer> logIds;
   for (const auto& verifiedSct : verifiedScts) {
@@ -149,14 +141,11 @@ CTPolicyCompliance NonEmbeddedSCTsCompliant(
       continue;
     }
     admissibleCount++;
-    if (verifiedSct.logFormat == CTLogFormat::RFC6962) {
-      rfc6962Count++;
-    }
     logIds.insert(verifiedSct.sct.logId);
     logOperators.insert(verifiedSct.logOperatorId);
   }
 
-  if (admissibleCount < 2 || rfc6962Count < 1) {
+  if (admissibleCount < 2) {
     return CTPolicyCompliance::NotEnoughScts;
   }
   if (logIds.size() < 2 || logOperators.size() < 2) {

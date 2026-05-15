@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 /**
  * Utility functions for UI accessibility.
  */
@@ -21,6 +18,7 @@ var A11yUtils = {
    * can thus hinder rather than help users if used incorrectly.
    * Please only use this after consultation with the Mozilla accessibility
    * team.
+   *
    * @param {object} [options]
    * @param {string} [options.id] The Fluent id of the message to announce. The
    *        ftl file must already be included in browser.xhtml. This must be

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsSocketTransport2_h__
-#define nsSocketTransport2_h__
+#ifndef nsSocketTransport2_h_
+#define nsSocketTransport2_h_
 
 #ifdef DEBUG_darinf
 #  define ENABLE_SOCKET_TRACING
@@ -108,6 +108,7 @@ class nsSocketTransport final : public nsASocketHandler,
 
   uint64_t ByteCountReceived() override;
   uint64_t ByteCountSent() override;
+  bool IsTRRConnection() override;
   static void CloseSocket(PRFileDesc* aFd, bool aTelemetryEnabled);
   static void SendPRBlockingTelemetry(
       PRIntervalTime aStart,
@@ -422,6 +423,8 @@ class nsSocketTransport final : public nsASocketHandler,
 
   bool mExternalDNSResolution = false;
   bool mRetryDnsIfPossible = false;
+
+  bool mIsTRRConnection = false;
 };
 
 class nsSocketInputStream : public nsIAsyncInputStream {

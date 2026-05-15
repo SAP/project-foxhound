@@ -10,10 +10,9 @@
 #include <utility>
 
 #include "Blob.h"
-#include "nsContentUtils.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/BaseBlobImpl.h"
+#include "nsContentUtils.h"
 
 namespace mozilla {
 class ErrorResult;

@@ -44,7 +44,6 @@
 // should not be included outside of LulElf.cpp.
 
 #include <elf.h>
-#include <stdlib.h>
 
 #include "mozilla/Assertions.h"
 

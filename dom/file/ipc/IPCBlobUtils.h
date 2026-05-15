@@ -9,7 +9,6 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/File.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 
 /*
  * Blobs and IPC

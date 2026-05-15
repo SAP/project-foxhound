@@ -18,24 +18,11 @@ add_task(async function () {
   // before the test begins.
   Cu.forceShrinkingGC();
 
-  let hud, node;
-  if (isFissionEnabled()) {
-    // When fission is enabled, we might miss the early message emitted while the target
-    // is being switched, so here we directly open the "real" test URI. See Bug 1614291.
-    hud = await openNewTabAndConsole(TEST_URI);
-    info("Wait for the 'foobar' message to be logged by the frame");
-    node = await waitFor(() => findConsoleAPIMessage(hud, "foobar"));
-  } else {
-    hud = await openNewTabAndConsole(
-      "data:text/html;charset=utf8,<!DOCTYPE html><p>hello"
-    );
-    info(
-      "Navigate and wait for the 'foobar' message to be logged by the frame"
-    );
-    const onMessage = waitForMessageByType(hud, "foobar", ".console-api");
-    await navigateTo(TEST_URI);
-    ({ node } = await onMessage);
-  }
+  // When fission is enabled, we might miss the early message emitted while the target
+  // is being switched, so here we directly open the "real" test URI. See Bug 1614291.
+  const hud = await openNewTabAndConsole(TEST_URI);
+  info("Wait for the 'foobar' message to be logged by the frame");
+  const node = await waitFor(() => findConsoleAPIMessage(hud, "foobar"));
 
   const objectInspectors = [...node.querySelectorAll(".tree")];
   is(

@@ -1,0 +1,167 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Mix-in classes */
+
+.spectrum-checker {
+  background-image: repeating-conic-gradient(#ccc 0 25%, white 0 50%);
+  background-size: 12px 12px;
+  /* Make sure that the background color is properly set in High Contrast Mode */
+  forced-color-adjust: none;
+}
+
+.spectrum-box {
+  background-clip: content-box;
+
+  :root[forced-colors-active] & {
+    border-color: initial;
+  }
+}
+
+/* Elements */
+
+/**
+ * Spectrum controls set the layout for the controls section of the color picker.
+ */
+.spectrum-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-block-start: 10px;
+}
+
+/**
+ * This styles the color preview and adds a checkered background overlay inside of it. The overlay
+ * can be manipulated using the --overlay-color variable.
+ */
+.spectrum-color-preview {
+  --overlay-color: transparent;
+  border: 1px solid color(srgb 0.5 0.5 0.5 / 0.5);
+  border-radius: 50%;
+  box-sizing: border-box;
+  width: 25px;
+  height: 25px;
+  background-image: linear-gradient(var(--overlay-color)), repeating-conic-gradient(#ccc 0 25%, white 0 50%);
+  background-size: 12px 12px;
+  /* Make sure that the background color is properly set in High Contrast Mode */
+  forced-color-adjust: none;
+
+  :root[forced-colors-active] & {
+    border-color: CanvasText;
+  }
+}
+
+.spectrum-slider-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  flex: 1;
+  margin-inline-start: 10px;
+  height: 30px;
+}
+
+/* Keep aspect ratio:
+http://www.briangrinstead.com/blog/keep-aspect-ratio-with-html-and-css */
+.spectrum-color-picker {
+  position: relative;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  box-sizing: border-box;
+  width: 205px;
+  height: 120px;
+  /* Make sure that the background color is properly set in High Contrast Mode */
+  forced-color-adjust: none;
+}
+
+.spectrum-color {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+}
+
+.spectrum-sat,
+.spectrum-val {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.spectrum-alpha {
+  margin-block-start: 3px;
+}
+
+.spectrum-alpha,
+.spectrum-hue {
+  position: relative;
+  height: 8px;
+}
+
+.spectrum-alpha-input,
+.spectrum-hue-input {
+  width: 100%;
+  margin: 0;
+  position: absolute;
+  height: 8px;
+  border-radius: 2px;
+  direction: initial;
+}
+
+.spectrum-hue-input,
+.spectrum-alpha-input {
+  outline-offset: 4px;
+}
+
+.spectrum-hue-input::-moz-range-thumb,
+.spectrum-alpha-input::-moz-range-thumb {
+  cursor: pointer;
+  height: 12px;
+  width: 12px;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+  background: #fff;
+  border-radius: 50%;
+  opacity: 0.9;
+  border: none;
+}
+
+:root[forced-colors-active] :is(.spectrum-hue-input, .spectrum-alpha-input)::-moz-range-thumb {
+  background: ButtonFace;
+  border: 2px solid ButtonText;
+}
+
+:root[forced-colors-active] :is(.spectrum-hue-input, .spectrum-alpha-input):is(:hover, :focus-visible)::-moz-range-thumb {
+  border-color: SelectedItem;
+}
+
+.spectrum-hue-input::-moz-range-track {
+  border-radius: 2px;
+  height: 8px;
+  background: linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%);
+  /* Make sure that the background color is properly set in High Contrast Mode */
+  forced-color-adjust: none;
+}
+
+.spectrum-sat {
+  background-image: linear-gradient(to right, #fff, rgba(204, 154, 129, 0));
+}
+
+.spectrum-val {
+  background-image: linear-gradient(to top, #000000, rgba(204, 154, 129, 0));
+}
+
+.spectrum-dragger {
+  user-select: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  height: 8px;
+  width: 8px;
+  border: 1px solid white;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+}

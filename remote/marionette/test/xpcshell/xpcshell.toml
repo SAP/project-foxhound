@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["appname == 'thunderbird'"]
+run-if = [
+  "appname != 'thunderbird'",
+]
 
 ["test_actors.js"]
 

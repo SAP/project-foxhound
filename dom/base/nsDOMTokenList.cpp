@@ -9,15 +9,16 @@
  */
 
 #include "nsDOMTokenList.h"
-#include "nsAttrValue.h"
-#include "nsAttrValueInlines.h"
-#include "nsTHashMap.h"
-#include "nsError.h"
-#include "nsHashKeys.h"
+
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/DOMTokenListBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/DOMTokenListBinding.h"
-#include "mozilla/ErrorResult.h"
+#include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
+#include "nsError.h"
+#include "nsHashKeys.h"
+#include "nsTHashMap.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

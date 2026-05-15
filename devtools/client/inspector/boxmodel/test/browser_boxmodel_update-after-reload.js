@@ -15,7 +15,7 @@ add_task(async function () {
 
   info("Reload the page");
   const onMarkupLoaded = waitForMarkupLoaded(inspector);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await onMarkupLoaded;
 
   info("Test that the box model view works on the reloaded page");

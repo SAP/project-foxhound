@@ -6,10 +6,10 @@
 
 #include "StorageOriginAttributes.h"
 
-#include "nsString.h"
-#include "nsURLHelper.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "nsString.h"
+#include "nsURLHelper.h"
 
 namespace mozilla {
 

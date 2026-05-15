@@ -11,6 +11,8 @@
 #include "gfxRect.h"
 #include "gfxTextRun.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumeratedArray.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/PresShellForwards.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGContainerFrame.h"
@@ -44,6 +46,17 @@ nsIFrame* NS_NewSVGTextFrame(mozilla::PresShell* aPresShell,
                              mozilla::ComputedStyle* aStyle);
 
 namespace mozilla {
+
+enum class SVGTextFrameWhichCachedRange {
+  Before,
+  After,
+};
+
+// Glue to make EnumeratedArray work with SVGTextFrameWhichCachedRange.
+template <>
+struct MaxContiguousEnumValue<SVGTextFrameWhichCachedRange> {
+  static constexpr auto value = SVGTextFrameWhichCachedRange::After;
+};
 
 /**
  * Information about the positioning for a single character in an SVG <text>
@@ -203,7 +216,7 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
   nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
@@ -225,7 +238,7 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
       const nsPoint& aPoint, FrameWithDistance* aCurrentBestFrame) override;
 
   // ISVGDisplayableFrame interface:
-  void NotifySVGChanged(uint32_t aFlags) override;
+  void NotifySVGChanged(ChangeFlags aFlags) override;
   void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                 imgDrawingParams& aImgParams) override;
   nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
@@ -536,6 +549,11 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   RefPtr<MutationObserver> mMutationObserver;
 
   /**
+   * Computed position information for each DOM character within the <text>.
+   */
+  nsTArray<CharPosition> mPositions;
+
+  /**
    * The number of characters in the DOM after the final nsTextFrame.  For
    * example, with
    *
@@ -544,11 +562,6 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * mTrailingUndisplayedCharacters would be 2.
    */
   uint32_t mTrailingUndisplayedCharacters = 0;
-
-  /**
-   * Computed position information for each DOM character within the <text>.
-   */
-  nsTArray<CharPosition> mPositions;
 
   /**
    * mFontSizeScaleFactor is used to cause the nsTextFrames to create text
@@ -586,6 +599,50 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * lengthAdjust="spacingAndGlyphs".
    */
   float mLengthAdjustScaleFactor = 1.0f;
+
+ public:
+  struct CachedMeasuredRange {
+    CachedMeasuredRange() : mAdvance(0) {}
+    Range mRange;
+    nscoord mAdvance;
+  };
+
+  void SetCurrentFrameForCaching(const nsTextFrame* aFrame) {
+    if (mFrameForCachedRanges != aFrame) {
+      std::fill(mCachedRanges.begin(), mCachedRanges.end(),
+                CachedMeasuredRange());
+      mFrameForCachedRanges = aFrame;
+    }
+  }
+
+  using WhichRange = SVGTextFrameWhichCachedRange;
+
+  CachedMeasuredRange& CachedRange(WhichRange aWhichRange) {
+    return mCachedRanges[aWhichRange];
+  }
+
+  // Return a reference to a PropertyProvider for the given textframe;
+  // the provider is cached by SVGTextFrame to avoid creating it afresh
+  // for repeated operations involving the same textframe.
+  nsTextFrame::PropertyProvider& PropertyProviderFor(nsTextFrame* aFrame) {
+    if (!mCachedProvider || aFrame != mCachedProvider->GetFrame()) {
+      mCachedProvider.reset();
+      mCachedProvider.emplace(aFrame,
+                              aFrame->EnsureTextRun(nsTextFrame::eInflated));
+    }
+    return mCachedProvider.ref();
+  }
+
+  // Forget any cached PropertyProvider. This should be called at the end of
+  // any method that relied on PropertyProviderFor(), to avoid leaving a
+  // cached provider that may become invalid.
+  void ForgetCachedProvider() { mCachedProvider.reset(); }
+
+ private:
+  const nsTextFrame* mFrameForCachedRanges = nullptr;
+  EnumeratedArray<WhichRange, CachedMeasuredRange> mCachedRanges;
+
+  Maybe<nsTextFrame::PropertyProvider> mCachedProvider;
 };
 
 }  // namespace mozilla

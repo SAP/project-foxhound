@@ -23,6 +23,7 @@
 
 #include "SandboxPolicyContent.h"
 #include "SandboxPolicyGMP.h"
+#include "SandboxPolicyGPU.h"
 #include "SandboxPolicyRDD.h"
 #include "SandboxPolicySocket.h"
 #include "SandboxPolicyUtility.h"
@@ -190,6 +191,8 @@ void MacSandboxInfo::AppendAsParams(std::vector<std::string>& aParams) const {
       this->AppendWindowServerParam(aParams);
       this->AppendReadPathParams(aParams);
       break;
+    case MacSandboxType_GPU:
+      break;
     default:
       // Before supporting a new process type, add a case statement
       // here to append any neccesary process-type-specific params.
@@ -299,6 +302,7 @@ bool StartMacSandbox(MacSandboxInfo const& aInfo, std::string& aErrorMessage) {
 
   // Used for the content process to access to parts of the cache dir.
   std::string userCacheDir;
+  std::string bundleIDCacheDir;
 
   if (aInfo.type == MacSandboxType_Utility) {
     profile = const_cast<char*>(SandboxPolicyUtility);
@@ -455,6 +459,37 @@ bool StartMacSandbox(MacSandboxInfo const& aInfo, std::string& aErrorMessage) {
               "Content sandbox disabled due to sandbox level setting\n");
       return false;
     }
+  } else if (aInfo.type == MacSandboxType_GPU) {
+    profile = const_cast<char*>(SandboxPolicyGPU);
+    params.push_back("SHOULD_LOG");
+    params.push_back(aInfo.shouldLog ? "TRUE" : "FALSE");
+    params.push_back("MAC_OS_VERSION");
+    params.push_back(combinedVersion.c_str());
+    params.push_back("APP_PATH");
+    params.push_back(aInfo.appPath.c_str());
+    params.push_back("HOME_PATH");
+    params.push_back(getenv("HOME"));
+    if (!aInfo.crashServerPort.empty()) {
+      params.push_back("CRASH_PORT");
+      params.push_back(aInfo.crashServerPort.c_str());
+    }
+
+    params.push_back("DARWIN_USER_CACHE_DIR");
+    char confStrBuf[PATH_MAX];
+    if (!confstr(_CS_DARWIN_USER_CACHE_DIR, confStrBuf, sizeof(confStrBuf))) {
+      return false;
+    }
+    if (!GetRealPath(userCacheDir, confStrBuf)) {
+      return false;
+    }
+    params.push_back(userCacheDir.c_str());
+
+    // For accessing shader cache paths in the cache dir that
+    // are derived from the applications bundle ID.
+    bundleIDCacheDir = userCacheDir;
+    bundleIDCacheDir.append("/" MOZ_GPU_PROCESS_BUNDLEID);
+    params.push_back("BUNDLE_ID_CACHE_DIR");
+    params.push_back(bundleIDCacheDir.c_str());
   } else {
     char* msg = NULL;
     asprintf(&msg, "Unexpected sandbox type %u", aInfo.type);
@@ -783,6 +818,11 @@ bool GetRDDSandboxParamsFromArgs(int aArgc, char** aArgv,
   return GetUtilitySandboxParamsFromArgs(aArgc, aArgv, aInfo, false);
 }
 
+bool GetGPUSandboxParamsFromArgs(int aArgc, char** aArgv,
+                                 MacSandboxInfo& aInfo) {
+  return GetUtilitySandboxParamsFromArgs(aArgc, aArgv, aInfo, false);
+}
+
 /*
  * Returns true if no errors were encountered or if early sandbox startup is
  * not enabled for this process. Returns false if an error was encountered.
@@ -820,6 +860,11 @@ bool StartMacSandboxIfEnabled(const MacSandboxType aSandboxType, int aArgc,
       break;
     case MacSandboxType_GMP:
       if (!GetPluginSandboxParamsFromArgs(aArgc, aArgv, info)) {
+        return false;
+      }
+      break;
+    case MacSandboxType_GPU:
+      if (!GetGPUSandboxParamsFromArgs(aArgc, aArgv, info)) {
         return false;
       }
       break;

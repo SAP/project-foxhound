@@ -56,6 +56,7 @@ avoid-blacklist-and-whitelist:
         - browser/components/tabbrowser/test/browser/tabs/browser_new_file_whitelisted_http_tab.js
         - browser/components/tabbrowser/test/browser/tabs/browser_tab_drag_drop_perwindow.js
         - browser/components/urlbar/tests/browser/browser_searchSingleWordNotification.js
+        - browser/components/urlbar/tests/browser/browser_trust_panel.js
         - browser/components/urlbar/tests/browser/browser_UrlbarInput_trimURLs.js
         - browser/components/urlbar/tests/unit/test_providerHeuristicFallback.js
         - browser/components/urlbar/tests/unit/test_search_suggestions.js
@@ -77,8 +78,8 @@ avoid-blacklist-and-whitelist:
         - devtools/client/debugger/test/mochitest/examples/ember/quickstart/dist/assets/vendor.js
         - devtools/client/debugger/test/mochitest/examples/react/build/main.js
         - devtools/client/debugger/test/mochitest/examples/react/build/service-worker.js
-        - devtools/client/inspector/markup/test/lib_babel_6.21.0_min.js
-        - devtools/client/inspector/markup/test/lib_react_dom_15.4.1.js
+        - devtools/client/inspector/markup/test/events/lib_babel_6.21.0_min.js
+        - devtools/client/inspector/markup/test/events/lib_react_dom_15.4.1.js
         - docshell/base/nsDocShell.cpp
         - docshell/base/URIFixup.sys.mjs
         - docshell/test/unit/test_URIFixup_info.js
@@ -97,7 +98,6 @@ avoid-blacklist-and-whitelist:
         - dom/bindings/RemoteObjectProxy.cpp
         - dom/events/EventStateManager.cpp
         - dom/events/KeyboardEvent.cpp
-        - dom/html/MediaError.cpp
         - dom/indexedDB/ActorsParent.cpp
         - dom/ipc/ContentParent.cpp
         - dom/ipc/URLClassifierParent.cpp
@@ -111,6 +111,7 @@ avoid-blacklist-and-whitelist:
         - dom/media/autoplay/test/mochitest/file_autoplay_policy_key_blacklist.html
         - dom/media/autoplay/test/mochitest/test_autoplay_policy_key_blacklist.html
         - dom/media/autoplay/test/mochitest/test_autoplay_policy_permission.html
+        - dom/media/mediaelement/MediaError.cpp
         - dom/media/webm/WebMDecoder.cpp
         - dom/media/webrtc/transport/stun_socket_filter.cpp
         - dom/media/webrtc/transport/test/ice_unittest.cpp
@@ -270,8 +271,6 @@ avoid-blacklist-and-whitelist:
         - toolkit/mozapps/extensions/test/xpcshell/rs-blocklist/test_gfxBlocklist_prefs.js
         - toolkit/mozapps/extensions/test/xpcshell/test_permissions.js
         - toolkit/mozapps/extensions/test/xpcshell/test_permissions_prefs.js
-        - toolkit/mozapps/extensions/test/xpinstall/browser_bug645699.js
-        - toolkit/mozapps/extensions/test/xpinstall/browser_doorhanger_installs.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile3.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4_postDownload.js

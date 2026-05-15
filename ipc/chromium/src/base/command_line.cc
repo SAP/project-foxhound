@@ -12,8 +12,6 @@
 #  include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #endif
 
-#include <algorithm>
-
 #include "base/logging.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"

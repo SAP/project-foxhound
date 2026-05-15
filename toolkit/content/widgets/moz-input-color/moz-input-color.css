@@ -21,20 +21,25 @@ label {
   border: var(--border-width) solid var(--border-color-interactive);
   border-radius: var(--border-radius-medium);
   background-color: var(--button-background-color-ghost);
+  color: var(--button-text-color);
 }
 
 label:hover {
   border-color: var(--border-color-interactive-hover);
   background-color: var(--button-background-color-ghost-hover);
+  color: var(--button-text-color-hover);
 }
 
 label:hover:active {
   border-color: var(--border-color-interactive-active);
   background-color: var(--button-background-color-ghost-active);
+  color: var(--button-text-color-active);
+  outline: none;
 }
 
 label:focus-within {
   outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
 }
 
 label span {
@@ -63,5 +68,5 @@ label span {
 
 .icon {
   -moz-context-properties: fill;
-  fill: var(--icon-color);
+  fill: var(--button-icon-fill);
 }

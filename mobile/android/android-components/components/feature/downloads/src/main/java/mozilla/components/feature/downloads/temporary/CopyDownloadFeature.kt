@@ -51,6 +51,7 @@ class CopyDownloadFeature(
     private val tabId: String?,
     private val onCopyConfirmation: () -> Unit,
     httpClient: Client,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : TemporaryDownloadFeature(
     context = context,
@@ -59,7 +60,7 @@ class CopyDownloadFeature(
 ) {
 
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
                 .distinctUntilChangedBy { it.content.copy }
                 .collect { state ->

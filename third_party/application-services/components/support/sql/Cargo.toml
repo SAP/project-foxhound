@@ -1,0 +1,24 @@
+[package]
+name = "sql-support"
+edition = "2021"
+version = "0.1.0"
+authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
+license = "MPL-2.0"
+
+[features]
+default = []
+# The debug-tools feature brings in utilities to help with debugging.
+debug-tools = ["dep:text-table", "rusqlite/column_decltype"]
+
+[dependencies]
+error-support = { path = "../error" }
+lazy_static = "1.4"
+interrupt-support = { path = "../interrupt" }
+thiserror = "2"
+tempfile = "3.1.0"
+text-table = { path = "../text-table", optional = true }
+parking_lot = ">=0.11,<=0.12"
+rusqlite = { version = "0.37.0", features = ["functions", "limits", "bundled", "unlock_notify"] }
+
+[dev-dependencies]
+error-support = { path = "../error", features = ["testing"] }

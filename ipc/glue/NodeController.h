@@ -87,26 +87,29 @@ class NodeController final : public mojo::core::ports::NodeDelegate,
   bool GetMessage(const PortRef& aPort, UniquePtr<IPC::Message>* aMessage);
 
   // Called in the broker process from GeckoChildProcessHost to introduce a new
-  // child process into the network. Returns a `PortRef` which can be used to
-  // communicate with the `PortRef` returned from `InitChildProcess`, and a
-  // reference to the `NodeChannel` created for the new process. The port can
-  // immediately have messages sent to it.
-  std::tuple<ScopedPort, RefPtr<NodeChannel>> InviteChildProcess(
-      UniquePtr<IPC::Channel> aChannel,
-      GeckoChildProcessHost* aChildProcessHost);
+  // child process into the network. On success, `aInitialPort` will be a
+  // `PortRef` which can be used to communicate with the `PortRef` returned from
+  // `InitChildProcess`, `aNodeChannel` will be a reference to the `NodeChannel`
+  // created for the new process, and `aClientHandle` will be the
+  // `ChannelHandle` to pass to the child process on the command line.
+  // The port can immediately have messages sent to it.
+  bool InviteChildProcess(GeckoChildProcessHost* aChildProcessHost,
+                          IPC::Channel::ChannelHandle* aClientHandle,
+                          ScopedPort* aInitialPort, NodeChannel** aNodeChannel);
 
   // Called as the IO thread is started in the parent process.
-  static void InitBrokerProcess();
+  static void InitBrokerProcess(const IPC::Channel::ChannelKind* aChannelKind);
 
   // Called as the IO thread is started in a child process.
-  static ScopedPort InitChildProcess(UniquePtr<IPC::Channel> aChannel,
-                                     base::ProcessId aParentPid);
+  static ScopedPort InitChildProcess(
+      IPC::Channel::ChannelHandle&& aChannelHandle, base::ProcessId aParentPid);
 
   // Called when the IO thread is torn down.
   static void CleanUp();
 
  private:
-  explicit NodeController(const NodeName& aName);
+  NodeController(const NodeName& aName,
+                 const IPC::Channel::ChannelKind* aChannelKind);
   ~NodeController();
 
   UniquePtr<IPC::Message> SerializeEventMessage(
@@ -147,6 +150,7 @@ class NodeController final : public mojo::core::ports::NodeDelegate,
 
   const NodeName mName;
   const UniquePtr<Node> mNode;
+  const IPC::Channel::ChannelKind* const mChannelKind;
 
   template <class T>
   using NodeMap = nsTHashMap<NodeNameHashKey, T>;

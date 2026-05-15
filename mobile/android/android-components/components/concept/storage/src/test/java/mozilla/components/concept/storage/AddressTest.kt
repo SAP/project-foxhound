@@ -14,7 +14,7 @@ class AddressTest {
     fun `WHEN all address properties are present THEN full address present in label`() {
         val address = generateAddress()
         val expected =
-            "${address.streetAddress}, ${address.addressLevel3}, ${address.addressLevel2}, " +
+            "${address.name}, ${address.streetAddress}, ${address.addressLevel3}, ${address.addressLevel2}, " +
                 "${address.organization}, ${address.addressLevel1}, ${address.country}, " +
                 "${address.postalCode}, ${address.tel}, ${address.email}"
 
@@ -29,7 +29,7 @@ class AddressTest {
             email = "",
         )
         val expected =
-            "${address.streetAddress}, ${address.addressLevel2}, ${address.addressLevel1}, " +
+            "${address.name}, ${address.streetAddress}, ${address.addressLevel2}, ${address.addressLevel1}, " +
                 "${address.country}, ${address.postalCode}, ${address.tel}"
 
         assertEquals(expected, address.addressLabel)

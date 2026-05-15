@@ -6,8 +6,6 @@ package org.mozilla.fenix.benchmark
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.StartupMode
@@ -17,16 +15,17 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.benchmark.utils.HtmlAsset
+import org.mozilla.fenix.benchmark.utils.MockWebServerRule
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
 import org.mozilla.fenix.benchmark.utils.measureRepeatedDefault
+import org.mozilla.fenix.benchmark.utils.uri
 
 /**
  * This test class benchmarks the speed of app startup when launching an intent. Run this benchmark
  * to verify how effective a Baseline Profile is. It does this by comparing [CompilationMode.None],
  * which represents the app with no Baseline Profiles optimizations, and [CompilationMode.Partial],
  * which uses Baseline Profiles.
- *
- * Before running make sure `autosignReleaseWithDebugKey=true` is present in local.properties.
  *
  * Run this benchmark to see startup measurements and captured system traces for verifying
  * the effectiveness of your Baseline Profiles. You can run it directly from Android
@@ -47,12 +46,14 @@ import org.mozilla.fenix.benchmark.utils.measureRepeatedDefault
  * and the [instrumentation arguments documentation](https://d.android.com/topic/performance/benchmarking/macrobenchmark-instrumentation-args).
  **/
 @RunWith(AndroidJUnit4::class)
-@RequiresApi(Build.VERSION_CODES.N)
 @BaselineProfileMacrobenchmark
 class BaselineProfilesLaunchIntentBenchmark {
 
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
+
+    @get:Rule
+    val mockRule = MockWebServerRule()
 
     @Test
     fun startupLaunchIntentNone() = launchIntentBenchmark(CompilationMode.None())
@@ -73,7 +74,7 @@ class BaselineProfilesLaunchIntentBenchmark {
             },
         ) {
             val intent = Intent(Intent.ACTION_VIEW)
-            intent.data = Uri.parse("https://www.mozilla.org/")
+            intent.data = mockRule.uri(HtmlAsset.SIMPLE)
             intent.setPackage(TARGET_PACKAGE)
 
             startActivityAndWait(intent = intent)

@@ -1,11 +1,14 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* global NodeServer */
 
 // This test checks that npm packages can be installed and used.
 
 "use strict";
+
+const { NodeServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
 
 add_task(async function test_socks5_installed() {
   let id = await NodeServer.fork();

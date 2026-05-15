@@ -4,8 +4,6 @@
 
 package org.mozilla.focus.topsites
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import mozilla.components.feature.top.sites.PinnedSiteStorage
 import mozilla.components.feature.top.sites.TopSite
@@ -16,19 +14,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi
 class DefaultTopSitesStorageTest {
 
     private val pinnedSitesStorage: PinnedSiteStorage = mock()
 
     @Test
-    fun `WHEN a top site is added THEN the pinned sites storage is called`() = runTest(UnconfinedTestDispatcher()) {
+    fun `WHEN a top site is added THEN the pinned sites storage is called`() = runTest {
         val defaultTopSitesStorage = DefaultTopSitesStorage(
             pinnedSitesStorage,
             coroutineContext,
         )
 
         defaultTopSitesStorage.addTopSite("Mozilla", "https://mozilla.com", isDefault = false)
+        testScheduler.advanceUntilIdle()
 
         verify(pinnedSitesStorage).addPinnedSite(
             "Mozilla",
@@ -38,7 +36,7 @@ class DefaultTopSitesStorageTest {
     }
 
     @Test
-    fun `WHEN a top site is removed THEN the pinned sites storage is called`() = runTest(UnconfinedTestDispatcher()) {
+    fun `WHEN a top site is removed THEN the pinned sites storage is called`() = runTest {
         val defaultTopSitesStorage = DefaultTopSitesStorage(
             pinnedSitesStorage,
             coroutineContext,
@@ -52,12 +50,13 @@ class DefaultTopSitesStorageTest {
         )
 
         defaultTopSitesStorage.removeTopSite(pinnedSite)
+        testScheduler.advanceUntilIdle()
 
         verify(pinnedSitesStorage).removePinnedSite(pinnedSite)
     }
 
     @Test
-    fun `WHEN a top site is updated THEN the pinned sites storage is called`() = runTest(UnconfinedTestDispatcher()) {
+    fun `WHEN a top site is updated THEN the pinned sites storage is called`() = runTest {
         val defaultTopSitesStorage = DefaultTopSitesStorage(
             pinnedSitesStorage,
             coroutineContext,
@@ -74,6 +73,8 @@ class DefaultTopSitesStorageTest {
             "Wiki",
             "https://en.wikipedia.org/wiki/Wiki",
         )
+
+        testScheduler.advanceUntilIdle()
 
         verify(pinnedSitesStorage).updatePinnedSite(
             pinnedSite,

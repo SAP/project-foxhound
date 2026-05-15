@@ -8,12 +8,23 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #include <atomic>
+#include <cstddef>
+#include <cstdio>
+#include <deque>
+#include <vector>
 
 #include "api/test/network_emulation/create_cross_traffic.h"
 #include "api/test/network_emulation/cross_traffic.h"
-#include "test/field_trial.h"
+#include "api/units/data_rate.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "api/video_codecs/scalability_mode.h"
+#include "call/video_send_stream.h"
+#include "rtc_base/checks.h"
 #include "test/gtest.h"
+#include "test/scenario/performance_stats.h"
 #include "test/scenario/scenario.h"
+#include "test/scenario/scenario_config.h"
 #include "test/video_test_constants.h"
 
 namespace webrtc {
@@ -104,9 +115,9 @@ TEST(VideoStreamTest, ReceivesVp8SimulcastFrames) {
       c->encoder.implementation = CodecImpl::kSoftware;
       c->encoder.codec = Codec::kVideoCodecVP8;
       // Enable simulcast.
-      c->encoder.simulcast_streams = {webrtc::ScalabilityMode::kL1T1,
-                                      webrtc::ScalabilityMode::kL1T1,
-                                      webrtc::ScalabilityMode::kL1T1};
+      c->encoder.simulcast_streams = {ScalabilityMode::kL1T1,
+                                      ScalabilityMode::kL1T1,
+                                      ScalabilityMode::kL1T1};
     });
     s.RunFor(kRunTime);
   }
@@ -218,7 +229,7 @@ TEST(VideoStreamTest, ResolutionAdaptsToAvailableBandwidth) {
     c->encoder.implementation = CodecImpl::kSoftware;
     c->encoder.codec = Codec::kVideoCodecVP9;
     // Enable SVC.
-    c->encoder.simulcast_streams = {webrtc::ScalabilityMode::kL2T1};
+    c->encoder.simulcast_streams = {ScalabilityMode::kL2T1};
   });
 
   // Run for a few seconds, until streams have stabilized,

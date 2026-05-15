@@ -1,12 +1,18 @@
 [DEFAULT]
 tags = "local"
 
+["test_log_files.py"]
+
 ["test_persist_closed_tabs_restore_manually.py"]
+
+["test_restore_aiwindow.py"]
 
 ["test_restore_loading_tab.py"]
 
 ["test_restore_manually.py"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1968578
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968578
+]
 
 ["test_restore_manually_with_pinned_tabs.py"]
 
@@ -17,22 +23,35 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["test_restore_sidebar_automatic.py"]
 
 ["test_restore_windows_after_close_last_tabs.py"]
-skip-if = ["os == 'mac'"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
+]
 
 ["test_restore_windows_after_restart_and_quit.py"]
 
 ["test_restore_windows_after_windows_shutdown.py"]
-run-if = ["os == 'win'"]
-skip-if = [
-    "win11_2009", # Bug 1727691
-    "os == 'win' && os_version == '11.26100' && processor == 'x86'", # Bug 1727691
-    "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1727691
+run-if = [
+  "os == 'win'",
 ]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1727691
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1727691
+]
+
+["test_splitview_restore.py"]
 
 ["test_tabgroups_restore.py"]
 
+["test_tabnotes_canonicalurl_restore.py"]
+
 ["test_taskbartab_restore.py"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 
 ["test_taskbartab_sessionstate.py"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]

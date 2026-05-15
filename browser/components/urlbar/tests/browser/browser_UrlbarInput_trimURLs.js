@@ -62,7 +62,7 @@ add_task(async function () {
 
   // Avoid search service sync init warnings due to URIFixup, when running the
   // test alone.
-  await Services.search.init();
+  await SearchService.init();
 
   Services.prefs.setBoolPref(PREF_TRIM_URLS, true);
 

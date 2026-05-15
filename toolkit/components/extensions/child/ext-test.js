@@ -135,6 +135,7 @@ this.test = class extends ExtensionAPI {
     const { extension } = context;
     let running = false;
     let testTasks = [];
+    let lastError = null;
     let unnamed = 0;
 
     async function runTasks(tests) {
@@ -156,6 +157,7 @@ this.test = class extends ExtensionAPI {
           let name = task.name || `unnamed_test_${++unnamed}`;
           let stack = getStack(context.getCaller());
           extension.emit("test-task-start", name, stack);
+          lastError = null;
           try {
             await Promise.race([task(), onClosed.promise]);
 
@@ -164,12 +166,17 @@ this.test = class extends ExtensionAPI {
               throw new ExtensionUtils.ExtensionError(CONTEXT_DESTROYED);
             }
           } catch (e) {
-            let err = `Exception running ${name}: ${e.message}`;
-            assertTrue(false, err);
-            Cu.reportError(err);
-            throw e;
+            lastError = `Exception running ${name}: ${e.message}`;
+            Cu.reportError(lastError);
           } finally {
-            extension.emit("test-task-done", testTasks.length, name, stack);
+            extension.emit(
+              "test-task-done",
+              testTasks.length,
+              name,
+              !lastError,
+              lastError ?? `${name} PASS`,
+              stack
+            );
           }
         }
       } finally {
@@ -190,12 +197,24 @@ this.test = class extends ExtensionAPI {
     }
 
     function assertTrue(value, msg) {
+      msg = msg ?? `Assertion ${value ? "PASS" : "FAIL"}`;
       extension.emit(
         "test-result",
         Boolean(value),
         String(msg),
         getStack(context.getCaller())
       );
+      if (!value) {
+        lastError = msg;
+      }
+    }
+
+    function assertEq(eq, msg, expected, actual) {
+      let stack = getStack(context.getCaller());
+      extension.emit("test-eq", eq, String(msg), expected, actual, stack);
+      if (!eq) {
+        lastError = `${msg} - Expected: ${expected}, Actual: ${actual}`;
+      }
     }
 
     class TestEventManager extends EventManager {
@@ -314,14 +333,8 @@ this.test = class extends ExtensionAPI {
             ensureStructurallyCloneable(actual);
           }
 
-          extension.emit(
-            "test-eq",
-            deepEquals(actual, expected),
-            String(msg),
-            toSource(expected),
-            toSource(actual),
-            getStack(context.getCaller())
-          );
+          let eq = deepEquals(actual, expected);
+          assertEq(eq, msg, toSource(expected), toSource(actual));
         },
 
         assertEq(expected, actual, msg) {
@@ -333,14 +346,7 @@ this.test = class extends ExtensionAPI {
           if (!equal && expected === actual) {
             actual += " (different)";
           }
-          extension.emit(
-            "test-eq",
-            equal,
-            String(msg),
-            expected,
-            actual,
-            getStack(context.getCaller())
-          );
+          assertEq(equal, msg, expected, actual);
         },
 
         assertRejects(promise, expectedError, msg) {

@@ -25,6 +25,8 @@ interface GleanImpl {
   getter GleanCategory (DOMString identifier);
 };
 
+typedef (boolean or unsigned long long or UTF8String or GleanDistributionData) GleanLabeledTestValue;
+
 [Func="GleanWebidlEnabled", Exposed=Window]
 interface GleanLabeled {
   /**
@@ -40,4 +42,7 @@ interface GleanLabeled {
    * `OTHER_LABEL` label.
    */
   getter GleanMetric (DOMString identifier);
+
+  [Throws, ChromeOnly]
+  record<UTF8String, GleanLabeledTestValue>? testGetValue(optional UTF8String aPingName = "");
 };

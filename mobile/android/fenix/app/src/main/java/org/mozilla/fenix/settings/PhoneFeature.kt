@@ -23,6 +23,7 @@ import org.mozilla.fenix.settings.sitepermissions.AUTOPLAY_BLOCK_ALL
 import org.mozilla.fenix.settings.sitepermissions.AUTOPLAY_BLOCK_AUDIBLE
 import org.mozilla.fenix.utils.Settings
 import android.Manifest.permission.CAMERA as CAMERA_PERMISSION
+import mozilla.components.ui.icons.R as iconsR
 
 @Parcelize
 enum class PhoneFeature(val androidPermissionsList: Array<String>) : Parcelable {
@@ -36,13 +37,14 @@ enum class PhoneFeature(val androidPermissionsList: Array<String>) : Parcelable 
     PERSISTENT_STORAGE(emptyArray()),
     MEDIA_KEY_SYSTEM_ACCESS(emptyArray()),
     CROSS_ORIGIN_STORAGE_ACCESS(emptyArray()),
+    LOCAL_DEVICE_ACCESS(emptyArray()),
+    LOCAL_NETWORK_ACCESS(emptyArray()),
     ;
 
     fun isAndroidPermissionGranted(context: Context): Boolean {
         return context.isPermissionGranted(androidPermissionsList.asIterable())
     }
 
-    @Suppress("ComplexMethod")
     fun getActionLabel(
         context: Context,
         sitePermissions: SitePermissions? = null,
@@ -90,6 +92,8 @@ enum class PhoneFeature(val androidPermissionsList: Array<String>) : Parcelable 
             MEDIA_KEY_SYSTEM_ACCESS -> context.getString(R.string.preference_phone_feature_media_key_system_access)
             AUTOPLAY, AUTOPLAY_AUDIBLE, AUTOPLAY_INAUDIBLE ->
                 context.getString(R.string.preference_browser_feature_autoplay)
+            LOCAL_DEVICE_ACCESS -> context.getString(R.string.preference_browser_feature_local_device_access)
+            LOCAL_NETWORK_ACCESS -> context.getString(R.string.preference_browser_feature_local_network_access)
         }
     }
 
@@ -107,6 +111,8 @@ enum class PhoneFeature(val androidPermissionsList: Array<String>) : Parcelable 
             CROSS_ORIGIN_STORAGE_ACCESS -> R.string.preference_phone_feature_cross_origin_storage_access
             MEDIA_KEY_SYSTEM_ACCESS -> R.string.preference_phone_feature_media_key_system_access
             AUTOPLAY, AUTOPLAY_AUDIBLE, AUTOPLAY_INAUDIBLE -> R.string.preference_browser_feature_autoplay
+            LOCAL_DEVICE_ACCESS -> R.string.preference_browser_feature_local_device_access
+            LOCAL_NETWORK_ACCESS -> R.string.preference_browser_feature_local_network_access
         }
     }
 
@@ -116,14 +122,16 @@ enum class PhoneFeature(val androidPermissionsList: Array<String>) : Parcelable 
     @DrawableRes
     fun getIconId(): Int {
         return when (this) {
-            CAMERA -> R.drawable.mozac_ic_camera_24
-            LOCATION -> R.drawable.mozac_ic_location_24
-            MICROPHONE -> R.drawable.mozac_ic_microphone_24
-            NOTIFICATION -> R.drawable.mozac_ic_notification_24
-            PERSISTENT_STORAGE -> R.drawable.mozac_ic_storage_24
-            CROSS_ORIGIN_STORAGE_ACCESS -> R.drawable.mozac_ic_cookies_24
-            MEDIA_KEY_SYSTEM_ACCESS -> R.drawable.mozac_ic_link_24
-            AUTOPLAY, AUTOPLAY_AUDIBLE, AUTOPLAY_INAUDIBLE -> R.drawable.mozac_ic_autoplay_24
+            CAMERA -> iconsR.drawable.mozac_ic_camera_24
+            LOCATION -> iconsR.drawable.mozac_ic_location_24
+            MICROPHONE -> iconsR.drawable.mozac_ic_microphone_24
+            NOTIFICATION -> iconsR.drawable.mozac_ic_notification_24
+            PERSISTENT_STORAGE -> iconsR.drawable.mozac_ic_storage_24
+            CROSS_ORIGIN_STORAGE_ACCESS -> iconsR.drawable.mozac_ic_cookies_24
+            MEDIA_KEY_SYSTEM_ACCESS -> iconsR.drawable.mozac_ic_link_24
+            AUTOPLAY, AUTOPLAY_AUDIBLE, AUTOPLAY_INAUDIBLE -> iconsR.drawable.mozac_ic_autoplay_24
+            LOCAL_DEVICE_ACCESS -> iconsR.drawable.mozac_ic_device_desktop_24
+            LOCAL_NETWORK_ACCESS -> iconsR.drawable.mozac_ic_router_24
         }
     }
 
@@ -144,6 +152,8 @@ enum class PhoneFeature(val androidPermissionsList: Array<String>) : Parcelable 
             PERSISTENT_STORAGE -> R.string.pref_key_browser_feature_persistent_storage
             CROSS_ORIGIN_STORAGE_ACCESS -> R.string.pref_key_browser_feature_cross_origin_storage_access
             MEDIA_KEY_SYSTEM_ACCESS -> R.string.pref_key_browser_feature_media_key_system_access
+            LOCAL_DEVICE_ACCESS -> R.string.pref_key_browser_feature_local_device_access
+            LOCAL_NETWORK_ACCESS -> R.string.pref_key_browser_feature_local_network_access
         }
     }
 

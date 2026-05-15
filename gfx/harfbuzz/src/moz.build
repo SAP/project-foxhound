@@ -55,7 +55,8 @@ UNIFIED_SOURCES += [
     'hb-face-builder.cc',
     'hb-face.cc',
     'hb-font.cc',
-    'hb-harfruzz.cc',
+    'hb-harfrust.cc',
+    'hb-kbts.cc',
     'hb-map.cc',
     'hb-number.cc',
     'hb-ot-cff1-table.cc',
@@ -105,6 +106,11 @@ UNIFIED_SOURCES += [
     'hb-subset-plan-var.cc',
     'hb-subset-plan.cc',
     'hb-subset-serialize.cc',
+    'hb-subset-table-cff.cc',
+    'hb-subset-table-color.cc',
+    'hb-subset-table-layout.cc',
+    'hb-subset-table-other.cc',
+    'hb-subset-table-var.cc',
     'hb-subset.cc',
     'hb-unicode.cc',
 ]
@@ -131,6 +137,7 @@ DEFINES['HB_NO_BUFFER_VERIFY'] = True
 DEFINES['HB_NO_FALLBACK_SHAPE'] = True
 DEFINES['HB_NO_UCD'] = True
 DEFINES['HB_NO_UNICODE_FUNCS'] = True
+DEFINES['HB_NO_VAR_COMPOSITES'] = True
 
 # On Android, we want to use harfbuzz's mmap support for file access,
 # so we need to set the appropriate configuration flags as we're not

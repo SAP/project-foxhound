@@ -93,6 +93,7 @@ function writeString(output, data) {
 
 /**
  * Read HTTP request from async input stream.
+ *
  * @return Request line (string) and Map of header names and values.
  */
 const readHttpRequest = async function (input) {

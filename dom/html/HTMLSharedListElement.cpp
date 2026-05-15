@@ -5,14 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLSharedListElement.h"
-#include "mozilla/dom/HTMLDListElementBinding.h"
-#include "mozilla/dom/HTMLOListElementBinding.h"
-#include "mozilla/dom/HTMLUListElementBinding.h"
-#include "mozilla/dom/HTMLLIElement.h"
 
 #include "mozilla/MappedDeclarationsBuilder.h"
-#include "nsGenericHTMLElement.h"
+#include "mozilla/dom/HTMLDListElementBinding.h"
+#include "mozilla/dom/HTMLLIElement.h"
+#include "mozilla/dom/HTMLOListElementBinding.h"
+#include "mozilla/dom/HTMLUListElementBinding.h"
 #include "nsAttrValueInlines.h"
+#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 

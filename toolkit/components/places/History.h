@@ -7,8 +7,6 @@
 #ifndef mozilla_places_History_h_
 #define mozilla_places_History_h_
 
-#include <utility>
-
 #include "Database.h"
 #include "mozIAsyncHistory.h"
 #include "mozIStorageConnection.h"

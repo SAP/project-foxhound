@@ -168,6 +168,10 @@
   display: inline-block;
 }
 
+.requests-list-column.requests-list-number-column {
+  text-align: end;
+}
+
 /* Requests list headers */
 
 .requests-list-headers-group,
@@ -594,17 +598,7 @@
  * Dim requests served from cache when High Contrast Mode is not enabled
  */
 :root:not([forced-colors-active]) .request-list-item:not(.selected, :hover).fromCache {
-  --table-icon-opacity: 0.7;
   color: var(--theme-text-color-alt);
-}
-
-/*
- * Apply partial opacity to specific icons and icon-like elements
- * (e.g. for cached requests)
- */
-.requests-security-icon-group,
-.requests-list-status-code:not([data-code^="3"]) {
-  opacity: var(--table-icon-opacity, 1);
 }
 
 /*

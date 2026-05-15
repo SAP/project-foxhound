@@ -10,12 +10,18 @@ EXPORTS.mozilla.dom += [
 ]
 
 UNIFIED_SOURCES += [
+    "WindowsLocationChild.cpp",
     "WindowsLocationParent.cpp",
     "WindowsLocationProvider.cpp",
 ]
 
+if CONFIG["CC_TYPE"] == "clang-cl":
+    UNIFIED_SOURCES += [
+        "WindowsRuntimeLocationChild.cpp",
+    ]
+
 SOURCES += [
-    "WindowsLocationChild.cpp",  # includes locationapi.h
+    "WindowsLegacyLocationChild.cpp",  # includes locationapi.h
 ]
 
 IPDL_SOURCES += [

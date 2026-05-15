@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <algorithm>
-#include "mozilla/EndianUtils.h"
-
 #include "OpusParser.h"
-#include "VideoUtils.h"
 
 #include <opus/opus.h>
+
+#include <algorithm>
+
+#include "VideoUtils.h"
+#include "mozilla/EndianUtils.h"
 extern "C" {
 #include <opus/opus_multistream.h>
 }

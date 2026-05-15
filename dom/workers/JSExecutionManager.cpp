@@ -8,10 +8,9 @@
 
 #include "WorkerCommon.h"
 #include "WorkerPrivate.h"
-
-#include "mozilla/dom/DocGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/DocGroup.h"
 
 namespace mozilla::dom {
 

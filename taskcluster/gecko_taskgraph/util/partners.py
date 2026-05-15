@@ -40,7 +40,7 @@ LOGIN_QUERY = """query {
 # Returns the contents of default.xml from a manifest repository
 MANIFEST_QUERY = """query {
   repository(owner:"%(owner)s", name:"%(repo)s") {
-    object(expression: "master:%(file)s") {
+    object(expression: "HEAD:%(file)s") {
       ... on Blob {
         text
       }
@@ -127,7 +127,6 @@ REPACK_CFG_QUERY = """query{
 
 # Map platforms in repack.cfg into their equivalents in taskcluster
 TC_PLATFORM_PER_FTP = {
-    "linux-i686": "linux-shippable",
     "linux-x86_64": "linux64-shippable",
     "mac": "macosx64-shippable",
     "win32": "win32-shippable",
@@ -448,8 +447,6 @@ def get_ftp_platform(platform):
         return "win64"
     if platform.startswith("macosx"):
         return "mac"
-    if platform.startswith("linux-"):
-        return "linux-i686"
     if platform.startswith("linux64"):
         return "linux-x86_64"
     raise ValueError(f"Unimplemented platform {platform}")
@@ -468,7 +465,7 @@ def get_partner_url_config(parameters, graph_config):
     partner_url_config = deepcopy(graph_config["partner-urls"])
     substitutions = {
         "release-product": parameters["release_product"],
-        "release-level": release_level(parameters["project"]),
+        "release-level": release_level(parameters),
         "release-type": parameters["release_type"],
     }
     resolve_keyed_by(
@@ -545,10 +542,11 @@ def apply_partner_priority(config, jobs):
     # integration branches because we don't want to wait a lot for the graph to be done, but
     # for multiple releases the partner tasks always wait for non-partner.
     if (
-        config.kind.startswith(
-            ("release-partner-repack", "release-partner-attribution")
-        )
-        and release_level(config.params["project"]) == "production"
+        config.kind.startswith((
+            "release-partner-repack",
+            "release-partner-attribution",
+        ))
+        and release_level(config.params) == "production"
     ):
         priority = "medium"
     for job in jobs:
@@ -585,16 +583,14 @@ def build_macos_attribution_dmg_command(dmg_app_path, attributions):
             command.append(create_dir_command)
 
         command.append(
-            " ".join(
-                [
-                    dmg_app_path,
-                    "attribute",
-                    a["input"],
-                    a["output"],
-                    MACOS_ATTRIBUTION_SENTINEL,
-                    _build_macos_attribution_string(attribution_code=a["attribution"]),
-                ]
-            )
+            " ".join([
+                dmg_app_path,
+                "attribute",
+                a["input"],
+                a["output"],
+                MACOS_ATTRIBUTION_SENTINEL,
+                _build_macos_attribution_string(attribution_code=a["attribution"]),
+            ])
         )
     return " && ".join(command)
 

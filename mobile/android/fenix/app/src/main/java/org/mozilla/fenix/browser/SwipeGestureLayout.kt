@@ -136,9 +136,18 @@ class SwipeGestureLayout @JvmOverloads constructor(
                     velocityY = 0f,
                 )
                 activeListener = null
+
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    performClick()
+                }
                 false
             }
             else -> gestureDetector.onTouchEvent(event)
         }
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
     }
 }

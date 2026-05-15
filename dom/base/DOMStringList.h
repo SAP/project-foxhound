@@ -8,9 +8,9 @@
 #define mozilla_dom_DOMStringList_h
 
 #include "nsISupports.h"
+#include "nsString.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
-#include "nsString.h"
 
 namespace mozilla::dom {
 

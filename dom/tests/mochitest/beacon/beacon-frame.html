@@ -7,12 +7,13 @@
 <body>
 <script type="text/javascript">
 
-function sendBeacon()
-{
+function sendBeacon() {
     var frame = window.parent.document.getElementById("frame");
+    // using data as id because it's unique-ish
+    var id = frame.getAttribute("data");
     var data = window.parent.beaconConvert(frame.getAttribute("data"));
-
-    var result = navigator.sendBeacon("http://mochi.test:8888/tests/dom/tests/mochitest/beacon/beacon-handler.sjs", data);
+    var beaconUri = "http://mochi.test:8888/tests/dom/tests/mochitest/beacon/beacon-handler.sjs?beaconid=" + id;
+    var result = navigator.sendBeacon(beaconUri, data);
     window.parent.beaconSent(result);
 }
 

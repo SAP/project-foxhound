@@ -17,9 +17,7 @@
 #include "gfxUtils.h"
 
 #include "MainThreadUtils.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/gfx/Tools.h"
-#include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_browser.h"

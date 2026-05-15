@@ -43,7 +43,10 @@ async function testBlockDialog(options) {
   let tab = BrowserTestUtils.addTab(gBrowser);
   let browser = gBrowser.getBrowserForTab(tab);
   gBrowser.selectedTab = tab;
-  await promiseTabLoadEvent(tab, "data:text/html," + escape(testPage));
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: "data:text/html," + escape(testPage),
+  });
   await SimpleTest.promiseFocus(browser);
 
   setClipboardData(CLIPBOARD_TEXT_STRING);

@@ -19,9 +19,7 @@ class LineBreakPolicy {
  public:
   // Creates the required low-level policy rules to evaluate a high-level
   // policy rule for complex line breaks.
-  static bool GenerateRules(const wchar_t* type_name,
-                            TargetPolicy::Semantics semantics,
-                            LowLevelPolicy* policy);
+  static bool GenerateRules(LowLevelPolicy* policy);
 
   // Processes a TargetServices::GetComplexLineBreaks() request from the target.
   static DWORD GetComplexLineBreaksProxyAction(EvalResult eval_result,

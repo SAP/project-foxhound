@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_SRICheck_h
 #define mozilla_dom_SRICheck_h
 
-#include "nsTString.h"
-#include "nsStringFwd.h"
+#include "mozilla/LoadTainting.h"
 #include "nsCOMPtr.h"
 #include "nsICryptoHash.h"
-#include "mozilla/LoadTainting.h"
+#include "nsStringFwd.h"
+#include "nsTString.h"
 
 class nsIChannel;
 class nsIConsoleReportCollector;
@@ -67,6 +67,7 @@ class SRICheckDataVerifier final {
                   nsIConsoleReportCollector* aReporter);
 
   bool IsComplete() const { return mComplete; }
+  bool IsInvalid() const { return mInvalidMetadata; }
 
   // Report the length of the computed hash and its type, such that we can
   // reserve the space for encoding it in a vector.

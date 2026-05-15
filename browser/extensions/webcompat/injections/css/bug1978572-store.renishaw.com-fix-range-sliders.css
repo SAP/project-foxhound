@@ -1,0 +1,18 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * store.renishaw.com - fix product dual-sliders
+ * Bug #1978572 - https://bugzilla.mozilla.org/show_bug.cgi?id=1978572
+ * WebCompat issue #168051 - https://webcompat.com/issues/168051
+ */
+input[type="range"].range-selector,
+input[type="range"].range-selector + div,
+input[type="range"].range-selector::-moz-range-track,
+input[type="range"].range-selector::-moz-range-progress {
+  pointer-events: none;
+}
+input[type="range"].range-selector::-moz-range-thumb {
+  pointer-events: all;
+}

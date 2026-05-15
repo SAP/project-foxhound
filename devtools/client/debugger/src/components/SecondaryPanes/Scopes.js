@@ -9,7 +9,7 @@ import {
   span,
 } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 import { showMenu } from "../../context-menu/menu";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import actions from "../../actions/index";
@@ -243,7 +243,7 @@ class Scopes extends PureComponent {
             },
             span(
               { className: "info icon" },
-              React.createElement(AccessibleImage, { className: "sourcemap" })
+              React.createElement(DebuggerImage, { name: "sourcemap" })
             ),
             L10N.getFormatStr(
               "scopes.noOriginalScopes",
@@ -261,7 +261,7 @@ class Scopes extends PureComponent {
             { className: "pane-info" },
             span(
               { className: "info icon" },
-              React.createElement(AccessibleImage, { className: "loader" })
+              React.createElement(DebuggerImage, { name: "loader" })
             ),
             L10N.getStr("scopes.loadingOriginalScopes")
           )
@@ -278,7 +278,7 @@ class Scopes extends PureComponent {
             { className: "pane-info" },
             span(
               { className: "info icon" },
-              React.createElement(AccessibleImage, { className: "loader" })
+              React.createElement(DebuggerImage, { name: "loader" })
             ),
             L10N.getStr("loadingText")
           )
@@ -287,7 +287,7 @@ class Scopes extends PureComponent {
       scopes = generatedScopes;
     }
 
-    function initiallyExpanded(item) {
+    function getInitiallyExpanded(item) {
       return expandedScopes.some(path => path == getScopeItemPath(item));
     }
 
@@ -315,7 +315,7 @@ class Scopes extends PureComponent {
           preventBlur: true,
           setExpanded: (path, expand) =>
             setExpandedScope(selectedFrame, path, expand),
-          initiallyExpanded,
+          getInitiallyExpanded,
           renderItemActions: this.renderWatchpointButton,
           shouldRenderTooltip: true,
         })

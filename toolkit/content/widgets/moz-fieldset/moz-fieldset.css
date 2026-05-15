@@ -14,12 +14,29 @@ fieldset {
 
 legend {
   padding: 0;
-  font-weight: var(--font-weight-bold);
-  display: inline-block;
+  font-weight: var(--font-weight-semibold);
+  display: flex;
+  gap: var(--space-small);
+  align-items: baseline;
 
-  &:has(+ #description) {
-    display: block;
+  &:has(+ a, + slot[name="support-link"]:has-slotted) {
+    display: inline-flex;
   }
+
+  /* Hack to handle vertical alignment in cases where we have an icon + heading
+  followed by a support link */
+  &:has(.icon) + a[is="moz-support-link"],
+  &:has(.icon) + ::slotted([slot="support-link"]) {
+    vertical-align: baseline;
+  }
+}
+
+.icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  -moz-context-properties: fill;
+  fill: currentColor;
+  align-self: center;
 }
 
 h1,
@@ -31,26 +48,30 @@ h6 {
   margin: 0;
 }
 
-#description {
+.description {
   margin: 0;
-  margin-block-start: var(--space-xxsmall);
-  & + a,
-  & + ::slotted([slot="support-link"]) {
-    font-size: var(--font-size-small);
-  }
+  margin-block-start: var(--space-xsmall);
+  color: var(--text-color-deemphasized);
 }
 
 #inputs {
   display: flex;
   flex-direction: column;
   gap: var(--space-large);
-  margin-top: var(--space-small);
 
   fieldset[aria-orientation="horizontal"] & {
     flex-direction: row;
     flex-wrap: wrap;
     row-gap: var(--space-small);
     column-gap: var(--space-medium);
+  }
+
+  :is(legend, .description) ~ & {
+    margin-top: var(--space-small);
+
+    :host([hasheading]) & {
+      margin-top: var(--space-large);
+    }
   }
 }
 

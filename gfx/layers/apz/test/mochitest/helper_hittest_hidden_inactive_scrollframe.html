@@ -30,17 +30,6 @@ function test() {
   var config = getHitTestConfig();
   var utils = config.utils;
 
-  let hasViewId;
-  try {
-    utils.getViewId(document.getElementById("nested"));
-    hasViewId = true;
-  } catch (e) {
-    hasViewId = false;
-  }
-  if (!config.activateAllScrollFrames) {
-    ok(!hasViewId, "The nested scroller should be inactive and not have a view id");
-  }
-
   checkHitResult(
     hitTest(centerOf(document.body)),
     APZHitResultFlags.VISIBLE,

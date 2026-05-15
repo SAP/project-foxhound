@@ -5,6 +5,7 @@
 
 const httpServer = createTestHTTPServer();
 httpServer.registerPathHandler(`/`, function (request, response) {
+  response.setHeader("Content-Type", "text/html");
   response.setStatusLine(request.httpVersion, 200, "OK");
   response.write(`
     <meta charset=utf8>
@@ -229,7 +230,7 @@ async function copyMessageContent(hud, messageEl) {
  * using the Selection API.
  *
  * @param {HTMLElement} el
- * @returns {String} the text representation of the element.
+ * @returns {string} the text representation of the element.
  */
 function getSelectionTextFromElement(el) {
   const doc = el.ownerDocument;

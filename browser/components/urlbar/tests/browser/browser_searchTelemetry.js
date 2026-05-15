@@ -188,7 +188,7 @@ async function compareCounts(clickCallback) {
   // * Telemetry histogram named "SEARCH_COUNTS"
   // * FHR
 
-  let engine = await Services.search.getDefault();
+  let engine = await SearchService.getDefault();
 
   clearSAPTelemetry();
 

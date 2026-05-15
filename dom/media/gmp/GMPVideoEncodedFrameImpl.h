@@ -32,8 +32,8 @@
 #define GMPVideoEncodedFrameImpl_h_
 
 #include "gmp-errors.h"
-#include "gmp-video-frame.h"
 #include "gmp-video-frame-encoded.h"
+#include "gmp-video-frame.h"
 #include "mozilla/ipc/Shmem.h"
 #include "nsTArray.h"
 

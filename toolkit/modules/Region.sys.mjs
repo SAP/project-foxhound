@@ -79,7 +79,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "timerManager",
   "@mozilla.org/updates/timer-manager;1",
-  "nsIUpdateTimerManager"
+  Ci.nsIUpdateTimerManager
 );
 
 const log = console.createInstance({

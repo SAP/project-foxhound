@@ -31,43 +31,6 @@ const TESTCASES = [
   },
   {
     description:
-      "without @autocomplete - each field in its own form (high-confidence cc-number & cc-name)",
-    document: `<form><input id="cc-number" placeholder="credit card number"></form>
-               <form><input id="cc-name" placeholder="credit card holder name"></form>
-               <form><input id="cc-exp" placeholder="expiration date"></form>`,
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.9",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.95",
-      ],
-    ],
-    idsToShowPopup: ["cc-number", "cc-name"],
-    idsWithNoPopup: ["cc-exp"],
-  },
-  {
-    description:
-      "without @autocomplete - each field in its own form (normal-confidence cc-number & cc-name)",
-    document: `<form><input id="cc-number" placeholder="credit card number"></form>
-               <form><input id="cc-name" placeholder="credit card holder name"></form>
-               <form><input id="cc-exp" placeholder="expiration date"></form>`,
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.9",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.8",
-      ],
-    ],
-    idsWithNoPopup: ["cc-number", "cc-name", "cc-exp"],
-  },
-  {
-    description:
       "with @autocomplete - cc-number/cc-name and another <input> in a form",
     document: `<form>
                  <input id="cc-number" autocomplete="cc-number">
@@ -91,29 +54,6 @@ const TESTCASES = [
                  <input id="password" type="password">
                </form>`,
     idsWithNoPopup: ["cc-number", "cc-name"],
-  },
-  {
-    description:
-      "without @autocomplete - high-confidence cc-number/cc-name and another hidden <input> in a form",
-    document: `<form>
-                 <input id="cc-number" placeholder="credit card number">
-                 <input id="token" type="hidden">
-               </form>
-               <form>
-                 <input id="cc-name" placeholder="credit card holder name">
-                 <input id="token" type="hidden">
-               </form>`,
-    prefs: [
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThreshold",
-        "0.9",
-      ],
-      [
-        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
-        "0.95",
-      ],
-    ],
-    idsToShowPopup: ["cc-number", "cc-name"],
   },
 ];
 

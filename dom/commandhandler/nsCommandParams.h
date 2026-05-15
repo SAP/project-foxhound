@@ -8,10 +8,10 @@
 #define nsCommandParams_h
 
 #include "mozilla/ErrorResult.h"
-#include "nsString.h"
-#include "nsICommandParams.h"
 #include "nsCOMPtr.h"
-#include "PLDHashTable.h"
+#include "nsICommandParams.h"
+#include "nsString.h"
+#include "nsTHashMap.h"
 
 class nsCommandParams : public nsICommandParams {
   using ErrorResult = mozilla::ErrorResult;
@@ -57,102 +57,22 @@ class nsCommandParams : public nsICommandParams {
  protected:
   virtual ~nsCommandParams();
 
-  struct HashEntry : public PLDHashEntryHdr {
-    nsCString mEntryName;
-
-    uint8_t mEntryType;
-    union {
-      bool mBoolean;
-      int32_t mLong;
-      double mDouble;
-      nsString* mString;
-      nsCString* mCString;
-    } mData;
-
-    nsCOMPtr<nsISupports> mISupports;
-
-    HashEntry(uint8_t aType, const char* aEntryName)
-        : mEntryName(aEntryName), mEntryType(aType), mData() {
-      Reset(mEntryType);
+  template <typename T>
+  T GenericGet(const char* aName, ErrorResult& aRv) const {
+    MOZ_ASSERT(!aRv.Failed());
+    auto entry = mValuesHash.Lookup(nsDependentCString(aName));
+    if (entry && entry->is<T>()) {
+      return entry->as<T>();
     }
+    T result{};
+    aRv.Throw(NS_ERROR_FAILURE);
+    return result;
+  }
 
-    explicit HashEntry(const HashEntry& aRHS) : mEntryType(aRHS.mEntryType) {
-      Reset(mEntryType);
-      switch (mEntryType) {
-        case eBooleanType:
-          mData.mBoolean = aRHS.mData.mBoolean;
-          break;
-        case eLongType:
-          mData.mLong = aRHS.mData.mLong;
-          break;
-        case eDoubleType:
-          mData.mDouble = aRHS.mData.mDouble;
-          break;
-        case eWStringType:
-          NS_ASSERTION(aRHS.mData.mString, "Source entry has no string");
-          mData.mString = new nsString(*aRHS.mData.mString);
-          break;
-        case eStringType:
-          NS_ASSERTION(aRHS.mData.mCString, "Source entry has no string");
-          mData.mCString = new nsCString(*aRHS.mData.mCString);
-          break;
-        case eISupportsType:
-          mISupports = aRHS.mISupports.get();
-          break;
-        default:
-          NS_ERROR("Unknown type");
-      }
-    }
+  using EntryVariant = mozilla::Variant<bool, int32_t, double, nsString,
+                                        nsCString, nsCOMPtr<nsISupports>>;
 
-    ~HashEntry() { Reset(eNoType); }
-
-    void Reset(uint8_t aNewType) {
-      switch (mEntryType) {
-        case eNoType:
-          break;
-        case eBooleanType:
-          mData.mBoolean = false;
-          break;
-        case eLongType:
-          mData.mLong = 0;
-          break;
-        case eDoubleType:
-          mData.mDouble = 0.0;
-          break;
-        case eWStringType:
-          delete mData.mString;
-          mData.mString = nullptr;
-          break;
-        case eISupportsType:
-          mISupports = nullptr;
-          break;
-        case eStringType:
-          delete mData.mCString;
-          mData.mCString = nullptr;
-          break;
-        default:
-          NS_ERROR("Unknown type");
-      }
-      mEntryType = aNewType;
-    }
-  };
-
-  HashEntry* GetNamedEntry(const char* aName) const;
-  HashEntry* GetOrMakeEntry(const char* aName, uint8_t aEntryType);
-
- protected:
-  static PLDHashNumber HashKey(const void* aKey);
-
-  static bool HashMatchEntry(const PLDHashEntryHdr* aEntry, const void* aKey);
-
-  static void HashMoveEntry(PLDHashTable* aTable, const PLDHashEntryHdr* aFrom,
-                            PLDHashEntryHdr* aTo);
-
-  static void HashClearEntry(PLDHashTable* aTable, PLDHashEntryHdr* aEntry);
-
-  PLDHashTable mValuesHash;
-
-  static const PLDHashTableOps sHashOps;
+  nsTHashMap<nsCString, EntryVariant> mValuesHash;
 };
 
 nsCommandParams* nsICommandParams::AsCommandParams() {

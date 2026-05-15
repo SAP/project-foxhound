@@ -74,22 +74,48 @@
 // unprivileged Cu.Sandbox, with these specific methods re-exported into the
 // sandbox scope.
 
-const engineActor = ChromeUtils.domProcessChild.getActor("TranslationsEngine");
+function getEngineActor() {
+  try {
+    return ChromeUtils.domProcessChild.getActor("TranslationsEngine");
+  } catch (error) {
+    if (error.name === "NotFoundError") {
+      return null;
+    }
+    throw error;
+  }
+}
 
-const TE_addProfilerMarker = engineActor.TE_addProfilerMarker.bind(engineActor);
-const TE_getLogLevel = engineActor.TE_getLogLevel.bind(engineActor);
-const TE_log = engineActor.TE_log.bind(engineActor);
-const TE_logError = engineActor.TE_logError.bind(engineActor);
-const TE_requestEnginePayload =
-  engineActor.TE_requestEnginePayload.bind(engineActor);
-const TE_reportEnginePerformance =
-  engineActor.TE_reportEnginePerformance.bind(engineActor);
-const TE_reportEngineStatus =
-  engineActor.TE_reportEngineStatus.bind(engineActor);
-const TE_resolveForceShutdown =
-  engineActor.TE_resolveForceShutdown.bind(engineActor);
-const TE_destroyEngineProcess =
-  engineActor.TE_destroyEngineProcess.bind(engineActor);
+function TE_addProfilerMarker(...args) {
+  return getEngineActor()?.TE_addProfilerMarker(...args);
+}
+function TE_getLogLevel(...args) {
+  return getEngineActor()?.TE_getLogLevel(...args);
+}
+function TE_log(...args) {
+  return getEngineActor()?.TE_log(...args);
+}
+function TE_logError(...args) {
+  return getEngineActor()?.TE_logError(...args);
+}
+function TE_requestEnginePayload(...args) {
+  const actor = getEngineActor();
+  if (!actor) {
+    throw new Error("TranslationsEngine actor not available.");
+  }
+  return actor.TE_requestEnginePayload(...args);
+}
+function TE_reportEnginePerformance(...args) {
+  return getEngineActor()?.TE_reportEnginePerformance(...args);
+}
+function TE_reportEngineStatus(...args) {
+  return getEngineActor()?.TE_reportEngineStatus(...args);
+}
+function TE_resolveForceShutdown(...args) {
+  return getEngineActor()?.TE_resolveForceShutdown(...args);
+}
+function TE_destroyEngineProcess(...args) {
+  return getEngineActor()?.TE_destroyEngineProcess(...args);
+}
 
 // How long the cache remains alive between uses, in milliseconds. In automation the
 // engine is manually created and destroyed to avoid timing issues.
@@ -250,7 +276,7 @@ export class TranslationsEngine {
    * @returns {Promise<TranslationsEngine>}
    */
   static async create(languagePair, innerWindowId) {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     if (!languagePair.sourceLanguage || !languagePair.targetLanguage) {
       throw new Error(
         "Attempt to create Translator with missing language tags."

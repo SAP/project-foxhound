@@ -457,7 +457,7 @@ class nsWSAdmissionManager {
           "websocket closed while connecting w/o failing?");
     }
 #endif
-    Unused << aReason;
+    (void)aReason;
 
     sManager->RemoveFromQueue(aChannel);
 
@@ -3517,6 +3517,8 @@ WebSocketChannel::AsyncOpenNative(nsIURI* aURI, const nsACString& aOrigin,
   nsCOMPtr<nsIURI> localURI;
   nsCOMPtr<nsIChannel> localChannel;
 
+  LOG(("WebSocketChannel::AsyncOpen uri=%s", mURI->GetSpecOrDefault().get()));
+
   rv = NS_MutateURI(mURI)
            .SetScheme(mEncrypted ? "https"_ns : "http"_ns)
            .Finalize(localURI);
@@ -3745,9 +3747,9 @@ WebSocketChannel::OnTransportAvailable(nsISocketTransport* aTransport,
 
   nsresult rv;
   rv = mTransport->SetEventSink(nullptr, nullptr);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_WARN_IF(NS_FAILED(rv))) return rv;
   rv = mTransport->SetSecurityCallbacks(this);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_WARN_IF(NS_FAILED(rv))) return rv;
 
   return OnTransportAvailableInternal();
 }

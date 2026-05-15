@@ -7,7 +7,7 @@ import { BaseAction } from "resource://normandy/actions/BaseAction.sys.mjs";
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionSchemas: "resource://normandy/actions/schemas/index.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   PreferenceRollouts: "resource://normandy/lib/PreferenceRollouts.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.sys.mjs",

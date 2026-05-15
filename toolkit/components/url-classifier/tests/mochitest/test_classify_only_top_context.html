@@ -89,7 +89,6 @@ add_setup(async () => {
   await SpecialPowers.pushPrefEnv({"set": [
     ["browser.safebrowsing.malware.enabled", true],
     ["urlclassifier.malwareTable", "mochi-malware-simple,mochi-unwanted-simple"],
-    ["network.predictor.enabled", false],
     ["urlclassifier.gethash.timeout_ms", 30000],
   ]});
 

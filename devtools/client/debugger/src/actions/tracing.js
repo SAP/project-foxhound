@@ -8,6 +8,7 @@ import {
   getIsCurrentlyTracing,
   getCurrentThread,
   getSourceByActorId,
+  getSourceActor,
 } from "../selectors/index";
 import { NO_SEARCH_VALUE } from "../reducers/tracer-frames";
 import { createLocation } from "../utils/location";
@@ -65,8 +66,10 @@ export function selectTrace(traceIndex) {
       const frames = getTraceFrames(getState());
       const frame = frames[frameIndex];
       const source = getSourceByActorId(getState(), frame.sourceId);
+      const sourceActor = getSourceActor(getState(), frame.sourceId);
       location = createLocation({
         source,
+        sourceActor,
         line: frame.line,
         column: frame.column,
       });
@@ -87,6 +90,8 @@ export function selectTrace(traceIndex) {
       // will have a permanent highlight.
       await dispatch(selectLocation(location, { highlight: false }));
     }
+
+    await dispatch(updateSelectedLocationTraces(location));
   };
 }
 
@@ -196,5 +201,48 @@ export function searchTraceArguments(searchString) {
         searchValueOrGrip,
       });
     }
+  };
+}
+
+export function updateSelectedLocationTraces(selectedLocation) {
+  return async function ({ getState, dispatch }) {
+    if (!selectedLocation) {
+      dispatch({
+        type: "SET_SELECTED_LOCACTION_TRACES",
+        selectedLocationTraces: null,
+      });
+      return;
+    }
+    const state = getState();
+
+    let location = selectedLocation;
+    // When an original location is selected, we should be fetching the matching generated location from reducers
+    if (selectedLocation.source.isOriginal) {
+      location = state.sources.selectedGeneratedLocation;
+    }
+
+    const allTraces = getAllTraces(state);
+    const frames = getTraceFrames(state);
+
+    // By computing this from the selectLocation action, we compute this once per location change,
+    // but it may be relevant to try to cache traces per location (file, line and column)
+    // to avoid having to go through all the traces on each location change.
+    const selectedLocationTraces = allTraces.filter(trace => {
+      const frameIndex = trace[TRACER_FIELDS_INDEXES.FRAME_INDEX];
+      const frame = frames[frameIndex];
+      return (
+        frame &&
+        frame.sourceId == location.sourceActor.id &&
+        frame.line == location.line &&
+        (!location.column || frame.column == location.column)
+      );
+    });
+
+    dispatch({
+      type: "SET_SELECTED_LOCACTION_TRACES",
+      selectedLocationTraces: !selectedLocationTraces.length
+        ? null
+        : selectedLocationTraces,
+    });
   };
 }

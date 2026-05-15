@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef pathsub_h___
-#define pathsub_h___
+#ifndef pathsub_h_
+#define pathsub_h_
 /*
 ** Pathname subroutines.
 **
@@ -39,4 +39,4 @@ extern int relatepaths(char* from, char* to, char* outpath);
 /* XXX changes current working directory -- caveat emptor */
 extern void reversepath(char* inpath, char* name, int len, char* outpath);
 
-#endif /* pathsub_h___ */
+#endif /* pathsub_h_ */

@@ -9,8 +9,6 @@
 #  error "Wrong architecture. Only x86 and x64 should build this file!"
 #endif
 
-#include <iterator>
-
 #include "jit/RegisterSets.h"
 
 const char* js::jit::FloatRegister::name() const {

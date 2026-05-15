@@ -8,6 +8,7 @@ ChromeUtils.defineESModuleGetters(this, {
     "resource://gre/modules/FxAccountsWebChannel.sys.mjs",
   SelectableProfileService:
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
+  PREF_LAST_FXA_USER_UID: "resource://gre/modules/FxAccountsCommon.sys.mjs",
 });
 
 // Set up mocked profiles
@@ -124,9 +125,11 @@ add_task(
     let helpers = new FxAccountsWebChannelHelpers();
 
     // We "pretend" there was another account previously logged in
-    helpers.setPreviousAccountNameHashPref("testuser@testuser.com");
+    helpers.setPreviousAccountHashPref("test_uid");
 
     // Mock methods
+    helpers._selectableProfilesEnabled = () =>
+      Services.prefs.getBoolPref("browser.profiles.enabled");
     helpers._getAllProfiles = async () => mockedProfiles;
     helpers._getCurrentProfileName = () => mockedProfiles[0].name;
     helpers._readJSONFileAsync = async function (_filePath) {
@@ -145,9 +148,11 @@ add_task(
           variant.expectedResponses[i];
 
         gResponse = responseVal;
-        let result =
-          await helpers.promptProfileSyncWarningIfNeeded("testuser2@test.com");
-        //Verify we returned the expected result
+        let result = await helpers.promptProfileSyncWarningIfNeeded({
+          email: "testuser2@test.com",
+          uid: "test2",
+        });
+        // Verify we returned the expected result
         Assert.deepEqual(result, expectedResult);
 
         let gleanValue = Glean.syncMergeDialog.clicked.testGetValue();
@@ -262,6 +267,8 @@ add_task(
     let helpers = new FxAccountsWebChannelHelpers();
 
     // Mock methods
+    helpers._selectableProfilesEnabled = () =>
+      Services.prefs.getBoolPref("browser.profiles.enabled");
     helpers._getAllProfiles = async () => mockedProfiles;
     helpers._getCurrentProfileName = () => mockedProfiles[0].name;
     // Mock the file reading to simulate the account being signed into the other profile
@@ -273,7 +280,7 @@ add_task(
         // The account is signed into the other profile
         return {
           version: 1,
-          accountData: { email: "testuser2@test.com" },
+          accountData: { email: "testuser2@test.com", uid: "uid" },
         };
       }
       return null;
@@ -291,9 +298,11 @@ add_task(
           variant.expectedResponses[i];
 
         gResponse = responseVal;
-        let result =
-          await helpers.promptProfileSyncWarningIfNeeded("testuser2@test.com");
-        //Verify we returned the expected result
+        let result = await helpers.promptProfileSyncWarningIfNeeded({
+          email: "testuser2@test.com",
+          uid: "uid",
+        });
+        // Verify we returned the expected result
         Assert.deepEqual(result, expectedResult);
 
         let gleanValue = Glean.syncMergeDialog.clicked.testGetValue();
@@ -331,11 +340,11 @@ add_task(async function test_current_profile_is_correctly_skipped() {
   // Profile2 is signed in with other@example.com.
   const fakeSignedInUsers = {
     [PathUtils.join(PathUtils.tempDir, "profile1", "signedInUser.json")]: {
-      accountData: { email: "user@example.com" },
+      accountData: { email: "user@example.com", uid: "user" },
       version: 1,
     },
     [PathUtils.join(PathUtils.tempDir, "profile2", "signedInUser.json")]: {
-      accountData: { email: "other@example.com" },
+      accountData: { email: "other@example.com", uid: "other" },
       version: 1,
     },
   };
@@ -350,8 +359,7 @@ add_task(async function test_current_profile_is_correctly_skipped() {
     fakeSignedInUsers[filePath] || null;
 
   // Case 1: The account email is in the current profile.
-  let associatedProfile =
-    await channel._getProfileAssociatedWithAcct("user@example.com");
+  let associatedProfile = await channel._getProfileAssociatedWithAcct("user");
   Assert.equal(
     associatedProfile,
     null,
@@ -359,8 +367,7 @@ add_task(async function test_current_profile_is_correctly_skipped() {
   );
 
   // Case 2: The account email is in a different profile.
-  associatedProfile =
-    await channel._getProfileAssociatedWithAcct("other@example.com");
+  associatedProfile = await channel._getProfileAssociatedWithAcct("other");
   Assert.ok(
     associatedProfile,
     "Should return a profile when account email is in another profile."
@@ -371,3 +378,30 @@ add_task(async function test_current_profile_is_correctly_skipped() {
     "Returned profile should be 'Profile2'."
   );
 });
+
+// Test need-relink-warning.
+add_task(
+  async function test_previously_signed_in_dialog_variants_result_and_telemetry() {
+    let helpers = new FxAccountsWebChannelHelpers();
+
+    // We "pretend" there was another account previously logged in
+    helpers.setPreviousAccountHashPref("test_uid");
+
+    Assert.ok(
+      !helpers._needRelinkWarning({
+        email: "testuser2@test.com",
+        uid: "test_uid",
+      })
+    );
+    Assert.ok(
+      helpers._needRelinkWarning({
+        email: "testuser2@test.com",
+        uid: "different_uid",
+      })
+    );
+    // missing uid == "new account" == "always need the warning if anyone was previously logged in"
+    Assert.ok(helpers._needRelinkWarning({ email: "testuser2@test.com" }));
+    Services.prefs.clearUserPref(PREF_LAST_FXA_USER_UID);
+    Assert.ok(!helpers._needRelinkWarning({ email: "testuser2@test.com" }));
+  }
+);

@@ -214,6 +214,111 @@ add_task(async function () {
     markupViewContainer.clientWidth,
     "Markup view overflows horizontally"
   );
+
+  info("Search for pseudo elements");
+
+  await searchInMarkupView(inspector, "::before");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::before",
+    "The ::before element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::before"]);
+
+  await searchInMarkupView(inspector, "::after");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::after",
+    "The ::after element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::after"]);
+
+  await searchInMarkupView(inspector, "::marker");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::marker",
+    "The ::marker element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::marker"]);
+
+  await searchInMarkupView(inspector, "::backdrop");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::backdrop",
+    "The ::backdrop element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::backdrop"]);
+
+  // Search by the `content` declaration of the ::before and ::after pseudo elements
+  await searchInMarkupView(inspector, "my_before_text");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::before",
+    "The ::before element is selected"
+  );
+  // no highlighting as the `content` text isn't displayed in the markup view
+  checkHighlightedSearchResults(inspector, []);
+
+  await searchInMarkupView(inspector, "my_after_text");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::after",
+    "The ::after element is selected"
+  );
+  // no highlighting as the `content` text isn't displayed in the markup view
+  checkHighlightedSearchResults(inspector, []);
+
+  info("Search for view-transition pseudo elements");
+  // Trigger the view transition
+  const onMarkupMutation = inspector.once("markupmutation");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    const document = content.document;
+    content.testTransition = document.startViewTransition(() => {
+      document.querySelector(".pseudos").replaceChildren("updated");
+    });
+    await content.testTransition.ready;
+    await content.testTransition.updateCallbackDone;
+  });
+  await onMarkupMutation;
+
+  await searchInMarkupView(inspector, "::view-transition");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::view-transition",
+    "The ::view-transition element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::view-transition"]);
+
+  await searchInMarkupView(inspector, "::view-transition-old(root)");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::view-transition-old(root)",
+    "The ::view-transition-old(root) element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::view-transition-old(root)"]);
+
+  await searchInMarkupView(inspector, "::view-transition-new(custom)");
+  is(
+    inspector.selection.nodeFront.displayName,
+    "::view-transition-new(custom)",
+    "The ::view-transition-new(custom) element is selected"
+  );
+  checkHighlightedSearchResults(inspector, ["::view-transition-new(custom)"]);
+
+  // Cancel transition
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    content.testTransition.skipTransition();
+    delete content.testTransition;
+  });
+
+  await searchInMarkupView(inspector, "flex");
+  is(
+    inspector.selection.nodeFront,
+    await getNodeFront(".Buttons", inspector),
+    "The section.Buttons element is selected"
+  );
+  // Selected node markup: <section class="Buttons">
+  checkHighlightedSearchResults(inspector, ["flex"]);
 });
 
 function checkHighlightedSearchResults(inspector, expectedHighlights) {

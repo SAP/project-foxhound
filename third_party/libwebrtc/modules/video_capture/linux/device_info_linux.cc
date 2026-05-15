@@ -8,34 +8,16 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <errno.h>
-#include <fcntl.h>
-#include <poll.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
-// v4l includes
-#if defined(__NetBSD__) || defined(__OpenBSD__) // WEBRTC_BSD
-#include <sys/videoio.h>
-#elif defined(__sun)
-#include <sys/videodev2.h>
-#else
-#include <linux/videodev2.h>
-#endif
+#include <cstdlib>
 
-#include <vector>
+#include "modules/video_capture/linux/device_info_v4l2.h"
+#include "modules/video_capture/video_capture.h"
+#include "modules/video_capture/video_capture_impl.h"
+#include "modules/video_capture/video_capture_options.h"
 
 #if defined(WEBRTC_USE_PIPEWIRE)
 #include "modules/video_capture/linux/device_info_pipewire.h"
 #endif
-#include "modules/video_capture/linux/device_info_v4l2.h"
-#include "modules/video_capture/video_capture.h"
-#include "modules/video_capture/video_capture_defines.h"
-#include "modules/video_capture/video_capture_impl.h"
-#include "modules/video_capture/video_capture_options.h"
-#include "rtc_base/logging.h"
 
 namespace webrtc {
 namespace videocapturemodule {

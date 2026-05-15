@@ -1,0 +1,67 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "../examples/*",
+  "../head.js",
+  "../shared-head.js",
+  "!/devtools/client/framework/browser-toolbox/test/helpers-browser-toolbox.js",
+  "!/devtools/client/inspector/test/head.js",
+  "!/devtools/client/inspector/test/shared-head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/telemetry-test-helpers.js",
+  "!/devtools/client/shared/test/highlighter-test-actor.js",
+  "!/devtools/client/webconsole/test/browser/shared-head.js",
+]
+prefs = [
+ "dom.ipc.processPrelaunch.enabled=false", # Disable randomly spawning processes during tests. After enabling windowless service workers, a process spawning will trigger an update of the service workers list which can fail the test if it occurs during shutdown (unhandled promise rejection).
+]
+
+["browser_dbg-sourcemapped-breakpoint-console.js"]
+
+["browser_dbg-sourcemapped-preview.js"]
+
+["browser_dbg-sourcemapped-scopes.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1858041 and 1849028 intermittent results (fails on Try, passes on Autoland)
+]
+
+["browser_dbg-sourcemapped-stepping.js"]
+skip-if = [
+  "true", # original stepping is currently disabled
+]
+
+["browser_dbg-sourcemapped-toggle.js"]
+
+["browser_dbg-sourcemaps-bogus.js"]
+
+["browser_dbg-sourcemaps-breakpoints.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-sourcemaps-credentials.js"]
+
+["browser_dbg-sourcemaps-disabled.js"]
+
+["browser_dbg-sourcemaps-ignorelist.js"]
+
+["browser_dbg-sourcemaps-indexed.js"]
+
+["browser_dbg-sourcemaps-redirect.js"]
+
+["browser_dbg-sourcemaps-reloading-quickly.js"]
+
+["browser_dbg-sourcemaps-reloading.js"]
+
+["browser_dbg-sourcemaps.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_dbg-sourcemaps2.js"]
+
+["browser_dbg-sourcemaps3.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]

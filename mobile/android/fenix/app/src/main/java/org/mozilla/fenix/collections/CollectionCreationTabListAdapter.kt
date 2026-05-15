@@ -6,6 +6,7 @@ package org.mozilla.fenix.collections
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.annotation.LayoutRes
 import androidx.core.view.isGone
 import androidx.core.view.isInvisible
 import androidx.recyclerview.widget.DiffUtil
@@ -116,6 +117,7 @@ class TabViewHolder(private val binding: CollectionTabListRowBinding) : ViewHold
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.collection_tab_list_row
+        @LayoutRes
+        val LAYOUT_ID = R.layout.collection_tab_list_row
     }
 }

@@ -132,9 +132,11 @@ class PerftestResultsHandler(metaclass=ABCMeta):
     def add_image(self, screenshot, test_name, page_cycle):
         # add to results
         LOG.info("received screenshot")
-        self.images.append(
-            {"screenshot": screenshot, "test_name": test_name, "page_cycle": page_cycle}
-        )
+        self.images.append({
+            "screenshot": screenshot,
+            "test_name": test_name,
+            "page_cycle": page_cycle,
+        })
 
     def add_page_timeout(self, test_name, page_url, page_cycle, pending_metrics):
         timeout_details = {
@@ -246,15 +248,13 @@ class RaptorResultsHandler(PerftestResultsHandler):
     def add(self, new_result_json):
         LOG.info("received results in RaptorResultsHandler.add")
         new_result_json.setdefault("extra_options", []).extend(
-            self.build_extra_options(
-                [
-                    (
-                        self.conditioned_profile,
-                        "condprof-%s" % self.conditioned_profile,
-                    ),
-                    (self.fission_enabled, "fission"),
-                ]
-            )
+            self.build_extra_options([
+                (
+                    self.conditioned_profile,
+                    "condprof-%s" % self.conditioned_profile,
+                ),
+                (self.fission_enabled, "fission"),
+            ])
         )
         if self.live_sites:
             new_result_json.setdefault("tags", []).append("live")
@@ -301,7 +301,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
     """Process Browsertime results"""
 
     def __init__(self, config, root_results_dir=None):
-        super(BrowsertimeResultsHandler, self).__init__(**config)
+        super().__init__(**config)
         self._root_results_dir = root_results_dir
         self.browsertime_visualmetrics = False
         self.failed_vismets = []
@@ -353,12 +353,10 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 self.browsertime_results_folders["browsertime_results"]
             ]
             if has_video_files:
-                target_subfolders.extend(
-                    [
-                        self.browsertime_results_folders["videos_annotated"],
-                        self.browsertime_results_folders["videos_original"],
-                    ]
-                )
+                target_subfolders.extend([
+                    self.browsertime_results_folders["videos_annotated"],
+                    self.browsertime_results_folders["videos_original"],
+                ])
             return target_subfolders
 
         # Default folder for unexpected files
@@ -757,12 +755,10 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
             def _extract_android_power_vals():
                 power_vals = raw_result.get("android").get("power", {})
                 if power_vals:
-                    bt_result["measurements"].setdefault("powerUsage", []).extend(
-                        [
-                            round(vals["powerUsage"] * (1 * 10**-6), 2)
-                            for vals in power_vals
-                        ]
-                    )
+                    bt_result["measurements"].setdefault("powerUsage", []).extend([
+                        round(vals["powerUsage"] * (1 * 10**-6), 2)
+                        for vals in power_vals
+                    ])
 
             if support_class:
                 bt_result["custom_data"] = True

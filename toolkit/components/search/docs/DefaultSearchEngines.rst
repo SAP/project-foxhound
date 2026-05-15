@@ -56,20 +56,20 @@ A general search engine is defined as one that returns general search results,
 for example Google or DuckDuckGo. A non-general search engine returns results
 for a specific area, e.g. shopping, books, dictionaries.
 
-Add-ons and App-provided Engines
+Add-ons and Config Engines
 ================================
 
 An add-on may set the name of the search provider in the manifest.json to be
-the name of an app-provided engine. In this case:
+the name of a config search engine. In this case:
 
 * If the add-on is a non-authorised partner, then we set the user's default
-  engine to be the name of the app-provided engine.
+  engine to the config engine.
 * If the add-on is from an authorised partner, then we set the users' default
-  engine to be the same as the app-provided engine, and we allow the
-  app-provided urls to be overridden with those of the add-on.
+  engine to the config engine, and we allow the config
+  engine's urls to be overridden with those of the add-on.
 
-If the specified engine is already default, then the add-on does
-not override the app-provided engine, and it's settings are ignored and no
+If the config engine is already default, then the add-on does
+not override the config engine, and it's settings are ignored and no
 new engine is added.
 
 The list of authorised add-ons is stored in `remote settings`_ in the
@@ -77,13 +77,13 @@ The list of authorised add-ons is stored in `remote settings`_ in the
 includes records containing:
 
 * Third-party Add-on Id: The identifier of the third party add-on which will
-  override the app provided one.
-* Add-on Id to Override: The identifier of the app-provided add-on to be
+  override the config one.
+* Add-on Id to Override: The identifier of the config search engine to be
   overridden.
 * a list of the url / params that are authorised to be replaced.
 
 When an authorised add-on overrides the default, we record the add-on's id
-with the app-provided engine in the ``overriddenBy`` field. This is used
+with the config engine in the ``overriddenBy`` field. This is used
 when the engine is loaded on startup to known that it should load the parameters
 from that add-on.
 

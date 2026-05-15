@@ -8,8 +8,6 @@
 
 #include "nsVideoFrame.h"
 
-#include <algorithm>
-
 #include "ImageContainer.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLImageElement.h"
@@ -221,6 +219,12 @@ bool nsVideoFrame::ReflowFinished() {
   return false;
 }
 
+nsRect nsVideoFrame::GetDestRect(const nsRect& aContentBox) const {
+  return nsLayoutUtils::ComputeObjectDestRect(
+      aContentBox, GetIntrinsicSize(/* aIgnoreContainment = */ true),
+      GetIntrinsicRatio(/* aIgnoreContainment = */ true), StylePosition());
+}
+
 void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                           const ReflowInput& aReflowInput,
                           nsReflowStatus& aStatus) {
@@ -247,6 +251,8 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
   }
 
   nsIContent* videoControlsDiv = GetVideoControls();
+  const nsSize containerSize =
+      aReflowInput.ComputedSizeAsContainerIfConstrained();
 
   // Reflow the child frames. We may have up to three: an image
   // frame (for the poster image), a container frame for the controls,
@@ -260,8 +266,6 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
     ReflowInput kidReflowInput(aPresContext, aReflowInput, child,
                                availableSize);
     ReflowOutput kidDesiredSize(myWM);
-    const nsSize containerSize =
-        aReflowInput.ComputedSizeAsContainerIfConstrained();
 
     if (child->GetContent() == mPosterImage) {
       // Reflow the poster frame.
@@ -319,7 +323,8 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
         }
       }
     } else {
-      NS_ERROR("Unexpected extra child frame in nsVideoFrame; skipping");
+      // We expect a placeholder for ::backdrop if we're fullscreen.
+      MOZ_ASSERT(child->IsPlaceholderFrame());
     }
   }
 
@@ -337,6 +342,10 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
   aMetrics.SetSize(myWM, logicalDesiredSize);
 
   aMetrics.SetOverflowAreasToDesiredBounds();
+  if (HasVideoElement()) {
+    aMetrics.mOverflowAreas.UnionAllWith(
+        GetDestRect(aReflowInput.ComputedPhysicalContentBoxRelativeToSelf()));
+  }
 
   FinishAndStoreOverflow(&aMetrics);
 
@@ -357,19 +366,20 @@ nsresult nsVideoFrame::GetFrameName(nsAString& aResult) const {
 #endif
 
 nsIFrame::SizeComputationResult nsVideoFrame::ComputeSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   if (!HasVideoElement()) {
     return nsContainerFrame::ComputeSize(
-        aRenderingContext, aWM, aCBSize, aAvailableISize, aMargin,
-        aBorderPadding, aSizeOverrides, aFlags);
+        aSizingInput, aWM, aCBSize, aAvailableISize, aMargin, aBorderPadding,
+        aSizeOverrides, aFlags);
   }
 
   return {ComputeSizeWithIntrinsicDimensions(
-              aRenderingContext, aWM, GetIntrinsicSize(), GetAspectRatio(),
-              aCBSize, aMargin, aBorderPadding, aSizeOverrides, aFlags),
+              aSizingInput.mRenderingContext, aWM, GetIntrinsicSize(),
+              GetAspectRatio(), aCBSize, aMargin, aBorderPadding,
+              aSizeOverrides, aFlags),
           AspectRatioUsage::None};
 }
 
@@ -386,13 +396,17 @@ Maybe<nsSize> nsVideoFrame::PosterImageSize() const {
 }
 
 AspectRatio nsVideoFrame::GetIntrinsicRatio() const {
+  return GetIntrinsicRatio(/* aIgnoreContainment = */ false);
+}
+
+AspectRatio nsVideoFrame::GetIntrinsicRatio(bool aIgnoreContainment) const {
   if (!HasVideoElement()) {
     // Audio elements have no intrinsic ratio.
     return AspectRatio();
   }
 
   // 'contain:[inline-]size' replaced elements have no intrinsic ratio.
-  if (GetContainSizeAxes().IsAny()) {
+  if (!aIgnoreContainment && GetContainSizeAxes().IsAny()) {
     return AspectRatio();
   }
 
@@ -443,8 +457,9 @@ bool nsVideoFrame::ShouldDisplayPoster() const {
   return true;
 }
 
-IntrinsicSize nsVideoFrame::GetIntrinsicSize() {
-  const auto containAxes = GetContainSizeAxes();
+IntrinsicSize nsVideoFrame::GetIntrinsicSize(bool aIgnoreContainment) const {
+  const auto containAxes =
+      aIgnoreContainment ? ContainSizeAxes(false, false) : GetContainSizeAxes();
   const auto isVideo = HasVideoElement();
   // Intrinsic size will be given by contain-intrinsic-size if the element is
   // size-contained. If both axes have containment, FinishIntrinsicSize() will
@@ -485,6 +500,10 @@ IntrinsicSize nsVideoFrame::GetIntrinsicSize() {
                              IntrinsicSize(kFallbackIntrinsicSize));
 }
 
+IntrinsicSize nsVideoFrame::GetIntrinsicSize() {
+  return GetIntrinsicSize(/* aIgnoreContainment = */ false);
+}
+
 void nsVideoFrame::UpdatePosterSource(bool aNotify) {
   NS_ASSERTION(HasVideoElement(), "Only call this on <video> elements.");
   HTMLVideoElement* element = static_cast<HTMLVideoElement*>(GetContent());
@@ -502,7 +521,8 @@ void nsVideoFrame::UpdatePosterSource(bool aNotify) {
 }
 
 nsresult nsVideoFrame::AttributeChanged(int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType) {
+                                        nsAtom* aAttribute,
+                                        AttrModType aModType) {
   if (aAttribute == nsGkAtoms::poster && HasVideoElement()) {
     UpdatePosterSource(true);
   }
@@ -551,9 +571,9 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
   NS_DISPLAY_DECL_NAME("Video", TYPE_VIDEO)
 
   already_AddRefed<ImageContainer> GetImageContainer(gfxRect& aDestGFXRect) {
-    nsRect area = Frame()->GetContentRectRelativeToSelf() + ToReferenceFrame();
-    HTMLVideoElement* element =
-        static_cast<HTMLVideoElement*>(Frame()->GetContent());
+    auto* f = static_cast<nsVideoFrame*>(Frame());
+    nsRect area = f->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
+    auto* element = static_cast<HTMLVideoElement*>(f->GetContent());
 
     Maybe<CSSIntSize> videoSizeInPx = element->GetVideoSize();
     if (videoSizeInPx.isNothing() || area.IsEmpty()) {
@@ -573,12 +593,9 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
       return nullptr;
     }
 
-    const auto aspectRatio = AspectRatio::FromSize(*videoSizeInPx);
-    const IntrinsicSize intrinsicSize(CSSPixel::ToAppUnits(*videoSizeInPx));
-    nsRect dest = nsLayoutUtils::ComputeObjectDestRect(
-        area, intrinsicSize, aspectRatio, Frame()->StylePosition());
-
-    aDestGFXRect = Frame()->PresContext()->AppUnitsToGfxUnits(dest);
+    nsRect dest =
+        f->GetDestRect(f->GetContentRectRelativeToSelf() + ToReferenceFrame());
+    aDestGFXRect = f->PresContext()->AppUnitsToGfxUnits(dest);
     aDestGFXRect.Round();
     if (aDestGFXRect.IsEmpty()) {
       return nullptr;
@@ -587,7 +604,7 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
     return container.forget();
   }
 
-  virtual bool CreateWebRenderCommands(
+  bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const mozilla::layers::StackingContextHelper& aSc,
@@ -616,11 +633,10 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
   // For opaque videos, we will want to override GetOpaqueRegion here.
   // This is tracked by bug 1545498.
 
-  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
-                           bool* aSnap) const override {
+  nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) const override {
     *aSnap = true;
     nsIFrame* f = Frame();
-    return f->GetContentRectRelativeToSelf() + ToReferenceFrame();
+    return f->InkOverflowRectRelativeToSelf() + ToReferenceFrame();
   }
 
   // Only report FirstContentfulPaint when the video is set
@@ -630,8 +646,7 @@ class nsDisplayVideo final : public nsPaintedDisplayItem {
     return video->VideoWidth() > 0;
   }
 
-  virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     gfxContext* aCtx) override {
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override {
     HTMLVideoElement* element =
         static_cast<HTMLVideoElement*>(Frame()->GetContent());
     gfxRect destGFXRect;
@@ -698,19 +713,25 @@ void nsVideoFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   const bool shouldDisplayPoster = ShouldDisplayPoster();
 
-  // NOTE: If we're displaying a poster image (instead of video data), we can
-  // trust the nsImageFrame to constrain its drawing to its content rect
-  // (which happens to be the same as our content rect).
-  uint32_t clipFlags;
-  if (shouldDisplayPoster ||
-      !nsStyleUtil::ObjectPropsMightCauseOverflow(StylePosition())) {
-    clipFlags = DisplayListClipState::ASSUME_DRAWING_RESTRICTED_TO_CONTENT_RECT;
-  } else {
-    clipFlags = 0;
+  DisplayListClipState::AutoSaveRestore clipState(aBuilder);
+  auto clipAxes = ShouldApplyOverflowClipping(StyleDisplay());
+  if (!clipAxes.isEmpty()) {
+    nsRect clipRect;
+    nsRectCornerRadii radii;
+    const bool haveRadii =
+        ComputeOverflowClipRectRelativeToSelf(clipAxes, clipRect, radii);
+    // NOTE: If we're displaying a poster image (instead of video data), we can
+    // trust the nsImageFrame to constrain its drawing to its content rect
+    // (which happens to be the same as our content rect).
+    const bool canOverflowWithoutRadii =
+        !shouldDisplayPoster &&
+        nsStyleUtil::ObjectPropsMightCauseOverflow(StylePosition());
+    if (haveRadii || canOverflowWithoutRadii) {
+      clipState.ClipContainingBlockDescendants(
+          clipRect + aBuilder->ToReferenceFrame(this),
+          haveRadii ? &radii : nullptr);
+    }
   }
-
-  DisplayListClipState::AutoClipContainingBlockDescendantsToContentBox clip(
-      aBuilder, this, clipFlags);
 
   if (HasVideoElement() && !shouldDisplayPoster) {
     aLists.Content()->AppendNewToTop<nsDisplayVideo>(aBuilder, this);

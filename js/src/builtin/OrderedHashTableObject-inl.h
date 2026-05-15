@@ -13,7 +13,12 @@
 
 inline void* js::detail::OrderedHashTableObject::allocateCellBuffer(
     JSContext* cx, size_t numBytes) {
-  return AllocNurseryOrMallocBuffer<uint8_t>(cx, this, numBytes);
+  return AllocateCellBuffer<uint8_t>(cx, this, numBytes);
+}
+
+inline void js::detail::OrderedHashTableObject::freeCellBuffer(
+    JSContext* cx, void* data, size_t numBytes) {
+  FreeCellBuffer<uint8_t>(cx, this, reinterpret_cast<uint8_t*>(data), numBytes);
 }
 
 #endif /* builtin_OrderedHashTableObject_inl_h */

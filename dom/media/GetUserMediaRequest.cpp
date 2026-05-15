@@ -4,11 +4,11 @@
 
 #include "GetUserMediaRequest.h"
 
-#include "base/basictypes.h"
 #include "MediaManager.h"
+#include "base/basictypes.h"
+#include "mozilla/dom/GetUserMediaRequestBinding.h"
 #include "mozilla/dom/MediaDevicesBinding.h"
 #include "mozilla/dom/MediaStreamBinding.h"
-#include "mozilla/dom/GetUserMediaRequestBinding.h"
 #include "nsIMediaDevice.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"

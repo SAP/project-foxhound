@@ -8,9 +8,10 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
 
 let gTree;
@@ -273,7 +274,7 @@ add_task(async function keywordNotEditable_click() {
  * Asserts that the engine and local shortcut rows are present in the tree.
  */
 async function checkRowVisibility() {
-  let engines = await Services.search.getVisibleEngines();
+  let engines = await SearchService.getVisibleEngines();
 
   Assert.equal(
     gTree.view.rowCount,
@@ -317,7 +318,7 @@ async function checkRowVisibility() {
  *   Called for each local shortcut row like: callback(rowIndex, shortcutObject)
  */
 async function forEachLocalShortcutRow(callback) {
-  let engines = await Services.search.getVisibleEngines();
+  let engines = await SearchService.getVisibleEngines();
   for (let i = 0; i < UrlbarUtils.LOCAL_SEARCH_MODES.length; i++) {
     let shortcut = UrlbarUtils.LOCAL_SEARCH_MODES[i];
     let row = engines.length + i;

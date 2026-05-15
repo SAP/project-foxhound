@@ -7,6 +7,10 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/browser/components/profiles/tests/browser/head.js",
   this
 );
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/customizableui/test/head.js",
+  this
+);
 
 const { FX_RELAY_OAUTH_CLIENT_ID } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccountsCommon.sys.mjs"
@@ -19,8 +23,6 @@ ChromeUtils.defineESModuleGetters(this, {
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
 });
 
-let gCUITestUtils = new CustomizableUITestUtils(window);
-
 add_setup(async function () {
   // gSync.init() is called in a requestIdleCallback. Force its initialization.
   gSync.init();
@@ -29,7 +31,10 @@ add_setup(async function () {
   // when in the signed-out state, we need to set the state _before_ opening
   // the FxA menu (since the panel cannot be opened) in the signed out state.
   await SpecialPowers.pushPrefEnv({
-    set: [["identity.fxaccounts.toolbar.accessed", true]],
+    set: [
+      ["browser.urlbar.trustPanel.featureGate", false],
+      ["identity.fxaccounts.toolbar.accessed", true],
+    ],
   });
 });
 
@@ -97,18 +102,18 @@ add_task(async function test_overflow_navBar_button_visibility() {
   let overflowPanel = document.getElementById("widget-overflow");
   overflowPanel.setAttribute("animate", "false");
   let navbar = document.getElementById(CustomizableUI.AREA_NAVBAR);
-  let originalWindowWidth = window.outerWidth;
+  let originalWindowWidth;
 
   registerCleanupFunction(function () {
     overflowPanel.removeAttribute("animate");
-    window.resizeTo(originalWindowWidth, window.outerHeight);
+    unensureToolbarOverflow(window, originalWindowWidth);
     return TestUtils.waitForCondition(
       () => !navbar.hasAttribute("overflowing")
     );
   });
 
-  window.resizeTo(450, window.outerHeight);
-
+  // As of bug 1960002, overflowing the navbar requires adding buttons.
+  originalWindowWidth = ensureToolbarOverflow(window, false);
   await TestUtils.waitForCondition(() => navbar.hasAttribute("overflowing"));
   ok(navbar.hasAttribute("overflowing"), "Should have an overflowing toolbar.");
 
@@ -618,36 +623,36 @@ add_task(async function test_app_menu_fxa_disabled() {
   await BrowserTestUtils.closeWindow(newWin);
 });
 
-add_task(
-  // Can't open the history menu in tests on Mac.
-  () => AppConstants.platform != "mac",
-  async function test_history_menu_fxa_disabled() {
-    const newWin = await BrowserTestUtils.openNewBrowserWindow();
-
-    Services.prefs.setBoolPref("identity.fxaccounts.enabled", true);
-    newWin.gSync.onFxaDisabled();
-
-    const historyMenubarItem = window.document.getElementById("history-menu");
-    const historyMenu = window.document.getElementById("historyMenuPopup");
-    const syncedTabsItem = historyMenu.querySelector("#sync-tabs-menuitem");
-    const menuShown = BrowserTestUtils.waitForEvent(historyMenu, "popupshown");
-    historyMenubarItem.openMenu(true);
-    await menuShown;
-
-    Assert.equal(
-      syncedTabsItem.hidden,
-      true,
-      "Synced Tabs item should not be displayed when FxAccounts is disabled"
+add_task(async function test_history_menu_fxa_disabled() {
+  if (AppConstants.platform === "macosx") {
+    info(
+      "skipping test because the history menu can't be opened in tests on mac"
     );
-    const menuHidden = BrowserTestUtils.waitForEvent(
-      historyMenu,
-      "popuphidden"
-    );
-    historyMenu.hidePopup();
-    await menuHidden;
-    await BrowserTestUtils.closeWindow(newWin);
+    return;
   }
-);
+
+  const newWin = await BrowserTestUtils.openNewBrowserWindow();
+
+  Services.prefs.setBoolPref("identity.fxaccounts.enabled", true);
+  newWin.gSync.onFxaDisabled();
+
+  const historyMenubarItem = window.document.getElementById("history-menu");
+  const historyMenu = window.document.getElementById("historyMenuPopup");
+  const syncedTabsItem = historyMenu.querySelector("#sync-tabs-menuitem");
+  const menuShown = BrowserTestUtils.waitForEvent(historyMenu, "popupshown");
+  historyMenubarItem.openMenu(true);
+  await menuShown;
+
+  Assert.equal(
+    syncedTabsItem.hidden,
+    true,
+    "Synced Tabs item should not be displayed when FxAccounts is disabled"
+  );
+  const menuHidden = BrowserTestUtils.waitForEvent(historyMenu, "popuphidden");
+  historyMenu.hidePopup();
+  await menuHidden;
+  await BrowserTestUtils.closeWindow(newWin);
+});
 
 // If the PXI experiment is enabled, we need to ensure we can see the CTAs when signed out
 add_task(async function test_experiment_ui_state_unconfigured() {
@@ -788,6 +793,7 @@ add_task(async function test_new_sync_setup_ui() {
   let state = {
     status: UIState.STATUS_SIGNED_IN,
     syncEnabled: false,
+    hasSyncKeys: true,
     email: "foo@bar.com",
     displayName: "Foo Bar",
     avatarURL: "https://foo.bar",
@@ -837,6 +843,7 @@ add_task(async function test_ui_my_services_signedin() {
   let state = {
     status: UIState.STATUS_SIGNED_IN,
     syncEnabled: true,
+    hasSyncKeys: true,
     email: "foo@bar.com",
     displayName: "Foo Bar",
     avatarURL: "https://foo.bar",
@@ -1113,7 +1120,7 @@ async function checkFxaToolbarButtonPanel({
 
   for (const id of hiddenItems) {
     const el = document.getElementById(id);
-    is(el.getAttribute("hidden"), "true", id + " is hidden");
+    ok(el.hasAttribute("hidden"), id + " is hidden");
   }
 
   for (const id of visibleItems) {

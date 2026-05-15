@@ -9,24 +9,33 @@
 
 #include <inttypes.h>
 #include <math.h>
+
 #include <sstream>
 #include <utility>
 
-#include "AudioSegment.h"
 #include "AudioConverter.h"
+#include "AudioSegment.h"
 #include "DOMMediaStream.h"
 #include "ImageContainer.h"
 #include "ImageTypes.h"
 #include "MediaEngine.h"
 #include "MediaSegment.h"
+#include "MediaStreamTrack.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
-#include "MediaStreamTrack.h"
 #include "RtpLogger.h"
+#include "Tracing.h"
 #include "VideoFrameConverter.h"
 #include "VideoSegment.h"
 #include "VideoStreamTrack.h"
 #include "VideoUtils.h"
+#include "common_video/include/video_frame_buffer.h"
+#include "jsapi/MediaTransportHandler.h"
+#include "jsapi/PeerConnectionImpl.h"
+#include "libwebrtcglue/MediaConduitInterface.h"
+#include "libwebrtcglue/WebrtcImageBuffer.h"
+#include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "mozilla/Logging.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/PeerIdentity.h"
@@ -36,23 +45,13 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Types.h"
 #include "nsError.h"
 #include "nsThreadUtils.h"
 #include "transport/runnable_utils.h"
-#include "jsapi/MediaTransportHandler.h"
-#include "jsapi/PeerConnectionImpl.h"
-#include "Tracing.h"
-#include "libwebrtcglue/WebrtcImageBuffer.h"
-#include "libwebrtcglue/MediaConduitInterface.h"
-#include "common_video/include/video_frame_buffer.h"
-#include "modules/rtp_rtcp/include/rtp_rtcp.h"
-#include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
-#include "modules/rtp_rtcp/source/rtp_packet_received.h"
 
 // Max size given stereo is 480*2*2 = 1920 (10ms of 16-bits stereo audio at
 // 48KHz)
@@ -223,7 +222,7 @@ class AudioProxyThread {
           self->InternalProcessAudioChunk(aRate, aChunk, aEnabled);
         }));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 
  protected:
@@ -568,7 +567,7 @@ void MediaPipeline::RtpPacketReceived(std::string& aTransportId,
   // a buffer. Conceivably, we could avoid the copy by using CopyOnWriteBuffer
   // inside MediaPacket, but that would let libwebrtc stuff leak into all parts
   // of our codebase.
-  rtc::CopyOnWriteBuffer packet_buffer(packet.data(), packet.len());
+  webrtc::CopyOnWriteBuffer packet_buffer(packet.data(), packet.len());
   webrtc::RtpPacketReceived parsedPacket(mRtpHeaderExtensionMap.get());
   if (!parsedPacket.Parse(packet_buffer)) {
     return;
@@ -657,7 +656,8 @@ void MediaPipeline::RtcpPacketReceived(std::string& aTransportId,
 
   // CopyOnWriteBuffer cannot take ownership of an existing buffer. Sadface.
   // But, this is RTCP, so the packets are relatively small and infrequent.
-  mRtcpReceiveEvent.Notify(rtc::CopyOnWriteBuffer(packet.data(), packet.len()));
+  mRtcpReceiveEvent.Notify(
+      webrtc::CopyOnWriteBuffer(packet.data(), packet.len()));
 }
 
 void MediaPipeline::AlpnNegotiated(const std::string& aAlpn,
@@ -1513,7 +1513,7 @@ class MediaPipelineReceiveVideo::PipelineListener
       image = imageBuffer->GetNativeImage();
     } else {
       MOZ_ASSERT(buffer.type() == webrtc::VideoFrameBuffer::Type::kI420);
-      rtc::scoped_refptr<const webrtc::I420BufferInterface> i420(
+      webrtc::scoped_refptr<const webrtc::I420BufferInterface> i420(
           buffer.GetI420());
 
       MOZ_ASSERT(i420->DataY());

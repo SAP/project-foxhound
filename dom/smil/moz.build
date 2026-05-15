@@ -53,7 +53,6 @@ UNIFIED_SOURCES += [
     "SMILKeySpline.cpp",
     "SMILNullType.cpp",
     "SMILParserUtils.cpp",
-    "SMILRepeatCount.cpp",
     "SMILStringType.cpp",
     "SMILTimeContainer.cpp",
     "SMILTimedElement.cpp",

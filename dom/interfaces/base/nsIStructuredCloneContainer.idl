@@ -22,11 +22,11 @@ interface nsIVariant;
  * nsIStructuredCloneContainer more than once.
  *
  * Once you've initialized the container, you can get a copy of the object it
- * stores by calling deserializeToVariant.  You can also get a base-64-encoded
+ * stores by calling deserializeToJsval.  You can also get a base-64-encoded
  * string containing a copy of the container's serialized data, using
  * getDataAsBase64.
  */
-[scriptable, uuid(c664aae7-0d67-4155-a2dd-a3861778626f)]
+[scriptable, builtinclass, uuid(c664aae7-0d67-4155-a2dd-a3861778626f)]
 interface nsIStructuredCloneContainer : nsISupports
 {
   /**

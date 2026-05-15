@@ -106,7 +106,7 @@ class DocAccessibleParent : public RemoteAccessible,
       const uint64_t& aID, const LayoutDeviceIntRect& aCaretRect,
       const int32_t& aOffset, const bool& aIsSelectionCollapsed,
       const bool& aIsAtEndOfLine, const int32_t& aGranularity,
-      const bool& aFromUser) final;
+      const bool& aFromUser, const bool& aSuppressEvent) final;
 
   virtual mozilla::ipc::IPCResult RecvMutationEvents(
       nsTArray<MutationEventData>&& aData) override;
@@ -136,11 +136,9 @@ class DocAccessibleParent : public RemoteAccessible,
   virtual mozilla::ipc::IPCResult RecvAccessiblesWillMove(
       nsTArray<uint64_t>&& aIDs) override;
 
-#if !defined(XP_WIN)
   virtual mozilla::ipc::IPCResult RecvAnnouncementEvent(
       const uint64_t& aID, const nsAString& aAnnouncement,
       const uint16_t& aPriority) override;
-#endif
 
   virtual mozilla::ipc::IPCResult RecvTextSelectionChangeEvent(
       const uint64_t& aID, nsTArray<TextRangeData>&& aSelection) override;
@@ -287,8 +285,8 @@ class DocAccessibleParent : public RemoteAccessible,
 
   // Tracks cached reverse relations (ie. those not set explicitly by an
   // attribute like aria-labelledby) for accessibles in this doc. This map is of
-  // the form: {accID, {relationType, [targetAccID, targetAccID, ...]}}
-  nsTHashMap<uint64_t, nsTHashMap<RelationType, nsTArray<uint64_t>>>
+  // the form: {accID, {pointerToRelationDataAddress, [targetAccID, ...]}}
+  nsTHashMap<uint64_t, nsTHashMap<const RelationData*, nsTArray<uint64_t>>>
       mReverseRelations;
 
   // Computed from the viewport cache, the accs referenced by these ids
@@ -327,11 +325,14 @@ class DocAccessibleParent : public RemoteAccessible,
   };
 
   RemoteAccessible* CreateAcc(const AccessibleData& aAccData);
-  void AttachChild(RemoteAccessible* aParent, uint32_t aIndex,
+  bool AttachChild(RemoteAccessible* aParent, uint32_t aIndex,
                    RemoteAccessible* aChild);
   [[nodiscard]] bool CheckDocTree() const;
   xpcAccessibleGeneric* GetXPCAccessible(RemoteAccessible* aProxy);
 
+  /**
+   * Fire an event to both OS and XPCOM consumers.
+   */
   void FireEvent(RemoteAccessible* aAcc, const uint32_t& aType);
 
   /**
@@ -367,9 +368,10 @@ class DocAccessibleParent : public RemoteAccessible,
   uint32_t mPendingShowIndex = 0;
   nsTHashSet<uint64_t> mMovingIDs;
   uint64_t mActorID;
-  bool mTopLevel;
-  bool mTopLevelInContentProcess;
-  bool mShutdown;
+  bool mTopLevel : 1;
+  bool mTopLevelInContentProcess : 1;
+  bool mShutdown : 1;
+  bool mIsInitialTreeDone : 1 = false;
   RefPtr<dom::CanonicalBrowsingContext> mBrowsingContext;
 
   nsTHashSet<RefPtr<dom::BrowserBridgeParent>> mPendingOOPChildDocs;

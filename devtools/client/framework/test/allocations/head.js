@@ -28,6 +28,16 @@ registerCleanupFunction(async () => {
   }
 });
 
+// Ignore promise rejections for actions triggered after panels are closed.
+{
+  const { PromiseTestUtils } = ChromeUtils.importESModule(
+    "resource://testing-common/PromiseTestUtils.sys.mjs"
+  );
+  PromiseTestUtils.allowMatchingRejectionsGlobally(
+    /REDUX_MIDDLEWARE_IGNORED_REDUX_ACTION/
+  );
+}
+
 // Load the tracker very first in order to ensure tracking all objects created by DevTools.
 // This is especially important for allocation sites. We need to catch the global the
 // earliest possible in order to ensure that all allocation objects come with a stack.
@@ -66,6 +76,12 @@ let tracker, releaseTrackerLoader;
 ChromeUtils.defineLazyGetter(this, "TrackedObjects", () => {
   return ChromeUtils.importESModule(
     "resource://devtools/shared/test-helpers/tracked-objects.sys.mjs"
+  );
+});
+
+ChromeUtils.defineLazyGetter(this, "TraceObjects", () => {
+  return ChromeUtils.importESModule(
+    "chrome://mochitests/content/browser/devtools/shared/test-helpers/trace-objects.sys.mjs"
   );
 });
 
@@ -160,9 +176,9 @@ async function stopRecordingAllocations(
   const parentProcessData =
     await tracker.stopRecordingAllocations(DEBUG_ALLOCATIONS);
 
-  const objectNodeIds = TrackedObjects.getAllNodeIds();
-  if (objectNodeIds.length) {
-    tracker.traceObjects(objectNodeIds);
+  const leakedObjects = TrackedObjects.getStillAllocatedObjects();
+  if (leakedObjects.length) {
+    await TraceObjects.traceObjects(leakedObjects, tracker.getSnapshotFile());
   }
 
   let contentProcessData = null;
@@ -187,12 +203,23 @@ async function stopRecordingAllocations(
   const trackedObjectsInContent = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
     [],
-    () => {
+    async () => {
       const TrackedObjects = ChromeUtils.importESModule(
         "resource://devtools/shared/test-helpers/tracked-objects.sys.mjs"
       );
-      const objectNodeIds = TrackedObjects.getAllNodeIds();
-      if (objectNodeIds.length) {
+      const leakedObjects = TrackedObjects.getStillAllocatedObjects();
+      if (leakedObjects.length) {
+        const TraceObjects = ChromeUtils.importESModule(
+          "chrome://mochitests/content/browser/devtools/shared/test-helpers/trace-objects.sys.mjs"
+        );
+        // Only pass 'weakRef' as Memory API and 'ubiNodeId' can only be inspected in the parent process
+        await TraceObjects.traceObjects(
+          leakedObjects.map(e => {
+            return {
+              weakRef: e.weakRef,
+            };
+          })
+        );
         const { DevToolsLoader } = ChromeUtils.importESModule(
           "resource://devtools/shared/loader/Loader.sys.mjs"
         );
@@ -202,14 +229,25 @@ async function stopRecordingAllocations(
         // As only the parent process can read the file because
         // of sandbox restrictions made to content processes regarding file I/O.
         const snapshotFile = tracker.getSnapshotFile();
-        return { snapshotFile, objectNodeIds };
+        return {
+          snapshotFile,
+          // Only pass ubi::Node::Id from this content process to the parent process.
+          // `leakedObjects`'s `weakRef` attributes can't be transferred across processes.
+          // TraceObjects.traceObjects in the parent process will only log leaks
+          // via the Memory API (and Node Id's).
+          objectUbiNodeIds: leakedObjects.map(e => {
+            return {
+              ubiNodeId: e.ubiNodeId,
+            };
+          }),
+        };
       }
       return null;
     }
   );
   if (trackedObjectsInContent) {
-    tracker.traceObjects(
-      trackedObjectsInContent.objectNodeIds,
+    TraceObjects.traceObjects(
+      trackedObjectsInContent.objectUbiNodeIds,
       trackedObjectsInContent.snapshotFile
     );
   }

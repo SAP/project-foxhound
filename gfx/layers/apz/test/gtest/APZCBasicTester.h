@@ -29,7 +29,7 @@ class APZCBasicTester : public APZCTesterBase {
     APZThreadUtils::SetThreadAssertionsEnabled(false);
     APZThreadUtils::SetControllerThread(NS_GetCurrentThread());
 
-    tm = new TestAPZCTreeManager(mcc);
+    tm = CreateTreeManager();
     updater = new APZUpdater(tm, false);
     sampler = new APZSampler(tm, false);
     apzc =
@@ -55,6 +55,10 @@ class APZCBasicTester : public APZCTesterBase {
     return CSSRect(metrics.GetScrollableRect().TopLeft(),
                    metrics.GetScrollableRect().Size() -
                        metrics.CalculateCompositedSizeInCssPixels());
+  }
+
+  virtual TestAPZCTreeManager* CreateTreeManager() {
+    return new TestAPZCTreeManager(mcc);
   }
 
   virtual void TearDown() {

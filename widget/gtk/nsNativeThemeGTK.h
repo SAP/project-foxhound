@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _GTK_NSNATIVETHEMEGTK_H_
-#define _GTK_NSNATIVETHEMEGTK_H_
+#ifndef GTK_NSNATIVETHEMEGTK_H_
+#define GTK_NSNATIVETHEMEGTK_H_
 
 #include "Theme.h"
 
@@ -52,11 +52,7 @@ class nsNativeThemeGTK final : public mozilla::widget::Theme {
   mozilla::LayoutDeviceIntSize GetMinimumWidgetSize(nsPresContext*, nsIFrame*,
                                                     StyleAppearance) override;
 
-  bool WidgetAttributeChangeRequiresRepaint(StyleAppearance,
-                                            nsAtom* aAttribute) override;
-
   bool ThemeSupportsWidget(nsPresContext*, nsIFrame*, StyleAppearance) override;
-  bool WidgetIsContainer(StyleAppearance) override;
   bool ThemeDrawsFocusForWidget(nsIFrame*, StyleAppearance) override;
   Transparency GetWidgetTransparency(nsIFrame*, StyleAppearance) override;
 

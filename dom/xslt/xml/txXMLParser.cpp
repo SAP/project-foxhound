@@ -4,13 +4,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txXMLParser.h"
-#include "txURIUtils.h"
-#include "txXPathTreeWalker.h"
 
 #include "mozilla/dom/Document.h"
-#include "nsSyncLoadService.h"
-#include "nsNetUtil.h"
 #include "nsIURI.h"
+#include "nsNetUtil.h"
+#include "nsSyncLoadService.h"
+#include "txURIUtils.h"
+#include "txXPathTreeWalker.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

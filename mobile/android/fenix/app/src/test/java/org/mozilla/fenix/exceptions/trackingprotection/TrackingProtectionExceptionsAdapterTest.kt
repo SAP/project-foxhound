@@ -41,7 +41,10 @@ class TrackingProtectionExceptionsAdapterTest {
 
     @Test
     fun `creates correct view holder type`() {
-        every { testContext.components.core.icons } returns BrowserIcons(testContext, mockk(relaxed = true))
+        every { testContext.components.core.icons } returns BrowserIcons(
+            testContext,
+            mockk(relaxed = true),
+        )
         val parent = FrameLayout(context)
         adapter.updateData(listOf(mockk(), mockk()))
         assertEquals(4, adapter.itemCount)

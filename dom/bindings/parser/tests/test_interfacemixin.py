@@ -219,7 +219,7 @@ def WebIDLTest(parser, harness):
         threw = True
     harness.ok(
         threw,
-        "Should not allow a name collision between interface mixin " "and other object",
+        "Should not allow a name collision between interface mixin and other object",
     )
 
     parser = parser.reset()
@@ -523,12 +523,12 @@ def WebIDLTest(parser, harness):
     harness.check(
         attr.exposureSet,
         set(["Window", "Worker"]),
-        "Should expose on all globals where including interfaces are " "exposed",
+        "Should expose on all globals where including interfaces are exposed",
     )
     base = results[3]
     attr = base.members[0]
     harness.check(
         attr.exposureSet,
         set(["Window", "Worker"]),
-        "Should expose on all globals where including interfaces are " "exposed",
+        "Should expose on all globals where including interfaces are exposed",
     )

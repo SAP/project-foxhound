@@ -1,22 +1,23 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _TRANSCEIVERIMPL_H_
-#define _TRANSCEIVERIMPL_H_
+#ifndef TRANSCEIVERIMPL_H_
+#define TRANSCEIVERIMPL_H_
 
 #include <string>
-#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
-#include "mozilla/StateMirroring.h"
+
+#include "ErrorList.h"
+#include "RTCStatsReport.h"
+#include "jsep/JsepSession.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StateMirroring.h"
+#include "mozilla/dom/MediaStreamTrack.h"
+#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
+#include "mozilla/dom/RTCRtpTransceiverBinding.h"
 #include "nsCOMPtr.h"
 #include "nsISerialEventTarget.h"
 #include "nsTArray.h"
-#include "mozilla/dom/MediaStreamTrack.h"
-#include "ErrorList.h"
-#include "jsep/JsepSession.h"
 #include "transport/transportlayer.h"  // For TransportLayer::State
-#include "mozilla/dom/RTCRtpTransceiverBinding.h"
-#include "RTCStatsReport.h"
 
 class nsIPrincipal;
 
@@ -284,4 +285,4 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
 
 }  // namespace mozilla
 
-#endif  // _TRANSCEIVERIMPL_H_
+#endif  // TRANSCEIVERIMPL_H_

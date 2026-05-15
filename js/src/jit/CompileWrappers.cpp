@@ -76,10 +76,6 @@ const void* CompileRuntime::addressOfInterruptBits() {
   return runtime()->mainContextFromAnyThread()->addressOfInterruptBits();
 }
 
-const void* CompileRuntime::addressOfInlinedICScript() {
-  return runtime()->mainContextFromAnyThread()->addressOfInlinedICScript();
-}
-
 const void* CompileRuntime::addressOfRealm() {
   return runtime()->mainContextFromAnyThread()->addressOfRealm();
 }
@@ -104,24 +100,21 @@ const void* CompileRuntime::addressOfLastBufferedWholeCell() {
   return runtime()->gc.addressOfLastBufferedWholeCell();
 }
 
-const void* CompileRuntime::addressOfHasSeenObjectEmulateUndefinedFuse() {
+const void* CompileRuntime::addressOfRuntimeFuse(
+    RuntimeFuses::FuseIndex index) {
   // We're merely accessing the address of the fuse here, and so we don't need
   // the MainThreadData check here.
-  return runtime()->hasSeenObjectEmulateUndefinedFuse.refNoCheck().fuseRef();
+  return runtime()->runtimeFuses.refNoCheck().getFuseByIndex(index)->fuseRef();
 }
 
-bool CompileRuntime::hasSeenObjectEmulateUndefinedFuseIntact() {
+bool CompileRuntime::runtimeFuseIntact(RuntimeFuses::FuseIndex index) {
   // Note: This accesses the bit; this would be unsafe off-thread, however
   // this should only be accessed by CompileInfo in its constructor on main
   // thread and so should be safe.
   //
   // (This value is also checked by ref() rather than skipped like the address
   // call above.)
-  return runtime()->hasSeenObjectEmulateUndefinedFuse.ref().intact();
-}
-
-bool CompileRuntime::hasSeenArrayExceedsInt32LengthFuseIntact() {
-  return runtime()->hasSeenArrayExceedsInt32LengthFuse.ref().intact();
+  return runtime()->runtimeFuses.ref().getFuseByIndex(index)->intact();
 }
 
 const DOMCallbacks* CompileRuntime::DOMcallbacks() {
@@ -149,10 +142,10 @@ const void* CompileRuntime::addressOfIonBailAfterCounter() {
 }
 #endif
 
-const uint32_t* CompileZone::addressOfNeedsIncrementalBarrier() {
+const uint32_t* CompileZone::addressOfNeedsMarkingBarrier() {
   // Cast away relaxed atomic wrapper for JIT access to barrier state.
   const mozilla::Atomic<uint32_t, mozilla::Relaxed>* ptr =
-      zone()->addressOfNeedsIncrementalBarrier();
+      zone()->addressOfNeedsMarkingBarrier();
   return reinterpret_cast<const uint32_t*>(ptr);
 }
 
@@ -184,6 +177,8 @@ void* CompileZone::addressOfNurseryAllocatedSites() {
   JSRuntime* rt = zone()->runtimeFromAnyThread();
   return rt->gc.addressOfNurseryAllocatedSites();
 }
+
+void* CompileZone::jitZone() { return zone()->jitZone(); }
 
 bool CompileZone::canNurseryAllocateStrings() {
   return zone()->allocNurseryStrings();

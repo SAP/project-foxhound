@@ -20,7 +20,8 @@ createHTML({
  * pulseaudio null-sink. Simulateously, record the other side of the null
  * sink, and check that no audio has been written to the sink, because the tab
  * was muted. Then, umute the tab and check that audio is being sent to the
- * null-sink. */
+ * null-sink.
+ */
 runTest(async () => {
   if (!SpecialPowers.getCharPref("media.audio_loopback_dev", "")) {
     todo(false, "No loopback device set by framework. Try --use-test-media-devices");

@@ -207,9 +207,7 @@ def test_mochitest_profiling(fake_file_path):
         "mozperftest.test.functionaltestrunner.FunctionalTestRunner.test"
     ) as test_mock, mock.patch(
         "mozperftest.test.mochitest.install_requirements_file"
-    ), mock.patch(
-        "mozperftest.test.mochitest.Path"
-    ):
+    ), mock.patch("mozperftest.test.mochitest.Path"):
         test_mock.return_value = (0, mock.MagicMock())
         try:
             with pytest.raises(NoPerfMetricsError):

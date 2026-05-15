@@ -6,9 +6,9 @@
 
 #include "mozilla/dom/cache/CacheWorkerRef.h"
 
-#include "mozilla/dom/cache/ActorChild.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/cache/ActorChild.h"
 
 namespace mozilla::dom::cache {
 

@@ -121,6 +121,45 @@ assert.throws = function (expectedErrorConstructor, func, message) {
   throw new Test262Error(message);
 };
 
+function isPrimitive(value) {
+  return !value || (typeof value !== 'object' && typeof value !== 'function');
+}
+
+assert.compareArray = function (actual, expected, message) {
+  message = message === undefined ? '' : message;
+
+  if (typeof message === 'symbol') {
+    message = message.toString();
+  }
+
+  if (isPrimitive(actual)) {
+    assert(false, `Actual argument [${actual}] shouldn't be primitive. ${message}`);
+  } else if (isPrimitive(expected)) {
+    assert(false, `Expected argument [${expected}] shouldn't be primitive. ${message}`);
+  }
+  var result = compareArray(actual, expected);
+  if (result) return;
+
+  var format = compareArray.format;
+  assert(false, `Actual ${format(actual)} and expected ${format(expected)} should have the same contents. ${message}`);
+};
+
+function compareArray(a, b) {
+  if (b.length !== a.length) {
+    return false;
+  }
+  for (var i = 0; i < a.length; i++) {
+    if (!assert._isSameValue(b[i], a[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+compareArray.format = function (arrayLike) {
+  return `[${Array.prototype.map.call(arrayLike, String).join(', ')}]`;
+};
+
 assert._formatIdentityFreeValue = function formatIdentityFreeValue(value) {
   switch (value === null ? 'null' : typeof value) {
     case 'string':
@@ -155,52 +194,9 @@ assert._toString = function (value) {
 // This code is governed by the BSD license found in the LICENSE file.
 /*---
 description: |
-    Compare the contents of two arrays
+    Deprecated now that compareArray is defined in assert.js.
 defines: [compareArray]
 ---*/
-
-function compareArray(a, b) {
-  if (b.length !== a.length) {
-    return false;
-  }
-
-  for (var i = 0; i < a.length; i++) {
-    if (!compareArray.isSameValue(b[i], a[i])) {
-      return false;
-    }
-  }
-  return true;
-}
-
-compareArray.isSameValue = function(a, b) {
-  if (a === 0 && b === 0) return 1 / a === 1 / b;
-  if (a !== a && b !== b) return true;
-
-  return a === b;
-};
-
-compareArray.format = function(arrayLike) {
-  return `[${[].map.call(arrayLike, String).join(', ')}]`;
-};
-
-assert.compareArray = function(actual, expected, message) {
-  message  = message === undefined ? '' : message;
-
-  if (typeof message === 'symbol') {
-    message = message.toString();
-  }
-
-  assert(actual != null, `Actual argument shouldn't be nullish. ${message}`);
-  assert(expected != null, `Expected argument shouldn't be nullish. ${message}`);
-  var format = compareArray.format;
-  var result = compareArray(actual, expected);
-
-  // The following prevents actual and expected from being iterated and evaluated
-  // more than once unless absolutely necessary.
-  if (!result) {
-    assert(false, `Actual ${format(actual)} and expected ${format(expected)} should have the same contents. ${message}`);
-  }
-};
 
 // file: propertyHelper.js
 // Copyright (C) 2017 Ecma International.  All rights reserved.

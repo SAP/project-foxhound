@@ -5,7 +5,6 @@
 package org.mozilla.fenix.exceptions.login
 
 import mozilla.components.feature.logins.exceptions.LoginException
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Test
@@ -23,7 +22,7 @@ class LoginExceptionFragmentStoreTest {
                 get() = "test"
         }
 
-        store.dispatch(ExceptionsFragmentAction.Change(listOf(newExceptionsItem))).joinBlocking()
+        store.dispatch(ExceptionsFragmentAction.Change(listOf(newExceptionsItem)))
         assertNotSame(initialState, store.state)
         assertEquals(listOf(newExceptionsItem), store.state.items)
     }

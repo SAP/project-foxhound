@@ -1,5 +1,5 @@
 [DEFAULT]
-head = "head.js"
+head = "../../../../../netwerk/test/unit/head_trr.js head.js"
 firefox-appdir = "browser"
 support-files = ["../../../../../netwerk/test/unit/http2-ca.pem"]
 

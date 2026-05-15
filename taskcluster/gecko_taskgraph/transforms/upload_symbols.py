@@ -6,7 +6,6 @@ Transform the upload-symbols task description template,
 taskcluster/kinds/upload-symbols/job-template.yml into an actual task description.
 """
 
-
 import logging
 
 from taskgraph.transforms.base import TransformSequence

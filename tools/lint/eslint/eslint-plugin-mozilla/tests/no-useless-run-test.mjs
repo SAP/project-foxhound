@@ -18,7 +18,7 @@ function invalidCode(code, output) {
   return {
     code,
     output,
-    errors: [{ messageId: "noUselessRunTest", type: "FunctionDeclaration" }],
+    errors: [{ messageId: "noUselessRunTest" }],
   };
 }
 

@@ -96,7 +96,7 @@ TEST(DelayedRunnable, BackgroundTaskQueueShutdownTask)
 
   // Leak the queue, so it gets cleaned up by xpcom-shutdown.
   nsISerialEventTarget* tq = taskQueue.forget().take();
-  mozilla::Unused << tq;
+  (void)tq;
 }
 
 /*
@@ -112,13 +112,13 @@ TEST(DelayedRunnable, nsThreadShutdownTask)
 
   // Leak the thread, so it gets cleaned up by xpcom-shutdown.
   nsIThread* t = thread.forget().take();
-  mozilla::Unused << t;
+  (void)t;
 }
 
 TEST(DelayedRunnable, TimerFiresBeforeRunnableRuns)
 {
   RefPtr<mozilla::SharedThreadPool> pool =
-      mozilla::SharedThreadPool::Get("Test Pool"_ns);
+      mozilla::SharedThreadPool::Get("Test Pool");
   auto tailTaskQueue1 =
       TaskQueue::Create(do_AddRef(pool), "TestDelayedRunnable tailTaskQueue1",
                         /* aSupportsTailDispatch = */ true);

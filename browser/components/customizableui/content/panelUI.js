@@ -7,7 +7,8 @@ ChromeUtils.defineESModuleGetters(this, {
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   MenuMessage: "resource:///modules/asrouter/MenuMessage.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   updateZoomUI: "resource:///modules/ZoomUI.sys.mjs",
 });
 
@@ -52,6 +53,7 @@ const PanelUI = {
     this.menuButton.addEventListener("mousedown", this);
     this.menuButton.addEventListener("keypress", this);
 
+    Services.obs.addObserver(this, "ai-window-state-changed");
     Services.obs.addObserver(this, "fullscreen-nav-toolbox");
     Services.obs.addObserver(this, "appMenu-notifications");
     Services.obs.addObserver(this, "show-update-progress");
@@ -82,6 +84,16 @@ const PanelUI = {
       autoHidePref => autoHidePref && Services.appinfo.OS !== "Darwin"
     );
 
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "isAIWindowEnabled",
+      "browser.smartwindow.enabled",
+      false,
+      (_pref, _previousValue, _newValue) => {
+        this._showAIMenuItem();
+      }
+    );
+
     if (this.autoHideToolbarInFullScreen) {
       window.addEventListener("fullscreen", this);
     } else {
@@ -109,6 +121,7 @@ const PanelUI = {
       "refresh"
     );
 
+    this._showAIMenuItem();
     this._initialized = true;
   },
 
@@ -177,6 +190,7 @@ const PanelUI = {
       }
     }
 
+    Services.obs.removeObserver(this, "ai-window-state-changed");
     Services.obs.removeObserver(this, "fullscreen-nav-toolbox");
     Services.obs.removeObserver(this, "appMenu-notifications");
     Services.obs.removeObserver(this, "show-update-progress");
@@ -262,6 +276,12 @@ const PanelUI = {
 
   observe(subject, topic, status) {
     switch (topic) {
+      case "ai-window-state-changed":
+        if (subject == window) {
+          this._showAIMenuItem();
+        }
+        break;
+
       case "fullscreen-nav-toolbox":
         if (this._notifications) {
           this.updateNotifications(false);
@@ -517,9 +537,7 @@ const PanelUI = {
         tempPanel.setAttribute("animate", "false");
       }
       tempPanel.setAttribute("context", "");
-      document
-        .getElementById(CustomizableUI.AREA_NAVBAR)
-        .appendChild(tempPanel);
+      document.getElementById("mainPopupSet").appendChild(tempPanel);
 
       let multiView = document.createXULElement("panelmultiview");
       multiView.setAttribute("id", "customizationui-widget-multiview");
@@ -1051,6 +1069,27 @@ const PanelUI = {
 
     popupnotification.notification = notification;
     popupnotification.show();
+  },
+
+  _showAIMenuItem() {
+    const isAIWindowActive = document.documentElement.hasAttribute("ai-window");
+    const aiMenuItem = PanelMultiView.getViewNode(
+      document,
+      "appMenu-new-ai-window-button"
+    );
+    const classicWindowMenuItem = PanelMultiView.getViewNode(
+      document,
+      "appMenu-new-classic-window-button"
+    );
+    const chatHistoryMenuItem = PanelMultiView.getViewNode(
+      document,
+      "appMenu-chats-history-button"
+    );
+
+    aiMenuItem.hidden = !this.isAIWindowEnabled || isAIWindowActive;
+    classicWindowMenuItem.hidden = !this.isAIWindowEnabled || !isAIWindowActive;
+
+    chatHistoryMenuItem.hidden = !this.isAIWindowEnabled || !isAIWindowActive;
   },
 
   _showBadge(notification) {

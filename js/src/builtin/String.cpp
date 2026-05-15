@@ -12,8 +12,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Compiler.h"
-#include "mozilla/FloatingPoint.h"
 #if JS_HAS_INTL_API
+#  include "mozilla/intl/Locale.h"
 #  include "mozilla/intl/String.h"
 #endif
 #include "mozilla/Likely.h"
@@ -28,7 +28,6 @@
 #include <string.h>
 #include <type_traits>
 
-#include "jsnum.h"
 #include "jstypes.h"
 
 #include "builtin/Array.h"
@@ -37,7 +36,9 @@
 #  include "builtin/intl/CommonFunctions.h"
 #  include "builtin/intl/FormatBuffer.h"
 #  include "builtin/intl/GlobalIntlData.h"
+#  include "builtin/intl/LocaleNegotiation.h"
 #endif
+#include "builtin/Number.h"
 #include "builtin/RegExp.h"
 #include "gc/GC.h"
 #include "jit/InlinableNatives.h"
@@ -1309,25 +1310,70 @@ static bool str_toLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 #if JS_HAS_INTL_API
-// String.prototype.toLocaleLowerCase is self-hosted when Intl is exposed,
-// with core functionality performed by the intrinsic below.
+// Lithuanian, Turkish, and Azeri have language dependent case mappings.
+static constexpr char LanguagesWithSpecialCasing[][3] = {"lt", "tr", "az"};
 
-static const char* CaseMappingLocale(JSContext* cx, JSString* str) {
-  JSLinearString* locale = str->ensureLinear(cx);
-  if (!locale) {
-    return nullptr;
+bool js::LocaleHasDefaultCaseMapping(const char* locale) {
+  MOZ_ASSERT(locale);
+
+  size_t languageSubtagLength;
+  if (auto* sep = strchr(locale, '-')) {
+    languageSubtagLength = sep - locale;
+  } else {
+    languageSubtagLength = std::strlen(locale);
   }
 
-  MOZ_ASSERT(locale->length() >= 2, "locale is a valid language tag");
+  // Invalid locale identifiers default to the last-ditch locale "en-GB", which
+  // has default case mapping.
+  mozilla::Span<const char> span{locale, languageSubtagLength};
+  {
+    // Tell the analysis the |IsStructurallyValidLanguageTag| function can't GC.
+    JS::AutoSuppressGCAnalysis nogc;
+    if (!mozilla::intl::IsStructurallyValidLanguageTag(span)) {
+      return true;
+    }
+  }
 
-  // Lithuanian, Turkish, and Azeri have language dependent case mappings.
-  static const char languagesWithSpecialCasing[][3] = {"lt", "tr", "az"};
+  mozilla::intl::LanguageSubtag subtag{span};
+
+  // Canonical case for the language subtag is lower-case
+  {
+    // Tell the analysis the |ToLowerCase| function can't GC.
+    JS::AutoSuppressGCAnalysis nogc;
+
+    subtag.ToLowerCase();
+  }
+
+  // Replace outdated language subtags. Skips complex language mappings, which
+  // is okay because none of the languages with special casing are affected by
+  // complex language mapping.
+  {
+    // Tell the analysis the |LanguageMapping| function can't GC.
+    JS::AutoSuppressGCAnalysis nogc;
+
+    (void)mozilla::intl::Locale::LanguageMapping(subtag);
+  }
+
+  // Check for languages which don't use the default case mapping algorithm.
+  for (const auto& language : LanguagesWithSpecialCasing) {
+    if (subtag.EqualTo(language)) {
+      return false;
+    }
+  }
+
+  // Simple locale with default case mapping. (Or an invalid locale which
+  // defaults to the last-ditch locale "en-GB".)
+  return true;
+}
+
+static const char* CaseMappingLocale(JSLinearString* locale) {
+  MOZ_ASSERT(locale->length() >= 2, "locale is a valid language tag");
 
   // All strings in |languagesWithSpecialCasing| are of length two, so we
   // only need to compare the first two characters to find a matching locale.
   // ES2017 Intl, §9.2.2 BestAvailableLocale
   if (locale->length() == 2 || locale->latin1OrTwoByteChar(2) == '-') {
-    for (const auto& language : languagesWithSpecialCasing) {
+    for (const auto& language : LanguagesWithSpecialCasing) {
       if (locale->latin1OrTwoByteChar(0) == language[0] &&
           locale->latin1OrTwoByteChar(1) == language[1]) {
         return language;
@@ -1335,38 +1381,50 @@ static const char* CaseMappingLocale(JSContext* cx, JSString* str) {
     }
   }
 
-  return "";  // ICU root locale
+  return nullptr;
 }
 
-static bool HasDefaultCasing(const char* locale) { return !strcmp(locale, ""); }
+enum class TargetCase { Lower, Upper };
 
-bool js::intl_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 2);
-  MOZ_ASSERT(args[0].isString());
-  MOZ_ASSERT(args[1].isString());
-
-  RootedString string(cx, args[0].toString());
-
-  const char* locale = CaseMappingLocale(cx, args[1].toString());
-  if (!locale) {
-    return false;
+/**
+ * TransformCase ( S, locales, targetCase )
+ */
+static JSLinearString* TransformCase(JSContext* cx, Handle<JSString*> string,
+                                     Handle<Value> locales,
+                                     TargetCase targetCase) {
+  // Step 1.
+  Rooted<intl::LocalesList> requestedLocales(cx, cx);
+  if (!intl::CanonicalizeLocaleList(cx, locales, &requestedLocales)) {
+    return nullptr;
   }
 
-  // Call String.prototype.toLowerCase() for language independent casing.
-  if (HasDefaultCasing(locale)) {
-    JSString* str = StringToLowerCase(cx, string);
-    if (!str) {
-      return false;
-    }
+  // Trivial case: When the input is empty, directly return the empty string.
+  if (string->empty()) {
+    return cx->emptyString();
+  }
 
-    args.rval().setString(str);
-    return true;
+  // Steps 2-3.
+  Rooted<JSLinearString*> requestedLocale(cx);
+  if (!requestedLocales.empty()) {
+    requestedLocale = requestedLocales[0];
+  } else {
+    requestedLocale = cx->global()->globalIntlData().defaultLocale(cx);
+    if (!requestedLocale) {
+      return nullptr;
+    }
+  }
+
+  // Steps 4-10.
+  const char* locale = CaseMappingLocale(requestedLocale);
+  if (!locale) {
+    // Call the default case conversion methods for language independent casing.
+    return targetCase == TargetCase::Lower ? StringToLowerCase(cx, string)
+                                           : StringToUpperCase(cx, string);
   }
 
   AutoStableStringChars inputChars(cx);
   if (!inputChars.initTwoByte(cx, string)) {
-    return false;
+    return nullptr;
   }
   mozilla::Range<const char16_t> input = inputChars.twoByteRange();
 
@@ -1379,43 +1437,48 @@ bool js::intl_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
   intl::FormatBuffer<char16_t, INLINE_CAPACITY> buffer(cx);
 
-  auto ok = mozilla::intl::String::ToLocaleLowerCase(locale, input, buffer);
+  auto ok =
+      targetCase == TargetCase::Lower
+          ? mozilla::intl::String::ToLocaleLowerCase(locale, input, buffer)
+          : mozilla::intl::String::ToLocaleUpperCase(locale, input, buffer);
   if (ok.isErr()) {
     intl::ReportInternalError(cx, ok.unwrapErr());
+    return nullptr;
+  }
+
+  return buffer.toString(cx);
+}
+#endif
+
+static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
+                                        "toLocaleLowerCase");
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-2.
+  Rooted<JSString*> str(
+      cx, ToStringForStringFunction(cx, "toLocaleLowerCase", args.thisv()));
+  if (!str) {
     return false;
   }
 
-  JSString* result = buffer.toString(cx);
+#if JS_HAS_INTL_API
+  // Step 3.
+  auto* result = TransformCase(cx, str, args.get(0), TargetCase::Lower);
   if (!result) {
     return false;
   }
 
   args.rval().setString(result);
   return true;
-}
-
 #else
-
-// When the Intl API is not exposed, String.prototype.toLowerCase is implemented
-// in C++.
-static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
-  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
-                                        "toLocaleLowerCase");
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedString str(
-      cx, ToStringForStringFunction(cx, "toLocaleLowerCase", args.thisv()));
-  if (!str) {
-    return false;
-  }
-
   /*
    * Forcefully ignore the first (or any) argument and return toLowerCase(),
    * ECMA has reserved that argument, presumably for defining the locale.
    */
   if (cx->runtime()->localeCallbacks &&
       cx->runtime()->localeCallbacks->localeToLowerCase) {
-    RootedValue result(cx);
+    Rooted<Value> result(cx);
     if (!cx->runtime()->localeCallbacks->localeToLowerCase(cx, str, &result)) {
       return false;
     }
@@ -1442,9 +1505,8 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setString(result);
   return true;
+#endif
 }
-
-#endif  // JS_HAS_INTL_API
 
 static inline bool ToUpperCaseHasSpecialCasing(Latin1Char charCode) {
   // U+00DF LATIN SMALL LETTER SHARP S is the only Latin-1 code point with
@@ -1747,86 +1809,34 @@ static bool str_toUpperCase(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-#if JS_HAS_INTL_API
-// String.prototype.toLocaleUpperCase is self-hosted when Intl is exposed,
-// with core functionality performed by the intrinsic below.
-
-bool js::intl_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
+static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
+                                        "toLocaleUpperCase");
   CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 2);
-  MOZ_ASSERT(args[0].isString());
-  MOZ_ASSERT(args[1].isString());
 
-  RootedString string(cx, args[0].toString());
-
-  const char* locale = CaseMappingLocale(cx, args[1].toString());
-  if (!locale) {
+  Rooted<JSString*> str(
+      cx, ToStringForStringFunction(cx, "toLocaleUpperCase", args.thisv()));
+  if (!str) {
     return false;
   }
 
-  // Call String.prototype.toUpperCase() for language independent casing.
-  if (HasDefaultCasing(locale)) {
-    JSString* str = js::StringToUpperCase(cx, string);
-    if (!str) {
-      return false;
-    }
-
-    args.rval().setString(str);
-    return true;
-  }
-
-  AutoStableStringChars inputChars(cx);
-  if (!inputChars.initTwoByte(cx, string)) {
-    return false;
-  }
-  mozilla::Range<const char16_t> input = inputChars.twoByteRange();
-
-  // Note: maximum case mapping length is three characters, so the result
-  // length might be > INT32_MAX. ICU will fail in this case.
-  static_assert(JSString::MAX_LENGTH <= INT32_MAX,
-                "String length must fit in int32_t for ICU");
-
-  static const size_t INLINE_CAPACITY = js::intl::INITIAL_CHAR_BUFFER_SIZE;
-
-  intl::FormatBuffer<char16_t, INLINE_CAPACITY> buffer(cx);
-
-  auto ok = mozilla::intl::String::ToLocaleUpperCase(locale, input, buffer);
-  if (ok.isErr()) {
-    intl::ReportInternalError(cx, ok.unwrapErr());
-    return false;
-  }
-
-  JSString* result = buffer.toString(cx);
+#if JS_HAS_INTL_API
+  // Step 3.
+  auto* result = TransformCase(cx, str, args.get(0), TargetCase::Upper);
   if (!result) {
     return false;
   }
 
   args.rval().setString(result);
   return true;
-}
-
 #else
-
-// When the Intl API is not exposed, String.prototype.toUpperCase is implemented
-// in C++.
-static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
-  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
-                                        "toLocaleUpperCase");
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedString str(
-      cx, ToStringForStringFunction(cx, "toLocaleUpperCase", args.thisv()));
-  if (!str) {
-    return false;
-  }
-
   /*
    * Forcefully ignore the first (or any) argument and return toUpperCase(),
    * ECMA has reserved that argument, presumably for defining the locale.
    */
   if (cx->runtime()->localeCallbacks &&
       cx->runtime()->localeCallbacks->localeToUpperCase) {
-    RootedValue result(cx);
+    Rooted<Value> result(cx);
     if (!cx->runtime()->localeCallbacks->localeToUpperCase(cx, str, &result)) {
       return false;
     }
@@ -1853,9 +1863,8 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setString(result);
   return true;
+#endif
 }
-
-#endif  // JS_HAS_INTL_API
 
 /**
  * String.prototype.localeCompare ( that [ , reserved1 [ , reserved2 ] ] )
@@ -1889,7 +1898,7 @@ static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
   HandleValue options = args.get(2);
 
   // Step 4.
-  Rooted<CollatorObject*> collator(
+  Rooted<intl::CollatorObject*> collator(
       cx, intl::GetOrCreateCollator(cx, locales, options));
   if (!collator) {
     return false;
@@ -2274,7 +2283,7 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
  *
  * ES2024 draft rev 7d2644968bd56d54d2886c012d18698ff3f72c35
  */
-bool js::str_charCodeAt(JSContext* cx, unsigned argc, Value* vp) {
+static bool str_charCodeAt(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "charCodeAt");
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -3070,7 +3079,7 @@ bool js::StringLastIndexOf(JSContext* cx, HandleString string,
 
 // ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
 // 22.1.3.24 String.prototype.startsWith ( searchString [ , position ] )
-bool js::str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
+static bool str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "startsWith");
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -3145,7 +3154,7 @@ bool js::StringStartsWith(JSContext* cx, HandleString string,
 
 // ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
 // 22.1.3.7 String.prototype.endsWith ( searchString [ , endPosition ] )
-bool js::str_endsWith(JSContext* cx, unsigned argc, Value* vp) {
+static bool str_endsWith(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "endsWith");
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -4289,15 +4298,18 @@ static ArrayObject* CharSplitHelper(JSContext* cx, Handle<JSLinearString*> str,
 }
 
 template <typename TextChar>
-static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
-    JSContext* cx, Handle<JSLinearString*> str, const TextChar* text,
-    uint32_t textLen, char16_t patCh) {
-  // Count the number of occurrences of patCh within text.
+static ArrayObject* SplitSingleCharHelper(JSContext* cx,
+                                          Handle<JSLinearString*> str,
+                                          char16_t patCh) {
+  // Count the number of occurrences of |patCh| within |str|.
   uint32_t count = 0;
-  for (size_t index = 0; index < textLen; index++) {
-    if (static_cast<char16_t>(text[index]) == patCh) {
-      count++;
-    }
+  if (patCh <= std::numeric_limits<TextChar>::max()) {
+    JS::AutoCheckCannotGC nogc;
+
+    auto text = str->range<TextChar>(nogc);
+
+    count = std::count(text.begin().get(), text.end().get(),
+                       static_cast<TextChar>(patCh));
   }
 
   // Handle zero-occurrence case - return input string in an array.
@@ -4317,23 +4329,35 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
   // Add substrings.
   uint32_t splitsIndex = 0;
   size_t lastEndIndex = 0;
-  for (size_t index = 0; index < textLen; index++) {
-    if (static_cast<char16_t>(text[index]) == patCh) {
-      size_t subLength = size_t(index - lastEndIndex);
-      JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength);
-      if (!sub) {
-        return nullptr;
-      }
-      // Foxhound: extend taint flow
-      if(sub->isTainted()) {
-        sub->taint().extend(op);
-      }
+  size_t textLen = str->length();
+  while (splitsIndex < count) {
+    // Find the next occurence of |patCh|.
+    size_t index;
+    {
+      JS::AutoCheckCannotGC nogc;
 
-      splits->initDenseElement(splitsIndex++, StringValue(sub));
+      auto text = str->range<TextChar>(nogc);
 
-      lastEndIndex = index + 1;
+      auto* p = std::find(text.begin().get() + lastEndIndex, text.end().get(),
+                          static_cast<TextChar>(patCh));
+      MOZ_ASSERT(p != text.end().get());
+
+      index = std::distance(text.begin().get(), p);
     }
+
+    size_t subLength = index - lastEndIndex;
+    JSString* sub = NewDependentString(cx, str, lastEndIndex, subLength);
+    if (!sub) {
+      return nullptr;
+    }
+    // Foxhound: extend taint flow
+    if(sub->isTainted()) {
+      sub->taint().extend(op);
+    }
+    splits->initDenseElement(splitsIndex++, StringValue(sub));
+    lastEndIndex = index + 1;
   }
+  MOZ_ASSERT(lastEndIndex <= textLen);
 
   // Add substring for tail of string (after last match).
   JSString* sub =
@@ -4349,27 +4373,6 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
   splits->initDenseElement(splitsIndex++, StringValue(sub));
 
   return splits;
-}
-
-// ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.
-static ArrayObject* SplitSingleCharHelper(JSContext* cx,
-                                          Handle<JSLinearString*> str,
-                                          char16_t ch) {
-  // Step 12.
-  size_t strLength = str->length();
-
-  AutoStableStringChars linearChars(cx);
-  if (!linearChars.init(cx, str)) {
-    return nullptr;
-  }
-
-  if (linearChars.isLatin1()) {
-    return SplitSingleCharHelper(cx, str, linearChars.latin1Chars(), strLength,
-                                 ch);
-  }
-
-  return SplitSingleCharHelper(cx, str, linearChars.twoByteChars(), strLength,
-                               ch);
 }
 
 // ES 2016 draft Mar 25, 2016 21.1.3.17 steps 4, 8, 12-18.
@@ -4393,7 +4396,10 @@ ArrayObject* js::StringSplitString(JSContext* cx, HandleString str,
 
   if (linearSep->length() == 1 && limit >= static_cast<uint32_t>(INT32_MAX)) {
     char16_t ch = linearSep->latin1OrTwoByteChar(0);
-    return SplitSingleCharHelper(cx, linearStr, ch);
+    if (linearStr->hasLatin1Chars()) {
+      return SplitSingleCharHelper<Latin1Char>(cx, linearStr, ch);
+    }
+    return SplitSingleCharHelper<char16_t>(cx, linearStr, ch);
   }
 
   return SplitHelper(cx, linearStr, limit, linearSep);
@@ -4422,13 +4428,10 @@ static const JSFunctionSpec string_methods[] = {
     JS_INLINABLE_FN("trim", str_trim, 0, 0, StringTrim),
     JS_INLINABLE_FN("trimStart", str_trimStart, 0, 0, StringTrimStart),
     JS_INLINABLE_FN("trimEnd", str_trimEnd, 0, 0, StringTrimEnd),
-#if JS_HAS_INTL_API
-    JS_SELF_HOSTED_FN("toLocaleLowerCase", "String_toLocaleLowerCase", 0, 0),
-    JS_SELF_HOSTED_FN("toLocaleUpperCase", "String_toLocaleUpperCase", 0, 0),
-#else
-    JS_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0, 0),
-    JS_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0, 0),
-#endif
+    JS_INLINABLE_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0, 0,
+                    StringToLocaleLowerCase),
+    JS_INLINABLE_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0, 0,
+                    StringToLocaleUpperCase),
     JS_FN("localeCompare", str_localeCompare, 1, 0),
     JS_SELF_HOSTED_FN("repeat", "String_repeat", 1, 0),
 #if JS_HAS_INTL_API
@@ -4561,7 +4564,7 @@ static bool GuessFromCharCodeIsLatin1(const CallArgs& args) {
  *
  * ES2024 draft rev 7d2644968bd56d54d2886c012d18698ff3f72c35
  */
-bool js::str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
+static bool str_fromCharCode(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   MOZ_ASSERT(args.length() <= ARGS_LENGTH_MAX);
@@ -4804,9 +4807,8 @@ bool js::str_fromCodePoint(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec string_static_methods[] = {
-    JS_INLINABLE_FN("fromCharCode", js::str_fromCharCode, 1, 0,
-                    StringFromCharCode),
-    JS_INLINABLE_FN("fromCodePoint", js::str_fromCodePoint, 1, 0,
+    JS_INLINABLE_FN("fromCharCode", str_fromCharCode, 1, 0, StringFromCharCode),
+    JS_INLINABLE_FN("fromCodePoint", str_fromCodePoint, 1, 0,
                     StringFromCodePoint),
 
     JS_SELF_HOSTED_FN("raw", "String_static_raw", 1, 0),

@@ -139,6 +139,10 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   NS_ENSURE_ARG(!aList.IsEmpty());
 
   switch (aErrorCode) {
+    case NS_ERROR_HARMFULADDON_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_HARMFULADDON_URI);
+      break;
     case NS_ERROR_MALWARE_URI:
       NS_SetRequestBlockingReason(
           channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_MALWARE_URI);
@@ -333,7 +337,7 @@ nsresult UrlClassifierCommon::CreatePairwiseEntityListURI(nsIChannel* aChannel,
           if (principal) {
             auto* basePrin = BasePrincipal::Cast(principal);
             rv = basePrin->GetURI(getter_AddRefs(topWinURI));
-            Unused << NS_WARN_IF(NS_FAILED(rv));
+            (void)NS_WARN_IF(NS_FAILED(rv));
           }
         }
       }
@@ -350,7 +354,7 @@ nsresult UrlClassifierCommon::CreatePairwiseEntityListURI(nsIChannel* aChannel,
       if (principal) {
         auto* basePrin = BasePrincipal::Cast(principal);
         rv = basePrin->GetURI(getter_AddRefs(topWinURI));
-        Unused << NS_WARN_IF(NS_FAILED(rv));
+        (void)NS_WARN_IF(NS_FAILED(rv));
       }
     }
   }

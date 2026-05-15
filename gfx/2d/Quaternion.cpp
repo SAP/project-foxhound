@@ -7,7 +7,6 @@
 #include "Quaternion.h"
 #include "Matrix.h"
 #include "Tools.h"
-#include <algorithm>
 #include <ostream>
 #include <math.h>
 

@@ -113,7 +113,6 @@ export class FingerprintingWebCompatService {
     this.#granularOverrides = new Set();
 
     this.#rs = lazy.RemoteSettings(COLLECTION_NAME);
-    this.#validator = new lazy.JsonSchema.Validator(SCHEMA);
   }
 
   async init() {
@@ -154,6 +153,11 @@ export class FingerprintingWebCompatService {
     lazy.logConsole.debug("Init completes");
   }
 
+  // Lazily create the schema validator when needed
+  #getSchemaValidator() {
+    return (this.#validator ??= new lazy.JsonSchema.Validator(SCHEMA));
+  }
+
   // Import fingerprinting overrides from the local granular pref.
   #importPrefOverrides() {
     lazy.logConsole.debug("importLocalGranularOverrides");
@@ -184,9 +188,15 @@ export class FingerprintingWebCompatService {
         return;
       }
 
+      // Skip creating the validator if there's nothing to validate.
+      if (overrides.length === 0) {
+        continue;
+      }
+
+      const validator = this.#getSchemaValidator();
       for (let override of overrides) {
         // Validate the override.
-        let { valid, errors } = this.#validator.validate(override);
+        let { valid, errors } = validator.validate(override);
 
         if (!valid) {
           lazy.logConsole.debug("Override validation error", override, errors);
@@ -254,7 +264,7 @@ export class FingerprintingWebCompatService {
     );
 
     // Set the remote override to the RFP service.
-    Services.rfp.setFingerprintingOverrides(Array.from(overrides));
+    Services.rfp.setFingerprintingOverrides(overrides);
   }
 
   observe(subject, topic, prefName) {

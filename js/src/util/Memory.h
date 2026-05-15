@@ -11,7 +11,6 @@
 #include "mozilla/Attributes.h"
 
 #include <stddef.h>
-#include <stdint.h>
 #include <string.h>
 #include <type_traits>
 

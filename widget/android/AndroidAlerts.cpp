@@ -4,11 +4,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AndroidAlerts.h"
+#include "mozilla/dom/notification/NotificationHandler.h"
 #include "mozilla/java/GeckoRuntimeWrappers.h"
 #include "mozilla/java/WebNotificationWrappers.h"
 #include "mozilla/java/WebNotificationActionWrappers.h"
+#include "nsContentUtils.h"
 #include "nsIPrincipal.h"
+#include "nsIScriptSecurityManager.h"
 #include "nsIURI.h"
+
+using namespace mozilla::dom::notification;
 
 namespace mozilla {
 namespace widget {
@@ -28,18 +33,6 @@ struct AndroidNotificationTuple {
 
 using NotificationMap = nsTHashMap<nsStringHashKey, AndroidNotificationTuple>;
 static StaticAutoPtr<NotificationMap> sNotificationMap;
-
-NS_IMETHODIMP
-AndroidAlerts::ShowAlertNotification(
-    const nsAString& aImageUrl, const nsAString& aAlertTitle,
-    const nsAString& aAlertText, bool aAlertTextClickable,
-    const nsAString& aAlertCookie, nsIObserver* aAlertListener,
-    const nsAString& aAlertName, const nsAString& aBidi, const nsAString& aLang,
-    const nsAString& aData, nsIPrincipal* aPrincipal, bool aInPrivateBrowsing,
-    bool aRequireInteraction) {
-  MOZ_ASSERT_UNREACHABLE("Should be implemented by nsAlertsService.");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
 
 NS_IMETHODIMP
 AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
@@ -121,18 +114,22 @@ AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
     ++index;
   }
 
+  nsAutoCString origin;
+  rv = aAlert->GetOrigin(origin);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+
   if (!sNotificationMap) {
     sNotificationMap = new NotificationMap();
   } else if (Maybe<AndroidNotificationTuple> tuple =
                  sNotificationMap->Extract(name)) {
     if (tuple->mObserver) {
-      tuple->mObserver->Observe(nullptr, "alertfinished", nullptr);
+      tuple->mObserver->Observe(nullptr, "alertfinished", u"close");
     }
   }
 
   java::WebNotification::LocalRef notification = notification->New(
       title, name, cookie, text, imageUrl, dir, lang, requireInteraction, spec,
-      silent, privateBrowsing, jni::IntArray::From(vibrate), actions);
+      silent, privateBrowsing, jni::IntArray::From(vibrate), actions, origin);
   AndroidNotificationTuple tuple{
       .mObserver = aAlertListener,
       .mAlert = aAlert,
@@ -164,7 +161,7 @@ AndroidAlerts::CloseAlert(const nsAString& aAlertName, bool aContextClosed) {
     // synchronously. (See bug 1975432 to deduplicate this logic)
     // We have to fire alertfinished here as we are closing it ourselves;
     // GeckoView will only send it when it's closed from Android side.
-    tuple->mObserver->Observe(nullptr, "alertfinished", nullptr);
+    tuple->mObserver->Observe(nullptr, "alertfinished", u"close");
   }
 
   java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
@@ -189,14 +186,44 @@ NS_IMETHODIMP AndroidAlerts::Teardown() {
 
 NS_IMETHODIMP AndroidAlerts::PbmTeardown() { return NS_ERROR_NOT_IMPLEMENTED; }
 
+nsresult RespondViaNotificationHandler(const nsAString& aName,
+                                       const nsACString& aTopic,
+                                       Maybe<nsString> aAction,
+                                       const nsACString& aOrigin) {
+  if (aTopic != "alertclickcallback"_ns) {
+    // NOTE(krosylight): we are not handling alertfinished as we don't want to
+    // open the app for each notification dismiss.
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal;
+  if (nsCOMPtr<nsIScriptSecurityManager> ssm =
+          nsContentUtils::GetSecurityManager()) {
+    MOZ_TRY(ssm->CreateContentPrincipalFromOrigin(aOrigin,
+                                                  getter_AddRefs(principal)));
+  } else {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  RefPtr<NotificationHandler> handler = NotificationHandler::GetSingleton();
+  MOZ_TRY(handler->RespondOnClick(principal, aName, aAction ? *aAction : u""_ns,
+                                  /* aAutoClosed */ !aAction, nullptr));
+  return NS_OK;
+}
+
 void AndroidAlerts::NotifyListener(const nsAString& aName, const char* aTopic,
-                                   Maybe<nsString> aAction) {
+                                   Maybe<nsString> aAction,
+                                   const nsACString& aOrigin) {
+  nsDependentCString topic(aTopic);
+
   if (!sNotificationMap) {
+    RespondViaNotificationHandler(aName, topic, aAction, aOrigin);
     return;
   }
 
   Maybe<AndroidNotificationTuple> tuple = sNotificationMap->MaybeGet(aName);
   if (!tuple) {
+    RespondViaNotificationHandler(aName, topic, aAction, aOrigin);
     return;
   }
 
@@ -208,7 +235,7 @@ void AndroidAlerts::NotifyListener(const nsAString& aName, const char* aTopic,
     tuple->mObserver->Observe(action, aTopic, nullptr);
   }
 
-  if ("alertfinished"_ns.Equals(aTopic)) {
+  if ("alertfinished"_ns.Equals(topic)) {
     sNotificationMap->Remove(aName);
   }
 }

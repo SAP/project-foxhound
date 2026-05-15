@@ -3,17 +3,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpHandler_h__
-#define nsHttpHandler_h__
+#ifndef nsHttpHandler_h_
+#define nsHttpHandler_h_
 
 #include <functional>
 
 #include "nsHttp.h"
 #include "nsHttpAuthCache.h"
-#include "nsHttpConnectionMgr.h"
+#include "nsHttpConnectionInfo.h"
 #include "AlternateServices.h"
 #include "ASpdySession.h"
 #include "HttpTrafficAnalyzer.h"
+#include "EventTokenBucket.h"
 
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
@@ -21,6 +22,8 @@
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsWeakReference.h"
+#include "mozilla/net/Dictionary.h"
+#include "mozilla/net/HttpConnectionMgrShell.h"
 
 #include "nsIHttpProtocolHandler.h"
 #include "nsIObserver.h"
@@ -52,6 +55,7 @@ namespace mozilla::net {
 
 class ATokenBucketEvent;
 class EventTokenBucket;
+class HttpActivityArgs;
 class Tickler;
 class nsHttpConnection;
 class nsHttpConnectionInfo;
@@ -116,10 +120,14 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   static already_AddRefed<nsHttpHandler> GetInstance();
 
+  [[nodiscard]] nsresult AddAcceptAndDictionaryHeaders(
+      nsIURI* aURI, ExtContentPolicyType aType, nsHttpRequestHead* aRequest,
+      bool aSecure, nsHttpChannel* aChan, void (*aSuspend)(nsHttpChannel*),
+      const std::function<bool(bool, DictionaryCacheEntry*)>& aCallback);
   [[nodiscard]] nsresult AddStandardRequestHeaders(
-      nsHttpRequestHead*, bool isSecure,
-      ExtContentPolicyType aContentPolicyType,
-      bool aShouldResistFingerprinting);
+      nsHttpRequestHead*, nsIURI* aURI, bool aIsHTTPS,
+      ExtContentPolicyType aContentPolicyType, bool aShouldResistFingerprinting,
+      const nsCString& aLanguageOverride);
   [[nodiscard]] nsresult AddConnectionHeader(nsHttpRequestHead*, uint32_t caps);
   bool IsAcceptableEncoding(const char* encoding, bool isSecure);
 
@@ -137,7 +145,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint32_t NetworkChangedTimeout() { return mNetworkChangedTimeout; }
   uint16_t MaxRequestAttempts() { return mMaxRequestAttempts; }
   const nsCString& DefaultSocketType() { return mDefaultSocketType; }
-  uint32_t PhishyUserPassLength() { return mPhishyUserPassLength; }
   uint8_t GetQoSBits() { return mQoSBits; }
   uint16_t GetIdleSynTimeout() { return mIdleSynTimeout; }
   uint16_t GetFallbackSynTimeout() { return mFallbackSynTimeout; }
@@ -222,7 +229,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   FrameCheckLevel GetEnforceH1Framing() { return mEnforceH1Framing; }
 
   nsHttpAuthCache* AuthCache(bool aPrivate) {
-    return aPrivate ? &mPrivateAuthCache : &mAuthCache;
+    return aPrivate ? mPrivateAuthCache : mAuthCache;
   }
   nsHttpConnectionMgr* ConnMgr() {
     MOZ_ASSERT_IF(nsIOService::UseSocketProcess(), XRE_IsSocketProcess());
@@ -334,9 +341,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   already_AddRefed<AltSvcMapping> GetAltServiceMapping(
       const nsACString& scheme, const nsACString& host, int32_t port, bool pb,
       const OriginAttributes& originAttributes, bool aHttp2Allowed,
-      bool aHttp3Allowed) {
-    return mAltSvcCache->GetAltServiceMapping(
-        scheme, host, port, pb, originAttributes, aHttp2Allowed, aHttp3Allowed);
+      bool aHttp3Allowed, bool aForceHttp3First = false) {
+    return mAltSvcCache->GetAltServiceMapping(scheme, host, port, pb,
+                                              originAttributes, aHttp2Allowed,
+                                              aHttp3Allowed, aForceHttp3First);
   }
 
   //
@@ -526,7 +534,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   void PrefsChanged(const char* pref);
 
   [[nodiscard]] nsresult SetAcceptLanguages();
-  [[nodiscard]] nsresult SetAcceptEncodings(const char*, bool mIsSecure);
+  [[nodiscard]] nsresult SetAcceptEncodings(const char*, bool aIsSecure,
+                                            bool aDictionary);
 
   [[nodiscard]] nsresult InitConnectionMgr();
 
@@ -555,13 +564,16 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   nsMainThreadPtrHandle<nsISiteSecurityService> mSSService;
 
   // the authentication credentials cache
-  nsHttpAuthCache mAuthCache;
-  nsHttpAuthCache mPrivateAuthCache;
+  RefPtr<nsHttpAuthCache> mAuthCache;
+  RefPtr<nsHttpAuthCache> mPrivateAuthCache;
 
   // the connection manager
   RefPtr<HttpConnectionMgrShell> mConnMgr;
 
   UniquePtr<AltSvcCache> mAltSvcCache;
+
+  // Pointer to DictionaryCache singleton
+  RefPtr<DictionaryCache> mDictionaryCache;
 
   //
   // prefs
@@ -607,12 +619,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   bool mBeConservativeForProxy{true};
 
-  // we'll warn the user if we load an URL containing a userpass field
-  // unless its length is less than this threshold.  this warning is
-  // intended to protect the user against spoofing attempts that use
-  // the userpass field of the URL to obscure the actual origin server.
-  uint8_t mPhishyUserPassLength{1};
-
   uint8_t mQoSBits{0x00};
 
   bool mEnforceAssocReq{false};
@@ -623,6 +629,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   nsCString mAcceptLanguages;
   nsCString mHttpAcceptEncodings;
   nsCString mHttpsAcceptEncodings;
+  nsCString mDictionaryAcceptEncodings;
 
   nsCString mDefaultSocketType;
 
@@ -806,7 +813,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   Mutex mHttpExclusionLock MOZ_UNANNOTATED{"nsHttpHandler::HttpExclusion"};
 
  public:
-  [[nodiscard]] nsresult NewChannelId(uint64_t& channelId);
+  [[nodiscard]] uint64_t NewChannelId();
   void AddHttpChannel(uint64_t aId, nsISupports* aChannel);
   void RemoveHttpChannel(uint64_t aId);
   nsWeakPtr GetWeakHttpChannel(uint64_t aId);
@@ -925,4 +932,4 @@ class HSTSDataCallbackWrapper final {
 
 }  // namespace mozilla::net
 
-#endif  // nsHttpHandler_h__
+#endif  // nsHttpHandler_h_

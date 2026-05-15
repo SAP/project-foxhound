@@ -3,20 +3,26 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  ProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+});
+
 add_task(async function test_providers() {
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
   Assert.throws(
-    () => UrlbarProvidersManager.registerProvider(),
+    () => providersManager.registerProvider(),
     /invalid provider/,
     "Should throw with no arguments"
   );
   Assert.throws(
-    () => UrlbarProvidersManager.registerProvider({}),
+    () => providersManager.registerProvider({}),
     /invalid provider/,
     "Should throw with empty object"
   );
   Assert.throws(
     () =>
-      UrlbarProvidersManager.registerProvider({
+      providersManager.registerProvider({
         name: "",
       }),
     /invalid provider/,
@@ -24,7 +30,7 @@ add_task(async function test_providers() {
   );
   Assert.throws(
     () =>
-      UrlbarProvidersManager.registerProvider({
+      providersManager.registerProvider({
         name: "test",
         startQuery: "no",
       }),
@@ -33,7 +39,7 @@ add_task(async function test_providers() {
   );
   Assert.throws(
     () =>
-      UrlbarProvidersManager.registerProvider({
+      providersManager.registerProvider({
         name: "test",
         startQuery: () => {},
         cancelQuery: "no",
@@ -42,11 +48,11 @@ add_task(async function test_providers() {
     "Should throw with invalid cancelQuery"
   );
 
-  let match = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-    UrlbarUtils.RESULT_SOURCE.TABS,
-    { url: "http://mozilla.org/foo/" }
-  );
+  let match = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    source: UrlbarUtils.RESULT_SOURCE.TABS,
+    payload: { url: "http://mozilla.org/foo/" },
+  });
 
   let provider = registerBasicTestProvider([match]);
   let context = createContext(undefined, { providers: [provider.name] });
@@ -56,10 +62,10 @@ add_task(async function test_providers() {
     "onQueryResults"
   );
 
-  await UrlbarProvidersManager.startQuery(context, controller);
+  await providersManager.startQuery(context, controller);
   // Sanity check that this doesn't throw. It should be a no-op since we await
   // for startQuery.
-  UrlbarProvidersManager.cancelQuery(context);
+  providersManager.cancelQuery(context);
 
   let params = await resultsPromise;
   Assert.deepEqual(params[0].results, [match]);
@@ -67,7 +73,7 @@ add_task(async function test_providers() {
 
 add_task(async function test_criticalSection() {
   // Just a sanity check, this shouldn't throw.
-  await UrlbarProvidersManager.runInCriticalSection(async () => {
+  await ProvidersManager.runInCriticalSection(async () => {
     let db = await PlacesUtils.promiseLargeCacheDBConnection();
     await db.execute(`PRAGMA page_cache`);
   });

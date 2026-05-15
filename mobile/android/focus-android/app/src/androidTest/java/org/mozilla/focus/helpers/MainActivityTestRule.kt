@@ -110,17 +110,15 @@ private fun updateFirstRun(showFirstRun: Boolean) {
 }
 
 private fun showFirstRun(appStore: AppStore) {
-    val job = appStore.dispatch(
+    appStore.dispatch(
         AppAction.ShowFirstRun,
     )
-    runBlocking { job.join() }
 }
 
 private fun hideFirstRun(appStore: AppStore) {
-    val job = appStore.dispatch(
+    appStore.dispatch(
         AppAction.FinishFirstRun(tabId = null),
     )
-    runBlocking { job.join() }
 }
 
 // changing the device preference for Touch and Hold delay, to avoid long-clicks instead of a single-click

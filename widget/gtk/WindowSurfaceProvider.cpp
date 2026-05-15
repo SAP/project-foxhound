@@ -208,15 +208,6 @@ void WindowSurfaceProvider::EndRemoteDrawingInRegion(
   if (!mWindowSurface || !mWindowSurfaceValid) {
     return;
   }
-#if defined(MOZ_WAYLAND)
-  if (GdkIsWaylandDisplay()) {
-    // We're called too early or we're unmapped.
-    // Don't draw anything.
-    if (!mWidget || !mWidget->IsMapped()) {
-      return;
-    }
-  }
-#endif
   mWindowSurface->Commit(aInvalidRegion);
 }
 

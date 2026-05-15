@@ -8,8 +8,8 @@
  * related code as self-contained as possible.
  */
 
-#ifndef SHELL_WINDOWS11TASKBARPINNING_H__
-#define SHELL_WINDOWS11TASKBARPINNING_H__
+#ifndef SHELL_WINDOWS11TASKBARPINNING_H_
+#define SHELL_WINDOWS11TASKBARPINNING_H_
 
 #include "nsString.h"
 #include <wrl.h>
@@ -34,4 +34,4 @@ Win11PinToTaskBarResult PinCurrentAppToTaskbarWin11(
 
 Win11PinToTaskBarResult IsCurrentAppPinnedToTaskbarWin11(bool aCheckOnly);
 
-#endif  // SHELL_WINDOWS11TASKBARPINNING_H__
+#endif  // SHELL_WINDOWS11TASKBARPINNING_H_

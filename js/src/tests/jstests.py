@@ -18,7 +18,10 @@ import shlex
 import sys
 import tempfile
 from contextlib import contextmanager
-from copy import copy
+from copy import (
+    copy,
+    deepcopy,
+)
 from datetime import datetime
 from itertools import chain
 from os.path import abspath, dirname, isfile, realpath
@@ -55,7 +58,11 @@ def changedir(dirname):
 
 
 class PathOptions:
-    def __init__(self, location, requested_paths, excluded_paths):
+    def __init__(self, topsrc_dir, location, requested_paths, excluded_paths):
+        self.topsrc_dir = topsrc_dir
+        self.test_prefix = (
+            os.path.abspath(os.path.relpath(location, topsrc_dir)) + os.sep
+        )
         self.requested_paths = requested_paths
         self.excluded_files, self.excluded_dirs = PathOptions._split_files_and_dirs(
             location, excluded_paths
@@ -79,7 +86,7 @@ class PathOptions:
     def should_run(self, filename):
         # If any tests are requested by name, skip tests that do not match.
         if self.requested_paths and not any(
-            req in filename for req in self.requested_paths
+            req in (self.test_prefix + filename) for req in self.requested_paths
         ):
             return False
 
@@ -112,7 +119,7 @@ def parse_args():
     op.add_argument(
         "--xul-info",
         dest="xul_info_src",
-        help="config data for xulRuntime" " (avoids search for config/autoconf.mk)",
+        help="config data for xulRuntime (avoids search for config/autoconf.mk)",
     )
 
     harness_og = op.add_argument_group("Harness Controls", "Control how tests are run.")
@@ -121,19 +128,19 @@ def parse_args():
         "--worker-count",
         type=int,
         default=max(1, get_cpu_count()),
-        help="Number of tests to run in parallel" " (default %(default)s)",
+        help="Number of tests to run in parallel (default %(default)s)",
     )
     harness_og.add_argument(
         "-t",
         "--timeout",
         type=float,
         default=150.0,
-        help="Set maximum time a test is allows to run" " (in seconds).",
+        help="Set maximum time a test is allows to run (in seconds).",
     )
     harness_og.add_argument(
         "--show-slow",
         action="store_true",
-        help="Show tests taking longer than a minimum time" " (in seconds).",
+        help="Show tests taking longer than a minimum time (in seconds).",
     )
     harness_og.add_argument(
         "--slow-test-threshold",
@@ -146,13 +153,15 @@ def parse_args():
         "-a",
         "--args",
         dest="shell_args",
-        default="",
+        default=[],
+        action="append",
         help="Extra args to pass to the JS shell.",
     )
     harness_og.add_argument(
         "--feature-args",
         dest="feature_args",
-        default="",
+        default=[],
+        action="append",
         help="Extra args to pass to the JS shell even when feature-testing.",
     )
     harness_og.add_argument(
@@ -166,12 +175,12 @@ def parse_args():
     harness_og.add_argument(
         "--tbpl",
         action="store_true",
-        help="Runs each test in all configurations tbpl" " tests.",
+        help="Runs each test in all configurations tbpl tests.",
     )
     harness_og.add_argument(
         "--tbpl-debug",
         action="store_true",
-        help="Runs each test in some faster configurations" " tbpl tests.",
+        help="Runs each test in some faster configurations tbpl tests.",
     )
     harness_og.add_argument(
         "-g", "--debug", action="store_true", help="Run a test in debugger."
@@ -185,7 +194,7 @@ def parse_args():
     harness_og.add_argument(
         "--passthrough",
         action="store_true",
-        help="Run tests with stdin/stdout attached to" " caller.",
+        help="Run tests with stdin/stdout attached to caller.",
     )
     harness_og.add_argument(
         "--test-reflect-stringify",
@@ -242,14 +251,14 @@ def parse_args():
         action="store",
         type=str,
         default="/data/local/tmp/test_root",
-        help="The remote directory to use as test root" " (e.g. %(default)s)",
+        help="The remote directory to use as test root (e.g. %(default)s)",
     )
     harness_og.add_argument(
         "--localLib",
         dest="local_lib",
         action="store",
         type=str,
-        help="The location of libraries to push -- preferably" " stripped",
+        help="The location of libraries to push -- preferably stripped",
     )
     harness_og.add_argument(
         "--no-xdr",
@@ -317,7 +326,7 @@ def parse_args():
     input_og.add_argument(
         "--no-extensions",
         action="store_true",
-        help="Run only tests conforming to the ECMAScript 5" " standard.",
+        help="Run only tests conforming to the ECMAScript 5 standard.",
     )
     input_og.add_argument(
         "--repeat", type=int, default=1, help="Repeat tests the given number of times."
@@ -334,23 +343,23 @@ def parse_args():
         "-o",
         "--show-output",
         action="store_true",
-        help="Print each test's output to the file given by" " --output-file.",
+        help="Print each test's output to the file given by --output-file.",
     )
     output_og.add_argument(
         "-F",
         "--failed-only",
         action="store_true",
-        help="If a --show-* option is given, only print" " output for failed tests.",
+        help="If a --show-* option is given, only print output for failed tests.",
     )
     output_og.add_argument(
         "--no-show-failed",
         action="store_true",
-        help="Don't print output for failed tests" " (no-op with --show-output).",
+        help="Don't print output for failed tests (no-op with --show-output).",
     )
     output_og.add_argument(
         "-O",
         "--output-file",
-        help="Write all output to the given file" " (default: stdout).",
+        help="Write all output to the given file (default: stdout).",
     )
     output_og.add_argument(
         "--failure-file", help="Write all not-passed tests to the given file."
@@ -373,7 +382,7 @@ def parse_args():
         dest="format",
         default="none",
         choices=["automation", "none"],
-        help="Output format. Either automation or none" " (default %(default)s).",
+        help="Output format. Either automation or none (default %(default)s).",
     )
     output_og.add_argument(
         "--log-wptreport",
@@ -433,7 +442,7 @@ def parse_args():
     if options.rr:
         debugger_prefix = ["rr", "record"]
 
-    js_cmd_args = shlex.split(options.shell_args) + shlex.split(options.feature_args)
+    js_cmd_args = split_extra_shell_args(options.shell_args + options.feature_args)
     if options.jorendb:
         options.passthrough = True
         options.hide_progress = True
@@ -456,9 +465,9 @@ def parse_args():
     # requested tests set.
     if options.test_file:
         for test_file in options.test_file:
-            requested_paths |= set(
-                [line.strip() for line in open(test_file).readlines()]
-            )
+            requested_paths |= set([
+                line.strip() for line in open(test_file).readlines()
+            ])
 
     excluded_paths = set(options.excluded_paths)
 
@@ -554,17 +563,15 @@ def load_wpt_tests(xul_tester, requested_paths, excluded_paths, update_manifest=
     )
 
     kwargs = vars(wptcommandline.create_parser().parse_args([]))
-    kwargs.update(
-        {
-            "config": os.path.join(
-                manifest_root, "_tests", "web-platform", "wptrunner.local.ini"
-            ),
-            "gecko_e10s": False,
-            "product": "firefox",
-            "verify": False,
-            "wasm": xul_tester.test("wasmIsSupported()"),
-        }
-    )
+    kwargs.update({
+        "config": os.path.join(
+            manifest_root, "_tests", "web-platform", "wptrunner.local.ini"
+        ),
+        "gecko_e10s": False,
+        "product": "firefox",
+        "verify": False,
+        "wasm": xul_tester.test("wasmIsSupported()"),
+    })
     wptcommandline.set_from_config(kwargs)
 
     def filter_jsshell_tests(it):
@@ -655,13 +662,20 @@ def load_wpt_tests(xul_tester, requested_paths, excluded_paths, update_manifest=
     return tests
 
 
+def split_extra_shell_args(args):
+    result = []
+    for option in args:
+        result.extend(shlex.split(option))
+    return result
+
+
 def load_tests(options, requested_paths, excluded_paths):
     """
     Returns a tuple: (test_count, test_gen)
         test_count: [int] Number of tests that will be in test_gen
         test_gen: [iterable<Test>] Tests found that should be run.
     """
-    import lib.manifest as manifest
+    from lib import manifest
 
     if options.js_shell is None:
         xul_tester = manifest.NullXULInfoTester()
@@ -672,11 +686,19 @@ def load_tests(options, requested_paths, excluded_paths):
             xul_abi, xul_os, xul_debug = options.xul_info_src.split(r":")
             xul_debug = xul_debug.lower() == "true"
             xul_info = manifest.XULInfo(xul_abi, xul_os, xul_debug)
-        feature_args = shlex.split(options.feature_args)
+        feature_args = split_extra_shell_args(options.feature_args)
         xul_tester = manifest.XULInfoTester(xul_info, options, feature_args)
 
     test_dir = dirname(abspath(__file__))
-    path_options = PathOptions(test_dir, requested_paths, excluded_paths)
+
+    # Given this file is js/src/tests/jstests.py, let's compute
+    # the base path directory as test_dir/../../../
+    #
+    # This has precedent in WPT loading and jorendb stuff
+    # despite being surprising :)
+    topsrc_dir = os.path.normpath(os.path.join(test_dir, "..", "..", ".."))
+
+    path_options = PathOptions(topsrc_dir, test_dir, requested_paths, excluded_paths)
     test_count = manifest.count_tests(test_dir, path_options)
     test_gen = manifest.load_reftests(test_dir, path_options, xul_tester)
 
@@ -752,7 +774,7 @@ def load_tests(options, requested_paths, excluded_paths):
         test_gen = (_ for _ in test_gen if not _.slow)
 
     if options.repeat:
-        test_gen = (test for test in test_gen for i in range(options.repeat))
+        test_gen = (deepcopy(test) for test in test_gen for _ in range(options.repeat))
         test_count *= options.repeat
 
     return test_count, test_gen
@@ -784,8 +806,7 @@ def main():
     if options.debug:
         if test_count > 1:
             print(
-                "Multiple tests match command line arguments,"
-                " debugger can only run one"
+                "Multiple tests match command line arguments, debugger can only run one"
             )
             for tc in test_gen:
                 print(f"    {tc.path}")

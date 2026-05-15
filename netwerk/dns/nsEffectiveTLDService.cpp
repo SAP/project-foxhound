@@ -8,14 +8,9 @@
 // complete description of the expected file format and parsing rules, see
 // http://wiki.mozilla.org/Gecko:Effective_TLD_Service
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Components.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/Try.h"
 
 #include "MainThreadUtils.h"
 #include "nsContentUtils.h"

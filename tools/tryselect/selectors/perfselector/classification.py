@@ -511,6 +511,27 @@ class ClassificationProvider:
                 "description": "A group of tests that ensure that the interactive part of the browser stays fast and "
                 "responsive",
             },
+            "Accessibility": {
+                "query": {
+                    Suites.PERFTEST.value: ["'perftest 'accessibility"],
+                },
+                "suites": [Suites.PERFTEST.value],
+                "platform-restrictions": [
+                    Platforms.DESKTOP.value,
+                    Platforms.LINUX.value,
+                    Platforms.MACOSX.value,
+                    Platforms.WINDOWS.value,
+                ],
+                "app-restrictions": {
+                    Suites.PERFTEST.value: [
+                        Apps.FIREFOX.value,
+                    ],
+                },
+                "tasks": [],
+                "description": (
+                    "A set of tests used to test accessibility engine performance in Firefox."
+                ),
+            },
             "Benchmarks": {
                 "query": {
                     Suites.RAPTOR.value: ["'browsertime 'benchmark !tp6-bench"],
@@ -616,7 +637,7 @@ class ClassificationProvider:
             },
             "Startup": {
                 "query": {
-                    Suites.PERFTEST.value: ["'startup !-test-"],
+                    Suites.PERFTEST.value: ["'startup !-test- !profiling"],
                     Suites.TALOS.value: ["'sessionrestore | 'other !damp"],
                 },
                 "suites": [Suites.PERFTEST.value, Suites.TALOS.value],

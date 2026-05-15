@@ -1,7 +1,7 @@
 diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
 --- a/expat/lib/xmlparse.c
 +++ b/expat/lib/xmlparse.c
-@@ -269,7 +269,9 @@ typedef struct {
+@@ -270,7 +270,9 @@ typedef struct {
  #define INIT_DATA_BUF_SIZE 1024
  #define INIT_ATTS_SIZE 16
  #define INIT_ATTS_VERSION 0xFFFFFFFF

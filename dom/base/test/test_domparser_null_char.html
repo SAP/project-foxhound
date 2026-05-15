@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=817469
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 817469 **/
+/** Test for Bug 817469 */
   var doc = new DOMParser().parseFromString("\x00<div id='myElement'>", "text/html");
   isnot(doc.getElementById("myElement"), null, "Should not stop at null");
 </script>

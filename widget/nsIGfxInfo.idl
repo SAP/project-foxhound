@@ -13,13 +13,11 @@ interface nsIGfxInfo : nsISupports
   /*
    * These are win32-specific
    */
-  readonly attribute boolean D2DEnabled;
   readonly attribute boolean DWriteEnabled;
   readonly attribute boolean EmbeddedInFirefoxReality;
   readonly attribute AString AzureCanvasBackend;
   readonly attribute AString AzureContentBackend;
   readonly attribute boolean usingGPUProcess;
-  readonly attribute boolean usingRemoteCanvas;
   readonly attribute boolean usingAcceleratedCanvas;
   readonly attribute boolean hasBattery;
   readonly attribute AString DWriteVersion;
@@ -122,6 +120,7 @@ interface nsIGfxInfo : nsISupports
   Array<ACString> getFailures(out Array<long> indices);
 
   [noscript, notxpcom] void logFailure(in ACString failure);
+  [noscript, notxpcom] void setCodecSupportInfo(in ACString supportInfo);
 
 %{C++
   /*
@@ -131,11 +130,11 @@ interface nsIGfxInfo : nsISupports
   enum FeatureType : uint8_t {
     FEATURE_INVALID = 0,
 #define GFXINFO_FEATURE(id, name, pref) FEATURE_##id,
-#include "mozilla/widget/GfxInfoFeatureDefs.h"
+#include "mozilla/widget/GfxInfoFeatureDefs.inc"
 #undef GFXINFO_FEATURE
     FEATURE_COUNT,
     /* This must be the first value after INVALID/ALL/OPTIONAL. */
-    FEATURE_START = FEATURE_DIRECT2D
+    FEATURE_START = FEATURE_DIRECT3D_9_LAYERS
   };
 
   /*
@@ -144,7 +143,7 @@ interface nsIGfxInfo : nsISupports
   enum FeatureStatusType : uint8_t {
     FEATURE_STATUS_INVALID = 0,
 #define GFXINFO_FEATURE_STATUS(id) FEATURE_##id,
-#include "mozilla/widget/GfxInfoFeatureStatusDefs.h"
+#include "mozilla/widget/GfxInfoFeatureStatusDefs.inc"
 #undef GFXINFO_FEATURE_STATUS
   };
 %}

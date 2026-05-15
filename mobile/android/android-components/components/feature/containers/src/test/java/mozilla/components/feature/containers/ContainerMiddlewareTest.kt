@@ -5,31 +5,22 @@
 package mozilla.components.feature.containers
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.ContainerAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContainerState
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class ContainerMiddlewareTest {
-    @get:Rule
-    val mainCoroutineRule = MainCoroutineRule()
-
     // Test container
     private val container = ContainerState(
         contextId = "contextId",
@@ -40,18 +31,17 @@ class ContainerMiddlewareTest {
 
     @Test
     fun `container storage stores the provided container on add container action`() =
-        runTestOnMain {
+        runTest {
             val storage = mockStorage()
             val middleware = ContainerMiddleware(testContext, coroutineContext, containerStorage = storage)
             val store = BrowserStore(
                 initialState = BrowserState(),
                 middleware = listOf(middleware),
             )
+            testScheduler.advanceUntilIdle()
 
-            store.waitUntilIdle() // wait to consume InitAction
-            store.waitUntilIdle() // wait to consume AddContainersAction
-
-            store.dispatch(ContainerAction.AddContainerAction(container)).joinBlocking()
+            store.dispatch(ContainerAction.AddContainerAction(container))
+            testScheduler.advanceUntilIdle()
 
             verify(storage).addContainer(
                 container.contextId,
@@ -63,16 +53,14 @@ class ContainerMiddlewareTest {
 
     @Test
     fun `fetch the containers from the container storage and load into browser state on initialize container state action`() =
-        runTestOnMain {
+        runTest {
             val storage = mockStorage(listOf(container))
             val middleware = ContainerMiddleware(testContext, coroutineContext, containerStorage = storage)
             val store = BrowserStore(
                 initialState = BrowserState(),
                 middleware = listOf(middleware),
             )
-
-            store.waitUntilIdle() // wait to consume InitAction
-            store.waitUntilIdle() // wait to consume AddContainersAction
+            testScheduler.advanceUntilIdle()
 
             verify(storage).getContainers()
             assertEquals(container, store.state.containers["contextId"])
@@ -80,7 +68,7 @@ class ContainerMiddlewareTest {
 
     @Test
     fun `container storage removes the provided container on remove container action`() =
-        runTestOnMain {
+        runTest {
             val storage = mockStorage()
             val middleware = ContainerMiddleware(testContext, coroutineContext, containerStorage = storage)
             val store = BrowserStore(
@@ -91,12 +79,10 @@ class ContainerMiddlewareTest {
                 ),
                 middleware = listOf(middleware),
             )
-
-            store.waitUntilIdle() // wait to consume InitAction
-            store.waitUntilIdle() // wait to consume AddContainersAction
+            testScheduler.advanceUntilIdle()
 
             store.dispatch(ContainerAction.RemoveContainerAction(container.contextId))
-                .joinBlocking()
+            testScheduler.advanceUntilIdle()
 
             verify(storage).removeContainer(container)
         }

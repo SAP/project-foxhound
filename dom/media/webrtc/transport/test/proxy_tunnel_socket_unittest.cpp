@@ -6,11 +6,10 @@
 
 // Original authors: ekr@rtfm.com; ryan@tokbox.com
 
-#include <vector>
 #include <numeric>
 
-#include "nr_socket_tcp.h"
 #include "WebrtcTCPSocketWrapper.h"
+#include "nr_socket_tcp.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"

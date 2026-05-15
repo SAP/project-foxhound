@@ -27,10 +27,34 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
     return etpState;
   }
 
+  #isBlockingTracker(state) {
+    return (
+      state & Ci.nsIWebProgressListener.STATE_REPLACED_FINGERPRINTING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_REPLACED_TRACKING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_CRYPTOMINING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_EMAILTRACKING_CONTENT
+    );
+  }
+
+  #getBlockedOrigins(currentWindowGlobal) {
+    const blockedOrigins = [];
+    const log = JSON.parse(currentWindowGlobal.contentBlockingLog);
+    for (let [origin, actions] of Object.entries(log)) {
+      if (actions.some(([state]) => this.#isBlockingTracker(state))) {
+        blockedOrigins.push(origin);
+      }
+    }
+    return blockedOrigins;
+  }
+
   #getAntitrackingInfo(browsingContext) {
     // Ask BounceTrackingProtection whether it has recently purged state for the
     // site in the current top level context.
     let btpHasPurgedSite = false;
+    let { currentWindowGlobal } = browsingContext;
     if (
       Services.prefs.getIntPref("privacy.bounceTrackingProtection.mode") !=
       Ci.nsIBounceTrackingProtection.MODE_DISABLED
@@ -39,7 +63,6 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
         "@mozilla.org/bounce-tracking-protection;1"
       ].getService(Ci.nsIBounceTrackingProtection);
 
-      let { currentWindowGlobal } = browsingContext;
       if (currentWindowGlobal) {
         let { documentPrincipal } = currentWindowGlobal;
         let { baseDomain } = documentPrincipal;
@@ -48,11 +71,14 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
       }
     }
 
+    const blockList = this.#getAntitrackingBlockList();
+    const blockedOrigins = this.#getBlockedOrigins(currentWindowGlobal);
     return {
-      blockList: this.#getAntitrackingBlockList(),
+      blockList,
+      blockedOrigins,
       isPrivateBrowsing: browsingContext.usePrivateBrowsing,
       hasTrackingContentBlocked: !!(
-        browsingContext.currentWindowGlobal.contentBlockingEvents &
+        currentWindowGlobal.contentBlockingEvents &
         Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT
       ),
       hasMixedActiveContentBlocked: !!(
@@ -103,7 +129,6 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
     );
 
     return clean({
-      direct2DEnabled: get("direct2DEnabled"),
       directWriteEnabled: get("directWriteEnabled"),
       directWriteVersion: get("directWriteVersion"),
       hasTouchScreen: info.ApzTouchInput == 1,

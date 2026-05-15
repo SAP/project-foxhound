@@ -17,7 +17,6 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_webgl.h"
-#include "mozilla/Unused.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsPrintfCString.h"
@@ -266,9 +265,11 @@ static std::shared_ptr<EglDisplay> GetAndInitSurfacelessDisplay(
 
 static auto EglDebugLayersEnabled() {
   EGLAttrib ret = LOCAL_EGL_FALSE;
+#ifdef XP_WIN
   if (StaticPrefs::gfx_direct3d11_enable_debug_layer_AtStartup()) {
     ret = LOCAL_EGL_TRUE;
   }
+#endif
   return ret;
 }
 

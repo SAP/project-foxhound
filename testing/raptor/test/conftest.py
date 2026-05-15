@@ -120,28 +120,28 @@ def create_args():
 def ConcretePerftest():
     class PerftestImplementation(Perftest):
         def check_for_crashes(self):
-            super(PerftestImplementation, self).check_for_crashes()
+            super().check_for_crashes()
 
         def clean_up(self):
-            super(PerftestImplementation, self).clean_up()
+            super().clean_up()
 
         def run_test(self, test, timeout):
-            super(PerftestImplementation, self).run_test(test, timeout)
+            super().run_test(test, timeout)
 
         def run_test_setup(self, test):
-            super(PerftestImplementation, self).run_test_setup(test)
+            super().run_test_setup(test)
 
         def run_test_teardown(self, test):
-            super(PerftestImplementation, self).run_test_teardown(test)
+            super().run_test_teardown(test)
 
         def set_browser_test_prefs(self):
-            super(PerftestImplementation, self).set_browser_test_prefs()
+            super().set_browser_test_prefs()
 
         def get_browser_meta(self):
             return (), ()
 
         def setup_chrome_args(self, test):
-            super(PerftestImplementation, self).setup_chrome_args(test)
+            super().setup_chrome_args(test)
 
     return PerftestImplementation
 
@@ -157,6 +157,6 @@ def ConcreteBrowsertime():
             return (), ()
 
         def setup_chrome_args(self, test):
-            super(BrowsertimeImplementation, self).setup_chrome_args(test)
+            super().setup_chrome_args(test)
 
     return BrowsertimeImplementation

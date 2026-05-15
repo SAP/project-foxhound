@@ -77,14 +77,14 @@ add_task(async function test_ignored_fields() {
     let nonSyncableProps = new PropertyBag();
     nonSyncableProps.setProperty("timeLastUsed", Date.now());
     nonSyncableProps.setProperty("timesUsed", 3);
-    Services.logins.modifyLogin(login, nonSyncableProps);
+    await Services.logins.modifyLoginAsync(login, nonSyncableProps);
 
     let noChanges = await engine.pullNewChanges();
     deepEqual(noChanges, {}, "Should not track non-syncable fields");
 
     let syncableProps = new PropertyBag();
     syncableProps.setProperty("username", "newuser");
-    Services.logins.modifyLogin(login, syncableProps);
+    await Services.logins.modifyLoginAsync(login, syncableProps);
 
     let changes = await engine.pullNewChanges();
     deepEqual(
@@ -127,7 +127,7 @@ add_task(async function test_ignored_sync_credentials() {
 
     let props = new PropertyBag();
     props.setProperty("password", "newcreds");
-    Services.logins.modifyLogin(login, props);
+    await Services.logins.modifyLoginAsync(login, props);
 
     noChanges = await engine.pullNewChanges();
     deepEqual(noChanges, {}, "Should not track changes to FxA credentials");
@@ -208,7 +208,7 @@ add_task(async function test_password_engine() {
     let props = new PropertyBag();
     let localPasswordChangeTime = Date.now() - 1 * 60 * 60 * 24 * 1000;
     props.setProperty("timePasswordChanged", localPasswordChangeTime);
-    Services.logins.modifyLogin(login, props);
+    await Services.logins.modifyLoginAsync(login, props);
 
     let logins = await Services.logins.searchLoginsAsync({
       origin: "https://mozilla.com",
@@ -304,7 +304,7 @@ add_task(async function test_sync_outgoing() {
     for (let i = 1; i <= 2; i++) {
       _("Modify the password iteration " + i);
       foundLogins[0].password = "newpassword" + i;
-      Services.logins.modifyLogin(login, foundLogins[0]);
+      await Services.logins.modifyLoginAsync(login, foundLogins[0]);
       foundLogins = await Services.logins.searchLoginsAsync({
         origin: "http://mozilla.com",
       });
@@ -348,7 +348,7 @@ add_task(async function test_sync_outgoing() {
     // Next, modify the username and sync.
     _("Modify the username");
     foundLogins[0].username = "newuser";
-    Services.logins.modifyLogin(login, foundLogins[0]);
+    await Services.logins.modifyLoginAsync(login, foundLogins[0]);
     foundLogins = await Services.logins.searchLoginsAsync({
       origin: "http://mozilla.com",
     });
@@ -383,7 +383,7 @@ add_task(async function test_sync_outgoing() {
 
     ok((await engine._store.getAllIDs())[guid]);
 
-    Services.logins.removeLogin(foundLogins[0]);
+    await Services.logins.removeLoginAsync(foundLogins[0]);
     foundLogins = await Services.logins.searchLoginsAsync({
       origin: "http://mozilla.com",
     });
@@ -657,7 +657,7 @@ add_task(async function test_sync_incoming_deleted_localchanged_remotenewer() {
       origin: "http://mozilla.com",
     });
     foundLogins[0].password = "wallaby";
-    Services.logins.modifyLogin(login, foundLogins[0]);
+    await Services.logins.modifyLoginAsync(login, foundLogins[0]);
 
     // Use a time in the future to ensure that the remote record is newer.
     collection.updateRecord(
@@ -715,7 +715,7 @@ add_task(async function test_sync_incoming_deleted_localchanged_localnewer() {
       origin: "http://www.mozilla.com",
     });
     foundLogins[0].password = "cheetah";
-    Services.logins.modifyLogin(login, foundLogins[0]);
+    await Services.logins.modifyLoginAsync(login, foundLogins[0]);
 
     // Use a time in the past to ensure that the local record is newer.
     collection.updateRecord(
@@ -1109,7 +1109,7 @@ add_task(async function test_roundtrip_unknown_fields() {
       Date.now() - 1 * 60 * 60 * 24 * 1000
     );
     props.setProperty("timePasswordChanged", localPasswordChangeTime);
-    Services.logins.modifyLogin(login, props);
+    await Services.logins.modifyLoginAsync(login, props);
 
     let logins = await Services.logins.searchLoginsAsync({
       origin: "https://mozilla.com",

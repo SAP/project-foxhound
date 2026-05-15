@@ -11,6 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 /**
  * AddonRollouts store info about an active or expired addon rollouts.
+ *
  * @typedef {object} AddonRollout
  * @property {int} recipeId
  *   The ID of the recipe.
@@ -65,7 +66,7 @@ function getDatabase() {
  * Get a transaction for interacting with the rollout store.
  *
  * @param {IDBDatabase} db
- * @param {String} mode Either "readonly" or "readwrite"
+ * @param {string} mode Either "readonly" or "readwrite"
  *
  * NOTE: Methods on the store returned by this function MUST be called
  * synchronously, otherwise the transaction with the store will expire.
@@ -98,6 +99,7 @@ export const AddonRollouts = {
 
   /**
    * Add a new rollout
+   *
    * @param {AddonRollout} rollout
    */
   async add(rollout) {
@@ -107,6 +109,7 @@ export const AddonRollouts = {
 
   /**
    * Update an existing rollout
+   *
    * @param {AddonRollout} rollout
    * @throws If a matching rollout does not exist.
    */
@@ -123,6 +126,7 @@ export const AddonRollouts = {
   /**
    * Update many existing rollouts. More efficient than calling `update` many
    * times in a row.
+   *
    * @param {Array<PreferenceRollout>} rollouts
    * @throws If any of the passed rollouts have a slug that doesn't exist in the database already.
    */
@@ -156,6 +160,7 @@ export const AddonRollouts = {
 
   /**
    * Test whether there is a rollout in storage with the given slug.
+   *
    * @param {string} slug
    * @returns {Promise<boolean>}
    */
@@ -167,6 +172,7 @@ export const AddonRollouts = {
 
   /**
    * Get a rollout by slug
+   *
    * @param {string} slug
    */
   async get(slug) {

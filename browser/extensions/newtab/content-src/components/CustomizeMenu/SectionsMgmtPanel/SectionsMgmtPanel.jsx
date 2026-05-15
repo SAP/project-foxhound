@@ -2,14 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 // eslint-disable-next-line no-shadow
 import { CSSTransition } from "react-transition-group";
 
-function SectionsMgmtPanel({ exitEventFired }) {
-  const [showPanel, setShowPanel] = useState(false); // State management with useState
+function SectionsMgmtPanel({
+  exitEventFired,
+  pocketEnabled,
+  onSubpanelToggle,
+  togglePanel,
+  showPanel,
+}) {
+  const arrowButtonRef = useRef(null);
   const { sectionPersonalization } = useSelector(
     state => state.DiscoveryStream
   );
@@ -169,18 +175,27 @@ function SectionsMgmtPanel({ exitEventFired }) {
 
   // Close followed/blocked topic subpanel when parent menu is closed
   useEffect(() => {
-    if (exitEventFired) {
-      setShowPanel(false);
+    if (exitEventFired && showPanel) {
+      togglePanel();
     }
-  }, [exitEventFired]);
+  }, [exitEventFired, showPanel, togglePanel]);
 
-  const togglePanel = () => {
-    setShowPanel(prevShowPanel => !prevShowPanel);
+  // Notify parent menu when subpanel opens/closes
+  useEffect(() => {
+    if (onSubpanelToggle) {
+      onSubpanelToggle(showPanel);
+    }
+  }, [showPanel, onSubpanelToggle]);
 
-    // Fire when the panel is open
-    if (!showPanel) {
+  useEffect(() => {
+    if (showPanel) {
       updateCachedData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPanel]);
+
+  const handlePanelEntered = () => {
+    arrowButtonRef.current?.focus();
   };
 
   const followedSectionsList = followedSectionsData.map(
@@ -268,15 +283,21 @@ function SectionsMgmtPanel({ exitEventFired }) {
       <moz-box-button
         onClick={togglePanel}
         data-l10n-id="newtab-section-manage-topics-button-v2"
+        {...(!pocketEnabled ? { disabled: true } : {})}
       ></moz-box-button>
       <CSSTransition
         in={showPanel}
         timeout={300}
         classNames="sections-mgmt-panel"
         unmountOnExit={true}
+        onEntered={handlePanelEntered}
       >
         <div className="sections-mgmt-panel">
-          <button className="arrow-button" onClick={togglePanel}>
+          <button
+            ref={arrowButtonRef}
+            className="arrow-button"
+            onClick={togglePanel}
+          >
             <h1 data-l10n-id="newtab-section-mangage-topics-title"></h1>
           </button>
           <h3 data-l10n-id="newtab-section-mangage-topics-followed-topics"></h3>

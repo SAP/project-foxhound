@@ -5,8 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceMeasure.h"
+
 #include "MainThreadUtils.h"
 #include "mozilla/dom/PerformanceMeasureBinding.h"
+#include "nsGkAtoms.h"
 
 using namespace mozilla::dom;
 
@@ -15,7 +17,7 @@ PerformanceMeasure::PerformanceMeasure(nsISupports* aParent,
                                        DOMHighResTimeStamp aStartTime,
                                        DOMHighResTimeStamp aEndTime,
                                        const JS::Handle<JS::Value>& aDetail)
-    : PerformanceEntry(aParent, aName, u"measure"_ns),
+    : PerformanceEntry(aParent, aName, nsGkAtoms::measure),
       mStartTime(aStartTime),
       mDuration(aEndTime - aStartTime),
       mDetail(aDetail) {

@@ -34,8 +34,8 @@
   overflow: hidden;
   /* padding will give space for card shadow to appear and
      margin will correct the alignment */
-  margin-inline: calc(var(--card-shadow-blur-radius) * -1);
-  padding-inline: var(--card-shadow-blur-radius);
+  margin-inline: calc(var(--base-unit) * -1);
+  padding-inline: var(--base-unit);
 }
 
 .debug-target-pane__collapsable--collapsed {

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_XULComboboxAccessible_h__
-#define mozilla_a11y_XULComboboxAccessible_h__
+#ifndef mozilla_a11y_XULComboboxAccessible_h_
+#define mozilla_a11y_XULComboboxAccessible_h_
 
 #include "XULMenuAccessible.h"
 
@@ -21,7 +21,7 @@ class XULComboboxAccessible : public AccessibleWrap {
   XULComboboxAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // LocalAccessible
-  void Description(nsString& aDescription) const override;
+  EDescriptionValueFlag Description(nsString& aDescription) const override;
   void Value(nsString& aValue) const override;
   a11y::role NativeRole() const override;
   uint64_t NativeState() const override;

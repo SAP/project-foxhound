@@ -154,14 +154,14 @@
     init() {
       this._radioChildren = null;
 
-      if (this.getAttribute("disabled") == "true") {
+      if (this.hasAttribute("disabled")) {
         this.disabled = true;
       }
 
       var children = this._getRadioChildren();
       var length = children.length;
       for (var i = 0; i < length; i++) {
-        if (children[i].getAttribute("selected") == "true") {
+        if (children[i].hasAttribute("selected")) {
           this.selectedIndex = i;
           return;
         }
@@ -230,7 +230,7 @@
     }
 
     get disabled() {
-      if (this.getAttribute("disabled") == "true") {
+      if (this.hasAttribute("disabled")) {
         return true;
       }
       var children = this._getRadioChildren();
@@ -265,12 +265,12 @@
     }
 
     set selectedItem(val) {
-      var focused = this.getAttribute("focused") == "true";
+      var focused = this.hasAttribute("focused");
       var alreadySelected = false;
 
       if (val) {
-        alreadySelected = val.getAttribute("selected") == "true";
-        val.setAttribute("focused", focused);
+        alreadySelected = val.hasAttribute("selected");
+        val.toggleAttribute("focused", focused);
         val.setAttribute("selected", "true");
         this.setAttribute("value", val.value);
       } else {
@@ -279,13 +279,8 @@
 
       // uncheck all other group nodes
       var children = this._getRadioChildren();
-      var previousItem = null;
       for (var i = 0; i < children.length; ++i) {
         if (children[i] != val) {
-          if (children[i].getAttribute("selected") == "true") {
-            previousItem = children[i];
-          }
-
           children[i].removeAttribute("selected");
           children[i].removeAttribute("focused");
         }
@@ -295,27 +290,11 @@
       event.initEvent("select", false, true);
       this.dispatchEvent(event);
 
-      if (focused) {
-        if (alreadySelected) {
-          // Notify accessibility that this item got focus.
-          event = document.createEvent("Events");
-          event.initEvent("DOMMenuItemActive", true, true);
-          val.dispatchEvent(event);
-        } else {
-          // Only report if actual change
-          if (val) {
-            // Accessibility will fire focus for this.
-            event = document.createEvent("Events");
-            event.initEvent("RadioStateChange", true, true);
-            val.dispatchEvent(event);
-          }
-
-          if (previousItem) {
-            event = document.createEvent("Events");
-            event.initEvent("RadioStateChange", true, true);
-            previousItem.dispatchEvent(event);
-          }
-        }
+      if (focused && alreadySelected) {
+        // Notify accessibility that this item got focus.
+        event = document.createEvent("Events");
+        event.initEvent("DOMMenuItemActive", true, true);
+        val.dispatchEvent(event);
       }
     }
 
@@ -350,7 +329,7 @@
     get focusedItem() {
       var children = this._getRadioChildren();
       for (var i = 0; i < children.length; ++i) {
-        if (children[i].getAttribute("focused") == "true") {
+        if (children[i].hasAttribute("focused")) {
           return children[i];
         }
       }

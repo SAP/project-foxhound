@@ -23,6 +23,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
@@ -55,7 +56,7 @@ export class AboutPrivateBrowsingParent extends JSWindowActorParent {
       }
       case "SearchHandoff": {
         let urlBar = win.gURLBar;
-        let searchEngine = Services.search.defaultPrivateEngine;
+        let searchEngine = lazy.SearchService.defaultPrivateEngine;
         let isFirstChange = true;
 
         if (!aMessage.data || !aMessage.data.text) {
@@ -133,7 +134,7 @@ export class AboutPrivateBrowsingParent extends JSWindowActorParent {
         }
         Services.prefs.setIntPref(SHOWN_PREF, shownTimes + 1);
         return new Promise(resolve => {
-          Services.search.getDefaultPrivate().then(engine => {
+          lazy.SearchService.getDefaultPrivate().then(engine => {
             resolve(engine.name);
           });
         });

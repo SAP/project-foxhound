@@ -118,7 +118,7 @@ SelectContentHelper.prototype = {
       isOpenedViaTouch: this.isOpenedViaTouch,
       options,
       rect,
-      custom: !this.element.nodePrincipal.isSystemPrincipal,
+      custom: this._allowCustomStyling(computedStyles),
       selectedIndex: this.element.selectedIndex,
       isDarkBackground: ChromeUtils.isDarkBackground(this.element),
       style: supportedStyles(computedStyles, SUPPORTED_SELECT_PROPERTIES),
@@ -161,6 +161,23 @@ SelectContentHelper.prototype = {
     return { options, uniqueStyles };
   },
 
+  _allowCustomStyling(styles) {
+    if (this.element.nodePrincipal.isSystemPrincipal) {
+      // We assume that our UI integrates reasonably with the OS, so we don't
+      // need custom styling.
+      return false;
+    }
+    if (styles.backgroundImage !== "none") {
+      // Disable custom styling if the select uses background-image. We can't
+      // reasonably support arbitrary background-images (because it'd require
+      // doing image loads on the parent for images specified by content, which
+      // is a no-go). Plus, isDarkBackground() and such don't deal particularly
+      // well with it.
+      return false;
+    }
+    return true;
+  },
+
   _update() {
     // The <select> was updated while the dropdown was open.
     // Let's send up a new list of options.
@@ -174,7 +191,7 @@ SelectContentHelper.prototype = {
     );
     this.actor.sendAsyncMessage("Forms:UpdateDropDown", {
       options: this._buildOptionList(),
-      custom: !this.element.nodePrincipal.isSystemPrincipal,
+      custom: this._allowCustomStyling(computedStyles),
       selectedIndex: this.element.selectedIndex,
       isDarkBackground: ChromeUtils.isDarkBackground(this.element),
       style: supportedStyles(computedStyles, SUPPORTED_SELECT_PROPERTIES),

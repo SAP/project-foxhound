@@ -115,8 +115,8 @@ async function runTests(topPage, limitForeignContexts) {
           ok(false, "Unknown message");
         });
 
-        content.document.body.appendChild(ifr);
         ifr.src = obj.page;
+        content.document.body.appendChild(ifr);
       });
     }
   );
@@ -224,7 +224,7 @@ async function runTests(topPage, limitForeignContexts) {
     info(trackerOrigin);
     switch (trackerOrigin) {
       case "https://example.org":
-      case "https://example.com":
+      case "https://example.com": {
         let numEntries = 1;
         if (limitForeignContexts) {
           ++numEntries;
@@ -239,6 +239,7 @@ async function runTests(topPage, limitForeignContexts) {
           expectCookiesBlockedForeign(originLog[1]);
         }
         break;
+      }
       case "https://tracking.example.org":
         is(
           originLog.length,

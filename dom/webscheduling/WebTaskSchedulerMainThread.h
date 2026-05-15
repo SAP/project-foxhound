@@ -9,10 +9,9 @@
 #define mozilla_dom_WebSchedulerMainThread_h
 
 #include "WebTaskScheduler.h"
+#include "mozilla/dom/AbortFollower.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsThreadUtils.h"
-
-#include "mozilla/dom/AbortFollower.h"
 
 namespace mozilla::dom {
 class WebTaskMainThreadRunnable final : public Runnable {

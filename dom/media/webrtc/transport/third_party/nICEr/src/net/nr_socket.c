@@ -41,7 +41,7 @@ int nr_socket_create_int(void *obj, nr_socket_vtbl *vtbl, nr_socket **sockp)
     int _status;
     nr_socket *sock=0;
 
-    if(!(sock=RCALLOC(sizeof(nr_socket))))
+    if(!(sock=R_NEW(nr_socket)))
       ABORT(R_NO_MEMORY);
 
     assert(vtbl->version >= 1 && vtbl->version <= 2);
@@ -153,7 +153,7 @@ int nr_socket_factory_create_int(void *obj,
     int _status;
     nr_socket_factory *factoryp=0;
 
-    if(!(factoryp=RCALLOC(sizeof(nr_socket_factory))))
+    if(!(factoryp=R_NEW(nr_socket_factory)))
       ABORT(R_NO_MEMORY);
 
     factoryp->obj = obj;

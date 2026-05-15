@@ -163,7 +163,7 @@ RefPtr<MediaDataDecoder::DecodePromise> AudioTrimmer::HandleDecodedResult(
     AudioData* sample = static_cast<AudioData*>(data.get());
     bool ok = sample->SetTrimWindow(trim);
     NS_ASSERTION(ok, "Trimming of audio sample failed");
-    Unused << ok;
+    (void)ok;
     if (sample->Frames() == 0) {
       LOGV("sample[%s, %s] is empty after trimming, dropping it",
            sampleInterval.mStart.ToString().get(),

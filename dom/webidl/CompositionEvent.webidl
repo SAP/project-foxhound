@@ -15,8 +15,6 @@ interface CompositionEvent : UIEvent
   constructor(DOMString type, optional CompositionEventInit eventInitDict = {});
 
   readonly attribute DOMString? data;
-  // locale is currently non-standard
-  readonly attribute DOMString  locale;
 
  /**
   * ranges is trying to expose TextRangeArray in Gecko so a
@@ -36,6 +34,5 @@ partial interface CompositionEvent
                                  optional boolean canBubbleArg = false,
                                  optional boolean cancelableArg = false,
                                  optional Window? viewArg = null,
-                                 optional DOMString? dataArg = null,
-                                 optional DOMString localeArg = "");
+                                 optional DOMString? dataArg = null);
 };

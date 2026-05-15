@@ -5,14 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIInput.h"
+
+#include "MIDILog.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/MIDIPortChild.h"
 #include "mozilla/dom/MIDIInputBinding.h"
 #include "mozilla/dom/MIDIMessageEvent.h"
 #include "mozilla/dom/MIDIMessageEventBinding.h"
+#include "mozilla/dom/MIDIPortChild.h"
 #include "nsGlobalWindowInner.h"
-
-#include "MIDILog.h"
 
 namespace mozilla::dom {
 

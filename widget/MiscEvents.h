@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_MiscEvents_h__
-#define mozilla_MiscEvents_h__
+#ifndef mozilla_MiscEvents_h_
+#define mozilla_MiscEvents_h_
 
 #include <stdint.h>
 
@@ -169,4 +169,4 @@ class WidgetCommandEvent : public WidgetGUIEvent {
 
 }  // namespace mozilla
 
-#endif  // mozilla_MiscEvents_h__
+#endif  // mozilla_MiscEvents_h_

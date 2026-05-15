@@ -243,8 +243,8 @@ class TabDescriptorActor extends Actor {
   /**
    * Navigate this tab to a new URL.
    *
-   * @param {String} url
-   * @param {Boolean} waitForLoad
+   * @param {string} url
+   * @param {boolean} waitForLoad
    * @return {Promise}
    *         A promise which resolves only once the requested URL is fully loaded.
    */

@@ -6,8 +6,8 @@
 #ifndef TRANSFRMX_OUTPUTFORMAT_H
 #define TRANSFRMX_OUTPUTFORMAT_H
 
-#include "txList.h"
 #include "nsString.h"
+#include "txList.h"
 
 enum txOutputMethod { eMethodNotSet, eXMLOutput, eHTMLOutput, eTextOutput };
 

@@ -11,6 +11,9 @@ transforms:
     - gecko_taskgraph.transforms.bootstrap:transforms
     - gecko_taskgraph.transforms.task:transforms
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     debian11:
         image: debian:bullseye
@@ -27,6 +30,11 @@ tasks:
         pre-commands:
             - apt-get update
             - apt-get install -y --no-install-recommends curl libcurl4 git python3-pip
+    debian14:
+        image: debian:forky
+        pre-commands:
+            - apt-get update
+            - apt-get install -y --no-install-recommends curl libcurl4 git python3-pip
     ubuntu2204:
         image: ubuntu:jammy
         pre-commands:
@@ -39,8 +47,15 @@ tasks:
             # For some reason, this is required, now.
             - export DEBIAN_FRONTEND=noninteractive
             - apt-get install -y --no-install-recommends curl git python3-pip
-    ubuntu2410:
-        image: ubuntu:oracular
+    ubuntu2504:
+        image: ubuntu:plucky
+        pre-commands:
+            - apt-get update
+            # For some reason, this is required, now.
+            - export DEBIAN_FRONTEND=noninteractive
+            - apt-get install -y --no-install-recommends curl git python3-pip
+    ubuntu2510:
+        image: ubuntu:questing
         pre-commands:
             - apt-get update
             # For some reason, this is required, now.
@@ -74,12 +89,21 @@ tasks:
         image: fedora:42
         pre-commands:
             - dnf install -y git python3-pip awk
-    rockylinux8:
-        image: rockylinux:8
+    fedora43:
+        image: fedora:43
         pre-commands:
-            - dnf install -y git python39-pip
+            - dnf install -y git python3-pip awk
+    # Temporarily disabled due to bug 1985871
+    # rockylinux8:
+    #     image: rockylinux/rockylinux:8
+    #     pre-commands:
+    #         - dnf install -y git python39-pip
     rockylinux9:
-        image: rockylinux:9
+        image: rockylinux/rockylinux:9
+        pre-commands:
+            - dnf install -y git python3-pip
+    rockylinux10:
+        image: rockylinux/rockylinux:10
         pre-commands:
             - dnf install -y git python3-pip
     opensuse-leap:

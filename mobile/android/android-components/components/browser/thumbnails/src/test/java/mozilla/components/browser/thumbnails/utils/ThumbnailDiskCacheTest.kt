@@ -19,37 +19,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.`when`
-import org.robolectric.annotation.Config
 import java.io.IOException
 import java.io.OutputStream
 
 @RunWith(AndroidJUnit4::class)
 class ThumbnailDiskCacheTest {
-
-    @Test
-    fun `Writing and reading bitmap bytes for sdk higher than 29`() {
-        val cache = ThumbnailDiskCache()
-        val request = ImageLoadRequest("123", 100, false)
-
-        val bitmap: Bitmap = mock()
-        `when`(bitmap.compress(any(), ArgumentMatchers.anyInt(), any())).thenAnswer {
-            Assert.assertEquals(
-                Bitmap.CompressFormat.WEBP_LOSSY,
-                it.arguments[0] as Bitmap.CompressFormat,
-            )
-            Assert.assertEquals(90, it.arguments[1] as Int) // Quality
-
-            val stream = it.arguments[2] as OutputStream
-            stream.write("Hello World".toByteArray())
-            true
-        }
-
-        cache.putThumbnailBitmap(testContext, ImageSaveRequest(request.id, request.isPrivate), bitmap)
-
-        val data = cache.getThumbnailData(testContext, request)
-        assertNotNull(data!!)
-        Assert.assertEquals("Hello World", String(data))
-    }
 
     @Test
     fun `Writing and reading bitmap bytes for private cache`() {
@@ -59,34 +33,7 @@ class ThumbnailDiskCacheTest {
         val bitmap: Bitmap = mock()
         `when`(bitmap.compress(any(), ArgumentMatchers.anyInt(), any())).thenAnswer {
             Assert.assertEquals(
-                Bitmap.CompressFormat.WEBP_LOSSY,
-                it.arguments[0] as Bitmap.CompressFormat,
-            )
-            Assert.assertEquals(90, it.arguments[1] as Int) // Quality
-
-            val stream = it.arguments[2] as OutputStream
-            stream.write("Hello World".toByteArray())
-            true
-        }
-
-        cache.putThumbnailBitmap(testContext, ImageSaveRequest(request.id, request.isPrivate), bitmap)
-
-        val data = cache.getThumbnailData(testContext, request)
-        assertNotNull(data!!)
-        Assert.assertEquals("Hello World", String(data))
-    }
-
-    @Config(sdk = [29])
-    @Test
-    fun `Writing and reading bitmap bytes for sdk lower or equal to 29`() {
-        val cache = ThumbnailDiskCache()
-        val request = ImageLoadRequest("123", 100, false)
-
-        val bitmap: Bitmap = mock()
-        `when`(bitmap.compress(any(), ArgumentMatchers.anyInt(), any())).thenAnswer {
-            Assert.assertEquals(
-                @Suppress("DEPRECATION") // not deprecated in sdk 29
-                Bitmap.CompressFormat.WEBP,
+                Bitmap.CompressFormat.JPEG,
                 it.arguments[0] as Bitmap.CompressFormat,
             )
             Assert.assertEquals(90, it.arguments[1] as Int) // Quality

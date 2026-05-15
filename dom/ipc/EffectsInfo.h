@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_EffectsInfo_h
 #define mozilla_dom_EffectsInfo_h
 
-#include "nsRect.h"
 #include "Units.h"
+#include "nsRect.h"
 
 namespace mozilla::dom {
 

@@ -7,16 +7,17 @@
 #ifndef mozilla_dom_timeout_h
 #define mozilla_dom_timeout_h
 
-#include "mozilla/dom/PopupBlocker.h"
-#include "mozilla/dom/TimeoutHandler.h"
+#include "GeckoProfiler.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/TimeStamp.h"
-#include "nsGlobalWindowInner.h"
+#include "mozilla/dom/PopupBlocker.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsGlobalWindowInner.h"
 #include "nsTHashMap.h"
-#include "GeckoProfiler.h"
 
 namespace mozilla::dom {
+
+class TimeoutHandler;
 
 /*
  * Timeout struct that holds information about each script
@@ -136,7 +137,7 @@ class Timeout final : protected LinkedListElement<RefPtr<Timeout>> {
   // (or is cancelled, etc)
   TimeStamp mSubmitTime;
 
-  ~Timeout() { SetTimeoutContainer(nullptr); }
+  ~Timeout();
 
  public:
   // Public member variables in this section.  Please don't add to this list

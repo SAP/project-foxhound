@@ -990,15 +990,6 @@ BEGIN_TEST(testRootedTuple) {
     CHECK(!IsInsideNursery(y));
   }
 
-  // Test initialization by RootedTuple.
-  {
-    Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
-    CHECK(obj);
-    RootedTuple<JSObject*> roots(cx, obj);
-    RootedField<JSObject*> x(roots);
-    CHECK(x == obj);
-  }
-
   // Test initialization by RootedField.
   {
     Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
@@ -1078,3 +1069,27 @@ BEGIN_TEST(testRootedCopying) {
   return true;
 }
 END_TEST(testRootedCopying)
+
+BEGIN_TEST(testRootedRealm) {
+  // Create a new global and use Rooted<Realm*> to keep it alive.
+  Rooted<Realm*> realm(cx);
+  {
+    JS::RealmOptions globalOptions;
+    JSObject* otherGlobal = JS_NewGlobalObject(
+        cx, getGlobalClass(), nullptr, JS::FireOnNewGlobalHook, globalOptions);
+    CHECK(otherGlobal);
+    realm = JS::GetObjectRealmOrNull(otherGlobal);
+    CHECK(realm);
+  }
+
+  JS_GC(cx);
+
+  // Use the realm.
+  JSAutoRealm ar(cx, JS::GetRealmGlobalOrNull(realm));
+  JS::RootedValue v(cx);
+  EVAL("let x = -1234; Math.abs(x)", &v);
+  CHECK(v.toNumber() == 1234);
+
+  return true;
+}
+END_TEST(testRootedRealm)

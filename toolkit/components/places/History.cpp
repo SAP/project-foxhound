@@ -36,7 +36,6 @@
 #include "nsIWidget.h"
 #include "nsIXPConnect.h"
 #include "nsIXULRuntime.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"  // for nsAutoScriptBlocker
 #include "nsJSUtils.h"
 #include "nsStandardURL.h"
@@ -871,8 +870,8 @@ class InsertVisitedURIs final : public Runnable {
       // We ignore errors from either of these methods in case old JS consumers
       // don't implement them (in which case they will get error/result
       // notifications as normal).
-      Unused << aCallback->GetIgnoreErrors(&ignoreErrors);
-      Unused << aCallback->GetIgnoreResults(&ignoreResults);
+      (void)aCallback->GetIgnoreErrors(&ignoreErrors);
+      (void)aCallback->GetIgnoreResults(&ignoreResults);
     }
     RefPtr<InsertVisitedURIs> event = new InsertVisitedURIs(
         aConnection, std::move(aPlaces), callback, ignoreErrors, ignoreResults,
@@ -915,7 +914,7 @@ class InsertVisitedURIs final : public Runnable {
         mDBConn, false, mozIStorageConnection::TRANSACTION_IMMEDIATE);
 
     // XXX Handle the error, bug 1696133.
-    Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+    (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
     const VisitData* lastFetchedPlace = nullptr;
     uint32_t lastFetchedVisitCount = 0;
@@ -1472,7 +1471,7 @@ void NotifyEmbedVisit(VisitData& aPlace,
         new nsMainThreadPtrHolder<mozIVisitInfoCallback>(
             "mozIVisitInfoCallback", aCallback));
     bool ignoreResults = false;
-    Unused << aCallback->GetIgnoreResults(&ignoreResults);
+    (void)aCallback->GetIgnoreResults(&ignoreResults);
     if (!ignoreResults) {
       nsCOMPtr<nsIRunnable> event =
           new NotifyPlaceInfoCallback(callback, aPlace, true, NS_OK);
@@ -2060,7 +2059,7 @@ History::VisitURI(nsIWidget* aWidget, nsIURI* aURI, nsIURI* aLastVisitedURI,
     // If the origin is restricted, make isVisited status available during the
     // session but not stored in the database.
     nsAutoCString origin;
-    Unused << visitedURI->GetHost(origin);
+    (void)visitedURI->GetHost(origin);
     if (StringBeginsWith(origin, "www."_ns)) {
       origin.Cut(0, 4);
     }
@@ -2160,7 +2159,7 @@ History::SetURITitle(nsIURI* aURI, const nsAString& aTitle) {
   if (XRE_IsContentProcess()) {
     auto* cpc = dom::ContentChild::GetSingleton();
     MOZ_ASSERT(cpc, "Content Protocol is NULL!");
-    Unused << cpc->SendSetURITitle(aURI, PromiseFlatString(aTitle));
+    (void)cpc->SendSetURITitle(aURI, PromiseFlatString(aTitle));
     return NS_OK;
   }
 
@@ -2296,7 +2295,7 @@ History::UpdatePlaces(JS::Handle<JS::Value> aPlaceInfos,
       if (data.visitTime < (PR_Now() / 1000)) {
 #ifdef DEBUG
         nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-        Unused << xpc->DebugDumpJSStack(false, false, false);
+        (void)xpc->DebugDumpJSStack(false, false, false);
         MOZ_CRASH("invalid time format passed to updatePlaces");
 #endif
         return NS_ERROR_INVALID_ARG;
@@ -2393,13 +2392,13 @@ void History::StartPendingVisitedQueries(PendingVisitedQueries&& aQueries) {
       MOZ_ASSERT(entry.GetData().IsEmpty(),
                  "Child process shouldn't have parent requests");
       if (uris.Length() == kBatchLimit) {
-        Unused << cpc->SendStartVisitedQueries(uris);
+        (void)cpc->SendStartVisitedQueries(uris);
         uris.ClearAndRetainStorage();
       }
     }
 
     if (!uris.IsEmpty()) {
-      Unused << cpc->SendStartVisitedQueries(uris);
+      (void)cpc->SendStartVisitedQueries(uris);
     }
   } else {
     VisitedQuery::Start(std::move(aQueries));

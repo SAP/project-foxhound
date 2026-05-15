@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLMenuElement_h
 #define mozilla_dom_HTMLMenuElement_h
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {

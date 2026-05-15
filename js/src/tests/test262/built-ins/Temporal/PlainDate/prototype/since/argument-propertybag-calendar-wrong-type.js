@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 esid: sec-temporal.plaindate.prototype.since
 description: >
   Appropriate error thrown when a calendar property from a property bag cannot
-  be converted to a calendar object
+  be converted to a calendar ID
 features: [BigInt, Symbol, Temporal]
 ---*/
 

@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,10 +28,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.modifier.dashedBorder
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Card for presenting placeholder information or CTAs.
@@ -46,27 +48,27 @@ fun PlaceholderCard(
     description: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FirefoxTheme {
-        Card(
-            modifier = Modifier
-                .dashedBorder(
-                    color = FirefoxTheme.colors.borderPrimary,
-                    cornerRadius = 8.dp,
-                    dashHeight = 2.dp,
-                    dashWidth = 4.dp,
-                )
-                .then(modifier),
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+    Card(
+        modifier = Modifier
+            .dashedBorder(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                cornerRadius = 8.dp,
+                dashHeight = 2.dp,
+                dashWidth = 4.dp,
+            )
+            .then(modifier),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+    ) {
+        Column(
+            Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
         ) {
-            Column(
-                Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-            ) {
-                title()
-                Spacer(modifier = Modifier.height(4.dp))
-                description()
-            }
+            title()
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            description()
         }
     }
 }
@@ -88,20 +90,19 @@ private fun PlaceholderCardPreview() {
                         ) {
                             Text(
                                 text = stringResource(R.string.collections_header),
-                                color = FirefoxTheme.colors.textPrimary,
                                 style = FirefoxTheme.typography.headline7,
                             )
 
                             IconButton(
                                 onClick = {},
+                                contentDescription = stringResource(
+                                    R.string.remove_home_collection_placeholder_content_description,
+                                ),
                                 modifier = Modifier.size(20.dp),
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.mozac_ic_cross_20),
-                                    contentDescription = stringResource(
-                                        R.string.remove_home_collection_placeholder_content_description,
-                                    ),
-                                    tint = FirefoxTheme.colors.textPrimary,
+                                    painter = painterResource(iconsR.drawable.mozac_ic_cross_20),
+                                    contentDescription = null,
                                 )
                             }
                         }
@@ -109,18 +110,18 @@ private fun PlaceholderCardPreview() {
                     description = {
                         Text(
                             text = stringResource(R.string.no_collections_description2),
-                            color = FirefoxTheme.colors.textSecondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = FirefoxTheme.typography.body2,
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        PrimaryButton(
+                        FilledButton(
                             text = stringResource(R.string.tabs_menu_save_to_collection1),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .wrapContentHeight(),
-                            icon = painterResource(R.drawable.ic_tab_collection),
+                            icon = painterResource(iconsR.drawable.mozac_ic_collection_24),
                             onClick = {},
                         )
                     },

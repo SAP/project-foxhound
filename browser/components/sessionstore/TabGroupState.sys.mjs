@@ -46,6 +46,9 @@
  * @property {ClosedTabStateData[]} tabs
  *   Copy of all tab data for the tabs that were in this tab group
  *   at the time it was saved.
+ * @property {TabSplitViewStateData[]} splitViews
+ *   Copy of all splitview data for the splitviews that were in this tab group
+ *   at the time it was saved.
  */
 
 /**
@@ -87,6 +90,7 @@ class _TabGroupState {
     closedData.closedAt = Date.now();
     closedData.sourceWindowId = sourceWindowId;
     closedData.tabs = [];
+    closedData.splitViews = [];
     return closedData;
   }
 
@@ -130,6 +134,7 @@ class _TabGroupState {
     savedData.closedAt = Date.now();
     savedData.windowClosedId = windowClosedId;
     savedData.tabs = [];
+    savedData.splitViews = [];
     return savedData;
   }
 

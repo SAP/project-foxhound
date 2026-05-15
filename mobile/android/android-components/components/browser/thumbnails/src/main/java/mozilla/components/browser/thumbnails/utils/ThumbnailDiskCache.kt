@@ -6,7 +6,6 @@ package mozilla.components.browser.thumbnails.utils
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.os.Build
 import androidx.annotation.VisibleForTesting
 import com.jakewharton.disklrucache.DiskLruCache
 import mozilla.components.concept.base.images.ImageLoadRequest
@@ -17,7 +16,7 @@ import java.io.IOException
 
 private const val MAXIMUM_CACHE_THUMBNAIL_DATA_BYTES: Long = 1024L * 1024L * 100L // 100 MB
 private const val THUMBNAIL_DISK_CACHE_VERSION = 1
-private const val WEBP_QUALITY = 90
+private const val ENCODING_QUALITY = 90
 private const val BASE_DIR_NAME = "thumbnails"
 
 /**
@@ -35,7 +34,7 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
     internal fun clear(context: Context) {
         synchronized(thumbnailCacheWriteLock) {
             try {
-                getThumbnailCache(context).delete()
+                getThumbnailCache(context)?.delete()
             } catch (e: IOException) {
                 logger.warn("Thumbnail cache could not be cleared. Perhaps there are none?")
             }
@@ -51,7 +50,7 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
      * @return the [ByteArray] of the thumbnail or null if the snapshot of the entry does not exist.
      */
     internal fun getThumbnailData(context: Context, request: ImageLoadRequest): ByteArray? {
-        val snapshot = getThumbnailCache(context).get(request.id) ?: return null
+        val snapshot = getThumbnailCache(context)?.get(request.id) ?: return null
 
         return try {
             snapshot.getInputStream(0).use {
@@ -71,20 +70,12 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
      * @param bitmap the thumbnail [Bitmap] to store.
      */
     internal fun putThumbnailBitmap(context: Context, request: ImageSaveRequest, bitmap: Bitmap) {
-        val compressFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Bitmap.CompressFormat.WEBP_LOSSY
-        } else {
-            @Suppress("DEPRECATION")
-            Bitmap.CompressFormat.WEBP
-        }
-
         try {
             synchronized(thumbnailCacheWriteLock) {
-                val editor = getThumbnailCache(context)
-                    .edit(request.id) ?: return
+                val editor = getThumbnailCache(context)?.edit(request.id) ?: return
 
                 editor.newOutputStream(0).use { stream ->
-                    bitmap.compress(compressFormat, WEBP_QUALITY, stream)
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, ENCODING_QUALITY, stream)
                 }
 
                 editor.commit()
@@ -103,7 +94,7 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
     internal fun removeThumbnailData(context: Context, sessionIdOrUrl: String) {
         try {
             synchronized(thumbnailCacheWriteLock) {
-                getThumbnailCache(context).remove(sessionIdOrUrl)
+                getThumbnailCache(context)?.remove(sessionIdOrUrl)
             }
         } catch (e: IOException) {
             logger.info("Failed to remove thumbnail bitmap from disk", e)
@@ -117,14 +108,19 @@ class ThumbnailDiskCache(private val isPrivate: Boolean = false) {
     }
 
     @Synchronized
-    private fun getThumbnailCache(context: Context): DiskLruCache {
+    private fun getThumbnailCache(context: Context): DiskLruCache? {
         thumbnailCache?.let { return it }
 
-        return DiskLruCache.open(
-            getThumbnailCacheDirectory(context),
-            THUMBNAIL_DISK_CACHE_VERSION,
-            1,
-            MAXIMUM_CACHE_THUMBNAIL_DATA_BYTES,
-        ).also { thumbnailCache = it }
+        return try {
+            DiskLruCache.open(
+                getThumbnailCacheDirectory(context),
+                THUMBNAIL_DISK_CACHE_VERSION,
+                1,
+                MAXIMUM_CACHE_THUMBNAIL_DATA_BYTES,
+            ).also { thumbnailCache = it }
+        } catch (e: IOException) {
+            logger.warn("Thumbnail cache could not be created.", e)
+            null
+        }
     }
 }

@@ -12,7 +12,6 @@ import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy
 import mozilla.components.concept.engine.Settings
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import org.junit.Test
 import org.mockito.Mockito.doReturn
@@ -40,14 +39,14 @@ class SettingsUseCasesTest {
                 tabId = "A",
                 engineSession = engineSessionA,
             ),
-        ).joinBlocking()
+        )
 
         store.dispatch(
             EngineAction.LinkEngineSessionAction(
                 tabId = "B",
                 engineSession = engineSessionB,
             ),
-        ).joinBlocking()
+        )
 
         val engine: Engine = mock()
         val settings: Settings = mock()

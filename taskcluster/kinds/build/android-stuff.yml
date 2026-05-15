@@ -5,6 +5,7 @@
 task-defaults:
     tags:
         android-stuff: "true"
+    run-on-repo-type: [hg]
     run:
         mozconfig-variant: null
 
@@ -19,7 +20,7 @@ android-geckoview-docs/opt:
         tier: 2
         symbol: A(gv-docs)
     run-on-projects: [mozilla-central-only]
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         docker-image: {in-tree: android-build}
         env:
@@ -44,6 +45,8 @@ android-geckoview-docs/opt:
         toolchain:
             - android-gradle-dependencies
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - linux64-jdk
             - linux64-node
     optimization:

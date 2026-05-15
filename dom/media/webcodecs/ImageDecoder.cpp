@@ -5,11 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ImageDecoder.h"
+
 #include <algorithm>
 #include <cstdint>
+
 #include "ImageContainer.h"
 #include "ImageDecoderReadRequest.h"
 #include "MediaResult.h"
+#include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/ImageTrack.h"
 #include "mozilla/dom/ImageTrackList.h"
 #include "mozilla/dom/Promise.h"
@@ -19,8 +23,6 @@
 #include "mozilla/dom/WebCodecsUtils.h"
 #include "mozilla/image/ImageUtils.h"
 #include "mozilla/image/SourceBuffer.h"
-#include "mozilla/Logging.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsComponentManagerUtils.h"
 #include "nsTHashSet.h"
 
@@ -439,8 +441,6 @@ void ImageDecoder::CheckOutstandingDecodes() {
     return nullptr;
   }
 
-  RefPtr<ImageDecoderReadRequest> readRequest;
-
   if (aInit.mData.IsReadableStream()) {
     const auto& stream = aInit.mData.GetAsReadableStream();
     // 10.3.2. If data is of type ReadableStream and the ReadableStream is
@@ -495,11 +495,11 @@ void ImageDecoder::CheckOutstandingDecodes() {
     return nullptr;
   }
 
-  nsTHashSet<const ArrayBuffer*> transferSet;
+  nsTHashSet<const JSObject*> transferSet;
   for (const auto& buffer : aInit.mTransfer) {
     // 10.2.2.2. If init.transfer contains more than one reference to the same
     // ArrayBuffer, then throw a DataCloneError DOMException.
-    if (transferSet.Contains(&buffer)) {
+    if (transferSet.Contains(buffer.Obj())) {
       MOZ_LOG(
           gWebCodecsLog, LogLevel::Error,
           ("ImageDecoder Constructor -- duplicate transferred ArrayBuffer"));
@@ -507,7 +507,7 @@ void ImageDecoder::CheckOutstandingDecodes() {
           "Transfer contains duplicate ArrayBuffer objects");
       return nullptr;
     }
-    transferSet.Insert(&buffer);
+    transferSet.Insert(buffer.Obj());
     // 10.2.2.3.1. If [[Detached]] internal slot is true, then throw a
     // DataCloneError DOMException.
     bool empty = buffer.ProcessData(
@@ -598,28 +598,43 @@ void ImageDecoder::Initialize(const GlobalObject& aGlobal,
 
   mSourceBuffer = MakeRefPtr<image::SourceBuffer>();
 
+  bool transferOwnership = false;
   const auto fnSourceBufferFromSpan = [&](const Span<uint8_t>& aData) {
-    nsresult rv = mSourceBuffer->ExpectLength(aData.Length());
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      MOZ_LOG(
-          gWebCodecsLog, LogLevel::Error,
-          ("ImageDecoder %p Initialize -- failed to pre-allocate source buffer",
-           this));
-      aRv.ThrowRangeError("Could not allocate for encoded source buffer");
-      return;
-    }
+    if (transferOwnership) {
+      // 10.2.2.18.2.1 Let [[encoded data]] reference bytes in data
+      //               representing an encoded image.
+      nsresult rv =
+          mSourceBuffer->AdoptData(reinterpret_cast<char*>(aData.Elements()),
+                                   aData.Length(), js_realloc, js_free);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        MOZ_LOG(gWebCodecsLog, LogLevel::Error,
+                ("ImageDecoder %p Initialize -- failed to adopt source buffer",
+                 this));
+        aRv.ThrowRangeError("Could not allocate for encoded source buffer");
+        return;
+      }
+    } else {
+      nsresult rv = mSourceBuffer->ExpectLength(aData.Length());
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        MOZ_LOG(gWebCodecsLog, LogLevel::Error,
+                ("ImageDecoder %p Initialize -- failed to pre-allocate source "
+                 "buffer",
+                 this));
+        aRv.ThrowRangeError("Could not allocate for encoded source buffer");
+        return;
+      }
 
-    // 10.2.2.18.3.2. Assign a copy of init.data to [[encoded data]].
-    rv = mSourceBuffer->Append(reinterpret_cast<const char*>(aData.Elements()),
-                               aData.Length());
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      MOZ_LOG(gWebCodecsLog, LogLevel::Error,
-              ("ImageDecoder %p Initialize -- failed to append source buffer",
-               this));
-      aRv.ThrowRangeError("Could not allocate for encoded source buffer");
-      return;
+      // 10.2.2.18.3.2. Assign a copy of init.data to [[encoded data]].
+      rv = mSourceBuffer->Append(
+          reinterpret_cast<const char*>(aData.Elements()), aData.Length());
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        MOZ_LOG(gWebCodecsLog, LogLevel::Error,
+                ("ImageDecoder %p Initialize -- failed to append source buffer",
+                 this));
+        aRv.ThrowRangeError("Could not allocate for encoded source buffer");
+        return;
+      }
     }
-
     mSourceBuffer->Complete(NS_OK);
 
     // 10.2.2.18.4. Assign true to [[complete]].
@@ -648,14 +663,52 @@ void ImageDecoder::Initialize(const GlobalObject& aGlobal,
   } else if (aInit.mData.IsArrayBufferView()) {
     // 10.2.2.18.3.1. Assert that init.data is of type BufferSource.
     const auto& view = aInit.mData.GetAsArrayBufferView();
-    view.ProcessFixedData(fnSourceBufferFromSpan);
+    bool isShared;
+    JS::Rooted<JSObject*> viewObj(aGlobal.Context(), view.Obj());
+    JSObject* arrayBuffer =
+        JS_GetArrayBufferViewBuffer(aGlobal.Context(), viewObj, &isShared);
+    bool inTransferList = false;
+    for (const auto& transferBuffer : aInit.mTransfer) {
+      if (arrayBuffer == transferBuffer.Obj()) {
+        inTransferList = true;
+        break;
+      }
+    }
+    size_t length;
+    if (inTransferList) {
+      length = JS_GetArrayBufferViewByteLength(view.Obj());
+      // Only transfer ownership if the view's byte offset is 0
+      // (Otherewise we would have problems with freeing a pointer
+      //  to halfway through the ArrayBuffer data)
+      transferOwnership = JS_GetArrayBufferViewByteOffset(view.Obj()) == 0;
+    }
+    if (transferOwnership) {
+      JS::Rooted<JSObject*> bufferObj(aGlobal.Context(), arrayBuffer);
+      void* data = JS::StealArrayBufferContents(aGlobal.Context(), bufferObj);
+      fnSourceBufferFromSpan(Span(static_cast<uint8_t*>(data), length));
+    } else {
+      view.ProcessFixedData(fnSourceBufferFromSpan);
+    }
     if (aRv.Failed()) {
       return;
     }
   } else if (aInit.mData.IsArrayBuffer()) {
     // 10.2.2.18.3.1. Assert that init.data is of type BufferSource.
     const auto& buffer = aInit.mData.GetAsArrayBuffer();
-    buffer.ProcessFixedData(fnSourceBufferFromSpan);
+    for (const auto& transferBuffer : aInit.mTransfer) {
+      if (buffer.Obj() == transferBuffer.Obj()) {
+        transferOwnership = true;
+        break;
+      }
+    }
+    if (transferOwnership) {
+      JS::Rooted<JSObject*> bufferObj(aGlobal.Context(), buffer.Obj());
+      size_t length = JS::GetArrayBufferByteLength(bufferObj);
+      void* data = JS::StealArrayBufferContents(aGlobal.Context(), bufferObj);
+      fnSourceBufferFromSpan(Span(static_cast<uint8_t*>(data), length));
+    } else {
+      buffer.ProcessFixedData(fnSourceBufferFromSpan);
+    }
     if (aRv.Failed()) {
       return;
     }

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gyda %1$s chi sy’n rheoli.</p> <p>Defnyddiwch ef fel porwr preifat: <ul> <li>Chwilio a phori o fewn yr ap</li> <li>Rhwystro tracwyr (neu ddiweddaru’ch gosodiadau i ganiatáu tracwyr)</li> <li>Dileu er mwyn dileu cwcis yn ogystal â hanes chwilio a phori</li> </ul> </p> <p>Mae %1$s yn cael ei gynhyrchu gan Mozilla. Ein cenhadaeth yw meithrin Rhyngrwyd iach ac agored.<br/> <a href=\"%2$s\">Dysgu rhagor</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gyda %1$s chi sy’n rheoli.</p>\n<p>Defnyddiwch ef fel porwr preifat:\n<ul>\n<li>Chwilio a phori o fewn yr ap</li>\n<li>Rhwystro tracwyr (neu ddiweddaru’ch gosodiadau i ganiatáu tracwyr)</li>\n<li>Dileu er mwyn dileu cwcis yn ogystal â hanes chwilio a phori</li>\n</ul> </p>\n<p>Mae %1$s yn cael ei gynhyrchu gan Mozilla. Ein cenhadaeth yw meithrin Rhyngrwyd iach ac agored.<br/>\n<a href=\"%2$s\">Dysgu rhagor</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Dysgu rhagor</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Preifatrwydd a Diogelwch</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -462,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Drwy barhau, rydych yn cytuno i %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Drwy barhau, rydych yn cytuno i %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Amodau Defnyddio Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Amodau Defnyddio Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Mae Firefox yn ofalus o\'ch preifatrwydd. Darllenwch fwy yn ein %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Mae Firefox yn pryderu am eich preifatrwydd. Dysgwch fwy yn ein %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Hysbysiad Preifatrwydd.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Hysbysiad Preifatrwydd</string>
   <!-- New Onboarding flow first screen button label -->
@@ -561,6 +562,8 @@
   <string name="tabs_tray_action_erase">Dileu hanes pori</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Cau tabiau eraill</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Ychwanegu tab newydd</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -881,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Gall hyn fod yn broblem gyda ffurfweddiad y gweinydd, neu gall fod yn rhywun sy’n ceisio dynwared y gweinydd. <br/><br/> Os ydych wedi cysylltu â’r gweinydd hwn yn llwyddiannus yn y gorffennol, gall y gwall fod yn un dros dro.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Gall rhywun fod yn ceisio dynwared y wefan a gall mynd ymlaen fod yn beryglus.</label> <br><br> <label> Nid yw %1$s yn ymddiried yn <b>%2$s</b> oherwydd bod cyhoeddwr ei dystysgrif yn anhysbys, maer dystysgrif wedi’i hunan-lofnodi, neu nid yw’r gweinydd yn anfon y tystysgrifau canolradd cywir.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Gall rhywun fod yn ceisio dynwared y wefan a gall mynd ymlaen fod yn beryglus.</label> <br><br>\n<label> Nid yw %1$s yn ymddiried yn <b>%2$s</b> oherwydd bod cyhoeddwr ei dystysgrif yn anhysbys, maer dystysgrif wedi’i hunan-lofnodi, neu nid yw’r gweinydd yn anfon y tystysgrifau canolradd cywir.</label>]]></string>
   <!--
     Sessions List
 

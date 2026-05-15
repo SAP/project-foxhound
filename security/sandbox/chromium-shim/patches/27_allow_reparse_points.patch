@@ -11,25 +11,25 @@ Differential Revision: https://phabricator.services.mozilla.com/D135692
 diff --git a/sandbox/win/src/filesystem_dispatcher.cc b/sandbox/win/src/filesystem_dispatcher.cc
 --- a/sandbox/win/src/filesystem_dispatcher.cc
 +++ b/sandbox/win/src/filesystem_dispatcher.cc
-@@ -87,17 +87,16 @@ bool FilesystemDispatcher::NtCreateFile(
-                                         std::wstring* name,
-                                         uint32_t attributes,
-                                         uint32_t desired_access,
-                                         uint32_t file_attributes,
-                                         uint32_t share_access,
-                                         uint32_t create_disposition,
+@@ -92,17 +92,16 @@ bool FilesystemDispatcher::NtCreateFile(
                                          uint32_t create_options) {
+   if ((create_options & FILE_VALID_OPTION_FLAGS) != create_options) {
+     // Do not support brokering calls with special information in
+     // NtCreateFile()'s ea_buffer (FILE_CONTAINS_EXTENDED_CREATE_INFORMATION).
+     ipc->return_info.nt_status = STATUS_ACCESS_DENIED;
+     return false;
+   }
    if (!PreProcessName(name)) {
 -    // The path requested might contain a reparse point.
      ipc->return_info.nt_status = STATUS_ACCESS_DENIED;
      return true;
    }
  
-   const wchar_t* filename = name->c_str();
- 
-   uint32_t broker = BROKER_TRUE;
-   CountedParameterSet<OpenFile> params;
-@@ -141,17 +140,16 @@ bool FilesystemDispatcher::NtCreateFile(
+   EvalResult result = EvalPolicy(IpcTag::NTCREATEFILE, *name, desired_access,
+                                  create_disposition == FILE_OPEN);
+   HANDLE handle;
+   ULONG_PTR io_information = 0;
+@@ -123,17 +122,16 @@ bool FilesystemDispatcher::NtCreateFile(
  
  bool FilesystemDispatcher::NtOpenFile(IPCInfo* ipc,
                                        std::wstring* name,
@@ -43,11 +43,11 @@ diff --git a/sandbox/win/src/filesystem_dispatcher.cc b/sandbox/win/src/filesyst
      return true;
    }
  
-   const wchar_t* filename = name->c_str();
- 
-   uint32_t broker = BROKER_TRUE;
-   uint32_t create_disposition = FILE_OPEN;
-@@ -196,17 +194,16 @@ bool FilesystemDispatcher::NtOpenFile(IP
+   EvalResult result =
+       EvalPolicy(IpcTag::NTOPENFILE, *name, desired_access, true);
+   HANDLE handle;
+   ULONG_PTR io_information = 0;
+@@ -154,17 +152,16 @@ bool FilesystemDispatcher::NtOpenFile(IP
  bool FilesystemDispatcher::NtQueryAttributesFile(IPCInfo* ipc,
                                                   std::wstring* name,
                                                   uint32_t attributes,
@@ -61,11 +61,11 @@ diff --git a/sandbox/win/src/filesystem_dispatcher.cc b/sandbox/win/src/filesyst
      return true;
    }
  
-   uint32_t broker = BROKER_TRUE;
-   const wchar_t* filename = name->c_str();
-   CountedParameterSet<FileName> params;
-   params[FileName::NAME] = ParamPickerMake(filename);
-@@ -245,17 +242,16 @@ bool FilesystemDispatcher::NtQueryAttrib
+   EvalResult result = EvalPolicy(IpcTag::NTQUERYATTRIBUTESFILE, *name);
+ 
+   FILE_BASIC_INFORMATION* information =
+       reinterpret_cast<FILE_BASIC_INFORMATION*>(info->Buffer());
+@@ -184,17 +181,16 @@ bool FilesystemDispatcher::NtQueryAttrib
  bool FilesystemDispatcher::NtQueryFullAttributesFile(IPCInfo* ipc,
                                                       std::wstring* name,
                                                       uint32_t attributes,
@@ -79,11 +79,19 @@ diff --git a/sandbox/win/src/filesystem_dispatcher.cc b/sandbox/win/src/filesyst
      return true;
    }
  
-   uint32_t broker = BROKER_TRUE;
-   const wchar_t* filename = name->c_str();
-   CountedParameterSet<FileName> params;
-   params[FileName::NAME] = ParamPickerMake(filename);
-@@ -307,17 +303,16 @@ bool FilesystemDispatcher::NtSetInformat
+   EvalResult result = EvalPolicy(IpcTag::NTQUERYFULLATTRIBUTESFILE, *name);
+ 
+   FILE_NETWORK_OPEN_INFORMATION* information =
+       reinterpret_cast<FILE_NETWORK_OPEN_INFORMATION*>(info->Buffer());
+      static_cast<FILE_INFORMATION_CLASS>(info_class);
+  *nt_status = GetNtExports()->SetInformationFile(
+      local_handle, io_block, file_info, length, file_info_class);
+
+  return true;
+}
+
+bool PreProcessName(std::wstring* path) {
+@@ -227,17 +223,16 @@ bool FilesystemDispatcher::NtSetInformat
  
    if (!IsSupportedRenameCall(rename_info, length, info_class))
      return false;
@@ -97,41 +105,41 @@ diff --git a/sandbox/win/src/filesystem_dispatcher.cc b/sandbox/win/src/filesyst
      return true;
    }
  
-   uint32_t broker = BROKER_TRUE;
-   const wchar_t* filename = name.c_str();
-   CountedParameterSet<FileName> params;
-   params[FileName::NAME] = ParamPickerMake(filename);
+   EvalResult result = EvalPolicy(IpcTag::NTSETINFO_RENAME, name);
+ 
+   IO_STATUS_BLOCK* io_status =
+       reinterpret_cast<IO_STATUS_BLOCK*>(status->Buffer());
 diff --git a/sandbox/win/src/filesystem_policy.cc b/sandbox/win/src/filesystem_policy.cc
 --- a/sandbox/win/src/filesystem_policy.cc
 +++ b/sandbox/win/src/filesystem_policy.cc
-@@ -1,16 +1,17 @@
- // Copyright (c) 2011 The Chromium Authors. All rights reserved.
- // Use of this source code is governed by a BSD-style license that can be
- // found in the LICENSE file.
- 
+@@ -5,16 +5,17 @@
  #include "sandbox/win/src/filesystem_policy.h"
  
+ #include <windows.h>
+ #include <winternl.h>
+ 
+ #include <ntstatus.h>
  #include <stdint.h>
  
 +#include <algorithm>
  #include <string>
  
- #include "base/logging.h"
- #include "base/stl_util.h"
+ #include "base/notreached.h"
  #include "base/win/scoped_handle.h"
- #include "base/win/windows_version.h"
+ #include "sandbox/win/src/internal_types.h"
  #include "sandbox/win/src/ipc_tags.h"
+ #include "sandbox/win/src/nt_internals.h"
  #include "sandbox/win/src/policy_engine_opcodes.h"
-@@ -39,22 +40,16 @@ NTSTATUS NtCreateFileInTarget(HANDLE* ta
-   NTSTATUS status =
-       NtCreateFile(&local_handle, desired_access, obj_attributes,
-                    io_status_block, nullptr, file_attributes, share_access,
-                    create_disposition, create_options, ea_buffer, ea_length);
+@@ -59,22 +60,16 @@ NTSTATUS NtCreateFileInTarget(HANDLE* ta
+   NTSTATUS status = GetNtExports()->CreateFile(
+       &local_handle, desired_access, obj_attributes, io_status_block, nullptr,
+       file_attributes, share_access, create_disposition, create_options,
+       ea_buffer, ea_length);
    if (!NT_SUCCESS(status)) {
      return status;
    }
  
--  if (!sandbox::SameObject(local_handle, obj_attributes->ObjectName->Buffer)) {
+-  if (!SameObject(local_handle, obj_attributes->ObjectName->Buffer)) {
 -    // The handle points somewhere else. Fail the operation.
 -    ::CloseHandle(local_handle);
 -    return STATUS_ACCESS_DENIED;
@@ -145,10 +153,10 @@ diff --git a/sandbox/win/src/filesystem_policy.cc b/sandbox/win/src/filesystem_p
    return STATUS_SUCCESS;
  }
  
-@@ -400,23 +395,32 @@ bool FileSystemPolicy::SetInformationFil
+@@ -285,23 +280,32 @@ bool FileSystemPolicy::SetInformationFil
        static_cast<FILE_INFORMATION_CLASS>(info_class);
-   *nt_status = NtSetInformationFile(local_handle, io_block, file_info, length,
-                                     file_info_class);
+   *nt_status = GetNtExports()->SetInformationFile(
+       local_handle, io_block, file_info, length, file_info_class);
  
    return true;
  }

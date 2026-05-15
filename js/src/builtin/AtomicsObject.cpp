@@ -19,8 +19,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"
 
-#include "jsnum.h"
-
+#include "builtin/Number.h"
 #include "builtin/Promise.h"
 #include "jit/AtomicOperations.h"
 #include "jit/InlinableNatives.h"
@@ -36,6 +35,7 @@
 
 #include "vm/Compartment-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/Realm-inl.h"
 
 using namespace js;
 
@@ -788,6 +788,10 @@ class AsyncFutexWaiter : public FutexWaiter {
   AsyncFutexWaiter(JSContext* cx, size_t offset)
       : FutexWaiter(cx, offset, FutexWaiterKind::Async) {}
 
+  // NOTE: AsyncFutexWaiter is deleted only by UniquePtr<AsyncFutexWaiter>,
+  //       and thus the destructor is not virtual.
+  ~AsyncFutexWaiter();
+
   WaitAsyncNotifyTask* notifyTask() { return notifyTask_; }
 
   void setNotifyTask(WaitAsyncNotifyTask* task) {
@@ -795,10 +799,14 @@ class AsyncFutexWaiter : public FutexWaiter {
     notifyTask_ = task;
   }
 
+  void resetNotifyTask() { notifyTask_ = nullptr; }
+
   void setTimeoutTask(WaitAsyncTimeoutTask* task) {
     MOZ_ASSERT(!timeoutTask_);
     timeoutTask_ = task;
   }
+
+  void resetTimeoutTask() { timeoutTask_ = nullptr; }
 
   bool hasTimeout() const { return !!timeoutTask_; }
   WaitAsyncTimeoutTask* timeoutTask() const { return timeoutTask_; }
@@ -809,7 +817,15 @@ class AsyncFutexWaiter : public FutexWaiter {
   // Both of these pointers are borrowed pointers. The notifyTask is owned by
   // the runtime's cancellable list, while the timeout task (if it exists) is
   // owned by the embedding's timeout manager.
+  //
+  // Set by setNotifyTask immediately after construction, and reset by
+  // resetNotifyTask when the notify task is getting deleted.
+  // WaitAsyncNotifyTask is responsible for calling resetNotifyTask
   WaitAsyncNotifyTask* notifyTask_ = nullptr;
+
+  // Set by setTimeoutTask immediately after construction, and reset by
+  // resetTimeoutTask when the timeout task is getting deleted.
+  // WaitAsyncTimeoutTask is responsible for calling resetTimeoutTask
   WaitAsyncTimeoutTask* timeoutTask_ = nullptr;
 };
 
@@ -833,16 +849,27 @@ class WaitAsyncNotifyTask : public OffThreadPromiseTask {
 
   // A back-edge to the waiter so that it can be cleaned up when the
   // Notify Task is dispatched and destroyed.
+  //
+  // Set by setWaiter immediately after construction, and reset by resetWaiter
+  // when the waiter is getting deleted.  AsyncFutexWaiter is responsible for
+  // calling resetWaiter.
   AsyncFutexWaiter* waiter_ = nullptr;
 
  public:
   WaitAsyncNotifyTask(JSContext* cx, Handle<PromiseObject*> promise)
       : OffThreadPromiseTask(cx, promise) {}
 
+  ~WaitAsyncNotifyTask() override {
+    if (waiter_) {
+      waiter_->resetNotifyTask();
+    }
+  }
+
   void setWaiter(AsyncFutexWaiter* waiter) {
     MOZ_ASSERT(!waiter_);
     waiter_ = waiter;
   }
+  void resetWaiter() { waiter_ = nullptr; }
 
   void setResult(Result result, AutoLockFutexAPI& lock) { result_ = result; }
 
@@ -875,19 +902,42 @@ class WaitAsyncNotifyTask : public OffThreadPromiseTask {
 //
 // See [SMDOC] Atomics.wait for more details.
 class WaitAsyncTimeoutTask : public JS::Dispatchable {
+  // Set by the constructor, and reset by resetWaiter when the waiter is getting
+  // deleted. AsyncFutexWaiter is responsible for calling resetWaiter.
   AsyncFutexWaiter* waiter_;
 
  public:
   explicit WaitAsyncTimeoutTask(AsyncFutexWaiter* waiter) : waiter_(waiter) {
     MOZ_ASSERT(waiter_);
   }
+  ~WaitAsyncTimeoutTask() {
+    if (waiter_) {
+      waiter_->resetTimeoutTask();
+    }
+  }
 
-  void clear(AutoLockFutexAPI&) { waiter_ = nullptr; }
+  void resetWaiter() { waiter_ = nullptr; }
+
+  void clear(AutoLockFutexAPI&) {
+    if (waiter_) {
+      waiter_->resetTimeoutTask();
+    }
+    waiter_ = nullptr;
+  }
   bool cleared(AutoLockFutexAPI&) { return !waiter_; }
 
   void run(JSContext*, MaybeShuttingDown maybeshuttingdown) final;
   void transferToRuntime() final;
 };
+
+AsyncFutexWaiter::~AsyncFutexWaiter() {
+  if (notifyTask_) {
+    notifyTask_->resetWaiter();
+  }
+  if (timeoutTask_) {
+    timeoutTask_->resetWaiter();
+  }
+}
 
 }  // namespace js
 
@@ -1021,6 +1071,7 @@ void WaitAsyncTimeoutTask::run(JSContext* cx,
   // Take ownership of the async waiter, so that it will be freed
   // when we return.
   UniquePtr<AsyncFutexWaiter> asyncWaiter(RemoveAsyncWaiter(waiter_, lock));
+  asyncWaiter->resetTimeoutTask();
 
   // Dispatch a task to resolve the promise with value "timed-out".
   WaitAsyncNotifyTask* task = asyncWaiter->notifyTask();
@@ -1060,67 +1111,72 @@ static FutexThread::WaitResult AtomicsWaitAsyncCriticalSection(
   // We need to initialize an OffThreadPromiseTask inside this critical section.
   // To avoid deadlock, we claim the helper thread lock first.
   AutoLockHelperThreadState helperThreadLock;
-  AutoLockFutexAPI futexLock;
-
-  // Steps 18-20:
-  SharedMem<T*> addr =
-      sarb->dataPointerShared().cast<T*>() + (byteOffset / sizeof(T));
-  if (jit::AtomicOperations::loadSafeWhenRacy(addr) != value) {
-    return FutexThread::WaitResult::NotEqual;
-  }
-
-  // Step 21
-  bool hasTimeout = timeout.isSome();
-  if (hasTimeout && timeout.value().IsZero()) {
-    return FutexThread::WaitResult::TimedOut;
-  }
-
-  // Steps 22-30
-  // To handle potential failures, we split this up into two phases:
-  // First, we allocate everything: the notify task, the waiter, and
-  // (if necessary) the timeout task. The allocations are managed
-  // using unique pointers, which will free them on failure. This
-  // phase has no external side-effects.
-
-  // Second, we transfer ownership of the allocations to the right places:
-  // the waiter owns the notify task, the shared array buffer owns the waiter,
-  // and the event loop owns the timeout task. This phase is infallible.
-  auto notifyTask = js::MakeUnique<WaitAsyncNotifyTask>(cx, promise);
-  if (!notifyTask) {
-    JS_ReportOutOfMemory(cx);
-    return FutexThread::WaitResult::Error;
-  }
-  auto waiter = js::MakeUnique<AsyncFutexWaiter>(cx, byteOffset);
-  if (!waiter) {
-    JS_ReportOutOfMemory(cx);
-    return FutexThread::WaitResult::Error;
-  }
-
-  notifyTask->setWaiter(waiter.get());
-  waiter->setNotifyTask(notifyTask.get());
 
   UniquePtr<WaitAsyncTimeoutTask> timeoutTask;
-  if (hasTimeout) {
-    timeoutTask = js::MakeUnique<WaitAsyncTimeoutTask>(waiter.get());
-    if (!timeoutTask) {
+  {
+    AutoLockFutexAPI futexLock;
+
+    // Steps 18-20:
+    SharedMem<T*> addr =
+        sarb->dataPointerShared().cast<T*>() + (byteOffset / sizeof(T));
+    if (jit::AtomicOperations::loadSafeWhenRacy(addr) != value) {
+      return FutexThread::WaitResult::NotEqual;
+    }
+
+    // Step 21
+    bool hasTimeout = timeout.isSome();
+    if (hasTimeout && timeout.value().IsZero()) {
+      return FutexThread::WaitResult::TimedOut;
+    }
+
+    // Steps 22-30
+    // To handle potential failures, we split this up into two phases:
+    // First, we allocate everything: the notify task, the waiter, and
+    // (if necessary) the timeout task. The allocations are managed
+    // using unique pointers, which will free them on failure. This
+    // phase has no external side-effects.
+
+    // Second, we transfer ownership of the allocations to the right places:
+    // the waiter owns the notify task, the shared array buffer owns the waiter,
+    // and the event loop owns the timeout task. This phase is infallible.
+    auto notifyTask = js::MakeUnique<WaitAsyncNotifyTask>(cx, promise);
+    if (!notifyTask) {
       JS_ReportOutOfMemory(cx);
       return FutexThread::WaitResult::Error;
     }
-    waiter->setTimeoutTask(timeoutTask.get());
-  }
+    auto waiter = js::MakeUnique<AsyncFutexWaiter>(cx, byteOffset);
+    if (!waiter) {
+      JS_ReportOutOfMemory(cx);
+      return FutexThread::WaitResult::Error;
+    }
 
-  // This is the last fallible operation. If it fails, all allocations
-  // will be freed. init has no side-effects if it fails.
-  if (!js::OffThreadPromiseTask::InitCancellable(cx, helperThreadLock,
-                                                 std::move(notifyTask))) {
-    return FutexThread::WaitResult::Error;
-  }
+    notifyTask->setWaiter(waiter.get());
+    waiter->setNotifyTask(notifyTask.get());
 
-  // Below this point, everything is infallible.
-  AddWaiter(sarb, waiter.release(), futexLock);
+    if (hasTimeout) {
+      timeoutTask = js::MakeUnique<WaitAsyncTimeoutTask>(waiter.get());
+      if (!timeoutTask) {
+        JS_ReportOutOfMemory(cx);
+        return FutexThread::WaitResult::Error;
+      }
+      waiter->setTimeoutTask(timeoutTask.get());
+    }
 
-  if (hasTimeout) {
-    MOZ_ASSERT(!!timeoutTask);
+    // This is the last fallible operation. If it fails, all allocations
+    // will be freed. init has no side-effects if it fails.
+    if (!js::OffThreadPromiseTask::InitCancellable(cx, helperThreadLock,
+                                                   std::move(notifyTask))) {
+      return FutexThread::WaitResult::Error;
+    }
+
+    // Below this point, everything is infallible.
+    AddWaiter(sarb, waiter.release(), futexLock);
+  }  // End of futexLock critical section
+
+  // We dispatch the task after leaving the critical section to avoid
+  // potential deadlock if the dispatch callback has internal locking.
+  // See bug 1980271.
+  if (timeoutTask) {
     OffThreadPromiseRuntimeState& state =
         cx->runtime()->offThreadPromiseState.ref();
     // We are not tracking the dispatch of the timeout task using the
@@ -1466,6 +1522,7 @@ bool js::atomics_notify_impl(JSContext* cx, SharedArrayRawBuffer* sarb,
   // avoid mutex ordering problems.
   RootedValue resultMsg(cx, StringValue(cx->names().ok));
   for (uint32_t i = 0; i < promisesToResolve.length(); i++) {
+    AutoRealm ar(cx, promisesToResolve[i]);
     if (!PromiseObject::resolve(cx, promisesToResolve[i], resultMsg)) {
       MOZ_ASSERT(cx->isThrowingOutOfMemory() || cx->isThrowingOverRecursed());
       return false;

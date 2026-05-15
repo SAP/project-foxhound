@@ -19,7 +19,7 @@
   width: 100%;
 }
 
-.search-field .img.search {
+.search-field .dbg-img.dbg-img-search {
   --icon-mask-size: 12px;
   --icon-inset-inline-start: 6px;
   position: absolute;
@@ -30,20 +30,20 @@
   pointer-events: none;
 }
 
-.search-field.big .img.search {
+.search-field.big .dbg-img.dbg-img-search {
   --icon-mask-size: 16px;
   --icon-inset-inline-start: 12px;
 }
 
-[dir="ltr"] .search-field .img.search {
+[dir="ltr"] .search-field .dbg-img.dbg-img-search {
   left: var(--icon-inset-inline-start);
 }
 
-[dir="rtl"] .search-field .img.search {
+[dir="rtl"] .search-field .dbg-img.dbg-img-search {
   right: var(--icon-inset-inline-start);
 }
 
-.search-field .img.loader {
+.search-field .dbg-img.dbg-img-loader {
   width: 24px;
   height: 24px;
   margin-inline-end: 4px;

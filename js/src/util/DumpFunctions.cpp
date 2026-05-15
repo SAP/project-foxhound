@@ -613,8 +613,9 @@ void js::DumpHeap(JSContext* cx, FILE* fp,
   fprintf(dtrc.output, "==========\n");
 
   dtrc.prefix = "> ";
+  gc::AutoPrepareForTracing session(cx);
   IterateHeapUnbarriered(cx, &dtrc, DumpHeapVisitZone, DumpHeapVisitRealm,
-                         DumpHeapVisitArena, DumpHeapVisitCell);
+                         DumpHeapVisitArena, DumpHeapVisitCell, session);
 
   fflush(dtrc.output);
 }

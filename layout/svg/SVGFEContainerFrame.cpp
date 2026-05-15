@@ -50,7 +50,7 @@ class SVGFEContainerFrame final : public nsContainerFrame {
 #endif
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   bool ComputeCustomOverflow(OverflowAreas& aOverflowAreas) override {
     // We don't maintain a ink overflow rect
@@ -83,7 +83,7 @@ void SVGFEContainerFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 nsresult SVGFEContainerFrame::AttributeChanged(int32_t aNameSpaceID,
                                                nsAtom* aAttribute,
-                                               int32_t aModType) {
+                                               AttrModType aModType) {
   dom::SVGFilterPrimitiveElement* element =
       static_cast<dom::SVGFilterPrimitiveElement*>(GetContent());
   if (element->AttributeAffectsRendering(aNameSpaceID, aAttribute)) {

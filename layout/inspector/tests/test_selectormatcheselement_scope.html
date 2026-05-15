@@ -1,0 +1,196 @@
+<!DOCTYPE HTML>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=1934914a
+-->
+<title>Test for CSSStyleRule::selectorMatchesElement with @scope</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<script>
+const InspectorUtils = SpecialPowers.InspectorUtils;
+</script>
+
+<main id=main></main>
+<template id=test_scope_explicit_nesting_outside>
+  <style>
+    .a {
+      .b {
+        @scope (.c) to (& .foo) {
+          .d {
+            .e {
+              @scope (.f) to (:scope .bar) {
+                .g {
+                  .h {
+                    color: red;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  </style>
+  <div class=a>
+    <div class=b>
+      <div class=c>
+        <div class=d>
+          <div class=e>
+            <div class=f>
+              <div class=g>
+                <div id=scoped class=h></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scope_explicit_nesting_outside.content.cloneNode(true));
+
+  const scopedElementRules = InspectorUtils.getMatchingCSSRules(scoped);
+  const scopedRule = scopedElementRules[2];
+  is(scopedRule.selectorText, `& .h`, "Got expected nested rule");
+  is(
+    scopedRule.selectorMatchesElement(0, scoped),
+    true,
+    ":scope selector matches the root scoped element"
+  );
+});
+</script>
+
+<template id=test_scope_explicit_scope_outside>
+  <style>
+    @scope(.a) {
+      .b {
+        .c {
+          @scope(.d) {
+            .e {
+              .f {
+                @scope(.g) {
+                  .h {
+                    .i {
+                      color: red;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  </style>
+  <div class=a>
+    <div class=b>
+      <div class=c>
+        <div class=d>
+          <div class=e>
+            <div class=f>
+              <div class=g>
+                <div class=h>
+                  <div id=scoped class=i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scope_explicit_scope_outside.content.cloneNode(true));
+
+  const scopedElementRules = InspectorUtils.getMatchingCSSRules(scoped);
+  const scopedRule = scopedElementRules[2];
+  is(scopedRule.selectorText, `& .i`, "Got expected nested rule");
+  is(
+    scopedRule.selectorMatchesElement(0, scoped),
+    true,
+    ":scope selector matches the root scoped element"
+  );
+});
+</script>
+
+<template id=test_scope_implicit>
+  <div id=scoped>
+    <style>
+      @scope {
+        :scope {
+          color: red;
+        }
+      }
+    </style>
+  </div>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scope_implicit.content.cloneNode(true));
+
+  const scopedElementRules = InspectorUtils.getMatchingCSSRules(scoped);
+  const scopedRule = scopedElementRules[2];
+  is(scopedRule.selectorText, `:scope`, "Got expected nested rule");
+  is(
+    scopedRule.selectorMatchesElement(0, scoped),
+    true,
+    ":scope selector matches the root scoped element"
+  );
+});
+</script>
+
+<template id=test_scope_implicit_shadow>
+  <div id=host1></div>
+  <div id=host2></div>
+  <template id=shadow_template>
+    <style>
+      @scope {
+        :scope {
+          background: red;
+        }
+        div {
+          background: blue;
+        }
+      }
+    </style>
+    <div id=scoped></div>
+  </template>
+</template>
+<script>
+add_task(async () => {
+  SimpleTest.registerCurrentTaskCleanupFunction(async () => main.replaceChildren());
+  main.append(test_scope_implicit_shadow.content.cloneNode(true));
+
+  const hosts = [host1, host2];
+  for (const host of hosts) {
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.append(shadow_template.content.cloneNode(true));
+  }
+
+  for (const host of hosts) {
+    const hostElementRules = InspectorUtils.getMatchingCSSRules(host);
+    const hostScopedRule = hostElementRules[2];
+    is(hostScopedRule.selectorText, `:scope`, "Got expected nested rule");
+    is(
+      hostScopedRule.selectorMatchesElement(0, host),
+      true,
+      ":scope selector matches the root scoped host element"
+    );
+    const scoped = host.shadowRoot.getElementById("scoped");
+    const scopedElementRules = InspectorUtils.getMatchingCSSRules(scoped);
+    const scopedRule = scopedElementRules[2];
+    is(scopedRule.selectorText, `div`, "Got expected nested rule");
+    is(
+      scopedRule.selectorMatchesElement(0, scoped),
+      true,
+      ":scope selector matches the root scoped element"
+    );
+  }
+});
+</script>

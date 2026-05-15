@@ -82,6 +82,8 @@ categories:
         - testing/perfdocs
         - tools/code-coverage
         - testing-rust-code
+    ai_agent_tools_doc:
+        - ai-agent-tools
     release_doc:
         - update-infrastructure
         - tools/update-verify
@@ -198,3 +200,44 @@ allowed_warnings:
     # mozbuild.sphinx extension warnings.
     - "WARNING: the mozbuild.sphinx extension does not declare"
     - "WARNING: doing serial read"
+
+# JSDoc must run successfully for dirs specified, so running
+# tree-wide (the default) will not work currently.
+# When adding more paths to this list, please ensure that they are not
+# excluded from the valid-jsdoc and require-jsdoc sections in the top-level
+# eslint-rollouts.config.mjs.
+js_source_paths:
+    - browser/components/backup
+    - browser/components/backup/actors
+    - browser/components/backup/resources
+    - browser/components/customizableui
+    - browser/components/extensions
+    - browser/components/migration
+    - browser/components/migration/content
+    - browser/components/mozcachedohttp
+    - browser/components/mozcachedohttp/actors
+    - browser/components/uitour
+    - browser/components/urlbar
+    - browser/components/urlbar/content
+    - js/xpconnect/loader
+    - remote/marionette
+    - testing/mochitest/BrowserTestUtils
+    - testing/mochitest/tests/SimpleTest/SimpleTest.js
+    - testing/mochitest/tests/SimpleTest/EventUtils.js
+    - testing/modules/Assert.sys.mjs
+    - testing/modules/TestUtils.sys.mjs
+    - toolkit/actors
+    - toolkit/components/extensions
+    - toolkit/components/extensions/parent
+    - toolkit/components/ml/content/backends/ONNXPipeline.mjs
+    - toolkit/modules/BrowserUtils.sys.mjs
+    - toolkit/mozapps/extensions
+    - toolkit/components/prompts/src
+    - toolkit/components/pictureinpicture
+    - toolkit/components/pictureinpicture/content
+    # This is limited to SearchService.sys.mjs for now, as we only need to
+    # generate docs for that file currently. Other search files
+    # (e.g. SearchEngineSelector) are failing due to
+    # https://github.com/pyodide/sphinx-js/issues/242 or a variant of it.
+    - toolkit/components/search/SearchService.sys.mjs
+    - toolkit/components/uniffi-bindgen-gecko-js/components/generated

@@ -30,6 +30,8 @@ interface CSSStyleDeclaration {
   undefined setProperty(UTF8String property, [LegacyNullToEmptyString] UTF8String value, optional [LegacyNullToEmptyString] UTF8String priority = "");
   [CEReactions, Throws]
   UTF8String removeProperty(UTF8String property);
+  [ChromeOnly]
+  boolean hasLonghandProperty(UTF8String property);
 
   readonly attribute CSSRule? parentRule;
 };

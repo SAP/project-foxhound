@@ -6,8 +6,12 @@ prefs = [
   "browser.tabs.firefox-view.logLevel=All",
 ]
 
+["browser_chats_firefoxview.js"]
+
 ["browser_dragDrop_after_opening_fxViewTab.js"]
-skip-if = ["!headless"] # Bug 1936459
+skip-if = [
+  "!headless", # Bug 1936459
+]
 
 ["browser_entrypoint_management.js"]
 
@@ -23,8 +27,7 @@ skip-if = ["!headless"] # Bug 1936459
 
 ["browser_firefoxview_search_telemetry.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && swgl", # Bug 1880113
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && swgl", # Bug 1880113
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && swgl", # Bug 1880113
 ]
 
 ["browser_firefoxview_tab.js"]
@@ -36,24 +39,39 @@ skip-if = [
 ["browser_opentabs_cards.js"]
 
 ["browser_opentabs_changes.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1879026
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1879026
+]
 
 ["browser_opentabs_firefoxview.js"]
 
 ["browser_opentabs_more.js"]
-skip-if = ["verify"] # Bug 1886017
+skip-if = [
+  "verify", # Bug 1886017
+]
 
 ["browser_opentabs_pinned_tabs.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1896042
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1896042
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1896042
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1896042
+]
 
 ["browser_opentabs_recency.js"]
 skip-if = [
-  "os == 'mac'",
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'",
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
   "os == 'win' && opt",
 ] # macos times out, see bug 1857293, Bug 1875877 - frequent fails on linux and windows opt
 
 ["browser_opentabs_search.js"]
-fail-if = ["a11y_checks"] # Bug 1850591 clicked moz-page-nav-button button is not focusable
+fail-if = [
+  "a11y_checks", # Bug 1850591 clicked moz-page-nav-button button is not focusable
+]
 
 ["browser_opentabs_tab_indicators.js"]
 

@@ -12,6 +12,18 @@ function testUiaRelationArray(id, prop, targets) {
   );
 }
 
+function testCustomUiaRelationArray(id, prop, targets) {
+  return isUiaElementArray(
+    `
+      findUiaByDomId(doc, "${id}")
+      .GetCurrentPropertyValue(uia${prop}PropertyId)
+      .QueryInterface(IUIAutomationElementArray)
+    `,
+    targets,
+    `${id} has correct ${prop} targets`
+  );
+}
+
 /**
  * Test the ControllerFor property.
  */
@@ -139,5 +151,67 @@ addUiaTask(
     );
   },
   // The IA2 -> UIA proxy doesn't expose LabeledBy properly.
+  { uiaEnabled: true, uiaDisabled: false }
+);
+
+/**
+ * Test the AccessibleActions property.
+ */
+addUiaTask(
+  `
+<dialog aria-actions="btn" id="dlg" onclick="" open>
+  Dialog with its own click listener
+  <form method="dialog">
+    <button id="btn">Close</button>
+  </form>
+</dialog>
+  `,
+  async function testActions() {
+    await definePyVar("doc", `getDocUia()`);
+    await testCustomUiaRelationArray("dlg", "AccessibleActions", ["btn"]);
+    await testCustomUiaRelationArray("btn", "AccessibleActions", []);
+  },
+  // The IA2 -> UIA proxy doesn't support AccessibleActions.
+  { uiaEnabled: true, uiaDisabled: false }
+);
+
+/**
+ * Test exposure of AriaProperties.hasactions.
+ */
+addUiaTask(
+  `
+<button id="button">button</button>
+<div role="tablist">
+  <div id="tab1" role="tab" tabindex="0" aria-actions="tab1Button">
+    tab1
+    <button id="tab1Button">tab1Button</button>
+  </div>
+  <div id="tab2" role="tab" aria-actions="tab2Button">
+    tab2
+    <button id="tab2Button" hidden>tab2Button</button>
+  </div>
+</div>
+  `,
+  async function testHasActions() {
+    await definePyVar("doc", `getDocUia()`);
+    is(
+      await runPython(`findUiaByDomId(doc, "button").CurrentAriaProperties`),
+      "",
+      "button missing hasactions"
+    );
+    // tab1 has a visible action.
+    is(
+      await runPython(`findUiaByDomId(doc, "tab1").CurrentAriaProperties`),
+      "hasactions=true",
+      "tab1 hasactions=true"
+    );
+    // tab2 has an action, but it's hidden.
+    is(
+      await runPython(`findUiaByDomId(doc, "tab2").CurrentAriaProperties`),
+      "hasactions=true",
+      "tab2 hasactions=true"
+    );
+  },
+  // The IA2 -> UIA proxy doesn't support hasactions.
   { uiaEnabled: true, uiaDisabled: false }
 );

@@ -1,0 +1,117 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+* License, v. 2.0. If a copy of the MPL was not distributed with this
+* file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  margin-inline: var(--arrowpanel-menuitem-margin-inline, var(--space-xsmall));
+  margin-block: var(--space-xsmall);
+  --illustration-margin-block-start-offset: 0px;
+  --illustration-margin-block-end-offset: 0px;
+  --container-margin-block-end-offset: 0px;
+  --image-width: 120px;
+  --logo-width: 18px;
+}
+
+#container {
+  display: flex;
+  position: relative;
+  flex-direction: column;
+  background-color: var(--background-color-information);
+  border-radius: var(--border-radius-small);
+  padding-block: var(--arrowpanel-menuitem-padding-block, var(--space-small));
+  padding-inline: var(--arrowpanel-menuitem-padding-inline, var(--space-small));
+  padding-block-end: var(--container-padding-block-end, var(--arrowpanel-menuitem-padding-block));
+  margin-block-start: var(--space-small);
+  color: var(--text-color);
+}
+
+#illustration-container,
+#logo-container {
+  display: none;
+  pointer-events: none;
+}
+
+#container[has-image] #illustration-container,
+#container[has-logo]  #logo-container {
+  display: flex;
+}
+
+#illustration-container img {
+  width: var(--image-width);
+}
+
+#logo-container img {
+  width: var(--logo-width);
+  margin-block-end: var(--space-small);
+}
+
+#primary {
+  font-size: 1.154em;
+  font-weight: var(--font-weight-semibold);
+  margin-block-end: var(--space-xsmall);
+}
+
+#close-button {
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+}
+
+#container[layout="column"] #primary {
+  flex: 1 1 0;
+  margin-block-end: var(--space-xsmall);
+}
+
+#container[layout="column"] #primary-button {
+  margin-block-start: var(--space-medium);
+}
+
+#container[layout="row"] {
+  margin-block-end: var(--container-margin-block-end-offset);
+}
+
+#container[layout="row"] #top-row {
+  display: flex;
+  align-items: center;
+}
+
+#container[layout="row"] #close-button {
+  margin-inline-start: auto;
+}
+
+#container[layout="row"] #illustration-button-container {
+  display: flex;
+  justify-content: space-between;
+  margin-block-start: var(--space-medium);
+  align-items: flex-start;
+}
+
+#container[has-image][layout="row"] #illustration-container {
+  margin-block-end: var(--illustration-margin-block-end-offset);
+  margin-block-start: var(--illustration-margin-block-start-offset);
+}
+
+#container[has-image][layout="column"] #illustration-container {
+  justify-content: center;
+  margin-block-start: var(--illustration-margin-block-start-offset);
+  margin-block-end: var(--space-xsmall);
+}
+
+#container[layout="simple"] {
+  flex-direction: row;
+  align-items: center;
+}
+
+#container[layout="simple"] :is(#secondary, #close-button, img) {
+  display: none;
+}
+
+#container[layout="simple"] #primary {
+  flex: 1 1 0;
+  font-size: 1em;
+  font-weight: initial;
+}
+
+#container[layout="simple"] #primary-button {
+  margin-inline-start: var(--space-medium);
+}

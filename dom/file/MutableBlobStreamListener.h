@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_MutableBlobStreamListener_h
 #define mozilla_dom_MutableBlobStreamListener_h
 
+#include "mozilla/dom/MutableBlobStorage.h"
 #include "nsIStreamListener.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "nsTString.h"
-#include "mozilla/dom/MutableBlobStorage.h"
 
 class nsIEventTarget;
 

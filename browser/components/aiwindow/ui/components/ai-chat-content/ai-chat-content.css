@@ -1,0 +1,69 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/* stylelint-disable */
+
+/*
+ * The styles in this file are intended to be applied to `aiChatContent.html`,
+ * which runs in a nested, remote frame for sandboxing reasons. They
+ * are not intended to be used directly in `aiWindow.html`
+ */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-content-wrapper {
+  align-items: flex-start;
+  /*
+   * Without this box-sizing, even a medium size chat-bubble-user flexes this
+   * element horizontally, and since it has width: 100% and a lot of padding,
+   * that flexion overflows the visible part of the sidebar viewport and
+   * part of the chat-bubble-user is clipped.
+   */
+  box-sizing: border-box;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-small);
+  margin-inline: auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-block: var(--space-large);
+  padding-inline: max(var(--space-medium), calc((100% - var(--smartwindow-content-max-width)) / 2));
+  scroll-behavior: smooth;
+  width: 100%;
+}
+
+/* Spacer that pushes chat content to the bottom when there's minimal content.
+   Collapses when content fills the available space, allowing proper scrolling. */
+.chat-content-wrapper::before {
+  content: "";
+  flex: 1;
+  min-height: 0;
+}
+
+/* Temporary chat bubble styling */
+.chat-bubble {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding-block: var(--space-large);
+}
+
+.chat-bubble-user {
+  align-self: flex-end;
+  background: light-dark(white, var(--color-violet-110));
+  border-radius: var(--space-medium);
+  box-shadow: var(--smartwindow-shadow);
+  max-width: 100%;
+  padding-inline: var(--space-large);
+  width: fit-content;
+}
+
+.chat-bubble-assistant {
+  gap: var(--space-small);
+  width: 100%;
+}

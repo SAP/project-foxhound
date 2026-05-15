@@ -1,0 +1,640 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>devtoolschildremoved event tests</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<script>
+"use strict";
+
+SimpleTest.waitForExplicitFinish();
+SimpleTest.waitForFocus(async () => {
+  await SpecialPowers.pushPrefEnv({ set: [["dom.movebefore.enabled", true]] });
+
+  // Unlock devtoolschildremoved events.
+  SpecialPowers.wrap(document).devToolsWatchingDOMMutations = true;
+  SimpleTest.registerCleanupFunction(() => {
+    SpecialPowers.wrap(document).devToolsWatchingDOMMutations = false;
+  });
+
+  function getDevToolsChildRemovedEvent(aTarget, aTestBody, aOnEvent) {
+    let event;
+    function getEvent(e) {
+      if (e.target == aTarget) {
+        event = e;
+        aOnEvent();
+      }
+    }
+    const chromeEventHandler = SpecialPowers.wrap(window).docShell.chromeEventHandler;
+    chromeEventHandler.addEventListener(
+      "devtoolschildremoved",
+      getEvent,
+      {
+        once: true,
+        capture: true,
+      }
+    );
+    try {
+      aTestBody();
+    } finally {
+      chromeEventHandler.removeEventListener(
+        "devtoolschildremoved",
+        getEvent,
+        {capture: true}
+      );
+    }
+    return event;
+  }
+
+  const srcContainer = document.getElementById("container");
+  const destContainer = document.getElementById("destContainer");
+  const refChild = document.getElementById("refChild");
+
+  // When a node is removed or moved from another place, "devtoolschildremoved"
+  // event whose target is the removed node should be fired.
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    const event = getDevToolsChildRemovedEvent(
+      span,
+      () => {
+        span.remove();
+      },
+      () => {
+        is(
+          span.parentNode,
+          srcContainer,
+          "devtoolschildremoved when Node.remove() should be called before removed from the DOM"
+        );
+      }
+    );
+    isnot(event, undefined, "Node.remove() should cause a devtoolschildremoved event");
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    const event = getDevToolsChildRemovedEvent(
+      span,
+      () => {
+        srcContainer.removeChild(span);
+      },
+      () => {
+        is(
+          span.parentNode,
+          srcContainer,
+          "devtoolschildremoved when Node.removeChild() should be called before removed from the DOM"
+        );
+      }
+    );
+    isnot(event, undefined, "Node.removeChild() should cause a devtoolschildremoved event");
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    const event = getDevToolsChildRemovedEvent(
+      span,
+      () => {
+        destContainer.appendChild(span);
+      },
+      () => {
+        is(
+          span.parentNode,
+          srcContainer,
+          "devtoolschildremoved when Node.appendChild() should be called before removed from the DOM"
+        );
+      }
+    );
+    isnot(event, undefined, "Node.appendChild() with connected node should cause a devtoolschildremoved event");
+    span.remove();
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    const event = getDevToolsChildRemovedEvent(
+      span,
+      () => {
+        destContainer.insertBefore(span, refChild);
+      },
+      () => {
+        is(
+          span.parentNode,
+          srcContainer,
+          "devtoolschildremoved when Node.insertBefore() should be called before removed from the DOM"
+        );
+      }
+    );
+    isnot(event, undefined, "Node.insertBefore() with connected node should cause a devtoolschildremoved event");
+    span.remove();
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    const event = getDevToolsChildRemovedEvent(
+      span,
+      () => {
+        destContainer.moveBefore(span, refChild);
+      },
+      () => {
+        is(
+          span.parentNode,
+          srcContainer,
+          "devtoolschildremoved when Node.moveBefore() should be called before removed from the DOM"
+        );
+      }
+    );
+    isnot(event, undefined, "Node.moveBefore() with connected node should cause a devtoolschildremoved event");
+    span.remove();
+  }
+
+  // While DevTools breaks on a removal of a node, users can modify the DOM.
+  // In such case, at least we should avoid to crash.
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.appendChild(span);
+        },
+        () => {
+          refChild.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The dest container is modified while Node.appendChild() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the dest container is modified during Node.appendChild()"
+      );
+    } finally {
+      span.remove();
+      destContainer.appendChild(refChild);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.insertBefore(span, refChild);
+        },
+        () => {
+          refChild.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The dest container is modified while Node.insertBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the dest container is modified during Node.insertBefore()"
+      );
+    } finally {
+      span.remove();
+      destContainer.appendChild(refChild);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.moveBefore(span, refChild);
+        },
+        () => {
+          refChild.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The dest container is modified while Node.moveBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the dest container is modified during Node.moveBefore()"
+      );
+    } finally {
+      span.remove();
+      destContainer.appendChild(refChild);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.appendChild(span);
+        },
+        () => {
+          destContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The dest container is removed while Node.appendChild() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the dest container is removed during Node.appendChild()"
+      );
+    } finally {
+      span.remove();
+      document.body.appendChild(destContainer);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.insertBefore(span, refChild);
+        },
+        () => {
+          destContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The dest container is removed while Node.insertBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the dest container is removed during Node.insertBefore()"
+      );
+    } finally {
+      span.remove();
+      document.body.appendChild(destContainer);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.moveBefore(span, refChild);
+        },
+        () => {
+          destContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The dest container is removed while Node.moveBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the dest container is removed during Node.moveBefore()"
+      );
+    } finally {
+      span.remove();
+      document.body.appendChild(destContainer);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          span.remove();
+        },
+        () => {
+          span.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The removing <span> is removed while Node.remove() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+    } finally {
+      is(
+        span.parentNode,
+        null,
+        "The removing <span> should not stay in the src container when it's removed during Node.remove()"
+      );
+      span.remove();
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          srcContainer.removeChild(span);
+        },
+        () => {
+          span.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The removing <span> is removed while Node.removeChild() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+    } finally {
+      is(
+        span.parentNode,
+        null,
+        "The removing <span> should not stay in the src container when it's removed during Node.removeChild()"
+      );
+      span.remove();
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.appendChild(span);
+        },
+        () => {
+          span.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The moving <span> is removed while Node.appendChild() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        null,
+        "The moving <span> should not in the DOM when it's removed during Node.appendChild()"
+      );
+    } finally {
+      span.remove();
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.insertBefore(span, refChild);
+        },
+        () => {
+          span.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The moving <span> is removed while Node.insertBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        null,
+        "The moving <span> should not in the DOM when it's removed during Node.insertBefore()"
+      );
+    } finally {
+      span.remove();
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.moveBefore(span, refChild);
+        },
+        () => {
+          span.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The moving <span> is removed while Node.moveBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        null,
+        "The moving <span> should not in the DOM when it's removed during Node.moveBefore()"
+      );
+    } finally {
+      span.remove();
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          span.remove();
+        },
+        () => {
+          srcContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The src container is removed while Node.remove() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The removing <span> should stay in the src container when the container is removed during Node.remove()"
+      );
+    } finally {
+      span.remove();
+      document.body.insertBefore(srcContainer, destContainer);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          srcContainer.removeChild(span);
+        },
+        () => {
+          srcContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The src container is removed while Node.removeChild() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The removing <span> should stay in the src container when the container is removed during Node.removeChild()"
+      );
+    } finally {
+      span.remove();
+      document.body.insertBefore(srcContainer, destContainer);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.appendChild(span);
+        },
+        () => {
+          srcContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The src container is removed while Node.appendChild() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the container is removed during Node.appendChild()"
+      );
+    } finally {
+      span.remove();
+      document.body.insertBefore(srcContainer, destContainer);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.insertBefore(span, refChild);
+        },
+        () => {
+          srcContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The src container is removed while Node.insertBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the container is removed during Node.insertBefore()"
+      );
+    } finally {
+      span.remove();
+      document.body.insertBefore(srcContainer, destContainer);
+    }
+  }
+
+  {
+    const span = document.createElement("span");
+    srcContainer.appendChild(span);
+    try {
+      const event = getDevToolsChildRemovedEvent(
+        span,
+        () => {
+          destContainer.moveBefore(span, refChild);
+        },
+        () => {
+          srcContainer.remove();
+        }
+      );
+      isnot(
+        event,
+        undefined,
+        "The src container is removed while Node.moveBefore() is called should cause a devtoolschildremoved event"
+      );
+    } catch (e) {
+      is(
+        span.parentNode,
+        srcContainer,
+        "The moving <span> should stay in the src container when the container is removed during Node.moveBefore()"
+      );
+    } finally {
+      span.remove();
+      document.body.insertBefore(srcContainer, destContainer);
+    }
+  }
+
+  SimpleTest.finish();
+});
+</script>
+</head>
+<body>
+  <div id="container"></div>
+  <div id="destContainer"><span id="refChild"></span></div>
+</body>
+</html>

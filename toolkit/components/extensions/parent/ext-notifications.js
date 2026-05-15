@@ -8,7 +8,14 @@ const ToolkitModules = {};
 
 ChromeUtils.defineESModuleGetters(ToolkitModules, {
   EventEmitter: "resource://gre/modules/EventEmitter.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
 });
+
+const AlertNotification = Components.Constructor(
+  "@mozilla.org/alert-notification;1",
+  "nsIAlertNotification",
+  "initWithObject"
+);
 
 var { ignoreEvent } = ExtensionCommon;
 
@@ -18,41 +25,11 @@ function Notification(context, notificationsMap, id, options) {
   this.id = id;
   this.options = options;
 
-  let imageURL;
-  if (options.iconUrl) {
-    imageURL = context.extension.baseURI.resolve(options.iconUrl);
-  }
-
   // Set before calling into nsIAlertsService, because the notification may be
   // closed during the call.
   notificationsMap.set(id, this);
 
-  try {
-    let svc = Cc["@mozilla.org/alerts-service;1"].getService(
-      Ci.nsIAlertsService
-    );
-    svc.showAlertNotification(
-      imageURL,
-      options.title,
-      options.message,
-      true, // textClickable
-      this.id,
-      this,
-      this.id,
-      undefined,
-      undefined,
-      undefined,
-      // Principal is not set because doing so reveals buttons to control
-      // notification preferences, which are currently not implemented for
-      // notifications triggered via this extension API (bug 1589693).
-      undefined,
-      context.incognito
-    );
-  } catch (e) {
-    // This will fail if alerts aren't available on the system.
-
-    this.observe(null, "alertfinished", id);
-  }
+  this.showAlert(context);
 }
 
 Notification.prototype = {
@@ -66,6 +43,62 @@ Notification.prototype = {
       // This will fail if the OS doesn't support this function.
     }
     this.notificationsMap.delete(this.id);
+  },
+
+  async showAlert(context) {
+    let imageURL;
+    if (this.options.iconUrl) {
+      imageURL = context.extension.baseURI.resolve(this.options.iconUrl);
+    }
+
+    let image;
+    try {
+      if (imageURL) {
+        let uri = ToolkitModules.NetUtil.newURI(imageURL);
+        let channel = ToolkitModules.NetUtil.newChannel({
+          uri,
+          securityFlags:
+            Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+          contentPolicyType: Ci.nsIContentPolicy.TYPE_IMAGE,
+          loadingPrincipal: context.principal,
+        });
+        image = await ChromeUtils.fetchDecodedImage(uri, channel);
+      }
+    } catch (e) {
+      console.error(`Loading image ${imageURL} for Notification failed: ${e}`);
+      imageURL = undefined;
+    }
+
+    // Return if the notification was explicitly closed while waiting for the image.
+    if (!this.notificationsMap.has(this.id)) {
+      this.observe(null, "alertfinished", this.id);
+      return;
+    }
+
+    try {
+      let svc = Cc["@mozilla.org/alerts-service;1"].getService(
+        Ci.nsIAlertsService
+      );
+      // Principal is not set because doing so reveals buttons to control
+      // notification preferences, which are currently not implemented for
+      // notifications triggered via this extension API (bug 1589693).
+      let alert = new AlertNotification({
+        // The imageURL and image should be in sync. Only Android still needs
+        // the imageURL instead of image.
+        imageURL,
+        image,
+        title: this.options.title,
+        text: this.options.message,
+        textClickable: true,
+        cookie: this.id,
+        name: this.id,
+        inPrivateBrowsing: context.incognito,
+      });
+      svc.showAlert(alert, this);
+    } catch (e) {
+      // This will fail if alerts aren't available on the system.
+      this.observe(null, "alertfinished", this.id);
+    }
   },
 
   observe(subject, topic, data) {

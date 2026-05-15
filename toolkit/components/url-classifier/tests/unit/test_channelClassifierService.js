@@ -44,7 +44,7 @@ function waitForBeforeBlockEvent(expected, callback) {
   return new Promise(function (resolve) {
     let observer = function observe(aSubject, aTopic) {
       switch (aTopic) {
-        case "urlclassifier-before-block-channel":
+        case "urlclassifier-before-block-channel": {
           let channel = aSubject.QueryInterface(
             Ci.nsIUrlClassifierBlockedChannel
           );
@@ -66,6 +66,7 @@ function waitForBeforeBlockEvent(expected, callback) {
           service.removeListener(observer);
           resolve(channel);
           break;
+        }
       }
     };
 

@@ -3,3 +3,6 @@ head = ""
 firefox-appdir = "browser"
 
 ["test_cld2.js"]
+
+["test_telemetry_sampling.js"]
+requesttimeoutfactor = 4

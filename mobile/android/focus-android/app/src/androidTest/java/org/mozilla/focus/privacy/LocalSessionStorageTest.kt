@@ -59,8 +59,8 @@ class LocalSessionStorageTest : TestSetup() {
     @SmokeTest
     @Test
     fun testLocalAndSessionStorageIsWrittenAndRemoved() {
-        val storageStartUrl = getStorageTestAsset(webServer, "storage_start.html").url
-        val storageCheckUrl = getStorageTestAsset(webServer, "storage_check.html").url
+        val storageStartUrl = webServer.getStorageTestAsset("storage_start.html").url
+        val storageCheckUrl = webServer.getStorageTestAsset("storage_check.html").url
 
         searchScreen {
         }.loadPage(storageStartUrl) {
@@ -82,7 +82,7 @@ class LocalSessionStorageTest : TestSetup() {
     @SmokeTest
     @Test
     fun eraseCookiesTest() {
-        val storageStartUrl = getStorageTestAsset(webServer, "storage_start.html").url
+        val storageStartUrl = webServer.getStorageTestAsset("storage_start.html").url
 
         searchScreen {
         }.loadPage(storageStartUrl) {

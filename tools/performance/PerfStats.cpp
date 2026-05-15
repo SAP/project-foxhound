@@ -6,6 +6,7 @@
 
 #include "PerfStats.h"
 #include "nsAppRunner.h"
+#include <string_view>
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
@@ -53,11 +54,21 @@ void PerfStats::SetCollectionMask(MetricMask aMask) {
   ContentParent::GetAll(contentParents);
 
   for (ContentParent* parent : contentParents) {
-    Unused << parent->SendUpdatePerfStatsCollectionMask(aMask);
+    (void)parent->SendUpdatePerfStatsCollectionMask(aMask);
   }
 }
 
 PerfStats::MetricMask PerfStats::GetCollectionMask() { return sCollectionMask; }
+
+PerfStats::MetricMask PerfStats::GetFeatureMask(const char* aMetricName) {
+  for (int i = 0; i < static_cast<int>(Metric::Max); i++) {
+    if (std::string_view(aMetricName) == std::string_view(sMetricNames[i])) {
+      return 1ULL << i;
+    }
+  }
+
+  return 0;
+}
 
 PerfStats* PerfStats::GetSingleton() {
   if (!sSingleton) {
@@ -81,31 +92,31 @@ void PerfStats::RecordMeasurementEndInternal(Metric aMetric) {
 
   sSingleton->mRecordedTimes[static_cast<size_t>(aMetric)] +=
       (TimeStamp::Now() -
-       sSingleton->mRecordedStarts[static_cast<size_t>(aMetric)])
+       sSingleton->mRecordedStarts[static_cast<MetricMask>(aMetric)])
           .ToMilliseconds();
-  sSingleton->mRecordedCounts[static_cast<size_t>(aMetric)]++;
+  sSingleton->mRecordedCounts[static_cast<MetricMask>(aMetric)]++;
 }
 
 void PerfStats::RecordMeasurementInternal(Metric aMetric,
                                           TimeDuration aDuration) {
   StaticMutexAutoLock lock(sMutex);
 
-  MOZ_ASSERT(sSingleton);
+  PerfStats* singleton = GetSingleton();
 
-  sSingleton->mRecordedTimes[static_cast<size_t>(aMetric)] +=
+  singleton->mRecordedTimes[static_cast<MetricMask>(aMetric)] +=
       aDuration.ToMilliseconds();
-  sSingleton->mRecordedCounts[static_cast<size_t>(aMetric)]++;
+  singleton->mRecordedCounts[static_cast<MetricMask>(aMetric)]++;
 }
 
-void PerfStats::RecordMeasurementCounterInternal(Metric aMetric,
-                                                 uint64_t aIncrementAmount) {
+void PerfStats::RecordMeasurementCounterInternal(
+    Metric aMetric, MetricCounter aIncrementAmount) {
   StaticMutexAutoLock lock(sMutex);
 
-  MOZ_ASSERT(sSingleton);
+  PerfStats* singleton = GetSingleton();
 
-  sSingleton->mRecordedTimes[static_cast<size_t>(aMetric)] +=
+  singleton->mRecordedTimes[static_cast<MetricMask>(aMetric)] +=
       double(aIncrementAmount);
-  sSingleton->mRecordedCounts[static_cast<size_t>(aMetric)]++;
+  singleton->mRecordedCounts[static_cast<MetricMask>(aMetric)]++;
 }
 
 void AppendJSONStringAsProperty(nsCString& aDest, const char* aPropertyName,
@@ -185,7 +196,7 @@ struct PerfStatsCollector {
 };
 
 void PerfStats::ResetCollection() {
-  for (uint64_t i = 0; i < static_cast<uint64_t>(Metric::Max); i++) {
+  for (MetricMask i = 0; i < static_cast<MetricMask>(Metric::Max); i++) {
     if (!(sCollectionMask & 1 << i)) {
       continue;
     }
@@ -293,7 +304,7 @@ nsCString PerfStats::CollectLocalPerfStatsJSONInternal() {
   {
     w.StartArrayProperty("metrics");
     {
-      for (uint64_t i = 0; i < static_cast<uint64_t>(Metric::Max); i++) {
+      for (MetricMask i = 0; i < static_cast<MetricMask>(Metric::Max); i++) {
         if (!(sCollectionMask & (1 << i))) {
           continue;
         }

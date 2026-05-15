@@ -117,7 +117,7 @@ class ConfigureTestSandbox(ConfigureSandbox):
         os_contents["environ"] = dict(environ)
         self.imported_os = ReadOnlyNamespace(**os_contents)
 
-        super(ConfigureTestSandbox, self).__init__(config, environ, *args, **kwargs)
+        super().__init__(config, environ, *args, **kwargs)
 
     @memoized_property
     def _wrapped_mozfile(self):

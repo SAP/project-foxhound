@@ -5,6 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OffscreenCanvasDisplayHelper.h"
+
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
@@ -16,8 +19,6 @@
 #include "mozilla/layers/PersistentBufferProvider.h"
 #include "mozilla/layers/TextureClientSharedSurface.h"
 #include "mozilla/layers/TextureWrapperImage.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/SVGObserverUtils.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsRFPService.h"
 
@@ -121,18 +122,20 @@ RefPtr<layers::ImageContainer> OffscreenCanvasDisplayHelper::GetImageContainer()
 void OffscreenCanvasDisplayHelper::UpdateContext(
     OffscreenCanvas* aOffscreenCanvas, RefPtr<ThreadSafeWorkerRef>&& aWorkerRef,
     CanvasContextType aType, const Maybe<mozilla::ipc::ActorId>& aChildId) {
-  RefPtr<layers::ImageContainer> imageContainer =
-      MakeRefPtr<layers::ImageContainer>(
-          layers::ImageUsageType::OffscreenCanvas,
-          layers::ImageContainer::ASYNCHRONOUS);
-
   MutexAutoLock lock(mMutex);
+
+  // Only create ImageContainer if we don't already have one (Bug 2004797).
+  // Recreating it would discard any existing frames, causing flicker.
+  if (!mImageContainer) {
+    mImageContainer = MakeRefPtr<layers::ImageContainer>(
+        layers::ImageUsageType::OffscreenCanvas,
+        layers::ImageContainer::ASYNCHRONOUS);
+  }
 
   mOffscreenCanvas = aOffscreenCanvas;
   mWorkerRef = std::move(aWorkerRef);
   mType = aType;
   mContextChildId = aChildId;
-  mImageContainer = std::move(imageContainer);
 
   if (aChildId) {
     mContextManagerId = Some(gfx::CanvasManagerChild::Get()->Id());
@@ -570,7 +573,8 @@ already_AddRefed<layers::Image> OffscreenCanvasDisplayHelper::GetAsImage() {
 }
 
 UniquePtr<uint8_t[]> OffscreenCanvasDisplayHelper::GetImageBuffer(
-    int32_t* aOutFormat, gfx::IntSize* aOutImageSize) {
+    CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
+    gfx::IntSize* aOutImageSize) {
   RefPtr<gfx::SourceSurface> surface = GetSurfaceSnapshot();
   if (!surface) {
     return nullptr;
@@ -589,42 +593,36 @@ UniquePtr<uint8_t[]> OffscreenCanvasDisplayHelper::GetImageBuffer(
     return nullptr;
   }
 
-  bool resistFingerprinting;
+  nsIPrincipal* principal = nullptr;
   nsICookieJarSettings* cookieJarSettings = nullptr;
   {
     MutexAutoLock lock(mMutex);
+
     if (mCanvasElement) {
-      Document* doc = mCanvasElement->OwnerDoc();
-      resistFingerprinting =
-          doc->ShouldResistFingerprinting(RFPTarget::CanvasRandomization);
-      if (resistFingerprinting) {
-        cookieJarSettings = doc->CookieJarSettings();
-      }
-    } else {
-      resistFingerprinting = nsContentUtils::ShouldResistFingerprinting(
-          "Fallback", RFPTarget::CanvasRandomization);
+      principal = mCanvasElement->NodePrincipal();
+      cookieJarSettings = mCanvasElement->OwnerDoc()->CookieJarSettings();
+    } else if (mOffscreenCanvas) {
+      principal = mOffscreenCanvas->GetParentObject()
+                      ? mOffscreenCanvas->GetParentObject()->PrincipalOrNull()
+                      : nullptr;
+      cookieJarSettings =
+          mOffscreenCanvas->GetParentObject()
+              ? mOffscreenCanvas->GetParentObject()->GetCookieJarSettings()
+              : nullptr;
     }
   }
-
-  if (resistFingerprinting) {
-    nsIPrincipal* principal = nullptr;
-    {
-      MutexAutoLock lock(mMutex);
-      if (mCanvasElement) {
-        principal = mCanvasElement->NodePrincipal();
-      }
-      if (mOffscreenCanvas) {
-        principal = mOffscreenCanvas->GetParentObject()
-                        ? mOffscreenCanvas->GetParentObject()->PrincipalOrNull()
-                        : nullptr;
-      }
-    }
+  nsRFPService::PotentiallyDumpImage(
+      principal, imageBuffer.get(), dataSurface->GetSize().width,
+      dataSurface->GetSize().height,
+      dataSurface->GetSize().width * dataSurface->GetSize().height * 4);
+  if (aExtractionBehavior == CanvasUtils::ImageExtraction::Randomize) {
     nsRFPService::RandomizePixels(
         cookieJarSettings, principal, imageBuffer.get(),
         dataSurface->GetSize().width, dataSurface->GetSize().height,
         dataSurface->GetSize().width * dataSurface->GetSize().height * 4,
         gfx::SurfaceFormat::A8R8G8B8_UINT32);
   }
+
   return imageBuffer;
 }
 

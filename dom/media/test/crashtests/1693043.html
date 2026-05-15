@@ -6,7 +6,7 @@ async function boom() {
   audio.preload = "metadata";
   audio.src = "sound.ogg";
   await new Promise(r => audio.onloadedmetadata = r);
-  const s = audio.mozCaptureStream();
+  const s = audio.captureStream?.() || audio.mozCaptureStream();
   const recorder = new MediaRecorder(
       new MediaStream(s.getTracks()),
       { audioBitsPerSecond: 3994678619 }

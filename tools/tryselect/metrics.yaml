@@ -1,0 +1,161 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# If this file is changed, update the generated docs:
+# https://firefox-source-docs.mozilla.org/mach/telemetry.html#updating-generated-metrics-docs
+
+# Adding a new metric? We have docs for that!
+# https://mozilla.github.io/glean/book/user/metrics/adding-new-metrics.html
+
+---
+$schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
+
+mach_try:
+  fzf_bootstrap_duration:
+    type: timespan
+    description: Time spent setting up or updating the fzf fuzzy finder tool.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  remote_data_fetching_duration:
+    type: timespan
+    description: >
+      Time spent fetching remote data used as part of the try selector.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  taskgraph_generation_duration:
+    type: timespan
+    description: >
+      Time spent generating the taskgraph for try selection.
+      This is typically the most expensive operation.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  task_filtering_duration:
+    type: timespan
+    description: >
+      Time spent filtering tasks based on paths, tags, worker types,
+      or uncommon task filters.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  interactive_duration:
+    type: timespan
+    description: >
+      Time spent by the user in interactive task selection (e.g., fzf UI).
+      This measures user think/selection time, not system processing time.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  task_config_generation_duration:
+    type: timespan
+    description: Time spent generating the try_task_config.json data structure.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  commit_prep:
+    type: timespan
+    description: >
+      Time spent preparing and creating a commit with the try configuration.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  vcs_prep:
+    type: timespan
+    description: Time spent making a push to try.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  vcs_push:
+    type: timespan
+    description: Time spent cleaning up after making a push to try.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage
+
+  vcs_cleanup:
+    type: timespan
+    description: Time spent cleaning up after making a push to try.
+    lifetime: application
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2008824
+    notification_emails:
+      - build-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage

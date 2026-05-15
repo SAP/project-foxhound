@@ -14,8 +14,11 @@ namespace mozilla::dom::cache {
 // Declared in ActorUtils.h
 void DeallocPCacheParent(PCacheParent* aActor) { delete aActor; }
 
-CacheParent::CacheParent(SafeRefPtr<cache::Manager> aManager, CacheId aCacheId)
-    : mManager(std::move(aManager)), mCacheId(aCacheId) {
+CacheParent::CacheParent(const WeakRefParentType& aManagingActor,
+                         SafeRefPtr<cache::Manager> aManager, CacheId aCacheId)
+    : mManagingActor(aManagingActor),
+      mManager(std::move(aManager)),
+      mCacheId(aCacheId) {
   MOZ_COUNT_CTOR(cache::CacheParent);
   MOZ_DIAGNOSTIC_ASSERT(mManager);
   mManager->AddRefCacheId(mCacheId);
@@ -42,12 +45,12 @@ already_AddRefed<PCacheOpParent> CacheParent::AllocPCacheOpParent(
     MOZ_CRASH("Invalid operation sent to Cache actor!");
   }
 
-  return MakeAndAddRef<CacheOpParent>(Manager(), mCacheId, aOpArgs);
+  return MakeAndAddRef<CacheOpParent>(mManagingActor, aOpArgs, mCacheId);
 }
 
 mozilla::ipc::IPCResult CacheParent::RecvPCacheOpConstructor(
     PCacheOpParent* aActor, const CacheOpArgs& aOpArgs) {
-  auto actor = static_cast<CacheOpParent*>(aActor);
+  auto* actor = static_cast<CacheOpParent*>(aActor);
   actor->Execute(mManager.clonePtr());
   return IPC_OK();
 }

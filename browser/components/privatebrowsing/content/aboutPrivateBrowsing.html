@@ -28,7 +28,10 @@
     <link rel="localization" href="toolkit/branding/brandings.ftl" />
     <link rel="localization" href="browser/aboutPrivateBrowsing.ftl" />
     <script src="chrome://browser/content/aboutPrivateBrowsing.js"></script>
-    <script src="chrome://browser/content/contentSearchHandoffUI.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/contentSearchHandoffUI.mjs"
+    ></script>
   </head>
 
   <body>
@@ -73,21 +76,7 @@
         <div class="wordmark"></div>
       </div>
       <div class="search-inner-wrapper">
-        <button
-          id="search-handoff-button"
-          class="search-handoff-button"
-          tabindex="-1"
-          aria-hidden="true"
-        >
-          <div class="fake-textbox"></div>
-          <input
-            id="fake-editable"
-            class="fake-editable"
-            tabindex="-1"
-            aria-hidden="true"
-          />
-          <div class="fake-caret"></div>
-        </button>
+        <content-search-handoff-ui></content-search-handoff-ui>
       </div>
       <div class="info-border">
         <div class="info">

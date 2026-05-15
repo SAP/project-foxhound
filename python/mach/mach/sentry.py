@@ -214,9 +214,9 @@ def _is_unmodified_mach_core(topsrcdir: Path):
     repo = _get_repository_object(topsrcdir)
     try:
         files = set(repo.get_outgoing_files()) | set(repo.get_changed_files())
-        _is_unmodified_mach_core_result = not any(
-            [file for file in files if file == "mach" or file.endswith(".py")]
-        )
+        _is_unmodified_mach_core_result = not any([
+            file for file in files if file == "mach" or file.endswith(".py")
+        ])
     except MissingUpstreamRepo:
         # If we don't know the upstream state, we don't know if the mach files
         # have been unmodified.

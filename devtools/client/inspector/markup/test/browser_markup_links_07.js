@@ -48,14 +48,22 @@ add_task(async function () {
   linkEl = editor.attrElements.get("for").querySelector(".link");
 
   info("Follow link with middle-click, wait for new node to be selected.");
-  await followLinkWaitForNewNode(linkEl, false, inspector);
+  await followLinkWaitForNewNode(linkEl, false, inspector, "name");
 
-  // We have to re-select the label as the link switched the currently selected
-  // node.
+  // We have to re-select the label as the link switched the currently selected node.
   await selectNode("label", inspector);
 
   info("Follow link with ctrl/meta-click, wait for new node to be selected.");
-  await followLinkWaitForNewNode(linkEl, true, inspector);
+  await followLinkWaitForNewNode(linkEl, true, inspector, "name");
+
+  info("Find the label for the element whose id starts with a number");
+  await selectNode(`label[for="${CSS.escape("3d")}"]`, inspector);
+  ({ editor } = await getContainerForSelector(
+    `label[for="${CSS.escape("3d")}"]`,
+    inspector
+  ));
+  linkEl = editor.attrElements.get("for").querySelectorAll(".link")[0];
+  await followLinkWaitForNewNode(linkEl, true, inspector, "3d");
 
   info("Select a node with an invalid IDREF attribute");
   await selectNode("output", inspector);
@@ -144,13 +152,22 @@ async function followLinkWaitForTab(linkEl, isMetaClick, expectedTabURI) {
   gBrowser.removeTab(target);
 }
 
-async function followLinkWaitForNewNode(linkEl, isMetaClick, inspector) {
+async function followLinkWaitForNewNode(
+  linkEl,
+  isMetaClick,
+  inspector,
+  expectedSelectedNodeId
+) {
   const onSelection = inspector.selection.once("new-node-front");
   performMouseDown(linkEl, isMetaClick);
   await onSelection;
 
   ok(true, "A new node was selected");
-  is(inspector.selection.nodeFront.id, "name", "The right node was selected");
+  is(
+    inspector.selection.nodeFront.id,
+    expectedSelectedNodeId,
+    "The right node was selected"
+  );
 }
 
 async function followLinkNoNewNode(linkEl, isMetaClick, inspector) {

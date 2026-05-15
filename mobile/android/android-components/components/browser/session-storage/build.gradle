@@ -4,25 +4,17 @@
 
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArgument "clearPackageData", "true"
         testInstrumentationRunnerArgument "listener", "leakcanary.FailTestOnLeakRunListener"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
     }
 
     namespace = 'mozilla.components.browser.session.storage'
@@ -32,39 +24,40 @@ dependencies {
     api project(':components:browser-state')
 
     implementation project(':components:concept-engine')
-    implementation project(':components:support-utils')
     implementation project(':components:support-ktx')
-
-    implementation libs.androidx.core.ktx
-    implementation libs.kotlin.coroutines
+    implementation project(':components:support-utils')
 
     implementation libs.androidx.browser
+    implementation libs.androidx.core.ktx
     implementation libs.androidx.drawerlayout
-    implementation libs.androidx.lifecycle.runtime
     implementation libs.androidx.lifecycle.process
+    implementation libs.androidx.lifecycle.runtime
+    implementation libs.kotlinx.coroutines
 
+    testImplementation project(':components:feature-tabs')
     testImplementation project(':components:support-test')
     testImplementation project(':components:support-test-fakes')
     testImplementation project(':components:support-test-libstate')
-    testImplementation project(':components:feature-tabs')
+
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 
     androidTestImplementation project(':components:browser-engine-gecko')
-    androidTestImplementation project(':components:support-android-test')
     androidTestImplementation project(':components:feature-tabs')
+    androidTestImplementation project(':components:support-android-test')
+
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
-    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.espresso.core
     androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.uiautomator
-    androidTestImplementation libs.androidx.espresso.core
-    androidTestImplementation libs.testing.leakcanary
-    androidTestImplementation libs.testing.mockwebserver
+    androidTestImplementation libs.leakcanary.instrumentation
+    androidTestImplementation libs.mockwebserver
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

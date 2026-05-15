@@ -16,6 +16,12 @@
 
 class gfxFT2FontBase;
 
+namespace mozilla {
+namespace gfx {
+class FTUserFontData;
+}
+}  // namespace mozilla
+
 class gfxFT2FontEntryBase : public gfxFontEntry {
  public:
   explicit gfxFT2FontEntryBase(const nsACString& aName) : gfxFontEntry(aName) {}
@@ -25,6 +31,11 @@ class gfxFT2FontEntryBase : public gfxFontEntry {
   static bool FaceHasTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag);
   static nsresult CopyFaceTable(mozilla::gfx::SharedFTFace*, uint32_t aTableTag,
                                 nsTArray<uint8_t>&);
+
+  virtual mozilla::gfx::FTUserFontData* GetUserFontData() = 0;
+
+  size_t ComputedSizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf) override;
 
  private:
   enum { kNumCmapCacheSlots = 256 };
@@ -70,6 +81,7 @@ class gfxFT2FontBase : public gfxFont {
                              const nsTArray<gfxFontVariation>& aVariations,
                              FT_Face aFTFace);
 
+  // Callers must always pair lock and unlock, regardless of return value.
   FT_Face LockFTFace() const;
   void UnlockFTFace() const;
 

@@ -4,6 +4,60 @@
 
 "use strict";
 
+/**
+ * Test implicit selected state.
+ */
+addAccessibleTask(
+  `
+<div role="tablist">
+  <div id="noSel" role="tab" tabindex="0">noSel</div>
+  <div id="noSel2" role="tab" tabindex="0">noSel2</div>
+</div>
+<div role="listbox" aria-multiselectable="true">
+  <div id="multiNoSel" role="option" tabindex="0">multiNoSel</div>
+</div>
+<div role="grid">
+  <div role="row">
+    <div id="gridcell" role="gridcell" tabindex="0">gridcell</div>
+  </div>
+</div>
+  `,
+  async function (browser, docAcc) {
+    const noSel = findAccessibleChildByID(docAcc, "noSel");
+    testStates(noSel, 0, 0, STATE_FOCUSED | STATE_SELECTED, 0);
+    info("Focusing noSel");
+    let focused = waitForEvent(EVENT_FOCUS, noSel);
+    noSel.takeFocus();
+    await focused;
+    testStates(noSel, STATE_FOCUSED | STATE_SELECTED, 0, 0, 0);
+
+    const noSel2 = findAccessibleChildByID(docAcc, "noSel2");
+    testStates(noSel2, 0, 0, STATE_FOCUSED | STATE_SELECTED, 0);
+    info("Focusing noSel2");
+    focused = waitForEvent(EVENT_FOCUS, noSel2);
+    noSel2.takeFocus();
+    await focused;
+    testStates(noSel2, STATE_FOCUSED | STATE_SELECTED, 0, 0, 0);
+
+    const multiNoSel = findAccessibleChildByID(docAcc, "multiNoSel");
+    testStates(multiNoSel, 0, 0, STATE_FOCUSED | STATE_SELECTED, 0);
+    info("Focusing multiNoSel");
+    focused = waitForEvent(EVENT_FOCUS, multiNoSel);
+    multiNoSel.takeFocus();
+    await focused;
+    testStates(multiNoSel, STATE_FOCUSED, 0, STATE_SELECTED, 0);
+
+    const gridcell = findAccessibleChildByID(docAcc, "gridcell");
+    testStates(gridcell, 0, 0, STATE_FOCUSED | STATE_SELECTED, 0);
+    info("Focusing gridcell");
+    focused = waitForEvent(EVENT_FOCUS, gridcell);
+    gridcell.takeFocus();
+    await focused;
+    testStates(gridcell, STATE_FOCUSED, 0, STATE_SELECTED, 0);
+  },
+  { topLevel: true, iframe: true, remoteIframe: true, chrome: true }
+);
+
 // Ensure explicit selection gets priority over implicit selection
 addAccessibleTask(
   `

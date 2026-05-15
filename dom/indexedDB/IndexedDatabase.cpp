@@ -5,18 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/IndexedDatabase.h"
-#include "IndexedDatabaseInlines.h"
 
 #include "IDBDatabase.h"
-
+#include "IndexedDatabaseInlines.h"
+#include "MainThreadUtils.h"
+#include "jsapi.h"
 #include "mozilla/dom/FileBlobImpl.h"
 #include "mozilla/dom/FileList.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "MainThreadUtils.h"
-#include "jsapi.h"
 #include "nsIFile.h"
 #include "nsIGlobalObject.h"
 #include "nsQueryObject.h"

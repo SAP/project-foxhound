@@ -25,6 +25,7 @@ EXPORTS.mozilla.ipc += [
     "CrossProcessMutex.h",
     "CrossProcessSemaphore.h",
     "DataPipe.h",
+    "EagerIPCStream.h",
     "Endpoint.h",
     "EnvironmentMap.h",
     "FileDescriptor.h",
@@ -38,7 +39,6 @@ EXPORTS.mozilla.ipc += [
     "IPCForwards.h",
     "IPCStreamUtils.h",
     "IPCTypes.h",
-    "IPDLParamTraits.h",
     "IPDLStructMember.h",
     "LaunchError.h",
     "MessageChannel.h",
@@ -55,6 +55,7 @@ EXPORTS.mozilla.ipc += [
     "RustMessageUtils.h",
     "ScopedPort.h",
     "SerializedStructuredCloneBuffer.h",
+    "SerializeToBytesUtil.h",
     "SharedMemoryCursor.h",
     "SharedMemoryHandle.h",
     "SharedMemoryMapping.h",
@@ -63,7 +64,6 @@ EXPORTS.mozilla.ipc += [
     "SideVariant.h",
     "TaintingIPCUtils.h",
     "TaskFactory.h",
-    "ToplevelActorHolder.h",
     "TransportSecurityInfoUtils.h",
     "URIUtils.h",
     "UtilityMediaService.h",
@@ -231,6 +231,7 @@ elif CONFIG["OS_TARGET"] == "Android":
     UNIFIED_SOURCES += ["MessagePump_android.cpp"]
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "/caps",
     "/dom/broadcastchannel",
     "/dom/indexedDB",
@@ -291,13 +292,24 @@ if CONFIG["TARGET_OS"] == "OSX":
     OS_LIBS += ["bsm"]  # for audit_token_to_pid
 elif CONFIG["TARGET_OS"] == "iOS":
     OS_LIBS += ["-framework BrowserEngineKit"]
+elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+    OS_LIBS += ["android"]
+
+extra_vars = ()
+if CONFIG["NIGHTLY_BUILD"] and not CONFIG["MOZ_NO_SMART_CARDS"]:
+    extra_vars = (
+        "MOZ_PKCS11_PROCESS_NAME_BRANDED",
+        "MOZ_PKCS11_PROCESS_BUNDLENAME",
+    )
 
 for var in (
     "MOZ_CHILD_PROCESS_NAME",
     "MOZ_CHILD_PROCESS_BUNDLENAME",
     "MOZ_EME_PROCESS_NAME_BRANDED",
     "MOZ_EME_PROCESS_BUNDLENAME",
-):
+    "MOZ_GPU_PROCESS_NAME_BRANDED",
+    "MOZ_GPU_PROCESS_BUNDLENAME",
+) + extra_vars:
     DEFINES[var] = '"%s"' % CONFIG[var]
 
 if CONFIG["MOZ_SANDBOX"] and CONFIG["OS_ARCH"] == "WINNT":
@@ -307,12 +319,11 @@ if CONFIG["MOZ_SANDBOX"] and CONFIG["OS_ARCH"] == "WINNT":
         "/security/sandbox/win/src/sandboxbroker",
     ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += [
-        "test/gtest",
-        "test/utility_process_xpcom",
-        "test/browser",
-    ]
+TEST_DIRS += [
+    "test/gtest",
+    "test/utility_process_xpcom",
+    "test/browser",
+]
 
 # Add libFuzzer configuration directives
 include("/tools/fuzzing/libfuzzer-config.mozbuild")

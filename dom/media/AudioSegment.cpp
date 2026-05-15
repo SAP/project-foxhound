@@ -4,10 +4,12 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioSegment.h"
-#include "AudioMixer.h"
-#include "AudioChannelFormat.h"
-#include "MediaTrackGraph.h"  // for nsAutoRefTraits<SpeexResamplerState>
+
 #include <speex/speex_resampler.h>
+
+#include "AudioChannelFormat.h"
+#include "AudioMixer.h"
+#include "MediaTrackGraph.h"  // for nsAutoRefTraits<SpeexResamplerState>
 
 namespace mozilla {
 

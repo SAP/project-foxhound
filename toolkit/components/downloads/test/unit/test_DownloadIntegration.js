@@ -439,3 +439,42 @@ add_task(async function test_exit_private_browsing() {
 
   continueResponses();
 });
+
+/**
+ * Tests nsIClearDataService clearPrivateBrowsingData which supports a completion callback.
+ * The onDataDeleted callback should only be fired after the download cleanup completes.
+ */
+add_task(async function test_exit_private_browsing_via_clear_data_service() {
+  mustInterruptResponses();
+
+  let privateList = await promiseNewList(true);
+  let download1 = await promiseNewDownload(httpUrl("source.txt"));
+  let download2 = await promiseNewDownload(httpUrl("interruptible.txt"));
+  let promiseAttempt1 = download1.start();
+  download2.start();
+
+  await privateList.add(download1);
+  await privateList.add(download2);
+
+  await promiseAttempt1;
+
+  Assert.equal((await privateList.getAll()).length, 2);
+
+  // Use ClearDataService which passes a collector as the notification subject.
+  // onDataDeleted should only fire after the download cleanup completes.
+  await new Promise(resolve => {
+    Services.clearData.clearPrivateBrowsingData({
+      onDataDeleted() {
+        resolve();
+      },
+    });
+  });
+
+  Assert.equal(
+    (await privateList.getAll()).length,
+    0,
+    "Private downloads cleared before onDataDeleted callback"
+  );
+
+  continueResponses();
+});

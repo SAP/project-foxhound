@@ -13,7 +13,6 @@
 #include "nsIDNSRecord.h"
 #include "nsHostResolver.h"
 #include "mozilla/Components.h"
-#include "mozilla/Unused.h"
 #include "DNSAdditionalInfo.h"
 #include "nsServiceManagerUtils.h"
 
@@ -31,9 +30,9 @@ NS_IMPL_ISUPPORTS(DNSRequestHandler, nsIDNSListener)
 static void SendLookupCompletedHelper(DNSRequestActor* aActor,
                                       const DNSRequestResponse& aReply) {
   if (DNSRequestParent* parent = aActor->AsDNSRequestParent()) {
-    Unused << parent->SendLookupCompleted(aReply);
+    (void)parent->SendLookupCompleted(aReply);
   } else if (DNSRequestChild* child = aActor->AsDNSRequestChild()) {
-    Unused << child->SendLookupCompleted(aReply);
+    (void)child->SendLookupCompleted(aReply);
   }
 }
 

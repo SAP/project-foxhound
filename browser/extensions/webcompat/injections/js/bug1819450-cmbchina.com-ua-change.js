@@ -12,16 +12,16 @@
  * to bypass the detection of mobile browser.
  */
 
-/* globals exportFunction */
+if (!navigator.userAgent.includes("SAMSUNG")) {
+  console.info(
+    "The user agent has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1081239 for details."
+  );
 
-console.info(
-  "The user agent has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1081239 for details."
-);
+  const MODIFIED_UA = navigator.userAgent + " SAMSUNG";
 
-const MODIFIED_UA = navigator.userAgent + " SAMSUNG";
+  const nav = Object.getPrototypeOf(navigator);
 
-const nav = Object.getPrototypeOf(navigator.wrappedJSObject);
-
-const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
-ua.get = exportFunction(() => MODIFIED_UA, window);
-Object.defineProperty(nav, "userAgent", ua);
+  const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
+  ua.get = () => MODIFIED_UA;
+  Object.defineProperty(nav, "userAgent", ua);
+}

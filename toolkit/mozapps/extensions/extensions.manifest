@@ -1,3 +1,5 @@
+# Daily `addons` Glean Ping scheduler.
+category update-timer amGleanDaily @mozilla.org/addons/glean-daily-ping;1,getService,glean-addons-daily,extensions.gleanPingAddons.daily.interval,86400
 #ifndef MOZ_WIDGET_ANDROID
 category update-timer addonManager @mozilla.org/addons/integration;1,getService,addon-background-update-timer,extensions.update.interval,86400
 #endif

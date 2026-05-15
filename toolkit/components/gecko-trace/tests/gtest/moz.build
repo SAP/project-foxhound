@@ -1,0 +1,20 @@
+include("/third_party/opentelemetry-cpp/opentelemetry-config.mozbuild")
+
+GeneratedFile(
+    "TestGeckoTraceEvents.h",
+    script="../../scripts/codegen.py",
+    entry_point="generate_cpp_events",
+    inputs=["./gecko-trace.yaml"],
+)
+
+if not CONFIG["GECKO_TRACE_ENABLE"]:
+    DIRS += [
+        "/third_party/opentelemetry-cpp",
+    ]
+
+UNIFIED_SOURCES += [
+    "TestEventDefinitions.cpp",
+    "TestGeckoTraceAPI.cpp",
+]
+
+FINAL_LIBRARY = "xul-gtest"

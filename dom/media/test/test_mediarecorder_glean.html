@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Glean Test for MediaRecorder</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+  <script src="/tests/SimpleTest/GleanTest.js"></script>
+</head>
+<body>
+<pre id="test"></pre>
+<script class="testbody" type="text/javascript">
+const testConfigs = [
+  {
+    type: "video",
+    containers: [
+      { name: "mp4" },
+      { name: "webm" },
+      { name: "x-matroska", label: "mkv" },
+    ],
+    codecs: [
+      { name: "vp8" },
+      { name: "vp9" },
+      { name: "av01.0.19M.08", label: "av1" },
+      { name: "avc1.64003E", label: "h264" },
+      { name: "hvc1.1.6.L186.B0", label: "h265" },
+      { name: "" },
+      { name: "blah" }, // invalid codec
+    ],
+  },
+  {
+    type: "audio",
+    containers: [{ name: "mp4" }, { name: "webm" }, { name: "ogg" }],
+    codecs: [
+      { name: "mp4a.40.2", label: "aac" },
+      { name: "flac" },
+      { name: "opus" },
+      { name: "vorbis" },
+      { name: "" },
+      { name: "blah" }, // invalid codec
+      { name: "av01.0.19M.08", label: "av1" }, // invalid codec
+    ],
+  },
+];
+
+const audioLabels = {
+  mp4: ["aac", "flac", "opus", "unspecified"],
+  webm: ["opus", "vorbis", "unspecified"],
+  mkv: ["aac", "flac", "opus", "pcm", "vorbis", "unspecified"],
+  ogg: ["flac", "opus", "vorbis", "unspecified"],
+};
+
+const validContainerCodecLabels = {
+  audio: audioLabels,
+  video: {
+    mp4: [...audioLabels.mp4, "av1", "h264", "h265", "vp9"],
+    webm: [...audioLabels.webm, "vp8", "vp9", "av1"],
+    mkv: [...audioLabels.mkv, "av1", "h264", "h265", "vp8", "vp9"],
+    ogg: [...audioLabels.ogg, "vp8", "vp9"],
+  },
+};
+
+add_task(async function testGleanIsTypeSupportedLabels() {
+  await GleanTest.testResetFOG();
+
+  function getLabel(type, container, codec, emptyCodecReplacement) {
+    const containerLabel = container.label || container.name;
+    const codecLabel =
+      codec.name == "" && emptyCodecReplacement
+        ? emptyCodecReplacement
+        : codec.label || codec.name;
+    const isValid = validContainerCodecLabels[type][containerLabel]?.includes(codecLabel);
+    return `${containerLabel}_${isValid ? codecLabel : "others"}`;
+  }
+
+  const singleCodecTests = testConfigs.flatMap(({ type, containers, codecs }) =>
+    containers.flatMap(container =>
+      codecs.map(codec => ({
+        mimeType: `${type}/${container.name};codecs=${codec.name}`,
+        labels: [getLabel(type, container, codec, "unspecified")], // empty codecs string is valid.
+      }))
+    )
+  );
+
+  const videoConfig = testConfigs.find(c => c.type === "video");
+  const audioConfig = testConfigs.find(c => c.type === "audio");
+  const pairedCodecTests = videoConfig.containers.flatMap(container =>
+    videoConfig.codecs.flatMap(videoCodec =>
+      audioConfig.codecs.map(audioCodec => ({
+        mimeType: `video/${container.name};codecs=${videoCodec.name},${audioCodec.name}`,
+        labels: [
+          getLabel("video", container, videoCodec),
+          getLabel("video", container, audioCodec),
+        ],
+      }))
+    )
+  );
+
+  const allTests = [...singleCodecTests, ...pairedCodecTests];
+  const counters = {};
+  for (const { mimeType, labels } of allTests) {
+    dump(`Testing MediaRecorder.isTypeSupported with mimeType: ${mimeType}, labels: [${labels.join(", ")}]\n`);
+    MediaRecorder.isTypeSupported(mimeType);
+    // A single call can update multiple counters, so we check each expected label.
+    const LabeledCounters = {};
+    for (const label of labels) {
+      LabeledCounters[label] = (LabeledCounters[label] || 0) + 1;
+    }
+    dump(`  Expected increments: ${JSON.stringify(LabeledCounters)}\n`);
+    for (const label of Object.keys(LabeledCounters)) {
+      counters[label] = (counters[label] || 0) + LabeledCounters[label];
+      const value = await GleanTest.mediaRecorder.mimeTypeQuery[label].testGetValue();
+      is(value, counters[label], `count for label '${label}' from mimeType '${mimeType}' should be ${counters[label]}`);
+    }
+  }
+
+  MediaRecorder.isTypeSupported("");
+  const emptyValue = await GleanTest.mediaRecorder.mimeTypeQuery.empty.testGetValue();
+  is(emptyValue, 1, `count for empty mime type in MediaRecorder.isTypeSupported should be 1`);
+
+  MediaRecorder.isTypeSupported("blah");
+  const othersValue = await GleanTest.mediaRecorder.mimeTypeQuery.others.testGetValue();
+  is(othersValue, 1, `count for invalid mime type in MediaRecorder.isTypeSupported should be 1`);
+
+  // testGetValue returns value of the stored metric, or null if there is no value.
+  const unusedValue = await GleanTest.mediaRecorder.mimeTypeQuery.mkv_pcm.testGetValue();
+  is(unusedValue, null, `count for unused mime type in MediaRecorder.isTypeSupported should be null`);
+});
+</script>
+</body>
+</html>

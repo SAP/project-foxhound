@@ -21,7 +21,7 @@ add_setup(async function () {
 /**
  * One-liner to create a basic tab group
  *
- * @param {Object} [options] options for addTabGroup
+ * @param {object} [options] options for addTabGroup
  * @param {Window} [options.targetWin] window to create the group in
  * @returns {MozTabbrowserTabGroup}
  */

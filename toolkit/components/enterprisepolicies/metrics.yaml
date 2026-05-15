@@ -27,6 +27,9 @@ policies:
     expires: never
     unit: enterprise policies
     telemetry_mirror: POLICIES_COUNT
+    lifetime: application
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
 
   is_enterprise:
     type: boolean
@@ -37,9 +40,19 @@ policies:
       scalar policies.is_enterprise.
     bugs:
       - https://bugzil.la/1803804
+      - https://bugzil.la/1997959
     data_reviews:
       - https://bugzil.la/1803804
+      - https://bugzil.la/1997959
     notification_emails:
       - mkaply@mozilla.com
     expires: never
     telemetry_mirror: POLICIES_IS_ENTERPRISE
+    send_in_pings:
+      - metrics
+      - events
+      - baseline
+    lifetime: application
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
+      - BASELINE_PING

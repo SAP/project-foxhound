@@ -7,6 +7,7 @@
 #include "SnappyUtils.h"
 
 #include <stddef.h>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/fallible.h"
@@ -16,7 +17,7 @@
 
 namespace mozilla::dom {
 
-static_assert(SNAPPY_VERSION == 0x010200);
+static_assert(SNAPPY_VERSION == 0x010202);
 
 bool SnappyCompress(const nsACString& aSource, nsACString& aDest) {
   MOZ_ASSERT(!aSource.IsVoid());

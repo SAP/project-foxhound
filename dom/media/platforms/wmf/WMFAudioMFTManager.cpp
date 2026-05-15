@@ -5,15 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFAudioMFTManager.h"
+
+#include "BufferReader.h"
 #include "MediaInfo.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
 #include "WMFUtils.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
-#include "nsTArray.h"
-#include "BufferReader.h"
 #include "mozilla/ScopeExit.h"
+#include "nsTArray.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 
@@ -79,6 +80,7 @@ const GUID& WMFAudioMFTManager::GetMediaSubtypeGUID() {
 }
 
 bool WMFAudioMFTManager::Init() {
+  AUTO_PROFILER_LABEL("WMFAudioMFTManager::Init", MEDIA_PLAYBACK);
   NS_ENSURE_TRUE(StreamTypeIsAudio(mStreamType), false);
 
   RefPtr<MFTDecoder> decoder(new MFTDecoder());
@@ -128,7 +130,7 @@ bool WMFAudioMFTManager::Init() {
   hr = outputType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 32);
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
-  hr = decoder->SetMediaTypes(inputType, outputType);
+  hr = decoder->SetMediaTypes(inputType, outputType, MFAudioFormat_Float);
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
   mDecoder = decoder;
@@ -193,7 +195,7 @@ WMFAudioMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutput) {
       return hr;
     }
     if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
-      hr = mDecoder->FindDecoderOutputType();
+      hr = mDecoder->FindDecoderOutputType(MFAudioFormat_Float);
       NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
       hr = UpdateOutputType();
       NS_ENSURE_TRUE(SUCCEEDED(hr), hr);

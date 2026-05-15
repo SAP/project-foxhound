@@ -10,13 +10,16 @@ add_task(function test_calculate_probability_zero_inputs() {
   const params = {
     GROUP_SIMILARITY_WEIGHT: 1,
     TITLE_SIMILARITY_WEIGHT: 1,
+    DOMAIN_SIMILARITY_WEIGHT: 1,
     INTERCEPT: 0,
   };
   const groupSim = 0;
   const titleSim = 0;
+  const domainSim = 0;
   const result = smartTabGroupingManager.calculateProbability(
     groupSim,
     titleSim,
+    domainSim,
     params
   );
   const expected = 1 / (1 + Math.exp(0)); // sigmoid(0) = 0.5
@@ -32,16 +35,19 @@ add_task(function test_calculate_probability_both_positive() {
   const params = {
     GROUP_SIMILARITY_WEIGHT: 1,
     TITLE_SIMILARITY_WEIGHT: 1,
+    DOMAIN_SIMILARITY_WEIGHT: 1,
     INTERCEPT: 0,
   };
   const groupSim = 1;
   const titleSim = 1;
+  const domainSim = 1;
   const result = smartTabGroupingManager.calculateProbability(
     groupSim,
     titleSim,
+    domainSim,
     params
   );
-  const expected = 1 / (1 + Math.exp(-2));
+  const expected = 1 / (1 + Math.exp(-3));
   Assert.equal(
     result.toPrecision(4),
     expected.toPrecision(4),
@@ -54,13 +60,16 @@ add_task(function test_calculate_probability_mixed_values() {
   const params = {
     GROUP_SIMILARITY_WEIGHT: 2,
     TITLE_SIMILARITY_WEIGHT: 3,
+    DOMAIN_SIMILARITY_WEIGHT: 0,
     INTERCEPT: 0.5,
   };
   const groupSim = 1;
   const titleSim = -1;
+  const domainSim = -1;
   const result = smartTabGroupingManager.calculateProbability(
     groupSim,
     titleSim,
+    domainSim,
     params
   );
   const expected = 1 / (1 + Math.exp(0.5)); // sigmoid(-0.5)
@@ -76,13 +85,16 @@ add_task(function test_calculate_probability_zero_weights() {
   const params = {
     GROUP_SIMILARITY_WEIGHT: 0,
     TITLE_SIMILARITY_WEIGHT: 0,
+    DOMAIN_SIMILARITY_WEIGHT: 0,
     INTERCEPT: 0,
   };
   const groupSim = 5;
   const titleSim = -3;
+  const domainSim = 1;
   const result = smartTabGroupingManager.calculateProbability(
     groupSim,
     titleSim,
+    domainSim,
     params
   );
   const expected = 1 / (1 + Math.exp(0)); // sigmoid(0) = 0.5
@@ -98,16 +110,19 @@ add_task(function test_calculate_probability_extreme_positive() {
   const params = {
     GROUP_SIMILARITY_WEIGHT: 1,
     TITLE_SIMILARITY_WEIGHT: 1,
+    DOMAIN_SIMILARITY_WEIGHT: 1,
     INTERCEPT: 0,
   };
   const groupSim = 10;
   const titleSim = 10;
+  const domainSim = 10;
   const result = smartTabGroupingManager.calculateProbability(
     groupSim,
     titleSim,
+    domainSim,
     params
   );
-  const expected = 1 / (1 + Math.exp(-20));
+  const expected = 1 / (1 + Math.exp(-30));
   Assert.equal(
     result.toPrecision(4),
     expected.toPrecision(4),
@@ -120,16 +135,19 @@ add_task(function test_calculate_probability_extreme_negative() {
   const params = {
     GROUP_SIMILARITY_WEIGHT: 1,
     TITLE_SIMILARITY_WEIGHT: 1,
+    DOMAIN_SIMILARITY_WEIGHT: 1,
     INTERCEPT: 0,
   };
   const groupSim = -10;
   const titleSim = -10;
+  const domainSim = -10;
   const result = smartTabGroupingManager.calculateProbability(
     groupSim,
     titleSim,
+    domainSim,
     params
   );
-  const expected = 1 / (1 + Math.exp(20));
+  const expected = 1 / (1 + Math.exp(30));
   Assert.equal(
     result.toPrecision(4),
     expected.toPrecision(4),
@@ -142,13 +160,16 @@ add_task(function test_calculate_probability_negative_intercept() {
   const params = {
     GROUP_SIMILARITY_WEIGHT: 1,
     TITLE_SIMILARITY_WEIGHT: 1,
+    DOMAIN_SIMILARITY_WEIGHT: 0,
     INTERCEPT: -1,
   };
   const groupSim = 0.5;
   const titleSim = 0.5;
+  const domainSim = 0.5;
   const result = smartTabGroupingManager.calculateProbability(
     groupSim,
     titleSim,
+    domainSim,
     params
   );
   const expected = 1 / (1 + Math.exp(0)); // sigmoid(0) = 0.5

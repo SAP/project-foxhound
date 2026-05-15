@@ -101,9 +101,7 @@ class TestWin32kAutostart(MarionetteTestCase):
         self.marionette.set_pref(Prefs.ENROLLMENT_STATUS, status, default_branch=True)
 
         updated_status = self.marionette.get_pref(Prefs.ENROLLMENT_STATUS)
-        self.assertTrue(
-            status == updated_status or updated_status == ExperimentStatus.DISQUALIFIED
-        )
+        self.assertTrue(updated_status in {status, ExperimentStatus.DISQUALIFIED})
         startup_status = self.marionette.get_pref(Prefs.STARTUP_ENROLLMENT_STATUS)
         self.assertEqual(
             startup_status,
@@ -155,7 +153,7 @@ class TestWin32kAutostart(MarionetteTestCase):
             self.setUpSession()
 
     def setUp(self):
-        super(TestWin32kAutostart, self).setUp()
+        super().setUp()
 
         # If we have configured marionette to require a particular value for
         # `win32k.autostart`, remove it as a forced pref until `tearDown`, and
@@ -201,7 +199,7 @@ class TestWin32kAutostart(MarionetteTestCase):
             self.marionette.instance.required_prefs[Prefs.WIN32K] = self.win32kRequired
         self.marionette.restart(in_app=False, clean=True)
 
-        super(TestWin32kAutostart, self).tearDown()
+        super().tearDown()
 
     def test_1(self):
         # [D=F] Nothing [A#1] -> Enrolled Control [A S=DisabledByDefault SS=DisabledByDefa...

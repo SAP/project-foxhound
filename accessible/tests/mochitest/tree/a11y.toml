@@ -11,12 +11,11 @@ support-files = [
 
 ["test_applicationacc.xhtml"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 561508
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64'", # Bug 561508
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 561508
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 561508
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'", # Bug 561508
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 561508
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 561508
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 561508
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 561508
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 561508
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 561508
 ]
 
 ["test_aria_display_contents.html"]

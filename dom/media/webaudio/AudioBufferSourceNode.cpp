@@ -5,20 +5,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AudioBufferSourceNode.h"
-#include "nsDebug.h"
-#include "mozilla/dom/AudioBufferSourceNodeBinding.h"
-#include "mozilla/dom/AudioParam.h"
-#include "mozilla/FloatingPoint.h"
-#include "nsContentUtils.h"
-#include "nsMathUtils.h"
+
+#include <algorithm>
+#include <limits>
+
 #include "AlignmentUtils.h"
+#include "AudioDestinationNode.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "AudioDestinationNode.h"
 #include "AudioParamTimeline.h"
-#include <limits>
-#include <algorithm>
 #include "Tracing.h"
+#include "mozilla/dom/AudioBufferSourceNodeBinding.h"
+#include "mozilla/dom/AudioParam.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsMathUtils.h"
 
 namespace mozilla::dom {
 
@@ -442,10 +443,13 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
 
   int32_t ComputeFinalOutSampleRate(float aPlaybackRate, float aDetune) {
     float computedPlaybackRate = aPlaybackRate * fdlibm_exp2f(aDetune / 1200.f);
-    // Make sure the playback rate is something our resampler can work with.
+    if (std::isnan(computedPlaybackRate)) {
+      computedPlaybackRate = 1.0f;
+    }
+    // Make sure the playback rate is something our resampler can work with
     int32_t rate = WebAudioUtils::TruncateFloatToInt<int32_t>(
         mSource->mSampleRate / computedPlaybackRate);
-    return rate ? rate : mBufferSampleRate;
+    return rate > 0 ? rate : mBufferSampleRate;
   }
 
   void UpdateSampleRateIfNeeded(uint32_t aChannels, TrackTime aTrackPosition) {
@@ -469,9 +473,6 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
       detune = mDetuneTimeline.GetValue();
     } else {
       detune = mDetuneTimeline.GetComplexValueAtTime(aTrackPosition);
-    }
-    if (playbackRate <= 0 || std::isnan(playbackRate)) {
-      playbackRate = 1.0f;
     }
 
     int32_t outRate = ComputeFinalOutSampleRate(playbackRate, detune);
@@ -697,7 +698,7 @@ void AudioBufferSourceNode::Start(double aWhen, double aOffset,
   mDuration = aDuration.WasPassed() ? aDuration.Value()
                                     : std::numeric_limits<double>::min();
 
-  WEB_AUDIO_API_LOG("%f: %s %u Start(%f, %g, %g)", Context()->CurrentTime(),
+  WEB_AUDIO_API_LOG("{:f}: {} {} Start({:f}, {}, {})", Context()->CurrentTime(),
                     NodeType(), Id(), aWhen, aOffset, mDuration);
 
   // We can't send these parameters without a buffer because we don't know the
@@ -774,8 +775,8 @@ void AudioBufferSourceNode::Stop(double aWhen, ErrorResult& aRv) {
     return;
   }
 
-  WEB_AUDIO_API_LOG("%f: %s %u Stop(%f)", Context()->CurrentTime(), NodeType(),
-                    Id(), aWhen);
+  WEB_AUDIO_API_LOG("{:f}: {} {} Stop({:f})", Context()->CurrentTime(),
+                    NodeType(), Id(), aWhen);
 
   AudioNodeTrack* ns = mTrack;
   if (!ns || !Context()) {

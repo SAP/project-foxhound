@@ -1,0 +1,7 @@
+package test {
+  public class TestParent {
+    method public @android.annotation.test.MainThread void testMethod();
+    field public @android.annotation.test.NonNull java.lang.String nonNullField;
+  }
+}
+

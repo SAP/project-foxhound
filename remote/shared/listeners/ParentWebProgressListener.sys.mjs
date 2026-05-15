@@ -7,7 +7,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowsingContextListener:
     "chrome://remote/content/shared/listeners/BrowsingContextListener.sys.mjs",
-  isInitialDocument:
+  isUncommittedInitialDocument:
     "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   notifyFragmentNavigated:
@@ -29,24 +29,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
 ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
 
 /**
- * Not to be confused with the WebProgressListenerParent which is the parent
- * actor for the WebProgressListener JSWindow actor pair.
- *
  * The ParentWebProgressListener is a listener that supports monitoring
  * navigations for the NavigationManager entirely from the parent process.
- *
- * The NavigationManager will either use the WebProgressListener JSWindow actors
- * or this listener, depending on the value of the preference
- * remote.parent-navigation.enabled.
  *
  * This listener does not implement the same interface as our other listeners
  * and is designed to be instantiated only once from the NavigationRegistry
  * singleton.
  *
- * Once we remove the WebProgressListener JS Window actors and only use this
- * listener, we may update it for consistency with the rest of the codebase but
- * in the meantime, the goal is to avoid the impact on the existing
- * implementation used by default.
+ * Bug 1984098: Fold this "listener" in the NavigationManager.
  */
 export class ParentWebProgressListener {
   #contextListener;
@@ -153,8 +143,9 @@ export class ParentWebProgressListener {
 
     const url = targetURI?.spec;
 
-    const isInitialDocument = lazy.isInitialDocument(context);
-    if (isInitialDocument && url === "about:blank") {
+    const isUncommittedInitialDocument =
+      lazy.isUncommittedInitialDocument(context);
+    if (isUncommittedInitialDocument && url === "about:blank") {
       this.#trace("Skip initial navigation to about:blank", context.id);
       return;
     }
@@ -229,7 +220,7 @@ export class ParentWebProgressListener {
   }
 
   #getAllBrowsingContexts() {
-    return lazy.TabManager.browsers.flatMap(browser =>
+    return lazy.TabManager.getBrowsers().flatMap(browser =>
       browser.browsingContext.getAllBrowsingContextsInSubtree()
     );
   }
@@ -257,13 +248,18 @@ export class ParentWebProgressListener {
 
   #onContextAttached = async (eventName, data) => {
     const { browsingContext } = data;
-    this.#startWatchingBrowsingContextNavigation(browsingContext);
+
+    if (browsingContext.isContent) {
+      this.#startWatchingBrowsingContextNavigation(browsingContext);
+    }
   };
 
   #onContextDiscarded = async (eventName, data = {}) => {
     const { browsingContext } = data;
 
-    this.#stopWatchingBrowsingContextNavigation(browsingContext);
+    if (browsingContext.isContent) {
+      this.#stopWatchingBrowsingContextNavigation(browsingContext);
+    }
   };
 
   #startWatchingBrowsingContextNavigation(browsingContext) {

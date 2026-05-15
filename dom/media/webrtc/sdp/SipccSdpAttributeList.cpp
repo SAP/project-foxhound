@@ -7,6 +7,7 @@
 #include "sdp/SipccSdpAttributeList.h"
 
 #include <ostream>
+
 #include "mozilla/Assertions.h"
 
 extern "C" {

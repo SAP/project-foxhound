@@ -24,7 +24,7 @@ void MiddleCroppingLabelFrame::GetUncroppedValue(nsAString& aValue) {
 
 nsresult MiddleCroppingLabelFrame::AttributeChanged(int32_t aNameSpaceID,
                                                     nsAtom* aAttribute,
-                                                    int32_t aModType) {
+                                                    AttrModType) {
   if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::value) {
     UpdateDisplayedValueToUncroppedValue(true);
   }

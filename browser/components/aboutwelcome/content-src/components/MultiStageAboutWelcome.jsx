@@ -15,6 +15,7 @@ const TRANSITION_OUT_TIME = 1000;
 const LANGUAGE_MISMATCH_SCREEN_ID = "AW_LANGUAGE_MISMATCH";
 
 export const MultiStageAboutWelcome = props => {
+  const gateInitialPaint = props.gateInitialPaint ?? false;
   let { defaultScreens } = props;
   const didFilter = useRef(false);
   const [didMount, setDidMount] = useState(false);
@@ -22,6 +23,8 @@ export const MultiStageAboutWelcome = props => {
 
   const [index, setScreenIndex] = useState(props.startScreen);
   const [previousOrder, setPreviousOrder] = useState(props.startScreen - 1);
+  // Gate first paint until we've finished the initial filtering pass.
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -56,8 +59,11 @@ export const MultiStageAboutWelcome = props => {
           filtered => screens.find(s => s.id === filtered.id) ?? filtered
         )
       );
-
-      didFilter.current = true;
+      // Mark the initial filter pass complete and allow the first paint.
+      if (!didFilter.current) {
+        didFilter.current = true;
+        setReady(true);
+      }
 
       // After completing screen filtering, trigger any unhandled campaign
       // action present in the attribution campaign data. This updates the
@@ -69,7 +75,9 @@ export const MultiStageAboutWelcome = props => {
         .AWGetUnhandledCampaignAction?.()
         .then(action => {
           if (typeof action === "string") {
-            AboutWelcomeUtils.handleCampaignAction(action, props.message_id);
+            AboutWelcomeUtils.handleCampaignAction(action, props.message_id, {
+              writeInMicrosurvey: props.writeInMicrosurvey,
+            });
           }
         })
         .catch(error => {
@@ -90,6 +98,7 @@ export const MultiStageAboutWelcome = props => {
             screen_index: order,
             screen_id: screen.id,
             screen_initials: screenInitials,
+            writeInMicrosurvey: props.writeInMicrosurvey,
           });
 
           window.AWAddScreenImpression?.(screen);
@@ -128,7 +137,7 @@ export const MultiStageAboutWelcome = props => {
   }, [transition]);
 
   // Transition to next screen, opening about:home on last screen button CTA
-  const handleTransition = () => {
+  const handleTransition = goBack => {
     // Only handle transitioning out from a screen once.
     if (transition === "out") {
       return;
@@ -140,7 +149,10 @@ export const MultiStageAboutWelcome = props => {
     // Actually move forwards after all transitions finish.
     setTimeout(
       () => {
-        if (index < screens.length - 1) {
+        if (goBack) {
+          setTransition(props.transitions ? "in" : "");
+          setScreenIndex(prevState => prevState - 1);
+        } else if (index < screens.length - 1) {
           setTransition(props.transitions ? "in" : "");
           setScreenIndex(prevState => prevState + 1);
         } else {
@@ -206,6 +218,10 @@ export const MultiStageAboutWelcome = props => {
   const [activeSingleSelectSelections, setActiveSingleSelectSelections] =
     useState({});
 
+  // Save textarea inputs for each screen as an object keyed by screen id. It's
+  // structured like this: { screenId: { textareaId: { value, isValid } } }
+  const [textInputs, setTextInputs] = useState({});
+
   // Get the active theme so the rendering code can make it selected
   // by default.
   const [activeTheme, setActiveTheme] = useState(null);
@@ -237,6 +253,12 @@ export const MultiStageAboutWelcome = props => {
       setInstalledAddons(addons);
     })();
   }, [index]);
+
+  // Do not render anything until the first filtering pass completes if gating
+  // initial paint is enabled.
+  if (gateInitialPaint && !ready) {
+    return null;
+  }
 
   return (
     <React.Fragment>
@@ -304,6 +326,20 @@ export const MultiStageAboutWelcome = props => {
             });
           };
 
+          const setTextInput = (value, inputId) => {
+            setTextInputs(prevState => {
+              const currentScreenInputs = prevState[currentScreen.id] || {};
+
+              return {
+                ...prevState,
+                [currentScreen.id]: {
+                  ...currentScreenInputs,
+                  [inputId]: value,
+                },
+              };
+            });
+          };
+
           return index === order ? (
             <WelcomeScreen
               key={currentScreen.id + order}
@@ -316,7 +352,9 @@ export const MultiStageAboutWelcome = props => {
               previousOrder={previousOrder}
               content={currentScreen.content}
               navigate={handleTransition}
+              autoAdvance={currentScreen.auto_advance}
               messageId={`${props.message_id}_${order}_${currentScreen.id}`}
+              writeInMicrosurvey={props.writeInMicrosurvey}
               UTMTerm={props.utm_term}
               flowParams={flowParams}
               activeTheme={activeTheme}
@@ -327,11 +365,12 @@ export const MultiStageAboutWelcome = props => {
               setScreenMultiSelects={setScreenMultiSelects}
               activeMultiSelect={activeMultiSelects[currentScreen.id]}
               setActiveMultiSelect={setActiveMultiSelect}
-              autoAdvance={currentScreen.auto_advance}
               activeSingleSelectSelections={
                 activeSingleSelectSelections[currentScreen.id]
               }
               setActiveSingleSelectSelection={setActiveSingleSelectSelection}
+              textInputs={textInputs[currentScreen.id]}
+              setTextInput={setTextInput}
               negotiatedLanguage={negotiatedLanguage}
               langPackInstallPhase={langPackInstallPhase}
               forceHideStepsIndicator={currentScreen.force_hide_steps_indicator}
@@ -356,80 +395,181 @@ export const MultiStageAboutWelcome = props => {
   );
 };
 
-export const SecondaryCTA = props => {
-  const targetElement = props.position
-    ? `secondary_button_${props.position}`
-    : `secondary_button`;
-  let buttonStyling = props.content.secondary_button?.has_arrow_icon
+const renderSingleSecondaryCTAButton = ({
+  content,
+  button,
+  targetElement,
+  position,
+  handleAction,
+  activeMultiSelect,
+  textInputs,
+  isArrayItem,
+  index = null,
+}) => {
+  let buttonStyling = button?.has_arrow_icon
     ? `secondary arrow-icon`
     : `secondary`;
-  const isPrimary = props.content.secondary_button?.style === "primary";
+  const isPrimary = button?.style === "primary";
   const isTextLink =
-    !["split", "callout"].includes(props.content.position) &&
-    props.content.tiles?.type !== "addons-picker" &&
+    !["split", "callout"].includes(content.position) &&
+    content.tiles?.type !== "addons-picker" &&
     !isPrimary;
-  const isSplitButton =
-    props.content.submenu_button?.attached_to === targetElement;
+  const isSplitButton = content.submenu_button?.attached_to === targetElement;
+
   let className = "secondary-cta";
-  if (props.position) {
-    className += ` ${props.position}`;
+  if (position) {
+    className += ` ${position}`;
   }
   if (isSplitButton) {
     className += " split-button-container";
   }
-  const isDisabled = React.useCallback(
-    disabledValue => {
-      if (disabledValue === "hasActiveMultiSelect") {
-        if (!props.activeMultiSelect) {
-          return true;
-        }
 
-        for (const key in props.activeMultiSelect) {
-          if (props.activeMultiSelect[key]?.length > 0) {
-            return false;
-          }
-        }
-
+  const computeDisabled = disabledValue => {
+    if (disabledValue === "hasActiveMultiSelect") {
+      if (!activeMultiSelect) {
         return true;
       }
 
-      return disabledValue;
-    },
-    [props.activeMultiSelect]
-  );
+      for (const key in activeMultiSelect) {
+        if (activeMultiSelect[key]?.length > 0) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+    if (disabledValue === "hasTextInput") {
+      // For text input, we check if the user has entered any text in the
+      // textarea(s) present on the screen.
+      if (!textInputs) {
+        return true;
+      }
+      return Object.values(textInputs).every(
+        input => !input.isValid || input.value.trim().length === 0
+      );
+    }
+    return disabledValue;
+  };
 
   if (isTextLink) {
     buttonStyling += " text-link";
   }
 
   if (isPrimary) {
-    buttonStyling = props.content.secondary_button?.has_arrow_icon
-      ? `primary arrow-icon`
-      : `primary`;
+    buttonStyling = button?.has_arrow_icon ? `primary arrow-icon` : `primary`;
   }
 
+  // We have to provide handleAction with the expected action here,
+  // since the data doesn't actually exist in JSON content
+  const shimmedHandleAction = event => {
+    if (isArrayItem && button?.action) {
+      return handleAction(event, button.action);
+    }
+    return handleAction(event);
+  };
+
+  let buttonId = "secondary_button";
+  buttonId += index !== null ? `_${index}` : "";
+
   return (
-    <div className={className}>
-      <Localized text={props.content[targetElement].text}>
+    <div className={className} key={targetElement}>
+      <Localized text={button?.text}>
         <span />
       </Localized>
-      <Localized text={props.content[targetElement].label}>
+      <Localized text={button?.label}>
         <button
-          id="secondary_button"
+          id={buttonId}
           className={buttonStyling}
           value={targetElement}
-          disabled={isDisabled(props.content.secondary_button?.disabled)}
-          onClick={props.handleAction}
+          disabled={computeDisabled(button?.disabled)}
+          onClick={shimmedHandleAction}
         />
       </Localized>
       {isSplitButton ? (
-        <SubmenuButton
-          content={props.content}
-          handleAction={props.handleAction}
-        />
+        <SubmenuButton content={content} handleAction={handleAction} />
       ) : null}
     </div>
   );
+};
+
+export const SecondaryCTA = props => {
+  const { content, position } = props;
+
+  const targetElement = position
+    ? `secondary_button_${position}`
+    : "secondary_button";
+  const buttonData = content[targetElement];
+
+  if (!buttonData) {
+    return null;
+  }
+
+  const buttons = React.useMemo(
+    () => (Array.isArray(buttonData) ? buttonData : [buttonData]),
+    [buttonData]
+  );
+
+  const [visibleButtons, setVisibleButtons] = React.useState([]);
+
+  React.useEffect(() => {
+    (async () => {
+      const filteredButtons = [];
+      for (const button of buttons) {
+        // No targeting, show by default for backwards compatibility
+        if (!button?.targeting) {
+          filteredButtons.push(button);
+          continue;
+        }
+
+        try {
+          const shouldShowButton = await window.AWEvaluateAttributeTargeting(
+            button.targeting
+          );
+          if (shouldShowButton) {
+            filteredButtons.push(button);
+          }
+        } catch (e) {
+          console.error("SecondaryCTA targeting failed:", button.targeting, e);
+        }
+      }
+      setVisibleButtons(filteredButtons);
+    })();
+  }, [buttons]);
+
+  if (!visibleButtons.length) {
+    return null;
+  }
+
+  if (Array.isArray(buttonData)) {
+    return (
+      <div className="secondary-buttons-top-container">
+        {visibleButtons.map((button, index) =>
+          renderSingleSecondaryCTAButton({
+            content,
+            button,
+            targetElement: `${targetElement}_${index}`,
+            position,
+            handleAction: props.handleAction,
+            activeMultiSelect: props.activeMultiSelect,
+            textInputs: props.textInputs,
+            isArrayItem: true,
+            index,
+          })
+        )}
+      </div>
+    );
+  }
+
+  return renderSingleSecondaryCTAButton({
+    content,
+    button: visibleButtons[0],
+    targetElement,
+    position,
+    handleAction: props.handleAction,
+    activeMultiSelect: props.activeMultiSelect,
+    textInputs: props.textInputs,
+    isArrayItem: false,
+  });
 };
 
 export const StepsIndicator = props => {
@@ -482,7 +622,10 @@ export class WelcomeScreen extends React.PureComponent {
           ...flowParams,
         };
       }
-      data = { ...data, extraParams: params };
+      data = {
+        ...data,
+        extraParams: { ...params, ...data?.extraParams },
+      };
     } else if (type === "OPEN_URL") {
       let url = new URL(data.args);
       addUtmParams(url, `${UTMTerm}-screen`);
@@ -497,13 +640,17 @@ export class WelcomeScreen extends React.PureComponent {
   }
 
   logTelemetry({ value, event, source, props }) {
-    AboutWelcomeUtils.sendActionTelemetry(props.messageId, source, event.name);
+    AboutWelcomeUtils.sendActionTelemetry(props.messageId, source, event.name, {
+      writeInMicrosurvey: props.writeInMicrosurvey,
+    });
 
     // Send additional telemetry if a messaging surface like feature callout is
     // dismissed via the dismiss button. Other causes of dismissal will be
     // handled separately by the messaging surface's own code.
     if (value === "dismiss_button" && !event.name) {
-      AboutWelcomeUtils.sendDismissTelemetry(props.messageId, source);
+      AboutWelcomeUtils.sendDismissTelemetry(props.messageId, source, {
+        writeInMicrosurvey: props.writeInMicrosurvey,
+      });
     }
   }
 
@@ -514,7 +661,12 @@ export class WelcomeScreen extends React.PureComponent {
 
     if (hasMigrate(action)) {
       await window.AWWaitForMigrationClose();
-      AboutWelcomeUtils.sendActionTelemetry(props.messageId, "migrate_close");
+      AboutWelcomeUtils.sendActionTelemetry(
+        props.messageId,
+        "migrate_close",
+        "CLICK_BUTTON",
+        { writeInMicrosurvey: props.writeInMicrosurvey }
+      );
     }
   }
 
@@ -551,38 +703,49 @@ export class WelcomeScreen extends React.PureComponent {
     }
   }
 
-  async handleAction(event) {
-    const { props } = this;
-    const value =
-      event.currentTarget.value ?? event.currentTarget.getAttribute("value");
-    const source = event.source || value;
-    let targetContent =
-      props.content[value] ||
-      props.content.tiles ||
-      props.content.languageSwitcher;
-
-    if (value === "submenu_button" && event.action) {
-      targetContent = { action: event.action };
+  resolveActionFromContent(value, event, props) {
+    if (
+      (value === "submenu_button" || value === "tile_button") &&
+      event.action
+    ) {
+      return event.action;
     }
+
+    const { content } = props;
+    const targetContent =
+      content[value] || content.tiles || content.languageSwitcher;
 
     if (!targetContent) {
-      return;
+      return null;
     }
 
-    let action;
     if (Array.isArray(targetContent)) {
       for (const tile of targetContent) {
         const matchedTile = tile.data.find(t => t.id === value);
         if (matchedTile?.action) {
-          action = matchedTile.action;
-          break;
+          return matchedTile.action;
         }
       }
-    } else if (!targetContent.action) {
-      return;
-    } else {
-      action = targetContent.action;
+      return null;
     }
+
+    return targetContent.action ?? null;
+  }
+
+  async handleAction(event, providedAction = null) {
+    const { props } = this;
+    const value =
+      event.currentTarget.value ?? event.currentTarget.getAttribute("value");
+    const source = event.source || value;
+
+    let action =
+      providedAction || this.resolveActionFromContent(value, event, props);
+
+    if (!action) {
+      console.error("Failed to resolve action");
+      return;
+    }
+
     // Send telemetry before waiting on actions
     this.logTelemetry({ value, event, source, props });
 
@@ -590,6 +753,10 @@ export class WelcomeScreen extends React.PureComponent {
 
     if (action.collectSelect) {
       this.setMultiSelectActions(action);
+    }
+
+    if (action.collectTextInput && Object.values(props.textInputs).length) {
+      this.setTextInputActions(action);
     }
 
     let actionResult;
@@ -604,7 +771,8 @@ export class WelcomeScreen extends React.PureComponent {
         AboutWelcomeUtils.sendActionTelemetry(
           props.messageId,
           actionResult ? "sign_in" : "sign_in_cancel",
-          "FXA_SIGNIN_FLOW"
+          "FXA_SIGNIN_FLOW",
+          { writeInMicrosurvey: props.writeInMicrosurvey }
         );
       }
 
@@ -635,7 +803,7 @@ export class WelcomeScreen extends React.PureComponent {
       this.props.setInitialTheme(this.props.activeTheme);
     }
 
-    // `navigate` and `dismiss` can be true/false/undefined, or they can be a
+    // `navigate`, `goBack` and `dismiss` can be true/false/undefined, or they can be a
     // string "actionResult" in which case we should use the actionResult
     // (boolean resolved by handleUserAction)
     const shouldDoBehavior = behavior => {
@@ -654,7 +822,7 @@ export class WelcomeScreen extends React.PureComponent {
     };
 
     if (shouldDoBehavior(action.navigate)) {
-      props.navigate();
+      props.navigate(action.goBack);
     }
 
     // Used by FeatureCallout to advance screens by re-rendering the whole
@@ -741,9 +909,80 @@ export class WelcomeScreen extends React.PureComponent {
       AboutWelcomeUtils.sendActionTelemetry(
         props.messageId,
         value.flat(),
-        "SELECT_CHECKBOX"
+        "SELECT_CHECKBOX",
+        { writeInMicrosurvey: props.writeInMicrosurvey }
       );
     }
+  }
+
+  setTextInputActions(action) {
+    let { props } = this;
+
+    if (action.type !== "MULTI_ACTION") {
+      console.error(
+        "collectTextInput is only supported for MULTI_ACTION type actions"
+      );
+      action.type = "MULTI_ACTION";
+    }
+    if (!Array.isArray(action.data?.actions)) {
+      console.error(
+        "collectTextInput is only supported for MULTI_ACTION type actions with an array of actions"
+      );
+      action.data = { actions: [] };
+    }
+
+    const collectedActions = [];
+
+    // If there is no character_limit, we still need to limit the size of the
+    // input to avoid sending huge payloads. We'll go with 8KB.
+    const truncateToByteSize = (str, maxBytes) => {
+      const encoder = new TextEncoder();
+      const encoded = encoder.encode(str);
+      if (encoded.length <= maxBytes) {
+        return str;
+      }
+      let end = maxBytes;
+      // Step back until we find a valid UTF-8 start byte
+      while (end > 0 && (encoded[end] & 0b11000000) === 0b10000000) {
+        end--; // this is a continuation byte
+      }
+      return new TextDecoder().decode(encoded.subarray(0, end));
+    };
+
+    const processTile = (tile, tileIndex) => {
+      if (tile?.type !== "textarea" || !tile.data) {
+        return;
+      }
+
+      const inputId = tile.data.id || `tile-${tileIndex}`;
+      const inputData = props.textInputs[inputId];
+      if (inputData?.isValid && inputData.value.trim().length) {
+        if (tile.data.action) {
+          collectedActions.push(tile.data.action);
+        }
+        AboutWelcomeUtils.sendActionTelemetry(
+          props.messageId,
+          inputId,
+          "TEXT_INPUT",
+          {
+            value: truncateToByteSize(inputData.value, 8192),
+            writeInMicrosurvey: props.writeInMicrosurvey,
+          }
+        );
+      }
+    };
+
+    if (props.content?.tiles) {
+      if (Array.isArray(props.content.tiles)) {
+        for (const [index, tile] of props.content.tiles.entries()) {
+          processTile(tile, index);
+        }
+      } else {
+        processTile(props.content.tiles, 0);
+      }
+    }
+
+    action.data.actions.unshift(...collectedActions);
   }
 
   render() {
@@ -763,12 +1002,15 @@ export class WelcomeScreen extends React.PureComponent {
         setActiveSingleSelectSelection={
           this.props.setActiveSingleSelectSelection
         }
+        textInputs={this.props.textInputs}
+        setTextInput={this.props.setTextInput}
         totalNumberOfScreens={this.props.totalNumberOfScreens}
         appAndSystemLocaleInfo={this.props.appAndSystemLocaleInfo}
         negotiatedLanguage={this.props.negotiatedLanguage}
         langPackInstallPhase={this.props.langPackInstallPhase}
         handleAction={this.handleAction}
         messageId={this.props.messageId}
+        writeInMicrosurvey={this.props.writeInMicrosurvey}
         isFirstScreen={this.props.isFirstScreen}
         isLastScreen={this.props.isLastScreen}
         isSingleScreen={this.props.isSingleScreen}

@@ -126,6 +126,12 @@ add_task(
       contentEagerMode: true,
     });
 
+    // Moving a tab to a new window with the findbar open appears to modify this pref.
+    // Pushing it to a pref env ensures that a failure will not be reported due to the pref changing.
+    await SpecialPowers.pushPrefEnv({
+      set: [["accessibility.typeaheadfind.flashBar", 0]],
+    });
+
     await FullPageTranslationsTestUtils.assertTranslationsButton(
       { button: true },
       "The translations button is visible.",
@@ -252,6 +258,8 @@ add_task(
         "ESTE ATRIBUTO DE TÍTULO DE ÚLTIMO PÁRRAFO SE MODIFICÓ. [es to en]"
       );
     });
+
+    await SpecialPowers.popPrefEnv();
 
     await cleanup();
     await BrowserTestUtils.closeWindow(window2);

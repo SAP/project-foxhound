@@ -161,14 +161,12 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   //
   // Table of constants referenced in snapshots. (JS::Value alignment)
   //
-  PreBarriered<Value>* constants() {
-    // Nursery constants are manually barriered in CodeGenerator::link() so a
-    // post barrier is not required..
-    return offsetToPointer<PreBarriered<Value>>(constantTableOffset());
+  HeapPtr<Value>* constants() {
+    return offsetToPointer<HeapPtr<Value>>(constantTableOffset());
   }
   size_t numConstants() const {
-    return numElements<PreBarriered<Value>>(constantTableOffset(),
-                                            runtimeDataOffset());
+    return numElements<HeapPtr<Value>>(constantTableOffset(),
+                                       runtimeDataOffset());
   }
 
   //
@@ -366,7 +364,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return mallocSizeOf(this);
   }
-  PreBarriered<Value>& getConstant(size_t index) {
+  HeapPtr<Value>& getConstant(size_t index) {
     MOZ_ASSERT(index < numConstants());
     return constants()[index];
   }

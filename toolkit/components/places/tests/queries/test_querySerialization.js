@@ -441,12 +441,12 @@ const queryOptionSwitches = [
  *   // callback is called 4 times with the following arrays:
  *   // [1], [2], [3], [4]
  *
- * @param  aSequences
- *         an array that contains an arbitrary number of arrays
- * @param  aCallback
- *         a function that is passed each sequence of the product as it's
- *         computed
- * @return the total number of sequences in the product
+ * @param {[][]}  aSequences
+ *   An array that contains an arbitrary number of arrays.
+ * @param {(sequence: []) => void} aCallback
+ *   A function that is passed each sequence of the product as it's computed.
+ * @returns {number}
+ *   The total number of sequences in the product.
  */
 function cartProd(aSequences, aCallback) {
   if (aSequences.length === 0) {
@@ -510,11 +510,13 @@ function cartProd(aSequences, aCallback) {
  *   // callback is called C(4, 2) = 6 times with the following sets (arrays):
  *   // [1, 2], [1, 3], [1, 4], [2, 3], [2, 4], [3, 4]
  *
- * @param  aSet
- *         an array from which to choose elements, aSet.length > 0
- * @param  aHowMany
- *         the number of elements to choose, > 0 and <= aSet.length
- * @return the total number of sets chosen
+ * @param {number[]} aSet
+ *   An array from which to choose elements, aSet.length > 0.
+ * @param {number} aHowMany
+ *   The number of elements to choose, > 0 and <= aSet.length.
+ * @param {number[]} aCallback
+ * @returns {number}
+ *   The total number of sets chosen.
  */
 function choose(aSet, aHowMany, aCallback) {
   // ptrs = indices of the elements in aSet we're currently choosing
@@ -570,11 +572,10 @@ function choose(aSet, aHowMany, aCallback) {
  * Convenience function for nsINavHistoryQuery switches that act as flags.  This
  * is attached to switch objects.  See querySwitches array above.
  *
- * @param  aQuery1
- *         an nsINavHistoryQuery object
- * @param  aQuery2
- *         another nsINavHistoryQuery object
- * @return true if this switch is the same in both aQuery1 and aQuery2
+ * @param {nsINavHistoryQuery} aQuery1
+ * @param {nsINavHistoryQuery} aQuery2
+ * @returns {boolean}
+ *   True if this switch is the same in both aQuery1 and aQuery2.
  */
 function flagSwitchMatches(aQuery1, aQuery2) {
   if (aQuery1[this.flag] && aQuery2[this.flag]) {
@@ -602,14 +603,13 @@ function flagSwitchMatches(aQuery1, aQuery2) {
  * determines which set of switches is used for comparison.  Pass in either
  * querySwitches or queryOptionSwitches.
  *
- * @param  aSwitches
- *         determines which set of switches applies to aObj1 and aObj2, either
- *         querySwitches or queryOptionSwitches
- * @param  aObj1
- *         an nsINavHistoryQuery or nsINavHistoryQueryOptions object
- * @param  aObj2
- *         another nsINavHistoryQuery or nsINavHistoryQueryOptions object
- * @return true if aObj1 and aObj2 are equal
+ * @param {object[]} aSwitches
+ *   Determines which set of switches applies to aObj1 and aObj2, either
+ *   querySwitches or queryOptionSwitches
+ * @param {nsINavHistoryQuery|nsINavHistoryQueryOptions} aObj1
+ * @param {nsINavHistoryQuery|nsINavHistoryQueryOptions} aObj2
+ * @returns {boolean}
+ *   True if aObj1 and aObj2 are equal.
  */
 function queryObjsEqual(aSwitches, aObj1, aObj2) {
   for (let i = 0; i < aSwitches.length; i++) {
@@ -623,10 +623,10 @@ function queryObjsEqual(aSwitches, aObj1, aObj2) {
 /**
  * This drives the test runs.  See the comment at the top of this file.
  *
- * @param aHowManyLo
- *        the size of the switch subsets to start with
- * @param aHowManyHi
- *        the size of the switch subsets to end with (inclusive)
+ * @param {number} aHowManyLo
+ *   The size of the switch subsets to start with.
+ * @param {number} aHowManyHi
+ *   The size of the switch subsets to end with (inclusive).
  */
 function runQuerySequences(aHowManyLo, aHowManyHi) {
   var allSwitches = querySwitches.concat(queryOptionSwitches);
@@ -679,10 +679,8 @@ function runQuerySequences(aHowManyLo, aHowManyHi) {
  * serialization, and ensures (using do_check_* functions) that the
  * de-serialized objects equal the originals.
  *
- * @param aQuery
- *        an nsINavHistoryQuery object
- * @param aQueryOptions
- *        an nsINavHistoryQueryOptions object
+ * @param {nsINavHistoryQuery} aQuery
+ * @param {nsINavHistoryQueryOptions} aQueryOptions
  */
 function serializeDeserialize(aQuery, aQueryOptions) {
   let queryStr = PlacesUtils.history.queryToQueryString(aQuery, aQueryOptions);
@@ -703,11 +701,10 @@ function serializeDeserialize(aQuery, aQueryOptions) {
  * Convenience function for switches that have simple values.  This is attached
  * to switch objects.  See querySwitches and queryOptionSwitches arrays above.
  *
- * @param  aObj1
- *         an nsINavHistoryQuery or nsINavHistoryQueryOptions object
- * @param  aObj2
- *         another nsINavHistoryQuery or nsINavHistoryQueryOptions object
- * @return true if this switch is the same in both aObj1 and aObj2
+ * @param {nsINavHistoryQuery|nsINavHistoryQueryOptions} aObj1
+ * @param {nsINavHistoryQuery|nsINavHistoryQueryOptions} aObj2
+ * @returns {boolean}
+ *   True if this switch is the same in both aObj1 and aObj2.
  */
 function simplePropertyMatches(aObj1, aObj2) {
   return aObj1[this.property] === aObj2[this.property];

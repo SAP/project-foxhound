@@ -91,3 +91,13 @@ add_task(async function test_storage_addLogin_parentheses() {
   await Services.logins.addLogins(loginList);
   await reloadAndCheckLoginsGen(loginList);
 });
+
+add_task(async function test_listInvalidOrigins() {
+  await Services.logins.addLoginAsync(
+    TestData.formLogin({ origin: "not a url" })
+  );
+  let invalid = await Services.logins.listInvalidOrigins();
+  Assert.equal(invalid.length, 1);
+  Assert.equal(invalid[0].origin, "not a url");
+  LoginTestUtils.clearData();
+});

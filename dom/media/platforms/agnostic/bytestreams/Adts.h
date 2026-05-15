@@ -6,6 +6,7 @@
 #define ADTS_H_
 
 #include <stdint.h>
+
 #include "MediaData.h"
 #include "mozilla/Result.h"
 

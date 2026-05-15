@@ -1,0 +1,40 @@
+/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+#include "nsISupportsPrimitives.idl"
+
+/**
+ * Represents a C++ map of pref names to values that is constructable from JS.
+ * The entries in this map must be known prefs and the type of the jsval
+ * values must match the known type of the pref.  We currently use this to
+ * overlay alternative values atop the current pref values during
+ * backupPrefFile, for prefs that we don't want to back up, or that we do want
+ * to back up, but with values different than the current ones.
+ */
+[scriptable, builtinclass, uuid(56ba17e3-4bfd-4804-bdf7-9c6e70170279)]
+interface nsIPrefOverrideMap : nsISupports
+{
+  /**
+   * Add value to the map.
+   * @param aPrefName  Must be a known pref.
+   * @param aPrefValue Type must be a boolean, an integer, or a string and must
+   *                   match the known type of the pref.  Regardless of type,
+   *                   this can always be null.
+   * @throws If aPrefName is not a valid pref name, if aPrefValue is not of the
+   *         right type for the pref, or on OOM
+   */
+  [implicit_jscontext]
+  void addEntry(in ACString aPrefName, in jsval aPrefValue);
+
+  /**
+   * Retrieve a value from the map.
+   * @param aPrefName  Must be a known pref.
+   * @returns A boolean, an integer, or a string.
+   * @throws  If aPrefName is not in the map or on OOM.
+   */
+  [implicit_jscontext]
+  jsval getEntry(in ACString aPrefName);
+};

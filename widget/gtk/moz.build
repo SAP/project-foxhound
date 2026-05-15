@@ -37,6 +37,7 @@ if CONFIG["MOZ_ENABLE_V4L2"]:
 
 EXPORTS += [
     "MozContainer.h",
+    "nsAppShell.h",
     "nsGTKToolkit.h",
     "nsGtkUtils.h",
     "nsImageToPixbuf.h",
@@ -56,6 +57,7 @@ EXPORTS.mozilla.widget += [
     "DMABufDevice.h",
     "DMABufFormats.h",
     "DMABufSurface.h",
+    "GSettings.h",
     "GtkCompositorWidget.h",
     "InProcessGtkCompositorWidget.h",
     "va_drmcommon.h",
@@ -72,6 +74,7 @@ UNIFIED_SOURCES += [
     "DMABufFormats.cpp",
     "DMABufSurface.cpp",
     "GfxInfo.cpp",
+    "GSettings.cpp",
     "GtkCompositorWidget.cpp",
     "GtkWidgets.cpp",
     "IMContextWrapper.cpp",

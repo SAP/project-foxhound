@@ -10,6 +10,8 @@
 
 #include "modules/audio_processing/test/echo_canceller3_config_json.h"
 
+#include <string>
+
 #include "api/audio/echo_canceller3_config.h"
 #include "test/gtest.h"
 
@@ -27,8 +29,8 @@ TEST(EchoCanceller3JsonHelpers, ToStringAndParseJson) {
   cfg.echo_model.model_reverb_in_nonlinear_mode = false;
   cfg.suppressor.normal_tuning.mask_hf.enr_suppress = .5f;
   cfg.suppressor.subband_nearend_detection.nearend_average_blocks = 3;
-  cfg.suppressor.subband_nearend_detection.subband1 = {1, 3};
-  cfg.suppressor.subband_nearend_detection.subband1 = {4, 5};
+  cfg.suppressor.subband_nearend_detection.subband1 = {.low = 1, .high = 3};
+  cfg.suppressor.subband_nearend_detection.subband1 = {.low = 4, .high = 5};
   cfg.suppressor.subband_nearend_detection.nearend_threshold = 2.f;
   cfg.suppressor.subband_nearend_detection.snr_threshold = 100.f;
   cfg.multi_channel.detect_stereo_content =

@@ -16,13 +16,14 @@ panel {
   --panel-background: Menu;
   --panel-color: MenuText;
   --panel-padding: var(--panel-padding-block) 0;
-  /* This should match GetMenuMaskImage() on macOS, or be overridden below */
+  /* This should match GetMenuCornerRadius() on macOS, or be overridden below */
   --panel-border-radius: 6px;
-  --panel-padding-block: 4px;
+  --panel-padding-block: var(--dimension-4);
+
   --panel-border-color: ThreeDShadow;
   --panel-width: initial;
 
-  --panel-shadow-margin: 4px;
+  --panel-shadow-margin: var(--dimension-4);
   --panel-shadow: 0 0 var(--panel-shadow-margin) hsla(0, 0%, 0%, 0.2);
   -moz-window-input-region-margin: var(--panel-shadow-margin);
   margin: calc(-1 * var(--panel-shadow-margin));
@@ -55,6 +56,11 @@ panel {
     --panel-border-color: transparent;
     /* -moz-window-shadow does the trick on macOS */
     --panel-shadow-margin: 0px;
+
+    @media (-moz-mac-tahoe-theme) {
+      /* GetMenuCornerRadius() returns a larger value on Tahoe */
+      --panel-border-radius: 12px;
+    }
   }
 
   &::part(content) {

@@ -17,6 +17,7 @@ class AndroidDecoderModule : public PlatformDecoderModule {
   friend already_AddRefed<T> MakeAndAddRef(Args&&...);
 
  public:
+  const char* Name() const override { return "Android MediaCodec w/ proxy"; }
   static already_AddRefed<PlatformDecoderModule> Create(
       CDMProxy* aProxy = nullptr);
 
@@ -45,6 +46,8 @@ class AndroidDecoderModule : public PlatformDecoderModule {
 
   // Return supported codecs (querying via JNI if not already cached)
   static media::MediaCodecsSupported GetSupportedCodecs();
+
+  static bool IsJavaDecoderModuleAllowed();
 
  protected:
   bool SupportsColorDepth(

@@ -9,6 +9,8 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/Response.h"
+#include "mozilla/dom/cache/BoundStorageKey.h"
+#include "mozilla/dom/cache/BoundStorageKeyCache.h"
 #include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/cache/CacheChild.h"
 #include "mozilla/dom/cache/CacheStreamControlChild.h"
@@ -25,6 +27,7 @@ template <typename T>
 namespace cache {
 
 using mozilla::ipc::PBackgroundChild;
+using Promise = mozilla::dom::Promise;
 
 namespace {
 
@@ -64,14 +67,32 @@ void AddWorkerRefToStreamChild(const CacheRequest& aRequest,
 
 CacheOpChild::CacheOpChild(SafeRefPtr<CacheWorkerRef> aWorkerRef,
                            nsIGlobalObject* aGlobal, nsISupports* aParent,
-                           Promise* aPromise, ActorChild* aParentActor)
+                           RefPtr<Promise>& aPromise, ActorChild* aParentActor)
     : mGlobal(aGlobal),
       mParent(aParent),
       mPromise(aPromise),
       mParentActor(aParentActor) {
   MOZ_DIAGNOSTIC_ASSERT(mGlobal);
   MOZ_DIAGNOSTIC_ASSERT(mParent);
-  MOZ_DIAGNOSTIC_ASSERT(mPromise);
+  MOZ_DIAGNOSTIC_ASSERT(aPromise);
+
+  MOZ_ASSERT_IF(!NS_IsMainThread(), aWorkerRef);
+
+  SetWorkerRef(CacheWorkerRef::PreferBehavior(
+      std::move(aWorkerRef), CacheWorkerRef::eStrongWorkerRef));
+}
+
+CacheOpChild::CacheOpChild(SafeRefPtr<CacheWorkerRef> aWorkerRef,
+                           nsIGlobalObject* aGlobal, nsISupports* aParent,
+                           RefPtr<CacheStoragePromise>& aPromise,
+                           ActorChild* aParentActor)
+    : mGlobal(aGlobal),
+      mParent(aParent),
+      mPromise(aPromise),
+      mParentActor(aParentActor) {
+  MOZ_DIAGNOSTIC_ASSERT(mGlobal);
+  MOZ_DIAGNOSTIC_ASSERT(mParent);
+  MOZ_DIAGNOSTIC_ASSERT(aPromise);
 
   MOZ_ASSERT_IF(!NS_IsMainThread(), aWorkerRef);
 
@@ -90,11 +111,153 @@ void CacheOpChild::ActorDestroy(ActorDestroyReason aReason) {
   // If the actor was terminated for some unknown reason, then indicate the
   // operation is dead.
   if (mPromise) {
-    mPromise->MaybeReject(NS_ERROR_FAILURE);
-    mPromise = nullptr;
+    HandleAndSettle<CacheOpResult::Tvoid_t>(ErrorResult(NS_ERROR_FAILURE));
+    mPromise.destroy();
   }
   mParentActor->NoteDeletedActor();
   RemoveWorkerRef();
+}
+
+using StorageOpenResultType = std::pair<CacheChild*, Namespace>;
+
+template <CacheOpResult::Type OP_TYPE, typename ResultType>
+void CacheOpChild::SettlePromise(
+    ResultType&& aRes, ErrorResult&& aRv,
+    const RefPtr<CacheStoragePromise>& aThePromise) {
+  // picks the correct promise type using traits defined in BoundStorageKey.h
+  // and BoundStorageKeyCache.h
+  using TargetPromiseType =
+      typename dom::cachestorage_traits<OP_TYPE>::PromiseType;
+  auto* target = static_cast<TargetPromiseType*>(aThePromise.get());
+  auto&& res = std::forward<ResultType>(aRes);
+
+  if (aRv.Failed()) {
+    target->Reject(std::move(aRv), __func__);
+    return;
+  }
+
+  using ValueType = typename std::decay_t<decltype(aRes)>;
+  if constexpr (std::is_same_v<ValueType, JS::HandleValue>) {
+    // Not serializing JS types into MozPromise. Need to collapse JS values
+    // into their raw types here. Since this is internal private method and
+    // based on it's usage yet; just expecting Undefined or null values here.
+    MOZ_ASSERT(res.isNullOrUndefined());
+    target->Resolve(nullptr /*implicitly converts to false for boolean types */,
+                    __func__);
+  } else if constexpr (std::is_same_v<ValueType, StorageOpenResultType>) {
+    // result would be of type CacheChild here and we need to properly wrap into
+    // holder class BoundStorageKeyCache before resolving promise
+    auto [cacheChild, ns] = res;
+    auto* cache = new BoundStorageKeyCache(mGlobal, cacheChild, ns);
+    target->Resolve(RefPtr(cache), __func__);
+  } else {
+    target->Resolve(std::forward<ResultType>(aRes), __func__);
+  }
+}
+
+template <CacheOpResult::Type OP_TYPE, typename ResultType>
+void CacheOpChild::SettlePromise(ResultType&& aRes, ErrorResult&& aRv,
+                                 const RefPtr<Promise>& aThePromise) {
+  if (aRv.Failed()) {
+    aThePromise->MaybeReject(aRv.StealNSResult());
+  } else {
+    using ValueType = typename std::decay_t<decltype(aRes)>;
+
+    if constexpr (std::is_same_v<ValueType, StorageOpenResultType>) {
+      // result would be of type CacheChild here and we need to properly wrap
+      // into holder class Cache before resolving promise
+      auto&& res = std::forward<ResultType>(aRes);
+      auto [cacheChild, ns] = res;
+      auto* cache = new Cache(mGlobal, cacheChild, ns);
+      aThePromise->MaybeResolve(RefPtr(cache));
+    } else {
+      aThePromise->MaybeResolve(std::forward<ResultType>(aRes));
+    }
+  }
+}
+
+template <CacheOpResult::Type OP_TYPE, typename ResultType>
+void CacheOpChild::Settle(ResultType&& aRes, ErrorResult&& aRv) {
+  if (mPromise->is<RefPtr<mozilla::dom::Promise>>()) {
+    auto targetPromise = mPromise->as<RefPtr<mozilla::dom::Promise>>();
+    MOZ_ASSERT(targetPromise);
+
+    SettlePromise<OP_TYPE>(std::forward<ResultType>(aRes), std::move(aRv),
+                           targetPromise);
+  } else if (mPromise->is<RefPtr<CacheStoragePromise>>()) {
+    auto targetPromise = mPromise->as<RefPtr<CacheStoragePromise>>();
+    MOZ_ASSERT(targetPromise);
+
+    SettlePromise<OP_TYPE>(std::forward<ResultType>(aRes), std::move(aRv),
+                           targetPromise);
+  }
+}
+
+template <CacheOpResult::Type OP_TYPE, typename TResponse>
+void CacheOpChild::HandleAndSettle(TResponse&& aRes) {
+  using ValueType = typename std::decay_t<decltype(aRes)>;
+  auto&& res = std::forward<TResponse>(aRes);
+
+  if constexpr (std::is_same_v<ValueType, Maybe<CacheResponse>>) {
+    if (res.isNothing()) {
+      Settle<OP_TYPE>(JS::UndefinedHandleValue);
+      return;
+    }
+
+    const CacheResponse& cacheResponse = res.ref();
+
+    AddWorkerRefToStreamChild(cacheResponse, GetWorkerRefPtr());
+    RefPtr<Response> response = ToResponse(cacheResponse);
+    Settle<OP_TYPE>(response);
+
+  } else if constexpr (std::is_same_v<ValueType, nsTArray<CacheResponse>>) {
+    AutoTArray<RefPtr<Response>, 256> responses;
+    responses.SetCapacity(res.Length());
+
+    for (uint32_t i = 0; i < res.Length(); ++i) {
+      AddWorkerRefToStreamChild(res[i], GetWorkerRefPtr());
+      responses.AppendElement(ToResponse(res[i]));
+    }
+
+    Settle<OP_TYPE>(std::move(responses));
+
+  } else if constexpr (std::is_same_v<ValueType, nsTArray<CacheRequest>>) {
+    AutoTArray<SafeRefPtr<Request>, 256> requests;
+    requests.SetCapacity(res.Length());
+
+    for (uint32_t i = 0; i < res.Length(); ++i) {
+      AddWorkerRefToStreamChild(res[i], GetWorkerRefPtr());
+      requests.AppendElement(ToRequest(res[i]));
+    }
+
+    Settle<OP_TYPE>(std::move(requests));
+
+  } else if constexpr (std::is_same_v<ValueType, bool> ||
+                       std::is_same_v<ValueType, nsTArray<nsString>> ||
+                       std::is_same_v<ValueType, JS::Handle<JS::Value>>) {
+    Settle<OP_TYPE>(std::forward<TResponse>(aRes));
+  } else if constexpr (std::is_same_v<ValueType, ErrorResult>) {
+    Settle<OP_TYPE>(false /* valid response does not exist */, std::move(res));
+  } else if constexpr (std::is_same_v<ValueType, StorageOpenResult>) {
+    auto* actor = static_cast<CacheChild*>(res.actor().AsChild());
+
+    // If we have a success status then we should have an actor.  Gracefully
+    // reject instead of crashing, though, if we get a nullptr here.
+    MOZ_DIAGNOSTIC_ASSERT(actor);
+    if (!actor) {
+      ErrorResult errRes;
+      errRes.ThrowTypeError(
+          "CacheStorage.open() failed to access the storage system.");
+      Settle<OP_TYPE>(StorageOpenResultType{} /* dummy */, std::move(errRes));
+    }
+
+    actor->SetWorkerRef(CacheWorkerRef::PreferBehavior(
+        GetWorkerRefPtr().clonePtr(), CacheWorkerRef::eIPCWorkerRef));
+    Settle<OP_TYPE>(StorageOpenResultType{actor, res.ns()});
+  } else {
+    static_assert(std::is_same_v<ValueType, void>,
+                  "There should be a block handling this type");
+  }
 }
 
 mozilla::ipc::IPCResult CacheOpChild::Recv__delete__(
@@ -103,73 +266,68 @@ mozilla::ipc::IPCResult CacheOpChild::Recv__delete__(
 
   if (NS_WARN_IF(aRv.Failed())) {
     MOZ_DIAGNOSTIC_ASSERT(aResult.type() == CacheOpResult::Tvoid_t);
-    mPromise->MaybeReject(std::move(aRv));
-    mPromise = nullptr;
+    HandleAndSettle<CacheOpResult::Tvoid_t>(aRv);
+    mPromise.destroy();
     return IPC_OK();
   }
 
   switch (aResult.type()) {
     case CacheOpResult::TCacheMatchResult: {
-      HandleResponse(aResult.get_CacheMatchResult().maybeResponse());
+      const auto& response = aResult.get_CacheMatchResult().maybeResponse();
+      HandleAndSettle<CacheOpResult::TCacheMatchResult>(response);
       break;
     }
     case CacheOpResult::TCacheMatchAllResult: {
-      HandleResponseList(aResult.get_CacheMatchAllResult().responseList());
+      const auto& response = aResult.get_CacheMatchAllResult().responseList();
+      HandleAndSettle<CacheOpResult::TCacheMatchAllResult>(response);
       break;
     }
     case CacheOpResult::TCachePutAllResult: {
-      mPromise->MaybeResolveWithUndefined();
+      // resolve with undefined
+      HandleAndSettle<CacheOpResult::TCachePutAllResult>(
+          JS::UndefinedHandleValue);
       break;
     }
     case CacheOpResult::TCacheDeleteResult: {
-      mPromise->MaybeResolve(aResult.get_CacheDeleteResult().success());
+      const auto& response = aResult.get_CacheDeleteResult().success();
+      HandleAndSettle<CacheOpResult::TCacheDeleteResult>(response);
       break;
     }
     case CacheOpResult::TCacheKeysResult: {
-      HandleRequestList(aResult.get_CacheKeysResult().requestList());
+      const auto& response = aResult.get_CacheKeysResult().requestList();
+      HandleAndSettle<CacheOpResult::TCacheKeysResult>(response);
       break;
     }
     case CacheOpResult::TStorageMatchResult: {
-      HandleResponse(aResult.get_StorageMatchResult().maybeResponse());
+      const auto& response = aResult.get_StorageMatchResult().maybeResponse();
+      HandleAndSettle<CacheOpResult::TStorageMatchResult>(response);
       break;
     }
     case CacheOpResult::TStorageHasResult: {
-      mPromise->MaybeResolve(aResult.get_StorageHasResult().success());
+      const auto& response = aResult.get_StorageHasResult().success();
+      HandleAndSettle<CacheOpResult::TStorageHasResult>(response);
       break;
     }
     case CacheOpResult::TStorageOpenResult: {
-      auto result = aResult.get_StorageOpenResult();
-      auto actor = static_cast<CacheChild*>(result.actor().AsChild());
-
-      // If we have a success status then we should have an actor.  Gracefully
-      // reject instead of crashing, though, if we get a nullptr here.
-      MOZ_DIAGNOSTIC_ASSERT(actor);
-      if (!actor) {
-        mPromise->MaybeRejectWithTypeError(
-            "CacheStorage.open() failed to access the storage system.");
-        break;
-      }
-
-      actor->SetWorkerRef(CacheWorkerRef::PreferBehavior(
-          GetWorkerRefPtr().clonePtr(), CacheWorkerRef::eIPCWorkerRef));
-      RefPtr<Cache> cache = new Cache(mGlobal, actor, result.ns());
-      mPromise->MaybeResolve(cache);
+      const auto& response = aResult.get_StorageOpenResult();
+      HandleAndSettle<CacheOpResult::TStorageOpenResult>(response);
       break;
     }
     case CacheOpResult::TStorageDeleteResult: {
-      mPromise->MaybeResolve(aResult.get_StorageDeleteResult().success());
+      const auto& response = aResult.get_StorageDeleteResult().success();
+      HandleAndSettle<CacheOpResult::TStorageDeleteResult>(response);
       break;
     }
     case CacheOpResult::TStorageKeysResult: {
-      mPromise->MaybeResolve(aResult.get_StorageKeysResult().keyList());
+      const auto& response = aResult.get_StorageKeysResult().keyList();
+      HandleAndSettle<CacheOpResult::TStorageKeysResult>(response);
       break;
     }
     default:
       MOZ_CRASH("Unknown Cache op result type!");
   }
 
-  mPromise = nullptr;
-
+  mPromise.destroy();
   return IPC_OK();
 }
 
@@ -187,50 +345,6 @@ void CacheOpChild::AssertOwningThread() const {
   NS_ASSERT_OWNINGTHREAD(CacheOpChild);
 }
 #endif
-
-PBackgroundChild* CacheOpChild::GetIPCManager() {
-  MOZ_CRASH("CacheOpChild does not implement TypeUtils::GetIPCManager()");
-}
-
-void CacheOpChild::HandleResponse(const Maybe<CacheResponse>& aMaybeResponse) {
-  if (aMaybeResponse.isNothing()) {
-    mPromise->MaybeResolveWithUndefined();
-    return;
-  }
-
-  const CacheResponse& cacheResponse = aMaybeResponse.ref();
-
-  AddWorkerRefToStreamChild(cacheResponse, GetWorkerRefPtr());
-  RefPtr<Response> response = ToResponse(cacheResponse);
-
-  mPromise->MaybeResolve(response);
-}
-
-void CacheOpChild::HandleResponseList(
-    const nsTArray<CacheResponse>& aResponseList) {
-  AutoTArray<RefPtr<Response>, 256> responses;
-  responses.SetCapacity(aResponseList.Length());
-
-  for (uint32_t i = 0; i < aResponseList.Length(); ++i) {
-    AddWorkerRefToStreamChild(aResponseList[i], GetWorkerRefPtr());
-    responses.AppendElement(ToResponse(aResponseList[i]));
-  }
-
-  mPromise->MaybeResolve(responses);
-}
-
-void CacheOpChild::HandleRequestList(
-    const nsTArray<CacheRequest>& aRequestList) {
-  AutoTArray<SafeRefPtr<Request>, 256> requests;
-  requests.SetCapacity(aRequestList.Length());
-
-  for (uint32_t i = 0; i < aRequestList.Length(); ++i) {
-    AddWorkerRefToStreamChild(aRequestList[i], GetWorkerRefPtr());
-    requests.AppendElement(ToRequest(aRequestList[i]));
-  }
-
-  mPromise->MaybeResolve(requests);
-}
 
 }  // namespace cache
 }  // namespace mozilla::dom

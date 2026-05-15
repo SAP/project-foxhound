@@ -1,3 +1,11 @@
+add_setup(async function setup() {
+  // This test covers the legacy implementation of the history sidebar
+  // Coverage for the new is at browser/components/sidebar/tests/browser/browser_history_sidebar.js
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+});
+
 add_task(async function test() {
   let sidebar = document.getElementById("sidebar");
 

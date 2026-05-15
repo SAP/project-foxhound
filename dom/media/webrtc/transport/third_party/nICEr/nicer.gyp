@@ -19,10 +19,8 @@
               # nrappkit
               '../nrappkit/src/event',
               '../nrappkit/src/log',
-              '../nrappkit/src/plugin',
               '../nrappkit/src/registry',
               '../nrappkit/src/share',
-              '../nrappkit/src/stats',
               '../nrappkit/src/util',
               '../nrappkit/src/util/libekr',
               '../nrappkit/src/port/generic/include',
@@ -39,8 +37,6 @@
                 # Crypto
                 "./src/crypto/nr_crypto.c",
                 "./src/crypto/nr_crypto.h",
-                #"./src/crypto/nr_crypto_openssl.c",
-                #"./src/crypto/nr_crypto_openssl.h",
 
                 # ICE
                 "./src/ice/ice_candidate.c",
@@ -65,18 +61,13 @@
                 # Net
                 "./src/net/nr_resolver.c",
                 "./src/net/nr_resolver.h",
-                "./src/net/nr_socket_wrapper.c",
-                "./src/net/nr_socket_wrapper.h",
                 "./src/net/nr_socket.c",
                 "./src/net/nr_socket.h",
-                #"./src/net/nr_socket_local.c",
                 "./src/net/nr_socket_local.h",
                 "./src/net/nr_socket_multi_tcp.c",
                 "./src/net/nr_socket_multi_tcp.h",
                 "./src/net/transport_addr.c",
                 "./src/net/transport_addr.h",
-                "./src/net/transport_addr_reg.c",
-                "./src/net/transport_addr_reg.h",
                 "./src/net/local_addr.c",
                 "./src/net/local_addr.h",
                 "./src/net/nr_interface_prioritizer.c",
@@ -117,8 +108,6 @@
                 "./src/stun/turn_client_ctx.h",
 
                 # Util
-                "./src/util/cb_args.c",
-                "./src/util/cb_args.h",
                 "./src/util/ice_util.c",
                 "./src/util/ice_util.h",
 

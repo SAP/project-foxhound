@@ -30,7 +30,7 @@
           "destroyed",
           "Destroy reason should correspond to GPUDeviceLostReason.destroyed"
         );
-        is(deviceLostReason.message, "", "Destroy message should be blank");
+        is(deviceLostReason.message, "Device destroyed", "Destroy message does not match");
         info("destroy_causes_lost END");
       };
 

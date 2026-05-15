@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 "use strict";
 
 var kSkipCacheFlags =
@@ -198,7 +196,7 @@ var BrowserCommands = {
 
     function loadBrowserURI(browser, url, principal) {
       browser.loadURI(url, {
-        flags: reloadFlags,
+        loadFlags: reloadFlags,
         triggeringPrincipal: principal,
       });
     }
@@ -428,6 +426,25 @@ var BrowserCommands = {
   },
 
   /**
+   * This is part of the Document Picture-in-Picture API.
+   * Close this window and bring the opener tab back to foreground.
+   *
+   * @param event
+   *        Used to determine how close was triggered.
+   */
+  returnToOpenerFromPiP(event) {
+    // Switch to and focus the opener
+    const openerBC = gBrowser.selectedBrowser.browsingContext.opener;
+    const openerBrowser = openerBC.embedderElement;
+    const openerWindow = openerBrowser.ownerGlobal;
+    const openerTab = openerWindow.gBrowser.getTabForBrowser(openerBrowser);
+    openerWindow.gBrowser.selectedTab = openerTab;
+    openerWindow.focus();
+
+    this.tryToCloseWindow(event);
+  },
+
+  /**
    * Open the View Source dialog.
    *
    * @param args
@@ -489,7 +506,9 @@ var BrowserCommands = {
     // In the case of popups, we need to find a non-popup browser window.
     if (!tabBrowser || !window.toolbar.visible) {
       // This returns only non-popup browser windows by default.
-      const browserWindow = BrowserWindowTracker.getTopWindow();
+      const browserWindow =
+        BrowserWindowTracker.getTopWindow() ??
+        (await BrowserWindowTracker.promiseOpenWindow());
       tabBrowser = browserWindow.gBrowser;
     }
 

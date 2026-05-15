@@ -59,34 +59,28 @@ def getReleaseInstallerPath(
                 MozillaVersion(version) > MozillaVersion(last_linux_bz2_version)
             ):
                 compression = "xz"
-            return "/".join(
-                [
-                    p.strip("/")
-                    for p in [
-                        platform,
-                        locale,
-                        "%s-%s.tar.%s" % (productName, version, compression),
-                    ]
+            return "/".join([
+                p.strip("/")
+                for p in [
+                    platform,
+                    locale,
+                    "%s-%s.tar.%s" % (productName, version, compression),
                 ]
-            )
+            ])
         elif "mac" in platform:
-            return "/".join(
-                [
-                    p.strip("/")
-                    for p in [platform, locale, "%s %s.dmg" % (brandName, version)]
-                ]
-            )
+            return "/".join([
+                p.strip("/")
+                for p in [platform, locale, "%s %s.dmg" % (brandName, version)]
+            ])
         elif platform.startswith("win"):
-            return "/".join(
-                [
-                    p.strip("/")
-                    for p in [
-                        platform,
-                        locale,
-                        "%s Setup %s.exe" % (brandName, version),
-                    ]
+            return "/".join([
+                p.strip("/")
+                for p in [
+                    platform,
+                    locale,
+                    "%s Setup %s.exe" % (brandName, version),
                 ]
-            )
+            ])
         else:
             raise "Unsupported platform"
     elif platform.startswith("android"):

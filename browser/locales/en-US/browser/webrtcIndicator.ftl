@@ -60,7 +60,7 @@ webrtc-screen-system-menu =
 ## These strings are only used on Mac for menus attached to icons
 ## near the clock on the mac menubar.
 ## Variables:
-##   $streamTitle (String): the title of the tab using the share.
+##   $streamTitle (String): the host of the tab using the share.
 ##   $tabCount (Number): the title of the tab using the share.
 
 webrtc-indicator-menuitem-control-sharing =
@@ -174,7 +174,6 @@ webrtc-allow-share-screen-and-audio-capture-unsafe-delegation = Allow { $origin 
 webrtc-share-screen-warning = Only share screens with sites you trust. Sharing can allow deceptive sites to browse as you and steal your private data.
 webrtc-share-browser-warning = Only share { -brand-short-name } with sites you trust. Sharing can allow deceptive sites to browse as you and steal your private data.
 
-webrtc-share-screen-learn-more = Learn more
 webrtc-pick-window-or-screen = Select window or screen
 webrtc-share-entire-screen = Entire screen
 webrtc-share-pipe-wire-portal = Use operating system settings

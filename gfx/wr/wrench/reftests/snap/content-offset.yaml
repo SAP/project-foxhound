@@ -1,0 +1,19 @@
+# Ensure that if a parent external scroll offset has a fractional component
+# that this doesn't affect the snapping calculations during scene building
+# (the overall scroll offset is snapped to device pixel by the spatial tree)
+---
+root:
+  items:
+    - type: scroll-frame
+      bounds: [0, 0, 200, 100]
+      content-size: [200, 200]
+      scroll-offset: [0, 100]
+      external-scroll-offset: [0, 50.1]
+      items:
+        - type: stacking-context
+          bounds: [0, -1.0, 0, 0]
+          transform: translate(100, 0.4)
+          items:
+            - type: rect
+              bounds: [ 25, 125, 50, 50 ]
+              color: green

@@ -16,7 +16,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "obliviousHttpService",
   "@mozilla.org/network/oblivious-http-service;1",
-  "nsIObliviousHttpService"
+  Ci.nsIObliviousHttpService
 );
 
 /**
@@ -91,7 +91,8 @@ export class MozCachedOHTTPProtocolHandler {
         uri,
         loadInfo,
         this,
-        this.#getOHTTPService()
+        this.#getOHTTPService(),
+        !!this.#injectedOHTTPService /* inTestingMode */
       );
     }
 
@@ -105,7 +106,8 @@ export class MozCachedOHTTPProtocolHandler {
             uri,
             loadInfo,
             this,
-            this.#getOHTTPService()
+            this.#getOHTTPService(),
+            !!this.#injectedOHTTPService /* inTestingMode */
           );
         }
 
@@ -117,7 +119,8 @@ export class MozCachedOHTTPProtocolHandler {
               uri,
               loadInfo,
               this,
-              this.#getOHTTPService()
+              this.#getOHTTPService(),
+              !!this.#injectedOHTTPService /* inTestingMode */
             );
           }
         } catch (e) {
@@ -230,6 +233,7 @@ export class MozCachedOHTTPChannel {
   #cancelled = false;
   #originalURI;
   #contentType = "";
+  #contentCharset = "";
   #contentLength = -1;
   #owner = null;
   #securityInfo = null;
@@ -237,6 +241,7 @@ export class MozCachedOHTTPChannel {
   #loadGroup = null;
   #pendingChannel = null;
   #startedRequest = false;
+  #inTestingMode = false;
 
   /**
    * Constructs a new MozCachedOHTTPChannel.
@@ -249,13 +254,23 @@ export class MozCachedOHTTPChannel {
    *   The protocol handler instance that created this channel.
    * @param {nsIObliviousHttpService} ohttpService
    *   The OHTTP service to use.
+   * @param {boolean} inTestingMode
+   *   True if the channel is in a mode that makes it easier to stub and
+   *   mock things out while under test.
    */
-  constructor(uri, loadInfo, protocolHandler, ohttpService) {
+  constructor(
+    uri,
+    loadInfo,
+    protocolHandler,
+    ohttpService,
+    inTestingMode = false
+  ) {
     this.#uri = uri;
     this.#loadInfo = loadInfo;
     this.#protocolHandler = protocolHandler;
     this.#ohttpService = ohttpService;
     this.#originalURI = uri;
+    this.#inTestingMode = inTestingMode;
   }
 
   /**
@@ -302,6 +317,19 @@ export class MozCachedOHTTPChannel {
 
   set contentType(aContentType) {
     this.#contentType = aContentType;
+  }
+
+  /**
+   * Gets or sets the content charset of the loaded resource.
+   *
+   * @type {string}
+   */
+  get contentCharset() {
+    return this.#contentCharset;
+  }
+
+  set contentCharset(aContentCharset) {
+    this.#contentCharset = aContentCharset;
   }
 
   /**
@@ -519,8 +547,8 @@ export class MozCachedOHTTPChannel {
    *   Object containing extracted data, or null if invalid.
    *   Returns null if URL parsing fails, no 'url' parameter found,
    *   target URL is not HTTPS, or target URL is malformed.
-   * @returns {nsIURI} returns.resourceURI - The decoded target image URI (HTTPS only)
-   * @returns {string} returns.host - The moz-cached-ohttp host (e.g., "newtab-image")
+   *   `resourceURI` is the decoded target image URI (HTTPS only).
+   *   `host` is the moz-cached-ohttp host (e.g., "newtab-image").
    */
   #extractHostAndResourceURI() {
     try {
@@ -577,12 +605,39 @@ export class MozCachedOHTTPChannel {
     if (result.success) {
       // Stream from parent-provided inputStream
       const pump = this.#createInputStreamPump(result.inputStream);
+      let headers = new Headers(result.headersObj);
+      this.#applyContentHeaders(headers);
 
       await this.#streamFromCache(pump, result.inputStream);
       return true;
     }
 
     return false;
+  }
+
+  /**
+   * Examines any response headers that were included with the cache entry or
+   * network response, and sets any internal state to represent those headers.
+   * For now, this is only the Content-Type header.
+   *
+   * @param {Headers} headers
+   *   A Headers object that may have some header key value pairs included.
+   */
+  #applyContentHeaders(headers) {
+    let contentTypeHeader = headers.get("Content-Type");
+    if (contentTypeHeader) {
+      let charSet = {};
+      let hadCharSet = {};
+      this.#contentType = Services.io.parseResponseContentType(
+        contentTypeHeader,
+        charSet,
+        hadCharSet
+      );
+
+      if (hadCharSet.value) {
+        this.#contentCharset = charSet.value;
+      }
+    }
   }
 
   /**
@@ -853,7 +908,9 @@ export class MozCachedOHTTPChannel {
           try {
             const contentType = request.getResponseHeader("content-type");
             if (contentType) {
-              this.#contentType = contentType;
+              let headers = new Headers();
+              headers.set("content-type", contentType);
+              this.#applyContentHeaders(headers);
             }
           } catch (e) {
             // Content-Type header not available
@@ -862,6 +919,7 @@ export class MozCachedOHTTPChannel {
 
         this.#startedRequest = true;
         this.#listener.onStartRequest(this);
+        this.#processResponseHeaders(cacheStreamUpdatePort, request);
         this.#processCacheControl(cacheStreamUpdatePort, request);
       },
 
@@ -949,6 +1007,7 @@ export class MozCachedOHTTPChannel {
    * @param {MessageChannelPort} cacheStreamUpdatePort
    *   MessagePort for sending error cleanup messages to the parent actor.
    *   Used to doom the cache entry when an error occurs during the request.
+   * @param {boolean} cacheOutputStream
    */
   #cleanupCacheOnError(cacheStreamUpdatePort, cacheOutputStream) {
     try {
@@ -977,6 +1036,39 @@ export class MozCachedOHTTPChannel {
       }
       this.#listener.onStopRequest(this, status);
     }
+  }
+
+  /**
+   * Attempts to write the response headers into the cache entry.
+   *
+   * @param {MessageChannelPort} cacheStreamUpdatePort
+   *   MessagePort for sending cache response headers to the parent actor.
+   * @param {nsIHttpChannel} httpChannel
+   *   The HTTP channel with response headers.
+   */
+  #processResponseHeaders(cacheStreamUpdatePort, httpChannel) {
+    let headersObj = {};
+    // nsIHttpChannel is marked as a builtinclass, meaning that it cannot
+    // be implemented by script, which makes mocking out channels a pain. We
+    // work around this by assuming that if we're in testing mode, that we've
+    // been passed an nsIChannel implemented in JS that also happens to have a
+    // visitResponseHeaders method implemented on it.
+    if (this.#inTestingMode) {
+      httpChannel = httpChannel.wrappedJSObject;
+    } else if (!(httpChannel instanceof Ci.nsIHttpChannel)) {
+      return;
+    }
+
+    httpChannel.visitResponseHeaders({
+      visitHeader(name, value) {
+        headersObj[name] = value;
+      },
+    });
+
+    cacheStreamUpdatePort.postMessage({
+      name: "WriteOriginalResponseHeaders",
+      headersObj,
+    });
   }
 
   /**

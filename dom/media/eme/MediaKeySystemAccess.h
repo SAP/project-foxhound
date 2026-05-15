@@ -7,16 +7,13 @@
 #ifndef mozilla_dom_MediaKeySystemAccess_h
 #define mozilla_dom_MediaKeySystemAccess_h
 
-#include "mozilla/Attributes.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-
-#include "mozilla/dom/Promise.h"
+#include "js/TypeDecls.h"
+#include "mozilla/KeySystemConfig.h"
 #include "mozilla/dom/MediaKeySystemAccessBinding.h"
 #include "mozilla/dom/MediaKeysRequestStatusBinding.h"
-#include "mozilla/KeySystemConfig.h"
-
-#include "js/TypeDecls.h"
+#include "mozilla/dom/Promise.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 

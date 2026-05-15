@@ -52,14 +52,14 @@ class SVGFEBlendElement final : public SVGFEBlendElementBase {
   EnumAttributesInfo GetEnumInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
+  enum { RESULT, IN1, IN2 };
+  SVGAnimatedString mStringAttributes[3];
+  static StringInfo sStringInfo[3];
+
   enum { MODE };
   SVGAnimatedEnumeration mEnumAttributes[1];
   static SVGEnumMapping sModeMap[];
   static EnumInfo sEnumInfo[1];
-
-  enum { RESULT, IN1, IN2 };
-  SVGAnimatedString mStringAttributes[3];
-  static StringInfo sStringInfo[3];
 };
 
 }  // namespace mozilla::dom

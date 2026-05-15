@@ -7,22 +7,22 @@
 #define mozilla_dom_HTMLSelectElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/ConstraintValidation.h"
-#include "nsGenericHTMLElement.h"
-
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/HTMLOptionsCollection.h"
 #include "mozilla/EnumSet.h"
-#include "nsCheapSets.h"
-#include "nsCOMPtr.h"
-#include "nsError.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/dom/HTMLOptionsCollection.h"
+#include "nsCOMPtr.h"
+#include "nsCheapSets.h"
 #include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsGenericHTMLElement.h"
+#include "nsStubMutationObserver.h"
 
 class nsContentList;
 class nsIDOMHTMLOptionElement;
 class nsIHTMLCollection;
-class nsISelectControlFrame;
+class nsListControlFrame;
 
 namespace mozilla {
 
@@ -76,6 +76,7 @@ class MOZ_STACK_CLASS SafeOptionListMutation {
  * Implementation of &lt;select&gt;
  */
 class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
+                                public nsStubMutationObserver,
                                 public ConstraintValidation {
  public:
   /**
@@ -115,6 +116,13 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
+
+  // For comboboxes, we need to keep the list up to date when options change.
+  NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
+  NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
+  NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+  NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
+  NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
 
   int32_t TabIndexDefault() override;
 
@@ -201,10 +209,16 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
 
   bool IsHTMLFocusable(IsFocusableFlags, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
-  void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
-                         bool aNotify, ErrorResult& aRv) override;
-  void RemoveChildNode(nsIContent* aKid, bool aNotify,
-                       const BatchRemovalState*) override;
+  void InsertChildBefore(
+      nsIContent* aKid, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
+      nsINode* aOldParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
+  void RemoveChildNode(
+      nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
+      nsINode* aNewParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
 
   // nsGenericHTMLElement
   bool IsDisabledForEvents(WidgetEvent* aEvent) override;
@@ -288,7 +302,7 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
                       nsAttrValue& aResult) override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
@@ -318,9 +332,7 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
                aError);
   }
 
-  /**
-   * Is this a combobox?
-   */
+  /** Is this a combobox? */
   bool IsCombobox() const { return !Multiple() && Size() <= 1; }
 
   bool OpenInParentProcess() const { return mIsOpenInParentProcess; }
@@ -336,6 +348,13 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
     SetFormAutofillState(aState);
   }
   void GetAutofillState(nsAString& aState) { GetFormAutofillState(aState); }
+
+  void SetupShadowTree();
+
+  // Returns the text node that has the selected <option>'s text.
+  // Note that it might return null for printing.
+  Text* GetSelectedContentText() const;
+  void SelectedContentTextMightHaveChanged();
 
  protected:
   virtual ~HTMLSelectElement() = default;
@@ -377,7 +396,7 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
    *                           its selected state to aSelected.
    * @param aNotify whether to notify the style system and such
    */
-  void OnOptionSelected(nsISelectControlFrame* aSelectFrame, int32_t aIndex,
+  void OnOptionSelected(nsListControlFrame* aSelectFrame, int32_t aIndex,
                         bool aSelected, bool aChangeOptionState, bool aNotify);
   /**
    * Restore state to a particular state string (representing the options)
@@ -439,11 +458,8 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
   int32_t GetFirstChildOptionIndex(nsIContent* aOptions, int32_t aStartIndex,
                                    int32_t aEndIndex);
 
-  /**
-   * Get the frame as an nsISelectControlFrame (MAY RETURN nullptr)
-   * @return the select frame, or null
-   */
-  nsISelectControlFrame* GetSelectFrame();
+  /** Get the frame as an nsListControlFrame (MAY RETURN nullptr) */
+  nsListControlFrame* GetListBoxFrame();
 
   /**
    * Helper method for dispatching ContentReset notifications to list box

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsUnknownDecoder_h__
-#define nsUnknownDecoder_h__
+#ifndef nsUnknownDecoder_h_
+#define nsUnknownDecoder_h_
 
 #include "nsIStreamConverter.h"
 #include "nsIThreadRetargetableStreamListener.h"
@@ -108,7 +108,9 @@ class nsUnknownDecoder : public nsIStreamConverter, public nsIContentSniffer {
   {_bytes, sizeof(_bytes) - 1, _type, nullptr}
 
 #define SNIFFER_ENTRY_WITH_FUNC(_bytes, _func) \
-  {_bytes, sizeof(_bytes) - 1, nullptr, _func}
+  {                                            \
+    _bytes, sizeof(_bytes) - 1, nullptr, _func \
+  }
 
   static nsSnifferEntry sSnifferEntries[];
   static uint32_t sSnifferEntryNum;
@@ -147,4 +149,4 @@ class nsBinaryDetector : public nsUnknownDecoder {
   virtual void DetermineContentType(nsIRequest* aRequest) override;
 };
 
-#endif /* nsUnknownDecoder_h__ */
+#endif /* nsUnknownDecoder_h_ */

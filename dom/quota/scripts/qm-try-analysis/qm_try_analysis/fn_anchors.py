@@ -2,9 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import json
 import subprocess
 from os import path
+
+from mozfile import json
 
 from qm_try_analysis.logging import info, warning
 
@@ -14,12 +15,10 @@ cached_functions = {}
 def getMetricsJson(src_url):
     if src_url.startswith("http"):
         info(f"Fetching source for function extraction: {src_url}")
-        metrics = subprocess.check_output(
-            [
-                path.join(path.dirname(path.realpath(__file__)), "fetch_fn_names.sh"),
-                src_url,
-            ]
-        )
+        metrics = subprocess.check_output([
+            path.join(path.dirname(path.realpath(__file__)), "fetch_fn_names.sh"),
+            src_url,
+        ])
     else:
         warning(f"Skip fetching source: {src_url}")
         metrics = ""
@@ -37,13 +36,11 @@ def getSpaceFunctionsRecursive(metrics_space):
         and metrics_space["name"]
         and metrics_space["name"] != "<anonymous>"
     ):
-        functions.append(
-            {
-                "name": metrics_space["name"],
-                "start_line": int(metrics_space["start_line"]),
-                "end_line": int(metrics_space["end_line"]),
-            }
-        )
+        functions.append({
+            "name": metrics_space["name"],
+            "start_line": int(metrics_space["start_line"]),
+            "end_line": int(metrics_space["end_line"]),
+        })
     for space in metrics_space["spaces"]:
         functions += getSpaceFunctionsRecursive(space)
     return functions

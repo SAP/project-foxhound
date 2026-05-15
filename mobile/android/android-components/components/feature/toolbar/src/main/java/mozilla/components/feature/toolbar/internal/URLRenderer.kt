@@ -69,6 +69,7 @@ internal class URLRenderer(
     }
 
     @VisibleForTesting
+    @Suppress("NestedBlockDepth")
     internal suspend fun updateUrl(url: String) {
         if (url.isEmpty() || configuration == null) {
             toolbar.url = url
@@ -81,6 +82,23 @@ internal class URLRenderer(
                 getRegistrableDomainOrHostSpan(url, configuration.publicSuffixList)?.let { (start, end) ->
                     url.substring(start, end)
                 } ?: url
+            }
+            // Displays only the host using distinct colors for the registrable domain and its subdomains
+            ToolbarFeature.RenderStyle.ColoredDomain -> {
+                getHostFromUrl(url)?.let { host ->
+                    val registrableDomainSpan = getRegistrableDomainSpanInHost(host, configuration.publicSuffixList)
+                    val colorSpan = registrableDomainSpan ?: (0 to host.length)
+
+                    SpannableStringBuilder(host).apply {
+                        configuration.urlColor?.let { urlColor ->
+                            applyUrlColors(
+                                urlColor,
+                                configuration.registrableDomainColor,
+                                colorSpan,
+                            )
+                        }
+                    }
+                } ?: SpannableStringBuilder(url)
             }
             // Display the registrableDomain with color and URL with another color
             ToolbarFeature.RenderStyle.ColoredUrl -> SpannableStringBuilder(url).apply {
@@ -98,6 +116,23 @@ internal class URLRenderer(
             ToolbarFeature.RenderStyle.UncoloredUrl -> url
         }
     }
+}
+
+/**
+ * Extracts the host from a URL string.
+ *
+ * @param url The URL to extract the host from
+ * @return The host or null if the URL is not HTTP(S) or has no host
+ */
+internal fun getHostFromUrl(
+    url: String,
+): String? {
+    val innerUrl = url.removePrefix(BLOB_URL_PREFIX)
+
+    val uri = innerUrl.toUri()
+    if (!uri.isHttpOrHttps) return null
+
+    return uri.host
 }
 
 /**

@@ -8,7 +8,6 @@
 #include <algorithm>
 
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/SchedulerGroup.h"

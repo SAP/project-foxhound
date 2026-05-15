@@ -20,7 +20,11 @@ export class WebDriverDocumentInsertedParent extends JSProcessActorParent {
 
     switch (name) {
       case "WebDriverDocumentInsertedChild:documentInserted": {
-        lazy.notifyNavigationCommitted(payload);
+        if (data.contextDetails.isContent) {
+          // There are no navigations in the parent process.
+          lazy.notifyNavigationCommitted(payload);
+        }
+
         break;
       }
       default:

@@ -60,6 +60,9 @@ data class Wallpaper(
         const val BEACH_VIBE = "beach-vibe"
         const val FIREFOX_COLLECTION = "firefox"
         const val DEFAULT = "default"
+        const val EDGE_TO_EDGE = "edge-to-edge"
+
+        private val localWallpapers = listOf(DEFAULT, EDGE_TO_EDGE)
 
         /*
          * Note: this collection could get out of sync with the version of it generated when fetching
@@ -88,6 +91,15 @@ data class Wallpaper(
         )
         val Default = Wallpaper(
             name = DEFAULT,
+            collection = DefaultCollection,
+            textColor = null,
+            cardColorLight = null,
+            cardColorDark = null,
+            thumbnailFileState = ImageFileState.Downloaded,
+            assetsFileState = ImageFileState.Downloaded,
+        )
+        val EdgeToEdge = Wallpaper(
+            name = EDGE_TO_EDGE,
             collection = DefaultCollection,
             textColor = null,
             cardColorLight = null,
@@ -135,6 +147,8 @@ data class Wallpaper(
                     thumbnailFileState = ImageFileState.Downloaded,
                     assetsFileState = ImageFileState.Downloaded,
                 )
+            } else if (name == EDGE_TO_EDGE) {
+                EdgeToEdge
             } else {
                 null
             }
@@ -150,6 +164,15 @@ data class Wallpaper(
          */
         fun nameIsDefault(name: String): Boolean =
             name.isEmpty() || name == DEFAULT || name.lowercase() == "none"
+
+        /**
+         * Returns true if the wallpaper is a local wallpaper, as opposed to a distant wallpaper
+         * that needs to be downloaded from a distant URL.
+         *
+         * @param name The name to check.
+         * @return True if wallpaper name is Default or EdgeToEdge, False otherwise
+         */
+        fun isLocalWallpaper(name: String): Boolean = name in localWallpapers
     }
 
     /**

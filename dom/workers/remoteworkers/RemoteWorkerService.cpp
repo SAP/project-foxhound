@@ -6,26 +6,26 @@
 
 #include "RemoteWorkerService.h"
 
-#include "mozilla/dom/PRemoteWorkerParent.h"
-#include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/PBackgroundParent.h"
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/Services.h"
-#include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/StaticMutex.h"
-#include "mozilla/StaticPtr.h"
-#include "nsIObserverService.h"
-#include "nsIThread.h"
-#include "nsThreadUtils.h"
-#include "nsXPCOMPrivate.h"
 #include "RemoteWorkerController.h"
 #include "RemoteWorkerDebuggerManagerChild.h"
 #include "RemoteWorkerDebuggerManagerParent.h"
 #include "RemoteWorkerServiceChild.h"
 #include "RemoteWorkerServiceParent.h"
+#include "mozilla/SchedulerGroup.h"
+#include "mozilla/Services.h"
+#include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
+#include "mozilla/dom/PRemoteWorkerParent.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/BackgroundParent.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundParent.h"
+#include "nsIObserverService.h"
+#include "nsIThread.h"
+#include "nsThreadUtils.h"
+#include "nsXPCOMPrivate.h"
 
 namespace mozilla {
 
@@ -195,7 +195,7 @@ void RemoteWorkerService::RegisterRemoteDebugger(
   // RemoteWorkerDebuggerManager::SendRegister.
   if (sRemoteWorkerService->mThread->IsOnCurrentThread()) {
     MOZ_ASSERT(sRemoteWorkerService->mDebuggerManagerChild);
-    Unused << sRemoteWorkerService->mDebuggerManagerChild->SendRegister(
+    (void)sRemoteWorkerService->mDebuggerManagerChild->SendRegister(
         std::move(aDebuggerInfo), std::move(aDebuggerParentEp));
     return;
   }
@@ -203,7 +203,7 @@ void RemoteWorkerService::RegisterRemoteDebugger(
   // For top-level workers in parent process, directly call RecvRegister().
   if (XRE_IsParentProcess() && NS_IsMainThread()) {
     MOZ_ASSERT(sRemoteWorkerService->mDebuggerManagerParent);
-    Unused << sRemoteWorkerService->mDebuggerManagerParent->RecvRegister(
+    (void)sRemoteWorkerService->mDebuggerManagerParent->RecvRegister(
         std::move(aDebuggerInfo), std::move(aDebuggerParentEp));
     return;
   }
@@ -217,7 +217,7 @@ void RemoteWorkerService::RegisterRemoteDebugger(
         RemoteWorkerService::RegisterRemoteDebugger(
             std::move(debuggerInfo), std::move(debuggerParentEp));
       });
-  Unused << NS_WARN_IF(
+  (void)NS_WARN_IF(
       NS_FAILED(sRemoteWorkerService->mThread->Dispatch(r.forget())));
 }
 

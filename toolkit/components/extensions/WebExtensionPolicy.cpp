@@ -9,6 +9,7 @@
 #include "mozilla/extensions/WebExtensionContentScript.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 
+#include "mozilla/glean/ExtensionsMetrics.h"
 #include "mozilla/AddonManagerWebAPI.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/WindowGlobalChild.h"
@@ -18,6 +19,7 @@
 #include "nsContentUtils.h"
 #include "nsEscape.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIConsoleService.h"
 #include "nsIObserver.h"
 #include "nsISubstitutingProtocolHandler.h"
 #include "nsLiteralString.h"
@@ -59,6 +61,12 @@ static const char kBackgroundPageHTMLEnd[] =
 #define BASE_CSP_PREF_V3 \
   "extensions.webextensions.base-content-security-policy.v3"
 #define DEFAULT_BASE_CSP_V3 "script-src 'self' 'wasm-unsafe-eval';"
+
+#define BASE_CSP_PREF_V3_WITH_LOCALHOST \
+  "extensions.webextensions.base-content-security-policy.v3-with-localhost"
+#define DEFAULT_BASE_CSP_V3_WITH_LOCALHOST                   \
+  "script-src 'self' 'wasm-unsafe-eval' http://localhost:* " \
+  "http://127.0.0.1:*;"
 
 static inline ExtensionPolicyService& EPS() {
   return ExtensionPolicyService::GetSingleton();
@@ -184,6 +192,7 @@ WebExtensionPolicyCore::WebExtensionPolicyCore(GlobalObject& aGlobal,
     : mPolicy(aPolicy),
       mId(NS_AtomizeMainThread(aInit.mId)),
       mName(aInit.mName),
+      mVersion(aInit.mVersion),
       mType(NS_AtomizeMainThread(aInit.mType)),
       mManifestVersion(aInit.mManifestVersion),
       mExtensionPageCSP(aInit.mExtensionPageCSP),
@@ -191,6 +200,7 @@ WebExtensionPolicyCore::WebExtensionPolicyCore(GlobalObject& aGlobal,
       mTemporarilyInstalled(aInit.mTemporarilyInstalled),
       mBackgroundWorkerScript(aInit.mBackgroundWorkerScript),
       mIgnoreQuarantine(aInit.mIsPrivileged || aInit.mIgnoreQuarantine),
+      mHasRecommendedState(aInit.mHasRecommendedState),
       mPermissions(new AtomSet(aInit.mPermissions)) {
   // In practice this is not necessary, but in tests where the uuid
   // passed in is not lowercased various tests can fail.
@@ -201,6 +211,13 @@ WebExtensionPolicyCore::WebExtensionPolicyCore(GlobalObject& aGlobal,
     nsresult rv = Preferences::GetString(BASE_CSP_PREF_V2, mBaseCSP);
     if (NS_FAILED(rv)) {
       mBaseCSP = NS_LITERAL_STRING_FROM_CSTRING(DEFAULT_BASE_CSP_V2);
+    }
+  } else if (mTemporarilyInstalled) {
+    nsresult rv =
+        Preferences::GetString(BASE_CSP_PREF_V3_WITH_LOCALHOST, mBaseCSP);
+    if (NS_FAILED(rv)) {
+      mBaseCSP =
+          NS_LITERAL_STRING_FROM_CSTRING(DEFAULT_BASE_CSP_V3_WITH_LOCALHOST);
     }
   } else {
     nsresult rv = Preferences::GetString(BASE_CSP_PREF_V3, mBaseCSP);
@@ -402,7 +419,7 @@ bool WebExtensionPolicy::Enable() {
     mBrowsingContextGroup = group->MakeKeepAlivePtr();
   }
 
-  Unused << Proto()->SetSubstitution(MozExtensionHostname(), BaseURI());
+  (void)Proto()->SetSubstitution(MozExtensionHostname(), BaseURI());
 
   mActive = true;
   return true;
@@ -422,7 +439,7 @@ bool WebExtensionPolicy::Disable() {
     mBrowsingContextGroup = nullptr;
   }
 
-  Unused << Proto()->SetSubstitution(MozExtensionHostname(), nullptr);
+  (void)Proto()->SetSubstitution(MozExtensionHostname(), nullptr);
 
   mActive = false;
   return true;
@@ -453,6 +470,10 @@ Result<nsString, nsresult> WebExtensionPolicy::GetURL(
 void WebExtensionPolicy::SetIgnoreQuarantine(bool aIgnore) {
   WebExtensionPolicy_Binding::ClearCachedIgnoreQuarantineValue(this);
   mCore->SetIgnoreQuarantine(aIgnore);
+}
+
+void WebExtensionPolicy::SetHasRecommendedState(bool aHasRecommendedState) {
+  mCore->SetHasRecommendedState(aHasRecommendedState);
 }
 
 void WebExtensionPolicy::RegisterContentScript(
@@ -554,7 +575,7 @@ bool WebExtensionPolicy::IsQuarantinedDoc(const DocInfo& aDoc) {
 /* static */
 bool WebExtensionPolicy::IsQuarantinedURI(const URLInfo& aURI) {
   // Ensure EPS is initialized before asking it about quarantined domains.
-  Unused << EPS();
+  (void)EPS();
 
   RefPtr<AtomSet> quarantinedDomains =
       ExtensionPolicyService::QuarantinedDomains();
@@ -765,7 +786,8 @@ WebExtensionContentScript::WebExtensionContentScript(
                          aRv),
       mRunAt(aInit.mRunAt),
       mWorld(aInit.mWorld),
-      mWorldId(aInit.mWorldId) {
+      mWorldId(aInit.mWorldId),
+      mCssOrigin(aInit.mCssOrigin) {
   mCssPaths.Assign(aInit.mCssPaths);
   mJsPaths.Assign(aInit.mJsPaths);
   mExtension = &aExtension;
@@ -881,11 +903,12 @@ bool MozDocumentMatcher::Matches(const DocInfo& aDoc,
     }
   }
 
-  return MatchesURI(urlinfo, aIgnorePermissions);
+  return MatchesURI(urlinfo, aIgnorePermissions, Some(aDoc));
 }
 
 bool MozDocumentMatcher::MatchesURI(const URLInfo& aURL,
-                                    bool aIgnorePermissions) const {
+                                    bool aIgnorePermissions,
+                                    const Maybe<DocInfo>& aDoc) const {
   MOZ_ASSERT((!mRestricted && !mCheckPermissions) || mExtension);
 
   if (MOZ_LIKELY(!mIsUserScript)) {
@@ -933,7 +956,59 @@ bool MozDocumentMatcher::MatchesURI(const URLInfo& aURL,
     return false;
   }
 
+  if (aURL.Scheme() == nsGkAtoms::moz_extension) {
+    bool allowed = StaticPrefs::
+        extensions_webextensions_allow_executeScript_in_moz_extension();
+
+    // Logging the deprecation warning and collecting telemetry if
+    // the call was originated from MozDocumentMatcher::Matches
+    // (and skip it if the method MatchesURI was called directly
+    // without passing the related DocInfo instance or if the
+    // innerWindowID could not be retrieved).
+    if (aDoc.isSome()) {
+      uint64_t innerWindowID;
+      nsresult rv = aDoc.value().GetInnerWindowID(&innerWindowID);
+      if (NS_SUCCEEDED(rv)) {
+        LogMozExtExecuteScriptDeprecationWarning(aURL, innerWindowID, allowed);
+
+        // Record telemetry events when a moz-extension Window global
+        // is matching a content script in addition to log the deprecation
+        // warning in the webconsole.
+        glean::extensions::match_moz_extension_document.Record(
+            Some(glean::extensions::MatchMozExtensionDocumentExtra(
+                Some(nsAtomCString(mExtension->Id()).get()),
+                Some(aDoc.value().IsTopLevel()), Some(!allowed))));
+      }
+    }
+
+    return allowed;
+  }
+
   return true;
+}
+
+void MozDocumentMatcher::LogMozExtExecuteScriptDeprecationWarning(
+    const URLInfo& aURL, uint64_t aInnerWindowID, bool aAllowed) const {
+  nsCOMPtr<nsIConsoleService> console(
+      do_GetService(NS_CONSOLESERVICE_CONTRACTID));
+  NS_ENSURE_TRUE_VOID(console);
+
+  nsCOMPtr<nsIScriptError> error(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
+  NS_ENSURE_TRUE_VOID(error);
+
+  nsPrintfCString warnMsg(
+      "Content Script execution in moz-extension document "
+      "has been deprecated %s (Extension ID: %s).",
+      aAllowed ? "and will be removed in Firefox 152"
+               : "and it has been blocked",
+      nsAtomCString(mExtension->Id()).get());
+
+  nsresult rv = error->InitWithWindowID(
+      NS_ConvertUTF8toUTF16(warnMsg), aURL.CSpec(), 0, 0,
+      nsIScriptError::warningFlag, "content javascript"_ns, aInnerWindowID,
+      true /* from chrome context */);
+  NS_ENSURE_TRUE_VOID(NS_SUCCEEDED(rv));
+  console->LogMessage(error);
 }
 
 bool MozDocumentMatcher::MatchesWindowGlobal(WindowGlobalChild& aWindow,
@@ -1005,9 +1080,7 @@ void DocumentObserver::Observe(
   }
 }
 
-void DocumentObserver::Disconnect() {
-  Unused << EPS().UnregisterObserver(*this);
-}
+void DocumentObserver::Disconnect() { (void)EPS().UnregisterObserver(*this); }
 
 void DocumentObserver::NotifyMatch(MozDocumentMatcher& aMatcher,
                                    nsPIDOMWindowOuter* aWindow) {
@@ -1077,9 +1150,10 @@ bool DocInfo::IsTopLevelOpaqueAboutBlank() const {
         bool isFinalAboutBlankDoc =
             mThis.URL().Scheme() == nsGkAtoms::about &&
             mThis.URL().Spec().EqualsLiteral("about:blank") &&
-            // Exclude initial about:blank to avoid matching initial about:blank
-            // of pending loads in the parent process, see bug 1901894.
-            !aWin->GetDoc()->IsInitialDocument();
+            // Exclude uncommitted initial about:blank to avoid matching
+            // about:blank of pending non-blank loads in the parent process,
+            // see bug 1901894.
+            !aWin->GetDoc()->IsUncommittedInitialDocument();
 
         // Principal() is expected to never be nullptr given a Window.
         MOZ_ASSERT(mThis.Principal());
@@ -1173,6 +1247,17 @@ uint64_t DocInfo::FrameID() const {
     }
   }
   return mFrameID.ref();
+}
+
+nsresult DocInfo::GetInnerWindowID(uint64_t* aInnerWindowID) const {
+  // This method is currently only going to retrieve the innerWindowID
+  // for non-preloading scripts and a Window global is actually available.
+  nsPIDOMWindowOuter* piWindow = GetWindow();
+  NS_ENSURE_TRUE(piWindow, NS_ERROR_FAILURE);
+  RefPtr<dom::Document> docNode = piWindow->GetDoc();
+  NS_ENSURE_TRUE(docNode, NS_ERROR_FAILURE);
+  *aInnerWindowID = docNode->InnerWindowID();
+  return NS_OK;
 }
 
 nsIPrincipal* DocInfo::Principal() const {

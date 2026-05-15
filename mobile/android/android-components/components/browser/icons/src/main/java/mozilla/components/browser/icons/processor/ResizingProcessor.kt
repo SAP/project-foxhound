@@ -28,6 +28,11 @@ class ResizingProcessor(
         desiredSize: DesiredSize,
     ): Icon? {
         val originalBitmap = icon.bitmap
+
+        if (originalBitmap.isRecycled) {
+            return icon
+        }
+
         val size = originalBitmap.width
         val (targetSize, _, _, maxScaleFactor) = desiredSize
 
@@ -51,7 +56,7 @@ class ResizingProcessor(
             }
         }
 
-        return icon.copy(bitmap = resizedBitmap ?: return null)
+        return resizedBitmap?.let { icon.copy(bitmap = it) }
     }
 
     /**

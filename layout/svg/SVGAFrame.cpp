@@ -9,7 +9,6 @@
 #include "gfxMatrix.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGContainerFrame.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGAElement.h"
 
 nsIFrame* NS_NewSVGAFrame(mozilla::PresShell* aPresShell,

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<meta charset=utf-8>
+<title>Test an imported module has an error to rethrow when import()</title>
+<script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+<script type="module" src="./import_parse_error.mjs"></script>
+<script>
+  SimpleTest.waitForExplicitFinish();
+
+  let hasErrorToRethrow = false;
+  let cachedError;
+  window.onerror = (_1, _2, _3, _4, error) => {
+    hasErrorToRethrow = true;
+    cachedError = error;
+  };
+
+  function testLoaded() {
+    // The top-level script "import_parse.error.mjs" has an error to rethrow.
+    is(hasErrorToRethrow, true, "hasErrorToRethrow should be set to true");
+
+    // Dynamic import the same module with an error to rethrow.
+    import("./import_parse_error.mjs").then(() => {
+      ok(false, "Should have thrown SyntaxError");
+    }).catch((e) => {
+      ok(e instanceof SyntaxError , "Should throw a SyntaxError");
+      ok(e === cachedError, "The same error object should be thrown");
+    });
+
+    // Dynamic import a module which has an error to rethrow.
+    import("./import_parse_error_3.mjs").then(() => {
+      ok(false, "Should have thrown SyntaxError");
+    }).catch((e) => {
+      ok(e instanceof SyntaxError , "Should throw a SyntaxError");
+      ok(e === cachedError, "The same error object should be thrown");
+      SimpleTest.finish();
+    });
+  }
+</script>
+<body onload='testLoaded()'></body>

@@ -6,7 +6,7 @@ add_setup(async function setup() {
     set: [["browser.urlbar.scotchBonnet.enableOverride", true]],
   });
 
-  let oldDefaultEngine = await Services.search.getDefault();
+  let oldDefaultEngine = await SearchService.getDefault();
 
   await SearchTestUtils.installSearchExtension(
     {
@@ -24,9 +24,9 @@ add_setup(async function setup() {
   });
 
   registerCleanupFunction(async function () {
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       oldDefaultEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
     await PlacesUtils.history.clear();
   });
@@ -61,7 +61,7 @@ add_task(async function test_engine_searchmode_after_result_nav() {
   Assert.equal(gURLBar.value, "https://example.com/search?q=testing");
 
   info("Press the close button and escape search mode");
-  window.document.querySelector("#searchmode-switcher-close").click();
+  gURLBar.querySelector(".searchmode-switcher-close").click();
   await UrlbarTestUtils.assertSearchMode(window, null);
   gBrowser.removeTab(tab);
 });
@@ -85,7 +85,7 @@ add_task(async function test_local_searchmode_after_result_nav() {
 
   info("Press on the bing menu button and enter search mode");
   let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
-  popup.querySelector("menuitem[label=Bookmarks]").click();
+  popup.querySelector("#search-button-bookmarks").click();
   await popupHidden;
 
   await UrlbarTestUtils.assertSearchMode(window, {
@@ -96,7 +96,7 @@ add_task(async function test_local_searchmode_after_result_nav() {
   Assert.equal(gURLBar.value, "https://example.com/search?q=testing");
 
   info("Press the close button and escape search mode");
-  window.document.querySelector("#searchmode-switcher-close").click();
+  gURLBar.querySelector(".searchmode-switcher-close").click();
   await UrlbarTestUtils.assertSearchMode(window, null);
 
   gBrowser.removeTab(tab);

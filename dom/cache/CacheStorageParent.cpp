@@ -7,7 +7,6 @@
 #include "mozilla/dom/cache/CacheStorageParent.h"
 
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/cache/ActorUtils.h"
 #include "mozilla/dom/cache/CacheOpParent.h"
 #include "mozilla/dom/cache/ManagerId.h"
@@ -21,29 +20,34 @@ using mozilla::ipc::PrincipalInfo;
 
 // declared in ActorUtils.h
 already_AddRefed<PCacheStorageParent> AllocPCacheStorageParent(
-    PBackgroundParent* aManagingActor, Namespace aNamespace,
+    mozilla::ipc::PBackgroundParent* aBackgroundIPCActor,
+    PBoundStorageKeyParent* aBoundStorageKeyActor, Namespace aNamespace,
     const mozilla::ipc::PrincipalInfo& aPrincipalInfo) {
   if (NS_WARN_IF(!quota::IsPrincipalInfoValid(aPrincipalInfo))) {
     MOZ_ASSERT(false);
     return nullptr;
   }
 
-  return MakeAndAddRef<CacheStorageParent>(aManagingActor, aNamespace,
-                                           aPrincipalInfo);
+  return MakeAndAddRef<CacheStorageParent>(
+      aBackgroundIPCActor, aBoundStorageKeyActor, aNamespace, aPrincipalInfo);
 }
 
 // declared in ActorUtils.h
 void DeallocPCacheStorageParent(PCacheStorageParent* aActor) { delete aActor; }
 
-CacheStorageParent::CacheStorageParent(PBackgroundParent* aManagingActor,
-                                       Namespace aNamespace,
-                                       const PrincipalInfo& aPrincipalInfo)
-    : mNamespace(aNamespace), mVerifiedStatus(NS_OK) {
+CacheStorageParent::CacheStorageParent(
+    mozilla::ipc::PBackgroundParent* aIPCActor,
+    PBoundStorageKeyParent* aBoundStorageKeyActor, Namespace aNamespace,
+    const PrincipalInfo& aPrincipalInfo)
+    : mBackgroundIPCActor(aIPCActor),
+      mBoundStorageKeyActor(aBoundStorageKeyActor),
+      mNamespace(aNamespace),
+      mVerifiedStatus(NS_OK) {
   MOZ_COUNT_CTOR(cache::CacheStorageParent);
-  MOZ_DIAGNOSTIC_ASSERT(aManagingActor);
+  MOZ_DIAGNOSTIC_ASSERT(mBackgroundIPCActor);
 
   // Start the async principal verification process immediately.
-  mVerifier = PrincipalVerifier::CreateAndDispatch(*this, aManagingActor,
+  mVerifier = PrincipalVerifier::CreateAndDispatch(*this, mBackgroundIPCActor,
                                                    aPrincipalInfo);
   MOZ_DIAGNOSTIC_ASSERT(mVerifier);
 }
@@ -70,7 +74,10 @@ PCacheOpParent* CacheStorageParent::AllocPCacheOpParent(
     MOZ_CRASH("Invalid operation sent to CacheStorage actor!");
   }
 
-  return new CacheOpParent(Manager(), mNamespace, aOpArgs);
+  return new CacheOpParent(mBoundStorageKeyActor
+                               ? WeakRefParentType(mBoundStorageKeyActor)
+                               : WeakRefParentType(mBackgroundIPCActor),
+                           aOpArgs, INVALID_CACHE_ID, mNamespace);
 }
 
 bool CacheStorageParent::DeallocPCacheOpParent(PCacheOpParent* aActor) {

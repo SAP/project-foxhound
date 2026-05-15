@@ -7,8 +7,6 @@
 #ifndef js_GlobalObject_h
 #define js_GlobalObject_h
 
-#include "mozilla/Attributes.h"
-
 #include "jstypes.h"
 
 #include "js/TypeDecls.h"

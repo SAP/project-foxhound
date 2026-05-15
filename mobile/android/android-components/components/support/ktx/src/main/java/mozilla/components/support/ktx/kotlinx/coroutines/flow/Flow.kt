@@ -4,10 +4,12 @@
 
 package mozilla.components.support.ktx.kotlinx.coroutines.flow
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapConcat
+import kotlinx.coroutines.flow.flow
 
 /**
  * Returns a [Flow] containing only changed elements of the lists of the original [Flow].
@@ -48,6 +50,7 @@ import kotlinx.coroutines.flow.flatMapConcat
  * ---
  * ```
  */
+@OptIn(ExperimentalCoroutinesApi::class) // flatMapConcat
 fun <T, R> Flow<List<T>>.filterChanged(transform: (T) -> R): Flow<T> {
     var lastMappedValues: Map<T, R>? = null
     return flatMapConcat { values ->
@@ -93,6 +96,48 @@ fun <T> Flow<T>.ifAnyChanged(transform: (T) -> Array<Any?>): Flow<T> {
             true
         } else {
             false
+        }
+    }
+}
+
+/**
+ * Partition the elements emitted by the original flow in groups of [size] elements, with each new emission
+ * being advanced by [step] elements.
+ *
+ * @param size the number of elements to take in each window.
+ * @param step the number of elements to move forward between windows.
+ * @param partialWindows if `true`, windows at the end of the flow that are smaller than [size]
+ * will also be emitted.
+ */
+fun <T> Flow<T>.windowed(size: Int, step: Int, partialWindows: Boolean = false): Flow<List<T>> = flow {
+    require(size > 0 && step > 0) { "size and step must be positive, was size=$size, step=$step" }
+
+    val window = ArrayDeque<T>(size)
+
+    /**
+     * Helper function to emit the current window and slide it forward by the step size.
+     */
+    suspend fun emitAndSlide() {
+        emit(window.toList())
+        repeat(step) {
+            if (window.isEmpty()) return@repeat
+            window.removeFirst()
+        }
+    }
+
+    collect { element ->
+        window.addLast(element)
+
+        // Emit whenever a full window is ready.
+        if (window.size == size) {
+            emitAndSlide()
+        }
+    }
+
+    // Handle any remaining partial windows after the main collection is done.
+    if (partialWindows) {
+        while (window.isNotEmpty()) {
+            emitAndSlide()
         }
     }
 }

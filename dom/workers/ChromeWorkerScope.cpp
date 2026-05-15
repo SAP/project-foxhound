@@ -6,11 +6,10 @@
 
 #include "ChromeWorkerScope.h"
 
-#include "jsapi.h"
+#include "js/MemoryFunctions.h"
 #include "js/PropertyAndElement.h"  // JS_GetProperty
 #include "js/experimental/CTypes.h"  // JS::InitCTypesClass, JS::CTypesCallbacks, JS::SetCTypesCallbacks
-#include "js/MemoryFunctions.h"
-
+#include "jsapi.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsString.h"
 

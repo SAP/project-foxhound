@@ -4,7 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <vector>
+#ifndef GFX_TESTS_GTEST_TEXTUREHELPER_H_
+#define GFX_TESTS_GTEST_TEXTUREHELPER_H_
 
 #include "Types.h"
 #include "gfxImageSurface.h"
@@ -132,3 +133,5 @@ already_AddRefed<TextureHost> CreateTextureHostWithBackend(
 
 }  // namespace layers
 }  // namespace mozilla
+
+#endif  // GFX_TESTS_GTEST_TEXTUREHELPER_H_

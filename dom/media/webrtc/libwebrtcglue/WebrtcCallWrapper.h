@@ -9,10 +9,10 @@
 
 #include <set>
 
+#include "SystemTime.h"
 #include "domstubs.h"
 #include "jsapi/RTCStatsReport.h"
 #include "nsISupportsImpl.h"
-#include "SystemTime.h"
 
 // libwebrtc includes
 #include "api/video/builtin_video_bitrate_allocator_factory.h"

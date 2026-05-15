@@ -137,7 +137,7 @@ int nr_socket_buffered_stun_create(nr_socket *inner, int max_pending,
   nr_socket_buffered_stun *sock = 0;
   size_t frame_size;
 
-  if (!(sock = RCALLOC(sizeof(nr_socket_buffered_stun))))
+  if (!(sock = R_NEW(nr_socket_buffered_stun)))
     ABORT(R_NO_MEMORY);
 
   sock->inner = inner;
@@ -163,7 +163,7 @@ int nr_socket_buffered_stun_create(nr_socket *inner, int max_pending,
   }
 
   /* TODO(ekr@rtfm.com): Check this */
-  if (!(sock->buffer = RMALLOC(sock->buffer_size)))
+  if (!(sock->buffer = (UCHAR*)RMALLOC(sock->buffer_size)))
     ABORT(R_NO_MEMORY);
 
   sock->read_state = NR_ICE_SOCKET_READ_NONE;
@@ -239,7 +239,7 @@ static int nr_socket_buffered_stun_sendto(void *obj,const void *msg, size_t len,
     if (len > NR_MAX_FRAME_SIZE)
       ABORT(R_FAILED);
 
-    if (!(frame = RMALLOC(len + sizeof(nr_frame_header))))
+    if (!(frame = (nr_frame_header*)RMALLOC(len + sizeof(nr_frame_header))))
       ABORT(R_NO_MEMORY);
 
     frame->frame_length = htons(len);

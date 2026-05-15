@@ -3,7 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 /// Bloom filter for relative selectors.
-use fxhash::FxHashMap;
+use rustc_hash::FxHashMap;
 
 use crate::bloom::BloomFilter;
 use crate::context::QuirksMode;
@@ -128,15 +128,15 @@ impl RelativeSelectorFilterMap {
         }
         let is_sibling = matches!(
             selector.match_hint,
-            RelativeSelectorMatchHint::InSibling |
-                RelativeSelectorMatchHint::InNextSiblingSubtree |
-                RelativeSelectorMatchHint::InSiblingSubtree
+            RelativeSelectorMatchHint::InSibling
+                | RelativeSelectorMatchHint::InNextSiblingSubtree
+                | RelativeSelectorMatchHint::InSiblingSubtree
         );
         let is_subtree = matches!(
             selector.match_hint,
-            RelativeSelectorMatchHint::InSubtree |
-                RelativeSelectorMatchHint::InNextSiblingSubtree |
-                RelativeSelectorMatchHint::InSiblingSubtree
+            RelativeSelectorMatchHint::InSubtree
+                | RelativeSelectorMatchHint::InNextSiblingSubtree
+                | RelativeSelectorMatchHint::InSiblingSubtree
         );
         let kind = if is_subtree {
             TraversalKind::Descendants

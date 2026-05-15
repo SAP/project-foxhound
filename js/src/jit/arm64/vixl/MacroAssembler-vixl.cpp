@@ -480,19 +480,7 @@ void MacroAssembler::Mov(const Register& rd,
     EmitExtendShift(rd, operand.reg(), operand.extend(),
                     operand.shift_amount());
   } else {
-    // Otherwise, emit a register move only if the registers are distinct, or
-    // if they are not X registers.
-    //
-    // Note that mov(w0, w0) is not a no-op because it clears the top word of
-    // x0. A flag is provided (kDiscardForSameWReg) if a move between the same W
-    // registers is not required to clear the top word of the X register. In
-    // this case, the instruction is discarded.
-    //
-    // If the sp is an operand, add #0 is emitted, otherwise, orr #0.
-    if (!rd.Is(operand.reg()) || (rd.Is32Bits() &&
-                                  (discard_mode == kDontDiscardForSameWReg))) {
-      mov(rd, operand.reg());
-    }
+    Mov(rd, operand.reg(), discard_mode);
   }
 }
 
@@ -846,6 +834,34 @@ void MacroAssembler::Adds(const Register& rd,
   Add(rd, rn, operand, SetFlags);
 }
 
+#define MINMAX(V)        \
+  V(Smax, smax, IsInt8)  \
+  V(Smin, smin, IsInt8)  \
+  V(Umax, umax, IsUint8) \
+  V(Umin, umin, IsUint8)
+
+#define VIXL_DEFINE_MASM_FUNC(MASM, ASM, RANGE)      \
+  void MacroAssembler::MASM(const Register& rd,      \
+                            const Register& rn,      \
+                            const Operand& op) {     \
+    if (op.IsImmediate()) {                          \
+      int64_t imm = op.GetImmediate();               \
+      if (!RANGE(imm)) {                             \
+        UseScratchRegisterScope temps(this);         \
+        Register temp = temps.AcquireSameSizeAs(rd); \
+        Mov(temp, imm);                              \
+        MASM(rd, rn, temp);                          \
+        return;                                      \
+      }                                              \
+    }                                                \
+    SingleEmissionCheckScope guard(this);            \
+    ASM(rd, rn, op);                                 \
+  }
+MINMAX(VIXL_DEFINE_MASM_FUNC)
+#undef VIXL_DEFINE_MASM_FUNC
+
+// Mozilla change: Undefine MINMAX
+#undef MINMAX
 
 void MacroAssembler::Sub(const Register& rd,
                          const Register& rn,

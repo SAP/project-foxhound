@@ -9,7 +9,6 @@
 #include "js/PropertyAndElement.h"  // JS_GetProperty, JS_HasProperty
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryProcessEnums.h"
-#include "mozilla/Unused.h"
 #include "nsJSUtils.h"  // nsAutoJSString
 #include "nsThreadUtils.h"
 #include "TelemetryFixture.h"
@@ -30,7 +29,7 @@ TEST_F(TelemetryTestFixture, ScalarUnsigned) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
   // Make sure we don't get scalars from other tests.
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
   // Set the test scalar to a known value.
   const uint32_t kInitialValue = 1172015;
@@ -65,7 +64,7 @@ TEST_F(TelemetryTestFixture, ScalarUnsigned) {
 TEST_F(TelemetryTestFixture, ScalarBoolean) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
   // Set the test scalar to a known value.
   TelemetryScalar::Set(Telemetry::ScalarID::TELEMETRY_TEST_BOOLEAN_KIND, true);
@@ -91,7 +90,7 @@ TEST_F(TelemetryTestFixture, ScalarBoolean) {
 TEST_F(TelemetryTestFixture, ScalarString) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
   // Set the test scalar to a known value.
   TelemetryScalar::Set(Telemetry::ScalarID::TELEMETRY_TEST_STRING_KIND,
@@ -117,7 +116,7 @@ TEST_F(TelemetryTestFixture, ScalarString) {
 TEST_F(TelemetryTestFixture, KeyedScalarUnsigned) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
   // Set the test scalar to a known value.
   const char* kScalarName = "telemetry.test.keyed_unsigned_int";
@@ -154,7 +153,7 @@ TEST_F(TelemetryTestFixture, KeyedScalarUnsigned) {
 TEST_F(TelemetryTestFixture, KeyedScalarBoolean) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
   // Set the test scalar to a known value.
   TelemetryScalar::Set(Telemetry::ScalarID::TELEMETRY_TEST_KEYED_BOOLEAN_KIND,
@@ -187,7 +186,7 @@ TEST_F(TelemetryTestFixture, KeyedScalarBoolean) {
 TEST_F(TelemetryTestFixture, NonMainThreadAdd) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
   // Define the function that will be called on the testing thread.
   nsCOMPtr<nsIRunnable> runnable = NS_NewRunnableFunction(
@@ -216,7 +215,7 @@ TEST_F(TelemetryTestFixture, ScalarUnknownID) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
   // Make sure we don't get scalars from other tests.
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
 // Don't run this part in debug builds as that intentionally asserts.
 #ifndef DEBUG
@@ -252,62 +251,10 @@ TEST_F(TelemetryTestFixture, ScalarUnknownID) {
 #endif
 }
 
-TEST_F(TelemetryTestFixture, ScalarEventSummary) {
-  AutoJSContextWithGlobal cx(mCleanGlobal);
-
-  // Make sure we don't get scalars from other tests.
-  Unused << mTelemetry->ClearScalars();
-
-  const char* kScalarName = "telemetry.event_counts";
-
-  const char* kLongestEvent =
-      "oohwowlookthiscategoryissolong#thismethodislongtooo#"
-      "thisobjectisnoslouch";
-  TelemetryScalar::SummarizeEvent(nsCString(kLongestEvent), ProcessID::Parent);
-
-  // Check the recorded value.
-  JS::Rooted<JS::Value> scalarsSnapshot(cx.GetJSContext());
-  GetScalarsSnapshot(true, cx.GetJSContext(), &scalarsSnapshot);
-
-  CheckKeyedUintScalar(kScalarName, kLongestEvent, cx.GetJSContext(),
-                       scalarsSnapshot, 1);
-
-// Don't run this part in debug builds as that intentionally asserts.
-#ifndef DEBUG
-  const char* kTooLongEvent =
-      "oohwowlookthiscategoryissolong#thismethodislongtooo#"
-      "thisobjectisnoslouch2";
-  TelemetryScalar::SummarizeEvent(nsCString(kTooLongEvent), ProcessID::Parent);
-
-  GetScalarsSnapshot(true, cx.GetJSContext(), &scalarsSnapshot);
-  CheckNumberOfProperties(kScalarName, cx.GetJSContext(), scalarsSnapshot, 1);
-#endif  // #ifndef DEBUG
-
-  // Test we can fill the next 499 keys up to our 500 maximum
-  for (int i = 1; i < 500; i++) {
-    std::ostringstream eventName;
-    eventName << "category#method#object" << i;
-    TelemetryScalar::SummarizeEvent(nsCString(eventName.str().c_str()),
-                                    ProcessID::Parent);
-  }
-
-  GetScalarsSnapshot(true, cx.GetJSContext(), &scalarsSnapshot);
-  CheckNumberOfProperties(kScalarName, cx.GetJSContext(), scalarsSnapshot, 500);
-
-// Don't run this part in debug builds as that intentionally asserts.
-#ifndef DEBUG
-  TelemetryScalar::SummarizeEvent(nsCString("whoops#too#many"),
-                                  ProcessID::Parent);
-
-  GetScalarsSnapshot(true, cx.GetJSContext(), &scalarsSnapshot);
-  CheckNumberOfProperties(kScalarName, cx.GetJSContext(), scalarsSnapshot, 500);
-#endif  // #ifndef DEBUG
-}
-
 TEST_F(TelemetryTestFixture, TestKeyedScalarAllowedKeys) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
   // Make sure we don't get scalars from other tests.
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
   const uint32_t kExpectedUint = 1172017;
 
@@ -348,7 +295,7 @@ TEST_F(TelemetryTestFixture, TooLongKey) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
   // Make sure we don't get scalars from other tests.
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
 // Don't run this part in debug builds as that intentionally asserts.
 #ifndef DEBUG
@@ -383,7 +330,7 @@ TEST_F(TelemetryTestFixture, EmptyKey) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
   // Make sure we don't get scalars from other tests.
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
 // Don't run this part in debug builds as that intentionally asserts.
 #ifndef DEBUG
@@ -417,7 +364,7 @@ TEST_F(TelemetryTestFixture, TooManyKeys) {
   AutoJSContextWithGlobal cx(mCleanGlobal);
 
   // Make sure we don't get scalars from other tests.
-  Unused << mTelemetry->ClearScalars();
+  (void)mTelemetry->ClearScalars();
 
 // Don't run this part in debug builds as that intentionally asserts.
 #ifndef DEBUG

@@ -7,11 +7,11 @@
 #ifndef DOM_SVG_SVGANIMATEDPATHSEGLIST_H_
 #define DOM_SVG_SVGANIMATEDPATHSEGLIST_H_
 
-#include "mozilla/Attributes.h"
+#include <memory>
+
+#include "SVGPathData.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
-#include "SVGPathData.h"
 
 namespace mozilla {
 
@@ -46,7 +46,7 @@ class SVGAnimatedPathSegList final {
   SVGAnimatedPathSegList& operator=(const SVGAnimatedPathSegList& aOther) {
     mBaseVal = aOther.mBaseVal;
     if (aOther.mAnimVal) {
-      mAnimVal = MakeUnique<SVGPathData>(*aOther.mAnimVal);
+      mAnimVal = std::make_unique<SVGPathData>(*aOther.mAnimVal);
     }
     return *this;
   }
@@ -92,7 +92,7 @@ class SVGAnimatedPathSegList final {
 
   bool IsAnimating() const { return !!mAnimVal; }
 
-  UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(dom::SVGElement* aElement);
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
 
@@ -103,7 +103,7 @@ class SVGAnimatedPathSegList final {
   // the empty string (<set to="">).
 
   SVGPathData mBaseVal;
-  UniquePtr<SVGPathData> mAnimVal;
+  std::unique_ptr<SVGPathData> mAnimVal;
 
   struct SMILAnimatedPathSegList : public SMILAttr {
    public:

@@ -9,9 +9,9 @@
 
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
+#include "nsINamed.h"
 #include "nsIRunnable.h"
 #include "nsITimer.h"
-#include "nsINamed.h"
 
 namespace mozilla::dom {
 

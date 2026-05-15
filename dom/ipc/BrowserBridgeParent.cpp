@@ -13,10 +13,10 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentProcessManager.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/InputAPZContext.h"
@@ -152,25 +152,25 @@ void BrowserBridgeParent::Destroy() {
     mBrowserParent = nullptr;
   }
   if (CanSend()) {
-    Unused << Send__delete__(this);
+    (void)Send__delete__(this);
   }
 }
 
 IPCResult BrowserBridgeParent::RecvShow(const OwnerShowInfo& aOwnerInfo) {
   mBrowserParent->AttachWindowRenderer();
-  Unused << mBrowserParent->SendShow(mBrowserParent->GetShowInfo(), aOwnerInfo);
+  (void)mBrowserParent->SendShow(mBrowserParent->GetShowInfo(), aOwnerInfo);
   return IPC_OK();
 }
 
 IPCResult BrowserBridgeParent::RecvScrollbarPreferenceChanged(
     ScrollbarPreference aPref) {
-  Unused << mBrowserParent->SendScrollbarPreferenceChanged(aPref);
+  (void)mBrowserParent->SendScrollbarPreferenceChanged(aPref);
   return IPC_OK();
 }
 
 IPCResult BrowserBridgeParent::RecvLoadURL(nsDocShellLoadState* aLoadState) {
-  Unused << mBrowserParent->SendLoadURL(WrapNotNull(aLoadState),
-                                        mBrowserParent->GetShowInfo());
+  (void)mBrowserParent->SendLoadURL(WrapNotNull(aLoadState),
+                                    mBrowserParent->GetShowInfo());
   return IPC_OK();
 }
 
@@ -186,24 +186,24 @@ IPCResult BrowserBridgeParent::RecvUpdateDimensions(
 }
 
 IPCResult BrowserBridgeParent::RecvUpdateEffects(const EffectsInfo& aEffects) {
-  Unused << mBrowserParent->SendUpdateEffects(aEffects);
+  (void)mBrowserParent->SendUpdateEffects(aEffects);
   return IPC_OK();
 }
 
 IPCResult BrowserBridgeParent::RecvUpdateRemotePrintSettings(
     const embedding::PrintData& aPrintData) {
-  Unused << mBrowserParent->SendUpdateRemotePrintSettings(aPrintData);
+  (void)mBrowserParent->SendUpdateRemotePrintSettings(aPrintData);
   return IPC_OK();
 }
 
 IPCResult BrowserBridgeParent::RecvRenderLayers(const bool& aEnabled) {
-  Unused << mBrowserParent->SendRenderLayers(aEnabled);
+  (void)mBrowserParent->SendRenderLayers(aEnabled);
   return IPC_OK();
 }
 
 IPCResult BrowserBridgeParent::RecvNavigateByKey(
     const bool& aForward, const bool& aForDocumentNavigation) {
-  Unused << mBrowserParent->SendNavigateByKey(aForward, aForDocumentNavigation);
+  (void)mBrowserParent->SendNavigateByKey(aForward, aForDocumentNavigation);
   return IPC_OK();
 }
 
@@ -225,7 +225,7 @@ IPCResult BrowserBridgeParent::RecvDispatchSynthesizedMouseEvent(
   }
 
   WidgetMouseEvent event = aEvent;
-  event.mWidget = widget;
+  event.mWidget = std::move(widget);
   // Convert mRefPoint from the dispatching child process coordinate space
   // to the parent coordinate space. The SendRealMouseEvent call will convert
   // it into the dispatchee child process coordinate space
@@ -243,7 +243,7 @@ IPCResult BrowserBridgeParent::RecvDispatchSynthesizedMouseEvent(
 }
 
 IPCResult BrowserBridgeParent::RecvWillChangeProcess() {
-  Unused << mBrowserParent->SendWillChangeProcess();
+  (void)mBrowserParent->SendWillChangeProcess();
   return IPC_OK();
 }
 
@@ -260,7 +260,7 @@ IPCResult BrowserBridgeParent::RecvDeactivate(const bool& aWindowLowering,
 
 mozilla::ipc::IPCResult BrowserBridgeParent::RecvUpdateRemoteStyle(
     const StyleImageRendering& aImageRendering) {
-  Unused << mBrowserParent->SendUpdateRemoteStyle(aImageRendering);
+  (void)mBrowserParent->SendUpdateRemoteStyle(aImageRendering);
   return IPC_OK();
 }
 
@@ -280,10 +280,13 @@ IPCResult BrowserBridgeParent::RecvSetEmbedderAccessible(
 #  if defined(ANDROID)
   MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
 #  endif
-  MOZ_ASSERT(aDoc || mEmbedderAccessibleDoc,
-             "Embedder doc shouldn't be cleared if it wasn't set");
-  MOZ_ASSERT(!mEmbedderAccessibleDoc || !aDoc || mEmbedderAccessibleDoc == aDoc,
-             "Embedder doc shouldn't change from one doc to another");
+  if (!aDoc && !mEmbedderAccessibleDoc) {
+    return IPC_FAIL(this, "Embedder doc shouldn't be cleared if it wasn't set");
+  }
+  if (mEmbedderAccessibleDoc && aDoc && mEmbedderAccessibleDoc != aDoc) {
+    return IPC_FAIL(this,
+                    "Embedder doc shouldn't change from one doc to another");
+  }
   if (!aDoc && mEmbedderAccessibleDoc &&
       !mEmbedderAccessibleDoc->IsShutdown()) {
     // We're clearing the embedder doc, so remove the pending child doc addition
@@ -293,14 +296,22 @@ IPCResult BrowserBridgeParent::RecvSetEmbedderAccessible(
   mEmbedderAccessibleDoc = static_cast<a11y::DocAccessibleParent*>(aDoc);
   mEmbedderAccessibleID = aID;
   if (!aDoc) {
-    MOZ_ASSERT(!aID);
+    if (aID) {
+      return IPC_FAIL(this, "Attempt to clear embedder but id given");
+    }
     return IPC_OK();
   }
-  MOZ_ASSERT(aID);
+  if (!aID) {
+    return IPC_FAIL(this, "Attempt to set embedder without id");
+  }
   if (GetDocAccessibleParent()) {
     // The embedded DocAccessibleParent has already been created. This can
-    // happen if, for example, an iframe is hidden and then shown or
-    // an iframe is reflowed by layout.
+    // happen if, for example, an iframe is hidden and then shown or an iframe
+    // Accessible is re-created. In the case of re-creation, the old iframe
+    // Accessible still exists at this point because this IPDL message is
+    // received *before* we receive the accessibility hide and show events. This
+    // is okay; DocAccessibleParent will store this as a pending OOP child
+    // document and add it when the new OuterDocAccessible arrives.
     mEmbedderAccessibleDoc->AddChildDoc(this);
   }
   return IPC_OK();

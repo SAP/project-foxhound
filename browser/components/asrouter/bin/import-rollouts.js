@@ -185,9 +185,8 @@ async function format(content) {
 
 async function main() {
   const { default: meow } = await import("meow");
-  const { MESSAGING_EXPERIMENTS_DEFAULT_FEATURES } = await import(
-    "../modules/MessagingExperimentConstants.sys.mjs"
-  );
+  const { MESSAGING_EXPERIMENTS_DEFAULT_FEATURES } =
+    await import("../modules/MessagingExperimentConstants.sys.mjs");
 
   const fileUrl = pathToFileURL(__filename);
 

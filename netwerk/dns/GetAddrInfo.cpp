@@ -29,6 +29,7 @@
 #include "prerror.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/net/DNSPacket.h"
 #include "nsIDNSService.h"
@@ -36,13 +37,29 @@
 
 namespace mozilla::net {
 
+static StaticMutex gOverrideServiceMutex;
 static StaticRefPtr<NativeDNSResolverOverride> gOverrideService;
+static Atomic<bool, Relaxed> gOverrideServiceUsed{false};
 
 LazyLogModule gGetAddrInfoLog("GetAddrInfo");
 #define LOG(msg, ...) \
   MOZ_LOG(gGetAddrInfoLog, LogLevel::Debug, ("[DNS]: " msg, ##__VA_ARGS__))
 #define LOG_WARNING(msg, ...) \
   MOZ_LOG(gGetAddrInfoLog, LogLevel::Warning, ("[DNS]: " msg, ##__VA_ARGS__))
+
+static already_AddRefed<NativeDNSResolverOverride> GetOverrideSingleton() {
+  StaticMutexAutoLock lock(gOverrideServiceMutex);
+  if (!gOverrideService) {
+    gOverrideService = new NativeDNSResolverOverride();
+    gOverrideServiceUsed = true;
+    RunOnShutdown([] {
+      gOverrideServiceUsed = false;
+      StaticMutexAutoLock lock(gOverrideServiceMutex);
+      gOverrideService = nullptr;
+    });
+  }
+  return do_AddRef(gOverrideService);
+}
 
 #ifdef DNSQUERY_AVAILABLE
 
@@ -318,7 +335,11 @@ nsresult GetAddrInfoShutdown() {
 
 bool FindAddrOverride(const nsACString& aHost, uint16_t aAddressFamily,
                       nsIDNSService::DNSFlags aFlags, AddrInfo** aAddrInfo) {
-  RefPtr<NativeDNSResolverOverride> overrideService = gOverrideService;
+  if (!gOverrideServiceUsed) {
+    return false;
+  }
+
+  RefPtr<NativeDNSResolverOverride> overrideService = GetOverrideSingleton();
   if (!overrideService) {
     return false;
   }
@@ -373,7 +394,7 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
 #endif
 
   // If there is an override for this host, then we synthetize a result.
-  if (gOverrideService &&
+  if (gOverrideServiceUsed &&
       FindAddrOverride(aHost, aAddressFamily, aFlags, aAddrInfo)) {
     LOG("Returning IP address from NativeDNSResolverOverride");
     return (*aAddrInfo)->Addresses().Length() ? NS_OK : NS_ERROR_UNKNOWN_HOST;
@@ -430,7 +451,10 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
 bool FindHTTPSRecordOverride(const nsACString& aHost,
                              TypeRecordResultType& aResult) {
   LOG("FindHTTPSRecordOverride aHost=%s", nsCString(aHost).get());
-  RefPtr<NativeDNSResolverOverride> overrideService = gOverrideService;
+  if (!gOverrideServiceUsed) {
+    return false;
+  }
+  RefPtr<NativeDNSResolverOverride> overrideService = GetOverrideSingleton();
   if (!overrideService) {
     return false;
   }
@@ -501,7 +525,7 @@ nsresult ParseHTTPSRecord(nsCString& aHost, DNSPacket& aDNSPacket,
 nsresult ResolveHTTPSRecord(const nsACString& aHost,
                             nsIDNSService::DNSFlags aFlags,
                             TypeRecordResultType& aResult, uint32_t& aTTL) {
-  if (gOverrideService) {
+  if (gOverrideServiceUsed) {
     return FindHTTPSRecordOverride(aHost, aResult) ? NS_OK
                                                    : NS_ERROR_UNKNOWN_HOST;
   }
@@ -574,14 +598,7 @@ NativeDNSResolverOverride::GetSingleton() {
   if (nsIOService::UseSocketProcess() && XRE_IsParentProcess()) {
     return NativeDNSResolverOverrideParent::GetSingleton();
   }
-
-  if (gOverrideService) {
-    return do_AddRef(gOverrideService);
-  }
-
-  gOverrideService = new NativeDNSResolverOverride();
-  ClearOnShutdown(&gOverrideService);
-  return do_AddRef(gOverrideService);
+  return GetOverrideSingleton();
 }
 
 NS_IMPL_ISUPPORTS(NativeDNSResolverOverride, nsINativeDNSResolverOverride)

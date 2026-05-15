@@ -3,11 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsXMLPrettyPrinter_h__
-#define nsXMLPrettyPrinter_h__
+#ifndef nsXMLPrettyPrinter_h_
+#define nsXMLPrettyPrinter_h_
 
-#include "nsStubDocumentObserver.h"
 #include "nsCOMPtr.h"
+#include "nsStubDocumentObserver.h"
 
 class nsXMLPrettyPrinter : public nsStubDocumentObserver {
  public:
@@ -56,4 +56,4 @@ class nsXMLPrettyPrinter : public nsStubDocumentObserver {
 
 nsresult NS_NewXMLPrettyPrinter(nsXMLPrettyPrinter** aPrinter);
 
-#endif  // nsXMLPrettyPrinter_h__
+#endif  // nsXMLPrettyPrinter_h_

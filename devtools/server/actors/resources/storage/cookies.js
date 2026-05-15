@@ -230,6 +230,9 @@ class CookiesStorageActor extends BaseStorageActor {
       // because creationTime is in micro seconds
       creationTime: cookie.creationTime / 1000,
 
+      // because updateTime is in micro seconds
+      updateTime: cookie.updateTime / 1000,
+
       size: cookie.name.length + (cookie.value || "").length,
 
       // - do -
@@ -279,7 +282,7 @@ class CookiesStorageActor extends BaseStorageActor {
    * this is either null, a single cookie or an array of cookies.
    * @param {nsICookieNotification_Action} action - The cookie operation, see
    * nsICookieNotification for details.
-   **/
+   */
   onCookieChanged(cookie, action) {
     const {
       COOKIE_ADDED,
@@ -362,6 +365,7 @@ class CookiesStorageActor extends BaseStorageActor {
       { name: "sameSite", editable: false, hidden: false },
       { name: "lastAccessed", editable: false, hidden: false },
       { name: "creationTime", editable: false, hidden: true },
+      { name: "updateTime", editable: false, hidden: true },
       { name: "hostOnly", editable: false, hidden: true },
     ];
 
@@ -375,9 +379,9 @@ class CookiesStorageActor extends BaseStorageActor {
   /**
    * Pass the editItem command from the content to the chrome process.
    *
-   * @param {Object} data
+   * @param {object} data
    *        See editCookie() for format details.
-   * @returns {Object} An object with an "errorString" property.
+   * @returns {object} An object with an "errorString" property.
    */
   async editItem(data) {
     const potentialErrorMessage = this.editCookie(data);
@@ -387,9 +391,9 @@ class CookiesStorageActor extends BaseStorageActor {
   /**
    * Add a cookie on given host
    *
-   * @param {String} guid
-   * @param {String} host
-   * @returns {Object} An object with an "errorString" property.
+   * @param {string} guid
+   * @param {string} host
+   * @returns {object} An object with an "errorString" property.
    */
   async addItem(guid, host) {
     const window = this.storageActor.getWindowFromHost(host);
@@ -416,9 +420,9 @@ class CookiesStorageActor extends BaseStorageActor {
   /**
    * Add a cookie on given principal
    *
-   * @param {String} guid
+   * @param {string} guid
    * @param {Principal} principal
-   * @returns {String|null} If the cookie couldn't be added (e.g. it's invalid),
+   * @returns {string | null} If the cookie couldn't be added (e.g. it's invalid),
    *          an error string will be returned.
    */
   addCookie(guid, principal) {
@@ -460,7 +464,7 @@ class CookiesStorageActor extends BaseStorageActor {
   /**
    * Apply the results of a cookie edit.
    *
-   * @param {Object} data
+   * @param {object} data
    *        An object in the following format:
    *        {
    *          host: "http://www.mozilla.org",
@@ -474,6 +478,7 @@ class CookiesStorageActor extends BaseStorageActor {
    *            host: ".mozilla.org",
    *            expires: "Mon, 02 Jun 2025 12:37:37 GMT",
    *            creationTime: "Tue, 18 Nov 2014 16:21:18 GMT",
+   *            updateTime: "Tue, 18 Nov 2014 16:21:18 GMT",
    *            lastAccessed: "Wed, 17 Feb 2016 10:06:23 GMT",
    *            value: "%7BHelloo%7D",
    *            isDomain: "true",
@@ -481,7 +486,7 @@ class CookiesStorageActor extends BaseStorageActor {
    *            isHttpOnly: "false"
    *          }
    *        }
-   * @returns {(String|null)} If cookie couldn't be updated (e.g. it's invalid), an error string
+   * @returns {(string | null)} If cookie couldn't be updated (e.g. it's invalid), an error string
    *          will be returned.
    */
   // eslint-disable-next-line complexity

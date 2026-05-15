@@ -53,10 +53,13 @@ where
     true
 }
 
-/// Whether two elements have the same same style attribute (by pointer identity).
+/// Whether two elements have the same style attribute.
+///
+/// First checks pointer identity (fast path), then falls back to value comparison.
 pub fn have_same_style_attribute<E>(
     target: &mut StyleSharingTarget<E>,
     candidate: &mut StyleSharingCandidate<E>,
+    shared_context: &SharedStyleContext,
 ) -> bool
 where
     E: TElement,
@@ -64,7 +67,13 @@ where
     match (target.style_attribute(), candidate.style_attribute()) {
         (None, None) => true,
         (Some(_), None) | (None, Some(_)) => false,
-        (Some(a), Some(b)) => &*a as *const _ == &*b as *const _,
+        (Some(a), Some(b)) => {
+            if std::ptr::eq(&*a, &*b) {
+                return true;
+            }
+            let guard = shared_context.guards.author;
+            *a.read_with(guard) == *b.read_with(guard)
+        },
     }
 }
 
@@ -129,6 +138,29 @@ where
     let for_candidate = candidate.revalidation_match_results(stylist, bloom, selector_caches);
 
     for_element == for_candidate
+}
+
+/// Whether the given element and a candidate have the same values for the the
+/// attributes used in an `attr()` function.
+#[inline]
+pub fn have_same_referenced_attrs<E>(
+    target: &StyleSharingTarget<E>,
+    candidate: &StyleSharingCandidate<E>,
+) -> bool
+where
+    E: TElement,
+{
+    // The candidate must be styled in order to be in the cache.
+    let borrowed_data = candidate.element.borrow_data().unwrap();
+    let attrs_used = borrowed_data.styles.primary().attribute_references.as_ref();
+
+    let Some(attrs_used) = attrs_used else {
+        return true;
+    };
+
+    attrs_used
+        .iter()
+        .all(|name| target.get_attr(name) == candidate.get_attr(name))
 }
 
 /// Whether a given element and a candidate share a set of scope activations

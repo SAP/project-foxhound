@@ -144,7 +144,7 @@ redirectLoop-title = The page isn’t redirecting properly
 unknownSocketType-title = Unexpected response from server
 nssFailure2-title = Secure Connection Failed
 csp-xfo-error-title = { -brand-short-name } Can’t Open This Page
-corruptedContentError-title = Corrupted Content Error
+corruptedContentErrorv2-title = Corrupted Content Error
 sslv3Used-title = Unable to Connect Securely
 inadequateSecurityError-title = Your connection is not secure
 blockedByPolicy-title = Blocked Page
@@ -173,6 +173,7 @@ fp-certerror-hide-advanced-button = Hide advanced
 fp-certerror-override-exception-button = Proceed to { $hostname } (Risky)
 fp-certerror-intro = { -brand-short-name } spotted a potentially serious security issue with <strong>{ $hostname }</strong>. Someone pretending to be the site could try to steal things like credit card info, passwords, or emails.
 fp-certerror-expired-into = { -brand-short-name } spotted a security issue with <strong>{ $hostname }</strong>. Either the site isn’t set up right or your device’s clock is set to the wrong date/time.
+fp-certerror-transparency-intro = Someone pretending to be <strong>{ $hostname }</strong> could try to steal things like credit card info, passwords, or emails.
 
 ##
 
@@ -182,10 +183,24 @@ fp-certerror-return-to-previous-page-recommended-button = Go back (Recommended)
 # This string appears after the following string: "What makes the site look dangerous?" (fp-certerror-why-site-dangerous)
 # Variables:
 #   $hostname (String) - Hostname of the website to which the user was trying to connect.
+fp-certerror-revoked-why-dangerous-body = { -brand-short-name } is warning you about this site because the certificate provided for { $hostname } has been revoked and isn’t trusted anymore.
+# This string appears after the following string: "What can you do about it?" (fp-certerror-what-can-you-do)
+fp-certerror-revoked-what-can-you-do-body = Probably nothing, since it’s likely there’s a problem with the site itself. You can check with the website owner to see if they are working on the problem.
+
+# This string appears after the following string: "What makes the site look dangerous?" (fp-certerror-why-site-dangerous)
+# Variables:
+#   $hostname (String) - Hostname of the website to which the user was trying to connect.
 #   $validHosts (String) - Valid hostnames.
 fp-certerror-bad-domain-why-dangerous-body = The site is set up to allow only secure connections, but there’s a problem with the site’s certificate. It’s possible that a bad actor is trying to impersonate the site. Sites use certificates issued by a certificate authority to prove they’re really who they say they are. { -brand-short-name } doesn’t trust this site because its certificate isn’t valid for { $hostname }. The certificate is only valid for: { $validHosts }.
 # This string appears after the following string: "What can you do about it?" (fp-certerror-what-can-you-do)
 fp-certerror-bad-domain-what-can-you-do-body = Probably nothing, since it’s likely there’s a problem with the site itself. Sites use certificates issued by a certificate authority to prove they’re really who they say they are. But if you’re on a corporate network, your support team may have more info. If you’re using antivirus software, try searching for potential conflicts or known issues.
+
+# This string appears after the following string: "What makes the site look dangerous?" (fp-certerror-why-site-dangerous)
+# Variables:
+#   $hostname (String) - Hostname of the website to which the user was trying to connect.
+fp-certerror-untrusted-issuer-why-dangerous-body = { -brand-short-name } is warning you about this site because the certificate provided for { $hostname } was issued by a certificate authority that isn’t trusted anymore.
+# This string appears after the following string: "What can you do about it?" (fp-certerror-what-can-you-do)
+fp-certerror-untrusted-issuer-what-can-you-do-body = Probably nothing, since it’s likely there’s a problem with the site itself. You can check with the website owner to see if they are working on the problem.
 
 # This string appears after the following string: "What makes the site look dangerous?" (fp-certerror-why-site-dangerous)
 fp-certerror-unknown-issuer-why-dangerous-body = There’s an issue with the site’s certificate. It’s possible that a bad actor is trying to impersonate the site. Sites use certificates issued by a certificate authority to prove they’re really who they say they are. { -brand-short-name } doesn’t trust this site because we can’t tell who issued the certificate, it’s self-signed, or the site isn’t sending intermediate certificates we trust.
@@ -221,6 +236,29 @@ fp-cert-error-code = Error Code: { $error }
 #   $datetime (Date) - Current datetime.
 fp-datetime = { DATETIME($datetime, month: "short", year: "numeric", day: "numeric") } { DATETIME($datetime, timeStyle: "long") }
 
+# This string appears after the following string: "What makes the site look dangerous?" (fp-certerror-why-site-dangerous)
+# Variables:
+#   $hostname (String) - Hostname of the website to which the user was trying to connect.
+fp-certerror-transparency-why-dangerous-body = { -brand-short-name } doesn’t trust { $hostname } because it couldn’t prove it meets public certificate transparency requirements.
+# This string appears after the following string: "What can you do about it?" (fp-certerror-what-can-you-do)
+fp-certerror-transparency-what-can-you-do-body = Probably nothing, since it’s likely there’s a problem with the site itself.
+
+
 fp-learn-more-about-secure-connection-failures = Learn more about secure connection failures
 fp-learn-more-about-cert-issues = Learn more about these kinds of certificate issues
 fp-learn-more-about-time-related-errors = Learn more about troubleshooting time-related errors
+
+# This string appears after the following string: "What makes the site look dangerous?" (fp-certerror-why-site-dangerous)
+# Variables:
+#   $datetime (Date) - Date the cert becomes valid.
+fp-certerror-pkix-not-yet-valid-why-dangerous-body = { -brand-short-name } doesn’t trust this site because it looks like the certificate provided isn’t valid until { DATETIME($date, timeStyle: "short") } on { DATETIME($date, month: "numeric", day: "numeric", year: "numeric") }.
+
+# This string appears after the following string: "What can you do about it?" (fp-certerror-what-can-you-do)
+# Variables:
+#   $date (Date) - Device's clock date.
+fp-certerror-pkix-not-yet-valid-what-can-you-do-body = Your device’s clock is set to { DATETIME($date, timeStyle: "short") } { DATETIME($date, month: "numeric", day: "numeric", year: "numeric") }. If this is correct, the security issue is probably with the site itself. If it’s wrong, you can change it in your device’s system settings.
+
+# This string appears after the following string: "What makes the site look dangerous?" (fp-certerror-why-site-dangerous)
+# Variables:
+#   $hostname (String) - Hostname of the website to which the user was trying to connect.
+fp-certerror-invalid-cert-why-dangerous = The owner of { $hostname } hasn’t set it up properly and a secure connection can’t be created.

@@ -22,8 +22,6 @@
       ["media.gmp-widevinecdm-l1.enabled", true],
       // Use the mock clearkey CDM to create cdm for all other key systems.
       ["media.eme.wmf.use-mock-cdm-for-external-cdms", true],
-      // Our mock CDM doesn't implement 'IsTypeSupportedEx()', only 'IsTypeSupported()'
-      ["media.eme.playready.istypesupportedex", false],
     ],
   });
 });

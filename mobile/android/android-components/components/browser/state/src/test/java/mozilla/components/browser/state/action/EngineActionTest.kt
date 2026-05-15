@@ -4,6 +4,7 @@
 
 package mozilla.components.browser.state.action
 
+import mozilla.components.browser.state.reducer.BrowserStateReducer
 import mozilla.components.browser.state.selector.findCustomTab
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.state.BrowserState
@@ -11,10 +12,8 @@ import mozilla.components.browser.state.state.EngineState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createCustomTab
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSessionState
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,27 +26,25 @@ import org.junit.Test
 
 class EngineActionTest {
     private lateinit var tab: TabSessionState
-    private lateinit var store: BrowserStore
+    private lateinit var state: BrowserState
 
     @Before
     fun setUp() {
         tab = createTab("https://www.mozilla.org")
 
-        store = BrowserStore(
-            initialState = BrowserState(
-                tabs = listOf(tab),
-            ),
+        state = BrowserState(
+            tabs = listOf(tab),
         )
     }
 
-    private fun engineState() = store.state.findTab(tab.id)!!.engineState
+    private fun engineState() = state.findTab(tab.id)!!.engineState
 
     @Test
     fun `LinkEngineSessionAction - Attaches engine session`() {
         assertNull(engineState().engineSession)
 
         val engineSession: EngineSession = mock()
-        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession, timestamp = 1234)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, EngineAction.LinkEngineSessionAction(tab.id, engineSession, timestamp = 1234))
 
         assertNotNull(engineState().engineSession)
         assertEquals(engineSession, engineState().engineSession)
@@ -56,14 +53,14 @@ class EngineActionTest {
 
     @Test
     fun `UnlinkEngineSessionAction - Detaches engine session`() {
-        store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, mock())).joinBlocking()
-        store.dispatch(EngineAction.UpdateEngineSessionStateAction(tab.id, mock())).joinBlocking()
-        store.dispatch(EngineAction.UpdateEngineSessionObserverAction(tab.id, mock())).joinBlocking()
+        state = BrowserStateReducer.reduce(state, EngineAction.LinkEngineSessionAction(tab.id, mock()))
+        state = BrowserStateReducer.reduce(state, EngineAction.UpdateEngineSessionStateAction(tab.id, mock()))
+        state = BrowserStateReducer.reduce(state, EngineAction.UpdateEngineSessionObserverAction(tab.id, mock()))
         assertNotNull(engineState().engineSession)
         assertNotNull(engineState().engineSessionState)
         assertNotNull(engineState().engineObserver)
 
-        store.dispatch(EngineAction.UnlinkEngineSessionAction(tab.id)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, EngineAction.UnlinkEngineSessionAction(tab.id))
         assertNull(engineState().engineSession)
         assertNotNull(engineState().engineSessionState)
         assertNull(engineState().engineObserver)
@@ -74,7 +71,7 @@ class EngineActionTest {
         assertNull(engineState().engineSessionState)
 
         val engineSessionState: EngineSessionState = mock()
-        store.dispatch(EngineAction.UpdateEngineSessionStateAction(tab.id, engineSessionState)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, EngineAction.UpdateEngineSessionStateAction(tab.id, engineSessionState))
         assertNotNull(engineState().engineSessionState)
         assertEquals(engineSessionState, engineState().engineSessionState)
     }
@@ -84,7 +81,7 @@ class EngineActionTest {
         assertNull(engineState().engineObserver)
 
         val engineObserver: EngineSession.Observer = mock()
-        store.dispatch(EngineAction.UpdateEngineSessionObserverAction(tab.id, engineObserver)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, EngineAction.UpdateEngineSessionObserverAction(tab.id, engineObserver))
         assertNotNull(engineState().engineObserver)
         assertEquals(engineObserver, engineState().engineObserver)
     }
@@ -107,34 +104,32 @@ class EngineActionTest {
             engineState = EngineState(engineSession = mock(), engineSessionState = mock()),
         )
 
-        val store = BrowserStore(
-            BrowserState(
-                tabs = listOf(tab1, tab2),
-                customTabs = listOf(customTab1, customTab2),
-            ),
+        var state = BrowserState(
+            tabs = listOf(tab1, tab2),
+            customTabs = listOf(customTab1, customTab2),
         )
 
-        store.dispatch(EngineAction.PurgeHistoryAction).joinBlocking()
+        state = BrowserStateReducer.reduce(state, EngineAction.PurgeHistoryAction)
 
-        assertNull(store.state.findTab(tab1.id)!!.engineState.engineSessionState)
-        assertNotNull(store.state.findTab(tab2.id)!!.engineState.engineSessionState)
+        assertNull(state.findTab(tab1.id)!!.engineState.engineSessionState)
+        assertNotNull(state.findTab(tab2.id)!!.engineState.engineSessionState)
 
-        assertNull(store.state.findCustomTab(customTab1.id)!!.engineState.engineSessionState)
-        assertNotNull(store.state.findCustomTab(customTab2.id)!!.engineState.engineSessionState)
+        assertNull(state.findCustomTab(customTab1.id)!!.engineState.engineSessionState)
+        assertNotNull(state.findCustomTab(customTab2.id)!!.engineState.engineSessionState)
     }
 
     @Test
     fun `UpdateEngineSessionInitializingAction - Updates initializing flag`() {
         assertFalse(engineState().initializing)
 
-        store.dispatch(EngineAction.UpdateEngineSessionInitializingAction(tab.id, true)).joinBlocking()
+        state = BrowserStateReducer.reduce(state, EngineAction.UpdateEngineSessionInitializingAction(tab.id, true))
         assertTrue(engineState().initializing)
     }
 
     @Test
     fun `OptimizedLoadUrlTriggeredAction - State is not changed`() {
-        val state = store.state
-        store.dispatch(EngineAction.OptimizedLoadUrlTriggeredAction(tab.id, "https://mozilla.org")).joinBlocking()
-        assertSame(store.state, state)
+        val oldState = state
+        state = BrowserStateReducer.reduce(state, EngineAction.OptimizedLoadUrlTriggeredAction(tab.id, "https://mozilla.org"))
+        assertSame(state, oldState)
     }
 }

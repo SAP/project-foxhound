@@ -118,6 +118,10 @@ async function testWithIncognitoOverride(incognitoOverride) {
   // Wait for the popup to open - bug 1800100
   if (incognitoOverride === "spanning") {
     await extension.awaitMessage("popup");
+    // The test calls openPopup() but never closes the popup. The popup should
+    // auto-close when the extension unloads. But we have to close it manually
+    // because auto-close on uninstall does not work on Android (bug 2015895).
+    await AppTestDelegate.closeBrowserAction(window, extension);
   }
 
   await extension.unload();

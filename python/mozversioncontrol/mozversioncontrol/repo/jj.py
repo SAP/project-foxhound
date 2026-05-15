@@ -10,7 +10,7 @@ import sys
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import mozpack.path as mozpath
 from mozfile import which
@@ -43,8 +43,13 @@ class JjVersionError(Exception):
 class JujutsuRepository(Repository):
     """An implementation of `Repository` for JJ repositories using the git backend."""
 
+    # Revset for a "HEAD-like" change. Use @ (the working copy commit) unless it
+    # would be discarded when switching away (because it's empty and has no
+    # description.)
+    HEAD_REVSET = 'coalesce(@ ~ (empty() & description(exact:"")) ~ bookmarks(), @-)'
+
     def __init__(self, path: Path, jj="jj", git="git"):
-        super(JujutsuRepository, self).__init__(path, tool=jj)
+        super().__init__(path, tool=jj)
         self._git = GitRepository(path, git=git)
 
         # Find git root. Newer jj has `jj git root`, but this should support
@@ -102,20 +107,22 @@ class JujutsuRepository(Repository):
 
     @property
     def head_ref(self):
-        # This is not really a defined concept in jj. Map it to @, or rather the
-        # persistent change id for the current @. Warning: this cannot be passed
-        # directly to a git command, it must be converted to a commit id first
-        # (eg via resolve_to_commit). This isn't done here because
-        # callers should be aware when they're dropping down to git semantics.
-        return self._resolve_to_change("@")
+        # This is not really a defined concept in jj. Map it to the persistent
+        # change id for @. Unless that's empty, in which case use @- instead.
+        #
+        # Note that this returns a JJ change id, not a git commit id. That's
+        # because I want it to fail if something tries to use it as a git commit
+        # directly rather than going through the generic vcs interface.
+        # (VCS-specific code can use _resolve_to_commit if it is necessary to
+        # drop down to git semantics.)
+        return self._resolve_to_change(self.HEAD_REVSET)
 
     def is_cinnabar_repo(self) -> bool:
         return self._git.is_cinnabar_repo()
 
     @property
     def base_ref(self):
-        ref = self._resolve_to_change("latest(roots(::@ & mutable())-)")
-        return ref if ref else self.head_ref
+        return self._resolve_to_change("roots((::@ & mutable())-)")
 
     def _resolve_to_commit(self, revset):
         commit = self._run_read_only(
@@ -158,7 +165,7 @@ class JujutsuRepository(Repository):
     def get_changed_files(self, diff_filter="ADM", mode="(ignored)", rev="@"):
         assert all(f.lower() in self._valid_diff_filter for f in diff_filter)
 
-        out = self._run_read_only(
+        out = self._run(
             "log",
             "-r",
             rev,
@@ -191,13 +198,55 @@ class JujutsuRepository(Repository):
 
         return changed
 
+    # Convert a line in a regexp-based ignore file (in this case,
+    # .clang-format-ignore) to a jj fileset expression. Support the small number
+    # of regexp expressions used in practice.
+    #
+    # Note: it is possible that jj filesets will acquire regex patterns (cf
+    # https://github.com/jj-vcs/jj/issues/6893 for strings), which would allow
+    # drastically simplifying this code.
+    def _translate_exclude_expr(self, pattern):
+        if not pattern or pattern.startswith("#"):
+            return None  # empty or comment
+        # .*/.ignore -> **/.ignore
+        pattern = pattern.replace(".*/", "**/")
+        # .*/.*.pb.h --> **/*.pb.h
+        pattern = re.sub(r"[.][*][^/]", "*", pattern)
+        # gfx/angle/.* -> gfx/angle/**/*
+        pattern = pattern.replace("(^|[^/]).*", "**/*")
+        # js/src/dtoa.c.* -> js/src/dtoa.c*/**/*
+        pattern = pattern.replace(".*", "*/**/*")
+        selector = "glob"
+        if pattern.startswith("^"):
+            selector = "root-glob"
+            pattern = pattern[1:]
+        elif "*" not in pattern:
+            selector = "root-file"
+        return f'{selector}:"{pattern}"'
+
     def diff_stream(self, rev=None, extensions=(), exclude_file=None, context=8):
         if rev is None:
-            rev = "latest((@ ~ empty()) | @-)"
-        rev = self._resolve_to_commit(rev)
-        return self._git.diff_stream(
-            rev=rev, extensions=extensions, exclude_file=exclude_file, context=context
-        )
+            rev = self.HEAD_REVSET
+        args = ["diff", "-r", rev, "--git"]
+
+        # File patterns to include
+        patterns = [f'glob:"**/*{dot_extension}"' for dot_extension in extensions]
+        if not patterns:
+            patterns = ["all()"]
+
+        # File patterns to exclude
+        excludes = []
+        if exclude_file is not None:
+            with open(exclude_file) as fh:
+                excludes.extend(line.strip() for line in fh)
+        exclude_patterns = []
+
+        # Construct "(F1 | F2 | F3) ~ F4 ~ F5" (Patterns F1-3 are included, F4-5
+        # are excluded.)
+        fileset = " ~ ".join(["(" + " | ".join(patterns) + ")"] + exclude_patterns)
+        args.append(fileset)
+
+        return self._pipefrom(*args)
 
     def get_outgoing_files(self, diff_filter="ADM", upstream=None):
         assert all(f.lower() in self._valid_diff_filter for f in diff_filter)
@@ -374,25 +423,62 @@ class JujutsuRepository(Repository):
         `changed_files` may contain a dict of file paths and their contents,
         see `stage_changes`.
         """
-        # Redundant with the snapshot from the next command, but the semantics
-        # of this operation depend on a snapshot happening (and it will eat
-        # working-copy changes if not!), so be extra explicit here in case it
-        # becomes possible to default snapshotting off.
-        self._run("debug", "snapshot")  # Force a snapshot.
         opid = self._run(
             "operation", "log", "-n1", "--no-graph", "-T", "id.short(16)"
         ).rstrip()
         try:
-            self._run("new", "-m", commit_message, "latest((@ ~ empty()) | @-)")
+            change, _ = self.prepare_try_push(commit_message, changed_files)
+            yield change
+        finally:
+            self._run("operation", "restore", opid)
+
+    def prepare_try_push(
+        self, commit_message: str, changed_files: Optional[dict[str, str]] = None
+    ) -> tuple[Optional[str], Callable]:
+        """Create a temporary try commit as a context manager.
+
+        Create a new commit using `commit_message` as the commit message. The commit
+        may be empty, for example when only including try syntax.
+
+        `changed_files` may contain a dict of file paths and their contents,
+        see `stage_changes`.
+
+        This function returns a tuple of the changeid of the new head and a
+        function that can be called to restore the repository to its original
+        state prior to this function having been run.
+        """
+        self._run("debug", "snapshot")  # Force a snapshot.
+        # Redundant with the snapshot from the next command, but the semantics
+        # of this operation depend on a snapshot happening (and it will eat
+        # working-copy changes if not!), so be extra explicit here in case it
+        # becomes possible to default snapshotting off.
+        opid = self._run(
+            "operation", "log", "-n1", "--no-graph", "-T", "id.short(16)"
+        ).rstrip()
+        try:
+            self._run("new", "-m", commit_message, self.HEAD_REVSET)
             for path, content in (changed_files or {}).items():
                 p = self.path / Path(path)
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(content)
+                # Manually track the file in case it is not automatically,
+                # e.g. because `snapshot.auto-track` has been configured.
+                self.add_remove_files(p)
             # Update the jj commit with the changes we just made.
             self._snapshot()
-            yield self._resolve_to_change("@")
-        finally:
+
+            def cleanup():
+                self._run("operation", "restore", opid)
+
+            return self._resolve_to_change("@"), cleanup
+        except:
+            # cleanup is handled by the caller in the happy path to allow
+            # it to log metrics. we also need to handle cleanup in the
+            # exception case, where the caller won't have the cleanup handler
+            # available. we lose metrics for this case, but they're not
+            # crucial for this path.
             self._run("operation", "restore", opid)
+            raise
 
     def get_last_modified_time_for_file(self, path: Path) -> datetime:
         """Return last modified in VCS time for the specified file."""
@@ -407,9 +493,14 @@ class JujutsuRepository(Repository):
         return datetime.strptime(date, "%Y-%m-%d %H:%M:%S.%f %z")
 
     def config_key_list_value_missing(self, key: str):
-        output = self._run_read_only("config", "list", key, stderr=subprocess.STDOUT)
-        warning_prefix = "Warning: No matching config key"
-        if output.startswith(warning_prefix):
+        output = self._run_read_only(
+            "config", "list", "--repo", key, stderr=subprocess.DEVNULL
+        ).strip()
+
+        # Empty output means the key is missing from repo config. We can't rely on
+        # warnings because there could be one or more other warnings (eg: deprecated
+        # config flags) and parsing that would be messy.
+        if not output:
             return True
 
         if output.startswith(key):
@@ -430,6 +521,24 @@ class JujutsuRepository(Repository):
             self.set_config_key_value(config_key, default_value)
         else:
             print(f'jj config: "{config_key}" already set; skipping')
+
+    def _get_config_value(self, key: str) -> Optional[str]:
+        """Get a config value, returning None if not set."""
+        value = self._run_read_only(
+            "config", "get", key, return_codes=[0, 1], stderr=subprocess.DEVNULL
+        )
+        return value.strip() if value else None
+
+    def _migrate_config_value(
+        self, key: str, deprecated_value: str, default_value: str
+    ):
+        """
+        Migrate a config key from a deprecated value to a new valid default value.
+        Only updates if the current value matches deprecated_value.
+        """
+        if self._get_config_value(key) == deprecated_value:
+            print(f'Migrating jj config: "{key}"')
+            self.set_config_key_value(key, default_value)
 
     def _copy_from_git_if_missing(self, config_key: str) -> bool:
         """
@@ -483,9 +592,18 @@ class JujutsuRepository(Repository):
             if updated_author:
                 self._run("describe", "--reset-author", "--no-edit")
 
+            immutable_heads_key = 'revset-aliases."immutable_heads()"'
+            immutable_heads_default_value = "builtin_immutable_heads() | remote_bookmarks(glob:'*', remote=exact:'origin')"
+            immutable_heads_deprecated_value = (
+                "builtin_immutable_heads() | remote_bookmarks(glob:'*', 'origin')"
+            )
+            self._migrate_config_value(
+                immutable_heads_key,
+                immutable_heads_deprecated_value,
+                immutable_heads_default_value,
+            )
             self._set_default_if_missing(
-                'revset-aliases."immutable_heads()"',
-                "builtin_immutable_heads() | remote_bookmarks(glob:'*', 'origin')",
+                immutable_heads_key, immutable_heads_default_value
             )
 
             # This enables `jj fix` which does `./mach lint --fix` on every commit in parallel
@@ -497,10 +615,33 @@ class JujutsuRepository(Repository):
 
             # This enables watchman if it's installed.
             if which("watchman"):
-                self._set_default_if_missing("core.fsmonitor", "watchman")
-                self._set_default_if_missing(
-                    "core.watchman.register-snapshot-trigger", False
-                )
+                # Use appropriate config keys based on jj version. 0.32.0+ renamed these config keys
+                if jj_version >= Version("0.32"):
+                    # Remove deprecated config keys to prevent warnings
+                    for key in [
+                        "core.fsmonitor",
+                        "core.watchman.register-snapshot-trigger",
+                    ]:
+                        self._run(
+                            "config",
+                            "unset",
+                            "--repo",
+                            key,
+                            return_codes=[0, 1],
+                            stderr=subprocess.DEVNULL,
+                        )
+
+                    # Set 0.32.0+ config keys
+                    self._set_default_if_missing("fsmonitor.backend", "watchman")
+                    self._set_default_if_missing(
+                        "fsmonitor.watchman.register-snapshot-trigger", False
+                    )
+                else:
+                    # Set old config keys
+                    self._set_default_if_missing("core.fsmonitor", "watchman")
+                    self._set_default_if_missing(
+                        "core.watchman.register-snapshot-trigger", False
+                    )
 
                 print("Checking if watchman is enabled...")
                 output = self._run_read_only("debug", "watchman", "status")

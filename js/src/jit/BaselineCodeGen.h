@@ -17,6 +17,7 @@
 namespace js {
 
 class NamedLambdaObject;
+class SourceLocationIterator;  // from vm/JSScript.h
 
 namespace jit {
 
@@ -147,6 +148,13 @@ class BaselineCodeGen {
     return callVM<Fn, fn>(RetAddrEntry::Kind::NonOpCallVM, phase);
   }
 
+  template <typename T>
+  void emitGuardedCallPreBarrierAnyZone(const T& address, MIRType type,
+                                        Register scratch) {
+    MOZ_ASSERT_IF(handler.realmIndependentJitcode(), !masm.maybeRealm());
+    masm.guardedCallPreBarrierAnyZone(address, type, scratch);
+  }
+
   // ifDebuggee should be a function emitting code for when the script is a
   // debuggee script. ifNotDebuggee (if present) is called to emit code for
   // non-debuggee scripts.
@@ -195,6 +203,9 @@ class BaselineCodeGen {
   [[nodiscard]] bool emitNextIC();
   [[nodiscard]] bool emitInterruptCheck();
   [[nodiscard]] bool emitWarmUpCounterIncrement();
+
+  [[nodiscard]] bool emitTrialInliningCheck(Register count, Register icScript,
+                                            Register scratch);
 
 #define EMIT_OP(op, ...) bool emit_##op();
   FOR_EACH_OPCODE(EMIT_OP)
@@ -278,6 +289,7 @@ class BaselineCodeGen {
 
   void emitProfilerEnterFrame();
   void emitProfilerExitFrame();
+  void emitProfilerCallSiteInstrumentation();
 
   void emitOutOfLinePostBarrierSlot();
 };
@@ -313,6 +325,9 @@ class BaselineCompilerHandler {
   CallObject* callObjectTemplate_;
   NamedLambdaObject* namedLambdaTemplate_;
 
+  // Allocated lazily on the first call to line() / column().
+  mutable mozilla::Maybe<SourceLocationIterator> srcLocIter_;
+
   // Index of the current ICEntry in the script's JitScript.
   uint32_t icEntryIndex_;
 
@@ -324,6 +339,8 @@ class BaselineCompilerHandler {
   bool compilingOffThread_ = false;
 
   bool needsEnvAllocSite_ = false;
+
+  const SourceLocationIterator& sourceLocationIterAtCurrentPc() const;
 
  public:
   using FrameInfoT = CompilerFrameInfo;
@@ -339,6 +356,11 @@ class BaselineCompilerHandler {
   jsbytecode* maybePC() const { return pc_; }
 
   void moveToNextPC() { pc_ += GetBytecodeLength(pc_); }
+
+  // The line/column of the current pc, for profiling source location info.
+  unsigned line() const;
+  JS::LimitedColumnNumberOneOrigin column() const;
+
   Label* labelOf(jsbytecode* pc) { return &labels_[script_->pcToOffset(pc)]; }
 
   bool isDefinitelyLastOp() const { return pc_ == script_->lastPC(); }
@@ -419,6 +441,8 @@ class BaselineCompilerHandler {
     return JS::Prefs::experimental_self_hosted_cache() &&
            script()->selfHosted();
   }
+
+  bool needsProfilerCallSiteInstrumentation() const { return true; }
 };
 
 using BaselineCompilerCodeGen = BaselineCodeGen<BaselineCompilerHandler>;
@@ -551,6 +575,8 @@ class BaselineInterpreterHandler {
   bool addEnvAllocSite() { return false; }  // Not supported.
 
   bool realmIndependentJitcode() const { return true; }
+
+  bool needsProfilerCallSiteInstrumentation() const { return false; }
 };
 
 using BaselineInterpreterCodeGen = BaselineCodeGen<BaselineInterpreterHandler>;

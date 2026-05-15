@@ -19,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1230533
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 525444 **/
+/** Test for Bug 525444 */
 
 SimpleTest.waitForExplicitFinish();
 let testWin;
@@ -34,10 +34,8 @@ SpecialPowers.pushPrefEnv({ set: [
   ['media.webspeech.synth.force_global_queue', true]] },
   function() {
     testWin = window.open("about:blank", "testWin");
-    testWin.onload = function(e) {
-      waitForVoices(testWin)
-        .then(() => testWin.location = "file_bfcache_page1.html")
-    };
+    waitForVoices(testWin)
+      .then(() => testWin.location = "file_bfcache_page1.html")
   });
 
 </script>

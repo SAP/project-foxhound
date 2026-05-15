@@ -65,7 +65,8 @@ def storybook_launch(command_context):
         argv=["http://localhost:5703"],
         setpref=[
             "svg.context-properties.content.enabled=true",
-            "layout.css.light-dark.enabled=true",
+            "layout.forms.input-type-search.enabled=true",
+            "layout.forms.reveal-password-button.enabled=true",
         ],
     )
 
@@ -89,7 +90,7 @@ def start_browser(command_context):
     # This delay is used to avoid launching the browser before the Storybook server has started.
     time.sleep(5)
     subprocess.run(
-        run_mach(command_context, "storybook", subcommand="launch"), check=False
+        run_mach(command_context, "storybook", subcommand="launch"), check=True
     )
 
 

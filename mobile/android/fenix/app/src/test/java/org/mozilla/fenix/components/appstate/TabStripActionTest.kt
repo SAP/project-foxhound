@@ -4,32 +4,30 @@
 
 package org.mozilla.fenix.components.appstate
 
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.mozilla.fenix.components.AppStore
 
 class TabStripActionTest {
 
     @Test
     fun `WHEN the last remaining tab that was closed was private THEN state should reflect that`() {
-        val store = AppStore(initialState = AppState())
+        val initialState = AppState()
 
-        store.dispatch(AppAction.TabStripAction.UpdateLastTabClosed(true)).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, AppAction.TabStripAction.UpdateLastTabClosed(true))
 
         val expected = AppState(wasLastTabClosedPrivate = true)
 
-        assertEquals(expected, store.state)
+        assertEquals(expected, finalState)
     }
 
     @Test
     fun `WHEN the last remaining tab that was closed was not private THEN state should reflect that`() {
-        val store = AppStore(initialState = AppState())
+        val initialState = AppState()
 
-        store.dispatch(AppAction.TabStripAction.UpdateLastTabClosed(false)).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, AppAction.TabStripAction.UpdateLastTabClosed(false))
 
         val expected = AppState(wasLastTabClosedPrivate = false)
 
-        assertEquals(expected, store.state)
+        assertEquals(expected, finalState)
     }
 }

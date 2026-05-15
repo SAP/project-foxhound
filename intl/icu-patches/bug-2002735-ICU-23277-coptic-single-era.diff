@@ -1,0 +1,109 @@
+diff --git a/intl/icu/source/i18n/coptccal.cpp b/intl/icu/source/i18n/coptccal.cpp
+--- a/intl/icu/source/i18n/coptccal.cpp
++++ b/intl/icu/source/i18n/coptccal.cpp
+@@ -61,46 +61,43 @@ int32_t
+ CopticCalendar::handleGetExtendedYear(UErrorCode& status)
+ {
+     if (U_FAILURE(status)) {
+         return 0;
+     }
+     if (newerField(UCAL_EXTENDED_YEAR, UCAL_YEAR) == UCAL_EXTENDED_YEAR) {
+         return internalGet(UCAL_EXTENDED_YEAR, 1); // Default to year 1
+     }
+-    // The year defaults to the epoch start, the era to CE
+-    int32_t era = internalGet(UCAL_ERA, CE);
+-    if (era == BCE) {
+-        return 1 - internalGet(UCAL_YEAR, 1); // Convert to extended year
+-    }
+-    if (era == CE){
+-        return internalGet(UCAL_YEAR, 1); // Default to year 1
+-    }
+-    status = U_ILLEGAL_ARGUMENT_ERROR;
+-    return 0;
++    // The year defaults to the epoch start
++    return internalGet(UCAL_YEAR, 1); // Default to year 1
+ }
+ 
+ IMPL_SYSTEM_DEFAULT_CENTURY(CopticCalendar, "@calendar=coptic")
+ 
+ int32_t
+ CopticCalendar::getJDEpochOffset() const
+ {
+     return COPTIC_JD_EPOCH_OFFSET;
+ }
+ 
+ int32_t CopticCalendar::extendedYearToEra(int32_t extendedYear) const {
+-    return extendedYear <= 0 ? BCE : CE;
++    return CE;
+ }
+ 
+ int32_t CopticCalendar::extendedYearToYear(int32_t extendedYear) const {
+-    return extendedYear <= 0 ? 1 - extendedYear : extendedYear;
++    return extendedYear;
+ }
+ 
+-bool CopticCalendar::isEra0CountingBackward() const {
+-    return true;
++int32_t
++CopticCalendar::handleGetLimit(UCalendarDateFields field, ELimitType limitType) const
++{
++    if (field == UCAL_ERA) {
++        return 1; // Only one era, era is always 1
++    }
++    return CECalendar::handleGetLimit(field, limitType);
+ }
+ 
+ int32_t
+ CopticCalendar::getRelatedYearDifference() const {
+     constexpr int32_t kCopticCalendarRelatedYearDifference = 284;
+     return kCopticCalendarRelatedYearDifference;
+ }
+ 
+diff --git a/intl/icu/source/i18n/coptccal.h b/intl/icu/source/i18n/coptccal.h
+--- a/intl/icu/source/i18n/coptccal.h
++++ b/intl/icu/source/i18n/coptccal.h
+@@ -165,16 +165,22 @@ protected:
+     int32_t getRelatedYearDifference() const override;
+ 
+     /**
+      * Return the extended year defined by the current fields.
+      * @internal
+      */
+     virtual int32_t handleGetExtendedYear(UErrorCode& status) override;
+ 
++    /**
++     * Calculate the limit for a specified type of limit and field
++     * @internal
++     */
++    virtual int32_t handleGetLimit(UCalendarDateFields field, ELimitType limitType) const override;
++
+     DECLARE_OVERRIDE_SYSTEM_DEFAULT_CENTURY
+ 
+     /**
+      * Return the date offset from Julian
+      * @internal
+      */
+     int32_t getJDEpochOffset() const override;
+ 
+@@ -184,21 +190,16 @@ protected:
+      */
+     int32_t extendedYearToEra(int32_t extendedYear) const override;
+ 
+     /**
+      * Compute the year from extended year.
+      * @internal
+      */
+     int32_t extendedYearToYear(int32_t extendedYear) const override;
+-
+-    /**
+-     * @internal
+-     */
+-    bool isEra0CountingBackward() const override;
+ public:
+     /**
+      * Override Calendar Returns a unique class ID POLYMORPHICALLY. Pure virtual
+      * override. This method is to implement a simple version of RTTI, since not all C++
+      * compilers support genuine RTTI. Polymorphic operator==() and clone() methods call
+      * this method.
+      *
+      * @return   The class ID for this object. All objects of a given class have the

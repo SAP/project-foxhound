@@ -6,7 +6,6 @@
 #include "gtest/gtest.h"
 #include <windows.h>
 #include "InstallationDirLayout.h"
-#include <string>
 #include <iostream>
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"

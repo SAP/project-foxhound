@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.components.support.base.feature.LifecycleAwareFeature
-import org.mozilla.fenix.distributions.DistributionIdManager
 import org.mozilla.fenix.onboarding.view.OnboardingPageUiData
 import org.mozilla.fenix.perf.runBlockingIncrement
 import org.mozilla.fenix.settings.OnSharedPreferenceChangeListener
@@ -29,16 +28,16 @@ import kotlin.coroutines.CoroutineContext
  *
  * @param prefKey the pref key identifier for the "should show marketing page" pref
  * @param pagesToDisplay the mutable list of onboarding pages we display
- * @param distributionIdManager the distribution ID manager
  * @param settings settings class that holds shared preferences
+ * @param mainContext the coroutine context for UI
  * @param ioContext the coroutine context for IO
  * @param lifecycleOwner the lifecycle owner
  */
 class MarketingPageRemovalSupport(
     private val prefKey: String,
     private val pagesToDisplay: MutableList<OnboardingPageUiData>,
-    private val distributionIdManager: DistributionIdManager,
     private val settings: Settings,
+    private val mainContext: CoroutineContext = Dispatchers.Main,
     private val ioContext: CoroutineContext = Dispatchers.IO,
     private val lifecycleOwner: LifecycleOwner,
 ) : LifecycleAwareFeature {
@@ -49,16 +48,15 @@ class MarketingPageRemovalSupport(
 
     override fun start() {
         job = lifecycleOwner.lifecycleScope.launch(ioContext) {
-            val isPartnership = distributionIdManager.isPartnershipDistribution()
-
             settings.preferences.flowScopedBooleanPreference(
                 lifecycleOwner,
+                mainContext,
                 prefKey,
                 settings.shouldShowMarketingOnboarding,
             )
                 .distinctUntilChanged()
                 .collect { shouldShowMarketingOnboarding ->
-                    if (!shouldShowMarketingOnboarding && !isPartnership) {
+                    if (!shouldShowMarketingOnboarding) {
                         pagesToDisplay.removeIfPageNotReached(currentPageIndex)
                     }
                 }
@@ -80,6 +78,7 @@ internal fun MutableList<OnboardingPageUiData>.removeIfPageNotReached(index: Int
 
 internal fun SharedPreferences.flowScopedBooleanPreference(
     owner: LifecycleOwner,
+    mainContext: CoroutineContext,
     key: String,
     defValue: Boolean,
 ) = channelFlow {
@@ -95,7 +94,7 @@ internal fun SharedPreferences.flowScopedBooleanPreference(
         }
     }
 
-    withContext(Dispatchers.Main) {
+    withContext(mainContext) {
         owner.lifecycle.addObserver(listener)
     }
 

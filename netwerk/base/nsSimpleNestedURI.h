@@ -9,8 +9,8 @@
  * happens.
  */
 
-#ifndef nsSimpleNestedURI_h__
-#define nsSimpleNestedURI_h__
+#ifndef nsSimpleNestedURI_h_
+#define nsSimpleNestedURI_h_
 
 #include "nsCOMPtr.h"
 #include "nsSimpleURI.h"
@@ -108,4 +108,4 @@ class nsSimpleNestedURI : public nsSimpleURI, public nsINestedURI {
 }  // namespace net
 }  // namespace mozilla
 
-#endif /* nsSimpleNestedURI_h__ */
+#endif /* nsSimpleNestedURI_h_ */

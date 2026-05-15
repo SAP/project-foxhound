@@ -8,21 +8,21 @@
 #define PreXULSkeletonUI_h_
 
 #include <windows.h>
-#include "mozilla/EnumSet.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "mozilla/Types.h"
 #include "mozilla/Vector.h"
 
 namespace mozilla {
 
+#define DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 19
+
 // These unfortunately need to be kept in sync with the window style and
 // extended window style computations in nsWindow. Luckily those styles seem
 // to not vary based off of any user settings for the initial toplevel window,
 // so we're safe here for now.
 static const DWORD kPreXULSkeletonUIWindowStyle =
-    WS_OVERLAPPED | WS_CLIPCHILDREN | WS_DLGFRAME | WS_BORDER | WS_THICKFRAME |
-    WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU;
+    WS_CLIPCHILDREN | WS_DLGFRAME | WS_BORDER | WS_MAXIMIZEBOX |
+    WS_MINIMIZEBOX | WS_SIZEBOX | WS_SYSMENU;
 static const DWORD kPreXULSkeletonUIWindowStyleEx = WS_EX_WINDOWEDGE;
 
 struct CSSPixelSpan {

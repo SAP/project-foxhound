@@ -6,24 +6,23 @@
 
 #include "Worker.h"
 
+#include "EventWithOptionsRunnable.h"
 #include "MessageEventRunnable.h"
-#include "mozilla/dom/WorkerBinding.h"
+#include "WorkerPrivate.h"
+#include "js/RootingAPI.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
-#include "mozilla/Unused.h"
-#include "nsContentUtils.h"
-#include "nsGlobalWindowInner.h"
-#include "WorkerPrivate.h"
-#include "EventWithOptionsRunnable.h"
-#include "js/RootingAPI.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "nsISupports.h"
-#include "nsDebug.h"
-#include "mozilla/dom/WorkerStatus.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/TrustedScriptURL.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
+#include "mozilla/dom/WorkerBinding.h"
+#include "mozilla/dom/WorkerStatus.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsGlobalWindowInner.h"
+#include "nsISupports.h"
 
 #ifdef XP_WIN
 #  undef PostMessage
@@ -130,7 +129,7 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
     return;
   }
   RefPtr<WorkerPrivate> workerPrivate = mWorkerPrivate;
-  Unused << workerPrivate;
+  (void)workerPrivate;
 
   JS::Rooted<JS::Value> transferable(aCx, JS::UndefinedValue());
 
@@ -189,7 +188,7 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   // The worker could have closed between the time we entered this function and
   // checked ParentStatusProtected and now, which could cause the dispatch to
   // fail.
-  Unused << NS_WARN_IF(!runnable->Dispatch(mWorkerPrivate));
+  (void)NS_WARN_IF(!runnable->Dispatch(mWorkerPrivate));
 }
 
 void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
@@ -210,7 +209,7 @@ void Worker::PostEventWithOptions(JSContext* aCx,
     return;
   }
   RefPtr<WorkerPrivate> workerPrivate = mWorkerPrivate;
-  Unused << workerPrivate;
+  (void)workerPrivate;
 
   aRunnable->InitOptions(aCx, aOptions, aTransferable, aRv);
 
@@ -223,7 +222,7 @@ void Worker::PostEventWithOptions(JSContext* aCx,
     return;
   }
 
-  Unused << NS_WARN_IF(!aRunnable->Dispatch(mWorkerPrivate));
+  (void)NS_WARN_IF(!aRunnable->Dispatch(mWorkerPrivate));
 }
 
 void Worker::Terminate() {

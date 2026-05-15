@@ -36,6 +36,18 @@ worker.log = function (...args) {
   info("Controller: " + args.join(" "));
 };
 
+add_setup(() => {
+  // Ensures that when the test ends, our worker doesn't have any deferred
+  // jobs remaining that might be leaking memory.
+  registerCleanupFunction(() => {
+    Assert.equal(
+      worker._deferredJobs.size,
+      0,
+      "Deferred jobs list should be empty."
+    );
+  });
+});
+
 // Test that simple messages work
 add_task(async function test_simple_args() {
   let message = ["test_simple_args", Math.random()];

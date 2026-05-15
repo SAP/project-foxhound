@@ -6,7 +6,6 @@ package mozilla.components.support.ktx.android.view
 
 import android.graphics.Color
 import androidx.test.ext.junit.rules.ActivityScenarioRule
-import androidx.test.filters.SdkSuppress
 import mozilla.components.support.ktx.TestActivity
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,7 +16,6 @@ class WindowKtTest {
     @get:Rule
     internal val activityRule: ActivityScenarioRule<TestActivity> = ActivityScenarioRule(TestActivity::class.java)
 
-    @SdkSuppress(minSdkVersion = 23)
     @Test
     fun whenALightColorIsAppliedToStatusBarThenSetIsAppearanceLightStatusBarsToTrue() {
         activityRule.scenario.onActivity {
@@ -36,7 +34,6 @@ class WindowKtTest {
         }
     }
 
-    @SdkSuppress(minSdkVersion = 23)
     @Test
     fun whenALightColorIsAppliedToNavigationBarThemeThenSetIsAppearanceLightNavigationBarsToTrue() {
         activityRule.scenario.onActivity {

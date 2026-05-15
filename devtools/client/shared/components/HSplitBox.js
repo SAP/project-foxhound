@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env browser */
 "use strict";
 
 // A box with a start and a end pane, separated by a dragable splitter that
@@ -28,7 +27,6 @@ const {
 } = require("resource://devtools/client/shared/vendor/react.mjs");
 const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.mjs");
 const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
-const { assert } = require("resource://devtools/shared/DevToolsUtils.js");
 
 class HSplitBox extends Component {
   static get propTypes() {
@@ -78,15 +76,16 @@ class HSplitBox extends Component {
   }
 
   componentDidMount() {
-    document.defaultView.top.addEventListener("mouseup", this._onMouseUp);
-    document.defaultView.top.addEventListener("mousemove", this._onMouseMove);
+    document.defaultView.addEventListener("mouseup", this._onMouseUp, true);
+    document.defaultView.addEventListener("mousemove", this._onMouseMove, true);
   }
 
   componentWillUnmount() {
-    document.defaultView.top.removeEventListener("mouseup", this._onMouseUp);
-    document.defaultView.top.removeEventListener(
+    document.defaultView.removeEventListener("mouseup", this._onMouseUp, true);
+    document.defaultView.removeEventListener(
       "mousemove",
-      this._onMouseMove
+      this._onMouseMove,
+      true
     );
   }
 
@@ -125,13 +124,11 @@ class HSplitBox extends Component {
   }
 
   render() {
-    /* eslint-disable no-shadow */
     const { start, end, startWidth, minStartWidth, minEndWidth } = this.props;
-    assert(
-      startWidth >= 0 && startWidth <= 1,
-      "0 <= this.props.startWidth <= 1"
-    );
-    /* eslint-enable */
+
+    // Values outside of [0, 1] have no effect thanks to flex + minWidth.
+    const clampedStartWidth = Math.min(Math.max(startWidth, 0), 1);
+
     return dom.div(
       {
         className: "h-split-box",
@@ -141,7 +138,7 @@ class HSplitBox extends Component {
       dom.div(
         {
           className: "h-split-box-pane",
-          style: { flex: startWidth, minWidth: minStartWidth },
+          style: { flex: clampedStartWidth, minWidth: minStartWidth },
         },
         start
       ),
@@ -154,7 +151,7 @@ class HSplitBox extends Component {
       dom.div(
         {
           className: "h-split-box-pane",
-          style: { flex: 1 - startWidth, minWidth: minEndWidth },
+          style: { flex: 1 - clampedStartWidth, minWidth: minEndWidth },
         },
         end
       )

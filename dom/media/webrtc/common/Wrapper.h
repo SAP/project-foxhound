@@ -47,8 +47,9 @@
  */
 
 #include <map>
-#include "prlock.h"
+
 #include "mozilla/Assertions.h"
+#include "prlock.h"
 
 /*
  * Wrapper has its own autolock class because the instances are declared

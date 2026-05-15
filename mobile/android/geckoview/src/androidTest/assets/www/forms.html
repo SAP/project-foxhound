@@ -24,11 +24,10 @@
     <iframe id="iframe"></iframe>
   </body>
   <script>
-    addEventListener("load", function () {
-      if (window.parent === window) {
-        document.getElementById("iframe").contentWindow.location.href =
-          window.location.href;
-      }
-    });
+    // ensure page isn't loaded before the iframe loaded it's target location
+    if (window.parent === window) {
+      document.getElementById("iframe").contentWindow.location.href =
+        window.location.href;
+    }
   </script>
 </html>

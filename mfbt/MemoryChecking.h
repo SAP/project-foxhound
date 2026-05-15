@@ -34,7 +34,6 @@
 #if defined(MOZ_ASAN)
 #  include <stddef.h>
 
-#  include "mozilla/Attributes.h"
 #  include "mozilla/Types.h"
 
 #  ifdef _MSC_VER

@@ -92,7 +92,8 @@ pub unsafe extern "C" fn string_vec_get_view(
             NS_OK
         }
         None => NS_ERROR_INVALID_ARG,
-    }}
+    }
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn free_boxed_string_vec(ptr: *mut Vec<String>) -> nsresult {

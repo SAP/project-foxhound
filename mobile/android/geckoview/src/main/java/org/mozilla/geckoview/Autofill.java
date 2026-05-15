@@ -6,10 +6,8 @@
 
 package org.mozilla.geckoview;
 
-import android.annotation.TargetApi;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.os.Build;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
@@ -34,12 +32,16 @@ import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Autofill functionality for forms and input fields. */
 public class Autofill {
   private static final boolean DEBUG = false;
 
+  /** Autofill notification type definitions. */
   public @interface AutofillNotify {}
 
+  /** Autofill hint definitions. */
   public static final class Hint {
+    /** Private constructor for Hint. */
     private Hint() {}
 
     /** Hint indicating that no special handling is required. */
@@ -57,8 +59,13 @@ public class Autofill {
     /** Hint indicating that a node represents a username. */
     public static final int USERNAME = 3;
 
+    /**
+     * Converts an autofill hint to its string representation.
+     *
+     * @param hint The autofill hint to convert
+     * @return The string representation of the hint, or null if invalid
+     */
     @AnyThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public static @Nullable String toString(final @AutofillHint int hint) {
       final int idx = hint + 1;
       final String[] map = new String[] {"NONE", "EMAIL", "PASSWORD", "URI", "USERNAME"};
@@ -70,11 +77,14 @@ public class Autofill {
     }
   }
 
+  /** Autofill hint type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({Hint.NONE, Hint.EMAIL_ADDRESS, Hint.PASSWORD, Hint.URI, Hint.USERNAME})
   public @interface AutofillHint {}
 
+  /** Input type definitions for autofill. */
   public static final class InputType {
+    /** Private constructor for InputType. */
     private InputType() {}
 
     /** Indicates that a node is not a known input type. */
@@ -89,8 +99,13 @@ public class Autofill {
     /** Indicates that a node is a phone input type. Example: {@code <input type="tel">} */
     public static final int PHONE = 2;
 
+    /**
+     * Converts an autofill input type to its string representation.
+     *
+     * @param type The autofill input type to convert
+     * @return The string representation of the type, or null if invalid
+     */
     @AnyThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public static @Nullable String toString(final @AutofillInputType int type) {
       final int idx = type + 1;
       final String[] map = new String[] {"NONE", "TEXT", "NUMBER", "PHONE"};
@@ -102,6 +117,7 @@ public class Autofill {
     }
   }
 
+  /** Autofill input type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({InputType.NONE, InputType.TEXT, InputType.NUMBER, InputType.PHONE})
   public @interface AutofillInputType {}
@@ -115,6 +131,12 @@ public class Autofill {
     Node node;
     EventCallback callback;
 
+    /**
+     * Constructor for NodeData.
+     *
+     * @param id The unique identifier for this node
+     * @param node The node associated with this data
+     */
     NodeData(final int id, final Node node) {
       this.id = id;
       this.node = node;
@@ -155,21 +177,35 @@ public class Autofill {
     // We can't store the Node directly because it might be updated by subsequent NodeAdd calls.
     private String mFocusedUuid = null;
 
-    /* package */ Session(@NonNull final GeckoSession geckoSession) {
+    /**
+     * Package-visible constructor for Session.
+     *
+     * @param geckoSession The GeckoSession for this autofill session
+     */
+    Session(@NonNull final GeckoSession geckoSession) {
       mGeckoSession = geckoSession;
       // Dummy session until a real one gets created
       clear(UUID.randomUUID().toString());
     }
 
+    /**
+     * Gets the default dimensions for autofill nodes.
+     *
+     * @return The default dimensions as a Rect
+     */
     @UiThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public @NonNull Rect getDefaultDimensions() {
       final Rect rect = new Rect();
       mGeckoSession.getSurfaceBounds(rect);
       return rect;
     }
 
-    /* package */ void clear(final String newSessionId) {
+    /**
+     * Clears the session and starts a new one with the given session ID.
+     *
+     * @param newSessionId The new session ID
+     */
+    void clear(final String newSessionId) {
       mId = newSessionId;
       mFocusedUuid = null;
       mRoot = Node.newDummyRoot(getDefaultDimensions(), newSessionId);
@@ -178,7 +214,12 @@ public class Autofill {
       addNode(mRoot);
     }
 
-    /* package */ boolean isEmpty() {
+    /**
+     * Checks if the session is empty (contains only root data).
+     *
+     * @return true if the session is empty, false otherwise
+     */
+    boolean isEmpty() {
       // Root data is always there
       return mUuidToNodeData.size() == 1;
     }
@@ -247,7 +288,13 @@ public class Autofill {
       }
     }
 
-    /* package */ void addRoot(@NonNull final Node node, final EventCallback callback) {
+    /**
+     * Adds a root node to the session.
+     *
+     * @param node The node to add as root
+     * @param callback The callback for this node
+     */
+    void addRoot(@NonNull final Node node, final EventCallback callback) {
       if (DEBUG) {
         Log.d(LOGTAG, "addRoot: " + node);
       }
@@ -257,7 +304,12 @@ public class Autofill {
       dataFor(node).callback = callback;
     }
 
-    /* package */ void addNode(@NonNull final Node node) {
+    /**
+     * Adds a node to the session.
+     *
+     * @param node The node to add
+     */
+    void addNode(@NonNull final Node node) {
       if (DEBUG) {
         Log.d(LOGTAG, "addNode: " + node);
       }
@@ -318,7 +370,12 @@ public class Autofill {
       return getNode(mFocusedUuid);
     }
 
-    /* package */ void setFocus(final Node node) {
+    /**
+     * Sets the currently focused node.
+     *
+     * @param node The node to set as focused, or null to clear focus
+     */
+    void setFocus(final Node node) {
       mFocusedUuid = node != null ? node.getUuid() : null;
     }
 
@@ -333,7 +390,13 @@ public class Autofill {
       return focused != null ? dataFor(focused) : null;
     }
 
-    /* package */ @Nullable
+    /**
+     * Gets a node by its UUID.
+     *
+     * @param uuid The UUID of the node to retrieve
+     * @return The node with the given UUID, or null if not found
+     */
+    @Nullable
     Node getNode(final String uuid) {
       if (uuid == null) {
         return null;
@@ -345,7 +408,13 @@ public class Autofill {
       return nodeData.node;
     }
 
-    /* package */ Node getNode(final int id) {
+    /**
+     * Gets a node by its ID.
+     *
+     * @param id The ID of the node to retrieve
+     * @return The node with the given ID, or null if not found
+     */
+    Node getNode(final int id) {
       return mIdToNode.get(id);
     }
 
@@ -360,7 +429,12 @@ public class Autofill {
       return mRoot;
     }
 
-    /* package */ String getId() {
+    /**
+     * Gets the session ID.
+     *
+     * @return The session ID
+     */
+    String getId() {
       return mId;
     }
 
@@ -383,18 +457,29 @@ public class Autofill {
       return builder.toString();
     }
 
-    @TargetApi(23)
+    /**
+     * Fills the view structure for autofill using the root node.
+     *
+     * @param view The view being filled
+     * @param structure The view structure to fill
+     * @param flags The autofill flags
+     */
     @UiThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public void fillViewStructure(
         @NonNull final View view, @NonNull final ViewStructure structure, final int flags) {
       ThreadUtils.assertOnUiThread();
       fillViewStructure(getRoot(), view, structure, flags);
     }
 
-    @TargetApi(23)
+    /**
+     * Fills the view structure for autofill using the specified node.
+     *
+     * @param node The node to use for filling the structure
+     * @param view The view being filled
+     * @param structure The view structure to fill
+     * @param flags The autofill flags
+     */
     @UiThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public void fillViewStructure(
         final @NonNull Node node,
         @NonNull final View view,
@@ -411,25 +496,21 @@ public class Autofill {
         return;
       }
 
-      if (Build.VERSION.SDK_INT >= 26) {
-        structure.setAutofillId(view.getAutofillId(), data.id);
-        structure.setWebDomain(node.getDomain());
-        structure.setAutofillValue(AutofillValue.forText(data.value));
-      }
+      structure.setAutofillId(view.getAutofillId(), data.id);
+      structure.setWebDomain(node.getDomain());
+      structure.setAutofillValue(AutofillValue.forText(data.value));
 
       structure.setId(data.id, null, null, null);
       // This dimensions doesn't seem to used for autofill service.
       structure.setDimens(0, 0, 0, 0, node.getDimensions().width(), node.getDimensions().height());
 
-      if (Build.VERSION.SDK_INT >= 26) {
-        final ViewStructure.HtmlInfo.Builder htmlBuilder =
-            structure.newHtmlInfoBuilder(node.getTag());
-        for (final String key : node.getAttributes().keySet()) {
-          htmlBuilder.addAttribute(key, String.valueOf(node.getAttribute(key)));
-        }
-
-        structure.setHtmlInfo(htmlBuilder.build());
+      final ViewStructure.HtmlInfo.Builder htmlBuilder =
+          structure.newHtmlInfoBuilder(node.getTag());
+      for (final String key : node.getAttributes().keySet()) {
+        htmlBuilder.addAttribute(key, String.valueOf(node.getAttribute(key)));
       }
+
+      structure.setHtmlInfo(htmlBuilder.build());
 
       structure.setChildCount(node.getChildren().size());
       int childCount = 0;
@@ -448,10 +529,7 @@ public class Autofill {
           structure.setFocusable(node.getFocusable());
           structure.setFocused(node.equals(getFocused()));
           structure.setVisibility(isVisible(node) ? View.VISIBLE : View.INVISIBLE);
-
-          if (Build.VERSION.SDK_INT >= 26) {
-            structure.setAutofillType(View.AUTOFILL_TYPE_TEXT);
-          }
+          structure.setAutofillType(View.AUTOFILL_TYPE_TEXT);
           break;
         default:
           if (childCount > 0) {
@@ -462,7 +540,7 @@ public class Autofill {
           break;
       }
 
-      if (Build.VERSION.SDK_INT < 26 || !"input".equals(node.getTag())) {
+      if (!"input".equals(node.getTag())) {
         return;
       }
       // LastPass will fill password to the field where setAutofillHints
@@ -546,19 +624,31 @@ public class Autofill {
     private final @NonNull String mDomain;
     private final String mSessionId;
 
-    /* package */
+    /**
+     * Gets the UUID of this node.
+     *
+     * @return The UUID of this node
+     */
     @NonNull
     String getUuid() {
       return mUuid;
     }
 
-    /* package */
+    /**
+     * Gets the root node of this node's tree.
+     *
+     * @return The root node, or null if this is the root
+     */
     @Nullable
     Node getRoot() {
       return mRoot;
     }
 
-    /* package */
+    /**
+     * Gets the parent node of this node.
+     *
+     * @return The parent node, or null if this is the root
+     */
     @Nullable
     Node getParent() {
       return mParent;
@@ -570,8 +660,13 @@ public class Autofill {
      *
      * @return The dimensions of this node.
      */
+    /**
+     * Gets the dimensions of this node in CSS coordinates.
+     *
+     * @return The dimensions of this node
+     */
     @AnyThread
-    /* package */ @NonNull
+    @NonNull
     Rect getDimensions() {
       return mDimens;
     }
@@ -592,7 +687,12 @@ public class Autofill {
      *
      * @param screenRect The dimensions of this node.
      */
-    /* package */ void setScreenRect(final @NonNull RectF screenRectF) {
+    /**
+     * Sets the screen coordinates for this node.
+     *
+     * @param screenRectF The screen rectangle for this node
+     */
+    void setScreenRect(final @NonNull RectF screenRectF) {
       screenRectF.roundOut(mScreenRect);
     }
 
@@ -606,7 +706,12 @@ public class Autofill {
       return mChildren.values();
     }
 
-    /* package */
+    /**
+     * Adds a child node to this node.
+     *
+     * @param child The child node to add
+     * @return This node for chaining
+     */
     @NonNull
     Node addChild(@NonNull final Node child) {
       mChildren.put(child.getUuid(), child);
@@ -623,8 +728,13 @@ public class Autofill {
       return mAttributes;
     }
 
+    /**
+     * Gets an HTML attribute value for this node.
+     *
+     * @param key The attribute key to retrieve
+     * @return The attribute value, or null if not found
+     */
     @AnyThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public @Nullable String getAttribute(@NonNull final String key) {
       return mAttributes.get(key);
     }
@@ -689,12 +799,24 @@ public class Autofill {
       return mDomain;
     }
 
-    /* package */
+    /**
+     * Creates a new dummy root node for a session.
+     *
+     * @param dimensions The dimensions for the root node
+     * @param sessionId The session ID
+     * @return A new dummy root node
+     */
     static Node newDummyRoot(final Rect dimensions, final String sessionId) {
       return new Node(dimensions, sessionId);
     }
 
-    /* package */ Node(final Rect dimensions, final String sessionId) {
+    /**
+     * Package-visible constructor for a root node.
+     *
+     * @param dimensions The dimensions of the node
+     * @param sessionId The session ID
+     */
+    Node(final Rect dimensions, final String sessionId) {
       mRoot = null;
       mParent = null;
       mUuid = UUID.randomUUID().toString();
@@ -755,12 +877,27 @@ public class Autofill {
       return builder.toString();
     }
 
-    /* package */ Node(
-        @NonNull final GeckoBundle bundle, final Rect defaultDimensions, final String sessionId) {
+    /**
+     * Package-visible constructor for a node from a GeckoBundle.
+     *
+     * @param bundle The GeckoBundle containing node data
+     * @param defaultDimensions The default dimensions to use if none specified
+     * @param sessionId The session ID
+     */
+    Node(@NonNull final GeckoBundle bundle, final Rect defaultDimensions, final String sessionId) {
       this(bundle, /* root */ null, /* parent */ null, defaultDimensions, sessionId);
     }
 
-    /* package */ Node(
+    /**
+     * Package-visible constructor for a child node from a GeckoBundle.
+     *
+     * @param bundle The GeckoBundle containing node data
+     * @param root The root node of the tree
+     * @param parent The parent node
+     * @param defaultDimensions The default dimensions to use if none specified
+     * @param sessionId The session ID
+     */
+    Node(
         @NonNull final GeckoBundle bundle,
         final Node root,
         final Node parent,
@@ -885,6 +1022,7 @@ public class Autofill {
     }
   }
 
+  /** Delegate for handling autofill events and requests. */
   public interface Delegate {
 
     /**
@@ -989,11 +1127,17 @@ public class Autofill {
     private @NonNull final Session mAutofillSession;
     private Delegate mDelegate;
 
+    /**
+     * Constructor for Support.
+     *
+     * @param geckoSession The GeckoSession to support
+     */
     public Support(@NonNull final GeckoSession geckoSession) {
       mGeckoSession = geckoSession;
       mAutofillSession = new Session(mGeckoSession);
     }
 
+    /** Registers event listeners for autofill support. */
     public void registerListeners() {
       mGeckoSession
           .getEventDispatcher()
@@ -1047,8 +1191,13 @@ public class Autofill {
       return mAutofillSession;
     }
 
-    /* package */ void addNode(
-        @NonNull final GeckoBundle message, @NonNull final EventCallback callback) {
+    /**
+     * Adds a node to the autofill session.
+     *
+     * @param message The GeckoBundle containing node data
+     * @param callback The callback for this node
+     */
+    void addNode(@NonNull final GeckoBundle message, @NonNull final EventCallback callback) {
       final Session session = getAutofillSession();
       final Node node = new Node(message, session.getDefaultDimensions(), session.getId());
 
@@ -1060,6 +1209,11 @@ public class Autofill {
       }
     }
 
+    /**
+     * Adds values to nodes from a GeckoBundle message.
+     *
+     * @param message The GeckoBundle containing node values
+     */
     private void addValues(final GeckoBundle message) {
       final String uuid = message.getString("uuid");
       if (uuid == null) {
@@ -1085,7 +1239,12 @@ public class Autofill {
       }
     }
 
-    /* package */ void start(@Nullable final String sessionId) {
+    /**
+     * Starts a new autofill session.
+     *
+     * @param sessionId The session ID for the new session
+     */
+    void start(@Nullable final String sessionId) {
       // Make sure we start with a clean session
       getAutofillSession().clear(sessionId);
       if (mDelegate != null) {
@@ -1093,7 +1252,12 @@ public class Autofill {
       }
     }
 
-    /* package */ void commit(@Nullable final GeckoBundle message) {
+    /**
+     * Commits an autofill session.
+     *
+     * @param message The GeckoBundle containing commit data
+     */
+    void commit(@Nullable final GeckoBundle message) {
       if (getAutofillSession().isEmpty() || message == null) {
         return;
       }
@@ -1114,7 +1278,12 @@ public class Autofill {
       }
     }
 
-    /* package */ void update(@Nullable final GeckoBundle message) {
+    /**
+     * Updates a node in the autofill session.
+     *
+     * @param message The GeckoBundle containing update data
+     */
+    void update(@Nullable final GeckoBundle message) {
       if (getAutofillSession().isEmpty() || message == null) {
         return;
       }
@@ -1149,7 +1318,8 @@ public class Autofill {
       }
     }
 
-    /* package */ void clear() {
+    /** Clears the current autofill session. */
+    void clear() {
       if (getAutofillSession().isEmpty()) {
         return;
       }
@@ -1164,7 +1334,12 @@ public class Autofill {
       }
     }
 
-    /* package */ void onFocusChanged(@Nullable final GeckoBundle message) {
+    /**
+     * Handles focus change events.
+     *
+     * @param message The GeckoBundle containing focus change data
+     */
+    void onFocusChanged(@Nullable final GeckoBundle message) {
       final Session session = getAutofillSession();
       if (session.isEmpty()) {
         return;

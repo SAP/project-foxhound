@@ -287,7 +287,7 @@ ChildDNSService::ClearCache(bool aTrrToo) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  Unused << mTRRServiceParent->SendClearDNSCache(aTrrToo);
+  (void)mTRRServiceParent->SendClearDNSCache(aTrrToo);
   return NS_OK;
 }
 
@@ -508,6 +508,11 @@ NS_IMETHODIMP ChildDNSService::GetLastConfirmationSkipReason(
   // XXX(valentin): Fix for socket process
   *aSkipReason = nsITRRSkipReason::TRR_UNSET;
   return NS_OK;
+}
+
+NS_IMETHODIMP ChildDNSService::SetHttp3FirstForServer(const nsACString& aServer,
+                                                      bool aEnabled) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 }  // namespace net

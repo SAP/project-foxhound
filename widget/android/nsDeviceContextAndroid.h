@@ -2,8 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsDeviceContextAndroid_h__
-#define nsDeviceContextAndroid_h__
+#ifndef nsDeviceContextAndroid_h_
+#define nsDeviceContextAndroid_h_
 
 #include "nsIDeviceContextSpec.h"
 #include "nsCOMPtr.h"
@@ -33,4 +33,4 @@ class nsDeviceContextSpecAndroid final : public nsIDeviceContextSpec {
   nsresult DoEndDocument();
   nsCOMPtr<nsIFile> mTempFile;
 };
-#endif  // nsDeviceContextAndroid_h__
+#endif  // nsDeviceContextAndroid_h_

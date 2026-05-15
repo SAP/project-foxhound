@@ -18,8 +18,8 @@ async function test() {
 
   // Language modes
   is(ed.getMode(), Editor.modes.text, "getMode");
-  ed.setMode(Editor.modes.js);
-  is(ed.getMode(), Editor.modes.js, "setMode");
+  ed.setMode(Editor.modes.javascript);
+  is(ed.getMode(), Editor.modes.javascript, "setMode");
 
   // Content
   is(ed.getText(), "Hello.", "getText");

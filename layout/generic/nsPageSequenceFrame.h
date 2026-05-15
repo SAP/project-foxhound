@@ -3,11 +3,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsPageSequenceFrame_h___
-#define nsPageSequenceFrame_h___
+#ifndef nsPageSequenceFrame_h_
+#define nsPageSequenceFrame_h_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/UniquePtr.h"
 #include "nsContainerFrame.h"
 #include "nsIPrintSettings.h"
 
@@ -51,10 +49,6 @@ class nsSharedPageData {
   nsString mDocURL;
   nsFont mHeadFootFont;
 
-  // Total number of pages (populated by PrintedSheetFrame when it determines
-  // that it's reflowed the final page):
-  int32_t mRawNumPages = 0;
-
   // If there's more than one page-range, then its components are stored here
   // as pairs of (start,end).  They're stored in the order provided (not
   // necessarily in ascending order).
@@ -67,17 +61,21 @@ class nsSharedPageData {
 
   nsCOMPtr<nsIPrintSettings> mPrintSettings;
 
-  // The scaling ratio we need to apply to make all pages fit horizontally. It's
-  // the minimum "ComputedWidth / OverflowWidth" ratio of all page content
-  // frames that overflowed.  It's 1.0 if none overflowed horizontally.
-  float mShrinkToFitRatio = 1.0f;
-
   // Lazy getter, to look up our pages-per-sheet info based on mPrintSettings
   // (if it's available).  The result is stored in our mPagesPerSheetInfo
   // member-var to speed up subsequent lookups.
   // This API is infallible; in failure cases, it just returns the info struct
   // that corresponds to 1 page per sheet.
   const nsPagesPerSheetInfo* PagesPerSheetInfo();
+
+  // Total number of pages (populated by PrintedSheetFrame when it determines
+  // that it's reflowed the final page):
+  int32_t mRawNumPages = 0;
+
+  // The scaling ratio we need to apply to make all pages fit horizontally. It's
+  // the minimum "ComputedWidth / OverflowWidth" ratio of all page content
+  // frames that overflowed.  It's 1.0 if none overflowed horizontally.
+  float mShrinkToFitRatio = 1.0f;
 
  private:
   const nsPagesPerSheetInfo* mPagesPerSheetInfo = nullptr;
@@ -107,7 +105,7 @@ class nsPageSequenceFrame final : public nsContainerFrame {
                         const nsDisplayListSet& aLists) override;
 
   // For Shrink To Fit
-  float GetSTFPercent() const { return mPageData->mShrinkToFitRatio; }
+  float GetSTFPercent() const { return mPageData.mShrinkToFitRatio; }
 
   // Gets the final print preview scale that we're applying to the previewed
   // sheets of paper.
@@ -123,7 +121,7 @@ class nsPageSequenceFrame final : public nsContainerFrame {
 
   uint32_t GetCurrentSheetIdx() const { return mCurrentSheetIdx; }
 
-  int32_t GetRawNumPages() const { return mPageData->mRawNumPages; }
+  int32_t GetRawNumPages() const { return mPageData.mRawNumPages; }
 
   uint32_t GetPagesInFirstSheet() const;
 
@@ -174,7 +172,7 @@ class nsPageSequenceFrame final : public nsContainerFrame {
   LogicalSize mScrollportSize;
 
   // Data shared by all the nsPageFrames:
-  mozilla::UniquePtr<nsSharedPageData> mPageData;
+  nsSharedPageData mPageData;
 
   // The zero-based index of the PrintedSheetFrame child that is being printed
   // (or about-to-be-printed), in an async print operation.
@@ -188,4 +186,4 @@ class nsPageSequenceFrame final : public nsContainerFrame {
   bool mCurrentCanvasListSetup;
 };
 
-#endif /* nsPageSequenceFrame_h___ */
+#endif /* nsPageSequenceFrame_h_ */

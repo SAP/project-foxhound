@@ -5,15 +5,15 @@ Date:   Fri Jul 14 11:04:04 2023 -0400
     Increase MAP_SIZE for Nyx
 
 diff --git a/include/config.h b/include/config.h
-index 988e536e..5e9870c0 100644
+index 9deb05c2..0a6d5f22 100644
 --- a/include/config.h
 +++ b/include/config.h
-@@ -459,7 +459,7 @@
+@@ -492,7 +492,7 @@ We add 4 byte for one u32 length field. */
     problems with complex programs). You need to recompile the target binary
     after changing this - otherwise, SEGVs may ensue. */
 
--  #define MAP_SIZE_POW2 16
-+  #define MAP_SIZE_POW2 23
+-#define MAP_SIZE_POW2 16
++#define MAP_SIZE_POW2 23
 
  /* Do not change this unless you really know what you are doing. */
 

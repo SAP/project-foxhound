@@ -62,7 +62,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "imgTools",
   "@mozilla.org/image/tools;1",
-  "imgITools"
+  Ci.imgITools
 );
 ChromeUtils.defineESModuleGetters(lazy, {
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
@@ -133,7 +133,7 @@ function getFaviconAsImage(iconurl, privateMode, callback) {
 
 // PreviewController
 
-/*
+/**
  * This class manages the behavior of thumbnails and previews. It has the following
  * responsibilities:
  * 1) responding to requests from Windows taskbar for a thumbnail or window
@@ -349,7 +349,7 @@ PreviewController.prototype = {
 
 // TabWindow
 
-/*
+/**
  * This class monitors a browser window for changes to its tabs
  *
  * @param win

@@ -4,6 +4,7 @@
 
 //! Common handling for the specified value CSS url() values.
 
+use crate::derives::*;
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs;
 use crate::parser::{Parse, ParserContext};
@@ -16,7 +17,7 @@ use servo_arc::Arc;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::mem::ManuallyDrop;
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 use style_traits::{CssWriter, ParseError, ToCss};
 use to_shmem::{SharedMemoryBuilder, ToShmem};
 
@@ -53,9 +54,9 @@ pub struct CssUrlData {
 
 impl PartialEq for CssUrlData {
     fn eq(&self, other: &Self) -> bool {
-        self.serialization == other.serialization &&
-            self.extra_data == other.extra_data &&
-            self.cors_mode == other.cors_mode
+        self.serialization == other.serialization
+            && self.extra_data == other.extra_data
+            && self.cors_mode == other.cors_mode
     }
 }
 
@@ -64,9 +65,12 @@ impl PartialEq for CssUrlData {
 /// TODO(emilio): See if necko can provide this, but for our case local refs or empty URIs are
 /// totally fine even though they wouldn't be in general...
 #[repr(u8)]
-pub enum LikelyBaseUriDependency {
-    /// No dependency on the base URI (either absolute uri, or relative URI).
-    No,
+#[derive(PartialOrd, PartialEq)]
+pub enum NonLocalUriDependency {
+    /// No non-local URI dependencies.
+    No = 0,
+    /// URI is absolute or not dependent on the base uri otherwise.
+    Absolute,
     /// We might depend on our path depth. E.g. `https://example.com/foo` and
     /// `https://example.com/bar` both resolve a relative URI like `baz.css` as
     /// `https://example.com/baz.css`.
@@ -76,33 +80,26 @@ pub enum LikelyBaseUriDependency {
     Full,
 }
 
-fn likely_base_uri_dependency(specified: &str) -> LikelyBaseUriDependency {
-    if specified.is_empty() {
-        // In CSS the empty URL is special / invalid.
-        // https://drafts.csswg.org/css-values-4/#url-empty
-        return LikelyBaseUriDependency::No;
-    }
-    if specified.starts_with('#') || specified.starts_with('/') {
-        // Local refs and absolute paths are fair game.
-        return LikelyBaseUriDependency::No;
-    }
-    const COMMON_PROTOCOLS: [&str; 3] = [
-        "http:",
-        "https:",
-        "data:",
-    ];
-    for protocol in COMMON_PROTOCOLS {
-        if specified.starts_with(protocol) {
-            // Common absolute URIs.
-            return LikelyBaseUriDependency::No;
+impl NonLocalUriDependency {
+    fn scan(specified: &str) -> Self {
+        if specified.is_empty() || specified.starts_with('#') || specified.starts_with("data:") {
+            // In CSS the empty URL is special / invalid. Local and data uris are also fair game.
+            // https://drafts.csswg.org/css-values-4/#url-empty
+            return Self::No;
         }
+        if specified.starts_with('/')
+            || specified.starts_with("http:")
+            || specified.starts_with("https:")
+        {
+            return Self::Absolute;
+        }
+        if specified.starts_with('?') {
+            // Query string resolves differently for any two different base URIs
+            return Self::Full;
+        }
+        // Might be a relative URI, play it safe.
+        Self::Path
     }
-    if specified.starts_with('?') {
-        // Query string resolves differently for any two different base URIs
-        return LikelyBaseUriDependency::Full;
-    }
-    // Might be a relative URI, play it safe.
-    LikelyBaseUriDependency::Path
 }
 
 impl CssUrl {
@@ -124,16 +121,25 @@ impl CssUrl {
     pub fn parse_from_string(url: String, context: &ParserContext, cors_mode: CorsMode) -> Self {
         use crate::use_counters::CustomUseCounter;
         if let Some(counters) = context.use_counters {
-            if !counters.custom.recorded(CustomUseCounter::MaybeHasFullBaseUriDependency) {
-                match likely_base_uri_dependency(&url) {
-                    LikelyBaseUriDependency::No => {},
-                    LikelyBaseUriDependency::Path => {
-                        counters.custom.record(CustomUseCounter::MaybeHasPathBaseUriDependency);
-                    },
-                    LikelyBaseUriDependency::Full => {
-                        counters.custom.record(CustomUseCounter::MaybeHasPathBaseUriDependency);
-                        counters.custom.record(CustomUseCounter::MaybeHasFullBaseUriDependency);
-                    },
+            if !counters
+                .custom
+                .recorded(CustomUseCounter::MaybeHasFullBaseUriDependency)
+            {
+                let dep = NonLocalUriDependency::scan(&url);
+                if dep >= NonLocalUriDependency::Absolute {
+                    counters
+                        .custom
+                        .record(CustomUseCounter::HasNonLocalUriDependency);
+                }
+                if dep >= NonLocalUriDependency::Path {
+                    counters
+                        .custom
+                        .record(CustomUseCounter::MaybeHasPathBaseUriDependency);
+                }
+                if dep >= NonLocalUriDependency::Full {
+                    counters
+                        .custom
+                        .record(CustomUseCounter::MaybeHasFullBaseUriDependency);
                 }
             }
         }
@@ -376,10 +382,7 @@ impl ToCss for ComputedUrl {
     }
 }
 
-lazy_static! {
-    /// A table mapping CssUrlData objects to their lazily created LoadData
-    /// objects.
-    static ref LOAD_DATA_TABLE: RwLock<HashMap<LoadDataKey, Box<LoadData>>> = {
-        Default::default()
-    };
-}
+/// A table mapping CssUrlData objects to their lazily created LoadData
+/// objects.
+static LOAD_DATA_TABLE: LazyLock<RwLock<HashMap<LoadDataKey, Box<LoadData>>>> =
+    LazyLock::new(|| Default::default());

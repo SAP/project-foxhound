@@ -229,7 +229,7 @@ async function top_level_about_blank({
 
     if (filename === "2.does_not_care_about_exclude_matches_globs.js") {
       files[filename] += `
-        // In an initial document, readyState = "uninitialized".
+        // In an initial document, readyState = "complete".
         dump("${filename} ran at readyState " + document.readyState + "\\n");
         browser.test.sendMessage("seen_content_script");
       `;

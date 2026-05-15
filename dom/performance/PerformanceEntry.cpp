@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceEntry.h"
+
 #include "MainThreadUtils.h"
 
 using namespace mozilla::dom;
@@ -20,10 +21,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(PerformanceEntry)
 NS_INTERFACE_MAP_END
 
 PerformanceEntry::PerformanceEntry(nsISupports* aParent, const nsAString& aName,
-                                   const nsAString& aEntryType)
-    : mParent(aParent),
-      mName(NS_Atomize(aName)),
-      mEntryType(NS_Atomize(aEntryType)) {}
+                                   const nsStaticAtom* aEntryType)
+    : mParent(aParent), mName(NS_Atomize(aName)), mEntryType(aEntryType) {}
 
 PerformanceEntry::~PerformanceEntry() = default;
 

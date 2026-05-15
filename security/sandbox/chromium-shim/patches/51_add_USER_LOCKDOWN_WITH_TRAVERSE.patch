@@ -1,0 +1,76 @@
+Author: Bob Owen <bobowencode@gmail.com>
+
+Add USER_LOCKDOWN_WITH_TRAVERSE access token level.
+
+diff --git a/sandbox/win/src/restricted_token_utils.cc b/sandbox/win/src/restricted_token_utils.cc
+index cb8d18a1a832..1dc7fd219f88 100644
+--- a/sandbox/win/src/restricted_token_utils.cc
++++ b/sandbox/win/src/restricted_token_utils.cc
+@@ -137,16 +137,26 @@ absl::optional<base::win::AccessToken> CreateRestrictedToken(
+         restricted_token.AddRestrictingSid(base::win::WellKnownSid::kRestricted);
+         if (unique_restricted_sid) {
+           restricted_token.AddRestrictingSid(*unique_restricted_sid);
+         }
+       } else {
+         restricted_token.AddUserSidForDenyOnly();
+       }
+       break;
++    case USER_LOCKDOWN_WITH_TRAVERSE:
++      if (use_restricting_sids) {
++        restricted_token.AddRestrictingSid(base::win::WellKnownSid::kNull);
++        if (unique_restricted_sid) {
++          restricted_token.AddRestrictingSid(*unique_restricted_sid);
++        }
++      } else {
++        restricted_token.AddUserSidForDenyOnly();
++      }
++      break;
+     case USER_LOCKDOWN:
+       remove_traverse_privilege = true;
+       if (use_restricting_sids) {
+         restricted_token.AddRestrictingSid(base::win::WellKnownSid::kNull);
+         if (unique_restricted_sid) {
+           restricted_token.AddRestrictingSid(*unique_restricted_sid);
+         }
+       } else {
+diff --git a/sandbox/win/src/security_level.h b/sandbox/win/src/security_level.h
+index f9110600a11a..a86c4576f6e8 100644
+--- a/sandbox/win/src/security_level.h
++++ b/sandbox/win/src/security_level.h
+@@ -38,16 +38,18 @@ enum IntegrityLevel {
+ // The Token level specifies a set of  security profiles designed to
+ // provide the bulk of the security of sandbox.
+ //
+ //  TokenLevel                 |Restricting   |Deny Only       |Privileges|
+ //                             |Sids          |Sids            |          |
+ // ----------------------------|--------------|----------------|----------|
+ // USER_LOCKDOWN               | Null Sid     | All            | None     |
+ // ----------------------------|--------------|----------------|----------|
++// USER_LOCKDOWN_WITH_TRAVERSE | Null Sid     | All            | Traverse |
++// ----------------------------|--------------|----------------|----------|
+ // USER_RESTRICTED             | RESTRICTED   | All            | Traverse |
+ // ----------------------------|--------------|----------------|----------|
+ // USER_LIMITED                | Users        | All except:    | Traverse |
+ //                             | Everyone     | Users          |          |
+ //                             | RESTRICTED   | Everyone       |          |
+ //                             |              | Interactive    |          |
+ // ----------------------------|--------------|----------------|----------|
+ // USER_INTERACTIVE            | Users        | All except:    | Traverse |
+@@ -77,16 +79,17 @@ enum IntegrityLevel {
+ // and on the broker token itself.
+ //
+ // The LOCKDOWN level is designed to allow access to almost nothing that has
+ // security associated with and they are the recommended levels to run sandboxed
+ // code specially if there is a chance that the broker is process might be
+ // started by a user that belongs to the Admins or power users groups.
+ enum TokenLevel {
+   USER_LOCKDOWN = 0,
++  USER_LOCKDOWN_WITH_TRAVERSE,
+   USER_RESTRICTED,
+   USER_LIMITED,
+   USER_INTERACTIVE,
+   USER_RESTRICTED_NON_ADMIN,
+   USER_RESTRICTED_SAME_ACCESS,
+   USER_UNPROTECTED,
+   USER_LAST
+ };

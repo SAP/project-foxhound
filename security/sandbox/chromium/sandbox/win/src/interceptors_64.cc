@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,12 +14,10 @@
 #include "sandbox/win/src/sandbox_nt_types.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "sandbox/win/src/signed_interception.h"
-#include "sandbox/win/src/sync_interception.h"
 #include "sandbox/win/src/target_interceptions.h"
 
 namespace sandbox {
 
-SANDBOX_INTERCEPT NtExports g_nt;
 SANDBOX_INTERCEPT OriginalFunctions g_originals;
 
 NTSTATUS WINAPI TargetNtMapViewOfSection64(HANDLE section,
@@ -58,9 +56,19 @@ TargetNtImpersonateAnonymousToken64(HANDLE thread) {
   return TargetNtImpersonateAnonymousToken(orig_fn, thread);
 }
 
+NTSTATUS WINAPI TargetNtOpenSection64(PHANDLE section_handle,
+                                      ACCESS_MASK desired_access,
+                                      POBJECT_ATTRIBUTES object_attributes) {
+  NtOpenSectionFunction orig_fn = reinterpret_cast<NtOpenSectionFunction>(
+      g_originals[OPEN_SECTION_TOKEN_ID]);
+
+  return TargetNtOpenSection(orig_fn, section_handle, desired_access,
+                             object_attributes);
+}
+
 NTSTATUS WINAPI
 TargetNtSetInformationThread64(HANDLE thread,
-                               NT_THREAD_INFORMATION_CLASS thread_info_class,
+                               THREADINFOCLASS thread_info_class,
                                PVOID thread_information,
                                ULONG thread_information_bytes) {
   NtSetInformationThreadFunction orig_fn =
@@ -226,44 +234,6 @@ TargetNtOpenProcessTokenEx64(HANDLE process,
                                     handle_attributes, token);
 }
 
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetCreateProcessW64(LPCWSTR application_name,
-                       LPWSTR command_line,
-                       LPSECURITY_ATTRIBUTES process_attributes,
-                       LPSECURITY_ATTRIBUTES thread_attributes,
-                       BOOL inherit_handles,
-                       DWORD flags,
-                       LPVOID environment,
-                       LPCWSTR current_directory,
-                       LPSTARTUPINFOW startup_info,
-                       LPPROCESS_INFORMATION process_information) {
-  CreateProcessWFunction orig_fn =
-      reinterpret_cast<CreateProcessWFunction>(g_originals[CREATE_PROCESSW_ID]);
-  return TargetCreateProcessW(
-      orig_fn, application_name, command_line, process_attributes,
-      thread_attributes, inherit_handles, flags, environment, current_directory,
-      startup_info, process_information);
-}
-
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetCreateProcessA64(LPCSTR application_name,
-                       LPSTR command_line,
-                       LPSECURITY_ATTRIBUTES process_attributes,
-                       LPSECURITY_ATTRIBUTES thread_attributes,
-                       BOOL inherit_handles,
-                       DWORD flags,
-                       LPVOID environment,
-                       LPCSTR current_directory,
-                       LPSTARTUPINFOA startup_info,
-                       LPPROCESS_INFORMATION process_information) {
-  CreateProcessAFunction orig_fn =
-      reinterpret_cast<CreateProcessAFunction>(g_originals[CREATE_PROCESSA_ID]);
-  return TargetCreateProcessA(
-      orig_fn, application_name, command_line, process_attributes,
-      thread_attributes, inherit_handles, flags, environment, current_directory,
-      startup_info, process_information);
-}
-
 SANDBOX_INTERCEPT HANDLE WINAPI
 TargetCreateThread64(LPSECURITY_ATTRIBUTES thread_attributes,
                      SIZE_T stack_size,
@@ -280,14 +250,10 @@ TargetCreateThread64(LPSECURITY_ATTRIBUTES thread_attributes,
 
 // -----------------------------------------------------------------------
 
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtCreateKey64(PHANDLE key,
-                    ACCESS_MASK desired_access,
-                    POBJECT_ATTRIBUTES object_attributes,
-                    ULONG title_index,
-                    PUNICODE_STRING class_name,
-                    ULONG create_options,
-                    PULONG disposition) {
+SANDBOX_INTERCEPT NTSTATUS WINAPI TargetNtCreateKey64(
+    PHANDLE key, ACCESS_MASK desired_access,
+    POBJECT_ATTRIBUTES object_attributes, ULONG title_index,
+    PUNICODE_STRING class_name, ULONG create_options, PULONG disposition) {
   NtCreateKeyFunction orig_fn =
       reinterpret_cast<NtCreateKeyFunction>(g_originals[CREATE_KEY_ID]);
   return TargetNtCreateKey(orig_fn, key, desired_access, object_attributes,
@@ -296,8 +262,7 @@ TargetNtCreateKey64(PHANDLE key,
 }
 
 SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtOpenKey64(PHANDLE key,
-                  ACCESS_MASK desired_access,
+TargetNtOpenKey64(PHANDLE key, ACCESS_MASK desired_access,
                   POBJECT_ATTRIBUTES object_attributes) {
   NtOpenKeyFunction orig_fn =
       reinterpret_cast<NtOpenKeyFunction>(g_originals[OPEN_KEY_ID]);
@@ -305,38 +270,12 @@ TargetNtOpenKey64(PHANDLE key,
 }
 
 SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtOpenKeyEx64(PHANDLE key,
-                    ACCESS_MASK desired_access,
-                    POBJECT_ATTRIBUTES object_attributes,
-                    ULONG open_options) {
+TargetNtOpenKeyEx64(PHANDLE key, ACCESS_MASK desired_access,
+                    POBJECT_ATTRIBUTES object_attributes, ULONG open_options) {
   NtOpenKeyExFunction orig_fn =
       reinterpret_cast<NtOpenKeyExFunction>(g_originals[OPEN_KEY_EX_ID]);
   return TargetNtOpenKeyEx(orig_fn, key, desired_access, object_attributes,
                            open_options);
-}
-
-// -----------------------------------------------------------------------
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtCreateEvent64(PHANDLE event_handle,
-                      ACCESS_MASK desired_access,
-                      POBJECT_ATTRIBUTES object_attributes,
-                      EVENT_TYPE event_type,
-                      BOOLEAN initial_state) {
-  NtCreateEventFunction orig_fn =
-      reinterpret_cast<NtCreateEventFunction>(g_originals[CREATE_EVENT_ID]);
-  return TargetNtCreateEvent(orig_fn, event_handle, desired_access,
-                             object_attributes, event_type, initial_state);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetNtOpenEvent64(PHANDLE event_handle,
-                    ACCESS_MASK desired_access,
-                    POBJECT_ATTRIBUTES object_attributes) {
-  NtOpenEventFunction orig_fn =
-      reinterpret_cast<NtOpenEventFunction>(g_originals[OPEN_EVENT_ID]);
-  return TargetNtOpenEvent(orig_fn, event_handle, desired_access,
-                           object_attributes);
 }
 
 // -----------------------------------------------------------------------
@@ -366,166 +305,6 @@ TargetRegisterClassW64(const WNDCLASS* wnd_class) {
   RegisterClassWFunction orig_fn =
       reinterpret_cast<RegisterClassWFunction>(g_originals[REGISTERCLASSW_ID]);
   return TargetRegisterClassW(orig_fn, wnd_class);
-}
-
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetEnumDisplayMonitors64(HDC hdc,
-                            LPCRECT clip_rect,
-                            MONITORENUMPROC enum_function,
-                            LPARAM data_pointer) {
-  EnumDisplayMonitorsFunction orig_fn =
-      reinterpret_cast<EnumDisplayMonitorsFunction>(
-          g_originals[ENUMDISPLAYMONITORS_ID]);
-  return TargetEnumDisplayMonitors(orig_fn, hdc, clip_rect, enum_function,
-                                   data_pointer);
-}
-
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetEnumDisplayDevicesA64(LPCSTR device,
-                            DWORD device_num,
-                            PDISPLAY_DEVICEA display_device,
-                            DWORD flags) {
-  EnumDisplayDevicesAFunction orig_fn =
-      reinterpret_cast<EnumDisplayDevicesAFunction>(
-          g_originals[ENUMDISPLAYDEVICESA_ID]);
-  return TargetEnumDisplayDevicesA(orig_fn, device, device_num, display_device,
-                                   flags);
-}
-
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetGetMonitorInfoA64(HMONITOR monitor, LPMONITORINFO monitor_info) {
-  GetMonitorInfoAFunction orig_fn = reinterpret_cast<GetMonitorInfoAFunction>(
-      g_originals[GETMONITORINFOA_ID]);
-  return TargetGetMonitorInfoA(orig_fn, monitor, monitor_info);
-}
-
-SANDBOX_INTERCEPT BOOL WINAPI
-TargetGetMonitorInfoW64(HMONITOR monitor, LPMONITORINFO monitor_info) {
-  GetMonitorInfoWFunction orig_fn = reinterpret_cast<GetMonitorInfoWFunction>(
-      g_originals[GETMONITORINFOW_ID]);
-  return TargetGetMonitorInfoW(orig_fn, monitor, monitor_info);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetSuggestedOPMProtectedOutputArraySize64(
-    PUNICODE_STRING device_name,
-    DWORD* suggested_output_array_size) {
-  GetSuggestedOPMProtectedOutputArraySizeFunction orig_fn =
-      reinterpret_cast<GetSuggestedOPMProtectedOutputArraySizeFunction>(
-          g_originals[GETSUGGESTEDOPMPROTECTEDOUTPUTARRAYSIZE_ID]);
-  return TargetGetSuggestedOPMProtectedOutputArraySize(
-      orig_fn, device_name, suggested_output_array_size);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI TargetCreateOPMProtectedOutputs64(
-    PUNICODE_STRING device_name,
-    DXGKMDT_OPM_VIDEO_OUTPUT_SEMANTICS vos,
-    DWORD protected_output_array_size,
-    DWORD* num_output_handles,
-    OPM_PROTECTED_OUTPUT_HANDLE* protected_output_array) {
-  CreateOPMProtectedOutputsFunction orig_fn =
-      reinterpret_cast<CreateOPMProtectedOutputsFunction>(
-          g_originals[CREATEOPMPROTECTEDOUTPUTS_ID]);
-  return TargetCreateOPMProtectedOutputs(
-      orig_fn, device_name, vos, protected_output_array_size,
-      num_output_handles, protected_output_array);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificate64(PUNICODE_STRING device_name,
-                       DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                       BYTE* certificate,
-                       ULONG certificate_length) {
-  GetCertificateFunction orig_fn =
-      reinterpret_cast<GetCertificateFunction>(g_originals[GETCERTIFICATE_ID]);
-  return TargetGetCertificate(orig_fn, device_name, certificate_type,
-                              certificate, certificate_length);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificateSize64(PUNICODE_STRING device_name,
-                           DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                           ULONG* certificate_length) {
-  GetCertificateSizeFunction orig_fn =
-      reinterpret_cast<GetCertificateSizeFunction>(
-          g_originals[GETCERTIFICATESIZE_ID]);
-  return TargetGetCertificateSize(orig_fn, device_name, certificate_type,
-                                  certificate_length);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificateByHandle64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                               DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                               BYTE* certificate,
-                               ULONG certificate_length) {
-  GetCertificateByHandleFunction orig_fn =
-      reinterpret_cast<GetCertificateByHandleFunction>(
-          g_originals[GETCERTIFICATE_ID]);
-  return TargetGetCertificateByHandle(orig_fn, protected_output,
-                                      certificate_type, certificate,
-                                      certificate_length);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetCertificateSizeByHandle64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                                   DXGKMDT_CERTIFICATE_TYPE certificate_type,
-                                   ULONG* certificate_length) {
-  GetCertificateSizeByHandleFunction orig_fn =
-      reinterpret_cast<GetCertificateSizeByHandleFunction>(
-          g_originals[GETCERTIFICATESIZE_ID]);
-  return TargetGetCertificateSizeByHandle(orig_fn, protected_output,
-                                          certificate_type, certificate_length);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI TargetDestroyOPMProtectedOutput64(
-    OPM_PROTECTED_OUTPUT_HANDLE protected_output) {
-  DestroyOPMProtectedOutputFunction orig_fn =
-      reinterpret_cast<DestroyOPMProtectedOutputFunction>(
-          g_originals[DESTROYOPMPROTECTEDOUTPUT_ID]);
-  return TargetDestroyOPMProtectedOutput(orig_fn, protected_output);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetOPMInformation64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                          const DXGKMDT_OPM_GET_INFO_PARAMETERS* parameters,
-                          DXGKMDT_OPM_REQUESTED_INFORMATION* requested_info) {
-  GetOPMInformationFunction orig_fn =
-      reinterpret_cast<GetOPMInformationFunction>(
-          g_originals[GETOPMINFORMATION_ID]);
-  return TargetGetOPMInformation(orig_fn, protected_output, parameters,
-                                 requested_info);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI
-TargetGetOPMRandomNumber64(OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-                           DXGKMDT_OPM_RANDOM_NUMBER* random_number) {
-  GetOPMRandomNumberFunction orig_fn =
-      reinterpret_cast<GetOPMRandomNumberFunction>(
-          g_originals[GETOPMRANDOMNUMBER_ID]);
-  return TargetGetOPMRandomNumber(orig_fn, protected_output, random_number);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI TargetSetOPMSigningKeyAndSequenceNumbers64(
-    OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-    const DXGKMDT_OPM_ENCRYPTED_PARAMETERS* parameters) {
-  SetOPMSigningKeyAndSequenceNumbersFunction orig_fn =
-      reinterpret_cast<SetOPMSigningKeyAndSequenceNumbersFunction>(
-          g_originals[SETOPMSIGNINGKEYANDSEQUENCENUMBERS_ID]);
-  return TargetSetOPMSigningKeyAndSequenceNumbers(orig_fn, protected_output,
-                                                  parameters);
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI TargetConfigureOPMProtectedOutput64(
-    OPM_PROTECTED_OUTPUT_HANDLE protected_output,
-    const DXGKMDT_OPM_CONFIGURE_PARAMETERS* parameters,
-    ULONG additional_parameters_size,
-    const BYTE* additional_parameters) {
-  ConfigureOPMProtectedOutputFunction orig_fn =
-      reinterpret_cast<ConfigureOPMProtectedOutputFunction>(
-          g_originals[CONFIGUREOPMPROTECTEDOUTPUT_ID]);
-  return TargetConfigureOPMProtectedOutput(
-      orig_fn, protected_output, parameters, additional_parameters_size,
-      additional_parameters);
 }
 
 SANDBOX_INTERCEPT NTSTATUS WINAPI

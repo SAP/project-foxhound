@@ -111,15 +111,20 @@ public class Utils {
    * Returns the simplified name of a Java class that includes any outer classes but excludes
    * package qualifiers. Used for Java signature hints.
    *
-   * @param genScope The current scope of the class containing the current declaration. @Param type
-   *     The class whose simplified name is to be generated.
+   * @param genScope The current scope of the class containing the current declaration.
+   * @param type The class whose simplified name is to be generated.
    * @return String containing the result
    */
   public static String getSimplifiedJavaClassName(final Class<?> genScope, final Class<?> type) {
     return getSimplifiedClassName(genScope, type, ".");
   }
 
-  /** Returns the fully-qualified name of the native class wrapper for the given type. */
+  /**
+   * Returns the fully-qualified name of the native class wrapper for the given type.
+   *
+   * @param type The class to get the wrapper name for
+   * @return The fully-qualified native wrapper class name
+   */
   public static String getWrappedNativeClassName(final Class<?> type) {
     return "mozilla::java::" + getSimplifiedClassName(null, type, "::");
   }
@@ -128,6 +133,7 @@ public class Utils {
    * Get the C++ parameter type corresponding to the provided type parameter.
    *
    * @param type Class to determine the corresponding JNI type for.
+   * @param info Annotation information for the parameter
    * @return C++ type as a String
    */
   public static String getNativeParameterType(Class<?> type, AnnotationInfo info) {
@@ -140,6 +146,7 @@ public class Utils {
    * generating comments instead of machine-readable code.
    *
    * @param type Class to determine the corresponding JNI type for.
+   * @param info Annotation information for the parameter
    * @return C++ type as a String
    */
   public static String getNativeParameterTypeHint(Class<?> type, AnnotationInfo info) {
@@ -193,6 +200,7 @@ public class Utils {
    * Get the C++ return type corresponding to the provided type parameter.
    *
    * @param type Class to determine the corresponding JNI type for.
+   * @param info Annotation information for the return type
    * @return C++ type as a String
    */
   public static String getNativeReturnType(Class<?> type, AnnotationInfo info) {
@@ -205,6 +213,7 @@ public class Utils {
    * generating comments instead of machine-readable code.
    *
    * @param type Class to determine the corresponding JNI type for.
+   * @param info Annotation information for the return type
    * @return C++ type as a String
    */
   public static String getNativeReturnTypeHint(Class<?> type, AnnotationInfo info) {
@@ -340,9 +349,9 @@ public class Utils {
   }
 
   /**
-   * Get the C++ name for a member.
+   * Get the C++ name for a class.
    *
-   * @param member Member to get the name for.
+   * @param clz Class to get the name for.
    * @return JNI name as a string
    */
   public static String getNativeName(Class<?> clz) {
@@ -351,9 +360,9 @@ public class Utils {
   }
 
   /**
-   * Get the C++ name for a member.
+   * Get the C++ name for an annotated element.
    *
-   * @param member Member to get the name for.
+   * @param element Annotated element to get the name for.
    * @return JNI name as a string
    */
   public static String getNativeName(AnnotatedElement element) {
@@ -379,6 +388,12 @@ public class Utils {
     return member.getName();
   }
 
+  /**
+   * Gets the unqualified name from a qualified name.
+   *
+   * @param name The qualified name
+   * @return The unqualified name
+   */
   public static String getUnqualifiedName(String name) {
     return name.substring(name.lastIndexOf(':') + 1);
   }
@@ -416,6 +431,7 @@ public class Utils {
   /**
    * Return an enum value with the given name.
    *
+   * @param <T> The enum type
    * @param type Enum class type.
    * @param name Enum value name.
    * @return Enum value with the given name.
@@ -453,6 +469,12 @@ public class Utils {
     }
   }
 
+  /**
+   * Gets the C preprocessor ifdef header for the given condition.
+   *
+   * @param ifdef The ifdef condition
+   * @return The ifdef header string
+   */
   public static String getIfdefHeader(String ifdef) {
     if (ifdef.isEmpty()) {
       return "";
@@ -462,6 +484,12 @@ public class Utils {
     return "#ifdef " + ifdef + "\n";
   }
 
+  /**
+   * Gets the C preprocessor endif footer for the given condition.
+   *
+   * @param ifdef The ifdef condition
+   * @return The endif footer string
+   */
   public static String getIfdefFooter(String ifdef) {
     if (ifdef.isEmpty()) {
       return "";
@@ -469,6 +497,12 @@ public class Utils {
     return "#endif // " + ifdef + "\n";
   }
 
+  /**
+   * Checks if a class is a JNI object by examining its inheritance hierarchy.
+   *
+   * @param cls The class to check
+   * @return true if the class extends JNIObject, false otherwise
+   */
   public static boolean isJNIObject(Class<?> cls) {
     for (; cls != null; cls = cls.getSuperclass()) {
       if (cls.getName().equals("org.mozilla.gecko.mozglue.JNIObject")) {

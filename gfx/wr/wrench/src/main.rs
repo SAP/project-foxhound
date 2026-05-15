@@ -21,6 +21,7 @@ mod perf;
 mod png;
 mod premultiply;
 mod rawtest;
+mod rawtests;
 mod reftest;
 mod test_invalidation;
 mod test_shaders;
@@ -786,7 +787,6 @@ pub fn main() {
     } else if let Some(subargs) = args.subcommand_matches("png") {
         let surface = match subargs.value_of("surface") {
             Some("screen") | None => png::ReadSurface::Screen,
-            Some("gpu-cache") => png::ReadSurface::GpuCache,
             _ => panic!("Unknown surface argument value")
         };
         let output_path = subargs.value_of("OUTPUT").map(PathBuf::from);
@@ -836,7 +836,10 @@ pub fn main() {
             rx.unwrap(),
         );
 
-        harness.run();
+        let num_failures = harness.run();
+        if num_failures > 0 {
+            process::exit(num_failures as _);
+        }
     } else if let Some(subargs) = args.subcommand_matches("compare_perf") {
         let first_filename = subargs.value_of("first_filename").unwrap();
         let second_filename = subargs.value_of("second_filename").unwrap();

@@ -3,15 +3,27 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* eslint-disable import/no-unassigned-import */
-/* eslint-env mozilla/remote-page */
 
 import {
+  gHasSts,
+  gIsCertError,
+  gErrorCode,
+  isCaptive,
   getCSSClass,
   getHostName,
   getSubjectAltNames,
   getFailedCertificatesAsPEMString,
+  handleNSSFailure,
   recordSecurityUITelemetry,
+  gOffline,
+  retryThis,
+  VPN_ACTIVE,
 } from "chrome://global/content/aboutNetErrorHelpers.mjs";
+import { initializeRegistry } from "chrome://global/content/errors/error-registry.mjs";
+import {
+  getResolvedErrorConfig,
+  isFeltPrivacySupported,
+} from "chrome://global/content/errors/error-lookup.mjs";
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import "chrome://global/content/elements/moz-button-group.mjs";
@@ -19,6 +31,10 @@ import "chrome://global/content/elements/moz-button.mjs";
 import "chrome://global/content/elements/moz-support-link.mjs";
 
 const HOST_NAME = getHostName();
+const FELT_PRIVACY_REFRESH = RPMGetBoolPref(
+  "security.certerrors.felt-privacy-v1",
+  false
+);
 
 export class NetErrorCard extends MozLitElement {
   static properties = {
@@ -27,23 +43,68 @@ export class NetErrorCard extends MozLitElement {
     advancedShowing: { type: Boolean, reflect: true },
     certErrorDebugInfoShowing: { type: Boolean, reflect: true },
     certificateErrorText: { type: String },
+    showPrefReset: { type: Boolean },
+    showTlsNotice: { type: Boolean },
+    showTrrSettingsButton: { type: Boolean },
   };
 
   static queries = {
     copyButtonTop: "#copyToClipboardTop",
+    copyButtonBot: "#copyToClipboardBot",
     exceptionButton: "#exception-button",
     errorCode: "#errorCode",
     advancedContainer: ".advanced-container",
     advancedButton: "#advanced-button",
+    certErrorIntro: "#certErrorIntro",
+    certErrorDebugInfo: "#certificateErrorDebugInformation",
+    certErrorText: "#certificateErrorText",
+    viewCertificate: "#viewCertificate",
+    certErrorBodyTitle: "#certErrorBodyTitle",
+    returnButton: "#returnButton",
+    learnMoreLink: "#learnMoreLink",
+    whatCanYouDo: "#whatCanYouDo",
+    whyDangerous: "#fp-why-site-dangerous",
+    netErrorTitleText: "#neterror-title-text",
+    netErrorIntro: "#netErrorIntro",
+    netErrorLearnMoreLink: "#neterror-learn-more-link",
+    httpAuthIntroText: "#fp-http-auth-disabled-intro-text",
+    tryAgainButton: "#tryAgainButton",
+    prefResetButton: "#prefResetButton",
+    tlsNotice: "#tlsVersionNotice",
+    badStsCertExplanation: "#badStsCertExplanation",
   };
 
-  static ERROR_CODES = new Set([
-    "SEC_ERROR_UNKNOWN_ISSUER",
-    "SSL_ERROR_BAD_CERT_DOMAIN",
-    "MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT",
-    "SEC_ERROR_EXPIRED_CERTIFICATE",
-    "SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE",
-  ]);
+  static getCustomErrorID(defaultCode) {
+    if (gOffline) {
+      return "NS_ERROR_OFFLINE";
+    }
+    if (defaultCode === "proxyConnectFailure" && VPN_ACTIVE) {
+      return "vpnFailure";
+    }
+    return defaultCode;
+  }
+
+  static isSupported() {
+    if (!FELT_PRIVACY_REFRESH) {
+      return false;
+    }
+
+    initializeRegistry();
+
+    let errorInfo;
+    try {
+      errorInfo = gIsCertError
+        ? document.getFailedCertSecurityInfo()
+        : document.getNetErrorInfo();
+    } catch {
+      return false;
+    }
+
+    const id = NetErrorCard.getCustomErrorID(
+      errorInfo.errorCodeString || gErrorCode
+    );
+    return isFeltPrivacySupported(id);
+  }
 
   constructor() {
     super();
@@ -54,31 +115,36 @@ export class NetErrorCard extends MozLitElement {
     this.certificateErrorText = null;
     this.domainMismatchNamesPromise = null;
     this.certificateErrorTextPromise = null;
+    this.showCustomNetErrorCard = false;
+    this.showPrefReset = false;
+    this.showTlsNotice = false;
+    this.showTrrSettingsButton = false;
+    this.trrTelemetryData = null;
   }
 
   async getUpdateComplete() {
-    const result = await super.getUpdateComplete();
-
-    if (this.domainMismatchNames && this.certificateErrorText) {
-      return result;
-    }
-
-    await Promise.all([
-      this.getDomainMismatchNames(),
-      this.getCertificateErrorText(),
-    ]);
-
-    await Promise.all([
+    // Fetch domain mismatch names and cert error text before rendering
+    // to ensure Fluent localization has all required variables
+    const promises = [
+      this.errorConfig?.advanced?.requiresDomainMismatchNames &&
+        !this.domainMismatchNames &&
+        this.getDomainMismatchNames(),
+      document.getFailedCertSecurityInfo &&
+        !this.certificateErrorText &&
+        this.getCertificateErrorText(),
       this.domainMismatchNamesPromise,
       this.certificateErrorTextPromise,
-    ]);
+    ].filter(Boolean);
 
-    return result;
+    if (promises.length) {
+      await Promise.all(promises);
+    }
+
+    return super.getUpdateComplete();
   }
 
   connectedCallback() {
     super.connectedCallback();
-
     this.init();
   }
 
@@ -89,43 +155,247 @@ export class NetErrorCard extends MozLitElement {
     );
   }
 
+  shouldHideExceptionButton() {
+    let prefValue = RPMGetBoolPref(
+      "security.certerror.hideAddException",
+      false
+    );
+    if (prefValue || this.errorConfig.hasNoUserFix) {
+      return true;
+    }
+
+    const isIframed = window.self !== window.top;
+    return gHasSts || !this.errorInfo.errorIsOverridable || isIframed;
+  }
+
   init() {
+    this.hostname = HOST_NAME;
+    this.errorInfo = this.getErrorInfo();
+    this.errorConfig = this.getErrorConfig();
+    this.hideExceptionButton = this.shouldHideExceptionButton();
+
+    const titles = {
+      net: "neterror-page-title",
+      blocked: "neterror-blocked-by-policy-page-title",
+    };
     document.l10n.setAttributes(
       document.querySelector("title"),
-      "fp-certerror-page-title"
+      titles[this.errorConfig.category] ?? "fp-certerror-page-title"
     );
 
-    this.failedCertInfo = document.getFailedCertSecurityInfo();
+    // Record telemetry when the error page loads
+    if (gIsCertError && !isCaptive()) {
+      recordSecurityUITelemetry(
+        "securityUiCerterror",
+        "loadAboutcerterror",
+        this.errorInfo
+      );
+    }
 
-    this.hostname = HOST_NAME;
-    const { port } = document.location;
-    if (port && port != 443) {
-      this.hostname += ":" + port;
+    // Check if the connection is being man-in-the-middled. When the parent
+    // detects an intercepted connection, the page may be reloaded with a new
+    // error code (MOZILLA_PKIX_ERROR_MITM_DETECTED).
+    const mitmPrimingEnabled = RPMGetBoolPref(
+      "security.certerrors.mitm.priming.enabled"
+    );
+    if (
+      mitmPrimingEnabled &&
+      this.errorConfig.errorCode == "SEC_ERROR_UNKNOWN_ISSUER" &&
+      // Only do this check for top-level failures.
+      window.parent == window
+    ) {
+      RPMSendAsyncMessage("Browser:PrimeMitm");
+    }
+
+    // We show an offline support page in case of a system-wide error,
+    // when a user cannot connect to the internet and access the SUMO website.
+    // For example, clock error, which causes certerrors across the web or
+    // a security software conflict where the user is unable to connect
+    // to the internet.
+    // The URL that prompts us to show an offline support page should have the following
+    // format: "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/supportPageSlug",
+    // so we can extract the support page slug.
+    let baseURL = RPMGetFormatURLPref("app.support.baseURL");
+    if (document.location.href.startsWith(baseURL)) {
+      let supportPageSlug = document.location.pathname.split("/").pop();
+      RPMSendAsyncMessage("DisplayOfflineSupportPage", {
+        supportPageSlug,
+      });
     }
 
     if (getCSSClass() == "expertBadCert") {
       this.toggleAdvancedShowing();
     }
+
+    this.checkAndRecordTRRTelemetry();
+    this.checkForDomainSuggestions();
+  }
+
+  // Check for alternate host for dnsNotFound errors.
+  checkForDomainSuggestions() {
+    if (gErrorCode == "dnsNotFound" && !this.isTRROnlyFailure()) {
+      RPMCheckAlternateHostAvailable();
+    }
+  }
+
+  isTRROnlyFailure() {
+    return gErrorCode == "dnsNotFound" && RPMIsTRROnlyFailure();
+  }
+
+  checkAndRecordTRRTelemetry() {
+    if (!this.isTRROnlyFailure() || isCaptive()) {
+      return;
+    }
+
+    this.recordTRRLoadTelemetry();
+    this.showTrrSettingsButton = true;
+  }
+
+  recordTRRLoadTelemetry() {
+    const trrMode = RPMGetIntPref("network.trr.mode");
+    const trrDomain = RPMGetTRRDomain();
+    const skipReason = RPMGetTRRSkipReason();
+
+    this.trrTelemetryData = {
+      value: "TRROnlyFailure",
+      mode: trrMode.toString(),
+      provider_key: trrDomain,
+      skip_reason: skipReason,
+    };
+
+    RPMRecordGleanEvent("securityDohNeterror", "loadDohwarning", {
+      value: "TRROnlyFailure",
+      mode: trrMode,
+      provider_key: trrDomain,
+      skip_reason: skipReason,
+    });
+  }
+
+  handlePrefChangeDetected() {
+    this.showPrefReset = true;
+    this.focusPrefResetButton();
+  }
+
+  async focusPrefResetButton() {
+    await this.getUpdateComplete();
+
+    if (window.top != window) {
+      return;
+    }
+
+    if (!this.prefResetButton) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      this.prefResetButton.focus();
+    });
+  }
+
+  handlePrefResetClick() {
+    RPMSendAsyncMessage("Browser:ResetSSLPreferences");
+  }
+
+  prefResetContainerTemplate() {
+    if (!this.showPrefReset) {
+      return null;
+    }
+
+    return html`<div id="prefChangeContainer" class="button-container">
+      <p data-l10n-id="neterror-pref-reset"></p>
+      <moz-button
+        id="prefResetButton"
+        type="primary"
+        data-l10n-id="neterror-pref-reset-button"
+        @click=${this.handlePrefResetClick}
+      ></moz-button>
+    </div>`;
+  }
+
+  getErrorInfo() {
+    return gIsCertError
+      ? document.getFailedCertSecurityInfo()
+      : document.getNetErrorInfo();
+  }
+
+  getErrorConfig() {
+    const id = NetErrorCard.getCustomErrorID(
+      this.errorInfo.errorCodeString || gErrorCode
+    );
+    const errorConfig = getResolvedErrorConfig(id, {
+      hostname: this.hostname,
+      errorInfo: this.errorInfo,
+      cssClass: getCSSClass(),
+      domainMismatchNames: this.domainMismatchNames,
+      offline: gOffline,
+    });
+
+    if (errorConfig.customNetError) {
+      this.showCustomNetErrorCard = true;
+    }
+
+    if (gErrorCode === "nssFailure2") {
+      const result = handleNSSFailure(() => this.handlePrefChangeDetected());
+      if (result.versionError) {
+        this.showTlsNotice = true;
+      }
+    }
+    return errorConfig;
   }
 
   introContentTemplate() {
-    switch (this.failedCertInfo.errorCodeString) {
-      case "SEC_ERROR_UNKNOWN_ISSUER":
-      case "SSL_ERROR_BAD_CERT_DOMAIN":
-      case "SEC_ERROR_EXPIRED_CERTIFICATE":
-      case "MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT":
-        return html`<p
-          data-l10n-id="fp-certerror-intro"
-          data-l10n-args='{"hostname": "${this.hostname}"}'
-        ></p>`;
-      case "SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE":
-        return html`<p
-          data-l10n-id="fp-certerror-expired-intro"
-          data-l10n-args='{"hostname": "${this.hostname}"}'
-        ></p>`;
+    const config = this.errorConfig;
+    if (!config.introContent) {
+      return null;
     }
 
-    return null;
+    // Determine element ID based on error type
+    const elementId = gIsCertError ? "certErrorIntro" : "netErrorIntro";
+
+    if (Array.isArray(config.introContent)) {
+      return html`<p id=${elementId}>
+        ${config.introContent.map(
+          ic =>
+            html`<span
+              data-l10n-id=${ic.dataL10nId}
+              data-l10n-args=${ic.dataL10nArgs
+                ? JSON.stringify(ic.dataL10nArgs)
+                : null}
+            ></span>`
+        )}
+      </p>`;
+    }
+
+    const { dataL10nId, dataL10nArgs } = config.introContent;
+
+    // Handle NS_ERROR_BASIC_HTTP_AUTH_DISABLED special case with additional content
+    if (config.errorCode === "NS_ERROR_BASIC_HTTP_AUTH_DISABLED") {
+      return html`<p
+          id="fp-http-auth-disabled-intro-text"
+          data-l10n-id=${dataL10nId}
+        ></p>
+        ${this.hideExceptionButton
+          ? html`<p
+              id="fp-http-auth-disabled-secure-connection-text"
+              data-l10n-id="fp-neterror-http-auth-disabled-secure-connection"
+            ></p> `
+          : null} `;
+    }
+
+    // Handle HSTS certificate errors with additional explanation
+    // For HSTS errors, we show additional explanation about why they can't bypass
+    return html`<p
+        id=${elementId}
+        data-l10n-id=${dataL10nId}
+        data-l10n-args=${dataL10nArgs ? JSON.stringify(dataL10nArgs) : null}
+      ></p>
+      ${gHasSts
+        ? html`<p
+            id="badStsCertExplanation"
+            data-l10n-id="certerror-what-should-i-do-bad-sts-cert-explanation"
+            data-l10n-args=${JSON.stringify({ hostname: this.hostname })}
+          ></p>`
+        : null} `;
   }
 
   advancedContainerTemplate() {
@@ -133,111 +403,64 @@ export class NetErrorCard extends MozLitElement {
       return null;
     }
 
-    let content;
-
-    switch (this.failedCertInfo.errorCodeString) {
-      case "SEC_ERROR_UNKNOWN_ISSUER": {
-        content = this.advancedSectionTemplate({
-          whyDangerousL10nId: "fp-certerror-unknown-issuer-why-dangerous-body",
-          whatCanYouDoL10nId:
-            "fp-certerror-unknown-issuer-what-can-you-do-body",
-          learnMoreL10nId: "fp-learn-more-about-cert-issues",
-          learnMoreSupportPage: "connection-not-secure",
-          viewCert: true,
-          viewDateTime: true,
-        });
-        break;
-      }
-      case "SSL_ERROR_BAD_CERT_DOMAIN": {
-        if (!this.domainMismatchNames) {
-          this.getDomainMismatchNames();
-          return null;
-        }
-
-        content = this.advancedSectionTemplate({
-          whyDangerousL10nId: "fp-certerror-bad-domain-why-dangerous-body",
-          whyDangerousL10nArgs: {
-            hostname: this.hostname,
-            validHosts: this.domainMismatchNames ?? "",
-          },
-          whatCanYouDoL10nId: "fp-certerror-bad-domain-what-can-you-do-body",
-          learnMoreL10nId: "fp-learn-more-about-secure-connection-failures",
-          learnMoreSupportPage: "connection-not-secure",
-          viewCert: true,
-          viewDateTime: true,
-        });
-        break;
-      }
-      case "SEC_ERROR_EXPIRED_CERTIFICATE": {
-        const notBefore = this.failedCertInfo.validNotBefore;
-        const notAfter = this.failedCertInfo.validNotAfter;
-        if (notBefore && Date.now() < notAfter) {
-          content = this.advancedSectionTemplate({
-            whyDangerousL10nId: "fp-certerror-not-yet-valid-why-dangerous-body",
-            whyDangerousL10nArgs: {
-              date: notBefore,
-            },
-            whatCanYouDoL10nId: "fp-certerror-expired-what-can-you-do-body",
-            whatCanYouDoL10nArgs: {
-              date: Date.now(),
-            },
-            learnMoreL10nId: "fp-learn-more-about-time-related-errors",
-            learnMoreSupportPage: "time-errors",
-            viewCert: true,
-            viewDateTime: true,
-          });
-        } else {
-          content = this.advancedSectionTemplate({
-            whyDangerousL10nId: "fp-certerror-expired-why-dangerous-body",
-            whyDangerousL10nArgs: {
-              date: notAfter,
-            },
-            whatCanYouDoL10nId: "fp-certerror-expired-what-can-you-do-body",
-            whatCanYouDoL10nArgs: {
-              date: Date.now(),
-            },
-            learnMoreL10nId: "fp-learn-more-about-time-related-errors",
-            learnMoreSupportPage: "time-errors",
-            viewCert: true,
-            viewDateTime: true,
-          });
-        }
-        break;
-      }
-      case "MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT": {
-        content = this.advancedSectionTemplate({
-          whyDangerousL10nId: "fp-certerror-self-signed-why-dangerous-body",
-          whatCanYouDoL10nId: "fp-certerror-self-signed-what-can-you-do-body",
-          importantNote: "fp-certerror-self-signed-important-note",
-          viewCert: true,
-          viewDateTime: true,
-        });
-        break;
-      }
-      case "SEC_ERROR_EXPIRED_ISSUER_CERTIFICATE": {
-        const notAfter = this.failedCertInfo.validNotAfter;
-        content = this.advancedSectionTemplate({
-          whyDangerousL10nId: "fp-certerror-expired-why-dangerous-body",
-          whyDangerousL10nArgs: {
-            date: notAfter,
-          },
-          whatCanYouDoL10nId: "fp-certerror-expired-what-can-you-do-body",
-          whatCanYouDoL10nArgs: {
-            date: Date.now(),
-          },
-          learnMoreL10nId: "fp-learn-more-about-time-related-errors",
-          learnMoreSupportPage: "time-errors",
-          viewCert: true,
-          viewDateTime: true,
-        });
-        break;
-      }
+    const config = this.errorConfig;
+    if (!config?.advanced) {
+      return null;
     }
+
+    const content = this.advancedSectionTemplate(
+      this.mapAdvancedConfigToParams(config.advanced)
+    );
 
     return html`<div class="advanced-container">
       <h2 data-l10n-id="fp-certerror-advanced-title"></h2>
       ${content}
     </div>`;
+  }
+
+  mapAdvancedConfigToParams(advancedConfig) {
+    const params = {
+      whyDangerousL10nId: advancedConfig.whyDangerous?.dataL10nId,
+      whyDangerousL10nArgs: advancedConfig.whyDangerous?.dataL10nArgs,
+      whatCanYouDoL10nId: advancedConfig.whatCanYouDo?.dataL10nId,
+      whatCanYouDoL10nArgs: advancedConfig.whatCanYouDo?.dataL10nArgs,
+      importantNote: advancedConfig.importantNote,
+      learnMoreL10nId: advancedConfig.learnMore?.dataL10nId,
+      learnMoreSupportPage: advancedConfig.learnMore?.supportPage,
+      viewCert: advancedConfig.showViewCertificate,
+      viewDateTime: advancedConfig.showDateTime,
+    };
+
+    // Inject hostname into args that need it
+    if (params.whyDangerousL10nArgs) {
+      if (params.whyDangerousL10nArgs.hostname === null) {
+        params.whyDangerousL10nArgs = {
+          ...params.whyDangerousL10nArgs,
+          hostname: this.hostname,
+        };
+      }
+      // Handle SSL_ERROR_BAD_CERT_DOMAIN's validHosts arg
+      if (params.whyDangerousL10nArgs.validHosts === null) {
+        params.whyDangerousL10nArgs = {
+          ...params.whyDangerousL10nArgs,
+          validHosts: this.domainMismatchNames ?? "",
+        };
+      }
+    }
+
+    // Handle whatCanYouDo date args
+    if (params.whatCanYouDoL10nArgs?.date === null) {
+      params.whatCanYouDoL10nArgs = {
+        ...params.whatCanYouDoL10nArgs,
+        date: Date.now(),
+      };
+    }
+
+    return params;
+  }
+
+  getNSSErrorWhyDangerousL10nId(errorString) {
+    return errorString.toLowerCase().replace(/_/g, "-");
   }
 
   advancedSectionTemplate(params) {
@@ -248,42 +471,33 @@ export class NetErrorCard extends MozLitElement {
       whatCanYouDoL10nArgs,
       importantNote,
       learnMoreL10nId,
+      learnMoreL10nArgs,
       learnMoreSupportPage,
       viewCert,
       viewDateTime,
     } = params;
-    return html`<p>
+    return html`<div>
         ${whyDangerousL10nId
-          ? html`<strong
-                data-l10n-id="fp-certerror-why-site-dangerous"
-              ></strong>
-              <span
+          ? html`<h3 data-l10n-id="fp-certerror-why-site-dangerous"></h3>
+              <p
+                id="fp-why-site-dangerous"
                 data-l10n-id=${whyDangerousL10nId}
                 data-l10n-args=${JSON.stringify(whyDangerousL10nArgs)}
-              ></span>`
+              ></p>`
           : null}
-      </p>
+      </div>
       ${whatCanYouDoL10nId
-        ? html`<p>
-            <strong data-l10n-id="fp-certerror-what-can-you-do"></strong>
-            <span
+        ? html`<div>
+            <h3 data-l10n-id="fp-certerror-what-can-you-do"></h3>
+            <p
+              id="whatCanYouDo"
               data-l10n-id=${whatCanYouDoL10nId}
               data-l10n-args=${JSON.stringify(whatCanYouDoL10nArgs)}
-            ></span>
-          </p>`
+            ></p>
+          </div>`
         : null}
       ${importantNote ? html`<p data-l10n-id=${importantNote}></p>` : null}
-      ${learnMoreL10nId
-        ? html`<p>
-            <a
-              is="moz-support-link"
-              support-page=${learnMoreSupportPage}
-              data-l10n-id=${learnMoreL10nId}
-              data-telemetry-id="learn_more_link"
-              @click=${this.handleTelemetryClick}
-            ></a>
-          </p>`
-        : null}
+      ${this.prefResetContainerTemplate()} ${this.tlsNoticeTemplate()}
       ${viewCert
         ? html`<p>
             <a
@@ -293,30 +507,267 @@ export class NetErrorCard extends MozLitElement {
             ></a>
           </p>`
         : null}
-      <p>
-        <a
-          id="errorCode"
-          data-l10n-id="fp-cert-error-code"
-          data-l10n-name="error-code-link"
-          data-telemetry-id="error_code_link"
-          data-l10n-args='{"error": "${this.failedCertInfo.errorCodeString}"}'
-          @click=${this.toggleCertErrorDebugInfoShowing}
-          href="#certificateErrorDebugInformation"
-        ></a>
-      </p>
+      ${learnMoreL10nId
+        ? html`<p>
+            <a
+              is="moz-support-link"
+              support-page=${learnMoreSupportPage}
+              data-l10n-id=${learnMoreL10nId}
+              data-l10n-args=${JSON.stringify(learnMoreL10nArgs)}
+              data-telemetry-id="learn_more_link"
+              id="learnMoreLink"
+              @click=${this.handleTelemetryClick}
+            ></a>
+          </p>`
+        : null}
+      ${this.errorConfig?.errorCode && gIsCertError
+        ? html`<p>
+            <a
+              id="errorCode"
+              data-l10n-id="fp-cert-error-code"
+              data-l10n-name="error-code-link"
+              data-telemetry-id="error_code_link"
+              data-l10n-args='{"error": "${this.errorConfig.errorCode}"}'
+              @click=${this.toggleCertErrorDebugInfoShowing}
+              href="#certificateErrorDebugInformation"
+            ></a>
+          </p>`
+        : null}
+      ${this.errorConfig?.errorCode && !gIsCertError
+        ? html`<p
+            data-l10n-id="fp-cert-error-code"
+            data-l10n-args='{"error": "${this.errorConfig.errorCode}"}'
+          ></p>`
+        : null}
       ${viewDateTime
         ? html`<p
             data-l10n-id="fp-datetime"
             data-l10n-args=${JSON.stringify({ datetime: Date.now() })}
           ></p>`
         : null}
-      <moz-button
-        id="exception-button"
-        data-l10n-id="fp-certerror-override-exception-button"
-        data-l10n-args=${JSON.stringify({ hostname: this.hostname })}
-        data-telemetry-id="exception_button"
-        @click=${this.handleProceedToUrlClick}
-      ></moz-button>`;
+      ${!this.hideExceptionButton
+        ? html` <moz-button
+            id="exception-button"
+            data-l10n-id="fp-certerror-override-exception-button"
+            data-l10n-args=${JSON.stringify({ hostname: this.hostname })}
+            data-telemetry-id="exception_button"
+            @click=${this.handleProceedToUrlClick}
+          ></moz-button>`
+        : null} `;
+  }
+
+  tlsNoticeTemplate() {
+    if (!this.showTlsNotice) {
+      return null;
+    }
+
+    return html`<p
+      id="tlsVersionNotice"
+      data-l10n-id="cert-error-old-tls-version"
+    ></p>`;
+  }
+
+  customNetErrorContainerTemplate() {
+    if (!this.showCustomNetErrorCard) {
+      return null;
+    }
+
+    const config = this.errorConfig;
+    if (!config.customNetError) {
+      // For errors with advanced sections but no custom net error section
+      if (config.buttons?.showAdvanced) {
+        const content = this.customNetErrorSectionTemplate({
+          titleL10nId: config.bodyTitleL10nId || "fp-certerror-body-title",
+          buttons: {
+            goBack: config.buttons?.showGoBack && window.self === window.top,
+            tryAgain: config.buttons?.showTryAgain,
+          },
+          useAdvancedSection: true,
+        });
+
+        return html`<div class="custom-net-error-card">${content}</div>`;
+      }
+      return null;
+    }
+
+    const customNetError = config.customNetError;
+    const params = this.mapCustomNetErrorConfigToParams(customNetError, config);
+    const content = this.customNetErrorSectionTemplate(params);
+
+    return html`<div class="custom-net-error-card">${content}</div>`;
+  }
+
+  mapCustomNetErrorConfigToParams(customNetError, config) {
+    const params = {
+      titleL10nId: customNetError.titleL10nId,
+      whyDangerousL10nId: customNetError.whyDangerousL10nId,
+      whyDangerousL10nArgs: customNetError.whyDangerousL10nArgs,
+      whyDidThisHappenL10nId: customNetError.whyDidThisHappenL10nId,
+      whyDidThisHappenL10nArgs: customNetError.whyDidThisHappenL10nArgs,
+      whatCanYouDoL10nId: customNetError.whatCanYouDoL10nId,
+      whatCanYouDoL10nArgs: customNetError.whatCanYouDoL10nArgs,
+      learnMoreL10nId: customNetError.learnMoreL10nId,
+      learnMoreSupportPage: customNetError.learnMoreSupportPage,
+      buttons: {
+        tryAgain: config.buttons?.showTryAgain,
+        goBack: config.buttons?.showGoBack && window.self === window.top,
+      },
+      useAdvancedSection: config.buttons?.showAdvanced,
+    };
+
+    // Inject hostname into args that need it
+    if (params.whatCanYouDoL10nArgs?.hostname === null) {
+      params.whatCanYouDoL10nArgs = {
+        ...params.whatCanYouDoL10nArgs,
+        hostname: this.hostname,
+      };
+    }
+    if (params.whyDidThisHappenL10nArgs?.hostname === null) {
+      params.whyDidThisHappenL10nArgs = {
+        ...params.whyDidThisHappenL10nArgs,
+        hostname: this.hostname,
+      };
+    }
+
+    return params;
+  }
+
+  customNetErrorSectionTemplate(params) {
+    const {
+      titleL10nId,
+      whyDangerousL10nId,
+      whyDangerousL10nArgs,
+      whyDidThisHappenL10nId,
+      whyDidThisHappenL10nArgs,
+      whatCanYouDoL10nId,
+      whatCanYouDoL10nArgs,
+      learnMoreL10nId,
+      learnMoreSupportPage,
+      buttons = {},
+      useAdvancedSection,
+    } = params;
+
+    const { goBack = false, tryAgain = false } = buttons;
+
+    // Format the learn more link with base URL if it's a SUMO slug
+    let learnMoreHref = learnMoreSupportPage;
+    if (
+      learnMoreSupportPage &&
+      !learnMoreSupportPage.startsWith("http://") &&
+      !learnMoreSupportPage.startsWith("https://")
+    ) {
+      const baseURL = RPMGetFormatURLPref("app.support.baseURL");
+      learnMoreHref = baseURL + learnMoreSupportPage;
+    }
+
+    const content = html`
+      ${whyDangerousL10nId
+        ? html`<div>
+            <h3 data-l10n-id="fp-certerror-why-site-dangerous"></h3>
+            <p
+              data-l10n-id=${whyDangerousL10nId}
+              data-l10n-args=${JSON.stringify(whyDangerousL10nArgs)}
+            ></p>
+          </div>`
+        : null}
+      ${whatCanYouDoL10nId
+        ? html`<div>
+            <h3 data-l10n-id="fp-certerror-what-can-you-do"></h3>
+            <p
+              id="whatCanYouDo"
+              data-l10n-id=${whatCanYouDoL10nId}
+              data-l10n-args=${JSON.stringify(whatCanYouDoL10nArgs)}
+            ></p>
+          </div>`
+        : null}
+      ${whyDidThisHappenL10nId
+        ? html`<div>
+            <h3 data-l10n-id="fp-certerror-what-can-you-do"></h3>
+            <p
+              data-l10n-id=${whyDidThisHappenL10nId}
+              data-l10n-args=${JSON.stringify(whyDidThisHappenL10nArgs)}
+            ></p>
+          </div>`
+        : null}
+      ${learnMoreL10nId
+        ? html`<p>
+            <a
+              href=${learnMoreHref}
+              data-l10n-id=${learnMoreL10nId}
+              data-telemetry-id="learn_more_link"
+              id="neterror-learn-more-link"
+              @click=${this.handleTelemetryClick}
+              rel="noopener noreferrer"
+              target="_blank"
+            ></a>
+          </p>`
+        : null}
+      ${tryAgain
+        ? html`<moz-button-group>
+            <moz-button
+              id="tryAgainButton"
+              type="primary"
+              data-l10n-id="neterror-try-again-button"
+              data-telemetry-id="try_again_button"
+              @click=${this.handleTryAgain}
+            ></moz-button>
+            ${this.showTrrSettingsButton
+              ? html`<moz-button
+                  id="trrSettingsButton"
+                  type="default"
+                  data-l10n-id="neterror-settings-button"
+                  data-telemetry-id="settings_button"
+                  @click=${this.handleTRRSettingsClick}
+                ></moz-button>`
+              : null}
+          </moz-button-group>`
+        : null}
+      ${goBack
+        ? html`<moz-button-group
+            ><moz-button
+              type="primary"
+              data-l10n-id="fp-certerror-return-to-previous-page-recommended-button"
+              data-telemetry-id="return_button_adv"
+              id="returnButton"
+              @click=${this.handleGoBackClick}
+            ></moz-button
+          ></moz-button-group>`
+        : null}
+    `;
+
+    return html`<h1 id="neterror-title-text" data-l10n-id=${titleL10nId}></h1>
+      ${this.introContentTemplate()}
+      ${useAdvancedSection
+        ? html`<moz-button-group>
+            ${goBack
+              ? html`<moz-button
+                  type="primary"
+                  data-l10n-id="fp-certerror-return-to-previous-page-recommended-button"
+                  data-telemetry-id="return_button_adv"
+                  id="returnButton"
+                  @click=${this.handleGoBackClick}
+                ></moz-button>`
+              : null}
+            ${tryAgain
+              ? html`<moz-button
+                  id="tryAgainButton"
+                  type="primary"
+                  data-l10n-id="neterror-try-again-button"
+                  data-telemetry-id="try_again_button"
+                  @click=${this.handleTryAgain}
+                ></moz-button>`
+              : null}
+            <moz-button
+              id="advanced-button"
+              data-l10n-id=${this.advancedShowing
+                ? "fp-certerror-hide-advanced-button"
+                : "fp-certerror-advanced-button"}
+              data-telemetry-id="advanced_button"
+              @click=${this.toggleAdvancedShowing}
+            ></moz-button
+          ></moz-button-group>`
+        : content}
+      ${useAdvancedSection ? this.advancedContainerTemplate() : null} `;
   }
 
   async getDomainMismatchNames() {
@@ -324,9 +775,14 @@ export class NetErrorCard extends MozLitElement {
       return;
     }
 
-    this.domainMismatchNamesPromise = getSubjectAltNames(this.failedCertInfo);
+    this.domainMismatchNamesPromise = getSubjectAltNames(this.errorInfo);
     let subjectAltNames = await this.domainMismatchNamesPromise;
     this.domainMismatchNames = subjectAltNames.join(", ");
+
+    // Re-resolve errorConfig to display domain mismatch names
+    if (this.errorConfig?.advanced?.requiresDomainMismatchNames) {
+      this.errorConfig = this.getErrorConfig();
+    }
   }
 
   async getCertificateErrorText() {
@@ -360,6 +816,7 @@ export class NetErrorCard extends MozLitElement {
       ></moz-button>
       <div id="certificateErrorText">${this.certificateErrorText}</div>
       <moz-button
+        id="copyToClipboardBot"
         data-telemetry-id="clipboard_button_bot"
         data-l10n-id="neterror-copy-to-clipboard-button"
         @click=${this.copyCertErrorTextToClipboard}
@@ -385,6 +842,16 @@ export class NetErrorCard extends MozLitElement {
     );
   }
 
+  handleTryAgain(e) {
+    this.handleTelemetryClick(e);
+    retryThis(e);
+  }
+
+  handleTRRSettingsClick(e) {
+    this.handleTelemetryClick(e);
+    RPMSendAsyncMessage("OpenTRRPreferences");
+  }
+
   toggleAdvancedShowing(e) {
     if (e) {
       this.handleTelemetryClick(e);
@@ -407,8 +874,15 @@ export class NetErrorCard extends MozLitElement {
     // error code link in the advanced panel.
     this.certErrorDebugInfoShowing = false;
 
+    if (!this.exceptionButton) {
+      this.resetReveal = null;
+      return;
+    }
+
     // Reveal, but disabled (and grayed-out) for 3.0s.
-    this.exceptionButton.disabled = true;
+    if (this.exceptionButton) {
+      this.exceptionButton.disabled = true;
+    }
 
     // -
 
@@ -442,7 +916,9 @@ export class NetErrorCard extends MozLitElement {
     }
 
     // Enable and un-gray-out.
-    this.exceptionButton.disabled = false;
+    if (this.exceptionButton) {
+      this.exceptionButton.disabled = false;
+    }
   }
 
   async toggleCertErrorDebugInfoShowing(event) {
@@ -472,21 +948,42 @@ export class NetErrorCard extends MozLitElement {
       target = target.getRootNode().host;
     }
     let telemetryId = target.dataset.telemetryId;
-    void recordSecurityUITelemetry(
-      "securityUiCerterror",
-      "click" +
-        telemetryId
-          .split("_")
-          .map(word => word[0].toUpperCase() + word.slice(1))
-          .join(""),
-      this.failedCertInfo
-    );
+
+    if (this.trrTelemetryData) {
+      RPMRecordGleanEvent(
+        "securityDohNeterror",
+        "click" +
+          telemetryId
+            .split("_")
+            .map(word => word[0].toUpperCase() + word.slice(1))
+            .join(""),
+        this.trrTelemetryData
+      );
+    } else {
+      const category = gIsCertError
+        ? "securityUiCerterror"
+        : "securityUiNeterror";
+      void recordSecurityUITelemetry(
+        category,
+        "click" +
+          telemetryId
+            .split("_")
+            .map(word => word[0].toUpperCase() + word.slice(1))
+            .join(""),
+        this.errorInfo
+      );
+    }
   }
 
   render() {
-    if (!this.failedCertInfo) {
+    if (!this.errorInfo) {
       return null;
     }
+
+    const { bodyTitleL10nId, image } = this.errorConfig;
+    const img =
+      image ?? "chrome://global/skin/illustrations/security-error.svg";
+    const title = bodyTitleL10nId ?? "fp-certerror-body-title";
 
     return html`<link
         rel="stylesheet"
@@ -494,29 +991,32 @@ export class NetErrorCard extends MozLitElement {
       />
       <article class="felt-privacy-container">
         <div class="img-container">
-          <img src="chrome://global/skin/illustrations/security-error.svg" />
+          <img src=${img} />
         </div>
         <div class="container">
-          <h1 data-l10n-id="fp-certerror-body-title"></h1>
-          ${this.introContentTemplate()}
-          <moz-button-group
-            ><moz-button
-              type="primary"
-              data-l10n-id="fp-certerror-return-to-previous-page-recommended-button"
-              data-telemetry-id="return_button_adv"
-              @click=${this.handleGoBackClick}
-            ></moz-button
-            ><moz-button
-              id="advanced-button"
-              data-l10n-id=${this.advancedShowing
-                ? "fp-certerror-hide-advanced-button"
-                : "fp-certerror-advanced-button"}
-              data-telemetry-id="advanced_button"
-              @click=${this.toggleAdvancedShowing}
-            ></moz-button
-          ></moz-button-group>
-          ${this.advancedContainerTemplate()}
-          ${this.certErrorDebugInfoTemplate()}
+          ${this.showCustomNetErrorCard
+            ? html`${this.customNetErrorContainerTemplate()}`
+            : html`<h1 id="certErrorBodyTitle" data-l10n-id=${title}></h1>
+                ${this.introContentTemplate()}
+                <moz-button-group
+                  ><moz-button
+                    type="primary"
+                    data-l10n-id="fp-certerror-return-to-previous-page-recommended-button"
+                    data-telemetry-id="return_button_adv"
+                    id="returnButton"
+                    @click=${this.handleGoBackClick}
+                  ></moz-button
+                  ><moz-button
+                    id="advanced-button"
+                    data-l10n-id=${this.advancedShowing
+                      ? "fp-certerror-hide-advanced-button"
+                      : "fp-certerror-advanced-button"}
+                    data-telemetry-id="advanced_button"
+                    @click=${this.toggleAdvancedShowing}
+                  ></moz-button
+                ></moz-button-group>
+                ${this.advancedContainerTemplate()}
+                ${this.certErrorDebugInfoTemplate()}`}
         </div>
       </article>`;
   }

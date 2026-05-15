@@ -1,4 +1,7 @@
 [DEFAULT]
+run-if = [
+  "os != 'android'",
+]
 head = "head.js"
 firefox-appdir = "browser"
 support-files = ["distribution.ini"]
@@ -11,8 +14,7 @@ support-files = ["distribution.ini"]
 
 ["test_browserGlue_migration_osauth.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && tsan",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1973344
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1973344
 ]
 
 ["test_browserGlue_migration_places_xulstore.js"]
@@ -26,6 +28,14 @@ skip-if = [
 ["test_browserGlue_migration_reset_tracking_table.js"]
 
 ["test_distribution.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_distribution_cachedexistence.js"]
+
+["test_profileDataUpgrade_smartwindow.js"]
+
+["test_startupTelemetry_aiControlBlocking.js"]
+
+["test_startupTelemetry_launchMethod.js"]
+run-if = [
+  "os == 'win'",
+]

@@ -897,6 +897,13 @@ export class TranslationsDocument {
   #scheduler;
 
   /**
+   * The script direction of the source language.
+   *
+   * @type {("ltr"|"rtl")}
+   */
+  #sourceScriptDirection;
+
+  /**
    * The script direction of the target language.
    *
    * @type {("ltr"|"rtl")}
@@ -1093,6 +1100,8 @@ export class TranslationsDocument {
     this.#documentLanguage = documentLanguage;
     this.#translationsCache = translationsCache;
     this.#actorReportFirstVisibleChange = reportVisibleChange;
+    this.#sourceScriptDirection =
+      Services.intl.getScriptDirection(documentLanguage);
     this.#targetScriptDirection =
       Services.intl.getScriptDirection(targetLanguage);
     this.#translationsMode = isFindBarOpen ? "content-eager" : "lazy";
@@ -1163,7 +1172,7 @@ export class TranslationsDocument {
           // The count of nodes that exited this observer's proximity.
           let exitedCount = 0;
 
-          const startTime = Cu.now();
+          const startTime = ChromeUtils.now();
           for (const { target, isIntersecting } of entries) {
             isIntersecting ? enteredCount++ : exitedCount++;
 
@@ -1220,7 +1229,7 @@ export class TranslationsDocument {
           // The count of nodes that exited this observer's proximity.
           let exitedCount = 0;
 
-          const startTime = Cu.now();
+          const startTime = ChromeUtils.now();
           for (const { target, isIntersecting } of entries) {
             if (isIntersecting) {
               // The target has entered the boundary, so we will enqueue it for translation.
@@ -1284,7 +1293,7 @@ export class TranslationsDocument {
           // The count of nodes that exited this observer's proximity.
           let exitedCount = 0;
 
-          const startTime = Cu.now();
+          const startTime = ChromeUtils.now();
           for (const { target, isIntersecting } of entries) {
             isIntersecting ? enteredCount++ : exitedCount++;
 
@@ -1339,7 +1348,7 @@ export class TranslationsDocument {
           // The count of nodes that exited this observer's proximity.
           let exitedCount = 0;
 
-          const startTime = Cu.now();
+          const startTime = ChromeUtils.now();
           for (const { target, isIntersecting } of entries) {
             if (isIntersecting) {
               // The target has entered the boundary, so we will enqueue it for translation.
@@ -1395,7 +1404,7 @@ export class TranslationsDocument {
       async mutationsList => {
         await this.#waitForFirstIntersectionObservations();
 
-        const startTime = Cu.now();
+        const startTime = ChromeUtils.now();
 
         // The count of attribute mutations in this observation.
         let attributeCount = 0;
@@ -1576,11 +1585,15 @@ export class TranslationsDocument {
     );
 
     const addRootElements = () => {
-      const startTime = Cu.now();
+      const startTime = ChromeUtils.now();
 
       this.#addRootElement(document.body);
       this.#addRootElement(document.head);
       this.#addRootElement(document.querySelector("title"));
+      if (!document.body && document.documentElement) {
+        // Handle documents such as standalone SVGs that lack a body.
+        this.#addRootElement(document.documentElement);
+      }
 
       ChromeUtils.addProfilerMarker(
         "TranslationsDocument Initialize",
@@ -1615,7 +1628,13 @@ export class TranslationsDocument {
       }
     };
 
-    if (document.body) {
+    if (
+      // There exists a document body, so we are clear to continue.
+      document.body ||
+      // The page has finished loading, but there is no document body.
+      // There may still be roots to add, such as in the case of a standalone SVG.
+      document.readyState !== "loading"
+    ) {
       addRootElements();
     } else {
       // The TranslationsDocument was invoked before the DOM was ready, wait for
@@ -1923,7 +1942,7 @@ export class TranslationsDocument {
         const attributeElementCount = this.#elementsWithMutatedAttributes.size;
         let attributeRequestCount = 0;
 
-        const startTime = Cu.now();
+        const startTime = ChromeUtils.now();
 
         // Ensure the nodes are still alive.
         const liveNodes = [];
@@ -2395,7 +2414,7 @@ export class TranslationsDocument {
       return;
     }
 
-    const element = asHTMLElement(node);
+    const element = asElement(node);
     if (!element) {
       return;
     }
@@ -2430,7 +2449,7 @@ export class TranslationsDocument {
       return;
     }
 
-    const contentStartTime = Cu.now();
+    const contentStartTime = ChromeUtils.now();
     this.#subdivideNodeForContentTranslations(element);
     ChromeUtils.addProfilerMarker(
       "TranslationsDocument Add Root",
@@ -2438,7 +2457,7 @@ export class TranslationsDocument {
       `Subdivided new root "${node.nodeName}" for content translations`
     );
 
-    const attributeStartTime = Cu.now();
+    const attributeStartTime = ChromeUtils.now();
     this.#subdivideNodeForAttributeTranslations(element);
     ChromeUtils.addProfilerMarker(
       "TranslationsDocument Add Root",
@@ -2905,7 +2924,7 @@ export class TranslationsDocument {
     let detachedElementCount = 0;
     let updatedAttributeCount = 0;
 
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
 
     // Stop the mutations so that the updates won't trigger observations.
     this.#pauseMutationObserverAndThen(() => {
@@ -3204,6 +3223,48 @@ export class TranslationsDocument {
   }
 
   /**
+   * Ensure the element and certain structured ancestors use the target
+   * script direction when it differs from the source script direction.
+   *
+   * No-op if the source and target directions match.
+   *
+   * @param {Element | null} element
+   */
+  #maybeUpdateScriptDirection(element) {
+    const targetScriptDirection = this.#targetScriptDirection;
+
+    if (!element || this.#sourceScriptDirection === targetScriptDirection) {
+      return;
+    }
+
+    /** @param {Element?} [el] */
+    const ensureDirection = el => {
+      el?.setAttribute("dir", targetScriptDirection);
+    };
+
+    ensureDirection(element);
+
+    const listItemAncestor = element.closest("li");
+    if (listItemAncestor) {
+      ensureDirection(listItemAncestor);
+      ensureDirection(listItemAncestor.closest("ul, ol"));
+    }
+
+    const tableCell = element.closest("th, td, caption");
+    if (tableCell) {
+      ensureDirection(tableCell);
+
+      const row = tableCell.closest("tr");
+      ensureDirection(row);
+
+      const body = row?.closest("tbody");
+      ensureDirection(body);
+
+      ensureDirection(body?.closest("table"));
+    }
+  }
+
+  /**
    * Updates all nodes that have completed attribute translation requests.
    *
    * This function is called asynchronously, so nodes may already be dead. Before
@@ -3217,7 +3278,7 @@ export class TranslationsDocument {
     let textNodeCount = 0;
     let elementCount = 0;
 
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
 
     // Stop the mutations so that the updates won't trigger observations.
     this.#pauseMutationObserverAndThen(() => {
@@ -3244,16 +3305,21 @@ export class TranslationsDocument {
         } else if (element === targetNode) {
           elementCount++;
 
-          const translationsDocument = this.#domParser.parseFromString(
+          const translationsDocument = this.#domParser.parseFromSafeString(
             `<!DOCTYPE html><div>${translatedContent}</div>`,
             "text/html"
           );
 
           updateElement(translationsDocument, element);
+          this.#maybeUpdateScriptDirection(element);
+
           this.#processedContentNodes.add(targetNode);
         } else {
           textNodeCount++;
+
           targetNode.textContent = translatedContent;
+          this.#maybeUpdateScriptDirection(asElement(targetNode.parentNode));
+
           this.#processedContentNodes.add(targetNode);
         }
 
@@ -3469,7 +3535,7 @@ export class TranslationsDocument {
    * callback without the need to explicitly bind `this` to the function object.
    */
   #handleScrollEvent = () => {
-    if (Cu.now() - this.#mostRecentScrollTimestamp < 100) {
+    if (ChromeUtils.now() - this.#mostRecentScrollTimestamp < 100) {
       // Scrolling can fire a lot of events in rapid succession, and computing the scrollY value can
       // trigger reflow, so we will limit how often we take the time to compute the scrollY value.
       // Scroll hints are critical to providing a smooth translation experience, but it's not the
@@ -3483,7 +3549,7 @@ export class TranslationsDocument {
       scrollY >= this.#previousScrollY ? "down" : "up";
 
     this.#previousScrollY = scrollY;
-    this.#mostRecentScrollTimestamp = Cu.now();
+    this.#mostRecentScrollTimestamp = ChromeUtils.now();
   };
 
   /**
@@ -3492,7 +3558,7 @@ export class TranslationsDocument {
    * @returns {boolean}
    */
   #hasUserScrolledRecently() {
-    return Cu.now() - this.#mostRecentScrollTimestamp < 200;
+    return ChromeUtils.now() - this.#mostRecentScrollTimestamp < 200;
   }
 
   /**
@@ -3672,7 +3738,7 @@ export class TranslationsDocument {
         let contentRequestCount = 0;
         let attributeRequestCount = 0;
 
-        const startTime = Cu.now();
+        const startTime = ChromeUtils.now();
 
         const {
           inViewportContentPriority,
@@ -5771,13 +5837,19 @@ class TranslationScheduler {
 }
 
 /**
- * Returns true if an HTML element is hidden based on factors such as collapsed state and
+ * Returns true if a node is hidden based on factors such as collapsed state and
  * computed style, otherwise false.
  *
- * @param {HTMLElement} element
+ * @param {Node} node
  * @returns {boolean}
  */
-function isHTMLElementHidden(element) {
+function isNodeHidden(node) {
+  const element = getHTMLElementForStyle(node);
+
+  if (!element) {
+    return true;
+  }
+
   // This is a cheap and easy check that will not compute style or force reflow.
   if (element.hidden) {
     // The element is explicitly hidden.
@@ -5804,6 +5876,15 @@ function isHTMLElementHidden(element) {
       element.offsetHeight ||
       element.getClientRects().length
     )
+  ) {
+    return true;
+  }
+
+  // The element may still have a zero-sized bounding client rectangle.
+  const boundingClientRect = element.getBoundingClientRect();
+  if (
+    boundingClientRect &&
+    (boundingClientRect.width === 0 || boundingClientRect.height === 0)
   ) {
     return true;
   }
@@ -5891,7 +5972,7 @@ function getNodeSpatialContext(node) {
     return {};
   }
 
-  if (isHTMLElementHidden(element)) {
+  if (isNodeHidden(element)) {
     // If the element is hidden, then the spatial context is not important.
     return {};
   }

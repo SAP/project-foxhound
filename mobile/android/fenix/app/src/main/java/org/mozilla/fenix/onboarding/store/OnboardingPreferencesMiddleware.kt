@@ -8,7 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.onboarding.store.OnboardingPreferencesRepository.OnboardingPreference
 import org.mozilla.fenix.onboarding.view.ThemeOptionType
 import org.mozilla.fenix.onboarding.view.ToolbarOptionType
@@ -24,7 +24,7 @@ class OnboardingPreferencesMiddleware(
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : Middleware<OnboardingState, OnboardingAction> {
     override fun invoke(
-        context: MiddlewareContext<OnboardingState, OnboardingAction>,
+        store: Store<OnboardingState, OnboardingAction>,
         next: (OnboardingAction) -> Unit,
         action: OnboardingAction,
     ) {
@@ -38,7 +38,7 @@ class OnboardingPreferencesMiddleware(
                             if (preferenceUpdate.value) {
                                 val updateAction =
                                     mapOnboardingPreferenceUpdateToStoreAction(preferenceUpdate)
-                                context.store.dispatch(updateAction)
+                                store.dispatch(updateAction)
                             }
                         }
                 }

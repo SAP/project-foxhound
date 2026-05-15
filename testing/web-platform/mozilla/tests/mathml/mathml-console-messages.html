@@ -39,16 +39,14 @@
     function testMessageForMarkup(markup, regexp, level) {
         promise_test(async function() {
             let messages = await retrieveConsoleMessagesFor(markup);
-
-            // Sometimes MathML messages are logged several times, so just
-            // ensure there is at least one.
             assert_greater_than_equal(messages.length, 1);
 
-            // Compare against the regexp.
-            assert_regexp_match(messages[0].errorMessage, regexp);
+            // Try to match any element in messages against the provided regexp.
+            let found = messages.find(m => regexp.test(m.errorMessage));
+            assert_true(!!found, `regexp ${regexp} not found in array ${messages.map(m => m.errorMessage)}`);
 
             // Check whether this is a warning or an error.
-            assert_equals(messages[0].isWarning, level == MessageLevel.WARNING);
+            assert_equals(found.isWarning, level == MessageLevel.WARNING);
         }, `Message for ${markup}`);
     }
 
@@ -239,6 +237,50 @@
         testMessageForMarkup(
             `<math><mi mathvariant="${value}">A</mi></math>`,
             new RegExp(`mathvariant='${value}'” .* deprecated`),
+            MessageLevel.WARNING);
+    });
+
+
+    // MathML_DeprecatedMoExplicitAccent
+    testNoMessageForMarkup(`<math><mrow><mo accent="true">x</mo></mrow></math>`);
+    [
+        ["mover", "accent", `<mover><mi>A</mi><mo accent="true">x</mo></mover>`],
+        ["munder", "accentunder", `<munder><mi>A</mi><mo accent="true">x</mo></munder>`],
+        ["munderover", "accent/accentunder", `<munderover><mi>A</mi><mo accent="true">x</mo><mo>y</mo></munderover>`],
+        ["munderover", "accent/accentunder", `<munderover><mi>A</mi><mo>x</mo><mo accent="true">y</mo></munderover>`],
+        ["munderover", "accent/accentunder", `<munderover><mi>A</mi><mo accent="true">x</mo><mo accent="true">y</mo></munderover>`],
+    ].forEach(([name, accent, markup]) => {
+        testMessageForMarkup(
+            `<math><${markup}></math>`,
+            new RegExp(`Setting the accent attribute on mo elements is deprecated. Use the “${accent}” attribute on “${name}” instead.`),
+            MessageLevel.WARNING);
+    });
+
+
+    // MathML_DeprecatedMoverNonExplicitAccent
+    // MathML_DeprecatedMunderNonExplicitAccentunder
+    [ "mover", "munder" ].forEach((name) => {
+        testNoMessageForMarkup(`<math><${name}><mi>A</mi><mo>x</mo></${name}></math>`);
+    });
+    testNoMessageForMarkup(`<math><munderover><mi>A</mi><mo>x</mo><mo>y</mo></munderover></math>`);
+    [
+        // Inferring the accent from the operator dictionary.
+        ["mover", "accent", `<mover><mi>B</mi><mo>^</mo></mover>`],
+        ["munder", "accentunder", `<munder><mi>B</mi><mo>^</mo></munder>`],
+        ["munderover", "accent", `<munderover><mi>B</mi><mo>x</mo><mo>^</mo></munderover>`],
+        ["munderover", "accentunder", `<munderover><mi>B</mi><mo>^</mo><mo>x</mo></munderover>`],
+        // Inferring the accent from `accent="true"`.
+        // The last test triggers both accent and accentunder warnings, so we check it twice.
+        ["mover", "accent", `<mover><mi>C</mi><mo accent="true">x</mo></mover>`],
+        ["munder", "accentunder", `<munder><mi>C</mi><mo accent="true">x</mo></munder>`],
+        ["munderover", "accent", `<munderover><mi>C</mi><mo>x</mo><mo accent="true">y</mo></munderover>`],
+        ["munderover", "accentunder", `<munderover><mi>C</mi><mo accent="true">x</mo><mo>y</mo></munderover>`],
+        ["munderover", "accent", `<munderover><mi>C</mi><mo accent="true">x</mo><mo accent="true">y</mo></munderover>`],
+        ["munderover", "accentunder", `<munderover><mi>D</mi><mo accent="true">x</mo><mo accent="true">y</mo></munderover>`],
+    ].forEach(([name, accent, markup]) => {
+        testMessageForMarkup(
+            `<math><${markup}></math>`,
+            new RegExp(`Inferring the ${accent} property from the core operator is deprecated. Consider adding an explicit ${accent} attribute to “${name}”.`),
             MessageLevel.WARNING);
     });
   </script>

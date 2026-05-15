@@ -3,47 +3,33 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
+    id 'com.android.library'
+    id 'kotlin-android'
     id 'mozac.PublicSuffixListPlugin'
 }
 
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
-apply plugin: 'mozac.PublicSuffixListPlugin'
+apply from: '../../../common-config.gradle'
+apply from: '../../../publish.gradle'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    buildFeatures {
-        viewBinding = true
-    }
-
     namespace = 'mozilla.components.lib.publicsuffixlist'
 }
 
-dependencies {
-    implementation libs.kotlin.coroutines
-    implementation libs.androidx.annotation
-
-    testImplementation project(':components:support-test')
-    testImplementation libs.androidx.test.core
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+publicSuffixList {
+    sourceFile = file("${gradle.mozconfig.topsrcdir}/netwerk/dns/effective_tld_names.dat")
 }
 
-apply from: '../../../android-lint.gradle'
-apply from: '../../../publish.gradle'
+dependencies {
+    implementation libs.androidx.annotation
+    implementation libs.kotlinx.coroutines
+
+    testImplementation project(':components:support-test')
+
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
+}
+
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

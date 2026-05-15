@@ -265,7 +265,7 @@ add_task(async function testFxViewNotMultiselect() {
       win.FirefoxViewHandler.tab.selected,
       "Firefox View tab is selected"
     );
-    let tab2 = await add_new_tab("https://www.mozilla.org");
+    let tab2 = await add_new_tab("https://www.mozilla.org/");
     let fxViewBtn = win.document.getElementById("firefox-view-button");
 
     info("We multi-select a visible tab with ctrl key down");

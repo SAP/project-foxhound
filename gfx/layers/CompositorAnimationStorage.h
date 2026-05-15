@@ -90,7 +90,8 @@ struct AnimatedValue final {
     mValue.as<nscolor>() = aColor;
   }
 
-  already_AddRefed<StyleAnimationValue> AsAnimationValue(nsCSSPropertyID) const;
+  already_AddRefed<StyleAnimationValue> AsAnimationValue(
+      NonCustomCSSPropertyId) const;
 
  private:
   AnimatedValueType mValue;
@@ -203,7 +204,7 @@ class CompositorAnimationStorage final {
    * Store the animated values from |aAnimationValues|.
    */
   void StoreAnimatedValue(
-      nsCSSPropertyID aProperty, uint64_t aId,
+      NonCustomCSSPropertyId aProperty, uint64_t aId,
       const std::unique_ptr<AnimationStorageData>& aAnimationStorageData,
       SampledAnimationArray&& aAnimationValues,
       const MutexAutoLock& aProofOfMapLock,

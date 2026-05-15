@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 export const ERRORS = Object.freeze({
+  /** Error state to be used for error management */
+  NONE: 0,
   /** User is not authorized to restore a backup archive */
   UNAUTHORIZED: 1,
   /** Selected backup archive can't be restored because it is corrupt */
@@ -47,6 +49,15 @@ export const ERRORS = Object.freeze({
    */
   UNSUPPORTED_APPLICATION: 14,
 });
+
+export function errorString(errorCodeToLookup) {
+  for (let [errorName, errorCode] of Object.entries(ERRORS)) {
+    if (errorCode == errorCodeToLookup) {
+      return errorName;
+    }
+  }
+  return "UNDEFINED_ERROR";
+}
 
 /**
  * These are steps that the BackupService or any of its subcomponents might

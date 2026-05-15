@@ -8,7 +8,6 @@
 #define DOM_QUOTA_RESOLVABLENORMALORIGINOP_H_
 
 #include "NormalOriginOperationBase.h"
-
 #include "mozilla/MozPromise.h"
 #include "mozilla/dom/FlippedOnce.h"
 

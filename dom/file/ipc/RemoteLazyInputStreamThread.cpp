@@ -97,13 +97,13 @@ RemoteLazyInputStreamThread::IsOnCurrentThread(bool* aRetval) {
 
 NS_IMETHODIMP
 RemoteLazyInputStreamThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                                      uint32_t aFlags) {
+                                      DispatchFlags aFlags) {
   return mThread->Dispatch(std::move(aRunnable), aFlags);
 }
 
 NS_IMETHODIMP
 RemoteLazyInputStreamThread::DispatchFromScript(nsIRunnable* aRunnable,
-                                                uint32_t aFlags) {
+                                                DispatchFlags aFlags) {
   return mThread->Dispatch(do_AddRef(aRunnable), aFlags);
 }
 
@@ -114,13 +114,19 @@ RemoteLazyInputStreamThread::DelayedDispatch(already_AddRefed<nsIRunnable>,
 }
 
 NS_IMETHODIMP
-RemoteLazyInputStreamThread::RegisterShutdownTask(nsITargetShutdownTask*) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+RemoteLazyInputStreamThread::RegisterShutdownTask(
+    nsITargetShutdownTask* aTask) {
+  return mThread->RegisterShutdownTask(aTask);
 }
 
 NS_IMETHODIMP
-RemoteLazyInputStreamThread::UnregisterShutdownTask(nsITargetShutdownTask*) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+RemoteLazyInputStreamThread::UnregisterShutdownTask(
+    nsITargetShutdownTask* aTask) {
+  return mThread->UnregisterShutdownTask(aTask);
+}
+
+nsIEventTarget::FeatureFlags RemoteLazyInputStreamThread::GetFeatures() {
+  return mThread->GetFeatures();
 }
 
 NS_IMETHODIMP

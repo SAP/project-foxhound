@@ -5,6 +5,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef ACCESSIBLE_IOS_MUIROOTACCESSIBLEPROTOCOL_H_
+#define ACCESSIBLE_IOS_MUIROOTACCESSIBLEPROTOCOL_H_
+
 #import <Foundation/Foundation.h>
 #import <UIKit/UIAccessibility.h>
 
@@ -49,3 +52,5 @@
 - (UIAccessibilityContainerType)accessibilityContainerType;
 
 @end
+
+#endif  // ACCESSIBLE_IOS_MUIROOTACCESSIBLEPROTOCOL_H_

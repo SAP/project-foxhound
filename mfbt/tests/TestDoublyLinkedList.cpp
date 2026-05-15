@@ -174,6 +174,10 @@ struct InTwoLists {
     static DoublyLinkedListElement<InTwoLists>& Get(InTwoLists* aThis) {
       return aThis->mListOne;
     }
+    static const DoublyLinkedListElement<InTwoLists>& Get(
+        const InTwoLists* aThis) {
+      return aThis->mListOne;
+    }
   };
 };
 
@@ -182,6 +186,10 @@ namespace mozilla {
 template <>
 struct GetDoublyLinkedListElement<InTwoLists> {
   static DoublyLinkedListElement<InTwoLists>& Get(InTwoLists* aThis) {
+    return aThis->mListTwo;
+  }
+  static const DoublyLinkedListElement<InTwoLists>& Get(
+      const InTwoLists* aThis) {
     return aThis->mListTwo;
   }
 };

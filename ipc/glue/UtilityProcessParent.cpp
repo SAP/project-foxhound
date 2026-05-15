@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "mozilla/ipc/UtilityProcessParent.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
 
 #if defined(XP_WIN)
@@ -62,6 +63,12 @@ mozilla::ipc::IPCResult UtilityProcessParent::RecvAddMemoryReport(
 
 mozilla::ipc::IPCResult UtilityProcessParent::RecvFOGData(ByteBuf&& aBuf) {
   glean::FOGData(std::move(aBuf));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult UtilityProcessParent::RecvGeckoTraceExport(
+    ByteBuf&& aBuf) {
+  recv_gecko_trace_export(aBuf.mData, aBuf.mLen);
   return IPC_OK();
 }
 

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MessageBroadcaster.h"
+
 #include "mozilla/dom/ContentParent.h"
 
 namespace mozilla::dom {

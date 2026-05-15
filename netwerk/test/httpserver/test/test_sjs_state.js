@@ -37,7 +37,7 @@ function run_test() {
   runHttpTests(tests, done);
 }
 
-/** **********
+/************
  * HANDLERS *
  ************/
 
@@ -74,7 +74,7 @@ function pathHandler(request, response) {
   response.setHeader("X-New-Shared-Value", sharedValue, false);
 }
 
-/** *************
+/***************
  * BEGIN TESTS *
  ***************/
 

@@ -544,7 +544,7 @@ add_task(async function test_draggingOtherMouseButtons() {
       // Mouse move with button 2 in draggingReady state
       mouse.down(100, 100);
       await helper.assertStateChange("draggingReady");
-      mouse.move(100, 100, { button: 2 });
+      mouse.move(100, 100, { button: 2, buttons: 2 });
       await helper.assertStateChange("crosshairs");
     }
   );

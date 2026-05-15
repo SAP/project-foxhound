@@ -162,12 +162,6 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),android)
 recurse_pre-export: mobile/android/pre-export
 endif
 
-# CSS2Properties.webidl needs ServoCSSPropList.py from layout/style
-dom/bindings/export: layout/style/ServoCSSPropList.py
-
-# Various telemetry histogram files need ServoCSSPropList.py from layout/style
-toolkit/components/telemetry/export: layout/style/ServoCSSPropList.py
-
 ifeq ($(TARGET_ENDIANNESS),big)
 config/external/icu/data/target-objects: config/external/icu/data/$(MDDEPDIR)/icudt$(MOZ_ICU_VERSION)b.dat.stub
 config/external/icu/data/$(MDDEPDIR)/icudt$(MOZ_ICU_VERSION)b.dat.stub: config/external/icu/icupkg/host

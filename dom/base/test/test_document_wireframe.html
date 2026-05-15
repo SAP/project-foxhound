@@ -15,13 +15,13 @@
      * Converts some RGB values into the same uint32_t nsColor representation
      * that getWireframe uses.
      *
-     * @param {Number} r
+     * @param {number} r
      *   Red color value.
-     * @param {Number} g
+     * @param {number} g
      *   Green color value.
-     * @param {Number} b
+     * @param {number} b
      *   Blue color value.
-     * @returns {Number}
+     * @returns {number}
      *   The red, green and blue values composed in a single uint32_t-compatible
      *   value.
      */
@@ -268,11 +268,10 @@
      *
      * @param {Element} frame
      *   The iframe to load the page in.
-     * @param {String} page
+     * @param {string} page
      *   The URL of the page to load in the frame.
-     * @returns Promise
-     * @resolves undefined
-     *   Once the load event has fired for the frame.
+     * @returns {Promise<Event>}
+     *   Resolves once the load event has fired for the frame.
      */
     function loadInIframe(frame, page) {
       return new Promise(resolve => {
@@ -291,7 +290,7 @@
      *
      * @param {Wireframe} wireframe
      *   A wireframe generated via document.getWireframe()
-     * @param {Object} approximateWireframe
+     * @param {object} approximateWireframe
      *   An object that closely resembles a wireframe but the rects in the
      *   rects property do not need to contain all of the properties expected
      *   in a WireframeTaggedRect. Skipped properties won't be checked.

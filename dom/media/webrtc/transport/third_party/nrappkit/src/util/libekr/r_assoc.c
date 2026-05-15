@@ -107,7 +107,7 @@ typedef struct r_assoc_el_ {
 struct r_assoc_ {
      int size;
      int bits;
-     int (*hash_func)(char *key,int len,int size);
+     int (*hash_func)(const char *key,int len,int size);
      r_assoc_el **chains;
      UINT4 num_elements;
 };
@@ -116,26 +116,24 @@ struct r_assoc_ {
 
 static int destroy_assoc_chain(r_assoc_el *chain);
 static int r_assoc_fetch_bucket(r_assoc *assoc,
-  char *key,int len,r_assoc_el **bucketp);
-static int copy_assoc_chain(r_assoc_el **knewp, r_assoc_el *old);
+  const char *key,int len,r_assoc_el **bucketp);
 
 int r_assoc_create(
   r_assoc **assocp,
-  int (*hash_func)(char *key, int len, int size),
+  int (*hash_func)(const char *key, int len, int size),
   int bits
   )
   {
     r_assoc *assoc=0;
     int _status;
 
-    if(!(assoc=(r_assoc *)RCALLOC(sizeof(r_assoc))))
+    if(!(assoc=R_NEW(r_assoc)))
       ABORT(R_NO_MEMORY);
     assoc->size=(1<<bits);
     assoc->bits=bits;
     assoc->hash_func=hash_func;
 
-    if(!(assoc->chains=(r_assoc_el **)RCALLOC(sizeof(r_assoc_el *)*
-      assoc->size)))
+    if(!(assoc->chains=R_NEW_CNT(r_assoc_el *, assoc->size)))
       ABORT(R_NO_MEMORY);
 
     *assocp=assoc;
@@ -185,59 +183,9 @@ static int destroy_assoc_chain(r_assoc_el *chain)
     return(0);
   }
 
-static int copy_assoc_chain(r_assoc_el **knewp, r_assoc_el *old)
-  {
-    r_assoc_el *knew = 0, *ptr = 0, *tmp = 0;
-    int r,_status;
-
-    ptr=0; /* Pacify GCC's uninitialized warning.
-              It's not correct */
-    if(!old) {
-      *knewp=0;
-      return(0);
-    }
-    for(;old;old=old->next){
-      if(!(tmp=(r_assoc_el *)RCALLOC(sizeof(r_assoc_el))))
-	ABORT(R_NO_MEMORY);
-
-      if(!knew){
-	knew=tmp;
-	ptr=knew;
-      }
-      else{
-	ptr->next=tmp;
-	tmp->prev=ptr;
-        ptr=tmp;
-      }
-
-      ptr->destroy=old->destroy;
-      ptr->copy=old->copy;
-
-      if(old->copy){
-	if(r=old->copy(&ptr->data,old->data))
-	  ABORT(r);
-      }
-      else
-	ptr->data=old->data;
-
-      if(!(ptr->key=(char *)RMALLOC(old->key_len)))
-	ABORT(R_NO_MEMORY);
-      memcpy(ptr->key,old->key,ptr->key_len=old->key_len);
-    }
-
-    *knewp=knew;
-
-    _status=0;
-  abort:
-    if(_status){
-      destroy_assoc_chain(knew);
-    }
-    return(_status);
-  }
-
 static int r_assoc_fetch_bucket(
   r_assoc *assoc,
-  char *key,
+  const char *key,
   int len,
   r_assoc_el **bucketp
   )
@@ -257,7 +205,7 @@ static int r_assoc_fetch_bucket(
     return(R_NOT_FOUND);
   }
 
-int r_assoc_fetch(r_assoc *assoc, char *key, int len, void **datap)
+int r_assoc_fetch(r_assoc *assoc, const char *key, int len, void **datap)
   {
     r_assoc_el *bucket = 0;
     int r;
@@ -274,7 +222,7 @@ int r_assoc_fetch(r_assoc *assoc, char *key, int len, void **datap)
 
 int r_assoc_insert(
   r_assoc *assoc,
-  char *key,
+  const char *key,
   int len,
   void *data,
   int (*copy)(void **knew, void *old),
@@ -293,7 +241,7 @@ int r_assoc_insert(
 	ABORT(r);
       hash_value=assoc->hash_func(key,len,assoc->bits);
 
-      if(!(new_bucket=(r_assoc_el *)RCALLOC(sizeof(r_assoc_el))))
+      if(!(new_bucket=R_NEW(r_assoc_el)))
 	ABORT(R_NO_MEMORY);
       if(!(new_bucket->key=(char *)RMALLOC(len)))
 	ABORT(R_NO_MEMORY);
@@ -325,70 +273,6 @@ int r_assoc_insert(
     if(_status && new_bucket){
       RFREE(new_bucket->key);
       RFREE(new_bucket);
-    }
-    return(_status);
-  }
-
-int r_assoc_delete(r_assoc *assoc, char *key, int len)
-  {
-    int r;
-    r_assoc_el *bucket = 0;
-    UINT4 hash_value;
-
-    if(r=r_assoc_fetch_bucket(assoc,key,len,&bucket)){
-      if(r!=R_NOT_FOUND)
-	ERETURN(r);
-      return(r);
-    }
-
-    /* Now remove the element from the hash chain */
-    if(bucket->prev){
-      bucket->prev->next=bucket->next;
-    }
-    else {
-      hash_value=assoc->hash_func(key,len,assoc->bits);
-      assoc->chains[hash_value]=bucket->next;
-    }
-
-    if(bucket->next)
-      bucket->next->prev=bucket->prev;
-
-    /* Remove the data */
-    if(bucket->destroy)
-      bucket->destroy(bucket->data);
-
-    RFREE(bucket->key);
-    RFREE(bucket);
-    assoc->num_elements--;
-
-    return(0);
-  }
-
-int r_assoc_copy(r_assoc **knewp, r_assoc *old)
-  {
-    int r,_status,i;
-    r_assoc *knew = 0;
-
-    if(!(knew=(r_assoc *)RCALLOC(sizeof(r_assoc))))
-      ABORT(R_NO_MEMORY);
-    knew->size=old->size;
-    knew->bits=old->bits;
-    knew->hash_func=old->hash_func;
-
-    if(!(knew->chains=(r_assoc_el **)RCALLOC(sizeof(r_assoc_el)*old->size)))
-      ABORT(R_NO_MEMORY);
-    for(i=0;i<knew->size;i++){
-      if(r=copy_assoc_chain(knew->chains+i,old->chains[i]))
-	ABORT(r);
-    }
-    knew->num_elements=old->num_elements;
-
-    *knewp=knew;
-
-    _status=0;
-  abort:
-    if(_status){
-      r_assoc_destroy(&knew);
     }
     return(_status);
   }
@@ -485,23 +369,9 @@ int r_assoc_iter_delete(r_assoc_iterator *iter)
   }
 
 
-/*This is a hack from AMS. Supposedly, it's pretty good for strings, even
- though it doesn't take into account all the data*/
-int r_assoc_simple_hash_compute(char *key, int len, int bits)
-  {
-    UINT4 h=0;
+int r_crc32(const char *data,int len,UINT4 *crcval);
 
-    h=key[0] +(key[len-1] * len);
-
-    h &= (1<<bits) - 1;
-
-    return(h);
-  }
-
-
-int r_crc32(char *data,int len,UINT4 *crcval);
-
-int r_assoc_crc32_hash_compute(char *data, int len, int bits)
+int r_assoc_crc32_hash_compute(const char *data, int len, int bits)
   {
     UINT4 res;
     UINT4 mask;

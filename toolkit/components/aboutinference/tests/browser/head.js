@@ -44,33 +44,22 @@ async function runInferenceProcess(remoteClients) {
  * navigates to about:inference, and passes the test requirements into the content process.
  *
  * @param {object} options - The options object.
- * @param {boolean} options.disabled - Flag to disable the inference functionality.
  * @param {Function} options.runInPage - The function to run in the content process.
  * @param {Array} [options.prefs] - An array of additional preferences to set.
- * @param {boolean} options.runInference - If true, runs an inference task
+ * @param {boolean} [options.runInference] - If true, runs an inference task
  *
  * @returns {Promise<void>} A promise that resolves when the test is complete.
  */
 async function openAboutInference({
-  disabled,
   runInPage,
-  prefs,
+  prefs = [],
   runInference = false,
 }) {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      // Enabled by default.
-      ["browser.ml.enable", !disabled],
-      ["browser.ml.logLevel", "Debug"],
-      ["dom.webgpu.enabled", !disabled],
-      ["dom.webgpu.service-workers.enabled", !disabled],
-      ...(prefs ?? []),
-    ],
-  });
+  await SpecialPowers.pushPrefEnv({ set: prefs });
 
   let cleanup;
   let remoteClients;
-  // run inference
+
   if (runInference) {
     let set = await setupRemoteClient();
     cleanup = set.cleanup;
@@ -95,6 +84,14 @@ async function openAboutInference({
   );
 
   // Now load the about:inference page, since the actor could be mocked.
+  if (prefs) {
+    info("Loading about:inference with prefs:");
+    for (const [key, value] of prefs) {
+      info(`  "${key}": ${value}`);
+    }
+  } else {
+    info("Loading about:inference with default prefs.");
+  }
   BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, "about:inference");
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 

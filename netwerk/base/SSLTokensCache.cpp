@@ -8,9 +8,11 @@
 #include "CommonSocketControl.h"
 #include "TransportSecurityInfo.h"
 #include "mozilla/ArrayAlgorithm.h"
+#include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "nsIOService.h"
+#include "prtime.h"
 #include "ssl.h"
 #include "sslexp.h"
 
@@ -49,10 +51,10 @@ SessionCacheInfo SessionCacheInfo::Clone() const {
           : Nothing();
   result.mIsBuiltCertChainRootBuiltInRoot = mIsBuiltCertChainRootBuiltInRoot;
   result.mOverridableErrorCategory = mOverridableErrorCategory;
-  result.mFailedCertChainBytes =
-      mFailedCertChainBytes
+  result.mHandshakeCertificatesBytes =
+      mHandshakeCertificatesBytes
           ? Some(TransformIntoNewArray(
-                *mFailedCertChainBytes,
+                *mHandshakeCertificatesBytes,
                 [](const auto& element) { return element.Clone(); }))
           : Nothing();
   return result;
@@ -81,8 +83,9 @@ uint32_t SSLTokensCache::TokenCacheRecord::Size() const {
       size += cert.Length();
     }
   }
-  if (mSessionCacheInfo.mFailedCertChainBytes) {
-    for (const auto& cert : mSessionCacheInfo.mFailedCertChainBytes.ref()) {
+  if (mSessionCacheInfo.mHandshakeCertificatesBytes) {
+    for (const auto& cert :
+         mSessionCacheInfo.mHandshakeCertificatesBytes.ref()) {
       size += cert.Length();
     }
   }
@@ -100,7 +103,7 @@ void SSLTokensCache::TokenCacheRecord::Reset() {
   mSessionCacheInfo.mIsBuiltCertChainRootBuiltInRoot.reset();
   mSessionCacheInfo.mOverridableErrorCategory =
       nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET;
-  mSessionCacheInfo.mFailedCertChainBytes.reset();
+  mSessionCacheInfo.mHandshakeCertificatesBytes.reset();
 }
 
 uint32_t SSLTokensCache::TokenCacheEntry::Size() const {
@@ -194,7 +197,7 @@ SSLTokensCache::~SSLTokensCache() { LOG(("SSLTokensCache::~SSLTokensCache")); }
 nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
                              uint32_t aTokenLen,
                              CommonSocketControl* aSocketControl) {
-  PRUint32 expirationTime;
+  PRTime expirationTime;
   SSLResumptionTokenInfo tokenInfo;
   if (SSL_GetResumptionTokenInfo(aToken, aTokenLen, &tokenInfo,
                                  sizeof(tokenInfo)) != SECSuccess) {
@@ -213,7 +216,7 @@ nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
 nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
                              uint32_t aTokenLen,
                              CommonSocketControl* aSocketControl,
-                             PRUint32 aExpirationTime) {
+                             PRTime aExpirationTime) {
   StaticMutexAutoLock lock(sLock);
 
   LOG(("SSLTokensCache::Put [key=%s, tokenLen=%u]",
@@ -291,21 +294,21 @@ nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
     return rv;
   }
 
-  Maybe<nsTArray<nsTArray<uint8_t>>> failedCertChainBytes;
-  nsTArray<RefPtr<nsIX509Cert>> failedCertArray;
-  rv = securityInfo->GetFailedCertChain(failedCertArray);
+  Maybe<nsTArray<nsTArray<uint8_t>>> handshakeCertificatesBytes;
+  nsTArray<RefPtr<nsIX509Cert>> handshakeCertificates;
+  rv = securityInfo->GetHandshakeCertificates(handshakeCertificates);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  if (!failedCertArray.IsEmpty()) {
-    failedCertChainBytes.emplace();
-    for (const auto& cert : failedCertArray) {
+  if (!handshakeCertificates.IsEmpty()) {
+    handshakeCertificatesBytes.emplace();
+    for (const auto& cert : handshakeCertificates) {
       nsTArray<uint8_t> rawCert;
       nsresult rv = cert->GetRawDER(rawCert);
       if (NS_FAILED(rv)) {
         return rv;
       }
-      failedCertChainBytes->AppendElement(std::move(rawCert));
+      handshakeCertificatesBytes->AppendElement(std::move(rawCert));
     }
   }
 
@@ -327,8 +330,8 @@ nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
     rec->mSessionCacheInfo.mIsBuiltCertChainRootBuiltInRoot =
         std::move(isBuiltCertChainRootBuiltInRoot);
     rec->mSessionCacheInfo.mOverridableErrorCategory = overridableErrorCategory;
-    rec->mSessionCacheInfo.mFailedCertChainBytes =
-        std::move(failedCertChainBytes);
+    rec->mSessionCacheInfo.mHandshakeCertificatesBytes =
+        std::move(handshakeCertificatesBytes);
     return rec;
   };
 
@@ -360,6 +363,25 @@ nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
 }
 
 // static
+// Retrieves a TLS session resumption token from the cache.
+//
+// Behavior:
+// - Searches for cached tokens matching aKey (typically a peer ID that includes
+//   hostname, port, and TLS flags)
+// - Multiple tokens may exist per key (stored in a pool); this method retrieves
+//   and removes the first non-expired token
+// - Expired tokens are automatically discarded during lookup
+// - Returns NS_ERROR_NOT_AVAILABLE if no valid token is found
+//
+// Parameters:
+// - aKey: Cache key identifying the connection (peer ID)
+// - aToken: [out] The TLS session resumption token bytes
+// - aResult: [out] Associated session info (certificates, EV status, CT status)
+// - aTokenId: [out, optional] Unique ID of the retrieved token (for later
+// removal)
+//
+// Note: This is a destructive read - the token is removed from the cache after
+// retrieval to prevent reuse, as TLS session tickets are typically single-use.
 nsresult SSLTokensCache::Get(const nsACString& aKey, nsTArray<uint8_t>& aToken,
                              SessionCacheInfo& aResult, uint64_t* aTokenId) {
   StaticMutexAutoLock lock(sLock);
@@ -389,21 +411,39 @@ nsresult SSLTokensCache::GetLocked(const nsACString& aKey,
       return NS_ERROR_NOT_AVAILABLE;
     }
 
-    const UniquePtr<TokenCacheRecord>& rec = cacheEntry->Get();
-    aToken = rec->mToken.Clone();
-    aResult = rec->mSessionCacheInfo.Clone();
-    if (aTokenId) {
-      *aTokenId = rec->mId;
+    PRTime now = PR_Now();
+
+    while (cacheEntry->RecordCount() > 0) {
+      const UniquePtr<TokenCacheRecord>& rec = cacheEntry->Get();
+
+      if (rec->mExpirationTime > now) {
+        aToken = rec->mToken.Clone();
+        aResult = rec->mSessionCacheInfo.Clone();
+        if (aTokenId) {
+          *aTokenId = rec->mId;
+        }
+        mCacheSize -= rec->Size();
+        cacheEntry->RemoveWithId(rec->mId);
+        if (cacheEntry->RecordCount() == 0) {
+          mTokenCacheRecords.Remove(aKey);
+        }
+        mozilla::glean::network::ssl_token_cache_hits.Get("hit"_ns).Add(1);
+        return NS_OK;
+      }
+
+      LOG(("  skipping expired token [expirationTime=%" PRId64 ", now=%" PRId64
+           "]",
+           rec->mExpirationTime, now));
+      mozilla::glean::network::ssl_token_cache_expired.Add(1);
+      mCacheSize -= rec->Size();
+      cacheEntry->RemoveWithId(rec->mId);
     }
-    mCacheSize -= rec->Size();
-    cacheEntry->RemoveWithId(rec->mId);
-    if (cacheEntry->RecordCount() == 0) {
-      mTokenCacheRecords.Remove(aKey);
-    }
-    return NS_OK;
+
+    mTokenCacheRecords.Remove(aKey);
   }
 
   LOG(("  token not found"));
+  mozilla::glean::network::ssl_token_cache_hits.Get("miss"_ns).Add(1);
   return NS_ERROR_NOT_AVAILABLE;
 }
 

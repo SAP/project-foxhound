@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _RTCSctpTransport_h_
-#define _RTCSctpTransport_h_
+#ifndef RTCSctpTransport_h_
+#define RTCSctpTransport_h_
 
+#include "RTCDtlsTransport.h"
+#include "js/RootingAPI.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RefPtr.h"
-#include "js/RootingAPI.h"
-#include "RTCDtlsTransport.h"
 
 class nsPIDOMWindowInner;
 
@@ -62,4 +62,4 @@ class RTCSctpTransport : public DOMEventTargetHelper {
 };
 
 }  // namespace mozilla::dom
-#endif  // _RTCSctpTransport_h_
+#endif  // RTCSctpTransport_h_

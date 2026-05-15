@@ -7,9 +7,7 @@
 #ifndef mozilla_layers_CompositorBridgeChild_h
 #define mozilla_layers_CompositorBridgeChild_h
 
-#include "base/basictypes.h"     // for DISALLOW_EVIL_CONSTRUCTORS
-#include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
-#include "mozilla/Attributes.h"  // for override
+#include "base/basictypes.h"  // for DISALLOW_EVIL_CONSTRUCTORS
 #include "mozilla/Monitor.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/PCompositorBridgeChild.h"
@@ -172,10 +170,6 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   bool AllocUnsafeShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
   bool AllocShmem(size_t aSize, mozilla::ipc::Shmem* aShmem) override;
   bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
-
-  PCompositorWidgetChild* AllocPCompositorWidgetChild(
-      const CompositorWidgetInitData& aInitData);
-  bool DeallocPCompositorWidgetChild(PCompositorWidgetChild* aActor);
 
   PAPZCTreeManagerChild* AllocPAPZCTreeManagerChild(const LayersId& aLayersId);
   bool DeallocPAPZCTreeManagerChild(PAPZCTreeManagerChild* aActor);

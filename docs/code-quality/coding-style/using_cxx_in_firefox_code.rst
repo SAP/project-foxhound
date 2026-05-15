@@ -30,8 +30,9 @@ their size are valid values.
 -  As of Mozilla 59, C++14 mode is required to build Mozilla.
 -  As of Mozilla 67, MSVC can no longer be used to build Mozilla.
 -  As of Mozilla 73, C++17 mode is required to build Mozilla.
+-  As of Mozilla 147, C++20 mode is required to build Mozilla.
 
-This means that C++17 can be used where supported on all platforms. The
+This means that C++20 can be used where supported on all platforms. The
 list of acceptable features is given below:
 
 .. list-table::
@@ -43,8 +44,8 @@ list of acceptable features is given below:
      - Clang
      -
    * - Current minimal requirement
-     - 8.1
-     - 8.0
+     - 10.1
+     - 17.0
      -
    * - Feature
      - GCC
@@ -311,10 +312,6 @@ Attributes
 Alignment
   Some alignment utilities are defined in `mozilla/Alignment.h
   <https://searchfox.org/mozilla-central/source/mfbt/Alignment.h>`__.
-
-  .. caution::
-    ``MOZ_ALIGNOF`` and ``alignof`` don't have the same semantics. Be careful of what you
-    expect from them.
 
 ``[[deprecated]]``
   If we have deprecated code, we should be removing it rather than marking it as

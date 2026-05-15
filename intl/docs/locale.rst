@@ -529,7 +529,7 @@ It may look like this:
       ]
     );
 
-    L10nRegistry.registerSources([fs]);
+    L10nRegistry.getInstance().registerSources([source]);
 
     let availableLocales = Services.locale.availableLocales;
 

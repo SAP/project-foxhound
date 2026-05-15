@@ -44,7 +44,7 @@ export class FullscreenFrameChild extends JSWindowActorChild {
         return this.contentWindow.document.exitFullscreen();
       case "RequestFullscreen":
         return Promise.all([this.changed(), this.requestFullscreen()]);
-      case "CreateChild":
+      case "CreateChild": {
         let child = msg.data;
         let iframe = this.contentWindow.document.createElement("iframe");
         iframe.allow = child.allow_fullscreen ? "fullscreen" : "";
@@ -60,12 +60,13 @@ export class FullscreenFrameChild extends JSWindowActorChild {
         iframe.src = child.url;
         this.contentWindow.document.body.appendChild(iframe);
         return loaded;
+      }
       case "GetEvents":
         return Promise.resolve(this.fullscreen_events);
       case "ClearEvents":
         this.fullscreen_events = [];
         return Promise.resolve();
-      case "GetFullscreenElement":
+      case "GetFullscreenElement": {
         let document = this.contentWindow.document;
         let child_iframe = this.contentWindow.document.getElementsByTagName(
           "iframe"
@@ -84,6 +85,7 @@ export class FullscreenFrameChild extends JSWindowActorChild {
           default:
             return Promise.resolve("other");
         }
+      }
     }
 
     return Promise.reject("Unexpected Message");

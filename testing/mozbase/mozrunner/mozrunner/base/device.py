@@ -189,5 +189,5 @@ class DeviceRunner(BaseRunner):
 
 class FennecRunner(DeviceRunner):
     def __init__(self, cmdargs=None, **kwargs):
-        super(FennecRunner, self).__init__(**kwargs)
+        super().__init__(**kwargs)
         self.cmdargs = cmdargs or []

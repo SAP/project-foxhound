@@ -7,11 +7,12 @@
 #ifndef DOM_SVG_SVGANIMATEDCLASS_H_
 #define DOM_SVG_SVGANIMATEDCLASS_H_
 
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/SVGAnimatedClassOrString.h"
-#include "mozilla/Attributes.h"
+#include <memory>
+
 #include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/SVGAnimatedClassOrString.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsString.h"
 
 namespace mozilla {
 
@@ -26,7 +27,7 @@ class SVGAnimatedClass final : public SVGAnimatedClassOrString {
  public:
   using SVGElement = dom::SVGElement;
 
-  void Init() { mAnimVal = nullptr; }
+  void Init() { mAnimVal = VoidString(); }
 
   void SetBaseValue(const nsAString& aValue, SVGElement* aSVGElement,
                     bool aDoSetAttr) override;
@@ -36,12 +37,12 @@ class SVGAnimatedClass final : public SVGAnimatedClassOrString {
   void SetAnimValue(const nsAString& aValue, SVGElement* aSVGElement);
   void GetAnimValue(nsAString& aResult,
                     const SVGElement* aSVGElement) const override;
-  bool IsAnimated() const { return !!mAnimVal; }
+  bool IsAnimated() const { return !mAnimVal.IsVoid(); }
 
-  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
-  UniquePtr<nsString> mAnimVal;
+  nsString mAnimVal = VoidString();
 
  public:
   struct SMILString : public SMILAttr {

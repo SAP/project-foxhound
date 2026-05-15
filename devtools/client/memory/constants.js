@@ -14,7 +14,7 @@ exports.ALLOCATION_RECORDING_OPTIONS = {
 // in `devtools/client/themes/memory.css`
 exports.TREE_ROW_HEIGHT = 18;
 
-/** * Actions ******************************************************************/
+/*** Actions ******************************************************************/
 
 const actions = (exports.actions = {});
 
@@ -123,7 +123,7 @@ actions.RESIZE_SHORTEST_PATHS = "resize-shortest-paths";
 // Fired when the memory front is changed.
 actions.UPDATE_MEMORY_FRONT = "update-memory-front";
 
-/** * Census Displays ***************************************************************/
+/*** Census Displays ***************************************************************/
 
 const COUNT = Object.freeze({ by: "count", count: true, bytes: true });
 const INTERNAL_TYPE = Object.freeze({ by: "internalType", then: COUNT });
@@ -237,7 +237,7 @@ exports.treeMapDisplays = Object.freeze({
   }),
 });
 
-/** * View States **************************************************************/
+/*** View States **************************************************************/
 
 /**
  * The various main views that the tool can be in.
@@ -249,7 +249,7 @@ viewState.DOMINATOR_TREE = "view-state-dominator-tree";
 viewState.TREE_MAP = "view-state-tree-map";
 viewState.INDIVIDUALS = "view-state-individuals";
 
-/** * Snapshot States **********************************************************/
+/*** Snapshot States **********************************************************/
 
 const snapshotState = (exports.snapshotState = Object.create(null));
 
@@ -301,7 +301,7 @@ treeMapState.SAVING = "tree-map-state-saving";
 treeMapState.SAVED = "tree-map-state-saved";
 treeMapState.ERROR = "tree-map-state-error";
 
-/** * Diffing States ***********************************************************/
+/*** Diffing States ***********************************************************/
 
 /*
  * Various states the diffing model can be in.
@@ -325,7 +325,7 @@ diffingState.TOOK_DIFF = "diffing-state-took-diff";
 // An error occurred while computing the diff.
 diffingState.ERROR = "diffing-state-error";
 
-/** * Dominator Tree States ****************************************************/
+/*** Dominator Tree States ****************************************************/
 
 /*
  * Various states the dominator tree model can be in.
@@ -343,7 +343,7 @@ dominatorTreeState.INCREMENTAL_FETCHING =
   "dominator-tree-state-incremental-fetching";
 dominatorTreeState.ERROR = "dominator-tree-state-error";
 
-/** * States for Individuals Model *********************************************/
+/*** States for Individuals Model *********************************************/
 
 /*
  * Various states the individuals model can be in.

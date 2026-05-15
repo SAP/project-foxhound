@@ -5,7 +5,6 @@
 browser.jar:
 % skin browser classic/1.0 %skin/classic/browser/
 #include ../shared/jar.inc.mn
-  skin/classic/browser/sanitizeDialog.css
   skin/classic/browser/browser.css
   skin/classic/browser/customizableui/panelUI.css    (customizableui/panelUI.css)
   skin/classic/browser/downloads/allDownloadsView.css (downloads/allDownloadsView.css)
@@ -16,5 +15,3 @@ browser.jar:
   skin/classic/browser/preferences/alwaysAsk.png            (preferences/alwaysAsk.png)
   skin/classic/browser/preferences/application.png          (preferences/application.png)
   skin/classic/browser/preferences/saveFile.png             (preferences/saveFile.png)
-  skin/classic/browser/share.svg                            (share.svg)
-  skin/classic/browser/webRTC-menubar-indicator.css         (../shared/webRTC-menubar-indicator.css)

@@ -8,12 +8,13 @@ prefs = [
   "layout.css.fit-content-function.enabled=true",
   "layout.css.scroll-driven-animations.enabled=true",
   "layout.css.stretch-size-keyword.enabled=true",
-  "layout.css.webkit-fill-available.enabled=true",
-  "layout.css.basic-shape-rect.enabled=true",
+  "layout.css.webkit-fill-available.all-size-properties.enabled=true",
   "layout.css.basic-shape-shape.enabled=true",
-  "layout.css.basic-shape-xywh.enabled=true",
   "layout.css.field-sizing.enabled=true",
   "layout.css.anchor-positioning.enabled=true",
+  "layout.css.anchor-positioning.position-try-order.enabled=true",
+  "layout.css.scroll-state.enabled=true",
+  "layout.css.text-box.enabled=true",
 ]
 support-files = [
   "animation_utils.js",
@@ -176,16 +177,20 @@ support-files = ["file_animations_with_disabled_properties.html"]
 ["test_bug391221.html"]
 
 ["test_bug397427.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug399349.html"]
 
 ["test_bug401046.html"]
-skip-if = ["true"] # Bug 701060
+skip-if = [
+  "true", # Bug 701060
+]
 
 ["test_bug405818.html"]
 
@@ -241,8 +246,8 @@ support-files = [
 ["test_bug732209.html"]
 support-files = ["bug732209-css.sjs"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_bug765590.html"]
@@ -320,7 +325,9 @@ support-files = ["file_bug1443344.css"]
 ["test_color_rounding.html"]
 
 ["test_compute_data_with_start_struct.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_computed_style.html"]
 
@@ -353,15 +360,15 @@ support-files = ["file_bug1381233.html"]
 
 ["test_css_cross_domain.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
   "socketprocess_networking",
 ]
 
 ["test_css_cross_domain_no_orb.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_css_eof_handling.html"]
@@ -392,8 +399,8 @@ skip-if = [
 
 ["test_display_mode.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_dont_use_document_colors.html"]
@@ -423,20 +430,22 @@ support-files = ["flexbox_layout_testcases.js"]
 
 ["test_flexbox_order.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug && xorigin", # Bug 1932914
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && xorigin", # Bug 1784708
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && xorigin", # Bug 1784708
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug && xorigin", # Bug 1932914
 ]
 
 ["test_flexbox_order_abspos.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug && xorigin", # Bug 1932914
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && xorigin", # Bug 1784708
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && xorigin", # Bug 1784708
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug && xorigin", # Bug 1932914
 ]
 
 ["test_flexbox_order_table.html"]
 
 ["test_flexbox_reflow_counts.html"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug && xorigin"] # Bug 1802475
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && xorigin", # Bug 1802475
+]
 
 ["test_flushing_frame.html"]
 
@@ -458,10 +467,10 @@ support-files = [
 # This test checks font loading state. When loaded second time, fonts may be
 # loaded synchronously, causing this test to fail in test-verify task.
 skip-if = [
-  "verify", # Bug 1455824
-  "os == 'android'", # Bug 1455824
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # Bug 1455824
+  "verify", # Bug 1455824
 ]
 
 ["test_garbage_at_end_of_declarations.html"]
@@ -490,7 +499,9 @@ skip-if = [
 support-files = ["slow_load.sjs"]
 # Test is slightly racy and on Android it fails frequently enough to be
 # annoying.
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_inherit_computation.html"]
 
@@ -522,7 +533,9 @@ support-files = [
 support-files = ["chrome/chrome-only-media-queries.js"]
 
 ["test_media_queries_dynamic.html"]
-skip-if = ["xorigin"] # Crashes, Assertion failure: mInFlightProcessId == 0, at /builds/worker/checkouts/gecko/docshell/base/CanonicalBrowsingContext.cpp:110, [Child][MessageChannel] Error: (msgtype=0xFFF7,name=<unknown IPC msg name>) Channel error: cannot send/recv
+skip-if = [
+  "xorigin", # Crashes, Assertion failure: mInFlightProcessId == 0, at /builds/worker/checkouts/gecko/docshell/base/CanonicalBrowsingContext.cpp:110, [Child][MessageChannel] Error: (msgtype=0xFFF7,name=<unknown IPC msg name>) Channel error: cannot send/recv
+]
 
 ["test_media_query_list.html"]
 
@@ -641,7 +654,9 @@ support-files = ["redundant_font_download.sjs"]
 ["test_selectors.html"]
 
 ["test_setPropertyWithNull.html"]
-skip-if = ["xorigin && debug"]
+skip-if = [
+  "debug && xorigin",
+]
 
 ["test_shape_outside_CORS.html"]
 
@@ -650,7 +665,9 @@ support-files = [
   "file_shared_sheet_caching.css",
   "file_shared_sheet_caching.html",
 ]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_sheet_privilege.html"]
 
@@ -704,12 +721,10 @@ fail-if = ["xorigin"]
 
 ["test_transitions_replacement_on_busy_frame_omta.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug && xorigin", # Bug 1932914 (secondary)
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1905949
-  "os == 'linux' && os_version == '22.04' && processor == 'x86_64' && display == 'wayland'", # Bug 1905949
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug", # Bug 1905949
-  "os == 'android' && processor == 'x86_64' && debug", # Bug 1905949
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1905949
+  "os == 'android' && arch == 'x86_64' && debug", # Bug 1905949
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # Bug 1905949
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1905949
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1905949
 ]
 
 ["test_transitions_replacement_with_setKeyframes.html"]
@@ -737,7 +752,9 @@ support-files = [
 ["test_units_time.html"]
 
 ["test_use_counters.html"]
-skip-if = ["!nightly_build"]
+skip-if = [
+  "!nightly_build",
+]
 
 ["test_user_sheet_shadow_dom.html"]
 
@@ -751,7 +768,9 @@ skip-if = [
 
 ["test_value_computation.html"]
 # This test requires too much memory on TSan (bug 1612707)
-skip-if = ["tsan"]
+skip-if = [
+  "tsan",
+]
 
 ["test_value_storage.html"]
 
@@ -762,8 +781,8 @@ skip-if = ["tsan"]
 ["test_variables.html"]
 support-files = ["support/external-variable-url.css"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_variables_loop.html"]
@@ -778,24 +797,42 @@ support-files = ["support/external-variable-url.css"]
 ["test_viewport_units.html"]
 
 ["test_visited_image_loading.html"]
-skip-if = ["os == 'android'"] # TIMED_OUT for android
+skip-if = [
+  "os == 'android'", # TIMED_OUT for android
+]
 
 ["test_visited_image_loading_empty.html"]
-skip-if = ["os == 'android'"] # TIMED_OUT for android
+skip-if = [
+  "os == 'android'", # TIMED_OUT for android
+]
 
 ["test_visited_lying.html"]
-skip-if = ["os == 'android'"] # TIMED_OUT for android
-fail-if = ["xorigin"]
+skip-if = [
+  "os == 'android'", # TIMED_OUT for android
+]
+fail-if = [
+  "xorigin",
+]
 
 ["test_visited_pref.html"]
-skip-if = ["os == 'android'"] # TIMED_OUT for android
-fail-if = ["xorigin"]
+skip-if = [
+  "os == 'android'", # TIMED_OUT for android
+]
+fail-if = [
+  "xorigin",
+]
 
 ["test_visited_reftests.html"]
-skip-if = ["os == 'android'"] # TIMED_OUT for android
+skip-if = [
+  "os == 'android'", # TIMED_OUT for android
+]
 
 ["test_webkit_device_pixel_ratio.html"]
-skip-if = ["xorigin"] # process crash: Assertion failure: mInFlightProcessId == 0, at /builds/worker/checkouts/gecko/docshell/base/CanonicalBrowsingContext.cpp:110
+skip-if = [
+  "xorigin", # process crash: Assertion failure: mInFlightProcessId == 0, at /builds/worker/checkouts/gecko/docshell/base/CanonicalBrowsingContext.cpp:110
+]
 
 ["test_webkit_flex_display.html"]
-skip-if = ["xorigin"] # Crashes, Assertion failure: mInFlightProcessId == 0, at /builds/worker/checkouts/gecko/docshell/base/CanonicalBrowsingContext.cpp:110
+skip-if = [
+  "xorigin", # Crashes, Assertion failure: mInFlightProcessId == 0, at /builds/worker/checkouts/gecko/docshell/base/CanonicalBrowsingContext.cpp:110
+]

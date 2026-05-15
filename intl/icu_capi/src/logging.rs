@@ -4,7 +4,6 @@
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
 
@@ -19,6 +18,7 @@ pub mod ffi {
         ///
         /// Returns `false` if there was already a logger set.
         #[cfg(all(not(target_arch = "wasm32"), feature = "simple_logger"))]
+        #[diplomat::attr(demo_gen, disable)] // stateful
         pub fn init_simple_logger() -> bool {
             simple_logger::init().is_ok()
         }

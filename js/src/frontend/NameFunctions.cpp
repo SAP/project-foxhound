@@ -91,6 +91,11 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
    * |*foundName| is set to true if a name is found for the expression.
    */
   bool nameExpression(ParseNode* n, bool* foundName) {
+    AutoCheckRecursionLimit recursion(fc_);
+    if (!recursion.check(fc_)) {
+      return false;
+    }
+
     switch (n->getKind()) {
       case ParseNodeKind::ArgumentsLength:
       case ParseNodeKind::DotExpr: {

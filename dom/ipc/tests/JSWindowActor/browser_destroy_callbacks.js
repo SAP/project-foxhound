@@ -11,7 +11,6 @@ declTest("destroy actor by iframe remove", {
       let frame = content.document.createElement("iframe");
       frame.id = "frame";
       content.document.body.appendChild(frame);
-      await ContentTaskUtils.waitForEvent(frame, "load");
       is(content.window.frames.length, 1, "There should be an iframe.");
       let child = frame.contentWindow.windowGlobalChild;
       let actorChild = child.getActor("TestWindow");

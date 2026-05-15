@@ -17,13 +17,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.mozilla.fenix.helpers.TestSetup
 
 private const val ON_SHOWN_ROOT_TAG = "onShownRoot"
 private const val ON_SHOWN_SETTLE_TIME_MS = 1000
 private const val ON_SHOWN_INDEX = 15
 private const val ON_SHOWN_NODE_COUNT = 30
 
-class ModifierTest {
+class ModifierTest : TestSetup() {
 
     @get:Rule
     val composeTestRule = createComposeRule()
@@ -57,8 +58,9 @@ class ModifierTest {
         }
 
         composeTestRule.scrollToOnShownIndex()
+        composeTestRule.waitForIdle()
 
-        composeTestRule.waitUntil(ON_SHOWN_SETTLE_TIME_MS + 500L) { onShown }
+        composeTestRule.waitUntil(ON_SHOWN_SETTLE_TIME_MS + 4000L) { onShown }
 
         assertTrue(onShown)
     }

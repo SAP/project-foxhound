@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 add_task(async function test_deleteClosedWindow() {
-  /** Test for Bug 491577 **/
+  /** Test for Bug 491577 */
 
   const REMEMBER = Date.now(),
     FORGET = Math.random();

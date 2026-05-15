@@ -8,13 +8,13 @@
 const TEST_URL =
   "data:text/html;charset=utf8,test page for toolbar keyboard navigation";
 
-function containsFocus(aDoc, aElm) {
-  let elm = aDoc.activeElement;
-  while (elm) {
-    if (elm === aElm) {
+function containsFocus(doc, expectedElement) {
+  let el = doc.activeElement;
+  while (el) {
+    if (el === expectedElement) {
       return true;
     }
-    elm = elm.parentNode;
+    el = el.parentNode;
   }
   return false;
 }

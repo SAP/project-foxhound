@@ -37,19 +37,19 @@ add_task(async function testLocalOverride() {
     gBrowser.selectedBrowser,
     [REQUEST_URL],
     async _url => {
-      const request = await content.wrappedJSObject.fetch(_url);
-      const requestcontent = await request.text();
+      const response = await content.wrappedJSObject.fetch(_url);
+      const responsecontent = await response.text();
       is(
-        requestcontent,
+        responsecontent,
         `"use strict";\ndocument.title = "Override script loaded";\n`,
-        "the request content has been overriden"
+        "the response content has been overriden"
       );
-      const secondRequest = await content.wrappedJSObject.fetch(_url);
-      const secondRequestcontent = await secondRequest.text();
+      const secondResponse = await content.wrappedJSObject.fetch(_url);
+      const secondResponsecontent = await secondResponse.text();
       is(
-        secondRequestcontent,
+        secondResponsecontent,
         `"use strict";\ndocument.title = "Override script loaded";\n`,
-        "the cached request content has been overriden"
+        "the cached response content has been overriden"
       );
     }
   );
@@ -101,6 +101,30 @@ add_task(async function testLocalOverride() {
 
   await BrowserTestUtils.waitForCondition(() => eventsCount >= 1);
 
+  info(
+    `Assert that requests which would require a CORS preflight can be overridden`
+  );
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [CORS_REQUEST_URL],
+    async _url => {
+      // NOTE: This is intentionally using `content.fetch` and not `content.wrappedJSObject.fetch`,
+      // otherwise the `LoadRequireCORSPreflight` flag is not set for the request.
+      const response = await content.fetch(_url, {
+        // Use a extra header to force a CORS preflight.
+        headers: { "X-PINGOTHER": "pingpong" },
+      });
+      const responsecontent = await response.text();
+      is(response.status, 200);
+      is(
+        responsecontent,
+        `"use strict";\ndocument.title = "Override script loaded";\n`,
+        "the content for the CORS (with preflight) request has been overriden"
+      );
+    }
+  );
+
+  await BrowserTestUtils.waitForCondition(() => eventsCount >= 2);
   networkObserver.destroy();
 });
 
@@ -164,19 +188,19 @@ add_task(async function testLocalOverrideGzipped() {
     gBrowser.selectedBrowser,
     [GZIPPED_REQUEST_URL],
     async _url => {
-      const request = await content.wrappedJSObject.fetch(_url);
-      const requestcontent = await request.text();
+      const response = await content.wrappedJSObject.fetch(_url);
+      const responsecontent = await response.text();
       is(
-        requestcontent,
+        responsecontent,
         `"use strict";\ndocument.title = "Override script loaded";\n`,
-        "the request content for the gzipped script has been overriden"
+        "the response content for the gzipped script has been overriden"
       );
-      const secondRequest = await content.wrappedJSObject.fetch(_url);
-      const secondRequestcontent = await secondRequest.text();
+      const secondResponse = await content.wrappedJSObject.fetch(_url);
+      const secondResponsecontent = await secondResponse.text();
       is(
-        secondRequestcontent,
+        secondResponsecontent,
         `"use strict";\ndocument.title = "Override script loaded";\n`,
-        "the cached request content for the gzipped script has been overriden"
+        "the cached response content for the gzipped script has been overriden"
       );
     }
   );
@@ -211,11 +235,11 @@ add_task(async function testLocalOverrideCSP() {
 
   const url = CSP_SCRIPT_TO_OVERRIDE;
   const browser = gBrowser.selectedBrowser;
-  const originalText = await getRequestText(url, browser);
+  const originalText = await getResponseText(url, browser);
   is(
     originalText,
     `"use strict";\ndocument.title = "CSP script to override loaded";\n`,
-    "the request content for the CSP script is the original one"
+    "the response content for the CSP script is the original one"
   );
 
   let eventsCount = 0;
@@ -233,17 +257,17 @@ add_task(async function testLocalOverrideCSP() {
   info(" override " + url + " to " + overrideFile.path + "\n");
   networkObserver.override(url, overrideFile.path);
 
-  const overriddenText = await getRequestText(url, browser);
+  const overriddenText = await getResponseText(url, browser);
   is(
     overriddenText,
     `"use strict";\ndocument.title = "Override script loaded";\n`,
-    "the request content for the CSP script has been overriden"
+    "the response content for the CSP script has been overriden"
   );
-  const cachedOverriddenText = await getRequestText(url, browser);
+  const cachedOverriddenText = await getResponseText(url, browser);
   is(
     cachedOverriddenText,
     `"use strict";\ndocument.title = "Override script loaded";\n`,
-    "the cached request content for the CSP script has been overriden"
+    "the cached response content for the CSP script has been overriden"
   );
 
   await SpecialPowers.spawn(browser, [url], async _url => {
@@ -265,11 +289,11 @@ add_task(async function testLocalOverrideCSP() {
 
   info("Remove the override for " + url);
   networkObserver.removeOverride(url);
-  const restoredText = await getRequestText(url, browser);
+  const restoredText = await getResponseText(url, browser);
   is(
     restoredText,
     `"use strict";\ndocument.title = "CSP script to override loaded";\n`,
-    "the request content for the CSP script is back to the original one"
+    "the response content for the CSP script is back to the original one"
   );
 
   networkObserver.destroy();
@@ -286,9 +310,9 @@ add_task(async function testLocalOverrideCSP() {
  * @returns {string}
  *     The text content of the fetch request.
  */
-async function getRequestText(url, browser) {
+async function getResponseText(url, browser) {
   return SpecialPowers.spawn(browser, [url], async _url => {
-    const request = await content.wrappedJSObject.fetch(_url);
-    return await request.text();
+    const response = await content.wrappedJSObject.fetch(_url);
+    return await response.text();
   });
 }

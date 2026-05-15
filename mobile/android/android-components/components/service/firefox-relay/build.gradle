@@ -1,0 +1,56 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+buildscript {
+    repositories {
+        gradle.configureMavenRepositories(delegate)
+    }
+
+    dependencies {
+        classpath libs.kotlin.serialization
+    }
+}
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlinx-serialization'
+
+android {
+    buildFeatures {
+        compose = true
+    }
+
+    namespace = 'mozilla.components.service.fxrelay'
+}
+
+dependencies {
+    implementation ComponentsDependencies.mozilla_appservices_fxrelay
+    implementation project(':components:compose-base')
+    implementation project(":components:ui-icons")
+    implementation project(':components:support-ktx')
+    implementation project(":components:lib-state")
+    implementation project(':components:service-firefox-accounts')
+
+    implementation libs.androidx.compose.material3
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.ui.tooling.preview
+
+    testImplementation project(':components:support-test')
+
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlinx.coroutines.test
+
+}
+
+apply from: '../../../common-config.gradle'
+apply from: '../../../publish.gradle'
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

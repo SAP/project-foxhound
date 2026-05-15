@@ -13,7 +13,7 @@ function unregisterTarget(targetFront) {
 
 /**
  *
- * @param {String} targetActorID: The actorID of the target we want to select.
+ * @param {string} targetActorID: The actorID of the target we want to select.
  */
 function selectTarget(targetActorID) {
   return function ({ dispatch }) {

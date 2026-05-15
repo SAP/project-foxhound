@@ -5,8 +5,8 @@
 #ifndef mozilla_dom_RemoteWorkerDebuggerParent_h
 #define mozilla_dom_RemoteWorkerDebuggerParent_h
 
-#include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
 #include "mozilla/dom/PRemoteWorkerDebuggerChild.h"
+#include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "nsIWorkerDebugger.h"
 #include "nsTArray.h"

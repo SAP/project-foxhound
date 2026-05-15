@@ -7,10 +7,10 @@
 #ifndef DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_WEBRTCENVIRONMENTWRAPPER_H_
 #define DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_WEBRTCENVIRONMENTWRAPPER_H_
 
+#include "SystemTime.h"
 #include "domstubs.h"
 #include "jsapi/PeerConnectionCtx.h"  // for MozTrialsConfig
 #include "nsISupportsImpl.h"
-#include "SystemTime.h"
 
 // libwebrtc includes
 #include "api/environment/environment.h"

@@ -64,7 +64,6 @@ private fun TabStripCardPreview() {
             ) {
                 Text(
                     text = "Tab Strip Card",
-                    color = FirefoxTheme.colors.textPrimary,
                     style = FirefoxTheme.typography.subtitle1,
                 )
             }

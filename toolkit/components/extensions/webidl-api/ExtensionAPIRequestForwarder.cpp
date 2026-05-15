@@ -400,7 +400,7 @@ nsresult RequestWorkerRunnable::DeserializeArgs(
     IgnoredErrorResult rv;
 
     JS::Rooted<JS::Value> jsvalue(aCx);
-    mArgsHolder->get()->Read(xpc::CurrentNativeGlobal(aCx), aCx, &jsvalue, rv);
+    mArgsHolder->get()->Read(aCx, &jsvalue, rv);
     if (NS_WARN_IF(rv.Failed())) {
       return NS_ERROR_UNEXPECTED;
     }
@@ -609,13 +609,12 @@ void RequestWorkerRunnable::ReadResult(JSContext* aCx,
 
   switch (*mResultType) {
     case mozIExtensionAPIRequestResult::ResultType::RETURN_VALUE:
-      mResultHolder->get()->Read(xpc::CurrentNativeGlobal(aCx), aCx, aResult,
-                                 aRv);
+      mResultHolder->get()->Read(aCx, aResult, aRv);
       return;
     case mozIExtensionAPIRequestResult::ResultType::EXTENSION_ERROR:
       JS::Rooted<JS::Value> exn(aCx);
       IgnoredErrorResult rv;
-      mResultHolder->get()->Read(xpc::CurrentNativeGlobal(aCx), aCx, &exn, rv);
+      mResultHolder->get()->Read(aCx, &exn, rv);
       if (rv.Failed()) {
         NS_WARNING("Failed to deserialize extension error");
         ExtensionAPIBase::ThrowUnexpectedError(aCx, aRv);

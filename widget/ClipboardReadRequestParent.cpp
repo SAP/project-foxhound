@@ -73,7 +73,7 @@ IPCResult ClipboardReadRequestParent::RecvGetData(
     const nsTArray<nsCString>& aFlavors, GetDataResolver&& aResolver) {
   bool valid = false;
   if (NS_FAILED(mClipboardDataSnapshot->GetValid(&valid)) || !valid) {
-    Unused << PClipboardReadRequestParent::Send__delete__(this);
+    (void)PClipboardReadRequestParent::Send__delete__(this);
     aResolver(NS_ERROR_NOT_AVAILABLE);
     return IPC_OK();
   }
@@ -95,7 +95,7 @@ IPCResult ClipboardReadRequestParent::RecvGetData(
           bool valid = false;
           if (NS_FAILED(self->mClipboardDataSnapshot->GetValid(&valid)) ||
               !valid) {
-            Unused << PClipboardReadRequestParent::Send__delete__(self);
+            (void)PClipboardReadRequestParent::Send__delete__(self);
           }
           resolver(aRv);
           return;
@@ -122,7 +122,7 @@ IPCResult ClipboardReadRequestParent::RecvGetDataSync(
     // DispatchDirectTaskToCurrentThread()
     RefPtr<nsIRunnable> task = NS_NewRunnableFunction(
         "ClipboardReadRequestParent_SyncError", [self = RefPtr{this}]() {
-          Unused << PClipboardReadRequestParent::Send__delete__(self);
+          (void)PClipboardReadRequestParent::Send__delete__(self);
         });
     nsThreadManager::get().DispatchDirectTaskToCurrentThread(task);
   };

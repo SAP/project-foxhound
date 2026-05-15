@@ -12,11 +12,11 @@
 #define mozilla_dom_Attr_h
 
 #include "mozilla/Attributes.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsDOMAttributeMap.h"
 #include "nsINode.h"
 #include "nsString.h"
-#include "nsCOMPtr.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsStubMutationObserver.h"
 
 namespace mozilla {
@@ -49,12 +49,15 @@ class Attr final : public nsINode {
                                       OOMReporter& aError) override;
   virtual void SetTextContentInternal(const nsAString& aTextContent,
                                       nsIPrincipal* aSubjectPrincipal,
-                                      ErrorResult& aError) override;
+                                      ErrorResult& aError,
+                                      MutationEffectOnScript) override;
   MOZ_CAN_RUN_SCRIPT void SetNodeValue(const nsAString& aNodeValue,
                                        mozilla::ErrorResult& aError) override;
   virtual void GetNodeValueInternal(nsAString& aNodeValue) override;
-  virtual void SetNodeValueInternal(const nsAString& aNodeValue,
-                                    ErrorResult& aError) override;
+  virtual void SetNodeValueInternal(
+      const nsAString& aNodeValue, ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
 
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 

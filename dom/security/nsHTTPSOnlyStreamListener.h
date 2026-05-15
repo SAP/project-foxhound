@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHTTPSOnlyStreamListener_h___
-#define nsHTTPSOnlyStreamListener_h___
+#ifndef nsHTTPSOnlyStreamListener_h_
+#define nsHTTPSOnlyStreamListener_h_
 
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
@@ -47,4 +47,4 @@ class nsHTTPSOnlyStreamListener : public nsIStreamListener {
   mozilla::TimeStamp mCreationStart;
 };
 
-#endif /* nsHTTPSOnlyStreamListener_h___ */
+#endif /* nsHTTPSOnlyStreamListener_h_ */

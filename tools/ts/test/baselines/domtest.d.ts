@@ -74,6 +74,15 @@ interface Location {
 interface Node {
 }
 
+interface TestChromeOnlyInterface {
+}
+
+declare var TestChromeOnlyInterface: {
+    prototype: TestChromeOnlyInterface;
+    new(): TestChromeOnlyInterface;
+    isInstance: IsInstance<TestChromeOnlyInterface>;
+};
+
 interface TestFunctions {
     allowSharedArrayBuffer: ArrayBuffer;
     allowSharedArrayBufferView: ArrayBufferView;
@@ -118,6 +127,7 @@ declare var TestFunctions: {
     prototype: TestFunctions;
     new(): TestFunctions;
     isInstance: IsInstance<TestFunctions>;
+    createTestChromeOnlyInterface(): TestChromeOnlyInterface;
     passThroughCallbackPromise(callback: PromiseReturner): Promise<any>;
     passThroughPromise(arg: any): Promise<any>;
     throwToRejectPromise(): Promise<any>;

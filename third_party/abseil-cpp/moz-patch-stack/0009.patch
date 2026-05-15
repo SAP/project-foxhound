@@ -1,30 +1,83 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Thu, 9 Jan 2025 13:53:00 -0600
-Subject: Bug 1938156 - third_party/abseil-cpp ba05f98ec72 added a group we
- don't need.
+Date: Tue, 7 Jan 2025 15:30:00 -0600
+Subject: Bug 1935474 - BUILD.gn changes to allow building all of
+ absl_component_deps. r?ng!
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/928c6aa703b29d46632c4333b0c8b643fc08c60f
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/9cf7afd94407318bb1c39b801d3523db532232e1
 ---
- abseil-cpp/BUILD.gn | 2 ++
- 1 file changed, 2 insertions(+)
+ abseil-cpp/BUILD.gn                      | 31 ++++++++++--------------
+ abseil-cpp/absl/random/internal/BUILD.gn |  5 ++++
+ 2 files changed, 18 insertions(+), 18 deletions(-)
 
 diff --git a/abseil-cpp/BUILD.gn b/abseil-cpp/BUILD.gn
-index d61c84ce559..2474ca7fd2e 100644
+index 49b4cb7f92b..1949a635ca1 100644
 --- a/abseil-cpp/BUILD.gn
 +++ b/abseil-cpp/BUILD.gn
-@@ -187,6 +187,7 @@ source_set("absl_full") {
+@@ -56,7 +56,6 @@ component("absl") {
  }
  
- group("absl_full_deps") {
-+  if (!moz_webrtc_build) {
+ group("absl_component_deps") {
+-  if (false) {
    public_deps = [
-     # Banned because each flag registration generates a static initializer, and
-     # the flag registration mechanism is problematic in component builds.
-@@ -213,6 +214,7 @@ group("absl_full_deps") {
+     "//third_party/abseil-cpp/absl/algorithm",
+     "//third_party/abseil-cpp/absl/algorithm:container",
+@@ -126,23 +125,6 @@ group("absl_component_deps") {
+     # absl internal utilities used by protobuf.
+     "//third_party/abseil-cpp/absl/container:layout",
    ]
+-  } else {
+-  public_deps = [
+-    "//abseil-cpp/absl/algorithm:container",
+-    "//abseil-cpp/absl/base:nullability",
+-    "//abseil-cpp/absl/cleanup",
+-    "//abseil-cpp/absl/container:inlined_vector",
+-    "//abseil-cpp/absl/functional:any_invocable",
+-    "//abseil-cpp/absl/functional:bind_front",
+-    "//abseil-cpp/absl/strings",
+-    "//abseil-cpp/absl/strings:str_format",
+-    "//abseil-cpp/absl/strings:string_view",
+-    "//abseil-cpp/absl/types:optional",
+-    "//abseil-cpp/absl/types:span",
+-    "//abseil-cpp/absl/types:variant",
+-    "//abseil-cpp/absl/utility",
+-  ]
+-  }
  
-   public_configs = [ "//third_party/abseil-cpp/absl/flags:absl_flags_config" ]
+   if (is_component_build) {
+     public_deps += [ ":absl_full_deps" ]
+@@ -156,6 +138,19 @@ group("absl_component_deps") {
+   }
+ 
+   visibility = [ ":absl" ]
++
++  if (moz_webrtc_build) {
++    # rewrite deps for our new abseil-cpp location
++    if (defined(public_deps)) {
++      modified_deps = []
++      foreach (dep, public_deps) {
++        newdep = string_replace(dep, "//third_party/abseil-cpp/", "//")
++        modified_deps += [ newdep ]
++      }
++      public_deps = []
++      public_deps = modified_deps
++    }
 +  }
  }
  
- config("absl_include_config") {
+ # Some third-party libraries use additional parts of absl that are banned in
+diff --git a/abseil-cpp/absl/random/internal/BUILD.gn b/abseil-cpp/absl/random/internal/BUILD.gn
+index 2aef8a1aa9d..08caf30bf0b 100644
+--- a/abseil-cpp/absl/random/internal/BUILD.gn
++++ b/abseil-cpp/absl/random/internal/BUILD.gn
+@@ -186,6 +186,11 @@ absl_source_set("platform") {
+     "//third_party/abseil-cpp/absl/base:config",
+   ]
+   visibility = [ "//third_party/abseil-cpp/absl/random/*" ]
++
++  if (moz_webrtc_build) {
++    # We don't really want to run Google's scripting to generate build flags
++    deps -= [ "//build:chromeos_buildflags" ]
++  }
+ }
+ 
+ absl_source_set("randen") {

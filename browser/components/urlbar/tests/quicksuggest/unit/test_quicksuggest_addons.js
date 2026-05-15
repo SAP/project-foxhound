@@ -101,7 +101,7 @@ add_setup(async function init() {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords: REMOTE_SETTINGS_RESULTS,
     merinoSuggestions: MERINO_SUGGESTIONS,
-    prefs: [["suggest.quicksuggest.nonsponsored", true]],
+    prefs: [["suggest.quicksuggest.all", true]],
   });
 });
 
@@ -114,9 +114,16 @@ add_task(async function telemetryType() {
 });
 
 // When quick suggest prefs are disabled, addon suggestions should be disabled.
-add_task(async function quickSuggestPrefsDisabled() {
-  let prefs = ["quicksuggest.enabled", "suggest.quicksuggest.nonsponsored"];
+add_task(async function prefsDisabled() {
+  let prefs = [
+    "quicksuggest.enabled",
+    "addons.featureGate",
+    "suggest.quicksuggest.all",
+    "suggest.addons",
+  ];
   for (let pref of prefs) {
+    info("Testing pref: " + pref);
+
     // Before disabling the pref, first make sure the suggestion is added.
     await check_results({
       context: createContext("test", {
@@ -143,42 +150,6 @@ add_task(async function quickSuggestPrefsDisabled() {
     });
 
     UrlbarPrefs.set(pref, true);
-    await QuickSuggestTestUtils.forceSync();
-  }
-});
-
-// When addon suggestions specific preference is disabled, addon suggestions
-// should not be added.
-add_task(async function addonSuggestionsSpecificPrefDisabled() {
-  const prefs = ["suggest.addons", "addons.featureGate"];
-  for (const pref of prefs) {
-    // First make sure the suggestion is added.
-    await check_results({
-      context: createContext("test", {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [
-        makeExpectedResult({
-          suggestion: MERINO_SUGGESTIONS[0],
-          source: "merino",
-          provider: "amo",
-        }),
-      ],
-    });
-
-    // Now disable the pref.
-    UrlbarPrefs.set(pref, false);
-    await check_results({
-      context: createContext("test", {
-        providers: [UrlbarProviderQuickSuggest.name],
-        isPrivate: false,
-      }),
-      matches: [],
-    });
-
-    // Revert.
-    UrlbarPrefs.clear(pref);
     await QuickSuggestTestUtils.forceSync();
   }
 });
@@ -428,7 +399,7 @@ add_task(async function remoteSettings() {
   ];
 
   // Disable Merino so we trigger only remote settings suggestions.
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
 
   for (let { input, expected } of testCases) {
     await check_results({
@@ -440,7 +411,7 @@ add_task(async function remoteSettings() {
     });
   }
 
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
+  UrlbarPrefs.clear("quicksuggest.online.enabled");
 });
 
 add_task(async function merinoIsTopPick() {
@@ -484,7 +455,7 @@ add_task(async function merinoIsTopPick() {
 // Tests the "Not relevant" command: a dismissed suggestion shouldn't be added.
 add_task(async function notRelevant() {
   // Disable Merino suggestions to make this task simpler.
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
 
   await doDismissOneTest({
     result: makeExpectedResult({
@@ -509,7 +480,7 @@ add_task(async function notRelevant() {
     ],
   });
 
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
+  UrlbarPrefs.clear("quicksuggest.online.enabled");
 });
 
 // Tests the "Not interested" command: all addon suggestions should be disabled
@@ -540,14 +511,14 @@ add_task(async function notInterested() {
 
 // Tests the "show less frequently" behavior.
 add_task(async function showLessFrequently() {
-  await doShowLessFrequentlyTests({
+  await doShowLessFrequentlyTest({
     feature: QuickSuggest.getFeature("AddonSuggestions"),
+    keyword: "two words",
+    minKeywordLengthPref: "addons.minKeywordLength",
     showLessFrequentlyCountPref: "addons.showLessFrequentlyCount",
-    nimbusCapVariable: "addonsShowLessFrequentlyCap",
     expectedResult: makeExpectedResult({
       suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
     }),
-    keyword: "two words",
   });
 });
 

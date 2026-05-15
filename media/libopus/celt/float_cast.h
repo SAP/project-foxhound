@@ -69,7 +69,7 @@ static OPUS_INLINE opus_int32 float2int(float x) {return _mm_cvt_ss2si(_mm_set_s
 
 #elif (defined(_MSC_VER) && _MSC_VER >= 1400) && (defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 1))
 
-        #include <xmmintrin.h>
+        #include <intrin.h>
         static OPUS_INLINE opus_int32 float2int(float value)
         {
                 /* _mm_load_ss will generate same code as _mm_set_ss
@@ -154,6 +154,23 @@ static OPUS_INLINE opus_int16 FLOAT2INT16(float x)
    x = MIN32(x, 32767);
    return (opus_int16)float2int(x);
 }
+
+static OPUS_INLINE opus_int32 FLOAT2INT24(float x)
+{
+   x = x*(CELT_SIG_SCALE*256.f);
+   x = MAX32(x, -16777216);
+   x = MIN32(x, 16777216);
+   return float2int(x);
+}
+#ifdef FIXED_POINT
+static OPUS_INLINE opus_int32 FLOAT2SIG(float x)
+{
+   x = x*((opus_int32)32768<<SIG_SHIFT);
+   x = MAX32(x, -(65536<<SIG_SHIFT));
+   x = MIN32(x, 65536<<SIG_SHIFT);
+   return float2int(x);
+}
+#endif
 #endif /* DISABLE_FLOAT_API */
 
 #endif /* FLOAT_CAST_H */

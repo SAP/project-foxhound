@@ -68,7 +68,7 @@ class CompatibilityView {
   }
 
   get resourceCommand() {
-    return this.inspector.toolbox.resourceCommand;
+    return this.inspector.commands.resourceCommand;
   }
 
   async #init() {
@@ -146,8 +146,8 @@ class CompatibilityView {
 
     this.#isChangeAddedWhileHidden = false;
 
-    // We need to debounce updating nodes since "add-change" event on changes actor is
-    // fired for every typed character until fixing bug 1503036.
+    // We need to debounce updating nodes since we might get CSS_CHANGE resources for
+    // every typed character until fixing bug 1503036.
     if (this.#previousChangedSelector === selector) {
       clearTimeout(this.#updateNodesTimeoutId);
     }

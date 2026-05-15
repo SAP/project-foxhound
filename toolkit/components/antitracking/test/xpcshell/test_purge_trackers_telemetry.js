@@ -21,7 +21,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "PurgeTrackerService",
   "@mozilla.org/purge-tracker-service;1",
-  "nsIPurgeTrackerService"
+  Ci.nsIPurgeTrackerService
 );
 
 add_task(async function setup() {
@@ -41,6 +41,9 @@ add_task(async function setup() {
 
   // Enables us to test localStorage in xpcshell.
   Services.prefs.setBoolPref("dom.storage.client_validation", false);
+
+  // Needed for BounceTrackingProtection.
+  do_get_profile(true);
 });
 
 /**

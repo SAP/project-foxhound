@@ -36,10 +36,14 @@ prefs = ["services.settings.server='data:,#remote-settings-dummy/v1'"]
 #    but in-process extensions.
 
 ["include:xpcshell-common.toml"]
-run-if = ["os == 'android'"] # Android has no remote extensions, Bug 1535365
+run-if = [
+  "os == 'android'", # Android has no remote extensions, Bug 1535365
+]
 
 ["include:xpcshell-content.toml"]
-run-if = ["os == 'android'"] # Android has no remote extensions, Bug 1535365
+run-if = [
+  "os == 'android'", # Android has no remote extensions, Bug 1535365
+]
 
 ["test_ExtensionShortcutKeyMap.js"]
 
@@ -50,7 +54,7 @@ run-if = ["os == 'android'"] # Android has no remote extensions, Bug 1535365
 ["test_StorageSyncService.js"]
 skip-if = [
   "!sync",
-  "os == 'android' && processor == 'x86_64'",
+  "os == 'android' && arch == 'x86_64'",
 ]
 
 ["test_WebExtensionPolicy.js"]
@@ -63,10 +67,18 @@ skip-if = [
 
 ["test_ext_contexts.js"]
 
+["test_ext_dnr_cache.js"]
+requesttimeoutfactor = 2 # Test has multiple long wait to absorb slow execution
+prefs = [
+  "dom.script_loader.experimental.navigation_cache.check_memory_pressure=false",
+]
+
 ["test_ext_experiments_glean.js"]
 
 ["test_ext_geckoProfiler_schema.js"]
-skip-if = ["os == 'android'"] # Not shipped on Android
+run-if = [
+  "os != 'android'", # Not shipped on Android
+]
 
 ["test_ext_indexedDB_principal.js"]
 
@@ -98,10 +110,14 @@ head = "head.js head_schemas.js"
 ["test_ext_schemas_interactive.js"]
 
 ["test_ext_schemas_manifest_permissions.js"]
-skip-if = ["condprof"]  # Bug 1769184 - by design for now
+run-if = [
+  "!condprof", # Bug 1769184 - by design for now
+]
 
 ["test_ext_schemas_privileged.js"]
-skip-if = ["condprof"]  # Bug 1769184 - by design for now
+run-if = [
+  "!condprof", # Bug 1769184 - by design for now
+]
 
 ["test_ext_schemas_revoke.js"]
 
@@ -111,12 +127,18 @@ skip-if = ["condprof"]  # Bug 1769184 - by design for now
 head = "head.js head_schemas.js"
 
 ["test_ext_secfetch.js"]
-skip-if = ["socketprocess_networking"] # Bug 1759035
-run-sequentially = "very high failure rate in parallel"
+skip-if = [
+  "socketprocess_networking", # Bug 1759035
+]
 
 ["test_ext_shared_array_buffer.js"]
 
 ["test_ext_startup_cache_telemetry.js"]
+skip-if = [
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'", # Bug 1996467
+  "os == 'win' && os_version == '11.26100' && arch == 'x86'", # Bug 1996467
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1996467
+]
 
 ["test_ext_test_mock.js"]
 
@@ -124,15 +146,24 @@ run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_unknown_permissions.js"]
 
+["test_ext_urlclassifier.js"]
+skip-if = [
+  "artifact", # Bug 2012613 - known limitation of FOG ping testing APIs
+]
+
 ["test_ext_webRequest_handlerBehaviorChanged.js"]
 
 ["test_ext_webRequest_urlclassification.js"]
 
 ["test_extension_permissions_migrate_kvstore_path.js"]
-skip-if = ["condprof"]  # Bug 1769184 - by design for now
+run-if = [
+  "!condprof", # Bug 1769184 - by design for now
+]
 
 ["test_extension_permissions_migration.js"]
-skip-if = ["condprof"]  # Bug 1769184 - by design for now
+run-if = [
+  "!condprof", # Bug 1769184 - by design for now
+]
 
 ["test_load_all_api_modules.js"]
 

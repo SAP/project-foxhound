@@ -39,7 +39,7 @@ async function testEditClassSelector(view) {
   const propEditor = ruleEditor.rule.textProps[0].editor;
 
   info("Check that the correct rules are visible");
-  is(view._elementStyle.rules.length, 3, "Should have 3 rules.");
+  is(view.elementStyle.rules.length, 3, "Should have 3 rules.");
   ok(ruleEditor.element.getAttribute("unmatched"), "Rule editor is unmatched.");
   is(
     getRuleViewRule(view, ".testclass"),
@@ -67,7 +67,7 @@ async function testEditDivSelector(view) {
   ruleEditor = getRuleViewRuleEditor(view, 2);
 
   info("Check that the correct rules are visible");
-  is(view._elementStyle.rules.length, 3, "Should have 3 rules.");
+  is(view.elementStyle.rules.length, 3, "Should have 3 rules.");
   ok(ruleEditor.element.getAttribute("unmatched"), "Rule editor is unmatched.");
   is(
     getRuleViewRule(view, "div"),

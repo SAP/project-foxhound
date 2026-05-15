@@ -5,8 +5,6 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/UniquePtr.h"
 
-#include <iterator>
-
 #include "jsapi-tests/tests.h"
 
 static unsigned gSliceCallbackCount = 0;
@@ -79,8 +77,8 @@ BEGIN_TEST(testGCRootsRemoved) {
 
   gSliceCallbackCount = 0;
   JS::SetGCSliceCallback(cx, RootsRemovedGCSliceCallback);
-  auto byebye =
-      mozilla::MakeScopeExit([=] { JS::SetGCSliceCallback(cx, nullptr); });
+  auto byebye = mozilla::MakeScopeExit(
+      [=, this] { JS::SetGCSliceCallback(cx, nullptr); });
 
   JS::RootedObject obj(cx, JS_NewPlainObject(cx));
   CHECK(obj);
@@ -255,7 +253,7 @@ BEGIN_TEST(testGCTree) {
   // Automate the callback clearing. Otherwise if a CHECK fails, it will get
   // cluttered with additional failures from the callback unexpectedly firing
   // during the final shutdown GC.
-  auto byebye = mozilla::MakeScopeExit([=] {
+  auto byebye = mozilla::MakeScopeExit([=, this] {
     JS::SetGCSliceCallback(cx, nullptr);
     JS_SetGCCallback(cx, nullptr, nullptr);
   });

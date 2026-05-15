@@ -3,12 +3,13 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _RUSTSDPGLUE_H_
-#define _RUSTSDPGLUE_H_
+#ifndef RUSTSDPGLUE_H_
+#define RUSTSDPGLUE_H_
 
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
+
 #include "SdpEnum.h"
 #include "mozilla/UniquePtr.h"
 #include "sdp/RsdparsaSdpInc.h"

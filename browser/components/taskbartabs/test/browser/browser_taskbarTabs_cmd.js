@@ -23,7 +23,7 @@ let taskbarTab1;
 add_setup(async () => {
   const url1 = Services.io.newURI("https://example.com");
   const userContextId1 = 0;
-  taskbarTab1 = await TaskbarTabs.findOrCreateTaskbarTab(url1, userContextId1);
+  taskbarTab1 = await createTaskbarTab(TaskbarTabs, url1, userContextId1);
 
   // Reset memory of pinning being called.
   sinon.resetHistory();

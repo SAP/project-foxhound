@@ -7,14 +7,14 @@
 #ifndef DOM_SVG_SVGUSEELEMENT_H_
 #define DOM_SVG_SVGUSEELEMENT_H_
 
+#include "SVGAnimatedLength.h"
+#include "SVGAnimatedString.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/IDTracker.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
-#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsStubMutationObserver.h"
-#include "SVGAnimatedLength.h"
-#include "SVGAnimatedString.h"
 #include "nsTArray.h"
 
 class nsIContent;
@@ -71,7 +71,7 @@ class SVGUseElement final : public SVGUseElementBase,
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
-  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
+  static NonCustomCSSPropertyId GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedString> Href();
@@ -159,17 +159,17 @@ class SVGUseElement final : public SVGUseElementBase,
   void TriggerReclone();
   void UnlinkSource();
 
-  enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
-  SVGAnimatedLength mLengthAttributes[4];
-  static LengthInfo sLengthInfo[4];
+  RefPtr<SVGUseElement> mOriginal;  // if we've been cloned, our "real" copy
+  ElementTracker mReferencedElementTracker;
+  RefPtr<URLExtraData> mContentURLData;  // URL data for its anonymous content
 
   enum { HREF, XLINK_HREF };
   SVGAnimatedString mStringAttributes[2];
   static StringInfo sStringInfo[2];
 
-  RefPtr<SVGUseElement> mOriginal;  // if we've been cloned, our "real" copy
-  ElementTracker mReferencedElementTracker;
-  RefPtr<URLExtraData> mContentURLData;  // URL data for its anonymous content
+  enum { ATTR_X, ATTR_Y, ATTR_WIDTH, ATTR_HEIGHT };
+  SVGAnimatedLength mLengthAttributes[4];
+  static LengthInfo sLengthInfo[4];
 };
 
 }  // namespace dom

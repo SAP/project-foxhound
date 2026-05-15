@@ -1,3 +1,7 @@
+// This library is patched, thus considered first-party. Ignore warnings
+// as if it were third-party.
+#![allow(warnings)]
+
 //! A library for reading and writing ZIP archives.
 //! ZIP is a format designed for cross-platform file "archiving".
 //! That is, storing a collection of files in a single datastream

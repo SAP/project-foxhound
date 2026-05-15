@@ -76,11 +76,21 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
           ErrorResult& aRv);
   void AsyncGo(int32_t aOffset, bool aRequireUserInteraction,
                bool aUserActivation);
+  void AsyncGo(const nsID& aKey, BrowsingContext* aNavigable,
+               bool aRequireUserInteraction, bool aUserActivation,
+               bool aCheckForCancelation,
+               std::function<void(nsresult)>&& aResolver);
 
   // aIndex is the new index, and aOffset is the offset between new and current.
   MOZ_CAN_RUN_SCRIPT
   void GotoIndex(int32_t aIndex, int32_t aOffset, bool aRequireUserInteraction,
                  bool aUserActivation, ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT
+  void GotoKey(const nsID& aKey, BrowsingContext* aNavigable,
+               bool aRequireUserInteraction, bool aUserActivation,
+               bool aCheckForCancelation,
+               const std::function<void(nsresult)>& aResolver,
+               ErrorResult& aRv);
 
   void RemovePendingHistoryNavigations();
 
@@ -109,27 +119,26 @@ class ChildSHistory : public nsISupports, public nsWrapperCache {
    public:
     PendingAsyncHistoryNavigation(ChildSHistory* aHistory, int32_t aOffset,
                                   bool aRequireUserInteraction,
-                                  bool aUserActivation)
-        : Runnable("PendingAsyncHistoryNavigation"),
-          mHistory(aHistory),
-          mRequireUserInteraction(aRequireUserInteraction),
-          mUserActivation(aUserActivation),
-          mOffset(aOffset) {}
+                                  bool aUserActivation);
 
-    MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override {
-      if (isInList()) {
-        remove();
-        mHistory->Go(mOffset, mRequireUserInteraction, mUserActivation,
-                     IgnoreErrors());
-      }
-      return NS_OK;
-    }
+    PendingAsyncHistoryNavigation(ChildSHistory* aHistory, const nsID& aKey,
+                                  BrowsingContext* aBrowsingContext,
+                                  bool aRequireUserInteraction,
+                                  bool aUserActivation,
+                                  bool aCheckForCancelation,
+                                  std::function<void(nsresult)>&& aResolver);
+
+    MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() override;
 
    private:
     const RefPtr<ChildSHistory> mHistory;
     bool mRequireUserInteraction;
     bool mUserActivation;
+    bool mCheckForCancelation;
     int32_t mOffset;
+    Maybe<nsID> mKey;
+    RefPtr<BrowsingContext> mBrowsingContext;
+    Maybe<std::function<void(nsresult)>> mResolver;
   };
 
   RefPtr<BrowsingContext> mBrowsingContext;

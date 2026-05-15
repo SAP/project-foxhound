@@ -17,7 +17,7 @@ export default [
   },
   {
     // Tests verify the exact source code of these functions
-    files: ["inspector/markup/test/doc_markup_events_*.html"],
+    files: ["inspector/markup/test/events/doc_markup_events_*.html"],
     rules: {
       "no-unused-vars": "off",
     },

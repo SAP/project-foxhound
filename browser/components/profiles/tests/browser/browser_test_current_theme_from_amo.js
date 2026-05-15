@@ -63,8 +63,8 @@ add_task(async function test_currentThemeFromAMOExistsOnEditPage() {
 
         Assert.equal(
           editProfileCard.themes.length,
-          11,
-          "Should have 11 themes with the currennt theme from AMO"
+          12,
+          "Should have 12 themes with the current theme from AMO"
         );
 
         Assert.equal(

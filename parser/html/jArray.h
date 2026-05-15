@@ -26,6 +26,7 @@
 #include <array>
 #include "mozilla/Attributes.h"
 #include "mozilla/BinarySearch.h"
+#include "mozilla/fallible.h"
 
 template <class T, class L>
 struct staticJArray {

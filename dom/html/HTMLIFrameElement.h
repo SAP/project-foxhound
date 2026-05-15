@@ -11,9 +11,9 @@
 #define mozilla_dom_HTMLIFrameElement_h
 
 #include "mozilla/Attributes.h"
+#include "nsDOMTokenList.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGenericHTMLFrameElement.h"
-#include "nsDOMTokenList.h"
 
 namespace mozilla::dom {
 
@@ -48,8 +48,6 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
       const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
-
-  void NodeInfoChanged(Document* aOldDoc) override;
 
   void BindToBrowsingContext(BrowsingContext* aBrowsingContext);
 
@@ -167,8 +165,8 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
   }
 
   void SetLazyLoading();
-  void StopLazyLoading();
-  void CancelLazyLoading(bool aClearLazyLoadState);
+  enum class TriggerLoad : bool { No, Yes };
+  void StopLazyLoading(TriggerLoad);
 
   const LazyLoadFrameResumptionState& GetLazyLoadFrameResumptionState() const {
     return mLazyLoadState;
@@ -177,21 +175,21 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
  protected:
   virtual ~HTMLIFrameElement();
 
-  virtual JSObject* WrapNode(JSContext* aCx,
-                             JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapNode(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
 
-  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                         const nsAString& aValue) override;
+  nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                 const nsAString& aValue) override;
 
-  virtual void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                            const nsAttrValue* aValue,
-                            const nsAttrValue* aOldValue,
-                            nsIPrincipal* aMaybeScriptedPrincipal,
-                            bool aNotify) override;
-  virtual void OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
-                                      const nsAttrValueOrString& aValue,
-                                      bool aNotify) override;
+  void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aMaybeScriptedPrincipal,
+                    bool aNotify) override;
+  void OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
+                              const nsAttrValueOrString& aValue,
+                              bool aNotify) override;
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(UnbindContext&) override;
+  void NodeInfoChanged(Document* aOldDoc) override;
 
  private:
   static void MapAttributesIntoRule(MappedDeclarationsBuilder&);
@@ -199,6 +197,7 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
   static const DOMTokenListSupportedToken sSupportedSandboxTokens[];
 
   void RefreshFeaturePolicy(bool aParseAllowAttribute);
+  void RefreshEmbedderReferrerPolicy(ReferrerPolicy aPolicy);
 
   // If this iframe has a 'srcdoc' attribute, the document's origin will be
   // returned. Otherwise, if this iframe has a 'src' attribute, the origin will

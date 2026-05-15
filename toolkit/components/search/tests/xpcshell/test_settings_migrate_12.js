@@ -61,7 +61,7 @@ async function useIcon(url, contentType) {
   SEARCH_SETTINGS.engines[1]._iconURL = icon;
   SearchTestUtils.setRemoteSettingsConfig(CONFIG);
 
-  await Services.search.wrappedJSObject.reset();
+  await SearchService.reset();
 
   await IOUtils.writeJSON(
     PathUtils.join(PathUtils.profileDir, SETTINGS_FILENAME),
@@ -69,7 +69,7 @@ async function useIcon(url, contentType) {
     { compress: true }
   );
 
-  await Services.search.init();
+  await SearchService.init();
   return icon;
 }
 
@@ -79,8 +79,8 @@ add_setup(async function () {
 
 add_task(async function test_migration() {
   let icon32 = await useIcon(`${gHttpURL}/icons/multipleSizes.ico`);
-  let engine = Services.search.getEngineByName("IconsTest");
-  let iconMapObj = engine.wrappedJSObject._iconMapObj;
+  let engine = SearchService.getEngineByName("IconsTest");
+  let iconMapObj = engine._iconMapObj;
 
   Assert.equal(
     Object.keys(iconMapObj).length,
@@ -100,8 +100,8 @@ add_task(async function test_migration() {
 
 add_task(async function test_migration_rescale() {
   await useIcon(`${gHttpURL}/icons/bigIcon.ico`);
-  let engine = Services.search.getEngineByName("IconsTest");
-  let iconMapObj = engine.wrappedJSObject._iconMapObj;
+  let engine = SearchService.getEngineByName("IconsTest");
+  let iconMapObj = engine._iconMapObj;
 
   Assert.equal(
     Object.keys(iconMapObj).length,

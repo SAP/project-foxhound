@@ -11,34 +11,38 @@
 #include "video/frame_encode_metadata_writer.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 
+#include "api/environment/environment.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_timing.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder.h"
 #include "common_video/h264/sps_vui_rewriter.h"
 #include "modules/include/module_common_types_public.h"
+#include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_coding_defines.h"
 #include "modules/video_coding/svc/create_scalability_structure.h"
+#include "modules/video_coding/svc/scalable_video_controller.h"
+#include "rtc_base/buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
 namespace {
 const int kMessagesThrottlingThreshold = 2;
 const int kThrottleRatio = 100000;
-
-class EncodedImageBufferWrapper : public EncodedImageBufferInterface {
- public:
-  explicit EncodedImageBufferWrapper(rtc::Buffer&& buffer)
-      : buffer_(std::move(buffer)) {}
-
-  const uint8_t* data() const override { return buffer_.data(); }
-  uint8_t* data() override { return buffer_.data(); }
-  size_t size() const override { return buffer_.size(); }
-
- private:
-  rtc::Buffer buffer_;
-};
-
 }  // namespace
 
 FrameEncodeMetadataWriter::TimingFramesLayerInfo::TimingFramesLayerInfo() =
@@ -47,13 +51,16 @@ FrameEncodeMetadataWriter::TimingFramesLayerInfo::~TimingFramesLayerInfo() =
     default;
 
 FrameEncodeMetadataWriter::FrameEncodeMetadataWriter(
+    const Environment& env,
     EncodedImageCallback* frame_drop_callback)
-    : frame_drop_callback_(frame_drop_callback),
+    : env_(env),
+      frame_drop_callback_(frame_drop_callback),
       framerate_fps_(0),
       last_timing_frame_time_ms_(-1),
       reordered_frames_logged_messages_(0),
       stalled_encoder_logged_messages_(0) {
-  codec_settings_.timing_frame_thresholds = {-1, 0};
+  codec_settings_.timing_frame_thresholds = {.delay_ms = -1,
+                                             .outlier_ratio_percent = 0};
 }
 FrameEncodeMetadataWriter::~FrameEncodeMetadataWriter() {}
 
@@ -70,7 +77,9 @@ void FrameEncodeMetadataWriter::OnEncoderInit(const VideoCodec& codec) {
     std::unique_ptr<ScalableVideoController> structure =
         CreateScalabilityStructure(*codec_settings_.GetScalabilityMode());
     if (structure) {
-      num_spatial_layers = structure->StreamConfig().num_spatial_layers;
+      // Take maximum of simulcast streams and SVC layers
+      size_t svc_spatial_layers = structure->StreamConfig().num_spatial_layers;
+      num_spatial_layers = std::max(num_spatial_layers, svc_spatial_layers);
     } else {
       // |structure| maybe nullptr if the scalability mode is invalid.
       RTC_LOG(LS_WARNING) << "Cannot create ScalabilityStructure, since the "
@@ -100,7 +109,7 @@ void FrameEncodeMetadataWriter::OnEncodeStarted(const VideoFrame& frame) {
   timing_frames_info_.resize(num_spatial_layers_);
   FrameMetadata metadata;
   metadata.rtp_timestamp = frame.rtp_timestamp();
-  metadata.encode_start_time_ms = TimeMillis();
+  metadata.encode_start_time_ms = env_.clock().TimeInMilliseconds();
   metadata.ntp_time_ms = frame.ntp_time_ms();
   metadata.timestamp_us = frame.timestamp_us();
   metadata.rotation = frame.rotation();
@@ -144,7 +153,7 @@ void FrameEncodeMetadataWriter::FillMetadataAndTimingInfo(
   std::optional<int64_t> encode_start_ms;
   uint8_t timing_flags = VideoSendTiming::kNotTriggered;
 
-  int64_t encode_done_ms = TimeMillis();
+  int64_t encode_done_ms = env_.clock().TimeInMilliseconds();
 
   encode_start_ms =
       ExtractEncodeStartTimeAndFillMetadata(simulcast_svc_idx, encoded_image);
@@ -183,7 +192,7 @@ void FrameEncodeMetadataWriter::FillMetadataAndTimingInfo(
 
   // If encode start is not available that means that encoder uses internal
   // source. In that case capture timestamp may be from a different clock with a
-  // drift relative to rtc::TimeMillis(). We can't use it for Timing frames,
+  // drift relative to `env_.clock()`. We can't use it for Timing frames,
   // because to being sent in the network capture time required to be less than
   // all the other timestamps.
   if (encode_start_ms) {
@@ -205,13 +214,11 @@ void FrameEncodeMetadataWriter::UpdateBitstream(
 
   // Make sure that the data is not copied if owned by EncodedImage.
   const EncodedImage& buffer = *encoded_image;
-  rtc::Buffer modified_buffer =
-      SpsVuiRewriter::ParseOutgoingBitstreamAndRewrite(
-          buffer, encoded_image->ColorSpace());
+  Buffer modified_buffer = SpsVuiRewriter::ParseOutgoingBitstreamAndRewrite(
+      buffer, encoded_image->ColorSpace());
 
   encoded_image->SetEncodedData(
-      rtc::make_ref_counted<EncodedImageBufferWrapper>(
-          std::move(modified_buffer)));
+      EncodedImageBuffer::Create(std::move(modified_buffer)));
 }
 
 void FrameEncodeMetadataWriter::Reset() {
@@ -257,8 +264,10 @@ FrameEncodeMetadataWriter::ExtractEncodeStartTimeAndFillMetadata(
       encoded_image->ntp_time_ms_ = metadata_list->front().ntp_time_ms;
       encoded_image->rotation_ = metadata_list->front().rotation;
       encoded_image->SetColorSpace(metadata_list->front().color_space);
+      // Key frames should never be considered as steady state refresh frames.
       encoded_image->SetIsSteadyStateRefreshFrame(
-          metadata_list->front().is_steady_state_refresh_frame);
+          metadata_list->front().is_steady_state_refresh_frame &&
+          encoded_image->FrameType() != VideoFrameType::kVideoFrameKey);
       encoded_image->SetPacketInfos(metadata_list->front().packet_infos);
       metadata_list->pop_front();
     } else {

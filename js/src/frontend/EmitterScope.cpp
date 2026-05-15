@@ -69,7 +69,7 @@ bool EmitterScope::checkEnvironmentChainLength(BytecodeEmitter* bce) {
     return false;
   }
 
-  environmentChainLength_ = mozilla::AssertedCast<uint8_t>(hops + 1);
+  environmentChainLength_ = mozilla::AssertedCast<uint16_t>(hops + 1);
   return true;
 }
 
@@ -147,7 +147,7 @@ bool EmitterScope::nameCanBeFree(BytecodeEmitter* bce,
 NameLocation EmitterScope::searchAndCache(BytecodeEmitter* bce,
                                           TaggedParserAtomIndex name) {
   Maybe<NameLocation> loc;
-  uint8_t hops = hasEnvironment() ? 1 : 0;
+  uint16_t hops = hasEnvironment() ? 1 : 0;
   DebugOnly<bool> inCurrentScript = enclosingInFrame();
 
   // Start searching in the current compilation.
@@ -1169,7 +1169,7 @@ Maybe<NameLocation> EmitterScope::locationBoundInScope(
     TaggedParserAtomIndex name, EmitterScope* target) {
   // The target scope must be an intra-frame enclosing scope of this
   // one. Count the number of extra hops to reach it.
-  uint8_t extraHops = 0;
+  uint16_t extraHops = 0;
   for (EmitterScope* es = this; es != target; es = es->enclosingInFrame()) {
     if (es->hasEnvironment()) {
       extraHops++;

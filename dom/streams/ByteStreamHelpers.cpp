@@ -5,11 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ByteStreamHelpers.h"
-#include "mozilla/dom/ReadableByteStreamController.h"
+
 #include "js/ArrayBuffer.h"
 #include "js/RootingAPI.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/dom/ReadableByteStreamController.h"
 
 namespace mozilla::dom {
 

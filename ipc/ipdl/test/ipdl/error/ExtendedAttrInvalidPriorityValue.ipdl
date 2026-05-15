@@ -1,4 +1,4 @@
-//error: invalid value for attribute `Priority', expected one of: normal, input, vsync, mediumhigh, control
+//error: invalid value for attribute `Priority', expected one of: normal, input, vsync, mediumhigh, control, low
 
 [ChildProc=any]
 protocol ExtendedAttrInvalidPriorityValue {

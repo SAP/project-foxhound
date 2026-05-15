@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2023 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -7,7 +7,7 @@ esid: sec-temporal.plaindate.from
 description: >
   Throw a TypeError if only one of era/eraYear fields is present (for calendar
   using eras)
-features: [Temporal]
+features: [Temporal, Intl.Era-monthcode]
 ---*/
 
 const base = { year: 2000, month: 5, day: 2, era: "ce", calendar: "gregory" };

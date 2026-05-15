@@ -10,8 +10,6 @@
 // For UNICODE_STRING
 #include <winternl.h>
 
-#include <string.h>
-
 namespace mozilla {
 namespace glue {
 

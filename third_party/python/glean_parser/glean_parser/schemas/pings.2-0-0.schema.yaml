@@ -15,10 +15,6 @@ description: |
 $id: moz://mozilla.org/schemas/glean/pings/2-0-0
 
 definitions:
-  dotted_snake_case:
-    type: string
-    pattern: "^[a-z_][a-z0-9_]{0,29}(\\.[a-z_][a-z0-9_]{0,29})*$"
-    maxLength: 40
   # Prior to version 2.0.0 of the schema, special ping names with underscores
   # were also supported.
   kebab_case:

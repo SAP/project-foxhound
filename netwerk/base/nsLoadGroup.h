@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsLoadGroup_h__
-#define nsLoadGroup_h__
+#ifndef nsLoadGroup_h_
+#define nsLoadGroup_h_
 
 #include "nsILoadGroup.h"
 #include "nsILoadGroupChild.h"
@@ -12,7 +12,7 @@
 #include "nsCOMPtr.h"
 #include "nsWeakReference.h"
 #include "nsISupportsPriority.h"
-#include "PLDHashTable.h"
+#include "nsTHashSet.h"
 #include "mozilla/TimeStamp.h"
 
 class nsIRequestContext;
@@ -99,7 +99,7 @@ class nsLoadGroup : public nsILoadGroup,
   nsCOMPtr<nsIRequestContextService> mRequestContextService;
 
   nsCOMPtr<nsIRequest> mDefaultLoadRequest;
-  PLDHashTable mRequests;
+  nsTHashSet<RefPtr<nsIRequest>> mRequests;
 
   nsWeakPtr mObserver;
   nsWeakPtr mParentLoadGroup;
@@ -126,4 +126,4 @@ class nsLoadGroup : public nsILoadGroup,
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsLoadGroup_h__
+#endif  // nsLoadGroup_h_

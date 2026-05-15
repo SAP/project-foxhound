@@ -10,11 +10,11 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/JSActorService.h"
 #include "mozilla/extensions/MatchPattern.h"
+#include "nsIDOMEventListener.h"
+#include "nsIObserver.h"
 #include "nsIURI.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "nsIObserver.h"
-#include "nsIDOMEventListener.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -76,17 +76,15 @@ class JSWindowActorProtocol final : public JSActorProtocol,
                const nsACString& aRemoteType, ErrorResult& aRv);
 
  private:
-  explicit JSWindowActorProtocol(const nsACString& aName) : mName(aName) {}
+  explicit JSWindowActorProtocol(const nsACString& aName)
+      : JSActorProtocol(aName) {}
   extensions::MatchPatternSetCore* GetURIMatcher();
-  bool RemoteTypePrefixMatches(const nsDependentCSubstring& aRemoteType);
   bool MessageManagerGroupMatches(BrowsingContext* aBrowsingContext);
   ~JSWindowActorProtocol() = default;
 
-  nsCString mName;
   bool mAllFrames = false;
   bool mIncludeChrome = false;
   nsTArray<nsString> mMatches;
-  nsTArray<nsCString> mRemoteTypes;
   nsTArray<nsString> mMessageManagerGroups;
 
   friend class JSActorProtocolUtils;

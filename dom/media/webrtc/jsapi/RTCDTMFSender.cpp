@@ -3,14 +3,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RTCDTMFSender.h"
-#include "libwebrtcglue/MediaConduitInterface.h"
-#include "transport/logging.h"
-#include "RTCRtpTransceiver.h"
-#include "nsITimer.h"
-#include "mozilla/dom/RTCDTMFSenderBinding.h"
-#include "mozilla/dom/RTCDTMFToneChangeEvent.h"
+
 #include <algorithm>
 #include <bitset>
+
+#include "RTCRtpTransceiver.h"
+#include "libwebrtcglue/MediaConduitInterface.h"
+#include "mozilla/dom/RTCDTMFSenderBinding.h"
+#include "mozilla/dom/RTCDTMFToneChangeEvent.h"
+#include "nsITimer.h"
+#include "transport/logging.h"
 
 namespace mozilla::dom {
 

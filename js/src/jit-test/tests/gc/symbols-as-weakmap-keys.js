@@ -1,4 +1,4 @@
-// |jit-test| --enable-symbols-as-weakmap-keys; skip-if: getBuildConfiguration("release_or_beta")
+// |jit-test| --enable-symbols-as-weakmap-keys
 
 // Test weak maps with symbols keys where the symbols are referenced in
 // different zones. Currently we require all participating zones plus the

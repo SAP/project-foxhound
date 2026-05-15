@@ -8,7 +8,6 @@
 
 #include "gfx2DGlue.h"
 #include "mozilla/AnimationUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/EffectSet.h"
 #include "mozilla/MotionPathUtils.h"
 #include "mozilla/PodOperations.h"
@@ -60,11 +59,12 @@ class LayerActivity {
   }
   ~LayerActivity();
   nsExpirationState* GetExpirationState() { return &mState; }
-  uint8_t& RestyleCountForProperty(nsCSSPropertyID aProperty) {
+  uint8_t& RestyleCountForProperty(NonCustomCSSPropertyId aProperty) {
     return mRestyleCounts[GetActivityIndexForProperty(aProperty)];
   }
 
-  static ActivityIndex GetActivityIndexForProperty(nsCSSPropertyID aProperty) {
+  static ActivityIndex GetActivityIndexForProperty(
+      NonCustomCSSPropertyId aProperty) {
     switch (aProperty) {
       case eCSSProperty_opacity:
         return ACTIVITY_OPACITY;
@@ -119,7 +119,7 @@ class LayerActivityTracker final
 
   explicit LayerActivityTracker(nsIEventTarget* aEventTarget)
       : nsExpirationTracker<LayerActivity, 4>(
-            GENERATION_MS, "LayerActivityTracker", aEventTarget) {}
+            GENERATION_MS, "LayerActivityTracker"_ns, aEventTarget) {}
   ~LayerActivityTracker() override { AgeAllGenerations(); }
 
   void NotifyExpired(LayerActivity* aObject) override;
@@ -275,7 +275,7 @@ static void IncrementScaleRestyleCountIfNeeded(nsIFrame* aFrame,
 
 /* static */
 void ActiveLayerTracker::NotifyRestyle(nsIFrame* aFrame,
-                                       nsCSSPropertyID aProperty) {
+                                       NonCustomCSSPropertyId aProperty) {
   LayerActivity* layerActivity = GetLayerActivityForUpdate(aFrame);
   uint8_t& mutationCount = layerActivity->RestyleCountForProperty(aProperty);
   IncrementMutationCount(&mutationCount);
@@ -299,7 +299,7 @@ static bool IsPresContextInScriptAnimationCallback(
 
 /* static */
 void ActiveLayerTracker::NotifyInlineStyleRuleModified(
-    nsIFrame* aFrame, nsCSSPropertyID aProperty) {
+    nsIFrame* aFrame, NonCustomCSSPropertyId aProperty) {
   if (IsPresContextInScriptAnimationCallback(aFrame->PresContext())) {
     LayerActivity* layerActivity = GetLayerActivityForUpdate(aFrame);
     // We know this is animated, so just hack the mutation count.

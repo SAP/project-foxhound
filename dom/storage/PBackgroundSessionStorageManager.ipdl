@@ -23,7 +23,7 @@ sync protocol PBackgroundSessionStorageManager
  parent:
   async PBackgroundSessionStorageCache(PrincipalInfo aPrincipalInfo, nsCString aOriginKey);
 
-  async ClearStorages(OriginAttributesPattern aPattern, nsCString aOriginScope);
+  async ClearStorages(OriginAttributesPattern aPattern, nsCString aOriginScope, uint32_t aMode);
 
   async DeleteMe();
 

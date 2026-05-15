@@ -80,6 +80,7 @@ export function OSCrypto() {
 OSCrypto.prototype = {
   /**
    * Convert an array containing only two bytes unsigned numbers to a string.
+   *
    * @param {number[]} arr - the array that needs to be converted.
    * @returns {string} the string representation of the array.
    */
@@ -93,6 +94,7 @@ OSCrypto.prototype = {
 
   /**
    * Convert a string to an array.
+   *
    * @param {string} str - the string that needs to be converted.
    * @returns {number[]} the array representation of the string.
    */
@@ -107,6 +109,7 @@ OSCrypto.prototype = {
   /**
    * Calculate the hash value used by IE as the name of the registry value where login details are
    * stored.
+   *
    * @param {string} data - the string value that needs to be hashed.
    * @returns {string} the hash value of the string.
    */
@@ -175,6 +178,7 @@ OSCrypto.prototype = {
 
   /**
    * Decrypt a string using the windows CryptUnprotectData API.
+   *
    * @param {string} data - the encrypted string that needs to be decrypted.
    * @param {?string} entropy - the entropy value of the decryption (could be null). Its value must
    * be the same as the one used when the data was encrypted.
@@ -224,6 +228,7 @@ OSCrypto.prototype = {
 
   /**
    * Encrypt a string using the windows CryptProtectData API.
+   *
    * @param {string} data - the string that is going to be encrypted.
    * @param {?string} entropy - the entropy value of the encryption (could be null). Its value must
    * be the same as the one that is going to be used for the decryption.

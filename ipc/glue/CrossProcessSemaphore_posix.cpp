@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CrossProcessSemaphore.h"
-#include "mozilla/Unused.h"
 #include "nsDebug.h"
 #include "nsISupportsImpl.h"
 #include <errno.h>
@@ -103,7 +102,7 @@ CrossProcessSemaphore::~CrossProcessSemaphore() {
 
   if (oldCount == 0) {
     // Nothing can be done if the destroy fails so ignore return code.
-    Unused << sem_destroy(mSemaphore);
+    (void)sem_destroy(mSemaphore);
   }
 
   MOZ_COUNT_DTOR(CrossProcessSemaphore);

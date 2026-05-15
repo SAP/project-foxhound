@@ -15,7 +15,6 @@
 #include <stdint.h>
 #include <type_traits>
 
-#include "jsexn.h"
 #include "jsfriendapi.h"
 #include "jspubtd.h"
 #include "jstypes.h"
@@ -33,6 +32,7 @@
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "vm/ArrayObject.h"
+#include "vm/ErrorObject.h"
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
@@ -63,16 +63,13 @@ class PropertyIteratorObject;
 class RegExpStatics;
 class SetObject;
 
-namespace gc {
-class FinalizationRegistryGlobalData;
-}  // namespace gc
-
 // Fixed slot capacities for PlainObjects. The global has a cached Shape for
 // PlainObject with default prototype for each of these values.
 enum class PlainObjectSlotsKind {
   Slots0,
   Slots2,
   Slots4,
+  Slots6,
   Slots8,
   Slots12,
   Slots16,
@@ -88,6 +85,8 @@ static PlainObjectSlotsKind PlainObjectSlotsKindFromAllocKind(
       return PlainObjectSlotsKind::Slots2;
     case gc::AllocKind::OBJECT4:
       return PlainObjectSlotsKind::Slots4;
+    case gc::AllocKind::OBJECT6:
+      return PlainObjectSlotsKind::Slots6;
     case gc::AllocKind::OBJECT8:
       return PlainObjectSlotsKind::Slots8;
     case gc::AllocKind::OBJECT12:
@@ -221,13 +220,10 @@ class GlobalObjectData {
   GCPtr<SetObject*> setObjectTemplate;
 
   GCPtr<PlainObject*> iterResultTemplate;
-  GCPtr<PlainObject*> iterResultWithoutPrototypeTemplate;
 
   // Lazily initialized script source object to use for scripts cloned from the
   // self-hosting stencil.
   GCPtr<ScriptSourceObject*> selfHostingScriptSource;
-
-  UniquePtr<gc::FinalizationRegistryGlobalData> finalizationRegistryData;
 
   // The number of times that one of the following has occurred:
   // 1. A property of this GlobalObject is deleted.
@@ -1015,13 +1011,9 @@ class GlobalObject : public NativeObject {
   static const size_t IterResultObjectValueSlot = 0;
   static const size_t IterResultObjectDoneSlot = 1;
   static js::PlainObject* getOrCreateIterResultTemplateObject(JSContext* cx);
-  static js::PlainObject* getOrCreateIterResultWithoutPrototypeTemplateObject(
-      JSContext* cx);
 
  private:
-  enum class WithObjectPrototype { No, Yes };
-  static js::PlainObject* createIterResultTemplateObject(
-      JSContext* cx, WithObjectPrototype withProto);
+  static js::PlainObject* createIterResultTemplateObject(JSContext* cx);
 
  public:
   static ScriptSourceObject* getOrCreateSelfHostingScriptSourceObject(
@@ -1141,11 +1133,6 @@ class GlobalObject : public NativeObject {
   static JSObject* getOrCreateRealmKeyObject(JSContext* cx,
                                              Handle<GlobalObject*> global);
 
-  gc::FinalizationRegistryGlobalData* getOrCreateFinalizationRegistryData();
-  gc::FinalizationRegistryGlobalData* maybeFinalizationRegistryData() const {
-    return data().finalizationRegistryData.get();
-  }
-
   static size_t offsetOfGlobalDataSlot() {
     return getFixedSlotOffset(GLOBAL_DATA_SLOT);
   }
@@ -1207,22 +1194,22 @@ JSObject* GenericCreatePrototype(JSContext* cx, JSProtoKey key) {
   return GlobalObject::createBlankPrototype(cx, cx->global(), &T::protoClass_);
 }
 
-// Which object(s) should be marked as having a fuse property in
+// Which object(s) should be marked as having a RealmFuse property in
 // GenericFinishInit.
-enum class WhichHasFuseProperty {
+enum class WhichHasRealmFuseProperty {
   Proto,
   ProtoAndCtor,
 };
 
-template <WhichHasFuseProperty FuseProperty>
+template <WhichHasRealmFuseProperty FuseProperty>
 inline bool GenericFinishInit(JSContext* cx, HandleObject ctor,
                               HandleObject proto) {
-  if constexpr (FuseProperty == WhichHasFuseProperty::ProtoAndCtor) {
-    if (!JSObject::setHasFuseProperty(cx, ctor)) {
+  if constexpr (FuseProperty == WhichHasRealmFuseProperty::ProtoAndCtor) {
+    if (!JSObject::setHasRealmFuseProperty(cx, ctor)) {
       return false;
     }
   }
-  return JSObject::setHasFuseProperty(cx, proto);
+  return JSObject::setHasRealmFuseProperty(cx, proto);
 }
 
 inline JSProtoKey StandardProtoKeyOrNull(const JSObject* obj) {

@@ -1251,6 +1251,56 @@ add_task(async function test_node_type_change() {
   await promiseStopServer(server);
 });
 
+add_task(async function test_uid_change() {
+  enableValidationPrefs();
+
+  await Service.engineManager.register(BogusEngine);
+  let engine = Service.engineManager.get("bogus");
+  engine.enabled = true;
+  let server = await serverForFoo(engine);
+
+  await SyncTestingInfrastructure(server);
+  let telem = get_sync_test_telemetry();
+  telem.maxPayloadCount = 500;
+  telem.submissionInterval = Infinity;
+
+  // a sync with the "old" uid.
+  await Service.sync();
+
+  fxAccounts.telemetry._setHashedUID("deadbeef");
+
+  try {
+    await GleanPings.sync.testSubmission(
+      reason => {
+        equal(reason, "idchange");
+        equal(
+          Glean.syncs.syncs.testGetValue().length,
+          1,
+          "first sync in its own ping"
+        );
+      },
+      async () => {
+        await Service.sync();
+      }
+    );
+    await GleanPings.sync.testSubmission(
+      () => {
+        equal(
+          Glean.syncs.syncs.testGetValue().length,
+          1,
+          "second sync in its own ping"
+        );
+      },
+      async () => {
+        telem.finish();
+      }
+    );
+  } finally {
+    await cleanAndGo(engine, server);
+    await Service.engineManager.unregister(engine);
+  }
+});
+
 add_task(async function test_deletion_request_ping() {
   async function assertRecordedSyncDeviceID(expected) {
     // `onAccountInitOrChange` sets the id asynchronously, so wait a tick.

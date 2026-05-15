@@ -7,12 +7,10 @@ package org.mozilla.fenix.components.toolbar
 import android.content.Context
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkStatic
-import io.mockk.unmockkStatic
+import io.mockk.spyk
 import io.mockk.verify
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,11 +20,13 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class DefaultToolbarIntegrationTest {
     private lateinit var feature: DefaultToolbarIntegration
+    private lateinit var context: Context
 
     @Before
     fun setup() {
-        mockkStatic("org.mozilla.fenix.ext.ContextKt")
-        every { any<Context>().components } returns mockk {
+        context = spyk(testContext)
+
+        every { context.components } returns mockk {
             every { core } returns mockk {
                 every { store } returns BrowserStore()
             }
@@ -35,20 +35,14 @@ class DefaultToolbarIntegrationTest {
         }
 
         feature = DefaultToolbarIntegration(
-            context = testContext,
+            context = context,
             toolbar = mockk(relaxed = true),
             scrollableToolbar = mockk(relaxed = true),
-            toolbarMenu = mockk(relaxed = true),
             lifecycleOwner = mockk(),
             customTabId = null,
             isPrivate = false,
             interactor = mockk(),
         )
-    }
-
-    @After
-    fun teardown() {
-        unmockkStatic("org.mozilla.fenix.ext.ContextKt")
     }
 
     @Test

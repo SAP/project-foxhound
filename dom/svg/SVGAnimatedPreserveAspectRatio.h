@@ -7,13 +7,13 @@
 #ifndef DOM_SVG_SVGANIMATEDPRESERVEASPECTRATIO_H_
 #define DOM_SVG_SVGANIMATEDPRESERVEASPECTRATIO_H_
 
+#include <memory>
+
+#include "mozilla/SMILAttr.h"
+#include "mozilla/SVGPreserveAspectRatio.h"
+#include "mozilla/dom/SVGElement.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
-#include "mozilla/SVGPreserveAspectRatio.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/dom/SVGElement.h"
 
 namespace mozilla {
 
@@ -73,7 +73,7 @@ class SVGAnimatedPreserveAspectRatio final {
 
   already_AddRefed<dom::DOMSVGAnimatedPreserveAspectRatio>
   ToDOMAnimatedPreserveAspectRatio(dom::SVGElement* aSVGElement);
-  UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement);
+  std::unique_ptr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement);
 
  private:
   SVGPreserveAspectRatio mAnimVal;

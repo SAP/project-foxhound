@@ -118,9 +118,6 @@ export function showSourceTreeItemContextMenu(
           click: () => dispatch(clearProjectDirectoryRoot()),
         });
       } else {
-        const itemFullName = item.thread
-          ? item.thread.name
-          : `${item.url} on ${getThreadName(item)}`;
         menuOptions.push({
           id: "node-set-directory-root",
           label: setDirectoryRootLabel,
@@ -128,7 +125,11 @@ export function showSourceTreeItemContextMenu(
           disabled: false,
           click: () =>
             dispatch(
-              setProjectDirectoryRoot(item.uniquePath, itemName, itemFullName)
+              setProjectDirectoryRoot(
+                item.uniquePath,
+                itemName,
+                getItemProjectDirectoryRootName(item)
+              )
             ),
         });
       }
@@ -140,8 +141,27 @@ export function showSourceTreeItemContextMenu(
   };
 }
 
-function getThreadName(item) {
-  return item.thread ? item.thread.name : getThreadName(item.parent);
+/**
+ * Compute the string which will be displayed as tooltip on the project directory root header
+ */
+function getItemProjectDirectoryRootName(item) {
+  if (item.thread) {
+    return item.thread.name;
+  }
+
+  // Go up the source tree to get to the group item
+  let groupItem = item;
+  while (!groupItem.groupName) {
+    groupItem = groupItem.parent;
+  }
+
+  // Group's origin is the base URL
+  const origin = groupItem.origin;
+  const path = item != groupItem ? item.path : "";
+  // The group item's parent is always a thread item
+  const threadName = groupItem.parent.thread.name;
+
+  return `${origin}${path} on ${threadName}`;
 }
 
 async function saveLocalFile(dispatch, source) {

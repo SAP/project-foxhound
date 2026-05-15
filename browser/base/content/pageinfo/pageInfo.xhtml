@@ -2,7 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-<?csp default-src chrome:; img-src data: *; media-src data: *; style-src chrome: 'unsafe-inline'; ?>
+<?csp default-src chrome:; style-src chrome: 'unsafe-inline'; ?>
 
 <window id="main-window"
   xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -12,8 +12,7 @@
   data-l10n-attrs="style"
   windowtype="Browser:page-info"
 #ifdef XP_MACOSX
-  drawtitle="true"
-  customtitlebar="true"
+  hidetitlebarseparator="true"
 #endif
   align="stretch"
   screenX="10" screenY="10"
@@ -248,7 +247,7 @@
         </hbox>
         <vbox id="imagecontainerbox" flex="1">
           <hbox id="theimagecontainer">
-            <image id="thepreviewimage"/>
+            <browser id="mediaBrowser" />
           </hbox>
           <hbox id="brokenimagecontainer" pack="center" collapsed="true">
             <image id="brokenimage" src="resource://gre-resources/broken-image.png"/>

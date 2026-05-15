@@ -7,15 +7,17 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
+#include "mozilla/dom/HTMLObjectElement.h"
+
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/HTMLObjectElement.h"
-#include "mozilla/dom/HTMLObjectElementBinding.h"
 #include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/HTMLObjectElementBinding.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "nsAttrValueInlines.h"
-#include "nsGkAtoms.h"
+#include "nsContentUtils.h"
 #include "nsError.h"
+#include "nsGkAtoms.h"
 #include "nsIContentInlines.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"

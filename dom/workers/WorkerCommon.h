@@ -8,6 +8,7 @@
 #define mozilla_dom_workers_WorkerCommon_h
 
 #include "js/TypeDecls.h"
+#include "nsString.h"
 
 class nsPIDOMWindowInner;
 
@@ -60,6 +61,11 @@ bool IsWorkerDebuggerSandbox(JSObject* object);
 
 void UpdateWorkersPlaybackState(const nsPIDOMWindowInner& aWindow,
                                 bool aIsPlayingAudio);
+
+inline size_t GetWorkerScriptMaxSizeInBytes() {
+  // This is the max size that any of our worker scripts can be.
+  return nsString::LengthStorage::kMax;
+}
 
 }  // namespace mozilla::dom
 

@@ -60,7 +60,7 @@
         android:id="@+id/vertical_divider"
         android:layout_width="1dp"
         android:layout_height="0dp"
-        android:background="?borderPrimary"
+        android:background="?attr/colorOutlineVariant"
         android:paddingStart="1dp"
         android:paddingEnd="1dp"
         app:layout_constraintBottom_toBottomOf="parent"

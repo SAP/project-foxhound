@@ -13,7 +13,6 @@
 #else
 #  define __cdecl
 #  include <stdarg.h>
-#  include <string.h>
 #endif
 
 #include "vprof.h"

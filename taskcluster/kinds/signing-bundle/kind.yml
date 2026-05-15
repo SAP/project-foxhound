@@ -15,6 +15,9 @@ transforms:
 kind-dependencies:
     - build-bundle
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     sign-bundle:
         description: Sign Android AABs

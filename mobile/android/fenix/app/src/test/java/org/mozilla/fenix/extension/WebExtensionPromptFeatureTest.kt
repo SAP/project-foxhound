@@ -13,19 +13,18 @@ import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.spyk
 import io.mockk.verify
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.WebExtensionAction.UpdatePromptRequestWebExtensionAction
 import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.webextension.WebExtensionInstallException
 import mozilla.components.feature.addons.Addon
 import mozilla.components.support.ktx.android.content.appVersionName
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
@@ -36,6 +35,7 @@ import org.mozilla.fenix.addons.AddonsManagementFragmentDirections
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.utils.LinkTextView
 import org.robolectric.RobolectricTestRunner
+import mozilla.components.feature.addons.R as addonsR
 
 @RunWith(RobolectricTestRunner::class)
 class WebExtensionPromptFeatureTest {
@@ -46,8 +46,7 @@ class WebExtensionPromptFeatureTest {
     private val onLinkClicked: (String, Boolean) -> Unit = spyk()
     private val navController: NavController = mockk(relaxed = true)
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
@@ -60,13 +59,15 @@ class WebExtensionPromptFeatureTest {
                 onLinkClicked = onLinkClicked,
                 navController = navController,
                 addonManager = mockk(relaxed = true),
+                mainDispatcher = testDispatcher,
             ),
         )
     }
 
     @Test
-    fun `WHEN InstallationFailed is dispatched THEN handleInstallationFailedRequest is called`() {
+    fun `WHEN InstallationFailed is dispatched THEN handleInstallationFailedRequest is called`() = runTest(testDispatcher) {
         webExtensionPromptFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         every { webExtensionPromptFeature.handleInstallationFailedRequest(any()) } returns null
 
@@ -77,21 +78,22 @@ class WebExtensionPromptFeatureTest {
                     mockk(),
                 ),
             ),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify { webExtensionPromptFeature.handleInstallationFailedRequest(any()) }
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with network error THEN showDialog with the correct message`() {
-        val expectedTitle = testContext.getString(R.string.mozac_feature_addons_cant_install_extension)
+    fun `WHEN calling handleInstallationFailedRequest with network error THEN showDialog with the correct message`() = runTest(testDispatcher) {
+        val expectedTitle = testContext.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         val exception = WebExtensionInstallException.NetworkFailure(
             extensionName = "name",
             throwable = Exception(),
         )
         val expectedMessage =
             testContext.getString(
-                R.string.mozac_feature_addons_extension_failed_to_install_network_error,
+                addonsR.string.mozac_feature_addons_extension_failed_to_install_network_error,
                 "name",
             )
 
@@ -103,8 +105,8 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with Blocklisted error THEN showDialog with the correct message`() {
-        val expectedTitle = testContext.getString(R.string.mozac_feature_addons_cant_install_extension)
+    fun `WHEN calling handleInstallationFailedRequest with Blocklisted error THEN showDialog with the correct message`() = runTest(testDispatcher) {
+        val expectedTitle = testContext.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         val extensionId = "extensionId"
         val extensionName = "extensionName"
         val extensionVersion = "extensionVersion"
@@ -116,7 +118,7 @@ class WebExtensionPromptFeatureTest {
         )
         val appName = testContext.getString(R.string.app_name)
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_blocklisted_2, extensionName, appName)
+            testContext.getString(addonsR.string.mozac_feature_addons_blocklisted_2, extensionName, appName)
         val expectedUrl = "${BuildConfig.AMO_BASE_URL}/android/blocked-addon/$extensionId/$extensionVersion/"
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
@@ -134,7 +136,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with UserCancelled error THEN do not showDialog`() {
+    fun `WHEN calling handleInstallationFailedRequest with UserCancelled error THEN do not showDialog`() = runTest(testDispatcher) {
         val expectedTitle = ""
         val extensionName = "extensionName"
         val exception = WebExtensionInstallException.UserCancelled(
@@ -142,7 +144,7 @@ class WebExtensionPromptFeatureTest {
             throwable = Exception(),
         )
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_failed_to_install, extensionName)
+            testContext.getString(addonsR.string.mozac_feature_addons_failed_to_install, extensionName)
 
         webExtensionPromptFeature.handleInstallationFailedRequest(
             exception = exception,
@@ -152,7 +154,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with Unknown error THEN showDialog with the correct message`() {
+    fun `WHEN calling handleInstallationFailedRequest with Unknown error THEN showDialog with the correct message`() = runTest(testDispatcher) {
         val expectedTitle = ""
         val extensionName = "extensionName"
         val exception = WebExtensionInstallException.Unknown(
@@ -160,7 +162,7 @@ class WebExtensionPromptFeatureTest {
             throwable = Exception(),
         )
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_failed_to_install, extensionName)
+            testContext.getString(addonsR.string.mozac_feature_addons_failed_to_install, extensionName)
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
 
@@ -170,14 +172,14 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with Unknown error and no extension name THEN showDialog with the correct message`() {
+    fun `WHEN calling handleInstallationFailedRequest with Unknown error and no extension name THEN showDialog with the correct message`() = runTest(testDispatcher) {
         val expectedTitle = ""
         val exception = WebExtensionInstallException.Unknown(
             extensionName = null,
             throwable = Exception(),
         )
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_extension_failed_to_install)
+            testContext.getString(addonsR.string.mozac_feature_addons_extension_failed_to_install)
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
 
@@ -187,13 +189,13 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with CorruptFile error THEN showDialog with the correct message`() {
-        val expectedTitle = testContext.getString(R.string.mozac_feature_addons_cant_install_extension)
+    fun `WHEN calling handleInstallationFailedRequest with CorruptFile error THEN showDialog with the correct message`() = runTest(testDispatcher) {
+        val expectedTitle = testContext.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         val exception = WebExtensionInstallException.CorruptFile(
             throwable = Exception(),
         )
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_extension_failed_to_install_corrupt_error)
+            testContext.getString(addonsR.string.mozac_feature_addons_extension_failed_to_install_corrupt_error)
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
 
@@ -203,13 +205,13 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with NotSigned error THEN showDialog with the correct message`() {
-        val expectedTitle = testContext.getString(R.string.mozac_feature_addons_cant_install_extension)
+    fun `WHEN calling handleInstallationFailedRequest with NotSigned error THEN showDialog with the correct message`() = runTest(testDispatcher) {
+        val expectedTitle = testContext.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         val exception = WebExtensionInstallException.NotSigned(
             throwable = Exception(),
         )
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_extension_failed_to_install_not_signed_error)
+            testContext.getString(addonsR.string.mozac_feature_addons_extension_failed_to_install_not_signed_error)
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
 
@@ -219,8 +221,8 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with Incompatible error THEN showDialog with the correct message`() {
-        val expectedTitle = testContext.getString(R.string.mozac_feature_addons_cant_install_extension)
+    fun `WHEN calling handleInstallationFailedRequest with Incompatible error THEN showDialog with the correct message`() = runTest(testDispatcher) {
+        val expectedTitle = testContext.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         val extensionName = "extensionName"
         val exception = WebExtensionInstallException.Incompatible(
             extensionName = extensionName,
@@ -230,7 +232,7 @@ class WebExtensionPromptFeatureTest {
         val version = testContext.appVersionName
         val expectedMessage =
             testContext.getString(
-                R.string.mozac_feature_addons_failed_to_install_incompatible_error,
+                addonsR.string.mozac_feature_addons_failed_to_install_incompatible_error,
                 extensionName,
                 appName,
                 version,
@@ -244,8 +246,9 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN AfterInstallation is dispatched THEN handleAfterInstallationRequest is called`() {
+    fun `WHEN AfterInstallation is dispatched THEN handleAfterInstallationRequest is called`() = runTest(testDispatcher) {
         webExtensionPromptFeature.start()
+        testDispatcher.scheduler.advanceUntilIdle()
 
         every { webExtensionPromptFeature.handleAfterInstallationRequest(any()) } returns mockk()
 
@@ -253,21 +256,29 @@ class WebExtensionPromptFeatureTest {
             UpdatePromptRequestWebExtensionAction(
                 WebExtensionPromptRequest.AfterInstallation.Permissions.Optional(
                     mockk(relaxed = true),
-                    mockk(),
-                    mockk(),
-                    mockk(),
-                    mockk(),
-                ),
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                ) {},
             ),
-        ).joinBlocking()
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
 
         verify { webExtensionPromptFeature.handleAfterInstallationRequest(any()) }
     }
 
     @Test
-    fun `GIVEN Optional Permissions WHEN handleAfterInstallationRequest is called THEN handleOptionalPermissionsRequest is called`() {
+    fun `GIVEN Optional Permissions WHEN handleAfterInstallationRequest is called THEN handleOptionalPermissionsRequest is called`() = runTest(testDispatcher) {
         webExtensionPromptFeature.start()
-        val request = mockk<WebExtensionPromptRequest.AfterInstallation.Permissions.Optional>(relaxed = true)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val request = mockk<WebExtensionPromptRequest.AfterInstallation.Permissions.Optional>(relaxed = true) {
+            every { extension } returns mockk(relaxed = true) {
+                every { getMetadata() } returns mockk(relaxed = true) {
+                    every { updateDate } returns "2023-10-27T10:15:30.500Z"
+                }
+            }
+        }
 
         webExtensionPromptFeature.handleAfterInstallationRequest(request)
 
@@ -275,7 +286,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleOptionalPermissionsRequest with permissions THEN call showPermissionDialog`() {
+    fun `WHEN calling handleOptionalPermissionsRequest with permissions THEN call showPermissionDialog`() = runTest(testDispatcher) {
         val addon: Addon = mockk(relaxed = true)
         val promptRequest = WebExtensionPromptRequest.AfterInstallation.Permissions.Optional(
             extension = mockk(),
@@ -300,7 +311,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleOptionalPermissionsRequest with a permission that doesn't have a description THEN do not call showPermissionDialog`() {
+    fun `WHEN calling handleOptionalPermissionsRequest with a permission that doesn't have a description THEN do not call showPermissionDialog`() = runTest(testDispatcher) {
         val addon: Addon = mockk(relaxed = true)
         val onConfirm: ((Boolean) -> Unit) = mockk()
         every { onConfirm(any()) } just runs
@@ -322,7 +333,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleOptionalPermissionsRequest with host permissions along with permissions that don't have a description THEN call showPermissionDialog`() {
+    fun `WHEN calling handleOptionalPermissionsRequest with host permissions along with permissions that don't have a description THEN call showPermissionDialog`() = runTest(testDispatcher) {
         val addon: Addon = mockk(relaxed = true)
         val onConfirm: ((Boolean) -> Unit) = mockk()
         every { onConfirm(any()) } just runs
@@ -352,7 +363,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleOptionalPermissionsRequest with no permissions THEN do not call showPermissionDialog`() {
+    fun `WHEN calling handleOptionalPermissionsRequest with no permissions THEN do not call showPermissionDialog`() = runTest(testDispatcher) {
         val addon: Addon = mockk(relaxed = true)
         val onConfirm: ((Boolean) -> Unit) = mockk()
         every { onConfirm(any()) } just runs
@@ -373,7 +384,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with UnsupportedAddonType error THEN showDialog with the correct message`() {
+    fun `WHEN calling handleInstallationFailedRequest with UnsupportedAddonType error THEN showDialog with the correct message`() = runTest(testDispatcher) {
         val expectedTitle = ""
         val extensionName = "extensionName"
         val exception = WebExtensionInstallException.UnsupportedAddonType(
@@ -381,7 +392,7 @@ class WebExtensionPromptFeatureTest {
             throwable = Exception(),
         )
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_failed_to_install, extensionName)
+            testContext.getString(addonsR.string.mozac_feature_addons_failed_to_install, extensionName)
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
 
@@ -391,15 +402,15 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with AdminInstallOnly error THEN showDialog with the correct message`() {
-        val expectedTitle = testContext.getString(R.string.mozac_feature_addons_cant_install_extension)
+    fun `WHEN calling handleInstallationFailedRequest with AdminInstallOnly error THEN showDialog with the correct message`() = runTest(testDispatcher) {
+        val expectedTitle = testContext.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         val extensionName = "extensionName"
         val exception = WebExtensionInstallException.AdminInstallOnly(
             extensionName = extensionName,
             throwable = Exception(),
         )
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_admin_install_only, extensionName)
+            testContext.getString(addonsR.string.mozac_feature_addons_admin_install_only, extensionName)
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
 
@@ -409,8 +420,8 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN calling handleInstallationFailedRequest with SoftBlocked error THEN showDialog with the correct message`() {
-        val expectedTitle = testContext.getString(R.string.mozac_feature_addons_cant_install_extension)
+    fun `WHEN calling handleInstallationFailedRequest with SoftBlocked error THEN showDialog with the correct message`() = runTest(testDispatcher) {
+        val expectedTitle = testContext.getString(addonsR.string.mozac_feature_addons_cant_install_extension)
         val extensionId = "extensionId"
         val extensionName = "extensionName"
         val extensionVersion = "extensionVersion"
@@ -422,7 +433,7 @@ class WebExtensionPromptFeatureTest {
         )
         val appName = testContext.getString(R.string.app_name)
         val expectedMessage =
-            testContext.getString(R.string.mozac_feature_addons_soft_blocked_1, extensionName, appName)
+            testContext.getString(addonsR.string.mozac_feature_addons_soft_blocked_2, extensionName, appName)
         val expectedUrl = "${BuildConfig.AMO_BASE_URL}/android/blocked-addon/$extensionId/$extensionVersion/"
 
         val dialog = webExtensionPromptFeature.handleInstallationFailedRequest(exception = exception)
@@ -440,7 +451,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN clicking Learn More on the Permissions Dialog THEN open the correct SUMO page in a custom tab`() {
+    fun `WHEN clicking Learn More on the Permissions Dialog THEN open the correct SUMO page in a custom tab`() = runTest(testDispatcher) {
         val addon: Addon = mockk(relaxed = true)
         val fragment = spy(
             webExtensionPromptFeature.showPermissionDialog(
@@ -455,7 +466,7 @@ class WebExtensionPromptFeatureTest {
         doReturn(testContext).`when`(fragment)?.requireContext()
 
         val dialog = fragment?.onCreateDialog(null)
-        dialog?.findViewById<TextView>(R.id.learn_more_link)?.performClick()
+        dialog?.findViewById<TextView>(addonsR.id.learn_more_link)?.performClick()
 
         val expectedUrl = SupportUtils.getSumoURLForTopic(
             testContext,
@@ -465,7 +476,7 @@ class WebExtensionPromptFeatureTest {
     }
 
     @Test
-    fun `WHEN clicking the link in the description THEN navigates to the add-on detail view`() {
+    fun `WHEN clicking the link in the description THEN navigates to the add-on detail view`() = runTest(testDispatcher) {
         val addon: Addon = mockk(relaxed = true)
         val fragment = spy(webExtensionPromptFeature.showPostInstallationDialog(addon = addon))
 

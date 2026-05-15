@@ -31,7 +31,7 @@ add_task(async function () {
 
   // Load one request and assert it shows up in the list
   let wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   assertSingleRequestState();
@@ -72,7 +72,7 @@ add_task(async function () {
 
   // Load a second request and make sure they still show up
   wait = waitForNetworkEvents(monitor, 1);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await wait;
 
   assertSingleRequestState();
@@ -129,8 +129,8 @@ add_task(async function () {
 
   function assertNetworkEventResourceState(expectedNoOfNetworkEventResources) {
     const actualNoOfNetworkEventResources =
-      toolbox.resourceCommand.getAllResources(
-        toolbox.resourceCommand.TYPES.NETWORK_EVENT
+      toolbox.commands.resourceCommand.getAllResources(
+        toolbox.commands.resourceCommand.TYPES.NETWORK_EVENT
       ).length;
 
     is(

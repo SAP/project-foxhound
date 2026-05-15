@@ -13,6 +13,9 @@ function test() {
         assertEq(obj.x, 1);
         assertEq(obj[sym], 4);
         assertEq(obj[0], 1);
+        // The _propertiesAdded property must be non-configurable to prevent
+        // redefining as an accessor property.
+        assertEq(Object.getOwnPropertyDescriptor(obj, "_propertiesAdded").configurable, false);
     }
 }
 test();

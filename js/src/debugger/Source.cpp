@@ -217,16 +217,7 @@ class DebuggerSourceGetTextMatcher {
       return NewStringCopyZ<CanGC>(cx_, "[no source]");
     }
 
-    // In case of DOM event handler like <div onclick="foo()" the JS code is
-    // wrapped into
-    //   function onclick() {foo()}
-    // We want to only return `foo()` here.
-    // But only for event handlers, for `new Function("foo()")`, we want to
-    // return:
-    //   function anonymous() {foo()}
-    if (ss->hasIntroductionType() &&
-        strcmp(ss->introductionType(), "eventHandler") == 0 &&
-        ss->isFunctionBody()) {
+    if (ss->shouldUnwrapEventHandlerBody()) {
       return ss->functionBodyString(cx_);
     }
 
@@ -623,7 +614,8 @@ bool DebuggerSource::CallData::getSourceMapURL() {
 }
 
 template <typename Unit>
-static JSScript* ReparseSource(JSContext* cx, Handle<ScriptSourceObject*> sso) {
+static JSScript* ReparseSource(JSContext* cx, Handle<ScriptSourceObject*> sso,
+                               bool asModule) {
   AutoRealm ar(cx, sso);
   ScriptSource* ss = sso->source();
 
@@ -645,6 +637,25 @@ static JSScript* ReparseSource(JSContext* cx, Handle<ScriptSourceObject*> sso) {
     return nullptr;
   }
 
+  if (asModule) {
+    if (options.lineno == 0) {
+      JS_ReportErrorASCII(cx, "Module cannot be reparsed with lineNumber == 0");
+      return nullptr;
+    }
+    if (!options.filename()) {
+      JS_ReportErrorASCII(cx, "Module cannot be reparsed without filename");
+      return nullptr;
+    }
+    options.setModule();
+
+    JSObject* module = JS::CompileModule(cx, options, srcBuf);
+    if (!module) {
+      return nullptr;
+    }
+
+    return module->as<ModuleObject>().script();
+  }
+
   return JS::Compile(cx, options, srcBuf);
 }
 
@@ -659,11 +670,13 @@ bool DebuggerSource::CallData::reparse() {
     return false;
   }
 
+  bool asModule = ToBoolean(args.get(0));
+
   RootedScript script(cx);
   if (sourceObject->source()->hasSourceType<mozilla::Utf8Unit>()) {
-    script = ReparseSource<mozilla::Utf8Unit>(cx, sourceObject);
+    script = ReparseSource<mozilla::Utf8Unit>(cx, sourceObject, asModule);
   } else {
-    script = ReparseSource<char16_t>(cx, sourceObject);
+    script = ReparseSource<char16_t>(cx, sourceObject, asModule);
   }
 
   if (!script) {

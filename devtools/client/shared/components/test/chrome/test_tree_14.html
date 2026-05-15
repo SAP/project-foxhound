@@ -83,10 +83,6 @@ window.onload = async function() {
     };
 
     function getExpectedActiveElementForFinalShiftTab() {
-      if (!SpecialPowers.getBoolPref("dom.disable_tab_focus_to_root_element")) {
-        return document.documentElement;
-      }
-
       // When tab focus mode is applied, the "Run Chrome Tests" button is not
       // focusable, so this Shift+Tab moves the focus to a Chrome UI element
       // instead of the "Run Chrome Tests" button, which makes the focus to

@@ -1,15 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!--
     Message announced to the user when tab tray is selected
     The %1$s will be replaced by the number of opened tabs
   -->
-  <string name="mozac_tab_counter_open_tab_tray">بلگه یل واز: %1$s. سی آشت بلگه یل بزنین ریس.</string>
+  <string name="mozac_tab_counter_open_tab_tray">بلگه یل واز: %1$s. سی آلشت بلگه یل بزنین ریس.</string>
   <!--
     Message announced to the user when tab tray is selected used by a11y services
     The %1$s will be replaced by the number of opened tabs
   -->
-  <string name="mozac_open_tab_counter_tab_tray">بلگه یل سیخومی واز: %1$s. سی جا گورویی منجا بلگه یل بزنین ریس.</string>
+  <string name="mozac_open_tab_counter_tab_tray">بلگه یل قیر سیخومی واز: %1$s. سی جا گورویی منجا بلگه یل بزنین ریس.</string>
   <!--
     Message announced to the user when the tab counter is selected in private browsing mode.
     Used by a11y services. The %1$s will be replaced by the number of opened tabs

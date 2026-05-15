@@ -12,6 +12,7 @@ const { MESSAGE_CATEGORY } = require("resource://devtools/shared/constants.js");
 const httpServer = createTestHTTPServer();
 httpServer.registerPathHandler(`/test_css_messages.html`, (req, res) => {
   res.setStatusLine(req.httpVersion, 200, "OK");
+  res.setHeader("Content-Type", "text/html");
   res.write(`<meta charset=utf8>
     <style>
       html {
@@ -93,7 +94,7 @@ async function testWatchingCachedCssMessages() {
   // emit warnings. But it does not automatically emit warnings for the existing CSS
   // errors in the stylesheets. So here we reload the tab, which will make the Parser
   // parse the stylesheets again, this time emitting warnings.
-  await reloadBrowser();
+  await reloadSelectedTab();
   // and trigger more CSS warnings
   await triggerCSSWarning(tab);
 

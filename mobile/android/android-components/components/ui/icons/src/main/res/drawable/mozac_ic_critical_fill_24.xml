@@ -11,6 +11,5 @@
         android:fillColor="@color/mozac_ui_icons_fill"
         android:fillType="evenOdd"
         android:pathData="M12 22C6.486 22 2 17.514 2 12S6.486 2 12 2s10 4.486 10 10-4.486 10-10 10zm-0.875-5v-1.75h1.75V17h-1.75zm0-10v6.25h1.75V7h-1.75z"
-        tools:ignore="VectorRaster"
-        tools:targetApi="n" />
+        tools:ignore="VectorRaster" />
 </vector>

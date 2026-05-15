@@ -8,10 +8,11 @@
 #define ImageEncoder_h
 
 #include "imgIEncoder.h"
-#include "nsError.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/dom/CanvasUtils.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
-#include "mozilla/UniquePtr.h"
+#include "nsError.h"
 #include "nsSize.h"
 
 class nsICanvasRenderingContextInternal;
@@ -37,7 +38,9 @@ class ImageEncoder {
   // aOptions, NS_ERROR_INVALID_ARG will be returned. When encountering this
   // error it is usual to call this function again without any options at all.
   static nsresult ExtractData(nsAString& aType, const nsAString& aOptions,
-                              const CSSIntSize aSize, bool aUsePlaceholder,
+                              const CSSIntSize aSize,
+                              CanvasUtils::ImageExtraction aExtractionBehavior,
+                              const nsCString& aRandomizationKey,
                               nsICanvasRenderingContextInternal* aContext,
                               OffscreenCanvasDisplayHelper* aOffscreenDisplay,
                               nsIInputStream** aStream);
@@ -53,12 +56,12 @@ class ImageEncoder {
   // success.
   // Note: The callback has to set a valid parent for content for the generated
   // Blob object.
-  static nsresult ExtractDataAsync(nsAString& aType, const nsAString& aOptions,
-                                   bool aUsingCustomOptions,
-                                   UniquePtr<uint8_t[]> aImageBuffer,
-                                   int32_t aFormat, const CSSIntSize aSize,
-                                   bool aUsePlaceholder,
-                                   EncodeCompleteCallback* aEncodeCallback);
+  static nsresult ExtractDataAsync(
+      nsAString& aType, const nsAString& aOptions, bool aUsingCustomOptions,
+      UniquePtr<uint8_t[]> aImageBuffer, int32_t aFormat,
+      const CSSIntSize aSize, CanvasUtils::ImageExtraction aExtractionBehavior,
+      const nsCString& aRandomizationKey,
+      EncodeCompleteCallback* aEncodeCallback);
 
   // Extract an Image asynchronously. Its function is same as ExtractDataAsync
   // except for the parameters. aImage is the uncompressed data. aEncodeCallback
@@ -67,7 +70,8 @@ class ImageEncoder {
   // Blob object.
   static nsresult ExtractDataFromLayersImageAsync(
       nsAString& aType, const nsAString& aOptions, bool aUsingCustomOptions,
-      layers::Image* aImage, bool aUsePlaceholder,
+      layers::Image* aImage, CanvasUtils::ImageExtraction aExtractionBehavior,
+      const nsCString& aRandomizationKey,
       EncodeCompleteCallback* aEncodeCallback);
 
   // Gives you a stream containing the image represented by aImageBuffer.
@@ -77,14 +81,17 @@ class ImageEncoder {
                                  uint8_t* aImageBuffer, int32_t aFormat,
                                  imgIEncoder* aEncoder,
                                  const nsAString& aEncoderOptions,
+                                 const nsACString& aRandomizationKey,
                                  nsIInputStream** aStream);
 
  private:
   // When called asynchronously, aContext and aRenderer are null.
   static nsresult ExtractDataInternal(
       const nsAString& aType, const nsAString& aOptions, uint8_t* aImageBuffer,
-      int32_t aFormat, const CSSIntSize aSize, bool aUsePlaceholder,
-      layers::Image* aImage, nsICanvasRenderingContextInternal* aContext,
+      int32_t aFormat, const CSSIntSize aSize,
+      CanvasUtils::ImageExtraction aExtractionBehavior,
+      const nsCString& aRandomizationKey, layers::Image* aImage,
+      nsICanvasRenderingContextInternal* aContext,
       OffscreenCanvasDisplayHelper* aOffscreenDisplay, nsIInputStream** aStream,
       imgIEncoder* aEncoder);
 

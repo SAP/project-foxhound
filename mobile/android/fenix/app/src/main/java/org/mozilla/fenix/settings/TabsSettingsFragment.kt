@@ -6,6 +6,7 @@ package org.mozilla.fenix.settings
 
 import android.os.Bundle
 import android.view.View
+import androidx.navigation.fragment.navArgs
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreference
@@ -29,6 +30,7 @@ class TabsSettingsFragment : PreferenceFragmentCompat() {
     private lateinit var radioOneMonth: RadioButtonPreference
     private lateinit var inactiveTabsCategory: PreferenceCategory
     private lateinit var inactiveTabs: SwitchPreference
+    private val args by navArgs<TabsSettingsFragmentArgs>()
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.tabs_preferences, rootKey)
@@ -44,6 +46,9 @@ class TabsSettingsFragment : PreferenceFragmentCompat() {
         showToolbar(getString(R.string.preferences_tabs))
 
         setupPreferences()
+        args.preferenceToScrollTo?.let {
+            scrollToPreference(it)
+        }
     }
 
     private fun setupPreferences() {

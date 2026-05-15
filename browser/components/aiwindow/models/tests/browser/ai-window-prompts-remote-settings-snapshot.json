@@ -1,0 +1,86 @@
+[
+  {
+    "model": "",
+    "feature": "conversation-suggestions-assistant-limitations",
+    "prompts": "You can do this and cannot do that.",
+    "version": "1.0",
+    "is_default": true,
+    "parameters": {},
+    "additional_components": []
+  },
+  {
+    "model": "qwen3-235b-a22b-instruct-2507-maas",
+    "feature": "conversation-suggestions-sidebar-starter",
+    "prompts": "Suggest a conversation starter message. {assistant_limitations}",
+    "version": "1.0",
+    "is_default": true,
+    "parameters": {},
+    "additional_components": [
+      "conversation-suggestions-assistant-limitations",
+      "conversation-suggestions-memories"
+    ]
+  },
+  {
+    "model": "qwen3-235b-a22b-instruct-2507-maas",
+    "feature": "chat",
+    "prompts": "You are a helpful browser assistant.",
+    "version": "2.0",
+    "is_default": true,
+    "parameters": {
+      "temperature": 1.0
+    },
+    "additional_components": []
+  },
+  {
+    "model": "gpt-oss-120b",
+    "feature": "chat",
+    "prompts": "You are a helpful browser assistant.",
+    "version": "2.0",
+    "is_default": false,
+    "parameters": {
+      "temperature": 1.0
+    },
+    "additional_components": []
+  },
+  {
+    "model": "gemini-2.5-flash-lite",
+    "feature": "chat",
+    "prompts": "You are a helpful browser assistant.",
+    "version": "2.0",
+    "is_default": false,
+    "parameters": {
+      "temperature": 1.0
+    },
+    "additional_components": []
+  },
+  {
+    "model": "",
+    "feature": "conversation-suggestions-memories",
+    "prompts": "Use the following memories {memories}.",
+    "version": "1.0",
+    "is_default": true,
+    "parameters": {},
+    "additional_components": []
+  },
+  {
+    "model": "qwen3-235b-a22b-instruct-2507-maas",
+    "feature": "conversation-suggestions-followup",
+    "prompts": "Suggest next conversation message. {assistant_limitations}",
+    "version": "1.0",
+    "is_default": true,
+    "parameters": {},
+    "additional_components": [
+      "conversation-suggestions-assistant-limitations",
+      "conversation-suggestions-memories"
+    ]
+  },
+  {
+    "model": "qwen3-235b-a22b-instruct-2507-maas",
+    "feature": "title-generation",
+    "prompts": "Generate a chat title basd on current conversation.",
+    "version": "1.0",
+    "is_default": true,
+    "parameters": {},
+    "additional_components": []
+  }
+]

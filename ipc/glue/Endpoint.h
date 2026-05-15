@@ -13,7 +13,6 @@
 #include "base/process_util.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/MessageLink.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/NodeController.h"
@@ -198,6 +197,13 @@ class UntypedManagedEndpoint {
  public:
   bool IsValid() const { return mInner.isSome(); }
 
+  bool IsValidForManager(IRefCountedProtocol* aManager) const;
+  bool IsValidForManager(const UntypedManagedEndpoint& aManager) const;
+
+  bool IsForProtocol(ProtocolId aProtocolId) const {
+    return !IsValid() || mInner->mType == aProtocolId;
+  }
+
   UntypedManagedEndpoint(const UntypedManagedEndpoint&) = delete;
   UntypedManagedEndpoint& operator=(const UntypedManagedEndpoint&) = delete;
 
@@ -220,7 +226,7 @@ class UntypedManagedEndpoint {
   bool BindCommon(IProtocol* aActor, IRefCountedProtocol* aManager);
 
  private:
-  friend struct IPDLParamTraits<UntypedManagedEndpoint>;
+  friend struct IPC::ParamTraits<UntypedManagedEndpoint>;
 
   struct Inner {
     // Pointers to the toplevel actor which will manage this connection. When

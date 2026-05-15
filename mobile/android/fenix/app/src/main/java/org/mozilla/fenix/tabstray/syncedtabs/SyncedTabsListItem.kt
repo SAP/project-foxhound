@@ -56,11 +56,6 @@ sealed class SyncedTabsListItem {
     }
 
     /**
-     * A placeholder for a device that has no tabs synced.
-     */
-    object NoTabs : SyncedTabsListItem()
-
-    /**
      * A message displayed if an error was encountered.
      *
      * @property errorText The text to be displayed to the user.

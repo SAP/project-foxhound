@@ -6,21 +6,20 @@
 
 #include "ClientNavigateOpChild.h"
 
-#include "ClientState.h"
 #include "ClientSource.h"
 #include "ClientSourceChild.h"
+#include "ClientState.h"
+#include "ReferrerInfo.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/Unused.h"
-#include "nsIDocShell.h"
 #include "nsDocShellLoadState.h"
+#include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
 #include "nsIWebProgress.h"
 #include "nsIWebProgressListener.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsURLHelper.h"
-#include "ReferrerInfo.h"
 
 namespace mozilla::dom {
 

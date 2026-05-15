@@ -4,6 +4,12 @@
 
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Tabbed Browser")
+with Files("GroupsList.sys.mjs"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser: Tab Groups")
+with Files("content/tabgroup.js"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser: Tab Groups")
+with Files("content/tabgroup-menu.js"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser: Tab Groups")
 
 JAR_MANIFESTS += ["jar.mn"]
 
@@ -23,6 +29,7 @@ TESTING_JS_MODULES += [
 ]
 
 BROWSER_CHROME_MANIFESTS += [
+    "test/browser/dragdrop/browser.toml",
     "test/browser/smarttabgrouping/browser.toml",
     "test/browser/statuspanel/browser.toml",
     "test/browser/tabMediaIndicator/browser.toml",

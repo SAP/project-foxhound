@@ -40,7 +40,7 @@ class ConsoleSettings extends Component {
     return {
       dispatch: PropTypes.func.isRequired,
       eagerEvaluation: PropTypes.bool.isRequired,
-      groupWarnings: PropTypes.bool.isRequired,
+      groupSimilar: PropTypes.bool.isRequired,
       persistLogs: PropTypes.bool.isRequired,
       timestampsVisible: PropTypes.bool.isRequired,
       webConsoleUI: PropTypes.object.isRequired,
@@ -53,7 +53,7 @@ class ConsoleSettings extends Component {
     const {
       dispatch,
       eagerEvaluation,
-      groupWarnings,
+      groupSimilar,
       persistLogs,
       timestampsVisible,
       autocomplete,
@@ -122,7 +122,7 @@ class ConsoleSettings extends Component {
     items.push(
       MenuItem({
         key: "webconsole-console-settings-menu-item-warning-groups",
-        checked: groupWarnings,
+        checked: groupSimilar,
         className:
           "menu-item webconsole-console-settings-menu-item-warning-groups",
         label: l10n.getStr(
@@ -131,7 +131,7 @@ class ConsoleSettings extends Component {
         tooltip: l10n.getStr(
           "webconsole.console.settings.menu.item.warningGroups.tooltip"
         ),
-        onClick: () => dispatch(actions.warningGroupsToggle()),
+        onClick: () => dispatch(actions.groupSimilarMessagesToggle()),
       })
     );
 

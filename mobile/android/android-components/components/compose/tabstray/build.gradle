@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
@@ -10,19 +11,6 @@ plugins {
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     buildFeatures {
         compose = true
     }
@@ -31,28 +19,27 @@ android {
 }
 
 dependencies {
-    implementation project(":components:concept-tabstray")
-
     implementation project(":components:browser-state")
-
+    implementation project(":components:concept-tabstray")
+    implementation project(":components:feature-tabs")
     implementation project(":components:ui-icons")
 
-    implementation project(":components:feature-tabs")
-
-    implementation libs.androidx.compose.ui
-    implementation libs.androidx.compose.ui.tooling.preview
+    implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.foundation
     implementation libs.androidx.compose.material3
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.ui.tooling.preview
 
     debugImplementation libs.androidx.compose.ui.tooling
 
     testImplementation project(':components:support-test')
+
     testImplementation libs.androidx.compose.ui.test
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

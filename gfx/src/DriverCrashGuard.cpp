@@ -409,11 +409,6 @@ bool D3D11LayersCrashGuard::UpdateEnvironment() {
   bool changed = false;
   // Feature status.
 #if defined(XP_WIN)
-  bool d2dEnabled = StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
-                    (!StaticPrefs::gfx_direct2d_disabled_AtStartup() &&
-                     FeatureEnabled(nsIGfxInfo::FEATURE_DIRECT2D));
-  changed |= CheckAndUpdateBoolPref("feature-d2d", d2dEnabled);
-
   bool d3d11Enabled = gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING);
   changed |= CheckAndUpdateBoolPref("feature-d3d11", d3d11Enabled);
   if (changed) {
@@ -468,9 +463,9 @@ void GLContextCrashGuard::Initialize() {
   // its drivers will essentially never change, so the crash guard could
   // permanently disable WebGL.
   return;
-#endif
-
+#else
   DriverCrashGuard::Initialize();
+#endif
 }
 
 bool GLContextCrashGuard::UpdateEnvironment() {

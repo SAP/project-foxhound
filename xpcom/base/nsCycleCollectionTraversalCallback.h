@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCycleCollectionTraversalCallback_h__
-#define nsCycleCollectionTraversalCallback_h__
+#ifndef nsCycleCollectionTraversalCallback_h_
+#define nsCycleCollectionTraversalCallback_h_
 
 #include <cstdint>
 #include "nscore.h"
@@ -67,4 +67,4 @@ class NS_NO_VTABLE nsCycleCollectionTraversalCallback {
   uint32_t mFlags;
 };
 
-#endif  // nsCycleCollectionTraversalCallback_h__
+#endif  // nsCycleCollectionTraversalCallback_h_

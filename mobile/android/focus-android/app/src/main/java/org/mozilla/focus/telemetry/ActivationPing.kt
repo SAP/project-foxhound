@@ -8,19 +8,25 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.focus.GleanMetrics.Activation
 import org.mozilla.focus.GleanMetrics.Pings
 
 /**
- * Ensures that only one activation ping is ever sent.
+ * Responsible for managing and sending the one-time "activation" ping.
  *
- * (Taken from Fenix)
+ * This class ensures that the activation ping is triggered exactly once during the
+ * lifetime of the application installation. It persists the sent state using
+ * [SharedPreferences] to prevent duplicate transmissions on subsequent app launches.
  */
-class ActivationPing(private val context: Context) {
+class ActivationPing(
+    private val context: Context,
+    private val serviceScope: CoroutineScope,
+    private val ioDispatcher: CoroutineDispatcher,
+) {
 
     private val prefs: SharedPreferences by lazy {
         context.getSharedPreferences(
@@ -63,7 +69,7 @@ class ActivationPing(private val context: Context) {
         // Generate the activation_id.
         Activation.activationId.generateAndSet()
 
-        CoroutineScope(Dispatchers.IO).launch {
+        serviceScope.launch(ioDispatcher) {
             Pings.activation.submit()
             markAsTriggered()
         }

@@ -11,6 +11,7 @@
 #include "BounceTrackingMapEntry.h"
 #include "ClearDataCallback.h"
 #include "PromiseNativeWrapper.h"
+#include "ProfileAfterChangeGate.h"
 
 #include "BounceTrackingStateGlobal.h"
 #include "ErrorList.h"
@@ -22,6 +23,7 @@
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/Promise.h"
 #include "nsDebug.h"
+#include "nsGlobalWindowInner.h"
 #include "nsHashPropertyBag.h"
 #include "nsIClearDataService.h"
 #include "nsIObserverService.h"
@@ -65,6 +67,13 @@ already_AddRefed<BounceTrackingProtection>
 BounceTrackingProtection::GetSingleton() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
+  nsresult rv = EnsurePastProfileAfterChange();
+  if (NS_FAILED(rv)) {
+    // We haven't reached "profile-after-change" yet, so we can't initialize
+    // BounceTrackingProtection. Return nullptr.
+    return nullptr;
+  }
+
   // Init previously failed, don't try again.
   if (sInitFailed) {
     return nullptr;
@@ -84,7 +93,7 @@ BounceTrackingProtection::GetSingleton() {
     RunOnShutdown([] {
       if (sBounceTrackingProtection &&
           sBounceTrackingProtection->mRemoteExceptionList) {
-        Unused << sBounceTrackingProtection->mRemoteExceptionList->Shutdown();
+        (void)sBounceTrackingProtection->mRemoteExceptionList->Shutdown();
       }
       sBounceTrackingProtection = nullptr;
     });
@@ -92,6 +101,7 @@ BounceTrackingProtection::GetSingleton() {
     nsresult rv = sBounceTrackingProtection->Init();
     if (NS_WARN_IF(NS_FAILED(rv))) {
       sInitFailed = true;
+      sBounceTrackingProtection = nullptr;
       return nullptr;
     }
   }
@@ -115,25 +125,26 @@ nsresult BounceTrackingProtection::Init() {
   MOZ_ASSERT(StaticPrefs::privacy_bounceTrackingProtection_mode() !=
                  nsIBounceTrackingProtection::MODE_DISABLED,
              "Mode pref must have an enabled state for init to be called.");
-  MOZ_LOG(
+  MOZ_LOG_FMT(
       gBounceTrackingProtectionLog, LogLevel::Info,
-      ("Init BounceTrackingProtection. Config: mode: %d, "
-       "bounceTrackingActivationLifetimeSec: %d, bounceTrackingGracePeriodSec: "
-       "%d, bounceTrackingPurgeTimerPeriodSec: %d, "
-       "clientBounceDetectionTimerPeriodMS: %d, requireStatefulBounces: %d, "
-       "HasMigratedUserActivationData: %d",
-       StaticPrefs::privacy_bounceTrackingProtection_mode(),
-       StaticPrefs::
-           privacy_bounceTrackingProtection_bounceTrackingActivationLifetimeSec(),
-       StaticPrefs::
-           privacy_bounceTrackingProtection_bounceTrackingGracePeriodSec(),
-       StaticPrefs::
-           privacy_bounceTrackingProtection_bounceTrackingPurgeTimerPeriodSec(),
-       StaticPrefs::
-           privacy_bounceTrackingProtection_clientBounceDetectionTimerPeriodMS(),
-       StaticPrefs::privacy_bounceTrackingProtection_requireStatefulBounces(),
-       StaticPrefs::
-           privacy_bounceTrackingProtection_hasMigratedUserActivationData()));
+      "Init BounceTrackingProtection. Config: mode: {}, "
+      "bounceTrackingActivationLifetimeSec: {}, bounceTrackingGracePeriodSec: "
+      "{}, bounceTrackingPurgeTimerPeriodSec: {}, "
+      "clientBounceDetectionTimerPeriodMS: {}, requireStatefulBounces: {}, "
+      "HasMigratedUserActivationData: {}",
+      static_cast<nsIBounceTrackingProtection::Modes>(
+          StaticPrefs::privacy_bounceTrackingProtection_mode()),
+      StaticPrefs::
+          privacy_bounceTrackingProtection_bounceTrackingActivationLifetimeSec(),
+      StaticPrefs::
+          privacy_bounceTrackingProtection_bounceTrackingGracePeriodSec(),
+      StaticPrefs::
+          privacy_bounceTrackingProtection_bounceTrackingPurgeTimerPeriodSec(),
+      StaticPrefs::
+          privacy_bounceTrackingProtection_clientBounceDetectionTimerPeriodMS(),
+      StaticPrefs::privacy_bounceTrackingProtection_requireStatefulBounces(),
+      StaticPrefs::
+          privacy_bounceTrackingProtection_hasMigratedUserActivationData());
 
   mStorage = new BounceTrackingProtectionStorage();
 
@@ -142,8 +153,8 @@ nsresult BounceTrackingProtection::Init() {
 
   rv = MaybeMigrateUserInteractionPermissions();
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Error,
-            ("user activation permission migration failed"));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Error,
+                "user activation permission migration failed");
   }
 
   // Register feature pref listener which dynamically enables or disables the
@@ -181,9 +192,9 @@ nsresult BounceTrackingProtection::UpdateBounceTrackingPurgeTimer(
     return NS_OK;
   }
 
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("Scheduling mBounceTrackingPurgeTimer. Interval: %d seconds.",
-           purgeTimerPeriod));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+              "Scheduling mBounceTrackingPurgeTimer. Interval: {} seconds.",
+              purgeTimerPeriod);
 
   return NS_NewTimerWithCallback(
       getter_AddRefs(mBounceTrackingPurgeTimer),
@@ -194,14 +205,14 @@ nsresult BounceTrackingProtection::UpdateBounceTrackingPurgeTimer(
         sBounceTrackingProtection->PurgeBounceTrackers()->Then(
             GetMainThreadSerialEventTarget(), __func__,
             [] {
-              MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-                      ("%s: PurgeBounceTrackers finished after timer call.",
-                       __FUNCTION__));
+              MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                          "{}: PurgeBounceTrackers finished after timer call.",
+                          __FUNCTION__);
             },
             [] { NS_WARNING("RunPurgeBounceTrackers failed"); });
       },
       purgeTimerPeriod * PR_MSEC_PER_SEC, nsITimer::TYPE_REPEATING_SLACK,
-      "mBounceTrackingPurgeTimer");
+      "mBounceTrackingPurgeTimer"_ns);
 }
 
 // static
@@ -222,8 +233,8 @@ nsresult BounceTrackingProtection::OnModeChange(bool aIsStartup) {
   nsIBounceTrackingProtection::Modes mode =
       static_cast<nsIBounceTrackingProtection::Modes>(modeInt);
 
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: mode: %d.", __FUNCTION__, mode));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug, "{}: mode: {}.",
+              __FUNCTION__, mode);
   if (sInitFailed) {
     return NS_ERROR_FAILURE;
   }
@@ -286,14 +297,18 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
     BounceTrackingState* aBounceTrackingState) {
   NS_ENSURE_ARG_POINTER(aBounceTrackingState);
 
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: aBounceTrackingState: %s", __FUNCTION__,
-           aBounceTrackingState->Describe().get()));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+              "{}: aBounceTrackingState: {}", __FUNCTION__,
+              *aBounceTrackingState);
 
   // Assert: navigable’s bounce tracking record is not null.
   const Maybe<BounceTrackingRecord>& record =
       aBounceTrackingState->GetBounceTrackingRecord();
-  NS_ENSURE_TRUE(record, NS_ERROR_FAILURE);
+  if (!record) {
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "GetBounceTrackingRecord returned nothing");
+    return NS_ERROR_FAILURE;
+  }
 
   // Get the bounce tracker map and the user activation map.
   RefPtr<BounceTrackingStateGlobal> globalState =
@@ -312,32 +327,29 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
     // If host equals navigable’s bounce tracking record's initial host,
     // continue.
     if (host == record->GetInitialHost()) {
-      MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-              ("%s: Skip host == initialHost: %s", __FUNCTION__,
-               PromiseFlatCString(host).get()));
+      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  "{}: Skip host == initialHost: {}", __FUNCTION__, host);
       continue;
     }
     // If host equals navigable’s bounce tracking record's final host, continue.
     if (host == record->GetFinalHost()) {
-      MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-              ("%s: Skip host == finalHost: %s", __FUNCTION__,
-               PromiseFlatCString(host).get()));
+      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  "{}: Skip host == finalHost: {}", __FUNCTION__, host);
       continue;
     }
 
     // If user activation map contains host, continue.
     if (globalState->HasUserActivation(host)) {
-      MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-              ("%s: Skip host with recent user activation: %s", __FUNCTION__,
-               PromiseFlatCString(host).get()));
+      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  "{}: Skip host with recent user activation: {}", __FUNCTION__,
+                  host);
       continue;
     }
 
     // If stateful bounce tracking map contains host, continue.
     if (globalState->HasBounceTracker(host)) {
-      MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-              ("%s: Skip already existing host: %s", __FUNCTION__,
-               PromiseFlatCString(host).get()));
+      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  "{}: Skip already existing host: {}", __FUNCTION__, host);
       continue;
     }
 
@@ -346,9 +358,9 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
     if (StaticPrefs::
             privacy_bounceTrackingProtection_requireStatefulBounces() &&
         !record->GetStorageAccessHosts().Contains(host)) {
-      MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-              ("%s: Skip host without storage access: %s", __FUNCTION__,
-               PromiseFlatCString(host).get()));
+      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  "{}: Skip host without storage access: {}", __FUNCTION__,
+                  host);
       continue;
     }
 
@@ -363,18 +375,17 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
 
     classifiedHosts.AppendElement(host);
 
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Info,
-            ("%s: Added bounce tracker candidate. siteHost: %s, "
-             "aBounceTrackingState: %s",
-             __FUNCTION__, PromiseFlatCString(host).get(),
-             aBounceTrackingState->Describe().get()));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Info,
+                "{}: Added bounce tracker candidate. siteHost: {}, "
+                "aBounceTrackingState: {}",
+                __FUNCTION__, host, *aBounceTrackingState);
   }
 
   // Set navigable’s bounce tracking record to null.
   aBounceTrackingState->ResetBounceTrackingRecord();
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: Done, reset aBounceTrackingState: %s", __FUNCTION__,
-           aBounceTrackingState->Describe().get()));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+              "{}: Done, reset aBounceTrackingState: {}", __FUNCTION__,
+              *aBounceTrackingState);
 
   // Log a message to the web console for each classified host.
   nsresult rv = LogBounceTrackersClassifiedToWebConsole(aBounceTrackingState,
@@ -483,8 +494,8 @@ nsresult BounceTrackingProtection::RecordUserActivation(
 NS_IMETHODIMP
 BounceTrackingProtection::Observe(nsISupports* aSubject, const char* aTopic,
                                   const char16_t* aData) {
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: aTopic: %s", __FUNCTION__, aTopic));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug, "{}: aTopic: {}",
+              __FUNCTION__, aTopic);
 
   if (!strcmp(aTopic, "idle-daily")) {
 #ifndef MOZ_WIDGET_ANDROID  // OHTTP is not supported on Android.
@@ -906,16 +917,16 @@ BounceTrackingProtection::PurgeBounceTrackers() {
           nsIBounceTrackingProtection::MODE_ENABLED &&
       StaticPrefs::privacy_bounceTrackingProtection_mode() !=
           nsIBounceTrackingProtection::MODE_ENABLED_DRY_RUN) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: Skip: Purging disabled via mode pref.", __FUNCTION__));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "{}: Skip: Purging disabled via mode pref.", __FUNCTION__);
     return PurgeBounceTrackersMozPromise::CreateAndReject(
         nsresult::NS_ERROR_NOT_AVAILABLE, __func__);
   }
 
   // Prevent multiple purge operations from running at the same time.
   if (mPurgeInProgress) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-            ("%s: Skip: Purge already in progress.", __FUNCTION__));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                "{}: Skip: Purge already in progress.", __FUNCTION__);
     return PurgeBounceTrackersMozPromise::CreateAndReject(
         nsresult::NS_ERROR_NOT_AVAILABLE, __func__);
   }
@@ -954,9 +965,9 @@ BounceTrackingProtection::PurgeBounceTrackers() {
           if (MOZ_LOG_TEST(gBounceTrackingProtectionLog, LogLevel::Debug)) {
             nsAutoCString oaSuffix;
             originAttributes.CreateSuffix(oaSuffix);
-            MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-                    ("%s: Running purge algorithm for OA: '%s'", __FUNCTION__,
-                     oaSuffix.get()));
+            MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                        "{}: Running purge algorithm for OA: '{}'",
+                        __FUNCTION__, oaSuffix);
           }
 
           nsresult rv = self->PurgeBounceTrackersForStateGlobal(
@@ -978,9 +989,9 @@ BounceTrackingProtection::PurgeBounceTrackers() {
                            ResolveOrRejectValue&& aResults) {
                   MOZ_ASSERT(aResults.IsResolve(), "AllSettled never rejects");
 
-                  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-                          ("%s: Done. Cleared %zu hosts.", __FUNCTION__,
-                           aResults.ResolveValue().Length()));
+                  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                              "{}: Done. Cleared {} hosts.", __FUNCTION__,
+                              aResults.ResolveValue().Length());
 
                   if (!aResults.ResolveValue().IsEmpty()) {
                     glean::bounce_tracking_protection::num_hosts_per_purge_run
@@ -1013,7 +1024,7 @@ BounceTrackingProtection::PurgeBounceTrackers() {
                   // MODE_ENABLED so we know in Nimbus when a client would have
                   // been exposed to BTP had it been enabled. This enables us to
                   // compare the control and treatment branches with exposure.
-                  Unused << NimbusFeatures::RecordExposureEvent(
+                  (void)NimbusFeatures::RecordExposureEvent(
                       "bounceTrackingProtection"_ns, false);
 
                   if (StaticPrefs::privacy_bounceTrackingProtection_mode() ==
@@ -1074,8 +1085,8 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
     BounceTrackingAllowList& aBounceTrackingAllowList,
     nsTArray<RefPtr<ClearDataMozPromise>>& aClearPromises) {
   MOZ_ASSERT(aStateGlobal);
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: %s", __FUNCTION__, aStateGlobal->Describe().get()));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug, "{}: {}",
+              __FUNCTION__, *aStateGlobal);
 
   // Ensure we only purge when pref configuration allows it.
   if (StaticPrefs::privacy_bounceTrackingProtection_mode() !=
@@ -1110,9 +1121,9 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
                     privacy_bounceTrackingProtection_bounceTrackingGracePeriodSec() *
                 PR_USEC_PER_SEC >
         now) {
-      MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-              ("%s: Skip host within bounce tracking grace period %s",
-               __FUNCTION__, PromiseFlatCString(host).get()));
+      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  "{}: Skip host within bounce tracking grace period {}",
+                  __FUNCTION__, host);
 
       continue;
     }
@@ -1129,9 +1140,8 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
       hostIsActive = false;
     }
     if (hostIsActive) {
-      MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-              ("%s: Skip host which is active %s", __FUNCTION__,
-               PromiseFlatCString(host).get()));
+      MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  "{}: Skip host which is active {}", __FUNCTION__, host);
       continue;
     }
 
@@ -1151,11 +1161,9 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
       if (MOZ_LOG_TEST(gBounceTrackingProtectionLog, LogLevel::Debug)) {
         nsAutoCString originAttributeSuffix;
         aStateGlobal->OriginAttributesRef().CreateSuffix(originAttributeSuffix);
-        MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-                ("%s: Skip allow-listed: host: %s, "
-                 "originAttributes: %s",
-                 __FUNCTION__, PromiseFlatCString(host).get(),
-                 originAttributeSuffix.get()));
+        MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+                    "{}: Skip allow-listed: host: {}, originAttributes: {}",
+                    __FUNCTION__, host, originAttributeSuffix);
       }
       // Remove allow-listed host so we don't need to check in again next purge
       // run. If it gets classified again and the allow-list entry gets removed
@@ -1165,11 +1173,10 @@ nsresult BounceTrackingProtection::PurgeBounceTrackersForStateGlobal(
     }
 
     // No exception above applies, clear state for the given host.
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Info,
-            ("%s: Purging bounce tracker. siteHost: %s, bounceTime: %" PRIu64
-             " aStateGlobal: %s",
-             __FUNCTION__, PromiseFlatCString(host).get(), bounceTime,
-             aStateGlobal->Describe().get()));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Info,
+                "{}: Purging bounce tracker. siteHost: {}, bounceTime: {} "
+                "aStateGlobal: {}",
+                __FUNCTION__, host, bounceTime, *aStateGlobal);
 
     // Remove it from the bounce trackers map, it's about to be purged. If the
     // clear call fails still remove it. We want to avoid an ever growing list
@@ -1220,11 +1227,6 @@ nsresult BounceTrackingProtection::PurgeStateForHostAndOriginAttributes(
       do_GetService("@mozilla.org/clear-data-service;1", &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // nsIClearDataService expects a schemeless site which for IPV6 addresses
-  // includes brackets. Add them if needed.
-  nsAutoCString hostToPurge(aHost);
-  nsContentUtils::MaybeFixIPv6Host(hostToPurge);
-
   // When clearing data for a specific site host we need to ensure that we
   // only clear for matching OriginAttributes. For example if the current
   // state global is private browsing only we must not clear normal browsing
@@ -1245,7 +1247,7 @@ nsresult BounceTrackingProtection::PurgeStateForHostAndOriginAttributes(
   NS_ENSURE_TRUE(pattern.ToJSON(oaPatternString), NS_ERROR_FAILURE);
 
   rv = clearDataService->DeleteDataFromSiteAndOriginAttributesPatternString(
-      hostToPurge, oaPatternString, false,
+      aHost, oaPatternString, false,
       // Exempt purging our own state for the given tracker since we already
       // update it ourselves. Additionally a nested call to the
       // BounceTrackingProtectionCleaner while iterating over the candidate set
@@ -1367,9 +1369,9 @@ nsresult BounceTrackingProtection::MaybeMigrateUserInteractionPermissions() {
     return NS_OK;
   }
 
-  MOZ_LOG(
-      gBounceTrackingProtectionLog, LogLevel::Debug,
-      ("%s: Importing user activation data from permissions", __FUNCTION__));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+              "{}: Importing user activation data from permissions",
+              __FUNCTION__);
 
   // Get all user activation permissions that are within our user activation
   // lifetime. We don't care about the rest since they are considered expired
@@ -1398,9 +1400,9 @@ nsresult BounceTrackingProtection::MaybeMigrateUserInteractionPermissions() {
                                       userActivationPermissions);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("%s: Found %zu (non-expired) user activation permissions",
-           __FUNCTION__, userActivationPermissions.Length()));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+              "{}: Found {} (non-expired) user activation permissions",
+              __FUNCTION__, userActivationPermissions.Length());
 
   for (const auto& perm : userActivationPermissions) {
     nsCOMPtr<nsIPrincipal> permPrincipal;

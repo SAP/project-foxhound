@@ -50,6 +50,10 @@ class LIRGeneratorX86 : public LIRGeneratorX86Shared {
   void lowerForMulInt64(LMulI64* ins, MMul* mir, MDefinition* lhs,
                         MDefinition* rhs);
 
+  template <class LInstr>
+  void lowerForShiftInt64(LInstr* ins, MDefinition* mir, MDefinition* lhs,
+                          MDefinition* rhs);
+
   void lowerTruncateDToInt32(MTruncateToInt32* ins);
   void lowerTruncateFToInt32(MTruncateToInt32* ins);
   void lowerBuiltinInt64ToFloatingPoint(MBuiltinInt64ToFloatingPoint* ins);

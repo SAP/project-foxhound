@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MacUtils_H_
-#define _MacUtils_H_
+#ifndef MacUtils_H_
+#define MacUtils_H_
 
 #include "nsStringFwd.h"
 #include "mozAccessible.h"
@@ -55,6 +55,13 @@ bool DocumentExists(Accessible* aDoc, uintptr_t aDocPtr);
 
 NSDictionary* StringAttributesFromAccAttributes(AccAttributes* aAttributes,
                                                 Accessible* aContainer);
+
+/**
+ * Get the appropriate NSScreen for the given Accessible.
+ * This should mostly return the main screen, except for
+ * in the presence of multiple monitors.
+ */
+NSScreen* GetNSScreenForAcc(mozAccessible* aAcc);
 }  // namespace utils
 }  // namespace a11y
 }  // namespace mozilla

@@ -60,6 +60,14 @@ TEST(ResistFingerprinting, UserCharacteristics_Complex)
             mozilla::glean::characteristics::max_touch_points.TestGetValue()
                 .unwrap()
                 .ref());
+
+        // Test FPU control state metric to ensure code runs and doesn't crash
+        auto fpuState =
+            mozilla::glean::characteristics::fpu_control_state.TestGetValue()
+                .unwrap()
+                .value();
+        ASSERT_STRNE("", fpuState.get());
+        ASSERT_TRUE(strstr(fpuState.get(), "std:") != nullptr);
       },
       []() { nsUserCharacteristics::SubmitPing(); }));
 }

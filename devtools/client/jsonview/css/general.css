@@ -44,3 +44,38 @@ body.theme-dark {
 .theme-dark pre {
   background-color: var(--theme-body-background);
 }
+
+/******************************************************************************/
+/* Profiler Icon Button */
+
+.profiler-icon-button {
+  appearance: none;
+  border: none;
+  border-inline-start: 1px solid var(--theme-splitter-color);
+  padding: 0;
+  margin: 0;
+  margin-inline-start: auto;
+  width: 32px;
+  height: 100%;
+  background-color: var(--theme-tab-toolbar-background);
+  background-image: url("chrome://devtools/skin/images/tool-profiler.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px 16px;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-color);
+  outline-offset: -2px;
+}
+
+.profiler-icon-button:not(:disabled):hover {
+  background-color: var(--theme-toolbar-hover);
+  fill: var(--theme-icon-hover-color);
+}
+
+.profiler-icon-button:not(:disabled):hover:active {
+  background-color: var(--theme-toolbar-hover-active);
+}
+
+.profiler-icon-button:disabled {
+  fill: var(--theme-icon-disabled-color);
+}

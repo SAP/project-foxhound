@@ -43,6 +43,7 @@ describe("MultiStageAboutWelcome module", () => {
       AWWaitForMigrationClose: () => Promise.resolve(),
       AWSelectTheme: () => Promise.resolve(),
       AWFinish: () => Promise.resolve(),
+      AWEvaluateAttributeTargeting: () => Promise.resolve(false),
     });
     sandbox = sinon.createSandbox();
   });
@@ -168,6 +169,51 @@ describe("MultiStageAboutWelcome module", () => {
       telemetryStub.restore();
     });
 
+    it("should autoAdvance with configurable time and send appropriate telemetry", () => {
+      let clock = sinon.useFakeTimers();
+      const screens = [
+        {
+          auto_advance: {
+            actionEl: "primary_button",
+            actionTimeMS: 5000,
+          },
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            primary_button: {
+              label: "Test Button",
+              action: {
+                navigate: true,
+              },
+            },
+          },
+        },
+      ];
+      const AUTO_ADVANCE_PROPS = {
+        defaultScreens: screens,
+        metricsFlowUri: "http://localhost/",
+        message_id: "DEFAULT_ABOUTWELCOME",
+        utm_term: "default",
+        startScreen: 0,
+      };
+      const wrapper = mount(<MultiStageAboutWelcome {...AUTO_ADVANCE_PROPS} />);
+      wrapper.update();
+      const finishStub = sandbox.stub(global, "AWFinish");
+      const telemetryStub = sinon.stub(
+        AboutWelcomeUtils,
+        "sendActionTelemetry"
+      );
+
+      assert.notCalled(finishStub);
+      clock.tick(5001);
+      assert.calledOnce(finishStub);
+      assert.calledOnce(telemetryStub);
+      assert.equal(telemetryStub.lastCall.args[2], "AUTO_ADVANCE");
+      clock.restore();
+      finishStub.restore();
+      telemetryStub.restore();
+    });
+
     it("should send telemetry ping on collectSelect", () => {
       const screens = [
         {
@@ -217,6 +263,210 @@ describe("MultiStageAboutWelcome module", () => {
       assert.equal(stub.lastCall.args[2], "SELECT_CHECKBOX");
       stub.restore();
     });
+
+    it("should send telemetry ping on collectTextInput", () => {
+      const screens = [
+        {
+          id: "TEXT_INPUT_TEST",
+          content: {
+            tiles: {
+              type: "textarea",
+              data: {
+                id: "text-input-test",
+              },
+            },
+            primary_button: {
+              label: "Test Button",
+              action: {
+                collectTextInput: true,
+              },
+            },
+          },
+        },
+      ];
+      const COMPONENT_PROPS = {
+        defaultScreens: screens,
+        message_id: "DEFAULT_ABOUTWELCOME",
+        startScreen: 0,
+      };
+      const stub = sinon.stub(AboutWelcomeUtils, "sendActionTelemetry");
+      let wrapper = mount(<MultiStageAboutWelcome {...COMPONENT_PROPS} />);
+      wrapper.update();
+
+      let welcomeScreenWrapper = wrapper.find(WelcomeScreen);
+      // Set some text in the text area to simulate user input
+      const textArea = welcomeScreenWrapper.find("textarea.textarea-input");
+      textArea.simulate("change", {
+        target: { value: "Some user input text" },
+      });
+      wrapper.update();
+      welcomeScreenWrapper = wrapper.find(WelcomeScreen);
+
+      const btnPrimary = welcomeScreenWrapper.find(".primary");
+      btnPrimary.simulate("click");
+      assert.calledTwice(stub);
+      assert.equal(
+        stub.firstCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      assert.equal(stub.firstCall.args[1], "primary_button");
+      assert.equal(
+        stub.lastCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      assert.ok(stub.lastCall.args[1].includes("text-input-test"));
+      assert.equal(stub.lastCall.args[2], "TEXT_INPUT");
+      assert.equal(stub.lastCall.args[3].value, "Some user input text");
+      stub.restore();
+    });
+
+    it("should apply character limit to textarea tile", () => {
+      const screens = [
+        {
+          id: "TEXT_INPUT_TEST",
+          content: {
+            tiles: {
+              type: "textarea",
+              data: {
+                id: "text-input-test",
+                character_limit: 20,
+              },
+            },
+            primary_button: {
+              label: "Test Button",
+              action: {
+                collectTextInput: true,
+              },
+              disabled: "hasTextInput",
+            },
+          },
+        },
+      ];
+      const COMPONENT_PROPS = {
+        defaultScreens: screens,
+        message_id: "DEFAULT_ABOUTWELCOME",
+        startScreen: 0,
+      };
+      let wrapper = mount(<MultiStageAboutWelcome {...COMPONENT_PROPS} />);
+      wrapper.update();
+
+      // Input a 10,000 character long string to exceed the character limit
+      const textArea = wrapper.find("textarea.textarea-input");
+      const value = "A".repeat(21);
+      textArea.simulate("change", { target: { value } });
+      wrapper.update();
+
+      // Check the char counter, it should show a negative value and be invalid
+      const charCounter = wrapper.find(".textarea-char-counter");
+      assert.equal(charCounter.text(), "-1");
+      assert.ok(charCounter.hasClass("invalid"));
+
+      // The primary button should be disabled due to hasTextInput rule
+      const btnPrimary = wrapper.find(".primary");
+      assert.ok(btnPrimary.props().disabled);
+    });
+
+    it("should truncate long text input values in telemetry ping on collectTextInput", () => {
+      const screens = [
+        {
+          id: "TEXT_INPUT_TEST",
+          content: {
+            tiles: {
+              type: "textarea",
+              data: {},
+            },
+            primary_button: {
+              label: "Test Button",
+              action: {
+                collectTextInput: true,
+              },
+            },
+          },
+        },
+      ];
+      const COMPONENT_PROPS = {
+        defaultScreens: screens,
+        message_id: "DEFAULT_ABOUTWELCOME",
+        startScreen: 0,
+      };
+      const stub = sinon.stub(AboutWelcomeUtils, "sendActionTelemetry");
+      let wrapper = mount(<MultiStageAboutWelcome {...COMPONENT_PROPS} />);
+      wrapper.update();
+
+      let welcomeScreenWrapper = wrapper.find(WelcomeScreen);
+      // Input a 10,000 character long string to exceed the 8KB limit
+      const textArea = welcomeScreenWrapper.find("textarea.textarea-input");
+      const value = "A".repeat(10_000);
+      textArea.simulate("change", { target: { value } });
+      wrapper.update();
+      welcomeScreenWrapper = wrapper.find(WelcomeScreen);
+
+      // Record telemetry - this is where the value should be truncated
+      const btnPrimary = welcomeScreenWrapper.find(".primary");
+      btnPrimary.simulate("click");
+      assert.calledTwice(stub);
+      assert.equal(
+        stub.firstCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      assert.equal(stub.firstCall.args[1], "primary_button");
+      assert.equal(
+        stub.lastCall.args[0],
+        welcomeScreenWrapper.props().messageId
+      );
+      // Should generate a tile id automatically if omitted
+      assert.ok(stub.lastCall.args[1].includes("tile-0"));
+      assert.equal(stub.lastCall.args[2], "TEXT_INPUT");
+      assert.equal(stub.lastCall.args[3].value.length, 8192);
+      stub.restore();
+    });
+
+    it("does not render anything until targeting/filtering resolves (gated first paint)", async () => {
+      let resolveTargeting;
+      const targetingPromise = new Promise(r => (resolveTargeting = r));
+      globals.set("AWEvaluateScreenTargeting", () => targetingPromise);
+
+      const wrapper = mount(
+        <MultiStageAboutWelcome {...DEFAULT_PROPS} gateInitialPaint={true} />
+      );
+      // Immediately after mount (before resolve), nothing should be painted
+      assert.strictEqual(wrapper.html(), null);
+      assert.ok(!wrapper.find(WelcomeScreen).exists());
+
+      resolveTargeting();
+      await spinEventLoop();
+      wrapper.update();
+
+      // After targeting resolves, the first screen should render
+      assert.ok(wrapper.find(WelcomeScreen).exists());
+    });
+
+    it("does not send telemetry before first paint is ready, but does afterwards", async () => {
+      let resolveTargeting;
+      const targetingPromise = new Promise(r => (resolveTargeting = r));
+      globals.set("AWEvaluateScreenTargeting", () => targetingPromise);
+
+      const sendEventStub = sinon.stub(global, "AWSendEventTelemetry");
+      const wrapper = mount(
+        <MultiStageAboutWelcome {...DEFAULT_PROPS} gateInitialPaint={true} />
+      );
+      assert.notCalled(sendEventStub);
+      assert.strictEqual(wrapper.html(), null);
+
+      resolveTargeting();
+      await spinEventLoop();
+      wrapper.update();
+
+      const hadImpression = sendEventStub
+        .getCalls()
+        .some(c => c.args && c.args[0] && c.args[0].event === "IMPRESSION");
+      assert.ok(
+        hadImpression,
+        "Expected at least one IMPRESSION event after paint"
+      );
+
+      sendEventStub.restore();
+    });
   });
 
   describe("WelcomeScreen component", () => {
@@ -245,6 +495,16 @@ describe("MultiStageAboutWelcome module", () => {
         assert.ok(wrapper.exists());
       });
 
+      it("should render a primary and secondary button", () => {
+        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
+        assert.ok(wrapper.find(".primary").exists());
+        assert.equal(
+          wrapper.find(".secondary-cta:not(.top) button.secondary").length,
+          1,
+          "One secondary button"
+        );
+      });
+
       it("should render secondary.top button", () => {
         let SCREEN_PROPS = {
           content: {
@@ -258,6 +518,52 @@ describe("MultiStageAboutWelcome module", () => {
         };
         const wrapper = mount(<SecondaryCTA {...SCREEN_PROPS} />);
         assert.ok(wrapper.find("div.secondary-cta.top").exists());
+      });
+
+      it("should render a secondary top 'Sign in' button if user isn't signed in", async () => {
+        globals.set("AWEvaluateAttributeTargeting", expression => {
+          return Promise.resolve(expression.includes("!isFxASignedIn"));
+        });
+
+        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
+        await spinEventLoop();
+        wrapper.update();
+
+        const secondaryTopButton = wrapper.find(".secondary-cta.top");
+        assert.ok(secondaryTopButton.exists(), "secondary button top exists");
+
+        const signInButton = secondaryTopButton.find(
+          '[data-l10n-id="mr1-onboarding-sign-in-button-label"]'
+        );
+
+        assert.equal(
+          signInButton.length,
+          1,
+          "One 'Sign in' secondary top button"
+        );
+      });
+
+      it("should render a secondary top 'Restore Backup' button when backup restore is enabled", async () => {
+        globals.set("AWEvaluateAttributeTargeting", expression => {
+          return Promise.resolve(expression.includes("backupRestoreEnabled"));
+        });
+
+        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
+        await spinEventLoop();
+        wrapper.update();
+
+        const secondaryTopButton = wrapper.find(".secondary-cta.top");
+        assert.ok(secondaryTopButton.exists(), "Secondary button top exists");
+
+        let backup = secondaryTopButton.find(
+          '[data-l10n-id="restore-from-backup-secondary-top-button"]'
+        );
+
+        assert.equal(
+          backup.length,
+          1,
+          "One secondary 'Backup Restore' top button"
+        );
       });
 
       it("should render the arrow icon in the secondary button", () => {
@@ -311,23 +617,6 @@ describe("MultiStageAboutWelcome module", () => {
           wrapper.find("div.indicator").prop("style"),
           "--progress-bar-progress",
           "50%"
-        );
-      });
-
-      it("should have a primary, secondary and secondary.top button in the rendered input", () => {
-        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
-        assert.ok(wrapper.find(".primary").exists());
-        assert.ok(
-          wrapper
-            .find(".secondary-cta button.secondary[value='secondary_button']")
-            .exists()
-        );
-        assert.ok(
-          wrapper
-            .find(
-              ".secondary-cta.top button.secondary[value='secondary_button_top']"
-            )
-            .exists()
         );
       });
     });
@@ -1078,7 +1367,7 @@ describe("MultiStageAboutWelcome module", () => {
           AboutWelcomeUtils.handleUserAction.resetHistory();
         }
       });
-      it("Should handle a campaign action when applicable", async () => {
+      it("should handle a campaign action when applicable", async () => {
         let actionSpy = sandbox.spy(AboutWelcomeUtils, "handleCampaignAction");
         let telemetrySpy = sandbox.spy(
           AboutWelcomeUtils,
@@ -1111,7 +1400,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.equal(telemetrySpy.firstCall.args[1], "CAMPAIGN_ACTION");
         globals.restore();
       });
-      it("Should not handle a campaign action when the action has already been handled", async () => {
+      it("should not handle a campaign action when the action has already been handled", async () => {
         let actionSpy = sandbox.spy(AboutWelcomeUtils, "handleCampaignAction");
         let telemetrySpy = sandbox.spy(
           AboutWelcomeUtils,
@@ -1140,7 +1429,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.notCalled(telemetrySpy);
         globals.restore();
       });
-      it("Should not send telemetrty when campaign action handling fails", async () => {
+      it("should not send telemetrty when campaign action handling fails", async () => {
         let actionSpy = sandbox.spy(AboutWelcomeUtils, "handleCampaignAction");
         let telemetrySpy = sandbox.spy(
           AboutWelcomeUtils,
@@ -1238,7 +1527,7 @@ describe("MultiStageAboutWelcome module", () => {
         globals.restore();
       });
 
-      it("Should dismiss when resolve boolean is true and needAwait true", async () => {
+      it("should dismiss when resolve boolean is true and needAwait true", async () => {
         TEST_ACTION.dismiss = "actionResult";
         TEST_ACTION.needsAwait = true;
         // `needsAwait` is true, so the handleUserAction function should return a `Promise<boolean>`
@@ -1275,7 +1564,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.calledOnce(finishStub);
       });
 
-      it("Should not dismiss when resolve boolean is false and needAwait true", async () => {
+      it("should not dismiss when resolve boolean is false and needAwait true", async () => {
         TEST_ACTION.dismiss = "actionResult";
         TEST_ACTION.needsAwait = true;
         // `needsAwait` is true, so the handleUserAction function should return a `Promise<boolean>`
@@ -1309,7 +1598,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.notCalled(finishStub);
       });
 
-      it("Should dismiss when true and handleUserAction not awaited", async () => {
+      it("should dismiss when true and handleUserAction not awaited", async () => {
         TEST_ACTION.dismiss = true;
         // `needsAwait` is not set, so the handleUserAction function should return a `Promise<undefined>`
         awSendToParentStub.callsFake(

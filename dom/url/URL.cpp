@@ -8,15 +8,15 @@
  */
 
 #include "URL.h"
+
+#include "MainThreadUtils.h"
 #include "URLMainThread.h"
 #include "URLWorker.h"
-
-#include "nsASCIIMask.h"
-#include "MainThreadUtils.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "nsContentUtils.h"
 #include "mozilla/dom/Document.h"
+#include "nsASCIIMask.h"
+#include "nsContentUtils.h"
 #include "nsIURIMutator.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
@@ -236,7 +236,7 @@ void URL::GetUsername(nsACString& aUsername) const {
 
 void URL::SetUsername(const nsACString& aUsername) {
   MOZ_ASSERT(mURI);
-  Unused << NS_MutateURI(mURI).SetUsername(aUsername).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetUsername(aUsername).Finalize(mURI);
 }
 
 void URL::GetPassword(nsACString& aPassword) const {
@@ -246,14 +246,14 @@ void URL::GetPassword(nsACString& aPassword) const {
 void URL::SetPassword(const nsACString& aPassword) {
   MOZ_ASSERT(mURI);
 
-  Unused << NS_MutateURI(mURI).SetPassword(aPassword).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetPassword(aPassword).Finalize(mURI);
 }
 
 void URL::GetHost(nsACString& aHost) const { URL_GETTER(aHost, GetHostPort); }
 
 void URL::SetHost(const nsACString& aHost) {
   MOZ_ASSERT(mURI);
-  Unused << NS_MutateURI(mURI).SetHostPort(aHost).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetHostPort(aHost).Finalize(mURI);
 }
 
 void URL::GetHostname(nsACString& aHostname) const {
@@ -267,7 +267,7 @@ void URL::SetHostname(const nsACString& aHostname) {
 
   // nsStandardURL returns NS_ERROR_UNEXPECTED for an empty hostname
   // The return code is silently ignored
-  Unused << NS_MutateURI(mURI).SetHost(aHostname).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetHost(aHostname).Finalize(mURI);
 }
 
 void URL::GetPort(nsACString& aPort) const {
@@ -300,7 +300,7 @@ void URL::SetPort(const nsACString& aPort) {
     }
   }
 
-  Unused << NS_MutateURI(mURI).SetPort(port).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetPort(port).Finalize(mURI);
 }
 
 void URL::GetPathname(nsACString& aPathname) const {
@@ -315,7 +315,7 @@ void URL::SetPathname(const nsACString& aPathname) {
   MOZ_ASSERT(mURI);
 
   // Do not throw!
-  Unused << NS_MutateURI(mURI).SetFilePath(aPathname).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetFilePath(aPathname).Finalize(mURI);
 }
 
 void URL::GetSearch(nsACString& aSearch) const {
@@ -347,14 +347,14 @@ void URL::GetHash(nsACString& aHash) const {
 void URL::SetHash(const nsACString& aHash) {
   MOZ_ASSERT(mURI);
 
-  Unused << NS_MutateURI(mURI).SetRef(aHash).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetRef(aHash).Finalize(mURI);
 }
 
 void URL::SetSearchInternal(const nsACString& aSearch) {
   MOZ_ASSERT(mURI);
 
   // Ignore failures to be compatible with NS4.
-  Unused << NS_MutateURI(mURI).SetQuery(aSearch).Finalize(mURI);
+  (void)NS_MutateURI(mURI).SetQuery(aSearch).Finalize(mURI);
 }
 
 void URL::UpdateURLSearchParams() {

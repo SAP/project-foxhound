@@ -432,10 +432,6 @@ fn run(args: CliArgs) -> miette::Result<()> {
                 timeout_length: TimeoutLength,
             ) {
                 for (worker_type, cases) in cases {
-                    // TODO: https://bugzilla.mozilla.org/show_bug.cgi?id=1938663
-                    if worker_type == Some(WorkerType::Service) {
-                        continue;
-                    }
                     let file_stem = worker_type.map(|wt| wt.as_str()).unwrap_or("cts");
                     let path = spec_file_dir.child(format!("{file_stem}.https.html"));
                     assert!(split_cases

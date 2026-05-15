@@ -159,3 +159,26 @@ page:
       - seceng-telemetry@mozilla.com
     expires: never
     telemetry_mirror: PAGE_LOAD_ERROR
+
+urlfixup:
+  suffix:
+    type: dual_labeled_counter
+    description: >
+      Counts how often a .com or other localized suffix is appended to a URL
+      as a result of pressing ctrl/cmd + enter in the URL bar.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1463540
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1463540
+    notification_emails:
+      - eemeli@mozilla.com
+    expires: 158
+    dual_labels:
+      key:
+        description: Where the fixup happened
+        labels:
+          - fixup
+          - smartbar
+          - urlbar
+      category:
+        description: The added URL suffix

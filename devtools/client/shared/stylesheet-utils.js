@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env browser */
 "use strict";
 
 function stylesheetLoadPromise(styleSheet) {
@@ -12,14 +11,14 @@ function stylesheetLoadPromise(styleSheet) {
   });
 }
 
-/*
+/**
  * Put the DevTools theme stylesheet into the provided chrome document.
  *
  * @param  {Document} doc
  *         The chrome document where the stylesheet should be appended.
- * @param  {String} url
+ * @param  {string} url
  *         The url of the stylesheet to load.
- * @return {Object}
+ * @return {object}
  *         - styleSheet {XMLStylesheetProcessingInstruction} the instruction node created.
  *         - loadPromise {Promise} that will resolve/reject when the stylesheet finishes
  *           or fails to load.

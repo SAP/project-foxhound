@@ -11,6 +11,7 @@ import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types
 import { createFactories } from "resource://devtools/client/shared/react-utils.mjs";
 
 import TreeViewClass from "resource://devtools/client/shared/components/tree/TreeView.mjs";
+import { BucketProperty } from "resource://devtools/client/shared/components/tree/ObjectProvider.mjs";
 import JsonToolbarClass from "resource://devtools/client/jsonview/components/JsonToolbar.mjs";
 
 import {
@@ -78,12 +79,31 @@ class JsonPanel extends Component {
       return true;
     }
 
+    const searchFilter = this.props.searchFilter.toLowerCase();
+
+    // For bucket nodes, check if any of their children match
+    if (object instanceof BucketProperty) {
+      const { object: array, startIndex, endIndex } = object;
+      for (let i = startIndex; i <= endIndex; i++) {
+        const childJson = JSON.stringify(array[i]);
+        if (childJson.toLowerCase().includes(searchFilter)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     const json = object.name + JSON.stringify(object.value);
-    return json.toLowerCase().includes(this.props.searchFilter.toLowerCase());
+    return json.toLowerCase().includes(searchFilter);
   }
 
   renderValue(props) {
     const member = props.member;
+
+    // Hide value for bucket nodes (they show ranges like [0…99])
+    if (member.type === "bucket") {
+      return null;
+    }
 
     // Hide object summary when non-empty object is expanded (bug 1244912).
     if (isObject(member.value) && member.hasChildren && member.open) {
@@ -114,6 +134,7 @@ class JsonPanel extends Component {
     return TreeView({
       object: this.props.data,
       mode: MODE.LONG,
+      bucketLargeArrays: true,
       onFilter: this.onFilter,
       columns,
       renderValue: this.renderValue,

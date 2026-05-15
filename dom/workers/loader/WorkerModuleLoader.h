@@ -10,7 +10,6 @@
 #include "js/loader/ModuleLoaderBase.h"
 #include "js/loader/ScriptFetchOptions.h"
 #include "mozilla/dom/SerializedStackHolder.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla::dom::workerinternals::loader {
 class WorkerScriptLoader;
@@ -44,6 +43,18 @@ class WorkerModuleLoader : public JS::loader::ModuleLoaderBase {
  private:
   ~WorkerModuleLoader() = default;
 
+  nsIURI* GetClientReferrerURI() override;
+
+  already_AddRefed<JS::loader::ScriptFetchOptions>
+  CreateDefaultScriptFetchOptions() override;
+
+  already_AddRefed<ModuleLoadRequest> CreateRequest(
+      JSContext* aCx, nsIURI* aURI, JS::Handle<JSObject*> aModuleRequest,
+      JS::Handle<JS::Value> aHostDefined, JS::Handle<JS::Value> aPayload,
+      bool aIsDynamicImport, ScriptFetchOptions* aOptions,
+      mozilla::dom::ReferrerPolicy aReferrerPolicy, nsIURI* aBaseURL,
+      const mozilla::dom::SRIMetadata& aSriMetadata) override;
+
   bool CreateDynamicImportLoader();
   void SetScriptLoader(JS::loader::ScriptLoaderInterface* aLoader) {
     mLoader = aLoader;
@@ -54,15 +65,6 @@ class WorkerModuleLoader : public JS::loader::ModuleLoaderBase {
   WorkerScriptLoader* GetScriptLoaderFor(ModuleLoadRequest* aRequest);
 
   nsIURI* GetBaseURI() const override;
-
-  already_AddRefed<ModuleLoadRequest> CreateStaticImport(
-      nsIURI* aURI, JS::ModuleType aModuleType, ModuleLoadRequest* aParent,
-      const mozilla::dom::SRIMetadata& aSriMetadata) override;
-
-  already_AddRefed<ModuleLoadRequest> CreateDynamicImport(
-      JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
-      LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
-      JS::Handle<JSObject*> aPromise) override;
 
   bool IsDynamicImportSupported() override;
 
@@ -77,9 +79,9 @@ class WorkerModuleLoader : public JS::loader::ModuleLoaderBase {
       JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
       JS::MutableHandle<JSObject*> aModuleScript) override;
 
-  nsresult CompileJavaScriptModule(JSContext* aCx, JS::CompileOptions& aOptions,
-                                   ModuleLoadRequest* aRequest,
-                                   JS::MutableHandle<JSObject*> aModuleScript);
+  nsresult CompileJavaScriptOrWasmModule(
+      JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
+      JS::MutableHandle<JSObject*> aModuleScript);
 
   nsresult CompileJsonModule(JSContext* aCx, JS::CompileOptions& aOptions,
                              ModuleLoadRequest* aRequest,
@@ -88,6 +90,16 @@ class WorkerModuleLoader : public JS::loader::ModuleLoaderBase {
   void OnModuleLoadComplete(ModuleLoadRequest* aRequest) override;
 
   bool IsModuleEvaluationAborted(ModuleLoadRequest* aRequest) override;
+
+  bool IsModuleTypeAllowed(JS::ModuleType aModuleType) override {
+    // https://html.spec.whatwg.org/#module-type-allowed
+    // If moduleType is "css" and the CSSStyleSheet interface is not exposed in
+    // settings's realm, then return false.
+    return aModuleType == JS::ModuleType::JavaScript ||
+           aModuleType == JS::ModuleType::JSON;
+  }
+
+  virtual bool IsForServiceWorker() const override;
 };
 
 }  // namespace mozilla::dom::workerinternals::loader

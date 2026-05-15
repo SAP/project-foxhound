@@ -61,8 +61,7 @@ OS_LIBS += [
     "uuid",
 ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["tests/gtest"]
+TEST_DIRS += ["tests/gtest"]
 
 if CONFIG["MOZ_DEBUG"]:
     WINCONSOLE = True

@@ -8,15 +8,11 @@
  * Bug 1969165 - Polyfill getWeekInfo for mpi.mb.ca
  */
 
-/* globals exportFunction, cloneInto */
+if (!window.Intl.Locale.prototype.getWeekInfo) {
+  console.info(
+    "Intl.Locale.getWeekInfo is being polyfilled for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1969165 for details."
+  );
 
-console.info(
-  "Intl.Locale.getWeekInfo is being polyfilled for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1969165 for details."
-);
-
-const { prototype } = window.wrappedJSObject.Intl.Locale;
-
-if (!prototype.getWeekInfo) {
   const weekInfoData = {
     aa: { firstDay: 7, weekend: [6, 7], minimalDays: 1 },
     "aa-DJ": { firstDay: 6, weekend: [6, 7], minimalDays: 1 },
@@ -730,7 +726,7 @@ if (!prototype.getWeekInfo) {
     zu: { firstDay: 7, weekend: [6, 7], minimalDays: 1 },
   };
 
-  prototype.getWeekInfo = exportFunction(function () {
-    return cloneInto(weekInfoData[this.language] ?? {}, window);
-  }, window);
+  window.Intl.Locale.prototype.getWeekInfo = function () {
+    return weekInfoData[this.language] ?? {};
+  };
 }

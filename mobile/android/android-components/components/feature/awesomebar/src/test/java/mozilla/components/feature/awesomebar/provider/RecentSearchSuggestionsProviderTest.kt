@@ -7,7 +7,6 @@ package mozilla.components.feature.awesomebar.provider
 import android.graphics.Bitmap
 import androidx.core.net.toUri
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.search.OS_SEARCH_ENGINE_TERMS_PARAM
 import mozilla.components.browser.state.search.SearchEngine
@@ -37,7 +36,6 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class RecentSearchSuggestionsProviderTest {
     private val historyEntry = HistoryMetadata(
@@ -218,7 +216,7 @@ class RecentSearchSuggestionsProviderTest {
     }
 
     @Test
-    fun `GIVEN a valid input WHEN querying suggestions THEN return by default 2 suggestions`() = runTest {
+    fun `GIVEN a valid input WHEN querying suggestions THEN return by default 5 suggestions`() = runTest {
         val historyEntries = listOf(
             historyEntry.copy(
                 key = historyEntry.key.copy(searchTerm = "fir"),
@@ -229,8 +227,20 @@ class RecentSearchSuggestionsProviderTest {
                 createdAt = 2,
             ),
             historyEntry.copy(
-                key = historyEntry.key.copy(searchTerm = "firefox"),
+                key = historyEntry.key.copy(searchTerm = "firef"),
                 createdAt = 3,
+            ),
+            historyEntry.copy(
+                key = historyEntry.key.copy(searchTerm = "firefo"),
+                createdAt = 4,
+            ),
+            historyEntry.copy(
+                key = historyEntry.key.copy(searchTerm = "firefox"),
+                createdAt = 5,
+            ),
+            historyEntry.copy(
+                key = historyEntry.key.copy(searchTerm = "firefox!"),
+                createdAt = 6,
             ),
         )
         doReturn(historyEntries).`when`(storage).getHistoryMetadataSince(Long.MIN_VALUE)
@@ -238,11 +248,17 @@ class RecentSearchSuggestionsProviderTest {
 
         val suggestions = provider.onInputChanged("")
 
-        assertEquals(2, suggestions.size)
-        assertEquals(historyEntries[2].key.searchTerm, suggestions[0].title)
+        assertEquals(5, suggestions.size)
+        assertEquals(historyEntries[5].key.searchTerm, suggestions[0].title)
         assertEquals(Int.MAX_VALUE - 2, suggestions[0].score)
-        assertEquals(historyEntries[1].key.searchTerm, suggestions[1].title)
+        assertEquals(historyEntries[4].key.searchTerm, suggestions[1].title)
         assertEquals(Int.MAX_VALUE - 3, suggestions[1].score)
+        assertEquals(historyEntries[3].key.searchTerm, suggestions[2].title)
+        assertEquals(Int.MAX_VALUE - 4, suggestions[2].score)
+        assertEquals(historyEntries[2].key.searchTerm, suggestions[3].title)
+        assertEquals(Int.MAX_VALUE - 5, suggestions[3].score)
+        assertEquals(historyEntries[1].key.searchTerm, suggestions[4].title)
+        assertEquals(Int.MAX_VALUE - 6, suggestions[4].score)
     }
 
     @Test

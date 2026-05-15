@@ -195,7 +195,7 @@ class ToolboxToolbar extends Component {
    * See Toolbox.prototype._createButtonState in devtools/client/framework/toolbox.js for
    * documentation on this object.
    *
-   * @param {String} focusedButton - The id of the focused button.
+   * @param {string} focusedButton - The id of the focused button.
    * @param {Array} toolboxButtons - Array of objects that define the command buttons.
    * @param {Function} focusButton - Keep a record of the currently focused button.
    * @param {boolean} isStart - Render either the starting buttons, or ending buttons.
@@ -411,7 +411,7 @@ class ToolboxToolbar extends Component {
    *        The id of the focused button.
    * @param {string} props.currentToolId
    *        The id of the currently selected tool, e.g. "inspector".
-   * @param {Object[]} props.hostTypes
+   * @param {object[]} props.hostTypes
    *        Array of host type objects.
    * @param {string} props.hostTypes[].position
    *        Position name.
@@ -446,12 +446,12 @@ class ToolboxToolbar extends Component {
    *        Completely close the toolbox.
    * @param {Function} props.focusButton
    *        Keep a record of the currently focused button.
-   * @param {Object} props.L10N
+   * @param {object} props.L10N
    *        Localization interface.
-   * @param {Object} props.toolbox
+   * @param {object} props.toolbox
    *        The devtools toolbox. Used by the MenuButton component to display
    *        the menu popup.
-   * @param {Object} refs
+   * @param {object} refs
    *        The components refs object. Used to keep a reference to the MenuButton
    *        for the meatball menu so that we can tell it to resize its contents
    *        when they change.

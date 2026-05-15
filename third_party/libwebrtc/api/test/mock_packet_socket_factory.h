@@ -16,6 +16,7 @@
 #include <type_traits>
 
 #include "api/async_dns_resolver.h"
+#include "api/environment/environment.h"
 #include "api/packet_socket_factory.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/socket_address.h"
@@ -24,17 +25,19 @@
 namespace webrtc {
 class MockPacketSocketFactory : public PacketSocketFactory {
  public:
-  MOCK_METHOD(AsyncPacketSocket*,
+  MOCK_METHOD(std::unique_ptr<AsyncPacketSocket>,
               CreateUdpSocket,
-              (const SocketAddress&, uint16_t, uint16_t),
+              (const Environment&, const SocketAddress&, uint16_t, uint16_t),
               (override));
-  MOCK_METHOD(AsyncListenSocket*,
-              CreateServerTcpSocket,
-              (const SocketAddress&, uint16_t, uint16_t, int opts),
-              (override));
-  MOCK_METHOD(AsyncPacketSocket*,
+  MOCK_METHOD(
+      std::unique_ptr<AsyncListenSocket>,
+      CreateServerTcpSocket,
+      (const Environment&, const SocketAddress&, uint16_t, uint16_t, int opts),
+      (override));
+  MOCK_METHOD(std::unique_ptr<AsyncPacketSocket>,
               CreateClientTcpSocket,
-              (const SocketAddress& local_address,
+              (const Environment&,
+               const SocketAddress& local_address,
                const SocketAddress&,
                const PacketSocketTcpOptions&),
               (override));
@@ -48,10 +51,5 @@ static_assert(!std::is_abstract_v<MockPacketSocketFactory>, "");
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::MockPacketSocketFactory;
-}  // namespace rtc
 
 #endif  // API_TEST_MOCK_PACKET_SOCKET_FACTORY_H_

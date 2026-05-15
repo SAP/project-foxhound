@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_simpledb_SDBConnection_h
 #define mozilla_dom_simpledb_SDBConnection_h
 
-#include <cstdint>
 #include "ErrorList.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/quota/PersistenceType.h"

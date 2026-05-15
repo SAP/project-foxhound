@@ -14,12 +14,12 @@ DEFINES["CRC32C_TESTS_BUILT_WITH_GLOG"] = "0"
 DEFINES["HAVE_ARM64_CRC32C"] = "0"
 DEFINES["HAVE_BUILTIN_PREFETCH"] = "1"
 DEFINES["HAVE_SSE42"] = "0"
-DEFINES["_LIBCPP_HARDENING_MODE"] = "_LIBCPP_HARDENING_MODE_NONE"
 
 FINAL_LIBRARY = "xul"
 
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
@@ -71,7 +71,6 @@ if CONFIG["OS_TARGET"] == "Linux":
     DEFINES["USE_OZONE"] = "1"
     DEFINES["USE_UDEV"] = True
     DEFINES["_FILE_OFFSET_BITS"] = "64"
-    DEFINES["_GLIBCXX_ASSERTIONS"] = "1"
     DEFINES["_LARGEFILE64_SOURCE"] = True
     DEFINES["_LARGEFILE_SOURCE"] = True
     DEFINES["__STDC_CONSTANT_MACROS"] = True
@@ -137,13 +136,11 @@ if CONFIG["TARGET_CPU"] == "loongarch64":
 
 if CONFIG["TARGET_CPU"] == "mips32":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["HAVE_MM_PREFETCH"] = "0"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["TARGET_CPU"] == "mips64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["HAVE_MM_PREFETCH"] = "0"
     DEFINES["_GNU_SOURCE"] = True
 
@@ -191,12 +188,10 @@ if CONFIG["OS_TARGET"] == "Android" and CONFIG["TARGET_CPU"] == "x86":
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "aarch64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "arm":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
@@ -205,12 +200,10 @@ if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86":
         "-msse2"
     ]
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 if CONFIG["OS_TARGET"] == "Linux" and CONFIG["TARGET_CPU"] == "x86_64":
 
-    DEFINES["CR_SYSROOT_KEY"] = "20250129T203412Z-1"
     DEFINES["_GNU_SOURCE"] = True
 
 Library("crc32c_sse42_gn")

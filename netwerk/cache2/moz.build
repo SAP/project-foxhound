@@ -25,7 +25,10 @@ EXPORTS += [
     "CacheStorageService.h",
 ]
 
-EXPORTS.mozilla.net += ["CachePurgeLock.h"]
+EXPORTS.mozilla.net += [
+    "CachePurgeLock.h",
+    "Dictionary.h",
+]
 
 SOURCES += [
     "CacheStorage.cpp",
@@ -50,6 +53,7 @@ UNIFIED_SOURCES += [
     "CacheLog.cpp",
     "CacheObserver.cpp",
     "CacheStorageService.cpp",
+    "Dictionary.cpp",
 ]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":

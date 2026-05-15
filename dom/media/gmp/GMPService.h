@@ -11,8 +11,8 @@
 #include "gmp-video-codec.h"
 #include "mozIGeckoMediaPluginService.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/gmp/GMPTypes.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/gmp/GMPTypes.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsIObserver.h"
@@ -101,9 +101,11 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
       GMPCrashHelper* aHelper, const NodeIdVariant& aNodeIdVariant,
       const nsACString& aAPI, const nsTArray<nsCString>& aTags) = 0;
 
-  nsresult GMPDispatch(nsIRunnable* event, uint32_t flags = NS_DISPATCH_NORMAL);
-  nsresult GMPDispatch(already_AddRefed<nsIRunnable> event,
-                       uint32_t flags = NS_DISPATCH_NORMAL);
+  nsresult GMPDispatch(nsIRunnable* event, nsIEventTarget::DispatchFlags flags =
+                                               NS_DISPATCH_NORMAL);
+  nsresult GMPDispatch(
+      already_AddRefed<nsIRunnable> event,
+      nsIEventTarget::DispatchFlags flags = NS_DISPATCH_NORMAL);
   void ShutdownGMPThread();
 
   static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier();

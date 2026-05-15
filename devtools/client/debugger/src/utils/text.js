@@ -4,43 +4,17 @@
 
 /**
  * Utils for keyboard command strings
+ *
  * @module utils/text
  */
-
-const isMacOS = Services.appinfo.OS === "Darwin";
-
-/**
- * Formats key for use in tooltips
- * For macOS we use the following unicode
- *
- * cmd ⌘ = \u2318
- * shift ⇧ – \u21E7
- * option (alt) ⌥ \u2325
- *
- * For Win/Lin this replaces CommandOrControl or CmdOrCtrl with Ctrl
- *
- * @memberof utils/text
- * @static
- */
-export function formatKeyShortcut(shortcut) {
-  if (isMacOS) {
-    return shortcut
-      .replace(/Shift\+/g, "\u21E7")
-      .replace(/Command\+|Cmd\+/g, "\u2318")
-      .replace(/CommandOrControl\+|CmdOrCtrl\+/g, "\u2318")
-      .replace(/Alt\+/g, "\u2325");
-  }
-  return shortcut
-    .replace(/CommandOrControl\+|CmdOrCtrl\+/g, `${L10N.getStr("ctrl")}+`)
-    .replace(/Shift\+/g, "Shift+");
-}
 
 /**
  * Truncates the received text to the maxLength in the format:
  * Original: 'this is a very long text and ends here'
  * Truncated: 'this is a ver...and ends here'
- * @param {String} sourceText - Source text
- * @param {Number} maxLength - Max allowed length
+ *
+ * @param {string} sourceText - Source text
+ * @param {number} maxLength - Max allowed length
  * @memberof utils/text
  * @static
  */

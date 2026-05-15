@@ -6,12 +6,12 @@
 
 #include "ChromeWorker.h"
 
+#include "WorkerPrivate.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "nsContentUtils.h"
 #include "nsIXPConnect.h"
-#include "WorkerPrivate.h"
 
 namespace mozilla::dom {
 
@@ -25,7 +25,7 @@ already_AddRefed<ChromeWorker> ChromeWorker::Constructor(
       AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown)) {
     NS_WARNING("ChromeWorker construction during shutdown");
     nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-    Unused << xpc->DebugDumpJSStack(true, true, false);
+    (void)xpc->DebugDumpJSStack(true, true, false);
   }
 
   JSContext* cx = aGlobal.Context();

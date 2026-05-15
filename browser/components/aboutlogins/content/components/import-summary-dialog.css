@@ -26,7 +26,7 @@
 
 .result-count {
   text-align: end;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .result-meta {
@@ -38,5 +38,5 @@
 
 .open-detailed-report {
   margin-block-start: 30px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }

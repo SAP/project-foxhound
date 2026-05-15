@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLBodyElement.h"
-#include "mozilla/dom/HTMLBodyElementBinding.h"
 
+#include "DocumentInlines.h"
 #include "mozilla/AttributeStyles.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/HTMLEditor.h"
@@ -14,14 +14,14 @@
 #include "mozilla/TextEditor.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLBodyElementBinding.h"
 #include "nsAttrValueInlines.h"
-#include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
-#include "nsPresContext.h"
-#include "DocumentInlines.h"
 #include "nsDocShell.h"
-#include "nsIDocShell.h"
+#include "nsGkAtoms.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIDocShell.h"
+#include "nsPresContext.h"
+#include "nsStyleConsts.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Body)
 
@@ -320,7 +320,7 @@ void HTMLBodyElement::FrameMarginsChanged() {
   WINDOW_EVENT_HELPER(name_, EventHandlerNonNull)
 #define BEFOREUNLOAD_EVENT(name_, id_, type_, struct_) \
   WINDOW_EVENT_HELPER(name_, OnBeforeUnloadEventHandlerNonNull)
-#include "mozilla/EventNameList.h"  // IWYU pragma: keep
+#include "mozilla/EventNameList.inc"  // IWYU pragma: keep
 #undef BEFOREUNLOAD_EVENT
 #undef WINDOW_EVENT
 #undef WINDOW_EVENT_HELPER

@@ -8,7 +8,9 @@
 
 #include "jit/FlushICache.h"  // js::jit::FlushICache
 #include "jit/RegisterSets.h"
+#include "jit/riscv64/MacroAssembler-riscv64.h"
 #include "jit/Simulator.h"
+
 namespace js {
 namespace jit {
 Registers::Code Registers::FromName(const char* name) {
@@ -76,7 +78,7 @@ void FlushICache(void* code, size_t size) {
 #if defined(JS_SIMULATOR)
   js::jit::SimulatorProcess::FlushICache(code, size);
 
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__OpenBSD__)
 #  if defined(__GNUC__)
   intptr_t end = reinterpret_cast<intptr_t>(code) + size;
   __builtin___clear_cache(reinterpret_cast<char*>(code),
@@ -90,11 +92,7 @@ void FlushICache(void* code, size_t size) {
 #endif
 }
 
-bool CPUFlagsHaveBeenComputed() {
-  // TODO Add CPU flags support
-  // Flags were computed above.
-  return true;
-}
+bool CPUFlagsHaveBeenComputed() { return RVFlags::FlagsHaveBeenComputed(); }
 
 }  // namespace jit
 }  // namespace js

@@ -11,7 +11,6 @@
 #ifndef mozilla_TypedEnumBits_h
 #define mozilla_TypedEnumBits_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/IntegerTypeTraits.h"
 
 namespace mozilla {

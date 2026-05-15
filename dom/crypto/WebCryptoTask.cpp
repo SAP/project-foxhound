@@ -4,24 +4,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "pk11pub.h"
-#include "cryptohi.h"
-#include "secerr.h"
-#include "nsNSSComponent.h"
-#include "nsProxyRelease.h"
+#include "mozilla/dom/WebCryptoTask.h"
 
+#include "cryptohi.h"
 #include "jsapi.h"
-#include "mozilla/glean/DomCryptoMetrics.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/dom/CryptoKey.h"
 #include "mozilla/dom/KeyAlgorithmProxy.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebCryptoCommon.h"
-#include "mozilla/dom/WebCryptoTask.h"
-#include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/WorkerRef.h"
+#include "mozilla/glean/DomCryptoMetrics.h"
+#include "nsNSSComponent.h"
+#include "nsProxyRelease.h"
+#include "pk11pub.h"
+#include "secerr.h"
 
 // Template taken from security/nss/lib/util/templates.c
 // This (or SGN_EncodeDigestInfo) would ideally be exported
@@ -2185,7 +2185,7 @@ class ImportOKPKeyTask : public ImportKeyTask {
         if (mJwk.mAlg.WasPassed() &&
             !mJwk.mAlg.Value().EqualsLiteral(JWK_ALG_EDDSA) &&
             !mJwk.mAlg.Value().EqualsLiteral(JWK_ALG_ED25519)) {
-          return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+          return NS_ERROR_DOM_DATA_ERR;
         }
       }
       if (!NormalizeToken(mJwk.mCrv.Value(), mNamedCurve)) {
@@ -2499,7 +2499,17 @@ class DeriveX25519BitsTask : public ReturnArrayBufferViewTask {
   DeriveX25519BitsTask(JSContext* aCx, const ObjectOrString& aAlgorithm,
                        CryptoKey& aKey, const ObjectOrString& aTargetAlgorithm)
       : mPrivKey(aKey.GetPrivateKey()) {
-    Init(aCx, aAlgorithm, aKey);
+    Maybe<size_t> lengthInBits;
+    mEarlyRv = GetKeyLengthForAlgorithmIfSpecified(aCx, aTargetAlgorithm,
+                                                   lengthInBits);
+    if (lengthInBits.isNothing()) {
+      mLength.SetNull();
+    } else {
+      mLength.SetValue(*lengthInBits);
+    }
+    if (NS_SUCCEEDED(mEarlyRv)) {
+      Init(aCx, aAlgorithm, aKey);
+    }
   }
 
   void Init(JSContext* aCx, const ObjectOrString& aAlgorithm, CryptoKey& aKey) {

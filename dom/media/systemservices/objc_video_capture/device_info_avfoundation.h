@@ -7,7 +7,6 @@
 #ifndef DOM_MEDIA_SYSTEMSERVICES_OBJC_VIDEO_CAPTURE_DEVICE_INFO_AVFOUNDATION_H_
 #define DOM_MEDIA_SYSTEMSERVICES_OBJC_VIDEO_CAPTURE_DEVICE_INFO_AVFOUNDATION_H_
 
-#include <map>
 #include <string>
 
 #include "api/sequence_checker.h"

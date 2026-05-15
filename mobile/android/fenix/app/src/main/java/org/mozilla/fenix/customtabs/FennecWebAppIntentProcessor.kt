@@ -143,7 +143,7 @@ class FennecWebAppIntentProcessor(
         return CustomTabConfig(
             colorSchemes = ColorSchemes(
                 defaultColorSchemeParams = ColorSchemeParams(
-                    toolbarColor = ContextCompat.getColor(context, R.color.fx_mobile_layer_color_1),
+                    toolbarColor = ContextCompat.getColor(context, R.color.fx_mobile_surface),
                 ),
             ),
         )

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_ChromeUtils__
-#define mozilla_dom_ChromeUtils__
+#ifndef mozilla_dom_ChromeUtils_
+#define mozilla_dom_ChromeUtils_
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -94,9 +94,13 @@ class ChromeUtils {
   static void ReleaseAssert(GlobalObject& aGlobal, bool aCondition,
                             const nsAString& aMessage);
 
+  static void RegisterMarkerSchema(GlobalObject& aGlobal,
+                                   JS::Handle<JSObject*> aSchema,
+                                   ErrorResult& aRv);
+
   static void AddProfilerMarker(GlobalObject& aGlobal, const nsACString& aName,
                                 const ProfilerMarkerOptionsOrDouble& aOptions,
-                                const Optional<nsACString>& text);
+                                const Optional<UTF8StringOrObject>& aData);
 
   static void GetXPCOMErrorName(GlobalObject& aGlobal, uint32_t aErrorCode,
                                 nsACString& aRetval);
@@ -201,17 +205,27 @@ class ChromeUtils {
                                  const dom::ClearResourceCacheOptions& aOptions,
                                  ErrorResult& aRv);
 
+  static void InvalidateResourceCache(GlobalObject& aGlobal, ErrorResult& aRv);
+
   static void ClearBfcacheByPrincipal(GlobalObject& aGlobal,
                                       nsIPrincipal* aPrincipal,
                                       ErrorResult& aRv);
 
-  static void SetPerfStatsCollectionMask(GlobalObject& aGlobal, uint64_t aMask);
+  static void EnableAllPerfStatsFeatures(GlobalObject& aGlobal);
+
+  static void SetPerfStatsFeatures(GlobalObject& aGlobal,
+                                   const Sequence<nsString>& aMetrics);
 
   static already_AddRefed<Promise> CollectPerfStats(GlobalObject& aGlobal,
                                                     ErrorResult& aRv);
 
   static already_AddRefed<Promise> RequestProcInfo(GlobalObject& aGlobal,
                                                    ErrorResult& aRv);
+
+  static uint64_t GetCurrentProcessMemoryUsage(GlobalObject& aGlobal,
+                                               ErrorResult& aRv);
+  static uint64_t GetCpuTimeSinceProcessStart(GlobalObject& aGlobal,
+                                              ErrorResult& aRv);
 
   static bool VsyncEnabled(GlobalObject& aGlobal);
 
@@ -315,6 +329,8 @@ class ChromeUtils {
 
   static double DateNow(GlobalObject&);
 
+  static double Now(GlobalObject&);
+
   static void EnsureJSOracleStarted(GlobalObject&);
 
   static unsigned AliveUtilityProcesses(const GlobalObject&);
@@ -333,6 +349,13 @@ class ChromeUtils {
                                           JS::MutableHandle<JS::Value> aRetval,
                                           ErrorResult& aRv);
 
+  static Nullable<bool> GetGlobalWindowCommandEnabled(GlobalObject&,
+                                                      const nsACString& aName);
+  static void GetLastOOMStackTrace(GlobalObject& aGlobal, nsAString& aRetval);
+
+  static void EncodeURIForSrcset(GlobalObject&, const nsACString& aIn,
+                                 nsACString& aOut);
+
 #ifdef MOZ_WMF_CDM
   static already_AddRefed<Promise> GetWMFContentDecryptionModuleInformation(
       GlobalObject& aGlobal, ErrorResult& aRv);
@@ -349,12 +372,13 @@ class ChromeUtils {
 
   static bool IsJSIdentifier(GlobalObject& aGlobal, const nsAString& aStr);
 
- private:
-  // Number of DevTools session debugging the current process
-  static std::atomic<uint32_t> sDevToolsOpenedCount;
+  static already_AddRefed<Promise> FetchDecodedImage(GlobalObject& aGlobal,
+                                                     nsIURI* aURI,
+                                                     nsIChannel* aChannel,
+                                                     ErrorResult& aRv);
 };
 
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_ChromeUtils__
+#endif  // mozilla_dom_ChromeUtils_

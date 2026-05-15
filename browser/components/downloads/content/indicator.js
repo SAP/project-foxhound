@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env mozilla/browser-window */
 
 /**
  * Handles the indicator that displays the progress of ongoing downloads, which
@@ -338,6 +337,7 @@ const DownloadsIndicatorView = {
 
   /**
    * Check if the panel containing aNode is open.
+   *
    * @param aNode
    *        the node whose panel we're interested in.
    */

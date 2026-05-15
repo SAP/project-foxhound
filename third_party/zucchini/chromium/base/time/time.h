@@ -785,6 +785,7 @@ class BASE_EXPORT Time : public time_internal::TimeBase<Time> {
     return FromStringInternal(time_string, false, parsed_time);
   }
 
+#if !defined(MOZ_ZUCCHINI)
   // Fills the given |exploded| structure with either the local time or UTC from
   // this Time instance. If the conversion cannot be made, the output will be
   // assigned invalid values. Use Exploded::HasValidValues() to confirm a
@@ -803,6 +804,7 @@ class BASE_EXPORT Time : public time_internal::TimeBase<Time> {
   // either UTC or local time. It will represent midnight on that day.
   Time UTCMidnight() const { return Midnight(false); }
   Time LocalMidnight() const { return Midnight(true); }
+#endif  // !defined(MOZ_ZUCCHINI)
 
   // For legacy deserialization only. Converts an integer value representing
   // Time to a class. This may be used when deserializing a |Time| structure,

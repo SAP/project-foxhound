@@ -101,9 +101,7 @@
 
         ok(item.iconEl, "Item displays an icon.");
         let iconStyles = window.getComputedStyle(item.iconEl);
-        let defaultIconSize = iconStyles.getPropertyValue(
-          "--icon-size-default"
-        );
+        let defaultIconSize = iconStyles.getPropertyValue("--icon-size");
         is(
           iconStyles.height,
           defaultIconSize,
@@ -173,6 +171,40 @@
           item.actionsStartSlotEl.assignedElements()[0],
           slottedAction,
           "The expected action is slotted."
+        );
+      });
+
+      add_task(async function testMozBoxItemSupportPage() {
+        let supportPageTemplate = testHelpers.templateFn({
+          label: "Testing support-page",
+          "support-page": "test",
+        });
+        let renderTarget =
+          await testHelpers.renderTemplate(supportPageTemplate);
+        let item = renderTarget.firstElementChild;
+
+        let supportLink = item.shadowRoot.querySelector(".support-page");
+        ok(
+          supportLink,
+          "moz-box-item renders a support link when supportPage is provided."
+        );
+
+        let adjacentEl = supportLink.previousElementSibling;
+        is(
+          adjacentEl.id,
+          "label",
+          "support link is placed next to the label when no description is provided."
+        );
+
+        item.description = "now we have a description.";
+        await item.updateComplete;
+
+        supportLink = item.shadowRoot.querySelector(".support-page");
+        adjacentEl = supportLink.previousElementSibling;
+        is(
+          adjacentEl.id,
+          "description",
+          "support link is placed next to the description when provided."
         );
       });
     </script>

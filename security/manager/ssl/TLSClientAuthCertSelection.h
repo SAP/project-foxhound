@@ -22,6 +22,12 @@ SECStatus SSLGetClientAuthDataHook(void* arg, PRFileDesc* socket,
                                    CERTCertificate** pRetCert,
                                    SECKEYPrivateKey** pRetKey);
 
+// Does the actual work of selecting a client authentication certificate for a
+// particular NSSSocketControl.
+void DoSelectClientAuthCertificate(NSSSocketControl* info,
+                                   mozilla::UniqueCERTCertificate&& serverCert,
+                                   nsTArray<nsTArray<uint8_t>>&& caNames);
+
 // Base class for continuing the operation of selecting a client authentication
 // certificate. Should not be used directly.
 class ClientAuthCertificateSelectedBase : public mozilla::Runnable {

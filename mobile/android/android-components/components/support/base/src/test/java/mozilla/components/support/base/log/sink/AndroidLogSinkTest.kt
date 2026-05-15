@@ -98,40 +98,8 @@ class AndroidLogSinkTest {
     }
 
     @Test
-    @Config(sdk = [21])
-    fun `Tag will be truncated on SDK 21+`() {
-        val sink = AndroidLogSink("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789")
-        sink.log(message = "Hello!")
-
-        val logs = ShadowLog.getLogs()
-        assertEquals(1, logs.size)
-        assertEquals("Hello!", logs.last().msg)
-        assertEquals("ABCDEFGHIJKLMNOPQRSTUVW", logs.last().tag)
-
-        ShadowLog.clear()
-
-        sink.log(message = "Yes!", tag = "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-        val logs2 = ShadowLog.getLogs()
-
-        assertEquals(1, logs2.size)
-        assertEquals("Yes!", logs2.last().msg)
-        assertEquals("1234567890ABCDEFGHIJKLM", logs2.last().tag)
-
-        ShadowLog.clear()
-
-        sink.log(message = "No!", tag = "Short")
-
-        val logs3 = ShadowLog.getLogs()
-
-        assertEquals(1, logs3.size)
-        assertEquals("No!", logs3.last().msg)
-        assertEquals("Short", logs3.last().tag)
-    }
-
-    @Test
-    @Config(sdk = [24])
-    fun `Tag will not be truncated on SDK 24+`() {
+    @Config(sdk = [26])
+    fun `Tag will not be truncated`() {
         val sink = AndroidLogSink("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789")
         sink.log(message = "Hello!")
 

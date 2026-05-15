@@ -15,7 +15,7 @@ var UAHelpers = {
     return `FxQuantum/${UAHelpers.getRunningFirefoxVersion()} `;
   },
   getDeviceAppropriateChromeUA(config = {}) {
-    let { androidVersion, version = "130.0.0.0", phone, tablet, OS } = config;
+    let { androidVersion, version = "143.0.0.0", phone, tablet, OS } = config;
     const key = JSON.stringify(config);
     if (config.noCache || !UAHelpers._deviceAppropriateChromeUAs[key]) {
       const userAgent =
@@ -47,7 +47,7 @@ var UAHelpers = {
             `Mozilla/5.0 (Linux; ${AndroidVersion}; ${tablet}) ${fxQuantum}AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
         }
       } else {
-        const WIN_SEGMENT = "Windows NT 10.0; Win64; x64";
+        const WIN_SEGMENT = "Windows NT 11.0; Win64; x64";
         let osSegment;
         if (OS === "macOS" || (noOSGiven && userAgent.includes("Macintosh"))) {
           osSegment = "Macintosh; Intel Mac OS X 10_15_7";
@@ -76,26 +76,22 @@ var UAHelpers = {
   ) {
     return `${ua} Gecko/${version}`;
   },
-  addChrome(ua = navigator.userAgent, version = "130.0.0.0") {
+  addChrome(ua = navigator.userAgent, version = "143.0.0.0") {
     const isMobile =
       navigator.userAgent.includes("Mobile") ||
       navigator.userAgent.includes("Tablet");
     return `${ua} AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} ${isMobile ? "Mobile " : ""}Safari/537.36`;
   },
   safari(config = {}) {
-    const version = config.version || "18.1";
+    const version = config.version || "26.1";
     const webkitVersion = config.webkitVersion || "605.1.15";
     const osVersion = config.osVersion?.replace(".", "_") || "10_15_7";
     const arch = config.arch || "Intel";
     let firefox = "";
-    switch (config.firefox || true) {
-      case "firefox":
-      case true:
-        firefox = `Firefox/${UAHelpers.getRunningFirefoxVersion()} `;
-        break;
-      case "fxQuantum":
-        firefox = UAHelpers.getFxQuantumSegment();
-        break;
+    if (config.withFirefox) {
+      firefox = `Firefox/${UAHelpers.getRunningFirefoxVersion()} `;
+    } else if (config.withFxQuantum) {
+      firefox = UAHelpers.getFxQuantumSegment();
     }
     return `Mozilla/5.0 (Macintosh; ${arch} Mac OS X ${osVersion}) ${firefox}AppleWebKit/${webkitVersion} (KHTML, like Gecko) Version/${version} Safari/${webkitVersion}`;
   },

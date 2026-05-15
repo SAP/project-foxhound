@@ -3,7 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { Log } from "resource://gre/modules/Log.sys.mjs";
-import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
 
 import { getFxAccountsSingleton } from "resource://gre/modules/FxAccounts.sys.mjs";
 
@@ -36,23 +35,6 @@ export var Authentication = {
     return null;
   },
 
-  async shortWaitForVerification(ms) {
-    let userData = await this.getSignedInUser();
-    let timeoutID;
-    let timeoutPromise = new Promise(resolve => {
-      timeoutID = setTimeout(() => {
-        Logger.logInfo(`Warning: no verification after ${ms}ms.`);
-        resolve();
-      }, ms);
-    });
-    await Promise.race([
-      fxAccounts.whenVerified(userData).finally(() => clearTimeout(timeoutID)),
-      timeoutPromise,
-    ]);
-    userData = await this.getSignedInUser();
-    return userData && userData.verified;
-  },
-
   async _openVerificationPage(uri) {
     let mainWindow = Services.wm.getMostRecentWindow("navigator:browser");
     let newtab = mainWindow.gBrowser.addWebTab(uri);
@@ -60,9 +42,9 @@ export var Authentication = {
     await new Promise(resolve => {
       win.addEventListener("loadend", resolve, { once: true });
     });
-    let didVerify = await this.shortWaitForVerification(10000);
+    Logger.logError("You are in a sad place - not waiting for verification.");
     mainWindow.gBrowser.removeTab(newtab);
-    return didVerify;
+    return false;
   },
 
   async _completeVerification(user) {
@@ -73,47 +55,10 @@ export var Authentication = {
       );
       return false;
     }
-    Logger.logInfo("Fetching mail (from restmail) for user " + username);
-    let restmailURI = `https://www.restmail.net/mail/${encodeURIComponent(
-      username
-    )}`;
-    let triedAlready = new Set();
-    const tries = 10;
-    const normalWait = 2000;
-    for (let i = 0; i < tries; ++i) {
-      let resp = await fetch(restmailURI);
-      let messages = await resp.json();
-      // Sort so that the most recent emails are first.
-      messages.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
-      for (let m of messages) {
-        // We look for a link that has a x-link that we haven't yet tried.
-        if (!m.headers["x-link"] || triedAlready.has(m.headers["x-link"])) {
-          continue;
-        }
-        let confirmLink = m.headers["x-link"];
-        triedAlready.add(confirmLink);
-        Logger.logInfo("Trying confirmation link " + confirmLink);
-        try {
-          if (await this._openVerificationPage(confirmLink)) {
-            return true;
-          }
-        } catch (e) {
-          Logger.logInfo(
-            "Warning: Failed to follow confirmation link: " +
-              Log.exceptionStr(e)
-          );
-        }
-      }
-      if (i === 0) {
-        // first time through after failing we'll do this.
-        await fxAccounts.resendVerificationEmail();
-      }
-      if (await this.shortWaitForVerification(normalWait)) {
-        return true;
-      }
-    }
-    // One last try.
-    return this.shortWaitForVerification(normalWait);
+    Logger.logError(
+      "You are in a sad place - confirmation links are no longer a thing"
+    );
+    return false;
   },
 
   async deleteEmail(user) {

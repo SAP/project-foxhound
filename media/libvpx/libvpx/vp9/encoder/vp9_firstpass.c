@@ -84,7 +84,7 @@
 #define HIGH_UNDERSHOOT_RATIO 2
 #define AV_WQ_FACTOR 4.0
 
-#define DOUBLE_DIVIDE_CHECK(x) ((x) < 0 ? (x)-0.000001 : (x) + 0.000001)
+#define DOUBLE_DIVIDE_CHECK(x) ((x) < 0 ? (x) - 0.000001 : (x) + 0.000001)
 
 #if ARF_STATS_OUTPUT
 unsigned int arf_count = 0;
@@ -402,7 +402,8 @@ static unsigned int highbd_get_prediction_error(BLOCK_SIZE bsize,
 // for first pass test.
 static int get_search_range(const VP9_COMP *cpi) {
   int sr = 0;
-  const int dim = VPXMIN(cpi->initial_width, cpi->initial_height);
+  int dim = VPXMIN(cpi->initial_width, cpi->initial_height);
+  dim = VPXMAX(dim, MI_SIZE);
 
   while ((dim << sr) < MAX_FULL_PEL_VAL) ++sr;
   return sr;

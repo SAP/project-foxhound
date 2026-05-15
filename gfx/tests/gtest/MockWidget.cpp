@@ -5,4 +5,4 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "MockWidget.h"
 
-NS_IMPL_ISUPPORTS_INHERITED0(MockWidget, nsBaseWidget)
+NS_IMPL_ISUPPORTS_INHERITED0(MockWidget, nsIWidget)

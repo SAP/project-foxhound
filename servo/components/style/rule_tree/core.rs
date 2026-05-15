@@ -128,7 +128,7 @@ impl RuleTree {
             return;
         }
 
-        let mut children_count = fxhash::FxHashMap::default();
+        let mut children_count = rustc_hash::FxHashMap::default();
 
         let mut stack = SmallVec::<[_; 32]>::new();
         stack.push(self.root.clone());
@@ -518,7 +518,7 @@ pub struct StrongRuleNode {
 }
 
 #[cfg(feature = "servo")]
-malloc_size_of_is_0!(StrongRuleNode);
+malloc_size_of::malloc_size_of_is_0!(StrongRuleNode);
 
 impl StrongRuleNode {
     fn new(n: Box<RuleNode>) -> Self {

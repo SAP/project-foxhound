@@ -12,6 +12,7 @@
 #include "mozilla/StyleSheet.h"
 #include "mozilla/dom/CSSContainerRule.h"
 #include "mozilla/dom/CSSCounterStyleRule.h"
+#include "mozilla/dom/CSSCustomMediaRule.h"
 #include "mozilla/dom/CSSFontFaceRule.h"
 #include "mozilla/dom/CSSFontFeatureValuesRule.h"
 #include "mozilla/dom/CSSFontPaletteValuesRule.h"
@@ -107,6 +108,7 @@ css::Rule* ServoCSSRuleList::GetRule(uint32_t aIndex) {
       CASE_RULE_UNLOCKED(StartingStyle, StartingStyle)
       CASE_RULE_LOCKED(PositionTry, PositionTry)
       CASE_RULE_LOCKED(NestedDeclarations, NestedDeclarations)
+      CASE_RULE_UNLOCKED(CustomMedia, CustomMedia)
 #undef CASE_RULE_LOCKED
 #undef CASE_RULE_UNLOCKED
 #undef CASE_RULE_WITH_PREFIX
@@ -210,7 +212,7 @@ nsresult ServoCSSRuleList::InsertRule(const nsACString& aRule,
   // StyleSheet::ReparseSheet just mints a new loader, but that'd be wrong in
   // this case I think, since such a load will bypass CSP checks.
   if (Document* doc = mStyleSheet->GetAssociatedDocument()) {
-    loader = doc->CSSLoader();
+    loader = &doc->EnsureCSSLoader();
   }
   auto containingState = css::Rule::ContainingRuleState::From(mParentRule);
   StyleCssRuleType type;
@@ -286,6 +288,7 @@ void ServoCSSRuleList::SetRawContents(RefPtr<StyleLockedCssRules> aNewRules,
       RULE_CASE_UNLOCKED(StartingStyle, StartingStyle)
       RULE_CASE_LOCKED(PositionTry, PositionTry)
       RULE_CASE_LOCKED(NestedDeclarations, NestedDeclarations)
+      RULE_CASE_UNLOCKED(CustomMedia, CustomMedia)
       case StyleCssRuleType::Keyframe:
         MOZ_ASSERT_UNREACHABLE("keyframe rule cannot be here");
         break;

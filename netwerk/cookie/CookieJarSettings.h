@@ -173,7 +173,7 @@ class CookieJarSettings final : public nsICookieJarSettings {
     mIsOnContentBlockingAllowList = aIsOnContentBlockingAllowList;
   }
 
-  void SetPartitionKey(nsIURI* aURI, bool aForeignByAncestorContext);
+  void SetPartitionKey(nsIURI* aURI);
   void SetPartitionKey(const nsAString& aPartitionKey) {
     mPartitionKey = aPartitionKey;
   }

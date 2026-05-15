@@ -8,7 +8,8 @@ let nowObj = new Date();
  * Normalizes a Date to midnight.
  *
  * @param {Date} inputDate
- * @return normalized Date
+ * @returns {Date}
+ *   The normalized date.
  */
 function toMidnight(inputDate) {
   let date = new Date(inputDate);
@@ -22,12 +23,12 @@ function toMidnight(inputDate) {
 /**
  * Adds a test URI visit to the database.
  *
- * @param aURI
- *        The URI to add a visit for.
- * @param aTime
- *        Reference "now" time.
- * @param aDayOffset
- *        number of days to add, pass a negative value to subtract them.
+ * @param {nsIURI} aURI
+ *   The URI to add a visit for.
+ * @param {Date} aTime
+ *   Reference "now" time.
+ * @param {number} aDayOffset
+ *   The number of days to add, pass a negative value to subtract them.
  */
 async function addNormalizedVisit(aURI, aTime, aDayOffset) {
   let dateObj = toMidnight(aTime);
@@ -135,6 +136,8 @@ add_task(async function task_fill_history() {
 /**
  * Bug 485703 - Hide date containers not containing additional entries compared
  *              to previous ones.
+ *
+ * @param {number} aOffset
  */
 function check_visit(aOffset) {
   let root = openRootForResultType(
@@ -343,6 +346,8 @@ add_task(async function test_RESULTS_AS_SITE_QUERY() {
 
 /**
  * Checks that queries grouped by date do liveupdate correctly.
+ *
+ * @param {nsINavHistoryQueryOptions.ResultType} aResultType
  */
 async function test_date_liveupdate(aResultType) {
   let midnight = toMidnight(nowObj);

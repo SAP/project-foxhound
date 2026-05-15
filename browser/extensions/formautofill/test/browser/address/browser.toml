@@ -23,13 +23,11 @@ support-files = [
 
 ["browser_address_doorhanger_confirmation_popup.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1890182
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan", # Bug 1890182
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug", # Bug 1890182
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1890182
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && asan", # Bug 1890182
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && opt", # Bug 1890182
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1890182
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1890182
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1890182
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1890182
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1890182
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1890182
 ]
 
 ["browser_address_doorhanger_display.js"]
@@ -45,6 +43,9 @@ skip-if = [
 ["browser_address_doorhanger_postalcode.js"]
 
 ["browser_address_doorhanger_required_fields.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_address_doorhanger_state.js"]
 
@@ -62,9 +63,7 @@ skip-if = [
 
 ["browser_address_telemetry.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1809709
-  "win11_2009 && debug", # Bug 1809709
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1809709
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1809709
 ]
 
 ["browser_autofill_whenhidden.js"]
@@ -74,3 +73,9 @@ skip-if = [
 ["browser_edit_address_doorhanger_display_state.js"]
 
 ["browser_edit_address_doorhanger_save_edited_fields.js"]
+
+["browser_manageAddressesSubpage.js"]
+
+["browser_phonenumber.js"]
+
+["browser_phonenumber_country.js"]

@@ -45,10 +45,11 @@ function synthesizeKeyForKeyboardMovement(element, keyName) {
 }
 
 add_task(async function test_TabGroupKeyboardFocus() {
-  const tab1 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab2 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab3 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab4 = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  const URL = "about:blank";
+  const tab1 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab2 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab3 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab4 = BrowserTestUtils.addTab(gBrowser, URL);
 
   const tabGroup = gBrowser.addTabGroup([tab2, tab3], { insertBefore: tab2 });
 
@@ -183,10 +184,11 @@ add_task(async function test_TabGroupKeyboardFocus() {
 });
 
 add_task(async function test_TabGroupKeyboardMovement() {
-  const tab1 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab2 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab3 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab4 = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  const URL = "about:blank";
+  const tab1 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab2 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab3 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab4 = BrowserTestUtils.addTab(gBrowser, URL);
 
   const tabGroup = gBrowser.addTabGroup([tab2, tab3], { insertBefore: tab2 });
 
@@ -284,4 +286,89 @@ add_task(async function test_TabGroupKeyboardMovement() {
   await removeTabGroup(tabGroup);
   BrowserTestUtils.removeTab(tab1);
   BrowserTestUtils.removeTab(tab4);
+});
+
+add_task(async function test_TabGroupPreviewKeyboardMovement() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tooltip.delay_ms", 0]],
+  });
+  const previewElement = document.getElementById("tabgroup-preview-panel");
+
+  let groupedTab = await addTab("about:blank");
+  let group = gBrowser.addTabGroup([groupedTab]);
+  let ungroupedTab = await addTab("about:blank");
+  await TabGroupTestUtils.toggleCollapsed(group, true);
+
+  // focus ungrouped tab
+  await BrowserTestUtils.switchTab(gBrowser, ungroupedTab);
+  Services.focus.setFocus(ungroupedTab, Services.focus.FLAG_BYKEY);
+  is(document.activeElement, ungroupedTab, "Ungrouped tab is focused");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    ungroupedTab,
+    "Ungrouped tab is keyboard-focused"
+  );
+
+  // move focus to group label, triggering preview to open
+  let groupPreviewOpened = BrowserTestUtils.waitForPopupEvent(
+    previewElement,
+    "shown"
+  );
+  await synthesizeKeyForKeyboardMovement(group.labelElement, "KEY_ArrowLeft");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    group.labelElement,
+    "group label is focused"
+  );
+  await groupPreviewOpened;
+  Assert.equal(
+    previewElement.state,
+    "open",
+    "Preview opens when focused by the keyboard"
+  );
+
+  // Cancel preview with esc key
+  let groupPreviewHidden = BrowserTestUtils.waitForPopupEvent(
+    previewElement,
+    "hidden"
+  );
+  await EventUtils.synthesizeKey("KEY_Escape");
+  await groupPreviewHidden;
+  is(previewElement.state, "closed", "Preview closes when esc is pressed");
+
+  // reopen preview
+  await synthesizeKeyForKeyboardMovement(ungroupedTab, "KEY_ArrowRight");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    ungroupedTab,
+    "Focus moved back to ungrouped tab"
+  );
+  groupPreviewOpened = BrowserTestUtils.waitForPopupEvent(
+    previewElement,
+    "shown"
+  );
+  await synthesizeKeyForKeyboardMovement(group.labelElement, "KEY_ArrowLeft");
+  await groupPreviewOpened;
+  is(
+    previewElement.state,
+    "open",
+    "Preview opened again after toggling focus back to group label"
+  );
+
+  // select grouped tab in preview using the arrow keys
+  let groupedTabSelected = BrowserTestUtils.waitForEvent(window, "TabSelect");
+  await EventUtils.synthesizeKey("KEY_ArrowDown");
+  await EventUtils.synthesizeKey(" ");
+  await groupedTabSelected;
+
+  is(gBrowser.selectedTab, groupedTab, "Grouped tab is now the active tab");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    group.labelElement,
+    "Group label remains keyboard focused"
+  );
+
+  await TabGroupTestUtils.removeTabGroup(group);
+  BrowserTestUtils.removeTab(ungroupedTab);
+  await SpecialPowers.popPrefEnv();
 });

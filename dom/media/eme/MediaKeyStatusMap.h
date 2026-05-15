@@ -7,14 +7,12 @@
 #ifndef mozilla_dom_MediaKeyStatuses_h
 #define mozilla_dom_MediaKeyStatuses_h
 
-#include "mozilla/Attributes.h"
+#include "mozilla/CDMCaps.h"
+#include "mozilla/dom/BufferSourceBindingFwd.h"
+#include "mozilla/dom/MediaKeyStatusMapBinding.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-
-#include "mozilla/dom/BufferSourceBindingFwd.h"
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/MediaKeyStatusMapBinding.h"
-#include "mozilla/CDMCaps.h"
 
 class nsPIDOMWindowInner;
 

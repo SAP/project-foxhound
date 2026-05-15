@@ -6,16 +6,16 @@
 #ifndef GMPVideoDecoderParent_h_
 #define GMPVideoDecoderParent_h_
 
-#include "mozilla/RefPtr.h"
-#include "gmp-video-decode.h"
-#include "mozilla/gmp/PGMPVideoDecoderParent.h"
+#include "GMPCrashHelperHolder.h"
 #include "GMPMessageUtils.h"
 #include "GMPSharedMemManager.h"
 #include "GMPUtils.h"
-#include "GMPVideoHost.h"
 #include "GMPVideoDecoderProxy.h"
+#include "GMPVideoHost.h"
 #include "VideoUtils.h"
-#include "GMPCrashHelperHolder.h"
+#include "gmp-video-decode.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/gmp/PGMPVideoDecoderParent.h"
 
 namespace mozilla::gmp {
 

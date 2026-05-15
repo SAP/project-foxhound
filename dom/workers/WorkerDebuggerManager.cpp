@@ -6,16 +6,14 @@
 
 #include "WorkerDebuggerManager.h"
 
-#include "nsSimpleEnumerator.h"
-
-#include "mozilla/dom/JSExecutionManager.h"
+#include "WorkerDebugger.h"
+#include "WorkerPrivate.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-
-#include "WorkerDebugger.h"
-#include "WorkerPrivate.h"
+#include "mozilla/dom/JSExecutionManager.h"
 #include "nsIObserverService.h"
+#include "nsSimpleEnumerator.h"
 
 namespace mozilla::dom {
 
@@ -80,7 +78,7 @@ class WorkerDebuggerEnumerator final : public nsSimpleEnumerator {
       : mIndex(0) {
     for (auto debugger : aDebuggers) {
       bool isRemote;
-      Unused << debugger->GetIsRemote(&isRemote);
+      (void)debugger->GetIsRemote(&isRemote);
       if (!isRemote) {
         mDebuggers.AppendElement(debugger);
       }

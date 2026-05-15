@@ -70,10 +70,14 @@ const kEventConstructors = {
                                                          return new ClipboardEvent(aName, aProps);
                                                        },
                                              },
+  CommandEvent:                              { create (aName, aProps) {
+                                                         return new CommandEvent(aName, aProps);
+                                                       },
+                                             },
   CompositionEvent:                          { create (aName, aProps) {
                                                          var e = document.createEvent("compositionevent");
                                                          e.initCompositionEvent(aName, aProps.bubbles, aProps.cancelable,
-                                                                                aProps.view, aProps.data, aProps.locale);
+                                                                                aProps.view, aProps.data);
                                                          return e;
                                                        },
                                              },
@@ -260,6 +264,12 @@ const kEventConstructors = {
                                                                              aProps.attrName, aProps.attrChange);
                                                          return e;
                                                        },
+                                             },
+  NavigateEvent:                             { create: null
+                                               // Cannot create NavigateEvent without NavigationDestination which can't be created
+                                             },
+  NavigationCurrentEntryChangeEvent:         { create: null
+                                               // Cannot create NavigationCurrentEntryChangeEvent without window.navigation
                                              },
   OfflineAudioCompletionEvent:               { create: "AudioContext" in self
                                                         ? function (aName, aProps) {
@@ -480,7 +490,8 @@ function test() {
 SimpleTest.waitForExplicitFinish();
 SpecialPowers.pushPrefEnv(
   {"set": [["dom.w3c_touch_events.legacy_apis.enabled", true],
-           ["dom.events.textevent.enabled", true]]},
+           ["dom.events.textevent.enabled", true],
+           ["dom.navigation.webidl.enabled", true]]},
   function() {
     test();
     SimpleTest.finish();

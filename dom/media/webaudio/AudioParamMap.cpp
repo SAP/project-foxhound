@@ -5,6 +5,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "AudioParamMap.h"
+
 #include "mozilla/dom/AudioParamMapBinding.h"
 
 namespace mozilla::dom {

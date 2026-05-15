@@ -7,9 +7,8 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <cstddef>
-#include <memory>
+#include <cstring>
 
 #include <keyhi.h>
 #include <nss.h>

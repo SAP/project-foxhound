@@ -42,6 +42,7 @@ dictionary NavigateEventInit : EventInit {
 };
 
 dictionary NavigationInterceptOptions {
+  NavigationPrecommitHandler precommitHandler;
   NavigationInterceptHandler handler;
   NavigationFocusReset focusReset;
   NavigationScrollBehavior scroll;

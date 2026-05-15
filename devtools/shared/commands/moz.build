@@ -8,6 +8,7 @@ DIRS += [
     "network",
     "object",
     "resource",
+    "responsive",
     "root-resource",
     "script",
     "target",

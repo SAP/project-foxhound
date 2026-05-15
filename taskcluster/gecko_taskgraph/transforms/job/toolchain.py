@@ -8,8 +8,8 @@ Support for running toolchain-building jobs via dedicated scripts
 import os
 
 import taskgraph
-from mozbuild.shellutil import quote as shell_quote
-from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from mozshellutil import quote as shell_quote
+from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
 from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph import GECKO
@@ -23,54 +23,52 @@ from gecko_taskgraph.util.hash import hash_paths
 
 CACHE_TYPE = "toolchains.v3"
 
-toolchain_run_schema = Schema(
-    {
-        Required("using"): "toolchain-script",
-        # The script (in taskcluster/scripts/misc) to run.
-        # Python scripts are invoked with `mach python` so vendored libraries
-        # are available.
-        Required("script"): str,
-        # Arguments to pass to the script.
-        Optional("arguments"): [str],
-        # If not false, tooltool downloads will be enabled via relengAPIProxy
-        # for either just public files, or all files.  Not supported on Windows
-        Required("tooltool-downloads"): Any(
-            False,
-            "public",
-            "internal",
-        ),
-        # Sparse profile to give to checkout using `run-task`.  If given,
-        # Defaults to "toolchain-build". The value is relative to
-        # "sparse-profile-prefix", optionally defined below is the path,
-        # defaulting to "build/sparse-profiles".
-        # i.e. `build/sparse-profiles/toolchain-build`.
-        # If `None`, instructs `run-task` to not use a sparse profile at all.
-        Required("sparse-profile"): Any(str, None),
-        # The relative path to the sparse profile.
-        Optional("sparse-profile-prefix"): str,
-        # Paths/patterns pointing to files that influence the outcome of a
-        # toolchain build.
-        Optional("resources"): [str],
-        # Path to the artifact produced by the toolchain job
-        Required("toolchain-artifact"): str,
-        Optional(
-            "toolchain-alias",
-            description="An alias that can be used instead of the real toolchain job name in "
-            "fetch stanzas for jobs.",
-        ): optionally_keyed_by("project", Any(None, str, [str])),
-        Optional(
-            "toolchain-env",
-            description="Additional env variables to add to the worker when using this toolchain",
-        ): {str: object},
-        Optional(
-            "toolchain-extract",
-            description="Whether the toolchain should be extracted after it is fetched "
-            + "(default: True)",
-        ): bool,
-        # Base work directory used to set up the task.
-        Optional("workdir"): str,
-    }
-)
+toolchain_run_schema = LegacySchema({
+    Required("using"): "toolchain-script",
+    # The script (in taskcluster/scripts/misc) to run.
+    # Python scripts are invoked with `mach python` so vendored libraries
+    # are available.
+    Required("script"): str,
+    # Arguments to pass to the script.
+    Optional("arguments"): [str],
+    # If not false, tooltool downloads will be enabled via relengAPIProxy
+    # for either just public files, or all files.  Not supported on Windows
+    Required("tooltool-downloads"): Any(
+        False,
+        "public",
+        "internal",
+    ),
+    # Sparse profile to give to checkout using `run-task`.  If given,
+    # Defaults to "toolchain-build". The value is relative to
+    # "sparse-profile-prefix", optionally defined below is the path,
+    # defaulting to "build/sparse-profiles".
+    # i.e. `build/sparse-profiles/toolchain-build`.
+    # If `None`, instructs `run-task` to not use a sparse profile at all.
+    Required("sparse-profile"): Any(str, None),
+    # The relative path to the sparse profile.
+    Optional("sparse-profile-prefix"): str,
+    # Paths/patterns pointing to files that influence the outcome of a
+    # toolchain build.
+    Optional("resources"): [str],
+    # Path to the artifact produced by the toolchain job
+    Required("toolchain-artifact"): str,
+    Optional(
+        "toolchain-alias",
+        description="An alias that can be used instead of the real toolchain job name in "
+        "fetch stanzas for jobs.",
+    ): optionally_keyed_by("project", Any(None, str, [str])),
+    Optional(
+        "toolchain-env",
+        description="Additional env variables to add to the worker when using this toolchain",
+    ): {str: object},
+    Optional(
+        "toolchain-extract",
+        description="Whether the toolchain should be extracted after it is fetched "
+        + "(default: True)",
+    ): bool,
+    # Base work directory used to set up the task.
+    Optional("workdir"): str,
+})
 
 
 def get_digest_data(config, run, taskdesc):
@@ -82,6 +80,9 @@ def get_digest_data(config, run, taskdesc):
     tooltool_manifest = env.get("TOOLTOOL_MANIFEST")
     if tooltool_manifest:
         files.append(tooltool_manifest)
+
+    # Store resources as an attribute for verification
+    taskdesc.setdefault("attributes", {})["toolchain-resources"] = sorted(files)
 
     # Accumulate dependency hashes for index generation.
     data = [hash_paths(GECKO, files)]
@@ -148,13 +149,11 @@ def common_toolchain(config, job, taskdesc, is_docker):
     digest_data = get_digest_data(config, run, taskdesc)
 
     env = worker.setdefault("env", {})
-    env.update(
-        {
-            "MOZ_BUILD_DATE": config.params["moz_build_date"],
-            "MOZ_SCM_LEVEL": config.params["level"],
-            "TOOLCHAIN_ARTIFACT": run.pop("toolchain-artifact"),
-        }
-    )
+    env.update({
+        "MOZ_BUILD_DATE": config.params["moz_build_date"],
+        "MOZ_SCM_LEVEL": config.params["level"],
+        "TOOLCHAIN_ARTIFACT": run.pop("toolchain-artifact"),
+    })
 
     if is_docker:
         # Toolchain checkouts don't live under {workdir}/checkouts

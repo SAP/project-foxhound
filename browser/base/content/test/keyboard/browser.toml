@@ -16,15 +16,20 @@ support-files = ["focusableContent.html"]
 
 ["browser_toolbarButtonKeyPress.js"]
 skip-if = [
-  "os == 'linux' && (asan || tsan || debug)", # Bug 1775712
-  "os == 'mac'", # Bug 1775712
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Bug 1775712
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1775712
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1775712
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1775712
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1775712
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1775712
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1775712
   "os == 'win'", # Bug 1775712
 ]
 
 ["browser_toolbarKeyNav.js"]
 support-files = ["!/browser/base/content/test/permissions/permissions.html"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && debug", # Bug 1775713
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1775713
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && tsan && swgl", # Bug 1775713
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan && swgl", # Bug 1775713
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1775713
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan && swgl", # Bug 1775713
 ]

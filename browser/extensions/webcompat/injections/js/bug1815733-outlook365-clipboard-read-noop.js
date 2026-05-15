@@ -13,17 +13,20 @@
  * annoying.
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixBug1815733) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1815733", {
+    configurable: false,
+    value: true,
+  });
 
-Object.defineProperty(navigator.clipboard.wrappedJSObject, "read", {
-  configurable: true,
-  value: exportFunction(function () {
-    return new Promise((resolve, _) => {
-      console.log(
-        "clipboard.read() has been overwriten with a no-op. See https://bugzilla.mozilla.org/show_bug.cgi?id=1815733#c13 for details."
-      );
+  console.info(
+    "navigator.clipboard.read() has been overridden with a no-op. See https://bugzilla.mozilla.org/show_bug.cgi?id=1815733#c13 for details."
+  );
 
-      resolve();
-    });
-  }, navigator.clipboard),
-});
+  Object.defineProperty(navigator.clipboard, "read", {
+    configurable: true,
+    value() {
+      return Promise.resolve();
+    },
+  });
+}

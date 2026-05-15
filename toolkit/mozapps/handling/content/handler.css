@@ -5,7 +5,7 @@
 @namespace html "http://www.w3.org/1999/xhtml";
 
 #description {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #remember-text:not([visible]) {
@@ -28,6 +28,7 @@ description {
 
 #description,
 #description-box,
+#warning-bar,
 #rememberContainer,
 #chooser {
   margin: 0 4px 16px;

@@ -208,7 +208,7 @@ async function testOriginControls(
       `Visible menu item ${i} has correct l10n attrs.`
     );
 
-    let checked = visibleOriginItems[i].getAttribute("checked") === "true";
+    let checked = visibleOriginItems[i].hasAttribute("checked");
     is(i === selected, checked, `Expected checked value for item ${i}.`);
   }
 

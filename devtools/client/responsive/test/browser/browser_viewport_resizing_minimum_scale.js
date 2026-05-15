@@ -7,6 +7,7 @@
 
 const TEST_URL =
   "data:text/html;charset=utf-8," +
+  "<!DOCTYPE html>" +
   '<head><meta name="viewport" content="initial-scale=1.0, ' +
   'minimum-scale=1.0, width=device-width"></head>' +
   '<div style="width:100%;background-color:green">test</div>' +

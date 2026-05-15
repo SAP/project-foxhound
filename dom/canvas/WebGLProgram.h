@@ -9,16 +9,14 @@
 #include <bitset>
 #include <map>
 #include <memory>
-#include <set>
 #include <vector>
-
-#include "mozilla/RefPtr.h"
-#include "mozilla/Vector.h"
-#include "mozilla/WeakPtr.h"
 
 #include "CacheInvalidator.h"
 #include "WebGLObjectModel.h"
 #include "WebGLTypes.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Vector.h"
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
 class ErrorResult;

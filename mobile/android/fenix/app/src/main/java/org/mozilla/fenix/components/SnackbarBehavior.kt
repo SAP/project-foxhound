@@ -31,11 +31,12 @@ class SnackbarBehavior<V : View>(
 
     // Priority list of possible anchors for the snackbar.
     private val dependenciesIds = buildList {
+        add(R.id.translationsBanner)
         add(R.id.loginSelectBar)
         add(R.id.suggestStrongPasswordBar)
         add(R.id.creditCardSelectBar)
         add(R.id.addressSelectBar)
-        add(R.id.toolbar_navbar_container)
+        add(R.id.navigation_bar)
         if (
             toolbarPosition == ToolbarPosition.BOTTOM ||
             (toolbarPosition == ToolbarPosition.TOP && shouldUseExpandedToolbar)

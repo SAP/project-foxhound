@@ -6,14 +6,14 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarHelper",
   "@mozilla.org/widget/touchbarhelper;1",
-  "nsITouchBarHelper"
+  Ci.nsITouchBarHelper
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "TouchBarInput",
   "@mozilla.org/widget/touchbarinput;1",
-  "nsITouchBarInput"
+  Ci.nsITouchBarInput
 );
 
 const TEST_PATH = getRootDirectory(gTestPath).replace(

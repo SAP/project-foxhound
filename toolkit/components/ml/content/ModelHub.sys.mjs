@@ -1,10 +1,14 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// @ts-nocheck - TODO - Remove this to type check this file.
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 /**
- * @typedef {import("./Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
+ * @import { ProgressAndStatusCallbackParams } from "./Utils.sys.mjs"
+ * @import { ParsedModelHubUrl, AllowDeny } from "../ml.d.ts"
  */
 
 const lazy = {};
@@ -14,8 +18,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   Progress: "chrome://global/content/ml/Utils.sys.mjs",
+  MLUtils: "chrome://global/content/ml/Utils.sys.mjs",
   OPFS: "chrome://global/content/ml/OPFS.sys.mjs",
   URLChecker: "chrome://global/content/ml/Utils.sys.mjs",
+  RejectionType: "chrome://global/content/ml/Utils.sys.mjs",
   createFileUrl: "chrome://global/content/ml/Utils.sys.mjs",
   DEFAULT_ENGINE_ID: "chrome://global/content/ml/EngineProcess.sys.mjs",
   FILE_REGEX: "chrome://global/content/ml/EngineProcess.sys.mjs",
@@ -49,6 +55,10 @@ const LOCAL_CHROME_PREFIX = "chrome://";
 // Default indexedDB revision.
 const DEFAULT_MODEL_REVISION = 6;
 
+const DEFAULT_DB_NAME = "modelFiles";
+
+const DEFAULT_OWNER_ROOT = "modelOwners";
+
 // The origin to use for storage. If null uses system.
 const DEFAULT_PRINCIPAL_ORIGIN = null;
 
@@ -80,7 +90,9 @@ const NO_ETAG = "NO_ETAG";
  */
 class ForbiddenURLError extends Error {
   constructor(url, rejectionType) {
-    super(`Forbidden URL: ${url} (${rejectionType})`);
+    super(
+      `Forbidden URL: ${url} (${rejectionType}). Set MOZ_ALLOW_EXTERNAL_ML_HUB=1 to allow external URLs.`
+    );
     this.name = "ForbiddenURLError";
     this.url = url;
   }
@@ -112,11 +124,11 @@ class ModelOwner {
    * @returns {Promise<void>}
    */
   #getIconFilePath() {
-    return `modelOwners/${this.hostname}/${this.owner}/icon`;
+    return `${DEFAULT_OWNER_ROOT}/${this.hostname}/${this.owner}/icon`;
   }
 
   /**
-   * Removes ant cache associated with this owner
+   * Removes any cache associated with this owner
    *
    */
   async pruneCache() {
@@ -279,7 +291,7 @@ class IndexedDBCache {
    * @param {principal} config.principal - The principal to use for the database.
    */
   constructor({
-    dbName = "modelFiles",
+    dbName = DEFAULT_DB_NAME,
     version = DEFAULT_MODEL_REVISION,
     maxSize = lazy.DEFAULT_MAX_CACHE_SIZE,
     principal,
@@ -299,11 +311,14 @@ class IndexedDBCache {
    */
   static async deleteDatabaseAndWait(
     principal,
-    dbName,
+    dbName = DEFAULT_DB_NAME,
     timeoutMs = DEFAULT_DELETE_TIMEOUT_MS
   ) {
     try {
-      await lazy.OPFS.remove(dbName, { recursive: true });
+      await Promise.all([
+        lazy.OPFS.remove(dbName, { recursive: true }),
+        lazy.OPFS.remove(DEFAULT_OWNER_ROOT, { recursive: true }),
+      ]);
     } catch (e) {
       // can be empty
     }
@@ -336,17 +351,26 @@ class IndexedDBCache {
   }
 
   /**
+   * Get the principal used by the the cache for storage access.
+   *
+   * @returns {nsIPrincipal} The principal to use for database operations.
+   */
+  getPrincipal() {
+    return this.#principal;
+  }
+
+  /**
    * Static method to create and initialize an instance of IndexedDBCache.
    *
    * @param {object} config
-   * @param {string} [config.dbName="modelFiles"] - The name of the database.
+   * @param {string} [config.dbName] - The name of the database.
    * @param {number} [config.version] - The version number of the database.
    * @param {number} config.maxSize Maximum size of the cache in bytes. Defaults to "browser.ml.modelCacheMaxSize".
    * @param {boolean} [config.reset=false] - Whether to reset the database.
    * @returns {Promise<IndexedDBCache>} An initialized instance of IndexedDBCache.
    */
   static async init({
-    dbName = "modelFiles",
+    dbName = DEFAULT_DB_NAME,
     version = DEFAULT_MODEL_REVISION,
     maxSize = lazy.DEFAULT_MAX_CACHE_SIZE,
     reset = false,
@@ -534,6 +558,16 @@ class IndexedDBCache {
             "The version of this database is changing. Closing."
           );
           db.close();
+          if (this.db == db) {
+            this.db = null;
+          }
+        };
+
+        db.onclose = () => {
+          lazy.console.debug("Database is closed");
+          if (this.db == db) {
+            this.db = null;
+          }
         };
 
         resolve(db); // Immediately resolve after DB is ready
@@ -541,13 +575,22 @@ class IndexedDBCache {
     }).then(async db => {
       if (wasUpgraded) {
         lazy.console.debug("Clearing OPFS cache");
-        await lazy.OPFS.remove("modelFiles", {
+        await lazy.OPFS.remove(this.dbName, {
           recursive: true,
           ignoreErrors: true,
         });
       }
       return db;
     });
+  }
+
+  /**
+   * Check whether the database connection is currently open.
+   *
+   * @returns {boolean} `true` if a database connection is currently open.
+   */
+  isOpen() {
+    return this.db != null;
   }
 
   /**
@@ -1042,51 +1085,46 @@ class IndexedDBCache {
    * @returns {Promise<void>} A promise that resolves once the deletion process is complete.
    */
   async deleteFilesByEngine({ engineId, deletedBy = "other" }) {
-    // looking at all files for deletion candidates
-    const files = [];
-    const uniqueModelRevisions = [];
     const items = await this.#getData({ storeName: this.enginesStoreName });
 
+    /** @type {Map<string, Set<string>>} */
+    const filesToDelete = new Map();
+
     for (const item of items) {
-      if (item.engineIds.includes(engineId)) {
-        // if it's the only one, we delete the file
-        if (item.engineIds.length === 1) {
-          files.push({
-            model: item.model,
-            file: item.file,
-            revision: item.revision,
-          });
-        } else {
-          // we remove the entry
-          const engineIds = new Set(item.engineIds);
-          engineIds.delete(engineId);
+      if (!item.engineIds?.includes(engineId)) {
+        continue;
+      }
 
-          await this.#updateData(this.enginesStoreName, {
-            engineIds: Array.from(engineIds),
-            model: item.model,
-            revision: item.revision,
-            file: item.file,
-          });
-        }
+      // Always remove the engine from the association list.
+      const newEngineIds = item.engineIds.filter(id => id !== engineId);
 
-        // Track unique (model, revision) pairs
-        if (
-          !uniqueModelRevisions.some(
-            ([m, r]) => m === item.model && r === item.revision
-          )
-        ) {
-          uniqueModelRevisions.push([item.model, item.revision]);
-        }
+      // If no engines remain, queue physical deletion.
+      if (newEngineIds.length === 0) {
+        const key = JSON.stringify([item.model, item.revision]);
+        const set = filesToDelete.get(key) ?? new Set();
+        set.add(item.file);
+        filesToDelete.set(key, set);
+      } else {
+        // Update the item with the new engine ids
+        await this.#updateData(this.enginesStoreName, {
+          engineIds: newEngineIds,
+          model: item.model,
+          revision: item.revision,
+          file: item.file,
+        });
       }
     }
 
-    // deleting the files from task, engines, files, headers
-    for (const file of files) {
-      await this.#deleteFile(file);
-    }
+    // Delete queued files grouped by (model, revision)
+    for (const [key, fileSet] of filesToDelete) {
+      const [model, revision] = JSON.parse(key);
 
-    // send metrics events
-    for (const [model, revision] of uniqueModelRevisions) {
+      await this.deleteModels({
+        model,
+        revision,
+        filterFn: record => fileSet.has(record.file),
+      });
+
       Glean.firefoxAiRuntime.modelDeletion.record({
         modelId: model,
         modelRevision: revision,
@@ -1113,6 +1151,7 @@ class IndexedDBCache {
       // For now we delete the icon file any time a file from a model is removed.
       owner.pruneCache(),
       this.#deleteData(this.headersStoreName, [model, revision, file]),
+      this.#deleteData(this.enginesStoreName, [model, revision, file]),
       lazy.OPFS.remove(this.generateFilePathInOPFS({ model, revision, file })),
     ]);
   }
@@ -1355,16 +1394,16 @@ export class ModelHub {
   /**
    * Create an instance of ModelHub.
    *
-   * @param {object} config
-   * @param {string} config.rootUrl - Root URL used to download models.
-   * @param {string} config.urlTemplate - The template to retrieve the full URL using a model name and revision.
-   * @param {Array<{filter: 'ALLOW'|'DENY', urlPrefix: string}>} config.allowDenyList - Array of URL patterns with filters.
+   * @param {object} [config]
+   * @param {string} [config.rootUrl] - Root URL used to download models.
+   * @param {string} [config.urlTemplate] - The template to retrieve the full URL using a model name and revision.
+   * @param {Array<AllowDeny>} [config.allowDenyList] - Array of URL patterns with filters.
    * @param {boolean} [config.reset=false] - Whether to reset the database.
    */
   constructor({
     rootUrl = lazy.DEFAULT_ROOT_URL,
     urlTemplate = lazy.DEFAULT_URL_TEMPLATE,
-    allowDenyList = null,
+    allowDenyList,
     reset = false,
   } = {}) {
     this.rootUrl = rootUrl;
@@ -1387,27 +1426,49 @@ export class ModelHub {
     this.reset = reset;
   }
 
+  /**
+   * @param {string} url
+   */
+  allowedURL(url) {
+    if (this.allowDenyList === null) {
+      return { allowed: true, rejectionType: lazy.RejectionType.NONE };
+    }
+    return this.allowDenyList.allowedURL(url);
+  }
+
   async #initCache() {
-    if (this.cache) {
+    if (this.cache && this.cache.isOpen()) {
       return;
     }
     this.cache = await IndexedDBCache.init({ reset: this.reset });
   }
 
   async #fetch(url, options) {
-    const result = this.allowDenyList && this.allowDenyList.allowedURL(url);
+    const result = this.allowedURL(url);
     if (result && !result.allowed) {
       throw new ForbiddenURLError(url, result.rejectionType);
     }
-    const response = await fetch(url, options);
 
-    if (!response.ok) {
-      throw new Error(
-        `HTTP error! Status: ${response.status} ${response.statusText}`
-      );
-    }
+    return lazy.MLUtils.fetchUrl(url, options);
+  }
 
-    return response;
+  /**
+   * Completely purge the IndexedDB-backed cache.
+   *
+   * This deletes the database using default parameters and waits until all
+   * open connections are closed and the deletion completes.
+   *
+   * All OPFS files are also deleted.
+   *
+   * @returns {Promise<void>}
+   * @throws {Error} If the database deletion fails or does not complete.
+   */
+  async purgeDatabase() {
+    await this.#initCache();
+    return IndexedDBCache.deleteDatabaseAndWait(
+      this.cache.getPrincipal(),
+      this.cache.dbName
+    );
   }
 
   /**
@@ -1420,7 +1481,7 @@ export class ModelHub {
    * `https://hub/organization/model/revision/filePath`
    *
    * @param {string} url - The full URL to the model, including protocol and domain - or the relative path.
-   * @returns {object} An object containing the parsed components of the URL. The
+   * @returns {ParsedModelHubUrl} An object containing the parsed components of the URL. The
    *                   object has properties `model`, `modelWithHostname` and `file`,
    *                   and optionally `revision` if the URL includes a version.
    * @throws {Error} Throws an error if the URL does not start with `this.rootUrl` or
@@ -1473,13 +1534,24 @@ export class ModelHub {
     const regex = new RegExp(`^${templateRegex}/(?<file>.+)$`);
     const match = parts.match(regex);
 
-    if (!match) {
+    if (!match || !match.groups) {
       throw new Error(`Invalid model URL format: ${url}`);
     }
 
     // Extract the matched parts
     const { model, revision, file } = match.groups;
-
+    if (!model) {
+      lazy.console.error(match);
+      throw new Error("No model found from url: " + url);
+    }
+    if (!revision) {
+      lazy.console.error(match);
+      throw new Error("No revision found from url: " + url);
+    }
+    if (!file) {
+      lazy.console.error(match);
+      throw new Error("No file found from url: " + url);
+    }
     if (!file || !file.length) {
       throw new Error(`Invalid model URL: ${url}`);
     }
@@ -1493,7 +1565,8 @@ export class ModelHub {
     };
   }
 
-  /** Creates the file URL from the organization, model, and version.
+  /**
+   * Creates the file URL from the organization, model, and version.
    *
    * @param {object} config - The configuration object to be updated.
    * @param {string} config.model - model name
@@ -1515,7 +1588,8 @@ export class ModelHub {
     });
   }
 
-  /** Checks the model and revision inputs.
+  /**
+   * Checks the model and revision inputs.
    *
    * @param { string } model
    * @param { string } revision
@@ -1570,18 +1644,17 @@ export class ModelHub {
   /**
    * Deletes all model files for the specified task and model, except for the specified revision.
    *
-   * @param {object} config - Configuration object.
-   * @param {string} config.taskName - The name of the inference task.
-   * @param {string} config.modelWithHostname - The model name (hostname/organization/name).
-   * @param {string} config.targetRevision - The revision to keep.
+   * @param {string} taskName - The name of the inference task.
+   * @param {string} modelWithHostname - The model name (hostname/organization/name).
+   * @param {string} targetRevision - The revision to keep.
    *
    * @returns {Promise<void>}
    */
-  async deleteNonMatchingModelRevisions({
+  async deleteNonMatchingModelRevisions(
     taskName,
     modelWithHostname,
-    targetRevision,
-  }) {
+    targetRevision
+  ) {
     // Ensure all required parameters are provided
     if (!taskName || !modelWithHostname || !targetRevision) {
       throw new Error(
@@ -1718,7 +1791,7 @@ export class ModelHub {
    * @param {string} config.file - The file name.
    * @param {string} config.modelHubRootUrl - root url of the model hub
    * @param {string} config.modelHubUrlTemplate - url template of the model hub
-   * @param {?function(ProgressAndStatusCallbackParams):void} config.progressCallback A function to call to indicate progress status.
+   * @param {?function(ProgressAndStatusCallbackParams):void} [config.progressCallback] A function to call to indicate progress status.
    * @returns {Promise<[ArrayBuffer, headers]>} The file content
    */
   async getModelFileAsArrayBuffer({
@@ -1811,10 +1884,11 @@ export class ModelHub {
    * @param {string} config.file - The file name.
    * @param {string} config.modelHubRootUrl - root url of the model hub
    * @param {string} config.modelHubUrlTemplate - url template of the model hub
-   * @param {?function(ProgressAndStatusCallbackParams):void} config.progressCallback A function to call to indicate progress status.
+   * @param {?function(ProgressAndStatusCallbackParams):void} [config.progressCallback] A function to call to indicate progress status.
    * @param {string} config.featureId - feature id for the model
    * @param {string} config.sessionId - shared across the same session
-   * @param {object} config.telemetryData - Additional telemetry data.
+   * @param {object} [config.telemetryData] - Additional telemetry data.
+   * @param {?AbortSignal} [config.abortSignal] - AbortSignal to cancel the download.
    * @returns {Promise<[string, headers]>} The local path to the file content and headers.
    */
   async getModelDataAsFile({
@@ -1826,6 +1900,7 @@ export class ModelHub {
     modelHubRootUrl,
     modelHubUrlTemplate,
     progressCallback,
+    abortSignal,
     featureId,
     sessionId,
     telemetryData = {},
@@ -1844,6 +1919,12 @@ export class ModelHub {
     });
     lazy.console.debug(`Getting model file from ${url}`);
 
+    if (abortSignal === null) {
+      // Guard against a `null` abortSignal which for some reason causes an error
+      // when piping through a Response body.
+      abortSignal = undefined;
+    }
+
     await this.#initCache();
 
     // we store the hostname alongside the model so we can distinguished per hub
@@ -1852,7 +1933,7 @@ export class ModelHub {
 
     let useCached;
     const chromeFile = url.startsWith("chrome://");
-    const fileAllowed = this.allowDenyList?.allowedURL(url);
+    const fileAllowed = this.allowedURL(url);
     let cachedHeaders = null;
 
     // If the revision is `main` we want to check the ETag in the hub
@@ -1991,12 +2072,13 @@ export class ModelHub {
     let caughtError;
     try {
       let isFirstCall = true;
-      const response = await this.#fetch(url);
+      const response = await this.#fetch(url, { signal: abortSignal });
       const fileObject = await lazy.OPFS.download({
         savePath: localFilePath,
         deletePreviousVersions: false,
         skipIfExists: false,
         source: response,
+        abortSignal,
         progressCallback: progressData => {
           progressCallback?.(
             new lazy.Progress.ProgressAndStatusCallbackParams({
@@ -2081,12 +2163,15 @@ export class ModelHub {
       })
     );
 
-    throw new Error(
-      `Failed to fetch the model file: ${url}. Reason: ${caughtError.message} ${caughtError.stack}`,
-      {
+    let enrichedErrMessage = `Failed to fetch the model file: ${url}. Reason: ${caughtError.message} ${caughtError.stack}`;
+
+    if (DOMException.isInstance(caughtError)) {
+      throw new DOMException(enrichedErrMessage, caughtError.name, {
         cause: caughtError,
-      }
-    );
+      });
+    }
+
+    throw new Error(enrichedErrMessage, { cause: caughtError });
   }
 
   /**

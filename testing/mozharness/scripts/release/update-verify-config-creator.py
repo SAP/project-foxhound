@@ -62,9 +62,15 @@ def is_triangular(x):
     True
     >>> is_triangular(4)
     False
-    >>> all(is_triangular(x) for x in [0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105])
+    >>> all(
+    ...     is_triangular(x)
+    ...     for x in [0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105]
+    ... )
     True
-    >>> all(not is_triangular(x) for x in [4, 5, 8, 9, 11, 17, 25, 29, 39, 44, 59, 61, 72, 98, 112])
+    >>> all(
+    ...     not is_triangular(x)
+    ...     for x in [4, 5, 8, 9, 11, 17, 25, 29, 39, 44, 59, 61, 72, 98, 112]
+    ... )
     True
     """
     # pylint --py3k W1619
@@ -339,7 +345,7 @@ class UpdateVerifyConfigCreator(BaseScript):
             self.log("Closed HG client.")
 
     def _pre_config_lock(self, rw_config):
-        super(UpdateVerifyConfigCreator, self)._pre_config_lock(rw_config)
+        super()._pre_config_lock(rw_config)
 
         if "updater_platform" not in self.config:
             self.config["updater_platform"] = self.config["platform"]

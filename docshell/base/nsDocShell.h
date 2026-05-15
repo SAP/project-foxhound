@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDocShell_h__
-#define nsDocShell_h__
+#ifndef nsDocShell_h_
+#define nsDocShell_h_
 
 #include "Units.h"
 #include "mozilla/Encoding.h"
@@ -24,6 +24,7 @@
 #include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
+#include "nsIDocumentViewer.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
 #include "nsINetworkInterceptController.h"
@@ -45,11 +46,14 @@ class HTMLEditor;
 class ObservedDocShell;
 class ScrollContainerFrame;
 enum class TaskCategory;
+class PresShell;
 namespace dom {
 class ClientInfo;
 class ClientSource;
 class EventTarget;
+class WindowGlobalChild;
 enum class NavigationHistoryBehavior : uint8_t;
+struct NavigationAPIMethodTracker;
 class SessionHistoryInfo;
 struct LoadingSessionHistoryInfo;
 struct Wireframe;
@@ -74,6 +78,7 @@ class nsIURILoader;
 class nsIWebBrowserFind;
 class nsIWidget;
 class nsIReferrerInfo;
+class nsIOpenWindowInfo;
 
 class nsBrowserStatusFilter;
 class nsCommandManager;
@@ -178,12 +183,20 @@ class nsDocShell final : public nsDocLoader,
   NS_DECL_NSIAUTHPROMPTPROVIDER
   NS_DECL_NSINETWORKINTERCEPTCONTROLLER
 
+  using nsIBaseWindow::GetMainWidget;
+
   // Create a new nsDocShell object.
   static already_AddRefed<nsDocShell> Create(
       mozilla::dom::BrowsingContext* aBrowsingContext,
       uint64_t aContentWindowID = 0);
 
-  bool Initialize();
+  nsresult Initialize(nsIOpenWindowInfo* aOpenWindowInfo,
+                      mozilla::dom::WindowGlobalChild* aWindowActor);
+
+  nsresult InitWindow(nsIWidget* aParentWidget, int32_t aX, int32_t aY,
+                      int32_t aWidth, int32_t aHeight,
+                      nsIOpenWindowInfo* aOpenWindowInfo,
+                      mozilla::dom::WindowGlobalChild* aWindowActor);
 
   NS_IMETHOD Stop() override {
     // Need this here because otherwise nsIWebNavigation::Stop
@@ -396,7 +409,8 @@ class nsDocShell final : public nsDocLoader,
   /**
    * Loads the given URI. See comments on nsDocShellLoadState members for more
    * information on information used.
-   * `aCacheKey` gets passed to DoURILoad call.
+   *
+   * @param aCacheKey gets passed to DoURILoad call.
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult InternalLoad(
@@ -409,11 +423,6 @@ class nsDocShell final : public nsDocLoader,
 
   void SetWillChangeProcess() { mWillChangeProcess = true; }
   bool WillChangeProcess() { return mWillChangeProcess; }
-
-  // Create a content viewer within this nsDocShell for the given
-  // `WindowGlobalChild` actor.
-  nsresult CreateDocumentViewerForActor(
-      mozilla::dom::WindowGlobalChild* aWindowActor);
 
   // Creates a real network channel (not a DocumentChannel) using the specified
   // parameters.
@@ -572,7 +581,16 @@ class nsDocShell final : public nsDocLoader,
   // Content Viewer Management
   //
 
-  nsresult EnsureDocumentViewer();
+  // Return whether a viewer exists and assert that we aren't
+  // trying to get a viewer before it's eager creation during docshell
+  // initialization.
+  bool VerifyDocumentViewer();
+
+  void DestroyDocumentViewer();
+
+  nsresult CreateInitialDocumentViewer(
+      nsIOpenWindowInfo* aOpenWindowInfo = nullptr,
+      mozilla::dom::WindowGlobalChild* aWindowActor = nullptr);
 
   // aPrincipal can be passed in if the caller wants. If null is
   // passed in, the about:blank principal will end up being used.
@@ -659,9 +677,14 @@ class nsDocShell final : public nsDocLoader,
       bool aNotifiedBeforeUnloadListeners = false);
 
  public:
-  bool IsAboutBlankLoadOntoInitialAboutBlank(nsIURI* aURI,
-                                             bool aInheritPrincipal,
-                                             nsIPrincipal* aPrincipalToInherit);
+  bool ShouldDoInitialAboutBlankSyncLoad(nsIURI* aURI,
+                                         nsDocShellLoadState* aLoadState,
+                                         nsIPrincipal* aPrincipalToInherit);
+
+  void UnsuppressPaintingIfNoNavigationAwayFromAboutBlank(
+      mozilla::PresShell* aPresShell);
+
+  bool HasStartedLoadingOtherThanInitialBlankURI();
 
  private:
   //
@@ -701,6 +724,9 @@ class nsDocShell final : public nsDocLoader,
   //         but the operation fails. NS_OK otherwise.
   MOZ_CAN_RUN_SCRIPT nsresult PerformTrustedTypesPreNavigationCheck(
       nsDocShellLoadState* aLoadState, nsGlobalWindowInner* aWindow) const;
+
+  nsresult CompleteInitialAboutBlankLoad(nsDocShellLoadState* aLoadState,
+                                         nsILoadInfo* aLoadInfo);
 
   static nsresult AddHeadersToChannel(nsIInputStream* aHeadersData,
                                       nsIChannel* aChannel);
@@ -778,6 +804,11 @@ class nsDocShell final : public nsDocLoader,
     DisplayLoadError(aError, aURI, aURL, aFailedChannel, &didDisplayLoadError);
     return didDisplayLoadError;
   }
+
+  // Called when a document is recognised as content the device owner doesn't
+  // want to be displayed. Stops parsing, stops scripts, and displays an
+  // error page with DisplayLoadError.
+  void DisplayRestrictedContentError();
 
   //
   // Uncategorized
@@ -941,6 +972,10 @@ class nsDocShell final : public nsDocLoader,
   // its real document and window are created.
   void MaybeCreateInitialClientSource(nsIPrincipal* aPrincipal = nullptr);
 
+  // Try to inherit the controller from same-origin parent.
+  void MaybeInheritController(mozilla::dom::ClientSource* aClientSource,
+                              nsIPrincipal* aPrincipal);
+
   // Determine if a service worker is allowed to control a window in this
   // docshell with the given URL.  If there are any reasons it should not,
   // this will return false.  If true is returned then the window *may* be
@@ -1014,13 +1049,23 @@ class nsDocShell final : public nsDocLoader,
                  nsIURI* aPreviousURI);
   nsPresContext* GetEldestPresContext();
   nsresult CheckLoadingPermissions();
+
+  // Fire a traverse navigate event for a non-traversable navigable.
   MOZ_CAN_RUN_SCRIPT
   void MaybeFireTraverseHistory(nsDocShellLoadState* aLoadState);
+  // Fire a traverse navigate event for a traversable navigable. Since this
+  // participates in #checking-if-unloading-is-canceled we return false to
+  // indicate that we should cancel the navigation.
+  MOZ_CAN_RUN_SCRIPT
+  nsIDocumentViewer::PermitUnloadResult MaybeFireTraversableTraverseHistory(
+      const mozilla::dom::SessionHistoryInfo& aInfo,
+      mozilla::Maybe<mozilla::dom::UserNavigationInvolvement> aUserInvolvement);
+
   nsresult LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType,
                             bool aUserActivation);
   nsresult LoadHistoryEntry(
       const mozilla::dom::LoadingSessionHistoryInfo& aEntry, uint32_t aLoadType,
-      bool aUserActivation);
+      bool aUserActivation, bool aNotifiedBeforeUnloadListeners);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult LoadHistoryEntry(nsDocShellLoadState* aLoadState, uint32_t aLoadType,
                             bool aLoadingCurrentEntry);
@@ -1031,6 +1076,9 @@ class nsDocShell final : public nsDocLoader,
   nsresult SetCurScrollPosEx(int32_t aCurHorizontalPos,
                              int32_t aCurVerticalPos);
   nsPoint GetCurScrollPos();
+
+  void RestoreScrollPositionFromTargetSessionHistoryInfo(
+      mozilla::dom::SessionHistoryInfo* aTarget);
 
   already_AddRefed<mozilla::dom::ChildSHistory> GetRootSessionHistory();
 
@@ -1179,13 +1227,25 @@ class nsDocShell final : public nsDocLoader,
       mozilla::Maybe<mozilla::NotNull<JSContext*>> aCx, uint32_t aReloadFlags,
       nsIStructuredCloneContainer* aNavigationAPIState = nullptr,
       mozilla::dom::UserNavigationInvolvement aUserInvolvement =
-          mozilla::dom::UserNavigationInvolvement::None);
+          mozilla::dom::UserNavigationInvolvement::None,
+      mozilla::dom::NavigationAPIMethodTracker* aNavigationAPIMethodTracker =
+          nullptr);
 
  private:
   MOZ_CAN_RUN_SCRIPT
   void InformNavigationAPIAboutAbortingNavigation();
 
+  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  void InformNavigationAPIAboutChildNavigableDestruction();
+
   enum class OngoingNavigation : uint8_t { NavigationID, Traversal };
+  enum class UnsetOngoingNavigation : bool { No, Yes };
+  // Implementation for `nsIWebNavigation::Stop`, extended to add a flag whether
+  // to unset the ongoing navigation or not.
+  MOZ_CAN_RUN_SCRIPT
+  nsresult StopInternal(uint32_t aStopFlags,
+                        UnsetOngoingNavigation aUnsetOngoingNavigation);
 
   MOZ_CAN_RUN_SCRIPT
   void SetOngoingNavigation(
@@ -1385,7 +1445,12 @@ class nsDocShell final : public nsDocLoader,
   bool mSavingOldViewer : 1;
 
   bool mInvisible : 1;
+
+  // There has been an OnStartRequest for a non-about:blank URI
   bool mHasLoadedNonBlankURI : 1;
+
+  // There has been a DoURILoad that wasn't the initial commit to about:blank
+  bool mHasStartedLoadingOtherThanInitialBlankURI : 1;
 
   // This flag means that mTiming has been initialized but nulled out.
   // We will check the innerWin's timing before creating a new one
@@ -1424,4 +1489,4 @@ inline nsISupports* ToSupports(nsDocShell* aDocShell) {
   return static_cast<nsIDocumentLoader*>(aDocShell);
 }
 
-#endif /* nsDocShell_h__ */
+#endif /* nsDocShell_h_ */

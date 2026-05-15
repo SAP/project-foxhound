@@ -14,6 +14,7 @@
 #define LOG_ENABLED() LOG5_ENABLED()
 
 #include "nsHttpHandler.h"
+#include "nsHttpConnectionMgr.h"
 #include "Http2StreamTunnel.h"
 #include "nsHttpConnectionInfo.h"
 #include "nsQueryObject.h"
@@ -105,6 +106,7 @@ void Http2StreamTunnel::CloseStream(nsresult aReason) {
     mOutput->OnSocketReady(aReason);
     mInput->OnSocketReady(aReason);
   }
+  mClosed = true;
 }
 
 NS_IMETHODIMP
@@ -112,7 +114,6 @@ Http2StreamTunnel::Close(nsresult aReason) {
   LOG(("Http2StreamTunnel::Close this=%p", this));
   RefPtr<Http2Session> session = Session();
   if (NS_SUCCEEDED(mCondition)) {
-    mSession = nullptr;
     if (NS_SUCCEEDED(aReason)) {
       aReason = NS_BASE_STREAM_CLOSED;
     }
@@ -120,6 +121,9 @@ Http2StreamTunnel::Close(nsresult aReason) {
     mInput->CloseWithStatus(aReason);
     // Let the session pickup that the stream has been closed.
     mCondition = aReason;
+    // Clear the session in the end to make sure that CleanupStream() can be
+    // called in CloseWithStatus().
+    mSession = nullptr;
   }
   return NS_OK;
 }
@@ -194,6 +198,8 @@ FWD_TS_T_ADDREF(GetTlsSocketControl, nsITLSSocketControl);
 FWD_TS_T_PTR(GetConnectionFlags, uint32_t);
 FWD_TS_T(SetConnectionFlags, uint32_t);
 FWD_TS_T(SetIsPrivate, bool);
+FWD_TS_T(SetIsTRRConnection, bool);
+FWD_TS_T_PTR(GetIsTRRConnection, bool);
 FWD_TS_T_PTR(GetTlsFlags, uint32_t);
 FWD_TS_T(SetTlsFlags, uint32_t);
 FWD_TS_T_PTR(GetRecvBufferSize, uint32_t);
@@ -320,13 +326,6 @@ nsresult Http2StreamTunnel::GenerateHeaders(nsCString& aCompressedData,
       EmptyCString(), EmptyCString(), true, aCompressedData, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // The size of the input headers is approximate
-  uint32_t ratio =
-      aCompressedData.Length() * 100 /
-      (11 + authorityHeader.Length() + mFlatHttpRequestHeaders.Length());
-
-  glean::spdy::syn_ratio.AccumulateSingleSample(ratio);
-
   return NS_OK;
 }
 
@@ -354,28 +353,9 @@ nsresult OutputStreamTunnel::OnSocketReady(nsresult condition) {
   nsresult rv = NS_OK;
   if (callback) {
     rv = callback->OnOutputStreamReady(this);
-    MaybeSetRequestDone(callback);
   }
 
   return rv;
-}
-
-void OutputStreamTunnel::MaybeSetRequestDone(
-    nsIOutputStreamCallback* aCallback) {
-  RefPtr<nsHttpConnection> conn = do_QueryObject(aCallback);
-  if (!conn) {
-    return;
-  }
-
-  RefPtr<Http2StreamTunnel> tunnel;
-  nsresult rv = GetStream(getter_AddRefs(tunnel));
-  if (NS_FAILED(rv)) {
-    return;
-  }
-
-  if (conn->RequestDone()) {
-    tunnel->SetRequestDone();
-  }
 }
 
 NS_IMPL_ISUPPORTS(OutputStreamTunnel, nsIOutputStream, nsIAsyncOutputStream)
@@ -454,11 +434,11 @@ OutputStreamTunnel::AsyncWait(nsIOutputStreamCallback* callback, uint32_t flags,
   // The following parametr are not used:
   MOZ_ASSERT(!flags);
   MOZ_ASSERT(!amount);
-  Unused << target;
+  (void)target;
 
   RefPtr<OutputStreamTunnel> self(this);
   if (NS_FAILED(mCondition)) {
-    Unused << NS_DispatchToCurrentThread(NS_NewRunnableFunction(
+    (void)NS_DispatchToCurrentThread(NS_NewRunnableFunction(
         "OutputStreamTunnel::CallOnSocketReady",
         [self{std::move(self)}]() { self->OnSocketReady(NS_OK); }));
   } else if (callback) {
@@ -587,11 +567,11 @@ InputStreamTunnel::AsyncWait(nsIInputStreamCallback* callback, uint32_t flags,
   // The following parametr are not used:
   MOZ_ASSERT(!flags);
   MOZ_ASSERT(!amount);
-  Unused << target;
+  (void)target;
 
   RefPtr<InputStreamTunnel> self(this);
   if (NS_FAILED(mCondition)) {
-    Unused << NS_DispatchToCurrentThread(NS_NewRunnableFunction(
+    (void)NS_DispatchToCurrentThread(NS_NewRunnableFunction(
         "InputStreamTunnel::CallOnSocketReady",
         [self{std::move(self)}]() { self->OnSocketReady(NS_OK); }));
   } else if (callback) {
@@ -703,12 +683,6 @@ nsresult Http2StreamWebSocket::GenerateHeaders(nsCString& aCompressedData,
 
   mRequestBodyLenRemaining = 0x0fffffffffffffffULL;
 
-  // The size of the input headers is approximate
-  uint32_t ratio =
-      aCompressedData.Length() * 100 /
-      (11 + authorityHeader.Length() + mFlatHttpRequestHeaders.Length());
-
-  glean::spdy::syn_ratio.AccumulateSingleSample(ratio);
   return NS_OK;
 }
 

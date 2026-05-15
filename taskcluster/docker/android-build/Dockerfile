@@ -10,7 +10,6 @@ VOLUME /builds/worker/tooltool-cache
 # git and openssh-client are used to upload GeckoView javadoc to Github.
 RUN apt-get update && \
     apt-get install \
-      autoconf2.13 \
       build-essential \
       base-files \
       ccache \

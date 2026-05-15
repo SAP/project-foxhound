@@ -33,7 +33,6 @@ class SavedLoginsAuthFragment : PreferenceFragmentCompat() {
         setPreferencesFromResource(R.xml.logins_preferences, rootKey)
     }
 
-    @Suppress("LongMethod")
     override fun onResume() {
         super.onResume()
         showToolbar(getString(R.string.preferences_passwords_logins_and_passwords_2))

@@ -679,7 +679,7 @@ class MOZ_STACK_CLASS BacktrackingAllocator : protected RegisterAllocator {
   using IsStackAllocated = std::true_type;
 
  private:
-  friend class JSONSpewer;
+  friend class GraphSpewer;
 
   // Computed data
   InstructionDataMap insData;

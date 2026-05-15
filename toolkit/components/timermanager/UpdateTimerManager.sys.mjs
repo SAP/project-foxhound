@@ -22,6 +22,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 /**
  *  Logs a string to the error console.
+ *
  *  @param   string
  *           The string to write to the error console.
  *  @param   bool
@@ -37,7 +38,8 @@ function LOG(string, alwaysLog = false) {
 /**
  *  A manager for timers. Manages timers that fire over long periods of time
  *  (e.g. days, weeks, months).
- *  @constructor
+ *
+ *  @class
  */
 export function TimerManager() {
   Services.obs.addObserver(this, "profile-before-change");
@@ -82,7 +84,7 @@ TimerManager.prototype = {
         minInterval = 500;
         minFirstInterval = 500;
       // fall through
-      case "profile-after-change":
+      case "profile-after-change": {
         this._timerMinimumDelay = Math.max(
           1000 *
             Services.prefs.getIntPref(PREF_APP_UPDATE_TIMERMINIMUMDELAY, 120),
@@ -104,6 +106,7 @@ TimerManager.prototype = {
         this._canEnsureTimer = true;
         this._ensureTimer(firstInterval);
         break;
+      }
       case "profile-before-change":
         Services.obs.removeObserver(this, "profile-before-change");
 
@@ -195,7 +198,7 @@ TimerManager.prototype = {
         function () {
           ChromeUtils.idleDispatch(() => {
             try {
-              let startTime = Cu.now();
+              let startTime = ChromeUtils.now();
               Cc[cid][method](Ci.nsITimerCallback).notify(timer);
               ChromeUtils.addProfilerMarker(
                 "UpdateTimer",
@@ -239,7 +242,7 @@ TimerManager.prototype = {
           if (timerData.callback && timerData.callback.notify) {
             ChromeUtils.idleDispatch(() => {
               try {
-                let startTime = Cu.now();
+                let startTime = ChromeUtils.now();
                 timerData.callback.notify(timer);
                 ChromeUtils.addProfilerMarker(
                   "UpdateTimer",

@@ -65,7 +65,14 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
   explicit WebRenderBridgeChild(const wr::PipelineId& aPipelineId);
 
   void AddWebRenderParentCommand(const WebRenderParentCommand& aCmd);
-  bool HasWebRenderParentCommands() { return !mParentCommands.IsEmpty(); }
+  /// Similar to AddWebRenderParentCommand, with the exception that ops are not
+  /// picked up by off-screen transactions. Typically useful for operations that
+  /// remove resources and should not be applied before we have un-referenced
+  /// the resources from the main display list.
+  void AddWebRenderParentDestroyCommand(const WebRenderParentCommand& aCmd);
+  bool HasWebRenderParentCommands() {
+    return !mParentCommands.IsEmpty() || !mParentDestroyCommands.IsEmpty();
+  }
 
   void UpdateResources(wr::IpcResourceUpdateQueue& aResources);
   void BeginTransaction();
@@ -190,6 +197,8 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
 
   ~WebRenderBridgeChild();
 
+  void MergeWebRenderParentCommands();
+
   wr::ExternalImageId GetNextExternalImageId();
 
   // CompositableForwarder
@@ -236,6 +245,7 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
 
   nsTArray<OpDestroy> mDestroyedActors;
   nsTArray<WebRenderParentCommand> mParentCommands;
+  nsTArray<WebRenderParentCommand> mParentDestroyCommands;
   nsTHashMap<nsUint64HashKey, CompositableClient*> mCompositables;
   bool mIsInTransaction;
   bool mIsInClearCachedResources;

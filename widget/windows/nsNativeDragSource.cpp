@@ -4,22 +4,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsNativeDragSource.h"
-#include <stdio.h>
 #include "nsISupportsImpl.h"
 #include "nsString.h"
 #include "nsToolkit.h"
 #include "nsWidgetsCID.h"
 #include "nsIDragService.h"
 #include "nsServiceManagerUtils.h"
+#include "mozilla/Logging.h"  //for mozilla::TrueOrFalse
 #include "mozilla/dom/DataTransfer.h"
-#include "mozilla/Logging.h"
+#include "mozilla/widget/WidgetLogging.h"
 
-extern mozilla::LazyLogModule sWidgetDragServiceLog;
-#define __DRAGSERVICE_LOG__(logLevel, ...) \
-  MOZ_LOG(sWidgetDragServiceLog, logLevel, __VA_ARGS__)
-#define LOGD(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Debug, (__VA_ARGS__))
-#define LOGI(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Info, (__VA_ARGS__))
-#define LOGE(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Error, (__VA_ARGS__))
+#define LOGD DRAGSERVICE_LOGD
+#define LOGI DRAGSERVICE_LOGI
+#define LOGE DRAGSERVICE_LOGE
 
 /*
  * class nsNativeDragSource
@@ -69,8 +66,9 @@ nsNativeDragSource::Release(void) {
 STDMETHODIMP
 nsNativeDragSource::QueryContinueDrag(BOOL fEsc, DWORD grfKeyState) {
   LOGD("%s | fEsc: %s | grfKeyState: %lu | grfKeyState has button: %s",
-       __FUNCTION__, GetBoolName(fEsc), grfKeyState,
-       GetBoolName((grfKeyState & MK_LBUTTON) || (grfKeyState & MK_RBUTTON)));
+       __FUNCTION__, mozilla::TrueOrFalse(fEsc), grfKeyState,
+       mozilla::TrueOrFalse((grfKeyState & MK_LBUTTON) ||
+                            (grfKeyState & MK_RBUTTON)));
   nsCOMPtr<nsIDragService> dragService =
       do_GetService("@mozilla.org/widget/dragservice;1");
   if (dragService) {

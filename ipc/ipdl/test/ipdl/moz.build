@@ -6,3 +6,23 @@
 
 # Copy test files so that they can be referenced in the docs.
 SPHINX_TREES["/ipc/_static"] = "ok"
+
+oktests = [f"ok/*.ipdl", f"ok/*.ipdlh"]
+errortests = [f"error/*.ipdl", f"error/*.ipdlh"]
+
+LegacyTest(
+    f"%{CONFIG['PYTHON3']}",
+    "runtests.py",
+    "ok",
+    "error",
+    f"%{CONFIG['PYTHON3']}",
+    "/ipc/ipdl/ipdl.py",
+    "--sync-msg-list",
+    "sync-messages.ini",
+    "--msg-metadata",
+    "message-metadata.ini",
+    "--ok-tests",
+    *oktests,
+    "--error-tests",
+    *errortests,
+)

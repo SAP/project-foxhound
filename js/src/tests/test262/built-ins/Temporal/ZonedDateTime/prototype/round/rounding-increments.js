@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -67,5 +67,21 @@ TemporalHelpers.assertZonedDateTimesEqual(zdt.round({
   roundingIncrement: 1
 }), expected1Day);
 
+const unitsAndIncrements = {
+   "hour": [1, 2, 4, 6, 8, 12],
+   "minute": [1, 3, 5, 6, 10, 30],
+   "second": [1, 3, 5, 6, 10, 30],
+   "millisecond": [1, 5, 10, 20, 25, 50, 100, 500],
+   "microsecond": [1, 5, 10, 20, 25, 50, 100, 500],
+   "nanosecond": [1, 5, 10, 20, 25, 50, 100, 500],
+};
+
+// Just check that each combination of unit and increment doesn't throw
+Object.entries(unitsAndIncrements).forEach(([unit, increments]) => {
+  increments.forEach((increment) => {
+    const result = zdt.round({ smallestUnit: unit, roundingMode: "ceil", roundingIncrement: increment });
+    assert.sameValue(result instanceof Temporal.ZonedDateTime, true, `${unit} ${increment}`);
+  })
+});
 
 reportCompare(0, 0);

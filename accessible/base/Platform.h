@@ -13,7 +13,6 @@
 
 #if defined(ANDROID)
 #  include "nsTArray.h"
-#  include "nsRect.h"
 #endif
 
 #ifdef MOZ_WIDGET_COCOA
@@ -95,11 +94,9 @@ void PlatformEvent(Accessible* aTarget, uint32_t aEventType);
 void PlatformStateChangeEvent(Accessible* aTarget, uint64_t aState,
                               bool aEnabled);
 
-void PlatformFocusEvent(Accessible* aTarget,
-                        const LayoutDeviceIntRect& aCaretRect);
+void PlatformFocusEvent(Accessible* aTarget);
 void PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
                             bool aIsSelectionCollapsed, int32_t aGranularity,
-                            const LayoutDeviceIntRect& aCaretRect,
                             bool aFromUser);
 void PlatformTextChangeEvent(Accessible* aTarget, const nsAString& aStr,
                              int32_t aStart, uint32_t aLen, bool aIsInsert,
@@ -109,14 +106,14 @@ void PlatformShowHideEvent(Accessible* aTarget, Accessible* aParent,
 void PlatformSelectionEvent(Accessible* aTarget, Accessible* aWidget,
                             uint32_t aType);
 
+void PlatformAnnouncementEvent(Accessible* aTarget,
+                               const nsAString& aAnnouncement,
+                               uint16_t aPriority);
+
 #if defined(ANDROID)
 void PlatformScrollingEvent(Accessible* aTarget, uint32_t aEventType,
                             uint32_t aScrollX, uint32_t aScrollY,
                             uint32_t aMaxScrollX, uint32_t aMaxScrollY);
-
-void PlatformAnnouncementEvent(Accessible* aTarget,
-                               const nsAString& aAnnouncement,
-                               uint16_t aPriority);
 
 bool LocalizeString(const nsAString& aToken, nsAString& aLocalized);
 #endif

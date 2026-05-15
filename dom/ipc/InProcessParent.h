@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_InProcessParent_h
 #define mozilla_dom_InProcessParent_h
 
-#include "mozilla/dom/PInProcessParent.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/JSProcessActorParent.h"
+#include "mozilla/dom/PInProcessParent.h"
 #include "mozilla/dom/ProcessActor.h"
 #include "mozilla/dom/RemoteType.h"
-#include "mozilla/StaticPtr.h"
 #include "nsIDOMProcessParent.h"
 
 namespace mozilla::dom {

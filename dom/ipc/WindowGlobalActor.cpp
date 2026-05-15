@@ -7,21 +7,20 @@
 #include "mozilla/dom/WindowGlobalActor.h"
 
 #include "AutoplayPolicy.h"
-#include "nsContentUtils.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/Logging.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/JSActorService.h"
-#include "mozilla/dom/JSWindowActorParent.h"
 #include "mozilla/dom/JSWindowActorChild.h"
+#include "mozilla/dom/JSWindowActorParent.h"
 #include "mozilla/dom/JSWindowActorProtocol.h"
 #include "mozilla/dom/PopupBlocker.h"
-#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-
+#include "mozilla/net/CookieJarSettings.h"
+#include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsNetUtil.h"
 
@@ -65,14 +64,19 @@ WindowGlobalInit WindowGlobalActor::BaseInitializer(
 
 WindowGlobalInit WindowGlobalActor::AboutBlankInitializer(
     dom::BrowsingContext* aBrowsingContext, nsIPrincipal* aPrincipal) {
+  MOZ_DIAGNOSTIC_ASSERT(
+      aPrincipal && aPrincipal->GetIsNullPrincipal(),
+      "AboutBlankInitializer is a dummy that should not be web-exposed");
+
   WindowGlobalInit init =
       BaseInitializer(aBrowsingContext, nsContentUtils::GenerateWindowId(),
                       nsContentUtils::GenerateWindowId());
 
   init.principal() = aPrincipal;
   init.storagePrincipal() = aPrincipal;
-  Unused << NS_NewURI(getter_AddRefs(init.documentURI()), "about:blank");
+  (void)NS_NewURI(getter_AddRefs(init.documentURI()), "about:blank");
   init.isInitialDocument() = true;
+  init.isUncommittedInitialDocument() = true;
 
   return init;
 }
@@ -90,6 +94,7 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
   Document* doc = aWindow->GetDocument();
 
   init.isInitialDocument() = doc->IsInitialDocument();
+  init.isUncommittedInitialDocument() = doc->IsUncommittedInitialDocument();
   init.blockAllMixedContent() = doc->GetBlockAllMixedContent(false);
   init.upgradeInsecureRequests() = doc->GetUpgradeInsecureRequests(false);
   init.sandboxFlags() = doc->GetSandboxFlags();
@@ -139,8 +144,12 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
     nsCOMPtr<nsILoadInfo> loadInfo(channel->LoadInfo());
     fields.Get<Indexes::IDX_IsOriginalFrameSource>() =
         loadInfo->GetOriginalFrameSrcLoad();
+
+    nsILoadInfo::StoragePermissionState storageAccess =
+        loadInfo->GetStoragePermission();
     fields.Get<Indexes::IDX_UsingStorageAccess>() =
-        loadInfo->GetStoragePermission() != nsILoadInfo::NoStoragePermission;
+        storageAccess == nsILoadInfo::HasStoragePermission ||
+        storageAccess == nsILoadInfo::StoragePermissionAllowListed;
 
     channel->GetSecurityInfo(getter_AddRefs(securityInfo));
   }

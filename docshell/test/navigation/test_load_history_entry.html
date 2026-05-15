@@ -77,20 +77,22 @@
         SimpleTest.finish();
     }
 
-    /*
-     * @prevLocation
-     *       if undefined, it is because there is no page to go back to
-     *
-     * @isCrossDocumentLoad
-     *       did we just open a different document
-     * @hashChangeExpected
-     *       Would we get a hash change event if we navigated backwards and forwards in history?
-     *       This is framed with respect to the previous step, e.g. in the previous step was the
-     *       hash different from the location we have navigated to just before calling this function?
-     *       When we navigate forwards or backwards, we need to wait for this event
-     *       because clickLink() also waits for hashchange event and
-     *       if this function gets called before clickLink(), sometimes hashchange
-     *       events from this function will leak to clickLink.
+    /**
+     * @param {Window} testWin
+     * @param {object} shistory
+     * @param {number} expectedNumSHEntries
+     * @param {?string} prevLocation
+     *   If undefined, it is because there is no page to go back to.
+     * @param {boolean} [isCrossDocumentLoad]
+     *   Did we just open a different document?
+     * @param {boolean} [hashChangeExpected]
+     *   Would we get a hash change event if we navigated backwards and forwards in history?
+     *   This is framed with respect to the previous step, e.g. in the previous step was the
+     *   hash different from the location we have navigated to just before calling this function?
+     *   When we navigate forwards or backwards, we need to wait for this event
+     *   because clickLink() also waits for hashchange event and
+     *   if this function gets called before clickLink(), sometimes hashchange
+     *   events from this function will leak to clickLink.
      */
     async function doAfterEachTest(testWin, shistory, expectedNumSHEntries, prevLocation,
                                    isCrossDocumentLoad = false, hashChangeExpected = true) {

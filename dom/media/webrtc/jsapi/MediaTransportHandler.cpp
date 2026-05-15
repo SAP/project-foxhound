@@ -3,25 +3,26 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaTransportHandler.h"
+
 #include "MediaTransportHandlerIPC.h"
-#include "transport/sigslot.h"
 #include "transport/nricemediastream.h"
 #include "transport/nriceresolver.h"
+#include "transport/sigslot.h"
 #include "transport/transportflow.h"
-#include "transport/transportlayerice.h"
 #include "transport/transportlayerdtls.h"
+#include "transport/transportlayerice.h"
 #include "transport/transportlayersrtp.h"
 
 // Config stuff
-#include "mozilla/dom/RTCConfigurationBinding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/RTCConfigurationBinding.h"
 
 // Parsing STUN/TURN URIs
 #include "nsIURI.h"
+#include "nsIURLParser.h"
 #include "nsNetUtil.h"
 #include "nsURLHelper.h"
-#include "nsIURLParser.h"
 
 // Logging stuff
 #include "common/browser_logging/CSFLog.h"
@@ -30,23 +31,17 @@
 #include "transport/rlogconnector.h"
 
 // DTLS
-#include "sdp/SdpAttribute.h"
-
-#include "transport/runnable_utils.h"
-
-#include "mozilla/Algorithm.h"
-
-#include "mozilla/dom/RTCStatsReportBinding.h"
-
-#include "nss.h"                // For NSS_NoDB_Init
-#include "mozilla/PublicSSL.h"  // For psm::InitializeCipherSuite
-
-#include "nsISocketTransportService.h"
-#include "nsDNSService2.h"
-
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
+
+#include "mozilla/PublicSSL.h"  // For psm::InitializeCipherSuite
+#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "nsDNSService2.h"
+#include "nsISocketTransportService.h"
+#include "nss.h"  // For NSS_NoDB_Init
+#include "sdp/SdpAttribute.h"
+#include "transport/runnable_utils.h"
 
 #ifdef MOZ_GECKO_PROFILER
 #  include "mozilla/ProfilerMarkers.h"
@@ -183,6 +178,8 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   uint32_t mMinDtlsVersion = 0;
   uint32_t mMaxDtlsVersion = 0;
   bool mForceNoHost = false;
+  bool mAllowLoopback = false;
+  bool mAllowLinkLocal = false;
   Maybe<NrIceCtx::NatSimulatorConfig> mNatConfig;
 
   std::set<std::string> mSignaledAddresses;
@@ -458,10 +455,6 @@ nsresult MediaTransportHandler::ConvertIceServers(
 
 static NrIceCtx::GlobalConfig GetGlobalConfig() {
   NrIceCtx::GlobalConfig config;
-  config.mAllowLinkLocal =
-      Preferences::GetBool("media.peerconnection.ice.link_local", false);
-  config.mAllowLoopback =
-      Preferences::GetBool("media.peerconnection.ice.loopback", false);
   config.mTcpEnabled =
       Preferences::GetBool("media.peerconnection.ice.tcp", false);
   config.mStunClientMaxTransmits = Preferences::GetInt(
@@ -536,7 +529,7 @@ static Maybe<NrIceCtx::NatSimulatorConfig> GetNatConfig() {
 void MediaTransportHandlerSTS::CreateIceCtx(const std::string& aName) {
   mInitPromise = InvokeAsync(
       GetMainThreadSerialEventTarget(), __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         CSFLogDebug(LOGTAG, "%s starting", __func__);
         if (!NSS_IsInitialized()) {
           if (NSS_NoDB_Init(nullptr) != SECSuccess) {
@@ -578,13 +571,17 @@ void MediaTransportHandlerSTS::CreateIceCtx(const std::string& aName) {
         mForceNoHost =
             Preferences::GetBool("media.peerconnection.ice.no_host", false);
         mNatConfig = GetNatConfig();
+        mAllowLoopback =
+            Preferences::GetBool("media.peerconnection.ice.loopback", false);
+        mAllowLinkLocal =
+            Preferences::GetBool("media.peerconnection.ice.link_local", false);
 
         MOZ_RELEASE_ASSERT(STSShutdownHandler::Instance());
         STSShutdownHandler::Instance()->Register(this);
 
         return InvokeAsync(
             mStsThread, __func__,
-            [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+            [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
               mIceCtx = NrIceCtx::Create(aName);
               if (!mIceCtx) {
                 return InitPromise::CreateAndReject("NrIceCtx::Create failed",
@@ -631,7 +628,7 @@ nsresult MediaTransportHandlerSTS::SetIceConfig(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           CSFLogError(LOGTAG, "%s: mIceCtx is null", __FUNCTION__);
           return;
@@ -641,6 +638,9 @@ nsresult MediaTransportHandlerSTS::SetIceConfig(
         if (config.mPolicy == NrIceCtx::ICE_POLICY_ALL && mForceNoHost) {
           config.mPolicy = NrIceCtx::ICE_POLICY_NO_HOST;
         }
+
+        config.mAllowLoopback = mAllowLoopback;
+        config.mAllowLinkLocal = mAllowLinkLocal;
         config.mNatSimulatorConfig = mNatConfig;
 
         nsresult rv;
@@ -746,7 +746,7 @@ void MediaTransportHandlerSTS::EnsureProvisionalTransport(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
         }
@@ -793,7 +793,7 @@ void MediaTransportHandlerSTS::ActivateTransport(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, keyDer = aKeyDer.Clone(), certDer = aCertDer.Clone(),
+      [=, this, keyDer = aKeyDer.Clone(), certDer = aCertDer.Clone(),
        self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
@@ -880,7 +880,7 @@ void MediaTransportHandlerSTS::SetTargetForDefaultLocalAddressLookup(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
         }
@@ -897,7 +897,7 @@ void MediaTransportHandlerSTS::StartIceGathering(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, stunAddrs = aStunAddrs.Clone(),
+      [=, this, stunAddrs = aStunAddrs.Clone(),
        self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
@@ -929,7 +929,7 @@ void MediaTransportHandlerSTS::StartIceChecks(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
         }
@@ -976,7 +976,7 @@ void MediaTransportHandlerSTS::AddIceCandidate(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
         }
@@ -1017,7 +1017,7 @@ void MediaTransportHandlerSTS::UpdateNetworkState(bool aOnline) {
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
         }
@@ -1033,7 +1033,7 @@ void MediaTransportHandlerSTS::RemoveTransportsExcept(
 
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, this, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         if (!mIceCtx) {
           return;  // Probably due to XPCOM shutdown
         }
@@ -1212,17 +1212,19 @@ RefPtr<dom::RTCStatsPromise> MediaTransportHandlerSTS::GetIceStats(
     const std::string& aTransportId, DOMHighResTimeStamp aNow) {
   MOZ_RELEASE_ASSERT(mInitPromise);
 
-  return mInitPromise->Then(mStsThread, __func__, [=, self = RefPtr(this)]() {
-    UniquePtr<dom::RTCStatsCollection> stats(new dom::RTCStatsCollection);
-    if (mIceCtx) {
-      for (const auto& stream : mIceCtx->GetStreams()) {
-        if (aTransportId.empty() || aTransportId == stream->GetId()) {
-          GetIceStats(*stream, aNow, stats.get());
+  return mInitPromise->Then(
+      mStsThread, __func__, [=, this, self = RefPtr(this)]() {
+        UniquePtr<dom::RTCStatsCollection> stats(new dom::RTCStatsCollection);
+        if (mIceCtx) {
+          for (const auto& stream : mIceCtx->GetStreams()) {
+            if (aTransportId.empty() || aTransportId == stream->GetId()) {
+              GetIceStats(*stream, aNow, stats.get());
+            }
+          }
         }
-      }
-    }
-    return dom::RTCStatsPromise::CreateAndResolve(std::move(stats), __func__);
-  });
+        return dom::RTCStatsPromise::CreateAndResolve(std::move(stats),
+                                                      __func__);
+      });
 }
 
 RefPtr<MediaTransportHandler::IceLogPromise>
@@ -1388,8 +1390,8 @@ void MediaTransportHandlerSTS::GetIceStats(
     s.mLastPacketReceivedTimestamp.Construct(candPair.ms_since_last_recv);
     s.mState.Construct(dom::RTCStatsIceCandidatePairState(candPair.state));
     s.mResponsesReceived.Construct(candPair.responses_recvd);
-    s.mCurrentRoundTripTime.Construct(candPair.current_rtt_ms);
-    s.mTotalRoundTripTime.Construct(candPair.total_rtt_ms);
+    s.mCurrentRoundTripTime.Construct(candPair.current_rtt_ms / 1000.0);
+    s.mTotalRoundTripTime.Construct(candPair.total_rtt_ms / 1000.0);
     s.mComponentId.Construct(candPair.component_id);
     if (!aStats->mIceCandidatePairStats.AppendElement(s, fallible)) {
       // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might

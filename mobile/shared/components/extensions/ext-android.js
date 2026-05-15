@@ -380,6 +380,10 @@ class Tab extends TabBase {
     return -1;
   }
 
+  get splitViewId() {
+    return -1;
+  }
+
   get width() {
     return this.browser.clientWidth;
   }

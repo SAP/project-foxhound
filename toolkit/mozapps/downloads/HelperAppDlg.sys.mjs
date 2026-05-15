@@ -113,28 +113,32 @@ import { DownloadUtils } from "resource://gre/modules/DownloadUtils.sys.mjs";
 import { Downloads } from "resource://gre/modules/Downloads.sys.mjs";
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 
-/* ctor
- */
-export function nsUnknownContentTypeDialog() {
-  // Initialize data properties.
-  this.mLauncher = null;
-  this.mContext = null;
-  this.mReason = null;
-  this.chosenApp = null;
-  this.givenDefaultApp = false;
-  this.updateSelf = true;
-  this.mTitle = "";
-}
+export class nsUnknownContentTypeDialog {
+  // Todo (bug 1986787): these should be private, but some are used from tests.
+  /** @type {?nsIHelperAppLauncher} */
+  mLauncher = null;
+  /** @type {?nsIInterfaceRequestor} */
+  mContext = null;
+  // This should be one of the 3 reason constants on nsIHelperAppDialog.
+  // Right now our automated XPIDL ts generation does not generate the
+  // correct enum for this. Bug 1986020 covers fixing this.
+  /** @type {number} */
+  mReason = null;
 
-nsUnknownContentTypeDialog.prototype = {
-  classID: Components.ID("{F68578EB-6EC2-4169-AE19-8C6243F0ABE1}"),
+  /** @type {?nsIDOMWindow} */
+  mDialog = null;
 
-  nsIMIMEInfo: Ci.nsIMIMEInfo,
+  /** @type {nsILocalHandlerApp | nsIGIOHandlerApp | null } */
+  chosenApp = null;
+  givenDefaultApp = false;
+  updateSelf = true;
+  mTitle = "";
 
-  QueryInterface: ChromeUtils.generateQI([
+  classID = Components.ID("{F68578EB-6EC2-4169-AE19-8C6243F0ABE1}");
+  QueryInterface = ChromeUtils.generateQI([
     "nsIHelperAppLauncherDialog",
     "nsITimerCallback",
-  ]),
+  ]);
 
   // ---------- nsIHelperAppLauncherDialog methods ----------
 
@@ -159,7 +163,7 @@ nsUnknownContentTypeDialog.prototype = {
 
     this._showTimer = Cc["@mozilla.org/timer;1"].createInstance(nsITimer);
     this._showTimer.initWithCallback(this, 0, nsITimer.TYPE_ONE_SHOT);
-  },
+  }
 
   // When opening from new tab, if tab closes while dialog is opening,
   // (which is a race condition on the XUL file being cached and the timer
@@ -196,13 +200,30 @@ nsUnknownContentTypeDialog.prototype = {
     // Hook this object to the dialog.
     this.mDialog.dialog = this;
 
-    // Hook up utility functions.
-    this.getSpecialFolderKey = this.mDialog.getSpecialFolderKey;
-
     // Watch for error notifications.
     var progressListener = new nsUnknownContentTypeDialogProgressListener(this);
     this.mLauncher.setWebProgressListener(progressListener);
-  },
+  }
+
+  #log = null;
+  #logprefix = "";
+
+  #debuglog(...args) {
+    if (!this.#log) {
+      this.#log = console.createInstance({
+        maxLogLevelPref: "toolkit.download.loglevel",
+        prefix: "HelperAppService",
+      });
+      let info = this.mLauncher.MIMEInfo;
+      // primaryExtension can throw if there are no extensions on this mimetype.
+      // Check if we have any before accessing it.
+      let primaryExtension = info.getFileExtensions().hasMore()
+        ? info.primaryExtension
+        : "";
+      this.#logprefix = `${info.MIMEType} - ${primaryExtension}`;
+    }
+    this.#log.debug(this.#logprefix, ...args);
+  }
 
   //
   // displayBadPermissionAlert()
@@ -219,7 +240,7 @@ nsUnknownContentTypeDialog.prototype = {
       bundle.GetStringFromName("badPermissions.title"),
       bundle.GetStringFromName("badPermissions")
     );
-  },
+  }
 
   promptForSaveToFileAsync(
     aLauncher,
@@ -402,7 +423,7 @@ nsUnknownContentTypeDialog.prototype = {
         });
       });
     })().catch(console.error);
-  },
+  }
 
   getFinalLeafName(aLeafName, aFileExt, aAfterFilePicker) {
     return (
@@ -411,7 +432,7 @@ nsUnknownContentTypeDialog.prototype = {
         allowInvalidFilenames: aAfterFilePicker,
       }) || "unnamed" + (aFileExt ? "." + aFileExt : "")
     );
-  },
+  }
 
   /**
    * Ensures that a local folder/file combination does not already exist in
@@ -432,7 +453,7 @@ nsUnknownContentTypeDialog.prototype = {
    *          if set to true, this was a file entered by the user from a file picker.
    * @return  nsIFile
    *          the created file
-   * @throw   an error such as permission doesn't allow creation of
+   * @throws  an error such as permission doesn't allow creation of
    *          file, etc.
    */
   validateLeafName(
@@ -461,7 +482,7 @@ nsUnknownContentTypeDialog.prototype = {
     }
 
     return validatedFile;
-  },
+  }
 
   // ---------- implementation methods ----------
 
@@ -561,7 +582,7 @@ nsUnknownContentTypeDialog.prototype = {
       // isn't actually a 'plain' text file.
       (isPlain && lazy.gReputationService.isBinary(suggestedFileName));
     if (
-      (shouldntRememberChoice && !this.openWithDefaultOK()) ||
+      (shouldntRememberChoice && !this.canUseDefaultHandler()) ||
       Services.prefs.getBoolPref("browser.download.forbid_open_with")
     ) {
       // hide featured choice
@@ -611,7 +632,7 @@ nsUnknownContentTypeDialog.prototype = {
         rememberChoice.checked =
           !this.mLauncher.MIMEInfo.alwaysAskBeforeHandling &&
           this.mLauncher.MIMEInfo.preferredAction !=
-            this.nsIMIMEInfo.handleInternally;
+            Ci.nsIMIMEInfo.handleInternally;
       }
       this.toggleRememberChoice(rememberChoice);
     }
@@ -629,7 +650,7 @@ nsUnknownContentTypeDialog.prototype = {
       },
       focusTarget: this.mDialog,
     });
-  },
+  }
 
   notify(aTimer) {
     if (aTimer == this._showTimer) {
@@ -644,14 +665,14 @@ nsUnknownContentTypeDialog.prototype = {
       this.mLauncher.promptForSaveDestination();
       this._saveToDiskTimer = null;
     }
-  },
+  }
 
   postShowCallback() {
     this.mDialog.sizeToContent();
 
     // Set initial focus
     this.dialogElement("mode").focus();
-  },
+  }
 
   initIntro(url, displayName) {
     this.dialogElement("location").value = displayName;
@@ -714,10 +735,10 @@ nsUnknownContentTypeDialog.prototype = {
       );
     }
     type.textContent = value;
-  },
+  }
 
   // Returns true if opening the default application makes sense.
-  openWithDefaultOK() {
+  canUseDefaultHandler() {
     // The checking is different on Windows...
     if (AppConstants.platform == "win") {
       // Windows presents some special cases.
@@ -737,12 +758,13 @@ nsUnknownContentTypeDialog.prototype = {
     // Note that nsIMIMEInfo providers need to ensure that this holds true
     // on each platform.
     return this.mLauncher.MIMEInfo.hasDefaultHandler;
-  },
+  }
 
   // Set "default" application description field.
   initDefaultApp() {
     // Use description, if we can get one.
     var desc = this.mLauncher.MIMEInfo.defaultDescription;
+    this.#debuglog("Default app description:", desc);
     if (desc) {
       var defaultApp = this.dialogElement("strings").getFormattedString(
         "defaultApp",
@@ -755,21 +777,21 @@ nsUnknownContentTypeDialog.prototype = {
       // custom handler at a later date which triggers the menulist to show.
       this.dialogElement("defaultHandler").hidden = true;
     }
-  },
+  }
 
   getPath(aFile) {
     if (AppConstants.platform == "macosx") {
       return aFile.leafName || aFile.path;
     }
     return aFile.path;
-  },
+  }
 
   initInteractiveControls() {
     var modeGroup = this.dialogElement("mode");
 
     // We don't let users open .exe files or random binary data directly
     // from the browser at the moment because of security concerns.
-    var openWithDefaultOK = this.openWithDefaultOK();
+    var canUseDefaultHandler = this.canUseDefaultHandler();
     var mimeType = this.mLauncher.MIMEInfo.MIMEType;
     var openHandler = this.dialogElement("openHandler");
     if (
@@ -778,8 +800,13 @@ nsUnknownContentTypeDialog.prototype = {
       ((mimeType == "application/octet-stream" ||
         mimeType == "application/x-msdos-program" ||
         mimeType == "application/x-msdownload") &&
-        !openWithDefaultOK)
+        !canUseDefaultHandler)
     ) {
+      this.#debuglog(
+        "Showing save-only dialog;",
+        `is executable: ${this.mLauncher.targetFileIsExecutable}`,
+        `can use default handler: ${canUseDefaultHandler}`
+      );
       this.dialogElement("open").disabled = true;
       openHandler.disabled = true;
       openHandler.selectedItem = null;
@@ -814,10 +841,8 @@ nsUnknownContentTypeDialog.prototype = {
 
     // Fill application name textbox.
     if (
-      this.chosenApp &&
       this.chosenApp instanceof Ci.nsILocalHandlerApp &&
-      this.chosenApp.executable &&
-      this.chosenApp.executable.path
+      this.chosenApp?.executable?.path
     ) {
       otherHandler.setAttribute(
         "path",
@@ -828,12 +853,8 @@ nsUnknownContentTypeDialog.prototype = {
       otherHandler.hidden = false;
     }
 
-    if (
-      this.chosenApp &&
-      this.chosenApp instanceof Ci.nsIGIOHandlerApp &&
-      this.chosenApp.id
-    ) {
-      otherHandler.setAttribute("appid", this.chooseApp.id);
+    if (this.chosenApp instanceof Ci.nsIGIOHandlerApp && this.chosenApp?.id) {
+      otherHandler.setAttribute("appid", this.chosenApp.id);
       otherHandler.label = this.chosenApp.name;
       otherHandler.hidden = false;
     }
@@ -846,14 +867,15 @@ nsUnknownContentTypeDialog.prototype = {
     }
 
     if (
-      this.mLauncher.MIMEInfo.preferredAction ==
-      this.nsIMIMEInfo.useSystemDefault
+      this.mLauncher.MIMEInfo.preferredAction == Ci.nsIMIMEInfo.useSystemDefault
     ) {
+      this.#debuglog("Selecting and showing system default handler");
       // Open (using system default).
       modeGroup.selectedItem = this.dialogElement("open");
     } else if (
-      this.mLauncher.MIMEInfo.preferredAction == this.nsIMIMEInfo.useHelperApp
+      this.mLauncher.MIMEInfo.preferredAction == Ci.nsIMIMEInfo.useHelperApp
     ) {
+      this.#debuglog("Selecting and showing helper app");
       // Open with given helper app.
       modeGroup.selectedItem = this.dialogElement("open");
       openHandler.selectedItem =
@@ -862,18 +884,20 @@ nsUnknownContentTypeDialog.prototype = {
           : defaultOpenHandler;
     } else if (
       !this.dialogElement("handleInternally").hidden &&
-      this.mLauncher.MIMEInfo.preferredAction ==
-        this.nsIMIMEInfo.handleInternally
+      this.mLauncher.MIMEInfo.preferredAction == Ci.nsIMIMEInfo.handleInternally
     ) {
+      this.#debuglog("Selecting and showing internal handler");
       // Handle internally
       modeGroup.selectedItem = this.dialogElement("handleInternally");
     } else {
+      this.#debuglog("Selecting and showing save to disk");
       // Save to disk.
       modeGroup.selectedItem = this.dialogElement("save");
     }
 
     // If we don't have a "default app" then disable that choice.
-    if (!openWithDefaultOK) {
+    if (!canUseDefaultHandler) {
+      this.#debuglog("Disabling 'open with app' choice.");
       var isSelected = defaultOpenHandler.selected;
 
       // Disable that choice.
@@ -890,39 +914,39 @@ nsUnknownContentTypeDialog.prototype = {
     otherHandler.nextSibling.hidden =
       otherHandler.nextSibling.nextSibling.hidden = false;
     this.updateOKButton();
-  },
+  }
 
   // Returns the user-selected application
   helperAppChoice() {
     return this.chosenApp;
-  },
+  }
 
   get saveToDisk() {
     return this.dialogElement("save").selected;
-  },
+  }
 
   get useOtherHandler() {
     return (
       this.dialogElement("open").selected &&
       this.dialogElement("openHandler").selectedIndex == 1
     );
-  },
+  }
 
   get useSystemDefault() {
     return (
       this.dialogElement("open").selected &&
       this.dialogElement("openHandler").selectedIndex == 0
     );
-  },
+  }
 
   get handleInternally() {
     return this.dialogElement("handleInternally").selected;
-  },
+  }
 
   toggleRememberChoice(aCheckbox) {
     this.dialogElement("settingsChange").hidden = !aCheckbox.checked;
     this.mDialog.sizeToContent();
-  },
+  }
 
   openHandlerCommand() {
     var openHandler = this.dialogElement("openHandler");
@@ -934,7 +958,7 @@ nsUnknownContentTypeDialog.prototype = {
         openHandler.selectedItem.id
       );
     }
-  },
+  }
 
   updateOKButton() {
     var ok = false;
@@ -963,7 +987,7 @@ nsUnknownContentTypeDialog.prototype = {
     // Enable Ok button if ok to press.
     let dialog = this.mDialog.document.getElementById("unknownContentType");
     dialog.getButton("accept").disabled = !ok;
-  },
+  }
 
   // Returns true iff the user-specified helper app has been modified.
   appChanged() {
@@ -971,7 +995,7 @@ nsUnknownContentTypeDialog.prototype = {
       this.helperAppChoice() !=
       this.mLauncher.MIMEInfo.preferredApplicationHandler
     );
-  },
+  }
 
   updateMIMEInfo() {
     let { MIMEInfo } = this.mLauncher;
@@ -1001,26 +1025,26 @@ nsUnknownContentTypeDialog.prototype = {
     // then we need to update.
     if (this.saveToDisk) {
       needUpdate =
-        this.mLauncher.MIMEInfo.preferredAction != this.nsIMIMEInfo.saveToDisk;
+        this.mLauncher.MIMEInfo.preferredAction != Ci.nsIMIMEInfo.saveToDisk;
       if (needUpdate) {
-        this.mLauncher.MIMEInfo.preferredAction = this.nsIMIMEInfo.saveToDisk;
+        this.mLauncher.MIMEInfo.preferredAction = Ci.nsIMIMEInfo.saveToDisk;
       }
     } else if (this.useSystemDefault) {
       needUpdate =
         this.mLauncher.MIMEInfo.preferredAction !=
-        this.nsIMIMEInfo.useSystemDefault;
+        Ci.nsIMIMEInfo.useSystemDefault;
       if (needUpdate) {
         this.mLauncher.MIMEInfo.preferredAction =
-          this.nsIMIMEInfo.useSystemDefault;
+          Ci.nsIMIMEInfo.useSystemDefault;
       }
     } else if (this.useOtherHandler) {
       // For "open with", we need to check both preferred action and whether the user chose
       // a new app.
       needUpdate =
         this.mLauncher.MIMEInfo.preferredAction !=
-          this.nsIMIMEInfo.useHelperApp || this.appChanged();
+          Ci.nsIMIMEInfo.useHelperApp || this.appChanged();
       if (needUpdate) {
-        this.mLauncher.MIMEInfo.preferredAction = this.nsIMIMEInfo.useHelperApp;
+        this.mLauncher.MIMEInfo.preferredAction = Ci.nsIMIMEInfo.useHelperApp;
         // App may have changed - Update application
         var app = this.helperAppChoice();
         this.mLauncher.MIMEInfo.preferredApplicationHandler = app;
@@ -1028,10 +1052,10 @@ nsUnknownContentTypeDialog.prototype = {
     } else if (this.handleInternally) {
       needUpdate =
         this.mLauncher.MIMEInfo.preferredAction !=
-        this.nsIMIMEInfo.handleInternally;
+        Ci.nsIMIMEInfo.handleInternally;
       if (needUpdate) {
         this.mLauncher.MIMEInfo.preferredAction =
-          this.nsIMIMEInfo.handleInternally;
+          Ci.nsIMIMEInfo.handleInternally;
       }
     }
     // We will also need to update if the "always ask" flag has changed.
@@ -1053,7 +1077,7 @@ nsUnknownContentTypeDialog.prototype = {
       !this.dialogElement("rememberChoice").checked;
 
     return needUpdate && !discardUpdate;
-  },
+  }
 
   // See if the user changed things, and if so, store this mime type in the
   // handler service.
@@ -1063,7 +1087,7 @@ nsUnknownContentTypeDialog.prototype = {
       Ci.nsIHandlerService
     );
     hs.store(handlerInfo);
-  },
+  }
 
   onOK(aEvent) {
     // Verify typed app path, if necessary.
@@ -1141,7 +1165,7 @@ nsUnknownContentTypeDialog.prototype = {
     }
 
     this.onUnload();
-  },
+  }
 
   onCancel() {
     // Remove our web progress listener.
@@ -1155,7 +1179,7 @@ nsUnknownContentTypeDialog.prototype = {
     }
 
     this.onUnload();
-  },
+  }
 
   onUnload() {
     this.mDialog.document.removeEventListener("dialogaccept", this);
@@ -1163,7 +1187,7 @@ nsUnknownContentTypeDialog.prototype = {
 
     // Unhook dialog from this object.
     this.mDialog.dialog = null;
-  },
+  }
 
   handleEvent(aEvent) {
     switch (aEvent.type) {
@@ -1174,14 +1198,14 @@ nsUnknownContentTypeDialog.prototype = {
         this.onCancel();
         break;
     }
-  },
+  }
 
   dialogElement(id) {
     return this.mDialog.document.getElementById(id);
-  },
+  }
 
   // Retrieve the pretty description from the file
-  getFileDisplayName: function getFileDisplayName(file) {
+  getFileDisplayName(file) {
     if (AppConstants.platform == "win") {
       if (file instanceof Ci.nsILocalFileWin) {
         try {
@@ -1196,7 +1220,7 @@ nsUnknownContentTypeDialog.prototype = {
       }
     }
     return file.leafName;
-  },
+  }
 
   finishChooseApp() {
     if (this.chosenApp) {
@@ -1235,7 +1259,8 @@ nsUnknownContentTypeDialog.prototype = {
       }
       openHandler.selectedItem = this.dialogElement(lastSelectedID);
     }
-  },
+  }
+
   // chooseApp:  Open file picker and prompt user for application.
   chooseApp() {
     if (AppConstants.platform == "win") {
@@ -1338,7 +1363,7 @@ nsUnknownContentTypeDialog.prototype = {
     }
 
     this.finishChooseApp();
-  },
+  }
 
   shouldShowInternalHandlerOption() {
     let browsingContext = this.mDialog.BrowsingContext.get(
@@ -1380,15 +1405,5 @@ nsUnknownContentTypeDialog.prototype = {
         primaryExtension
       )
     );
-  },
-
-  // Turn this on to get debugging messages.
-  debug: false,
-
-  // Dump text (if debug is on).
-  dump(text) {
-    if (this.debug) {
-      dump(text);
-    }
-  },
-};
+  }
+}

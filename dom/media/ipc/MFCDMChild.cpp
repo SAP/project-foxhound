@@ -4,13 +4,13 @@
 
 #include "MFCDMChild.h"
 
+#include "RemoteMediaManagerChild.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/KeySystemConfig.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticString.h"
 #include "mozilla/WMFCDMProxyCallback.h"
 #include "nsString.h"
-#include "RemoteMediaManagerChild.h"
 
 namespace mozilla {
 
@@ -460,6 +460,28 @@ mozilla::ipc::IPCResult MFCDMChild::RecvOnSessionKeyExpiration(
   MOZ_ASSERT(mProxyCallback);
   mProxyCallback->OnSessionKeyExpiration(aExpiration);
   return IPC_OK();
+}
+
+mozilla::ipc::IPCResult MFCDMChild::RecvOnSessionClosed(
+    const MFCDMSessionClosedResult& aResult) {
+  LOG("RecvOnSessionClosed, sessionId=%s",
+      NS_ConvertUTF16toUTF8(aResult.sessionId()).get());
+  MOZ_ASSERT(mManagerThread);
+  MOZ_ASSERT(mProxyCallback);
+  mProxyCallback->OnSessionClosed(aResult);
+  return IPC_OK();
+}
+
+void MFCDMChild::IPDLActorDestroyed() {
+  AssertOnManagerThread();
+  mIPDLSelfRef = nullptr;
+  if (!mShutdown) {
+    LOG("IPDLActorDestroyed, remote process crashed!");
+    mState = NS_ERROR_NOT_AVAILABLE;
+    if (mProxyCallback) {
+      mProxyCallback->OnRemoteProcessCrashed();
+    }
+  }
 }
 
 #undef SLOG

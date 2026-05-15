@@ -6,9 +6,9 @@
 
 #include "mozilla/dom/WorkerRef.h"
 
-#include "nsDebug.h"
-#include "WorkerRunnable.h"
 #include "WorkerPrivate.h"
+#include "WorkerRunnable.h"
+#include "nsDebug.h"
 
 namespace mozilla::dom {
 

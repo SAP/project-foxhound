@@ -2,11 +2,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsTableCellFrame_h__
-#define nsTableCellFrame_h__
+#ifndef nsTableCellFrame_h_
+#define nsTableCellFrame_h_
 
 #include "celldata.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/WritingModes.h"
 #include "nsContainerFrame.h"
@@ -20,6 +19,13 @@ namespace mozilla {
 class PresShell;
 class ScrollContainerFrame;
 }  // namespace mozilla
+
+enum class TableCellAlignment : uint8_t {
+  Top,
+  Middle,
+  Bottom,
+  Baseline,
+};
 
 /**
  * nsTableCellFrame
@@ -68,7 +74,7 @@ class nsTableCellFrame : public nsContainerFrame,
 #endif
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   /** @see nsIFrame::DidSetComputedStyle */
   void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
@@ -130,14 +136,12 @@ class nsTableCellFrame : public nsContainerFrame,
                             mozilla::ForceAlignTopForTableCell aForceAlignTop);
 
   /*
-   * Get the value of vertical-align adjusted for CSS 2's rules for a
-   * table cell, which means the result is always
-   * StyleVerticalAlignKeyword::{Top,Middle,Bottom,Baseline}.
+   * Map the CSS vertical-align to the corresponding table cell alignment value.
    */
-  virtual mozilla::StyleVerticalAlignKeyword GetVerticalAlign() const;
+  virtual TableCellAlignment GetTableCellAlignment() const;
 
-  bool HasVerticalAlignBaseline() const {
-    return GetVerticalAlign() == mozilla::StyleVerticalAlignKeyword::Baseline &&
+  bool HasTableCellAlignmentBaseline() const {
+    return GetTableCellAlignment() == TableCellAlignment::Baseline &&
            !GetContentEmpty();
   }
 

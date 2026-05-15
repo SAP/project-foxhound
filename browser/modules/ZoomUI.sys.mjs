@@ -184,7 +184,7 @@ export async function updateZoomUI(aBrowser, aAnimate = false) {
   win.FullZoom.updateCommands();
 }
 
-import { CustomizableUI } from "resource:///modules/CustomizableUI.sys.mjs";
+import { CustomizableUI } from "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs";
 
 let customizationListener = {};
 customizationListener.onWidgetAdded =

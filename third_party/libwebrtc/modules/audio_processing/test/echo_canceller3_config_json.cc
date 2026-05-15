@@ -9,12 +9,13 @@
  */
 #include "modules/audio_processing/test/echo_canceller3_config_json.h"
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
+#include "api/audio/echo_canceller3_config.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/json.h"
@@ -408,6 +409,15 @@ void Aec3ConfigFromJsonString(absl::string_view json_string,
                      .anti_howling_activation_threshold);
       ReadParam(subsection, "anti_howling_gain",
                 &cfg.suppressor.high_bands_suppression.anti_howling_gain);
+    }
+
+    if (GetValueFromJsonObject(section, "high_frequency_suppression",
+                               &subsection)) {
+      ReadParam(subsection, "limiting_gain_band",
+                &cfg.suppressor.high_frequency_suppression.limiting_gain_band);
+      ReadParam(
+          subsection, "bands_in_limiting_gain",
+          &cfg.suppressor.high_frequency_suppression.bands_in_limiting_gain);
     }
 
     ReadParam(section, "floor_first_increase",

@@ -10,34 +10,32 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.setMain
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.TestAction
 import mozilla.components.lib.state.TestState
 import mozilla.components.lib.state.reducer
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.rule.MainCoroutineRule
+import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentCaptor
+import org.mockito.Mockito.atLeastOnce
 import org.mockito.Mockito.doNothing
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.CoroutineContext
 
 @RunWith(AndroidJUnit4::class)
-@ExperimentalCoroutinesApi
 class FragmentKtTest {
 
     @get:Rule
@@ -74,7 +72,7 @@ class FragmentKtTest {
         assertEquals(0, receivedValue)
 
         // Updating state: Nothing received yet.
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(0, receivedValue)
 
@@ -84,12 +82,12 @@ class FragmentKtTest {
         assertEquals(24, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
         latch = CountDownLatch(1)
@@ -97,7 +95,7 @@ class FragmentKtTest {
         // View gets detached
         onAttachListener.value.onViewDetachedFromWindow(view)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
     }
@@ -130,31 +128,31 @@ class FragmentKtTest {
         assertEquals(23, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(24, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
 
         doReturn(null).`when`(fragment).activity
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
 
         doReturn(mock<FragmentActivity>()).`when`(fragment).activity
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(28, receivedValue)
     }
@@ -177,6 +175,7 @@ class FragmentKtTest {
         doNothing().`when`(view).addOnAttachStateChangeListener(onAttachListener.capture())
         doReturn(mock<FragmentActivity>()).`when`(fragment).activity
         doReturn(view).`when`(fragment).view
+        doReturn(owner).`when`(fragment).viewLifecycleOwner
         doReturn(owner.lifecycle).`when`(fragment).lifecycle
 
         fragment.consumeFlow(
@@ -194,7 +193,7 @@ class FragmentKtTest {
         assertEquals(0, receivedValue)
 
         // Updating state: Nothing received yet.
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(0, receivedValue)
 
@@ -204,12 +203,12 @@ class FragmentKtTest {
         assertEquals(24, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
         latch = CountDownLatch(1)
@@ -217,7 +216,7 @@ class FragmentKtTest {
         // View gets detached
         onAttachListener.value.onViewDetachedFromWindow(view)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
     }
@@ -239,6 +238,8 @@ class FragmentKtTest {
         doNothing().`when`(view).addOnAttachStateChangeListener(onAttachListener.capture())
         doReturn(mock<FragmentActivity>()).`when`(fragment).activity
         doReturn(view).`when`(fragment).view
+        doReturn(fragmentLifecycleOwner).`when`(fragment).viewLifecycleOwner
+
         doReturn(fragmentLifecycleOwner.lifecycle).`when`(fragment).lifecycle
 
         fragment.consumeFlow(
@@ -255,7 +256,7 @@ class FragmentKtTest {
         assertEquals(0, receivedValue)
 
         // Updating state: Nothing received yet.
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(0, receivedValue)
 
@@ -265,7 +266,7 @@ class FragmentKtTest {
         assertEquals(24, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
         latch = CountDownLatch(1)
@@ -277,18 +278,13 @@ class FragmentKtTest {
         val fragmentLifecycle = mock<LifecycleRegistry>()
         val view = mock<View>()
         val store = Store(TestState(counter = 23), ::reducer)
+        val owner = MockedLifecycleOwner(Lifecycle.State.INITIALIZED)
 
         doReturn(mock<FragmentActivity>()).`when`(fragment).activity
         doReturn(fragmentLifecycle).`when`(fragment).lifecycle
+        doReturn(owner).`when`(fragment).viewLifecycleOwner
         doReturn(view).`when`(fragment).view
 
-        // Verify that we create the flow even if no other coroutine runs past this point
-        val noopDispatcher = object : CoroutineDispatcher() {
-            override fun dispatch(context: CoroutineContext, block: Runnable) {
-                // NOOP
-            }
-        }
-        Dispatchers.setMain(noopDispatcher)
         fragment.consumeFlow(store) { flow ->
             flow.collect { }
         }
@@ -296,6 +292,176 @@ class FragmentKtTest {
         // Only way to verify that store.flow was called without triggering the channelFlow
         // producer and in this test we want to make sure we call store.flow before the flow
         // is "produced."
-        verify(fragmentLifecycle).addObserver(any())
+        verify(fragmentLifecycle, atLeastOnce()).addObserver(any())
+    }
+
+    @Test
+    fun `consumeFlow does not collect when view lifecycle destroyed before collection`() {
+        val fragment = mock<Fragment>()
+        val viewMock = mock<View>()
+        val viewLifecycleOwner = MockedLifecycleOwner(Lifecycle.State.CREATED)
+
+        val store = Store(
+            TestState(counter = 42),
+            ::reducer,
+        )
+
+        var collectedValue: Int? = null
+        var collectionAttemptedFor43 = false
+        val collectionLatch = CountDownLatch(1) // For item 43 (should not be hit)
+
+        val attachStateChangeListenerCaptor =
+            ArgumentCaptor.forClass(View.OnAttachStateChangeListener::class.java)
+
+        doNothing().`when`(viewMock)
+            .addOnAttachStateChangeListener(attachStateChangeListenerCaptor.capture())
+        `when`(viewMock.isAttachedToWindow).thenReturn(true)
+        `when`(fragment.activity).thenReturn(org.mockito.Mockito.mock(FragmentActivity::class.java))
+        // View is initially available
+        `when`(fragment.view).thenReturn(viewMock)
+        `when`(fragment.viewLifecycleOwner).thenReturn(viewLifecycleOwner)
+        `when`(fragment.lifecycle).thenReturn(viewLifecycleOwner.lifecycle)
+
+        // Call consumeFlow. Collection is set up but not active due to CREATED state.
+        fragment.consumeFlow(
+            from = store,
+        ) { flow ->
+            flow.collect { state ->
+                collectedValue = state.counter
+                if (state.counter == 43) { // Only care if 43 is collected
+                    collectionAttemptedFor43 = true
+                    collectionLatch.countDown()
+                }
+            }
+        }
+
+        verify(viewMock).addOnAttachStateChangeListener(attachStateChangeListenerCaptor.capture())
+        assertNotNull(
+            "OnAttachStateChangeListener should have been captured",
+            attachStateChangeListenerCaptor.value,
+        )
+
+        store.dispatch(TestAction.IncrementAction)
+
+        `when`(fragment.view).thenReturn(null)
+
+        attachStateChangeListenerCaptor.value.onViewDetachedFromWindow(viewMock)
+        `when`(viewMock.isAttachedToWindow).thenReturn(false)
+
+        viewLifecycleOwner.lifecycleRegistry.currentState = Lifecycle.State.STARTED
+
+        coroutinesTestRule.testDispatcher.scheduler.runCurrent()
+
+        viewLifecycleOwner.lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+
+        assertFalse(
+            "Latch for 43 should NOT have counted down. collectedValue: $collectedValue, collectionAttemptedFor43: $collectionAttemptedFor43",
+            collectionLatch.await(50, TimeUnit.MILLISECONDS),
+        )
+        assertFalse("Collection of state 43 should not have occurred", collectionAttemptedFor43)
+        if (collectedValue == 43) {
+            Assert.fail("collectedValue became 43, but should not have.")
+        }
+    }
+
+    @Test
+    fun `consumeFlow stops collecting when view detached mid flow`() {
+        val fragment = mock<Fragment>()
+        val viewMock = mock<View>()
+        // Start lifecycle in a state where collection can begin once STARTED
+        val viewLifecycleOwner = MockedLifecycleOwner(Lifecycle.State.CREATED)
+
+        val store = Store(
+            TestState(counter = 10), // Initial state
+            ::reducer,
+        )
+
+        var collectedValue: Int? = null
+        val collectedItems = mutableListOf<Int>()
+        val firstItemLatch = CountDownLatch(1)
+        val secondItemLatch = CountDownLatch(1)
+        // This latch should NOT be hit for the third item
+        val thirdItemLatch = CountDownLatch(1)
+
+        val attachStateChangeListenerCaptor =
+            ArgumentCaptor.forClass(View.OnAttachStateChangeListener::class.java)
+
+        doNothing().`when`(viewMock)
+            .addOnAttachStateChangeListener(attachStateChangeListenerCaptor.capture())
+        `when`(viewMock.isAttachedToWindow).thenReturn(true) // View is initially attached
+
+        `when`(fragment.activity).thenReturn(mock<FragmentActivity>())
+        `when`(fragment.view).thenReturn(viewMock) // View is initially available
+        `when`(fragment.viewLifecycleOwner).thenReturn(viewLifecycleOwner)
+        `when`(fragment.lifecycle).thenReturn(viewLifecycleOwner.lifecycle)
+
+        fragment.consumeFlow(from = store) { flow ->
+            flow.collect { state ->
+                collectedValue = state.counter
+                collectedItems.add(state.counter)
+                when (state.counter) {
+                    10 -> firstItemLatch.countDown()
+                    11 -> secondItemLatch.countDown()
+                    12 -> thirdItemLatch.countDown() // Should not reach here
+                }
+            }
+        }
+
+        verify(viewMock).addOnAttachStateChangeListener(attachStateChangeListenerCaptor.capture())
+        assertNotNull(
+            "OnAttachStateChangeListener should have been captured",
+            attachStateChangeListenerCaptor.value,
+        )
+
+        // Move to STARTED to allow collection of initial state (10)
+        viewLifecycleOwner.lifecycleRegistry.currentState = Lifecycle.State.STARTED
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(
+            "Initial item (10) should have been collected",
+            firstItemLatch.await(1, TimeUnit.SECONDS),
+        )
+        assertEquals("Collected value should be 10", 10, collectedValue)
+
+        // Dispatch and collect a second item (11)
+        store.dispatch(TestAction.IncrementAction) // counter becomes 11
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(
+            "Second item (11) should have been collected",
+            secondItemLatch.await(1, TimeUnit.SECONDS),
+        )
+        assertEquals("Collected value should be 11", 11, collectedValue)
+
+        // Now, simulate view detachment - this should cancel the viewScope
+        attachStateChangeListenerCaptor.value.onViewDetachedFromWindow(viewMock)
+        `when`(fragment.view).thenReturn(null) // Fragment's view is now null
+        `when`(viewMock.isAttachedToWindow).thenReturn(false) // View is no longer attached
+
+        // Optional: Also move lifecycle to DESTROYED to be thorough
+        viewLifecycleOwner.lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
+
+        // Run any tasks that result from detachment/destruction
+        coroutinesTestRule.testDispatcher.scheduler.runCurrent()
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+
+        // Attempt to dispatch a third item (12)
+        store.dispatch(TestAction.IncrementAction) // counter becomes 12
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+
+        // Verify the third item (12) was NOT collected
+        assertFalse(
+            "Third item (12) should NOT have been collected after detachment/destruction. Collected items: $collectedItems",
+            thirdItemLatch.await(50, TimeUnit.MILLISECONDS),
+        )
+        assertEquals(
+            "Collected value should remain 11 (the last value before cancellation)",
+            11,
+            collectedValue,
+        )
+        assertTrue("Collected items should not contain 12", !collectedItems.contains(12))
+        assertEquals("Should have collected 2 items (10, 11)", 2, collectedItems.size)
     }
 }

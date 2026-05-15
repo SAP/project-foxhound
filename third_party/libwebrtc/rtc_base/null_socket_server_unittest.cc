@@ -10,8 +10,7 @@
 
 #include "rtc_base/null_socket_server.h"
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <memory>
 
 #include "api/test/rtc_error_matchers.h"
@@ -33,10 +32,10 @@ TEST(NullSocketServerTest, WaitAndSet) {
   thread->PostTask([&ss] { ss.WakeUp(); });
   // The process_io will be ignored.
   const bool process_io = true;
-  EXPECT_THAT(webrtc::WaitUntil(
-                  [&] { return ss.Wait(SocketServer::kForever, process_io); },
-                  ::testing::IsTrue(), {.timeout = TimeDelta::Millis(5'000)}),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return ss.Wait(SocketServer::kForever, process_io); },
+                ::testing::IsTrue(), {.timeout = TimeDelta::Millis(5'000)}),
+      IsRtcOk());
 }
 
 TEST(NullSocketServerTest, TestWait) {

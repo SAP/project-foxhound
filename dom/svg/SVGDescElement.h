@@ -7,7 +7,6 @@
 #ifndef DOM_SVG_SVGDESCELEMENT_H_
 #define DOM_SVG_SVGDESCELEMENT_H_
 
-#include "mozilla/Attributes.h"
 #include "SVGElement.h"
 
 nsresult NS_NewSVGDescElement(

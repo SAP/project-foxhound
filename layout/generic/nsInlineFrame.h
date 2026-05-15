@@ -6,10 +6,9 @@
 
 /* rendering object for CSS display:inline objects */
 
-#ifndef nsInlineFrame_h___
-#define nsInlineFrame_h___
+#ifndef nsInlineFrame_h_
+#define nsInlineFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 
 class nsLineLayout;
@@ -68,7 +67,7 @@ class nsInlineFrame : public nsContainerFrame {
   void AddInlinePrefISize(const mozilla::IntrinsicSizeInput& aInput,
                           InlinePrefISizeData* aData) override;
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -81,7 +80,7 @@ class nsInlineFrame : public nsContainerFrame {
               nsReflowStatus& aStatus) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   bool CanContinueTextRun() const override;
 
@@ -209,4 +208,4 @@ class nsFirstLineFrame final : public nsInlineFrame {
   nsIFrame* PullOneFrame(nsPresContext*, InlineReflowInput&) override;
 };
 
-#endif /* nsInlineFrame_h___ */
+#endif /* nsInlineFrame_h_ */

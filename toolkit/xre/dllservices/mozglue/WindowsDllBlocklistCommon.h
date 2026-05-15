@@ -7,7 +7,6 @@
 #ifndef mozilla_WindowsDllBlocklistCommon_h
 #define mozilla_WindowsDllBlocklistCommon_h
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/WindowsDllBlocklistInfo.h"
 
 #if !defined(DLL_BLOCKLIST_STRING_TYPE)

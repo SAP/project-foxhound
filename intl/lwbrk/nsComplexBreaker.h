@@ -2,8 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsComplexBreaker_h__
-#define nsComplexBreaker_h__
+#ifndef nsComplexBreaker_h_
+#define nsComplexBreaker_h_
 
 #include <stdint.h>
 /**
@@ -33,4 +33,4 @@ class ComplexBreaker {
                         uint8_t* aBreakBefore);
 };
 
-#endif /* nsComplexBreaker_h__ */
+#endif /* nsComplexBreaker_h_ */

@@ -226,7 +226,7 @@ async function addMediaTab(src) {
     forceNewProcess: true,
   });
   const browser = gBrowser.getBrowserForTab(tab);
-  await BrowserTestUtils.browserLoaded(browser);
+  await BrowserTestUtils.browserLoaded(browser, { wantLoad: "about:blank" });
   await SpecialPowers.spawn(browser, [src], createAudioElement);
   return tab;
 }

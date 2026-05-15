@@ -6,15 +6,15 @@
 
 #include "BlankDecoderModule.h"
 
-#include "mozilla/CheckedInt.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/gfx/Rect.h"
-#include "mozilla/gfx/Point.h"
 #include "ImageContainer.h"
 #include "MediaData.h"
 #include "MediaInfo.h"
 #include "VideoUtils.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/Rect.h"
 
 namespace mozilla {
 

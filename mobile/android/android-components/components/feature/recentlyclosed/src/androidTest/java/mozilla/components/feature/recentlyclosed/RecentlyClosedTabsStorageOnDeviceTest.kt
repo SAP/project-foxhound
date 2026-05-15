@@ -6,9 +6,7 @@ package mozilla.components.feature.recentlyclosed
 
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.browser.state.state.recover.TabState
@@ -75,7 +73,7 @@ class RecentlyClosedTabsStorageOnDeviceTest {
 
 private class FakeCrashReporting : CrashReporting {
     override fun submitCaughtException(throwable: Throwable): Job {
-        return MainScope().launch {}
+        return Job().apply { complete() }
     }
 
     override fun recordCrashBreadcrumb(breadcrumb: Breadcrumb) {}

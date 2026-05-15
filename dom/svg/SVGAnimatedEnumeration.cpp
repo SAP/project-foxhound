@@ -6,12 +6,12 @@
 
 #include "SVGAnimatedEnumeration.h"
 
-#include "mozilla/dom/SVGElement.h"
-#include "mozilla/SMILValue.h"
-#include "nsAtom.h"
-#include "nsError.h"
 #include "SMILEnumType.h"
 #include "SVGAttrTearoffTable.h"
+#include "mozilla/SMILValue.h"
+#include "mozilla/dom/SVGElement.h"
+#include "nsAtom.h"
+#include "nsError.h"
 
 using namespace mozilla::dom;
 
@@ -44,8 +44,8 @@ class MOZ_RAII AutoChangeEnumNotifier {
   bool mDoSetAttr;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<
-    SVGAnimatedEnumeration, SVGAnimatedEnumeration::DOMAnimatedEnum>
+constinit static SVGAttrTearoffTable<SVGAnimatedEnumeration,
+                                     SVGAnimatedEnumeration::DOMAnimatedEnum>
     sSVGAnimatedEnumTearoffTable;
 
 const SVGEnumMapping* SVGAnimatedEnumeration::GetMapping(
@@ -146,9 +146,9 @@ SVGAnimatedEnumeration::DOMAnimatedEnum::~DOMAnimatedEnum() {
   sSVGAnimatedEnumTearoffTable.RemoveTearoff(mVal);
 }
 
-UniquePtr<SMILAttr> SVGAnimatedEnumeration::ToSMILAttr(
+std::unique_ptr<SMILAttr> SVGAnimatedEnumeration::ToSMILAttr(
     SVGElement* aSVGElement) {
-  return MakeUnique<SMILEnum>(this, aSVGElement);
+  return std::make_unique<SMILEnum>(this, aSVGElement);
 }
 
 nsresult SVGAnimatedEnumeration::SMILEnum::ValueFromString(

@@ -4,21 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "js/Value.h"
-#include "nsThreadUtils.h"
+#include "mozilla/dom/PromiseDebugging.h"
 
+#include "js/Value.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/TimeStamp.h"
-
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseBinding.h"
-#include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/PromiseDebuggingBinding.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom {
 

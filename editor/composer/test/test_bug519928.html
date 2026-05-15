@@ -25,70 +25,27 @@ function allowJS(allow, frame) {
   SpecialPowers.wrap(frame.contentWindow).windowGlobalChild.windowContext.allowJavascript = allow;
 }
 
-function expectJSAllowed(allowed, testCondition, callback) {
+async function expectJSAllowed(allowed, testCondition) {
   window.ICanRunMyJS = false;
-  var self_ = window;
+  const self_ = window;
   testCondition();
 
-  var doc = iframe.contentDocument;
-  doc.body.innerHTML = "<iframe></iframe>";
-  var innerFrame = doc.querySelector("iframe");
-  innerFrame.addEventListener("load", function() {
-    var msg = "The inner iframe should" + (allowed ? "" : " not") + " be able to run Javascript";
-    is(self_.ICanRunMyJS, allowed, msg);
-    callback();
-  }, {once: true});
+  const doc = iframe.contentDocument;
+  const innerFrame = doc.createElement("iframe");
   // eslint-disable-next-line no-useless-concat
-  var iframeSrc = "<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
-  innerFrame.srcdoc = iframeSrc;
+  innerFrame.srcdoc = "<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
+  const loaded = new Promise(resolve => innerFrame.onload = resolve);
+  doc.body.append(innerFrame);
+
+  await loaded;
+  is(self_.ICanRunMyJS, allowed, "The inner iframe should" + (allowed ? "" : " not") + " be able to run Javascript");
+
+  innerFrame.remove();
 }
 
-SimpleTest.waitForExplicitFinish();
-/* eslint-disable max-nested-callbacks */
-addLoadEvent(function() {
-  var enterDesignMode = function() { document.designMode = "on"; };
-  var leaveDesignMode = function() { document.designMode = "off"; };
-  expectJSAllowed(false, disableJS, function() {
-    expectJSAllowed(true, enableJS, function() {
-      expectJSAllowed(true, enterDesignMode, function() {
-        expectJSAllowed(true, leaveDesignMode, function() {
-          expectJSAllowed(false, disableJS, function() {
-            expectJSAllowed(false, enterDesignMode, function() {
-              expectJSAllowed(false, leaveDesignMode, function() {
-                expectJSAllowed(true, enableJS, function() {
-                  enterDesignMode = function() { iframe.contentDocument.designMode = "on"; };
-                  leaveDesignMode = function() { iframe.contentDocument.designMode = "off"; };
-                  expectJSAllowed(false, disableJS, function() {
-                    expectJSAllowed(true, enableJS, function() {
-                      expectJSAllowed(true, enterDesignMode, function() {
-                        expectJSAllowed(true, leaveDesignMode, function() {
-                          expectJSAllowed(false, disableJS, function() {
-                            expectJSAllowed(false, enterDesignMode, function() {
-                              expectJSAllowed(false, leaveDesignMode, function() {
-                                expectJSAllowed(true, enableJS, function() {
-                                  testDocumentDisabledJS();
-                                });
-                              });
-                            });
-                          });
-                        });
-                      });
-                    });
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-  });
-});
-/* eslint-enable max-nested-callbacks */
-
-function testDocumentDisabledJS() {
+async function testDocumentDisabledJS() {
   window.ICanRunMyJS = false;
-  var self_ = window;
+  const self_ = window;
   // Ensure design modes are disabled
   document.designMode = "off";
   iframe.contentDocument.designMode = "off";
@@ -96,23 +53,52 @@ function testDocumentDisabledJS() {
   // Javascript enabled on the main iframe
   enableJS();
 
-  var doc = iframe.contentDocument;
-  doc.body.innerHTML = "<iframe></iframe>";
-  var innerFrame = doc.querySelector("iframe");
+  const doc = iframe.contentDocument;
+  const innerFrame = doc.createElement("iframe");
+  // eslint-disable-next-line no-useless-concat
+  innerFrame.srcdoc = "<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
+  const loaded = new Promise(resolve => innerFrame.onload = resolve);
+  doc.body.append(innerFrame);
 
   // Javascript disabled on the innerFrame.
   allowJS(false, innerFrame);
 
-  innerFrame.addEventListener("load", function() {
-    var msg = "The inner iframe should not be able to run Javascript";
-    is(self_.ICanRunMyJS, false, msg);
-    SimpleTest.finish();
-  }, {once: true});
-  // eslint-disable-next-line no-useless-concat
-  var iframeSrc = "<script>parent.parent.ICanRunMyJS = true;</scr" + "ipt>";
-  innerFrame.srcdoc = iframeSrc;
+  await loaded;
+  is(self_.ICanRunMyJS, false, "The inner iframe should not be able to run Javascript");
+
+  innerFrame.remove();
 }
 
+SimpleTest.waitForExplicitFinish();
+addLoadEvent(async function() {
+  var enterDesignMode = function() { document.designMode = "on"; };
+  var leaveDesignMode = function() { document.designMode = "off"; };
+
+  await expectJSAllowed(false, disableJS);
+  await expectJSAllowed(true, enableJS);
+  await expectJSAllowed(true, enterDesignMode);
+  await expectJSAllowed(true, leaveDesignMode);
+  await expectJSAllowed(false, disableJS);
+  await expectJSAllowed(false, enterDesignMode);
+  await expectJSAllowed(false, leaveDesignMode);
+  await expectJSAllowed(true, enableJS);
+
+  enterDesignMode = function() { iframe.contentDocument.designMode = "on"; };
+  leaveDesignMode = function() { iframe.contentDocument.designMode = "off"; };
+
+  await expectJSAllowed(false, disableJS);
+  await expectJSAllowed(true, enableJS);
+  await expectJSAllowed(true, enterDesignMode);
+  await expectJSAllowed(true, leaveDesignMode);
+  await expectJSAllowed(false, disableJS);
+  await expectJSAllowed(false, enterDesignMode);
+  await expectJSAllowed(false, leaveDesignMode);
+  await expectJSAllowed(true, enableJS);
+
+  await testDocumentDisabledJS();
+
+  SimpleTest.finish();
+});
 </script>
 </pre>
 </body>

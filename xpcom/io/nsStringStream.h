@@ -7,8 +7,8 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-#ifndef nsStringStream_h__
-#define nsStringStream_h__
+#ifndef nsStringStream_h_
+#define nsStringStream_h_
 
 #include "nsIStringStream.h"
 #include "nsString.h"
@@ -91,4 +91,4 @@ extern nsresult NS_NewCStringInputStream(nsIInputStream** aStreamResult,
 extern nsresult NS_NewCStringInputStream(nsIInputStream** aStreamResult,
                                          nsCString&& aStringToRead);
 
-#endif  // nsStringStream_h__
+#endif  // nsStringStream_h_

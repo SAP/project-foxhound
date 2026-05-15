@@ -358,7 +358,7 @@ parser.add_argument(
     "--expect-file",
     type=str,
     nargs="?",
-    help="deprecated option, temporarily still present for backwards " "compatibility",
+    help="deprecated option, temporarily still present for backwards compatibility",
 )
 parser.add_argument(
     "--verbose",
@@ -434,12 +434,13 @@ for step in steps:
             # Trim the {curly brackets} off of the output keys.
             data[name[1:-1]] = outfiles[i]
             num_outputs += 1
-        assert (
-            len(outfiles) == num_outputs
-        ), 'step "%s": mismatched number of output files (%d) and params (%d)' % (
-            step,
-            num_outputs,
-            len(outfiles),
+        assert len(outfiles) == num_outputs, (
+            'step "%s": mismatched number of output files (%d) and params (%d)'
+            % (
+                step,
+                num_outputs,
+                len(outfiles),
+            )
         )  # NOQA: E501
 
 if args.step:

@@ -4,7 +4,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-gkrust_features = []
+gkrust_features = [
+    "for_xul",
+]
 
 if CONFIG["MOZ_DEBUG"]:
     gkrust_features += [
@@ -82,6 +84,9 @@ if CONFIG["MOZ_ICU4X"]:
 
 if CONFIG["USE_LIBZ_RS"]:
     gkrust_features += ["libz-rs-sys"]
+
+if CONFIG["MOZ_JXL"]:
+    gkrust_features += ["jxl_decoder"]
 
 # This must remain last.
 gkrust_features = ["gkrust-shared/%s" % f for f in gkrust_features]

@@ -3,7 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 /**
- * Variant of AccessibleImage used in sources list and tabs.
+ * Variant of DebuggerImage used in sources list and tabs.
  * Define the different source type / framework / library icons here.
  */
 
@@ -13,59 +13,54 @@
 
 /* Icons for frameworks and libs */
 
-.img.aframe {
+.dbg-img.dbg-img-aframe {
   background-image: url(chrome://devtools/content/debugger/images/sources/aframe.svg);
   background-color: transparent !important;
 }
 
-.img.angular {
+.dbg-img.dbg-img-angular {
   background-image: url(chrome://devtools/content/debugger/images/sources/angular.svg);
   background-color: transparent !important;
 }
 
-.img.babel {
+.dbg-img.dbg-img-babel {
   mask-image: url(chrome://devtools/content/debugger/images/sources/babel.svg);
 }
 
-.img.backbone {
+.dbg-img.dbg-img-backbone {
   mask-image: url(chrome://devtools/content/debugger/images/sources/backbone.svg);
 }
 
-.img.choo {
-  background-image: url(chrome://devtools/content/debugger/images/sources/choo.svg);
-  background-color: transparent !important;
-}
-
-.img.coffeescript {
+.dbg-img.dbg-img-coffeescript {
   background-image: url(chrome://devtools/content/debugger/images/sources/coffeescript.svg);
   background-color: transparent !important;
   fill: var(--theme-icon-color);
   -moz-context-properties: fill;
 }
 
-.img.dojo {
+.dbg-img.dbg-img-dojo {
   background-image: url(chrome://devtools/content/debugger/images/sources/dojo.svg);
   background-color: transparent !important;
 }
 
-.img.ember {
+.dbg-img.dbg-img-ember {
   background-image: url(chrome://devtools/content/debugger/images/sources/ember.svg);
   background-color: transparent !important;
 }
 
-.img.express {
+.dbg-img.dbg-img-express {
   mask-image: url(chrome://devtools/content/debugger/images/sources/express.svg);
 }
 
-.img.extension {
+.dbg-img.dbg-img-extension {
   mask-image: url(chrome://devtools/content/debugger/images/sources/extension.svg);
 }
 
-.img.immutable {
+.dbg-img.dbg-img-immutable {
   mask-image: url(chrome://devtools/content/debugger/images/sources/immutable.svg);
 }
 
-.img.javascript {
+.dbg-img.dbg-img-javascript {
   background-image: url(chrome://devtools/content/debugger/images/sources/javascript.svg);
   background-size: 14px 14px;
   background-color: transparent !important;
@@ -73,7 +68,7 @@
   -moz-context-properties: fill;
 }
 
-.img.has-network-override::after {
+.dbg-img.has-network-override::after {
   content: "";
   display: block;
   height: 5px;
@@ -84,93 +79,93 @@
   translate: 12px 10px;
 }
 
-.node.focused .img.has-network-override::after {
+.node.focused .dbg-img.has-network-override::after {
   outline-color: var(--theme-selection-background);
 }
 
-.img.jquery {
+.dbg-img.dbg-img-jquery {
   mask-image: url(chrome://devtools/content/debugger/images/sources/jquery.svg);
 }
 
-.img.lodash {
+.dbg-img.dbg-img-lodash {
   mask-image: url(chrome://devtools/content/debugger/images/sources/lodash.svg);
 }
 
-.img.marko {
+.dbg-img.dbg-img-marko {
   background-image: url(chrome://devtools/content/debugger/images/sources/marko.svg);
   background-color: transparent !important;
 }
 
-.img.mobx {
+.dbg-img.dbg-img-mobx {
   background-image: url(chrome://devtools/content/debugger/images/sources/mobx.svg);
   background-color: transparent !important;
 }
 
-.img.nextjs {
+.dbg-img.dbg-img-nextjs {
   background-image: url(chrome://devtools/content/debugger/images/sources/nextjs.svg);
   background-color: transparent !important;
 }
 
-.img.node {
+.dbg-img.dbg-img-node {
   background-image: url(chrome://devtools/content/debugger/images/sources/node.svg);
   background-color: transparent !important;
 }
 
-.img.nuxtjs {
+.dbg-img.dbg-img-nuxtjs {
   background-image: url(chrome://devtools/content/debugger/images/sources/nuxtjs.svg);
   background-color: transparent !important;
 }
 
-.img.preact {
+.dbg-img.dbg-img-preact {
   background-image: url(chrome://devtools/content/debugger/images/sources/preact.svg);
   background-color: transparent !important;
 }
 
-.img.pug {
+.dbg-img.dbg-img-pug {
   background-image: url(chrome://devtools/content/debugger/images/sources/pug.svg);
   background-color: transparent !important;
 }
 
-.img.react {
+.dbg-img.dbg-img-react {
   background-image: url(chrome://devtools/content/debugger/images/sources/react.svg);
   background-color: transparent !important;
   fill: var(--theme-highlight-bluegrey);
   -moz-context-properties: fill;
 }
 
-.img.redux {
+.dbg-img.dbg-img-redux {
   mask-image: url(chrome://devtools/content/debugger/images/sources/redux.svg);
 }
 
-.img.rxjs {
+.dbg-img.dbg-img-rxjs {
   background-image: url(chrome://devtools/content/debugger/images/sources/rxjs.svg);
   background-color: transparent !important;
 }
 
-.img.sencha-extjs {
+.dbg-img.dbg-img-sencha-extjs {
   background-image: url(chrome://devtools/content/debugger/images/sources/sencha-extjs.svg);
   background-color: transparent !important;
 }
 
-.img.typescript {
+.dbg-img.dbg-img-typescript {
   background-image: url(chrome://devtools/content/debugger/images/sources/typescript.svg);
   background-color: transparent !important;
   fill: var(--theme-icon-color);
   -moz-context-properties: fill;
 }
 
-.img.underscore {
+.dbg-img.dbg-img-underscore {
   mask-image: url(chrome://devtools/content/debugger/images/sources/underscore.svg);
 }
 
 /* We use both 'Vue' and 'VueJS' when identifying frameworks */
-.img.vue,
-.img.vuejs {
+.dbg-img.dbg-img-vue,
+.dbg-img.dbg-img-vuejs {
   background-image: url(chrome://devtools/content/debugger/images/sources/vuejs.svg);
   background-color: transparent !important;
 }
 
-.img.webpack {
+.dbg-img.dbg-img-webpack {
   background-image: url(chrome://devtools/content/debugger/images/sources/webpack.svg);
   background-color: transparent !important;
 }

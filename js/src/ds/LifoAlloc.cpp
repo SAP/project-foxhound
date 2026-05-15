@@ -17,8 +17,6 @@
 
 using namespace js;
 
-using mozilla::tl::BitSize;
-
 namespace js {
 namespace detail {
 
@@ -171,8 +169,10 @@ LifoAlloc::UniqueBumpChunk LifoAlloc::newChunkWithCapacity(size_t n,
   // bytes in a newly allocated chunk, or default to |defaultChunkSize_|.
 
   size_t minSize;
-  if (MOZ_UNLIKELY(!detail::BumpChunk::allocSizeWithRedZone(n, &minSize) ||
-                   (minSize & (size_t(1) << (BitSize<size_t>::value - 1))))) {
+  if (MOZ_UNLIKELY(
+          !detail::BumpChunk::allocSizeWithRedZone(n, &minSize) ||
+          (minSize &
+           (size_t(1) << (std::numeric_limits<size_t>::digits - 1))))) {
     return nullptr;
   }
 

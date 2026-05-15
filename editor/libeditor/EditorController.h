@@ -18,10 +18,8 @@ namespace mozilla {
 
 class EditorController final {
  public:
-  static nsresult RegisterEditorCommands(
-      nsControllerCommandTable* aCommandTable);
-  static nsresult RegisterEditingCommands(
-      nsControllerCommandTable* aCommandTable);
+  static void RegisterEditorCommands(nsControllerCommandTable* aCommandTable);
+  static void RegisterEditingCommands(nsControllerCommandTable* aCommandTable);
   static void Shutdown();
 };
 

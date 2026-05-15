@@ -13,6 +13,7 @@ import mozilla.components.concept.toolbar.AutocompleteDelegate
 import mozilla.components.concept.toolbar.AutocompleteProvider
 import mozilla.components.concept.toolbar.AutocompleteResult
 import mozilla.components.concept.toolbar.Toolbar
+import mozilla.components.concept.toolbar.fake.FakeToolbar
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.eq
@@ -21,7 +22,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
@@ -31,131 +31,10 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 
 class ToolbarAutocompleteFeatureTest {
-    class TestToolbar : Toolbar {
-        override var highlight: Toolbar.Highlight = Toolbar.Highlight.NONE
-        override var siteTrackingProtection: Toolbar.SiteTrackingProtection =
-            Toolbar.SiteTrackingProtection.OFF_GLOBALLY
-        override var title: String = ""
-        override var url: CharSequence = ""
-        override var siteInfo: Toolbar.SiteInfo = Toolbar.SiteInfo.INSECURE
-        override var private: Boolean = false
-
-        var autocompleteFilter: (suspend (String, AutocompleteDelegate) -> Unit)? = null
-
-        override fun setSearchTerms(searchTerms: String) {
-            fail()
-        }
-
-        override fun displayProgress(progress: Int) {
-            fail()
-        }
-
-        override fun onBackPressed(): Boolean {
-            fail()
-            return false
-        }
-
-        override fun onStop() {
-            fail()
-        }
-
-        override fun setOnUrlCommitListener(listener: (String) -> Boolean) {
-            fail()
-        }
-
-        override fun setAutocompleteListener(filter: suspend (String, AutocompleteDelegate) -> Unit) {
-            autocompleteFilter = filter
-        }
-
-        override fun addBrowserAction(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun removeBrowserAction(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun removePageAction(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun addPageAction(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun addNavigationAction(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun removeNavigationAction(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun setOnEditListener(listener: Toolbar.OnEditListener) {
-            fail()
-        }
-
-        override fun displayMode() {
-            fail()
-        }
-
-        override fun editMode(cursorPlacement: Toolbar.CursorPlacement) {
-            fail()
-        }
-
-        override fun addEditActionStart(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun addEditActionEnd(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun removeEditActionEnd(action: Toolbar.Action) {
-            fail()
-        }
-
-        override fun hideMenuButton() {
-            fail()
-        }
-
-        override fun showMenuButton() {
-            fail()
-        }
-
-        override fun setDisplayHorizontalPadding(horizontalPadding: Int) {
-            fail()
-        }
-
-        override fun invalidateActions() {
-            fail()
-        }
-
-        override fun dismissMenu() {
-            fail()
-        }
-
-        override fun enableScrolling() {
-            fail()
-        }
-
-        override fun disableScrolling() {
-            fail()
-        }
-
-        override fun collapse() {
-            fail()
-        }
-
-        override fun expand() {
-            fail()
-        }
-    }
+    private val toolbar = FakeToolbar()
 
     @Test
     fun `feature can be used without providers`() = runTest {
-        val toolbar = TestToolbar()
-
         ToolbarAutocompleteFeature(toolbar)
 
         assertNotNull(toolbar.autocompleteFilter)
@@ -169,7 +48,6 @@ class ToolbarAutocompleteFeatureTest {
 
     @Test
     fun `feature can be configured with providers`() = runTest {
-        val toolbar = TestToolbar()
         var feature = ToolbarAutocompleteFeature(toolbar)
         val autocompleteDelegate: AutocompleteDelegate = mock()
 
@@ -304,7 +182,6 @@ class ToolbarAutocompleteFeatureTest {
 
     @Test
     fun `feature triggers speculative connect for results if engine provided`() = runTest {
-        val toolbar = TestToolbar()
         val engine: Engine = mock()
         val feature = ToolbarAutocompleteFeature(toolbar, engine) { true }
         val autocompleteDelegate: AutocompleteDelegate = mock()
@@ -328,7 +205,6 @@ class ToolbarAutocompleteFeatureTest {
 
     @Test
     fun `WHEN should autocomplete returns false THEN return no results`() = runTest {
-        val toolbar = TestToolbar()
         val engine: Engine = mock()
         var shouldAutoComplete = false
         val feature = ToolbarAutocompleteFeature(toolbar, engine) { shouldAutoComplete }
@@ -359,7 +235,6 @@ class ToolbarAutocompleteFeatureTest {
 
     @Test
     fun `GIVEN no autocomplete providers WHEN checking for autocomplete results THEN silently fail with no results`() = runTest {
-        val toolbar = TestToolbar()
         val engine: Engine = mock()
         val feature = ToolbarAutocompleteFeature(toolbar, engine) { true }
         val autocompleteDelegate: AutocompleteDelegate = mock()
@@ -388,7 +263,6 @@ class ToolbarAutocompleteFeatureTest {
 
     @Test
     fun `GIVEN no initial autocomplete providers and one is added WHEN checking for autocomplete results THEN return autocomplete suggestions`() = runTest {
-        val toolbar = TestToolbar()
         val engine: Engine = mock()
         val feature = ToolbarAutocompleteFeature(toolbar, engine) { true }
         val autocompleteDelegate: AutocompleteDelegate = mock()
@@ -557,7 +431,11 @@ class ToolbarAutocompleteFeatureTest {
     }
 
     @Suppress("SameParameterValue")
-    private fun verifyNoAutocompleteResult(toolbar: TestToolbar, autocompleteDelegate: AutocompleteDelegate, query: String) = runTest {
+    private fun verifyNoAutocompleteResult(
+        toolbar: FakeToolbar,
+        autocompleteDelegate: AutocompleteDelegate,
+        query: String,
+    ) = runTest {
         toolbar.autocompleteFilter!!(query, autocompleteDelegate)
 
         verify(autocompleteDelegate, never()).applyAutocompleteResult(any(), any())
@@ -565,7 +443,12 @@ class ToolbarAutocompleteFeatureTest {
         reset(autocompleteDelegate)
     }
 
-    private fun verifyAutocompleteResult(toolbar: TestToolbar, autocompleteDelegate: AutocompleteDelegate, query: String, result: AutocompleteResult) = runTest {
+    private fun verifyAutocompleteResult(
+        toolbar: FakeToolbar,
+        autocompleteDelegate: AutocompleteDelegate,
+        query: String,
+        result: AutocompleteResult,
+    ) = runTest {
         toolbar.autocompleteFilter!!.invoke(query, autocompleteDelegate)
 
         verify(autocompleteDelegate, times(1)).applyAutocompleteResult(eq(result), any())

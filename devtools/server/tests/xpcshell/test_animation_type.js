@@ -21,6 +21,10 @@ function run_test() {
     constructor() {
       this.effect = { target: getMockNode() };
     }
+
+    static isInstance(instance) {
+      return instance instanceof this;
+    }
   };
 
   window.CSSAnimation = class extends window.Animation {};

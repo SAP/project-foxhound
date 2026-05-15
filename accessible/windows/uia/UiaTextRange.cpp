@@ -485,10 +485,11 @@ UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
   if (!range) {
     return CO_E_OBJNOTCONNECTED;
   }
-  MOZ_ASSERT(range.Start() <= range.End(), "Range must be valid to proceed.");
+  const TextLeafPoint origStart = range.Start();
+  MOZ_ASSERT(origStart <= range.End(), "Range must be valid to proceed.");
 
   // We can't find anything in an empty range.
-  if (range.Start() == range.End()) {
+  if (origStart == range.End()) {
     return S_OK;
   }
 
@@ -498,10 +499,12 @@ UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
   nsTArray<std::pair<int32_t, Accessible*>> indexToAcc;
   nsAutoString rangeText;
   for (const TextLeafRange leafSegment : range) {
-    Accessible* startAcc = leafSegment.Start().mAcc;
+    const TextLeafPoint segmentStart = leafSegment.Start();
+    Accessible* startAcc = segmentStart.mAcc;
     MOZ_ASSERT(startAcc, "Start acc of leaf segment was unexpectedly null.");
     indexToAcc.EmplaceBack(rangeText.Length(), startAcc);
-    startAcc->AppendTextTo(rangeText);
+    startAcc->AppendTextTo(rangeText, segmentStart.mOffset,
+                           leafSegment.End().mOffset - segmentStart.mOffset);
   }
 
   // Find the search string's start position in the text of the range, ignoring
@@ -538,15 +541,28 @@ UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
     return itr;
   };
 
+  // Get the start offset to use for a given Accessible containing our match.
+  auto getStartOffsetForAcc = [origStart](Accessible* aAcc) {
+    if (aAcc == origStart.mAcc) {
+      // aAcc is in the same leaf in which the origin range starts. The origin
+      // range might start in the middle of the leaf, in which case our gathered
+      // text starts there too.
+      return origStart.mOffset;
+    }
+    return 0;
+  };
+
   // Calculate the TextLeafPoint for the start and end of the found text.
   auto itr = GetNearestAccLessThanIndex(startIndex);
   Accessible* foundTextStart = itr->second;
-  const int32_t offsetFromStart = startIndex - itr->first;
+  const int32_t offsetFromStart =
+      startIndex - itr->first + getStartOffsetForAcc(foundTextStart);
   const TextLeafPoint rangeStart{foundTextStart, offsetFromStart};
 
   itr = GetNearestAccLessThanIndex(endIndex);
   Accessible* foundTextEnd = itr->second;
-  const int32_t offsetFromEndAccStart = endIndex - itr->first;
+  const int32_t offsetFromEndAccStart =
+      endIndex - itr->first + getStartOffsetForAcc(foundTextEnd);
   const TextLeafPoint rangeEnd{foundTextEnd, offsetFromEndAccStart};
 
   TextLeafRange resultRange{rangeStart, rangeEnd};
@@ -704,21 +720,6 @@ UiaTextRange::GetBoundingRectangles(__RPC__deref_out_opt SAFEARRAY** aRetVal) {
 
   // Get the rectangles for each line.
   nsTArray<LayoutDeviceIntRect> lineRects = range.LineRects();
-  if (lineRects.IsEmpty() && !mIsEndOfLineInsertionPoint &&
-      range.Start() == range.End()) {
-    // The documentation for GetBoundingRectangles says that we should return
-    // "An empty array for a degenerate range.":
-    // https://learn.microsoft.com/en-us/windows/win32/api/uiautomationcore/nf-uiautomationcore-itextrangeprovider-getboundingrectangles#return-value
-    // This is exactly what range.LineRects() just did. However, contrary to
-    // this, some clients (including Microsoft Text Cursor Indicator) call
-    // GetBoundingRectangles on a degenerate range when querying the caret and
-    // expect rectangles to be returned. Therefore, use the character bounds.
-    // Bug 1966812: Ideally, we would also return a rectangle when
-    // mIsEndOfLineInsertionPoint is true. However, we don't currently have code
-    // to calculate a rectangle in that case.
-    lineRects.AppendElement(range.Start().CharBounds());
-  }
-
   // For UIA's purposes, the rectangles of this array are four doubles arranged
   // in order {left, top, width, height}.
   SAFEARRAY* rectsVec = SafeArrayCreateVector(VT_R8, 0, lineRects.Length() * 4);

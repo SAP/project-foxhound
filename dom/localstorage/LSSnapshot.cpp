@@ -15,13 +15,12 @@
 
 // Global includes
 #include <cstdint>
-#include <cstdlib>
 #include <new>
-#include <type_traits>
 #include <utility>
+
 #include "ErrorList.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/MacroForEach.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
@@ -30,12 +29,12 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/LSValue.h"
-#include "mozilla/dom/quota/QuotaCommon.h"
-#include "mozilla/dom/quota/ResultExtensions.h"
-#include "mozilla/dom/quota/ScopedLogExtraInfo.h"
 #include "mozilla/dom/PBackgroundLSDatabase.h"
 #include "mozilla/dom/PBackgroundLSSharedTypes.h"
 #include "mozilla/dom/PBackgroundLSSnapshot.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/dom/quota/ScopedLogExtraInfo.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -325,6 +324,8 @@ nsresult LSSnapshot::GetKeys(nsTArray<nsString>& aKeys) {
 
 nsresult LSSnapshot::SetItem(const nsAString& aKey, const nsAString& aValue,
                              LSNotifyInfo& aNotifyInfo) {
+  GECKO_TRACE_SCOPE("dom::localstorage", "LSSnapshot::SetItem");
+
   AssertIsOnOwningThread();
   MOZ_ASSERT(mActor);
   MOZ_ASSERT(mInitialized);
@@ -386,6 +387,8 @@ nsresult LSSnapshot::SetItem(const nsAString& aKey, const nsAString& aValue,
       quota::ScopedLogExtraInfo scope{
           quota::ScopedLogExtraInfo::kTagContextTainted,
           "dom::localstorage::LSSnapshot::SetItem::UpdateUsage"_ns};
+      GECKO_TRACE_SCOPE("dom::localstorage",
+                        "LSSnapshot::SetItem::UpdateUsage");
       QM_TRY(MOZ_TO_RESULT(UpdateUsage(delta)), QM_PROPAGATE, QM_NO_CLEANUP,
              ([]() {
                static uint32_t counter = 0u;
@@ -1089,7 +1092,7 @@ LSSnapshot::Run() {
     MOZ_ALWAYS_SUCCEEDS(mIdleTimer->InitWithNamedFuncCallback(
         IdleTimerCallback, this,
         StaticPrefs::dom_storage_snapshot_idle_timeout_ms(),
-        nsITimer::TYPE_ONE_SHOT, "LSSnapshot::IdleTimerCallback"));
+        nsITimer::TYPE_ONE_SHOT, "LSSnapshot::IdleTimerCallback"_ns));
 
     mHasPendingIdleTimerCallback = true;
   }

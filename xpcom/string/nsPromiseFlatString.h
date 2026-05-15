@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPromiseFlatString_h___
-#define nsPromiseFlatString_h___
+#ifndef nsPromiseFlatString_h_
+#define nsPromiseFlatString_h_
 
 #include "nsString.h"
 
 #include "nsTPromiseFlatString.h"
 
-#endif /* !defined(nsPromiseFlatString_h___) */
+#endif /* !defined(nsPromiseFlatString_h_) */

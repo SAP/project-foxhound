@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_intl_LocaleService_h__
-#define mozilla_intl_LocaleService_h__
+#ifndef mozilla_intl_LocaleService_h_
+#define mozilla_intl_LocaleService_h_
 
 #include "nsIObserver.h"
 #include "nsString.h"
@@ -168,6 +168,16 @@ class LocaleService final : public mozILocaleService,
    */
   bool IsAppLocaleRTL();
 
+  /**
+   * If true, accesskeys should always be appended for the current app locale.
+   */
+  bool AlwaysAppendAccesskeys();
+
+  /**
+   * If true, accesskeys should always be separated from the label.
+   */
+  bool InsertSeparatorBeforeAccesskeys();
+
   static bool LanguagesMatch(const nsACString& aRequested,
                              const nsACString& aAvailable);
 
@@ -229,4 +239,4 @@ class LocaleService final : public mozILocaleService,
 }  // namespace intl
 }  // namespace mozilla
 
-#endif /* mozilla_intl_LocaleService_h__ */
+#endif /* mozilla_intl_LocaleService_h_ */

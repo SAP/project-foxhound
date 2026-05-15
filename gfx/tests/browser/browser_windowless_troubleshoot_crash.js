@@ -1,38 +1,23 @@
 add_task(async function test_windowlessBrowserTroubleshootCrash() {
   let webNav = Services.appShell.createWindowlessBrowser(false);
 
-  let onLoaded = new Promise(resolve => {
-    let docShell = webNav.docShell;
-    let listener = {
-      observe(contentWindow) {
-        let observedDocShell =
-          contentWindow.docShell.sameTypeRootTreeItem.QueryInterface(
-            Ci.nsIDocShell
-          );
-        if (docShell === observedDocShell) {
-          Services.obs.removeObserver(
-            listener,
-            "content-document-global-created"
-          );
-          resolve();
-        }
-      },
-    };
-    Services.obs.addObserver(listener, "content-document-global-created");
-  });
   let loadURIOptions = {
     triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal({}),
   };
+
+  // will synchronously commit to the initial about:blank and finish the load
   webNav.loadURI(Services.io.newURI("about:blank"), loadURIOptions);
 
-  await onLoaded;
+  is(webNav.document.location.href, "about:blank", "location is about:blank");
+  is(webNav.document.readyState, "complete", "readyState is complete");
 
   let winUtils = webNav.document.defaultView.windowUtils;
   try {
     let layerManager = winUtils.layerManagerType;
     ok(
-      layerManager == "Basic" || layerManager == "WebRender (Software)",
-      "windowless browser's layerManagerType should be 'Basic' or 'WebRender (Software)'"
+      ["WebRender (Software)", "Fallback"].includes(layerManager),
+      "windowless browser's layerManagerType should be 'WebRender (Software)' or 'Fallback': " +
+        layerManager
     );
   } catch (e) {
     // The windowless browser may not have a layermanager at all yet, and that's ok.

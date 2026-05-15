@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MOZ_WAYLAND_DISPLAY_H__
-#define __MOZ_WAYLAND_DISPLAY_H__
+#ifndef MOZ_WAYLAND_DISPLAY_H_
+#define MOZ_WAYLAND_DISPLAY_H_
 
 #include "DMABufDevice.h"
 
@@ -22,6 +22,7 @@
 #include "mozilla/widget/xdg-activation-v1-client-protocol.h"
 #include "mozilla/widget/xdg-output-unstable-v1-client-protocol.h"
 #include "mozilla/widget/color-management-v1-client-protocol.h"
+#include "mozilla/widget/color-representation-v1-client-protocol.h"
 #include "mozilla/widget/xdg-shell-client-protocol.h"
 #include "mozilla/widget/xx-pip-v1-client-protocol.h"
 
@@ -80,6 +81,10 @@ class nsWaylandDisplay {
   wl_keyboard* GetKeyboard() { return mKeyboard; }
   void ClearKeyboard();
 
+  wl_touch* GetTouch() { return mTouch; }
+  void SetTouch(wl_touch* aTouch);
+  void ClearTouch();
+
   void SetSeat(wl_seat* aSeat, int aSeatId);
   wl_seat* GetSeat() { return mSeat; }
   void RemoveSeat(int aSeatId);
@@ -103,6 +108,11 @@ class nsWaylandDisplay {
 
   void SetColorManager(wp_color_manager_v1* aColorManager);
   wp_color_manager_v1* GetColorManager() const { return mColorManager; }
+  void SetColorRepresentationManager(
+      wp_color_representation_manager_v1* aColorRepresentationManager);
+  wp_color_representation_manager_v1* GetColorRepresentationManager() const {
+    return mColorRepresentationManager;
+  }
   void SetPipShell(xx_pip_shell_v1* aShell) { mPipShell = aShell; }
   xx_pip_shell_v1* GetPipShell() const { return mPipShell; }
   void SetXdgWm(xdg_wm_base* aWmBase) { mWmBase = aWmBase; }
@@ -113,6 +123,9 @@ class nsWaylandDisplay {
   bool IsHDREnabled() const {
     return mColorManagerSupportedFeature.mParametric;
   }
+  void SetSupportedCoefficientsAndRanges(uint32_t aCoefficients,
+                                         uint32_t aRange);
+  uint32_t GetColorRange(uint32_t aCoefficients, bool aFullRange);
   RefPtr<DMABufFormats> GetDMABufFormats() const { return mFormats; }
   bool HasDMABufFeedback() const { return mDmabufIsFeedback; }
   void EnsureDMABufFormats();
@@ -121,6 +134,20 @@ class nsWaylandDisplay {
                                      uint32_t aTime);
   void RequestAsyncRoundtrip();
   void WaitForAsyncRoundtrips();
+
+  struct MonitorConfig {
+    int id = 0;
+    int x = 0;
+    int y = 0;
+    int pixelWidth = 0;
+    int pixelHeight = 0;
+    explicit MonitorConfig(int aId) : id(aId) {}
+  };
+
+  MonitorConfig* AddMonitorConfig(int aId);
+  MonitorConfig* GetMonitorConfig(int x, int y);
+  bool RemoveMonitorConfig(int aId);
+  void AddWlOutput(wl_output* aWlOutput, int aId);
 
   ~nsWaylandDisplay();
 
@@ -135,6 +162,7 @@ class nsWaylandDisplay {
   int mSeatId = -1;
   wl_keyboard* mKeyboard = nullptr;
   wl_pointer* mPointer = nullptr;
+  wl_touch* mTouch = nullptr;
   zwp_idle_inhibit_manager_v1* mIdleInhibitManager = nullptr;
   zwp_relative_pointer_manager_v1* mRelativePointerManager = nullptr;
   zwp_pointer_constraints_v1* mPointerConstraints = nullptr;
@@ -147,6 +175,7 @@ class nsWaylandDisplay {
   org_kde_kwin_appmenu_manager* mAppMenuManager = nullptr;
   wp_fractional_scale_manager_v1* mFractionalScaleManager = nullptr;
   wp_color_manager_v1* mColorManager = nullptr;
+  wp_color_representation_manager_v1* mColorRepresentationManager = nullptr;
   xx_pip_shell_v1* mPipShell = nullptr;
   xdg_wm_base* mWmBase = nullptr;
   RefPtr<DMABufFormats> mFormats;
@@ -164,8 +193,17 @@ class nsWaylandDisplay {
   int mSupportedTransfer[sColorTransfersNum] = {};
   int mSupportedPrimaries[sColorPrimariesNum] = {};
 
+  constexpr static int sSupportedRangeFull = 1;
+  constexpr static int sSupportedRangeLimited = 2;
+  constexpr static int sSupportedRangeBoth = 3;
+  constexpr static int sSupportedRangesNum =
+      WP_COLOR_REPRESENTATION_SURFACE_V1_COEFFICIENTS_ICTCP + 1;
+  uint32_t mSupportedRanges[sSupportedRangesNum] = {};
+
   bool mExplicitSync = false;
   bool mIsPrimarySelectionEnabled = false;
+
+  AutoTArray<UniquePtr<MonitorConfig>, 4> mMonitors;
 };
 
 wl_display* WaylandDisplayGetWLDisplay();
@@ -197,4 +235,4 @@ static inline T* WaylandRegistryBind(struct wl_registry* wl_registry,
   return reinterpret_cast<T*>(id);
 }
 
-#endif  // __MOZ_WAYLAND_DISPLAY_H__
+#endif  // MOZ_WAYLAND_DISPLAY_H_

@@ -19,6 +19,7 @@ The following information is supported by this system:
 * *dltoken*
 * *dlsource*
 * *msstoresignedin*
+* *msclkid*
 
 Descriptions of each of these can be found in :ref:`the Telemetry Environment documentation <environment>`.
 
@@ -129,6 +130,8 @@ Firefox installs done through the Microsoft Store support extracting campaign ID
 
 
 `https://www.microsoft.com/store/apps/9NZVDKPMR9RD?cid=source%3Dgoogle.com%26medium%3Dorganic%26campaign%3D(not%20set)%26content%3D(not%20set) <https://www.microsoft.com/store/apps/9NZVDKPMR9RD?cid=source%3Dgoogle.com%26medium%3Dorganic%26campaign%3D(not%20set)%26content%3D(not%20set)>`_
+
+Microsoft Store Ads presents its Ads Campaign ID to installed applications as a uniquely formatted ``storeBingAd_[uuid]``, for example ``storeBingAd_45cbbf091fb541f0ae959d50ffb8c5b8``. Firefox records this as ``msclkid=[uuid]``, for example ``msclkid=45cbbf091fb541f0ae959d50ffb8c5b8`` in installation attribution.
 
 
 For more on how custom campaign IDs work in general in the Microsoft Store environment, `see Microsoft's documentation <https://docs.microsoft.com/en-us/windows/uwp/publish/create-a-custom-app-promotion-campaign>`_.

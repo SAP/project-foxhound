@@ -222,6 +222,162 @@
       });
     },
 
+    async function checkDtlsKEA() {
+      // "media.webrtc.enable_pq_hybrid_kex" and "send_mlkem_keyshare" are enabled by default
+      // By default we send 2 key shares, PQ and X25519
+      // PQ Key share (ECDH Hybrid) has a higher preference, so it will be chosen as KEA
+          const pc1 = new RTCPeerConnection();
+          const pc2 = new RTCPeerConnection();
+          await gleanResetTestValues();
+          // SSL Handshake Key Exchange Algorithm (null=0, rsa=1, dh=2, ecdh=4, ecdh_hybrid=8)
+          let keyExchangeValue = await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue() || 0;
+          is(keyExchangeValue, 0, "Expected no keyExchange distribution defined");
+
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          pc1.addTrack(stream.getTracks()[0]);
+
+          await connect(pc1, pc2, 32000, "DTLS connected", true, true);
+          // This telemetry happens on STS/socket process
+          await gleanFlushChildren();
+
+          let count1_0 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["0"] || 0;
+          let count1_1 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["1"] || 0;
+          let count1_2 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["2"] || 0;
+          let count1_4 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["4"] || 0;
+          let count1_8 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["8"] || 0;
+          is(count1_0, 0, "Expected 0 connections using NULL");
+          is(count1_1, 0, "Expected 0 connections using RSA");
+          is(count1_2, 0, "Expected 0 connections using DH");
+          is(count1_4, 0, "Expected 0 connections using ECDH");
+          is(count1_8, 2, "Expected 2 connections using ECDH Hybrid");
+    },
+
+    async function checkDtlsKEA_DTLSBelow13() {
+        // DTLS1.2 does not use Kyber
+        // In this case, X25519 (ECDH) key share will be used
+        await withPrefs([["media.peerconnection.dtls.version.max", 771]],
+        async () => {
+          const pc1 = new RTCPeerConnection();
+          const pc2 = new RTCPeerConnection();
+          await gleanResetTestValues();
+          // SSL Handshake Key Exchange Algorithm (null=0, rsa=1, dh=2, ecdh=4, ecdh_hybrid=8)
+          let keyExchangeValue = await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue() || 0;
+          is(keyExchangeValue, 0, "Expected no keyExchange distribution defined");
+
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          pc1.addTrack(stream.getTracks()[0]);
+
+          await connect(pc1, pc2, 32000, "DTLS connected", true, true);
+          // This telemetry happens on STS/socket process
+          await gleanFlushChildren();
+
+          let count1_0 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["0"] || 0;
+          let count1_1 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["1"] || 0;
+          let count1_2 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["2"] || 0;
+          let count1_4 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["4"] || 0;
+          let count1_8 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["8"] || 0;
+          is(count1_0, 0, "Expected 0 connections using NULL");
+          is(count1_1, 0, "Expected 0 connections using RSA");
+          is(count1_2, 0, "Expected 0 connections using DH");
+          is(count1_4, 2, "Expected 2 connections using ECDH");
+          is(count1_8, 0, "Expected 0 connections using ECDH Hybrid");
+    })},
+
+    async function checkDtlsKEA_DTLS13DisablePQ() {
+        await withPrefs([["media.webrtc.enable_pq_hybrid_kex", false]],
+        async () => {
+          const pc1 = new RTCPeerConnection();
+          const pc2 = new RTCPeerConnection();
+          await gleanResetTestValues();
+          // SSL Handshake Key Exchange Algorithm (null=0, rsa=1, dh=2, ecdh=4, ecdh_hybrid=8)
+          let keyExchangeValue = await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue() || 0;
+          is(keyExchangeValue, 0, "Expected no keyExchange distribution defined");
+
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          pc1.addTrack(stream.getTracks()[0]);
+
+          await connect(pc1, pc2, 32000, "DTLS connected", true, true);
+          // This telemetry happens on STS/socket process
+          await gleanFlushChildren();
+
+          let count1_0 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["0"] || 0;
+          let count1_1 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["1"] || 0;
+          let count1_2 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["2"] || 0;
+          let count1_4 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["4"] || 0;
+          let count1_8 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["8"] || 0;
+          is(count1_0, 0, "Expected 0 connections using NULL");
+          is(count1_1, 0, "Expected 0 connections using RSA");
+          is(count1_2, 0, "Expected 0 connections using DH");
+          is(count1_4, 2, "Expected 2 connections using ECDH");
+          is(count1_8, 0, "Expected 0 connections using ECDH Hybrid");
+    })},
+
+    async function checkDtlsKEA_DTLS13DisablePQEnablePQShare() {
+        // Safety measures, when PQ is disabled, even if the sending ml-kem share is enabled
+        // it should not be sent.
+        await withPrefs([["media.webrtc.enable_pq_hybrid_kex", false],
+            ["media.webrtc.send_mlkem_keyshare", true]
+      ],
+        async () => {
+          const pc1 = new RTCPeerConnection();
+          const pc2 = new RTCPeerConnection();
+          await gleanResetTestValues();
+          // SSL Handshake Key Exchange Algorithm (null=0, rsa=1, dh=2, ecdh=4, ecdh_hybrid=8)
+          let keyExchangeValue = await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue() || 0;
+          is(keyExchangeValue, 0, "Expected no keyExchange distribution defined");
+
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          pc1.addTrack(stream.getTracks()[0]);
+
+          await connect(pc1, pc2, 32000, "DTLS connected", true, true);
+          // This telemetry happens on STS/socket process
+          await gleanFlushChildren();
+
+          let count1_0 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["0"] || 0;
+          let count1_1 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["1"] || 0;
+          let count1_2 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["2"] || 0;
+          let count1_4 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["4"] || 0;
+          let count1_8 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["8"] || 0;
+          is(count1_0, 0, "Expected 0 connections using NULL");
+          is(count1_1, 0, "Expected 0 connections using RSA");
+          is(count1_2, 0, "Expected 0 connections using DH");
+          is(count1_4, 2, "Expected 2 connections using ECDH");
+          is(count1_8, 0, "Expected 0 connections using ECDH Hybrid");
+    })},
+
+    async function checkDtlsKEA_DTLS13EnablePQDisablePQShare() {
+        // We will still advertise PQ, but we won't send a key share.
+        // See bug 1992457.
+        await withPrefs([["media.webrtc.enable_pq_hybrid_kex", true],
+            ["media.webrtc.send_mlkem_keyshare", false]
+      ],
+        async () => {
+          const pc1 = new RTCPeerConnection();
+          const pc2 = new RTCPeerConnection();
+          await gleanResetTestValues();
+          // SSL Handshake Key Exchange Algorithm (null=0, rsa=1, dh=2, ecdh=4, ecdh_hybrid=8)
+          let keyExchangeValue = await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue() || 0;
+          is(keyExchangeValue, 0, "Expected no keyExchange distribution defined");
+
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          pc1.addTrack(stream.getTracks()[0]);
+
+          await connect(pc1, pc2, 32000, "DTLS connected", true, true);
+          // This telemetry happens on STS/socket process
+          await gleanFlushChildren();
+
+          let count1_0 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["0"] || 0;
+          let count1_1 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["1"] || 0;
+          let count1_2 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["2"] || 0;
+          let count1_4 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["4"] || 0;
+          let count1_8 = (await GleanTest.webrtcdtls.keyExchangeAlgorithm.testGetValue()).values["8"] || 0;
+          is(count1_0, 0, "Expected 0 connections using NULL");
+          is(count1_1, 0, "Expected 0 connections using RSA");
+          is(count1_2, 0, "Expected 0 connections using DH");
+          is(count1_4, 2, "Expected 2 connections using ECDH");
+          is(count1_8, 0, "Expected 0 connections using ECDH Hybrid");
+    })},
+
     async function checkRTCRtpSenderCount() {
       const pc = new RTCPeerConnection();
       const oldCount = await GleanTest.rtcrtpsender.count.testGetValue() ?? 0;

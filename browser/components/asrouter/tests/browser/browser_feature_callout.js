@@ -243,6 +243,8 @@ add_task(async function feature_callout_dismiss_on_escape() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
   const doc = win.document;
   const browser = win.gBrowser.selectedBrowser;
+  // Ensure the browser is focused
+  win.gBrowser.selectedBrowser.focus();
 
   const { closed } = await showFeatureCallout(browser, testMessage);
 
@@ -275,6 +277,9 @@ add_task(async function feature_callout_returns_default_focus_to_top() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
   const doc = win.document;
   const browser = win.gBrowser.selectedBrowser;
+  // Ensure the browser is focused
+  win.gBrowser.selectedBrowser.focus();
+  let focusedElement = doc.activeElement;
 
   const { closed } = await showFeatureCallout(browser, testMessage);
 
@@ -288,8 +293,8 @@ add_task(async function feature_callout_returns_default_focus_to_top() {
 
   Assert.strictEqual(
     doc.activeElement.localName,
-    "body",
-    `by default focus returns to the document body after callout closes`
+    focusedElement.localName,
+    `by default focus returns to the browser after callout closes`
   );
   await BrowserTestUtils.closeWindow(win);
 });

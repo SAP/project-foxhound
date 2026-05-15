@@ -1516,7 +1516,7 @@ class SurfaceCacheImpl final : public nsIMemoryReporter {
     explicit SurfaceTracker(uint32_t aSurfaceCacheExpirationTimeMS)
         : ExpirationTrackerImpl<CachedSurface, 2, StaticMutex,
                                 StaticMutexAutoLock>(
-              aSurfaceCacheExpirationTimeMS, "SurfaceTracker") {}
+              aSurfaceCacheExpirationTimeMS, "SurfaceTracker"_ns) {}
 
    protected:
     void NotifyExpiredLocked(CachedSurface* aSurface,
@@ -1945,7 +1945,7 @@ void SurfaceCache::ReleaseImageOnMainThread(
   // Don't try to dispatch the release after shutdown, we'll just leak the
   // runnable.
   if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownFinal)) {
-    Unused << aImage;
+    (void)aImage;
     return;
   }
 

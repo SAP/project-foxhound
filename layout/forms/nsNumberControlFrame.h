@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsNumberControlFrame_h__
-#define nsNumberControlFrame_h__
+#ifndef nsNumberControlFrame_h_
+#define nsNumberControlFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsContainerFrame.h"
 #include "nsIAnonymousContentCreator.h"
@@ -95,4 +94,4 @@ class nsNumberControlFrame final : public nsTextControlFrame {
   nsCOMPtr<Element> mSpinDown;
 };
 
-#endif  // nsNumberControlFrame_h__
+#endif  // nsNumberControlFrame_h_

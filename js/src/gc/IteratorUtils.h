@@ -10,8 +10,6 @@
 #include "mozilla/Array.h"
 #include "mozilla/Maybe.h"
 
-#include <initializer_list>
-
 namespace js {
 
 /*
@@ -67,6 +65,9 @@ class NestedIterator {
       a.next();
     }
   }
+
+ protected:
+  const IteratorA& iterA() const { return a; }
 };
 
 /*

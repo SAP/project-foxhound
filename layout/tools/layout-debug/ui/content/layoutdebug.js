@@ -35,7 +35,6 @@ const FEATURES = {
 
 const SIMPLE_COMMANDS = [
   "dumpTextRuns",
-  "dumpViews",
   "dumpCounterManager",
   "dumpRetainedDisplayList",
   "dumpStyleSheets",
@@ -294,11 +293,7 @@ nsLDBBrowserContentListener.prototype = {
 
   // non-interface methods
   setButtonEnabled: function (aButtonElement, aEnabled) {
-    if (aEnabled) {
-      aButtonElement.removeAttribute("disabled");
-    } else {
-      aButtonElement.setAttribute("disabled", "true");
-    }
+    aButtonElement.toggleAttribute("disabled", !aEnabled);
   },
 
   mStatusText: null,
@@ -425,9 +420,6 @@ function OnLDBLoad() {
         case "menu_dumpTextRuns":
           gDebugger.dumpTextRuns();
           break;
-        case "menu_dumpViews":
-          gDebugger.dumpViews();
-          break;
         case "menu_dumpCounterManager":
           gDebugger.dumpCounterManager();
           break;
@@ -545,7 +537,7 @@ function OnLDBLoad() {
 
 function checkPersistentMenu(item) {
   var menuitem = document.getElementById("menu_" + item);
-  menuitem.setAttribute("checked", gDebugger[item]);
+  menuitem.toggleAttribute("checked", gDebugger[item]);
 }
 
 function checkPersistentMenus() {
@@ -607,7 +599,7 @@ function OnLDBUnload() {
 function toggle(menuitem) {
   // trim the initial "menu_"
   var feature = menuitem.id.substring(5);
-  gDebugger[feature] = menuitem.getAttribute("checked") == "true";
+  gDebugger[feature] = menuitem.hasAttribute("checked");
 }
 
 function openFile() {

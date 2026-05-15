@@ -8,8 +8,9 @@
 #define DOM_MEDIA_PLATFORMS_FFMPEG_FFMPEGUTILS_H_
 
 #include <cstddef>
-#include "nsStringFwd.h"
+
 #include "FFmpegLibWrapper.h"
+#include "nsStringFwd.h"
 
 // This must be the last header included
 #include "FFmpegLibs.h"

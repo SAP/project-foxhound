@@ -45,7 +45,7 @@ add_task(async function () {
       details: {
         status: 301,
         statusText: "Moved Permanently",
-        type: "html",
+        type: "html (redirect)",
         fullMimeType: "text/html; charset=utf-8",
       },
     },
@@ -77,7 +77,7 @@ add_task(async function () {
         status: 301,
         statusText: "Moved Permanently (cached)",
         displayedStatus: "cached",
-        type: "html",
+        type: "html (redirect)",
         fullMimeType: "text/html; charset=utf-8",
       },
     },

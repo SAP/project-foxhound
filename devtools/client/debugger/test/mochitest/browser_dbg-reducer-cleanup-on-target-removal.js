@@ -16,10 +16,6 @@ const TEST_URI = `https://example.com/document-builder.sjs?html=
 <iframe src="${encodeURI(IFRAME_TEST_URL)}"></iframe><body>`;
 
 add_task(async function () {
-  if (!isEveryFrameTargetEnabled()) {
-    ok(true, "This test is disabled without EFT");
-    return;
-  }
   await pushPref("devtools.debugger.map-scopes-enabled", true);
   const dbg = await initDebuggerWithAbsoluteURL(TEST_URI);
 
@@ -62,7 +58,7 @@ add_task(async function () {
   // Assert that reducer do have some data before remove the target.
   Assert.greater(dbg.selectors.getSourceCount(), 0, "Some sources exists");
   is(dbg.selectors.getBreakpointCount(), 1, "There is one breakpoint");
-  is(dbg.selectors.getSourceTabs().length, 2, "Two tabs are opened");
+  is(countTabs(dbg), 2, "Two tabs are opened");
   Assert.greater(
     dbg.selectors.getAllThreads().length,
     1,
@@ -86,7 +82,7 @@ add_task(async function () {
   );
   let state = dbg.store.getState();
 
-  ok(!!Object.keys(state.ast.mutableInScopeLines).length, "Some scopes exists");
+  Assert.greater(state.ast.mutableInScopeLines.size, 0, "Some scopes exists");
   Assert.greater(
     state.sourceActors.mutableSourceActors.size,
     0,
@@ -127,7 +123,7 @@ add_task(async function () {
   is(editor.sourcesCount(), 0, "No sources exists in the source editor cache");
   is(dbg.selectors.getSourceCount(), 0, "No sources exists");
   is(dbg.selectors.getBreakpointCount(), 0, "No breakpoints exists");
-  is(dbg.selectors.getSourceTabs().length, 0, "No tabs exists");
+  is(countTabs(dbg), 0, "No tabs exists");
   is(
     dbg.selectors.getAllThreads().length,
     1,

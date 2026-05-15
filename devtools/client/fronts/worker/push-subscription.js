@@ -26,5 +26,4 @@ class PushSubscriptionFront extends FrontClassWithSpec(pushSubscriptionSpec) {
   }
 }
 
-exports.PushSubscriptionFront = PushSubscriptionFront;
 registerFront(PushSubscriptionFront);

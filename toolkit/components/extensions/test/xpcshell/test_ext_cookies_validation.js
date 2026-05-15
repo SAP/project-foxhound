@@ -1,27 +1,13 @@
 "use strict";
 
-add_task(
-  { pref_set: [["extensions.cookie.rejectWhenInvalid", true]] },
-  async function test_no_reject_invalid_cookies() {
-    await do_test_invalid_cookies({ failure: true });
-  }
-);
-
-add_task(
-  { pref_set: [["extensions.cookie.rejectWhenInvalid", false]] },
-  async function test_warn_on_invalid_cookies() {
-    await do_test_invalid_cookies({ failure: false });
-  }
-);
-
-async function do_test_invalid_cookies(options) {
+add_task(async function do_test_invalid_cookies() {
   async function backgroundScript() {
     browser.test.onMessage.addListener(async message => {
       let failure = true;
       try {
         await browser.cookies.set({
-          ...message.cookie,
           url: "https://example.com",
+          ...message.cookie,
         });
         failure = false;
       } catch (e) {
@@ -31,7 +17,7 @@ async function do_test_invalid_cookies(options) {
           `${message.title} - correct exception`
         );
       } finally {
-        browser.test.assertEq(failure, message.failure, message.title);
+        browser.test.assertTrue(failure, message.title);
         browser.test.sendMessage("completed");
       }
     });
@@ -42,7 +28,11 @@ async function do_test_invalid_cookies(options) {
   const extension = ExtensionTestUtils.loadExtension({
     background: backgroundScript,
     manifest: {
-      permissions: ["cookies", "https://example.com/*"],
+      permissions: [
+        "cookies",
+        "https://example.com/*",
+        "https://example..com/*",
+      ],
     },
   });
 
@@ -126,12 +116,32 @@ async function do_test_invalid_cookies(options) {
       errorString:
         "Cookie “a” has been rejected because its path attribute is too big.",
     },
+    {
+      cookie: {
+        url: "https://example..com",
+        domain: ".example.com",
+        name: "test",
+      },
+      title: "Invalid url",
+      errorString: `Invalid domain url: "https://example..com"`,
+      failure: true,
+    },
+    {
+      cookie: {
+        url: "https://example..com",
+        name: "test",
+      },
+      title: "Invalid url and no domain",
+      errorString: `Invalid domain: "example..com"`,
+      failure: true,
+    },
   ];
 
   for (const test of tests) {
-    extension.sendMessage({ ...test, ...options });
+    extension.sendMessage(test);
+
     await extension.awaitMessage("completed");
   }
 
   await extension.unload();
-}
+});

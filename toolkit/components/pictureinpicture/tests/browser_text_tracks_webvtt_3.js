@@ -5,11 +5,12 @@
 
 /**
  * Verifies the value of a cue's .line property.
+ *
  * @param {Element} browser The <xul:browser> hosting the <video>
- * @param {String} videoID The ID of the video being checked
+ * @param {string} videoID The ID of the video being checked
  * @param {Integer} trackIndex The index of the track to be loaded
  * @param {Integer} cueIndex The index of the cue to be tested on
- * @param {Integer|String} expectedValue The expected line value of the cue
+ * @param {Integer | string} expectedValue The expected line value of the cue
  */
 async function verifyLineForCue(
   browser,

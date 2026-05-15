@@ -1,10 +1,13 @@
 ChromeUtils.defineESModuleGetters(this, {
+  AboutNewTabResourceMapping:
+    "resource:///modules/AboutNewTabResourceMapping.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   CFRMessageProvider: "resource:///modules/asrouter/CFRMessageProvider.sys.mjs",
@@ -17,14 +20,67 @@ ChromeUtils.defineESModuleGetters(this, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   QueryCache: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  SelectableProfileService:
+    "resource:///modules/profiles/SelectableProfileService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
+  Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
+  TabNotes: "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
+  TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
+  TaskbarTabsPin: "resource:///modules/taskbartabs/TaskbarTabsPin.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
 });
+
+const { DefaultBrowserCheck } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/DefaultBrowserCheck.sys.mjs"
+);
+
+const testFeatureCallout = {
+  id: "TEST_MESSAGE",
+  template: "feature_callout",
+  content: {
+    id: "TEST_MESSAGE",
+    template: "multistage",
+    backdrop: "transparent",
+    transitions: false,
+    screens: [
+      {
+        id: "TEST_MESSAGE_1",
+        anchors: [
+          { selector: "#PanelUI-menu-button", arrow_position: "top-end" },
+        ],
+        content: {
+          position: "callout",
+          title: {
+            raw: "Test title",
+          },
+          subtitle: {
+            raw: "Test subtitle",
+          },
+          primary_button: {
+            label: {
+              raw: "Done",
+            },
+            action: {
+              navigate: true,
+            },
+          },
+        },
+      },
+    ],
+  },
+  priority: 1,
+  targeting: "true",
+  trigger: { id: "defaultBrowserCheck" },
+};
 
 function sendFormAutofillMessage(name, data) {
   let actor =
@@ -64,6 +120,20 @@ async function removeAutofillRecords() {
     await observePromise;
   }
 }
+
+add_task(async function setup_pref_env() {
+  // Let the harness know these prefs are test-managed so it won't warn about
+  // changes
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.search.region", ""],
+      ["distribution.iniFile.exists.value", false],
+      ["distribution.iniFile.exists.appversion", ""],
+      ["extensions.webextensions.uuids", "{}"],
+      ["browser.shell.mostRecentDefaultPromptSeen", 0],
+    ],
+  });
+});
 
 // ASRouterTargeting.findMatchingMessage
 add_task(async function find_matching_message() {
@@ -256,6 +326,8 @@ add_task(async function check_canCreateSelectableProfiles() {
   );
 
   await ProfilesDatastoreService.resetProfileService(null);
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_hasSelectableProfiles() {
@@ -278,6 +350,7 @@ add_task(async function check_hasSelectableProfiles() {
     message,
     "should select correct item by hasSelectableProfiles"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_usesFirefoxSync() {
@@ -294,6 +367,7 @@ add_task(async function check_usesFirefoxSync() {
     message,
     "should select correct item by usesFirefoxSync"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxAEnabled() {
@@ -309,6 +383,7 @@ add_task(async function check_isFxAEnabled() {
     !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
     "should not select a message if fxa is disabled"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxAEnabled() {
@@ -325,6 +400,7 @@ add_task(async function check_isFxAEnabled() {
     message,
     "should select the correct message"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxASignedIn_false() {
@@ -349,6 +425,7 @@ add_task(async function check_isFxASignedIn_false() {
   );
 
   sandbox.restore();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxASignedIn_true() {
@@ -373,6 +450,7 @@ add_task(async function check_isFxASignedIn_true() {
   );
 
   sandbox.restore();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_totalBookmarksCount() {
@@ -428,8 +506,8 @@ add_task(async function check_needsUpdate() {
 
 add_task(async function checksearchEngines() {
   const result = await ASRouterTargeting.Environment.searchEngines;
-  const expectedInstalled = (await Services.search.getAppProvidedEngines())
-    .map(engine => engine.identifier)
+  const expectedInstalled = (await SearchService.getAppProvidedEngines())
+    .map(engine => engine.id)
     .sort()
     .join(",");
   ok(
@@ -447,14 +525,14 @@ add_task(async function checksearchEngines() {
   );
   is(
     result.current,
-    (await Services.search.getDefault()).identifier,
+    (await SearchService.getDefault()).id,
     "searchEngines.current should be the current engine name"
   );
 
   const message = {
     id: "foo",
     targeting: `searchEngines[.current == ${
-      (await Services.search.getDefault()).identifier
+      (await SearchService.getDefault()).id
     }]`,
   };
   is(
@@ -466,7 +544,7 @@ add_task(async function checksearchEngines() {
   const message2 = {
     id: "foo",
     targeting: `searchEngines[${
-      (await Services.search.getAppProvidedEngines())[0].identifier
+      (await SearchService.getAppProvidedEngines())[0].id
     } in .installed]`,
   };
   is(
@@ -496,6 +574,53 @@ add_task(async function checkisDefaultBrowser() {
   );
 });
 
+add_task(async function checkisPrivateWindow_false() {
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  const expected = PrivateBrowsingUtils.isContentWindowPrivate(win);
+  const result = await ASRouterTargeting.Environment.isPrivateWindow;
+  is(typeof result, "boolean", "isPrivateWindow should be a boolean value");
+  is(
+    result,
+    expected,
+    "isPrivateWindow should be equal to PrivateBrowsingUtils.isContentWindowPrivate()"
+  );
+  const message = {
+    id: "foo",
+    targeting: `isPrivateWindow == ${expected.toString()}`,
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by isPrivateWindow"
+  );
+  await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function checkisPrivateWindow_true() {
+  // Open a new private window
+  const privateWin = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+  const expected = PrivateBrowsingUtils.isContentWindowPrivate(privateWin);
+  const result = await ASRouterTargeting.Environment.isPrivateWindow;
+  is(typeof result, "boolean", "isPrivateWindow should be a boolean value");
+  is(
+    result,
+    expected,
+    "isPrivateWindow should be equal to PrivateBrowsingUtils.isContentWindowPrivate()"
+  );
+  const message = {
+    id: "foo",
+    targeting: `isPrivateWindow == ${expected.toString()}`,
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by isPrivateWindow"
+  );
+  await BrowserTestUtils.closeWindow(privateWin);
+});
+
 add_task(async function checkdevToolsOpenedCount() {
   await pushPrefs(["devtools.selfxss.count", 5]);
   is(
@@ -509,6 +634,7 @@ add_task(async function checkdevToolsOpenedCount() {
     message,
     "should select correct item by devToolsOpenedCount"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_platformName() {
@@ -536,7 +662,7 @@ add_task(async function checkAddonsInfo() {
   Assert.strictEqual(
     installedAddons,
     false,
-    "should correctly return hasInstalledAddons"
+    "should correctly return hasInstalledAddons before"
   );
 
   const xpi = AddonTestUtils.createTempWebExtensionFile({
@@ -636,7 +762,13 @@ add_task(async function checkAddonsInfo() {
     "should correctly provide `installDate` property from full data"
   );
 
-  ok(hasInstalledAddons, "should correctly return hasInstalledAddons");
+  ok(hasInstalledAddons, "should correctly return hasInstalledAddons after");
+
+  // Clean up the installed test addon
+  let testAddonObj = await AddonManager.getAddonByID(FAKE_ID);
+  if (testAddonObj) {
+    await testAddonObj.uninstall();
+  }
 });
 
 add_task(async function checkFrecentSites() {
@@ -644,10 +776,12 @@ add_task(async function checkFrecentSites() {
   const timeDaysAgo = numDays => now - numDays * 24 * 60 * 60 * 1000;
 
   const visits = [];
+  // Create test data with varying frecency scores: high (frequent visits),
+  // medium (less frequent), and low (infrequent).
   for (const [uri, count, visitDate] of [
-    ["https://mozilla1.com/", 10, timeDaysAgo(0)], // frecency 1000
-    ["https://mozilla2.com/", 5, timeDaysAgo(1)], // frecency 500
-    ["https://mozilla3.com/", 1, timeDaysAgo(2)], // frecency 100
+    ["https://mozilla1.com/", 10, timeDaysAgo(0)],
+    ["https://mozilla2.com/", 5, timeDaysAgo(1)],
+    ["https://mozilla3.com/", 1, timeDaysAgo(2)],
   ]) {
     [...Array(count).keys()].forEach(() =>
       visits.push({
@@ -678,10 +812,13 @@ add_task(async function checkFrecentSites() {
     "should not select incorrect item by host in topFrecentSites"
   );
 
+  // Frecency threshold for 5 visits to mozilla2.com, 1 day ago.
+  let threshold = PlacesUtils.history.pageFrecencyThreshold(1, 5, false);
   message = {
     id: "foo",
-    targeting:
-      "'mozilla2.com' in topFrecentSites[.frecency >= 400]|mapToProperty('host')",
+    targeting: `'mozilla2.com' in topFrecentSites[.frecency >= ${
+      threshold
+    }]|mapToProperty('host')`,
   };
   is(
     await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
@@ -689,10 +826,13 @@ add_task(async function checkFrecentSites() {
     "should select correct item when filtering by frecency"
   );
 
+  let higherThreshold = PlacesUtils.history.pageFrecencyThreshold(1, 6, false);
+  Assert.greater(higherThreshold, threshold, "Threshold is higher.");
   message = {
     id: "foo",
-    targeting:
-      "'mozilla2.com' in topFrecentSites[.frecency >= 600]|mapToProperty('host')",
+    targeting: `'mozilla2.com' in topFrecentSites[.frecency >= ${
+      higherThreshold
+    }]|mapToProperty('host')`,
   };
   ok(
     !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
@@ -877,6 +1017,8 @@ add_task(async function check_provider_cohorts() {
     "bar",
     "should have cohort bar for cfr"
   );
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_xpinstall_enabled() {
@@ -888,6 +1030,53 @@ add_task(async function check_xpinstall_enabled() {
   // flip to true, check targeting reflects that
   await pushPrefs(["xpinstall.enabled", true]);
   is(await ASRouterTargeting.Environment.xpinstallEnabled, true);
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function check_current_tab_installed_as_web_app() {
+  // By default, Taskbar Tabs will try and pin this to the taskbar, but we
+  // don't want to do that in this test.
+  const sandbox = sinon.createSandbox();
+  sandbox.stub(TaskbarTabsPin, "pinTaskbarTab");
+  sandbox.stub(TaskbarTabsPin, "unpinTaskbarTab");
+
+  const kUri = "https://example.com";
+
+  await BrowserTestUtils.withNewTab(kUri, async () => {
+    is(
+      await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+      false,
+      "no taskbar tab exists yet"
+    );
+
+    const { taskbarTab } = await TaskbarTabs.findOrCreateTaskbarTab(
+      Services.io.newURI(kUri),
+      0
+    );
+    is(
+      await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+      true,
+      "should be true when a Taskbar Tab exists for this tab"
+    );
+
+    await BrowserTestUtils.withNewTab("mochi.test:8888", async () => {
+      is(
+        await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+        false,
+        "should be false even if a Taskbar Tab exists for a different tab"
+      );
+    });
+
+    await TaskbarTabs.removeTaskbarTab(taskbarTab.id);
+    is(
+      await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+      false,
+      "should be false after removing the Taskbar Tab"
+    );
+  });
+
+  sandbox.restore();
 });
 
 add_task(async function check_pinned_tabs() {
@@ -914,6 +1103,62 @@ add_task(async function check_pinned_tabs() {
   );
 });
 
+class FakeTabWithNote extends EventTarget {
+  /**
+   * @param {string} canonicalUrl
+   */
+  constructor(canonicalUrl) {
+    super();
+    this.canonicalUrl = canonicalUrl;
+  }
+}
+
+add_task(async function check_tabNotesCount() {
+  const tab1 = new FakeTabWithNote("https://www.example.com/1");
+  const tab2 = new FakeTabWithNote("https://www.example.com/2");
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tabs.notes.enabled", true]],
+  });
+  await TabNotes.init();
+
+  Assert.equal(
+    await ASRouterTargeting.Environment.tabNotesCount,
+    0,
+    "No tab notes yet"
+  );
+
+  await TabNotes.set(tab1, "Test note 1");
+  Assert.equal(
+    await ASRouterTargeting.Environment.tabNotesCount,
+    1,
+    "One tab note"
+  );
+
+  await TabNotes.set(tab2, "Test note 2");
+  Assert.equal(
+    await ASRouterTargeting.Environment.tabNotesCount,
+    2,
+    "Two tab notes"
+  );
+
+  await TabNotes.delete(tab2);
+  Assert.equal(
+    await ASRouterTargeting.Environment.tabNotesCount,
+    1,
+    "One tab note again"
+  );
+
+  await TabNotes.reset();
+  Assert.equal(
+    await ASRouterTargeting.Environment.tabNotesCount,
+    0,
+    "No tab notes again"
+  );
+
+  await TabNotes.deinit();
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function check_hasAccessedFxAPanel() {
   is(
     await ASRouterTargeting.Environment.hasAccessedFxAPanel,
@@ -928,6 +1173,7 @@ add_task(async function check_hasAccessedFxAPanel() {
     true,
     "Should detect panel access"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function checkCFRFeaturesUserPref() {
@@ -946,6 +1192,7 @@ add_task(async function checkCFRFeaturesUserPref() {
     message,
     "should select correct item by cfrFeature"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function checkCFRAddonsUserPref() {
@@ -964,6 +1211,7 @@ add_task(async function checkCFRAddonsUserPref() {
     message,
     "should select correct item by cfrAddons"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_blockedCountByType() {
@@ -1021,6 +1269,7 @@ add_task(async function checkPatternsValid() {
 
 add_task(async function check_isChinaRepack() {
   const prefDefaultBranch = Services.prefs.getDefaultBranch("distribution.");
+  const originalDistributionId = prefDefaultBranch.getCharPref("id", "");
   const messages = [
     { id: "msg_for_china_repack", targeting: "isChinaRepack == true" },
     { id: "msg_for_everyone_else", targeting: "isChinaRepack == false" },
@@ -1063,7 +1312,7 @@ add_task(async function check_isChinaRepack() {
     "should select the message for non China repack users"
   );
 
-  prefDefaultBranch.deleteBranch("");
+  prefDefaultBranch.setCharPref("id", originalDistributionId);
 });
 
 add_task(async function check_userId() {
@@ -1322,19 +1571,29 @@ add_task(async function check_userPrefersReducedMotion() {
 });
 
 add_task(async function test_distributionId() {
+  let expectedDefault = Services.prefs
+    .getDefaultBranch(null)
+    .getCharPref("distribution.id", "");
   is(
     ASRouterTargeting.Environment.distributionId,
-    "",
-    "Should return an empty distribution Id"
+    expectedDefault,
+    "Should return the expected default distribution Id"
   );
 
   Services.prefs.getDefaultBranch(null).setCharPref("distribution.id", "test");
-
   is(
     ASRouterTargeting.Environment.distributionId,
     "test",
     "Should return the correct distribution Id"
   );
+
+  if (expectedDefault) {
+    Services.prefs
+      .getDefaultBranch(null)
+      .setCharPref("distribution.id", expectedDefault);
+  } else {
+    Services.prefs.getDefaultBranch(null).deleteBranch("distribution.id");
+  }
 });
 
 add_task(async function test_fxViewButtonAreaType_default() {
@@ -1515,6 +1774,8 @@ add_task(async function test_migrationInteractions() {
     ok(!(await ASRouterTargeting.Environment[getterName]));
     await pushPrefs([pref, true]);
     ok(await ASRouterTargeting.Environment[getterName]);
+    await SpecialPowers.popPrefEnv();
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -1546,6 +1807,10 @@ add_task(async function check_useEmbeddedMigrationWizard() {
   ]);
 
   ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isMSIX() {
@@ -1886,6 +2151,7 @@ add_task(async function check_totalSearches() {
     20,
     "should return a value of 20"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function checkisDefaultBrowserUncached() {
@@ -1950,6 +2216,7 @@ add_task(
       false,
       "activeNotifications should be false if the topic selection modal on newtab was last shown more than a minute ago"
     );
+    await SpecialPowers.popPrefEnv();
   }
 );
 
@@ -1992,6 +2259,7 @@ add_task(
       true,
       "activeNotifications should be true if the topic selection modal on newtab was last shown less than a minute ago"
     );
+    await SpecialPowers.popPrefEnv();
   }
 );
 
@@ -2021,6 +2289,88 @@ add_task(async function check_activeNotifications_newtabMessages() {
   Services.obs.removeObserver(testObserver, "newtab-message-query");
 });
 
+add_task(async function activeNotifications_default_prompt_shown() {
+  let sb = sinon.createSandbox();
+
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  let visibilityChange = new Promise(res =>
+    win.document.addEventListener("visibilitychange", res, { once: true })
+  );
+
+  sb.stub(DefaultBrowserCheck, "willCheckDefaultBrowser").returns(true);
+  const promptSpy = sb.spy(DefaultBrowserCheck, "prompt");
+
+  await BROWSER_GLUE._maybeShowDefaultBrowserPrompt();
+
+  Assert.equal(promptSpy.callCount, 1, "default prompt should be called");
+
+  // activeNotifications are updated by visibilitychanges, so make sure we get
+  // one before testing it.
+  await visibilityChange;
+
+  is(
+    await ASRouterTargeting.Environment.activeNotifications,
+    true,
+    "activeNotifications should be true if the set to default prompt is being shown"
+  );
+  await BrowserTestUtils.closeWindow(win);
+  sb.restore();
+});
+
+add_task(async function activeNotifications_feature_callout_shown() {
+  let sb = sinon.createSandbox();
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  let callout = await FeatureCalloutBroker.showFeatureCallout(
+    win.gBrowser.selectedBrowser,
+    testFeatureCallout
+  );
+  ok(callout, "Callout shown");
+
+  is(
+    await ASRouterTargeting.Environment.activeNotifications,
+    true,
+    "activeNotifications should be true if a feature callout is being shown"
+  );
+  await BrowserTestUtils.closeWindow(win);
+  sb.restore();
+});
+
+add_task(async function activeNotifications_spotlight_shown() {
+  let sb = sinon.createSandbox();
+  const IMPORT_SCREEN = {
+    id: "AW_IMPORT",
+    content: {
+      primary_button: {
+        label: "import",
+        action: {
+          navigate: true,
+          type: "SHOW_MIGRATION_WIZARD",
+        },
+      },
+    },
+  };
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  Spotlight.showSpotlightDialog(win.gBrowser.selectedBrowser, {
+    content: { modal: "tab", screens: [IMPORT_SCREEN] },
+  });
+
+  await TestUtils.waitForCondition(
+    () => win.document.readyState === "complete",
+    "Waiting for spotlight dialog to finish loading"
+  );
+
+  is(
+    await ASRouterTargeting.Environment.activeNotifications,
+    true,
+    "activeNotifications should be true if a spotlight is being shown"
+  );
+  await BrowserTestUtils.closeWindow(win);
+  sb.restore();
+});
+
 add_task(async function check_unhandledCampaignAction() {
   is(
     typeof ASRouterTargeting.Environment.unhandledCampaignAction,
@@ -2043,7 +2393,30 @@ add_task(async function check_unhandledCampaignAction() {
       },
     },
     {
-      title: "supported and unhandled set default browser campaign action",
+      title:
+        "supported (pin and set default) and unhandled set default browser campaign action",
+      attributionData: {
+        campaign: "pin_and_default",
+      },
+      expected: "PIN_AND_DEFAULT",
+      after: () => {
+        QueryCache.queries.UnhandledCampaignAction.expire();
+      },
+    },
+    {
+      title:
+        "supported (pin to taskbar) and unhandled set default browser campaign action",
+      attributionData: {
+        campaign: "pin_firefox_to_taskbar",
+      },
+      expected: "PIN_FIREFOX_TO_TASKBAR",
+      after: () => {
+        QueryCache.queries.UnhandledCampaignAction.expire();
+      },
+    },
+    {
+      title:
+        "supported (set default) and unhandled set default browser campaign action",
       attributionData: {
         campaign: "set_default_browser",
       },
@@ -2053,7 +2426,8 @@ add_task(async function check_unhandledCampaignAction() {
       },
     },
     {
-      title: "supported and handled set default browser campaign action",
+      title:
+        "supported (set default) and handled set default browser campaign action",
       attributionData: {
         campaign: "set_default_browser",
       },
@@ -2061,8 +2435,8 @@ add_task(async function check_unhandledCampaignAction() {
       before: async () => {
         await pushPrefs([DID_HANDLE_CAMAPAIGN_ACTION_PREF, true]);
       },
-      after: () => {
-        Services.prefs.clearUserPref(DID_HANDLE_CAMAPAIGN_ACTION_PREF);
+      after: async () => {
+        await SpecialPowers.popPrefEnv();
         QueryCache.queries.UnhandledCampaignAction.expire();
       },
     },
@@ -2116,6 +2490,63 @@ add_task(async function check_profileGroupIdTargeting() {
   );
 });
 
+add_task(async function check_currentProfileIdTargeting() {
+  is(
+    typeof ASRouterTargeting.Environment.currentProfileId,
+    "string",
+    "Should return a string"
+  );
+
+  const message = {
+    id: "foo",
+    targeting: `currentProfileId == "test-profile-id"`,
+  };
+
+  const result = await ASRouterTargeting.findMatchingMessage({
+    messages: [message],
+    context: { currentProfileId: "test-profile-id" },
+  });
+
+  is(result, message, "should select correct item by profile id");
+});
+
+add_task(async function check_profileGroupProfileCountTargeting() {
+  await pushPrefs(
+    ["browser.profiles.enabled", false],
+    ["browser.profiles.created", false]
+  );
+  const resultFalse =
+    await ASRouterTargeting.Environment.profileGroupProfileCount;
+
+  is(typeof resultFalse, "number", "Should return a number");
+
+  is(resultFalse, 0, "should be zero because profiles are disabled");
+
+  await pushPrefs(
+    ["browser.profiles.enabled", true],
+    ["browser.profiles.created", true]
+  );
+
+  const expected = await SelectableProfileService.getProfileCount();
+  const resultTrue =
+    await ASRouterTargeting.Environment.profileGroupProfileCount;
+
+  is(resultTrue, expected, "it should be equal to the profile group count");
+
+  const message = {
+    id: "foo",
+    targeting: `profileGroupProfileCount == "${expected}"`,
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by number of profiles in the group"
+  );
+
+  //Clean up the prefs
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function test_buildId() {
   is(
     typeof ASRouterTargeting.Environment.buildId,
@@ -2133,4 +2564,157 @@ add_task(async function test_buildId() {
     message,
     "should select correct item when filtering by build ID"
   );
+});
+
+add_task(async function test_newtabAddonVersion() {
+  const FAKE_NEWTAB_VERSION = "145.0.2123.2131";
+  const sandbox = sinon.createSandbox();
+
+  sandbox
+    .stub(AboutNewTabResourceMapping, "addonVersion")
+    .get(() => FAKE_NEWTAB_VERSION);
+
+  is(
+    ASRouterTargeting.Environment.newtabAddonVersion,
+    FAKE_NEWTAB_VERSION,
+    "Should return the newtab addon version as reported by AboutNewTabResourceMapping"
+  );
+
+  const message = {
+    id: "foo",
+    targeting: `newtabAddonVersion|versionCompare('143.1.0') >= 0`,
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item when filtering by newtabAddonVersion"
+  );
+});
+
+add_task(async function check_backupsInfo() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  const testBackupResponse = {
+    found: true,
+    backupFileToRestore: "/tmp/profile-backup.jsonlz4",
+    multipleBackupsFound: false,
+  };
+
+  const stub = sandbox
+    .stub(QueryCache.getters.backupsInfo, "get")
+    .resolves(testBackupResponse);
+
+  Assert.deepEqual(
+    await ASRouterTargeting.Environment.backupsInfo,
+    testBackupResponse,
+    "Should return structured backup info from the cached getter"
+  );
+
+  const message = { id: "foo", targeting: "backupsInfo.found" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "Should select message when a backup was found"
+  );
+
+  Assert.ok(stub.called, "backupsInfo getter was called");
+});
+
+add_task(async function check_isEncryptedBackup() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  is(
+    await ASRouterTargeting.Environment.isEncryptedBackup,
+    false,
+    "should return false if the pref is unset"
+  );
+
+  await pushPrefs(["messaging-system-action.backupChooser", "easy"]);
+  is(
+    await ASRouterTargeting.Environment.isEncryptedBackup,
+    false,
+    "should return false if the pref value is easy"
+  );
+
+  await pushPrefs(["messaging-system-action.backupChooser", "full"]);
+  is(
+    await ASRouterTargeting.Environment.isEncryptedBackup,
+    true,
+    "should return true if the pref value is full"
+  );
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function check_backupArchiveEnabled() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  await pushPrefs(
+    ["browser.backup.archive.enabled", true],
+    ["browser.backup.archive.overridePlatformCheck", true]
+  );
+
+  is(
+    await ASRouterTargeting.Environment.backupArchiveEnabled,
+    true,
+    "should return true if the killswitch is not on"
+  );
+  await SpecialPowers.popPrefEnv();
+  const archiveExperiment = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "backupService",
+    value: { archiveKillswitch: true },
+  });
+  await pushPrefs(
+    ["browser.backup.archive.enabled", true],
+    ["browser.backup.archive.overridePlatformCheck", false]
+  );
+
+  is(
+    await ASRouterTargeting.Environment.backupArchiveEnabled,
+    false,
+    "should return false if the killswitch is on"
+  );
+
+  // End the experiment.
+  await archiveExperiment();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function check_backupRestoreEnabled() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  await pushPrefs(
+    ["browser.backup.restore.enabled", true],
+    ["browser.backup.restore.overridePlatformCheck", true]
+  );
+
+  is(
+    await ASRouterTargeting.Environment.backupRestoreEnabled,
+    true,
+    "should return true if the killswitch is not on"
+  );
+  await SpecialPowers.popPrefEnv();
+  await pushPrefs(
+    ["browser.backup.restore.enabled", true],
+    ["browser.backup.restore.overridePlatformCheck", false]
+  );
+
+  const restoreExperiment = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "backupService",
+    value: { restoreKillswitch: true },
+  });
+
+  is(
+    await ASRouterTargeting.Environment.backupRestoreEnabled,
+    false,
+    "should return false if the killswitch is on"
+  );
+
+  // End the experiment.
+  await restoreExperiment();
+  await SpecialPowers.popPrefEnv();
 });

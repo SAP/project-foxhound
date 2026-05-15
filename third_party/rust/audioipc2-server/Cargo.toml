@@ -32,19 +32,15 @@ name = "audioipc2_server"
 path = "src/lib.rs"
 
 [dependencies]
-cubeb-core = "0.13"
+cubeb-core = "0.32"
 log = "0.4"
 once_cell = "1.2.0"
 slab = "0.4"
 
 [dependencies.audio_thread_priority]
-version = "0.32"
+version = "0.34"
 default-features = false
 
 [dependencies.audioipc]
 path = "../audioipc"
 package = "audioipc2"
-
-[dependencies.error-chain]
-version = "0.12.0"
-default-features = false

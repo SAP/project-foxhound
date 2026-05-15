@@ -8,11 +8,11 @@
 #define mozilla_GMPVideoEncoder_h_
 
 #include "GMPVideoEncoderProxy.h"
-#include "mozilla/StaticString.h"
-#include "mozIGeckoMediaPluginService.h"
-#include "nsRefPtrHashtable.h"
 #include "PlatformEncoderModule.h"
 #include "TimeUnits.h"
+#include "mozIGeckoMediaPluginService.h"
+#include "mozilla/StaticString.h"
+#include "nsRefPtrHashtable.h"
 
 class GMPVideoHost;
 
@@ -29,6 +29,7 @@ class GMPVideoEncoder final : public MediaDataEncoder,
 
   RefPtr<InitPromise> Init() override;
   RefPtr<EncodePromise> Encode(const MediaData* aSample) override;
+  RefPtr<EncodePromise> Encode(nsTArray<RefPtr<MediaData>>&& aSamples) override;
   RefPtr<ReconfigurationPromise> Reconfigure(
       const RefPtr<const EncoderConfigurationChangeList>& aConfigurationChanges)
       override;
@@ -38,6 +39,7 @@ class GMPVideoEncoder final : public MediaDataEncoder,
 
   void Encoded(GMPVideoEncodedFrame* aEncodedFrame,
                const nsTArray<uint8_t>& aCodecSpecificInfo) override;
+  void Dropped(uint64_t aTimestamp) override;
   void Error(GMPErr aError) override;
   void Terminated() override;
 
@@ -65,6 +67,9 @@ class GMPVideoEncoder final : public MediaDataEncoder,
 
   void Teardown(const MediaResult& aResult, StaticString aCallSite);
 
+  void EncodeNextSample(nsTArray<RefPtr<MediaData>>&& aInputs,
+                        MediaDataEncoder::EncodedData&& aOutputs);
+
   const EncoderConfig mConfig;
   nsCOMPtr<mozIGeckoMediaPluginService> mMPS;
   GMPVideoEncoderProxy* mGMP = nullptr;
@@ -75,6 +80,9 @@ class GMPVideoEncoder final : public MediaDataEncoder,
   using PendingEncodePromises =
       nsRefPtrHashtable<nsUint64HashKey, EncodePromise::Private>;
   PendingEncodePromises mPendingEncodes;
+
+  MozPromiseHolder<EncodePromise> mEncodeBatchPromise;
+  MozPromiseRequestHolder<EncodePromise> mEncodeBatchRequest;
 };
 
 }  // namespace mozilla

@@ -13,9 +13,12 @@
 # Usage:
 # $ ./generate_sources_mozbuild.sh
 
+set -xe
+
 export LC_ALL=C
 BASE_DIR=$(pwd)
-LIBAOM_SRC_DIR="../../third_party/aom"
+ROOT_DIR="../.."
+LIBAOM_SRC_DIR="$ROOT_DIR/third_party/aom"
 LIBAOM_CONFIG_DIR="config"
 
 # Print license header.
@@ -94,7 +97,7 @@ function gen_arm64_optional_args {
 echo "Generating config files."
 python3 -m venv temp
 . temp/bin/activate
-pip install pyparsing==2.4.7
+pip install -e $ROOT_DIR/python/mozcmakeparser
 python3 generate_sources_mozbuild.py
 deactivate
 rm -r temp

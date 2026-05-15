@@ -7,13 +7,13 @@
 #ifndef WMF_H_
 #define WMF_H_
 
+// clang-format off
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 #include <mfobjects.h>
 #include <ks.h>
-#include <stdio.h>
 #include <mferror.h>
 #include <propvarutil.h>
 #include <wmcodecdsp.h>
@@ -21,9 +21,10 @@
 #include <dxva2api.h>
 #include <wmcodecdsp.h>
 #include <codecapi.h>
+// clang-format on
 
-#include "mozilla/Atomics.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticMutex.h"
 #include "nsThreadUtils.h"
@@ -139,7 +140,7 @@ class MediaFoundationInitializer final {
   // WMF from threads with the same COM compartment model.
   HRESULT MFShutdown();
 
-  MOZ_RUNINIT static inline UniquePtr<MediaFoundationInitializer> sInitializer;
+  constinit static inline UniquePtr<MediaFoundationInitializer> sInitializer;
   static inline StaticMutex sCreateMutex;
   static inline Atomic<bool> sIsShutdown{false};
   const bool mHasInitialized;

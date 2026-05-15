@@ -10,11 +10,11 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
 import androidx.core.net.toUri
 import androidx.core.text.HtmlCompat
 import androidx.core.view.isVisible
 import androidx.navigation.NavController
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,7 +93,7 @@ class ClearSiteDataView(
     }
 
     private fun showConfirmationDialog(baseDomain: String) {
-        AlertDialog.Builder(context).apply {
+        MaterialAlertDialogBuilder(context).apply {
             setMessage(
                 HtmlCompat.fromHtml(
                     context.getString(

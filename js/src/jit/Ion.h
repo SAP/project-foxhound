@@ -7,7 +7,6 @@
 #ifndef jit_Ion_h
 #define jit_Ion_h
 
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"

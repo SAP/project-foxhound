@@ -3,16 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#ifndef __nsRFPService_h__
-#define __nsRFPService_h__
+#ifndef _nsRFPService_h_
+#define _nsRFPService_h_
 
 #include <cstdint>
-#include <tuple>
 #include <bitset>
 #include "ErrorList.h"
 #include "PLDHashTable.h"
 #include "mozilla/BasicEvents.h"
-#include "mozilla/ContentBlockingLog.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/dom/MediaDeviceInfoBinding.h"
@@ -25,6 +23,7 @@
 #include "nsISupports.h"
 #include "nsIRFPService.h"
 #include "nsStringFwd.h"
+#include <queue>
 
 // Defines regarding spoofed values of Navigator object. These spoofed values
 // are returned when 'privacy.resistFingerprinting' is true.
@@ -52,14 +51,14 @@
 #  define SPOOFED_UA_OS "Android 10; Mobile"
 #  define SPOOFED_APPVERSION "5.0 (Android 10)"
 #  define SPOOFED_OSCPU "Linux armv81"
-#  define SPOOFED_MAX_TOUCH_POINTS 10
+#  define SPOOFED_MAX_TOUCH_POINTS 5
 #else
 // For Linux and other platforms, like BSDs, SunOS and etc, we will use Linux
 // platform.
 #  define SPOOFED_UA_OS SPOOFED_UA_OS_OTHER
 #  define SPOOFED_APPVERSION "5.0 (X11)"
 #  define SPOOFED_OSCPU "Linux x86_64"
-#  define SPOOFED_MAX_TOUCH_POINTS 10
+#  define SPOOFED_MAX_TOUCH_POINTS 0
 #endif
 
 #define LEGACY_BUILD_ID "20181001000000"
@@ -71,6 +70,8 @@ struct JSContext;
 
 class nsIChannel;
 
+class nsICanvasRenderingContextInternal;
+
 namespace mozilla {
 class WidgetKeyboardEvent;
 class OriginAttributes;
@@ -79,6 +80,9 @@ namespace dom {
 class Document;
 enum class CanvasContextType : uint8_t;
 }  // namespace dom
+namespace gfx {
+class DataSourceSurface;
+}  // namespace gfx
 
 enum KeyboardLang { EN = 0x01 };
 
@@ -112,7 +116,7 @@ class KeyboardHashKey : public PLDHashEntryHdr {
   typedef const KeyboardHashKey* KeyTypePointer;
 
   KeyboardHashKey(const KeyboardLangs aLang, const KeyboardRegions aRegion,
-                  const KeyNameIndexType aKeyIdx, const nsAString& aKey);
+                  const KeyNameIndex aKeyIdx, const nsAString& aKey);
 
   explicit KeyboardHashKey(KeyTypePointer aOther);
 
@@ -130,7 +134,7 @@ class KeyboardHashKey : public PLDHashEntryHdr {
 
   KeyboardLangs mLang;
   KeyboardRegions mRegion;
-  KeyNameIndexType mKeyIdx;
+  KeyNameIndex mKeyIdx;
   nsString mKey;
 };
 
@@ -166,25 +170,200 @@ enum TimerPrecisionType {
 
 // ============================================================================
 
-enum class CanvasFeatureUsage : uint8_t {
+enum class CanvasFeatureUsage : uint64_t {
   None = 0,
-  KnownFingerprintText = 1 << 0,
-  SetFont = 1 << 1,
-  FillRect = 1 << 2,
-  LineTo = 1 << 3,
-  Stroke = 1 << 4
+
+  KnownText_1 = 1llu << 0,
+  KnownText_2 = 1llu << 1,
+  KnownText_3 = 1llu << 2,
+  KnownText_4 = 1llu << 3,
+  KnownText_5 = 1llu << 4,
+  KnownText_6 = 1llu << 5,
+  KnownText_7 = 1llu << 6,
+  KnownText_8 = 1llu << 7,
+  KnownText_9 = 1llu << 8,
+  KnownText_10 = 1llu << 9,
+  KnownText_11 = 1llu << 10,
+  KnownText_12 = 1llu << 11,
+  KnownText_13 = 1llu << 12,
+  KnownText_14 = 1llu << 13,
+  KnownText_15 = 1llu << 14,
+  KnownText_16 = 1llu << 15,
+  KnownText_17 = 1llu << 16,
+  KnownText_18 = 1llu << 17,
+  KnownText_19 = 1llu << 18,
+  KnownText_20 = 1llu << 19,
+  KnownText_21 = 1llu << 20,
+  KnownText_22 = 1llu << 21,
+  KnownText_23 = 1llu << 22,
+  KnownText_24 = 1llu << 23,
+  KnownText_25 = 1llu << 24,
+  KnownText_26 = 1llu << 25,
+  KnownText_27 = 1llu << 26,
+  KnownText_28 = 1llu << 27,
+  KnownText_29 = 1llu << 28,
+  KnownText_30 = 1llu << 29,
+  KnownText_31 = 1llu << 30,
+  KnownText_32 = 1llu << 31,
+
+  SetFont = 1llu << 32,
+  FillRect = 1llu << 33,
+  LineTo = 1llu << 34,
+  Stroke = 1llu << 35,
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CanvasFeatureUsage);
+
+// We try to classify observed canvas fingerprinting scripts into different
+// classes, but we don't usually know the source/vendor of those scripts. The
+// classification is based on a behavioral analysis covering things like the
+// functions called and size of the canvas. The alias given is a guess and
+// should not be considered definitive. The entity identified may not be doing
+// this behavior at all, they may be doing a diferent or additional behaviors.
+enum CanvasFingerprinterAlias {
+  eNoneIdentified = 0,
+  eFingerprintJS = 1,
+  eAkamai = 2,
+  eOzoki = 3,
+  ePerimeterX = 4,
+  eSignifyd = 5,
+  eClaydar = 6,
+  eForter = 7,
+
+  // Variants are unknown but distinct types of fingerprinters
+  eVariant1 = 8,
+  eVariant2 = 9,
+  eVariant3 = 10,
+  eVariant4 = 11,
+  eVariant5 = 12,
+  eVariant6 = 13,
+  eVariant7 = 14,
+  eVariant8 = 15,
+
+  eClientGear = 16,
+  eImperva = 17,
+  eLastAlias = eImperva
+};
+
+enum CanvasExtractionAPI : uint8_t {
+  ToDataURL = 0,
+  ToBlob = 1,
+  GetImageData = 2,
+  ReadPixels = 3
+};
+
+enum CanvasUsageSource : uint64_t {
+  Unknown = 0,
+  Impossible =
+      1llu << 0,  // This represents API calls that I don't believe are possible
+  MainThread_Canvas_ImageBitmap_toDataURL = 1llu << 1,
+  MainThread_Canvas_ImageBitmap_toBlob = 1llu << 2,
+  MainThread_Canvas_ImageBitmap_getImageData = 1llu << 3,
+
+  MainThread_Canvas_Canvas2D_toDataURL = 1llu << 4,
+  MainThread_Canvas_Canvas2D_toBlob = 1llu << 5,
+  MainThread_Canvas_Canvas2D_getImageData = 1llu << 6,
+
+  MainThread_Canvas_WebGL_toDataURL = 1llu << 7,
+  MainThread_Canvas_WebGL_toBlob = 1llu << 8,
+  MainThread_Canvas_WebGL_getImageData = 1llu << 9,
+  MainThread_Canvas_WebGL_readPixels = 1llu << 10,
+
+  MainThread_Canvas_WebGPU_toDataURL = 1llu << 11,
+  MainThread_Canvas_WebGPU_toBlob = 1llu << 12,
+  MainThread_Canvas_WebGPU_getImageData = 1llu << 13,
+
+  MainThread_OffscreenCanvas_ImageBitmap_toDataURL = 1llu << 14,
+  MainThread_OffscreenCanvas_ImageBitmap_toBlob = 1llu << 15,
+  MainThread_OffscreenCanvas_ImageBitmap_getImageData = 1llu << 16,
+
+  MainThread_OffscreenCanvas_Canvas2D_toDataURL = 1llu << 17,
+  MainThread_OffscreenCanvas_Canvas2D_toBlob = 1llu << 18,
+  MainThread_OffscreenCanvas_Canvas2D_getImageData = 1llu << 19,
+
+  MainThread_OffscreenCanvas_WebGL_toDataURL = 1llu << 20,
+  MainThread_OffscreenCanvas_WebGL_toBlob = 1llu << 21,
+  MainThread_OffscreenCanvas_WebGL_getImageData = 1llu << 22,
+  MainThread_OffscreenCanvas_WebGL_readPixels = 1llu << 23,
+
+  MainThread_OffscreenCanvas_WebGPU_toDataURL = 1llu << 24,
+  MainThread_OffscreenCanvas_WebGPU_toBlob = 1llu << 25,
+  MainThread_OffscreenCanvas_WebGPU_getImageData = 1llu << 26,
+
+  Worker_OffscreenCanvas_ImageBitmap_toBlob = 1llu << 27,
+  Worker_OffscreenCanvas_ImageBitmap_getImageData = 1llu << 28,
+
+  Worker_OffscreenCanvas_Canvas2D_toBlob = 1llu << 29,
+  Worker_OffscreenCanvas_Canvas2D_getImageData = 1llu << 30,
+
+  Worker_OffscreenCanvasCanvas2D_Canvas2D_toBlob = 1llu << 31,
+  Worker_OffscreenCanvasCanvas2D_Canvas2D_getImageData = 1llu << 32,
+
+  Worker_OffscreenCanvas_WebGL_toBlob = 1llu << 33,
+  Worker_OffscreenCanvas_WebGL_getImageData = 1llu << 34,
+  Worker_OffscreenCanvas_WebGL_readPixels = 1llu << 35,
+
+  Worker_OffscreenCanvas_WebGPU_toBlob = 1llu << 36,
+  Worker_OffscreenCanvas_WebGPU_getImageData = 1llu << 37,
+
+  // --- New entires added here to preserve original values (no reordering!)
+  MainThread_Canvas_OffscreenCanvas2D_getImageData = 1llu << 38,
+  MainThread_Canvas_OffscreenCanvas2D_toBlob = 1llu << 39,
+
+  // After you go past 40 - metrics.yaml will need to be updated
+
+};
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CanvasUsageSource);
+nsCString CanvasUsageSourceToString(CanvasUsageSource aSource);
 
 class CanvasUsage {
  public:
   CSSIntSize mSize;
   dom::CanvasContextType mType;
+  CanvasUsageSource mUsageSource;
   CanvasFeatureUsage mFeatureUsage;
 
   CanvasUsage(CSSIntSize aSize, dom::CanvasContextType aType,
-              CanvasFeatureUsage aFeatureUsage)
-      : mSize(aSize), mType(aType), mFeatureUsage(aFeatureUsage) {}
+              CanvasUsageSource aUsageSource, CanvasFeatureUsage aFeatureUsage)
+      : mSize(aSize),
+        mType(aType),
+        mUsageSource(aUsageSource),
+        mFeatureUsage(aFeatureUsage) {}
+
+  static CanvasUsage CreateUsage(
+      bool aIsOffscreen, dom::CanvasContextType aContextType,
+      CanvasExtractionAPI aApi, CSSIntSize aSize,
+      const nsICanvasRenderingContextInternal* aContext);
+
+  static inline CanvasUsageSource GetCanvasUsageSource(
+      bool isOffscreen, dom::CanvasContextType contextType,
+      CanvasExtractionAPI api);
+};
+struct CanvasFingerprintingEvent {
+  // The identity or alias of the entity doing the fingerprinting.
+  CanvasFingerprinterAlias alias;
+  // A bitmask of all of the known canvas fingerprinting texts
+  //   non-zero indicates some known fingerprinting text was used, making the
+  //   event highly likely to be fingerprinting.
+  uint32_t knownTextBitmask;
+  // A bitmap of all the sources that were used to extract canvas data
+  uint64_t sourcesBitmask;
+
+  CanvasFingerprintingEvent()
+      : alias(CanvasFingerprinterAlias::eNoneIdentified),
+        knownTextBitmask(0),
+        sourcesBitmask(0) {}
+
+  CanvasFingerprintingEvent(CanvasFingerprinterAlias aAlias,
+                            uint32_t aKnownTextBitmask,
+                            uint64_t aSourcesBitmask)
+      : alias(aAlias),
+        knownTextBitmask(aKnownTextBitmask),
+        sourcesBitmask(aSourcesBitmask) {}
+
+  bool operator==(const CanvasFingerprintingEvent& other) const {
+    return alias == other.alias && knownTextBitmask == other.knownTextBitmask &&
+           sourcesBitmask == other.sourcesBitmask;
+  }
 };
 
 // ============================================================================
@@ -286,6 +465,12 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
 
   // --------------------------------------------------------------------------
 
+  // This method generates the time zone string (e.g. "Atlantic/Reykjavik") that
+  // should be spoofed by the JavaScript engine.
+  static nsCString GetSpoofedJSTimeZone();
+
+  // --------------------------------------------------------------------------
+
   /**
    * This method for getting spoofed modifier states for the given keyboard
    * event.
@@ -339,13 +524,28 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
       nsIURI* aFirstPartyURI, nsIPrincipal* aPrincipal,
       bool aForeignByAncestorContext);
 
-  // The method to add random noises to the image data based on the random key
-  // of the given cookieJarSettings.
+  static void PotentiallyDumpImage(nsIPrincipal* aPrincipal,
+                                   gfx::DataSourceSurface* aSurface);
+  static void PotentiallyDumpImage(nsIPrincipal* aPrincipal, uint8_t* aData,
+                                   uint32_t aWidth, uint32_t aHeight,
+                                   uint32_t aSize);
+
+  // This function is plumbed to RandomizeElements function.
   static nsresult RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
                                   nsIPrincipal* aPrincipal, uint8_t* aData,
                                   uint32_t aWidth, uint32_t aHeight,
                                   uint32_t aSize,
                                   mozilla::gfx::SurfaceFormat aSurfaceFormat);
+  // This function is used to randomize the elements in the given data
+  // according to the given parameters. For example, for an RGBA pixel, by group
+  // in this context, we refer to a single pixel and by element, we refer to
+  // channels. So, if we have an RGBA pixel, we have 4 elements per group, i.e.
+  // 4 channels per pixel. We use aElementsPerGroup to randomize at most one of
+  // elements per group, i.e. one channel per pixel.
+  static nsresult RandomizeElements(
+      nsICookieJarSettings* aCookieJarSettings, nsIPrincipal* aPrincipal,
+      uint8_t* aData, uint32_t aSizeInBytes, uint8_t aElementsPerGroup,
+      uint8_t aBytesPerElement, uint8_t aElementOffset, bool aSkipLastElement);
 
   // --------------------------------------------------------------------------
 
@@ -368,19 +568,13 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
   // --------------------------------------------------------------------------
 
   static void MaybeReportCanvasFingerprinter(nsTArray<CanvasUsage>& aUses,
-                                             nsIChannel* aChannel,
-                                             nsACString& aOriginNoSuffix);
+                                             nsIChannel* aChannel, nsIURI* aURI,
+                                             const nsACString& aOriginNoSuffix);
 
-  static void MaybeReportFontFingerprinter(nsIChannel* aChannel,
+  static void MaybeReportFontFingerprinter(nsIChannel* aChannel, nsIURI* aURI,
                                            const nsACString& aOriginNoSuffix);
 
   // --------------------------------------------------------------------------
-
-  // A helper function to check if there is a suspicious fingerprinting
-  // activity from given content blocking origin logs. It returns true if we
-  // detect suspicious fingerprinting activities.
-  static bool CheckSuspiciousFingerprintingActivity(
-      nsTArray<ContentBlockingLog::LogEntry>& aLogs);
 
   // Generates a fake media device name with given kind and index.
   // Example: Internal Microphone
@@ -422,6 +616,19 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
 
   static uint32_t CollapseMaxTouchPoints(uint32_t aMaxTouchPoints);
 
+  static void CalculateFontLocaleAllowlist();
+  static bool FontIsAllowedByLocale(const nsACString& aName);
+
+  static Maybe<RFPTarget> TextToRFPTarget(const nsAString& aText);
+
+  static void GetFingerprintingRandomizationKeyAsString(
+      nsICookieJarSettings* aCookieJarSettings,
+      nsACString& aRandomizationKeyStr);
+
+  static nsresult GenerateRandomizationKeyFromHash(
+      const nsACString& aRandomizationKeyStr, uint32_t aContentHash,
+      nsACString& aHex);
+
  private:
   nsresult Init();
 
@@ -434,8 +641,6 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
 
   void PrefChanged(const char* aPref);
   static void PrefChanged(const char* aPref, void* aSelf);
-
-  static Maybe<RFPTarget> TextToRFPTarget(const nsAString& aText);
 
   // --------------------------------------------------------------------------
 
@@ -538,4 +743,4 @@ class nsRFPService final : public nsIObserver, public nsIRFPService {
 
 }  // namespace mozilla
 
-#endif /* __nsRFPService_h__ */
+#endif /* _nsRFPService_h_ */

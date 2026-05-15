@@ -5,13 +5,17 @@ prefs = [
 ]
 tags = "os_integration"
 
+["browser_aiwindow_options.js"]
+
 ["browser_file_close_tabs.js"]
 
 ["browser_file_menu_import_wizard.js"]
 
 ["browser_file_share.js"]
 https_first_disabled = true
-run-if = ["os == 'mac'"] # Mac only feature
+run-if = [
+  "os == 'mac'", # Mac only feature
+]
 
 ["browser_history_recently_closed_tabs.js"]
 run-if = [

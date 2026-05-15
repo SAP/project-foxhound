@@ -41,6 +41,12 @@ class ContentIteratorBase {
    */
   [[nodiscard]] virtual nsresult Init(nsINode* aRoot);
 
+  /**
+   * If you want to use `const AbstractRange*`, you can use an overload which
+   * takes RawRangeBoundary instances or InitWithoutValidatingPoints().
+   * If your range is dynamic, i.e., an nsRange, you can use
+   * InitWithoutValidatingPoints() which skips comparing the boundary points.
+   */
   [[nodiscard]] virtual nsresult Init(dom::AbstractRange* aRange);
   [[nodiscard]] virtual nsresult Init(nsINode* aStartContainer,
                                       uint32_t aStartOffset,
@@ -251,9 +257,13 @@ class ContentSubtreeIterator final : public SafeContentIteratorBase {
   /**
    * Not supported.
    */
-  [[nodiscard]] virtual nsresult Init(nsINode* aRoot) override;
+  [[nodiscard]] nsresult Init(nsINode* aRoot) override;
 
-  [[nodiscard]] virtual nsresult Init(dom::AbstractRange* aRange) override;
+  /**
+   * If you need to use const AbstractRange, use an overload which take
+   * RawRangeBoundary instances.
+   */
+  [[nodiscard]] nsresult Init(dom::AbstractRange* aRange) override;
 
   /**
    * Initialize the iterator with aRange that does correct things
@@ -275,16 +285,26 @@ class ContentSubtreeIterator final : public SafeContentIteratorBase {
    *
    * Examples of what nodes will be returned can be found
    * at test_content_iterator_subtree_shadow_tree.html.
+   *
+   * FIXME: This doesn't have a overload of this method which takes
+   * `const RawRangeBoundary`s. That allows the callers to make this with
+   * `const AbstractRange*`. So, it and its non-validation version (for
+   * `const nsRange*` should be here.
    */
   [[nodiscard]] nsresult InitWithAllowCrossShadowBoundary(
       dom::AbstractRange* aRange);
-  [[nodiscard]] virtual nsresult Init(nsINode* aStartContainer,
-                                      uint32_t aStartOffset,
-                                      nsINode* aEndContainer,
-                                      uint32_t aEndOffset) override;
-  [[nodiscard]] virtual nsresult Init(
-      const RawRangeBoundary& aStartBoundary,
-      const RawRangeBoundary& aEndBoundary) override;
+
+  [[nodiscard]] nsresult Init(nsINode* aStartContainer, uint32_t aStartOffset,
+                              nsINode* aEndContainer,
+                              uint32_t aEndOffset) override;
+  [[nodiscard]] nsresult Init(const RawRangeBoundary& aStartBoundary,
+                              const RawRangeBoundary& aEndBoundary) override;
+  [[nodiscard]] nsresult InitWithoutValidatingPoints(
+      const RawRangeBoundary& aStart, const RawRangeBoundary& aEnd) override {
+    // We need to create an nsRange from aStart and aEnd.  Therefore, anyway
+    // nsRange will validate them.
+    return Init(aStart, aEnd);
+  }
 
   void Next() override;
   void Prev() override;

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Text for context menu item to open the link in a new tab. -->
   <string name="mozac_feature_contextmenu_open_link_in_new_tab">Fosgail an ceangal ann an taba ùr</string>
@@ -14,6 +21,8 @@
   <string name="mozac_feature_contextmenu_share_image">Co-roinn an dealbh</string>
   <!-- Text for context menu item to copy the link to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_link">Dèan lethbhreac dhen cheangal</string>
+  <!-- Text for context menu item to copy the link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_copy_link_text">Dèan lethbhreac de theacsa a’ cheangail</string>
   <!-- Text for context menu item to copy the URL pointing to the image to the clipboard. -->
   <string name="mozac_feature_contextmenu_copy_image_location">Dèan lethbhreac de sheòladh an deilbh</string>
   <!-- Text for context menu item to save / download the image. -->
@@ -28,6 +37,8 @@
   <string name="mozac_feature_contextmenu_snackbar_new_private_tab_opened">Chaidh taba prìobhaideach ùr fhosgladh</string>
   <!-- Text for confirmation "snackbar" shown after copying a link or image URL to the clipboard. -->
   <string name="mozac_feature_contextmenu_snackbar_link_copied">Chaidh lethbhreac dhen cheangal a chur air an stòr-bhòrd</string>
+  <!-- Text for confirmation "snackbar" shown after copying a link text to the clipboard. -->
+  <string name="mozac_feature_contextmenu_snackbar_link_text_copied">Chaidh lethbhreac de theacsa a’ cheangail a chur air an stòr-bhòrd</string>
   <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
   <string name="mozac_feature_contextmenu_snackbar_action_switch">Geàrr leum</string>
   <!-- Text for context menu item to open the link in an external app. -->

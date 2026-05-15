@@ -14,13 +14,13 @@
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/HTMLElement.h"
 #include "mozilla/dom/HTMLFieldSetElement.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/ValidityState.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsGenericHTMLElement.h"
+#include "nsIMutationObserver.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -149,7 +149,7 @@ void ElementInternals::SetFormValue(
 }
 
 // https://html.spec.whatwg.org/#dom-elementinternals-form
-HTMLFormElement* ElementInternals::GetForm(ErrorResult& aRv) const {
+Element* ElementInternals::GetFormForBindings(ErrorResult& aRv) const {
   MOZ_ASSERT(mTarget);
 
   if (!mTarget->IsFormAssociatedElement()) {
@@ -157,7 +157,8 @@ HTMLFormElement* ElementInternals::GetForm(ErrorResult& aRv) const {
         "Target element is not a form-associated custom element");
     return nullptr;
   }
-  return GetForm();
+
+  return GetFormForBindings();
 }
 
 // https://html.spec.whatwg.org/commit-snapshots/3ad5159be8f27e110a70cefadcb50fc45ec21b05/#dom-elementinternals-setvalidity
@@ -218,23 +219,22 @@ void ElementInternals::SetValidity(
   mValidationMessage =
       (!aMessage.WasPassed() || IsValid()) ? EmptyString() : aMessage.Value();
 
-  /**
-   * 7. Set element's validation anchor to null if anchor is not given.
-   *    Otherwise, if anchor is not a shadow-including descendant of element,
-   *    then throw a "NotFoundError" DOMException. Otherwise, set element's
-   *    validation anchor to anchor.
-   */
-  nsGenericHTMLElement* anchor =
-      aAnchor.WasPassed() ? &aAnchor.Value() : nullptr;
-  // TODO: maybe create something like IsShadowIncludingDescendantOf if there
-  //       are other places also need such check.
-  if (anchor && (anchor == mTarget ||
-                 !anchor->IsShadowIncludingInclusiveDescendantOf(mTarget))) {
-    aRv.ThrowNotFoundError(
-        "Validation anchor is not a shadow-including descendant of target"
-        "element");
-    return;
+  nsGenericHTMLElement* anchor;
+  if (!aAnchor.WasPassed()) {
+    // 7. If anchor is not given, then set it to element.
+    anchor = mTarget;
+  } else {
+    anchor = &aAnchor.Value();
+    // 8. Otherwise, if anchor is not a shadow-including inclusive
+    //    descendant of element, then throw a "NotFoundError" DOMException.
+    if (!anchor->IsShadowIncludingInclusiveDescendantOf(mTarget)) {
+      aRv.ThrowNotFoundError(
+          "Validation anchor is not a shadow-including inclusive "
+          "descendant of target element");
+      return;
+    }
   }
+  // 9. Set element's validation anchor to anchor.
   mValidationAnchor = anchor;
 }
 
@@ -340,7 +340,7 @@ already_AddRefed<nsINodeList> ElementInternals::GetLabels(
         "Target element is not a form-associated custom element");
     return nullptr;
   }
-  return mTarget->Labels();
+  return mTarget->LabelsInternal();
 }
 
 nsGenericHTMLElement* ElementInternals::GetValidationAnchor(
@@ -361,6 +361,10 @@ CustomStateSet* ElementInternals::States() {
   }
   return mCustomStateSet;
 }
+
+Element* ElementInternals::GetFormForBindings() const {
+  return GetFormInternal();
+};
 
 void ElementInternals::SetForm(HTMLFormElement* aForm) { mForm = aForm; }
 
@@ -453,9 +457,8 @@ nsresult ElementInternals::SetAttr(nsAtom* aName, const nsAString& aValue) {
   Document* document = mTarget->GetComposedDoc();
   mozAutoDocUpdate updateBatch(document, true);
 
-  uint8_t modType = mAttrs.HasAttr(aName) ? MutationEvent_Binding::MODIFICATION
-                                          : MutationEvent_Binding::ADDITION;
-
+  const AttrModType modType =
+      mAttrs.HasAttr(aName) ? AttrModType::Modification : AttrModType::Addition;
   MutationObservers::NotifyARIAAttributeDefaultWillChange(mTarget, aName,
                                                           modType);
 
@@ -619,9 +622,9 @@ void ElementInternals::GetAttrElements(
 
     for (const nsWeakPtr& weakEl : attrElements) {
       // For each attrElement in reflectedTarget's explicitly set attr-elements:
-      if (nsCOMPtr<Element> attrEl = do_QueryReferent(weakEl)) {
+      if (RefPtr<Element> attrEl = do_QueryReferent(weakEl)) {
         // Append attrElement to elements.
-        elements.AppendElement(attrEl);
+        elements.AppendElement(std::move(attrEl));
       }
     }
 
@@ -655,22 +658,22 @@ void ElementInternals::GetAttrElements(
   cachedAttrElements = std::move(elements);
 }
 
-bool ElementInternals::GetAttrElements(nsAtom* aAttr,
-                                       nsTArray<Element*>& aElements) {
-  aElements.Clear();
+Maybe<nsTArray<RefPtr<Element>>> ElementInternals::GetAttrElements(
+    nsAtom* aAttr) {
   auto attrElementsMaybeEntry = mAttrElementsMap.Lookup(aAttr);
   if (!attrElementsMaybeEntry) {
-    return false;
+    return Nothing();
   }
 
+  nsTArray<RefPtr<Element>> elements;
   auto& [attrElements, cachedAttrElements] = attrElementsMaybeEntry.Data();
   for (const nsWeakPtr& weakEl : attrElements) {
-    if (nsCOMPtr<Element> attrEl = do_QueryReferent(weakEl)) {
-      aElements.AppendElement(attrEl);
+    if (RefPtr<Element> attrEl = do_QueryReferent(weakEl)) {
+      elements.AppendElement(std::move(attrEl));
     }
   }
 
-  return true;
+  return Some(std::move(elements));
 }
 
 }  // namespace mozilla::dom

@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FileSystemEntry.h"
+
 #include "CallbackRunnables.h"
 #include "FileSystem.h"
 #include "FileSystemDirectoryEntry.h"

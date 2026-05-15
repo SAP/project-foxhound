@@ -5,7 +5,6 @@
 
 #include "nsCodeCoverage.h"
 #include "mozilla/CodeCoverageHandler.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Promise.h"
 
@@ -55,7 +54,7 @@ nsresult Request(JSContext* cx, Promise** aPromise, RequestType requestType) {
 
   uint32_t processCount = 0;
   for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-    mozilla::Unused << cp;
+    (void)cp;
     ++processCount;
   }
 

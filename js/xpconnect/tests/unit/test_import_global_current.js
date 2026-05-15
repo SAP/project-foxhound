@@ -766,6 +766,8 @@ var ns = ChromeUtils.importESModule("resource://test/es6module_top_level_await.j
   Assert.equal(window.eval(`ns2.foo == ns.foo;`), true);
 });
 
+// TODO: Bug 1973663: Enable xpcshell test testSyncImportWhileAsyncImportTLA
+/*
 add_task(async function testSyncImportWhileAsyncImportTLA() {
   // Top-level-await is not supported by sync import, but if the module is
   // already fetching, ChromeUtils.importESModule waits for it and, the
@@ -794,3 +796,4 @@ var ns = ChromeUtils.importESModule("resource://test/es6module_top_level_await.j
   Assert.equal(window.eval(`ns.foo();`), 10);
   Assert.equal(window.eval(`ns2.foo == ns.foo;`), true);
 });
+*/

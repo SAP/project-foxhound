@@ -17,7 +17,7 @@ async def open_editor(client):
     await client.set_prompt_responses(AUDIO_FILE_URL)
     await client.navigate(URL)
     client.await_css(PICKER_DROPDOWN_BUTTON_CSS, is_displayed=True).click()
-    for _ in range(5):
+    for _ in range(10):
         try:
             client.await_css(PICKER_FROM_URL_CSS, is_displayed=True).click()
             break

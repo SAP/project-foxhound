@@ -1,0 +1,94 @@
+[DEFAULT]
+subsuite = "translations"
+support-files = [
+  "head.js",
+  "!/toolkit/components/translations/tests/browser/shared-head.js",
+  "!/toolkit/components/translations/tests/browser/translations-test.mjs",
+]
+
+["browser_translations_select_ai_feature.js"]
+
+["browser_translations_select_context_menu_engine_unsupported.js"]
+
+["browser_translations_select_context_menu_feature_disabled.js"]
+
+["browser_translations_select_context_menu_preferred_app_locales.js"]
+
+["browser_translations_select_context_menu_preferred_language_edge_cases.js"]
+
+["browser_translations_select_context_menu_preferred_web_languages.js"]
+
+["browser_translations_select_context_menu_with_full_page_translations_active.js"]
+
+["browser_translations_select_context_menu_with_hyperlink.js"]
+
+["browser_translations_select_context_menu_with_no_text_selected.js"]
+
+["browser_translations_select_context_menu_with_text_selected.js"]
+
+["browser_translations_select_panel_a11y_utils.js"]
+
+["browser_translations_select_panel_change_app_locale.js"]
+
+["browser_translations_select_panel_close_on_new_tab.js"]
+
+["browser_translations_select_panel_copy_button.js"]
+
+["browser_translations_select_panel_engine_cache.js"]
+
+["browser_translations_select_panel_fallback_to_doc_language.js"]
+
+["browser_translations_select_panel_flip_lexical_shortlist.js"]
+
+["browser_translations_select_panel_init_failure.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov",
+]
+
+["browser_translations_select_panel_modify_available_language_models.js"]
+
+["browser_translations_select_panel_pdf.js"]
+
+["browser_translations_select_panel_reader_mode.js"]
+
+["browser_translations_select_panel_retranslate_on_change_language_directly.js"]
+
+["browser_translations_select_panel_retranslate_on_change_language_from_dropdown_menu.js"]
+
+["browser_translations_select_panel_script_tags.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov",
+]
+
+["browser_translations_select_panel_select_current_language_directly.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov",
+]
+
+["browser_translations_select_panel_select_current_language_from_dropdown_menu.js"]
+
+["browser_translations_select_panel_select_same_from_and_to_languages_directly.js"]
+
+["browser_translations_select_panel_select_same_from_and_to_languages_from_dropdown_menu.js"]
+
+["browser_translations_select_panel_settings_menu.js"]
+
+["browser_translations_select_panel_translate_full_page_button.js"]
+
+["browser_translations_select_panel_translate_on_change_language_directly.js"]
+
+["browser_translations_select_panel_translate_on_change_language_from_dropdown_menu.js"]
+
+["browser_translations_select_panel_translate_on_change_language_multiple_times_directly.js"]
+
+["browser_translations_select_panel_translate_on_change_language_multiple_times_from_dropdown_menu.js"]
+
+["browser_translations_select_panel_translate_on_open.js"]
+
+["browser_translations_select_panel_translation_failure_after_unsupported_language.js"]
+
+["browser_translations_select_panel_translation_failure_on_open.js"]
+
+["browser_translations_select_panel_translation_failure_on_retranslate.js"]
+
+["browser_translations_select_panel_unsupported_language.js"]

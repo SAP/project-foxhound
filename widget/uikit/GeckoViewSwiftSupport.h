@@ -31,6 +31,7 @@
 @end
 
 @protocol GeckoProcessExtension <NSObject>
+- (void)lockdownSandbox:(NSString*)revision;
 @end
 
 @protocol EventCallback <NSObject>
@@ -51,16 +52,20 @@
                 message:(id)message
                callback:(id<EventCallback>)callback;
 - (BOOL)hasListener:(NSString*)type;
+// Called when GeckoView is ready to receive dispatched events from Swift.
+- (void)activate;
 @end
 
 @protocol GeckoViewWindow <NSObject>
+- (UIView*)view;
+- (void)close;
 @end
 
 MOZ_BEGIN_EXTERN_C
 
 MOZ_EXPORT id<GeckoViewWindow> GeckoViewOpenWindow(
-    NSString* aId, id<SwiftEventDispatcher> aDispatcher, id aInitData,
-    bool aPrivateMode);
+    NSString* aId, id<SwiftEventDispatcher> aDispatcher,
+    NSDictionary* aInitData, bool aPrivateMode);
 
 MOZ_END_EXTERN_C
 

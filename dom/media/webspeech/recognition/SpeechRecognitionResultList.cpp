@@ -6,9 +6,8 @@
 
 #include "SpeechRecognitionResultList.h"
 
-#include "mozilla/dom/SpeechRecognitionResultListBinding.h"
-
 #include "SpeechRecognition.h"
+#include "mozilla/dom/SpeechRecognitionResultListBinding.h"
 
 namespace mozilla::dom {
 

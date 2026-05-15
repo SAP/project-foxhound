@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __mozilla_widget_TaskbarPreviewButton_h__
-#define __mozilla_widget_TaskbarPreviewButton_h__
+#ifndef _mozilla_widget_TaskbarPreviewButton_h_
+#define _mozilla_widget_TaskbarPreviewButton_h_
 
 #include <windows.h>
 #include <shobjidl.h>
@@ -44,4 +44,4 @@ class TaskbarPreviewButton : public nsITaskbarPreviewButton,
 }  // namespace widget
 }  // namespace mozilla
 
-#endif /* __mozilla_widget_TaskbarPreviewButton_h__ */
+#endif /* _mozilla_widget_TaskbarPreviewButton_h_ */

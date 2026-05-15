@@ -5,7 +5,6 @@
 package mozilla.components.browser.engine.gecko
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
@@ -19,7 +18,6 @@ import org.mozilla.geckoview.GeckoResult
 import org.robolectric.annotation.LooperMode
 
 @Suppress("DEPRECATION") // Suppress deprecation for LooperMode.Mode.LEGACY
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 @LooperMode(LooperMode.Mode.LEGACY)
 class GeckoResultTest {

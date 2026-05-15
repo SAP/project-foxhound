@@ -11,7 +11,7 @@
 "use strict";
 
 const { UrlbarProviderOpenTabs } = ChromeUtils.importESModule(
-  "resource:///modules/UrlbarProviderOpenTabs.sys.mjs"
+  "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs"
 );
 
 async function openPagesCount() {
@@ -88,4 +88,41 @@ add_task(async function test_switchToTab_tab_closed() {
 
   gBrowser.removeTab(testTab);
   await PlacesUtils.history.clear();
+});
+
+add_task(async function test_switchToTab_tab_closed_in_background() {
+  let backgroundTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.org"
+  );
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, "");
+
+  // Ensure no suggestion from history is returned
+  await PlacesUtils.history.clear();
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "example",
+  });
+
+  Assert.equal(UrlbarTestUtils.getResultCount(window), 2);
+  let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
+  Assert.equal(result.source, UrlbarUtils.RESULT_SOURCE.TABS);
+
+  gBrowser.removeTab(backgroundTab);
+  await UrlbarTestUtils.promiseSearchComplete(window);
+
+  Assert.equal(
+    UrlbarTestUtils.getResultCount(window),
+    1,
+    "Switch to tab result should disappear"
+  );
+  result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+  Assert.equal(
+    result.source,
+    UrlbarUtils.RESULT_SOURCE.SEARCH,
+    "We should only have a heuristic result"
+  );
+
+  gBrowser.removeTab(tab);
 });

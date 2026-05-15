@@ -3,7 +3,6 @@
  *   * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UrlClassifierTelemetryUtils.h"
-#include "mozilla/Assertions.h"
 
 namespace mozilla {
 namespace safebrowsing {

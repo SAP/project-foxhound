@@ -32,4 +32,6 @@ LOCAL_INCLUDES += [
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=stack-protector']
 
+LIBRARY_DEFINES["MOZ_HAS_MOZGLUE"] = True
+
 Library('breakpad_client')

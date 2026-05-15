@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<script>
+  window.addEventListener("load", async () => {
+    let offlineAudioContext = new OfflineAudioContext(26, 128, 48000)
+    let response = await fetch("1999307.mp3");
+    let buffer = await response.arrayBuffer()
+    const convolverNode = offlineAudioContext.createConvolver()
+    const callback = async (e) => {
+        convolverNode.buffer = e
+    }
+    const audioBuffer2 = await offlineAudioContext.decodeAudioData(buffer, callback, undefined)
+    const audioBufferSourceNode = new AudioBufferSourceNode(offlineAudioContext, {
+        "buffer": audioBuffer2
+    })
+    audioBufferSourceNode.start(0, 7267473, 4744938)
+    const constantSourceNode = new ConstantSourceNode(offlineAudioContext, {
+        "offset": 3.4e+38
+    })
+    constantSourceNode.connect(convolverNode, 0, 0)
+    convolverNode.connect(audioBufferSourceNode.detune, 0)
+    constantSourceNode.start(0)
+    await offlineAudioContext.startRendering()
+    document.documentElement.classList.remove("reftest-wait");
+  })
+</script>
+</html>

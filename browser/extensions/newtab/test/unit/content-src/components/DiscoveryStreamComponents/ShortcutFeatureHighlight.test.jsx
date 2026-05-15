@@ -8,20 +8,23 @@ describe("Discovery Stream <ShortcutFeatureHighlight>", () => {
   let dispatch;
   let handleDismiss;
   let handleBlock;
+  let messageData;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     dispatch = sandbox.stub();
     handleDismiss = sandbox.stub();
     handleBlock = sandbox.stub();
+    messageData = sandbox.stub();
 
     wrapper = mount(
       <ShortcutFeatureHighlight
         dispatch={dispatch}
-        handleDismiss={handleDismiss}
-        handleBlock={handleBlock}
-        position="inset-block-end inset-inline-start"
         feature="FEATURE_SHORTCUT_HIGHLIGHT"
+        handleBlock={handleBlock}
+        handleDismiss={handleDismiss}
+        messageData={messageData}
+        position="inset-block-end inset-inline-start"
       />
     );
   });

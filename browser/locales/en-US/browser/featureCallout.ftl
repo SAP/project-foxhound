@@ -20,16 +20,6 @@ callout-firefox-view-recently-closed-title = Get back your closed tabs in a snap
 
 callout-firefox-view-recently-closed-subtitle = All your closed tabs will magically show up here. Never worry about accidentally closing a site again.
 
-callout-firefox-view-colorways-title = Add a splash of color
-
-# "Shade" refer to different color options in each colorway.
-callout-firefox-view-colorways-subtitle = Choose the shade that speaks to you with colorways. Only in { -brand-product-name }.
-
-callout-firefox-view-colorways-reminder-title = Explore our latest colorways
-
-# “Shades” refers to the different color options in each colorways
-callout-firefox-view-colorways-reminder-subtitle = Color your browser with these iconic shades, inspired by independent voices. Only in { -brand-product-name }.
-
 ## Continuous Onboarding - Firefox View: Tab pick up
 
 # “Boost your browsing” refers to the added benefit the user receives from having
@@ -67,6 +57,9 @@ fx-view-discoverability-secondary-button-label = Dismiss
 sidebar-button-callout-title = Show tab titles in the sidebar
 sidebar-button-callout-subtitle = Use the sidebar button to expand the sidebar, so you can see tab titles.
 sidebar-button-callout-vertical-tabs = To show your tabs, select the sidebar button in the toolbar.
+sidebar-deprecation-callout-title = Updated sidebar coming soon
+sidebar-deprecation-callout-subtitle = We’re phasing out the sidebar version you’re currently using. Try the updated sidebar. It’s faster and you get access to more tools.
+sidebar-deprecation-cta-button = Try it now
 
 ## Sidebar Vertical Tabs Strings
 
@@ -135,6 +128,16 @@ sidebar-genai-survey-satisfaction-question = How satisfied are you with having a
 sidebar-genai-survey-productive-question =
     To what extent do you agree or disagree with this statement:<br/>
     “The AI chatbot in the sidebar helps me be more productive”?
+
+# Split View Onboarding Strings
+
+splitview-onboarding-callout-title-1 = Split view: a better way to multitask
+splitview-onboarding-callout-subtitle-1 = Right click this tab and choose “Add Split View” to see two tabs at once.
+splitview-onboarding-callout-cta-1 = Try it now
+
+splitview-onboarding-callout-title-2 = See two tabs at once with split view
+splitview-onboarding-callout-subtitle-2 = No extra windows. No tab flipping. Right-click this tab and choose “Add Split View.”
+splitview-onboarding-callout-cta-2 = Try split view
 
 # Unified Search Button callout strings
 
@@ -221,6 +224,23 @@ fxa-adoption-passwords-subtitle = Protect your passwords by syncing them to your
 # Opens Mozilla accounts sign-up page
 fxa-adoption-passwords-primary-button-label = Sign up
 
+## Taskbar Tabs callout strings
+
+taskbar-tabs-social-callout-title = Keep your favorite feeds in your taskbar
+taskbar-tabs-social-callout-subtitle = Launch your social sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-chat-callout-title = Chat from your taskbar
+taskbar-tabs-chat-callout-subtitle = Launch your chat sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-email-callout-title = Keep your email in your taskbar
+taskbar-tabs-email-callout-subtitle = Launch your webmail like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-media-callout-title = Get back to streaming from your taskbar
+taskbar-tabs-media-callout-subtitle = Launch your streaming sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-value-prop-callout-title = Add this site to your taskbar
+taskbar-tabs-value-prop-callout-subtitle = Launch it in its own window and a simplified interface with a single click.
+
 ## Windows 10 EoS Sync messages group 1 callouts
 
 windows-10-eos-sync-urgency-title-1 = Don’t lose everything you’ve saved when you move to Windows 11.
@@ -243,3 +263,13 @@ windows-10-eos-sync-tour-title-1 = Too many tabs? Tidy up with tab groups.
 windows-10-eos-sync-tour-subtitle-1 = Drag one tab on top of another to create a group and keep things organized.
 windows-10-eos-sync-tour-title-2 = Get organized for Windows 11.
 windows-10-eos-sync-tour-subtitle-2 = Sync your bookmarks, passwords, and settings to back them up before you switch.
+
+windows-10-eos-sync-split-dismiss-button-show-fewer-option =
+    .label = Show fewer recommendations
+windows-10-eos-sync-dismiss-button-label = Dismiss
+windows-10-eos-sync-callout-primary-advance-button-label = Next
+
+## Link Preview Onboarding message callout strings
+
+link-preview-onboarding-callout-title = New: Click and hold to preview links
+link-preview-onboarding-callout-description = See a short description, reading time, and more to decide if a link is worth the click. Also available on right-click.

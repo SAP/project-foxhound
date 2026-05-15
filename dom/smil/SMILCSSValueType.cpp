@@ -8,27 +8,27 @@
 
 #include "SMILCSSValueType.h"
 
-#include "nsComputedDOMStyle.h"
-#include "nsColor.h"
-#include "nsCSSProps.h"
-#include "nsCSSValue.h"
-#include "nsDebug.h"
-#include "nsPresContextInlines.h"
-#include "nsPresContext.h"
-#include "nsString.h"
-#include "nsStyleUtil.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
-#include "mozilla/ServoBindings.h"
-#include "mozilla/StyleAnimationValue.h"
-#include "mozilla/ServoCSSParser.h"
-#include "mozilla/ServoStyleSet.h"
 #include "mozilla/SMILParserUtils.h"
 #include "mozilla/SMILValue.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoCSSParser.h"
+#include "mozilla/ServoStyleSet.h"
+#include "mozilla/StyleAnimationValue.h"
 #include "mozilla/dom/BaseKeyframeTypesBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "nsCSSProps.h"
+#include "nsCSSValue.h"
+#include "nsColor.h"
+#include "nsComputedDOMStyle.h"
+#include "nsDebug.h"
+#include "nsPresContext.h"
+#include "nsPresContextInlines.h"
+#include "nsString.h"
+#include "nsStyleUtil.h"
 
 using namespace mozilla::dom;
 
@@ -40,19 +40,19 @@ using ServoAnimationValues = CopyableAutoTArray<RefPtr<StyleAnimationValue>, 1>;
 SMILCSSValueType SMILCSSValueType::sSingleton;
 
 struct ValueWrapper {
-  ValueWrapper(nsCSSPropertyID aPropID, const AnimationValue& aValue)
-      : mPropID(aPropID) {
+  ValueWrapper(NonCustomCSSPropertyId aPropId, const AnimationValue& aValue)
+      : mPropId(aPropId) {
     MOZ_ASSERT(!aValue.IsNull());
     mServoValues.AppendElement(aValue.mServo);
   }
-  ValueWrapper(nsCSSPropertyID aPropID,
+  ValueWrapper(NonCustomCSSPropertyId aPropId,
                const RefPtr<StyleAnimationValue>& aValue)
-      : mPropID(aPropID), mServoValues{(aValue)} {}
-  ValueWrapper(nsCSSPropertyID aPropID, ServoAnimationValues&& aValues)
-      : mPropID(aPropID), mServoValues{std::move(aValues)} {}
+      : mPropId(aPropId), mServoValues{(aValue)} {}
+  ValueWrapper(NonCustomCSSPropertyId aPropId, ServoAnimationValues&& aValues)
+      : mPropId(aPropId), mServoValues{std::move(aValues)} {}
 
   bool operator==(const ValueWrapper& aOther) const {
-    if (mPropID != aOther.mPropID) {
+    if (mPropId != aOther.mPropId) {
       return false;
     }
 
@@ -74,7 +74,7 @@ struct ValueWrapper {
     return !(*this == aOther);
   }
 
-  nsCSSPropertyID mPropID;
+  NonCustomCSSPropertyId mPropId;
   ServoAnimationValues mServoValues;
 };
 
@@ -209,8 +209,8 @@ static bool AddOrAccumulate(SMILValue& aDest, const SMILValue& aValueToAdd,
     return false;
   }
 
-  nsCSSPropertyID property =
-      valueToAddWrapper ? valueToAddWrapper->mPropID : destWrapper->mPropID;
+  NonCustomCSSPropertyId property =
+      valueToAddWrapper ? valueToAddWrapper->mPropId : destWrapper->mPropId;
   // Special case: font-size-adjust and stroke-dasharray are explicitly
   // non-additive (even though StyleAnimationValue *could* support adding them)
   if (property == eCSSProperty_font_size_adjust ||
@@ -355,7 +355,7 @@ nsresult SMILCSSValueType::Interpolate(const SMILValue& aStartVal,
   // false. That's fine since most shorthands (like 'font' and
   // 'text-decoration') include non-discrete components. If authors want to
   // treat all components as discrete then they should use calcMode="discrete".
-  if (Servo_Property_IsDiscreteAnimatable(endWrapper->mPropID)) {
+  if (Servo_Property_IsDiscreteAnimatable(endWrapper->mPropId)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -382,13 +382,13 @@ nsresult SMILCSSValueType::Interpolate(const SMILValue& aStartVal,
     }
     results.AppendElement(result);
   }
-  aResult.mU.mPtr = new ValueWrapper(endWrapper->mPropID, std::move(results));
+  aResult.mU.mPtr = new ValueWrapper(endWrapper->mPropId, std::move(results));
 
   return NS_OK;
 }
 
 static ServoAnimationValues ValueFromStringHelper(
-    nsCSSPropertyID aPropID, Element* aTargetElement,
+    NonCustomCSSPropertyId aPropId, Element* aTargetElement,
     nsPresContext* aPresContext, const ComputedStyle* aComputedStyle,
     const nsAString& aString) {
   ServoAnimationValues result;
@@ -403,7 +403,7 @@ static ServoAnimationValues ValueFromStringHelper(
       ServoCSSParser::GetParsingEnvironment(doc);
   RefPtr<StyleLockedDeclarationBlock> servoDeclarationBlock =
       ServoCSSParser::ParseProperty(
-          aPropID, NS_ConvertUTF16toUTF8(aString), env,
+          aPropId, NS_ConvertUTF16toUTF8(aString), env,
           StyleParsingMode::ALLOW_UNITLESS_LENGTH |
               StyleParsingMode::ALLOW_ALL_NUMERIC_VALUES);
   if (!servoDeclarationBlock) {
@@ -418,7 +418,7 @@ static ServoAnimationValues ValueFromStringHelper(
 }
 
 // static
-void SMILCSSValueType::ValueFromString(nsCSSPropertyID aPropID,
+void SMILCSSValueType::ValueFromString(NonCustomCSSPropertyId aPropId,
                                        Element* aTargetElement,
                                        const nsAString& aString,
                                        SMILValue& aValue,
@@ -444,7 +444,7 @@ void SMILCSSValueType::ValueFromString(nsCSSPropertyID aPropID,
   }
 
   ServoAnimationValues parsedValues = ValueFromStringHelper(
-      aPropID, aTargetElement, presContext, computedStyle, aString);
+      aPropId, aTargetElement, presContext, computedStyle, aString);
   if (aIsContextSensitive) {
     // FIXME: Bug 1358955 - detect context-sensitive values and set this value
     // appropriately.
@@ -453,13 +453,13 @@ void SMILCSSValueType::ValueFromString(nsCSSPropertyID aPropID,
 
   if (!parsedValues.IsEmpty()) {
     sSingleton.InitValue(aValue);
-    aValue.mU.mPtr = new ValueWrapper(aPropID, std::move(parsedValues));
+    aValue.mU.mPtr = new ValueWrapper(aPropId, std::move(parsedValues));
   }
 }
 
 // static
 SMILValue SMILCSSValueType::ValueFromAnimationValue(
-    nsCSSPropertyID aPropID, Element* aTargetElement,
+    NonCustomCSSPropertyId aPropId, Element* aTargetElement,
     const AnimationValue& aValue) {
   SMILValue result;
 
@@ -475,13 +475,13 @@ SMILValue SMILCSSValueType::ValueFromAnimationValue(
   }
 
   sSingleton.InitValue(result);
-  result.mU.mPtr = new ValueWrapper(aPropID, aValue);
+  result.mU.mPtr = new ValueWrapper(aPropId, aValue);
 
   return result;
 }
 
 // static
-bool SMILCSSValueType::SetPropertyValues(nsCSSPropertyID aPropertyId,
+bool SMILCSSValueType::SetPropertyValues(NonCustomCSSPropertyId aPropertyId,
                                          const SMILValue& aValue,
                                          DeclarationBlock& aDecl) {
   MOZ_ASSERT(aValue.mType == &SMILCSSValueType::sSingleton,
@@ -502,7 +502,8 @@ bool SMILCSSValueType::SetPropertyValues(nsCSSPropertyID aPropertyId,
 }
 
 // static
-nsCSSPropertyID SMILCSSValueType::PropertyFromValue(const SMILValue& aValue) {
+NonCustomCSSPropertyId SMILCSSValueType::PropertyFromValue(
+    const SMILValue& aValue) {
   if (aValue.mType != &SMILCSSValueType::sSingleton) {
     return eCSSProperty_UNKNOWN;
   }
@@ -512,7 +513,7 @@ nsCSSPropertyID SMILCSSValueType::PropertyFromValue(const SMILValue& aValue) {
     return eCSSProperty_UNKNOWN;
   }
 
-  return wrapper->mPropID;
+  return wrapper->mPropId;
 }
 
 // static
@@ -546,7 +547,7 @@ void SMILCSSValueType::FinalizeValue(SMILValue& aValue,
     zeroValues.AppendElement(std::move(zeroValue));
   }
   aValue.mU.mPtr =
-      new ValueWrapper(valueToMatchWrapper->mPropID, std::move(zeroValues));
+      new ValueWrapper(valueToMatchWrapper->mPropId, std::move(zeroValues));
 }
 
 }  // namespace mozilla

@@ -43,7 +43,6 @@ add_task(async function () {
 });
 
 async function enableFirstBreakpoint(dbg) {
-  setEditorCursorAt(dbg, 32, 0);
   await addBreakpoint(dbg, "long.js", 32);
   const bpMarkers = await waitForAllElements(dbg, "columnBreakpoints");
 

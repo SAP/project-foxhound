@@ -4,13 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/MediaSession.h"
+
+#include "mozilla/EnumeratedArrayCycleCollection.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ContentMediaController.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/MediaSession.h"
 #include "mozilla/dom/MediaControlUtils.h"
 #include "mozilla/dom/WindowContext.h"
-#include "mozilla/EnumeratedArrayCycleCollection.h"
 
 // avoid redefined macro in unified build
 #undef LOG
@@ -86,6 +87,8 @@ void MediaSession::Shutdown() {
   if (mParent) {
     SetMediaSessionDocStatus(SessionDocStatus::eInactive);
   }
+  mLoadingArtworkRequest.DisconnectIfExists();
+  mMetadataChangeListener.DisconnectIfExists();
 }
 
 void MediaSession::NotifyOwnerDocumentActivityChanged() {
@@ -116,7 +119,13 @@ JSObject* MediaSession::WrapObject(JSContext* aCx,
 MediaMetadata* MediaSession::GetMetadata() const { return mMediaMetadata; }
 
 void MediaSession::SetMetadata(MediaMetadata* aMetadata) {
+  mMetadataChangeListener.DisconnectIfExists();
   mMediaMetadata = aMetadata;
+  if (mMediaMetadata) {
+    mMetadataChangeListener = mMediaMetadata->MetadataChangeEvent().Connect(
+        AbstractThread::MainThread(), this,
+        &MediaSession::NotifyMetadataUpdated);
+  }
   NotifyMetadataUpdated();
 }
 
@@ -314,13 +323,43 @@ void MediaSession::NotifyMetadataUpdated() {
   RefPtr<BrowsingContext> currentBC = GetParentObject()->GetBrowsingContext();
   MOZ_ASSERT(currentBC, "Update session metadata after context destroyed!");
 
+  mLoadingArtworkRequest.DisconnectIfExists();
+
+  RefPtr<IMediaInfoUpdater> updater = ContentMediaAgent::Get(currentBC);
+  if (!updater) {
+    return;
+  }
+
   Maybe<MediaMetadataBase> metadata;
-  if (GetMetadata()) {
-    metadata.emplace(*(GetMetadata()->AsMetadataBase()));
+  if (mMediaMetadata) {
+    metadata.emplace(*mMediaMetadata->AsMetadataBaseWithoutArtworkSurface());
   }
-  if (RefPtr<IMediaInfoUpdater> updater = ContentMediaAgent::Get(currentBC)) {
-    updater->UpdateMetadata(currentBC->Id(), metadata);
+
+  updater->UpdateMetadata(currentBC->Id(), metadata);
+
+  // If we don't have any metadata, just return. Otherwise we might have
+  // artwork that we have to load asynchronously and update the metadata
+  // together with the artwork's image surface again.
+  if (metadata.isNothing() || metadata->mArtwork.IsEmpty()) {
+    return;
   }
+
+  LOG("Starting load of the MediaMetadata artwork.");
+  mMediaMetadata->LoadMetadataArtwork()
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr{this}, currentBC](MediaMetadataBase&& aMetadata) {
+            if (RefPtr<IMediaInfoUpdater> updater =
+                    ContentMediaAgent::Get(currentBC)) {
+              updater->UpdateMetadata(currentBC->Id(), Some(aMetadata));
+            }
+
+            self->mLoadingArtworkRequest.Complete();
+          },
+          [](nsresult rv) {
+            MOZ_ASSERT_UNREACHABLE("LoadMetadataArtwork should always resolve");
+          })
+      ->Track(mLoadingArtworkRequest);
 }
 
 void MediaSession::NotifyEnableSupportedAction(MediaSessionAction aAction) {

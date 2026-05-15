@@ -25,6 +25,7 @@
 //! assert in debug builds.
 
 #![allow(non_snake_case)]
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 
 use std::{borrow::Cow, convert::TryFrom, error, fmt, ops::Deref, result};
 

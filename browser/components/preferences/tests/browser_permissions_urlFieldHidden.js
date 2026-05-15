@@ -14,9 +14,12 @@ add_task(async function urlFieldVisibleForPopupPermissions() {
     !popupPolicyCheckbox.checked,
     "popupPolicyCheckbox should be unchecked by default"
   );
-  popupPolicyCheckbox.click();
   let popupPolicyButton = doc.getElementById("popupPolicyButton");
   ok(popupPolicyButton, "popupPolicyButton found");
+  let popupPolicyButtonAvailable =
+    waitForSettingControlChange(popupPolicyButton);
+  popupPolicyCheckbox.click();
+  await popupPolicyButtonAvailable;
   let dialogPromise = promiseLoadSubDialog(PERMISSIONS_URL);
   popupPolicyButton.click();
   let dialog = await dialogPromise;

@@ -169,15 +169,15 @@ Types and Marshalling
 
 Things have been pretty simple up to this point - all the arguments we've passed in have been javascript primitives.  But for some types (most importantly Actor types, which I'll get to eventually), we can't just copy them into a JSON packet and expect it to work, we need to marshal things ourselves.
 
-Again, the protocol lib tries hard to provide a natural API to actors and clients, and sometime that natural API might involve object APIs. I'm going to use a wickedly contrived example, bear with me.  Let's say I have a small object that contains a number and has a few methods associated with it:
+Again, the protocol lib tries hard to provide a natural API to actors and clients, and sometime that natural API might involve object APIs. I'm going to use a wickedly contrived example, bear with me.  Let's say I have a small class that contains a number and has a few methods associated with it:
 
-    let Incrementor = function (i) {
-      this.value = value;
+    class Incrementor {
+      constructor (i) {
+        this.value = i;
+      }
+      increment() { this.value++ }
+      decrement() { this.value-- }
     }
-    Incrementor.prototype = {
-        increment: function () { this.value++ },
-        decrement: function () { this.value-- }
-    };
 
 
 and I want to return it from a backend function:
@@ -464,11 +464,9 @@ Here's how you'd set it up in a spec:
 
 Here's how the implementation would look:
 
-    const EventEmitter = require("devtools/shared/event-emitter");
-
     // In your Actor class:
     giveGoodNews(news) {
-      EventEmitter.emit(this, "good-news", news);
+      this.emit("good-news", news);
     }
 
 Now you can listen to events on a front:

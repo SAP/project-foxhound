@@ -12,5 +12,11 @@
  * prefixed version (which it seems to work with, so we unprefix it here).
  */
 
-const { prototype } = HTMLMediaElement.wrappedJSObject;
-prototype.captureStream = prototype.mozCaptureStream;
+if (!HTMLMediaElement.captureStream) {
+  console.info(
+    "HTMLMediaElement.captureStream has been set to HTMLMediaElement.mozCaptureStream for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1963270 for details."
+  );
+
+  const { prototype } = HTMLMediaElement;
+  prototype.captureStream = prototype.mozCaptureStream;
+}

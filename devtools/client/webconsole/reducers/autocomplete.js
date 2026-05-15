@@ -108,9 +108,9 @@ function autocomplete(state = getDefaultState(), action) {
 /**
  * Retrieve from cache action reducer.
  *
- * @param {Object} state
- * @param {Object} action
- * @returns {Object} new state.
+ * @param {object} state
+ * @param {object} action
+ * @returns {object} new state.
  */
 function autoCompleteRetrieveFromCache(state, action) {
   const { input } = action;

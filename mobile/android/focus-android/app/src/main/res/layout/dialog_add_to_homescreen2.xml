@@ -52,9 +52,9 @@
     <Button
         android:id="@+id/addtohomescreen_dialog_add"
         style="@style/ButtonStyle"
-        android:layout_marginTop="36dp"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginTop="30dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
         android:text="@string/dialog_addtohomescreen_action_add"
         app:layout_constraintBottom_toTopOf="@id/homescreen_dialog_warning_layout"
         app:layout_constraintEnd_toEndOf="parent"
@@ -63,8 +63,8 @@
     <Button
         android:id="@+id/addtohomescreen_dialog_cancel"
         style="@style/ButtonStyle"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="8dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
         android:text="@string/dialog_addtohomescreen_action_cancel"
         app:layout_constraintEnd_toStartOf="@id/addtohomescreen_dialog_add"
         app:layout_constraintTop_toTopOf="@id/addtohomescreen_dialog_add"

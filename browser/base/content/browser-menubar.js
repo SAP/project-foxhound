@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -183,6 +181,8 @@ document.addEventListener(
           if (!event.target.parentNode._placesView) {
             new HistoryMenu(event);
           }
+
+          AIWindow.appMenu(event, window);
           break;
         case "historyUndoPopup":
           document

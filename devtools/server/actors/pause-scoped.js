@@ -9,6 +9,7 @@ const { ObjectActor } = require("resource://devtools/server/actors/object.js");
 class PauseScopedObjectActor extends ObjectActor {
   /**
    * Creates a pause-scoped actor for the specified object.
+   *
    * @see ObjectActor
    */
   constructor(threadActor, obj, hooks) {

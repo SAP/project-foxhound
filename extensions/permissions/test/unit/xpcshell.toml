@@ -8,7 +8,9 @@ head = "head.js"
 ["test_permmanager_defaults.js"]
 
 ["test_permmanager_expiration.js"]
-skip-if = ["os == 'win' && os_version == '10.2009' && processor == 'x86_64'"] # Bug 1718292
+skip-if = [
+  "os == 'win' && os_version == '10.2009' && arch == 'x86_64'", # Bug 1718292
+]
 
 ["test_permmanager_getAllByTypeSince.js"]
 
@@ -25,10 +27,15 @@ skip-if = ["os == 'win' && os_version == '10.2009' && processor == 'x86_64'"] # 
 ["test_permmanager_ipc.js"]
 # This test is meant to run on a multi process mode
 # and with file urls loaded in their own child process.
-run-if = ["e10s"]
+run-if = [
+  "e10s",
+]
 firefox-appdir = "browser"
 
 ["test_permmanager_load_invalid_entries.js"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'x86_64'", # , # Bug 1834534
+]
 
 ["test_permmanager_local_files.js"]
 
@@ -37,32 +44,48 @@ firefox-appdir = "browser"
 ["test_permmanager_matchesuri.js"]
 
 ["test_permmanager_migrate_10-11.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_migrate_11-12.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_migrate_4-7.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_migrate_4-7_no_history.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_migrate_5-7a.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_migrate_5-7b.js"]
 
 ["test_permmanager_migrate_6-7a.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_migrate_6-7b.js"]
 
 ["test_permmanager_migrate_7-8.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_migrate_9-10.js"]
-run-if = ["os != 'android'"] # Android doesn't use places
+run-if = [
+  "os != 'android'", # Android doesn't use places
+]
 
 ["test_permmanager_notifications.js"]
 

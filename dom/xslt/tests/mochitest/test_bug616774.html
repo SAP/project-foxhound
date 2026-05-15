@@ -16,7 +16,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=616774-->
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 616774 **/
+/** Test for Bug 616774 */
 is(document.evaluate('- "8"', document, null, XPathResult.ANY_TYPE, null).numberValue, -8, "Negated string literal should evaluate to itself negated");
 is(document.evaluate('- - "999"', document, null, XPathResult.ANY_TYPE, null).numberValue, 999, "String literal should evaluate to itself");
 is(document.evaluate('- - id("content")', document, null, XPathResult.ANY_TYPE, null).numberValue, 42, "DOM element should evaluate to itself coerced to a number");

@@ -3,6 +3,7 @@
 
 const {
   invokeTestCallbackInterfaceNoop,
+  invokeTestCallbackInterfaceGetValue,
   invokeTestCallbackInterfaceSetValue,
   TestCallbackInterface,
   UniffiSkipJsTypeCheck,
@@ -31,76 +32,53 @@ class Callback extends TestCallbackInterface {
   }
 }
 
-add_task(async () => {
-  const cbi = new Callback(42);
-  // Call the noop method, wait a while and make sure it doesn't crash
-  invokeTestCallbackInterfaceNoop(cbi);
-  do_test_pending();
-  do_timeout(100, do_test_finished);
-});
+// Construct a callback interface to pass to rust
+const cbi = new Callback(42);
+// Before we pass it to Rust `hasRegisteredCallbacks` should return fals
+Assert.equal(
+  UnitTestObjs.uniffiCallbackHandlerUniffiBindingsTestsTestCallbackInterface.hasRegisteredCallbacks(),
+  false
+);
+// Test calling callback interface methods, which we can only do indirectly.
+// Each of these Rust functions inputs a callback interface, calls a method on it, then returns the result.
+invokeTestCallbackInterfaceNoop(cbi);
+Assert.equal(invokeTestCallbackInterfaceGetValue(cbi), 42);
+invokeTestCallbackInterfaceSetValue(cbi, 43);
+Assert.equal(invokeTestCallbackInterfaceGetValue(cbi), 43);
 
-add_task(async () => {
-  const cbi = new Callback(42);
-  // Call the setValue method, wait a while and make that it went into effect
-  invokeTestCallbackInterfaceSetValue(cbi, 43);
-  do_test_pending();
-  do_timeout(100, async () => {
-    Assert.equal(await cbi.getValue(), 43);
-    do_test_finished();
-  });
-});
+// Test lowering failures when invoking the callback interfaces.
+// The main test is that we don't leak a callback interface handle when doing this.
+// Even though the Rust call doesn't go through, `hasRegisteredCallbacks` should still return false
+// at the end of this test.
 
-// We can't test other functionality like return values/exceptions since we always wrap sync methods
-// to be fire-and-forget.
+const invalidU32Value = 2 ** 48;
+try {
+  invokeTestCallbackInterfaceSetValue(cbi, invalidU32Value);
+} catch {
+  // Errors are expected
+}
 
-// Test that if we fail to lower all arguments, we don't leave a callback interface handle left in
-// the handle map.
-add_task(async function testCleanupAfterFailedLower() {
-  const cbi = new Callback(42);
-  Assert.equal(
-    UnitTestObjs.uniffiCallbackHandlerUniffiBindingsTestsTestCallbackInterface.hasRegisteredCallbacks(),
-    false
-  );
-  // Call `invokeTestCallbackInterfaceSetValue` with an invalid second argument.
-  // We hack things in the pipeline code to skip the JS type checks, so both arguments are passed to
-  // C++.
-  // The test is if the C++ code cleans up afterwards and frees the handle to the callback interface
-  const invalidU32Value = 2 ** 48;
-  invokeTestCallbackInterfaceSetValue(cbi, invalidU32Value)
-    // Errors are expected
-    .catch(() => null);
-  Assert.equal(
-    UnitTestObjs.uniffiCallbackHandlerUniffiBindingsTestsTestCallbackInterface.hasRegisteredCallbacks(),
-    false
-  );
-});
-
-// Similar test as `testCleanupAfterFailedLower`, however this one hacks things so that we lower the
-// arguments to C++.
-add_task(async function testCleanupAfterFailedCppLower() {
-  const cbi = new Callback(42);
-  Assert.equal(
-    UnitTestObjs.uniffiCallbackHandlerUniffiBindingsTestsTestCallbackInterface.hasRegisteredCallbacks(),
-    false
-  );
-  // Call `invokeTestCallbackInterfaceSetValue` with an invalid second argument.
-  // We hack things in the pipeline code to skip the JS type checks, so both arguments are passed to
-  // C++.
-  // The test is if the C++ code cleans up afterwards and frees the handle to the callback interface
-  const invalidU32Value = 2 ** 48;
+// Test a trickier case of lower failing.
+// This one uses `UniffiSkipJsTypeCheck` to force the JS type checking to pass and make the failure
+// happen in the C++ layer.
+try {
   invokeTestCallbackInterfaceSetValue(
     cbi,
     new UniffiSkipJsTypeCheck(invalidU32Value)
-  )
-    // Errors are expected
-    .catch(() => null);
-  // Cleanup happens in a scheduled call, so wait a bit before checking
-  do_test_pending();
-  do_timeout(100, () => {
-    Assert.equal(
-      UnitTestObjs.uniffiCallbackHandlerUniffiBindingsTestsTestCallbackInterface.hasRegisteredCallbacks(),
-      false
-    );
-    do_test_finished();
-  });
+  );
+} catch {
+  // Errors are expected
+}
+
+// eslint-disable-next-line no-delete-var
+delete cbi;
+// Wait a bit, then check that all callbacks have been cleaned up.
+// Cleanup happens in a scheduled call, so wait a bit before checking
+do_test_pending();
+do_timeout(100, () => {
+  Assert.equal(
+    UnitTestObjs.uniffiCallbackHandlerUniffiBindingsTestsTestCallbackInterface.hasRegisteredCallbacks(),
+    false
+  );
+  do_test_finished();
 });

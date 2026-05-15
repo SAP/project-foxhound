@@ -29,10 +29,23 @@
       background-color: gold;
     }
   }
+
+  body tagnamethree {
+    color: bisque;
+
+    @starting-style {
+      color: hotpink;
+    }
+
+    &::after {
+      content: "Hi";
+    }
+  }
 </style>
 <pre id="log"></pre>
 <tagname></tagname>
 <tagnametwo></tagnametwo>
+<tagnamethree></tagnamethree>
 <script>
 /**
  * This test checks that InspectorUtils.getMatchingCSSRules setting
@@ -111,4 +124,14 @@ add_task(async function testCombinator() {
     "in `body tagnametwo` rule"
   );
 });
+
+add_task(async function testPseudo() {
+  info("Check that pseudo element on element with @starting-style are retrieved")
+
+  const styleSheet = document.styleSheets[1];
+  const el = document.querySelector("tagnamethree");
+  const rules = InspectorUtils.getMatchingCSSRules(el, ":after", false, true);
+  is(rules.length, 1, "Got expected number of rules");
+  is(rules[0].selectorText, "&::after", "Got expected ::after rule");
+})
 </script>

@@ -7,9 +7,9 @@
 #ifndef SEEK_JOB_H
 #define SEEK_JOB_H
 
-#include "mozilla/MozPromise.h"
 #include "MediaDecoder.h"
 #include "SeekTarget.h"
+#include "mozilla/MozPromise.h"
 
 namespace mozilla {
 

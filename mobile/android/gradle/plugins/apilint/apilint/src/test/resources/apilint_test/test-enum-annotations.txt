@@ -1,0 +1,7 @@
+import android.support.annotation.IntDef;
+
+package test {
+  @IntDef public interface TestEnum {
+  }
+}
+

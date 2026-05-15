@@ -10,7 +10,7 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -32,13 +32,13 @@ const TIMES_TO_SHOW_PREF = "quickactions.timesToShowOnboardingLabel";
 const TIMES_SHOWN_PREF = "quickactions.timesShownOnboardingLabel";
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
-import { ActionsProviderQuickActions } from "resource:///modules/ActionsProviderQuickActions.sys.mjs";
-import { ActionsProviderContextualSearch } from "resource:///modules/ActionsProviderContextualSearch.sys.mjs";
-import { ActionsProviderTabGroups } from "resource:///modules/ActionsProviderTabGroups.sys.mjs";
+import { ActionsProviderQuickActions } from "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs";
+import { ActionsProviderContextualSearch } from "moz-src:///browser/components/urlbar/ActionsProviderContextualSearch.sys.mjs";
+import { ActionsProviderTabGroups } from "moz-src:///browser/components/urlbar/ActionsProviderTabGroups.sys.mjs";
 
 let globalActionsProviders = [
   ActionsProviderContextualSearch,
@@ -49,11 +49,7 @@ let globalActionsProviders = [
 /**
  * A provider that lets the user view all available global actions for a query.
  */
-class ProviderGlobalActions extends UrlbarProvider {
-  get name() {
-    return "UrlbarProviderGlobalActions";
-  }
-
+export class UrlbarProviderGlobalActions extends UrlbarProvider {
   /**
    * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
@@ -61,27 +57,35 @@ class ProviderGlobalActions extends UrlbarProvider {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
   }
 
-  async isActive() {
+  /**
+   * Whether this provider should be invoked for the given context.
+   * If this method returns false, the providers manager won't start a query
+   * with this provider, to save on resources.
+   *
+   * @param {UrlbarQueryContext} queryContext The query context object
+   */
+  async isActive(queryContext) {
     return (
       (lazy.UrlbarPrefs.get(SCOTCH_BONNET_PREF) ||
-        lazy.UrlbarPrefs.get(ACTIONS_PREF)) &&
+        lazy.UrlbarPrefs.get(ACTIONS_PREF) ||
+        queryContext.sapName == "searchbar") &&
       lazy.UrlbarPrefs.get(QUICK_ACTIONS_PREF)
     );
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
     let actionsResults = [];
-    let searchModeEngine = "";
 
     for (let provider of globalActionsProviders) {
       if (provider.isActive(queryContext)) {
         for (let action of (await provider.queryActions(queryContext)) || []) {
-          if (action.engine && !searchModeEngine) {
-            searchModeEngine = action.engine;
-          } else if (action.engine) {
-            // We only allow one action that provides an engine search mode.
-            continue;
-          }
           action.providerName = provider.name;
           actionsResults.push(action);
         }
@@ -113,20 +117,15 @@ class ProviderGlobalActions extends UrlbarProvider {
       query,
     };
 
-    if (searchModeEngine) {
-      payload.providesSearchMode = true;
-      payload.engine = searchModeEngine;
-    }
-
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      UrlbarUtils.RESULT_SOURCE.ACTIONS,
-      payload
-    );
-    result.suggestedIndex =
-      queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.TABS
-        ? SUGGESTED_INDEX_TABS_MODE
-        : SUGGESTED_INDEX;
+    let result = new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+      source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
+      suggestedIndex:
+        queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.TABS
+          ? SUGGESTED_INDEX_TABS_MODE
+          : SUGGESTED_INDEX,
+      payload,
+    });
     addCallback(this, result);
   }
 
@@ -197,6 +196,7 @@ class ProviderGlobalActions extends UrlbarProvider {
 
       if (action.dataset?.providesSearchMode) {
         btn.attributes["data-provides-searchmode"] = "true";
+        btn.attributes["data-engine"] = action.engine;
       }
 
       return btn;
@@ -217,16 +217,14 @@ class ProviderGlobalActions extends UrlbarProvider {
     let viewUpdate = {};
     if (result.payload.showOnboardingLabel) {
       viewUpdate["press-tab-label"] = {
-        l10n: { id: "press-tab-label", cacheable: true },
+        l10n: { id: "press-tab-label" },
       };
     }
     result.payload.actionsResults.forEach((action, i) => {
       viewUpdate[`label-${i}`] = {
-        l10n: { id: action.l10nId, args: action.l10nArgs, cacheable: true },
+        l10n: { id: action.l10nId, args: action.l10nArgs },
       };
     });
     return viewUpdate;
   }
 }
-
-export var UrlbarProviderGlobalActions = new ProviderGlobalActions();

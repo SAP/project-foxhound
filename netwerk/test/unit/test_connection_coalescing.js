@@ -5,6 +5,14 @@
 
 "use strict";
 
+const { NodeHTTP2Server } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
+
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
 const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );

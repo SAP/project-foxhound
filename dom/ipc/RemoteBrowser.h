@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_ipc_RemoteBrowser_h
 #define mozilla_dom_ipc_RemoteBrowser_h
 
+#include "Units.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "nsISupports.h"
 #include "nsRect.h"
-#include "Units.h"
 
 class nsDocShellLoadState;
 class nsFrameLoader;

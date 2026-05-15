@@ -141,6 +141,17 @@ pdfjs:
     notification_emails:
       - cdenizet@mozilla.com
       - mcastelluccio@mozilla.com
+  tagged:
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997134
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997134
+    description: >
+      How many times PDF Viewer was used for tagged pdf.
+    expires: never
+    type: counter
+    notification_emails:
+      - pdfjs-team@mozilla.com
 pdfjs.editing.highlight:
     kind:
       type: labeled_counter
@@ -896,44 +907,62 @@ pdfjs.signature:
         - pdfjs-team@mozilla.com
       expires: never
 
-glam_experiment:
-  used:
-    type: counter
-    disabled: true
-    description: >
-      Duplicate of:
-      `pdfjs.used`
+pdfjs.comment:
+    edit:
+      type: labeled_counter
+      description: >
+        Counts the number of times the user edits or deletes comments.
+      labels:
+        - deleted
+        - edited
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1991172
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1991172#c1
+      data_sensitivity:
+        - interaction
+      notification_emails:
+        - pdfjs-team@mozilla.com
+      expires: never
 
-      Intended for the purpose of testing client side sampling of data. This
-      metric is disabled by default and will be enabled only for the purpose
-      of the experiment. See Bug 1947604 for more information.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1947604
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1566882#c2
-    notification_emails:
-      - tlong@mozilla.com
-      - efilho@mozilla.com
-    expires: 146
+    sidebar:
+      type: event
+      description: >
+        Recorded when the comment sidebar is opened.
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1991172
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1991172#c1
+      data_sensitivity:
+        - interaction
+      notification_emails:
+        - pdfjs-team@mozilla.com
+      expires: never
+      extra_keys:
+        comments_count:
+          type: quantity
+          description: >
+            Number of comments in the sidebar.
 
-pdfjs.digital_signature:
-  certificate:
-    type: labeled_counter
-    description: >
-      Counts the number of certificates used to sign a PDF document.
-    labels:
-      - adbe_x509_rsa_sha1
-      - adbe_pkcs7_detached
-      - adbe_pkcs7_sha1
-      - etsi_cades_detached
-      - etsi_rfc3161
-      - unsupported
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1973573
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1973573#c1
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - pdfjs-team@mozilla.com
-    expires: 147
+    save:
+      type: event
+      description: >
+        Recorded when the user saves a PDF with some deleted/edited comments.
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1991172
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1991172#c1
+      data_sensitivity:
+        - interaction
+      notification_emails:
+        - pdfjs-team@mozilla.com
+      expires: never
+      extra_keys:
+        edited:
+          type: quantity
+          description: >
+            Number of edited comments.
+        deleted:
+          type: quantity
+          description: >
+            Number of deleted comments.

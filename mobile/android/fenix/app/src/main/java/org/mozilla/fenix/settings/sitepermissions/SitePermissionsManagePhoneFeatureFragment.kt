@@ -28,6 +28,7 @@ import org.mozilla.fenix.GleanMetrics.Autoplay
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentManageSitePermissionsFeaturePhoneBinding
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.PhoneFeature
@@ -245,8 +246,7 @@ class SitePermissionsManagePhoneFeatureFragment : Fragment() {
      * Returns a [CharSequence] that arranges and styles [mainText], a line break, and then [subText]
      */
     private fun getCombinedLabel(mainText: CharSequence, subText: CharSequence): CharSequence {
-        val subTextSize =
-            resources.getDimensionPixelSize(R.dimen.phone_feature_label_recommended_text_size)
+        val subTextSize = pixelSizeFor(R.dimen.phone_feature_label_recommended_text_size)
         val recommendedSpannable = SpannableString(subText)
         val subTextColor = ContextCompat.getColor(
             requireContext(),

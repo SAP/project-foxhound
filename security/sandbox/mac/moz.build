@@ -19,4 +19,6 @@ SOURCES += [
     "Sandbox.mm",
 ]
 
+DEFINES["MOZ_GPU_PROCESS_BUNDLEID"] = '"%s"' % CONFIG["MOZ_GPU_PROCESS_BUNDLEID"]
+
 Library("mozsandbox")

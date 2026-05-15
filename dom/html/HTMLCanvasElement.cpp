@@ -6,42 +6,46 @@
 
 #include "mozilla/dom/HTMLCanvasElement.h"
 
+#include "ActiveLayerTracker.h"
+#include "CanvasUtils.h"
+#include "ClientWebGLContext.h"
 #include "ImageEncoder.h"
+#include "MediaTrackGraph.h"
+#include "VRManagerChild.h"
+#include "WindowRenderer.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "MediaTrackGraph.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/CheckedInt.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/CanvasCaptureMediaStream.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/GeneratePlaceholderCanvasData.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/dom/GeneratePlaceholderCanvasData.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
-#include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/OffscreenCanvasDisplayHelper.h"
-#include "mozilla/EventDispatcher.h"
+#include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/layers/CanvasRenderer.h"
 #include "mozilla/layers/WebRenderCanvasRenderer.h"
 #include "mozilla/layers/WebRenderUserData.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/webgpu/CanvasContext.h"
 #include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
-#include "nsDisplayList.h"
 #include "nsDOMJSUtils.h"
+#include "nsDisplayList.h"
 #include "nsITimer.h"
 #include "nsJSUtils.h"
 #include "nsLayoutUtils.h"
@@ -49,11 +53,6 @@
 #include "nsNetUtil.h"
 #include "nsRefreshDriver.h"
 #include "nsStreamUtils.h"
-#include "ActiveLayerTracker.h"
-#include "CanvasUtils.h"
-#include "VRManagerChild.h"
-#include "ClientWebGLContext.h"
-#include "WindowRenderer.h"
 
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
@@ -718,8 +717,8 @@ nsresult HTMLCanvasElement::CopyInnerTo(HTMLCanvasElement* aDest) {
   return rv;
 }
 
-nsChangeHint HTMLCanvasElement::GetAttributeChangeHint(const nsAtom* aAttribute,
-                                                       int32_t aModType) const {
+nsChangeHint HTMLCanvasElement::GetAttributeChangeHint(
+    const nsAtom* aAttribute, AttrModType aModType) const {
   nsChangeHint retval =
       nsGenericHTMLElement::GetAttributeChangeHint(aAttribute, aModType);
   if (aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height) {
@@ -903,11 +902,12 @@ already_AddRefed<CanvasCaptureMediaStream> HTMLCanvasElement::CaptureStream(
   // Check site-specific permission and display prompt if appropriate.
   // If no permission, arrange for the frame capture listener to return
   // all-white, opaque image data.
-  bool usePlaceholder = !CanvasUtils::IsImageExtractionAllowed(
-      OwnerDoc(), nsContentUtils::GetCurrentJSContext(), aSubjectPrincipal);
+  CanvasUtils::ImageExtraction extractionBehaviour =
+      CanvasUtils::ImageExtractionResult(this, nullptr, &aSubjectPrincipal);
 
-  rv = RegisterFrameCaptureListener(stream->FrameCaptureListener(),
-                                    usePlaceholder);
+  rv = RegisterFrameCaptureListener(
+      stream->FrameCaptureListener(),
+      extractionBehaviour == CanvasUtils::ImageExtraction::Placeholder);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return nullptr;
@@ -923,25 +923,25 @@ nsresult HTMLCanvasElement::ExtractData(JSContext* aCx,
                                         nsIInputStream** aStream) {
   // Check site-specific permission and display prompt if appropriate.
   // If no permission, return all-white, opaque image data.
-  bool usePlaceholder = !CanvasUtils::IsImageExtractionAllowed(
-      OwnerDoc(), aCx, aSubjectPrincipal);
+  CanvasUtils::ImageExtraction extractionBehaviour =
+      CanvasUtils::ImageExtractionResult(this, aCx, &aSubjectPrincipal);
 
-  if (!usePlaceholder) {
+  if (extractionBehaviour != CanvasUtils::ImageExtraction::Placeholder) {
     auto size = GetWidthHeight();
-    CanvasContextType type = GetCurrentContextType();
-    CanvasFeatureUsage featureUsage = CanvasFeatureUsage::None;
-    if (type == CanvasContextType::Canvas2D) {
-      if (auto ctx =
-              static_cast<CanvasRenderingContext2D*>(GetCurrentContext())) {
-        featureUsage = ctx->FeatureUsage();
-      }
-    }
-
-    CanvasUsage usage(size, type, featureUsage);
+    auto usage = CanvasUsage::CreateUsage(false, GetCurrentContextType(),
+                                          CanvasExtractionAPI::ToDataURL, size,
+                                          GetCurrentContext());
     OwnerDoc()->RecordCanvasUsage(usage);
   }
 
-  return ImageEncoder::ExtractData(aType, aOptions, GetSize(), usePlaceholder,
+  nsCString randomizationKey = VoidCString();
+  if (extractionBehaviour == CanvasUtils::ImageExtraction::EfficientRandomize) {
+    nsRFPService::GetFingerprintingRandomizationKeyAsString(
+        GetCookieJarSettings(), randomizationKey);
+  }
+
+  return ImageEncoder::ExtractData(aType, aOptions, GetSize(),
+                                   extractionBehaviour, randomizationKey,
                                    mCurrentContext, mOffscreenDisplay, aStream);
 }
 
@@ -993,12 +993,15 @@ nsresult HTMLCanvasElement::ToDataURLImpl(JSContext* aCx,
 }
 
 UniquePtr<uint8_t[]> HTMLCanvasElement::GetImageBuffer(
-    int32_t* aOutFormat, gfx::IntSize* aOutImageSize) {
+    CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
+    gfx::IntSize* aOutImageSize) {
   if (mCurrentContext) {
-    return mCurrentContext->GetImageBuffer(aOutFormat, aOutImageSize);
+    return mCurrentContext->GetImageBuffer(aExtractionBehavior, aOutFormat,
+                                           aOutImageSize);
   }
   if (mOffscreenDisplay) {
-    return mOffscreenDisplay->GetImageBuffer(aOutFormat, aOutImageSize);
+    return mOffscreenDisplay->GetImageBuffer(aExtractionBehavior, aOutFormat,
+                                             aOutImageSize);
   }
   return nullptr;
 }
@@ -1033,8 +1036,8 @@ void HTMLCanvasElement::ToBlob(JSContext* aCx, BlobCallback& aCallback,
 
   // Check site-specific permission and display prompt if appropriate.
   // If no permission, return all-white, opaque image data.
-  bool usePlaceholder = !CanvasUtils::IsImageExtractionAllowed(
-      OwnerDoc(), aCx, aSubjectPrincipal);
+  CanvasUtils::ImageExtraction extractionBehaviour =
+      CanvasUtils::ImageExtractionResult(this, aCx, &aSubjectPrincipal);
 
   // Encoder callback when encoding is complete.
   class EncodeCallback : public EncodeCompleteCallback {
@@ -1087,8 +1090,15 @@ void HTMLCanvasElement::ToBlob(JSContext* aCx, BlobCallback& aCallback,
       global, &aCallback, recheckCanRead ? mOffscreenDisplay.get() : nullptr,
       recheckCanRead ? &aSubjectPrincipal : nullptr);
 
+  auto usage = CanvasUsage::CreateUsage(false, GetCurrentContextType(),
+                                        CanvasExtractionAPI::ToBlob,
+                                        GetWidthHeight(), GetCurrentContext());
+  if (extractionBehaviour != CanvasUtils::ImageExtraction::Placeholder) {
+    OwnerDoc()->RecordCanvasUsage(usage);
+  }
+
   CanvasRenderingContextHelper::ToBlob(aCx, callback, aType, aParams,
-                                       usePlaceholder, aRv);
+                                       extractionBehaviour, aRv);
 }
 
 OffscreenCanvas* HTMLCanvasElement::TransferControlToOffscreen(
@@ -1107,10 +1117,8 @@ OffscreenCanvas* HTMLCanvasElement::TransferControlToOffscreen(
   }
 
   LayersBackend backend = LayersBackend::LAYERS_NONE;
-  nsIWidget* docWidget = nsContentUtils::WidgetForDocument(OwnerDoc());
-  if (docWidget) {
-    WindowRenderer* renderer = docWidget->GetWindowRenderer();
-    if (renderer) {
+  if (nsIWidget* docWidget = nsContentUtils::WidgetForDocument(OwnerDoc())) {
+    if (WindowRenderer* renderer = docWidget->GetWindowRenderer()) {
       backend = renderer->GetCompositorBackendType();
     }
   }
@@ -1253,6 +1261,20 @@ void HTMLCanvasElement::InvalidateCanvasPlaceholder(uint32_t aWidth,
   MOZ_ASSERT(!rv.Failed());
 }
 
+static bool InvalidateCanvasData(nsIFrame* aFrame, uint32_t aKey) {
+  RefPtr data = GetWebRenderUserData<WebRenderCanvasData>(aFrame, aKey);
+  if (!data) {
+    return false;
+  }
+  CanvasRenderer* renderer = data->GetCanvasRenderer();
+  if (!renderer) {
+    return false;
+  }
+  renderer->SetDirty();
+  aFrame->SchedulePaint(nsIFrame::PAINT_COMPOSITE_ONLY);
+  return true;
+}
+
 void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
   // Cache the current ImageContainer to avoid contention on the mutex.
   if (mOffscreenDisplay) {
@@ -1262,23 +1284,23 @@ void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
   // We don't need to flush anything here; if there's no frame or if
   // we plan to reframe we don't need to invalidate it anyway.
   nsIFrame* frame = GetPrimaryFrame();
-  if (!frame) return;
+  if (!frame) {
+    return;
+  }
 
   // When using layers-free WebRender, we cannot invalidate the layer (because
   // there isn't one). Instead, we mark the CanvasRenderer dirty and scheduling
   // an empty transaction which is effectively equivalent.
-  CanvasRenderer* renderer = nullptr;
-  const auto key = static_cast<uint32_t>(DisplayItemType::TYPE_CANVAS);
-  RefPtr<WebRenderCanvasData> data =
-      GetWebRenderUserData<WebRenderCanvasData>(frame, key);
-  if (data) {
-    renderer = data->GetCanvasRenderer();
+  bool invalidated = false;
+  for (auto* item : frame->DisplayItems()) {
+    if (item->GetType() == DisplayItemType::TYPE_CANVAS) {
+      invalidated |= InvalidateCanvasData(frame, item->GetPerFrameKey());
+    }
   }
-
-  if (renderer) {
-    renderer->SetDirty();
-    frame->SchedulePaint(nsIFrame::PAINT_COMPOSITE_ONLY);
-  } else {
+  invalidated =
+      invalidated ||
+      InvalidateCanvasData(frame, uint32_t(DisplayItemType::TYPE_CANVAS));
+  if (!invalidated) {
     if (damageRect) {
       CSSIntSize size = GetWidthHeight();
       if (size.width != 0 && size.height != 0) {
@@ -1301,9 +1323,7 @@ void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
    * invalidating a canvas will feed into heuristics and cause JIT code to be
    * kept around longer, for smoother animations.
    */
-  nsPIDOMWindowInner* win = OwnerDoc()->GetInnerWindow();
-
-  if (win) {
+  if (nsPIDOMWindowInner* win = OwnerDoc()->GetInnerWindow()) {
     if (JSObject* obj = win->AsGlobal()->GetGlobalJSObject()) {
       js::NotifyAnimationActivity(obj);
     }
@@ -1403,30 +1423,23 @@ nsresult HTMLCanvasElement::RegisterFrameCaptureListener(
   }
 
   if (!mRequestedFrameRefreshObserver) {
-    Document* doc = OwnerDoc();
-    if (!doc) {
-      return NS_ERROR_FAILURE;
-    }
-
-    PresShell* shell = nsContentUtils::FindPresShellForDocument(doc);
-    if (!shell) {
+    PresShell* shell = nsContentUtils::FindPresShellForDocument(OwnerDoc());
+    if (NS_WARN_IF(!shell)) {
       return NS_ERROR_FAILURE;
     }
 
     nsPresContext* context = shell->GetPresContext();
-    if (!context) {
+    if (NS_WARN_IF(!context)) {
       return NS_ERROR_FAILURE;
     }
 
     context = context->GetRootPresContext();
-    if (!context) {
+    if (NS_WARN_IF(!context)) {
       return NS_ERROR_FAILURE;
     }
 
     nsRefreshDriver* driver = context->RefreshDriver();
-    if (!driver) {
-      return NS_ERROR_FAILURE;
-    }
+    MOZ_ASSERT(driver);
 
     mRequestedFrameRefreshObserver =
         new RequestedFrameRefreshObserver(this, driver, aReturnPlaceholderData);

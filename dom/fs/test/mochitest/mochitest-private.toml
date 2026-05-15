@@ -4,7 +4,9 @@
 
 [DEFAULT]
 dupe-manifest = true
-skip-if = ["xorigin"]
+skip-if = [
+  "xorigin",
+]
 prefs = [
   "browser.privatebrowsing.autostart=true",
   "extensions.blocklist.enabled=false",
@@ -17,4 +19,6 @@ support-files = [
 
 ["test_iframes.html"]
 scheme = "https"
-fail-if = ["true"]  # Until PBM support
+fail-if = [
+  "true", # Until PBM support
+]

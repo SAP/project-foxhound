@@ -8,11 +8,11 @@
 #define BOX_H_
 
 #include <stdint.h>
-#include "nsTArray.h"
-#include "MediaResource.h"
-#include "mozilla/EndianUtils.h"
+
 #include "AtomType.h"
 #include "BufferReader.h"
+#include "MediaResource.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 class ByteStream;
@@ -44,6 +44,7 @@ class Box {
  public:
   Box(BoxContext* aContext, uint64_t aOffset, const Box* aParent = nullptr);
   Box();
+  nsresult InitStatus() const { return mInitStatus; }
 
   bool IsAvailable() const { return !mRange.IsEmpty(); }
   uint64_t Offset() const { return mRange.mStart; }
@@ -68,7 +69,7 @@ class Box {
 
   // Returns a slice, pointing to the data of this box. The lifetime of
   // the memory this slice points to matches the box's context's lifetime.
-  ByteSlice ReadAsSlice();
+  ByteSlice ReadAsSlice() const;
 
  private:
   bool Contains(MediaByteRange aRange) const;
@@ -78,6 +79,7 @@ class Box {
   uint64_t mChildOffset;
   AtomType mType;
   const Box* mParent;
+  nsresult mInitStatus = NS_ERROR_NOT_INITIALIZED;
 };
 
 // BoxReader serves box data through an AutoByteReader. The box data is
@@ -87,7 +89,7 @@ class Box {
 // Ensure that the BoxReader doesn't outlive the BoxContext!
 class MOZ_RAII BoxReader {
  public:
-  explicit BoxReader(Box& aBox)
+  explicit BoxReader(const Box& aBox)
       : mData(aBox.ReadAsSlice()), mReader(mData.mBytes, mData.mSize) {}
   BufferReader* operator->() { return &mReader; }
 

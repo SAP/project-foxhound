@@ -22,7 +22,7 @@ DEFAULT_TIMEOUT = 125
 
 class TestBrowserThread(threading.Thread):
     def __init__(self, raptor_instance, tests, names):
-        super(TestBrowserThread, self).__init__()
+        super().__init__()
         self.raptor_instance = raptor_instance
         self.tests = tests
         self.names = names
@@ -69,22 +69,19 @@ def test_build_profile(
     if app_name != "firefox":
         return
 
-    # These prefs are set in mozprofile
+    # These prefs are set by merging testing/profiles
     firefox_prefs = [
         'user_pref("app.update.checkInstallTime", false);',
         'user_pref("app.update.disabledForTesting", true);',
         'user_pref("'
         'security.turn_off_all_security_so_that_viruses_can_take_over_this_computer", true);',
     ]
-    # This pref is set in raptor
-    raptor_pref = 'user_pref("security.enable_java", false);'
 
     prefs_file = os.path.join(perftest_instance.profile.profile, "user.js")
     with open(prefs_file) as fh:
         prefs = fh.read()
         for firefox_pref in firefox_prefs:
             assert firefox_pref in prefs
-        assert raptor_pref in prefs
 
 
 @patch("logger.logger.RaptorLogger.info")
@@ -200,7 +197,7 @@ def test_post_startup_delay(
         debug_mode=debug_mode,
         post_startup_delay=post_startup_delay,
         conditioned_profile=conditioned_profile,
-        **options
+        **options,
     )
 
     assert perftest.post_startup_delay == expected_post_startup_delay

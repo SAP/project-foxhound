@@ -7,13 +7,10 @@
 JOB_CHOICES = {
     "android-arm-opt",
     "android-arm-debug",
-    "android-x86-opt",
     "android-x86_64-opt",
     "android-x86_64-debug",
     "android-aarch64-opt",
     "android-aarch64-debug",
-    "linux-opt",
-    "linux-debug",
     "linux64-opt",
     "linux64-debug",
     "linux64-aarch64-opt",

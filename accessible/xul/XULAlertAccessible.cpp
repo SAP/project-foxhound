@@ -29,7 +29,7 @@ uint64_t XULAlertAccessible::NativeState() const {
   return LocalAccessible::NativeState() | states::ALERT;
 }
 
-ENameValueFlag XULAlertAccessible::Name(nsString& aName) const {
+ENameValueFlag XULAlertAccessible::DirectName(nsString& aName) const {
   // Screen readers need to read contents of alert, not the accessible name.
   // If we have both some screen readers will read the alert twice.
   aName.Truncate();

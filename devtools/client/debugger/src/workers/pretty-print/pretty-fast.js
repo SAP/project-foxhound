@@ -103,12 +103,12 @@ const PRE_OBJECT_LITERAL_TOKENS = new Set([
 
 class PrettyFast {
   /**
-   * @param {Object} options: Provides configurability of the pretty printing.
-   * @param {String} options.url: The URL string of the ugly JS code.
-   * @param {String} options.indent: The string to indent code by.
+   * @param {object} options: Provides configurability of the pretty printing.
+   * @param {string} options.url: The URL string of the ugly JS code.
+   * @param {string} options.indent: The string to indent code by.
    * @param {SourceMapGenerator} options.sourceMapGenerator: An optional sourceMapGenerator
    *                             the mappings will be added to.
-   * @param {Boolean} options.prefixWithNewLine: When true, the pretty printed code will start
+   * @param {boolean} options.prefixWithNewLine: When true, the pretty printed code will start
    *                  with a line break
    * @param {Integer} options.originalStartLine: The line the passed script starts at (1-based).
    *                  This is used for inline scripts where we need to account for the lines
@@ -200,8 +200,8 @@ class PrettyFast {
   #stack = [];
 
   /**
-   * @param {String} input: The ugly JS code we want to pretty print.
-   * @returns {Object}
+   * @param {string} input: The ugly JS code we want to pretty print.
+   * @returns {object}
    *          An object with the following properties:
    *            - code: The pretty printed code string.
    *            - map: A SourceMapGenerator instance.
@@ -411,7 +411,7 @@ class PrettyFast {
    *
    * @param Object token
    *        The token we are currently handling.
-   * @param {Object|undefined} nextToken
+   * @param {object | undefined} nextToken
    *        The next token, might not exist if we're on the last token
    */
   #handleToken(token, nextToken) {
@@ -738,9 +738,9 @@ function isObjectLiteral(token, previousToken) {
 /**
  * Determines if we think that the given token starts a long parenthesis
  *
- * @param {Object} token
+ * @param {object} token
  *        The token we want to determine if it is the beginning of a long paren.
- * @param {Array<Object>} tokenQueue
+ * @param {Array<object>} tokenQueue
  *        The whole list of tokens parsed by acorn
  * @param {Integer} currentTokenIndex
  *        The index of `token` in `tokenQueue`

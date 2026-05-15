@@ -17,12 +17,10 @@
 #ifdef MOZ_BACKGROUNDTASKS
 #  include "mozilla/BackgroundTasks.h"
 #endif
-#include "mozilla/HashFunctions.h"
 #include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/Result.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Tokenizer.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/intl/Localization.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -69,7 +67,7 @@ using ToastFailedHandler =
 using IVectorView_ToastNotification =
     Collections::IVectorView<WinToastNotification*>;
 
-NS_IMPL_ISUPPORTS(ToastNotificationHandler, nsIAlertNotificationImageListener)
+NS_IMPL_ISUPPORTS0(ToastNotificationHandler)
 
 static bool SetNodeValueString(const nsString& aString, IXmlNode* node,
                                IXmlDocument* xml) {
@@ -188,16 +186,17 @@ Result<nsString, nsresult> ToastNotificationHandler::GetLaunchArgument() {
   nsString launchArg;
 
   // When the preference is false, the COM notification server will be invoked,
-  // discover that there is no `program`, and exit (successfully), after which
-  // Windows will invoke the in-product Windows 8-style callbacks.  When true,
-  // the COM notification server will launch Firefox with sufficient arguments
-  // for Firefox to handle the notification.
+  // notice that this is a request that it should ignore, and exit
+  // (successfully), after which Windows will invoke the in-product Windows
+  // 8-style callbacks.  When true, the COM notification server will launch
+  // Firefox with sufficient arguments for Firefox to handle the notification.
   if (!Preferences::GetBool(
           "alerts.useSystemBackend.windows.notificationserver.enabled",
           false)) {
-    // Include dummy key/value so that newline appended arguments aren't off by
-    // one line.
-    launchArg += u"invalid key\ninvalid value"_ns;
+    // The COM notification server will look for this specific key and value to
+    // trigger the behavior mentioned above, of exiting and allowing Windows
+    // 8-style callbacks to run.
+    launchArg += u"skipNotificationServer\ntrue"_ns;
     return launchArg;
   }
 
@@ -272,11 +271,6 @@ GetToastNotificationManagerStatics() {
 }
 
 ToastNotificationHandler::~ToastNotificationHandler() {
-  if (mImageRequest) {
-    mImageRequest->Cancel(NS_BINDING_ABORTED);
-    mImageRequest = nullptr;
-  }
-
   if (mHasImage && mImageFile) {
     DebugOnly<nsresult> rv = mImageFile->Remove(false);
     NS_ASSERTION(NS_SUCCEEDED(rv), "Cannot remove temporary image file");
@@ -304,22 +298,29 @@ void ToastNotificationHandler::HandleCloseFromBrowser() {
 nsresult ToastNotificationHandler::InitAlertAsync() {
   MOZ_TRY(mAlertNotification->GetId(mWindowsTag));
 
+  // The image file might already have been set by system principal APIs.
+  if (mImageUri.IsEmpty()) {
 #ifdef MOZ_BACKGROUNDTASKS
-  nsAutoString imageUrl;
-  if (BackgroundTasks::IsBackgroundTaskMode() &&
-      NS_SUCCEEDED(mAlertNotification->GetImageURL(imageUrl)) &&
-      !imageUrl.IsEmpty()) {
-    // Bug 1870750: Image decoding relies on gfx and runs on a thread pool,
-    // which expects to have been initialized early and on the main thread.
-    // Since background tasks run headless this never occurs. In this case we
-    // force gfx initialization.
-    Unused << NS_WARN_IF(!gfxPlatform::GetPlatform());
-  }
+    nsAutoString imageUrl;
+    if (BackgroundTasks::IsBackgroundTaskMode() &&
+        NS_SUCCEEDED(mAlertNotification->GetImageURL(imageUrl)) &&
+        !imageUrl.IsEmpty()) {
+      // Bug 1870750: Image decoding relies on gfx and runs on a thread pool,
+      // which expects to have been initialized early and on the main thread.
+      // Since background tasks run headless this never occurs. In this case we
+      // force gfx initialization.
+      (void)NS_WARN_IF(!gfxPlatform::GetPlatform());
+    }
 #endif
 
-  return mAlertNotification->LoadImage(/* aTimeout = */ 0, this,
-                                       /* aUserData = */ nullptr,
-                                       getter_AddRefs(mImageRequest));
+    nsCOMPtr<imgIContainer> image;
+    MOZ_TRY(mAlertNotification->GetImage(getter_AddRefs(image)));
+
+    // Defer showing alert until image has saved to disk.
+    return image ? AsyncSaveImage(image) : TryShowAlert();
+  }
+
+  return TryShowAlert();
 }
 
 nsString ToastNotificationHandler::ActionArgsJSONString(
@@ -811,6 +812,11 @@ void ToastNotificationHandler::SendFinished() {
   mSentFinished = true;
 }
 
+void ToastNotificationHandler::HandleCloseFromSystem() {
+  SendFinished();
+  mBackend->RemoveHandler(mName, this);
+}
+
 HRESULT
 ToastNotificationHandler::OnActivate(
     const ComPtr<IToastNotification>& notification,
@@ -846,15 +852,15 @@ ToastNotificationHandler::OnActivate(
 
             while (parse.ReadUntil(Tokenizer16::Token::NewLine(), token)) {
               if (token == nsDependentString(kLaunchArgAction)) {
-                Unused << parse.ReadUntil(Tokenizer16::Token::EndOfFile(),
-                                          actionString);
+                (void)parse.ReadUntil(Tokenizer16::Token::EndOfFile(),
+                                      actionString);
               } else {
                 // Next line is a value in a key/value pair, skip.
                 parse.SkipUntil(Tokenizer16::Token::NewLine());
               }
               // Skip newline.
               Tokenizer16::Token unused;
-              Unused << parse.Next(unused);
+              (void)parse.Next(unused);
             }
           }
         }
@@ -914,8 +920,7 @@ ToastNotificationHandler::OnActivate(
       mAlertListener->Observe(alertAction, "alertclickcallback", mCookie.get());
     }
   }
-  SendFinished();
-  mBackend->RemoveHandler(mName, this);
+  HandleCloseFromSystem();
   return S_OK;
 }
 
@@ -1002,8 +1007,7 @@ ToastNotificationHandler::OnDismiss(
     return S_OK;
   }
 
-  SendFinished();
-  mBackend->RemoveHandler(mName, this);
+  HandleCloseFromSystem();
   return S_OK;
 }
 
@@ -1015,35 +1019,19 @@ ToastNotificationHandler::OnFail(const ComPtr<IToastNotification>& notification,
   MOZ_LOG(sWASLog, LogLevel::Error,
           ("Error creating notification, error: %ld", err));
 
-  SendFinished();
-  mBackend->RemoveHandler(mName, this);
+  HandleCloseFromSystem();
   return S_OK;
 }
 
 nsresult ToastNotificationHandler::TryShowAlert() {
   if (NS_WARN_IF(!ShowAlert())) {
-    SendFinished();
-    mBackend->RemoveHandler(mName, this);
+    HandleCloseFromSystem();
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }
 
-NS_IMETHODIMP
-ToastNotificationHandler::OnImageMissing(nsISupports*) {
-  return TryShowAlert();
-}
-
-NS_IMETHODIMP
-ToastNotificationHandler::OnImageReady(nsISupports*, imgIRequest* aRequest) {
-  nsresult rv = AsyncSaveImage(aRequest);
-  if (NS_FAILED(rv)) {
-    return TryShowAlert();
-  }
-  return rv;
-}
-
-nsresult ToastNotificationHandler::AsyncSaveImage(imgIRequest* aRequest) {
+nsresult ToastNotificationHandler::AsyncSaveImage(imgIContainer* aImage) {
   nsresult rv =
       NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(mImageFile));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1064,16 +1052,12 @@ nsresult ToastNotificationHandler::AsyncSaveImage(imgIRequest* aRequest) {
   uuidStr.AppendLiteral(".png");
   mImageFile->AppendNative(uuidStr);
 
-  nsCOMPtr<imgIContainer> imgContainer;
-  rv = aRequest->GetImage(getter_AddRefs(imgContainer));
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsMainThreadPtrHandle<ToastNotificationHandler> self(
       new nsMainThreadPtrHolder<ToastNotificationHandler>(
           "ToastNotificationHandler", this));
 
   nsCOMPtr<nsIFile> imageFile(mImageFile);
-  RefPtr<mozilla::gfx::SourceSurface> surface = imgContainer->GetFrame(
+  RefPtr<mozilla::gfx::SourceSurface> surface = aImage->GetFrame(
       imgIContainer::FRAME_FIRST,
       imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY);
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(

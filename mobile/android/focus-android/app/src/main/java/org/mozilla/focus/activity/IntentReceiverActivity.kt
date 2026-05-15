@@ -32,7 +32,7 @@ class IntentReceiverActivity : Activity() {
             return
         }
 
-        val result = intentProcessor.handleIntent(this, intent, savedInstanceState)
+        val result = intentProcessor.handleIntent(intent, savedInstanceState)
         if (result is IntentProcessor.Result.CustomTab) {
             dispatchCustomTabsIntent(result.id)
         } else {

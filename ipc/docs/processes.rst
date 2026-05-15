@@ -149,7 +149,7 @@ create a new process of our new **Demo** process type and ask that process for
 Once that is done, the new process will be cleanly destroyed.
 
 Code for the complete demo can be found `here
-<https://phabricator.services.mozilla.com/D119038>`_.
+<https://phabricator.services.mozilla.com/D119038>`__.
 
 Common Architecture
 ~~~~~~~~~~~~~~~~~~~
@@ -230,12 +230,12 @@ Basic requirements
   call checking for boundary against ``GeckoProcessType_End``
 * Add your process to the correct ``MessageLoop::TYPE_x`` in the first
   ``switch(XRE_GetProcessType())`` in `XRE_InitChildProcess
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/xre/nsEmbedFunctions.cpp#572-590>`_.
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/xre/nsEmbedFunctions.cpp#572-590>`__.
   You can get more information about that topic in `this comment
   <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/ipc/chromium/src/base/message_loop.h#159-187>`_
 * Instantiate your child within the second ``switch (XRE_GetProcessType())`` in
   `XRE_InitChildProcess
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/xre/nsEmbedFunctions.cpp#615-671>`_
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/xre/nsEmbedFunctions.cpp#615-671>`__
 * Add a new entry ``PROCESS_TYPE_x`` in `nsIXULRuntime interface
   <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/xpcom/system/nsIXULRuntime.idl#183-196>`_
 
@@ -243,14 +243,14 @@ Graphics
 ########
 
 If you need graphics-related interaction, hack into `gfxPlatform
-<https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/gfx/thebes/gfxPlatform.cpp>`_
+<https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/gfx/thebes/gfxPlatform.cpp>`__
 
 - Add a call to your process manager init in ``gfxPlatform::Init()`` in
   `gfxPlatform
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/gfx/thebes/gfxPlatform.cpp#808-810>`_
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/gfx/thebes/gfxPlatform.cpp#808-810>`__
 - Add a call to your process manager shutdown in ``gfxPlatform::Shutdown()`` in
   `gfxPlatform
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/gfx/thebes/gfxPlatform.cpp#1255-1259>`_
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/gfx/thebes/gfxPlatform.cpp#1255-1259>`__
 
 Android
 #######
@@ -291,9 +291,9 @@ Throughout the linked code, please consider those methods more as boilerplate co
 
 - Add definition of memory reporter to your new :ref:`top-level actor <Top Level Actors>`
 
-  + Type inclusion `MemoryReportTypes <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#6>`_
-  + To parent-side `AddMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#32>`_
-  + To child-side `RequestMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#44-48>`_
+  + Type inclusion `MemoryReportTypes <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#6>`__
+  + To parent-side `AddMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#32>`__
+  + To child-side `RequestMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#44-48>`__
 
 - Add handling for your new process within `nsMemoryReporterManager::GetReportsExtended <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/xpcom/base/nsMemoryReporterManager.cpp#1813-1819>`_
 - Provide a process manager level abstraction
@@ -301,11 +301,11 @@ Throughout the linked code, please consider those methods more as boilerplate co
   + Implement a new class deriving ``MemoryReportingProcess`` such as `UtilityMemoryReporter <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessManager.cpp#253-292>`_
   + Write a `GetProcessMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessManager.cpp#294-300>`_
 
-- On the child side, provide an implementation for `RequestMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#153-166>`_
+- On the child side, provide an implementation for `RequestMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#153-166>`__
 - On the parent side
 
-  + Provide an implementation for `RequestMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessParent.cpp#41-69>`_
-  + Provide an implementation for `AddMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessParent.cpp#71-77>`_
+  + Provide an implementation for `RequestMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessParent.cpp#41-69>`__
+  + Provide an implementation for `AddMemoryReport <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessParent.cpp#71-77>`__
 
 If you want to add a test that ensures proper behavior, you can have a look at the `utility process memory report test <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/test/browser/browser_utility_memoryReport.js>`_
 
@@ -332,11 +332,11 @@ Profiler
 
 - Add definition of ``PProfiler`` to your new IPDL
 
-  + Type inclusion `protocol PProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#9>`_
-  + Child-side `InitProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#42>`_
+  + Type inclusion `protocol PProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#9>`__
+  + Child-side `InitProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#42>`__
 
-- Make sure your initialization path contains a `SendInitProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessHost.cpp#222-223>`_. You will want to perform the call once a ``OnChannelConnected`` is issued, thus ensuring your new process is connected to IPC.
-- Provide an implementation for `InitProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#147-151>`_
+- Make sure your initialization path contains a `SendInitProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessHost.cpp#222-223>`__. You will want to perform the call once a ``OnChannelConnected`` is issued, thus ensuring your new process is connected to IPC.
+- Provide an implementation for `InitProfiler <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#147-151>`__
 
 - You will probably want to make sure your child process code register within the profiler a proper name, otherwise it will default to ``GeckoMain`` ; this can be done by issuing ``profiler_set_process_name(nsCString("XxX"))`` on the child init side.
 
@@ -395,30 +395,30 @@ Glean telemetry
 - Ensure your new IPDL includes on the child side
 
   + `FlushFOGData
-    <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#55>`_
+    <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#55>`__
   + `TestTriggerMetrics
-    <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#60>`_
+    <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/PUtilityProcess.ipdl#60>`__
 
 - Provide a parent-side implementation for `FOGData
-  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessParent.cpp#79-82>`_
+  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessParent.cpp#79-82>`__
 - Provide a child-side implementation for `FlushFOGData
-  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#179-183>`_
+  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#179-183>`__
 - Child-side should flush its FOG data at IPC `ActorDestroy
-  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#199-201>`_
+  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#199-201>`__
 - Child-side `test metrics
-  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#185-191>`_
+  <https://searchfox.org/mozilla-central/rev/fc4d4a8d01b0e50d20c238acbb1739ccab317ebc/ipc/glue/UtilityProcessChild.cpp#185-191>`__
 - Within `FOGIPC
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp>`_
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp>`__
 
   + Add handling of your new process type within ``FlushAllChildData()`` `here
-    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp#106-121>`_
+    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp#106-121>`__
     and ``SendFOGData()`` `here
-    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp#165-182>`_
+    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp#165-182>`__
   + Add support for sending test metrics in ``TestTriggerMetrics()`` `here
-    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp#208-232>`_
+    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/ipc/FOGIPC.cpp#208-232>`__
 
 - Handle process shutdown in ``register_process_shutdown()`` of `glean
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/api/src/ipc.rs>`_
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/components/glean/api/src/ipc.rs>`__
 
 Third-Party Modules
 ###################
@@ -432,7 +432,7 @@ Third-Party Modules
 
 - Provide a parent side implementation for both
 
-- Add handling of your new process type in ``MultiGetUntrustedModulesData::GetUntrustedModuleLoadEvents()`` `here <https://searchfox.org/mozilla-central/rev/2ce39261ea6a69e49d87f76a119494b2a7a7e42a/toolkit/components/telemetry/other/UntrustedModules.cpp#145-151>`_
+- Add handling of your new process type in ``MultiGetUntrustedModulesData::GetUntrustedModuleLoadEvents()`` `here <https://searchfox.org/mozilla-central/rev/2ce39261ea6a69e49d87f76a119494b2a7a7e42a/toolkit/components/telemetry/other/UntrustedModules.cpp#145-151>`__
 
 - `Update your IPDL <https://searchfox.org/mozilla-central/rev/2ce39261ea6a69e49d87f76a119494b2a7a7e42a/ipc/glue/PUtilityProcess.ipdl#75>`_ and make sure your ``Init()`` can receive a boolean for
   ``isReadyForBackgroundProcessing`` `like here <https://searchfox.org/mozilla-central/rev/2ce39261ea6a69e49d87f76a119494b2a7a7e42a/ipc/glue/UtilityProcessChild.cpp#157-160>`_, then within the child's ``RecvInit()``
@@ -494,31 +494,31 @@ MacOS Sandbox
 _____________
 
 - Add new case handling in ``GeckoChildProcessHost::StartMacSandbox()`` of
-  `GeckoChildProcessHost <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/ipc/glue/GeckoChildProcessHost.cpp#1720-1743>`_
+  `GeckoChildProcessHost <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/ipc/glue/GeckoChildProcessHost.cpp#1720-1743>`__
 - Add new entry in ``enum MacSandboxType`` defined in `macOS sandbox header
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.h#12-20>`_
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.h#12-20>`__
 - Within `macOS sandbox core
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm>`_
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm>`__
   handle the new ``MacSandboxType`` in
 
    + ``MacSandboxInfo::AppendAsParams()`` in the `switch statement
-     <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm#164-188>`_
+     <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm#164-188>`__
    + ``StartMacSandbox()`` in the `series of if/else statements
-     <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm#286-436>`_.
+     <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm#286-436>`__.
      This code sets template values for the sandbox string rendering, and is
      running on the side of the main process.
    + ``StartMacSandboxIfEnabled()`` in this `switch statement
-     <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm#753-782>`_.
+     <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/Sandbox.mm#753-782>`__.
      You might also need a ``GetXXXSandboxParamsFromArgs()`` that performs CLI
      parsing on behalf of ``StartMacSandbox()``.
 
 - Create the new sandbox definition file
   ``security/sandbox/mac/SandboxPolicy<XXX>.h`` for your new process ``<XXX>``,
   and make it exposed in the ``EXPORTS.mozilla`` section of `moz.build
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/moz.build#7-13>`_.
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/mac/moz.build#7-13>`__.
   Those rules follows a specific Scheme-like language. You can learn more about
   it in `Apple Sandbox Guide
-  <https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf>`_
+  <https://reverse.put.as/wp-content/uploads/2011/09/Apple-Sandbox-Guide-v1.0.pdf>`__
   as well as on your system within ``/System/Library/Sandbox/Profiles/``.
 
 Windows Sandbox
@@ -526,11 +526,11 @@ _______________
 
 - Introduce a new ``SandboxBroker::SetSecurityLevelForXXXProcess()`` that
   defines the new sandbox in the sandbox broker basing yourself on this
-  `example <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp#1241-1344>`_
+  `example <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp#1241-1344>`__
 
 - Add new case handling in ``WindowsProcessLauncher::DoSetup()`` calling
   ``SandboxBroker::SetSecurityLevelForXXXProcess()`` in `GeckoChildProcessHost
-  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/ipc/glue/GeckoChildProcessHost.cpp#1391-1470>`_.
+  <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/ipc/glue/GeckoChildProcessHost.cpp#1391-1470>`__.
   This will apply actual sandboxing rules to your process.
 
 Sandbox tests

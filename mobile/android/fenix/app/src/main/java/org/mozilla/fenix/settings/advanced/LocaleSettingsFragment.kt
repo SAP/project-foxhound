@@ -17,10 +17,10 @@ import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import mozilla.components.lib.state.ext.consumeFrom
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.support.locale.LocaleUseCases
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.databinding.FragmentLocaleSettingsBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.showToolbar
@@ -49,10 +49,8 @@ class LocaleSettingsFragment : Fragment(), MenuProvider {
         val browserStore = requireContext().components.core.store
         val localeUseCase = LocaleUseCases(browserStore)
 
-        localeSettingsStore = StoreProvider.get(this) {
-            LocaleSettingsStore(
-                createInitialLocaleSettingsState(requireContext()),
-            )
+        localeSettingsStore = storeProvider.get { restoredState ->
+            LocaleSettingsStore(restoredState ?: createInitialLocaleSettingsState(requireContext()))
         }
         interactor = LocaleSettingsInteractor(
             controller = DefaultLocaleSettingsController(

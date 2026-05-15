@@ -6,6 +6,7 @@
 package org.mozilla.geckoview;
 
 import android.annotation.SuppressLint;
+import android.app.ForegroundServiceStartNotAllowedException;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -27,12 +28,16 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.util.GeckoBundle;
 
+/** Handler for processing application crashes and sending crash reports. */
 public class CrashHandler implements Thread.UncaughtExceptionHandler {
 
   private static final String LOGTAG = "GeckoCrashHandler";
@@ -277,29 +282,30 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
     final Bundle extras = new Bundle();
     final String pkgName = getAppPackageName();
 
-    extras.putLong("CrashTime", getCrashTime());
-    extras.putLong("StartupTime", getStartupTime());
-    extras.putString("Android_ProcessName", getProcessName());
-    extras.putString("Android_PackageName", pkgName);
+    extras.putLong(CrashReport.Annotation.CrashTime.toString(), getCrashTime());
+    extras.putLong(CrashReport.Annotation.StartupTime.toString(), getStartupTime());
+    extras.putString(CrashReport.Annotation.Android_ProcessName.toString(), getProcessName());
+    extras.putString(CrashReport.Annotation.Android_PackageName.toString(), pkgName);
 
     final String notes = GeckoAppShell.getAppNotes();
     if (notes != null) {
-      extras.putString("Notes", notes);
+      extras.putString(CrashReport.Annotation.Notes.toString(), notes);
     }
 
     if (context != null) {
       final PackageManager pkgMgr = context.getPackageManager();
       try {
         final PackageInfo pkgInfo = pkgMgr.getPackageInfo(pkgName, 0);
-        extras.putString("Version", pkgInfo.versionName);
-        extras.putInt("BuildID", pkgInfo.versionCode);
-        extras.putLong("InstallTime", pkgInfo.lastUpdateTime / 1000);
+        extras.putString(CrashReport.Annotation.Version.toString(), pkgInfo.versionName);
+        extras.putInt(CrashReport.Annotation.BuildID.toString(), pkgInfo.versionCode);
+        extras.putLong(
+            CrashReport.Annotation.InstallTime.toString(), pkgInfo.lastUpdateTime / 1000);
       } catch (final PackageManager.NameNotFoundException e) {
         Log.i(LOGTAG, "Error getting package info", e);
       }
     }
 
-    extras.putString("JavaStackTrace", getExceptionStackTrace(exc));
+    extras.putString(CrashReport.Annotation.JavaStackTrace.toString(), getExceptionStackTrace(exc));
     return extras;
   }
 
@@ -336,9 +342,9 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
   public String getServerUrl(@NonNull final Bundle extras) {
     return String.format(
         DEFAULT_SERVER_URL,
-        normalizeUrlString(extras.getString("ProductID")),
-        normalizeUrlString(extras.getString("Version")),
-        normalizeUrlString(extras.getString("BuildID")));
+        normalizeUrlString(extras.getString(CrashReport.Annotation.ProductID.toString())),
+        normalizeUrlString(extras.getString(CrashReport.Annotation.Version.toString())),
+        normalizeUrlString(extras.getString(CrashReport.Annotation.BuildID.toString())));
   }
 
   /**
@@ -351,98 +357,109 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
   @AnyThread
   public boolean launchCrashReporter(
       @NonNull final String dumpFile, @NonNull final String extraFile) {
+    if (mHandlerService == null) {
+      Log.w(LOGTAG, "No crash handler service defined, unable to report crash");
+      return false;
+    }
+
+    return launchCrashReporter(
+        mHandlerService,
+        getAppContext(),
+        getAppPackageName(),
+        dumpFile,
+        extraFile,
+        GeckoRuntime.CRASHED_PROCESS_VISIBILITY_MAIN,
+        "main",
+        null);
+  }
+
+  @AnyThread
+  private static boolean launchCrashReporter(
+      @NonNull final Class<?> handlerService,
+      @Nullable final Context context,
+      @NonNull final String appPackageName,
+      @NonNull final String dumpFile,
+      @NonNull final String extraFile,
+      @NonNull final String visibility,
+      @NonNull final String processType,
+      @Nullable final String remoteType) {
     try {
-      final Context context = getAppContext();
-      final ProcessBuilder pb;
-
-      if (mHandlerService == null) {
-        Log.w(LOGTAG, "No crash handler service defined, unable to report crash");
-        return false;
-      }
-
       if (context != null) {
-        final Intent intent = new Intent(GeckoRuntime.ACTION_CRASHED);
+        final Intent intent =
+            new Intent(GeckoRuntime.ACTION_CRASHED, null, context, handlerService);
         intent.putExtra(GeckoRuntime.EXTRA_MINIDUMP_PATH, dumpFile);
         intent.putExtra(GeckoRuntime.EXTRA_EXTRAS_PATH, extraFile);
-        intent.putExtra(
-            GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY,
-            GeckoRuntime.CRASHED_PROCESS_VISIBILITY_MAIN);
-        intent.putExtra(GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE, "main");
-        intent.setClass(context, mHandlerService);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          context.startForegroundService(intent);
-        } else {
-          context.startService(intent);
+        intent.putExtra(GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY, visibility);
+        intent.putExtra(GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE, processType);
+        if (remoteType != null) {
+          intent.putExtra(GeckoRuntime.EXTRA_CRASH_REMOTE_TYPE, remoteType);
         }
+        context.startForegroundService(intent);
         return true;
       }
 
-      final int deviceSdkVersion = Build.VERSION.SDK_INT;
-      if (deviceSdkVersion < 17) {
-        pb =
-            new ProcessBuilder(
-                "/system/bin/am",
-                "startservice",
-                "-a",
-                GeckoRuntime.ACTION_CRASHED,
-                "-n",
-                getAppPackageName() + '/' + mHandlerService.getName(),
-                "--es",
-                GeckoRuntime.EXTRA_MINIDUMP_PATH,
-                dumpFile,
-                "--es",
-                GeckoRuntime.EXTRA_EXTRAS_PATH,
-                extraFile,
-                "--es",
-                GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY,
-                GeckoRuntime.CRASHED_PROCESS_VISIBILITY_MAIN,
-                "--es",
-                GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE,
-                "main");
-      } else {
-        final String startServiceCommand;
-        if (deviceSdkVersion >= 26) {
-          startServiceCommand = "start-foreground-service";
-        } else {
-          startServiceCommand = "startservice";
-        }
-
-        pb =
-            new ProcessBuilder(
-                "/system/bin/am",
-                startServiceCommand,
-                "--user", /* USER_CURRENT_OR_SELF */
-                "-3",
-                "-a",
-                GeckoRuntime.ACTION_CRASHED,
-                "-n",
-                getAppPackageName() + '/' + mHandlerService.getName(),
-                "--es",
-                GeckoRuntime.EXTRA_MINIDUMP_PATH,
-                dumpFile,
-                "--es",
-                GeckoRuntime.EXTRA_EXTRAS_PATH,
-                extraFile,
-                "--es",
-                GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY,
-                GeckoRuntime.CRASHED_PROCESS_VISIBILITY_MAIN,
-                "--es",
-                GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE,
-                "main");
+      final List<String> args =
+          new ArrayList<>(
+              Arrays.asList(
+                  "/system/bin/am",
+                  "start-foreground-service",
+                  "--user",
+                  /* USER_CURRENT_OR_SELF */ "-3",
+                  "-a",
+                  GeckoRuntime.ACTION_CRASHED,
+                  "-n",
+                  appPackageName + '/' + handlerService.getName(),
+                  "--es",
+                  GeckoRuntime.EXTRA_MINIDUMP_PATH,
+                  dumpFile,
+                  "--es",
+                  GeckoRuntime.EXTRA_EXTRAS_PATH,
+                  extraFile,
+                  "--es",
+                  GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY,
+                  visibility,
+                  "--es",
+                  GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE,
+                  processType));
+      if (remoteType != null) {
+        args.add("--es");
+        args.add(GeckoRuntime.EXTRA_CRASH_REMOTE_TYPE);
+        args.add(remoteType);
       }
 
-      pb.start().waitFor();
-
+      final ProcessBuilder pb = new ProcessBuilder();
+      pb.command(args).start().waitFor();
     } catch (final IOException e) {
       Log.e(LOGTAG, "Error launching crash reporter", e);
       return false;
+
+    } catch (final IllegalStateException e) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+          && e instanceof ForegroundServiceStartNotAllowedException) {
+        Log.e(LOGTAG, "Error launching crash reporter", e);
+        return false;
+      }
+      throw e;
 
     } catch (final InterruptedException e) {
       Log.i(LOGTAG, "Interrupted while waiting to launch crash reporter", e);
       // Fall-through
     }
     return true;
+  }
+
+  @AnyThread
+  /* package */ static boolean launchCrashReporter(
+      final Class<?> handlerService, final Context context, final GeckoBundle bundle) {
+    return launchCrashReporter(
+        handlerService,
+        context,
+        context.getPackageName(),
+        bundle.getString(GeckoRuntime.EXTRA_MINIDUMP_PATH),
+        bundle.getString(GeckoRuntime.EXTRA_EXTRAS_PATH),
+        bundle.getString(GeckoRuntime.EXTRA_CRASH_PROCESS_VISIBILITY),
+        bundle.getString(GeckoRuntime.EXTRA_CRASH_PROCESS_TYPE),
+        bundle.getString(GeckoRuntime.EXTRA_CRASH_REMOTE_TYPE));
   }
 
   /**
@@ -495,7 +512,7 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
 
       final Bundle extras = getCrashExtras(thread, exc);
       final String url = getServerUrl(extras);
-      extras.putString("ServerURL", url);
+      extras.putString(CrashReport.Annotation.ServerURL.toString(), url);
 
       final JSONObject json = new JSONObject();
       for (final String key : extras.keySet()) {
@@ -573,12 +590,14 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
       public Bundle getCrashExtras(final Thread thread, final Throwable exc) {
         final Bundle extras = super.getCrashExtras(thread, exc);
 
-        extras.putString("ProductName", BuildConfig.MOZ_APP_BASENAME);
-        extras.putString("ProductID", BuildConfig.MOZ_APP_ID);
-        extras.putString("Version", BuildConfig.MOZ_APP_VERSION);
-        extras.putString("BuildID", BuildConfig.MOZ_APP_BUILDID);
-        extras.putString("Vendor", BuildConfig.MOZ_APP_VENDOR);
-        extras.putString("ReleaseChannel", BuildConfig.MOZ_UPDATE_CHANNEL);
+        extras.putString(
+            CrashReport.Annotation.ProductName.toString(), BuildConfig.MOZ_APP_BASENAME);
+        extras.putString(CrashReport.Annotation.ProductID.toString(), BuildConfig.MOZ_APP_ID);
+        extras.putString(CrashReport.Annotation.Version.toString(), BuildConfig.MOZ_APP_VERSION);
+        extras.putString(CrashReport.Annotation.BuildID.toString(), BuildConfig.MOZ_APP_BUILDID);
+        extras.putString(CrashReport.Annotation.Vendor.toString(), BuildConfig.MOZ_APP_VENDOR);
+        extras.putString(
+            CrashReport.Annotation.ReleaseChannel.toString(), BuildConfig.MOZ_UPDATE_CHANNEL);
         return extras;
       }
 

@@ -40,18 +40,6 @@ const TEST_PROVIDER_INFO = [
   },
 ];
 
-// The impression doesn't change in these tests.
-const IMPRESSION = {
-  provider: "example",
-  tagged: "true",
-  partner_code: "ff",
-  source: "unknown",
-  is_shopping_page: "false",
-  is_private: "false",
-  shopping_tab_displayed: "false",
-  is_signed_in: "false",
-};
-
 const SERP_URL = getSERPUrl("searchTelemetryAd_searchbox_with_content.html");
 
 async function replaceIncludedProperty(included) {
@@ -97,14 +85,11 @@ add_task(async function test_click_link_1_matching_ignore_link_regexps() {
 
   assertSERPTelemetry([
     {
-      impression: IMPRESSION,
       abandonment: {
         reason: SearchSERPTelemetryUtils.ABANDONMENTS.NAVIGATION,
       },
     },
-    {
-      impression: IMPRESSION,
-    },
+    {},
   ]);
 
   await cleanup();
@@ -127,14 +112,11 @@ add_task(async function test_click_link_2_matching_ignore_link_regexps() {
 
   assertSERPTelemetry([
     {
-      impression: IMPRESSION,
       abandonment: {
         reason: SearchSERPTelemetryUtils.ABANDONMENTS.NAVIGATION,
       },
     },
-    {
-      impression: IMPRESSION,
-    },
+    {},
   ]);
 
   await cleanup();
@@ -157,7 +139,6 @@ add_task(async function test_click_link_3_not_matching_ignore_link_regexps() {
 
   assertSERPTelemetry([
     {
-      impression: IMPRESSION,
       engagements: [
         {
           action: "clicked",
@@ -165,9 +146,7 @@ add_task(async function test_click_link_3_not_matching_ignore_link_regexps() {
         },
       ],
     },
-    {
-      impression: IMPRESSION,
-    },
+    {},
   ]);
 
   await cleanup();
@@ -215,7 +194,6 @@ add_task(async function test_click_listener_with_ignore_link_regexps() {
 
   assertSERPTelemetry([
     {
-      impression: IMPRESSION,
       engagements: [
         {
           action: "clicked",
@@ -223,9 +201,7 @@ add_task(async function test_click_listener_with_ignore_link_regexps() {
         },
       ],
     },
-    {
-      impression: IMPRESSION,
-    },
+    {},
   ]);
 
   await cleanup();

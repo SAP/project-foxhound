@@ -21,7 +21,7 @@ namespace mozilla {
 namespace layers {
 
 TextureWrapperD3D11Allocator::TextureWrapperD3D11Allocator()
-    : mThread(SharedThreadPool::Get("TextureUpdate"_ns, 1)),
+    : mThread(SharedThreadPool::Get("TextureUpdate", 1)),
       mMutex("TextureWrapperD3D11Allocator::mMutex") {}
 TextureWrapperD3D11Allocator::~TextureWrapperD3D11Allocator() = default;
 

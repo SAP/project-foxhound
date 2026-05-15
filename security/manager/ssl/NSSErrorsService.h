@@ -5,7 +5,6 @@
 #ifndef NSSErrorsService_h
 #define NSSErrorsService_h
 
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsILineInputStream.h"
 #include "nsINSSErrorsService.h"

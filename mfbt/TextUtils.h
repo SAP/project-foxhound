@@ -43,12 +43,10 @@ inline constexpr bool IsAscii(char aChar) {
   return IsAscii(static_cast<unsigned char>(aChar));
 }
 
-#ifdef __cpp_char8_t
 /** Returns true iff |aChar| is ASCII, i.e. in the range [0, 0x80). */
 inline constexpr bool IsAscii(char8_t aChar) {
   return IsAscii(static_cast<unsigned char>(aChar));
 }
-#endif
 
 /** Returns true iff |aChar| is ASCII, i.e. in the range [0, 0x80). */
 inline constexpr bool IsAscii(char16_t aChar) { return aChar < 0x80; }
@@ -269,7 +267,7 @@ constexpr bool IsAsciiAlphanumeric(Char aChar) {
  * (This function therefore works for decimal, hexadecimal, etc.).
  */
 template <typename Char>
-uint8_t AsciiAlphanumericToNumber(Char aChar) {
+constexpr uint8_t AsciiAlphanumericToNumber(Char aChar) {
   using UnsignedChar = typename detail::MakeUnsignedChar<Char>::Type;
   auto uc = static_cast<UnsignedChar>(aChar);
 
@@ -281,11 +279,7 @@ uint8_t AsciiAlphanumericToNumber(Char aChar) {
     return uc - 'A' + 10;
   }
 
-  // Ideally this function would be constexpr, but unfortunately gcc at least as
-  // of 6.4 forbids non-constexpr function calls in unevaluated constexpr
-  // function calls.  See bug 1453456.  So for now, just assert and leave the
-  // entire function non-constexpr.
-  MOZ_ASSERT('a' <= uc && uc <= 'z',
+  MOZ_ASSERT(IsAsciiLowercaseAlpha(aChar),
              "non-ASCII alphanumeric character can't be converted to number");
   return uc - 'a' + 10;
 }

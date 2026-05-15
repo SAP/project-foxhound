@@ -5,7 +5,6 @@
 Transform the signing task into an actual task description.
 """
 
-
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 

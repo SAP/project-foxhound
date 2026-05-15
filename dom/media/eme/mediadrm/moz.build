@@ -7,13 +7,37 @@
 EXPORTS.mozilla += [
     "MediaDrmCDMCallbackProxy.h",
     "MediaDrmCDMProxy.h",
+    "MediaDrmProvisioningHelper.h",
     "MediaDrmProxySupport.h",
+    "MediaDrmRemoteCDMParent.h",
 ]
 
 UNIFIED_SOURCES += [
     "MediaDrmCDMCallbackProxy.cpp",
     "MediaDrmCDMProxy.cpp",
+    "MediaDrmProvisioningHelper.cpp",
     "MediaDrmProxySupport.cpp",
+    "MediaDrmRemoteCDMParent.cpp",
 ]
+
+XPIDL_SOURCES += [
+    "nsIMediaDrmProvisioning.idl",
+]
+
+XPIDL_MODULE = "dom_media"
+
+EXTRA_JS_MODULES.media += [
+    "MediaDrmProvisioning.sys.mjs",
+]
+
+XPCOM_MANIFESTS += [
+    "components.conf",
+]
+
+OS_LIBS += [
+    "mediandk",
+]
+
+include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"

@@ -19,25 +19,22 @@ const flags = require("resource://devtools/shared/flags.js");
  *
  * This transport exchanges messages named 'debug:<prefix>:packet', where
  * <prefix> is |prefix|, whose data is the protocol packet.
- */
-function ChildDebuggerTransport(mm, prefix) {
-  this._mm = mm;
-  this._messageName = "debug:" + prefix + ":packet";
-}
-
-/*
+ *
  * To avoid confusion, we use 'message' to mean something that
  * nsIMessageSender conveys, and 'packet' to mean a remote debugging
  * protocol packet.
  */
-ChildDebuggerTransport.prototype = {
-  constructor: ChildDebuggerTransport,
+class ChildDebuggerTransport {
+  constructor(mm, prefix) {
+    this._mm = mm;
+    this._messageName = "debug:" + prefix + ":packet";
+  }
 
-  hooks: null,
+  hooks = null;
 
   _addListener() {
     this._mm.addMessageListener(this._messageName, this);
-  },
+  }
 
   _removeListener() {
     try {
@@ -50,22 +47,22 @@ ChildDebuggerTransport.prototype = {
       // this point with a dead messageManager which only throws errors but does not
       // seem to indicate in any other way that it is dead.
     }
-  },
+  }
 
   ready() {
     this._addListener();
-  },
+  }
 
   close(options) {
     this._removeListener();
     if (this.hooks.onTransportClosed) {
       this.hooks.onTransportClosed(null, options);
     }
-  },
+  }
 
   receiveMessage({ data }) {
     this.hooks.onPacket(data);
-  },
+  }
 
   /**
    * Helper method to ensure a given `object` can be sent across message manager
@@ -84,7 +81,7 @@ ChildDebuggerTransport.prototype = {
       return false;
     }
     return true;
-  },
+  }
 
   pathToUnserializable(object) {
     for (const key in object) {
@@ -97,7 +94,7 @@ ChildDebuggerTransport.prototype = {
       }
     }
     return [];
-  },
+  }
 
   send(packet) {
     if (flags.testing && !this._canBeSerialized(packet)) {
@@ -118,11 +115,11 @@ ChildDebuggerTransport.prototype = {
       // this point with a dead messageManager which only throws errors but does not
       // seem to indicate in any other way that it is dead.
     }
-  },
+  }
 
   startBulkSend() {
     throw new Error("Can't send bulk data to child processes.");
-  },
-};
+  }
+}
 
 exports.ChildDebuggerTransport = ChildDebuggerTransport;

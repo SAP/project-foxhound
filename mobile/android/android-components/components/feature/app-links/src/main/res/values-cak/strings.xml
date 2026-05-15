@@ -1,11 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  ~ This Source Code Form is subject to the terms of the Mozilla Public
+  ~ License, v. 2.0. If a copy of the MPL was not distributed with this
+  ~ file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The tile for the list of external apps to open the link in -->
   <string name="mozac_feature_applinks_open_in">Tijaq pa…</string>
   <!-- The description to warn users that their private browsing session changes -->
   <string name="mozac_feature_applinks_confirm_dialog_title">¿La nijaq pa ri chokoy? Rik\'in jub\'a\' man xtichinäx ta chik ri asamaj.</string>
+  <!--
+    The description to warn users that their private browsing session changes
+    %s is a placeholder that will be replaced by an app name
+  -->
+  <string name="mozac_feature_applinks_confirm_dialog_title_with_app_name">¿La nijaq pa ri %s? Rik\'in jub\'a\' man xtichinäx ta chik ri asamaj.</string>
   <!-- The title of the prompt that warns users their normal browsing session is trying to open another app -->
   <string name="mozac_feature_applinks_normal_confirm_dialog_title">Tijaq pa jun chik chokoy</string>
+  <!--
+    The title of the prompt that warns users their normal browsing session is trying to open another app
+    %s is a placeholder that will be replaced by an app name
+  -->
+  <string name="mozac_feature_applinks_normal_confirm_dialog_title_with_app_name">Tijaq pa %s</string>
   <!--
     The message of the prompt to confirm with users that they want to open the link in another app
     %s is a placeholder that will be replaced by the app name
@@ -15,4 +32,6 @@
   <string name="mozac_feature_applinks_confirm_dialog_confirm">Tijaq</string>
   <!-- Cancels the prompt -->
   <string name="mozac_feature_applinks_confirm_dialog_deny">Tiq\'at</string>
+  <!-- The label of the checkbox that, depending of user's choice, can change the Open links in apps setting -->
+  <string name="mozac_feature_applinks_confirm_dialog_checkbox_label">Junelik kejaq taq ximonel pa taq chokoy</string>
 </resources>

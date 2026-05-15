@@ -6,9 +6,10 @@
 #if !defined(BufferMediaResource_h_)
 #  define BufferMediaResource_h_
 
+#  include <algorithm>
+
 #  include "MediaResource.h"
 #  include "nsISeekableStream.h"
-#  include <algorithm>
 
 namespace mozilla {
 

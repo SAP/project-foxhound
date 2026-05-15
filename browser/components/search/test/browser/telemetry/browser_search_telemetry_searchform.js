@@ -130,7 +130,7 @@ add_task(async function test_appProvidedUrlbar() {
   info("Choose Second Engine in the unified search button popup.");
   let item = popup.querySelector('menuitem[label="Second Engine"]');
   let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
-  EventUtils.synthesizeMouseAtCenter(item, { shiftKey: true });
+  popup.activateItem(item, { shiftKey: true });
   await popupHidden;
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
@@ -149,7 +149,7 @@ add_task(async function test_extensionUrlbar() {
   info("Choose extension engine in the unified search button popup.");
   let item = popup.querySelector(`menuitem[label="${TEST_ENGINE_NAME}"]`);
   let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
-  EventUtils.synthesizeMouseAtCenter(item, { shiftKey: true });
+  popup.activateItem(item, { shiftKey: true });
   await popupHidden;
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 
@@ -172,7 +172,7 @@ add_task(async function test_actualSearchUrlbar() {
   info("Shift-click Second Engine in the unified search button popup.");
   let item = popup.querySelector('menuitem[label="Second Engine"]');
   let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
-  EventUtils.synthesizeMouseAtCenter(item, { shiftKey: true });
+  popup.activateItem(item, { shiftKey: true });
   await popupHidden;
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 

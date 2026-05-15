@@ -36,6 +36,10 @@ add_setup(async function () {
   MockFilePicker.useAnyFile();
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
+
   registerCleanupFunction(() => {
     MockFilePicker.cleanup();
     LoginTestUtils.clearData();

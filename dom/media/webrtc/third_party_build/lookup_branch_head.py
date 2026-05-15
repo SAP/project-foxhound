@@ -13,6 +13,9 @@ default_cache_path = ".moz-fast-forward/milestone.cache"
 
 
 def fetch_branch_head_dict():
+    # The milestone dictionary was found by opening the Mozilla dev
+    # tools network tab and loading page
+    # https://chromiumdash.appspot.com/branches
     milestone_url = (
         "https://chromiumdash.appspot.com/fetch_milestones?only_branched=true"
     )
@@ -33,6 +36,44 @@ def fetch_branch_head_dict():
         new_dict[row["milestone"]] = row["webrtc_branch"]
 
     return new_dict
+
+
+def fetch_branch_schedule_dict():
+    # The milestone schedule dictionary was found by opening the Mozilla
+    # dev tools network tab and loading page
+    # https://chromiumdash.appspot.com/schedule
+    milestone_schedule_url = (
+        "https://chromiumdash.appspot.com/fetch_milestone_schedule?offset=-1&n=4"
+    )
+    uf = urllib.request.urlopen(milestone_schedule_url)
+    html = uf.read()
+    schedule_dict = json.loads(html)
+
+    # There is more information in the json dictionary, but we only care
+    # about the mstone (version) to branch_point date info.  For example:
+    # v138 -> 2025-05-26T00:00:00
+    # v139 -> 2025-06-23T00:00:00
+    # v140 -> 2025-08-04T00:00:00
+    #
+    # As returned from web query, milestones are integers and branch_point
+    # dates are strings.
+    new_dict = {}
+    for row in schedule_dict["mstones"]:
+        new_dict[row["mstone"]] = row["branch_point"]
+
+    return new_dict
+
+
+def get_branch_date(milestone):
+    milestone_dates = {}
+    try:
+        milestone_dates = fetch_branch_schedule_dict()
+    except Exception:
+        pass
+
+    if milestone in milestone_dates:
+        return milestone_dates[milestone]
+    return None
 
 
 def read_dict_from_cache(cache_path):

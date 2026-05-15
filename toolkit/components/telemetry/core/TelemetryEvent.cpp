@@ -73,20 +73,15 @@ struct EventMarker {
   using MS = mozilla::MarkerSchema;
   static MS MarkerTypeDisplay() {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable("cat", "Category",
-                                       MS::Format::UniqueString,
-                                       MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable(
-        "met", "Method", MS::Format::UniqueString, MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable(
-        "obj", "Object", MS::Format::UniqueString, MS::Searchable::Searchable);
-    schema.AddKeyLabelFormatSearchable("val", "Value", MS::Format::String,
-                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("cat", "Category", MS::Format::UniqueString);
+    schema.AddKeyLabelFormat("met", "Method", MS::Format::UniqueString);
+    schema.AddKeyLabelFormat("obj", "Object", MS::Format::UniqueString);
+    schema.AddKeyLabelFormat("val", "Value", MS::Format::String);
     schema.SetTooltipLabel(
         "{marker.data.cat}.{marker.data.met}#{marker.data.obj} "
         "{marker.data.val}");
     schema.SetTableLabel(
-        "{marker.name} - {marker.data.cat}.{marker.data.met}#"
+        "{marker.data.cat}.{marker.data.met}#"
         "{marker.data.obj} {marker.data.val}");
     return schema;
   }
@@ -474,10 +469,6 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
   if (!CanRecordEvent(lock, eventKey, processType)) {
     return RecordEventResult::CannotRecord;
   }
-
-  // Count the number of times this event has been recorded.
-  TelemetryScalar::SummarizeEvent(UniqueEventName(category, method, object),
-                                  processType);
 
   EventRecordArray* eventRecords = GetEventRecordsForProcess(lock, processType);
   eventRecords->AppendElement(EventRecord(timestamp, eventKey, value, extra));

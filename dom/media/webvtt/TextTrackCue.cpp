@@ -5,13 +5,13 @@
 
 #include "mozilla/dom/TextTrackCue.h"
 
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLTrackElement.h"
 #include "mozilla/dom/TextTrackList.h"
 #include "mozilla/dom/TextTrackRegion.h"
-#include "nsComponentManagerUtils.h"
-#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/intl/Bidi.h"
+#include "nsComponentManagerUtils.h"
 #include "nsGlobalWindowInner.h"
 
 extern mozilla::LazyLogModule gTextTrackLog;

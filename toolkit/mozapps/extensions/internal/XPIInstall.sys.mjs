@@ -82,7 +82,7 @@ const ZipReader = Components.Constructor(
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  gCertDB: ["@mozilla.org/security/x509certdb;1", "nsIX509CertDB"],
+  gCertDB: ["@mozilla.org/security/x509certdb;1", Ci.nsIX509CertDB],
 });
 
 const PREF_INSTALL_REQUIRESECUREORIGIN =
@@ -99,6 +99,8 @@ const PREF_XPI_WEAK_SIGNATURES_ALLOWED =
 const PREF_SELECTED_THEME = "extensions.activeThemeID";
 
 const TOOLKIT_ID = "toolkit@mozilla.org";
+const TOPIC_GOING_OFFLINE = "network:offline-about-to-go-offline";
+const TOPIC_QUIT_GRANTED = "quit-application-granted";
 
 ChromeUtils.defineLazyGetter(lazy, "MOZ_UNSIGNED_SCOPES", () => {
   let result = 0;
@@ -1121,12 +1123,10 @@ function writeStringToFile(file, string) {
  */
 function SafeInstallOperation() {
   this._installedFiles = [];
-  this._createdDirs = [];
 }
 
 SafeInstallOperation.prototype = {
   _installedFiles: null,
-  _createdDirs: null,
 
   _installFile(aFile, aTargetDirectory, aCopy) {
     let oldFile = aCopy ? null : aFile.clone();
@@ -1239,10 +1239,6 @@ SafeInstallOperation.prototype = {
         move.newFile.moveTo(move.oldFile.parent, null);
       }
     }
-
-    while (this._createdDirs.length) {
-      recursiveRemove(this._createdDirs.pop());
-    }
   },
 };
 
@@ -1262,7 +1258,7 @@ class AddonInstall {
    * @param {nsIURL} url
    *        The nsIURL to get the add-on from. If this is an nsIFileURL then
    *        the add-on will not need to be downloaded
-   * @param {Object} [options = {}]
+   * @param {object} [options = {}]
    *        Additional options for the install
    * @param {string} [options.hash]
    *        An optional hash for the add-on
@@ -1277,7 +1273,7 @@ class AddonInstall {
    * @param {string} [options.version]
    *        The expected version for the add-on.
    *        Required for updates, i.e. when existingAddon is set.
-   * @param {Object?} [options.telemetryInfo]
+   * @param {object?} [options.telemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [options.isUserRequestedUpdate]
@@ -1456,7 +1452,7 @@ class AddonInstall {
         this._callInstallListeners("onDownloadCancelled");
         this.removeTemporaryFile();
         break;
-      case AddonManager.STATE_POSTPONED:
+      case AddonManager.STATE_POSTPONED: {
         logger.debug(`Cancelling postponed install of ${this.addon.id}`);
         this.state = AddonManager.STATE_CANCELLED;
         this._cleanup();
@@ -1466,11 +1462,21 @@ class AddonInstall {
         );
         this.removeTemporaryFile();
 
+        const stagedInstall = AppUpdate._stagedLangpacks.get(this.addon.id);
+        if (stagedInstall && stagedInstall !== this) {
+          // File path is owned by another AddonInstall (langpack). To avoid
+          // removing the wrong file or database entry, skip unstage.
+          logger.debug(`Skipping unstageInstall for obsolete AddonInstall`);
+          return;
+        }
+
         let stagingDir = this.location.installer.getStagingDir();
         let stagedAddon = stagingDir.clone();
 
+        // Note: unstageInstall is async!
         this.unstageInstall(stagedAddon);
         break;
+      }
       default:
         throw new Error(
           "Cannot cancel install of " +
@@ -1806,6 +1812,11 @@ class AddonInstall {
             this._callInstallListeners("onInstallFailed");
           } else {
             logger.info(`Install of ${this.addon.id} cancelled by user`);
+            if (err) {
+              // promptHandler is expected to reject() without value to cancel.
+              // A non-void error is unexpected, so log it for visibility.
+              Cu.reportError(err);
+            }
             this.state = AddonManager.STATE_CANCELLED;
             this._cleanup();
             this._callInstallListeners(
@@ -1909,15 +1920,15 @@ class AddonInstall {
       false
     );
 
-    let stagedAddon = this.location.installer.getStagingDir();
+    const stagingDir = this.location.installer.getStagingDir();
+    const stagedAddon = stagingDir.clone();
+    stagedAddon.append(`${this.addon.id}.xpi`);
 
     try {
       await this.location.installer.requestStagingDir();
 
       // remove any previously staged files
-      await this.unstageInstall(stagedAddon);
-
-      stagedAddon.append(`${this.addon.id}.xpi`);
+      await this.unstageInstall(stagingDir);
 
       await this.stageInstall(false, stagedAddon, isSameLocation);
 
@@ -2100,9 +2111,82 @@ class AddonInstall {
   async unstageInstall(stagingDir) {
     this.location.unstageAddon(this.addon.id);
 
+    // We do not create this directory, but we used to. This is only kept
+    // around to make sure that the directory is eventually cleaned up of stale
+    // entries. See https://bugzilla.mozilla.org/show_bug.cgi?id=2006512#c4
+    // TODO bug 2010271: Remove this in favor of an infrequent cleanup task.
     await removeAsync(getFile(this.addon.id, stagingDir));
 
     await removeAsync(getFile(`${this.addon.id}.xpi`, stagingDir));
+  }
+
+  /**
+   * Rename the staged XPI associated with this install, to prevent another
+   * installation from overwriting it (see bug 2006489).
+   *
+   * @see restoreStagedInstall
+   */
+  backupStagedInstall() {
+    if (this._backupStagedAddon) {
+      logger.warn(
+        `Unexpected double attempt to back up staged langpack ${this.addon.id}`
+      );
+      return;
+    }
+    const stagedAddon = this.location.installer.getStagingDir();
+    stagedAddon.append(`${this.addon.id}.xpi`);
+    try {
+      // Rename file. This will be restored when the install completes. If for
+      // some reason the application crashes or quits before we get there, this
+      // file will be left behind.
+      //
+      // TODO bug 2010271: Periodically remove stale addonid~bak.xpi files.
+      //
+      // "~" as separator because it is never a part of an addon ID.
+      stagedAddon.moveTo(null, `${this.addon.id}~bak.xpi`);
+      this._backupStagedAddon = stagedAddon;
+    } catch (e) {
+      logger.warn(`Failed to rename staged langpack ${this.addon.id}`, e);
+    }
+  }
+
+  /**
+   * Undo the rename of backupStagedInstall(). This should be called when there
+   * are no other uses of the original file name.
+   *
+   * @see backupStagedInstall
+   * @see stageInstall
+   */
+  restoreStagedInstall() {
+    if (this._backupStagedAddon) {
+      try {
+        // Restore file and metadata, matching the logic from stageInstall().
+        this._backupStagedAddon.moveTo(null, `${this.addon.id}.xpi`);
+        this._backupStagedAddon = null;
+        this.location.stageAddon(this.addon.id, this.addon.toJSON());
+      } catch (e) {
+        logger.warn(`Failed to restore staged langpack ${this.addon.id}`, e);
+        this._backupStagedAddon = null;
+      }
+    }
+  }
+
+  /**
+   * Remove the staged file without restoring it. This should be called when
+   * the file has become obsolete, e.g. due to a newer version of the XPI.
+   *
+   * @see backupStagedInstall
+   * @see restoreStagedInstall
+   */
+  deleteBackupStagedInstall() {
+    if (this._backupStagedAddon) {
+      try {
+        this._backupStagedAddon.remove(false);
+      } catch (e) {
+        logger.warn(`Failed to delete staged langpack ${this.addon.id}`, e);
+      }
+      this._backupStagedAddon = null;
+    }
   }
 
   /**
@@ -2171,11 +2255,12 @@ class AddonInstall {
       case "onDownloadCancelled":
       case "onDownloadFailed":
       case "onInstallCancelled":
-      case "onInstallFailed":
+      case "onInstallFailed": {
         let rej = Promise.reject(new Error(`Install failed: ${event}`));
         rej.catch(() => {});
         this._resolveInstallPromise(rej);
         break;
+      }
       case "onInstallEnded":
         this._resolveInstallPromise(
           Promise.resolve(this._startupPromise).then(() => args[0])
@@ -2336,7 +2421,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    *        The XPIStateLocation the add-on will be installed into
    * @param {nsIURL} url
    *        The nsIURL to get the add-on from
-   * @param {Object} [options = {}]
+   * @param {object} [options = {}]
    *        Additional options for the install
    * @param {string} [options.hash]
    *        An optional hash for the add-on
@@ -2351,7 +2436,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    *        An optional name for the add-on
    * @param {string} [options.type]
    *        An optional type for the add-on
-   * @param {Object} [options.icons]
+   * @param {object} [options.icons]
    *        Optional icons for the add-on
    * @param {string} [options.version]
    *        The expected version for the add-on.
@@ -2417,16 +2502,18 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  observe() {
-    // Network is going offline
-    this.cancel();
+  observe(_subject, topic, _data) {
+    if (topic == TOPIC_GOING_OFFLINE || topic == TOPIC_QUIT_GRANTED) {
+      // Network is going offline, or we're shutting down
+      this.cancel();
+    }
   }
 
   /**
    * Starts downloading the add-on's XPI file.
    */
   startDownload() {
-    this.downloadStartedAt = Cu.now();
+    this.downloadStartedAt = ChromeUtils.now();
 
     this.state = AddonManager.STATE_DOWNLOADING;
     if (!this._callInstallListeners("onDownloadStarted")) {
@@ -2508,7 +2595,8 @@ var DownloadAddonInstall = class extends AddonInstall {
       }
       this.channel.asyncOpen(listener);
 
-      Services.obs.addObserver(this, "network:offline-about-to-go-offline");
+      Services.obs.addObserver(this, TOPIC_GOING_OFFLINE);
+      Services.obs.addObserver(this, TOPIC_QUIT_GRANTED);
     } catch (e) {
       logger.warn(
         "Failed to start download for addon " + this.sourceURI.spec,
@@ -2521,7 +2609,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * Update the crypto hasher with the new data and call the progress listeners.
    *
    * @see nsIStreamListener
@@ -2534,7 +2622,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * Check the redirect response for a hash of the target XPI and verify that
    * we don't end up on an insecure channel.
    *
@@ -2572,7 +2660,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     this.channel = aNewChannel;
   }
 
-  /*
+  /**
    * This is the first chance to get at real headers on the channel.
    *
    * @see nsIStreamListener
@@ -2616,7 +2704,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * The download is complete.
    *
    * @see nsIStreamListener
@@ -2625,7 +2713,8 @@ var DownloadAddonInstall = class extends AddonInstall {
     this.stream.close();
     this.channel = null;
     this.badCerthandler = null;
-    Services.obs.removeObserver(this, "network:offline-about-to-go-offline");
+    Services.obs.removeObserver(this, TOPIC_GOING_OFFLINE);
+    Services.obs.removeObserver(this, TOPIC_QUIT_GRANTED);
 
     let crypto = this.crypto;
     this.crypto = null;
@@ -2651,9 +2740,8 @@ var DownloadAddonInstall = class extends AddonInstall {
       return;
     }
 
-    logger.debug("Download of " + this.sourceURI.spec + " completed.");
-
     if (Components.isSuccessCode(aStatus)) {
+      logger.debug(`Download of ${this.sourceURI.spec} completed.`);
       if (
         !(aRequest instanceof Ci.nsIHttpChannel) ||
         aRequest.requestSucceeded
@@ -2834,7 +2922,7 @@ var DownloadAddonInstall = class extends AddonInstall {
  *        The callback to pass the new AddonInstall to
  * @param {AddonInternal} aAddon
  *        The add-on being updated
- * @param {Object} aUpdate
+ * @param {object} aUpdate
  *        The metadata about the new version from the update manifest
  * @param {boolean} isUserRequested
  *        An optional boolean, true if the install object is related to a user triggered update.
@@ -3059,6 +3147,18 @@ export var UpdateChecker = function (
     } else {
       updateURL = Services.prefs.getCharPref(PREF_EM_UPDATE_URL);
     }
+  } else {
+    // Ensure that add-ons from the China repack can update (bug 1990806).
+    const UPDATE_URL_CN_OLD =
+      "https://addons.firefox.com.cn/chinaedition/addons/updates.json";
+    const UPDATE_URL_CN_NEW =
+      "https://archive.mozilla.org/pub/cn_pack/addons.json";
+    if (updateURL.startsWith(UPDATE_URL_CN_OLD)) {
+      logger.warn(
+        `update_url changed for add-on ${aAddon.id} version ${aAddon.version}, from ${updateURL} to ${UPDATE_URL_CN_NEW}`
+      );
+      updateURL = UPDATE_URL_CN_NEW;
+    }
   }
 
   const UPDATE_TYPE_COMPATIBILITY = 32;
@@ -3263,7 +3363,7 @@ UpdateChecker.prototype = {
  *        The file to install
  * @param {XPIStateLocation} location
  *        The location to install to
- * @param {Object?} [telemetryInfo]
+ * @param {object?} [telemetryInfo]
  *        An optional object which provides details about the installation source
  *        included in the addon manager telemetry events.
  * @returns {Promise<AddonInstall>}
@@ -3450,7 +3550,7 @@ class DirectoryInstaller {
   /**
    * Installs an add-on into the install location.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Installation options.
    * @param {string} options.id
    *        The ID of the add-on to install
@@ -3474,6 +3574,8 @@ class DirectoryInstaller {
     let transaction = new SafeInstallOperation();
 
     let moveOldAddon = aId => {
+      // We do not create unpacked directories any more since bug 1457072. This
+      // `aId` removal logic could be removed or replaced (bug 2010271).
       let file = getFile(aId, this.dir);
       if (file.exists()) {
         transaction.moveUnder(file, trashDir);
@@ -3541,6 +3643,11 @@ class DirectoryInstaller {
   uninstallAddon(aId) {
     let file = getFile(aId, this.dir);
     if (!file.exists()) {
+      // TODO: We should unconditionally look at `${aId}.xpi` without first
+      // checking the directory without suffix, because support for unpacked
+      // installs was removd a long time ago (bug 1457072). If there is any
+      // concern about directories left behind, the removal could be added
+      // elsewhere (bug 2010271).
       file.leafName += ".xpi";
     }
 
@@ -3603,7 +3710,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
   /**
    * Saves the current set of system add-ons
    *
-   * @param {Object} aAddonSet - object containing schema, directory and set
+   * @param {object} aAddonSet - object containing schema, directory and set
    *                 of system add-on IDs and versions.
    */
   static _saveAddonSet(aAddonSet) {
@@ -4049,10 +4156,59 @@ var AppUpdate = {
     });
   },
 
-  stageInstall(installer) {
+  // Map from addon ID to AddonInstall of langpacks staged for next startup.
+  _stagedLangpacks: new Map(),
+  _conflictingInstalls: null,
+  _ensurePersistentStagedLangpack() {
+    // stageLangpacksForAppUpdate may stage a langpack for the next application
+    // update, because langpacks are compatible with specific major versions
+    // only. But if an update check finds another langpack compatible with the
+    // current version, the previously staged langpack would be overwritten,
+    // because AddonInstall instances with the same ID share the same file path.
+    // To avoid the loss of langpacks, temporarily rename the file, then restore
+    // it upon completion of the installation (bug 2006489).
+    if (this._conflictingInstalls) {
+      return;
+    }
+    this._conflictingInstalls = new Set();
+    const restoreStagedIfNeeded = install => {
+      if (this._conflictingInstalls.delete(install)) {
+        const stagedInstall = this._stagedLangpacks.get(install.addon.id);
+        stagedInstall.restoreStagedInstall();
+      }
+    };
+    const globalInstallListener = {
+      onInstallStarted: install => {
+        const stagedInstall = this._stagedLangpacks.get(install.addon.id);
+        if (stagedInstall && stagedInstall !== install) {
+          this._conflictingInstalls.add(install);
+          stagedInstall.backupStagedInstall();
+        }
+      },
+      onInstallCancelled: install => {
+        restoreStagedIfNeeded(install);
+      },
+      onInstallFailed: install => {
+        restoreStagedIfNeeded(install);
+      },
+      onInstallEnded: install => {
+        restoreStagedIfNeeded(install);
+      },
+    };
+    AddonManager.addInstallListener(globalInstallListener);
+  },
+
+  stageLangpackInstall(installer) {
     return new Promise((resolve, reject) => {
       let listener = {
         onDownloadEnded: install => {
+          const stagedInstall = this._stagedLangpacks.get(install.addon.id);
+          if (stagedInstall) {
+            // Found a new version of a previously staged langpack. We don't
+            // care about the previous one any more.
+            stagedInstall.deleteBackupStagedInstall();
+            this._stagedLangpacks.delete(install.addon.id);
+          }
           install.postpone();
         },
         onInstallFailed: install => {
@@ -4068,6 +4224,10 @@ var AppUpdate = {
         onInstallPostponed: install => {
           // At this point the addon is staged for restart.
           install.removeListener(listener);
+
+          this._stagedLangpacks.set(install.addon.id, installFor(install));
+          this._ensurePersistentStagedLangpack();
+
           resolve();
         },
       };
@@ -4088,7 +4248,7 @@ var AppUpdate = {
           nextVersion,
           nextPlatformVersion
         )
-          .then(update => update && this.stageInstall(update))
+          .then(update => update && this.stageLangpackInstall(update))
           .catch(e => {
             logger.debug(`addon.findUpdate error: ${e}`);
           })
@@ -4565,13 +4725,13 @@ export var XPIInstall = {
    *        A hash for the install
    * @param {string} [aOptions.name]
    *        A name for the install
-   * @param {Object} [aOptions.icons]
+   * @param {object} [aOptions.icons]
    *        Icon URLs for the install
    * @param {string} [aOptions.version]
    *        A version for the install
    * @param {XULElement} [aOptions.browser]
    *        The browser performing the install
-   * @param {Object} [aOptions.telemetryInfo]
+   * @param {object} [aOptions.telemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [aOptions.sendCookies = false]
@@ -4609,7 +4769,7 @@ export var XPIInstall = {
    *
    * @param {nsIFile} aFile
    *        The file to be installed
-   * @param {Object?} [aInstallTelemetryInfo]
+   * @param {object?} [aInstallTelemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [aUseSystemLocation = false]
@@ -4884,23 +5044,6 @@ export var XPIInstall = {
     let wasPending = aAddon.pendingUninstall;
 
     if (aForcePending) {
-      // We create an empty directory in the staging directory to indicate
-      // that an uninstall is necessary on next startup. Temporary add-ons are
-      // automatically uninstalled on shutdown anyway so there is no need to
-      // do this for them.
-      if (!aAddon.location.isTemporary && aAddon.location.installer) {
-        let stage = getFile(
-          aAddon.id,
-          aAddon.location.installer.getStagingDir()
-        );
-        if (!stage.exists()) {
-          stage.create(
-            Ci.nsIFile.DIRECTORY_TYPE,
-            lazy.FileUtils.PERMS_DIRECTORY
-          );
-        }
-      }
-
       XPIExports.XPIDatabase.setAddonProperties(aAddon, {
         pendingUninstall: true,
       });
@@ -5007,10 +5150,6 @@ export var XPIInstall = {
     }
     if (!aAddon.pendingUninstall) {
       throw new Error("Add-on is not marked to be uninstalled");
-    }
-
-    if (!aAddon.location.isTemporary && aAddon.location.installer) {
-      aAddon.location.installer.cleanStagingDir([aAddon.id]);
     }
 
     XPIExports.XPIDatabase.setAddonProperties(aAddon, {

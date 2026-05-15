@@ -198,11 +198,13 @@ add_task(
 );
 
 add_task(async function test_search_config_override_validates_to_schema() {
-  let selector = new SearchEngineSelector(() => {});
+  let collectionData = await RemoteSettings(
+    SearchUtils.SETTINGS_OVERRIDES_KEY
+  ).get();
 
   await assertSearchConfigValidates({
     collectionName: "search-config-overrides-v2",
-    collectionData: await selector.getEngineConfigurationOverrides(),
+    collectionData,
     getEntryId: entry => entry.identifier,
   });
 });

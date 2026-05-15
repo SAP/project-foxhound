@@ -103,7 +103,7 @@ if (SpecialPowers.effectiveIsolationStrategy() == SpecialPowers.ISOLATION_STRATE
     name: "Loading OOP iframe",
     test: () => {
       return new Promise((resolve) => {
-        const el = document.body.appendChild(document.createElement("iframe"));
+        const el = document.createElement("iframe");
         el.id = "frame";
         addEventListener("message", ({ data }) => {
           if (data == "onload") {
@@ -111,6 +111,7 @@ if (SpecialPowers.effectiveIsolationStrategy() == SpecialPowers.ISOLATION_STRATE
           }
         });
         el.src = "https://example.com/tests/docshell/test/navigation/iframe_slow_onload.html";
+        document.body.appendChild(el);
       });
     },
     waitForDone: () => {

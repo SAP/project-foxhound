@@ -17,10 +17,10 @@
   // need selected to deal with the menulists (like `<select>`).
   const ITEM_NEEDS_GUTTER_SELECTOR = (() => {
     if (AppConstants.platform == "macosx") {
-      return "[checked=true], [selected=true]";
+      return "[checked], [selected]";
     }
     if (AppConstants.platform == "win") {
-      return "[checked=true]";
+      return "[checked]";
     }
     return "[type=checkbox], [type=radio]";
   })();

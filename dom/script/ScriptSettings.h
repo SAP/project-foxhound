@@ -9,14 +9,12 @@
 #ifndef mozilla_dom_ScriptSettings_h
 #define mozilla_dom_ScriptSettings_h
 
-#include "xpcpublic.h"
-
-#include "mozilla/dom/JSExecutionManager.h"
-#include "mozilla/Maybe.h"
-
-#include "jsapi.h"
 #include "js/Exception.h"
 #include "js/Warnings.h"  // JS::WarningReporter
+#include "jsapi.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/dom/JSExecutionManager.h"
+#include "xpcpublic.h"
 
 class JSObject;
 class nsIGlobalObject;

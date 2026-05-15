@@ -7,7 +7,7 @@ add_setup(async function () {
 });
 
 add_task(async function () {
-  /** Test for Bug 350525 **/
+  /** Test for Bug 350525 */
 
   function test(aLambda) {
     try {

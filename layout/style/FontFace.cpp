@@ -24,8 +24,7 @@
 #include "mozilla/dom/UnionTypes.h"
 #include "nsStyleUtil.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // -- Utility functions ------------------------------------------------------
 
@@ -71,9 +70,7 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(FontFace)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(FontFace)
 
-FontFace::FontFace(nsIGlobalObject* aParent) : mLoadedRejection(NS_OK) {
-  BindToOwner(aParent);
-}
+FontFace::FontFace(nsIGlobalObject* aParent) { BindToOwner(aParent); }
 
 FontFace::~FontFace() {
   // Assert that we don't drop any FontFace objects during a Servo traversal,
@@ -282,23 +279,38 @@ void FontFace::MaybeResolve() {
     return;
   }
 
+  if (NS_IsMainThread() && !nsContentUtils::IsSafeToRunScript()) {
+    nsContentUtils::AddScriptRunner(NewRunnableMethod(
+        "FontFace::MaybeResolve", this, &FontFace::MaybeResolve));
+    return;
+  }
+
   mLoaded->MaybeResolve(this);
 }
 
-void FontFace::MaybeReject(nsresult aResult) {
+void FontFace::MaybeReject(FontFaceLoadedRejectReason aReason,
+                           nsCString&& aMessage) {
   gfxFontUtils::AssertSafeThreadOrServoFontMetricsLocked();
 
   if (ServoStyleSet* ss = gfxFontUtils::CurrentServoStyleSet()) {
     // See comments in Gecko_GetFontMetrics.
-    ss->AppendTask(
-        PostTraversalTask::RejectFontFaceLoadedPromise(this, aResult));
+    ss->AppendTask(PostTraversalTask::RejectFontFaceLoadedPromise(
+        this, aReason, std::move(aMessage)));
     return;
   }
 
   if (mLoaded) {
-    mLoaded->MaybeReject(aResult);
-  } else if (mLoadedRejection == NS_OK) {
-    mLoadedRejection = aResult;
+    switch (aReason) {
+      case FontFaceLoadedRejectReason::Network:
+        mLoaded->MaybeRejectWithNetworkError(aMessage);
+        break;
+      case FontFaceLoadedRejectReason::Syntax:
+        mLoaded->MaybeRejectWithSyntaxError(aMessage);
+        break;
+    }
+  } else if (!mLoadedRejection) {
+    mLoadedRejection = MakeUnique<FontFaceLoadedRejection>(
+        FontFaceLoadedRejection{aReason, std::move(aMessage)});
   }
 }
 
@@ -307,15 +319,14 @@ void FontFace::EnsurePromise() {
     return;
   }
 
-  ErrorResult rv;
-  mLoaded = Promise::Create(GetOwnerGlobal(), rv);
+  mLoaded = Promise::CreateInfallible(GetOwnerGlobal());
 
   if (mImpl->Status() == FontFaceLoadStatus::Loaded) {
     mLoaded->MaybeResolve(this);
-  } else if (mLoadedRejection != NS_OK) {
-    mLoaded->MaybeReject(mLoadedRejection);
+  } else if (mLoadedRejection) {
+    auto rejection = std::move(mLoadedRejection);
+    MaybeReject(rejection->mReason, std::move(rejection->mMessage));
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

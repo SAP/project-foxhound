@@ -37,8 +37,6 @@ class nsClipboard final : public nsBaseClipboard {
                            NSString** aPasteboardType);
   static bool IsImageType(const nsACString& aMIMEType);
   static NSString* WrapHtmlForSystemPasteboard(NSString* aString);
-  static nsresult TransferableFromPasteboard(nsITransferable* aTransferable,
-                                             NSPasteboard* pboard);
   static mozilla::Result<nsCOMPtr<nsISupports>, nsresult> GetDataFromPasteboard(
       const nsACString& aFlavor, NSPasteboard* aPasteboard);
   mozilla::Result<int32_t, nsresult> GetNativeClipboardSequenceNumber(

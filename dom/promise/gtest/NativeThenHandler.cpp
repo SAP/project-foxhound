@@ -5,11 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "xpcpublic.h"
 
 using namespace mozilla;

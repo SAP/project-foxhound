@@ -6,6 +6,7 @@
 
 #include "nsISupports.idl"
 
+interface nsISHEntry;
 interface nsIURI;
 
 /**
@@ -85,4 +86,14 @@ interface nsISHistoryListener : nsISupports
    * @param aNumEvicted - number of content viewers evicted
    */
   void OnDocumentViewerEvicted(in unsigned long aNumEvicted);
+
+  /**
+   * Called whenever a session history update has been committed.
+   */
+  void OnHistoryCommit();
+
+  /**
+   * Called whenever a session history entry changes title.
+   */
+  void OnEntryTitleUpdated(in nsISHEntry aEntry);
 };

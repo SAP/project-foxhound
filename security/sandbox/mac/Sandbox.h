@@ -17,6 +17,7 @@ enum MacSandboxType {
   MacSandboxType_RDD,
   MacSandboxType_Socket,
   MacSandboxType_Utility,
+  MacSandboxType_GPU,
   MacSandboxType_Invalid
 };
 

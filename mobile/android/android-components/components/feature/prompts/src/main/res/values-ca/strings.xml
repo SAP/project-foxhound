@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">D’acord</string>
   <!-- Text for confirmation for a negative action in dialog. -->
@@ -52,6 +59,8 @@
   <string name="mozac_feature_prompts_deny">Denega</string>
   <!-- Text of the title of a dialog when a page is requesting to open a new window. -->
   <string name="mozac_feature_prompts_popup_dialog_title">Voleu permetre que s’obri aquest lloc?</string>
+  <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
+  <string name="mozac_feature_prompts_redirect_dialog_title">Voleu permetre que es redirigeixi a aquest lloc?</string>
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">Segur?</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
@@ -110,12 +119,8 @@
   <string name="mozac_feature_prompts_suggest_strong_password_use_password">Utilitza la contrasenya</string>
   <!-- Pressing this will dismiss the suggested strong password dialog -->
   <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Ara no</string>
-  <!-- Title for showing the suggest strong password saved confirmation snackbar -->
-  <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title" tools:ignore="UnusedResources" moz:removedIn="142">S’ha desat la contrasenya</string>
   <!-- Title for showing the suggest strong password updated confirmation snackbar -->
   <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">S’ha actualitzat la contrasenya</string>
-  <!-- Title for showing the username updated confirmation snackbar -->
-  <string name="mozac_feature_prompt_login_snackbar_username_updated" tools:ignore="UnusedResources" moz:removedIn="142">S’ha actualitzat el nom d’usuari</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">Voleu tornar a enviar les dades a aquest lloc?</string>
   <string name="mozac_feature_prompt_repost_message">Actualitzar aquesta pàgina pot provocar la repetició de les accions recents, com ara enviar un pagament o publicar un comentari dues vegades.</string>
@@ -123,6 +128,14 @@
   <string name="mozac_feature_prompt_repost_positive_button_text">Torna a enviar les dades</string>
   <!-- Pressing this will dismiss the dialog and not refresh the webpage -->
   <string name="mozac_feature_prompt_repost_negative_button_text">Cancel·la</string>
+  <!-- Strings show in a dialog that appear when user confirm folder upload -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_title">Voleu pujar els fitxers?</string>
+  <!-- Prompt message displayed when user selects a specific folder. %1$s is a folder / directory name. -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_message">Assegureu-vos que confieu en aquest lloc abans de pujar el fitxer des de «%1$s».</string>
+  <!-- Pressing this will dismiss the dialog and allow to upload folder -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_positive_button_text">Puja</string>
+  <!-- Pressing this will dismiss the dialog and disallow to upload folder -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_negative_button_text">Cancel·la</string>
   <!--
     Credit Card Autofill
 

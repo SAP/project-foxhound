@@ -6,10 +6,9 @@
 #ifndef mozilla_dom_DocumentInlines_h
 #define mozilla_dom_DocumentInlines_h
 
-#include "mozilla/dom/Document.h"
-
 #include "mozilla/PresShell.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "nsContentUtils.h"
 #include "nsPresContext.h"

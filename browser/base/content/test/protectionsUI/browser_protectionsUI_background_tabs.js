@@ -33,7 +33,10 @@ add_task(async function testBackgroundTabs() {
   let hasContentBlockingEvent = TestUtils.waitForCondition(
     () => browser.getContentBlockingEvents() != 0
   );
-  await promiseTabLoadEvent(backgroundTab, TRACKING_PAGE);
+  await BrowserTestUtils.loadURIString({
+    browser: backgroundTab.linkedBrowser,
+    uriString: TRACKING_PAGE,
+  });
   await hasContentBlockingEvent;
 
   is(

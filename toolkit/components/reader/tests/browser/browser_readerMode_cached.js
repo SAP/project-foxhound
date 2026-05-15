@@ -16,7 +16,7 @@ add_task(async function () {
     return content.document.getElementById("rnd").textContent;
   });
 
-  let promiseTabLoad = promiseTabLoadEvent(tab);
+  let promiseTabLoad = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
   let readerButton = document.getElementById("reader-mode-button");
   readerButton.click();
   await promiseTabLoad;

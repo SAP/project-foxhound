@@ -16,6 +16,7 @@
 #include "mozilla/TextUtils.h"
 #include "mozilla/AppShutdown.h"
 #include "nsHashKeys.h"
+#include "nsTHashtable.h"
 #include "nsThreadUtils.h"
 
 #include "nsAtom.h"
@@ -171,6 +172,34 @@ struct AtomTableKey {
 };
 
 struct AtomTableEntry : public PLDHashEntryHdr {
+  using KeyType = const AtomTableKey&;
+  using KeyTypePointer = const AtomTableKey*;
+
+  explicit AtomTableEntry(KeyTypePointer aKey) : mAtom(nullptr) {
+    // NOTE: We'll insert the entry with a null mAtom.
+    // It is only initialized by the caller.
+  }
+  AtomTableEntry(AtomTableEntry&&) = default;
+
+  // NOTE: GetKey cannot be implemented.
+  bool KeyEquals(KeyTypePointer aKey) const {
+    if (aKey->mUTF8String) {
+      bool err = false;
+      return (CompareUTF8toUTF16(
+                  nsDependentCSubstring(aKey->mUTF8String,
+                                        aKey->mUTF8String + aKey->mLength),
+                  nsDependentAtomString(mAtom), &err) == 0) &&
+             !err;
+    }
+
+    return mAtom->Equals(aKey->mUTF16String, aKey->mLength);
+  }
+
+  static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
+  static PLDHashNumber HashKey(KeyTypePointer aKey) { return aKey->mHash; }
+
+  enum { ALLOW_MEMMOVE = true };
+
   // These references are either to dynamic atoms, in which case they are
   // non-owning, or they are to static atoms, which aren't really refcounted.
   // See the comment at the top of this file for more details.
@@ -199,7 +228,7 @@ static AtomCache sRecentlyUsedLargeMainThreadAtoms;
 class nsAtomSubTable {
   friend class nsAtomTable;
   mozilla::RWLock mLock;
-  PLDHashTable mTable;
+  nsTHashtable<AtomTableEntry> mTable;
   nsAtomSubTable();
   void GCLocked(GCKind aKind) MOZ_REQUIRES(mLock);
   void AddSizeOfExcludingThisLocked(MallocSizeOf aMallocSizeOf,
@@ -208,12 +237,12 @@ class nsAtomSubTable {
 
   AtomTableEntry* Search(AtomTableKey& aKey) const MOZ_REQUIRES_SHARED(mLock) {
     // XXX There's no LockedForReadingByCurrentThread();
-    return static_cast<AtomTableEntry*>(mTable.Search(&aKey));
+    return mTable.GetEntry(aKey);
   }
 
   AtomTableEntry* Add(AtomTableKey& aKey) MOZ_REQUIRES(mLock) {
     MOZ_ASSERT(mLock.LockedForWritingByCurrentThread());
-    return static_cast<AtomTableEntry*>(mTable.Add(&aKey));  // Infallible
+    return static_cast<AtomTableEntry*>(mTable.PutEntry(aKey));  // Infallible
   }
 };
 
@@ -235,11 +264,6 @@ class nsAtomTable {
   // on atoms concurrently. It's also slow, since it triggers a GC before
   // counting.
   size_t RacySlowCount();
-
-  // This hash table op is a static member of this class so that it can take
-  // advantage of |friend| declarations.
-  static void AtomTableClearEntry(PLDHashTable* aTable,
-                                  PLDHashEntryHdr* aEntry);
 
   // We achieve measurable reduction in locking contention in parallel CSS
   // parsing by increasing the number of subtables up to 128. This has been
@@ -296,40 +320,6 @@ class nsAtomTable {
 // Static singleton instance for the atom table.
 static nsAtomTable* gAtomTable;
 
-static PLDHashNumber AtomTableGetHash(const void* aKey) {
-  const AtomTableKey* k = static_cast<const AtomTableKey*>(aKey);
-  return k->mHash;
-}
-
-static bool AtomTableMatchKey(const PLDHashEntryHdr* aEntry, const void* aKey) {
-  const AtomTableEntry* he = static_cast<const AtomTableEntry*>(aEntry);
-  const AtomTableKey* k = static_cast<const AtomTableKey*>(aKey);
-
-  if (k->mUTF8String) {
-    bool err = false;
-    return (CompareUTF8toUTF16(nsDependentCSubstring(
-                                   k->mUTF8String, k->mUTF8String + k->mLength),
-                               nsDependentAtomString(he->mAtom), &err) == 0) &&
-           !err;
-  }
-
-  return he->mAtom->Equals(k->mUTF16String, k->mLength);
-}
-
-void nsAtomTable::AtomTableClearEntry(PLDHashTable* aTable,
-                                      PLDHashEntryHdr* aEntry) {
-  auto* entry = static_cast<AtomTableEntry*>(aEntry);
-  entry->mAtom = nullptr;
-}
-
-static void AtomTableInitEntry(PLDHashEntryHdr* aEntry, const void* aKey) {
-  static_cast<AtomTableEntry*>(aEntry)->mAtom = nullptr;
-}
-
-static const PLDHashTableOps AtomTableOps = {
-    AtomTableGetHash, AtomTableMatchKey, PLDHashTable::MoveEntryStub,
-    nsAtomTable::AtomTableClearEntry, AtomTableInitEntry};
-
 nsAtomSubTable& nsAtomTable::SelectSubTable(AtomTableKey& aKey) {
   // There are a few considerations around how we select subtables.
   //
@@ -342,7 +332,7 @@ nsAtomSubTable& nsAtomTable::SelectSubTable(AtomTableKey& aKey) {
   // entry's position within the subtable. If we used the exact same bits used
   // by the subtables, then each subtable would compute the same position for
   // every entry it observes, leading to pessimal performance. In this case,
-  // we're using PLDHashTable, whose primary hash function uses the N leftmost
+  // we're using nsTHashtable, whose primary hash function uses the N leftmost
   // bits of the hash value (where N is the log2 capacity of the table). This
   // means we should prefer the rightmost bits here.
   //
@@ -405,16 +395,14 @@ size_t nsAtomTable::RacySlowCount() {
   size_t count = 0;
   for (auto& table : mSubTables) {
     AutoReadLock lock(table.mLock);
-    count += table.mTable.EntryCount();
+    count += table.mTable.Count();
   }
 
   return count;
 }
 
 nsAtomSubTable::nsAtomSubTable()
-    : mLock("Atom Sub-Table Lock"),
-      mTable(&AtomTableOps, sizeof(AtomTableEntry),
-             nsAtomTable::kInitialSubTableSize) {}
+    : mLock("Atom Sub-Table Lock"), mTable(nsAtomTable::kInitialSubTableSize) {}
 
 void nsAtomSubTable::GCLocked(GCKind aKind) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -424,7 +412,7 @@ void nsAtomSubTable::GCLocked(GCKind aKind) {
   nsAutoCString nonZeroRefcountAtoms;
   uint32_t nonZeroRefcountAtomsCount = 0;
   for (auto i = mTable.Iter(); !i.Done(); i.Next()) {
-    auto* entry = static_cast<AtomTableEntry*>(i.Get());
+    auto* entry = i.Get();
     if (entry->mAtom->IsStatic()) {
       continue;
     }
@@ -523,8 +511,7 @@ void nsAtomSubTable::AddSizeOfExcludingThisLocked(MallocSizeOf aMallocSizeOf,
                                                   AtomsSizes& aSizes) {
   aSizes.mTable += mTable.ShallowSizeOfExcludingThis(aMallocSizeOf);
   for (auto iter = mTable.Iter(); !iter.Done(); iter.Next()) {
-    auto* entry = static_cast<AtomTableEntry*>(iter.Get());
-    entry->mAtom->AddSizeOfIncludingThis(aMallocSizeOf, aSizes);
+    iter.Get()->mAtom->AddSizeOfIncludingThis(aMallocSizeOf, aSizes);
   }
 }
 

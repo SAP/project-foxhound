@@ -8,6 +8,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
 
@@ -96,7 +97,7 @@ add_setup(skipIfNotBrowser(), async () => {
 });
 
 async function runlegacyDataReportingFlowfirstRun(prefToSet) {
-  await Services.search.init();
+  await SearchService.init();
 
   const FIRST_RUN_TIMEOUT_MSEC = 60 * 1000; // 60s
   const OTHER_RUNS_TIMEOUT_MSEC = 10 * 1000; // 10s

@@ -9,18 +9,19 @@
 
 #include "vm/Interpreter.h"
 
-#include "jslibmath.h"
-#include "jsmath.h"
-#include "jsnum.h"
+#include "mozilla/CheckedArithmetic.h"
 
+#include "builtin/Math.h"
+#include "builtin/Number.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "util/CheckedArithmetic.h"
+#include "util/PortableMath.h"
 #include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"  // JSDVG_SEARCH_STACK
 #include "vm/JSAtomUtils.h"   // AtomizeString
 #include "vm/Realm.h"
 #include "vm/StaticStrings.h"
 #include "vm/ThrowMsgKind.h"
+#include "vm/Watchtower.h"
 
 #include "vm/GlobalObject-inl.h"
 #include "vm/JSAtomUtils-inl.h"  // PrimitiveValueToId, TypeName
@@ -255,11 +256,25 @@ inline void InitGlobalLexicalOperation(
                 lexicalEnv == &cx->global()->lexicalEnvironment());
   MOZ_ASSERT(JSOp(*pc) == JSOp::InitGLexical);
 
-  mozilla::Maybe<PropertyInfo> prop =
-      lexicalEnv->lookup(cx, script->getName(pc));
+  PropertyName* name = script->getName(pc);
+  mozilla::Maybe<PropertyInfo> prop = lexicalEnv->lookup(cx, name);
   MOZ_ASSERT(prop.isSome());
-  MOZ_ASSERT(IsUninitializedLexical(lexicalEnv->getSlot(prop->slot())));
 
+  // We usually don't have to call Watchtower::watchPropertyValueChange because
+  // this is an initialization instead of a mutation, and we don't optimize
+  // loads of uninitialized lexicals in the JIT.
+  //
+  // The Debugger API allows initializing lexical bindings using
+  // forceLexicalInitializationByName before we get here, so we use a slow path
+  // if that feature has been used.
+  if (MOZ_UNLIKELY(cx->hasDebuggerForcedLexicalInit)) {
+    if (!IsUninitializedLexical(lexicalEnv->getSlot(prop->slot()))) {
+      Watchtower::watchPropertyValueChange<AllowGC::NoGC>(
+          cx, lexicalEnv, NameToId(name), value, *prop);
+    }
+  } else {
+    MOZ_ASSERT(IsUninitializedLexical(lexicalEnv->getSlot(prop->slot())));
+  }
   lexicalEnv->setSlot(prop->slot(), value);
 }
 
@@ -611,7 +626,7 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
   if (lhs.isInt32() && rhs.isInt32()) {
     int32_t l = lhs.toInt32(), r = rhs.toInt32();
     int32_t t;
-    if (MOZ_LIKELY(SafeAdd(l, r, &t))) {
+    if (MOZ_LIKELY(mozilla::SafeAdd(l, r, &t))) {
       res.setInt32(t);
       return true;
     }

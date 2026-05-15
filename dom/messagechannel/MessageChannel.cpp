@@ -6,11 +6,11 @@
 
 #include "MessageChannel.h"
 
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/MessageChannelBinding.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/Document.h"
 #include "nsIGlobalObject.h"
 #include "nsServiceManagerUtils.h"
 

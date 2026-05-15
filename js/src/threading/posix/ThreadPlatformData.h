@@ -8,8 +8,6 @@
 #define threading_posix_PlatformData_h
 
 #include <pthread.h>
-#include <stdlib.h>
-#include <string.h>
 
 #if defined(__APPLE__) && defined(__MACH__)
 #  include <dlfcn.h>

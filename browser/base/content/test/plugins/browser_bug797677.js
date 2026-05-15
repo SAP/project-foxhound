@@ -25,10 +25,10 @@ add_task(async function () {
   };
   Services.console.registerListener(errorListener);
 
-  await promiseTabLoadEvent(
-    gBrowser.selectedTab,
-    gTestRoot + "plugin_bug797677.html"
-  );
+  await BrowserTestUtils.loadURIString({
+    browser: gBrowser.selectedTab.linkedBrowser,
+    uriString: gTestRoot + "plugin_bug797677.html",
+  });
 
   let pluginInfo = await promiseForPluginInfo("plugin");
   is(

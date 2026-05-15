@@ -7,10 +7,10 @@
 #include "mozilla/dom/PushSubscriptionOptions.h"
 
 #include "MainThreadUtils.h"
-#include "mozilla/dom/PushSubscriptionOptionsBinding.h"
-#include "mozilla/dom/TypedArray.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/dom/PushSubscriptionOptionsBinding.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsIGlobalObject.h"
 #include "nsWrapperCache.h"
 

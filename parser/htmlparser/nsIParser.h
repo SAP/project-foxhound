@@ -3,8 +3,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef NS_IPARSER___
-#define NS_IPARSER___
+#ifndef NS_IPARSER_
+#define NS_IPARSER_
 
 /**
  * This GECKO-INTERNAL interface is on track to being REMOVED (or refactored
@@ -19,7 +19,6 @@
 
 #include "nsISupports.h"
 #include "nsIStreamListener.h"
-#include "nsIDTD.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsAtom.h"
@@ -175,6 +174,12 @@ class nsIParser : public nsParserBase {
    * True if this is a script-created HTML5 parser.
    */
   virtual bool IsScriptCreated() = 0;
+
+  /**
+   * True iff this is an about:blank-mode HTML5 parser
+   * (i.e. a parser for non-initial about:blank).
+   */
+  virtual bool IsAboutBlankMode() = 0;
 };
 
 #endif

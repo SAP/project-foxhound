@@ -7,10 +7,10 @@ add_task(async function () {
   await SimpleTest.promiseFocus(win);
 
   let tab = win.gBrowser.tabs[0];
-  await promiseTabLoadEvent(
-    tab,
-    getRootDirectory(gTestPath) + "test_bug462673.html"
-  );
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: getRootDirectory(gTestPath) + "test_bug462673.html",
+  });
 
   is(
     win.gBrowser.browsers.length,
@@ -37,10 +37,10 @@ add_task(async function () {
   await SimpleTest.promiseFocus(win);
 
   let tab = win.gBrowser.tabs[0];
-  await promiseTabLoadEvent(
-    tab,
-    getRootDirectory(gTestPath) + "test_bug462673.html"
-  );
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: getRootDirectory(gTestPath) + "test_bug462673.html",
+  });
 
   var newTab = BrowserTestUtils.addTab(win.gBrowser);
   var newBrowser = newTab.linkedBrowser;

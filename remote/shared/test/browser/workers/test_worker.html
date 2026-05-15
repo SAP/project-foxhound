@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worker Listener test page</title>
+</head>
+<body>
+  Worker Listener test page.
+
+  <script type="text/javascript">
+    window.registerWorker = function () {
+      window.testWorker = new window.Worker("worker.js");
+      window.onWorkerReady = new Promise(r => {
+        window.testWorker.onmessage = e => {
+          if (e.data == "worker loaded") {
+            r();
+          }
+        };
+      });
+    }
+  </script>
+</body>
+</html>

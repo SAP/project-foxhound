@@ -5,7 +5,7 @@
 package org.mozilla.fenix.downloads.listscreen.middleware
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Downloads
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
@@ -18,7 +18,7 @@ import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState
 class DownloadTelemetryMiddleware : Middleware<DownloadUIState, DownloadUIAction> {
 
     override fun invoke(
-        context: MiddlewareContext<DownloadUIState, DownloadUIAction>,
+        store: Store<DownloadUIState, DownloadUIAction>,
         next: (DownloadUIAction) -> Unit,
         action: DownloadUIAction,
     ) {
@@ -44,6 +44,10 @@ class DownloadTelemetryMiddleware : Middleware<DownloadUIState, DownloadUIAction
                 Downloads.shareFile.record(NoExtras())
             }
 
+            is DownloadUIAction.RenameFileClicked -> {
+                Downloads.renameFile.record(NoExtras())
+            }
+
             is DownloadUIAction.PauseDownload -> {
                 Downloads.pauseDownload.record(NoExtras())
             }
@@ -58,6 +62,14 @@ class DownloadTelemetryMiddleware : Middleware<DownloadUIState, DownloadUIAction
 
             is DownloadUIAction.RetryDownload -> {
                 Downloads.retryDownload.record(NoExtras())
+            }
+
+            is DownloadUIAction.AddPendingDeletionSet -> {
+                Downloads.deleteSnackbarShown.record(NoExtras())
+            }
+
+            is DownloadUIAction.UndoPendingDeletion -> {
+                Downloads.deleteSnackbarUndoClicked.record(NoExtras())
             }
 
             else -> {}

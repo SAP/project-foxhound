@@ -35,6 +35,8 @@ rtc_library("audio_frame_proxies") {
     ":audio_frame_view",
     "../../api/audio:audio_frame_api",
     "../../api/audio:audio_processing",
+    "../../api/audio:audio_processing_statistics",
+    "../../rtc_base:checks",
   ]
 }
 
@@ -61,6 +63,7 @@ rtc_library("audio_buffer") {
     "../../common_audio",
     "../../common_audio:common_audio_c",
     "../../rtc_base:checks",
+    "../../rtc_base:gtest_prod",
   ]
 }
 
@@ -82,7 +85,25 @@ rtc_library("high_pass_filter") {
   ]
 }
 
-rtc_source_set("aec_dump_interface") {
+rtc_library("post_filter") {
+  visibility = [ "*" ]
+
+  sources = [
+    "post_filter.cc",
+    "post_filter.h",
+  ]
+
+  defines = []
+
+  deps = [
+    ":audio_buffer",
+    "../../api:array_view",
+    "../../rtc_base:checks",
+    "utility:cascaded_biquad_filter",
+  ]
+}
+
+rtc_library("aec_dump_interface") {
   visibility = [ "*" ]
   sources = [
     "include/aec_dump.cc",
@@ -91,6 +112,7 @@ rtc_source_set("aec_dump_interface") {
 
   deps = [
     ":audio_frame_view",
+    "../../api/audio:audio_frame_api",
     "../../api/audio:audio_processing",
     "//third_party/abseil-cpp/absl/base:core_headers",
   ]
@@ -151,16 +173,19 @@ rtc_library("audio_processing") {
     ":audio_frame_view",
     ":gain_controller2",
     ":high_pass_filter",
+    ":post_filter",
     ":rms_level",
     "../../api:array_view",
     "../../api:field_trials_view",
     "../../api:function_view",
     "../../api:make_ref_counted",
+    "../../api:scoped_refptr",
     "../../api/audio:aec3_config",
     "../../api/audio:audio_frame_api",
     "../../api/audio:audio_processing",
     "../../api/audio:audio_processing_statistics",
     "../../api/audio:echo_control",
+    "../../api/audio:neural_residual_echo_estimator_api",
     "../../api/environment",
     "../../api/task_queue",
     "../../audio/utility:audio_frame_operations",
@@ -170,6 +195,7 @@ rtc_library("audio_processing") {
     "../../common_audio:fir_filter_factory",
     "../../common_audio/third_party/ooura:fft_size_256",
     "../../rtc_base:checks",
+    "../../rtc_base:denormal_disabler",
     "../../rtc_base:event_tracer",
     "../../rtc_base:gtest_prod",
     "../../rtc_base:logging",
@@ -181,7 +207,6 @@ rtc_library("audio_processing") {
     "../../rtc_base/synchronization:mutex",
     "../../rtc_base/system:rtc_export",
     "../../system_wrappers",
-    "../../system_wrappers:denormal_disabler",
     "../../system_wrappers:metrics",
     "aec3",
     "aec_dump",
@@ -189,6 +214,7 @@ rtc_library("audio_processing") {
     "agc",
     "agc:gain_control_interface",
     "agc:legacy_agc",
+    "agc2:input_volume_controller",
     "agc2:input_volume_stats_reporter",
     "capture_levels_adjuster",
     "ns",
@@ -229,7 +255,7 @@ rtc_library("residual_echo_detector") {
   ]
 }
 
-rtc_source_set("rms_level") {
+rtc_library("rms_level") {
   visibility = [ "*" ]
   sources = [
     "rms_level.cc",
@@ -249,7 +275,10 @@ rtc_library("audio_processing_statistics") {
 
 rtc_source_set("audio_frame_view") {
   sources = [ "include/audio_frame_view.h" ]
-  deps = [ "../../api/audio:audio_frame_api" ]
+  deps = [
+    "../../api/audio:audio_frame_api",
+    "../../rtc_base:checks",
+  ]
 }
 
 if (rtc_enable_protobuf) {
@@ -284,9 +313,11 @@ if (rtc_include_tests) {
       ":aec_dump_interface",
       ":audio_buffer",
       ":audio_processing",
+      "../../api:array_view",
       "../../api:scoped_refptr",
       "../../api/audio:audio_processing",
       "../../api/audio:audio_processing_statistics",
+      "../../api/audio:echo_control",
       "../../api/environment",
       "../../api/task_queue",
       "../../test:test_support",
@@ -334,20 +365,26 @@ if (rtc_include_tests) {
         ":gain_controller2",
         ":high_pass_filter",
         ":mocks",
+        ":post_filter",
         "../../api:array_view",
         "../../api:make_ref_counted",
+        "../../api:ref_count",
         "../../api:scoped_refptr",
         "../../api/audio:aec3_config",
         "../../api/audio:aec3_factory",
         "../../api/audio:audio_frame_api",
         "../../api/audio:audio_processing",
+        "../../api/audio:audio_processing_statistics",
         "../../api/audio:builtin_audio_processing_builder",
         "../../api/audio:echo_detector_creator",
         "../../api/environment",
         "../../api/environment:environment_factory",
+        "../../api/units:time_delta",
         "../../common_audio",
         "../../common_audio:common_audio_c",
         "../../rtc_base:checks",
+        "../../rtc_base:cpu_info",
+        "../../rtc_base:denormal_disabler",
         "../../rtc_base:gtest_prod",
         "../../rtc_base:macromagic",
         "../../rtc_base:platform_thread",
@@ -364,30 +401,32 @@ if (rtc_include_tests) {
         "../../rtc_base/synchronization:mutex",
         "../../rtc_base/system:arch",
         "../../rtc_base/system:file_wrapper",
-        "../../system_wrappers",
-        "../../system_wrappers:denormal_disabler",
-        "../../test:field_trial",
         "../../test:fileutils",
         "../../test:rtc_expect_death",
         "../../test:test_support",
         "../audio_coding:neteq_input_audio_tools",
         "aec_dump:mock_aec_dump_unittests",
         "agc:agc_unittests",
+        "agc:gain_control_interface",
         "agc2:adaptive_digital_gain_controller_unittest",
         "agc2:biquad_filter_unittests",
+        "agc2:cpu_features",
         "agc2:fixed_digital_unittests",
         "agc2:gain_applier_unittest",
+        "agc2:input_volume_controller",
         "agc2:input_volume_controller_unittests",
         "agc2:input_volume_stats_reporter_unittests",
         "agc2:noise_estimator_unittests",
         "agc2:saturation_protector_unittest",
         "agc2:speech_level_estimator_unittest",
         "agc2:test_utils",
+        "agc2:vad_wrapper",
         "agc2:vad_wrapper_unittests",
         "agc2/rnn_vad:unittests",
         "capture_levels_adjuster",
         "capture_levels_adjuster:capture_levels_adjuster_unittests",
         "test/conversational_speech:unittest",
+        "utility:cascaded_biquad_filter_unittest",
         "utility:legacy_delay_estimator_unittest",
         "utility:pffft_wrapper_unittest",
         "vad:vad_unittests",
@@ -415,6 +454,7 @@ if (rtc_include_tests) {
           ":runtime_settings_protobuf_utils",
           "../../api/audio:audio_frame_api",
           "../../api/audio:echo_control",
+          "../../api/audio:neural_residual_echo_estimator_api",
           "../../rtc_base:rtc_base_tests_utils",
           "aec_dump",
           "aec_dump:aec_dump_unittests",
@@ -431,6 +471,7 @@ if (rtc_include_tests) {
           "echo_detector/normalized_covariance_estimator_unittest.cc",
           "gain_control_unittest.cc",
           "high_pass_filter_unittest.cc",
+          "post_filter_unittest.cc",
           "residual_echo_detector_unittest.cc",
           "rms_level_unittest.cc",
           "test/debug_dump_replayer.cc",
@@ -454,11 +495,15 @@ if (rtc_include_tests) {
       ":audio_processing",
       ":audioproc_test_utils",
       "../../api:array_view",
+      "../../api:scoped_refptr",
+      "../../api/audio:audio_processing",
       "../../api/audio:builtin_audio_processing_builder",
       "../../api/environment:environment_factory",
       "../../api/numerics",
       "../../api/test/metrics:global_metrics_logger_and_exporter",
       "../../api/test/metrics:metric",
+      "../../api/units:time_delta",
+      "../../rtc_base:checks",
       "../../rtc_base:platform_thread",
       "../../rtc_base:protobuf_utils",
       "../../rtc_base:random",
@@ -490,7 +535,10 @@ if (rtc_include_tests) {
   if (rtc_enable_protobuf && !build_with_chromium) {
     rtc_library("audioproc_f_impl") {
       testonly = true
-      configs += [ ":apm_debug_dump" ]
+      configs += [
+        ":apm_debug_dump",
+        "//third_party/tflite:tflite_config_no_undef",
+      ]
       sources = [
         "test/aec_dump_based_simulator.cc",
         "test/aec_dump_based_simulator.h",
@@ -519,6 +567,8 @@ if (rtc_include_tests) {
         "../../api/audio:audio_processing",
         "../../api/audio:builtin_audio_processing_builder",
         "../../api/audio:echo_detector_creator",
+        "../../api/audio:neural_residual_echo_estimator_api",
+        "../../api/audio:neural_residual_echo_estimator_creator",
         "../../api/environment",
         "../../api/environment:environment_factory",
         "../../common_audio",
@@ -534,6 +584,8 @@ if (rtc_include_tests) {
         "//third_party/abseil-cpp/absl/flags:flag",
         "//third_party/abseil-cpp/absl/flags:parse",
         "//third_party/abseil-cpp/absl/strings:string_view",
+        "//third_party/tflite:tflite_builtin_op_resolver_standalone",
+        "//third_party/tflite:tflite_standalone",
       ]
     }  # audioproc_f_impl
   }

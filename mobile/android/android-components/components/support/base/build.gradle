@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
@@ -9,12 +13,6 @@ def generatedSrcDir = new File(layout.buildDirectory.get().asFile, "generated/co
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
         def appServicesVersion = ApplicationServicesConfig.version
         if (gradle.hasProperty("localProperties.branchBuild.application-services.version")) {
             appServicesVersion = gradle["localProperties.branchBuild.application-services.version"]
@@ -22,18 +20,11 @@ android {
 
         buildConfigField("String", "LIBRARY_VERSION", "\"" + config.componentsVersion + "\"")
         buildConfigField("String", "APPLICATION_SERVICES_VERSION", "\"" + appServicesVersion + "\"")
-        buildConfigField("String", "GLEAN_SDK_VERSION", "\"" + libs.versions.mozilla.glean.get() + "\"")
+        buildConfigField("String", "GLEAN_SDK_VERSION", "\"" + project.ext.gleanVersion + "\"")
         if (gradle.mozconfig.substs.MOZ_INCLUDE_SOURCE_INFO) {
             buildConfigField("String", "VCS_HASH", "\"" + gradle.mozconfig.source_repo.MOZ_SOURCE_STAMP + "\"")
         } else {
             buildConfigField("String", "VCS_HASH", "\"\"")
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -55,63 +46,78 @@ android {
 }
 
 dependencies {
-    implementation libs.kotlin.coroutines
-    implementation libs.androidx.activity
-    implementation libs.androidx.core.ktx
-    implementation libs.androidx.lifecycle.viewmodel
-
-    implementation project(':components:concept-fetch')
-
     api project(":components:concept-base")
+
     // We expose the app-compat as API so that consumers get access to the Lifecycle classes automatically
     api libs.androidx.appcompat
 
+    implementation project(':components:concept-fetch')
+
+    implementation libs.androidx.activity
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.lifecycle.viewmodel
+    implementation libs.kotlinx.coroutines
+
     testImplementation project(':components:support-test')
 
-    testImplementation libs.testing.coroutines
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
-
-
-preBuild.finalizedBy("generateComponentEnum")
-
 
 /**
  * Generates a "Components" enum listing all published components.
  */
 tasks.register("generateComponentEnum") {
     def buildConfigCache = buildConfig
+    def publishedProjects = buildConfigCache.projects.findAll { project ->
+        project.value.publish
+    }
+    def file = new File(generatedSrcDir, "Component.kt")
+
+    inputs.property("publishedProjects", publishedProjects.collect { project ->
+        project.key + ":" + project.value.publish
+    }.sort())
+
+    outputs.file(file)
+    
     doLast {
         generatedSrcDir.mkdirs()
 
-        def file = new File(generatedSrcDir, "Component.kt")
-        file.delete()
-        file.createNewFile()
-
-        file << "/* This Source Code Form is subject to the terms of the Mozilla Public\n" +
+        def content = new StringBuilder()
+        content << "/* This Source Code Form is subject to the terms of the Mozilla Public\n" +
                 " * License, v. 2.0. If a copy of the MPL was not distributed with this\n" +
                 " * file, You can obtain one at http://mozilla.org/MPL/2.0/. */\n"
 
-        file << "package mozilla.components.support.base" << "\n"
-        file << "\n"
-        file << "// Automatically generated file. DO NOT MODIFY" << "\n"
-        file << "\n"
-        file << "enum class Component {" << "\n"
+        content << "package mozilla.components.support.base" << "\n"
+        content << "\n"
+        content << "// Automatically generated file. DO NOT MODIFY" << "\n"
+        content << "\n"
+        content << "enum class Component {" << "\n"
 
-        file << buildConfigCache.projects.findAll { project ->
-            project.value.publish
-        }.collect { project ->
+        content << publishedProjects.collect { project ->
             "    " + project.key.replaceFirst(/^components:/, "").replace("-", "_").toUpperCase(Locale.US)
         }.join(", \n")
 
-        file << "\n"
-        file << "}\n"
-        file << "\n"
+        content << "\n"
+        content << "}\n"
+        content << "\n"
+
+        file.text = content.toString()
     }
 }
 
-apply from: '../../../android-lint.gradle'
+afterEvaluate {
+    tasks.matching {
+        (it.name.startsWith("compile") && it.name.endsWith("Kotlin")) ||
+        it.name.startsWith("explodeCodeSource") ||
+        it.name in ["sourceReleaseJar", "sourcesJar"]
+    }.configureEach {
+        dependsOn("generateComponentEnum")
+    }
+}
+
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

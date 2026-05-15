@@ -14,7 +14,7 @@ const lazy = {};
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   ExternalProtocolService: [
     "@mozilla.org/uriloader/external-protocol-service;1",
-    "nsIExternalProtocolService",
+    Ci.nsIExternalProtocolService,
   ],
 });
 
@@ -90,12 +90,12 @@ WebProtocolHandlerRegistrar.prototype = {
     }
   },
 
-  /* This function can be called multiple times and (re-)initializes the cache
+  /**
+   * This function can be called multiple times and (re-)initializes the cache
    * if the feature is toggled on. If called with the feature off it will also
    * unregister the observers.
    *
    * @param {boolean} firstInit
-   *
    */
   init(firstInit = false) {
     if (firstInit) {
@@ -285,7 +285,8 @@ WebProtocolHandlerRegistrar.prototype = {
     return xreDirProvider.getInstallHash();
   },
 
-  /* Private method to check if we are already the default protocolhandler
+  /**
+   * Private method to check if we are already the default protocolhandler
    * for `protocol`.
    *
    * @param {string} protocol name, e.g. mailto (without ://)
@@ -415,65 +416,6 @@ WebProtocolHandlerRegistrar.prototype = {
     return handler;
   },
 
-  /*
-   * Function to store a value associated to a domain using the content pref
-   * service.
-   *
-   * @param {string} domain: the domain for this setting
-   * @param {string} setting: the name of the setting
-   * @param {string} value: the actual setting to be stored
-   * @param {string} context (optional): private window or not
-   * @returns {string} the stored preference (see: nsIContentPrefService2.idl)
-   */
-  async _saveSiteSpecificSetting(domain, setting, value, context = null) {
-    const gContentPrefs = Cc["@mozilla.org/content-pref/service;1"].getService(
-      Ci.nsIContentPrefService2
-    );
-
-    return new Promise((resolve, reject) => {
-      gContentPrefs.set(domain, setting, value, context, {
-        handleResult(pref) {
-          resolve(pref);
-        },
-        handleCompletion() {},
-        handleError(err) {
-          reject(err);
-        },
-      });
-    });
-  },
-
-  /*
-   * Function to return a stored value from the content pref service. Returns
-   * a promise, so await can be used to synchonize the retrieval.
-   *
-   * @param {string} domain: the domain for this setting
-   * @param {string} setting: the name of the setting
-   * @param {string} context (optional): private window or not
-   * @param {string} def (optional): the default value to return
-   * @returns {string} either stored value or ""
-   */
-  async _getSiteSpecificSetting(domain, setting, context = null, def = null) {
-    const gContentPrefs = Cc["@mozilla.org/content-pref/service;1"].getService(
-      Ci.nsIContentPrefService2
-    );
-
-    return await new Promise((resolve, reject) => {
-      gContentPrefs.getByDomainAndName(domain, setting, context, {
-        _result: def,
-        handleResult(pref) {
-          this._result = pref.value;
-        },
-        handleCompletion(_) {
-          resolve(this._result);
-        },
-        handleError(err) {
-          reject(err);
-        },
-      });
-    });
-  },
-
   /**
    * See nsIWebProtocolHandlerRegistrar
    */
@@ -580,7 +522,7 @@ WebProtocolHandlerRegistrar.prototype = {
     );
   },
 
-  /*
+  /**
    * Special implementation for mailto: A prompt (notificationbox.js) is only
    * shown if there is a realistic chance that we can really set the OS default,
    * e.g. if we have been properly installed and the current page is not already

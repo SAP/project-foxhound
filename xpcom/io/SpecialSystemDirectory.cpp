@@ -6,6 +6,7 @@
 
 #include "SpecialSystemDirectory.h"
 #include "mozilla/Try.h"
+#include "nsComponentManagerUtils.h"
 #include "nsString.h"
 #include "nsDependentString.h"
 #include "nsIXULAppInfo.h"
@@ -20,8 +21,8 @@
 #  include <shlobj.h>
 #  include <knownfolders.h>
 #  include <guiddef.h>
-#  include "mozilla/glean/XpcomMetrics.h"
 #  include "mozilla/WinHeaderOnlyUtils.h"
+#  include "nsIWindowsRegKey.h"
 
 #elif defined(XP_UNIX)
 
@@ -59,6 +60,10 @@
 #endif
 
 #if defined(XP_WIN)
+// OneDrive For Business folders are named "Business1", "Business2", ...
+// "Business10".
+static const uint32_t kOneDriveBusinessFolderStartIdx = 1;
+static const uint32_t kOneDriveBusinessFolderEndIdx = 10;
 
 static nsresult GetKnownFolder(REFKNOWNFOLDERID aFolderId, nsIFile** aFile) {
   mozilla::UniquePtr<WCHAR, mozilla::CoTaskMemFreeDeleter> path;
@@ -106,6 +111,40 @@ static nsresult GetRegWindowsAppDataFolder(bool aLocal, nsIFile** aFile) {
   return NS_NewLocalFile(nsDependentString(path, len), aFile);
 }
 
+static const auto kOneDrivePersonalSubkey{u"Personal"_ns};
+
+static nsresult GetOneDriveSyncRoot(const nsAString& aSubkey, nsIFile** aFolder,
+                                    nsIWindowsRegKey* aRegistrySvc = nullptr) {
+  nsresult rv = NS_OK;
+  nsCOMPtr<nsIWindowsRegKey> registrySvc = aRegistrySvc;
+  if (!registrySvc) {
+    registrySvc = do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  const nsAutoString path =
+      u"Software\\Microsoft\\OneDrive\\Accounts\\"_ns + aSubkey;
+  rv = registrySvc->Open(nsIWindowsRegKey::ROOT_KEY_CURRENT_USER, path,
+                         nsIWindowsRegKey::ACCESS_READ);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (aSubkey.Equals(kOneDrivePersonalSubkey)) {
+    auto isUserLoggedIn{false};
+    rv = registrySvc->HasValue(u"cid"_ns, &isUserLoggedIn);
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (!isUserLoggedIn) {
+      return NS_ERROR_FILE_NOT_FOUND;
+    }
+  }
+  bool hasUserFolder = false;
+  rv = registrySvc->HasValue(u"UserFolder"_ns, &hasUserFolder);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!hasUserFolder) {
+    return NS_ERROR_FILE_NOT_FOUND;
+  }
+  nsAutoString folderPath;
+  rv = registrySvc->ReadStringValue(u"UserFolder"_ns, folderPath);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_NewLocalFile(folderPath, aFolder);
+}
 #endif  // XP_WIN
 
 #if defined(XP_UNIX)
@@ -542,9 +581,6 @@ nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
       nsresult rv = GetKnownFolder(FOLDERID_RoamingAppData, aFile);
       if (NS_FAILED(rv)) {
         rv = GetRegWindowsAppDataFolder(false, aFile);
-        mozilla::glean::system::special_directory_appdata_fallback
-            .Get("appdata"_ns)
-            .Set(NS_SUCCEEDED(rv));
       }
       return rv;
     }
@@ -552,14 +588,14 @@ nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
       nsresult rv = GetKnownFolder(FOLDERID_LocalAppData, aFile);
       if (NS_FAILED(rv)) {
         rv = GetRegWindowsAppDataFolder(true, aFile);
-        mozilla::glean::system::special_directory_appdata_fallback
-            .Get("localappdata"_ns)
-            .Set(NS_SUCCEEDED(rv));
       }
       return rv;
     }
     case Win_Documents: {
       return GetKnownFolder(FOLDERID_Documents, aFile);
+    }
+    case Win_OneDrivePersonal: {
+      return GetOneDriveSyncRoot(kOneDrivePersonalSubkey, aFile);
     }
 #endif  // XP_WIN
 
@@ -576,6 +612,39 @@ nsresult GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
       return GetUnixSystemConfigDir(aFile);
 #endif
 
+    default:
+      break;
+  }
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+nsresult GetSpecialSystemDirectoryList(
+    SystemDirectoryLists aSystemDirectoryLists,
+    nsCOMArray<nsIFile>& aDirectories) {
+  switch (aSystemDirectoryLists) {
+#ifdef XP_WIN
+    case Win_OneDriveBusiness: {
+      nsresult rv;
+      nsCOMPtr<nsIWindowsRegKey> registrySvc =
+          do_GetService("@mozilla.org/windows-registry-key;1", &rv);
+      NS_ENSURE_SUCCESS(rv, rv);
+      for (uint32_t idx = kOneDriveBusinessFolderStartIdx;
+           idx <= kOneDriveBusinessFolderEndIdx; ++idx) {
+        nsAutoString businessValue;
+        businessValue.AppendPrintf("Business%d", idx);
+        nsCOMPtr<nsIFile> folder;
+        rv = GetOneDriveSyncRoot(businessValue, getter_AddRefs(folder),
+                                 registrySvc);
+        // Skip folder on error.  Report error only if not
+        // NS_ERROR_FILE_NOT_FOUND, which indicates an unused business folder.
+        if (rv == NS_ERROR_FILE_NOT_FOUND || NS_WARN_IF(NS_FAILED(rv))) {
+          continue;
+        }
+        aDirectories.AppendElement(folder);
+      }
+      return NS_OK;
+    }
+#endif  // XP_WIN
     default:
       break;
   }

@@ -7,37 +7,44 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
+#include <cstddef>
 #include <cstdint>
-#include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/test/create_network_emulation_manager.h"
+#include "api/test/network_emulation/network_emulation_interfaces.h"
 #include "api/test/network_emulation_manager.h"
+#include "api/test/simulated_network.h"
 #include "api/units/data_rate.h"
 #include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "net/dcsctp/public/dcsctp_message.h"
 #include "net/dcsctp/public/dcsctp_options.h"
 #include "net/dcsctp/public/dcsctp_socket.h"
+#include "net/dcsctp/public/timeout.h"
 #include "net/dcsctp/public/types.h"
 #include "net/dcsctp/socket/dcsctp_socket.h"
 #include "net/dcsctp/testing/testing_macros.h"
 #include "net/dcsctp/timer/task_queue_timeout.h"
 #include "rtc_base/copy_on_write_buffer.h"
-#include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/random.h"
 #include "rtc_base/socket_address.h"
+#include "rtc_base/strings/string_builder.h"
 #include "rtc_base/strings/string_format.h"
+#include "rtc_base/thread.h"
 #include "rtc_base/time_utils.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
 
 #if !defined(WEBRTC_ANDROID) && defined(NDEBUG) && \
     !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
@@ -114,13 +121,13 @@ class BoundSocket : public webrtc::EmulatedNetworkReceiverInterface {
     dest_address_ = socket.source_address_;
   }
 
-  void SetReceiver(std::function<void(rtc::CopyOnWriteBuffer)> receiver) {
+  void SetReceiver(std::function<void(webrtc::CopyOnWriteBuffer)> receiver) {
     receiver_ = std::move(receiver);
   }
 
-  void SendPacket(rtc::ArrayView<const uint8_t> data) {
+  void SendPacket(webrtc::ArrayView<const uint8_t> data) {
     endpoint_->SendPacket(source_address_, dest_address_,
-                          rtc::CopyOnWriteBuffer(data.data(), data.size()));
+                          webrtc::CopyOnWriteBuffer(data.data(), data.size()));
   }
 
  private:
@@ -129,7 +136,7 @@ class BoundSocket : public webrtc::EmulatedNetworkReceiverInterface {
     receiver_(std::move(packet.data));
   }
 
-  std::function<void(rtc::CopyOnWriteBuffer)> receiver_;
+  std::function<void(webrtc::CopyOnWriteBuffer)> receiver_;
   webrtc::EmulatedEndpoint* endpoint_ = nullptr;
   webrtc::SocketAddress source_address_;
   webrtc::SocketAddress dest_address_;
@@ -153,7 +160,7 @@ class SctpActor : public DcSctpSocketCallbacks {
         random_(GetUniqueSeed()),
         sctp_socket_(name, *this, nullptr, sctp_options),
         last_bandwidth_printout_(Now()) {
-    emulated_socket.SetReceiver([this](rtc::CopyOnWriteBuffer buf) {
+    emulated_socket.SetReceiver([this](webrtc::CopyOnWriteBuffer buf) {
       // The receiver will be executed on the NetworkEmulation task queue, but
       // the dcSCTP socket is owned by `thread_` and is not thread-safe.
       thread_->PostTask([this, buf] { this->sctp_socket_.ReceivePacket(buf); });
@@ -181,7 +188,7 @@ class SctpActor : public DcSctpSocketCallbacks {
     }
   }
 
-  void SendPacket(rtc::ArrayView<const uint8_t> data) override {
+  void SendPacket(webrtc::ArrayView<const uint8_t> data) override {
     emulated_socket_.SendPacket(data);
   }
 
@@ -218,14 +225,14 @@ class SctpActor : public DcSctpSocketCallbacks {
   void OnConnectionRestarted() override {}
 
   void OnStreamsResetFailed(
-      rtc::ArrayView<const StreamID> /* outgoing_streams */,
+      webrtc::ArrayView<const StreamID> /* outgoing_streams */,
       absl::string_view /* reason */) override {}
 
   void OnStreamsResetPerformed(
-      rtc::ArrayView<const StreamID> /* outgoing_streams */) override {}
+      webrtc::ArrayView<const StreamID> /* outgoing_streams */) override {}
 
   void OnIncomingStreamsReset(
-      rtc::ArrayView<const StreamID> /* incoming_streams */) override {}
+      webrtc::ArrayView<const StreamID> /* incoming_streams */) override {}
 
   void NotifyOutgoingMessageBufferEmpty() override {}
 

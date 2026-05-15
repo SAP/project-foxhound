@@ -6,8 +6,6 @@
 
 #include "mozilla/Range.h"
 
-#include <type_traits>
-
 using mozilla::Range;
 
 static_assert(std::is_convertible_v<Range<int>, Range<const int>>,

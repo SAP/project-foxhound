@@ -16,26 +16,32 @@ prefs = [
 ]
 
 ["browser_abort_visibility.js"]
-run-if = ["os != 'win'"] # Test not relevant on 1903+
+run-if = [
+  "os != 'win'", # Test not relevant on 1903+
+]
 
 ["browser_fido_appid_extension.js"]
-run-if = ["os != 'win'"] # Test not relevant on 1903+
+run-if = [
+  "os != 'win'", # Test not relevant on 1903+
+]
 
 ["browser_webauthn_cert_override.js"]
 
+
 ["browser_webauthn_conditional_mediation.js"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt", # Bug 1892213
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1892213
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1892213
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt", # Bug 1892213
 ]
 
 ["browser_webauthn_ipaddress.js"]
 
 ["browser_webauthn_prompts.js"]
-run-if = ["os != 'win'"] # Test not relevant on 1903+
+run-if = [
+  "os != 'win'", # Test not relevant on 1903+
+]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # bug 1855383
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1855383
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1929455
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1855383
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1929455
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1929455
 ]

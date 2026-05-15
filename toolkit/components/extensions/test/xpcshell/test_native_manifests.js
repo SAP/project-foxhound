@@ -619,7 +619,7 @@ while True:
     await IOUtils.writeUTF8(scriptPath, SCRIPT);
 
     let batPath = PathUtils.join(userDir.path, TYPE_SLUG, "wontdie.bat");
-    let batBody = `@ECHO OFF\n${PYTHON} -u "${scriptPath}" %*\n`;
+    let batBody = `@ECHO OFF\n"${PYTHON}" -u "${scriptPath}" %*\n`;
     await IOUtils.writeUTF8(batPath, batBody);
     await IOUtils.setPermissions(batPath, 0o755);
 

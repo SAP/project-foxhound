@@ -132,30 +132,13 @@ function TopicSelection({ supportUrl }) {
   }, [inputRef]);
 
   const handleFocus = useCallback(e => {
-    // this list will have to be updated with other reusable components that get used inside of this modal
-    const tabbableElements = modalRef.current.querySelectorAll(
-      'a[href], button, moz-button, input[tabindex="0"]'
-    );
-    const [firstTabableEl] = tabbableElements;
-    const lastTabbableEl = tabbableElements[tabbableElements.length - 1];
+    const isArrowPressed = e.key === "ArrowUp" || e.key === "ArrowDown";
 
-    let isTabPressed = e.key === "Tab" || e.keyCode === 9;
-    let isArrowPressed = e.key === "ArrowUp" || e.key === "ArrowDown";
-
-    if (isTabPressed) {
-      if (e.shiftKey) {
-        if (document.activeElement === firstTabableEl) {
-          lastTabbableEl.focus();
-          e.preventDefault();
-        }
-      } else if (document.activeElement === lastTabbableEl) {
-        firstTabableEl.focus();
-        e.preventDefault();
-      }
-    } else if (
+    if (
       isArrowPressed &&
       checkboxWrapperRef.current.contains(document.activeElement)
     ) {
+      e.preventDefault();
       const checkboxElements =
         checkboxWrapperRef.current.querySelectorAll("input");
       const [firstInput] = checkboxElements;

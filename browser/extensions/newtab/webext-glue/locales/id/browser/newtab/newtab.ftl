@@ -8,6 +8,9 @@
 newtab-page-title = Tab Baru
 newtab-settings-button =
     .title = Ubahsuai laman Tab Baru Anda
+newtab-customize-panel-icon-button =
+    .title = Ubahsuai laman ini
+newtab-customize-panel-icon-button-label = Sesuaikan
 newtab-personalize-settings-icon-label =
     .title = Personalisasikan Tab Baru
     .aria-label = Pengaturan
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Pintasan Baru
 newtab-topsites-edit-topsites-header = Ubah Situs Pilihan
 newtab-topsites-edit-shortcut-header = Edit Pintasan
 newtab-topsites-add-shortcut-label = Tambahkan Pintasan
+newtab-topsites-add-shortcut-title =
+    .title = Tambahkan Pintasan
+    .aria-label = Tambahkan Pintasan
 newtab-topsites-title-label = Judul
 newtab-topsites-title-input =
     .placeholder = Masukkan judul
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Tindakan ini tidak bisa diurungkan.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Bersponsor
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (disematkan)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,6 +131,8 @@ newtab-menu-delete-pocket = Hapus dari { -pocket-brand-name }
 newtab-menu-archive-pocket = Arsip di { -pocket-brand-name }
 newtab-menu-show-privacy-info = Sponsor kami & privasi Anda
 newtab-menu-about-fakespot = Tentang { -fakespot-brand-name }
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Laporkan
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blokir
@@ -186,6 +202,8 @@ newtab-label-sponsored-by = Disponsori oleh { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } ・ { $timeToRead } mnt
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Disponsori
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -296,16 +314,28 @@ newtab-custom-pocket-subtitle = Konten luar biasa yang dikelola oleh { -pocket-b
 newtab-custom-stories-toggle =
     .label = Cerita yang direkomendasikan
     .description = Konten luar biasa yang dikurasi oleh keluarga { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Cerita
+newtab-custom-stories-personalized-checkbox-label = Cerita yang dipersonalisasi berdasarkan aktivitas Anda
 newtab-custom-pocket-sponsored = Konten bersponsor
 newtab-custom-pocket-show-recent-saves = Tampilkan penyimpanan terbaru
 newtab-custom-recent-title = Aktivitas terbaru
 newtab-custom-recent-subtitle = Pilihan situs dan konten terbaru
-newtab-custom-recent-toggle =
-    .label = Aktivitas terbaru
-    .description = Pilihan situs dan konten terbaru
 newtab-custom-weather-toggle =
     .label = Cuaca
     .description = Sekilas prakiraan cuaca hari ini
+newtab-custom-widget-weather-toggle =
+    .label = Cuaca
+newtab-custom-widget-lists-toggle =
+    .label = Daftar
+newtab-custom-widget-section-title = Widget
+newtab-custom-widget-section-toggle =
+    .label = Widget
+newtab-widget-manage-title = Widget
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Tutup
+    .aria-label = Tutup menu
 newtab-custom-close-button = Tutup
 newtab-custom-settings = Kelola pengaturan lainnya
 
@@ -318,6 +348,7 @@ newtab-wallpaper-custom-color = Pilih warna
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Gambar melebihi batas ukuran berkas sebesar { $file_size }MB. Coba unggah berkas yang lebih kecil.
+newtab-wallpaper-error-upload-file-type = Kami tidak dapat mengunggah berkas Anda. Silakan coba lagi dengan berkas gambar.
 newtab-wallpaper-error-file-type = Kami tidak dapat mengunggah berkas Anda. Silakan coba lagi dengan jenis berkas yang berbeda.
 newtab-wallpaper-light-red-panda = Panda merah
 newtab-wallpaper-light-mountain = Pegunungan putih
@@ -367,7 +398,7 @@ newtab-wallpaper-abstract-purple-green = Gradien ungu dan hijau terang
 newtab-wallpaper-abstract-blue-purple-waves = Bentuk bergelombang biru dan ungu
 newtab-wallpaper-abstract-black-waves = Bentuk hitam bergelombang
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Foto
 newtab-wallpaper-beach-at-sunrise = Pantai saat matahari terbit
@@ -423,7 +454,6 @@ newtab-weather-menu-change-location = Ubah lokasi
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Cari lokasi
     .aria-label = Cari lokasi
-newtab-weather-change-location-search-input = Cari lokasi
 newtab-weather-menu-weather-display = Tampilan cuaca
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -441,6 +471,11 @@ newtab-weather-menu-hide-weather = Sembunyikan cuaca di Tab Baru
 newtab-weather-menu-learn-more = Pelajari lebih lanjut
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Data cuaca tidak tersedia saat ini.
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Lihat prakiraan di { $provider }
+    .aria-description = { $provider } ∙ Bersponsor
 
 ## Topic Labels
 
@@ -489,6 +524,7 @@ newtab-topic-selection-button-pick-interests = Pilih minat Anda
 newtab-section-follow-button = Ikuti
 newtab-section-following-button = Mengikuti
 newtab-section-unfollow-button = Berhenti mengikuti
+newtab-section-follow-highlight-subtitle = Ikuti minat Anda untuk melihat lebih banyak hal yang Anda sukai.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -521,13 +557,22 @@ newtab-custom-wallpaper-title = Wallpaper kustom ada di sini
 newtab-custom-wallpaper-subtitle = Unggah wallpaper sendiri atau pilih warna kustom untuk menjadikan { -brand-product-name } lebih personal.
 newtab-custom-wallpaper-cta = Coba sekarang
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-cta = Coba sekarang
+
 ## Strings for download mobile highlight
 
+newtab-download-mobile-highlight-title = Unduh { -brand-product-name } untuk seluler
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Pindai kode untuk menjelajah dengan aman saat bepergian.
 
 ## Strings for shortcuts highlight
 
+newtab-shortcuts-highlight-title = Favorit Anda di ujung jari Anda
+newtab-shortcuts-highlight-subtitle = Tambahkan pintasan untuk menjaga situs favorit Anda dengan sekali klik.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Mengapa Anda melaporkan ini?
@@ -535,8 +580,50 @@ newtab-report-ads-reason-not-interested =
     .label = Saya tidak tertarik
 newtab-report-ads-reason-inappropriate =
     .label = Tidak pantas
+newtab-report-content-wrong-category =
+    .label = Kategori salah
+newtab-report-content-outdated =
+    .label = Kedaluwarsa
 newtab-report-cancel = Batal
 newtab-report-submit = Kirim
+newtab-toast-thanks-for-reporting =
+    .message = Terima kasih telah melaporkan ini.
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Baru
+newtab-widget-lists-label-beta =
+    .label = Beta
+newtab-widget-task-list-menu-copy = Salin
+newtab-widget-lists-menu-edit = Sunting nama daftar
+newtab-widget-lists-menu-create = Buat daftar baru
+newtab-widget-lists-menu-delete = Hapus daftar ini
+newtab-widget-lists-menu-copy = Salin daftar ke papan klip
+newtab-widget-lists-menu-hide = Sembunyikan semua daftar
+newtab-widget-lists-menu-learn-more = Pelajari lebih lanjut
+newtab-widget-lists-input-menu-open-link = Buka tautan
+newtab-widget-lists-input-menu-move-up = Pindah ke atas
+newtab-widget-lists-input-menu-move-down = Pindah ke bawah
+newtab-widget-lists-input-menu-delete = Hapus
+newtab-widget-lists-input-menu-edit = Sunting
+newtab-widget-lists-name-label-default =
+    .label = Daftar tugas
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Daftar tugas
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Daftar baru
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-label-play =
+    .label = Putar
+newtab-widget-timer-label-pause =
+    .label = Jeda
+newtab-widget-timer-menu-notifications = Matikan notifikasi
+newtab-widget-timer-menu-notifications-on = Hidupkan notifikasi
+newtab-widget-timer-menu-learn-more = Pelajari lebih lanjut
+newtab-promo-card-title = Dukung { -brand-product-name }

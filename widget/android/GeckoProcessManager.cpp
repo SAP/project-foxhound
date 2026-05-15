@@ -10,6 +10,8 @@
 #include "nsISupportsImpl.h"
 #include "mozilla/Services.h"
 
+#include "mozilla/java/GeckoAppShellWrappers.h"
+
 namespace mozilla {
 
 /* static */ void GeckoProcessManager::Init() {

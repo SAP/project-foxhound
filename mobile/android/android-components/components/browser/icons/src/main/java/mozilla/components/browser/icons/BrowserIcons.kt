@@ -89,7 +89,7 @@ internal val sharedDiskCache = IconDiskCache()
  * @param generator The [IconGenerator] to generate an icon if no icon could be loaded.
  * @param decoders List of [ImageDecoder] instances to use when decoding a loaded icon into a [android.graphics.Bitmap].
  */
-class BrowserIcons constructor(
+class BrowserIcons(
     private val context: Context,
     httpClient: Client,
     private val generator: IconGenerator = DefaultIconGenerator(),
@@ -121,6 +121,7 @@ class BrowserIcons constructor(
         THREADS,
         NamedThreadFactory("BrowserIcons"),
     ).asCoroutineDispatcher(),
+    val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : MemoryConsumer {
     private val logger = Logger("BrowserIcons")
     private val maximumSize = context.resources.getDimensionPixelSize(R.dimen.mozac_browser_icons_maximum_size)
@@ -201,7 +202,7 @@ class BrowserIcons constructor(
             onSuccess = { extension ->
                 Logger.debug("Installed browser-icons extension")
 
-                store.flowScoped { flow -> subscribeToUpdates(store, flow, extension) }
+                store.flowScoped(dispatcher = mainDispatcher) { flow -> subscribeToUpdates(store, flow, extension) }
             },
             onError = { throwable ->
                 Logger.error("Could not install browser-icons extension", throwable)

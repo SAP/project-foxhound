@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef TelemetryEvent_h__
-#define TelemetryEvent_h__
+#ifndef TelemetryEvent_h_
+#define TelemetryEvent_h_
 
 #include <stdint.h>
 #include "js/TypeDecls.h"
@@ -61,4 +61,4 @@ size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf);
 
 }  // namespace TelemetryEvent
 
-#endif  // TelemetryEvent_h__
+#endif  // TelemetryEvent_h_

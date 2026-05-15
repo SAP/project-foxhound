@@ -14,16 +14,6 @@
 
 namespace mozilla {
 
-void StyleSheet::SetURIs(nsIURI* aSheetURI, nsIURI* aOriginalSheetURI,
-                         nsIURI* aBaseURI) {
-  MOZ_ASSERT(aSheetURI && aBaseURI, "null ptr");
-  MOZ_ASSERT(!HasRules() && !IsComplete());
-  StyleSheetInfo& info = Inner();
-  info.mSheetURI = aSheetURI;
-  info.mOriginalSheetURI = aOriginalSheetURI;
-  info.mBaseURI = aBaseURI;
-}
-
 dom::ParentObject StyleSheet::GetParentObject() const {
   if (mRelevantGlobal) {
     return dom::ParentObject(mRelevantGlobal);

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Form Autofill With Remote IFrame Demo Page</title>
+</head>
+<body>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const iframeSrc = params.get("iframe");
+
+    if (iframeSrc) {
+      const iframe = document.createElement("iframe");
+      iframe.src = iframeSrc;
+      document.body.appendChild(iframe);
+    } else {
+      document.body.textContent = "Missing iframe query parameter.";
+    }
+  </script>
+</body>
+</html>

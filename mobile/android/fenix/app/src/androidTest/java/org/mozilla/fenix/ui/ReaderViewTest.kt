@@ -5,20 +5,21 @@
 package org.mozilla.fenix.ui
 
 import android.view.View
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingResources
-import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.RetryTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.HomeActivityTestRule
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.loremIpsumAsset
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.ViewVisibilityIdlingResource
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import mozilla.components.browser.toolbar.R as toolbarR
 
 /**
  *  Tests for verifying basic functionality of content context menus
@@ -33,14 +34,13 @@ class ReaderViewTest : TestSetup() {
     private val estimatedReadingTime = "1 - 2 minutes"
 
     @get:Rule
-    val activityIntentTestRule = HomeActivityIntentTestRule.withDefaultSettingsOverrides()
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityTestRule.withDefaultSettingsOverrides(),
+        ) { it.activity }
 
     @get:Rule
     val memoryLeaksRule = DetectMemoryLeaksRule()
-
-    @Rule
-    @JvmField
-    val retryTestRule = RetryTestRule(3)
 
     /**
      *  Verify that Reader View capable pages
@@ -51,29 +51,19 @@ class ReaderViewTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/250592
     @Test
     fun verifyReaderModePageDetectionTest() {
-        val readerViewPage =
-            TestAssetHelper.getLoremIpsumAsset(mockWebServer)
-        val genericPage =
-            TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val readerViewPage = mockWebServer.loremIpsumAsset
+        val genericPage = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(readerViewPage.url) {
-            mDevice.waitForIdle()
         }
 
-        registerAndCleanupIdlingResources(
-            ViewVisibilityIdlingResource(
-                activityIntentTestRule.activity.findViewById(R.id.mozac_browser_toolbar_page_actions),
-                View.VISIBLE,
-            ),
-        ) {}
-
-        navigationToolbar {
-            verifyReaderViewDetected(true)
+        navigationToolbar(composeTestRule) {
+            verifyReaderViewToolbarButton(true)
         }.enterURLAndEnterToBrowser(genericPage.url) {
         }
-        navigationToolbar {
-            verifyReaderViewDetected(false)
+        navigationToolbar(composeTestRule) {
+            verifyReaderViewToolbarButton(false)
         }
     }
 
@@ -81,32 +71,23 @@ class ReaderViewTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyReaderModeControlsTest() {
-        val readerViewPage =
-            TestAssetHelper.getLoremIpsumAsset(mockWebServer)
+        val readerViewPage = mockWebServer.loremIpsumAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(readerViewPage.url) {
-            mDevice.waitForIdle()
+            waitForPageToLoad()
         }
 
-        registerAndCleanupIdlingResources(
-            ViewVisibilityIdlingResource(
-                activityIntentTestRule.activity.findViewById(R.id.mozac_browser_toolbar_page_actions),
-                View.VISIBLE,
-            ),
-        ) {}
-
-        navigationToolbar {
-            verifyReaderViewDetected(true)
-            toggleReaderView()
-            mDevice.waitForIdle()
+        navigationToolbar(composeTestRule) {
+            verifyReaderViewToolbarButton(true)
+            clickReaderViewToolbarButton(isReaderViewEnabled = false)
         }
 
-        browserScreen {
+        browserScreen(composeTestRule) {
             verifyPageContent(estimatedReadingTime)
         }.openThreeDotMenu {
-            verifyReaderViewAppearance(true)
-        }.openReaderViewAppearance {
+            verifyCustomizeReaderViewButton(true)
+        }.clickCustomizeReaderViewButton {
             verifyAppearanceFontGroup(true)
             verifyAppearanceFontSansSerif(true)
             verifyAppearanceFontSerif(true)
@@ -139,14 +120,15 @@ class ReaderViewTest : TestSetup() {
             verifyAppearanceColorSchemeChange("SEPIA")
         }.toggleColorSchemeChangeLight {
             verifyAppearanceColorSchemeChange("LIGHT")
-        }.closeAppearanceMenu {
+        }.closeReaderViewControlMenu(composeTestRule) {
         }
-        navigationToolbar {
-            toggleReaderView()
-            mDevice.waitForIdle()
-            verifyReaderViewDetected(true)
+        navigationToolbar(composeTestRule) {
+            clickReaderViewToolbarButton(isReaderViewEnabled = true)
+            verifyReaderViewToolbarButton(true)
+        }
+        browserScreen(composeTestRule) {
         }.openThreeDotMenu {
-            verifyReaderViewAppearance(false)
+            verifyCustomizeReaderViewButton(false)
         }
     }
 }

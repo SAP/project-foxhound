@@ -21,7 +21,7 @@
 namespace webrtc {
 
 // Faked video renderer that has a callback for actions on rendering.
-class FakeVideoRenderer : public rtc::VideoSinkInterface<VideoFrame> {
+class FakeVideoRenderer : public VideoSinkInterface<VideoFrame> {
  public:
   FakeVideoRenderer();
 
@@ -59,7 +59,7 @@ class FakeVideoRenderer : public rtc::VideoSinkInterface<VideoFrame> {
  private:
   int width_ = 0;
   int height_ = 0;
-  VideoRotation rotation_ = webrtc::kVideoRotation_0;
+  VideoRotation rotation_ = kVideoRotation_0;
   int64_t timestamp_us_ = 0;
   int num_rendered_frames_ = 0;
   bool black_frame_ = false;
@@ -68,10 +68,5 @@ class FakeVideoRenderer : public rtc::VideoSinkInterface<VideoFrame> {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace cricket {
-using ::webrtc::FakeVideoRenderer;
-}  // namespace cricket
 
 #endif  // MEDIA_BASE_FAKE_VIDEO_RENDERER_H_

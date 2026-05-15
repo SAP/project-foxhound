@@ -7,23 +7,22 @@
 #ifndef DOM_QUOTA_CACHINGDATABASECONNECTION_H_
 #define DOM_QUOTA_CACHINGDATABASECONNECTION_H_
 
-#include "mozilla/dom/quota/Config.h"
-
 #include "mozStorageHelper.h"
-#include "nsCOMPtr.h"
-#include "nscore.h"
-#include "nsHashKeys.h"
-#include "nsInterfaceHashtable.h"
-#include "nsISupportsImpl.h"
-#include "nsString.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/InitializedOnce.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/dom/quota/Config.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/dom/quota/ScopedLogExtraInfo.h"
+#include "nsCOMPtr.h"
+#include "nsHashKeys.h"
+#include "nsISupportsImpl.h"
+#include "nsInterfaceHashtable.h"
+#include "nsString.h"
+#include "nscore.h"
 
 namespace mozilla::dom::quota {
 

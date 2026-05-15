@@ -72,8 +72,7 @@ class MOZ_GSL_POINTER nsTDependentSubstring : public nsTSubstring<T> {
       : substring_type(const_cast<char_type*>(aData), aLength, DataFlags(0),
                        ClassFlags(0)) {}
 
-  explicit nsTDependentSubstring(
-      mozilla::Span<const char_type> aData)
+  explicit nsTDependentSubstring(mozilla::Span<const char_type> aData)
       : nsTDependentSubstring(aData.Elements(), aData.Length()) {}
 
   nsTDependentSubstring(const char_type* aStart MOZ_LIFETIME_BOUND,

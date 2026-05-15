@@ -1,5 +1,9 @@
 "use strict";
 
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
 /* import-globals-from trr_common.js */
 
 // Allow telemetry probes which may otherwise be disabled for some
@@ -102,6 +106,7 @@ add_task(async function test_idle_telemetry() {
 add_task(
   { skip_if: () => AppConstants.platform == "android" },
   async function test_idle_telemetry_http3() {
+    Services.prefs.setBoolPref("network.trr.useGET", false);
     let h3port = await create_h3_server();
     Assert.ok(Number.isInteger(h3port));
 

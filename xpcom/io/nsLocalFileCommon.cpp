@@ -171,7 +171,7 @@ nsresult NS_NewLocalFileWithPersistentDescriptor(
   return NS_OK;
 }
 
-#if !defined(MOZ_WIDGET_COCOA) && !defined(XP_WIN)
+#if !defined(XP_WIN)
 NS_IMETHODIMP
 nsLocalFile::InitWithFile(nsIFile* aFile) {
   if (NS_WARN_IF(!aFile)) {

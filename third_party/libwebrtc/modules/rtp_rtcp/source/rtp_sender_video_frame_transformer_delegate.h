@@ -14,7 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
+#include <string>
 #include <vector>
 
 #include "api/array_view.h"
@@ -40,10 +40,10 @@ namespace webrtc {
 class RTPVideoFrameSenderInterface {
  public:
   virtual bool SendVideo(int payload_type,
-                         std::optional<VideoCodecType> codec_type,
+                         VideoCodecType codec_type,
                          uint32_t rtp_timestamp,
                          Timestamp capture_time,
-                         rtc::ArrayView<const uint8_t> payload,
+                         ArrayView<const uint8_t> payload,
                          size_t encoder_output_size,
                          RTPVideoHeader video_header,
                          TimeDelta expected_retransmission_time,
@@ -65,20 +65,21 @@ class RTPSenderVideoFrameTransformerDelegate : public TransformedFrameCallback {
  public:
   RTPSenderVideoFrameTransformerDelegate(
       RTPVideoFrameSenderInterface* sender,
-      rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+      scoped_refptr<FrameTransformerInterface> frame_transformer,
       uint32_t ssrc,
-      const std::string& rid,
+      std::string rid,
       TaskQueueFactory* send_transport_queue);
 
   void Init();
 
   // Delegates the call to FrameTransformerInterface::TransformFrame.
   bool TransformFrame(int payload_type,
-                      std::optional<VideoCodecType> codec_type,
+                      VideoCodecType codec_type,
                       uint32_t rtp_timestamp,
                       const EncodedImage& encoded_image,
                       RTPVideoHeader video_header,
-                      TimeDelta expected_retransmission_time);
+                      TimeDelta expected_retransmission_time,
+                      const std::vector<uint32_t>& csrcs = {});
 
   // Implements TransformedFrameCallback. Can be called on any thread. Posts
   // the transformed frame to be sent on the `encoder_queue_`.
@@ -114,7 +115,7 @@ class RTPSenderVideoFrameTransformerDelegate : public TransformedFrameCallback {
 
   mutable Mutex sender_lock_;
   RTPVideoFrameSenderInterface* sender_ RTC_GUARDED_BY(sender_lock_);
-  rtc::scoped_refptr<FrameTransformerInterface> frame_transformer_;
+  scoped_refptr<FrameTransformerInterface> frame_transformer_;
   const uint32_t ssrc_;
   const std::string rid_;
   // Used when the encoded frames arrives without a current task queue. This can

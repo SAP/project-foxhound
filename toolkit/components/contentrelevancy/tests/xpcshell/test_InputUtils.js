@@ -14,7 +14,13 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
 });
 
-const FRECENCY_SCORE_FOR_ONE_VISIT = 100;
+// 0 days ago, 1 visit.
+const FRECENCY_SCORE_FOR_ONE_VISIT = PlacesUtils.history.pageFrecencyThreshold(
+  0,
+  1,
+  false
+);
+
 const TEST_VISITS = [
   "http://test-1.com/",
   "http://test-2.com/",

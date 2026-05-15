@@ -1,0 +1,20 @@
+<html>
+<head>
+  <script>
+    var pattern
+    window.addEventListener("load", async () => {
+      const canvas = document.createElement("canvas")
+      document.documentElement.appendChild(canvas)
+      canvas.setAttribute("class", "class_3")
+      canvas.setAttribute("id", "id_0")
+      const context = canvas.getContext("2d")
+      const bitmap = await window.createImageBitmap(context, -462926265, -128, 2147483643, -2147483649)
+      context.canvas = canvas
+      try { pattern = context.createPattern(bitmap, "repeat") } catch (e) {}
+      context.miterLimit = 512
+      context.createConicGradient(512, 512, 3801793650)
+      setTimeout("location.reload()", Math.random() * 2000)
+    })
+  </script>
+</head>
+</html>

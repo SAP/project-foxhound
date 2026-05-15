@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpActivityDistributor_h__
-#define nsHttpActivityDistributor_h__
+#ifndef nsHttpActivityDistributor_h_
+#define nsHttpActivityDistributor_h_
 
 #include "nsIHttpActivityObserver.h"
 #include "nsTArray.h"
@@ -37,4 +37,4 @@ class nsHttpActivityDistributor : public nsIHttpActivityDistributor {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsHttpActivityDistributor_h__
+#endif  // nsHttpActivityDistributor_h_

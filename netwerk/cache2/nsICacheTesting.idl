@@ -17,4 +17,23 @@ interface nsICacheTesting : nsISupports
   void suspendCacheIOThread(in uint32_t aLevel);
   void resumeCacheIOThread();
   void flush(in nsIObserver aObserver);
+  /**
+   * Clear the in-memory DictionaryCache but keep disk data intact.
+   * This forces dictionary entries to be reloaded from disk on next access.
+   */
+  void clearDictionaryCacheMemory();
+
+  /**
+   * Corrupt the hash of a stored dictionary for testing hash mismatch handling.
+   * @param aURI The URI of the dictionary to corrupt
+   */
+  void corruptDictionaryHash(in ACString aURI);
+
+  /**
+   * Clear the loaded dictionary data for a specific entry while keeping the
+   * entry metadata (including hash). This forces the data to be reloaded from
+   * disk on next prefetch.
+   * @param aURI The URI of the dictionary
+   */
+  void clearDictionaryDataForTesting(in ACString aURI);
 };

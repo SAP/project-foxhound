@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
@@ -12,20 +13,6 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     buildFeatures {
         compose = true
     }
@@ -36,6 +23,7 @@ android {
 dependencies {
     implementation project(':components:browser-state')
     implementation project(':components:compose-base')
+    implementation project(':components:compose-cfr')
     implementation project(':components:concept-engine')
     implementation project(':components:feature-session')
     implementation project(':components:feature-tabs')
@@ -47,29 +35,32 @@ dependencies {
     implementation project(':components:ui-colors')
 
     implementation libs.androidx.activity
+    implementation platform(libs.androidx.compose.bom)
     implementation libs.androidx.compose.foundation
     implementation libs.androidx.compose.material3
     implementation libs.androidx.compose.ui
     implementation libs.androidx.compose.ui.tooling.preview
     implementation libs.androidx.constraintlayout
     implementation libs.androidx.core.ktx
+    implementation libs.androidx.fragment.compose
     implementation libs.google.material
 
     debugImplementation libs.androidx.compose.ui.tooling
 
-    testImplementation libs.androidx.test.core
-    testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.robolectric
     testImplementation project(':components:feature-session')
     testImplementation project(':components:support-test')
     testImplementation project(':components:support-test-libstate')
+
+    testImplementation libs.androidx.test.core
+    testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 
     androidTestImplementation project(':components:support-android-test')
     androidTestImplementation libs.androidx.test.core
     androidTestImplementation libs.androidx.test.runner
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

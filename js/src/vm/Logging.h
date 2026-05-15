@@ -93,6 +93,8 @@ class LogModule {
   _(startup)              /* engine startup logging */                       \
   _(teleporting)          /* Shape Teleporting */                            \
   _(selfHosted)           /* self-hosted script logging */                   \
+  _(gc)                   /* The garbage collector */                        \
+  _(mtq)                  /* MicroTask queue */                              \
   JITSPEW_CHANNEL_LIST(_) /* A module for each JitSpew channel. */
 
 // Declare Log modules
@@ -118,13 +120,12 @@ FOR_EACH_JS_LOG_MODULE(DECLARE_MODULE);
                                         LogLevel::log_level, __VA_ARGS__); \
       }                                                                    \
     } while (0);
-#  define JS_LOG_FMT(name, log_level, fmt, ...)                             \
-    do {                                                                    \
-      if (name##Module.shouldLog(LogLevel::log_level)) {                    \
-        name##Module.interface.logPrintFmt(name##Module.logger,             \
-                                           LogLevel::log_level,             \
-                                           FMT_STRING(fmt), ##__VA_ARGS__); \
-      }                                                                     \
+#  define JS_LOG_FMT(name, log_level, fmt, ...)                            \
+    do {                                                                   \
+      if (name##Module.shouldLog(LogLevel::log_level)) {                   \
+        name##Module.interface.logPrintFmt(                                \
+            name##Module.logger, LogLevel::log_level, fmt, ##__VA_ARGS__); \
+      }                                                                    \
     } while (0);
 #else
 #  define JS_LOG(module, log_level, ...)

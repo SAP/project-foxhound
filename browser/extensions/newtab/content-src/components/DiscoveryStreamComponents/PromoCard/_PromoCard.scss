@@ -1,0 +1,71 @@
+.promo-card-wrapper {
+  @include newtab-card-style;
+
+  display: none; // hidden by default
+  box-shadow: var(--box-shadow-card);
+  border-radius: var(--border-radius-large);
+  height: 298px;
+  width: 228px;
+  position: relative;
+  padding: var(--space-large);
+
+  .promo-card-title {
+    display: block;
+    font-size: var(--font-size-medium);
+    font-weight: var(--heading-font-weight);
+    margin-block: var(--space-medium);
+
+    &::before {
+      content: '';
+      display: inline-block;
+      width: var(--icon-size);
+      height: var(--icon-size);
+      background-image: url('chrome://branding/content/icon32.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      margin-inline-end: var(--space-small);
+      vertical-align: middle;
+    }
+  }
+
+  .promo-card-body {
+    display: block;
+    margin-block: 0 var(--space-medium);
+  }
+
+  .promo-card-dismiss-button {
+    position: absolute;
+    inset-block-start: var(--space-small);
+    inset-inline-end: var(--space-small);
+    margin: 0;
+  }
+
+  .promo-card-cta-wrapper {
+    display: flex;
+    width: 100%;
+    justify-content: end;
+  }
+
+  .img-wrapper {
+    height: 132px;
+    width: 196px;
+  }
+}
+
+// Card grid and sections have different breakpoints where we move to 3 columns.
+.ds-card-grid {
+  .promo-card-wrapper {
+    @media (min-width: $break-point-ultra-wide) {
+      display: block; // only visible in 4 column layout
+    }
+  }
+}
+
+// Card grid and sections have different breakpoints where we move to 3 columns.
+.ds-section-wrapper{
+  .promo-card-wrapper {
+    @media (min-width: $break-point-sections-variant) {
+      display: block; // only visible in 4 column layout
+    }
+  }
+}

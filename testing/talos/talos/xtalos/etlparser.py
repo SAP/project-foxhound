@@ -225,7 +225,6 @@ def trackProcess(row, firstFirefoxPID):
 
 
 def getBrowserPID():
-    global gBrowserPID
     return gBrowserPID
 
 
@@ -348,7 +347,6 @@ def etlparser(
     all_threads=False,
     debug=False,
 ):
-    global NAME_SUBSTITUTIONS
 
     # setup output file
     if outputFile:
@@ -395,7 +393,7 @@ def etlparser(
 
     allowlist = loadAllowlist(allowlist_file)
 
-    header = "filename, tid, stage, readcount, readbytes, writecount," " writebytes"
+    header = "filename, tid, stage, readcount, readbytes, writecount, writebytes"
     outFile.write(header + "\n")
 
     # Filter out stages, threads, and allowlisted files that we're not

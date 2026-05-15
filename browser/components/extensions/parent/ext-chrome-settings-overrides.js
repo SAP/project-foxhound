@@ -17,6 +17,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   ExtensionSettingsStore:
     "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
 });
 
@@ -185,15 +186,15 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
     );
     if (item && control == "controlled_by_this_extension") {
       try {
-        let engine = Services.search.getEngineByName(
+        let engine = SearchService.getEngineByName(
           item.value || item.initialValue
         );
         if (engine) {
-          await Services.search.setDefault(
+          await SearchService.setDefault(
             engine,
             action == "enable"
-              ? Ci.nsISearchService.CHANGE_REASON_ADDON_INSTALL
-              : Ci.nsISearchService.CHANGE_REASON_ADDON_UNINSTALL
+              ? SearchService.CHANGE_REASON.ADDON_INSTALL
+              : SearchService.CHANGE_REASON.ADDON_UNINSTALL
           );
         }
       } catch (e) {
@@ -204,7 +205,7 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
 
   static async removeEngine(id) {
     try {
-      await Services.search.removeWebExtensionEngine(id);
+      await SearchService.removeWebExtensionEngine(id);
     } catch (e) {
       Cu.reportError(e);
     }
@@ -277,7 +278,7 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
     }
     if (manifest.chrome_settings_overrides.search_provider) {
       // Registering a search engine can potentially take a long while,
-      // or not complete at all (when Services.search.promiseInitialized is
+      // or not complete at all (when SearchService.promiseInitialized is
       // never resolved), so we are deliberately not awaiting the returned
       // promise here.
       let searchStartupPromise =
@@ -307,7 +308,7 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
       extension.id
     );
     if (!item) {
-      let defaultEngine = await Services.search.getDefault();
+      let defaultEngine = await SearchService.getDefault();
       item = await ExtensionSettingsStore.addSetting(
         extension.id,
         DEFAULT_SEARCH_STORE_TYPE,
@@ -339,8 +340,8 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
   async promptDefaultSearch(engineName) {
     let { extension } = this;
     // Don't ask if it is already the current engine
-    let engine = Services.search.getEngineByName(engineName);
-    let defaultEngine = await Services.search.getDefault();
+    let engine = SearchService.getEngineByName(engineName);
+    let defaultEngine = await SearchService.getDefault();
     if (defaultEngine.name == engine.name) {
       return;
     }
@@ -368,9 +369,9 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
               "enable",
               extension.id
             );
-            await Services.search.setDefault(
-              Services.search.getEngineByName(engineName),
-              Ci.nsISearchService.CHANGE_REASON_ADDON_INSTALL
+            await SearchService.setDefault(
+              SearchService.getEngineByName(engineName),
+              SearchService.CHANGE_REASON.ADDON_INSTALL
             );
           }
           // For testing
@@ -399,7 +400,7 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
       return;
     }
 
-    await Services.search.promiseInitialized;
+    await SearchService.promiseInitialized;
     if (!this.extension) {
       Cu.reportError(
         `Extension shut down before search provider was registered`
@@ -408,15 +409,15 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
     }
 
     let engineName = searchProvider.name.trim();
-    let result = await Services.search.maybeSetAndOverrideDefault(extension);
-    // This will only be set to true when the specified engine is an app-provided
+    let result = await SearchService.maybeSetAndOverrideDefault(extension);
+    // This will only be set to true when the specified engine is a config
     // engine, or when it is an allowed add-on defined in the list stored in
     // SearchDefaultOverrideAllowlistHandler.
-    if (result.canChangeToAppProvided) {
+    if (result.canChangeToConfigEngine) {
       await this.setDefault(engineName, true);
     }
     if (!result.canInstallEngine) {
-      // This extension is overriding an app-provided one, so we don't
+      // This extension is overriding a config search engine, so we don't
       // add its engine as well.
       return;
     }
@@ -433,13 +434,13 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
     let { extension } = this;
 
     if (extension.startupReason === "ADDON_INSTALL") {
-      // We should only get here if an extension is setting an app-provided
+      // We should only get here if an extension is setting a config search
       // engine to default and we are ignoring the addons other engine settings.
       // In this case we do not show the prompt to the user.
       let item = await this.ensureSetting(engineName);
-      await Services.search.setDefault(
-        Services.search.getEngineByName(item.value),
-        Ci.nsISearchService.CHANGE_REASON_ADDON_INSTALL
+      await SearchService.setDefault(
+        SearchService.getEngineByName(item.value),
+        SearchService.CHANGE_REASON.ADDON_INSTALL
       );
     } else if (
       ["ADDON_UPGRADE", "ADDON_DOWNGRADE", "ADDON_ENABLE"].includes(
@@ -458,7 +459,7 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
       // and the current engine actually set.
       if (
         control === "controlled_by_this_extension" &&
-        Services.search.defaultEngine.name !== engineName
+        SearchService.defaultEngine.name !== engineName
       ) {
         // Check for and fix any inconsistency between the extensions settings storage
         // and the current engine actually set.  If settings claims the extension is default
@@ -469,7 +470,7 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
           DEFAULT_SEARCH_SETTING_NAME
         );
         for (const setting of allSettings) {
-          if (setting.value !== Services.search.defaultEngine.name) {
+          if (setting.value !== SearchService.defaultEngine.name) {
             await ExtensionSettingsStore.disable(
               setting.id,
               DEFAULT_SEARCH_STORE_TYPE,
@@ -485,21 +486,21 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
       }
 
       if (control === "controlled_by_this_extension") {
-        await Services.search.setDefault(
-          Services.search.getEngineByName(engineName),
-          Ci.nsISearchService.CHANGE_REASON_ADDON_INSTALL
+        await SearchService.setDefault(
+          SearchService.getEngineByName(engineName),
+          SearchService.CHANGE_REASON.ADDON_INSTALL
         );
       } else if (control === "controllable_by_this_extension") {
         if (skipEnablePrompt) {
-          // For overriding app-provided engines, we don't prompt, so set
+          // For overriding config engines, we don't prompt, so set
           // the default straight away.
           await chrome_settings_overrides.processDefaultSearchSetting(
             "enable",
             extension.id
           );
-          await Services.search.setDefault(
-            Services.search.getEngineByName(engineName),
-            Ci.nsISearchService.CHANGE_REASON_ADDON_INSTALL
+          await SearchService.setDefault(
+            SearchService.getEngineByName(engineName),
+            SearchService.CHANGE_REASON.ADDON_INSTALL
           );
         } else if (extension.startupReason == "ADDON_ENABLE") {
           // This extension has precedence, but is not in control.  Ask the user.
@@ -512,7 +513,7 @@ this.chrome_settings_overrides = class extends ExtensionAPI {
   async addSearchEngine() {
     let { extension } = this;
     try {
-      await Services.search.addEnginesFromExtension(extension);
+      await SearchService.addEnginesFromExtension(extension);
     } catch (e) {
       Cu.reportError(e);
       return false;

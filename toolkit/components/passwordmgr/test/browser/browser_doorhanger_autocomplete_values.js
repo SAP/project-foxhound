@@ -178,7 +178,7 @@ add_task(async function test_edit_password() {
     await LoginTestUtils.clearData();
     await cleanupDoorhanger();
     await cleanupPasswordNotifications();
-    Services.logins.removeAllUserFacingLogins();
+    await Services.logins.removeAllUserFacingLoginsAsync();
 
     // Create the pre-existing logins when needed.
     if (testCase.savedLogins) {
@@ -187,6 +187,7 @@ add_task(async function test_edit_password() {
     }
 
     info("Opening tab");
+    let formProcessedPromise = listenForTestNotification("FormProcessed");
     await BrowserTestUtils.withNewTab(
       {
         gBrowser,
@@ -195,6 +196,9 @@ add_task(async function test_edit_password() {
           "passwordmgr/test/browser/form_expanded.html",
       },
       async function (browser) {
+        info("Waiting for form-processed message");
+        await formProcessedPromise;
+
         info("Editing the form");
         for (const change of testCase.modifiedFields) {
           for (const selector in change) {
@@ -203,7 +207,6 @@ add_task(async function test_edit_password() {
             await changeContentFormValues(browser, change);
           }
         }
-
         let notif = getCaptureDoorhanger("any");
 
         let { panel } = PopupNotifications;
@@ -267,7 +270,7 @@ add_task(async function test_edit_password() {
         await cleanupDoorhanger();
         await cleanupPasswordNotifications();
         await clearMessageCache(browser);
-        Services.logins.removeAllUserFacingLogins();
+        await Services.logins.removeAllUserFacingLoginsAsync();
       }
     );
   }

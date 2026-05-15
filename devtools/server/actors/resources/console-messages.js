@@ -163,8 +163,8 @@ module.exports = ConsoleMessageWatcher;
  * sub-properties we might need.
  *
  * @param {TargetActor} targetActor: The Target Actor from which this object originates.
- * @param {Object} result: The console.table message.
- * @returns {Object} An object containing the properties of the first argument of the
+ * @param {object} result: The console.table message.
+ * @returns {object} An object containing the properties of the first argument of the
  *                   console.table call.
  */
 function getConsoleTableMessageItems(targetActor, result) {

@@ -7,12 +7,10 @@
 #ifndef mozilla_dom_SpeechRecognitionAlternative_h
 #define mozilla_dom_SpeechRecognitionAlternative_h
 
+#include "js/TypeDecls.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"
-#include "js/TypeDecls.h"
-
-#include "mozilla/Attributes.h"
 
 namespace mozilla::dom {
 

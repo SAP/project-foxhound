@@ -91,7 +91,7 @@ class UnknownBaseError(Exception):
     """Base class for handling unexpected input in this module."""
 
     def __init__(self, value):
-        super(UnknownBaseError, self).__init__()
+        super().__init__()
         self.value = value
         self.category = "input"
 
@@ -119,7 +119,7 @@ class UnsupportedHashAlgorithmError(Exception):
     """Helper exception type for unsupported hash algorithms."""
 
     def __init__(self, value):
-        super(UnsupportedHashAlgorithmError, self).__init__()
+        super().__init__()
         self.value = value
 
     def __str__(self):

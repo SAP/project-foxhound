@@ -5,11 +5,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-using mozilla::CSSRect from "Units.h";
-using mozilla::CSSToScreenScale from "Units.h";
-using mozilla::ScreenIntSize from "Units.h";
-using mozilla::ScreenPoint from "Units.h";
+using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
+using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
 using mozilla::layers::CompositorScrollUpdate from "mozilla/layers/CompositorScrollUpdate.h";
+using mozilla::void_t from "mozilla/ipc/IPCCore.h";
 
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
@@ -38,12 +37,15 @@ parent:
   async MaxToolbarHeight(int32_t aHeight);
   async FixedBottomOffset(int32_t aOffset);
   async DefaultClearColor(uint32_t aColor);
-  async RequestScreenPixels();
+  async RequestScreenPixels(uint64_t aRequestId, IntRect aSourceRect, IntSize aDestSize);
   async EnableLayerUpdateNotifications(bool aEnable);
 child:
   async ToolbarAnimatorMessageFromCompositor(int32_t aMessage);
   async NotifyCompositorScrollUpdate(CompositorScrollUpdate aUpdate);
-  async ScreenPixels(Shmem aMem, ScreenIntSize aSize, bool aNeedsYFlip);
+  // Returns when the child side has finished using the HardwareBuffer,
+  // indicating that the parent side can now release it.
+  async ScreenPixels(uint64_t aRequestId, FileDescriptor? aHardwareBuffer, FileDescriptor? aAcquireFence)
+    returns (void_t ok);
 };
 
 } // layers

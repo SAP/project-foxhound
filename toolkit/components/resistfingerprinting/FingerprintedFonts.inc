@@ -835,3 +835,262 @@ const char* variantB[] = {"ms pmincho",
                           "nanummyeongjo",
                           "stixintegralsupd-regular",
                           nullptr};
+
+const char* variantC[] = {"arial",
+                          "cambria math",
+                          "dejavu sans",
+                          "droid sans",
+                          "geneva",
+                          "helvetica neue",
+                          "segoe ui",
+                          "source code pro",
+                          "ubuntu",
+                          nullptr};
+
+const char* variantD[] = {"dejavu sans",
+                          "droid sans",
+                          "source code pro",
+                          "ubuntu",
+                          nullptr};
+
+const char* variantE[] = {
+    "Andale Mono",
+    "Arial",
+    "Arial Black",
+    "Arial Hebrew",
+    "Arial MT",
+    "Arial Narrow",
+    "Arial Rounded MT Bold",
+    "Arial Unicode MS",
+    "Bitstream Vera Sans Mono",
+    "Book Antiqua",
+    "Bookman Old Style",
+    "Calibri",
+    "Cambria",
+    "Century",
+    "Century Gothic",
+    "Century Schoolbook",
+    "Comic Sans",
+    "Comic Sans MS",
+    "Consolas",
+    "Courier",
+    "Courier New",
+    "Garamond",
+    "Georgia",
+    "Helvetica",
+    "Helvetica Neue",
+    "Impact",
+    "Lucida Fax",
+    "Lucida Handwriting",
+    "Lucida Sans",
+    "Lucida Sans Typewriter",
+    "Lucida Sans Unicode",
+    "Microsoft Sans Serif",
+    "Monaco",
+    "Monotype Corsiva",
+    "MS Gothic",
+    "MS Outlook",
+    "MS PGothic",
+    "MS Reference Sans Serif",
+    "MS Serif",
+    "MYRIAD",
+    "MYRIAD PRO",
+    "Palatino",
+    "Palatino Linotype",
+    "Segoe Script",
+    "Segoe UI",
+    "Segoe UI Semibold",
+    "Segoe UI Symbol",
+    "Tahoma",
+    "Times",
+    "Times New Roman",
+    "Times New Roman PS",
+    "Trebuchet MS",
+    "Verdana",
+    "Wingdings",
+    "Wingdings 3",
+    nullptr};
+    
+// Font list (48 fonts) - runtime order from web crawl data
+const char* variantF_FontList[] = {
+    "Segoe Fluent Icons",
+    "Ink Free",
+    "Bahnschrift",
+    "Segoe MDL2 Assets",
+    "HoloLens MDL2 Assets",
+    "Leelawadee UI",
+    "Javanese Text",
+    "Segoe UI Emoji",
+    "Aldhabi",
+    "Gadugi",
+    "Myanmar Text",
+    "Nirmala UI",
+    "Lucida Console",
+    "Cambria Math",
+    "Bai Jamjuree",
+    "Chakra Petch",
+    "Charmonman",
+    "Fahkwang",
+    "K2D",
+    "Kodchasan",
+    "KoHo",
+    "Sarabun",
+    "Srisakdi",
+    "Galvji",
+    "MuktaMahee Regular",
+    "InaiMathi Bold",
+    "American Typewriter Semibold",
+    "Futura Bold",
+    "SignPainter-HouseScript Semibold",
+    "PingFang HK Light",
+    "Kohinoor Devanagari Medium",
+    "Luminari",
+    "Geneva",
+    "Helvetica Neue",
+    "Droid Sans Mono",
+    "Dancing Script",
+    "Roboto",
+    "Ubuntu",
+    "Liberation Mono",
+    "Source Code Pro",
+    "DejaVu Sans",
+    "OpenSymbol",
+    "Chilanka",
+    "Cousine",
+    "Arimo",
+    "Jomolhari",
+    "MONO",
+    "Noto Color Emoji",
+    nullptr};
+
+// Variant H emoji list - includes ZWJ sequence codepoints
+// clang-format off
+const uint32_t variantHEmojis[] = {
+    0x1F600,  // Grinning Face
+    0x263A,   // White Smiling Face
+    0x1F935, 0x200D, 0x2642, 0xFE0F,  // Man in Tuxedo
+    0x2668,   // Hot Springs
+    0x2638,   // Wheel of Dharma
+    0x26A7,   // Transgender Symbol
+    0x2049,   // Exclamation Question Mark
+    0x2139,   // Information Source
+    0x1F3F3, 0xFE0F, 0x200D, 0x26A7, 0xFE0F,  // Transgender Flag
+    0x1F972,  // Smiling Face with Tear
+    0x2639,   // White Frowning Face
+    0x2620,   // Skull and Crossbones
+    0x1F9D1, 0x200D, 0x1F9B0,  // Person: Red Hair
+    0x1F9CF, 0x200D, 0x2642, 0xFE0F,  // Deaf Man
+    0x26F7,   // Skier
+    0x1F9D1, 0x200D, 0x1F91D, 0x200D, 0x1F9D1,  // People Holding Hands
+    0x2618,   // Shamrock
+    0x26F0,   // Mountain
+    0x26E9,   // Shinto Shrine
+    0x26F4,   // Ferry
+    0x2708,   // Airplane
+    0x23F1,   // Stopwatch
+    0x26C8,   // Cloud with Lightning and Rain
+    0x2602,   // Umbrella
+    0x26F1,   // Umbrella on Ground
+    0x2603,   // Snowman
+    0x2604,   // Comet
+    0x26F8,   // Ice Skate
+    0x265F,   // Chess Pawn
+    0x26D1,   // Rescue Worker's Helmet
+    0x2328,   // Keyboard
+    0x2709,   // Envelope
+    0x270F,   // Pencil
+    0x1F469, 0x200D, 0x2764, 0xFE0F, 0x200D, 0x1F48B, 0x200D, 0x1F468,  // Kiss: Woman, Man
+    0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466,  // Family: Man, Woman, Girl, Boy
+    0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F466,  // Family: Man, Woman, Boy
+    0x00A9,   // Copyright Sign
+    0x2692,   // Hammer and Pick
+    0x2694,   // Crossed Swords
+    0x2699,   // Gear
+    0x26D3,   // Chains
+    0x2697,   // Alembic
+    0x26B0,   // Coffin
+    0x26B1,   // Funeral Urn
+    0x2622,   // Radioactive Sign
+    0x2623,   // Biohazard Sign
+    0x2B06,   // Up Arrow
+    0x2197,   // North East Arrow
+    0x27A1,   // Right Arrow
+    0x2B05,   // Left Arrow
+    0x269B,   // Atom Symbol
+    0x2721,   // Star of David
+    0x271D,   // Latin Cross
+    0x2626,   // Orthodox Cross
+    0x25B6,   // Play Button
+    0x23ED,   // Next Track Button
+    0x23EF,   // Play or Pause Button
+    0x23CF,   // Eject Button
+    0x2640,   // Female Sign
+    0x2642,   // Male Sign
+    0x2716,   // Multiplication X
+    0x3030,   // Wavy Dash
+    0x2695,   // Staff of Aesculapius (Medical)
+    0x269C,   // Fleur-de-lis
+    0x2714,   // Check Mark
+    0x2733,   // Eight Spoked Asterisk
+    0x2747,   // Sparkle
+    0x25FC,   // Black Medium Square
+    0x25AA,   // Black Small Square
+    0x2763,   // Heart Exclamation
+    0x2764,   // Red Heart
+    0x270C,   // Victory Hand
+    0x261D,   // Index Pointing Up
+    0x270D,   // Writing Hand
+    0x2744,   // Snowflake
+    0x2696,   // Balance Scale
+    0x21AA,   // Right Arrow Curving Left
+};
+// clang-format on
+
+// Variant I: emoji font list from populateSVGRect's CSS_FONT_FAMILY
+const char* variantI_FontList[] = {"Apple Color Emoji",
+                                   "Segoe UI Emoji",
+                                   "Segoe UI Symbol",
+                                   "Noto Color Emoji",
+                                   "EmojiOne Color",
+                                   "Android Emoji",
+                                   "sans-serif",
+                                   nullptr};
+
+// Variant I emoji list from populateSVGRect's EMOJIS
+// clang-format off
+const uint32_t variantIEmojis[] = {
+    0x1F600,  // Grinning Face
+    0x263A,   // White Smiling Face
+    0x1F9D5, 0x200D, 0x2642, 0xFE0F,  // Person with Headscarf -> Male
+    0x2670,   // Adi Shakti
+    0x2638,   // Wheel of Dharma
+    0x26A7,   // Transgender Symbol
+    0x2049,   // Exclamation Question Mark
+    0x2139,   // Information Source
+    0x1F3F3, 0xFE0F, 0x200D, 0x26A7, 0xFE0F,  // Transgender Flag
+    0x1F972,  // Smiling Face with Tear
+    0x2639,   // White Frowning Face
+    0x2620,   // Skull and Crossbones
+    0x1F9D1, 0x200D, 0x1F9B0,  // Person: Red Hair
+    0x1F9CF, 0x200D, 0x2642, 0xFE0F,  // Deaf Man
+    0x26F7,   // Skier
+    0x1F9D1, 0x200D, 0x1F91D, 0x200D, 0x1F9D1,  // People Holding Hands
+    0x2618,   // Shamrock
+    0x26F0,   // Mountain
+    0x26E9,   // Shinto Shrine
+    0x26F4,   // Ferry
+    0x2708,   // Airplane
+    0x23F1,   // Stopwatch
+    0x26C8,   // Cloud with Lightning and Rain
+    0x26C2,   // White Draughts Man
+    0x26F1,   // Umbrella on Ground
+    0x26C3,   // Black Draughts King
+    0x26C4,   // Snowman without Snow
+    0x26F8,   // Ice Skate
+    0x264F,   // Scorpio
+    0x26D1,   // Rescue Worker's Helmet
+    0x2328,   // Keyboard
+    0x26F9,   // Person Bouncing Ball
+    0x270F,   // Pencil
+};
+// clang-format on

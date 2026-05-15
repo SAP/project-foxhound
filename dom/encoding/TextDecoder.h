@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_textdecoder_h_
 #define mozilla_dom_textdecoder_h_
 
+#include "mozilla/Encoding.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BufferSourceBindingFwd.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/TextDecoderBinding.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla::dom {
 

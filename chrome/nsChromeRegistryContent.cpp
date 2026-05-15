@@ -64,9 +64,9 @@ void nsChromeRegistryContent::RegisterPackage(const ChromePackage& aPackage) {
 
   mozilla::UniquePtr<PackageEntry> entry = mozilla::MakeUnique<PackageEntry>();
   entry->flags = aPackage.flags;
-  entry->contentBaseURI = content;
-  entry->localeBaseURI = locale;
-  entry->skinBaseURI = skin;
+  entry->contentBaseURI = std::move(content);
+  entry->localeBaseURI = std::move(locale);
+  entry->skinBaseURI = std::move(skin);
 
   mPackagesHash.InsertOrUpdate(aPackage.package, std::move(entry));
 }

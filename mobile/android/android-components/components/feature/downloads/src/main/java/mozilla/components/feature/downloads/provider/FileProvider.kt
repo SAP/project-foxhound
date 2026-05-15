@@ -14,5 +14,4 @@ package mozilla.components.feature.downloads.provider
  * As a convention try to use unique names like using the name of the component as a prefix of the
  * name of the file, like component_xxx_file_paths.xml.
  */
-/** @suppress */
 class FileProvider : androidx.core.content.FileProvider()

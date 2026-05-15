@@ -14,6 +14,7 @@
 #include "mozilla/Components.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/FOGIPC.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/net/DNSRequestParent.h"
 #include "mozilla/net/ProxyConfigLookupParent.h"
 #include "mozilla/net/SocketProcessBackgroundParent.h"
@@ -229,7 +230,7 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvObserveHttpActivity(
       components::HttpActivityDistributor::Service();
   MOZ_ASSERT(activityDistributor);
 
-  Unused << activityDistributor->ObserveActivityWithArgs(
+  (void)activityDistributor->ObserveActivityWithArgs(
       aArgs, aActivityType, aActivitySubtype, aTimestamp, aExtraSizeData,
       aExtraStringData);
   return IPC_OK();
@@ -327,6 +328,12 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvOnConsoleMessage(
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvFOGData(ByteBuf&& aBuf) {
   glean::FOGData(std::move(aBuf));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvGeckoTraceExport(
+    ByteBuf&& aBuf) {
+  recv_gecko_trace_export(aBuf.mData, aBuf.mLen);
   return IPC_OK();
 }
 

@@ -21,12 +21,12 @@
 #include "nsString.h"
 #include "nsTString.h"
 #include "mozilla/ipc/IPCTypes.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/Types.h"
+#include "gfxTypes.h"
 
 #include <map>
 
@@ -95,6 +95,7 @@ struct Mat {
   float m[N * N];  // column-major, for GL
 
   float& at(const uint8_t x, const uint8_t y) { return m[N * x + y]; }
+  float at(const uint8_t x, const uint8_t y) const { return m[N * x + y]; }
 
   static Mat<N> I() {
     auto ret = Mat<N>{};
@@ -155,9 +156,9 @@ class DrawBlitProg final {
   struct BaseArgs final {
     Mat3 texMatrix0;
     bool yFlip;
-    gfx::IntSize
-        destSize;  // Always needed for (at least) setting the viewport.
-    Maybe<gfx::IntRect> destRect;
+    gfx::IntSize fbSize;  // Always needed for (at least) setting the viewport.
+    gfx::IntRect destRect;
+    gfx::IntSize texSize;
   };
   struct YUVArgs final {
     Mat3 texMatrix1;
@@ -234,22 +235,36 @@ class GLBlitHelper final {
   std::unique_ptr<const DrawBlitProg> CreateDrawBlitProg(
       const DrawBlitProg::Key& key) const;
 
+  const char* GetAlphaMixin(Maybe<gfxAlphaType>) const;
+
  public:
   bool BlitPlanarYCbCr(const layers::PlanarYCbCrData&,
-                       const gfx::IntSize& destSize, OriginPos destOrigin);
+                       const gfx::IntRect& destRect, OriginPos destOrigin,
+                       const gfx::IntSize& fbSize = gfx::IntSize(),
+                       Maybe<gfxAlphaType> convertAlpha = {});
 #ifdef MOZ_WIDGET_ANDROID
   bool Blit(const java::GeckoSurfaceTexture::Ref& surfaceTexture,
-            const gfx::IntSize& destSize, const OriginPos destOrigin) const;
+            const gfx::IntSize& texSize, const gfx::IntRect& destRect,
+            const OriginPos destOrigin,
+            const gfx::IntSize& fbSize = gfx::IntSize(),
+            Maybe<gfxAlphaType> convertAlpha = {}) const;
+  bool Blit(EGLImage image, EGLSync fence, const gfx::IntSize& texSize,
+            const gfx::IntRect& destRect, const OriginPos destOrigin,
+            const gfx::IntSize& fbSize = gfx::IntSize(),
+            Maybe<gfxAlphaType> convertAlpha = {}) const;
 #endif
 #ifdef XP_MACOSX
   bool BlitImage(layers::MacIOSurfaceImage* srcImage,
-                 const gfx::IntSize& destSize, OriginPos destOrigin) const;
+                 const gfx::IntRect& destRect, OriginPos destOrigin,
+                 const gfx::IntSize& fbSize = gfx::IntSize()) const;
 #endif
 #ifdef MOZ_WIDGET_GTK
-  bool Blit(DMABufSurface* surface, const gfx::IntSize& destSize,
-            OriginPos destOrigin) const;
+  bool Blit(DMABufSurface* surface, const gfx::IntRect& destRect,
+            OriginPos destOrigin, const gfx::IntSize& fbSize = gfx::IntSize(),
+            Maybe<gfxAlphaType> convertAlpha = {}) const;
   bool BlitImage(layers::DMABUFSurfaceImage* srcImage,
-                 const gfx::IntSize& destSize, OriginPos destOrigin) const;
+                 const gfx::IntRect& destRect, OriginPos destOrigin,
+                 const gfx::IntSize& fbSize = gfx::IntSize()) const;
   bool BlitYCbCrImageToDMABuf(const layers::PlanarYCbCrData& yuvData,
                               DMABufSurface* surface);
 #endif
@@ -278,47 +293,54 @@ class GLBlitHelper final {
                             GLenum srcTarget = LOCAL_GL_TEXTURE_2D,
                             GLenum destTarget = LOCAL_GL_TEXTURE_2D) const;
 
-  void DrawBlitTextureToFramebuffer(GLuint srcTex, const gfx::IntSize& srcSize,
-                                    const gfx::IntSize& destSize,
-                                    GLenum srcTarget = LOCAL_GL_TEXTURE_2D,
-                                    bool srcIsBGRA = false) const;
+  void DrawBlitTextureToFramebuffer(
+      GLuint srcTex, const gfx::IntSize& srcSize, const gfx::IntSize& destSize,
+      GLenum srcTarget = LOCAL_GL_TEXTURE_2D, bool srcIsBGRA = false,
+      bool yFlip = false, Maybe<gfxAlphaType> convertAlpha = {}) const;
 
   bool BlitImageToFramebuffer(layers::Image* srcImage,
-                              const gfx::IntSize& destSize,
-                              OriginPos destOrigin);
+                              const gfx::IntRect& destRect,
+                              OriginPos destOrigin,
+                              const gfx::IntSize& fbSize = gfx::IntSize());
   bool BlitSdToFramebuffer(const layers::SurfaceDescriptor&,
-                           const gfx::IntSize& destSize, OriginPos destOrigin);
+                           const gfx::IntRect& destRect, OriginPos destOrigin,
+                           const gfx::IntSize& fbSize = gfx::IntSize(),
+                           Maybe<gfxAlphaType> convertAlpha = {});
 
  private:
-  bool BlitImage(layers::GPUVideoImage* srcImage, const gfx::IntSize& destSize,
-                 OriginPos destOrigin) const;
+  bool BlitImage(layers::GPUVideoImage* srcImage, const gfx::IntRect& destRect,
+                 OriginPos destOrigin,
+                 const gfx::IntSize& fbSize = gfx::IntSize()) const;
 #ifdef XP_MACOSX
-  bool BlitImage(MacIOSurface* const iosurf, const gfx::IntSize& destSize,
-                 OriginPos destOrigin) const;
+  bool BlitImage(MacIOSurface* const iosurf, const gfx::IntRect& destRect,
+                 OriginPos destOrigin,
+                 const gfx::IntSize& fbSize = gfx::IntSize(),
+                 Maybe<gfxAlphaType> convertAlpha = {}) const;
 #endif
 #ifdef XP_WIN
   // GLBlitHelperD3D.cpp:
   bool BlitImage(layers::D3D11ShareHandleImage* srcImage,
-                 const gfx::IntSize& destSize, OriginPos destOrigin) const;
+                 const gfx::IntRect& destRect, OriginPos destOrigin,
+                 const gfx::IntSize& fbSize = gfx::IntSize()) const;
   bool BlitImage(layers::D3D11ZeroCopyTextureImage* srcImage,
-                 const gfx::IntSize& destSize, OriginPos destOrigin) const;
+                 const gfx::IntRect& destRect, OriginPos destOrigin,
+                 const gfx::IntSize& fbSize = gfx::IntSize()) const;
 
   bool BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,
-                      const gfx::IntSize& destSize, OriginPos destOrigin) const;
+                      const gfx::IntRect& destRect, OriginPos destOrigin,
+                      const gfx::IntSize& fbSize = gfx::IntSize(),
+                      Maybe<gfxAlphaType> convertAlpha = {}) const;
   bool BlitDescriptor(const layers::SurfaceDescriptorDXGIYCbCr& desc,
-                      const gfx::IntSize& destSize,
-                      const OriginPos destOrigin) const;
+                      const gfx::IntRect& destRect, const OriginPos destOrigin,
+                      const gfx::IntSize& fbSize = gfx::IntSize(),
+                      Maybe<gfxAlphaType> convertAlpha = {}) const;
   bool BlitAngleYCbCr(const WindowsHandle (&handleList)[3],
                       const gfx::IntRect& clipRect, const gfx::IntSize& ySize,
                       const gfx::IntSize& uvSize,
                       const gfx::YUVColorSpace colorSpace,
-                      const gfx::IntSize& destSize, OriginPos destOrigin) const;
-
-  bool BlitAnglePlanes(uint8_t numPlanes,
-                       const RefPtr<ID3D11Texture2D>* texD3DList,
-                       const DrawBlitProg* prog,
-                       const DrawBlitProg::BaseArgs& baseArgs,
-                       const DrawBlitProg::YUVArgs* const yuvArgs) const;
+                      const gfx::IntRect& destRect, OriginPos destOrigin,
+                      const gfx::IntSize& fbSize = gfx::IntSize(),
+                      Maybe<gfxAlphaType> convertAlpha = {}) const;
 #endif
 };
 
@@ -340,6 +362,7 @@ extern const char* const kFragConvert_ColorLut3d;
 extern const char* const kFragConvert_ColorLut2d;
 
 extern const char* const kFragMixin_AlphaMultColors;
+extern const char* const kFragMixin_AlphaUnpremultColors;
 extern const char* const kFragMixin_AlphaClampColors;
 extern const char* const kFragMixin_AlphaOne;
 

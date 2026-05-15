@@ -44,6 +44,15 @@
             android:glEsVersion="0x00020000"
             android:required="true"/>
 
+    <!-- Needed for PackageManager.queryIntentActivities(Intent.ACTION_VIEW, ...) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
     <application>
         <service
                 android:name="org.mozilla.gecko.media.MediaManager"
@@ -72,6 +81,13 @@
                 android:exported="false"
                 android:isolatedProcess="false"
                 android:process=":gpu">
+        </service>
+        <service
+                android:name="org.mozilla.gecko.process.GeckoChildProcessServices$rdd"
+                android:enabled="true"
+                android:exported="false"
+                android:isolatedProcess="false"
+                android:process=":rdd">
         </service>
         <service
                 android:name="org.mozilla.gecko.process.GeckoChildProcessServices$utility"

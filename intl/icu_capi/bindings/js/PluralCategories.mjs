@@ -4,6 +4,9 @@ import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
 
 
+/**
+ * See the [Rust documentation for `categories`](https://docs.rs/icu/2.1.1/icu/plurals/struct.PluralRules.html#method.categories) for more information.
+ */
 export class PluralCategories {
     #zero;
     get zero() {
@@ -82,7 +85,13 @@ export class PluralCategories {
         functionCleanupArena,
         appendArrayMap
     ) {
-        return [this.#zero, this.#one, this.#two, this.#few, this.#many, this.#other]
+        let buffer = diplomatRuntime.DiplomatBuf.struct(wasm, 6, 1);
+
+        this._writeToArrayBuffer(wasm.memory.buffer, buffer.ptr, functionCleanupArena, appendArrayMap);
+
+        functionCleanupArena.alloc(buffer);
+
+        return buffer.ptr;
     }
 
     static _fromSuppliedValue(internalConstructor, obj) {

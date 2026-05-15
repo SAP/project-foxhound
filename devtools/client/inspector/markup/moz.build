@@ -16,4 +16,8 @@ DevToolsModules(
     "utils.js",
 )
 
-BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
+BROWSER_CHROME_MANIFESTS += [
+    "test/browser.toml",
+    "test/events/browser.toml",
+    "test/shadowdom/browser.toml",
+]

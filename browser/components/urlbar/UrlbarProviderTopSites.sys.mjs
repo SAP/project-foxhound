@@ -11,7 +11,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -21,10 +21,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TopSites: "resource:///modules/topsites/TopSites.sys.mjs",
   TOP_SITES_DEFAULT_ROWS: "resource:///modules/topsites/constants.mjs",
   TOP_SITES_MAX_SITES_PER_ROW: "resource:///modules/topsites/constants.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarProviderOpenTabs:
+    "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
 
 // These prefs must be true for the provider to return results. They are assumed
@@ -50,35 +52,14 @@ function sameUrlIgnoringRef(url1, url2) {
 /**
  * A provider that returns the Top Sites shown on about:newtab.
  */
-class ProviderTopSites extends UrlbarProvider {
+export class UrlbarProviderTopSites extends UrlbarProvider {
   constructor() {
     super();
-
-    this._topSitesListeners = [];
-    let callListeners = () => this._callTopSitesListeners();
-    if (Services.prefs.getBoolPref("browser.topsites.component.enabled")) {
-      Services.obs.addObserver(callListeners, "topsites-refreshed");
-    } else {
-      Services.obs.addObserver(callListeners, "newtab-top-sites-changed");
-    }
-    for (let pref of TOP_SITES_ENABLED_PREFS) {
-      Services.prefs.addObserver(pref, callListeners);
-    }
   }
 
-  get PRIORITY() {
+  static get PRIORITY() {
     // Top sites are prioritized over the UrlbarProviderPlaces provider.
     return 1;
-  }
-
-  /**
-   * Unique name for the provider, used by the context to filter on providers.
-   * Not using a unique name will cause the newest registration to win.
-   *
-   * @returns {string}
-   */
-  get name() {
-    return "UrlbarProviderTopSites";
   }
 
   /**
@@ -109,17 +90,15 @@ class ProviderTopSites extends UrlbarProvider {
    * @returns {number} The provider's priority for the given query.
    */
   getPriority() {
-    return this.PRIORITY;
+    return UrlbarProviderTopSites.PRIORITY;
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
-   * @returns {Promise}
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     // Bail if Top Sites are not enabled. We check this condition here instead
@@ -156,9 +135,9 @@ class ProviderTopSites extends UrlbarProvider {
     // This is done here, rather than in the global scope, because
     // TOP_SITES_DEFAULT_ROWS causes import of topsites constants.mjs, and we want to
     // do that only when actually querying for Top Sites.
-    if (this.topSitesRows === undefined) {
+    if (UrlbarProviderTopSites.topSitesRows === undefined) {
       XPCOMUtils.defineLazyPreferenceGetter(
-        this,
+        UrlbarProviderTopSites,
         "topSitesRows",
         "browser.newtabpage.activity-stream.topSitesRows",
         lazy.TOP_SITES_DEFAULT_ROWS
@@ -170,7 +149,7 @@ class ProviderTopSites extends UrlbarProvider {
     // additional ones couldn't be managed from the page.
     let numTopSites = Math.min(
       lazy.UrlbarPrefs.get("maxRichResults"),
-      lazy.TOP_SITES_MAX_SITES_PER_ROW * this.topSitesRows
+      lazy.TOP_SITES_MAX_SITES_PER_ROW * UrlbarProviderTopSites.topSitesRows
     );
     sites = sites.slice(0, numTopSites);
 
@@ -205,32 +184,15 @@ class ProviderTopSites extends UrlbarProvider {
 
     let tabUrlsToContextIds = new Map();
     if (lazy.UrlbarPrefs.get("suggest.openpage")) {
-      if (lazy.UrlbarPrefs.get("switchTabs.searchAllContainers")) {
-        lazy.UrlbarProviderOpenTabs.getOpenTabUrls(
-          queryContext.isPrivate
-        ).forEach((userContextAndGroupIds, url) => {
-          let userContextIds = new Set();
-          for (let [userContextId] of userContextAndGroupIds) {
-            userContextIds.add(userContextId);
-          }
-          tabUrlsToContextIds.set(url, userContextIds);
-        });
-      } else {
-        for (let [
-          url,
-          userContextId,
-        ] of lazy.UrlbarProviderOpenTabs.getOpenTabUrlsForUserContextId(
-          queryContext.userContextId,
-          queryContext.isPrivate
-        )) {
-          let userContextIds = tabUrlsToContextIds.get(url);
-          if (!userContextIds) {
-            userContextIds = new Set();
-          }
+      lazy.UrlbarProviderOpenTabs.getOpenTabUrls(
+        queryContext.isPrivate
+      ).forEach((userContextAndGroupIds, url) => {
+        let userContextIds = new Set();
+        for (let [userContextId] of userContextAndGroupIds) {
           userContextIds.add(userContextId);
-          tabUrlsToContextIds.set(url, userContextIds);
         }
-      }
+        tabUrlsToContextIds.set(url, userContextIds);
+      });
     }
 
     for (let site of sites) {
@@ -254,26 +216,19 @@ class ProviderTopSites extends UrlbarProvider {
             if (tabUserContextIds.size) {
               let switchToTabResultAdded = false;
               for (let userContextId of tabUserContextIds) {
-                // Normally we could skip the whole for loop, but if searchAllContainers
-                // is set then the current page userContextId may differ, then we should
-                // allow switching to other ones.
                 if (
                   sameUrlIgnoringRef(queryContext.currentPage, site.url) &&
-                  (!lazy.UrlbarPrefs.get("switchTabs.searchAllContainers") ||
-                    queryContext.userContextId == userContextId)
+                  queryContext.userContextId == userContextId
                 ) {
                   // Don't suggest switching to the current tab.
                   continue;
                 }
                 payload.userContextId = userContextId;
-                let result = new lazy.UrlbarResult(
-                  UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-                  UrlbarUtils.RESULT_SOURCE.TABS,
-                  ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-                    queryContext.tokens,
-                    payload
-                  )
-                );
+                let result = new lazy.UrlbarResult({
+                  type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+                  source: UrlbarUtils.RESULT_SOURCE.TABS,
+                  payload,
+                });
                 addCallback(this, result);
                 switchToTabResultAdded = true;
               }
@@ -290,6 +245,7 @@ class ProviderTopSites extends UrlbarProvider {
           }
           payload.sendAttributionRequest = site.sendAttributionRequest;
 
+          /** @type {Values<typeof UrlbarUtils.RESULT_SOURCE>} */
           let resultSource = UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL;
           if (lazy.UrlbarPrefs.get("suggest.bookmark")) {
             let bookmark = await lazy.PlacesUtils.bookmarks.fetch({
@@ -304,14 +260,11 @@ class ProviderTopSites extends UrlbarProvider {
             }
           }
 
-          let result = new lazy.UrlbarResult(
-            UrlbarUtils.RESULT_TYPE.URL,
-            resultSource,
-            ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-              queryContext.tokens,
-              payload
-            )
-          );
+          let result = new lazy.UrlbarResult({
+            type: UrlbarUtils.RESULT_TYPE.URL,
+            source: resultSource,
+            payload,
+          });
           addCallback(this, result);
           break;
         }
@@ -337,22 +290,18 @@ class ProviderTopSites extends UrlbarProvider {
             break;
           }
 
-          let result = new lazy.UrlbarResult(
-            UrlbarUtils.RESULT_TYPE.SEARCH,
-            UrlbarUtils.RESULT_SOURCE.SEARCH,
-            ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-              queryContext.tokens,
-              {
-                title: site.title,
-                keyword: site.title,
-                providesSearchMode: true,
-                engine: engine.name,
-                query: "",
-                icon: site.favicon,
-                isPinned: site.isPinned,
-              }
-            )
-          );
+          let result = new lazy.UrlbarResult({
+            type: UrlbarUtils.RESULT_TYPE.SEARCH,
+            source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+            payload: {
+              keyword: site.title,
+              providesSearchMode: true,
+              engine: engine.name,
+              query: "",
+              icon: site.favicon,
+              isPinned: site.isPinned,
+            },
+          });
           addCallback(this, result);
           break;
         }
@@ -376,6 +325,14 @@ class ProviderTopSites extends UrlbarProvider {
   }
 
   /**
+   * Once initialized, contains an array of weak
+   * references of top sites listener functions.
+   *
+   * @type {?{get: Function}[]}
+   */
+  static #topSitesListeners = null;
+
+  /**
    * Adds a listener function that will be called when the top sites change or
    * they are enabled/disabled. This class will hold a weak reference to the
    * listener, so you do not need to unregister it, but you or someone else must
@@ -385,22 +342,42 @@ class ProviderTopSites extends UrlbarProvider {
    * @param {Function} callback
    *   The listener function. This class will hold a weak reference to it.
    */
-  addTopSitesListener(callback) {
-    this._topSitesListeners.push(Cu.getWeakReference(callback));
+  static addTopSitesListener(callback) {
+    // Lazily init observers.
+    if (!UrlbarProviderTopSites.#topSitesListeners) {
+      UrlbarProviderTopSites.#topSitesListeners = [];
+      let callListeners = UrlbarProviderTopSites.#callTopSitesListeners;
+      if (Services.prefs.getBoolPref("browser.topsites.component.enabled")) {
+        Services.obs.addObserver(callListeners, "topsites-refreshed");
+      } else {
+        Services.obs.addObserver(callListeners, "newtab-top-sites-changed");
+      }
+      for (let pref of TOP_SITES_ENABLED_PREFS) {
+        Services.prefs.addObserver(pref, callListeners);
+      }
+    }
+    UrlbarProviderTopSites.#topSitesListeners.push(
+      Cu.getWeakReference(callback)
+    );
   }
 
-  _callTopSitesListeners() {
-    for (let i = 0; i < this._topSitesListeners.length; ) {
-      let listener = this._topSitesListeners[i].get();
+  static #callTopSitesListeners() {
+    for (let i = 0; i < UrlbarProviderTopSites.#topSitesListeners.length; ) {
+      let listener = UrlbarProviderTopSites.#topSitesListeners[i].get();
       if (!listener) {
         // The listener has been GC'ed, so remove it from our list.
-        this._topSitesListeners.splice(i, 1);
+        UrlbarProviderTopSites.#topSitesListeners.splice(i, 1);
       } else {
         listener();
         ++i;
       }
     }
   }
-}
 
-export var UrlbarProviderTopSites = new ProviderTopSites();
+  /**
+   * The number of top site rows to display by default.
+   *
+   * @type {number|undefined}
+   */
+  static topSitesRows;
+}

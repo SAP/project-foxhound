@@ -7,7 +7,6 @@
 #include "gtest/MozGTestBench.h"
 #include "gmock/gmock.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/SSE.h"
 #include "mozilla/arm.h"

@@ -34,7 +34,7 @@ interface XULElement : Element {
   [SetterThrows]
   attribute DOMString src;
 
-  [Throws]
+  [BinaryName="ensureControllers"]
   readonly attribute XULControllers controllers;
 
   [NeedsCallerType]

@@ -14,7 +14,7 @@ const DETECT_INDENT_MAX_LINES = 500;
  * Get the number of indentation units to use to indent a "block"
  * and a boolean indicating whether indentation must be done using tabs.
  *
- * @return {Object} an object of the form {indentUnit, indentWithTabs}.
+ * @return {object} an object of the form {indentUnit, indentWithTabs}.
  *        |indentUnit| is the number of indentation units to use
  *        to indent a "block".
  *        |indentWithTabs| is a boolean which is true if indentation
@@ -30,7 +30,7 @@ function getTabPrefs() {
  * Get the indentation to use in an editor, or return false if the user has
  * asked for the indentation to be guessed from some text.
  *
- * @return {false | Object}
+ * @return {false | object}
  *        Returns false if the "detect indentation" pref is set.
  *        If the pref is not set, returns an object of the same
  *        form as returned by getTabPrefs.
@@ -53,7 +53,7 @@ function getIndentationFromPrefs() {
  *        the range of text lines to examine, and |callback| is a function
  *        to be called with the text of each line.
  *
- * @return {Object} an object of the form {indentUnit, indentWithTabs}.
+ * @return {object} an object of the form {indentUnit, indentWithTabs}.
  *        |indentUnit| is the number of indentation units to use
  *        to indent a "block".
  *        |indentWithTabs| is a boolean which is true if indentation
@@ -79,8 +79,8 @@ function getIndentationFromIteration(iterFunc) {
  * A wrapper for @see getIndentationFromIteration which computes the
  * indentation of a given string.
  *
- * @param {String} string the input text
- * @return {Object} an object of the same form as returned by
+ * @param {string} string the input text
+ * @return {object} an object of the same form as returned by
  *                  getIndentationFromIteration
  */
 function getIndentationFromString(string) {

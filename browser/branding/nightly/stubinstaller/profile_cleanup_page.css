@@ -33,10 +33,3 @@ body {
   padding: 8px 40px;
   font-size: 15px;
 }
-
-/* The footer goes in the bottom right corner. */
-#footer {
-  position: fixed;
-  right: 50px;
-  bottom: 59px;
-}

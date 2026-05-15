@@ -11,10 +11,13 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "absl/strings/string_view.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
 #include "examples/turnserver/read_auth_file.h"
 #include "p2p/base/basic_packet_socket_factory.h"
 #include "p2p/base/port_interface.h"
@@ -33,9 +36,9 @@ class TurnFileAuth : public webrtc::TurnAuthInterface {
   explicit TurnFileAuth(std::map<std::string, std::string> name_to_key)
       : name_to_key_(std::move(name_to_key)) {}
 
-  virtual bool GetKey(absl::string_view username,
-                      absl::string_view realm,
-                      std::string* key) {
+  bool GetKey(absl::string_view username,
+              absl::string_view realm,
+              std::string* key) override {
     // File is stored as lines of <username>=<HA1>.
     // Generate HA1 via "echo -n "<username>:<realm>:<password>" | md5sum"
     auto it = name_to_key_.find(std::string(username));
@@ -70,17 +73,18 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  const webrtc::Environment env = webrtc::CreateEnvironment();
   webrtc::PhysicalSocketServer socket_server;
   webrtc::AutoSocketServerThread main(&socket_server);
-  webrtc::AsyncUDPSocket* int_socket =
-      webrtc::AsyncUDPSocket::Create(&socket_server, int_addr);
+  std::unique_ptr<webrtc::AsyncUDPSocket> int_socket =
+      webrtc::AsyncUDPSocket::Create(env, int_addr, socket_server);
   if (!int_socket) {
     std::cerr << "Failed to create a UDP socket bound at" << int_addr.ToString()
               << std::endl;
     return 1;
   }
 
-  webrtc::TurnServer server(&main);
+  webrtc::TurnServer server(env, &main);
   std::fstream auth_file(argv[4], std::fstream::in);
 
   TurnFileAuth auth(auth_file.is_open()
@@ -89,7 +93,7 @@ int main(int argc, char* argv[]) {
   server.set_realm(argv[3]);
   server.set_software(kSoftware);
   server.set_auth_hook(&auth);
-  server.AddInternalSocket(int_socket, cricket::PROTO_UDP);
+  server.AddInternalSocket(std::move(int_socket), webrtc::PROTO_UDP);
   server.SetExternalSocketFactory(
       new webrtc::BasicPacketSocketFactory(&socket_server),
       webrtc::SocketAddress(ext_addr, 0));

@@ -1,5 +1,13 @@
 @use 'sass:math';
 
+// newtab only variables, otherwise use https://firefoxux.github.io/firefox-desktop-components/?path=/story/docs-tokens-table--default
+:root {
+  --newtab-card-height: 282px;
+  --newtab-card-width-medium: 300px;
+  --newtab-card-grid-layout-width: 296px; // Matches widget used in Base.jsx
+  --newtab-card-height-small: 133px; // Card height for small-sized widgets in the widgets pane
+}
+
 $primary-blue: var(--color-accent-primary);
 $primary-blue-dark: var(--color-accent-primary);
 $primary-text-color-dark: rgb(43, 42, 51);
@@ -53,9 +61,9 @@ $in-content-page-background-dark: #2B2A33;
 $newtab-background-secondary: var(--color-white);
 $newtab-background-secondary-dark: rgb(66, 65, 77);
 
-// Mirrors $newtab-background-secondary with 20% opacity
-$newtab-background-card: color-mix(in srgb, var(--color-white) 80%, transparent);
-$newtab-background-card-dark: rgb(66, 65, 77, 80%);
+// Mirrors $newtab-background-secondary with 15% transparency
+$newtab-background-card: color-mix(in srgb, var(--color-white) 85%, transparent);
+$newtab-background-card-dark: rgba(66, 65, 77, 85%);
 
 // Photon transitions from http://design.firefox.com/photon/motion/duration-and-easing.html
 $photon-easing: cubic-bezier(0.07, 0.95, 0, 1);
@@ -156,8 +164,6 @@ $context-menu-font-size: inherit;
 $context-menu-outer-padding: 5px;
 $context-menu-item-padding: 3px 12px;
 
-$error-fallback-font-size: var(--font-size-small);
-
 $image-path: 'chrome://newtab/content/data/content/assets/';
 
 $textbox-shadow-size: 4px;
@@ -188,7 +194,7 @@ $customize-menu-border-tint: 1px solid rgba(0, 0, 0, 15%);
     background-image: url('chrome://global/skin/icons/more.svg');
     background-position: 50.1%;
     border: 0;
-    outline: $border-primary;
+    outline: 1px solid var(--border-color);
     outline-width: 0;
     border-radius: var(--border-radius-circle);
     cursor: pointer;

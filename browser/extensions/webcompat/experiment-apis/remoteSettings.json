@@ -1,0 +1,28 @@
+[
+  {
+    "namespace": "remoteSettings",
+    "description": "experimental API extension to allow access to the Remote Settings API",
+    "events": [
+      {
+        "name": "onRemoteSettingsUpdate",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "update",
+            "type": "object",
+            "description": "The update payload"
+          }
+        ]
+      }
+    ],
+    "functions": [
+      {
+        "name": "get",
+        "type": "function",
+        "description": "Get the current collection from Remote Settings (if any)",
+        "parameters": [],
+        "async": true
+      }
+    ]
+  }
+]

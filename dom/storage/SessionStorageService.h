@@ -7,10 +7,10 @@
 #ifndef DOM_STORAGE_SESSIONSTORAGESERVICE_H_
 #define DOM_STORAGE_SESSIONSTORAGESERVICE_H_
 
-#include "nsISessionStorageService.h"
 #include "mozilla/Result.h"
 #include "mozilla/dom/FlippedOnce.h"
 #include "mozilla/dom/PBackgroundSessionStorageServiceChild.h"
+#include "nsISessionStorageService.h"
 
 namespace mozilla {
 

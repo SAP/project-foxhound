@@ -27,7 +27,7 @@ export var FileTestUtils = {
    *
    * @return nsIFile pointing to a non-existent file in a temporary directory.
    *
-   * @note It is not enough to delete the file if it exists, or to delete the
+   * Note: It is not enough to delete the file if it exists, or to delete the
    *       file after calling nsIFile.createUnique, because on Windows the
    *       delete operation in the file system may still be pending, preventing
    *       a new file with the same name to be created.

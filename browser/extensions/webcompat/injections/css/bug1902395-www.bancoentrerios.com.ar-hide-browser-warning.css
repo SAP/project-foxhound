@@ -1,0 +1,13 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * www.bancoentrerios.com.ar - Erroneously shows a message that Firefox is outdated.
+ * Bug #1902395 - https://bugzilla.mozilla.org/show_bug.cgi?id=1902395
+ *
+ * We can automatically hide the message for users.
+ */
+[data-testid="browser-compatibility-banner"] {
+  display: none;
+}

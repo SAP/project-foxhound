@@ -46,7 +46,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "aomStartup",
   "@mozilla.org/addons/addon-manager-startup;1",
-  "amIAddonManagerStartup"
+  Ci.amIAddonManagerStartup
 );
 
 async function talosStart() {

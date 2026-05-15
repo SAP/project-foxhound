@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">ਠੀਕ ਹੈ</string>
   <!-- Text for confirmation for a negative action in dialog. -->
@@ -52,6 +59,8 @@
   <string name="mozac_feature_prompts_deny">ਇਨਕਾਰ ਕਰੋ</string>
   <!-- Text of the title of a dialog when a page is requesting to open a new window. -->
   <string name="mozac_feature_prompts_popup_dialog_title">ਇਸ ਸਾਈਟ ਨੂੰ ਖੋਲ੍ਹਣ ਦੀ ਮਨਜ਼ੂਰੀ ਦੇਣੀ ਹੈ?</string>
+  <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
+  <string name="mozac_feature_prompts_redirect_dialog_title">ਇਸ ਸਾਈਟ ਲਈ ਰੀ-ਡਾਇਰੈਕਟ ਕਰਨਾ ਹੈ?</string>
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">ਕੀ ਤੁਸੀਂ ਚਾਹੁੰਦੇ ਹੋ?</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
@@ -110,12 +119,8 @@
   <string name="mozac_feature_prompts_suggest_strong_password_use_password">ਪਾਸਵਰਡ ਨੂੰ ਵਰਤੋਂ</string>
   <!-- Pressing this will dismiss the suggested strong password dialog -->
   <string name="mozac_feature_prompts_suggest_strong_password_dismiss">ਹੁਣੇ ਨਹੀਂ</string>
-  <!-- Title for showing the suggest strong password saved confirmation snackbar -->
-  <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title" tools:ignore="UnusedResources" moz:removedIn="142">ਪਾਸਵਰਡ ਸੰਭਾਲਿਆ</string>
   <!-- Title for showing the suggest strong password updated confirmation snackbar -->
   <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">ਪਾਸਵਰਡ ਅੱਪਡੇਟ ਕੀਤਾ ਗਿਆ</string>
-  <!-- Title for showing the username updated confirmation snackbar -->
-  <string name="mozac_feature_prompt_login_snackbar_username_updated" tools:ignore="UnusedResources" moz:removedIn="142">ਵਰਤੋਂਕਾਰ-ਨਾਂ ਨੂੰ ਅੱਪਡੇਟ ਕੀਤਾ</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">ਇਸ ਸਾਈਟ ਲਈ ਡਾਟਾ ਮੁੜ-ਭੇਜਣਾ ਹੈ?</string>
   <string name="mozac_feature_prompt_repost_message">ਇਸ ਸਫ਼ੇ ਨੂੰ ਮੁੜ-ਤਾਜ਼ਾ ਕਰਨ ਨਾਲ ਤਾਜ਼ਾ ਕਾਰਵਾਈਆਂ ਨੂੰ ਦੁਹਰਾਇਆ ਜਾਵੇਗਾ ਜਿਵੇਂ ਕਿ ਭੁਗਤਾਨ ਭੇਜਣ ਜਾਂ ਟਿੱਪਣੀ ਨੂੰ ਦੋ ਵਾਰ ਪੋਸਟ ਕੀਤਾ ਜਾਵੇਗਾ।</string>
@@ -179,4 +184,12 @@
   <string name="mozac_feature_prompts_identity_credentials_continue">ਜਾਰੀ ਰੱਖੋ</string>
   <!-- Text for the cancel button of the Identity Credential dialogs. -->
   <string name="mozac_feature_prompts_identity_credentials_cancel">ਰੱਦ ਕਰੋ</string>
+  <!--
+    Email Mask Autofill
+
+    Text for the email mask prompt to allow users to fill an email input field in a sign up form with an email mask.
+  -->
+  <string name="mozac_feature_relay_chip_text">ਈਮੇਲ ਮਾਸਕ ਨੂੰ ਵਰਤੋਂ</string>
+  <!-- Informational text for the contextual feature recommendation (CFR) enabling the email mask aliases. The %s is the name of the service, "Firefox Relay". -->
+  <string name="mozac_feature_relay_email_masks_cfr">ਨਵਾਂ! %s ਈਮੇਲ ਮਾਸਕ ਹੁਣ ਮੋਬਾਈਲ ਉੱਤੇ ਉਪਲੱਬਧ ਹਨ।</string>
 </resources>

@@ -11,46 +11,46 @@ import re
 
 import attr
 import taskgraph
-from mozbuild.shellutil import quote as shell_quote
 from mozpack import path as mozpath
+from mozshellutil import quote as shell_quote
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.schema import Schema, validate_schema
+from taskgraph.util.schema import LegacySchema, validate_schema
 from taskgraph.util.treeherder import join_symbol
 from voluptuous import Any, Extra, Optional, Required
 
 import gecko_taskgraph
+from gecko_taskgraph.transforms.task import task_description_schema
 
 from ..util.cached_tasks import add_optimization
 
 CACHE_TYPE = "content.v1"
 
-FETCH_SCHEMA = Schema(
-    {
-        # Name of the task.
-        Required("name"): str,
-        # Relative path (from config.path) to the file the task was defined
-        # in.
-        Optional("task-from"): str,
-        # Description of the task.
-        Required("description"): str,
-        Optional(
-            "fetch-alias",
-            description="An alias that can be used instead of the real fetch job name in "
-            "fetch stanzas for jobs.",
-        ): str,
-        Optional(
-            "artifact-prefix",
-            description="The prefix of the taskcluster artifact being uploaded. "
-            "Defaults to `public/`; if it starts with something other than "
-            "`public/` the artifact will require scopes to access.",
-        ): str,
-        Optional("attributes"): {str: object},
-        Required("fetch"): {
-            Required("type"): str,
-            Extra: object,
-        },
-    }
-)
+FETCH_SCHEMA = LegacySchema({
+    # Name of the task.
+    Required("name"): str,
+    # Relative path (from config.path) to the file the task was defined
+    # in.
+    Optional("task-from"): str,
+    # Description of the task.
+    Required("description"): str,
+    Optional(
+        "fetch-alias",
+        description="An alias that can be used instead of the real fetch job name in "
+        "fetch stanzas for jobs.",
+    ): str,
+    Optional(
+        "artifact-prefix",
+        description="The prefix of the taskcluster artifact being uploaded. "
+        "Defaults to `public/`; if it starts with something other than "
+        "`public/` the artifact will require scopes to access.",
+    ): str,
+    Optional("attributes"): {str: object},
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+    Required("fetch"): {
+        Required("type"): str,
+        Extra: object,
+    },
+})
 
 
 # define a collection of payload builders, depending on the worker implementation
@@ -59,12 +59,12 @@ fetch_builders = {}
 
 @attr.s(frozen=True)
 class FetchBuilder:
-    schema = attr.ib(type=Schema)
+    schema = attr.ib(type=LegacySchema)
     builder = attr.ib()
 
 
 def fetch_builder(name, schema):
-    schema = Schema({Required("type"): name}).extend(schema)
+    schema = LegacySchema({Required("type"): name}).extend(schema)
 
     def wrap(func):
         fetch_builders[name] = FetchBuilder(schema, func)
@@ -137,6 +137,7 @@ def make_task(config, jobs):
             "expires-after": task_expires,
             "label": "fetch-%s" % name,
             "run-on-projects": [],
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": {
                 "symbol": join_symbol("Fetch", name),
                 "kind": "build",
@@ -148,7 +149,7 @@ def make_task(config, jobs):
                 "checkout": False,
                 "command": job["command"],
             },
-            "worker-type": "b-linux-gcp",
+            "worker-type": "b-linux",
             "worker": {
                 "chain-of-trust": True,
                 "docker-image": {"in-tree": job.get("docker-image", "fetch")},
@@ -168,6 +169,11 @@ def make_task(config, jobs):
         if job.get("secret", None):
             task["scopes"] = ["secrets:get:" + job.get("secret")]
             task["worker"]["taskcluster-proxy"] = True
+
+        # Fetches that are used for local development need to be built on a
+        # level-3 branch to be installable via `mach bootstrap`.
+        if attributes.get("local-fetch"):
+            task["run-on-projects"] = ["integration", "release"]
 
         if not taskgraph.fast:
             cache_name = task["label"].replace(f"{config.kind}-", "", 1)
@@ -202,6 +208,7 @@ def make_task(config, jobs):
             # download.
             Required("key-path"): str,
         },
+        Optional("headers"): [str],
         # The name to give to the generated artifact. Defaults to the file
         # portion of the URL. Using a different extension converts the
         # archive to the given type. Only conversion to .tar.zst is
@@ -256,21 +263,20 @@ def create_fetch_url_task(config, name, fetch):
             gpg_key = fh.read()
 
         env["FETCH_GPG_KEY"] = gpg_key
-        command.extend(
-            [
-                "--gpg-sig-url",
-                sig_url,
-                "--gpg-key-env",
-                "FETCH_GPG_KEY",
-            ]
-        )
+        command.extend([
+            "--gpg-sig-url",
+            sig_url,
+            "--gpg-key-env",
+            "FETCH_GPG_KEY",
+        ])
 
-    command.extend(
-        [
-            fetch["url"],
-            "/builds/worker/artifacts/%s" % artifact_name,
-        ]
-    )
+    for header in fetch.get("headers", []):
+        command.extend(["--header", header])
+
+    command.extend([
+        fetch["url"],
+        "/builds/worker/artifacts/%s" % artifact_name,
+    ])
 
     return {
         "command": command,
@@ -404,7 +410,7 @@ def create_chromium_fetch_task(config, name, fetch):
     cmd = [
         "bash",
         "-c",
-        "cd {} && " "/usr/bin/python3 {} {}".format(workdir, fetch["script"], args),
+        "cd {} && /usr/bin/python3 {} {}".format(workdir, fetch["script"], args),
     ]
 
     return {
@@ -458,7 +464,7 @@ def create_cft_canary_fetch_task(config, name, fetch):
     cmd = [
         "bash",
         "-c",
-        "cd {} && " "/usr/bin/python3 {} {}".format(workdir, fetch["script"], args),
+        "cd {} && /usr/bin/python3 {} {}".format(workdir, fetch["script"], args),
     ]
 
     return {

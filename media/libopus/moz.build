@@ -21,7 +21,7 @@ FINAL_LIBRARY = "gkcodecs"
 NoVisibilityFlags()
 
 DEFINES["OPUS_BUILD"] = True
-DEFINES["OPUS_VERSION"] = "abbb80c6226e0dcca8c3b3e96d2180c25385c569"
+DEFINES["OPUS_VERSION"] = "3704fb816bc8d299eaa2ff2879070b790edf6f5e"
 DEFINES["USE_ALLOCA"] = True
 DEFINES["ENABLE_HARDENING"] = True
 
@@ -113,6 +113,20 @@ if CONFIG["TARGET_CPU"] in ("x86", "x86_64"):
             SOURCES[f].flags += ["-msse4.1"]
 
 if CONFIG["TARGET_CPU"] == "arm" and CONFIG["GNU_AS"]:
+    GeneratedFile(
+            "celt_pitch_xcorr_arm-gnu.s",
+            script="arm2gnu.py",
+            entry_point="generate",
+            inputs=["celt/arm/arm2gnu.pl", "celt/arm/celt_pitch_xcorr_arm.s"],
+            )
+    GeneratedFile(
+            "celt/arm/armopts-gnu.S",
+            script="arm2gnu.py",
+            entry_point="generate",
+            inputs=["celt/arm/arm2gnu.pl",
+                    "celt/arm/armopts.s"],
+            )
+
     SOURCES += celt_sources_arm_rtcd
     SOURCES += [
         "!celt_pitch_xcorr_arm-gnu.s"

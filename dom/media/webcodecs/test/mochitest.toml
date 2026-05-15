@@ -8,6 +8,7 @@ prefs = [
 support-files = [
   "bug1921817.jpg",
   "green.png",
+  "multiple.ico"
 ]
 
 ["test_bug1921817.html"]
@@ -16,6 +17,12 @@ scheme = "https"
 ["test_imageDecoder_desiredSize.html"]
 scheme = "https"
 
+["test_resistFingerprinting.html"]
+scheme = "https"
+skip-if = [
+  "os == 'android'", # WebCodecs isn't enabled yet on Android
+]
+
 ["test_rfp_api_disabling_disabled.html"]
 scheme = "https"
 
@@ -23,6 +30,9 @@ scheme = "https"
 scheme = "https"
 
 ["test_rfp_api_disabling_exemption.html"]
+scheme = "https"
+
+["test_track_getNativeSizes.html"]
 scheme = "https"
 
 ["test_videoFrame_mismatched_codedSize.html"]

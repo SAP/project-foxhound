@@ -15,6 +15,8 @@
 #include "UrlClassifierFeatureEmailTrackingProtection.h"
 #include "UrlClassifierFeatureFingerprintingAnnotation.h"
 #include "UrlClassifierFeatureFingerprintingProtection.h"
+#include "UrlClassifierFeatureGlobalCache.h"
+#include "UrlClassifierFeatureHarmfulAddonProtection.h"
 #include "UrlClassifierFeaturePhishingProtection.h"
 #include "UrlClassifierFeatureSocialTrackingAnnotation.h"
 #include "UrlClassifierFeatureSocialTrackingProtection.h"
@@ -43,11 +45,13 @@ void UrlClassifierFeatureFactory::Shutdown() {
   UrlClassifierFeatureEmailTrackingProtection::MaybeShutdown();
   UrlClassifierFeatureFingerprintingAnnotation::MaybeShutdown();
   UrlClassifierFeatureFingerprintingProtection::MaybeShutdown();
+  UrlClassifierFeatureGlobalCache::MaybeShutdown();
   UrlClassifierFeaturePhishingProtection::MaybeShutdown();
   UrlClassifierFeatureSocialTrackingAnnotation::MaybeShutdown();
   UrlClassifierFeatureSocialTrackingProtection::MaybeShutdown();
   UrlClassifierFeatureTrackingAnnotation::MaybeShutdown();
   UrlClassifierFeatureTrackingProtection::MaybeShutdown();
+  UrlClassifierFeatureHarmfulAddonProtection::MaybeShutdown();
 }
 
 /* static */
@@ -114,6 +118,12 @@ void UrlClassifierFeatureFactory::GetFeaturesFromChannel(
     aFeatures.AppendElement(feature);
   }
 
+  // Addon Protection
+  feature = UrlClassifierFeatureHarmfulAddonProtection::MaybeCreate(aChannel);
+  if (feature) {
+    aFeatures.AppendElement(feature);
+  }
+
   // Tracking Protection
   feature = UrlClassifierFeatureTrackingProtection::MaybeCreate(aChannel);
   if (feature) {
@@ -149,6 +159,17 @@ void UrlClassifierFeatureFactory::GetFeaturesFromChannel(
 void UrlClassifierFeatureFactory::GetPhishingProtectionFeatures(
     nsTArray<RefPtr<nsIUrlClassifierFeature>>& aFeatures) {
   UrlClassifierFeaturePhishingProtection::MaybeCreate(aFeatures);
+}
+
+/* static */
+void UrlClassifierFeatureFactory::GetRealTimeProtectionFeatures(
+    nsTArray<RefPtr<nsIUrlClassifierFeature>>& aFeatures) {
+  nsCOMPtr<nsIUrlClassifierFeature> feature;
+
+  feature = UrlClassifierFeatureGlobalCache::MaybeCreate();
+  if (feature) {
+    aFeatures.AppendElement(feature);
+  }
 }
 
 /* static */
@@ -213,6 +234,12 @@ UrlClassifierFeatureFactory::GetFeatureByName(const nsACString& aName) {
     return feature.forget();
   }
 
+  // GlobalCache
+  feature = UrlClassifierFeatureGlobalCache::GetIfNameMatches(aName);
+  if (feature) {
+    return feature.forget();
+  }
+
   // SocialTracking Annotation
   feature =
       UrlClassifierFeatureSocialTrackingAnnotation::GetIfNameMatches(aName);
@@ -241,6 +268,12 @@ UrlClassifierFeatureFactory::GetFeatureByName(const nsACString& aName) {
 
   // PhishingProtection features
   feature = UrlClassifierFeaturePhishingProtection::GetIfNameMatches(aName);
+  if (feature) {
+    return feature.forget();
+  }
+
+  // Addon Protection
+  feature = UrlClassifierFeatureHarmfulAddonProtection::GetIfNameMatches(aName);
   if (feature) {
     return feature.forget();
   }
@@ -304,6 +337,12 @@ void UrlClassifierFeatureFactory::GetFeatureNames(nsTArray<nsCString>& aArray) {
     aArray.AppendElement(name);
   }
 
+  // GlobalCache
+  name.Assign(UrlClassifierFeatureGlobalCache::Name());
+  if (!name.IsEmpty()) {
+    aArray.AppendElement(name);
+  }
+
   // SocialTracking Annotation
   name.Assign(UrlClassifierFeatureSocialTrackingAnnotation::Name());
   if (!name.IsEmpty()) {
@@ -324,6 +363,12 @@ void UrlClassifierFeatureFactory::GetFeatureNames(nsTArray<nsCString>& aArray) {
 
   // Tracking Annotation
   name.Assign(UrlClassifierFeatureTrackingAnnotation::Name());
+  if (!name.IsEmpty()) {
+    aArray.AppendElement(name);
+  }
+
+  // Addon Protection
+  name.Assign(UrlClassifierFeatureHarmfulAddonProtection::Name());
   if (!name.IsEmpty()) {
     aArray.AppendElement(name);
   }

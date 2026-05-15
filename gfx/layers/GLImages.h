@@ -91,7 +91,7 @@ class SurfaceTextureImage final : public GLImage {
     mSetCurrentCallback = std::move(aCallback);
   }
 
-  void OnSetCurrent() {
+  void OnSetCurrent() override {
     if (mSetCurrentCallback) {
       (*mSetCurrentCallback)();
       mSetCurrentCallback.reset();

@@ -38,6 +38,10 @@
       add_task(async function testMozInputTextEvents() {
         await testHelpers.testTextBasedInputEvents("moz-input-text");
       });
+
+      add_task(async function testMozInputTextSync() {
+        await testHelpers.verifyValueSync("moz-input-text");
+      });
     </script>
   </head>
   <body>

@@ -43,9 +43,9 @@ class CryptoError extends Error {
    * Creates an error object indicating an incoming push message could not be
    * decrypted.
    *
-   * @param {String} message A human-readable error message. This is only for
+   * @param {string} message A human-readable error message. This is only for
    * internal module logging, and doesn't need to be localized.
-   * @param {String} property The localized property name from `dom.properties`.
+   * @param {string} property The localized property name from `dom.properties`.
    * @param {String...} params Substitutions to insert into the localized
    *  string.
    */
@@ -60,9 +60,9 @@ class CryptoError extends Error {
    * Formats a localized string for reporting decryption errors to the Web
    * Console.
    *
-   * @param {String} scope The scope of the service worker receiving the
+   * @param {string} scope The scope of the service worker receiving the
    *  message, prepended to any other substitutions in the string.
-   * @returns {String} The localized string.
+   * @returns {string} The localized string.
    */
   format(scope) {
     let params = [scope, ...this.params].map(String);
@@ -285,7 +285,7 @@ class Decoder {
    * @param {BufferSource} publicKey The static subscription public key.
    * @param {BufferSource} authenticationSecret The subscription authentication
    *  secret, or `null` if not used by the scheme.
-   * @param {Object} cryptoParams An object containing the ephemeral sender
+   * @param {object} cryptoParams An object containing the ephemeral sender
    *  public key, salt, and record size.
    * @param {BufferSource} ciphertext The encrypted message data.
    */
@@ -387,10 +387,10 @@ class Decoder {
    *
    * @throws {CryptoError} if decryption fails or padding is incorrect.
    * @param {Uint8Array} slice The encrypted record.
-   * @param {Number} index The record sequence number.
+   * @param {number} index The record sequence number.
    * @param {Uint8Array} nonce The nonce base, used to generate the IV.
    * @param {Uint8Array} key The content encryption key.
-   * @param {Boolean} last Indicates if this is the final record.
+   * @param {boolean} last Indicates if this is the final record.
    * @returns {Uint8Array} The decrypted block with padding removed.
    */
   async decodeChunk(slice, index, nonce, key, last) {
@@ -599,7 +599,7 @@ export var PushCrypto = {
    *  receiving the message, in raw form.
    * @param {BufferSource} authenticationSecret The 16-byte shared
    *  authentication secret of the subscription receiving the message.
-   * @param {Object} headers The encryption headers from the push server.
+   * @param {object} headers The encryption headers from the push server.
    * @param {BufferSource} payload The encrypted message payload.
    * @returns {Uint8Array} The decrypted message data.
    */

@@ -18,6 +18,10 @@ const URL5 = "data:text/plain,tab5";
 const TAB_GROUP_1 = "tab-group-1";
 const TAB_GROUP_2 = "tab-group-2";
 
+registerCleanupFunction(async () => {
+  await SpecialPowers.clearUserPref("browser.tabs.splitview.hasUsed");
+});
+
 /**
  * @param {(string|number)[]} order
  * @param {(string|number)[]} expected
@@ -196,6 +200,7 @@ async function dropAfter(rowToDrag, rowToDropAfter, win) {
 
 /**
  * Virtually drag and drop one tabs list row before another.
+ *
  * @param {XulToolbarItem} rowToDrag
  * @param {XulToolbarItem} rowToDropBefore
  * @param {Window} win
@@ -650,4 +655,110 @@ add_task(async function test_drag_and_drop_tab_groups() {
   });
 
   await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_drag_and_drop_split_view() {
+  await testWithNewWindow(async function (newWindow) {
+    const tabsListNode = newWindow.gTabsPanel.allTabsPanel.containerNode;
+
+    const tab3 = newWindow.gBrowser.tabs.at(3);
+    const tab4 = newWindow.gBrowser.tabs.at(4);
+    const splitview = newWindow.gBrowser.addTabSplitView([tab3, tab4], {
+      insertBefore: tab3,
+    });
+    await newWindow.gTabsPanel.allTabsPanel.domRefreshComplete;
+
+    assertOrder(
+      getTabsListOrderedIds(tabsListNode),
+      ["unknown", 1, 2, 3, 4, 5],
+      "after creating split view, order should be unchanged"
+    );
+
+    info("drag split view before tab 2");
+    let rows = tabsListNode.querySelectorAll("toolbaritem");
+    await dropBefore(rows[3], rows[2], newWindow);
+
+    assertOrder(
+      getTabsListOrderedIds(tabsListNode),
+      ["unknown", 1, 3, 4, 2, 5],
+      "after dragging split view, both tabs should appear together in the new position"
+    );
+    newWindow.gBrowser.unsplitTabs(splitview);
+  });
+});
+
+add_task(async function test_drag_cannot_drop_between_splitview_tabs() {
+  await testWithNewWindow(async function (newWindow) {
+    const tabsListNode = newWindow.gTabsPanel.allTabsPanel.containerNode;
+
+    const tab3 = newWindow.gBrowser.tabs.at(3);
+    const tab4 = newWindow.gBrowser.tabs.at(4);
+    const splitview = newWindow.gBrowser.addTabSplitView([tab3, tab4], {
+      insertBefore: tab3,
+    });
+    await newWindow.gTabsPanel.allTabsPanel.domRefreshComplete;
+
+    assertOrder(
+      getTabsListOrderedIds(tabsListNode),
+      ["unknown", 1, 2, 3, 4, 5],
+      "verify the starting order"
+    );
+
+    info("drag tab5 to bottom half of tab3 (first splitview tab)");
+    let rows = tabsListNode.querySelectorAll("toolbaritem");
+    await dropAfter(
+      rows[5], // tab5
+      rows[3], // tab3
+      newWindow
+    );
+
+    assertOrder(
+      getTabsListOrderedIds(tabsListNode),
+      ["unknown", 1, 2, 5, 3, 4],
+      "dragging onto the bottom half of the first splitview tab should place the drop before both splitview tabs"
+    );
+
+    info("drag tab5 to bottom half of tab4 (second splitview tab)");
+    rows = tabsListNode.querySelectorAll("toolbaritem");
+    await dropAfter(
+      rows[3], // tab5
+      rows[5], // tab4
+      newWindow
+    );
+
+    assertOrder(
+      getTabsListOrderedIds(tabsListNode),
+      ["unknown", 1, 2, 3, 4, 5],
+      "dragging onto the bottom half of the second splitview tab should place the drop after both splitview tabs"
+    );
+
+    info("drag tab5 to top half of tab3 (first splitview tab)");
+    rows = tabsListNode.querySelectorAll("toolbaritem");
+    await dropBefore(
+      rows[5], // tab5
+      rows[3], // tab3
+      newWindow
+    );
+
+    assertOrder(
+      getTabsListOrderedIds(tabsListNode),
+      ["unknown", 1, 2, 5, 3, 4],
+      "dragging onto the top half of the first splitview tab should place the drop before both splitview tabs"
+    );
+
+    info("drag tab2 to top half of tab4 (second splitview tab)");
+    rows = tabsListNode.querySelectorAll("toolbaritem");
+    await dropBefore(
+      rows[2], // tab2
+      rows[5], // tab4
+      newWindow
+    );
+
+    assertOrder(
+      getTabsListOrderedIds(tabsListNode),
+      ["unknown", 1, 5, 3, 4, 2],
+      "dragging onto the top half of the second splitview tab should place the drop after both splitview tabs"
+    );
+    newWindow.gBrowser.unsplitTabs(splitview);
+  });
 });

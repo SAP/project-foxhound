@@ -39,7 +39,7 @@
 
 .identity-box-button {
   padding-inline: var(--urlbar-icon-padding);
-  border-radius: var(--urlbar-icon-border-radius);
+  border-radius: var(--urlbar-inner-border-radius);
 }
 
 .identity-box-button,
@@ -79,6 +79,10 @@
   @media -moz-pref("browser.urlbar.searchModeSwitcher.featureGate") or -moz-pref("browser.urlbar.scotchBonnet.enableOverride") {
     margin-inline-end: var(--urlbar-searchmodeswitcher-margin-inline-end);
   }
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("browser.urlbar.trustPanel.featureGate") {
+    margin-inline-end: 0;
+  }
 }
 
 #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage) > .identity-box-button,
@@ -86,7 +90,7 @@
   background-color: var(--urlbar-box-bgcolor);
   color: var(--urlbar-box-text-color);
   padding-inline: 8px;
-  border-radius: var(--urlbar-icon-border-radius);
+  border-radius: var(--urlbar-inner-border-radius);
 }
 
 #urlbar[focused] {
@@ -255,7 +259,7 @@
 
 #tracking-protection-icon-container {
   padding-inline: var(--urlbar-icon-padding);
-  border-radius: var(--urlbar-icon-border-radius);
+  border-radius: var(--urlbar-inner-border-radius);
   /* This is needed in order to position the blue dot indicator. */
   position: relative;
 }
@@ -295,23 +299,41 @@
 @media -moz-pref("browser.urlbar.trustPanel.featureGate") {
   #tracking-protection-icon-container,
   /* Keep displaying the moz-extension or chrome UI chicklet */
-  #identity-box[pageproxystate="valid"]:not(.chromeUI, .extensionPage) {
+  #identity-box[pageproxystate="valid"]:not(.chromeUI, .extensionPage) #identity-icon-box {
     display: none;
+  }
+
+  .searchmode-switcher,
+  #identity-box {
+    margin-inline-end: 0;
+  }
+
+  #urlbar-label-box,
+  .urlbar-input-box {
+    margin-inline-start: var(--identity-box-margin-inline);
   }
 
   #trust-icon-container {
     padding-inline: var(--urlbar-icon-padding);
-    border-radius: var(--urlbar-icon-border-radius);
-    margin-inline-end: var(--identity-box-margin-inline);
+    border-radius: var(--urlbar-inner-border-radius);
     -moz-context-properties: fill, fill-opacity;
+    /* Height shouldn't need defined here but is failing wpt tests without.
+       Investigating in https://bugzilla.mozilla.org/show_bug.cgi?id=2004907 */
+    height: calc(16px + (2 * var(--urlbar-icon-padding)));
 
-    list-style-image: url(chrome://browser/skin/trust-icon-active.svg);
-
-    &.insecure {
+    /* The urlbar will show insecure or secure icon by default depending
+       on the state of the connection, the further clauses may override that. */
+    &:where(.insecure) {
       list-style-image: url(chrome://browser/skin/trust-icon-insecure.svg);
+      background-color: var(--urlbar-box-bgcolor);
+      color: var(--urlbar-box-text-color);
     }
 
-    &.inactive {
+    &.secure {
+      list-style-image: url(chrome://browser/skin/trust-icon-active.svg);
+    }
+
+    &.inactive:not(.insecure) {
       list-style-image: url(chrome://browser/skin/trust-icon-disabled.svg);
     }
 
@@ -319,8 +341,16 @@
       list-style-image: url(chrome://browser/skin/trust-icon-warning.svg);
     }
 
-    .urlbar-input-container[pageproxystate="valid"] > &:not(.chickletShown) {
-      display: flex;
+    &.file {
+      list-style-image: url(chrome://global/skin/icons/page-portrait.svg);
     }
+
+    .urlbar-input-container[pageproxystate="valid"] > &:not(.chickletShown) {
+      display: inline-flex;
+    }
+  }
+
+  #trust-icon-container:not(.insecure) > #trust-label {
+    display: none;
   }
 }

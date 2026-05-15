@@ -9,15 +9,13 @@
 #include <cmath>
 #include <cstdint>
 #include <new>
+
 #include "ErrorList.h"
 #include "js/Conversions.h"
 #include "js/Equality.h"
 #include "js/StructuredClone.h"
 #include "js/Value.h"
-#include "mozilla/Casting.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/dom/BindingDeclarations.h"

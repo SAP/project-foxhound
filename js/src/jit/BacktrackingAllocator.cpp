@@ -835,6 +835,28 @@ void LiveRange::tryToMoveDefAndUsesInto(LiveRange* other) {
   CodePosition otherFrom = other->from();
   CodePosition otherTo = other->to();
 
+  // Copy the has-definition flag to |other|, if possible.
+  if (hasDefinition() && from() == otherFrom) {
+    other->setHasDefinition();
+  }
+
+  // If we have no uses, we're done.
+  if (!hasUses()) {
+    return;
+  }
+
+  // Fast path for when we can use |moveAllUsesToTheEndOf|. This is very common
+  // for the non-Wasm code path in |trySplitAcrossHotcode|. This fast path had a
+  // hit rate of 75% when running Octane in the JS shell.
+  //
+  // Note: the |!other->hasUses()| check could be more precise, but this didn't
+  // improve the hit rate at all.
+  if (!other->hasUses() && usesBegin()->pos >= otherFrom &&
+      lastUse()->pos < otherTo) {
+    moveAllUsesToTheEndOf(other);
+    return;
+  }
+
   // The uses are sorted by position, so first skip all uses before |other|
   // starts.
   UsePositionIterator iter = usesBegin();
@@ -852,21 +874,20 @@ void LiveRange::tryToMoveDefAndUsesInto(LiveRange* other) {
   }
 
   MOZ_ASSERT_IF(iter, !other->covers(iter->pos));
-
-  // Distribute the definition to |other| as well, if possible.
-  if (hasDefinition() && from() == other->from()) {
-    other->setHasDefinition();
-  }
 }
 
 void LiveRange::moveAllUsesToTheEndOf(LiveRange* other) {
   MOZ_ASSERT(&other->vreg() == &vreg());
   MOZ_ASSERT(this != other);
-  MOZ_ASSERT(other->contains(this));
+  MOZ_ASSERT(intersects(other));
 
   if (uses_.empty()) {
     return;
   }
+
+  // Assert |other| covers all of our uses.
+  MOZ_ASSERT(other->covers(uses_.begin()->pos));
+  MOZ_ASSERT(other->covers(uses_.back()->pos));
 
   // Assert |other->uses_| remains sorted after adding our uses at the end.
   MOZ_ASSERT_IF(!other->uses_.empty(),

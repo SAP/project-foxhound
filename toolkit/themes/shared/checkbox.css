@@ -9,11 +9,11 @@ checkbox {
   align-items: center;
   margin: 4px 2px;
 
-  &[disabled="true"][native] {
+  &[disabled][native] {
     color: GrayText;
   }
 
-  &[disabled="true"]:not([native]) > .checkbox-label-box {
+  &[disabled]:not([native]) > .checkbox-label-box {
     opacity: 0.4;
   }
 }

@@ -6,11 +6,13 @@ package org.mozilla.fenix.ui
 
 import android.content.Context
 import android.os.Build
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.rule.GrantPermissionRule.grant
 import mozilla.components.service.nimbus.messaging.FxNimbusMessaging
 import org.json.JSONObject
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.experiments.nimbus.HardcodedNimbusFeatures
@@ -29,8 +31,10 @@ class NimbusMessagingNotificationTest : TestSetup() {
     private lateinit var hardcodedNimbus: HardcodedNimbusFeatures
 
     @get:Rule
-    val activityTestRule =
-        HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true)
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true),
+        ) { it.activity }
 
     @get:Rule
     val grantPermissionRule: GrantPermissionRule =
@@ -77,9 +81,9 @@ class NimbusMessagingNotificationTest : TestSetup() {
         // hardcodedNimbus by the time its re-scheduled.
         // Because the scheduling happens for a second time, the work request needs to replace the
         // existing one.
-        activityTestRule.finishActivity()
+        composeTestRule.activityRule.finishActivity()
         hardcodedNimbus.connectWith(FxNimbus)
-        activityTestRule.launchActivity(null)
+        composeTestRule.activityRule.launchActivity(null)
 
         mDevice.openNotification()
         notificationShade {

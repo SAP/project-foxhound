@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te da el control.</p> <p>Usalo como navegador privado: <ul> <li>Buscar y navegar directamente en la aplicación</li> <li>Bloquear rastreadores (o actualizar los ajustes para permitir rastreadores)</li> <li>Borrar para eliminar cookies e historial de búsqueda y navegación</li> </ul> </p> <p>%1$s es producido por Mozilla. Nuestra misión es promover una Internet saludable y abierta.<br/> <a href=\"%2$s\">Conocer más</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te da el control.</p>\n<p>Usalo como navegador privado:\n<ul>\n<li>Buscar y navegar directamente en la aplicación</li>\n<li>Bloquear rastreadores (o actualizar los ajustes para permitir rastreadores)</li>\n<li>Borrar para eliminar cookies e historial de búsqueda y navegación</li>\n</ul> </p>\n<p>%1$s es producido por Mozilla. Nuestra misión es promover una Internet saludable y abierta.<br/>\n<a href=\"%2$s\">Conocer más</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Conocer más</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -339,17 +346,17 @@
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="preference_about">Acerca de %1$s</string>
   <!-- Header for the list of installed search engines -->
-  <string name="preference_search_installed_search_engines">Motores de búsqueda instalados</string>
+  <string name="preference_search_installed_search_engines">Buscadores instalados</string>
   <!-- Header for the list of installed search engines -->
   <string name="preference_choose_search_engine">Elegir buscador</string>
   <!-- Action for restoring the default list of search engines -->
-  <string name="preference_search_restore">Restaurar los motores de búsqueda predeterminados</string>
+  <string name="preference_search_restore">Restaurar los buscadores predeterminados</string>
   <!--
     Action for adding an additional search engine to the list.
     The "+" is used to emphasize that this is an "add" action
   -->
   <string name="preference_search_add2">+Agregar otro buscador</string>
-  <string name="preference_search_remove_title">Eliminar los motores de búsqueda</string>
+  <string name="preference_search_remove_title">Eliminar los buscadores</string>
   <string name="preference_search_remove">Eliminar</string>
   <!-- Action for dding an additional search engine to the list -->
   <string name="preference_search_add3">Agregar otro buscador</string>
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Al continuar, aceptás los %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Al continuar, aceptás los %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Términos de uso de Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Términos de uso de Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox se preocupa por tu privacidad. Conocé más en nuestra %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox se preocupa por tu privacidad. Conocé más en nuestra %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Nota de privacidad.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Nota de privacidad</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Borrar historial de navegación</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Cerrar las otras pestañas</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Agregar nueva pestaña</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -745,7 +746,7 @@
   <!-- Label used for the "YES button" for the prompt to enable search suggestions -->
   <string name="enable_search_suggestions_yes">Sí</string>
   <!-- Message displayed when using a search engine that doesn't provide suggestions -->
-  <string name="no_suggestions_message">Algunos motores de búsqueda no pueden mostrar sugerencias.</string>
+  <string name="no_suggestions_message">Algunos buscadores no pueden mostrar sugerencias.</string>
   <!-- Button to dismiss the message displayed  when using a search engine that doesn't provide suggestions -->
   <string name="dismiss_no_suggestions_prompt_button">Descartar</string>
   <!-- Tips displayed on the home view -->
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ésto podría ser un problema con la configuración del servidor o podría ser alguien tratando de hacerse pasar por el servidor.<br/><br/> Si te conectaste a este servidor exitosamente en el pasado, el error puede ser temporal.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguien podría estar intentando imitar el sitio y continuar podría ser riesgoso.</label> <br><br> <label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguien podría estar intentando imitar el sitio y continuar podría ser riesgoso.</label> <br><br>\n<label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
   <!--
     Sessions List
 

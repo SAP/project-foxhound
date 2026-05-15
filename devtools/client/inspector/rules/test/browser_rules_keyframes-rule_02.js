@@ -30,7 +30,7 @@ async function testPacman(inspector, view) {
 
   // Dynamic changes test disabled because of Bug 1050940
   // If this part of the test is ever enabled again, it should be changed to
-  // use addProperty (in head.js) and stop using _applyingModifications
+  // use addProperty (in head.js) and stop using applyingModifications
 
   // info("Test dynamic changes to keyframe rule for #pacman");
 
@@ -38,7 +38,7 @@ async function testPacman(inspector, view) {
   // let ruleEditor = view.element.children[5].childNodes[0]._ruleEditor;
   // ruleEditor.addProperty("opacity", "0", true);
 
-  // yield ruleEditor._applyingModifications;
+  // yield ruleEditor.applyingModifications;
   // yield once(element, "animationend");
 
   // is
@@ -84,7 +84,7 @@ function convertTextPropsToString(textProps) {
 
 async function getKeyframeRules(selector, inspector, view) {
   await selectNode(selector, inspector);
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
 
   const rules = {
     elementRules: elementStyle.rules.filter(rule => !rule.keyframes),

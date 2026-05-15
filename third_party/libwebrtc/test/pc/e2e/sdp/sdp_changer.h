@@ -12,16 +12,17 @@
 #define TEST_PC_E2E_SDP_SDP_CHANGER_H_
 
 #include <map>
-#include <optional>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/jsep.h"
 #include "api/rtp_parameters.h"
 #include "api/test/pclf/media_configuration.h"
 #include "media/base/rid_description.h"
+#include "p2p/base/transport_description.h"
 #include "pc/session_description.h"
 #include "pc/simulcast_description.h"
 
@@ -40,11 +41,11 @@ namespace webrtc_pc_e2e {
 // vector and they will be added in the same order, as they were in
 // `supported_codecs`.
 std::vector<RtpCodecCapability> FilterVideoCodecCapabilities(
-    rtc::ArrayView<const VideoCodecConfig> video_codecs,
+    ArrayView<const VideoCodecConfig> video_codecs,
     bool use_rtx,
     bool use_ulpfec,
     bool use_flexfec,
-    rtc::ArrayView<const RtpCodecCapability> supported_codecs);
+    ArrayView<const RtpCodecCapability> supported_codecs);
 
 struct LocalAndRemoteSdp {
   LocalAndRemoteSdp(std::unique_ptr<SessionDescriptionInterface> local_sdp,
@@ -81,11 +82,10 @@ class SignalingInterceptor {
       std::unique_ptr<SessionDescriptionInterface> answer,
       const VideoCodecConfig& first_codec);
 
-  std::vector<std::unique_ptr<IceCandidateInterface>> PatchOffererIceCandidates(
-      rtc::ArrayView<const IceCandidateInterface* const> candidates);
-  std::vector<std::unique_ptr<IceCandidateInterface>>
-  PatchAnswererIceCandidates(
-      rtc::ArrayView<const IceCandidateInterface* const> candidates);
+  std::vector<std::unique_ptr<IceCandidate>> PatchOffererIceCandidates(
+      ArrayView<const IceCandidate* const> candidates);
+  std::vector<std::unique_ptr<IceCandidate>> PatchAnswererIceCandidates(
+      ArrayView<const IceCandidate* const> candidates);
 
  private:
   // Contains information about simulcast section, that is required to perform
@@ -93,16 +93,16 @@ class SignalingInterceptor {
   struct SimulcastSectionInfo {
     SimulcastSectionInfo(const std::string& mid,
                          MediaProtocolType media_protocol_type,
-                         const std::vector<cricket::RidDescription>& rids_desc);
+                         const std::vector<RidDescription>& rids_desc);
 
     const std::string mid;
     const MediaProtocolType media_protocol_type;
     std::vector<std::string> rids;
-    cricket::SimulcastDescription simulcast_description;
+    SimulcastDescription simulcast_description;
     webrtc::RtpExtension mid_extension;
     webrtc::RtpExtension rid_extension;
     webrtc::RtpExtension rrid_extension;
-    cricket::TransportDescription transport_description;
+    TransportDescription transport_description;
   };
 
   struct SignalingContext {

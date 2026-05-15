@@ -5,8 +5,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Original author: ekr@rtfm.com
-#include "logging.h"
 #include "transportlayer.h"
+
+#include "logging.h"
 
 // Logging context
 namespace mozilla {

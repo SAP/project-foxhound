@@ -3,6 +3,7 @@ componentsGroupId: "org.mozilla.components"
 
 # Synchronized build configuration for all modules
 jvmTargetCompatibility: 17
-compileSdkVersion: 36
-minSdkVersion: 21
+compileSdkMajorVersion: 36
+compileSdkMinorVersion: 1
+minSdkVersion: 26
 targetSdkVersion: 36

@@ -24,7 +24,7 @@ internal object ContentStateReducer {
     /**
      * [ContentAction] Reducer function for modifying a specific [ContentState] of a [SessionState].
      */
-    @Suppress("LongMethod", "ThrowsCount")
+    @Suppress("LongMethod", "ThrowsCount", "CognitiveComplexMethod")
     fun reduce(state: BrowserState, action: ContentAction): BrowserState {
         return when (action) {
             is ContentAction.RemoveIconAction -> updateContentState(state, action.sessionId) {
@@ -272,6 +272,16 @@ internal object ContentStateReducer {
             is UpdatePermissionHighlightsStateAction.PersistentStorageChangedAction -> {
                 updatePermissionHighlightsState(state, action.tabId) {
                     it.copy(persistentStorageChanged = action.value)
+                }
+            }
+            is UpdatePermissionHighlightsStateAction.LocalDeviceAccessChangedAction -> {
+                updatePermissionHighlightsState(state, action.tabId) {
+                    it.copy(localDeviceAccessChanged = action.value)
+                }
+            }
+            is UpdatePermissionHighlightsStateAction.LocalNetworkAccessChangedAction -> {
+                updatePermissionHighlightsState(state, action.tabId) {
+                    it.copy(localNetworkAccessChanged = action.value)
                 }
             }
             is UpdatePermissionHighlightsStateAction.AutoPlayAudibleBlockingAction -> {

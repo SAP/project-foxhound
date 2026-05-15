@@ -5,8 +5,6 @@
 package mozilla.components.browser.engine.gecko
 
 import androidx.annotation.VisibleForTesting
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import mozilla.components.browser.engine.gecko.content.blocking.GeckoTrackingProtectionException
 import mozilla.components.browser.engine.gecko.ext.geckoTrackingProtectionPermission
 import mozilla.components.browser.engine.gecko.ext.isExcludedForTrackingProtection
@@ -26,7 +24,6 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission.V
 internal class GeckoTrackingProtectionExceptionStorage(
     private val runtime: GeckoRuntime,
 ) : TrackingProtectionExceptionStorage {
-    internal var scope = CoroutineScope(Dispatchers.IO)
 
     override fun contains(session: EngineSession, onResult: (Boolean) -> Unit) {
         val url = (session as GeckoEngineSession).currentUrl

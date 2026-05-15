@@ -7,6 +7,7 @@
 #include "mozilla/dom/VideoFrame.h"
 
 #include <math.h>
+
 #include <limits>
 #include <utility>
 
@@ -17,7 +18,6 @@
 #include "js/StructuredClone.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ResultVariant.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Try.h"
 #include "mozilla/UniquePtr.h"
@@ -39,6 +39,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/layers/LayersSurfaces.h"
+#include "mozilla/webgpu/ExternalTexture.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
 #include "nsLayoutUtils.h"
@@ -129,9 +130,21 @@ class I420BufferReader : public YUVBufferReaderBase {
         mStrideV(CeilingOfHalf(aWidth)) {}
   virtual ~I420BufferReader() = default;
 
-  const uint8_t* DataU() const { return &mBuffer[YByteSize().value()]; }
-  const uint8_t* DataV() const {
-    return &mBuffer[YByteSize().value() + UByteSize().value()];
+  Result<const uint8_t*, MediaResult> DataU() const {
+    auto offset = YByteSize();
+    if (!offset.isValid()) {
+      return Err(
+          MediaResult(NS_ERROR_INVALID_ARG, "offset for U plane overflow"_ns));
+    }
+    return &mBuffer[offset.value()];
+  }
+  Result<const uint8_t*, MediaResult> DataV() const {
+    auto offset = YByteSize() + UByteSize();
+    if (!offset.isValid()) {
+      return Err(
+          MediaResult(NS_ERROR_INVALID_ARG, "offset for V plane overflow"_ns));
+    }
+    return &mBuffer[offset.value()];
   }
   virtual I420ABufferReader* AsI420ABufferReader() { return nullptr; }
 
@@ -157,9 +170,13 @@ class I420ABufferReader final : public I420BufferReader {
   }
   virtual ~I420ABufferReader() = default;
 
-  const uint8_t* DataA() const {
-    return &mBuffer[YByteSize().value() + UByteSize().value() +
-                    VSize().value()];
+  Result<const uint8_t*, MediaResult> DataA() const {
+    auto offset = YByteSize() + UByteSize() + VSize();
+    if (!offset.isValid()) {
+      return Err(MediaResult(NS_ERROR_INVALID_ARG,
+                             "offset for Alpha plane overflow"_ns));
+    }
+    return &mBuffer[offset.value()];
   }
 
   virtual I420ABufferReader* AsI420ABufferReader() override { return this; }
@@ -175,7 +192,14 @@ class NV12BufferReader final : public YUVBufferReaderBase {
         mStrideUV(aWidth + aWidth % 2) {}
   virtual ~NV12BufferReader() = default;
 
-  const uint8_t* DataUV() const { return &mBuffer[YByteSize().value()]; }
+  Result<const uint8_t*, MediaResult> DataUV() const {
+    auto offset = YByteSize();
+    if (!offset.isValid()) {
+      return Err(
+          MediaResult(NS_ERROR_INVALID_ARG, "offset for UV plane overflow"_ns));
+    }
+    return &mBuffer[offset.value()];
+  }
 
   const int32_t mStrideUV;
 };
@@ -238,8 +262,8 @@ static Result<RefPtr<layers::Image>, MediaResult> CreateImageFromSourceSurface(
   }
 
   // Gecko favors BGRA so we convert surface into BGRA format first.
-  RefPtr<gfx::DataSourceSurface> bgraSurface;
-  MOZ_TRY_VAR(bgraSurface, AllocateBGRASurface(surface));
+  RefPtr<gfx::DataSourceSurface> bgraSurface =
+      MOZ_TRY(AllocateBGRASurface(surface));
 
   return RefPtr<layers::Image>(
       new layers::SourceSurfaceImage(bgraSurface.get()));
@@ -260,8 +284,8 @@ static Result<RefPtr<layers::Image>, MediaResult> CreateImageFromRawData(
   }
 
   // Gecko favors BGRA so we convert surface into BGRA format first.
-  RefPtr<gfx::DataSourceSurface> bgraSurface;
-  MOZ_TRY_VAR(bgraSurface, AllocateBGRASurface(surface));
+  RefPtr<gfx::DataSourceSurface> bgraSurface =
+      MOZ_TRY(AllocateBGRASurface(surface));
   MOZ_ASSERT(bgraSurface);
 
   return RefPtr<layers::Image>(
@@ -309,16 +333,16 @@ static Result<RefPtr<layers::Image>, MediaResult> CreateYUVImageFromBuffer(
     data.mYStride = reader->mStrideY;
     data.mYSkip = 0;
     // Cb plane.
-    data.mCbChannel = const_cast<uint8_t*>(reader->DataU());
+    data.mCbChannel = const_cast<uint8_t*>(MOZ_TRY(reader->DataU()));
     data.mCbSkip = 0;
     // Cr plane.
-    data.mCrChannel = const_cast<uint8_t*>(reader->DataV());
+    data.mCrChannel = const_cast<uint8_t*>(MOZ_TRY(reader->DataV()));
     data.mCbSkip = 0;
     // A plane.
     if (aFormat.PixelFormat() == VideoPixelFormat::I420A) {
       data.mAlpha.emplace();
       data.mAlpha->mChannel =
-          const_cast<uint8_t*>(reader->AsI420ABufferReader()->DataA());
+          const_cast<uint8_t*>(MOZ_TRY(reader->AsI420ABufferReader()->DataA()));
       data.mAlpha->mSize = data.mPictureRect.Size();
       // No values for mDepth and mPremultiplied.
     }
@@ -366,7 +390,7 @@ static Result<RefPtr<layers::Image>, MediaResult> CreateYUVImageFromBuffer(
     data.mYStride = reader.mStrideY;
     data.mYSkip = 0;
     // Cb plane.
-    data.mCbChannel = const_cast<uint8_t*>(reader.DataUV());
+    data.mCbChannel = const_cast<uint8_t*>(MOZ_TRY(reader.DataUV()));
     data.mCbSkip = 1;
     // Cr plane.
     data.mCrChannel = data.mCbChannel + 1;
@@ -575,13 +599,13 @@ static Result<Ok, nsCString> ValidateVisibility(
   MOZ_ASSERT(aVisibleRect.Height() > 0);
 
   const auto w = CheckedInt<uint32_t>(aVisibleRect.Width()) + aVisibleRect.X();
-  if (w.value() > static_cast<uint32_t>(aPicSize.Width())) {
+  if (!w.isValid() || w.value() > static_cast<uint32_t>(aPicSize.Width())) {
     return Err(
         "Sum of visible rectangle's x and width exceeds the picture's width"_ns);
   }
 
   const auto h = CheckedInt<uint32_t>(aVisibleRect.Height()) + aVisibleRect.Y();
-  if (h.value() > static_cast<uint32_t>(aPicSize.Height())) {
+  if (!h.isValid() || h.value() > static_cast<uint32_t>(aPicSize.Height())) {
     return Err(
         "Sum of visible rectangle's y and height exceeds the picture's height"_ns);
   }
@@ -601,13 +625,12 @@ static Result<Maybe<gfx::IntSize>, nsCString> MaybeGetDisplaySize(
 
   Maybe<gfx::IntSize> displaySize;
   if (aInit.mDisplayWidth.WasPassed() && aInit.mDisplayHeight.WasPassed()) {
-    displaySize.emplace();
-    MOZ_TRY_VAR(displaySize.ref(), ToIntSize(aInit.mDisplayWidth.Value(),
-                                             aInit.mDisplayHeight.Value())
-                                       .mapErr([](nsCString error) {
-                                         error.Insert("display", 0);
-                                         return error;
-                                       }));
+    displaySize.emplace(MOZ_TRY(
+        ToIntSize(aInit.mDisplayWidth.Value(), aInit.mDisplayHeight.Value())
+            .mapErr([](nsCString error) {
+              error.Insert("display", 0);
+              return error;
+            })));
   }
   return displaySize;
 }
@@ -617,27 +640,24 @@ static Result<
     std::tuple<gfx::IntSize, Maybe<gfx::IntRect>, Maybe<gfx::IntSize>>,
     nsCString>
 ValidateVideoFrameBufferInit(const VideoFrameBufferInit& aInit) {
-  gfx::IntSize codedSize;
-  MOZ_TRY_VAR(codedSize, ToIntSize(aInit.mCodedWidth, aInit.mCodedHeight)
-                             .mapErr([](nsCString error) {
-                               error.Insert("coded", 0);
-                               return error;
-                             }));
+  gfx::IntSize codedSize =
+      MOZ_TRY(ToIntSize(aInit.mCodedWidth, aInit.mCodedHeight)
+                  .mapErr([](nsCString error) {
+                    error.Insert("coded", 0);
+                    return error;
+                  }));
 
   Maybe<gfx::IntRect> visibleRect;
   if (aInit.mVisibleRect.WasPassed()) {
-    visibleRect.emplace();
-    MOZ_TRY_VAR(
-        visibleRect.ref(),
+    visibleRect.emplace(MOZ_TRY(
         ToIntRect(aInit.mVisibleRect.Value()).mapErr([](nsCString error) {
           error.Insert("visibleRect's ", 0);
           return error;
-        }));
+        })));
     MOZ_TRY(ValidateVisibility(visibleRect.ref(), codedSize));
   }
 
-  Maybe<gfx::IntSize> displaySize;
-  MOZ_TRY_VAR(displaySize, MaybeGetDisplaySize(aInit));
+  Maybe<gfx::IntSize> displaySize = MOZ_TRY(MaybeGetDisplaySize(aInit));
 
   return std::make_tuple(codedSize, visibleRect, displaySize);
 }
@@ -849,12 +869,11 @@ static Result<CombinedBufferLayout, MediaResult> ParseVideoFrameCopyToOptions(
     // TODO: We handle some edge cases that spec misses:
     // https://github.com/w3c/webcodecs/issues/513
     // This comment should be removed once the issue is resolved.
-    overrideRect.emplace();
-    MOZ_TRY_VAR(overrideRect.ref(),
-                ToIntRect(aOptions.mRect.Value()).mapErr([](nsCString error) {
-                  error.Insert("rect's ", 0);
-                  return MediaResult(NS_ERROR_INVALID_ARG, error);
-                }));
+    overrideRect.emplace(
+        MOZ_TRY(ToIntRect(aOptions.mRect.Value()).mapErr([](nsCString error) {
+          error.Insert("rect's ", 0);
+          return MediaResult(NS_ERROR_INVALID_ARG, error);
+        })));
 
     MediaResult r = VerifyRectSizeAlignment(aFormat, overrideRect.ref());
     if (NS_FAILED(r.Code())) {
@@ -862,9 +881,8 @@ static Result<CombinedBufferLayout, MediaResult> ParseVideoFrameCopyToOptions(
     }
   }
 
-  gfx::IntRect parsedRect;
-  MOZ_TRY_VAR(parsedRect, ParseVisibleRect(aVisibleRect, overrideRect,
-                                           aCodedSize, aFormat));
+  gfx::IntRect parsedRect = MOZ_TRY(
+      ParseVisibleRect(aVisibleRect, overrideRect, aCodedSize, aFormat));
 
   const Sequence<PlaneLayout>* optLayout = OptionalToPointer(aOptions.mLayout);
 
@@ -982,20 +1000,17 @@ ValidateVideoFrameInit(const VideoFrameInit& aInit,
 
   Maybe<gfx::IntRect> visibleRect;
   if (aInit.mVisibleRect.WasPassed()) {
-    visibleRect.emplace();
-    MOZ_TRY_VAR(
-        visibleRect.ref(),
+    visibleRect.emplace(MOZ_TRY(
         ToIntRect(aInit.mVisibleRect.Value()).mapErr([](nsCString error) {
           error.Insert("visibleRect's ", 0);
           return error;
-        }));
+        })));
     MOZ_TRY(ValidateVisibility(visibleRect.ref(), aCodedSize));
 
     MOZ_TRY(VerifyRectOffsetAlignment(aFormat, visibleRect.ref()));
   }
 
-  Maybe<gfx::IntSize> displaySize;
-  MOZ_TRY_VAR(displaySize, MaybeGetDisplaySize(aInit));
+  Maybe<gfx::IntSize> displaySize = MOZ_TRY(MaybeGetDisplaySize(aInit));
 
   return std::make_pair(visibleRect, displaySize);
 }
@@ -1013,11 +1028,10 @@ static Result<RefPtr<VideoFrame>, MediaResult> CreateVideoFrameFromBuffer(
                            "linear RGB is not supported"_ns));
   }
 
-  std::tuple<gfx::IntSize, Maybe<gfx::IntRect>, Maybe<gfx::IntSize>> init;
-  MOZ_TRY_VAR(init,
-              ValidateVideoFrameBufferInit(aInit).mapErr([](nsCString error) {
-                return MediaResult(NS_ERROR_INVALID_ARG, error);
-              }));
+  std::tuple<gfx::IntSize, Maybe<gfx::IntRect>, Maybe<gfx::IntSize>> init =
+      MOZ_TRY(ValidateVideoFrameBufferInit(aInit).mapErr([](nsCString error) {
+        return MediaResult(NS_ERROR_INVALID_ARG, error);
+      }));
   gfx::IntSize codedSize = std::get<0>(init);
   Maybe<gfx::IntRect> visibleRect = std::get<1>(init);
   Maybe<gfx::IntSize> displaySize = std::get<2>(init);
@@ -1031,44 +1045,38 @@ static Result<RefPtr<VideoFrame>, MediaResult> CreateVideoFrameFromBuffer(
                            "coded width and/or height is invalid"_ns));
   }
 
-  gfx::IntRect parsedRect;
-  MOZ_TRY_VAR(parsedRect, ParseVisibleRect(gfx::IntRect({0, 0}, codedSize),
-                                           visibleRect, codedSize, format));
+  gfx::IntRect parsedRect = MOZ_TRY(ParseVisibleRect(
+      gfx::IntRect({0, 0}, codedSize), visibleRect, codedSize, format));
 
   const Sequence<PlaneLayout>* optLayout = OptionalToPointer(aInit.mLayout);
 
-  CombinedBufferLayout combinedLayout;
-  MOZ_TRY_VAR(combinedLayout,
-              ComputeLayoutAndAllocationSize(parsedRect, format, optLayout));
+  CombinedBufferLayout combinedLayout =
+      MOZ_TRY(ComputeLayoutAndAllocationSize(parsedRect, format, optLayout));
 
   Maybe<uint64_t> duration = OptionalToMaybe(aInit.mDuration);
 
   VideoColorSpaceInternal colorSpace =
       PickColorSpace(OptionalToPointer(aInit.mColorSpace), aInit.mFormat);
 
-  RefPtr<layers::Image> data;
-  MOZ_TRY_VAR(
-      data,
-      aBuffer.ProcessFixedData(
-          [&](const Span<uint8_t>& aData)
-              -> Result<RefPtr<layers::Image>, MediaResult> {
-            if (aData.Length() <
-                static_cast<size_t>(combinedLayout.mAllocationSize)) {
-              return Err(
-                  MediaResult(NS_ERROR_INVALID_ARG, "data is too small"_ns));
-            }
+  RefPtr<layers::Image> data = MOZ_TRY(aBuffer.ProcessFixedData(
+      [&](const Span<uint8_t>& aData)
+          -> Result<RefPtr<layers::Image>, MediaResult> {
+        if (aData.Length() <
+            static_cast<size_t>(combinedLayout.mAllocationSize)) {
+          return Err(MediaResult(NS_ERROR_INVALID_ARG, "data is too small"_ns));
+        }
 
-            // TODO: If codedSize is (3, 3) and visibleRect is (0, 0, 1, 1) but
-            // the data is 2 x 2 RGBA buffer (2 x 2 x 4 bytes), it pass the
-            // above check. In this case, we can crop it to a 1 x 1-codedSize
-            // image (Bug 1782128).
-            if (aData.Length() < format.ByteCount(codedSize)) {
-              return Err(
-                  MediaResult(NS_ERROR_INVALID_ARG, "data is too small"_ns));
-            }
+        // TODO: If codedSize is (3, 3) and visibleRect is (0, 0, 1, 1) but
+        // the data is 2 x 2 RGBA buffer (2 x 2 x 4 bytes), it pass the
+        // above check. In this case, we can crop it to a 1 x 1-codedSize
+        // image (Bug 1782128).
+        size_t byteCount = MOZ_TRY(format.ByteCount(codedSize));
+        if (aData.Length() < byteCount) {
+          return Err(MediaResult(NS_ERROR_INVALID_ARG, "data is too small"_ns));
+        }
 
-            return CreateImageFromBuffer(format, colorSpace, codedSize, aData);
-          }));
+        return CreateImageFromBuffer(format, colorSpace, codedSize, aData);
+      }));
 
   MOZ_ASSERT(data);
   MOZ_ASSERT(data->GetSize() == codedSize);
@@ -1107,7 +1115,7 @@ static already_AddRefed<VideoFrame> CreateVideoFrameFromBuffer(
 }
 
 // https://w3c.github.io/webcodecs/#videoframe-initialize-visible-rect-and-display-size
-static void InitializeVisibleRectAndDisplaySize(
+static Result<Ok, nsCString> InitializeVisibleRectAndDisplaySize(
     Maybe<gfx::IntRect>& aVisibleRect, Maybe<gfx::IntSize>& aDisplaySize,
     gfx::IntRect aDefaultVisibleRect, gfx::IntSize aDefaultDisplaySize) {
   if (!aVisibleRect) {
@@ -1118,11 +1126,14 @@ static void InitializeVisibleRectAndDisplaySize(
                     aDefaultVisibleRect.Width();
     double hScale = static_cast<double>(aDefaultDisplaySize.Height()) /
                     aDefaultVisibleRect.Height();
-    double w = wScale * aVisibleRect->Width();
-    double h = hScale * aVisibleRect->Height();
-    aDisplaySize.emplace(gfx::IntSize(static_cast<uint32_t>(round(w)),
-                                      static_cast<uint32_t>(round(h))));
+    uint32_t w = static_cast<uint32_t>(round(wScale * aVisibleRect->Width()));
+    uint32_t h = static_cast<uint32_t>(round(hScale * aVisibleRect->Height()));
+    if (w == 0 || h == 0) {
+      return Err("Computed display size is zero in at least one dimension"_ns);
+    }
+    aDisplaySize.emplace(gfx::IntSize(w, h));
   }
+  return Ok();
 }
 
 // https://w3c.github.io/webcodecs/#videoframe-initialize-frame-with-resource-and-size
@@ -1142,8 +1153,8 @@ InitializeFrameWithResourceAndSize(nsIGlobalObject* aGlobal,
             return VideoFrame::Format(aFormat);
           });
 
-  std::pair<Maybe<gfx::IntRect>, Maybe<gfx::IntSize>> init;
-  MOZ_TRY_VAR(init, ValidateVideoFrameInit(aInit, format, image->GetSize()));
+  std::pair<Maybe<gfx::IntRect>, Maybe<gfx::IntSize>> init =
+      MOZ_TRY(ValidateVideoFrameInit(aInit, format, image->GetSize()));
   Maybe<gfx::IntRect> visibleRect = init.first;
   Maybe<gfx::IntSize> displaySize = init.second;
 
@@ -1155,9 +1166,9 @@ InitializeFrameWithResourceAndSize(nsIGlobalObject* aGlobal,
     // to do in this case?
   }
 
-  InitializeVisibleRectAndDisplaySize(visibleRect, displaySize,
-                                      gfx::IntRect({0, 0}, image->GetSize()),
-                                      image->GetSize());
+  MOZ_TRY(InitializeVisibleRectAndDisplaySize(
+      visibleRect, displaySize, gfx::IntRect({0, 0}, image->GetSize()),
+      image->GetSize()));
 
   Maybe<uint64_t> duration = OptionalToMaybe(aInit.mDuration);
 
@@ -1191,14 +1202,13 @@ InitializeFrameFromOtherFrame(nsIGlobalObject* aGlobal, VideoFrameData&& aData,
     // to do in this case?
   }
 
-  std::pair<Maybe<gfx::IntRect>, Maybe<gfx::IntSize>> init;
-  MOZ_TRY_VAR(init,
-              ValidateVideoFrameInit(aInit, format, aData.mImage->GetSize()));
+  std::pair<Maybe<gfx::IntRect>, Maybe<gfx::IntSize>> init =
+      MOZ_TRY(ValidateVideoFrameInit(aInit, format, aData.mImage->GetSize()));
   Maybe<gfx::IntRect> visibleRect = init.first;
   Maybe<gfx::IntSize> displaySize = init.second;
 
-  InitializeVisibleRectAndDisplaySize(visibleRect, displaySize,
-                                      aData.mVisibleRect, aData.mDisplaySize);
+  MOZ_TRY(InitializeVisibleRectAndDisplaySize(
+      visibleRect, displaySize, aData.mVisibleRect, aData.mDisplaySize));
 
   Maybe<uint64_t> duration = OptionalToMaybe(aInit.mDuration);
 
@@ -2053,6 +2063,13 @@ void VideoFrame::Close() {
   mDisplaySize = gfx::IntSize();
   mColorSpace = VideoColorSpaceInternal();
 
+  for (const auto& weakExternalTexture : mWebGPUExternalTextures) {
+    if (auto* externalTexture = weakExternalTexture.get()) {
+      externalTexture->Expire();
+    }
+  }
+  mWebGPUExternalTextures.Clear();
+
   StopAutoClose();
 }
 
@@ -2065,6 +2082,11 @@ already_AddRefed<layers::Image> VideoFrame::GetImage() const {
     return nullptr;
   }
   return do_AddRef(mResource->mImage);
+}
+
+void VideoFrame::TrackWebGPUExternalTexture(
+    WeakPtr<webgpu::ExternalTexture> aExternalTexture) {
+  mWebGPUExternalTextures.AppendElement(aExternalTexture);
 }
 
 nsCString VideoFrame::ToString() const {
@@ -2674,7 +2696,8 @@ bool VideoFrame::Format::IsValidSize(const gfx::IntSize& aSize) const {
   return false;
 }
 
-size_t VideoFrame::Format::ByteCount(const gfx::IntSize& aSize) const {
+Result<size_t, MediaResult> VideoFrame::Format::ByteCount(
+    const gfx::IntSize& aSize) const {
   MOZ_ASSERT(IsValidSize(aSize));
 
   CheckedInt<size_t> bytes;
@@ -2690,6 +2713,11 @@ size_t VideoFrame::Format::ByteCount(const gfx::IntSize& aSize) const {
     planeBytes *= SampleBytes(p);
 
     bytes += planeBytes;
+  }
+
+  if (!bytes.isValid()) {
+    return Err(MediaResult(NS_ERROR_DOM_MEDIA_OVERFLOW_ERR,
+                           "VideoFrame buffer size overflow"_ns));
   }
 
   return bytes.value();

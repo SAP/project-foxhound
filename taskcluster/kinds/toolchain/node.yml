@@ -6,7 +6,7 @@ task-defaults:
     description: "Node repack toolchain build"
     attributes:
         local-toolchain: true
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
     run:
@@ -26,7 +26,7 @@ linux64-node-22:
     description: "Node toolchain build"
     treeherder:
         symbol: TL(node-22)
-    worker-type: b-linux-large-amd
+    worker-type: b-linux-docker-large-amd
     run:
         script: build-nodejs.sh
         toolchain-alias:

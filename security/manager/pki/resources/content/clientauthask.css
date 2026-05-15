@@ -7,7 +7,7 @@
 }
 
 .important {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .details {
@@ -17,7 +17,7 @@
 }
 
 .info-box-container {
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   padding: 9px;
   border: 1px solid transparent;
   border-radius: 4px;

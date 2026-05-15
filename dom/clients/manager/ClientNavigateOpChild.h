@@ -6,8 +6,8 @@
 #ifndef _mozilla_dom_ClientNavigateOpChild_h
 #define _mozilla_dom_ClientNavigateOpChild_h
 
-#include "mozilla/dom/PClientNavigateOpChild.h"
 #include "ClientOpPromise.h"
+#include "mozilla/dom/PClientNavigateOpChild.h"
 
 namespace mozilla::dom {
 

@@ -6,12 +6,7 @@
 
 "use strict";
 
-const kBaseUrlForContent = getRootDirectory(gTestPath).replace(
-  "chrome://mochitests/content",
-  "https://example.com"
-);
-const kContentFileName = "file_toplevel.html";
-const kContentFileUrl = kBaseUrlForContent + kContentFileName;
+const kContentFileUrl = kBaseUrlForContent + "file_toplevel.html";
 
 async function waitForPasteContextMenu() {
   await waitForPasteMenuPopupEvent("shown");
@@ -28,7 +23,6 @@ async function waitForPasteContextMenu() {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["dom.events.asyncClipboard.readText", true],
       ["test.events.async.enabled", true],
       // Avoid paste button delay enabling making test too long.
       ["security.dialog_enable_delay", 0],

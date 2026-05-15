@@ -7,8 +7,6 @@
 #ifndef js_UbiNodePostOrder_h
 #define js_UbiNodePostOrder_h
 
-#include "mozilla/Attributes.h"
-
 #include <utility>
 
 #include "js/UbiNode.h"

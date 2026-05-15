@@ -78,6 +78,7 @@
       <li><a href="about:license#cairo">Cairo Component Licenses</a></li>
       <li><a href="about:license#chromium">Chromium License</a></li>
       <li><a href="about:license#codemirror">CodeMirror License</a></li>
+      <li><a href="about:license#codemirror6">CodeMirror 6 License</a></li>
       <li><a href="about:license#cryptogams">CRYPTOGAMS License</a></li>
       <li><a href="about:license#cubic-bezier">cubic-bezier License</a></li>
       <li><a href="about:license#d3">D3 License</a></li>
@@ -115,7 +116,6 @@
       <li><a href="about:license#libyuv">libyuv License</a></li>
       <li><a href="about:license#hunspell-lt">Lithuanian Spellchecking Dictionary License</a></li>
       <li><a href="about:license#lodash">lodash License</a></li>
-      <li><a href="about:license#matches">matches License</a></li>
       <li><a href="about:license#mit">MIT License</a></li>
       <li><a href="about:license#myspell">MySpell License</a></li>
       <li><a href="about:license#nicer">nICEr License</a></li>
@@ -128,6 +128,7 @@
 #endif
       <li><a href="about:license#praton">praton License</a></li>
       <li><a href="about:license#praton1">praton and inet_ntop License</a></li>
+      <li><a href="about:license#prosemirror">ProseMirror License</a></li>
       <li><a href="about:license#qcms">qcms License</a></li>
       <li><a href="about:license#qrcode-generator">QR Code Generator License</a></li>
       <li><a href="about:license#react">React License</a></li>
@@ -1523,14 +1524,17 @@ product.
                 <li><code>devtools/client/netmonitor/src/components/messages/parsers/signalr/TextMessageFormat.js</code></li>
                 <li><code>devtools/client/netmonitor/src/components/messages/parsers/signalr/Utils.js</code></li>
                 <li><code>third_party/cups/include</code></li>
-#ifdef MOZ_JXL
-                <li><code>third_party/highway/</code></li>
-#endif
 #ifdef MOZ_PERFETTO
                 <li><code>third_party/perfetto/</code></li>
 #endif
                 <li><code>third_party/rust/calendrical_calculations</code></li>
                 <li><code>taint/test/mochitest/purify.js</code></li>
+                <li><code>toolkit/components/ml/vendor/openai/dist/openai.mjs</code></li>
+                <li><code>toolkit/components/ml/vendor/transformers.js</code></li>
+#ifdef NIGHTLY_BUILD
+                <li><code>toolkit/components/ml/vendor/transformers-dev.js</code></li>
+                <li><code>toolkit/components/ml/vendor/openai/dist/openai-dev.mjs</code></li>
+#endif
             </ul>
           </td>
           <td>
@@ -2233,7 +2237,7 @@ product.
             <p>This license applies to files in the following directories:
             <ul>
                 <li><code>third_party/rust/arrayref</code></li>
-                <li><code>third_party/rust/mach</code></li>
+                <li><code>third_party/rust/mach2</code></li>
                 <li><code>third_party/rust/qlog</code></li>
             </ul>
             See the individual LICENSE files for copyright owners.</p>
@@ -2277,8 +2281,12 @@ product.
                 <li><code>toolkit/content/vendor/react/react-transition-group.js</code></li>
                 <li><code>third_party/rust/bindgen/</code></li>
                 <li><code>third_party/rust/subtle/</code></li>
+                <li><code>third_party/rust/uritemplate-next/</code></li>
 #ifdef MOZ_JXL
-                <li><code>third_party/jpeg-xl/</code></li>
+                <li><code>third_party/rust/jxl</code></li>
+                <li><code>third_party/rust/jxl_macros</code></li>
+                <li><code>third_party/rust/jxl_simd</code></li>
+                <li><code>third_party/rust/jxl_transforms</code></li>
 #endif
                 <li><code>third_party/xsimd/</code></li>
                 <li><code>third_party/zstd/</code></li>
@@ -2527,6 +2535,40 @@ product.
 
         <tr>
           <td>
+            <h1><a id="codemirror6"></a>CodeMirror 6 License</h1>
+          </td>
+          <td>
+            <p>This license applies to all files in <code>devtools/client/shared/sourceeditor/codemirror6</code></p>
+          </td>
+          <td>
+            <pre>
+            MIT License
+
+            Copyright (C) 2025 by Marijn Haverbeke <marijn@haverbeke.berlin>, Adrian Heine <mail@adrianheine.de>, and others
+
+            Permission is hereby granted, free of charge, to any person obtaining a copy
+            of this software and associated documentation files (the "Software"), to deal
+            in the Software without restriction, including without limitation the rights
+            to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+            copies of the Software, and to permit persons to whom the Software is
+            furnished to do so, subject to the following conditions:
+
+            The above copyright notice and this permission notice shall be included in
+            all copies or substantial portions of the Software.
+
+            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+            IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+            FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+            AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+            LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+            OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+            THE SOFTWARE.
+            </pre>
+          </td>
+        </tr>
+
+        <tr>
+          <td>
             <h1><a id="cryptogams"></a>CRYPTOGAMS License</h1>
           </td>
           <td>
@@ -2678,7 +2720,7 @@ product.
             <h1><a id="diff"></a>diff License</h1>
           </td>
           <td>
-            <p>This license applies to the file <code>devtools/client/inspector/markup/test/helper_diff.js</code>.</p>
+            <p>This license applies to the file <code>devtools/client/inspector/markup/test/events/helper_diff.js</code>.</p>
           </td>
           <td>
             <pre>
@@ -3684,7 +3726,11 @@ product.
             <h1><a id="libevent"></a>libevent License</h1>
           </td>
           <td>
-            <p>This license applies to files in the directory <code>ipc/chromium/src/third_party/libevent/</code>.</p>
+            <p>This license applies to files in the following directories:<p>
+            <ul>
+              <li><code>ipc/chromium/src/third_party/libevent/</code></li>
+              <li><code>security/sandbox/chromium/third_party/libevent/</code></li>
+            </ul>
           </td>
           <td>
             <pre>
@@ -4035,44 +4081,6 @@ product.
 
         <tr>
           <td>
-            <h1><a id="matches"></a>matches License</h1>
-          </td>
-          <td>
-            <p>This license applies to files in the directory <code>third_party/rust/matches</code>.</p>
-          </td>
-          <td>
-            <pre>
-            Copyright (c) 2014-2016 Simon Sapin
-
-            Permission is hereby granted, free of charge, to any
-            person obtaining a copy of this software and associated
-            documentation files (the "Software"), to deal in the
-            Software without restriction, including without
-            limitation the rights to use, copy, modify, merge,
-            publish, distribute, sublicense, and/or sell copies of
-            the Software, and to permit persons to whom the Software
-            is furnished to do so, subject to the following
-            conditions:
-
-            The above copyright notice and this permission notice
-            shall be included in all copies or substantial portions
-            of the Software.
-
-            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-            ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-            TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-            PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-            SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-            CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-            OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-            IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-            DEALINGS IN THE SOFTWARE.
-            </pre>
-          </td>
-        </tr>
-
-        <tr>
-          <td>
             <h1><a id="mit"></a>MIT License</h1>
           </td>
           <td>
@@ -4115,13 +4123,33 @@ product.
               <li><code>devtools/client/netmonitor/src/components/messages/parsers/stomp/byte.js</code>,
                   <code>devtools/client/netmonitor/src/components/messages/parsers/stomp/frame.js</code> and
                   <code>devtools/client/netmonitor/src/components/messages/parsers/stomp/parser.js</code></li>
+              <li><code>third_party/rust/proc-macro2</code></li>
               <li><code>third_party/rust/synstructure</code></li>
               <li><code>third_party/rust/void</code></li>
+#ifdef MOZ_JXL
+              <li><code>third_party/rust/array-init</code></li>
+              <li><code>third_party/rust/proc-macro-error-attr2</code> and
+                  <code>third_party/rust/proc-macro-error2</code></li>
+#endif
               <li><code>js/src/zydis</code> (unless otherwise specified)</li>
               <li><code>js/src/vm/Float16.h</code>(the code contained in the half namespace)</li>
               <li><code>js/src/xsum</code></li>
               <li><code>toolkit/components/resistfingerprinting/content/gl-matrix.js</code></li>
               <li><code>toolkit/components/resistfingerprinting/content/ssdeep.js</code></li>
+#ifdef NIGHTLY_BUILD
+              <li><code>toolkit/components/ml/vendor/wllama-module-dev.mjs</code></li>
+#endif
+              <li><code>toolkit/components/ml/vendor/wllama-module.mjs</code></li>
+#ifdef XP_WIN
+              <li>CoreMessagingXP.dll</li>
+              <li>marshal.dll</li>
+              <li>Microsoft.InputStateManager.dll</li>
+              <li>Microsoft.Internal.FrameworkUdk.dll</li>
+              <li>Microsoft.UI.Composition.OSSupport.dll</li>
+              <li>Microsoft.UI.Input.dll</li>
+              <li>Microsoft.UI.Windowing.Core.dll</li>
+              <li>Microsoft.UI.Windowing.dll</li>
+#endif
             </ul>
             See the individual LICENSE files or headers for copyright owners.</p>
           </td>
@@ -4679,14 +4707,37 @@ product.
 
         <tr>
           <td>
-            <h1><a id="qrcode-generator"></a>QR Code Generator License</h1>
+            <h1><a id="prosemirror"></a>ProseMirror Licenses</h1>
           </td>
           <td>
-            <p>This license applies to certain files in the directory <code>devtools/shared/qrcode/encoder/</code>.</p>
+            <p>This entry applies to all files in <code>third_party/js/prosemirror/</code> and its subdirectories. Most ProseMirror packages are licensed under the MIT license, except where noted below.</p>
+            <ul>
+              <li>
+                MIT License:
+                <ul>
+                  <li><code>third_party/js/prosemirror/prosemirror-commands</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-history</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-keymap</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-model</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-schema-basic</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-state</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-transform</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-view</code></li>
+                </ul>
+              </li>
+              <li>
+                Apache License 2.0:
+                <ul>
+                  <li><code>third_party/js/prosemirror/prosemirror-suggestions</code></li>
+                </ul>
+              </li>
+            </ul>
           </td>
           <td>
             <pre>
-            Copyright (c) 2009 Kazuhiko Arase
+            MIT License (applies to core and non-core ProseMirror packages)
+
+            Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 
             Permission is hereby granted, free of charge, to any person obtaining a copy
             of this software and associated documentation files (the "Software"), to deal
@@ -4705,6 +4756,58 @@ product.
             LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
             OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
             THE SOFTWARE.
+
+            ---
+
+            Apache License 2.0 (applies to third-party package <code>third_party/js/prosemirror/prosemirror-suggestions</code>):
+
+            Copyright 2017 Quartzy, Inc.
+
+            Licensed under the Apache License, Version 2.0 (the "License");
+            you may not use this file except in compliance with the License.
+            You may obtain a copy of the License at
+
+              http://www.apache.org/licenses/LICENSE-2.0
+
+            Unless required by applicable law or agreed to in writing, software
+            distributed under the License is distributed on an "AS IS" BASIS,
+            WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+            See the License for the specific language governing permissions and
+            limitations under the License.
+            </pre>
+          </td>
+        </tr>
+
+        <tr>
+          <td>
+            <h1><a id="qrcode-generator"></a>QR Code Generator License</h1>
+          </td>
+          <td>
+            <p>This license applies to certain files in the directory <code>third_party/js/qrcode/</code>.</p>
+          </td>
+          <td>
+            <pre>
+            MIT License
+
+            Copyright (c) 2009 Kazuhiko Arase
+
+            Permission is hereby granted, free of charge, to any person obtaining a copy
+            of this software and associated documentation files (the "Software"), to deal
+            in the Software without restriction, including without limitation the rights
+            to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+            copies of the Software, and to permit persons to whom the Software is
+            furnished to do so, subject to the following conditions:
+
+            The above copyright notice and this permission notice shall be included in all
+            copies or substantial portions of the Software.
+
+            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+            IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+            FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+            AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+            LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+            OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+            SOFTWARE.
             </pre>
           </td>
         </tr>
@@ -5254,6 +5357,7 @@ product.
               <li><code>intl/icu</code></li>
               <li><code>intl/tzdata</code></li>
               <li><code>js/src/util</code></li>
+              <li><code>security/sandbox/chromium/base/third_party/icu</code></li>
 #ifdef MOZ_ZUCCHINI
               <li><code>third_party/zucchini/chromium/base/third_party/icu/</code></li>
 #endif
@@ -5664,6 +5768,8 @@ product.
               <li><code>intl/icu_segmenter_data</code></li>
               <li><code>third_party/rust/icu_calendar</code></li>
               <li><code>third_party/rust/icu_calendar_data</code></li>
+              <li><code>third_party/rust/icu_casemap</code></li>
+              <li><code>third_party/rust/icu_casemap_data</code></li>
               <li><code>third_party/rust/icu_collections</code></li>
               <li><code>third_party/rust/icu_locale</code></li>
               <li><code>third_party/rust/icu_locale_core</code></li>
@@ -5867,7 +5973,12 @@ product.
             <h1><a id="vtune"></a>VTune License</h1>
           </td>
           <td>
-            <p>This license applies to certain files in the directory <code>js/src/vtune</code> and <code>tools/profiler/core/vtune</code>.</p>
+            <p>This license applies to certain files in the following directories:</p>
+            <ul>
+              <li><code>js/src/vtune</code></li>
+              <li><code>mozglue/baseprofiler/core/vtune/</code></li>
+              <li><code>tools/profiler/core/vtune</code></li>
+            </ul>
           </td>
           <td>
             <pre>
@@ -5908,7 +6019,7 @@ product.
             <h1><a id="webrtc"></a>WebRTC License</h1>
           </td>
           <td>
-            <p>This license applies to certain files in the directory <code>third_party/libwebrtc/</code>.</p>
+            <p>This license applies to certain files in the directory <code>third_party/libwebrtc/</code> and <code>dom/media/systemservices/android_video_capture/</code>.</p>
           </td>
           <td>
             <pre>
@@ -5989,7 +6100,7 @@ product.
     </ul>
 
 <pre>
-Copyright (c) &lt;year&gt;, Xiph.org Foundation
+Copyright (c) &lt;2002-2025&gt;, Xiph.org Foundation
         <tr>
           <td>
             <h1><a id="xiph"></a>Xiph.org Foundation License</h1>

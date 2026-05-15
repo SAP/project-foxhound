@@ -6,12 +6,12 @@
 
 #include "DirectoryLockImpl.h"
 
-#include "nsError.h"
-#include "nsString.h"
-#include "nsThreadUtils.h"
 #include "mozilla/ReverseIterator.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "nsError.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom::quota {
 
@@ -388,7 +388,7 @@ void DirectoryLockImpl::AcquireInternal(PrepareInfo&& aPrepareInfo) {
         lock->Log();
       },
       this, kAcquireTimeoutMs, nsITimer::TYPE_ONE_SHOT,
-      "quota::DirectoryLockImpl::AcquireInternal"));
+      "quota::DirectoryLockImpl::AcquireInternal"_ns));
 
   if (!mExclusive || !mInternal) {
     return;

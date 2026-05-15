@@ -8,7 +8,6 @@
 #define MOZILLA_GFX_SHAREDSURFACESCHILD_H
 
 #include <stdint.h>                            // for uint32_t, uint64_t
-#include "mozilla/Attributes.h"                // for override
 #include "mozilla/Maybe.h"                     // for Maybe
 #include "mozilla/RefPtr.h"                    // for already_AddRefed
 #include "mozilla/StaticPtr.h"                 // for StaticRefPtr

@@ -7,7 +7,6 @@
 #ifndef GFX_WEBRENDERSCROLLDATA_H
 #define GFX_WEBRENDERSCROLLDATA_H
 
-#include <map>
 #include <iosfwd>
 
 #include "chrome/common/ipc_message_utils.h"

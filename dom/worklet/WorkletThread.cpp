@@ -5,23 +5,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkletThread.h"
-#include "prthread.h"
+
+#include "XPCSelfHostedShmem.h"
+#include "js/ContextOptions.h"
+#include "js/Exception.h"
+#include "js/Initialization.h"
+#include "js/friend/MicroTask.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/EventQueue.h"
+#include "mozilla/FlowMarkers.h"
+#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/ThreadEventQueue.h"
+#include "mozilla/dom/AtomList.h"
+#include "mozilla/dom/WorkletGlobalScope.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "nsJSEnvironment.h"
 #include "nsJSPrincipals.h"
-#include "mozilla/dom/AtomList.h"
-#include "mozilla/dom/WorkletGlobalScope.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/FlowMarkers.h"
-#include "mozilla/EventQueue.h"
-#include "mozilla/ThreadEventQueue.h"
-#include "js/ContextOptions.h"
-#include "js/Exception.h"
-#include "js/Initialization.h"
-#include "XPCSelfHostedShmem.h"
+#include "prthread.h"
 
 namespace mozilla::dom {
 
@@ -162,10 +165,12 @@ class WorkletJSContext final : public CycleCollectedJSContext {
 #endif
 
     JS::JobQueueMayNotBeEmpty(cx);
+
     PROFILER_MARKER_FLOW_ONLY("WorkletJSContext::DispatchToMicroTask", OTHER,
                               {}, FlowMarker,
                               Flow::FromPointer(runnable.get()));
-    GetMicroTaskQueue().push_back(std::move(runnable));
+    bool ret = mozilla::EnqueueMicroTask(cx, std::move(aRunnable));
+    MOZ_RELEASE_ASSERT(ret);
   }
 
   bool IsSystemCaller() const override {
@@ -199,7 +204,11 @@ void WorkletJSContext::ReportError(JSErrorReport* aReport,
   RefPtr<AsyncErrorReporter> reporter = new AsyncErrorReporter(xpcReport);
 
   JSContext* cx = Context();
-  if (JS_IsExceptionPending(cx)) {
+  // NOTE: This function is used both for errors and warnings, and warnings
+  //       can be reported while there's a pending exception.
+  //       Warnings are always reported with non-null JSErrorReport.
+  if (!aReport || !aReport->isWarning()) {
+    MOZ_ASSERT(JS_IsExceptionPending(cx));
     JS::ExceptionStack exnStack(cx);
     if (JS::StealPendingExceptionStack(cx, &exnStack)) {
       JS::Rooted<JSObject*> stack(cx);
@@ -295,30 +304,6 @@ nsresult WorkletThread::DispatchRunnable(
   return nsThread::Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
 }
 
-NS_IMETHODIMP
-WorkletThread::DispatchFromScript(nsIRunnable* aRunnable, uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> runnable(aRunnable);
-  return Dispatch(runnable.forget(), aFlags);
-}
-
-NS_IMETHODIMP
-WorkletThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                        uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> runnable(aRunnable);
-
-  // Worklet only supports asynchronous dispatch.
-  if (NS_WARN_IF(aFlags != NS_DISPATCH_NORMAL)) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  return nsThread::Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
-}
-
-NS_IMETHODIMP
-WorkletThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t aFlags) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
 static bool DispatchToEventLoop(
     void* aClosure, js::UniquePtr<JS::Dispatchable>&& aDispatchable) {
   // This callback may execute either on the worklet thread or a random
@@ -392,9 +377,9 @@ void WorkletThread::EnsureCycleCollectedJSContext(
 
   // A thread lives strictly longer than its JSRuntime so we can safely
   // store a raw pointer as the callback's closure argument on the JSRuntime.
-  JS::InitDispatchsToEventLoop(context->Context(), DispatchToEventLoop,
-                               DelayedDispatchToEventLoop,
-                               NS_GetCurrentThread());
+  JS::InitAsyncTaskCallbacks(context->Context(), DispatchToEventLoop,
+                             DelayedDispatchToEventLoop, nullptr, nullptr,
+                             NS_GetCurrentThread());
 
   JS_SetNativeStackQuota(context->Context(),
                          WORKLET_CONTEXT_NATIVE_STACK_LIMIT);

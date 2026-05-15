@@ -103,7 +103,7 @@ const webconsoleSpecPrototype = {
      * Start the given Web Console listeners.
      *
      * @see webconsoleFront LISTENERS
-     * @Arg array events
+     * @param {Array} events
      *        Array of events you want to start. See this.LISTENERS for
      *        known events.
      */
@@ -117,10 +117,10 @@ const webconsoleSpecPrototype = {
      * Stop the given Web Console listeners.
      *
      * @see webconsoleFront LISTENERS
-     * @Arg array events
+     * @param {Array} events
      *        Array of events you want to stop. See this.LISTENERS for
      *        known events.
-     * @Arg function onResponse
+     * @param {Function} onResponse
      *        Function to invoke when the server response is received.
      */
     stopListeners: {
@@ -133,7 +133,7 @@ const webconsoleSpecPrototype = {
      * Retrieve the cached messages from the server.
      *
      * @see webconsoleFront CACHED_MESSAGES
-     * @Arg array types
+     * @param {Array} types
      *        The array of message types you want from the server. See
      *        this.CACHED_MESSAGES for known types.
      */
@@ -165,14 +165,15 @@ const webconsoleSpecPrototype = {
     /**
      * Autocomplete a JavaScript expression.
      *
-     * @Arg {String} string
+     * @param {string} string
      *      The code you want to autocomplete.
-     * @Arg {Number} cursor
+     * @param {number} cursor
      *      Cursor location inside the string. Index starts from 0.
-     * @Arg {String} frameActor
+     * @param {string} frameActor
      *      The id of the frame actor that made the call.
-     * @Arg {String} selectedNodeActor: Actor id of the selected node in the inspector.
-     * @Arg {Array} authorizedEvaluations
+     * @param {string} selectedNodeActor
+     *      Actor id of the selected node in the inspector.
+     * @param {Array} authorizedEvaluations
      *      Array of the properties access which can be executed by the engine.
      *      Example: [["x", "myGetter"], ["x", "myGetter", "y", "anotherGetter"]] to
      *      retrieve properties of `x.myGetter.` and `x.myGetter.y.anotherGetter`.

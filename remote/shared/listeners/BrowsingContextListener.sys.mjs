@@ -64,9 +64,9 @@ export class BrowsingContextListener {
   observe(subject, topic, data) {
     switch (topic) {
       case OBSERVER_TOPIC_ATTACHED:
-        // Delay emitting the event for top-level browsing contexts until
-        // the embedder element has been set.
-        if (!subject.parent) {
+        // Delay emitting the event for top-level browsing contexts in
+        // the content process until the embedder element has been set.
+        if (subject.isContent && !subject.parent) {
           this.#topContextsToAttach.set(subject, data);
           return;
         }
@@ -84,13 +84,14 @@ export class BrowsingContextListener {
         this.emit("discarded", { browsingContext: subject, why: data });
         break;
 
-      case OBSERVER_TOPIC_SET_EMBEDDER:
+      case OBSERVER_TOPIC_SET_EMBEDDER: {
         const why = this.#topContextsToAttach.get(subject);
         if (why !== undefined) {
           this.emit("attached", { browsingContext: subject, why });
           this.#topContextsToAttach.delete(subject);
         }
         break;
+      }
     }
   }
 

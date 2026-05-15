@@ -6,7 +6,7 @@
 /**
  * Dirties style and layout on the current browser window.
  *
- * @param {Number} Optional factor by which to modify the DOM. Useful for
+ * @param {number} Optional factor by which to modify the DOM. Useful for
  *        when multiple calls to dirtyTheDOM may occur, and you need them
  *        to dirty the DOM differently from one another. If you only need
  *        to dirty the DOM once, this can be omitted.

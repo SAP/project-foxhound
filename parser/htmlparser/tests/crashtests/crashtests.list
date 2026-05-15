@@ -67,3 +67,4 @@ skip-if(Android||isDebugBuild||AddressSanitizer||ThreadSanitizer) load 1747514.h
 HTTP load 1810896-1.html
 load 1854907-1.html
 load 1910951-1.html
+load 1982148-1.html

@@ -380,9 +380,13 @@ nsresult L10nRegistry::LoadSync(const nsACString& aPath, void** aData,
       nsIRequest::LOAD_NORMAL);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Don't warn on failure here, because it is triggered very frequently for
+  // necko.ftl which first tries and fails loading a resource://app/ URI before
+  // succeeding with a resource://gre/ URI.
   nsCOMPtr<nsIInputStream> input;
-  rv = channel->Open(getter_AddRefs(input));
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_INVALID_ARG);
+  if (NS_FAILED(channel->Open(getter_AddRefs(input)))) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
   return NS_ReadInputStreamToBuffer(input, aData, -1, aSize);
 }
@@ -433,7 +437,7 @@ void L10nRegistrySendUpdateL10nFileSources() {
   nsTArray<ContentParent*> parents;
   ContentParent::GetAll(parents);
   for (ContentParent* parent : parents) {
-    Unused << parent->SendUpdateL10nFileSources(sources);
+    (void)parent->SendUpdateL10nFileSources(sources);
   }
 }
 

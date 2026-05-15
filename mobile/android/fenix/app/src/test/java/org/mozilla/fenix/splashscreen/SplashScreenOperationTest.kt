@@ -7,6 +7,7 @@ import android.content.Context
 import android.view.View
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -26,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class SplashScreenOperationTest {
 
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Test
     fun `GIVEN the nimbus experiment has not fetched the data WHEN fetch operation is called THEN we observe and record nimbus fetching the data`() = runTest {
         val testNimbus = TestNimbusApi(this)
@@ -62,25 +64,7 @@ class SplashScreenOperationTest {
         assertTrue(operation.dataFetched)
     }
 
-    @Test
-    fun `WHEN fetch operation is finished THEN nimbus callback is unregistered`() = runTest {
-        val testNimbus = TestNimbusApi(this)
-        val operation = FetchExperimentsOperation(
-            buildStorage(),
-            testNimbus,
-        )
-
-        launch { operation.run() }
-        delay(100)
-
-        assertTrue(testNimbus.observers.contains(operation.fetchNimbusObserver))
-
-        launch { testNimbus.fakeExperimentsFetch(100) }
-        advanceUntilIdle()
-
-        assertFalse(testNimbus.observers.contains(operation.fetchNimbusObserver))
-    }
-
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Test
     fun `GIVEN nimbus data not fetched WHEN apply operation is called THEN we observe and record nimbus fetching the data and nimbus applying the data`() = runTest {
         val testNimbus = TestNimbusApi(scope = this, applyDelay = 1000L)
@@ -119,30 +103,6 @@ class SplashScreenOperationTest {
 
         assertNull(operation.fetchNimbusObserver)
         assertTrue(operation.dataFetched)
-    }
-
-    @Test
-    fun `WHEN apply operation is finished THEN nimbus callback is unregistered`() = runTest {
-        val testNimbus = TestNimbusApi(this)
-        val operation = ApplyExperimentsOperation(
-            buildStorage(),
-            testNimbus,
-        )
-
-        launch { operation.run() }
-        delay(100)
-
-        assertTrue(testNimbus.observers.contains(operation.fetchNimbusObserver))
-
-        launch { testNimbus.fakeExperimentsFetch(100) }
-        delay(200)
-
-        assertTrue(testNimbus.observers.contains(operation.applyNimbusObserver))
-
-        advanceUntilIdle()
-
-        assertFalse(testNimbus.observers.contains(operation.fetchNimbusObserver))
-        assertFalse(testNimbus.observers.contains(operation.applyNimbusObserver))
     }
 
     class TestNimbusApi(
@@ -210,7 +170,8 @@ class SplashScreenOperationTest {
         override val context: Context
             get() = testContext
 
-        override var globalUserParticipation: Boolean = true
+        override var experimentParticipation: Boolean = true
+        override var rolloutParticipation: Boolean = true
     }
 
     private fun buildStorage(

@@ -37,10 +37,12 @@ interface nsIPrefBranch : nsISupports
    *
    * @see getPrefType
    */
-  const long PREF_INVALID = 0;
-  const long PREF_STRING = 32;
-  const long PREF_INT = 64;
-  const long PREF_BOOL = 128;
+  cenum PreferenceType : 32 {
+    PREF_INVALID = 0,
+    PREF_STRING = 32,
+    PREF_INT = 64,
+    PREF_BOOL = 128,
+  };
 
   /**
    * Called to get the root on which this branch is based, such as
@@ -56,7 +58,7 @@ interface nsIPrefBranch : nsISupports
    * @return long     A value representing the type of the preference. This
    *                  value will be PREF_STRING, PREF_INT, or PREF_BOOL.
    */
-  long getPrefType(in string aPrefName);
+  nsIPrefBranch_PreferenceType getPrefType(in string aPrefName);
 
   /**
    * Called to get the state of an individual boolean preference.

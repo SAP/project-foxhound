@@ -114,6 +114,7 @@ export class SidebarPage extends MozLitElement {
       e.originalTarget.flattenedTreeParentNode,
       // Event might be in shadow DOM, check the host element.
       e.explicitOriginalTarget.flattenedTreeParentNode.getRootNode().host,
+      e.originalTarget.flattenedTreeParentNode.getRootNode().host,
     ];
     for (let el of elements) {
       if (el?.localName == localName) {

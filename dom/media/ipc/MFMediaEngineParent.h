@@ -9,11 +9,11 @@
 #include <winnt.h>
 #include <wrl.h>
 
-#include "MediaInfo.h"
 #include "MFMediaEngineExtra.h"
 #include "MFMediaEngineNotify.h"
 #include "MFMediaEngineUtils.h"
 #include "MFMediaSource.h"
+#include "MediaInfo.h"
 #include "PlatformDecoderModule.h"
 #include "mozilla/PMFMediaEngineParent.h"
 

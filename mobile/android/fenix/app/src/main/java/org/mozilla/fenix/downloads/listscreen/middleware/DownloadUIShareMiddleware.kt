@@ -6,7 +6,7 @@ package org.mozilla.fenix.downloads.listscreen.middleware
 
 import android.content.Context
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.ktx.android.content.share
 import mozilla.components.support.ktx.android.content.shareMedia
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
@@ -22,7 +22,7 @@ class DownloadUIShareMiddleware(
 ) : Middleware<DownloadUIState, DownloadUIAction> {
 
     override fun invoke(
-        context: MiddlewareContext<DownloadUIState, DownloadUIAction>,
+        store: Store<DownloadUIState, DownloadUIAction>,
         next: (DownloadUIAction) -> Unit,
         action: DownloadUIAction,
     ) {

@@ -5,15 +5,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ChromiumCDMProxy.h"
+
 #include "ChromiumCDMCallbackProxy.h"
+#include "GMPService.h"
+#include "GMPUtils.h"
 #include "MediaResult.h"
+#include "content_decryption_module.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/MediaKeySession.h"
 #include "mozilla/dom/MediaKeysBinding.h"
-#include "GMPUtils.h"
 #include "nsPrintfCString.h"
-#include "GMPService.h"
-#include "content_decryption_module.h"
 
 #define NS_DispatchToMainThread(...) CompileError_UseAbstractMainThreadInstead
 
@@ -552,7 +553,8 @@ void ChromiumCDMProxy::OnExpirationChange(const nsAString& aSessionId,
   }
 }
 
-void ChromiumCDMProxy::OnSessionClosed(const nsAString& aSessionId) {
+void ChromiumCDMProxy::OnSessionClosed(
+    const nsAString& aSessionId, dom::MediaKeySessionClosedReason aReason) {
   MOZ_ASSERT(NS_IsMainThread());
 
   bool keyStatusesChange = false;
@@ -568,7 +570,7 @@ void ChromiumCDMProxy::OnSessionClosed(const nsAString& aSessionId) {
   }
   RefPtr<dom::MediaKeySession> session(mKeys->GetSession(aSessionId));
   if (session) {
-    session->OnClosed();
+    session->OnClosed(aReason);
   }
 }
 

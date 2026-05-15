@@ -1,12 +1,13 @@
 .confirmation-dialog {
-  .modal {
-    box-shadow: $shadow-secondary;
-    inset-inline-start: 0;
-    margin: auto;
-    position: fixed;
-    inset-inline-end: 0;
-    inset-block-start: 20%;
-    width: 400px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
+  padding: 0;
+  width: 400px;
+  box-shadow: var(--box-shadow-popup);
+  background: var(--newtab-background-color-secondary);
+
+  &::backdrop {
+    background: var(--newtab-overlay-color);
   }
 
   section {
@@ -24,43 +25,12 @@
     }
   }
 
-  .actions {
+  .button-group {
     border: 0;
-    display: flex;
-    flex-wrap: nowrap;
-    padding: 0 var(--space-large);
-
-    button {
-      margin-inline-end: var(--space-large);
-      padding-inline: var(--space-large);
-      white-space: normal;
-      width: 50%;
-
-      &.done {
-        margin-inline-end: 0;
-        margin-inline-start: 0;
-      }
-    }
+    padding: var(--space-large);
   }
 
   .icon {
     margin-inline-end: var(--space-large);
   }
-}
-
-.modal-overlay {
-  background: var(--newtab-overlay-color);
-  height: 100%;
-  inset-inline-start: 0;
-  position: fixed;
-  inset-block-start: 0;
-  width: 100%;
-  z-index: 11001;
-}
-
-.modal {
-  background: var(--newtab-background-color-secondary);
-  border: $border-secondary;
-  border-radius: var(--border-radius-small);
-  z-index: 11002;
 }

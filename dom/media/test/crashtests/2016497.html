@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head><meta charset="utf-8"><title>crash test</title></head>
+<body>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  const dec = new VideoDecoder({
+    output: () => {},
+    error: () => {}
+  });
+  dec.configure({ codec: "hev1.2.4.L120.B0" });
+  const chunk = new EncodedVideoChunk({
+    type: "key",
+    timestamp: 1,
+    data: new Uint8Array([0, 0, 0, 1, 0x67, 0x42, 0x00, 0x1e])
+  });
+  dec.decode(chunk);
+  dec.decode(chunk);
+  await dec.flush().catch(() => {});
+  document.documentElement.removeAttribute("class");
+});
+</script>
+</body>
+</html>

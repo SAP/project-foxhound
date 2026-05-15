@@ -7,13 +7,12 @@
 #ifndef DOM_QUOTA_SCOPEDLOGEXTRAINFO_H_
 #define DOM_QUOTA_SCOPEDLOGEXTRAINFO_H_
 
-#include "mozilla/dom/quota/Config.h"
-
 #include <map>
-#include "mozilla/Assertions.h"
+
 #include "mozilla/Attributes.h"
 #include "mozilla/Tainting.h"
 #include "mozilla/ThreadLocal.h"
+#include "mozilla/dom/quota/Config.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
 

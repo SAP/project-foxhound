@@ -7,13 +7,14 @@ package org.mozilla.focus.fragment.about
 import android.content.Context
 import android.widget.Toast
 import org.mozilla.focus.R
-import org.mozilla.focus.ext.components
-import org.mozilla.focus.state.AppAction
 
 /**
  * Triggers the "secret" debug menu when logoView is tapped 5 times.
  */
-class SecretSettingsUnlocker(private val context: Context) {
+class SecretSettingsUnlocker(
+    private val context: Context,
+    private val onLogoClicked: () -> Unit,
+) {
 
     private var secretSettingsClicks = 0
     private var lastDebugMenuToast: Toast? = null
@@ -47,7 +48,7 @@ class SecretSettingsUnlocker(private val context: Context) {
                     R.string.about_debug_menu_toast_done,
                     Toast.LENGTH_LONG,
                 ).show()
-                context.components.appStore.dispatch(AppAction.SecretSettingsStateChange(true))
+                onLogoClicked()
             }
         }
     }

@@ -35,23 +35,6 @@ testserver.registerPathHandler(
   }
 );
 
-testserver.registerPathHandler(
-  "/installtrigger_install.html",
-  (request, response) => {
-    response.write(
-      createTestPage(`
-    <button/>
-    <script>
-      const install = InstallTrigger.install.bind(InstallTrigger);
-      document.querySelector("button").onclick = () => {
-        install({ fakeextensionurl: "http://example.com/fakeextensionurl.xpi" });
-      };
-    </script>
-  `)
-    );
-  }
-);
-
 async function testDeprecationWarning(testPageURL, expectedDeprecationWarning) {
   const page = await ExtensionTestUtils.loadContentPage(testPageURL);
 
@@ -97,38 +80,12 @@ async function testDeprecationWarning(testPageURL, expectedDeprecationWarning) {
 
 add_task(
   {
-    pref_set: [
-      ["extensions.InstallTrigger.enabled", true],
-      ["extensions.InstallTriggerImpl.enabled", true],
-    ],
+    pref_set: [["extensions.InstallTrigger.enabled", true]],
   },
   function testDeprecationWarningsOnUADetection() {
     return testDeprecationWarning(
       "http://example.com/installtrigger_ua_detection.html",
       "InstallTrigger is deprecated and will be removed in the future."
-    );
-  }
-);
-
-add_task(
-  {
-    pref_set: [
-      ["extensions.InstallTrigger.enabled", true],
-      ["extensions.InstallTriggerImpl.enabled", true],
-    ],
-  },
-  async function testDeprecationWarningsOnInstallTriggerInstall() {
-    const message = await testDeprecationWarning(
-      "http://example.com/installtrigger_install.html",
-      "InstallTrigger.install() is deprecated and will be removed in the future."
-    );
-
-    const moreInfoURL =
-      "https://extensionworkshop.com/documentation/publish/self-distribution/";
-
-    ok(
-      message.includes(moreInfoURL),
-      "Deprecation warning should include an url to self-distribution documentation"
     );
   }
 );
@@ -161,12 +118,9 @@ async function testInstallTriggerDeprecationPrefs(expectedResults) {
 
 add_task(
   {
-    pref_set: [
-      ["extensions.InstallTrigger.enabled", true],
-      ["extensions.InstallTriggerImpl.enabled", false],
-    ],
+    pref_set: [["extensions.InstallTrigger.enabled", true]],
   },
-  function testInstallTriggerImplDisabled() {
+  function testInstallTriggerEnabled() {
     return testInstallTriggerDeprecationPrefs({
       uaDetectionResult: true,
       typeofInstallMethod: "undefined",
@@ -190,7 +144,6 @@ add_task(
     pref_set: [
       ["extensions.remoteSettings.disabled", false],
       ["extensions.InstallTrigger.enabled", true],
-      ["extensions.InstallTriggerImpl.enabled", true],
     ],
   },
   async function testInstallTriggerDeprecatedFromRemoteSettings() {
@@ -199,72 +152,11 @@ add_task(
     // InstallTrigger is expected to be initially enabled.
     await testInstallTriggerDeprecationPrefs({
       uaDetectionResult: true,
-      typeofInstallMethod: "function",
-    });
-
-    info("Test remote settings update to hide InstallTrigger methods");
-
-    // InstallTrigger global is expected to still be enabled, the install method
-    // to have been hidden.
-    const unexpectedPrefsBranchName = "extensions.unexpectedPrefs";
-    await setAndEmitFakeRemoteSettingsData([
-      {
-        id: "AddonManagerSettings",
-        installTriggerDeprecation: {
-          "extensions.InstallTriggerImpl.enabled": false,
-          // Unexpected preferences names would be just ignored.
-          [`${unexpectedPrefsBranchName}.fromProcessedEntry`]: true,
-        },
-        otherFakeFutureSetting: {
-          [`${unexpectedPrefsBranchName}.fromFakeFutureSetting`]: true,
-        },
-        // This entry is expected to always be processed when running this
-        // xpcshell test, the appInfo platformVersion is always set to 42
-        // by the call to AddonTestUtils's createAppInfo.
-        filter_expression: "env.appinfo.platformVersion >= 42",
-      },
-      {
-        // Entries entirely unexpected should be ignored even if they may be
-        // including a property named as the ones that AMRemoteSettings (e.g.
-        // it may be a new type of entry introduced for a new Firefox version,
-        // which a previous version of Firefox shouldn't try to process avoid
-        // undefined behaviors).
-        id: "AddonManagerSettings-fxFutureVersion",
-        // This entry is expected to always be filtered out by RemoteSettings,
-        // while running this xpcshell test the platformInfo version is always set
-        // to 42 by the call to AddonTestUtils's createAppInfo.
-        filter_expression: "env.appinfo.platformVersion >= 200",
-        installTriggerDeprecation: {
-          // If processed, it would fail the assertion that follows
-          // because it does change the same pref that the previous entry did
-          // set to false.
-          "extensions.InstallTriggerImpl.enabled": true,
-        },
-      },
-    ]);
-    await testInstallTriggerDeprecationPrefs({
-      uaDetectionResult: true,
       typeofInstallMethod: "undefined",
     });
 
-    const unexpectedPrefBranch = Services.prefs.getBranch(
-      unexpectedPrefsBranchName
-    );
-    equal(
-      unexpectedPrefBranch.getPrefType("fromFakeFutureSetting"),
-      unexpectedPrefBranch.PREF_INVALID,
-      "Preferences included in an unexpected entry property should not be set"
-    );
-    equal(
-      unexpectedPrefBranch.getPrefType("fromProcessedEntry"),
-      unexpectedPrefBranch.PREF_INVALID,
-      undefined,
-      "Unexpected pref included in the installTriggerDeprecation entry should not be set"
-    );
-
     info("Test remote settings update to hide InstallTrigger global");
-    // InstallTrigger global is expected to still be enabled, the install method
-    // to have been hidden.
+    // InstallTrigger global is expected to still be enabled
     await setAndEmitFakeRemoteSettingsData([
       {
         id: "AddonManagerSettings",
@@ -278,36 +170,18 @@ add_task(
     });
 
     info("Test remote settings update to re-enable InstallTrigger global");
-    // InstallTrigger global is expected to still be enabled, the install method
-    // to have been hidden.
+    // InstallTrigger global is expected to still be enabled
     await setAndEmitFakeRemoteSettingsData([
       {
         id: "AddonManagerSettings",
         installTriggerDeprecation: {
           "extensions.InstallTrigger.enabled": true,
-          "extensions.InstallTriggerImpl.enabled": false,
         },
       },
     ]);
     await testInstallTriggerDeprecationPrefs({
       uaDetectionResult: true,
       typeofInstallMethod: "undefined",
-    });
-
-    info("Test remote settings update to re-enable InstallTrigger methods");
-    // InstallTrigger global and method are both expected to be re-enabled.
-    await setAndEmitFakeRemoteSettingsData([
-      {
-        id: "AddonManagerSettings",
-        installTriggerDeprecation: {
-          "extensions.InstallTrigger.enabled": true,
-          "extensions.InstallTriggerImpl.enabled": true,
-        },
-      },
-    ]);
-    await testInstallTriggerDeprecationPrefs({
-      uaDetectionResult: true,
-      typeofInstallMethod: "function",
     });
 
     info("Test remote settings ignored when AMRemoteSettings is disabled");
@@ -319,7 +193,6 @@ add_task(
           id: "AddonManagerSettings",
           installTriggerDeprecation: {
             "extensions.InstallTrigger.enabled": false,
-            "extensions.InstallTriggerImpl.enabled": false,
           },
         },
       ],
@@ -327,7 +200,7 @@ add_task(
     );
     await testInstallTriggerDeprecationPrefs({
       uaDetectionResult: true,
-      typeofInstallMethod: "function",
+      typeofInstallMethod: "undefined",
     });
 
     info(

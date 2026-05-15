@@ -37,8 +37,9 @@ class CompositorThreadHolder final {
     return rv;
   }
 
-  nsresult Dispatch(already_AddRefed<nsIRunnable> event,
-                    uint32_t flags = nsIEventTarget::DISPATCH_NORMAL) {
+  nsresult Dispatch(
+      already_AddRefed<nsIRunnable> event,
+      nsIEventTarget::DispatchFlags flags = nsIEventTarget::DISPATCH_NORMAL) {
     return mCompositorThread->Dispatch(std::move(event), flags);
   }
 

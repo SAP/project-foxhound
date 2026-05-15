@@ -47,11 +47,11 @@ async function promiseHistoryClearedState(aURIs, aShouldBeCleared) {
 /**
  * Ensures that the given pref is the expected value.
  *
- * @param {String} aPrefName
+ * @param {string} aPrefName
  *        The pref's sub-branch under the privacy branch
- * @param {Boolean} aExpectedVal
+ * @param {boolean} aExpectedVal
  *        The pref's expected value
- * @param {String} aMsg
+ * @param {string} aMsg
  *        Passed to is()
  */
 function boolPrefIs(aPrefName, aExpectedVal, aMsg) {
@@ -150,9 +150,6 @@ add_setup(async function () {
     await blankSlate();
     await PlacesTestUtils.promiseAsyncUpdates();
   });
-  await SpecialPowers.pushPrefEnv({
-    set: [["privacy.sanitize.useOldClearHistoryDialog", false]],
-  });
 
   // open preferences to trigger an updateSites()
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
@@ -188,7 +185,7 @@ function visitTimeForMinutesAgo(aMinutesAgo) {
  * Opens dialog in the provided context and selects the checkboxes
  * as sent in the parameters
  *
- * @param {Object} context the dialog is opened in, timespan to select,
+ * @param {object} context the dialog is opened in, timespan to select,
  *  if browsingHistoryAndDownloads, cookiesAndStorage, cache or siteSettings
  *  are checked
  */
@@ -301,26 +298,30 @@ add_task(async function test_pref_remembering() {
   dh.open();
   await dh.promiseClosed;
 
-  // test rememebering prefs from the clear history context
-  // since clear history and clear site data have seperate remembering
-  // of prefs
-  dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
-  dh.onload = function () {
-    this.checkPrefCheckbox("cookiesAndStorage", true);
-    this.checkPrefCheckbox("siteSettings", false);
-    this.checkPrefCheckbox("cache", false);
+  if (!settingsRedesignHistoryEnabled()) {
+    // test rememebering prefs from the clear history context
+    // since clear history and clear site data have seperate remembering
+    // of prefs
+    dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
+    dh.onload = function () {
+      this.checkPrefCheckbox("cookiesAndStorage", true);
+      this.checkPrefCheckbox("siteSettings", false);
+      this.checkPrefCheckbox("cache", false);
 
-    this.acceptDialog();
-  };
-  dh.open();
-  await dh.promiseClosed;
+      this.acceptDialog();
+    };
+    dh.open();
+    await dh.promiseClosed;
+  }
 
   // validate if prefs are remembered across both clear history and browser
   dh = new ClearHistoryDialogHelper({ mode: "browser" });
   dh.onload = function () {
     this.validateCheckbox("cookiesAndStorage", true);
     this.validateCheckbox("siteSettings", false);
-    this.validateCheckbox("cache", false);
+    if (!settingsRedesignHistoryEnabled()) {
+      this.validateCheckbox("cache", false);
+    }
 
     this.cancelDialog();
   };
@@ -767,111 +768,113 @@ add_task(async function test_clear_on_shutdown() {
   await SiteDataTestUtils.clear();
 });
 
-add_task(async function testClearHistoryCheckboxStatesAfterMigration() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["privacy.cpd.history", false],
-      ["privacy.cpd.formdata", true],
-      ["privacy.cpd.cookies", true],
-      ["privacy.cpd.offlineApps", false],
-      ["privacy.cpd.sessions", false],
-      ["privacy.cpd.siteSettings", false],
-      ["privacy.cpd.cache", true],
-      // Set cookiesAndStorage to verify that the pref is flipped in the test
-      ["privacy.clearHistory.cookiesAndStorage", false],
-      // We set the old migrate pref to false to simulate a user who has not migrated to the new dialog.
-      // we should follow the user's old prefs with "cpd." prefix in this case.
-      ["privacy.sanitize.cpd.hasMigratedToNewPrefs2", false],
-      ["privacy.sanitize.cpd.hasMigratedToNewPrefs3", false],
-    ],
+if (!settingsRedesignHistoryEnabled()) {
+  add_task(async function testClearHistoryCheckboxStatesAfterMigration() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["privacy.cpd.history", false],
+        ["privacy.cpd.formdata", true],
+        ["privacy.cpd.cookies", true],
+        ["privacy.cpd.offlineApps", false],
+        ["privacy.cpd.sessions", false],
+        ["privacy.cpd.siteSettings", false],
+        ["privacy.cpd.cache", true],
+        // Set cookiesAndStorage to verify that the pref is flipped in the test
+        ["privacy.clearHistory.cookiesAndStorage", false],
+        // We set the old migrate pref to false to simulate a user who has not migrated to the new dialog.
+        // we should follow the user's old prefs with "cpd." prefix in this case.
+        ["privacy.sanitize.cpd.hasMigratedToNewPrefs2", false],
+        ["privacy.sanitize.cpd.hasMigratedToNewPrefs3", false],
+      ],
+    });
+
+    let dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
+    dh.onload = function () {
+      this.validateCheckbox("cookiesAndStorage", true);
+      this.validateCheckbox("browsingHistoryAndDownloads", false);
+      this.validateCheckbox("formdata", true);
+      this.validateCheckbox("cache", true);
+      this.validateCheckbox("siteSettings", false);
+
+      this.checkPrefCheckbox("siteSettings", true);
+      this.checkPrefCheckbox("cookiesAndStorage", false);
+      this.acceptDialog();
+    };
+    dh.open();
+    await dh.promiseClosed;
+
+    is(
+      Services.prefs.getBoolPref("privacy.sanitize.cpd.hasMigratedToNewPrefs3"),
+      true,
+      "Migration is complete for cpd branch"
+    );
+
+    // make sure the migration doesn't run again
+    dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
+    dh.onload = function () {
+      this.validateCheckbox("siteSettings", true);
+      this.validateCheckbox("cookiesAndStorage", false);
+      this.cancelDialog();
+    };
+    dh.open();
+    await dh.promiseClosed;
   });
 
-  let dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
-  dh.onload = function () {
-    this.validateCheckbox("cookiesAndStorage", true);
-    this.validateCheckbox("browsingHistoryAndDownloads", false);
-    this.validateCheckbox("formdata", true);
-    this.validateCheckbox("cache", true);
-    this.validateCheckbox("siteSettings", false);
+  add_task(async function testClearHistoryCheckboxStatesAfterMigration3() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["privacy.cpd.history", false],
+        ["privacy.cpd.formdata", true],
+        ["privacy.cpd.cookies", true],
+        ["privacy.cpd.offlineApps", false],
+        ["privacy.cpd.sessions", false],
+        ["privacy.cpd.siteSettings", true],
+        ["privacy.cpd.cache", true],
+        // Verify that prefs not in not touched in migration from v2
+        ["privacy.clearHistory.cookiesAndStorage", false],
+        ["privacy.clearHistory.siteSettings", false],
+        ["privacy.clearHistory.cache", false],
+        // Verify that formData and browsingHistoryAndDownloads inherit this value
+        ["privacy.clearHistory.historyFormDataAndDownloads", true],
+        // migrate from v2 to v3, dont redo the v1 to v2 migration
+        ["privacy.sanitize.cpd.hasMigratedToNewPrefs2", true],
+        ["privacy.sanitize.cpd.hasMigratedToNewPrefs3", false],
+      ],
+    });
 
-    this.checkPrefCheckbox("siteSettings", true);
-    this.checkPrefCheckbox("cookiesAndStorage", false);
-    this.acceptDialog();
-  };
-  dh.open();
-  await dh.promiseClosed;
+    let dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
+    dh.onload = function () {
+      // migration to v3 shouldn't modify these values
+      this.validateCheckbox("cookiesAndStorage", false);
+      this.validateCheckbox("siteSettings", false);
+      this.validateCheckbox("cache", false);
 
-  is(
-    Services.prefs.getBoolPref("privacy.sanitize.cpd.hasMigratedToNewPrefs3"),
-    true,
-    "Migration is complete for cpd branch"
-  );
+      // migration to v3 should set them initially to true from historyFormDataAndDownloads pref
+      this.validateCheckbox("browsingHistoryAndDownloads", true);
+      this.validateCheckbox("formdata", true);
 
-  // make sure the migration doesn't run again
-  dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
-  dh.onload = function () {
-    this.validateCheckbox("siteSettings", true);
-    this.validateCheckbox("cookiesAndStorage", false);
-    this.cancelDialog();
-  };
-  dh.open();
-  await dh.promiseClosed;
-});
+      // flip two prefs to open to verify migration doesn't happen again and checkboxes retain their value
+      this.checkPrefCheckbox("siteSettings", true);
+      this.checkPrefCheckbox("browsingHistoryAndDownloads", false);
+      this.acceptDialog();
+    };
+    dh.open();
+    await dh.promiseClosed;
 
-add_task(async function testClearHistoryCheckboxStatesAfterMigration3() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["privacy.cpd.history", false],
-      ["privacy.cpd.formdata", true],
-      ["privacy.cpd.cookies", true],
-      ["privacy.cpd.offlineApps", false],
-      ["privacy.cpd.sessions", false],
-      ["privacy.cpd.siteSettings", true],
-      ["privacy.cpd.cache", true],
-      // Verify that prefs not in not touched in migration from v2
-      ["privacy.clearHistory.cookiesAndStorage", false],
-      ["privacy.clearHistory.siteSettings", false],
-      ["privacy.clearHistory.cache", false],
-      // Verify that formData and browsingHistoryAndDownloads inherit this value
-      ["privacy.clearHistory.historyFormDataAndDownloads", true],
-      // migrate from v2 to v3, dont redo the v1 to v2 migration
-      ["privacy.sanitize.cpd.hasMigratedToNewPrefs2", true],
-      ["privacy.sanitize.cpd.hasMigratedToNewPrefs3", false],
-    ],
+    is(
+      Services.prefs.getBoolPref("privacy.sanitize.cpd.hasMigratedToNewPrefs3"),
+      true,
+      "Migration is complete for cpd branch"
+    );
+
+    // make sure the migration doesn't run again
+    dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
+    dh.onload = function () {
+      this.validateCheckbox("siteSettings", true);
+      this.validateCheckbox("browsingHistoryAndDownloads", false);
+      this.cancelDialog();
+    };
+    dh.open();
+    await dh.promiseClosed;
   });
-
-  let dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
-  dh.onload = function () {
-    // migration to v3 shouldn't modify these values
-    this.validateCheckbox("cookiesAndStorage", false);
-    this.validateCheckbox("siteSettings", false);
-    this.validateCheckbox("cache", false);
-
-    // migration to v3 should set them initially to true from historyFormDataAndDownloads pref
-    this.validateCheckbox("browsingHistoryAndDownloads", true);
-    this.validateCheckbox("formdata", true);
-
-    // flip two prefs to open to verify migration doesn't happen again and checkboxes retain their value
-    this.checkPrefCheckbox("siteSettings", true);
-    this.checkPrefCheckbox("browsingHistoryAndDownloads", false);
-    this.acceptDialog();
-  };
-  dh.open();
-  await dh.promiseClosed;
-
-  is(
-    Services.prefs.getBoolPref("privacy.sanitize.cpd.hasMigratedToNewPrefs3"),
-    true,
-    "Migration is complete for cpd branch"
-  );
-
-  // make sure the migration doesn't run again
-  dh = new ClearHistoryDialogHelper({ mode: "clearHistory" });
-  dh.onload = function () {
-    this.validateCheckbox("siteSettings", true);
-    this.validateCheckbox("browsingHistoryAndDownloads", false);
-    this.cancelDialog();
-  };
-  dh.open();
-  await dh.promiseClosed;
-});
+}

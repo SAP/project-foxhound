@@ -68,9 +68,9 @@ add_setup(async function () {
 
 async function checkOrder(type, expectedOrder) {
   // Reset the sorted list.
-  Services.search.wrappedJSObject._cachedSortedEngines = null;
+  SearchService._cachedSortedEngines = null;
 
-  const sortedEngines = await Services.search[type]();
+  const sortedEngines = await SearchService[type]();
   Assert.deepEqual(
     sortedEngines.map(s => s.name),
     expectedOrder,
@@ -88,10 +88,7 @@ add_task(async function test_engine_sort_with_non_builtins_sort() {
 
   // As we've added an engine, the pref will have been set to true, but
   // we do really want to test the default sort.
-  Services.search.wrappedJSObject._settings.setMetaDataAttribute(
-    "useSavedOrder",
-    false
-  );
+  SearchService._settings.setMetaDataAttribute("useSavedOrder", false);
 
   // We should still have the same built-in engines listed.
   await checkOrder("getAppProvidedEngines", EXPECTED_DEFAULT_ORDER);

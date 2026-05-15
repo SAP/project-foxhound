@@ -10,6 +10,7 @@
 #include "CommonSocketControl.h"
 #include "TLSClientAuthCertSelection.h"
 #include "mozilla/Casting.h"
+#include "mozilla/Maybe.h"
 #include "nsNSSIOLayer.h"
 #include "nsThreadUtils.h"
 
@@ -205,6 +206,7 @@ class NSSSocketControl final : public CommonSocketControl {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     return mCertVerificationState == WaitingForCertVerification;
   }
+
   void AddPlaintextBytesRead(uint64_t val) {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
     mPlaintextBytesRead += val;
@@ -284,39 +286,24 @@ class NSSSocketControl final : public CommonSocketControl {
   void SetPreliminaryHandshakeInfo(const SSLChannelInfo& channelInfo,
                                    const SSLCipherSuiteInfo& cipherInfo);
 
-  void SetPendingSelectClientAuthCertificate(
-      nsCOMPtr<nsIRunnable>&& selectClientAuthCertificate) {
+  // Cancels an unclaimed (i.e. speculative) connection.
+  bool CancelIfNotClaimed() {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    MOZ_LOG(
-        gPIPNSSLog, mozilla::LogLevel::Debug,
-        ("[%p] setting pending select client auth certificate", (void*)mFd));
-    // If the connection corresponding to this socket hasn't been claimed, it
-    // is a speculative connection. The connection will block until the "choose
-    // a client auth certificate" dialog has been shown. The dialog will only
-    // be shown when this connection gets claimed. However, necko will never
-    // claim the connection as long as it is blocking. Thus, this connection
-    // can't proceed, so it's best to cancel it. Necko will create a new,
-    // non-speculative connection instead.
     if (!mClaimed) {
       SetCanceled(PR_CONNECT_RESET_ERROR);
-    } else {
-      mPendingSelectClientAuthCertificate =
-          std::move(selectClientAuthCertificate);
     }
+    return !mClaimed;
   }
 
-  void MaybeDispatchSelectClientAuthCertificate() {
+  void SetClientAuthCertificateRequest(
+      mozilla::UniqueCERTCertificate&& serverCertificate,
+      nsTArray<nsTArray<uint8_t>>&& caNames) {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    if (!IsWaitingForCertVerification() && mClaimed &&
-        mPendingSelectClientAuthCertificate) {
-      MOZ_LOG(gPIPNSSLog, mozilla::LogLevel::Debug,
-              ("[%p] dispatching pending select client auth certificate",
-               (void*)mFd));
-      mozilla::Unused << NS_DispatchToMainThread(
-          mPendingSelectClientAuthCertificate);
-      mPendingSelectClientAuthCertificate = nullptr;
-    }
+    mClientAuthCertificateRequest.emplace(ClientAuthCertificateRequest{
+        std::move(serverCertificate), std::move(caNames)});
   }
+
+  void MaybeSelectClientAuthCertificate();
 
  private:
   ~NSSSocketControl() = default;
@@ -373,8 +360,19 @@ class NSSSocketControl final : public CommonSocketControl {
   mozilla::TimeStamp mSocketCreationTimestamp;
   uint64_t mPlaintextBytesRead;
 
+  // Whether or not this connection has been claimed. If it has not been
+  // claimed, this is a speculative connection.
   bool mClaimed;
-  nsCOMPtr<nsIRunnable> mPendingSelectClientAuthCertificate;
+  // When a server requests a client authentication certificate, the server's
+  // certificate may not have been verified yet. In order to prevent any
+  // certificate dialogs from appearing before verification succeeds (and to
+  // prevent them altogether if it fails), stash the information relevant to
+  // selecting a certificate until it has succeeded.
+  struct ClientAuthCertificateRequest {
+    mozilla::UniqueCERTCertificate mServerCertificate;
+    nsTArray<nsTArray<uint8_t>> mCANames;
+  };
+  mozilla::Maybe<ClientAuthCertificateRequest> mClientAuthCertificateRequest;
 
   // Regarding the client certificate message in the TLS handshake, RFC 5246
   // (TLS 1.2) says:

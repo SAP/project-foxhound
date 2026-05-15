@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_ExtendableCookieChangeEvent_h
 #define mozilla_dom_ExtendableCookieChangeEvent_h
 
-#include "mozilla/dom/ServiceWorkerEvents.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ExtendableCookieChangeEventBinding.h"
+#include "mozilla/dom/ServiceWorkerEvents.h"
 
 namespace mozilla::dom {
 

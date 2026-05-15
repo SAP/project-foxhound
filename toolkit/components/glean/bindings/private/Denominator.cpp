@@ -18,7 +18,7 @@ namespace mozilla::glean {
 
 namespace impl {
 
-void DenominatorMetric::Add(int32_t aAmount) const {
+void DenominatorStandalone::Add(int32_t aAmount) const {
   auto scalarId = ScalarIdForMetric(mId);
   if (scalarId && aAmount >= 0) {
     TelemetryScalar::Add(scalarId.extract(), aAmount);

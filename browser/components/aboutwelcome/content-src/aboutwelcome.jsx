@@ -35,6 +35,7 @@ class AboutWelcome extends React.PureComponent {
           mountStart: performance.getEntriesByName("mount").pop().startTime,
           domState,
           source: this.props.UTMTerm,
+          writeInMicrosurvey: this.props.write_in_microsurvey,
         });
       };
       if (document.readyState === "complete") {
@@ -65,6 +66,7 @@ class AboutWelcome extends React.PureComponent {
         addonIconURL={props.iconURL}
         themeScreenshots={props.screenshots}
         message_id={props.messageId}
+        writeInMicrosurvey={props.write_in_microsurvey}
         defaultScreens={props.screens}
         updateHistory={!props.disableHistoryUpdates}
         metricsFlowUri={this.state.metricsFlowUri}
@@ -74,6 +76,7 @@ class AboutWelcome extends React.PureComponent {
         startScreen={props.startScreen || 0}
         appAndSystemLocaleInfo={props.appAndSystemLocaleInfo}
         ariaRole={props.aria_role}
+        gateInitialPaint={true}
       />
     );
   }

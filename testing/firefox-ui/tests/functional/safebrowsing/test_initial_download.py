@@ -3,19 +3,18 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-from functools import reduce
 
 from marionette_driver import Wait
 from marionette_harness import MarionetteTestCase
 
 
 class TestSafeBrowsingInitialDownload(MarionetteTestCase):
-    v2_file_extensions = [
+    shavar_file_extensions = [
         "vlpset",
         "sbstore",
     ]
 
-    v4_file_extensions = [
+    protobuf_file_extensions = [
         "vlpset",
         "metadata",
     ]
@@ -35,6 +34,8 @@ class TestSafeBrowsingInitialDownload(MarionetteTestCase):
         "browser.safebrowsing.provider.mozilla.nextupdatetime": 1,
     }
 
+    prefs_provider_google_update_time = {}
+
     prefs_safebrowsing = {
         "services.settings.server": "https://firefox.settings.services.mozilla.com/v1",
         "browser.safebrowsing.debug": True,
@@ -45,9 +46,9 @@ class TestSafeBrowsingInitialDownload(MarionetteTestCase):
         files = []
 
         if is_v4:
-            my_file_extensions = self.v4_file_extensions
+            my_file_extensions = self.protobuf_file_extensions
         else:  # v2
-            my_file_extensions = self.v2_file_extensions
+            my_file_extensions = self.shavar_file_extensions
 
         for pref_name in self.prefs_download_lists:
             base_names = self.marionette.get_pref(pref_name).split(",")
@@ -59,44 +60,40 @@ class TestSafeBrowsingInitialDownload(MarionetteTestCase):
             )
 
             for ext in my_file_extensions:
-                files.extend(
-                    [
-                        f"{f}.{ext}"
-                        for f in base_names
-                        if f and f.endswith("-proto") == is_v4
-                    ]
-                )
+                files.extend([
+                    f"{f}.{ext}"
+                    for f in base_names
+                    if f and f.endswith("-proto") == is_v4
+                ])
 
         return set(sorted(files))
 
     def setUp(self):
-        super(TestSafeBrowsingInitialDownload, self).setUp()
+        super().setUp()
 
-        self.safebrowsing_v2_files = self.get_safebrowsing_files(False)
+        self.safebrowsing_shavar_files = self.get_safebrowsing_files(False)
         if any(
             f.startswith("goog-") or f.startswith("googpub-")
-            for f in self.safebrowsing_v2_files
+            for f in self.safebrowsing_shavar_files
         ):
-            self.prefs_provider_update_time.update(
-                {
-                    "browser.safebrowsing.provider.google.nextupdatetime": 1,
-                }
-            )
+            self.prefs_provider_google_update_time.update({
+                "browser.safebrowsing.provider.google.nextupdatetime": 1,
+            })
 
-        self.safebrowsing_v4_files = self.get_safebrowsing_files(True)
+        self.safebrowsing_protobuf_files = self.get_safebrowsing_files(True)
         if any(
             f.startswith("goog-") or f.startswith("googpub-")
-            for f in self.safebrowsing_v4_files
+            for f in self.safebrowsing_protobuf_files
         ):
-            self.prefs_provider_update_time.update(
-                {
-                    "browser.safebrowsing.provider.google4.nextupdatetime": 1,
-                }
-            )
+            self.prefs_provider_google_update_time.update({
+                "browser.safebrowsing.provider.google4.nextupdatetime": 1,
+                "browser.safebrowsing.provider.google5.nextupdatetime": 1,
+            })
 
         # Force the preferences for the new profile
         enforce_prefs = self.prefs_safebrowsing
         enforce_prefs.update(self.prefs_provider_update_time)
+        enforce_prefs.update(self.prefs_provider_google_update_time)
         self.marionette.enforce_gecko_prefs(enforce_prefs)
 
         self.safebrowsing_path = os.path.join(
@@ -108,15 +105,23 @@ class TestSafeBrowsingInitialDownload(MarionetteTestCase):
             # Restart with a fresh profile
             self.marionette.restart(in_app=False, clean=True)
         finally:
-            super(TestSafeBrowsingInitialDownload, self).tearDown()
+            super().tearDown()
 
     def test_safe_browsing_initial_download(self):
         def check_downloaded(_):
-            return reduce(
-                lambda state, pref: state and int(self.marionette.get_pref(pref)) != 1,
-                list(self.prefs_provider_update_time),
-                True,
-            )
+            # All prefs in prefs_provider_update_time must be updated.
+            # For prefs_provider_google_update_time (google4/google5),
+            # either one being updated is sufficient since only one
+            # provider will be active depending on whether V5 is enabled.
+            for pref in self.prefs_provider_update_time:
+                if int(self.marionette.get_pref(pref)) == 1:
+                    return False
+            if self.prefs_provider_google_update_time and not any(
+                int(self.marionette.get_pref(pref)) != 1
+                for pref in self.prefs_provider_google_update_time
+            ):
+                return False
+            return True
 
         try:
             Wait(self.marionette, timeout=170).until(
@@ -125,12 +130,12 @@ class TestSafeBrowsingInitialDownload(MarionetteTestCase):
             )
         finally:
             files_on_disk_toplevel = os.listdir(self.safebrowsing_path)
-            for f in self.safebrowsing_v2_files:
+            for f in self.safebrowsing_shavar_files:
                 self.assertIn(f, files_on_disk_toplevel)
 
-            if len(self.safebrowsing_v4_files) > 0:
+            if len(self.safebrowsing_protobuf_files) > 0:
                 files_on_disk_google4 = os.listdir(
                     os.path.join(self.safebrowsing_path, "google4")
                 )
-                for f in self.safebrowsing_v4_files:
+                for f in self.safebrowsing_protobuf_files:
                     self.assertIn(f, files_on_disk_google4)

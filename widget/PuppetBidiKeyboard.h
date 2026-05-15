@@ -23,7 +23,7 @@ class PuppetBidiKeyboard final : public nsIBidiKeyboard {
   void SetBidiKeyboardInfo(bool aIsLangRTL, bool aHaveBidiKeyboards);
 
  private:
-  ~PuppetBidiKeyboard();
+  ~PuppetBidiKeyboard() = default;
 
   bool mIsLangRTL;
   bool mHaveBidiKeyboards;

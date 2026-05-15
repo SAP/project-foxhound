@@ -1,13 +1,12 @@
 {%- if enum_.is_flat -%}
 
 {{ enum_.js_docstring }}
-export const {{ enum_.name }} = {
+export const {{ enum_.name }} = Object.freeze({
     {%- for variant in enum_.variants %}
     {{ variant.js_docstring|indent(4) }}
     {{ variant.name }}: {{ variant.discr.js_lit }},
     {%- endfor %}
-};
-Object.freeze({{ enum_.name }});
+});
 
 // Export the FFIConverter object to make external types work.
 export class {{ enum_.self_type.ffi_converter }} extends FfiConverterArrayBuffer {

@@ -37,15 +37,13 @@ def _install_package(virtualenv_manager, package):
             # already installed in this venv, we can skip
             return
 
-    subprocess.check_call(
-        [
-            virtualenv_manager.python_path,
-            "-m",
-            "pip",
-            "install",
-            package,
-        ]
-    )
+    subprocess.check_call([
+        virtualenv_manager.python_path,
+        "-m",
+        "pip",
+        "install",
+        package,
+    ])
 
 
 def _kill_mozproxy(pid):
@@ -84,7 +82,7 @@ class OutputHandler:
 
 
 def test_help():
-    p = subprocess.run([sys.executable, "-m", "mozproxy", "--help"])
+    p = subprocess.run([sys.executable, "-m", "mozproxy", "--help"], check=False)
     assert p.returncode == 0
 
 

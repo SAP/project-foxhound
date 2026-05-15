@@ -22,6 +22,12 @@ class nsISupports;
 
 namespace mozilla::glean {
 
+enum MetricTypeId {
+  {% for (type_name, subtype_name), (type_id, original_type) in metric_type_ids %}
+  {{original_type|SCREAMING_CASE}} = {{type_id}},
+  {% endfor %}
+};
+
 // The category lookup table's entry type
 using category_entry_t = uint32_t;
 // The metric lookup table's entry type

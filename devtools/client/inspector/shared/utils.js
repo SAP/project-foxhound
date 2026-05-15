@@ -37,7 +37,7 @@ const HTML_NS = "http://www.w3.org/1999/xhtml";
  *        Current text editor value.
  * @param {number} insertionPoint
  *        The index of the insertion point.
- * @return {Boolean} True if the focus should advance; false if
+ * @return {boolean} True if the focus should advance; false if
  *        the character should be inserted.
  */
 function advanceValidate(keyCode, value, insertionPoint) {
@@ -143,28 +143,13 @@ async function getLongString(longStringActorPromise) {
  * Returns a selector of the Element Rep from the grip. This is based on the
  * getElements() function in our devtools-reps component for a ElementNode.
  *
- * @param  {Object} grip
+ * @param  {object} grip
  *         Grip-like object that can be used with Reps.
- * @return {String} selector of the element node.
+ * @return {string} selector of the element node.
  */
 function getSelectorFromGrip(grip) {
-  const {
-    attributes,
-    nodeName,
-    isAfterPseudoElement,
-    isBeforePseudoElement,
-    isMarkerPseudoElement,
-  } = grip.preview;
-
-  if (isAfterPseudoElement) {
-    return "::after";
-  } else if (isBeforePseudoElement) {
-    return "::before";
-  } else if (isMarkerPseudoElement) {
-    return "::marker";
-  }
-
-  let selector = nodeName;
+  const { attributes, displayName } = grip.preview;
+  let selector = displayName;
 
   if (attributes.id) {
     selector += `#${attributes.id}`;
@@ -198,9 +183,9 @@ function promiseWarn(error) {
  * While waiting for a reps fix in https://github.com/firefox-devtools/reps/issues/92,
  * translate nodeFront to a grip-like object that can be used with an ElementNode rep.
  *
- * @params  {NodeFront} nodeFront
+ * @param {NodeFront} nodeFront
  *          The NodeFront for which we want to create a grip-like object.
- * @returns {Object} a grip-like object that can be used with Reps.
+ * @returns {object} a grip-like object that can be used with Reps.
  */
 function translateNodeFrontToGrip(nodeFront) {
   const { attributes } = nodeFront;
@@ -217,11 +202,10 @@ function translateNodeFrontToGrip(nodeFront) {
     preview: {
       attributes: attributesMap,
       attributesLength: attributes.length,
-      isAfterPseudoElement: nodeFront.isAfterPseudoElement,
-      isBeforePseudoElement: nodeFront.isBeforePseudoElement,
-      isMarkerPseudoElement: nodeFront.isMarkerPseudoElement,
+      isPseudoElement: nodeFront.isPseudoElement,
       // All the grid containers are assumed to be in the DOM tree.
       isConnected: true,
+      displayName: nodeFront.displayName,
       // nodeName is already lowerCased in Node grips
       nodeName: nodeFront.nodeName.toLowerCase(),
       nodeType: nodeFront.nodeType,

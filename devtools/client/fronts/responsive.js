@@ -24,5 +24,4 @@ class ResponsiveFront extends FrontClassWithSpec(responsiveSpec) {
   }
 }
 
-exports.ResponsiveFront = ResponsiveFront;
 registerFront(ResponsiveFront);

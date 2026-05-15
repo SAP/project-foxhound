@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _JSEPSESSIONIMPL_H_
-#define _JSEPSESSIONIMPL_H_
+#ifndef JSEPSESSIONIMPL_H_
+#define JSEPSESSIONIMPL_H_
 
 #include <map>
 #include <set>

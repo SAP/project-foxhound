@@ -41,6 +41,14 @@
   list-style-image: url(chrome://browser/skin/notification-icons/camera.svg);
 }
 
+.localhost-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/local-host.svg);
+}
+
+.local-network-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/local-network.svg);
+}
+
 .microphone-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/microphone.svg);
 }
@@ -101,7 +109,7 @@
 }
 
 .privacy-detailedoption {
-  border-color: var(--in-content-box-border-color);
+  border-color: var(--border-color);
 }
 
 .privacy-detailedoption.disabled {
@@ -117,7 +125,7 @@
 }
 
 .arrowhead {
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   min-height: 20px;
   min-width: 20px;
   max-height: 20px;
@@ -184,12 +192,12 @@
 }
 
 .privacy-detailedoption.selected {
-  border-color: var(--color-accent-primary);
+  border-color: var(--border-color-selected);
 }
 
 @media (forced-colors) {
   .privacy-detailedoption.selected {
-    outline: 2px solid var(--color-accent-primary);
+    outline: 2px solid var(--border-color-selected);
   }
 }
 
@@ -205,7 +213,7 @@
 
 .content-blocking-warning-title,
 .privacy-detailedoption .radio-label-box {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .privacy-detailedoption:not(.expanded, .selected) .privacy-extra-information {
@@ -269,6 +277,11 @@
   margin-inline-end: 6px;
 }
 
+.content-blocking-exceptions {
+  border-top: 1px solid var(--border-color);
+  padding-top: 18px;
+}
+
 #blockCookiesMenu {
   width: 450px;
 }
@@ -316,27 +329,12 @@
   display: inline-flex;
 }
 
-/* Address bar */
-
-#firefoxSuggestDataCollectionPrivacyToggle {
-  /* With this value we're trying to keep the apparent vertical space between
-     option boxes the same as the apparent vertical space between the labels of
-     the checkboxes above this toggle. */
-  margin-block-start: 18px;
-}
-
-#openSearchEnginePreferences {
-  margin-block-start: 0.5em;
-}
-
-#firefoxSuggestDataCollectionSearchToggle,
-#dismissedSuggestions,
-#openSearchEnginePreferences.extraMargin {
-  margin-block-start: 2em;
-}
-
 /* Logins and Passwords */
 
 #openWindowsPasskeySettings {
   margin-block-start: 2em;
+}
+
+#statusPrimaryPassword {
+  --box-icon-fill: var(--icon-color-success);
 }

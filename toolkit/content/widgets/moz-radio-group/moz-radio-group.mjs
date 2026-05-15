@@ -18,6 +18,7 @@ import { MozBaseInputElement } from "../lit-utils.mjs";
  * @property {string} label - Label for the group of moz-radio elements.
  * @property {string} description - Description for the group of moz-radio elements.
  * @property {string} supportPage - Support page for the group of moz-radio elements.
+ * @property {number} headingLevel - Render the label in a heading of this level.
  * @property {string} name
  *  Input name of the radio group. Propagates to moz-radio children.
  * @property {string} value
@@ -50,6 +51,8 @@ customElements.define("moz-radio-group", MozRadioGroup);
  *  Name of the input control, set by the associated moz-radio-group element.
  * @property {string} supportPage - Name of the SUMO support page to link to.
  * @property {string} value - Value of the radio input.
+ * @property {string} ariaLabel - The aria-label text when there is no visible label.
+ * @property {string} ariaDescription - The aria-description text when there is no visible description.
  */
 export class MozRadio extends SelectControlItemMixin(MozBaseInputElement) {
   static activatedProperty = "checked";
@@ -64,15 +67,18 @@ export class MozRadio extends SelectControlItemMixin(MozBaseInputElement) {
     return html`<input
       type="radio"
       id="input"
-      value=${this.value}
+      .value=${this.value}
       name=${this.name}
       .checked=${this.checked}
       aria-checked=${this.checked}
-      aria-describedby="description"
       tabindex=${this.itemTabIndex}
       ?disabled=${this.isDisabled}
       accesskey=${ifDefined(this.accessKey)}
       aria-label=${ifDefined(this.ariaLabel ?? undefined)}
+      aria-describedby="description"
+      aria-description=${ifDefined(
+        this.hasDescription ? undefined : this.ariaDescription
+      )}
       @click=${this.handleClick}
       @change=${this.handleChange}
     />`;

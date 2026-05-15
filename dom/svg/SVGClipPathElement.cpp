@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/SVGClipPathElement.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGClipPathElementBinding.h"
 #include "mozilla/dom/SVGUnitTypesBinding.h"
 #include "nsGkAtoms.h"

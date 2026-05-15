@@ -6,10 +6,10 @@
 #ifndef GPU_SupportedFeatures_H_
 #define GPU_SupportedFeatures_H_
 
-#include "nsWrapperCache.h"
-#include "ObjectModel.h"
-
 #include <unordered_set>
+
+#include "ObjectModel.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -32,8 +32,7 @@ class SupportedFeatures final : public nsWrapperCache, public ChildOf<Adapter> {
   const auto& Features() const { return mFeatures; }
 
  private:
-  ~SupportedFeatures() = default;
-  void Cleanup() {}
+  virtual ~SupportedFeatures();
 
   std::unordered_set<dom::GPUFeatureName> mFeatures;
 };

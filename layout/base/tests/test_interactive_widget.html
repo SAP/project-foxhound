@@ -176,8 +176,6 @@ add_task(async () => {
   // need to hide the keyboard.
   SimpleTest.registerCurrentTaskCleanupFunction(async () => await hideKeyboard());
 
-  await promiseAfterPaint();
-
   await SimpleTest.promiseWaitForCondition(
     () => document.activeElement == document.querySelector("textarea"),
     "Waiting for focus");
@@ -207,7 +205,6 @@ add_task(async () => {
   // need to hide the keyboard.
   SimpleTest.registerCurrentTaskCleanupFunction(async () => await hideKeyboard());
 
-  await promiseAfterPaint();
   await SimpleTest.promiseWaitForCondition(
     () => document.activeElement == document.querySelector("textarea"),
     "Waiting for focus");
@@ -268,7 +265,6 @@ add_task(async () => {
     await hideKeyboard();
   });
 
-  await promiseAfterPaint();
   await SimpleTest.promiseWaitForCondition(
     () => document.activeElement == document.querySelector("textarea"),
     "Waiting for focus");

@@ -19,17 +19,17 @@
       type="module"
       src="chrome://global/content/megalist/MegalistAlpha.mjs"
     ></script>
+    <!-- We import sidebar.css before the others, otherwise, it unintentionally
+      overrides some properties (e.g., conflicts with :root) -->
+    <link
+      rel="stylesheet"
+      href="chrome://browser/content/sidebar/sidebar.css"
+    />
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
     <link
       rel="stylesheet"
       href="chrome://global/content/megalist/megalist.css"
     />
-    <!-- We should be using sidebar.css but input fields are regressed if we
-        swap out common.css for it. -->
-    <!-- <link
-      rel="stylesheet"
-      href="chrome://browser/skin/places/sidebar.css"
-    /> -->
     <link rel="localization" href="branding/brand.ftl" />
     <link rel="localization" href="browser/contextual-manager.ftl" />
     <link rel="localization" href="browser/aboutLogins.ftl" />

@@ -39,7 +39,7 @@ export default [
   "**/reftest/",
   "**/reftests/",
   // Don't ignore the reftest harness files.
-  "!/layout/tools/reftest/",
+  "!layout/tools/reftest/",
 
   // Exclude expected objdirs.
   "obj*/",
@@ -95,19 +95,20 @@ export default [
 
   // Ignore devtools generated code
   "devtools/**/*.snapshot.mjs",
+  "tools/profiler/tests/browser/browser_test_feature_jstracing_objtestutils.snapshot.mjs",
   "devtools/client/webconsole/test/node/fixtures/stubs/*.js",
   "!devtools/client/webconsole/test/node/fixtures/stubs/index.js",
   "devtools/client/shared/source-map-loader/test/browser/fixtures/*.js",
 
   // Ignore devtools files testing sourcemaps / code style
   "devtools/client/framework/test/code_*",
-  "devtools/client/inspector/markup/test/events_bundle.js",
+  "devtools/client/inspector/markup/test/events/events_bundle.js",
   "devtools/client/netmonitor/test/xhr_bundle.js",
   "devtools/client/webconsole/test/browser/code_bundle_nosource.js",
   "devtools/client/webconsole/test/browser/code_bundle_invalidmap.js",
   "devtools/client/webconsole/test/browser/test-autocomplete-mapped.js",
   "devtools/client/webconsole/test/browser/test-autocomplete-mapped.src.js",
-  "devtools/client/inspector/markup/test/shadowdom_open_debugger.min.js",
+  "devtools/client/inspector/markup/test/shadowdom/shadowdom_open_debugger.min.js",
   "devtools/client/webconsole/test/browser/test-click-function-to-source*.js",
   "devtools/client/webconsole/test/browser/test-external-script-errors.js",
   "devtools/client/webconsole/test/browser/test-mangled-function.*",
@@ -152,12 +153,14 @@ export default [
 
   // Intentional broken files
   "dom/base/test/file_js_cache_syntax_error.js",
+  "dom/base/test/file_js_cache_large_syntax_error.js",
   "dom/base/test/jsmodules/test_scriptNotParsedAsModule.html",
   "dom/base/test/jsmodules/test_syntaxError.html",
   "dom/base/test/jsmodules/test_syntaxErrorAsync.html",
   "dom/base/test/jsmodules/module_badSyntax.mjs",
   "dom/base/test/jsmodules/test_syntaxErrorInline.html",
   "dom/base/test/jsmodules/test_syntaxErrorInlineAsync.html",
+  "dom/base/test/jsmodules/parse_error.js",
   "dom/base/test/test_bug687859.html",
   "dom/media/webrtc/tests/mochitests/identity/idp-bad.js",
   "dom/security/test/general/file_nonscript.json",
@@ -168,6 +171,10 @@ export default [
   "dom/workers/test/importScripts_worker_imported3.js",
   "dom/workers/test/invalid.js",
   "dom/workers/test/threadErrors_worker1.js",
+
+  // Test files for serialization tests
+  "dom/serializers/tests/mochitest/file_htmlserializer_1*",
+  "dom/serializers/tests/mochitest/file_xhtmlserializer_1*",
 
   // Tests the module loader's path handling.
   // Dynamic imports contains non-optimal paths.
@@ -211,6 +218,9 @@ export default [
   "mobile/android/fenix/app/src/androidTest/assets/",
   "mobile/android/focus-android/app/src/androidTest/assets/",
 
+  // Contains pref files.
+  "mobile/ios/app/",
+
   // Pre-processed/pref files
   "modules/libpref/greprefs.js",
   "modules/libpref/init/all.js",
@@ -238,11 +248,11 @@ export default [
   "servo/",
 
   // Rust/Cargo output from running `cargo` directly
-  "/target/",
-  "/servo/ports/geckolib/target/",
-  "/dom/base/rust/target/",
-  "/servo/components/style/target/",
-  "/dom/webgpu/tests/cts/vendor/target/",
+  "target/",
+  "servo/ports/geckolib/target/",
+  "dom/base/rust/target/",
+  "servo/components/style/target/",
+  "dom/webgpu/tests/cts/vendor/target/",
 
   // Test files that we don't want to lint (preprocessed, minified etc)
   "testing/condprofile/condprof/tests/profile",
@@ -265,6 +275,7 @@ export default [
   // Intentionally invalid files
   "toolkit/components/workerloader/tests/moduleF-syntax-error.js",
   "toolkit/components/enterprisepolicies/tests/browser/config_broken_json.json",
+  "toolkit/components/normandy/test/unit/mock_api/api/v1/extension/index.json",
   "toolkit/mozapps/extensions/test/xpcshell/data/test_AddonRepository_fail.json",
 
   // Built files
@@ -281,8 +292,9 @@ export default [
   "toolkit/mozapps/update/tests/data/xpcshellConstantsPP.js",
   "toolkit/modules/AppConstants.sys.mjs",
 
-  // Tests of ESLint command.
+  // ESLint tests.
   "tools/lint/test/files",
+  "tools/lint/eslint/eslint-plugin-mozilla/tests/globals-data/import-globals-from-invalid.js",
 
   // Uses special template formatting.
   "tools/tryselect/selectors/chooser/templates/chooser.html",
@@ -300,8 +312,4 @@ export default [
   // Test files for circular import in modules.
   "dom/base/test/jsmodules/import_circular.mjs",
   "dom/base/test/jsmodules/import_circular_1.mjs",
-
-  // Support for Import attributes is only available in ESLint v9.19
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1944290
-  "netwerk/test/mochitests/test_import_json_module.mjs",
 ];

@@ -105,7 +105,7 @@ class RTC_EXPORT VideoFrame {
 
     VideoFrame build();
     Builder& set_video_frame_buffer(
-        const rtc::scoped_refptr<VideoFrameBuffer>& buffer);
+        const scoped_refptr<VideoFrameBuffer>& buffer);
     Builder& set_timestamp_ms(int64_t timestamp_ms);
     Builder& set_timestamp_us(int64_t timestamp_us);
     [[deprecated("Use set_presentation_timestamp instead")]] Builder&
@@ -124,10 +124,11 @@ class RTC_EXPORT VideoFrame {
     Builder& set_id(uint16_t id);
     Builder& set_update_rect(const std::optional<UpdateRect>& update_rect);
     Builder& set_packet_infos(RtpPacketInfos packet_infos);
+    Builder& set_is_repeat_frame(bool is_repeat_frame);
 
    private:
     uint16_t id_ = kNotSetId;
-    rtc::scoped_refptr<webrtc::VideoFrameBuffer> video_frame_buffer_;
+    scoped_refptr<VideoFrameBuffer> video_frame_buffer_;
     int64_t timestamp_us_ = 0;
     std::optional<Timestamp> presentation_timestamp_;
     std::optional<Timestamp> reference_time_;
@@ -138,13 +139,14 @@ class RTC_EXPORT VideoFrame {
     RenderParameters render_parameters_;
     std::optional<UpdateRect> update_rect_;
     RtpPacketInfos packet_infos_;
+    bool is_repeat_frame_ = false;
   };
 
   // To be deprecated. Migrate all use to Builder.
-  VideoFrame(const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
-             webrtc::VideoRotation rotation,
+  VideoFrame(const scoped_refptr<VideoFrameBuffer>& buffer,
+             VideoRotation rotation,
              int64_t timestamp_us);
-  VideoFrame(const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
+  VideoFrame(const scoped_refptr<VideoFrameBuffer>& buffer,
              uint32_t timestamp_rtp,
              int64_t render_time_ms,
              VideoRotation rotation);
@@ -173,7 +175,7 @@ class RTC_EXPORT VideoFrame {
   uint16_t id() const { return id_; }
   void set_id(uint16_t id) { id_ = id; }
 
-  // System monotonic clock, same timebase as rtc::TimeMicros().
+  // System monotonic clock, same timebase as TimeMicros().
   int64_t timestamp_us() const { return timestamp_us_; }
   void set_timestamp_us(int64_t timestamp_us) { timestamp_us_ = timestamp_us; }
 
@@ -241,10 +243,9 @@ class RTC_EXPORT VideoFrame {
 
   // Return the underlying buffer. Never nullptr for a properly
   // initialized VideoFrame.
-  rtc::scoped_refptr<webrtc::VideoFrameBuffer> video_frame_buffer() const;
+  scoped_refptr<VideoFrameBuffer> video_frame_buffer() const;
 
-  void set_video_frame_buffer(
-      const rtc::scoped_refptr<VideoFrameBuffer>& buffer);
+  void set_video_frame_buffer(const scoped_refptr<VideoFrameBuffer>& buffer);
 
   // Return true if the frame is stored in a texture.
   bool is_texture() const {
@@ -284,9 +285,14 @@ class RTC_EXPORT VideoFrame {
     processing_time_ = processing_time;
   }
 
+  bool is_repeat_frame() const { return is_repeat_frame_; }
+  void set_is_repeat_frame(bool is_repeat_frame) {
+    is_repeat_frame_ = is_repeat_frame;
+  }
+
  private:
   VideoFrame(uint16_t id,
-             const rtc::scoped_refptr<VideoFrameBuffer>& buffer,
+             const scoped_refptr<VideoFrameBuffer>& buffer,
              int64_t timestamp_us,
              const std::optional<Timestamp>& presentation_timestamp,
              const std::optional<Timestamp>& reference_time,
@@ -296,11 +302,25 @@ class RTC_EXPORT VideoFrame {
              const std::optional<ColorSpace>& color_space,
              const RenderParameters& render_parameters,
              const std::optional<UpdateRect>& update_rect,
-             RtpPacketInfos packet_infos);
+             RtpPacketInfos packet_infos,
+             bool is_repeat_frame)
+      : id_(id),
+        video_frame_buffer_(buffer),
+        timestamp_rtp_(timestamp_rtp),
+        ntp_time_ms_(ntp_time_ms),
+        timestamp_us_(timestamp_us),
+        presentation_timestamp_(presentation_timestamp),
+        reference_time_(reference_time),
+        rotation_(rotation),
+        color_space_(color_space),
+        render_parameters_(render_parameters),
+        update_rect_(update_rect),
+        packet_infos_(std::move(packet_infos)),
+        is_repeat_frame_(is_repeat_frame) {}
 
   uint16_t id_;
   // An opaque reference counted handle that stores the pixel data.
-  rtc::scoped_refptr<webrtc::VideoFrameBuffer> video_frame_buffer_;
+  scoped_refptr<VideoFrameBuffer> video_frame_buffer_;
   uint32_t timestamp_rtp_;
   int64_t ntp_time_ms_;
   int64_t timestamp_us_;
@@ -329,6 +349,11 @@ class RTC_EXPORT VideoFrame {
   // returned from the decoder.
   // Currently, not set for locally captured video frames.
   std::optional<ProcessingTime> processing_time_;
+  // Indicates if this is a "repeat frame" - i.e. a copy a previous frame,
+  // inserted in order to make a video codec converge towards a stable quality
+  // in cases where a capturer is using a variable frame rate and stops
+  // producing frames when nothing has changed.
+  bool is_repeat_frame_;
 };
 
 }  // namespace webrtc

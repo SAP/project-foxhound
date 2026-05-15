@@ -1,0 +1,21 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Adding a new event? We have docs for that!
+# https://firefox-source-docs.mozilla.org/toolkit/components/gecko-trace/user/new_definitions_file.html
+
+---
+events:
+  source_located:
+    description: >
+      Base event that adds source-code location capture
+    attributes:
+      source.file:
+        type: string
+        description: >
+          Source file where the event was emitted
+      source.line:
+        type: integer
+        description: >
+          Line number where the event was emitted

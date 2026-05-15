@@ -7,11 +7,12 @@ package org.mozilla.fenix.library
 import android.content.Context
 import android.view.ViewGroup
 import androidx.appcompat.widget.Toolbar
-import androidx.core.content.ContextCompat
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.asActivity
 import org.mozilla.fenix.ext.setToolbarColors
+import com.google.android.material.R as materialR
+import mozilla.components.ui.icons.R as iconsR
 
 open class LibraryPageView(
     val containerView: ViewGroup,
@@ -24,8 +25,8 @@ open class LibraryPageView(
     ) {
         updateToolbar(
             title = title,
-            foregroundColor = context.getColorFromAttr(R.attr.textPrimary),
-            backgroundColor = context.getColorFromAttr(R.attr.layer1),
+            foregroundColor = context.getColorFromAttr(materialR.attr.colorOnSurface),
+            backgroundColor = context.getColorFromAttr(materialR.attr.colorSurface),
         )
     }
 
@@ -34,11 +35,8 @@ open class LibraryPageView(
     ) {
         updateToolbar(
             title = title,
-            foregroundColor = ContextCompat.getColor(
-                context,
-                R.color.fx_mobile_text_color_oncolor_primary,
-            ),
-            backgroundColor = context.getColorFromAttr(R.attr.accent),
+            foregroundColor = context.getColorFromAttr(materialR.attr.colorOnPrimary),
+            backgroundColor = context.getColorFromAttr(materialR.attr.colorPrimarySurface),
         )
     }
 
@@ -46,7 +44,7 @@ open class LibraryPageView(
         activity?.title = title
         val toolbar = activity?.findViewById<Toolbar>(R.id.navigationToolbar)
         toolbar?.setToolbarColors(foregroundColor, backgroundColor)
-        toolbar?.setNavigationIcon(R.drawable.ic_back_button)
+        toolbar?.setNavigationIcon(iconsR.drawable.mozac_ic_back_24)
         toolbar?.navigationIcon?.setTint(foregroundColor)
     }
 }

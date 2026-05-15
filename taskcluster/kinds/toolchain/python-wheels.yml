@@ -6,7 +6,7 @@ task-defaults:
     description: "python wheels build"
     attributes:
         local-toolchain: true
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 3600
     run:
@@ -14,19 +14,6 @@ task-defaults:
         script: build-python-wheel.sh
         resources:
             - 'build/wheel_requirements.txt'
-
-linux64-1804-dbus-python:
-    treeherder:
-        symbol: TL(py3.9-dbus-python)
-    fetches:
-        fetch:
-            - dbus-python-1.2.18
-        toolchain:
-            - linux64-python-3.9
-    run:
-        toolchain-artifact: public/build/dbus_python-1.2.18-cp39-cp39-linux_x86_64.whl
-    worker:
-        docker-image: {in-tree: ubuntu1804-build-python-wheels}
 
 linux64-2204-dbus-python:
     treeherder:
@@ -60,7 +47,7 @@ linux64-aarch64-2404-dbus-python:
         toolchain-artifact: public/build/dbus_python-1.3.2-cp312-cp312-linux_aarch64.whl
     worker:
         docker-image: {in-tree: ubuntu2404-arm64-build-python-wheels}
-    worker-type: images-gcp-aarch64
+    worker-type: b-linux-aarch64
 
 linux-python-dbusmock:
     treeherder:

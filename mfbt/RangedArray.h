@@ -30,12 +30,12 @@ class RangedArray {
   static size_t minIndex() { return MinIndex; }
 
   T& operator[](size_t aIndex) {
-    MOZ_ASSERT(aIndex == MinIndex || aIndex > MinIndex);
+    MOZ_ASSERT(aIndex >= MinIndex);
     return mArr[aIndex - MinIndex];
   }
 
   const T& operator[](size_t aIndex) const {
-    MOZ_ASSERT(aIndex == MinIndex || aIndex > MinIndex);
+    MOZ_ASSERT(aIndex >= MinIndex);
     return mArr[aIndex - MinIndex];
   }
 

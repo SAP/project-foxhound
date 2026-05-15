@@ -1,0 +1,489 @@
+Minor changes and #if guards to allow for base toolchain builds.
+
+These remove the use of certain features that are not available in the
+toolchain compiler versions and other minor changes to prevent warnings that
+are treated as errors. They should not affect normal builds.
+
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/compiler_specific.h b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/compiler_specific.h
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/compiler_specific.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/compiler_specific.h
+@@ -19,27 +19,28 @@
+ #define PA_HAS_BUILTIN(x) __has_builtin(x)
+ #else
+ #define PA_HAS_BUILTIN(x) 0
+ #endif
+ 
+ // Annotate a function indicating it should not be inlined.
+ // Use like:
+ //   NOINLINE void DoStuff() { ... }
+-#if defined(__clang__) && PA_HAS_ATTRIBUTE(noinline)
++#if defined(__clang__) && PA_HAS_ATTRIBUTE(noinline) && __clang_major__ >= 15
+ #define PA_NOINLINE [[clang::noinline]]
+ #elif defined(COMPILER_GCC) && PA_HAS_ATTRIBUTE(noinline)
+ #define PA_NOINLINE __attribute__((noinline))
+ #elif defined(COMPILER_MSVC)
+ #define PA_NOINLINE __declspec(noinline)
+ #else
+ #define PA_NOINLINE
+ #endif
+ 
+-#if defined(__clang__) && defined(NDEBUG) && PA_HAS_ATTRIBUTE(always_inline)
++#if defined(__clang__) && defined(NDEBUG) && \
++    PA_HAS_ATTRIBUTE(always_inline) && __clang_major__ >= 15
+ #define PA_ALWAYS_INLINE [[clang::always_inline]] inline
+ #elif defined(COMPILER_GCC) && defined(NDEBUG) && \
+     PA_HAS_ATTRIBUTE(always_inline)
+ #define PA_ALWAYS_INLINE inline __attribute__((__always_inline__))
+ #elif defined(COMPILER_MSVC) && defined(NDEBUG)
+ #define PA_ALWAYS_INLINE __forceinline
+ #else
+ #define PA_ALWAYS_INLINE inline
+@@ -219,17 +220,17 @@ inline constexpr bool AnalyzerAssumeTrue
+ // constructor.
+ #if PA_HAS_ATTRIBUTE(require_constant_initialization)
+ #define PA_CONSTINIT __attribute__((require_constant_initialization))
+ #endif
+ #if !defined(PA_CONSTINIT)
+ #define PA_CONSTINIT
+ #endif
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && __clang_major__ >= 13
+ #define PA_GSL_POINTER [[gsl::Pointer]]
+ #else
+ #define PA_GSL_POINTER
+ #endif
+ 
+ // Constexpr destructors were introduced in C++20. PartitionAlloc's minimum
+ // supported C++ version is C++17.
+ #if defined(__cpp_constexpr) && __cpp_constexpr >= 201907L
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/cxx20_is_constant_evaluated.h b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/cxx20_is_constant_evaluated.h
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/cxx20_is_constant_evaluated.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/cxx20_is_constant_evaluated.h
+@@ -2,16 +2,18 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+ #ifndef BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_PARTITION_ALLOC_BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+ #define BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_PARTITION_ALLOC_BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+ 
+ #include <type_traits>
+ 
++#include "base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/compiler_specific.h"
++
+ namespace partition_alloc::internal::base {
+ 
+ // std::is_constant_evaluated was introduced in C++20. PartitionAlloc's minimum
+ // supported C++ version is C++17.
+ #if defined(__cpp_lib_is_constant_evaluated) && \
+     __cpp_lib_is_constant_evaluated >= 201811L
+ 
+ using std::is_constant_evaluated;
+@@ -19,16 +21,20 @@ using std::is_constant_evaluated;
+ #else
+ 
+ // Implementation of C++20's std::is_constant_evaluated.
+ //
+ // References:
+ // - https://en.cppreference.com/w/cpp/types/is_constant_evaluated
+ // - https://wg21.link/meta.const.eval
+ constexpr bool is_constant_evaluated() noexcept {
++#  if PA_HAS_BUILTIN(__builtin_is_constant_evaluated)
+   return __builtin_is_constant_evaluated();
++#  else
++  return false;
++#  endif
+ }
+ 
+ #endif
+ 
+ }  // namespace partition_alloc::internal::base
+ 
+ #endif  // BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_PARTITION_ALLOC_BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+diff --git a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_forward.h b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_forward.h
+--- a/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_forward.h
++++ b/base/allocator/partition_allocator/src/partition_alloc/partition_alloc_forward.h
+@@ -23,19 +23,23 @@ namespace internal {
+ // Alignment has two constraints:
+ // - Alignment requirement for scalar types: alignof(std::max_align_t)
+ // - Alignment requirement for operator new().
+ //
+ // The two are separate on Windows 64 bits, where the first one is 8 bytes, and
+ // the second one 16. We could technically return something different for
+ // malloc() and operator new(), but this would complicate things, and most of
+ // our allocations are presumably coming from operator new() anyway.
++#if defined(__STDCPP_DEFAULT_NEW_ALIGNMENT__)
+ constexpr size_t kAlignment =
+     std::max(alignof(max_align_t),
+              static_cast<size_t>(__STDCPP_DEFAULT_NEW_ALIGNMENT__));
++#else
++constexpr size_t kAlignment = alignof(max_align_t);
++#endif
+ static_assert(kAlignment <= 16,
+               "PartitionAlloc doesn't support a fundamental alignment larger "
+               "than 16 bytes.");
+ 
+ struct SlotSpanMetadata;
+ class PA_LOCKABLE Lock;
+ 
+ // This type trait verifies a type can be used as a pointer offset.
+diff --git a/base/compiler_specific.h b/base/compiler_specific.h
+--- a/base/compiler_specific.h
++++ b/base/compiler_specific.h
+@@ -36,27 +36,28 @@
+ #define HAS_BUILTIN(x) __has_builtin(x)
+ #else
+ #define HAS_BUILTIN(x) 0
+ #endif
+
+ // Annotate a function indicating it should not be inlined.
+ // Use like:
+ //   NOINLINE void DoStuff() { ... }
+-#if defined(__clang__) && HAS_ATTRIBUTE(noinline)
++#if defined(__clang__) && HAS_ATTRIBUTE(noinline) && __clang_major__ >= 15
+ #define NOINLINE [[clang::noinline]]
+ #elif defined(COMPILER_GCC) && HAS_ATTRIBUTE(noinline)
+ #define NOINLINE __attribute__((noinline))
+ #elif defined(COMPILER_MSVC)
+ #define NOINLINE __declspec(noinline)
+ #else
+ #define NOINLINE
+ #endif
+
+-#if defined(__clang__) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline)
++#if defined(__clang__) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline) && \
++    __clang_major__ >= 15
+ #define ALWAYS_INLINE [[clang::always_inline]] inline
+ #elif defined(COMPILER_GCC) && defined(NDEBUG) && HAS_ATTRIBUTE(always_inline)
+ #define ALWAYS_INLINE inline __attribute__((__always_inline__))
+ #elif defined(COMPILER_MSVC) && defined(NDEBUG)
+ #define ALWAYS_INLINE __forceinline
+ #else
+ #define ALWAYS_INLINE inline
+ #endif
+@@ -64,17 +65,18 @@
+ // Annotate a function indicating it should never be tail called. Useful to make
+ // sure callers of the annotated function are never omitted from call-stacks.
+ // To provide the complementary behavior (prevent the annotated function from
+ // being omitted) look at NOINLINE. Also note that this doesn't prevent code
+ // folding of multiple identical caller functions into a single signature. To
+ // prevent code folding, see NO_CODE_FOLDING() in base/debug/alias.h.
+ // Use like:
+ //   NOT_TAIL_CALLED void FooBar();
+-#if defined(__clang__) && HAS_ATTRIBUTE(not_tail_called)
++#if defined(__clang__) && HAS_ATTRIBUTE(not_tail_called) && \
++    __clang_major__ >= 15
+ #define NOT_TAIL_CALLED [[clang::not_tail_called]]
+ #else
+ #define NOT_TAIL_CALLED
+ #endif
+
+ // Specify memory alignment for structs, classes, etc.
+ // Use like:
+ //   class ALIGNAS(16) MyClass { ... }
+@@ -402,17 +403,17 @@ inline constexpr bool AnalyzerAssumeTrue
+ // constructor.
+ #if HAS_ATTRIBUTE(require_constant_initialization)
+ #define CONSTINIT __attribute__((require_constant_initialization))
+ #endif
+ #if !defined(CONSTINIT)
+ #define CONSTINIT
+ #endif
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && __clang_major__ >= 13
+ #define GSL_OWNER [[gsl::Owner]]
+ #define GSL_POINTER [[gsl::Pointer]]
+ #else
+ #define GSL_OWNER
+ #define GSL_POINTER
+ #endif
+ 
+ // Adds the "logically_const" tag to a symbol's mangled name. The "Mutable
+diff --git a/base/cxx20_is_constant_evaluated.h b/base/cxx20_is_constant_evaluated.h
+--- a/base/cxx20_is_constant_evaluated.h
++++ b/base/cxx20_is_constant_evaluated.h
+@@ -1,21 +1,27 @@
+ // Copyright 2022 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+ #ifndef BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+ #define BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+ 
++#include "base/compiler_specific.h"
++
+ namespace base {
+ 
+ // Implementation of C++20's std::is_constant_evaluated.
+ //
+ // References:
+ // - https://en.cppreference.com/w/cpp/types/is_constant_evaluated
+ // - https://wg21.link/meta.const.eval
+ constexpr bool is_constant_evaluated() noexcept {
++#if HAS_BUILTIN(__builtin_is_constant_evaluated)
+   return __builtin_is_constant_evaluated();
++#else
++  return false;
++#endif
+ }
+ 
+ }  // namespace base
+ 
+ #endif  // BASE_CXX20_IS_CONSTANT_EVALUATED_H_
+diff --git a/base/location.cc b/base/location.cc
+--- a/base/location.cc
++++ b/base/location.cc
+@@ -119,22 +119,28 @@ void Location::WriteIntoTrace(perfetto::
+ #define RETURN_ADDRESS() _ReturnAddress()
+ #elif defined(COMPILER_GCC) && !BUILDFLAG(IS_NACL)
+ #define RETURN_ADDRESS() \
+   __builtin_extract_return_addr(__builtin_return_address(0))
+ #else
+ #define RETURN_ADDRESS() nullptr
+ #endif
+ 
++#if SUPPORTS_LOCATION_BUILTINS
+ // static
+ NOINLINE Location Location::Current(const char* function_name,
+                                     const char* file_name,
+                                     int line_number) {
+   return Location(function_name, file_name + kStrippedPrefixLength, line_number,
+                   RETURN_ADDRESS());
+ }
+-
++#else
++// static
++NOINLINE Location Location::Current() {
++  return Location(nullptr, RETURN_ADDRESS());
++}
++#endif
+ //------------------------------------------------------------------------------
+ NOINLINE const void* GetProgramCounter() {
+   return RETURN_ADDRESS();
+ }
+ 
+ }  // namespace base
+diff --git a/base/location.h b/base/location.h
+--- a/base/location.h
++++ b/base/location.h
+@@ -9,16 +9,29 @@
+ 
+ #include "base/base_export.h"
+ #include "base/memory/raw_ptr_exclusion.h"
+ #include "base/trace_event/base_tracing_forward.h"
+ #include "build/build_config.h"
+ 
+ namespace base {
+ 
++#if defined(__has_builtin)
++// Clang allows detection of these builtins.
++#  define SUPPORTS_LOCATION_BUILTINS                                       \
++    (__has_builtin(__builtin_FUNCTION) && __has_builtin(__builtin_FILE) && \
++     __has_builtin(__builtin_LINE))
++#elif defined(COMPILER_GCC) && __GNUC__ >= 7
++// GCC has supported these for a long time, but they point at the function
++// declaration in the case of default arguments, rather than at the call site.
++#  define SUPPORTS_LOCATION_BUILTINS 1
++#else
++#  define SUPPORTS_LOCATION_BUILTINS 0
++#endif
++
+ // Location provides basic info where of an object was constructed, or was
+ // significantly brought to life.
+ class BASE_EXPORT Location {
+  public:
+   Location();
+   Location(const Location& other);
+   Location(Location&& other) noexcept;
+   Location& operator=(const Location& other);
+@@ -66,19 +79,23 @@ class BASE_EXPORT Location {
+ 
+   // Converts to the most user-readable form possible. If function and filename
+   // are not available, this will return "pc:<hex address>".
+   std::string ToString() const;
+ 
+   // Write a representation of this object into a trace.
+   void WriteIntoTrace(perfetto::TracedValue context) const;
+ 
++#if SUPPORTS_LOCATION_BUILTINS
+   static Location Current(const char* function_name = __builtin_FUNCTION(),
+                           const char* file_name = __builtin_FILE(),
+                           int line_number = __builtin_LINE());
++#else
++  static Location Current();
++#endif
+ 
+  private:
+   // Only initializes the file name and program counter, the source information
+   // will be null for the strings, and -1 for the line number.
+   // TODO(http://crbug.com/760702) remove file name from this constructor.
+   Location(const char* file_name, const void* program_counter);
+ 
+   // Constructor should be called with a long-lived char*, such as __FILE__.
+diff --git a/base/memory/ref_counted.h b/base/memory/ref_counted.h
+--- a/base/memory/ref_counted.h
++++ b/base/memory/ref_counted.h
+@@ -71,23 +71,26 @@ class BASE_EXPORT RefCountedBase {
+   }
+ 
+   // Returns true if the object should self-delete.
+   bool Release() const {
+     ReleaseImpl();
+ 
+ #if DCHECK_IS_ON()
+     DCHECK(!in_dtor_);
+-    if (ref_count_ == 0)
++    if (ref_count_ == 0) {
+       in_dtor_ = true;
++    }
+ 
+-    if (ref_count_ >= 1)
++    if (ref_count_ >= 1) {
+       DCHECK(CalledOnValidSequence());
+-    if (ref_count_ == 1)
++    }
++    if (ref_count_ == 1) {
+       sequence_checker_.DetachFromSequence();
++    }
+ #endif
+ 
+     return ref_count_ == 0;
+   }
+ 
+   // Returns true if it is safe to read or write the object, from a thread
+   // safety standpoint. Should be DCHECK'd from the methods of RefCounted
+   // classes if there is a danger of objects being shared across threads.
+diff --git a/base/memory/weak_ptr.h b/base/memory/weak_ptr.h
+--- a/base/memory/weak_ptr.h
++++ b/base/memory/weak_ptr.h
+@@ -198,19 +198,21 @@ class SupportsWeakPtrBase {
+   // from SupportsWeakPtr<T> in exactly one way.
+   template <typename T>
+   struct ExtractSinglyInheritedBase;
+   template <typename T>
+   struct ExtractSinglyInheritedBase<SupportsWeakPtr<T>> {
+     using Base = T;
+     explicit ExtractSinglyInheritedBase(SupportsWeakPtr<T>*);
+   };
++#if !defined(MOZ_SANDBOX)
+   template <typename T>
+   ExtractSinglyInheritedBase(SupportsWeakPtr<T>*)
+       -> ExtractSinglyInheritedBase<SupportsWeakPtr<T>>;
++#endif
+ };
+ 
+ // Forward declaration from safe_ptr.h.
+ template <typename T>
+ SafeRef<T> MakeSafeRefFromWeakPtrInternals(internal::WeakReference&& ref,
+                                            T* ptr);
+ 
+ }  // namespace internal
+diff --git a/base/numerics/safe_conversions_impl.h b/base/numerics/safe_conversions_impl.h
+--- a/base/numerics/safe_conversions_impl.h
++++ b/base/numerics/safe_conversions_impl.h
+@@ -5,16 +5,18 @@
+ #ifndef BASE_NUMERICS_SAFE_CONVERSIONS_IMPL_H_
+ #define BASE_NUMERICS_SAFE_CONVERSIONS_IMPL_H_
+ 
+ #include <stdint.h>
+ 
+ #include <limits>
+ #include <type_traits>
+ 
++#include "base/compiler_specific.h"
++
+ #if defined(__GNUC__) || defined(__clang__)
+ #define BASE_NUMERICS_LIKELY(x) __builtin_expect(!!(x), 1)
+ #define BASE_NUMERICS_UNLIKELY(x) __builtin_expect(!!(x), 0)
+ #else
+ #define BASE_NUMERICS_LIKELY(x) (x)
+ #define BASE_NUMERICS_UNLIKELY(x) (x)
+ #endif
+ 
+@@ -81,17 +83,21 @@ constexpr typename std::make_unsigned<T>
+   using UnsignedT = typename std::make_unsigned<T>::type;
+   return IsValueNegative(value)
+              ? static_cast<UnsignedT>(0u - static_cast<UnsignedT>(value))
+              : static_cast<UnsignedT>(value);
+ }
+ 
+ // TODO(jschuh): Switch to std::is_constant_evaluated() once C++20 is supported.
+ // Alternately, the usage could be restructured for "consteval if" in C++23.
++#if HAS_BUILTIN(__builtin_is_constant_evaluated)
+ #define IsConstantEvaluated() (__builtin_is_constant_evaluated())
++#else
++#define IsConstantEvaluated() false
++#endif
+ 
+ // TODO(jschuh): Debug builds don't reliably propagate constants, so we restrict
+ // some accelerated runtime paths to release builds until this can be forced
+ // with consteval support in C++20 or C++23.
+ #if defined(NDEBUG)
+ constexpr bool kEnableAsmCode = true;
+ #else
+ constexpr bool kEnableAsmCode = false;
+diff --git a/base/strings/string_util_impl_helpers.h b/base/strings/string_util_impl_helpers.h
+--- a/base/strings/string_util_impl_helpers.h
++++ b/base/strings/string_util_impl_helpers.h
+@@ -225,16 +225,18 @@ bool StartsWithT(T str, T search_for, Co
+   switch (case_sensitivity) {
+     case CompareCase::SENSITIVE:
+       return source == search_for;
+ 
+     case CompareCase::INSENSITIVE_ASCII:
+       return std::equal(search_for.begin(), search_for.end(), source.begin(),
+                         CaseInsensitiveCompareASCII<CharT>());
+   }
++
++  return false;
+ }
+ 
+ template <typename T, typename CharT = typename T::value_type>
+ bool EndsWithT(T str, T search_for, CompareCase case_sensitivity) {
+   if (search_for.size() > str.size())
+     return false;
+ 
+   BasicStringPiece<CharT> source =
+@@ -243,16 +245,18 @@ bool EndsWithT(T str, T search_for, Comp
+   switch (case_sensitivity) {
+     case CompareCase::SENSITIVE:
+       return source == search_for;
+ 
+     case CompareCase::INSENSITIVE_ASCII:
+       return std::equal(source.begin(), source.end(), search_for.begin(),
+                         CaseInsensitiveCompareASCII<CharT>());
+   }
++
++  return false;
+ }
+ 
+ // A Matcher for DoReplaceMatchesAfterOffset() that matches substrings.
+ template <class CharT>
+ struct SubstringMatcher {
+   BasicStringPiece<CharT> find_this;
+ 
+   size_t Find(const std::basic_string<CharT>& input, size_t pos) {
+diff --git a/base/thread_annotations.h b/base/thread_annotations.h
+--- a/base/thread_annotations.h
++++ b/base/thread_annotations.h
+@@ -35,17 +35,17 @@
+ // (e.g. &MyClass::mutex_) to refer to a mutex in some (unknown) object.
+ 
+ #ifndef BASE_THREAD_ANNOTATIONS_H_
+ #define BASE_THREAD_ANNOTATIONS_H_
+ 
+ #include "base/dcheck_is_on.h"
+ #include "build/build_config.h"
+ 
+-#if defined(__clang__)
++#if defined(__clang__) && __clang_major__ >= 9
+ #define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
+ #else
+ #define THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op
+ #endif
+ 
+ // GUARDED_BY()
+ //
+ // Documents if a shared field or global variable needs to be protected by a
+

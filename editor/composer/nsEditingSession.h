@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsEditingSession_h__
-#define nsEditingSession_h__
+#ifndef nsEditingSession_h_
+#define nsEditingSession_h_
 
 #include "nsCOMPtr.h"               // for nsCOMPtr
 #include "nsISupportsImpl.h"        // for NS_DECL_ISUPPORTS
@@ -73,10 +73,11 @@ class nsEditingSession final : public nsIEditingSession,
 
   nsresult SetupEditorCommandController(
       ControllerCreatorFn aControllerCreatorFn, mozIDOMWindowProxy* aWindow,
-      nsISupports* aContext, uint32_t* aControllerId);
+      nsISupportsWeakReference* aContext, uint32_t* aControllerId);
 
   nsresult SetContextOnControllerById(nsIControllers* aControllers,
-                                      nsISupports* aContext, uint32_t aID);
+                                      nsISupportsWeakReference* aContext,
+                                      uint32_t aID);
 
   /**
    *  Set the editor on the controller(s) for this window
@@ -165,4 +166,4 @@ class nsEditingSession final : public nsIEditingSession,
   nsWeakPtr mExistingEditor;
 };
 
-#endif  // nsEditingSession_h__
+#endif  // nsEditingSession_h_

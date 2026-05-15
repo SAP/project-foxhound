@@ -10,20 +10,31 @@
 
 loadTestSubscript("head_unified_extensions.js");
 
-requestLongerTimeout(2);
+requestLongerTimeout(3);
 
-const NUM_EXTENSIONS = 5;
-const OVERFLOW_WINDOW_WIDTH_PX = 450;
+const NUM_EXTENSIONS = 7;
+const OVERFLOW_WINDOW_WIDTH_PX = 500;
 const DEFAULT_WIDGET_IDS = [
   "home-button",
   "library-button",
   "zoom-controls",
   "search-container",
-  "sidebar-button",
+  "print-button",
 ];
+// Since bug 1960002, not all the default widgets overflow at the min-width (and
+// the following is the number of elements from the DEFAULT_WIDGET_IDS array
+// to stay in the toolbar).
+const NUM_NONOVERFLOWED_DEFAULT_WIDGETS = 2;
+const OVERFLOWED_DEFAULT_WIDGET_IDS = DEFAULT_WIDGET_IDS.slice(
+  NUM_NONOVERFLOWED_DEFAULT_WIDGETS
+);
 const OVERFLOWED_EXTENSIONS_LIST_ID = "overflowed-extensions-list";
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
+
   // To make it easier to control things that will overflow, we'll start by
   // removing that's removable out of the nav-bar and adding just a fixed
   // set of items (DEFAULT_WIDGET_IDS) at the end of the nav-bar.
@@ -126,7 +137,9 @@ async function withWindowOverflowed(
   // widgets have finished being moved. We'll use the first widget that
   // we added to the nav-bar, as this should be the left-most item in the
   // set that we added.
-  const signpostWidgetID = "home-button";
+  const signpostWidgetID =
+    DEFAULT_WIDGET_IDS[NUM_NONOVERFLOWED_DEFAULT_WIDGETS];
+
   // We'll also force the signpost widget to be extra-wide to ensure that it
   // overflows after we shrink the window.
   CustomizableUI.getWidget(signpostWidgetID).forWindow(win).node.style =
@@ -261,7 +274,7 @@ async function withWindowOverflowed(
 
     let widgetOverflowListener = {
       _remainingOverflowables:
-        browserActionsInNavBar.length + DEFAULT_WIDGET_IDS.length,
+        browserActionsInNavBar.length + OVERFLOWED_DEFAULT_WIDGET_IDS.length,
       _deferred: Promise.withResolvers(),
 
       get promise() {
@@ -273,8 +286,20 @@ async function withWindowOverflowed(
         info(
           `onWidgetOverflow: ${this._remainingOverflowables} remaining after ${widget.id}`
         );
+        if (this._remainingOverflowables < 0) {
+          ok(false, `Unexpected widget overflowed: ${widget.id}`);
+          return;
+        }
         if (!this._remainingOverflowables) {
-          this._deferred.resolve();
+          // Wait for an arbitrary 500 millisecond to increase the chances to hit
+          // a failure from the assertion right above, or whenOverflowed callback
+          // assertions, if more widgete have been overflowed then the ones
+          // actually expected.
+          //
+          // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+          setTimeout(() => {
+            this._deferred.resolve();
+          }, 500);
         }
       },
     };
@@ -304,6 +329,9 @@ async function withWindowOverflowed(
     try {
       info("Running whenOverflowed task");
       await whenOverflowed(defaultList, unifiedExtensionList, extensionIDs);
+    } catch (err) {
+      console.error(err);
+      ok(false, `whenOverflowed raised an unexpected error: ${err}`);
     } finally {
       info("whenOverflowed finished, maximizing again");
       await ensureMaximizedWindow(win);
@@ -321,6 +349,9 @@ async function withWindowOverflowed(
       try {
         info("Running afterUnderflowed task");
         await afterUnderflowed();
+      } catch (err) {
+        console.error(err);
+        ok(false, `afterUnderflowed raised an unexpected error: ${err}`);
       } finally {
         await Promise.all(extensions.map(extension => extension.unload()));
       }
@@ -437,18 +468,17 @@ add_task(async function test_overflowable_toolbar() {
 
   await withWindowOverflowed(win, {
     whenOverflowed: async (defaultList, unifiedExtensionList, extensionIDs) => {
-      // Ensure that there are 5 items in the Unified Extensions overflow
-      // list, and the default widgets should all be in the default overflow
+      // Ensure that there are NUM_EXTENSIONS items in the Unified Extensions overflow
+      // list, and the expected default widgets moved into the default overflow
       // list (though there might be more items from the nav-bar in there that
       // already existed in the nav-bar before we put the default widgets in
       // there as well).
       let defaultListIDs = getChildrenIDs(defaultList);
-      for (const widgetID of DEFAULT_WIDGET_IDS) {
-        Assert.ok(
-          defaultListIDs.includes(widgetID),
-          `Default overflow list should have ${widgetID}`
-        );
-      }
+      Assert.deepEqual(
+        defaultListIDs,
+        OVERFLOWED_DEFAULT_WIDGET_IDS,
+        "Got the expected list of default widgets overflowed"
+      );
 
       Assert.ok(
         unifiedExtensionList.children.length,
@@ -964,9 +994,8 @@ add_task(async function test_unpin_overflowed_widget() {
         !pinToToolbar.hidden,
         "expected 'Pin to Toolbar' to be visible"
       );
-      Assert.equal(
-        pinToToolbar.getAttribute("checked"),
-        "true",
+      Assert.ok(
+        pinToToolbar.hasAttribute("checked"),
         "expected 'Pin to Toolbar' to be checked"
       );
 

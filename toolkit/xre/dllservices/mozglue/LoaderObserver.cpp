@@ -6,7 +6,6 @@
 
 #include "LoaderObserver.h"
 
-#include "mozilla/AutoProfilerLabel.h"
 #include "mozilla/BaseProfilerMarkers.h"
 #include "mozilla/glue/WindowsUnicode.h"
 #include "mozilla/StackWalk_windows.h"
@@ -22,14 +21,12 @@ namespace glue {
 void LoaderObserver::OnBeginDllLoad(void** aContext,
                                     PCUNICODE_STRING aRequestedDllName) {
   MOZ_ASSERT(aContext);
-  if (IsProfilerPresent()) {
-    UniquePtr<char[]> utf8RequestedDllName(WideToUTF8(aRequestedDllName));
-    BASE_PROFILER_MARKER_TEXT(
-        "DllLoad", OTHER, MarkerTiming::IntervalStart(),
-        mozilla::ProfilerString8View::WrapNullTerminatedString(
-            utf8RequestedDllName.get()));
-    *aContext = utf8RequestedDllName.release();
-  }
+  UniquePtr<char[]> utf8RequestedDllName(WideToUTF8(aRequestedDllName));
+  BASE_PROFILER_MARKER_TEXT(
+      "DllLoad", OTHER, MarkerTiming::IntervalStart(),
+      mozilla::ProfilerString8View::WrapNullTerminatedString(
+          utf8RequestedDllName.get()));
+  *aContext = utf8RequestedDllName.release();
 
 #if defined(_M_AMD64) || defined(_M_ARM64)
   // Prevent the stack walker from suspending this thread when LdrLoadDll
@@ -83,7 +80,7 @@ void LoaderObserver::OnEndDllLoad(void* aContext, NTSTATUS aNtStatus,
     mModuleLoads = new ModuleLoadInfoVec();
   }
 
-  Unused << mModuleLoads->emplaceBack(
+  (void)mModuleLoads->emplaceBack(
       std::forward<ModuleLoadInfo>(aModuleLoadInfo));
 }
 
@@ -140,7 +137,7 @@ void LoaderObserver::OnForward(ModuleLoadInfoVec&& aInfo) {
   } else {
     // This should not happen, but we can handle it
     for (auto&& item : aInfo) {
-      Unused << mModuleLoads->append(std::move(item));
+      (void)mModuleLoads->append(std::move(item));
     }
   }
 }

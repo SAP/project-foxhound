@@ -87,6 +87,10 @@ async function test_query(query) {
   await extension.startup();
   extension.sendMessage(query);
   await extension.awaitFinish("tabs.query");
+  // The test calls openPopup() but never closes the popup. The popup should
+  // auto-close when the extension unloads. But we have to close it manually
+  // because auto-close on uninstall does not work on Android (bug 2015895).
+  await AppTestDelegate.closeBrowserAction(window, extension);
   await extension.unload();
 }
 

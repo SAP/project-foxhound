@@ -6,13 +6,13 @@
 #ifndef BaseMediaResource_h
 #define BaseMediaResource_h
 
+#include "MediaCache.h"
 #include "MediaResource.h"
 #include "MediaResourceCallback.h"
-#include "MediaCache.h"
-#include "nsIChannel.h"
-#include "nsIURI.h"
-#include "nsIStreamListener.h"
 #include "mozilla/dom/MediaDebugInfoBinding.h"
+#include "nsIChannel.h"
+#include "nsIStreamListener.h"
+#include "nsIURI.h"
 
 class nsIPrincipal;
 

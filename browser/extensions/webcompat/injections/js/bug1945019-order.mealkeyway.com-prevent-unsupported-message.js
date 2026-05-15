@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals exportFunction */
-
 "use strict";
 
 /**
@@ -13,19 +11,26 @@
  * We can automatically hide the message for users.
  */
 
-console.info(
-  "Web compatibility fixes are in effect. See https://bugzilla.mozilla.org/show_bug.cgi?id=1923286 for details."
-);
+if (!window.__firefoxWebCompatFixBug1923286) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1923286", {
+    configurable: false,
+    value: true,
+  });
 
-const timer = setInterval(() => {
-  for (const node of document.querySelectorAll(
-    "[class*=customMiniPrompt_customPromptContent]"
-  )) {
-    if (node.innerText.includes("Chrome")) {
-      node.parentElement
-        .querySelector("[class*=customMiniPrompt_iconAdd]")
-        ?.click();
-      clearInterval(timer);
+  console.info(
+    "Web compatibility fixes are in effect. See https://bugzilla.mozilla.org/show_bug.cgi?id=1923286 for details."
+  );
+
+  const timer = setInterval(() => {
+    for (const node of document.querySelectorAll(
+      "[class*=customMiniPrompt_customPromptContent]"
+    )) {
+      if (node.innerText.includes("Chrome")) {
+        node.parentElement
+          .querySelector("[class*=customMiniPrompt_iconAdd]")
+          ?.click();
+        clearInterval(timer);
+      }
     }
-  }
-}, 100);
+  }, 100);
+}

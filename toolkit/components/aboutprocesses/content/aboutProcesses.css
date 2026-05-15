@@ -5,7 +5,7 @@
 @import url("chrome://global/skin/in-content/common.css");
 
 html {
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
 }
 body {
   overflow-x: hidden;
@@ -33,7 +33,7 @@ body {
   position: fixed;
   z-index: 1;
   height: 2em;
-  border-bottom: 1px solid var(--in-content-border-color);
+  border-bottom: 1px solid var(--border-color);
   width: 100%;
   background-color: var(--background-color-box);
 }
@@ -58,19 +58,11 @@ tr {
 th {
   font-weight: normal;
   text-align: start;
-  background-color: var(--in-content-button-background);
+  background-color: var(--button-background-color);
 }
 th:not(:first-child) {
   border-inline-start: 1px solid;
-  border-image: linear-gradient(
-      transparent 0%,
-      transparent 20%,
-      var(--in-content-box-border-color) 20%,
-      var(--in-content-box-border-color) 80%,
-      transparent 80%,
-      transparent 100%
-    )
-    1 1;
+  border-image: linear-gradient(transparent 0%, transparent 20%, var(--border-color) 20%, var(--border-color) 80%, transparent 80%, transparent 100%) 1 1;
 }
 th,
 td {
@@ -113,14 +105,14 @@ td:first-child {
 
 .profiler-icon:hover,
 .profiler-icon:focus-visible {
-  background-color: var(--in-content-button-background-hover);
-  color: var(--in-content-button-text-color-hover);
+  background-color: var(--button-background-color-hover);
+  color: var(--button-text-color-hover);
 }
 
 .profiler-icon:hover:active,
 .profiler-icon:focus-visible:active {
-  background-color: var(--in-content-button-background-active);
-  color: var(--in-content-button-text-color-active);
+  background-color: var(--button-background-color-active);
+  color: var(--button-text-color-active);
   fill-opacity: 1;
 }
 
@@ -164,7 +156,7 @@ td:not(:hover) > .profiler-icon:not(.profiler-active, :focus-visible) {
   outline: none;
 }
 .twisty:-moz-focusring::before {
-  outline: var(--in-content-focus-outline);
+  outline: var(--focus-outline);
 }
 .indent {
   padding-inline: 48px 0;
@@ -174,12 +166,12 @@ td:not(:hover) > .profiler-icon:not(.profiler-active, :focus-visible) {
 }
 
 tr[selected] > td {
-  background-color: var(--in-content-item-selected);
-  color: var(--in-content-item-selected-text);
+  background-color: var(--color-accent-primary-selected);
+  color: var(--text-color-accent-primary-selected);
 }
 #process-tbody > tr:hover {
-  background-color: var(--in-content-item-hover);
-  color: var(--in-content-item-hover-text);
+  background-color: var(--background-color-list-item-hover);
+  color: var(--text-color-list-item-hover);
 }
 
 /* Tab names and thread summary text can extend into memory and CPU columns. */
@@ -210,11 +202,11 @@ th > button.clickable {
   the outline is only partially visible on the line start. */
   outline-offset: -4px;
   &:hover {
-    background-color: var(--in-content-button-background-hover);
-    color: var(--in-content-button-text-color-hover);
+    background-color: var(--button-background-color-hover);
+    color: var(--button-text-color-hover);
     &:active {
-      background-color: var(--in-content-button-background-active);
-      color: var(--in-content-button-text-color-active);
+      background-color: var(--button-background-color-active);
+      color: var(--button-text-color-active);
     }
   }
 }
@@ -240,7 +232,7 @@ th > button.clickable {
 }
 
 tr.process > td.type {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
   user-select: text;
 }
 tr.thread {
@@ -278,14 +270,14 @@ tr:is([selected], :hover, :focus-visible):not(.killing) > td > .close-icon,
 
 .close-icon:hover,
 .close-icon:focus-visible {
-  background-color: var(--in-content-button-background-hover);
-  color: var(--in-content-button-text-color-hover);
+  background-color: var(--button-background-color-hover);
+  color: var(--button-text-color-hover);
 }
 
 .close-icon:hover:active,
 .close-icon:focus-visible:active {
-  background-color: var(--in-content-button-background-active);
-  color: var(--in-content-button-text-color-active);
+  background-color: var(--button-background-color-active);
+  color: var(--button-text-color-active);
 }
 
 /* column-name */
@@ -300,7 +292,7 @@ tr:is([selected], :hover, :focus-visible):not(.killing) > td > .close-icon,
  */
 
 tr.separate-from-previous-process-group {
-  border-top: dotted 1px var(--in-content-box-border-color);
+  border-top: dotted 1px var(--border-color);
   margin-top: -1px;
 }
 

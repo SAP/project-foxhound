@@ -15,18 +15,7 @@ add_task(async function () {
   const toolbox = panel._toolbox;
 
   info("Wait until the iframe picker button is visible");
-  try {
-    await waitFor(() => toolbox.doc.getElementById("command-button-frames"));
-  } catch (e) {
-    if (isFissionEnabled() && !isEveryFrameTargetEnabled()) {
-      ok(
-        true,
-        "Remote frames are not displayed in iframe picker if Fission is enabled but EFT is not"
-      );
-      return;
-    }
-    throw e;
-  }
+  await waitFor(() => toolbox.doc.getElementById("command-button-frames"));
 
   info("Check `document` property when no specific frame is focused");
   let documentPropertyValue = getDocumentPropertyValue(panel);

@@ -22,7 +22,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "resProto",
   "@mozilla.org/network/protocol;1?name=resource",
-  "nsISubstitutingProtocolHandler"
+  Ci.nsISubstitutingProtocolHandler
 );
 
 // These are not automagically defined for us because we are an extension.
@@ -181,7 +181,7 @@ TalosPowersService.prototype = {
    *        Marker name.
    */
   profilerSubtestStart(marker = null) {
-    profilerSubtestStartTime = Cu.now();
+    profilerSubtestStartTime = ChromeUtils.now();
 
     if (marker) {
       this.addInstantMarker(marker);
@@ -192,7 +192,6 @@ TalosPowersService.prototype = {
    * Adds an instant marker to the Profile in the parent process.
    *
    * @param marker (string)  A marker to set.
-   *
    */
   addInstantMarker(marker) {
     ChromeUtils.addProfilerMarker("Talos", { category: "Test" }, marker);
@@ -286,12 +285,12 @@ TalosPowersService.prototype = {
       // that would cause us to write a mostly empty cache to the
       // about:home startup cache on shutdown, which causes that test
       // to break periodically.
-      AboutNewTab.onBrowserReady();
+      //
       // There aren't currently any easily observable notifications or
       // events to let us know when the feed is ready, so we'll just poll
       // for now.
       let pollForFeed = async function () {
-        let foundFeed = AboutNewTab.activityStream.store.feeds.get(
+        let foundFeed = AboutNewTab.activityStream?.store.feeds.get(
           "feeds.system.topsites"
         );
         if (!foundFeed) {

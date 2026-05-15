@@ -1,0 +1,31 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.footer-container {
+  display: flex;
+  gap: var(--space-large);
+  padding: var(--space-xlarge);
+}
+
+moz-button.footer-action-button {
+  @media not (forced-colors) {
+    --button-text-color-ghost: var(--smartwindow-brand-accent);
+    --button-text-color-ghost-hover: var(--smartwindow-brand-accent);
+    --button-text-color-ghost-active: var(--smartwindow-brand-accent);
+    --button-background-color-ghost-active: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+    --button-background-color-ghost-hover: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), color-mix(in srgb, white 10%, transparent));
+    --button-background-color-ghost-selected: light-dark(
+      color-mix(in srgb, var(--color-violet-50) 25%, transparent),
+      color-mix(in srgb, white 15%, transparent)
+    );
+  }
+}
+
+moz-button.footer-action-button::part(button) {
+  --icon-size: var(--icon-size-medium);
+  --button-font-weight: var(--font-weight);
+  /* --button-font-size: var(--font-size-small); */
+  flex-direction: column;
+  gap: var(--space-small);
+}

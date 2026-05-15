@@ -3,6 +3,38 @@
 You can view your test pings [here](https://debug-ping-preview.firebaseapp.com/). Note that there is also a button within the Glean Debug Tools to access this link.
 Use one of the methods below to send test pings.
 
+**Note:** In order to test **telemetry** on **debug** builds with **methods 1** and **2**, the following patch must also be applied:
+
+``` diff
+
+diff --git a/app/src/main/java/org/mozilla/fenix/components/metrics/MetricController.kt b/app/src/main/java/org/mozilla/fenix/components/metrics/MetricController.kt
+
+index c38ebb62d..3ae102d97 100644
+
+--- a/app/src/main/java/org/mozilla/fenix/components/metrics/MetricController.kt
+
++++ b/app/src/main/java/org/mozilla/fenix/components/metrics/MetricController.kt
+
+@@ -50,7 +50,7 @@ interface MetricController {
+
+             isMarketingDataTelemetryEnabled: () -> Boolean,
+
+             settings: Settings
+
+         ): MetricController {
+
+-            return if (BuildConfig.TELEMETRY) {
+
++            return if (true) {
+
+                 ReleaseMetricController(
+
+                     services,
+
+                     isDataTelemetryEnabled,
+
+```
+
 ***Method 1 (about:glean)***
 
 Since version 136, telemetry pings can be tested via about:glean.

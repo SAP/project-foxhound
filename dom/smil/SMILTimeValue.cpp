@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SMILTimeValue.h"
+
 #include "nsMathUtils.h"
 
 namespace mozilla {
@@ -22,26 +23,26 @@ static inline int8_t Cmp(int64_t aA, int64_t aB) {
 int8_t SMILTimeValue::CompareTo(const SMILTimeValue& aOther) const {
   int8_t result;
 
-  if (mState == STATE_DEFINITE) {
-    result = (aOther.mState == STATE_DEFINITE)
+  if (mState == State::Definite) {
+    result = (aOther.mState == State::Definite)
                  ? Cmp(mMilliseconds, aOther.mMilliseconds)
                  : -1;
-  } else if (mState == STATE_INDEFINITE) {
-    if (aOther.mState == STATE_DEFINITE)
+  } else if (mState == State::Indefinite) {
+    if (aOther.mState == State::Definite)
       result = 1;
-    else if (aOther.mState == STATE_INDEFINITE)
+    else if (aOther.mState == State::Indefinite)
       result = 0;
     else
       result = -1;
   } else {
-    result = (aOther.mState != STATE_UNRESOLVED) ? 1 : 0;
+    result = (aOther.mState != State::Unresolved) ? 1 : 0;
   }
 
   return result;
 }
 
 void SMILTimeValue::SetMillis(double aMillis, Rounding aRounding) {
-  mState = STATE_DEFINITE;
+  mState = State::Definite;
   mMilliseconds = NS_round(aMillis);
   if (aRounding == Rounding::EnsureNonZero && !mMilliseconds && aMillis) {
     // Ensure we don't round small values to zero.

@@ -10,8 +10,6 @@
  *    streams.
  */
 
-/* eslint-env node */
-
 "use strict";
 
 const pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();

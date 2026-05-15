@@ -19,7 +19,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=624329
   <!-- test code goes here -->
   <script type="application/javascript">
   <![CDATA[
-  /** Test for Bug 624329 **/
+  /** Test for Bug 624329 */
 
 SimpleTest.waitForExplicitFinish();
 
@@ -93,9 +93,8 @@ function openContextMenu() {
     menu = win.document.getElementById("menu");
     var screenX = menu.screenX;
     var screenY = menu.screenY;
-    var utils = win.windowUtils;
 
-    utils.sendMouseEvent("contextmenu", mouseX, mouseY, 2, 0, 0);
+    synthesizeMouseAtPoint(mouseX, mouseY, { type: "contextmenu", button: 2 }, win);
 
     var interval = setInterval(checkMoved, 200);
     function checkMoved() {

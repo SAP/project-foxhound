@@ -116,7 +116,7 @@ class OpenH264Build(TransferMixin, VCSScript, TooltoolMixin):
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        dirs = super(OpenH264Build, self).query_abs_dirs()
+        dirs = super().query_abs_dirs()
         dirs["abs_upload_dir"] = os.path.join(dirs["abs_work_dir"], "upload")
         self.abs_dirs = dirs
         return self.abs_dirs
@@ -248,8 +248,12 @@ class OpenH264Build(TransferMixin, VCSScript, TooltoolMixin):
 
     def _git_checkout(self, repo, repo_dir, rev):
         try:
-            subprocess.run(["git", "clone", "-q", "--no-checkout", repo, repo_dir])
-            subprocess.run(["git", "checkout", "-q", "-f", f"{rev}^0"], cwd=repo_dir)
+            subprocess.run(
+                ["git", "clone", "-q", "--no-checkout", repo, repo_dir], check=True
+            )
+            subprocess.run(
+                ["git", "checkout", "-q", "-f", f"{rev}^0"], check=True, cwd=repo_dir
+            )
         except Exception:
             self.rmtree(repo_dir)
             raise

@@ -19,6 +19,7 @@
 #include "sdk/objc/native/api/video_encoder_factory.h"
 
 #if defined(WEBRTC_IOS)
+#include "api/environment/environment.h"
 #import "sdk/objc/native/api/audio_device_module.h"
 #endif
 
@@ -42,7 +43,9 @@
   [builder setVideoDecoderFactory:std::move(videoDecoderFactory)];
 
 #if defined(WEBRTC_IOS)
-  [builder setAudioDeviceModule:webrtc::CreateAudioDeviceModule()];
+  [builder setAudioDeviceModuleBuilder:^(const webrtc::Environment &env) {
+    return webrtc::CreateAudioDeviceModule(env);
+  }];
 #endif
   return builder;
 }

@@ -25,11 +25,11 @@
  *   },
  * });
  *
- * @param {Object} cases: An object, keyed by action type, that will determine if a
+ * @param {object} cases: An object, keyed by action type, that will determine if a
  *         given action will add a marker.
- * @param {String} cases.{actionType} - The type of the action that will trigger the
+ * @param {string} cases.{actionType} - The type of the action that will trigger the
  *         marker creation.
- * @param {String} cases.{actionType}.label - The marker label
+ * @param {string} cases.{actionType}.label - The marker label
  * @param {Integer} cases.{actionType}.sessionId - The telemetry sessionId. This is used
  *        to be able to distinguish markers coming from different toolboxes.
  * @param {Function} [cases.{actionType}.getMarkerDescription] - An optional function that
@@ -43,7 +43,7 @@ function createPerformanceMarkerMiddleware(cases) {
       const shouldAddProfileMarker = !!condition;
 
       // Start the marker timer before calling next(action).
-      const startTime = shouldAddProfileMarker ? Cu.now() : null;
+      const startTime = shouldAddProfileMarker ? ChromeUtils.now() : null;
       const newState = next(action);
 
       if (shouldAddProfileMarker) {

@@ -88,28 +88,15 @@
 
 static struct {
     int    errnum;
-    char  *str;
+    const char  *str;
 } errors[] = NR_ERROR_MAPPING;
 
-int nr_verr_exit(char *fmt,...)
-  {
-    va_list ap;
-
-    va_start(ap,fmt);
-    vfprintf(stderr,fmt,ap);
-
-    if (fmt[0] != '\0' && fmt[strlen(fmt)-1] != '\n')
-        fprintf(stderr,"\n");
-
-    exit(1);
-  }
-
-char *
+const char *
 nr_strerror(int errnum)
 {
     static char unknown_error[256];
     size_t i;
-    char *error = 0;
+    const char *error = 0;
 
     for (i = 0; i < sizeof(errors)/sizeof(*errors); ++i) {
         if (errnum == errors[i].errnum) {
@@ -125,12 +112,3 @@ nr_strerror(int errnum)
 
     return error;
 }
-
-int
-nr_strerror_r(int errnum, char *strerrbuf, size_t buflen)
-{
-    char *error = nr_strerror(errnum);
-    snprintf(strerrbuf, buflen, "%s", error);
-    return 0;
-}
-

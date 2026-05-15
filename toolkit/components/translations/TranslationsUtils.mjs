@@ -7,10 +7,47 @@
  */
 
 /**
+ * @typedef {object} Lazy
+ * @property {typeof console} console
+ * @property {typeof import("resource://services-settings/RemoteSettingsClient.sys.mjs").RemoteSettingsClient} RemoteSettingsClient
+ */
+
+/** @type {Lazy} */
+const lazy = {};
+
+ChromeUtils.defineLazyGetter(lazy, "console", () => {
+  return console.createInstance({
+    maxLogLevelPref: "browser.translations.logLevel",
+    prefix: "Translations",
+  });
+});
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  RemoteSettingsClient:
+    "resource://services-settings/RemoteSettingsClient.sys.mjs",
+});
+
+/**
  * A set of global static utility functions that are useful throughout the
  * Translations ecosystem within the Firefox code base.
  */
 export class TranslationsUtils {
+  /**
+   * The name of the Remote Settings collection that hosts
+   * Translations Model Records for the current version of Firefox.
+   */
+  static get translationsModelsCollectionName() {
+    return "translations-models-v2";
+  }
+
+  /**
+   * The name of the Remote Settings collection that hosts
+   * Translations WASM Records for the current version of Firefox.
+   */
+  static get translationsWasmCollectionName() {
+    return "translations-wasm-v2";
+  }
+
   /**
    * Checks if the language tag string parses as a valid BCP-47 language tag.
    *
@@ -124,5 +161,41 @@ export class TranslationsUtils {
       key += `,${targetVariant}`;
     }
     return key;
+  }
+
+  /**
+   * Deletes all translations language model files.
+   *
+   * @returns {Promise<string[]>} - A list of record IDs.
+   */
+  static async deleteAllLanguageFiles() {
+    const { RemoteSettings } = ChromeUtils.importESModule(
+      "resource://services-settings/remote-settings.sys.mjs"
+    );
+    const client = RemoteSettings(
+      TranslationsUtils.translationsModelsCollectionName
+    );
+
+    try {
+      await client.attachments.deleteAll();
+    } catch (error) {
+      if (!(error instanceof lazy.RemoteSettingsClient.EmptyDatabaseError)) {
+        lazy.console.error(
+          "Failed to delete Translations language files.",
+          error
+        );
+      }
+    }
+
+    try {
+      const records = await client.get({
+        syncIfEmpty: false,
+        loadDumpIfNewer: false,
+      });
+      return records.map(record => record.id);
+    } catch (error) {
+      lazy.console.error("Failed to list Translations model records.", error);
+      return [];
+    }
   }
 }

@@ -70,8 +70,6 @@ overlapped IO request that works on both NT 3.51 and 4.0 is to close the
 file descriptor, hence the rule of thumb stated at the beginning of this
 memo.
 
-.. _Limitations:
-
 Limitations
 -----------
 
@@ -97,8 +95,6 @@ overlapped IO request has the following limitations:
    *A related known bug is that timeout and interrupt don't work for
    <tt>PR_Connect()</tt> on NT. This bug is due to a different
    limitation in our NT implementation.*
-
-.. _Conclusions:
 
 Conclusions
 -----------

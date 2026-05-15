@@ -611,7 +611,7 @@ class ThreadActor extends Actor {
   /**
    * Add event breakpoints to the list of active event breakpoints
    *
-   * @param {Array<String>} ids: events to add (e.g. ["event.mouse.click","event.mouse.mousedown"])
+   * @param {Array<string>} ids: events to add (e.g. ["event.mouse.click","event.mouse.mousedown"])
    */
   addEventBreakpoints(ids) {
     this.setActiveEventBreakpoints(
@@ -622,7 +622,7 @@ class ThreadActor extends Actor {
   /**
    * Remove event breakpoints from the list of active event breakpoints
    *
-   * @param {Array<String>} ids: events to remove (e.g. ["event.mouse.click","event.mouse.mousedown"])
+   * @param {Array<string>} ids: events to remove (e.g. ["event.mouse.click","event.mouse.mousedown"])
    */
   removeEventBreakpoints(ids) {
     this.setActiveEventBreakpoints(
@@ -633,7 +633,7 @@ class ThreadActor extends Actor {
   /**
    * Set the the list of active event breakpoints
    *
-   * @param {Array<String>} ids: events to add breakpoint for (e.g. ["event.mouse.click","event.mouse.mousedown"])
+   * @param {Array<string>} ids: events to add breakpoint for (e.g. ["event.mouse.click","event.mouse.mousedown"])
    */
   setActiveEventBreakpoints(ids) {
     this._activeEventBreakpoints = new Set(ids);
@@ -1371,7 +1371,7 @@ class ThreadActor extends Actor {
    *
    * Note that this is also called when evaluating conditional breakpoints.
    *
-   * @param {Boolean} doPause
+   * @param {boolean} doPause
    *        Should watch for pause or not. `_onExceptionUnwind` function will
    *        then be notified about new caught or uncaught exception being fired.
    */
@@ -1389,7 +1389,7 @@ class ThreadActor extends Actor {
    * Note that the thread actor will pause on exception by default.
    * This method has to be called with a falsy value to disable it.
    *
-   * @param {Boolean} doPause
+   * @param {boolean} doPause
    *        Controls whether we should or should not pause on debugger statement.
    */
   setPauseOnDebuggerStatement(doPause) {
@@ -1784,6 +1784,7 @@ class ThreadActor extends Actor {
   /**
    * Create and return an environment actor that corresponds to the provided
    * Debugger.Environment.
+   *
    * @param Debugger.Environment environment
    *        The lexical environment we want to extract.
    * @param object pool
@@ -2157,7 +2158,7 @@ class ThreadActor extends Actor {
     }
 
     // Preloaded WebExtension content scripts may be cached internally by
-    // ExtensionContent.jsm and ThreadActor would ignore them on a page reload
+    // ExtensionContent.sys.mjs and ThreadActor would ignore them on a page reload
     // because it finds them in the _debuggerSourcesSeen WeakSet,
     // and so we also need to be sure that there is still a source actor for the source.
     let sourceActor;
@@ -2365,16 +2366,16 @@ exports.ThreadActor = ThreadActor;
  *
  * PauseActors exist for the lifetime of a given debuggee pause.  Used to
  * scope pause-lifetime grips.
- *
- * @param {Pool} pool: The actor pool created for this pause.
  */
-function PauseActor(pool) {
-  this.pool = pool;
+class PauseActor {
+  /**
+   * @param {Pool} pool: The actor pool created for this pause.
+   */
+  constructor(pool) {
+    this.pool = pool;
+  }
+  typeName = "pause";
 }
-
-PauseActor.prototype = {
-  typeName: "pause",
-};
 
 // Utility functions.
 
@@ -2385,7 +2386,7 @@ PauseActor.prototype = {
  * @param Debugger.Object wrappedGlobal
  *        The |Debugger.Object| which wraps a global.
  *
- * @returns {Object|undefined}
+ * @returns {object | undefined}
  *          Returns the unwrapped global object or |undefined| if unwrapping
  *          failed.
  */

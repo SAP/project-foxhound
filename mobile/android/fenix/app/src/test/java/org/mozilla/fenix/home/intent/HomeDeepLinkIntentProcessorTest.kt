@@ -6,9 +6,6 @@ package org.mozilla.fenix.home.intent
 
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
-import android.os.Build.VERSION_CODES.M
 import androidx.core.net.toUri
 import androidx.navigation.NavController
 import io.mockk.Called
@@ -29,10 +26,8 @@ import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
-import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 class HomeDeepLinkIntentProcessorTest {
@@ -279,38 +274,6 @@ class HomeDeepLinkIntentProcessorTest {
     }
 
     @Test
-    @Config(maxSdk = M)
-    fun `process make_default_browser deep link for API 23 and below`() {
-        val packageManager: PackageManager = mockk()
-        val packageInfo = PackageInfo()
-
-        every { activity.packageName } returns "org.mozilla.fenix"
-        every { activity.packageManager } returns packageManager
-        @Suppress("DEPRECATION")
-        every { packageManager.getPackageInfo("org.mozilla.fenix", 0) } returns packageInfo
-        packageInfo.versionName = "versionName"
-
-        assertTrue(processorHome.process(testIntent("make_default_browser"), navController, out, settings))
-
-        val searchTermOrURL =
-            SupportUtils.getGenericSumoURLForTopic(
-                topic = SupportUtils.SumoTopic.SET_AS_DEFAULT_BROWSER,
-            )
-
-        verify {
-            activity.openToBrowserAndLoad(
-                searchTermOrURL = searchTermOrURL,
-                newTab = true,
-                from = BrowserDirection.FromGlobal,
-                flags = EngineSession.LoadUrlFlags.external(),
-            )
-        }
-
-        verify { navController wasNot Called }
-        verify { out wasNot Called }
-    }
-
-    @Test
     fun `process settings_notifications deep link`() {
         assertTrue(processorHome.process(testIntent("settings_notifications"), navController, out, settings))
 
@@ -341,6 +304,14 @@ class HomeDeepLinkIntentProcessorTest {
         assertTrue(processorHome.process(testIntent("settings_private_browsing"), navController, out, settings))
 
         verify { navController.navigate(NavGraphDirections.actionGlobalPrivateBrowsingFragment()) }
+        verify { out wasNot Called }
+    }
+
+    @Test
+    fun `process settings_app_icon deep link`() {
+        assertTrue(processorHome.process(testIntent("settings_app_icon"), navController, out, settings))
+
+        verify { navController.navigate(NavGraphDirections.actionGlobalAppIconSelectionFragment()) }
         verify { out wasNot Called }
     }
 

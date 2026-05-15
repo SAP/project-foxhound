@@ -6,19 +6,8 @@
 
 #include "ServiceWorkerContainer.h"
 
-#include "nsContentSecurityManager.h"
-#include "nsContentUtils.h"
-#include "nsIServiceWorkerManager.h"
-#include "nsIScriptError.h"
-#include "nsThreadUtils.h"
-#include "nsNetUtil.h"
-#include "nsPIDOMWindow.h"
-#include "mozilla/Components.h"
-
-#include "nsCycleCollectionParticipant.h"
-#include "nsGlobalWindowInner.h"
-#include "nsServiceManagerUtils.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -41,6 +30,16 @@
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIScriptError.h"
+#include "nsIServiceWorkerManager.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
 
 // This is defined to something else on Windows
 #ifdef DispatchMessage
@@ -127,12 +126,11 @@ using mozilla::dom::ipc::StructuredCloneData;
 // incoming messages and as an interface to DispatchMessage().
 struct MOZ_HEAP_CLASS ServiceWorkerContainer::ReceivedMessage {
   explicit ReceivedMessage(const ClientPostMessageArgs& aArgs)
-      : mServiceWorker(aArgs.serviceWorker()) {
-    mClonedData.CopyFromClonedMessageData(aArgs.clonedData());
-  }
+      : mServiceWorker(aArgs.serviceWorker()),
+        mClonedData(aArgs.clonedData()) {}
 
   ServiceWorkerDescriptor mServiceWorker;
-  StructuredCloneData mClonedData;
+  NotNull<RefPtr<StructuredCloneData>> mClonedData;
 
   NS_INLINE_DECL_REFCOUNTING(ReceivedMessage)
 
@@ -289,7 +287,7 @@ already_AddRefed<Promise> ServiceWorkerContainer::Register(
   // Verify that the global is valid and has permission to store
   // data.  We perform this late so that we can report the final
   // scope URL in any error message.
-  Unused << GetGlobalIfValid(aRv, [&](nsIGlobalObject* aGlobal) {
+  (void)GetGlobalIfValid(aRv, [&](nsIGlobalObject* aGlobal) {
     AutoTArray<nsString, 1> param;
     CopyUTF8toUTF16(cleanedScopeURL, *param.AppendElement());
     aGlobal->ReportToConsole(nsIScriptError::errorFlag, "Service Workers"_ns,
@@ -319,7 +317,7 @@ already_AddRefed<Promise> ServiceWorkerContainer::Register(
   }
 
   mActor->SendRegister(
-      clientInfo.ref().ToIPC(), nsCString(cleanedScopeURL),
+      clientInfo.ref().ToIPC(), nsCString(cleanedScopeURL), aOptions.mType,
       nsCString(cleanedScriptURL), aOptions.mUpdateViaCache,
       [self,
        outer](const IPCServiceWorkerRegistrationDescriptorOrCopyableErrorResult&
@@ -511,7 +509,7 @@ already_AddRefed<Promise> ServiceWorkerContainer::GetRegistration(
             //  If rv is a failure then this is an application layer error.
             //  Note, though, we also reject with NS_OK to indicate that we just
             //  didn't find a registration.
-            Unused << self->GetGlobalIfValid(rv);
+            (void)self->GetGlobalIfValid(rv);
             if (!rv.Failed()) {
               outer->MaybeResolveWithUndefined();
               return;
@@ -685,19 +683,17 @@ void ServiceWorkerContainer::DispatchMessage(RefPtr<ReceivedMessage> aMessage) {
   // not, we'd fail to initialize the JS API and exit.
   RunWithJSContext([this, message = std::move(aMessage)](
                        JSContext* const aCx, nsIGlobalObject* const aGlobal) {
-    ErrorResult result;
     bool deserializationFailed = false;
     RootedDictionary<MessageEventInit> init(aCx);
-    auto res = FillInMessageEventInit(aCx, aGlobal, *message, init, result);
+    auto res = FillInMessageEventInit(aCx, aGlobal, *message, init);
     if (res.isErr()) {
       deserializationFailed = res.unwrapErr();
       MOZ_ASSERT_IF(deserializationFailed, init.mData.isNull());
       MOZ_ASSERT_IF(deserializationFailed, init.mPorts.IsEmpty());
       MOZ_ASSERT_IF(deserializationFailed, !init.mOrigin.IsEmpty());
       MOZ_ASSERT_IF(deserializationFailed, !init.mSource.IsNull());
-      result.SuppressException();
 
-      if (!deserializationFailed && result.MaybeSetPendingException(aCx)) {
+      if (!deserializationFailed) {
         return;
       }
     }
@@ -706,11 +702,7 @@ void ServiceWorkerContainer::DispatchMessage(RefPtr<ReceivedMessage> aMessage) {
         this, deserializationFailed ? u"messageerror"_ns : u"message"_ns, init);
     event->SetTrusted(true);
 
-    result = NS_OK;
-    DispatchEvent(*event, result);
-    if (result.Failed()) {
-      result.SuppressException();
-    }
+    DispatchEvent(*event, IgnoreErrors());
   });
 }
 
@@ -742,7 +734,7 @@ nsresult FillInOriginNoSuffix(const ServiceWorkerDescriptor& aServiceWorker,
 
 Result<Ok, bool> ServiceWorkerContainer::FillInMessageEventInit(
     JSContext* const aCx, nsIGlobalObject* const aGlobal,
-    ReceivedMessage& aMessage, MessageEventInit& aInit, ErrorResult& aRv) {
+    ReceivedMessage& aMessage, MessageEventInit& aInit) {
   // Determining the source and origin should preceed attempting deserialization
   // because on a "messageerror" event (i.e. when deserialization fails), the
   // dispatched message needs to contain such an origin and source, per spec:
@@ -764,15 +756,16 @@ Result<Ok, bool> ServiceWorkerContainer::FillInMessageEventInit(
     return Err(false);
   }
 
+  IgnoredErrorResult readError;
   JS::Rooted<JS::Value> messageData(aCx);
-  aMessage.mClonedData.Read(aCx, &messageData, aRv);
-  if (aRv.Failed()) {
+  aMessage.mClonedData->Read(aCx, &messageData, readError);
+  if (readError.Failed()) {
     return Err(true);
   }
 
   aInit.mData = messageData;
 
-  if (!aMessage.mClonedData.TakeTransferredPortsAsSequence(aInit.mPorts)) {
+  if (!aMessage.mClonedData->TakeTransferredPortsAsSequence(aInit.mPorts)) {
     xpc::Throw(aCx, NS_ERROR_OUT_OF_MEMORY);
     return Err(false);
   }

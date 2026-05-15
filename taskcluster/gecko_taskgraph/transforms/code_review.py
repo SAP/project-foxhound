@@ -5,7 +5,6 @@
 Add soft dependencies and configuration to code-review tasks.
 """
 
-
 from taskgraph.transforms.base import TransformSequence
 
 transforms = TransformSequence()
@@ -30,4 +29,14 @@ def add_phabricator_config(config, jobs):
         if diff is not None:
             code_review = job.setdefault("extra", {}).setdefault("code-review", {})
             code_review["phabricator-diff"] = diff
+        yield job
+
+
+@transforms.add
+def add_github_config(config, jobs):
+    for job in jobs:
+        github = config.params.get("try_task_config", {}).get("github")
+        if github:
+            code_review = job.setdefault("extra", {}).setdefault("code-review", {})
+            code_review["github"] = github
         yield job

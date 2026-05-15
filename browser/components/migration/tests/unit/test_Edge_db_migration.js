@@ -136,17 +136,18 @@ function convertValueForWriting(value, valueType) {
         return [buffer, KERNEL.FILETIME.size];
       }
       throw new Error("Unrecognized value for longlong column");
-    case COLUMN_TYPES.JET_coltypLongText:
+    case COLUMN_TYPES.JET_coltypLongText: {
       let wchar_tArray = ctypes.ArrayType(ctypes.char16_t);
       buffer = new wchar_tArray(value.length + 1);
       buffer.value = String(value);
       return [buffer, buffer.length * 2];
+    }
     case COLUMN_TYPES.JET_coltypBit:
       buffer = new ctypes.uint8_t();
       // Bizarre boolean values, but whatever:
       buffer.value = value ? 255 : 0;
       return [buffer, 1];
-    case COLUMN_TYPES.JET_coltypGUID:
+    case COLUMN_TYPES.JET_coltypGUID: {
       let byteArray = ctypes.ArrayType(ctypes.uint8_t);
       buffer = new byteArray(16);
       let j = 0;
@@ -159,6 +160,7 @@ function convertValueForWriting(value, valueType) {
         i++;
       }
       return [buffer, 16];
+    }
   }
 
   throw new Error("Unknown type " + valueType);

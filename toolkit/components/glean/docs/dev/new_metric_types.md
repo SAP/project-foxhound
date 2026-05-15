@@ -174,7 +174,7 @@ Each metric type has six pieces you'll need to cover:
     - The naming style for methods here is `lowerCamelCase`.
     - If the metric method is a reserved word, prepend it with a `_`.
     - Web IDL bindings use
-      [their own mapping for types](/dom/webIdlBindings/index.md).
+      [their own mapping for types](/dom/webIdlBindings/index).
       If you choose ones that most closely resemble the C++ types,
       you'll make your life easier.
 - Add a new mapping in `dom/bindings/Bindings.conf`:
@@ -195,7 +195,7 @@ Each metric type has six pieces you'll need to cover:
     - In the definition of `GleanX`, member identifiers are back to
       `CamelCase`.
     - Test-only methods can throw `DataError` on failure.
-    - Review the [Web IDL Bindings documentation](/dom/webIdlBindings/index.html)
+    - Review the [Web IDL Bindings documentation](/dom/webIdlBindings/index)
       for help with optional, nullable, and non-primitive types.
 
 ### 6. Tests

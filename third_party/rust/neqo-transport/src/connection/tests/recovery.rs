@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use neqo_common::qdebug;
 use neqo_crypto::AuthenticationStatus;
 use test_fixture::{
-    assertions::{assert_handshake, assert_initial},
+    assertions::{assert_handshake, assert_initial, is_handshake, is_initial},
     now, split_datagram,
 };
 
@@ -28,10 +28,9 @@ use crate::{
         FAST_PTO_SCALE, MAX_OUTSTANDING_UNACK, MAX_PTO_PACKET_COUNT, MIN_OUTSTANDING_UNACK,
     },
     rtt::GRANULARITY,
-    stats::MAX_PTO_COUNTS,
     tparams::{TransportParameter, TransportParameterId::*},
     tracking::{DEFAULT_LOCAL_ACK_DELAY, DEFAULT_REMOTE_ACK_DELAY},
-    CloseReason, Error, Pmtud, StreamType,
+    CloseReason, Error, Pmtud, Stats, StreamType,
 };
 
 #[test]
@@ -42,9 +41,8 @@ fn pto_works_basic() {
 
     let mut now = now();
 
-    let res = client.process_output(now);
-    let idle_timeout = ConnectionParameters::default().get_idle_timeout();
-    assert_eq!(res, Output::Callback(idle_timeout));
+    let cb = client.process_output(now).callback();
+    assert_eq!(cb, ConnectionParameters::DEFAULT_IDLE_TIMEOUT);
 
     // Send data on two streams
     let stream1 = client.stream_create(StreamType::UniDi).unwrap();
@@ -231,13 +229,11 @@ fn pto_handshake_complete() {
 
     now += HALF_RTT;
     let pkt = server.process(pkt, now).dgram();
-    assert_initial(pkt.as_ref().unwrap(), false);
+    assert_handshake(pkt.as_ref().unwrap());
 
     now += HALF_RTT;
     let pkt = client.process(pkt, now).dgram();
-    let (initial, handshake) = split_datagram(&pkt.clone().unwrap());
-    assert_initial(&initial, false);
-    assert_handshake(handshake.as_ref().unwrap());
+    assert_handshake(pkt.as_ref().unwrap());
 
     let cb = client.process_output(now).callback();
     // The client now has a single RTT estimate (20ms), so
@@ -252,7 +248,6 @@ fn pto_handshake_complete() {
     now += HALF_RTT;
     client.authenticated(AuthenticationStatus::Ok, now);
 
-    qdebug!("---- client: SH..FIN -> FIN");
     let pkt1 = client.process_output(now).dgram();
     assert_handshake(pkt1.as_ref().unwrap());
     assert_eq!(*client.state(), State::Connected);
@@ -260,15 +255,18 @@ fn pto_handshake_complete() {
     let cb = client.process_output(now).callback();
     assert_eq!(cb, pto);
 
-    let mut pto_counts = [0; MAX_PTO_COUNTS];
+    let mut pto_counts = [0; Stats::MAX_PTO_COUNTS];
     assert_eq!(client.stats.borrow().pto_counts, pto_counts);
 
     // Wait for PTO to expire and resend a handshake packet.
     // Wait long enough that the 1-RTT PTO also fires.
-    qdebug!("---- client: PTO");
     now += pto;
     let pkt2 = client.process_output(now).dgram();
     assert_handshake(pkt2.as_ref().unwrap());
+
+    // Discard the ping that follows.
+    let ping = client.process_output(now).dgram();
+    assert_eq!(ping.as_ref().unwrap()[0] & 0x80, 0);
 
     pto_counts[0] = 1;
     assert_eq!(client.stats.borrow().pto_counts, pto_counts);
@@ -290,6 +288,10 @@ fn pto_handshake_complete() {
     assert_handshake(&pkt3_hs);
     assert!(pkt3_1rtt.is_some());
 
+    // Discard the ping that follows.
+    let ping = client.process_output(now).dgram();
+    assert_eq!(ping.as_ref().unwrap()[0] & 0x80, 0);
+
     // PTO has been doubled.
     let pto = pto * 2;
     let cb = client.process_output(now).callback();
@@ -301,7 +303,6 @@ fn pto_handshake_complete() {
     pto_counts[1] = 1;
     assert_eq!(client.stats.borrow().pto_counts, pto_counts);
 
-    qdebug!("---- server: receive FIN and send ACK");
     now += HALF_RTT;
     // Now let the server have pkt1 and expect an immediate Handshake ACK.
     // The output will be a Handshake packet with ACK and 1-RTT packet with
@@ -479,7 +480,7 @@ fn handshake_ack_pto() {
     let delay = client.process_output(now).callback();
     assert_eq!(delay, RTT * 3);
 
-    let mut pto_counts = [0; MAX_PTO_COUNTS];
+    let mut pto_counts = [0; Stats::MAX_PTO_COUNTS];
     assert_eq!(client.stats.borrow().pto_counts, pto_counts);
 
     // Wait for the PTO and ensure that the client generates a packet.
@@ -827,7 +828,9 @@ fn fast_pto() {
     let mut now = connect_rtt_idle(&mut client, &mut server, DEFAULT_RTT);
 
     let res = client.process_output(now);
-    let idle_timeout = ConnectionParameters::default().get_idle_timeout() - (DEFAULT_RTT / 2);
+    let idle_timeout = ConnectionParameters::DEFAULT_IDLE_TIMEOUT
+        .checked_sub(DEFAULT_RTT / 2)
+        .unwrap();
     assert_eq!(res, Output::Callback(idle_timeout));
 
     // Send data on two streams
@@ -870,7 +873,9 @@ fn fast_pto_persistent_congestion() {
     let mut now = connect_rtt_idle(&mut client, &mut server, DEFAULT_RTT);
 
     let res = client.process_output(now);
-    let idle_timeout = ConnectionParameters::default().get_idle_timeout() - (DEFAULT_RTT / 2);
+    let idle_timeout = ConnectionParameters::DEFAULT_IDLE_TIMEOUT
+        .checked_sub(DEFAULT_RTT / 2)
+        .unwrap();
     assert_eq!(res, Output::Callback(idle_timeout));
 
     // Send packets spaced by the PTO timer.  And lose them.
@@ -937,4 +942,92 @@ fn ack_for_unsent() {
             ..
         }
     ));
+}
+
+/// Test that PTO fires for Handshake space even when no Handshake packets have been sent.
+///
+/// This reproduces a handshake loss scenario where:
+/// 1. Client receives Server Hello → Handshake keys installed
+/// 2. Server's Handshake flight (Certificate, etc.) is lost/corrupted
+/// 3. Client never sends any Handshake packets (has nothing to send yet)
+/// 4. Client's Handshake space has `last_ack_eliciting` = None
+/// 5. PTO timer never arms for Handshake space
+/// 6. Connection times out
+///
+/// The client should probe Handshake space to elicit server retransmission.
+#[test]
+fn pto_handshake_space_when_server_flight_lost() {
+    const RTT: Duration = Duration::from_millis(10);
+    let mut now = now();
+    // This test assumes PTOs only involve single-packet flights, which is incompatible with
+    // multi-packet flights as used by MLKEM.
+    let mut client = new_client(ConnectionParameters::default().mlkem(false));
+    let mut server = default_server();
+    // This is a greasing transport parameter, and large enough that the
+    // server needs to send two Handshake packets.
+    let big = TransportParameter::Bytes(vec![0; Pmtud::default_plpmtu(DEFAULT_ADDR.ip())]);
+    server
+        .set_local_tparam(TestTransportParameter, big)
+        .unwrap();
+
+    let c1 = client.process_output(now).dgram();
+    now += RTT / 2;
+
+    // Collect all server output.
+    let mut server_dgrams = Vec::new();
+    server_dgrams.push(server.process(c1, now).dgram().unwrap());
+    while let Some(dgram) = server.process_output(now).dgram() {
+        server_dgrams.push(dgram);
+    }
+    assert!(!server_dgrams.is_empty());
+
+    // Send all Initial packets to the client, but drop all Handshake packets.
+    now += RTT / 2;
+    let mut found_hs = false;
+    for dgram in server_dgrams {
+        let (first, second) = split_datagram(&dgram);
+        if is_initial(&first, false) {
+            assert!(!found_hs, "got Initial after Handshake");
+            if let Some(hs) = second {
+                found_hs |= is_handshake(&hs);
+            }
+            client.process_input(first, now);
+        } else {
+            found_hs |= is_handshake(&first);
+        }
+    }
+    assert!(found_hs);
+
+    // Client processes the Initial packets (which install Handshake keys).
+    let c2 = client.process_output(now).dgram();
+    assert!(c2.is_some()); // This is an ACK.  Drop it.
+    assert_eq!(*client.state(), State::Handshaking);
+
+    let pto = client.process_output(now).callback();
+    assert_ne!(pto, Duration::ZERO);
+    now += pto;
+
+    // Drain all packets and get the next timeout.
+    let next_timeout = loop {
+        if let Output::Callback(callback) = client.process_output(now) {
+            break callback;
+        }
+    };
+    // Fire PTO - this should prime Handshake space.
+    now += next_timeout;
+
+    // Collect all packets from this timeout and verify PING was sent.
+    let stats_before = client.stats().frame_tx;
+    let mut pto_packets = Vec::new();
+    while let Some(dgram) = client.process_output(now).dgram() {
+        pto_packets.push(dgram);
+    }
+
+    // Check if any Handshake PING probes packets were sent.
+    let mut has_handshake = false;
+    for dgram in &pto_packets {
+        let (first, second) = split_datagram(dgram);
+        has_handshake |= is_handshake(&first) || second.as_ref().is_some_and(|s| is_handshake(s));
+    }
+    assert!(has_handshake && client.stats().frame_tx.ping > stats_before.ping);
 }

@@ -13,7 +13,6 @@ cat > $mozconfig <<EOF
 # Disable Keyfile Loading (and checks)
 # This overrides the settings in the common android mozconfig
 ac_add_options --without-mozilla-api-keyfile
-ac_add_options --without-google-location-service-api-keyfile
 ac_add_options --without-google-safebrowsing-api-keyfile
 
 ac_add_options --disable-nodejs

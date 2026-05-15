@@ -1,0 +1,21 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+---
+$schema: moz://mozilla.org/schemas/glean/pings/2-0-0
+
+# NOTE: this should be kept in sync with the ping as registered
+# using Services.fog.registerRuntimePing from api.js.
+data-leak-blocker:
+  description: |
+    Instrumentation related to the data-leak-blocker built-in add-on.
+  include_client_id: true
+  metadata:
+    include_info_sections: true
+  bugs:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1985769
+  data_reviews:
+    - https://bugzilla.mozilla.org/show_bug.cgi?id=1985769
+  notification_emails:
+    - addons-dev-internal@mozilla.com

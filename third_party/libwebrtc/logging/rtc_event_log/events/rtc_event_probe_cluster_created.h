@@ -69,7 +69,7 @@ class RtcEventProbeClusterCreated final : public RtcEvent {
   uint32_t min_probes() const { return min_probes_; }
   uint32_t min_bytes() const { return min_bytes_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> /* batch */) {
+  static std::string Encode(ArrayView<const RtcEvent*> /* batch */) {
     // TODO(terelius): Implement
     return "";
   }
@@ -83,7 +83,7 @@ class RtcEventProbeClusterCreated final : public RtcEvent {
   }
 
  private:
-  RtcEventProbeClusterCreated(const RtcEventProbeClusterCreated& other);
+  RtcEventProbeClusterCreated(const RtcEventProbeClusterCreated&) = default;
 
   const int32_t id_;
   const int32_t bitrate_bps_;

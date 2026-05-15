@@ -59,6 +59,12 @@ known_errors = [
         # for sidebar.
         "message": "toggleSidebarKb",
     },
+    {
+        # Triggered as soon as anything tries to access window.fullScreen.
+        # Bug 1709294 to stop exposing window.fullScreen to the web content and
+        # the warning can be removed.
+        "message": 'JavaScript Warning: "Window.fullScreen attribute is deprecated and will be removed in the future."',
+    },
 ]
 
 # Same rules apply here - please don't add anything! - but headless runs

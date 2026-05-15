@@ -9,15 +9,16 @@
 #ifndef mozilla_dom_ScriptDecoding_h
 #define mozilla_dom_ScriptDecoding_h
 
+#include <stddef.h>  // size_t
+#include <stdint.h>  // uint8_t, uint32_t
+
+#include <type_traits>  // std::is_same
+
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/CheckedInt.h"  // mozilla::CheckedInt
 #include "mozilla/Encoding.h"    // mozilla::Decoder
 #include "mozilla/Span.h"        // mozilla::Span
 #include "mozilla/UniquePtr.h"   // mozilla::UniquePtr
-
-#include <stddef.h>     // size_t
-#include <stdint.h>     // uint8_t, uint32_t
-#include <type_traits>  // std::is_same
 
 namespace mozilla::dom {
 

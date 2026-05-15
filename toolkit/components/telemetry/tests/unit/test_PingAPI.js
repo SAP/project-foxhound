@@ -19,6 +19,7 @@ ChromeUtils.defineLazyGetter(this, "gPingsArchivePath", function () {
 
 /**
  * Fakes the archive storage quota.
+ *
  * @param {Integer} aArchiveQuota The new quota, in bytes.
  */
 function fakeStorageQuota(aArchiveQuota) {
@@ -31,7 +32,7 @@ function fakeStorageQuota(aArchiveQuota) {
 /**
  * Lists all the valid archived pings and their metadata, sorted by creation date.
  *
- * @return {Object[]} A list of objects with the extracted data in the form:
+ * @return {object[]} A list of objects with the extracted data in the form:
  *                  { timestamp: <number>,
  *                    id: <string>,
  *                    type: <string>,

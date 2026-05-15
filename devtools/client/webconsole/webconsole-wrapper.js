@@ -73,17 +73,16 @@ loader.lazyRequireGetter(
 
 let store = null;
 
-class WebConsoleWrapper {
+class WebConsoleWrapper extends EventEmitter {
   /**
    *
    * @param {HTMLElement} parentNode
    * @param {WebConsoleUI} webConsoleUI
    * @param {Toolbox} toolbox
    * @param {Document} document
-   *
    */
   constructor(parentNode, webConsoleUI, toolbox, document) {
-    EventEmitter.decorate(this);
+    super();
 
     this.parentNode = parentNode;
     this.webConsoleUI = webConsoleUI;
@@ -186,9 +185,9 @@ class WebConsoleWrapper {
    * Query the reducer store for the current state of filtering
    * a given type of message
    *
-   * @param {String} filter
+   * @param {string} filter
    *        Type of message to be filtered.
-   * @return {Boolean}
+   * @return {boolean}
    *         True if this type of message should be displayed.
    */
   getFilterState(filter) {
@@ -371,7 +370,7 @@ class WebConsoleWrapper {
 
   /**
    *
-   * @param {String} expression: The expression to evaluate
+   * @param {string} expression: The expression to evaluate
    */
   dispatchEvaluateExpression(expression) {
     store.dispatch(actions.evaluateExpression(expression));
@@ -437,7 +436,7 @@ class WebConsoleWrapper {
 
         if (this.queuedMessageUpdates.length) {
           await store.dispatch(
-            actions.networkMessageUpdates(this.queuedMessageUpdates, null)
+            actions.networkMessageUpdates(this.queuedMessageUpdates)
           );
           this.webConsoleUI.emitForTests("network-messages-updated");
           this.queuedMessageUpdates = [];

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workerscope_h__
-#define mozilla_dom_workerscope_h__
+#ifndef mozilla_dom_workerscope_h_
+#define mozilla_dom_workerscope_h_
 
 #include "js/TypeDecls.h"
 #include "js/loader/ModuleLoaderBase.h"
@@ -13,18 +13,17 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/AnimationFrameProvider.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/PerformanceWorker.h"
 #include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/TrustedTypePolicyFactory.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/TimeoutManager.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
@@ -79,6 +78,7 @@ class ServiceWorkerDescriptor;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationDescriptor;
 struct StructuredSerializeOptions;
+class TimeoutManager;
 class WorkerDocumentListener;
 class WorkerLocation;
 class WorkerNavigator;
@@ -343,7 +343,7 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
   MOZ_CAN_RUN_SCRIPT void ImportScripts(
       JSContext* aCx,
       const Sequence<OwningTrustedScriptURLOrString>& aScriptURLs,
-      ErrorResult& aRv);
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   OnErrorEventHandlerNonNull* GetOnerror();
 
@@ -645,4 +645,4 @@ inline nsISupports* ToSupports(mozilla::dom::WorkerGlobalScope* aScope) {
   return static_cast<mozilla::dom::EventTarget*>(aScope);
 }
 
-#endif /* mozilla_dom_workerscope_h__ */
+#endif /* mozilla_dom_workerscope_h_ */

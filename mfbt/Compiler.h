@@ -9,11 +9,7 @@
 #ifndef mozilla_Compiler_h
 #define mozilla_Compiler_h
 
-#define MOZ_IS_GCC 0
-
 #if !defined(__clang__) && defined(__GNUC__)
-
-#  undef MOZ_IS_GCC
 #  define MOZ_IS_GCC 1
 /*
  * These macros should simplify gcc version checking. For example, to check
@@ -25,10 +21,8 @@
 #  define MOZ_GCC_VERSION_AT_MOST(major, minor, patchlevel)             \
     ((__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__) <= \
      ((major) * 10000 + (minor) * 100 + (patchlevel)))
-#  if !MOZ_GCC_VERSION_AT_LEAST(6, 1, 0)
-#    error "mfbt (and Gecko) require at least gcc 6.1 to build."
-#  endif
-
+#else
+#  define MOZ_IS_GCC 0
 #endif
 
 #endif /* mozilla_Compiler_h */

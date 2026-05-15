@@ -53,6 +53,7 @@ class DataChoicesReducerTest {
             telemetryEnabled = true,
             usagePingEnabled = true,
             studiesEnabled = true,
+            showMeasurementDataSection = true,
             measurementDataEnabled = true,
             crashReportOption = CrashReportOption.Never,
         )
@@ -60,6 +61,7 @@ class DataChoicesReducerTest {
         assertEquals(true, after.telemetryEnabled)
         assertEquals(true, after.usagePingEnabled)
         assertEquals(true, after.studiesEnabled)
+        assertEquals(true, after.showMeasurementDataSection)
         assertEquals(true, after.measurementDataEnabled)
         assertEquals(CrashReportOption.Never, after.selectedCrashOption)
     }

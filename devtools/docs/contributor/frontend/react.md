@@ -4,7 +4,7 @@ interfaces. In here you can find an explanation of why we chose React
 and a short primer on it. Additionally, we list best practices that
 all devtools code should adhere to when writing React.
 
-# Quick Intro
+# React Quick Intro
 
 This is a very quick introduction on how to *use* React, but does not
 explain in-depth the concepts behind it. If you want more in-depth

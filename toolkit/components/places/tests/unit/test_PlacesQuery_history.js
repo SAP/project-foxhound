@@ -383,3 +383,29 @@ add_task(async function test_sort_by_last_visited() {
 
   await PlacesUtils.history.clear();
 });
+
+add_task(async function test_page_title_changed() {
+  let now = new Date();
+  await PlacesUtils.history.insert({
+    url: "https://www.example.com/",
+    title: "Old Title",
+    visits: [{ date: now }],
+  });
+
+  let history = await placesQuery.getHistory();
+  let mapKey = placesQuery.getStartOfDayTimestamp(now);
+  Assert.equal(
+    history.get(mapKey)[0].title,
+    "Old Title",
+    "Initial title is correct."
+  );
+
+  info("Update page title.");
+  placesQuery.handlePageTitleChanged({
+    url: "https://www.example.com/",
+    title: "New Title",
+  });
+  Assert.equal(history.get(mapKey)[0].title, "New Title", "Title is updated.");
+
+  await PlacesUtils.history.clear();
+});

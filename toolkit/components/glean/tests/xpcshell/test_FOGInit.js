@@ -26,11 +26,9 @@ add_task(function test_fog_init_works() {
     Assert.ok(true, "Too close to 'metrics' ping send window. Skipping test.");
     return;
   }
-  Assert.greater(
-    Glean.fog.initialization.testGetValue(),
-    0,
-    "FOG init happened, and its time was measured."
-  );
+  const snapshot = Glean.fog.initializations.testGetValue();
+  Assert.equal(snapshot.count, 1, "FOG init happened once.");
+  Assert.greater(snapshot.sum, 0, "FOG init's time was measured.");
 });
 
 add_task(function test_fog_initialized_with_correct_rate_limit() {

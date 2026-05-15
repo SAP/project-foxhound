@@ -826,7 +826,7 @@ export class AddressEditDoorhanger extends AutofillDoorhanger {
     return div;
   }
 
-  /*
+  /**
    * This method generates a unique input ID using the field name of the address field.
    *
    * @param {string} fieldName The name of the address field
@@ -974,7 +974,7 @@ export class CreditCardSaveDoorhanger extends AutofillDoorhanger {
     privacyLinkElement.setAttribute(
       "href",
       CreditCardSaveDoorhanger.spotlightURL ||
-        "about:preferences#privacy-form-autofill"
+        "about:preferences#privacy-payment-methods-autofill"
     );
 
     const linkId = `autofill-options-link${

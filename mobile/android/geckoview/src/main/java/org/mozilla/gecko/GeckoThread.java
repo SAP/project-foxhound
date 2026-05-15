@@ -147,6 +147,9 @@ public class GeckoThread extends Thread {
   public static final int FLAG_DISABLE_LOW_MEMORY_DETECTION =
       1 << 3; // Disable low-memory detection and notifications.
   public static final int FLAG_CHILD = 1 << 4; // This is a child process.
+  public static final int FLAG_CONTENT_ISOLATED = 1 << 5; // Content service is isolated process.
+  public static final int FLAG_CONTENT_ISOLATED_HAS_ZYGOTE =
+      1 << 6; // Content service has app Zygote enabled.
 
   /* package */ static final String EXTRA_ARGS = "args";
 
@@ -456,8 +459,14 @@ public class GeckoThread extends Thread {
     final List<String> env = getEnvFromExtras(mInitInfo.extras);
 
     // In Gecko, the native crash reporter is enabled by default in opt builds, and
-    // disabled by default in debug builds.
-    if ((mInitInfo.flags & FLAG_ENABLE_NATIVE_CRASHREPORTER) == 0 && !BuildConfig.DEBUG_BUILD) {
+    // disabled by default in debug builds. This may be inconsistent with whether a GeckoView
+    // handler is set, so default Gecko to follow GeckoView unless overridden (such as by a test
+    // harness).
+    if (env.contains("MOZ_CRASHREPORTER=1") || env.contains("MOZ_CRASHREPORTER_DISABLE=1")) {
+      // If explicitly set, pass settings to Gecko regardless of whether a GeckoView handler exists.
+      // Native crashes can still write out minidumps even if GeckoView doesn't process them.
+    } else if ((mInitInfo.flags & FLAG_ENABLE_NATIVE_CRASHREPORTER) == 0
+        && !BuildConfig.DEBUG_BUILD) {
       env.add(0, "MOZ_CRASHREPORTER_DISABLE=1");
     } else if ((mInitInfo.flags & FLAG_ENABLE_NATIVE_CRASHREPORTER) != 0
         && BuildConfig.DEBUG_BUILD) {
@@ -492,6 +501,14 @@ public class GeckoThread extends Thread {
     if ((mInitInfo.flags & FLAG_PRELOAD_CHILD) != 0) {
       // Preload the content ("tab") child process.
       GeckoProcessManager.getInstance().preload(GeckoProcessType.CONTENT);
+    }
+
+    if ((mInitInfo.flags & FLAG_CONTENT_ISOLATED) != 0) {
+      GeckoProcessManager.getInstance().setIsolatedProcessEnabled(true);
+    }
+
+    if ((mInitInfo.flags & FLAG_CONTENT_ISOLATED_HAS_ZYGOTE) != 0) {
+      GeckoProcessManager.getInstance().setAppZygoteEnabled(true);
     }
 
     if ((mInitInfo.flags & FLAG_DEBUGGING) != 0) {

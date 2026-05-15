@@ -32,13 +32,13 @@ TaggingService.prototype = {
   /**
    * Creates a tag container under the tags-root with the given name.
    *
-   * @param aTagName
-   *        the name for the new tag.
-   * @param aSource
-   *        a change source constant from nsINavBookmarksService::SOURCE_*.
-   * @returns the id of the new tag container.
+   * @param {string} aTagName
+   *   The name for the new tag.
+   * @param {nsINavBookmarksService.ChangeSource} aSource
+   *   The source of change for the tag.
+   * @returns {number} the id of the new tag container.
    */
-  _createTag: function TS__createTag(aTagName, aSource) {
+  _createTag(aTagName, aSource) {
     var newFolderId = PlacesUtils.bookmarks.createFolder(
       PlacesUtils.tagsFolderId,
       aTagName,
@@ -56,14 +56,14 @@ TaggingService.prototype = {
   /**
    * Checks whether the given uri is tagged with the given tag.
    *
-   * @param [in] aURI
-   *        url to check for
-   * @param [in] aTagName
-   *        the tag to check for
-   * @returns the item id if the URI is tagged with the given tag, -1
-   *          otherwise.
+   * @param {nsIURI} aURI
+   *   The url to check for.
+   * @param {string} aTagName
+   *   The tag name to check for.
+   * @returns {number}
+   *   The item id if the URI is tagged with the given tag, -1 otherwise.
    */
-  _getItemIdForTaggedURI: function TS__getItemIdForTaggedURI(aURI, aTagName) {
+  _getItemIdForTaggedURI(aURI, aTagName) {
     var tagId = this._getItemIdForTag(aTagName);
     if (tagId == -1) {
       return -1;
@@ -89,13 +89,14 @@ TaggingService.prototype = {
   },
 
   /**
-   * Returns the folder id for a tag, or -1 if not found.
+   * Returns the folder id for a tag.
    *
-   * @param [in] aTag
-   *        string tag to search for
-   * @returns integer id for the bookmark folder for the tag
+   * @param {string} aTagName
+   *   The tag name to search for.
+   * @returns {number}
+   *   The id for the bookmark folder for the tag, or -1 if not found.
    */
-  _getItemIdForTag: function TS_getItemIdForTag(aTagName) {
+  _getItemIdForTag(aTagName) {
     for (var i in this._tagFolders) {
       if (aTagName.toLowerCase() == this._tagFolders[i].toLowerCase()) {
         return parseInt(i);
@@ -103,14 +104,16 @@ TaggingService.prototype = {
     }
     return -1;
   },
+
   /**
    * Makes a proper array of tag objects like  { id: number, name: string }.
    *
-   * @param aTags
-   *        Array of tags.  Entries can be tag names or concrete item id.
-   * @param trim [optional]
-   *        Whether to trim passed-in named tags. Defaults to false.
-   * @returns Array of tag objects like { id: number, name: string }.
+   * @param {(string|number)[]} aTags
+   *   Entries can be tag names or concrete item id.
+   * @param {boolean} [trim]
+   *   Whether to trim passed-in named tags. Defaults to false.
+   * @returns {{id: number, name: string}[]}
+   *   Array of tag objects.
    *
    * @throws Cr.NS_ERROR_INVALID_ARG if any element of the input array is not
    *         a valid tag.
@@ -120,6 +123,7 @@ TaggingService.prototype = {
     return aTags
       .filter(tag => tag !== undefined)
       .map(idOrName => {
+        /** @type {{id: number, name: string} & object} */
         let tag = {};
         if (typeof idOrName == "number" && this._tagFolders[idOrName]) {
           // This is a tag folder id.
@@ -148,7 +152,7 @@ TaggingService.prototype = {
   },
 
   // nsITaggingService
-  tagURI: function TS_tagURI(aURI, aTags, aSource) {
+  tagURI(aURI, aTags, aSource) {
     if (!aURI || !aTags || !Array.isArray(aTags) || !aTags.length) {
       throw Components.Exception(
         "Invalid value for tags",
@@ -200,12 +204,12 @@ TaggingService.prototype = {
   /**
    * Removes the tag container from the tags root if the given tag is empty.
    *
-   * @param aTagId
-   *        the itemId of the tag element under the tags root
-   * @param aSource
-   *        a change source constant from nsINavBookmarksService::SOURCE_*
+   * @param {number} aTagId
+   *   The itemId of the tag element under the tags root.
+   * @param {nsINavBookmarksService.ChangeSource} aSource
+   *   The source of change for the tag.
    */
-  _removeTagIfEmpty: function TS__removeTagIfEmpty(aTagId, aSource) {
+  _removeTagIfEmpty(aTagId, aSource) {
     let count = 0;
     let db = PlacesUtils.history.DBConnection;
     let stmt = db.createStatement(
@@ -344,40 +348,40 @@ TaggingService.prototype = {
    * removed, leaving only the bookmark items in tag folders.  If the URI is
    * either properly bookmarked or not tagged just returns and empty array.
    *
-   * @param   aURI
-   *          A URI (string) that may or may not be bookmarked
-   * @returns an array of item ids
+   * @param {string} url
+   *   A URI that may or may not be bookmarked
+   * @returns {number[]}
+   *   An array of item ids.
    */
-  _getTaggedItemIdsIfUnbookmarkedURI:
-    function TS__getTaggedItemIdsIfUnbookmarkedURI(url) {
-      var itemIds = [];
-      var isBookmarked = false;
+  _getTaggedItemIdsIfUnbookmarkedURI(url) {
+    var itemIds = [];
+    var isBookmarked = false;
 
-      // Using bookmarks service API for this would be a pain.
-      // Until tags implementation becomes sane, go the query way.
-      let db = PlacesUtils.history.DBConnection;
-      let stmt = db.createStatement(
-        `SELECT id, parent
+    // Using bookmarks service API for this would be a pain.
+    // Until tags implementation becomes sane, go the query way.
+    let db = PlacesUtils.history.DBConnection;
+    let stmt = db.createStatement(
+      `SELECT id, parent
        FROM moz_bookmarks
        WHERE fk = (SELECT id FROM moz_places WHERE url_hash = hash(:page_url) AND url = :page_url)`
-      );
-      stmt.params.page_url = url;
-      try {
-        while (stmt.executeStep() && !isBookmarked) {
-          if (this._tagFolders[stmt.row.parent]) {
-            // This is a tag entry.
-            itemIds.push(stmt.row.id);
-          } else {
-            // This is a real bookmark, so the bookmarked URI is not an orphan.
-            isBookmarked = true;
-          }
+    );
+    stmt.params.page_url = url;
+    try {
+      while (stmt.executeStep() && !isBookmarked) {
+        if (this._tagFolders[stmt.row.parent]) {
+          // This is a tag entry.
+          itemIds.push(stmt.row.id);
+        } else {
+          // This is a real bookmark, so the bookmarked URI is not an orphan.
+          isBookmarked = true;
         }
-      } finally {
-        stmt.finalize();
       }
+    } finally {
+      stmt.finalize();
+    }
 
-      return isBookmarked ? [] : itemIds;
-    },
+    return isBookmarked ? [] : itemIds;
+  },
 
   handlePlacesEvents(events) {
     for (let event of events) {
@@ -537,13 +541,17 @@ class TagSearch {
 export function TagAutoCompleteSearch() {}
 
 TagAutoCompleteSearch.prototype = {
-  /*
+  /**
    * Search for a given string and notify a listener of the result.
    *
-   * @param searchString - The string to search for
-   * @param searchParam - An extra parameter
-   * @param previousResult - A previous result to use for faster searching
-   * @param listener - A listener to notify when the search is complete
+   * @param {string} searchString
+   *   The string to search for.
+   * @param {string} searchParam
+   *   An extra parameter.
+   * @param {nsIAutoCompleteResult} previousResult
+   *   A previous result to use for faster searching.
+   * @param {nsIAutoCompleteObserver} listener
+   *   A listener to notify when the search is complete.
    */
   startSearch(searchString, searchParam, previousResult, listener) {
     if (this._search) {

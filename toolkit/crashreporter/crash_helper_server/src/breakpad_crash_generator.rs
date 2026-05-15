@@ -6,27 +6,58 @@
  * Wrappers used to call into Breakpad code                                   *
  ******************************************************************************/
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use super::crash_generation::get_auxv_info;
+
+use anyhow::{bail, Result};
+use cfg_if::cfg_if;
+use crash_helper_common::{BreakpadChar, BreakpadData, BreakpadString, Pid};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use minidump_writer::minidump_writer::DirectAuxvDumpInfo;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::{
     ffi::{c_char, c_void, OsString},
     ptr::NonNull,
 };
 
-use anyhow::{bail, Result};
-use cfg_if::cfg_if;
-use crash_helper_common::{BreakpadChar, BreakpadData, BreakpadString};
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use minidump_writer::minidump_writer::DirectAuxvDumpInfo;
-
-use crate::crash_generation::BreakpadProcessId;
-
 #[cfg(target_os = "windows")]
 type BreakpadInitType = *const u16;
+#[cfg(target_os = "windows")]
+type NativeProcessId = windows_sys::Win32::Foundation::HANDLE;
+
 #[cfg(target_os = "macos")]
 type BreakpadInitType = *const c_char;
+#[cfg(target_os = "macos")]
+type NativeProcessId = u32;
+
 #[cfg(any(target_os = "linux", target_os = "android"))]
 type BreakpadInitType = std::os::fd::RawFd;
 #[cfg(any(target_os = "linux", target_os = "android"))]
-use std::os::fd::{FromRawFd, OwnedFd};
+type NativeProcessId = Pid;
+
+#[repr(C)]
+pub struct BreakpadProcessId {
+    pub pid: Pid,
+    #[cfg(target_os = "macos")]
+    pub task: u32,
+    #[cfg(target_os = "windows")]
+    pub handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+impl BreakpadProcessId {
+    pub fn get_native(&self) -> NativeProcessId {
+        cfg_if! {
+            if #[cfg(any(target_os = "linux", target_os = "android"))] {
+                self.pid
+            } else if #[cfg(target_os = "windows")] {
+                self.handle
+            } else if  #[cfg(target_os = "macos")] {
+                self.task
+            }
+        }
+    }
+}
 
 extern "C" {
     fn CrashGenerationServer_init(
@@ -68,11 +99,6 @@ impl BreakpadCrashGenerator {
         breakpad_data: BreakpadData,
         path: OsString,
         finalize_callback: extern "C" fn(BreakpadProcessId, *const c_char, *const BreakpadChar),
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        auxv_callback: extern "C" fn(
-            crash_helper_common::Pid,
-            *mut DirectAuxvDumpInfo,
-        ) -> bool,
     ) -> Result<BreakpadCrashGenerator> {
         let breakpad_raw_data = breakpad_data.into_raw();
         let path_ptr = path.into_raw();
@@ -84,7 +110,7 @@ impl BreakpadCrashGenerator {
                 path_ptr,
                 finalize_callback,
                 #[cfg(any(target_os = "android", target_os = "linux"))]
-                auxv_callback,
+                get_auxv_info,
             )
         };
 

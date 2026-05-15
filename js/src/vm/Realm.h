@@ -11,7 +11,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Variant.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
 #include <stddef.h>
@@ -44,6 +43,7 @@ class BaselineCompileQueue;
 }  // namespace jit
 
 class AutoRestoreRealmDebugMode;
+class DateTimeInfo;
 class Debugger;
 class GlobalObject;
 class GlobalObjectData;
@@ -215,13 +215,18 @@ class PropertyIteratorObject;
 
 struct IteratorHashPolicy {
   struct Lookup {
-    Shape** shapes;
-    size_t numShapes;
+    Shape* objShape;
+    Shape** protoShapes;
+    size_t numProtoShapes;
     HashNumber shapesHash;
 
-    Lookup(Shape** shapes, size_t numShapes, HashNumber shapesHash)
-        : shapes(shapes), numShapes(numShapes), shapesHash(shapesHash) {
-      MOZ_ASSERT(numShapes > 0);
+    Lookup(Shape* objShape, Shape** protoShapes, size_t numProtoShapes,
+           HashNumber shapesHash)
+        : objShape(objShape),
+          protoShapes(protoShapes),
+          numProtoShapes(numProtoShapes),
+          shapesHash(shapesHash) {
+      MOZ_ASSERT(objShape);
     }
   };
   static HashNumber hash(const Lookup& lookup) { return lookup.shapesHash; }
@@ -239,7 +244,10 @@ class ObjectRealm {
   // All non-syntactic lexical environments in the realm. These are kept in a
   // map because when loading scripts into a non-syntactic environment, we
   // need to use the same lexical environment to persist lexical bindings.
-  js::UniquePtr<js::ObjectWeakMap> nonSyntacticLexicalEnvironments_;
+  using NonSyntacticLexialEnvironmentsMap =
+      WeakMap<JSObject*, JSObject*, ZoneAllocPolicy>;
+  js::UniquePtr<NonSyntacticLexialEnvironmentsMap>
+      nonSyntacticLexicalEnvironments_;
 
   ObjectRealm(const ObjectRealm&) = delete;
   void operator=(const ObjectRealm&) = delete;
@@ -250,7 +258,8 @@ class ObjectRealm {
 
   // Keep track of the metadata objects which can be associated with each JS
   // object. Both keys and values are in this realm.
-  js::UniquePtr<js::ObjectWeakMap> objectMetadataTable;
+  using ObjectMetadataTable = WeakMap<JSObject*, JSObject*, ZoneAllocPolicy>;
+  js::UniquePtr<ObjectMetadataTable> objectMetadataTable;
 
   using IteratorCache =
       js::HashSet<js::PropertyIteratorObject*, js::IteratorHashPolicy,
@@ -339,6 +348,11 @@ class JS::Realm : public JS::shadow::Realm {
   const js::AllocationMetadataBuilder* allocationMetadataBuilder_ = nullptr;
   void* realmPrivate_ = nullptr;
 
+#if JS_HAS_INTL_API
+  // Date-time info for realms with non-default time zones.
+  js::UniquePtr<js::DateTimeInfo> dateTimeInfo_;
+#endif
+
   // There are two ways to enter a realm:
   //
   // (1) AutoRealm (and JSAutoRealm, JS::EnterRealm)
@@ -392,7 +406,7 @@ class JS::Realm : public JS::shadow::Realm {
     DebuggerObservesWasm = 1 << 4,
     DebuggerObservesNativeCall = 1 << 5,
   };
-  unsigned debugModeBits_ = 0;
+  uint32_t debugModeBits_ = 0;
   friend class js::AutoRestoreRealmDebugMode;
 
   bool isSystem_ = false;
@@ -464,6 +478,7 @@ class JS::Realm : public JS::shadow::Realm {
 
  private:
   void updateDebuggerObservesFlag(unsigned flag);
+  void restoreDebugModeBitsOnOOM(uint32_t bits);
 
   Realm(const Realm&) = delete;
   void operator=(const Realm&) = delete;
@@ -541,6 +556,8 @@ class JS::Realm : public JS::shadow::Realm {
    * global is still live.
    */
   void traceGlobalData(JSTracer* trc);
+
+  void traceGlobalRoot(JSTracer* trc, const char* name);
 
   void traceWeakGlobalEdge(JSTracer* trc);
 
@@ -799,6 +816,18 @@ class JS::Realm : public JS::shadow::Realm {
   // Returns the locale for this realm. (Pointer must NOT be freed!)
   const char* getLocale() const;
 
+  // Set the locale for this realm. Reset to the system default locale when the
+  // input is |nullptr|.
+  void setLocaleOverride(const char* locale);
+
+  // Returns the date-time info for this realm. Returns nullptr unless a time
+  // zone override was specified in the realm creation options.
+  js::DateTimeInfo* getDateTimeInfo();
+
+  // Set the time zone for this realm. Reset to the system default time zone
+  // when the input is |nullptr|.
+  void setTimeZoneOverride(const char* timeZone);
+
   // Initializes randomNumberGenerator if needed.
   mozilla::non_crypto::XorShift128PlusRNG& getOrCreateRandomNumberGenerator();
 
@@ -890,9 +919,9 @@ class MOZ_RAII AssertRealmUnchanged {
   JS::Realm* const oldRealm;
 };
 
-// AutoRealm can be used to enter the realm of a JSObject, JSScript or
-// ObjectGroup. It must not be used with cross-compartment wrappers, because
-// CCWs are not associated with a single realm.
+// AutoRealm can be used to enter the realm of a JSObject or JSScript. It must
+// not be used with cross-compartment wrappers, because CCWs are not associated
+// with a single realm.
 class AutoRealm {
   JSContext* const cx_;
   JS::Realm* const origin_;
@@ -925,8 +954,7 @@ class MOZ_RAII AutoAllocInAtomsZone {
 };
 
 // During GC we sometimes need to enter a realm when we may have been allocating
-// in the the atoms zone. This leaves the atoms zone temporarily. This happens
-// in embedding callbacks and when we need to mark object groups as pretenured.
+// in the the atoms zone. This leaves the atoms zone temporarily.
 class MOZ_RAII AutoMaybeLeaveAtomsZone {
   JSContext* const cx_;
   bool wasInAtomsZone_;

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpHeaderArray_h__
-#define nsHttpHeaderArray_h__
+#ifndef nsHttpHeaderArray_h_
+#define nsHttpHeaderArray_h_
 
 #include "nsHttp.h"
 #include "nsTArray.h"
@@ -46,7 +46,8 @@ class nsHttpHeaderArray {
     // Used only for response header.
     eVarietyResponseNetOriginalAndResponse,
     eVarietyResponseNetOriginal,
-    eVarietyResponse
+    eVarietyResponse,
+    eVarietyResponseOverride,
   };
 
   // Used by internal setters: to set header from network use SetHeaderFromNet

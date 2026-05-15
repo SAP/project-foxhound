@@ -12,32 +12,31 @@
 #include "ClientSourceChild.h"
 #include "ClientState.h"
 #include "ClientValidation.h"
+#include "mozilla/SchedulerGroup.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
-#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/Navigator.h"
-#include "mozilla/dom/WorkerScope.h"
-#include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/ServiceWorkerContainer.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
-#include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/SchedulerGroup.h"
-#include "mozilla/StaticPrefs_privacy.h"
-#include "mozilla/StorageAccess.h"
-#include "nsIContentSecurityPolicy.h"
+#include "mozilla/dom/WorkerRef.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/ipc/BackgroundUtils.h"
 #include "nsContentUtils.h"
 #include "nsFocusManager.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIDocShell.h"
 #include "nsPIDOMWindow.h"
-
-#include "mozilla/ipc/BackgroundUtils.h"
 
 namespace mozilla::dom {
 
@@ -256,10 +255,10 @@ nsresult ClientSource::WindowExecutionReady(nsPIDOMWindowInner* aInnerWindow) {
   }
 
   Document* doc = aInnerWindow->GetExtantDoc();
-  NS_ENSURE_TRUE(doc, NS_ERROR_UNEXPECTED);
+  NS_ENSURE_TRUE(doc, NS_ERROR_DOM_INVALID_STATE_ERR);
 
   nsIURI* uri = doc->GetOriginalURI();
-  NS_ENSURE_TRUE(uri, NS_ERROR_UNEXPECTED);
+  NS_ENSURE_TRUE(uri, NS_ERROR_NOT_AVAILABLE);
 
   // Don't use nsAutoCString here since IPC requires a full nsCString anyway.
   nsCString spec;

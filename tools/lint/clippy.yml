@@ -3,22 +3,54 @@ clippy:
     description: Lint rust
     include:
         - build/workspace-hack/
-        - dom/midi/midir_impl/
+        - browser/app/nmhproxy/
+        - dom/base/fragmentdirectives/
+        - dom/base/rust/
+        - dom/fs/parent/rust/data-encoding-ffi/
+        - dom/fs/parent/rust/mime-guess-ffi/
         - dom/media/gtest/
+        - dom/midi/midir_impl/
+        - dom/origin-trials/ffi/
+        - dom/webauthn/authrs_bridge/
         - dom/webauthn/libudev-sys/
         - gfx/webrender_bindings/
         - gfx/wr/peek-poke/
         - gfx/wr/peek-poke/peek-poke-derive/
         - gfx/wr/webrender_build/
         - gfx/wr/wr_malloc_size_of/
+        # - intl/bidi/rust/unicode-bidi-ffi/
+        - intl/l10n/rust/fluent-ffi/
+        - intl/l10n/rust/l10nregistry-ffi/
+        # - intl/l10n/rust/l10nregistry-rs/
+        - intl/l10n/rust/localization-ffi/
+        - intl/locale/rust/oxilangtag-ffi/
+        - ipc/rust/ipdl_utils/
         - js/src/rust/shared/
         - modules/libpref/init/static_prefs/
         - mozglue/static/rust/
+        - netwerk/base/http-sfv/
+        - netwerk/base/idna_glue/
         - netwerk/base/mozurl/
         - netwerk/base/rust-helper/
-        - netwerk/test/http3server/
+        - netwerk/base/urlpattern_glue/
+        - netwerk/base/uritemplate_glue/
+        - netwerk/protocol/http/binary_http/
+        - netwerk/protocol/http/oblivious_http/
         - netwerk/socket/neqo_glue/
+        - netwerk/test/http3server/
+        - security/certverifier/signature_cache/
+        - security/manager/ssl/abridged_certs/
+        - security/manager/ssl/crypto_hash/
         - security/manager/ssl/data_storage/
+        - security/manager/ssl/ipcclientcerts/
+        - security/manager/ssl/pdf_trust_anchors/
+        - security/manager/ssl/qwac_trust_anchors/
+        # - security/manager/ssl/rsclientcerts/
+        - security/manager/ssl/rsclientcerts-util/
+        - security/manager/ssl/trust_anchors/
+        - security/manager/ssl/trust-anchor-build-util/
+        - security/mls/mls_gk/
+        - servo/components/malloc_size_of/
         - servo/components/selectors/
         - servo/components/servo_arc/
         - servo/components/style/
@@ -26,8 +58,11 @@ clippy:
         - servo/components/style_traits/
         - servo/components/to_shmem/
         - servo/components/to_shmem_derive/
+        - servo/tests/unit/malloc_size_of/
         - servo/tests/unit/style/
+        - storage/rust/
         - testing/geckodriver/
+        - testing/geckodriver/marionette/
         - testing/mozbase/rust/mozdevice/
         - testing/mozbase/rust/mozprofile/
         - testing/mozbase/rust/mozrunner/
@@ -35,15 +70,35 @@ clippy:
         - testing/webdriver/
         - third_party/rust/mp4parse/
         - third_party/rust/mp4parse_capi/
+        - toolkit/components/cascade_bloom_filter/
+        # - toolkit/components/dap/ffi/
+        - toolkit/components/gecko-trace/
+        - toolkit/components/glean/
+        - toolkit/components/kvstore/
+        - toolkit/components/processtools/
+        - toolkit/components/uniffi-bindgen-gecko-js/
+        - toolkit/crashreporter/client/app/
+        - toolkit/crashreporter/crash_helper_client/
+        - toolkit/crashreporter/crash_helper_common/
+        - toolkit/crashreporter/crash_helper_server/
+        - toolkit/crashreporter/crashping/
+        - toolkit/crashreporter/minidump-analyzer/
         - toolkit/crashreporter/mozannotation_client/
         - toolkit/crashreporter/mozannotation_server/
-        - toolkit/components/kvstore/
-        - toolkit/components/glean/
-        - toolkit/components/uniffi-bindgen-gecko-js/
+        - toolkit/crashreporter/mozwer-rust/
+        - toolkit/crashreporter/process_reader/
+        - toolkit/crashreporter/rust_minidump_writer_linux/
+        # - toolkit/library/buildid_reader/
+        - toolkit/library/buildid_reader/ffi/
+        - toolkit/library/gtest/rust/
         - toolkit/library/rust/
+        - toolkit/xre/detect_win32k_conflicts/
         - tools/fuzzing/rust/
-        - tools/profiler/rust-api/
+        # - tools/profiler/rust-api/
+        # - xpcom/rust/gecko_logger/
+        - xpcom/rust/gecko_tracing/
         - xpcom/rust/gtest/bench-collections/
+        - xpcom/rust/malloc_size_of_derive/
         - xpcom/rust/xpcom/xpcom_macros/
     non_gkrust_crates:
         # Crates to run clippy on that aren't part of the gkrust crate
@@ -71,13 +126,8 @@ clippy:
         - modules/libpref/parser/
         - tools/profiler/rust-helper/
         - toolkit/library/rust/shared/
-        - toolkit/library/gtest/rust/
-        # not_unsafe_ptr_arg_deref
-        - remote/
         - dom/media/webrtc/sdp/rsdparsa_capi/
         - intl/encoding_glue/
-        # not_unsafe_ptr_arg_deref
-        - storage/rust/
         - storage/variant/
         # nsstring
         - servo/ports/geckolib/tests/
@@ -87,6 +137,7 @@ clippy:
         - xpcom/rust/gtest/nsstring/
         - security/manager/ssl/cert_storage/
         - intl/locale/rust/fluent-langneg-ffi/
+        - intl/locale/rust/locale_service_glue/
         - intl/locale/rust/unic-langid-ffi/
         - toolkit/components/places/bookmark_sync/
         - xpcom/rust/nserror/
@@ -95,11 +146,6 @@ clippy:
         - dom/media/webrtc/transport/mdns_service/
         - tools/lint/test/files/clippy/
         - servo/ports/geckolib/
-        - servo/ports/geckolib/tests/
-        - servo/tests/unit/malloc_size_of/
-        - servo/components/malloc_size_of/
-        - dom/media/webrtc/sdp/rsdparsa_capi/
-        - testing/geckodriver/marionette/
         - toolkit/components/bitsdownload/bits_client/
         - gfx/wr/example-compositor/compositor/
         - toolkit/components/bitsdownload/bits_client/bits/
@@ -110,9 +156,9 @@ clippy:
     support-files:
         - 'tools/lint/clippy/**'
     # the version of cargo-clippy is:
-    # clippy 0.1.65 (2019147 2022-09-19)
+    # clippy 0.1.92 (ded5c06cf2 2025-12-08)
     # we use the date instead to facilitate the check
     # replacing - by . because Python packaging.version.Version expects this
-    min_clippy_version: 2022.09.19
+    min_clippy_version: 2025.12.08
     type: global
     payload: clippy:lint

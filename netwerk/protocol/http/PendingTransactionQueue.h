@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PendingTransactionQueue_h__
-#define PendingTransactionQueue_h__
+#ifndef PendingTransactionQueue_h_
+#define PendingTransactionQueue_h_
 
 #include "nsClassHashtable.h"
 #include "nsHttpTransaction.h"
@@ -54,12 +54,21 @@ class PendingTransactionQueue {
   size_t PendingQueueLength() const;
   size_t PendingQueueLengthForWindow(uint64_t windowId) const;
 
+  // Return true if there are any pending transactions (optimized version of
+  // PendingQueueLength() == 0). Returns early as soon as a non-empty queue is
+  // found.
+  bool PendingQueueIsEmpty() const;
+
   // Remove the empty pendingQ in |mPendingTransactionTable|.
   void RemoveEmptyPendingQ();
 
   void PrintDiagnostics(nsCString& log);
 
   size_t UrgentStartQueueLength();
+
+  // Return true if the urgent start queue is empty (optimized version of
+  // UrgentStartQueueLength() == 0).
+  bool UrgentStartQueueIsEmpty() const;
 
   void PrintPendingQ();
 
@@ -89,4 +98,4 @@ class PendingTransactionQueue {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // !PendingTransactionQueue_h__
+#endif  // !PendingTransactionQueue_h_

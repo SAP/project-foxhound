@@ -13,9 +13,9 @@ from pathlib import Path
 REL_PATH = "/dom/canvas/test/webgl-conf"
 REPO_DIR = Path.cwd()
 DIR_IN_GECKO = Path(__file__).parent
-assert not REPO_DIR.samefile(
-    DIR_IN_GECKO
-), "Run this script from the source git checkout."
+assert not REPO_DIR.samefile(DIR_IN_GECKO), (
+    "Run this script from the source git checkout."
+)
 assert DIR_IN_GECKO.as_posix().endswith(REL_PATH)  # Be paranoid with rm -rf.
 
 gecko_base_dir = DIR_IN_GECKO.as_posix()[: -len(REL_PATH)]

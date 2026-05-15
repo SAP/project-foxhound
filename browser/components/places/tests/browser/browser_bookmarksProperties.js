@@ -6,6 +6,8 @@
  * Tests the bookmarks Properties dialog.
  */
 
+const IS_REVAMP = Services.prefs.getBoolPref("sidebar.revamp");
+
 // DOM ids of Places sidebar trees.
 const SIDEBAR_HISTORY_TREE_ID = "historyTree";
 const SIDEBAR_BOOKMARKS_TREE_ID = "bookmarks-view";
@@ -14,7 +16,9 @@ const SIDEBAR_HISTORY_ID = "viewHistorySidebar";
 const SIDEBAR_BOOKMARKS_ID = "viewBookmarksSidebar";
 
 // For history sidebar.
-const SIDEBAR_HISTORY_BYLASTVISITED_VIEW = "bylastvisited";
+const SIDEBAR_HISTORY_BYLASTVISITED_VIEW = IS_REVAMP
+  ? "sidebar-history-sort-by-last-visited"
+  : "bylastvisited";
 const SIDEBAR_HISTORY_BYMOSTVISITED_VIEW = "byvisited";
 const SIDEBAR_HISTORY_BYDATE_VIEW = "byday";
 const SIDEBAR_HISTORY_BYSITE_VIEW = "bysite";
@@ -43,7 +47,6 @@ function add_bookmark(url) {
 
 // Each test is an obj w/ a desc property and run method.
 var gTests = [];
-
 // ------------------------------------------------------------------------------
 // Bug 462662 - Pressing Enter to select tag from autocomplete closes bookmarks properties dialog
 
@@ -116,7 +119,7 @@ gTests.push({
               .getElementById("bookmarkpropertiesdialog")
               .cancelDialog();
             break;
-          case "popupshown":
+          case "popupshown": {
             tagsField.popup.removeEventListener("popupshown", this, true);
             // In case this test fails the window will close, the test will fail
             // since we didn't set _cleanShutdown.
@@ -137,6 +140,7 @@ gTests.push({
             richlistbox.focus();
             EventUtils.synthesizeKey("VK_RETURN", {}, self.window);
             break;
+          }
           default:
             Assert.ok(false, "unknown event: " + aEvent.type);
         }
@@ -244,7 +248,7 @@ gTests.push({
               .getElementById("bookmarkpropertiesdialog")
               .cancelDialog();
             break;
-          case "popupshown":
+          case "popupshown": {
             tagsField.popup.removeEventListener("popupshown", this, true);
             // In case this test fails the window will close, the test will fail
             // since we didn't set _cleanShutdown.
@@ -265,6 +269,7 @@ gTests.push({
             richlistbox.focus();
             EventUtils.synthesizeKey("VK_ESCAPE", {}, self.window);
             break;
+          }
           default:
             Assert.ok(false, "unknown event: " + aEvent.type);
         }
@@ -315,18 +320,30 @@ gTests.push({
   },
 
   selectNode(tree) {
-    var visitNode = tree.view.nodeForTreeIndex(0);
-    tree.selectNode(visitNode);
+    let selectedNode;
+    if (IS_REVAMP) {
+      // its actually a sidebar-tab-list not a xul:tree
+      const itemList = tree;
+      itemList.focusIndex(0);
+      selectedNode = itemList.rowEls[0];
+    } else {
+      let visitNode = tree.view.nodeForTreeIndex(0);
+      tree.selectNode(visitNode);
+      selectedNode = tree.selectedNode;
+    }
     Assert.equal(
-      tree.selectedNode.uri,
+      selectedNode.uri,
       TEST_URL,
       "The correct visit has been selected"
     );
-    Assert.equal(
-      tree.selectedNode.itemId,
-      -1,
-      "The selected node is not bookmarked"
-    );
+    if (!IS_REVAMP) {
+      Assert.equal(
+        selectedNode.itemId,
+        -1,
+        "The selected node is not bookmarked"
+      );
+    }
+    return selectedNode;
   },
 
   async run() {
@@ -411,7 +428,7 @@ gTests.push({
 
 // ------------------------------------------------------------------------------
 
-add_task(async function test_setup() {
+add_setup(async function test_setup() {
   // This test can take some time, if we timeout too early it could run
   // in the middle of other tests, or hang them.
   requestLongerTimeout(2);
@@ -444,7 +461,11 @@ function execute_test_in_sidebar(test) {
       function () {
         // Need to executeSoon since the tree is initialized on sidebar load.
         executeSoon(async () => {
-          await open_properties_dialog(test);
+          if (IS_REVAMP && test.sidebar == SIDEBAR_HISTORY_ID) {
+            await open_properties_dialog_from_revamp_list(test);
+          } else {
+            await open_properties_dialog_from_tree(test);
+          }
           resolve();
         });
       },
@@ -463,7 +484,7 @@ async function promise_properties_window(dialogUrl = DIALOG_URL) {
   return win;
 }
 
-async function open_properties_dialog(test) {
+async function open_properties_dialog_from_tree(test) {
   var sidebar = document.getElementById("sidebar");
 
   // If this is history sidebar, set the required view.
@@ -527,6 +548,49 @@ async function open_properties_dialog(test) {
     // later, as otherwise opening the dialog throws an exception.
     executeSoon(() => {
       tree.controller.doCommand(command);
+    });
+  });
+}
+
+async function open_properties_dialog_from_revamp_list(test) {
+  const { contentDocument } = document.getElementById("sidebar");
+  const sidebarComponent = contentDocument.querySelector("sidebar-history");
+
+  // If this is history sidebar, set the required view.
+  if (test.sidebar == SIDEBAR_HISTORY_ID) {
+    info(`selecting correct history view: ${test.historyView}`);
+    let menuItem = document.getElementById(test.historyView);
+    menuItem.doCommand();
+    await sidebarComponent.updateComplete;
+  }
+
+  await TestUtils.waitForCondition(
+    () => !!sidebarComponent.cards[0].firstElementChild.rowEls.length
+  );
+
+  const list = sidebarComponent.cards[0].firstElementChild;
+  Assert.ok(
+    list && BrowserTestUtils.isVisible(list),
+    "Sidebar list has been loaded"
+  );
+  // Ask current test to select the node to edit.
+  const selectedNode = test.selectNode(list);
+  Assert.ok(selectedNode, "We have a places node selected: " + selectedNode);
+
+  return new Promise(resolve => {
+    promise_properties_window(test.dialogUrl).then(win => {
+      test.window = win;
+      resolve();
+    });
+    // This will open the dialog. For some reason this needs to be executed
+    // later, as otherwise opening the dialog throws an exception.
+    executeSoon(() => {
+      // Its the interactions in the bookmarks dialog which is under test,
+      // so we'll just call the same function handling the context menu item would call
+      window.PlacesCommandHook.bookmarkLink(
+        selectedNode.url,
+        selectedNode.title
+      );
     });
   });
 }

@@ -22,33 +22,30 @@
     height: auto;
     padding: 7px;
     margin: 0;
-    -moz-context-properties: fill;
-    fill: currentColor;
   }
 }
 
 #context-back {
-  list-style-image: url("chrome://browser/skin/back.svg");
+  --menuitem-icon: url("chrome://browser/skin/back.svg");
 }
 
 #context-forward {
-  list-style-image: url("chrome://browser/skin/forward.svg");
+  --menuitem-icon: url("chrome://browser/skin/forward.svg");
 }
 
 #context-reload {
-  list-style-image: url("chrome://global/skin/icons/reload.svg");
+  --menuitem-icon: url("chrome://global/skin/icons/reload.svg");
 }
 
 #context-stop {
-  list-style-image: url("chrome://global/skin/icons/close.svg");
+  --menuitem-icon: url("chrome://global/skin/icons/close.svg");
 }
 
 #context-bookmarkpage {
-  list-style-image: url("chrome://browser/skin/bookmark-hollow.svg");
-}
-
-#context-bookmarkpage[starred="true"] {
-  list-style-image: url("chrome://browser/skin/bookmark.svg");
+  --menuitem-icon: url("chrome://browser/skin/bookmark-hollow.svg");
+  &[starred] {
+    --menuitem-icon: url("chrome://browser/skin/bookmark.svg");
+  }
 }
 
 #context-back:-moz-locale-dir(rtl),
@@ -58,7 +55,5 @@
 }
 
 #context-media-eme-learnmore {
-  list-style-image: url("chrome://browser/skin/drm-icon.svg");
-  -moz-context-properties: fill;
-  fill: currentColor;
+  --menuitem-icon: url("chrome://browser/skin/drm-icon.svg");
 }

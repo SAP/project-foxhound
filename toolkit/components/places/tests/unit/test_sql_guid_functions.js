@@ -9,8 +9,8 @@
 /**
  * Checks all our invariants about our guids for a given result.
  *
- * @param aGuid
- *        The guid to check.
+ * @param {string} aGuid
+ *   The guid to check.
  */
 function check_invariants(aGuid) {
   info("Checking guid '" + aGuid + "'");

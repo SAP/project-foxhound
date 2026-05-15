@@ -156,15 +156,13 @@ def test_cli_run_with_stdin_filename(run, filedir, capfd, monkeypatch, tmp_path)
 
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"foobar\n")))
     tmpfile = tmp_path / "temp"
-    run(
-        [
-            "-l",
-            "string",
-            f"--stdin-filename={filedir}/foobar.py",
-            "--dump-stdin-file",
-            str(tmpfile),
-        ]
-    )
+    run([
+        "-l",
+        "string",
+        f"--stdin-filename={filedir}/foobar.py",
+        "--dump-stdin-file",
+        str(tmpfile),
+    ])
     out, err = capfd.readouterr()
     assert out == ""
     assert tmpfile.read_text() == "foobar\n"

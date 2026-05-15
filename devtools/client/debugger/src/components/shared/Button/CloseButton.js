@@ -6,7 +6,7 @@ import React from "devtools/client/shared/vendor/react";
 import { button } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
-import AccessibleImage from "../AccessibleImage";
+import DebuggerImage from "../DebuggerImage";
 
 function CloseButton({ handleClick, buttonClass, tooltip }) {
   return button(
@@ -15,8 +15,8 @@ function CloseButton({ handleClick, buttonClass, tooltip }) {
       onClick: handleClick,
       title: tooltip,
     },
-    React.createElement(AccessibleImage, {
-      className: "close",
+    React.createElement(DebuggerImage, {
+      name: "close",
     })
   );
 }

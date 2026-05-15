@@ -17,7 +17,8 @@ interface HTMLFieldSetElement : HTMLElement {
 
   [CEReactions, SetterThrows]
            attribute boolean disabled;
-  readonly attribute HTMLFormElement? form;
+  [BinaryName=formForBindings]
+  readonly attribute Element? form;
   [CEReactions, SetterThrows]
            attribute DOMString name;
 

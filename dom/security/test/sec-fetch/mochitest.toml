@@ -12,19 +12,24 @@ support-files = [
 
 ["test_iframe_window_open_metaRedirect.html"]
 
+["test_noreferrer_popup.html"]
+skip-if = [
+  "!fission",
+]
+
 ["test_trustworthy_loopback.html"]
 skip-if = [
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && !fission", # Bug 1805760
-  "http3",
   "http2",
+  "http3",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && !fission", # Bug 1805760
 ]
 support-files = ["file_trustworthy_loopback.html"]
 
 ["test_websocket.html"]
 skip-if = [
-  "os == 'android'", # no websocket support Bug 982828
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # no websocket support Bug 982828
 ]
 support-files = ["file_websocket_wsh.py"]
 

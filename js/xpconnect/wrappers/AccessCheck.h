@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __AccessCheck_h__
-#define __AccessCheck_h__
+#ifndef AccessCheck_h_
+#define AccessCheck_h_
 
 #include "js/Id.h"
 #include "js/Wrapper.h"
@@ -112,4 +112,4 @@ struct OpaqueWithSilentFailing : public Policy {
 
 }  // namespace xpc
 
-#endif /* __AccessCheck_h__ */
+#endif /* AccessCheck_h_ */

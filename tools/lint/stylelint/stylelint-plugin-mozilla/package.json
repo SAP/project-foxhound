@@ -6,6 +6,7 @@
   },
   "license": "MPL-2.0",
   "devDependencies": {
+    "postcss-value-parser": "4.2.0",
     "stylelint-test-rule-node": "0.4.0"
   },
   "private": true

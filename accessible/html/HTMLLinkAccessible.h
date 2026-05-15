@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HTMLLinkAccessible_h__
-#define mozilla_a11y_HTMLLinkAccessible_h__
+#ifndef mozilla_a11y_HTMLLinkAccessible_h_
+#define mozilla_a11y_HTMLLinkAccessible_h_
 
 #include "HyperTextAccessible.h"
 
@@ -42,7 +42,7 @@ class HTMLLinkAccessible : public HyperTextAccessible {
   virtual bool AttributeChangesState(nsAtom* aAttribute) override;
 
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
 

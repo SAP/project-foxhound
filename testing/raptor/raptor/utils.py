@@ -34,7 +34,7 @@ def strtobool(value: str):
     if value in false_vals:
         return 0
 
-    raise ValueError(f'Expected one of: {", ".join(true_vals + false_vals)}')
+    raise ValueError(f"Expected one of: {', '.join(true_vals + false_vals)}")
 
 
 def flatten(data, parent_dir, sep="/"):

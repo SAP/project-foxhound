@@ -10,6 +10,7 @@
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "nsCOMPtr.h"
+#include "nsGlobalWindowInner.h"
 #include "nsICookieNotification.h"
 #include "nsIObserverService.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -24,8 +25,8 @@ NS_IMPL_ISUPPORTS(BounceTrackingStorageObserver, nsIObserver,
 nsresult BounceTrackingStorageObserver::Init() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
-          ("BounceTrackingStorageObserver::%s", __FUNCTION__));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Debug,
+              "BounceTrackingStorageObserver::{}", __FUNCTION__);
 
   // Add observers to listen for cookie changes.
   nsCOMPtr<nsIObserverService> observerService =
@@ -44,8 +45,8 @@ NS_IMETHODIMP
 BounceTrackingStorageObserver::Observe(nsISupports* aSubject,
                                        const char* aTopic,
                                        const char16_t* aData) {
-  MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Verbose,
-          ("Observe topic %s", aTopic));
+  MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Verbose,
+              "Observe topic {}", aTopic);
 
   NS_ENSURE_TRUE(aSubject, NS_ERROR_FAILURE);
 
@@ -69,8 +70,8 @@ BounceTrackingStorageObserver::Observe(nsISupports* aSubject,
   rv = notification->GetBrowsingContext(getter_AddRefs(browsingContext));
   NS_ENSURE_SUCCESS(rv, rv);
   if (!browsingContext) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Verbose,
-            ("Could not get BC for CookieNotification."));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Verbose,
+                "Could not get BC for CookieNotification.");
     return NS_OK;
   }
 
@@ -86,8 +87,8 @@ BounceTrackingStorageObserver::Observe(nsISupports* aSubject,
 
   if (!(schemeMap & (nsICookie::schemeType::SCHEME_HTTP |
                      nsICookie::schemeType::SCHEME_HTTPS))) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Verbose,
-            ("Skipping non-HTTP(S) cookie."));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Verbose,
+                "Skipping non-HTTP(S) cookie.");
     return NS_OK;
   }
 
@@ -101,8 +102,8 @@ BounceTrackingStorageObserver::Observe(nsISupports* aSubject,
   RefPtr<BounceTrackingState> bounceTrackingState =
       webProgress->GetBounceTrackingState();
   if (!bounceTrackingState) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Verbose,
-            ("BC does not have BounceTrackingState."));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Verbose,
+                "BC does not have BounceTrackingState.");
     return NS_OK;
   }
 
@@ -135,8 +136,8 @@ BounceTrackingStorageObserver::Observe(nsISupports* aSubject,
   NS_ENSURE_TRUE(cookiePrincipal, NS_ERROR_FAILURE);
 
   if (!BounceTrackingState::ShouldTrackPrincipal(cookiePrincipal)) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Verbose,
-            ("%s: Skipping principal.", __FUNCTION__));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Verbose,
+                "{}: Skipping principal.", __FUNCTION__);
     return NS_OK;
   }
 
@@ -168,8 +169,8 @@ nsresult BounceTrackingStorageObserver::OnInitialStorageAccess(
       nsIPrincipal* storagePrincipal =
           innerWindow->GetEffectiveStoragePrincipal();
       if (!BounceTrackingState::ShouldTrackPrincipal(storagePrincipal)) {
-        MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Verbose,
-                ("%s: Skipping principal (content process).", __FUNCTION__));
+        MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Verbose,
+                    "{}: Skipping principal (content process).", __FUNCTION__);
         return NS_OK;
       }
     }
@@ -189,8 +190,8 @@ nsresult BounceTrackingStorageObserver::OnInitialStorageAccess(
   NS_ENSURE_TRUE(storagePrincipal, NS_ERROR_FAILURE);
 
   if (!BounceTrackingState::ShouldTrackPrincipal(storagePrincipal)) {
-    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Verbose,
-            ("%s: Skipping principal.", __FUNCTION__));
+    MOZ_LOG_FMT(gBounceTrackingProtectionLog, LogLevel::Verbose,
+                "{}: Skipping principal.", __FUNCTION__);
     return NS_OK;
   }
 

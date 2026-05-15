@@ -5,7 +5,7 @@
 import { makeBreakpointId } from "../utils/breakpoint/index";
 
 export function getInScopeLines(state, location) {
-  return state.ast.mutableInScopeLines[makeBreakpointId(location)]?.lines;
+  return state.ast.mutableInScopeLines.get(makeBreakpointId(location))?.lines;
 }
 
 export function hasInScopeLines(state, location) {

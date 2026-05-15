@@ -12,11 +12,12 @@ production update server.
 Obtaining an update MAR
 -----------------------
 
-Updates are served as MAR files. There are two common ways to obtain a
-MAR to use: download a prebuilt one, or build one yourself.
+Updates are served as MAR files. There are two common ways to update
+using a MAR: consume a prebuilt one, or consume one you've built
+yourself.
 
-Downloading a MAR
-~~~~~~~~~~~~~~~~~
+Using a prebuilt MAR
+~~~~~~~~~~~~~~~~~~~~
 
 Prebuilt Nightly MARs can be found
 `here <https://archive.mozilla.org/pub/firefox/nightly/>`__ on
@@ -33,6 +34,19 @@ desired version, the MARs will be in the ``update`` directory. You want
 to use the MAR labelled ``complete``, not a partial MAR. Here is an
 example of an appropriate MAR file to use:
 https://archive.mozilla.org/pub/firefox/releases/69.0b9/update/win64/en-US/firefox-69.0b9.complete.mar.
+
+Serving the prebuilt MAR from a URL
++++++++++++++++++++++++++++++++++++
+
+There's a ``mach`` command for that!  Try:
+
+.. code:: bash
+
+   $ ./mach update serve -v <URL to MAR>
+
+That will start an HTTP server that will HTTP redirect (302 Found) to the given
+URL.  See :ref:`installing-label` for how to configure enterprise policies to
+use this server.
 
 Building a MAR
 ~~~~~~~~~~~~~~
@@ -103,90 +117,19 @@ arbitrarily large like ``2000.0a1``).
    Note: It can be a bit tricky to get the ``make_full_update.sh``
    script to accept paths with spaces.
 
-Serving the update
-------------------
+Serving the update MAR file
++++++++++++++++++++++++++++
 
-Preparing the update files
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-First, create the directory that updates will be served from and put the
-MAR file in it. Then, create a file within called ``update.xml`` with
-these contents, replacing ``<mar name>``, ``<hash>`` and ``<size>`` with
-the MAR's filename, its sha512 hash, and its file size in bytes.
-
-::
-
-   <?xml version="1.0" encoding="UTF-8"?>
-   <updates>
-       <update type="minor" displayVersion="2000.0a1" appVersion="2000.0a1" platformVersion="2000.0a1" buildID="21181002100236">
-           <patch type="complete" URL="http://127.0.0.1:8000/<mar name>" hashFunction="sha512" hashValue="<hash>" size="<size>"/>
-       </update>
-   </updates>
-
-If you've downloaded the MAR you're using, you'll find the sha512 value
-in a file called SHA512SUMS in the root of the release directory on
-archive.mozilla.org for a release or beta build (you'll have to search
-it for the file name of your MAR, since it includes the sha512 for every
-file that's part of that release), and for a nightly build you'll find a
-file with a .checksums extension adjacent to your MAR that contains that
-information (for instance, for the MAR file at
-https://archive.mozilla.org/pub/firefox/nightly/2019/09/2019-09-17-09-36-29-mozilla-central/firefox-71.0a1.en-US.win64.complete.mar,
-the file
-https://archive.mozilla.org/pub/firefox/nightly/2019/09/2019-09-17-09-36-29-mozilla-central/firefox-71.0a1.en-US.win64.checksums
-contains the sha512 for that file as well as for all the other win64
-files that are part of that nightly release).
-
-If you've built your own MAR, you can obtain its sha512 checksum by
-running the following command, which should work in Linux, macOS, or
-Windows in the MozillaBuild environment:
-
-.. code::
-
-   shasum --algorithm 512 <filename>
-
-On Windows, you can get the exact file size in bytes for your MAR by
-right clicking on it in the file explorer and selecting Properties.
-You'll find the correct size in bytes at the end of the line that begins
-"Size", **not** the one that begins "Size on disk". Be sure to remove
-the commas when you paste this number into the XML file.
-
-On macOS, you can get the exact size of your MAR by running the command:
-
-.. code::
-
-   stat -f%z <filename>
-
-Or on Linux, the same command would be:
-
-.. code::
-
-   stat --format "%s" <filename>
-
-Starting your update server
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Now, start an update server to serve the update files on port 8000. An
-easy way to do this is with Python. Remember to navigate to the correct
-directory before starting the server. This is the Python2 command:
+Try:
 
 .. code:: bash
 
-   $ python -m SimpleHTTPServer 8000
+   $ ./mach update serve -v <MAR output path>
 
-or, this is the Python3 command:
+.. _installing-label:
 
-.. code:: bash
-
-   $ python3 -m http.server 8000
-
-.. container:: blockIndicator note
-
-   If you aren't sure that you started the server correctly, try using a
-   web browser to navigate to ``http://127.0.0.1:8000/update.xml`` and
-   make sure that you get the XML file you created earlier.
-
-Installing the update
----------------------
+Installing the update MAR
+-------------------------
 
 You may want to start by deleting any pending updates to ensure that no
 previously found updates interfere with installing the desired update.

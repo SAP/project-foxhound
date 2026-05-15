@@ -9,7 +9,6 @@ gecko_taskgraph.util.verify.verify_docs with different parameters to do the
 actual checking.
 """
 
-
 import os.path
 
 import pytest

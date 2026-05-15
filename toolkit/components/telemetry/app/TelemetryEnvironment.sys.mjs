@@ -15,14 +15,16 @@ const Utils = TelemetryUtils;
 
 import {
   AddonManager,
-  AddonManagerPrivate,
+  EnvironmentAddonBuilder,
 } from "resource://gre/modules/AddonManager.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
   WindowsVersionInfo:
     "resource://gre/modules/components-utils/WindowsVersionInfo.sys.mjs",
@@ -39,12 +41,10 @@ if (AppConstants.MOZ_UPDATER) {
     lazy,
     "UpdateServiceStub",
     "@mozilla.org/updates/update-service-stub;1",
-    "nsIApplicationUpdateServiceStub"
+    Ci.nsIApplicationUpdateServiceStub
   );
 }
 
-// The maximum length of a string (e.g. description) in the addons section.
-const MAX_ADDON_STRING_LENGTH = 100;
 // The maximum length of a string value in the settings.attribution object.
 const MAX_ATTRIBUTION_STRING_LENGTH = 100;
 // The maximum lengths for the experiment id and branch in the experiments section.
@@ -119,11 +119,11 @@ export var TelemetryEnvironment = {
    * If an annotation with the same id already exists, it will be overwritten.
    * This triggers a new subsession, subject to throttling.
    *
-   * @param {String} id The id of the active experiment.
-   * @param {String} branch The experiment branch.
-   * @param {Object} [options] Optional object with options.
-   * @param {String} [options.type=false] The specific experiment type.
-   * @param {String} [options.enrollmentId=undefined] The id of the enrollment.
+   * @param {string} id The id of the active experiment.
+   * @param {string} branch The experiment branch.
+   * @param {object} [options] Optional object with options.
+   * @param {string} [options.type=false] The specific experiment type.
+   * @param {string} [options.enrollmentId=undefined] The id of the enrollment.
    */
   setExperimentActive(id, branch, options = {}) {
     if (gGlobalEnvironment) {
@@ -137,7 +137,7 @@ export var TelemetryEnvironment = {
    * Remove an experiment annotation from the environment.
    * If the annotation exists, a new subsession will triggered.
    *
-   * @param {String} id The id of the active experiment.
+   * @param {string} id The id of the active experiment.
    */
   setExperimentInactive(id) {
     if (gGlobalEnvironment) {
@@ -256,16 +256,8 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
     "browser.urlbar.dnsResolveSingleWordsAfterSearch",
     { what: RECORD_DEFAULTPREF_VALUE },
   ],
-  [
-    "browser.urlbar.quicksuggest.dataCollection.enabled",
-    { what: RECORD_DEFAULTPREF_VALUE },
-  ],
   ["browser.urlbar.showSearchSuggestionsFirst", { what: RECORD_PREF_VALUE }],
   ["browser.urlbar.showSearchTerms.enabled", { what: RECORD_PREF_VALUE }],
-  [
-    "browser.urlbar.suggest.quicksuggest.nonsponsored",
-    { what: RECORD_DEFAULTPREF_VALUE },
-  ],
   [
     "browser.urlbar.suggest.quicksuggest.sponsored",
     { what: RECORD_DEFAULTPREF_VALUE },
@@ -280,7 +272,6 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["dom.popup_allowed_events", { what: RECORD_PREF_VALUE }],
   ["editor.truncate_user_pastes", { what: RECORD_PREF_VALUE }],
   ["extensions.InstallTrigger.enabled", { what: RECORD_PREF_VALUE }],
-  ["extensions.InstallTriggerImpl.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.autoDisableScopes", { what: RECORD_PREF_VALUE }],
   ["extensions.blocklist.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.enabledScopes", { what: RECORD_PREF_VALUE }],
@@ -291,7 +282,6 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
     { what: RECORD_PREF_VALUE },
   ],
   ["extensions.formautofill.creditCards.enabled", { what: RECORD_PREF_VALUE }],
-  ["extensions.manifestV3.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.quarantinedDomains.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.strictCompatibility", { what: RECORD_PREF_VALUE }],
   ["extensions.update.enabled", { what: RECORD_PREF_VALUE }],
@@ -299,8 +289,6 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["extensions.update.background.url", { what: RECORD_PREF_VALUE }],
   ["general.config.filename", { what: RECORD_DEFAULTPREF_STATE }],
   ["general.smoothScroll", { what: RECORD_PREF_VALUE }],
-  ["gfx.direct2d.disabled", { what: RECORD_PREF_VALUE }],
-  ["gfx.direct2d.force-enabled", { what: RECORD_PREF_VALUE }],
   ["gfx.webrender.all", { what: RECORD_PREF_VALUE }],
   ["layers.acceleration.disabled", { what: RECORD_PREF_VALUE }],
   ["layers.acceleration.force-enabled", { what: RECORD_PREF_VALUE }],
@@ -403,7 +391,6 @@ const SEARCH_ENGINE_MODIFIED_TOPIC = "browser-search-engine-modified";
 const SEARCH_SERVICE_TOPIC = "browser-search-service";
 const SESSIONSTORE_WINDOWS_RESTORED_TOPIC = "sessionstore-windows-restored";
 const PREF_CHANGED_TOPIC = "nsPref:changed";
-const GMP_PROVIDER_REGISTERED_TOPIC = "gmp-provider-registered";
 const AUTO_UPDATE_PREF_CHANGE_TOPIC =
   UpdateUtils.PER_INSTALLATION_PREFS["app.update.auto"].observerTopic;
 const BACKGROUND_UPDATE_PREF_CHANGE_TOPIC =
@@ -412,20 +399,8 @@ const BACKGROUND_UPDATE_PREF_CHANGE_TOPIC =
 const SERVICES_INFO_CHANGE_TOPIC = "sync-ui-state:update";
 
 /**
- * Enforces the parameter to a boolean value.
- * @param aValue The input value.
- * @return {Boolean|Object} If aValue is a boolean or a number, returns its truthfulness
- *         value. Otherwise, return null.
- */
-function enforceBoolean(aValue) {
-  if (typeof aValue !== "number" && typeof aValue !== "boolean") {
-    return null;
-  }
-  return Boolean(aValue);
-}
-
-/**
  * Get the current browser locale.
+ *
  * @return a string with the locale or null on failure.
  */
 function getBrowserLocale() {
@@ -438,6 +413,7 @@ function getBrowserLocale() {
 
 /**
  * Get the current OS locale.
+ *
  * @return a string with the OS locale or null on failure.
  */
 function getSystemLocale() {
@@ -452,6 +428,7 @@ function getSystemLocale() {
 
 /**
  * Get the current OS locales.
+ *
  * @return an array of strings with the OS locales or null on failure.
  */
 function getSystemLocales() {
@@ -466,6 +443,7 @@ function getSystemLocales() {
 
 /**
  * Get the current OS regional preference locales.
+ *
  * @return an array of strings with the OS regional preference locales or null on failure.
  */
 function getRegionalPrefsLocales() {
@@ -485,10 +463,7 @@ function getIntlSettings() {
     appLocales: Services.locale.appLocalesAsBCP47,
     systemLocales: getSystemLocales(),
     regionalPrefsLocales: getRegionalPrefsLocales(),
-    acceptLanguages: Services.prefs
-      .getComplexValue("intl.accept_languages", Ci.nsIPrefLocalizedString)
-      .data.split(",")
-      .map(str => str.trim()),
+    acceptLanguages: Services.locale.acceptLanguages.split(/\s*,\s*/g),
   };
   Glean.intl.requestedLocales.set(intl.requestedLocales);
   Glean.intl.availableLocales.set(intl.availableLocales);
@@ -541,10 +516,10 @@ function getGfxField(aPropertyName, aDefault) {
 /**
  * Returns a substring of the input string.
  *
- * @param {String} aString The input string.
+ * @param {string} aString The input string.
  * @param {Integer} aMaxLength The maximum length of the returned substring. If this is
  *        greater than the length of the input string, we return the whole input string.
- * @return {String} The substring or null if the input string is null.
+ * @return {string} The substring or null if the input string is null.
  */
 function limitStringToLength(aString, aMaxLength) {
   if (typeof aString !== "string") {
@@ -592,411 +567,6 @@ function getGfxAdapter(aSuffix = "") {
   };
 }
 
-/**
- * Encapsulates the asynchronous magic interfacing with the addon manager. The builder
- * is owned by a parent environment object and is an addon listener.
- */
-function EnvironmentAddonBuilder(environment) {
-  this._environment = environment;
-
-  // The pending task blocks addon manager shutdown. It can either be the initial load
-  // or a change load.
-  this._pendingTask = null;
-
-  // Have we added an observer to listen for blocklist changes that still needs to be
-  // removed:
-  this._gmpProviderObserverAdded = false;
-
-  // Set to true once initial load is complete and we're watching for changes.
-  this._loaded = false;
-
-  // The state reported by the shutdown blocker if we hang shutdown.
-  this._shutdownState = "Initial";
-}
-EnvironmentAddonBuilder.prototype = {
-  /**
-   * Get the initial set of addons.
-   * @returns Promise<void> when the initial load is complete.
-   */
-  async init() {
-    AddonManager.beforeShutdown.addBlocker(
-      "EnvironmentAddonBuilder",
-      () => this._shutdownBlocker(),
-      { fetchState: () => this._shutdownState }
-    );
-
-    this._pendingTask = (async () => {
-      try {
-        this._shutdownState = "Awaiting _updateAddons";
-        // Gather initial addons details
-        await this._updateAddons();
-
-        if (!this._environment._addonsAreFull) {
-          // The addon database has not been loaded, wait for it to
-          // initialize and gather full data as soon as it does.
-          this._shutdownState = "Awaiting AddonManagerPrivate.databaseReady";
-          await AddonManagerPrivate.databaseReady;
-
-          // Now gather complete addons details.
-          this._shutdownState = "Awaiting second _updateAddons";
-          await this._updateAddons();
-        }
-      } catch (err) {
-        this._environment._log.error("init - Exception in _updateAddons", err);
-      } finally {
-        this._pendingTask = null;
-        this._shutdownState = "_pendingTask init complete. No longer blocking.";
-      }
-    })();
-
-    return this._pendingTask;
-  },
-
-  /**
-   * Register an addon listener and watch for changes.
-   */
-  watchForChanges() {
-    this._loaded = true;
-    AddonManager.addAddonListener(this);
-  },
-
-  // AddonListener
-  onEnabled(addon) {
-    this._onAddonChange(addon);
-  },
-  onDisabled(addon) {
-    this._onAddonChange(addon);
-  },
-  onInstalled(addon) {
-    this._onAddonChange(addon);
-  },
-  onUninstalling(addon) {
-    this._onAddonChange(addon);
-  },
-  onUninstalled(addon) {
-    this._onAddonChange(addon);
-  },
-  onPropertyChanged(addon, propertiesChanged) {
-    // Avoid to update the telemetry environment for onPropertyChanged
-    // calls that we are not actually interested in (and quarantineIgnoredByApp
-    // is not expected to change at runtime, unless the entire active addons
-    // entry is also replaced, e.g. on the extension being uninstalled and
-    // installed again).
-    if (!propertiesChanged.includes("quarantineIgnoredByUser")) {
-      return;
-    }
-    this._onAddonChange(addon);
-  },
-
-  _onAddonChange(addon) {
-    if (addon && addon.isBuiltin && !addon.isSystem) {
-      return;
-    }
-    this._environment._log.trace("_onAddonChange");
-    this._checkForChanges("addons-changed");
-  },
-
-  // nsIObserver
-  observe(aSubject, aTopic) {
-    this._environment._log.trace("observe - Topic " + aTopic);
-    if (aTopic == GMP_PROVIDER_REGISTERED_TOPIC) {
-      Services.obs.removeObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
-      this._gmpProviderObserverAdded = false;
-      let gmpPluginsPromise = this._getActiveGMPlugins();
-      gmpPluginsPromise.then(
-        gmpPlugins => {
-          let { addons } = this._environment._currentEnvironment;
-          addons.activeGMPlugins = gmpPlugins;
-        },
-        err => {
-          this._environment._log.error(
-            "blocklist observe: Error collecting plugins",
-            err
-          );
-        }
-      );
-    }
-  },
-
-  _checkForChanges(changeReason) {
-    if (this._pendingTask) {
-      this._environment._log.trace(
-        "_checkForChanges - task already pending, dropping change with reason " +
-          changeReason
-      );
-      return;
-    }
-
-    this._shutdownState = "_checkForChanges awaiting _updateAddons";
-    this._pendingTask = this._updateAddons().then(
-      result => {
-        this._pendingTask = null;
-        this._shutdownState = "No longer blocking, _updateAddons resolved";
-        if (result.changed) {
-          this._environment._onEnvironmentChange(
-            changeReason,
-            result.oldEnvironment
-          );
-        }
-      },
-      err => {
-        this._pendingTask = null;
-        this._shutdownState = "No longer blocking, _updateAddons rejected";
-        this._environment._log.error(
-          "_checkForChanges: Error collecting addons",
-          err
-        );
-      }
-    );
-  },
-
-  _shutdownBlocker() {
-    if (this._loaded) {
-      AddonManager.removeAddonListener(this);
-      if (this._gmpProviderObserverAdded) {
-        Services.obs.removeObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
-      }
-    }
-
-    // At startup, _pendingTask is set to a Promise that does not resolve
-    // until the addons database has been read so complete details about
-    // addons are available.  Returning it here will cause it to block
-    // profileBeforeChange, guranteeing that full information will be
-    // available by the time profileBeforeChangeTelemetry is fired.
-    return this._pendingTask;
-  },
-
-  /**
-   * Collect the addon data for the environment.
-   *
-   * This should only be called from _pendingTask; otherwise we risk
-   * running this during addon manager shutdown.
-   *
-   * @returns Promise<Object> This returns a Promise resolved with a status object with the following members:
-   *   changed - Whether the environment changed.
-   *   oldEnvironment - Only set if a change occured, contains the environment data before the change.
-   */
-  async _updateAddons() {
-    this._environment._log.trace("_updateAddons");
-
-    let addons = {
-      activeAddons: await this._getActiveAddons(),
-      theme: await this._getActiveTheme(),
-      activeGMPlugins: await this._getActiveGMPlugins(),
-    };
-
-    let result = {
-      changed:
-        !this._environment._currentEnvironment.addons ||
-        !ObjectUtils.deepEqual(
-          addons.activeAddons,
-          this._environment._currentEnvironment.addons.activeAddons
-        ),
-    };
-
-    if (result.changed) {
-      this._environment._log.trace("_updateAddons: addons differ");
-      result.oldEnvironment = Cu.cloneInto(
-        this._environment._currentEnvironment,
-        {}
-      );
-    }
-    this._environment._currentEnvironment.addons = addons;
-
-    // Convert into the appropriate schema and record the addon environment
-    // data in Glean
-    let activeAddonsGlean = Object.entries(addons.activeAddons).map(
-      ([id, { type, ...rest }]) => ({ id, addonType: type, ...rest })
-    );
-    Glean.addons.activeAddons.set(activeAddonsGlean);
-    Glean.addons.theme.set(addons.theme);
-    Glean.addons.activeGMPlugins.set(
-      Object.entries(addons.activeGMPlugins).map(([id, value]) => ({
-        id,
-        ...value,
-      }))
-    );
-
-    return result;
-  },
-
-  /**
-   * Get the addon data in object form.
-   * @return Promise<object> containing the addon data.
-   */
-  async _getActiveAddons() {
-    // Request addons, asynchronously.
-    // "theme" is excluded because it is already handled by _getActiveTheme.
-    let { addons: allAddons, fullData } = await AddonManager.getActiveAddons(
-      AddonManagerPrivate.getAddonTypesByProvider("XPIProvider").filter(
-        addonType => addonType != "theme"
-      )
-    );
-
-    this._environment._addonsAreFull = fullData;
-    let activeAddons = {};
-    for (let addon of allAddons) {
-      // Don't collect any information about the new built-in search webextensions
-      if (addon.isBuiltin && !addon.isSystem) {
-        continue;
-      }
-      // Weird addon data in the wild can lead to exceptions while collecting
-      // the data.
-      try {
-        // Make sure to have valid dates (built-in add-ons are
-        // expected to not have a valid update date).
-        let updateDate = isNaN(addon.updateDate?.valueOf())
-          ? new Date(0)
-          : new Date(Math.max(0, addon.updateDate));
-
-        activeAddons[addon.id] = {
-          version: limitStringToLength(addon.version, MAX_ADDON_STRING_LENGTH),
-          scope: addon.scope,
-          type: addon.type,
-          updateDay: Utils.millisecondsToDays(updateDate.getTime()),
-          isSystem: addon.isSystem,
-          isWebExtension: addon.isWebExtension,
-          multiprocessCompatible: true,
-        };
-
-        // getActiveAddons() gives limited data during startup and full
-        // data after the addons database is loaded.
-        if (fullData) {
-          // Make sure to have valid dates (built-in add-ons are
-          // expected to not have a valid install date).
-          let installDate = isNaN(addon.installDate?.valueOf())
-            ? new Date(0)
-            : new Date(Math.max(0, addon.installDate));
-
-          Object.assign(activeAddons[addon.id], {
-            blocklisted:
-              addon.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
-            description: limitStringToLength(
-              addon.description,
-              MAX_ADDON_STRING_LENGTH
-            ),
-            name: limitStringToLength(addon.name, MAX_ADDON_STRING_LENGTH),
-            userDisabled: enforceBoolean(addon.userDisabled),
-            appDisabled: addon.appDisabled,
-            foreignInstall: enforceBoolean(addon.foreignInstall),
-            hasBinaryComponents: false,
-            installDay: Utils.millisecondsToDays(installDate.getTime()),
-            signedState: addon.signedState,
-            signedTypes: JSON.stringify(addon.signedTypes),
-            quarantineIgnoredByApp: enforceBoolean(
-              addon.quarantineIgnoredByApp
-            ),
-            quarantineIgnoredByUser: enforceBoolean(
-              addon.quarantineIgnoredByUser
-            ),
-          });
-        }
-      } catch (ex) {
-        this._environment._log.error(
-          "_getActiveAddons - An addon was discarded due to an error",
-          ex
-        );
-        continue;
-      }
-    }
-
-    return activeAddons;
-  },
-
-  /**
-   * Get the currently active theme data in object form.
-   * @return Promise<object> containing the active theme data.
-   */
-  async _getActiveTheme() {
-    // Request themes, asynchronously.
-    let { addons: themes } = await AddonManager.getActiveAddons(["theme"]);
-
-    let activeTheme = {};
-    // We only store information about the active theme.
-    let theme = themes.find(theme => theme.isActive);
-    if (theme) {
-      // Make sure to have valid dates.
-      let installDate = new Date(Math.max(0, theme.installDate));
-      let updateDate = new Date(Math.max(0, theme.updateDate));
-
-      activeTheme = {
-        id: theme.id,
-        blocklisted:
-          theme.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
-        description: limitStringToLength(
-          theme.description,
-          MAX_ADDON_STRING_LENGTH
-        ),
-        name: limitStringToLength(theme.name, MAX_ADDON_STRING_LENGTH),
-        userDisabled: enforceBoolean(theme.userDisabled),
-        appDisabled: theme.appDisabled,
-        version: limitStringToLength(theme.version, MAX_ADDON_STRING_LENGTH),
-        scope: theme.scope,
-        foreignInstall: enforceBoolean(theme.foreignInstall),
-        hasBinaryComponents: false,
-        installDay: Utils.millisecondsToDays(installDate.getTime()),
-        updateDay: Utils.millisecondsToDays(updateDate.getTime()),
-        signedState: theme.signedState,
-        signedTypes: JSON.stringify(theme.signedTypes),
-      };
-    }
-
-    return activeTheme;
-  },
-
-  /**
-   * Get the GMPlugins data in object form.
-   *
-   * @return Object containing the GMPlugins data.
-   *
-   * This should only be called from _pendingTask; otherwise we risk
-   * running this during addon manager shutdown.
-   */
-  async _getActiveGMPlugins() {
-    // If we haven't yet loaded the blocklist, pass back dummy data for now,
-    // and add an observer to update this data as soon as we get it.
-    if (!AddonManager.hasProvider("GMPProvider")) {
-      if (!this._gmpProviderObserverAdded) {
-        Services.obs.addObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
-        this._gmpProviderObserverAdded = true;
-      }
-      return {
-        "dummy-gmp": {
-          version: "0.1",
-          userDisabled: false,
-          applyBackgroundUpdates: 1,
-        },
-      };
-    }
-    // Request plugins, asynchronously.
-    let allPlugins = await AddonManager.getAddonsByTypes(["plugin"]);
-
-    let activeGMPlugins = {};
-    for (let plugin of allPlugins) {
-      // Only get info for active GMplugins.
-      if (!plugin.isGMPlugin || !plugin.isActive) {
-        continue;
-      }
-
-      try {
-        activeGMPlugins[plugin.id] = {
-          version: plugin.version,
-          userDisabled: enforceBoolean(plugin.userDisabled),
-          applyBackgroundUpdates: plugin.applyBackgroundUpdates,
-        };
-      } catch (ex) {
-        this._environment._log.error(
-          "_getActiveGMPlugins - A GMPlugin was discarded due to an error",
-          ex
-        );
-        continue;
-      }
-    }
-
-    return activeGMPlugins;
-  },
-};
-
 function EnvironmentCache() {
   this._log = Log.repository.getLoggerWithMessagePrefix(
     LOGGER_NAME,
@@ -1031,8 +601,14 @@ function EnvironmentCache() {
   // until the initial environment has been built.
 
   let p = [this._updateSettings()];
-  this._addonBuilder = new EnvironmentAddonBuilder(this);
-  p.push(this._addonBuilder.init());
+
+  // NOTE: on mobile builds the EnvironmentAddonBuilder instance is directly
+  // created and managed from inside AddonManager.sys.mjs, whereas on Desktop
+  // TelemetryEnvironment is still expected to be collecting the activeAddons.
+  if (EnvironmentAddonBuilder.isTelemetryEnvironmentEnabled()) {
+    this._addonBuilder = new EnvironmentAddonBuilder(this);
+    p.push(this._addonBuilder.init());
+  }
 
   this._currentEnvironment.profile = {};
   p.push(this._updateProfile());
@@ -1053,7 +629,9 @@ function EnvironmentCache() {
   let setup = () => {
     this._initTask = null;
     this._startWatchingPrefs();
-    this._addonBuilder.watchForChanges();
+    // NOTE: on mobile builds the EnvironmentAddonBuilder instance is directly
+    // created and managed from inside AddonManager.sys.mjs.
+    this._addonBuilder?.watchForChanges();
     this._updateGraphicsFeatures();
     return this.currentEnvironment;
   };
@@ -1066,15 +644,12 @@ function EnvironmentCache() {
       return setup();
     }
   );
-
-  // Addons may contain partial or full data depending on whether the Addons DB
-  // has had a chance to load. Do we have full data yet?
-  this._addonsAreFull = false;
 }
 EnvironmentCache.prototype = {
   /**
    * The current environment data. The returned data is cloned to avoid
    * unexpected sharing or mutation.
+   *
    * @returns object
    */
   get currentEnvironment() {
@@ -1083,6 +658,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Wait for the current enviroment to be fully initialized.
+   *
    * @returns Promise<object>
    */
   onInitialized() {
@@ -1160,6 +736,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Register a listener for environment changes.
+   *
    * @param name The name of the listener. If a new listener is registered
    *             with the same name, the old listener will be replaced.
    * @param listener function(reason, oldEnvironment) - Will receive a reason for
@@ -1177,6 +754,7 @@ EnvironmentCache.prototype = {
   /**
    * Unregister from listening to environment changes.
    * It's fine to call this on an unitialized TelemetryEnvironment.
+   *
    * @param name The name of the listener to remove.
    */
   unregisterChangeListener(name) {
@@ -1284,6 +862,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Only used in tests, set the preferences to watch.
+   *
    * @param aPreferences A map of preferences names and their recording policy.
    */
   _watchPreferences(aPreferences) {
@@ -1315,6 +894,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Get the value of a preference given the preference name and the policy.
+   *
    * @param pref Name of the preference.
    * @param what Policy of the preference.
    *
@@ -1432,8 +1012,7 @@ EnvironmentCache.prototype = {
         }
         if (
           aData == "engine-changed" &&
-          aSubject.QueryInterface(Ci.nsISearchEngine) &&
-          Services.search.defaultEngine != aSubject
+          lazy.SearchService.defaultEngine != aSubject.wrappedJSObject
         ) {
           return;
         }
@@ -1470,17 +1049,18 @@ EnvironmentCache.prototype = {
         this._sessionWasRestored = true;
         // Make sure to initialize the search service once we've done restoring
         // the windows, so that we don't risk loosing search data.
-        Services.search.init();
+        lazy.SearchService.init();
         // The default browser check could take some time, so just call it after
         // the session was restored.
         this._updateDefaultBrowser();
         break;
-      case PREF_CHANGED_TOPIC:
+      case PREF_CHANGED_TOPIC: {
         let options = this._watchedPrefs.get(aData);
         if (options && !options.requiresRestart) {
           this._onPrefChanged(aData);
         }
         break;
+      }
       case AUTO_UPDATE_PREF_CHANGE_TOPIC:
         this._currentEnvironment.settings.update.autoDownload = aData == "true";
         Glean.updateSettings.autoDownload.set(
@@ -1509,9 +1089,9 @@ EnvironmentCache.prototype = {
     }
 
     this._log.trace(
-      "_updateSearchEngine - isInitialized: " + Services.search.isInitialized
+      "_updateSearchEngine - isInitialized: " + lazy.SearchService.isInitialized
     );
-    if (!Services.search.isInitialized) {
+    if (!lazy.SearchService.isInitialized) {
       return;
     }
 
@@ -1519,7 +1099,7 @@ EnvironmentCache.prototype = {
     this._currentEnvironment.settings = this._currentEnvironment.settings || {};
 
     // Update the search engine entry in the current environment.
-    const defaultEngineInfo = Services.search.getDefaultEngineInfo();
+    const defaultEngineInfo = lazy.SearchService.getDefaultEngineInfo();
     this._currentEnvironment.settings.defaultSearchEngine =
       defaultEngineInfo.defaultSearchEngine;
     this._currentEnvironment.settings.defaultSearchEngineData = {
@@ -1570,6 +1150,9 @@ EnvironmentCache.prototype = {
     try {
       let gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
       gfxData.features = gfxInfo.getFeatures();
+      for (const [name, value] of Object.entries(gfxData.features)) {
+        Glean.gfxFeatures[name].set(value);
+      }
     } catch (e) {
       this._log.error("nsIGfxInfo.getFeatures() caught error", e);
     }
@@ -1584,6 +1167,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Get the build data in object form.
+   *
    * @return Object containing the build data.
    */
   _getBuild() {
@@ -1608,6 +1192,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Determine if we're the default browser.
+   *
    * @returns null on error, true if we are the default browser, or false otherwise.
    */
   _isDefaultBrowser() {
@@ -1632,7 +1217,7 @@ EnvironmentCache.prototype = {
 
     try {
       let { ShellService } = ChromeUtils.importESModule(
-        "resource:///modules/ShellService.sys.mjs"
+        "moz-src:///browser/components/shell/ShellService.sys.mjs"
       );
       // This uses the same set of flags used by the pref pane.
       return isDefault(ShellService, false, true);
@@ -1772,6 +1357,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Update the cached profile data.
+   *
    * @returns Promise<> resolved when the I/O is complete.
    */
   async _updateProfile() {
@@ -1810,6 +1396,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Load the attribution data object and updates the environment.
+   *
    * @returns Promise<> resolved when the I/O is complete.
    */
   async _loadAttributionAsync() {
@@ -1855,6 +1442,7 @@ EnvironmentCache.prototype = {
       ua: attributionData.ua,
       dltoken: attributionData.dltoken,
       msstoresignedin: attributionData.msstoresignedin,
+      msclkid: attributionData.msclkid,
       dlsource: attributionData.dlsource,
     };
     Services.fog.updateAttribution(
@@ -1904,6 +1492,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Get i18n data about the system.
+   *
    * @return A promise of completion.
    */
   async _loadIntlData() {
@@ -1953,6 +1542,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Get the partner data in object form.
+   *
    * @return Object containing the partner data.
    */
   _getPartner() {
@@ -1989,6 +1579,7 @@ EnvironmentCache.prototype = {
   _cpuData: null,
   /**
    * Get the CPU information.
+   *
    * @return Object containing the CPU information data.
    */
   _getCPUData() {
@@ -2035,6 +1626,7 @@ EnvironmentCache.prototype = {
   _processData: null,
   /**
    * Get the process information.
+   *
    * @return Object containing the process information data.
    */
   _getProcessData() {
@@ -2047,6 +1639,7 @@ EnvironmentCache.prototype = {
   _osData: null,
   /**
    * Get the OS information.
+   *
    * @return Object containing the OS data.
    */
   _getOSData() {
@@ -2113,6 +1706,7 @@ EnvironmentCache.prototype = {
   _hddData: null,
   /**
    * Get the HDD information.
+   *
    * @return Object containing the HDD data.
    */
   _getHDDData() {
@@ -2125,6 +1719,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Get registered security product information.
+   *
    * @return Object containing the security product data
    */
   _getSecurityAppData() {
@@ -2153,11 +1748,11 @@ EnvironmentCache.prototype = {
 
   /**
    * Get the GFX information.
+   *
    * @return Object containing the GFX data.
    */
   _getGFXData() {
     let gfxData = {
-      D2DEnabled: getGfxField("D2DEnabled", null),
       DWriteEnabled: getGfxField("DWriteEnabled", null),
       ContentBackend: getGfxField("ContentBackend", null),
       Headless: getGfxField("isHeadless", null),
@@ -2168,9 +1763,6 @@ EnvironmentCache.prototype = {
       monitors: [],
       features: {},
     };
-    if (gfxData.D2DEnabled !== null) {
-      Glean.gfx.d2dEnabled.set(gfxData.D2DEnabled);
-    }
     if (gfxData.DWriteEnabled !== null) {
       Glean.gfx.dwriteEnabled.set(gfxData.DWriteEnabled);
     }
@@ -2243,6 +1835,7 @@ EnvironmentCache.prototype = {
 
   /**
    * Get the system data in object form.
+   *
    * @return Object containing the system data.
    */
   _getSystem() {

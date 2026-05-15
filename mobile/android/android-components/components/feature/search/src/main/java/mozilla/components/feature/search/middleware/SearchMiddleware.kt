@@ -7,6 +7,7 @@ package mozilla.components.feature.search.middleware
 import android.content.Context
 import android.graphics.BitmapFactory
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -24,7 +25,6 @@ import mozilla.components.feature.search.storage.SearchEngineSelectorConfig
 import mozilla.components.feature.search.storage.SearchEngineSelectorRepository
 import mozilla.components.feature.search.storage.SearchMetadataStorage
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 import java.util.Locale
@@ -81,16 +81,16 @@ class SearchMiddleware(
         searchEngineSelectorConfig?.service?.remoteSettingsService?.makeClient(SEARCH_CONFIG_ICONS_COLLECTION_NAME)
     private val searchEngineSelectorRepository: SearchEngineRepository? =
         searchEngineSelectorConfig?.let {
-                SearchEngineSelectorRepository(it, defaultSearchEngineIcon, client)
+                SearchEngineSelectorRepository(context, it, defaultSearchEngineIcon, client)
         }
 
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
         when (action) {
-            is SearchAction.SetRegionAction -> loadSearchEngines(context.store, action.regionState, action.distribution)
+            is SearchAction.SetRegionAction -> loadSearchEngines(store, action.regionState, action.distribution)
             is SearchAction.UpdateCustomSearchEngineAction -> saveCustomSearchEngine(action)
             is SearchAction.RemoveCustomSearchEngineAction -> removeCustomSearchEngine(action)
             is SearchAction.SelectSearchEngineAction -> updateSearchEngineSelection(action)
@@ -104,11 +104,11 @@ class SearchMiddleware(
         when (action) {
             is SearchAction.ShowSearchEngineAction, is SearchAction.HideSearchEngineAction,
             is SearchAction.RestoreHiddenSearchEnginesAction,
-            -> updateHiddenSearchEngines(context.state.search.hiddenSearchEngines)
+            -> updateHiddenSearchEngines(store.state.search.hiddenSearchEngines)
             is SearchAction.AddAdditionalSearchEngineAction, is SearchAction.RemoveAdditionalSearchEngineAction ->
-                updateAdditionalSearchEngines(context.state.search.additionalSearchEngines)
+                updateAdditionalSearchEngines(store.state.search.additionalSearchEngines)
             is SearchAction.UpdateDisabledSearchEngineIdsAction -> updateDisabledSearchEngineIds(
-                context.store,
+                store,
                 action,
             )
             else -> {
@@ -127,8 +127,11 @@ class SearchMiddleware(
         val migrationValues = migration?.getValuesToMigrate()
         performCustomSearchEnginesMigration(migrationValues)
 
-        val regionBundle = if (searchEngineSelectorRepository != null) {
-            async(ioDispatcher) {
+        val regionBundle: Deferred<BundleStorage.Bundle>
+        val allAdditionalSearchEngines: Deferred<List<SearchEngine>>
+
+        if (searchEngineSelectorRepository != null) {
+            val result = async(ioDispatcher) {
                 searchEngineSelectorRepository.load(
                     region = region,
                     distribution = distribution,
@@ -136,11 +139,24 @@ class SearchMiddleware(
                     coroutineContext = ioDispatcher,
                 )
             }
+            regionBundle = async {
+                result.await().copy(
+                    list = result.await().list.filter { !it.isOptional },
+                )
+            }
+            allAdditionalSearchEngines = async { result.await().list.filter { it.isOptional } }
         } else {
-            async(ioDispatcher) {
+            regionBundle = async(ioDispatcher) {
                 bundleStorage.load(
                     region = region,
                     distribution = distribution,
+                    searchExtraParams = searchExtraParams,
+                    coroutineContext = ioDispatcher,
+                )
+            }
+            allAdditionalSearchEngines = async(ioDispatcher) {
+                bundleStorage.load(
+                    ids = additionalBundledSearchEngineIds,
                     searchExtraParams = searchExtraParams,
                     coroutineContext = ioDispatcher,
                 )
@@ -151,21 +167,6 @@ class SearchMiddleware(
         val hiddenSearchEngineIds = async(ioDispatcher) { metadataStorage.getHiddenSearchEngines() }
         val disabledSearchEngineIds = async(ioDispatcher) { metadataStorage.getDisabledSearchEngineIds() }
         val additionalSearchEngineIds = async(ioDispatcher) { metadataStorage.getAdditionalSearchEngines() }
-        val allAdditionalSearchEngines = if (searchEngineSelectorRepository != null) {
-            async(ioDispatcher) {
-                regionBundle.await().list.filter { searchEngine ->
-                    !searchEngine.isGeneral
-                }
-            }
-        } else {
-            async(ioDispatcher) {
-                bundleStorage.load(
-                    ids = additionalBundledSearchEngineIds,
-                    searchExtraParams = searchExtraParams,
-                    coroutineContext = ioDispatcher,
-                )
-            }
-        }
 
         val hiddenSearchEngines = mutableListOf<SearchEngine>()
         val filteredRegionSearchEngines = regionBundle.await().list.filter { searchEngine ->

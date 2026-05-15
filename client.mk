@@ -54,7 +54,7 @@ ifdef MOZBUILD_MANAGE_SCCACHE_DAEMON
 	# from make (but don't use the + prefix when make -n is used, so that
 	# the command doesn't run in that case)
 	mkdir -p $(UPLOAD_PATH)
-	$(if $(findstring n,$(filter-out --%, $(MAKEFLAGS))),,+)env SCCACHE_LOG=sccache=debug SCCACHE_ERROR_LOG=$(UPLOAD_PATH)/sccache.log $(MOZBUILD_MANAGE_SCCACHE_DAEMON) --start-server
+	$(if $(findstring n,$(filter-out --%, $(MAKEFLAGS))),,+)env SCCACHE_LOG=sccache=debug SCCACHE_ERROR_LOG=$(UPLOAD_PATH)/sccache.log SCCACHE_LOG_MILLIS=true $(MOZBUILD_MANAGE_SCCACHE_DAEMON) --start-server
 endif
 	### Build it
 	+$(MOZ_MAKE) $(SCCACHE_STOP_ON_FAILURE)

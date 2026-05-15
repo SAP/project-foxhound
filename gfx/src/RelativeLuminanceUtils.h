@@ -23,6 +23,13 @@ class RelativeLuminanceUtils {
     return ComputeFromComponents(r, g, b);
   }
 
+  static float Compute(float aR, float aG, float aB) {
+    float r = ComputeComponent(aR);
+    float g = ComputeComponent(aG);
+    float b = ComputeComponent(aB);
+    return ComputeFromComponents(r, g, b);
+  }
+
   // Adjust the relative luminance of the given color.
   static nscolor Adjust(nscolor aColor, float aLuminance) {
     float r = ComputeComponent(NS_GET_R(aColor));
@@ -50,12 +57,15 @@ class RelativeLuminanceUtils {
   }
 
  private:
-  static float ComputeComponent(uint8_t aComponent) {
-    float v = float(aComponent) / 255.0f;
-    if (v <= 0.03928f) {
-      return v / 12.92f;
+  static float ComputeComponent(float aComponent) {
+    if (aComponent <= 0.03928f) {
+      return aComponent / 12.92f;
     }
-    return std::pow((v + 0.055f) / 1.055f, 2.4f);
+    return std::pow((aComponent + 0.055f) / 1.055f, 2.4f);
+  }
+
+  static float ComputeComponent(uint8_t aComponent) {
+    return ComputeComponent(float(aComponent) / 255.0f);
   }
 
   static constexpr float ComputeFromComponents(float aR, float aG, float aB) {

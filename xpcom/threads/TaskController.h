@@ -431,8 +431,9 @@ class TaskController {
   std::stack<RefPtr<Task>> mCurrentTasksMT;
 
   // A list of all tasks ordered by priority.
-  std::set<RefPtr<Task>, Task::PriorityCompare> mThreadableTasks;
-  std::set<RefPtr<Task>, Task::PriorityCompare> mMainThreadTasks;
+  using PrioritySortedTasks = std::set<RefPtr<Task>, Task::PriorityCompare>;
+  PrioritySortedTasks mThreadableTasks;
+  PrioritySortedTasks mMainThreadTasks;
 
   // TaskManagers currently active.
   // We can use a raw pointer since tasks always hold on to their TaskManager.

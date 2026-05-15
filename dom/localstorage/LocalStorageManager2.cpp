@@ -12,11 +12,11 @@
 
 // Global includes
 #include <utility>
+
 #include "MainThreadUtils.h"
 #include "jsapi.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/RemoteLazyInputStreamThread.h"

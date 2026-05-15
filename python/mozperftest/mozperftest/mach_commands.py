@@ -77,6 +77,8 @@ def run_perftest(command_context, **kwargs):
             kwargs["flavor"] = script_info.script_type.name
         elif script_info.script_type == ScriptType.alert:
             kwargs["flavor"] = script_info.script_type.name
+        elif script_info.script_type == ScriptType.eval_mochitest:
+            kwargs["flavor"] = "eval-mochitest"
         elif "flavor" not in kwargs:
             # we set the value only if not provided (so "mobile-browser"
             # can be picked)

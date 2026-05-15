@@ -6,7 +6,6 @@
 
 #include <windows.h>
 
-#if !defined(MOZ_ZUCCHINI)
 #include <io.h>
 #include <psapi.h>
 #include <shellapi.h>
@@ -22,30 +21,37 @@
 #include <utility>
 #include <vector>
 
+#if !defined(MOZ_ZUCCHINI)
 #include "base/check.h"
 #include "base/clang_profiling_buildflags.h"
 #include "base/debug/alias.h"
 #include "base/feature_list.h"
 #include "base/features.h"
-#include "base/files/file_enumerator.h"
 #endif  // !defined(MOZ_ZUCCHINI)
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #if !defined(MOZ_ZUCCHINI)
 #include "base/files/memory_mapped_file.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/location.h"
+#endif  // !defined(MOZ_ZUCCHINI)
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
 #include "base/process/process_handle.h"
 #include "base/rand_util.h"
+#if !defined(MOZ_ZUCCHINI)
 #include "base/strings/strcat.h"
+#endif  // !defined(MOZ_ZUCCHINI)
 #include "base/strings/string_number_conversions.h"
+#if !defined(MOZ_ZUCCHINI)
 #include "base/strings/string_piece.h"
+#endif  // !defined(MOZ_ZUCCHINI)
 #include "base/strings/string_util.h"
 #include "base/strings/string_util_win.h"
 #include "base/strings/utf_string_conversions.h"
+#if !defined(MOZ_ZUCCHINI)
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
@@ -68,11 +74,11 @@ namespace {
 
 #if !defined(MOZ_ZUCCHINI)
 int g_extra_allowed_path_for_no_execute = 0;
+#endif  // !defined(MOZ_ZUCCHINI)
 
 const DWORD kFileShareAll =
     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 const wchar_t kDefaultTempDirPrefix[] = L"ChromiumTemp";
-#endif  // !defined(MOZ_ZUCCHINI)
 
 // Returns the Win32 last error code or ERROR_SUCCESS if the last error code is
 // ERROR_FILE_NOT_FOUND or ERROR_PATH_NOT_FOUND. This is useful in cases where
@@ -86,7 +92,6 @@ DWORD ReturnLastErrorOrSuccessOnNotFound() {
              : error_code;
 }
 
-#if !defined(MOZ_ZUCCHINI)
 // Deletes all files and directories in a path.
 // Returns ERROR_SUCCESS on success or the Windows error code corresponding to
 // the first error encountered. ERROR_FILE_NOT_FOUND and ERROR_PATH_NOT_FOUND
@@ -137,6 +142,7 @@ void AppendModeCharacter(wchar_t mode_char, std::wstring* mode) {
                mode_char);
 }
 
+#if !defined(MOZ_ZUCCHINI)
 bool DoCopyFile(const FilePath& from_path,
                 const FilePath& to_path,
                 bool fail_if_exists) {
@@ -275,7 +281,6 @@ DWORD DoDeleteFile(const FilePath& path, bool recursive) {
   if (path.value().length() >= MAX_PATH)
     return ERROR_BAD_PATHNAME;
 
-#if !defined(MOZ_ZUCCHINI)
   // Handle any path with wildcards.
   if (path.BaseName().value().find_first_of(FILE_PATH_LITERAL("*?")) !=
       FilePath::StringType::npos) {
@@ -285,7 +290,6 @@ DWORD DoDeleteFile(const FilePath& path, bool recursive) {
     DCHECK_NE(static_cast<LONG>(error_code), ERROR_PATH_NOT_FOUND);
     return error_code;
   }
-#endif  // !defined(MOZ_ZUCCHINI)
 
   // Report success if the file or path does not exist.
   const DWORD attr = ::GetFileAttributes(path.value().c_str());
@@ -307,7 +311,6 @@ DWORD DoDeleteFile(const FilePath& path, bool recursive) {
                : ReturnLastErrorOrSuccessOnNotFound();
   }
 
-#if !defined(MOZ_ZUCCHINI)
   if (recursive) {
     const DWORD error_code =
         DeleteFileRecursive(path, FILE_PATH_LITERAL("*"), true);
@@ -316,7 +319,6 @@ DWORD DoDeleteFile(const FilePath& path, bool recursive) {
     if (error_code != ERROR_SUCCESS)
       return error_code;
   }
-#endif  // !defined(MOZ_ZUCCHINI)
   return ::RemoveDirectory(path.value().c_str())
              ? ERROR_SUCCESS
              : ReturnLastErrorOrSuccessOnNotFound();
@@ -454,6 +456,7 @@ OnceClosure GetDeletePathRecursivelyCallback(
   return GetDeleteFileCallbackInternal(path, /*recursive=*/true,
                                        std::move(reply_callback));
 }
+#endif  // !defined(MOZ_ZUCCHINI)
 
 FilePath MakeAbsoluteFilePath(const FilePath& input) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
@@ -462,17 +465,16 @@ FilePath MakeAbsoluteFilePath(const FilePath& input) {
     return FilePath();
   return FilePath(file_path);
 }
-#endif  // !defined(MOZ_ZUCCHINI)
 
 bool DeleteFile(const FilePath& path) {
   return DeleteFileOrSetLastError(path, /*recursive=*/false);
 }
 
-#if !defined(MOZ_ZUCCHINI)
 bool DeletePathRecursively(const FilePath& path) {
   return DeleteFileOrSetLastError(path, /*recursive=*/true);
 }
 
+#if !defined(MOZ_ZUCCHINI)
 bool DeleteFileAfterReboot(const FilePath& path) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
 
@@ -535,6 +537,7 @@ bool CopyDirectoryExcl(const FilePath& from_path,
                        bool recursive) {
   return DoCopyDirectory(from_path, to_path, recursive, true);
 }
+#endif  // !defined(MOZ_ZUCCHINI)
 
 bool PathExists(const FilePath& path) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
@@ -613,6 +616,7 @@ FilePath GetHomeDir() {
   return FilePath(FILE_PATH_LITERAL("C:\\"));
 }
 
+#if !defined(MOZ_ZUCCHINI)
 File CreateAndOpenTemporaryFileInDir(const FilePath& dir, FilePath* temp_file) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
 
@@ -678,6 +682,7 @@ ScopedFILE CreateAndOpenTemporaryStreamInDir(const FilePath& dir,
   return ScopedFILE(
       FileToFILE(CreateAndOpenTemporaryFileInDir(dir, path), "wb+"));
 }
+#endif  // !defined(MOZ_ZUCCHINI)
 
 bool CreateTemporaryDirInDir(const FilePath& base_dir,
                              const FilePath::StringType& prefix,
@@ -814,6 +819,7 @@ bool CreateDirectoryAndGetError(const FilePath& full_path,
   return false;
 }
 
+#if !defined(MOZ_ZUCCHINI)
 bool NormalizeFilePath(const FilePath& path, FilePath* real_path) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
   File file(path,
@@ -940,6 +946,7 @@ bool GetFileInfo(const FilePath& file_path, File::Info* results) {
 
   return true;
 }
+#endif  // !defined(MOZ_ZUCCHINI)
 
 FILE* OpenFile(const FilePath& filename, const char* mode) {
   // 'N' is unconditionally added below, so be sure there is not one already
@@ -991,6 +998,7 @@ File FILEToFile(FILE* file_stream) {
   return File(ScopedPlatformFile(other_handle));
 }
 
+#if !defined(MOZ_ZUCCHINI)
 int ReadFile(const FilePath& filename, char* data, int max_size) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
   win::ScopedHandle file(CreateFile(filename.value().c_str(), GENERIC_READ,
@@ -1066,6 +1074,7 @@ bool AppendToFile(const FilePath& filename, span<const uint8_t> data) {
 bool AppendToFile(const FilePath& filename, StringPiece data) {
   return AppendToFile(filename, as_bytes(make_span(data)));
 }
+#endif  // !defined(MOZ_ZUCCHINI)
 
 bool GetCurrentDirectory(FilePath* dir) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
@@ -1083,6 +1092,7 @@ bool GetCurrentDirectory(FilePath* dir) {
   return true;
 }
 
+#if !defined(MOZ_ZUCCHINI)
 bool SetCurrentDirectory(const FilePath& directory) {
   ScopedBlockingCall scoped_blocking_call(FROM_HERE, BlockingType::MAY_BLOCK);
   return ::SetCurrentDirectory(directory.value().c_str()) != 0;

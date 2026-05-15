@@ -7,8 +7,6 @@
 #ifndef mozilla_image_encoders_icon_mac_nsIconChannel_h
 #define mozilla_image_encoders_icon_mac_nsIconChannel_h
 
-#include "mozilla/Attributes.h"
-
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsIChannel.h"

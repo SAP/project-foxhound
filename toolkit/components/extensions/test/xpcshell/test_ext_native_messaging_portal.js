@@ -6,6 +6,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Subprocess: "resource://gre/modules/Subprocess.sys.mjs",
+  TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
 AddonTestUtils.init(this);
@@ -47,6 +48,7 @@ var DBUS_SESSION_BUS_ADDRESS = "";
 var DBUS_SESSION_BUS_PID = 0; // eslint-disable-line no-unused-vars
 var DBUS_MOCK = null;
 var FDS_MOCK = null;
+var gdbusCmd = null;
 
 async function background() {
   let port;
@@ -72,7 +74,7 @@ async function background() {
 
 async function mockSetup(objectPath, methodName, args) {
   let mockProcess = await lazy.Subprocess.call({
-    command: await lazy.Subprocess.pathSearch("gdbus"),
+    command: gdbusCmd,
     arguments: [
       "call",
       "--session",
@@ -110,6 +112,7 @@ add_setup(async function () {
   }
 
   let prefValue = Services.prefs.getIntPref(nativeMessagingPref, 0);
+  gdbusCmd = await lazy.Subprocess.pathSearch("gdbus");
   Services.prefs.setIntPref(nativeMessagingPref, 2);
 
   Services.env.set("DBUS_SESSION_BUS_ADDRESS", DBUS_SESSION_BUS_ADDRESS);
@@ -126,6 +129,16 @@ add_setup(async function () {
       portalInterfaceName,
     ],
   });
+
+  // Wait until dbusmock is ready
+  await lazy.TestUtils.waitForCondition(async () => {
+    let res = await mockSetup(
+      portalObjectPath,
+      "org.freedesktop.DBus.Mock.GetCalls",
+      []
+    );
+    return res.exitCode == 0;
+  }, "waiting for dbusmock");
 
   // When talking to the native messaging portal over D-Bus, it returns a tuple
   // of file descriptors. For the mock to work correctly, the file descriptors
@@ -201,7 +214,7 @@ add_setup(async function () {
 
 async function verifyDbusMockCall(objectPath, method, offset) {
   let getCalls = await lazy.Subprocess.call({
-    command: await lazy.Subprocess.pathSearch("gdbus"),
+    command: gdbusCmd,
     arguments: [
       "call",
       "--session",
@@ -323,7 +336,7 @@ add_task(async function test_talk_to_portal() {
     "@a(ssss) []",
   ]);
   let waitForRequestObject = await lazy.Subprocess.call({
-    command: await lazy.Subprocess.pathSearch("gdbus"),
+    command: gdbusCmd,
     arguments: [
       "introspect",
       "--session",

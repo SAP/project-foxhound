@@ -15,7 +15,7 @@ gecko_refcount_logging = ["style/gecko_refcount_logging", "servo_arc/gecko_refco
 
 [dependencies]
 atomic_refcell = "0.1"
-cssparser = "0.34"
+cssparser = "0.36"
 cstr = "0.2"
 dom = { path = "../../../dom/base/rust" }
 ipdl_utils = { path = "../../../ipc/rust/ipdl_utils" }

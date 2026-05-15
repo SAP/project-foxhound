@@ -26,9 +26,6 @@ include ProtocolTypes;
 
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 
-[MoveOnly=data] using struct mozilla::SerializedStructuredCloneBuffer
-  from "mozilla/ipc/SerializedStructuredCloneBuffer.h";
-
 using struct mozilla::dom::LoadingSessionHistoryInfo
   from "mozilla/dom/SessionHistoryEntry.h";
 
@@ -63,6 +60,10 @@ using mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using mozilla::dom::NotificationDirection from "mozilla/dom/NotificationBinding.h";
 using mozilla::dom::UserNavigationInvolvement from "mozilla/dom/UserNavigationInvolvement.h";
 using mozilla::net::ClassificationFlags from "nsIClassifiedChannel.h";
+using mozilla::dom::ForceMediaDocument from "mozilla/dom/LoadURIOptionsBinding.h";
+using mozilla::dom::NavigationHistoryBehavior from "mozilla/dom/NavigationBinding.h";
+[RefCounted] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
+[RefCounted] using class nsStructuredCloneContainer from "nsStructuredCloneContainer.h";
 
 namespace mozilla {
 namespace dom {
@@ -73,42 +74,6 @@ struct MessagePortIdentifier
   nsID destinationUuid;
   uint32_t sequenceId;
   bool neutered;
-};
-
-/**
- * Cross-process representation for postMessage() style payloads where Blobs may
- * be referenced/"cloned" and (optionally) messageports transferred.  Use
- * StructuredCloneData in your code to convert between this wire representation
- * and the StructuredCloneData StructuredCloneHolder-subclass.
- */
-struct ClonedMessageData
-{
-  SerializedStructuredCloneBuffer data;
-  IPCBlob[] blobs;
-  IPCStream[] inputStreams;
-  MessagePortIdentifier[] identifiers;
-};
-
-struct ErrorMessageData {
-};
-
-union ClonedOrErrorMessageData {
-  ClonedMessageData;
-  ErrorMessageData;
-};
-
-struct RefMessageData {
-  nsID uuid;
-};
-
-union MessageDataType {
-  ClonedMessageData;
-  RefMessageData;
-};
-
-struct MessageData {
-  nsID? agentClusterId;
-  MessageDataType data;
 };
 
 struct ScreenDetails {
@@ -215,6 +180,7 @@ struct DocShellLoadStateInit
   bool LoadReplace;
   bool InheritPrincipal;
   bool PrincipalIsExplicit;
+  bool NotifiedBeforeUnloadListeners;
   bool ForceAllowDataURI;
   bool IsExemptFromHTTPSFirstMode;
   bool OriginalFrameSrc;
@@ -225,8 +191,16 @@ struct DocShellLoadStateInit
   bool TextDirectiveUserActivation;
   bool AllowFocusMove;
   bool IsFromProcessingFrameAttributes;
+  bool NeedsCompletelyLoadedDocument;
+  bool ShouldNotForceReplaceInOnLoad;
+  NavigationHistoryBehavior? HistoryBehavior;
+
   SchemelessInputType SchemelessInput;
+  ForceMediaDocument forceMediaDocument;
   HTTPSUpgradeTelemetryType HttpsUpgradeTelemetry;
+
+  // https://html.spec.whatwg.org/#she-navigation-api-state
+  nullable nsStructuredCloneContainer NavigationAPIState;
 
   // Fields missing due to lack of need or serialization
   // nsCOMPtr<nsIDocShell> mSourceDocShell;
@@ -238,6 +212,10 @@ struct DocShellLoadStateInit
   bool TryToReplaceWithSessionHistoryLoad;
 
   bool IsMetaRefresh;
+
+  bool IsCaptivePortalTab;
+
+  bool IsInitialAboutBlankHandlingProhibited;
 };
 
 struct TimedChannelInfo
@@ -348,6 +326,7 @@ struct IPCNotificationAction {
 
 // Mostly same as NotificationOptions except:
 // * `title` is included (it's a separate parameter in the Notification constructor)
+// * `icon` is parsed into nsIURI
 // * `data` is serialized to base64 string by StructuredCloneContainer
 // * `vibrate` is normalized to sequence
 struct IPCNotificationOptions {
@@ -356,7 +335,7 @@ struct IPCNotificationOptions {
   nsString lang;
   nsString body;
   nsString tag;
-  nsString icon;
+  nullable nsIURI icon;
   bool requireInteraction;
   bool silent;
   uint32_t[] vibrate;

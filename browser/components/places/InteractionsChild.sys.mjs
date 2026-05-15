@@ -113,11 +113,16 @@ export class InteractionsChild extends JSWindowActorChild {
         break;
       }
       case "pagehide": {
-        if (!this.docShell.currentDocumentChannel) {
+        // We generally expect this to be an nsIHttpChannel, if it isn't
+        // then the if statement below will return early anyway.
+        let currentDocumentChannel = /** @type {nsIHttpChannel} */ (
+          this.docShell.currentDocumentChannel
+        );
+        if (!currentDocumentChannel) {
           return;
         }
 
-        if (!this.docShell.currentDocumentChannel.requestSucceeded) {
+        if (!currentDocumentChannel.requestSucceeded) {
           return;
         }
 

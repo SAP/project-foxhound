@@ -5,10 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLFontElement.h"
+
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLFontElementBinding.h"
-#include "mozilla/MappedDeclarationsBuilder.h"
 #include "nsAttrValueInlines.h"
+#include "nsAttrValueOrString.h"
 #include "nsContentUtils.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Font)
@@ -51,9 +53,12 @@ void HTMLFontElement::MapAttributesIntoRule(
   // face: string list
   if (!aBuilder.PropertyIsSet(eCSSProperty_font_family)) {
     const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::face);
-    if (value && value->Type() == nsAttrValue::eString &&
+    if (value &&
+        (value->Type() == nsAttrValue::eString ||
+         value->Type() == nsAttrValue::eAtom) &&
         !value->IsEmptyString()) {
-      aBuilder.SetFontFamily(NS_ConvertUTF16toUTF8(value->GetStringValue()));
+      aBuilder.SetFontFamily(
+          NS_ConvertUTF16toUTF8(nsAttrValueOrString(value).String()));
     }
   }
   // size: int

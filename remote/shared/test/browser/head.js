@@ -8,6 +8,10 @@ const { NavigationManager } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/NavigationManager.sys.mjs"
 );
 
+const numberRegex = /[0-9]+/i;
+const uuidRegex =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * Add a new tab in a given browser, pointing to a given URL and automatically
  * register the cleanup function to remove it at the end of the test.

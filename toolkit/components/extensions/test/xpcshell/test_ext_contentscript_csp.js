@@ -6,8 +6,6 @@ const { TestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TestUtils.sys.mjs"
 );
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const server = createHttpServer({
   hosts: ["example.com", "csplog.example.net"],
 });

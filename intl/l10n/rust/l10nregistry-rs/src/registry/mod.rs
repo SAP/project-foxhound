@@ -213,7 +213,7 @@ impl<P, B> L10nRegistry<P, B> {
         Ok(())
     }
 
-    pub fn try_borrow_metasources(&self) -> Result<Ref<MetaSources>, L10nRegistrySetupError> {
+    pub fn try_borrow_metasources(&self) -> Result<Ref<'_, MetaSources>, L10nRegistrySetupError> {
         self.shared
             .metasources
             .try_borrow()
@@ -222,7 +222,7 @@ impl<P, B> L10nRegistry<P, B> {
 
     pub fn try_borrow_metasources_mut(
         &self,
-    ) -> Result<RefMut<MetaSources>, L10nRegistrySetupError> {
+    ) -> Result<RefMut<'_, MetaSources>, L10nRegistrySetupError> {
         self.shared
             .metasources
             .try_borrow_mut()

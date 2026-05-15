@@ -10,6 +10,8 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.search.SearchEngineProvider
 import org.mozilla.fenix.R
 import org.mozilla.fenix.search.awesomebar.SearchSuggestionsProvidersBuilder.Companion.GOOGLE_SEARCH_ENGINE_NAME
+import mozilla.components.feature.awesomebar.R as awesomebarR
+import mozilla.components.feature.fxsuggest.R as fxsuggestR
 
 /**
  * Provides localized strings for various suggestion groups in the AwesomeBar.
@@ -196,10 +198,10 @@ class DefaultSuggestionsStringsProvider(
     }
 
     override fun getSwitchToTabDescriptionString(): String {
-        return context.getString(R.string.switch_to_tab_description)
+        return context.getString(awesomebarR.string.switch_to_tab_description)
     }
 
     override fun getSponsoredSuggestionDescription(): String {
-        return context.getString(R.string.sponsored_suggestion_description)
+        return context.getString(fxsuggestR.string.sponsored_suggestion_description)
     }
 }

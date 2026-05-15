@@ -12,9 +12,6 @@ const POPUP_SECOND_URL =
 
 add_task(async function () {
   await pushPref("devtools.popups.debug", true);
-  // We expect to create a target for a same-process iframe
-  // in the test against window.open to load a document in an iframe.
-  await pushPref("devtools.every-frame-target.enabled", true);
 
   // Create a TargetCommand for a given test tab
   const tab = await addTab(TEST_URL);

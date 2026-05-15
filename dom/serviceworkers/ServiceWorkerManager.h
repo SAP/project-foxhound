@@ -8,7 +8,9 @@
 #define mozilla_dom_workers_serviceworkermanager_h
 
 #include <cstdint>
+
 #include "ErrorList.h"
+#include "ServiceWorkerDescriptor.h"
 #include "ServiceWorkerShutdownState.h"
 #include "js/ErrorReport.h"
 #include "mozilla/AlreadyAddRefed.h"
@@ -175,7 +177,7 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
 
   RefPtr<ServiceWorkerRegistrationPromise> Register(
       const ClientInfo& aClientInfo, const nsACString& aScopeURL,
-      const nsACString& aScriptURL,
+      const WorkerType& aType, const nsACString& aScriptURL,
       ServiceWorkerUpdateViaCache aUpdateViaCache);
 
   RefPtr<ServiceWorkerRegistrationPromise> GetRegistration(
@@ -192,8 +194,8 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
       const nsACString& aScope) const;
 
   already_AddRefed<ServiceWorkerRegistrationInfo> CreateNewRegistration(
-      const nsCString& aScope, nsIPrincipal* aPrincipal,
-      ServiceWorkerUpdateViaCache aUpdateViaCache,
+      const nsCString& aScope, const WorkerType& aType,
+      nsIPrincipal* aPrincipal, ServiceWorkerUpdateViaCache aUpdateViaCache,
       IPCNavigationPreloadState aNavigationPreloadState =
           IPCNavigationPreloadState(false, "true"_ns));
 

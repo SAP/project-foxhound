@@ -7,8 +7,8 @@
 #define mozilla_dom_CanvasCaptureMediaStream_h_
 
 #include "DOMMediaStream.h"
-#include "mozilla/dom/HTMLCanvasElement.h"
 #include "PrincipalHandle.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
 
 class nsIPrincipal;
 

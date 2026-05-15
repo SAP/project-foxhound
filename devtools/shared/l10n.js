@@ -28,9 +28,9 @@ const getNumberFormatter = function (decimals) {
  * Memoized getter for properties files that ensures a given url is only required and
  * parsed once.
  *
- * @param {String} url
+ * @param {string} url
  *        The URL of the properties file to parse.
- * @return {Object} parsed properties mapped in an object.
+ * @return {object} parsed properties mapped in an object.
  */
 function getProperties(url) {
   if (!propertiesMap[url]) {
@@ -70,18 +70,19 @@ function getProperties(url) {
 
 /**
  * Localization convenience methods.
- *
- * @param string stringBundleName
- *        The desired string bundle's name.
- * @param boolean strict
- *        (legacy) pass true to force the helper to throw if the l10n id cannot be found.
  */
-function LocalizationHelper(stringBundleName, strict = false) {
-  this.stringBundleName = stringBundleName;
-  this.strict = strict;
-}
-
-LocalizationHelper.prototype = {
+class LocalizationHelper {
+  /**
+   *
+   * @param {string} stringBundleName
+   *        The desired string bundle's name.
+   * @param {boolean} strict
+   *        (legacy) pass true to force the helper to throw if the l10n id cannot be found.
+   */
+  constructor(stringBundleName, strict = false) {
+    this.stringBundleName = stringBundleName;
+    this.strict = strict;
+  }
   /**
    * L10N shortcut function.
    *
@@ -100,7 +101,7 @@ LocalizationHelper.prototype = {
 
     console.error("No localization found for [" + name + "]");
     return name;
-  },
+  }
 
   /**
    * L10N shortcut function.
@@ -111,7 +112,7 @@ LocalizationHelper.prototype = {
    */
   getFormatStr(name, ...args) {
     return sprintf(this.getStr(name), ...args);
-  },
+  }
 
   /**
    * L10N shortcut function for numeric arguments that need to be formatted.
@@ -128,7 +129,7 @@ LocalizationHelper.prototype = {
     });
 
     return this.getFormatStr(name, ...newArgs);
-  },
+  }
 
   /**
    * Converts a number to a locale-aware string format and keeps a certain
@@ -164,8 +165,8 @@ LocalizationHelper.prototype = {
     }
 
     return localized;
-  },
-};
+  }
+}
 
 function getPropertiesForNode(node) {
   const bundleEl = node.closest("[data-localization-bundle]");
@@ -224,50 +225,49 @@ function localizeMarkup(root) {
   }
 }
 
-const sharedL10N = new LocalizationHelper(
-  "devtools/shared/locales/shared.properties"
-);
-
 /**
  * A helper for having the same interface as LocalizationHelper, but for more
  * than one file. Useful for abstracting l10n string locations.
  */
-function MultiLocalizationHelper(...stringBundleNames) {
-  const instances = stringBundleNames.map(bundle => {
-    // Use strict = true because the MultiLocalizationHelper logic relies on try/catch
-    // around the underlying LocalizationHelper APIs.
-    return new LocalizationHelper(bundle, true);
-  });
-
-  // Get all function members of the LocalizationHelper class, making sure we're
-  // not executing any potential getters while doing so, and wrap all the
-  // methods we've found to work on all given string bundles.
-  Object.getOwnPropertyNames(LocalizationHelper.prototype)
-    .map(name => ({
-      name,
-      descriptor: Object.getOwnPropertyDescriptor(
-        LocalizationHelper.prototype,
-        name
-      ),
-    }))
-    .filter(({ descriptor }) => descriptor.value instanceof Function)
-    .forEach(method => {
-      this[method.name] = (...args) => {
-        for (const l10n of instances) {
-          try {
-            return method.descriptor.value.apply(l10n, args);
-          } catch (e) {
-            // Do nothing
-          }
-        }
-        return null;
-      };
+class MultiLocalizationHelper {
+  constructor(...stringBundleNames) {
+    const instances = stringBundleNames.map(bundle => {
+      // Use strict = true because the MultiLocalizationHelper logic relies on try/catch
+      // around the underlying LocalizationHelper APIs.
+      return new LocalizationHelper(bundle, true);
     });
+
+    // Get all function members of the LocalizationHelper class, making sure we're
+    // not executing any potential getters while doing so, and wrap all the
+    // methods we've found to work on all given string bundles.
+    Object.getOwnPropertyNames(LocalizationHelper.prototype)
+      .map(name => ({
+        name,
+        descriptor: Object.getOwnPropertyDescriptor(
+          LocalizationHelper.prototype,
+          name
+        ),
+      }))
+      .filter(({ descriptor }) => descriptor.value instanceof Function)
+      .forEach(method => {
+        this[method.name] = (...args) => {
+          for (const l10n of instances) {
+            try {
+              return method.descriptor.value.apply(l10n, args);
+            } catch (e) {
+              // Do nothing
+            }
+          }
+          return null;
+        };
+      });
+  }
 }
 
 exports.LocalizationHelper = LocalizationHelper;
 exports.localizeMarkup = localizeMarkup;
 exports.MultiLocalizationHelper = MultiLocalizationHelper;
 Object.defineProperty(exports, "ELLIPSIS", {
-  get: () => sharedL10N.getStr("ellipsis"),
+  get: () =>
+    typeof Services == "undefined" ? "\u2026" : Services.locale.ellipsis,
 });

@@ -13,10 +13,8 @@ error -
 #endif
 
 #if defined(__hpux)
-#  ifndef HPUX
         error -
-    HPUX is not defined
-#  endif
+    HPUX is not supported
 #endif
 
 #if defined(__alpha)
@@ -59,11 +57,7 @@ error -
 #    define INT64 long
 #  endif
 #else
-#  if defined(HPUX)
-#    define INT64 long
-#  else
 #    define INT64 long long
-#  endif
 #endif
 
                      struct align_short {

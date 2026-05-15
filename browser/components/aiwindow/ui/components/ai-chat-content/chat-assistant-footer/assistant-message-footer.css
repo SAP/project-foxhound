@@ -1,0 +1,27 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+:host {
+  --chat-assistant-footer-button-padding: var(--space-xsmall);
+  --chat-assistant-footer-button-bg-hover: rgba(191, 143, 204, 0.2);
+  --chat-assistant-footer-button-bg-active: rgba(191, 143, 204, 0.26);
+  --chat-assistant-footer-button-border-hover: rgba(0, 0, 0, 0);
+  --chat-assistant-footer-button-border-active: rgba(0, 0, 0, 0);
+}
+
+.footer {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xsmall);
+}
+
+moz-button.footer-icon-button {
+  --button-icon-fill: light-dark(var(--color-gray-70), var(--color-white));
+  --button-padding: var(--chat-assistant-footer-button-padding);
+  --button-background-color-ghost-hover: var(--chat-assistant-footer-button-bg-hover);
+  --button-border-color-ghost-hover: var(--chat-assistant-footer-button-border-hover);
+  --button-background-color-ghost-active: var(--chat-assistant-footer-button-bg-active);
+  --button-border-color-ghost-active: var(--chat-assistant-footer-button-border-active);
+}

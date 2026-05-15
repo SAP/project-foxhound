@@ -41,11 +41,6 @@ class CodeGeneratorARM : public CodeGeneratorShared {
     masm.cmpPtr(lhs, rhs);
     bailoutIf(c, snapshot);
   }
-  void bailoutTestPtr(Assembler::Condition c, Register lhs, Register rhs,
-                      LSnapshot* snapshot) {
-    masm.testPtr(lhs, rhs);
-    bailoutIf(c, snapshot);
-  }
   template <typename T1, typename T2>
   void bailoutCmp32(Assembler::Condition c, T1 lhs, T2 rhs,
                     LSnapshot* snapshot) {
@@ -90,8 +85,6 @@ class CodeGeneratorARM : public CodeGeneratorShared {
   void emitWasmStore(T* ins);
   template <typename T>
   void emitWasmUnalignedStore(T* ins);
-
-  Register64 ToOperandOrRegister64(const LInt64Allocation& input);
 
   void divICommon(MDiv* mir, Register lhs, Register rhs, Register output,
                   LSnapshot* snapshot, Label& done);

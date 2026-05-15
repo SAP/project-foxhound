@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Text Fragment Creation Should Not Reveal Other Elements (Bug 1970909)</title>
+  <meta charset="UTF-8">
+  <link rel="help" href="https://bugzil.la/1970909">
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+</head>
+<body>
+  <div id="hidden1" hidden="until-found">abc</div>
+
+  <details id="details1">
+    <summary>First Section</summary>
+    <div id="content1">abc</div>
+  </details>
+
+  <details id="details2">
+    <summary>Second Section</summary>
+    <div id="content2">abc def</div>
+  </details>
+
+  <script>
+    SimpleTest.waitForExplicitFinish();
+
+    async function runTests() {
+      try {
+        // Creating a text fragment from a selection in details2 should not reveal
+        // other elements (closed <details> or hidden=until-found elements).
+
+        ok(hidden1.hidden === "until-found",
+           "Precondition: hidden1 should have hidden=until-found");
+        details1.open = false;
+        details2.open = true;
+
+        ok(!details1.open, "Precondition: details1 should be closed");
+        ok(details2.open, "Precondition: details2 should be open");
+
+        const range = document.createRange();
+        range.setStart(content2.firstChild, 0);
+        range.setEnd(content2.firstChild, 3);
+        is(range.toString(), "abc", "Precondition: Range should contain 'abc'");
+
+        // Create text directive from the range
+        // This will internally search for "abc" to determine if context is needed
+        // and must not reveal other matches of the search string.
+        const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        isnot(textDirective, null, "A text directive should be created for 'abc'");
+
+        is(hidden1.hidden, "until-found", "hidden=until-found element should not be revealed");
+        ok(!details1.open, "closed details element should not be opened");
+        ok(details2.open, "already open element which contains the selection should remain open");
+        is(textDirective, "text=abc,-def", `Text directive "${textDirective}" should be correct`);
+
+      } finally {
+        SimpleTest.finish();
+      }
+    }
+
+    document.body.onload = runTests;
+  </script>
+</body>
+</html>

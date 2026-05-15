@@ -2,14 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WebAuthnService.h"
+
+#include "WebAuthnEnumStrings.h"
+#include "WebAuthnTransportIdentifiers.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "nsIObserverService.h"
 #include "nsTextFormatter.h"
 #include "nsThreadUtils.h"
-#include "WebAuthnEnumStrings.h"
-#include "WebAuthnService.h"
-#include "WebAuthnTransportIdentifiers.h"
 
 namespace mozilla::dom {
 
@@ -31,14 +32,12 @@ void WebAuthnService::ShowAttestationConsentPrompt(
       NS_NewRunnableFunction(__func__, [self, aTransactionId]() {
         self->SetHasAttestationConsent(
             aTransactionId,
-            StaticPrefs::
-                security_webauth_webauthn_testing_allow_direct_attestation());
+            StaticPrefs::security_webauthn_always_allow_direct_attestation());
       }));
 #else
   nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
       __func__, [self, aOrigin, aTransactionId, aBrowsingContextId]() {
-        if (StaticPrefs::
-                security_webauth_webauthn_testing_allow_direct_attestation()) {
+        if (StaticPrefs::security_webauthn_always_allow_direct_attestation()) {
           self->SetHasAttestationConsent(aTransactionId, true);
           return;
         }
@@ -79,12 +78,12 @@ WebAuthnService::MakeCredential(uint64_t aTransactionId,
   // chains to `aPromise` here.
 
   nsString attestation;
-  Unused << aArgs->GetAttestationConveyancePreference(attestation);
+  (void)aArgs->GetAttestationConveyancePreference(attestation);
   bool attestationRequested = !attestation.EqualsLiteral(
       MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_NONE);
 
   nsString origin;
-  Unused << aArgs->GetOrigin(origin);
+  (void)aArgs->GetOrigin(origin);
 
   RefPtr<WebAuthnRegisterPromiseHolder> promiseHolder =
       new WebAuthnRegisterPromiseHolder(GetCurrentSerialEventTarget());
@@ -92,45 +91,54 @@ WebAuthnService::MakeCredential(uint64_t aTransactionId,
   RefPtr<WebAuthnService> self = this;
   RefPtr<WebAuthnRegisterPromise> promise = promiseHolder->Ensure();
   promise
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [self, origin, aTransactionId, aBrowsingContextId,
-           attestationRequested](
-              const WebAuthnRegisterPromise::ResolveOrRejectValue& aValue) {
-            auto guard = self->mTransactionState.Lock();
-            if (guard->isNothing()) {
-              return;
-            }
-            MOZ_ASSERT(guard->ref().parentRegisterPromise.isSome());
-            MOZ_ASSERT(guard->ref().registerResult.isNothing());
-            MOZ_ASSERT(guard->ref().childRegisterRequest.Exists());
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [self, origin, aTransactionId, aBrowsingContextId,
+              attestationRequested](
+                 const WebAuthnRegisterPromise::ResolveOrRejectValue& aValue) {
+               auto guard = self->mTransactionState.Lock();
+               if (guard->isNothing()) {
+                 return;
+               }
+               MOZ_ASSERT(guard->ref().parentRegisterPromise.isSome());
+               MOZ_ASSERT(guard->ref().registerResult.isNothing());
+               MOZ_ASSERT(guard->ref().childRegisterRequest.Exists());
 
-            guard->ref().childRegisterRequest.Complete();
+               guard->ref().childRegisterRequest.Complete();
 
-            if (aValue.IsReject()) {
-              guard->ref().parentRegisterPromise.ref()->Reject(
-                  aValue.RejectValue());
-              guard->reset();
-              return;
-            }
+               if (aValue.IsReject()) {
+                 guard->ref().parentRegisterPromise.ref()->Reject(
+                     aValue.RejectValue());
+                 guard->reset();
+                 return;
+               }
 
-            nsIWebAuthnRegisterResult* result = aValue.ResolveValue();
-            // If the RP requested attestation, we need to show a consent prompt
-            // before returning any identifying information. The platform may
-            // have already done this for us, so we need to inspect the
-            // attestation object at this point.
-            bool resultIsIdentifying = true;
-            Unused << result->HasIdentifyingAttestation(&resultIsIdentifying);
-            if (attestationRequested && resultIsIdentifying) {
-              guard->ref().registerResult = Some(result);
-              self->ShowAttestationConsentPrompt(origin, aTransactionId,
-                                                 aBrowsingContextId);
-              return;
-            }
-            result->Anonymize();
-            guard->ref().parentRegisterPromise.ref()->Resolve(result);
-            guard->reset();
-          })
+               nsIWebAuthnRegisterResult* result = aValue.ResolveValue();
+               // We can return whatever result we have if the authenticator
+               // handled attestation consent for us.
+               bool attestationConsentPromptShown = false;
+               (void)result->GetAttestationConsentPromptShown(
+                   &attestationConsentPromptShown);
+               if (attestationConsentPromptShown) {
+                 guard->ref().parentRegisterPromise.ref()->Resolve(result);
+                 guard->reset();
+                 return;
+               }
+               // If the RP requested attestation and the response contains
+               // identifying information, then we need to show a consent
+               // prompt.
+               bool resultIsIdentifying = true;
+               (void)result->HasIdentifyingAttestation(&resultIsIdentifying);
+               if (attestationRequested && resultIsIdentifying) {
+                 guard->ref().registerResult = Some(result);
+                 self->ShowAttestationConsentPrompt(origin, aTransactionId,
+                                                    aBrowsingContextId);
+                 return;
+               }
+               // In all other cases we strip out identifying information.
+               result->Anonymize();
+               guard->ref().parentRegisterPromise.ref()->Resolve(result);
+               guard->reset();
+             })
       ->Track(guard->ref().childRegisterRequest);
 
   nsresult rv = guard->ref().service->MakeCredential(
@@ -170,7 +178,7 @@ WebAuthnService::GetAssertion(uint64_t aTransactionId,
     if (rv == NS_OK) {  // AppID is set
       uint8_t transportSet = 0;
       nsTArray<uint8_t> allowListTransports;
-      Unused << aArgs->GetAllowListTransports(allowListTransports);
+      (void)aArgs->GetAllowListTransports(allowListTransports);
       for (const uint8_t& transport : allowListTransports) {
         transportSet |= transport;
       }
@@ -194,7 +202,7 @@ WebAuthnService::GetAssertion(uint64_t aTransactionId,
   // If this is a conditionally mediated request, notify observers that there
   // is a pending transaction. This is mainly useful in tests.
   bool conditionallyMediated;
-  Unused << aArgs->GetConditionallyMediated(&conditionallyMediated);
+  (void)aArgs->GetConditionallyMediated(&conditionallyMediated);
   if (conditionallyMediated) {
     nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(__func__, []() {
       nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();

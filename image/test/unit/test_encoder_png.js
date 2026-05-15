@@ -144,7 +144,8 @@ function encodeImage(input) {
     frame.height,
     frame.stride,
     frame.format,
-    options
+    options,
+    null
   );
   return encoder;
 }

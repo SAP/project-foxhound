@@ -4,7 +4,7 @@
 
 "use strict";
 
-/* globals browser, UAHelpers */
+/* globals browser, debugLog, UAHelpers */
 
 const GOOGLE_TLDS = [
   "com",
@@ -267,6 +267,9 @@ var InterventionHelpers = {
     mimic_Android_Hotspot2_device: ua => {
       return UAHelpers.androidHotspot2Device(ua);
     },
+    replace_colon_in_rv_with_space: ua => {
+      return ua.replace("rv:", "rv ");
+    },
     reduce_firefox_version_by_one: ua => {
       const [head, fx, tail] = ua.split(/(firefox\/)/i);
       if (!fx || !tail) {
@@ -278,7 +281,15 @@ var InterventionHelpers = {
       }
       return `${head}${fx}${major - 1}${tail.slice(major.toString().length)}`;
     },
+    add_Safari: (ua, config) => {
+      config.withFirefox = true;
+      return UAHelpers.safari(config);
+    },
     Safari: (ua, config) => {
+      return UAHelpers.safari(config);
+    },
+    Safari_with_FxQuantum: (ua, config) => {
+      config.withFxQuantum = true;
       return UAHelpers.safari(config);
     },
   },
@@ -294,7 +305,12 @@ var InterventionHelpers = {
   ],
   valid_channels: ["beta", "esr", "nightly", "stable"],
 
-  shouldSkip(intervention, firefoxVersion, firefoxChannel) {
+  shouldSkip(
+    intervention,
+    firefoxVersion,
+    firefoxChannel,
+    customFunctionNames
+  ) {
     const {
       bug,
       max_version,
@@ -302,64 +318,119 @@ var InterventionHelpers = {
       not_channels,
       only_channels,
       skip_if,
+      ua_string,
     } = intervention;
     if (firefoxChannel) {
       if (only_channels && !only_channels.includes(firefoxChannel)) {
-        return true;
+        return `not for Firefox ${firefoxChannel}`;
       }
       if (not_channels?.includes(firefoxChannel)) {
-        return true;
+        return `not for Firefox ${firefoxChannel}`;
       }
     }
     if (min_version && firefoxVersion < min_version) {
-      return true;
+      return `only for Firefox ${min_version} or newer`;
     }
     if (max_version) {
       // Make sure to handle the case where only the major version matters,
       // for instance if we want 138 and the version number is 138.1.
       if (String(max_version).includes(".")) {
         if (firefoxVersion > max_version) {
-          return true;
+          return `only for Firefox ${max_version} or older`;
         }
       } else if (Math.floor(firefoxVersion) > max_version) {
-        return true;
+        return `only for Firefox ${max_version} or older`;
+      }
+    }
+    if (ua_string) {
+      for (let ua of Array.isArray(ua_string) ? ua_string : [ua_string]) {
+        if (!InterventionHelpers.ua_change_functions[ua.change ?? ua]) {
+          return `unknown UA string helper ${ua.change ?? ua} (webcompat addon may be too old)`;
+        }
       }
     }
     if (skip_if) {
       try {
-        if (this.skip_if_functions[skip_if]?.()) {
-          return true;
+        if (
+          !this.skip_if_functions[skip_if] ||
+          this.skip_if_functions[skip_if]?.()
+        ) {
+          return `skipped because ${skip_if}`;
         }
       } catch (e) {
         console.trace(
           `Error while checking skip-if condition ${skip_if} for bug ${bug}:`,
           e
         );
+        return `error while checking if ${skip_if}`;
       }
     }
-    return false;
-  },
 
-  async getOS() {
-    const os =
-      (await browser.aboutConfigPrefs.getPref("platform_override")) ??
-      (await browser.runtime.getPlatformInfo()).os;
-    if (os === "win") {
-      return "windows";
+    // special case: allow platforms=[] to indicate "disabled by default",
+    // meaning we intend for it to be available on every platform.
+    if (
+      !InterventionHelpers.isDisabledByDefault(intervention) &&
+      !InterventionHelpers.checkPlatformMatches(intervention)
+    ) {
+      return "unneeded on this platform";
     }
-    return os;
+
+    const missingFn = InterventionHelpers.isMissingCustomFunctions(
+      intervention,
+      customFunctionNames
+    );
+    if (missingFn) {
+      return `needed function ${missingFn} unavailable (webcompat addon may be too old)`;
+    }
+
+    return undefined;
   },
 
-  async getPlatformMatches() {
+  nonCustomInterventionKeys: Object.freeze(
+    new Set([
+      "content_scripts",
+      "enabled",
+      "max_version",
+      "min_version",
+      "not_platforms",
+      "platforms",
+      "not_channels",
+      "only_channels",
+      "pref_check",
+      "skip_if",
+      "ua_string",
+    ])
+  ),
+
+  isMissingCustomFunctions(intervention, customFunctionNames) {
+    for (let key of Object.keys(intervention)) {
+      if (
+        !InterventionHelpers.nonCustomInterventionKeys.has(key) &&
+        !customFunctionNames.has(key)
+      ) {
+        return key;
+      }
+    }
+    return undefined;
+  },
+
+  getOS() {
+    return (
+      browser.aboutConfigPrefs.getPref("platform_override") ??
+      browser.appConstants.getPlatform()
+    );
+  },
+
+  getPlatformMatches() {
     if (!InterventionHelpers._platformMatches) {
-      const os = await this.getOS();
+      const os = this.getOS();
       InterventionHelpers._platformMatches = [
         "all",
         os,
         os == "android" ? "android" : "desktop",
       ];
       if (os == "android") {
-        const packageName = await browser.appConstants.getAndroidPackageName();
+        const packageName = browser.appConstants.getAndroidPackageName();
         if (packageName.includes("fenix") || packageName.includes("firefox")) {
           InterventionHelpers._platformMatches.push("fenix");
         }
@@ -368,14 +439,14 @@ var InterventionHelpers = {
     return InterventionHelpers._platformMatches;
   },
 
-  async checkPlatformMatches(intervention) {
+  checkPlatformMatches(intervention) {
     let desired = intervention.platforms;
     let undesired = intervention.not_platforms;
     if (!desired && !undesired) {
       return true;
     }
 
-    const actual = await InterventionHelpers.getPlatformMatches();
+    const actual = InterventionHelpers.getPlatformMatches();
     if (undesired) {
       if (!Array.isArray(undesired)) {
         undesired = [undesired];
@@ -400,16 +471,21 @@ var InterventionHelpers = {
     );
   },
 
+  isDisabledByDefault(intervention) {
+    return (
+      intervention.platforms &&
+      !intervention.platforms.length &&
+      !intervention.not_platforms
+    );
+  },
+
   applyUAChanges(ua, changes) {
     if (!Array.isArray(changes)) {
       changes = [changes];
     }
     for (let config of changes) {
       if (typeof config === "string") {
-        config = { change: config, enabled: true };
-      }
-      if (!config.enabled) {
-        continue;
+        config = { change: config };
       }
       let finalChanges = config.change;
       if (!Array.isArray(finalChanges)) {
@@ -448,5 +524,139 @@ var InterventionHelpers = {
    */
   matchPatternsForGoogle(base, suffix = "/*") {
     return InterventionHelpers.matchPatternsForTLDs(base, suffix, GOOGLE_TLDS);
+  },
+
+  async registerContentScripts(scriptsToReg, typeStr) {
+    // Try to avoid re-registering scripts already registered
+    // (e.g. if the webcompat background page is restarted
+    // after an extension process crash, after having registered
+    // the content scripts already once), but do not prevent
+    // to try registering them again if the getRegisteredContentScripts
+    // method returns an unexpected rejection.
+
+    const ids = scriptsToReg.map(s => s.id);
+    if (!ids.length) {
+      return;
+    }
+    try {
+      const alreadyRegged = await browser.scripting.getRegisteredContentScripts(
+        { ids }
+      );
+      const alreadyReggedIds = alreadyRegged.map(script => script.id);
+      const stillNeeded = scriptsToReg.filter(
+        ({ id }) => !alreadyReggedIds.includes(id)
+      );
+      await browser.scripting.registerContentScripts(stillNeeded);
+      debugLog(
+        `Registered still-not-active ${typeStr} content scripts`,
+        stillNeeded
+      );
+    } catch (e) {
+      for (const script of scriptsToReg) {
+        try {
+          await browser.scripting.registerContentScripts(scriptsToReg);
+        } catch (e2) {
+          console.error(
+            `Error while registering ${typeStr} content script`,
+            script,
+            e2
+          );
+        }
+      }
+      debugLog(
+        `Registered ${typeStr} content scripts after error registering just non-active ones`,
+        scriptsToReg,
+        e
+      );
+    }
+  },
+
+  async ensureOnlyTheseContentScripts(contentScriptsToRegister, type) {
+    if (type != "webcompat intervention" && type != "SmartBlock shim") {
+      throw new Error(
+        '`type` must be "webcompat intervention" or "SmartBlock shim"'
+      );
+    }
+
+    // Check which content scripts are already registered persistently.
+    // (we may need to disable ones we no longer need, and also register
+    // any new ones which are not persisted yet).
+    const desiredContentScriptIds = new Set(
+      contentScriptsToRegister.map(s => s.id)
+    );
+    const activeContentScripts =
+      await browser.scripting.getRegisteredContentScripts();
+
+    const interventionContentScripts = activeContentScripts.filter(s =>
+      s.id.includes(type)
+    );
+
+    const oldContentScriptsToUnregister = interventionContentScripts.filter(
+      ({ id }) => !desiredContentScriptIds.has(id)
+    );
+
+    if (oldContentScriptsToUnregister.length) {
+      debugLog(
+        `Unregistering no-longer-needed ${type} content scripts`,
+        oldContentScriptsToUnregister
+      );
+      try {
+        await browser.scripting.unregisterContentScripts({
+          ids: oldContentScriptsToUnregister.map(s => s.id),
+        });
+      } catch (_) {
+        for (const script of oldContentScriptsToUnregister) {
+          try {
+            await browser.scripting.unregisterContentScripts({
+              ids: [script.id],
+            });
+          } catch (e) {
+            console.error("Error unregistering content script", script, e);
+          }
+        }
+      }
+    }
+
+    const interventionContentScriptIds = new Set(
+      interventionContentScripts.map(s => s.id)
+    );
+    const newContentScriptsToRegister = contentScriptsToRegister.filter(
+      ({ id }) => !interventionContentScriptIds.has(id)
+    );
+    if (newContentScriptsToRegister.length) {
+      debugLog(
+        `Registering new ${type} content scripts`,
+        newContentScriptsToRegister
+      );
+      try {
+        await browser.scripting.registerContentScripts(
+          newContentScriptsToRegister
+        );
+      } catch (_) {
+        for (const script of newContentScriptsToRegister) {
+          try {
+            await browser.scripting.registerContentScripts([script]);
+          } catch (e) {
+            console.error("Error registering content script", script, e);
+          }
+        }
+      }
+    }
+
+    const alreadyRegisteredContentScripts = contentScriptsToRegister.filter(
+      ({ id }) => interventionContentScriptIds.has(id)
+    );
+    if (alreadyRegisteredContentScripts.length) {
+      debugLog(
+        `Already have registered ${type} content scripts`,
+        alreadyRegisteredContentScripts
+      );
+    }
+
+    return {
+      alreadyRegisteredContentScripts,
+      newContentScriptsToRegister,
+      oldContentScriptsToUnregister,
+    };
   },
 };

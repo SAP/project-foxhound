@@ -10,9 +10,8 @@
 #include "SDBConnection.h"
 
 // Global includes
-#include <utility>
+
 #include "mozilla/ErrorNames.h"
-#include "mozilla/MacroForEach.h"
 #include "nsError.h"
 #include "nsISDBCallbacks.h"
 #include "nsISupportsUtils.h"

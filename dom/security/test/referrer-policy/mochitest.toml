@@ -9,19 +9,20 @@ support-files = [
 
 ["test_img_referrer.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
+  "verify-standalone",
 ]
 
 ["test_referrer_header_current_document.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_referrer_redirect.html"]
 # Please keep alphabetical order.
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]

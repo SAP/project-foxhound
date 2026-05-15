@@ -119,9 +119,11 @@ class TestWindowHandles(ChromeHandlerMixin, WindowManagerMixin, MarionetteTestCa
         self.marionette.start_session()
 
         self.assert_window_handles()
-        self.assertEqual(window_handles, self.marionette.window_handles)
 
-        self.marionette.switch_to_window(new_window)
+        # For a new session the window handles will have a new uuid as value
+        self.assertEqual(len(window_handles), len(self.marionette.window_handles))
+        for item in self.marionette.window_handles:
+            self.assertNotIn(item, window_handles)
 
     def test_window_handles_include_unloaded_tabs(self):
         new_tab = self.open_tab()

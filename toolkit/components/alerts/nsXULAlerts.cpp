@@ -90,27 +90,6 @@ void nsXULAlerts::PersistentAlertFinished() {
 }
 
 NS_IMETHODIMP
-nsXULAlerts::ShowAlertNotification(
-    const nsAString& aImageUrl, const nsAString& aAlertTitle,
-    const nsAString& aAlertText, bool aAlertTextClickable,
-    const nsAString& aAlertCookie, nsIObserver* aAlertListener,
-    const nsAString& aAlertName, const nsAString& aBidi, const nsAString& aLang,
-    const nsAString& aData, nsIPrincipal* aPrincipal, bool aInPrivateBrowsing,
-    bool aRequireInteraction) {
-  nsCOMPtr<nsIAlertNotification> alert =
-      do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
-  NS_ENSURE_TRUE(alert, NS_ERROR_FAILURE);
-  // vibrate is unused for now
-  nsTArray<uint32_t> vibrate;
-  nsresult rv = alert->Init(aAlertName, aImageUrl, aAlertTitle, aAlertText,
-                            aAlertTextClickable, aAlertCookie, aBidi, aLang,
-                            aData, aPrincipal, aInPrivateBrowsing,
-                            aRequireInteraction, false, vibrate);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return ShowAlert(alert, aAlertListener);
-}
-
-NS_IMETHODIMP
 nsXULAlerts::ShowAlert(nsIAlertNotification* aAlert,
                        nsIObserver* aAlertListener) {
   nsAutoString name;
@@ -180,8 +159,8 @@ nsresult nsXULAlerts::ShowAlertImpl(nsIAlertNotification* aAlert,
   rv = aAlert->GetName(name);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsAutoString imageUrl;
-  rv = aAlert->GetImageURL(imageUrl);
+  nsCOMPtr<imgIContainer> image;
+  rv = aAlert->GetImage(getter_AddRefs(image));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsAutoString title;
@@ -216,16 +195,11 @@ nsresult nsXULAlerts::ShowAlertImpl(nsIAlertNotification* aAlert,
 
   nsCOMPtr<nsIMutableArray> argsArray = nsArray::Create();
 
-  // create scriptable versions of our strings that we can store in our
-  // nsIMutableArray....
-  nsCOMPtr<nsISupportsString> scriptableImageUrl(
-      do_CreateInstance(NS_SUPPORTS_STRING_CONTRACTID));
-  NS_ENSURE_TRUE(scriptableImageUrl, NS_ERROR_FAILURE);
-
-  scriptableImageUrl->SetData(imageUrl);
-  rv = argsArray->AppendElement(scriptableImageUrl);
+  rv = argsArray->AppendElement(image);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // create scriptable versions of our strings that we can store in our
+  // nsIMutableArray....
   nsCOMPtr<nsISupportsString> scriptableAlertTitle(
       do_CreateInstance(NS_SUPPORTS_STRING_CONTRACTID));
   NS_ENSURE_TRUE(scriptableAlertTitle, NS_ERROR_FAILURE);

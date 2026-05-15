@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _CSF_COMMON_E58E5677_950A_424c_B6C2_CA180092E6A2_H
-#define _CSF_COMMON_E58E5677_950A_424c_B6C2_CA180092E6A2_H
+#ifndef CSF_COMMON_E58E5677_950A_424c_B6C2_CA180092E6A2_H
+#define CSF_COMMON_E58E5677_950A_424c_B6C2_CA180092E6A2_H
 
 /*
 

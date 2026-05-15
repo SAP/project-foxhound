@@ -46,7 +46,11 @@ support-files = [
 ["test_bug1328865.js"]
 
 ["test_bug1550815.js"]
-run-if = ["false"] # recovering from SIGBUS is temporarily disabled by bug 1583735
+run-if = [
+  "false", # recovering from SIGBUS is temporarily disabled by bug 1583735
+]
+
+["test_bug1940027_embedded_null.js"]
 
 ["test_corrupt_1211262.js"]
 
@@ -65,7 +69,9 @@ run-if = ["false"] # recovering from SIGBUS is temporarily disabled by bug 15837
 ["test_fault_handler.js"]
 head = "../../zipwriter/test/unit/head_zipwriter.js"
 # run-if = ["os == 'win'"] # tests windows specific exception handling
-run-if = ["false"] # Requires elevated priviledges. See bug 1707853 and comments in test
+run-if = [
+  "false", # Requires elevated priviledges. See bug 1707853 and comments in test
+]
 
 ["test_jarchannel.js"]
 

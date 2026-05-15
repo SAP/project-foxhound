@@ -10,6 +10,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     description: Release Promotion version tag for buildN
     run-on-projects: []
     shipping-phase: promote
@@ -27,7 +28,6 @@ task-defaults:
                     by-release-type:
                         beta: staging-firefox-beta
                         release: staging-firefox-release
-                        release-rc: staging-firefox-release
                         esr115: staging-firefox-esr115
                         esr128: staging-firefox-esr128
                         esr140: staging-firefox-esr140

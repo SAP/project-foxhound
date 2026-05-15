@@ -1,0 +1,32 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test that replaceState from within fragment navigation does not cause a crash</title>
+  <meta charset="utf-8">
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=2002159">Mozilla Bug 2002159</a>
+<p id="display"></p>
+<div id="content" style="display: none"></div>
+<pre id="test">
+<a id="fragment-link" href="#content" onblur="triggerReplace()"></a>
+</pre>
+<script>
+  SimpleTest.waitForExplicitFinish();
+  window.onload = async () => {
+    let link = document.getElementById("fragment-link");
+    link.focus();
+    link.click();
+  };
+
+  function triggerReplace() {
+    history.replaceState(null, null, "#0");
+
+    ok(true, "replaceState from within fragment navigation does not cause a crash");
+    SimpleTest.finish();
+  }
+</script>
+</body>
+</html>

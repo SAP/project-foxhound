@@ -33,7 +33,7 @@ function loadEditMenuStrings(win) {
  * You'll need to call menu.popup() yourself, this just returns the Menu instance.
  *
  * @param {Window} win parent window reference
- * @param {String} id menu ID
+ * @param {string} id menu ID
  *
  * @returns {Menu}
  */

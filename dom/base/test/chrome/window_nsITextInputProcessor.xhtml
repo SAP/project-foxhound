@@ -2056,243 +2056,8 @@ function runCompositionWithKeyEventTests()
   var convertKeyEvent = new KeyboardEvent("", { key: "Convert", code: "Convert", keyCode: KeyboardEvent.DOM_VK_CONVERT });
   var backspaceKeyEvent = new KeyboardEvent("", { key: "Backspace", code: "Backspace", keyCode: KeyboardEvent.DOM_VK_BACK_SPACE });
 
-  Services.prefs.setBoolPref("dom.keyboardevent.dispatch_during_composition", false);
-
   // nsITextInputProcessor.startComposition()
-  reset();
-  TIP.startComposition(printableKeyEvent);
-  is(events.length, 2,
-     description + "startComposition(printableKeyEvent) should cause keydown and compositionstart");
-  is(events[0].type, "keydown",
-     description + "startComposition(printableKeyEvent) should cause keydown");
-  is(events[1].type, "compositionstart",
-     description + "startComposition(printableKeyEvent) should cause compositionstart");
-  is(input.value, "",
-     description + "startComposition(printableKeyEvent) shouldn't modify the focused editor");
-
-  // Setting composition string "foo" as a raw clause
-  TIP.setPendingCompositionString("foo");
-  TIP.appendClauseToPendingComposition(3, TIP.ATTR_RAW_CLAUSE);
-  TIP.setCaretInPendingComposition(3);
-
-  reset();
-  TIP.flushPendingComposition(printableKeyEvent);
-  is(events.length, 1,
-     description + "flushPendingComposition(KeyupInternal) after startComposition() should cause compositionupdate");
-  is(events[0].type, "compositionupdate",
-     description + "flushPendingComposition(KeyupInternal) after startComposition() should cause compositionupdate");
-  is(events[0].data, "foo",
-     description + "compositionupdate caused by flushPendingComposition(KeyupInternal) should have new composition string in its data");
-  is(input.value, "foo",
-     description + "modifying composition string should cause modifying the focused editor");
-
-  // Changing the raw clause to a selected clause
-  TIP.setPendingCompositionString("foo");
-  TIP.appendClauseToPendingComposition(3, TIP.ATTR_SELECTED_CLAUSE);
-
-  reset();
-  TIP.flushPendingComposition(convertKeyEvent);
-  is(events.length, 0,
-     description + "flushPendingComposition(convertKeyEvent) changing only clause information shouldn't cause compositionupdate");
-  is(input.value, "foo",
-     description + "modifying composition clause shouldn't cause modifying the focused editor");
-
-  // Separating the selected clause to two clauses
-  TIP.setPendingCompositionString("foo");
-  TIP.appendClauseToPendingComposition(2, TIP.ATTR_SELECTED_CLAUSE);
-  TIP.appendClauseToPendingComposition(1, TIP.ATTR_CONVERTED_CLAUSE);
-  TIP.setCaretInPendingComposition(2);
-
-  reset();
-  TIP.flushPendingComposition(convertKeyEvent);
-  is(events.length, 0,
-     description + "flushPendingComposition(convertKeyEvent) separating a clause information shouldn't cause compositionupdate");
-  is(input.value, "foo",
-     description + "separating composition clause shouldn't cause modifying the focused editor");
-
-  // Modifying the composition string
-  TIP.setPendingCompositionString("FOo");
-  TIP.appendClauseToPendingComposition(2, TIP.ATTR_SELECTED_CLAUSE);
-  TIP.appendClauseToPendingComposition(1, TIP.ATTR_CONVERTED_CLAUSE);
-  TIP.setCaretInPendingComposition(2);
-
-  reset();
-  TIP.flushPendingComposition(convertKeyEvent);
-  is(events.length, 1,
-     description + "flushPendingComposition(convertKeyEvent) causing modifying composition string should cause compositionupdate");
-  is(events[0].type, "compositionupdate",
-     description + "flushPendingComposition(convertKeyEvent) causing modifying composition string should cause compositionupdate");
-  is(events[0].data, "FOo",
-     description + "compositionupdate caused by flushPendingComposition(convertKeyEvent) should have new composition string in its data");
-  is(input.value, "FOo",
-     description + "modifying composition clause shouldn't cause modifying the focused editor");
-
-  // Committing the composition string
-  reset();
-  TIP.commitComposition(enterKeyEvent);
-  is(events.length, 2,
-     description + "commitComposition(enterKeyEvent) should cause compositionend and keyup but shoudn't cause compositionupdate");
-  is(events[0].type, "compositionend",
-     description + "commitComposition(enterKeyEvent) should cause compositionend");
-  is(events[0].data, "FOo",
-     description + "compositionend caused by commitComposition(enterKeyEvent) should have the committed string in its data");
-  is(events[1].type, "keyup",
-     description + "commitComposition(enterKeyEvent) should cause keyup");
-  is(input.value, "FOo",
-     description + "commitComposition(enterKeyEvent) shouldn't cause modifying the focused editor");
-
-  // Starting new composition without a call of startComposition()
-  TIP.setPendingCompositionString("bar");
-  TIP.appendClauseToPendingComposition(3, TIP.ATTR_RAW_CLAUSE);
-
-  reset();
-  TIP.flushPendingComposition(printableKeyEvent);
-  is(events.length, 3,
-     description + "flushPendingComposition(printableKeyEvent) without a call of startComposition() should cause both compositionstart and compositionupdate");
-  is(events[0].type, "keydown",
-     description + "flushPendingComposition(printableKeyEvent) without a call of startComposition() should cause keydown");
-  is(events[1].type, "compositionstart",
-     description + "flushPendingComposition(printableKeyEvent) without a call of startComposition() should cause compositionstart");
-  is(events[2].type, "compositionupdate",
-     description + "flushPendingComposition(printableKeyEvent) without a call of startComposition() should cause compositionupdate after compositionstart");
-  is(events[2].data, "bar",
-     description + "compositionupdate caused by flushPendingComposition(printableKeyEvent) without a call of startComposition() should have the composition string in its data");
-  is(input.value, "FOobar",
-     description + "new composition string should cause appending composition string to the focused editor");
-
-  // Canceling the composition
-  reset();
-  TIP.cancelComposition(escKeyEvent);
-  is(events.length, 3,
-     description + "cancelComposition(escKeyEvent) should cause both compositionupdate and compositionend");
-  is(events[0].type, "compositionupdate",
-     description + "cancelComposition(escKeyEvent) should cause compositionupdate");
-  is(events[0].data, "",
-     description + "compositionupdate caused by cancelComposition(escKeyEvent) should have empty string in its data");
-  is(events[1].type, "compositionend",
-     description + "cancelComposition(escKeyEvent) should cause compositionend after compositionupdate");
-  is(events[1].data, "",
-     description + "compositionend caused by cancelComposition(escKeyEvent) should have empty string in its data");
-  is(events[2].type, "keyup",
-     description + "cancelComposition(escKeyEvent) should cause keyup after compositionend");
-  is(input.value, "FOo",
-     description + "canceled composition string should be removed from the focused editor");
-
-  // Starting composition explicitly and canceling it
-  reset();
-  TIP.startComposition(printableKeyEvent);
-  TIP.cancelComposition(escKeyEvent);
-  is(events.length, 4,
-     description + "canceling composition immediately after startComposition() should cause keydown, compositionstart, compositionend and keyup");
-  is(events[0].type, "keydown",
-     description + "canceling composition immediately after startComposition() should cause keydown first");
-  is(events[1].type, "compositionstart",
-     description + "canceling composition immediately after startComposition() should cause compositionstart after keydown");
-  is(events[2].type, "compositionend",
-     description + "canceling composition immediately after startComposition() should cause compositionend after compositionstart");
-  is(events[2].data, "",
-     description + "compositionend caused by canceling composition should have empty string in its data");
-  is(events[3].type, "keyup",
-     description + "canceling composition immediately after startComposition() should cause keyup after compositionend");
-  is(input.value, "FOo",
-     description + "canceling composition shouldn't modify the focused editor");
-
-  // Create composition for next test.
-  TIP.setPendingCompositionString("bar");
-  TIP.appendClauseToPendingComposition(3, TIP.ATTR_RAW_CLAUSE);
-  TIP.flushPendingComposition();
-  is(input.value, "FOobar",
-     description + "The focused editor should have new composition string \"bar\"");
-
-  // Allow to set empty composition string
-  reset();
-  TIP.flushPendingComposition(backspaceKeyEvent);
-  is(events.length, 1,
-     description + "making composition string empty should cause only compositionupdate");
-  is(events[0].type, "compositionupdate",
-     description + "making composition string empty should cause compositionupdate");
-  is(events[0].data, "",
-     description + "compositionupdate caused by making composition string empty should have empty string in its data");
-
-  // Allow to insert new composition string without compositionend/compositionstart
-  TIP.setPendingCompositionString("buzz");
-  TIP.appendClauseToPendingComposition(4, TIP.ATTR_RAW_CLAUSE);
-
-  reset();
-  TIP.flushPendingComposition(printableKeyEvent);
-  is(events.length, 1,
-     description + "modifying composition string from empty string should cause only compositionupdate");
-  is(events[0].type, "compositionupdate",
-     description + "modifying composition string from empty string should cause compositionupdate");
-  is(events[0].data, "buzz",
-     description + "compositionupdate caused by modifying composition string from empty string should have new composition string in its data");
-  is(input.value, "FOobuzz",
-     description + "new composition string should be appended to the focused editor");
-
-  // Committing with different string
-  reset();
-  TIP.commitCompositionWith("bar", printableKeyEvent);
-  is(events.length, 3,
-     description + "committing with different string should cause compositionupdate and compositionend");
-  is(events[0].type, "compositionupdate",
-     description + "committing with different string should cause compositionupdate first");
-  is(events[0].data, "bar",
-     description + "compositionupdate caused by committing with different string should have the committing string in its data");
-  is(events[1].type, "compositionend",
-     description + "committing with different string should cause compositionend after compositionupdate");
-  is(events[1].data, "bar",
-     description + "compositionend caused by committing with different string should have the committing string in its data");
-  is(events[2].type, "keyup",
-     description + "committing with different string should cause keyup after compositionend");
-  is(input.value, "FOobar",
-     description + "new committed string should be appended to the focused editor");
-
-  // Appending new composition string
-  TIP.setPendingCompositionString("buzz");
-  TIP.appendClauseToPendingComposition(4, TIP.ATTR_RAW_CLAUSE);
-  TIP.flushPendingComposition();
-  is(input.value, "FOobarbuzz",
-     description + "new composition string should be appended to the focused editor");
-
-  // Committing with same string
-  reset();
-  TIP.commitCompositionWith("buzz", enterKeyEvent);
-  is(events.length, 2,
-     description + "committing with same string should cause only compositionend");
-  is(events[0].type, "compositionend",
-     description + "committing with same string should cause compositionend");
-  is(events[0].data, "buzz",
-     description + "compositionend caused by committing with same string should have the committing string in its data");
-  is(events[1].type, "keyup",
-     description + "committing with same string should cause keyup after compositionend");
-  is(input.value, "FOobarbuzz",
-     description + "new committed string should be appended to the focused editor");
-
-  // Inserting commit string directly
-  reset();
-  TIP.commitCompositionWith("boo!", printableKeyEvent);
-  is(events.length, 5,
-     description + "committing text directly should cause compositionstart, compositionupdate and compositionend");
-  is(events[0].type, "keydown",
-     description + "committing text directly should cause keydown first");
-  is(events[1].type, "compositionstart",
-     description + "committing text directly should cause compositionstart after keydown");
-  is(events[2].type, "compositionupdate",
-     description + "committing text directly should cause compositionupdate after compositionstart");
-  is(events[2].data, "boo!",
-     description + "compositionupdate caused by committing text directly should have the committing text in its data");
-  is(events[3].type, "compositionend",
-     description + "committing text directly should cause compositionend after compositionupdate");
-  is(events[3].data, "boo!",
-     description + "compositionend caused by committing text directly should have the committing text in its data");
-  is(events[4].type, "keyup",
-     description + "committing text directly should cause keyup after compositionend");
-  is(input.value, "FOobarbuzzboo!",
-     description + "committing text directly should append the committing text to the focused editor");
-
-  Services.prefs.setBoolPref("dom.keyboardevent.dispatch_during_composition", true);
-
-  // Even if "dom.keyboardevent.dispatch_during_composition" is true, keypress event shouldn't be fired during composition
+  // Keypress event shouldn't be fired during composition
   reset();
   TIP.startComposition(printableKeyEvent);
   is(events.length, 3,
@@ -2304,7 +2069,7 @@ function runCompositionWithKeyEventTests()
   is(events[2].type, "keyup",
      description + "TIP.startComposition(printableKeyEvent) should cause keyup (keypress event shouldn't be fired during composition)");
 
-  // TIP.flushPendingComposition(printableKeyEvent) should cause keydown and keyup events if "dom.keyboardevent.dispatch_during_composition" is true
+  // TIP.flushPendingComposition(printableKeyEvent) should cause keydown and keyup events
   TIP.setPendingCompositionString("foo");
   TIP.appendClauseToPendingComposition(3, TIP.ATTR_RAW_CLAUSE);
   TIP.setCaretInPendingComposition(3);
@@ -2320,7 +2085,7 @@ function runCompositionWithKeyEventTests()
   is(events[2].type, "keyup",
      description + "TIP.flushPendingComposition(printableKeyEvent) should cause keyup (keypress event shouldn't be fired during composition)");
 
-  // TIP.commitComposition(enterKeyEvent) should cause keydown and keyup events if "dom.keyboardevent.dispatch_during_composition" is true
+  // TIP.commitComposition(enterKeyEvent) should cause keydown and keyup events
   reset();
   TIP.commitComposition(enterKeyEvent);
   is(events.length, 3,
@@ -2332,7 +2097,7 @@ function runCompositionWithKeyEventTests()
   is(events[2].type, "keyup",
      description + "TIP.commitComposition(enterKeyEvent) should cause keyup (keypress event shouldn't be fired during composition)");
 
-  // TIP.cancelComposition(escKeyEvent) should cause keydown and keyup events if "dom.keyboardevent.dispatch_during_composition" is true
+  // TIP.cancelComposition(escKeyEvent) should cause keydown and keyup events
   TIP.startComposition();
   reset();
   TIP.cancelComposition(escKeyEvent);
@@ -2349,7 +2114,7 @@ function runCompositionWithKeyEventTests()
   var enterKeydownEvent = new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN });
   var escKeydownEvent = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: KeyboardEvent.DOM_VK_ESCAPE });
 
-  // TIP.startComposition(printableKeydownEvent) shouldn't cause keyup event even if "dom.keyboardevent.dispatch_during_composition" is true
+  // TIP.startComposition(printableKeydownEvent) shouldn't cause keyup event
   reset();
   TIP.startComposition(printableKeydownEvent);
   is(events.length, 2,
@@ -2359,7 +2124,7 @@ function runCompositionWithKeyEventTests()
   is(events[1].type, "compositionstart",
      description + "TIP.startComposition(printableKeydownEvent) should cause compositionstart (keyup event shouldn't be fired)");
 
-  // TIP.flushPendingComposition(printableKeydownEvent) shouldn't cause keyup event even if "dom.keyboardevent.dispatch_during_composition" is true
+  // TIP.flushPendingComposition(printableKeydownEvent) shouldn't cause keyup event
   TIP.setPendingCompositionString("foo");
   TIP.appendClauseToPendingComposition(3, TIP.ATTR_RAW_CLAUSE);
   TIP.setCaretInPendingComposition(3);
@@ -2373,7 +2138,7 @@ function runCompositionWithKeyEventTests()
   is(events[1].type, "compositionupdate",
      description + "TIP.flushPendingComposition(printableKeydownEvent) should cause compositionupdate (keyup event shouldn't be fired)");
 
-  // TIP.commitComposition(enterKeydownEvent) shouldn't cause keyup event even if "dom.keyboardevent.dispatch_during_composition" is true
+  // TIP.commitComposition(enterKeydownEvent) shouldn't cause keyup event
   reset();
   TIP.commitComposition(enterKeydownEvent);
   is(events.length, 2,
@@ -2383,7 +2148,7 @@ function runCompositionWithKeyEventTests()
   is(events[1].type, "compositionend",
      description + "TIP.commitComposition(enterKeydownEvent) should cause compositionend (keyup event shouldn't be fired)");
 
-  // TIP.cancelComposition(escKeydownEvent) shouldn't cause keyup event even if "dom.keyboardevent.dispatch_during_composition" is true
+  // TIP.cancelComposition(escKeydownEvent) shouldn't cause keyup event
   TIP.startComposition();
   reset();
   TIP.cancelComposition(escKeydownEvent);
@@ -2393,8 +2158,6 @@ function runCompositionWithKeyEventTests()
      description + "TIP.cancelComposition(escKeydownEvent) should cause keydown (keyup event shouldn't be fired)");
   is(events[1].type, "compositionend",
      description + "TIP.cancelComposition(escKeydownEvent) should cause compositionend (keyup event shouldn't be fired)");
-
-  Services.prefs.clearUserPref("dom.keyboardevent.dispatch_during_composition");
 
   window.removeEventListener("compositionstart", handler);
   window.removeEventListener("compositionupdate", handler);
@@ -2440,58 +2203,6 @@ function runConsumingKeydownBeforeCompositionTests()
   var printableKeyEvent = new KeyboardEvent("", { key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
   var enterKeyEvent = new KeyboardEvent("", { key: "Enter", code: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN });
   var escKeyEvent = new KeyboardEvent("", { key: "Escape", code: "Escape", keyCode: KeyboardEvent.DOM_VK_ESCAPE });
-
-  Services.prefs.setBoolPref("dom.keyboardevent.dispatch_during_composition", false);
-
-  // If keydown before compositionstart is consumed, composition shouldn't be started.
-  reset();
-  ok(!TIP.startComposition(printableKeyEvent),
-     description + "TIP.startComposition(printableKeyEvent) should return false because it's keydown is consumed");
-  is(events.length, 2,
-     description + "TIP.startComposition(printableKeyEvent) should cause only keydown and keyup events");
-  is(events[0].type, "keydown",
-     description + "TIP.startComposition(printableKeyEvent) should cause keydown event first");
-  is(events[1].type, "keyup",
-     description + "TIP.startComposition(printableKeyEvent) should cause keyup event after keydown");
-  ok(!TIP.hasComposition,
-     description + "TIP.startComposition(printableKeyEvent) shouldn't cause composition");
-  is(input.value, "",
-     description + "TIP.startComposition(printableKeyEvent) shouldn't cause inserting text");
-
-  // If keydown before compositionstart caused by flushPendingComposition(printableKeyEvent) is consumed, composition shouldn't be started.
-  reset();
-  TIP.setPendingCompositionString("foo");
-  TIP.appendClauseToPendingComposition(3, TIP.ATTR_RAW_CLAUSE);
-  TIP.setCaretInPendingComposition(3);
-  ok(!TIP.flushPendingComposition(printableKeyEvent),
-     description + "TIP.flushPendingComposition(printableKeyEvent) should return false because it's keydown is consumed");
-  is(events.length, 2,
-     description + "TIP.flushPendingComposition(printableKeyEvent) should cause only keydown and keyup events");
-  is(events[0].type, "keydown",
-     description + "TIP.flushPendingComposition(printableKeyEvent) should cause keydown event first");
-  is(events[1].type, "keyup",
-     description + "TIP.flushPendingComposition(printableKeyEvent) should cause keyup event after keydown");
-  ok(!TIP.hasComposition,
-     description + "TIP.flushPendingComposition(printableKeyEvent) shouldn't cause composition");
-  is(input.value, "",
-     description + "TIP.flushPendingComposition(printableKeyEvent) shouldn't cause inserting text");
-
-  // If keydown before compositionstart is consumed, composition shouldn't be started.
-  reset();
-  ok(!TIP.commitCompositionWith("foo", printableKeyEvent),
-     description + "TIP.commitCompositionWith(\"foo\", printableKeyEvent) should return false because it's keydown is consumed");
-  is(events.length, 2,
-     description + "TIP.commitCompositionWith(\"foo\", printableKeyEvent) should cause only keydown and keyup events");
-  is(events[0].type, "keydown",
-     description + "TIP.commitCompositionWith(\"foo\", printableKeyEvent) should cause keydown event first");
-  is(events[1].type, "keyup",
-     description + "TIP.commitCompositionWith(\"foo\", printableKeyEvent) should cause keyup event after keydown");
-  ok(!TIP.hasComposition,
-     description + "TIP.commitCompositionWith(\"foo\", printableKeyEvent) shouldn't cause composition");
-  is(input.value, "",
-     description + "TIP.commitCompositionWith(\"foo\", printableKeyEvent) shouldn't cause inserting text");
-
-  Services.prefs.setBoolPref("dom.keyboardevent.dispatch_during_composition", true);
 
   // If composition is already started, TIP.flushPendingComposition(printableKeyEvent) shouldn't be canceled.
   TIP.startComposition();
@@ -2558,8 +2269,6 @@ function runConsumingKeydownBeforeCompositionTests()
      description + "TIP.cancelComposition(escKeyEvent) should cause canceling composition even if preceding keydown is consumed because there was a composition already");
   is(input.value, "",
      description + "TIP.cancelComposition(escKeyEvent) should cancel composition even if preceding keydown is consumed because there was a composition already");
-
-  Services.prefs.clearUserPref("dom.keyboardevent.dispatch_during_composition");
 
   window.removeEventListener("compositionstart", handler);
   window.removeEventListener("compositionupdate", handler);
@@ -3000,39 +2709,24 @@ async function runKeyTests()
      description + "input.value should be \"a\" by TIP.keyup(keyA) even if the keyup event is consumed");
 
   // key events during composition
-  try {
-    Services.prefs.setBoolPref("dom.keyboardevent.dispatch_during_composition", false);
+  ok(TIP.startComposition(), "TIP.startComposition() should start composition");
 
-    ok(TIP.startComposition(), "TIP.startComposition() should start composition");
+  input.value = "";
 
-    input.value = "";
-    reset();
-    TIP.keydown(keyA);
-    is(events.length, 0,
-       description + "TIP.keydown(keyA) shouldn't cause key events during composition if it's disabled by the pref");
-    reset();
-    TIP.keyup(keyA);
-    is(events.length, 0,
-       description + "TIP.keyup(keyA) shouldn't cause key events during composition if it's disabled by the pref");
+  reset();
+  TIP.keydown(keyA);
+  is(events.length, 1,
+     description + "TIP.keydown(keyA) should cause keydown event even composition if it's enabled by the pref");
+  checkKeyAttrs("TIP.keydown(keyA) during composition", events[0],
+                { type: "keydown",  key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A, charCode: 0, isComposing: true });
+  reset();
+  TIP.keyup(keyA);
+  is(events.length, 1,
+     description + "TIP.keyup(keyA) should cause keyup event even composition if it's enabled by the pref");
+  checkKeyAttrs("TIP.keyup(keyA) during composition", events[0],
+                { type: "keyup",    key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A, charCode: 0, isComposing: true });
 
-    Services.prefs.setBoolPref("dom.keyboardevent.dispatch_during_composition", true);
-    reset();
-    TIP.keydown(keyA);
-    is(events.length, 1,
-       description + "TIP.keydown(keyA) should cause keydown event even composition if it's enabled by the pref");
-    checkKeyAttrs("TIP.keydown(keyA) during composition", events[0],
-                  { type: "keydown",  key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A, charCode: 0, isComposing: true });
-    reset();
-    TIP.keyup(keyA);
-    is(events.length, 1,
-       description + "TIP.keyup(keyA) should cause keyup event even composition if it's enabled by the pref");
-    checkKeyAttrs("TIP.keyup(keyA) during composition", events[0],
-                  { type: "keyup",    key: "a", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A, charCode: 0, isComposing: true });
-
-  } finally {
-    TIP.cancelComposition();
-    Services.prefs.clearUserPref("dom.keyboardevent.dispatch_during_composition");
-  }
+  TIP.cancelComposition();
 
   // Test .location computation
   const kCodeToLocation = [
@@ -4816,7 +4510,7 @@ async function runQuerySelectionEventTestAtTextChangeNotification() {
         case "request-to-cancel":
           aTIP.cancelComposition();
           break;
-        case "notify-text-change":
+        case "notify-text-change": {
           const textContent = synthesizeQueryTextContent(0, 100);
           if (textContent?.text.includes("abc")) {
             break;  // Different notification which we want to test, wait next one.
@@ -4839,6 +4533,7 @@ async function runQuerySelectionEventTestAtTextChangeNotification() {
           }
           resolve();
           break;
+        }
       }
       return true;
     });

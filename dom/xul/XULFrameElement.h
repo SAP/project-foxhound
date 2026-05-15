@@ -4,19 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef XULFrameElement_h__
-#define XULFrameElement_h__
+#ifndef XULFrameElement_h_
+#define XULFrameElement_h_
 
-#include "mozilla/Attributes.h"
+#include "js/TypeDecls.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/WindowProxyHolder.h"
-#include "js/TypeDecls.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIOpenWindowInfo.h"
-#include "nsWrapperCache.h"
-#include "nsString.h"
-#include "nsXULElement.h"
 #include "nsFrameLoaderOwner.h"
+#include "nsIOpenWindowInfo.h"
+#include "nsString.h"
+#include "nsWrapperCache.h"
+#include "nsXULElement.h"
 
 class nsIWebNavigation;
 class nsFrameLoader;

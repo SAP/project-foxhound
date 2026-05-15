@@ -12,7 +12,7 @@
 
 @media (prefers-color-scheme: dark) {
   #contentAreaDownloadsView {
-    --download-progress-fill-color: var(--in-content-item-selected);
+    --download-progress-fill-color: var(--color-accent-primary-selected);
   }
 }
 
@@ -35,7 +35,7 @@
   margin-inline-end: 18px;
   border: none;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   background-color: color-mix(in srgb, currentColor 15%, transparent);
 }
 
@@ -48,7 +48,7 @@
 .downloadProgress::-moz-progress-bar {
   appearance: none;
   background-color: var(--download-progress-fill-color);
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
 }
 
 .downloadProgress[paused]::-moz-progress-bar {

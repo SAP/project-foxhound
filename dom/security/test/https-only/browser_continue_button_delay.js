@@ -57,6 +57,12 @@ async function waitForEnabledButtonAndCheckTiming() {
   );
 }
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.trustPanel.featureGate", false]],
+  });
+});
+
 add_task(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["dom.security.https_only_mode", true]],

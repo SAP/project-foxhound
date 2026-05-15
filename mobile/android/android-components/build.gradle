@@ -2,29 +2,22 @@
 
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
-import org.gradle.internal.logging.text.StyledTextOutput.Style
-import org.gradle.internal.logging.text.StyledTextOutputFactory
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 import static org.gradle.api.tasks.testing.TestResult.ResultType
 
 buildscript {
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
     dependencies {
-        classpath libs.tools.androidgradle
+        classpath libs.android.gradle.plugin
     }
 }
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.detekt)
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
@@ -32,24 +25,31 @@ plugins {
 }
 
 allprojects {
-    repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
-
-        maven {
-            url = "${gradle.mozconfig.topobjdir}/gradle/maven"
-        }
+    ext {
+        gleanVersion = libs.versions.glean.get()
     }
 
     // Enable Kotlin warnings as errors for all modules
     tasks.withType(KotlinCompile).configureEach {
         compilerOptions.allWarningsAsErrors = true
+    }
+
+    if (gradle.mozconfig.substs.DOWNLOAD_ALL_GRADLE_DEPENDENCIES) {
+        // Work around https://github.com/google/ksp/issues/1964 by explicitly
+        // declaring dependencies that are dynamically added during Gradle task
+        // execution.
+        pluginManager.withPlugin('com.google.devtools.ksp') {
+            project.configurations {
+                kspDependencies
+            }
+
+            project.dependencies {
+                kspDependencies libs.ksp.symbol.processing.aa
+                kspDependencies libs.ksp.symbol.processing.aa.embeddable
+                kspDependencies libs.ksp.symbol.processing.api
+                kspDependencies libs.ksp.symbol.processing.common.deps
+            }
+        }
     }
 }
 
@@ -68,13 +68,13 @@ subprojects {
             if (details.requested.group == 'org.mozilla.telemetry'
                     && details.requested.name.contains('glean') ) {
                 def requested = details.requested.version.tokenize(".")
-                def defined = libs.versions.mozilla.glean.get().tokenize(".")
+                def defined = project.ext.gleanVersion.tokenize(".")
                 // Check the major version
                 if (requested[0] != defined[0]) {
-                    throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${libs.versions.mozilla.glean.get()}")
+                    throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${project.ext.gleanVersion}")
                 } else {
                     // Enforce that all (transitive) dependencies are using the defined Glean version
-                    details.useVersion libs.versions.mozilla.glean.get()
+                    details.useVersion project.ext.gleanVersion
                 }
             }
         }
@@ -166,11 +166,9 @@ subprojects {
                     }
                 }
 
-                // https://issuetracker.google.com/issues/379732901
                 packaging {
                     resources {
-                        excludes += ['META-INF/LICENSE.md', 'META-INF/LICENSE-notice.md',
-                                     'META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+                        excludes += ['META-INF/LICENSE.md', 'META-INF/LICENSE-notice.md']
                     }
                 }
 
@@ -179,7 +177,7 @@ subprojects {
                 }
             }
 
-            if (project.hasProperty("coverage") && project.name != "support-test") {
+            if (project.name != "support-test") {
                 android.buildTypes.all { buildType ->
                     tasks.withType(Test).configureEach() {
                         jacoco {
@@ -213,7 +211,10 @@ subprojects {
                 android {
                     buildTypes {
                         debug {
-                            testCoverageEnabled = true
+                            // Enable test coverage when fetching dependencies: it's an easy way to
+                            // ensure we fetch the Jacoco agent dependency `org.jacoco.agent`, which
+                            // resolves to `org.jacoco.agent-$VERSION-runtime.jar`.
+                            testCoverageEnabled = project.hasProperty("coverage") || gradle.mozconfig.substs.DOWNLOAD_ALL_GRADLE_DEPENDENCIES
                         }
                     }
                 }
@@ -254,6 +255,10 @@ subprojects {
             logging.removeStandardErrorListener(listener)
         }
     }
+
+    tasks.withType(AbstractTestTask).configureEach {
+        failOnNoDiscoveredTests = false
+    }
 }
 
 if (findProject(":geckoview") == null) {
@@ -278,6 +283,15 @@ detekt {
         }
         txt {
             enabled = false
+        }
+    }
+}
+
+tasks.named("detekt").configure {
+    reports {
+        custom {
+            reportId = "suppression-count"
+            outputLocation.set(file("$projectDir/build/reports/suppressions.txt"))
         }
     }
 }
@@ -330,6 +344,8 @@ tasks.withType(DetektCreateBaselineTask).configureEach() {
 
 configurations {
     ktlint
+
+    detektDependencies
 }
 
 dependencies {
@@ -339,6 +355,9 @@ dependencies {
         }
     }
     detektPlugins project(":components:tooling-detekt")
+    detekt libs.detekt.cli
+
+    detektDependencies libs.detekt.cli
 }
 
 tasks.register("ktlint", JavaExec) {
@@ -350,7 +369,6 @@ tasks.register("ktlint", JavaExec) {
     args "samples/**/*.kt"
     args "!**/build/**/*.kt"
     args "buildSrc/**/*.kt"
-    args "--baseline=ktlint-baseline.xml"
     args "--reporter=json,output=build/reports/ktlint/ktlint.json"
     args "--reporter=plain"
 }
@@ -365,10 +383,19 @@ tasks.register("ktlintFormat", JavaExec) {
     args "samples/**/*.kt"
     args "!**/build/**/*.kt"
     args "buildSrc/**/*.kt"
-    args "--baseline=ktlint-baseline.xml"
     args "--reporter=json,output=build/reports/ktlint/ktlintFormat.json"
     args "--reporter=plain"
     jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
+}
+
+tasks.register("lint") {
+    group = "verification"
+    description = "Runs lint on all android-components subprojects."
+    subprojects.each {
+        if (it.tasks.findByName("lint") != null) {
+            dependsOn it.tasks.named("lint")
+        }
+    }
 }
 
 tasks.register("listRepositories") {

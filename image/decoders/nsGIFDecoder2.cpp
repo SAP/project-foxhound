@@ -496,7 +496,7 @@ LexerResult nsGIFDecoder2::DoDecode(SourceBufferIterator& aIterator,
 
   return mLexer.Lex(
       aIterator, aOnResume,
-      [=](State aState, const char* aData, size_t aLength) {
+      [this](State aState, const char* aData, size_t aLength) {
         switch (aState) {
           case State::GIF_HEADER:
             return ReadGIFHeader(aData);

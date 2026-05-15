@@ -7,12 +7,22 @@
 logActiveElement();
 
 async function waitForSearchBarFocus() {
-  let searchbar = document.getElementById("searchbar");
+  let searchbar = document.getElementById(
+    Services.prefs.getBoolPref("browser.search.widget.new")
+      ? "searchbar-new"
+      : "searchbar"
+  );
   await TestUtils.waitForCondition(function () {
     logActiveElement();
-    return document.activeElement === searchbar.textbox;
+    return document.activeElement === searchbar.inputField;
   });
 }
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
+});
 
 // Ctrl+K should open the menu panel and focus the search bar if the search bar is in the panel.
 add_task(async function check_shortcut_when_in_closed_overflow_panel_closed() {

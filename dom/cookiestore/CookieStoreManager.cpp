@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CookieStoreManager.h"
-#include "CookieStoreChild.h"
 
+#include "CookieStoreChild.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"

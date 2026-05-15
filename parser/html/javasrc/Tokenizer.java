@@ -932,7 +932,7 @@ public class Tokenizer implements Locator, Locator2 {
 
     // ]NOCPP]
 
-    HtmlAttributes emptyAttributes() {
+    @Inline HtmlAttributes emptyAttributes() {
         // [NOCPP[
         if (newAttributesEachTime) {
             return new HtmlAttributes(mappingLangToXmlLang);
@@ -944,7 +944,7 @@ public class Tokenizer implements Locator, Locator2 {
         // ]NOCPP]
     }
 
-    @Inline private void appendCharRefBuf(char c) {
+    private void appendCharRefBuf(char c) {
         // CPPONLY: assert charRefBufLen < charRefBuf.length:
         // CPPONLY:     "RELEASE: Attempted to overrun charRefBuf!";
         charRefBuf[charRefBufLen++] = c;
@@ -983,11 +983,8 @@ public class Tokenizer implements Locator, Locator2 {
      *            the UTF-16 code unit to append
      */
     @Inline private void appendStrBuf(char c) {
-        // CPPONLY: assert strBufLen < strBuf.length: "Previous buffer length insufficient.";
         // CPPONLY: if (strBufLen == strBuf.length) {
-        // CPPONLY:     if (!EnsureBufferSpace(1)) {
-        // CPPONLY:         assert false: "RELEASE: Unable to recover from buffer reallocation failure";
-        // CPPONLY:     } // TODO: Add telemetry when outer if fires but inner does not
+        // CPPONLY:     EnsureBufferSpaceShouldNeverHappen(1);
         // CPPONLY: }
         strBuf[strBufLen++] = c;
     }
@@ -1000,9 +997,22 @@ public class Tokenizer implements Locator, Locator2 {
      *
      * @return the buffer as a string
      */
-    protected String strBufToString() {
+    @Inline protected String strBufToString() {
+        // CPPONLY: String digitAtom = TryAtomizeForSingleDigit();
+        // CPPONLY: if (digitAtom) {
+        // CPPONLY:   return digitAtom;
+        // CPPONLY: }
+        // CPPONLY:
+        // CPPONLY: boolean maybeAtomize = false;
+        // CPPONLY: if (!newAttributesEachTime) {
+        // CPPONLY:   if (attributeName == AttributeName.CLASS ||
+        // CPPONLY:       attributeName == AttributeName.TYPE) {
+        // CPPONLY:     maybeAtomize = true;
+        // CPPONLY:   }
+        // CPPONLY: }
+        // CPPONLY:
         String str = Portability.newStringFromBuffer(strBuf, 0, strBufLen
-            // CPPONLY: , tokenHandler, !newAttributesEachTime && attributeName == AttributeName.CLASS
+            // CPPONLY: , tokenHandler, maybeAtomize
         );
         clearStrBufAfterUse();
         return str;
@@ -1014,7 +1024,7 @@ public class Tokenizer implements Locator, Locator2 {
      *
      * @return the buffer as local name
      */
-    private void strBufToDoctypeName() {
+    @Inline private void strBufToDoctypeName() {
         doctypeName = Portability.newLocalNameFromBuffer(strBuf, strBufLen, interner);
         clearStrBufAfterUse();
     }
@@ -1025,7 +1035,7 @@ public class Tokenizer implements Locator, Locator2 {
      * @throws SAXException
      *             if the token handler threw
      */
-    private void emitStrBuf() throws SAXException {
+    @Inline private void emitStrBuf() throws SAXException {
         if (strBufLen > 0) {
             tokenHandler.characters(strBuf, 0, strBufLen);
             clearStrBufAfterUse();
@@ -1094,13 +1104,12 @@ public class Tokenizer implements Locator, Locator2 {
         // ]NOCPP]
     }
 
-    private void appendStrBuf(@NoLength char[] buffer, int offset, int length) throws SAXException {
-        int newLen = Portability.checkedAdd(strBufLen, length);
-        // CPPONLY: assert newLen <= strBuf.length: "Previous buffer length insufficient.";
+    @Inline private void appendStrBuf(@NoLength char[] buffer, int offset, int length) throws SAXException {
+        // Years of crash stats have shown that the this addition doesn't overflow, as it logically
+        // shouldn't.
+        int newLen = strBufLen + length;
         // CPPONLY: if (strBuf.length < newLen) {
-        // CPPONLY:     if (!EnsureBufferSpace(length)) {
-        // CPPONLY:         assert false: "RELEASE: Unable to recover from buffer reallocation failure";
-        // CPPONLY:     } // TODO: Add telemetry when outer if fires but inner does not
+        // CPPONLY:     EnsureBufferSpaceShouldNeverHappen(length);
         // CPPONLY: }
         System.arraycopy(buffer, offset, strBuf, strBufLen, length);
         strBufLen = newLen;
@@ -1455,12 +1464,6 @@ public class Tokenizer implements Locator, Locator2 {
          */
         int pos = start - 1;
 
-        /**
-         * The index of the first <code>char</code> in <code>buf</code> that is
-         * part of a coalesced run of character tokens or
-         * <code>Integer.MAX_VALUE</code> if there is not a current run being
-         * coalesced.
-         */
         switch (state) {
             case DATA:
             case RCDATA:
@@ -1486,19 +1489,24 @@ public class Tokenizer implements Locator, Locator2 {
                 break;
         }
 
-        /**
-         * The number of <code>char</code>s in <code>buf</code> that have
-         * meaning. (The rest of the array is garbage and should not be
-         * examined.)
-         */
         // CPPONLY: if (mViewSource) {
         // CPPONLY:   mViewSource.SetBuffer(buffer);
-        // CPPONLY:   pos = stateLoop(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
+        // CPPONLY:   if (htmlaccelEnabled()) {
+        // CPPONLY:     pos = StateLoopViewSourceSIMD(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
+        // CPPONLY:   } else {
+        // CPPONLY:     pos = StateLoopViewSourceALU(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
+        // CPPONLY:   }
         // CPPONLY:   mViewSource.DropBuffer((pos == buffer.getEnd()) ? pos : pos + 1);
         // CPPONLY: } else if (tokenHandler.WantsLineAndColumn()) {
-        // CPPONLY:   pos = stateLoop(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
+        // CPPONLY:   if (htmlaccelEnabled()) {
+        // CPPONLY:     pos = StateLoopLineColSIMD(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
+        // CPPONLY:   } else {
+        // CPPONLY:     pos = StateLoopLineColALU(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
+        // CPPONLY:   }
+        // CPPONLY: } else if (htmlaccelEnabled()) {
+        // CPPONLY:   pos = StateLoopFastestSIMD(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
         // CPPONLY: } else {
-        // CPPONLY:   pos = stateLoop(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
+        // CPPONLY:   pos = StateLoopFastestALU(state, c, pos, buffer.getBuffer(), false, returnState, buffer.getEnd());
         // CPPONLY: }
         // [NOCPP[
         pos = stateLoop(state, c, pos, buffer.getBuffer(), false, returnState,
@@ -1547,7 +1555,7 @@ public class Tokenizer implements Locator, Locator2 {
     }
     // ]NOCPP]
 
-    @SuppressWarnings("unused") private int stateLoop(int state, char c,
+    @SuppressWarnings("unused") @Inline private int stateLoop(int state, char c,
             int pos, @NoLength char[] buf, boolean reconsume, int returnState,
             int endPos) throws SAXException {
         boolean reportedConsecutiveHyphens = false;
@@ -1626,7 +1634,11 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // CPPONLY: pos += accelerateAdvancementData(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -2201,7 +2213,11 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // CPPONLY: pos += accelerateAdvancementAttributeValueDoubleQuoted(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -2698,7 +2714,11 @@ public class Tokenizer implements Locator, Locator2 {
                     // CPPONLY: MOZ_FALLTHROUGH;
                 case COMMENT:
                     commentloop: for (;;) {
-                        if (++pos == endPos) {
+                        ++pos;
+                        // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                        // The line below advances pos by some number of code units that this state is indifferent to.
+                        // CPPONLY: pos += accelerateAdvancementComment(buf, pos, endPos);
+                        if (pos == endPos) {
                             break stateloop;
                         }
                         c = checkChar(buf, pos);
@@ -3194,7 +3214,11 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // CPPONLY: pos += accelerateAdvancementCdataSection(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -3281,7 +3305,11 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // CPPONLY: pos += accelerateAdvancementAttributeValueSingleQuoted(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -3893,7 +3921,11 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // CPPONLY: pos += accelerateAdvancementPlaintext(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -4005,7 +4037,12 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // RCDATA and DATA have the same set of characters that they are indifferent to, hence accelerateData.
+                            // CPPONLY: pos += accelerateAdvancementData(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -4056,7 +4093,11 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // CPPONLY: pos += accelerateAdvancementRawtext(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -4340,7 +4381,12 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // Using `accelerateAdvancementRawtext`, because this states has the same characters of interest as RAWTEXT.
+                            // CPPONLY: pos += accelerateAdvancementRawtext(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -4536,7 +4582,11 @@ public class Tokenizer implements Locator, Locator2 {
                         if (reconsume) {
                             reconsume = false;
                         } else {
-                            if (++pos == endPos) {
+                            ++pos;
+                            // Perhaps at some point, it will be appropriate to do SIMD in Java, but not today.
+                            // The line below advances pos by some number of code units that this state is indifferent to.
+                            // CPPONLY: pos += accelerateAdvancementScriptDataEscaped(buf, pos, endPos);
+                            if (pos == endPos) {
                                 break stateloop;
                             }
                             c = checkChar(buf, pos);
@@ -6348,24 +6398,24 @@ public class Tokenizer implements Locator, Locator2 {
         forceQuirks = false;
     }
 
-    private void adjustDoubleHyphenAndAppendToStrBufCarriageReturn()
+    @Inline private void adjustDoubleHyphenAndAppendToStrBufCarriageReturn()
             throws SAXException {
         silentCarriageReturn();
         adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
     }
 
-    private void adjustDoubleHyphenAndAppendToStrBufLineFeed()
+    @Inline private void adjustDoubleHyphenAndAppendToStrBufLineFeed()
             throws SAXException {
         silentLineFeed();
         adjustDoubleHyphenAndAppendToStrBufAndErr('\n', false);
     }
 
-    private void appendStrBufLineFeed() {
+    @Inline private void appendStrBufLineFeed() {
         silentLineFeed();
         appendStrBuf('\n');
     }
 
-    private void appendStrBufCarriageReturn() {
+    @Inline private void appendStrBufCarriageReturn() {
         silentCarriageReturn();
         appendStrBuf('\n');
     }
@@ -6383,7 +6433,7 @@ public class Tokenizer implements Locator, Locator2 {
 
     // ]NOCPP]
 
-    private void emitCarriageReturn(@NoLength char[] buf, int pos)
+    @Inline private void emitCarriageReturn(@NoLength char[] buf, int pos)
             throws SAXException {
         silentCarriageReturn();
         flushChars(buf, pos);
@@ -6412,7 +6462,7 @@ public class Tokenizer implements Locator, Locator2 {
         cstart = pos + 1;
     }
 
-    private void setAdditionalAndRememberAmpersandLocation(char add) {
+    @Inline private void setAdditionalAndRememberAmpersandLocation(char add) {
         additional = add;
         // [NOCPP[
         ampersandLocation = new LocatorImpl(this);
@@ -7077,7 +7127,7 @@ public class Tokenizer implements Locator, Locator2 {
      * happened in a non-text context, this method turns that deferred suspension
      * request into an immediately-pending suspension request.
      */
-    private void suspendIfRequestedAfterCurrentNonTextToken() {
+    @Inline private void suspendIfRequestedAfterCurrentNonTextToken() {
         if (suspendAfterCurrentNonTextToken) {
             suspendAfterCurrentNonTextToken = false;
             shouldSuspend = true;
@@ -7221,7 +7271,7 @@ public class Tokenizer implements Locator, Locator2 {
      * @param val
      * @throws SAXException
      */
-    private void emitOrAppendTwo(@Const @NoLength char[] val, int returnState)
+    @Inline private void emitOrAppendTwo(@Const @NoLength char[] val, int returnState)
             throws SAXException {
         if ((returnState & DATA_AND_RCDATA_MASK) != 0) {
             appendStrBuf(val[0]);
@@ -7231,7 +7281,7 @@ public class Tokenizer implements Locator, Locator2 {
         }
     }
 
-    private void emitOrAppendOne(@Const @NoLength char[] val, int returnState)
+    @Inline private void emitOrAppendOne(@Const @NoLength char[] val, int returnState)
             throws SAXException {
         if ((returnState & DATA_AND_RCDATA_MASK) != 0) {
             appendStrBuf(val[0]);
@@ -7268,7 +7318,7 @@ public class Tokenizer implements Locator, Locator2 {
         }
     }
 
-    public void requestSuspension() {
+    @Inline public void requestSuspension() {
         shouldSuspend = true;
     }
 
@@ -7311,7 +7361,7 @@ public class Tokenizer implements Locator, Locator2 {
 
     // ]NOCPP]
 
-    public boolean isInDataState() {
+    @Inline public boolean isInDataState() {
         return (stateSave == DATA);
     }
 

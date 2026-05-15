@@ -26,7 +26,6 @@
 #include "common/readstrings.h"
 #include "common/updatererrors.h"
 #include "common/updatedefines.h"
-#include "mozilla/ArrayUtils.h"
 
 #ifndef MAXPATHLEN
 #  ifdef PATH_MAX

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -55,6 +62,7 @@
   <string name="menu_settings">Configuración</string>
   <string name="menu_about">Acerca de</string>
   <string name="menu_help">Ayuda</string>
+  <string name="menu_terms_of_use">Condiciones de uso</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -148,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te da el control.</p> <p>Úsalo como navegador privado: <ul> <li>Busca y navega en la propia aplicación</li> <li>Bloquea a los rastreadores (o cambia los ajustes para permitirlos)</li> <li>Limpia para borrar cookies y los historiales de búsqueda y navegación</li> </ul> </p> <p>%1$s es producido por Mozilla. Nuestra misión es promover un Internet saludable y abierto.<br/> <a href=\"%2$s\">Descubre más</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s te da el control.</p>\n<p>Úsalo como navegador privado:\n<ul>\n<li>Busca y navega en la propia aplicación</li>\n<li>Bloquea a los rastreadores (o cambia los ajustes para permitirlos)</li>\n<li>Limpia para borrar cookies y los historiales de búsqueda y navegación</li>\n</ul> </p>\n<p>%1$s es producido por Mozilla. Nuestra misión es promover un Internet saludable y abierto.<br/>\n<a href=\"%2$s\">Descubre más</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Más información</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privacidad y seguridad</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -456,6 +466,30 @@
   <string name="onboarding_first_screen_title">Te damos la bienvenida a %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Rápido. Privado. Sin distracciones.</string>
+  <!--
+    New Onboarding flow first screen 'terms of use' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Al continuar, aceptas los %1$s.</string>
+  <!--
+    New Onboarding flow first screen 'terms of use link'
+
+    Text for the link used in onboarding_first_screen_terms_of_use_text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Términos de uso de Firefox</string>
+  <!--
+    New Onboarding flow first screen 'privacy notice' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
+  -->
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox se preocupa por tu privacidad. Obtén más información en nuestra %1$s.</string>
+  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
+  <string name="onboarding_first_screen_privacy_notice_link_2">Política de privacidad</string>
+  <!-- New Onboarding flow first screen button label -->
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Continuar</string>
+  <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
+  <string name="a11y_link_available">Link disponible</string>
   <!--
     Onboarding second screen: Title
 
@@ -848,7 +882,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Esto podría deberse a un problema con la configuración del servidor, o podría ser alguien intentando hacerse pasar por el servidor.<br/><br/> Si en el pasado te has conectado correctamente a este servidor, el error podría ser temporal.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguien podría estar intentando hacerse pasar por el sitio y continuar podría ser peligroso.</label> <br><br> <label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Alguien podría estar intentando hacerse pasar por el sitio y continuar podría ser peligroso.</label> <br><br>\n<label>%1$s no confía en <b>%2$s</b> porque el emisor del certificado es desconocido, el certificado está autofirmado o el servidor no envía los certificados intermedios correctos.</label>]]></string>
   <!--
     Sessions List
 

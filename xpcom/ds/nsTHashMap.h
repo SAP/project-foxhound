@@ -7,9 +7,7 @@
 #ifndef XPCOM_DS_NSTHASHMAP_H_
 #define XPCOM_DS_NSTHASHMAP_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"

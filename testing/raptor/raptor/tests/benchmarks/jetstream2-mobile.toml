@@ -12,6 +12,7 @@ subtest_unit = "score"
 test_url = "http://<host>:<port>/index.html?raptor"
 type = "benchmark"
 unit = "score"
+sparse_checkout = true
 
 ["jetstream2"]
 repository = "https://github.com/mozilla/perf-automation"

@@ -10,8 +10,8 @@ diff --git a/sandbox/win/src/broker_services.cc b/sandbox/win/src/broker_service
 --- a/sandbox/win/src/broker_services.cc
 +++ b/sandbox/win/src/broker_services.cc
 @@ -414,16 +414,17 @@ DWORD WINAPI BrokerServicesBase::TargetE
-   NOTREACHED();
-   return 0;
+   }
+   return policy;
  }
  
  // SpawnTarget does all the interesting sandbox setup and creates the target
@@ -19,72 +19,72 @@ diff --git a/sandbox/win/src/broker_services.cc b/sandbox/win/src/broker_service
  ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
                                             const wchar_t* command_line,
 +                                           base::EnvironmentMap& env_map,
-                                            scoped_refptr<TargetPolicy> policy,
-                                            ResultCode* last_warning,
+                                            std::unique_ptr<TargetPolicy> policy,
                                             DWORD* last_error,
                                             PROCESS_INFORMATION* target_info) {
    if (!exe_path)
      return SBOX_ERROR_BAD_PARAMS;
  
-   if (!policy)
+   // This code should only be called from the exe, ensure that this is always
+   // the case.
 @@ -609,17 +610,17 @@ ResultCode BrokerServicesBase::SpawnTarg
+ 
+   // Create the TargetProcess object and spawn the target suspended. Note that
    // Brokerservices does not own the target object. It is owned by the Policy.
    base::win::ScopedProcessInformation process_info;
-   TargetProcess* target = new TargetProcess(
-       std::move(initial_token), std::move(lockdown_token), job.Get(),
-       thread_pool_.get(),
-       profile ? profile->GetImpersonationCapabilities() : std::vector<Sid>());
+   std::unique_ptr<TargetProcess> target = std::make_unique<TargetProcess>(
+       std::move(*initial_token), std::move(*lockdown_token), thread_pool_);
  
-   result = target->Create(exe_path, command_line, inherit_handles, startup_info,
+   result = target->Create(exe_path, command_line, std::move(startup_info),
 -                          &process_info, last_error);
 +                          &process_info, env_map, last_error);
  
    if (result != SBOX_ALL_OK) {
-     SpawnCleanup(target);
+     target->Terminate();
      return result;
    }
  
-   if (lowbox_token.IsValid()) {
-     *last_warning = target->AssignLowBoxToken(lowbox_token);
+   if (config_base->GetJobLevel() <= JobLevel::kLimitedUser) {
+     // Restrict the job from containing any processes. Job restrictions
 diff --git a/sandbox/win/src/broker_services.h b/sandbox/win/src/broker_services.h
 --- a/sandbox/win/src/broker_services.h
 +++ b/sandbox/win/src/broker_services.h
-@@ -7,16 +7,17 @@
- 
- #include <list>
+@@ -8,16 +8,17 @@
  #include <map>
  #include <memory>
  #include <set>
+ #include <string>
  #include <utility>
  
  #include "base/compiler_specific.h"
+ #include "base/containers/flat_map.h"
 +#include "base/environment.h"
- #include "base/macros.h"
+ #include "base/memory/raw_ptr.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/win/scoped_handle.h"
+ #include "sandbox/win/src/alternate_desktop.h"
  #include "sandbox/win/src/crosscall_server.h"
- #include "sandbox/win/src/job.h"
  #include "sandbox/win/src/sandbox.h"
  #include "sandbox/win/src/sandbox_policy_base.h"
  #include "sandbox/win/src/sharedmem_ipc_server.h"
 @@ -39,16 +40,17 @@ class BrokerServicesBase final : public 
+       std::unique_ptr<BrokerServicesTargetTracker> target_tracker) override;
+   ResultCode CreateAlternateDesktop(Desktop desktop) override;
+   void DestroyDesktops() override;
+   std::unique_ptr<TargetPolicy> CreatePolicy() override;
+   std::unique_ptr<TargetPolicy> CreatePolicy(base::StringPiece key) override;
  
-   ~BrokerServicesBase();
- 
-   // BrokerServices interface.
-   ResultCode Init() override;
-   scoped_refptr<TargetPolicy> CreatePolicy() override;
    ResultCode SpawnTarget(const wchar_t* exe_path,
                           const wchar_t* command_line,
 +                         base::EnvironmentMap& env_map,
-                          scoped_refptr<TargetPolicy> policy,
-                          ResultCode* last_warning,
+                          std::unique_ptr<TargetPolicy> policy,
                           DWORD* last_error,
                           PROCESS_INFORMATION* target) override;
-   ResultCode WaitForAllTargets() override;
    ResultCode GetPolicyDiagnostics(
        std::unique_ptr<PolicyDiagnosticsReceiver> receiver) override;
- 
+   void SetStartingMitigations(MitigationFlags starting_mitigations) override;
+   bool RatchetDownSecurityMitigations(
+       MitigationFlags additional_flags) override;
 diff --git a/sandbox/win/src/sandbox.h b/sandbox/win/src/sandbox.h
 --- a/sandbox/win/src/sandbox.h
 +++ b/sandbox/win/src/sandbox.h
@@ -98,120 +98,144 @@ diff --git a/sandbox/win/src/sandbox.h b/sandbox/win/src/sandbox.h
    virtual ResultCode SpawnTarget(const wchar_t* exe_path,
                                   const wchar_t* command_line,
 +                                 base::EnvironmentMap& env_map,
-                                  scoped_refptr<TargetPolicy> policy,
-                                  ResultCode* last_warning,
+                                  std::unique_ptr<TargetPolicy> policy,
                                   DWORD* last_error,
                                   PROCESS_INFORMATION* target) = 0;
  
-   // This call blocks (waits) for all the targets to terminate.
-   // Returns:
-   //   ALL_OK if successful. All other return values imply failure.
+   // This call creates a snapshot of policies managed by the sandbox and
+   // returns them via a helper class.
+   // Parameters:
+   //   receiver: The |PolicyDiagnosticsReceiver| implementation will be
 diff --git a/sandbox/win/src/target_process.cc b/sandbox/win/src/target_process.cc
 --- a/sandbox/win/src/target_process.cc
 +++ b/sandbox/win/src/target_process.cc
 @@ -9,16 +9,17 @@
- 
  #include <memory>
+ #include <string_view>
  #include <utility>
  #include <vector>
  
- #include "base/macros.h"
+ #include "base/containers/span.h"
  #include "base/memory/free_deleter.h"
  #include "base/numerics/safe_conversions.h"
 +#include "base/process/environment_internal.h"
+ #include "base/strings/string_util.h"
+ #include "base/win/access_token.h"
+ #include "base/win/current_module.h"
+ #include "base/win/scoped_handle.h"
+ #include "base/win/security_util.h"
  #include "base/win/startup_information.h"
- #include "base/win/windows_version.h"
  #include "sandbox/win/src/crosscall_client.h"
  #include "sandbox/win/src/crosscall_server.h"
- #include "sandbox/win/src/policy_low_level.h"
- #include "sandbox/win/src/restricted_token_utils.h"
- #include "sandbox/win/src/sandbox_types.h"
- #include "sandbox/win/src/security_capabilities.h"
 @@ -137,16 +138,17 @@ TargetProcess::~TargetProcess() {
+ 
  // Creates the target (child) process suspended and assigns it to the job
  // object.
  ResultCode TargetProcess::Create(
      const wchar_t* exe_path,
      const wchar_t* command_line,
-     bool inherit_handles,
-     const base::win::StartupInformation& startup_info,
+     std::unique_ptr<StartupInformationHelper> startup_info_helper,
      base::win::ScopedProcessInformation* target_info,
 +    base::EnvironmentMap& env_changes,
      DWORD* win_error) {
    exe_name_.reset(_wcsdup(exe_path));
  
+   base::win::StartupInformation* startup_info =
+       startup_info_helper->GetStartupInformation();
+ 
    // the command line needs to be writable by CreateProcess().
    std::unique_ptr<wchar_t, base::FreeDeleter> cmd_line(_wcsdup(command_line));
- 
-   // Start the target process suspended.
+@@ -148,40 +150,48 @@ ResultCode TargetProcess::Create(
    DWORD flags =
-@@ -156,22 +158,29 @@ ResultCode TargetProcess::Create(
+       CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | DETACHED_PROCESS;
+ 
+   if (startup_info->has_extended_startup_info())
      flags |= EXTENDED_STARTUPINFO_PRESENT;
  
-   if (job_ && base::win::GetVersion() < base::win::Version::WIN8) {
-     // Windows 8 implements nested jobs, but for older systems we need to
-     // break out of any job we're in to enforce our restrictions.
-     flags |= CREATE_BREAKAWAY_FROM_JOB;
-   }
+   std::wstring new_env;
  
-+  LPTCH original_environment = GetEnvironmentStrings();
-+  base::NativeEnvironmentString new_environment =
-+    base::internal::AlterEnvironment(original_environment, env_changes);
-+  // Ignore return value? What can we do?
-+  FreeEnvironmentStrings(original_environment);
-+  LPVOID new_env_ptr = (void*)new_environment.data();
++  wchar_t* old_environment = ::GetEnvironmentStringsW();
++  if (!old_environment) {
++    return SBOX_ERROR_CANNOT_OBTAIN_ENVIRONMENT;
++  }
 +
+   if (startup_info_helper->IsEnvironmentFiltered()) {
+-    wchar_t* old_environment = ::GetEnvironmentStringsW();
+-    if (!old_environment) {
+-      return SBOX_ERROR_CANNOT_OBTAIN_ENVIRONMENT;
+-    }
+-
+     // Only copy a limited list of variables to the target from the broker's
+     // environment. These are
+     //  * "Path", "SystemDrive", "SystemRoot", "TEMP", "TMP": Needed for normal
+     //    operation and tests.
+     //  * "LOCALAPPDATA": Needed for App Container processes.
+     //  * "CHROME_CRASHPAD_PIPE_NAME": Needed for crashpad.
+     static constexpr base::WStringPiece to_keep[] = {
+         L"Path",
+         L"SystemDrive",
+         L"SystemRoot",
+         L"TEMP",
+         L"TMP",
+         L"LOCALAPPDATA",
+         L"CHROME_CRASHPAD_PIPE_NAME"};
+ 
+     new_env = FilterEnvironment(old_environment, to_keep);
+-    ::FreeEnvironmentStringsW(old_environment);
++  } else {
++    // Environment strings block is terminated by a double null.
++    wchar_t* end_ptr = old_environment;
++    while (*end_ptr++ || *end_ptr++) {
++    }
++    new_env.assign(old_environment, end_ptr);
+   }
++
++  ::FreeEnvironmentStringsW(old_environment);
++  new_env = base::internal::AlterEnvironment(std::data(new_env), env_changes);
+ 
+   bool inherit_handles = startup_info_helper->ShouldInheritHandles();
    PROCESS_INFORMATION temp_process_info = {};
-   if (!::CreateProcessAsUserW(lockdown_token_.Get(), exe_path, cmd_line.get(),
+   if (!::CreateProcessAsUserW(lockdown_token_.get(), exe_path, cmd_line.get(),
                                nullptr,  // No security attribute.
                                nullptr,  // No thread attribute.
                                inherit_handles, flags,
--                              nullptr,  // Use the environment of the caller.
-+                              new_env_ptr,
-                               nullptr,  // Use current directory of the caller.
-                               startup_info.startup_info(),
-                               &temp_process_info)) {
-     *win_error = ::GetLastError();
-     return SBOX_ERROR_CREATE_PROCESS;
-   }
-   base::win::ScopedProcessInformation process_info(temp_process_info);
- 
+                               new_env.empty() ? nullptr : std::data(new_env),
 diff --git a/sandbox/win/src/target_process.h b/sandbox/win/src/target_process.h
 --- a/sandbox/win/src/target_process.h
 +++ b/sandbox/win/src/target_process.h
-@@ -9,16 +9,17 @@
+@@ -6,16 +6,17 @@
+ #define SANDBOX_WIN_SRC_TARGET_PROCESS_H_
  
  #include <stddef.h>
  #include <stdint.h>
  
  #include <memory>
- #include <vector>
  
- #include "base/macros.h"
+ #include "base/containers/span.h"
 +#include "base/environment.h"
+ #include "base/gtest_prod_util.h"
  #include "base/memory/free_deleter.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/strings/string_util.h"
+ #include "base/win/access_token.h"
  #include "base/win/scoped_handle.h"
  #include "base/win/scoped_process_information.h"
- #include "sandbox/win/src/crosscall_server.h"
- #include "sandbox/win/src/sandbox_types.h"
- 
- namespace base {
- namespace win {
+ #include "base/win/sid.h"
 @@ -54,16 +55,17 @@ class TargetProcess {
-   void Release() {}
+ 
+   ~TargetProcess();
  
    // Creates the new target process. The process is created suspended.
    ResultCode Create(const wchar_t* exe_path,
                      const wchar_t* command_line,
-                     bool inherit_handles,
-                     const base::win::StartupInformation& startup_info,
+                     std::unique_ptr<StartupInformationHelper> startup_info,
                      base::win::ScopedProcessInformation* target_info,
 +                    base::EnvironmentMap& env_map,
                      DWORD* win_error);
  
-   // Assign a new lowbox token to the process post creation. The process
-   // must still be in its initial suspended state, however this still
-   // might fail in the presence of third-party software.
-   ResultCode AssignLowBoxToken(const base::win::ScopedHandle& token);
- 
    // Destroys the target process.
+   void Terminate();
+ 
+   // Creates the IPC objects such as the BrokerDispatcher and the
+   // IPC server. The IPC server uses the services of the thread_pool.
+   ResultCode Init(Dispatcher* ipc_dispatcher,

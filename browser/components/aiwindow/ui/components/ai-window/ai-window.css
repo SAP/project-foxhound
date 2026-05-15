@@ -1,0 +1,142 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-self: center;
+  align-items: center;
+  justify-items: center;
+  width: 100%;
+}
+
+/* Fullpage: browser collapsed (0 height) until chat starts, showing prompts and smartbar */
+:host([mode="fullpage"]) {
+  grid-template-areas:
+    "browser"
+    "."
+    "smartbar"
+    "prompts"
+    "."
+    "footer";
+  grid-template-rows: 0 1fr auto auto 1fr auto;
+  align-content: stretch;
+}
+
+:host([mode="sidebar"]) {
+  grid-template-areas:
+    "sidebar-header"
+    "browser"
+    "prompts"
+    "smartbar";
+  grid-template-rows: auto 1fr auto auto;
+}
+
+/* Expands browser to full height and removes prompts from grid when chat starts */
+:host(.chat-active) {
+  grid-template-areas:
+    "browser"
+    "smartbar";
+  grid-template-rows: 1fr auto;
+}
+
+:host([mode="sidebar"].chat-active) {
+  grid-template-areas:
+    "sidebar-header"
+    "browser"
+    "smartbar";
+  grid-template-rows: auto 1fr auto;
+}
+
+#browser-container {
+  grid-area: browser;
+  display: contents;
+  width: 100%;
+}
+
+#aichat-browser {
+  width: 100%;
+  height: 100%;
+}
+
+#smartbar-wrapper {
+  grid-area: smartbar;
+  height: var(--smartbar-height, auto);
+  margin-block-end: var(--space-medium);
+  /* smartbar max width must be the same as the child context (ai-window-content.css) container */
+  max-width: var(--smartwindow-content-max-width);
+  position: relative;
+  width: calc(100% - var(--space-large));
+}
+
+#ai-window-smartbar {
+  position: absolute;
+  z-index: 1;
+}
+
+:host([mode="fullpage"]) #ai-window-smartbar {
+  top: 0;
+}
+
+:host([mode="sidebar"]) #ai-window-smartbar {
+  bottom: 0;
+}
+
+smartwindow-prompts {
+  grid-area: prompts;
+  width: 100%;
+}
+
+#browser-container.chat-active #ai-window-smartbar {
+  grid-area: 2 / 1;
+}
+
+.sidebar-header {
+  box-sizing: border-box;
+  grid-area: sidebar-header;
+  padding: var(--space-small);
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+moz-button.new-chat-icon-button {
+  --button-border-radius: var(--border-radius-large);
+}
+
+#smartbar-toggle-button:not([hidden]) {
+  display: flex;
+  justify-self: center;
+  align-self: center;
+  --icon-size: var(--icon-size-medium);
+}
+
+#smartbar-toggle-button {
+  --smartbar-button-border-color: color-mix(in srgb, var(--color-purple-70) 15%, transparent);
+  --smartbar-button-background-color: color-mix(in srgb, var(--color-purple-40) 20%, transparent);
+  --smartbar-button-text-color: var(--color-gray-100);
+}
+
+#smartbar-toggle-button::part(button) {
+  display: flex;
+  padding: calc(var(--space-medium) + var(--space-xxsmall)) var(--space-large);
+  border-radius: var(--border-radius-circle);
+  border: var(--border-width) solid var(--smartbar-button-border-color);
+  background: var(--smartbar-button-background-color);
+  box-shadow: var(--box-shadow-level-2);
+}
+
+#smartbar-toggle-button::part(moz-button-label) {
+  color: var(--smartbar-button-text-color);
+  font-size: var(--button-font-size);
+  font-weight: var(--font-weight);
+}
+
+smartwindow-footer {
+  grid-area: footer;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}

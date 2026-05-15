@@ -44,19 +44,19 @@ function ok(bool, msg) {
 /**
  * Generate and track results from a XMLHttpRequest with regards to timeouts.
  *
- * @param {String} id         The test description.
- * @param {Number} timeLimit  The initial setting for the request timeout.
- * @param {Number} resetAfter (Optional) The time after sending the request, to
+ * @param {string} id         The test description.
+ * @param {number} timeLimit  The initial setting for the request timeout.
+ * @param {number} resetAfter (Optional) The time after sending the request, to
  *                            reset the timeout.
- * @param {Number} resetTo    (Optional) The delay to reset the timeout to.
+ * @param {number} resetTo    (Optional) The delay to reset the timeout to.
  *
- * @note The actual testing takes place in handleEvent(event).
+ * Note: The actual testing takes place in handleEvent(event).
  * The requests are generated in startXHR().
  *
- * @note If resetAfter and resetTo are omitted, only the initial timeout setting
+ * Note: If resetAfter and resetTo are omitted, only the initial timeout setting
  * applies.
  *
- * @constructor
+ * @class
  * @implements DOMEventListener
  */
 function RequestTracker(async, id, timeLimit /*[, resetAfter, resetTo]*/) {
@@ -121,7 +121,7 @@ RequestTracker.prototype = {
   /**
    * Get a message describing this test.
    *
-   * @returns {String} The test description.
+   * @returns {string} The test description.
    */
   getMessage() {
     var rv = this.id + ", ";
@@ -233,7 +233,7 @@ AbortedRequest.prototype = {
   /**
    * Get a message describing this test.
    *
-   * @returns {String} The test description.
+   * @returns {string} The test description.
    */
   getMessage() {
     return "time to abort is " + this.abortDelay + ", timeout set at 2000";

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">%s yɨ´ɨ yu´u</string>
@@ -10,10 +17,6 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">Kue´eka nuu kají</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Kua\'a kaka yu´unu</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Xita kaka yu´unu</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Nánuku a xíín chu´un iin nuu</string>
   <!-- Placeholder text shown in the search bar before a user enters text for a general engine -->
@@ -27,9 +30,9 @@
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Tee a nánukunu</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">Ya\'a kene daa pestañas nune</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Ya\'a kene daa pestañas nune</string>
   <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description">Daa pestañas yu\'u kene ya\'a.</string>
+  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Daa pestañas yu\'u kene ya\'a.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d nkaji</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -41,7 +44,7 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Kene selección múltiple</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description">Chuva\'a daa pestañas nkaji nuu colección</string>
+  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Chuva\'a daa pestañas nkaji nuu colección</string>
   <!--
     Home - Bookmarks
 
@@ -54,13 +57,7 @@
   <string name="home_bookmarks_menu_item_remove">Xita</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
   <string name="about_content">%1$s kuvi iin a sá´á Mozilla.</string>
-  <!--
-    Private Browsing
-
-    Explanation for private browsing displayed to users on home view when they first enable private mode.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="private_browsing_placeholder_description_2" moz:removedIn="141" tools:ignore="UnusedResources">%1$s xita a nnánukunu a nsá´ánu saa kenenu nuu ka̱a̱ a xiin nakasɨnu kuaiyo da pestaña jíí ventana nánuku yu´u. Ya´a ntu taji a noo´o nánuku yu´u nuu Web ji nuu ñɨvu tatu Internet, ya´a kumiji noo\'o a nnánukunu nuu inka ñɨvu ni´i ka̱a̱ tee nɨnuu ya´a.</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Tu´un nakani jiee nánuku yu\'u</string>
   <!--
     True Private Browsing Mode
@@ -68,13 +65,6 @@
     Title for info card on private homescreen in True Private Browsing Mode.
   -->
   <string name="felt_privacy_desc_card_title">Nxinonu rastros nuu ka̱a̱ ya\'a</string>
-  <!--
-    Explanation for private browsing displayed to users on home view when they first enable
-    private mode in our new Total Private Browsing mode.
-    %1$s is the name of the app (for example "Firefox").
-    %2$s is a link using felt_privacy_info_card_subtitle_link_text as text
-  -->
-  <string name="felt_privacy_info_card_subtitle_2">%1$s xina daa cookies, a nnánukunu jíí datos nuu ya\'a sa nakasɨnu kuaiyo da pestañas yu\'u. %2$s</string>
   <!--
     Clickable portion of the explanation for private browsing that links the user to our
     about privacy page.
@@ -91,12 +81,8 @@
   <string name="open_in_app_cfr_positive_button_text">Kua´an nuu da ke´i</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">Xita</string>
-  <!--
-    Private browsing erase action "contextual feature recommendation" (CFR)
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
 
-    Text for the message displayed in the contextual feature recommendation popup promoting the erase private browsing feature.
-  -->
-  <string name="erase_action_cfr_message" moz:removedIn="141" tools:ignore="UnusedResources">Kuaxin ya\'a sa kajie\'e sesión yu\'u. Xita da nnánukunu, cookies — todo.</string>
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">Jiniñu\'u kua\'anu kivɨ nu ka̱a̱ nátava. Kua\'a nu ke\'i Android, kauxin permisos jee kachi de kuvi.</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -181,8 +167,6 @@
   <string name="browser_menu_stop">Siankuiñi</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">Extensiones</string>
-  <!-- Browser menu banner link text for learning more about extensions -->
-  <string name="browser_menu_extensions_banner_learn_more" moz:removedIn="141" tools:ignore="UnusedResources">Ka´vi kue´eka</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">Tetiñu extensión</string>
   <!-- Browser menu button that opens AMO in a tab -->
@@ -190,9 +174,9 @@
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Información de la cuenta</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">Chinei</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Chinei</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">Naku íyo a jíía</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Naku íyo a jíía</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Ke´i</string>
   <!-- Browser menu button that opens a user's library -->
@@ -200,27 +184,19 @@
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">Sitio de escritorio</string>
   <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab">Síne nuu iin pestaña</string>
+  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">Síne nuu iin pestaña</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Chisó ya´a nuu kajie´e</string>
-  <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
-  <string name="browser_menu_add_to_homescreen_2" moz:removedIn="141" tools:ignore="UnusedResources">Chisó ya´a nuu kajie´e…</string>
   <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
   <string name="resync_button_content_description">Resincronizar</string>
   <!-- Browser menu button that opens the find in page menu -->
   <string name="browser_menu_find_in_page">Nánuku nuu página</string>
-  <!-- Browser menu button that opens the find in page menu -->
-  <string name="browser_menu_find_in_page_2" moz:removedIn="141" tools:ignore="UnusedResources">Nánuku nuu página…</string>
   <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
   <string name="browser_menu_translations">Traducir página</string>
-  <!-- Browser menu button that saves the current tab to a collection -->
-  <string name="browser_menu_save_to_collection" moz:removedIn="141" tools:ignore="UnusedResources">Chuva\'a nuu colección…</string>
   <!-- Browser menu button that saves the current tab to a collection -->
   <string name="browser_menu_save_to_collection_2">Chuva\'a nuu colección</string>
   <!-- Browser menu button that open a share menu to share the current site -->
   <string name="browser_menu_share">Kua´a</string>
-  <!-- Browser menu button that open a share menu to share the current site -->
-  <string name="browser_menu_share_2" moz:removedIn="141" tools:ignore="UnusedResources">Kua´a…</string>
   <!--
     Browser menu button shown in custom tabs that opens the current tab in Fenix
     %1$s is the name of the app (for example "Firefox").
@@ -230,7 +206,7 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by">Ya´a nsa´a %1$s</string>
+  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">Ya´a nsa´a %1$s</string>
   <!--
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
@@ -243,51 +219,23 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Síne jii aplicación</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view">Sá\'á vii jíí vista lectura</string>
+  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Sá\'á vii jíí vista lectura</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
   <string name="browser_menu_customize_reader_view_2">Sá\'á vii jíí vista lectura</string>
   <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add">Tee</string>
+  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Tee</string>
   <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit">Natee</string>
+  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Natee</string>
   <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1">Sá´á vii nuu kajie´e</string>
+  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Sá´á vii nuu kajie´e</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">Kajie´e sesión</string>
   <!-- Browser menu label that creates a private tab -->
   <string name="browser_menu_new_private_tab">Pestaña yu´u jíía</string>
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">Contraseñas</string>
-  <!--
-    Browser menu label that navigates to the SUMO page for the Firefox for Android release notes.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="browser_menu_new_in_firefox" moz:removedIn="141" tools:ignore="UnusedResources">A jíí kene %1$s</string>
-  <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
-  <string name="browser_menu_switch_to_desktop_site" moz:removedIn="141" tools:ignore="UnusedResources">Sama nuu escritorio</string>
-  <!-- Browser menu label that toggles the request for the mobile site of the currently visited page -->
-  <string name="browser_menu_switch_to_mobile_site" moz:removedIn="142" tools:ignore="UnusedResources">Sama nuu móvil</string>
-  <!-- Browser menu label that navigates to the page tools sub-menu -->
-  <string name="browser_menu_tools" moz:removedIn="141" tools:ignore="UnusedResources">Daa ka̱a̱</string>
-  <!--
-    Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
-    bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen
-  -->
-  <string name="browser_menu_save" moz:removedIn="141" tools:ignore="UnusedResources">Chuva´a</string>
-  <!-- Browser menu label that bookmarks the currently visited page -->
-  <string name="browser_menu_bookmark_this_page" moz:removedIn="141" tools:ignore="UnusedResources">Tee página ya´a nuu a ta´an ini noo´o</string>
   <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
   <string name="browser_menu_edit_bookmark">Tee a ta´an ini noo\'o</string>
-  <!-- Browser menu label that the saves the currently visited page as a PDF -->
-  <string name="browser_menu_save_as_pdf" moz:removedIn="141" tools:ignore="UnusedResources">Chuva´a kua PDF…</string>
-  <!-- Browser menu label for turning ON reader view of the current visited page -->
-  <string name="browser_menu_turn_on_reader_view" moz:removedIn="141" tools:ignore="UnusedResources">Tee vista ka\'vi</string>
-  <!-- Browser menu label for turning OFF reader view of the current visited page -->
-  <string name="browser_menu_turn_off_reader_view" moz:removedIn="141" tools:ignore="UnusedResources">Xita vista ka\'vi</string>
-  <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
-  <string name="browser_menu_translate_page" moz:removedIn="141" tools:ignore="UnusedResources">Traducir página…</string>
-  <!-- Browser menu label for the print feature -->
-  <string name="browser_menu_print" moz:removedIn="141" tools:ignore="UnusedResources">Nátava…</string>
   <!--
     Browser menu label for the Delete browsing data on quit feature.
     %1$s is the name of the app (for example "Firefox").
@@ -305,11 +253,6 @@
     Content description for the Home screen button on the browser toolbar
   -->
   <string name="browser_toolbar_home">Pantalla nue kajie\'e</string>
-  <!--
-    Content description (not visible, for screen readers etc.): Erase button: Erase the browsing
-    history and go back to the home screen.
-  -->
-  <string name="browser_toolbar_erase" moz:removedIn="141" tools:ignore="UnusedResources">Xiná daa nnánukunu</string>
   <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">Traducir página</string>
   <!--
@@ -343,22 +286,8 @@
   <!--
     Home onboarding
 
-    Home onboarding dialog welcome screen title text.
+    Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
-  <string name="onboarding_home_welcome_title_2" moz:removedIn="141" tools:ignore="UnusedResources">Kusɨɨ inidáni nkantanu nu iin internet kua jiniñu\'unuma</string>
-  <!-- Home onboarding dialog welcome screen description text. -->
-  <string name="onboarding_home_welcome_description" moz:removedIn="141" tools:ignore="UnusedResources">Kue\'eka da teku. Ku\'eka privacidad. Iin compromiso jíí da ñivɨ por encima de los beneficios.</string>
-  <!-- Home onboarding dialog sign into sync screen title text. -->
-  <string name="onboarding_home_sync_title_3" moz:removedIn="141" tools:ignore="UnusedResources">Sama pantalla kuviji iin ntu viji</string>
-  <!-- Text for the button to continue the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_get_started_button" moz:removedIn="141" tools:ignore="UnusedResources">Kajie´e</string>
-  <!-- Text for the button to navigate to the sync sign in screen on the home onboarding dialog. -->
-  <string name="onboarding_home_sign_in_button" moz:removedIn="141" tools:ignore="UnusedResources">Kajie´e sesión</string>
-  <!-- Text for the button to skip the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_skip_button" moz:removedIn="141" tools:ignore="UnusedResources">Ignorar</string>
-  <!-- Onboarding home screen sync popup dialog message, shown on top of Recent Synced Tabs in the Jump back in section. -->
-  <string name="sync_cfr_message" moz:removedIn="142" tools:ignore="UnusedResources">¡Tus pestañas se están sincronizando! Kaka nu inkinonu nu inka ka̱a̱ noo\'o</string>
-  <!-- Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog -->
   <string name="onboarding_home_content_description_close_button">Nakasɨ</string>
   <!--
     Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
@@ -368,13 +297,6 @@
   <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Tu´un xitu Firefox a nejika kumio</string>
   <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_title_nimbus_2">Kɨsɨ inidani a kumidani noo\'o</string>
-  <!--
-    Title for set firefox as default browser screen used by Nimbus experiments.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="BrandUsage,UnusedResources">Kuni navi chi kue\'etuni ñivɨ ta\'an inida Firefox</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_4" tools:ignore="UnusedResources">Kue\'e tuni ñivɨ kumidaja privacidad mada jee kajida iin ka̱a̱ a sá´á iin vetiñu ntu ntava xu\'un.</string>
   <!-- Text for the button to set firefox as default browser on the device -->
   <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Sá´á ka̱a̱ ya´a iin a ni´inu ntaka íchi</string>
   <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -404,6 +326,10 @@
   <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Tee widget Firefox</string>
   <!-- Text for the button to dismiss the screen and move on with the flow -->
   <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">Nkuvi ntañu´u</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!--
     Search Widget
 
@@ -531,8 +457,6 @@
   <string name="preferences_gestures">Gestos</string>
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">Sá´á vii</string>
-  <!-- Preference description for banner about signing in -->
-  <string name="preferences_sign_in_description_2">Kajie´e sesión saa kuvi saa sincronizar daa pestañas, a ta´a ini noo´o, contraseñas jii kue´eka.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
   <string name="preferences_account_default_name_2">Cuenta de Mozilla</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
@@ -541,8 +465,6 @@
   <string name="preferences_language">Tu´un</string>
   <!-- Preference for translations -->
   <string name="preferences_translations">Traducciones</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">Nuu kaji daa datos</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">Recopilación de datos</string>
   <!-- Preference for developers -->
@@ -575,8 +497,6 @@
   <string name="preferences_open_links_in_apps_ask">Katu\'un ntaka síne</string>
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">Ni´in íchi</string>
-  <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager" tools:ignore="UnusedResources" moz:removedIn="141">Ke\'i daa xínuu externo</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Tee registros Gecko</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -591,14 +511,6 @@
   <string name="notifications_allowed_summary">Kuvi</string>
   <!-- Summary for notification preference indicating notifications are not allowed -->
   <string name="notifications_not_allowed_summary">Nkua\'a</string>
-  <!--
-    Add-on Permissions
-
-    The title of the required permissions section from addon's permissions screen
-  -->
-  <string name="addons_permissions_heading_required" tools:ignore="UnusedResources" moz:removedIn="141">Jiniñu\'u</string>
-  <!-- The title of the optional permissions section from addon's permissions screen -->
-  <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources" moz:removedIn="141">Kaji</string>
   <!--
     Add-on Preferences
 
@@ -615,11 +527,7 @@
   <string name="customize_addon_collection_user_hint">Dueño de la colección (ID de usuario)</string>
   <!-- Toast shown after confirming the custom extension collection configuration -->
   <string name="toast_customize_extension_collection_done">Colección daa colección. Nakasɨdani ka̱a̱ sa kuvi kene daa a nsama…</string>
-  <!--
-    Customize Home
-
-    Header text for jumping back into the recent tab in customize the home screen
-  -->
+  <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">Niko íchi yata</string>
   <!-- Title for the customize home screen section with bookmarks. -->
   <string name="customize_toggle_bookmarks">A ta´a ini noo´o</string>
@@ -640,10 +548,6 @@
     Content description for various wallpapers. %1$s is the name of the wallpaper.
   -->
   <string name="wallpapers_item_name_content_description">Elemento de fondo de pantalla: %1$s</string>
-  <!-- Snackbar message for when wallpaper is selected -->
-  <string name="wallpaper_updated_snackbar_message">¡Fondo de pantalla actualizado!</string>
-  <!-- Snackbar label for action to view selected wallpaper -->
-  <string name="wallpaper_updated_snackbar_action">Kune\'ya</string>
   <!-- Snackbar message for when wallpaper couldn't be downloaded -->
   <string name="wallpaper_download_error_snackbar_message">Ntu nkuvi xinuu fondo pantalla</string>
   <!-- Snackbar label for action to retry downloading the wallpaper -->
@@ -762,12 +666,6 @@
   <string name="preference_experiments_2">Estudios</string>
   <!-- Summary for studies preferences -->
   <string name="preference_experiments_summary_2">Kua\'a Mozilla chu\'un jee sá´á estudios</string>
-  <!--
-    Turn On Sync Preferences
-
-    Header of the Sync and save your data preference view
-  -->
-  <string name="preferences_sync_2">Sincroniza jee chuva\'a información noo\'o</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">Kajie´e sesión para reconectar</string>
   <!-- Preference for removing FxA account -->
@@ -945,15 +843,15 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Tee pestaña yu´u</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">Yɨ´ɨ yu´u</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Yɨ´ɨ yu´u</string>
   <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync">Sincronizar</string>
+  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Sincronizar</string>
   <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share">Tɨɨn kuaiyo da pestañas</string>
+  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Tɨɨn kuaiyo da pestañas</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Pestañas nnakasɨ ntañu´u</string>
   <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources">Skuata nnakasɨ</string>
+  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Skuata nnakasɨ</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Nuu ke\'i cuenta</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -961,11 +859,11 @@
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Nakasɨ kuaiyo daa pestañas</string>
   <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark">A ta´a ini noo´o</string>
+  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">A ta´a ini noo´o</string>
   <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close">Nakasɨ</string>
+  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Nakasɨ</string>
   <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description">Kua\'a daa pestañas nkaji</string>
+  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Kua\'a daa pestañas nkaji</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Menú daa pestañas nkaji</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -1003,9 +901,9 @@
   <!-- Text for the button to clear all history -->
   <string name="history_delete_all">Xita a nnánukunu</string>
   <!-- Text for the snackbar to confirm that multiple browsing history items has been deleted -->
-  <string name="history_delete_multiple_items_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">A nnánukunu nxita</string>
+  <string name="history_delete_multiple_items_snackbar">A nnánukunu nxita</string>
   <!-- Text for the snackbar to confirm that a single browsing history item has been deleted. %1$s is the shortened URL of the deleted history item. -->
-  <string name="history_delete_single_item_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">Nxita %1$s</string>
+  <string name="history_delete_single_item_snackbar">Nxita %1$s</string>
   <!-- Context description text for the button to delete a single history item -->
   <string name="history_delete_item">Xita</string>
   <!--
@@ -1042,14 +940,6 @@
   <string name="tab_crash_close">Nakasɨ pestaña</string>
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">Natee tuku pestaña</string>
-  <!--
-    Bookmarks
-
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
-  -->
-  <string name="bookmark_delete_folder_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">¿A mana kuvinu xitanu carpeta ya´a?</string>
-  <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items including folders. %s is the name of the app (for example "Firefox"). -->
-  <string name="bookmark_delete_multiple_folders_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">%s xita da elementos nkaji.</string>
   <!-- Text for the cancel button on delete bookmark dialog -->
   <string name="bookmark_delete_negative">Nkuvi-ka</string>
   <!-- Screen title for adding a bookmarks folder -->
@@ -1059,7 +949,7 @@
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Natee</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">Tɨɨn</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Tɨɨn</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Kua´a</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -1072,8 +962,6 @@
   <string name="bookmark_menu_open_all_in_private_tabs_button">Síne kuaiyo nu pestañas yu\'u</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">Xita</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">Chuva´a</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -1083,37 +971,23 @@
   <string name="edit_bookmark_fragment_title">Tee da a ta´an noo\'o</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">Natee carpeta</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button" tools:ignore="UnusedResources" moz:removedIn="143">Kajie´e sesión sa kune\'yanu a ta´a ini noo´o sincronizados</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">CARPETA</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">Sivɨ</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label" tools:ignore="UnusedResources" moz:removedIn="143">Tee carpeta</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Kaji carpeta</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error" tools:ignore="UnusedResources" moz:removedIn="143">Nejika kumiji iin título</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">URL ntu vatu</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message" tools:ignore="UnusedResources" moz:removedIn="143">Na íyo a ta´a ini noo´o ya\'a</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Nxita %1$s</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks not including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_2" tools:ignore="UnusedResources" moz:removedIn="143">A ta´a ini noo´o nxita</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_3" tools:ignore="UnusedResources" moz:removedIn="143">Xita carpetas sincronizadas</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">DESHACER</string>
-  <!-- Text for the button to search all bookmarks -->
-  <string name="bookmark_search" tools:ignore="UnusedResources" moz:removedIn="143">Tee tu\'un nánukunu</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">DESHACER</string>
   <!-- Content description for the bookmark navigation bar back button -->
   <string name="bookmark_navigate_back_button_content_description">Niko yata</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
@@ -1240,12 +1114,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d pestaña nkajii</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved" tools:ignore="UnusedResources" moz:removedIn="142">¡Pestañas nchuva\'a!</string>
-  <!-- Text shown in snackbar when one or multiple tabs have been saved in a new collection -->
-  <string name="create_collection_tabs_saved_new_collection">¡Colección nchuva\'a!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">¡Pestaña nchuva\'a!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">Nakasɨ</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -1291,8 +1159,6 @@
   <string name="toast_copy_link_to_clipboard">Copiado al portapapeles</string>
   <!-- An option from the share dialog to sign into sync -->
   <string name="sync_sign_in">Kajie´e sesión ji Sync</string>
-  <!-- An option from the three dot menu to sync and save data -->
-  <string name="sync_menu_sync_and_save_data">Sincroniza jee chuva\'a datos</string>
   <!-- An option from the share dialog to send link to all other sync devices -->
   <string name="sync_send_to_all">Chu´un ichi nuu ntaka ka̱a̱</string>
   <!-- An option from the share dialog to reconnect to sync -->
@@ -1336,23 +1202,23 @@
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">Sá´á Firefox ka̱a̱ nánuku xinañu´u</string>
   <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title">Ni\'i nánuku yu\'u</string>
+  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Ni\'i nánuku yu\'u</string>
   <!--
     Text shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_text">Kaka nchuva\'anu cookies jíí daa nnánukunu jíí %1$s</string>
+  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">Kaka nchuva\'anu cookies jíí daa nnánukunu jíí %1$s</string>
   <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title">Kaka jee nxinonu huellas</string>
+  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">Kaka jee nxinonu huellas</string>
   <!--
     Text A shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_A_text">Sa nànuku yu\'unu nu %1$s ntu nkino a nnánukunu.</string>
+  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">Sa nànuku yu\'unu nu %1$s ntu nkino a nnánukunu.</string>
   <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title">Kaji\'e nánuku</string>
+  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">Kaji\'e nánuku</string>
   <!-- Text B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_text">Nani\'i iin a kuvi yati. A xiin nuku iin a sɨɨ.</string>
+  <string name="notification_re_engagement_B_text" tools:ignore="UnusedResources" moz:removedIn="150">Nani\'i iin a kuvi yati. A xiin nuku iin a sɨɨ.</string>
   <!--
     Survey
 
@@ -1367,12 +1233,8 @@
   <!--
     Snackbar
 
-    Text shown in snackbar when user deletes a collection
+    Text shown in snackbar when user closes a tab
   -->
-  <string name="snackbar_collection_deleted" tools:ignore="UnusedResources" moz:removedIn="143">Nxita colección</string>
-  <!-- Text shown in snackbar when user renames a collection -->
-  <string name="snackbar_collection_renamed" moz:removedIn="141" tools:ignore="UnusedResources">Nsama sivɨ colección</string>
-  <!-- Text shown in snackbar when user closes a tab -->
   <string name="snackbar_tab_closed">Pestaña nasɨ</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">Daa pestaña nasɨ</string>
@@ -1380,14 +1242,10 @@
   <string name="snackbar_added_to_shortcuts">¡Tee nuu acceso ñama!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Pestaña yu\'u nasɨ</string>
-  <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed" moz:removedIn="141" tools:ignore="UnusedResources">Pestañas yu\'u nnakasɨ</string>
   <!-- Text shown in snackbar when user erases their private browsing data -->
   <string name="snackbar_private_data_deleted">Nna daa datos ka̱a̱ nánuku</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">DESHACER</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed">Nxita página</string>
   <!--
     QR code scanner prompt which appears after scanning a code, but before navigating to it
     %1$s is the name of the app (for example "Firefox"), %2$s is the URL or text scanned
@@ -1403,10 +1261,6 @@
   <string name="qr_scanner_dialog_invalid_ok">Kuvi</string>
   <!-- Tab collection deletion prompt dialog message. %1$s is the collection name. -->
   <string name="tab_collection_dialog_message">¿A mana kuvinu xitanu %1$s?</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive" tools:ignore="UnusedResources" moz:removedIn="143">Xita</string>
-  <!-- Message for copying the URL via long press on the toolbar -->
-  <string name="url_copied" tools:ignore="UnusedResources" moz:removedIn="142">URL ntɨɨn</string>
   <!-- Sample text for accessibility font size -->
   <string name="accessibility_text_size_sample_text_1">Ya\'a kuvi iin tu\'un ejemplo. Sukua tuvi naja kino tu\'un saa sá´á ka\'nunu a xíín sá´á lulinu jíí ya\'a.</string>
   <!-- Summary for Accessibility Text Size Scaling Preference -->
@@ -1453,7 +1307,7 @@
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Xita automáticamente daa datos nkakanu sa kajinu \"Kene\" nu menú principal</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">Kene</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Kene</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Rango de tiempo a eliminar</string>
   <!-- Body text of a delete browsing data dialog. -->
@@ -1488,14 +1342,6 @@
     text to display in the snackbar once account is signed-in
   -->
   <string name="onboarding_firefox_account_sync_is_on">Sync iyo activado</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar">¡Pestañas nchu\'u íchi!</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">¡Pestaña nchu\'u íchi!</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">Ntu nkuvi chu\'un íchi</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -1786,8 +1632,6 @@
   <string name="credit_cards_edit_card">Natee tarjeta</string>
   <!-- The header for the card number of a credit card -->
   <string name="credit_cards_card_number">Tuniin tarjeta</string>
-  <!-- The header for the expiration date of a credit card -->
-  <string name="credit_cards_expiration_date">Fecha de caducidad</string>
   <!-- The label for the expiration date month of a credit card to be used by a11y services -->
   <string name="credit_cards_expiration_date_month">Yoo fecha nɨ\'ɨ</string>
   <!-- The label for the expiration date year of a credit card to be used by a11y services -->
@@ -1886,12 +1730,6 @@
   <string name="search_add_custom_engine_error_empty_search_string">Tee iin tu\'un nánuku</string>
   <!-- Text shown when a user leaves out the required template string -->
   <string name="search_add_custom_engine_error_missing_template">Kune´ya dee tu´un nánukunu íyo kua vají nuu ya´a</string>
-  <!-- Text shown when a user creates a new search engine. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">Nsá´á %s</string>
-  <!-- Text shown when a user successfully edits a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_edit_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">Nchuva\'a %s</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">Nxita %s</string>
   <!-- Heading for the instructions to allow a permission -->
   <string name="phone_feature_blocked_intro">Sa kuvi:</string>
   <!-- First step for the allowing a permission -->
@@ -1916,8 +1754,6 @@
   <string name="confirm_clear_permission_site">¿A mana kuvinu xinonu permiso ya\'a nu nuu ya\'a?</string>
   <!-- label shown when there are not site exceptions to show in the site exception settings -->
   <string name="no_site_exceptions">Sin excepciones de sitio</string>
-  <!-- Bookmark deletion confirmation -->
-  <string name="bookmark_deletion_confirmation" tools:ignore="UnusedResources" moz:removedIn="143">¿A mana kuvinu xitanu a ta\'a ininu?</string>
   <!-- Browser menu button that adds a shortcut to the home fragment -->
   <string name="browser_menu_add_to_shortcuts">Tee daa acceso ñama</string>
   <!-- Browser menu button that removes a shortcut from the home fragment -->
@@ -1928,9 +1764,9 @@
   -->
   <string name="certificate_info_verified_by">Nne´ya: %1$s</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">Xita</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Xita</string>
   <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button">Natee</string>
+  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Natee</string>
   <!-- Message in delete confirmation dialog for password -->
   <string name="login_deletion_confirmation_2">¿A mana kuvinu xitanu contraseña ya\'a?</string>
   <!-- Positive action of a dialog asking to delete -->
@@ -1938,9 +1774,9 @@
   <!-- Negative action of a dialog asking to delete login -->
   <string name="dialog_delete_negative">Nkuvi-ka</string>
   <!-- The saved password options menu description. -->
-  <string name="login_options_menu_2">Kaji daa contraseñas</string>
+  <string name="login_options_menu_2" tools:ignore="UnusedResources" moz:removedIn="149">Kaji daa contraseñas</string>
   <!-- The button description to save changes to an edited password. -->
-  <string name="save_changes_to_login_2">Chuva´a daa nsama</string>
+  <string name="save_changes_to_login_2" tools:ignore="UnusedResources" moz:removedIn="149">Chuva´a daa nsama</string>
   <!-- The page title for editing a saved password. -->
   <string name="edit_2">Natee contraseña</string>
   <!-- The page title for adding new password. -->
@@ -2059,12 +1895,6 @@
   <string name="radio_preference_info_content_description">Kaxin sa kuninu detalles</string>
   <!-- Content description for the action bar "up" button -->
   <string name="action_bar_up_description">Kaka íchi sikɨ</string>
-  <!-- Content description for privacy content close button -->
-  <string name="privacy_content_close_button_content_description" tools:ignore="UnusedResources" moz:removedIn="143">Nakasɨ</string>
-  <!-- Header text for a section on the home screen. -->
-  <string name="pocket_stories_categories_header" moz:removedIn="141" tools:ignore="UnusedResources">Daa tu\'un por tema</string>
-  <!-- Text of a button allowing users to access an external url for more Pocket recommendations. -->
-  <string name="pocket_stories_placeholder_text" moz:removedIn="141" tools:ignore="UnusedResources">Nani\'i ku\'eka</string>
   <!-- Text indicating that the Pocket story that also displays this text is a sponsored story by other 3rd party entity. -->
   <string name="pocket_stories_sponsor_indication">Patrocinado</string>
   <!-- Snackbar message for enrolling in a Nimbus experiment from the secret settings when Studies preference is Off. -->
@@ -2085,8 +1915,6 @@
   <string name="a11y_state_label_expanded">expandido</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">Síne enlace sa kuninuka jiee colección ya\'a</string>
-  <!-- Action label for links that point to an article. Talkback will append this to say "Double tap to read the article". -->
-  <string name="a11y_action_label_read_article" moz:removedIn="141" tools:ignore="UnusedResources">ka\'vi articulo</string>
   <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
   <string name="a11y_heading">%s, Xini</string>
   <!-- Title for dialog displayed when trying to access links present in a text. -->
@@ -2238,4 +2066,10 @@
   -->
   <string name="beta_feature">BETA</string>
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

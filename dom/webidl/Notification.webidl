@@ -41,16 +41,16 @@ interface Notification : EventTarget {
   readonly attribute NotificationDirection dir;
 
   [Pure]
-  readonly attribute DOMString? lang;
+  readonly attribute DOMString lang;
 
   [Pure]
-  readonly attribute DOMString? body;
+  readonly attribute DOMString body;
 
   [Constant]
-  readonly attribute DOMString? tag;
+  readonly attribute DOMString tag;
 
   [Pure]
-  readonly attribute DOMString? icon;
+  readonly attribute UTF8String icon;
 
   [Constant, Pref="dom.webnotifications.requireinteraction.enabled"]
   readonly attribute boolean requireInteraction;
@@ -78,12 +78,25 @@ dictionary NotificationOptions {
   NotificationDirection dir = "auto";
   DOMString lang = "";
   DOMString body = "";
+  // [UseCounter], bug 1976515
+  UTF8String navigate;
   DOMString tag = "";
-  DOMString icon = "";
-  boolean requireInteraction = false;
-  boolean silent = false;
+  // [UseCounter], bug 1976515
+  UTF8String image;
+  UTF8String icon = "";
+  // [UseCounter], bug 1976515
+  UTF8String badge;
+  // [UseCounter], bug 1976515
   VibratePattern vibrate;
+  // [UseCounter], bug 1976515
+  EpochTimeStamp timestamp;
+  // [UseCounter], bug 1976515
+  boolean renotify = false;
+  boolean silent = false;
+  // [UseCounter], bug 1976515
+  boolean requireInteraction = false;
   any data = null;
+  // [UseCounter], bug 1976515
   [Pref="dom.webnotifications.actions.enabled"]
   sequence<NotificationAction> actions = [];
 };

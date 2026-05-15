@@ -7,7 +7,6 @@
 #ifndef SlicedInputStream_h
 #define SlicedInputStream_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"

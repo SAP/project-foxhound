@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CompositionEvent.h"
+
 #include "mozilla/TextEvents.h"
 #include "prtime.h"
 
@@ -42,7 +43,7 @@ already_AddRefed<CompositionEvent> CompositionEvent::Constructor(
   RefPtr<CompositionEvent> e = new CompositionEvent(t, nullptr, nullptr);
   bool trusted = e->Init(t);
   e->InitCompositionEvent(aType, aParam.mBubbles, aParam.mCancelable,
-                          aParam.mView, aParam.mData, u""_ns);
+                          aParam.mView, aParam.mData);
   e->mDetail = aParam.mDetail;
   e->SetTrusted(trusted);
   e->SetComposed(aParam.mComposed);
@@ -59,20 +60,14 @@ NS_INTERFACE_MAP_END_INHERITING(UIEvent)
 
 void CompositionEvent::GetData(nsAString& aData) const { aData = mData; }
 
-void CompositionEvent::GetLocale(nsAString& aLocale) const {
-  aLocale = mLocale;
-}
-
 void CompositionEvent::InitCompositionEvent(const nsAString& aType,
                                             bool aCanBubble, bool aCancelable,
                                             nsGlobalWindowInner* aView,
-                                            const nsAString& aData,
-                                            const nsAString& aLocale) {
+                                            const nsAString& aData) {
   NS_ENSURE_TRUE_VOID(!mEvent->mFlags.mIsBeingDispatched);
 
   UIEvent::InitUIEvent(aType, aCanBubble, aCancelable, aView, 0);
   mData = aData;
-  mLocale = aLocale;
 }
 
 void CompositionEvent::GetRanges(TextClauseArray& aRanges) {

@@ -57,6 +57,7 @@ power:
       - gpu
       - gmplugin
       - utility
+      - inference
     telemetry_mirror: POWER_CPU_TIME_PER_PROCESS_TYPE_MS
 
   cpu_time_per_tracker_type_ms:
@@ -270,6 +271,7 @@ power.wakeups_per_thread:
       - mozstorage
       - mtransport
       - netlink_monitor
+      - onnx_worker
       - pacerthread
       - permission
       - playeventsound
@@ -319,6 +321,7 @@ power.wakeups_per_thread:
   content_foreground: *per_thread_wakeups
   content_background: *per_thread_wakeups
   gpu_process: *per_thread_wakeups
+  inference_process: *per_thread_wakeups
 
 power.cpu_ms_per_thread:
   parent_active: &per_thread_cpu_ms
@@ -342,6 +345,7 @@ power.cpu_ms_per_thread:
   content_foreground: *per_thread_cpu_ms
   content_background: *per_thread_cpu_ms
   gpu_process: *per_thread_cpu_ms
+  inference_process: *per_thread_cpu_ms
 
 power.battery:
   percentage_when_user_active:
@@ -364,45 +368,3 @@ power.battery:
     notification_emails:
       - florian@mozilla.com
     expires: never
-
-glam_experiment:
-  cpu_time_bogus_values:
-    type: counter
-    disabled: true
-    description: >
-      Duplicate of:
-      `power.cpu_time_bogus_values`
-
-      Intended for the purpose of testing client side sampling of data. This
-      metric is disabled by default and will be enabled only for the purpose
-      of the experiment. See Bug 1947604 for more information.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1947604
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1755733
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - tlong@mozilla.com
-      - efilho@mozilla.com
-    expires: 146
-  total_cpu_time_ms:
-    type: counter
-    disabled: true
-    description: >
-      Duplicate of:
-      `power.total_cpu_time_ms`
-
-      Intended for the purpose of testing client side sampling of data. This
-      metric is disabled by default and will be enabled only for the purpose
-      of the experiment. See Bug 1947604 for more information.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1947604
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1736040
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - tlong@mozilla.com
-      - efilho@mozilla.com
-    expires: 146

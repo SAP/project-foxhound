@@ -14,6 +14,9 @@ kind-dependencies:
     - release-eme-free-repack-beetmover-checksums
     - release-beetmover-signed-langpacks-checksums
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     firefox-promote:
         name: post-beetmover-checksums-dummy

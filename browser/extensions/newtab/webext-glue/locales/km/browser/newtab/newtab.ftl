@@ -45,9 +45,6 @@ newtab-confirm-delete-history-p1 = តើអ្នកប្រាកដថាអ
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = សកម្មភាពនេះមិនអាចមិនធ្វើឡើង​វិញបានទេ។
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -78,11 +75,9 @@ newtab-menu-save-to-pocket = រក្សាទុកទៅ { -pocket-brand-name
 newtab-menu-delete-pocket = លុបចេញពី { -pocket-brand-name }
 newtab-menu-archive-pocket = ទុកក្នុងប័ណ្ណសារក្នុង { -pocket-brand-name }
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
+newtab-privacy-modal-button-done = ធ្វើ​រួច
 
 ##
 
@@ -133,9 +128,6 @@ newtab-section-menu-move-up = ​ផ្លាស់ទី​ឡើង​លើ
 newtab-section-menu-move-down = ផ្លាស់ទី​ចុះក្រោម
 newtab-section-menu-privacy-notice = ការជូនដំណឹង​អំពី​ឯកជនភាព
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = វិបសាយ​លើ​គេ
@@ -151,9 +143,6 @@ newtab-empty-section-highlights = ចាប់ផ្តើមការរុក�
 #   $provider (string) - Name of the content provider for this section, e.g "Pocket".
 newtab-empty-section-topstories = អ្នកបានអានរឿងទាំងអស់ហើយ។ ពិនិត្យ​រឿង​ដែល​ពេញនិយមបំផុត​ឡើងវិញ​​ពី { $provider }។ មិនអាចរង់ចាំ? ជ្រើសរើសប្រធានបទកំពុងពេញនិយម ដើម្បីស្វែងរករឿងដ៏អស្ចារ្យនៅ​លើ​អ៊ីនធឺណិត។
 
-## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
-
-
 ## Pocket Content Section.
 
 # This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
@@ -163,9 +152,9 @@ newtab-pocket-cta-button = ទាញយក { -pocket-brand-name }
 
 ## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
 
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
+# Clicking the thumbs down button for this story informs us that the user does not feel like the story is interesting for them
+newtab-pocket-thumbs-down-tooltip =
+    .title = មិនមែនសម្រាប់ខ្ញុំទេ
 
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
@@ -173,57 +162,56 @@ newtab-pocket-cta-button = ទាញយក { -pocket-brand-name }
 newtab-error-fallback-info = អូ មានអ្វីមួយខុសប្រក្រតីក្នុងការផ្ទុក​ខ្លឹមសារ​នេះ។
 newtab-error-fallback-refresh-link = ផ្ទុកទំព័រឡើងវិញ ដើម្បីព្យាយាមម្ដងទៀត។
 
-## Customization Menu
-
-
 ## New Tab Wallpapers
 
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
+newtab-wallpaper-title = ផ្ទាំងរូបភាព
 
 ## New Tab Weather
 
-
-## Topic Labels
-
+newtab-weather-opt-in-not-now =
+    .label = កុំទាន់
+newtab-weather-opt-in-yes =
+    .label = បាទ/ចាស៎
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = ទីក្រុងញូវយ៉ក
 
 ## Topic Selection Modal
 
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
+newtab-topic-selection-cancel-button = បោះបង់
 
 ## Confirmation modal for blocking a section
 
+newtab-section-cancel-button = កុំទាន់
 
-## Strings for custom wallpaper highlight
+## Strings for new user activation custom wallpaper highlight
 
+newtab-new-user-custom-wallpaper-cta = សាកល្បងឥឡូវនេះ
 
-## Strings for download mobile highlight
+## Strings for reporting issues with ads and content
 
+newtab-report-ads-reason-not-interested =
+    .label = ខ្ញុំមិនចាប់អារម្មណ៍ទេ
+newtab-report-cancel = បោះបង់
 
-## Strings for shortcuts highlight
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = ថ្មី
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = បានបញ្ចប់ ({ $number })
+newtab-widget-lists-menu-delete = លុបបញ្ជីនេះ
+newtab-widget-lists-menu-hide = លាក់បញ្ជីទាំងអស់
+newtab-widget-lists-input-menu-delete = លុប
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = បញ្ជីថ្មី
 
-## Strings for reporting ads and content
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
 
-
-## Strings for trending searches
-
+newtab-widget-timer-notification-warning = ការជូនដំណឹងត្រូវបានបិទ
+newtab-widget-timer-menu-notifications = បិទការជូនដំណឹង
+newtab-widget-timer-menu-notifications-on = បើកការជូនដំណឹង

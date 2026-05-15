@@ -10,7 +10,7 @@ import subprocess
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 from mozpack.files import FileListFinder
 
@@ -27,7 +27,7 @@ class HgRepository(Repository):
     def __init__(self, path: Path, hg="hg"):
         import hglib.client
 
-        super(HgRepository, self).__init__(path, tool=hg)
+        super().__init__(path, tool=hg)
         self._env["HGPLAIN"] = "1"
 
         # Setting this modifies a global variable and makes all future hglib
@@ -91,7 +91,7 @@ class HgRepository(Repository):
 
     def _run(self, *args, **runargs):
         if not self._client.server:
-            return super(HgRepository, self)._run(*args, **runargs)
+            return super()._run(*args, **runargs)
 
         # hglib requires bytes on python 3
         args = [a.encode("utf-8") if not isinstance(a, bytes) else a for a in args]
@@ -240,7 +240,8 @@ class HgRepository(Repository):
             args += ["-r", ".^"]
         for dot_extension in extensions:
             args += ["--include", f"glob:**{dot_extension}"]
-        args += ["--exclude", f"listfile:{exclude_file}"]
+        if exclude_file is not None:
+            args += ["--exclude", f"listfile:{exclude_file}"]
         return self._pipefrom(*args)
 
     def working_directory_clean(self, untracked=False, ignored=False):
@@ -379,20 +380,40 @@ class HgRepository(Repository):
         `changed_files` may contain a dict of file paths and their contents,
         see `stage_changes`.
         """
+        head_ref, cleanup = self.prepare_try_push(commit_message, changed_files)
+        yield head_ref
+        cleanup()
+
+    def prepare_try_push(
+        self, commit_message: str, changed_files: Optional[dict[str, str]] = None
+    ) -> tuple[Optional[str], Callable]:
+        """Create a temporary try commit as a context manager.
+
+        Create a new commit using `commit_message` as the commit message. The commit
+        may be empty, for example when only including try syntax.
+
+        `changed_files` may contain a dict of file paths and their contents,
+        see `stage_changes`.
+
+        This function returns a tuple of the changeset of the new head and a
+        function that can be called to remove the head from the local
+        repository.
+        """
         if changed_files:
             self.stage_changes(changed_files)
 
         # Allow empty commit messages in case we only use try-syntax.
         self._run("--config", "ui.allowemptycommit=1", "commit", "-m", commit_message)
 
-        yield self.head_ref
+        def cleanup():
+            try:
+                self._run("prune", ".")
+            except subprocess.CalledProcessError:
+                # The `evolve` extension is required for `uncommit` and `prune`.
+                self.raise_for_missing_extension("evolve")
+                raise
 
-        try:
-            self._run("prune", ".")
-        except subprocess.CalledProcessError:
-            # The `evolve` extension is required for `uncommit` and `prune`.
-            self.raise_for_missing_extension("evolve")
-            raise
+        return self.head_ref, cleanup
 
     def get_last_modified_time_for_file(self, path: Path):
         """Return last modified in VCS time for the specified file."""
@@ -426,12 +447,10 @@ class HgRepository(Repository):
         print(f"Ensuring {url} is up to date at {dest}")
 
         env = os.environ.copy()
-        env.update(
-            {
-                "HGPLAIN": "1",
-                "HGRCPATH": "!",
-            }
-        )
+        env.update({
+            "HGPLAIN": "1",
+            "HGRCPATH": "!",
+        })
 
         try:
             subprocess.check_call(pull_args, cwd=str(cwd), env=env)

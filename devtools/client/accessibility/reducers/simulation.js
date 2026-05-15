@@ -26,7 +26,7 @@ function getInitialState() {
 
 function simulation(state = getInitialState(), action) {
   switch (action.type) {
-    case SIMULATE:
+    case SIMULATE: {
       if (action.error) {
         console.warn("Error running simulation", action.error);
         return state;
@@ -44,6 +44,7 @@ function simulation(state = getInitialState(), action) {
       });
 
       return updatedState;
+    }
     default:
       return state;
   }

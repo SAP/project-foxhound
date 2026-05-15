@@ -8,22 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#if defined(_MSC_VER) && _MSC_VER < 1300
-#pragma warning(disable : 4786)
-#endif
-
 #include "rtc_base/socket_adapters.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
-#include "absl/strings/match.h"
-#include "absl/strings/string_view.h"
-#include "rtc_base/buffer.h"
-#include "rtc_base/byte_buffer.h"
+#include "api/array_view.h"
+#include "rtc_base/async_socket.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/strings/string_builder.h"
-#include "rtc_base/zero_memory.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 
 namespace webrtc {
 
@@ -137,7 +135,7 @@ static const uint8_t kSslClientHello[] = {
 };
 
 // static
-rtc::ArrayView<const uint8_t> AsyncSSLSocket::SslClientHello() {
+ArrayView<const uint8_t> AsyncSSLSocket::SslClientHello() {
   // Implicit conversion directly from kSslClientHello to ArrayView fails when
   // built with gcc.
   return {kSslClientHello, sizeof(kSslClientHello)};
@@ -165,7 +163,7 @@ static const uint8_t kSslServerHello[] = {
 };
 
 // static
-rtc::ArrayView<const uint8_t> AsyncSSLSocket::SslServerHello() {
+ArrayView<const uint8_t> AsyncSSLSocket::SslServerHello() {
   return {kSslServerHello, sizeof(kSslServerHello)};
 }
 
@@ -186,7 +184,7 @@ void AsyncSSLSocket::OnConnectEvent(Socket* socket) {
   if (res != sizeof(kSslClientHello)) {
     RTC_LOG(LS_ERROR) << "Sending fake SSL ClientHello message failed.";
     Close();
-    SignalCloseEvent(this, 0);
+    NotifyCloseEvent(this, 0);
   }
 }
 
@@ -197,7 +195,7 @@ void AsyncSSLSocket::ProcessInput(char* data, size_t* len) {
   if (memcmp(kSslServerHello, data, sizeof(kSslServerHello)) != 0) {
     RTC_LOG(LS_ERROR) << "Received non-matching fake SSL ServerHello message.";
     Close();
-    SignalCloseEvent(this, 0);  // TODO: error code?
+    NotifyCloseEvent(this, 0);  // TODO: error code?
     return;
   }
 
@@ -208,7 +206,7 @@ void AsyncSSLSocket::ProcessInput(char* data, size_t* len) {
 
   bool remainder = (*len > 0);
   BufferInput(false);
-  SignalConnectEvent(this);
+  NotifyConnectEvent(this);
 
   // FIX: if SignalConnect causes the socket to be destroyed, we are in trouble
   if (remainder)

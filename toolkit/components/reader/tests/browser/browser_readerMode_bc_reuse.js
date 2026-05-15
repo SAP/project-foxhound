@@ -30,7 +30,7 @@ add_task(async function test_TODO() {
         { attributes: true },
         () => !readerButton.hidden
       );
-      let tabLoaded = promiseTabLoadEvent(newTab);
+      let tabLoaded = BrowserTestUtils.browserLoaded(newTab.linkedBrowser);
       readerButton.click();
       await tabLoaded;
       isnot(

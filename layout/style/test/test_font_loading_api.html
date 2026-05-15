@@ -384,13 +384,12 @@ function runTest() {
         invalidFontFamilyNames.forEach(function(aFamilyName) {
           familyTests = familyTests.then(function() {
             var face = new win.FontFace(aFamilyName, fontData);
-            is(face.status, "error", "FontFace should be error immediately after construction with invalid family name " + aFamilyName + " (TEST 17) (" + what + ")");
-            is(face.family, "", "FontFace.family should be the empty string after construction with invalid family name " + aFamilyName + " (TEST 17) (" + what + ")");
+            isnot(face.status, "error", "FontFace should be quoted after construction with invalid family name " + aFamilyName + " (TEST 17) (" + what + ")");
+            is(face.family, `"${aFamilyName}"`, "FontFace.family should be the quoted string after construction with invalid family name " + aFamilyName + " (TEST 17) (" + what + ")");
             return face.loaded.then(function() {
-              ok(false, "FontFace should not load after invalid family name " + aFamilyName + " specified (TEST 17) (" + what + ")");
+              ok(true, "FontFace should load after invalid family name " + aFamilyName + " specified (TEST 17) (" + what + ")");
             }, function(aError) {
-              ok(true, "FontFace should not load after invalid family name " + aFamilyName + " specified (TEST 17) (" + what + ")");
-              is(aError.name, "SyntaxError", "FontFace.loaded with invalid family name " + aFamilyName + " should be rejected with a SyntaxError (TEST 17) (" + what + ")");
+              ok(false, "FontFace should load after invalid family name " + aFamilyName + " specified (TEST 17) (" + what + ")");
             });
           });
         });

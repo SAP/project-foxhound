@@ -23,7 +23,9 @@ body {
   margin: 0 auto;
   width: 60%;
   height: 24px;
-  background-color: white;
+  background-color: #f5cbf6;
+  border-radius: 8px;
+  padding: 3px;
 }
 
 body.high-contrast #progress_background {
@@ -34,7 +36,8 @@ body.high-contrast #progress_background {
   margin: 0;
   width: 0%;
   height: 100%;
-  background-color: #00aaff;
+  background-color: #7543e3;
+  border-radius: 6px;
 }
 
 /* In high contrast mode, fill the entire progress bar with its border. */
@@ -44,19 +47,6 @@ body.high-contrast #progress_bar {
   box-sizing: border-box;
 }
 
-/* This layout doesn't want the header or content text. */
-#header,
-#content {
-  display: none;
-}
-
 #blurb {
   font-size: 20px;
-}
-
-/* The footer goes in the bottom right corner. */
-#footer {
-  position: fixed;
-  right: 50px;
-  bottom: 60px;
 }

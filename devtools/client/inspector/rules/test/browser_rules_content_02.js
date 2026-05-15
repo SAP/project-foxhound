@@ -25,52 +25,62 @@ add_task(async function () {
   // await commands.targetCommand.startListening();
   const inspector = await clickOnInspectMenuItem("span");
 
-  checkRuleViewContent(inspector.getPanel("ruleview").view);
+  const { view } = inspector.getPanel("ruleview");
+  checkRuleViewContent(view, [
+    {
+      selector: "element",
+      selectorEditable: false,
+      declarations: [
+        {
+          name: "color",
+          value: "yellow",
+        },
+      ],
+    },
+    {
+      header: STYLE_INSPECTOR_L10N.getFormatStr("rule.inheritedFrom", "p"),
+    },
+    {
+      selector: "element",
+      selectorEditable: false,
+      inherited: true,
+      declarations: [
+        {
+          name: "color",
+          value: "green",
+          overridden: true,
+        },
+      ],
+    },
+    {
+      header: STYLE_INSPECTOR_L10N.getFormatStr("rule.inheritedFrom", "div"),
+    },
+    {
+      selector: "element",
+      selectorEditable: false,
+      inherited: true,
+      declarations: [
+        {
+          name: "color",
+          value: "blue",
+          overridden: true,
+        },
+      ],
+    },
+    {
+      header: STYLE_INSPECTOR_L10N.getFormatStr("rule.inheritedFrom", "body"),
+    },
+    {
+      selector: "element",
+      selectorEditable: false,
+      inherited: true,
+      declarations: [
+        {
+          name: "color",
+          value: "red",
+          overridden: true,
+        },
+      ],
+    },
+  ]);
 });
-
-function checkRuleViewContent({ styleDocument }) {
-  info("Making sure the rule-view contains the expected content");
-
-  const headers = [...styleDocument.querySelectorAll(".ruleview-header")];
-  is(headers.length, 3, "There are 3 headers for inherited rules");
-
-  is(
-    headers[0].textContent,
-    STYLE_INSPECTOR_L10N.getFormatStr("rule.inheritedFrom", "p"),
-    "The first header is correct"
-  );
-  is(
-    headers[1].textContent,
-    STYLE_INSPECTOR_L10N.getFormatStr("rule.inheritedFrom", "div"),
-    "The second header is correct"
-  );
-  is(
-    headers[2].textContent,
-    STYLE_INSPECTOR_L10N.getFormatStr("rule.inheritedFrom", "body"),
-    "The third header is correct"
-  );
-
-  const rules = styleDocument.querySelectorAll(".ruleview-rule");
-  is(rules.length, 4, "There are 4 rules in the view");
-
-  for (const rule of rules) {
-    const selector = rule.querySelector(".ruleview-selectors-container");
-    is(
-      selector.textContent,
-      STYLE_INSPECTOR_L10N.getStr("rule.sourceElement"),
-      "The rule's selector is correct"
-    );
-
-    const propertyNames = [...rule.querySelectorAll(".ruleview-propertyname")];
-    is(propertyNames.length, 1, "There's only one property name, as expected");
-
-    const propertyValues = [
-      ...rule.querySelectorAll(".ruleview-propertyvalue"),
-    ];
-    is(
-      propertyValues.length,
-      1,
-      "There's only one property value, as expected"
-    );
-  }
-}

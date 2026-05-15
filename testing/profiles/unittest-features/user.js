@@ -14,9 +14,6 @@
 user_pref("dom.w3c_touch_events.enabled", 1);
 // Enable CSS initial-letter for testing
 user_pref("layout.css.initial-letter.enabled", true);
-// Enable Media Source Extensions for testing
-user_pref("media.mediasource.mp4.enabled", true);
-user_pref("media.mediasource.webm.enabled", true);
 user_pref("media.av1.enabled", true);
 user_pref("media.eme.enabled", true);
 user_pref("dom.forms.datetime.others", true);

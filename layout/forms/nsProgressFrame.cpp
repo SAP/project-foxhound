@@ -58,12 +58,12 @@ nsresult nsProgressFrame::CreateAnonymousContent(
 
   if (StaticPrefs::layout_css_modern_range_pseudos_enabled()) {
     // TODO(emilio): Create also a slider-track pseudo-element.
-    mBarDiv->SetPseudoElementType(PseudoStyleType::sliderFill);
+    mBarDiv->SetPseudoElementType(PseudoStyleType::SliderFill);
   } else {
     // Associate ::-moz-{progress,meter}-bar pseudo-element to the anon child.
     mBarDiv->SetPseudoElementType(mType == Type::Progress
-                                      ? PseudoStyleType::mozProgressBar
-                                      : PseudoStyleType::mozMeterBar);
+                                      ? PseudoStyleType::MozProgressBar
+                                      : PseudoStyleType::MozMeterBar);
   }
 
   // XXX(Bug 1631371) Check if this should use a fallible operation as it
@@ -101,12 +101,7 @@ void nsProgressFrame::Reflow(nsPresContext* aPresContext,
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsProgressFrame");
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
-
-  NS_ASSERTION(mBarDiv, "Progress bar div must exist!");
-  NS_ASSERTION(
-      PrincipalChildList().GetLength() == 1 &&
-          PrincipalChildList().FirstChild() == mBarDiv->GetPrimaryFrame(),
-      "unexpected child frames");
+  MOZ_ASSERT(mBarDiv, "Progress bar div must exist!");
   NS_ASSERTION(!GetPrevContinuation(),
                "nsProgressFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
@@ -135,6 +130,8 @@ void nsProgressFrame::ReflowChildFrame(nsIFrame* aChild,
                                        const ReflowInput& aReflowInput,
                                        const LogicalSize& aParentContentBoxSize,
                                        nsReflowStatus& aStatus) {
+  MOZ_ASSERT(aChild == mBarDiv->GetPrimaryFrame() ||
+             aChild->IsPlaceholderFrame());
   bool vertical = ResolvedOrientationIsVertical();
   const WritingMode wm = aChild->GetWritingMode();
   const LogicalSize parentSizeInChildWM =
@@ -206,7 +203,7 @@ void nsProgressFrame::ReflowChildFrame(nsIFrame* aChild,
 
 nsresult nsProgressFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
-                                           int32_t aModType) {
+                                           AttrModType aModType) {
   NS_ASSERTION(mBarDiv, "Progress bar div must exist!");
 
   if (aNameSpaceID == kNameSpaceID_None &&

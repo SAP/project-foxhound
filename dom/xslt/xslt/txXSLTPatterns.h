@@ -6,7 +6,6 @@
 #ifndef TX_XSLT_PATTERNS_H
 #define TX_XSLT_PATTERNS_H
 
-#include "mozilla/Attributes.h"
 #include "txExpandedName.h"
 #include "txExpr.h"
 #include "txXMLUtils.h"
@@ -188,7 +187,7 @@ class txStepPattern : public txPattern, public PredicateList {
 
   txNodeTest* getNodeTest() { return mNodeTest.get(); }
   void setNodeTest(txNodeTest* aNodeTest) {
-    mozilla::Unused << mNodeTest.release();
+    (void)mNodeTest.release();
     mNodeTest = mozilla::WrapUnique(aNodeTest);
   }
 

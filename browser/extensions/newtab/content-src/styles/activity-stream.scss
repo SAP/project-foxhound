@@ -34,7 +34,7 @@ body {
   // rules for HNT wallpapers
   background-repeat: no-repeat;
   background-size: cover;
-  background-position: center;
+  background-position: var(--newtab-wallpaper-backgroundPosition);
   background-attachment: fixed;
   background-image:
     var(--newtab-wallpaper, ''),
@@ -51,7 +51,7 @@ h2 {
 }
 
 .inner-border {
-  border: $border-secondary;
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
   height: 100%;
   inset-inline-start: 0;
@@ -83,7 +83,7 @@ h2 {
 }
 
 .actions {
-  border-top: $border-secondary;
+  border-block-start: 1px solid var(--border-color);
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
@@ -96,7 +96,7 @@ h2 {
 .button,
 .actions button {
   background-color: var(--newtab-button-secondary-color);
-  border: $border-primary;
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
   color: inherit;
   cursor: pointer;
@@ -134,6 +134,10 @@ input {
   }
 }
 
+panel-item::part(button) {
+  padding-inline-start: var(--space-medium);
+}
+
 // These styles are needed for -webkit-line-clamp to work correctly, so reuse
 // this class name while separately setting a clamp value via CSS or JS.
 .clamp {
@@ -145,6 +149,7 @@ input {
 
 // Components
 // stylelint-disable no-invalid-position-at-import-rule
+@import '../components/ActivationWindowMessage/ActivationWindowMessage';
 @import '../components/A11yLinkButton/A11yLinkButton';
 @import '../components/Base/Base';
 @import '../components/ErrorBoundary/ErrorBoundary';
@@ -161,7 +166,6 @@ input {
 @import '../components/Card/Card';
 @import '../components/CollapsibleSection/CollapsibleSection';
 @import '../components/DiscoveryStreamAdmin/DiscoveryStreamAdmin';
-@import '../components/PocketLoggedInCta/PocketLoggedInCta';
 @import '../components/MoreRecommendations/MoreRecommendations';
 @import '../components/DiscoveryStreamBase/DiscoveryStreamBase';
 @import '../components/ModalOverlay/ModalOverlay';
@@ -171,11 +175,11 @@ input {
 @import '../components/Widgets/Widgets';
 @import '../components/Widgets/Lists/Lists';
 @import '../components/Widgets/FocusTimer/FocusTimer';
+@import '../components/Widgets/WeatherForecast/WeatherForecast';
 
 // Discovery Stream Components
 @import '../components/DiscoveryStreamComponents/CardGrid/CardGrid';
 @import '../components/DiscoveryStreamComponents/CardSections/CardSections';
-@import '../components/DiscoveryStreamComponents/CollectionCardGrid/CollectionCardGrid';
 @import '../components/DiscoveryStreamComponents/Highlights/Highlights';
 @import '../components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule';
 @import '../components/DiscoveryStreamComponents/Navigation/Navigation';
@@ -185,30 +189,23 @@ input {
 @import '../components/DiscoveryStreamComponents/DSCard/DSCard';
 @import '../components/DiscoveryStreamComponents/DSContextFooter/DSContextFooter';
 @import '../components/DiscoveryStreamComponents/DSImage/DSImage';
-@import '../components/DiscoveryStreamComponents/DSDismiss/DSDismiss';
-@import '../components/DiscoveryStreamComponents/DSMessage/DSMessage';
 @import '../components/DiscoveryStreamImpressionStats/ImpressionStats';
 @import '../components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState';
-@import '../components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo';
-@import '../components/DiscoveryStreamComponents/DSThumbsUpDownButtons/DSThumbsUpDownButtons';
-@import '../components/DiscoveryStreamComponents/DSSignup/DSSignup';
-@import '../components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal';
 @import '../components/DiscoveryStreamComponents/PrivacyLink/PrivacyLink';
 @import '../components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/DownloadMobilePromoHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight';
-@import '../components/DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight';
 @import '../components/DiscoveryStreamComponents/FeatureHighlight/ShortcutFeatureHighlight';
 @import '../components/DiscoveryStreamComponents/TopicSelection/TopicSelection';
-@import '../components/DiscoveryStreamComponents/ListFeed/ListFeed';
 @import '../components/DiscoveryStreamComponents/AdBanner/AdBanner';
 @import '../components/DiscoveryStreamComponents/AdBannerContextMenu/AdBannerContextMenu';
+@import '../components/DiscoveryStreamComponents/PromoCard/PromoCard';
+@import '../components/DiscoveryStreamComponents/BriefingCard/BriefingCard';
 @import '../components/DiscoveryStreamComponents/SectionContextMenu/SectionContextMenu';
 @import '../components/DiscoveryStreamComponents/InterestPicker/InterestPicker';
 @import '../components/DiscoveryStreamComponents/ReportContent/ReportContent';
 @import '../components/DiscoveryStreamComponents/PersonalizedCard/PersonalizedCard';
-@import '../components/DiscoveryStreamComponents/TrendingSearches/TrendingSearches';
 
 // stylelint-enable no-invalid-position-at-import-rule

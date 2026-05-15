@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Title of the crash reporter dialog. %1$s will be replaced with the name of the app (e.g. Firefox Focus). -->
   <string name="mozac_lib_crash_dialog_title">O planhèm. %1$s a rescontrat un problèma e a quitat de foncionar.</string>
@@ -26,4 +33,8 @@
   <string name="mozac_lib_crash_no_crashes">Cap de rapòrt de plantatge es pas estat mandat.</string>
   <!-- Text link that will show an app chooser to share a crash report with a third-party app (e.g. gmail) -->
   <string name="mozac_lib_crash_share">Partejar</string>
+  <!-- String for Send crash reports automatically radio button in Data Collection Screen -->
+  <string name="crash_reporting_auto">Enviar automaticament</string>
+  <!-- String for Never sending crash reports radio button in Data Collection Screen -->
+  <string name="crash_reporting_never">Enviar pas jamai</string>
 </resources>

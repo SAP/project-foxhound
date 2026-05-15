@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ADTSDemuxer.h"
-#include "mozilla/ArrayUtils.h"
+#include "mozilla/Logging.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -21,6 +21,11 @@
 #include "nsString.h"
 
 #include <algorithm>
+
+mozilla::LazyLogModule gMediaSnifferLog("MediaSniffer");
+
+#define LOG(msg, ...) \
+  MOZ_LOG(gMediaSnifferLog, mozilla::LogLevel::Debug, (msg, ##__VA_ARGS__))
 
 // The minimum number of bytes that are needed to attempt to sniff an mp4 file.
 static const unsigned MP4_MIN_BYTES_COUNT = 12;
@@ -167,7 +172,11 @@ bool MatchesMP4(const uint8_t* aData, const uint32_t aLength,
 }
 
 static bool MatchesWebM(const uint8_t* aData, const uint32_t aLength) {
-  return nestegg_sniff((uint8_t*)aData, aLength);
+  return nestegg_sniff_webm((uint8_t*)aData, aLength);
+}
+
+static bool MatchesMatroska(const uint8_t* aData, const uint32_t aLength) {
+  return nestegg_sniff_mkv((uint8_t*)aData, aLength);
 }
 
 // This function implements mp3 sniffing based on parsing
@@ -235,22 +244,32 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
   }
 
   if (MatchesMP4(aData, clampedLength, aSniffedType)) {
+    LOG("Sniffed MP4 content");
     return NS_OK;
   }
 
   if (MatchesWebM(aData, clampedLength)) {
+    LOG("Sniffed Webm content");
     aSniffedType.AssignLiteral(VIDEO_WEBM);
+    return NS_OK;
+  }
+
+  if (MatchesMatroska(aData, clampedLength)) {
+    LOG("Sniffed Matroska content");
+    aSniffedType.AssignLiteral(VIDEO_MATROSKA);
     return NS_OK;
   }
 
   // Bug 950023: 512 bytes are often not enough to sniff for mp3.
   if (MatchesMP3(aData, std::min(aLength, MAX_BYTES_SNIFFED_MP3))) {
     aSniffedType.AssignLiteral(AUDIO_MP3);
+    LOG("Sniffed MP3 content");
     return NS_OK;
   }
 
   if (MatchesADTS(aData, std::min(aLength, MAX_BYTES_SNIFFED_ADTS))) {
     aSniffedType.AssignLiteral(AUDIO_AAC);
+    LOG("Sniffed ATDS content");
     return NS_OK;
   }
 
@@ -261,3 +280,5 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
   aSniffedType.AssignLiteral(APPLICATION_OCTET_STREAM);
   return NS_ERROR_NOT_AVAILABLE;
 }
+
+#undef LOG

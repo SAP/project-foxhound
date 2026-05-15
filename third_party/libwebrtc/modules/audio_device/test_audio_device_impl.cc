@@ -9,13 +9,18 @@
  */
 #include "modules/audio_device/test_audio_device_impl.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
 
 #include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/units/time_delta.h"
+#include "modules/audio_device/audio_device_buffer.h"
+#include "modules/audio_device/audio_device_generic.h"
 #include "modules/audio_device/include/test_audio_device.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/synchronization/mutex.h"
@@ -26,14 +31,14 @@ namespace {
 
 constexpr int kFrameLengthUs = 10000;
 
-}
+}  // namespace
 
 TestAudioDevice::TestAudioDevice(
-    TaskQueueFactory* task_queue_factory,
+    const Environment& env,
     std::unique_ptr<TestAudioDeviceModule::Capturer> capturer,
     std::unique_ptr<TestAudioDeviceModule::Renderer> renderer,
     float speed)
-    : task_queue_factory_(task_queue_factory),
+    : env_(env),
       capturer_(std::move(capturer)),
       renderer_(std::move(renderer)),
       process_interval_us_(kFrameLengthUs / speed),
@@ -41,8 +46,8 @@ TestAudioDevice::TestAudioDevice(
       rendering_(false),
       capturing_(false) {
   auto good_sample_rate = [](int sr) {
-    return sr == 8000 || sr == 16000 || sr == 32000 || sr == 44100 ||
-           sr == 48000;
+    return sr == 8000 || sr == 16000 || sr == 24000 || sr == 32000 ||
+           sr == 44100 || sr == 48000;
   };
 
   if (renderer_) {
@@ -58,7 +63,7 @@ TestAudioDevice::TestAudioDevice(
 }
 
 AudioDeviceGeneric::InitStatus TestAudioDevice::Init() {
-  task_queue_ = task_queue_factory_->CreateTaskQueue(
+  task_queue_ = env_.task_queue_factory().CreateTaskQueue(
       "TestAudioDeviceModuleImpl", TaskQueueFactory::Priority::NORMAL);
 
   RepeatingTaskHandle::Start(task_queue_.get(), [this]() {
@@ -165,11 +170,11 @@ void TestAudioDevice::ProcessAudio() {
   if (capturing_ && capturer_ != nullptr) {
     // Capture 10ms of audio. 2 bytes per sample.
     const bool keep_capturing = capturer_->Capture(&recording_buffer_);
-    if (recording_buffer_.size() > 0) {
+    if (!recording_buffer_.empty()) {
       audio_buffer_->SetRecordedBuffer(
           recording_buffer_.data(),
           recording_buffer_.size() / capturer_->NumChannels(),
-          std::make_optional(TimeNanos()));
+          std::make_optional(env_.clock().CurrentTime().ns()));
       audio_buffer_->DeliverRecordedData();
     }
     if (!keep_capturing) {
@@ -184,7 +189,7 @@ void TestAudioDevice::ProcessAudio() {
     size_t samples_out = samples_per_channel * renderer_->NumChannels();
     RTC_CHECK_LE(samples_out, playout_buffer_.size());
     const bool keep_rendering = renderer_->Render(
-        rtc::ArrayView<const int16_t>(playout_buffer_.data(), samples_out));
+        ArrayView<const int16_t>(playout_buffer_.data(), samples_out));
     if (!keep_rendering) {
       rendering_ = false;
     }

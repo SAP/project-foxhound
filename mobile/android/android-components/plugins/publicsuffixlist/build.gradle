@@ -3,30 +3,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.dsl)
 }
 
-buildDir = "${gradle.mozconfig.topobjdir}/gradle/build/mobile/android/android-components/plugins/publicsuffixlist"
-
-repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
-}
+layout.buildDirectory.set(file("${gradle.mozconfig.topobjdir}/gradle/build/mobile/android/android-components/plugins/publicsuffixlist"))
 
 dependencies {
-    implementation libs.thirdparty.okhttp
-    implementation libs.thirdparty.okio
+    implementation libs.okhttp
+    implementation libs.okio
+
+    compileOnly libs.android.gradle.plugin
 }
 
 gradlePlugin {
     plugins.register("mozac.PublicSuffixListPlugin") {
         id = "mozac.PublicSuffixListPlugin"
-        implementationClass = "PublicSuffixListPlugin"
+        implementationClass = "mozilla.components.gradle.plugins.PublicSuffixListPlugin"
     }
 }

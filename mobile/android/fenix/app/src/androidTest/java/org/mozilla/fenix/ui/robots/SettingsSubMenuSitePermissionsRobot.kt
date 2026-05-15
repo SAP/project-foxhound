@@ -5,7 +5,6 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
-import androidx.preference.R
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
@@ -21,11 +20,13 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import org.hamcrest.CoreMatchers.allOf
 import org.hamcrest.Matchers
 import org.hamcrest.Matchers.endsWith
+import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.TestHelper.hasCousin
 import org.mozilla.fenix.helpers.click
 import org.mozilla.fenix.helpers.isChecked
+import androidx.preference.R as preferenceR
 
 /**
  * Implementation of Robot Pattern for the settings Site Permissions sub menu.
@@ -45,7 +46,7 @@ class SettingsSubMenuSitePermissionsRobot {
     }
 
     fun verifyContentHeading() =
-        onView(withText(getStringResource(org.mozilla.fenix.R.string.preferences_category_content))).check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        onView(withText(getStringResource(R.string.preferences_category_content))).check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
 
     fun verifyAlwaysRequestDesktopSiteOption() {
         Log.i(TAG, "verifyAlwaysRequestDesktopSiteOption: Trying to verify that the \"Always request desktop site\" option is visible")
@@ -61,11 +62,11 @@ class SettingsSubMenuSitePermissionsRobot {
     }
 
     fun verifyPermissionsHeading() =
-        onView(withText(getStringResource(org.mozilla.fenix.R.string.preferences_category_permissions))).check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        onView(withText(getStringResource(R.string.preferences_category_permissions))).check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
 
     fun verifySitePermissionOption(option: String, summary: String = "") {
         Log.i(TAG, "verifySitePermissionOption: Trying to perform scroll action to the $option option button")
-        onView(withId(R.id.recycler_view)).perform(
+        onView(withId(preferenceR.id.recycler_view)).perform(
             RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                 hasDescendant(withText(option)),
             ),
@@ -94,7 +95,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsCommonRobot.Transition {
             Log.i(TAG, "openAutoPlay: Trying to perform scroll action to the \"Autoplay\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("Autoplay")),
                 ),
@@ -112,7 +113,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsCommonRobot.Transition {
             Log.i(TAG, "openCamera: Trying to perform scroll action to the \"Camera\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("Camera")),
                 ),
@@ -130,7 +131,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsCommonRobot.Transition {
             Log.i(TAG, "openLocation: Trying to perform scroll action to the \"Location\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("Location")),
                 ),
@@ -148,7 +149,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsCommonRobot.Transition {
             Log.i(TAG, "openMicrophone: Trying to perform scroll action to the \"Microphone\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("Microphone")),
                 ),
@@ -166,7 +167,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsCommonRobot.Transition {
             Log.i(TAG, "openNotification: Trying to perform scroll action to the \"Notification\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("Notification")),
                 ),
@@ -184,7 +185,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsCommonRobot.Transition {
             Log.i(TAG, "openPersistentStorage: Trying to perform scroll action to the \"Persistent Storage\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("Persistent Storage")),
                 ),
@@ -202,7 +203,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsCommonRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsCommonRobot.Transition {
             Log.i(TAG, "openDRMControlledContent: Trying to perform scroll action to the \"DRM-controlled content\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("DRM-controlled content")),
                 ),
@@ -220,7 +221,7 @@ class SettingsSubMenuSitePermissionsRobot {
             interact: SettingsSubMenuSitePermissionsExceptionsRobot.() -> Unit,
         ): SettingsSubMenuSitePermissionsExceptionsRobot.Transition {
             Log.i(TAG, "openExceptions: Trying to perform scroll action to the \"Exceptions\" button")
-            onView(withId(R.id.recycler_view)).perform(
+            onView(withId(preferenceR.id.recycler_view)).perform(
                 RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
                     hasDescendant(withText("Exceptions")),
                 ),
@@ -240,7 +241,7 @@ private fun goBackButton() =
     onView(withContentDescription("Navigate up"))
 
 private fun alwaysRequestDesktopSiteOption() =
-    onView(withText(getStringResource(org.mozilla.fenix.R.string.preference_feature_desktop_mode_default)))
+    onView(withText(getStringResource(R.string.preference_feature_desktop_mode_default)))
 
 private fun openAutoPlay() =
     onView(allOf(withText("Autoplay")))

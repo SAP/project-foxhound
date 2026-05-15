@@ -70,8 +70,6 @@ const Module* Compiler::moduleForProgramKind(ProgramKind kind) {
         case ProgramKind::kCompute:               return m.loadComputeModule(this);
         case ProgramKind::kGraphiteFragment:      return m.loadGraphiteFragmentModule(this);
         case ProgramKind::kGraphiteVertex:        return m.loadGraphiteVertexModule(this);
-        case ProgramKind::kGraphiteFragmentES2:   return m.loadGraphiteFragmentES2Module(this);
-        case ProgramKind::kGraphiteVertexES2:     return m.loadGraphiteVertexES2Module(this);
         case ProgramKind::kPrivateRuntimeBlender:
         case ProgramKind::kPrivateRuntimeColorFilter:
         case ProgramKind::kPrivateRuntimeShader:  return m.loadPrivateRTShaderModule(this);
@@ -352,7 +350,7 @@ bool Compiler::optimize(Program& program) {
                          program.fUsage.get());
 #endif
 
-        // Unreachable code can confuse some drivers, so it's worth removing. (skia:12012)
+        // Unreachable code can confuse some drivers, so it's worth removing. (skbug.com/40043094)
         Transform::EliminateUnreachableCode(program);
 
         while (Transform::EliminateDeadFunctions(program)) {

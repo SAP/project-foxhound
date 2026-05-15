@@ -10,7 +10,6 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla::layers {
 
@@ -84,6 +83,9 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   mozilla::ipc::IPCResult RecvCheckContentOnlyTDR(
       const uint32_t& sequenceNum, bool* isContentOnlyTDR) override;
 
+  mozilla::ipc::IPCResult RecvCheckAndClearWRDidRasterize(
+      const LayersId& aId, bool* aDidRasterize) override;
+
   mozilla::ipc::IPCResult RecvDynamicToolbarOffsetChanged(
       const int32_t& aOffset) override {
     return IPC_FAIL_NO_REASON(this);
@@ -138,15 +140,10 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
 
   bool IsSameProcess() const override;
 
-  PCompositorWidgetParent* AllocPCompositorWidgetParent(
+  already_AddRefed<PCompositorWidgetParent> AllocPCompositorWidgetParent(
       const CompositorWidgetInitData& aInitData) override {
     // Not allowed.
     return nullptr;
-  }
-  bool DeallocPCompositorWidgetParent(
-      PCompositorWidgetParent* aActor) override {
-    // Not allowed.
-    return false;
   }
 
   PAPZCTreeManagerParent* AllocPAPZCTreeManagerParent(
@@ -160,6 +157,9 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
       const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize& aSize,
       const WindowKind& aWindowKind) override;
   bool DeallocPWebRenderBridgeParent(PWebRenderBridgeParent* aActor) override;
+  // Nothing to do as content WebRenderBridgeParents are fully initialized at
+  // construction time.
+  void EnsureWebRenderBridgeParentInitialized() override {}
 
   void ObserveLayersUpdate(LayersId aLayersId, bool aActive) override;
 

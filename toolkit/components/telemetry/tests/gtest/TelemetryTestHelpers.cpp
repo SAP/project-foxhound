@@ -11,7 +11,6 @@
 #include "js/PropertyAndElement.h"  // JS_Enumerate, JS_GetElement, JS_GetProperty
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/gtest/MozAssertions.h"
-#include "mozilla/Unused.h"
 #include "nsTArray.h"
 #include "nsPrintfCString.h"
 
@@ -254,7 +253,7 @@ nsTArray<nsString> EventValuesToArray(JSContext* aCx,
     nsString str;
     EXPECT_TRUE(AssignJSString(aCx, str, jsVal.toString()))
         << "Value must be able to be init'd to a string.";
-    Unused << valueArray.EmplaceBack(std::move(str));
+    (void)valueArray.EmplaceBack(std::move(str));
   }
 
   return valueArray;
@@ -276,9 +275,9 @@ void GetEventSnapshot(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
 
   JS::Rooted<JS::Value> processEvents(aCx);
   JS::Rooted<JSObject*> eventObj(aCx, &eventSnapshot.toObject());
-  Unused << JS_GetProperty(aCx, eventObj,
-                           Telemetry::Common::GetNameForProcessID(aProcessType),
-                           &processEvents);
+  (void)JS_GetProperty(aCx, eventObj,
+                       Telemetry::Common::GetNameForProcessID(aProcessType),
+                       &processEvents);
 
   aResult.set(processEvents);
 }
@@ -310,9 +309,9 @@ void GetScalarsSnapshot(bool aKeyed, JSContext* aCx,
   JS::Rooted<JSObject*> scalarObj(aCx, &scalarsSnapshot.toObject());
   // Don't complain if no scalars for the process can be found. Just
   // return an empty object.
-  Unused << JS_GetProperty(aCx, scalarObj,
-                           Telemetry::Common::GetNameForProcessID(aProcessType),
-                           &processScalars);
+  (void)JS_GetProperty(aCx, scalarObj,
+                       Telemetry::Common::GetNameForProcessID(aProcessType),
+                       &processScalars);
 
   aResult.set(processScalars);
 }

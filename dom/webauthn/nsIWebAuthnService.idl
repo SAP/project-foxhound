@@ -84,7 +84,7 @@ interface nsIWebAuthnService : nsISupports
     void selectAutoFillEntry(in uint64_t aTransactionId, in Array<uint8_t> aCredentialId);
     void resumeConditionalGet(in uint64_t aTransactionId);
 
-    void pinCallback(in uint64_t aTransactionId, in ACString aPin);
+    void pinCallback(in uint64_t aTransactionId, in AUTF8String aPin);
     void setHasAttestationConsent(in uint64_t aTransactionId, in boolean aHasConsent);
     void selectionCallback(in uint64_t aTransactionId, in uint64_t aIndex);
 

@@ -27,7 +27,7 @@ import mozilla.components.browser.toolbar.internal.ActionContainer
 import mozilla.components.concept.menu.MenuController
 import mozilla.components.concept.toolbar.Toolbar
 import mozilla.components.support.ktx.android.content.isScreenReaderEnabled
-import mozilla.components.ui.colors.R.color as photonColors
+import mozilla.components.ui.colors.R as colorsR
 
 /**
  * Sub-component of the browser toolbar responsible for displaying the URL and related controls ("display mode").
@@ -178,16 +178,16 @@ class DisplayToolbar internal constructor(
      * Customizable colors in "display mode".
      */
     var colors: Colors = Colors(
-        siteInfoIconSecure = ContextCompat.getColor(context, photonColors.photonWhite),
-        siteInfoIconInsecure = ContextCompat.getColor(context, photonColors.photonWhite),
-        siteInfoIconLocalPdf = ContextCompat.getColor(context, photonColors.photonWhite),
-        emptyIcon = ContextCompat.getColor(context, photonColors.photonWhite),
-        menu = ContextCompat.getColor(context, photonColors.photonWhite),
+        siteInfoIconSecure = ContextCompat.getColor(context, colorsR.color.photonWhite),
+        siteInfoIconInsecure = ContextCompat.getColor(context, colorsR.color.photonWhite),
+        siteInfoIconLocalPdf = ContextCompat.getColor(context, colorsR.color.photonWhite),
+        emptyIcon = ContextCompat.getColor(context, colorsR.color.photonWhite),
+        menu = ContextCompat.getColor(context, colorsR.color.photonWhite),
         hint = views.origin.hintColor,
         title = views.origin.titleColor,
         text = views.origin.textColor,
         trackingProtection = null,
-        separator = ContextCompat.getColor(context, photonColors.photonGrey80),
+        separator = ContextCompat.getColor(context, colorsR.color.photonGrey80),
         highlight = null,
     )
         set(value) {
@@ -541,7 +541,7 @@ class DisplayToolbar internal constructor(
             Toolbar.SiteInfo.SECURE -> colors.siteInfoIconSecure
             Toolbar.SiteInfo.LOCAL_PDF -> colors.siteInfoIconLocalPdf
         }
-        if (color == Color.TRANSPARENT && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (color == Color.TRANSPARENT) {
             views.siteInfoIndicator.clearColorFilter()
         } else {
             views.siteInfoIndicator.setColorFilter(color)

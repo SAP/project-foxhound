@@ -42,10 +42,10 @@ function handleRequest(request, response) {
   DEBUG("Entered request handler");
   response.setHeader("Cache-Control", "no-cache", false);
 
-  function finishControlResponse(response) {
+  function finishControlResponse(id, response) {
     DEBUG("********* sending out the control GET response");
-    var data = getState("beaconData");
-    var mimetype = getState("beaconMimetype");
+    var beacons = getOurState();
+    let { data, mimetype } = beacons[id];
     DEBUG("GET was sending : " + data + "\n");
     DEBUG("GET was sending : " + mimetype + "\n");
     var result = {
@@ -53,38 +53,42 @@ function handleRequest(request, response) {
       mimetype,
     };
     response.write(JSON.stringify(result));
-    setOurState(null);
+    beacons[id] = {};
+    setOurState(beacons);
+  }
+
+  function getFinishOrWait(id, response) {
+    var beacons = getOurState() || {};
+    const item = beacons[id];
+    if (item && typeof item === "object" && item.data !== "") {
+      finishControlResponse(id, response);
+    } else {
+      DEBUG("GET has  arrived, but POST has not, blocking response!");
+      beacons[id] = {};
+      beacons[id].response = response;
+      setOurState(beacons);
+      response.processAsync();
+    }
   }
 
   if (request.method == "GET") {
     DEBUG(" ------------ GET --------------- ");
     response.setHeader("Content-Type", "application/json", false);
-    switch (request.queryString) {
-      case "getLastBeaconCors":
-        // Allow CORS responses of the last beacon
-        var originHeader = request.getHeader("origin");
-        response.setHeader(
-          "Access-Control-Allow-Headers",
-          "content-type",
-          false
-        );
-        response.setHeader("Access-Control-Allow-Methods", "POST, GET", false);
-        response.setHeader("Access-Control-Allow-Origin", originHeader, false);
-        response.setHeader("Access-Control-Allow-Credentials", "true", false);
-      // fallthrough
-      case "getLastBeacon":
-        var state = getOurState();
-        if (state === "unblocked") {
-          finishControlResponse(response);
-        } else {
-          DEBUG("GET has  arrived, but POST has not, blocking response!");
-          setOurState(response);
-          response.processAsync();
-        }
-        break;
-      default:
-        response.setStatusLine(request.httpVersion, 400, "Bad Request");
-        break;
+
+    let searchParams = new URLSearchParams(request.queryString);
+    if (searchParams.has("getLastBeaconCors")) {
+      // Allow CORS responses of the last beacon
+      var originHeader = request.getHeader("origin");
+      response.setHeader("Access-Control-Allow-Headers", "content-type", false);
+      response.setHeader("Access-Control-Allow-Methods", "POST, GET", false);
+      response.setHeader("Access-Control-Allow-Origin", originHeader, false);
+      response.setHeader("Access-Control-Allow-Credentials", "true", false);
+      getFinishOrWait("0", response);
+    } else if (searchParams.has("getBeacon")) {
+      let id = searchParams.get("getBeacon");
+      getFinishOrWait(id, response);
+    } else {
+      response.setStatusLine(request.httpVersion, 400, "Bad Request");
     }
     return;
   }
@@ -126,20 +130,28 @@ function handleRequest(request, response) {
 
     DEBUG("**********   POST was sending : " + data + "\n");
     DEBUG("**********   POST was sending : " + mimetype + "\n");
-    setState("beaconData", data);
-    setState("beaconMimetype", mimetype);
 
     response.setHeader("Content-Type", "text/plain", false);
     response.write("ok");
 
-    var blockedResponse = getOurState();
-    if (typeof blockedResponse == "object" && blockedResponse) {
+    // associate the data from the beacon with the id
+    let searchParams = new URLSearchParams(request.queryString);
+    let id = searchParams.get("beaconid") || "0"; // "0" because test_beaconWithSafelistedContentType.html doesn't use id param
+    let beacons = getOurState() || {};
+
+    const item = beacons[id];
+    if (item && typeof item.response === "object" && item.response) {
       DEBUG("GET is already pending, finishing!");
-      finishControlResponse(blockedResponse);
-      blockedResponse.finish();
+      beacons[id].data = data;
+      beacons[id].mimetype = mimetype;
+      finishControlResponse(id, item.response);
+      item.response.finish();
     } else {
       DEBUG("GET has not arrived, marking it as unblocked");
-      setOurState("unblocked");
+      beacons[id] = {};
+      beacons[id].data = data;
+      beacons[id].mimetype = mimetype;
+      setOurState(beacons);
     }
 
     return;

@@ -10,21 +10,21 @@
 
 #include "api/crypto/crypto_options.h"
 
+#include <cstdint>
+#include <optional>
+#include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
+#include "api/field_trials_view.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ssl_stream_adapter.h"
 
 namespace webrtc {
 
 CryptoOptions::CryptoOptions() {}
-
-CryptoOptions::CryptoOptions(const CryptoOptions& other) {
-  srtp = other.srtp;
-  sframe = other.sframe;
-}
-
-CryptoOptions::~CryptoOptions() {}
 
 // static
 CryptoOptions CryptoOptions::NoGcm() {
@@ -69,6 +69,7 @@ bool CryptoOptions::operator==(const CryptoOptions& other) const {
     struct SFrame {
       bool require_frame_encryption;
     } sframe;
+    EphemeralKeyExchangeCipherGroups ephemeral_key_exchange_cipher_groups;
   };
   static_assert(sizeof(data_being_tested_for_equality) == sizeof(*this),
                 "Did you add something to CryptoOptions and forget to "
@@ -82,11 +83,73 @@ bool CryptoOptions::operator==(const CryptoOptions& other) const {
          srtp.enable_encrypted_rtp_header_extensions ==
              other.srtp.enable_encrypted_rtp_header_extensions &&
          sframe.require_frame_encryption ==
-             other.sframe.require_frame_encryption;
+             other.sframe.require_frame_encryption &&
+         ephemeral_key_exchange_cipher_groups ==
+             other.ephemeral_key_exchange_cipher_groups;
 }
 
 bool CryptoOptions::operator!=(const CryptoOptions& other) const {
   return !(*this == other);
+}
+
+CryptoOptions::EphemeralKeyExchangeCipherGroups::
+    EphemeralKeyExchangeCipherGroups()
+    : enabled_(SSLStreamAdapter::GetDefaultEphemeralKeyExchangeCipherGroups(
+          /* field_trials= */ nullptr)) {}
+
+bool CryptoOptions::EphemeralKeyExchangeCipherGroups::operator==(
+    const CryptoOptions::EphemeralKeyExchangeCipherGroups& other) const {
+  return enabled_ == other.enabled_;
+}
+
+std::set<uint16_t>
+CryptoOptions::EphemeralKeyExchangeCipherGroups::GetSupported() {
+  return SSLStreamAdapter::GetSupportedEphemeralKeyExchangeCipherGroups();
+}
+
+std::optional<std::string>
+CryptoOptions::EphemeralKeyExchangeCipherGroups::GetName(uint16_t group_id) {
+  return SSLStreamAdapter::GetEphemeralKeyExchangeCipherGroupName(group_id);
+}
+
+void CryptoOptions::EphemeralKeyExchangeCipherGroups::AddFirst(uint16_t group) {
+  std::erase(enabled_, group);
+  enabled_.insert(enabled_.begin(), group);
+}
+
+void CryptoOptions::EphemeralKeyExchangeCipherGroups::Update(
+    const FieldTrialsView* field_trials,
+    const std::vector<uint16_t>* disabled_groups) {
+  // Note: assumption is that these lists contains few elements...so converting
+  // to set<> is not worth it.
+  std::vector<uint16_t> default_groups =
+      SSLStreamAdapter::GetDefaultEphemeralKeyExchangeCipherGroups(
+          field_trials);
+  // Remove all disabled.
+  if (disabled_groups) {
+    std::erase_if(default_groups, [&](uint16_t val) {
+      return absl::c_linear_search(*disabled_groups, val);
+    });
+    std::erase_if(enabled_, [&](uint16_t val) {
+      return absl::c_linear_search(*disabled_groups, val);
+    });
+  }
+
+  // Add those enabled by field-trials first.
+  std::vector<uint16_t> current = std::move(enabled_);
+  enabled_.clear();
+  for (auto val : default_groups) {
+    if (!absl::c_linear_search(current, val)) {
+      enabled_.push_back(val);
+    }
+  }
+
+  // Then re-add those present (unless already there).
+  for (auto val : current) {
+    if (!absl::c_linear_search(enabled_, val)) {
+      enabled_.push_back(val);
+    }
+  }
 }
 
 }  // namespace webrtc

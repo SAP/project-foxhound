@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/IdentityProvider.h"
-#include "nsIGlobalObject.h"
+
 #include "mozilla/dom/WebIdentityHandler.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla {
 namespace dom {
@@ -29,7 +30,7 @@ void IdentityProvider::Close(const GlobalObject& aGlobal) {
   nsCOMPtr<nsPIDOMWindowInner> window =
       do_QueryInterface(aGlobal.GetAsSupports());
   NS_ENSURE_TRUE_VOID(window);
-  Unused << window->Close();
+  (void)window->Close();
 }
 
 // static

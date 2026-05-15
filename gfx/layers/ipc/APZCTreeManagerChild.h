@@ -11,8 +11,6 @@
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/layers/PAPZCTreeManagerChild.h"
 
-#include <unordered_map>
-
 namespace mozilla {
 namespace layers {
 

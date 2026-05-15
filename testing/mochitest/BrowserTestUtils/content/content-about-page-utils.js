@@ -1,5 +1,3 @@
-/* eslint-env mozilla/process-script */
-
 "use strict";
 
 var Cm = Components.manager;

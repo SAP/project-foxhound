@@ -46,7 +46,7 @@ class FontFaceSetDocumentImpl final : public FontFaceSetImpl,
 
   bool IsFontLoadAllowed(const gfxFontFaceSrc&) override;
 
-  nsPresContext* GetPresContext() const override;
+  FontVisibilityProvider* GetFontVisibilityProvider() const override;
 
   bool UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules) override;
 

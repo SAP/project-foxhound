@@ -7,7 +7,7 @@ package org.mozilla.fenix.crashes
 import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.lib.crash.store.CrashMiddleware
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 
@@ -20,16 +20,16 @@ class CrashReportingAppMiddleware(
     private val crashMiddleware: CrashMiddleware,
 ) : Middleware<AppState, AppAction> {
     override fun invoke(
-        context: MiddlewareContext<AppState, AppAction>,
+        store: Store<AppState, AppAction>,
         next: (AppAction) -> Unit,
         action: AppAction,
     ) {
         next(action)
         when (action) {
             is AppAction.CrashActionWrapper -> {
-                val getState = { context.store.state.crashState }
+                val getState = { store.state.crashState }
                 val dispatch: (CrashAction) -> Unit = {
-                    context.store.dispatch(AppAction.CrashActionWrapper(it))
+                    store.dispatch(AppAction.CrashActionWrapper(it))
                 }
                 crashMiddleware.invoke(
                     middlewareContext = Pair(getState, dispatch),

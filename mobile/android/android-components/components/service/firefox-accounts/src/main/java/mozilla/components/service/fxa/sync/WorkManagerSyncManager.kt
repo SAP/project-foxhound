@@ -124,14 +124,8 @@ internal object WorkersLiveDataObserver {
         if (workersLiveData.hasObservers()) return
 
         // This must be called on the UI thread.
-        workersLiveData.observeForever {
-            val isRunning = when (it?.any { worker -> worker.state == WorkInfo.State.RUNNING }) {
-                null -> false
-                false -> false
-                true -> true
-            }
-
-            dispatcher?.workersStateChanged(isRunning)
+        workersLiveData.observeForever { workers ->
+            dispatcher?.workersStateChanged(workers?.map { it.state })
 
             // TODO process errors coming out of worker.outputData
         }
@@ -157,13 +151,13 @@ internal class WorkManagerSyncDispatcher(
         stopPeriodicSync()
     }
 
-    override fun workersStateChanged(isRunning: Boolean) {
-        if (isSyncActive && !isRunning) {
-            notifyObservers { onIdle() }
-            isSyncActive = false
-        } else if (!isSyncActive && isRunning) {
+    override fun workersStateChanged(currentWorkStates: List<WorkInfo.State>?) {
+        if (currentWorkStates?.any { it == WorkInfo.State.RUNNING } == true) {
             notifyObservers { onStarted() }
             isSyncActive = true
+        } else if (currentWorkStates?.any { it.isFinished } == true) {
+            notifyObservers { onIdle() }
+            isSyncActive = false
         }
     }
 
@@ -342,7 +336,7 @@ internal class WorkManagerSyncWorker(
         }
     }
 
-    @Suppress("LongMethod", "ComplexMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     private suspend fun doSync(syncableStores: Map<SyncEngine, LazyStoreWithKey>): Result {
         val engineKeyProviders = mutableMapOf<SyncEngine, KeyProvider>()
 

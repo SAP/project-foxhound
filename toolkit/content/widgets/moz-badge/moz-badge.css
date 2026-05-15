@@ -8,8 +8,8 @@
   gap: var(--space-xsmall);
   padding: var(--space-xsmall) var(--space-small);
   width: fit-content;
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
+  color: var(--badge-text-color);
+  border: 1px solid var(--badge-border-color);
   border-radius: var(--border-radius-small);
 }
 
@@ -23,4 +23,12 @@
 
 .moz-badge-label {
   font-size: var(--font-size-small);
+}
+
+:host([type="new"]) {
+  .moz-badge {
+    color: var(--badge-text-color-filled);
+    background-color: var(--badge-background-color-filled);
+    border-color: var(--badge-border-color-filled);
+  }
 }

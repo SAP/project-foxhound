@@ -75,36 +75,34 @@ DevToolsServer.disallowNewThreadGlobals = function () {
 // As implemented now, we consult gTestGlobals when we're constructed, not
 // when we're iterated over, so tests have to add their globals before the
 // root actor is created.
-function TestTabList(connection) {
-  this.conn = connection;
+class TestTabList {
+  constructor(connection) {
+    this.conn = connection;
 
-  // An array of actors for each global added with
-  // DevToolsServer.addTestGlobal.
-  this._descriptorActors = [];
+    // An array of actors for each global added with
+    // DevToolsServer.addTestGlobal.
+    this._descriptorActors = [];
 
-  // A pool mapping those actors' names to the actors.
-  this._descriptorActorPool = new LazyPool(connection);
+    // A pool mapping those actors' names to the actors.
+    this._descriptorActorPool = new LazyPool(connection);
 
-  for (const global of gTestGlobals) {
-    const actor = new TestTargetActor(connection, global);
-    this._descriptorActorPool.manage(actor);
+    for (const global of gTestGlobals) {
+      const actor = new TestTargetActor(connection, global);
+      this._descriptorActorPool.manage(actor);
 
-    // Register the target actor, so that the Watcher actor can have access to it.
-    TargetActorRegistry.registerXpcShellTargetActor(actor);
+      // Register the target actor, so that the Watcher actor can have access to it.
+      TargetActorRegistry.registerXpcShellTargetActor(actor);
 
-    const descriptorActor = new TestDescriptorActor(connection, actor);
-    this._descriptorActorPool.manage(descriptorActor);
+      const descriptorActor = new TestDescriptorActor(connection, actor);
+      this._descriptorActorPool.manage(descriptorActor);
 
-    this._descriptorActors.push(descriptorActor);
+      this._descriptorActors.push(descriptorActor);
+    }
   }
-}
-
-TestTabList.prototype = {
-  constructor: TestTabList,
-  destroy() {},
+  destroy() {}
   getList() {
     return Promise.resolve([...this._descriptorActors]);
-  },
+  }
   // Helper method only available for the xpcshell implementation of tablist.
   getTargetActorForTab(title) {
     const descriptorActor = this._descriptorActors.find(d => d.title === title);
@@ -112,8 +110,8 @@ TestTabList.prototype = {
       return null;
     }
     return descriptorActor._targetActor;
-  },
-};
+  }
+}
 
 exports.createRootActor = function createRootActor(connection) {
   ActorRegistry.registerModule("devtools/server/actors/webconsole", {

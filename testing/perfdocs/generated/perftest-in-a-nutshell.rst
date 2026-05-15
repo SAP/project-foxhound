@@ -186,6 +186,70 @@ You can also find the profiles in the artifacts tab of the Raptor test:
 
 To generate the profiles locally, you can pass the flags ``--extra-profiler-run`` or ``--gecko-profile`` which repeat the test for an extra iteration with the profiler enabled, or run the test from the beginning with the profiler enabled for three iterations, respectively. It's also possible to specify more configuration such as the profiled threads, the sampling interval or the profiler features being enabled. The parameters used in a profiling run can be copied directly from the about:profiling page in any Nightly build: click the button at the top of the page, then pick the option "Copy parameters for performance tests".
 
+
+Triggering Gecko Profiles in CI with Custom Parameters
+------------------------------------------------------
+
+In addition to using creating a Gecko Profile with the treeherder actions, you can also generate a Gecko Profiler run with custom options **directly in CI** using the ``geckoprofile`` Treeherder action after navigating to ``Custom Action``.
+
+This is useful when you want to profile an existing task using custom profiler settings such as specific threads, sampling intervals, or features, without needing to submit a new try push with non-default parameters.
+
+How to trigger a custom Gecko Profile
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. Go to the push in Treeherder that ran the test you're interested in.
+2. Click on the task (e.g. a Raptor or Talos test).
+
+ .. image:: ./gpc_select.png
+    :alt: Selected performance test
+    :scale: 50%
+    :align: center
+
+3. In the task detail panel, click the three-dot menu and select ``Custom Action``.
+
+ .. image:: ./gpc_custom.png
+    :alt: Selecting custom action from the overflow menu
+    :scale: 50%
+    :align: center
+
+4. From the list of actions, choose ``geckoprofile``.
+
+ .. image:: ./gpc_dropdown.png
+    :alt: Selecting geckoprofile-custom action
+    :scale: 50%
+    :align: center
+
+5. Fill in the profiling parameters:
+
+   * ``gecko_profile_interval`` – sampling interval in milliseconds (e.g. `1`)
+   * ``gecko_profile_features`` – comma-separated feature list (e.g. `js,stackwalk,cpu,screenshots,memory`)
+   * ``gecko_profile_threads`` – comma-separated thread names (e.g. `GeckoMain,Compositor,Renderer`)
+
+ .. image:: ./gpc_form.png
+    :alt: Interface to specify custom gecko profiling parameters
+    :scale: 50%
+    :align: center
+
+ For an overview of available features and thread options, visit ``about:profiling`` in Firefox.
+ It shows descriptions and internal names for features, and includes basic thread options.
+ Note that the full set of threads is not documented. Teams typically know the ones they need, and may use presets.
+
+
+Triggering Simpleperf Profiles in CI
+------------------------------------
+
+`Simpleperf is an android profiling tool  <https://firefox-source-docs.mozilla.org/performance/profiling_with_simpleperf.html#profiling-on-android-with-simpleperf>`_  which can profile all threads on an android device and also works for non-fenix apps.
+At the moment we only have support for simpleperf with our video applink startup tests.
+
+To trigger a CI run, go to one of those jobs, and click the `Generate Performance Profile` button.
+
+ .. image:: ./generate_performance_profile.png
+    :alt: Generate Performance Profile Button
+    :scale: 50%
+    :align: center
+
+When the job completes, click on the artifacts tab, and then click the `Open in Firefox Profiler` hyperlink. You'll be re-directed to a screen where you can then load and interact with the simpleperf profiles.
+
 Side-by-Side
 ------------
 

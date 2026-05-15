@@ -33,7 +33,6 @@
 
 #include "jArray.h"
 #include "mozilla/ImportScanner.h"
-#include "mozilla/Likely.h"
 #include "nsAHtml5TreeBuilderState.h"
 #include "nsAtom.h"
 #include "nsContentUtils.h"

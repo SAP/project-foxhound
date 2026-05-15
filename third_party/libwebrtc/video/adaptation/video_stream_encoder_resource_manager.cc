@@ -10,31 +10,57 @@
 
 #include "video/adaptation/video_stream_encoder_resource_manager.h"
 
-#include <stdio.h>
-
 #include <algorithm>
-#include <cmath>
-#include <limits>
+#include <cstdint>
+#include <cstdio>
+#include <map>
 #include <memory>
+#include <optional>
+#include <string>
+#include <tuple>
 #include <utility>
+#include <vector>
 
-#include "absl/algorithm/container.h"
-#include "absl/base/macros.h"
 #include "api/adaptation/resource.h"
 #include "api/field_trials_view.h"
+#include "api/rtp_parameters.h"
+#include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_base.h"
+#include "api/units/data_rate.h"
+#include "api/units/data_size.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_adaptation_counters.h"
 #include "api/video/video_adaptation_reason.h"
-#include "api/video/video_source_interface.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_frame.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder.h"
+#include "call/adaptation/adaptation_constraint.h"
+#include "call/adaptation/degradation_preference_provider.h"
+#include "call/adaptation/encoder_settings.h"
+#include "call/adaptation/resource_adaptation_processor_interface.h"
 #include "call/adaptation/video_source_restrictions.h"
+#include "call/adaptation/video_stream_adapter.h"
+#include "call/adaptation/video_stream_input_state_provider.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/quality_scaler_settings.h"
+#include "rtc_base/experiments/quality_scaling_experiment.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
+#include "system_wrappers/include/clock.h"
+#include "video/adaptation/balanced_constraint.h"
+#include "video/adaptation/bandwidth_quality_scaler_resource.h"
+#include "video/adaptation/bitrate_constraint.h"
+#include "video/adaptation/encode_usage_resource.h"
+#include "video/adaptation/overuse_frame_detector.h"
+#include "video/adaptation/pixel_limit_resource.h"
 #include "video/adaptation/quality_scaler_resource.h"
+#include "video/config/video_encoder_config.h"
+#include "video/video_stream_encoder_observer.h"
 
 namespace webrtc {
 
@@ -42,9 +68,6 @@ const int kDefaultInputPixelsWidth = 176;
 const int kDefaultInputPixelsHeight = 144;
 
 namespace {
-
-constexpr const char* kPixelLimitResourceFieldTrialName =
-    "WebRTC-PixelLimitResource";
 
 bool IsResolutionScalingEnabled(DegradationPreference degradation_preference) {
   return degradation_preference == DegradationPreference::MAINTAIN_FRAMERATE ||
@@ -93,7 +116,7 @@ bool EqualFlags(const std::vector<bool>& a, const std::vector<bool>& b) {
 class VideoStreamEncoderResourceManager::InitialFrameDropper {
  public:
   explicit InitialFrameDropper(
-      rtc::scoped_refptr<QualityScalerResource> quality_scaler_resource,
+      scoped_refptr<QualityScalerResource> quality_scaler_resource,
       const FieldTrialsView& field_trials)
       : quality_scaler_resource_(quality_scaler_resource),
         quality_scaler_settings_(field_trials),
@@ -219,7 +242,7 @@ class VideoStreamEncoderResourceManager::InitialFrameDropper {
   // achieve desired bitrate.
   static const int kMaxInitialFramedrop = 4;
 
-  const rtc::scoped_refptr<QualityScalerResource> quality_scaler_resource_;
+  const scoped_refptr<QualityScalerResource> quality_scaler_resource_;
   const QualityScalerSettings quality_scaler_settings_;
   bool has_seen_first_bwe_drop_;
   DataRate set_start_bitrate_;
@@ -261,7 +284,8 @@ VideoStreamEncoderResourceManager::VideoStreamEncoderResourceManager(
       input_state_provider_(input_state_provider),
       adaptation_processor_(nullptr),
       encoder_stats_observer_(encoder_stats_observer),
-      degradation_preference_(DegradationPreference::DISABLED),
+      degradation_preference_(
+          DegradationPreference::MAINTAIN_FRAMERATE_AND_RESOLUTION),
       video_source_restrictions_(),
       balanced_settings_(field_trials),
       clock_(clock),
@@ -271,8 +295,6 @@ VideoStreamEncoderResourceManager::VideoStreamEncoderResourceManager(
                                                 field_trials)),
       quality_scaling_experiment_enabled_(
           QualityScalingExperiment::Enabled(field_trials_)),
-      pixel_limit_resource_experiment_enabled_(
-          field_trials.IsEnabled(kPixelLimitResourceFieldTrialName)),
       encoder_target_bitrate_bps_(std::nullopt),
       encoder_settings_(std::nullopt) {
   TRACE_EVENT0(
@@ -332,28 +354,12 @@ void VideoStreamEncoderResourceManager::MaybeInitializePixelLimitResource() {
   RTC_DCHECK_RUN_ON(encoder_queue_);
   RTC_DCHECK(adaptation_processor_);
   RTC_DCHECK(!pixel_limit_resource_);
-  if (!pixel_limit_resource_experiment_enabled_) {
-    // The field trial is not running.
-    return;
+  pixel_limit_resource_ = PixelLimitResource::CreateIfFieldTrialEnabled(
+      field_trials_, encoder_queue_, input_state_provider_);
+  if (pixel_limit_resource_) {
+    AddResource(pixel_limit_resource_,
+                pixel_limit_resource_->adaptation_reason());
   }
-  int max_pixels = 0;
-  std::string pixel_limit_field_trial =
-      field_trials_.Lookup(kPixelLimitResourceFieldTrialName);
-  if (sscanf(pixel_limit_field_trial.c_str(), "Enabled-%d", &max_pixels) != 1) {
-    RTC_LOG(LS_ERROR) << "Couldn't parse " << kPixelLimitResourceFieldTrialName
-                      << " trial config: " << pixel_limit_field_trial;
-    return;
-  }
-  RTC_LOG(LS_INFO) << "Running field trial "
-                   << kPixelLimitResourceFieldTrialName << " configured to "
-                   << max_pixels << " max pixels";
-  // Configure the specified max pixels from the field trial. The pixel limit
-  // resource is active for the lifetme of the stream (until
-  // StopManagedResources() is called).
-  pixel_limit_resource_ =
-      PixelLimitResource::Create(encoder_queue_, input_state_provider_);
-  pixel_limit_resource_->SetMaxPixels(max_pixels);
-  AddResource(pixel_limit_resource_, VideoAdaptationReason::kCpu);
 }
 
 void VideoStreamEncoderResourceManager::StopManagedResources() {
@@ -378,7 +384,7 @@ void VideoStreamEncoderResourceManager::StopManagedResources() {
 }
 
 void VideoStreamEncoderResourceManager::AddResource(
-    rtc::scoped_refptr<Resource> resource,
+    scoped_refptr<Resource> resource,
     VideoAdaptationReason reason) {
   RTC_DCHECK_RUN_ON(encoder_queue_);
   RTC_DCHECK(resource);
@@ -390,7 +396,7 @@ void VideoStreamEncoderResourceManager::AddResource(
 }
 
 void VideoStreamEncoderResourceManager::RemoveResource(
-    rtc::scoped_refptr<Resource> resource) {
+    scoped_refptr<Resource> resource) {
   {
     RTC_DCHECK_RUN_ON(encoder_queue_);
     RTC_DCHECK(resource);
@@ -552,7 +558,7 @@ void VideoStreamEncoderResourceManager::UpdateBandwidthQualityScalerSettings(
       // Before executing "StartCheckForOveruse",we must execute "AddResource"
       // firstly,because it can make the listener valid.
       AddResource(bandwidth_quality_scaler_resource_,
-                  webrtc::VideoAdaptationReason::kQuality);
+                  VideoAdaptationReason::kQuality);
       bandwidth_quality_scaler_resource_->StartCheckForOveruse(
           resolution_bitrate_limits, codec_type);
     }
@@ -620,7 +626,7 @@ void VideoStreamEncoderResourceManager::ConfigureBandwidthQualityScaler(
 }
 
 VideoAdaptationReason VideoStreamEncoderResourceManager::GetReasonFromResource(
-    rtc::scoped_refptr<Resource> resource) const {
+    scoped_refptr<Resource> resource) const {
   RTC_DCHECK_RUN_ON(encoder_queue_);
   const auto& registered_resource = resources_.find(resource);
   RTC_DCHECK(registered_resource != resources_.end())
@@ -663,7 +669,7 @@ int VideoStreamEncoderResourceManager::LastFrameSizeOrDefault() const {
 void VideoStreamEncoderResourceManager::OnVideoSourceRestrictionsUpdated(
     VideoSourceRestrictions restrictions,
     const VideoAdaptationCounters& adaptation_counters,
-    rtc::scoped_refptr<Resource> reason,
+    scoped_refptr<Resource> reason,
     const VideoSourceRestrictions& unfiltered_restrictions) {
   RTC_DCHECK_RUN_ON(encoder_queue_);
   current_adaptation_counters_ = adaptation_counters;
@@ -680,8 +686,8 @@ void VideoStreamEncoderResourceManager::OnVideoSourceRestrictionsUpdated(
 }
 
 void VideoStreamEncoderResourceManager::OnResourceLimitationChanged(
-    rtc::scoped_refptr<Resource> resource,
-    const std::map<rtc::scoped_refptr<Resource>, VideoAdaptationCounters>&
+    scoped_refptr<Resource> resource,
+    const std::map<scoped_refptr<Resource>, VideoAdaptationCounters>&
         resource_limitations) {
   RTC_DCHECK_RUN_ON(encoder_queue_);
   if (!resource) {

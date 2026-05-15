@@ -43,7 +43,7 @@ def test_lint_file_whitespace_fix(lint, paths, create_temp_file):
     path = create_temp_file(contents, "bad.cpp")
     lint([path], fix=True)
     # Gives a different answer on Windows. Probably because of Windows CR
-    assert fixed == 3 or fixed == 2
+    assert fixed in {2, 3}
 
 
 if __name__ == "__main__":

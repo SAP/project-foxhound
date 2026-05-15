@@ -35,7 +35,7 @@ fun TabList(
     val tabs = store.observeAsComposableState { state -> state.tabs.filter(tabsFilter) }
     val selectedTabId = store.observeAsComposableState { state -> state.selectedTabId }
     TabList(
-        tabs.value ?: emptyList(),
+        tabs.value,
         modifier,
         selectedTabId.value,
         onTabSelected,

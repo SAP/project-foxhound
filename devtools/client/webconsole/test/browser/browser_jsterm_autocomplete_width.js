@@ -35,7 +35,7 @@ add_task(async function () {
     "popup has expected items"
   );
 
-  const originalWidth = popup._tooltip.container.clientWidth;
+  const originalWidth = popup.tooltip.container.clientWidth;
   Assert.greaterOrEqual(
     originalWidth,
     getLongestLabelWidth(jsterm),
@@ -53,7 +53,7 @@ add_task(async function () {
     hasExactPopupLabels(popup, ["y".repeat(10), "z".repeat(20)]),
     "popup has expected items"
   );
-  const newPopupWidth = popup._tooltip.container.clientWidth;
+  const newPopupWidth = popup.tooltip.container.clientWidth;
   Assert.greaterOrEqual(
     newPopupWidth,
     originalWidth,
@@ -73,7 +73,7 @@ add_task(async function () {
   await onAutocompleteUpdated;
 
   is(
-    popup._tooltip.container.clientWidth,
+    popup.tooltip.container.clientWidth,
     originalWidth,
     "popup is back to its original width"
   );

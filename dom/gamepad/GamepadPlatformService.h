@@ -7,15 +7,15 @@
 #ifndef mozilla_dom_GamepadPlatformService_h_
 #define mozilla_dom_GamepadPlatformService_h_
 
-#include "mozilla/dom/GamepadBinding.h"
-#include "mozilla/dom/GamepadEventTypes.h"
-#include "mozilla/dom/GamepadHandle.h"
-
 #include <map>
+
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Vector.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/GamepadBinding.h"
+#include "mozilla/dom/GamepadEventTypes.h"
+#include "mozilla/dom/GamepadHandle.h"
 
 namespace mozilla::dom {
 

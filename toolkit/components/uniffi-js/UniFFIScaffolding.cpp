@@ -128,4 +128,13 @@ void UniFFIScaffolding::DeregisterCallbackHandler(GlobalObject& aGlobal,
   uniffi::DeregisterCallbackHandler(aInterfaceId, aError);
 }
 
+uint64_t UniFFIScaffolding::CallbackHandleCreate(GlobalObject& aGlobal) {
+  return uniffi::CallbackHandleCreate();
+}
+
+uint32_t UniFFIScaffolding::CallbackHandleRelease(GlobalObject& aGlobal,
+                                                  uint64_t aHandle) {
+  return uniffi::CallbackHandleRelease(aHandle);
+}
+
 }  // namespace mozilla::dom

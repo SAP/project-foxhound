@@ -17,16 +17,12 @@ internal data class PinnedSiteEntity(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "id")
     var id: Long? = null,
-
     @ColumnInfo(name = "title")
     var title: String,
-
     @ColumnInfo(name = "url")
     var url: String,
-
     @ColumnInfo(name = "is_default")
     var isDefault: Boolean = false,
-
     @ColumnInfo(name = "created_at")
     var createdAt: Long = System.currentTimeMillis(),
 ) {

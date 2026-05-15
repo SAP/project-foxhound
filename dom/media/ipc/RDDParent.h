@@ -3,10 +3,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef _include_dom_media_ipc_RDDParent_h__
-#define _include_dom_media_ipc_RDDParent_h__
+#ifndef _include_dom_media_ipc_RDDParent_h_
+#define _include_dom_media_ipc_RDDParent_h_
 #include "mozilla/PRDDParent.h"
-
 #include "mozilla/RefPtr.h"
 #include "mozilla/ipc/AsyncBlockers.h"
 
@@ -57,7 +56,7 @@ class RDDParent final : public PRDDParent {
   mozilla::ipc::IPCResult RecvUnblockUntrustedModulesThread();
 #endif  // defined(XP_WIN)
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
-  mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
+  mozilla::ipc::IPCResult RecvUpdateVar(const nsTArray<GfxVarUpdate>& var);
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
   mozilla::ipc::IPCResult RecvInitSandboxTesting(
@@ -82,4 +81,4 @@ class RDDParent final : public PRDDParent {
 
 }  // namespace mozilla
 
-#endif  // _include_dom_media_ipc_RDDParent_h__
+#endif  // _include_dom_media_ipc_RDDParent_h_

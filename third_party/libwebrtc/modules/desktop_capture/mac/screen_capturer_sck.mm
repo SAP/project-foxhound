@@ -267,7 +267,7 @@ void ScreenCapturerSck::SetMaxFrameRate(uint32_t max_frame_rate) {
 
 void ScreenCapturerSck::CaptureFrame() {
   RTC_DCHECK_RUN_ON(&api_checker_);
-  int64_t capture_start_time_millis = rtc::TimeMillis();
+  int64_t capture_start_time_millis = webrtc::TimeMillis();
 
   if (permanent_error_) {
     RTC_LOG(LS_VERBOSE) << "ScreenCapturerSck " << this
@@ -306,7 +306,7 @@ void ScreenCapturerSck::CaptureFrame() {
   if (frame) {
     RTC_LOG(LS_VERBOSE) << "ScreenCapturerSck " << this
                         << " CaptureFrame() -> SUCCESS";
-    frame->set_capture_time_ms(rtc::TimeSince(capture_start_time_millis));
+    frame->set_capture_time_ms(webrtc::TimeSince(capture_start_time_millis));
     callback_->OnCaptureResult(Result::SUCCESS, std::move(frame));
   } else {
     RTC_LOG(LS_VERBOSE) << "ScreenCapturerSck " << this
@@ -534,9 +534,9 @@ void ScreenCapturerSck::StartWithFilter(SCContentFilter* __strong filter) {
   config.colorSpaceName = kCGColorSpaceSRGB;
   config.showsCursor = capture_options_.prefer_cursor_embedded();
   config.captureResolution = SCCaptureResolutionNominal;
-  config.minimumFrameInterval =
-      max_frame_rate_ > 0 ? CMTimeMake(1, static_cast<int32_t>(max_frame_rate_))
-                          : kCMTimeZero;
+  config.minimumFrameInterval = max_frame_rate_ > 0 ?
+      CMTimeMake(1, static_cast<int32_t>(max_frame_rate_)) :
+      kCMTimeZero;
 
   {
     MutexLock lock(&latest_frame_lock_);
@@ -590,7 +590,8 @@ void ScreenCapturerSck::StartWithFilter(SCContentFilter* __strong filter) {
         // this handler.
         permanent_error_ = true;
         RTC_LOG(LS_ERROR) << "ScreenCapturerSck " << this
-                          << " Starting failed.";
+                          << " Starting failed with error code " << error.code
+                          << ".";
       } else {
         RTC_LOG(LS_INFO) << "ScreenCapturerSck " << this << " Capture started.";
       }
@@ -650,8 +651,8 @@ void ScreenCapturerSck::OnNewIOSurface(IOSurfaceRef io_surface,
                                       scale_factor * bounding_rect.size.width,
                                       scale_factor * bounding_rect.size.height);
 
-  rtc::ScopedCFTypeRef<IOSurfaceRef> scoped_io_surface(
-      io_surface, rtc::RetainPolicy::RETAIN);
+  webrtc::ScopedCFTypeRef<IOSurfaceRef> scoped_io_surface(
+      io_surface, webrtc::RetainPolicy::RETAIN);
   std::unique_ptr<DesktopFrameIOSurface> desktop_frame_io_surface =
       DesktopFrameIOSurface::Wrap(scoped_io_surface, img_bounding_rect);
   if (!desktop_frame_io_surface) {
@@ -778,8 +779,9 @@ std::unique_ptr<DesktopCapturer> CreateGenericCapturerSck(
   if (@available(macOS 14.0, *)) {
     if (options.allow_sck_system_picker()) {
       return std::make_unique<ScreenCapturerSck>(
-          options, SCContentSharingPickerModeSingleDisplay |
-                       SCContentSharingPickerModeMultipleWindows);
+          options,
+          SCContentSharingPickerModeSingleDisplay |
+              SCContentSharingPickerModeMultipleWindows);
     }
   }
   return nullptr;

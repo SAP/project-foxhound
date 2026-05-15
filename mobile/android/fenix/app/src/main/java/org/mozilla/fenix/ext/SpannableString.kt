@@ -15,7 +15,10 @@ import androidx.annotation.Dimension.Companion.DP
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.support.ktx.android.util.dpToPx
 
-fun SpannableString.setTextSize(context: Context, @Dimension(unit = DP) textSize: Int) =
+fun SpannableString.setTextSize(
+    context: Context,
+    @Dimension(unit = DP) textSize: Int,
+) =
     this.setSpan(
         AbsoluteSizeSpan(textSize.dpToPx(context.resources.displayMetrics)),
         0,
@@ -23,7 +26,10 @@ fun SpannableString.setTextSize(context: Context, @Dimension(unit = DP) textSize
         Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
     )
 
-fun SpannableString.setTextColor(context: Context, @AttrRes colorResId: Int) =
+fun SpannableString.setTextColor(
+    context: Context,
+    @AttrRes colorResId: Int,
+) =
     this.setSpan(
         ForegroundColorSpan(context.getColorFromAttr(colorResId)),
         0,

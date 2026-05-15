@@ -3,50 +3,42 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WebGLContext.h"
-#include "WebGL2Context.h"
-
-#include "WebGLContextUtils.h"
-#include "WebGLBuffer.h"
-#include "WebGLShader.h"
-#include "WebGLProgram.h"
-#include "WebGLFormats.h"
-#include "WebGLFramebuffer.h"
-#include "WebGLQuery.h"
-#include "WebGLRenderbuffer.h"
-#include "WebGLTexture.h"
-#include "WebGLVertexArray.h"
-
-#include "nsDebug.h"
-#include "nsReadableUtils.h"
-#include "nsString.h"
-
-#include "gfxContext.h"
-#include "gfxPlatform.h"
-#include "GLContext.h"
-
-#include "nsContentUtils.h"
-#include "nsError.h"
-#include "nsLayoutUtils.h"
-
-#include "CanvasUtils.h"
-#include "gfxUtils.h"
-#include "MozFramebuffer.h"
-
-#include "jsfriendapi.h"
-
-#include "WebGLTexelConversions.h"
-#include "WebGLValidateStrings.h"
-#include <algorithm>
 #include <fmt/format.h>
 
-#include "mozilla/DebugOnly.h"
+#include <algorithm>
+
+#include "CanvasUtils.h"
+#include "GLContext.h"
+#include "MozFramebuffer.h"
+#include "WebGL2Context.h"
+#include "WebGLBuffer.h"
+#include "WebGLContext.h"
+#include "WebGLContextUtils.h"
+#include "WebGLFormats.h"
+#include "WebGLFramebuffer.h"
+#include "WebGLProgram.h"
+#include "WebGLQuery.h"
+#include "WebGLRenderbuffer.h"
+#include "WebGLShader.h"
+#include "WebGLTexelConversions.h"
+#include "WebGLTexture.h"
+#include "WebGLValidateStrings.h"
+#include "WebGLVertexArray.h"
+#include "gfxContext.h"
+#include "gfxPlatform.h"
+#include "gfxUtils.h"
+#include "jsfriendapi.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
-#include "mozilla/EndianUtils.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/StaticPrefs_webgl.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsLayoutUtils.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
 
 namespace mozilla {
 
@@ -1055,7 +1047,7 @@ webgl::PackingInfo WebGLContext::ValidImplementationColorReadPI(
 }
 
 std::string webgl::format_as(const PackingInfo& pi) {
-  return fmt::format(FMT_STRING("{}/{}"), pi.format, pi.type);
+  return fmt::format("{}/{}", pi.format, pi.type);
 }
 
 static bool ValidateReadPixelsFormatAndType(
@@ -1096,20 +1088,17 @@ static bool ValidateReadPixelsFormatAndType(
     clientImplPI.type = LOCAL_GL_HALF_FLOAT_OES;
   }
 
-  auto validPiStr =
-      fmt::format(FMT_STRING("{} (spec-required baseline for format {})"),
-                  defaultPI, srcUsage->format->name);
+  auto validPiStr = fmt::format("{} (spec-required baseline for format {}",
+                                defaultPI, srcUsage->format->name);
   if (implPI != defaultPI) {
     validPiStr += fmt::format(
-        FMT_STRING(
-            ", or {} (spec-optional implementation-chosen format-dependant"
-            " IMPLEMENTATION_COLOR_READ_FORMAT/_TYPE)"),
+        ", or {} (spec-optional implementation-chosen format-dependant"
+        " IMPLEMENTATION_COLOR_READ_FORMAT/_TYPE)",
         clientImplPI);
   }
   if (bonusValidPi) {
-    validPiStr +=
-        fmt::format(FMT_STRING(", or {} (spec-required bonus for format {})"),
-                    *bonusValidPi, srcUsage->format->name);
+    validPiStr += fmt::format(", or {} (spec-required bonus for format {}",
+                              *bonusValidPi, srcUsage->format->name);
   }
 
   webgl->ErrorInvalidOperation(

@@ -14,8 +14,13 @@ types.addActorType("domstylerule");
  * and which element they were inherited from (if any).
  */
 types.addDictType("appliedstyle", {
+  // All these attributes are defined by PageStyleActor.#getRuleItem()
   rule: "domstylerule",
+  pseudoElement: "nullable:string",
+  isSystem: "nullable:boolean",
   inherited: "nullable:domnode#actorid",
+  darkColorScheme: "nullable:boolean",
+  matchedSelectorIndexes: "nullable:array:number",
   keyframes: "nullable:domstylerule",
 });
 

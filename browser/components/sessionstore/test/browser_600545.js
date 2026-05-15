@@ -7,7 +7,7 @@ requestLongerTimeout(2);
 var stateBackup = JSON.parse(ss.getBrowserState());
 
 function test() {
-  /** Test for Bug 600545 **/
+  /** Test for Bug 600545 */
   waitForExplicitFinish();
   testBug600545();
 }

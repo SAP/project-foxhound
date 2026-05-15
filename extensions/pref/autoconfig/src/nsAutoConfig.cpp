@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ResultExtensions.h"
 #include "nsAutoConfig.h"
 #include "nsJSConfigTriggers.h"
 
@@ -288,9 +287,8 @@ nsresult nsAutoConfig::downloadAutoConfig() {
     if (NS_SUCCEEDED(rv) && minutes > 0) {
       // Create a new timer and pass this nsAutoConfig
       // object as a timer callback.
-      MOZ_TRY_VAR(mTimer,
-                  NS_NewTimerWithCallback(this, minutes * 60 * 1000,
-                                          nsITimer::TYPE_REPEATING_SLACK));
+      mTimer = MOZ_TRY(NS_NewTimerWithCallback(this, minutes * 60 * 1000,
+                                               nsITimer::TYPE_REPEATING_SLACK));
     }
   }  // first_time
 

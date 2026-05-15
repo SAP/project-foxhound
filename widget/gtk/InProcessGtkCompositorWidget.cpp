@@ -25,7 +25,7 @@ RefPtr<CompositorWidget> CompositorWidget::CreateLocal(
   } else {
     return new InProcessGtkCompositorWidget(
         aInitData.get_GtkCompositorWidgetInitData(), aOptions,
-        static_cast<nsWindow*>(aWidget));
+        nsWindow::FromWidget(aWidget));
   }
 }
 

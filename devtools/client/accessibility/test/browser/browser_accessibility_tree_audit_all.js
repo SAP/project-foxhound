@@ -12,7 +12,7 @@ addA11YPanelTask(
     const { doc, toolbox } = env;
     info("Reload to have a clean state");
     // This is needed to reproduce the issue from Bug 1929891
-    await reloadBrowser();
+    await reloadSelectedTab();
 
     info(`Select the "All issues" item to run all audits at once`);
     await toggleMenuItem(doc, toolbox.doc, TREE_FILTERS_MENU_ID, 1);

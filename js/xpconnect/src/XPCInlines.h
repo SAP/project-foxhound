@@ -6,8 +6,8 @@
 
 /* private inline methods (#include'd by xpcprivate.h). */
 
-#ifndef xpcinlines_h___
-#define xpcinlines_h___
+#ifndef xpcinlines_h_
+#define xpcinlines_h_
 
 #include <algorithm>
 
@@ -364,4 +364,4 @@ inline void xpc::CleanupValue(const nsXPTType& aType, void* aValue,
 
 /***************************************************************************/
 
-#endif /* xpcinlines_h___ */
+#endif /* xpcinlines_h_ */

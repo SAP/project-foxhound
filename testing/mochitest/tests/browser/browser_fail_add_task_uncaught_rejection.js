@@ -3,8 +3,6 @@
 
 "use strict";
 
-setExpectedFailuresForSelfTest(4);
-
 async function rejectOnNextTick(error) {
   await Promise.resolve();
 

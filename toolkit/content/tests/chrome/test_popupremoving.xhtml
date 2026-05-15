@@ -28,13 +28,13 @@
 <hbox>
 
 <menu id="nestedmenu1" label="1">
-    <menupopup id="nestedpopup1" onpopupshown="if (event.target == this) this.firstChild.open = true">
+    <menupopup id="nestedpopup1" onpopupshown="if (event.target == this) this.firstChild.open = true" native="false">
       <menu id="nestedmenu2" label="2">
-        <menupopup id="nestedpopup2" onpopupshown="if (event.target == this) this.firstChild.open = true">
+        <menupopup id="nestedpopup2" onpopupshown="if (event.target == this) this.firstChild.open = true" native="false">
           <menu id="nestedmenu3" label="3">
-            <menupopup id="nestedpopup3" onpopupshown="if (event.target == this) this.firstChild.open = true">
+            <menupopup id="nestedpopup3" onpopupshown="if (event.target == this) this.firstChild.open = true" native="false">
               <menu id="nestedmenu4" label="4">
-                <menupopup id="nestedpopup4">
+                <menupopup id="nestedpopup4" native="false">
                   <menuitem label="Nested 1"/>
                   <menuitem label="Nested 2"/>
                   <menuitem label="Nested 3"/>
@@ -48,7 +48,7 @@
 </menu>
 
 <menu id="separatemenu1" label="1">
-    <menupopup id="separatepopup1" onpopupshown="$('separatemenu2').open = true">
+    <menupopup id="separatepopup1" onpopupshown="$('separatemenu2').open = true" native="false">
         <menuitem label="L1 One"/>
         <menuitem label="L1 Two"/>
         <menuitem label="L1 Three"/>
@@ -57,7 +57,8 @@
 
 <menu id="separatemenu2" label="2">
     <menupopup id="separatepopup2" onpopupshown="$('separatemenu3').open = true"
-                                   onpopuphidden="popup2Hidden()">
+                                   onpopuphidden="popup2Hidden()"
+                                   native="false">
         <menuitem label="L2 One"/>
         <menuitem label="L2 Two"/>
         <menuitem label="L2 Three"/>
@@ -65,7 +66,7 @@
 </menu>
 
 <menu id="separatemenu3" label="3" onpopupshown="$('separatemenu4').open = true">
-    <menupopup id="separatepopup3">
+    <menupopup id="separatepopup3" native="false">
         <menuitem label="L3 One"/>
         <menuitem label="L3 Two"/>
         <menuitem label="L3 Three"/>
@@ -73,7 +74,7 @@
 </menu>
 
 <menu id="separatemenu4" label="4" onpopuphidden="$('separatemenu2').open = false">
-    <menupopup id="separatepopup3">
+    <menupopup id="separatepopup3" native="false">
         <menuitem label="L4 One"/>
         <menuitem label="L4 Two"/>
         <menuitem label="L4 Three"/>

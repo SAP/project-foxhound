@@ -2,7 +2,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "cps",
   "@mozilla.org/network/captive-portal-service;1",
-  "nsICaptivePortalService"
+  Ci.nsICaptivePortalService
 );
 
 const CANONICAL_CONTENT = "success";

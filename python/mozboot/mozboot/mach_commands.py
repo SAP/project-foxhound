@@ -93,7 +93,7 @@ def vcs_setup(command_context, update_only=False, vcs=None):
 
         print("Initializing a git colocated jj repository...")
         jj_bin = get_tool_path("jj")
-        subprocess.run([jj_bin, "git", "init", "--colocate"])
+        subprocess.run([jj_bin, "git", "init", "--colocate"], check=True)
 
     if vcs:
         repo = get_specific_repository_object(topsrcdir, vcs)

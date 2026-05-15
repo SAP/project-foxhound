@@ -11,6 +11,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import mozilla.components.compose.base.theme.layout.AcornLayout
@@ -39,6 +40,7 @@ fun AcornTheme(
 }
 
 @Composable
+@ReadOnlyComposable
 private fun getAcornColors() = if (isSystemInDarkTheme()) {
     darkColorPalette
 } else {
@@ -46,6 +48,7 @@ private fun getAcornColors() = if (isSystemInDarkTheme()) {
 }
 
 @Composable
+@ReadOnlyComposable
 private fun getAcornColorScheme(): ColorScheme = if (isSystemInDarkTheme()) {
     acornDarkColorScheme()
 } else {
@@ -58,6 +61,7 @@ private fun getAcornColorScheme(): ColorScheme = if (isSystemInDarkTheme()) {
 object AcornTheme {
     val colors: AcornColors
         @Composable
+        @ReadOnlyComposable
         get() = localAcornColors.current
 
     val typography: AcornTypography
@@ -65,10 +69,12 @@ object AcornTheme {
 
     val layout: AcornLayout
         @Composable
+        @ReadOnlyComposable
         get() = localLayout.current
 
     val windowSize: AcornWindowSize
         @Composable
+        @ReadOnlyComposable
         get() = localWindowSize.current
 }
 
@@ -100,12 +106,18 @@ private fun ProvideAcornTokens(
     )
 }
 
-val localAcornColors = staticCompositionLocalOf<AcornColors> {
-    error("No AcornColors provided")
+/**
+ * CompositionLocal that provides the current Acorn color palette to the Compose tree.
+ *
+ * Defaults to [lightColorPalette]. This value is typically set by [AcornTheme] at the root of
+ * your application. To access the active palette, use [AcornTheme.colors].
+ */
+val localAcornColors = staticCompositionLocalOf {
+    lightColorPalette
 }
 
-private val localWindowSize = staticCompositionLocalOf<AcornWindowSize> {
-    error("No AcornWindowSize provided")
+private val localWindowSize = staticCompositionLocalOf {
+    AcornWindowSize.Small
 }
 
 private val localLayout = staticCompositionLocalOf {

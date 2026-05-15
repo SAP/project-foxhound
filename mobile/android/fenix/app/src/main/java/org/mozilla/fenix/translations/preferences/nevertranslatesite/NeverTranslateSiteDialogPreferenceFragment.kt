@@ -7,10 +7,9 @@ package org.mozilla.fenix.translations.preferences.nevertranslatesite
 import android.app.Dialog
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
-import androidx.compose.ui.platform.ComposeView
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.compose.content
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import mozilla.components.browser.state.action.TranslationsAction
@@ -38,28 +37,26 @@ class NeverTranslateSiteDialogPreferenceFragment : DialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        setContent {
-            FirefoxTheme {
-                NeverTranslateSiteDialogPreference(
-                    websiteUrl = args.neverTranslateSiteUrl,
-                    onConfirmDelete = {
-                        browserStore.dispatch(
-                            TranslationsAction.RemoveNeverTranslateSiteAction(
-                                origin = args.neverTranslateSiteUrl,
-                            ),
-                        )
-                        runIfFragmentIsAttached {
-                            findNavController().popBackStack()
-                        }
-                    },
-                    onCancel = {
-                        runIfFragmentIsAttached {
-                            findNavController().popBackStack()
-                        }
-                    },
-                )
-            }
+    ) = content {
+        FirefoxTheme {
+            NeverTranslateSiteDialogPreference(
+                websiteUrl = args.neverTranslateSiteUrl,
+                onConfirmDelete = {
+                    browserStore.dispatch(
+                        TranslationsAction.RemoveNeverTranslateSiteAction(
+                            origin = args.neverTranslateSiteUrl,
+                        ),
+                    )
+                    runIfFragmentIsAttached {
+                        findNavController().popBackStack()
+                    }
+                },
+                onCancel = {
+                    runIfFragmentIsAttached {
+                        findNavController().popBackStack()
+                    }
+                },
+            )
         }
     }
 }

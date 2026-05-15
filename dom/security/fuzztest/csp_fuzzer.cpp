@@ -6,8 +6,8 @@
 
 #include "FuzzingInterface.h"
 #include "mozilla/BasePrincipal.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCSPContext.h"
+#include "nsComponentManagerUtils.h"
 #include "nsNetUtil.h"
 #include "nsStringFwd.h"
 

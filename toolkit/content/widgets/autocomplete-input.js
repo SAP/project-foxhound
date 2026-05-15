@@ -457,8 +457,7 @@
     }
 
     handleKeyDown(aEvent) {
-      // Re: urlbarDeferred, see the comment in urlbarBindings.xml.
-      if (aEvent.defaultPrevented && !aEvent.urlbarDeferred) {
+      if (aEvent.defaultPrevented) {
         return false;
       }
 

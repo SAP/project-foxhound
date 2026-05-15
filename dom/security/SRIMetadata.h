@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_SRIMetadata_h
 #define mozilla_dom_SRIMetadata_h
 
-#include "nsTArray.h"
-#include "nsString.h"
 #include "SRICheck.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 namespace mozilla::dom {
 

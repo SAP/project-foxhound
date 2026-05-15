@@ -4,18 +4,16 @@
 
 package org.mozilla.fenix.ext
 
+import android.content.res.Resources
 import android.graphics.Rect
-import android.os.Build
 import android.view.TouchDelegate
 import android.view.View
+import androidx.annotation.DimenRes
 import androidx.annotation.Dimension
 import androidx.annotation.Dimension.Companion.DP
 import androidx.annotation.VisibleForTesting
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import mozilla.components.support.ktx.android.util.dpToPx
-import mozilla.components.support.utils.ext.bottom
-import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
 
 /**
@@ -23,13 +21,20 @@ import org.mozilla.fenix.components.Components
  */
 fun View.settings() = context.components.settings
 
-fun View.increaseTapArea(@Dimension(unit = DP) extraDps: Int) {
-    val dips = extraDps.dpToPx(resources.displayMetrics)
+fun View.increaseTapArea(
+    @Dimension(unit = DP) extraDps: Int,
+) {
+    val extraPx = extraDps.dpToPx(resources.displayMetrics)
+    increaseTapAreaInternal(extraPx)
+}
+
+@VisibleForTesting
+internal fun View.increaseTapAreaInternal(extraPx: Int) {
     val parent = this.parent as View
     parent.post {
         val touchRect = Rect()
         getHitRect(touchRect)
-        touchRect.inset(-dips, -dips)
+        touchRect.inset(-extraPx, -extraPx)
         parent.touchDelegate = TouchDelegate(touchRect, this)
     }
 }
@@ -39,7 +44,9 @@ fun View.increaseTapArea(@Dimension(unit = DP) extraDps: Int) {
  *
  * @param extraDps the extra dps that's wanted to be added on top and bottom of the view
  */
-fun View.increaseTapAreaVertically(@Dimension(unit = DP) extraDps: Int) {
+fun View.increaseTapAreaVertically(
+    @Dimension(unit = DP) extraDps: Int,
+) {
     val dips = extraDps.dpToPx(resources.displayMetrics)
     val parent = this.parent as View
     parent.post {
@@ -76,54 +83,23 @@ fun View.getRectWithScreenLocation(): Rect {
 }
 
 /**
- * A safer version of [ViewCompat.getRootWindowInsets] that does not throw a NullPointerException
- * if the view is not attached.
- */
-fun View.getWindowInsets(): WindowInsetsCompat? {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        rootWindowInsets?.let {
-            WindowInsetsCompat.toWindowInsetsCompat(it)
-        }
-    } else {
-        null
-    }
-}
-
-/**
- * Checks if the keyboard is visible
+ * Returns the pixel size for the given dimension resource ID.
  *
- * Inspired by https://stackoverflow.com/questions/2150078/how-to-check-visibility-of-software-keyboard-in-android
- * API 30 adds a native method for this. We should use it (and a compat method if one
- * is added) when it becomes available
+ * This is a wrapper around [Resources.getDimensionPixelSize], reducing verbosity when accessing
+ * dimension values from a [View].
+ *
+ * @param resId Resource ID of the dimension.
+ * @return The pixel size corresponding to the given dimension resource.
  */
-fun View.isKeyboardVisible(): Boolean {
-    // Since we have insets in M and above, we don't need to guess what the keyboard height is.
-    // Otherwise, we make a guess at the minimum height of the keyboard to account for the
-    // navigation bar.
-    val minimumKeyboardHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        0
-    } else {
-        resources.getDimensionPixelSize(R.dimen.minimum_keyboard_height)
-    }
-    return getKeyboardHeight() > minimumKeyboardHeight
-}
-
-@VisibleForTesting
-internal fun View.getWindowVisibleDisplayFrame(): Rect = with(Rect()) {
-    getWindowVisibleDisplayFrame(this)
-    this
-}
+fun View.pixelSizeFor(
+    @DimenRes resId: Int,
+) = resources.getDimensionPixelSize(resId)
 
 /**
- * Calculates the height of the onscreen keyboard.
+ * Used to get and set CoordinatorLayout Behavior on a View.
  */
-fun View.getKeyboardHeight(): Int {
-    val windowRect = getWindowVisibleDisplayFrame()
-    val statusBarHeight = windowRect.top
-    var keyboardHeight = rootView.height - (windowRect.height() + statusBarHeight)
-    getWindowInsets()?.let {
-        keyboardHeight -= it.bottom()
+var View.behavior: CoordinatorLayout.Behavior<*>?
+    get() = (layoutParams as? CoordinatorLayout.LayoutParams)?.behavior
+    set(value) {
+        (layoutParams as? CoordinatorLayout.LayoutParams)?.behavior = value
     }
-
-    return keyboardHeight
-}

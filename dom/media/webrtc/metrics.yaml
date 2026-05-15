@@ -424,8 +424,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   cipher:
     type: labeled_counter
@@ -440,8 +441,29 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
+
+  key_exchange_algorithm:
+    type: custom_distribution
+    description: >
+      SSL Handshake Key Exchange Algorithm (null=0, rsa=1,
+      dh=2, ecdh=4, ecdh_hybrid=8)
+    range_min: 0
+    range_max: 16
+    bucket_count: 17
+    histogram_type: linear
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983029
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983029
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - webrtc-telemetry-alerts@mozilla.com
+      - seceng-telemetry@mozilla.com
+    expires: 152
 
   srtp_cipher:
     type: labeled_counter
@@ -456,8 +478,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   client_handshake_result:
     type: labeled_counter
@@ -473,8 +496,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   server_handshake_result:
     type: labeled_counter
@@ -490,8 +514,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   client_handshake_started_counter:
     type: counter
@@ -504,8 +529,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
   server_handshake_started_counter:
     type: counter
@@ -518,8 +544,9 @@ webrtcdtls:
     data_sensitivity:
       - technical
     notification_emails:
+      - bcampen@mozilla.com
       - webrtc-telemetry-alerts@mozilla.com
-    expires: 145
+    expires: never
 
 webrtc.signaling:
   sdp_negotiated:

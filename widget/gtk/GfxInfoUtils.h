@@ -5,19 +5,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WIDGET_GTK_GFXINFO_UTILS_h__
-#define WIDGET_GTK_GFXINFO_UTILS_h__
-
-// An alternative to mozilla::Unused for use in (a) C code and (b) code where
-// linking with unused.o is difficult.
-#define MOZ_UNUSED(expr) \
-  do {                   \
-    if (expr) {          \
-      (void)0;           \
-    }                    \
-  } while (0)
+#ifndef WIDGET_GTK_GFXINFO_UTILS_h_
+#define WIDGET_GTK_GFXINFO_UTILS_h_
 
 #define LOG_PIPE 2
+
+#include <cstdarg>
 
 static bool enable_logging = false;
 static void log(const char* format, ...) {
@@ -87,12 +80,12 @@ static void record_flush() {
   if (!test_buf) {
     return;
   }
-  MOZ_UNUSED(write(output_pipe, test_buf, test_length));
+  [[maybe_unused]] ssize_t r0 = write(output_pipe, test_buf, test_length);
   if (enable_logging) {
-    MOZ_UNUSED(write(LOG_PIPE, test_buf, test_length));
+    [[maybe_unused]] ssize_t r1 = write(LOG_PIPE, test_buf, test_length);
   }
   free(test_buf);
   test_buf = nullptr;
 }
 
-#endif /* WIDGET_GTK_GFXINFO_h__ */
+#endif /* WIDGET_GTK_GFXINFO_h_ */

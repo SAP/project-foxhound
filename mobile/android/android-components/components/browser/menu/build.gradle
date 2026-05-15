@@ -2,24 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-parcelize'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     buildFeatures {
         viewBinding = true
     }
@@ -37,21 +28,20 @@ dependencies {
     implementation project(':components:ui-icons')
 
     implementation libs.androidx.appcompat
-    implementation libs.androidx.core.ktx
-    implementation libs.androidx.recyclerview
     implementation libs.androidx.cardview
     implementation libs.androidx.constraintlayout
     implementation libs.androidx.coordinatorlayout
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.recyclerview
 
     testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
-
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

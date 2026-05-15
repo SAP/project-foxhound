@@ -9,7 +9,13 @@ with Files("**"):
 
 GeckoSharedLibrary("clearkey")
 
-FINAL_TARGET = "dist/bin/gmp-clearkey/0.1"
+# Android wants all libraries to be packaged under dist/bin so that we can
+# place them in the APK under lib/<arch>. We have special logic in GMP that
+# configure the clearkey library for us.
+if CONFIG["OS_TARGET"] == "Android":
+    FINAL_TARGET = "dist/bin"
+else:
+    FINAL_TARGET = "dist/bin/gmp-clearkey/0.1"
 
 FINAL_TARGET_PP_FILES += ["manifest.json.in"]
 

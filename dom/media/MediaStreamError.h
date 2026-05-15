@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_MediaStreamError_h
 #define mozilla_dom_MediaStreamError_h
 
-#include "mozilla/Attributes.h"
-#include "nsWrapperCache.h"
 #include "js/TypeDecls.h"
-#include "nsPIDOMWindow.h"
 #include "mozilla/RefPtr.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCache.h"
 
 #if defined(XP_WIN) && defined(GetMessage)
 #  undef GetMessage

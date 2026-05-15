@@ -17,7 +17,6 @@
 
 #include <stddef.h>
 #include <stdio.h>
-#include <string.h>
 #include "prdtoa.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Sprintf.h"

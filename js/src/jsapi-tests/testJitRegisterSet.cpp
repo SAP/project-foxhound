@@ -168,6 +168,10 @@ void pullAllFpus(AllocatableFloatRegisterSet& set, uint32_t& max_bits,
   }
 }
 
+// TODO: MIPS64 only allows calling |alignedAliased| for Double FP registers.
+// Disable this test for MIPS64 until it's clear that that restriction is
+// actually correct. (bug 1993738)
+#ifndef JS_CODEGEN_MIPS64
 BEGIN_TEST(testJitRegisterSet_FPU_Aliases) {
   BEGIN_All_WALK(FloatRegisters::Total);
   FOR_ALL_REGISTERS(FloatRegister, reg) {
@@ -209,3 +213,4 @@ BEGIN_TEST(testJitRegisterSet_FPU_Aliases) {
   return true;
 }
 END_TEST(testJitRegisterSet_FPU_Aliases)
+#endif

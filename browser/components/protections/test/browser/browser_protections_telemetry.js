@@ -7,7 +7,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
+  Ci.nsITrackingDBService
 );
 
 const { AboutProtectionsParent } = ChromeUtils.importESModule(
@@ -267,7 +267,7 @@ add_task(async function checkTelemetryClickEvents() {
     `recorded telemetry for lw_open_button when there are breached passwords`
   );
   AboutProtectionsParent.setTestOverride(null);
-  Services.logins.removeLogin(TEST_LOGIN1);
+  await Services.logins.removeLoginAsync(TEST_LOGIN1);
   await BrowserTestUtils.removeTab(gBrowser.selectedTab);
   await BrowserTestUtils.reloadTab(tab);
 

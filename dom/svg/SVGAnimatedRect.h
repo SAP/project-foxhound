@@ -7,9 +7,8 @@
 #ifndef DOM_SVG_SVGANIMATEDRECT_H_
 #define DOM_SVG_SVGANIMATEDRECT_H_
 
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/dom/SVGElement.h"
-#include "mozilla/Attributes.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla {

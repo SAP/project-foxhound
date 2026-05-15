@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "mozilla/Vector.h"
 #include "mozilla/intl/PluralRules.h"
 
 #define TEST_SELECT(actual, expected)     \

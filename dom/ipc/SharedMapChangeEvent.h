@@ -7,9 +7,8 @@
 #ifndef dom_ipc_SharedMapChangeEvent_h
 #define dom_ipc_SharedMapChangeEvent_h
 
-#include "mozilla/dom/MozSharedMapBinding.h"
-
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/MozSharedMapBinding.h"
 #include "nsTArray.h"
 
 namespace mozilla::dom::ipc {

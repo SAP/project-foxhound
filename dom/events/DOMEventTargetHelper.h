@@ -8,9 +8,9 @@
 #define mozilla_DOMEventTargetHelper_h_
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/EventTarget.h"
 #include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/EventTarget.h"
 #include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"

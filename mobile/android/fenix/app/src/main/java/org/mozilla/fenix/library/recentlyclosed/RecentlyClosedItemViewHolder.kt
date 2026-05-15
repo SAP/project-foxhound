@@ -5,6 +5,7 @@
 package org.mozilla.fenix.library.recentlyclosed
 
 import android.view.View
+import androidx.annotation.LayoutRes
 import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.browser.state.state.recover.TabState
 import org.mozilla.fenix.R
@@ -60,6 +61,7 @@ class RecentlyClosedItemViewHolder(
     }
 
     companion object {
-        const val LAYOUT_ID = R.layout.history_list_item
+        @LayoutRes
+        val LAYOUT_ID = R.layout.history_list_item
     }
 }

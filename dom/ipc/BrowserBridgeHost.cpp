@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/BrowserBridgeHost.h"
 
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Element.h"
 #include "nsFrameLoader.h"
 
@@ -44,31 +43,31 @@ bool BrowserBridgeHost::CanRecv() const {
 
 void BrowserBridgeHost::LoadURL(nsDocShellLoadState* aLoadState) {
   MOZ_ASSERT(aLoadState);
-  Unused << mBridge->SendLoadURL(WrapNotNull(aLoadState));
+  (void)mBridge->SendLoadURL(WrapNotNull(aLoadState));
 }
 
 void BrowserBridgeHost::ResumeLoad(uint64_t aPendingSwitchId) {
-  Unused << mBridge->SendResumeLoad(aPendingSwitchId);
+  (void)mBridge->SendResumeLoad(aPendingSwitchId);
 }
 
 void BrowserBridgeHost::DestroyStart() {
   // We don't clear the bridge until BrowserBridgeChild::ActorDestroy is called,
   // which will end up calling DestroyComplete().
   if (mBridge) {
-    Unused << mBridge->SendBeginDestroy();
+    (void)mBridge->SendBeginDestroy();
   }
 }
 
 void BrowserBridgeHost::DestroyComplete() { mBridge = nullptr; }
 
 bool BrowserBridgeHost::Show(const OwnerShowInfo& aShowInfo) {
-  Unused << mBridge->SendShow(aShowInfo);
+  (void)mBridge->SendShow(aShowInfo);
   return true;
 }
 
 void BrowserBridgeHost::UpdateDimensions(const LayoutDeviceIntRect& aRect,
                                          const LayoutDeviceIntSize& aSize) {
-  Unused << mBridge->SendUpdateDimensions(aRect, aSize);
+  (void)mBridge->SendUpdateDimensions(aRect, aSize);
 }
 
 void BrowserBridgeHost::UpdateEffects(EffectsInfo aEffects) {
@@ -76,7 +75,7 @@ void BrowserBridgeHost::UpdateEffects(EffectsInfo aEffects) {
     return;
   }
   mEffectsInfo = aEffects;
-  Unused << mBridge->SendUpdateEffects(mEffectsInfo);
+  (void)mBridge->SendUpdateEffects(mEffectsInfo);
 }
 
 already_AddRefed<nsIWidget> BrowserBridgeHost::GetWidget() const {

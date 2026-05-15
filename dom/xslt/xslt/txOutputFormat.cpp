@@ -4,8 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txOutputFormat.h"
-#include "txXMLUtils.h"
+
 #include "txExpandedName.h"
+#include "txXMLUtils.h"
 
 txOutputFormat::txOutputFormat()
     : mMethod(eMethodNotSet),

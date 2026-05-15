@@ -1,4 +1,4 @@
-// |jit-test| --enable-symbols-as-weakmap-keys; skip-if: getBuildConfiguration("release_or_beta")
+// |jit-test| --enable-symbols-as-weakmap-keys
 for (x=0; x<10000; ++x) {
   try {
     m13 = new WeakMap;

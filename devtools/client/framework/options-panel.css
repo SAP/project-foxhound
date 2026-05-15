@@ -102,6 +102,21 @@
   padding-inline-end: 4px;
 }
 
+label:has(.option-secondary-label) {
+  display: grid;
+  grid-template-areas:
+    "input label"
+    ".     secondary-label";
+  grid-template-columns: auto 1fr;
+}
+
+.option-secondary-label {
+  font-size: 0.9em;
+  font-style: italic;
+  grid-area: secondary-label;
+  color: var(--theme-text-color-alt);
+}
+
 #devtools-sourceeditor-keybinding-select {
   min-width: 130px;
 }

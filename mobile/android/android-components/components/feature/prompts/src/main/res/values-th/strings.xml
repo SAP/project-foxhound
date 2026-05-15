@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">ตกลง</string>
   <!-- Text for confirmation for a negative action in dialog. -->
@@ -52,6 +59,8 @@
   <string name="mozac_feature_prompts_deny">ปฏิเสธ</string>
   <!-- Text of the title of a dialog when a page is requesting to open a new window. -->
   <string name="mozac_feature_prompts_popup_dialog_title">อนุญาตให้เว็บไซต์นี้เปิดหรือไม่?</string>
+  <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
+  <string name="mozac_feature_prompts_redirect_dialog_title">อนุญาตให้เปลี่ยนทางไปยังเว็บไซต์นี้หรือไม่?</string>
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">คุณแน่ใจหรือไม่?</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
@@ -110,12 +119,8 @@
   <string name="mozac_feature_prompts_suggest_strong_password_use_password">ใช้รหัสผ่าน</string>
   <!-- Pressing this will dismiss the suggested strong password dialog -->
   <string name="mozac_feature_prompts_suggest_strong_password_dismiss">ไม่ใช่ตอนนี้</string>
-  <!-- Title for showing the suggest strong password saved confirmation snackbar -->
-  <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title" tools:ignore="UnusedResources" moz:removedIn="142">บันทึกรหัสผ่านแล้ว</string>
   <!-- Title for showing the suggest strong password updated confirmation snackbar -->
   <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">ปรับปรุงรหัสผ่านแล้ว</string>
-  <!-- Title for showing the username updated confirmation snackbar -->
-  <string name="mozac_feature_prompt_login_snackbar_username_updated" tools:ignore="UnusedResources" moz:removedIn="142">ปรับปรุงชื่อผู้ใช้แล้ว</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">ส่งข้อมูลไปยังไซต์นี้อีกครั้งไหม</string>
   <string name="mozac_feature_prompt_repost_message">การเรียกหน้านี้ใหม่อาจทำให้เกิดการกระทำซ้ำเช่นการส่งการชำระเงินหรือโพสต์ความคิดเห็นซ้ำ</string>
@@ -179,4 +184,12 @@
   <string name="mozac_feature_prompts_identity_credentials_continue">ดำเนินการต่อ</string>
   <!-- Text for the cancel button of the Identity Credential dialogs. -->
   <string name="mozac_feature_prompts_identity_credentials_cancel">ยกเลิก</string>
+  <!--
+    Email Mask Autofill
+
+    Text for the email mask prompt to allow users to fill an email input field in a sign up form with an email mask.
+  -->
+  <string name="mozac_feature_relay_chip_text">ใช้ตัวปกปิดอีเมล</string>
+  <!-- Informational text for the contextual feature recommendation (CFR) enabling the email mask aliases. The %s is the name of the service, "Firefox Relay". -->
+  <string name="mozac_feature_relay_email_masks_cfr">ใหม่! ตัวปกปิดอีเมลของ %s พร้อมใช้งานบนมือถือแล้ว</string>
 </resources>

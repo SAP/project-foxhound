@@ -20,7 +20,7 @@ def web_socket_do_extra_handshake(request):
         time.sleep(3)
     elif request.ws_protocol == "test-19":
         raise ValueError("Aborting (test-19)")
-    elif request.ws_protocol == "test-20" or request.ws_protocol == "test-17":
+    elif request.ws_protocol in {"test-20", "test-17"}:
         time.sleep(3)
     elif request.ws_protocol == "test-22":
         # The timeout is 5 seconds
@@ -49,10 +49,10 @@ def web_socket_passive_closing_handshake(request):
 
 
 def web_socket_transfer_data(request):
-    if request.ws_protocol == "test-1" or request.ws_protocol == "test-4":
+    if request.ws_protocol in {"test-1", "test-4"}:
         msgutil.send_message(request, "server data")
         msgutil.close_connection(request)
-    elif request.ws_protocol == "test-2.1" or request.ws_protocol == "test-2.2":
+    elif request.ws_protocol in {"test-2.1", "test-2.2"}:
         msgutil.close_connection(request)
     elif request.ws_protocol == "test-6":
         resp = "wrong message"
@@ -109,7 +109,7 @@ def web_socket_transfer_data(request):
         raise RuntimeError("test-15 should be disabled for now")
         # msgutil.close_connection(request, True)   # OBSOLETE 2nd arg
         # return
-    elif request.ws_protocol == "test-17" or request.ws_protocol == "test-21":
+    elif request.ws_protocol in {"test-17", "test-21"}:
         time.sleep(2)
         resp = "wrong message"
         if msgutil.receive_message(request) == "client data":

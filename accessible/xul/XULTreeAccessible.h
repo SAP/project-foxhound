@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_XULTreeAccessible_h__
-#define mozilla_a11y_XULTreeAccessible_h__
+#ifndef mozilla_a11y_XULTreeAccessible_h_
+#define mozilla_a11y_XULTreeAccessible_h_
 
 #include "nsITreeView.h"
 #include "XULListboxAccessible.h"
@@ -223,7 +223,7 @@ class XULTreeItemAccessible : public XULTreeItemAccessibleBase {
 
   // LocalAccessible
   virtual void Shutdown() override;
-  virtual ENameValueFlag Name(nsString& aName) const override;
+  virtual ENameValueFlag DirectName(nsString& aName) const override;
   virtual a11y::role NativeRole() const override;
 
   // XULTreeItemAccessibleBase

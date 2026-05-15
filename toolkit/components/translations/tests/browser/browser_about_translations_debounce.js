@@ -3,156 +3,114 @@
 
 "use strict";
 
-// runInPage calls ContentTask.spawn, which injects ContentTaskUtils in the
-// scope of the callback. Eslint doesn't know about that.
-/* global ContentTaskUtils */
-
 /**
- * Test the debounce behavior.
+ * This test case ensures that new inputs to the source text area are only picked
+ * up once every cycle of the debounce delay.
  */
 add_task(async function test_about_translations_debounce() {
-  const { runInPage, cleanup, resolveDownloads } = await openAboutTranslations({
+  const { aboutTranslationsTestUtils, cleanup } = await openAboutTranslations({
     languagePairs: [
       { fromLang: "en", toLang: "fr" },
       { fromLang: "fr", toLang: "en" },
     ],
   });
 
-  await runInPage(async ({ selectors }) => {
-    const { document, window } = content;
-    // Do not allow the debounce to come to completion.
-    Cu.waiveXrays(window).DEBOUNCE_DELAY = 5;
-
-    await ContentTaskUtils.waitForCondition(
-      () => {
-        return document.body.hasAttribute("ready");
-      },
-      "Waiting for the document to be ready.",
-      100,
-      200
-    );
-
-    /** @type {HTMLSelectElement} */
-    const fromSelect = document.querySelector(selectors.fromLanguageSelect);
-    /** @type {HTMLSelectElement} */
-    const toSelect = document.querySelector(selectors.toLanguageSelect);
-    /** @type {HTMLTextAreaElement} */
-    const translationTextarea = document.querySelector(
-      selectors.translationTextarea
-    );
-    /** @type {HTMLDivElement} */
-    const translationResultsPlaceholder = document.querySelector(
-      selectors.translationResultsPlaceholder
-    );
-
-    function setInput(element, value) {
-      element.value = value;
-      element.dispatchEvent(new Event("input"));
+  await aboutTranslationsTestUtils.assertEvents(
+    {
+      expected: [
+        [
+          AboutTranslationsTestUtils.Events.TranslationRequested,
+          { translationId: 1 },
+        ],
+        [AboutTranslationsTestUtils.Events.ShowTranslatingPlaceholder],
+      ],
+    },
+    async () => {
+      await aboutTranslationsTestUtils.setSourceLanguageSelectorValue("en");
+      await aboutTranslationsTestUtils.setTargetLanguageSelectorValue("fr");
+      await aboutTranslationsTestUtils.setSourceTextAreaValue("Hello world");
     }
+  );
 
-    is(
-      translationResultsPlaceholder.innerText,
-      "Translation",
-      "Showing default placeholder"
-    );
+  await aboutTranslationsTestUtils.assertEvents(
+    {
+      expected: [
+        [
+          AboutTranslationsTestUtils.Events.TranslationComplete,
+          { translationId: 1 },
+        ],
+      ],
+    },
+    async () => {
+      await aboutTranslationsTestUtils.resolveDownloads(1);
+    }
+  );
 
-    setInput(fromSelect, "en");
-    setInput(toSelect, "fr");
-    setInput(translationTextarea, "T");
-
-    // There's a slight delay when "Translation" becomes "Translating…"
-    await ContentTaskUtils.waitForCondition(
-      () => translationResultsPlaceholder.innerText === "Translating…",
-      "Showing translating text",
-      100,
-      200
-    );
+  await aboutTranslationsTestUtils.assertTranslatedText({
+    sourceLanguage: "en",
+    targetLanguage: "fr",
+    sourceText: "Hello world",
   });
 
-  await resolveDownloads(1); // en -> fr
+  await aboutTranslationsTestUtils.assertEvents(
+    {
+      unexpected: [
+        AboutTranslationsTestUtils.Events.URLUpdatedFromUI,
+        AboutTranslationsTestUtils.Events.TranslationRequested,
+      ],
+    },
+    async () => {
+      info("Temporarily increasing the debounce delay to one second.");
+      const oneSecondDelay = 1000;
+      await aboutTranslationsTestUtils.setDebounceDelay(oneSecondDelay);
+      await aboutTranslationsTestUtils.setSourceTextAreaValue(
+        "This text should not be translated"
+      );
 
-  await runInPage(async ({ selectors }) => {
-    const { document, window } = content;
-    // Do not allow the debounce to come to completion.
-    Cu.waiveXrays(window).DEBOUNCE_DELAY = 5;
+      info("Waiting half a second after updating the text.");
+      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+      await new Promise(resolve => setTimeout(resolve, oneSecondDelay / 2));
+    }
+  );
 
-    await ContentTaskUtils.waitForCondition(
-      () => {
-        return document.body.hasAttribute("ready");
-      },
-      "Waiting for the document to be ready.",
-      100,
-      200
-    );
+  info("Restoring the debounce delay to 200ms.");
+  await aboutTranslationsTestUtils.setDebounceDelay(200);
 
-    /** @type {HTMLTextAreaElement} */
-    const translationTextarea = document.querySelector(
-      selectors.translationTextarea
-    );
-    /** @type {HTMLDivElement} */
-    const translationResult = document.querySelector(
-      selectors.translationResult
-    );
-    /** @type {HTMLDivElement} */
-    const translationResultsPlaceholder = document.querySelector(
-      selectors.translationResultsPlaceholder
-    );
-
-    async function assertTranslationResult(translation) {
-      try {
-        await ContentTaskUtils.waitForCondition(
-          () => translation === translationResult.innerText,
-          `Waiting for: "${translation}"`,
-          100,
-          200
-        );
-      } catch (error) {
-        // The result wasn't found, but the assertion below will report the error.
-        console.error(error);
-      }
-
-      is(
-        translation,
-        translationResult.innerText,
-        "The text runs through the mocked translations engine."
+  await aboutTranslationsTestUtils.assertEvents(
+    {
+      expected: [
+        [
+          AboutTranslationsTestUtils.Events.URLUpdatedFromUI,
+          {
+            sourceLanguage: "en",
+            targetLanguage: "fr",
+            sourceText: "This text will be translated",
+          },
+        ],
+        [
+          AboutTranslationsTestUtils.Events.TranslationRequested,
+          { translationId: 2 },
+        ],
+        [
+          AboutTranslationsTestUtils.Events.TranslationComplete,
+          { translationId: 2 },
+        ],
+      ],
+      unexpected: [
+        AboutTranslationsTestUtils.Events.ShowTranslatingPlaceholder,
+      ],
+    },
+    async () => {
+      await aboutTranslationsTestUtils.setSourceTextAreaValue(
+        "This text will be translated"
       );
     }
-    function setInput(element, value) {
-      element.value = value;
-      element.dispatchEvent(new Event("input"));
-    }
+  );
 
-    info("Get the translations into a stable translationed state");
-
-    await assertTranslationResult("T [en to fr]");
-
-    is(
-      translationResultsPlaceholder.textContent,
-      "Translation",
-      "Has the default placeholder as content"
-    );
-    is(
-      translationResultsPlaceholder.innerText,
-      "",
-      "No longer showing any placeholder text"
-    );
-
-    info("Reset and pause the debounce state.");
-    Cu.waiveXrays(window).DEBOUNCE_DELAY = 1_000_000_000;
-    Cu.waiveXrays(window).DEBOUNCE_RUN_COUNT = 0;
-
-    info("Input text which will be debounced.");
-    setInput(translationTextarea, "T");
-    setInput(translationTextarea, "Te");
-    setInput(translationTextarea, "Tex");
-    is(Cu.waiveXrays(window).DEBOUNCE_RUN_COUNT, 0, "Debounce has not run.");
-
-    info("Allow the debounce to actually come to completion.");
-    Cu.waiveXrays(window).DEBOUNCE_DELAY = 5;
-    setInput(translationTextarea, "Text");
-
-    await assertTranslationResult("TEXT [en to fr]");
-    is(Cu.waiveXrays(window).DEBOUNCE_RUN_COUNT, 1, "Debounce ran once.");
+  await aboutTranslationsTestUtils.assertTranslatedText({
+    sourceLanguage: "en",
+    targetLanguage: "fr",
+    sourceText: "This text will be translated",
   });
 
   await cleanup();

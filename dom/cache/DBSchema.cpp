@@ -393,7 +393,8 @@ static_assert(
         nsIContentPolicy::TYPE_INTERNAL_EXTERNAL_RESOURCE == 61 &&
         nsIContentPolicy::TYPE_JSON == 62 &&
         nsIContentPolicy::TYPE_INTERNAL_JSON_PRELOAD == 63 &&
-        nsIContentPolicy::TYPE_END == 64,
+        nsIContentPolicy::TYPE_INTERNAL_IMAGE_NOTIFICATION == 64 &&
+        nsIContentPolicy::TYPE_END == 65,
     "nsContentPolicyType values are as expected");
 
 namespace {

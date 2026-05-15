@@ -15,7 +15,7 @@ add_task(async function () {
   await testFontHighlighting(view, inspector);
 
   info("Check that highlighting still works after reloading the page");
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await testFontHighlighting(view, inspector);
 

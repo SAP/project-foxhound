@@ -21,7 +21,9 @@ support-files = [
 ["browser_checkNonUndefinedStrings.js"]
 
 ["browser_checkOCSP.js"]
-skip-if = ["true"] # Bug 1596313
+skip-if = [
+  "true", # Bug 1596313
+]
 
 ["browser_checkStandAlonePage.js"]
 
@@ -30,7 +32,9 @@ skip-if = ["true"] # Bug 1596313
 ["browser_downloadLink.js"]
 
 ["browser_handleMultipleCertsURL.js"]
-skip-if = ["true"] # Bug 1626853
+skip-if = [
+  "true", # Bug 1626853
+]
 
 ["browser_openTabAndSendCertInfo.js"]
 support-files = ["dummy_page.html"]

@@ -12,24 +12,112 @@
 <script type="text/javascript">
 "use strict";
 
+add_setup(async () => {
+  // Enable logging to get actionable information when the test fails.
+  // E.g. the idleService.idleTime getter triggers the following logs:
+  // https://searchfox.org/mozilla-central/rev/1eb4f27ece7cb96ac94b635ad0dc95c00d1443db/widget/nsUserIdleService.cpp#633-635,641-648
+  // "idleService: Get idle time: polled %u msec, valid = %d"
+  // "idleService: Get idle time: time since reset %u msec"
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["logging.config.add_timestamp", true],
+      ["logging.idleService", 5], // Logs from nsUserIdleService.cpp
+      ["logging.nsIUserIdleService", 5], // Logs from nsUserIdleServiceGTK.cpp
+    ],
+  });
+});
+
+async function resetIdleToActive() {
+  await SpecialPowers.spawnChrome([], () => {
+    const idleService = Cc["@mozilla.org/widget/useridleservice;1"].getService(Ci.nsIUserIdleServiceInternal);
+    idleService.resetIdleTimeOut(0);
+  });
+}
+
 add_task(async function testWithRealIdleService() {
-  function background() {
-    browser.test.onMessage.addListener(async (msg, ...args) => {
-      let detectionInterval = args[0];
-      if (msg == "addListener") {
-        browser.idle.setDetectionInterval(detectionInterval);
-        let status = await browser.idle.queryState(detectionInterval);
-        browser.test.assertEq("active", status, "Idle status is active");
-        browser.idle.onStateChanged.addListener(async newState => {
-          browser.test.assertEq("idle", newState, "listener fired with the expected state");
-          browser.test.sendMessage("listenerFired");
-          let status = await browser.idle.queryState(detectionInterval);
-          browser.test.assertEq("idle", status, "Idle status is idle");
-          browser.test.notifyPass("idle");
+  async function background() {
+    // The minimum detection interval accepted by idle.queryState() and
+    // idle.setDetectionInterval() is 15 seconds.
+    const MINIMUM_DETECTION_INTERVAL = 15;
+
+    async function callResetIdleToActive() {
+      return new Promise(resolve => {
+        browser.test.onMessage.addListener(function listener(msg) {
+          browser.test.assertEq("resetIdleToActiveDone", msg, "Expected msg");
+          browser.test.onMessage.removeListener(listener);
+          resolve();
         });
-        browser.test.sendMessage("listenerAdded");
+        browser.test.sendMessage("resetIdleToActive");
+      });
+    }
+
+    await callResetIdleToActive();
+    // We have just reset idle, so idle.queryState() should return "active".
+    let status = await browser.idle.queryState(MINIMUM_DETECTION_INTERVAL);
+    browser.test.assertEq("active", status, "Idle status is active");
+
+    let counter = 0;
+    let resetToActiveAttempts = 0;
+    let seenIdle = false;
+    let seenActive = false;
+    browser.idle.onStateChanged.addListener(async function listener(newState) {
+      const num = ++counter;
+      // At the first event we expect active->idle, and then back and forth.
+      const expectedState = num % 2 === 1 ? "idle" : "active";
+      browser.test.assertEq(
+        expectedState,
+        newState,
+        `state when idle.onStateChanged fires ${num}x`
+      );
+
+      // Note: although we pass MINIMUM_DETECTION_INTERVAL here, we lower its
+      // value to SMALL_IDLE_DETECTION_INTERVAL_IN_SECONDS elsewhere, to make
+      // sure that the test has a high chance of detecting idle.
+      let state = await browser.idle.queryState(MINIMUM_DETECTION_INTERVAL);
+      // idle->active can happen during dispatch if the user triggers input.
+      // active->idle can happen if the test runs slow and the idle interval
+      // has elapsed, especially because we simulate a very short interval.
+      if (state !== expectedState) {
+        browser.test.log(`Unexpected queryState at ${num}: ${state}`);
+        if (expectedState === "active" && seenIdle && !seenActive) {
+          // To avoid retrying forever, give up after a few attempts.
+          // When we give up, the test will time out awaiting idle_to_active.
+          // We don't expect to hit this situation more than a handful of times
+          // but retry 20 times to fail fast (tests usually time out after 30
+          // seconds of inactivity).
+          const MAX_RETRY_RESET_TO_ACTIVE_ATTEMPTS = 20;
+          if (++resetToActiveAttempts > MAX_RETRY_RESET_TO_ACTIVE_ATTEMPTS) {
+            browser.test.fail("queryState() does not match onStateChanged");
+            return;
+          }
+          browser.test.log(`Retry attempt ${resetToActiveAttempts}`);
+          // Trigger idle -> active transition to retry the check.
+          callResetIdleToActive();
+        }
+        // If expecting "idle", just wait a little bit. Eventually enough time
+        // has elapsed to trigger the idle state.
+        return;
+      }
+
+      browser.test.assertEq(expectedState, state, `queryState at ${num}`);
+
+      if (!seenIdle && newState === "idle") {
+        seenIdle = true;
+        browser.test.sendMessage("active_to_idle");
+        return;
+      }
+
+      if (seenIdle && !seenActive && newState === "active") {
+        seenActive = true;
+        browser.idle.onStateChanged.removeListener(listener);
+        browser.test.sendMessage("idle_to_active");
       }
     });
+
+    // The default detection interval is 60 seconds. Lower it to the minimum.
+    await browser.idle.setDetectionInterval(MINIMUM_DETECTION_INTERVAL);
+
+    browser.test.sendMessage("listenerAdded");
   }
 
   let extension = ExtensionTestUtils.loadExtension({
@@ -39,25 +127,68 @@ add_task(async function testWithRealIdleService() {
     },
   });
 
+  // The test can call resetIdleToActive repeatedly. Collect the pending calls
+  // to ensure that we wait for the calls to complete and clean up at the end
+  // of the test.
+  const pendingIdleResetters = [];
+  extension.onMessage("resetIdleToActive", async () => {
+    info(`Going to reset idle timeout to force idle state to be "active"`);
+    let promise = resetIdleToActive();
+    pendingIdleResetters.push(promise);
+    await promise;
+    extension.sendMessage("resetIdleToActiveDone");
+  });
+
   await extension.startup();
 
-  let chromeScript = loadChromeScript(() => {
-    const {sendAsyncMessage} = this;
-    const idleService = Cc["@mozilla.org/widget/useridleservice;1"].getService(Ci.nsIUserIdleService);
-    let idleTime = idleService.idleTime;
-    sendAsyncMessage("detectionInterval", Math.max(Math.ceil(idleTime / 1000) + 10, 15));
-  });
-  let detectionInterval = await chromeScript.promiseOneMessage("detectionInterval");
-  chromeScript.destroy();
-
-  info(`Setting interval to ${detectionInterval}`);
-  extension.sendMessage("addListener", detectionInterval);
   await extension.awaitMessage("listenerAdded");
   info("Listener added");
-  await extension.awaitMessage("listenerFired");
-  info("Listener fired");
-  await extension.awaitFinish("idle");
+
+  // The test extension now waits for idle.onStateChanged, to detect transition
+  // from "active" to "idle". The minimum detectionInterval accepted by the
+  // idle.queryState & idle.setDetectionInterval APIs is 15 seconds. It is very
+  // unlikely for the system to be idle for 15 seconds straight.
+  //
+  // To avoid waiting for at least 15 seconds or even timing out due to a busy
+  // system, we are artificially lowering the detectionInterval from 15 seconds
+  // to 1 second.
+  //
+  // If you intentionally want to delay the completion of this test, repeatedly
+  // hit a keyboard key while this test is running. That also confirms that the
+  // idle API is working as intended.
+  info(`Going to artificially lower detectionInterval to enter "idle" state`);
+  await SpecialPowers.spawnChrome([extension.id], (extId) => {
+    const SMALL_IDLE_DETECTION_INTERVAL_IN_SECONDS = 1;
+    const { WebExtensionPolicy } = Cu.getGlobalForObject(Services);
+    const { backgroundContext } = WebExtensionPolicy.getByID(extId).extension;
+
+    // The idle extension APIs have already been invoked by the test extension,
+    // so its implementation is expected to be cached here:
+    const apiPaths = backgroundContext.apiCan.apiPaths;
+    const queryStateOrig = apiPaths.get("idle.queryState");
+    is(typeof queryStateOrig, "function", "idle.queryState is a function");
+    function queryState(...args) {
+      info(`Intercepted idle.queryState call: using small detection interval`);
+      args[0] = SMALL_IDLE_DETECTION_INTERVAL_IN_SECONDS;
+      return queryStateOrig.apply(this, args);
+    }
+    apiPaths.set("idle.queryState", queryState);
+    const setDetectionInterval = apiPaths.get("idle.setDetectionInterval")
+    is(typeof setDetectionInterval, "function", "setDetectionInterval is func");
+    setDetectionInterval(SMALL_IDLE_DETECTION_INTERVAL_IN_SECONDS);
+  });
+
+  info("Waiting for active-to-idle transition");
+  await extension.awaitMessage("active_to_idle");
+
+  info(`Going to reset idle timeout to force idle state to be "active" again`);
+  await resetIdleToActive();
+
+  info("Waiting for idle-to-active transition");
+  await extension.awaitMessage("idle_to_active");
   await extension.unload();
+
+  await Promise.all(pendingIdleResetters);
 });
 
 </script>

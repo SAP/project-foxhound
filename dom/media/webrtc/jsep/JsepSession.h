@@ -2,24 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _JSEPSESSION_H_
-#define _JSEPSESSION_H_
+#ifndef JSEPSESSION_H_
+#define JSEPSESSION_H_
 
-#include <map>
 #include <string>
 #include <vector>
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
-#include "nsError.h"
-
-#include "jsep/JsepTransport.h"
-#include "sdp/Sdp.h"
 
 #include "jsep/JsepTransceiver.h"
-
+#include "jsep/JsepTransport.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/PeerConnectionObserverEnumsBinding.h"
+#include "nsError.h"
+#include "sdp/Sdp.h"
 
 namespace mozilla {
 

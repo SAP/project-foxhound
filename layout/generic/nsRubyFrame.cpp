@@ -111,8 +111,9 @@ void nsRubyFrame::Reflow(nsPresContext* aPresContext,
   // Grab overflow frames from prev-in-flow and its own.
   MoveInlineOverflowToChildList(aReflowInput.mLineLayout->LineContainerFrame());
 
-  // Clear leadings
+  // Clear leadings and ruby-positioning metrics.
   mLeadings.Reset();
+  mRubyMetrics = mozilla::RubyMetrics();
 
   // Begin the span for the ruby frame
   WritingMode frameWM = aReflowInput.GetWritingMode();
@@ -279,10 +280,35 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
   baseRect.BStart(lineWM) = aBlockStartAscent - baseMetrics.BlockStartAscent();
   // The rect for offsets of text containers.
   LogicalRect offsetRect = baseRect;
-  RubyBlockLeadings descLeadings = aBaseContainer->GetDescendantLeadings();
-  offsetRect.BStart(lineWM) -= descLeadings.mStart;
-  offsetRect.BSize(lineWM) += descLeadings.mStart + descLeadings.mEnd;
+
+  // Should we do ruby positioning based on em-normalized ascent/descent?
+  // This seems to be roughly what Chrome does, and with many fonts it gives
+  // a better result (ruby closer to the base text) than using the font's
+  // declared metrics, if its ascent/descent incorporate lots of extra space.
+  bool normalizeRubyMetrics = aPresContext->NormalizeRubyMetrics();
+  float rubyMetricsFactor =
+      normalizeRubyMetrics ? aPresContext->RubyPositioningFactor() : 0.0f;
+  mozilla::RubyMetrics rubyMetrics;
+
+  if (normalizeRubyMetrics) {
+    // Get base container's ascent & descent, normalized to 1em (scaled by the
+    // ruby positioning factor) overall extent, and adjust offsetRect to match.
+    rubyMetrics = aBaseContainer->RubyMetrics(rubyMetricsFactor);
+    offsetRect.BStart(lineWM) +=
+        baseMetrics.BlockStartAscent() - rubyMetrics.mAscent;
+    offsetRect.BSize(lineWM) = rubyMetrics.mAscent + rubyMetrics.mDescent;
+  } else {
+    RubyBlockLeadings descLeadings = aBaseContainer->GetDescendantLeadings();
+    offsetRect.BStart(lineWM) -= descLeadings.mStart;
+    offsetRect.BSize(lineWM) += descLeadings.mStart + descLeadings.mEnd;
+  }
+
   Maybe<LineRelativeDir> lastLineSide;
+
+  // Keep track of any leading required on block-start and/or block-end sides
+  // of the base frame to accommodate annotations that project beyond it.
+  nscoord startLeading = 0, endLeading = 0;
+
   for (uint32_t i = 0; i < rtcCount; i++) {
     nsRubyTextContainerFrame* textContainer = textContainers[i];
     WritingMode rtcWM = textContainer->GetWritingMode();
@@ -297,6 +323,25 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
     // handled when reflowing the base containers.
     NS_ASSERTION(textReflowStatus.IsEmpty(),
                  "Ruby text container must not break itself inside");
+
+    nscoord textEmHeight = 0;
+    nscoord ascentDelta = 0;
+    nscoord bStartMargin = 0;
+    if (normalizeRubyMetrics) {
+      auto [ascent, descent] = textContainer->RubyMetrics(rubyMetricsFactor);
+      const auto* firstChild = textContainer->PrincipalChildList().FirstChild();
+      textEmHeight = ascent + descent;
+      nscoord textBlockStartAscent =
+          firstChild && textMetrics.BlockStartAscent() ==
+                            ReflowOutput::ASK_FOR_BASELINE
+              ? firstChild->GetLogicalBaseline(lineWM)
+              : textMetrics.BlockStartAscent();
+      ascentDelta = textBlockStartAscent - ascent;
+      bStartMargin =
+          firstChild ? firstChild->GetLogicalUsedMargin(lineWM).BStart(lineWM)
+                     : 0;
+    }
+
     const LogicalSize size = textMetrics.Size(lineWM);
     textContainer->SetSize(lineWM, size);
 
@@ -351,13 +396,35 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
         position = offsetRect.Origin(lineWM) + offset;
         aReflowInput.mLineLayout->AdvanceICoord(size.ISize(lineWM));
       } else if (logicalSide == LogicalSide::BStart) {
-        offsetRect.BStart(lineWM) -= size.BSize(lineWM);
-        offsetRect.BSize(lineWM) += size.BSize(lineWM);
-        position = offsetRect.Origin(lineWM);
+        if (normalizeRubyMetrics) {
+          offsetRect.BStart(lineWM) -= textEmHeight;
+          offsetRect.BSize(lineWM) += textEmHeight;
+          position.I(lineWM) = offsetRect.IStart(lineWM);
+          position.B(lineWM) = offsetRect.BStart(lineWM) - ascentDelta;
+          rubyMetrics.mAscent += textEmHeight;
+        } else {
+          offsetRect.BStart(lineWM) -= size.BSize(lineWM);
+          offsetRect.BSize(lineWM) += size.BSize(lineWM);
+          position = offsetRect.Origin(lineWM);
+        }
+        // Record leading that will be needed on the block-start side to
+        // accommodate the ruby text.
+        startLeading = -position.B(lineWM);
       } else if (logicalSide == LogicalSide::BEnd) {
-        position = offsetRect.Origin(lineWM) +
-                   LogicalPoint(lineWM, 0, offsetRect.BSize(lineWM));
-        offsetRect.BSize(lineWM) += size.BSize(lineWM);
+        if (normalizeRubyMetrics) {
+          position.I(lineWM) = offsetRect.IStart(lineWM);
+          position.B(lineWM) =
+              offsetRect.BEnd(lineWM) - ascentDelta - bStartMargin;
+          offsetRect.BSize(lineWM) += textEmHeight;
+          rubyMetrics.mDescent += textEmHeight;
+        } else {
+          position = offsetRect.Origin(lineWM) +
+                     LogicalPoint(lineWM, 0, offsetRect.BSize(lineWM));
+          offsetRect.BSize(lineWM) += size.BSize(lineWM);
+        }
+        // Record leading that will be needed on the block-end side to
+        // accommodate the ruby text.
+        endLeading = position.B(lineWM) + size.BSize(lineWM) - aBlockSize;
       } else {
         MOZ_ASSERT_UNREACHABLE("???");
       }
@@ -380,17 +447,17 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
     aReflowInput.mLineLayout->AdvanceICoord(deltaISize);
   }
 
-  // Set block leadings of the base container.
-  // The leadings are the difference between the offsetRect and the rect
-  // of this ruby container, which has block start zero and block size
-  // aBlockSize.
-  nscoord startLeading = -offsetRect.BStart(lineWM);
-  nscoord endLeading = offsetRect.BEnd(lineWM) - aBlockSize;
-  // XXX When bug 765861 gets fixed, this warning should be upgraded.
-  NS_WARNING_ASSERTION(startLeading >= 0 && endLeading >= 0,
-                       "Leadings should be non-negative (because adding "
-                       "ruby annotation can only increase the size)");
-  mLeadings.Update(startLeading, endLeading);
+  // Record leadings needed for the block container.
+  // The leadings are the difference between the rect of this ruby container,
+  // which has block start zero and block size aBlockSize, and the block-start/
+  // block-end edges of the outermost annotations.
+  // We clamp the values here because if there was significant leading built
+  // into the font's original metrics, the annotations may be entirely within
+  // this space, but we don't want to introduce negative leading.
+  mLeadings.Update(std::max(0, startLeading), std::max(0, endLeading));
+
+  // Record metrics to be used if any further annotations are added.
+  mRubyMetrics.CombineWith(rubyMetrics);
 }
 
 nsRubyBaseContainerFrame* nsRubyFrame::PullOneSegment(

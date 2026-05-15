@@ -2010,6 +2010,16 @@ function rint32tobigint(i) {
     return i;
 }
 
+let uceFault_int32tobigint_nonnegative = eval(`(${uceFault})`.replace('uceFault', 'uceFault_int32tobigint_nonnegative'));
+function rint32tobigint_nonnegative(i) {
+    i = Math.max(i, 0);
+    var x = BigInt(i);
+    if (uceFault_int32tobigint_nonnegative(i) || uceFault_int32tobigint_nonnegative(i))
+        assertEq(x, 99n);
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
 let uceFault_nantozero_nan = eval(`(${uceFault})`.replace('uceFault', 'uceFault_nantozero_nan'));
 function rnantozero_nan(i) {
     // Note: |x| must be Double-typed.
@@ -2060,6 +2070,44 @@ function ratomicsislockfree_false(i) {
     if (uceFault_ratomicsislockfree_false(i) || uceFault_ratomicsislockfree_false(i))
         assertEq(y, false);
     assertRecoveredOnBailout(y, true);
+    return i;
+}
+
+let uceFault_rstrictconstantcompareint32_eq = eval(`(${uceFault})`.replace('uceFault', 'uceFault_rstrictconstantcompareint32_eq'));
+function rstrictconstantcompareint32_eq(i) {
+    var x = i === 0;
+    if (uceFault_rstrictconstantcompareint32_eq(i) || uceFault_rstrictconstantcompareint32_eq(i))
+        assertEq(x, false /* = 0 === 99 */);
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
+let uceFault_rstrictconstantcompareint32_ne = eval(`(${uceFault})`.replace('uceFault', 'uceFault_rstrictconstantcompareint32_ne'));
+function rstrictconstantcompareint32_ne(i) {
+    var x = i !== 0;
+    if (uceFault_rstrictconstantcompareint32_ne(i) || uceFault_rstrictconstantcompareint32_ne(i))
+        assertEq(x, true /* = 0 !== 99 */);
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
+let uceFault_rstrictconstantcompareboolean_eq = eval(`(${uceFault})`.replace('uceFault', 'uceFault_rstrictconstantcompareboolean_eq'));
+function rstrictconstantcompareboolean_eq(i) {
+    var value = [null, true][i & 1];
+    var x = value === true;
+    if (uceFault_rstrictconstantcompareboolean_eq(i) || uceFault_rstrictconstantcompareboolean_eq(i))
+        assertEq(x, true /* true === [null, true][99 & 1] */);
+    assertRecoveredOnBailout(x, true);
+    return i;
+}
+
+let uceFault_rstrictconstantcompareboolean_ne = eval(`(${uceFault})`.replace('uceFault', 'uceFault_rstrictconstantcompareboolean_ne'));
+function rstrictconstantcompareboolean_ne(i) {
+    var value = [null, true][i & 1];
+    var x = value !== true;
+    if (uceFault_rstrictconstantcompareboolean_ne(i) || uceFault_rstrictconstantcompareboolean_ne(i))
+        assertEq(x, false /* true === [null, true][99 & 1] */);
+    assertRecoveredOnBailout(x, true);
     return i;
 }
 
@@ -2267,11 +2315,16 @@ for (j = 100 - max; j < 100; j++) {
     rbigintasint(BigInt(i));
     rbigintasuint(BigInt(i));
     rint32tobigint(i);
+    rint32tobigint_nonnegative(i);
     rnantozero_nan(i);
     rnantozero_poszero(i);
     rnantozero_negzero(i);
     ratomicsislockfree_true(i);
     ratomicsislockfree_false(i);
+    rstrictconstantcompareint32_eq(i);
+    rstrictconstantcompareint32_ne(i);
+    rstrictconstantcompareboolean_eq(i);
+    rstrictconstantcompareboolean_ne(i);
 }
 
 // Test that we can refer multiple time to the same recover instruction, as well

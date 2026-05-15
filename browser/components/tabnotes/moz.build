@@ -1,0 +1,31 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
+
+MOZ_SRC_FILES += [
+    "CanonicalURL.sys.mjs",
+    "TabNotes.sys.mjs",
+    "TabNotesController.sys.mjs",
+]
+
+FINAL_TARGET_FILES.actors += [
+    "CanonicalURLChild.sys.mjs",
+    "CanonicalURLParent.sys.mjs",
+]
+
+EXTRA_COMPONENTS += [
+    "tabnotes.manifest",
+]
+
+XPCSHELL_TESTS_MANIFESTS += [
+    "test/unit/xpcshell.toml",
+]
+
+BROWSER_CHROME_MANIFESTS += [
+    "test/browser/browser.toml",
+]

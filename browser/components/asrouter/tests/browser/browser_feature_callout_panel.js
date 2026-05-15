@@ -264,6 +264,14 @@ add_task(async function feature_callout_split_dismiss_button() {
 
   await testCalloutHiddenIf(
     async (win, calloutContainer) => {
+      // Wait until the submenu markup exists, since SecondaryCTA targeting renders async
+      await BrowserTestUtils.waitForCondition(
+        () =>
+          calloutContainer.querySelector(
+            `#${calloutId} .fxms-multi-stage-submenu`
+          ),
+        "Wait for submenu to be attached"
+      );
       let splitButtonContainer = calloutContainer.querySelector(
         `#${calloutId} .split-button-container`
       );

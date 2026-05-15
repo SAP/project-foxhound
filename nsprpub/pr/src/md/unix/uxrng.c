@@ -21,31 +21,6 @@ static size_t GetHighResClock(void* buf, size_t maxbytes) {
   return 0;
 }
 
-#elif defined(HPUX)
-
-#  ifdef __ia64
-#    include <ia64/sys/inline.h>
-
-static size_t GetHighResClock(void* buf, size_t maxbytes) {
-  PRUint64 t;
-
-#    ifdef __GNUC__
-  __asm__ __volatile__("mov %0 = ar.itc" : "=r"(t));
-#    else
-  t = _Asm_mov_from_ar(_AREG44);
-#    endif
-  return _pr_CopyLowBits(buf, maxbytes, &t, sizeof(t));
-}
-#  else
-static size_t GetHighResClock(void* buf, size_t maxbytes) {
-  extern int ret_cr16();
-  int cr16val;
-
-  cr16val = ret_cr16();
-  return (_pr_CopyLowBits(buf, maxbytes, &cr16val, sizeof(cr16val)));
-}
-#  endif
-
 #elif defined(AIX)
 
 static size_t GetHighResClock(void* buf, size_t maxbytes) { return 0; }

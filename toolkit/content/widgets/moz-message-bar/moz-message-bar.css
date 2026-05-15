@@ -96,7 +96,7 @@
 /* MozMessageBar heading style */
 
 .heading {
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
 }
 
 /* MozMessageBar message style */

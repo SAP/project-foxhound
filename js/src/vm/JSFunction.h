@@ -769,10 +769,10 @@ static_assert(
 static_assert(unsigned(JSFunction::AtomSlot) ==
               unsigned(JS::shadow::Function::AtomSlot));
 
-extern JSString* fun_toStringHelper(JSContext* cx, js::HandleObject obj,
-                                    bool isToSource);
-
 namespace js {
+
+extern JSString* fun_toStringHelper(JSContext* cx, HandleObject obj,
+                                    bool isToSource);
 
 extern bool Function(JSContext* cx, unsigned argc, Value* vp);
 

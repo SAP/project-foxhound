@@ -11,9 +11,8 @@
 #ifndef MODULES_DESKTOP_CAPTURE_DESKTOP_CAPTURER_H_
 #define MODULES_DESKTOP_CAPTURE_DESKTOP_CAPTURER_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -22,11 +21,8 @@
 // TODO(alcooper): Update include usage in downstream consumers and then change
 // this to a forward declaration.
 #include "modules/desktop_capture/delegated_source_list_controller.h"
-#if defined(WEBRTC_USE_GIO)
 #include "modules/desktop_capture/desktop_capture_metadata.h"
-#endif  // defined(WEBRTC_USE_GIO)
 #include "modules/desktop_capture/desktop_capture_types.h"
-#include "modules/desktop_capture/desktop_frame.h"
 #include "modules/desktop_capture/shared_memory.h"
 #include "rtc_base/system/rtc_export.h"
 
@@ -36,6 +32,7 @@ void RTC_EXPORT LogDesktopCapturerFullscreenDetectorUsage();
 
 class DesktopCaptureOptions;
 class DesktopFrame;
+class DesktopVector;
 
 // Abstract interface for screen and window capturers.
 class RTC_EXPORT DesktopCapturer {

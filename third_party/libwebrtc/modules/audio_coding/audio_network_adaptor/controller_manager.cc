@@ -10,22 +10,31 @@
 
 #include "modules/audio_coding/audio_network_adaptor/controller_manager.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <map>
 #include <memory>
+#include <optional>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "modules/audio_coding/audio_network_adaptor/bitrate_controller.h"
 #include "modules/audio_coding/audio_network_adaptor/channel_controller.h"
+#include "modules/audio_coding/audio_network_adaptor/controller.h"
 #include "modules/audio_coding/audio_network_adaptor/debug_dump_writer.h"
 #include "modules/audio_coding/audio_network_adaptor/dtx_controller.h"
 #include "modules/audio_coding/audio_network_adaptor/fec_controller_plr_based.h"
 #include "modules/audio_coding/audio_network_adaptor/frame_length_controller.h"
 #include "modules/audio_coding/audio_network_adaptor/frame_length_controller_v2.h"
 #include "modules/audio_coding/audio_network_adaptor/util/threshold_curve.h"
-#include "rtc_base/logging.h"
-#include "rtc_base/time_utils.h"
+#include "rtc_base/checks.h"
 
 #if WEBRTC_ENABLE_PROTOBUF
 #ifdef WEBRTC_ANDROID_PLATFORM_BUILD
@@ -43,6 +52,7 @@ namespace {
 #if WEBRTC_ENABLE_PROTOBUF
 
 std::unique_ptr<FecControllerPlrBased> CreateFecControllerPlrBased(
+    const Environment& env,
     const audio_network_adaptor::config::FecController& config,
     bool initial_fec_enabled) {
   RTC_CHECK(config.has_fec_enabling_threshold());
@@ -61,8 +71,9 @@ std::unique_ptr<FecControllerPlrBased> CreateFecControllerPlrBased(
   RTC_CHECK(fec_disabling_threshold.has_high_bandwidth_bps());
   RTC_CHECK(fec_disabling_threshold.has_high_bandwidth_packet_loss());
 
-  return std::unique_ptr<FecControllerPlrBased>(
-      new FecControllerPlrBased(FecControllerPlrBased::Config(
+  return std::make_unique<FecControllerPlrBased>(
+      env,
+      FecControllerPlrBased::Config(
           initial_fec_enabled,
           ThresholdCurve(fec_enabling_threshold.low_bandwidth_bps(),
                          fec_enabling_threshold.low_bandwidth_packet_loss(),
@@ -72,12 +83,12 @@ std::unique_ptr<FecControllerPlrBased> CreateFecControllerPlrBased(
                          fec_disabling_threshold.low_bandwidth_packet_loss(),
                          fec_disabling_threshold.high_bandwidth_bps(),
                          fec_disabling_threshold.high_bandwidth_packet_loss()),
-          config.time_constant_ms())));
+          config.time_constant_ms()));
 }
 
 std::unique_ptr<FrameLengthController> CreateFrameLengthController(
     const audio_network_adaptor::config::FrameLengthController& config,
-    rtc::ArrayView<const int> encoder_frame_lengths_ms,
+    ArrayView<const int> encoder_frame_lengths_ms,
     int initial_frame_length_ms,
     int min_encoder_bitrate_bps) {
   RTC_CHECK(config.has_fl_increasing_packet_loss_fraction());
@@ -201,7 +212,7 @@ std::unique_ptr<BitrateController> CreateBitrateController(
 
 std::unique_ptr<FrameLengthControllerV2> CreateFrameLengthControllerV2(
     const audio_network_adaptor::config::FrameLengthControllerV2& config,
-    rtc::ArrayView<const int> encoder_frame_lengths_ms) {
+    ArrayView<const int> encoder_frame_lengths_ms) {
   return std::make_unique<FrameLengthControllerV2>(
       encoder_frame_lengths_ms, config.min_payload_bitrate_bps(),
       config.use_slow_adaptation());
@@ -218,25 +229,10 @@ ControllerManagerImpl::Config::Config(int min_reordering_time_ms,
 ControllerManagerImpl::Config::~Config() = default;
 
 std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
+    const Environment& env,
     absl::string_view config_string,
     size_t num_encoder_channels,
-    rtc::ArrayView<const int> encoder_frame_lengths_ms,
-    int min_encoder_bitrate_bps,
-    size_t intial_channels_to_encode,
-    int initial_frame_length_ms,
-    int initial_bitrate_bps,
-    bool initial_fec_enabled,
-    bool initial_dtx_enabled) {
-  return Create(config_string, num_encoder_channels, encoder_frame_lengths_ms,
-                min_encoder_bitrate_bps, intial_channels_to_encode,
-                initial_frame_length_ms, initial_bitrate_bps,
-                initial_fec_enabled, initial_dtx_enabled, nullptr);
-}
-
-std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
-    absl::string_view config_string,
-    size_t num_encoder_channels,
-    rtc::ArrayView<const int> encoder_frame_lengths_ms,
+    ArrayView<const int> encoder_frame_lengths_ms,
     int min_encoder_bitrate_bps,
     size_t intial_channels_to_encode,
     int initial_frame_length_ms,
@@ -249,8 +245,8 @@ std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
   RTC_CHECK(
       controller_manager_config.ParseFromString(std::string(config_string)));
   if (debug_dump_writer)
-    debug_dump_writer->DumpControllerManagerConfig(controller_manager_config,
-                                                   TimeMillis());
+    debug_dump_writer->DumpControllerManagerConfig(
+        controller_manager_config, env.clock().TimeInMilliseconds());
 
   std::vector<std::unique_ptr<Controller>> controllers;
   std::map<const Controller*, std::pair<int, float>> scoring_points;
@@ -261,7 +257,7 @@ std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
     switch (controller_config.controller_case()) {
       case audio_network_adaptor::config::Controller::kFecController:
         controller = CreateFecControllerPlrBased(
-            controller_config.fec_controller(), initial_fec_enabled);
+            env, controller_config.fec_controller(), initial_fec_enabled);
         break;
       case audio_network_adaptor::config::Controller::kFecControllerRplrBased:
         // FecControllerRplrBased has been removed and can't be used anymore.
@@ -306,18 +302,19 @@ std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
     controllers.push_back(std::move(controller));
   }
 
-  if (scoring_points.size() == 0) {
-    return std::unique_ptr<ControllerManagerImpl>(
-        new ControllerManagerImpl(ControllerManagerImpl::Config(0, 0),
-                                  std::move(controllers), scoring_points));
+  if (scoring_points.empty()) {
+    return std::make_unique<ControllerManagerImpl>(
+        env, ControllerManagerImpl::Config(0, 0), std::move(controllers),
+        scoring_points);
   } else {
     RTC_CHECK(controller_manager_config.has_min_reordering_time_ms());
     RTC_CHECK(controller_manager_config.has_min_reordering_squared_distance());
-    return std::unique_ptr<ControllerManagerImpl>(new ControllerManagerImpl(
+    return std::make_unique<ControllerManagerImpl>(
+        env,
         ControllerManagerImpl::Config(
             controller_manager_config.min_reordering_time_ms(),
             controller_manager_config.min_reordering_squared_distance()),
-        std::move(controllers), scoring_points));
+        std::move(controllers), scoring_points);
   }
 
 #else
@@ -326,17 +323,17 @@ std::unique_ptr<ControllerManager> ControllerManagerImpl::Create(
 #endif  // WEBRTC_ENABLE_PROTOBUF
 }
 
-ControllerManagerImpl::ControllerManagerImpl(const Config& config)
-    : ControllerManagerImpl(
-          config,
-          std::vector<std::unique_ptr<Controller>>(),
-          std::map<const Controller*, std::pair<int, float>>()) {}
+ControllerManagerImpl::ControllerManagerImpl(const Environment& env,
+                                             const Config& config)
+    : ControllerManagerImpl(env, config, {}, {}) {}
 
 ControllerManagerImpl::ControllerManagerImpl(
+    const Environment& env,
     const Config& config,
     std::vector<std::unique_ptr<Controller>> controllers,
     const std::map<const Controller*, std::pair<int, float>>& scoring_points)
-    : config_(config),
+    : env_(env),
+      config_(config),
       controllers_(std::move(controllers)),
       last_reordering_time_ms_(std::nullopt),
       last_scoring_point_(0, 0.0) {
@@ -354,13 +351,13 @@ ControllerManagerImpl::~ControllerManagerImpl() = default;
 
 std::vector<Controller*> ControllerManagerImpl::GetSortedControllers(
     const Controller::NetworkMetrics& metrics) {
-  if (controller_scoring_points_.size() == 0)
+  if (controller_scoring_points_.empty())
     return default_sorted_controllers_;
 
   if (!metrics.uplink_bandwidth_bps || !metrics.uplink_packet_loss_fraction)
     return sorted_controllers_;
 
-  const int64_t now_ms = TimeMillis();
+  const int64_t now_ms = env_.clock().TimeInMilliseconds();
   if (last_reordering_time_ms_ &&
       now_ms - *last_reordering_time_ms_ < config_.min_reordering_time_ms)
     return sorted_controllers_;

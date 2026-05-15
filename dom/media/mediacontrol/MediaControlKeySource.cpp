@@ -6,9 +6,9 @@
 
 #include "MediaControlKeySource.h"
 
-#include "MediaController.h"
-#include "MediaControlUtils.h"
 #include "MediaControlService.h"
+#include "MediaControlUtils.h"
+#include "MediaController.h"
 #include "mozilla/Logging.h"
 
 namespace mozilla::dom {

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Content description (not visible, for screen readers etc.): Description for the overflow menu button in the browser toolbar. -->
   <string name="mozac_browser_toolbar_menu_button">نومگه</string>
@@ -13,7 +20,7 @@
   <!-- Content description: For the site security information icon (the site security icon). -->
   <string name="mozac_browser_toolbar_content_description_site_info">دووسمندیا سایت</string>
   <!-- Announcement made by the screen reader when the progress bar is shown and a page is loading -->
-  <string name="mozac_browser_toolbar_progress_loading">هونی بار اکونه</string>
+  <string name="mozac_browser_toolbar_progress_loading">هونی بار اونه</string>
   <!-- Content description: For the autoplay toolbar icon, it is set when the auto play permission is blocking content playing. -->
   <string name="mozac_browser_toolbar_content_description_autoplay_blocked">ی قرد ز موئتوا و دست سامووا پشک خوتکار مسدۊد وابین</string>
 </resources>

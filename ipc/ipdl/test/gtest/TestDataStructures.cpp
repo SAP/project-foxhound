@@ -17,8 +17,6 @@
 #include "mozilla/_ipdltest/PTestDataStructuresSubChild.h"
 #include "mozilla/_ipdltest/PTestDataStructuresSubParent.h"
 
-#include "mozilla/Unused.h"
-
 using namespace mozilla::ipc;
 
 using RegionArray = nsTArray<nsIntRegion>;
@@ -398,7 +396,7 @@ class TestDataStructuresParent : public PTestDataStructuresParent {
       // if |ra| has been realloc()d and given a different allocator
       // chunk, this loop will nondeterministically crash or iloop.
       for (auto iter = ra[i].RectIter(); !iter.Done(); iter.Next()) {
-        Unused << iter.Get();
+        (void)iter.Get();
       }
     }
     return IPC_OK();

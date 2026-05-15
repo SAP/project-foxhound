@@ -208,43 +208,39 @@ def check_mozglue_order(binary):
 
 def check_networking(binary):
     retcode = 0
-    networking_functions = set(
-        [
-            # socketpair is not concerning; it is restricted to AF_UNIX
-            "recv",
-            "send",
-            # We would be concerned by recvmsg and sendmsg; but we believe
-            # they are okay as documented in 1376621#c23
-            "gethostbyname",
-            "gethostbyaddr",
-            "gethostent",
-            "sethostent",
-            "endhostent",
-            "gethostent_r",
-            "gethostbyname2",
-            "gethostbyaddr_r",
-            "gethostbyname_r",
-            "gethostbyname2_r",
-            "getservent",
-            "getservbyname",
-            "getservbyport",
-            "setservent",
-            "getprotoent",
-            "getprotobyname",
-            "getprotobynumber",
-            "setprotoent",
-            "endprotoent",
-        ]
-    )
+    networking_functions = set([
+        # socketpair is not concerning; it is restricted to AF_UNIX
+        "recv",
+        "send",
+        # We would be concerned by recvmsg and sendmsg; but we believe
+        # they are okay as documented in 1376621#c23
+        "gethostbyname",
+        "gethostbyaddr",
+        "gethostent",
+        "sethostent",
+        "endhostent",
+        "gethostent_r",
+        "gethostbyname2",
+        "gethostbyaddr_r",
+        "gethostbyname_r",
+        "gethostbyname2_r",
+        "getservent",
+        "getservbyname",
+        "getservbyport",
+        "setservent",
+        "getprotoent",
+        "getprotobyname",
+        "getprotobynumber",
+        "setprotoent",
+        "endprotoent",
+    ])
     # These are used by the crash monitor & crash monitor client to talk with
     # the main process on Linux and macOS.
-    socket_functions = set(
-        [
-            "connect",
-            "accept",
-            "listen",
-        ]
-    )
+    socket_functions = set([
+        "connect",
+        "accept",
+        "listen",
+    ])
 
     if PLATFORM == "WINNT":
         networking_functions |= socket_functions

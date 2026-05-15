@@ -42,3 +42,68 @@
   --button-size-icon: 24px;
   --button-min-height: 24px;
 }
+
+.attention > #fxview-tab-row-favicon::after {
+  background-image: radial-gradient(circle, var(--attention-dot-color), var(--attention-dot-color) 2px, transparent 2px);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  height: 4px;
+  width: 100%;
+  inset-block-start: var(--icon-size-medium);
+}
+
+.fxview-tab-row-favicon::after {
+  display: block;
+  content: "";
+  background-size: var(--size-item-xsmall);
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  height: var(--size-item-xsmall);
+  width: var(--size-item-xsmall);
+  -moz-context-properties: fill, stroke;
+  fill: currentColor;
+  stroke: var(--background-color-box);
+
+  .fxview-tab-row-main.attention > & {
+    background-image: radial-gradient(circle, var(--attention-dot-color), var(--attention-dot-color) 2px, transparent 2px);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    height: 4px;
+    width: 100%;
+    inset-block-start: var(--icon-size-medium);
+  }
+}
+
+.fxview-tab-row-main:is(.muted, .soundplaying, .activemedia-blocked):not(.attention) .fxview-tab-row-favicon::after {
+  /* inset-inline-start set to half of the favicon
+  width to place it horizontally centered */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  inset-inline-start: 8px;
+  /* inset-block-start set to display 6px above
+  the top of the favicon */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  inset-block-start: -6px;
+  background-color: var(--background-color-box);
+  padding: 1px;
+  border-radius: var(--border-radius-circle);
+}
+
+.fxview-tab-row-main.muted .fxview-tab-row-favicon::after {
+  background-image: url("chrome://global/skin/media/audio-muted.svg");
+}
+
+.fxview-tab-row-main.soundplaying .fxview-tab-row-favicon::after {
+  background-image: url("chrome://browser/skin/tabbrowser/tab-audio-playing-small.svg");
+}
+
+.fxview-tab-row-main.activemedia-blocked .fxview-tab-row-favicon::after {
+  background-image: url("chrome://browser/skin/tabbrowser/tab-audio-blocked-small.svg");
+}
+
+.fxview-tab-row-container-indicator {
+  height: var(--size-item-small);
+  width: var(--size-item-small);
+  background-image: var(--identity-icon);
+  background-size: cover;
+  -moz-context-properties: fill;
+  fill: var(--identity-icon-color);
+}

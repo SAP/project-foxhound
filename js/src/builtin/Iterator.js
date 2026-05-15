@@ -1014,7 +1014,6 @@ function IteratorFind(predicate) {
   }
 }
 
-#ifdef NIGHTLY_BUILD
 /**
  * Iterator.concat ( ...items )
  *
@@ -1670,15 +1669,16 @@ function IteratorCloseAllForException(iters) {
   // Step 2. (Performed in caller)
 }
 
+#ifdef NIGHTLY_BUILD
 /**
  * CreateNumericRangeIterator (start, end, optionOrStep, type)
- * Step 18 
- * 
+ * Step 18
+ *
  * https://tc39.es/proposal-iterator.range/#sec-create-numeric-range-iterator
  */
 function IteratorRangeNext() {
   var obj = this;
-  // Step 18. Let closure be a new Abstract Closure with no parameters 
+  // Step 18. Let closure be a new Abstract Closure with no parameters
   // that captures start, end, step, inclusiveEnd, zero, one and performs the following steps when called:
 
   if (!IsObject(obj) || (obj = GuardToIteratorRange(obj)) === null) {
@@ -1728,7 +1728,7 @@ function IteratorRangeNext() {
 
   // Step 18.i.iv: If ifIncrease is true, then
   if (ifIncrease) {
-    // Step 18.i.iv.1: If inclusiveEnd is true, then 
+    // Step 18.i.iv.1: If inclusiveEnd is true, then
     if (inclusiveEnd) {
       // Step 18.i.iv.1.a: If currentYieldingValue > end, return undefined.
       if (currentYieldingValue > end) {
@@ -1773,7 +1773,7 @@ function IteratorRangeNext() {
 
 /**
  * CreateNumericRangeIterator (start, end, optionOrStep, type)
- * 
+ *
  * https://tc39.es/proposal-iterator.range/#sec-create-numeric-range-iterator
  */
 function CreateNumericRangeIterator(start, end, optionOrStep, isNumberRange) {
@@ -1836,7 +1836,7 @@ function CreateNumericRangeIterator(start, end, optionOrStep, isNumberRange) {
     step = optionOrStep.step;
 
     // Step 8.b. Set inclusiveEnd to ToBoolean(? Get(optionOrStep, "inclusive")).
-    inclusiveEnd = ToBoolean(optionOrStep.inclusiveEnd);
+    inclusiveEnd = TO_BOOLEAN(optionOrStep.inclusiveEnd);
   }
   // Step 9: Else if type is NUMBER-RANGE and optionOrStep is a Number, then
   else if (isNumberRange && typeof optionOrStep === 'number') {
@@ -1921,5 +1921,136 @@ function IteratorRange(start, end, optionOrStep) {
   // Step 3. Throw a TypeError exception.
   ThrowTypeError(JSMSG_ITERATOR_RANGE_INVALID_START);
 
+}
+
+/**
+ *  Iterator.prototype.chunks ( chunkSize )
+ *
+ *  https://tc39.es/proposal-iterator-chunking/#sec-iterator.prototype.chunks
+ */
+function IteratorChunks(chunkSize) {
+  // Step 1. Let O be the this value.
+  var iterator = this;
+
+  // Step 2. If O is not an Object, throw a TypeError exception.
+  if (!IsObject(iterator)) {
+    ThrowTypeError(JSMSG_OBJECT_REQUIRED, iterator === null ? "null" : typeof iterator);
+  }
+
+  // Step 3. Let iterated be the Iterator Record
+  //  { [[Iterator]]: O, [[NextMethod]]: undefined, [[Done]]: false }.
+
+  // Step 4. If chunkSize is not an integral Number in the inclusive interval
+  // from 1𝔽 to 𝔽(2**32 - 1), then
+  if (!Number_isInteger(chunkSize) || (chunkSize < 1 || chunkSize > (2 ** 32) - 1)) {
+    // Step 4.a. Let error be ThrowCompletion(a newly created RangeError object).
+    // Step 4.b. Return ? IteratorClose(iterated, error).
+    try {
+      IteratorClose(iterator);
+    } catch {}
+    ThrowRangeError(JSMSG_INVALID_CHUNKSIZE);
+  }
+
+  // Step 5. Set iterated to ? GetIteratorDirect(O).
+  var nextMethod = iterator.next;
+
+  // Step 6. Let closure be a new Abstract Closure with ...
+  // (Handled in IteratorChunksGenerator.)
+
+  // Step 7. Let result be CreateIteratorFromClosure(
+  //   closure, "Iterator Helper", %IteratorHelperPrototype%,
+  //   « [[UnderlyingIterators]] »
+  // ).
+  var result = NewIteratorHelper();
+  var generator = IteratorChunksGenerator(iterator, nextMethod, chunkSize);
+
+  // Step 8. Set result.[[UnderlyingIterators]] to « iterated ».
+  UnsafeSetReservedSlot(
+    result,
+    ITERATOR_HELPER_GENERATOR_SLOT,
+    generator
+  );
+  UnsafeSetReservedSlot(
+    result,
+    ITERATOR_HELPER_UNDERLYING_ITERATOR_SLOT,
+    iterator
+  );
+
+  // Step 9. Return result.
+  return result;
+}
+
+/**
+ *  Iterator.prototype.chunks ( chunkSize )
+ *
+ *  Abstract closure definition.
+ *
+ *  https://tc39.es/proposal-iterator-chunking/#sec-iterator.prototype.chunks
+ */
+function* IteratorChunksGenerator(iterator, nextMethod, chunkSize) {
+  // Step 6. Let closure be a new Abstract Closure
+  //         with no parameters that captures iterated and
+  //         chunkSize and performs the following steps when called:
+  // Step 6.a. Let buffer be a new empty List.
+  // This is an optimization that performs the equivalent of CreateArrayFromList
+  // at the same time as constructing the buffer.
+  // All the operations done on buffer are not affected by prototype pollution,
+  // and thus directly using an array here is safe.
+  // All the operations done on the buffer are not observable,
+  // and thus reordering the operation here is safe.
+  var buffer = [];
+
+  // Step 6.b. Repeat,
+  // Step 6.b.i. Let value be ? IteratorStepValue(iterated).
+  for (var value of allowContentIterWithNext(iterator, nextMethod)) {
+    // Step 6.b.iii. Append value to buffer.
+    // (Reordered)
+    // NOTE: The OOM case is automatically handled by the for-of loop.
+    DefineDataProperty(buffer, buffer.length, value);
+
+    // Step 6.b.iv. If the number of elements in buffer is ℝ(chunkSize), then
+    if (buffer.length === chunkSize) {
+      // Step 6.b.iv.1. Let completion be
+      //                Completion(Yield(CreateArrayFromList(buffer))).
+      yield buffer;
+
+      // Step 6.b.iv.3. Set buffer to a new empty List.
+      // This is an optimization that performs the equivalent of
+      // CreateArrayFromList at the same time as constructing the buffer.
+      buffer = [];
+    }
+  }
+
+  // Step 6.b.ii. If value is done, then
+  // Step 6.b.ii.1. If buffer is not empty, then
+  if (buffer.length) {
+    // Step 6.b.ii.1.a. Perform Completion(Yield(CreateArrayFromList(buffer))).
+    // Iterator helper doesn't have throw methods, and only "normal" or "return"
+    // completion can appear here.
+    // Given that this is the last step inside the function, there's no
+    // difference between handling and ignoring the completion.
+    yield buffer;
+  }
+
+  // Step 6.b.ii.2. Return ReturnCompletion(undefined).
+  // (implicit)
+}
+
+/**
+ *  Iterator.prototype.windows ( windowSize, undersized )
+ *
+ *  https://tc39.es/proposal-iterator-chunking/#sec-iterator.prototype.windows
+ */
+function IteratorWindows(windowSize, undersized) {
+  return false;
+}
+
+/**
+ *  Iterator.prototype.join ( separator )
+ *
+ *  https://tc39.es/proposal-iterator-join/#sec-iterator.prototype.join
+ */
+function IteratorJoin(separator) {
+	return false;
 }
 #endif

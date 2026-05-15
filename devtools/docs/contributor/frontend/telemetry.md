@@ -52,7 +52,7 @@ Our entries are prefixed with `DEVTOOLS_`. For example:
 
 ```
   "DEVTOOLS_DOM_OPENED_COUNT": {
-    "alert_emails": ["dev-developer-tools@lists.mozilla.org"],
+    "alert_emails": ["devtools-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "kind": "count",
     "bug_numbers": [1343501],
@@ -60,7 +60,7 @@ Our entries are prefixed with `DEVTOOLS_`. For example:
     "releaseChannelCollection": "opt-out"
   },
   "DEVTOOLS_DOM_TIME_ACTIVE_SECONDS": {
-    "alert_emails": ["dev-developer-tools@lists.mozilla.org"],
+    "alert_emails": ["devtools-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "bug_numbers": [1343501],
@@ -86,7 +86,7 @@ devtools.toolbar.eyedropper:
     expires: never
     kind: uint
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -100,7 +100,7 @@ devtools.copy.unique.css.selector:
     expires: "57"
     kind: uint
     notification_emails:
-      - dev-developer-tools@lists.mozilla.org
+      - devtools-telemetry-alerts@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - 'main'
@@ -115,7 +115,7 @@ devtools.main:
   open:
     objects: ["tools"]
     bug_numbers: [1416024]
-    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    notification_emails: ["devtools-telemetry-alerts@mozilla.com"]
     record_in_processes: ["main"]
     description: User opens devtools toolbox.
     release_channel_collection: opt-out

@@ -25,4 +25,32 @@ add_task(async function test_enabletrackingprotection_strict_preferences() {
     true,
     "Preference should be true"
   );
+  is(
+    Services.prefs.prefIsLocked(
+      "privacy.trackingprotection.allow_list.baseline.enabled"
+    ),
+    false,
+    "Preference should NOT be locked"
+  );
+  is(
+    Services.prefs.prefIsLocked(
+      "privacy.trackingprotection.allow_list.convenience.enabled"
+    ),
+    false,
+    "Preference should NOT be locked"
+  );
+  is(
+    Services.prefs.getBoolPref(
+      "privacy.trackingprotection.allow_list.baseline.enabled"
+    ),
+    true,
+    "Default value for privacy.trackingprotection.allow_list.baseline.enabled should be true"
+  );
+  is(
+    Services.prefs.getBoolPref(
+      "privacy.trackingprotection.allow_list.convenience.enabled"
+    ),
+    false,
+    "Default value for privacy.trackingprotection.allow_list.convenience.enabled should be false"
+  );
 });

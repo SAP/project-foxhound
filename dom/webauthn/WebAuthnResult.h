@@ -5,19 +5,19 @@
 #ifndef mozilla_dom_WebAuthnResult_h_
 #define mozilla_dom_WebAuthnResult_h_
 
+#include "mozilla/Maybe.h"
 #include "nsIWebAuthnResult.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
-#include "mozilla/Maybe.h"
-#include "nsString.h"
-
 #ifdef MOZ_WIDGET_ANDROID
+#  include "JavaBuiltins.h"
 #  include "mozilla/java/WebAuthnUtilsNatives.h"
 #endif
 
 #ifdef XP_WIN
 #  include <windows.h>
+
 #  include "mozilla/dom/PWebAuthnTransactionParent.h"
 #  include "winwebauthn/webauthn.h"
 #endif
@@ -38,7 +38,8 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
                          const Maybe<bool>& aPrfSupported,
                          const Maybe<nsTArray<uint8_t>>& aPrfFirst,
                          const Maybe<nsTArray<uint8_t>>& aPrfSecond)
-      : mClientDataJSON(aClientDataJSON),
+      : mAttestationConsentPromptShown(false),
+        mClientDataJSON(aClientDataJSON),
         mCredPropsRk(Nothing()),
         mAuthenticatorAttachment(aAuthenticatorAttachment),
         mLargeBlobSupported(aLargeBlobSupported),
@@ -63,6 +64,7 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
         reinterpret_cast<uint8_t*>(
             aResponse->AttestationObject()->GetElements().Elements()),
         aResponse->AttestationObject()->Length());
+    mAttestationConsentPromptShown = false;
     if (aResponse->ClientDataJson()) {
       mClientDataJSON = Some(nsAutoCString(
           reinterpret_cast<const char*>(
@@ -80,6 +82,34 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
     }
     mAuthenticatorAttachment =
         Some(aResponse->AuthenticatorAttachment()->ToString());
+    if (aResponse->CredProps()) {
+      mCredPropsRk = Some(java::sdk::Boolean::Ref::From(aResponse->CredProps())
+                              ->BooleanValue());
+    }
+    if (aResponse->PrfEnabled()) {
+      mPrfSupported =
+          Some(java::sdk::Boolean::Ref::From(aResponse->PrfEnabled())
+                   ->BooleanValue());
+    }
+    if (aResponse->PrfFirst() && aResponse->PrfFirst()->Length() > 0) {
+      mPrfFirst.emplace();
+      mPrfFirst->AppendElements(
+          reinterpret_cast<uint8_t*>(
+              aResponse->PrfFirst()->GetElements().Elements()),
+          aResponse->PrfFirst()->Length());
+    }
+    if (aResponse->PrfSecond() && aResponse->PrfSecond()->Length() > 0) {
+      mPrfSecond.emplace();
+      mPrfSecond->AppendElements(
+          reinterpret_cast<uint8_t*>(
+              aResponse->PrfSecond()->GetElements().Elements()),
+          aResponse->PrfSecond()->Length());
+    }
+    if (aResponse->LargeBlobSupported()) {
+      mLargeBlobSupported =
+          Some(java::sdk::Boolean::Ref::From(aResponse->LargeBlobSupported())
+                   ->BooleanValue());
+    }
   }
 #endif
 
@@ -92,6 +122,7 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
 
     mAttestationObject.AppendElements(aResponse->pbAttestationObject,
                                       aResponse->cbAttestationObject);
+    mAttestationConsentPromptShown = true;
 
     nsTArray<WebAuthnExtensionResult> extensions;
     if (aResponse->dwVersion >= WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_2) {
@@ -117,25 +148,49 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
       }
     }
 
-    if (aResponse->dwVersion >= WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_3) {
-      if (aResponse->dwUsedTransport & WEBAUTHN_CTAP_TRANSPORT_USB) {
-        mTransports.AppendElement(u"usb"_ns);
+    if (aResponse->dwVersion >= WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_7) {
+      if (aResponse->pHmacSecret) {
+        if (aResponse->pHmacSecret->cbFirst > 0) {
+          mPrfFirst.emplace();
+          mPrfFirst->AppendElements(aResponse->pHmacSecret->pbFirst,
+                                    aResponse->pHmacSecret->cbFirst);
+        }
+        if (aResponse->pHmacSecret->cbSecond > 0) {
+          mPrfSecond.emplace();
+          mPrfSecond->AppendElements(aResponse->pHmacSecret->pbSecond,
+                                     aResponse->pHmacSecret->cbSecond);
+        }
       }
-      if (aResponse->dwUsedTransport & WEBAUTHN_CTAP_TRANSPORT_NFC) {
-        mTransports.AppendElement(u"nfc"_ns);
-      }
-      if (aResponse->dwUsedTransport & WEBAUTHN_CTAP_TRANSPORT_BLE) {
-        mTransports.AppendElement(u"ble"_ns);
-      }
-      if (aResponse->dwUsedTransport & WEBAUTHN_CTAP_TRANSPORT_INTERNAL) {
-        mTransports.AppendElement(u"internal"_ns);
-      }
+    }
+
+    DWORD transports = 0;
+    if (aResponse->dwVersion >= WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_8) {
+      // The dwTransports field added in version 8 lists all supported
+      // transports, whereas the dwUsedTransport available since version 3 only
+      // returns the transport that was used.
+      transports = aResponse->dwTransports;
+    } else if (aResponse->dwVersion >=
+               WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_3) {
+      transports = aResponse->dwUsedTransport;
+    }
+
+    if (transports & WEBAUTHN_CTAP_TRANSPORT_USB) {
+      mTransports.AppendElement(u"usb"_ns);
+    }
+    if (transports & WEBAUTHN_CTAP_TRANSPORT_NFC) {
+      mTransports.AppendElement(u"nfc"_ns);
+    }
+    if (transports & WEBAUTHN_CTAP_TRANSPORT_BLE) {
+      mTransports.AppendElement(u"ble"_ns);
+    }
+    if (transports & WEBAUTHN_CTAP_TRANSPORT_INTERNAL) {
+      mTransports.AppendElement(u"internal"_ns);
     }
     // WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_5 corresponds to
     // WEBAUTHN_API_VERSION_6 which is where WEBAUTHN_CTAP_TRANSPORT_HYBRID was
     // defined.
     if (aResponse->dwVersion >= WEBAUTHN_CREDENTIAL_ATTESTATION_VERSION_5) {
-      if (aResponse->dwUsedTransport & WEBAUTHN_CTAP_TRANSPORT_HYBRID) {
+      if (transports & WEBAUTHN_CTAP_TRANSPORT_HYBRID) {
         mTransports.AppendElement(u"hybrid"_ns);
       }
     }
@@ -166,6 +221,7 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
   ~WebAuthnRegisterResult() = default;
 
   nsTArray<uint8_t> mAttestationObject;
+  bool mAttestationConsentPromptShown;
   nsTArray<uint8_t> mCredentialId;
   nsTArray<nsString> mTransports;
   Maybe<nsCString> mClientDataJSON;
@@ -243,6 +299,33 @@ class WebAuthnSignResult final : public nsIWebAuthnSignResult {
         aResponse->UserHandle()->Length());
     mAuthenticatorAttachment =
         Some(aResponse->AuthenticatorAttachment()->ToString());
+    if (aResponse->PrfFirst() && aResponse->PrfFirst()->Length() > 0) {
+      mPrfFirst.emplace();
+      mPrfFirst->AppendElements(
+          reinterpret_cast<uint8_t*>(
+              aResponse->PrfFirst()->GetElements().Elements()),
+          aResponse->PrfFirst()->Length());
+    }
+    if (aResponse->PrfSecond() && aResponse->PrfSecond()->Length() > 0) {
+      mPrfSecond.emplace();
+      mPrfSecond->AppendElements(
+          reinterpret_cast<uint8_t*>(
+              aResponse->PrfSecond()->GetElements().Elements()),
+          aResponse->PrfSecond()->Length());
+    }
+    if (aResponse->LargeBlobBlob() &&
+        aResponse->LargeBlobBlob()->Length() > 0) {
+      mLargeBlobValue.emplace();
+      mLargeBlobValue->AppendElements(
+          reinterpret_cast<uint8_t*>(
+              aResponse->LargeBlobBlob()->GetElements().Elements()),
+          aResponse->LargeBlobBlob()->Length());
+    }
+    if (aResponse->LargeBlobWritten()) {
+      mLargeBlobWritten =
+          Some(java::sdk::Boolean::Ref::From(aResponse->LargeBlobWritten())
+                   ->BooleanValue());
+    }
   }
 #endif
 

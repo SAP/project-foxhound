@@ -6,13 +6,13 @@
 
 #include "mozilla/dom/HTMLSummaryElement.h"
 
-#include "mozilla/dom/HTMLDetailsElement.h"
-#include "mozilla/dom/HTMLElementBinding.h"
-#include "mozilla/dom/HTMLUnknownElement.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/dom/HTMLDetailsElement.h"
+#include "mozilla/dom/HTMLElementBinding.h"
+#include "mozilla/dom/HTMLUnknownElement.h"
 #include "nsFocusManager.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Summary)

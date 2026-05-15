@@ -14,7 +14,7 @@ const { OnboardingMessageProvider } = ChromeUtils.importESModule(
 );
 
 XPCOMUtils.defineLazyServiceGetters(this, {
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
+  BrowserHandler: ["@mozilla.org/browser/clh;1", Ci.nsIBrowserHandler],
 });
 
 add_setup(() => {

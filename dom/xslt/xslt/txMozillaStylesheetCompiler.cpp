@@ -3,39 +3,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIAuthPrompt.h"
+#include "ReferrerInfo.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Text.h"
+#include "nsAttrName.h"
+#include "nsCharsetSource.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentPolicyUtils.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsIAuthPrompt.h"
 #include "nsIExpatSink.h"
+#include "nsIHttpChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
-#include "nsParser.h"
-#include "nsCharsetSource.h"
-#include "nsIRequestObserver.h"
-#include "nsContentPolicyUtils.h"
-#include "nsIStreamConverterService.h"
-#include "nsSyncLoadService.h"
-#include "nsIHttpChannel.h"
-#include "nsIURI.h"
 #include "nsIPrincipal.h"
+#include "nsIRequestObserver.h"
+#include "nsIScriptError.h"
+#include "nsIStreamConverterService.h"
+#include "nsIURI.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXMLContentSink.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
-#include "nsGkAtoms.h"
+#include "nsParser.h"
+#include "nsSyncLoadService.h"
 #include "txLog.h"
 #include "txMozillaXSLTProcessor.h"
 #include "txStylesheetCompiler.h"
 #include "txXMLUtils.h"
-#include "nsAttrName.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIScriptError.h"
-#include "nsError.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Text.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/UniquePtr.h"
-#include "ReferrerInfo.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;
@@ -275,7 +274,7 @@ txStylesheetSink::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
   if (httpChannel) {
-    Unused << httpChannel->GetRequestSucceeded(&success);
+    (void)httpChannel->GetRequestSucceeded(&success);
   }
 
   nsresult result = aStatusCode;

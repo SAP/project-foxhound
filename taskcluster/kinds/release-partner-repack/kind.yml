@@ -11,6 +11,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 kind-dependencies:
+    - build
     - build-signing
     - build-mac-signing
     - build-mac-notarization
@@ -19,12 +20,13 @@ kind-dependencies:
     - shippable-l10n-mac-notarization
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: partner-repack
     description: Release Promotion partner repacks
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-product: firefox
     shipping-phase: promote
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         docker-image:
             in-tree: "partner-repack"
@@ -44,13 +46,6 @@ task-defaults:
                 production: false
 
 tasks:
-    linux-shippable:
-        attributes:
-            build_platform: linux-shippable
-            build_type: opt
-            artifact_prefix: releng/partner
-            shippable: true
-
     linux64-shippable:
         attributes:
             build_platform: linux64-shippable

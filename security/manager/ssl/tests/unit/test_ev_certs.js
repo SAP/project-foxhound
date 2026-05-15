@@ -7,8 +7,7 @@
 
 // Tests that end-entity certificates that should successfully verify as EV
 // (Extended Validation) do so and that end-entity certificates that should not
-// successfully verify as EV do not. Also tests related situations (e.g. that
-// failure to fetch an OCSP response results in no EV treatment).
+// successfully verify as EV do not.
 //
 // A quick note about the certificates in these tests: generally, an EV
 // certificate chain will have an end-entity with a specific policy OID followed
@@ -109,12 +108,13 @@ function asyncTestEV(
       0,
       "ev-test.example.com",
       now,
+      [],
       result
     );
   });
 }
 
-function ensureVerifiesAsEV(testcase) {
+function ensureVerifiesAsEVWithOneOCSPRequest(testcase) {
   let cert = constructCertFromFile(`test_ev_certs/${testcase}-ee.pem`);
   addCertFromFile(certdb, `test_ev_certs/${testcase}-int.pem`, ",,");
   let expectedOCSPRequestPaths = [`${testcase}-ee`];
@@ -149,12 +149,12 @@ function ensureVerificationFails(testcase, expectedPRErrorCode) {
   return asyncTestEV(cert, expectedPRErrorCode, false, []);
 }
 
-function verifyWithFlags_LOCAL_ONLY_and_MUST_BE_EV(testcase, expectSuccess) {
+function ensureVerifiesAsEVWithFLAG_LOCAL_ONLY(testcase) {
   let cert = constructCertFromFile(`test_ev_certs/${testcase}-ee.pem`);
   addCertFromFile(certdb, `test_ev_certs/${testcase}-int.pem`, ",,");
   let now = Date.now() / 1000;
   let expectedErrorCode = SEC_ERROR_POLICY_VALIDATION_FAILED;
-  if (expectSuccess && gEVExpected) {
+  if (gEVExpected) {
     expectedErrorCode = PRErrorCodeSuccess;
   }
   return new Promise(resolve => {
@@ -162,7 +162,7 @@ function verifyWithFlags_LOCAL_ONLY_and_MUST_BE_EV(testcase, expectSuccess) {
     let result = new EVCertVerificationResult(
       cert.subjectName,
       expectedErrorCode,
-      expectSuccess && gEVExpected,
+      gEVExpected,
       resolve,
       ocspResponder
     );
@@ -174,17 +174,10 @@ function verifyWithFlags_LOCAL_ONLY_and_MUST_BE_EV(testcase, expectSuccess) {
       flags,
       "ev-test.example.com",
       now,
+      [],
       result
     );
   });
-}
-
-function ensureNoOCSPMeansNoEV(testcase) {
-  return verifyWithFlags_LOCAL_ONLY_and_MUST_BE_EV(testcase, false);
-}
-
-function ensureVerifiesAsEVWithFLAG_LOCAL_ONLY(testcase) {
-  return verifyWithFlags_LOCAL_ONLY_and_MUST_BE_EV(testcase, true);
 }
 
 function verifyWithOCSPResponseType(testcase, response, expectEV) {
@@ -201,32 +194,38 @@ function verifyWithOCSPResponseType(testcase, response, expectEV) {
   );
 }
 
-function ensureVerifiesAsDVWithOldEndEntityOCSPResponse(testcase) {
-  return verifyWithOCSPResponseType(testcase, "longvalidityalmostold", false);
+function ensureVerifiesAsEVWithOldEndEntityOCSPResponse(testcase) {
+  return verifyWithOCSPResponseType(testcase, "longvalidityalmostold", true);
 }
 
-function ensureVerifiesAsDVWithVeryOldEndEntityOCSPResponse(testcase) {
-  return verifyWithOCSPResponseType(testcase, "ancientstillvalid", false);
+function ensureVerifiesAsEVWithVeryOldEndEntityOCSPResponse(testcase) {
+  return verifyWithOCSPResponseType(testcase, "ancientstillvalid", true);
 }
 
 // These should all verify as EV.
 add_task(async function plainExpectSuccessEVTests() {
-  await ensureVerifiesAsEV("anyPolicy-int-path");
-  await ensureVerifiesAsEV("test-oid-path");
-  await ensureVerifiesAsEV("cabforum-oid-path");
-  await ensureVerifiesAsEV("cabforum-and-test-oid-ee-path");
-  await ensureVerifiesAsEV("test-and-cabforum-oid-ee-path");
-  await ensureVerifiesAsEV("reverse-order-oids-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("anyPolicy-int-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("test-oid-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("cabforum-oid-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("cabforum-and-test-oid-ee-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("test-and-cabforum-oid-ee-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("reverse-order-oids-path");
+  await ensureVerifiesAsEVWithNoOCSPRequests("no-ocsp-ee-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("no-ocsp-int-path");
   // In this case, the end-entity has both the CA/B Forum OID and the test OID
   // (in that order). The intermediate has the CA/B Forum OID. Since the
   // implementation tries all EV policies it encounters, this successfully
   // verifies as EV.
-  await ensureVerifiesAsEV("cabforum-and-test-oid-ee-cabforum-oid-int-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest(
+    "cabforum-and-test-oid-ee-cabforum-oid-int-path"
+  );
   // In this case, the end-entity has both the test OID and the CA/B Forum OID
   // (in that order). The intermediate has only the CA/B Forum OID. Since the
   // implementation tries all EV policies it encounters, this successfully
   // verifies as EV.
-  await ensureVerifiesAsEV("test-and-cabforum-oid-ee-cabforum-oid-int-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest(
+    "test-and-cabforum-oid-ee-cabforum-oid-int-path"
+  );
 });
 
 // These fail for various reasons to verify as EV, but fallback to DV should
@@ -234,8 +233,6 @@ add_task(async function plainExpectSuccessEVTests() {
 add_task(async function expectDVFallbackTests() {
   await ensureVerifiesAsDV("anyPolicy-ee-path");
   await ensureVerifiesAsDV("non-ev-root-path");
-  await ensureVerifiesAsDV("no-ocsp-ee-path", []);
-  await ensureVerifiesAsEV("no-ocsp-int-path");
   // In this case, the end-entity has the test OID and the intermediate has the
   // CA/B Forum OID. Since the CA/B Forum OID is not treated the same as the
   // anyPolicy OID, this will not verify as EV.
@@ -260,19 +257,17 @@ add_task(async function evRootTrustTests() {
     Ci.nsIX509Cert.CA_CERT,
     Ci.nsIX509CertDB.TRUSTED_SSL
   );
-  await ensureVerifiesAsEV("test-oid-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("test-oid-path");
 });
 
 // Test that if FLAG_LOCAL_ONLY and FLAG_MUST_BE_EV are specified, that no OCSP
-// requests are made (this also means that nothing will verify as EV).
-add_task(async function localOnlyMustBeEVTests() {
+// requests are made.
+add_task(async function expectEVWithFlagLocalOnly() {
   clearOCSPCache();
-  await ensureNoOCSPMeansNoEV("anyPolicy-ee-path");
-  await ensureNoOCSPMeansNoEV("anyPolicy-int-path");
-  await ensureNoOCSPMeansNoEV("non-ev-root-path");
-  await ensureNoOCSPMeansNoEV("no-ocsp-ee-path");
-  await ensureNoOCSPMeansNoEV("no-ocsp-int-path");
-  await ensureNoOCSPMeansNoEV("test-oid-path");
+  await ensureVerifiesAsEVWithFLAG_LOCAL_ONLY("anyPolicy-int-path");
+  await ensureVerifiesAsEVWithFLAG_LOCAL_ONLY("no-ocsp-ee-path");
+  await ensureVerifiesAsEVWithFLAG_LOCAL_ONLY("no-ocsp-int-path");
+  await ensureVerifiesAsEVWithFLAG_LOCAL_ONLY("test-oid-path");
 });
 
 // Prime the OCSP cache and then ensure that we can validate certificates as EV
@@ -282,8 +277,8 @@ add_task(async function localOnlyMustBeEVTests() {
 add_task(async function ocspCachingTests() {
   clearOCSPCache();
 
-  await ensureVerifiesAsEV("anyPolicy-int-path");
-  await ensureVerifiesAsEV("test-oid-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("anyPolicy-int-path");
+  await ensureVerifiesAsEVWithOneOCSPRequest("test-oid-path");
 
   await ensureVerifiesAsEVWithNoOCSPRequests("anyPolicy-int-path");
   await ensureVerifiesAsEVWithNoOCSPRequests("test-oid-path");
@@ -292,19 +287,60 @@ add_task(async function ocspCachingTests() {
   await ensureVerifiesAsEVWithFLAG_LOCAL_ONLY("test-oid-path");
 });
 
-// Old-but-still-valid OCSP responses are accepted for intermediates but not
-// end-entity certificates (because of OCSP soft-fail this results in DV
-// fallback).
+// It was once the case that old-but-still-valid OCSP responses were accepted
+// for intermediates but not end-entity certificates (because of OCSP soft-fail
+// this would result in DV fallback). Now that OCSP is not required for EV
+// status these certificates should all verify as EV.
 add_task(async function oldOCSPResponseTests() {
   clearOCSPCache();
 
   clearOCSPCache();
-  await ensureVerifiesAsDVWithOldEndEntityOCSPResponse("anyPolicy-int-path");
-  await ensureVerifiesAsDVWithOldEndEntityOCSPResponse("test-oid-path");
+  await ensureVerifiesAsEVWithOldEndEntityOCSPResponse("anyPolicy-int-path");
+  await ensureVerifiesAsEVWithOldEndEntityOCSPResponse("test-oid-path");
 
   clearOCSPCache();
-  await ensureVerifiesAsDVWithVeryOldEndEntityOCSPResponse(
+  await ensureVerifiesAsEVWithVeryOldEndEntityOCSPResponse(
     "anyPolicy-int-path"
   );
-  await ensureVerifiesAsDVWithVeryOldEndEntityOCSPResponse("test-oid-path");
+  await ensureVerifiesAsEVWithVeryOldEndEntityOCSPResponse("test-oid-path");
 });
+
+add_task(
+  { skip_if: () => !AppConstants.DEBUG },
+  async function expectEVUsingBuiltInRoot() {
+    // security.test.built_in_root_hash only works in debug builds.
+    Services.prefs.setCharPref(
+      "security.test.built_in_root_hash",
+      evroot.sha256Fingerprint
+    );
+    // When CRLite is enforced and OCSP is not required, a certificate that
+    // chains to a built-in root can get EV status without an OCSP check.
+    Services.prefs.setIntPref("security.pki.crlite_mode", 2);
+    Services.prefs.setBoolPref("security.OCSP.require", false);
+
+    clearOCSPCache();
+    await ensureVerifiesAsEVWithNoOCSPRequests("anyPolicy-int-path");
+    await ensureVerifiesAsEVWithNoOCSPRequests("test-oid-path");
+
+    // When CRLite is disabled and OCSP is not required, we will perform an
+    // OCSP request while checking these same certificates.
+    Services.prefs.setIntPref("security.pki.crlite_mode", 0);
+    Services.prefs.setBoolPref("security.OCSP.require", false);
+
+    clearOCSPCache();
+    await ensureVerifiesAsEVWithOneOCSPRequest("anyPolicy-int-path");
+    await ensureVerifiesAsEVWithOneOCSPRequest("test-oid-path");
+
+    // Likewise if CRLite is enforced and OCSP is required.
+    Services.prefs.setIntPref("security.pki.crlite_mode", 2);
+    Services.prefs.setBoolPref("security.OCSP.require", true);
+
+    clearOCSPCache();
+    await ensureVerifiesAsEVWithOneOCSPRequest("anyPolicy-int-path");
+    await ensureVerifiesAsEVWithOneOCSPRequest("test-oid-path");
+
+    Services.prefs.clearUserPref("security.test.built_in_root_hash");
+    Services.prefs.clearUserPref("security.pki.crlite_mode");
+    Services.prefs.clearUserPref("security.OCSP.require");
+  }
+);

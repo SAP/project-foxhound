@@ -12,11 +12,10 @@
 
 #include "ImageContainer.h"  // for ISharedImage, Image, etc
 #include "gfxTypes.h"
-#include "mozilla/Attributes.h"  // for override
-#include "mozilla/RefPtr.h"      // for RefPtr
-#include "mozilla/gfx/Point.h"   // for IntSize
-#include "mozilla/gfx/Types.h"   // for SurfaceFormat
-#include "nsCOMPtr.h"            // for already_AddRefed
+#include "mozilla/RefPtr.h"     // for RefPtr
+#include "mozilla/gfx/Point.h"  // for IntSize
+#include "mozilla/gfx/Types.h"  // for SurfaceFormat
+#include "nsCOMPtr.h"           // for already_AddRefed
 
 namespace mozilla {
 namespace layers {

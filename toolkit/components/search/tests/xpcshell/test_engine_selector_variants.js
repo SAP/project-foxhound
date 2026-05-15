@@ -13,6 +13,9 @@ const STATIC_SEARCH_URL_DATA = {
   base: "https://www.example.com/search",
   searchTermParamName: "q",
   displayName: null,
+  isNewUntil: null,
+  excludePartnerCodeFromTelemetry: false,
+  acceptedContentTypes: null,
 };
 
 const CONFIG = [

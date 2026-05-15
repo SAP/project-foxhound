@@ -8,10 +8,10 @@
 #define mozilla_dom_XMLHttpRequest_h
 
 #include <iterator>  // std::begin, std::end
-#include "mozilla/Attributes.h"
+
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/XMLHttpRequestEventTarget.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
+#include "mozilla/dom/XMLHttpRequestEventTarget.h"
 
 class nsIInputStream;
 

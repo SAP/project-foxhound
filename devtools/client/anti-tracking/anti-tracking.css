@@ -1,0 +1,101 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+#anti-tracking-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+#tracker-toolbar-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 1em;
+
+  #interactive-debugger-prompt {
+    flex-grow: 1;
+    flex-shrink: 0;
+    flex-basis: 100%;
+
+    padding: 0.5em;
+    box-sizing: border-box;
+    font-weight: bold;
+    color: white;
+    background-color: var(--theme-toolbar-background-highlighted);
+
+    &:empty {
+      display: none;
+    }
+
+    &.completed {
+      background-color: var(--green-70);
+    }
+  }
+}
+
+#tracker-table-container {
+  overflow: auto;
+}
+
+#tracker-table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+}
+
+#tracker-table :is(th, td) {
+  padding: 0.5em 1em;
+  text-align: start;
+  white-space: nowrap;
+  border: 1px solid var(--theme-splitter-color);
+}
+
+#tracker-table th {
+  position: sticky;
+  top: 0;
+  background-color: var(--theme-toolbar-background);
+}
+
+#tracker-table tr:nth-child(even) {
+  background-color: var(--table-zebra-background);
+}
+
+#tracker-table button {
+  padding: 0.3em 0.8em;
+  border: 1px solid var(--theme-button-border);
+  border-radius: 3px;
+  background: var(--theme-button-background);
+}
+
+#tracker-table button:hover {
+  background: var(--theme-button-hover-background);
+}
+
+.hostname-cell {
+  max-width: 25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tracker-blocked {
+  color: light-dark(var(--red-70), var(--red-20));
+}
+
+.no-content-message {
+  padding: 1rem;
+  color: var(--theme-text-color-alt);
+  text-align: center;
+  font-size: 1.5em;
+}

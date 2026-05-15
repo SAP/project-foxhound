@@ -172,7 +172,7 @@ function rootsChanged(roots, oldRoots, autoReleaseObjectActors) {
 /**
  * Release any actors we don't need anymore
  *
- * @param {Object} client: Object with a `releaseActor` method
+ * @param {object} client: Object with a `releaseActor` method
  * @param {Array} oldRoots: The roots in which we want to cleanup now-unused actors
  * @param {Array} newRoots: The current roots (might have item that are also in oldRoots)
  */

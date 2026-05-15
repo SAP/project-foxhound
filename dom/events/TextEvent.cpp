@@ -4,11 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/TextEvent.h"
+
 #include "mozilla/BasePrincipal.h"  // for nsIPrincipal::IsSystemPrincipal()
 #include "mozilla/EventForwards.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/DataTransfer.h"
-#include "mozilla/dom/TextEvent.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIPrincipal.h"
 #include "nsPresContext.h"

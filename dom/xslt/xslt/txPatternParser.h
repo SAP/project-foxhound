@@ -6,8 +6,8 @@
 #ifndef TX_PATTERNPARSER_H
 #define TX_PATTERNPARSER_H
 
-#include "txXSLTPatterns.h"
 #include "txExprParser.h"
+#include "txXSLTPatterns.h"
 
 class txStylesheetCompilerState;
 

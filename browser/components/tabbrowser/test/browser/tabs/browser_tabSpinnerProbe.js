@@ -8,8 +8,9 @@ const MAX_HANG_TIME = 5 * 1000; // ms
 
 /**
  * Returns the sum of all values in an array.
+ *
  * @param  {Array}  aArray An array of integers
- * @return {Number} The sum of the integers in the array
+ * @return {number} The sum of the integers in the array
  */
 function sum(aArray) {
   return aArray.reduce(function (previousValue, currentValue) {
@@ -42,7 +43,8 @@ function hangContentProcess(browser, aMs) {
 /**
  * A generator intended to be run as a Task. It tests one of the tab spinner
  * telemetry probes.
- * @param {String} aProbe The probe to test. Should be:
+ *
+ * @param {string} aProbe The probe to test. Should be:
  *                  - FX_TAB_SWITCH_SPINNER_VISIBLE_MS
  */
 async function testProbe(aProbe) {

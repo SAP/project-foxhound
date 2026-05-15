@@ -57,9 +57,7 @@ enum class CalendarId : int32_t {
   Indian,
 
   // Islamic lunar calendars.
-  Islamic,
   IslamicCivil,
-  IslamicRGSA,
   IslamicTabular,
   IslamicUmmAlQura,
 
@@ -84,23 +82,9 @@ inline constexpr auto availableCalendars = {
     CalendarId::Gregorian,
     CalendarId::Hebrew,
     CalendarId::Indian,
-// See Bug 1950425, this calendar is only available on Nightly due to
-// inconsistencies between ICU4X and ICU4C.
-#ifdef NIGHTLY_BUILD
-    CalendarId::Islamic,
-#endif
     CalendarId::IslamicCivil,
-// See Bug 1950425, this calendar is only available on Nightly due to
-// inconsistencies between ICU4X and ICU4C.
-#ifdef NIGHTLY_BUILD
-    CalendarId::IslamicRGSA,
-#endif
     CalendarId::IslamicTabular,
-// See Bug 1950425, this calendar is only available on Nightly due to
-// inconsistencies between ICU4X and ICU4C.
-#ifdef NIGHTLY_BUILD
     CalendarId::IslamicUmmAlQura,
-#endif
     CalendarId::Japanese,
     CalendarId::Persian,
     CalendarId::ROC,
@@ -131,7 +115,7 @@ class CalendarObject : public NativeObject {
  * Calendar value, which is a string containing a canonical calendar identifier.
  */
 class MOZ_STACK_CLASS CalendarValue final {
-  JS::Value value_{};
+  JS::Value value_;
 
  public:
   /**

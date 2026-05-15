@@ -6,6 +6,7 @@
 
 /**
  * Source Map Worker
+ *
  * @module utils/source-map-worker
  */
 
@@ -33,6 +34,7 @@ const {
   getSourceMap,
   getSourceMapWithMetadata,
   setSourceMap,
+  clearSourceMapForSources,
   clearSourceMaps: clearSourceMapsRequests,
 } = require("resource://devtools/client/shared/source-map-loader/utils/sourceMapRequests.js");
 const {
@@ -63,9 +65,9 @@ function mapToOriginalSourceInfos(generatedId, urls) {
  * Load the source map and retrieved infos about all the original sources
  * referenced in that source map.
  *
- * @param {Object} generatedSource
+ * @param {object} generatedSource
  *        Source object for a bundle referencing a source map
- * @return {Array<Object>|null}
+ * @return {Array<object> | null}
  *        List of object with id and url attributes describing the original sources.
  */
 async function getOriginalURLs(generatedSource) {
@@ -83,9 +85,9 @@ async function getOriginalURLs(generatedSource) {
  * Load the source map for a given bundle and return information
  * about the related original sources and the source map itself.
  *
- * @param {Object} generatedSource
+ * @param {object} generatedSource
  *        Source object for the bundle.
- * @return {Object}
+ * @return {object}
  *  - {Array<Object>} sources
  *    Object with id and url attributes, refering to the related original sources
  *    referenced in the source map.
@@ -292,7 +294,7 @@ async function getGeneratedLocation(location) {
 /**
  * Map the breakable positions (line and columns) from generated to original locations.
  *
- * @param {Object} breakpointPositions
+ * @param {object} breakpointPositions
  *        List of columns per line refering to the breakable columns per line
  *        for a given source:
  *        {
@@ -333,10 +335,10 @@ async function getOriginalLocations(breakpointPositions, sourceId) {
  *
  * @param {SourceMapConsumer} map
  *        The source map for the bundle source.
- * @param {Object} location
+ * @param {object} location
  *        A location within a bundle to map to an original location.
- * @param {Object} options
- * @param {Boolean} options.looseSearch
+ * @param {object} options
+ * @param {boolean} options.looseSearch
  *        Optional, if true, will do a loose search on first column and next lines
  *        until a mapping is found.
  * @return {location}
@@ -389,11 +391,11 @@ function getOriginalLocationSync(map, location, { looseSearch = false } = {}) {
 /**
  * Map a bundle location to an original one.
  *
- * @param {Object} location
+ * @param {object} location
  *        Bundle location
- * @param {Object} options
+ * @param {object} options
  *        See getORiginalLocationSync.
- * @return {Object}
+ * @return {object}
  *        Original location
  */
 async function getOriginalLocation(location, options) {
@@ -614,13 +616,16 @@ async function getFileGeneratedRange(originalSourceId) {
  * Set the sourceMap for multiple passed source ids.
  *
  * @param {Array<string>} generatedSourceIds
- * @param {Object} map: An actual sourcemap (as generated with SourceMapGenerator#toJSON)
+ * @param {object} map: An actual sourcemap (as generated with SourceMapGenerator#toJSON)
  */
 function setSourceMapForGeneratedSources(generatedSourceIds, map) {
   const sourceMapConsumer = new SourceMapConsumer(map);
   for (const generatedId of generatedSourceIds) {
     setSourceMap(generatedId, Promise.resolve(sourceMapConsumer));
   }
+}
+function clearSourceMapForGeneratedSources(generatedSourceIds) {
+  clearSourceMapForSources(generatedSourceIds);
 }
 
 function clearSourceMaps() {
@@ -642,5 +647,6 @@ module.exports = {
   getGeneratedRangesForOriginal,
   getFileGeneratedRange,
   setSourceMapForGeneratedSources,
+  clearSourceMapForGeneratedSources,
   clearSourceMaps,
 };

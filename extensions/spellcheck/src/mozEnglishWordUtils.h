@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozEnglishWordUtils_h__
-#define mozEnglishWordUtils_h__
+#ifndef mozEnglishWordUtils_h_
+#define mozEnglishWordUtils_h_
 
 #include "nsCOMPtr.h"
 #include "nsString.h"

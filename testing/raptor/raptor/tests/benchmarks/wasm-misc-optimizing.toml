@@ -9,6 +9,7 @@ page_timeout = 1200000
 test_url = "http://<host>:<port>/index.html?raptor"
 type = "benchmark"
 unit = "ms"
+sparse_checkout = true
 
 ["wasm-misc-optimizing"]
 apps = "firefox"

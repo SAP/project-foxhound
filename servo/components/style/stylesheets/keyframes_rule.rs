@@ -4,6 +4,7 @@
 
 //! Keyframes: https://drafts.csswg.org/css-animations/#keyframes
 
+use crate::derives::*;
 use crate::error_reporting::ContextualParseError;
 use crate::parser::ParserContext;
 use crate::properties::{
@@ -16,7 +17,6 @@ use crate::properties::{
 };
 use crate::shared_lock::{DeepCloneWithLock, SharedRwLock, SharedRwLockReadGuard};
 use crate::shared_lock::{Locked, ToCssWithGuard};
-use crate::str::CssStringWriter;
 use crate::stylesheets::rule_parser::VendorPrefix;
 use crate::stylesheets::{CssRuleType, StylesheetContents};
 use crate::values::{serialize_percentage, KeyframesName};
@@ -27,7 +27,9 @@ use cssparser::{
 use servo_arc::Arc;
 use std::borrow::Cow;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, ParsingMode, StyleParseErrorKind, ToCss};
+use style_traits::{
+    CssStringWriter, CssWriter, ParseError, ParsingMode, StyleParseErrorKind, ToCss,
+};
 
 /// A [`@keyframes`][keyframes] rule.
 ///
@@ -80,21 +82,13 @@ impl KeyframesRule {
 }
 
 impl DeepCloneWithLock for KeyframesRule {
-    fn deep_clone_with_lock(
-        &self,
-        lock: &SharedRwLock,
-        guard: &SharedRwLockReadGuard,
-    ) -> Self {
+    fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Self {
         KeyframesRule {
             name: self.name.clone(),
             keyframes: self
                 .keyframes
                 .iter()
-                .map(|x| {
-                    Arc::new(
-                        lock.wrap(x.read_with(guard).deep_clone_with_lock(lock, guard)),
-                    )
-                })
+                .map(|x| Arc::new(lock.wrap(x.read_with(guard).deep_clone_with_lock(lock, guard))))
                 .collect(),
             vendor_prefix: self.vendor_prefix.clone(),
             source_location: self.source_location.clone(),
@@ -211,8 +205,8 @@ impl Keyframe {
         parent_stylesheet_contents: &StylesheetContents,
         lock: &SharedRwLock,
     ) -> Result<Arc<Locked<Self>>, ParseError<'i>> {
-        let url_data = parent_stylesheet_contents.url_data.read();
-        let namespaces = parent_stylesheet_contents.namespaces.read();
+        let url_data = &parent_stylesheet_contents.url_data;
+        let namespaces = &parent_stylesheet_contents.namespaces;
         let mut context = ParserContext::new(
             parent_stylesheet_contents.origin,
             &url_data,
@@ -236,11 +230,7 @@ impl Keyframe {
 
 impl DeepCloneWithLock for Keyframe {
     /// Deep clones this Keyframe.
-    fn deep_clone_with_lock(
-        &self,
-        lock: &SharedRwLock,
-        guard: &SharedRwLockReadGuard,
-    ) -> Keyframe {
+    fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Keyframe {
         Keyframe {
             selector: self.selector.clone(),
             block: Arc::new(lock.wrap(self.block.read_with(guard).clone())),

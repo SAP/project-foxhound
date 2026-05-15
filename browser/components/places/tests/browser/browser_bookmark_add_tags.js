@@ -74,11 +74,7 @@ add_task(async function test_add_bookmark_tags_from_bookmarkProperties() {
         "bookmarks-add-bookmark",
       "Bookmark title is correct"
     );
-    Assert.equal(
-      bookmarkStar.getAttribute("starred"),
-      "true",
-      "Page is starred"
-    );
+    Assert.ok(bookmarkStar.hasAttribute("starred"), "Page is starred");
   });
   await promiseNotification;
 

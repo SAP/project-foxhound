@@ -29,9 +29,11 @@ uint8_t* RemoteArrayOfByteBuffer::BuffersStartAddress() const {
 }
 
 bool RemoteArrayOfByteBuffer::Check(size_t aOffset, size_t aSizeInBytes) const {
-  return mBuffers && mBuffers->IsReadable() &&
-         detail::IsAddValid(aOffset, aSizeInBytes) &&
-         aOffset + aSizeInBytes <= mBuffers->Size<uint8_t>();
+  if (!mBuffers || !mBuffers->IsReadable()) {
+    return false;
+  }
+  auto size = CheckedInt<size_t>(aOffset) + aSizeInBytes;
+  return size.isValid() && size.value() <= mBuffers->Size<uint8_t>();
 }
 
 void RemoteArrayOfByteBuffer::Write(size_t aOffset, const void* aSourceAddr,
@@ -106,28 +108,30 @@ already_AddRefed<MediaByteBuffer> RemoteArrayOfByteBuffer::MediaByteBufferAt(
   return buffer.forget();
 }
 
-/*static */ void ipc::IPDLParamTraits<RemoteArrayOfByteBuffer>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    const RemoteArrayOfByteBuffer& aVar) {
-  WriteIPDLParam(aWriter, aActor, aVar.mIsValid);
+}  // namespace mozilla
+
+/*static */ void IPC::ParamTraits<mozilla::RemoteArrayOfByteBuffer>::Write(
+    IPC::MessageWriter* aWriter, const mozilla::RemoteArrayOfByteBuffer& aVar) {
+  WriteParam(aWriter, aVar.mIsValid);
   // We need the following gymnastic as the Shmem transfered over IPC will be
   // revoked. We must create a temporary one instead so that it can be recycled
   // later back into the original ShmemPool.
   if (aVar.mBuffers) {
-    WriteIPDLParam(aWriter, aActor, Some(ipc::Shmem(*aVar.mBuffers)));
+    WriteParam(aWriter, mozilla::Some(mozilla::ipc::Shmem(*aVar.mBuffers)));
   } else {
-    WriteIPDLParam(aWriter, aActor, Maybe<ipc::Shmem>());
+    WriteParam(aWriter, mozilla::Maybe<mozilla::ipc::Shmem>());
   }
-  WriteIPDLParam(aWriter, aActor, aVar.mOffsets);
+  WriteParam(aWriter, aVar.mOffsets);
 }
 
-/* static */ bool ipc::IPDLParamTraits<RemoteArrayOfByteBuffer>::Read(
-    IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor,
-    RemoteArrayOfByteBuffer* aVar) {
-  return ReadIPDLParam(aReader, aActor, &aVar->mIsValid) &&
-         ReadIPDLParam(aReader, aActor, &aVar->mBuffers) &&
-         ReadIPDLParam(aReader, aActor, &aVar->mOffsets);
+/* static */ bool IPC::ParamTraits<mozilla::RemoteArrayOfByteBuffer>::Read(
+    IPC::MessageReader* aReader, mozilla::RemoteArrayOfByteBuffer* aVar) {
+  return ReadParam(aReader, &aVar->mIsValid) &&
+         ReadParam(aReader, &aVar->mBuffers) &&
+         ReadParam(aReader, &aVar->mOffsets);
 }
+
+namespace mozilla {
 
 bool ArrayOfRemoteMediaRawData::Fill(
     const nsTArray<RefPtr<MediaRawData>>& aData,
@@ -152,9 +156,12 @@ bool ArrayOfRemoteMediaRawData::Fill(
             ? Some(CryptoInfo{
                   entry->mCrypto.mCryptoScheme,
                   entry->mCrypto.mIV,
+                  entry->mCrypto.mConstantIV,
                   entry->mCrypto.mKeyId,
                   entry->mCrypto.mPlainSizes,
                   entry->mCrypto.mEncryptedSizes,
+                  entry->mCrypto.mCryptByteBlock,
+                  entry->mCrypto.mSkipByteBlock,
               })
             : Nothing()});
   }
@@ -217,32 +224,35 @@ already_AddRefed<MediaRawData> ArrayOfRemoteMediaRawData::ElementAt(
     CryptoSample& cypto = rawData->GetWritableCrypto();
     cypto.mCryptoScheme = sample.mCryptoConfig->mEncryptionScheme();
     cypto.mIV = std::move(sample.mCryptoConfig->mIV());
+    cypto.mConstantIV = std::move(sample.mCryptoConfig->mConstantIV());
     cypto.mIVSize = cypto.mIV.Length();
     cypto.mKeyId = std::move(sample.mCryptoConfig->mKeyId());
     cypto.mPlainSizes = std::move(sample.mCryptoConfig->mClearBytes());
     cypto.mEncryptedSizes = std::move(sample.mCryptoConfig->mCipherBytes());
+    cypto.mCryptByteBlock = sample.mCryptoConfig->mCryptByteBlock();
+    cypto.mSkipByteBlock = sample.mCryptoConfig->mSkipByteBlock();
   }
   perfRecorder.Record();
   return rawData.forget();
 }
 
-/*static */ void ipc::IPDLParamTraits<ArrayOfRemoteMediaRawData*>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    ArrayOfRemoteMediaRawData* aVar) {
-  WriteIPDLParam(aWriter, aActor, std::move(aVar->mSamples));
-  WriteIPDLParam(aWriter, aActor, std::move(aVar->mBuffers));
-  WriteIPDLParam(aWriter, aActor, std::move(aVar->mAlphaBuffers));
-  WriteIPDLParam(aWriter, aActor, std::move(aVar->mExtraDatas));
+}  // namespace mozilla
+
+/*static */ void IPC::ParamTraits<mozilla::ArrayOfRemoteMediaRawData*>::Write(
+    MessageWriter* aWriter, mozilla::ArrayOfRemoteMediaRawData* aVar) {
+  WriteParam(aWriter, std::move(aVar->mSamples));
+  WriteParam(aWriter, std::move(aVar->mBuffers));
+  WriteParam(aWriter, std::move(aVar->mAlphaBuffers));
+  WriteParam(aWriter, std::move(aVar->mExtraDatas));
 }
 
-/* static */ bool ipc::IPDLParamTraits<ArrayOfRemoteMediaRawData*>::Read(
-    IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor,
-    RefPtr<ArrayOfRemoteMediaRawData>* aVar) {
-  auto array = MakeRefPtr<ArrayOfRemoteMediaRawData>();
-  if (!ReadIPDLParam(aReader, aActor, &array->mSamples) ||
-      !ReadIPDLParam(aReader, aActor, &array->mBuffers) ||
-      !ReadIPDLParam(aReader, aActor, &array->mAlphaBuffers) ||
-      !ReadIPDLParam(aReader, aActor, &array->mExtraDatas)) {
+/* static */ bool IPC::ParamTraits<mozilla::ArrayOfRemoteMediaRawData*>::Read(
+    MessageReader* aReader, RefPtr<mozilla::ArrayOfRemoteMediaRawData>* aVar) {
+  auto array = mozilla::MakeRefPtr<mozilla::ArrayOfRemoteMediaRawData>();
+  if (!ReadParam(aReader, &array->mSamples) ||
+      !ReadParam(aReader, &array->mBuffers) ||
+      !ReadParam(aReader, &array->mAlphaBuffers) ||
+      !ReadParam(aReader, &array->mExtraDatas)) {
     return false;
   }
   *aVar = std::move(array);
@@ -250,28 +260,28 @@ already_AddRefed<MediaRawData> ArrayOfRemoteMediaRawData::ElementAt(
 }
 
 /* static */ void
-ipc::IPDLParamTraits<ArrayOfRemoteMediaRawData::RemoteMediaRawData>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    const paramType& aVar) {
-  WriteIPDLParam(aWriter, aActor, aVar.mBase);
-  WriteIPDLParam(aWriter, aActor, aVar.mEOS);
-  WriteIPDLParam(aWriter, aActor, aVar.mHeight);
-  WriteIPDLParam(aWriter, aActor, aVar.mTemporalLayerId);
-  WriteIPDLParam(aWriter, aActor, aVar.mOriginalPresentationWindow);
-  WriteIPDLParam(aWriter, aActor, aVar.mCryptoConfig);
+IPC::ParamTraits<mozilla::ArrayOfRemoteMediaRawData::RemoteMediaRawData>::Write(
+    MessageWriter* aWriter, const paramType& aVar) {
+  WriteParam(aWriter, aVar.mBase);
+  WriteParam(aWriter, aVar.mEOS);
+  WriteParam(aWriter, aVar.mHeight);
+  WriteParam(aWriter, aVar.mTemporalLayerId);
+  WriteParam(aWriter, aVar.mOriginalPresentationWindow);
+  WriteParam(aWriter, aVar.mCryptoConfig);
 }
 
 /* static */ bool
-ipc::IPDLParamTraits<ArrayOfRemoteMediaRawData::RemoteMediaRawData>::Read(
-    IPC::MessageReader* aReader, ipc::IProtocol* aActor, paramType* aVar) {
-  MediaDataIPDL mBase;
-  return ReadIPDLParam(aReader, aActor, &aVar->mBase) &&
-         ReadIPDLParam(aReader, aActor, &aVar->mEOS) &&
-         ReadIPDLParam(aReader, aActor, &aVar->mHeight) &&
-         ReadIPDLParam(aReader, aActor, &aVar->mTemporalLayerId) &&
-         ReadIPDLParam(aReader, aActor, &aVar->mOriginalPresentationWindow) &&
-         ReadIPDLParam(aReader, aActor, &aVar->mCryptoConfig);
+IPC::ParamTraits<mozilla::ArrayOfRemoteMediaRawData::RemoteMediaRawData>::Read(
+    MessageReader* aReader, paramType* aVar) {
+  mozilla::MediaDataIPDL mBase;
+  return ReadParam(aReader, &aVar->mBase) && ReadParam(aReader, &aVar->mEOS) &&
+         ReadParam(aReader, &aVar->mHeight) &&
+         ReadParam(aReader, &aVar->mTemporalLayerId) &&
+         ReadParam(aReader, &aVar->mOriginalPresentationWindow) &&
+         ReadParam(aReader, &aVar->mCryptoConfig);
 };
+
+namespace mozilla {
 
 bool ArrayOfRemoteAudioData::Fill(
     const AudioData* aData, std::function<ShmemBuffer(size_t)>&& aAllocator) {
@@ -336,19 +346,20 @@ already_AddRefed<AudioData> ArrayOfRemoteAudioData::ElementAt(
   return audioData.forget();
 }
 
-/*static */ void ipc::IPDLParamTraits<ArrayOfRemoteAudioData*>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    ArrayOfRemoteAudioData* aVar) {
-  WriteIPDLParam(aWriter, aActor, std::move(aVar->mSamples));
-  WriteIPDLParam(aWriter, aActor, std::move(aVar->mBuffers));
+}  // namespace mozilla
+
+/*static */ void IPC::ParamTraits<mozilla::ArrayOfRemoteAudioData*>::Write(
+    IPC::MessageWriter* aWriter, mozilla::ArrayOfRemoteAudioData* aVar) {
+  WriteParam(aWriter, std::move(aVar->mSamples));
+  WriteParam(aWriter, std::move(aVar->mBuffers));
 }
 
-/* static */ bool ipc::IPDLParamTraits<ArrayOfRemoteAudioData*>::Read(
-    IPC::MessageReader* aReader, mozilla::ipc::IProtocol* aActor,
-    RefPtr<ArrayOfRemoteAudioData>* aVar) {
-  auto array = MakeRefPtr<ArrayOfRemoteAudioData>();
-  if (!ReadIPDLParam(aReader, aActor, &array->mSamples) ||
-      !ReadIPDLParam(aReader, aActor, &array->mBuffers)) {
+/* static */ bool IPC::ParamTraits<mozilla::ArrayOfRemoteAudioData*>::Read(
+    IPC::MessageReader* aReader,
+    RefPtr<mozilla::ArrayOfRemoteAudioData>* aVar) {
+  auto array = mozilla::MakeRefPtr<mozilla::ArrayOfRemoteAudioData>();
+  if (!ReadParam(aReader, &array->mSamples) ||
+      !ReadParam(aReader, &array->mBuffers)) {
     return false;
   }
   *aVar = std::move(array);
@@ -356,34 +367,28 @@ already_AddRefed<AudioData> ArrayOfRemoteAudioData::ElementAt(
 }
 
 /* static */ void
-ipc::IPDLParamTraits<ArrayOfRemoteAudioData::RemoteAudioData>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    const paramType& aVar) {
-  WriteIPDLParam(aWriter, aActor, aVar.mBase);
-  WriteIPDLParam(aWriter, aActor, aVar.mChannels);
-  WriteIPDLParam(aWriter, aActor, aVar.mRate);
-  WriteIPDLParam(aWriter, aActor, aVar.mChannelMap);
-  WriteIPDLParam(aWriter, aActor, aVar.mOriginalTime);
-  WriteIPDLParam(aWriter, aActor, aVar.mTrimWindow);
-  WriteIPDLParam(aWriter, aActor, aVar.mFrames);
-  WriteIPDLParam(aWriter, aActor, aVar.mDataOffset);
+IPC::ParamTraits<mozilla::ArrayOfRemoteAudioData::RemoteAudioData>::Write(
+    IPC::MessageWriter* aWriter, const paramType& aVar) {
+  WriteParam(aWriter, aVar.mBase);
+  WriteParam(aWriter, aVar.mChannels);
+  WriteParam(aWriter, aVar.mRate);
+  WriteParam(aWriter, aVar.mChannelMap);
+  WriteParam(aWriter, aVar.mOriginalTime);
+  WriteParam(aWriter, aVar.mTrimWindow);
+  WriteParam(aWriter, aVar.mFrames);
+  WriteParam(aWriter, aVar.mDataOffset);
 }
 
 /* static */ bool
-ipc::IPDLParamTraits<ArrayOfRemoteAudioData::RemoteAudioData>::Read(
-    IPC::MessageReader* aReader, ipc::IProtocol* aActor, paramType* aVar) {
-  MediaDataIPDL mBase;
-  if (!ReadIPDLParam(aReader, aActor, &aVar->mBase) ||
-      !ReadIPDLParam(aReader, aActor, &aVar->mChannels) ||
-      !ReadIPDLParam(aReader, aActor, &aVar->mRate) ||
-      !ReadIPDLParam(aReader, aActor, &aVar->mChannelMap) ||
-      !ReadIPDLParam(aReader, aActor, &aVar->mOriginalTime) ||
-      !ReadIPDLParam(aReader, aActor, &aVar->mTrimWindow) ||
-      !ReadIPDLParam(aReader, aActor, &aVar->mFrames) ||
-      !ReadIPDLParam(aReader, aActor, &aVar->mDataOffset)) {
-    return false;
-  }
-  return true;
+IPC::ParamTraits<mozilla::ArrayOfRemoteAudioData::RemoteAudioData>::Read(
+    IPC::MessageReader* aReader, paramType* aVar) {
+  mozilla::MediaDataIPDL mBase;
+  return ReadParam(aReader, &aVar->mBase) &&
+         ReadParam(aReader, &aVar->mChannels) &&
+         ReadParam(aReader, &aVar->mRate) &&
+         ReadParam(aReader, &aVar->mChannelMap) &&
+         ReadParam(aReader, &aVar->mOriginalTime) &&
+         ReadParam(aReader, &aVar->mTrimWindow) &&
+         ReadParam(aReader, &aVar->mFrames) &&
+         ReadParam(aReader, &aVar->mDataOffset);
 };
-
-}  // namespace mozilla

@@ -5,7 +5,7 @@ const TEST_URL = `https://example.com${DIRECTORY_PATH}form_signup_detection.html
 
 /**
  *
- * @param {Object} histogramData The histogram data to examine
+ * @param {object} histogramData The histogram data to examine
  * @returns The amount of entries found in the histogram data
  */
 function countEntries(histogramData) {
@@ -15,8 +15,8 @@ function countEntries(histogramData) {
 }
 
 /**
- * @param {String} id The histogram to examine
- * @param {Number} expected The expected amount of entries for a histogram
+ * @param {string} id The histogram to examine
+ * @param {number} expected The expected amount of entries for a histogram
  */
 async function countEntriesOfChildHistogram(id, expected) {
   let histogram;

@@ -37,12 +37,6 @@ const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
   });
 };
 
-add_task(async function setup() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-});
-
 add_task(async function test_insertCSS_and_removeCSS_params_validation() {
   let extension = makeExtension({
     async background() {

@@ -1,0 +1,22 @@
+diff --git a/src/llama-chat.cpp b/src/llama-chat.cpp
+index 61ceb1e41d..e96699e58a 100644
+--- a/src/llama-chat.cpp
++++ b/src/llama-chat.cpp
+@@ -74,11 +74,17 @@
+ }
+ 
+ llm_chat_template llm_chat_detect_template(const std::string & tmpl) {
++#if 0
+     try {
+         return llm_chat_template_from_str(tmpl);
+     } catch (const std::out_of_range &) {
+         // ignore
+     }
++#endif
++    auto chat_template = LLM_CHAT_TEMPLATES.find(tmpl);
++    if (chat_template != LLM_CHAT_TEMPLATES.end()) {
++        return chat_template->second;
++    }
+ 
+     auto tmpl_contains = [&tmpl](const char * haystack) -> bool {
+         return tmpl.find(haystack) != std::string::npos;

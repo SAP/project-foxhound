@@ -127,9 +127,7 @@ export class HiddenFrame {
       this.#listener,
       Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT
     );
-    let docShell = this.#browser.docShell;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-    docShell.createAboutBlankDocumentViewer(systemPrincipal, systemPrincipal);
     let browsingContext = this.#browser.browsingContext;
     browsingContext.useGlobalHistory = false;
     let loadURIOptions = {
@@ -184,7 +182,7 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
   /**
    * Releases the given hidden browser.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The hidden browser element.
    */
   #releaseBrowser(browser) {
@@ -202,7 +200,7 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
    * This function will return whatever the callback function returns.
    *
    * @template T
-   * @param {(XULBrowserElement) => T | Promise<T>} callback
+   * @param {(MozBrowser) => T | Promise<T>} callback
    *   The callback function will be called with the browser element and may
    *   be asynchronous.
    * @returns {Promise<T>}

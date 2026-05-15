@@ -13,9 +13,10 @@ const TEST_SANDBOX_URL =
 
 /**
  * Tests the contentBlockingAllowListPrincipal.
+ *
  * @param {Browser} browser - Browser to test.
  * @param {("content"|"system")} type - Expected principal type.
- * @param {String} [origin] - Expected origin of principal. Defaults to the
+ * @param {string} [origin] - Expected origin of principal. Defaults to the
  * origin of the browsers content principal.
  */
 function checkAllowListPrincipal(
@@ -46,7 +47,8 @@ function checkAllowListPrincipal(
 
 /**
  * Runs a given test in a normal window and in a private browsing window.
- * @param {String} initialUrl - URL to load in the initial test tab.
+ *
+ * @param {string} initialUrl - URL to load in the initial test tab.
  * @param {Function} testCallback - Test function to run in both windows.
  */
 async function runTestInNormalAndPrivateMode(initialUrl, testCallback) {
@@ -69,10 +71,11 @@ async function runTestInNormalAndPrivateMode(initialUrl, testCallback) {
 
 /**
  * Creates an iframe in the passed browser and waits for it to load.
+ *
  * @param {Browser} browser - Browser to create the frame in.
- * @param {String} src - Frame source url.
- * @param {String} id - Frame id.
- * @param {String} [sandboxAttr] - Optional list of sandbox attributes to set
+ * @param {string} src - Frame source url.
+ * @param {string} id - Frame id.
+ * @param {string} [sandboxAttr] - Optional list of sandbox attributes to set
  * for the iframe. Defaults to no sandbox.
  * @returns {Promise} - Resolves once the frame has loaded.
  */

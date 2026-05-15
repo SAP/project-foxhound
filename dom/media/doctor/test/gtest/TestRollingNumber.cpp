@@ -4,13 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "RollingNumber.h"
-
-#include "mozilla/Assertions.h"
+#include <gtest/gtest.h>
 
 #include <cstdint>
-#include <gtest/gtest.h>
 #include <type_traits>
+
+#include "RollingNumber.h"
 
 using RN8 = mozilla::RollingNumber<uint8_t>;
 

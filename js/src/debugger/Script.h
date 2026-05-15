@@ -23,7 +23,7 @@ class BaseScript;
 class GlobalObject;
 
 namespace gc {
-struct Cell;
+class Cell;
 }
 
 class DebuggerScript : public NativeObject {

@@ -7,6 +7,8 @@ package mozilla.components.ui.widgets.behavior
 import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.support.test.mock
+import mozilla.components.ui.widgets.behavior.DependencyGravity.Bottom
+import mozilla.components.ui.widgets.behavior.DependencyGravity.Top
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,21 +18,21 @@ import org.mockito.Mockito.verify
 class ViewYTranslatorTest {
     @Test
     fun `yTranslator should use BottomToolbarBehaviorStrategy for bottom placed toolbars`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
 
         assertTrue(yTranslator.strategy is BottomViewBehaviorStrategy)
     }
 
     @Test
     fun `yTranslator should use TopToolbarBehaviorStrategy for top placed toolbars`() {
-        val yTranslator = ViewYTranslator(ViewPosition.TOP)
+        val yTranslator = ViewYTranslator(Top)
 
         assertTrue(yTranslator.strategy is TopViewBehaviorStrategy)
     }
 
     @Test
     fun `yTranslator should delegate it's strategy for snapWithAnimation`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
         val strategy: ViewYTranslationStrategy = mock()
         yTranslator.strategy = strategy
         val view: View = mock()
@@ -42,7 +44,7 @@ class ViewYTranslatorTest {
 
     @Test
     fun `yTranslator should delegate it's strategy for expandWithAnimation`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
         val strategy: ViewYTranslationStrategy = mock()
         yTranslator.strategy = strategy
         val view: View = mock()
@@ -54,7 +56,7 @@ class ViewYTranslatorTest {
 
     @Test
     fun `yTranslator should delegate it's strategy for collapseWithAnimation`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
         val strategy: ViewYTranslationStrategy = mock()
         yTranslator.strategy = strategy
         val view: View = mock()
@@ -66,7 +68,7 @@ class ViewYTranslatorTest {
 
     @Test
     fun `yTranslator should delegate it's strategy for forceExpandIfNotAlready`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
         val strategy: ViewYTranslationStrategy = mock()
         yTranslator.strategy = strategy
         val view: View = mock()
@@ -78,7 +80,7 @@ class ViewYTranslatorTest {
 
     @Test
     fun `yTranslator should delegate it's strategy for translate`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
         val strategy: ViewYTranslationStrategy = mock()
         yTranslator.strategy = strategy
         val view: View = mock()
@@ -90,7 +92,7 @@ class ViewYTranslatorTest {
 
     @Test
     fun `yTranslator should delegate it's strategy for cancelInProgressTranslation`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
         val strategy: ViewYTranslationStrategy = mock()
         yTranslator.strategy = strategy
 
@@ -101,7 +103,7 @@ class ViewYTranslatorTest {
 
     @Test
     fun `yTranslator should delegate it's strategy for snapImmediately`() {
-        val yTranslator = ViewYTranslator(ViewPosition.BOTTOM)
+        val yTranslator = ViewYTranslator(Bottom)
         val strategy: ViewYTranslationStrategy = mock()
         yTranslator.strategy = strategy
         val view: View = mock()

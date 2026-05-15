@@ -1,0 +1,48 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+task-defaults:
+    description: 'Validate android strings.xml with moz.l10n'
+    run-on-repo-type: [hg]
+    run:
+        using: run-task
+        cwd: '{checkout}'
+        command: 'pip install --break-system-packages --user "moz.l10n[xml]~=0.10.1" && /builds/worker/.local/bin/l10n-lint --config ./l10n.toml'
+    worker-type: t-linux-docker-amd
+    platform: lint/opt
+    treeherder:
+        kind: other
+        tier: 2
+    worker:
+        docker-image: {in-tree: lint}
+        max-run-time: 1800
+    use-python: system
+
+
+l10n-lint-android-components:
+    optimization:
+        skip-unless-changed:
+            - "mobile/android/android-components/**"
+    run:
+        cwd: '{checkout}/mobile/android/android-components'
+    treeherder:
+        symbol: compare-locales(AC)
+
+l10n-lint-focus:
+    optimization:
+        skip-unless-changed:
+            - "mobile/android/focus-android/**"
+    run:
+        cwd: '{checkout}/mobile/android/focus-android'
+    treeherder:
+        symbol: compare-locales(focus)
+
+l10n-lint-fenix:
+    optimization:
+        skip-unless-changed:
+            - "mobile/android/fenix/**"
+    run:
+        cwd: '{checkout}/mobile/android/fenix'
+    treeherder:
+        symbol: compare-locales(fenix)

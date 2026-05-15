@@ -69,7 +69,7 @@ def func_type_name(func_type):
 
 def func_type_has_floats(func_type):
     for arg in func_type["args"]:
-        if arg == "Float32" or arg == "Float64":
+        if arg in {"Float32", "Float64"}:
             return True
     return False
 
@@ -106,7 +106,7 @@ def arm32_soft_fp_args(func_type):
                 contents += f"MakeInt64(stack_pointer[{stackOffset}], stack_pointer[{stackOffset + 1}])"
                 stackOffset += 2
             else:
-                contents += f"MakeInt64(a{intRegIndex}, a{intRegIndex+1})"
+                contents += f"MakeInt64(a{intRegIndex}, a{intRegIndex + 1})"
                 intRegIndex += 2
         elif arg == "Float32":
             if intRegIndex == numIntArgRegs:
@@ -162,7 +162,7 @@ def arm32_hard_fp_args(func_type):
                 contents += f"MakeInt64(stack_pointer[{stackOffset}], stack_pointer[{stackOffset + 1}])"
                 stackOffset += 2
             else:
-                contents += f"MakeInt64(a{intRegIndex}, a{intRegIndex+1})"
+                contents += f"MakeInt64(a{intRegIndex}, a{intRegIndex + 1})"
                 intRegIndex += 2
         elif arg == "Float32":
             if floatRegIndex == numFloatArgRegs:
@@ -209,7 +209,7 @@ def arm32_simulator_dispatch(func_types):
             # either generated args will do.
             contents += f"  {ret_setter}target({soft_fp_args});\\\n"
         contents += "  scratchVolatileRegisters((void*)target);\\\n"
-        if ret == "General" or ret == "Int32" or ret == "Int64":
+        if ret in {"General", "Int32", "Int64"}:
             contents += "  setCallResult(ret);\\\n"
         elif ret == "Float32":
             contents += "  setCallResultFloat(ret);\\\n"

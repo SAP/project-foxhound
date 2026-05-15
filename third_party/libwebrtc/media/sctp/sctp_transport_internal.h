@@ -15,7 +15,6 @@
 // anything in media/.
 
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <optional>
 
@@ -26,49 +25,7 @@
 #include "p2p/dtls/dtls_transport_internal.h"
 #include "rtc_base/copy_on_write_buffer.h"
 
-namespace cricket {
-
-// Constants that are important to API users
-
-// The number of outgoing streams that we'll negotiate. Since stream IDs (SIDs)
-// are 0-based, the highest usable SID is 1023.
-//
-// It's recommended to use the maximum of 65535 in:
-// https://tools.ietf.org/html/draft-ietf-rtcweb-data-channel-13#section-6.2
-// However, we use 1024 in order to save memory. usrsctp allocates 104 bytes
-// for each pair of incoming/outgoing streams (on a 64-bit system), so 65535
-// streams would waste ~6MB.
-//
-// Note: "max" and "min" here are inclusive.
-constexpr uint16_t kMaxSctpStreams = 1024;
-constexpr uint16_t kMaxSctpSid = kMaxSctpStreams - 1;
-constexpr uint16_t kMinSctpSid = 0;
-// The maximum number of streams that can be negotiated according to spec.
-constexpr uint16_t kSpecMaxSctpSid = 65535;
-
-// This is the default SCTP port to use. It is passed along the wire and the
-// connectee and connector must be using the same port. It is not related to the
-// ports at the IP level. (Corresponds to: sockaddr_conn.sconn_port in
-// usrsctp.h)
-const int kSctpDefaultPort = 5000;
-
-// Error cause codes defined at
-// https://www.iana.org/assignments/sctp-parameters/sctp-parameters.xhtml#sctp-parameters-24
-enum class SctpErrorCauseCode : uint16_t {
-  kInvalidStreamIdentifier = 1,
-  kMissingMandatoryParameter = 2,
-  kStaleCookieError = 3,
-  kOutOfResource = 4,
-  kUnresolvableAddress = 5,
-  kUnrecognizedChunkType = 6,
-  kInvalidMandatoryParameter = 7,
-  kUnrecognizedParameters = 8,
-  kNoUserData = 9,
-  kCookieReceivedWhileShuttingDown = 10,
-  kRestartWithNewAddresses = 11,
-  kUserInitiatedAbort = 12,
-  kProtocolViolation = 13,
-};
+namespace webrtc {
 
 // Abstract SctpTransport interface for use internally (by PeerConnection etc.).
 // Exists to allow mock/fake SctpTransports to be created.
@@ -77,18 +34,18 @@ class SctpTransportInternal {
   virtual ~SctpTransportInternal() {}
 
   virtual void SetOnConnectedCallback(std::function<void()> callback) = 0;
-  virtual void SetDataChannelSink(webrtc::DataChannelSink* sink) = 0;
+  virtual void SetDataChannelSink(DataChannelSink* sink) = 0;
 
   // Changes what underlying DTLS transport is uses. Used when switching which
   // bundled transport the SctpTransport uses.
-  virtual void SetDtlsTransport(cricket::DtlsTransportInternal* transport) = 0;
+  virtual void SetDtlsTransport(DtlsTransportInternal* transport) = 0;
 
   // When Start is called, connects as soon as possible; this can be called
   // before DTLS completes, in which case the connection will begin when DTLS
   // completes. This method can be called multiple times, though not if either
   // of the ports are changed.
   //
-  virtual bool Start(const webrtc::SctpOptions& options) = 0;
+  virtual bool Start(const SctpOptions& options) = 0;
   // TODO(deadbeef): Support calling Start with different local/remote ports
   // and create a new association? Not clear if this is something we need to
   // support though. See: https://github.com/w3c/webrtc-pc/issues/979
@@ -112,7 +69,7 @@ class SctpTransportInternal {
   // TODO(deadbeef): Actually implement the "returns false if `sid` can't be
   // used" part. See:
   // https://bugs.chromium.org/p/chromium/issues/detail?id=619849
-  virtual bool OpenStream(int sid, webrtc::PriorityValue priority) = 0;
+  virtual bool OpenStream(int sid, PriorityValue priority) = 0;
   // The inverse of OpenStream. Begins the closing procedure, which will
   // eventually result in SignalClosingProcedureComplete on the side that
   // initiates it, and both SignalClosingProcedureStartedRemotely and
@@ -121,9 +78,9 @@ class SctpTransportInternal {
   // Send data down this channel.
   // Returns RTCError::OK() if successful an error otherwise. Notably
   // RTCErrorType::RESOURCE_EXHAUSTED for blocked operations.
-  virtual webrtc::RTCError SendData(int sid,
-                                    const webrtc::SendDataParams& params,
-                                    const rtc::CopyOnWriteBuffer& payload) = 0;
+  virtual RTCError SendData(int sid,
+                            const SendDataParams& params,
+                            const CopyOnWriteBuffer& payload) = 0;
 
   // Indicates when the SCTP socket is created and not blocked by congestion
   // control. This changes to false when SDR_BLOCK is returned from SendData,
@@ -148,6 +105,7 @@ class SctpTransportInternal {
   virtual void set_debug_name_for_testing(const char* debug_name) = 0;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // MEDIA_SCTP_SCTP_TRANSPORT_INTERNAL_H_

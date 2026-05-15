@@ -5,13 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGAnimationElement.h"
-#include "mozilla/dom/SVGSVGElement.h"
-#include "mozilla/dom/SVGSwitchElement.h"
-#include "mozilla/dom/BindContext.h"
-#include "mozilla/dom/ElementInlines.h"
+
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SMILAnimationFunction.h"
 #include "mozilla/SMILTimeContainer.h"
+#include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/dom/SVGSwitchElement.h"
+#include "nsAttrValueOrString.h"
 #include "nsContentUtils.h"
 #include "nsIContentInlines.h"
 
@@ -255,7 +257,7 @@ void SVGAnimationElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       const nsAttrValue* xlinkHref =
           mAttrs.GetAttr(nsGkAtoms::href, kNameSpaceID_XLink);
       if (xlinkHref) {
-        UpdateHrefTarget(xlinkHref->GetStringValue());
+        UpdateHrefTarget(nsAttrValueOrString(xlinkHref).String());
       }
     } else if (!HasAttr(nsGkAtoms::href)) {
       mHrefTarget.Unlink();
@@ -266,9 +268,10 @@ void SVGAnimationElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                HasAttr(nsGkAtoms::href))) {
     // Note: "href" takes priority over xlink:href. So if "xlink:href" is being
     // set here, we only let that update our target if "href" is *unset*.
-    MOZ_ASSERT(aValue->Type() == nsAttrValue::eString,
-               "Expected href attribute to be string type");
-    UpdateHrefTarget(aValue->GetStringValue());
+    MOZ_ASSERT(aValue->Type() == nsAttrValue::eString ||
+                   aValue->Type() == nsAttrValue::eAtom,
+               "Expected href attribute to be string or atom type");
+    UpdateHrefTarget(nsAttrValueOrString(aValue).String());
   }  // else: we're not yet in a document -- we'll update the target on
      // next BindToTree call.
 }

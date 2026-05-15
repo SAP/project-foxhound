@@ -5,8 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerDescriptor.h"
+
 #include "mozilla/dom/IPCServiceWorkerDescriptor.h"
 #include "mozilla/dom/ServiceWorkerBinding.h"
+#include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 
 namespace mozilla::dom {
@@ -16,7 +18,7 @@ using mozilla::ipc::PrincipalInfoToPrincipal;
 
 ServiceWorkerDescriptor::ServiceWorkerDescriptor(
     uint64_t aId, uint64_t aRegistrationId, uint64_t aRegistrationVersion,
-    nsIPrincipal* aPrincipal, const nsACString& aScope,
+    nsIPrincipal* aPrincipal, const nsACString& aScope, WorkerType aType,
     const nsACString& aScriptURL, ServiceWorkerState aState)
     : mData(MakeUnique<IPCServiceWorkerDescriptor>()) {
   MOZ_ALWAYS_SUCCEEDS(
@@ -26,6 +28,7 @@ ServiceWorkerDescriptor::ServiceWorkerDescriptor(
   mData->registrationId() = aRegistrationId;
   mData->registrationVersion() = aRegistrationVersion;
   mData->scope() = aScope;
+  mData->type() = aType;
   mData->scriptURL() = aScriptURL;
   mData->state() = aState;
   // Set HandlesFetch as true in default
@@ -35,10 +38,10 @@ ServiceWorkerDescriptor::ServiceWorkerDescriptor(
 ServiceWorkerDescriptor::ServiceWorkerDescriptor(
     uint64_t aId, uint64_t aRegistrationId, uint64_t aRegistrationVersion,
     const mozilla::ipc::PrincipalInfo& aPrincipalInfo, const nsACString& aScope,
-    const nsACString& aScriptURL, ServiceWorkerState aState)
+    WorkerType aType, const nsACString& aScriptURL, ServiceWorkerState aState)
     : mData(MakeUnique<IPCServiceWorkerDescriptor>(
           aId, aRegistrationId, aRegistrationVersion, aPrincipalInfo,
-          nsCString(aScriptURL), nsCString(aScope), aState, true)) {}
+          nsCString(aScriptURL), aType, nsCString(aScope), aState, true)) {}
 
 ServiceWorkerDescriptor::ServiceWorkerDescriptor(
     const IPCServiceWorkerDescriptor& aDescriptor)
@@ -101,6 +104,8 @@ Result<nsCOMPtr<nsIPrincipal>, nsresult> ServiceWorkerDescriptor::GetPrincipal()
 const nsCString& ServiceWorkerDescriptor::Scope() const {
   return mData->scope();
 }
+
+WorkerType ServiceWorkerDescriptor::Type() const { return mData->type(); }
 
 const nsCString& ServiceWorkerDescriptor::ScriptURL() const {
   return mData->scriptURL();

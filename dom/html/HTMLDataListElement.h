@@ -3,12 +3,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef HTMLDataListElement_h___
-#define HTMLDataListElement_h___
+#ifndef HTMLDataListElement_h_
+#define HTMLDataListElement_h_
 
-#include "mozilla/Attributes.h"
-#include "nsGenericHTMLElement.h"
 #include "nsContentList.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
 
@@ -53,4 +52,4 @@ class HTMLDataListElement final : public nsGenericHTMLElement {
 
 }  // namespace mozilla::dom
 
-#endif /* HTMLDataListElement_h___ */
+#endif /* HTMLDataListElement_h_ */

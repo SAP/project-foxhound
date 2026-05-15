@@ -13,17 +13,15 @@
 #include "mozilla/Attributes.h"  // MOZ_STACK_CLASS
 #include "mozilla/Range.h"       // mozilla::Range
 #include "mozilla/RangedPtr.h"   // mozilla::RangedPtr
-
-#include "mozilla/Sprintf.h"    // SprintfLiteral
+#include "mozilla/Sprintf.h"     // SprintfLiteral
 #include "mozilla/TextUtils.h"  // mozilla::AsciiAlphanumericToNumber, mozilla::IsAsciiDigit, mozilla::IsAsciiHexDigit
 
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint32_t
 #include <utility>   // std::move
 
-#include "jsnum.h"  // ParseDecimalNumber, GetFullInteger, FullStringToDouble
-
-#include "builtin/Array.h"              // NewDenseCopiedArray
+#include "builtin/Array.h"  // NewDenseCopiedArray
+#include "builtin/Number.h"  // ParseDecimalNumber, GetFullInteger, FullStringToDouble
 #include "builtin/ParseRecordObject.h"  // js::ParseRecordObject
 #include "ds/IdValuePair.h"             // IdValuePair
 #include "gc/GCEnum.h"                  // CanGC

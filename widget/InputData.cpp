@@ -43,6 +43,15 @@ InputData::InputData(InputType aInputType, TimeStamp aTimeStamp,
       mLayersId{0},
       modifiers(aModifiers) {}
 
+InputData::InputData(InputType aInputType, TimeStamp aTimeStamp,
+                     const Maybe<uint64_t>& aCallback, Modifiers aModifiers)
+    : mInputType(aInputType),
+      mTimeStamp(aTimeStamp),
+      mFocusSequenceNumber(0),
+      mLayersId{0},
+      mCallbackId(aCallback),
+      modifiers(aModifiers) {}
+
 SingleTouchData::SingleTouchData(int32_t aIdentifier,
                                  ScreenIntPoint aScreenPoint,
                                  ScreenSize aRadius, float aRotationAngle,
@@ -74,8 +83,7 @@ already_AddRefed<Touch> SingleTouchData::ToNewDOMTouch() const {
                 LayoutDeviceIntPoint::Truncate(mScreenPoint.x, mScreenPoint.y),
                 LayoutDeviceIntPoint::Truncate(mRadius.width, mRadius.height),
                 mRotationAngle, mForce);
-  touch->tiltX = mTiltX;
-  touch->tiltY = mTiltY;
+  touch->mTilt.emplace(mTiltX, mTiltY);
   touch->twist = mTwist;
   return touch.forget();
 }
@@ -93,7 +101,7 @@ MultiTouchInput::MultiTouchInput()
 
 MultiTouchInput::MultiTouchInput(const WidgetTouchEvent& aTouchEvent)
     : InputData(MULTITOUCH_INPUT, aTouchEvent.mTimeStamp,
-                aTouchEvent.mModifiers),
+                aTouchEvent.mCallbackId, aTouchEvent.mModifiers),
       mHandledByAPZ(aTouchEvent.mFlags.mHandledByAPZ),
       mButton(aTouchEvent.mButton),
       mButtons(aTouchEvent.mButtons),
@@ -259,8 +267,9 @@ MouseInput::MouseInput(MouseType aType, ButtonType aButtonType,
       mIgnoreCapturingContent(false),
       mSynthesizeMoveAfterDispatch(false) {}
 
-MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
-    : InputData(MOUSE_INPUT, aMouseEvent.mTimeStamp, aMouseEvent.mModifiers),
+MouseInput::MouseInput(const WidgetMouseEvent& aMouseEvent)
+    : InputData(MOUSE_INPUT, aMouseEvent.mTimeStamp, aMouseEvent.mCallbackId,
+                aMouseEvent.mModifiers),
       mType(MOUSE_NONE),
       mButtonType(NONE),
       mInputSource(aMouseEvent.mInputSource),
@@ -474,6 +483,7 @@ WidgetMouseOrPointerEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const {
   event.mClickEventPrevented = mPreventClickEvent;
   event.mIgnoreCapturingContent = mIgnoreCapturingContent;
   event.mSynthesizeMoveAfterDispatch = mSynthesizeMoveAfterDispatch;
+  event.mCallbackId = mCallbackId;
 
   return event;
 }
@@ -852,7 +862,7 @@ ScrollWheelInput::ScrollWheelInput(
 
 ScrollWheelInput::ScrollWheelInput(const WidgetWheelEvent& aWheelEvent)
     : InputData(SCROLLWHEEL_INPUT, aWheelEvent.mTimeStamp,
-                aWheelEvent.mModifiers),
+                aWheelEvent.mCallbackId, aWheelEvent.mModifiers),
       mDeltaType(DeltaTypeForDeltaMode(aWheelEvent.mDeltaMode)),
       mScrollMode(SCROLLMODE_INSTANT),
       mHandledByAPZ(aWheelEvent.mFlags.mHandledByAPZ),
@@ -940,6 +950,7 @@ WidgetWheelEvent ScrollWheelInput::ToWidgetEvent(nsIWidget* aWidget) const {
       mAllowToOverrideSystemScrollSpeed;
   wheelEvent.mFlags.mHandledByAPZ = mHandledByAPZ;
   wheelEvent.mFocusSequenceNumber = mFocusSequenceNumber;
+  wheelEvent.mCallbackId = mCallbackId;
   return wheelEvent;
 }
 

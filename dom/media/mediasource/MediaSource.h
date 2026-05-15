@@ -8,9 +8,8 @@
 #define mozilla_dom_MediaSource_h_
 
 #include "MediaSourceDecoder.h"
+#include "TimeUnits.h"
 #include "js/RootingAPI.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/dom/MediaSourceBinding.h"
@@ -20,7 +19,6 @@
 #include "nsID.h"
 #include "nsISupports.h"
 #include "nscore.h"
-#include "TimeUnits.h"
 
 struct JSContext;
 class JSObject;

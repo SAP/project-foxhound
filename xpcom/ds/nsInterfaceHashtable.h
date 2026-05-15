@@ -4,11 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsInterfaceHashtable_h__
-#define nsInterfaceHashtable_h__
+#ifndef nsInterfaceHashtable_h_
+#define nsInterfaceHashtable_h_
 
 #include "nsRefCountedHashtable.h"
 #include "nsHashKeys.h"
 #include "nsCOMPtr.h"
 
-#endif  // nsInterfaceHashtable_h__
+#endif  // nsInterfaceHashtable_h_

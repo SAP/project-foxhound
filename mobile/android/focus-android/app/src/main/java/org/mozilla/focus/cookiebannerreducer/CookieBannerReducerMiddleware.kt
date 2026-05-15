@@ -7,14 +7,12 @@ package org.mozilla.focus.cookiebannerreducer
 import android.content.Context
 import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.focus.GleanMetrics.CookieBanner
 import org.mozilla.focus.GleanMetrics.Pings
@@ -26,7 +24,7 @@ import org.mozilla.focus.ext.settings
  * Middleware for cookie banner reduction.
  */
 class CookieBannerReducerMiddleware(
-    private val ioScope: CoroutineScope,
+    private val scope: CoroutineScope,
     private val cookieBannersStorage: CookieBannersStorage,
     private val appContext: Context,
     private val currentTab: SessionState,
@@ -34,24 +32,22 @@ class CookieBannerReducerMiddleware(
     Middleware<CookieBannerReducerState, CookieBannerReducerAction> {
 
     override fun invoke(
-        context: MiddlewareContext<CookieBannerReducerState, CookieBannerReducerAction>,
+        store: Store<CookieBannerReducerState, CookieBannerReducerAction>,
         next: (CookieBannerReducerAction) -> Unit,
         action: CookieBannerReducerAction,
     ) {
         when (action) {
             is CookieBannerReducerAction.InitCookieBannerReducer -> {
-                /**
-                 * The initial CookieBannerReducerState when the user enters first in the screen
-                 */
-                initCookieBannerReducer(context)
+                // The initial CookieBannerReducerState when the user enters first in the screen
+                initCookieBannerReducer(store)
             }
 
             is CookieBannerReducerAction.ToggleCookieBannerException -> {
-                handleCookieBannerToggle(action, context)
+                handleCookieBannerToggle(action, store)
                 next(action)
             }
             is CookieBannerReducerAction.RequestReportSite -> {
-                reportSite(action, context)
+                reportSite(action, store)
                 next(action)
             }
             else -> {
@@ -62,13 +58,13 @@ class CookieBannerReducerMiddleware(
 
     private fun handleCookieBannerToggle(
         action: CookieBannerReducerAction.ToggleCookieBannerException,
-        context: MiddlewareContext<CookieBannerReducerState, CookieBannerReducerAction>,
+        store: Store<CookieBannerReducerState, CookieBannerReducerAction>,
     ) {
-        ioScope.launch {
+        scope.launch {
             if (action.isCookieBannerHandlingExceptionEnabled) {
                 cookieBannersStorage.removeException(currentTab.content.url, true)
                 CookieBanner.exceptionRemoved.record(NoExtras())
-                context.store.dispatch(
+                store.dispatch(
                     CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
                         CookieBannerReducerStatus.NoException,
                     ),
@@ -77,7 +73,7 @@ class CookieBannerReducerMiddleware(
                 clearSiteData()
                 cookieBannersStorage.addPersistentExceptionInPrivateMode(currentTab.content.url)
                 CookieBanner.exceptionAdded.record(NoExtras())
-                context.store.dispatch(
+                store.dispatch(
                     CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
                         CookieBannerReducerStatus.HasException,
                     ),
@@ -89,68 +85,67 @@ class CookieBannerReducerMiddleware(
 
     private fun reportSite(
         action: CookieBannerReducerAction.RequestReportSite,
-        context: MiddlewareContext<CookieBannerReducerState, CookieBannerReducerAction>,
+        store: Store<CookieBannerReducerState, CookieBannerReducerAction>,
     ) {
         CookieBanner.reportSiteDomain.set(action.siteToReport)
         Pings.cookieBannerReportSite.submit()
-        context.store.dispatch(
+        store.dispatch(
             CookieBannerReducerAction.ShowSnackBarForSiteToReport(
                 true,
             ),
         )
-        context.store.dispatch(
+        store.dispatch(
             CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
                 CookieBannerReducerStatus.CookieBannerUnsupportedSiteRequestWasSubmitted,
             ),
         )
-        ioScope.launch { cookieBannersStorage.saveSiteDomain(action.siteToReport) }
+        scope.launch { cookieBannersStorage.saveSiteDomain(action.siteToReport) }
     }
 
     private fun initCookieBannerReducer(
-        context: MiddlewareContext<CookieBannerReducerState, CookieBannerReducerAction>,
+        store: Store<CookieBannerReducerState, CookieBannerReducerAction>,
     ) {
         val shouldShowCookieBannerItem = shouldShowCookieBannerReducerItem()
-        context.store.dispatch(
+        store.dispatch(
             CookieBannerReducerAction.UpdateCookieBannerReducerVisibility(
                 shouldShowCookieBannerItem = shouldShowCookieBannerItem,
             ),
         )
 
         if (shouldShowCookieBannerItem) {
-            ioScope.launch {
-                if (isSiteDomainReported(context)) {
+            scope.launch {
+                if (isSiteDomainReported(store)) {
                     return@launch
                 }
                 val hasException =
                     cookieBannersStorage.hasException(currentTab.content.url, true)
-                withContext(Dispatchers.Main) {
-                    if (hasException == null) {
-                        // An error occurred while querying the exception, let's hide the item.
-                        context.store.dispatch(
-                            CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
-                                null,
-                            ),
-                        )
-                        return@withContext
-                    } else if (hasException) {
-                        showExceptionStatus(context, true)
-                    } else {
-                        showUnsupportedSiteIfNeeded(context)
-                    }
+
+                if (hasException == null) {
+                    // An error occurred while querying the exception, let's hide the item.
+                    store.dispatch(
+                        CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
+                            null,
+                        ),
+                    )
+                    return@launch
+                } else if (hasException) {
+                    showExceptionStatus(store, true)
+                } else {
+                    showUnsupportedSiteIfNeeded(store)
                 }
             }
         }
     }
 
     private fun showUnsupportedSiteIfNeeded(
-        context: MiddlewareContext<CookieBannerReducerState, CookieBannerReducerAction>,
+        store: Store<CookieBannerReducerState, CookieBannerReducerAction>,
     ) {
         currentTab.engineState.engineSession?.hasCookieBannerRuleForSession(
             onResult = { result ->
                 if (result) {
-                    showExceptionStatus(context, false)
+                    showExceptionStatus(store, false)
                 } else {
-                    context.store.dispatch(
+                    store.dispatch(
                         CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
                             CookieBannerReducerStatus.CookieBannerSiteNotSupported,
                         ),
@@ -158,7 +153,7 @@ class CookieBannerReducerMiddleware(
                 }
             },
             onException = {
-                context.store.dispatch(
+                store.dispatch(
                     CookieBannerReducerAction.UpdateCookieBannerReducerVisibility(
                         shouldShowCookieBannerItem = false,
                     ),
@@ -168,17 +163,17 @@ class CookieBannerReducerMiddleware(
     }
 
     private fun showExceptionStatus(
-        context: MiddlewareContext<CookieBannerReducerState, CookieBannerReducerAction>,
+        store: Store<CookieBannerReducerState, CookieBannerReducerAction>,
         hasException: Boolean,
     ) {
         if (hasException) {
-            context.store.dispatch(
+            store.dispatch(
                 CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
                     CookieBannerReducerStatus.HasException,
                 ),
             )
         } else {
-            context.store.dispatch(
+            store.dispatch(
                 CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
                     CookieBannerReducerStatus.NoException,
                 ),
@@ -197,13 +192,13 @@ class CookieBannerReducerMiddleware(
     }
 
     private suspend fun isSiteDomainReported(
-        context: MiddlewareContext<CookieBannerReducerState, CookieBannerReducerAction>,
+        store: Store<CookieBannerReducerState, CookieBannerReducerAction>,
     ): Boolean {
         val host = currentTab.content.url.toUri().host.orEmpty()
         val siteDomain =
             appContext.components.publicSuffixList.getPublicSuffixPlusOne(host).await()
         if (siteDomain != null && cookieBannersStorage.isSiteDomainReported(siteDomain)) {
-            context.store.dispatch(
+            store.dispatch(
                 CookieBannerReducerAction.UpdateCookieBannerReducerStatus(
                     CookieBannerReducerStatus.CookieBannerUnsupportedSiteRequestWasSubmitted,
                 ),
@@ -216,14 +211,12 @@ class CookieBannerReducerMiddleware(
     private suspend fun clearSiteData() {
         val host = currentTab.content.url.toUri().host.orEmpty()
         val domain = appContext.components.publicSuffixList.getPublicSuffixPlusOne(host).await()
-        withContext(Dispatchers.Main) {
-            appContext.components.engine.clearData(
-                host = domain,
-                data = Engine.BrowsingData.select(
-                    Engine.BrowsingData.AUTH_SESSIONS,
-                    Engine.BrowsingData.ALL_SITE_DATA,
-                ),
-            )
-        }
+        appContext.components.engine.clearData(
+            host = domain,
+            data = Engine.BrowsingData.select(
+                Engine.BrowsingData.AUTH_SESSIONS,
+                Engine.BrowsingData.ALL_SITE_DATA,
+            ),
+        )
     }
 }

@@ -3,11 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "txExpr.h"
 #include "nsAtom.h"
-#include "txNodeSet.h"
 #include "nsGkAtoms.h"
+#include "txExpr.h"
 #include "txIXPathContext.h"
+#include "txNodeSet.h"
 
 //-------------------/
 //- VariableRefExpr -/

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WorkerChannelInfo.h"
+
 #include "mozilla/dom/BrowsingContext.h"
 
 namespace mozilla::dom {

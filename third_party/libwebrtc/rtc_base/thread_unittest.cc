@@ -34,11 +34,12 @@
 #include "rtc_base/null_socket_server.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
+#include "rtc_base/socket_factory.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/testsupport/rtc_expect_death.h"
@@ -53,7 +54,6 @@ namespace webrtc {
 namespace {
 
 using ::testing::ElementsAre;
-using ::webrtc::TimeDelta;
 
 // Generates a sequence of numbers (collaboratively).
 class TestGenerator {
@@ -88,26 +88,28 @@ class MessageClient : public TestGenerator {
 };
 
 // Receives on a socket and sends by posting messages.
-class SocketClient : public TestGenerator, public sigslot::has_slots<> {
+class SocketClient : public TestGenerator {
  public:
-  SocketClient(Socket* socket,
+  SocketClient(SocketFactory* socket_factory,
                const SocketAddress& addr,
                Thread* post_thread,
                MessageClient* phandler)
-      : socket_(AsyncUDPSocket::Create(socket, addr)),
+      : socket_(AsyncUDPSocket::Create(CreateTestEnvironment(),
+                                       addr,
+                                       *socket_factory)),
         post_thread_(post_thread),
         post_handler_(phandler) {
     socket_->RegisterReceivedPacketCallback(
-        [&](rtc::AsyncPacketSocket* socket, const rtc::ReceivedPacket& packet) {
+        [&](AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
           OnPacket(socket, packet);
         });
   }
 
-  ~SocketClient() override { delete socket_; }
+  ~SocketClient() = default;
 
   SocketAddress address() const { return socket_->GetLocalAddress(); }
 
-  void OnPacket(AsyncPacketSocket* socket, const rtc::ReceivedPacket& packet) {
+  void OnPacket(AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
     EXPECT_EQ(packet.payload().size(), sizeof(uint32_t));
     uint32_t prev =
         reinterpret_cast<const uint32_t*>(packet.payload().data())[0];
@@ -119,7 +121,7 @@ class SocketClient : public TestGenerator, public sigslot::has_slots<> {
   }
 
  private:
-  AsyncUDPSocket* socket_;
+  std::unique_ptr<AsyncUDPSocket> socket_;
   Thread* post_thread_;
   MessageClient* post_handler_;
 };
@@ -168,9 +170,7 @@ TEST(ThreadTest, DISABLED_Main) {
 
   // Create the socket client on its own thread.
   auto th2 = Thread::CreateWithSocketServer();
-  Socket* asocket =
-      th2->socketserver()->CreateSocket(addr.family(), SOCK_DGRAM);
-  SocketClient sock_client(asocket, addr, th1.get(), &msg_client);
+  SocketClient sock_client(th2->socketserver(), addr, th1.get(), &msg_client);
 
   socket->Connect(sock_client.address());
 
@@ -206,7 +206,7 @@ TEST(ThreadTest, CountBlockingCalls) {
   //   (thread_unittest.cc:262): Blocking TestBody: total=2 (actual=1, could=1)
   RTC_LOG_THREAD_BLOCK_COUNT();
 #if RTC_DCHECK_IS_ON
-  rtc::Thread::ScopedCountBlockingCalls blocked_calls(
+  Thread::ScopedCountBlockingCalls blocked_calls(
       [&](uint32_t actual_block, uint32_t could_block) {
         EXPECT_EQ(1u, actual_block);
         EXPECT_EQ(1u, could_block);
@@ -242,10 +242,10 @@ TEST(ThreadTest, CountBlockingCalls) {
 
 #if RTC_DCHECK_IS_ON
 TEST(ThreadTest, CountBlockingCallsOneCallback) {
-  rtc::AutoThread current;
+  AutoThread current;
   bool was_called_back = false;
   {
-    rtc::Thread::ScopedCountBlockingCalls blocked_calls(
+    Thread::ScopedCountBlockingCalls blocked_calls(
         [&](uint32_t actual_block, uint32_t could_block) {
           was_called_back = true;
         });
@@ -255,10 +255,10 @@ TEST(ThreadTest, CountBlockingCallsOneCallback) {
 }
 
 TEST(ThreadTest, CountBlockingCallsSkipCallback) {
-  rtc::AutoThread current;
+  AutoThread current;
   bool was_called_back = false;
   {
-    rtc::Thread::ScopedCountBlockingCalls blocked_calls(
+    Thread::ScopedCountBlockingCalls blocked_calls(
         [&](uint32_t actual_block, uint32_t could_block) {
           was_called_back = true;
         });
@@ -309,7 +309,7 @@ TEST(ThreadTest, Wrap) {
 
 #if (!defined(NDEBUG) || RTC_DCHECK_IS_ON)
 TEST(ThreadTest, InvokeToThreadAllowedReturnsTrueWithoutPolicies) {
-  rtc::AutoThread main_thread;
+  AutoThread main_thread;
   // Create and start the thread.
   auto thread1 = Thread::CreateWithSocketServer();
   auto thread2 = Thread::CreateWithSocketServer();
@@ -320,7 +320,7 @@ TEST(ThreadTest, InvokeToThreadAllowedReturnsTrueWithoutPolicies) {
 }
 
 TEST(ThreadTest, InvokeAllowedWhenThreadsAdded) {
-  rtc::AutoThread main_thread;
+  AutoThread main_thread;
   // Create and start the thread.
   auto thread1 = Thread::CreateWithSocketServer();
   auto thread2 = Thread::CreateWithSocketServer();
@@ -339,7 +339,7 @@ TEST(ThreadTest, InvokeAllowedWhenThreadsAdded) {
 }
 
 TEST(ThreadTest, InvokesDisallowedWhenDisallowAllInvokes) {
-  rtc::AutoThread main_thread;
+  AutoThread main_thread;
   // Create and start the thread.
   auto thread1 = Thread::CreateWithSocketServer();
   auto thread2 = Thread::CreateWithSocketServer();
@@ -469,9 +469,9 @@ TEST(ThreadTest, ThreeThreadsBlockingCall) {
         SetAndInvokeSet(&async_invoked, thread2, out);
       });
 
-      EXPECT_THAT(webrtc::WaitUntil([&] { return async_invoked.Get(); },
-                                    ::testing::IsTrue()),
-                  webrtc::IsRtcOk());
+      EXPECT_THAT(
+          WaitUntil([&] { return async_invoked.Get(); }, ::testing::IsTrue()),
+          IsRtcOk());
     }
   };
 
@@ -486,14 +486,13 @@ TEST(ThreadTest, ThreeThreadsBlockingCall) {
   });
   EXPECT_FALSE(thread_a_called.Get());
 
-  EXPECT_THAT(webrtc::WaitUntil([&] { return thread_a_called.Get(); },
-                                ::testing::IsTrue()),
-              webrtc::IsRtcOk());
+  EXPECT_THAT(
+      WaitUntil([&] { return thread_a_called.Get(); }, ::testing::IsTrue()),
+      IsRtcOk());
 }
 
-static void DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(
-    FakeClock& clock,
-    Thread& q) {
+void DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(FakeClock& clock,
+                                                           Thread& q) {
   std::vector<int> run_order;
 
   Event done;
@@ -516,7 +515,7 @@ static void DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(
 
 TEST(ThreadTest, DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder) {
   ScopedBaseFakeClock clock;
-  Thread q(rtc::CreateDefaultSocketServer(), true);
+  Thread q(CreateDefaultSocketServer(), true);
   q.Start();
   DelayedPostsWithIdenticalTimesAreProcessedInFifoOrder(clock, q);
 
@@ -635,7 +634,7 @@ class DestructionFunctor {
 };
 
 TEST(ThreadPostTaskTest, InvokesWithLambda) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   Event event;
@@ -644,7 +643,7 @@ TEST(ThreadPostTaskTest, InvokesWithLambda) {
 }
 
 TEST(ThreadPostTaskTest, InvokesWithCopiedFunctor) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   LifeCycleFunctor::Stats stats;
@@ -658,7 +657,7 @@ TEST(ThreadPostTaskTest, InvokesWithCopiedFunctor) {
 }
 
 TEST(ThreadPostTaskTest, InvokesWithMovedFunctor) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   LifeCycleFunctor::Stats stats;
@@ -672,7 +671,7 @@ TEST(ThreadPostTaskTest, InvokesWithMovedFunctor) {
 }
 
 TEST(ThreadPostTaskTest, InvokesWithReferencedFunctorShouldCopy) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   LifeCycleFunctor::Stats stats;
@@ -687,7 +686,7 @@ TEST(ThreadPostTaskTest, InvokesWithReferencedFunctorShouldCopy) {
 }
 
 TEST(ThreadPostTaskTest, InvokesWithCopiedFunctorDestroyedOnTargetThread) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   Event event;
@@ -701,7 +700,7 @@ TEST(ThreadPostTaskTest, InvokesWithCopiedFunctorDestroyedOnTargetThread) {
 }
 
 TEST(ThreadPostTaskTest, InvokesWithMovedFunctorDestroyedOnTargetThread) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   Event event;
@@ -716,7 +715,7 @@ TEST(ThreadPostTaskTest, InvokesWithMovedFunctorDestroyedOnTargetThread) {
 
 TEST(ThreadPostTaskTest,
      InvokesWithReferencedFunctorShouldCopyAndDestroyedOnTargetThread) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   Event event;
@@ -731,7 +730,7 @@ TEST(ThreadPostTaskTest,
 }
 
 TEST(ThreadPostTaskTest, InvokesOnBackgroundThread) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   Event event;
@@ -748,7 +747,7 @@ TEST(ThreadPostTaskTest, InvokesOnBackgroundThread) {
 }
 
 TEST(ThreadPostTaskTest, InvokesAsynchronously) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   // The first event ensures that SendSingleMessage() is not blocking this
@@ -764,7 +763,7 @@ TEST(ThreadPostTaskTest, InvokesAsynchronously) {
 }
 
 TEST(ThreadPostTaskTest, InvokesInPostedOrder) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   Event first;
@@ -786,7 +785,7 @@ TEST(ThreadPostTaskTest, InvokesInPostedOrder) {
 }
 
 TEST(ThreadPostDelayedTaskTest, InvokesAsynchronously) {
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   // The first event ensures that SendSingleMessage() is not blocking this
@@ -805,7 +804,7 @@ TEST(ThreadPostDelayedTaskTest, InvokesAsynchronously) {
 
 TEST(ThreadPostDelayedTaskTest, InvokesInDelayOrder) {
   ScopedFakeClock clock;
-  std::unique_ptr<Thread> background_thread(rtc::Thread::Create());
+  std::unique_ptr<Thread> background_thread(Thread::Create());
   background_thread->Start();
 
   Event first;
@@ -833,7 +832,7 @@ TEST(ThreadPostDelayedTaskTest, InvokesInDelayOrder) {
 TEST(ThreadPostDelayedTaskTest, IsCurrentTaskQueue) {
   auto current_tq = TaskQueueBase::Current();
   {
-    std::unique_ptr<Thread> thread(rtc::Thread::Create());
+    std::unique_ptr<Thread> thread(Thread::Create());
     thread->WrapCurrent();
     EXPECT_EQ(TaskQueueBase::Current(),
               static_cast<TaskQueueBase*>(thread.get()));
@@ -858,7 +857,6 @@ std::unique_ptr<TaskQueueFactory> CreateDefaultThreadFactory(
   return std::make_unique<ThreadFactory>();
 }
 
-using ::webrtc::TaskQueueTest;
 
 INSTANTIATE_TEST_SUITE_P(RtcThread,
                          TaskQueueTest,

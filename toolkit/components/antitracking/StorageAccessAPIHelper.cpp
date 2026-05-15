@@ -372,8 +372,7 @@ StorageAccessAPIHelper::AllowAccessForOnChildProcess(
       return StorageAccessPermissionGrantPromise::CreateAndReject(false,
                                                                   __func__);
     }
-    Unused << trackingPrincipal->IsThirdPartyPrincipal(principal,
-                                                       &isThirdParty);
+    (void)trackingPrincipal->IsThirdPartyPrincipal(principal, &isThirdParty);
     if (aReason ==
             ContentBlockingNotifier::ePrivilegeStorageAccessForOriginAPI ||
         !isThirdParty) {
@@ -539,8 +538,8 @@ StorageAccessAPIHelper::CompleteAllowAccessForOnParentProcess(
                                                                     __func__);
       }
 
-      Unused << cp->SendOnAllowAccessFor(aParentContext, trackingOrigin,
-                                         aCookieBehavior, aReason);
+      (void)cp->SendOnAllowAccessFor(aParentContext, trackingOrigin,
+                                     aCookieBehavior, aReason);
     }
 
     Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>
@@ -577,7 +576,7 @@ StorageAccessAPIHelper::CompleteAllowAccessForOnParentProcess(
                    RefPtr<dom::WindowContext> windowContext =
                        dom::WindowContext::GetById(innerWindowId);
                    if (windowContext) {
-                     Unused << BounceTrackingProtection::RecordUserActivation(
+                     (void)BounceTrackingProtection::RecordUserActivation(
                          windowContext);
                    }
                  }
@@ -802,7 +801,7 @@ StorageAccessAPIHelper::CompleteAllowAccessForOnChildProcess(
                   RefPtr<dom::WindowContext> windowContext =
                       dom::WindowContext::GetById(innerWindowId);
                   if (windowContext) {
-                    Unused << BounceTrackingProtection::RecordUserActivation(
+                    (void)BounceTrackingProtection::RecordUserActivation(
                         windowContext);
                   }
                 }
@@ -1049,7 +1048,7 @@ StorageAccessAPIHelper::SaveAccessForOriginOnParentProcess(
   rv = permManager->AddFromPrincipal(aParentPrincipal, type,
                                      nsIPermissionManager::ALLOW_ACTION,
                                      expirationType, when);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   if (StaticPrefs::privacy_antitracking_testing()) {
     nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
@@ -1311,7 +1310,7 @@ StorageAccessAPIHelper::RequestStorageAccessAsyncHelper(
   // called later in CompleteAllowAccessFor inside of AllowAccessFor.
   auto performPermissionGrant = aDocument->CreatePermissionGrantPromise(
       aInnerWindow, principal, aHasUserInteraction, aRequireUserInteraction,
-      Nothing(), aFrameOnly);
+      aFrameOnly);
 
   // Try to allow access for the given principal.
   return StorageAccessAPIHelper::AllowAccessForOnChildProcess(
@@ -1357,8 +1356,8 @@ void StorageAccessAPIHelper::UpdateAllowAccessOnCurrentProcess(
     // Only check browsing contexts that are in-process.
     if (aContext->IsInProcess()) {
       nsAutoCString origin;
-      Unused << AntiTrackingUtils::GetPrincipalAndTrackingOrigin(
-          aContext, nullptr, origin);
+      (void)AntiTrackingUtils::GetPrincipalAndTrackingOrigin(aContext, nullptr,
+                                                             origin);
 
       if (aTrackingOrigin == origin) {
         nsCOMPtr<nsPIDOMWindowInner> inner =
@@ -1424,7 +1423,7 @@ void StorageAccessAPIHelper::UpdateAllowAccessOnParentProcess(
       AntiTrackingUtils::GetPrincipalAndTrackingOrigin(aContext, nullptr,
                                                        origin);
       if (aTrackingOrigin == origin) {
-        Unused << wgp->SendSaveStorageAccessPermissionGranted();
+        (void)wgp->SendSaveStorageAccessPermissionGranted();
       }
     });
   }
@@ -1455,7 +1454,7 @@ void StorageAccessGrantTelemetryClassification::MaybeReportTracker(
 
   rv = uriClassifier->AsyncClassifyLocalWithFeatureNames(
       aURI, featureNames, nsIUrlClassifierFeature::blocklist, classification);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 // nsIUrlClassifierFeatureCallback

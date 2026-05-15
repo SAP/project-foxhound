@@ -4,9 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <limits>
-#include "mozilla/Hal.h"
 #include "ConnectionMainThread.h"
+
+#include "mozilla/Hal.h"
 
 namespace mozilla::dom::network {
 

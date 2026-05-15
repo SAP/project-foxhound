@@ -23,9 +23,10 @@ add_task(async function () {
     results: [],
     priority: 999,
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   registerCleanupFunction(async function () {
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
     await PlacesUtils.history.clear();
   });
 

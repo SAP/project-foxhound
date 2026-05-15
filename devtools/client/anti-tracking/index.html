@@ -1,0 +1,39 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!doctype html>
+<html dir="">
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome: resource:; img-src chrome:;"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="chrome://devtools/content/anti-tracking/anti-tracking.css"
+    />
+  </head>
+  <body class="theme-body" role="application">
+    <script src="chrome://devtools/content/shared/theme-switching.js"></script>
+    <script src="resource://devtools/client/anti-tracking/initializer.js"></script>
+    <div id="anti-tracking-panel">
+      <div id="tracker-toolbar-container">
+        <button id="block-selected">Block Selected</button>
+        <button id="unblock-selected">Unblock Selected</button>
+        <button id="reset">Reset unblock list</button>
+        <button id="interactive-debugging">Start Interactive Debugging</button>
+        <button id="website-broke" disabled>Website Broke</button>
+        <button id="test-next-tracker" disabled>Continue</button>
+        <button id="stop-debugging" disabled>Stop</button>
+        <div id="interactive-debugger-prompt"></div>
+      </div>
+      <div id="tracker-table-container">
+        <table id="tracker-table">
+          <thead id="tracker-table-head"></thead>
+          <tbody id="tracker-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </body>
+</html>

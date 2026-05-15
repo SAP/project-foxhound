@@ -11,7 +11,7 @@
  *
  * @param {InspectorPanel} inspector
  *        Current instance of the inspector being tested.
- * @param {Object} elms
+ * @param {object} elms
  *        Map of elements that will be used to retrieve live references to children
  *        elements
  * @param {Element} focused
@@ -33,9 +33,9 @@ function testNavigationState(inspector, elms, focused, activedescendant) {
 /**
  * Lookup the provided dotted path ("prop1.subprop2.myProp") in the provided object.
  *
- * @param {Object} obj
+ * @param {object} obj
  *        Object to expand.
- * @param {String} path
+ * @param {string} path
  *        Dotted path to use to expand the object.
  * @return {?} anything that is found at the provided path in the object.
  */
@@ -50,10 +50,10 @@ function lookupPath(obj, path) {
  *
  * @param {InspectorPanel} inspector
  *        Current instance of the inspector being tested.
- * @param {Object} elms
+ * @param {object} elms
  *        MarkupContainers/Elements that will be used to retrieve references to other
  *        elements based on objects' paths.
- * @param {Object} testData
+ * @param {object} testData
  *        - {String} desc: description for better logging.
  *        - {String} key: keyboard event's key.
  *        - {Object} options, optional: event data such as shiftKey, etc.

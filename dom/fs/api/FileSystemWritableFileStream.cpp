@@ -9,7 +9,6 @@
 #include "fs/FileSystemAsyncCopy.h"
 #include "fs/FileSystemShutdownBlocker.h"
 #include "fs/FileSystemThreadSafeStreamOwner.h"
-#include "mozilla/Buffer.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/MozPromise.h"
@@ -301,7 +300,7 @@ FileSystemWritableFileStream::Create(
               if (stream->IsOpen()) {
                 // We don't need the promise, we just
                 // begin the closing process.
-                Unused << stream->BeginAbort();
+                (void)stream->BeginAbort();
               }
             });
         QM_TRY(MOZ_TO_RESULT(workerRef));
@@ -340,7 +339,7 @@ FileSystemWritableFileStream::Create(
   stream->mCloseHandler->Open([stream]() {
     if (stream->IsOpen()) {
       // We don't need the promise, we just begin the closing process.
-      Unused << stream->BeginAbort();
+      (void)stream->BeginAbort();
     }
   });
 
@@ -356,7 +355,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(FileSystemWritableFileStream,
                                                 WritableStream)
   // Per the comment for the FileSystemManager class, don't unlink mManager!
   if (tmp->IsOpen()) {
-    Unused << tmp->BeginAbort();
+    (void)tmp->BeginAbort();
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(FileSystemWritableFileStream,

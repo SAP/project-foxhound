@@ -64,6 +64,10 @@ class SVGFETurbulenceElement final : public SVGFETurbulenceElementBase {
   EnumAttributesInfo GetEnumInfo() override;
   StringAttributesInfo GetStringInfo() override;
 
+  enum { RESULT };
+  SVGAnimatedString mStringAttributes[1];
+  static StringInfo sStringInfo[1];
+
   enum { SEED };  // floating point seed?!
   SVGAnimatedNumber mNumberAttributes[1];
   static NumberInfo sNumberInfo[1];
@@ -81,10 +85,6 @@ class SVGFETurbulenceElement final : public SVGFETurbulenceElementBase {
   static SVGEnumMapping sTypeMap[];
   static SVGEnumMapping sStitchTilesMap[];
   static EnumInfo sEnumInfo[2];
-
-  enum { RESULT };
-  SVGAnimatedString mStringAttributes[1];
-  static StringInfo sStringInfo[1];
 };
 
 }  // namespace mozilla::dom

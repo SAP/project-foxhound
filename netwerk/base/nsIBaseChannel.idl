@@ -39,7 +39,7 @@ interface nsIBaseChannel : nsISupports {
 %{C++
   RefPtr<mozilla::net::ContentRange> ContentRange() {
     RefPtr<mozilla::net::ContentRange> range;
-    mozilla::Unused << GetContentRange(&range);
+    (void)GetContentRange(&range);
     return range;
   }
 
@@ -55,7 +55,7 @@ interface nsIBaseChannel : nsISupports {
 
   RefPtr<CMimeType> FullMimeType() {
     RefPtr<CMimeType> type;
-    mozilla::Unused << GetFullMimeType(&type);
+    (void)GetFullMimeType(&type);
     return type;
   }
 %}

@@ -7,7 +7,7 @@
 #ifndef ACTIVELAYERTRACKER_H_
 #define ACTIVELAYERTRACKER_H_
 
-#include "nsCSSPropertyID.h"
+#include "NonCustomCSSPropertyId.h"
 
 class nsIFrame;
 class nsIContent;
@@ -44,14 +44,14 @@ class ActiveLayerTracker {
    * Any such marking will time out after a short period.
    * @param aProperty the property that has changed
    */
-  static void NotifyRestyle(nsIFrame* aFrame, nsCSSPropertyID aProperty);
+  static void NotifyRestyle(nsIFrame* aFrame, NonCustomCSSPropertyId aProperty);
 
   /**
    * Notify that a property in the inline style rule of aFrame's element
    * has been modified.
    */
   static void NotifyInlineStyleRuleModified(nsIFrame* aFrame,
-                                            nsCSSPropertyID aProperty);
+                                            NonCustomCSSPropertyId aProperty);
   /**
    * Notify that a frame needs to be repainted. This is important for layering
    * decisions where, say, aFrame's transform is updated from JS, but we need

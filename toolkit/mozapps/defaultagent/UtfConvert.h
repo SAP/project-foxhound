@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DEFAULT_BROWSER_UTF_CONVERT_H__
-#define DEFAULT_BROWSER_UTF_CONVERT_H__
+#ifndef DEFAULT_BROWSER_UTF_CONVERT_H_
+#define DEFAULT_BROWSER_UTF_CONVERT_H_
 
 #include <string>
 
@@ -21,4 +21,4 @@ Utf8ToUtf16Result Utf8ToUtf16(const char* const utf8);
 
 }  // namespace mozilla::default_agent
 
-#endif  // DEFAULT_BROWSER_UTF_CONVERT_H__
+#endif  // DEFAULT_BROWSER_UTF_CONVERT_H_

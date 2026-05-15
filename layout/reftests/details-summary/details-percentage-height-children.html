@@ -18,16 +18,19 @@
     width: 50%;
     height: 40%;
   }
+  details::details-content {
+    height: 60%;
+  }
   div#inner {
     background-color: cyan;
     width: 50%;
-    height: 60%;
+    height: 100%;
   }
   </style>
   <body>
     <details open>
       <summary>Summary: 40% height</summary>
-      <div id="inner">Div: 60% height</div>
+      <div id="inner">Div: 100% height, inside 60% height ::details-content pseudo</div>
     </details>
   </body>
 </html>

@@ -486,6 +486,10 @@ void js::SetPreserveWrapperCallbacks(
   cx->runtime()->hasReleasedWrapperCallback = hasReleasedWrapper;
 }
 
+void js::CommitPendingWrapperPreservations(JSContext* cx) {
+  cx->runtime()->commitPendingWrapperPreservations();
+}
+
 JS_PUBLIC_API unsigned JS_PCToLineNumber(
     JSScript* script, jsbytecode* pc,
     JS::LimitedColumnNumberOneOrigin* columnp) {
@@ -737,7 +741,8 @@ JS_PUBLIC_API void js::SetAllocationMetadataBuilder(
 }
 
 JS_PUBLIC_API JSObject* js::GetAllocationMetadata(JSObject* obj) {
-  ObjectWeakMap* map = ObjectRealm::get(obj).objectMetadataTable.get();
+  ObjectRealm::ObjectMetadataTable* map =
+      ObjectRealm::get(obj).objectMetadataTable.get();
   if (map) {
     auto ptr = map->lookup(obj);
     if (ptr) {
@@ -773,14 +778,6 @@ AutoAssertNoContentJS::~AutoAssertNoContentJS() {
 }
 
 JS_PUBLIC_API void js::EnableCodeCoverage() { js::coverage::EnableLCov(); }
-
-JS_PUBLIC_API JS::Value js::MaybeGetScriptPrivate(JSObject* object) {
-  if (!object->is<ScriptSourceObject>()) {
-    return UndefinedValue();
-  }
-
-  return object->as<ScriptSourceObject>().getPrivate();
-}
 
 JS_PUBLIC_API uint64_t js::GetMemoryUsageForZone(Zone* zone) {
   // We do not include zone->sharedMemoryUseCounts since that's already included

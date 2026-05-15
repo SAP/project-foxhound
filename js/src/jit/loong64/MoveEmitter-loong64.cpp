@@ -41,18 +41,20 @@ void MoveEmitterLOONG64::breakCycle(const MoveOperand& from,
       break;
     case MoveOp::INT32:
       if (to.isMemory()) {
-        SecondScratchRegisterScope scratch2(masm);
-        masm.load32(getAdjustedAddress(to), scratch2);
-        masm.store32(scratch2, cycleSlot(0));
+        UseScratchRegisterScope temps(masm);
+        Register scratch = temps.Acquire();
+        masm.load32(getAdjustedAddress(to), scratch);
+        masm.store32(scratch, cycleSlot(0));
       } else {
         masm.store32(to.reg(), cycleSlot(0));
       }
       break;
     case MoveOp::GENERAL:
       if (to.isMemory()) {
-        SecondScratchRegisterScope scratch2(masm);
-        masm.loadPtr(getAdjustedAddress(to), scratch2);
-        masm.storePtr(scratch2, cycleSlot(0));
+        UseScratchRegisterScope temps(masm);
+        Register scratch = temps.Acquire();
+        masm.loadPtr(getAdjustedAddress(to), scratch);
+        masm.storePtr(scratch, cycleSlot(0));
       } else {
         masm.storePtr(to.reg(), cycleSlot(0));
       }
@@ -93,9 +95,10 @@ void MoveEmitterLOONG64::completeCycle(const MoveOperand& from,
     case MoveOp::INT32:
       MOZ_ASSERT(slotId == 0);
       if (to.isMemory()) {
-        SecondScratchRegisterScope scratch2(masm);
-        masm.load32(cycleSlot(0), scratch2);
-        masm.store32(scratch2, getAdjustedAddress(to));
+        UseScratchRegisterScope temps(masm);
+        Register scratch = temps.Acquire();
+        masm.load32(cycleSlot(0), scratch);
+        masm.store32(scratch, getAdjustedAddress(to));
       } else {
         masm.load32(cycleSlot(0), to.reg());
       }
@@ -103,9 +106,10 @@ void MoveEmitterLOONG64::completeCycle(const MoveOperand& from,
     case MoveOp::GENERAL:
       MOZ_ASSERT(slotId == 0);
       if (to.isMemory()) {
-        SecondScratchRegisterScope scratch2(masm);
-        masm.loadPtr(cycleSlot(0), scratch2);
-        masm.storePtr(scratch2, getAdjustedAddress(to));
+        UseScratchRegisterScope temps(masm);
+        Register scratch = temps.Acquire();
+        masm.loadPtr(cycleSlot(0), scratch);
+        masm.storePtr(scratch, getAdjustedAddress(to));
       } else {
         masm.loadPtr(cycleSlot(0), to.reg());
       }
@@ -162,9 +166,10 @@ void MoveEmitterLOONG64::emitMove(const MoveOperand& from,
     if (to.isGeneralReg()) {
       masm.loadPtr(getAdjustedAddress(from), to.reg());
     } else if (to.isMemory()) {
-      SecondScratchRegisterScope scratch2(masm);
-      masm.loadPtr(getAdjustedAddress(from), scratch2);
-      masm.storePtr(scratch2, getAdjustedAddress(to));
+      UseScratchRegisterScope temps(masm);
+      Register scratch = temps.Acquire();
+      masm.loadPtr(getAdjustedAddress(from), scratch);
+      masm.storePtr(scratch, getAdjustedAddress(to));
     } else {
       MOZ_CRASH("Invalid emitMove arguments.");
     }
@@ -172,9 +177,10 @@ void MoveEmitterLOONG64::emitMove(const MoveOperand& from,
     if (to.isGeneralReg()) {
       masm.computeEffectiveAddress(getAdjustedAddress(from), to.reg());
     } else if (to.isMemory()) {
-      SecondScratchRegisterScope scratch2(masm);
-      masm.computeEffectiveAddress(getAdjustedAddress(from), scratch2);
-      masm.storePtr(scratch2, getAdjustedAddress(to));
+      UseScratchRegisterScope temps(masm);
+      Register scratch = temps.Acquire();
+      masm.computeEffectiveAddress(getAdjustedAddress(from), scratch);
+      masm.storePtr(scratch, getAdjustedAddress(to));
     } else {
       MOZ_CRASH("Invalid emitMove arguments.");
     }
@@ -197,9 +203,10 @@ void MoveEmitterLOONG64::emitInt32Move(const MoveOperand& from,
     if (to.isGeneralReg()) {
       masm.load32(getAdjustedAddress(from), to.reg());
     } else if (to.isMemory()) {
-      SecondScratchRegisterScope scratch2(masm);
-      masm.load32(getAdjustedAddress(from), scratch2);
-      masm.store32(scratch2, getAdjustedAddress(to));
+      UseScratchRegisterScope temps(masm);
+      Register scratch = temps.Acquire();
+      masm.load32(getAdjustedAddress(from), scratch);
+      masm.store32(scratch, getAdjustedAddress(to));
     } else {
       MOZ_CRASH("Invalid emitInt32Move arguments.");
     }
@@ -207,9 +214,10 @@ void MoveEmitterLOONG64::emitInt32Move(const MoveOperand& from,
     if (to.isGeneralReg()) {
       masm.computeEffectiveAddress(getAdjustedAddress(from), to.reg());
     } else if (to.isMemory()) {
-      SecondScratchRegisterScope scratch2(masm);
-      masm.computeEffectiveAddress(getAdjustedAddress(from), scratch2);
-      masm.store32(scratch2, getAdjustedAddress(to));
+      UseScratchRegisterScope temps(masm);
+      Register scratch = temps.Acquire();
+      masm.computeEffectiveAddress(getAdjustedAddress(from), scratch);
+      masm.store32(scratch, getAdjustedAddress(to));
     } else {
       MOZ_CRASH("Invalid emitInt32Move arguments.");
     }

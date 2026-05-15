@@ -333,20 +333,6 @@ async function testFileAccessMacOnly() {
     func: readDir,
   });
 
-  // /Network is not present on macOS 10.15 (xnu 19). Don't
-  // test this directory on 10.15 and later.
-  if (AppConstants.isPlatformAndVersionAtMost("macosx", 18)) {
-    // Test that we cannot read from /Network at level 3
-    let network = GetDir("/Network");
-    tests.push({
-      desc: "/Network",
-      ok: false,
-      browser: webBrowser,
-      file: network,
-      minLevel: minHomeReadSandboxLevel(),
-      func: readDir,
-    });
-  }
   // Test that we cannot read from /Users at level 3
   let users = GetDir("/Users");
   tests.push({
@@ -440,34 +426,33 @@ async function testFileAccessLinuxOnly() {
   let configDir = GetHomeSubdir(".config");
 
   const xdgConfigHome = Services.env.get("XDG_CONFIG_HOME");
-
-  if (xdgConfigHome.length > 1) {
+  if (xdgConfigHome) {
     configDir = GetDir(xdgConfigHome);
     configDir.normalize();
-
-    tests.push({
-      desc: `$XDG_CONFIG_HOME (${configDir.path})`,
-      ok: true,
-      browser: webBrowser,
-      file: configDir,
-      minLevel: minHomeReadSandboxLevel(),
-      func: readDir,
-    });
   }
 
-  // $HOME/.config/ or $XDG_CONFIG_HOME/ should have rdonly access
   tests.push({
-    desc: `${configDir.path} dir`,
-    ok: true,
+    desc: `$XDG_CONFIG_HOME (${configDir.path})`,
+    ok: true, // access should not be granted outside of XDG support
     browser: webBrowser,
     file: configDir,
     minLevel: minHomeReadSandboxLevel(),
     func: readDir,
   });
+
+  tests.push({
+    desc: `XDG_CONFIG_HOME=${configDir.path} dir should have rdonly`,
+    ok: true, // should be allowed only if XDG support is there
+    browser: webBrowser,
+    file: configDir,
+    minLevel: minHomeReadSandboxLevel(),
+    func: readDir,
+  });
+
   if (fileContentProcessEnabled) {
     tests.push({
       desc: `${configDir.path} dir`,
-      ok: true,
+      ok: true, // should be allowed only if XDG support is there
       browser: fileBrowser,
       file: configDir,
       minLevel: 0,
@@ -475,11 +460,10 @@ async function testFileAccessLinuxOnly() {
     });
   }
 
-  if (xdgConfigHome.length > 1) {
-    // When XDG_CONFIG_HOME is set, dont allow $HOME/.config
+  if (isXdgEnabled() && xdgConfigHome) {
     const homeConfigDir = GetHomeSubdir(".config");
     tests.push({
-      desc: `${homeConfigDir.path} dir`,
+      desc: `XDG_CONFIG_HOME=${homeConfigDir.path} dir should deny $HOME/.config`,
       ok: false,
       browser: webBrowser,
       file: homeConfigDir,
@@ -503,7 +487,7 @@ async function testFileAccessLinuxOnly() {
     // Checking $HOME/.config is already done above.
     const homeConfigPrefix = GetHomeSubdir(".configlol");
     tests.push({
-      desc: `${homeConfigPrefix.path} dir`,
+      desc: `No XDG_CONFIG_HOME we dont allow ${homeConfigPrefix.path} access`,
       ok: false,
       browser: webBrowser,
       file: homeConfigPrefix,
@@ -512,7 +496,7 @@ async function testFileAccessLinuxOnly() {
     });
     if (fileContentProcessEnabled) {
       tests.push({
-        desc: `${homeConfigPrefix.path} dir`,
+        desc: `No XDG_CONFIG_HOME we dont allow ${homeConfigPrefix.path} access`,
         ok: false,
         browser: fileBrowser,
         file: homeConfigPrefix,
@@ -639,7 +623,7 @@ async function testFileAccessLinuxOnly() {
   });
 
   // Only needed to perform cleanup
-  if (xdgConfigHome.length > 1) {
+  if (isXdgEnabled()) {
     tests.push({
       desc: `$XDG_CONFIG_HOME (${configDir.path}) cleanup`,
       ok: true,
@@ -698,6 +682,13 @@ async function testFileAccessWindowsOnly() {
   let tests = [];
 
   let extDir = GetPerUserExtensionDir();
+  // We used to unconditionally create this directory from Firefox, but that
+  // was dropped in bug 2001887. The value of this directory is questionable;
+  // the test was added in Firefox 56 (bug 1403744) to cover legacy add-ons,
+  // but legacy add-on support was discontinued in Firefox 57, and we stopped
+  // sideloading add-ons from this directory on all builds except ESR in
+  // Firefox 74 (bug 1602840).
+  await IOUtils.makeDirectory(extDir.path);
   tests.push({
     desc: "per-user extensions dir",
     ok: true,

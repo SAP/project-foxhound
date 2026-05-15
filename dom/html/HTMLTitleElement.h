@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLTITLEElement_h_
 #define mozilla_dom_HTMLTITLEElement_h_
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStubMutationObserver.h"
 
@@ -19,7 +18,7 @@ namespace dom {
 class HTMLTitleElement final : public nsGenericHTMLElement,
                                public nsStubMutationObserver {
  public:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
   explicit HTMLTitleElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);

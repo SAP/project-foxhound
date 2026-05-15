@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.81.0"
+rust-version = "1.87.0"
 name = "neqo-crypto"
-version = "0.14.1"
+version = "0.22.2"
 authors = ["The Neqo Authors <necko@mozilla.com>"]
 build = "build.rs"
 autolib = false
@@ -39,8 +39,18 @@ categories = [
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mozilla/neqo/"
 
+[package.metadata.cargo-machete]
+ignored = [
+    "bindgen",
+    "semver",
+    "serde",
+    "serde_derive",
+    "toml",
+    "windows",
+]
+
 [features]
-bench = []
+bench = ["log/release_max_level_info"]
 disable-encryption = []
 disable-random = []
 gecko = ["mozbuild"]
@@ -98,11 +108,15 @@ version = "0.27"
 features = ["derive"]
 default-features = false
 
+[dependencies.thiserror]
+version = "2.0.12"
+default-features = false
+
 [dev-dependencies.test-fixture]
 path = "../test-fixture"
 
 [build-dependencies.bindgen]
-version = "0.69"
+version = "0.72"
 features = ["runtime"]
 default-features = false
 
@@ -117,6 +131,7 @@ default-features = false
 
 [build-dependencies.serde]
 version = "1.0"
+features = ["std"]
 default-features = false
 
 [build-dependencies.serde_derive]
@@ -124,7 +139,16 @@ version = "1.0"
 default-features = false
 
 [build-dependencies.toml]
-version = "0.5"
+version = "0.9"
+features = [
+    "parse",
+    "serde",
+]
+default-features = false
+
+[target."cfg(windows)".dependencies.windows]
+version = ">=0.60,<0.63"
+features = ["Win32_Security_Authentication_Identity"]
 default-features = false
 
 [lints.clippy]
@@ -142,15 +166,17 @@ float_cmp_const = "warn"
 fn_to_numeric_cast_any = "warn"
 get_unwrap = "warn"
 if_then_some_else_none = "warn"
+impl_trait_in_params = "warn"
 infinite_loop = "warn"
 iter_over_hash_type = "warn"
 large_include_file = "warn"
 let_underscore_must_use = "warn"
 let_underscore_untyped = "warn"
-literal_string_with_formatting_args = "allow"
+literal_string_with_formatting_args = "warn"
 lossy_float_literal = "warn"
 map_with_unused_argument_over_ranges = "warn"
 mem_forget = "warn"
+missing_asserts_for_indexing = "warn"
 mixed_read_write_in_expression = "warn"
 module_name_repetitions = "warn"
 multiple_crate_versions = "allow"
@@ -158,13 +184,14 @@ multiple_inherent_impl = "warn"
 mutex_atomic = "warn"
 mutex_integer = "warn"
 needless_raw_strings = "warn"
+non_ascii_literal = "warn"
+non_zero_suggestions = "warn"
 partial_pub_fields = "warn"
 pathbuf_init_then_push = "warn"
 precedence_bits = "warn"
 pub_without_shorthand = "warn"
 rc_buffer = "warn"
 rc_mutex = "warn"
-redundant_test_prefix = "warn"
 redundant_type_annotations = "warn"
 ref_patterns = "warn"
 renamed_function_params = "warn"
@@ -173,7 +200,6 @@ return_and_then = "warn"
 self_named_module_files = "warn"
 semicolon_inside_block = "warn"
 string_lit_chars_any = "warn"
-string_to_string = "warn"
 suspicious_xor_used_as_pow = "warn"
 try_err = "warn"
 unnecessary_safety_comment = "warn"
@@ -200,10 +226,12 @@ priority = -1
 
 [lints.rust]
 absolute_paths_not_starting_with_crate = "warn"
+ambiguous_negative_literals = "warn"
 explicit_outlives_requirements = "warn"
 macro_use_extern_crate = "warn"
 missing_abi = "warn"
 non_ascii_idents = "warn"
+redundant_imports = "warn"
 redundant_lifetimes = "warn"
 trivial_numeric_casts = "warn"
 unit_bindings = "warn"
@@ -211,3 +239,8 @@ unused_import_braces = "warn"
 unused_lifetimes = "warn"
 unused_macro_rules = "warn"
 unused_qualifications = "warn"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+priority = 0
+check-cfg = ["cfg(coverage,coverage_nightly,fuzzing)"]

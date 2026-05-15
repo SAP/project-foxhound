@@ -1,0 +1,6 @@
+Expires: Mon, 26 Jul 1997 05:00:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Cache-Control: post-check=0, pre-check=0, false
+Pragma: no-cache
+Set-Cookie: reporting-api-worker-triggers-deprecation={{$id:uuid()}}; Path=/reporting
+Reporting-Endpoints: default="https://{{host}}:{{ports[https][0]}}/reporting/resources/report.py?reportID=46ecac28-6d27-4763-a692-bcc589054716"

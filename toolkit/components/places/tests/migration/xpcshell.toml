@@ -1,6 +1,11 @@
 [DEFAULT]
+run-if = [
+  "!condprof", # Not worth running conditioned profiles on these migration
+]
 head = "head_migration.js"
-skip-if = ["condprof"] # Not worth running conditioned profiles on these migration
+skip-if = [
+  "os == 'android'",
+]
 # tests for databases. See discussion in bug 1838791.
 
 support-files = [
@@ -19,6 +24,8 @@ support-files = [
   "places_v79.sqlite",
   "places_v81.sqlite",
   "places_v82.sqlite",
+  "places_v83.sqlite",
+  "places_v85.sqlite",
 ]
 
 ["test_current_from_downgraded.js"]
@@ -48,3 +55,7 @@ support-files = [
 ["test_current_from_v79.js"]
 
 ["test_current_from_v81.js"]
+
+["test_current_from_v82.js"]
+
+["test_current_from_v83.js"]

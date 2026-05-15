@@ -5,8 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGFESpotLightElement.h"
-#include "mozilla/dom/SVGFESpotLightElementBinding.h"
+
 #include "mozilla/SVGFilterInstance.h"
+#include "mozilla/dom/SVGFESpotLightElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FESpotLight)
 

@@ -8,37 +8,37 @@
  * An object of this type represents an original source for the style
  * editor.  An "original" source is one that is mentioned in a source
  * map.
- *
- * @param {String} url
- *        The URL of the original source.
- * @param {String} sourceID
- *        The source ID of the original source, as used by the source
- *        map service.
- * @param {SourceMapLoader} sourceMapLoader
- *        The source map loader; @see Toolbox.sourceMapLoader
  */
-function OriginalSource(url, sourceId, sourceMapLoader) {
-  this.isOriginalSource = true;
+class OriginalSource {
+  /**
+   * @param {string} url
+   *        The URL of the original source.
+   * @param {string} sourceID
+   *        The source ID of the original source, as used by the source
+   *        map service.
+   * @param {SourceMapLoader} sourceMapLoader
+   *        The source map loader; @see Toolbox.sourceMapLoader
+   */
+  constructor(url, sourceId, sourceMapLoader) {
+    this.isOriginalSource = true;
 
-  this._url = url;
-  this._sourceId = sourceId;
-  this._sourceMapLoader = sourceMapLoader;
-}
-
-OriginalSource.prototype = {
+    this._url = url;
+    this._sourceId = sourceId;
+    this._sourceMapLoader = sourceMapLoader;
+  }
   get sourceId() {
     return this._sourceId;
-  },
+  }
 
   /** Get the original source's URL.  */
   get url() {
     return this._url;
-  },
+  }
 
   /** Get the original source's URL.  */
   get href() {
     return this._url;
-  },
+  }
 
   /**
    * Return a promise that will resolve to the original source's full
@@ -59,7 +59,7 @@ OriginalSource.prototype = {
         });
     }
     return this._sourcePromise;
-  },
+  }
 
   /**
    * Given a source-mapped, generated style sheet, a line, and a
@@ -68,9 +68,9 @@ OriginalSource.prototype = {
    *
    * @param {StyleSheetResource} relatedSheet
    *        The generated style sheet's resource
-   * @param {Number} line
+   * @param {number} line
    *        Line number.
-   * @param {Number} column
+   * @param {number} column
    *        Column number.
    * @return {Location}
    *        The original location, an object with at least
@@ -93,11 +93,11 @@ OriginalSource.prototype = {
         location.styleSheet = relatedSheet;
         return location;
       });
-  },
+  }
 
   // Dummy implementations, as we never emit an event.
-  on() {},
-  off() {},
-};
+  on() {}
+  off() {}
+}
 
 exports.OriginalSource = OriginalSource;

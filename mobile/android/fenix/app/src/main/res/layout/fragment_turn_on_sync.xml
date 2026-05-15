@@ -36,11 +36,11 @@
             android:layout_marginTop="16dp"
             android:adjustViewBounds="true"
             android:importantForAccessibility="no"
-            android:scaleType="fitXY"
+            android:scaleType="fitCenter"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@id/title_sign_in"
-            app:srcCompat="@drawable/ic_scan" />
+            app:srcCompat="@drawable/nova_onboarding_sync_qr" />
 
         <TextView
             android:id="@+id/signInInstructions"

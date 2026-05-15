@@ -7,7 +7,6 @@
 #include "mozilla/ProcInfo.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Logging.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "nsMemoryReporterManager.h"
 #include "nsWhitespaceTokenizer.h"
@@ -15,8 +14,6 @@
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #include <cerrno>
-#include <cstdio>
-#include <cstring>
 #include <unistd.h>
 #ifdef __FreeBSD__
 #  include <sys/user.h>
@@ -36,6 +33,10 @@ nsresult GetCpuTimeSinceProcessStartInMs(uint64_t* aResult) {
   }
 
   return NS_ERROR_FAILURE;
+}
+
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult GetGpuTimeSinceProcessStartInMs(uint64_t* aResult) {

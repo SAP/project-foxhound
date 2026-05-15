@@ -142,6 +142,30 @@ add_task(async function test_create_context_prefix() {
   userContextManager.destroy();
 });
 
+add_task(async function test_events() {
+  const manager = new UserContextManagerClass();
+  const userContextCreatedEvents = [];
+  const userContextDeletedEvents = [];
+  manager.on("user-context-created", (name, data) =>
+    userContextCreatedEvents.push(data)
+  );
+  manager.on("user-context-deleted", (name, data) =>
+    userContextDeletedEvents.push(data)
+  );
+
+  const contextId1 = manager.createContext();
+  is(userContextCreatedEvents.length, 1);
+  is(userContextCreatedEvents[0].userContextId, contextId1);
+  is(userContextDeletedEvents.length, 0);
+
+  manager.removeUserContext(contextId1);
+  is(userContextCreatedEvents.length, 1);
+  is(userContextDeletedEvents.length, 1);
+  is(userContextDeletedEvents[0].userContextId, contextId1);
+
+  manager.destroy();
+});
+
 add_task(async function test_several_managers() {
   const manager1 = new UserContextManagerClass();
   const manager2 = new UserContextManagerClass();

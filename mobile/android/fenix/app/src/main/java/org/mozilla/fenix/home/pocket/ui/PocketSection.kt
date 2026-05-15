@@ -4,12 +4,11 @@
 
 package org.mozilla.fenix.home.pocket.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -50,13 +49,18 @@ fun PocketSection(
         }
     }
 
-    Column(modifier = Modifier.padding(top = 72.dp)) {
-        // Simple wrapper to add horizontal padding to just the header while the stories have none.
-        Box(modifier = Modifier.padding(horizontal = horizontalPadding)) {
-            HomeSectionHeader(
-                headerText = stringResource(R.string.pocket_stories_header_2),
-            )
-        }
+    Column {
+        HomeSectionHeader(
+            headerText = stringResource(R.string.pocket_stories_header_2),
+            modifier = Modifier.padding(horizontal = horizontalPadding),
+            description = stringResource(R.string.stories_discover_more_content_description),
+            buttonText = stringResource(R.string.homepage_all_stories),
+            onButtonClick = if (state.showDiscoverMoreButton) {
+                interactor::onDiscoverMoreClicked
+            } else {
+                null
+            },
+        )
 
         Spacer(Modifier.height(16.dp))
 
@@ -74,7 +78,7 @@ fun PocketSection(
 @Composable
 private fun PocketSectionPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer2)) {
+        Surface {
             PocketSection(
                 state = FakeHomepagePreview.pocketState(),
                 cardBackgroundColor = WallpaperState.default.cardBackgroundColor,

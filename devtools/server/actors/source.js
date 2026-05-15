@@ -16,7 +16,6 @@ const {
 const {
   getDebuggerSourceURL,
 } = require("resource://devtools/server/actors/utils/source-url.js");
-
 loader.lazyRequireGetter(
   this,
   "ArrayBufferActor",
@@ -34,6 +33,14 @@ loader.lazyRequireGetter(
   this,
   "DevToolsUtils",
   "resource://devtools/shared/DevToolsUtils.js"
+);
+
+ChromeUtils.defineESModuleGetters(
+  this,
+  {
+    ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+  },
+  { global: "contextual" }
 );
 
 const windowsDrive = /^([a-zA-Z]:)/;
@@ -160,7 +167,7 @@ class SourceActor extends Actor {
 
       // Cu is not available for workers and so we are not able to get a
       // WebExtensionPolicy object
-      if (!isWorker && this.url?.startsWith("moz-extension:")) {
+      if (!isWorker && ExtensionUtils.isExtensionUrl(this.url)) {
         try {
           const extURI = Services.io.newURI(this.url);
           const policy = WebExtensionPolicy.getByURI(extURI);
@@ -375,9 +382,15 @@ class SourceActor extends Actor {
       try {
         newScript = this._source.reparse();
       } catch (e) {
-        // reparse() will throw if the source is not valid JS. This can happen
-        // if this source is the resurrection of a GC'ed source and there are
-        // parse errors in the refetched contents.
+        // Parsing the source as a normal script failed. Try again to parse it
+        // as a module.
+        try {
+          newScript = this._source.reparse(/* asModule */ true);
+        } catch (ex) {
+          // reparse() will throw if the source is not valid JS. This can happen
+          // if this source is the resurrection of a GC'ed source and there are
+          // parse errors in the refetched contents.
+        }
       }
       if (newScript) {
         scripts = [newScript];
@@ -517,6 +530,7 @@ class SourceActor extends Actor {
 
   /**
    * Handler for the "onSource" packet.
+   *
    * @return Object
    *         The return of this function contains a field `contentType`, and
    *         a field `source`. `source` can either be an ArrayBuffer or
@@ -604,7 +618,7 @@ class SourceActor extends Actor {
     this.pausePoints = uncompressed;
   }
 
-  /*
+  /**
    * Ensure the given BreakpointActor is set as a breakpoint handler on all
    * scripts that match its location in the generated source.
    *

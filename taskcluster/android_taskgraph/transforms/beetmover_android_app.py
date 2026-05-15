@@ -7,6 +7,9 @@ Transform the beetmover task into an actual task description.
 
 import logging
 
+from gecko_taskgraph.transforms.task import (
+    task_description_schema as gecko_task_description_schema,
+)
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.task import task_description_schema
 from taskgraph.util.schema import optionally_keyed_by, resolve_keyed_by
@@ -26,6 +29,7 @@ beetmover_description_schema = Schema(
         Optional("attributes"): task_description_schema["attributes"],
         Optional("dependencies"): task_description_schema["dependencies"],
         Optional("bucket-scope"): optionally_keyed_by("level", "build-type", str),
+        Optional("run-on-repo-type"): gecko_task_description_schema["run-on-repo-type"],
     },
     extra=ALLOW_EXTRA,
 )
@@ -54,7 +58,7 @@ def make_task_description(config, tasks):
             **{
                 "build-type": task["attributes"]["build-type"],
                 "level": config.params["level"],
-            }
+            },
         )
         bucket_scope = task.pop("bucket-scope")
 
@@ -70,6 +74,7 @@ def make_task_description(config, tasks):
             "dependencies": task["dependencies"],
             "attributes": attributes,
             "treeherder": task["treeherder"],
+            "run-on-repo-type": task.get("run-on-repo-type", ["git", "hg"]),
         }
 
         yield taskdesc
@@ -97,15 +102,13 @@ def make_task_worker(config, tasks):
         locale = task["attributes"].get("locale")
         build_type = task["attributes"]["build-type"]
 
-        task["worker"].update(
-            {
-                "implementation": "beetmover",
-                "release-properties": craft_release_properties(config, task),
-                "artifact-map": generate_beetmover_artifact_map(
-                    config, task, platform=build_type, locale=locale
-                ),
-            }
-        )
+        task["worker"].update({
+            "implementation": "beetmover",
+            "release-properties": craft_release_properties(config, task),
+            "artifact-map": generate_beetmover_artifact_map(
+                config, task, platform=build_type, locale=locale
+            ),
+        })
 
         if locale:
             task["worker"]["locale"] = locale

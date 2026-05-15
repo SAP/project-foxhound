@@ -9,8 +9,6 @@ const BASE_URL = `http://localhost:${server.identity.primaryPort}/data`;
 // the right timeout for content scripts executed at document_idle.
 ExtensionTestUtils.mockAppInfo();
 
-Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
-
 const makeExtension = ({ manifest: manifestProps, ...otherProps }) => {
   return ExtensionTestUtils.loadExtension({
     manifest: {
@@ -103,6 +101,7 @@ add_task(async function test_registerContentScripts_runAt() {
             runAt: "document_idle",
             world: "ISOLATED",
             persistAcrossSessions: false,
+            cssOrigin: "author",
             js: ["script-idle.js"],
           },
           {
@@ -113,6 +112,7 @@ add_task(async function test_registerContentScripts_runAt() {
             runAt: "document_idle",
             world: "ISOLATED",
             persistAcrossSessions: false,
+            cssOrigin: "author",
             js: ["script-idle-default.js"],
           },
           {
@@ -123,6 +123,7 @@ add_task(async function test_registerContentScripts_runAt() {
             runAt: "document_end",
             world: "ISOLATED",
             persistAcrossSessions: false,
+            cssOrigin: "author",
             js: ["script-end.js"],
           },
           {
@@ -133,6 +134,7 @@ add_task(async function test_registerContentScripts_runAt() {
             runAt: "document_start",
             world: "ISOLATED",
             persistAcrossSessions: false,
+            cssOrigin: "author",
             js: ["script-start.js"],
           },
         ]),
@@ -436,6 +438,7 @@ add_task(async function test_register_update_and_unregister() {
             runAt: "document_idle",
             world: "ISOLATED",
             persistAcrossSessions: false,
+            cssOrigin: "author",
             js: ["script-3.js"],
           },
         ]),

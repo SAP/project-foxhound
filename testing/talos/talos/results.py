@@ -8,6 +8,7 @@
 objects and methods for parsing and serializing Talos results
 see https://wiki.mozilla.org/Buildbot/Talos/DataFormat
 """
+
 import csv
 import json
 import os
@@ -511,12 +512,10 @@ class BrowserLogResults:
                 values = dict(zip(header, row))
                 for i, mainthread_counter in enumerate(mainthread_counters):
                     if int(values[mainthread_counter_keys[i]]) > 0:
-                        counter_results.setdefault(mainthread_counter, []).append(
-                            [
-                                int(values[mainthread_counter_keys[i]]),
-                                values["filename"],
-                            ]
-                        )
+                        counter_results.setdefault(mainthread_counter, []).append([
+                            int(values[mainthread_counter_keys[i]]),
+                            values["filename"],
+                        ])
 
         if session_store_counter in counter_results.keys():
             filename = "etl_output_session_restore_stats.csv"

@@ -24,10 +24,6 @@ existing_tasks:
   build-android-arm-shippable/opt-upload-symbols: Ksi4GI0qQ-CFRAn8LNAczg
   build-android-arm/debug: UjY_RctIR7aRt4oHBYShHA
   build-android-arm/debug-upload-symbols: IQ_8m-_JQHGog5FRLI__DA
-  build-android-x86-shippable-lite/opt: IGQyYOI9QjSolWgtAVm9dg
-  build-android-x86-shippable-lite/opt-upload-symbols: PMFv18ERRveqpncc8pgVWw
-  build-android-x86-shippable/opt: FkgJbh6NQ3SUmavmHH6kBA
-  build-android-x86-shippable/opt-upload-symbols: PMpRnrFVTAq3lqtRqIsNtQ
   build-android-x86_64-asan-fuzzing/opt: XaPOAh5OQuG47wc9Lya_Bw
   build-android-x86_64-fuzzing/debug: Tw2s8jqLQw--lYVsbC2AMg
   build-android-x86_64-shippable-lite/opt: BzCd-9RgRf2Vq3Mglvqn3w
@@ -115,8 +111,6 @@ existing_tasks:
   build-signing-android-arm-shippable/opt: GmloJh56SQaNonqg8o2FXQ
   build-signing-android-geckoview-fat-aar-shippable-lite/opt: GXsEnh_wQGiZ8QHJ1KOoXQ
   build-signing-android-geckoview-fat-aar-shippable/opt: aJFQIvhFRD-D2zvFWVvFxA
-  build-signing-android-x86-shippable-lite/opt: IpsglgGHQjKdahkwVmX6Dg
-  build-signing-android-x86-shippable/opt: GLLIkF2qQNe5O97Gnm3QUw
   build-signing-android-x86_64-shippable-lite/opt: FbxkWar7SAmXJMFt4qrQAw
   build-signing-android-x86_64-shippable/opt: Vc6CcGAbTcS1NnKp-DX8Bg
   build-signing-linux-shippable/opt: VBAFsLgdR6qMcs9vTDiB1Q
@@ -324,7 +318,6 @@ existing_tasks:
   geckodriver-signing-win32-geckodriver/opt: IJxQYyftQua_jzeUrTiZPw
   geckodriver-signing-win64-aarch64-geckodriver/opt: BkKJVaaYS2mykJBXhvOHQw
   geckodriver-signing-win64-geckodriver/opt: AvLzzlYWQKGu-L41qdl9-A
-  generate-profile-android-x86-shippable/opt: PAn2Km3QTnKQ6aqrJYgz-g
   generate-profile-android-x86_64-shippable/opt: cep6FXoKQjeDDzPU1PKnwg
   generate-profile-linux-shippable/opt: b5Hdn47eRNKOfHzQKLSyCg
   generate-profile-linux64-shippable/opt: NLVtcpmLTBSTZ27_88u0eg
@@ -333,7 +326,6 @@ existing_tasks:
   generate-profile-win64-shippable/opt: MyXvUd_WTHuc6dm9T8J_Nw
   hazard-linux64-haz/debug: G68vTRBxRtiOGieUsdTyng
   hazard-linux64-shell-haz/debug: TSxe00BYTaq-iJz5f-hR9w
-  instrumented-build-android-x86-shippable/opt: au0phX_VR4-xj8RKyoswpg
   instrumented-build-android-x86_64-shippable/opt: SS9ysburRUGKErU8lzgyFQ
   instrumented-build-linux-shippable/opt: Pvyux5DmT-CFCWdPzuC5Eg
   instrumented-build-linux64-shippable/opt: Wcwc1QaSTe2kymJrsuRFuw
@@ -4370,8 +4362,6 @@ existing_tasks:
   toolchain-android-arm-libunwind-17: MB28IG86QhqULlgWFgXBcA
   toolchain-android-x64-compiler-rt-17: Q38Mk-2wRI2fqObYJv_-AQ
   toolchain-android-x64-libunwind-17: c7S-ISTWReSq4QxlF9cLBw
-  toolchain-android-x86-compiler-rt-17: MTUGrMwdQDWEAX62qDtnsw
-  toolchain-android-x86-libunwind-17: GKa23zxiQGqReOTKKT40wA
   toolchain-browsertime: WzM15r-EQRCkuxRJWuPcBA
   toolchain-clang-dist-toolchain: UOI6Ncl2Q8ONcl5JEqK9AQ
   toolchain-linux32-geckodriver: JN7TPNfvQQawyLRmLDyuvA
@@ -4452,7 +4442,6 @@ existing_tasks:
   toolchain-linux64-winchecksec: SVDd4XWNQbyL2L7Gy5MRlQ
   toolchain-linux64-wine: ItOfIoMiRx-KXcSGxWJ_rg
   toolchain-linux64-x64-compiler-rt-17: asI3jotbSniZHRZEaQAACw
-  toolchain-linux64-x86-compiler-rt-17: SXnO2_ZMTp-XuG3fsHLuUQ
   toolchain-linux64-xar: CGxSNSA2QXK9l-zUegpBEw
   toolchain-macosx64-aarch64-cargo-vet: GuHSvO42StSWamK3IzApgA
   toolchain-macosx64-aarch64-cbindgen: bcpirkoxTZmdXIV2n3xl0A
@@ -4541,8 +4530,6 @@ existing_tasks:
   upload-generated-sources-android-aarch64-shippable/opt: IBqZHxQzRpy1lNJXAhOfrw
   upload-generated-sources-android-arm-shippable-lite/opt: GeP_SEr3S8uOAlaCuyffAA
   upload-generated-sources-android-arm-shippable/opt: EEdreTiSQmqgeq34KabMQQ
-  upload-generated-sources-android-x86-shippable-lite/opt: PBQYhBsOTzOc0q-maDme-w
-  upload-generated-sources-android-x86-shippable/opt: bpMOgd9gQ6yXHJA4zB4dlg
   upload-generated-sources-android-x86_64-shippable-lite/opt: dogIZk7cSs23_S1euyit3g
   upload-generated-sources-android-x86_64-shippable/opt: JBOInBFCSBmGgJS0mEBWCA
   upload-generated-sources-dummy-firefox-macosx64-shippable: dx7OR-YUT_abq-nuBkPlww

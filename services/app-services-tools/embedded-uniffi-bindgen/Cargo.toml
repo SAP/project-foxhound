@@ -1,0 +1,11 @@
+[package]
+name = "toolchain-embedded-uniffi-bindgen"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+
+[[bin]]
+name = "embedded-uniffi-bindgen"
+
+[dependencies]
+mozilla-central-workspace-hack = { version = "0.1", features = ["toolchain-embedded-uniffi-bindgen"], optional = true }

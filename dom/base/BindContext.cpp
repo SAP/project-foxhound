@@ -5,10 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/BindContext.h"
-#include "mozilla/dom/BrowsingContext.h"
 
-#include "mozilla/dom/Document.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsPIDOMWindow.h"

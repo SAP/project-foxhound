@@ -41,7 +41,13 @@ doesn't only contain trivial geometry, it can also store another
 [stacking_contexts]: https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Positioning/Understanding_z_index/The_stacking_context
 */
 
-#![allow(clippy::unreadable_literal, clippy::new_without_default, clippy::too_many_arguments)]
+#![allow(
+    clippy::unreadable_literal,
+    clippy::new_without_default,
+    clippy::too_many_arguments,
+    unknown_lints,
+    mismatched_lifetime_syntaxes
+)]
 
 
 // Cribbed from the |matches| crate, for simplicity.
@@ -96,14 +102,15 @@ mod filterdata;
 mod frame_builder;
 mod freelist;
 mod glyph_cache;
-mod gpu_cache;
 mod gpu_types;
 mod hit_test;
 mod internal_types;
 mod lru_cache;
 mod pattern;
 mod picture;
+mod picture_composite_mode;
 mod picture_graph;
+mod invalidation;
 mod prepare;
 mod prim_store;
 mod print_tree;
@@ -115,7 +122,7 @@ mod render_task_cache;
 mod render_task;
 mod renderer;
 mod resource_cache;
-mod scene;
+pub mod scene;
 mod scene_builder_thread;
 mod scene_building;
 mod screen_capture;
@@ -124,6 +131,7 @@ mod spatial_node;
 mod surface;
 mod texture_pack;
 mod texture_cache;
+mod transform;
 mod tile_cache;
 mod util;
 mod visibility;
@@ -134,6 +142,7 @@ mod rectangle_occlusion;
 mod picture_textures;
 mod frame_allocator;
 mod bump_allocator;
+mod svg_filter;
 
 ///
 pub mod intern;
@@ -147,7 +156,7 @@ pub mod shader_source {
 extern crate bincode;
 extern crate byteorder;
 pub extern crate euclid;
-extern crate fxhash;
+extern crate rustc_hash;
 extern crate gleam;
 extern crate num_traits;
 extern crate plane_split;
@@ -156,7 +165,6 @@ extern crate rayon;
 extern crate ron;
 #[macro_use]
 extern crate smallvec;
-extern crate time;
 #[cfg(all(feature = "capture", feature = "png"))]
 extern crate png;
 #[cfg(test)]
@@ -187,9 +195,7 @@ pub use crate::screen_capture::{AsyncScreenshotHandle, RecordedFrameHandle};
 pub use crate::texture_cache::TextureCacheConfig;
 pub use api as webrender_api;
 pub use webrender_build::shader::{ProgramSourceDigest, ShaderKind};
-pub use crate::picture::{TileDescriptor, TileId, InvalidationReason};
-pub use crate::picture::{PrimitiveCompareResult, CompareHelperResult};
-pub use crate::picture::{TileNode, TileNodeKind, TileOffset};
+pub use crate::tile_cache::TileOffset;
 pub use crate::intern::ItemUid;
 pub use crate::render_api::*;
 pub use crate::tile_cache::{PictureCacheDebugInfo, DirtyTileDebugInfo, TileDebugInfo, SliceDebugInfo};
@@ -198,3 +204,6 @@ pub use bump_allocator::ChunkPool;
 
 #[cfg(feature = "sw_compositor")]
 pub use crate::compositor::sw_compositor;
+
+#[cfg(feature = "debugger")]
+mod debugger;

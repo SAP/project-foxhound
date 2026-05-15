@@ -20,4 +20,7 @@ interface nsIGNOMEShellService : nsIShellService
    * Returns true if Firefox is set as the default handler for the scheme.
    */
   boolean isDefaultForScheme(in AUTF8String aScheme);
+
+  AUTF8String getGSettingsString(in AUTF8String aScheme, in AUTF8String aKey);
+  void setGSettingsString(in AUTF8String aScheme, in AUTF8String aKey, in AUTF8String aValue);
 };

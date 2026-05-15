@@ -17,7 +17,7 @@ void SprintfLiteralChecker::registerMatchers(MatchFinder *AstMatcher) {
                       hasArgument(1, declRefExpr(to(varDecl(
                                          hasType(isConstQualified()),
                                          hasInitializer(integerLiteral().bind(
-                                             "constant")))))))))
+                                             "constant")))))))),isFirstParty())
           .bind("funcCall"),
       this);
 }

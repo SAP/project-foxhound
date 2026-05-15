@@ -10,9 +10,8 @@ async function ensureUtilsChild() {
     return;
   }
 
-  const { UtilsChild: importedUtilsChild } = await import(
-    "/tests/dom/quota/test/modules/worker/UtilsChild.mjs"
-  );
+  const { UtilsChild: importedUtilsChild } =
+    await import("/tests/dom/quota/test/modules/worker/UtilsChild.mjs");
 
   UtilsChild = importedUtilsChild;
 }

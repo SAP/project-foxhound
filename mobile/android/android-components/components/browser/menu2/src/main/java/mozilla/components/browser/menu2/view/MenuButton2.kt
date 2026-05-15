@@ -114,5 +114,7 @@ class MenuButton2 @JvmOverloads constructor(
     /**
      * Sets the tint of the 3-dot menu icon.
      */
-    override fun setColorFilter(@ColorInt color: Int) = menuIcon.setColorFilter(color)
+    override fun setColorFilter(
+        @ColorInt color: Int,
+    ) = menuIcon.setColorFilter(color)
 }

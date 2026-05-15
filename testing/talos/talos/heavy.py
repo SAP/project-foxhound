@@ -5,6 +5,7 @@
 """
 Downloads Heavy profiles from TaskCluster.
 """
+
 import datetime
 import functools
 import os
@@ -66,13 +67,12 @@ def follow_redirects(url, max=3):
 
 
 def _recursive_mtime(path):
-    max = os.path.getmtime(path)
+    max_mtime = os.path.getmtime(path)
     for root, dirs, files in os.walk(path):
         for element in dirs + files:
             age = os.path.getmtime(os.path.join(root, element))
-            if age > max:
-                max = age
-    return max
+            max_mtime = max(max_mtime, age)
+    return max_mtime
 
 
 def profile_age(profile_dir, last_modified=None):

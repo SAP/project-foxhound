@@ -84,20 +84,7 @@ add_task(async function test_not_signed_in_to_google_account() {
 
   await waitForPageWithImpression();
 
-  assertSERPTelemetry([
-    {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
-    },
-  ]);
+  assertSERPTelemetry([{}]);
 
   BrowserTestUtils.removeTab(tab);
   resetTelemetry();
@@ -115,13 +102,6 @@ add_task(async function test_signed_in_to_google_account() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
         is_signed_in: "true",
       },
     },
@@ -139,20 +119,7 @@ add_task(async function test_toggle_google_account_signed_in_status() {
 
   await waitForPageWithImpression();
 
-  assertSERPTelemetry([
-    {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
-    },
-  ]);
+  assertSERPTelemetry([{}]);
 
   resetTelemetry();
 
@@ -167,13 +134,6 @@ add_task(async function test_toggle_google_account_signed_in_status() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
         is_signed_in: "true",
       },
     },
@@ -189,20 +149,7 @@ add_task(async function test_toggle_google_account_signed_in_status() {
 
   await waitForPageWithImpression();
 
-  assertSERPTelemetry([
-    {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
-    },
-  ]);
+  assertSERPTelemetry([{}]);
 
   BrowserTestUtils.removeTab(tab1);
   BrowserTestUtils.removeTab(tab2);
@@ -217,20 +164,7 @@ add_task(async function test_containers() {
 
   await waitForPageWithImpression();
 
-  assertSERPTelemetry([
-    {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
-    },
-  ]);
+  assertSERPTelemetry([{}]);
 
   resetTelemetry();
 
@@ -245,13 +179,6 @@ add_task(async function test_containers() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
         is_signed_in: "true",
       },
     },
@@ -283,20 +210,7 @@ add_task(async function test_containers_across_contexts() {
 
   await waitForPageWithImpression();
 
-  assertSERPTelemetry([
-    {
-      impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
-        is_private: "false",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
-      },
-    },
-  ]);
+  assertSERPTelemetry([{}]);
 
   Services.cookies.removeAll();
   BrowserTestUtils.removeTab(containerTab1);
@@ -319,14 +233,7 @@ add_task(async function test_private_windows() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
         is_private: "true",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
     },
   ]);
@@ -349,14 +256,7 @@ add_task(async function test_private_windows() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
         is_private: "true",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
     },
   ]);
@@ -392,14 +292,7 @@ add_task(async function test_private_windows_across_contexts() {
   assertSERPTelemetry([
     {
       impression: {
-        provider: "example",
-        tagged: "true",
-        partner_code: "ff",
-        source: "unknown",
-        is_shopping_page: "false",
         is_private: "true",
-        shopping_tab_displayed: "false",
-        is_signed_in: "false",
       },
     },
   ]);

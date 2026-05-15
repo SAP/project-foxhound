@@ -271,12 +271,12 @@ def write_root_hashes(path, certdata, known_root_hashes):
         tmpl = Template(ROOT_HASHES_ENTRY_TEMPLATE)
         for root in certdata:
             root_hash = known_root_hashes[root.sha256base64()]
-            digest_half_1 = "".join(
-                [f"0x{c:02x}, " for c in root_hash.digest[: len(root_hash.digest) >> 1]]
-            ).removesuffix(" ")
-            digest_half_2 = "".join(
-                [f"0x{c:02x}, " for c in root_hash.digest[len(root_hash.digest) >> 1 :]]
-            ).removesuffix(", ")
+            digest_half_1 = "".join([
+                f"0x{c:02x}, " for c in root_hash.digest[: len(root_hash.digest) >> 1]
+            ]).removesuffix(" ")
+            digest_half_2 = "".join([
+                f"0x{c:02x}, " for c in root_hash.digest[len(root_hash.digest) >> 1 :]
+            ]).removesuffix(", ")
             f.write(
                 tmpl.substitute(
                     label=root_hash.label,

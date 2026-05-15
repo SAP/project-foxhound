@@ -25,7 +25,6 @@
 #include "base/eintr_wrapper.h"
 #include "base/strings/safe_sprintf.h"
 #include "mozilla/Array.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Preferences.h"
@@ -34,7 +33,6 @@
 #include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
@@ -223,8 +221,8 @@ static void PreloadSandboxLib(base::environment_map* aEnv) {
 }
 
 static bool AttachSandboxReporter(geckoargs::ChildProcessArgs& aExtraOpts) {
-  UniqueFileHandle clientFileDescriptor(
-      dup(SandboxReporter::Singleton()->GetClientFileDescriptor()));
+  auto clientFileDescriptor = mozilla::DuplicateFileHandle(
+      SandboxReporter::Singleton()->GetClientFileDescriptor());
   if (!clientFileDescriptor) {
     SANDBOX_LOG_ERRNO("dup");
     return false;
@@ -336,6 +334,8 @@ bool SandboxLaunch::Configure(GeckoProcessType aType, SandboxingKind aKind,
     return true;
   }
 
+  // Warning: don't combine multiple case labels, even if the code is
+  // currently the same, to avoid mistakes when changes are made.
   switch (aType) {
     case GeckoProcessType_Socket:
       if (level >= 1) {
@@ -344,6 +344,12 @@ bool SandboxLaunch::Configure(GeckoProcessType aType, SandboxingKind aKind,
       }
       break;
     case GeckoProcessType_GMPlugin:
+      if (level >= 1) {
+        canChroot = true;
+        flags |= CLONE_NEWIPC;
+        flags |= CLONE_NEWNET;
+      }
+      break;
     case GeckoProcessType_RDD:
       if (level >= 1) {
         canChroot = true;
@@ -597,7 +603,7 @@ static void ConfigureUserNamespace(uid_t uid, gid_t gid) {
   // establishing gid mappings will fail unless the process first
   // revokes its ability to call setgroups() by using a /proc node
   // added in the same set of patches.
-  Unused << WriteStringToFile("/proc/self/setgroups", "deny", 4);
+  (void)WriteStringToFile("/proc/self/setgroups", "deny", 4);
 
   len = static_cast<size_t>(SafeSPrintf(buf, "%d %d 1", gid, gid));
   MOZ_RELEASE_ASSERT(len < sizeof(buf));

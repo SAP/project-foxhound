@@ -8,7 +8,9 @@ support-files = [
 ]
 
 ["make_profile.js"]
-run-if = ["false"] # dummy test entry to generate profile zip files
+run-if = [
+  "false", # dummy test entry to generate profile zip files
+]
 
 ["test_bug1425146.js"]
 

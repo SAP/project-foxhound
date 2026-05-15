@@ -9,8 +9,8 @@
 
 #include "mozilla/net/PNeckoParent.h"
 #include "mozilla/net/PTCPServerSocketParent.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla::dom {
 

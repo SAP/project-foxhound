@@ -8,13 +8,14 @@
 
 #include <utility>
 
+#include "RemoteWorkerServiceParent.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/SchedulerGroup.h"
-#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/dom/ContentChild.h"  // ContentChild::GetSingleton
-#include "mozilla/dom/ProcessIsolation.h"
-#include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerParent.h"
 #include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerChild.h"
+#include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerParent.h"
+#include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/RemoteWorkerController.h"
 #include "mozilla/dom/RemoteWorkerNonLifeCycleOpControllerParent.h"
 #include "mozilla/dom/RemoteWorkerParent.h"
@@ -23,14 +24,11 @@
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/net/CookieServiceParent.h"
 #include "mozilla/net/NeckoParent.h"
-#include "mozilla/net/CookieServiceParent.h"
-#include "mozilla/StaticPrefs_extensions.h"
 #include "nsCOMPtr.h"
-#include "nsImportModule.h"
 #include "nsIXULRuntime.h"
+#include "nsImportModule.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "RemoteWorkerServiceParent.h"
 
 mozilla::LazyLogModule gRemoteWorkerManagerLog("RemoteWorkerManager");
 
@@ -271,7 +269,7 @@ void RemoteWorkerManager::Launch(RemoteWorkerController* aController,
 void RemoteWorkerManager::LaunchInternal(
     RemoteWorkerController* aController,
     RemoteWorkerServiceParent* aTargetActor,
-    UniqueThreadsafeContentParentKeepAlive aKeepAlive,
+    UniqueThreadsafeContentParentKeepAlive&& aKeepAlive,
     const RemoteWorkerData& aData) {
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();

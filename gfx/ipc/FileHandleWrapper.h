@@ -4,19 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _include_gfx_ipc_FileHandleWrapper_h__
-#define _include_gfx_ipc_FileHandleWrapper_h__
+#ifndef _include_gfx_ipc_FileHandleWrapper_h_
+#define _include_gfx_ipc_FileHandleWrapper_h_
 
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsISupportsImpl.h"
 
+namespace IPC {
+template <typename P>
+struct ParamTraits;
+}
+
 namespace mozilla {
-
-namespace ipc {
-template <typename T>
-struct IPDLParamTraits;
-}  // namespace ipc
-
 namespace gfx {
 
 //
@@ -26,7 +25,7 @@ namespace gfx {
 // could reduce the number of shared handles in a process.
 //
 class FileHandleWrapper {
-  friend struct mozilla::ipc::IPDLParamTraits<gfx::FileHandleWrapper*>;
+  friend struct IPC::ParamTraits<gfx::FileHandleWrapper*>;
 
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileHandleWrapper);
@@ -46,4 +45,4 @@ class FileHandleWrapper {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _include_gfx_ipc_FileHandleWrapper_h__
+#endif  // _include_gfx_ipc_FileHandleWrapper_h_

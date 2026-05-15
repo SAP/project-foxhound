@@ -3,41 +3,38 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebrtcGlobalInformation.h"
-#include "WebrtcGlobalStatsHistory.h"
-#include "libwebrtcglue/VideoConduit.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/dom/PWebrtcGlobal.h"
-#include "mozilla/dom/PWebrtcGlobalChild.h"
-#include "WebrtcGlobalChild.h"
-#include "WebrtcGlobalParent.h"
 
 #include <algorithm>
 #include <vector>
 
-#include "mozilla/dom/WebrtcGlobalInformationBinding.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
-#include "mozilla/dom/ContentChild.h"
-
 #include "ErrorList.h"
+#include "MediaTransportHandler.h"
+#include "PeerConnectionCtx.h"
+#include "PeerConnectionImpl.h"
+#include "WebrtcGlobalChild.h"
+#include "WebrtcGlobalParent.h"
+#include "WebrtcGlobalStatsHistory.h"
+#include "common/browser_logging/WebRtcLog.h"
+#include "libwebrtcglue/VideoConduit.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/PWebrtcGlobal.h"
+#include "mozilla/dom/PWebrtcGlobalChild.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
+#include "mozilla/dom/WebrtcGlobalInformationBinding.h"
 #include "nsISupports.h"
 #include "nsITimer.h"
 #include "nsLiteralString.h"
 #include "nsNetCID.h"               // NS_SOCKETTRANSPORTSERVICE_CONTRACTID
+#include "nsProxyRelease.h"         // nsMainThreadPtrHolder
 #include "nsServiceManagerUtils.h"  // do_GetService
-#include "nsXULAppAPI.h"
-#include "mozilla/ErrorResult.h"
-#include "nsProxyRelease.h"  // nsMainThreadPtrHolder
-#include "mozilla/Unused.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/ClearOnShutdown.h"
-
-#include "common/browser_logging/WebRtcLog.h"
 #include "nsString.h"
+#include "nsXULAppAPI.h"
 #include "transport/runnable_utils.h"
-#include "MediaTransportHandler.h"
-#include "PeerConnectionCtx.h"
-#include "PeerConnectionImpl.h"
 
 #ifdef XP_WIN
 #  include <process.h>
@@ -196,7 +193,7 @@ void WebrtcGlobalInformation::ClearAllStats(const GlobalObject& aGlobal) {
   if (!WebrtcContentParents::Empty()) {
     // Pass on the request to any content process based PeerConnections.
     for (const auto& cp : WebrtcContentParents::GetAll()) {
-      Unused << cp->SendClearStats();
+      (void)cp->SendClearStats();
     }
   }
 
@@ -449,12 +446,12 @@ void WebrtcGlobalInformation::ClearLogging(const GlobalObject& aGlobal) {
   if (!WebrtcContentParents::Empty()) {
     // Clear content process signaling logs
     for (const auto& cp : WebrtcContentParents::GetAll()) {
-      Unused << cp->SendClearLog();
+      (void)cp->SendClearLog();
     }
   }
 
   // Clear chrome process signaling logs
-  Unused << RunLogClear();
+  (void)RunLogClear();
 }
 
 static RefPtr<GenericPromise> UpdateLogStash() {
@@ -550,7 +547,7 @@ void WebrtcGlobalInformation::SetAecDebug(const GlobalObject& aGlobal,
   sLastAECDebug = aEnable;
 
   for (const auto& cp : WebrtcContentParents::GetAll()) {
-    Unused << cp->SendSetAecLogging(aEnable);
+    (void)cp->SendSetAecLogging(aEnable);
   }
 }
 
@@ -607,7 +604,7 @@ void WebrtcGlobalInformation::AdjustTimerReferences(
             },
             nullptr, WebrtcGlobalStatsHistory::Pref::PollIntervalMs(),
             nsITimer::TYPE_REPEATING_SLACK,
-            "WebrtcGlobalInformation::GatherHistory");
+            "WebrtcGlobalInformation::GatherHistory"_ns);
       }
       ClearOnShutdown(&sHistoryTimer);
     }

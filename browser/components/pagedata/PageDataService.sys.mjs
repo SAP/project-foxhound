@@ -23,7 +23,7 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", function () {
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  idleService: ["@mozilla.org/widget/useridleservice;1", "nsIUserIdleService"],
+  idleService: ["@mozilla.org/widget/useridleservice;1", Ci.nsIUserIdleService],
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(

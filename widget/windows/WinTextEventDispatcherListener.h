@@ -6,7 +6,6 @@
 #ifndef WinTextEventDispatcherListener_h_
 #define WinTextEventDispatcherListener_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextEventDispatcherListener.h"
 

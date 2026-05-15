@@ -8,6 +8,7 @@
 newtab-page-title = പുതിയ ടാബ്
 newtab-settings-button =
     .title = നിങ്ങളുടെ പുതിയ ടാബ് താള് ഇഷ്ടാനുസൃതമാക്കുക
+newtab-customize-panel-icon-button-label = ഇച്ഛാനുസൃതമാക്കുക
 newtab-personalize-settings-icon-label =
     .title = പുതിയ ടാബ് വ്യക്തിപരമാക്കുക
     .aria-label = ക്രമീകരണങ്ങൾ
@@ -53,6 +54,9 @@ newtab-topsites-add-shortcut-header = പുതിയ കുറുക്കു�
 newtab-topsites-edit-topsites-header = മികച്ച സൈറ്റ് പട്ടിക തിരുത്തൂ
 newtab-topsites-edit-shortcut-header = കുറുക്കുവഴി തിരുത്തുക
 newtab-topsites-add-shortcut-label = കുറുക്കുവഴി ചേർക്കുക
+newtab-topsites-add-shortcut-title =
+    .title = കുറുക്കുവഴി ചേർക്കുക
+    .aria-label = കുറുക്കുവഴി ചേർക്കുക
 newtab-topsites-title-label = തലക്കെട്ട്
 newtab-topsites-title-input =
     .placeholder = തലക്കെട്ട് നൽകൂ
@@ -117,6 +121,8 @@ newtab-menu-delete-pocket = { -pocket-brand-name } നിന്ന് മായ�
 newtab-menu-archive-pocket = { -pocket-brand-name } ഗ്രന്ഥപ്പുരത്തിലാക്കി വയ്ക്കുക
 newtab-menu-show-privacy-info = ഞങ്ങളുടെ പരുപാടികൾക്കു് പണം കൊടുക്കുന്നവരും താങ്ങളുടെ സ്വകാര്യതാവും
 newtab-menu-about-fakespot = { -fakespot-brand-name }-നെ കുറിച്ചു്
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = വിവരം അറിയിക്കുക
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = തടയുക
@@ -185,6 +191,8 @@ newtab-label-sponsored-by = { $sponsor } കൊണ്ടു പണം മുട�
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } മിനിറ്റ്
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = പണങ്കൊണ്ടു പ്രചരിപ്പിച്ചതു്
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -286,12 +294,15 @@ newtab-custom-sponsored-sites = പണം കൊണ്ടു് പ്രസര�
 newtab-custom-pocket-title = { -pocket-brand-name } ശുപാൎശ ചെയ്ത
 newtab-custom-pocket-show-recent-saves = അടുത്തിടെ കരുതിവയ്ക്കലുകൾ കാണിക്കുക
 newtab-custom-recent-title = ഒടുവിലുള്ള പ്രവർത്തനം
-newtab-custom-recent-toggle =
-    .label = ഒടുവിലുള്ള പ്രവർത്തനം
-    .description = ഒടുവിൽ സന്ദൎശിച്ച വെബ്സ്ഥാനങ്ങളുടെയും ഉള്ളടക്കത്തിന്റെയും ഒരു തിരഞ്ഞെടുപ്പു്
 newtab-custom-weather-toggle =
     .label = കാലാവസ്ഥ
     .description = ഒരു നോട്ടത്തിൽ ഇന്നത്തെ കാലാവസ്ഥ
+newtab-custom-widget-weather-toggle =
+    .label = കാലാവസ്ഥ
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = അടയ്ക്കുക
+    .aria-label = കുറിപ്പടി അടയ്ക്കുക
 newtab-custom-close-button = അടയ്ക്കുക
 
 ## New Tab Wallpapers
@@ -331,9 +342,10 @@ newtab-wallpaper-abstract-blue = നീല ആകാരങ്ങൾ
 newtab-wallpaper-abstract-purple = ഊതന്നിറ ആകാരങ്ങൾ
 newtab-wallpaper-abstract-orange = പഴുക്ക ആകാരങ്ങൾ
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = ചിത്രങ്ങൾ
+newtab-wallpaper-storm-sky = കൊടുങ്കാറ്റുമാനം
 newtab-wallpaper-sky-with-pink-clouds = പാടലന്നിറമുള്ള മുകിലുകൾ പതിഞ്ഞവ്വിണ്ണു്
 newtab-wallpaper-white-mountains = വെളുത്ത മലനിരകൾ
 newtab-wallpaper-feature-highlight-header = നിറത്തിന്റെ നീർത്തെറിപ്പ് ഉരച്ചുനോക്കുക
@@ -346,9 +358,6 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
-## Celestial
-
-
 ## New Tab Weather
 
 # Variables:
@@ -358,7 +367,6 @@ newtab-weather-menu-change-location = സ്ഥാനം മാറ്റുക
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = സ്ഥാനം തപ്പുക
     .aria-label = സ്ഥാനം തപ്പുക
-newtab-weather-change-location-search-input = സ്ഥാനം തപ്പുക
 newtab-weather-menu-weather-display = കാലാവസ്ഥ പ്രദർശകം
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -376,6 +384,12 @@ newtab-weather-menu-hide-weather = പുതിയ ടാബിൽ കാലാ�
 newtab-weather-menu-learn-more = കൂടുതല്‍ അറിയുക
 # This message is shown if user is working offline
 newtab-weather-error-not-available = കാലാവസ്ഥാ ദത്ത ഇപ്പോൾ ലഭ്യമല്ല.
+newtab-weather-opt-in-not-now =
+    .label = ഇപ്പോഴല്ല
+newtab-weather-opt-in-yes =
+    .label = അതെ
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = ന്യൂയോർക്ക് പട്ടണം
 
 ## Topic Labels
 
@@ -441,13 +455,11 @@ newtab-section-mangage-topics-blocked-topics = തടഞ്ഞവ
 newtab-section-mangage-topics-blocked-topics-empty-state = താങ്ങൾ ഇതുവരെ ഒരു വിഷയത്തിനെയും ത‍ടഞ്ഞിട്ടില്ല
 newtab-custom-wallpaper-cta = ഉപയോഗിച്ചു് നോക്കൂ!
 
-## Strings for download mobile highlight
+## Strings for new user activation custom wallpaper highlight
 
+newtab-new-user-custom-wallpaper-cta = ഉപയോഗിച്ചു നോക്കൂ
 
-## Strings for shortcuts highlight
-
-
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-ads-reason-not-interested =
     .label = എനിക്കിതിൽ താല്പര്യമില്ല
@@ -461,8 +473,34 @@ newtab-report-content-outdated =
     .label = പഴയതു്
 newtab-report-content-spam-misleading =
     .label = പാഴുള്ളടക്കം അല്ലെങ്കിൽ തെറ്റിദ്ധരിപ്പിക്കുന്നതു്.
+newtab-report-content-requires-payment-subscription-learn-more = കൂടുതല്‍ അറിയുക
 newtab-report-cancel = റദ്ദാക്കുക
 newtab-report-submit = സമൎപ്പിക്കുക
 
-## Strings for trending searches
+## Strings for task / to-do list productivity widget
 
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = പുതിയതു്
+newtab-widget-lists-label-beta =
+    .label = ബീറ്റ
+newtab-widget-task-list-menu-copy = പകൎത്തുക
+newtab-widget-lists-menu-hide = പട്ടികകളെല്ലാം മറയ്ക്കുക
+newtab-widget-lists-menu-learn-more = കൂടുതല്‍ അറിയുക
+newtab-widget-lists-input-add-an-item =
+    .placeholder = ഇനം ചേർക്കുക
+newtab-widget-lists-input-menu-open-link = കണ്ണി തുറക്കുക
+newtab-widget-lists-input-menu-move-up = മുകളിലേക്കു് നീക്കു്
+newtab-widget-lists-input-menu-move-down = താഴോട്ടു നീക്കു്
+newtab-widget-lists-input-menu-delete = മായ്ക്കുക
+newtab-widget-lists-input-menu-edit = തിരുത്തുക
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + പുതിയ പട്ടികയുണ്ടാക്കുക
+newtab-widget-lists-name-label-default =
+    .label = കാര്യപ്പട്ടിക
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = കാര്യപ്പട്ടിക
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = പുതിയ പട്ടിക

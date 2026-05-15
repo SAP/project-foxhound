@@ -704,6 +704,8 @@ class JS_PUBLIC_API JSAutoStructuredCloneBuffer {
 
   JS::StructuredCloneScope scope() const { return data_.scope(); }
 
+  uint32_t version() const { return version_; }
+
   /**
    * Adopt some memory. It will be automatically freed by the destructor.
    * data must have been allocated by the JS engine (e.g., extracted via

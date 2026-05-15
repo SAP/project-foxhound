@@ -91,6 +91,12 @@ support-files = [
   "file_favicon.png^headers^",
 ]
 
+["browser_favicon_svg.js"]
+support-files = [
+  "file_favicon_svg.html",
+  "file_favicon.svg"
+]
+
 ["browser_icon_discovery.js"]
 
 ["browser_invalid_href_fallback.js"]
@@ -104,6 +110,12 @@ support-files = ["blank.html"]
 support-files = [
   "file_insecure_favicon.html",
   "file_favicon.png",
+]
+
+["browser_multiple_ico.js"]
+support-files = [
+  "file_multiple_ico.html",
+  "file_multiple.ico",
 ]
 
 ["browser_multiple_icons_in_short_timeframe.js"]

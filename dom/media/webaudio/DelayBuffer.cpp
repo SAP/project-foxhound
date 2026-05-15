@@ -6,9 +6,9 @@
 
 #include "DelayBuffer.h"
 
-#include "mozilla/PodOperations.h"
 #include "AudioChannelFormat.h"
 #include "AudioNodeEngine.h"
+#include "mozilla/PodOperations.h"
 
 namespace mozilla {
 

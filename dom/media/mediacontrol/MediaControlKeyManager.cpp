@@ -4,10 +4,9 @@
 
 #include "MediaControlKeyManager.h"
 
-#include "MediaControlUtils.h"
 #include "MediaControlService.h"
+#include "MediaControlUtils.h"
 #include "mozilla/AbstractThread.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
@@ -209,7 +208,7 @@ void MediaControlKeyManager::OnPreferenceChange() {
   LOG_INFO("Preference change : %s media control",
            isPrefEnabled ? "enable" : "disable");
   if (shouldMonitorKeys) {
-    Unused << StartMonitoringControlKeys();
+    (void)StartMonitoringControlKeys();
   } else {
     StopMonitoringControlKeys();
   }

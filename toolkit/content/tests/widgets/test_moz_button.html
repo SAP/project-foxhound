@@ -28,6 +28,7 @@
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' width='16' height='16' fill='context-fill' fill-opacity='context-fill-opacity'%3E%3Cpath d='M3 7 1.5 7l-.5.5L1 9l.5.5 1.5 0 .5-.5 0-1.5z'/%3E%3Cpath d='m8.75 7-1.5 0-.5.5 0 1.5.5.5 1.5 0 .5-.5 0-1.5z'/%3E%3Cpath d='M14.5 7 13 7l-.5.5 0 1.5.5.5 1.5 0L15 9l0-1.5z'/%3E%3C/svg%3E");
       }
     </style>
+    <div id="target"></div>
     <script>
       const { AddonManager } = ChromeUtils.importESModule(
         "resource://gre/modules/AddonManager.sys.mjs"
@@ -83,6 +84,12 @@
         }
       }
 
+      function normalizeBackgroundSize(val) {
+        const el = document.querySelector("#target");
+        el.style.backgroundSize = val;
+        return el.style.backgroundSize;
+      }
+
       function assertButtonPropertiesMatch(el, propertyToCssVar) {
         let elStyles = el.backgroundEl
           ? getComputedStyle(el.backgroundEl)
@@ -100,6 +107,9 @@
           ) {
             propertyVal = normalizeColor(propertyVal, elStyles);
             cssVarVal = normalizeColor(cssVarVal, elStyles);
+          }
+          if (property === "backgroundSize") {
+            cssVarVal = normalizeBackgroundSize(propertyVal);
           }
           info(`${propertyVal} == ${cssVarVal}`);
           is(propertyVal, cssVarVal, `${property} should be ${cssVar}`);
@@ -219,6 +229,7 @@
         await testProperty("aria-label", "ariaLabel");
         await testProperty("aria-haspopup", "ariaHasPopup");
         await testProperty("aria-expanded", "ariaExpanded");
+        await testProperty("aria-pressed", "ariaPressed");
       });
 
       add_task(async function testIconButtons() {
@@ -239,7 +250,7 @@
           ok(!img, "button does not use an img element to display an icon");
           assertButtonPropertiesMatch(button, {
             fill,
-            backgroundSize: "--icon-size-default",
+            backgroundSize: "--icon-size",
           });
         }
 
@@ -253,8 +264,8 @@
           );
           assertButtonPropertiesMatch(img, {
             fill,
-            width: "--icon-size-default",
-            height: "--icon-size-default",
+            width: "--icon-size",
+            height: "--icon-size",
           });
         }
 
@@ -452,9 +463,16 @@
           "aria-expanded on button is set to false when the panel-list is hidden"
         );
 
+        assertButtonPropertiesMatch(menuButton, {
+          backgroundColor: "--button-background-color",
+          color: "--button-text-color",
+          borderColor: "--button-border-color",
+        });
+
         let openPromise = BrowserTestUtils.waitForEvent(panelList, "shown");
         synthesizeMouseAtCenter(menuButton, {});
         await openPromise;
+        synthesizeMouseAtCenter(panelList, { type: "mousemove" }, window);
 
         ok(panelList.open, "panel-list is open");
 
@@ -464,6 +482,12 @@
           "true",
           "aria-expanded on button is set to true when the panel-list is open"
         );
+
+        assertButtonPropertiesMatch(menuButton, {
+          backgroundColor: "--button-background-color-selected",
+          color: "--button-text-color-selected",
+          borderColor: "--button-border-color-selected",
+        });
 
         let hidePromise = BrowserTestUtils.waitForEvent(panelList, "hidden");
         synthesizeKey("Escape", {});
@@ -503,6 +527,112 @@
         ok(
           !menuButton.buttonEl.getAttribute("aria-expanded"),
           "Button element doesn't have aria-expanded attribute"
+        );
+      });
+
+      add_task(async function testSplitButton() {
+        const PANEL_LIST_ID = "panel-list";
+        let splitButton = document.querySelector(".four");
+        let panelList = document.querySelector(`#${PANEL_LIST_ID}`);
+
+        splitButton.menuId = PANEL_LIST_ID;
+        splitButton.type = "split";
+        await splitButton.updateComplete;
+
+        is(
+          splitButton.type,
+          "split",
+          "The type of moz-button is set to split button"
+        );
+        ok(splitButton.chevronButtonEl, "The chevron button renders.");
+
+        let chevronButtonElUpdated = BrowserTestUtils.waitForMutationCondition(
+          splitButton.chevronButtonEl,
+          {
+            attributes: true,
+            attributeFilter: ["aria-haspopup", "aria-expanded"],
+          },
+          () => {
+            return (
+              splitButton.chevronButtonEl.hasAttribute("aria-haspopup") &&
+              splitButton.chevronButtonEl.hasAttribute("aria-expanded")
+            );
+          }
+        );
+        await chevronButtonElUpdated;
+
+        assertButtonPropertiesMatch(splitButton, {
+          borderStartStartRadius: "--button-border-radius",
+          borderEndStartRadius: "--button-border-radius",
+          borderStartEndRadius: "0px",
+          borderEndEndRadius: "0px",
+        });
+
+        let chevronButtonBackgroundEl =
+          splitButton.chevronButtonEl.querySelector(".button-background");
+        assertButtonPropertiesMatch(chevronButtonBackgroundEl, {
+          borderStartStartRadius: "0px",
+          borderEndStartRadius: "0px",
+          borderStartEndRadius: "--button-border-radius",
+          borderEndEndRadius: "--button-border-radius",
+        });
+
+        is(
+          splitButton.chevronButtonEl.getAttribute("aria-labelledby"),
+          `${splitButton.buttonEl.id} ${splitButton.chevronButtonEl.id}`,
+          "Chevron button element has expected aria-labelledby attribute"
+        );
+
+        is(
+          splitButton.chevronButtonEl.getAttribute("data-l10n-id"),
+          "moz-button-more-options",
+          "Chevron button has expected data-l10n-id attribute."
+        );
+
+        ok(!panelList.open, "panel-list is hidden");
+        ok(
+          !splitButton.buttonEl.hasAttribute("aria-haspopup"),
+          "Button element does not have aria-haspopup attribute"
+        );
+        is(
+          splitButton.chevronButtonEl.getAttribute("aria-haspopup"),
+          "menu",
+          "Chevron button element has aria-haspopup attribute set to menu"
+        );
+        ok(
+          !splitButton.buttonEl.hasAttribute("aria-expanded"),
+          "Button element does not have aria-haspopup attribute"
+        );
+        is(
+          splitButton.chevronButtonEl.getAttribute("aria-expanded"),
+          "false",
+          "aria-expanded on chevron button is set to false when the panel-list is hidden"
+        );
+
+        let openPromise = BrowserTestUtils.waitForEvent(panelList, "shown");
+        synthesizeMouseAtCenter(splitButton.chevronButtonEl, {});
+        await openPromise;
+        synthesizeMouseAtCenter(panelList, { type: "mousemove" }, window);
+
+        ok(panelList.open, "panel-list is open");
+
+        await splitButton.updateComplete;
+        is(
+          splitButton.chevronButtonEl.getAttribute("aria-expanded"),
+          "true",
+          "aria-expanded on chevron button is set to true when the panel-list is open"
+        );
+
+        let hidePromise = BrowserTestUtils.waitForEvent(panelList, "hidden");
+        synthesizeKey("Escape", {});
+        await hidePromise;
+
+        ok(!panelList.open, "panel-list is hidden");
+
+        is(
+          splitButton.chevronButtonEl.getAttribute("aria-expanded"),
+          "false",
+          "aria-expanded on chevron button is set to false when the panel-list is hidden"
         );
       });
     </script>

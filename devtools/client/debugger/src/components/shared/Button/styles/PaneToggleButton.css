@@ -6,7 +6,7 @@
   padding: 4px 6px;
 }
 
-.toggle-button .img {
+.toggle-button .dbg-img {
   vertical-align: middle;
 }
 
@@ -19,11 +19,11 @@
   margin-inline-start: 0;
 }
 
-html[dir="rtl"] .toggle-button.start .img,
-html[dir="ltr"] .toggle-button.end:not(.vertical) .img {
+html[dir="rtl"] .toggle-button.start .dbg-img,
+html[dir="ltr"] .toggle-button.end:not(.vertical) .dbg-img {
   transform: scaleX(-1);
 }
 
-.toggle-button.end.vertical .img {
+.toggle-button.end.vertical .dbg-img {
   transform: rotate(-90deg);
 }

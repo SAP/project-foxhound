@@ -4,6 +4,9 @@ import * as diplomatRuntime from "./diplomat-runtime.mjs";
 
 
 
+/**
+ * See the [Rust documentation for `Direction`](https://docs.rs/unicode_bidi/0.3.11/unicode_bidi/enum.Direction.html) for more information.
+ */
 export class BidiDirection {
     #value = undefined;
 
@@ -42,6 +45,7 @@ export class BidiDirection {
         throw TypeError(value + " is not a BidiDirection and does not correspond to any of its enumerator values.");
     }
 
+    /** @internal */
     static fromValue(value) {
         return new BidiDirection(value);
     }
@@ -50,6 +54,7 @@ export class BidiDirection {
         return [...BidiDirection.#values.keys()][this.#value];
     }
 
+    /** @internal */
     get ffiValue(){
         return this.#value;
     }

@@ -110,6 +110,7 @@ class Symbol
 #endif
 
   static constexpr size_t offsetOfHash() { return offsetof(Symbol, hash_); }
+  static constexpr size_t offsetOfCode() { return offsetof(Symbol, code_); }
 };
 
 } /* namespace JS */

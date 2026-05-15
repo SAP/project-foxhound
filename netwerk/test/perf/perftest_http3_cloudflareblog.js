@@ -1,7 +1,6 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-/* eslint-env node */
 
 /*
 Ensure the `--firefox.preference=network.http.http3.enable:true` is
@@ -13,8 +12,8 @@ async function test(context, commands) {
   let waitTime = 1000;
 
   if (
-    (typeof context.options.browsertime !== "undefined") &
-    (typeof context.options.browsertime.waitTime !== "undefined")
+    typeof context.options.browsertime !== "undefined" &&
+    typeof context.options.browsertime.waitTime !== "undefined"
   ) {
     waitTime = context.options.browsertime.waitTime;
   }

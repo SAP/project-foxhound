@@ -7,12 +7,12 @@
 #include "mozilla/dom/SVGTests.h"
 
 #include "DOMSVGStringList.h"
+#include "mozilla/dom/SVGSwitchElement.h"
+#include "mozilla/intl/LocaleService.h"
+#include "mozilla/intl/oxilangtag_ffi_generated.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
-#include "mozilla/dom/SVGSwitchElement.h"
-#include "mozilla/intl/oxilangtag_ffi_generated.h"
-#include "mozilla/Preferences.h"
 
 namespace mozilla::dom {
 
@@ -68,7 +68,7 @@ static int32_t FindBestLanguage(const nsTArray<nsCString>& aAvailLangs,
     reqLangs.AppendElements(Span(std::array{"en-US", "en"}));
   } else {
     nsCString acceptLangs;
-    Preferences::GetLocalizedCString("intl.accept_languages", acceptLangs);
+    intl::LocaleService::GetInstance()->GetAcceptLanguages(acceptLangs);
     nsCCharSeparatedTokenizer languageTokenizer(acceptLangs, ',');
     while (languageTokenizer.hasMoreTokens()) {
       reqLangs.AppendElement(languageTokenizer.nextToken());
@@ -85,7 +85,7 @@ static int32_t FindBestLanguage(const nsTArray<nsCString>& aAvailLangs,
       struct LangTagDelete {
         void operator()(LangTag* aLangTag) const { lang_tag_destroy(aLangTag); }
       };
-      UniquePtr<LangTag, LangTagDelete> langTag(lang_tag_new(&avail));
+      std::unique_ptr<LangTag, LangTagDelete> langTag(lang_tag_new(&avail));
       if (langTag && lang_tag_matches(langTag.get(), &req)) {
         return &avail - &aAvailLangs[0];
       }

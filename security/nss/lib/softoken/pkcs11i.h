@@ -193,7 +193,8 @@ struct SFTKObjectStr {
     SFTKSlot *slot;
     void *objectInfo;
     SFTKFree infoFree;
-    PRBool isFIPS;
+    CK_FLAGS validation_value;
+    SFTKAttribute validation_attribute;
 };
 
 struct SFTKTokenObjectStr {
@@ -292,6 +293,7 @@ struct SFTKSessionContextStr {
     SFTKVerify verify;
     unsigned int maxLen;
     SFTKObject *key;
+    SECItem *signature;
 };
 
 /*
@@ -504,6 +506,11 @@ struct SFTKItemTemplateStr {
 #define sftk_isToken(id) (((id)&SFTK_TOKEN_MASK) == SFTK_TOKEN_MAGIC)
 #define sftk_isFIPS(id) \
     (((id) == FIPS_SLOT_ID) || ((id) >= SFTK_MIN_FIPS_USER_SLOT_ID))
+
+/* validation flags. These are token specific, but also
+ * visible to the application via the validation object
+ * each validation should cover a unique bit. */
+#define SFTK_VALIDATION_FIPS_FLAG 0x00000001L
 
 /* the session hash multiplier (see bug 201081) */
 #define SHMULTIPLIER 1791398085
@@ -758,6 +765,9 @@ extern char *sftk_getString(SFTKObject *object, CK_ATTRIBUTE_TYPE type);
 extern void sftk_nullAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type);
 extern CK_RV sftk_GetULongAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
                                     CK_ULONG *longData);
+extern CK_RV sftk_ReadAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
+                                unsigned char *data, unsigned int maxlen,
+                                unsigned int *lenp);
 extern CK_RV sftk_forceAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
                                  const void *value, unsigned int len);
 extern CK_RV sftk_defaultAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
@@ -969,8 +979,15 @@ CK_FLAGS sftk_AttributeToFlags(CK_ATTRIBUTE_TYPE op);
  * FIPS security policy */
 PRBool sftk_operationIsFIPS(SFTKSlot *slot, CK_MECHANISM *mech,
                             CK_ATTRIBUTE_TYPE op, SFTKObject *source);
+/* manage the fips flag on objects */
+void sftk_setFIPS(SFTKObject *obj, PRBool isFIPS);
+PRBool sftk_hasFIPS(SFTKObject *obj);
+
 /* add validation objects to the slot */
 CK_RV sftk_CreateValidationObjects(SFTKSlot *slot);
+
+/* get the length of an MLDSASignature based on the PKCS #11 parameter set */
+unsigned int sftk_MLDSAGetSigLen(CK_ML_DSA_PARAMETER_SET_TYPE paramSet);
 
 SEC_END_PROTOS
 

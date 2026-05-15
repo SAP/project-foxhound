@@ -18,9 +18,9 @@
 #include <utility>
 #include <vector>
 
+#include "api/environment/environment.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
-#include "api/units/timestamp.h"
 #include "media/base/media_channel.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_util.h"
@@ -34,24 +34,22 @@
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
-#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
 // Fake NetworkInterface that sends/receives RTP/RTCP packets.
-class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
+class FakeNetworkInterface : public MediaChannelNetworkInterface {
  public:
-  FakeNetworkInterface()
-      : thread_(Thread::Current()),
+  explicit FakeNetworkInterface(const Environment& env)
+      : env_(env),
+        thread_(Thread::Current()),
         dest_(NULL),
         conf_(false),
         sendbuf_size_(-1),
         recvbuf_size_(-1),
-        dscp_(rtc::DSCP_NO_CHANGE) {}
+        dscp_(DSCP_NO_CHANGE) {}
 
-  void SetDestination(cricket::MediaReceiveChannelInterface* dest) {
-    dest_ = dest;
-  }
+  void SetDestination(MediaReceiveChannelInterface* dest) { dest_ = dest; }
 
   // Conference mode is a mode where instead of simply forwarding the packets,
   // the transport will send multiple copies of the packet with the specified
@@ -120,19 +118,19 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
 
   int sendbuf_size() const { return sendbuf_size_; }
   int recvbuf_size() const { return recvbuf_size_; }
-  rtc::DiffServCodePoint dscp() const { return dscp_; }
-  rtc::PacketOptions options() const { return options_; }
+  DiffServCodePoint dscp() const { return dscp_; }
+  AsyncSocketPacketOptions options() const { return options_; }
 
  protected:
   virtual bool SendPacket(CopyOnWriteBuffer* packet,
-                          const rtc::PacketOptions& options)
+                          const AsyncSocketPacketOptions& options)
       RTC_LOCKS_EXCLUDED(mutex_) {
-    if (!webrtc::IsRtpPacket(*packet)) {
+    if (!IsRtpPacket(*packet)) {
       return false;
     }
 
     MutexLock lock(&mutex_);
-    sent_ssrcs_[webrtc::ParseRtpSsrc(*packet)]++;
+    sent_ssrcs_[ParseRtpSsrc(*packet)]++;
     options_ = options;
 
     rtp_packets_.push_back(*packet);
@@ -148,7 +146,7 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
   }
 
   virtual bool SendRtcp(CopyOnWriteBuffer* packet,
-                        const rtc::PacketOptions& options)
+                        const AsyncSocketPacketOptions& options)
       RTC_LOCKS_EXCLUDED(mutex_) {
     MutexLock lock(&mutex_);
     rtcp_packets_.push_back(*packet);
@@ -167,7 +165,7 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
     } else if (opt == Socket::OPT_RCVBUF) {
       recvbuf_size_ = option;
     } else if (opt == Socket::OPT_DSCP) {
-      dscp_ = static_cast<rtc::DiffServCodePoint>(option);
+      dscp_ = static_cast<DiffServCodePoint>(option);
     }
     return 0;
   }
@@ -178,7 +176,7 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
       if (dest_) {
         RtpPacketReceived parsed_packet;
         if (parsed_packet.Parse(packet)) {
-          parsed_packet.set_arrival_time(Timestamp::Micros(TimeMicros()));
+          parsed_packet.set_arrival_time(env_.clock().CurrentTime());
           dest_->OnPacketReceived(std::move(parsed_packet));
         } else {
           RTC_DCHECK_NOTREACHED();
@@ -190,7 +188,7 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
  private:
   void SetRtpSsrc(uint32_t ssrc, CopyOnWriteBuffer& buffer) {
     RTC_CHECK_GE(buffer.size(), 12);
-    webrtc::SetBE32(buffer.MutableData() + 8, ssrc);
+    SetBE32(buffer.MutableData() + 8, ssrc);
   }
 
   void GetNumRtpBytesAndPackets(uint32_t ssrc, int* bytes, int* packets) {
@@ -201,7 +199,7 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
       *packets = 0;
     }
     for (size_t i = 0; i < rtp_packets_.size(); ++i) {
-      if (ssrc == webrtc::ParseRtpSsrc(rtp_packets_[i])) {
+      if (ssrc == ParseRtpSsrc(rtp_packets_[i])) {
         if (bytes) {
           *bytes += static_cast<int>(rtp_packets_[i].size());
         }
@@ -212,8 +210,9 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
     }
   }
 
+  const Environment env_;
   TaskQueueBase* thread_;
-  cricket::MediaReceiveChannelInterface* dest_;
+  MediaReceiveChannelInterface* dest_;
   bool conf_;
   // The ssrcs used in sending out packets in conference mode.
   std::vector<uint32_t> conf_sent_ssrcs_;
@@ -227,18 +226,13 @@ class FakeNetworkInterface : public cricket::MediaChannelNetworkInterface {
   std::vector<CopyOnWriteBuffer> rtcp_packets_;
   int sendbuf_size_;
   int recvbuf_size_;
-  rtc::DiffServCodePoint dscp_;
+  DiffServCodePoint dscp_;
   // Options of the most recently sent packet.
-  rtc::PacketOptions options_;
+  AsyncSocketPacketOptions options_;
   ScopedTaskSafety safety_;
 };
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace cricket {
-using ::webrtc::FakeNetworkInterface;
-}  // namespace cricket
 
 #endif  // MEDIA_BASE_FAKE_NETWORK_INTERFACE_H_

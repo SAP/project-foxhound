@@ -297,7 +297,7 @@ nsresult MultiGetUntrustedModulesData::SubmitToGlean() {
     process.processName = Some(strPid);
 
     nsCString elapsed;
-    elapsed.AppendFloat(data.mElapsed.ToSecondsSigDigits());
+    elapsed.AppendFloat(data.mElapsed.ToSeconds());
     process.elapsed = Some(elapsed);
 
     if (data.mXULLoadDurationMS.isSome()) {

@@ -21,15 +21,19 @@ import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.browser.toolbar.display.DisplayToolbar
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.concept.toolbar.ScrollableToolbar
+import mozilla.components.feature.customtabs.getConfiguredColorSchemeParams
 import mozilla.components.support.ktx.util.URLStringUtils
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
 import org.mozilla.fenix.customtabs.CustomTabToolbarIntegration
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.theme.ThemeManager
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.ToolbarPopupWindow
+import org.mozilla.fenix.utils.getAppNightMode
 import java.lang.ref.WeakReference
+import com.google.android.material.R as materialR
 
 /**
  * A wrapper over [BrowserToolbar] to allow extra customisation and behavior.
@@ -54,7 +58,7 @@ class BrowserToolbarView(
     private val lifecycleOwner: LifecycleOwner,
     private val tabStripContent: @Composable () -> Unit,
 ) : FenixBrowserToolbarView(
-    context = context,
+    parent = container,
     settings = settings,
     customTabSession = customTabSession,
 ) {
@@ -76,8 +80,6 @@ class BrowserToolbarView(
     var toolbar: BrowserToolbar = layout.findViewById(R.id.toolbar)
 
     val toolbarIntegration: ToolbarIntegration
-
-    val menuToolbar: ToolbarMenu
 
     init {
         container.addView(layout)
@@ -142,14 +144,6 @@ class BrowserToolbarView(
                 display.hint = context.getString(R.string.search_hint)
             }
 
-            menuToolbar = ToolbarMenuBuilder(
-                context = this,
-                components = components,
-                settings = settings,
-                interactor = interactor,
-                lifecycleOwner = lifecycleOwner,
-                customTabSessionId = customTabSession?.id,
-            ).build()
             if (!isCustomTabSession) {
                 toolbar.display.setMenuDismissAction {
                     toolbar.invalidateActions()
@@ -157,21 +151,25 @@ class BrowserToolbarView(
             }
 
             toolbarIntegration = if (customTabSession != null) {
+                val colorSchemeParams = customTabSession.config.getConfiguredColorSchemeParams(
+                    currentNightMode = context.resources.configuration.uiMode,
+                    preferredNightMode = settings.getAppNightMode(),
+                )
+
                 CustomTabToolbarIntegration(
                     context = this,
                     toolbar = toolbar,
                     scrollableToolbar = toolbar as ScrollableToolbar,
-                    toolbarMenu = menuToolbar,
                     interactor = interactor,
                     customTabId = customTabSession.id,
                     isPrivate = customTabSession.content.private,
+                    backgroundColor = colorSchemeParams?.toolbarColor,
                 )
             } else {
                 DefaultToolbarIntegration(
                     context = this,
                     toolbar = toolbar,
                     scrollableToolbar = this@BrowserToolbarView,
-                    toolbarMenu = menuToolbar,
                     lifecycleOwner = lifecycleOwner,
                     isPrivate = components.core.store.state.selectedTab?.content?.private ?: false,
                     interactor = interactor,
@@ -210,9 +208,7 @@ class BrowserToolbarView(
                 setDisplayHorizontalPadding(0)
             } else {
                 hideMenuButton()
-                setDisplayHorizontalPadding(
-                    context.resources.getDimensionPixelSize(R.dimen.browser_fragment_display_toolbar_padding),
-                )
+                setDisplayHorizontalPadding(pixelSizeFor(R.dimen.browser_fragment_display_toolbar_padding))
             }
         }
     }
@@ -228,7 +224,7 @@ class BrowserToolbarView(
         )
         val separatorColor = ContextCompat.getColor(
             context,
-            ThemeManager.resolveAttribute(R.attr.borderPrimary, context),
+            ThemeManager.resolveAttribute(materialR.attr.colorOutlineVariant, context),
         )
 
         toolbar.display.colors = toolbar.display.colors.copy(

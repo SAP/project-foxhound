@@ -58,36 +58,56 @@ uint32_t ComputeRGBBufferSize(IntSize aSize, SurfaceFormat aFormat) {
   return bufsize;
 }
 
+static bool CheckYCbCrStride(const gfx::IntSize& aSize, int32_t aStride,
+                             gfx::ColorDepth aDepth) {
+  gfx::SurfaceFormat format = gfx::SurfaceFormatForColorDepth(aDepth);
+  CheckedInt32 minStride =
+      CheckedInt32(gfx::BytesPerPixel(format)) * aSize.width;
+  return minStride.isValid() && aStride >= minStride.value();
+}
+
 // Minimum required shmem size in bytes
-uint32_t ComputeYCbCrBufferSize(const gfx::IntSize& aYSize, int32_t aYStride,
+uint32_t ComputeYCbCrBufferSize(const gfx::IntRect& aDisplay,
+                                const gfx::IntSize& aYSize, int32_t aYStride,
                                 const gfx::IntSize& aCbCrSize,
-                                int32_t aCbCrStride) {
+                                int32_t aCbCrStride, gfx::ColorDepth aDepth,
+                                const ChromaSubsampling aSubsampling) {
   MOZ_ASSERT(aYSize.height >= 0 && aYSize.width >= 0);
 
-  if (aYSize.height < 0 || aYSize.width < 0 || aCbCrSize.height < 0 ||
+  if (aDisplay.IsEmpty() || aDisplay.x < 0 || aDisplay.y < 0 ||
+      !gfx::IntRect(gfx::IntPoint(), aYSize).Contains(aDisplay) ||
+      aYSize.height < 0 || aYSize.width < 0 || aCbCrSize.height < 0 ||
       aCbCrSize.width < 0 ||
       !gfx::Factory::AllowedSurfaceSize(IntSize(aYStride, aYSize.height)) ||
       !gfx::Factory::AllowedSurfaceSize(
-          IntSize(aCbCrStride, aCbCrSize.height))) {
+          IntSize(aCbCrStride, aCbCrSize.height)) ||
+      !CheckYCbCrStride(aYSize, aYStride, aDepth) ||
+      !CheckYCbCrStride(aCbCrSize, aCbCrStride, aDepth) ||
+      !(ChromaSize(aYSize, aSubsampling) <= aCbCrSize)) {
     return 0;
   }
 
-  // Overflow checks are performed in AllowedSurfaceSize
-  return GetAlignedStride<4>(aYSize.height, aYStride) +
-         2 * GetAlignedStride<4>(aCbCrSize.height, aCbCrStride);
+  // Overflow checks are performed only individually in AllowedSurfaceSize
+  auto bufLen =
+      CheckedInt<uint32_t>(GetAlignedStride<4>(aYSize.height, aYStride)) +
+      CheckedInt<uint32_t>(GetAlignedStride<4>(aCbCrSize.height, aCbCrStride)) *
+          2;
+  if (!bufLen.isValid()) {
+    return 0;
+  }
+  return bufLen.value();
 }
 
-uint32_t ComputeYCbCrBufferSize(const gfx::IntSize& aYSize, int32_t aYStride,
+uint32_t ComputeYCbCrBufferSize(const gfx::IntRect& aDisplay,
+                                const gfx::IntSize& aYSize, int32_t aYStride,
                                 const gfx::IntSize& aCbCrSize,
                                 int32_t aCbCrStride, uint32_t aYOffset,
-                                uint32_t aCbOffset, uint32_t aCrOffset) {
-  MOZ_ASSERT(aYSize.height >= 0 && aYSize.width >= 0);
-
-  if (aYSize.height < 0 || aYSize.width < 0 || aCbCrSize.height < 0 ||
-      aCbCrSize.width < 0 ||
-      !gfx::Factory::AllowedSurfaceSize(IntSize(aYStride, aYSize.height)) ||
-      !gfx::Factory::AllowedSurfaceSize(
-          IntSize(aCbCrStride, aCbCrSize.height))) {
+                                uint32_t aCbOffset, uint32_t aCrOffset,
+                                gfx::ColorDepth aDepth,
+                                const ChromaSubsampling aSubsampling) {
+  uint32_t minBufLen = ComputeYCbCrBufferSize(
+      aDisplay, aYSize, aYStride, aCbCrSize, aCbCrStride, aDepth, aSubsampling);
+  if (minBufLen == 0) {
     return 0;
   }
 
@@ -105,7 +125,8 @@ uint32_t ComputeYCbCrBufferSize(const gfx::IntSize& aYSize, int32_t aYStride,
   crEnd += cbCrLength;
 
   if (!yEnd.isValid() || !cbEnd.isValid() || !crEnd.isValid() ||
-      yEnd.value() > aCbOffset || cbEnd.value() > aCrOffset) {
+      yEnd.value() > aCbOffset || cbEnd.value() > aCrOffset ||
+      crEnd.value() < minBufLen) {
     return 0;
   }
 

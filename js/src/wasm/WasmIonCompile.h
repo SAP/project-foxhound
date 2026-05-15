@@ -42,7 +42,6 @@ namespace wasm {
 [[nodiscard]] bool IonDumpFunction(const CompilerEnvironment& compilerEnv,
                                    const CodeMetadata& codeMeta,
                                    const FuncCompileInput& func,
-                                   IonDumpContents contents,
                                    GenericPrinter& out, UniqueChars* error);
 
 }  // namespace wasm

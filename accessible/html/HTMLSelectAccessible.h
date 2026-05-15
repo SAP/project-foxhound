@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_a11y_HTMLSelectAccessible_h__
-#define mozilla_a11y_HTMLSelectAccessible_h__
+#ifndef mozilla_a11y_HTMLSelectAccessible_h_
+#define mozilla_a11y_HTMLSelectAccessible_h_
 
 #include "HTMLFormControlAccessible.h"
 
@@ -81,7 +81,7 @@ class HTMLSelectOptionAccessible : public HyperTextAccessible {
   // LocalAccessible
   virtual ENameValueFlag NativeName(nsString& aName) const override;
   virtual void DOMAttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType,
+                                   AttrModType aModType,
                                    const nsAttrValue* aOldValue,
                                    uint64_t aOldState) override;
 
@@ -159,7 +159,8 @@ class HTMLComboboxAccessible final : public AccessibleWrap {
 
   // LocalAccessible
   virtual void Shutdown() override;
-  virtual void Description(nsString& aDescription) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual void Value(nsString& aValue) const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;

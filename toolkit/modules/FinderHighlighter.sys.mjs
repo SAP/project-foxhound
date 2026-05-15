@@ -215,7 +215,7 @@ FinderHighlighter.prototype = {
    *                                     Rects and texts
    *
    * @param  {nsIDOMWindow} window
-   * @return {Object}
+   * @return {object}
    */
   getForWindow(window) {
     if (!gWindows.has(window)) {
@@ -235,7 +235,7 @@ FinderHighlighter.prototype = {
   /**
    * Notify all registered listeners that the 'Highlight All' operation finished.
    *
-   * @param {Boolean} highlight Whether highlighting was turned on
+   * @param {boolean} highlight Whether highlighting was turned on
    */
   notifyFinished(highlight) {
     for (let l of this.finder._listeners) {
@@ -250,10 +250,10 @@ FinderHighlighter.prototype = {
    * be called recursively for each (i)frame inside a page.
    *
    * @param {Booolean} highlight      Whether highlighting should be turned on
-   * @param {String}   [word]         Needle to search for and highlight when found
-   * @param {Boolean}  [linksOnly]    Only consider nodes that are links for the search
-   * @param {Boolean}  [drawOutline]  Whether found links should be outlined.
-   * @param {Boolean}  [useSubFrames] Whether to iterate over subframes.
+   * @param {string}   [word]         Needle to search for and highlight when found
+   * @param {boolean}  [linksOnly]    Only consider nodes that are links for the search
+   * @param {boolean}  [drawOutline]  Whether found links should be outlined.
+   * @param {boolean}  [useSubFrames] Whether to iterate over subframes.
    * @yield {Promise}  that resolves once the operation has finished
    */
   async highlight(highlight, word, linksOnly, drawOutline, useSubFrames) {
@@ -477,7 +477,7 @@ FinderHighlighter.prototype = {
    * To make sure that the outline covers the found range completely, all the
    * CSS styles that influence the text are copied and applied to the outline.
    *
-   * @param {Object} data Dictionary coming from Finder that contains the
+   * @param {object} data Dictionary coming from Finder that contains the
    *                      following properties:
    *   {Number}  result        One of the nsITypeAheadFind.FIND_* constants
    *                           indicating the result of a search operation.
@@ -607,7 +607,7 @@ FinderHighlighter.prototype = {
     let hasRanges = false;
     if (window) {
       let controllers = [this.finder._getSelectionController(window)];
-      let editors = this.editors;
+      let editors = this._editors;
       if (editors) {
         // Add the selection controllers from any input fields.
         controllers.push(...editors.map(editor => editor.selectionController));
@@ -747,7 +747,7 @@ FinderHighlighter.prototype = {
    * invoked. When modal highlighting is turned off, we hide the CanvasFrame
    * contents.
    *
-   * @param {Boolean} useModalHighlight
+   * @param {boolean} useModalHighlight
    */
   onModalHighlightChange(useModalHighlight) {
     let window = this.finder._getWindow();
@@ -763,7 +763,7 @@ FinderHighlighter.prototype = {
    * When 'Highlight All' is toggled during a session, this callback is invoked
    * and when it's turned off, the found occurrences will be removed from the mask.
    *
-   * @param {Boolean} highlightAll
+   * @param {boolean} highlightAll
    */
   onHighlightAllChange(highlightAll) {
     this._highlightAll = highlightAll;
@@ -819,7 +819,7 @@ FinderHighlighter.prototype = {
    * Geometry.sys.mjs takes care of the DOMRect calculations.
    *
    * @param  {nsIDOMWindow} window          Window to read the boundary rect from
-   * @param  {Boolean}      [includeScroll] Whether to ignore the scroll offset,
+   * @param  {boolean}      [includeScroll] Whether to ignore the scroll offset,
    *                                        which is useful for comparing DOMRects.
    *                                        Optional, defaults to `true`
    * @return {Rect}
@@ -878,7 +878,7 @@ FinderHighlighter.prototype = {
    * This method fetches this offset of the frame element to the respective window.
    *
    * @param  {nsIDOMWindow} window          Window to read the boundary rect from
-   * @return {Object}       Simple object that contains the following two properties:
+   * @return {object}       Simple object that contains the following two properties:
    *                        - {Number} x Offset along the horizontal axis.
    *                        - {Number} y Offset along the vertical axis.
    */
@@ -921,7 +921,7 @@ FinderHighlighter.prototype = {
    * scrollbars.
    *
    * @param  {nsiDOMWindow} window The current finder window.
-   * @return {Object} The current full page dimensions with `width` and `height`
+   * @return {object} The current full page dimensions with `width` and `height`
    *                  properties
    */
   _getWindowDimensions(window) {
@@ -949,7 +949,7 @@ FinderHighlighter.prototype = {
    * range. The CSS properties we look for can be found in `kFontPropsCSS`.
    *
    * @param  {Range} range Range to fetch style info from.
-   * @return {Object} Dictionary consisting of the styles that were found.
+   * @return {object} Dictionary consisting of the styles that were found.
    */
   _getRangeFontStyle(range) {
     let node = range.startContainer;
@@ -970,8 +970,8 @@ FinderHighlighter.prototype = {
    * Utility; transform a dictionary object as returned by `_getRangeFontStyle`
    * above into a HTML style attribute value.
    *
-   * @param  {Object} fontStyle
-   * @return {String}
+   * @param  {object} fontStyle
+   * @return {string}
    */
   _getHTMLFontStyle(fontStyle) {
     let style = [];
@@ -993,7 +993,7 @@ FinderHighlighter.prototype = {
    * @param  {...Array} [additionalStyles] Optional set of style pairs that will
    *                                       augment or override the styles defined
    *                                       by `stylePairs`
-   * @return {String}
+   * @return {string}
    */
   _getStyleString(stylePairs, ...additionalStyles) {
     let baseStyle = new Map(stylePairs);
@@ -1010,8 +1010,8 @@ FinderHighlighter.prototype = {
   /**
    * Checks whether a CSS RGB color value can be classified as being 'bright'.
    *
-   * @param  {String} cssColor RGB color value in the default format rgb[a](r,g,b)
-   * @return {Boolean}
+   * @param  {string} cssColor RGB color value in the default format rgb[a](r,g,b)
+   * @return {boolean}
    */
   _isColorBright(cssColor) {
     cssColor = cssColor.match(kRGBRE);
@@ -1034,7 +1034,7 @@ FinderHighlighter.prototype = {
    *  5. When the majority of ranges are counted as contain bright colored text,
    *     the page is considered to contain bright text overall.
    *
-   * @param {Object} dict Dictionary of properties belonging to the
+   * @param {object} dict Dictionary of properties belonging to the
    *                      currently active window. The page text color property
    *                      will be recorded in `dict.brightText` as `true` or `false`.
    */
@@ -1076,7 +1076,7 @@ FinderHighlighter.prototype = {
    * 'scroll'.
    *
    * @param  {Range} range Range that be enclosed in a dynamic container
-   * @return {Boolean}
+   * @return {boolean}
    */
   _isInDynamicContainer(range) {
     const kFixed = new Set(["fixed", "sticky", "scroll", "auto"]);
@@ -1117,7 +1117,7 @@ FinderHighlighter.prototype = {
    * for use by the drawing function of the highlighter.
    *
    * @param  {Range}  range  Range to fetch the rectangles from
-   * @param  {Object} [dict] Dictionary of properties belonging to
+   * @param  {object} [dict] Dictionary of properties belonging to
    *                         the currently active window
    * @return {Set}    Set of rects that were found for the range
    */
@@ -1159,11 +1159,11 @@ FinderHighlighter.prototype = {
    * cache.
    *
    * @param  {Range}   range            Range to fetch the rectangles from
-   * @param  {Boolean} [checkIfDynamic] Whether we should check if the range
+   * @param  {boolean} [checkIfDynamic] Whether we should check if the range
    *                                    is dynamic as per the rules in
    *                                    `_isInDynamicContainer()`. Optional,
    *                                    defaults to `true`
-   * @param  {Object}  [dict]           Dictionary of properties belonging to
+   * @param  {object}  [dict]           Dictionary of properties belonging to
    *                                    the currently active window
    * @return {Set}     Set of rects that were found for the range
    */
@@ -1194,7 +1194,7 @@ FinderHighlighter.prototype = {
    * Re-read the rectangles of the ranges that we keep track of separately,
    * because they're enclosed by a position: fixed container DOM node or (i)frame.
    *
-   * @param {Object} dict Dictionary of properties belonging to the currently
+   * @param {object} dict Dictionary of properties belonging to the currently
    *                      active window
    */
   _updateDynamicRangesRects(dict) {
@@ -1213,7 +1213,7 @@ FinderHighlighter.prototype = {
    * Rebuild it, if necessary, This will deactivate the animation between
    * occurrences.
    *
-   * @param {Object} dict Dictionary of properties belonging to the currently
+   * @param {object} dict Dictionary of properties belonging to the currently
    *                      active window
    */
   _updateRangeOutline(dict) {
@@ -1390,7 +1390,7 @@ FinderHighlighter.prototype = {
   /**
    * Finish any currently playing animations on the found range outline node.
    *
-   * @param {Object} dict Dictionary of properties belonging to the currently
+   * @param {object} dict Dictionary of properties belonging to the currently
    *                      active window
    */
   _finishOutlineAnimations(dict) {
@@ -1481,7 +1481,7 @@ FinderHighlighter.prototype = {
    * the ranges that were found.
    *
    * @param {nsIDOMWindow} window Window to draw in.
-   * @param {Boolean} [paintContent]
+   * @param {boolean} [paintContent]
    */
   _repaintHighlightAllMask(window, paintContent = true) {
     window = this.getTopWindow(window);
@@ -1592,9 +1592,9 @@ FinderHighlighter.prototype = {
    * for certain operations. This allows us to degrade gracefully when we expect
    * the performance to be negatively impacted due to drawing-intensive operations.
    *
-   * @param  {Object} dict Dictionary of properties belonging to the currently
+   * @param  {object} dict Dictionary of properties belonging to the currently
    *                       active window
-   * @return {Boolean}
+   * @return {boolean}
    */
   _isPageTooBig(dict) {
     let { height, width } = dict.lastWindowDimensions;
@@ -1609,7 +1609,7 @@ FinderHighlighter.prototype = {
    * will be upscaled to `kModalHighlightRepaintHiFreqMs`.
    *
    * @param {nsIDOMWindow} window
-   * @param {Object}       options Dictionary of painter hints that contains the
+   * @param {object}       options Dictionary of painter hints that contains the
    *                               following properties:
    *   {Boolean} contentChanged  Whether the documents' content changed in the
    *                             meantime. This happens when the DOM is updated

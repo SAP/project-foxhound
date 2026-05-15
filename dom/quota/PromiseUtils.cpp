@@ -6,14 +6,14 @@
 
 #include "mozilla/dom/quota/PromiseUtils.h"
 
-#include "jsapi.h"
 #include "MainThreadUtils.h"
-#include "nsDebug.h"
-#include "xpcpublic.h"
+#include "jsapi.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Promise.h"
+#include "nsDebug.h"
+#include "xpcpublic.h"
 
 namespace mozilla::dom::quota {
 

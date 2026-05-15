@@ -24,11 +24,6 @@ LayoutDeviceIntSize ScrollbarDrawingWin::GetMinimumWidgetSize(
     case StyleAppearance::ScrollbarbuttonDown:
     case StyleAppearance::ScrollbarbuttonLeft:
     case StyleAppearance::ScrollbarbuttonRight:
-      // For scrollbar-width:thin, we don't display the buttons.
-      if (IsScrollbarWidthThin(aFrame)) {
-        return LayoutDeviceIntSize{};
-      }
-      [[fallthrough]];
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarthumbVertical:

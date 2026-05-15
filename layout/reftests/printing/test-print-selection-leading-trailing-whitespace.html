@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html reftest-print-range="selection">
+<head>
+  <meta charset="utf-8">
+  <link href="print.css" rel="stylesheet">
+  <script>
+    function selectNonWhitespaceText() {
+      window.getSelection()
+        .setBaseAndExtent(
+          selection.firstChild,
+          2,
+          selection.firstChild,
+          35);
+    }
+  </script>
+</head>
+<body onload="selectNonWhitespaceText()">
+  <p id="selection">  This text should appear on page 1  </p>
+</body>
+</html>

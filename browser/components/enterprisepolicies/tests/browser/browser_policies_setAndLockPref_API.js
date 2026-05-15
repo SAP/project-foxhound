@@ -121,7 +121,7 @@ add_task(async function test_API_through_policies() {
 
 add_task(async function test_pref_tracker() {
   // Tests the test harness functionality that tracks usage of
-  // the setAndLockPref and setDefualtPref APIs.
+  // the setAndLockPref and setDefaultPref APIs.
 
   let defaults = Services.prefs.getDefaultBranch("");
 

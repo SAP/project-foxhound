@@ -10,32 +10,12 @@ add_task(async function () {
   });
 });
 
-// simple tab load helper, pilfered from browser plugin tests
-function promiseTabLoadEvent(tab, url) {
-  info("Wait tab event: load");
-
-  function handle(loadedUrl) {
-    if (loadedUrl === "about:blank" || (url && loadedUrl !== url)) {
-      info(`Skipping spurious load event for ${loadedUrl}`);
-      return false;
-    }
-
-    info("Tab event received: load");
-    return true;
-  }
-
-  let loaded = BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, handle);
-
-  if (url) {
-    BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, url);
-  }
-
-  return loaded;
-}
-
 add_task(async function () {
   let pluginTab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser));
-  await promiseTabLoadEvent(pluginTab, gTestRoot + "block_all_plugins.html");
+  await BrowserTestUtils.loadURIString({
+    browser: pluginTab.linkedBrowser,
+    uriString: gTestRoot + "block_all_plugins.html",
+  });
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     let doc = content.document;
 

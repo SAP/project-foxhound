@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
@@ -26,7 +26,7 @@ class SetupChecklistPreferencesMiddleware(
 ) : Middleware<AppState, AppAction> {
 
     override fun invoke(
-        context: MiddlewareContext<AppState, AppAction>,
+        store: Store<AppState, AppAction>,
         next: (AppAction) -> Unit,
         action: AppAction,
     ) {
@@ -38,7 +38,7 @@ class SetupChecklistPreferencesMiddleware(
                     repository.setupChecklistPreferenceUpdates
                         .collect { preferenceUpdate ->
                             val updateAction = mapRepoUpdateToStoreAction(preferenceUpdate)
-                            context.store.dispatch(updateAction)
+                            store.dispatch(updateAction)
                         }
                 }
                 repository.init()

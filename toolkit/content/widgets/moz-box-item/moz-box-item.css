@@ -2,14 +2,53 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+:host([layout="medium-icon"]) {
+  --box-icon-size: var(--icon-size-large);
+}
+
 :host([layout="large-icon"]) {
   --box-icon-size: var(--icon-size-xlarge);
+}
 
+:host([layout$="-icon"]) {
   .text-content.has-icon.has-description {
     grid-template-areas:
       "icon label"
       "icon description";
   }
+}
+
+:host([static]) {
+  /* Indent static items the width of the handle button + gap */
+  padding-inline-start: calc(var(--button-size-icon) + var(--space-small));
+}
+
+.text-content.has-support-page {
+  display: flex;
+
+  &.has-description {
+    flex-wrap: wrap;
+  }
+
+  .label-wrapper {
+    width: 100%;
+    display: flex;
+    gap: var(--space-small);
+    align-items: center;
+
+    .support-page {
+      margin-inline-start: var(--space-xsmall);
+    }
+  }
+
+  .description,
+  .support-page {
+    display: inline;
+  }
+}
+
+.description + .support-page {
+  font-size: var(--font-size-small);
 }
 
 .box-container {
@@ -39,5 +78,12 @@ slot[name="actions-start"] {
   background-repeat: no-repeat;
   border-radius: var(--button-border-radius);
   -moz-context-properties: fill;
-  fill: currentColor;
+  /** Override the text color set by description-deemphasized for the handle.
+      This cannot be disabled, hence the color should remain the default. */
+  fill: var(--text-color);
+  flex-shrink: 0;
+}
+
+.actions:has(> slot:not(:has-slotted)) {
+  display: none;
 }

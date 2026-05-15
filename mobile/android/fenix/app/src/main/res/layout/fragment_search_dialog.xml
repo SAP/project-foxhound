@@ -40,7 +40,7 @@
         android:id="@+id/search_suggestions_hint_divider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="?borderPrimary"
+        android:background="?attr/colorOutlineVariant"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="@id/search_suggestions_hint"
         app:layout_constraintEnd_toEndOf="parent"
@@ -61,7 +61,7 @@
         android:fadingEdgeLength="40dp"
         android:nestedScrollingEnabled="false"
         android:requiresFadingEdge="vertical"
-        android:background="?attr/layer1"
+        android:background="?attr/colorSurface"
         android:visibility="invisible"
         app:layout_constraintBottom_toTopOf="@+id/keyboard_divider"
         app:layout_constraintEnd_toEndOf="parent"
@@ -72,7 +72,7 @@
         android:id="@+id/fill_link_from_clipboard"
         android:layout_width="0dp"
         android:layout_height="@dimen/search_fragment_clipboard_item_height"
-        android:background="?attr/layer1"
+        android:background="?attr/colorSurface"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone"
@@ -139,13 +139,13 @@
         android:id="@+id/fill_link_divider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="?borderPrimary"
+        android:background="?attr/colorOutlineVariant"
         app:layout_constraintTop_toBottomOf="@id/fill_link_from_clipboard" />
 
     <View
         android:id="@+id/keyboard_divider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="?borderPrimary"
+        android:background="?attr/colorOutlineVariant"
         app:layout_constraintBottom_toBottomOf="parent" />
 </org.mozilla.fenix.perf.SearchDialogFragmentConstraintLayout>

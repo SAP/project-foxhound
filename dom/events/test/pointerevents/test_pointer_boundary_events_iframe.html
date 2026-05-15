@@ -1,0 +1,120 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Test for pointer boundary events</title>
+<script type="application/javascript"  src="/tests/SimpleTest/SimpleTest.js"></script>
+<script type="application/javascript"  src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+<style>
+#container {
+  width: 10px;
+  height: 10px;
+  background-color: rgb(124, 241, 124);
+}
+</style>
+</head>
+<body>
+<div id="content"></div>
+<div id="container"></div><br>
+<div>
+  <iframe id="same-origin" src="iframe.html"></iframe>
+  <iframe id="cross-origin" src="http://example.com/tests/dom/events/test/pointerevents/iframe.html"></iframe>
+</div>
+<script>
+"use strict";
+
+const container = document.getElementById("container");
+const sameOriginIframe = document.getElementById("same-origin");
+const crossOriginIframe = document.getElementById("cross-origin");
+
+// register event listeners
+const events = [];
+function logEvent(e) {
+  events.push(`${e.type}@${e.target.id}`);
+}
+
+async function movePointerTo(target) {
+  let clickPromise = new Promise(resolve => {
+    target.addEventListener("click", resolve, { once: true });
+  });
+
+  synthesizeMouseAtCenter(target, { type: "mousemove" });
+  synthesizeMouseAtCenter(target, {});
+  await clickPromise;
+}
+
+add_setup(async function init() {
+  await SpecialPowers.pushPrefEnv({"set": [
+    // This will make dispatched event going through parent process.
+    ["test.events.async.enabled", true]
+  ]});
+
+  // Register event listeners
+  [ "pointerenter", "pointerleave", "pointerover", "pointerout",
+    "mouseenter", "mouseleave", "mouseover", "mouseout",
+  ].forEach(eventType => {
+    container.addEventListener(eventType, logEvent);
+    sameOriginIframe.addEventListener(eventType, logEvent);
+    crossOriginIframe.addEventListener(eventType, logEvent);
+  });
+});
+
+add_task(async function test_pointer_boundary_events_same_origin_iframe() {
+  info("Move mouse to initial area and clear previous logged events");
+  await movePointerTo(container);
+  events.length = 0;
+
+  info("Move mouse from initial area to same-origin iframe and back");
+  let clickPromise = new Promise(resolve => {
+    container.addEventListener("click", resolve, { once: true });
+  });
+  synthesizeMouseAtCenter(sameOriginIframe, { type: "mousemove" });
+  synthesizeMouseAtCenter(container, { type: "mousemove" });
+  synthesizeMouseAtCenter(container, {});
+
+  info("Ensure all events are received");
+  await clickPromise;
+
+  info("Verify the logged events");
+  const expectedEvents = [ "pointerout@container", "pointerleave@container",
+                           "pointerover@same-origin", "pointerenter@same-origin",
+                           "mouseout@container", "mouseleave@container",
+                           "mouseover@same-origin", "mouseenter@same-origin",
+                           "pointerout@same-origin", "pointerleave@same-origin",
+                           "pointerover@container", "pointerenter@container",
+                           "mouseout@same-origin", "mouseleave@same-origin",
+                           "mouseover@container", "mouseenter@container" ];
+  isDeeply(events, expectedEvents, "check events");
+});
+
+add_task(async function test_pointer_boundary_events_cross_origin_iframe() {
+  info("Move mouse to initial area and clear previous logged events");
+  await movePointerTo(container);
+  events.length = 0;
+
+  info("Move mouse from initial area to cross-origin iframe and back");
+  let clickPromise = new Promise(resolve => {
+    container.addEventListener("click", resolve, { once: true });
+  });
+  synthesizeMouseAtCenter(crossOriginIframe, { type: "mousemove" });
+  synthesizeMouseAtCenter(container, { type: "mousemove" });
+  synthesizeMouseAtCenter(container, {});
+
+  info("Ensure all events are received");
+  await clickPromise;
+
+  info("Verify the logged events");
+  const expectedEvents = [ "pointerout@container", "pointerleave@container",
+                           "pointerover@cross-origin", "pointerenter@cross-origin",
+                           "mouseout@container", "mouseleave@container",
+                           "mouseover@cross-origin", "mouseenter@cross-origin",
+                           "pointerout@cross-origin", "pointerleave@cross-origin",
+                           "pointerover@container", "pointerenter@container",
+                           "mouseout@cross-origin", "mouseleave@cross-origin",
+                           "mouseover@container", "mouseenter@container" ];
+  isDeeply(events, expectedEvents, "check events");
+});
+
+</script>
+</body>
+</html>

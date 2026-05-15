@@ -23,11 +23,13 @@ namespace shell {
 class ShellModuleObjectWrapper : public js::NativeObject {
  public:
   using Target = ModuleObject;
-  enum ModuleSlot { TargetSlot = 0, SlotCount };
+  enum ModuleSlot { TargetSlot = 0, ModuleTypeSlot, SlotCount };
   static const JSClass class_;
-  static ShellModuleObjectWrapper* create(JSContext* cx,
-                                          JS::Handle<ModuleObject*> moduleObj);
+  static ShellModuleObjectWrapper* create(
+      JSContext* cx, JS::Handle<ModuleObject*> moduleObj,
+      JS::ModuleType moduleType = JS::ModuleType::JavaScript);
   ModuleObject* get();
+  JS::ModuleType getModuleType();
 };
 
 }  // namespace shell

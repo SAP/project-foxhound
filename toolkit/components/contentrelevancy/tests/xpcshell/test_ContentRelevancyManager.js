@@ -151,6 +151,35 @@ add_task(async function test_shutdown_blocker() {
     "The interrupt shutdown blocker should be called"
   );
 
+  AsyncShutdown.profileChangeTeardown._reset();
+  Services.prefs.clearUserPref("toolkit.asyncshutdown.testing");
+  Services.prefs.clearUserPref(PREF_CONTENT_RELEVANCY_ENABLED);
+  gSandbox.restore();
+});
+
+add_task(async function test_dont_register_blocker_if_in_shutdown() {
+  // Test a corner case: the ContentRelevancyManager is initialized during shutdown.
+  //
+  // In this case it shouldn't register a shutdown blocker, because it's too late to do that.
+  // Instead, it should just immediately uninitialize itself.
+  //
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1990569
+  ContentRelevancyManager.uninit();
+  Services.prefs.setBoolPref(PREF_CONTENT_RELEVANCY_ENABLED, true);
+  await TestUtils.waitForTick();
+
+  gSandbox.spy(ContentRelevancyManager, "interrupt");
+
+  // Simulate shutdown.
+  Services.prefs.setBoolPref("toolkit.asyncshutdown.testing", true);
+  AsyncShutdown.profileChangeTeardown._trigger();
+  ContentRelevancyManager.init();
+  Assert.ok(
+    !ContentRelevancyManager.initialized,
+    "ContentRelevancyManager should have uninitialized itself"
+  );
+
+  AsyncShutdown.profileChangeTeardown._reset();
   Services.prefs.clearUserPref("toolkit.asyncshutdown.testing");
   Services.prefs.clearUserPref(PREF_CONTENT_RELEVANCY_ENABLED);
   gSandbox.restore();

@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLTimeElement_h
 #define mozilla_dom_HTMLTimeElement_h
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 

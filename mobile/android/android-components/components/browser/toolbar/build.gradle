@@ -2,37 +2,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.browser.toolbar'
 }
 
 dependencies {
     api project(':components:concept-toolbar')
-    api project(':components:ui-autocomplete')
     api project(':components:support-base')
+    api project(':components:ui-autocomplete')
 
-    implementation project(':components:concept-engine')
-    implementation project(':components:concept-menu')
     implementation project(':components:browser-menu')
     implementation project(':components:browser-menu2')
-    implementation project(':components:ui-icons')
+    implementation project(':components:concept-engine')
+    implementation project(':components:concept-menu')
     implementation project(':components:ui-colors')
+    implementation project(':components:ui-icons')
     implementation project(':components:ui-widgets')
     implementation project(':components:support-ktx')
     implementation project(':components:support-utils')
@@ -41,17 +32,16 @@ dependencies {
     implementation libs.androidx.constraintlayout
     implementation libs.androidx.core.ktx
     implementation libs.google.material
-
-    implementation libs.kotlin.coroutines
+    implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

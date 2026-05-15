@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // To implement FileSystemDirectoryHandle's async iteration until we can use
-// a natively supported `async iterable`.
+// a natively supported `async_iterable`.
 [Exposed=(Window,Worker), SecureContext, LegacyNoInterfaceObject]
 interface FileSystemDirectoryIterator {
   [NewObject]

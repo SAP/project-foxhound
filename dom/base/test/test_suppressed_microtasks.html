@@ -11,46 +11,44 @@
     var previousTask = -1;
     function test() {
       let win = window.open("about:blank");
-      win.onload = function() {
+      win.onmessage = function() {
+        win.start = win.performance.now();
+        win.didRunMicrotask = false;
         win.onmessage = function() {
-          win.start = win.performance.now();
-          win.didRunMicrotask = false;
-          win.onmessage = function() {
-            ok(win.didRunMicrotask, "Should have run a microtask.");
-            let period = win.performance.now() - win.start;
-            win.opener.ok(
-              period < 200,
-              "Running a task should be fast. Took " + period + "ms.");
-            win.onmessage = null;
-          }
-          win.queueMicrotask(function() { win.didRunMicrotask = true; });
-          win.postMessage("measurementMessage", "*");
+          ok(win.didRunMicrotask, "Should have run a microtask.");
+          let period = win.performance.now() - win.start;
+          win.opener.ok(
+            period < 200,
+            "Running a task should be fast. Took " + period + "ms.");
+          win.onmessage = null;
         }
-        win.postMessage("initialMessage", "*");
-
-        const last = 500000;
-        for (let i = 0; i < last + 1; ++i) {
-          window.queueMicrotask(function() {
-            // Check that once microtasks are unsuppressed, they are handled in
-            // the correct order.
-            if (previousTask !=  i - 1) {
-              // Explicitly optimize out cases which pass.
-              ok(false, "Microtasks should be handled in order.");
-            }
-            previousTask = i;
-            if (i == last) {
-              win.close();
-              SimpleTest.finish();
-            }
-          });
-        }
-
-        // Synchronous XMLHttpRequest suppresses microtasks.
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "slow.sjs", false);
-        xhr.send();
-        is(previousTask, -1, "Shouldn't have run microtasks during a sync XHR.");
+        win.queueMicrotask(function() { win.didRunMicrotask = true; });
+        win.postMessage("measurementMessage", "*");
       }
+      win.postMessage("initialMessage", "*");
+
+      const last = 500000;
+      for (let i = 0; i < last + 1; ++i) {
+        window.queueMicrotask(function() {
+          // Check that once microtasks are unsuppressed, they are handled in
+          // the correct order.
+          if (previousTask !=  i - 1) {
+            // Explicitly optimize out cases which pass.
+            ok(false, "Microtasks should be handled in order.");
+          }
+          previousTask = i;
+          if (i == last) {
+            win.close();
+            SimpleTest.finish();
+          }
+        });
+      }
+
+      // Synchronous XMLHttpRequest suppresses microtasks.
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", "slow.sjs", false);
+      xhr.send();
+      is(previousTask, -1, "Shouldn't have run microtasks during a sync XHR.");
     }
   </script>
 </head>

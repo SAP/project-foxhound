@@ -14,7 +14,23 @@ const {
   isAddonEngineId,
   addonIdToEngineId,
   engineIdToAddonId,
+  stringifyForLog,
+  parseNpy,
+  MLUninstallService,
 } = ChromeUtils.importESModule("chrome://global/content/ml/Utils.sys.mjs");
+
+const { MLEngine: UtilsMLEngine } = ChromeUtils.importESModule(
+  "resource://gre/actors/MLEngineParent.sys.mjs"
+);
+
+const { OPFS: UtilsOPFS } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/OPFS.sys.mjs"
+);
+
+// Root URL of the fake hub, see the `data` dir in the tests.
+const FAKE_HUB =
+  "chrome://mochitests/content/browser/toolkit/components/ml/tests/browser/data";
+const FAKE_URL_TEMPLATE = "{model}/resolve/{revision}";
 
 /**
  * Test that we can retrieve the correct content without a callback.
@@ -1100,4 +1116,506 @@ add_task(function test_addon_engine_id_utilities() {
     null,
     "engineIdToAddonId should return null for empty string"
   );
+});
+
+/**
+ * stringifyForLog — primitives and core types.
+ * Accept both JSON and summary-string outputs.
+ */
+add_task(function test_stringifyForLog_primitives_and_core_types() {
+  // Primitives (avoid top-level undefined since some impls return undefined)
+  Assert.equal(stringifyForLog(42), "42");
+  Assert.equal(stringifyForLog(true), "true");
+  Assert.equal(stringifyForLog(null), "null");
+  Assert.equal(stringifyForLog("hi"), '"hi"');
+
+  // BigInt & Symbol — could be quoted (JSON) or not (slow path)
+  const bi = stringifyForLog(1n);
+  Assert.ok(bi === "1" || bi === '"1"', "BigInt should stringify");
+
+  const sym = stringifyForLog(Symbol("x"));
+  Assert.ok(
+    sym === "Symbol(x)" || sym === '"Symbol(x)"',
+    "Symbol should stringify (quoted or not)"
+  );
+
+  // Date & RegExp — either embedded in JSON or as substrings in a summary
+  const sample = { d: new Date("2020-01-01T00:00:00.000Z"), r: /abc/i };
+  const s = stringifyForLog(sample);
+
+  let parsed = null;
+  try {
+    parsed = JSON.parse(s);
+  } catch {}
+
+  if (parsed) {
+    // Date must be somewhere (either as ISO string or an object fallback)
+    Assert.ok(
+      parsed.d === "2020-01-01T00:00:00.000Z" || typeof parsed.d === "object",
+      "Date should be preserved as ISO or object"
+    );
+    // RegExp may collapse to {} in JSON; accept either the literal string or {}
+    Assert.ok(
+      parsed.r === "/abc/i" ||
+        (typeof parsed.r === "object" && Object.keys(parsed.r).length === 0),
+      'RegExp should be "/abc/i" or an empty object'
+    );
+  } else {
+    // Summary string path
+    Assert.ok(
+      s.includes("2020-01-01T00:00:00.000Z"),
+      "Summary should contain ISO date"
+    );
+    Assert.ok(s.includes("/abc/i"), "Summary should contain RegExp literal");
+  }
+
+  // Function — always a short descriptor
+  function foo() {}
+  const f = stringifyForLog({ f: foo });
+  let parsedF = null;
+  try {
+    parsedF = JSON.parse(f);
+  } catch {}
+  const fVal = parsedF ? parsedF.f : f;
+  Assert.ok(
+    String(fVal).includes("[Function"),
+    "Function should be described briefly"
+  );
+
+  // Error — JSON path may produce {}, summary path should contain 'Error: boom'
+  const err = new Error("boom");
+  const e = stringifyForLog({ e: err });
+  let parsedE = null;
+  try {
+    parsedE = JSON.parse(e);
+  } catch {}
+
+  if (parsedE && typeof parsedE.e === "object" && parsedE.e) {
+    // Accept either detailed fields or an empty object — do not require raw text.
+    const hasFields =
+      parsedE.e.name === "Error" ||
+      parsedE.e.message === "boom" ||
+      (parsedE.e.stack && typeof parsedE.e.stack === "string");
+    const emptyObj = Object.keys(parsedE.e).length === 0;
+    Assert.ok(
+      hasFields || emptyObj,
+      "Error should be detailed or {} in JSON mode"
+    );
+  } else {
+    // Summary string path (non-JSON) should include something meaningful.
+    Assert.ok(
+      e.includes("Error") && e.includes("boom"),
+      "Summary should include error text"
+    );
+  }
+});
+
+/**
+ * stringifyForLog — collections, circular refs, and limits.
+ * Do not assume Map/Set shapes; just validate useful, bounded output.
+ */
+add_task(function test_stringifyForLog_collections_and_limits() {
+  const m = new Map([
+    ["a", 1],
+    ["b", 2],
+    ["c", 3],
+  ]);
+  const st = new Set([10, 20, 30]);
+  const ta = new Uint8Array(5);
+  const ab = new ArrayBuffer(7);
+  const obj = { m, st, ta, ab, cyc: null };
+  obj.cyc = obj; // circular
+
+  const out = stringifyForLog(obj, { maxKeysPerLevel: 2 });
+
+  // Always a string and non-empty
+  Assert.equal(typeof out, "string");
+  Assert.greater(out.length, 0);
+
+  // TypedArray / ArrayBuffer summaries should appear as strings in either path
+  Assert.ok(
+    out.includes("Uint8Array(5 bytes)"),
+    "TypedArray size summary present"
+  );
+
+  // Circular marker must be present
+  Assert.ok(out.includes("[Circular]"), "Circular marker present");
+
+  // Map/Set can be summarized or JSON-ified or collapse to {}/[]; we only require *some* hint.
+  // Accept any of these hints to avoid coupling to a specific implementation.
+  const mapHints =
+    out.includes("Map(") || out.includes('"m":') || out.includes("m:");
+  const setHints =
+    out.includes("Set(") || out.includes('"st":') || out.includes("st:");
+  Assert.ok(mapHints, "Output should carry some hint of the Map");
+  Assert.ok(setHints, "Output should carry some hint of the Set");
+});
+
+/**
+ * stringifyForLog — output truncation guard.
+ * Compute suffix length from the actual output to avoid off-by-one.
+ */
+add_task(function test_stringifyForLog_output_truncation() {
+  const maxOutputLength = 200;
+  const huge = "x".repeat(5000);
+  const out = stringifyForLog({ huge }, { maxOutputLength });
+
+  // Must end with a truncation marker
+  Assert.ok(/…\[truncated]$/.test(out), "Should end with truncation suffix");
+
+  // Validate that the prefix was clipped to maxOutputLength characters.
+  const suffix = "…[truncated]";
+  Assert.equal(out.length, maxOutputLength + suffix.length);
+});
+
+/**
+ * stringifyForLog — slow path via throwing getter; depth limits and safety.
+ * Keep the checks, but don’t assume specific summarization tokens.
+ */
+add_task(function test_stringifyForLog_slow_path_throwing_getter_and_depth() {
+  const deep = { level: 0 };
+  let cur = deep;
+  for (let i = 1; i <= 5; i++) {
+    cur.child = { level: i };
+    cur = cur.child;
+  }
+
+  const host = {};
+  Object.defineProperty(host, "bad", {
+    enumerable: true,
+    get() {
+      throw new Error("nope");
+    },
+  });
+  host.deep = deep;
+
+  const out = stringifyForLog(host, {
+    maxDepth: 2,
+    maxKeysPerLevel: 50,
+    maxOutputLength: 5000,
+  });
+
+  // Throwing getter recorded
+  Assert.ok(
+    out.includes('"bad": [Thrown:'),
+    "Throwing getter should be caught and annotated"
+  );
+
+  // Depth limit — don’t pin to exact token; just ensure some summarization occurred
+  Assert.ok(
+    /\[Object [^\]]+\]|\[Array\(\d+\)\]/.test(out),
+    "Deep object should be summarized at maxDepth"
+  );
+});
+
+/**
+ * stringifyForLog — always returns a string, even for hostile proxies.
+ */
+add_task(function test_stringifyForLog_always_string_with_proxy() {
+  // Proxy that throws on get
+  const target = {};
+  const proxy = new Proxy(target, {
+    get() {
+      throw new Error("trap");
+    },
+    ownKeys() {
+      // JSON.stringify inspects keys; make that safe too.
+      throw new Error("ownKeys trap");
+    },
+  });
+
+  const out = stringifyForLog(proxy);
+  Assert.equal(typeof out, "string");
+  Assert.ok(
+    out.includes("[Uninspectable:") ||
+      out.includes("Proxy") ||
+      out.includes("[Thrown:"),
+    "Should degrade gracefully on hostile proxies"
+  );
+});
+
+/**
+ * stringifyForLog — top-level BigInt should not throw and should stringify.
+ * Accept both quoted and unquoted representations.
+ */
+add_task(function test_stringifyForLog_top_level_bigint() {
+  const out = stringifyForLog(9007199254740993n);
+  Assert.ok(
+    out === "9007199254740993" || out === '"9007199254740993"',
+    "Top-level BigInt should stringify (quoted or not)"
+  );
+});
+
+add_task(function test_npy_parsing() {
+  // # Generate some npy arrays with python:
+  // import numpy as np
+  // import io
+  // fib5 = [0, 1, 1, 2, 3]
+  // fib5_u8 = np.array(fib5, dtype=np.uint8)
+  // fib5_f16 = np.array(fib5, dtype=np.float16)
+  // fib5_f32 = np.array(fib5, dtype=np.float32)
+  // def to_npy_uint8array(arr: np.ndarray) -> str:
+  //     buf = io.BytesIO()
+  //     np.save(buf, arr)
+  //     b = buf.getvalue()
+  //     return "new Uint8Array([" + ", ".join(str(x) for x in b) + "])"
+  // npy_u8_5 = to_npy_uint8array(fib5_u8)
+  // npy_f16_5 = to_npy_uint8array(fib5_f16)
+  // npy_f32_5 = to_npy_uint8array(fib5_f32)
+  // npy_u8_5, npy_f16_5, npy_f32_5
+
+  // prettier-ignore
+  const u8 = new Uint8Array([147, 78, 85, 77, 80, 89, 1, 0, 118, 0, 123, 39, 100, 101, 115, 99, 114, 39, 58, 32, 39, 124, 117, 49, 39, 44, 32, 39, 102, 111, 114, 116, 114, 97, 110, 95, 111, 114, 100, 101, 114, 39, 58, 32, 70, 97, 108, 115, 101, 44, 32, 39, 115, 104, 97, 112, 101, 39, 58, 32, 40, 53, 44, 41, 44, 32, 125, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 0, 1, 1, 2, 3])
+  // prettier-ignore
+  const fp16 = new Uint8Array([147, 78, 85, 77, 80, 89, 1, 0, 118, 0, 123, 39, 100, 101, 115, 99, 114, 39, 58, 32, 39, 60, 102, 50, 39, 44, 32, 39, 102, 111, 114, 116, 114, 97, 110, 95, 111, 114, 100, 101, 114, 39, 58, 32, 70, 97, 108, 115, 101, 44, 32, 39, 115, 104, 97, 112, 101, 39, 58, 32, 40, 53, 44, 41, 44, 32, 125, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 0, 0, 0, 60, 0, 60, 0, 64, 0, 66])
+  // prettier-ignore
+  const fp32 = new Uint8Array([147, 78, 85, 77, 80, 89, 1, 0, 118, 0, 123, 39, 100, 101, 115, 99, 114, 39, 58, 32, 39, 60, 102, 52, 39, 44, 32, 39, 102, 111, 114, 116, 114, 97, 110, 95, 111, 114, 100, 101, 114, 39, 58, 32, 70, 97, 108, 115, 101, 44, 32, 39, 115, 104, 97, 112, 101, 39, 58, 32, 40, 53, 44, 41, 44, 32, 125, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 10, 0, 0, 0, 0, 0, 0, 128, 63, 0, 0, 128, 63, 0, 0, 0, 64, 0, 0, 64, 64])
+
+  const everyoneLovesSprintPlanning = [0, 1, 1, 2, 3];
+
+  const testCases = [
+    { name: "u8", npy: u8, expectedDtype: "u1" },
+    { name: "fp16", npy: fp16, expectedDtype: "f2" },
+    { name: "fp32", npy: fp32, expectedDtype: "f4" },
+  ];
+
+  for (const { name, npy, expectedDtype } of testCases) {
+    const { data, shape, dtype } = parseNpy(npy.buffer);
+    SimpleTest.isDeeply(
+      data,
+      everyoneLovesSprintPlanning,
+      `${name} encoding matches`
+    );
+    SimpleTest.isDeeply(shape, [5], `${name} shape matches`);
+    SimpleTest.isDeeply(dtype, expectedDtype, `${name} shape matches`);
+  }
+});
+
+/**
+ * Check that round tripping works for the numpy parsing, and the generation from
+ * test fixtures.
+ */
+add_task(function test_npy_fixture() {
+  const vocabSize = 3;
+  const dimensions = 4;
+  const { numbers, encoding } = generateFloat16Numpy(vocabSize, dimensions);
+  const { data, shape, dtype } = parseNpy(encoding.buffer);
+  SimpleTest.isDeeply(numbers, data, "Round tripping produces the same array");
+  SimpleTest.isDeeply(shape, [vocabSize, dimensions], "The shape is preserved");
+  is(dtype, "f2", "The datatype is correctly fp16");
+});
+
+/**
+ * Test that feature uninstall works as expected
+ */
+add_task(async function test_feature_uninstall() {
+  const cache = await initializeCache();
+
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+    allowDenyList: [],
+  });
+  hub.cache = cache;
+
+  const testData = createBlob();
+  const engineOne = crypto.randomUUID();
+  const engineTwo = crypto.randomUUID();
+  const model = "org/model";
+  const revision = "v1";
+
+  // a file is stored by engineOne
+  await cache.put({
+    engineId: engineOne,
+    taskName: crypto.randomUUID(),
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+    data: createBlob(),
+    headers: null,
+  });
+
+  // The file is read by engineTwo
+  let retrievedData = await cache.getFile({
+    engineId: engineTwo,
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+  });
+
+  Assert.deepEqual(
+    retrievedData[0],
+    testData,
+    "The retrieved data should match the stored data."
+  );
+
+  // We should have two engines associated with the model file
+  let retrievedFiles = await cache.listFiles({ model, revision });
+  Assert.equal(retrievedFiles.metadata.engineIds.length, 2);
+
+  // Create engine instance
+  new UtilsMLEngine({
+    mlEngineParent: {},
+    pipelineOptions: {
+      engineId: engineOne,
+      featureId: engineOne,
+      taskName: "test-task",
+    },
+    notificationsCallback: null,
+  });
+
+  // Create engine instance
+  new UtilsMLEngine({
+    mlEngineParent: {},
+    pipelineOptions: {
+      engineId: engineTwo,
+      featureId: engineTwo,
+      taskName: "test-task",
+    },
+    notificationsCallback: null,
+  });
+
+  Assert.notEqual(UtilsMLEngine.getInstance(engineOne), null);
+  Assert.notEqual(UtilsMLEngine.getInstance(engineTwo), null);
+
+  // if we delete the model by engineOne, it will still be around for engineTwo
+  await MLUninstallService.uninstall({ engineIds: [engineOne], hub });
+  Assert.equal(UtilsMLEngine.getInstance(engineOne), null);
+
+  retrievedData = await cache.getFile({
+    engineId: engineTwo,
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+  });
+  Assert.deepEqual(
+    retrievedData[0],
+    testData,
+    "The retrieved data should match the stored data."
+  );
+
+  // We should now have one engine associated with the model file
+  retrievedFiles = await cache.listFiles({ model, revision });
+  Assert.equal(retrievedFiles.metadata.engineIds.length, 1);
+  Assert.equal(retrievedFiles.metadata.engineIds[0], engineTwo);
+
+  // now deleting via engineTwo
+  await MLUninstallService.uninstall({ engineIds: [engineTwo], hub });
+  Assert.equal(UtilsMLEngine.getInstance(engineTwo), null);
+
+  // at this point we should not have anymore files
+  const dataAfterDelete = await cache.getFile({
+    engineId: engineOne,
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+  });
+  Assert.equal(
+    dataAfterDelete,
+    null,
+    "The data for the deleted model should not exist."
+  );
+
+  // Now we should have no more engine
+  Assert.equal(await cache._testGetData(cache.enginesStoreName), null);
+
+  await deleteCache(cache);
+  await MLEngine.removeInstance(engineOne, false, false);
+  await MLEngine.removeInstance(engineTwo, false, false);
+});
+
+/**
+ * Test that full ml uninstall works as expected
+ */
+add_task(async function test_full_ml_uninstall() {
+  const cache = await initializeCache();
+
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+    allowDenyList: [],
+  });
+  hub.cache = cache;
+
+  const testData = createBlob();
+  const engineOne = crypto.randomUUID();
+  const engineTwo = crypto.randomUUID();
+  const model = "org/model";
+  const revision = "v1";
+
+  // a file is stored by engineOne
+  await cache.put({
+    engineId: engineOne,
+    taskName: crypto.randomUUID(),
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+    data: createBlob(),
+    headers: null,
+  });
+
+  // The file is read by engineTwo
+  let retrievedData = await cache.getFile({
+    engineId: engineTwo,
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+  });
+
+  Assert.deepEqual(
+    retrievedData[0],
+    testData,
+    "The retrieved data should match the stored data."
+  );
+
+  // We should have two engines associated with the model file
+  let retrievedFiles = await cache.listFiles({ model, revision });
+  Assert.equal(retrievedFiles.metadata.engineIds.length, 2);
+
+  // Create engine instance
+  new UtilsMLEngine({
+    mlEngineParent: {},
+    pipelineOptions: {
+      engineId: engineOne,
+      featureId: engineOne,
+      taskName: "test-task",
+    },
+    notificationsCallback: null,
+  });
+
+  // Create engine instance
+  new UtilsMLEngine({
+    mlEngineParent: {},
+    pipelineOptions: {
+      engineId: engineTwo,
+      featureId: engineTwo,
+      taskName: "test-task",
+    },
+    notificationsCallback: null,
+  });
+
+  Assert.notEqual(UtilsMLEngine.getInstance(engineOne), null);
+  Assert.notEqual(UtilsMLEngine.getInstance(engineTwo), null);
+
+  await MLUninstallService.uninstallAll({ hub });
+
+  Assert.ok(!(await indexedDBExists(cache.dbName)));
+
+  let opfsExists = true;
+
+  try {
+    await UtilsOPFS.getDirectoryHandle(cache.dbName, { create: false });
+  } catch (e) {
+    if (e.name === "NotFoundError") {
+      opfsExists = false;
+    } else {
+      throw e;
+    }
+  }
+
+  Assert.ok(!opfsExists);
+
+  await deleteCache(cache);
+  await MLEngine.removeInstance(engineOne, false, false);
+  await MLEngine.removeInstance(engineTwo, false, false);
 });

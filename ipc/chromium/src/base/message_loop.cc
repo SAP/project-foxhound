@@ -13,16 +13,19 @@
 #include "base/string_util.h"
 #include "base/thread_local.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/MaybeLeakRefPtr.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ProfilerRunnable.h"
+#include "mozilla/TargetShutdownTaskSet.h"
 #include "nsIEventTarget.h"
 #include "nsITargetShutdownTask.h"
 #include "nsThreadUtils.h"
 
 #if defined(XP_DARWIN)
 #  include "base/message_pump_mac.h"
+#  include "base/message_pump_kqueue.h"
 #endif
-#if defined(XP_UNIX)
+#if defined(XP_UNIX) && !defined(XP_DARWIN)
 #  include "base/message_pump_libevent.h"
 #endif
 #if defined(XP_LINUX) || defined(__DragonFly__) || defined(XP_FREEBSD) || \
@@ -82,18 +85,15 @@ class MessageLoop::EventTarget : public nsISerialEventTarget,
   NS_DECL_NSIEVENTTARGET_FULL
 
   void TargetShutdown() override {
-    nsTArray<nsCOMPtr<nsITargetShutdownTask>> shutdownTasks;
+    TargetShutdownTaskSet::TasksArray shutdownTasks;
     {
       mozilla::MutexAutoLock lock(mMutex);
       if (mShutdownTasksRun) {
         return;
       }
-      mShutdownTasksRun = true;
-      shutdownTasks = std::move(mShutdownTasks);
-      mShutdownTasks.Clear();
+      shutdownTasks = mShutdownTasks.Extract();
     }
-
-    for (auto& task : shutdownTasks) {
+    for (const auto& task : shutdownTasks) {
       task->TargetShutdown();
     }
   }
@@ -108,7 +108,6 @@ class MessageLoop::EventTarget : public nsISerialEventTarget,
     if (mLoop) {
       mLoop->RemoveDestructionObserver(this);
     }
-    MOZ_ASSERT(mShutdownTasks.IsEmpty());
   }
 
   void WillDestroyCurrentMessageLoop() override {
@@ -126,8 +125,7 @@ class MessageLoop::EventTarget : public nsISerialEventTarget,
 
   mozilla::Mutex mMutex;
   bool mShutdownTasksRun MOZ_GUARDED_BY(mMutex) = false;
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> mShutdownTasks
-      MOZ_GUARDED_BY(mMutex);
+  TargetShutdownTaskSet mShutdownTasks MOZ_GUARDED_BY(mMutex);
   MessageLoop* mLoop MOZ_GUARDED_BY(mMutex);
 };
 
@@ -148,24 +146,22 @@ MessageLoop::EventTarget::IsOnCurrentThread(bool* aResult) {
 
 NS_IMETHODIMP
 MessageLoop::EventTarget::DispatchFromScript(nsIRunnable* aEvent,
-                                             uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> event(aEvent);
-  return Dispatch(event.forget(), aFlags);
+                                             DispatchFlags aFlags) {
+  return Dispatch(do_AddRef(aEvent), aFlags);
 }
 
 NS_IMETHODIMP
 MessageLoop::EventTarget::Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                                   uint32_t aFlags) {
+                                   DispatchFlags aFlags) {
+  mozilla::MaybeLeakRefPtr<nsIRunnable> event(std::move(aEvent),
+                                              aFlags & NS_DISPATCH_FALLIBLE);
+
   mozilla::MutexAutoLock lock(mMutex);
   if (!mLoop) {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  if (aFlags != NS_DISPATCH_NORMAL) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  mLoop->PostTask(std::move(aEvent));
+  mLoop->PostTask(event.forget());
   return NS_OK;
 }
 
@@ -173,7 +169,7 @@ NS_IMETHODIMP
 MessageLoop::EventTarget::DelayedDispatch(already_AddRefed<nsIRunnable> aEvent,
                                           uint32_t aDelayMs) {
   mozilla::MutexAutoLock lock(mMutex);
-  if (!mLoop) {
+  if (!mLoop || mShutdownTasksRun) {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
@@ -187,18 +183,22 @@ MessageLoop::EventTarget::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
   if (!mLoop || mShutdownTasksRun) {
     return NS_ERROR_UNEXPECTED;
   }
-  MOZ_ASSERT(!mShutdownTasks.Contains(aTask));
-  mShutdownTasks.AppendElement(aTask);
+  mShutdownTasks.AddTask(aTask);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 MessageLoop::EventTarget::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
   mozilla::MutexAutoLock lock(mMutex);
-  if (!mLoop || mShutdownTasksRun) {
+  if (!mLoop) {
     return NS_ERROR_UNEXPECTED;
   }
-  return mShutdownTasks.RemoveElement(aTask) ? NS_OK : NS_ERROR_UNEXPECTED;
+  return mShutdownTasks.RemoveTask(aTask);
+}
+
+nsIEventTarget::FeatureFlags MessageLoop::EventTarget::GetFeatures() {
+  // MessageLoop::EventTarget does not SUPPORTS_SHUTDOWN_TASK_DISPATCH.
+  return FeatureFlags::SUPPORTS_SHUTDOWN_TASKS;
 }
 
 //------------------------------------------------------------------------------
@@ -284,7 +284,11 @@ MessageLoop::MessageLoop(Type type, nsISerialEventTarget* aEventTarget)
     pump_ = new base::MessagePumpForUI();
 #  endif  // XP_LINUX
   } else if (type_ == TYPE_IO) {
+#  if defined(XP_DARWIN)
+    pump_ = new base::MessagePumpKqueue();
+#  else
     pump_ = new base::MessagePumpLibevent();
+#  endif
   } else {
     pump_ = new base::MessagePumpDefault();
   }
@@ -422,7 +426,7 @@ void MessageLoop::PostTask_Helper(already_AddRefed<nsIRunnable> task,
     if (delay_ms) {
       rv = target->DelayedDispatch(std::move(task), delay_ms);
     } else {
-      rv = target->Dispatch(std::move(task), 0);
+      rv = target->Dispatch(std::move(task), NS_DISPATCH_NORMAL);
     }
     MOZ_ALWAYS_SUCCEEDS(rv);
     return;
@@ -704,6 +708,22 @@ void MessageLoopForIO::RegisterIOHandler(HANDLE file, IOHandler* handler) {
 
 bool MessageLoopForIO::WaitForIOCompletion(DWORD timeout, IOHandler* filter) {
   return pump_io()->WaitForIOCompletion(timeout, filter);
+}
+
+#elif defined(XP_DARWIN)
+
+bool MessageLoopForIO::WatchFileDescriptor(int fd, bool persistent, Mode mode,
+                                           FileDescriptorWatcher* controller,
+                                           Watcher* delegate) {
+  return pump_kqueue()->WatchFileDescriptor(
+      fd, persistent, static_cast<base::MessagePumpKqueue::Mode>(mode),
+      controller, delegate);
+}
+
+bool MessageLoopForIO::WatchMachReceivePort(mach_port_t port,
+                                            MachPortWatchController* controller,
+                                            MachPortWatcher* delegate) {
+  return pump_kqueue()->WatchMachReceivePort(port, controller, delegate);
 }
 
 #else

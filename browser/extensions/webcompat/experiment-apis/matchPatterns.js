@@ -14,6 +14,7 @@ this.matchPatterns = class extends ExtensionAPI {
           const set = new MatchPatternSet(patterns);
           return Cu.cloneInto(
             {
+              patterns,
               matches: url => {
                 return set.matches(url);
               },

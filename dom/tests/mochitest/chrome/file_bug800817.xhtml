@@ -18,12 +18,11 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=800817
   <!-- test code goes here -->
   <script type="application/javascript">
   <![CDATA[
-  /** Test for Bug 800817 **/
+  /** Test for Bug 800817 */
 
   function sendClick(win) {
-    var wu = win.windowUtils;
-    wu.sendMouseEventToWindow("mousedown", 10, 10, 0, 0, 0);
-    wu.sendMouseEventToWindow("mouseup", 10, 10, 0, 0, 0);
+    win.synthesizeMouseEvent("mousedown", 10, 10, {}, { toWindow: true });
+    win.synthesizeMouseEvent("mouseup", 10, 10, {}, { toWindow: true });
   }
 
   function runTests() {

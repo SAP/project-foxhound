@@ -5,19 +5,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "StorageManager.h"
-#include "fs/FileSystemRequestHandler.h"
 
 #include <cstdint>
 #include <cstdlib>
-#include <utility>
+
 #include "ErrorList.h"
-#include "fs/FileSystemRequestHandler.h"
 #include "MainThreadUtils.h"
+#include "fs/FileSystemRequestHandler.h"
 #include "js/CallArgs.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"

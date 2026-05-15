@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
@@ -10,19 +11,6 @@ plugins {
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     buildFeatures {
         viewBinding = true
     }
@@ -31,29 +19,28 @@ android {
 }
 
 dependencies {
-    implementation platform(libs.androidx.compose.bom)
-    implementation project(':components:support-ktx')
-    implementation project(':components:support-utils')
-
-    implementation libs.androidx.compose.ui
-    implementation libs.androidx.compose.ui.tooling.preview
-    implementation libs.androidx.compose.foundation
-    implementation libs.androidx.compose.material3
-
-    implementation libs.androidx.core.ktx
+    implementation project(':components:browser-menu2')
     implementation project(':components:compose-base')
     implementation project(':components:concept-menu')
-    implementation project(':components:browser-menu2')
     implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
     implementation project(':components:ui-colors')
     implementation project(':components:ui-icons')
+
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.foundation
+    implementation libs.androidx.compose.material3
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.ui.tooling.preview
+    implementation libs.androidx.core.ktx
 
     testImplementation project(":components:support-test")
 
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

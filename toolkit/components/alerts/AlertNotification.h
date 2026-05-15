@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_AlertNotification_h__
-#define mozilla_AlertNotification_h__
+#ifndef mozilla_AlertNotification_h_
+#define mozilla_AlertNotification_h_
 
 #include "imgINotificationObserver.h"
 #include "nsIAlertsService.h"
@@ -17,50 +17,13 @@
 
 namespace mozilla {
 
-class AlertImageRequest final : public imgINotificationObserver,
-                                public nsICancelable,
-                                public nsITimerCallback,
-                                public nsINamed {
- public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(AlertImageRequest,
-                                           imgINotificationObserver)
-  NS_DECL_IMGINOTIFICATIONOBSERVER
-  NS_DECL_NSICANCELABLE
-  NS_DECL_NSITIMERCALLBACK
-  NS_DECL_NSINAMED
-
-  AlertImageRequest(nsIURI* aURI, nsIPrincipal* aPrincipal,
-                    bool aInPrivateBrowsing, uint32_t aTimeout,
-                    nsIAlertNotificationImageListener* aListener,
-                    nsISupports* aUserData);
-
-  nsresult Start();
-
- private:
-  virtual ~AlertImageRequest();
-
-  nsresult NotifyMissing();
-  void NotifyComplete();
-
-  nsCOMPtr<nsIURI> mURI;
-  nsCOMPtr<nsIPrincipal> mPrincipal;
-  bool mInPrivateBrowsing;
-  uint32_t mTimeout;
-  nsCOMPtr<nsIAlertNotificationImageListener> mListener;
-  nsCOMPtr<nsISupports> mUserData;
-  nsCOMPtr<nsITimer> mTimer;
-  nsCOMPtr<imgIRequest> mRequest;
-};
-
 class AlertNotification : public nsIAlertNotification {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIALERTNOTIFICATION
-  AlertNotification();
 
  protected:
-  virtual ~AlertNotification();
+  virtual ~AlertNotification() = default;
 
  private:
   nsresult InitId();
@@ -68,17 +31,18 @@ class AlertNotification : public nsIAlertNotification {
   nsString mId;
   nsString mName;
   nsString mImageURL;
+  nsCOMPtr<imgIContainer> mImage;
   nsString mTitle;
   nsString mText;
-  bool mTextClickable;
+  bool mTextClickable = false;
   nsString mCookie;
   nsString mDir;
   nsString mLang;
-  bool mRequireInteraction;
+  bool mRequireInteraction = false;
   nsString mData;
   nsCOMPtr<nsIPrincipal> mPrincipal;
-  bool mInPrivateBrowsing;
-  bool mSilent;
+  bool mInPrivateBrowsing = false;
+  bool mSilent = false;
   nsTArray<uint32_t> mVibrate;
   nsTArray<RefPtr<nsIAlertAction>> mActions;
   nsString mOpaqueRelaunchData;
@@ -89,6 +53,8 @@ class AlertAction : public nsIAlertAction {
   NS_DECL_NSIALERTACTION
 
   AlertAction(const nsAString& aAction, const nsAString& aTitle);
+  static Result<already_AddRefed<AlertAction>, nsresult> Copy(
+      nsIAlertAction& aAction);
 
  protected:
   virtual ~AlertAction() = default;
@@ -99,4 +65,4 @@ class AlertAction : public nsIAlertAction {
 
 }  // namespace mozilla
 
-#endif /* mozilla_AlertNotification_h__ */
+#endif /* mozilla_AlertNotification_h_ */

@@ -508,19 +508,14 @@ data class Addon(
          * The developer says this extension collects: x, y, z
          * ```
          *
-         * Unfortunately, we have to account for either a lack of proper API (prior to API level 26), a fairly
-         * limited API (prior to API level 33) and a nice API (API level 33 and above). That essentially means:
+         * We have to account for a fairly limited API prior to API level 33. That essentially means:
          *
          * - For API level 33 and above (TIRAMISU), we will return `x, y, z` because we use the "AND" type and
          *   the "NARROW" width.
          *
-         * - For API level 26 (O) to 33 (excluded), we will use the list formatter that is configured with the
+         * - For API level below 33, we will use the list formatter that is configured with the
          *   "AND" type (good) and the "WIDE" width (not ideal). We will therefore return `x, y and z` for the
          *   same list of permissions. It's still better to use a list formatter for localization.
-         *
-         * - For API level below 26, we use a "join string with a comma" fallback. That will return `x, y, z`
-         *   in plain English. That will also return the same formatted string in _any_ locale, even when that
-         *   isn't how a list should be formatted. We do not have any other option, though.
          *
          * @param localizedPermissions The list of localized permission [String]
          */
@@ -530,13 +525,8 @@ data class Addon(
                     ListFormatter.getInstance(Locale.getDefault(), ListFormatter.Type.AND, ListFormatter.Width.NARROW)
                         .format(localizedPermissions)
                 }
-
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O -> {
-                    ListFormatter.getInstance(Locale.getDefault()).format(localizedPermissions)
-                }
-
                 else -> {
-                    localizedPermissions.joinToString(", ")
+                    ListFormatter.getInstance(Locale.getDefault()).format(localizedPermissions)
                 }
             }
             return formattedList
@@ -734,7 +724,7 @@ data class Addon(
             return localizedSiteAccessPermissions
         }
 
-        @Suppress("MagicNumber", "ComplexMethod")
+        @Suppress("MagicNumber", "CognitiveComplexMethod", "CyclomaticComplexMethod")
         private fun formatURLAccessPermission(
             permissionsToTranslations: MutableMap<String, Int>,
             localizedSiteAccessPermissions: MutableList<String>,

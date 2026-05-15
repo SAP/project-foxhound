@@ -4,19 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_Navigation_h___
-#define mozilla_dom_Navigation_h___
-
-#include "nsHashtablesFwd.h"
-#include "nsStringFwd.h"
+#ifndef mozilla_dom_Navigation_h_
+#define mozilla_dom_Navigation_h_
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
-
 #include "mozilla/dom/NavigateEvent.h"
 #include "mozilla/dom/NavigationBinding.h"
+#include "nsHashtablesFwd.h"
+#include "nsStringFwd.h"
 
 class nsIDHashKey;
 
@@ -35,7 +33,48 @@ struct NavigationResult;
 
 class SessionHistoryInfo;
 
-struct NavigationAPIMethodTracker;
+// https://html.spec.whatwg.org/#navigation-api-method-tracker
+struct NavigationAPIMethodTracker final : public nsISupports {
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(NavigationAPIMethodTracker)
+
+  NavigationAPIMethodTracker(Navigation* aNavigationObject,
+                             const Maybe<nsID> aKey, const JS::Value& aInfo,
+                             nsIStructuredCloneContainer* aSerializedState,
+                             NavigationHistoryEntry* aCommittedToEntry,
+                             Promise* aCommittedPromise,
+                             Promise* aFinishedPromise, bool aPending = false);
+
+  // Mark this tracker as no longer pending (promoted to ongoing).
+  void MarkAsNotPending() { mPending = false; }
+
+  void CleanUp();
+  void NotifyAboutCommittedToEntry(NavigationHistoryEntry* aNHE);
+  void ResolveFinishedPromise();
+  void RejectFinishedPromise(JS::Handle<JS::Value> aException);
+  void CreateResult(JSContext* aCx, NavigationResult& aResult);
+  void SetSerializedState(nsIStructuredCloneContainer* aSerializedState) {
+    mSerializedState = aSerializedState;
+  }
+
+  Promise* CommittedPromise() { return mCommittedPromise; }
+  Promise* FinishedPromise() { return mFinishedPromise; }
+
+  bool IsHandled() const;
+
+  RefPtr<Navigation> mNavigationObject;
+  Maybe<nsID> mKey;
+  JS::Heap<JS::Value> mInfo;
+
+ private:
+  ~NavigationAPIMethodTracker();
+
+  bool mPending;
+  RefPtr<nsIStructuredCloneContainer> mSerializedState;
+  RefPtr<NavigationHistoryEntry> mCommittedToEntry;
+  RefPtr<Promise> mCommittedPromise;
+  RefPtr<Promise> mFinishedPromise;
+};
 
 class Navigation final : public DOMEventTargetHelper {
  public:
@@ -43,6 +82,10 @@ class Navigation final : public DOMEventTargetHelper {
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Navigation, DOMEventTargetHelper)
 
   explicit Navigation(nsPIDOMWindowInner* aWindow);
+
+  bool IsNavigation() const override { return true; }
+
+  NS_IMPL_FROMEVENTTARGET_HELPER(Navigation, IsNavigation())
 
   using EventTarget::EventListenerAdded;
   virtual void EventListenerAdded(nsAtom* aType) override;
@@ -70,19 +113,18 @@ class Navigation final : public DOMEventTargetHelper {
 
   void Navigate(JSContext* aCx, const nsAString& aUrl,
                 const NavigationNavigateOptions& aOptions,
-                NavigationResult& aResult) {}
+                NavigationResult& aResult);
 
   MOZ_CAN_RUN_SCRIPT void Reload(JSContext* aCx,
                                  const NavigationReloadOptions& aOptions,
                                  NavigationResult& aResult);
 
   void TraverseTo(JSContext* aCx, const nsAString& aKey,
-                  const NavigationOptions& aOptions,
-                  NavigationResult& aResult) {}
+                  const NavigationOptions& aOptions, NavigationResult& aResult);
   void Back(JSContext* aCx, const NavigationOptions& aOptions,
-            NavigationResult& aResult) {}
+            NavigationResult& aResult);
   void Forward(JSContext* aCx, const NavigationOptions& aOptions,
-               NavigationResult& aResult) {}
+               NavigationResult& aResult);
 
   IMPL_EVENT_HANDLER(navigate);
   IMPL_EVENT_HANDLER(navigatesuccess);
@@ -119,11 +161,12 @@ class Navigation final : public DOMEventTargetHelper {
 
   MOZ_CAN_RUN_SCRIPT bool FirePushReplaceReloadNavigateEvent(
       JSContext* aCx, NavigationType aNavigationType, nsIURI* aDestinationURL,
-      bool aIsSameDocument, bool aIsSync,
-      Maybe<UserNavigationInvolvement> aUserInvolvement,
-      Element* aSourceElement, already_AddRefed<FormData> aFormDataEntryList,
+      bool aIsSameDocument, Maybe<UserNavigationInvolvement> aUserInvolvement,
+      Element* aSourceElement, FormData* aFormDataEntryList,
       nsIStructuredCloneContainer* aNavigationAPIState,
-      nsIStructuredCloneContainer* aClassicHistoryAPIState);
+      nsIStructuredCloneContainer* aClassicHistoryAPIState,
+      NavigationAPIMethodTracker* aApiMethodTrackerForNavigateOrReload =
+          nullptr);
 
   MOZ_CAN_RUN_SCRIPT bool FireDownloadRequestNavigateEvent(
       JSContext* aCx, nsIURI* aDestinationURL,
@@ -137,11 +180,29 @@ class Navigation final : public DOMEventTargetHelper {
   bool HasOngoingNavigateEvent() const;
 
   MOZ_CAN_RUN_SCRIPT
+  void InnerInformAboutAbortingNavigation(JSContext* aCx);
+
+  MOZ_CAN_RUN_SCRIPT
   void AbortOngoingNavigation(
       JSContext* aCx, JS::Handle<JS::Value> aError = JS::UndefinedHandleValue);
 
+  MOZ_CAN_RUN_SCRIPT
+  void AbortNavigateEvent(JSContext* aCx, const NavigateEvent* aEvent,
+                          JS::Handle<JS::Value> aReason);
+
+  MOZ_CAN_RUN_SCRIPT
+  void InformAboutChildNavigableDestruction(JSContext* aCx);
+
+  void CreateNavigationActivationFrom(
+      SessionHistoryInfo* aPreviousEntryForActivation,
+      NavigationType aNavigationType);
+
+  void SetSerializedStateIntoOngoingAPIMethodTracker(
+      nsIStructuredCloneContainer* aSerializedState);
+
  private:
   friend struct NavigationAPIMethodTracker;
+  friend struct NavigationWaitForAllScope;
   using UpcomingTraverseAPIMethodTrackers =
       nsTHashMap<nsIDHashKey, RefPtr<NavigationAPIMethodTracker>>;
 
@@ -149,11 +210,6 @@ class Navigation final : public DOMEventTargetHelper {
 
   // https://html.spec.whatwg.org/multipage/nav-history-apis.html#has-entries-and-events-disabled
   bool HasEntriesAndEventsDisabled() const;
-
-  void ScheduleEventsFromNavigation(
-      NavigationType aType,
-      const RefPtr<NavigationHistoryEntry>& aPreviousEntry,
-      nsTArray<RefPtr<NavigationHistoryEntry>>&& aDisposedEntries);
 
   MOZ_CAN_RUN_SCRIPT
   nsresult FireEvent(const nsAString& aName);
@@ -167,17 +223,15 @@ class Navigation final : public DOMEventTargetHelper {
       JSContext* aCx, NavigationType aNavigationType,
       NavigationDestination* aDestination,
       UserNavigationInvolvement aUserInvolvement, Element* aSourceElement,
-      already_AddRefed<FormData> aFormDataEntryList,
+      FormData* aFormDataEntryList,
       nsIStructuredCloneContainer* aClassicHistoryAPIState,
-      const nsAString& aDownloadRequestFilename);
+      const nsAString& aDownloadRequestFilename,
+      NavigationAPIMethodTracker* aNavigationAPIMethodTracker = nullptr);
 
   NavigationHistoryEntry* FindNavigationHistoryEntry(
       const SessionHistoryInfo& aSessionHistoryInfo) const;
 
-  void PromoteUpcomingAPIMethodTrackerToOngoing(Maybe<nsID>&& aDestinationKey);
-
-  RefPtr<NavigationAPIMethodTracker>
-  MaybeSetUpcomingNonTraverseAPIMethodTracker(
+  RefPtr<NavigationAPIMethodTracker> SetUpNavigateReloadAPIMethodTracker(
       JS::Handle<JS::Value> aInfo,
       nsIStructuredCloneContainer* aSerializedState);
 
@@ -186,6 +240,9 @@ class Navigation final : public DOMEventTargetHelper {
 
   void SetEarlyErrorResult(JSContext* aCx, NavigationResult& aResult,
                            ErrorResult&& aRv) const;
+
+  void SetEarlyStateErrorResult(JSContext* aCx, NavigationResult& aResult,
+                                const nsACString& aMessage) const;
 
   bool CheckIfDocumentIsFullyActiveAndMaybeSetEarlyErrorResult(
       JSContext* aCx, const Document* aDocument,
@@ -201,9 +258,18 @@ class Navigation final : public DOMEventTargetHelper {
 
   static void CleanUp(NavigationAPIMethodTracker* aNavigationAPIMethodTracker);
 
+  void SetCurrentEntryIndex(const SessionHistoryInfo* aTargetInfo);
+
   Document* GetAssociatedDocument() const;
 
+  // Update the state managing if we need to dispatch the traverse event or not.
+  void UpdateNeedsTraverse();
+
   void LogHistory() const;
+
+  void PerformNavigationTraversal(JSContext* aCx, const nsID& aKey,
+                                  const NavigationOptions& aOptions,
+                                  NavigationResult& aResult);
 
   // https://html.spec.whatwg.org/multipage/nav-history-apis.html#navigation-entry-list
   nsTArray<RefPtr<NavigationHistoryEntry>> mEntries;
@@ -223,9 +289,6 @@ class Navigation final : public DOMEventTargetHelper {
   // https://html.spec.whatwg.org/multipage/nav-history-apis.html#ongoing-api-method-tracker
   RefPtr<NavigationAPIMethodTracker> mOngoingAPIMethodTracker;
 
-  // https://html.spec.whatwg.org/multipage/nav-history-apis.html#upcoming-non-traverse-api-method-tracker
-  RefPtr<NavigationAPIMethodTracker> mUpcomingNonTraverseAPIMethodTracker;
-
   // https://html.spec.whatwg.org/multipage/nav-history-apis.html#upcoming-traverse-api-method-trackers
   UpcomingTraverseAPIMethodTrackers mUpcomingTraverseAPIMethodTrackers;
 
@@ -236,6 +299,44 @@ class Navigation final : public DOMEventTargetHelper {
   RefPtr<NavigationActivation> mActivation;
 };
 
+inline Navigation* EventTarget::GetAsNavigation() {
+  return IsNavigation() ? AsNavigation() : nullptr;
+}
+inline const Navigation* EventTarget::GetAsNavigation() const {
+  return IsNavigation() ? AsNavigation() : nullptr;
+}
+inline Navigation* EventTarget::AsNavigation() {
+  MOZ_DIAGNOSTIC_ASSERT(IsNavigation());
+  return static_cast<Navigation*>(this);
+}
+inline const Navigation* EventTarget::AsNavigation() const {
+  MOZ_DIAGNOSTIC_ASSERT(IsNavigation());
+  return static_cast<const Navigation*>(this);
+}
+
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_Navigation_h___
+template <>
+struct fmt::formatter<mozilla::dom::NavigationType, char>
+    : public formatter<nsLiteralCString> {
+  template <typename FmtContext>
+  constexpr auto format(const mozilla::dom::NavigationType& aNavigationType,
+                        FmtContext& aCtx) const {
+    return formatter<nsLiteralCString>::format(
+        mozilla::dom::GetEnumString(aNavigationType), aCtx);
+  }
+};
+
+template <>
+struct fmt::formatter<mozilla::dom::NavigationHistoryBehavior, char>
+    : public formatter<nsLiteralCString> {
+  template <typename FmtContext>
+  constexpr auto format(
+      const mozilla::dom::NavigationHistoryBehavior& aNavigationHistoryBehavior,
+      FmtContext& aCtx) const {
+    return formatter<nsLiteralCString>::format(
+        mozilla::dom::GetEnumString(aNavigationHistoryBehavior), aCtx);
+  }
+};
+
+#endif  // mozilla_dom_Navigation_h_

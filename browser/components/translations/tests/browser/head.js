@@ -251,29 +251,6 @@ function maybeGetByL10nId(l10nId, doc = document) {
 }
 
 /**
- * Provide a uniform way to log actions. This abuses the Error stack to get the callers
- * of the action. This should help in test debugging.
- */
-function logAction(...params) {
-  const error = new Error();
-  const stackLines = error.stack.split("\n");
-  const actionName = stackLines[1]?.split("@")[0] ?? "";
-  const taskFileLocation = stackLines[2]?.split("@")[1] ?? "";
-  if (taskFileLocation.includes("head.js")) {
-    // Only log actions that were done at the test level.
-    return;
-  }
-
-  info(`Action: ${actionName}(${params.join(", ")})`);
-  info(
-    `Source: ${taskFileLocation.replace(
-      "chrome://mochitests/content/browser/",
-      ""
-    )}`
-  );
-}
-
-/**
  * Returns true if Full-Page Translations is currently active, otherwise false.
  *
  * @returns {boolean}
@@ -308,12 +285,9 @@ async function navigate(
 
   // Load a blank page first to ensure that tests don't hang.
   // I don't know why this is needed, but it appears to be necessary.
-  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, BLANK_PAGE);
-  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-
+  await loadBlankPage();
   const loadTargetPage = async () => {
-    BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    await loadNewPage(gBrowser.selectedBrowser, url);
 
     if (downloadHandler) {
       await FullPageTranslationsTestUtils.assertTranslationsButton(
@@ -355,14 +329,22 @@ async function switchTab(tab, name) {
 async function toggleReaderMode() {
   logAction();
   const readerButton = document.getElementById("reader-mode-button");
-  await waitForCondition(() => readerButton.hidden === false);
+  await BrowserTestUtils.waitForMutationCondition(
+    readerButton,
+    { attributes: true, attributeFilter: ["hidden"] },
+    () => readerButton.hidden === false
+  );
 
   readerButton.getAttribute("readeractive")
     ? info("Exiting reader mode")
     : info("Entering reader mode");
 
   const readyPromise = readerButton.getAttribute("readeractive")
-    ? waitForCondition(() => !readerButton.getAttribute("readeractive"))
+    ? BrowserTestUtils.waitForMutationCondition(
+        readerButton,
+        { attributes: true, attributeFilter: ["readeractive"] },
+        () => !readerButton.getAttribute("readeractive")
+      )
     : BrowserTestUtils.waitForContentEvent(
         gBrowser.selectedBrowser,
         "AboutReaderContentReady"
@@ -451,30 +433,64 @@ class TranslationsBencher {
   static METRIC_TOKENS_PER_SECOND = "tokens-per-second";
 
   /**
-   * The metric base name for peak memory usage in the inference process.
-   *
-   * We often see a spike in memory usage when models initialize that eventually
-   * stabilizes as the inference process continues running. As such, it is important
-   * that we collect two memory metrics during our benchmarks.
-   *
-   * @see {TranslationsBencher.METRIC_STABILIZED_MEMORY_USAGE}
+   * The metric base name for peak memory usage in the parent process.
+   * The TranslationsBencher records this at a sampled interval reporting
+   * the maximum recorded memory recorded during the benchmark.
    *
    * @type {string}
    */
-  static METRIC_PEAK_MEMORY_USAGE = "peak-memory-usage";
+  static METRIC_PEAK_PARENT_PROCESS_MEMORY_USAGE =
+    "peak-parent-process-memory-usage";
 
   /**
-   * The metric base name for stabilized memory usage in the inference process.
-   *
-   * We often see a spike in memory usage when models initialize that eventually
-   * stabilizes as the inference process continues running. As such, it is important
-   * that we collect two memory metrics during our benchmarks.
-   *
-   * @see {TranslationsBencher.METRIC_PEAK_MEMORY_USAGE}
+   * The metric base name for stabilized memory usage in the parent process.
+   * The TranslationsBencher records this just after finishing the final translation,
+   * but before destroying the engine and running GC.
    *
    * @type {string}
    */
-  static METRIC_STABILIZED_MEMORY_USAGE = "stabilized-memory-usage";
+  static METRIC_STABILIZED_PARENT_PROCESS_MEMORY_USAGE =
+    "stabilized-parent-process-memory-usage";
+
+  /**
+   * The metric base name for the memory usage in the parent process after
+   * translation has completed, and after running cycle collection and
+   * garbage collection.
+   *
+   * @type {string}
+   */
+  static METRIC_POST_GC_PARENT_PROCESS_MEMORY_USAGE =
+    "post-gc-parent-process-memory-usage";
+
+  /**
+   * The metric base name for peak memory usage in the inference process.
+   * The TranslationsBencher records this at a sampled interval reporting
+   * the maximum recorded memory recorded during the benchmark.
+   *
+   * @type {string}
+   */
+  static METRIC_PEAK_INFERENCE_PROCESS_MEMORY_USAGE =
+    "peak-inference-process-memory-usage";
+
+  /**
+   * The metric base name for stabilized memory usage in the inference process,
+   * The TranslationsBencher records this just after finishing the final translation,
+   * but before running GC.
+   *
+   * @type {string}
+   */
+  static METRIC_STABILIZED_INFERENCE_PROCESS_MEMORY_USAGE =
+    "stabilized-inference-process-memory-usage";
+
+  /**
+   * The metric base name for the memory usage in the inference process after
+   * translation has completed, and after running cycle collection and garbage
+   * garbage collection.
+   *
+   * @type {string}
+   */
+  static METRIC_POST_GC_INFERENCE_PROCESS_MEMORY_USAGE =
+    "post-gc-inference-process-memory-usage";
 
   /**
    * The metric base name for total translation time.
@@ -492,10 +508,10 @@ class TranslationsBencher {
    * @type {Record<string, {pageLanguage: string, tokenCount: number, wordCount: number}>}
    */
   static #PAGE_DATA = {
-    [SPANISH_BENCHMARK_PAGE_URL]: {
-      pageLanguage: "es",
-      tokenCount: 10966,
-      wordCount: 6944,
+    [ENGLISH_BENCHMARK_PAGE_URL]: {
+      pageLanguage: "en",
+      tokenCount: 12955,
+      wordCount: 9575,
     },
   };
 
@@ -560,11 +576,18 @@ class TranslationsBencher {
    */
   static PeakMemorySampler = class {
     /**
-     * The peak recorded memory in mebibytes (MiB).
+     * The peak recorded memory in mebibytes (MiB) for the parent process.
      *
      * @type {number}
      */
-    #peakMemoryMiB = 0;
+    #peakParentMemoryMiB = 0;
+
+    /**
+     * The peak recorded memory in mebibytes (MiB) for the inference process.
+     *
+     * @type {number}
+     */
+    #peakInferenceMemoryMiB = 0;
 
     /**
      * The interval id for the memory sample timer.
@@ -590,21 +613,26 @@ class TranslationsBencher {
     }
 
     /**
-     * Collects the current inference process memory usage and updates
-     * the peak memory measurement if the current usage exceeds the previous peak.
+     * Collects the current memory usage for both the parent and inference processes
+     * and updates the peak memory measurements if the current usage exceeds the
+     * previously recorded peaks.
      *
      * @returns {Promise<void>}
      */
     async #collectMemorySample() {
-      const currentMemoryMiB =
-        await TranslationsBencher.#getInferenceProcessTotalMemoryUsage();
-      if (currentMemoryMiB > this.#peakMemoryMiB) {
-        this.#peakMemoryMiB = currentMemoryMiB;
+      const { parentMemoryMiB, inferenceMemoryMiB } =
+        await TranslationsBencher.#getTotalMemoryUsageByProcess();
+
+      if (parentMemoryMiB > this.#peakParentMemoryMiB) {
+        this.#peakParentMemoryMiB = parentMemoryMiB;
+      }
+      if (inferenceMemoryMiB > this.#peakInferenceMemoryMiB) {
+        this.#peakInferenceMemoryMiB = inferenceMemoryMiB;
       }
     }
 
     /**
-     * Starts the interval timer to begin sampling a new peak memory usage.
+     * Starts the interval timer to begin sampling new peak memory usage values.
      */
     start() {
       if (this.#intervalId !== null) {
@@ -613,7 +641,8 @@ class TranslationsBencher {
         );
       }
 
-      this.#peakMemoryMiB = 0;
+      this.#peakParentMemoryMiB = 0;
+      this.#peakInferenceMemoryMiB = 0;
       this.#intervalId = setInterval(() => {
         this.#collectMemorySample().catch(console.error);
       }, this.#interval);
@@ -637,7 +666,7 @@ class TranslationsBencher {
     /**
      * Returns the peak recorded memory usage in mebibytes (MiB).
      *
-     * @returns {number}
+     * @returns {{ peakParentMemoryMiB: number, peakInferenceMemoryMiB: number }}
      */
     getPeakRecordedMemoryUsage() {
       if (this.#intervalId) {
@@ -646,7 +675,10 @@ class TranslationsBencher {
         );
       }
 
-      return this.#peakMemoryMiB;
+      return {
+        peakParentMemoryMiB: this.#peakParentMemoryMiB,
+        peakInferenceMemoryMiB: this.#peakInferenceMemoryMiB,
+      };
     }
   };
 
@@ -659,6 +691,7 @@ class TranslationsBencher {
    * @param {string} options.page - The URL of the page to test.
    * @param {string} options.sourceLanguage - The BCP-47 language tag for the source language.
    * @param {string} options.targetLanguage - The BCP-47 language tag for the target language.
+   * @param {("tiny"|"base-memory"|"base")} options.architecture - The architecture of the model.
    * @param {number} options.speedBenchCount - The number of speed-sampling runs to perform.
    * @param {number} options.memoryBenchCount - The number of memory-sampling runs to perform.
    * @param {number} [options.memorySampleInterval] - The interval in milliseconds between memory usage samples.
@@ -669,6 +702,7 @@ class TranslationsBencher {
     page,
     sourceLanguage,
     targetLanguage,
+    architecture,
     speedBenchCount,
     memoryBenchCount,
     memorySampleInterval = 10,
@@ -719,6 +753,7 @@ class TranslationsBencher {
       journal,
       sourceLanguage,
       targetLanguage,
+      architecture,
       memoryBenchCount,
       memorySampleInterval,
     });
@@ -728,6 +763,7 @@ class TranslationsBencher {
       journal,
       sourceLanguage,
       targetLanguage,
+      architecture,
       wordCount,
       tokenCount,
       speedBenchCount,
@@ -745,6 +781,7 @@ class TranslationsBencher {
    * @param {TranslationsBencher.Journal} options.journal - The shared metrics journal.
    * @param {string} options.sourceLanguage - The BCP-47 language tag for the source language.
    * @param {string} options.targetLanguage - The BCP-47 language tag for the target language.
+   * @param {("tiny"|"base-memory"|"base")} options.architecture - The architecture of the model.
    * @param {number} options.memoryBenchCount - The number of runs to perform for memory sampling.
    * @param {number} options.memorySampleInterval - The interval in milliseconds between memory samples.
    *
@@ -755,6 +792,7 @@ class TranslationsBencher {
     journal,
     sourceLanguage,
     targetLanguage,
+    architecture,
     memoryBenchCount,
     memorySampleInterval,
   }) {
@@ -766,6 +804,7 @@ class TranslationsBencher {
           { fromLang: sourceLanguage, toLang: "en" },
           { fromLang: "en", toLang: targetLanguage },
         ],
+        architecture,
         prefs: [["browser.translations.logLevel", "Error"]],
         contentEagerMode: true,
       });
@@ -779,12 +818,8 @@ class TranslationsBencher {
         runInPage
       );
 
-      await FullPageTranslationsTestUtils.assertTranslationsButton(
-        { button: true, circleArrows: false, locale: false, icon: true },
-        "The button is available."
-      );
-
       await FullPageTranslationsTestUtils.openPanel({
+        openFromAppMenu: true,
         onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewIntro,
       });
 
@@ -805,15 +840,55 @@ class TranslationsBencher {
 
       peakMemorySampler.stop();
 
-      const peakMemoryMiB = peakMemorySampler.getPeakRecordedMemoryUsage();
-      const stabilizedMemoryMiB =
-        await TranslationsBencher.#getInferenceProcessTotalMemoryUsage();
+      const { peakParentMemoryMiB, peakInferenceMemoryMiB } =
+        peakMemorySampler.getPeakRecordedMemoryUsage();
+
+      const { parentMemoryMiB, inferenceMemoryMiB } =
+        await TranslationsBencher.#getTotalMemoryUsageByProcess();
+
+      // Force cycle collection and garbage collection.
+      Services.obs.notifyObservers(null, "child-cc-request");
+      Services.obs.notifyObservers(null, "child-gc-request");
+      window.windowUtils.cycleCollect();
+      Cu.forceGC();
+
+      const { inferenceMemoryMiB: postGCInferenceMiB } =
+        await TranslationsBencher.#getTotalMemoryUsageByProcess();
+
+      // Destroy the TranslationsEngine, then force cycle collection and garbage collection again.
+      await EngineProcess.destroyTranslationsEngine();
+      Services.obs.notifyObservers(null, "child-cc-request");
+      Services.obs.notifyObservers(null, "child-gc-request");
+      window.windowUtils.cycleCollect();
+      Cu.forceGC();
+
+      const { parentMemoryMiB: postGCParentMiB } =
+        await TranslationsBencher.#getTotalMemoryUsageByProcess();
 
       journal.pushMetrics([
-        [TranslationsBencher.METRIC_PEAK_MEMORY_USAGE, peakMemoryMiB],
         [
-          TranslationsBencher.METRIC_STABILIZED_MEMORY_USAGE,
-          stabilizedMemoryMiB,
+          TranslationsBencher.METRIC_PEAK_PARENT_PROCESS_MEMORY_USAGE,
+          peakParentMemoryMiB,
+        ],
+        [
+          TranslationsBencher.METRIC_STABILIZED_PARENT_PROCESS_MEMORY_USAGE,
+          parentMemoryMiB,
+        ],
+        [
+          TranslationsBencher.METRIC_POST_GC_PARENT_PROCESS_MEMORY_USAGE,
+          postGCParentMiB,
+        ],
+        [
+          TranslationsBencher.METRIC_PEAK_INFERENCE_PROCESS_MEMORY_USAGE,
+          peakInferenceMemoryMiB,
+        ],
+        [
+          TranslationsBencher.METRIC_STABILIZED_INFERENCE_PROCESS_MEMORY_USAGE,
+          inferenceMemoryMiB,
+        ],
+        [
+          TranslationsBencher.METRIC_POST_GC_INFERENCE_PROCESS_MEMORY_USAGE,
+          postGCInferenceMiB,
         ],
       ]);
 
@@ -830,6 +905,7 @@ class TranslationsBencher {
    * @param {TranslationsBencher.Journal} options.journal - The shared metrics journal.
    * @param {string} options.sourceLanguage - The BCP-47 language tag for the source language.
    * @param {string} options.targetLanguage - The BCP-47 language tag for the target language.
+   * @param {("tiny"|"base-memory"|"base")} options.architecture - The architecture of the model.
    * @param {number} options.wordCount - The total word count of the page.
    * @param {number} options.tokenCount - The total token count of the page.
    * @param {number} options.speedBenchCount - The number of runs to perform for speed sampling.
@@ -841,6 +917,7 @@ class TranslationsBencher {
     journal,
     sourceLanguage,
     targetLanguage,
+    architecture,
     wordCount,
     tokenCount,
     speedBenchCount,
@@ -853,6 +930,7 @@ class TranslationsBencher {
           { fromLang: sourceLanguage, toLang: "en" },
           { fromLang: "en", toLang: targetLanguage },
         ],
+        architecture,
         prefs: [["browser.translations.logLevel", "Error"]],
         contentEagerMode: true,
       });
@@ -861,12 +939,8 @@ class TranslationsBencher {
         runInPage
       );
 
-      await FullPageTranslationsTestUtils.assertTranslationsButton(
-        { button: true, circleArrows: false, locale: false, icon: true },
-        "The button is available."
-      );
-
       await FullPageTranslationsTestUtils.openPanel({
+        openFromAppMenu: true,
         onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewIntro,
       });
 
@@ -1012,13 +1086,57 @@ class TranslationsBencher {
   }
 
   /**
-   * Returns the total memory used by the inference process in mebibytes (MiB).
+   * Returns the total memory used by both the parent process and the inference
+   * process in mebibytes (MiB).
    *
-   * @returns {Promise<number>} The total memory usage in mebibytes.
+   * @returns {Promise<{ parentMemoryMiB: number, inferenceMemoryMiB: number }>}
+   *          The total memory usage for each process in mebibytes.
    */
-  static async #getInferenceProcessTotalMemoryUsage() {
-    const inferenceProcessInfo = await fetchInferenceProcessInfo();
-    return bytesToMebibytes(inferenceProcessInfo.memory);
+  static async #getTotalMemoryUsageByProcess() {
+    const { parentInfo, inferenceInfo } =
+      await TranslationsBencher.#fetchProcessesInfo();
+    return {
+      parentMemoryMiB: bytesToMebibytes(parentInfo.memory),
+      inferenceMemoryMiB: bytesToMebibytes(inferenceInfo.memory),
+    };
+  }
+
+  /**
+   * Returns the process info for both the parent process and inference process.
+   *
+   * @returns {Promise<{ parentInfo: { pid: number, memory: number, cpuTime: number, cpuCycleCount: number },
+   *                     inferenceInfo: { pid: number, memory: number, cpuTime: number, cpuCycleCount: number } }>}
+   */
+  static async #fetchProcessesInfo() {
+    let info = await ChromeUtils.requestProcInfo();
+
+    const parentInfo = {
+      pid: info.pid,
+      memory: info.memory,
+      cpuTime: info.cpuTime,
+      cpuCycleCount: info.cpuCycleCount,
+    };
+
+    let inferenceInfo = {};
+    for (const child of info.children) {
+      // At the time of writing, there is only a single inference process.
+      // If we one day spawn multiple inference processes, this code will
+      // need to be revised.
+      if (child.type === "inference") {
+        inferenceInfo = {
+          pid: child.pid,
+          memory: child.memory,
+          cpuTime: child.cpuTime,
+          cpuCycleCount: child.cpuCycleCount,
+        };
+        break;
+      }
+    }
+
+    return {
+      parentInfo,
+      inferenceInfo,
+    };
   }
 }
 
@@ -1242,12 +1360,12 @@ class FullPageTranslationsTestUtils {
         `Should match expected disabled state for ${dataL10nId}`
       );
       await waitForCondition(
-        () => menuItem.getAttribute("checked") === (checked ? "true" : "false"),
+        () => menuItem.hasAttribute("checked") === checked,
         "Waiting for checkbox state"
       );
       is(
-        menuItem.getAttribute("checked"),
-        checked ? "true" : "false",
+        menuItem.hasAttribute("checked"),
+        checked,
         `Should match expected checkbox state for ${dataL10nId}`
       );
     }
@@ -1384,8 +1502,12 @@ class FullPageTranslationsTestUtils {
    */
   static async waitForAllPendingTranslationsToComplete(runInPage) {
     await runInPage(async ({ waitForCondition }) => {
-      const translationsChild =
-        content.windowGlobalChild.getActor("Translations");
+      let translationsChild;
+      try {
+        translationsChild = content.windowGlobalChild.getActor("Translations");
+      } catch {
+        return;
+      }
 
       while (
         translationsChild.translatedDoc?.hasPendingTranslationRequests() ||
@@ -1415,8 +1537,12 @@ class FullPageTranslationsTestUtils {
    */
   static async assertNoElementsAreObservedForContentIntersection(runInPage) {
     await runInPage(async ({ waitForCondition }) => {
-      const translationsChild =
-        content.windowGlobalChild.getActor("Translations");
+      let translationsChild;
+      try {
+        translationsChild = content.windowGlobalChild.getActor("Translations");
+      } catch {
+        return;
+      }
 
       await waitForCondition(
         () =>
@@ -1435,8 +1561,12 @@ class FullPageTranslationsTestUtils {
    */
   static async assertNoElementsAreObservedForAttributeIntersection(runInPage) {
     await runInPage(async ({ waitForCondition }) => {
-      const translationsChild =
-        content.windowGlobalChild.getActor("Translations");
+      let translationsChild;
+      try {
+        translationsChild = content.windowGlobalChild.getActor("Translations");
+      } catch {
+        return;
+      }
 
       await waitForCondition(
         () =>
@@ -2550,6 +2680,49 @@ class FullPageTranslationsTestUtils {
   }
 
   /**
+   * Opens the app menu and asserts the translate button visibility.
+   *
+   * @param {object} options
+   * @param {boolean} options.visible
+   * @param {string} message
+   */
+  static async assertAppMenuTranslateItemVisibility({ visible }, message) {
+    if (message) {
+      info(message);
+    }
+
+    if (window.PanelUI.panel.state !== "closed") {
+      const panelHidden = BrowserTestUtils.waitForEvent(
+        window.PanelUI.panel,
+        "popuphidden"
+      );
+      window.PanelUI.hide();
+      await panelHidden;
+    }
+
+    const panelShown = BrowserTestUtils.waitForEvent(
+      window.PanelUI.panel,
+      "popupshown"
+    );
+    window.PanelUI.show();
+    await panelShown;
+
+    const translateSiteButton = maybeGetById("appMenu-translate-button", false);
+    is(
+      translateSiteButton.hidden,
+      !visible,
+      "The app-menu translate button visibility should match the expected state."
+    );
+
+    const panelHidden = BrowserTestUtils.waitForEvent(
+      window.PanelUI.panel,
+      "popuphidden"
+    );
+    window.PanelUI.hide();
+    await panelHidden;
+  }
+
+  /**
    * Opens the translations panel via the translations button.
    *
    * @param {object} config
@@ -2950,7 +3123,6 @@ class SelectTranslationsTestUtils {
     SharedTranslationsTestUtils._assertPanelElementVisibility(
       SelectTranslationsPanel.elements,
       {
-        betaIcon: false,
         cancelButton: false,
         copyButton: false,
         doneButtonPrimary: false,
@@ -3025,7 +3197,6 @@ class SelectTranslationsTestUtils {
     const isFullPageTranslationsRestrictedForPage =
       TranslationsParent.isFullPageTranslationsRestrictedForPage(gBrowser);
     SelectTranslationsTestUtils.#assertPanelElementVisibility({
-      betaIcon: true,
       copyButton: true,
       doneButtonPrimary: true,
       fromLabel: true,
@@ -3101,7 +3272,6 @@ class SelectTranslationsTestUtils {
     await SelectTranslationsTestUtils.waitForPanelState("init-failure");
     SelectTranslationsTestUtils.#assertPanelElementVisibility({
       header: true,
-      betaIcon: true,
       cancelButton: true,
       initFailureContent: true,
       initFailureMessageBar: true,
@@ -3135,7 +3305,6 @@ class SelectTranslationsTestUtils {
     await SelectTranslationsTestUtils.waitForPanelState("translation-failure");
     SelectTranslationsTestUtils.#assertPanelElementVisibility({
       header: true,
-      betaIcon: true,
       cancelButton: true,
       fromLabel: true,
       fromMenuList: true,
@@ -3197,7 +3366,6 @@ class SelectTranslationsTestUtils {
       unsupportedLanguageMessageBar,
     } = SelectTranslationsPanel.elements;
     SelectTranslationsTestUtils.#assertPanelElementVisibility({
-      betaIcon: true,
       doneButtonSecondary: true,
       header: true,
       settingsButton: true,
@@ -3289,7 +3457,6 @@ class SelectTranslationsTestUtils {
       "The textarea should have the translating class."
     );
     SelectTranslationsTestUtils.#assertPanelElementVisibility({
-      betaIcon: true,
       copyButton: true,
       doneButtonPrimary: true,
       fromLabel: true,
@@ -4090,71 +4257,6 @@ class SelectTranslationsTestUtils {
       eventName,
       callback,
       postEventAssertion
-    );
-  }
-}
-
-class TranslationsSettingsTestUtils {
-  /**
-   * Opens the Translation Settings page by clicking the settings button sent in the argument.
-   *
-   * @param  {HTMLElement} settingsButton
-   * @returns {Element}
-   */
-  static async openAboutPreferencesTranslationsSettingsPane(settingsButton) {
-    const document = gBrowser.selectedBrowser.contentDocument;
-
-    const translationsPane =
-      content.window.gCategoryModules.get("paneTranslations");
-    const promise = BrowserTestUtils.waitForEvent(
-      document,
-      "paneshown",
-      false,
-      event => event.detail.category === "paneTranslations"
-    );
-
-    click(settingsButton, "Click settings button");
-    await promise;
-
-    return translationsPane.elements;
-  }
-
-  /**
-   * Utility function to handle the click event for a `moz-button` element that controls
-   * the Download/Remove Language functionality.
-   *
-   * The button's icon reflects the current state of the language (downloaded, loading, or removed),
-   * which is represented by a corresponding CSS class.
-   *
-   * When this button is clicked for any language, the function waits for the button's state and icon
-   * to update. It then checks whether the button's state and icon match the expected state as defined
-   * by the test case, and logs the respective message provided by the test case.
-   *
-   * @param {Element} langButton - The `moz-button` element representing the download/remove button.
-   * @param {string} buttonIcon - The expected CSS class representing the button's state/icon (e.g., download, loading, or remove icon).
-   * @param {string} logMsg - A custom log message provided by the test case indicating the expected result.
-   */
-
-  static async downaloadButtonClick(langButton, buttonIcon, logMsg) {
-    if (
-      !langButton.parentNode
-        .querySelector("moz-button")
-        .classList.contains(buttonIcon)
-    ) {
-      await BrowserTestUtils.waitForMutationCondition(
-        langButton.parentNode.querySelector("moz-button"),
-        { attributes: true, attributeFilter: ["class"] },
-        () =>
-          langButton.parentNode
-            .querySelector("moz-button")
-            .classList.contains(buttonIcon)
-      );
-    }
-    ok(
-      langButton.parentNode
-        .querySelector("moz-button")
-        .classList.contains(buttonIcon),
-      logMsg
     );
   }
 }

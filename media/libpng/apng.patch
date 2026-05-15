@@ -30,18 +30,18 @@ diff --git a/png.h b/png.h
  /* This triggers a compiler error in png.c, if png.c and png.h
   * do not agree upon the version number.
   */
-@@ -796,6 +811,10 @@ typedef PNG_CALLBACK(void, *png_write_st
- #ifdef PNG_PROGRESSIVE_READ_SUPPORTED
- typedef PNG_CALLBACK(void, *png_progressive_info_ptr, (png_structp, png_infop));
- typedef PNG_CALLBACK(void, *png_progressive_end_ptr, (png_structp, png_infop));
+@@ -801,6 +816,10 @@ typedef PNG_CALLBACK(void, *png_progress
+    (png_structp, png_infop));
+ typedef PNG_CALLBACK(void, *png_progressive_end_ptr,
+    (png_structp, png_infop));
 +#ifdef PNG_APNG_SUPPORTED
-+typedef PNG_CALLBACK(void, *png_progressive_frame_ptr, (png_structp,
-+    png_uint_32));
++typedef PNG_CALLBACK(void, *png_progressive_frame_ptr,
++   (png_structp, png_uint_32));
 +#endif
  
  /* The following callback receives png_uint_32 row_number, int pass for the
   * png_bytep data of the row.  When transforming an interlaced image the
-@@ -3338,6 +3357,75 @@ PNG_EXPORT(244, int, png_set_option, (pn
+@@ -3506,6 +3525,75 @@ PNG_EXPORT(244, int, png_set_option, (pn
   *  END OF HARDWARE AND SOFTWARE OPTIONS
   ******************************************************************************/
  
@@ -117,14 +117,14 @@ diff --git a/png.h b/png.h
  /* Maintainer: Put new public prototypes here ^, in libpng.3, in project
   * defs, and in scripts/symbols.def.
   */
-@@ -3346,7 +3434,11 @@ PNG_EXPORT(244, int, png_set_option, (pn
+@@ -3514,7 +3602,11 @@ PNG_EXPORT(244, int, png_set_option, (pn
   * one to use is one more than this.)
   */
  #ifdef PNG_EXPORT_LAST_ORDINAL
 +#ifdef PNG_APNG_SUPPORTED
 +  PNG_EXPORT_LAST_ORDINAL(279);
 +#else
-   PNG_EXPORT_LAST_ORDINAL(259);
+    PNG_EXPORT_LAST_ORDINAL(259);
 +#endif /* APNG */
  #endif
  
@@ -302,7 +302,7 @@ diff --git a/pngget.c b/pngget.c
 diff --git a/pnginfo.h b/pnginfo.h
 --- a/pnginfo.h
 +++ b/pnginfo.h
-@@ -282,5 +282,18 @@ defined(PNG_READ_BACKGROUND_SUPPORTED)
+@@ -259,5 +259,18 @@ defined(PNG_READ_BACKGROUND_SUPPORTED)
  #ifdef PNG_sRGB_SUPPORTED
     int rendering_intent;
  #endif

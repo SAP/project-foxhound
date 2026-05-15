@@ -16,3 +16,13 @@ if CONFIG["CC_TYPE"] in ("clang", "gcc"):
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=50044
 if CONFIG["CC_TYPE"] == "gcc":
     CXXFLAGS += ["-Wno-attributes"]
+
+# Override definitions from "build/moz.configure/warnings.configure" until
+# these warnings are enabled by default.
+#
+# (Older) GCC doesn't support these warnings, so only enable when compiling
+# with Clang.
+if CONFIG["CC_TYPE"] in ("clang", "clang-cl"):
+    CXXFLAGS += ["-Wdeprecated-this-capture"]
+    CXXFLAGS += ["-Wdeprecated-anon-enum-enum-conversion"]
+    CXXFLAGS += ["-Wdeprecated-enum-enum-conversion"]

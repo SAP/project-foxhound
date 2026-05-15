@@ -33,12 +33,6 @@ class CodeGeneratorRiscv64 : public CodeGeneratorShared {
   Operand ToOperand(const LAllocation* a);
   Operand ToOperand(const LDefinition* def);
 
-#ifdef JS_PUNBOX64
-  Operand ToOperandOrRegister64(const LInt64Allocation& input);
-#else
-  Register64 ToOperandOrRegister64(const LInt64Allocation& input);
-#endif
-
   MoveOperand toMoveOperand(LAllocation a) const;
 
   template <typename T1, typename T2>
@@ -62,24 +56,10 @@ class CodeGeneratorRiscv64 : public CodeGeneratorShared {
     masm.branchPtr(c, lhs, rhs, &bail);
     bailoutFrom(&bail, snapshot);
   }
-  void bailoutTestPtr(Assembler::Condition c, Register lhs, Register rhs,
-                      LSnapshot* snapshot) {
-    // TODO(riscv64) Didn't use branchTestPtr due to '-Wundefined-inline'.
-    MOZ_ASSERT(c == Assembler::Zero || c == Assembler::NonZero ||
-               c == Assembler::Signed || c == Assembler::NotSigned);
-    Label bail;
-    if (lhs == rhs) {
-      masm.ma_b(lhs, rhs, &bail, c);
-    } else {
-      ScratchRegisterScope scratch(masm);
-      masm.and_(scratch, lhs, rhs);
-      masm.ma_b(scratch, scratch, &bail, c);
-    }
-    bailoutFrom(&bail, snapshot);
-  }
   void bailoutIfFalseBool(Register reg, LSnapshot* snapshot) {
     Label bail;
-    ScratchRegisterScope scratch(masm);
+    UseScratchRegisterScope temps(&masm);
+    Register scratch = temps.Acquire();
     masm.ma_and(scratch, reg, Imm32(0xFF));
     masm.ma_b(scratch, scratch, &bail, Assembler::Zero);
     bailoutFrom(&bail, snapshot);
@@ -151,6 +131,8 @@ class CodeGeneratorRiscv64 : public CodeGeneratorShared {
                         Register output);
   void emitBigIntPtrMod(LBigIntPtrMod* ins, Register dividend, Register divisor,
                         Register output);
+
+  void emitMulI64(Register lhs, int64_t rhs, Register dest);
 };
 
 typedef CodeGeneratorRiscv64 CodeGeneratorSpecific;

@@ -32,9 +32,6 @@ class CodeGeneratorWasm32 : public CodeGeneratorShared {
   void bailoutCmpPtr(Assembler::Condition, T1, T2, LSnapshot*) {
     MOZ_CRASH();
   }
-  void bailoutTestPtr(Assembler::Condition, Register, Register, LSnapshot*) {
-    MOZ_CRASH();
-  }
   void bailoutIfFalseBool(Register, LSnapshot*) { MOZ_CRASH(); }
   void bailoutFrom(Label*, LSnapshot*) { MOZ_CRASH(); }
   void bailout(LSnapshot*) { MOZ_CRASH(); }

@@ -1,0 +1,627 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>setting-control test</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link
+      rel="stylesheet"
+      href="chrome://mochikit/content/tests/SimpleTest/test.css"
+    />
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"></script>
+    <script src="../../../../../toolkit/content/tests/widgets/lit-test-helpers.js"></script>
+    <script src="./head.js"></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-group.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/preferences/widgets/setting-control.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-support-link.mjs"
+    ></script>
+    <script
+      type="application/javascript"
+      src="chrome://global/content/preferencesBindings.js"
+    ></script>
+    <script>
+      /* import-globals-from /toolkit/content/preferencesBindings.js */
+      let html, testHelpers;
+
+      const LABEL_L10N_ID = "browsing-use-autoscroll";
+      const GROUP_L10N_ID = "pane-experimental-reset";
+
+      async function renderTemplate(itemConfig) {
+        let config = {
+          items: [itemConfig],
+        };
+        let result = await testHelpers.renderTemplate(html`
+          <setting-group
+            .config=${config}
+            .getSetting=${(...args) => Preferences.getSetting(...args)}
+          ></setting-group>
+        `);
+        await result.firstElementChild.updateComplete;
+        return result.querySelector("setting-control");
+      }
+
+      add_setup(async function setup() {
+        const mockL10nSource = L10nFileSource.createMock(
+          "test",
+          "app",
+          ["en-US"],
+          "/localization/{locale}/",
+          [
+            {
+              path: "/localization/en-US/mock.ftl",
+              source: "l10n-test-id =\n .label = Test label",
+            },
+          ]
+        );
+        L10nRegistry.getInstance().registerSources([mockL10nSource]);
+        MozXULElement.insertFTLIfNeeded("mock.ftl");
+        SimpleTest.registerCleanupFunction(() => {
+          L10nRegistry.getInstance().removeSources([mockL10nSource.name]);
+        });
+        testHelpers = new InputTestHelpers();
+        ({ html } = await testHelpers.setupLit());
+        testHelpers.setupTests({
+          templateFn: () => html`<setting-group></setting-group>`,
+        });
+        MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
+        MozXULElement.insertFTLIfNeeded("browser/preferences/preferences.ftl");
+      });
+
+      add_task(async function testSimpleCheckbox() {
+        const PREF = "test.setting-control.one";
+        const SETTING = "setting-control-one";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF, true]],
+        });
+        Preferences.addAll([{ id: PREF, type: "bool" }]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+        let itemConfig = { l10nId: LABEL_L10N_ID, id: SETTING };
+        let setting = Preferences.getSetting(SETTING);
+        let control = await renderTemplate(itemConfig);
+        is(
+          control.controlEl.localName,
+          "moz-checkbox",
+          "The control rendered a checkbox"
+        );
+        is(control.controlEl.dataset.l10nId, LABEL_L10N_ID, "Label is set");
+        is(control.controlEl.checked, true, "checkbox is checked");
+        is(control.controlEl.disabled, false, "checkbox is enabled");
+        is(Services.prefs.getBoolPref(PREF), true, "pref is true");
+
+        let settingChanged = waitForSettingChange(setting);
+        synthesizeMouseAtCenter(control.controlEl, {});
+        await settingChanged;
+        is(
+          control.controlEl.checked,
+          false,
+          "checkbox becomes unchecked after click"
+        );
+        is(Services.prefs.getBoolPref(PREF), false, "pref is false");
+
+        settingChanged = waitForSettingChange(setting);
+        Services.prefs.setBoolPref(PREF, true);
+        await settingChanged;
+        is(
+          control.controlEl.checked,
+          true,
+          "checkbox becomes checked after pref change"
+        );
+        is(Services.prefs.getBoolPref(PREF), true, "pref is true");
+
+        // Pref locking
+        settingChanged = waitForSettingChange(setting);
+        Services.prefs.lockPref(PREF);
+        await settingChanged;
+        is(
+          control.controlEl.disabled,
+          true,
+          "checkbox is disabled when locked"
+        );
+
+        settingChanged = waitForSettingChange(setting);
+        Services.prefs.unlockPref(PREF);
+        await settingChanged;
+        is(
+          control.controlEl.disabled,
+          false,
+          "checkbox is enabled when unlocked"
+        );
+      });
+
+      add_task(async function testSimpleToggle() {
+        const PREF = "test.setting-control.toggle";
+        const SETTING = "setting-control-toggle";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF, true]],
+        });
+        Preferences.addAll([{ id: PREF, type: "bool" }]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+        let itemConfig = {
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+          control: "moz-toggle",
+        };
+        let setting = Preferences.getSetting(SETTING);
+        let control = await renderTemplate(itemConfig);
+
+        is(
+          control.controlEl.localName,
+          "moz-toggle",
+          "The control rendered a toggle"
+        );
+        is(control.controlEl.dataset.l10nId, LABEL_L10N_ID, "Label is set");
+        is(control.controlEl.pressed, true, "toggle is pressed");
+        is(control.controlEl.disabled, false, "toggle is enabled");
+        is(Services.prefs.getBoolPref(PREF), true, "pref is true");
+
+        let settingChanged = waitForSettingChange(setting);
+        synthesizeMouseAtCenter(control.controlEl, {});
+        await settingChanged;
+
+        is(
+          control.controlEl.pressed,
+          false,
+          "toggle becomes unchecked after click"
+        );
+        is(Services.prefs.getBoolPref(PREF), false, "pref is false");
+
+        settingChanged = waitForSettingChange(setting);
+        Services.prefs.setBoolPref(PREF, true);
+        await settingChanged;
+
+        is(
+          control.controlEl.pressed,
+          true,
+          "toggle becomes pressed after pref change"
+        );
+        is(Services.prefs.getBoolPref(PREF), true, "pref is true");
+      });
+
+      add_task(async function testSettingSameControlValue() {
+        const SETTING = "setting-control-same-value";
+        Preferences.addSetting({
+          id: SETTING,
+          get: () => false,
+          set: () => false,
+        });
+        let itemConfig = {
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+        };
+        let setting = Preferences.getSetting(SETTING);
+        let control = await renderTemplate(itemConfig);
+        ok(control, "Got a control");
+        let checkbox = control.controlEl;
+        is(checkbox.localName, "moz-checkbox", "moz-checkbox is rendered");
+        is(checkbox.checked, false, "checkbox is unchecked on initial render");
+
+        let settingChanged = waitForSettingChange(setting);
+        synthesizeMouseAtCenter(checkbox, {});
+        setting.emit("change");
+        await settingChanged;
+        is(checkbox.checked, false, "checkbox stays unchecked after click");
+      });
+
+      add_task(async function testSupportLinkCheckbox() {
+        const SETTING = "setting-control-support-link";
+        Preferences.addSetting({
+          id: SETTING,
+          get: () => true,
+        });
+        let itemConfig = {
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+          supportPage: "foo",
+        };
+        let control = await renderTemplate(
+          itemConfig,
+          Preferences.getSetting(SETTING)
+        );
+        ok(control, "Got a control");
+        let checkbox = control.controlEl;
+        is(checkbox.localName, "moz-checkbox", "moz-checkbox is rendered");
+        is(
+          checkbox.supportPage,
+          "foo",
+          "The checkbox receives the supportPage"
+        );
+      });
+
+      add_task(async function testCommonControlProperties() {
+        const SETTING = "setting-common-props";
+        Preferences.addSetting({
+          id: SETTING,
+          get: () => true,
+        });
+
+        await testCommonSettingControlProperties(async commonConfig => {
+          const control = await renderTemplate({
+            id: SETTING,
+            ...commonConfig,
+          });
+          return control.querySelector("moz-checkbox");
+        });
+      });
+
+      add_task(async function testSupportLinkSubcategory() {
+        const SETTING = "setting-control-subcategory";
+        Preferences.addSetting({
+          id: SETTING,
+          get: () => true,
+        });
+
+        let configOne = {
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+          subcategory: "exsubcategory",
+        };
+        let control = await renderTemplate(
+          configOne,
+          Preferences.getSetting(SETTING)
+        );
+        ok(control, "Got the control");
+        is(
+          control.controlEl.dataset.subcategory,
+          "exsubcategory",
+          "Subcategory is set"
+        );
+
+        let configTwo = {
+          l10nId: LABEL_L10N_ID,
+          id: SETTING,
+          subcategory: "exsubcategory2",
+          supportPage: "foo",
+        };
+        control = await renderTemplate(
+          configTwo,
+          Preferences.getSetting(SETTING)
+        );
+        ok(control, "Got the control");
+        is(
+          control.controlEl.dataset.subcategory,
+          "exsubcategory2",
+          "Subcategory is set"
+        );
+
+        is(control.controlEl.supportPage, "foo", "Input got the supportPage");
+      });
+
+      add_task(async function testNestedCheckboxes() {
+        const PREF_PARENT = "test.setting-control.parent";
+        const SETTING_PARENT = "setting-control-parent";
+        const PREF_NESTED = "test.setting-control.nested";
+        const SETTING_NESTED = "setting-control-nested";
+        await SpecialPowers.pushPrefEnv({
+          set: [
+            [PREF_PARENT, false],
+            [PREF_NESTED, true],
+          ],
+        });
+        Preferences.addAll([
+          { id: PREF_PARENT, type: "bool" },
+          { id: PREF_NESTED, type: "bool" },
+        ]);
+        Preferences.addSetting({
+          id: SETTING_PARENT,
+          pref: PREF_PARENT,
+        });
+        Preferences.addSetting({
+          id: SETTING_NESTED,
+          pref: PREF_NESTED,
+        });
+        let itemConfig = {
+          l10nId: LABEL_L10N_ID,
+          id: SETTING_PARENT,
+          items: [{ l10nId: LABEL_L10N_ID, id: SETTING_NESTED }],
+        };
+        let parentSetting = Preferences.getSetting(SETTING_PARENT);
+        let parentControl = await renderTemplate(itemConfig, parentSetting);
+        is(
+          parentControl.setting.id,
+          SETTING_PARENT,
+          "Parent control id is set"
+        );
+        let nestedControl = parentControl.controlEl.firstElementChild;
+        info("Nested: " + nestedControl.localName);
+        is(
+          nestedControl.setting.id,
+          SETTING_NESTED,
+          "Nested control id is set"
+        );
+        is(parentControl.controlEl.checked, false, "Parent is unchecked");
+        is(
+          parentControl.controlEl.inputEl.disabled,
+          false,
+          "Parent is enabled"
+        );
+        is(nestedControl.controlEl.checked, true, "Nested is checked");
+        is(
+          nestedControl.controlEl.inputEl.disabled,
+          true,
+          "Nested is disabled"
+        );
+
+        let settingChanged = waitForSettingChange(parentSetting);
+        // Click the label since the center of the entire <moz-checkbox> would
+        // be the space between the parent and nested checkboxes.
+        synthesizeMouseAtCenter(parentControl.controlEl.labelEl, {});
+        await settingChanged;
+        await parentControl.updateComplete;
+
+        is(
+          parentControl.controlEl.checked,
+          true,
+          "Parent is checked after click"
+        );
+        is(
+          parentControl.controlEl.inputEl.disabled,
+          false,
+          "Parent is enabled after click"
+        );
+        is(
+          nestedControl.controlEl.checked,
+          true,
+          "Nested is checked after click"
+        );
+        is(
+          nestedControl.controlEl.inputEl.disabled,
+          false,
+          "Nested is enabled after click"
+        );
+
+        settingChanged = waitForSettingChange(parentSetting);
+        Services.prefs.setBoolPref(PREF_PARENT, false);
+        await settingChanged;
+        await parentControl.updateComplete;
+
+        is(
+          parentControl.controlEl.checked,
+          false,
+          "Parent is unchecked after pref change"
+        );
+        is(
+          parentControl.controlEl.inputEl.disabled,
+          false,
+          "Parent is enabled after pref change"
+        );
+        is(
+          nestedControl.controlEl.checked,
+          true,
+          "Nested is checked after pref change"
+        );
+        is(
+          nestedControl.controlEl.inputEl.disabled,
+          true,
+          "Nested is disabled after pref change"
+        );
+      });
+
+      add_task(async function testDepsChangeVisibility() {
+        const DEP_PREF_ID = "test.depsChange.dep";
+        const DEP_SETTING_ID = "testDepsChangeDep";
+        await SpecialPowers.pushPrefEnv({
+          set: [[DEP_PREF_ID, true]],
+        });
+        Preferences.add({ id: DEP_PREF_ID, type: "bool" });
+        Preferences.addSetting({
+          id: DEP_SETTING_ID,
+          pref: DEP_PREF_ID,
+        });
+
+        const PARENT_SETTING_ID = "testDepsChangeParent";
+        Preferences.addSetting({
+          id: PARENT_SETTING_ID,
+          deps: [DEP_SETTING_ID],
+          visible: deps => deps[DEP_SETTING_ID].value,
+        });
+
+        let itemConfig = { l10nId: LABEL_L10N_ID, id: PARENT_SETTING_ID };
+        let setting = Preferences.getSetting(PARENT_SETTING_ID);
+        let control = await renderTemplate(itemConfig, setting);
+        is(
+          control.controlEl.localName,
+          "moz-checkbox",
+          "The control rendered a checkbox"
+        );
+        ok(!control.hidden, "The control is visible");
+        ok(setting.visible, "Setting is visible initially");
+
+        let settingChanged = waitForSettingChange(setting);
+        Services.prefs.setBoolPref(DEP_PREF_ID, false);
+        await settingChanged;
+
+        ok(!setting.visible, "Setting is not visible based on dep");
+        ok(control.hidden, "The control is now hidden");
+      });
+
+      add_task(async function testSettingDisabled() {
+        const SETTING = "setting-control-disabled";
+        let settingDisabled = false;
+        Preferences.addSetting({
+          id: SETTING,
+          disabled: () => settingDisabled,
+        });
+        let itemConfig = { l10nId: LABEL_L10N_ID, id: SETTING };
+        let setting = Preferences.getSetting(SETTING);
+        let control = await renderTemplate(itemConfig, setting);
+        ok(!control.controlEl.disabled, "Setting is enabled");
+
+        // Fake that something changed and the setting should be disabled
+        settingDisabled = true;
+        setting.emit("change");
+        await control.updateComplete;
+
+        ok(control.controlEl.disabled, "Setting is disabled after change");
+      });
+
+      add_task(async function testSettingNotDefined() {
+        const SETTING = "setting-control-not-defined";
+        let itemConfig = { l10nId: LABEL_L10N_ID, id: SETTING };
+        let setting = Preferences.getSetting(SETTING);
+        try {
+          await renderTemplate(itemConfig, setting);
+          ok(false, "Should throw when setting isn't defined");
+        } catch (e) {
+          let control =
+            testHelpers.renderTarget.querySelector("setting-control");
+          ok(control, "setting-control is rendered");
+          is(control.children.length, 0, "setting-control has no children");
+          let SettingControl = customElements.get("setting-control");
+          is(
+            e.constructor,
+            SettingControl.SettingNotDefinedError,
+            "We got an exception"
+          );
+        }
+
+        Preferences.addSetting({ id: SETTING });
+        let control = await renderTemplate(itemConfig, setting);
+        is(
+          control.firstElementChild.localName,
+          "moz-checkbox",
+          "Rendered with a setting"
+        );
+      });
+
+      add_task(async function testTabIndex() {
+        const PREF = "test.setting-control.tabindex";
+        const SETTING = "setting-control-tabindex";
+        await SpecialPowers.pushPrefEnv({
+          set: [[PREF, true]],
+        });
+        Preferences.addAll([{ id: PREF, type: "bool" }]);
+        Preferences.addSetting({
+          id: SETTING,
+          pref: PREF,
+        });
+        let itemConfig = { l10nId: LABEL_L10N_ID, id: SETTING };
+        let control = await renderTemplate(itemConfig);
+
+        // Create an element to help with testing keyboard interactions.
+        let focusTrap = document.createElement("button");
+        focusTrap.textContent = "before";
+        control.prepend(focusTrap);
+
+        ok(
+          !control.getAttribute("tabindex"),
+          "tabindex is not set on the setting-control initially."
+        );
+        ok(
+          !control.controlEl.getAttribute("tabindex"),
+          "tabindex is not set on the inner control element initially."
+        );
+        isnot(
+          document.activeElement,
+          control.controlEl,
+          "The control is not focused initially."
+        );
+
+        focusTrap.focus();
+        synthesizeKey("KEY_Tab", {});
+
+        is(
+          document.activeElement,
+          control.controlEl,
+          "The control element receives focus via keyboard interaction."
+        );
+
+        // Restore focus to the button.
+        focusTrap.focus();
+
+        control.setAttribute("tabindex", "-1");
+        await control.updateComplete;
+
+        is(
+          control.tabIndex,
+          -1,
+          "tabIndex property gets set on the setting-control."
+        );
+        is(
+          control.controlEl.getAttribute("tabindex"),
+          "-1",
+          "tabindex gets propagated to the control el."
+        );
+
+        synthesizeKey("KEY_Tab", {});
+        isnot(
+          document.activeElement,
+          control.controlEl,
+          "The control element no longer receives focus via keyboard interaction."
+        );
+      });
+
+      add_task(async function testSettingControlSlot() {
+        const SETTING_PARENT = "setting-control-slot-parent";
+        const SETTING_CHILD_ACTION = "setting-control-slot-child-action";
+
+        Preferences.addSetting({ id: SETTING_PARENT });
+        Preferences.addSetting({ id: SETTING_CHILD_ACTION });
+
+        const itemConfig = {
+          id: SETTING_PARENT,
+          l10nId: LABEL_L10N_ID,
+          control: "moz-box-item",
+          items: [
+            {
+              id: SETTING_CHILD_ACTION,
+              l10nId: LABEL_L10N_ID,
+              slot: "actions",
+            },
+          ],
+        };
+
+        const parentSetting = Preferences.getSetting(SETTING_PARENT);
+        const parentControl = await renderTemplate(itemConfig, parentSetting);
+
+        is(
+          parentControl.setting.id,
+          SETTING_PARENT,
+          "Parent control id is set"
+        );
+        ok(parentControl.controlEl, "Parent controlEl exists");
+
+        const nestedControl =
+          parentControl.controlEl.querySelector("setting-control");
+
+        is(
+          nestedControl.setting.id,
+          SETTING_CHILD_ACTION,
+          "Nested control id is set"
+        );
+        ok(nestedControl.controlEl, "Nested controlEl exists");
+        is(
+          nestedControl.getAttribute("slot"),
+          "actions",
+          "Nested setting-control has expected slot name"
+        );
+        is(
+          parentControl.controlEl.shadowRoot
+            .querySelector("slot[name='actions']")
+            .assignedElements()[0],
+          nestedControl,
+          "Nested setting-control is slotted in the parent control."
+        );
+      });
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

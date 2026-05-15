@@ -9,6 +9,7 @@
 
 #include "DecoderDoctorLogger.h"
 #include "Intervals.h"
+#include "MediaChannelStatistics.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Result.h"
 #include "mozilla/UniquePtr.h"
@@ -17,8 +18,6 @@
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
-
-#include "MediaChannelStatistics.h"
 
 class nsIEventTarget;
 class nsIPrincipal;
@@ -196,7 +195,7 @@ class MediaCacheStream : public DecoderDoctorLifeLogger<MediaCacheStream> {
 
  public:
   // This needs to be a power of two
-  static const int64_t BLOCK_SIZE = 32768;
+  static constexpr int64_t BLOCK_SIZE = 32768;
 
   enum ReadMode { MODE_METADATA, MODE_PLAYBACK };
 
@@ -346,10 +345,10 @@ class MediaCacheStream : public DecoderDoctorLifeLogger<MediaCacheStream> {
   // These methods must be called on a different thread from the main
   // thread. They should always be called on the same thread for a given
   // stream.
-  // *aBytes gets the number of bytes that were actually read. This can
-  // be less than aCount. If the first byte of data is not in the cache,
-  // this will block until the data is available or the stream is
-  // closed, otherwise it won't block.
+  // On success, *aBytes returns the number of bytes that were actually read.
+  // This can be less than aCount on end of stream or when remaining bytes will
+  // not be available because a network error has occurred.
+  // This will block until the data is available or the stream is closed.
   nsresult Read(AutoLock&, char* aBuffer, uint32_t aCount, uint32_t* aBytes);
   // Seeks to aOffset in the stream then performs a Read operation. See
   // 'Read' for argument and return details.
@@ -452,9 +451,9 @@ class MediaCacheStream : public DecoderDoctorLifeLogger<MediaCacheStream> {
   // any thread.
   int64_t GetNextCachedDataInternal(AutoLock&, int64_t aOffset);
   // Used by |NotifyDataEnded| to write |mPartialBlock| to disk.
-  // If |aNotifyAll| is true, this function will wake up readers who may be
+  // This function will wake up readers who may be
   // waiting on the media cache monitor. Called on the media cache thread only.
-  void FlushPartialBlockInternal(AutoLock&, bool aNotifyAll);
+  void FlushPartialBlockInternal(AutoLock&);
 
   void NotifyDataStartedInternal(uint32_t aLoadID, int64_t aOffset,
                                  bool aSeekable, int64_t aLength);

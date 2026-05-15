@@ -1,1 +1,1 @@
-user_pref("gfx.blacklist.direct2d", 1);
+user_pref("gfx.blacklist.dx_nv12", 1);

@@ -9,6 +9,10 @@
 
 #include "PerformanceRecorder.h"
 
+namespace webrtc {
+struct SdpVideoFormat;
+}
+
 namespace mozilla {
 
 class WebrtcVideoDecoder;

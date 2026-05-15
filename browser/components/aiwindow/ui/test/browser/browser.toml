@@ -1,0 +1,100 @@
+[DEFAULT]
+prefs = [
+  "browser.newtab.preload=false",
+  "browser.search.suggest.enabled=false",
+  "browser.urlbar.suggest.searches=false",
+  "browser.smartwindow.endpoint=http://localhost:0/v1"
+]
+support-files = [
+  "head.js",
+  "test_chat_search_button.html",
+  "test_chat_search_button.mjs",
+  "test_assistant_message_footer_page.html",
+  "test_applied_memories_page.html",
+  "test_memories_icon_button_page.html",
+  "test_memories_icon_button.mjs",
+  "test_smartwindow_panel_list_page.html",
+  "test_smartwindow_panel_list.mjs",
+  "test_website_chip_page.html",
+  "test_website_chip.mjs"
+]
+
+["browser_actor_user_prompt.js"]
+
+["browser_aichat_content_actors.js"]
+
+["browser_aichat_content_message_event.js"]
+
+["browser_aichat_message.js"]
+
+["browser_aichat_open_link.js"]
+
+["browser_aiwindow_account_auth.js"]
+
+["browser_aiwindow_applied_memories_button.js"]
+
+["browser_aiwindow_ask_button.js"]
+
+["browser_aiwindow_assistant_message_footer.js"]
+
+["browser_aiwindow_firstrun.js"]
+
+["browser_aiwindow_immersive.js"]
+
+["browser_aiwindow_integration.js"]
+
+["browser_aiwindow_memories.js"]
+
+["browser_aiwindow_memory_tokens.js"]
+
+["browser_aiwindow_new_chat_button.js"]
+
+["browser_aiwindow_newtab_preload.js"]
+
+["browser_aiwindow_search_button.js"]
+
+["browser_aiwindow_smartbar.js"]
+
+["browser_aiwindow_smartbar_focus.js"]
+
+["browser_aiwindow_smartbar_mentions.js"]
+
+["browser_aiwindow_switcher.js"]
+
+["browser_aiwindow_token_parsing.js"]
+
+["browser_aiwindow_transparency.js"]
+
+["browser_aiwindow_urlbar_chat.js"]
+
+["browser_aiwindow_website_chip.js"]
+
+["browser_aiwindowui.js"]
+
+["browser_memories_icon_button.js"]
+
+["browser_open_aiwindow.js"]
+
+["browser_sidebar_aiwindow.js"]
+
+["browser_smartwindow_content.js"]
+
+["browser_smartwindow_footer.js"]
+
+["browser_smartwindow_history_commands.js"]
+
+["browser_smartwindow_init.js"]
+
+["browser_smartwindow_leak.js"]
+
+["browser_smartwindow_panel_list.js"]
+
+["browser_smartwindow_prompts.js"]
+
+["browser_smartwindow_run_search.js"]
+
+["browser_smartwindow_shortcut.js"]
+
+["browser_smartwindow_tab_move.js"]
+
+["browser_smartwindow_tab_switching.js"]

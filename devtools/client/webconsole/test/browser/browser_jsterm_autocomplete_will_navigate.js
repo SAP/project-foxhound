@@ -39,7 +39,7 @@ add_task(async function () {
 
   info("reload the page to close the popup");
   const onPopupClose = popup.once("popup-closed");
-  await reloadBrowser();
+  await reloadSelectedTab();
   await onPopupClose;
 
   ok(!popup.isOpen, "popup is not open after reloading the page");

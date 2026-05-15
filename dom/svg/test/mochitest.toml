@@ -1,6 +1,5 @@
 [DEFAULT]
 support-files = [
-  "MutationEventChecker.js",
   "a_href_destination.svg",
   "a_href_helper_01.svg",
   "a_href_helper_02_03.svg",
@@ -81,8 +80,6 @@ support-files = [
 
 ["test_dataTypes.html"]
 
-["test_dataTypesModEvents.html"]
-
 ["test_dynamic-move-under-mouse.html"]
 
 ["test_fragments.html"]
@@ -100,7 +97,9 @@ support-files = [
 ["test_hit-testing-and-viewbox.xhtml"]
 
 ["test_lang.xhtml"]
-skip-if = ["true"] # disabled-for-intermittent-failures--bug-701060
+skip-if = [
+  "true", # disabled-for-intermittent-failures--bug-701060
+]
 
 ["test_length.xhtml"]
 

@@ -115,7 +115,10 @@ export class PromiseWorker extends ChromeWorker {
    *
    * @private
    */
-  onFailure({ msgId, error }) {
+  onFailure({ msgId, error, errorCode }) {
+    if (error !== undefined) {
+      error.errorCode = errorCode;
+    }
     this.pendingResponses.get(msgId).reject(error);
     this.pendingResponses.delete(msgId);
   }

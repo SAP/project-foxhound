@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __IPC_GLUE_MESSAGEPUMP_H__
-#define __IPC_GLUE_MESSAGEPUMP_H__
+#ifndef IPC_GLUE_MESSAGEPUMP_H_
+#define IPC_GLUE_MESSAGEPUMP_H_
 
 #include "base/message_pump_default.h"
 #if defined(XP_WIN)
@@ -15,7 +15,6 @@
 #endif
 
 #include "base/time.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 #include "nsCOMPtr.h"
 #include "nsIThreadInternal.h"
@@ -200,4 +199,4 @@ class MessagePumpForAndroidUI : public base::MessagePump {
 } /* namespace ipc */
 } /* namespace mozilla */
 
-#endif /* __IPC_GLUE_MESSAGEPUMP_H__ */
+#endif /* IPC_GLUE_MESSAGEPUMP_H_ */

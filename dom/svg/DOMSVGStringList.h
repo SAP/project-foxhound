@@ -7,10 +7,9 @@
 #ifndef DOM_SVG_DOMSVGSTRINGLIST_H_
 #define DOM_SVG_DOMSVGSTRINGLIST_H_
 
-#include "nsCycleCollectionParticipant.h"
 #include "SVGElement.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
+#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
 

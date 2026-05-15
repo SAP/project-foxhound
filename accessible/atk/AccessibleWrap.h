@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __NS_ACCESSIBLE_WRAP_H__
-#define __NS_ACCESSIBLE_WRAP_H__
+#ifndef NS_ACCESSIBLE_WRAP_H_
+#define NS_ACCESSIBLE_WRAP_H_
 
 #include "nsCOMPtr.h"
 #include "LocalAccessible.h"
@@ -64,11 +64,12 @@ class AccessibleWrap : public LocalAccessible {
 
   bool IsValidObject();
 
-  static const char* ReturnString(nsAString& aString) {
-    static nsCString returnedString;
-    CopyUTF16toUTF8(aString, returnedString);
-    return returnedString.get();
-  }
+  /**
+   * ATK has a bunch of getters that expect a borrowed reference to raw char*
+   * pointers. To simulate this, we have a method that uses a static nsCString
+   * return a temporary buffer that gets wiped on the next call.
+   */
+  static const char* ReturnString(nsAString& aString);
 
   static void GetKeyBinding(Accessible* aAccessible, nsAString& aResult);
 
@@ -87,4 +88,4 @@ class AccessibleWrap : public LocalAccessible {
 }  // namespace a11y
 }  // namespace mozilla
 
-#endif /* __NS_ACCESSIBLE_WRAP_H__ */
+#endif /* NS_ACCESSIBLE_WRAP_H_ */

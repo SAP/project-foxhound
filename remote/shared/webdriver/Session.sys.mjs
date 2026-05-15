@@ -14,8 +14,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Capabilities: "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs",
   Certificates: "chrome://remote/content/shared/webdriver/Certificates.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  FilePickerHandler:
+    "chrome://remote/content/shared/webdriver/FilePickerHandler.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   registerProcessDataActor:
     "chrome://remote/content/shared/webdriver/process-actors/WebDriverProcessDataParent.sys.mjs",
   RootMessageHandler:
@@ -29,15 +32,26 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/webdriver-bidi/WebDriverBiDiConnection.sys.mjs",
   WebSocketHandshake:
     "chrome://remote/content/server/WebSocketHandshake.sys.mjs",
+  windowManager: "chrome://remote/content/shared/WindowManager.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
+
+// Bug 1999693: This preference is a temporary workaround until clients can use
+// the unhandledPromptBehavior capability to decide if file pickers should be
+// dismissed or not.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "dismissFilePickersEnabled",
+  "remote.bidi.dismiss_file_pickers.enabled",
+  false
+);
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "aomStartup",
   "@mozilla.org/addons/addon-manager-startup;1",
-  "amIAddonManagerStartup"
+  Ci.amIAddonManagerStartup
 );
 
 // Global singleton that holds active WebDriver sessions
@@ -68,6 +82,7 @@ export class WebDriverSession {
   #http;
   #id;
   #messageHandler;
+  #navigableSeenNodes;
   #path;
 
   static SESSION_FLAG_BIDI = "bidi";
@@ -275,9 +290,13 @@ export class WebDriverSession {
 
     // Maps a Navigable (browsing context or content browser for top-level
     // browsing contexts) to a Set of nodeId's.
-    this.navigableSeenNodes = new WeakMap();
+    this.#navigableSeenNodes = new WeakMap();
 
     lazy.registerProcessDataActor();
+
+    // Start the tracking of browsing contexts to create Navigable ids.
+    lazy.NavigableManager.startTracking();
+    lazy.windowManager.startTracking();
 
     webDriverSessions.set(this.#id, this);
   }
@@ -285,9 +304,14 @@ export class WebDriverSession {
   destroy() {
     webDriverSessions.delete(this.#id);
 
+    // Stop the tracking of browsing contexts when no WebDriver
+    // session exists anymore.
+    lazy.NavigableManager.stopTracking();
+    lazy.windowManager.stopTracking();
+
     lazy.unregisterProcessDataActor();
 
-    this.navigableSeenNodes = null;
+    this.#navigableSeenNodes = null;
 
     lazy.Certificates.enableSecurityChecks();
 
@@ -310,6 +334,12 @@ export class WebDriverSession {
         this._onMessageHandlerProtocolEvent
       );
       this.#messageHandler.destroy();
+
+      // Note: do not check lazy.dismissFilePickersEnabled, the preference might
+      // have been updated at runtime. allowFilePickers(this) is safe to call,
+      // if there was no corresponding dismissFilePickers(this), it will be a
+      // no-op.
+      lazy.FilePickerHandler.allowFilePickers(this);
     }
 
     for (const id of this.#chromeProtocolHandles.keys()) {
@@ -355,9 +385,22 @@ export class WebDriverSession {
         "message-handler-protocol-event",
         this._onMessageHandlerProtocolEvent
       );
+
+      // Bug 2005673: Only enable dismissing file pickers lazily if the session
+      // explicitly starts handling BiDi commands.
+      if (lazy.dismissFilePickersEnabled) {
+        // Temporarily dismiss all file pickers.
+        // Bug 1999693: File pickers should only be dismissed when the unhandled
+        // prompt behaviour for type "file" is not set to "ignore".
+        lazy.FilePickerHandler.dismissFilePickers(this);
+      }
     }
 
     return this.#messageHandler;
+  }
+
+  get navigableSeenNodes() {
+    return this.#navigableSeenNodes;
   }
 
   get pageLoadStrategy() {
@@ -424,7 +467,7 @@ export class WebDriverSession {
    *     relative to this path.
    * @param {Array<Array<string, string, string>>} entries
    *     An array of arrays, each containing a registry entry (type, namespace,
-   *     path, options) as it would appar in a chrome.manifest file. Only the
+   *     path, options) as it would appear in a chrome.manifest file. Only the
    *     following entry types are currently accepted:
    *
    *         - "content" A URL entry. Must be a 3-element array.
@@ -538,7 +581,7 @@ export function getSeenNodesForBrowsingContext(sessionId, browsingContext) {
   }
 
   const navigable =
-    lazy.TabManager.getNavigableForBrowsingContext(browsingContext);
+    lazy.NavigableManager.getNavigableForBrowsingContext(browsingContext);
   const session = getWebDriverSessionById(sessionId);
 
   if (!session.navigableSeenNodes.has(navigable)) {

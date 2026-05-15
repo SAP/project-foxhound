@@ -4,10 +4,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 pub mod decoder;
 mod decoder_instructions;
 pub mod encoder;
 mod encoder_instructions;
+mod fuzz;
 mod header_block;
 pub mod huffman;
 mod huffman_decode_helper;
@@ -20,9 +23,8 @@ mod static_table;
 mod stats;
 mod table;
 
-use std::fmt::{self, Display, Formatter};
-
 pub use stats::Stats;
+use thiserror::Error;
 
 pub use crate::{decoder::Decoder, encoder::Encoder};
 
@@ -36,29 +38,49 @@ pub struct Settings {
     pub max_blocked_streams: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
+    #[error("Decompression error")]
     Decompression,
+    #[error("Encoder stream error")]
     EncoderStream,
+    #[error("Decoder stream error")]
     DecoderStream,
+    #[error("Critical stream closed")]
     ClosedCriticalStream,
+    #[error("Internal error")]
     Internal,
 
     // These are internal errors, they will be transformed into one of the above.
-    NeedMoreData, /* Return when an input stream does not have more data that a decoder
-                   * needs.(It does not mean that a stream is closed.) */
+    ///
+    /// Return when an input stream does not have more data that a decoder needs.
+    /// It does not mean that a stream is closed.
+    #[error("Need more data")]
+    NeedMoreData,
+    #[error("Header lookup failed")]
     HeaderLookup,
+    #[error("Huffman decompression error")]
     HuffmanDecompression,
+    #[error("Bad UTF-8 encoding")]
     BadUtf8,
+    #[error("Change capacity error")]
     ChangeCapacity,
+    #[error("Dynamic table full")]
     DynamicTableFull,
+    #[error("Incremented ack is larger than inserts")]
     IncrementAck,
+    #[error("Integer overflow")]
     IntegerOverflow,
+    #[error("Wrong stream count")]
     WrongStreamCount,
+    #[error("Decoding error")]
     Decoding, // Decoding internal error that is not one of the above.
+    #[error("Encoder stream blocked")]
     EncoderStreamBlocked,
 
-    Transport(neqo_transport::Error),
+    #[error(transparent)]
+    Transport(#[from] neqo_transport::Error),
+    #[error("Qlog error")]
     Qlog,
 }
 
@@ -89,29 +111,46 @@ impl Error {
     }
 }
 
-impl ::std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn ::std::error::Error + 'static)> {
-        match self {
-            Self::Transport(e) => Some(e),
-            _ => None,
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::Error;
+
+    #[test]
+    fn error_codes() {
+        assert_eq!(Error::Decompression.code(), 0x200);
+        assert_eq!(Error::EncoderStream.code(), 0x201);
+        assert_eq!(Error::DecoderStream.code(), 0x202);
+        assert_eq!(Error::ClosedCriticalStream.code(), 0x104);
+        for err in [
+            Error::Internal,
+            Error::NeedMoreData,
+            Error::HeaderLookup,
+            Error::HuffmanDecompression,
+            Error::BadUtf8,
+            Error::ChangeCapacity,
+            Error::DynamicTableFull,
+            Error::IncrementAck,
+            Error::IntegerOverflow,
+            Error::WrongStreamCount,
+            Error::Decoding,
+            Error::EncoderStreamBlocked,
+            Error::Transport(neqo_transport::Error::NoMoreData),
+            Error::Qlog,
+        ] {
+            assert_eq!(err.code(), 3);
         }
     }
-}
 
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "QPACK error: {self:?}")
-    }
-}
-
-impl From<neqo_transport::Error> for Error {
-    fn from(err: neqo_transport::Error) -> Self {
-        Self::Transport(err)
-    }
-}
-
-impl From<::qlog::Error> for Error {
-    fn from(_err: ::qlog::Error) -> Self {
-        Self::Qlog
+    #[test]
+    fn map_error() {
+        assert_eq!(
+            Error::map_error::<()>(Err(Error::ClosedCriticalStream), Error::Internal),
+            Err(Error::ClosedCriticalStream)
+        );
+        assert_eq!(
+            Error::map_error::<()>(Err(Error::Internal), Error::Decompression),
+            Err(Error::Decompression)
+        );
     }
 }

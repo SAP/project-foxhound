@@ -6,8 +6,8 @@
 
 /* State that is passed down to UnbindToTree. */
 
-#ifndef mozilla_dom_UnbindContext_h__
-#define mozilla_dom_UnbindContext_h__
+#ifndef mozilla_dom_UnbindContext_h_
+#define mozilla_dom_UnbindContext_h_
 
 #include "mozilla/Attributes.h"
 #include "nsINode.h"
@@ -22,12 +22,40 @@ struct MOZ_STACK_CLASS UnbindContext final {
   // The parent node of the subtree we're unbinding from.
   nsINode* GetOriginalSubtreeParent() const { return mOriginalParent; }
 
-  explicit UnbindContext(nsINode& aRoot)
-      : mRoot(aRoot), mOriginalParent(aRoot.GetParentNode()) {}
+  // The document that owns the tree we're getting unbound from.
+  Document& OwnerDoc() const { return mDoc; }
+
+  // Whether we were connected.
+  bool WasInComposedDoc() const { return mWasInComposedDoc; }
+
+  // Whether we were in the document.
+  bool WasInUncomposedDoc() const { return mWasInUncomposedDoc; }
+
+  explicit UnbindContext(nsINode& aRoot, const BatchRemovalState* aBatchState)
+      : mRoot(aRoot),
+        mOriginalParent(aRoot.GetParentNode()),
+        mDoc(*aRoot.OwnerDoc()),
+        mBatchState(aBatchState),
+        mWasInComposedDoc(aRoot.IsInComposedDoc()),
+        mWasInUncomposedDoc(aRoot.IsInUncomposedDoc()) {}
+
+  void SetIsMove(bool aIsMove) { mIsMove = aIsMove; }
+
+  bool IsMove() const { return mIsMove; }
+
+  const BatchRemovalState* GetBatchRemovalState() const { return mBatchState; }
 
  private:
   nsINode& mRoot;
   nsINode* const mOriginalParent;
+  Document& mDoc;
+  const BatchRemovalState* const mBatchState = nullptr;
+
+  const bool mWasInComposedDoc;
+  const bool mWasInUncomposedDoc;
+
+  // If set, we're moving the shadow-including inclusive ancestor.
+  bool mIsMove = false;
 };
 
 }  // namespace mozilla::dom

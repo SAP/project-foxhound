@@ -50,13 +50,23 @@ async function turnOffScheduledBackupsHelper(browser, taskFn) {
   await taskFn();
 }
 
+add_setup(async () => {
+  await SpecialPowers.pushPrefEnv({
+    set: [[SCHEDULED_BACKUPS_ENABLED_PREF, true]],
+  });
+
+  registerCleanupFunction(async () => {
+    await SpecialPowers.popPrefEnv();
+  });
+});
+
 /**
  * Tests that the turn off scheduled backups dialog can set
  * browser.backup.scheduled.enabled to false from the settings page
  * and that the most recent backup is deleted once confirmed.
  */
 add_task(async function test_turn_off_scheduled_backups_confirm() {
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     Services.telemetry.clearEvents();
     Services.fog.testResetFOG();
 
@@ -64,10 +74,6 @@ add_task(async function test_turn_off_scheduled_backups_confirm() {
     let deleteLastBackupStub = sandbox
       .stub(BackupService.prototype, "deleteLastBackup")
       .resolves(true);
-
-    await SpecialPowers.pushPrefEnv({
-      set: [[SCHEDULED_BACKUPS_ENABLED_PREF, true]],
-    });
 
     await turnOffScheduledBackupsHelper(browser, () => {
       let scheduledPrefVal = Services.prefs.getBoolPref(
@@ -93,7 +99,6 @@ add_task(async function test_turn_off_scheduled_backups_confirm() {
     let events = Glean.browserBackup.toggleOff.testGetValue();
     Assert.equal(events.length, 1, "Found the toggleOff Glean event.");
 
-    await SpecialPowers.popPrefEnv();
     sandbox.restore();
   });
 });
@@ -103,7 +108,7 @@ add_task(async function test_turn_off_scheduled_backups_confirm() {
  * encryption is disabled as a result and the latest backup is still deleted.
  */
 add_task(async function test_turn_off_scheduled_backups_disables_encryption() {
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     let sandbox = sinon.createSandbox();
     let disableEncryptionStub = sandbox
       .stub(BackupService.prototype, "disableEncryption")
@@ -116,7 +121,7 @@ add_task(async function test_turn_off_scheduled_backups_disables_encryption() {
      * out the actual BackupService state, instead of the state passed to backup-settings
      * since we're not testing UI here. */
     const testDefaultName = "test-default-path";
-    sandbox.stub(BackupService.prototype, "state").get(() => {
+    sandbox.stub(BackupService.get(), "state").get(() => {
       return {
         encryptionEnabled: true,
         defaultParent: {
@@ -124,10 +129,6 @@ add_task(async function test_turn_off_scheduled_backups_disables_encryption() {
           fileName: testDefaultName,
         },
       };
-    });
-
-    await SpecialPowers.pushPrefEnv({
-      set: [[SCHEDULED_BACKUPS_ENABLED_PREF, true]],
     });
 
     await turnOffScheduledBackupsHelper(browser, () => {
@@ -141,7 +142,6 @@ add_task(async function test_turn_off_scheduled_backups_disables_encryption() {
       );
     });
 
-    await SpecialPowers.popPrefEnv();
     sandbox.restore();
   });
 });

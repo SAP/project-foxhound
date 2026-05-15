@@ -12,8 +12,8 @@
 
 #include <optional>
 
+#include "api/transport/ecn_marking.h"
 #include "p2p/test/fake_packet_transport.h"
-#include "rtc_base/network/ecn_marking.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/socket_address.h"
 #include "test/gmock.h"
@@ -26,20 +26,21 @@ using ::testing::MockFunction;
 TEST(PacketTransportInternal,
      NotifyPacketReceivedPassthrougPacketToRegisteredListener) {
   webrtc::FakePacketTransport packet_transport("test");
-  MockFunction<void(rtc::PacketTransportInternal*, const rtc::ReceivedPacket&)>
+  MockFunction<void(webrtc::PacketTransportInternal*,
+                    const webrtc::ReceivedIpPacket&)>
       receiver;
 
   packet_transport.RegisterReceivedPacketCallback(&receiver,
                                                   receiver.AsStdFunction());
   EXPECT_CALL(receiver, Call)
-      .WillOnce(
-          [](rtc::PacketTransportInternal*, const rtc::ReceivedPacket& packet) {
-            EXPECT_EQ(packet.decryption_info(),
-                      rtc::ReceivedPacket::kDtlsDecrypted);
-          });
-  packet_transport.NotifyPacketReceived(rtc::ReceivedPacket(
-      {}, webrtc::SocketAddress(), std::nullopt, rtc::EcnMarking::kNotEct,
-      rtc::ReceivedPacket::kDtlsDecrypted));
+      .WillOnce([](webrtc::PacketTransportInternal*,
+                   const webrtc::ReceivedIpPacket& packet) {
+        EXPECT_EQ(packet.decryption_info(),
+                  webrtc::ReceivedIpPacket::kDtlsDecrypted);
+      });
+  packet_transport.NotifyPacketReceived(webrtc::ReceivedIpPacket(
+      {}, webrtc::SocketAddress(), std::nullopt, webrtc::EcnMarking::kNotEct,
+      webrtc::ReceivedIpPacket::kDtlsDecrypted));
 
   packet_transport.DeregisterReceivedPacketCallback(&receiver);
 }

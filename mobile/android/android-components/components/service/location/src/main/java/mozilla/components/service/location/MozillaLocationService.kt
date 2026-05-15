@@ -10,6 +10,8 @@ import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.NONE
 import androidx.core.content.edit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import mozilla.components.Build
 import mozilla.components.concept.fetch.Client
@@ -60,6 +62,7 @@ class MozillaLocationService(
     private val currentTime: () -> Long = { System.currentTimeMillis() },
 ) : LocationService {
     private val regionServiceUrl = (serviceUrl + "country?key=%s").format(apiKey)
+    private val fetchMutex = Mutex()
 
     /**
      * Determines the current [LocationService.Region] based on the IP address used to access the service.
@@ -72,12 +75,23 @@ class MozillaLocationService(
     override suspend fun fetchRegion(
         readFromCache: Boolean,
     ): LocationService.Region? = withContext(Dispatchers.IO) {
-        if (readFromCache && isCacheValid()) {
-            context.loadCachedRegion()?.let { return@withContext it }
-        }
+        cachedRegionIfValid(readFromCache)?.let { return@withContext it }
 
-        client.fetchRegion(regionServiceUrl)?.also {
-            context.cacheRegion(it)
+        fetchMutex.withLock {
+            cachedRegionIfValid(readFromCache)?.let { return@withLock it }
+
+            client.fetchRegion(regionServiceUrl)?.also {
+                context.cacheRegion(it)
+            }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun cachedRegionIfValid(readFromCache: Boolean): LocationService.Region? {
+        return if (readFromCache && isCacheValid()) {
+            context.loadCachedRegion()
+        } else {
+            null
         }
     }
 

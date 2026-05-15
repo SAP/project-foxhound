@@ -8,35 +8,232 @@ $tags:
   - 'Firefox :: IP Protection'
 
 ipprotection:
-  enabled:
-    type: boolean
-    description: >
-      True if IP Protection is running.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972711
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972711
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - kpatenio@mozilla.com
-    expires: never
-
-  toggled:
+  alert_button_clicked:
     type: event
     description: >
-      Recorded when IP Protection is toggled.
+      Recorded when a user clicks "Continue without VPN" or "Close all tabs" in the VPN alert.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972711
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2020503
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972711
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2020503
     data_sensitivity:
       - interaction
     notification_emails:
       - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
     expires: never
     extra_keys:
-      enabled:
+      buttonType:
+        type: quantity
+        description: >
+          Action taken by the user, represented as an integer.
+          0 = continue without VPN
+          1 = close all tabs
+      reason:
+        type: string
+        description: >
+          Reason why the alert was triggered: "paused" or "error".
+  started:
+    type: event
+    description: >
+      Recorded when IP Protection is started.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      userAction:
         type: boolean
         description: >
-          True if IP Protection was turned on.
+          If the VPN was connected by a user action.
+      inPrivateBrowsing:
+        type: boolean
+        description: >
+          True if IP Protection was started in a private browsing window.
+
+  stopped:
+    type: event
+    description: >
+      Recorded when IP Protection is stopped.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017486
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      userAction:
+        type: boolean
+        description: >
+          If the VPN was disconnected by a user action.
+      duration:
+        type: string
+        description: >
+          Amount of time the VPN was connected in a session.
+  click_upgrade_button:
+    type: event
+    description: >
+      This is recorded when a user clicks the upgrade button in the VPN panel.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972930
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972930
+    notification_emails:
+      - rking@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+  removed_from_toolbar:
+    type: event
+    description: >
+      Recorded when the IP Protection widget is removed from the toolbar.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017739
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mhynson@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+
+  bandwidth_used_threshold:
+    type: event
+    description: >
+      Recorded when the percentage of bandwidth used crosses a threshold of 50,
+      75, or 90%.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017744
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017744
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mhynson@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      percentage:
+        type: quantity
+        description: >
+          The bandwidth usage threshold that was crossed (50, 75, or 90).
+
+  error:
+    type: event
+    description: >
+      Recorded when the in-panel error message is triggered.
+    bugs:
+     - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_reviews:
+     - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_sensitivity:
+     - interaction
+    notification_emails:
+      - rking@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      source:
+        type: string
+        description: >
+          Module where the error originated.
+
+  exclusion_added:
+    type: counter
+    description: >
+      Recorded when a site exclusion is added.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+
+  exclusion_toggled:
+    type: event
+    description: >
+      Recorded when a site exclusion is added or removed using the panel toggle UI.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017487
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - kpatenio@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      excluded:
+        type: boolean
+        description: >
+          True if the site was excluded (VPN disabled for site).
+          False if the exclusion was removed (VPN re-enabled for site).
+
+  paused:
+    type: event
+    description: >
+      Recorded when the IPP Proxy manager is set to the paused state.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1998500
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      wasActive:
+        type: boolean
+        description: >
+          True if the previous state was the active state, otherwise false.
+
+  get_started:
+    type: event
+    description: >
+      Recorded when the user clicks the get started button in the panel or settings.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017484
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fchasen@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+
+  enrollment:
+    type: event
+    description: >
+      Recorded when an account has been enrolled after completing the sign up flow.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017484
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2017484
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fchasen@mozilla.com
+      - vpn-telemetry@mozilla.com
+    expires: never
+    extra_keys:
+      enrolled:
+        type: boolean
+        description: >
+          True if the enrollment finished successfully.

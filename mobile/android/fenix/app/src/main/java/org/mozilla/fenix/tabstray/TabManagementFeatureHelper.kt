@@ -13,24 +13,14 @@ import org.mozilla.fenix.nimbus.FxNimbus
 interface TabManagementFeatureHelper {
 
     /**
-     * Whether the Tabs Tray enhancements are enabled in Nightly.
+     * Whether the Tab Manager opening animation is enabled.
      */
-    val enhancementsEnabledNightly: Boolean
+    val openingAnimationEnabled: Boolean
 
     /**
-     * Whether the Tabs Tray enhancements are enabled in Beta.
+     * Whether the Tab Search feature is enabled.
      */
-    val enhancementsEnabledBeta: Boolean
-
-    /**
-     * Whether the Tabs Tray enhancements are enabled in Release.
-     */
-    val enhancementsEnabledRelease: Boolean
-
-    /**
-     * Whether the Tabs Tray enhancements are enabled for the user.
-     */
-    val enhancementsEnabled: Boolean
+    val tabSearchEnabled: Boolean
 }
 
 /**
@@ -38,21 +28,14 @@ interface TabManagementFeatureHelper {
  */
 data object DefaultTabManagementFeatureHelper : TabManagementFeatureHelper {
 
-    override val enhancementsEnabledNightly: Boolean
-        get() = true
+    override val openingAnimationEnabled: Boolean
+        get() = Config.channel.isDebug || FxNimbus.features.tabManagementEnhancements.value().openingAnimationEnabled
 
-    override val enhancementsEnabledBeta: Boolean
-        get() = false
-
-    override val enhancementsEnabledRelease: Boolean
-        get() = FxNimbus.features.tabManagementEnhancements.value().enabled
-
-    override val enhancementsEnabled: Boolean
+    override val tabSearchEnabled: Boolean
         get() = when {
-            Config.channel.isDebug -> true
-            Config.channel.isNightlyOrDebug -> enhancementsEnabledNightly
-            Config.channel.isBeta -> enhancementsEnabledBeta
-            Config.channel.isRelease -> enhancementsEnabledRelease
+            Config.channel.isNightlyOrDebug -> true
+            Config.channel.isBeta -> FxNimbus.features.tabSearch.value().enabled
+            Config.channel.isRelease -> FxNimbus.features.tabSearch.value().enabled
             else -> false
         }
 }

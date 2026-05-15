@@ -1,4 +1,3 @@
-// |reftest| random-if(gtkWidget)
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -50,11 +49,27 @@ expect =  0;
 addTestCase();
 
 // Date.parse is accurate to the second;  valueOf() to the millisecond  -
-status = "Math.abs(Date.parse(now.toLocaleString('en-US')) - now.valueOf()) < 1000";
-actual =   Math.abs(Date.parse(now.toLocaleString('en-US')) -  now.valueOf()) < 1000;
+status = "Math.abs(Date.parse(now.toLocaleString('en-US')) - now.valueOf()) < 1000 + (!isRepeatedTime(now) ? 0 : msPerHour)";
+actual =  Math.abs(Date.parse(now.toLocaleString('en-US')) - now.valueOf()) < 1000 + (!isRepeatedTime(now) ? 0 : msPerHour);
 expect = true;
 addTestCase();
 
+
+// Test with repeated and skipped time due to daylight saving time.
+for (var date of [
+   // Switch from standard time to daylight saving time for PST8PDT.
+   new Date(Date.parse("2025-11-02T08:00:00Z")),
+   new Date(Date.parse("2025-11-02T09:00:00Z")),
+
+   // Switch from daylight saving time to standard time for PST8PDT.
+   new Date(Date.parse("2025-03-09T09:00:00Z")),
+   new Date(Date.parse("2025-03-09T10:00:00Z")),
+]) {
+   status = "Math.abs(Date.parse(date.toLocaleString('en-US')) - date.valueOf()) < 1000 + (!isRepeatedTime(date) ? 0 : msPerHour)";
+   actual =  Math.abs(Date.parse(date.toLocaleString('en-US')) - date.valueOf()) < 1000 + (!isRepeatedTime(date) ? 0 : msPerHour);
+   expect = true;
+   addTestCase();
+}
 
 
 // 1970
@@ -109,3 +124,11 @@ function addDateTestCase(date_given_in_milliseconds)
   addTestCase();
 }
 
+
+// Repeated local time when switching from daylight saving time to standard time.
+function isRepeatedTime(date)
+{
+   var offset1 = date.getTimezoneOffset();
+   var offset2 = new Date(date.valueOf() - msPerHour).getTimezoneOffset();
+   return offset1 > offset2;
+}

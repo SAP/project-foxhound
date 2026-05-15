@@ -16,11 +16,13 @@ Services.scriptloader.loadSubScript(
 ChromeUtils.defineESModuleGetters(this, {
   HttpServer: "resource://testing-common/httpd.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarProviderInterventions:
-    "resource:///modules/UrlbarProviderInterventions.sys.mjs",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderInterventions.sys.mjs",
+  ProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "UrlbarTestUtils", () => {
@@ -535,7 +537,7 @@ async function checkTip(win, expectedTip, closeView = true) {
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.TIP, "Result type");
   let heuristic;
   let title;
-  let name = Services.search.defaultEngine.name;
+  let name = SearchService.defaultEngine.name;
   switch (expectedTip) {
     case UrlbarProviderSearchTips.TIP_TYPE.ONBOARD:
       heuristic = true;
@@ -572,12 +574,19 @@ async function checkTip(win, expectedTip, closeView = true) {
   }
 }
 
-function makeTipResult({ buttonUrl, helpUrl = undefined }) {
-  return new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TIP,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
+function makeTipResult({
+  buttonUrl,
+  helpUrl = undefined,
+  descriptionL10n = undefined,
+  descriptionLearnMoreTopic = undefined,
+}) {
+  return new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TIP,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    payload: {
       helpUrl,
+      descriptionL10n,
+      descriptionLearnMoreTopic,
       type: "test",
       titleL10n: { id: "urlbar-search-tips-confirm" },
       buttons: [
@@ -586,8 +595,8 @@ function makeTipResult({ buttonUrl, helpUrl = undefined }) {
           l10n: { id: "urlbar-search-tips-confirm" },
         },
       ],
-    }
-  );
+    },
+  });
 }
 
 /**
@@ -698,14 +707,13 @@ function resetSearchTipsProvider() {
   Services.prefs.clearUserPref(
     `browser.urlbar.tipShownCount.${UrlbarProviderSearchTips.TIP_TYPE.REDIRECT}`
   );
-  UrlbarProviderSearchTips.disableTipsForCurrentSession = false;
+  ProvidersManager.getInstanceForSap("urlbar").getProvider(
+    "UrlbarProviderSearchTips"
+  ).disableTipsForCurrentSession = false;
 }
 
 async function setDefaultEngine(name) {
-  let engine = (await Services.search.getEngines()).find(e => e.name == name);
+  let engine = (await SearchService.getEngines()).find(e => e.name == name);
   Assert.ok(engine);
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 }

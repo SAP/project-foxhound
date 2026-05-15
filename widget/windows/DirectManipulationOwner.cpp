@@ -7,6 +7,7 @@
 #include "nsWindow.h"
 #include "WinModifierKeyState.h"
 #include "InputData.h"
+#include "UnitTransforms.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/SwipeTracker.h"
 #include "mozilla/TimeStamp.h"

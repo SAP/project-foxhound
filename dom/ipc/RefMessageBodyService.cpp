@@ -7,7 +7,7 @@
 #include "RefMessageBodyService.h"
 
 #include <cstdint>
-#include <cstdlib>
+
 #include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
@@ -136,10 +136,10 @@ void RefMessageBodyService::ForgetPort(const nsID& aPortID) {
 }
 
 RefMessageBody::RefMessageBody(const nsID& aPortID,
-                               UniquePtr<ipc::StructuredCloneData>&& aCloneData)
+                               ipc::StructuredCloneData* aCloneData)
     : mPortID(aPortID),
       mMutex("RefMessageBody::mMutex"),
-      mCloneData(std::move(aCloneData)),
+      mCloneData(aCloneData),
       mMaxCount(Nothing()),
       mCount(0) {}
 

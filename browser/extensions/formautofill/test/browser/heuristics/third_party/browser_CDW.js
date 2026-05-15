@@ -30,6 +30,7 @@ add_heuristic_tests(
     },
     {
       fixturePath: "Checkout_BillingPaymentInfo.html",
+      useTestYear: 2024,
       expectedResult: [
         {
           default: {

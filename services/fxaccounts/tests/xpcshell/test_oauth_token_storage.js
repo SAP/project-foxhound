@@ -178,3 +178,84 @@ add_task(async function testCacheStorage() {
   await fxa.signOut(/* localOnly = */ true);
   deepEqual(storageManager.accountData, null);
 });
+
+add_task(async function testCachedTokenExpiry_noExpiry() {
+  let fxa = await createMockFxA();
+  let cas = fxa._internal.currentAccountState;
+
+  // Token without expiresAt should always be returned. Mainly for
+  // tokens fetched before we started tracking expiry, but also if
+  // there's ever a scenario where the server doesn't offer an expiry.
+  let tokenData = { token: "token-no-expiry" };
+  let scopeArray = ["scope1"];
+  cas.setCachedToken(scopeArray, tokenData);
+  deepEqual(
+    cas.getCachedToken(scopeArray),
+    tokenData,
+    "Token without expiresAt should be returned"
+  );
+});
+
+add_task(async function testCachedTokenExpiry_futureExpiry() {
+  let fxa = await createMockFxA();
+  let cas = fxa._internal.currentAccountState;
+
+  // Token with expiresAt far in the future should be returned
+  const nowSecs = Math.floor(Date.now() / 1000);
+  let tokenData = { token: "token-future", expiresAt: nowSecs + 3600 };
+  let scopeArray = ["scope2"];
+  cas.setCachedToken(scopeArray, tokenData);
+  deepEqual(
+    cas.getCachedToken(scopeArray),
+    tokenData,
+    "Token with future expiry should be returned"
+  );
+});
+
+add_task(async function testCachedTokenExpiry_pastExpiry() {
+  let fxa = await createMockFxA();
+  let cas = fxa._internal.currentAccountState;
+
+  // Token with expiresAt in the past should return null
+  const nowSecs = Math.floor(Date.now() / 1000);
+  let tokenData = { token: "token-past", expiresAt: nowSecs - 100 };
+  let scopeArray = ["scope3"];
+  cas.setCachedToken(scopeArray, tokenData);
+  equal(
+    cas.getCachedToken(scopeArray),
+    null,
+    "Token with past expiry should return null"
+  );
+});
+
+add_task(async function testCachedTokenExpiry_withinGracePeriod() {
+  let fxa = await createMockFxA();
+  let cas = fxa._internal.currentAccountState;
+
+  // Token expiring within 60 seconds should return null
+  const nowSecs = Math.floor(Date.now() / 1000);
+  let tokenData = { token: "token-soon", expiresAt: nowSecs + 30 };
+  let scopeArray = ["scope4"];
+  cas.setCachedToken(scopeArray, tokenData);
+  equal(
+    cas.getCachedToken(scopeArray),
+    null,
+    "Token expiring within grace period should return null"
+  );
+});
+
+add_task(async function testCachedTokenExpiry_justOutsideGracePeriod() {
+  let fxa = await createMockFxA();
+  let cas = fxa._internal.currentAccountState;
+
+  // Token expiring just beyond the 60-second grace period should be returned
+  const nowSecs = Math.floor(Date.now() / 1000);
+  let tokenData = { token: "token-ok", expiresAt: nowSecs + 61 };
+  let scopeArray = ["scope5"];
+  cas.setCachedToken(scopeArray, tokenData);
+  deepEqual(
+    cas.getCachedToken(scopeArray),
+    tokenData,
+    "Token expiring just outside grace period should be returned"
+  );
+});

@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_SubtleCrypto_h
 #define mozilla_dom_SubtleCrypto_h
 
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "nsIGlobalObject.h"
-#include "mozilla/dom/CryptoKey.h"
 #include "js/TypeDecls.h"
+#include "mozilla/dom/CryptoKey.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIGlobalObject.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

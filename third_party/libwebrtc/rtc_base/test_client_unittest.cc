@@ -10,28 +10,31 @@
 
 #include "rtc_base/test_client.h"
 
+#include <memory>
 #include <utility>
 
-#include "absl/memory/memory.h"
+#include "api/environment/environment.h"
 #include "rtc_base/async_tcp_socket.h"
 #include "rtc_base/async_udp_socket.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/net_helpers.h"
 #include "rtc_base/net_test_helpers.h"
 #include "rtc_base/physical_socket_server.h"
 #include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/test_echo_server.h"
 #include "rtc_base/thread.h"
+#include "test/create_test_environment.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 
 #define MAYBE_SKIP_IPV4                        \
-  if (!::rtc::HasIPv4Enabled()) {              \
+  if (!::webrtc::HasIPv4Enabled()) {           \
     RTC_LOG(LS_INFO) << "No IPv4... skipping"; \
     return;                                    \
   }
 
 #define MAYBE_SKIP_IPV6                        \
-  if (!::rtc::HasIPv6Enabled()) {              \
+  if (!::webrtc::HasIPv6Enabled()) {           \
     RTC_LOG(LS_INFO) << "No IPv6... skipping"; \
     return;                                    \
   }
@@ -39,13 +42,18 @@
 namespace webrtc {
 namespace {
 
+using ::testing::NotNull;
+
 void TestUdpInternal(const SocketAddress& loopback) {
+  const Environment env = CreateTestEnvironment();
   PhysicalSocketServer socket_server;
   AutoSocketServerThread main_thread(&socket_server);
-  Socket* socket = socket_server.CreateSocket(loopback.family(), SOCK_DGRAM);
+  std::unique_ptr<Socket> socket =
+      socket_server.Create(loopback.family(), SOCK_DGRAM);
+  ASSERT_THAT(socket, NotNull());
   socket->Bind(loopback);
 
-  TestClient client(std::make_unique<AsyncUDPSocket>(socket));
+  TestClient client(std::make_unique<AsyncUDPSocket>(env, std::move(socket)));
   SocketAddress addr = client.address(), from;
   EXPECT_EQ(3, client.SendTo("foo", 3, addr));
   EXPECT_TRUE(client.CheckNextPacket("foo", 3, &from));
@@ -54,14 +62,17 @@ void TestUdpInternal(const SocketAddress& loopback) {
 }
 
 void TestTcpInternal(const SocketAddress& loopback) {
+  const Environment env = CreateTestEnvironment();
   PhysicalSocketServer socket_server;
   AutoSocketServerThread main_thread(&socket_server);
-  webrtc::TestEchoServer server(&main_thread, loopback);
+  TestEchoServer server(env, &main_thread, loopback);
 
-  Socket* socket = socket_server.CreateSocket(loopback.family(), SOCK_STREAM);
-  std::unique_ptr<AsyncTCPSocket> tcp_socket = absl::WrapUnique(
-      AsyncTCPSocket::Create(socket, loopback, server.address()));
-  ASSERT_TRUE(tcp_socket != nullptr);
+  std::unique_ptr<Socket> socket =
+      socket_server.Create(loopback.family(), SOCK_STREAM);
+  ASSERT_THAT(socket, NotNull());
+  ASSERT_EQ(socket->Bind(loopback), 0);
+  ASSERT_EQ(socket->Connect(server.address()), 0);
+  auto tcp_socket = std::make_unique<AsyncTCPSocket>(env, std::move(socket));
 
   TestClient client(std::move(tcp_socket));
   SocketAddress addr = client.address(), from;

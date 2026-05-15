@@ -321,9 +321,10 @@ bool Compartment::getOrCreateWrapper(JSContext* cx, HandleObject existing,
 
   // If we're wrapping an object which emulates undefined then the runtime fuse
   // should already have been popped.
-  MOZ_ASSERT_IF(
-      obj->getClass()->emulatesUndefined(),
-      !cx->runtime()->hasSeenObjectEmulateUndefinedFuse.ref().intact());
+  MOZ_ASSERT_IF(obj->getClass()->emulatesUndefined(),
+                !cx->runtime()
+                     ->runtimeFuses.ref()
+                     .hasSeenObjectEmulateUndefinedFuse.intact());
 
   // Create a new wrapper for the object.
   auto wrap = cx->runtime()->wrapObjectCallbacks->wrap;

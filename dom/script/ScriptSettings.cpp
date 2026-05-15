@@ -6,7 +6,6 @@
 
 #include "mozilla/dom/ScriptSettings.h"
 
-#include <utility>
 #include "MainThreadUtils.h"
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
@@ -27,7 +26,6 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/dom/AutoEntryScript.h"

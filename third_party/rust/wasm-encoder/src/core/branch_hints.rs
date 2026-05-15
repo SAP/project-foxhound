@@ -1,5 +1,6 @@
 use crate::{CustomSection, Encode, Section, SectionId};
-use std::borrow::Cow;
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
 
 /// Helper structure to encode the `metadata.code.branch_hint` custom section.
 ///
@@ -24,11 +25,12 @@ use std::borrow::Cow;
 /// let mut code = CodeSection::new();
 /// let mut body = Function::new([]);
 ///
-/// body.instruction(&Instruction::I32Const(1));
+/// body.instructions().i32_const(1);
 /// let if_offset = body.byte_len();
-/// body.instruction(&Instruction::If(BlockType::Empty));
-/// body.instruction(&Instruction::End);
-/// body.instruction(&Instruction::End);
+/// body.instructions()
+///     .if_(BlockType::Empty)
+///     .end()
+///     .end();
 /// code.function(&body);
 ///
 /// let mut hints = BranchHints::new();

@@ -355,7 +355,8 @@ add_task(async function test_permission_popup_permission_clear() {
     testGeoSharingIconVisible(false),
     testPermissionPopupGeoContainer(false, false),
     TestUtils.waitForCondition(() => {
-      let sharingState = tab._sharingState;
+      let browser = tab.linkedBrowser;
+      let sharingState = browser._sharingState;
       return (
         sharingState == null ||
         sharingState.geo == null ||

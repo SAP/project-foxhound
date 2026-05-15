@@ -42,9 +42,7 @@ const EXPECTED_SPONSORED_URLBAR_RESULT = {
     telemetryType: "adm_sponsored",
     url: "http://example.com/sponsored",
     originalUrl: "http://example.com/sponsored",
-    displayUrl: "http://example.com/sponsored",
     title: "Sponsored suggestion",
-    qsSuggestion: "sponsored",
     icon: null,
     isSponsored: true,
     sponsoredImpressionUrl: "http://example.com/impression",
@@ -55,7 +53,7 @@ const EXPECTED_SPONSORED_URLBAR_RESULT = {
     descriptionL10n: { id: "urlbar-result-action-sponsored" },
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
-      id: "urlbar-result-menu-learn-more-about-firefox-suggest",
+      id: "urlbar-result-menu-learn-more",
     },
     isBlockable: true,
     source: "remote-settings",
@@ -71,9 +69,7 @@ const EXPECTED_NONSPONSORED_URLBAR_RESULT = {
     telemetryType: "adm_nonsponsored",
     url: "http://example.com/nonsponsored",
     originalUrl: "http://example.com/nonsponsored",
-    displayUrl: "http://example.com/nonsponsored",
     title: "Non-sponsored suggestion",
-    qsSuggestion: "nonsponsored",
     icon: null,
     isSponsored: false,
     sponsoredImpressionUrl: "http://example.com/impression",
@@ -83,7 +79,7 @@ const EXPECTED_NONSPONSORED_URLBAR_RESULT = {
     sponsoredIabCategory: "5 - Education",
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
-      id: "urlbar-result-menu-learn-more-about-firefox-suggest",
+      id: "urlbar-result-menu-learn-more",
     },
     isBlockable: true,
     source: "remote-settings",
@@ -109,7 +105,7 @@ add_setup(async () => {
     prefs: [
       ["quicksuggest.impressionCaps.sponsoredEnabled", true],
       ["quicksuggest.impressionCaps.nonSponsoredEnabled", true],
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
     ],
   });
@@ -3176,6 +3172,10 @@ async function doTimedCallbacks(callbacksBySecond) {
  *   The results that are expected from the search.
  */
 async function checkSearch({ name, searchString, expectedResults }) {
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  let quickSuggestProviderInstance = providersManager.getProvider(
+    UrlbarProviderQuickSuggest.name
+  );
   info(`Preparing search "${name}" with search string "${searchString}"`);
   let context = createContext(searchString, {
     providers: [UrlbarProviderQuickSuggest.name],
@@ -3191,8 +3191,8 @@ async function checkSearch({ name, searchString, expectedResults }) {
   // Impression stats are updated only on engagement, so force one now.
   // `selIndex` doesn't really matter but since we're not trying to simulate a
   // click on the suggestion, pass in -1 to ensure we don't record a click.
-  if (UrlbarProviderQuickSuggest._resultFromLastQuery) {
-    UrlbarProviderQuickSuggest._resultFromLastQuery.isVisible = true;
+  if (quickSuggestProviderInstance._resultFromLastQuery) {
+    quickSuggestProviderInstance._resultFromLastQuery.isVisible = true;
   }
   const controller = UrlbarTestUtils.newMockController({
     input: {
@@ -3221,7 +3221,7 @@ async function checkSearch({ name, searchString, expectedResults }) {
 
   // If this test is ever re-enabled, this line will need to be updated for the
   // new engagement API (onEngagement())
-  UrlbarProviderQuickSuggest.onLegacyEngagement(
+  quickSuggestProviderInstance.onLegacyEngagement(
     "engagement",
     context,
     {

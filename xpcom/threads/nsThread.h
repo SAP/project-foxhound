@@ -4,13 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsThread_h__
-#define nsThread_h__
+#ifndef nsThread_h_
+#define nsThread_h_
 
 #include "MainThreadUtils.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/LinkedList.h"
@@ -20,7 +19,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/TaskDispatcher.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "nsIDirectTaskDispatcher.h"
 #include "nsIEventTarget.h"
 #include "nsISerialEventTarget.h"
@@ -204,9 +202,9 @@ class nsThread : public nsIThreadInternal,
   bool ShutdownRequired() { return mShutdownRequired; }
 
   // Lets GetRunningEventDelay() determine if the pool this is part
-  // of has an unstarted thread
+  // of has an idle or unstarted thread.
   void SetPoolThreadFreePtr(mozilla::Atomic<bool, mozilla::Relaxed>* aPtr) {
-    mIsAPoolThreadFree = aPtr;
+    mIsAPoolThreadFreePtr = aPtr;
   }
 
   void SetScriptObserver(mozilla::CycleCollectedJSContext* aScriptObserver);
@@ -294,7 +292,7 @@ class nsThread : public nsIThreadInternal,
   const bool mIsMainThread;
   bool mUseHangMonitor;
   const bool mIsUiThread;
-  mozilla::Atomic<bool, mozilla::Relaxed>* mIsAPoolThreadFree;
+  mozilla::Atomic<bool, mozilla::Relaxed>* mIsAPoolThreadFreePtr;
 
   // Set to true if this thread creates a JSRuntime.
   bool mCanInvokeJS;
@@ -355,4 +353,4 @@ class nsThreadShutdownContext final : public nsIThreadShutdown {
 extern int sCanaryOutputFD;
 #endif
 
-#endif  // nsThread_h__
+#endif  // nsThread_h_

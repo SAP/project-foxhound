@@ -17,6 +17,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.VISIBILITY_SECRET
 import androidx.core.app.NotificationManagerCompat.IMPORTANCE_LOW
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -34,7 +35,6 @@ import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.ids.SharedIdsHelper
 import mozilla.components.support.ktx.android.notification.ChannelData
 import mozilla.components.support.ktx.android.notification.ensureNotificationChannelExists
-import mozilla.components.support.utils.PendingIntentUtils
 import mozilla.components.support.utils.ext.stopForegroundCompat
 import java.util.Locale
 
@@ -51,6 +51,7 @@ import java.util.Locale
  */
 @Suppress("TooManyFunctions")
 abstract class AbstractPrivateNotificationService(
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val notificationScope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) : Service() {
     private var privateTabsScope: CoroutineScope? = null
@@ -92,11 +93,9 @@ abstract class AbstractPrivateNotificationService(
             this,
             NOTIFICATION_CHANNEL,
             onSetupChannel = {
-                if (SDK_INT >= Build.VERSION_CODES.O) {
-                    enableLights(false)
-                    enableVibration(false)
-                    setShowBadge(false)
-                }
+                enableLights(false)
+                enableVibration(false)
+                setShowBadge(false)
             },
         )
     }
@@ -110,7 +109,7 @@ abstract class AbstractPrivateNotificationService(
             val channelId = getChannelId()
 
             val notification = createNotification(channelId)
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 notificationsDelegate.notify(notificationId = notificationId, notification = notification)
             }
         }
@@ -134,12 +133,12 @@ abstract class AbstractPrivateNotificationService(
                 )
             }
 
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 startForeground(notificationId, notification)
             }
         }
 
-        privateTabsScope = store.flowScoped { flow ->
+        privateTabsScope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.privateTabs.isEmpty() }
                 .distinctUntilChanged()
                 .collect { noPrivateTabs ->
@@ -147,7 +146,7 @@ abstract class AbstractPrivateNotificationService(
                 }
         }
 
-        localeScope = store.flowScoped { flow ->
+        localeScope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.mapNotNull { state -> state.locale }
                 .distinctUntilChanged()
                 .collect {
@@ -168,7 +167,7 @@ abstract class AbstractPrivateNotificationService(
                 this,
                 0,
                 intent,
-                PendingIntentUtils.defaultFlags or FLAG_ONE_SHOT,
+                PendingIntent.FLAG_IMMUTABLE or FLAG_ONE_SHOT,
             )
         }
 

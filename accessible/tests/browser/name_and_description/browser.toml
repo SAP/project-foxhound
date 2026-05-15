@@ -1,0 +1,20 @@
+[DEFAULT]
+subsuite = "a11y"
+support-files = [
+  "head.js",
+  "!/accessible/tests/browser/shared-head.js",
+  "!/accessible/tests/mochitest/*.js",
+  "!/accessible/tests/mochitest/events/slow_image.sjs",
+  "!/accessible/tests/mochitest/letters.gif",
+  "!/accessible/tests/mochitest/moz.png",
+]
+prefs = [
+  # Required for the eval in invokeContentTask in shared-head.js
+  "security.allow_eval_with_system_principal=true"
+]
+
+["browser_description_general.js"]
+
+["browser_name_general.js"]
+
+["browser_name_markup.js"]

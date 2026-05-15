@@ -4,60 +4,196 @@
 #      Mon Feb 27 12:12:03 2023 +0000
 Expose Sid::FromNamedCapability through broker services.
 
+diff --git a/base/win/sid.cc b/base/win/sid.cc
+--- a/base/win/sid.cc
++++ b/base/win/sid.cc
+@@ -17,18 +17,22 @@
+ #include "base/check.h"
+ #include "base/no_destructor.h"
+ #include "base/rand_util.h"
+ #include "base/ranges/algorithm.h"
+ #include "base/strings/string_util_win.h"
+ #include "base/win/scoped_handle.h"
+ #include "base/win/scoped_localalloc.h"
+ #include "base/win/windows_version.h"
+-#include "third_party/boringssl/src/include/openssl/crypto.h"
+-#include "third_party/boringssl/src/include/openssl/sha.h"
++#if defined(MOZ_SANDBOX)
++#include <winternl.h>
++#else
++#include "third_party/boringssl/src/include/openssl/crypto.h"
++#include "third_party/boringssl/src/include/openssl/sha.h"
++#endif
+ 
+ namespace base::win {
+ 
+ namespace {
+ 
+ template <typename Iterator>
+ Sid FromSubAuthorities(const SID_IDENTIFIER_AUTHORITY& identifier_authority,
+                        size_t sub_authority_count,
+@@ -94,16 +98,19 @@
+ }
+ 
+ Sid Sid::FromKnownCapability(WellKnownCapability capability) {
+   int32_t capability_rid = WellKnownCapabilityToRid(capability);
+   return FromSubAuthorities(SECURITY_APP_PACKAGE_AUTHORITY,
+                             {SECURITY_CAPABILITY_BASE_RID, capability_rid});
+ }
+ 
++typedef NTSTATUS(WINAPI* RtlDeriveCapabilitySidsFromNameFunction)(
++    PCUNICODE_STRING SourceString, PSID CapabilityGroupSid, PSID CapabilitySid);
++
+ Sid Sid::FromNamedCapability(const std::wstring& capability_name) {
+   static const base::NoDestructor<std::map<std::wstring, WellKnownCapability>>
+       known_capabilities(
+           {{L"INTERNETCLIENT", WellKnownCapability::kInternetClient},
+            {L"INTERNETCLIENTSERVER",
+             WellKnownCapability::kInternetClientServer},
+            {L"PRIVATENETWORKCLIENTSERVER",
+             WellKnownCapability::kPrivateNetworkClientServer},
+@@ -119,28 +126,37 @@
+            {L"APPOINTMENTS", WellKnownCapability::kAppointments},
+            {L"CONTACTS", WellKnownCapability::kContacts}});
+ 
+   std::wstring cap_upper = base::ToUpperASCII(capability_name);
+   auto known_cap = known_capabilities->find(cap_upper);
+   if (known_cap != known_capabilities->end()) {
+     return FromKnownCapability(known_cap->second);
+   }
+-  CRYPTO_library_init();
+-  static_assert((SHA256_DIGEST_LENGTH / sizeof(DWORD)) ==
+-                SECURITY_APP_PACKAGE_RID_COUNT);
+-  DWORD rids[(SHA256_DIGEST_LENGTH / sizeof(DWORD)) + 2];
+-  rids[0] = SECURITY_CAPABILITY_BASE_RID;
+-  rids[1] = SECURITY_CAPABILITY_APP_RID;
+-
+-  SHA256(reinterpret_cast<const uint8_t*>(cap_upper.c_str()),
+-         cap_upper.size() * sizeof(wchar_t),
+-         reinterpret_cast<uint8_t*>(&rids[2]));
+-  return FromSubAuthorities(SECURITY_APP_PACKAGE_AUTHORITY, std::size(rids),
+-                            rids);
++
++  HMODULE ntdll_handle = ::GetModuleHandleW(L"ntdll.dll");
++  CHECK(ntdll_handle);
++  auto derive_capability_sids =
++      reinterpret_cast<RtlDeriveCapabilitySidsFromNameFunction>(
++          ::GetProcAddress(ntdll_handle, "RtlDeriveCapabilitySidsFromName"));
++  if (!derive_capability_sids) {
++    return Sid();
++  }
++
++  UNICODE_STRING name = {};
++  ::RtlInitUnicodeString(&name, capability_name.c_str());
++  BYTE capability_sid[SECURITY_MAX_SID_SIZE];
++  BYTE group_sid[SECURITY_MAX_SID_SIZE];
++
++  NTSTATUS status = derive_capability_sids(&name, group_sid, capability_sid);
++  if (!NT_SUCCESS(status)) {
++    return Sid();
++  }
++
++  return Sid(capability_sid, ::GetLengthSid(capability_sid));
+ }
+ 
+ Sid Sid::FromKnownSid(WellKnownSid type) {
+   switch (type) {
+     case WellKnownSid::kNull:
+       return FromSubAuthorities(SECURITY_NULL_SID_AUTHORITY,
+                                 {SECURITY_NULL_RID});
+     case WellKnownSid::kWorld:
+diff --git a/security/sandbox/chromium/base/win/sid.h b/security/sandbox/chromium/base/win/sid.h
+--- a/base/win/sid.h
++++ b/base/win/sid.h
+@@ -127,15 +127,16 @@ class BASE_EXPORT Sid {
+
+   // Is this Sid equal to another Sid?
+   bool operator==(const Sid& sid) const;
+
+   // Is this Sid not equal to another Sid?
+   bool operator!=(const Sid& sid) const;
+
+  private:
++  Sid() {}
+   Sid(const void* sid, size_t length);
+   std::vector<char> sid_;
+ };
+
+ }  // namespace base::win
+
+ #endif  // BASE_WIN_SID_H_
 diff --git a/sandbox/win/src/broker_services.cc b/sandbox/win/src/broker_services.cc
 --- a/sandbox/win/src/broker_services.cc
 +++ b/sandbox/win/src/broker_services.cc
-@@ -730,9 +730,16 @@ ResultCode BrokerServicesBase::GetPolicy
-     return SBOX_ERROR_GENERIC;
-   }
+@@ -11,16 +11,17 @@
+ #include "base/containers/contains.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/notreached.h"
+ #include "base/threading/platform_thread.h"
+ #include "base/win/access_token.h"
+ #include "base/win/current_module.h"
+ #include "base/win/scoped_handle.h"
+ #include "base/win/scoped_process_information.h"
++#include "base/win/sid.h"
+ #include "base/win/windows_version.h"
+ #include "build/build_config.h"
+ #include "sandbox/win/src/app_container.h"
+ #include "sandbox/win/src/process_mitigations.h"
+ #include "sandbox/win/src/sandbox.h"
+ #include "sandbox/win/src/sandbox_policy_base.h"
+ #include "sandbox/win/src/sandbox_policy_diagnostic.h"
+ #include "sandbox/win/src/startup_information_helper.h"
+@@ -604,9 +604,16 @@ ResultCode BrokerServicesBase::GetPolicy
+ }
  
-   // Ownership has passed to tracker thread.
-   receiver.release();
-   return SBOX_ALL_OK;
+ // static
+ void BrokerServicesBase::FreezeTargetConfigForTesting(TargetConfig* config) {
+   CHECK(!config->IsConfigured());
+   static_cast<ConfigBase*>(config)->Freeze();
  }
  
 +bool BrokerServicesBase::DeriveCapabilitySidFromName(const wchar_t* name,
 +                                                     PSID derived_sid,
 +                                                     DWORD sid_buffer_length) {
 +  return ::CopySid(sid_buffer_length, derived_sid,
-+                   Sid::FromNamedCapability(name).GetPSID());
++                   base::win::Sid::FromNamedCapability(name).GetPSID());
 +}
 +
  }  // namespace sandbox
 diff --git a/sandbox/win/src/broker_services.h b/sandbox/win/src/broker_services.h
 --- a/sandbox/win/src/broker_services.h
 +++ b/sandbox/win/src/broker_services.h
-@@ -57,16 +57,19 @@ class BrokerServicesBase final : public 
-                          scoped_refptr<TargetPolicy> policy,
-                          ResultCode* last_warning,
-                          DWORD* last_error,
-                          PROCESS_INFORMATION* target) override;
-   ResultCode WaitForAllTargets() override;
-   ResultCode GetPolicyDiagnostics(
+@@ -64,16 +64,19 @@ class BrokerServicesBase final : public 
        std::unique_ptr<PolicyDiagnosticsReceiver> receiver) override;
+   void SetStartingMitigations(MitigationFlags starting_mitigations) override;
+   bool RatchetDownSecurityMitigations(
+       MitigationFlags additional_flags) override;
+   std::wstring GetDesktopName(Desktop desktop) override;
+ 
+   static void FreezeTargetConfigForTesting(TargetConfig* config);
  
 +  bool DeriveCapabilitySidFromName(const wchar_t* name, PSID derived_sid,
 +                                   DWORD sid_buffer_length) override;
 +
   private:
-   // The routine that the worker thread executes. It is in charge of
-   // notifications and cleanup-related tasks.
-   static DWORD WINAPI TargetEventsThread(PVOID param);
+   // Implements Init and InitForTesting.
+   ResultCode Init(std::unique_ptr<BrokerServicesTargetTracker> target_tracker);
+ 
+   // Ensures the desktop integrity suits any process we are launching.
+   ResultCode UpdateDesktopIntegrity(Desktop desktop, IntegrityLevel integrity);
  
    // The completion port used by the job objects to communicate events to
-   // the worker thread.
-   base::win::ScopedHandle job_port_;
 diff --git a/sandbox/win/src/sandbox.h b/sandbox/win/src/sandbox.h
 --- a/sandbox/win/src/sandbox.h
 +++ b/sandbox/win/src/sandbox.h
-@@ -117,16 +117,21 @@ class BrokerServices {
-   //   called to accept the results of the call.
-   // Returns:
-   //   ALL_OK if the request was dispatched. All other return values
-   //   imply failure, and the responder will not receive its completion
-   //   callback.
-   virtual ResultCode GetPolicyDiagnostics(
-       std::unique_ptr<PolicyDiagnosticsReceiver> receiver) = 0;
+@@ -149,16 +149,21 @@ class BrokerServices {
+   // RatchetDownSecurityMitigations is then called by the broker process to
+   // gradually increase our security as startup continues. It's designed to
+   // be called multiple times. If you don't call SetStartingMitigations first
+   // and there were mitigations applied early in startup, the new mitigations
+   // may not be applied.
+   virtual bool RatchetDownSecurityMitigations(
+       MitigationFlags additional_flags) = 0;
  
 +  // Derive a capability PSID from the given string.
 +  virtual bool DeriveCapabilitySidFromName(const wchar_t* name,

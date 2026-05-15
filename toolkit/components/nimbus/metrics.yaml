@@ -31,6 +31,10 @@ nimbus_targeting_environment:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1963183
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1971552
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1967328
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983122
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997164
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995896
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2011286
     data_reviews: &targeting_context_data_reviews
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1928107
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937207
@@ -40,6 +44,10 @@ nimbus_targeting_environment:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1963183
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1971552
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1967328
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983122
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997164
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995896
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2011286
     notification_emails: &targeting_context_notification_emails
       - beth@mozilla.com
       - project-nimbus@mozilla.com
@@ -70,6 +78,7 @@ nimbus_targeting_environment:
       - technical
     type: labeled_counter
     labels:
+      - "browser.ai.control.default"
       - "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons"
       - "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features"
       - "browser.newtabpage.activity-stream.feeds.section.highlights"
@@ -78,9 +87,10 @@ nimbus_targeting_environment:
       - "browser.newtabpage.activity-stream.showSearch"
       - "browser.newtabpage.activity-stream.showSponsoredTopSites"
       - "browser.newtabpage.enabled"
+      - "browser.profiles.created"
       - "browser.startup.page"
       - "browser.toolbars.bookmarks.visibility"
-      - "browser.urlbar.quicksuggest.dataCollection.enabled"
+      - "browser.urlbar.lastUrlbarSearchSeconds"
       - "browser.urlbar.showSearchSuggestionsFirst"
       - "browser.urlbar.suggest.quicksuggest.sponsored"
       - "media.videocontrols.picture-in-picture.enabled"
@@ -91,6 +101,7 @@ nimbus_targeting_environment:
       - "nimbus.qa.pref-1"
       - "nimbus.qa.pref-2"
       - "security.sandbox.content.level"
+      - "termsofuse.acceptedDate"
       - "trailhead.firstrun.didSeeAboutWelcome"
 
   attr_eval_errors:
@@ -133,6 +144,7 @@ nimbus_targeting_environment:
       - "os"
       - "primaryResolution"
       - "profileAgeCreated"
+      - "profileGroupProfileCount"
       - "region"
       - "totalBookmarksCount"
       - "userMonthlyActivity"
@@ -169,6 +181,8 @@ nimbus_targeting_environment:
     structure:
       type: object
       properties:
+        browser__ai__control__default:
+          type: string
         browser__newtabpage__activity_stream__asrouter__userprefs__cfr__addons:
           type: boolean
         browser__newtabpage__activity_stream__asrouter__userprefs__cfr__features:
@@ -185,12 +199,14 @@ nimbus_targeting_environment:
           type: boolean
         browser__newtabpage__enabled:
           type: boolean
+        browser__profiles__created:
+          type: boolean
         browser__startup__page:
           type: number
         browser__toolbars__bookmarks__visibility:
           type: string
-        browser__urlbar__quicksuggest__dataCollection__enabled:
-          type: boolean
+        browser__urlbar__lastUrlbarSearchSeconds:
+          type: number
         browser__urlbar__showSearchSuggestionsFirst:
           type: boolean
         browser__urlbar__suggest__quicksuggest__sponsored:
@@ -207,6 +223,8 @@ nimbus_targeting_environment:
           type: number
         security__sandbox__content__level:
           type: number
+        termsofuse__acceptedDate:
+          type: string
         trailhead__firstrun__didSeeAboutWelcome:
           type: boolean
 
@@ -287,8 +305,6 @@ nimbus_targeting_context:
     unit: addresses
 
   arch_bits:
-    no_lint:
-      - UNIT_IN_NAME # metric name must match the targeting context attribute
     bugs: *targeting_context_bugs
     data_reviews: *targeting_context_data_reviews
     expires: *targeting_context_expiry
@@ -643,6 +659,20 @@ nimbus_targeting_context:
     type: quantity
     unit: seconds since UNIX epoch
 
+  profile_group_profile_count:
+    bugs: *targeting_context_bugs
+    data_reviews: *targeting_context_data_reviews
+    expires: *targeting_context_expiry
+    notification_emails: *targeting_context_notification_emails
+    send_in_pings: *targeting_context_pings
+    description: >
+      The number of profiles in the current profile group or zero if either the
+      feature is not enabled or the user has not created any profiles.
+    data_sensitivity:
+      - interaction
+    type: quantity
+    unit: profiles
+
   region:
     bugs: *targeting_context_bugs
     data_reviews: *targeting_context_data_reviews
@@ -769,9 +799,11 @@ nimbus_events:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
     data_sensitivity:
       - technical
     notification_emails:
@@ -821,6 +853,15 @@ nimbus_events:
         description: >
           If reason == "l10n-missing-entry" or "l10n-missing-locale" this is the
           locale we failed to find in the set of available translations.
+      about_config_change:
+        description: >
+          If reason == "changed-pref", whether or not the change was triggerd
+          via about:config.
+        type: string
+      migration:
+        description: >
+          If reason == "migration", the migration that triggered the unenrollment.
+        type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
@@ -828,6 +869,7 @@ nimbus_events:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1896718
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1907649
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1976329
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1993057
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
@@ -835,6 +877,7 @@ nimbus_events:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1896718
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1907649
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1976329
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1993057
     data_sensitivity:
       - technical
     notification_emails:
@@ -998,12 +1041,19 @@ nimbus_events:
       conflict_slug:
         type: string
         description: If the enrollment hit a feature conflict, the slug of the conflicting experiment/rollout
+      migration:
+        type: string
+        description: If the unenrollment was caused by a migration, the name of the migration.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817481
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1955169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2006752
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817481
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1955169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2006752
     data_sensitivity:
       - technical
     notification_emails:
@@ -1011,6 +1061,7 @@ nimbus_events:
       - project-nimbus@mozilla.com
     expires: never
     disabled: true
+    send_in_pings: *targeting_context_pings
 
   migration:
     type: event
@@ -1034,6 +1085,8 @@ nimbus_events:
           Reasons include:
 
           - "unknown": an unknown exception occurred.
+          - one of the reasons documented in
+            `nimbus_events.remote_settings_sync_error`.
 
       enrollments:
         type: string
@@ -1041,8 +1094,10 @@ nimbus_events:
           An optional string that includes any enrollments triggered by this relation
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
     data_sensitivity:
       - technical
     notification_emails:
@@ -1127,48 +1182,51 @@ nimbus_events:
      - technical
     expires: never
 
-  remote_settings_sync:
+  remote_settings_sync_error:
     type: event
     description: >
-      Triggered whenever Nimbus attempts to get recipes from remote settings
-      collections, whether or not it succeeds.
+      Triggered when Nimbus fails to get recipes from remote settings collections.
+
     extra_keys:
+      collection:
+        type: string
+        description: The name of the collection.
+
       force_sync:
         type: boolean
-        description: >
-          Whether or not a sync was forced when fetching recipes.
-
-      experiments_success:
-        type: boolean
-        description: >
-          Whether or not loading the experiments collection succeeded.
-
-      secure_experiments_success:
-        type: boolean
-        description: >
-          Whether or not loading the secure experiments collection succeeded.
-
-      experiments_empty:
-        type: boolean
-        description: >
-          Whether or not the experiments collection was empty.
-
-      secure_experiments_empty:
-        type: boolean
-        description: >
-          Whether or not the secure experiments collection was empty.
+        description: Whether or not the sync was forced.
 
       trigger:
         type: string
+        description: What triggered the sync.
+
+      reason:
+        type: string
         description: >
-          The name of the event that triggered the sync.
+          What caused the error. One of:
+
+          - `backwards-sync`: The collection would have synced backwards.
+          - `empty`: The collection is empty. (This is not strictly speaking an
+            error, but there is usually at least one live experiment or rollout
+            in each collection.)
+          - `get-exception`: RemoteSettingsClient.get() threw an exception.
+          - `invalid-data`: The collection did not return an array.
+          - `invalid-last-modified`: The collection returned an invalid value
+            for lastModified.
+          - `last-modified-exception`: Asking the collection for the lastModified
+            triggered an exception.
+          - `null-last-modified`: The collection was empty but lastModified was
+            null (i.e., not synced).
+
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1968792
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
     data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1968792
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
+
     data_sensitivity:
       - technical
     notification_emails:
+      - beth@mozilla.com
       - relud@mozilla.com
       - project-nimbus@mozilla.com
     expires: never
@@ -1190,7 +1248,7 @@ normandy:
     data_reviews:
       - https://bugzil.la/1675104
     notification_emails:
-      - ujet@mozilla.com
+      - omc-core@mozilla.com
     expires: never
     extra_keys:
       value:

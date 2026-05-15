@@ -25,14 +25,15 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.ktx.android.view.getRectWithViewLocation
 import mozilla.components.support.utils.ext.bottom
+import mozilla.components.support.utils.ext.getWindowInsets
+import mozilla.components.support.utils.ext.isKeyboardVisible
 import mozilla.components.support.utils.ext.mandatorySystemGestureInsets
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.getRectWithScreenLocation
-import org.mozilla.fenix.ext.getWindowInsets
-import org.mozilla.fenix.ext.isKeyboardVisible
 import org.mozilla.fenix.ext.maxActiveTime
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.ext.settings
 import kotlin.math.abs
 import kotlin.math.max
@@ -48,6 +49,7 @@ class ToolbarGestureHandler(
     private val contentLayout: View,
     private val tabPreview: TabPreview,
     private val toolbarLayout: View,
+    private val navBarLayout: View?,
     private val store: BrowserStore,
     private val selectTabUseCase: TabsUseCases.SelectTabUseCase,
     private val onSwipeStarted: () -> Unit,
@@ -66,7 +68,7 @@ class ToolbarGestureHandler(
         get() = activity.resources.displayMetrics.widthPixels
 
     private val previewOffset =
-        activity.resources.getDimensionPixelSize(R.dimen.browser_fragment_gesture_preview_offset)
+        activity.pixelSizeFor(R.dimen.browser_fragment_gesture_preview_offset)
 
     private val touchSlop = ViewConfiguration.get(activity).scaledTouchSlop
     private val minimumFlingVelocity = ViewConfiguration.get(activity).scaledMinimumFlingVelocity
@@ -154,6 +156,7 @@ class ToolbarGestureHandler(
         }
     }
 
+    @Suppress("CognitiveComplexMethod")
     private fun getDestination(): Destination {
         val isLtr = activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_LTR
         val currentTab = store.state.selectedTab ?: return Destination.None
@@ -290,6 +293,7 @@ class ToolbarGestureHandler(
 
     private fun PointF.isInToolbar(): Boolean {
         val toolbarLocation = toolbarLayout.getRectWithScreenLocation()
+        val navBarLocation = navBarLayout?.getRectWithScreenLocation()
         // In Android 10, the system gesture touch area overlaps the bottom of the toolbar, so
         // lets make our swipe area taller by that amount
         activity.window.decorView.getWindowInsets()?.let { insets ->
@@ -297,7 +301,7 @@ class ToolbarGestureHandler(
                 toolbarLocation.top -= (insets.mandatorySystemGestureInsets().bottom - insets.bottom())
             }
         }
-        return toolbarLocation.contains(toPoint())
+        return toolbarLocation.contains(toPoint()) || navBarLocation?.contains(toPoint()) == true
     }
 
     private val Rect.visibleWidth: Int

@@ -18,13 +18,10 @@
 #include "js/ProfilingCategory.h"
 #include "js/ProfilingStack.h"
 #include "js/RootingAPI.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BaseProfilerRAIIMacro.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ProfilerThreadRegistration.h"
-#include "mozilla/ThreadLocal.h"
 #include "nsString.h"
 
 #include <stdint.h>

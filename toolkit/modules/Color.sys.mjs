@@ -10,7 +10,7 @@
  * AA = Regular sized text or large text in enhanced contrast mode.
  * AAA = Regular sized text in enhanced contrast mode.
  *
- * @type {Object}
+ * @type {object}
  */
 const CONTRAST_RATIO_LEVELS = {
   A: 3,
@@ -25,7 +25,7 @@ const CONTRAST_RATIO_LEVELS = {
  * contrastRatio(bgcolor, white) ? <use black> : <use white>`, we can greatly
  * simplify the calculation to the following constant.
  *
- * @type {Number}
+ * @type {number}
  */
 const CONTRAST_BRIGHTTEXT_THRESHOLD = Math.sqrt(1.05 * 0.05) - 0.05;
 
@@ -34,9 +34,9 @@ const CONTRAST_BRIGHTTEXT_THRESHOLD = Math.sqrt(1.05 * 0.05) - 0.05;
  * In the future, this object may be extended to allow for conversions between
  * different color formats and notations, support transparency.
  *
- * @param {Number} r Red color component
- * @param {Number} g Green color component
- * @param {Number} b Blue color component
+ * @param {number} r Red color component
+ * @param {number} g Green color component
+ * @param {number} b Blue color component
  */
 export class Color {
   constructor(r, g, b) {
@@ -49,7 +49,7 @@ export class Color {
    * Formula from W3C's WCAG 2.0 spec's relative luminance, section 1.4.1,
    * http://www.w3.org/TR/WCAG20/.
    *
-   * @return {Number} Relative luminance, represented as number between 0 and 1.
+   * @return {number} Relative luminance, represented as number between 0 and 1.
    */
   get relativeLuminance() {
     let colorArr = [this.r, this.g, this.b].map(color => {
@@ -63,7 +63,7 @@ export class Color {
   }
 
   /**
-   * @return {Boolean} TRUE if you need to use a bright color (e.g. 'white'), when
+   * @return {boolean} TRUE if you need to use a bright color (e.g. 'white'), when
    *                   this color is set as the background.
    */
   get useBrightText() {
@@ -78,7 +78,7 @@ export class Color {
    * http://www.w3.org/TR/WCAG20/.
    *
    * @param  {Color}  otherColor Color instance to calculate the contrast with
-   * @return {Number} Contrast ratios can range from 1 to 21, commonly written
+   * @return {number} Contrast ratios can range from 1 to 21, commonly written
    *                  as 1:1 to 21:1.
    */
   contrastRatio(otherColor) {
@@ -99,9 +99,9 @@ export class Color {
    * be discernable.
    *
    * @param  {Color}  otherColor Color instance to calculate the contrast with
-   * @param  {String} [level]    WCAG conformance level that maps to the minimum
+   * @param  {string} [level]    WCAG conformance level that maps to the minimum
    *                             required contrast ratio. Defaults to 'AA'
-   * @return {Boolean}
+   * @return {boolean}
    */
   isContrastRatioAcceptable(otherColor, level = "AA") {
     return this.contrastRatio(otherColor) > CONTRAST_RATIO_LEVELS[level];

@@ -68,6 +68,11 @@ class MobileViewportManager final : public nsIDOMEventListener,
    */
   float ComputeIntrinsicResolution() const;
 
+  /* Return the intrinsic scale based on viewport size (from meta viewport),
+   * and content size. Use this for position:fixed calculations.
+   */
+  mozilla::CSSToScreenScale GetIntrinsicScaleForFixedViewport() const;
+
   /* The only direct calls to this should be in test code.
    * Normally, it gets called by HandleEvent().
    */

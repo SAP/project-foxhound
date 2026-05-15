@@ -57,9 +57,9 @@ class FactTest {
 
         assertNotNull(fact.metadata)
         assertEquals(2, fact.metadata!!.size)
-        assertTrue(fact.metadata!!.contains("key1"))
-        assertTrue(fact.metadata!!.contains("key2"))
-        assertEquals("value1", fact.metadata!!["key1"])
-        assertEquals("value2", fact.metadata!!["key2"])
+        assertTrue(fact.metadata.contains("key1"))
+        assertTrue(fact.metadata.contains("key2"))
+        assertEquals("value1", fact.metadata["key1"])
+        assertEquals("value2", fact.metadata["key2"])
     }
 }

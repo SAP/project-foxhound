@@ -7,8 +7,6 @@
 #ifndef mozilla_dom_MerchantValidationEvent_h
 #define mozilla_dom_MerchantValidationEvent_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Result.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/MerchantValidationEventBinding.h"
 #include "mozilla/dom/PromiseNativeHandler.h"

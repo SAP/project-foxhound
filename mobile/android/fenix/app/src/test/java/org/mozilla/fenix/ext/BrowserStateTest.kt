@@ -21,29 +21,6 @@ import org.mozilla.fenix.utils.Settings
 class BrowserStateTest {
 
     @Test
-    fun `GIVEN a tab which had media playing WHEN inProgressMediaTab is called THEN return that tab`() {
-        val inProgressMediaTab = createTab(
-            url = "mediaUrl",
-            id = "2",
-            lastMediaAccessState = LastMediaAccessState("https://mozilla.com", 123, true),
-        )
-        val browserState = BrowserState(
-            tabs = listOf(mockk(relaxed = true), inProgressMediaTab, mockk(relaxed = true)),
-        )
-
-        assertEquals(inProgressMediaTab, browserState.inProgressMediaTab)
-    }
-
-    @Test
-    fun `GIVEN no tab which had media playing exists WHEN inProgressMediaTab is called THEN return null`() {
-        val browserState = BrowserState(
-            tabs = listOf(createTab("tab1"), createTab("tab2"), createTab("tab3")),
-        )
-
-        assertNull(browserState.inProgressMediaTab)
-    }
-
-    @Test
     fun `GIVEN the selected tab is a normal tab and no media tab exists WHEN asRecentTabs is called THEN return a list of that tab`() {
         val selectedTab = createTab(url = "url", id = "3")
         val browserState = BrowserState(
@@ -244,45 +221,6 @@ class BrowserStateTest {
         )
 
         assertEquals(normalTab1, browserState.lastOpenedNormalTab)
-    }
-
-    @Test
-    fun `GIVEN no normal tabs are open WHEN secondToLastOpenedNormalTab is called THEN return null`() {
-        val browserState = BrowserState(
-            tabs = listOf(mockk(relaxed = true)),
-        )
-        assertNull(browserState.secondToLastOpenedNormalTab)
-    }
-
-    @Test
-    fun `GIVEN one normal tab is open WHEN secondToLastOpenedNormalTab is called THEN return the one tab`() {
-        val lastAccessedNormalTab = createTab(url = "url2", id = "2", lastAccess = 1)
-        val browserState = BrowserState(
-            tabs = listOf(lastAccessedNormalTab),
-        )
-        assertNull(browserState.secondToLastOpenedNormalTab)
-    }
-
-    @Test
-    fun `GIVEN two normal tabs are open WHEN secondToLastOpenedNormalTab is called THEN return the second-to-last opened tab`() {
-        val normalTab1 = createTab(url = "url1", id = "1", lastAccess = 1)
-        val normalTab2 = createTab(url = "url2", id = "2", lastAccess = 2)
-        val browserState = BrowserState(
-            tabs = listOf(normalTab1, normalTab2),
-        )
-        assertEquals(normalTab1.id, browserState.secondToLastOpenedNormalTab!!.id)
-    }
-
-    @Test
-    fun `GIVEN four normal tabs are open WHEN secondToLastOpenedNormalTab is called THEN return the second-to-last opened tab`() {
-        val normalTab1 = createTab(url = "url1", id = "1", lastAccess = 1)
-        val normalTab2 = createTab(url = "url2", id = "2", lastAccess = 4)
-        val normalTab3 = createTab(url = "url3", id = "3", lastAccess = 3)
-        val normalTab4 = createTab(url = "url4", id = "4", lastAccess = 2)
-        val browserState = BrowserState(
-            tabs = listOf(normalTab1, normalTab2, normalTab3, normalTab4),
-        )
-        assertEquals(normalTab3.id, browserState.secondToLastOpenedNormalTab!!.id)
     }
 
     @Test

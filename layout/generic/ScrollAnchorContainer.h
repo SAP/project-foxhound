@@ -30,7 +30,7 @@ namespace mozilla::layout {
 class ScrollAnchorContainer final {
  public:
   explicit ScrollAnchorContainer(ScrollContainerFrame* aScrollFrame);
-  ~ScrollAnchorContainer();
+  ~ScrollAnchorContainer() = default;
 
   /**
    * Returns the nearest scroll anchor container that could select aFrame as an

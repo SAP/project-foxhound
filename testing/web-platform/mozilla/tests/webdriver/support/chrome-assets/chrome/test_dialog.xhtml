@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<?csp default-src chrome:; ?>
+
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!-- Test file for a XUL dialog.  -->
+
+<!DOCTYPE testdialog [ <!ENTITY % dialogDTD SYSTEM "chrome://marionette-chrome/content/test_dialog.dtd">
+%dialogDTD; ]>
+
+<window
+  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+  xmlns:html="http://www.w3.org/1999/xhtml"
+  title="&testDialog.title;"
+>
+  <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
+  <html:link rel="stylesheet" href="chrome://marionette-chrome/content/style.css" />
+
+  <dialog id="testDialog" buttons="accept,cancel">
+    <vbox flex="1" class="dialog-box">
+      <label>&settings.label;</label>
+      <separator class="thin" />
+      <richlistbox id="test-list" flex="1">
+        <richlistitem id="item-choose" orient="horizontal" selected="true">
+          <label id="choose-label" value="First Entry" flex="1" />
+          <button id="choose-button" label="Choose..." />
+        </richlistitem>
+      </richlistbox>
+      <separator class="thin" />
+      <checkbox id="check-box" label="Test Mode 2" />
+      <hbox align="center">
+        <label id="text-box-label" control="text-box">Name:</label>
+        <input
+          xmlns="http://www.w3.org/1999/xhtml"
+          id="text-box"
+          class="input-moz-box-flex"
+        />
+      </hbox>
+    </vbox>
+  </dialog>
+</window>

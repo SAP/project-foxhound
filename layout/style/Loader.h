@@ -16,7 +16,6 @@
 #include "mozilla/CORSMode.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SharedSubResourceCache.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/css/StylePreloadKind.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "nsCompatibility.h"

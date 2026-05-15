@@ -6,6 +6,6 @@
 
 SOURCES += ["FuzzingMutate.cpp", "FuzzingTraits.cpp"]
 
-EXPORTS += ["FuzzingMutate.h", "FuzzingTraits.h"]
+EXPORTS += ["FuzzingBufferReader.h", "FuzzingMutate.h", "FuzzingTraits.h"]
 
 FINAL_LIBRARY = "xul"

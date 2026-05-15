@@ -69,7 +69,7 @@ add_setup(async () => {
 
   registerCleanupFunction(async () => {
     await OSKeyStoreTestUtils.cleanup();
-    await IOUtils.remove(testProfilePath, { recursive: true });
+    await maybeRemovePath(testProfilePath);
   });
 });
 
@@ -112,8 +112,8 @@ add_task(async function test_createArchive_unencrypted() {
 
   assertExtractionsMatch(EXTRACTION_PATH);
 
-  await IOUtils.remove(FAKE_ARCHIVE_PATH);
-  await IOUtils.remove(EXTRACTION_PATH);
+  await maybeRemovePath(FAKE_ARCHIVE_PATH);
+  await maybeRemovePath(EXTRACTION_PATH);
 });
 
 /**
@@ -167,8 +167,8 @@ add_task(async function test_createArchive_encrypted() {
 
   assertExtractionsMatch(EXTRACTION_PATH);
 
-  await IOUtils.remove(FAKE_ARCHIVE_PATH);
-  await IOUtils.remove(EXTRACTION_PATH);
+  await maybeRemovePath(FAKE_ARCHIVE_PATH);
+  await maybeRemovePath(EXTRACTION_PATH);
 });
 
 /**
@@ -313,8 +313,8 @@ add_task(async function test_createArchive_encrypted_truncated() {
     "Extraction should have been automatically destroyed."
   );
 
-  await IOUtils.remove(FAKE_ARCHIVE_PATH);
-  await IOUtils.remove(FAKE_COMPRESSED_FILE);
+  await maybeRemovePath(FAKE_ARCHIVE_PATH);
+  await maybeRemovePath(FAKE_COMPRESSED_FILE);
 });
 
 /**
@@ -388,7 +388,7 @@ add_task(async function test_createArchive_early_binary_stream_close() {
     "Extraction should have been automatically destroyed."
   );
 
-  await IOUtils.remove(FAKE_ARCHIVE_PATH);
+  await maybeRemovePath(FAKE_ARCHIVE_PATH);
 });
 
 /**
@@ -459,7 +459,7 @@ add_task(async function test_missing_binary_block() {
     /Could not find binary block/
   );
 
-  await IOUtils.remove(fakeRecoveryPath);
+  await maybeRemovePath(fakeRecoveryPath);
 });
 
 /**

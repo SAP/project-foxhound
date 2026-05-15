@@ -4,18 +4,13 @@
 
 package org.mozilla.fenix.settings
 
-import android.content.Context
 import androidx.preference.Preference
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.mockkStatic
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ext.settings
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
@@ -26,33 +21,11 @@ class CustomEtpCookiesOptionsDropDownListPreferenceTest {
             testContext.getString(R.string.preference_enhanced_tracking_protection_custom_cookies_5),
         ) + defaultEntries
         val expectedValues = arrayOf(testContext.getString(R.string.total_protection)) + defaultValues
+        val preference = CustomEtpCookiesOptionsDropDownListPreference(testContext)
 
-        mockkStatic("org.mozilla.fenix.ext.ContextKt") {
-            every { any<Context>().settings() } returns mockk {
-                every { enabledTotalCookieProtection } returns true
-            }
-
-            val preference = CustomEtpCookiesOptionsDropDownListPreference(testContext)
-
-            assertArrayEquals(expectedEntries, preference.entries)
-            assertArrayEquals(expectedValues, preference.entryValues)
-            assertEquals(expectedValues[0], preference.getDefaultValue())
-        }
-    }
-
-    @Test
-    fun `GIVEN total cookie protection is disabled WHEN using this preference THEN don't show the total cookie protection option`() {
-        mockkStatic("org.mozilla.fenix.ext.ContextKt") {
-            every { any<Context>().settings() } returns mockk {
-                every { enabledTotalCookieProtection } returns false
-            }
-
-            val preference = CustomEtpCookiesOptionsDropDownListPreference(testContext)
-
-            assertArrayEquals(defaultEntries, preference.entries)
-            assertArrayEquals(defaultValues, preference.entryValues)
-            assertEquals(defaultValues[0], preference.getDefaultValue())
-        }
+        assertArrayEquals(expectedEntries, preference.entries)
+        assertArrayEquals(expectedValues, preference.entryValues)
+        assertEquals(expectedValues[0], preference.getDefaultValue())
     }
 
     /**

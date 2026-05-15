@@ -34,15 +34,15 @@ class WorkerTargetActor extends BaseTargetActor {
    *
    * @param {DevToolsServerConnection} conn: The connection to the client.
    * @param {WorkerGlobalScope} workerGlobal: The worker global.
-   * @param {Object} workerDebuggerData: The worker debugger information
-   * @param {String} workerDebuggerData.id: The worker debugger id
-   * @param {String} workerDebuggerData.url: The worker debugger url
-   * @param {String} workerDebuggerData.type: The worker debugger type
-   * @param {Number?} workerDebuggerData.relatedDocumentInnerWindowId: (optional)
+   * @param {object} workerDebuggerData: The worker debugger information
+   * @param {string} workerDebuggerData.id: The worker debugger id
+   * @param {string} workerDebuggerData.url: The worker debugger url
+   * @param {string} workerDebuggerData.type: The worker debugger type
+   * @param {number?} workerDebuggerData.relatedDocumentInnerWindowId: (optional)
    *                  If the worker is spawned from a document, the innerWindowId of it.
-   * @param {Boolean} workerDebuggerData.workerConsoleApiMessagesDispatchedToMainThread:
+   * @param {boolean} workerDebuggerData.workerConsoleApiMessagesDispatchedToMainThread:
    *                  Value of the dom.worker.console.dispatch_events_to_main_thread pref
-   * @param {Object} sessionContext: The Session Context to help know what is debugged.
+   * @param {object} sessionContext: The Session Context to help know what is debugged.
    *                                 See devtools/server/actors/watcher/session-context.js
    */
   constructor(conn, workerGlobal, workerDebuggerData, sessionContext) {

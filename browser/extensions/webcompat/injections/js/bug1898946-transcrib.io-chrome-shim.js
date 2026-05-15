@@ -11,26 +11,20 @@
  * so let's set appropriate values to also look like Chrome.
  */
 
-/* globals exportFunction */
+if (!navigator.userAgent.includes("Chrome")) {
+  console.info(
+    "The user agent and navigator.vendor have been shimmed for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1898946 for details."
+  );
 
-console.info(
-  "The user agent and navigator.vendor have been shimmed for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1898946 for details."
-);
+  const CHROME_UA = navigator.userAgent + " Chrome for WebCompat";
 
-const CHROME_UA = navigator.userAgent + " Chrome for WebCompat";
+  const nav = Object.getPrototypeOf(navigator);
 
-Object.defineProperty(window.navigator.wrappedJSObject, "userAgent", {
-  get: exportFunction(function () {
-    return CHROME_UA;
-  }, window),
+  const ua = Object.getOwnPropertyDescriptor(nav, "userAgent");
+  ua.get = () => CHROME_UA;
+  Object.defineProperty(nav, "userAgent", ua);
 
-  set: exportFunction(function () {}, window),
-});
-
-Object.defineProperty(window.navigator.wrappedJSObject, "vendor", {
-  get: exportFunction(function () {
-    return "Google Inc.";
-  }, window),
-
-  set: exportFunction(function () {}, window),
-});
+  const vendor = Object.getOwnPropertyDescriptor(nav, "vendor");
+  vendor.get = () => "Google Inc.";
+  Object.defineProperty(nav, "vendor", vendor);
+}

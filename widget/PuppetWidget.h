@@ -12,12 +12,12 @@
  * is forwarded to and/or data received from elsewhere.
  */
 
-#ifndef mozilla_widget_PuppetWidget_h__
-#define mozilla_widget_PuppetWidget_h__
+#ifndef mozilla_widget_PuppetWidget_h_
+#define mozilla_widget_PuppetWidget_h_
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/RefPtr.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "nsCOMArray.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Attributes.h"
@@ -25,6 +25,8 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/TextEventDispatcherListener.h"
 #include "mozilla/layers/MemoryPressureObserver.h"
+
+class nsRefreshDriver;
 
 namespace mozilla {
 enum class NativeKeyBindingsType : uint8_t;
@@ -41,7 +43,7 @@ namespace widget {
 
 struct AutoCacheNativeKeyCommands;
 
-class PuppetWidget final : public nsBaseWidget,
+class PuppetWidget final : public nsIWidget,
                            public TextEventDispatcherListener,
                            public layers::MemoryPressureListener {
   typedef mozilla::CSSRect CSSRect;
@@ -54,7 +56,7 @@ class PuppetWidget final : public nsBaseWidget,
   typedef mozilla::widget::TextEventDispatcherListener
       TextEventDispatcherListener;
 
-  typedef nsBaseWidget Base;
+  typedef nsIWidget Base;
 
   // The width and height of the "widget" are clamped to this.
  public:
@@ -68,11 +70,11 @@ class PuppetWidget final : public nsBaseWidget,
 
   // PuppetWidget creation is infallible, hence InfallibleCreate(), which
   // Create() calls.
-  using nsBaseWidget::Create;  // for Create signature not overridden here
-  nsresult Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
-                  widget::InitData* aInitData = nullptr) override;
-  void InfallibleCreate(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
-                        widget::InitData* aInitData = nullptr);
+  using nsIWidget::Create;  // for Create signature not overridden here
+  nsresult Create(nsIWidget* aParent, const LayoutDeviceIntRect&,
+                  const widget::InitData&) override;
+  void InfallibleCreate(nsIWidget* aParent, const LayoutDeviceIntRect&,
+                        const widget::InitData&);
 
   void InitIMEState();
 
@@ -83,16 +85,15 @@ class PuppetWidget final : public nsBaseWidget,
   bool IsVisible() const override { return mVisible; }
 
   // Widget position is controlled by the parent process via BrowserChild.
-  void Move(double aX, double aY) override {}
-
-  void Resize(double aWidth, double aHeight, bool aRepaint) override;
-  void Resize(double aX, double aY, double aWidth, double aHeight,
-              bool aRepaint) override {
-    if (!mBounds.IsEqualXY(aX, aY)) {
-      NotifyWindowMoved(aX, aY);
+  void Move(const DesktopPoint&) override {}
+  void Resize(const DesktopSize&, bool aRepaint) override;
+  void Resize(const DesktopRect& aRect, bool aRepaint) override {
+    auto targetRect = gfx::RoundedToInt(aRect * GetDesktopToDeviceScale());
+    if (mBounds.TopLeft() != targetRect.TopLeft()) {
+      NotifyWindowMoved(targetRect.TopLeft());
     }
-    mBounds.MoveTo(aX, aY);
-    return Resize(aWidth, aHeight, aRepaint);
+    mBounds.MoveTo(targetRect.TopLeft());
+    return Resize(aRect.Size(), aRepaint);
   }
 
   // XXX/cjones: copying gtk behavior here; unclear what disabling a
@@ -129,8 +130,7 @@ class PuppetWidget final : public nsBaseWidget,
   void InitEvent(WidgetGUIEvent& aEvent,
                  LayoutDeviceIntPoint* aPoint = nullptr);
 
-  nsresult DispatchEvent(WidgetGUIEvent* aEvent,
-                         nsEventStatus& aStatus) override;
+  nsEventStatus DispatchEvent(WidgetGUIEvent* aEvent) override;
   ContentAndAPZEventStatus DispatchInputEvent(
       WidgetInputEvent* aEvent) override;
   void SetConfirmedTargetAPZC(
@@ -148,7 +148,7 @@ class PuppetWidget final : public nsBaseWidget,
   friend struct AutoCacheNativeKeyCommands;
 
   //
-  // nsBaseWidget methods we override
+  // nsIWidget methods we override
   //
 
   // Documents loaded in child processes are always subdocuments of
@@ -218,6 +218,7 @@ class PuppetWidget final : public nsBaseWidget,
   // Get the screen position of the application window.
   LayoutDeviceIntPoint GetWindowPosition();
 
+  LayoutDeviceIntRect GetBounds() override;
   LayoutDeviceIntRect GetScreenBounds() override;
 
   nsresult SynthesizeNativeKeyEvent(
@@ -284,7 +285,7 @@ class PuppetWidget final : public nsBaseWidget,
   nsresult GetSystemFont(nsCString& aFontName) override;
 
   // TextEventDispatcherListener
-  using nsBaseWidget::NotifyIME;
+  using nsIWidget::NotifyIME;
   NS_IMETHOD NotifyIME(TextEventDispatcher* aTextEventDispatcher,
                        const IMENotification& aNotification) override;
   NS_IMETHOD_(IMENotificationRequests) GetIMENotificationRequests() override;
@@ -315,8 +316,6 @@ class PuppetWidget final : public nsBaseWidget,
                              uint32_t& aTargetCauseOffset);
   bool GetCaretRect(LayoutDeviceIntRect& aCaretRect, uint32_t aCaretOffset);
   uint32_t GetCaretOffset();
-
-  nsIWidgetListener* GetCurrentWidgetListener();
 
   // When this widget caches input context and currently managed by
   // IMEStateManager, the cache is valid.
@@ -370,6 +369,8 @@ class PuppetWidget final : public nsBaseWidget,
  private:
   nsSizeMode mSizeMode;
 
+  LayoutDeviceIntRect mBounds;
+
   bool mNeedIMEStateInit;
   // When remote process requests to commit/cancel a composition, the
   // composition may have already been committed in the main process.  In such
@@ -384,4 +385,4 @@ class PuppetWidget final : public nsBaseWidget,
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // mozilla_widget_PuppetWidget_h__
+#endif  // mozilla_widget_PuppetWidget_h_

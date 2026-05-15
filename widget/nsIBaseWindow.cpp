@@ -4,11 +4,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIBaseWindow.h"
+#include "nsDeviceContext.h"
 #include "mozilla/LookAndFeel.h"
 
 using namespace mozilla;
 
 CSSToLayoutDeviceScale nsIBaseWindow::UnscaledDevicePixelsPerCSSPixel() {
-  return CSSToLayoutDeviceScale(GetWidgetCSSToDeviceScale() *
-                                LookAndFeel::SystemZoomSettings().mFullZoom);
+  CSSToLayoutDeviceScale widgetScale(GetWidgetCSSToDeviceScale());
+  int32_t apd =
+      nsDeviceContext::ComputeAppUnitsPerDevPixelForWidgetScale(widgetScale);
+  apd = nsDeviceContext::ApplyFullZoomToAPD(
+      apd, LookAndFeel::SystemZoomSettings().mFullZoom);
+  return CSSToLayoutDeviceScale(double(AppUnitsPerCSSPixel()) / double(apd));
 }

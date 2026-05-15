@@ -5,10 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGFESpecularLightingElement.h"
-#include "mozilla/dom/SVGFESpecularLightingElementBinding.h"
+
 #include "mozilla/SVGFilterInstance.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGFESpecularLightingElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FESpecularLighting)
 
@@ -48,13 +49,13 @@ SVGFESpecularLightingElement::SpecularExponent() {
 already_AddRefed<DOMSVGAnimatedNumber>
 SVGFESpecularLightingElement::KernelUnitLengthX() {
   return mNumberPairAttributes[KERNEL_UNIT_LENGTH].ToDOMAnimatedNumber(
-      SVGAnimatedNumberPair::eFirst, this);
+      SVGAnimatedNumberPairWhichOne::First, this);
 }
 
 already_AddRefed<DOMSVGAnimatedNumber>
 SVGFESpecularLightingElement::KernelUnitLengthY() {
   return mNumberPairAttributes[KERNEL_UNIT_LENGTH].ToDOMAnimatedNumber(
-      SVGAnimatedNumberPair::eSecond, this);
+      SVGAnimatedNumberPairWhichOne::Second, this);
 }
 
 //----------------------------------------------------------------------

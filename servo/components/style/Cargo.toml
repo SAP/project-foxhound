@@ -35,7 +35,7 @@ servo = [
     "cssparser/serde",
     "encoding_rs",
     "malloc_size_of/servo",
-    "markup5ever",
+    "web_atoms",
     "serde",
     "servo_arc/servo",
     "stylo_atoms",
@@ -55,23 +55,21 @@ arrayvec = "0.7"
 atomic_refcell = "0.1"
 bitflags = "2"
 byteorder = "1.0"
-cssparser = "0.34"
+cssparser = "0.36"
 derive_more = { version = "2", features = ["add", "add_assign", "deref", "deref_mut", "from"] }
 dom = { path = "../../../dom/base/rust" }
 new_debug_unreachable = "1.0"
 encoding_rs = {version = "0.8", optional = true}
 euclid = "0.22"
-fxhash = "0.2"
+rustc-hash = "2.1.1"
 icu_segmenter = { version = "2.0", default-features = false, features = ["auto", "compiled_data"] }
 indexmap = {version = "2", features = ["std"]}
 itertools = "0.14"
 itoa = "1.0"
-lazy_static = "1"
 log = "0.4"
 malloc_size_of = { path = "../malloc_size_of" }
 malloc_size_of_derive = { path = "../../../xpcom/rust/malloc_size_of_derive" }
-markup5ever = { version = "0.12", optional = true }
-matches = "0.1"
+web_atoms = { version = "0.1", optional = true }
 nsstring = {path = "../../../xpcom/rust/nsstring/", optional = true}
 num_cpus = {version = "1.1.0"}
 num-integer = "0.1"
@@ -91,19 +89,19 @@ smallvec = "1.0"
 static_assertions = "1.1"
 static_prefs = { path = "../../../modules/libpref/init/static_prefs" }
 string_cache = { version = "0.8", optional = true }
+strum = "0.27"
+strum_macros = "0.27"
 style_derive = {path = "../style_derive"}
 style_traits = {path = "../style_traits"}
 to_shmem = {path = "../to_shmem"}
 to_shmem_derive = {path = "../to_shmem_derive"}
 thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
 uluru = "3.0"
-unicode-bidi = { version = "0.3", default-features = false }
 void = "1.0.2"
 gecko-profiler = { path = "../../../tools/profiler/rust-api" }
 url = { version = "2.5", optional = true, features = ["serde"] }
 
 [build-dependencies]
-lazy_static = "1"
 log = { version = "0.4", features = ["std"] }
 bindgen = {version = "0.69", optional = true, default-features = false}
 regex = {version = "1.0", optional = true, default-features = false, features = ["perf", "std"]}

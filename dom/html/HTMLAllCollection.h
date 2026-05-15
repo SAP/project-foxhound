@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_HTMLAllCollection_h
 #define mozilla_dom_HTMLAllCollection_h
 
+#include <stdint.h>
+
 #include "mozilla/dom/Document.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsImpl.h"
 #include "nsRefPtrHashtable.h"
 #include "nsWrapperCache.h"
-
-#include <stdint.h>
 
 class nsContentList;
 class nsINode;

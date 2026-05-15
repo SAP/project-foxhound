@@ -19,7 +19,6 @@
 #include "MsaaRootAccessible.h"
 #include "MsaaXULMenuAccessible.h"
 #include "nsEventMap.h"
-#include "nsViewManager.h"
 #include "nsWinUtils.h"
 #include "Relation.h"
 #include "sdnAccessible.h"
@@ -42,7 +41,7 @@ static const GUID IID_MsaaAccessible = {
     0x4afc,
     {0xa3, 0x2c, 0xd6, 0xb5, 0xc0, 0x10, 0x04, 0x6b}};
 
-MOZ_RUNINIT MsaaIdGenerator MsaaAccessible::sIDGen;
+constinit MsaaIdGenerator MsaaAccessible::sIDGen;
 ITypeInfo* MsaaAccessible::gTypeInfo = nullptr;
 
 /* static */
@@ -179,17 +178,16 @@ HWND MsaaAccessible::GetHWNDFor(Accessible* aAccessible) {
   // Popup lives in own windows, use its HWND until the popup window is
   // hidden to make old JAWS versions work with collapsed comboboxes (see
   // discussion in bug 379678).
-  nsIFrame* frame = localAcc->GetFrame();
-  if (frame) {
+  if (nsIFrame* frame = localAcc->GetFrame()) {
     nsIWidget* widget = frame->GetNearestWidget();
     if (widget && widget->IsVisible()) {
-      if (nsViewManager* vm = document->PresShellPtr()->GetViewManager()) {
-        nsCOMPtr<nsIWidget> rootWidget = vm->GetRootWidget();
-        // Make sure the accessible belongs to popup. If not then use
-        // document HWND (which might be different from root widget in the
-        // case of window emulation).
-        if (rootWidget != widget)
-          return static_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
+      nsCOMPtr<nsIWidget> rootWidget =
+          document->PresShellPtr()->GetRootWidget();
+      // Make sure the accessible belongs to popup. If not then use
+      // document HWND (which might be different from root widget in the
+      // case of window emulation).
+      if (rootWidget != widget) {
+        return static_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
       }
     }
   }
@@ -532,9 +530,8 @@ MsaaAccessible::QueryInterface(REFIID iid, void** ppv) {
   // For interfaces below this point, we have to query the Accessible to
   // determine if they are available.
   if (!mAcc) {
-    // mscom::Interceptor (and maybe other callers) expects either S_OK or
-    // E_NOINTERFACE, so don't return CO_E_OBJNOTCONNECTED like we normally
-    // would for a dead object.
+    // Some callers expect either S_OK or E_NOINTERFACE, so don't return
+    // CO_E_OBJNOTCONNECTED like we normally would for a dead object.
     return E_NOINTERFACE;
   }
   AccessibleWrap* localAcc = LocalAcc();
@@ -768,7 +765,7 @@ MsaaAccessible::get_accRole(
     break;
 
   switch (geckoRole) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
     default:
       MOZ_CRASH("Unknown role.");
   }
@@ -1202,7 +1199,7 @@ MsaaAccessible::accNavigate(
       return E_NOTIMPL;
 
       // MSAA relationship extensions to accNavigate
-#include "RelationTypeMap.h"
+#include "RelationTypeMap.inc"
 
     default:
       return E_INVALIDARG;

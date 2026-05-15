@@ -2,9 +2,11 @@
 subsuite = "a11y"
 support-files = [
   "head.js",
+  "doc_xul.xhtml",
   "!/accessible/tests/browser/shared-head.js",
   "!/accessible/tests/mochitest/*.js",
   "!/accessible/tests/mochitest/moz.png",
+  "!/dom/media/test/shorter_audio_than_video_3s.webm",
 ]
 prefs = [
   "dom.viewTransitions.enabled=true",
@@ -14,7 +16,9 @@ prefs = [
 ]
 
 ["browser_aria_owns.js"]
-skip-if = ["true"] # Bug 1445513
+skip-if = [
+  "true", # Bug 1445513
+]
 
 ["browser_browser_element.js"]
 
@@ -25,8 +29,17 @@ skip-if = ["true"] # Bug 1445513
 ["browser_general.js"]
 
 ["browser_lazy_tabs.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_link.js"]
+
+["browser_media.js"]
+
+["browser_no_remote_xul.js"]
+
+["browser_root_element.js"]
 
 ["browser_searchbar.js"]
 
@@ -43,5 +56,3 @@ skip-if = ["true"] # Bug 1445513
 ["browser_test_nsIAccessibleDocument_URL.js"]
 
 ["browser_view_transition.js"]
-
-["browser_root_element.js"]

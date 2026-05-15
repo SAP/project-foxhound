@@ -46,7 +46,9 @@ internal class LoginPanelTextInputLayout(
         }
     }
 
-    private fun TypedArray.getColorOrNull(@StyleableRes styleableRes: Int): Int? {
+    private fun TypedArray.getColorOrNull(
+        @StyleableRes styleableRes: Int,
+    ): Int? {
         val resourceId = this.getResourceId(styleableRes, 0)
         return if (resourceId > 0) ContextCompat.getColor(context, resourceId) else null
     }

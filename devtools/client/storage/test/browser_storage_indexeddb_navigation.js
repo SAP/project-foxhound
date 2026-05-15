@@ -51,7 +51,7 @@ add_task(async function () {
   // navigating. See Bug 1273802
 
   // reload the current tab, and check again
-  await reloadBrowser();
+  await reloadSelectedTab();
   // wait for storage tree refresh, and check host
   info("Checking storage tree…");
   await waitUntil(() => isInTree(doc, ["indexedDB", "https://example.net"]));

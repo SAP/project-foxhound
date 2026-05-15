@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<!--
+Verifies cross-graph ports are cleaned up when a MediaStreamTrack connected
+to MediaStreamAudioSourceNode is stopped.
+-->
+<html class="reftest-wait">
+<head>
+  <title>Test bug 1674892 - MediaStreamAudioSourceNode with getUserMedia and different sample rate</title>
+  <script>
+    document.addEventListener("DOMContentLoaded", async () => {
+      const iframe = document.createElement("iframe");
+      iframe.srcdoc = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <script>
+            let SpecialStream = SpecialPowers.wrap(MediaStream);
+            let ctx, stream, sourceNode, analyser, dataArray;
+
+            window.addEventListener("message", async (event) => {
+              if (event.data === "startAudio") {
+                ctx = new AudioContext({ sampleRate: 32000 });
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                  audio: true,
+                  fake: true
+                });
+
+                sourceNode = ctx.createMediaStreamSource(stream);
+                sourceNode.connect(ctx.destination);
+
+                analyser = ctx.createAnalyser();
+                analyser.fftSize = 256;
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                sourceNode.connect(analyser);
+
+                while ((analyser.getByteFrequencyData(dataArray), dataArray.every(v => v == 0))) {
+                  await new Promise(r => requestAnimationFrame(r));
+                }
+
+                const count = await SpecialStream.countUnderlyingStreams();
+                parent.postMessage({ type: "ready", value: count }, "*");
+              } else if (event.data === "destroy") {
+                // Clean up all resources
+                if (stream) {
+                  // Stopping the MediaStreamTrack breaks connection to
+                  // CrossGraphTransmitter, which can cause issues if the
+                  // transmitter attempts to read from that connection during
+                  // ::ProcessInput before the CrossGraph pair is fully torn
+                  // down.
+                  stream.getTracks().forEach(track => track.stop());
+                  stream = null;
+                }
+                if (analyser) {
+                  analyser.disconnect();
+                  analyser = null;
+                }
+                if (sourceNode) {
+                  sourceNode.disconnect();
+                  sourceNode = null;
+                }
+                if (ctx) {
+                  await ctx.close();
+                  ctx = null;
+                }
+                dataArray = null;
+
+                // Force garbage collection
+                await new Promise(r => SpecialPowers.exactGC(r));
+
+                const count = await SpecialStream.countUnderlyingStreams();
+                parent.postMessage({ type: "destroyed", value: count }, "*");
+              }
+            });
+
+            // Notify parent that iframe is ready with initial stream count
+            (async () => {
+              const count = await SpecialStream.countUnderlyingStreams();
+              parent.postMessage({ type: "init", value: count }, "*");
+            })();
+          <\/script>
+        </head>
+        <body></body>
+        </html>
+      `;
+
+      document.body.appendChild(iframe);
+
+      // Helper to wait for iframe messages
+      const waitForMessage = (type) => {
+        return new Promise(resolve => {
+          const handler = (event) => {
+            if (event.data.type === type) {
+              window.removeEventListener("message", handler);
+              resolve(event.data.value);
+            }
+          };
+          window.addEventListener("message", handler);
+        });
+      };
+
+      // Wait for iframe to initialize and get initial stream count
+      const initialCount = await waitForMessage("init");
+      dump(`Initial stream count: ${initialCount}\n`);
+
+      // Start audio and wait for it to be ready
+      iframe.contentWindow.postMessage("startAudio", "*");
+      const readyCount = await waitForMessage("ready");
+      dump(`Stream count when audio ready: ${readyCount}\n`);
+
+      // Destroy all resources in the iframe while MediaStream is active
+      iframe.contentWindow.postMessage("destroy", "*");
+      const finalCount = await waitForMessage("destroyed");
+      dump(`Final stream count: ${finalCount}\n`);
+
+      // Check if streams were cleaned up
+      if (finalCount === initialCount) {
+        document.documentElement.removeAttribute("class");
+      } else {
+        dump("Streams were not cleaned up properly.\n");
+      }
+    });
+  </script>
+</head>
+<body></body>
+</html>

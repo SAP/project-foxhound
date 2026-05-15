@@ -36,7 +36,7 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "A nullable union type with a nullable member type should have " "thrown.",
+        "A nullable union type with a nullable member type should have thrown.",
     )
 
     parser.reset()
@@ -59,5 +59,5 @@ def WebIDLTest(parser, harness):
 
     harness.ok(
         threw,
-        "A nullable union type with a nullable member type should have " "thrown.",
+        "A nullable union type with a nullable member type should have thrown.",
     )

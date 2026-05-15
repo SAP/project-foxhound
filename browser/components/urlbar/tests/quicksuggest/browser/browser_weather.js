@@ -23,6 +23,7 @@ add_setup(async function () {
     ],
   });
   await MerinoTestUtils.initWeather();
+  GeolocationTestUtils.stubGeolocation(GeolocationTestUtils.SAN_FRANCISCO);
 });
 
 // Does a search, clicks the "Show less frequently" result menu command, and

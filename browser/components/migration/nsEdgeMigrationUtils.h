@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsedgemigrationutils__h__
-#define nsedgemigrationutils__h__
+#ifndef nsedgemigrationutils_h_
+#define nsedgemigrationutils_h_
 
 #include "nsISupportsImpl.h"
 #include "nsIEdgeMigrationUtils.h"

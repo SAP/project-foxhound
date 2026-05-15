@@ -3,10 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "GLContext.h"
 #include "WebGL2Context.h"
 #include "WebGLProgram.h"
 #include "WebGLTransformFeedback.h"
-#include "GLContext.h"
 
 namespace mozilla {
 

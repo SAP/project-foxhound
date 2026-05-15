@@ -9,9 +9,7 @@ add_setup(async function setup() {
   });
   await TestUtils.waitForCondition(
     () =>
-      BrowserTestUtils.isVisible(
-        document.getElementById("urlbar-searchmode-switcher")
-      ),
+      BrowserTestUtils.isVisible(gURLBar.querySelector(".searchmode-switcher")),
     "search mode switcher button is visible"
   );
 
@@ -24,18 +22,18 @@ add_task(async function test_opened() {
   await cleanUp();
 
   info("Open search mode switcher popup");
-  await UrlbarTestUtils.openSearchModeSwitcher(window);
+  const popup1 = await UrlbarTestUtils.openSearchModeSwitcher(window);
   Assert.equal(Glean.urlbarUnifiedsearchbutton.opened.testGetValue(), 1);
 
   info("Close search mode switcher popup");
-  EventUtils.synthesizeKey("KEY_Escape", {});
+  popup1.hidePopup();
 
   info("Open search mode switcher popup again");
-  await UrlbarTestUtils.openSearchModeSwitcher(window);
+  const popup2 = await UrlbarTestUtils.openSearchModeSwitcher(window);
   Assert.equal(Glean.urlbarUnifiedsearchbutton.opened.testGetValue(), 2);
 
   info("Close search mode switcher popup again");
-  EventUtils.synthesizeKey("KEY_Escape", {});
+  popup2.hidePopup();
 });
 
 add_task(async function test_picked_search_engines() {
@@ -92,7 +90,7 @@ add_task(async function test_picked_settings() {
   let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
   let pageLoaded = BrowserTestUtils.browserLoaded(window);
   popup
-    .querySelector("#searchmode-switcher-popup-search-settings-button")
+    .querySelector(".searchmode-switcher-popup-search-settings-button")
     .click();
   await Promise.all([pageLoaded, popupHidden]);
   Assert.equal(
@@ -121,7 +119,7 @@ async function testSearchEngine(label, telemetry, expected) {
     expected
   );
 
-  document.querySelector("#searchmode-switcher-close").click();
+  gURLBar.querySelector(".searchmode-switcher-close").click();
   await UrlbarTestUtils.assertSearchMode(window, null);
 }
 
@@ -143,9 +141,9 @@ async function removeAddonSearchEngine(name) {
   let settingsWritten = SearchTestUtils.promiseSearchNotification(
     "write-settings-to-disk-complete"
   );
-  let engine = Services.search.getEngineByName(name);
+  let engine = SearchService.getEngineByName(name);
   await Promise.all([
-    Services.search.removeEngine(engine),
+    SearchService.removeEngine(engine),
     promiseEngineRemoved,
     settingsWritten,
   ]);

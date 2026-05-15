@@ -12,6 +12,7 @@ CompiledModules(
     "loadSourceText.js",
     "newSources.js",
     "prettyPrint.js",
+    "removeSources.js",
     "select.js",
     "symbols.js",
 )

@@ -9,8 +9,8 @@
 
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "nsThreadUtils.h"
 #include "nsTObserverArray.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 

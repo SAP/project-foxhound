@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef AltSvcTransactionChild_h__
-#define AltSvcTransactionChild_h__
+#ifndef AltSvcTransactionChild_h_
+#define AltSvcTransactionChild_h_
 
 #include "mozilla/net/PAltSvcTransactionChild.h"
 
@@ -36,4 +36,4 @@ class AltSvcTransactionChild final : public PAltSvcTransactionChild {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // AltSvcTransactionChild_h__
+#endif  // AltSvcTransactionChild_h_

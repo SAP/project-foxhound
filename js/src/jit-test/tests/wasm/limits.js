@@ -247,3 +247,18 @@ function testTableFailGrow(initial, maximum, target) {
 
 testTableFailGrow(1, undefined, TableMaxRuntime + 1);
 testTableFailGrow(1, TableMaxValid, TableMaxRuntime + 1);
+
+// Testing the maximum number of memories in a single module.
+function generateMemories(count) {
+  let lines = ['(module'];
+  for (let i = 0; i < count; i++) {
+    lines.push(`  (memory 10 50)`);
+  }
+  lines.push(')');
+  return lines.join('\n');
+}
+
+wasmValidateText(generateMemories(MaxMemories));
+
+assertErrorMessage(() => wasmEvalText(generateMemories(MaxMemories+1)),
+    WebAssembly.CompileError, /too many memories/);

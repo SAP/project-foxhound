@@ -7,6 +7,7 @@ add_setup(clickTestSetup);
 
 /**
  * Triggers cookie banner clicking and tests the events dispatched.
+ *
  * @param {*} options - Test options.
  * @param {nsICookieBannerService::Modes} options.mode - The cookie banner service mode to test with.
  * @param {boolean} options.detectOnly - Whether the service should be enabled

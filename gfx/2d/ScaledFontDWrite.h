@@ -11,7 +11,6 @@
 #include "DWriteSettings.h"
 #include "ScaledFontBase.h"
 
-struct ID2D1GeometrySink;
 struct gfxFontStyle;
 
 namespace mozilla {
@@ -29,14 +28,6 @@ class ScaledFontDWrite final : public ScaledFontBase {
                    bool aGDIForced, const gfxFontStyle* aStyle);
 
   FontType GetType() const override { return FontType::DWRITE; }
-
-  already_AddRefed<Path> GetPathForGlyphs(const GlyphBuffer& aBuffer,
-                                          const DrawTarget* aTarget) override;
-  void CopyGlyphsToBuilder(const GlyphBuffer& aBuffer, PathBuilder* aBuilder,
-                           const Matrix* aTransformHint) override;
-
-  void CopyGlyphsToSink(const GlyphBuffer& aBuffer,
-                        ID2D1SimplifiedGeometrySink* aSink);
 
   bool CanSerialize() override { return true; }
 

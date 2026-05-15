@@ -14,5 +14,4 @@ const {
 
 class CompatibilityFront extends FrontClassWithSpec(compatibilitySpec) {}
 
-exports.CompatibilityFront = CompatibilityFront;
 registerFront(CompatibilityFront);

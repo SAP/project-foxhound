@@ -4,6 +4,7 @@
 
 //! Query features.
 
+use crate::derives::*;
 use crate::parser::ParserContext;
 use crate::values::computed::{self, CSSPixelLength, Ratio, Resolution};
 use crate::Atom;
@@ -134,10 +135,10 @@ impl FeatureFlags {
 
     /// Returns all the container axis flags.
     pub fn all_container_axes() -> Self {
-        Self::CONTAINER_REQUIRES_INLINE_AXIS |
-            Self::CONTAINER_REQUIRES_BLOCK_AXIS |
-            Self::CONTAINER_REQUIRES_WIDTH_AXIS |
-            Self::CONTAINER_REQUIRES_HEIGHT_AXIS
+        Self::CONTAINER_REQUIRES_INLINE_AXIS
+            | Self::CONTAINER_REQUIRES_BLOCK_AXIS
+            | Self::CONTAINER_REQUIRES_WIDTH_AXIS
+            | Self::CONTAINER_REQUIRES_HEIGHT_AXIS
     }
 
     /// Returns our subset of container axis flags.

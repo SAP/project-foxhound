@@ -2,11 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef CacheHashUtils__h__
-#define CacheHashUtils__h__
+#ifndef CacheHashUtils_h_
+#define CacheHashUtils_h_
 
 #include "nsISupports.h"
-#include "mozilla/Types.h"
 #include "prnetdb.h"
 #include "nsPrintfCString.h"
 

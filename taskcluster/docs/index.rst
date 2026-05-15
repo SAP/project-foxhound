@@ -1,4 +1,5 @@
 .. taskcluster_index:
+.. _TaskCluster Task-Graph Generation:
 
 Firefox CI and Taskgraph
 ========================
@@ -31,10 +32,10 @@ documentation.
    of being merged back together.
 
    Today the version of Taskgraph under ``taskcluster/gecko_taskgraph`` depends
-   on the standalone version, which is vendored under
-   ``third_party/python/taskcluster_taskgraph``. There is still a lot of
-   duplication between these places, but ``gecko_taskgraph`` is slowly being
-   re-written to consume standalone Taskgraph.
+   on the upstream version, which is installed as part of
+   ``taskcluster/requirements.txt``. There is still a lot of duplication
+   between these places, but ``gecko_taskgraph`` is slowly being re-written to
+   consume upstream Taskgraph.
 
 The ``taskcluster`` directory contains all the files needed to define the graph
 of tasks that must be executed to build and test the Gecko tree. This is more

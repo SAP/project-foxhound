@@ -30,6 +30,7 @@ profiles-rootdir = Root Directory
 profiles-localdir = Local Directory
 profiles-current-profile = This is the profile in use and it cannot be deleted.
 profiles-in-use-profile = This profile is in use in another application and it cannot be deleted.
+profiles-cannot-delete-profile = Can’t delete a profile that is linked to other profiles.
 
 profiles-rename = Rename
 profiles-remove = Remove

@@ -8,25 +8,24 @@
  */
 
 #include "LocalStorage.h"
+
 #include "LocalStorageCache.h"
 #include "LocalStorageManager.h"
 #include "StorageUtils.h"
-
-#include "nsIPrincipal.h"
-
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/StorageBinding.h"
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/StorageEventBinding.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/EnumSet.h"
 #include "nsJSUtils.h"
 #include "nsTaintingUtils.h"
-#include "nsThreadUtils.h"
 #include "nsContentUtils.h"
+#include "nsIPrincipal.h"
 #include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 

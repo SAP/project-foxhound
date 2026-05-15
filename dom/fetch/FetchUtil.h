@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_FetchUtil_h
 #define mozilla_dom_FetchUtil_h
 
-#include "nsString.h"
-#include "nsError.h"
-
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
+#include "nsError.h"
+#include "nsString.h"
 
 #define WASM_CONTENT_TYPE "application/wasm"
 

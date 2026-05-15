@@ -30,12 +30,9 @@ struct ScrollStyles {
   enum MapOverflowToValidScrollStyleTag { MapOverflowToValidScrollStyle };
   ScrollStyles(const nsStyleDisplay&, MapOverflowToValidScrollStyleTag);
 
-  bool operator==(const ScrollStyles& aStyles) const {
-    return aStyles.mHorizontal == mHorizontal && aStyles.mVertical == mVertical;
-  }
-  bool operator!=(const ScrollStyles& aStyles) const {
-    return !(*this == aStyles);
-  }
+  bool operator==(const ScrollStyles&) const = default;
+  bool operator!=(const ScrollStyles&) const = default;
+
   bool IsHiddenInBothDirections() const;
 };
 

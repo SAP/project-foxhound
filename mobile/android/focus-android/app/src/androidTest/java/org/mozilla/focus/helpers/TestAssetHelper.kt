@@ -4,6 +4,8 @@
 
 package org.mozilla.focus.helpers
 
+import android.net.Uri
+import androidx.core.net.toUri
 import okhttp3.mockwebserver.MockWebServer
 
 /**
@@ -20,58 +22,54 @@ object TestAssetHelper {
      * Content for these pages all follow the same pattern. See [tab1.html] for
      * content implementation details.
      */
-    fun getGenericTabAsset(server: MockWebServer, pageNum: Int): TestAsset {
-        val url = server.url("tab$pageNum.html").toString()
-        val content = "Tab $pageNum"
-        val title = "tab$pageNum"
+    fun MockWebServer.getGenericTabAsset(pageNum: Int) = createTestAsset(
+        path = "tab$pageNum.html",
+        content = "Tab $pageNum",
+        title = "tab$pageNum",
+    )
 
-        return TestAsset(url, content, title)
-    }
+    val MockWebServer.genericAsset
+        get() = createTestAsset(
+            path = "genericPage.html",
+            content = "focus test page",
+            title = "GenericPage",
+        )
 
-    fun getGenericAsset(server: MockWebServer): TestAsset {
-        val url = server.url("genericPage.html").toString()
-        val content = "focus test page"
-        val title = "GenericPage"
+    val MockWebServer.htmlControlsPageAsset
+        get() = createTestAsset(
+            path = "htmlControls.html",
+            title = "Html_Control_Form",
+        )
 
-        return TestAsset(url, content, title)
-    }
+    fun MockWebServer.getEnhancedTrackingProtectionAsset(pageTitle: String) = createTestAsset(
+        path = "etpPages/$pageTitle.html",
+        title = pageTitle,
+    )
 
-    fun getHTMLControlsPageAsset(server: MockWebServer): TestAsset {
-        val url = server.url("htmlControls.html").toString()
-        val content = ""
-        val title = "Html_Control_Form"
+    val MockWebServer.imageTestAsset
+        get() = createTestAsset("image_test.html")
 
-        return TestAsset(url, content, title)
-    }
+    fun MockWebServer.getStorageTestAsset(pageTitle: String) = createTestAsset(pageTitle)
 
-    fun getEnhancedTrackingProtectionAsset(server: MockWebServer, pageTitle: String): TestAsset {
-        val url = server.url("etpPages/$pageTitle.html").toString()
-        val content = ""
+    fun MockWebServer.getMediaTestAsset(pageTitle: String) = createTestAsset(
+        path = "$pageTitle.html",
+        title = pageTitle,
+    )
 
-        return TestAsset(url, content, pageTitle)
-    }
+    val MockWebServer.pdfTestAsset
+        get() = createTestAsset(
+            path = "/resources/pdfFile.pdf",
+            content = "Page 1",
+            title = "pdfFile.pdf",
+        )
 
-    fun getImageTestAsset(server: MockWebServer): TestAsset {
-        val url = server.url("image_test.html").toString()
-
-        return TestAsset(url, "", "")
-    }
-
-    fun getStorageTestAsset(server: MockWebServer, pageTitle: String): TestAsset {
-        val url = server.url(pageTitle).toString()
-
-        return TestAsset(url, "", "")
-    }
-
-    fun getMediaTestAsset(server: MockWebServer, pageTitle: String): TestAsset {
-        val url = server.url("$pageTitle.html").toString()
-
-        return TestAsset(url, "", pageTitle)
-    }
-
-    fun getPDFTestAsset(server: MockWebServer): TestAsset {
-        val url = server.url("/resources/pdfFile.pdf").toString()
-
-        return TestAsset(url, "Page 1", "pdfFile.pdf")
-    }
+    private fun MockWebServer.createTestAsset(
+        path: String,
+        content: String = "",
+        title: String = "",
+    ) = TestAsset(
+        url(path).toString(),
+        content,
+        title,
+    )
 }

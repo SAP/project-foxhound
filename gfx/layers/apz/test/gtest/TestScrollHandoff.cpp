@@ -214,7 +214,7 @@ class APZCNestedFlingScrollHandoffTester : public APZCTreeManagerTester {
       mcc->AdvanceBy(kTouchTimeDelta100Hz);
       if (delta != 0) {
         currentLocation.x += delta;
-        Unused << TouchMove(subframeApzc, currentLocation, mcc->Time());
+        (void)TouchMove(subframeApzc, currentLocation, mcc->Time());
       }
     }
 
@@ -224,11 +224,11 @@ class APZCNestedFlingScrollHandoffTester : public APZCTreeManagerTester {
       mcc->AdvanceBy(kTouchTimeDelta100Hz);
       if (delta != 0) {
         currentLocation.y += delta;
-        Unused << TouchMove(subframeApzc, currentLocation, mcc->Time());
+        (void)TouchMove(subframeApzc, currentLocation, mcc->Time());
       }
     }
 
-    Unused << TouchUp(subframeApzc, currentLocation, mcc->Time());
+    (void)TouchUp(subframeApzc, currentLocation, mcc->Time());
   }
 
   void ExecuteWait(const TimeDuration& aDuration) {

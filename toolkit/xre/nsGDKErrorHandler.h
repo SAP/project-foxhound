@@ -3,6 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef TOOLKIT_XRE_NSGDKERRORHANDLER_H_
+#define TOOLKIT_XRE_NSGDKERRORHANDLER_H_
+
 #ifdef MOZ_WIDGET_GTK
 void InstallGdkErrorHandler();
 #endif
+
+#endif  // TOOLKIT_XRE_NSGDKERRORHANDLER_H_

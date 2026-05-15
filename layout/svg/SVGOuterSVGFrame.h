@@ -7,7 +7,6 @@
 #ifndef LAYOUT_SVG_SVGOUTERSVGFRAME_H_
 #define LAYOUT_SVG_SVGOUTERSVGFRAME_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ISVGSVGFrame.h"
 #include "mozilla/SVGContainerFrame.h"
 
@@ -53,7 +52,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   AspectRatio GetIntrinsicRatio() const override;
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, WritingMode aWritingMode,
+      const SizeComputationInput& aSizingInput, WritingMode aWritingMode,
       const LogicalSize& aCBSize, nscoord aAvailableISize,
       const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
       const mozilla::StyleSizeOverrides& aSizeOverrides,
@@ -83,7 +82,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   void Destroy(DestroyContext&) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   nsContainerFrame* GetContentInsertionFrame() override {
     // Any children must be added to our single anonymous inner frame kid.
@@ -100,7 +99,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
 
   // ISVGSVGFrame interface:
-  void NotifyViewportOrTransformChanged(uint32_t aFlags) override;
+  void NotifyViewportOrTransformChanged(ChangeFlags aFlags) override;
 
   // ISVGDisplayableFrame methods:
   void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,

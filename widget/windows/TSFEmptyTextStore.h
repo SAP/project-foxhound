@@ -14,8 +14,6 @@
 #include "WinUtils.h"
 #include "WritingModes.h"
 
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextEventDispatcher.h"

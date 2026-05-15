@@ -20,11 +20,13 @@ class MOZ_STACK_CLASS SVGArcConverter {
   bool GetNextSegment(Point* cp1, Point* cp2, Point* to);
 
  protected:
-  int32_t mNumSegs, mSegIndex;
+  int32_t mNumSegs;
+  int32_t mSegIndex = 0;
   double mTheta, mDelta, mT;
   double mSinPhi, mCosPhi;
   double mRx, mRy;
-  Point mFrom, mC;
+  Point mFrom, mTo, mC;
+  bool mFallBackToSingleLine = false;
 };
 
 }  // namespace mozilla

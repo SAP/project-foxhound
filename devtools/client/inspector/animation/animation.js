@@ -34,8 +34,10 @@ const {
   hasRunningAnimation,
 } = require("resource://devtools/client/inspector/animation/utils/utils.js");
 
-class AnimationInspector {
+class AnimationInspector extends EventEmitter {
   constructor(inspector, win) {
+    super();
+
     this.inspector = inspector;
     this.win = win;
 
@@ -62,7 +64,10 @@ class AnimationInspector {
     this.simulateAnimationForKeyframesProgressBar =
       this.simulateAnimationForKeyframesProgressBar.bind(this);
     this.toggleElementPicker = this.toggleElementPicker.bind(this);
-    this.update = this.update.bind(this);
+    this.watchAnimationsForSelectedNode =
+      this.watchAnimationsForSelectedNode.bind(this);
+    this.unwatchAnimationsForSelectedNode =
+      this.unwatchAnimationsForSelectedNode.bind(this);
     this.onAnimationStateChanged = this.onAnimationStateChanged.bind(this);
     this.onAnimationsCurrentTimeUpdated =
       this.onAnimationsCurrentTimeUpdated.bind(this);
@@ -71,11 +76,10 @@ class AnimationInspector {
     this.onElementPickerStarted = this.onElementPickerStarted.bind(this);
     this.onElementPickerStopped = this.onElementPickerStopped.bind(this);
     this.onNavigate = this.onNavigate.bind(this);
+    this.onNewNodeFront = this.onNewNodeFront.bind(this);
     this.onSidebarResized = this.onSidebarResized.bind(this);
     this.onSidebarSelectionChanged = this.onSidebarSelectionChanged.bind(this);
-    this.onTargetAvailable = this.onTargetAvailable.bind(this);
 
-    EventEmitter.decorate(this);
     this.emitForTests = this.emitForTests.bind(this);
 
     this.initComponents();
@@ -144,13 +148,16 @@ class AnimationInspector {
   }
 
   async initListeners() {
-    await this.inspector.commands.targetCommand.watchTargets({
-      types: [this.inspector.commands.targetCommand.TYPES.FRAME],
-      onAvailable: this.onTargetAvailable,
+    await this.watchAnimationsForSelectedNode({
+      // During the initialization of the panel, this.isPanelVisible returns false,
+      // since it's not ready yet.
+      // We need to bypass the check in order to retrieve the animationsFront and fetch
+      // the animations for the selected node.
+      force: true,
     });
 
     this.inspector.on("new-root", this.onNavigate);
-    this.inspector.selection.on("new-node-front", this.update);
+    this.inspector.selection.on("new-node-front", this.onNewNodeFront);
     this.inspector.sidebar.on("select", this.onSidebarSelectionChanged);
     this.inspector.toolbox.on("select", this.onSidebarSelectionChanged);
     this.inspector.toolbox.on(
@@ -169,8 +176,11 @@ class AnimationInspector {
 
   destroy() {
     this.setAnimationStateChangedListenerEnabled(false);
-    this.inspector.off("new-root", this.onNavigate);
-    this.inspector.selection.off("new-node-front", this.update);
+    this.inspector.off("new-root", this.onNewNodeFront);
+    this.inspector.selection.off(
+      "new-node-front",
+      this.watchAnimationsForSelectedNode
+    );
     this.inspector.sidebar.off("select", this.onSidebarSelectionChanged);
     this.inspector.toolbox.off(
       "inspector-sidebar-resized",
@@ -222,20 +232,24 @@ class AnimationInspector {
   /**
    * This function calls AnimationsFront.setCurrentTimes with considering the createdTime.
    *
-   * @param {Number} currentTime
+   * @param {number} currentTime
    */
   async doSetCurrentTimes(currentTime) {
+    // If we don't have an animationsFront, it means that we don't have visible animations
+    // so we can safely bail here.
+    if (!this.animationsFront) {
+      return;
+    }
+
     const { animations, timeScale } = this.state;
     currentTime = currentTime + timeScale.minStartTime;
-    await this.animationsFront.setCurrentTimes(animations, currentTime, true, {
-      relativeToCreatedTime: true,
-    });
+    await this.animationsFront.setCurrentTimes(animations, currentTime, true);
   }
 
   /**
    * Return a map of animated property from given animation actor.
    *
-   * @param {Object} animation
+   * @param {object} animation
    * @return {Map} A map of animated property
    *         key: {String} Animated property name
    *         value: {Array} Array of keyframe object
@@ -273,11 +287,11 @@ class AnimationInspector {
    * Return the computed style of the specified property after setting the given styles
    * to the simulated element.
    *
-   * @param {String} property
+   * @param {string} property
    *        CSS property name (e.g. text-align).
-   * @param {Object} styles
+   * @param {object} styles
    *        Map of CSS property name and value.
-   * @return {String}
+   * @return {string}
    *         Computed style of property.
    */
   getComputedStyle(property, styles) {
@@ -300,7 +314,11 @@ class AnimationInspector {
       return Promise.reject("Animation inspector already destroyed");
     }
 
-    return this.inspector.walker.getNodeFromActor(actorID, ["node"]);
+    if (!this.animationsFront?.walker) {
+      return Promise.reject("No animations front walker");
+    }
+
+    return this.animationsFront.walker.getNodeFromActor(actorID, ["node"]);
   }
 
   isPanelVisible() {
@@ -323,7 +341,7 @@ class AnimationInspector {
    * Then, dispatches the current time to listeners that are registered
    * by addAnimationsCurrentTimeListener.
    *
-   * @param {Number} currentTime
+   * @param {number} currentTime
    */
   onAnimationsCurrentTimeUpdated(currentTime) {
     this.currentTime = currentTime;
@@ -336,7 +354,7 @@ class AnimationInspector {
   /**
    * This method is called when the current time proceed by CurrentTimeTimer.
    *
-   * @param {Number} currentTime
+   * @param {number} currentTime
    * @param {Bool} shouldStop
    */
   onCurrentTimeTimerUpdated(currentTime, shouldStop) {
@@ -415,11 +433,11 @@ class AnimationInspector {
     this.wasPanelVisibled = isPanelVisibled;
 
     if (this.isPanelVisible()) {
-      await this.update();
+      await this.watchAnimationsForSelectedNode();
       this.onSidebarResized(null, this.inspector.getSidebarSize());
     } else {
+      await this.unwatchAnimationsForSelectedNode();
       this.stopAnimationsCurrentTimeTimer();
-      this.setAnimationStateChangedListenerEnabled(false);
     }
   }
 
@@ -429,16 +447,6 @@ class AnimationInspector {
     }
 
     this.inspector.store.dispatch(updateSidebarSize(size));
-  }
-
-  async onTargetAvailable({ targetFront }) {
-    if (targetFront.isTopLevel) {
-      this.animationsFront = await targetFront.getFront("animations");
-      this.animationsFront.setWalkerActor(this.inspector.walker);
-      this.animationsFront.on("mutations", this.onAnimationsMutation);
-
-      await this.update();
-    }
   }
 
   removeAnimationsCurrentTimeListener(listener) {
@@ -498,6 +506,12 @@ class AnimationInspector {
       return; // Already destroyed or another node selected.
     }
 
+    // If we don't have an animationsFront, it means that we don't have visible animations
+    // so we can safely bail here.
+    if (!this.animationsFront) {
+      return;
+    }
+
     let animations = this.state.animations;
     // "changed" event on each animation will fire respectively when the playback
     // rate changed. Since for each occurrence of event, change of UI is urged.
@@ -523,6 +537,12 @@ class AnimationInspector {
   async setAnimationsPlayState(doPlay) {
     if (!this.inspector) {
       return; // Already destroyed or another node selected.
+    }
+
+    // If we don't have an animationsFront, it means that we don't have visible animations
+    // so we can safely bail here.
+    if (!this.animationsFront) {
+      return;
     }
 
     let { animations, timeScale } = this.state;
@@ -629,9 +649,9 @@ class AnimationInspector {
    *
    * @param {Array} keyframes
    *        e.g. [{ opacity: 0 }, { opacity: 1 }]
-   * @param {Object} effectTiming
+   * @param {object} effectTiming
    *        e.g. { duration: 1000, fill: "both" }
-   * @param {Boolean} isElementNeeded
+   * @param {boolean} isElementNeeded
    *        true:  create animation with an element.
    *               If want to know computed value of the element, turn on.
    *        false: create animation without an element,
@@ -677,7 +697,7 @@ class AnimationInspector {
    * The returned animation is implementing Animation interface of Web Animation API.
    * https://drafts.csswg.org/web-animations/#the-animation-interface
    *
-   * @param {Object} effectTiming
+   * @param {object} effectTiming
    *        e.g. { duration: 1000, fill: "both" }
    * @return {Animation}
    *         https://drafts.csswg.org/web-animations/#the-animation-interface
@@ -720,24 +740,72 @@ class AnimationInspector {
     this.inspector.toolbox.nodePicker.togglePicker();
   }
 
-  async update() {
-    if (!this.isPanelVisible()) {
+  onNewNodeFront() {
+    this.watchAnimationsForSelectedNode();
+  }
+
+  /**
+   * Retrieve animations for the inspector selected node (and its subtree), add an event
+   * listener for animations on the node (and its subtree) and update the panel.
+   * If the panel is not visible (and `force` is not `true`), the panel won't be updated,
+   * and this will remove the previous listener.
+   *
+   * @param {object} options
+   * @param {boolean} options.force: Set to true to force updating the panel, even if
+   *                  it is not visible.
+   */
+  async watchAnimationsForSelectedNode({ force = false } = {}) {
+    this.unwatchAnimationsForSelectedNode();
+
+    if (!this.isPanelVisible() && !force) {
       return;
     }
 
     const done = this.inspector.updating("animationinspector");
-
     const selection = this.inspector.selection;
-    const animations =
-      selection.isConnected() && selection.isElementNode()
-        ? await this.animationsFront.getAnimationPlayersForNode(
-            selection.nodeFront
-          )
-        : [];
-    this.fireUpdateAction(animations);
+
+    let animations;
+    const shouldWatchAnimationForSelectedNode =
+      selection && selection.isConnected() && selection.isElementNode();
+    if (shouldWatchAnimationForSelectedNode) {
+      // Since the panel only displays the animations for the selected node and its subtree,
+      // we can get the animation front from the selected node target, so we can handle
+      // animations in iframe for example
+      this.animationsFront =
+        await selection.nodeFront.targetFront.getFront("animations");
+      // At this point, we have a selected node, so the target should have an inspector
+      // and its walker, that we can pass to the animation front
+      this.animationsFront.setWalkerActor(
+        selection.nodeFront.inspectorFront.walker
+      );
+      // Then we can listen for future animations on the subtree
+      this.animationsFront.on("mutations", this.onAnimationsMutation);
+      // and directly retrieve the existing one, if there are some
+      animations = await this.animationsFront.getAnimationPlayersForNode(
+        selection.nodeFront
+      );
+    }
+
+    this.fireUpdateAction(animations || []);
     this.setAnimationStateChangedListenerEnabled(true);
 
     done();
+  }
+
+  /**
+   * Nullify animationFront, remove the listener that might have been set on it, as well
+   * as listeners on AnimationPlayer fronts.
+   *
+   * @param {object} options
+   * @param {boolean} options.force: Set to true to force updating the panel, even if
+   *                  it is not visible.
+   */
+  unwatchAnimationsForSelectedNode() {
+    if (this.animationsFront) {
+      this.animationsFront.off("mutations", this.onAnimationsMutation);
+      this.animationsFront = null;
+    }
+    this.setAnimationStateChangedListenerEnabled(false);
   }
 
   async refreshAnimationsState(animations) {

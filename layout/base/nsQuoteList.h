@@ -6,10 +6,9 @@
 
 /* implementation of quotes for the CSS 'content' property */
 
-#ifndef nsQuoteList_h___
-#define nsQuoteList_h___
+#ifndef nsQuoteList_h_
+#define nsQuoteList_h_
 
-#include "mozilla/Attributes.h"
 #include "nsGenConList.h"
 
 namespace mozilla {
@@ -97,4 +96,4 @@ class nsQuoteList : public nsGenConList {
   mozilla::ContainStyleScope* mScope;
 };
 
-#endif /* nsQuoteList_h___ */
+#endif /* nsQuoteList_h_ */

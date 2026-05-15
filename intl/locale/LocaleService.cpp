@@ -14,6 +14,7 @@
 #include "mozilla/intl/AppDateTimeFormat.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/OSPreferences.h"
+#include "mozilla/intl/locale_service_glue_generated.h"
 #include "nsContentUtils.h"
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
@@ -30,6 +31,10 @@
 #endif
 
 #define INTL_SYSTEM_LOCALES_CHANGED "intl:system-locales-changed"
+
+#define ACCEPT_LANGUAGES_PREF "intl.accept_languages"
+#define FONT_LANGUAGE_GROUP_PREF "font.language.group"
+#define URL_FIXUP_SUFFIX_PREF "browser.fixup.alternate.suffix"
 
 #define PSEUDO_LOCALE_PREF "intl.l10n.pseudo"
 #define REQUESTED_LOCALES_PREF "intl.locale.requested"
@@ -692,5 +697,100 @@ LocaleService::GetPackagedLocales(nsTArray<nsCString>& aRetVal) {
     InitPackagedLocales();
   }
   aRetVal = mPackagedLocales.Clone();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LocaleService::GetEllipsis(nsAString& aRetVal) {
+  if (mAppLocales.IsEmpty()) {
+    NegotiateAppLocales(mAppLocales);
+  }
+  ffi::locale_service_ellipsis(&mAppLocales[0], &aRetVal);
+  return NS_OK;
+}
+
+bool LocaleService::AlwaysAppendAccesskeys() {
+  if (mAppLocales.IsEmpty()) {
+    NegotiateAppLocales(mAppLocales);
+  }
+  return ffi::locale_service_always_append_accesskeys(&mAppLocales[0]);
+}
+
+bool LocaleService::InsertSeparatorBeforeAccesskeys() {
+  if (mAppLocales.IsEmpty()) {
+    NegotiateAppLocales(mAppLocales);
+  }
+  return ffi::locale_service_insert_separator_before_accesskeys(
+      &mAppLocales[0]);
+}
+
+NS_IMETHODIMP
+LocaleService::GetAlwaysAppendAccesskeys(bool* aRetVal) {
+  (*aRetVal) = AlwaysAppendAccesskeys();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LocaleService::GetInsertSeparatorBeforeAccesskeys(bool* aRetVal) {
+  (*aRetVal) = InsertSeparatorBeforeAccesskeys();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LocaleService::GetAcceptLanguages(nsACString& aRetVal) {
+  // if there is a user (or locked) value, use it
+  if (Preferences::HasUserValue(ACCEPT_LANGUAGES_PREF) ||
+      Preferences::IsLocked(ACCEPT_LANGUAGES_PREF)) {
+    nsresult rv = Preferences::GetCString(ACCEPT_LANGUAGES_PREF, aRetVal);
+    if (NS_SUCCEEDED(rv)) {
+      return NS_OK;
+    }
+  }
+
+  // if we need to fetch the default value, do that instead
+  if (mAppLocales.IsEmpty()) {
+    NegotiateAppLocales(mAppLocales);
+  }
+  ffi::locale_service_default_accept_languages(&mAppLocales[0], &aRetVal);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LocaleService::GetFontLanguageGroup(nsACString& aRetVal) {
+  // if there is a user (or locked) value, use it
+  if (Preferences::HasUserValue(FONT_LANGUAGE_GROUP_PREF) ||
+      Preferences::IsLocked(FONT_LANGUAGE_GROUP_PREF)) {
+    nsresult rv = Preferences::GetCString(FONT_LANGUAGE_GROUP_PREF, aRetVal);
+    if (NS_SUCCEEDED(rv)) {
+      return NS_OK;
+    }
+  }
+
+  // if we need to fetch the default value, do that instead
+  if (mAppLocales.IsEmpty()) {
+    NegotiateAppLocales(mAppLocales);
+  }
+  ffi::locale_service_default_font_language_group(&mAppLocales[0], &aRetVal);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LocaleService::GetUrlFixupSuffix(nsACString& aRetVal) {
+  // if there is a user (or locked) value, use it
+  if (Preferences::HasUserValue(URL_FIXUP_SUFFIX_PREF) ||
+      Preferences::IsLocked(URL_FIXUP_SUFFIX_PREF)) {
+    nsresult rv = Preferences::GetCString(URL_FIXUP_SUFFIX_PREF, aRetVal);
+    if (NS_SUCCEEDED(rv)) {
+      return NS_OK;
+    }
+  }
+
+  // if we need to fetch the default value, do that instead
+  if (mAppLocales.IsEmpty()) {
+    NegotiateAppLocales(mAppLocales);
+  }
+  ffi::locale_service_default_url_fixup_suffix(&mAppLocales[0], &aRetVal);
+
   return NS_OK;
 }

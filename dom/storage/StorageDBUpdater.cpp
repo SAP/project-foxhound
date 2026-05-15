@@ -6,16 +6,15 @@
 
 #include "LocalStorageManager.h"
 #include "StorageUtils.h"
-
 #include "mozIStorageBindingParams.h"
-#include "mozIStorageValueArray.h"
-#include "mozIStorageFunction.h"
-#include "mozilla/BasePrincipal.h"
-#include "nsVariant.h"
-#include "mozilla/Tokenizer.h"
 #include "mozIStorageConnection.h"
+#include "mozIStorageFunction.h"
+#include "mozIStorageValueArray.h"
 #include "mozStorageHelper.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/StorageOriginAttributes.h"
+#include "mozilla/Tokenizer.h"
+#include "nsVariant.h"
 
 // Current version of the database schema
 #define CURRENT_SCHEMA_VERSION 2

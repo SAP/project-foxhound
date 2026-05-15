@@ -4,18 +4,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txMozillaTextOutput.h"
-#include "nsIContent.h"
+
+#include "mozilla/Encoding.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDocumentTransformer.h"
+#include "mozilla/dom/DocumentFragment.h"
 #include "nsCharsetSource.h"
-#include "txURIUtils.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
-#include "mozilla/Encoding.h"
-#include "nsTextNode.h"
+#include "nsIContent.h"
+#include "nsIDocumentTransformer.h"
 #include "nsNameSpaceManager.h"
-#include "mozilla/dom/DocumentFragment.h"
+#include "nsTextNode.h"
+#include "txURIUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -122,8 +123,9 @@ nsresult txMozillaTextOutput::createResultDocument(bool aLoadedAsData) {
    */
 
   // Create the document
-  nsresult rv = NS_NewXMLDocument(getter_AddRefs(mDocument), nullptr, nullptr,
-                                  aLoadedAsData);
+  nsresult rv = NS_NewXMLDocument(
+      getter_AddRefs(mDocument), nullptr, nullptr,
+      aLoadedAsData ? LoadedAsData::AsData : LoadedAsData::No);
   NS_ENSURE_SUCCESS(rv, rv);
   mCreatedDocument = true;
   // This should really be handled by Document::BeginLoad

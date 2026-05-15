@@ -546,9 +546,9 @@ class CycleCollectedJSRuntime {
 
   // Prepare any zones for GC that have been passed to AddZoneWaitingForGC()
   // since the last GC or since the last call to PrepareWaitingZonesForGC(),
-  // whichever was most recent. If there were no such zones, prepare for a
-  // full GC.
-  void PrepareWaitingZonesForGC();
+  // whichever was most recent. If there were no such zones and the GC was not
+  // triggered by the JS engine, prepare for a full GC.
+  void PrepareWaitingZonesForGC(JS::GCReason aReason);
 
   // Get the current thread's CycleCollectedJSRuntime.  Returns null if there
   // isn't one.

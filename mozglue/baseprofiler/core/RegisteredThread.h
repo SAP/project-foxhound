@@ -10,8 +10,6 @@
 #include "platform.h"
 #include "ThreadInfo.h"
 
-#include "mozilla/UniquePtr.h"
-
 namespace mozilla {
 namespace baseprofiler {
 
@@ -21,9 +19,18 @@ namespace baseprofiler {
 // the "Racy" prefix.
 //
 class RacyRegisteredThread final {
+ private:
+  enum class SleepState {
+    Awake,
+    SleepingNotObserved,
+    SleepingObserved,
+  };
+
  public:
   explicit RacyRegisteredThread(BaseProfilerThreadId aThreadId)
-      : mThreadId(aThreadId), mSleep(AWAKE), mIsBeingProfiled(false) {}
+      : mThreadId(aThreadId),
+        mSleep(SleepState::Awake),
+        mIsBeingProfiled(false) {}
 
   ~RacyRegisteredThread() {}
 
@@ -40,16 +47,18 @@ class RacyRegisteredThread final {
     // threads that had been observed prior to the profiler stopping and
     // restarting. Otherwise sleeping threads would not have any samples to
     // copy forward while sleeping.
-    (void)mSleep.compareExchange(SLEEPING_OBSERVED, SLEEPING_NOT_OBSERVED);
+    (void)mSleep.compareExchange(SleepState::SleepingObserved,
+                                 SleepState::SleepingNotObserved);
   }
 
   // This returns true for the second and subsequent calls in each sleep cycle.
   bool CanDuplicateLastSampleDueToSleep() {
-    if (mSleep == AWAKE) {
+    if (mSleep == SleepState::Awake) {
       return false;
     }
 
-    if (mSleep.compareExchange(SLEEPING_NOT_OBSERVED, SLEEPING_OBSERVED)) {
+    if (mSleep.compareExchange(SleepState::SleepingNotObserved,
+                               SleepState::SleepingObserved)) {
       return false;
     }
 
@@ -59,18 +68,18 @@ class RacyRegisteredThread final {
   // Call this whenever the current thread sleeps. Calling it twice in a row
   // without an intervening setAwake() call is an error.
   void SetSleeping() {
-    MOZ_ASSERT(mSleep == AWAKE);
-    mSleep = SLEEPING_NOT_OBSERVED;
+    MOZ_ASSERT(mSleep == SleepState::Awake);
+    mSleep = SleepState::SleepingNotObserved;
   }
 
   // Call this whenever the current thread wakes. Calling it twice in a row
   // without an intervening setSleeping() call is an error.
   void SetAwake() {
-    MOZ_ASSERT(mSleep != AWAKE);
-    mSleep = AWAKE;
+    MOZ_ASSERT(mSleep != SleepState::Awake);
+    mSleep = SleepState::Awake;
   }
 
-  bool IsSleeping() { return mSleep != AWAKE; }
+  bool IsSleeping() { return mSleep != SleepState::Awake; }
 
   BaseProfilerThreadId ThreadId() const { return mThreadId; }
 
@@ -117,10 +126,7 @@ class RacyRegisteredThread final {
   // effectiveness of the optimization because more code would have to be run
   // before we can tell that duplication is allowed.
   //
-  static const int AWAKE = 0;
-  static const int SLEEPING_NOT_OBSERVED = 1;
-  static const int SLEEPING_OBSERVED = 2;
-  Atomic<int> mSleep;
+  Atomic<SleepState> mSleep;
 
   // Is this thread being profiled? (e.g., should markers be recorded?)
   Atomic<bool, MemoryOrdering::Relaxed> mIsBeingProfiled;

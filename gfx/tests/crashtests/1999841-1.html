@@ -1,0 +1,37 @@
+<canvas id='cid1' height='800' width='800'></canvas>
+<canvas id='cid2' height='800' width='471'></canvas>
+<script>
+function fuzz_1(){
+  const cnv=document.getElementById('cid1');
+  let ctx3=cnv.getContext('2d');
+  try { ctx3.shadowColor = '#3b4'; } catch (e) {}
+  try { ctx3.shadowBlur = 4222.398; } catch (e) {}
+  try { ctx3.fillText('&#x31A;', 137, Number.MIN_VALUE, 61.16); } catch (e) {}
+}
+function fuzz_2(){
+  const cnv2=document.getElementById('cid2');
+  let ctx3=cnv2.getContext('2d',{alpha: false});
+  let ctx4=cnv2.getContext('2d');
+  try{ var imd6=ctx4.createImageData(195,154); }catch(e){}
+  try{ var pth7=new Path2D(); }catch(e){}
+  try{ var prn9=ctx4.createPattern(cnv2,'repeat'); }catch(e){}
+  try{ pth7.bezierCurveTo(184,246,40,292764982115,218,66); }catch(e){}
+  try { ctx3.quadraticCurveTo(cnv2.height, 233, 1, 1); } catch (e) {}
+  try { ctx4.stroke(); } catch (e) {}
+  try { ctx4.putImageData(imd6, 280, 82); } catch (e) {}
+  try { cnv2.setAttribute('height', 800); } catch (e) {}
+  try { ctx3.strokeStyle = prn9; } catch (e) {}
+  try { ctx4.stroke(pth7); } catch (e) {}
+}
+
+let loads = Number(sessionStorage.getItem('loads')) + 1
+if (loads === 1) {
+    document.addEventListener("DOMContentLoaded", fuzz_1);
+    window.requestIdleCallback(() => { window.location.reload(true) })
+}
+else {
+    document.addEventListener("DOMContentLoaded", fuzz_2);
+    window.requestIdleCallback(window.close)
+}
+sessionStorage.setItem('loads', loads)
+</script>

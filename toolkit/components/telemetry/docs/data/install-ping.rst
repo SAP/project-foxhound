@@ -66,7 +66,7 @@ locale (both)
   Locale of the installer and of the installed product, in AB_CD format
 
 ping_version (stub)
-  Version of the stub ping, currently 8
+  Version of the stub ping, currently 12
 
 stub_build_id (stub)
   Build ID of the stub installer.

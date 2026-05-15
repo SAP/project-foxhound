@@ -75,7 +75,7 @@ export const FAKE_GLOBAL_PREFS = new Map();
  * Very simple fake for the most basic semantics of nsIPrefBranch. Lots of
  * things aren't yet supported.  Feel free to add them in.
  *
- * @param {Object} args - optional arguments
+ * @param {object} args - optional arguments
  * @param {Function} args.initHook - if present, will be called back
  *                   inside the constructor. Typically used from tests
  *                   to save off a pointer to the created instance so that
@@ -118,8 +118,8 @@ export class FakensIPrefBranch {
   setBoolPref(prefName, value) {
     this.set(prefName, value);
   }
-  getBoolPref(prefName) {
-    return this.get(prefName);
+  getBoolPref(prefName, defaultValue) {
+    return this.get(prefName, defaultValue);
   }
   setIntPref(prefName, value) {
     this.set(prefName, value);
@@ -321,7 +321,7 @@ FakePerformance.prototype = {
   callsToMark: 0,
 
   /**
-   * @note The "startTime" for each mark is simply the number of times mark
+   * Note: The "startTime" for each mark is simply the number of times mark
    * has been called in this object.
    */
   mark(name) {
@@ -400,6 +400,7 @@ export function FakeNimbusFeature() {
     getEnrollmentMetadata() {},
     getVariable() {},
     getAllVariables() {},
+    getAllEnrollments() {},
     onUpdate() {},
     offUpdate() {},
   };

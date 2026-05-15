@@ -9,7 +9,6 @@
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/PermissionManager.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Unused.h"
 #include "gtest/gtest.h"
 #include "gtest/MozGTestBench.h"
 
@@ -46,7 +45,7 @@ MOZ_GTEST_BENCH_F(PermissionManagerTester,
                   TestNonExistentPermissionFromPrincipal, [this] {
                     for (unsigned i = 0; i < kNumIterations; ++i) {
                       uint32_t result = 0;
-                      Unused << mPermissionManager->TestPermissionFromPrincipal(
+                      (void)mPermissionManager->TestPermissionFromPrincipal(
                           mPrincipal, mNonExistentType, &result);
                     }
                   });

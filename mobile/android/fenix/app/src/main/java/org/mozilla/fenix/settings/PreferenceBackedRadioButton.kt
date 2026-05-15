@@ -13,6 +13,7 @@ import androidx.core.content.edit
 import androidx.core.content.withStyledAttributes
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.settings
+import androidx.appcompat.R as appcompatR
 
 /**
  * [AppCompatRadioButton] backed by a boolean `SharedPreference`.
@@ -28,7 +29,7 @@ import org.mozilla.fenix.ext.settings
 class PreferenceBackedRadioButton @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = R.attr.radioButtonStyle,
+    defStyleAttr: Int = appcompatR.attr.radioButtonStyle,
 ) : AppCompatRadioButton(context, attrs, defStyleAttr) {
     @VisibleForTesting
     internal var externalOnCheckedChangeListener: OnCheckedChangeListener? = null

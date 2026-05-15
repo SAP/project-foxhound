@@ -111,7 +111,7 @@ async function testSteps() {
 
   async function fillDatabase(database, durability) {
     return new Promise(function (resolve) {
-      const startTime = Cu.now();
+      const startTime = ChromeUtils.now();
 
       info(`Filling database ${database.name} using ${durability} durability`);
 
@@ -130,7 +130,7 @@ async function testSteps() {
           if (index < transactionCount) {
             addData();
           } else {
-            const endTime = Cu.now();
+            const endTime = ChromeUtils.now();
 
             const timeDelta = endTime - startTime;
 

@@ -22,6 +22,9 @@
 # do ok(true, "Type not supported") and stop the test.
 
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 subsuite = "media"
 tags = "suspend media-gpu"
 support-files = [
@@ -699,16 +702,22 @@ support-files = [
 ["test_background_video_cancel_suspend_taint.html"]
 skip-if = [
   "os == 'android'", # bug 1346705
-  "os == 'mac' && debug", # Bug 1670131 - after splitting manifest perma fail
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1670131 - after splitting manifest perma fail
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1670131 - after splitting manifest perma fail
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1670131 - after splitting manifest perma fail
 ]
 
 ["test_background_video_cancel_suspend_visible.html"]
 
 ["test_background_video_drawimage_with_suspended_video.html"]
-skip-if = ["os == 'android'"] # bug 1346705
+skip-if = [
+  "os == 'android'", # bug 1346705
+]
 
 ["test_background_video_ended_event.html"]
-skip-if = ["os == 'android'"] # bug 1346705
+skip-if = [
+  "os == 'android'", # bug 1346705
+]
 
 ["test_background_video_no_suspend_disabled.html"]
 
@@ -717,12 +726,16 @@ skip-if = ["os == 'android'"] # bug 1346705
 ["test_background_video_no_suspend_short_vid.html"]
 
 ["test_background_video_resume_after_end_show_last_frame.html"]
-skip-if = ["os == 'android'"] # bug 1346705
+skip-if = [
+  "os == 'android'", # bug 1346705
+]
 
 ["test_background_video_resume_looping_video_without_audio.html"]
 
 ["test_background_video_suspend.html"]
-skip-if = ["os == 'android'"] #Bug 1304480
+skip-if = [
+  "os == 'android'", # Bug 1304480
+]
 
 ["test_background_video_suspend_ends.html"]
 
@@ -733,4 +746,6 @@ skip-if = ["os == 'android'"] #Bug 1304480
 ["test_background_video_tainted_by_createimagebitmap.html"]
 
 ["test_background_video_tainted_by_drawimage.html"]
-skip-if = ["os == 'android'"] # bug 1346705
+skip-if = [
+  "os == 'android'", # bug 1346705
+]

@@ -83,10 +83,9 @@ def phc_default(build_project, milestone, target):
     if build_project == "js":
         return False
 
-    # Both Linux32 and Win32 have frequent crashes when stack tracing (for
-    # unclear reasons), so PHC is enabled only on 64-bit only in both cases.
-    # MacOS doesn't have a 32-bit version.  Therefore we've only been
-    # testing on 64bit processors.
+    # Win32 has frequent crashes when stack tracing (for unclear reasons),
+    # so PHC is enabled only on 64-bit.  MacOS doesn't have a 32-bit version.
+    # Therefore we've only been testing on 64bit processors.
     return (target.cpu in ("x86_64", "aarch64")) and (
         (target.os == "GNU" and target.kernel == "Linux")
         or (target.kernel == "WINNT")

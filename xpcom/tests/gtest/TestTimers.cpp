@@ -133,8 +133,9 @@ class TimerHelper {
     Cancel();
     MonitorAutoLock lock(mMonitor);
     mStart = TimeStamp::Now();
-    return mTimer->InitWithNamedFuncCallback(
-        ClosureCallback, this, aDelay, aType, "TimerHelper::ClosureCallback");
+    return mTimer->InitWithNamedFuncCallback(ClosureCallback, this, aDelay,
+                                             aType,
+                                             "TimerHelper::ClosureCallback"_ns);
   }
 
   Maybe<uint32_t> Wait(uint32_t aLimitMs) {
@@ -362,11 +363,11 @@ class FindExpirationTimeState final {
 
         timer->InitWithNamedFuncCallback(
             &UnusedCallbackFunc, nullptr, kTimerOffset + kTimerInterval * i,
-            aType, "FindExpirationTimeState::InitTimers");
+            aType, "FindExpirationTimeState::InitTimers"_ns);
       } else {
         timer->InitWithNamedFuncCallback(
             &UnusedCallbackFunc, nullptr, kTimerOffset + kTimerInterval * i,
-            nsITimer::TYPE_ONE_SHOT, "FindExpirationTimeState::InitTimers");
+            nsITimer::TYPE_ONE_SHOT, "FindExpirationTimeState::InitTimers"_ns);
       }
       mTimers.push_front(timer.get());
     }
@@ -887,7 +888,8 @@ TEST(Timers, ClosureCallback)
         notifiedThread = current;
         mon.Notify();
       },
-      50, nsITimer::TYPE_ONE_SHOT, "(test) Timers.ClosureCallback", testThread);
+      50, nsITimer::TYPE_ONE_SHOT, "(test) Timers.ClosureCallback"_ns,
+      testThread);
   ASSERT_NS_SUCCEEDED(rv);
 
   ReentrantMonitorAutoEnter mon(*newMon);
@@ -914,13 +916,13 @@ TEST(Timers, HighResFuncCallback)
   // out-of-order.
   MOZ_ALWAYS_SUCCEEDS(t3->InitHighResolutionWithNamedFuncCallback(
       &SetTime, &third, TimeDuration::FromMicroseconds(300),
-      nsITimer::TYPE_ONE_SHOT, "TestTimers::HighResFuncCallback::third"));
+      nsITimer::TYPE_ONE_SHOT, "TestTimers::HighResFuncCallback::third"_ns));
   MOZ_ALWAYS_SUCCEEDS(t2->InitHighResolutionWithNamedFuncCallback(
       &SetTime, &second, TimeDuration::FromMicroseconds(200),
-      nsITimer::TYPE_ONE_SHOT, "TestTimers::HighResFuncCallback::second"));
+      nsITimer::TYPE_ONE_SHOT, "TestTimers::HighResFuncCallback::second"_ns));
   MOZ_ALWAYS_SUCCEEDS(t1->InitHighResolutionWithNamedFuncCallback(
       &SetTime, &first, TimeDuration::FromMicroseconds(100),
-      nsITimer::TYPE_ONE_SHOT, "TestTimers::HighResFuncCallback::first"));
+      nsITimer::TYPE_ONE_SHOT, "TestTimers::HighResFuncCallback::first"_ns));
 
   SpinEventLoopUntil<ProcessFailureBehavior::IgnoreAndContinue>(
       "TestTimers::HighResFuncCallback"_ns,

@@ -1,7 +1,9 @@
 /* stylelint-disable max-nesting-depth */
 
 .collapsible-section {
-  padding: var(--space-small) var(--space-xlarge);
+  // Compact layout padding and spacing from thumbs UI overrides
+  padding: 0 var(--space-xlarge);
+  margin-block-end: var(--space-xxlarge);
 
   .section-title-container {
     margin: 0;
@@ -20,7 +22,7 @@
 
   .section-title {
     font-size: $section-title-font-size;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     color: var(--newtab-text-primary-color);
 
     &.grey-title {

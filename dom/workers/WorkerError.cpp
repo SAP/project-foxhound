@@ -7,8 +7,10 @@
 #include "WorkerError.h"
 
 #include <stdio.h>
+
 #include <algorithm>
 #include <utility>
+
 #include "MainThreadUtils.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
@@ -25,9 +27,6 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Span.h"
-#include "mozilla/ThreadSafeWeakPtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ErrorEvent.h"
@@ -107,7 +106,7 @@ class ReportErrorRunnable final : public WorkerParentDebuggeeRunnable {
         RefPtr<RemoteWorkerChild> actor(
             aWorkerPrivate->GetRemoteWorkerController());
 
-        Unused << NS_WARN_IF(!actor);
+        (void)NS_WARN_IF(!actor);
 
         if (actor) {
           actor->ErrorPropagationOnMainThread(nullptr, false);
@@ -178,7 +177,7 @@ class ReportGenericErrorRunnable final : public WorkerParentDebuggeeRunnable {
       RefPtr<RemoteWorkerChild> actor(
           aWorkerPrivate->GetRemoteWorkerController());
 
-      Unused << NS_WARN_IF(!actor);
+      (void)NS_WARN_IF(!actor);
 
       if (actor) {
         actor->ErrorPropagationOnMainThread(nullptr, false);

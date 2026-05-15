@@ -13,8 +13,6 @@
 
 #include <utility>
 
-#include "mozilla/Attributes.h"
-
 namespace mozilla {
 
 // This should only be used in cases where std::reverse_iterator cannot be used,

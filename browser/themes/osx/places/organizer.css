@@ -8,53 +8,54 @@
 
   position: relative;
   -moz-window-dragging: drag;
-  padding: calc(env(-moz-mac-titlebar-height) + 4px) 4px 3px;
+  padding: 4px 4px 3px;
   border-bottom: 1px solid ThreeDShadow;
 
-  &::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    appearance: auto;
-    -moz-default-appearance: -moz-window-titlebar;
-    z-index: -1;
+  @media not (-moz-mac-tahoe-theme) {
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      appearance: auto;
+      -moz-default-appearance: -moz-window-titlebar;
+      z-index: -1;
+    }
+  }
+}
+
+#placesMenu > menu,
+#placesToolbar > toolbarbutton {
+  appearance: auto;
+  -moz-default-appearance: toolbarbutton;
+  color: inherit;
+  padding: 3px;
+  min-height: var(--toolbar-item-height);
+  margin: var(--toolbar-item-margin);
+
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.8;
+
+  > .menu-icon,
+  > .toolbarbutton-icon {
+    margin: 1px 4px;
   }
 
-  > toolbarbutton {
-    min-height: var(--toolbar-item-height);
-    margin: var(--toolbar-item-margin);
-    appearance: auto;
-    -moz-default-appearance: toolbarbutton;
+  &:not(#clearDownloadsButton) > .menu-text {
+    display: none;
+  }
 
-    > .toolbarbutton-icon {
-      -moz-context-properties: fill, fill-opacity;
-      fill: currentColor;
-      fill-opacity: 0.8;
-      margin: 1px 4px;
-    }
+  &[disabled],
+  &:not(:hover):-moz-window-inactive {
+    opacity: 0.5;
+  }
 
-    &:not(#clearDownloadsButton) > .toolbarbutton-text {
-      display: none;
-    }
+  &[disabled]:-moz-window-inactive {
+    opacity: 0.25;
+  }
 
-    &[type="menu"] > .toolbarbutton-menu-dropmarker {
-      content: url(chrome://global/skin/icons/arrow-down-12.svg);
-      padding: 0;
-      margin-inline-end: 2px;
-    }
-
-    &[disabled],
-    &:not(:hover):-moz-window-inactive {
-      opacity: 0.5;
-    }
-
-    &[disabled]:-moz-window-inactive {
-      opacity: 0.25;
-    }
-
-    > menupopup {
-      margin-top: 1px;
-    }
+  > menupopup {
+    margin-top: 1px;
   }
 }
 
@@ -102,17 +103,6 @@
     position: relative;
     background-image: none !important;
   }
-}
-
-/* back and forward button */
-#back-button,
-#forward-button:-moz-locale-dir(rtl) {
-  list-style-image: url("chrome://global/skin/icons/arrow-left.svg");
-}
-
-#forward-button,
-#back-button:-moz-locale-dir(rtl) {
-  list-style-image: url("chrome://global/skin/icons/arrow-right.svg");
 }
 
 /* Root View */

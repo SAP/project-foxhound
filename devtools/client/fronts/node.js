@@ -63,7 +63,6 @@ class NodeListFront extends FrontClassWithSpec(nodeListSpec) {
   }
 }
 
-exports.NodeListFront = NodeListFront;
 registerFront(NodeListFront);
 
 /**
@@ -226,6 +225,24 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
   }
 
   /**
+   * Returns the ultimate originating element (see https://drafts.csswg.org/selectors-4/#ultimate-originating-element),
+   * i.e. the closest ancestor that is not a pseudo element.
+   * Returns null if this node isn't a pseudo element.
+   *
+   * @returns {NodeFront|null}
+   */
+  getUltimateOriginatingElement() {
+    if (!this.isPseudoElement) {
+      return null;
+    }
+    let ancestor = this.parentNode();
+    while (ancestor?.isPseudoElement) {
+      ancestor = ancestor.parentNode();
+    }
+    return ancestor;
+  }
+
+  /**
    * Process a mutation entry as returned from the walker's `getMutations`
    * request.  Only tries to handle changes of the node's contents
    * themselves (character data and attribute changes), the walker itself
@@ -289,10 +306,7 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return this._form.nodeName;
   }
   get displayName() {
-    const { displayName, nodeName } = this._form;
-
-    // Keep `nodeName.toLowerCase()` for backward compatibility
-    return displayName || nodeName.toLowerCase();
+    return this._form.displayName;
   }
   get doctypeString() {
     return (
@@ -359,24 +373,11 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return this._form.hasEventListeners;
   }
 
-  get isMarkerPseudoElement() {
-    return this._form.isMarkerPseudoElement;
-  }
-  get isBeforePseudoElement() {
-    return this._form.isBeforePseudoElement;
-  }
-  get isAfterPseudoElement() {
-    return this._form.isAfterPseudoElement;
-  }
   get isPseudoElement() {
-    return (
-      this.isBeforePseudoElement ||
-      this.isAfterPseudoElement ||
-      this.isMarkerPseudoElement
-    );
+    return this._form.isPseudoElement;
   }
-  get isAnonymous() {
-    return this._form.isAnonymous;
+  get isNativeAnonymous() {
+    return this._form.isNativeAnonymous;
   }
   get isInHTMLDocument() {
     return this._form.isInHTMLDocument;
@@ -471,6 +472,10 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
 
   get containerType() {
     return this._form.containerType;
+  }
+
+  get anchorName() {
+    return this._form.anchorName;
   }
 
   get isTreeDisplayed() {

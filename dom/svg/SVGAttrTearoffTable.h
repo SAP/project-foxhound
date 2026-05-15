@@ -9,9 +9,9 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/StaticPtr.h"
-#include "nsTHashMap.h"
 #include "nsDebug.h"
 #include "nsHashKeys.h"
+#include "nsTHashMap.h"
 
 namespace mozilla {
 

@@ -19,8 +19,8 @@ import org.mozilla.fenix.perf.StartupPathProvider.StartupPath
 
 class StartupPathProviderTest {
 
-    private lateinit var provider: StartupPathProvider
-    private lateinit var callbacks: StartupPathProvider.StartupPathLifecycleObserver
+    private lateinit var provider: DefaultStartupPathProvider
+    private lateinit var callbacks: DefaultStartupPathProvider.StartupPathLifecycleObserver
 
     @MockK private lateinit var intent: Intent
 
@@ -28,7 +28,7 @@ class StartupPathProviderTest {
     fun setUp() {
         MockKAnnotations.init(this)
 
-        provider = StartupPathProvider()
+        provider = DefaultStartupPathProvider()
         callbacks = provider.getTestCallbacks()
     }
 

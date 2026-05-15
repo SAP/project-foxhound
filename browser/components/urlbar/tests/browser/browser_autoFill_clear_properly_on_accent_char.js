@@ -176,7 +176,7 @@ async function waitForSelectionChange(options = { times: 1 }) {
   }
 
   await new Promise(resolve => {
-    gURLBar.addEventListener("selectionchange", event =>
+    gURLBar.inputField.addEventListener("selectionchange", event =>
       handler(event, resolve)
     );
   });

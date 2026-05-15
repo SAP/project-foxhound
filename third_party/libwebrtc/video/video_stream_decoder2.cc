@@ -15,6 +15,7 @@
 
 #include "api/units/time_delta.h"
 #include "api/video/video_frame.h"
+#include "api/video/video_sink_interface.h"
 #include "api/video_codecs/video_decoder.h"
 #include "modules/video_coding/video_receiver2.h"
 #include "rtc_base/checks.h"
@@ -26,7 +27,7 @@ namespace internal {
 VideoStreamDecoder::VideoStreamDecoder(
     VideoReceiver2* video_receiver,
     ReceiveStatisticsProxy* receive_statistics_proxy,
-    rtc::VideoSinkInterface<VideoFrame>* incoming_video_stream)
+    VideoSinkInterface<VideoFrame>* incoming_video_stream)
     : video_receiver_(video_receiver),
       receive_stats_callback_(receive_statistics_proxy),
       incoming_video_stream_(incoming_video_stream) {
@@ -52,10 +53,6 @@ int32_t VideoStreamDecoder::OnFrameToRender(const FrameToRender& arguments) {
   receive_stats_callback_->OnDecodedFrame(
       arguments.video_frame, arguments.qp, arguments.decode_time,
       arguments.content_type, arguments.frame_type);
-  if (arguments.corruption_score.has_value()) {
-    receive_stats_callback_->OnCorruptionScore(*arguments.corruption_score,
-                                               arguments.content_type);
-  }
   incoming_video_stream_->OnFrame(arguments.video_frame);
   return 0;
 }

@@ -30,9 +30,6 @@
 #include "nsIWidget.h"
 #include "nsPresContext.h"
 #include "nsStyleConsts.h"
-#ifdef XP_WIN
-#  include "mozilla/WindowsVersion.h"
-#endif
 
 using namespace mozilla;
 using mozilla::dom::DisplayMode;
@@ -73,6 +70,15 @@ static nsSize GetDeviceSize(const Document& aDocument) {
       nsGlobalWindowOuter::GetRDMDeviceSize(aDocument);
   if (deviceSize.isSome()) {
     return CSSPixel::ToAppUnits(deviceSize.value());
+  }
+
+  // Media queries in documents should use an override set with WebDriver BiDi
+  // if it exists.
+  if (dom::BrowsingContext* bc = aDocument.GetBrowsingContext()) {
+    Maybe<CSSIntSize> screenSize = bc->GetScreenAreaOverride();
+    if (screenSize.isSome()) {
+      return CSSPixel::ToAppUnits(screenSize.value());
+    }
   }
 
   nsPresContext* pc = aDocument.GetPresContext();
@@ -218,22 +224,24 @@ StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(const Document* aDocument) {
 
   nsCOMPtr<nsISupports> container = rootDocument->GetContainer();
   if (nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(container)) {
-    nsCOMPtr<nsIWidget> mainWidget;
-    baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
+    nsCOMPtr<nsIWidget> mainWidget = baseWindow->GetMainWidget();
     if (mainWidget && mainWidget->SizeMode() == nsSizeMode_Fullscreen) {
       return StyleDisplayMode::Fullscreen;
     }
   }
 
-  static_assert(static_cast<int32_t>(DisplayMode::Browser) ==
-                        static_cast<int32_t>(StyleDisplayMode::Browser) &&
-                    static_cast<int32_t>(DisplayMode::Minimal_ui) ==
-                        static_cast<int32_t>(StyleDisplayMode::MinimalUi) &&
-                    static_cast<int32_t>(DisplayMode::Standalone) ==
-                        static_cast<int32_t>(StyleDisplayMode::Standalone) &&
-                    static_cast<int32_t>(DisplayMode::Fullscreen) ==
-                        static_cast<int32_t>(StyleDisplayMode::Fullscreen),
-                "DisplayMode must mach nsStyleConsts.h");
+  static_assert(
+      static_cast<int32_t>(DisplayMode::Browser) ==
+              static_cast<int32_t>(StyleDisplayMode::Browser) &&
+          static_cast<int32_t>(DisplayMode::Minimal_ui) ==
+              static_cast<int32_t>(StyleDisplayMode::MinimalUi) &&
+          static_cast<int32_t>(DisplayMode::Standalone) ==
+              static_cast<int32_t>(StyleDisplayMode::Standalone) &&
+          static_cast<int32_t>(DisplayMode::Fullscreen) ==
+              static_cast<int32_t>(StyleDisplayMode::Fullscreen) &&
+          static_cast<int32_t>(DisplayMode::Picture_in_picture) ==
+              static_cast<int32_t>(StyleDisplayMode::PictureInPicture),
+      "DisplayMode must mach nsStyleConsts.h");
 
   dom::BrowsingContext* browsingContext = aDocument->GetBrowsingContext();
   if (!browsingContext) {
@@ -290,6 +298,11 @@ StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
                             : aDocument->PreferredColorScheme();
   return scheme == ColorScheme::Dark ? StylePrefersColorScheme::Dark
                                      : StylePrefersColorScheme::Light;
+}
+
+bool Gecko_MediaFeatures_MacRTL(const Document* aDocument) {
+  auto* widget = nsContentUtils::WidgetForDocument(aDocument);
+  return widget && widget->IsMacTitlebarDirectionRTL();
 }
 
 // Neither Linux, Windows, nor Mac have a way to indicate that low contrast is
@@ -349,6 +362,11 @@ StyleDynamicRange Gecko_MediaFeatures_VideoDynamicRange(
     return StyleDynamicRange::Standard;
   }
 #ifdef MOZ_WAYLAND
+  // Wayland compositors allow to process HDR content even without HDR monitor
+  // attached.
+  if (StaticPrefs::gfx_wayland_hdr_force_enabled_AtStartup()) {
+    return StyleDynamicRange::High;
+  }
   if (!StaticPrefs::gfx_wayland_hdr_AtStartup()) {
     return StyleDynamicRange::Standard;
   }

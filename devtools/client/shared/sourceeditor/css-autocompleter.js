@@ -95,7 +95,7 @@ class CSSCompleter {
   ]);
 
   /**
-   * @constructor
+   * @class
    * @param options {Object} An options object containing the following options:
    *        - walker {Object} The object used for query selecting from the current
    *                 target's DOM.

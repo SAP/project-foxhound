@@ -5,11 +5,12 @@
 :root {
   max-width: 40em;
   min-width: 35em;
+  min-height: 24em;
 }
 
 #warningSupplemental,
 .description {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .longDescription {

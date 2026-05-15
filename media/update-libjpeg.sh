@@ -25,4 +25,4 @@ elif test -e ${topsrcdir}/.git; then
     git checkout HEAD -- $revert_files
 fi
 
-patch -p0 -i mozilla.diff
+patch -p3 -i mozilla.diff

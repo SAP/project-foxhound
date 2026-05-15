@@ -21,8 +21,7 @@ interface nsIHttpAuthenticableChannel;
  * unsuccessful because of receiving either a 401 or 407 http response code
  * ProcessAuthentication MUST be called and the page MUST be requested again
  * with the new credentials that the user has provided. After a successful
- * request, checkForSuperfluousAuth MAY be called, and disconnect MUST be
- * called.
+ * request disconnect MUST be called.
  */
 
 [uuid(788f331b-2e1f-436c-b405-4f88a31a105b)]
@@ -64,12 +63,6 @@ interface nsIHttpChannelAuthProvider : nsICancelable
    *    the auth cache.
    */
   [must_use] void addAuthorizationHeaders(in boolean dontUseCachedWWWCreds);
-
-  /**
-   * Check if an unnecessary(and maybe malicious) url authentication has been
-   * provided.
-   */
-  [must_use] void checkForSuperfluousAuth();
 
   /**
    * Cancel pending user auth prompts and release the callback and channel

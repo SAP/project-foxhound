@@ -9,7 +9,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "mozilla/Types.h"
 #include "AsyncDBus.h"
 #include "nsGtkUtils.h"
 #include "nsIFileURL.h"
@@ -18,9 +17,11 @@
 #include "nsIWidget.h"
 #include "nsIFile.h"
 #include "nsIStringBundle.h"
+#include "nsWindow.h"
 #include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Document.h"
 
 #include "nsArrayEnumerator.h"
 #include "nsEnumeratorUtils.h"
@@ -30,17 +31,16 @@
 #include "WidgetUtilsGtk.h"
 
 #include "gfxPlatform.h"
+#include "nsXULAppAPI.h"
 #include "nsFilePicker.h"
 
 #undef LOG
 #ifdef MOZ_LOGGING
 #  include "mozilla/Logging.h"
-#  include "nsTArray.h"
-#  include "Units.h"
 extern mozilla::LazyLogModule gWidgetLog;
-#  define LOG(args) MOZ_LOG(gWidgetLog, mozilla::LogLevel::Debug, args)
+#  define LOG(...) MOZ_LOG(gWidgetLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 #else
-#  define LOG(args)
+#  define LOG(...)
 #endif /* MOZ_LOGGING */
 
 using namespace mozilla;
@@ -50,9 +50,18 @@ using mozilla::dom::Promise;
 // bug 1935858
 #define MAX_PREVIEW_SOURCE_SIZE 8192
 
-nsIFile* nsFilePicker::mPrevDisplayDirectory = nullptr;
+static nsIFile* sPrevDisplayDirectory = nullptr;
 
-void nsFilePicker::Shutdown() { NS_IF_RELEASE(mPrevDisplayDirectory); }
+void nsFilePicker::Shutdown() { NS_IF_RELEASE(sPrevDisplayDirectory); }
+
+#ifdef MOZ_ENABLE_DBUS
+static RefPtr<widget::DBusProxyPromise> CreatePickerPortalPromise() {
+  return widget::CreateDBusProxyForBus(
+      G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS,
+      /* aInterfaceInfo = */ nullptr, "org.freedesktop.portal.Desktop",
+      "/org/freedesktop/portal/desktop", "org.freedesktop.portal.FileChooser");
+}
+#endif
 
 static GtkFileChooserAction GetGtkFileChooserAction(nsIFilePicker::Mode aMode) {
   GtkFileChooserAction action;
@@ -172,12 +181,15 @@ static nsAutoCString MakeCaseInsensitiveShellGlob(const char* aPattern) {
 NS_IMPL_ISUPPORTS(nsFilePicker, nsIFilePicker)
 
 nsFilePicker::nsFilePicker()
-    : mUseNativeFileChooser(
-          widget::ShouldUsePortal(widget::PortalKind::FilePicker)) {}
+#ifdef MOZ_ENABLE_DBUS
+    : mPreferPortal(widget::ShouldUsePortal(widget::PortalKind::FilePicker))
+#endif
+{
+}
 
 nsFilePicker::~nsFilePicker() = default;
 
-void ReadMultipleFiles(gpointer filename, gpointer array) {
+static void ReadMultipleFiles(gpointer filename, gpointer array) {
   nsCOMPtr<nsIFile> localfile;
   nsresult rv =
       NS_NewNativeLocalFile(nsDependentCString(static_cast<char*>(filename)),
@@ -190,60 +202,50 @@ void ReadMultipleFiles(gpointer filename, gpointer array) {
   g_free(filename);
 }
 
-void nsFilePicker::ReadValuesFromFileChooser(void* file_chooser) {
+void nsFilePicker::ReadValuesFromNonPortalFileChooser(
+    GtkFileChooser* file_chooser) {
   mFiles.Clear();
 
   if (mMode == nsIFilePicker::modeOpenMultiple) {
     mFileURL.Truncate();
 
-    GSList* list =
-        gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(file_chooser));
+    GSList* list = gtk_file_chooser_get_filenames(file_chooser);
     g_slist_foreach(list, ReadMultipleFiles, static_cast<gpointer>(&mFiles));
     g_slist_free(list);
   } else {
-    gchar* filename = gtk_file_chooser_get_uri(GTK_FILE_CHOOSER(file_chooser));
+    gchar* filename = gtk_file_chooser_get_uri(file_chooser);
     mFileURL.Assign(filename);
     g_free(filename);
   }
 
-  GtkFileFilter* filter =
-      gtk_file_chooser_get_filter(GTK_FILE_CHOOSER(file_chooser));
-  GSList* filter_list =
-      gtk_file_chooser_list_filters(GTK_FILE_CHOOSER(file_chooser));
+  GtkFileFilter* filter = gtk_file_chooser_get_filter(file_chooser);
+  GSList* filter_list = gtk_file_chooser_list_filters(file_chooser);
 
-  mSelectedType = static_cast<int16_t>(g_slist_index(filter_list, filter));
+  mSelectedType = g_slist_index(filter_list, filter);
   g_slist_free(filter_list);
-
-  // Remember last used directory.
-  nsCOMPtr<nsIFile> file;
-  GetFile(getter_AddRefs(file));
-  if (file) {
-    nsCOMPtr<nsIFile> dir;
-    file->GetParent(getter_AddRefs(dir));
-    if (dir) {
-      dir.swap(mPrevDisplayDirectory);
-    }
-  }
 }
 
 void nsFilePicker::InitNative(nsIWidget* aParent, const nsAString& aTitle) {
-  mParentWidget = aParent;
+  mParentWidget = nsWindow::FromWidget(aParent);
   mTitle.Assign(aTitle);
+
+  if (mParentWidget) {
+    if (GtkWidget* widget = mParentWidget->GetGtkWidget()) {
+      if (auto* title = gtk_window_get_title(GTK_WINDOW(widget))) {
+        mTitle.AppendLiteral(" - ");
+        mTitle.Append(NS_ConvertUTF8toUTF16(title));
+      }
+    }
+  }
 }
 
 NS_IMETHODIMP
 nsFilePicker::IsModeSupported(nsIFilePicker::Mode aMode, JSContext* aCx,
                               Promise** aRetPromise) {
 #ifdef MOZ_ENABLE_DBUS
-  if (!widget::ShouldUsePortal(widget::PortalKind::FilePicker) ||
-      aMode != nsIFilePicker::modeGetFolder) {
+  if (!mPreferPortal || aMode != nsIFilePicker::modeGetFolder) {
     return nsBaseFilePicker::IsModeSupported(aMode, aCx, aRetPromise);
   }
-
-  const char kFreedesktopPortalName[] = "org.freedesktop.portal.Desktop";
-  const char kFreedesktopPortalPath[] = "/org/freedesktop/portal/desktop";
-  const char kFreedesktopPortalFileChooser[] =
-      "org.freedesktop.portal.FileChooser";
 
   MOZ_ASSERT(aCx);
   MOZ_ASSERT(aRetPromise);
@@ -259,35 +261,30 @@ nsFilePicker::IsModeSupported(nsIFilePicker::Mode aMode, JSContext* aCx,
     return result.StealNSResult();
   }
 
-  widget::CreateDBusProxyForBus(
-      G_BUS_TYPE_SESSION,
-      GDBusProxyFlags(G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS),
-      /* aInterfaceInfo = */ nullptr, kFreedesktopPortalName,
-      kFreedesktopPortalPath, kFreedesktopPortalFileChooser)
-      ->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [retPromise](RefPtr<GDBusProxy>&& aProxy) {
-            const char kFreedesktopPortalVersionProperty[] = "version";
-            // Folder selection was added in version 3 of xdg-desktop-portal
-            const uint32_t kFreedesktopPortalMinimumVersion = 3;
-            uint32_t foundVersion = 0;
+  CreatePickerPortalPromise()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [retPromise](RefPtr<GDBusProxy>&& aProxy) {
+        const char kFreedesktopPortalVersionProperty[] = "version";
+        // Folder selection was added in version 3 of xdg-desktop-portal
+        const uint32_t kFreedesktopPortalMinimumVersion = 3;
+        uint32_t foundVersion = 0;
 
-            RefPtr<GVariant> property =
-                dont_AddRef(g_dbus_proxy_get_cached_property(
-                    aProxy, kFreedesktopPortalVersionProperty));
+        RefPtr<GVariant> property =
+            dont_AddRef(g_dbus_proxy_get_cached_property(
+                aProxy, kFreedesktopPortalVersionProperty));
 
-            if (property) {
-              foundVersion = g_variant_get_uint32(property);
-              LOG(("Found portal version: %u", foundVersion));
-            }
+        if (property) {
+          foundVersion = g_variant_get_uint32(property);
+          LOG("Found portal version: %u", foundVersion);
+        }
 
-            retPromise->MaybeResolve(foundVersion >=
-                                     kFreedesktopPortalMinimumVersion);
-          },
-          [retPromise](GUniquePtr<GError>&& aError) {
-            g_printerr("Failed to create DBUS proxy: %s\n", aError->message);
-            retPromise->MaybeReject(NS_ERROR_FAILURE);
-          });
+        retPromise->MaybeResolve(foundVersion >=
+                                 kFreedesktopPortalMinimumVersion);
+      },
+      [retPromise](GUniquePtr<GError>&& aError) {
+        g_printerr("Failed to create DBUS proxy: %s\n", aError->message);
+        retPromise->MaybeReject(NS_ERROR_FAILURE);
+      });
 
   retPromise.forget(aRetPromise);
   return NS_OK;
@@ -356,7 +353,6 @@ nsFilePicker::GetFilterIndex(int32_t* aFilterIndex) {
 NS_IMETHODIMP
 nsFilePicker::SetFilterIndex(int32_t aFilterIndex) {
   mSelectedType = aFilterIndex;
-
   return NS_OK;
 }
 
@@ -402,7 +398,7 @@ nsFilePicker::GetFiles(nsISimpleEnumerator** aFiles) {
 NS_IMETHODIMP
 nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
   // Can't show two dialogs concurrently with the same filepicker
-  if (mFileChooser) {
+  if (mIsOpen) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -415,10 +411,271 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
+  mIsOpen = true;
+  mCallback = aCallback;
+
+#ifdef MOZ_ENABLE_DBUS
+  if (mPreferPortal) {
+    TryOpenPortal();
+    return NS_OK;
+  }
+#endif
+
+  OpenNonPortal();
+  return NS_OK;
+}
+
+static GtkFileFilter* NewFilter(const nsCString& aFilter,
+                                const nsCString& aName) {
+  // This is fun... the GTK file picker does not accept a list of filters
+  // so we need to split out each string, and add it manually.
+  char** patterns = g_strsplit(aFilter.get(), ";", -1);
+  if (!patterns) {
+    return nullptr;
+  }
+  GtkFileFilter* filter = gtk_file_filter_new();
+  for (int j = 0; patterns[j] != nullptr; ++j) {
+    nsAutoCString caseInsensitiveFilter =
+        MakeCaseInsensitiveShellGlob(g_strstrip(patterns[j]));
+    gtk_file_filter_add_pattern(filter, caseInsensitiveFilter.get());
+  }
+  g_strfreev(patterns);
+  // If we have a name for our filter, let's use that, otherwise let's use the
+  // pattern.
+  gtk_file_filter_set_name(filter,
+                           aName.IsEmpty() ? aFilter.get() : aName.get());
+  return filter;
+}
+
+#ifdef MOZ_ENABLE_DBUS
+void nsFilePicker::TryOpenPortal() {
+  MOZ_DIAGNOSTIC_ASSERT(!mPortalProxy);
+  CreatePickerPortalPromise()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [self = RefPtr{this}](RefPtr<GDBusProxy>&& aProxy) {
+        self->mPortalProxy = std::move(aProxy);
+        self->FinishOpeningPortal();
+      },
+      [self = RefPtr{this}](GUniquePtr<GError>&& aError) {
+        g_printerr("Failed to create DBUS proxy: %s\n", aError->message);
+        self->OpenNonPortal();
+      });
+}
+
+void nsFilePicker::FinishOpeningPortal() {
+  MOZ_DIAGNOSTIC_ASSERT(mPortalProxy);
+  MOZ_DIAGNOSTIC_ASSERT(!mExportedParent);
+  nsAutoCString parentWindow;
+  if (mParentWidget) {
+    mParentWidget->ExportHandle()->Then(
+        GetCurrentSerialEventTarget(), __func__,
+        [self = RefPtr{this}](nsCString&& aResult) {
+          self->mExportedParent = true;
+          self->FinishOpeningPortalWithParent(aResult);
+        },
+        [self = RefPtr{this}](bool) {
+          self->FinishOpeningPortalWithParent(""_ns);
+        });
+  } else {
+    FinishOpeningPortalWithParent(""_ns);
+  }
+}
+
+void nsFilePicker::FinishOpeningPortalWithParent(const nsCString& aHandle) {
+  LOG("FinishOpeningPortalWithParent(%s)\n", aHandle.get());
+  const char* method = [&] {
+    switch (mMode) {
+      case nsIFilePicker::modeOpen:
+      case nsIFilePicker::modeOpenMultiple:
+      case nsIFilePicker::modeGetFolder:
+        break;
+      case nsIFilePicker::modeSave:
+        return "SaveFile";
+    }
+    return "OpenFile";
+  }();
+
+  GVariantBuilder opt_builder;
+  g_variant_builder_init(&opt_builder, G_VARIANT_TYPE_VARDICT);
+
+  nsAutoCString token;
+  widget::MakePortalRequestToken("file_picker"_ns, token);
+  g_variant_builder_add(&opt_builder, "{sv}", "handle_token",
+                        g_variant_new_string(token.get()));
+
+  g_variant_builder_add(
+      &opt_builder, "{sv}", "multiple",
+      g_variant_new_boolean(mMode == nsIFilePicker::modeOpenMultiple));
+  g_variant_builder_add(
+      &opt_builder, "{sv}", "directory",
+      g_variant_new_boolean(mMode == nsIFilePicker::modeGetFolder));
+  if (!mOkButtonLabel.IsEmpty()) {
+    g_variant_builder_add(
+        &opt_builder, "{sv}", "accept_label",
+        g_variant_new_string(NS_ConvertUTF16toUTF8(mOkButtonLabel).get()));
+  }
+  g_variant_builder_add(&opt_builder, "{sv}", "modal",
+                        g_variant_new_boolean(TRUE));
+
+  // 3.22+ https://docs.gtk.org/gtk3/method.FileFilter.to_gvariant.html
+  static auto sGtkFileFilterToGvariant = (GVariant * (*)(GtkFileFilter*))
+      dlsym(RTLD_DEFAULT, "gtk_file_filter_to_gvariant");
+  if (!mFilters.IsEmpty() && sGtkFileFilterToGvariant) {
+    GVariantBuilder filters_builder;
+    g_variant_builder_init(&filters_builder, G_VARIANT_TYPE("a(sa(us))"));
+    RefPtr<GVariant> currentFilter;
+    for (size_t i = 0; i < mFilters.Length(); ++i) {
+      auto* filter = NewFilter(mFilters[i], mFilterNames[i]);
+      if (!filter) {
+        continue;
+      }
+      RefPtr<GVariant> filterVariant =
+          dont_AddRef(g_variant_ref_sink(sGtkFileFilterToGvariant(filter)));
+      g_variant_builder_add(&filters_builder, "@(sa(us))", filterVariant.get());
+      if (mSelectedType >= 0 && size_t(mSelectedType) == i) {
+        currentFilter = filterVariant;
+      }
+      g_object_unref(filter);
+    }
+    g_variant_builder_add(&opt_builder, "{sv}", "filters",
+                          g_variant_builder_end(&filters_builder));
+    if (currentFilter) {
+      g_variant_builder_add(&opt_builder, "{sv}", "current_filter",
+                            currentFilter.get());
+    }
+  }
+
+  NS_ConvertUTF16toUTF8 defaultName(mDefault);
+  if (!defaultName.IsEmpty() && mMode == nsIFilePicker::modeSave) {
+    g_variant_builder_add(&opt_builder, "{sv}", "current_name",
+                          g_variant_new_string(defaultName.get()));
+  }
+
+  if (nsCOMPtr<nsIFile> defaultPath = GetDefaultPath()) {
+    if (!defaultName.IsEmpty() && mMode != nsIFilePicker::modeSave) {
+      // Try to select the intended file. Even if it doesn't exist, GTK still
+      // switches directories.
+      defaultPath->AppendNative(defaultName);
+      nsAutoCString path;
+      defaultPath->GetNativePath(path);
+      g_variant_builder_add(&opt_builder, "{sv}", "current_file",
+                            g_variant_new_bytestring(path.get()));
+    } else {
+      nsAutoCString directory;
+      defaultPath->GetNativePath(directory);
+      g_variant_builder_add(&opt_builder, "{sv}", "current_folder",
+                            g_variant_new_bytestring(directory.get()));
+    }
+  }
+
+  LOG("FilePickerPortal requesting %s with token %s", method, token.get());
+  guint subscriptionId = widget::OnDBusPortalResponse(
+      mPortalProxy, token,
+      [self = RefPtr{this}](GVariant* aResult) { self->DonePortal(aResult); });
+
+  NS_ConvertUTF16toUTF8 title(mTitle);
+  widget::DBusProxyCall(mPortalProxy, method,
+                        g_variant_new("(ss@a{sv})", aHandle.get(), title.get(),
+                                      g_variant_builder_end(&opt_builder)),
+                        G_DBUS_CALL_FLAGS_NONE)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr{this}](RefPtr<GVariant>&& aResult) {
+            LOG("FilePickerPortal request path: %s",
+                GUniquePtr<char>(g_variant_print(aResult, TRUE)).get());
+          },
+          [subscriptionId, self = RefPtr{this}](GUniquePtr<GError>&& aError) {
+            g_printerr("Failed to open portal: %s\n", aError->message);
+            g_dbus_connection_signal_unsubscribe(
+                g_dbus_proxy_get_connection(self->mPortalProxy),
+                subscriptionId);
+            self->ClearPortalState();
+            self->OpenNonPortal();
+          });
+}
+
+void nsFilePicker::ReadPortalUriList(GVariant* aUriList) {
+  GVariantIter iter;
+  g_variant_iter_init(&iter, aUriList);
+  gchar* uriString;
+  while (g_variant_iter_loop(&iter, "s", &uriString)) {
+    LOG("nsFilePickerReadPortalUriList(%s)\n", uriString);
+    if (mFileURL.IsEmpty()) {
+      mFileURL.Assign(uriString);
+    }
+    nsCOMPtr<nsIURI> uri;
+    NS_NewURI(getter_AddRefs(uri), uriString);
+    if (nsCOMPtr<nsIFileURL> fileUrl = do_QueryInterface(uri)) {
+      nsCOMPtr<nsIFile> file;
+      fileUrl->GetFile(getter_AddRefs(file));
+      mFiles.AppendElement(file);
+    }
+  }
+}
+
+void nsFilePicker::ClearPortalState() {
+  if (mExportedParent && mParentWidget) {
+    mParentWidget->UnexportHandle();
+    mExportedParent = false;
+  }
+  mPortalProxy = nullptr;
+}
+
+void nsFilePicker::DonePortal(GVariant* aResult) {
+  LOG("nsFilePicker::DonePortal(%s)\n",
+      GUniquePtr<char>(g_variant_print(aResult, TRUE)).get());
+  ResultCode result = [&] {
+    RefPtr<GVariant> resultCode =
+        dont_AddRef(g_variant_get_child_value(aResult, 0));
+    switch (g_variant_get_uint32(resultCode)) {
+      case 0:
+        return ResultCode::returnOK;
+      case 1:
+      default:
+        return ResultCode::returnCancel;
+    }
+  }();
+
+  if (result == returnOK) {
+    RefPtr<GVariant> results =
+        dont_AddRef(g_variant_get_child_value(aResult, 1));
+    GVariantIter iter;
+    GVariant* value;
+    gchar* key;
+    g_variant_iter_init(&iter, results);
+    while (g_variant_iter_loop(&iter, "{sv}", &key, &value)) {
+      LOG("FilePicker portal got %s: %s\n", key,
+          GUniquePtr<char>(g_variant_print(value, TRUE)).get());
+      if (!strcmp(key, "current_filter")) {
+        RefPtr<GVariant> name =
+            dont_AddRef(g_variant_get_child_value(value, 0));
+        nsDependentCString filterName(g_variant_get_string(name, nullptr));
+        auto index = mFilterNames.IndexOf(filterName);
+        if (index == mFilterNames.NoIndex) {
+          index = mFilters.IndexOf(filterName);
+        }
+        if (index != mFilterNames.NoIndex) {
+          mSelectedType = index;
+        }
+      }
+      if (!strcmp(key, "uris")) {
+        ReadPortalUriList(value);
+      }
+    }
+  }
+
+  ClearPortalState();
+  DoneCommon(result);
+}
+#endif
+
+void nsFilePicker::OpenNonPortal() {
   NS_ConvertUTF16toUTF8 title(mTitle);
 
   GtkWindow* parent_widget =
-      GTK_WINDOW(mParentWidget->GetNativeData(NS_NATIVE_SHELLWIDGET));
+      mParentWidget
+          ? GTK_WINDOW(mParentWidget->GetNativeData(NS_NATIVE_SHELLWIDGET))
+          : nullptr;
 
   GtkFileChooserAction action = GetGtkFileChooserAction(mMode);
 
@@ -427,11 +684,13 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
   if (!mOkButtonLabel.IsEmpty()) {
     accept_button = buttonLabel.get();
   } else {
-    accept_button = nullptr;
+    accept_button = g_dgettext(
+        "gtk30", action == GTK_FILE_CHOOSER_ACTION_SAVE ? "_Save" : "_Open");
   }
 
-  void* file_chooser =
-      GtkFileChooserNew(title.get(), parent_widget, action, accept_button);
+  GtkFileChooser* file_chooser = GTK_FILE_CHOOSER(gtk_file_chooser_dialog_new(
+      title.get(), parent_widget, action, g_dgettext("gtk30", "_Cancel"),
+      GTK_RESPONSE_CANCEL, accept_button, GTK_RESPONSE_ACCEPT, nullptr));
 
   // If we have --enable-proxy-bypass-protection, then don't allow
   // remote URLs to be used.
@@ -450,17 +709,18 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
                      G_CALLBACK(UpdateFilePreviewWidget), img_preview);
   }
 
-  GtkFileChooserSetModal(file_chooser, parent_widget, TRUE);
+  gtk_window_set_modal(GTK_WINDOW(file_chooser), true);
+  if (parent_widget) {
+    gtk_window_set_destroy_with_parent(GTK_WINDOW(file_chooser), TRUE);
+  }
 
   NS_ConvertUTF16toUTF8 defaultName(mDefault);
   switch (mMode) {
     case nsIFilePicker::modeOpenMultiple:
-      gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(file_chooser),
-                                           TRUE);
+      gtk_file_chooser_set_select_multiple(file_chooser, TRUE);
       break;
     case nsIFilePicker::modeSave:
-      gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(file_chooser),
-                                        defaultName.get());
+      gtk_file_chooser_set_current_name(file_chooser, defaultName.get());
       break;
 
     default:
@@ -468,21 +728,14 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
       break;
   }
 
-  nsCOMPtr<nsIFile> defaultPath;
-  if (mDisplayDirectory) {
-    mDisplayDirectory->Clone(getter_AddRefs(defaultPath));
-  } else if (mPrevDisplayDirectory) {
-    mPrevDisplayDirectory->Clone(getter_AddRefs(defaultPath));
-  }
-
-  if (defaultPath) {
+  if (nsCOMPtr<nsIFile> defaultPath = GetDefaultPath()) {
     if (!defaultName.IsEmpty() && mMode != nsIFilePicker::modeSave) {
       // Try to select the intended file. Even if it doesn't exist, GTK still
       // switches directories.
       defaultPath->AppendNative(defaultName);
       nsAutoCString path;
       defaultPath->GetNativePath(path);
-      gtk_file_chooser_set_filename(GTK_FILE_CHOOSER(file_chooser), path.get());
+      gtk_file_chooser_set_filename(file_chooser, path.get());
     } else {
       nsAutoCString directory;
       defaultPath->GetNativePath(directory);
@@ -505,12 +758,11 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
             },
             &mFileChooserDelegate);
 
-        if (mFileChooserDelegate != nullptr) {
+        if (mFileChooserDelegate) {
           g_object_ref(mFileChooserDelegate);
         }
       }
-      gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(file_chooser),
-                                          directory.get());
+      gtk_file_chooser_set_current_folder(file_chooser, directory.get());
     }
   }
 
@@ -519,40 +771,17 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
                                     GTK_RESPONSE_ACCEPT);
   }
 
-  int32_t count = mFilters.Length();
-  for (int32_t i = 0; i < count; ++i) {
-    // This is fun... the GTK file picker does not accept a list of filters
-    // so we need to split out each string, and add it manually.
-
-    char** patterns = g_strsplit(mFilters[i].get(), ";", -1);
-    if (!patterns) {
-      return NS_ERROR_OUT_OF_MEMORY;
+  size_t count = mFilters.Length();
+  for (size_t i = 0; i < count; ++i) {
+    GtkFileFilter* filter = NewFilter(mFilters[i], mFilterNames[i]);
+    if (!filter) {
+      continue;
     }
-
-    GtkFileFilter* filter = gtk_file_filter_new();
-    for (int j = 0; patterns[j] != nullptr; ++j) {
-      nsAutoCString caseInsensitiveFilter =
-          MakeCaseInsensitiveShellGlob(g_strstrip(patterns[j]));
-      gtk_file_filter_add_pattern(filter, caseInsensitiveFilter.get());
-    }
-
-    g_strfreev(patterns);
-
-    if (!mFilterNames[i].IsEmpty()) {
-      // If we have a name for our filter, let's use that.
-      const char* filter_name = mFilterNames[i].get();
-      gtk_file_filter_set_name(filter, filter_name);
-    } else {
-      // If we don't have a name, let's just use the filter pattern.
-      const char* filter_pattern = mFilters[i].get();
-      gtk_file_filter_set_name(filter, filter_pattern);
-    }
-
-    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(file_chooser), filter);
+    gtk_file_chooser_add_filter(file_chooser, filter);
 
     // Set the initially selected filter
-    if (mSelectedType == i) {
-      gtk_file_chooser_set_filter(GTK_FILE_CHOOSER(file_chooser), filter);
+    if (mSelectedType >= 0 && size_t(mSelectedType) == i) {
+      gtk_file_chooser_set_filter(file_chooser, filter);
     }
   }
 
@@ -560,27 +789,39 @@ nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
                                                  TRUE);
 
   mFileChooser = file_chooser;
-  mCallback = aCallback;
-  NS_ADDREF_THIS();
-  g_signal_connect(file_chooser, "response", G_CALLBACK(OnResponse), this);
-  GtkFileChooserShow(file_chooser);
+  NS_ADDREF_THIS();  // Balanced by the NS_RELEASE_THIS in DoneNonPortal.
+  g_signal_connect(file_chooser, "response", G_CALLBACK(OnNonPortalResponse),
+                   this);
+  g_signal_connect(file_chooser, "destroy", G_CALLBACK(OnNonPortalDestroy),
+                   this);
+  gtk_widget_show(GTK_WIDGET(file_chooser));
+}
 
-  return NS_OK;
+already_AddRefed<nsIFile> nsFilePicker::GetDefaultPath() {
+  nsCOMPtr<nsIFile> defaultPath;
+  if (mDisplayDirectory) {
+    mDisplayDirectory->Clone(getter_AddRefs(defaultPath));
+  } else if (sPrevDisplayDirectory) {
+    sPrevDisplayDirectory->Clone(getter_AddRefs(defaultPath));
+  }
+  return defaultPath.forget();
 }
 
 /* static */
-void nsFilePicker::OnResponse(void* file_chooser, gint response_id,
-                              gpointer user_data) {
-  static_cast<nsFilePicker*>(user_data)->Done(file_chooser, response_id);
+void nsFilePicker::OnNonPortalResponse(GtkWidget* file_chooser,
+                                       gint response_id, gpointer user_data) {
+  static_cast<nsFilePicker*>(user_data)->DoneNonPortal(file_chooser,
+                                                       response_id);
 }
 
 /* static */
-void nsFilePicker::OnDestroy(GtkWidget* file_chooser, gpointer user_data) {
-  static_cast<nsFilePicker*>(user_data)->Done(file_chooser,
-                                              GTK_RESPONSE_CANCEL);
+void nsFilePicker::OnNonPortalDestroy(GtkWidget* file_chooser,
+                                      gpointer user_data) {
+  static_cast<nsFilePicker*>(user_data)->DoneNonPortal(file_chooser,
+                                                       GTK_RESPONSE_CANCEL);
 }
 
-bool nsFilePicker::WarnForNonReadableFile(void* file_chooser) {
+bool nsFilePicker::WarnForNonReadableFile() {
   nsCOMPtr<nsIFile> file;
   GetFile(getter_AddRefs(file));
   if (!file) {
@@ -615,39 +856,28 @@ bool nsFilePicker::WarnForNonReadableFile(void* file_chooser) {
   }
 
   GtkDialogFlags flags = GTK_DIALOG_DESTROY_WITH_PARENT;
+  GtkWindow* parent_window =
+      mParentWidget
+          ? GTK_WINDOW(mParentWidget->GetNativeData(NS_NATIVE_SHELLWIDGET))
+          : nullptr;
   auto* cancel_dialog = gtk_message_dialog_new(
-      GTK_WINDOW(file_chooser), flags, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
-      "%s", NS_ConvertUTF16toUTF8(errorMessage).get());
+      parent_window, flags, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s",
+      NS_ConvertUTF16toUTF8(errorMessage).get());
   gtk_dialog_run(GTK_DIALOG(cancel_dialog));
   gtk_widget_destroy(cancel_dialog);
 
   return true;
 }
 
-void nsFilePicker::Done(void* file_chooser, gint response) {
+void nsFilePicker::DoneNonPortal(GtkWidget* file_chooser, gint response) {
   mFileChooser = nullptr;
 
   nsIFilePicker::ResultCode result;
   switch (response) {
     case GTK_RESPONSE_OK:
     case GTK_RESPONSE_ACCEPT:
-      ReadValuesFromFileChooser(file_chooser);
+      ReadValuesFromNonPortalFileChooser(GTK_FILE_CHOOSER(file_chooser));
       result = nsIFilePicker::returnOK;
-      if (mMode == nsIFilePicker::modeSave) {
-        nsCOMPtr<nsIFile> file;
-        GetFile(getter_AddRefs(file));
-        if (file) {
-          bool exists = false;
-          file->Exists(&exists);
-          if (exists) {
-            result = nsIFilePicker::returnReplace;
-          }
-        }
-      } else if (mMode == nsIFilePicker::modeOpen) {
-        if (WarnForNonReadableFile(file_chooser)) {
-          result = nsIFilePicker::returnCancel;
-        }
-      }
       break;
 
     case GTK_RESPONSE_CANCEL:
@@ -663,8 +893,8 @@ void nsFilePicker::Done(void* file_chooser, gint response) {
   }
 
   // A "response" signal won't be sent again but "destroy" will be.
-  g_signal_handlers_disconnect_by_func(file_chooser, FuncToGpointer(OnDestroy),
-                                       this);
+  g_signal_handlers_disconnect_by_func(
+      file_chooser, FuncToGpointer(OnNonPortalDestroy), this);
 
   // When response_id is GTK_RESPONSE_DELETE_EVENT or when called from
   // OnDestroy, the widget would be destroyed anyway but it is fine if
@@ -672,7 +902,7 @@ void nsFilePicker::Done(void* file_chooser, gint response) {
   // requests that any remaining references be released, but the reference
   // count will not be decremented again if GtkWindow's reference has already
   // been released.
-  GtkFileChooserDestroy(file_chooser);
+  gtk_widget_destroy(GTK_WIDGET(file_chooser));
 
   if (mFileChooserDelegate) {
     // Properly deref our acquired reference. We call this after
@@ -689,77 +919,43 @@ void nsFilePicker::Done(void* file_chooser, gint response) {
     mFileChooserDelegate = nullptr;
   }
 
-  if (mCallback) {
-    mCallback->Done(result);
-    mCallback = nullptr;
-  }
+  DoneCommon(result);
   NS_RELEASE_THIS();
 }
 
-// All below functions available as of GTK 3.20+
-void* nsFilePicker::GtkFileChooserNew(const gchar* title, GtkWindow* parent,
-                                      GtkFileChooserAction action,
-                                      const gchar* accept_label) {
-  static auto sGtkFileChooserNativeNewPtr =
-      (void* (*)(const gchar*, GtkWindow*, GtkFileChooserAction, const gchar*,
-                 const gchar*))dlsym(RTLD_DEFAULT,
-                                     "gtk_file_chooser_native_new");
-  if (mUseNativeFileChooser && sGtkFileChooserNativeNewPtr != nullptr) {
-    return (*sGtkFileChooserNativeNewPtr)(title, parent, action, accept_label,
-                                          nullptr);
-  }
-  if (!accept_label) {
-    accept_label = g_dgettext(
-        "gtk30", action == GTK_FILE_CHOOSER_ACTION_SAVE ? "_Save" : "_Open");
-  }
-  return gtk_file_chooser_dialog_new(
-      title, parent, action, g_dgettext("gtk30", "_Cancel"),
-      GTK_RESPONSE_CANCEL, accept_label, GTK_RESPONSE_ACCEPT, nullptr);
-}
-
-void nsFilePicker::GtkFileChooserShow(void* file_chooser) {
-  static auto sGtkNativeDialogShowPtr =
-      (void (*)(void*))dlsym(RTLD_DEFAULT, "gtk_native_dialog_show");
-  if (mUseNativeFileChooser && sGtkNativeDialogShowPtr != nullptr) {
-    const char* portalEnvString = g_getenv("GTK_USE_PORTAL");
-    bool setPortalEnv =
-        (portalEnvString && *portalEnvString == '0') || !portalEnvString;
-    if (setPortalEnv) {
-      setenv("GTK_USE_PORTAL", "1", true);
+void nsFilePicker::DoneCommon(ResultCode aResult) {
+  if (aResult == ResultCode::returnOK) {
+    if (mMode == nsIFilePicker::modeSave) {
+      nsCOMPtr<nsIFile> file;
+      GetFile(getter_AddRefs(file));
+      if (file) {
+        bool exists = false;
+        file->Exists(&exists);
+        if (exists) {
+          aResult = nsIFilePicker::returnReplace;
+        }
+      }
+    } else if (mMode == nsIFilePicker::modeOpen) {
+      if (WarnForNonReadableFile()) {
+        aResult = nsIFilePicker::returnCancel;
+      }
     }
-    (*sGtkNativeDialogShowPtr)(file_chooser);
-    if (setPortalEnv) {
-      unsetenv("GTK_USE_PORTAL");
-    }
-  } else {
-    g_signal_connect(file_chooser, "destroy", G_CALLBACK(OnDestroy), this);
-    gtk_widget_show(GTK_WIDGET(file_chooser));
   }
-}
 
-void nsFilePicker::GtkFileChooserDestroy(void* file_chooser) {
-  static auto sGtkNativeDialogDestroyPtr =
-      (void (*)(void*))dlsym(RTLD_DEFAULT, "gtk_native_dialog_destroy");
-  if (mUseNativeFileChooser && sGtkNativeDialogDestroyPtr != nullptr) {
-    (*sGtkNativeDialogDestroyPtr)(file_chooser);
-  } else {
-    gtk_widget_destroy(GTK_WIDGET(file_chooser));
-  }
-}
-
-void nsFilePicker::GtkFileChooserSetModal(void* file_chooser,
-                                          GtkWindow* parent_widget,
-                                          gboolean modal) {
-  static auto sGtkNativeDialogSetModalPtr = (void (*)(void*, gboolean))dlsym(
-      RTLD_DEFAULT, "gtk_native_dialog_set_modal");
-  if (mUseNativeFileChooser && sGtkNativeDialogSetModalPtr != nullptr) {
-    (*sGtkNativeDialogSetModalPtr)(file_chooser, modal);
-  } else {
-    GtkWindow* window = GTK_WINDOW(file_chooser);
-    gtk_window_set_modal(window, modal);
-    if (parent_widget != nullptr) {
-      gtk_window_set_destroy_with_parent(window, modal);
+  // Remember last used directory.
+  nsCOMPtr<nsIFile> file;
+  GetFile(getter_AddRefs(file));
+  if (file) {
+    nsCOMPtr<nsIFile> dir;
+    file->GetParent(getter_AddRefs(dir));
+    if (dir) {
+      dir.swap(sPrevDisplayDirectory);
     }
+  }
+
+  if (mCallback) {
+    mCallback->Done(aResult);
+    mCallback = nullptr;
   }
 }
 

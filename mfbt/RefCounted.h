@@ -9,12 +9,9 @@
 #ifndef mozilla_RefCounted_h
 #define mozilla_RefCounted_h
 
-#include <utility>
 #include <type_traits>
 
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/RefCountType.h"
 

@@ -105,6 +105,10 @@ inline bool IsForwarded<Cell>(const Cell* t) {
   return t->isForwarded();
 }
 
+inline bool IsForwarded(const JS::Value& value) {
+  return value.isGCThing() && IsForwarded(value.toGCThing());
+}
+
 template <typename T>
 inline T* Forwarded(const T* t) {
   const RelocationOverlay* overlay = RelocationOverlay::fromCell(t);
@@ -112,13 +116,21 @@ inline T* Forwarded(const T* t) {
   return reinterpret_cast<T*>(overlay->forwardingAddress());
 }
 
+inline JS::Value Forwarded(const JS::Value& value) {
+  MOZ_ASSERT(IsForwarded(value));
+  JS::Value result = value;
+  result.changeGCThingPayload(Forwarded(value.toGCThing()));
+  return result;
+}
+
 template <typename T>
-inline T MaybeForwarded(T t) {
-  if (IsForwarded(t)) {
-    t = Forwarded(t);
+inline T MaybeForwarded(const T& t) {
+  if (!IsForwarded(t)) {
+    return t;
   }
-  MOZ_ASSERT(!IsForwarded(t));
-  return t;
+  T result = Forwarded(t);
+  MOZ_ASSERT(!IsForwarded(result));
+  return result;
 }
 
 inline const JSClass* MaybeForwardedObjectClass(const JSObject* obj) {
@@ -176,7 +188,7 @@ inline void PreWriteBarrierDuringFlattening(JSString* str) {
 
   auto* cell = reinterpret_cast<TenuredCell*>(str);
   JS::shadow::Zone* zone = cell->shadowZoneFromAnyThread();
-  if (!zone->needsIncrementalBarrier()) {
+  if (!zone->needsMarkingBarrier()) {
     return;
   }
 

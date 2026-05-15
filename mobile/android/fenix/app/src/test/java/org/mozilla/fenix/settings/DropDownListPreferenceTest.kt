@@ -24,7 +24,7 @@ class DropDownListPreferenceTest {
     fun `WHEN findEntriesValue is called with a non-string THEN it returns null`() {
         assertNull(preference.findEntry(null))
         assertNull(preference.findEntry(1))
-        assertNull(preference.findEntry(Object()))
+        assertNull(preference.findEntry(Any()))
         assertNull(preference.findEntry(listOf<Char>()))
     }
 

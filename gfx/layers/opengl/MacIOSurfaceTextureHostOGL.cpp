@@ -17,15 +17,15 @@ namespace layers {
 
 MacIOSurfaceTextureHostOGL::MacIOSurfaceTextureHostOGL(
     TextureFlags aFlags, const SurfaceDescriptorMacIOSurface& aDescriptor)
-    : TextureHost(TextureHostType::MacIOSurface, aFlags) {
+    : TextureHost(TextureHostType::MacIOSurface, aFlags),
+      mSurface(MacIOSurface::LookupSurface(aDescriptor.surfaceId(),
+                                           !aDescriptor.isOpaque(),
+                                           aDescriptor.yUVColorSpace())),
+      mGpuFence(aDescriptor.gpuFence()) {
   MOZ_COUNT_CTOR(MacIOSurfaceTextureHostOGL);
-  mSurface = MacIOSurface::LookupSurface(aDescriptor.surfaceId(),
-                                         !aDescriptor.isOpaque(),
-                                         aDescriptor.yUVColorSpace());
   if (!mSurface) {
     gfxCriticalNote << "Failed to look up MacIOSurface";
   }
-  mGpuFence = aDescriptor.gpuFence();
 }
 
 MacIOSurfaceTextureHostOGL::~MacIOSurfaceTextureHostOGL() {
@@ -165,7 +165,8 @@ void MacIOSurfaceTextureHostOGL::PushResourceUpdates(
                            /* aNormalizedUvs */ false);
       break;
     }
-    case gfx::SurfaceFormat::P010: {
+    case gfx::SurfaceFormat::P010:
+    case gfx::SurfaceFormat::P016: {
       MOZ_ASSERT(aImageKeys.length() == 2);
       MOZ_ASSERT(mSurface->GetPlaneCount() == 2);
       wr::ImageDescriptor descriptor0(
@@ -247,7 +248,8 @@ void MacIOSurfaceTextureHostOGL::PushDisplayItems(
           /* aSupportsExternalCompositing */ true);
       break;
     }
-    case gfx::SurfaceFormat::P010: {
+    case gfx::SurfaceFormat::P010:
+    case gfx::SurfaceFormat::P016: {
       MOZ_ASSERT(aImageKeys.length() == 2);
       MOZ_ASSERT(mSurface->GetPlaneCount() == 2);
       aBuilder.PushP010Image(

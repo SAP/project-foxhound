@@ -82,6 +82,17 @@ class ResizingProcessorTest {
     }
 
     @Test
+    fun `process returns initial icon if bitmap is recycled`() {
+        val bitmap = mockBitmap(128).apply { doReturn(true).`when`(this).isRecycled }
+        val icon = Icon(bitmap, source = Icon.Source.INLINE)
+        val resized = process(icon = icon)
+
+        assertEquals(icon.bitmap, resized?.bitmap)
+
+        verify(processor, never()).resize(any(), anyInt())
+    }
+
+    @Test
     fun `smaller icons are resized to the max scale factor if permitted`() {
         val processor = spy(ResizingProcessor(discardSmallIcons = false))
 

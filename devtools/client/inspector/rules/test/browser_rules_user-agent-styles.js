@@ -116,8 +116,8 @@ async function userAgentStylesVisible(inspector, view) {
     await selectNode(data.selector, inspector);
     await compareAppliedStylesWithUI(inspector, view, "ua");
 
-    userRules = view._elementStyle.rules.filter(rule => rule.editor.isEditable);
-    uaRules = view._elementStyle.rules.filter(rule => !rule.editor.isEditable);
+    userRules = view.elementStyle.rules.filter(rule => rule.editor.isEditable);
+    uaRules = view.elementStyle.rules.filter(rule => !rule.editor.isEditable);
     is(userRules.length, data.numUserRules, "Correct number of user rules");
     Assert.greater(uaRules.length, data.numUARules, "Has UA rules");
   }
@@ -165,8 +165,8 @@ async function userAgentStylesNotVisible(inspector, view) {
     await selectNode(data.selector, inspector);
     await compareAppliedStylesWithUI(inspector, view);
 
-    userRules = view._elementStyle.rules.filter(rule => rule.editor.isEditable);
-    uaRules = view._elementStyle.rules.filter(rule => !rule.editor.isEditable);
+    userRules = view.elementStyle.rules.filter(rule => rule.editor.isEditable);
+    uaRules = view.elementStyle.rules.filter(rule => !rule.editor.isEditable);
     is(userRules.length, data.numUserRules, "Correct number of user rules");
     is(uaRules.length, data.numUARules, "No UA rules");
   }
@@ -190,7 +190,7 @@ async function compareAppliedStylesWithUI(inspector, view, filter) {
   }
   entries = [...entryMap.values()];
 
-  const elementStyle = view._elementStyle;
+  const elementStyle = view.elementStyle;
   await waitFor(() => elementStyle.rules.length === entries.length);
   is(
     elementStyle.rules.length,

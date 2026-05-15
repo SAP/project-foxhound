@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mediapacket_h__
-#define mediapacket_h__
+#ifndef mediapacket_h_
+#define mediapacket_h_
 
 #include <cstddef>
 #include <cstdint>
@@ -118,4 +118,4 @@ struct ParamTraits<mozilla::MediaPacket> {
   }
 };
 }  // namespace IPC
-#endif  // mediapacket_h__
+#endif  // mediapacket_h_

@@ -52,7 +52,7 @@ class DisassemblerSpew {
   uint32_t internalResolve(const Label* l);
 #endif
 
-  void spewVA(const char* fmt, va_list args) MOZ_FORMAT_PRINTF(2, 0);
+  void spewVA(const char* fmt, va_list va) MOZ_FORMAT_PRINTF(2, 0);
 
  public:
   DisassemblerSpew();

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<script>
+window.addEventListener("load", async () => {
+  try {
+    await navigator.mediaCapabilities.decodingInfo({
+      type: "file",
+      video: {
+        contentType: "video/mp4; codecs=avc1.64001f",
+        width: 0,
+        height: 0,
+        bitrate: 2000000,
+        framerate: 30
+      }
+    });
+  } catch (e) {}
+  document.documentElement.classList.remove("reftest-wait");
+});
+</script>
+</html>

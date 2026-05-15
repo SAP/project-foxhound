@@ -761,3 +761,68 @@ addAccessibleTask(
   },
   { chrome: true, topLevel: true }
 );
+
+/**
+ * Test has-actions attribute.
+ */
+addAccessibleTask(
+  `<dialog aria-actions="btn" id="dlg" open>
+      Hello
+      <button id="btn">Close</button>
+      <button id="btn-hidden" hidden>Pin</button>
+    </dialog>`,
+  async function testHasActionsAttribute(browser, docAcc) {
+    function getDlgHasActions() {
+      try {
+        return dlg.attributes.getStringProperty("has-actions");
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const dlg = findAccessibleChildByID(docAcc, "dlg");
+    is(getDlgHasActions(), "true", "dlg has-actions attribute is true");
+
+    // Removing the 'aria-actions' attribute from the element
+    // should remove the 'has-actions' attribute from the accessible.
+    let changed = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, "dlg");
+    await invokeSetAttribute(browser, "dlg", "aria-actions");
+    await changed;
+    await untilCacheIs(
+      getDlgHasActions,
+      null,
+      "dlg has-actions attribute removed"
+    );
+
+    // Setting the 'aria-actions' attribute to an empty string
+    // should make the 'has-actions' accessible attribute true.
+    changed = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, "dlg");
+    await invokeSetAttribute(browser, "dlg", "aria-actions", "");
+    await changed;
+    await untilCacheIs(
+      getDlgHasActions,
+      "true",
+      "dlg has-actions attribute re-added"
+    );
+
+    // Remove again to set up for next test
+    await invokeSetAttribute(browser, "dlg", "aria-actions");
+    await untilCacheIs(
+      getDlgHasActions,
+      null,
+      "dlg has-actions attribute removed again"
+    );
+
+    // Setting the 'aria-actions' attribute to a hidden target
+    // should still make 'has-actions' true
+    changed = waitForEvent(EVENT_OBJECT_ATTRIBUTE_CHANGED, "dlg");
+    await invokeSetAttribute(browser, "dlg", "aria-actions", "btn-hidden");
+    await changed;
+    await untilCacheIs(
+      getDlgHasActions,
+      "true",
+      "dlg has-actions attribute re-added with hidden target"
+    );
+  },
+  { chrome: true, topLevel: true }
+);

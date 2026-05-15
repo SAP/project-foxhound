@@ -34,6 +34,14 @@ const NAVIGATION_ITEMS =
         null,
       ];
 
+const askChatMenu = [
+  "context-ask-chat",
+  true,
+  // Need a blank entry here because the Ask Chat submenu is dynamically built with no ids.
+  "",
+  null,
+];
+
 add_task(async function test_setup() {
   const example_base =
     // eslint-disable-next-line @microsoft/sdl/no-insecure-url
@@ -49,28 +57,39 @@ add_task(async function test_setup() {
 });
 
 add_task(async function test_text_input() {
-  await test_contextmenu("#input_text", [
-    "context-undo",
-    false,
-    "context-redo",
-    false,
-    "---",
-    null,
-    "context-cut",
-    false,
-    "context-copy",
-    false,
-    "context-paste",
-    null, // ignore clipboard state
-    "context-delete",
-    false,
-    "context-selectall",
-    false,
-    "---",
-    null,
-    "spell-check-enabled",
-    true,
-  ]);
+  await test_contextmenu(
+    "#input_text",
+    [
+      "context-undo",
+      false,
+      "context-redo",
+      false,
+      "---",
+      null,
+      "context-cut",
+      false,
+      "context-copy",
+      false,
+      "context-paste",
+      null, // ignore clipboard state
+      "context-delete",
+      false,
+      "context-selectall",
+      false,
+      "---",
+      null,
+      ...askChatMenu,
+      "---",
+      null,
+      "spell-check-enabled",
+      true,
+    ],
+    {
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
+    }
+  );
 });
 
 add_task(async function test_text_input_disabled() {
@@ -95,10 +114,18 @@ add_task(async function test_text_input_disabled() {
       false,
       "---",
       null,
+      ...askChatMenu,
+      "---",
+      null,
       "spell-check-enabled",
       true,
     ],
-    { skipFocusChange: true }
+    {
+      skipFocusChange: true,
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
+    }
   );
 });
 
@@ -136,6 +163,9 @@ add_task(async function test_password_input() {
       null,
       "context-reveal-password",
       null,
+      "---",
+      null,
+      ...askChatMenu,
     ],
     {
       skipFocusChange: true,
@@ -167,6 +197,9 @@ add_task(async function test_password_input() {
           }
         );
       },
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
     }
   );
   await SpecialPowers.popPrefEnv();
@@ -177,32 +210,43 @@ add_task(async function firefox_relay_input() {
     set: [["signon.firefoxRelay.feature", "enabled"]],
   });
 
-  await test_contextmenu("#input_username", [
-    "use-relay-mask",
-    true,
-    "---",
-    null,
-    "context-undo",
-    false,
-    "context-redo",
-    false,
-    "---",
-    null,
-    "context-cut",
-    false,
-    "context-copy",
-    false,
-    "context-paste",
-    null, // ignore clipboard state
-    "context-delete",
-    false,
-    "context-selectall",
-    false,
-    "---",
-    null,
-    "spell-check-enabled",
-    true,
-  ]);
+  await test_contextmenu(
+    "#input_username",
+    [
+      "use-relay-mask",
+      true,
+      "---",
+      null,
+      "context-undo",
+      false,
+      "context-redo",
+      false,
+      "---",
+      null,
+      "context-cut",
+      false,
+      "context-copy",
+      false,
+      "context-paste",
+      null, // ignore clipboard state
+      "context-delete",
+      false,
+      "context-selectall",
+      false,
+      "---",
+      null,
+      ...askChatMenu,
+      "---",
+      null,
+      "spell-check-enabled",
+      true,
+    ],
+    {
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
+    }
+  );
 
   await test_contextmenu(
     "#input_email",
@@ -227,9 +271,15 @@ add_task(async function firefox_relay_input() {
       false,
       "context-selectall",
       null,
+      "---",
+      null,
+      ...askChatMenu,
     ],
     {
       skipFocusChange: true,
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
     }
   );
 
@@ -267,9 +317,15 @@ add_task(async function test_tel_email_url_number_input() {
         false,
         "context-selectall",
         null,
+        "---",
+        null,
+        ...askChatMenu,
       ],
       {
         skipFocusChange: true,
+        awaitOnMenuBuilt: {
+          id: "context-ask-chat",
+        },
       }
     );
   }
@@ -300,11 +356,17 @@ add_task(
           true,
           "---",
           null,
+          ...askChatMenu,
+          "---",
+          null,
           "context-viewsource",
           true,
         ],
         {
           skipFocusChange: true,
+          awaitOnMenuBuilt: {
+            id: "context-ask-chat",
+          },
         }
       );
     }
@@ -338,10 +400,18 @@ add_task(async function test_search_input() {
       null,
       "---",
       null,
+      ...askChatMenu,
+      "---",
+      null,
       "spell-check-enabled",
       true,
     ],
-    { skipFocusChange: true }
+    {
+      skipFocusChange: true,
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
+    }
   );
 });
 
@@ -374,9 +444,15 @@ add_task(async function test_text_input_readonly() {
       false,
       "context-selectall",
       null,
+      "---",
+      null,
+      ...askChatMenu,
     ],
     {
       skipFocusChange: true,
+      awaitOnMenuBuilt: {
+        id: "context-ask-chat",
+      },
     }
   );
 });

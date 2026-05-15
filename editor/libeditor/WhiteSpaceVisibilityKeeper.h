@@ -46,7 +46,7 @@ class WhiteSpaceVisibilityKeeper final {
   using InsertTextTo = EditorBase::InsertTextTo;
   using LineBreakType = HTMLEditor::LineBreakType;
   using PointPosition = WSRunScanner::PointPosition;
-  using Scan = WSRunScanner::Scan;
+  using ReferHTMLDefaultStyle = WSRunScanner::ReferHTMLDefaultStyle;
   using TextFragmentData = WSRunScanner::TextFragmentData;
   using VisibleWhiteSpacesData = WSRunScanner::VisibleWhiteSpacesData;
 

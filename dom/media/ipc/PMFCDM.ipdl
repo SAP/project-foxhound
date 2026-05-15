@@ -13,6 +13,7 @@ using mozilla::dom::MediaKeyMessageType from "mozilla/dom/MediaKeyMessageEventBi
 using mozilla::dom::MediaKeyStatus from "mozilla/dom/MediaKeyStatusMapBinding.h";
 using mozilla::dom::HDCPVersion from "mozilla/dom/MediaKeysBinding.h";
 using mozilla::KeySystemConfigRequest from "mozilla/KeySystemConfig.h";
+using mozilla::dom::MediaKeySessionClosedReason from "mozilla/dom/MediaKeySessionBinding.h";
 
 namespace mozilla {
 
@@ -58,7 +59,6 @@ struct MFCDMCapabilitiesIPDL {
   SessionType[] sessionTypes;
   Requirement distinctiveID;
   Requirement persistentState;
-  bool? isHDCP22Compatible;
   bool isHardwareDecryption;
 };
 
@@ -103,6 +103,11 @@ struct MFCDMCapabilitiesRequest {
   bool isPrivateBrowsing;
 };
 
+struct MFCDMSessionClosedResult {
+  nsString sessionId;
+  MediaKeySessionClosedReason reason;
+};
+
 [ManualDealloc]
 async protocol PMFCDM
 {
@@ -124,6 +129,7 @@ child:
   async OnSessionKeyMessage(MFCDMKeyMessage message);
   async OnSessionKeyStatusesChanged(MFCDMKeyStatusChange keystatuses);
   async OnSessionKeyExpiration(MFCDMKeyExpiration expiration);
+  async OnSessionClosed(MFCDMSessionClosedResult result);
 };
 
 } // namespace mozilla

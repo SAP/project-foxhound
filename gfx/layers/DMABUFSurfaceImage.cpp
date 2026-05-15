@@ -10,7 +10,6 @@
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/DMABUFTextureClientOGL.h"
 #include "mozilla/layers/TextureForwarder.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticMutex.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"

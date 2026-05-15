@@ -3,15 +3,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDeviceContextSpecWin_h___
-#define nsDeviceContextSpecWin_h___
+#ifndef nsDeviceContextSpecWin_h_
+#define nsDeviceContextSpecWin_h_
 
 #include "nsCOMPtr.h"
 #include "nsIDeviceContextSpec.h"
 #include "nsPrinterListBase.h"
 #include "nsIPrintSettings.h"
 #include <windows.h>
-#include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/PrintPromise.h"
 

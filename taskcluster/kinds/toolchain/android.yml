@@ -3,7 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         docker-image: {in-tree: android-build}
         max-run-time: 1800
@@ -39,7 +39,7 @@ linux64-android31-avd-x86_64-repack:
     description: "Android AVD (Linux) repack toolchain build"
     treeherder:
         symbol: TL(avd31-x86_64-linux)
-    worker-type: b-linux-kvm-gcp
+    worker-type: b-linux-kvm
     worker:
         kvm: true
     run:
@@ -59,7 +59,7 @@ linux64-android30-avd-x86-repack:
     description: "Android AVD (Linux) repack toolchain build"
     treeherder:
         symbol: TL(avd30-x86-linux)
-    worker-type: b-linux-kvm-gcp
+    worker-type: b-linux-kvm
     worker:
         kvm: true
     run:
@@ -79,7 +79,7 @@ linux64-android34-avd-x86_64-repack:
     description: "Android AVD (Linux) repack toolchain build"
     treeherder:
         symbol: TL(avd34-x86_64-linux)
-    worker-type: b-linux-kvm-gcp
+    worker-type: b-linux-kvm
     worker:
         kvm: true
     run:
@@ -193,7 +193,7 @@ linux64-jdk-repack:
         toolchain-artifact: project/gecko/jdk/jdk-linux.tar.zst
         toolchain-alias: linux64-jdk
         toolchain-env:
-            JAVA_HOME: "/builds/worker/fetches/jdk/jdk-17.0.15+6"
+            JAVA_HOME: "/builds/worker/fetches/jdk/jdk-17.0.17+10"
 
 linux64-android-sdk-linux-repack:
     description: "Android SDK (Linux) repack toolchain build"
@@ -261,6 +261,7 @@ linux64-android-gradle-dependencies:
         sparse-profile: null
         resources:
             - '*.gradle'
+            - 'config/milestone.txt'
             - 'gradle.properties'
             - 'gradle/**'
             - 'mobile/android/**/*.gradle'
@@ -283,6 +284,7 @@ linux64-android-gradle-dependencies:
             - linux64-android-sdk-linux-repack
             - linux64-jdk-repack
             - linux64-node
+            - terser
 
 linux64-android-gradle-dependencies-lite:
     description: "Android Lite Gradle dependencies toolchain task"
@@ -296,6 +298,7 @@ linux64-android-gradle-dependencies-lite:
         sparse-profile: null
         resources:
             - '*.gradle'
+            - 'config/milestone.txt'
             - 'gradle.properties'
             - 'gradle/**'
             - 'mobile/android/**/*.gradle'
@@ -318,6 +321,7 @@ linux64-android-gradle-dependencies-lite:
             - linux64-android-sdk-linux-repack
             - linux64-jdk-repack
             - linux64-node
+            - terser
 
 linux64-android-xmlstarlet:
     description: "Tool for finding xml paths on Android"

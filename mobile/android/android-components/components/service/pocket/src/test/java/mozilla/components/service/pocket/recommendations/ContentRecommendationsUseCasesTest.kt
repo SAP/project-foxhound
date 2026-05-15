@@ -5,7 +5,6 @@
 package mozilla.components.service.pocket.recommendations
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.fetch.Client
 import mozilla.components.service.pocket.ContentRecommendationsRequestConfig
@@ -27,7 +26,6 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class ContentRecommendationsUseCasesTest {
 

@@ -3,15 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WindowDefs_h__
-#define WindowDefs_h__
+#ifndef WindowDefs_h_
+#define WindowDefs_h_
 
 /*
  * nsWindowDefs - nsWindow related definitions, consts, and macros.
  */
 
 #include "mozilla/widget/WinMessages.h"
-#include "nsBaseWidget.h"
+#include "nsIWidget.h"
 #include "nsdefs.h"
 #include "resource.h"
 
@@ -112,4 +112,4 @@ struct MSGResult {
   NS_ASSERTION(((s) & (WS_CHILD | WS_POPUP)) != (WS_CHILD | WS_POPUP), \
                "WS_POPUP and WS_CHILD are mutually exclusive")
 
-#endif /* WindowDefs_h__ */
+#endif /* WindowDefs_h_ */

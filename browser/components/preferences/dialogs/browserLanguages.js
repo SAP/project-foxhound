@@ -317,11 +317,11 @@ class SortedItemSelectList {
 /**
  * @typedef LocaleDisplayInfo
  * @type {object}
- * @prop {string} id - A unique ID.
- * @prop {string} label - The localized display name.
- * @prop {string} value - The BCP 47 locale identifier or the word "search".
- * @prop {boolean} canRemove - The default locale cannot be removed.
- * @prop {boolean} installed - Whether or not the locale is installed.
+ * @property {string} id - A unique ID.
+ * @property {string} label - The localized display name.
+ * @property {string} value - The BCP 47 locale identifier or the word "search".
+ * @property {boolean} canRemove - The default locale cannot be removed.
+ * @property {boolean} installed - Whether or not the locale is installed.
  */
 
 /**
@@ -413,7 +413,7 @@ var gBrowserLanguagesDialog = {
 
   async onLoad() {
     /**
-     * @typedef {Object} Options - Options passed in to configure the subdialog.
+     * @typedef {object} Options - Options passed in to configure the subdialog.
      * @property {string} telemetryId,
      * @property {Array<string>} [selectedLocalesForRestart] The optional list of
      *   previously selected locales for when a restart is required. This list is

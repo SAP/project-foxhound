@@ -4,15 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef XULTreeElement_h__
-#define XULTreeElement_h__
+#ifndef XULTreeElement_h_
+#define XULTreeElement_h_
 
-#include "mozilla/Attributes.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "nsString.h"
-#include "nsXULElement.h"
 #include "nsITreeView.h"
+#include "nsString.h"
+#include "nsWrapperCache.h"
+#include "nsXULElement.h"
 
 class nsTreeBodyFrame;
 class nsTreeColumn;
@@ -89,18 +88,18 @@ class XULTreeElement final : public nsXULElement {
 
   void SetFocused(bool aFocused);
   void EnsureRowIsVisible(int32_t index);
-  void Invalidate(void);
+  void Invalidate();
   void InvalidateColumn(nsTreeColumn* col);
   void InvalidateRow(int32_t index);
   void InvalidateCell(int32_t row, nsTreeColumn* col);
   void InvalidateRange(int32_t startIndex, int32_t endIndex);
   void RowCountChanged(int32_t index, int32_t count);
-  void BeginUpdateBatch(void);
-  void EndUpdateBatch(void);
-  void ClearStyleAndImageCaches(void);
+  void BeginUpdateBatch();
+  void EndUpdateBatch();
+  void ClearStyleAndImageCaches();
 
-  virtual void UnbindFromTree(UnbindContext&) override;
-  virtual void DestroyContent() override;
+  void UnbindFromTree(UnbindContext&) override;
+  void DestroyContent() override;
 
   void BodyDestroyed(int32_t aFirstVisibleRow) {
     mTreeBody = nullptr;
@@ -108,6 +107,9 @@ class XULTreeElement final : public nsXULElement {
   }
 
   int32_t GetCachedTopVisibleRow() { return mCachedFirstVisibleRow; }
+
+  int32_t ScrollbarPosition() const;
+  int32_t ScrollbarMaxPosition() const;
 
  protected:
   int32_t mCachedFirstVisibleRow;

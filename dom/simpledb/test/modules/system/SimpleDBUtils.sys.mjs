@@ -24,7 +24,7 @@ export const SimpleDBUtils = {
    *
    * These requests are typically returned by the connection.
    *
-   * @param {Object} request
+   * @param {object} request
    *   The request object, which must have a callback property and
    *   result-related properties (e.g., resultCode, resultName).
    * @returns {Promise}

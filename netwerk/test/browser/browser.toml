@@ -13,6 +13,7 @@ support-files = [
   "early_hint_asset_html.sjs",
   "early_hint_csp_options_html.sjs",
   "early_hint_preconnect_html.sjs",
+  "request_accept_language.sjs",
   "file_channel.html",
   "post.html",
   "res.css",
@@ -45,6 +46,7 @@ support-files = [
   "res_http_index_format",
   "res_http_index_format^headers^",
   "square.png",
+  "square2.png",
   "no_103_preload.html",
   "no_103_preload.html^headers^",
   "103_preload_anchor.html^informationalResponse^",
@@ -92,10 +94,10 @@ support-files = [
   "103_preload_no_img.html^informationalResponse^",
 ]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1829935
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt", # Bug 1829935
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1829935
-  "os == 'win' && os_version == '11.26100' && opt", # Bug 1829935
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1829935
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1829935
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone", # Bug 1829935
 ]
 
 ["browser_103_csp.js"]
@@ -113,8 +115,8 @@ support-files = ["early_hint_preload_test_helper.sys.mjs",]
 ["browser_103_http_v1_1_preload.js"]
 support-files = ["early_hint_preload_test_helper.sys.mjs",]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["browser_103_no_cancel_on_error.js"]
@@ -147,7 +149,11 @@ support-files = ["early_hint_preload_test_helper.sys.mjs",]
 ["browser_NetUtil.js"]
 
 ["browser_about_cache.js"]
-skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'"] # Bug 1970244
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1970244
+]
+
+["browser_accept_language_override.js"]
 
 ["browser_backgroundtask_purgeHTTPCache.js"]
 
@@ -156,10 +162,14 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && d
 ["browser_bug1535877.js"]
 
 ["browser_bug1629307.js"]
-fail-if = ["a11y_checks"] # Bug 1854523 clicked button may not be focusable
+fail-if = [
+  "a11y_checks", # Bug 1854523 clicked button may not be focusable
+]
 
 ["browser_child_resource.js"]
-run-if = ["crashreporter"]
+run-if = [
+  "crashreporter",
+]
 
 ["browser_cookie_filtering_basic.js"]
 
@@ -180,26 +190,41 @@ support-files = ["res_hello_h1.sjs"]
 
 ["browser_essential_domain_fallbacks.js"]
 
+["browser_fetch_after_suspending_request.js"]
+
 ["browser_fetch_lnk.js"]
-run-if = ["os == 'win'"]
+run-if = [
+  "os == 'win'",
+]
 support-files = ["file_lnk.lnk",]
 
 ["browser_http_index_format.js"]
 
+["browser_ipAddressSpace_mainpage_unaffected.js"]
+
+["browser_link_hover_speculative_connection.js"]
+support-files = ["file_link_hover.sjs"]
+
+["browser_loadinfo_iframe_browsing_context.js"]
+
 ["browser_mock_https_rr.js"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
   "socketprocess_networking",
 ]
 
 ["browser_necko_l10n.js"]
 
 ["browser_nsIFormPOSTActionChannel.js"]
-skip-if = ["true"] # protocol handler and channel does not work in content process
+skip-if = [
+  "true", # protocol handler and channel does not work in content process
+]
 
 ["browser_post_auth.js"]
-skip-if = ["socketprocess_networking"] # Bug 1772209
+skip-if = [
+  "socketprocess_networking", # Bug 1772209
+]
 
 ["browser_post_file.js"]
 
@@ -223,13 +248,27 @@ support-files = [
   "damonbowling.jpg^headers^",
   "file_favicon.html",
 ]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_test_file_channel_observer.js"]
+
+["browser_test_local_network_access.js"]
+support-files = [
+  "page_with_non_trackers.html",
+  "page_with_non_trackers.html^headers^",
+  "fetch_from_tracker.sjs",
+]
 
 ["browser_test_local_network_trackers.js"]
 support-files = [
   "page_with_trackers.html",
+  "page_with_non_trackers.html",
   "fetch_from_tracker.sjs",
 ]
 
 ["browser_test_offline_tab.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && verify-standalone",
+]

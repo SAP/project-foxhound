@@ -45,6 +45,7 @@ public final class GeckoEditableChild extends JNIObject implements IGeckoEditabl
         final int repeatCount,
         final int flags,
         final boolean isSynthesizedImeKey,
+        final boolean waitingReply,
         final KeyEvent event) {
       GeckoEditableChild.this.onKeyEvent(
           action,
@@ -57,6 +58,7 @@ public final class GeckoEditableChild extends JNIObject implements IGeckoEditabl
           repeatCount,
           flags,
           isSynthesizedImeKey,
+          waitingReply,
           event);
     }
 
@@ -171,6 +173,7 @@ public final class GeckoEditableChild extends JNIObject implements IGeckoEditabl
       int repeatCount,
       int flags,
       boolean isSynthesizedImeKey,
+      boolean waitingReply,
       KeyEvent event);
 
   @WrapForJNI(dispatchTo = "proxy")

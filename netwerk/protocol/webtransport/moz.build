@@ -9,18 +9,21 @@ with Files("**"):
 
 XPIDL_SOURCES += [
     "nsIWebTransport.idl",
+    "nsIWebTransportEventService.idl",
     "nsIWebTransportStream.idl",
 ]
 
 XPIDL_MODULE = "necko_webtransport"
 
 EXPORTS.mozilla.net += [
+    "WebTransportEventService.h",
     "WebTransportHash.h",
     "WebTransportSessionProxy.h",
     "WebTransportStreamProxy.h",
 ]
 
 UNIFIED_SOURCES += [
+    "WebTransportEventService.cpp",
     "WebTransportHash.cpp",
     "WebTransportSessionProxy.cpp",
     "WebTransportStreamProxy.cpp",

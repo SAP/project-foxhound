@@ -4,8 +4,8 @@ import shutil
 import tempfile
 import unittest
 
-import mozharness.base.vcs.mercurial as mercurial
 import mozunit
+from mozharness.base.vcs import mercurial
 
 test_string = """foo
 bar
@@ -81,15 +81,11 @@ class TestMakeAbsolute(unittest.TestCase):
 
 class TestHg(unittest.TestCase):
     def _init_hg_repo(self, hg_obj, repodir):
-        hg_obj.run_command(
-            [
-                "bash",
-                os.path.join(
-                    os.path.dirname(__file__), "helper_files", "init_hgrepo.sh"
-                ),
-                repodir,
-            ]
-        )
+        hg_obj.run_command([
+            "bash",
+            os.path.join(os.path.dirname(__file__), "helper_files", "init_hgrepo.sh"),
+            repodir,
+        ])
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()

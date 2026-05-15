@@ -26,6 +26,12 @@
 
 namespace js {
 
+static MOZ_ALWAYS_INLINE void SetValueRangeToUndefined(Value* vec, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    vec[i].setUndefined();
+  }
+}
+
 inline HandleObject InterpreterFrame::environmentChain() const {
   return HandleObject::fromMarkedLocation(&envChain_);
 }

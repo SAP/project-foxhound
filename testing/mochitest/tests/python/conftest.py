@@ -71,16 +71,14 @@ def runtests(setup_test_harness, binary, parser, request):
 
     buf = io.StringIO()
     options = vars(parser.parse_args([]))
-    options.update(
-        {
-            "app": binary,
-            "flavor": flavor,
-            "runFailures": runFailures,
-            "restartAfterFailure": restartAfterFailure,
-            "keep_open": False,
-            "log_raw": [buf],
-        }
-    )
+    options.update({
+        "app": binary,
+        "flavor": flavor,
+        "runFailures": runFailures,
+        "restartAfterFailure": restartAfterFailure,
+        "keep_open": False,
+        "log_raw": [buf],
+    })
 
     if runFailures == "selftest":
         options["crashAsPass"] = True
@@ -89,12 +87,10 @@ def runtests(setup_test_harness, binary, parser, request):
 
     if not os.path.isdir(runtests.build_obj.bindir):
         package_root = os.path.dirname(mochitest_root)
-        options.update(
-            {
-                "certPath": os.path.join(package_root, "certs"),
-                "utilityPath": os.path.join(package_root, "bin"),
-            }
-        )
+        options.update({
+            "certPath": os.path.join(package_root, "certs"),
+            "utilityPath": os.path.join(package_root, "bin"),
+        })
         options["extraProfileFiles"].append(
             os.path.join(package_root, "bin", "plugins")
         )

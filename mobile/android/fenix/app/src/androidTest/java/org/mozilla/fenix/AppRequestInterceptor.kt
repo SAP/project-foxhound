@@ -165,6 +165,7 @@ class AppRequestInterceptor(
         ErrorType.ERROR_SAFEBROWSING_MALWARE_URI,
         ErrorType.ERROR_SAFEBROWSING_PHISHING_URI,
         ErrorType.ERROR_SAFEBROWSING_UNWANTED_URI,
+        ErrorType.ERROR_HARMFULADDON_URI,
         -> RiskLevel.High
     }
 

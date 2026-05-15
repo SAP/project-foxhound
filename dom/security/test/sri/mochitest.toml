@@ -43,16 +43,16 @@ support-files = [
 
 ["test_script_crossdomain.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_script_sameorigin.html"]
 
 ["test_style_crossdomain.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_style_sameorigin.html"]

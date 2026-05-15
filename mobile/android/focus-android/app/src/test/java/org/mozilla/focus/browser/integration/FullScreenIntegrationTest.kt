@@ -12,6 +12,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.core.view.WindowInsetsCompat
 import mozilla.components.browser.engine.gecko.GeckoEngineView
+import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.feature.prompts.dialog.FullScreenNotification
 import mozilla.components.feature.session.FullScreenFeature
@@ -397,7 +398,7 @@ internal class FullScreenIntegrationTest {
         isAccessibilityEnabled: () -> Boolean = { false },
     ) = FullScreenIntegration(
         activity = activity,
-        store = mock(),
+        store = BrowserStore(),
         tabId = null,
         sessionUseCases = mock(),
         toolbarView = toolbar,

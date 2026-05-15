@@ -33,7 +33,7 @@
 
 .panel-button {
   appearance: none;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   color: var(--button-text-color);
   background-color: var(--button-background-color);
   padding: 2px 6px;

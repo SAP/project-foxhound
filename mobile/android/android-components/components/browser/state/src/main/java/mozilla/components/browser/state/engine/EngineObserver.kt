@@ -6,6 +6,8 @@ package mozilla.components.browser.state.engine
 
 import android.content.Intent
 import android.os.Environment
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.CookieBannerAction
@@ -19,7 +21,7 @@ import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.browser.state.state.AppIntentState
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.LoadRequestState
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.state.content.DownloadState.Status.INITIATED
 import mozilla.components.browser.state.state.content.FindResultState
@@ -37,10 +39,12 @@ import mozilla.components.concept.engine.translate.TranslationEngineState
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.concept.engine.window.WindowRequest
+import mozilla.components.concept.fetch.Headers.Names.E_TAG
 import mozilla.components.concept.fetch.Response
 import mozilla.components.lib.state.Store
+import java.security.cert.X509Certificate
 
-private const val PAGE_LOAD_COMPLETION_PROGRESS = 100
+internal const val PAGE_LOAD_COMPLETION_PROGRESS = 100
 
 /**
  * [EngineSession.Observer] implementation responsible to update the state of a [Session] from the events coming out of
@@ -50,46 +54,47 @@ private const val PAGE_LOAD_COMPLETION_PROGRESS = 100
 internal class EngineObserver(
     private val tabId: String,
     private val store: Store<BrowserState, BrowserAction>,
+    private val scope: CoroutineScope,
 ) : EngineSession.Observer {
 
     override fun onScrollChange(scrollX: Int, scrollY: Int) {
-        store.dispatch(ReaderAction.UpdateReaderScrollYAction(tabId, scrollY))
+        dispatchAsync(ReaderAction.UpdateReaderScrollYAction(tabId, scrollY))
     }
 
     override fun onNavigateBack() {
-        store.dispatch(ContentAction.UpdateSearchTermsAction(tabId, ""))
+        dispatchAsync(ContentAction.UpdateSearchTermsAction(tabId, ""))
     }
 
     override fun onNavigateForward() {
-        store.dispatch(ContentAction.UpdateSearchTermsAction(tabId, ""))
+        dispatchAsync(ContentAction.UpdateSearchTermsAction(tabId, ""))
     }
 
     override fun onGotoHistoryIndex() {
-        store.dispatch(ContentAction.UpdateSearchTermsAction(tabId, ""))
+        dispatchAsync(ContentAction.UpdateSearchTermsAction(tabId, ""))
     }
 
     override fun onLoadData() {
-        store.dispatch(ContentAction.UpdateSearchTermsAction(tabId, ""))
+        dispatchAsync(ContentAction.UpdateSearchTermsAction(tabId, ""))
     }
 
     override fun onLoadUrl() {
         if (store.state.findTabOrCustomTab(tabId)?.content?.isSearch == true) {
-            store.dispatch(ContentAction.UpdateIsSearchAction(tabId, false))
+            dispatchAsync(ContentAction.UpdateIsSearchAction(tabId, false))
         } else {
-            store.dispatch(ContentAction.UpdateSearchTermsAction(tabId, ""))
+            dispatchAsync(ContentAction.UpdateSearchTermsAction(tabId, ""))
         }
     }
 
     override fun onFirstContentfulPaint() {
-        store.dispatch(ContentAction.UpdateFirstContentfulPaintStateAction(tabId, true))
+        dispatchAsync(ContentAction.UpdateFirstContentfulPaintStateAction(tabId, true))
     }
 
     override fun onPaintStatusReset() {
-        store.dispatch(ContentAction.UpdateFirstContentfulPaintStateAction(tabId, false))
+        dispatchAsync(ContentAction.UpdateFirstContentfulPaintStateAction(tabId, false))
     }
 
     override fun onLocationChange(url: String, hasUserGesture: Boolean) {
-        store.dispatch(ContentAction.UpdateUrlAction(tabId, url, hasUserGesture))
+        dispatchAsync(ContentAction.UpdateUrlAction(tabId, url, hasUserGesture))
     }
 
     @Suppress("DEPRECATION") // Session observable is deprecated
@@ -99,11 +104,11 @@ internal class EngineObserver(
         triggeredByWebContent: Boolean,
     ) {
         if (triggeredByWebContent) {
-            store.dispatch(ContentAction.UpdateSearchTermsAction(tabId, ""))
+            dispatchAsync(ContentAction.UpdateSearchTermsAction(tabId, ""))
         }
 
         val loadRequest = LoadRequestState(url, triggeredByRedirect, triggeredByWebContent)
-        store.dispatch(ContentAction.UpdateLoadRequestAction(tabId, loadRequest))
+        dispatchAsync(ContentAction.UpdateLoadRequestAction(tabId, loadRequest))
     }
 
     override fun onLaunchIntentRequest(
@@ -112,7 +117,7 @@ internal class EngineObserver(
         fallbackUrl: String?,
         appName: String?,
     ) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateAppIntentAction(
                 tabId,
                 AppIntentState(url, appIntent, fallbackUrl, appName),
@@ -121,11 +126,11 @@ internal class EngineObserver(
     }
 
     override fun onTitleChange(title: String) {
-        store.dispatch(ContentAction.UpdateTitleAction(tabId, title))
+        dispatchAsync(ContentAction.UpdateTitleAction(tabId, title))
     }
 
     override fun onPreviewImageChange(previewImageUrl: String) {
-        store.dispatch(ContentAction.UpdatePreviewImageAction(tabId, previewImageUrl))
+        dispatchAsync(ContentAction.UpdatePreviewImageAction(tabId, previewImageUrl))
     }
 
     override fun onProgress(progress: Int) {
@@ -133,75 +138,75 @@ internal class EngineObserver(
         // referencing to a field in the state is not recommended, this flow should be reconsidered
         // while the visual completeness logic is revisited in Bug 1966977.
         if (progress == PAGE_LOAD_COMPLETION_PROGRESS && !store.state.translationsInitialized) {
-            store.dispatch(TranslationsAction.InitTranslationsBrowserState)
+            dispatchAsync(TranslationsAction.InitTranslationsBrowserState)
         }
-        store.dispatch(ContentAction.UpdateProgressAction(tabId, progress))
+        dispatchAsync(ContentAction.UpdateProgressAction(tabId, progress))
     }
 
     override fun onLoadingStateChange(loading: Boolean) {
-        store.dispatch(ContentAction.UpdateLoadingStateAction(tabId, loading))
+        dispatchAsync(ContentAction.UpdateLoadingStateAction(tabId, loading))
 
         if (loading) {
-            store.dispatch(ContentAction.ClearFindResultsAction(tabId))
-            store.dispatch(ContentAction.UpdateRefreshCanceledStateAction(tabId, false))
-            store.dispatch(TrackingProtectionAction.ClearTrackersAction(tabId))
+            dispatchAsync(ContentAction.ClearFindResultsAction(tabId))
+            dispatchAsync(ContentAction.UpdateRefreshCanceledStateAction(tabId, false))
+            dispatchAsync(TrackingProtectionAction.ClearTrackersAction(tabId))
         }
     }
 
     override fun onNavigationStateChange(canGoBack: Boolean?, canGoForward: Boolean?) {
         canGoBack?.let {
-            store.dispatch(ContentAction.UpdateBackNavigationStateAction(tabId, canGoBack))
+            dispatchAsync(ContentAction.UpdateBackNavigationStateAction(tabId, canGoBack))
         }
         canGoForward?.let {
-            store.dispatch(ContentAction.UpdateForwardNavigationStateAction(tabId, canGoForward))
+            dispatchAsync(ContentAction.UpdateForwardNavigationStateAction(tabId, canGoForward))
         }
     }
 
-    override fun onSecurityChange(secure: Boolean, host: String?, issuer: String?) {
-        store.dispatch(
+    override fun onSecurityChange(secure: Boolean, host: String?, issuer: String?, certificate: X509Certificate?) {
+        dispatchAsync(
             ContentAction.UpdateSecurityInfoAction(
                 tabId,
-                SecurityInfoState(secure, host ?: "", issuer ?: ""),
+                SecurityInfo.from(secure, host ?: "", issuer ?: "", certificate),
             ),
         )
     }
 
     override fun onTrackerBlocked(tracker: Tracker) {
-        store.dispatch(TrackingProtectionAction.TrackerBlockedAction(tabId, tracker))
+        dispatchAsync(TrackingProtectionAction.TrackerBlockedAction(tabId, tracker))
     }
 
     override fun onTrackerLoaded(tracker: Tracker) {
-        store.dispatch(TrackingProtectionAction.TrackerLoadedAction(tabId, tracker))
+        dispatchAsync(TrackingProtectionAction.TrackerLoadedAction(tabId, tracker))
     }
 
     override fun onExcludedOnTrackingProtectionChange(excluded: Boolean) {
-        store.dispatch(TrackingProtectionAction.ToggleExclusionListAction(tabId, excluded))
+        dispatchAsync(TrackingProtectionAction.ToggleExclusionListAction(tabId, excluded))
     }
 
     override fun onTrackerBlockingEnabledChange(enabled: Boolean) {
-        store.dispatch(TrackingProtectionAction.ToggleAction(tabId, enabled))
+        dispatchAsync(TrackingProtectionAction.ToggleAction(tabId, enabled))
     }
 
     override fun onCookieBannerChange(status: EngineSession.CookieBannerHandlingStatus) {
-        store.dispatch(CookieBannerAction.UpdateStatusAction(tabId, status))
+        dispatchAsync(CookieBannerAction.UpdateStatusAction(tabId, status))
     }
 
     override fun onTranslatePageChange() {
-        store.dispatch(TranslationsAction.SetTranslateProcessingAction(tabId, isProcessing = false))
+        dispatchAsync(TranslationsAction.SetTranslateProcessingAction(tabId, isProcessing = false))
     }
 
     override fun onLongPress(hitResult: HitResult) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateHitResultAction(tabId, hitResult),
         )
     }
 
     override fun onFind(text: String) {
-        store.dispatch(ContentAction.ClearFindResultsAction(tabId))
+        dispatchAsync(ContentAction.ClearFindResultsAction(tabId))
     }
 
     override fun onFindResult(activeMatchOrdinal: Int, numberOfMatches: Int, isDoneCounting: Boolean) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.AddFindResultAction(
                 tabId,
                 FindResultState(
@@ -241,9 +246,10 @@ internal class EngineObserver(
             skipConfirmation = skipConfirmation,
             openInApp = openInApp,
             response = response,
+            etag = response?.headers?.get(E_TAG),
         )
 
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateDownloadAction(
                 tabId,
                 download,
@@ -252,7 +258,7 @@ internal class EngineObserver(
     }
 
     override fun onDesktopModeChange(enabled: Boolean) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateTabDesktopMode(
                 tabId,
                 enabled,
@@ -261,7 +267,7 @@ internal class EngineObserver(
     }
 
     override fun onFullScreenChange(enabled: Boolean) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.FullScreenChangedAction(
                 tabId,
                 enabled,
@@ -270,7 +276,7 @@ internal class EngineObserver(
     }
 
     override fun onMetaViewportFitChanged(layoutInDisplayCutoutMode: Int) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.ViewportFitChangedAction(
                 tabId,
                 layoutInDisplayCutoutMode,
@@ -279,7 +285,7 @@ internal class EngineObserver(
     }
 
     override fun onContentPermissionRequest(permissionRequest: PermissionRequest) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdatePermissionsRequest(
                 tabId,
                 permissionRequest,
@@ -288,7 +294,7 @@ internal class EngineObserver(
     }
 
     override fun onCancelContentPermissionRequest(permissionRequest: PermissionRequest) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.ConsumePermissionsRequest(
                 tabId,
                 permissionRequest,
@@ -297,7 +303,7 @@ internal class EngineObserver(
     }
 
     override fun onAppPermissionRequest(permissionRequest: PermissionRequest) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateAppPermissionsRequest(
                 tabId,
                 permissionRequest,
@@ -306,7 +312,7 @@ internal class EngineObserver(
     }
 
     override fun onPromptRequest(promptRequest: PromptRequest) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdatePromptRequestAction(
                 tabId,
                 promptRequest,
@@ -315,27 +321,27 @@ internal class EngineObserver(
     }
 
     override fun onPromptDismissed(promptRequest: PromptRequest) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.ConsumePromptRequestAction(tabId, promptRequest),
         )
     }
 
     override fun onPromptUpdate(previousPromptRequestUid: String, promptRequest: PromptRequest) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.ReplacePromptRequestAction(tabId, previousPromptRequestUid, promptRequest),
         )
     }
 
     override fun onRepostPromptCancelled() {
-        store.dispatch(ContentAction.UpdateRefreshCanceledStateAction(tabId, true))
+        dispatchAsync(ContentAction.UpdateRefreshCanceledStateAction(tabId, true))
     }
 
     override fun onBeforeUnloadPromptDenied() {
-        store.dispatch(ContentAction.UpdateRefreshCanceledStateAction(tabId, true))
+        dispatchAsync(ContentAction.UpdateRefreshCanceledStateAction(tabId, true))
     }
 
     override fun onWindowRequest(windowRequest: WindowRequest) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateWindowRequestAction(
                 tabId,
                 windowRequest,
@@ -344,13 +350,13 @@ internal class EngineObserver(
     }
 
     override fun onShowDynamicToolbar() {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateExpandedToolbarStateAction(tabId, true),
         )
     }
 
     override fun onMediaActivated(mediaSessionController: MediaSession.Controller) {
-        store.dispatch(
+        dispatchAsync(
             MediaSessionAction.ActivatedMediaSessionAction(
                 tabId,
                 mediaSessionController,
@@ -359,15 +365,15 @@ internal class EngineObserver(
     }
 
     override fun onMediaDeactivated() {
-        store.dispatch(MediaSessionAction.DeactivatedMediaSessionAction(tabId))
+        dispatchAsync(MediaSessionAction.DeactivatedMediaSessionAction(tabId))
     }
 
     override fun onMediaMetadataChanged(metadata: MediaSession.Metadata) {
-        store.dispatch(MediaSessionAction.UpdateMediaMetadataAction(tabId, metadata))
+        dispatchAsync(MediaSessionAction.UpdateMediaMetadataAction(tabId, metadata))
     }
 
     override fun onMediaPlaybackStateChanged(playbackState: MediaSession.PlaybackState) {
-        store.dispatch(
+        dispatchAsync(
             MediaSessionAction.UpdateMediaPlaybackStateAction(
                 tabId,
                 playbackState,
@@ -376,7 +382,7 @@ internal class EngineObserver(
     }
 
     override fun onMediaFeatureChanged(features: MediaSession.Feature) {
-        store.dispatch(
+        dispatchAsync(
             MediaSessionAction.UpdateMediaFeatureAction(
                 tabId,
                 features,
@@ -385,7 +391,7 @@ internal class EngineObserver(
     }
 
     override fun onMediaPositionStateChanged(positionState: MediaSession.PositionState) {
-        store.dispatch(
+        dispatchAsync(
             MediaSessionAction.UpdateMediaPositionStateAction(
                 tabId,
                 positionState,
@@ -394,7 +400,7 @@ internal class EngineObserver(
     }
 
     override fun onMediaMuteChanged(muted: Boolean) {
-        store.dispatch(
+        dispatchAsync(
             MediaSessionAction.UpdateMediaMutedAction(
                 tabId,
                 muted,
@@ -406,7 +412,7 @@ internal class EngineObserver(
         fullscreen: Boolean,
         elementMetadata: MediaSession.ElementMetadata?,
     ) {
-        store.dispatch(
+        dispatchAsync(
             MediaSessionAction.UpdateMediaFullscreenAction(
                 tabId,
                 fullscreen,
@@ -416,11 +422,11 @@ internal class EngineObserver(
     }
 
     override fun onWebAppManifestLoaded(manifest: WebAppManifest) {
-        store.dispatch(ContentAction.UpdateWebAppManifestAction(tabId, manifest))
+        dispatchAsync(ContentAction.UpdateWebAppManifestAction(tabId, manifest))
     }
 
     override fun onCrash() {
-        store.dispatch(
+        dispatchAsync(
             CrashAction.SessionCrashedAction(
                 tabId,
             ),
@@ -428,7 +434,7 @@ internal class EngineObserver(
     }
 
     override fun onProcessKilled() {
-        store.dispatch(
+        dispatchAsync(
             EngineAction.KillEngineSessionAction(
                 tabId,
             ),
@@ -436,7 +442,7 @@ internal class EngineObserver(
     }
 
     override fun onStateUpdated(state: EngineSessionState) {
-        store.dispatch(
+        dispatchAsync(
             EngineAction.UpdateEngineSessionStateAction(
                 tabId,
                 state,
@@ -445,7 +451,7 @@ internal class EngineObserver(
     }
 
     override fun onRecordingStateChanged(devices: List<RecordingDevice>) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.SetRecordingDevices(
                 tabId,
                 devices,
@@ -454,7 +460,7 @@ internal class EngineObserver(
     }
 
     override fun onHistoryStateChanged(historyList: List<HistoryItem>, currentIndex: Int) {
-        store.dispatch(
+        dispatchAsync(
             ContentAction.UpdateHistoryStateAction(
                 tabId,
                 historyList,
@@ -464,46 +470,50 @@ internal class EngineObserver(
     }
 
     override fun onSaveToPdfException(throwable: Throwable) {
-        store.dispatch(EngineAction.SaveToPdfExceptionAction(tabId, throwable))
+        dispatchAsync(EngineAction.SaveToPdfExceptionAction(tabId, throwable))
     }
 
     override fun onPrintFinish() {
-        store.dispatch(EngineAction.PrintContentCompletedAction(tabId))
+        dispatchAsync(EngineAction.PrintContentCompletedAction(tabId))
     }
 
     override fun onPrintException(isPrint: Boolean, throwable: Throwable) {
-        store.dispatch(EngineAction.PrintContentExceptionAction(tabId, isPrint, throwable))
+        dispatchAsync(EngineAction.PrintContentExceptionAction(tabId, isPrint, throwable))
     }
 
     override fun onSaveToPdfComplete() {
-        store.dispatch(EngineAction.SaveToPdfCompleteAction(tabId))
+        dispatchAsync(EngineAction.SaveToPdfCompleteAction(tabId))
     }
 
     override fun onCheckForFormData(containsFormData: Boolean, adjustPriority: Boolean) {
-        store.dispatch(ContentAction.UpdateHasFormDataAction(tabId, containsFormData, adjustPriority))
+        dispatchAsync(ContentAction.UpdateHasFormDataAction(tabId, containsFormData, adjustPriority))
     }
 
     override fun onCheckForFormDataException(throwable: Throwable) {
-        store.dispatch(ContentAction.CheckForFormDataExceptionAction(tabId, throwable))
+        dispatchAsync(ContentAction.CheckForFormDataExceptionAction(tabId, throwable))
     }
 
     override fun onTranslateExpected() {
-        store.dispatch(TranslationsAction.TranslateExpectedAction(tabId))
+        dispatchAsync(TranslationsAction.TranslateExpectedAction(tabId))
     }
 
     override fun onTranslateOffer() {
-        store.dispatch(TranslationsAction.TranslateOfferAction(tabId = tabId, isOfferTranslate = true))
+        dispatchAsync(TranslationsAction.TranslateOfferAction(tabId = tabId, isOfferTranslate = true))
     }
 
     override fun onTranslateStateChange(state: TranslationEngineState) {
-        store.dispatch(TranslationsAction.TranslateStateChangeAction(tabId, state))
+        dispatchAsync(TranslationsAction.TranslateStateChangeAction(tabId, state))
     }
 
     override fun onTranslateComplete(operation: TranslationOperation) {
-        store.dispatch(TranslationsAction.TranslateSuccessAction(tabId, operation))
+        dispatchAsync(TranslationsAction.TranslateSuccessAction(tabId, operation))
     }
 
     override fun onTranslateException(operation: TranslationOperation, translationError: TranslationError) {
-        store.dispatch(TranslationsAction.TranslateExceptionAction(tabId, operation, translationError))
+        dispatchAsync(TranslationsAction.TranslateExceptionAction(tabId, operation, translationError))
+    }
+
+    private fun dispatchAsync(action: BrowserAction) = scope.launch {
+        store.dispatch(action)
     }
 }

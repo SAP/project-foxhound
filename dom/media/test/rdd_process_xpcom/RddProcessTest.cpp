@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #if defined(ENABLE_TESTS)
-#  include "mozilla/RDDProcessManager.h"
-#  include "mozilla/RDDChild.h"
 #  include "mozilla/RddProcessTest.h"
+
+#  include "mozilla/RDDChild.h"
+#  include "mozilla/RDDProcessManager.h"
 #  include "mozilla/dom/Promise.h"
 
 namespace mozilla {
@@ -45,7 +46,7 @@ RddProcessTest::TestTelemetryProbes(JSContext* aCx,
         }
         MOZ_ASSERT(child, "No RDD Child?");
 
-        Unused << child->SendTestTelemetryProbes();
+        (void)child->SendTestTelemetryProbes();
         promise->MaybeResolve((int32_t)rddProc->RDDProcessPid());
       },
       [promise](nsresult aError) {

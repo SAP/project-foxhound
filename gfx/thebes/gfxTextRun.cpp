@@ -28,7 +28,7 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPresData.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
+#include "nsLayoutUtils.h"
 #include "nsStyleConsts.h"
 #include "nsStyleUtil.h"
 #include "nsUnicodeProperties.h"
@@ -329,14 +329,16 @@ gfxTextRun::LigatureData gfxTextRun::ComputeLigatureData(
   if (aProvider && (mFlags & gfx::ShapedTextFlags::TEXT_ENABLE_SPACING)) {
     gfxFont::Spacing spacing;
     if (aPartRange.start == result.mRange.start) {
-      aProvider->GetSpacing(Range(aPartRange.start, aPartRange.start + 1),
-                            &spacing);
-      result.mPartWidth += spacing.mBefore;
+      if (aProvider->GetSpacing(Range(aPartRange.start, aPartRange.start + 1),
+                                &spacing)) {
+        result.mPartWidth += spacing.mBefore;
+      }
     }
     if (aPartRange.end == result.mRange.end) {
-      aProvider->GetSpacing(Range(aPartRange.end - 1, aPartRange.end),
-                            &spacing);
-      result.mPartWidth += spacing.mAfter;
+      if (aProvider->GetSpacing(Range(aPartRange.end - 1, aPartRange.end),
+                                &spacing)) {
+        result.mPartWidth += spacing.mAfter;
+      }
     }
   }
 
@@ -358,15 +360,16 @@ int32_t gfxTextRun::GetAdvanceForGlyphs(Range aRange) const {
   return advance;
 }
 
-static void GetAdjustedSpacing(
+// Returns false if there is definitely no spacing to apply.
+static bool GetAdjustedSpacing(
     const gfxTextRun* aTextRun, gfxTextRun::Range aRange,
     const gfxTextRun::PropertyProvider& aProvider,
     gfxTextRun::PropertyProvider::Spacing* aSpacing) {
   if (aRange.start >= aRange.end) {
-    return;
+    return false;
   }
 
-  aProvider.GetSpacing(aRange, aSpacing);
+  bool result = aProvider.GetSpacing(aRange, aSpacing);
 
 #ifdef DEBUG
   // Check to see if we have spacing inside ligatures
@@ -385,6 +388,8 @@ static void GetAdjustedSpacing(
     }
   }
 #endif
+
+  return result;
 }
 
 bool gfxTextRun::GetAdjustedSpacingArray(
@@ -398,8 +403,11 @@ bool gfxTextRun::GetAdjustedSpacingArray(
   }
   auto spacingOffset = aSpacingRange.start - aRange.start;
   memset(aSpacing->Elements(), 0, sizeof(gfxFont::Spacing) * spacingOffset);
-  GetAdjustedSpacing(this, aSpacingRange, *aProvider,
-                     aSpacing->Elements() + spacingOffset);
+  if (!GetAdjustedSpacing(this, aSpacingRange, *aProvider,
+                          aSpacing->Elements() + spacingOffset)) {
+    aSpacing->Clear();
+    return false;
+  }
   memset(aSpacing->Elements() + spacingOffset + aSpacingRange.Length(), 0,
          sizeof(gfxFont::Spacing) * (aRange.end - aSpacingRange.end));
   return true;
@@ -860,8 +868,6 @@ void gfxTextRun::GetLineHeightMetrics(Range aRange, gfxFloat& aAscent,
   aDescent = accumulatedMetrics.mDescent;
 }
 
-#define MEASUREMENT_BUFFER_SIZE 100
-
 void gfxTextRun::ClassifyAutoHyphenations(uint32_t aStart, Range aRange,
                                           nsTArray<HyphenType>& aHyphenBuffer,
                                           HyphenationState* aWordState) {
@@ -943,9 +949,10 @@ uint32_t gfxTextRun::BreakAndMeasureText(
 
   NS_ASSERTION(aStart + aMaxLength <= GetLength(), "Substring out of range");
 
-  Range bufferRange(
-      aStart, aStart + std::min<uint32_t>(aMaxLength, MEASUREMENT_BUFFER_SIZE));
-  PropertyProvider::Spacing spacingBuffer[MEASUREMENT_BUFFER_SIZE];
+  constexpr uint32_t kMeasurementBufferSize = 100;
+  Range bufferRange(aStart,
+                    aStart + std::min(aMaxLength, kMeasurementBufferSize));
+  PropertyProvider::Spacing spacingBuffer[kMeasurementBufferSize];
   bool haveSpacing = !!(mFlags & gfx::ShapedTextFlags::TEXT_ENABLE_SPACING);
   if (haveSpacing) {
     GetAdjustedSpacing(this, bufferRange, aProvider, spacingBuffer);
@@ -999,7 +1006,7 @@ uint32_t gfxTextRun::BreakAndMeasureText(
       uint32_t oldHyphenBufferLength = hyphenBuffer.Length();
       bufferRange.start = i;
       bufferRange.end =
-          std::min(aStart + aMaxLength, i + MEASUREMENT_BUFFER_SIZE);
+          std::min(aStart + aMaxLength, i + kMeasurementBufferSize);
       // For spacing, we always overwrite the old data with the newly
       // fetched one. However, for hyphenation, hyphenation data sometimes
       // depends on the context in every word (if "hyphens: auto" is set).
@@ -1228,15 +1235,16 @@ gfxFloat gfxTextRun::GetAdvanceWidth(
     uint32_t i;
     AutoTArray<PropertyProvider::Spacing, 200> spacingBuffer;
     if (spacingBuffer.AppendElements(aRange.Length(), fallible)) {
-      GetAdjustedSpacing(this, ligatureRange, *aProvider,
-                         spacingBuffer.Elements());
-      for (i = 0; i < ligatureRange.Length(); ++i) {
-        PropertyProvider::Spacing* space = &spacingBuffer[i];
-        result += space->mBefore + space->mAfter;
-      }
-      if (aSpacing) {
-        aSpacing->mBefore = spacingBuffer[0].mBefore;
-        aSpacing->mAfter = spacingBuffer.LastElement().mAfter;
+      if (GetAdjustedSpacing(this, ligatureRange, *aProvider,
+                             spacingBuffer.Elements())) {
+        for (i = 0; i < ligatureRange.Length(); ++i) {
+          PropertyProvider::Spacing* space = &spacingBuffer[i];
+          result += space->mBefore + space->mAfter;
+        }
+        if (aSpacing) {
+          aSpacing->mBefore = spacingBuffer[0].mBefore;
+          aSpacing->mAfter = spacingBuffer.LastElement().mAfter;
+        }
       }
     }
   }
@@ -1841,14 +1849,16 @@ void gfxTextRun::Dump(FILE* out) {
 }
 #endif
 
-gfxFontGroup::gfxFontGroup(nsPresContext* aPresContext,
+gfxFontGroup::gfxFontGroup(FontVisibilityProvider* aFontVisibilityProvider,
                            const StyleFontFamilyList& aFontFamilyList,
                            const gfxFontStyle* aStyle, nsAtom* aLanguage,
                            bool aExplicitLanguage,
                            gfxTextPerfMetrics* aTextPerf,
                            gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize,
                            StyleFontVariantEmoji aVariantEmoji)
-    : mPresContext(aPresContext),  // Note that aPresContext may be null!
+    : mFontVisibilityProvider(
+          aFontVisibilityProvider),  // Note that mFontVisibilityProvider may be
+                                     // null!
       mFamilyList(aFontFamilyList),
       mStyle(*aStyle),
       mLanguage(aLanguage),
@@ -1942,7 +1952,7 @@ void gfxFontGroup::EnsureFontList() {
           generic != StyleGenericFontFamily::SystemUi) {
         mFallbackGeneric = generic;
       }
-      pfl->AddGenericFonts(mPresContext, generic, mLanguage, fonts);
+      pfl->AddGenericFonts(mFontVisibilityProvider, generic, mLanguage, fonts);
       if (mTextPerf) {
         mTextPerf->current.genericLookups++;
       }
@@ -1953,8 +1963,8 @@ void gfxFontGroup::EnsureFontList() {
   if (mFallbackGeneric == StyleGenericFontFamily::None && !mStyle.systemFont) {
     auto defaultLanguageGeneric = GetDefaultGeneric(mLanguage);
 
-    pfl->AddGenericFonts(mPresContext, defaultLanguageGeneric, mLanguage,
-                         fonts);
+    pfl->AddGenericFonts(mFontVisibilityProvider, defaultLanguageGeneric,
+                         mLanguage, fonts);
     if (mTextPerf) {
       mTextPerf->current.genericLookups++;
     }
@@ -1991,7 +2001,8 @@ void gfxFontGroup::AddPlatformFont(const nsACString& aName, bool aQuotedName,
 
   // Not known in the user font set ==> check system fonts
   gfxPlatformFontList::PlatformFontList()->FindAndAddFamilies(
-      mPresContext, StyleGenericFontFamily::None, aName, &aFamilyList,
+      mFontVisibilityProvider, StyleGenericFontFamily::None, aName,
+      &aFamilyList,
       aQuotedName ? gfxPlatformFontList::FindFamiliesFlags::eQuotedFamilyName
                   : gfxPlatformFontList::FindFamiliesFlags(0),
       &mStyle, mLanguage.get(), mDevToCssSize);
@@ -2155,7 +2166,7 @@ already_AddRefed<gfxFont> gfxFontGroup::GetDefaultFont() {
   }
 
   gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
-  FontFamily family = pfl->GetDefaultFont(mPresContext, &mStyle);
+  FontFamily family = pfl->GetDefaultFont(mFontVisibilityProvider, &mStyle);
   MOZ_ASSERT(!family.IsNull(),
              "invalid default font returned by GetDefaultFont");
 
@@ -2164,7 +2175,7 @@ already_AddRefed<gfxFont> gfxFontGroup::GetDefaultFont() {
     fontlist::Family* fam = family.mShared;
     if (!fam->IsInitialized()) {
       // If this fails, FindFaceForStyle will just safely return nullptr
-      Unused << pfl->InitializeFamily(fam);
+      (void)pfl->InitializeFamily(fam);
     }
     fontlist::Face* face = fam->FindFaceForStyle(pfl->SharedFontList(), mStyle);
     if (face) {
@@ -2197,7 +2208,7 @@ already_AddRefed<gfxFont> gfxFontGroup::GetDefaultFont() {
       for (uint32_t i = 0; i < numFonts; ++i) {
         fontlist::Family* fam = &families[i];
         if (!fam->IsInitialized()) {
-          Unused << pfl->InitializeFamily(fam);
+          (void)pfl->InitializeFamily(fam);
         }
         fontlist::Face* face =
             fam->FindFaceForStyle(pfl->SharedFontList(), mStyle);
@@ -2542,6 +2553,12 @@ template already_AddRefed<gfxTextRun> gfxFontGroup::MakeTextRun(
     gfx::ShapedTextFlags aFlags, nsTextFrameUtils::Flags aFlags2,
     gfxMissingFontRecorder* aMFR);
 
+// ComputeRanges instantiation (used by
+// gfxPlatformFontList::ListFontsUsedForString).
+template void gfxFontGroup::ComputeRanges(nsTArray<TextRange>&, const char16_t*,
+                                          uint32_t, Script,
+                                          gfx::ShapedTextFlags);
+
 // Helper to get a hashtable that maps tags to Script codes, created on first
 // use.
 static const nsTHashMap<nsUint32HashKey, Script>* ScriptTagToCodeTable() {
@@ -2624,7 +2641,7 @@ static Script ResolveScriptForLang(const nsAtom* aLanguage, Script aDefault) {
   Locale locale;
   if (LocaleParser::TryParse(lang, locale).isOk()) {
     if (locale.Script().Missing()) {
-      Unused << locale.AddLikelySubtags();
+      (void)locale.AddLikelySubtags();
     }
     if (locale.Script().Present()) {
       Span span = locale.Script().Span();
@@ -2893,9 +2910,9 @@ void gfxFontGroup::InitScriptRun(DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
                      syntheticLower, syntheticUpper)) {
         // fallback for small-caps variant glyphs
         if (!matchedFont->InitFakeSmallCapsRun(
-                mPresContext, aDrawTarget, aTextRun, aString + runStart,
-                aOffset + runStart, matchedLength, range.matchType,
-                range.orientation, aRunScript,
+                mFontVisibilityProvider, aDrawTarget, aTextRun,
+                aString + runStart, aOffset + runStart, matchedLength,
+                range.matchType, range.orientation, aRunScript,
                 mExplicitLanguage ? mLanguage.get() : nullptr, syntheticLower,
                 syntheticUpper)) {
           matchedFont = nullptr;
@@ -3298,6 +3315,12 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFontForChar(
   // Handle a candidate font that could support the character, returning true
   // if we should go ahead and return |f|, false to continue searching.
   auto CheckCandidate = [&](gfxFont* f, FontMatchType t) -> bool {
+    // If a given character is a Private Use Area Unicode codepoint, user
+    // agents must only match font families named in the font-family list that
+    // are not generic families.
+    if (t.generic != StyleGenericFontFamily::None && IsPUA(aCh)) {
+      return false;
+    }
     // If no preference, or if it's an explicitly-named family in the fontgroup
     // and font-variant-emoji is 'normal', then we accept the font.
     if (presentation == FontPresentation::Any ||
@@ -3314,7 +3337,12 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFontForChar(
         f->HasColorGlyphFor(aCh, aNextCh) ||
         (!nextIsVarSelector && f->HasColorGlyphFor(aCh, kVariationSelector16));
     // If the provided glyph matches the preference, accept the font.
-    if (hasColorGlyph == PrefersColor(presentation)) {
+    if (hasColorGlyph == PrefersColor(presentation) &&
+        // Exception: if this is an emoji flag+tag letters sequence, and the
+        // following codepoint (the first tag) is missing from the font, we
+        // don't want to use this font as it will fail to present the cluster.
+        (!hasColorGlyph || !gfxFontUtils::IsEmojiFlagAndTag(aCh, aNextCh) ||
+         f->HasCharacter(aNextCh))) {
       *aMatchType = t;
       return true;
     }
@@ -3463,8 +3491,9 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFontForChar(
   // Also don't attempt any fallback for control characters or noncharacters,
   // where we won't be rendering a glyph anyhow, or for codepoints where global
   // fallback has already noted a failure.
-  FontVisibility level =
-      mPresContext ? mPresContext->GetFontVisibility() : FontVisibility::User;
+  FontVisibility level = mFontVisibilityProvider
+                             ? mFontVisibilityProvider->GetFontVisibility()
+                             : FontVisibility::User;
   auto* pfl = gfxPlatformFontList::PlatformFontList();
   if (pfl->SkipFontFallbackForChar(level, aCh) ||
       (!StaticPrefs::gfx_font_rendering_fallback_unassigned_chars() &&
@@ -3847,8 +3876,8 @@ already_AddRefed<gfxFont> gfxFontGroup::WhichPrefFontSupportsChar(
         mFallbackGeneric != StyleGenericFontFamily::None
             ? mFallbackGeneric
             : pfl->GetDefaultGeneric(currentLang);
-    gfxPlatformFontList::PrefFontList* families =
-        pfl->GetPrefFontsLangGroup(mPresContext, generic, currentLang);
+    gfxPlatformFontList::PrefFontList* families = pfl->GetPrefFontsLangGroup(
+        mFontVisibilityProvider, generic, currentLang);
     NS_ASSERTION(families, "no pref font families found");
 
     // find the first pref font that includes the character
@@ -3873,7 +3902,7 @@ already_AddRefed<gfxFont> gfxFontGroup::WhichPrefFontSupportsChar(
       if (family.mShared) {
         fontlist::Family* fam = family.mShared;
         if (!fam->IsInitialized()) {
-          Unused << pfl->InitializeFamily(fam);
+          (void)pfl->InitializeFamily(fam);
         }
         fontlist::Face* face =
             fam->FindFaceForStyle(pfl->SharedFontList(), mStyle);
@@ -3927,7 +3956,7 @@ already_AddRefed<gfxFont> gfxFontGroup::WhichSystemFontSupportsChar(
     FontPresentation aPresentation) {
   FontVisibility visibility;
   return gfxPlatformFontList::PlatformFontList()->SystemFindFontForChar(
-      mPresContext, aCh, aNextCh, aRunScript, aPresentation, &mStyle,
+      mFontVisibilityProvider, aCh, aNextCh, aRunScript, aPresentation, &mStyle,
       &visibility);
 }
 
@@ -3962,15 +3991,33 @@ gfxFont::Metrics gfxFontGroup::GetMetricsForCSSUnits(
   return metrics;
 }
 
-void gfxMissingFontRecorder::Flush() {
-  static bool mNotifiedFontsInitialized = false;
-  static uint32_t mNotifiedFonts[gfxMissingFontRecorder::kNumScriptBitsWords];
-  if (!mNotifiedFontsInitialized) {
-    memset(&mNotifiedFonts, 0, sizeof(mNotifiedFonts));
-    mNotifiedFontsInitialized = true;
+class DeferredNotifyMissingFonts final : public nsIRunnable {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+
+  explicit DeferredNotifyMissingFonts(nsString&& aScriptList)
+      : mScriptList(std::move(aScriptList)) {}
+
+ protected:
+  virtual ~DeferredNotifyMissingFonts() {}
+
+  NS_IMETHOD Run(void) override {
+    nsCOMPtr<nsIObserverService> service = GetObserverService();
+    service->NotifyObservers(nullptr, "font-needed", mScriptList.get());
+    return NS_OK;
   }
 
+  nsString mScriptList;
+};
+
+NS_IMPL_ISUPPORTS(DeferredNotifyMissingFonts, nsIRunnable)
+
+void gfxMissingFontRecorder::Flush() {
+  static uint32_t mNotifiedFonts[gfxMissingFontRecorder::kNumScriptBitsWords];
+  static StaticMutex sNotifiedFontsMutex;
+
   nsAutoString fontNeeded;
+  sNotifiedFontsMutex.Lock();
   for (uint32_t i = 0; i < kNumScriptBitsWords; ++i) {
     mMissingFonts[i] &= ~mNotifiedFonts[i];
     if (!mMissingFonts[i]) {
@@ -3995,8 +4042,15 @@ void gfxMissingFontRecorder::Flush() {
     }
     mMissingFonts[i] = 0;
   }
+  sNotifiedFontsMutex.Unlock();
+
   if (!fontNeeded.IsEmpty()) {
-    nsCOMPtr<nsIObserverService> service = GetObserverService();
-    service->NotifyObservers(nullptr, "font-needed", fontNeeded.get());
+    if (NS_IsMainThread()) {
+      nsCOMPtr<nsIObserverService> service = GetObserverService();
+      service->NotifyObservers(nullptr, "font-needed", fontNeeded.get());
+    } else {
+      NS_DispatchToMainThread(
+          new DeferredNotifyMissingFonts(std::move(fontNeeded)));
+    }
   }
 }

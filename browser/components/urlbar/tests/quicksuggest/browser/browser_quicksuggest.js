@@ -62,37 +62,11 @@ add_setup(async function () {
   });
 
   // Disable Merino so we trigger only remote settings suggestions.
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
 
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.suggest.engines", false]],
   });
-});
-
-// Tests a sponsored result and keyword highlighting.
-add_task(async function sponsored() {
-  await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
-    value: "fra",
-  });
-  await QuickSuggestTestUtils.assertIsQuickSuggest({
-    window,
-    index: 1,
-    isSponsored: true,
-    url: "https://example.com/amp",
-  });
-  let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
-  Assert.equal(
-    row.querySelector(".urlbarView-title").firstChild.textContent,
-    "fra",
-    "The part of the keyword that matches users input is not bold."
-  );
-  Assert.equal(
-    row.querySelector(".urlbarView-title > strong").textContent,
-    "b",
-    "The auto completed section of the keyword is bolded."
-  );
-  await UrlbarTestUtils.promisePopupClose(window);
 });
 
 // Tests a non-sponsored result.
@@ -107,6 +81,10 @@ add_task(async function nonSponsored() {
     isSponsored: false,
     url: "https://example.com/wikipedia",
   });
+
+  let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
+  Assert.ok(!row.hasAttribute("sponsored"));
+
   await UrlbarTestUtils.promisePopupClose(window);
 });
 
@@ -129,25 +107,12 @@ add_task(async function sponsoredPriority() {
   });
 
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
-  Assert.equal(
-    row.querySelector(".urlbarView-title").firstChild.textContent,
-    "fra",
-    "The part of the keyword that matches users input is not bold."
-  );
-  Assert.equal(
-    row.querySelector(".urlbarView-title > strong").textContent,
-    "b",
-    "The auto completed section of the keyword is bolded."
-  );
+  Assert.ok(row.hasAttribute("sponsored"));
 
   // Group label.
   let before = window.getComputedStyle(row, "::before");
-  Assert.equal(before.content, "attr(label)", "::before.content is enabled");
-  Assert.equal(
-    row.getAttribute("label"),
-    "Top pick",
-    "Row has 'Top pick' group label"
-  );
+  Assert.equal(before.content, "none", "::before.content is none");
+  Assert.ok(!row.hasAttribute("label"), "Row should not have a group label");
 
   await UrlbarTestUtils.promisePopupClose(window);
   await cleanUpNimbus();
@@ -203,25 +168,15 @@ add_task(async function ampTopPickCharThreshold_meetsThreshold() {
     index: 1,
     isSponsored: true,
     isBestMatch: true,
-    hasSponsoredLabel: false,
     url: "https://example.com/amp",
   });
 
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
-  Assert.equal(
-    row.querySelector(".urlbarView-title > strong").textContent,
-    query,
-    "The title should include the full keyword and the part that matches the query should be bold"
-  );
 
   // Group label.
   let before = window.getComputedStyle(row, "::before");
-  Assert.equal(before.content, "attr(label)", "::before.content is enabled");
-  Assert.equal(
-    row.getAttribute("label"),
-    "Sponsored",
-    "Row has 'Sponsored' group label"
-  );
+  Assert.equal(before.content, "none", "::before.content is none");
+  Assert.ok(!row.hasAttribute("label"), "Row should not have a group label");
 
   await UrlbarTestUtils.promisePopupClose(window);
   await cleanUpNimbus();
@@ -287,7 +242,10 @@ add_task(async function resultMenu_manage_nonSponsored() {
 add_task(async function resultMenu_manage_navigational() {
   // Enable Merino.
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.quicksuggest.dataCollection.enabled", true]],
+    set: [
+      ["browser.urlbar.quicksuggest.online.available", true],
+      ["browser.urlbar.quicksuggest.online.enabled", true],
+    ],
   });
 
   MerinoTestUtils.server.response.body.suggestions = [
@@ -306,7 +264,10 @@ add_task(async function resultMenu_manage_navigational() {
 add_task(async function resultMenu_manage_dynamicWikipedia() {
   // Enable Merino.
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.quicksuggest.dataCollection.enabled", true]],
+    set: [
+      ["browser.urlbar.quicksuggest.online.available", true],
+      ["browser.urlbar.quicksuggest.online.enabled", true],
+    ],
   });
   MerinoTestUtils.server.response.body.suggestions = [
     MERINO_DYNAMIC_WIKIPEDIA_SUGGESTION,
@@ -318,4 +279,76 @@ add_task(async function resultMenu_manage_dynamicWikipedia() {
   });
 
   await SpecialPowers.popPrefEnv();
+});
+
+// Tests the "Learn more" result menu.
+add_task(async function resultMenu_learn_more_sponsored() {
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "fra",
+  });
+
+  info("Selecting Learn more item from the result menu");
+  let tabOpenPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "awesome-bar-result-menu"
+  );
+  await UrlbarTestUtils.openResultMenuAndClickItem(window, "help", {
+    resultIndex: 1,
+  });
+  info("Waiting for Learn more link to open in a new tab");
+  await tabOpenPromise;
+  gBrowser.removeCurrentTab();
+
+  await UrlbarTestUtils.promisePopupClose(window);
+});
+
+// Tests icon size for AMP suggestion.
+add_task(async function ampIconSize() {
+  const TEST_DATA = [
+    {
+      topPick: true,
+      useNovaIconSize: true,
+      expected: 52,
+    },
+    {
+      topPick: true,
+      useNovaIconSize: false,
+      expected: 28,
+    },
+    {
+      topPick: false,
+      useNovaIconSize: true,
+      expected: 16,
+    },
+    {
+      topPick: false,
+      useNovaIconSize: false,
+      expected: 16,
+    },
+  ];
+
+  for (let { topPick, useNovaIconSize, expected } of TEST_DATA) {
+    if (topPick) {
+      UrlbarPrefs.set("quicksuggest.ampTopPickCharThreshold", 1);
+    }
+
+    const cleanUpNimbus = await UrlbarTestUtils.initNimbusFeature({
+      quickSuggestAmpTopPickUseNovaIconSize: useNovaIconSize,
+    });
+
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "fra",
+    });
+
+    let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
+    let icon = row.querySelector(".urlbarView-favicon");
+    Assert.equal(icon.getAttribute("icon-size"), expected);
+
+    await UrlbarTestUtils.promisePopupClose(window);
+    await cleanUpNimbus();
+    UrlbarPrefs.clear("quicksuggest.ampTopPickCharThreshold");
+  }
 });

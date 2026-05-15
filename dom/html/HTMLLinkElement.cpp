@@ -6,42 +6,40 @@
 
 #include "mozilla/dom/HTMLLinkElement.h"
 
+#include "DecoderDoctorDiagnostics.h"
+#include "DecoderTraits.h"
+#include "MediaContainerType.h"
+#include "MediaList.h"
+#include "imgLoader.h"
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Components.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/HTMLLinkElementBinding.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
+#include "mozilla/dom/HTMLLinkElementBinding.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "nsAttrValueInlines.h"
+#include "nsAttrValueOrString.h"
 #include "nsContentUtils.h"
 #include "nsDOMTokenList.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
+#include "nsIContentPolicy.h"
 #include "nsINode.h"
 #include "nsIPrefetchService.h"
-#include "nsISizeOf.h"
+#include "nsMimeTypes.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowSizes.h"
-#include "nsIContentPolicy.h"
-#include "nsMimeTypes.h"
-#include "imgLoader.h"
-#include "MediaContainerType.h"
-#include "DecoderDoctorDiagnostics.h"
-#include "DecoderTraits.h"
-#include "MediaList.h"
-#include "nsAttrValueInlines.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Link)
 
@@ -132,7 +130,7 @@ void HTMLLinkElement::UnbindFromTree(UnbindContext& aContext) {
 
   nsGenericHTMLElement::UnbindFromTree(aContext);
 
-  Unused << UpdateStyleSheetInternal(oldDoc, oldShadowRoot);
+  (void)UpdateStyleSheetInternal(oldDoc, oldShadowRoot);
 }
 
 bool HTMLLinkElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -225,8 +223,7 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       CreateAndDispatchEvent(u"DOMLinkChanged"_ns);
     }
     mTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
-        this, aValue ? aValue->GetStringValue() : EmptyString(),
-        aSubjectPrincipal);
+        this, nsAttrValueOrString(aValue).String(), aSubjectPrincipal);
 
     // If the link has `rel=localization` and its `href` attribute is changed,
     // update the list of localization links.
@@ -291,7 +288,7 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
           dropSheet || aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
           aName == nsGkAtoms::type || aName == nsGkAtoms::disabled;
 
-      Unused << UpdateStyleSheetInternal(
+      (void)UpdateStyleSheetInternal(
           nullptr, nullptr, forceUpdate ? ForceUpdate::Yes : ForceUpdate::No);
     }
   } else {
@@ -304,7 +301,7 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       if (aName == nsGkAtoms::href || aName == nsGkAtoms::rel ||
           aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
           aName == nsGkAtoms::type || aName == nsGkAtoms::disabled) {
-        Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+        (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
       }
       if ((aName == nsGkAtoms::as || aName == nsGkAtoms::type ||
            aName == nsGkAtoms::crossorigin || aName == nsGkAtoms::media) &&
@@ -323,17 +320,23 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   "preload", "prefetch", "dns-prefetch", "stylesheet", "next", "alternate", \
       "preconnect", "icon", "search", nullptr
 
-static const DOMTokenListSupportedToken sSupportedRelValueCombinations[][12] = {
+static const DOMTokenListSupportedToken sSupportedRelValueCombinations[][13] = {
     {SUPPORTED_REL_VALUES_BASE},
     {"manifest", SUPPORTED_REL_VALUES_BASE},
     {"modulepreload", SUPPORTED_REL_VALUES_BASE},
-    {"modulepreload", "manifest", SUPPORTED_REL_VALUES_BASE}};
+    {"modulepreload", "manifest", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", "manifest", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", "modulepreload", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", "modulepreload", "manifest",
+     SUPPORTED_REL_VALUES_BASE}};
 #undef SUPPORTED_REL_VALUES_BASE
 
 nsDOMTokenList* HTMLLinkElement::RelList() {
   if (!mRelList) {
     int index = (StaticPrefs::dom_manifest_enabled() ? 1 : 0) |
-                (StaticPrefs::network_modulepreload() ? 2 : 0);
+                (StaticPrefs::network_modulepreload() ? 2 : 0) |
+                (StaticPrefs::network_http_dictionaries_enable() ? 4 : 0);
 
     mRelList = new nsDOMTokenList(this, nsGkAtoms::rel,
                                   sSupportedRelValueCombinations[index]);
@@ -404,8 +407,13 @@ Maybe<LinkStyle::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
 void HTMLLinkElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
                                              size_t* aNodeSize) const {
   nsGenericHTMLElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
-  if (nsCOMPtr<nsISizeOf> iface = do_QueryInterface(mCachedURI)) {
-    *aNodeSize += iface->SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
+
+  // It is okay to include the size of mCachedURI here even though it might have
+  // strong references from elsewhere because the URI was created for this
+  // object, in nsGenericHTMLElement::GetURIAttr(). Only objects that created
+  // their own URI will call nsIURI::SizeOfIncludingThis().
+  if (mCachedURI) {
+    *aNodeSize += mCachedURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
   }
 }
 
@@ -465,6 +473,13 @@ void HTMLLinkElement::
     }
   }
 
+  if (linkTypes & eCOMPRESSION_DICTIONARY) {
+    if (nsCOMPtr<nsIURI> uri = GetURI()) {
+      StartPreload(nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD);
+      return;
+    }
+  }
+
   if (linkTypes & ePRELOAD) {
     if (nsCOMPtr<nsIURI> uri = GetURI()) {
       nsContentPolicyType policyType;
@@ -508,7 +523,10 @@ void HTMLLinkElement::
   }
 
   if (linkTypes & eMODULE_PRELOAD) {
-    ScriptLoader* scriptLoader = OwnerDoc()->ScriptLoader();
+    ScriptLoader* scriptLoader = OwnerDoc()->GetScriptLoader();
+    if (!scriptLoader) {
+      return;
+    }
     ModuleLoader* moduleLoader = scriptLoader->GetModuleLoader();
 
     if (!moduleLoader) {
@@ -659,11 +677,10 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     }
   } else {
     MOZ_ASSERT(aName == nsGkAtoms::media);
-    nsAutoString oldMedia;
-    if (aOldValue) {
-      aOldValue->ToString(oldMedia);
-    }
-    if (net::CheckPreloadAttrs(asAttr, mimeType, oldMedia, OwnerDoc())) {
+    // Device might have changed since we evaluated the old media query. We
+    // already checked that the new query matches. If we have mPreload,
+    // nothing changes.
+    if (mPreload) {
       oldPolicyType = asPolicyType;
     } else {
       oldPolicyType = nsIContentPolicy::TYPE_INVALID;

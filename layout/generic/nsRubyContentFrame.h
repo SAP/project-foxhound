@@ -6,8 +6,8 @@
 
 /* base class for ruby rendering objects that directly contain content */
 
-#ifndef nsRubyContentFrame_h___
-#define nsRubyContentFrame_h___
+#ifndef nsRubyContentFrame_h_
+#define nsRubyContentFrame_h_
 
 #include "nsInlineFrame.h"
 
@@ -28,4 +28,4 @@ class nsRubyContentFrame : public nsInlineFrame {
       : nsInlineFrame(aStyle, aPresContext, aID) {}
 };
 
-#endif /* nsRubyContentFrame_h___ */
+#endif /* nsRubyContentFrame_h_ */

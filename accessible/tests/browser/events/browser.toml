@@ -7,15 +7,23 @@ support-files = [
   "!/accessible/tests/mochitest/*.js",
 ]
 prefs = [
+  "accessibility.ariaNotify.enabled=true",
   # Required for the eval in invokeContentTask in shared-head.js
   "security.allow_eval_with_system_principal=true"
 ]
 
 ["browser_alert.js"]
 
+["browser_announcement.js"]
+
 ["browser_content_prompt.js"]
 
 ["browser_focus_document.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1962169
+]
+
+["browser_initial_blank_load.js"]
 
 ["browser_menu_and_alerts.js"]
 
@@ -32,7 +40,9 @@ prefs = [
 ["browser_test_focus_dialog.js"]
 
 ["browser_test_focus_urlbar.js"]
-skip-if = ["os == 'win'"] # Bug 1818994
+skip-if = [
+  "os == 'win'", # Bug 1818994
+]
 
 ["browser_test_panel.js"]
 

@@ -94,38 +94,39 @@ skip-if = [
 ["test_fetch_cors.html"]
 scheme = "https"
 skip-if = [
-  "http3",
   "http2",
+  "http3",
+  "os == 'android' && os_version == '14' && arch == 'x86_64'", # Bug 1858891
 ]
 
 ["test_fetch_cors_sw_empty_reroute.html"]
 scheme = "https"
 skip-if = [
-  "os == 'android'", # Bug 1623134
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # Bug 1623134
 ]
 
 ["test_fetch_cors_sw_reroute.html"]
 scheme = "https"
 skip-if = [
-  "os == 'android'", # Bug 1623134
-  "http3",
   "http2",
+  "http3",
+  "os == 'android'", # Bug 1623134
 ]
 
 ["test_fetch_csp_block.html"]
 
 ["test_fetch_observer.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_fetch_user_control_rp.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_formdataparsing.html"]
@@ -141,8 +142,8 @@ skip-if = [
 ["test_readableStreams.html"]
 scheme = "https"
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_request.html"]
@@ -153,16 +154,16 @@ skip-if = [
 
 ["test_response.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_responseReadyForWasm.html"]
 
 ["test_response_sw_reroute.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_temporaryFileBlob.html"]

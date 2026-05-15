@@ -5,24 +5,14 @@ const PERMISSIONS_URL =
 var exceptionsDialog;
 
 add_task(async function openLoginExceptionsSubDialog() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.settings-redesign.enabled", false]],
+  });
   // ensure rememberSignons is off for this test;
   ok(
     !Services.prefs.getBoolPref("signon.rememberSignons"),
     "Check initial value of signon.rememberSignons pref"
   );
-
-  // Undo the save password change.
-  registerCleanupFunction(async function () {
-    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
-      let doc = content.document;
-      let savePasswordCheckBox = doc.getElementById("savePasswords");
-      if (savePasswordCheckBox.checked) {
-        savePasswordCheckBox.click();
-      }
-    });
-
-    gBrowser.removeCurrentTab();
-  });
 
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
 
@@ -42,9 +32,74 @@ add_task(async function openLoginExceptionsSubDialog() {
   });
 
   exceptionsDialog = await dialogOpened;
+
+  await addALoginException();
+  await deleteALoginException();
+
+  exceptionsDialog.close();
+
+  // Undo the save password change.
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
+    let doc = content.document;
+    let savePasswordCheckBox = doc.getElementById("savePasswords");
+    if (savePasswordCheckBox.checked) {
+      savePasswordCheckBox.click();
+    }
+  });
+
+  gBrowser.removeCurrentTab();
 });
 
-add_task(async function addALoginException() {
+add_task(async function openLoginExceptionsSubDialogNew() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.settings-redesign.enabled", true]],
+  });
+  // ensure rememberSignons is off for this test;
+  ok(
+    !Services.prefs.getBoolPref("signon.rememberSignons"),
+    "Check initial value of signon.rememberSignons pref"
+  );
+
+  await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
+
+  let dialogOpened = promiseLoadSubDialog(PERMISSIONS_URL);
+
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
+    let doc = content.document;
+    let savePasswordCheckBox = doc.getElementById("savePasswords");
+    Assert.ok(
+      !savePasswordCheckBox.checked,
+      "Save Password CheckBox should be unchecked by default"
+    );
+    savePasswordCheckBox.click();
+
+    let loginExceptionsButton = doc.getElementById("managePasswordExceptions");
+    await ContentTaskUtils.waitForCondition(
+      () => !loginExceptionsButton.disabled
+    );
+    loginExceptionsButton.click();
+  });
+
+  exceptionsDialog = await dialogOpened;
+
+  await addALoginException();
+  await deleteALoginException();
+
+  exceptionsDialog.close();
+
+  // Undo the save password change.
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
+    let doc = content.document;
+    let savePasswordCheckBox = doc.getElementById("savePasswords");
+    if (savePasswordCheckBox.checked) {
+      savePasswordCheckBox.click();
+    }
+  });
+
+  gBrowser.removeCurrentTab();
+});
+
+async function addALoginException() {
   let doc = exceptionsDialog.document;
 
   let richlistbox = doc.getElementById("permissionsBox");
@@ -65,9 +120,9 @@ add_task(async function addALoginException() {
     let elements = richlistbox.getElementsByAttribute("origin", website);
     is(elements.length, 1, "It should find only one coincidence");
   }
-});
+}
 
-add_task(async function deleteALoginException() {
+async function deleteALoginException() {
   let doc = exceptionsDialog.document;
 
   let richlistbox = doc.getElementById("permissionsBox");
@@ -98,4 +153,4 @@ add_task(async function deleteALoginException() {
       "Subdialog is visible after deleting an element"
     );
   }
-});
+}

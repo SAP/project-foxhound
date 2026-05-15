@@ -11,13 +11,14 @@ const { TestUtils } = ChromeUtils.importESModule(
 );
 
 add_setup(async function setup() {
-  h2Port = Services.env.get("MOZHTTP2_PORT");
-  Assert.notEqual(h2Port, null);
-  Assert.notEqual(h2Port, "");
+  let trrServer = new TRRServer();
+  await trrServer.start();
+  h2Port = trrServer.port();
 
   trr_test_setup();
-  registerCleanupFunction(() => {
+  registerCleanupFunction(async () => {
     trr_clear_prefs();
+    await trrServer.stop();
   });
 
   if (mozinfo.socketprocess_networking) {

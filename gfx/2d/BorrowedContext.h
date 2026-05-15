@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _MOZILLA_GFX_BORROWED_CONTEXT_H
-#define _MOZILLA_GFX_BORROWED_CONTEXT_H
+#ifndef MOZILLA_GFX_BORROWED_CONTEXT_H
+#define MOZILLA_GFX_BORROWED_CONTEXT_H
 
 #include "2D.h"
 
@@ -17,63 +17,6 @@
 namespace mozilla {
 
 namespace gfx {
-
-#ifdef MOZ_X11
-/* This is a helper class that let's you borrow an Xlib drawable from
- * a DrawTarget. This is used for drawing themed widgets.
- *
- * Callers should check the Xlib drawable after constructing the object
- * to see if it succeeded. The DrawTarget should not be used while
- * the drawable is borrowed. */
-class BorrowedXlibDrawable {
- public:
-  BorrowedXlibDrawable()
-      : mDT(nullptr),
-        mDisplay(nullptr),
-        mDrawable(X11None),
-        mScreen(nullptr),
-        mVisual(nullptr) {}
-
-  explicit BorrowedXlibDrawable(DrawTarget* aDT)
-      : mDT(nullptr),
-        mDisplay(nullptr),
-        mDrawable(X11None),
-        mScreen(nullptr),
-        mVisual(nullptr) {
-    Init(aDT);
-  }
-
-  // We can optionally Init after construction in
-  // case we don't know what the DT will be at construction
-  // time.
-  bool Init(DrawTarget* aDT);
-
-  // The caller needs to call Finish if drawable is non-zero when
-  // they are done with the context. This is currently explicit
-  // instead of happening implicitly in the destructor to make
-  // what's happening in the caller more clear. It also
-  // let's you resume using the DrawTarget in the same scope.
-  void Finish();
-
-  ~BorrowedXlibDrawable() { MOZ_ASSERT(!mDrawable); }
-
-  Display* GetDisplay() const { return mDisplay; }
-  Drawable GetDrawable() const { return mDrawable; }
-  Screen* GetScreen() const { return mScreen; }
-  Visual* GetVisual() const { return mVisual; }
-  IntSize GetSize() const { return mSize; }
-  Point GetOffset() const { return mOffset; }
-
- private:
-  DrawTarget* mDT;
-  Display* mDisplay;
-  Drawable mDrawable;
-  Screen* mScreen;
-  Visual* mVisual;
-  IntSize mSize;
-  Point mOffset;
-};
-#endif
 
 #ifdef XP_DARWIN
 /* This is a helper class that let's you borrow a CGContextRef from a
@@ -128,4 +71,4 @@ class BorrowedCGContext {
 }  // namespace gfx
 }  // namespace mozilla
 
-#endif  // _MOZILLA_GFX_BORROWED_CONTEXT_H
+#endif  // MOZILLA_GFX_BORROWED_CONTEXT_H

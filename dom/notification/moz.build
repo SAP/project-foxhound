@@ -55,6 +55,8 @@ LOCAL_INCLUDES += [
     "/dom/ipc",
     # NotificationHandler::RespondOnClick, but see bug 1966910.
     "/js/xpconnect/src",
+    # Safe Browsing classification for notifications (bug 1986300).
+    "/netwerk/url-classifier",
 ]
 
 BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]

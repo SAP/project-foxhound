@@ -1,0 +1,58 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+android {
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
+    defaultConfig {
+        applicationId "org.mozilla.samples.relay"
+        minSdk config.minSdkVersion
+        targetSdk config.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    splits {
+        abi {
+            enable = true
+            reset()
+            include "armeabi-v7a", "arm64-v8a", "x86_64"
+        }
+    }
+
+    namespace = 'org.mozilla.samples.relay'
+
+}
+
+dependencies {
+    implementation project(':components:lib-fetch-httpurlconnection')
+    implementation project(':components:lib-state')
+    implementation project(':components:service-firefox-accounts')
+    implementation project(':components:support-appservices')
+    implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
+    implementation project(":components:service-firefox-relay")
+
+    implementation libs.androidx.appcompat
+    implementation libs.androidx.browser
+    implementation libs.androidx.constraintlayout
+    implementation libs.androidx.core.ktx
+    implementation libs.kotlinx.coroutines
+}

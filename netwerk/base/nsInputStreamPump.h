@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsInputStreamPump_h__
-#define nsInputStreamPump_h__
+#ifndef nsInputStreamPump_h_
+#define nsInputStreamPump_h_
 
 #include "nsIInputStreamPump.h"
 #include "nsIAsyncInputStream.h"
@@ -66,6 +66,14 @@ class nsInputStreamPump final : public nsIInputStreamPump,
    */
   nsresult CallOnStateStop();
 
+  /**
+   * Used by nsPipe to dispatch events with increased priority.
+   */
+  void SetHighPriority(bool aHighPriority) {
+    mHighPriorityStream = aHighPriority;
+  }
+  bool IsHighPriority() { return mHighPriorityStream; }
+
  protected:
   enum { STATE_IDLE, STATE_START, STATE_TRANSFER, STATE_STOP, STATE_DEAD };
 
@@ -118,6 +126,9 @@ class nsInputStreamPump final : public nsIInputStreamPump,
   const bool mOffMainThread;
   // Protects state/member var accesses across multiple threads.
   mozilla::RecursiveMutex mMutex{"nsInputStreamPump"};
+  // Whether events from this input stream should be dispatched
+  // with increased priority
+  mozilla::Atomic<bool, mozilla::Relaxed> mHighPriorityStream{false};
 };
 
-#endif  // !nsInputStreamChannel_h__
+#endif  // !nsInputStreamChannel_h_

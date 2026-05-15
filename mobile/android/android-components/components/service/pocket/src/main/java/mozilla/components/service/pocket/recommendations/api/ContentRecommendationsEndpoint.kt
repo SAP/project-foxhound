@@ -11,7 +11,6 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import mozilla.components.concept.fetch.Client
 import mozilla.components.service.pocket.ContentRecommendationsRequestConfig
-import mozilla.components.service.pocket.stories.api.PocketEndpoint.Companion.newInstance
 import mozilla.components.service.pocket.stories.api.PocketResponse
 
 /**

@@ -122,7 +122,7 @@ let observer = new (class extends EventEmitter {
   handlePlacesEvents(events) {
     for (let event of events) {
       switch (event.type) {
-        case "bookmark-added":
+        case "bookmark-added": {
           if (event.isTagging) {
             continue;
           }
@@ -142,7 +142,8 @@ let observer = new (class extends EventEmitter {
 
           this.emit("created", bookmark);
           break;
-        case "bookmark-removed":
+        }
+        case "bookmark-removed": {
           if (event.isTagging || event.isDescendantRemoval) {
             continue;
           }
@@ -160,6 +161,7 @@ let observer = new (class extends EventEmitter {
             info: { parentId: event.parentGuid, index: event.index, node },
           });
           break;
+        }
         case "bookmark-moved":
           this.emit("moved", {
             guid: event.guid,

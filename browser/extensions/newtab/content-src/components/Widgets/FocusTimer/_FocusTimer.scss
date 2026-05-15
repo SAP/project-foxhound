@@ -2,6 +2,216 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// .focus-timer {
+.focus-timer {
+  @include newtab-card-style;
 
-// }
+  grid-column: span 1;
+  width: var(--newtab-card-grid-layout-width);
+
+  // Match the new card width if sections are enabled
+  .has-sections-grid & {
+    width: var(--newtab-card-width-medium);
+  }
+
+  border-radius: var(--border-radius-large);
+  padding-block: var(--space-medium);
+  height: var(--newtab-card-height);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: var(--box-shadow-card);
+}
+
+.focus-timer-tabs {
+  display: flex;
+  margin-block-end: var(--space-medium);
+  position: relative;
+  width: 100%;
+  padding-inline: var(--space-medium);
+}
+
+// Align the context menu button to the right while keeping the Focus/Break button centered
+.focus-timer-tabs-buttons {
+  display: flex;
+  gap: var(--space-xxsmall);
+  justify-content: center;
+  flex-grow: 1;
+
+  moz-button {
+    flex-grow: 1;
+  }
+
+  moz-button:first-of-type {
+    &::part(button) {
+      border-end-end-radius: 0;
+      border-start-end-radius: 0;
+    }
+  }
+
+  moz-button:last-of-type {
+    &::part(button) {
+      border-start-start-radius: 0;
+      border-end-start-radius: 0;
+    }
+  }
+}
+
+.newtab-widget-timer-notification-title-wrapper {
+  display: flex;
+  justify-content: space-between;
+  // Alignment note: This matches alignment with the Lists widget "List name" select
+  align-items: center;
+  width: 100%;
+  padding-inline: var(--space-medium);
+  margin-block-end: var(--space-medium);
+
+  h3 {
+    font-size: var(--button-font-size);
+    font-weight: var(--heading-font-weight);
+    margin-block: 0;
+  }
+}
+
+// Make sure context menu is only visible as you hover over the Timer widget
+.focus-timer-context-menu-wrapper {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.focus-timer:hover, .focus-timer:focus-within {
+  .focus-timer-context-menu-wrapper {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.progress-circle-wrapper {
+  /* Colours for the main timer */
+  --timer-red: var(--color-red-50);
+  --timer-orange: var(--color-orange-30);
+
+  /* Colours for the break timer */
+  --timer-blue: var(--color-blue-20);
+  --timer-violet: var(--color-violet-20);
+
+  /* Complete timer */
+  --timer-green: var(--color-green-20);
+
+  &.is-small {
+    min-height: 114px;
+    width: 114px;
+
+    .progress-circle-label {
+      font-size: var(--font-size-xxlarge);
+    }
+  }
+
+  min-height: 138px;
+  position: relative;
+  width: 138px;
+  overflow: hidden;
+  margin-block-end: var(--space-small);
+
+  .progress-circle-background,
+  .progress-circle-background-break,
+  .progress-circle,
+  .progress-circle-complete {
+    --thickness: var(--space-small);
+
+    border-radius: var(--border-radius-circle);
+    inset: 0;
+    mask: radial-gradient(farthest-side, transparent calc(100% - var(--thickness)), black calc(100% - var(--thickness)));  position: absolute;
+  }
+
+  .progress-circle,
+  .progress-circle-complete {
+    background-color: var(--border-color-interactive);
+  }
+
+  /* main timer colours */
+  .progress-circle-background {
+    background: conic-gradient(
+      var(--timer-orange) 0deg,
+      var(--timer-red) 150deg,
+      var(--timer-red) 210deg,
+      var(--timer-orange) 360deg
+    );
+  }
+
+  /* break timer colours */
+  .progress-circle-background-break {
+    background: conic-gradient(
+      var(--timer-violet) 0deg,
+      var(--timer-blue) 150deg,
+      var(--timer-blue) 210deg,
+      var(--timer-violet) 360deg
+    );
+  }
+
+  /* timer turns green when complete */
+  .progress-circle-complete {
+    background: var(--timer-green);
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+    z-index: 2;
+
+    &.visible {
+      opacity: 1;
+    }
+  }
+
+  .focus-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .focus-visible {
+    opacity: 1;
+  }
+
+  .break-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .break-visible {
+    opacity: 1;
+  }
+
+  .progress-circle-label {
+    align-items: center;
+    color: var(--text-color);
+    display: flex;
+    // Bug 1880518 - Large font-size number (32px)
+    font-size: calc(var(--font-size-large) * 2);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    height: 100%;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    justify-content: center;
+    position: absolute;
+    width: 100%;
+    z-index: 2;
+  }
+}
+
+.timer-set-minutes,
+.timer-set-seconds {
+  &:focus {
+    outline: var(--focus-outline);
+  }
+}
+
+.focus-timer-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-medium);
+}
+
+.timer-notification-status {
+  color: var(--text-color-deemphasized);
+  font-size: var(--font-size-small);
+  margin-block-start: var(--space-small);
+}

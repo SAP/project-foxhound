@@ -6,6 +6,7 @@
 
 #include "StreamUtils.h"
 
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/Result.h"
 #include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
@@ -67,6 +68,8 @@ Result<nsCOMPtr<nsIBinaryOutputStream>, nsresult> GetBinaryOutputStream(
 
 Result<nsCOMPtr<nsIBinaryInputStream>, nsresult> GetBinaryInputStream(
     nsIFile& aDirectory, const nsAString& aFilename) {
+  GECKO_TRACE_SCOPE("dom::quota", "GetBinaryInputStream")
+
   MOZ_ASSERT(!NS_IsMainThread());
 
   QM_TRY_INSPECT(const auto& file, MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(

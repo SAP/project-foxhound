@@ -16,11 +16,25 @@ rtc_source_set("audio_device") {
   ]
   deps = [
     "..:ref_count",
-    "..:scoped_refptr",
-    "../../rtc_base:checks",
     "../../rtc_base:stringutils",
-    "../task_queue",
   ]
+}
+
+if (rtc_include_internal_audio_device) {
+  rtc_library("create_audio_device_module") {
+    visibility = [ "*" ]
+    sources = [
+      "create_audio_device_module.cc",
+      "create_audio_device_module.h",
+    ]
+    deps = [
+      ":audio_device",
+      "..:scoped_refptr",
+      "../../modules/audio_device:audio_device_impl",
+      "../environment",
+      "//third_party/abseil-cpp/absl/base:nullability",
+    ]
+  }
 }
 
 rtc_library("audio_frame_api") {
@@ -38,7 +52,6 @@ rtc_library("audio_frame_api") {
     "..:rtp_packet_info",
     "../../rtc_base:checks",
     "../../rtc_base:logging",
-    "../../rtc_base:macromagic",
     "../../rtc_base:timeutils",
   ]
 }
@@ -55,11 +68,12 @@ rtc_source_set("audio_mixer_api") {
   deps = [
     ":audio_frame_api",
     "..:make_ref_counted",
+    "..:ref_count",
     "../../rtc_base:refcount",
   ]
 }
 
-rtc_source_set("audio_processing") {
+rtc_library("audio_processing") {
   visibility = [ "*" ]
   sources = [
     "audio_processing.cc",
@@ -73,7 +87,6 @@ rtc_source_set("audio_processing") {
     "..:ref_count",
     "..:scoped_refptr",
     "../../rtc_base:checks",
-    "../../rtc_base:macromagic",
     "../../rtc_base:stringutils",
     "../../rtc_base/system:arch",
     "../../rtc_base/system:file_wrapper",
@@ -93,8 +106,10 @@ rtc_library("builtin_audio_processing_builder") {
     "builtin_audio_processing_builder.h",
   ]
   deps = [
+    ":aec3_config",
     ":audio_processing",
     ":echo_control",
+    ":neural_residual_echo_estimator_api",
     "..:make_ref_counted",
     "..:scoped_refptr",
     "../../modules/audio_processing",
@@ -105,7 +120,7 @@ rtc_library("builtin_audio_processing_builder") {
   ]
 }
 
-rtc_source_set("audio_processing_statistics") {
+rtc_library("audio_processing_statistics") {
   visibility = [ "*" ]
   sources = [
     "audio_processing_statistics.cc",
@@ -138,6 +153,7 @@ rtc_library("aec3_factory") {
   deps = [
     ":aec3_config",
     ":echo_control",
+    ":neural_residual_echo_estimator_api",
     "../../modules/audio_processing/aec3",
     "../../rtc_base/system:rtc_export",
     "../environment",
@@ -149,13 +165,48 @@ rtc_source_set("echo_control") {
   visibility = [ "*" ]
   sources = [ "echo_control.h" ]
   deps = [
+    ":neural_residual_echo_estimator_api",
     "../../rtc_base:checks",
     "../environment",
     "//third_party/abseil-cpp/absl/base:nullability",
   ]
 }
 
-rtc_source_set("echo_detector_creator") {
+rtc_source_set("neural_residual_echo_estimator_api") {
+  visibility = [ "*" ]
+  sources = [ "neural_residual_echo_estimator.h" ]
+  deps = [
+    ":aec3_config",
+    "..:array_view",
+  ]
+}
+
+if (rtc_enable_protobuf) {
+  rtc_library("neural_residual_echo_estimator_creator") {
+    visibility = [ "*" ]
+    allow_poison = [ "default_neural_residual_echo_estimator" ]
+    configs += [ "../../modules/audio_processing:apm_debug_dump" ]
+    sources = [
+      "neural_residual_echo_estimator_creator.cc",
+      "neural_residual_echo_estimator_creator.h",
+    ]
+    deps = [
+      ":neural_residual_echo_estimator_api",
+      "../../modules/audio_processing/aec3/neural_residual_echo_estimator:neural_residual_echo_estimator_impl",
+      "../../rtc_base:checks",
+      "../../rtc_base/system:rtc_export",
+      "//third_party/abseil-cpp/absl/base:nullability",
+      "//third_party/abseil-cpp/absl/strings:string_view",
+    ]
+    if (build_with_chromium) {
+      deps += [ "//third_party/tflite" ]
+    } else {
+      deps += [ "//third_party/tflite:tflite_standalone" ]
+    }
+  }
+}
+
+rtc_library("echo_detector_creator") {
   visibility = [ "*" ]
   allow_poison = [ "default_echo_detector" ]
   sources = [

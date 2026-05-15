@@ -5,6 +5,7 @@
 package org.mozilla.fenix.library.history.viewholders
 
 import android.view.View
+import androidx.annotation.LayoutRes
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import org.mozilla.fenix.R
@@ -162,6 +163,8 @@ class HistoryListItemViewHolder(
 
     companion object {
         const val DISABLED_BUTTON_ALPHA = 0.7f
-        const val LAYOUT_ID = R.layout.history_list_item
+
+        @LayoutRes
+        val LAYOUT_ID = R.layout.history_list_item
     }
 }

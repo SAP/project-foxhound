@@ -5,8 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsAppShell_h__
-#define nsAppShell_h__
+#ifndef nsAppShell_h_
+#define nsAppShell_h_
 
 #ifdef MOZ_ENABLE_DBUS
 #  include <gio/gio.h>
@@ -43,6 +43,9 @@ class nsAppShell : public nsBaseAppShell {
                                                     gpointer aUserData);
   static void DBusConnectClientResponse(GObject* aObject, GAsyncResult* aResult,
                                         gpointer aUserData);
+  static void DBusConnectionCheck();
+  static void SetSessionDBus(GDBusConnection* aDBusConnectionSession);
+  static void SetSystemDBus(GDBusConnection* aDBusConnectionSystem);
 #endif
 
   static void InstallTermSignalHandler();
@@ -64,7 +67,11 @@ class nsAppShell : public nsBaseAppShell {
   RefPtr<GCancellable> mLogin1ProxyCancellable;
   RefPtr<GDBusProxy> mTimedate1Proxy;
   RefPtr<GCancellable> mTimedate1ProxyCancellable;
+  RefPtr<GDBusConnection> mDBusConnectionSession;
+  RefPtr<GDBusConnection> mDBusConnectionSystem;
+  RefPtr<GCancellable> mDBusGetCancellableSession;
+  RefPtr<GCancellable> mDBusGetCancellableSystem;
 #endif
 };
 
-#endif /* nsAppShell_h__ */
+#endif /* nsAppShell_h_ */

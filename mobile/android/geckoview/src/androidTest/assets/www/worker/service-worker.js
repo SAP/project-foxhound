@@ -10,6 +10,10 @@ self.addEventListener("activate", function (e) {
 
 self.onnotificationclick = function (event) {
   console.log("onnotificationclick");
-  self.clients.openWindow("open_window_target.html");
+  let urlParam = "";
+  if (event.action) {
+    urlParam = `?action=${event.action}`;
+  }
+  self.clients.openWindow("open_window_target.html" + urlParam);
   event.notification.close();
 };

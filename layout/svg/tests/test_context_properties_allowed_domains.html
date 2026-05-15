@@ -48,6 +48,10 @@
 
     await waitForLoad(frame);
 
+    // ensure layout flushed, see Bug 1955324 comment 15
+    await new Promise(res => frame.contentWindow.requestAnimationFrame(res));
+    ok(frame.contentWindow.innerHeight != 0, 'iframe has non-zero size');
+
     let snapshot = await snapshotWindow(frame, false);
     document.body.removeChild(frame);
     return snapshot;

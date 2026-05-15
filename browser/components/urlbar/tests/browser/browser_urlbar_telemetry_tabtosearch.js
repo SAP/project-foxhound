@@ -13,11 +13,6 @@
 const ENGINE_NAME = "MozSearch";
 const ENGINE_DOMAIN = "example.com";
 
-ChromeUtils.defineESModuleGetters(this, {
-  UrlbarProviderTabToSearch:
-    "resource:///modules/UrlbarProviderTabToSearch.sys.mjs",
-});
-
 /**
  * Checks to see if the second result in the Urlbar is a tab-to-search result
  * with the correct engine.
@@ -34,7 +29,7 @@ async function checkForTabToSearchResult(engineName, isOnboarding) {
   ).result;
   Assert.equal(
     tabToSearchResult.providerName,
-    "TabToSearch",
+    "UrlbarProviderTabToSearch",
     "The second result is a tab-to-search result."
   );
   Assert.equal(
@@ -96,7 +91,7 @@ add_task(async function test() {
     ).result;
     Assert.equal(
       tabToSearchResult.providerName,
-      "TabToSearch",
+      "UrlbarProviderTabToSearch",
       "The second result is a tab-to-search result."
     );
     Assert.equal(

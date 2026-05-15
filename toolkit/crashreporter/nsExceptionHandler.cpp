@@ -16,12 +16,11 @@
 #include "nsIFileStreams.h"
 #include "nsNetUtil.h"
 #include "nsString.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/GeckoArgs.h"
 #include "mozilla/EnumeratedRange.h"
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
-#include "mozilla/Unused.h"
 #include "mozilla/RuntimeExceptionModule.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
@@ -29,7 +28,6 @@
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/ToString.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
@@ -99,7 +97,6 @@
 
 #  if defined(MOZ_OXIDIZED_BREAKPAD)
 #    include "mozilla/toolkit/crashreporter/rust_minidump_writer_linux_ffi_generated.h"
-#    include <unordered_map>
 #    include <mutex>
 #    include <sys/auxv.h>
 #  endif  // defined(MOZ_OXIDIZED_BREAKPAD)
@@ -223,10 +220,12 @@ MOZ_RUNINIT static std::optional<xpstring> defaultMemoryReportPath = {};
 
 static const char kCrashMainID[] = "crash.main.3\n";
 
-static CrashHelperClient* gCrashHelperClient = nullptr;
+static StaticMutex gCrashHelperClientMutex;
+static CrashHelperClient* gCrashHelperClient
+    MOZ_GUARDED_BY(gCrashHelperClientMutex) = nullptr;
 static google_breakpad::ExceptionHandler* gExceptionHandler = nullptr;
 static mozilla::Atomic<bool> gEncounteredChildException(false);
-MOZ_CONSTINIT static nsCString gServerURL;
+constinit static nsCString gServerURL;
 
 MOZ_RUNINIT static xpstring pendingDirectory;
 MOZ_RUNINIT static xpstring crashReporterPath;
@@ -252,10 +251,6 @@ static XP_CHAR lastCrashTimeFilename[XP_PATH_MAX] = {0};
 // with the current process that gets lost when we fork so we need to
 // explicitly pass it to am
 static char* androidUserSerial = nullptr;
-
-// Before Android 8 we needed to use "startservice" to start the crash reporting
-// service. After Android 8 we need to use "start-foreground-service"
-static const char* androidStartServiceCommand = nullptr;
 #endif
 
 // this holds additional data sent via the API
@@ -286,11 +281,12 @@ static std::terminate_handler oldTerminateHandler = nullptr;
 MOZ_RUNINIT static nsCString childCrashNotifyPipe;
 
 #elif defined(XP_LINUX)
-static int serverSocketFd = -1;
 static int clientSocketFd = -1;
-#  if defined(MOZ_WIDGET_ANDROID)
+#  if !defined(MOZ_WIDGET_ANDROID)
+static int serverSocketFd = -1;
+#  else
 static int crashHelperClientFd = -1;
-#  endif  // defined(MOZ_WIDGET_ANDROID)
+#  endif
 #endif
 
 static void OOPInit();
@@ -422,7 +418,7 @@ static inline void my_u64tostring(uint64_t aValue, char* aBuffer,
 #endif
 
 static void CreateFileFromPath(const xpstring& path, nsIFile** file) {
-  Unused << NS_NewPathStringLocalFile(
+  (void)NS_NewPathStringLocalFile(
       DependentPathString(path.c_str(), path.size()), file);
 }
 
@@ -917,7 +913,7 @@ static void AnnotateMemoryStatus(AnnotationWriter& aWriter) {
       // No /proc/meminfo? Well, fail silently.
       return;
     }
-    auto Guard = MakeScopeExit([fd]() { mozilla::Unused << sys_close(fd); });
+    auto Guard = MakeScopeExit([fd]() { (void)sys_close(fd); });
 
     ssize_t bytesRead = 0;
     do {
@@ -1248,7 +1244,7 @@ static bool LaunchProgram(const XP_CHAR* aProgramPath,
   if (pid == -1) {
     return false;
   } else if (pid == 0) {
-    Unused << execl(aProgramPath, aProgramPath, aMinidumpPath, nullptr);
+    (void)execl(aProgramPath, aProgramPath, aMinidumpPath, nullptr);
     _exit(1);
   }
 #  endif  // XP_MACOSX
@@ -1280,15 +1276,15 @@ static bool LaunchCrashHandlerService(const XP_CHAR* aProgramPath,
   else if (pid == 0) {
     // Invoke the crash handler service using am
     if (androidUserSerial) {
-      Unused << execlp(
-          "/system/bin/am", "/system/bin/am", androidStartServiceCommand,
+      (void)execlp(
+          "/system/bin/am", "/system/bin/am", "start-foreground-service",
           "--user", androidUserSerial, "-a", "org.mozilla.gecko.ACTION_CRASHED",
           "-n", aProgramPath, "--es", "minidumpPath", aMinidumpPath, "--es",
           "extrasPath", extrasPath, "--ez", "fatal", "true", "--es",
           "processVisibility", "MAIN", "--es", "processType", "main", (char*)0);
     } else {
-      Unused << execlp(
-          "/system/bin/am", "/system/bin/am", androidStartServiceCommand, "-a",
+      (void)execlp(
+          "/system/bin/am", "/system/bin/am", "start-foreground-service", "-a",
           "org.mozilla.gecko.ACTION_CRASHED", "-n", aProgramPath, "--es",
           "minidumpPath", aMinidumpPath, "--es", "extrasPath", extrasPath,
           "--ez", "fatal", "true", "--es", "processVisibility", "MAIN", "--es",
@@ -1301,7 +1297,7 @@ static bool LaunchCrashHandlerService(const XP_CHAR* aProgramPath,
     // everything will be killed by the ActivityManager as soon as the signal
     // handler exits
     int status;
-    Unused << HANDLE_EINTR(sys_waitpid(pid, &status, __WALL));
+    (void)HANDLE_EINTR(sys_waitpid(pid, &status, __WALL));
   }
 
   return true;
@@ -1391,8 +1387,10 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
                  static_cast<uint64_t>(crashTime - inactiveStateStart));
   }
 
-  double uptimeTS = (TimeStamp::NowLoRes() - TimeStamp::ProcessCreation())
-                        .ToSecondsSigDigits();
+  // ToSeconds preserves the full precision of the TimeDuration. It is assumed
+  // that visualizations of this value will format/truncate it to their needs.
+  double uptimeTS =
+      (TimeStamp::NowLoRes() - TimeStamp::ProcessCreation()).ToSeconds();
   char uptimeTSString[64] = {};
   SimpleNoCLibDtoA(uptimeTS, uptimeTSString, sizeof(uptimeTSString));
   writer.Write(Annotation::UptimeTS, uptimeTSString);
@@ -1949,17 +1947,6 @@ nsresult SetExceptionHandler(nsIFile* aXREDirectory, bool force /*=false*/) {
     NS_WARNING("No Android crash handler set");
   }
 
-  const char* deviceAndroidVersion =
-      PR_GetEnv("MOZ_ANDROID_DEVICE_SDK_VERSION");
-  if (deviceAndroidVersion != nullptr) {
-    const int deviceSdkVersion = atol(deviceAndroidVersion);
-    if (deviceSdkVersion >= 26) {
-      androidStartServiceCommand = (char*)"start-foreground-service";
-    } else {
-      androidStartServiceCommand = (char*)"startservice";
-    }
-  }
-
   const char* crashHelperPathEnv = PR_GetEnv("MOZ_ANDROID_PACKAGE_NAME");
   MOZ_ASSERT(crashHelperPathEnv, "The application package name is required");
   crashHelperPath = crashHelperPathEnv;
@@ -2116,6 +2103,7 @@ nsresult SetMinidumpPath(const nsAString& aPath) {
 #endif
 
   // Set the path used by the crash helper for out-of-process crash generation
+  StaticMutexAutoLock lock(gCrashHelperClientMutex);
   if (gCrashHelperClient) {
     set_crash_report_path(gCrashHelperClient,
                           (const BreakpadChar*)path.BeginReading());
@@ -2341,6 +2329,7 @@ nsresult UnsetExceptionHandler() {
   dumpSafetyLock = nullptr;
 
   std::set_terminate(oldTerminateHandler);
+  StaticMutexAutoLock lock(gCrashHelperClientMutex);
   if (gCrashHelperClient) {
     crash_helper_shutdown(gCrashHelperClient);
     gCrashHelperClient = nullptr;
@@ -2542,8 +2531,8 @@ AutoRecordAnnotation::AutoRecordAnnotation(Annotation key,
 
 AutoRecordAnnotation::~AutoRecordAnnotation() {
   if (GetEnabled()) {
-    Unused << mozannotation_register_nscstring(static_cast<uint32_t>(mKey),
-                                               mPrevious);
+    (void)mozannotation_register_nscstring(static_cast<uint32_t>(mKey),
+                                           mPrevious);
   }
 }
 
@@ -2570,8 +2559,10 @@ static void AddCommonAnnotations(AnnotationTable& aAnnotations) {
     aAnnotations[Annotation::LastInteractionDuration] = inactiveDuration;
   }
 
-  double uptimeTS = (TimeStamp::NowLoRes() - TimeStamp::ProcessCreation())
-                        .ToSecondsSigDigits();
+  // ToSeconds preserves the full precision of the TimeDuration. It is assumed
+  // that visualizations of this value will format/truncate it to their needs.
+  double uptimeTS =
+      (TimeStamp::NowLoRes() - TimeStamp::ProcessCreation()).ToSeconds();
   nsAutoCString uptimeStr;
   uptimeStr.AppendFloat(uptimeTS);
   aAnnotations[Annotation::UptimeTS] = uptimeStr;
@@ -3308,6 +3299,7 @@ static void OOPInit() {
       gExceptionHandler->dump_path().c_str());
 #endif
 
+  StaticMutexAutoLock lock(gCrashHelperClientMutex);
   gCrashHelperClient = crashHelperClient;
 }
 
@@ -3337,19 +3329,80 @@ CrashPipeType GetChildNotificationPipe() {
 #endif
 }
 
-UniqueFileHandle RegisterChildIPCChannel() {
+bool RegisterChildIPCChannel(mozilla::geckoargs::ChildProcessArgs& aArgs) {
+  StaticMutexAutoLock lock(gCrashHelperClientMutex);
   if (gCrashHelperClient) {
-    AncillaryData ipc_endpoint = register_child_ipc_channel(gCrashHelperClient);
-    return UniqueFileHandle{ipc_endpoint};
+    RawIPCConnector connector = {};
+    if (!register_child_ipc_channel(gCrashHelperClient, &connector)) {
+      return false;
+    }
+
+#if defined(XP_DARWIN)
+    UniqueMachSendRight send_right{connector.send};
+    UniqueMachReceiveRight recv_right{connector.recv};
+
+    if (!send_right || !recv_right) {
+      return false;
+    }
+
+    geckoargs::sCrashHelperSend.Put(std::move(send_right), aArgs);
+    geckoargs::sCrashHelperRecv.Put(std::move(recv_right), aArgs);
+#else
+#  if defined(XP_WIN)
+    UniqueFileHandle endpoint{connector.handle};
+#  else
+    UniqueFileHandle endpoint{connector.socket};
+#  endif  // defined(XP_WIN)
+
+    if (!endpoint) {
+      return false;
+    }
+
+    geckoargs::sCrashHelper.Put(std::move(endpoint), aArgs);
+#endif
+    return true;
   }
 
-  return UniqueFileHandle();
+  return false;
 }
 
-bool SetRemoteExceptionHandler(CrashPipeType aCrashPipe,
-                               UniqueFileHandle aCrashHelperPipe) {
+bool SetRemoteExceptionHandler(int& aArgc, char** aArgv) {
   MOZ_ASSERT(!gExceptionHandler, "crash client already init'd");
-  crash_helper_rendezvous(aCrashHelperPipe.release());
+  auto crash_pipe = geckoargs::sCrashReporter.Get(aArgc, aArgv);
+
+  if (crash_pipe.isNothing()) {
+    return false;
+  }
+
+#if defined(XP_DARWIN)
+  auto send_right = geckoargs::sCrashHelperSend.Get(aArgc, aArgv);
+  auto recv_right = geckoargs::sCrashHelperRecv.Get(aArgc, aArgv);
+
+  if (send_right.isNothing() || recv_right.isNothing()) {
+    return false;
+  }
+
+  struct RawIPCConnector raw_connector = {
+      .send = send_right->release(),
+      .recv = recv_right->release(),
+  };
+
+  crash_helper_rendezvous(raw_connector);
+#else
+  auto endpoint = geckoargs::sCrashHelper.Get(aArgc, aArgv);
+
+  if (endpoint.isNothing()) {
+    return false;
+  }
+
+#  if defined(XP_WIN)
+  RawIPCConnector raw_connector = {.handle = endpoint->release()};
+#  else
+  RawIPCConnector raw_connector = {.socket = endpoint->release()};
+#  endif  // defined(XP_WIN)
+
+  crash_helper_rendezvous(raw_connector);
+#endif    // defined(XP_DARWIN)
   RegisterRuntimeExceptionModule();
   InitializeAppNotes();
   RegisterAnnotations();
@@ -3370,7 +3423,7 @@ bool SetRemoteExceptionHandler(CrashPipeType aCrashPipe,
       nullptr,  // no callback
       nullptr,  // no callback context
       google_breakpad::ExceptionHandler::HANDLER_ALL, GetMinidumpType(),
-      (const wchar_t*)NS_ConvertUTF8toUTF16(aCrashPipe).BeginReading(),
+      (const wchar_t*)NS_ConvertUTF8toUTF16(*crash_pipe).BeginReading(),
       nullptr  // no custom info
   );
   gExceptionHandler->set_handle_debug_exceptions(true);
@@ -3387,23 +3440,27 @@ bool SetRemoteExceptionHandler(CrashPipeType aCrashPipe,
                                             nullptr,  // no callback
                                             nullptr,  // no callback context
                                             true,     // install signal handlers
-                                            aCrashPipe.release());
+                                            crash_pipe->release());
 #elif defined(XP_MACOSX)
   gExceptionHandler =
       new google_breakpad::ExceptionHandler("", ChildFilter,
                                             nullptr,  // no callback
                                             nullptr,  // no callback context
                                             true,     // install signal handlers
-                                            aCrashPipe);
+                                            *crash_pipe);
 #endif
 
   RecordMainThreadId();
 
   oldTerminateHandler = std::set_terminate(&TerminateHandler);
 
-  // we either do remote or nothing, no fallback to regular crash reporting
+  // If we didn't fail earlier because of a missing IPC channel then all of the
+  // above should have succeeded.
+  MOZ_ASSERT(gExceptionHandler->IsOutOfProcess(),
+             "Should have been able to set remote exception handler");
+
   return gExceptionHandler->IsOutOfProcess();
-}
+}  // namespace CrashReporter
 
 bool TakeMinidumpForChild(ProcessId childPid, nsIFile** dump,
                           AnnotationTable& aAnnotations) {
@@ -3413,8 +3470,11 @@ bool TakeMinidumpForChild(ProcessId childPid, nsIFile** dump,
 
   CrashReport* crash_report = nullptr;
 
-  if (gCrashHelperClient) {
-    crash_report = transfer_crash_report(gCrashHelperClient, childPid);
+  {
+    StaticMutexAutoLock lock(gCrashHelperClientMutex);
+    if (gCrashHelperClient) {
+      crash_report = transfer_crash_report(gCrashHelperClient, childPid);
+    }
   }
 
   if (!crash_report) {
@@ -3695,12 +3755,14 @@ void GetCurrentProcessAuxvInfo(DirectAuxvDumpInfo* aAuxvInfo) {
 
 void RegisterChildAuxvInfo(pid_t aChildPid,
                            const DirectAuxvDumpInfo& aAuxvInfo) {
+  StaticMutexAutoLock lock(gCrashHelperClientMutex);
   if (gCrashHelperClient) {
     register_child_auxv_info(gCrashHelperClient, aChildPid, &aAuxvInfo);
   }
 }
 
 void UnregisterChildAuxvInfo(pid_t aChildPid) {
+  StaticMutexAutoLock lock(gCrashHelperClientMutex);
   if (gCrashHelperClient) {
     unregister_child_auxv_info(gCrashHelperClient, aChildPid);
   }

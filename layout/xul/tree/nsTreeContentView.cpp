@@ -725,7 +725,7 @@ int32_t nsTreeContentView::GetIndexOfItem(Element* aItem) {
 
 void nsTreeContentView::AttributeChanged(dom::Element* aElement,
                                          int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType,
+                                         nsAtom* aAttribute, AttrModType,
                                          const nsAttrValue* aOldValue) {
   // Lots of codepaths under here that do all sorts of stuff, so be safe.
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);

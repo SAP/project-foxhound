@@ -65,7 +65,7 @@ class ParentAccessibilityActor extends Actor {
   /**
    * A getter that indicates if accessibility service is enabled.
    *
-   * @return {Boolean}
+   * @return {boolean}
    *         True if accessibility service is on.
    */
   get enabled() {
@@ -75,7 +75,7 @@ class ParentAccessibilityActor extends Actor {
   /**
    * A getter that indicates if the accessibility service can be disabled.
    *
-   * @return {Boolean}
+   * @return {boolean}
    *         True if accessibility service can be disabled.
    */
   get canBeDisabled() {
@@ -93,7 +93,7 @@ class ParentAccessibilityActor extends Actor {
   /**
    * A getter that indicates if the accessibility service can be enabled.
    *
-   * @return {Boolean}
+   * @return {boolean}
    *         True if accessibility service can be enabled.
    */
   get canBeEnabled() {

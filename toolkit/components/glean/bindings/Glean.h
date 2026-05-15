@@ -8,22 +8,15 @@
 #define mozilla_glean_Glean_h
 
 #include "js/TypeDecls.h"
+// The following include provides GleanWebidlEnabled(), used by generated
+// GleanBinding.cpp
+#include "mozilla/glean/bindings/GleanWebIDL.h"
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
 
 class nsIGlobalObject;
-
-namespace mozilla::dom {
-/*
- * WebIDL permission function for whether Glean APIs are permitted for aCx.
- *
- * Here instead of nsIGlobalWindowInner or BindingUtils for organization and
- * header include optimization reasons.
- */
-bool GleanWebidlEnabled(JSContext* aCx, JSObject* aObj);
-}  // namespace mozilla::dom
 
 namespace mozilla::glean {
 

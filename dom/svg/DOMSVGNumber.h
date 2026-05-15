@@ -8,11 +8,10 @@
 #define DOM_SVG_DOMSVGNUMBER_H_
 
 #include "DOMSVGNumberList.h"
+#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
 #include "nsWrapperCache.h"
 
 #define MOZ_SVG_LIST_INDEX_BIT_COUNT 27  // supports > 134 million list items

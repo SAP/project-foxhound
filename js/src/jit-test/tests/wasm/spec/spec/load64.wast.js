@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/load64.wast
+// ./test/core/memory64/load64.wast
 
-// ./test/core/load64.wast:3
+// ./test/core/memory64/load64.wast:3
 let $0 = instantiate(`(module
   (memory i64 1)
 
@@ -174,364 +174,364 @@ let $0 = instantiate(`(module
   )
 )`);
 
-// ./test/core/load64.wast:161
+// ./test/core/memory64/load64.wast:161
 assert_return(() => invoke($0, `as-br-value`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:163
+// ./test/core/memory64/load64.wast:163
 assert_return(() => invoke($0, `as-br_if-cond`, []), []);
 
-// ./test/core/load64.wast:164
+// ./test/core/memory64/load64.wast:164
 assert_return(() => invoke($0, `as-br_if-value`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:165
+// ./test/core/memory64/load64.wast:165
 assert_return(() => invoke($0, `as-br_if-value-cond`, []), [value("i32", 7)]);
 
-// ./test/core/load64.wast:167
+// ./test/core/memory64/load64.wast:167
 assert_return(() => invoke($0, `as-br_table-index`, []), []);
 
-// ./test/core/load64.wast:168
+// ./test/core/memory64/load64.wast:168
 assert_return(() => invoke($0, `as-br_table-value`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:169
+// ./test/core/memory64/load64.wast:169
 assert_return(() => invoke($0, `as-br_table-value-index`, []), [value("i32", 6)]);
 
-// ./test/core/load64.wast:171
+// ./test/core/memory64/load64.wast:171
 assert_return(() => invoke($0, `as-return-value`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:173
+// ./test/core/memory64/load64.wast:173
 assert_return(() => invoke($0, `as-if-cond`, []), [value("i32", 1)]);
 
-// ./test/core/load64.wast:174
+// ./test/core/memory64/load64.wast:174
 assert_return(() => invoke($0, `as-if-then`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:175
+// ./test/core/memory64/load64.wast:175
 assert_return(() => invoke($0, `as-if-else`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:177
+// ./test/core/memory64/load64.wast:177
 assert_return(() => invoke($0, `as-select-first`, [0, 1]), [value("i32", 0)]);
 
-// ./test/core/load64.wast:178
+// ./test/core/memory64/load64.wast:178
 assert_return(() => invoke($0, `as-select-second`, [0, 0]), [value("i32", 0)]);
 
-// ./test/core/load64.wast:179
+// ./test/core/memory64/load64.wast:179
 assert_return(() => invoke($0, `as-select-cond`, []), [value("i32", 1)]);
 
-// ./test/core/load64.wast:181
+// ./test/core/memory64/load64.wast:181
 assert_return(() => invoke($0, `as-call-first`, []), [value("i32", -1)]);
 
-// ./test/core/load64.wast:182
+// ./test/core/memory64/load64.wast:182
 assert_return(() => invoke($0, `as-call-mid`, []), [value("i32", -1)]);
 
-// ./test/core/load64.wast:183
+// ./test/core/memory64/load64.wast:183
 assert_return(() => invoke($0, `as-call-last`, []), [value("i32", -1)]);
 
-// ./test/core/load64.wast:185
+// ./test/core/memory64/load64.wast:185
 assert_return(() => invoke($0, `as-call_indirect-first`, []), [value("i32", -1)]);
 
-// ./test/core/load64.wast:186
+// ./test/core/memory64/load64.wast:186
 assert_return(() => invoke($0, `as-call_indirect-mid`, []), [value("i32", -1)]);
 
-// ./test/core/load64.wast:187
+// ./test/core/memory64/load64.wast:187
 assert_return(() => invoke($0, `as-call_indirect-last`, []), [value("i32", -1)]);
 
-// ./test/core/load64.wast:188
+// ./test/core/memory64/load64.wast:188
 assert_return(() => invoke($0, `as-call_indirect-index`, []), [value("i32", -1)]);
 
-// ./test/core/load64.wast:190
+// ./test/core/memory64/load64.wast:190
 assert_return(() => invoke($0, `as-local.set-value`, []), []);
 
-// ./test/core/load64.wast:191
+// ./test/core/memory64/load64.wast:191
 assert_return(() => invoke($0, `as-local.tee-value`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:192
+// ./test/core/memory64/load64.wast:192
 assert_return(() => invoke($0, `as-global.set-value`, []), []);
 
-// ./test/core/load64.wast:194
+// ./test/core/memory64/load64.wast:194
 assert_return(() => invoke($0, `as-load-address`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:195
+// ./test/core/memory64/load64.wast:195
 assert_return(() => invoke($0, `as-loadN-address`, []), [value("i32", 0)]);
 
-// ./test/core/load64.wast:196
+// ./test/core/memory64/load64.wast:196
 assert_return(() => invoke($0, `as-store-address`, []), []);
 
-// ./test/core/load64.wast:197
+// ./test/core/memory64/load64.wast:197
 assert_return(() => invoke($0, `as-store-value`, []), []);
 
-// ./test/core/load64.wast:198
+// ./test/core/memory64/load64.wast:198
 assert_return(() => invoke($0, `as-storeN-address`, []), []);
 
-// ./test/core/load64.wast:199
+// ./test/core/memory64/load64.wast:199
 assert_return(() => invoke($0, `as-storeN-value`, []), []);
 
-// ./test/core/load64.wast:201
+// ./test/core/memory64/load64.wast:201
 assert_return(() => invoke($0, `as-unary-operand`, []), [value("i32", 32)]);
 
-// ./test/core/load64.wast:203
+// ./test/core/memory64/load64.wast:203
 assert_return(() => invoke($0, `as-binary-left`, []), [value("i32", 10)]);
 
-// ./test/core/load64.wast:204
+// ./test/core/memory64/load64.wast:204
 assert_return(() => invoke($0, `as-binary-right`, []), [value("i32", 10)]);
 
-// ./test/core/load64.wast:206
+// ./test/core/memory64/load64.wast:206
 assert_return(() => invoke($0, `as-test-operand`, []), [value("i32", 1)]);
 
-// ./test/core/load64.wast:208
+// ./test/core/memory64/load64.wast:208
 assert_return(() => invoke($0, `as-compare-left`, []), [value("i32", 1)]);
 
-// ./test/core/load64.wast:209
+// ./test/core/memory64/load64.wast:209
 assert_return(() => invoke($0, `as-compare-right`, []), [value("i32", 1)]);
 
-// ./test/core/load64.wast:211
+// ./test/core/memory64/load64.wast:211
 assert_return(() => invoke($0, `as-memory.grow-size`, []), [value("i64", 1n)]);
 
-// ./test/core/load64.wast:213
+// ./test/core/memory64/load64.wast:213
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i32) (i32.load32 (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:220
+// ./test/core/memory64/load64.wast:220
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i32) (i32.load32_u (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:227
+// ./test/core/memory64/load64.wast:227
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i32) (i32.load32_s (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:234
+// ./test/core/memory64/load64.wast:234
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i32) (i32.load64 (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:241
+// ./test/core/memory64/load64.wast:241
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i32) (i32.load64_u (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:248
+// ./test/core/memory64/load64.wast:248
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i32) (i32.load64_s (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:256
+// ./test/core/memory64/load64.wast:256
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i64) (i64.load64 (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:263
+// ./test/core/memory64/load64.wast:263
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i64) (i64.load64_u (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:270
+// ./test/core/memory64/load64.wast:270
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result i64) (i64.load64_s (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:278
+// ./test/core/memory64/load64.wast:278
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result f32) (f32.load32 (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:285
+// ./test/core/memory64/load64.wast:285
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result f32) (f32.load64 (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:293
+// ./test/core/memory64/load64.wast:293
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result f64) (f64.load32 (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:300
+// ./test/core/memory64/load64.wast:300
 assert_malformed(
   () => instantiate(`(memory i64 1) (func (param i64) (result f64) (f64.load64 (local.get 0))) `),
   `unknown operator`,
 );
 
-// ./test/core/load64.wast:311
+// ./test/core/memory64/load64.wast:311
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load_i32 (i32.load (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:315
+// ./test/core/memory64/load64.wast:315
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load8_s_i32 (i32.load8_s (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:319
+// ./test/core/memory64/load64.wast:319
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load8_u_i32 (i32.load8_u (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:323
+// ./test/core/memory64/load64.wast:323
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load16_s_i32 (i32.load16_s (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:327
+// ./test/core/memory64/load64.wast:327
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load16_u_i32 (i32.load16_u (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:331
+// ./test/core/memory64/load64.wast:331
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load_i64 (i64.load (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:335
+// ./test/core/memory64/load64.wast:335
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load8_s_i64 (i64.load8_s (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:339
+// ./test/core/memory64/load64.wast:339
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load8_u_i64 (i64.load8_u (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:343
+// ./test/core/memory64/load64.wast:343
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load16_s_i64 (i64.load16_s (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:347
+// ./test/core/memory64/load64.wast:347
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load16_u_i64 (i64.load16_u (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:351
+// ./test/core/memory64/load64.wast:351
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load32_s_i64 (i64.load32_s (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:355
+// ./test/core/memory64/load64.wast:355
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load32_u_i64 (i64.load32_u (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:359
+// ./test/core/memory64/load64.wast:359
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load_f32 (f32.load (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:363
+// ./test/core/memory64/load64.wast:363
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func \$load_f64 (f64.load (i64.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:371
+// ./test/core/memory64/load64.wast:371
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i32) (i32.load (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:372
+// ./test/core/memory64/load64.wast:372
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i32) (i32.load8_s (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:373
+// ./test/core/memory64/load64.wast:373
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i32) (i32.load8_u (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:374
+// ./test/core/memory64/load64.wast:374
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i32) (i32.load16_s (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:375
+// ./test/core/memory64/load64.wast:375
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i32) (i32.load16_u (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:376
+// ./test/core/memory64/load64.wast:376
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i64) (i64.load (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:377
+// ./test/core/memory64/load64.wast:377
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i64) (i64.load8_s (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:378
+// ./test/core/memory64/load64.wast:378
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i64) (i64.load8_u (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:379
+// ./test/core/memory64/load64.wast:379
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i64) (i64.load16_s (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:380
+// ./test/core/memory64/load64.wast:380
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i64) (i64.load16_u (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:381
+// ./test/core/memory64/load64.wast:381
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i64) (i64.load32_s (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:382
+// ./test/core/memory64/load64.wast:382
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result i64) (i64.load32_u (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:383
+// ./test/core/memory64/load64.wast:383
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result f32) (f32.load (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:384
+// ./test/core/memory64/load64.wast:384
 assert_invalid(
   () => instantiate(`(module (memory i64 1) (func (result f64) (f64.load (f32.const 0))))`),
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:387
+// ./test/core/memory64/load64.wast:387
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -542,7 +542,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:396
+// ./test/core/memory64/load64.wast:396
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -554,7 +554,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:406
+// ./test/core/memory64/load64.wast:406
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -566,7 +566,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:416
+// ./test/core/memory64/load64.wast:416
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -578,7 +578,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:426
+// ./test/core/memory64/load64.wast:426
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -590,7 +590,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:436
+// ./test/core/memory64/load64.wast:436
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -602,7 +602,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:446
+// ./test/core/memory64/load64.wast:446
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -614,7 +614,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:456
+// ./test/core/memory64/load64.wast:456
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -626,7 +626,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:466
+// ./test/core/memory64/load64.wast:466
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -637,7 +637,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:475
+// ./test/core/memory64/load64.wast:475
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -648,7 +648,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:484
+// ./test/core/memory64/load64.wast:484
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -660,7 +660,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:494
+// ./test/core/memory64/load64.wast:494
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -679,7 +679,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:511
+// ./test/core/memory64/load64.wast:511
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -691,7 +691,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:521
+// ./test/core/memory64/load64.wast:521
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -703,7 +703,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:531
+// ./test/core/memory64/load64.wast:531
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -715,7 +715,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:541
+// ./test/core/memory64/load64.wast:541
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -726,7 +726,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:550
+// ./test/core/memory64/load64.wast:550
 assert_invalid(
   () => instantiate(`(module
     (memory i64 0)
@@ -737,7 +737,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/load64.wast:559
+// ./test/core/memory64/load64.wast:559
 assert_invalid(
   () => instantiate(`(module
     (memory i64 1)

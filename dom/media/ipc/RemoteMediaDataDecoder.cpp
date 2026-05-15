@@ -48,11 +48,15 @@ RemoteMediaDataDecoder::~RemoteMediaDataDecoder() {
 }
 
 RefPtr<MediaDataDecoder::InitPromise> RemoteMediaDataDecoder::Init() {
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  if (!managerThread) {
+    return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
+  }
   RefPtr<RemoteMediaDataDecoder> self = this;
-  return InvokeAsync(RemoteMediaManagerChild::GetManagerThread(), __func__,
+  return InvokeAsync(managerThread, __func__,
                      [self]() { return self->mChild->Init(); })
       ->Then(
-          RemoteMediaManagerChild::GetManagerThread(), __func__,
+          managerThread, __func__,
           [self, this](TrackType aTrack) {
             MutexAutoLock lock(mMutex);
             // If shutdown has started in the meantime shutdown promise may
@@ -68,6 +72,7 @@ RefPtr<MediaDataDecoder::InitPromise> RemoteMediaDataDecoder::Init() {
             mIsHardwareAccelerated =
                 mChild->IsHardwareAccelerated(mHardwareAcceleratedReason);
             mConversion = mChild->NeedsConversion();
+            mDecodeProperties = mChild->GetDecodeProperties();
             mShouldDecoderAlwaysBeRecycled =
                 mChild->ShouldDecoderAlwaysBeRecycled();
             LOG("%p RemoteDecoderChild has been initialized - description: %s, "
@@ -82,55 +87,81 @@ RefPtr<MediaDataDecoder::InitPromise> RemoteMediaDataDecoder::Init() {
 
 RefPtr<MediaDataDecoder::DecodePromise> RemoteMediaDataDecoder::Decode(
     MediaRawData* aSample) {
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  if (!managerThread) {
+    return DecodePromise::CreateAndReject(NS_ERROR_DOM_MEDIA_CANCELED,
+                                          __func__);
+  }
   RefPtr<RemoteMediaDataDecoder> self = this;
   RefPtr<MediaRawData> sample = aSample;
-  return InvokeAsync(
-      RemoteMediaManagerChild::GetManagerThread(), __func__, [self, sample]() {
-        return self->mChild->Decode(nsTArray<RefPtr<MediaRawData>>{sample});
-      });
+  return InvokeAsync(managerThread, __func__, [self, sample]() {
+    return self->mChild->Decode(nsTArray<RefPtr<MediaRawData>>{sample});
+  });
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> RemoteMediaDataDecoder::DecodeBatch(
     nsTArray<RefPtr<MediaRawData>>&& aSamples) {
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  if (!managerThread) {
+    return DecodePromise::CreateAndReject(NS_ERROR_DOM_MEDIA_CANCELED,
+                                          __func__);
+  }
   RefPtr<RemoteMediaDataDecoder> self = this;
-  return InvokeAsync(RemoteMediaManagerChild::GetManagerThread(), __func__,
+  return InvokeAsync(managerThread, __func__,
                      [self, samples = std::move(aSamples)]() {
                        return self->mChild->Decode(samples);
                      });
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> RemoteMediaDataDecoder::Flush() {
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  if (!managerThread) {
+    return FlushPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
+  }
   RefPtr<RemoteMediaDataDecoder> self = this;
-  return InvokeAsync(RemoteMediaManagerChild::GetManagerThread(), __func__,
+  return InvokeAsync(managerThread, __func__,
                      [self]() { return self->mChild->Flush(); });
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> RemoteMediaDataDecoder::Drain() {
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  if (!managerThread) {
+    return DecodePromise::CreateAndReject(NS_ERROR_DOM_MEDIA_CANCELED,
+                                          __func__);
+  }
   RefPtr<RemoteMediaDataDecoder> self = this;
-  return InvokeAsync(RemoteMediaManagerChild::GetManagerThread(), __func__,
+  return InvokeAsync(managerThread, __func__,
                      [self]() { return self->mChild->Drain(); });
 }
 
 RefPtr<ShutdownPromise> RemoteMediaDataDecoder::Shutdown() {
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  if (!managerThread) {
+    return ShutdownPromise::CreateAndResolve(true, __func__);
+  }
   RefPtr<RemoteMediaDataDecoder> self = this;
-  return InvokeAsync(
-      RemoteMediaManagerChild::GetManagerThread(), __func__, [self]() {
-        RefPtr<ShutdownPromise> p = self->mChild->Shutdown();
+  return InvokeAsync(managerThread, __func__, [self]() {
+    auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+    if (!managerThread) {
+      return ShutdownPromise::CreateAndResolve(true, __func__);
+    }
 
-        // We're about to be destroyed and drop our ref to
-        // *DecoderChild. Make sure we put a ref into the
-        // task queue for the *DecoderChild thread to keep
-        // it alive until we send the delete message.
-        p->Then(RemoteMediaManagerChild::GetManagerThread(), __func__,
-                [child = std::move(self->mChild)](
-                    const ShutdownPromise::ResolveOrRejectValue& aValue) {
-                  MOZ_ASSERT(aValue.IsResolve());
-                  child->DestroyIPDL();
-                  return ShutdownPromise::CreateAndResolveOrReject(aValue,
-                                                                   __func__);
-                });
-        return p;
-      });
+    RefPtr<ShutdownPromise> p = self->mChild->Shutdown();
+
+    // We're about to be destroyed and drop our ref to
+    // *DecoderChild. Make sure we put a ref into the
+    // task queue for the *DecoderChild thread to keep
+    // it alive until we send the delete message.
+    p->Then(managerThread, __func__,
+            [child = std::move(self->mChild)](
+                const ShutdownPromise::ResolveOrRejectValue& aValue) {
+              MOZ_ASSERT(aValue.IsResolve());
+              child->DestroyIPDL();
+              return ShutdownPromise::CreateAndResolveOrReject(aValue,
+                                                               __func__);
+            });
+    return p;
+  });
 }
 
 bool RemoteMediaDataDecoder::IsHardwareAccelerated(
@@ -141,9 +172,13 @@ bool RemoteMediaDataDecoder::IsHardwareAccelerated(
 }
 
 void RemoteMediaDataDecoder::SetSeekThreshold(const media::TimeUnit& aTime) {
+  auto managerThread = RemoteMediaManagerChild::GetManagerThread();
+  if (!managerThread) {
+    return;
+  }
   RefPtr<RemoteMediaDataDecoder> self = this;
   media::TimeUnit time = aTime;
-  RemoteMediaManagerChild::GetManagerThread()->Dispatch(
+  managerThread->Dispatch(
       NS_NewRunnableFunction("dom::RemoteMediaDataDecoder::SetSeekThreshold",
                              [=]() {
                                MOZ_ASSERT(self->mChild);
@@ -156,6 +191,13 @@ MediaDataDecoder::ConversionRequired RemoteMediaDataDecoder::NeedsConversion()
     const {
   MutexAutoLock lock(mMutex);
   return mConversion;
+}
+
+Maybe<MediaDataDecoder::PropertyValue>
+RemoteMediaDataDecoder::GetDecodeProperty(
+    MediaDataDecoder::PropertyName aName) const {
+  MutexAutoLock lock(mMutex);
+  return mDecodeProperties[aName];
 }
 
 nsCString RemoteMediaDataDecoder::GetDescriptionName() const {

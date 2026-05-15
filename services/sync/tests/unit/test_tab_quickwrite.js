@@ -14,10 +14,8 @@ const FAR_FUTURE = 4102405200000; // 2100/01/01
 
 add_task(async function setup() {
   // Since these are xpcshell tests, we'll need to mock ui features
-  TabProvider.shouldSkipWindow = mockShouldSkipWindow;
-  TabProvider.getWindowEnumerator = mockGetWindowEnumerator.bind(this, [
-    "http://foo.com",
-  ]);
+  TabProvider.getOrderedNonPrivateWindows =
+    mockGetOrderedNonPrivateWindows.bind(this, ["http://foo.com"]);
 });
 
 async function prepareServer() {
@@ -105,10 +103,31 @@ add_task(async function test_tab_quickwrite_keeps_old_tabs() {
   _("Ensure we don't delete other tabs on quickWrite (bug 1801295).");
   let { server, engine } = await prepareServer();
 
+  // The ID of another device.
+  const id = "fake-guid-99";
+
+  // The clients engine is always going to tell us there are no other clients,
+  // but we need other clients, so we trick it.
+  // (We can't just stick this on the server, because we treat it as stale because it
+  // doesn't appear in the fxa list - but tricking it this way works)
+  let observeClientsFinished = (_subject, _topic, data) => {
+    if (data == "clients") {
+      engine.service.clientsEngine.fxAccounts.device._deviceListCache = {
+        devices: [],
+      };
+      // trick the clients engine into thinking it has a remote client with the same guid.
+      engine.service.clientsEngine._store._remoteClients = {};
+      engine.service.clientsEngine._store._remoteClients[id] = {
+        id,
+        fxaDeviceId: id,
+      };
+    }
+  };
+  Services.obs.addObserver(observeClientsFinished, "weave:engine:sync:finish");
+
   // need a first sync to ensure everything is setup correctly.
   await Service.sync({ engines: ["tabs"] });
 
-  const id = "fake-guid-99";
   let remoteRecord = encryptPayload({
     id,
     clientName: "not local",
@@ -125,21 +144,13 @@ add_task(async function test_tab_quickwrite_keeps_old_tabs() {
   let collection = server.getCollection("username", "tabs");
   collection.insert(id, remoteRecord);
 
+  // This test can be flakey because sometimes we are so fast we think there is nothing to do.
+  // Resetting the last sync time here ensures we always fetch records from the server.
+  engine.setLastSync(0);
   await Service.sync({ engines: ["tabs"] });
 
   // collection should now have 2 records - ours and the pretend remote one we inserted.
   Assert.equal(collection.count(), 2, "starting with 2 tab records");
-
-  // So fxAccounts.device.recentDeviceList is not null.
-  engine.service.clientsEngine.fxAccounts.device._deviceListCache = {
-    devices: [],
-  };
-  // trick the clients engine into thinking it has a remote client with the same guid.
-  engine.service.clientsEngine._store._remoteClients = {};
-  engine.service.clientsEngine._store._remoteClients[id] = {
-    id,
-    fxaDeviceId: id,
-  };
 
   let clients = await engine.getAllClients();
   Assert.equal(clients.length, 1);
@@ -153,6 +164,11 @@ add_task(async function test_tab_quickwrite_keeps_old_tabs() {
   Assert.equal(clients.length, 1);
 
   engine.service.clientsEngine._store._remoteClients = {};
+
+  Services.obs.removeObserver(
+    observeClientsFinished,
+    "weave:engine:sync:finish"
+  );
 
   await promiseStopServer(server);
 });

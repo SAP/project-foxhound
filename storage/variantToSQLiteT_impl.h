@@ -12,6 +12,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 //// variantToSQLiteT Implementation
 
+#ifndef STORAGE_VARIANTTOSQLITET_IMPL_H_
+#define STORAGE_VARIANTTOSQLITET_IMPL_H_
+
 template <typename T>
 int variantToSQLiteT(T aObj, nsIVariant* aValue) {
   // Allow to return nullptr not wrapped to nsIVariant for speed.
@@ -123,3 +126,5 @@ int variantToSQLiteT(T aObj, nsIVariant* aValue) {
   }
   return SQLITE_OK;
 }
+
+#endif  // STORAGE_VARIANTTOSQLITET_IMPL_H_

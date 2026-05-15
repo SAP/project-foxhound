@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,6 +19,7 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(28.dp)
 
@@ -43,18 +45,18 @@ private fun MenuGroupPreview() {
     FirefoxTheme {
         Column(
             modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer1)
-                .padding(16.dp),
+                .background(color = MaterialTheme.colorScheme.surface)
+                .padding(all = FirefoxTheme.layout.space.static200),
         ) {
             MenuGroup {
                 MenuItem(
                     label = stringResource(id = R.string.browser_menu_add_to_homescreen),
-                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_plus_24),
+                    beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_plus_24),
                 )
 
                 MenuItem(
                     label = stringResource(id = R.string.browser_menu_add_to_homescreen),
-                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_plus_24),
+                    beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_plus_24),
                 )
             }
         }

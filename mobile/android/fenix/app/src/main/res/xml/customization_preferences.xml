@@ -7,6 +7,15 @@
     android:key="@string/pref_key_customization_preference_screen" >
     <androidx.preference.PreferenceCategory
         android:layout="@layout/preference_cat_style"
+        android:title="@string/preferences_app_icon"
+        android:key="@string/pref_key_customization_category_app_icon"
+        app:iconSpaceReserved="false">
+        <org.mozilla.fenix.iconpicker.ui.AppIconPreference
+            android:key="@string/pref_key_app_icon" />
+    </androidx.preference.PreferenceCategory>
+
+    <androidx.preference.PreferenceCategory
+        android:layout="@layout/preference_cat_style"
         android:title="@string/preferences_theme"
         app:iconSpaceReserved="false">
         <org.mozilla.fenix.settings.RadioButtonPreference
@@ -70,20 +79,16 @@
             android:key="@string/pref_key_toolbar_expanded"
             app:sharedPreferenceKey="pref_key_toolbar_expanded"
             app:falseOptionTitle="@string/preference_simple_toolbar"
-            app:trueOptionTitle="@string/preference_expanded_toolbar"
-            app:falseOptionIconRes="@drawable/ic_toolbar_simple"
-            app:trueOptionIconRes="@drawable/ic_toolbar_expanded" />
+            app:trueOptionTitle="@string/preference_expanded_toolbar" />
     </androidx.preference.PreferenceCategory>
 
+    <!-- Toolbar shortcut picker -->
     <androidx.preference.PreferenceCategory
+        android:key="@string/pref_key_customization_category_toolbar_shortcut"
         android:layout="@layout/preference_cat_style"
-        android:title="@string/preferences_app_icon"
-        android:key="@string/pref_key_customization_category_app_icon"
-        app:iconSpaceReserved="false">
-
-        <org.mozilla.fenix.iconpicker.ui.AppIconPreference
-            android:key="@string/pref_key_app_icon" />
-    </androidx.preference.PreferenceCategory>
+        android:title="@string/preferences_toolbar_shortcut"
+        android:visible="false"
+        app:iconSpaceReserved="false" />
 
     <androidx.preference.PreferenceCategory
         android:layout="@layout/preference_cat_style"

@@ -5,37 +5,34 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ProcessHangMonitor.h"
-#include "mozilla/ProcessHangMonitorIPC.h"
 
+#include "MainThreadUtils.h"
+#include "base/task.h"
+#include "base/thread.h"
 #include "jsapi.h"
-#include "xpcprivate.h"
-
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Monitor.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/ProcessHangMonitorIPC.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/StaticMonitor.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CancelContentJSOptionsBinding.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/TaskFactory.h"
-#include "mozilla/Monitor.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticMonitor.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
-#include "mozilla/WeakPtr.h"
-
-#include "MainThreadUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsFrameLoader.h"
 #include "nsIHangReport.h"
@@ -43,9 +40,7 @@
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "nsThreadUtils.h"
-
-#include "base/task.h"
-#include "base/thread.h"
+#include "xpcprivate.h"
 
 #ifdef XP_WIN
 // For IsDebuggerPresent()
@@ -725,7 +720,7 @@ void HangMonitorChild::NotifySlowScriptAsync(TabId aTabId,
                                              const nsString& aAddonId,
                                              const double aDuration) {
   if (mIPCOpen) {
-    Unused << SendHangEvidence(
+    (void)SendHangEvidence(
         SlowScriptData(aTabId, aFileName, aAddonId, aDuration));
   }
 }
@@ -801,7 +796,7 @@ void HangMonitorChild::ClearHangAsync() {
 
   // bounce back to parent on background thread
   if (mIPCOpen) {
-    Unused << SendClearHang();
+    (void)SendClearHang();
   }
 }
 
@@ -881,9 +876,9 @@ void HangMonitorParent::PaintOrUnloadLayersWhileInterruptingJSOnThread(
 
   if (mIPCOpen) {
     if (aPaint) {
-      Unused << SendPaintWhileInterruptingJS(aTabId);
+      (void)SendPaintWhileInterruptingJS(aTabId);
     } else {
-      Unused << SendUnloadLayersWhileInterruptingJS(aTabId);
+      (void)SendUnloadLayersWhileInterruptingJS(aTabId);
     }
   }
 }
@@ -924,8 +919,8 @@ void HangMonitorParent::CancelContentJSExecutionIfRunningOnThread(
   }
 
   if (mIPCOpen) {
-    Unused << SendCancelContentJSExecutionIfRunning(
-        aTabId, aNavigationType, aNavigationIndex, spec, aEpoch);
+    (void)SendCancelContentJSExecutionIfRunning(aTabId, aNavigationType,
+                                                aNavigationIndex, spec, aEpoch);
   }
 }
 
@@ -945,7 +940,7 @@ void HangMonitorParent::SetMainThreadQoSPriorityOnThread(
     nsIThread::QoSPriority aQoSPriority) {
   MOZ_RELEASE_ASSERT(IsOnThread());
   if (mIPCOpen) {
-    Unused << SendSetMainThreadQoSPriority(aQoSPriority);
+    (void)SendSetMainThreadQoSPriority(aQoSPriority);
   }
 }
 #endif
@@ -1043,7 +1038,7 @@ void HangMonitorParent::TerminateScript() {
   MOZ_RELEASE_ASSERT(IsOnThread());
 
   if (mIPCOpen) {
-    Unused << SendTerminateScript();
+    (void)SendTerminateScript();
   }
 }
 
@@ -1051,7 +1046,7 @@ void HangMonitorParent::BeginStartingDebugger() {
   MOZ_RELEASE_ASSERT(IsOnThread());
 
   if (mIPCOpen) {
-    Unused << SendBeginStartingDebugger();
+    (void)SendBeginStartingDebugger();
   }
 }
 
@@ -1059,7 +1054,7 @@ void HangMonitorParent::EndStartingDebugger() {
   MOZ_RELEASE_ASSERT(IsOnThread());
 
   if (mIPCOpen) {
-    Unused << SendEndStartingDebugger();
+    (void)SendEndStartingDebugger();
   }
 }
 

@@ -15,18 +15,18 @@
 #include "nsRFPService.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
+#include "nsTHashSet.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/RandomNum.h"
 #include "mozilla/ReverseIterator.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_telemetry.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/glean/AntitrackingMetrics.h"
-#include "mozilla/XorShift128PlusRNG.h"
+
+static mozilla::LazyLogModule gFingerprinterDetection("FingerprinterDetection");
 
 namespace mozilla {
 
@@ -51,9 +51,7 @@ Maybe<uint32_t> ContentBlockingLog::RecordLogParent(
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
         aReason,
     const nsTArray<nsCString>& aTrackingFullHashes,
-    const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-        aCanvasFingerprinter,
-    const Maybe<bool> aCanvasFingerprinterKnownText) {
+    const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   uint32_t events = GetContentBlockingEventsInLog();
@@ -101,21 +99,21 @@ Maybe<uint32_t> ContentBlockingLog::RecordLogParent(
     case nsIWebProgressListener::STATE_LOADED_EMAILTRACKING_LEVEL_2_CONTENT:
     case nsIWebProgressListener::STATE_PURGED_BOUNCETRACKER:
     case nsIWebProgressListener::STATE_COOKIES_PARTITIONED_TRACKER:
-      Unused << RecordLogInternal(aOrigin, aType, blockedValue);
+      (void)RecordLogInternal(aOrigin, aType, blockedValue);
       break;
 
     case nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER:
     case nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER:
-      Unused << RecordLogInternal(aOrigin, aType, blockedValue, aReason,
-                                  aTrackingFullHashes);
+      (void)RecordLogInternal(aOrigin, aType, blockedValue, aReason,
+                              aTrackingFullHashes);
       break;
 
     case nsIWebProgressListener::STATE_REPLACED_FINGERPRINTING_CONTENT:
     case nsIWebProgressListener::STATE_ALLOWED_FINGERPRINTING_CONTENT:
     case nsIWebProgressListener::STATE_REPLACED_TRACKING_CONTENT:
     case nsIWebProgressListener::STATE_ALLOWED_TRACKING_CONTENT:
-      Unused << RecordLogInternal(aOrigin, aType, blockedValue, aReason,
-                                  aTrackingFullHashes);
+      (void)RecordLogInternal(aOrigin, aType, blockedValue, aReason,
+                              aTrackingFullHashes);
       break;
     case nsIWebProgressListener::STATE_ALLOWED_FONT_FINGERPRINTING:
       MOZ_ASSERT(!aBlocked,
@@ -138,8 +136,7 @@ Maybe<uint32_t> ContentBlockingLog::RecordLogParent(
                  "We don't expected to see blocked "
                  "STATE_ALLOWED_CANVAS_FINGERPRINTING");
       entry = RecordLogInternal(aOrigin, aType, blockedValue, Nothing(), {},
-                                aCanvasFingerprinter,
-                                aCanvasFingerprinterKnownText);
+                                aCanvasFingerprintingEvent);
 
       // Replace the flag using the suspicious fingerprinting event so that we
       // can report the event if we detect suspicious fingerprinting.
@@ -208,7 +205,7 @@ void ContentBlockingLog::ReportLog() {
 }
 
 void ContentBlockingLog::ReportCanvasFingerprintingLog(
-    nsIPrincipal* aFirstPartyPrincipal, bool aShouldReport) {
+    nsIPrincipal* aFirstPartyPrincipal) {
   MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aFirstPartyPrincipal);
@@ -219,8 +216,12 @@ void ContentBlockingLog::ReportCanvasFingerprintingLog(
   }
 
   bool hasCanvasFingerprinter = false;
-  bool canvasFingerprinterKnownText = false;
-  Maybe<ContentBlockingNotifier::CanvasFingerprinter> canvasFingerprinter;
+
+  // Track unique (key, source) combinations to avoid counting duplicates per
+  // page
+  nsTHashSet<nsCString> seenTextSourceCombos;
+  nsTHashSet<nsCString> seenAliasSourceCombos;
+
   for (const auto& originEntry : mLog) {
     if (!originEntry.mData) {
       continue;
@@ -230,55 +231,98 @@ void ContentBlockingLog::ReportCanvasFingerprintingLog(
       if (logEntry.mType !=
           nsIWebProgressListener::STATE_ALLOWED_CANVAS_FINGERPRINTING) {
         continue;
+      } else if (logEntry.mCanvasFingerprintingEvent.isSome() == false) {
+        // Little confused about how we could get here, but I did see a crash
+        {
+          nsAutoCString firstPartyOrigin;
+          aFirstPartyPrincipal->GetOriginNoSuffix(firstPartyOrigin);
+          MOZ_LOG(gFingerprinterDetection, LogLevel::Error,
+                  ("ContentBlockingLog::ReportCanvasFingerprintingLog: "
+                   "logEntry has no CanvasFingerprintingEvent "
+                   "(firstPartyOrigin=%s)",
+                   firstPartyOrigin.get()));
+        }
+        continue;
+      }
+      hasCanvasFingerprinter = true;
+
+      auto canvasFingerprintingEvent =
+          logEntry.mCanvasFingerprintingEvent.value();
+
+      // ----------------------------------
+      // First cover canvas_fingerprinting_type_text_by_source_per_tab2
+      // Only count each unique (text, source) combination once per page
+      if (!canvasFingerprintingEvent.knownTextBitmask) {
+        nsAutoCString key, category;
+        key.AppendLiteral("none");
+        category.AppendInt(canvasFingerprintingEvent.sourcesBitmask);
+
+        nsAutoCString comboKey(key + ":"_ns + category);
+        if (!seenTextSourceCombos.Contains(comboKey)) {
+          seenTextSourceCombos.Insert(comboKey);
+          glean::contentblocking::
+              canvas_fingerprinting_type_text_by_source_per_tab2
+                  .Get(key, category)
+                  .Add();
+        }
+      } else {
+        // Iterate over each set bit in the bitmask
+        for (uint32_t b = canvasFingerprintingEvent.knownTextBitmask; b;
+             b &= (b - 1)) {
+          uint32_t singleSetBit_Text = b & (~b + 1);
+          uint32_t exponent = mozilla::CountTrailingZeroes32(singleSetBit_Text);
+
+          nsAutoCString key, category;
+          key.AppendInt(exponent);
+          category.AppendInt(canvasFingerprintingEvent.sourcesBitmask);
+
+          nsAutoCString comboKey(key + ":"_ns + category);
+          if (!seenTextSourceCombos.Contains(comboKey)) {
+            seenTextSourceCombos.Insert(comboKey);
+            glean::contentblocking::
+                canvas_fingerprinting_type_text_by_source_per_tab2
+                    .Get(key, category)
+                    .Add();
+          }
+        }
       }
 
-      // Select the log entry with the highest fingerprinting likelihood,
-      // that primarily means preferring those with a FingerprinterKnownText.
-      if (!hasCanvasFingerprinter ||
-          (!canvasFingerprinterKnownText &&
-           *logEntry.mCanvasFingerprinterKnownText) ||
-          (!canvasFingerprinterKnownText && canvasFingerprinter.isNothing() &&
-           logEntry.mCanvasFingerprinter.isSome())) {
-        hasCanvasFingerprinter = true;
-        canvasFingerprinterKnownText = *logEntry.mCanvasFingerprinterKnownText;
-        canvasFingerprinter = logEntry.mCanvasFingerprinter;
+      // ----------------------------------
+      // Second, cover canvas_fingerprinting_type_alias_by_source_per_tab2
+      // Only count each unique (alias, source) combination once per page
+      {
+        nsAutoCString key, category;
+        key.AppendInt(static_cast<uint32_t>(canvasFingerprintingEvent.alias));
+        category.AppendInt(canvasFingerprintingEvent.sourcesBitmask);
+
+        nsAutoCString comboKey(key + ":"_ns + category);
+        if (!seenAliasSourceCombos.Contains(comboKey)) {
+          seenAliasSourceCombos.Insert(comboKey);
+          glean::contentblocking::
+              canvas_fingerprinting_type_alias_by_source_per_tab2
+                  .Get(key, category)
+                  .Add();
+        }
       }
     }
   }
 
-  auto label =
-      glean::contentblocking::CanvasFingerprintingPerTabLabel::eUnknown;
-  auto labelMatched =
-      glean::contentblocking::CanvasFingerprintingPerTabLabel::eUnknownMatched;
-  if (hasCanvasFingerprinter && canvasFingerprinterKnownText) {
-    label = glean::contentblocking::CanvasFingerprintingPerTabLabel::eKnownText;
-    labelMatched = glean::contentblocking::CanvasFingerprintingPerTabLabel::
-        eKnownTextMatched;
-  }
+  // ----------------------------------
+  // Finally, cover the overall 'was there any canvas fingerprinting' metric
+  // canvas_fingerprinting_per_tab2
 
   if (!hasCanvasFingerprinter) {
-    glean::contentblocking::canvas_fingerprinting_per_tab.EnumGet(label)
-        .AccumulateSingleSample(0);
-    if (aShouldReport) {
-      glean::contentblocking::canvas_fingerprinting_per_tab
-          .EnumGet(labelMatched)
-          .AccumulateSingleSample(0);
-    }
+    // Increment the global 'did the page have any' metric
+    glean::contentblocking::canvas_fingerprinting_per_tab2
+        .EnumGet(
+            glean::contentblocking::CanvasFingerprintingPerTab2Label::eNotFound)
+        .Add();
   } else {
-    int32_t fingerprinter =
-        canvasFingerprinter.isSome() ? (*canvasFingerprinter + 1) : 0;
-    auto label =
-        canvasFingerprinterKnownText
-            ? glean::contentblocking::CanvasFingerprintingPerTabLabel::
-                  eKnownText
-            : glean::contentblocking::CanvasFingerprintingPerTabLabel::eUnknown;
-    glean::contentblocking::canvas_fingerprinting_per_tab.EnumGet(label)
-        .AccumulateSingleSample(fingerprinter);
-    if (aShouldReport) {
-      glean::contentblocking::canvas_fingerprinting_per_tab
-          .EnumGet(labelMatched)
-          .AccumulateSingleSample(fingerprinter);
-    }
+    // Increment the global 'did the page have any' metric
+    glean::contentblocking::canvas_fingerprinting_per_tab2
+        .EnumGet(
+            glean::contentblocking::CanvasFingerprintingPerTab2Label::eFound)
+        .Add();
   }
 }
 
@@ -384,9 +428,9 @@ void ContentBlockingLog::ReportEmailTrackingLog(
       }
 
       if (isLevel1EmailTracker) {
-        Unused << level1SiteSet.EnsureInserted(baseDomain);
+        (void)level1SiteSet.EnsureInserted(baseDomain);
       } else {
-        Unused << level2SiteSet.EnsureInserted(baseDomain);
+        (void)level2SiteSet.EnsureInserted(baseDomain);
       }
     }
   }
@@ -438,9 +482,7 @@ ContentBlockingLog::OriginEntry* ContentBlockingLog::RecordLogInternal(
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
         aReason,
     const nsTArray<nsCString>& aTrackingFullHashes,
-    const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-        aCanvasFingerprinter,
-    const Maybe<bool> aCanvasFingerprinterKnownText) {
+    const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent) {
   DebugOnly<bool> isCookiesBlockedTracker =
       aType == nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
       aType == nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER;
@@ -464,8 +506,7 @@ ContentBlockingLog::OriginEntry* ContentBlockingLog::RecordLogInternal(
     if (!entry.mData->mLogs.IsEmpty()) {
       auto& last = entry.mData->mLogs.LastElement();
       if (last.mType == aType && last.mBlocked == aBlocked &&
-          last.mCanvasFingerprinter == aCanvasFingerprinter &&
-          last.mCanvasFingerprinterKnownText == aCanvasFingerprinterKnownText) {
+          last.mCanvasFingerprintingEvent == aCanvasFingerprintingEvent) {
         ++last.mRepeatCount;
         // Don't record recorded events.  This helps compress our log.
         // We don't care about if the the reason is the same, just keep the
@@ -486,19 +527,16 @@ ContentBlockingLog::OriginEntry* ContentBlockingLog::RecordLogInternal(
       // Cap the size at the maximum length adjustable by the pref
       entry.mData->mLogs.RemoveElementAt(0);
     }
-    entry.mData->mLogs.AppendElement(
-        LogEntry{aType, 1u, aBlocked, aReason, aTrackingFullHashes.Clone(),
-                 aCanvasFingerprinter, aCanvasFingerprinterKnownText});
+    entry.mData->mLogs.AppendElement(LogEntry{aType, 1u, aBlocked, aReason,
+                                              aTrackingFullHashes.Clone(),
+                                              aCanvasFingerprintingEvent});
 
     // Check suspicious fingerprinting activities if the origin hasn't already
     // been marked.
     // TODO(Bug 1864909): Moving the suspicious fingerprinting detection call
     // out of here.
-    if ((aType == nsIWebProgressListener::STATE_ALLOWED_CANVAS_FINGERPRINTING ||
-         aType == nsIWebProgressListener::STATE_ALLOWED_FONT_FINGERPRINTING) &&
-        !entry.mData->mHasSuspiciousFingerprintingActivity &&
-        nsRFPService::CheckSuspiciousFingerprintingActivity(
-            entry.mData->mLogs)) {
+    if (aType == nsIWebProgressListener::STATE_ALLOWED_CANVAS_FINGERPRINTING ||
+        aType == nsIWebProgressListener::STATE_ALLOWED_FONT_FINGERPRINTING) {
       entry.mData->mHasSuspiciousFingerprintingActivity = true;
     }
     return &entry;
@@ -528,18 +566,16 @@ ContentBlockingLog::OriginEntry* ContentBlockingLog::RecordLogInternal(
     MOZ_ASSERT(entry->mData->mHasSocialTrackerCookiesLoaded.isNothing());
     entry->mData->mHasSocialTrackerCookiesLoaded.emplace(aBlocked);
   } else {
-    entry->mData->mLogs.AppendElement(
-        LogEntry{aType, 1u, aBlocked, aReason, aTrackingFullHashes.Clone(),
-                 aCanvasFingerprinter, aCanvasFingerprinterKnownText});
+    entry->mData->mLogs.AppendElement(LogEntry{aType, 1u, aBlocked, aReason,
+                                               aTrackingFullHashes.Clone(),
+                                               aCanvasFingerprintingEvent});
 
     // Check suspicious fingerprinting activities if the origin hasn't been
     // marked.
     // TODO(Bug 1864909): Moving the suspicious fingerprinting detection call
     // out of here.
-    if ((aType == nsIWebProgressListener::STATE_ALLOWED_CANVAS_FINGERPRINTING ||
-         aType == nsIWebProgressListener::STATE_ALLOWED_FONT_FINGERPRINTING) &&
-        nsRFPService::CheckSuspiciousFingerprintingActivity(
-            entry->mData->mLogs)) {
+    if (aType == nsIWebProgressListener::STATE_ALLOWED_CANVAS_FINGERPRINTING ||
+        aType == nsIWebProgressListener::STATE_ALLOWED_FONT_FINGERPRINTING) {
       entry->mData->mHasSuspiciousFingerprintingActivity = true;
     }
   }

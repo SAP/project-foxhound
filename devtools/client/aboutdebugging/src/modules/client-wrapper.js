@@ -119,7 +119,7 @@ class ClientWrapper {
     const prefType = PREF_TO_TYPE[prefName];
     const preferenceFront = await this.client.mainRoot.getFront("preference");
     switch (prefType) {
-      case PREF_TYPES.BOOL:
+      case PREF_TYPES.BOOL: {
         // TODO: Add server-side trait and methods to pass a default value to getBoolPref.
         // See Bug 1522588.
         let prefValue;
@@ -129,6 +129,7 @@ class ClientWrapper {
           prefValue = defaultValue;
         }
         return prefValue;
+      }
       default:
         throw new Error("Unsupported preference:" + prefName);
     }

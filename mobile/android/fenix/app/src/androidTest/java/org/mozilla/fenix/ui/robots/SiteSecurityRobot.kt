@@ -7,21 +7,32 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers
+import androidx.test.espresso.matcher.ViewMatchers
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiSelector
+import androidx.test.uiautomator.Until
 import mozilla.components.support.ktx.kotlin.tryGetHostFromUrl
+import org.hamcrest.Matchers.not
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
+import org.mozilla.fenix.helpers.click
+import org.mozilla.fenix.helpers.ext.waitNotNull
+import org.mozilla.fenix.helpers.isChecked
+import org.mozilla.fenix.ui.robots.EnhancedTrackingProtectionRobot.Transition
 
 /**
  * Implementation of Robot Pattern for Site Security UI.
@@ -74,7 +85,67 @@ class SiteSecurityRobot {
         Log.i(TAG, "verifyClearSiteDataPrompt: Verified that the \"Delete\" dialog button is displayed")
     }
 
-    class Transition
+    fun verifyETPSwitchVisibility(visible: Boolean) {
+        waitForAppWindowToBeUpdated()
+        if (visible) {
+            Log.i(TAG, "verifyETPSwitchVisibility: Trying to verify ETP toggle is displayed")
+            enhancedTrackingProtectionSwitch()
+                .check(matches(isDisplayed()))
+            Log.i(TAG, "verifyETPSwitchVisibility: Verified ETP toggle is displayed")
+        } else {
+            Log.i(TAG, "verifyETPSwitchVisibility: Trying to verify ETP toggle is not displayed")
+            enhancedTrackingProtectionSwitch()
+                .check(matches(not(isDisplayed())))
+            Log.i(TAG, "verifyETPSwitchVisibility: Verified ETP toggle is not displayed")
+        }
+    }
+
+    fun verifyEnhancedTrackingProtectionSheetStatus(status: String, state: Boolean) {
+        mDevice.waitNotNull(Until.findObjects(By.text("Protections are $status for this site")))
+        Log.i(TAG, "verifyEnhancedTrackingProtectionSheetStatus: Trying to check ETP toggle is checked: $state")
+        onView(ViewMatchers.withResourceName("switch_widget")).check(
+            matches(
+                isChecked(
+                    state,
+                ),
+            ),
+        )
+        Log.i(TAG, "verifyEnhancedTrackingProtectionSheetStatus: Verified ETP toggle is checked: $state")
+    }
+
+    class Transition {
+        fun closeSiteSecuritySheet(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            // Back out of the Enhanced Tracking Protection sheet
+            Log.i(TAG, "closeSiteSecuritySheet: Trying to click device back button")
+            mDevice.pressBack()
+            Log.i(TAG, "closeSiteSecuritySheet: Clicked device back button")
+
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
+        }
+
+        fun toggleEnhancedTrackingProtectionFromSheet(interact: SiteSecurityRobot.() -> Unit): SiteSecurityRobot.Transition {
+            itemWithResId("$packageName:id/trackingProtectionLayout").waitForExists(waitingTime)
+            Log.i(TAG, "toggleEnhancedTrackingProtectionFromSheet: Trying to click ETP switch")
+            itemWithResId("$packageName:id/trackingProtectionSwitch").click()
+            Log.i(TAG, "toggleEnhancedTrackingProtectionFromSheet: Clicked ETP switch")
+
+            SiteSecurityRobot().interact()
+            return Transition()
+        }
+
+        fun openDetails(interact: EnhancedTrackingProtectionRobot.() -> Unit): EnhancedTrackingProtectionRobot.Transition {
+            Log.i(TAG, "openDetails: Waiting for $waitingTime ms for ETP sheet \"Details\" button to exist")
+            openEnhancedTrackingProtectionDetails().waitForExists(waitingTime)
+            Log.i(TAG, "openDetails: Waited for $waitingTime ms for ETP sheet \"Details\" button to exist")
+            Log.i(TAG, "openDetails: Trying to click ETP sheet \"Details\" button")
+            openEnhancedTrackingProtectionDetails().click()
+            Log.i(TAG, "openDetails: Clicked ETP sheet \"Details\" button")
+
+            EnhancedTrackingProtectionRobot().interact()
+            return EnhancedTrackingProtectionRobot.Transition()
+        }
+    }
 }
 
 private fun quickActionSheet() =
@@ -170,3 +241,9 @@ private fun clearSiteDataPrompt(url: String) =
 
 private fun cancelClearSiteDataButton() = onView(withId(android.R.id.button2)).inRoot(RootMatchers.isDialog())
 private fun deleteSiteDataButton() = onView(withId(android.R.id.button1)).inRoot(RootMatchers.isDialog())
+
+private fun enhancedTrackingProtectionSwitch() =
+    onView(withId(R.id.trackingProtectionSwitch))
+
+private fun openEnhancedTrackingProtectionDetails() =
+    mDevice.findObject(UiSelector().resourceId("$packageName:id/trackingProtectionDetails"))

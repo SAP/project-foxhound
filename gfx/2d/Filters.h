@@ -8,11 +8,10 @@
 #define MOZILLA_GFX_FILTERS_H_
 
 #include "Types.h"
-#include "mozilla/RefPtr.h"
+#include "mozilla/RefCounted.h"
 
 #include "Point.h"
 #include "Matrix.h"
-#include <vector>
 
 namespace mozilla {
 namespace gfx {
@@ -21,7 +20,6 @@ class SourceSurface;
 
 enum FilterBackend {
   FILTER_BACKEND_SOFTWARE = 0,
-  FILTER_BACKEND_DIRECT2D1_1,
   FILTER_BACKEND_WEBGL,
   FILTER_BACKEND_RECORDING,
   FILTER_BACKEND_CAPTURE
@@ -194,7 +192,8 @@ enum ColorChannel {
   COLOR_CHANNEL_R = 0,
   COLOR_CHANNEL_G,
   COLOR_CHANNEL_B,
-  COLOR_CHANNEL_A
+  COLOR_CHANNEL_A,
+  COLOR_CHANNEL_MAX = COLOR_CHANNEL_A
 };
 
 enum DisplacementMapInputs {

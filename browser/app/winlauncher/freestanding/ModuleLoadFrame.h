@@ -9,7 +9,6 @@
 
 #include "mozilla/LoaderAPIInterfaces.h"
 #include "mozilla/NativeNt.h"
-#include "mozilla/ThreadLocal.h"
 
 #include "SafeThreadLocal.h"
 

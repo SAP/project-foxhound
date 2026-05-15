@@ -1,0 +1,12 @@
+package test {
+  public class TestClass {
+    method public long testLong();
+    method public int testInt();
+    method public void testIntParam(int);
+    method public void testIntParamVarArg(int...);
+    method public long[] testLongArray();
+    method public long[][] testLongArrayArray();
+    method public long[][][] testLongArrayArrayArray();
+  }
+}
+

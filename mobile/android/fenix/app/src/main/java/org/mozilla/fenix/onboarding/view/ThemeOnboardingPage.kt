@@ -26,12 +26,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -42,15 +49,15 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.times
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import mozilla.components.compose.base.utils.inComposePreview
-import mozilla.components.lib.state.ext.observeAsState
-import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.fenix.R
 import org.mozilla.fenix.onboarding.store.OnboardingStore
 import org.mozilla.fenix.onboarding.store.applyThemeIfRequired
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * The default ratio of the image height to the parent height.
@@ -106,85 +113,84 @@ fun ThemeOnboardingPage(
     pageState: OnboardingPageState,
     onThemeSelectionClicked: (ThemeOptionType) -> Unit,
 ) {
-    BoxWithConstraints {
-        val boxWithConstraintsScope = this
-        // Base
-        Column(
-            modifier = Modifier
-                .background(FirefoxTheme.colors.layer1)
-                .padding(horizontal = 16.dp, vertical = 24.dp)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            with(pageState) {
-                // Main content group
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(Modifier)
+    Surface {
+        BoxWithConstraints {
+            val boxWithConstraintsScope = this
+            // Base
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 24.dp)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                with(pageState) {
+                    // Main content group
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier)
 
-                    Image(
-                        painter = painterResource(id = imageRes),
-                        contentDescription = stringResource(
-                            R.string.onboarding_customize_theme_main_image_content_description,
-                        ),
-                        modifier = Modifier.height(mainImageHeight(boxWithConstraintsScope)),
-                    )
+                        Image(
+                            painter = painterResource(id = imageRes),
+                            contentDescription = stringResource(
+                                R.string.onboarding_customize_theme_main_image_content_description,
+                            ),
+                            modifier = Modifier.height(mainImageHeight(boxWithConstraintsScope)),
+                        )
 
-                    Spacer(Modifier.height(32.dp))
+                        Spacer(Modifier.height(32.dp))
 
-                    Text(
-                        text = title,
-                        color = FirefoxTheme.colors.textPrimary,
-                        textAlign = TextAlign.Center,
-                        style = FirefoxTheme.typography.headline5,
-                    )
+                        Text(
+                            text = title,
+                            textAlign = TextAlign.Center,
+                            style = FirefoxTheme.typography.headline5,
+                        )
 
-                    Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(16.dp))
 
-                    Text(
-                        text = description,
-                        color = FirefoxTheme.colors.textPrimary,
-                        textAlign = TextAlign.Center,
-                        style = FirefoxTheme.typography.body2,
-                    )
+                        Text(
+                            text = description,
+                            textAlign = TextAlign.Center,
+                            style = FirefoxTheme.typography.body2,
+                        )
 
-                    Spacer(Modifier.height(32.dp))
+                        Spacer(Modifier.height(32.dp))
 
-                    val state by onboardingStore.observeAsState(initialValue = onboardingStore.state) { state -> state }
+                        val state by onboardingStore.stateFlow.collectAsState()
 
-                    if (!inComposePreview) {
-                        LaunchedEffect(onboardingStore.state.themeOptionSelected) {
-                            applyThemeIfRequired(onboardingStore.state.themeOptionSelected)
+                        if (!inComposePreview) {
+                            LaunchedEffect(onboardingStore.state.themeOptionSelected) {
+                                applyThemeIfRequired(onboardingStore.state.themeOptionSelected)
+                            }
+                        }
+
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            themeOptions?.let {
+                                ThemeOptions(
+                                    boxWithConstraintsScope = boxWithConstraintsScope,
+                                    options = it,
+                                    selectedOption = state.themeOptionSelected,
+                                    onClick = onThemeSelectionClicked,
+                                )
+                            }
                         }
                     }
 
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        themeOptions?.let {
-                            ThemeOptions(
-                                boxWithConstraintsScope = boxWithConstraintsScope,
-                                options = it,
-                                selectedOption = state.themeOptionSelected,
-                                onClick = onThemeSelectionClicked,
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    FilledButton(
+                        text = primaryButton.text,
+                        modifier = Modifier
+                            .width(width = FirefoxTheme.layout.size.maxWidth.small)
+                            .semantics { testTag = title + "onboarding_card.positive_button" },
+                        onClick = { primaryButton.onClick() },
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                PrimaryButton(
-                    text = primaryButton.text,
-                    modifier = Modifier
-                        .width(width = FirefoxTheme.layout.size.maxWidth.small)
-                        .semantics { testTag = title + "onboarding_card.positive_button" },
-                    onClick = { primaryButton.onClick() },
-                )
             }
-        }
 
-        LaunchedEffect(pageState) {
-            pageState.onRecordImpressionEvent()
+            LaunchedEffect(pageState) {
+                pageState.onRecordImpressionEvent()
+            }
         }
     }
 }
@@ -222,11 +228,12 @@ private fun SelectableImageItem(
     selectedOption: ThemeOptionType,
     onClick: (ThemeOptionType) -> Unit,
 ) {
+    var isMultilineLabel by remember { mutableStateOf(false) }
     val isSelectedOption = themeOption.themeType == selectedOption
 
     Column(
         modifier = Modifier
-            .width(columnWidth)
+            .width(if (isMultilineLabel) LocalDensity.current.fontScale * columnWidth else columnWidth)
             .clickable(
                 onClickLabel = stringResource(R.string.onboarding_customize_theme_a11y_action_label_select),
                 onClick = {
@@ -253,7 +260,7 @@ private fun SelectableImageItem(
                     .width(optionImageWidth(boxWithConstraintsScope))
                     .border(
                         2.dp,
-                        FirefoxTheme.colors.actionPrimary,
+                        MaterialTheme.colorScheme.primary,
                         RoundedCornerShape(borderModifier),
                     )
             } else {
@@ -263,7 +270,7 @@ private fun SelectableImageItem(
 
         Text(
             text = themeOption.label,
-            color = FirefoxTheme.colors.textPrimary,
+            onTextLayout = { if (!isMultilineLabel) { isMultilineLabel = it.lineCount > 1 } },
             modifier = Modifier.padding(vertical = 6.dp),
             style = FirefoxTheme.typography.caption,
         )
@@ -272,24 +279,24 @@ private fun SelectableImageItem(
             Box(
                 modifier = Modifier
                     .background(
-                        color = FirefoxTheme.colors.layerAccent,
+                        color = MaterialTheme.colorScheme.primary,
                         shape = CircleShape,
                     )
                     .size(24.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.mozac_ic_checkmark_24),
+                    painter = painterResource(id = iconsR.drawable.mozac_ic_checkmark_24),
                     contentDescription = null, // decorative only.
                     modifier = Modifier.size(12.dp),
-                    tint = PhotonColors.White,
+                    tint = MaterialTheme.colorScheme.onPrimary,
                 )
             }
         } else {
             Box(
                 modifier = Modifier
                     .size(24.dp)
-                    .border(2.dp, FirefoxTheme.colors.actionSecondary, CircleShape),
+                    .border(2.dp, MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
             }

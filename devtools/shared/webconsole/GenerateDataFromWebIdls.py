@@ -12,9 +12,12 @@ with a mozconfig that references a built non-artifact build.
 """
 
 from os import path, remove, system
-import json
+
 import WebIDL
 import buildconfig
+
+from mozfile import json
+
 
 # This is an explicit list of interfaces to load [Pure] and [Constant]
 # annotation for. There are a bunch of things that are pure in other interfaces

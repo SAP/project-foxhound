@@ -342,6 +342,7 @@ export class BranchedAddonStudyAction extends BaseStudyAction {
 
   /**
    * Enroll in the study represented by the given recipe.
+   *
    * @param recipe Object describing the study to enroll in.
    * @param extensionDetails Object describing the addon to be installed.
    */
@@ -499,6 +500,7 @@ export class BranchedAddonStudyAction extends BaseStudyAction {
 
   /**
    * Update the study represented by the given recipe.
+   *
    * @param recipe Object describing the study to be updated.
    * @param extensionDetails Object describing the addon to be installed.
    */
@@ -679,6 +681,7 @@ export class BranchedAddonStudyAction extends BaseStudyAction {
 
   /**
    * Unenrolls the client from the study with a given recipe ID.
+   *
    * @param recipeId The recipe ID of an enrolled study
    * @param reason The reason for this unenrollment, to be used in Telemetry
    * @throws If the specified study does not exist, or if it is already inactive.
@@ -725,9 +728,9 @@ export class BranchedAddonStudyAction extends BaseStudyAction {
    * The deadline is 7 days from the first time that recipe failed, as
    * reckoned by the client's clock.
    *
-   * @param {Object} args
+   * @param {object} args
    * @param {Study} args.study The enrolled study to potentially unenroll.
-   * @param {String} args.reason If the study should end, the reason it is ending.
+   * @param {string} args.reason If the study should end, the reason it is ending.
    */
   async _considerTemporaryError({ study, reason }) {
     if (!study?.active) {

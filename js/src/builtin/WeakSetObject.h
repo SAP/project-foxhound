@@ -20,6 +20,8 @@ class WeakSetObject : public WeakCollectionObject {
   [[nodiscard]] static bool delete_(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool has(JSContext* cx, unsigned argc, Value* vp);
 
+  static bool hasObject(WeakSetObject* weakSet, JSObject* obj);
+
  private:
   static const ClassSpec classSpec_;
 

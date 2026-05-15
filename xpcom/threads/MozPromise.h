@@ -477,6 +477,23 @@ class MozPromise : public MozPromiseBase {
         MOZ_DIAGNOSTIC_ASSERT(!mPromise->IsPending());
       }
 
+#ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
+      // nsINamed
+      NS_IMETHOD GetName(nsACString& aName) override {
+        nsresult rv = PrioritizableCancelableRunnable::GetName(aName);
+        if (NS_FAILED(rv)) {
+          return rv;
+        }
+
+        if (mPromise) {
+          aName.Append(" ");
+          aName.Append(mPromise->mCreationSite);
+        };
+
+        return NS_OK;
+      }
+#endif
+
       ~ResolveOrRejectRunnable() {
         if (mThenValue) {
           mThenValue->AssertIsDead();
@@ -1314,7 +1331,7 @@ class MozPromise : public MozPromiseBase {
 #endif
   };
 
-  StaticString mCreationSite;  // For logging
+  StaticString mCreationSite;  // For logging and profiling
   Mutex mMutex MOZ_UNANNOTATED;
   ResolveOrRejectValue mValue;
   bool mUseSynchronousTaskDispatch = false;

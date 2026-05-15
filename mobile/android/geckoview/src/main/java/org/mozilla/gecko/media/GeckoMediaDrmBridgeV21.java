@@ -9,7 +9,6 @@ import android.media.MediaCrypto;
 import android.media.MediaDrm;
 import android.media.NotProvisionedException;
 import android.os.AsyncTask;
-import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
@@ -671,9 +670,7 @@ public class GeckoMediaDrmBridgeV21 implements GeckoMediaDrm {
     // The EME spec says the messageType is only for optimization and optional.
     // Send 'License_request' as default when it's not available.
     int requestType = LICENSE_REQUEST_INITIAL;
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      requestType = request.getRequestType();
-    }
+    requestType = request.getRequestType();
     onSessionMessage(session, requestType, request.getData());
   }
 

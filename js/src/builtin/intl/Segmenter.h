@@ -14,6 +14,7 @@
 #include "js/Class.h"
 #include "js/Value.h"
 #include "vm/NativeObject.h"
+#include "vm/StringType.h"
 
 struct JS_PUBLIC_API JSContext;
 class JSString;
@@ -22,7 +23,7 @@ namespace JS {
 class GCContext;
 }
 
-namespace js {
+namespace js::intl {
 
 enum class SegmenterGranularity : int8_t { Grapheme, Word, Sentence };
 
@@ -31,26 +32,35 @@ class SegmenterObject : public NativeObject {
   static const JSClass class_;
   static const JSClass& protoClass_;
 
-  static constexpr uint32_t INTERNALS_SLOT = 0;
-  static constexpr uint32_t LOCALE_SLOT = 1;
-  static constexpr uint32_t GRANULARITY_SLOT = 2;
-  static constexpr uint32_t SEGMENTER_SLOT = 3;
-  static constexpr uint32_t SLOT_COUNT = 4;
+  static constexpr uint32_t LOCALE_SLOT = 0;
+  static constexpr uint32_t GRANULARITY_SLOT = 1;
+  static constexpr uint32_t SEGMENTER_SLOT = 2;
+  static constexpr uint32_t SLOT_COUNT = 3;
 
-  static_assert(INTERNALS_SLOT == INTL_INTERNALS_OBJECT_SLOT,
-                "INTERNALS_SLOT must match self-hosting define for internals "
-                "object slot");
+  bool isLocaleResolved() const { return getFixedSlot(LOCALE_SLOT).isString(); }
 
-  JSString* getLocale() const {
+  JSObject* getRequestedLocales() const {
     const auto& slot = getFixedSlot(LOCALE_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
-    return slot.toString();
+    return &slot.toObject();
   }
 
-  void setLocale(JSString* locale) {
-    setFixedSlot(LOCALE_SLOT, StringValue(locale));
+  void setRequestedLocales(JSObject* requestedLocales) {
+    setFixedSlot(LOCALE_SLOT, JS::ObjectValue(*requestedLocales));
+  }
+
+  JSLinearString* getLocale() const {
+    const auto& slot = getFixedSlot(LOCALE_SLOT);
+    if (slot.isUndefined()) {
+      return nullptr;
+    }
+    return &slot.toString()->asLinear();
+  }
+
+  void setLocale(JSLinearString* locale) {
+    setFixedSlot(LOCALE_SLOT, JS::StringValue(locale));
   }
 
   SegmenterGranularity getGranularity() const {
@@ -346,13 +356,9 @@ class SegmentIteratorObject : public NativeObject {
   static void finalize(JS::GCContext* gcx, JSObject* obj);
 };
 
-/**
- * Create a new Segments object.
- *
- * Usage: segment = intl_CreateSegmentsObject(segmenter, string)
- */
-[[nodiscard]] extern bool intl_CreateSegmentsObject(JSContext* cx,
-                                                    unsigned argc, Value* vp);
+}  // namespace js::intl
+
+namespace js {
 
 /**
  * Create a new Segment Iterator object.

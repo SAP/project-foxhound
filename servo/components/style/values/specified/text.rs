@@ -4,16 +4,18 @@
 
 //! Specified types for text properties.
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::properties::longhands::writing_mode::computed_value::T as SpecifiedWritingMode;
 use crate::values::computed;
 use crate::values::computed::text::TextEmphasisStyle as ComputedTextEmphasisStyle;
 use crate::values::computed::{Context, ToComputedValue};
-use crate::values::generics::NumberOrAuto;
 use crate::values::generics::text::{
-    GenericHyphenateLimitChars, GenericInitialLetter, GenericTextDecorationLength, GenericTextIndent,
+    GenericHyphenateLimitChars, GenericInitialLetter, GenericTextDecorationInset,
+    GenericTextDecorationLength, GenericTextIndent,
 };
-use crate::values::specified::length::LengthPercentage;
+use crate::values::generics::NumberOrAuto;
+use crate::values::specified::length::{Length, LengthPercentage};
 use crate::values::specified::{AllowQuirks, Integer, Number};
 use crate::Zero;
 use cssparser::Parser;
@@ -27,7 +29,7 @@ use style_traits::{KeywordsCollectFn, SpecifiedValueInfo};
 pub type InitialLetter = GenericInitialLetter<Number, Integer>;
 
 /// A spacing value used by either the `letter-spacing` or `word-spacing` properties.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
 pub enum Spacing {
     /// `normal`
     Normal,
@@ -51,7 +53,10 @@ impl Parse for Spacing {
 }
 
 /// A specified value for the `letter-spacing` property.
-#[derive(Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(
+    Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
+)]
+#[typed_value(derive_fields)]
 pub struct LetterSpacing(pub Spacing);
 
 impl ToComputedValue for LetterSpacing {
@@ -69,13 +74,16 @@ impl ToComputedValue for LetterSpacing {
         if computed.0.is_zero() {
             return LetterSpacing(Spacing::Normal);
         }
-        LetterSpacing(Spacing::Value(ToComputedValue::from_computed_value(&computed.0)))
+        LetterSpacing(Spacing::Value(ToComputedValue::from_computed_value(
+            &computed.0,
+        )))
     }
 }
 
-
 /// A specified value for the `word-spacing` property.
-#[derive(Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(
+    Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
+)]
 pub struct WordSpacing(pub Spacing);
 
 impl ToComputedValue for WordSpacing {
@@ -89,7 +97,9 @@ impl ToComputedValue for WordSpacing {
     }
 
     fn from_computed_value(computed: &Self::ComputedValue) -> Self {
-        WordSpacing(Spacing::Value(ToComputedValue::from_computed_value(computed)))
+        WordSpacing(Spacing::Value(ToComputedValue::from_computed_value(
+            computed,
+        )))
     }
 }
 
@@ -105,6 +115,7 @@ impl ToComputedValue for WordSpacing {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum HyphenateCharacter {
@@ -125,8 +136,12 @@ impl Parse for HyphenateLimitChars {
         type IntegerOrAuto = NumberOrAuto<Integer>;
 
         let total_word_length = IntegerOrAuto::parse(context, input)?;
-        let pre_hyphen_length = input.try_parse(|i| IntegerOrAuto::parse(context, i)).unwrap_or(IntegerOrAuto::Auto);
-        let post_hyphen_length = input.try_parse(|i| IntegerOrAuto::parse(context, i)).unwrap_or(pre_hyphen_length);
+        let pre_hyphen_length = input
+            .try_parse(|i| IntegerOrAuto::parse(context, i))
+            .unwrap_or(IntegerOrAuto::Auto);
+        let post_hyphen_length = input
+            .try_parse(|i| IntegerOrAuto::parse(context, i))
+            .unwrap_or(pre_hyphen_length);
         Ok(Self {
             total_word_length,
             pre_hyphen_length,
@@ -188,6 +203,7 @@ pub enum TextOverflowSide {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 /// text-overflow.
@@ -273,15 +289,19 @@ impl ToCss for TextOverflow {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
-#[cfg_attr(feature = "gecko", css(bitflags(
-    single = "none,spelling-error,grammar-error",
-    mixed = "underline,overline,line-through,blink",
-)))]
-#[cfg_attr(not(feature = "gecko"), css(bitflags(
-    single = "none",
-    mixed = "underline,overline,line-through,blink",
-)))]
+#[cfg_attr(
+    feature = "gecko",
+    css(bitflags(
+        single = "none,spelling-error,grammar-error",
+        mixed = "underline,overline,line-through,blink",
+    ))
+)]
+#[cfg_attr(
+    not(feature = "gecko"),
+    css(bitflags(single = "none", mixed = "underline,overline,line-through,blink",))
+)]
 #[repr(C)]
 /// Specified keyword values for the text-decoration-line property.
 pub struct TextDecorationLine(u8);
@@ -370,17 +390,24 @@ pub enum TextTransformCase {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
-#[cfg_attr(feature = "gecko", css(bitflags(
-    single = "none,math-auto",
-    mixed = "uppercase,lowercase,capitalize,full-width,full-size-kana",
-    validate_mixed = "Self::validate_mixed_flags",
-)))]
-#[cfg_attr(not(feature = "gecko"), css(bitflags(
-    single = "none",
-    mixed = "uppercase,lowercase,capitalize,full-width,full-size-kana",
-    validate_mixed = "Self::validate_mixed_flags",
-)))]
+#[cfg_attr(
+    feature = "gecko",
+    css(bitflags(
+        single = "none,math-auto",
+        mixed = "uppercase,lowercase,capitalize,full-width,full-size-kana",
+        validate_mixed = "Self::validate_mixed_flags",
+    ))
+)]
+#[cfg_attr(
+    not(feature = "gecko"),
+    css(bitflags(
+        single = "none",
+        mixed = "uppercase,lowercase,capitalize,full-width,full-size-kana",
+        validate_mixed = "Self::validate_mixed_flags",
+    ))
+)]
 #[repr(C)]
 /// Specified value for the text-transform property.
 /// (The spec grammar gives
@@ -398,10 +425,15 @@ bitflags! {
         /// Capitalize each word.
         const CAPITALIZE = 1 << 2;
         /// Automatic italicization of math variables.
+        #[cfg(feature = "gecko")]
         const MATH_AUTO = 1 << 3;
 
         /// All the case transforms, which are exclusive with each other.
+        #[cfg(feature = "gecko")]
         const CASE_TRANSFORMS = Self::UPPERCASE.0 | Self::LOWERCASE.0 | Self::CAPITALIZE.0 | Self::MATH_AUTO.0;
+        /// All the case transforms, which are exclusive with each other.
+        #[cfg(feature = "servo")]
+        const CASE_TRANSFORMS = Self::UPPERCASE.0 | Self::LOWERCASE.0 | Self::CAPITALIZE.0;
 
         /// full-width
         const FULL_WIDTH = 1 << 4;
@@ -428,6 +460,19 @@ impl TextTransform {
         // Case bits are exclusive with each other.
         case.is_empty() || case.bits().is_power_of_two()
     }
+
+    /// Returns the corresponding TextTransformCase.
+    pub fn case(&self) -> TextTransformCase {
+        match *self & Self::CASE_TRANSFORMS {
+            Self::NONE => TextTransformCase::None,
+            Self::UPPERCASE => TextTransformCase::Uppercase,
+            Self::LOWERCASE => TextTransformCase::Lowercase,
+            Self::CAPITALIZE => TextTransformCase::Capitalize,
+            #[cfg(feature = "gecko")]
+            Self::MATH_AUTO => TextTransformCase::MathAuto,
+            _ => unreachable!("Case bits are exclusive with each other"),
+        }
+    }
 }
 
 /// Specified and computed value of text-align-last.
@@ -446,6 +491,7 @@ impl TextTransform {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 #[repr(u8)]
@@ -475,6 +521,7 @@ pub enum TextAlignLast {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 #[repr(u8)]
@@ -495,7 +542,18 @@ pub enum TextAlignKeyword {
 
 /// Specified value of text-align property.
 #[derive(
-    Clone, Copy, Debug, Eq, Hash, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToCss,
+    ToShmem,
+    ToTyped,
 )]
 pub enum TextAlign {
     /// Keyword value of text-align property.
@@ -581,7 +639,7 @@ fn fill_mode_is_default_and_shape_exists(
 /// Specified value of text-emphasis-style property.
 ///
 /// https://drafts.csswg.org/css-text-decor/#propdef-text-emphasis-style
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
 #[allow(missing_docs)]
 pub enum TextEmphasisStyle {
     /// [ <fill> || <shape> ]
@@ -668,8 +726,8 @@ impl ToComputedValue for TextEmphasisStyle {
                     //
                     // Also should probably use WritingMode::is_vertical rather
                     // than the computed value of the `writing-mode` property.
-                    if context.style().get_inherited_box().clone_writing_mode() ==
-                        SpecifiedWritingMode::HorizontalTb
+                    if context.style().get_inherited_box().clone_writing_mode()
+                        == SpecifiedWritingMode::HorizontalTb
                     {
                         TextEmphasisShapeKeyword::Circle
                     } else {
@@ -761,6 +819,7 @@ impl Parse for TextEmphasisStyle {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 #[css(bitflags(
@@ -818,6 +877,7 @@ impl TextEmphasisPosition {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum WordBreak {
@@ -847,6 +907,7 @@ pub enum WordBreak {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum TextJustify {
@@ -874,6 +935,7 @@ pub enum TextJustify {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum MozControlCharacterVisibility {
@@ -907,6 +969,7 @@ impl Default for MozControlCharacterVisibility {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum LineBreak {
@@ -932,6 +995,7 @@ pub enum LineBreak {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum OverflowWrap {
@@ -965,6 +1029,11 @@ impl Parse for TextIndent {
                     length = Some(len);
                     continue;
                 }
+            }
+
+            // Servo doesn't support the keywords, so just break and let the caller deal with it.
+            if cfg!(feature = "servo") {
+                break;
             }
 
             // Check for the keywords (boolean flags).
@@ -1005,6 +1074,7 @@ impl Parse for TextIndent {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum TextDecorationSkipInk {
@@ -1030,6 +1100,38 @@ impl TextDecorationLength {
     }
 }
 
+/// Implements type for `text-decoration-inset` property
+pub type TextDecorationInset = GenericTextDecorationInset<Length>;
+
+impl TextDecorationInset {
+    /// `Auto` value.
+    #[inline]
+    pub fn auto() -> Self {
+        GenericTextDecorationInset::Auto
+    }
+
+    /// Whether this is the `Auto` value.
+    #[inline]
+    pub fn is_auto(&self) -> bool {
+        matches!(*self, GenericTextDecorationInset::Auto)
+    }
+}
+
+impl Parse for TextDecorationInset {
+    fn parse<'i, 't>(
+        ctx: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        if let Ok(start) = input.try_parse(|i| Length::parse(ctx, i)) {
+            let end = input.try_parse(|i| Length::parse(ctx, i));
+            let end = end.unwrap_or_else(|_| start.clone());
+            return Ok(TextDecorationInset::Length { start, end });
+        }
+        input.expect_ident_matching("auto")?;
+        Ok(TextDecorationInset::Auto)
+    }
+}
+
 #[derive(
     Clone,
     Copy,
@@ -1042,6 +1144,7 @@ impl TextDecorationLength {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[css(bitflags(
     single = "auto",
@@ -1118,7 +1221,16 @@ impl ToCss for TextUnderlinePosition {
 /// Values for `ruby-position` property
 #[repr(u8)]
 #[derive(
-    Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum RubyPosition {
@@ -1146,8 +1258,8 @@ impl Parse for RubyPosition {
             "under" => false,
         };
         // Parse alternate after
-        let alternate = alternate ||
-            input
+        let alternate = alternate
+            || input
                 .try_parse(|i| i.expect_ident_matching("alternate"))
                 .is_ok();
 
@@ -1177,5 +1289,303 @@ impl ToCss for RubyPosition {
 impl SpecifiedValueInfo for RubyPosition {
     fn collect_completion_keywords(f: KeywordsCollectFn) {
         f(&["alternate", "over", "under"])
+    }
+}
+
+/// Specified value for the text-autospace property
+/// which takes the grammar:
+///     normal | <autospace> | auto
+/// where:
+///     <autospace> = no-autospace |
+///                   [ ideograph-alpha || ideograph-numeric || punctuation ]
+///                   || [ insert | replace ]
+///
+/// https://drafts.csswg.org/css-text-4/#text-autospace-property
+///
+/// Bug 1980111: 'replace' value is not supported yet.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    Serialize,
+    SpecifiedValueInfo,
+    ToCss,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[css(bitflags(
+    single = "normal,auto,no-autospace",
+    // Bug 1980111: add 'replace' to 'mixed' in the future so that it parses correctly.
+    // Bug 1986500: add 'punctuation' to 'mixed' in the future so that it parses correctly.
+    mixed = "ideograph-alpha,ideograph-numeric,insert",
+    // Bug 1980111: Uncomment 'validate_mixed' to support 'replace' value.
+    // validate_mixed = "Self::validate_mixed_flags",
+))]
+#[repr(C)]
+pub struct TextAutospace(u8);
+bitflags! {
+    impl TextAutospace: u8 {
+        /// No automatic space is inserted.
+        const NO_AUTOSPACE = 0;
+
+        /// The user agent chooses a set of typographically high quality spacing values.
+        const AUTO = 1 << 0;
+
+        /// Same behavior as ideograph-alpha ideograph-numeric.
+        const NORMAL = 1 << 1;
+
+        /// 1/8ic space between ideographic characters and non-ideographic letters.
+        const IDEOGRAPH_ALPHA = 1 << 2;
+
+        /// 1/8ic space between ideographic characters and non-ideographic decimal numerals.
+        const IDEOGRAPH_NUMERIC = 1 << 3;
+
+        /* Bug 1986500: Uncomment the following to support the 'punctuation' value.
+        /// Apply special spacing between letters and punctuation (French).
+        const PUNCTUATION = 1 << 4;
+        */
+
+        /// Auto-spacing is only inserted if no space character is present in the text.
+        const INSERT = 1 << 5;
+
+        /* Bug 1980111: Uncomment the following to support 'replace' value.
+        /// Auto-spacing may replace an existing U+0020 space with custom space.
+        const REPLACE = 1 << 6;
+        */
+    }
+}
+
+/* Bug 1980111: Uncomment the following to support 'replace' value.
+impl TextAutospace {
+    fn validate_mixed_flags(&self) -> bool {
+        // It's not valid to have both INSERT and REPLACE set.
+        !self.contains(TextAutospace::INSERT | TextAutospace::REPLACE)
+    }
+}
+*/
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(u8)]
+/// Identifies specific font metrics for use in the <text-edge> typedef.
+///
+/// https://drafts.csswg.org/css-inline-3/#typedef-text-edge
+pub enum TextEdgeKeyword {
+    /// Use the text-over baseline/text-under baseline as the over/under edge.
+    Text,
+    /// Use the ideographic-over baseline/ideographic-under baseline as the over/under edge.
+    Ideographic,
+    /// Use the ideographic-ink-over baseline/ideographic-ink-under baseline as the over/under edge.
+    IdeographicInk,
+    /// Use the cap-height baseline as the over edge.
+    Cap,
+    /// Use the x-height baseline as the over edge.
+    Ex,
+    /// Use the alphabetic baseline as the under edge.
+    Alphabetic,
+}
+
+impl TextEdgeKeyword {
+    fn is_valid_for_over(&self) -> bool {
+        match self {
+            TextEdgeKeyword::Text
+            | TextEdgeKeyword::Ideographic
+            | TextEdgeKeyword::IdeographicInk
+            | TextEdgeKeyword::Cap
+            | TextEdgeKeyword::Ex => true,
+            _ => false,
+        }
+    }
+
+    fn is_valid_for_under(&self) -> bool {
+        match self {
+            TextEdgeKeyword::Text
+            | TextEdgeKeyword::Ideographic
+            | TextEdgeKeyword::IdeographicInk
+            | TextEdgeKeyword::Alphabetic => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(C)]
+/// The <text-edge> typedef, used by the `line-fit-edge` and
+/// `text-box-edge` properties.
+///
+/// The first value specifies the text over edge; the second value
+/// specifies the text under edge. If only one value is specified,
+/// both edges are assigned that same keyword if possible; else
+/// text is assumed as the missing value.
+///
+/// https://drafts.csswg.org/css-inline-3/#typedef-text-edge
+pub struct TextEdge {
+    /// Font metric to use for the text over edge.
+    pub over: TextEdgeKeyword,
+    /// Font metric to use for the text under edge.
+    pub under: TextEdgeKeyword,
+}
+
+impl Parse for TextEdge {
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<TextEdge, ParseError<'i>> {
+        let first = TextEdgeKeyword::parse(input)?;
+
+        if let Ok(second) = input.try_parse(TextEdgeKeyword::parse) {
+            if !first.is_valid_for_over() || !second.is_valid_for_under() {
+                return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+            }
+
+            return Ok(TextEdge {
+                over: first,
+                under: second,
+            });
+        }
+
+        // https://drafts.csswg.org/css-inline-3/#typedef-text-edge
+        // > If only one value is specified, both edges are assigned that same
+        // > keyword if possible; else 'text' is assumed as the missing value.
+        match (first.is_valid_for_over(), first.is_valid_for_under()) {
+            (true, true) => Ok(TextEdge {
+                over: first,
+                under: first,
+            }),
+            (true, false) => Ok(TextEdge {
+                over: first,
+                under: TextEdgeKeyword::Text,
+            }),
+            (false, true) => Ok(TextEdge {
+                over: TextEdgeKeyword::Text,
+                under: first,
+            }),
+            _ => unreachable!("Parsed keyword will be valid for at least one edge"),
+        }
+    }
+}
+
+impl ToCss for TextEdge {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        match (self.over, self.under) {
+            (over, TextEdgeKeyword::Text) if !over.is_valid_for_under() => over.to_css(dest),
+            (TextEdgeKeyword::Text, under) if !under.is_valid_for_over() => under.to_css(dest),
+            (over, under) => {
+                over.to_css(dest)?;
+
+                if over != under {
+                    dest.write_char(' ')?;
+                    self.under.to_css(dest)?;
+                }
+
+                Ok(())
+            },
+        }
+    }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[repr(C, u8)]
+/// Specified value for the `text-box-edge` property.
+///
+/// https://drafts.csswg.org/css-inline-3/#text-box-edge
+pub enum TextBoxEdge {
+    /// Uses the value of `line-fit-edge`, interpreting `leading` (the initial value) as `text`.
+    Auto,
+    /// Uses the specified font metrics.
+    TextEdge(TextEdge),
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    Parse,
+    Serialize,
+    SpecifiedValueInfo,
+    ToCss,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+    ToTyped,
+)]
+#[css(bitflags(single = "none,trim-start,trim-end,trim-both"))]
+#[repr(C)]
+/// Specified value for the `text-box-trim` property.
+///
+/// https://drafts.csswg.org/css-inline-3/#text-box-edge
+pub struct TextBoxTrim(u8);
+bitflags! {
+    impl TextBoxTrim: u8 {
+        /// NONE
+        const NONE = 0;
+        /// TRIM_START
+        const TRIM_START = 1 << 0;
+        /// TRIM_END
+        const TRIM_END = 1 << 1;
+        /// TRIM_BOTH
+        const TRIM_BOTH = Self::TRIM_START.0 | Self::TRIM_END.0;
+    }
+}
+
+impl TextBoxTrim {
+    /// Returns the initial value of text-box-trim
+    #[inline]
+    pub fn none() -> Self {
+        TextBoxTrim::NONE
     }
 }

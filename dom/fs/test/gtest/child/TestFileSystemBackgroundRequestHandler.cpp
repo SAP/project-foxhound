@@ -8,7 +8,6 @@
 #include "FileSystemMocks.h"
 #include "gtest/gtest.h"
 #include "mozilla/SpinEventLoopUntil.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/FileSystemManager.h"
 #include "mozilla/dom/FileSystemManagerChild.h"
 #include "mozilla/dom/PFileSystemManager.h"

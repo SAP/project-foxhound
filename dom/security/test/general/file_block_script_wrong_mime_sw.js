@@ -7,9 +7,7 @@
  * used a single test document, we use a SW idiom where the SW claims the
  * existing window client.  And because we operate in two modes and we
  * parameterize via URL, we also ensure that we skipWaiting.
- **/
-
-/* eslint-env serviceworker */
+ */
 
 // We are parameterized by "mode".
 const params = new URLSearchParams(location.search);

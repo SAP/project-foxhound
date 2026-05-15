@@ -9,7 +9,6 @@
 
 import { Component } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
-import { markerTypes } from "../../constants";
 
 class HighlightLines extends Component {
   static get propTypes() {
@@ -59,7 +58,7 @@ class HighlightLines extends Component {
       lines.push({ line });
     }
     editor.setLineContentMarker({
-      id: markerTypes.MULTI_HIGHLIGHT_LINE_MARKER,
+      id: editor.markerTypes.MULTI_HIGHLIGHT_LINE_MARKER,
       lineClassName: "highlight-lines",
       lines,
     });

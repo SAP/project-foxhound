@@ -7,16 +7,15 @@
 #ifndef mozilla_BufferList_h
 #define mozilla_BufferList_h
 
+#include "mozilla/Assertions.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/Vector.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <numeric>
-
-#include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/Vector.h"
+#include <type_traits>
+#include <utility>
 
 // BufferList represents a sequence of buffers of data. A BufferList can choose
 // to own its buffers or not. The class handles writing to the buffers,

@@ -368,6 +368,11 @@ interface nsISocketTransport : nsITransport
     [noscript] void setIsPrivate(in boolean isPrivate);
 
     /**
+     * Sets whether this socket is used for a TRR service channel connection.
+     */
+    [noscript] void setIsTRRConnection(in boolean isTRRConnection);
+
+    /**
      * If DNS is performed externally, this flag informs the caller that it may
      * retry connecting with a different DNS configuration (e.g. different IP
      * family preference). The flag is set only if a network error is encounder,
@@ -379,4 +384,9 @@ interface nsISocketTransport : nsITransport
      * Return the current status of the socket.
      */
     [noscript] readonly attribute nsresult status;
+
+    /**
+     * Indicates whether this socket is used for a TRR service channel connection.
+     */
+    readonly attribute boolean isTRRConnection;
 };

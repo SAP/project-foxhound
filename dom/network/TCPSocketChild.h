@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_TCPSocketChild_h
 #define mozilla_dom_TCPSocketChild_h
 
+#include "js/TypeDecls.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/net/PTCPSocketChild.h"
-#include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
-#include "js/TypeDecls.h"
+#include "nsCycleCollectionParticipant.h"
 
 class nsITCPSocketCallback;
 

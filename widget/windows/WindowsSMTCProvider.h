@@ -12,10 +12,8 @@
 #  include <Windows.Media.h>
 #  include <wrl.h>
 
-#  include "mozilla/dom/FetchImageHelper.h"
 #  include "mozilla/dom/MediaController.h"
 #  include "mozilla/dom/MediaControlKeySource.h"
-#  include "mozilla/UniquePtr.h"
 
 using ISMTC = ABI::Windows::Media::ISystemMediaTransportControls;
 using SMTCProperty = ABI::Windows::Media::SystemMediaTransportControlsProperty;
@@ -72,10 +70,7 @@ class WindowsSMTCProvider final : public mozilla::dom::MediaControlKeySource {
   bool SetMusicMetadata(const nsString& aArtist, const nsString& aTitle);
 
   // Sets one of the artwork to the SMTC interface asynchronously
-  void LoadThumbnail(const nsTArray<mozilla::dom::MediaImage>& aArtwork);
-  // Stores the image at index aIndex of the mArtwork to the Thumbnail
-  // asynchronously
-  void LoadImageAtIndex(const size_t aIndex);
+  void LoadThumbnail(const nsTArray<mozilla::dom::MediaImageData>& aArtwork);
   // Stores the raw binary data of an image to mImageStream and set it to the
   // Thumbnail asynchronously
   void LoadImage(const char* aImageData, uint32_t aDataSize);
@@ -117,10 +112,6 @@ class WindowsSMTCProvider final : public mozilla::dom::MediaControlKeySource {
   // mArtwork can only be used in main thread in case of data racing
   CopyableTArray<mozilla::dom::MediaImage> mArtwork;
   size_t mNextImageIndex;
-
-  mozilla::UniquePtr<mozilla::dom::FetchImageHelper> mImageFetcher;
-  mozilla::MozPromiseRequestHolder<mozilla::dom::ImagePromise>
-      mImageFetchRequest;
 
   HWND mWindow;  // handle to the invisible window
 

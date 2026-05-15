@@ -5,13 +5,16 @@
 #include "chrome/common/mach_ipc_mac.h"
 
 #include "base/logging.h"
+#include "base/message_loop.h"
 #include "base/string_util.h"
 #include "mozilla/GeckoArgs.h"
+#include "mozilla/ipc/IOThread.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsDebug.h"
+#include "nsXULAppAPI.h"
 
 #ifdef XP_MACOSX
 #  include <bsm/libbsm.h>
@@ -110,7 +113,8 @@ static std::string FormatMachError(kern_return_t kr) {
 //==============================================================================
 bool MachChildProcessCheckIn(
     const char* bootstrap_service_name, mach_msg_timeout_t timeout,
-    std::vector<mozilla::UniqueMachSendRight>& send_rights) {
+    std::vector<mozilla::UniqueMachSendRight>& send_rights,
+    std::vector<mozilla::UniqueMachReceiveRight>& receive_rights) {
   mozilla::UniqueMachSendRight task_sender;
   kern_return_t kr = bootstrap_look_up(bootstrap_port, bootstrap_service_name,
                                        mozilla::getter_Transfers(task_sender));
@@ -130,10 +134,11 @@ bool MachChildProcessCheckIn(
   }
 
   // The buffer must be big enough to store a full reply including
-  // kMaxPassedMachSendRights port descriptors.
+  // kMaxPassedMachSendRights and kMaxPassedMachReceiveRights port descriptors.
   size_t buffer_size = sizeof(mach_msg_base_t) +
                        sizeof(mach_msg_port_descriptor_t) *
-                           mozilla::geckoargs::kMaxPassedMachSendRights +
+                           (mozilla::geckoargs::kMaxPassedMachSendRights +
+                            mozilla::geckoargs::kMaxPassedMachReceiveRights) +
                        sizeof(mach_msg_trailer_t);
   mozilla::UniquePtr<uint8_t[]> buffer =
       mozilla::MakeUnique<uint8_t[]>(buffer_size);
@@ -165,24 +170,32 @@ bool MachChildProcessCheckIn(
   mach_msg_base_t* reply = reinterpret_cast<mach_msg_base_t*>(buffer.get());
   MOZ_RELEASE_ASSERT(reply->header.msgh_bits & MACH_MSGH_BITS_COMPLEX);
   MOZ_RELEASE_ASSERT(reply->body.msgh_descriptor_count <=
-                     mozilla::geckoargs::kMaxPassedMachSendRights);
+                     (mozilla::geckoargs::kMaxPassedMachSendRights +
+                      mozilla::geckoargs::kMaxPassedMachReceiveRights));
 
   mach_msg_port_descriptor_t* descrs =
       reinterpret_cast<mach_msg_port_descriptor_t*>(reply + 1);
   for (size_t i = 0; i < reply->body.msgh_descriptor_count; ++i) {
     MOZ_RELEASE_ASSERT(descrs[i].type == MACH_MSG_PORT_DESCRIPTOR);
-    MOZ_RELEASE_ASSERT(descrs[i].disposition == MACH_MSG_TYPE_MOVE_SEND);
-    send_rights.emplace_back(descrs[i].name);
+    if (descrs[i].disposition == MACH_MSG_TYPE_MOVE_RECEIVE) {
+      receive_rights.emplace_back(descrs[i].name);
+    } else {
+      MOZ_RELEASE_ASSERT(descrs[i].disposition == MACH_MSG_TYPE_MOVE_SEND);
+      send_rights.emplace_back(descrs[i].name);
+    }
   }
 
   return true;
 }
 
 //==============================================================================
+namespace {
+
 mozilla::Result<mozilla::Ok, mozilla::ipc::LaunchError>
-MachHandleProcessCheckIn(
+MachHandleProcessCheckInSync(
     mach_port_t endpoint, pid_t child_pid, mach_msg_timeout_t timeout,
     const std::vector<mozilla::UniqueMachSendRight>& send_rights,
+    std::vector<mozilla::UniqueMachReceiveRight>& receive_rights,
     task_t* child_task) {
   using mozilla::Err;
   using mozilla::Ok;
@@ -192,6 +205,10 @@ MachHandleProcessCheckIn(
   MOZ_ASSERT(send_rights.size() <= mozilla::geckoargs::kMaxPassedMachSendRights,
              "Child process cannot receive more than kMaxPassedMachSendRights "
              "during check-in!");
+  MOZ_ASSERT(
+      receive_rights.size() <= mozilla::geckoargs::kMaxPassedMachReceiveRights,
+      "Child process cannot receive more than kMaxPassedMachReceiveRights "
+      "during check-in!");
 
   // Receive the check-in message from content. This will contain its 'task_t'
   // data, and a reply port which can be used to send the reply message.
@@ -247,7 +264,8 @@ MachHandleProcessCheckIn(
   // with any send rights over to that child process which they should have on
   // startup.
   size_t reply_size = sizeof(mach_msg_base_t) +
-                      sizeof(mach_msg_port_descriptor_t) * send_rights.size();
+                      sizeof(mach_msg_port_descriptor_t) *
+                          (send_rights.size() + receive_rights.size());
   mozilla::UniquePtr<uint8_t[]> buffer =
       mozilla::MakeUnique<uint8_t[]>(reply_size);
   mach_msg_base_t* reply = reinterpret_cast<mach_msg_base_t*>(buffer.get());
@@ -255,7 +273,8 @@ MachHandleProcessCheckIn(
       MACH_MSGH_BITS(MACH_MSG_TYPE_MOVE_SEND_ONCE, 0) | MACH_MSGH_BITS_COMPLEX;
   reply->header.msgh_size = reply_size;
   reply->header.msgh_remote_port = request.header.msgh_remote_port;
-  reply->body.msgh_descriptor_count = send_rights.size();
+  reply->body.msgh_descriptor_count =
+      send_rights.size() + receive_rights.size();
 
   // Fill the descriptors from our mChildArgs.
   mach_msg_port_descriptor_t* descrs =
@@ -265,10 +284,17 @@ MachHandleProcessCheckIn(
     descrs[i].disposition = MACH_MSG_TYPE_COPY_SEND;
     descrs[i].name = send_rights[i].get();
   }
+  for (size_t i = 0; i < receive_rights.size(); ++i) {
+    size_t j = i + send_rights.size();
+    descrs[j].type = MACH_MSG_PORT_DESCRIPTOR;
+    descrs[j].disposition = MACH_MSG_TYPE_MOVE_RECEIVE;
+    descrs[j].name = receive_rights[i].release();
+  }
 
   // Send the reply.
-  kr = mach_msg(&reply->header, MACH_SEND_MSG, reply->header.msgh_size, 0,
-                MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
+  kr = mach_msg(&reply->header, MACH_SEND_MSG | MACH_SEND_TIMEOUT,
+                reply->header.msgh_size, 0, MACH_PORT_NULL, /* timeout */ 0,
+                MACH_PORT_NULL);
   if (kr != KERN_SUCCESS) {
     // NOTE: The only port which `mach_msg_destroy` would destroy is
     // `header.msgh_remote_port`, which is actually owned by `request`, so we
@@ -289,4 +315,113 @@ MachHandleProcessCheckIn(
 
   return Ok();
 }
+
+class MachCheckInListener : public MessageLoopForIO::MachPortWatcher {
+ public:
+  MachCheckInListener(
+      MachHandleProcessCheckInPromise::Private* promise,
+      mozilla::UniqueMachReceiveRight endpoint, pid_t child_pid,
+      std::vector<mozilla::UniqueMachSendRight> send_rights,
+      std::vector<mozilla::UniqueMachReceiveRight> receive_rights)
+      : promise_(promise),
+        child_pid_(child_pid),
+        endpoint_(std::move(endpoint)),
+        send_rights_(std::move(send_rights)),
+        receive_rights_(std::move(receive_rights)) {}
+
+  // Start listening for a check-in - can |delete this|.
+  void Start(mozilla::TimeDuration timeout);
+
+ private:
+  void OnMachMessageReceived(mach_port_t port);
+  void OnMachSendPossible(mach_port_t, bool) { MOZ_ASSERT_UNREACHABLE(); }
+
+  // Complete the promise, and |delete this|.
+  void CompleteAndDelete(
+      const mozilla::Result<task_t, mozilla::ipc::LaunchError>& result);
+  void FailAndDelete(mozilla::StaticString aFunction) {
+    CompleteAndDelete(mozilla::Err(mozilla::ipc::LaunchError(aFunction)));
+  }
+
+  RefPtr<MachHandleProcessCheckInPromise::Private> promise_;
+  pid_t child_pid_ = -1;
+  mozilla::UniqueMachReceiveRight endpoint_;
+  MessageLoopForIO::MachPortWatchController watch_controller_;
+  nsCOMPtr<nsITimer> timeout_timer_;
+  std::vector<mozilla::UniqueMachSendRight> send_rights_;
+  std::vector<mozilla::UniqueMachReceiveRight> receive_rights_;
+};
+
+void MachCheckInListener::Start(mozilla::TimeDuration timeout) {
+  mozilla::ipc::AssertIOThread();
+
+  // If a timeout was provided, start a timer.
+  if (timeout != mozilla::TimeDuration::Forever()) {
+    nsresult rv = NS_NewTimerWithCallback(
+        getter_AddRefs(timeout_timer_),
+        [this](nsITimer*) { FailAndDelete("MachCheckInListener TimedOut"); },
+        timeout, nsITimer::TYPE_ONE_SHOT, "MachCheckInListener"_ns,
+        XRE_GetAsyncIOEventTarget());
+    if (NS_FAILED(rv)) {
+      FailAndDelete("MachCheckIn: NewTimer");
+      return;
+    }
+  }
+
+  if (!MessageLoopForIO::current()->WatchMachReceivePort(
+          endpoint_.get(), &watch_controller_, this)) {
+    FailAndDelete("MachCheckIn: WatchMachPort");
+    return;
+  }
+}
+
+void MachCheckInListener::OnMachMessageReceived(mach_port_t port) {
+  mozilla::ipc::AssertIOThread();
+  MOZ_ASSERT(endpoint_.get() == port);
+
+  task_t task = MACH_PORT_NULL;
+  auto result = MachHandleProcessCheckInSync(endpoint_.get(), child_pid_,
+                                             /* timeout */ 0, send_rights_,
+                                             receive_rights_, &task);
+  CompleteAndDelete(result.map([&](const mozilla::Ok&) { return task; }));
+}
+
+void MachCheckInListener::CompleteAndDelete(
+    const mozilla::Result<task_t, mozilla::ipc::LaunchError>& result) {
+  mozilla::ipc::AssertIOThread();
+
+  if (result.isOk()) {
+    promise_->Resolve(result.inspect(), __func__);
+  } else {
+    promise_->Reject(result.inspectErr(), __func__);
+  }
+
+  watch_controller_.StopWatchingMachPort();
+  if (timeout_timer_) {
+    timeout_timer_->Cancel();
+  }
+
+  // SAFETY: MachCheckInListener can only be called by MessageLoopForIO or by a
+  // nsITimer callback. By cancelling both callbacks above, on the IPC I/O
+  // thread, we will never be called again.
+  delete this;
+}
+
+}  // namespace
+
+RefPtr<MachHandleProcessCheckInPromise> MachHandleProcessCheckIn(
+    mozilla::UniqueMachReceiveRight endpoint, pid_t child_pid,
+    mozilla::TimeDuration timeout,
+    std::vector<mozilla::UniqueMachSendRight> send_rights,
+    std::vector<mozilla::UniqueMachReceiveRight> receive_rights) {
+  mozilla::ipc::AssertIOThread();
+
+  auto promise =
+      mozilla::MakeRefPtr<MachHandleProcessCheckInPromise::Private>(__func__);
+  (new MachCheckInListener(promise, std::move(endpoint), child_pid,
+                           std::move(send_rights), std::move(receive_rights)))
+      ->Start(timeout);
+  return promise;
+}
+
 #endif

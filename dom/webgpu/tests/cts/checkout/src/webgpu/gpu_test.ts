@@ -19,9 +19,10 @@ import {
   TypedArrayBufferView,
   TypedArrayBufferViewConstructor,
   unreachable,
+  hasFeature,
 } from '../common/util/util.js';
 
-import { kLimits, kQueryTypeInfo, WGSLLanguageFeature } from './capability_info.js';
+import { kPossibleLimits, kQueryTypeInfo, WGSLLanguageFeature } from './capability_info.js';
 import { InterpolationType, InterpolationSampling } from './constants.js';
 import {
   resolvePerAspectFormat,
@@ -31,14 +32,15 @@ import {
   getRequiredFeatureForTextureFormat,
   isTextureFormatUsableAsRenderAttachment,
   isTextureFormatMultisampled,
-  is32Float,
-  isSintOrUintFormat,
   isTextureFormatResolvable,
   isDepthTextureFormat,
   isStencilTextureFormat,
   textureViewDimensionAndFormatCompatibleForDevice,
   textureDimensionAndFormatCompatibleForDevice,
   isTextureFormatUsableWithStorageAccessMode,
+  isTextureFormatUsableWithCopyExternalImageToTexture,
+  isTextureFormatFilterable,
+  isTextureFormatBlendable,
 } from './format_info.js';
 import { checkElementsEqual, checkElementsBetween } from './util/check_contents.js';
 import { CommandBufferMaker, EncoderType } from './util/command_buffer_maker.js';
@@ -351,7 +353,7 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
     return globalTestConfig.compatibility;
   }
 
-  makeLimitVariant(limit: (typeof kLimits)[number], variant: ValueTestVariant) {
+  makeLimitVariant(limit: (typeof kPossibleLimits)[number], variant: ValueTestVariant) {
     return makeValueTestVariant(this.device.limits[limit]!, variant);
   }
 
@@ -459,7 +461,10 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
    * Note: Try to use one of the more specific skipIf tests if possible.
    */
   skipIfDeviceDoesNotHaveFeature(feature: GPUFeatureName) {
-    this.skipIf(!this.device.features.has(feature), `device does not have feature: '${feature}'`);
+    this.skipIf(
+      !hasFeature(this.device.features, feature),
+      `device does not have feature: '${feature}'`
+    );
   }
 
   /**
@@ -496,7 +501,7 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
       }
       const feature = getRequiredFeatureForTextureFormat(format);
       this.skipIf(
-        !!feature && !this.device.features.has(feature),
+        !!feature && !hasFeature(this.device.features, feature),
         `texture format '${format}' requires feature: '${feature}'`
       );
     }
@@ -507,7 +512,11 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
     viewDimension: GPUTextureViewDimension
   ) {
     this.skipIf(
-      !textureViewDimensionAndFormatCompatibleForDevice(this.device, viewDimension, format),
+      !textureViewDimensionAndFormatCompatibleForDevice(
+        this.device.features,
+        viewDimension,
+        format
+      ),
       `format: ${format} does not support viewDimension: ${viewDimension}`
     );
   }
@@ -517,7 +526,7 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
     dimension: GPUTextureDimension | undefined
   ) {
     this.skipIf(
-      !textureDimensionAndFormatCompatibleForDevice(this.device, dimension, format),
+      !textureDimensionAndFormatCompatibleForDevice(this.device.features, dimension, format),
       `format: ${format} does not support dimension: ${dimension}`
     );
   }
@@ -525,7 +534,7 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
   skipIfTextureFormatNotResolvable(...formats: (GPUTextureFormat | undefined)[]) {
     for (const format of formats) {
       if (format === undefined) continue;
-      if (!isTextureFormatResolvable(this.device, format)) {
+      if (!isTextureFormatResolvable(this.device.features, format)) {
         this.skip(`texture format '${format}' is not resolvable`);
       }
     }
@@ -571,7 +580,7 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
     for (const format of formats) {
       if (!format) continue;
 
-      if (!isTextureFormatUsableWithStorageAccessMode(this.device, format, access)) {
+      if (!isTextureFormatUsableWithStorageAccessMode(this.device.features, format, access)) {
         this.skip(
           `Texture with ${format} is not usable as a storage texture with access ${access}`
         );
@@ -581,7 +590,7 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
 
   skipIfTextureFormatNotUsableAsRenderAttachment(...formats: (GPUTextureFormat | undefined)[]) {
     for (const format of formats) {
-      if (format && !isTextureFormatUsableAsRenderAttachment(this.device, format)) {
+      if (format && !isTextureFormatUsableAsRenderAttachment(this.device.features, format)) {
         this.skip(`Texture with ${format} is not usable as a render attachment`);
       }
     }
@@ -590,7 +599,7 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
   skipIfTextureFormatNotMultisampled(...formats: (GPUTextureFormat | undefined)[]) {
     for (const format of formats) {
       if (format === undefined) continue;
-      if (!isTextureFormatMultisampled(this.device, format)) {
+      if (!isTextureFormatMultisampled(this.device.features, format)) {
         this.skip(`texture format '${format}' does not support multisampling`);
       }
     }
@@ -599,26 +608,20 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
   skipIfTextureFormatNotBlendable(...formats: (GPUTextureFormat | undefined)[]) {
     for (const format of formats) {
       if (format === undefined) continue;
-      this.skipIf(isSintOrUintFormat(format), 'sint/uint formats are not blendable');
-      if (is32Float(format)) {
-        this.skipIf(
-          !this.device.features.has('float32-blendable'),
-          `texture format '${format}' is not blendable`
-        );
-      }
+      this.skipIf(
+        !isTextureFormatBlendable(this.device.features, format),
+        `${format} is not blendable`
+      );
     }
   }
 
   skipIfTextureFormatNotFilterable(...formats: (GPUTextureFormat | undefined)[]) {
     for (const format of formats) {
       if (format === undefined) continue;
-      this.skipIf(isSintOrUintFormat(format), 'sint/uint formats are not filterable');
-      if (is32Float(format)) {
-        this.skipIf(
-          !this.device.features.has('float32-filterable'),
-          `texture format '${format}' is not filterable`
-        );
-      }
+      this.skipIf(
+        !isTextureFormatFilterable(this.device.features, format),
+        `${format} is not filterable`
+      );
     }
   }
 
@@ -644,6 +647,13 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
     );
   }
 
+  skipIfTextureFormatPossiblyNotUsableWithCopyExternalImageToTexture(format: GPUTextureFormat) {
+    this.skipIf(
+      !isTextureFormatUsableWithCopyExternalImageToTexture(this.device.features, format),
+      `can not use copyExternalImageToTexture with ${format}`
+    );
+  }
+
   /** Skips this test case if the `langFeature` is *not* supported. */
   skipIfLanguageFeatureNotSupported(langFeature: WGSLLanguageFeature) {
     if (!this.hasLanguageFeature(langFeature)) {
@@ -662,6 +672,16 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
   hasLanguageFeature(langFeature: WGSLLanguageFeature) {
     const lf = getGPU(this.rec).wgslLanguageFeatures;
     return lf !== undefined && lf.has(langFeature);
+  }
+
+  /** Skips this test case if the GPUTextureUsage `TRANSIENT_ATTACHMENT` is *not* supported. */
+  // MAINTENANCE_TODO(#4509): Remove this when TRANSIENT_ATTACHMENT is added to the WebGPU spec.
+  skipIfTransientAttachmentNotSupported() {
+    const isTransientAttachmentSupported = 'TRANSIENT_ATTACHMENT' in GPUTextureUsage;
+    this.skipIf(
+      !isTransientAttachmentSupported,
+      'GPUTextureUsage TRANSIENT_ATTACHMENT is not supported'
+    );
   }
 
   /**
@@ -1208,6 +1228,23 @@ export class GPUTestBase extends Fixture<GPUTestSubcaseBatchState> {
           this.rec.debug(niceStack);
         }
       });
+    }
+  }
+
+  /**
+   * Expect a validation error or exception inside the callback.
+   *
+   * Tests should always do just one WebGPU call in the callback, to make sure that's what's tested.
+   */
+  expectValidationErrorOrException(
+    fn: () => void,
+    shouldError: boolean = true,
+    shouldThrow: boolean = true
+  ): void {
+    if (shouldThrow) {
+      this.shouldThrow(shouldError, fn);
+    } else {
+      this.expectValidationError(fn, shouldError);
     }
   }
 

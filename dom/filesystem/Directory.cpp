@@ -8,15 +8,14 @@
 
 #include "GetDirectoryListingTask.h"
 #include "GetFilesTask.h"
-
-#include "nsIFile.h"
-#include "nsString.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/FileSystemBase.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/OSFileSystem.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "nsIFile.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 

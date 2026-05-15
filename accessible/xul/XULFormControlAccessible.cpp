@@ -106,7 +106,7 @@ bool XULButtonAccessible::AttributeChangesState(nsAtom* aAttribute) {
 
 void XULButtonAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType,
+                                              AttrModType aModType,
                                               const nsAttrValue* aOldValue,
                                               uint64_t aOldState) {
   AccessibleWrap::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -266,17 +266,9 @@ XULRadioButtonAccessible::XULRadioButtonAccessible(nsIContent* aContent,
 uint64_t XULRadioButtonAccessible::NativeState() const {
   uint64_t state = LeafAccessible::NativeState();
   state |= states::CHECKABLE;
-
-  nsCOMPtr<nsIDOMXULSelectControlItemElement> radioButton =
-      Elm()->AsXULSelectControlItem();
-  if (radioButton) {
-    bool selected = false;  // Radio buttons can be selected
-    radioButton->GetSelected(&selected);
-    if (selected) {
-      state |= states::CHECKED;
-    }
+  if (Elm()->State().HasState(dom::ElementState::CHECKED)) {
+    state |= states::CHECKED;
   }
-
   return state;
 }
 

@@ -65,14 +65,14 @@ add_setup(async function () {
 add_task(async function test_bad_nimbus_setting_on_init() {
   getVariableStub.withArgs("extraParams").returns({ foo: "bar" });
 
-  await Services.search.init();
+  await SearchService.init();
 
   Assert.ok(
     updateStub.called,
     "Should have called onUpdate to listen for future updates"
   );
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "q=foo",
@@ -93,7 +93,7 @@ add_task(async function test_switch_to_good_nimbus_setting() {
 
   updateStub.firstCall.args[0]();
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "code=supergood%26id%3Dunique123456&q=foo",
@@ -108,7 +108,7 @@ add_task(async function test_switch_back_to_bad_nimbus_setting() {
 
   updateStub.firstCall.args[0]();
 
-  const engine = Services.search.getEngineById("preferenceEngine");
+  const engine = SearchService.getEngineById("preferenceEngine");
   Assert.equal(
     engine.getSubmission("foo").uri.spec,
     baseURL + "q=foo",

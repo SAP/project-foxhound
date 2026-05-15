@@ -5,8 +5,6 @@
 #include "mozilla/intl/Locale.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Span.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Variant.h"
@@ -17,9 +15,7 @@
 #include <iterator>
 #include <stddef.h>
 #include <stdint.h>
-#include <string>
 #include <string.h>
-#include <type_traits>
 #include <utility>
 
 #include "unicode/uloc.h"

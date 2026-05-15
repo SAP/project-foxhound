@@ -68,7 +68,7 @@ FilePath::~FilePath() = default;
 
 FilePath& FilePath::operator=(const FilePath& that) = default;
 
-FilePath& FilePath::operator=(FilePath&& that) = default;
+FilePath& FilePath::operator=(FilePath&& that) noexcept = default;
 
 // static
 bool FilePath::IsSeparator(CharType character) {

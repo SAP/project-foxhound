@@ -89,8 +89,8 @@ BEGIN_TEST(testFrontendErrors_error) {
     CHECK(exception.isObject());
     JS::Rooted<JSObject*> exceptionObj(cx, &exception.toObject());
 
-    const JSErrorReport* report = JS_ErrorFromException(cx, exceptionObj);
-    CHECK(report);
+    JS::BorrowedErrorReport report(cx);
+    CHECK(JS_ErrorFromException(cx, exceptionObj, report));
 
     CHECK(report->errorNumber == JSMSG_UNEXPECTED_TOKEN_NO_EXPECT);
     // Runtime's error report doesn't borrow the filename.
@@ -269,8 +269,8 @@ BEGIN_TEST(testFrontendErrors_overRecursed) {
     CHECK(exception.isObject());
     JS::Rooted<JSObject*> exceptionObj(cx, &exception.toObject());
 
-    const JSErrorReport* report = JS_ErrorFromException(cx, exceptionObj);
-    CHECK(report);
+    JS::BorrowedErrorReport report(cx);
+    CHECK(JS_ErrorFromException(cx, exceptionObj, report));
 
     CHECK(report->errorNumber == JSMSG_OVER_RECURSED);
   }
@@ -327,8 +327,8 @@ BEGIN_TEST(testFrontendErrors_allocationOverflow) {
     CHECK(exception.isObject());
     JS::Rooted<JSObject*> exceptionObj(cx, &exception.toObject());
 
-    const JSErrorReport* report = JS_ErrorFromException(cx, exceptionObj);
-    CHECK(report);
+    JS::BorrowedErrorReport report(cx);
+    CHECK(JS_ErrorFromException(cx, exceptionObj, report));
 
     CHECK(report->errorNumber == JSMSG_ALLOC_OVERFLOW);
   }

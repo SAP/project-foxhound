@@ -4,9 +4,9 @@
 
 package org.mozilla.fenix.compose
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,9 +16,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,7 +27,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import mozilla.components.compose.base.modifier.skeletonLoader
 import mozilla.components.compose.base.modifier.thenConditional
+import org.mozilla.fenix.home.topsites.ui.HomepageCard
+import org.mozilla.fenix.home.topsites.ui.homepageCardImageShape
 import org.mozilla.fenix.theme.FirefoxTheme
 
 const val ITEM_WIDTH = 305
@@ -64,31 +64,34 @@ fun ListItemTabSurface(
             predicate = { onClick != null },
         )
 
-    Card(
+    HomepageCard(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        backgroundColor = backgroundColor,
     ) {
         Row(
-            modifier = Modifier.fillMaxHeight()
+            modifier = Modifier
+                .fillMaxHeight()
                 .padding(contentPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val (imageWidth, imageHeight) = IMAGE_SIZE.dp to IMAGE_SIZE.dp
-            val imageModifier = Modifier
-                .size(imageWidth, imageHeight)
-                .clip(RoundedCornerShape(8.dp))
-
             Image(
                 url = imageUrl,
-                modifier = imageModifier,
+                modifier = Modifier.size(IMAGE_SIZE.dp)
+                    .clip(homepageCardImageShape),
                 private = false,
-                targetSize = imageWidth,
+                targetSize = IMAGE_SIZE.dp,
                 contentScale = imageContentScale,
+                placeholder = {
+                    Box(
+                        modifier = Modifier
+                            .size(IMAGE_SIZE.dp)
+                            .clip(homepageCardImageShape)
+                            .skeletonLoader(),
+                    )
+                },
             )
 
-            Spacer(Modifier.width(FirefoxTheme.layout.space.static100))
+            Spacer(modifier = Modifier.width(FirefoxTheme.layout.space.static100))
 
             Column(
                 verticalArrangement = Arrangement.SpaceBetween,
@@ -108,7 +111,6 @@ private fun ListItemTabSurfacePreview() {
         ) {
             Text(
                 text = "This can be anything",
-                color = FirefoxTheme.colors.textPrimary,
                 fontSize = 22.sp,
             )
         }
@@ -125,7 +127,6 @@ private fun ListItemTabSurfaceWithCustomBackgroundPreview() {
         ) {
             Text(
                 text = "This can be anything",
-                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 14.sp,
             )
         }

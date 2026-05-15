@@ -43,32 +43,28 @@ struct TransactionData {
 typedef Maybe<TransactionData> MaybeTransactionData;
 
 }  // namespace layers
+}  // namespace mozilla
 
-namespace ipc {
+namespace IPC {
 
 template <>
-struct IPDLParamTraits<mozilla::layers::DisplayListData> {
+struct ParamTraits<mozilla::layers::DisplayListData> {
   typedef mozilla::layers::DisplayListData paramType;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    paramType&& aParam);
+  static void Write(MessageWriter* aWriter, paramType&& aParam);
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult);
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
 
 template <>
-struct IPDLParamTraits<mozilla::layers::TransactionData> {
+struct ParamTraits<mozilla::layers::TransactionData> {
   typedef mozilla::layers::TransactionData paramType;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    paramType&& aParam);
+  static void Write(MessageWriter* aWriter, paramType&& aParam);
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult);
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC
 
 #endif /* GFX_RENDERROOTTYPES_H */

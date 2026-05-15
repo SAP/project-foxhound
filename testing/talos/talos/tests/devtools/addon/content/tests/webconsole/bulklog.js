@@ -36,11 +36,11 @@ module.exports = async function () {
         obj["item-" + i] = {index: i, ...obj};
       }
       addMessageListener("do-logs", function () {
-        const start = Cu.now();
+        const start = ChromeUtils.now();
         for (var i = 0; i < ${TOTAL_MESSAGES}; i++) {
           content.console.log('damp', i+1, content, obj);
         }
-        sendAsyncMessage('logs-done',  Cu.now() - start);
+        sendAsyncMessage('logs-done',  ChromeUtils.now() - start);
       });
     }`
       ) +

@@ -9,10 +9,12 @@ with Files("*"):
 
 EXPORTS.mozilla.dom += [
     "ViewTransition.h",
+    "ViewTransitionTypeSet.h",
 ]
 
 UNIFIED_SOURCES += [
     "ViewTransition.cpp",
+    "ViewTransitionTypeSet.cpp",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

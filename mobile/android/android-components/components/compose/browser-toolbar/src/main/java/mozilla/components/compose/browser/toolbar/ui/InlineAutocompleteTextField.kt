@@ -5,315 +5,569 @@
 package mozilla.components.compose.browser.toolbar.ui
 
 import android.content.Context
-import android.graphics.drawable.GradientDrawable
-import android.os.Build
-import android.text.InputType.TYPE_CLASS_TEXT
-import android.text.InputType.TYPE_TEXT_VARIATION_URI
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.KeyEvent
-import android.view.View
+import android.text.Spanned
 import android.view.inputmethod.EditorInfo
-import androidx.annotation.ColorInt
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.annotation.DoNotInline
+import androidx.annotation.VisibleForTesting
+import androidx.compose.foundation.ComposeFoundationFlags
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat.Type.ime
-import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.cancelChildren
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import mozilla.components.compose.base.theme.AcornTheme
-import mozilla.components.compose.browser.toolbar.BrowserEditToolbar
-import mozilla.components.concept.toolbar.AutocompleteDelegate
-import mozilla.components.concept.toolbar.AutocompleteProvider
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_SEARCH_BOX
 import mozilla.components.concept.toolbar.AutocompleteResult
-import mozilla.components.support.base.log.logger.Logger
-import mozilla.components.support.base.utils.NamedThreadFactory
-import mozilla.components.support.ktx.android.view.showKeyboard
-import mozilla.components.ui.autocomplete.AutocompleteView
-import mozilla.components.ui.autocomplete.InlineAutocompleteEditText
-import mozilla.components.ui.autocomplete.OnFilterListener
-import java.util.concurrent.Executors
-import kotlin.coroutines.CoroutineContext
+import mozilla.components.support.utils.SafeUrl
 
 private const val TEXT_SIZE = 15f
 private const val TEXT_HIGHLIGHT_COLOR = "#5C592ACB"
-private const val AUTOCOMPLETE_QUERY_THREADS = 3
-private const val AUTOCOMPLETE_THREADS_FACTORY_NAME = "EditToolbar"
-private const val LETTER_SPACING_SP = 0.5f
+private const val MAX_TEXT_LENGTH_TO_PASTE = 2_000
 
 /**
- * Sub-component of the [BrowserEditToolbar] responsible for displaying a text field that is
- * capable of inline autocompletion.
+ * A text field composable that displays a suggestion inline with the user's input,
+ * styled differently to distinguish it from the typed text.
+ *
+ * @param query The query to show.
+ * @param hint Placeholder text tpo show if [query] is empty.
+ * @param suggestion The autocomplete suggestion to display. `null` if no suggestion is active.
+ * @param showQueryAsPreselected If `true`, the initial query text will be fully selected.
+ * @param usePrivateModeQueries If `true`, instructs the keyboard to disable personalized learning,
+ * suitable for private/incognito modes.
+ * @param modifier The [Modifier] to be applied to this text field.
+ * @param onUrlEdit Callback invoked when the user types or deletes text, providing [BrowserToolbarQuery]
+ * with information about the previous and the new query.
+ * @param onUrlCommitted A callback for when the user commits the text via an IME action like "Go".
  */
-@OptIn(ExperimentalComposeUiApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalComposeUiApi::class) // for InterceptPlatformTextInput
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @Composable
-@Suppress("LongMethod")
 internal fun InlineAutocompleteTextField(
     query: String,
     hint: String,
+    suggestion: AutocompleteResult?,
     showQueryAsPreselected: Boolean,
-    autocompleteProviders: List<AutocompleteProvider>,
+    usePrivateModeQueries: Boolean,
     modifier: Modifier = Modifier,
-    onUrlEdit: (String) -> Unit = {},
-    onUrlEditAborted: () -> Unit = {},
+    onUrlEdit: (BrowserToolbarQuery) -> Unit = {},
     onUrlCommitted: (String) -> Unit = {},
-    onUrlSuggestionAutocompleted: (String) -> Unit = {},
 ) {
+    val textFieldState = rememberTextFieldState(
+        initialText = query,
+        initialSelection = when {
+            showQueryAsPreselected -> TextRange(0, query.length)
+            else -> TextRange(query.length)
+        },
+    )
+    var useSuggestion by remember { mutableStateOf(true) }
+    // Properties referenced in long lived lambdas
+    val currentSuggestion by rememberUpdatedState(suggestion)
+    val currentUseSuggestion by rememberUpdatedState(useSuggestion)
+
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    val suggestionTextColor = MaterialTheme.colorScheme.onSurface
+    val highlightBackgroundColor = Color(TEXT_HIGHLIGHT_COLOR.toColorInt())
+
+    var suggestionBounds by remember { mutableStateOf<Rect?>(null) }
+    val deviceLayoutDirection = LocalLayoutDirection.current
+    val scrollState = rememberScrollState()
+
     val context = LocalContext.current
-    val textColor = AcornTheme.colors.textPrimary
-    val hintColor = AcornTheme.colors.textSecondary
-    val backgroundColor = AcornTheme.colors.layer3
-    val backgroundDrawable = remember { buildBackground(context, backgroundColor.toArgb()) }
-    val autocompletedTextColor = remember { TEXT_HIGHLIGHT_COLOR.toColorInt() }
-    val logger = remember { Logger("InlineAutocompleteTextField") }
-
-    val autocompleteDispatcher = remember {
-        SupervisorJob() +
-            Executors.newFixedThreadPool(
-                AUTOCOMPLETE_QUERY_THREADS,
-                NamedThreadFactory(AUTOCOMPLETE_THREADS_FACTORY_NAME),
-            ).asCoroutineDispatcher() +
-            CoroutineExceptionHandler { _, throwable ->
-                logger.error("Error while processing autocomplete input", throwable)
+    val defaultTextToolbar = LocalTextToolbar.current
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
+    val pasteInterceptorToolbar = remember(defaultTextToolbar, clipboard) {
+        PasteSanitizerTextToolbar(context, defaultTextToolbar, clipboard, coroutineScope) {
+            val originalText = textFieldState
+            textFieldState.edit {
+                replace(originalText.selection.start, originalText.selection.end, it)
             }
-    }
-
-    var editText by remember { mutableStateOf<InlineAutocompleteEditText?>(null) }
-
-    // Doing this here and not in the "update" block to change the autocomplete filter
-    // only when the autocomplete providers change, and not for every recomposition / other parameter changes.
-    LaunchedEffect(autocompleteProviders) {
-        logger.debug("Refreshing autocomplete suggestions from ${autocompleteProviders.size} providers.")
-
-        editText?.let {
-            it.setOnFilterListener(
-                AsyncFilterListener(
-                    it, autocompleteDispatcher,
-                    object : suspend (String, AutocompleteDelegate) -> Unit {
-                        override suspend fun invoke(
-                            query: String,
-                            delegate: AutocompleteDelegate,
-                        ) {
-                            if (autocompleteProviders.isEmpty() || query.isBlank()) {
-                                delegate.noAutocompleteResult(query)
-                            } else {
-                                val result = autocompleteProviders
-                                    .firstNotNullOfOrNull { it.getAutocompleteSuggestion(query) }
-
-                                if (result != null) {
-                                    delegate.applyAutocompleteResult(result) {
-                                        onUrlSuggestionAutocompleted(result.url)
-                                    }
-                                } else {
-                                    delegate.noAutocompleteResult(query)
-                                }
-                            }
-                        }
-                    },
+            onUrlEdit(
+                BrowserToolbarQuery(
+                    previous = originalText.text.toString(),
+                    current = textFieldState.text.toString(),
                 ),
             )
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { pasteInterceptorToolbar.hide() }
+    }
 
-            it.refreshAutocompleteSuggestions()
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    LaunchedEffect(query) {
+        if (query != textFieldState.text.toString()) {
+            textFieldState.edit {
+                replace(0, length, query)
+                selection = TextRange(query.length)
+            }
         }
     }
 
-    AndroidView(
-        factory = { context ->
-            InlineAutocompleteEditText(context).apply {
-                imeOptions = EditorInfo.IME_ACTION_GO or
-                    EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-                    EditorInfo.IME_FLAG_NO_FULLSCREEN
-                inputType = TYPE_CLASS_TEXT or TYPE_TEXT_VARIATION_URI
-                setLines(1)
-                gravity = Gravity.CENTER_VERTICAL
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, TEXT_SIZE)
-                setFocusable(true)
-                background = backgroundDrawable
-                autoCompleteBackgroundColor = autocompletedTextColor
-                setTextColor(textColor.toArgb())
-                this.hint = hint
-                setHintTextColor(hintColor.toArgb())
+    val localView = LocalView.current
+    LaunchedEffect(suggestion) {
+        if (useSuggestion) {
+            suggestion?.text?.let {
+                @Suppress("DEPRECATION")
+                localView.announceForAccessibility(it)
+            }
+        }
+    }
 
-                // Used to match the same style that is used for Compose texts to ensure a smooth transition
-                letterSpacing = TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_SP,
-                    LETTER_SPACING_SP, context.resources.displayMetrics,
-                    ) / textSize
-
-                updateText(query)
-                if (showQueryAsPreselected && query.isNotBlank()) {
-                    selectAll()
-                }
-
-                setOnCommitListener {
-                    onUrlCommitted(text.toString())
-                }
-
-                setOnTextChangeListener { text, _ ->
-                    onUrlEdit(text)
-                }
-
-                setOnDispatchKeyEventPreImeListener { event ->
-                    if (event?.keyCode == KeyEvent.KEYCODE_BACK && isImeVisible()) {
-                        onUrlEditAborted()
+    // Always want the text to be entered left to right.
+    CompositionLocalProvider(
+        LocalLayoutDirection provides LayoutDirection.Ltr,
+        LocalTextToolbar provides pasteInterceptorToolbar,
+    ) {
+        // Set incognito mode for the keyboard when needed.
+        InterceptPlatformTextInput(
+            interceptor = { request, nextHandler ->
+                val modifiedRequest = PlatformTextInputMethodRequest { outAttributes ->
+                    request.createInputConnection(outAttributes).also {
+                        if (usePrivateModeQueries) {
+                            NoPersonalizedLearningHelper.addNoPersonalizedLearning(outAttributes)
+                        }
                     }
-                    false
                 }
-            }.also {
-                editText = it
-            }
-        },
-        modifier = modifier,
-        update = {
-            if (query != it.originalText) {
-                it.updateText(query)
-                it.refreshAutocompleteSuggestions()
-            }
-            if (it.hint != hint) {
-                it.hint = hint
-                it.setHintTextColor(hintColor.toArgb())
-            }
-        },
-    )
-}
-
-/**
- * Wraps [filter] execution in a coroutine context, cancelling prior executions on every invocation.
- * [coroutineContext] must be of type that doesn't propagate cancellation of its children upwards.
- */
-private class AsyncFilterListener(
-    private val urlView: AutocompleteView,
-    override val coroutineContext: CoroutineContext,
-    private val filter: suspend (String, AutocompleteDelegate) -> Unit,
-    private val uiContext: CoroutineContext = Dispatchers.Main,
-) : OnFilterListener, CoroutineScope {
-    override fun invoke(text: String) {
-        // We got a new input, so whatever past autocomplete queries we still have running are
-        // irrelevant. We cancel them, but do not depend on cancellation to take place.
-        coroutineContext.cancelChildren()
-
-        CoroutineScope(coroutineContext).launch {
-            filter(text, AsyncAutocompleteDelegate(urlView, this, uiContext))
+                nextHandler.startInputMethod(modifiedRequest)
+            },
+        ) {
+            BasicTextField(
+                state = textFieldState,
+                modifier = modifier
+                    .testTag(ADDRESSBAR_SEARCH_BOX)
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            keyboardController?.show()
+                        }
+                    }
+                    .focusRequester(focusRequester),
+                textStyle = TextStyle(
+                    fontSize = TEXT_SIZE.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = when (deviceLayoutDirection) {
+                        LayoutDirection.Ltr -> TextAlign.Start
+                        LayoutDirection.Rtl -> TextAlign.End
+                    },
+                ),
+                lineLimits = TextFieldLineLimits.SingleLine,
+                scrollState = scrollState,
+                keyboardOptions = KeyboardOptions(
+                    showKeyboardOnFocus = true,
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Go,
+                    autoCorrectEnabled = false,
+                ),
+                onKeyboardAction = {
+                    keyboardController?.hide()
+                    val currentText = textFieldState.text.toString()
+                    val finalUrl = if (useSuggestion && suggestion?.text?.startsWith(currentText) == true) {
+                        suggestion.text
+                    } else {
+                        currentText
+                    }
+                    onUrlCommitted(finalUrl)
+                },
+                inputTransformation = remember(onUrlEdit) {
+                    AutocompleteInputTransformation(
+                        suggestion = { currentSuggestion },
+                        shouldUseSuggestion = { currentUseSuggestion },
+                        onSuggestionVisibilityChangeRequest = { useSuggestion = it },
+                        onUrlEdit = onUrlEdit,
+                    )
+                },
+                outputTransformation = remember(suggestionTextColor) {
+                    AutocompleteOutputTransformation(
+                        suggestion = { currentSuggestion },
+                        shouldUseSuggestion = { currentUseSuggestion },
+                        textColor = suggestionTextColor,
+                        textBackground = highlightBackgroundColor,
+                    )
+                },
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                onTextLayout = { layoutResult ->
+                    val currentInput = textFieldState.text
+                    suggestionBounds = when (currentInput.isEmpty()) {
+                        true -> null
+                        false -> try {
+                            layoutResult()?.getBoundingBox(currentInput.length - 1)
+                        } catch (_: IllegalArgumentException) {
+                            null
+                        }
+                    }
+                },
+                decorator = { innerTextField ->
+                    AutocompleteDecorator(
+                        hint = hint,
+                        suggestion = when {
+                            useSuggestion -> currentSuggestion
+                            else -> null
+                        },
+                        onSuggestionVisibilityChangeRequest = { useSuggestion = it },
+                        suggestionBounds = suggestionBounds,
+                        textFieldState = textFieldState,
+                        onUrlEdit = onUrlEdit,
+                        deviceLayoutDirection = deviceLayoutDirection,
+                        innerTextField = innerTextField,
+                    )
+                },
+            )
         }
     }
 }
 
 /**
- * An autocomplete delegate which is aware of its parent scope (to check for cancellations).
- * Responsible for processing autocompletion results and discarding stale results when [urlView] moved on.
+ * Information about the current browser toolbar query.
+ *
+ * @property current The current query.
+ * @property previous The previous query, if any.
  */
-private class AsyncAutocompleteDelegate(
-    private val urlView: AutocompleteView,
-    private val parentScope: CoroutineScope,
-    override val coroutineContext: CoroutineContext,
-    private val logger: Logger = Logger("AsyncAutocompleteDelegate"),
-) : AutocompleteDelegate, CoroutineScope {
-    override fun applyAutocompleteResult(result: AutocompleteResult, onApplied: () -> Unit) {
-        // Bail out if we were cancelled already.
-        if (!parentScope.isActive) {
-            logger.debug("Autocomplete request cancelled. Discarding results.")
-            return
-        }
+data class BrowserToolbarQuery(
+    val current: String,
+    val previous: String? = null,
+)
 
-        // Process results on the UI dispatcher.
-        CoroutineScope(coroutineContext).launch {
-            // Ignore this result if the query is stale.
-            if (result.input == urlView.originalText.lowercase()) {
-                urlView.applyAutocompleteResult(
-                    InlineAutocompleteEditText.AutocompleteResult(
-                        text = result.text,
-                        source = result.source,
-                        totalItems = result.totalItems,
-                    ),
-                )
-                onApplied()
+/**
+ * Helper for removing the suggestion or delete from the user query when backspace is pressed.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private class AutocompleteInputTransformation(
+    private val suggestion: () -> AutocompleteResult?,
+    private val shouldUseSuggestion: () -> Boolean,
+    private val onSuggestionVisibilityChangeRequest: (Boolean) -> Unit,
+    private val onUrlEdit: (BrowserToolbarQuery) -> Unit,
+) : InputTransformation {
+    override fun TextFieldBuffer.transformInput() {
+        val originalText = originalText.toString()
+        val newText = asCharSequence().toString()
+        val suggestion = suggestion()?.text
+
+        val isBackspace = originalText.length > newText.length && originalText.startsWith(newText)
+        val isSuggestionVisible = shouldUseSuggestion() &&
+            suggestion?.startsWith(originalText) == true && suggestion.length > originalText.length
+        val isCursorAtQueryEnd = originalSelection.collapsed && originalSelection.end == originalText.length
+
+        if (isBackspace) {
+            onSuggestionVisibilityChangeRequest(false)
+
+            val isBackspaceHidingSuggestion = isCursorAtQueryEnd && isSuggestionVisible
+            if (isBackspaceHidingSuggestion) {
+                // Avoid deleting text, just hide the suggestion.
+                revertAllChanges()
             } else {
-                logger.debug("Discarding stale autocomplete result.")
+                // Actually delete text and hide the suggestion.
+                onUrlEdit(BrowserToolbarQuery(previous = originalText, current = newText))
             }
-        }
-    }
-
-    override fun noAutocompleteResult(input: String) {
-        // Bail out if we were cancelled already.
-        if (!parentScope.isActive) {
-            logger.debug("Autocomplete request cancelled. Discarding 'noAutocompleteResult'.")
-            return
-        }
-
-        // Process results on the UI thread.
-        CoroutineScope(coroutineContext).launch {
-            // Ignore this result if the query is stale.
-            if (input == urlView.originalText) {
-                urlView.noAutocompleteResult()
-            } else {
-                logger.debug("Discarding stale lack of autocomplete results.")
+        } else {
+            if (originalText != newText) {
+                onSuggestionVisibilityChangeRequest(true)
+                onUrlEdit(BrowserToolbarQuery(previous = originalText, current = newText))
             }
         }
     }
 }
 
-private fun buildBackground(
-    context: Context,
-    @ColorInt color: Int,
-    cornerRadius: Float = 8f,
-): GradientDrawable {
-    val cornerRadiusPx = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP,
-        cornerRadius,
-        context.resources.displayMetrics,
-    )
+/**
+ * Helper for showing the autocomplete suggestion inline with user's input.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private class AutocompleteOutputTransformation(
+    private val suggestion: () -> AutocompleteResult?,
+    private val shouldUseSuggestion: () -> Boolean,
+    private val textColor: Color,
+    private val textBackground: Color,
+) : OutputTransformation {
+    override fun TextFieldBuffer.transformOutput() {
+        val userInput = asCharSequence()
+        val suggestion = suggestion()
+        if (!shouldUseSuggestion() ||
+            suggestion?.text?.isEmpty() == true ||
+            suggestion?.text?.startsWith(userInput) == false
+        ) { return }
 
-    return GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        setColor(color)
-        this.cornerRadius = cornerRadiusPx
+        val suffix = suggestion?.text?.removePrefix(userInput) ?: return
+        if (suffix.isNotEmpty()) {
+            val originalLength = length
+            append(suffix)
+            addStyle(
+                SpanStyle(
+                    color = textColor,
+                    background = textBackground,
+                ),
+                originalLength,
+                length,
+            )
+        }
     }
 }
 
-private fun View.isImeVisible() = ViewCompat.getRootWindowInsets(this)?.isVisible(ime()) == true
+/**
+ * Helper for handling the text shown to the user:
+ * - show the current query or hint if query is empty.
+ * - dismisses the suggestion if cursor is placed in query.
+ * - commits the suggestion if cursor is placed in the suggestion or after it.
+ */
+@Composable
+@Suppress("LongParameterList")
+private fun AutocompleteDecorator(
+    hint: String,
+    suggestion: AutocompleteResult?,
+    onSuggestionVisibilityChangeRequest: (Boolean) -> Unit,
+    suggestionBounds: Rect?,
+    textFieldState: TextFieldState,
+    onUrlEdit: (BrowserToolbarQuery) -> Unit,
+    deviceLayoutDirection: LayoutDirection,
+    innerTextField: @Composable () -> Unit,
+) {
+    // Stop using the suggestion if cursor is moved manually away from the end.
+    LaunchedEffect(textFieldState) {
+        snapshotFlow { textFieldState.selection }
+            .collectLatest {
+                if (it.end != textFieldState.text.length) {
+                    onSuggestionVisibilityChangeRequest(false)
+                }
+            }
+    }
 
-private fun InlineAutocompleteEditText.updateText(newText: String) {
-    // Avoid running the code for focusing this if the updated text is the one user already typed.
-    // But ensure focusing this if just starting to type.
-    if (text.toString() == newText && newText.isNotEmpty()) return
-
-    setText(text = newText, shouldAutoComplete = false)
-    setSelection(newText.length)
-    if (!hasFocus()) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // On Android 14 this needs to be called before requestFocus() in order to receive focus.
-            isFocusableInTouchMode = true
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Commit the suggestion when users tap on the outside of the typed in text.
+            .pointerInput(suggestion, suggestionBounds) {
+                awaitEachGesture {
+                    val downEvent = awaitFirstDown(requireUnconsumed = false)
+                    val suggestionText = suggestion?.text
+                    if (suggestionBounds != null && suggestionText != null &&
+                        suggestionBounds.right < downEvent.position.x
+                    ) {
+                        onUrlEdit(
+                            BrowserToolbarQuery(
+                                previous = textFieldState.text.toString(),
+                                current = suggestionText,
+                            ),
+                        )
+                        textFieldState.edit {
+                            replace(0, length, suggestionText)
+                            selection = TextRange(suggestionText.length)
+                        }
+                    }
+                }
+            },
+        contentAlignment = when (deviceLayoutDirection) {
+            LayoutDirection.Ltr -> Alignment.CenterStart
+            LayoutDirection.Rtl -> Alignment.CenterEnd
+        },
+    ) {
+        if (textFieldState.text.isEmpty()) {
+            Text(
+                text = hint,
+                style = LocalTextStyle.current.merge(
+                    fontSize = TEXT_SIZE.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+            )
         }
-        requestFocus()
-        showKeyboard()
+        innerTextField()
+    }
+}
+
+/**
+ * Temporary helper for putting the toolbar in incognito mode.
+ * See https://issuetracker.google.com/issues/359257538.
+ */
+@VisibleForTesting
+internal object NoPersonalizedLearningHelper {
+    @DoNotInline
+    fun addNoPersonalizedLearning(info: EditorInfo) {
+        info.imeOptions = info.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+    }
+}
+
+/**
+ * Helper for sanitizing what gets pasted through the contextual menu.
+ */
+@OptIn(ExperimentalFoundationApi::class) // for ComposeFoundationFlags
+private class PasteSanitizerTextToolbar(
+    private val context: Context,
+    private val delegate: TextToolbar,
+    private val clipboard: Clipboard,
+    private val scope: CoroutineScope,
+    private val handlePaste: (String) -> Unit,
+) : TextToolbar {
+    init {
+        // Temporary workaround for https://issuetracker.google.com/issues/447192728
+        ComposeFoundationFlags.isNewContextMenuEnabled = false
+    }
+
+    override val status = delegate.status
+
+    override fun hide() = delegate.hide()
+
+    override fun showMenu(
+        rect: Rect,
+        onCopyRequested: (() -> Unit)?,
+        onPasteRequested: (() -> Unit)?,
+        onCutRequested: (() -> Unit)?,
+        onSelectAllRequested: (() -> Unit)?,
+        onAutofillRequested: (() -> Unit)?,
+    ) {
+        delegate.showMenu(
+            rect = rect,
+            onCopyRequested = onCopyRequested,
+            onPasteRequested = {
+                scope.launch {
+                    handlePaste(sanitizeAvailableTextClip())
+                }
+            },
+            onCutRequested = onCutRequested,
+            onSelectAllRequested = onSelectAllRequested,
+            onAutofillRequested = onAutofillRequested,
+        )
+    }
+
+    override fun showMenu(
+        rect: Rect,
+        onCopyRequested: (() -> Unit)?,
+        onPasteRequested: (() -> Unit)?,
+        onCutRequested: (() -> Unit)?,
+        onSelectAllRequested: (() -> Unit)?,
+    ) {
+        delegate.showMenu(
+            rect = rect,
+            onCopyRequested = onCopyRequested,
+            onPasteRequested = {
+                scope.launch {
+                    handlePaste(sanitizeAvailableTextClip())
+                }
+            },
+            onCutRequested = onCutRequested,
+            onSelectAllRequested = onSelectAllRequested,
+        )
+    }
+
+    private suspend fun sanitizeAvailableTextClip(): String {
+        val originalClip = clipboard.getClipEntry() ?: return ""
+
+        val sb = StringBuilder()
+        for (i in 0 until originalClip.clipData.itemCount) {
+            val text = originalClip.clipData.getItemAt(i).coerceToText(context)
+            val textToBePasted = (text as? Spanned)?.toString() ?: text
+
+            val safeTextToBePasted = SafeUrl.stripUnsafeUrlSchemes(context, textToBePasted)
+
+            if (i >= 1) { sb.append("\n") }
+            sb.append(safeTextToBePasted)
+        }
+
+        return sb.toString().take(MAX_TEXT_LENGTH_TO_PASTE)
     }
 }
 
 @PreviewLightDark
 @Composable
-private fun BrowserEditToolbarPreview() {
-    InlineAutocompleteTextField(
-        query = "http://www.mozilla.org",
-        hint = "",
-        showQueryAsPreselected = false,
-        autocompleteProviders = emptyList(),
-    )
+private fun InlineAutocompleteTextFieldWithSuggestion() {
+    AcornTheme {
+        Box(
+            Modifier.background(MaterialTheme.colorScheme.surfaceDim),
+        ) {
+            InlineAutocompleteTextField(
+                query = "wiki",
+                hint = "hint",
+                showQueryAsPreselected = false,
+                usePrivateModeQueries = false,
+                suggestion = AutocompleteResult(
+                    "wiki",
+                    "wikipedia.org",
+                    "https://wikipedia.org",
+                    "test",
+                    1,
+                ),
+            )
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun InlineAutocompleteTextFieldWithNoQuery() {
+    AcornTheme {
+        Box(
+            Modifier.background(MaterialTheme.colorScheme.surfaceDim),
+        ) {
+            InlineAutocompleteTextField(
+                query = "",
+                hint = "hint",
+                showQueryAsPreselected = false,
+                usePrivateModeQueries = false,
+                suggestion = null,
+            )
+        }
+    }
 }

@@ -1,0 +1,5 @@
+package test {
+  public class TestClass {
+    field @android.support.annotation.Nullable public java.lang.String testField;
+  }
+}

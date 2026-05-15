@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,11 +8,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <initializer_list>
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "base/macros.h"
 #include "sandbox/linux/bpf_dsl/bpf_dsl_forward.h"
 #include "sandbox/linux/bpf_dsl/cons.h"
 #include "sandbox/linux/bpf_dsl/trap_registry.h"
@@ -120,6 +120,12 @@ SANDBOX_EXPORT ResultExpr
 SANDBOX_EXPORT ResultExpr
     UnsafeTrap(TrapRegistry::TrapFnc trap_func, const void* aux);
 
+// UserNotify specifies that the kernel shall notify a listening process that a
+// syscall occurred. The listening process may perform the system call on
+// behalf of the sandboxed process, or may instruct the sandboxed process to
+// continue the system call.
+SANDBOX_EXPORT ResultExpr UserNotify();
+
 // BoolConst converts a bool value into a BoolExpr.
 SANDBOX_EXPORT BoolExpr BoolConst(bool value);
 
@@ -149,6 +155,8 @@ class SANDBOX_EXPORT Arg {
 
   Arg(const Arg& arg) : num_(arg.num_), mask_(arg.mask_) {}
 
+  Arg& operator=(const Arg&) = delete;
+
   // Returns an Arg representing the current argument, but after
   // bitwise-and'ing it with |rhs|.
   friend Arg operator&(const Arg& lhs, uint64_t rhs) {
@@ -170,8 +178,6 @@ class SANDBOX_EXPORT Arg {
 
   int num_;
   uint64_t mask_;
-
-  DISALLOW_ASSIGN(Arg);
 };
 
 // If begins a conditional result expression predicated on the
@@ -181,6 +187,9 @@ SANDBOX_EXPORT Elser If(BoolExpr cond, ResultExpr then_result);
 class SANDBOX_EXPORT Elser {
  public:
   Elser(const Elser& elser);
+
+  Elser& operator=(const Elser&) = delete;
+
   ~Elser();
 
   // ElseIf extends the conditional result expression with another
@@ -201,7 +210,6 @@ class SANDBOX_EXPORT Elser {
   friend Elser If(BoolExpr, ResultExpr);
   template <typename T>
   friend Caser<T> Switch(const Arg<T>&);
-  DISALLOW_ASSIGN(Elser);
 };
 
 // Switch begins a switch expression dispatched according to the
@@ -213,16 +221,16 @@ template <typename T>
 class SANDBOX_EXPORT Caser {
  public:
   Caser(const Caser<T>& caser) : arg_(caser.arg_), elser_(caser.elser_) {}
-  ~Caser() {}
+
+  Caser& operator=(const Caser&) = delete;
+
+  ~Caser() = default;
 
   // Case adds a single-value "case" clause to the switch.
   Caser<T> Case(T value, ResultExpr result) const;
 
   // Cases adds a multiple-value "case" clause to the switch.
-  // See also the SANDBOX_BPF_DSL_CASES macro below for a more idiomatic way
-  // of using this function.
-  template <typename... Values>
-  Caser<T> CasesImpl(ResultExpr result, const Values&... values) const;
+  Caser<T> Cases(std::initializer_list<T> values, ResultExpr result) const;
 
   // Terminate the switch with a "default" clause.
   ResultExpr Default(ResultExpr result) const;
@@ -235,19 +243,7 @@ class SANDBOX_EXPORT Caser {
 
   template <typename U>
   friend Caser<U> Switch(const Arg<U>&);
-  DISALLOW_ASSIGN(Caser);
 };
-
-// Recommended usage is to put
-//    #define CASES SANDBOX_BPF_DSL_CASES
-// near the top of the .cc file (e.g., nearby any "using" statements), then
-// use like:
-//    Switch(arg).CASES((3, 5, 7), result)...;
-#define SANDBOX_BPF_DSL_CASES(values, result) \
-  CasesImpl(result, SANDBOX_BPF_DSL_CASES_HELPER values)
-
-// Helper macro to strip parentheses.
-#define SANDBOX_BPF_DSL_CASES_HELPER(...) __VA_ARGS__
 
 // =====================================================================
 // Official API ends here.
@@ -303,18 +299,23 @@ SANDBOX_EXPORT Caser<T> Switch(const Arg<T>& arg) {
 
 template <typename T>
 Caser<T> Caser<T>::Case(T value, ResultExpr result) const {
-  return SANDBOX_BPF_DSL_CASES((value), std::move(result));
+  return Cases({value}, std::move(result));
 }
 
 template <typename T>
-template <typename... Values>
-Caser<T> Caser<T>::CasesImpl(ResultExpr result, const Values&... values) const {
+Caser<T> Caser<T>::Cases(std::initializer_list<T> values,
+                         ResultExpr result) const {
   // Theoretically we could evaluate arg_ just once and emit a more efficient
   // dispatch table, but for now we simply translate into an equivalent
   // If/ElseIf/Else chain.
 
+  BoolExpr values_expr(BoolConst(false));
+  for (T value : values) {
+    values_expr = AnyOf(values_expr, arg_ == value);
+  }
+
   return Caser<T>(arg_,
-                  elser_.ElseIf(AnyOf((arg_ == values)...), std::move(result)));
+                  elser_.ElseIf(std::move(values_expr), std::move(result)));
 }
 
 template <typename T>

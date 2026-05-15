@@ -20,6 +20,14 @@ struct StyleAlignFlags;
 class CSSAlignUtils {
  public:
   /**
+   * Map a raw StyleAlignFlags value to the used one.
+   */
+  static StyleAlignFlags UsedAlignmentForAbsPos(nsIFrame* aFrame,
+                                                StyleAlignFlags aFlags,
+                                                LogicalAxis aLogicalAxis,
+                                                WritingMode aCBWM);
+
+  /**
    * Flags to customize the behavior of AlignJustifySelf:
    */
   enum class AlignJustifyFlag {
@@ -47,6 +55,15 @@ class CSSAlignUtils {
   using AlignJustifyFlags = EnumSet<AlignJustifyFlag>;
 
   /**
+   * Additional information required to resolve anchor-center on a particular
+   * axis.
+   */
+  struct AnchorAlignInfo {
+    nscoord mAnchorStart;
+    nscoord mAnchorSize;
+  };
+
+  /**
    * This computes the aligned offset of a CSS-aligned child within its
    * alignment container. The returned offset is distance between the
    * logical "start" edge of the alignment container & the logical "start" edge
@@ -62,12 +79,14 @@ class CSSAlignUtils {
    * @param aCBSize The size of the alignment container, in its aAxis.
    * @param aRI A ReflowInput for the child.
    * @param aChildSize The child's LogicalSize (in its own writing mode).
+   * @param aAnchorInfo When specified, an inset-modified anchor start and size
+   * (in the child's writing mode) to use for anchor-center alignment.
    */
-  static nscoord AlignJustifySelf(const StyleAlignFlags& aAlignment,
-                                  LogicalAxis aAxis, AlignJustifyFlags aFlags,
-                                  nscoord aBaselineAdjust, nscoord aCBSize,
-                                  const ReflowInput& aRI,
-                                  const LogicalSize& aChildSize);
+  static nscoord AlignJustifySelf(
+      const StyleAlignFlags& aAlignment, LogicalAxis aAxis,
+      AlignJustifyFlags aFlags, nscoord aBaselineAdjust, nscoord aCBSize,
+      const ReflowInput& aRI, const LogicalSize& aChildSize,
+      const Maybe<AnchorAlignInfo>& aAnchorRect = Nothing());
 };
 
 }  // namespace mozilla

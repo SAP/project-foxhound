@@ -548,7 +548,7 @@ export var ExtensionSettingsStore = {
    *        The id of the extension for which the setting is being retrieved.
    *        Defaults to undefined, in which case the top setting is returned.
    *
-   * @returns {object} An object with properties for key, value and id.
+   * @returns {{ id: string, key: string, value: string}} An object with properties for key, value and id.
    */
   getSetting(type, key, id) {
     return getItem(type, key, id);

@@ -73,7 +73,7 @@ RefPtr<GenericNonExclusivePromise> MFMediaEngineChild::Init(
             }
 
             mIPDLSelfRef = this;
-            Unused << manager->SendPMFMediaEngineConstructor(this);
+            (void)manager->SendPMFMediaEngineConstructor(this);
 
             MediaInfoIPDL mediaInfo(
                 info.HasAudio() ? Some(info.mAudio) : Nothing(),
@@ -243,7 +243,7 @@ uint64_t MFMediaEngineChild::GetUpdatedDroppedFrames(
 }
 
 void MFMediaEngineChild::OwnerDestroyed() {
-  Unused << ManagerThread()->Dispatch(NS_NewRunnableFunction(
+  (void)ManagerThread()->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineChild::OwnerDestroy", [self = RefPtr{this}, this] {
         self->mOwner = nullptr;
         // Ask to destroy IPDL.
@@ -290,7 +290,7 @@ MFMediaEngineWrapper::~MFMediaEngineWrapper() { mEngine->OwnerDestroyed(); }
 void MFMediaEngineWrapper::Play() {
   WLOG("Play");
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(
+  (void)ManagerThread()->Dispatch(
       NS_NewRunnableFunction("MFMediaEngineWrapper::Play",
                              [engine = mEngine] { engine->SendPlay(); }));
 }
@@ -298,7 +298,7 @@ void MFMediaEngineWrapper::Play() {
 void MFMediaEngineWrapper::Pause() {
   WLOG("Pause");
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(
+  (void)ManagerThread()->Dispatch(
       NS_NewRunnableFunction("MFMediaEngineWrapper::Pause",
                              [engine = mEngine] { engine->SendPause(); }));
 }
@@ -308,7 +308,7 @@ void MFMediaEngineWrapper::Seek(const TimeUnit& aTargetTime) {
   mCurrentTimeInSecond = currentTimeInSecond;
   WLOG("Seek to %f", currentTimeInSecond);
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(NS_NewRunnableFunction(
+  (void)ManagerThread()->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineWrapper::Seek", [engine = mEngine, currentTimeInSecond] {
         engine->SendSeek(currentTimeInSecond);
       }));
@@ -316,7 +316,7 @@ void MFMediaEngineWrapper::Seek(const TimeUnit& aTargetTime) {
 
 void MFMediaEngineWrapper::Shutdown() {
   WLOG("Shutdown");
-  Unused << ManagerThread()->Dispatch(
+  (void)ManagerThread()->Dispatch(
       NS_NewRunnableFunction("MFMediaEngineWrapper::Shutdown",
                              [engine = mEngine] { engine->Shutdown(); }));
 }
@@ -324,7 +324,7 @@ void MFMediaEngineWrapper::Shutdown() {
 void MFMediaEngineWrapper::SetPlaybackRate(double aPlaybackRate) {
   WLOG("Set playback rate %f", aPlaybackRate);
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(
+  (void)ManagerThread()->Dispatch(
       NS_NewRunnableFunction("MFMediaEngineWrapper::SetPlaybackRate",
                              [engine = mEngine, aPlaybackRate] {
                                engine->SendSetPlaybackRate(aPlaybackRate);
@@ -334,7 +334,7 @@ void MFMediaEngineWrapper::SetPlaybackRate(double aPlaybackRate) {
 void MFMediaEngineWrapper::SetVolume(double aVolume) {
   WLOG("Set volume %f", aVolume);
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(NS_NewRunnableFunction(
+  (void)ManagerThread()->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineWrapper::SetVolume",
       [engine = mEngine, aVolume] { engine->SendSetVolume(aVolume); }));
 }
@@ -342,7 +342,7 @@ void MFMediaEngineWrapper::SetVolume(double aVolume) {
 void MFMediaEngineWrapper::SetLooping(bool aLooping) {
   WLOG("Set looping %d", aLooping);
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(NS_NewRunnableFunction(
+  (void)ManagerThread()->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineWrapper::SetLooping",
       [engine = mEngine, aLooping] { engine->SendSetLooping(aLooping); }));
 }
@@ -354,7 +354,7 @@ void MFMediaEngineWrapper::SetPreservesPitch(bool aPreservesPitch) {
 void MFMediaEngineWrapper::NotifyEndOfStream(TrackInfo::TrackType aType) {
   WLOG("NotifyEndOfStream, type=%s", TrackTypeToStr(aType));
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(NS_NewRunnableFunction(
+  (void)ManagerThread()->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineWrapper::NotifyEndOfStream",
       [engine = mEngine, aType] { engine->SendNotifyEndOfStream(aType); }));
 }
@@ -370,7 +370,7 @@ bool MFMediaEngineWrapper::SetCDMProxy(CDMProxy* aProxy) {
   const uint64_t proxyId = proxy->GetCDMProxyId();
   WLOG("SetCDMProxy, CDM-Id=%" PRIu64, proxyId);
   MOZ_ASSERT(IsInited());
-  Unused << ManagerThread()->Dispatch(NS_NewRunnableFunction(
+  (void)ManagerThread()->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineWrapper::SetCDMProxy",
       [engine = mEngine, proxy = RefPtr{aProxy}, proxyId] {
         engine->SendSetCDMProxyId(proxyId);

@@ -16,8 +16,12 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/transport/stun.h"
+#include "p2p/dtls/dtls_utils.h"
+#include "rtc_base/byte_buffer.h"
+#include "rtc_base/checks.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -52,57 +56,105 @@ const std::vector<uint8_t> dtls_flight4 = {
     0x00, 0x00, 0x00, 0x00, 0x00};
 
 const std::vector<uint8_t> empty = {};
+
+std::vector<uint32_t> FromAckAttribute(webrtc::ArrayView<uint8_t> attr) {
+  webrtc::ByteBufferReader ack_reader(attr);
+  std::vector<uint32_t> values;
+  uint32_t value;
+  while (ack_reader.ReadUInt32(&value)) {
+    values.push_back(value);
+  }
+  RTC_DCHECK_EQ(ack_reader.Length(), 0);
+  return values;
+}
+
+std::vector<uint8_t> FakeDtlsPacket(uint16_t packet_number) {
+  auto packet = dtls_flight1;
+  packet[17] = static_cast<uint8_t>(packet_number >> 8);
+  packet[18] = static_cast<uint8_t>(packet_number & 255);
+  return packet;
+}
+
+std::unique_ptr<webrtc::StunByteStringAttribute> WrapInStun(
+    webrtc::IceAttributeType type,
+    absl::string_view data) {
+  return std::make_unique<webrtc::StunByteStringAttribute>(type, data);
+}
+
+std::unique_ptr<webrtc::StunByteStringAttribute> WrapInStun(
+    webrtc::IceAttributeType type,
+    const std::vector<uint8_t>& data) {
+  return std::make_unique<webrtc::StunByteStringAttribute>(type, data.data(),
+                                                           data.size());
+}
+
+std::unique_ptr<webrtc::StunByteStringAttribute> WrapInStun(
+    webrtc::IceAttributeType type,
+    const std::vector<uint32_t>& data) {
+  return std::make_unique<webrtc::StunByteStringAttribute>(type, data);
+}
+
 }  // namespace
 
-namespace cricket {
+namespace webrtc {
 
+using ::testing::ElementsAreArray;
 using ::testing::MockFunction;
 using State = DtlsStunPiggybackController::State;
 
 class DtlsStunPiggybackControllerTest : public ::testing::Test {
  protected:
   DtlsStunPiggybackControllerTest()
-      : client_([](rtc::ArrayView<const uint8_t> data) {}),
-        server_([](rtc::ArrayView<const uint8_t> data) {}) {}
+      : client_(
+            [this](ArrayView<const uint8_t> data) { ClientPacketSink(data); }),
+        server_([this](ArrayView<const uint8_t> data) {
+          ServerPacketSink(data);
+        }) {}
 
-  void SendClientToServer(const std::vector<uint8_t> data,
+  void SendClientToServer(const std::vector<uint8_t>& packet,
                           StunMessageType type) {
-    if (!data.empty()) {
-      client_.CapturePacket(data);
+    if (!packet.empty()) {
+      client_.CapturePacket(packet);
+      client_.Flush();
     } else {
       client_.ClearCachedPacketForTesting();
     }
     std::unique_ptr<StunByteStringAttribute> attr_data;
-    if (client_.GetDataToPiggyback(type)) {
-      attr_data = std::make_unique<StunByteStringAttribute>(
-          STUN_ATTR_META_DTLS_IN_STUN, *client_.GetDataToPiggyback(type));
+    std::optional<ArrayView<uint8_t>> view_data;
+    if (auto data = client_.GetDataToPiggyback(type)) {
+      attr_data = WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, *data);
+      view_data = attr_data->array_view();
     }
     std::unique_ptr<StunByteStringAttribute> attr_ack;
-    if (client_.GetAckToPiggyback(type)) {
-      attr_ack = std::make_unique<StunByteStringAttribute>(
-          STUN_ATTR_META_DTLS_IN_STUN_ACK, *client_.GetAckToPiggyback(type));
+    std::optional<std::vector<uint32_t>> view_acks;
+    if (auto ack = client_.GetAckToPiggyback(type)) {
+      attr_ack = WrapInStun(STUN_ATTR_META_DTLS_IN_STUN_ACK, *ack);
+      view_acks = FromAckAttribute(attr_ack->array_view());
     }
-    server_.ReportDataPiggybacked(attr_data.get(), attr_ack.get());
+    server_.ReportDataPiggybacked(view_data, view_acks);
   }
-  void SendServerToClient(const std::vector<uint8_t> data,
+  void SendServerToClient(const std::vector<uint8_t>& packet,
                           StunMessageType type) {
-    if (!data.empty()) {
-      server_.CapturePacket(data);
+    if (!packet.empty()) {
+      server_.CapturePacket(packet);
+      server_.Flush();
     } else {
       server_.ClearCachedPacketForTesting();
     }
     std::unique_ptr<StunByteStringAttribute> attr_data;
-    if (server_.GetDataToPiggyback(type)) {
-      attr_data = std::make_unique<StunByteStringAttribute>(
-          STUN_ATTR_META_DTLS_IN_STUN, *server_.GetDataToPiggyback(type));
+    std::optional<ArrayView<uint8_t>> view_data;
+    if (auto data = server_.GetDataToPiggyback(type)) {
+      attr_data = WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, *data);
+      view_data = attr_data->array_view();
     }
     std::unique_ptr<StunByteStringAttribute> attr_ack;
-    if (server_.GetAckToPiggyback(type)) {
-      attr_ack = std::make_unique<StunByteStringAttribute>(
-          STUN_ATTR_META_DTLS_IN_STUN_ACK, *server_.GetAckToPiggyback(type));
+    std::optional<std::vector<uint32_t>> view_acks;
+    if (auto ack = server_.GetAckToPiggyback(type)) {
+      attr_ack = WrapInStun(STUN_ATTR_META_DTLS_IN_STUN_ACK, *ack);
+      view_acks = FromAckAttribute(attr_ack->array_view());
     }
-    client_.ReportDataPiggybacked(attr_data.get(), attr_ack.get());
-    if (data == dtls_flight4) {
+    client_.ReportDataPiggybacked(view_data, view_acks);
+    if (packet == dtls_flight4) {
       // After sending flight 4, the server handshake is complete.
       server_.SetDtlsHandshakeComplete(/*is_client=*/false,
                                        /*is_dtls13=*/false);
@@ -113,12 +165,15 @@ class DtlsStunPiggybackControllerTest : public ::testing::Test {
 
   void DisableSupport(DtlsStunPiggybackController& client_or_server) {
     ASSERT_EQ(client_or_server.state(), State::TENTATIVE);
-    client_or_server.ReportDataPiggybacked(nullptr, nullptr);
+    client_or_server.ReportDataPiggybacked(std::nullopt, std::nullopt);
     ASSERT_EQ(client_or_server.state(), State::OFF);
   }
 
   DtlsStunPiggybackController client_;
   DtlsStunPiggybackController server_;
+
+  MOCK_METHOD(void, ClientPacketSink, (ArrayView<const uint8_t>));
+  MOCK_METHOD(void, ServerPacketSink, (ArrayView<const uint8_t>));
 };
 
 TEST_F(DtlsStunPiggybackControllerTest, BasicHandshake) {
@@ -251,24 +306,32 @@ TEST_F(DtlsStunPiggybackControllerTest,
 }
 
 TEST_F(DtlsStunPiggybackControllerTest, BasicHandshakeAckData) {
-  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_RESPONSE), "");
-  EXPECT_EQ(client_.GetAckToPiggyback(STUN_BINDING_REQUEST), "");
+  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_RESPONSE),
+            std::vector<uint32_t>({}));
+  EXPECT_EQ(client_.GetAckToPiggyback(STUN_BINDING_RESPONSE),
+            std::vector<uint32_t>({}));
 
   // Flight 1+2
   SendClientToServer(dtls_flight1, STUN_BINDING_REQUEST);
   SendServerToClient(dtls_flight2, STUN_BINDING_RESPONSE);
-  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
-            std::string("\x12\x34", 2));
-  EXPECT_EQ(client_.GetAckToPiggyback(STUN_BINDING_RESPONSE),
-            std::string("\x43\x21", 2));
+  EXPECT_THAT(*server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
+              ElementsAreArray({ComputeDtlsPacketHash(dtls_flight1)}));
+  EXPECT_THAT(*client_.GetAckToPiggyback(STUN_BINDING_RESPONSE),
+              ElementsAreArray({ComputeDtlsPacketHash(dtls_flight2)}));
 
   // Flight 3+4
   SendClientToServer(dtls_flight3, STUN_BINDING_REQUEST);
   SendServerToClient(dtls_flight4, STUN_BINDING_RESPONSE);
-  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_RESPONSE),
-            std::string("\x12\x34\x44\x44", 4));
-  EXPECT_EQ(client_.GetAckToPiggyback(STUN_BINDING_REQUEST),
-            std::string("\x43\x21\x54\x86", 4));
+  EXPECT_THAT(*server_.GetAckToPiggyback(STUN_BINDING_RESPONSE),
+              ElementsAreArray({
+                  ComputeDtlsPacketHash(dtls_flight1),
+                  ComputeDtlsPacketHash(dtls_flight3),
+              }));
+  EXPECT_THAT(*client_.GetAckToPiggyback(STUN_BINDING_REQUEST),
+              ElementsAreArray({
+                  ComputeDtlsPacketHash(dtls_flight2),
+                  ComputeDtlsPacketHash(dtls_flight4),
+              }));
 
   // Post-handshake ACK
   SendServerToClient(empty, STUN_BINDING_REQUEST);
@@ -282,16 +345,119 @@ TEST_F(DtlsStunPiggybackControllerTest, BasicHandshakeAckData) {
 TEST_F(DtlsStunPiggybackControllerTest, AckDataNoDuplicates) {
   // Flight 1+2
   SendClientToServer(dtls_flight1, STUN_BINDING_REQUEST);
-  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
-            std::string("\x12\x34", 2));
+  EXPECT_THAT(*server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
+              ElementsAreArray({ComputeDtlsPacketHash(dtls_flight1)}));
   SendClientToServer(dtls_flight3, STUN_BINDING_REQUEST);
-  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
-            std::string("\x12\x34\x44\x44", 4));
+  EXPECT_THAT(*server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
+              ElementsAreArray({
+                  ComputeDtlsPacketHash(dtls_flight1),
+                  ComputeDtlsPacketHash(dtls_flight3),
+              }));
 
   // Receive Flight 1 again, no change expected.
   SendClientToServer(dtls_flight1, STUN_BINDING_REQUEST);
-  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
-            std::string("\x12\x34\x44\x44", 4));
+  EXPECT_THAT(*server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
+              ElementsAreArray({
+                  ComputeDtlsPacketHash(dtls_flight1),
+                  ComputeDtlsPacketHash(dtls_flight3),
+              }));
 }
 
-}  // namespace cricket
+TEST_F(DtlsStunPiggybackControllerTest, IgnoresNonDtlsData) {
+  std::vector<uint8_t> ascii = {0x64, 0x72, 0x6f, 0x70, 0x6d, 0x65};
+
+  EXPECT_CALL(*this, ServerPacketSink).Times(0);
+  server_.ReportDataPiggybacked(
+      WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, ascii)->array_view(),
+      std::nullopt);
+  EXPECT_EQ(0, server_.GetCountOfReceivedData());
+}
+
+TEST_F(DtlsStunPiggybackControllerTest, DontSendAckedPackets) {
+  server_.CapturePacket(dtls_flight1);
+  server_.Flush();
+  EXPECT_TRUE(server_.GetDataToPiggyback(STUN_BINDING_REQUEST).has_value());
+  server_.ReportDataPiggybacked(
+      std::nullopt,
+      std::vector<uint32_t>({ComputeDtlsPacketHash(dtls_flight1)}));
+  // No unacked packet exists.
+  EXPECT_FALSE(server_.GetDataToPiggyback(STUN_BINDING_REQUEST).has_value());
+}
+
+TEST_F(DtlsStunPiggybackControllerTest, LimitAckSize) {
+  std::vector<uint8_t> dtls_flight5 = FakeDtlsPacket(0x5487);
+
+  server_.ReportDataPiggybacked(
+      WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, dtls_flight1)->array_view(),
+      std::nullopt);
+  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST)->size(), 1u);
+  server_.ReportDataPiggybacked(
+      WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, dtls_flight2)->array_view(),
+      std::nullopt);
+  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST)->size(), 2u);
+  server_.ReportDataPiggybacked(
+      WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, dtls_flight3)->array_view(),
+      std::nullopt);
+  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST)->size(), 3u);
+  server_.ReportDataPiggybacked(
+      WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, dtls_flight4)->array_view(),
+      std::nullopt);
+  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST)->size(), 4u);
+
+  // Limit size of ack so that it does not grow unbounded.
+  server_.ReportDataPiggybacked(
+      WrapInStun(STUN_ATTR_META_DTLS_IN_STUN, dtls_flight5)->array_view(),
+      std::nullopt);
+  EXPECT_EQ(server_.GetAckToPiggyback(STUN_BINDING_REQUEST)->size(),
+            DtlsStunPiggybackController::kMaxAckSize);
+  EXPECT_THAT(*server_.GetAckToPiggyback(STUN_BINDING_REQUEST),
+              ElementsAreArray({
+                  ComputeDtlsPacketHash(dtls_flight2),
+                  ComputeDtlsPacketHash(dtls_flight3),
+                  ComputeDtlsPacketHash(dtls_flight4),
+                  ComputeDtlsPacketHash(dtls_flight5),
+              }));
+}
+
+TEST_F(DtlsStunPiggybackControllerTest, MultiPacketRoundRobin) {
+  // Let's pretend that a flight is 3 packets...
+  server_.CapturePacket(dtls_flight1);
+  server_.CapturePacket(dtls_flight2);
+  server_.CapturePacket(dtls_flight3);
+  server_.Flush();
+  EXPECT_EQ(server_.GetDataToPiggyback(STUN_BINDING_REQUEST),
+            std::string(dtls_flight1.begin(), dtls_flight1.end()));
+  EXPECT_EQ(server_.GetDataToPiggyback(STUN_BINDING_REQUEST),
+            std::string(dtls_flight2.begin(), dtls_flight2.end()));
+  EXPECT_EQ(server_.GetDataToPiggyback(STUN_BINDING_REQUEST),
+            std::string(dtls_flight3.begin(), dtls_flight3.end()));
+
+  server_.ReportDataPiggybacked(
+      std::nullopt,
+      std::vector<uint32_t>({ComputeDtlsPacketHash(dtls_flight1)}));
+
+  EXPECT_EQ(server_.GetDataToPiggyback(STUN_BINDING_REQUEST),
+            std::string(dtls_flight2.begin(), dtls_flight2.end()));
+  EXPECT_EQ(server_.GetDataToPiggyback(STUN_BINDING_REQUEST),
+            std::string(dtls_flight3.begin(), dtls_flight3.end()));
+
+  server_.ReportDataPiggybacked(
+      std::nullopt,
+      std::vector<uint32_t>({ComputeDtlsPacketHash(dtls_flight3)}));
+
+  EXPECT_EQ(server_.GetDataToPiggyback(STUN_BINDING_REQUEST),
+            std::string(dtls_flight2.begin(), dtls_flight2.end()));
+  EXPECT_EQ(server_.GetDataToPiggyback(STUN_BINDING_REQUEST),
+            std::string(dtls_flight2.begin(), dtls_flight2.end()));
+}
+
+TEST_F(DtlsStunPiggybackControllerTest, DuplicateAck) {
+  server_.CapturePacket(dtls_flight1);
+  server_.Flush();
+  server_.ReportDataPiggybacked(
+      std::nullopt,
+      std::vector<uint32_t>({ComputeDtlsPacketHash(dtls_flight1),
+                             ComputeDtlsPacketHash(dtls_flight1)}));
+}
+
+}  // namespace webrtc

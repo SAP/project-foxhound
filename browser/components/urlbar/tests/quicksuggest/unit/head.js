@@ -5,13 +5,16 @@
 /* eslint-disable jsdoc/require-param */
 
 ChromeUtils.defineESModuleGetters(this, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  Preferences: "resource://gre/modules/Preferences.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
-  UrlbarProviderAutofill: "resource:///modules/UrlbarProviderAutofill.sys.mjs",
+  UrlbarProviderAutofill:
+    "moz-src:///browser/components/urlbar/UrlbarProviderAutofill.sys.mjs",
   UrlbarProviderQuickSuggest:
-    "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderQuickSuggest.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
 
 add_setup(async function setUpQuickSuggestXpcshellTest() {
@@ -23,109 +26,95 @@ add_setup(async function setUpQuickSuggestXpcshellTest() {
 });
 
 /**
- * Tests quick suggest prefs migrations.
+ * Sets up a test so it can use `doMigrateTest`. The app's region and locale
+ * will be set to US and en-US. Use `QuickSuggestTestUtils.withRegionAndLocale`
+ * or `setRegionAndLocale` if you need to test migration in a different region
+ * or locale.
+ */
+async function setUpMigrateTest() {
+  await UrlbarTestUtils.initNimbusFeature();
+  await QuickSuggestTestUtils.setRegionAndLocale({
+    region: "US",
+    locale: "en-US",
+  });
+}
+
+/**
+ * Tests a single Suggest prefs migration, from one version to the next. Call
+ * `setUpMigrateTest` in your setup task before using this. To test migration in
+ * a region and locale other than US and en-US, wrap your `doMigrateTest` call
+ * in `QuickSuggestTestUtils.withRegionAndLocale`.
  *
  * @param {object} options
  *   The options object.
- * @param {object} options.testOverrides
- *   An object that modifies how migration is performed. It has the following
- *   properties, and all are optional:
- *
- *   {number} migrationVersion
- *     Migration will stop at this version, so for example you can test
- *     migration only up to version 1 even when the current actual version is
- *     larger than 1.
- *   {object} defaultPrefs
- *     An object that maps pref names (relative to `browser.urlbar`) to
- *     default-branch values. These should be the default prefs for the given
- *     `migrationVersion` and will be set as defaults before migration occurs.
- *
- * @param {object} options.expectedPrefs
- *   The expected prefs after migration: `{ defaultBranch, userBranch }`
- *   Pref names should be relative to `browser.urlbar`.
- * @param {boolean} options.shouldEnable
- *   Whether Suggest should be enabled when migration occurs.
- * @param {object} [options.initialUserBranch]
- *   Prefs to set on the user branch before migration ocurs. Use these to
- *   simulate user actions like disabling prefs or opting in or out of the
- *   online modal. Pref names should be relative to `browser.urlbar`.
+ * @param {number} options.toVersion
+ *   The version to test. Migration from `toVersion - 1` to `toVersion` will be
+ *   performed.
+ * @param {object} [options.preMigrationUserPrefs]
+ *   Prefs to set on the user branch before migration. An object that maps pref
+ *   names relative to `browser.urlbar.` to values.
+ * @param {object} [options.expectedPostMigrationUserPrefs]
+ *   Prefs that are expected to be set on the user branch after migration. An
+ *   object that maps pref names relative to `browser.urlbar.` to values. If a
+ *   pref is expected to be set on the user branch before migration but cleared
+ *   after migration, set its value to `null`.
  */
 async function doMigrateTest({
-  testOverrides,
-  expectedPrefs,
-  shouldEnable = true,
-  initialUserBranch = {},
+  toVersion,
+  preMigrationUserPrefs = {},
+  expectedPostMigrationUserPrefs = {},
 }) {
   info(
     "Testing migration: " +
       JSON.stringify({
-        testOverrides,
-        initialUserBranch,
-        shouldEnable,
-        expectedPrefs,
+        toVersion,
+        preMigrationUserPrefs,
+        expectedPostMigrationUserPrefs,
       })
   );
 
-  function setPref(branch, name, value) {
-    switch (typeof value) {
-      case "boolean":
-        branch.setBoolPref(name, value);
-        break;
-      case "number":
-        branch.setIntPref(name, value);
-        break;
-      case "string":
-        branch.setCharPref(name, value);
-        break;
-      default:
-        Assert.ok(
-          false,
-          `Pref type not handled for setPref: ${name} = ${value}`
-        );
-        break;
+  // Prefs whose user-branch values we should always make sure to check.
+  // Includes obsolete prefs since they're relevant to some older migrations.
+  let userPrefsToAlwaysCheck = [
+    "quicksuggest.dataCollection.enabled",
+    "quicksuggest.enabled",
+    "suggest.quicksuggest",
+    "suggest.quicksuggest.nonsponsored",
+    "suggest.quicksuggest.sponsored",
+  ];
+
+  let userBranch = new Preferences({
+    branch: "browser.urlbar.",
+    defaultBranch: false,
+  });
+
+  // Set the last-seen migration version to `toVersion - 1`.
+  if (toVersion == 1) {
+    userBranch.reset("quicksuggest.migrationVersion");
+  } else {
+    userBranch.set("quicksuggest.migrationVersion", toVersion - 1);
+  }
+
+  // Set pre-migration user prefs.
+  for (let [name, value] of Object.entries(preMigrationUserPrefs)) {
+    userBranch.set(name, value);
+  }
+
+  // Record values for prefs in `userPrefsToAlwaysCheck` that weren't just set
+  // above, so that we can use them later.
+  for (let name of userPrefsToAlwaysCheck) {
+    if (!preMigrationUserPrefs.hasOwnProperty(name)) {
+      preMigrationUserPrefs[name] = userBranch.isSet(name)
+        ? userBranch.get(name)
+        : null;
     }
   }
 
-  function getPref(branch, name) {
-    let type = typeof UrlbarPrefs.get(name);
-    switch (type) {
-      case "boolean":
-        return branch.getBoolPref(name);
-      case "number":
-        return branch.getIntPref(name);
-      case "string":
-        return branch.getCharPref(name);
-      default:
-        Assert.ok(false, `Pref type not handled for getPref: ${name} ${type}`);
-        break;
-    }
-    return null;
-  }
-
-  let defaultBranch = Services.prefs.getDefaultBranch("browser.urlbar.");
-  let userBranch = Services.prefs.getBranch("browser.urlbar.");
-
-  // Set initial prefs. `initialDefaultBranch` are firefox.js values, i.e.,
-  // defaults immediately after startup, before Suggest init and migration.
-  UrlbarPrefs.clear("quicksuggest.migrationVersion");
-  let initialDefaultBranch = {
-    "suggest.quicksuggest.nonsponsored": false,
-    "suggest.quicksuggest.sponsored": false,
-    "quicksuggest.dataCollection.enabled": false,
-  };
-  for (let name of Object.keys(initialDefaultBranch)) {
-    userBranch.clearUserPref(name);
-  }
-  for (let [branch, prefs] of [
-    [defaultBranch, initialDefaultBranch],
-    [userBranch, initialUserBranch],
-  ]) {
-    for (let [name, value] of Object.entries(prefs)) {
-      if (value !== undefined) {
-        setPref(branch, name, value);
-      }
-    }
-  }
+  // The entire set of prefs that should be checked after migration.
+  let userPrefsToCheckPostMigration = new Set([
+    ...Object.keys(preMigrationUserPrefs),
+    ...Object.keys(expectedPostMigrationUserPrefs),
+  ]);
 
   // Reinitialize Suggest and check prefs twice. The first time the migration
   // should happen, and the second time the migration should not happen and
@@ -133,92 +122,47 @@ async function doMigrateTest({
   for (let i = 0; i < 2; i++) {
     info(`Reinitializing Suggest, i=${i}`);
 
-    // Reinitialize Suggest.
-    await QuickSuggest._test_reinit({
-      ...testOverrides,
-      region: shouldEnable ? "US" : "XX",
-      locale: shouldEnable ? "en-US" : "xx-XX",
+    // Reinitialize Suggest, which includes migration.
+    await QuickSuggest._test_reset({
+      migrationVersion: toVersion,
     });
 
-    // Check expected pref values. Store expected effective values as we go so
-    // we can check them afterward. For a given pref, the expected effective
-    // value is the user value, or if there's not a user value, the default
-    // value.
-    let expectedEffectivePrefs = {};
-    let {
-      defaultBranch: expectedDefaultBranch,
-      userBranch: expectedUserBranch,
-    } = expectedPrefs;
-    expectedDefaultBranch = expectedDefaultBranch || {};
-    expectedUserBranch = expectedUserBranch || {};
-    for (let [branch, prefs, branchType] of [
-      [defaultBranch, expectedDefaultBranch, "default"],
-      [userBranch, expectedUserBranch, "user"],
-    ]) {
-      let entries = Object.entries(prefs);
-      if (!entries.length) {
-        continue;
-      }
-
-      info(
-        `Checking expected prefs on ${branchType} branch after Suggest init`
-      );
-      for (let [name, value] of entries) {
-        expectedEffectivePrefs[name] = value;
-        if (branch == userBranch) {
-          Assert.ok(
-            userBranch.prefHasUserValue(name),
-            `Pref ${name} is on user branch`
-          );
-        }
-        Assert.equal(
-          getPref(branch, name),
-          value,
-          `Pref ${name} value on ${branchType} branch`
-        );
-      }
-    }
-
-    info(
-      `Making sure prefs on the default branch without expected user-branch values are not on the user branch`
-    );
-    for (let name of Object.keys(initialDefaultBranch)) {
-      if (!expectedUserBranch.hasOwnProperty(name)) {
+    for (let name of userPrefsToCheckPostMigration) {
+      // The expected value is the expected post-migration value, if any;
+      // otherwise it's the pre-migration value.
+      let expectedValue = expectedPostMigrationUserPrefs.hasOwnProperty(name)
+        ? expectedPostMigrationUserPrefs[name]
+        : preMigrationUserPrefs[name];
+      if (expectedValue === null) {
         Assert.ok(
-          !userBranch.prefHasUserValue(name),
-          `Pref ${name} is not on user branch`
+          !userBranch.isSet(name),
+          "Pref should not have a user value after migration: " + name
+        );
+      } else {
+        Assert.ok(
+          userBranch.isSet(name),
+          "Pref should have a user value after migration: " + name
+        );
+        Assert.equal(
+          userBranch.get(name),
+          expectedValue,
+          "Pref should have been set to the expected value after migration: " +
+            name
         );
       }
     }
 
-    info(`Checking expected effective prefs`);
-    for (let [name, value] of Object.entries(expectedEffectivePrefs)) {
-      Assert.equal(
-        UrlbarPrefs.get(name),
-        value,
-        `Pref ${name} effective value`
-      );
-    }
-
-    let currentVersion =
-      testOverrides?.migrationVersion === undefined
-        ? QuickSuggest.MIGRATION_VERSION
-        : testOverrides.migrationVersion;
     Assert.equal(
-      UrlbarPrefs.get("quicksuggest.migrationVersion"),
-      currentVersion,
-      "quicksuggest.migrationVersion is correct after migration"
+      userBranch.get("quicksuggest.migrationVersion"),
+      toVersion,
+      "quicksuggest.migrationVersion should be updated after migration"
     );
   }
 
   // Clean up.
-  UrlbarPrefs.clear("quicksuggest.migrationVersion");
-  let userBranchNames = [
-    ...Object.keys(initialUserBranch),
-    ...Object.keys(expectedPrefs.userBranch || {}),
-  ];
-  for (let name of userBranchNames) {
-    userBranch.clearUserPref(name);
+  userBranch.reset("quicksuggest.migrationVersion");
+  for (let name of userPrefsToCheckPostMigration) {
+    userBranch.reset(name);
   }
 }
 
@@ -244,6 +188,8 @@ async function doMigrateTest({
  *   Array of objects: `{ query, expectedResults }`
  *   For each object, the test will perform a search with `query` as the search
  *   string. The query should always match `expectedResults`.
+ * @param {string[]} [options.providers]
+ *   The providers to query.
  */
 async function doDismissOneTest({
   feature,
@@ -251,6 +197,7 @@ async function doDismissOneTest({
   command,
   queriesForDismissals,
   queriesForOthers,
+  providers = [UrlbarProviderQuickSuggest.name],
 }) {
   await QuickSuggest.clearDismissedSuggestions();
   await QuickSuggestTestUtils.forceSync();
@@ -263,10 +210,16 @@ async function doDismissOneTest({
     "quicksuggest-dismissals-changed"
   );
 
+  let actualResult = await getActualResult({
+    providers,
+    query: queriesForDismissals[0].query,
+    expectedResult: result,
+  });
+
   triggerCommand({
-    result,
     command,
     feature,
+    result: actualResult,
     expectedCountsByCall: {
       removeResult: 1,
     },
@@ -280,7 +233,7 @@ async function doDismissOneTest({
     "canClearDismissedSuggestions should return true after triggering command"
   );
   Assert.ok(
-    await QuickSuggest.isResultDismissed(result),
+    await QuickSuggest.isResultDismissed(actualResult),
     "The result should be dismissed"
   );
 
@@ -288,7 +241,7 @@ async function doDismissOneTest({
     info("Doing search for dismissed suggestions: " + JSON.stringify(query));
     await check_results({
       context: createContext(query, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers,
         isPrivate: false,
       }),
       matches: [],
@@ -301,7 +254,7 @@ async function doDismissOneTest({
     );
     await check_results({
       context: createContext(query, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers,
         isPrivate: false,
       }),
       matches: expectedResults,
@@ -329,7 +282,7 @@ async function doDismissOneTest({
     info("Doing search after clearing dismissals: " + JSON.stringify(query));
     await check_results({
       context: createContext(query, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers,
         isPrivate: false,
       }),
       matches: expectedResults,
@@ -352,8 +305,8 @@ async function doDismissOneTest({
  *   suggestion type.
  * @param {string} options.pref
  *   The name of the user-controlled pref (relative to `browser.urlbar.`) that
- *   controls the suggestion type. Should be the same as
- *   `feature.primaryUserControlledPreference`.
+ *   controls the suggestion type. Should be included in
+ *   `feature.primaryUserControlledPreferences`.
  * @param {Array} options.queries
  *   Array of objects: `{ query, expectedResults }`
  *   For each object, the test will perform a search with `query` as the search
@@ -361,8 +314,17 @@ async function doDismissOneTest({
  *   results. After clearing dismissals, the query should match the results in
  *   `expectedResults`. If `expectedResults` is omitted, `[result]` will be
  *   used.
+ * @param {string[]} [options.providers]
+ *   The providers to query.
  */
-async function doDismissAllTest({ feature, result, command, pref, queries }) {
+async function doDismissAllTest({
+  feature,
+  result,
+  command,
+  pref,
+  queries,
+  providers = [UrlbarProviderQuickSuggest.name],
+}) {
   await QuickSuggest.clearDismissedSuggestions();
   await QuickSuggestTestUtils.forceSync();
   Assert.ok(
@@ -374,10 +336,16 @@ async function doDismissAllTest({ feature, result, command, pref, queries }) {
     "quicksuggest-dismissals-changed"
   );
 
+  let actualResult = await getActualResult({
+    providers,
+    query: queries[0].query,
+    expectedResult: result,
+  });
+
   triggerCommand({
-    result,
     command,
     feature,
+    result: actualResult,
     expectedCountsByCall: {
       removeResult: 1,
     },
@@ -399,7 +367,7 @@ async function doDismissAllTest({ feature, result, command, pref, queries }) {
     info("Doing search after triggering command: " + JSON.stringify(query));
     await check_results({
       context: createContext(query, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers,
         isPrivate: false,
       }),
       matches: [],
@@ -434,7 +402,7 @@ async function doDismissAllTest({ feature, result, command, pref, queries }) {
     info("Doing search after clearing dismissals: " + JSON.stringify(query));
     await check_results({
       context: createContext(query, {
-        providers: [UrlbarProviderQuickSuggest.name],
+        providers,
         isPrivate: false,
       }),
       matches: expectedResults,
@@ -443,251 +411,174 @@ async function doDismissAllTest({ feature, result, command, pref, queries }) {
 }
 
 /**
- * Does some "show less frequently" tests where the cap is set in remote
- * settings and Nimbus. See `doOneShowLessFrequentlyTest()`. This function
- * assumes the matching behavior implemented by the given `SuggestFeature` is
- * based on matching prefixes of the given keyword starting at the first word.
- * It also assumes the `SuggestFeature` provides suggestions in remote settings.
+ * Does a search, asserts an actual result exists that matches the given result,
+ * and returns it.
  *
  * @param {object} options
  *   Options object.
- * @param {SuggestFeature} options.feature
- *   The feature that provides the suggestion matched by the searches.
- * @param {*} options.expectedResult
- *   The expected result that should be matched, for searches that are expected
- *   to match a result. Can also be a function; it's passed the current search
- *   string and it should return the expected result.
- * @param {string} options.showLessFrequentlyCountPref
- *   The name of the pref that stores the "show less frequently" count being
- *   tested.
- * @param {string} options.nimbusCapVariable
- *   The name of the Nimbus variable that stores the "show less frequently" cap
- *   being tested.
- * @param {object} options.keyword
- *   The primary keyword to use during the test.
- * @param {number} options.keywordBaseIndex
- *   The index in `keyword` to base substring checks around. This function will
- *   test substrings starting at the beginning of keyword and ending at the
- *   following indexes: one index before `keywordBaseIndex`,
- *   `keywordBaseIndex`, `keywordBaseIndex` + 1, `keywordBaseIndex` + 2, and
- *   `keywordBaseIndex` + 3.
+ * @param {SuggestFeature} options.query
+ *   The search string.
+ * @param {UrlbarResult} options.expectedResult
+ *   The expected result.
+ * @param {string[]} [options.providers]
+ *   The providers to query.
  */
-async function doShowLessFrequentlyTests({
-  feature,
+async function getActualResult({
+  query,
   expectedResult,
-  showLessFrequentlyCountPref,
-  nimbusCapVariable,
-  keyword,
-  keywordBaseIndex = keyword.indexOf(" "),
+  providers = [UrlbarProviderQuickSuggest.name],
 }) {
-  // Do some sanity checks on the keyword. Any checks that fail are errors in
-  // the test.
-  if (keywordBaseIndex <= 0) {
-    throw new Error(
-      "keywordBaseIndex must be > 0, but it's " + keywordBaseIndex
-    );
-  }
-  if (keyword.length < keywordBaseIndex + 3) {
-    throw new Error(
-      "keyword must have at least two chars after keywordBaseIndex"
-    );
-  }
-
-  let tests = [
-    {
-      showLessFrequentlyCount: 0,
-      canShowLessFrequently: true,
-      newSearches: {
-        [keyword.substring(0, keywordBaseIndex - 1)]: false,
-        [keyword.substring(0, keywordBaseIndex)]: true,
-        [keyword.substring(0, keywordBaseIndex + 1)]: true,
-        [keyword.substring(0, keywordBaseIndex + 2)]: true,
-        [keyword.substring(0, keywordBaseIndex + 3)]: true,
-      },
-    },
-    {
-      showLessFrequentlyCount: 1,
-      canShowLessFrequently: true,
-      newSearches: {
-        [keyword.substring(0, keywordBaseIndex)]: false,
-      },
-    },
-    {
-      showLessFrequentlyCount: 2,
-      canShowLessFrequently: true,
-      newSearches: {
-        [keyword.substring(0, keywordBaseIndex + 1)]: false,
-      },
-    },
-    {
-      showLessFrequentlyCount: 3,
-      canShowLessFrequently: false,
-      newSearches: {
-        [keyword.substring(0, keywordBaseIndex + 2)]: false,
-      },
-    },
-    {
-      showLessFrequentlyCount: 3,
-      canShowLessFrequently: false,
-      newSearches: {},
-    },
-  ];
-
-  info("Testing 'show less frequently' with cap in remote settings");
-  await doOneShowLessFrequentlyTest({
-    tests,
-    feature,
-    expectedResult,
-    showLessFrequentlyCountPref,
-    rs: {
-      show_less_frequently_cap: 3,
-    },
+  info("Doing search to get an actual result: " + JSON.stringify(query));
+  let context = createContext(query, {
+    providers,
+    isPrivate: false,
+  });
+  await check_results({
+    context,
+    matches: [expectedResult],
   });
 
-  // Nimbus should override remote settings.
-  info("Testing 'show less frequently' with cap in Nimbus and remote settings");
-  await doOneShowLessFrequentlyTest({
-    tests,
-    feature,
-    expectedResult,
-    showLessFrequentlyCountPref,
-    rs: {
-      show_less_frequently_cap: 10,
-    },
-    nimbus: {
-      [nimbusCapVariable]: 3,
-    },
-  });
+  let actualResult = context.results.find(
+    r =>
+      r.providerName == UrlbarProviderQuickSuggest.name &&
+      r.payload.provider == expectedResult.payload.provider
+  );
+  Assert.ok(actualResult, "Search should have returned a matching result");
+
+  return actualResult;
 }
 
 /**
- * Does a group of searches, increments the "show less frequently" count, and
- * repeats until all groups are done. The cap can be set by remote settings
- * config and/or Nimbus.
+ * Tests the `show_less_frequently` command for a given feature.
  *
  * @param {object} options
  *   Options object.
  * @param {SuggestFeature} options.feature
- *   The feature that provides the suggestion matched by the searches.
- * @param {*} options.expectedResult
- *   The expected result that should be matched, for searches that are expected
- *   to match a result. Can also be a function; it's passed the current search
- *   string and it should return the expected result.
+ *   The feature being tested.
+ * @param {SuggestFeature} options.keyword
+ *   The keyword to search for. Its length must be at least 3, and each prefix
+ *   starting at `keyword.length - 3` must match a suggestion.
+ * @param {object} options.expectedResult
+ *   The result that is expected to match the keyword and its prefixes.
+ * @param {string} options.minKeywordLengthPref
+ *   The name of the pref for the min keyword length being tested.
  * @param {string} options.showLessFrequentlyCountPref
- *   The name of the pref that stores the "show less frequently" count being
- *   tested.
- * @param {object} options.tests
- *   An array where each item describes a group of new searches to perform and
- *   expected state. Each item should look like this:
- *   `{ showLessFrequentlyCount, canShowLessFrequently, newSearches }`
- *
- *   {number} showLessFrequentlyCount
- *     The expected value of `showLessFrequentlyCount` before the group of
- *     searches is performed.
- *   {boolean} canShowLessFrequently
- *     The expected value of `canShowLessFrequently` before the group of
- *     searches is performed.
- *   {object} newSearches
- *     An object that maps each search string to a boolean that indicates
- *     whether the first remote settings suggestion should be triggered by the
- *     search string. Searches are cumulative: The intended use is to pass a
- *     large initial group of searches in the first search group, and then each
- *     following `newSearches` is a diff against the previous.
- * @param {object} options.rs
- *   The remote settings config to set.
- * @param {object} options.nimbus
- *   The Nimbus variables to set.
+ *   The name of the pref for the "show less frequently" count being tested.
  */
-async function doOneShowLessFrequentlyTest({
+async function doShowLessFrequentlyTest({
   feature,
+  keyword,
   expectedResult,
+  minKeywordLengthPref,
   showLessFrequentlyCountPref,
-  tests,
-  rs = {},
-  nimbus = {},
 }) {
-  // Disable Merino so we trigger only remote settings suggestions. The
-  // `SuggestFeature` is expected to add remote settings suggestions using
-  // keywords start starting with the first word in each full keyword, but the
-  // mock Merino server will always return whatever suggestion it's told to
-  // return regardless of the search string. That means Merino will return a
-  // suggestion for a keyword that's smaller than the first full word.
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
+  let showLessFrequentlyCap = 3;
 
-  // Set Nimbus variables and RS config.
-  let cleanUpNimbus = await UrlbarTestUtils.initNimbusFeature(nimbus);
+  if (keyword.length < showLessFrequentlyCap) {
+    throw new Error(
+      "keyword must be long enough to 'Show less frequently' enough times"
+    );
+  }
+
   await QuickSuggestTestUtils.withConfig({
-    config: rs,
+    config: { show_less_frequently_cap: showLessFrequentlyCap },
     callback: async () => {
-      let cumulativeSearches = {};
+      // Do `showLessFrequentlyCap` searches and trigger the
+      // `show_less_frequently` command after each one. In each iteration, the
+      // length of `searchString` increases by 1.
+      for (let count = 0; count < showLessFrequentlyCap; count++) {
+        let searchString = keyword.substring(
+          0,
+          keyword.length - showLessFrequentlyCap + count + 1
+        );
 
-      for (let {
-        showLessFrequentlyCount,
-        canShowLessFrequently,
-        newSearches,
-      } of tests) {
         info(
-          "Starting subtest: " +
+          "Doing search: " +
             JSON.stringify({
-              showLessFrequentlyCount,
-              canShowLessFrequently,
-              newSearches,
+              count,
+              searchString,
             })
         );
 
+        // Check prefs and other values before searching.
+        Assert.equal(
+          UrlbarPrefs.get(minKeywordLengthPref),
+          count == 0 ? 0 : searchString.length,
+          "minKeywordLength pref should be correct before search " + count
+        );
         Assert.equal(
           feature.showLessFrequentlyCount,
-          showLessFrequentlyCount,
-          "showLessFrequentlyCount should be correct initially"
+          count,
+          "showLessFrequentlyCount should be correct before search " + count
         );
         Assert.equal(
           UrlbarPrefs.get(showLessFrequentlyCountPref),
-          showLessFrequentlyCount,
-          "Pref should be correct initially"
+          count,
+          "showLessFrequentlyCount pref should be correct before search " +
+            count
         );
-        Assert.equal(
+        Assert.ok(
           feature.canShowLessFrequently,
-          canShowLessFrequently,
-          "canShowLessFrequently should be correct initially"
+          "canShowLessFrequently should be correct before search " + count
         );
 
-        // Merge the current `newSearches` object into the cumulative object.
-        cumulativeSearches = {
-          ...cumulativeSearches,
-          ...newSearches,
-        };
+        // Do the search.
+        await check_results({
+          context: createContext(searchString, {
+            providers: [UrlbarProviderQuickSuggest.name],
+            isPrivate: false,
+          }),
+          matches: [expectedResult],
+        });
 
-        for (let [searchString, isExpected] of Object.entries(
-          cumulativeSearches
-        )) {
-          info("Doing search: " + JSON.stringify({ searchString, isExpected }));
+        // Trigger the command.
+        triggerCommand({
+          feature,
+          searchString,
+          command: "show_less_frequently",
+          result: expectedResult,
+          expectedCountsByCall: {
+            acknowledgeFeedback: 1,
+            invalidateResultMenuCommands:
+              count == showLessFrequentlyCap - 1 ? 1 : 0,
+          },
+        });
 
-          let results = [];
-          if (isExpected) {
-            results.push(
-              typeof expectedResult == "function"
-                ? expectedResult(searchString)
-                : expectedResult
-            );
-          }
-
-          await check_results({
-            context: createContext(searchString, {
-              providers: [UrlbarProviderQuickSuggest.name],
-              isPrivate: false,
-            }),
-            matches: results,
-          });
-        }
-
-        feature.incrementShowLessFrequentlyCount();
+        // The same search should now match nothing.
+        await check_results({
+          context: createContext(searchString, {
+            providers: [UrlbarProviderQuickSuggest.name],
+            isPrivate: false,
+          }),
+          matches: [],
+        });
       }
+
+      // Check prefs and other values now that all searches are done.
+      Assert.equal(
+        UrlbarPrefs.get(minKeywordLengthPref),
+        keyword.length + 1,
+        "minKeywordLength pref should be correct after all searches"
+      );
+      Assert.equal(
+        feature.showLessFrequentlyCount,
+        showLessFrequentlyCap,
+        "showLessFrequentlyCount should be correct after all searches"
+      );
+      Assert.equal(
+        UrlbarPrefs.get(showLessFrequentlyCountPref),
+        showLessFrequentlyCap,
+        "showLessFrequentlyCap pref should be correct after all searches"
+      );
+      Assert.ok(
+        !feature.canShowLessFrequently,
+        "canShowLessFrequently should be correct after all searches"
+      );
     },
   });
 
-  await cleanUpNimbus();
+  UrlbarPrefs.clear(minKeywordLengthPref);
   UrlbarPrefs.clear(showLessFrequentlyCountPref);
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
 }
 
 /**
@@ -790,6 +681,11 @@ function triggerCommand({
     {
       removeResult() {
         addCall("removeResult");
+      },
+      input: {
+        startQuery() {
+          addCall("startQuery");
+        },
       },
       view: {
         acknowledgeFeedback() {

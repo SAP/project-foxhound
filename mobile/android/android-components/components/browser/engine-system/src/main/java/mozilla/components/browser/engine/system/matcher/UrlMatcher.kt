@@ -109,7 +109,7 @@ class UrlMatcher {
      * @return a [Pair] of <Boolean, String?> the first indicates, if the URI matches and the second
      * indicates the category of the match if available otherwise null.
      */
-    @Suppress("ReturnCount", "ComplexMethod")
+    @Suppress("ReturnCount")
     fun matches(resourceURI: Uri, pageURI: Uri): Pair<Boolean, String?> {
         val resourceURLString = resourceURI.toString()
         val resourceHost = resourceURI.host
@@ -252,7 +252,7 @@ class UrlMatcher {
             return categoryMap
         }
 
-        @Suppress("ThrowsCount", "ComplexMethod", "NestedBlockDepth")
+        @Suppress("ThrowsCount", "NestedBlockDepth", "CognitiveComplexMethod")
         private fun extractCategories(reader: JsonReader, categoryMap: MutableMap<String, Trie>, override: Boolean) {
             reader.beginObject()
 

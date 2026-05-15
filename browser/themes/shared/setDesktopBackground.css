@@ -19,5 +19,5 @@ html|p#preview-unavailable {
   margin: 12px 11px;
   text-align: center;
   color: #9b2423;
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }

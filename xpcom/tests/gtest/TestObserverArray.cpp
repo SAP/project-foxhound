@@ -6,7 +6,6 @@
 
 #include "nsTObserverArray.h"
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/UniquePtr.h"
 
 using namespace mozilla;

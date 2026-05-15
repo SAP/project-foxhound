@@ -45,11 +45,6 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "events",
-  "resource://devtools/shared/event-emitter.js"
-);
-loader.lazyRequireGetter(
-  this,
   "getBounds",
   "resource://devtools/server/actors/highlighters/utils/accessibility.js",
   true
@@ -92,9 +87,10 @@ const CSS_TEXT_SELECTOR = "#text";
 
 /**
  * Get node inforamtion such as nodeType and the unique CSS selector for the node.
+ *
  * @param  {DOMNode} node
  *         Node for which to get the information.
- * @return {Object}
+ * @return {object}
  *         Information about the type of the node and how to locate it.
  */
 function getNodeDescription(node) {
@@ -117,6 +113,7 @@ function getNodeDescription(node) {
 /**
  * Get a snapshot of the nsIAccessible object including its subtree. None of the subtree
  * queried here is cached via accessible walker's refMap.
+ *
  * @param  {nsIAccessible} acc
  *         Accessible object to take a snapshot of.
  * @param  {nsIAccessibilityService} a11yService
@@ -195,6 +192,7 @@ function getSnapshot(acc, a11yService, targetActor) {
  * An ARIA role token will be returned unless the role can't be mapped to an
  * ARIA role (e.g. <iframe>), in which case a Gecko role string will be
  * returned.
+ *
  * @param  {nsIAccessible} acc
  *         Accessible object to take a snapshot of.
  * @param  {nsIAccessibilityService} a11yService
@@ -494,7 +492,7 @@ class AccessibleActor extends Actor {
    * Provide additional (full) information about the accessible object that is
    * otherwise missing from the form.
    *
-   * @return {Object}
+   * @return {object}
    *         Object that contains accessible object information such as states,
    *         actions, attributes, etc.
    */
@@ -557,11 +555,12 @@ class AccessibleActor extends Actor {
 
   /**
    * Run an accessibility audit for a given audit type.
-   * @param {String} type
+   *
+   * @param {string} type
    *        Type of an audit (Check AUDIT_TYPE in devtools/shared/constants
    *        to see available audit types).
    *
-   * @return {null|Object}
+   * @return {null | object}
    *         Object that contains accessible audit data for a given type or null
    *         if there's nothing to report for this accessible.
    */
@@ -584,11 +583,11 @@ class AccessibleActor extends Actor {
   /**
    * Audit the state of the accessible object.
    *
-   * @param  {Object} options
+   * @param  {object} options
    *         Options for running audit, may include:
    *         - types: Array of audit types to be performed during audit.
    *
-   * @return {Object|null}
+   * @return {object | null}
    *         Audit results for the accessible object.
    */
   audit(options = {}) {
@@ -627,7 +626,7 @@ class AccessibleActor extends Actor {
         }, {});
         this._lastAudit = this._lastAudit || {};
         Object.assign(this._lastAudit, audit);
-        events.emit(this, "audited", audit);
+        this.emit("audited", audit);
 
         return audit;
       })

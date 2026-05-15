@@ -539,6 +539,44 @@ add_task(async function test_tabGroupContextMenuMoveTabToExistingGroup() {
 });
 
 /*
+ * Tests that the "move tab to group > [group name]" option moves a splitview to the selected
+ * group in another window
+ */
+add_task(
+  async function test_tabGroupContextMenuMoveSplitViewToExistingGroupInOtherWindow() {
+    const tab1 = await addTab();
+    const tab2 = await addTab();
+    gBrowser.addTabSplitView([tab1, tab2]);
+
+    const win = await BrowserTestUtils.openNewBrowserWindow();
+    let otherTab = BrowserTestUtils.addTab(win.gBrowser, "about:blank", {
+      skipAnimation: true,
+    });
+    let group = win.gBrowser.addTabGroup([otherTab]);
+    Assert.ok(
+      !group.tabsAndSplitViews.some(
+        node => node.tagName == "tab-split-view-wrapper"
+      ),
+      "No splitview is currently in the group"
+    );
+
+    await withTabMenu(tab1, async (_, moveTabToGroupItem) => {
+      moveTabToGroupItem.querySelector(`[tab-group-id="${group.id}"]`).click();
+    });
+
+    Assert.ok(
+      group.tabsAndSplitViews.some(
+        node => node.tagName == "tab-split-view-wrapper"
+      ),
+      "Splitview has been moved to group in other window"
+    );
+
+    await removeTabGroup(group);
+    await BrowserTestUtils.closeWindow(win);
+  }
+);
+
+/*
  * Same as above, but for groups in different windows
  */
 add_task(
@@ -953,7 +991,9 @@ add_task(
 
     await Promise.allSettled([
       BrowserTestUtils.browserLoaded(savedTab.linkedBrowser),
-      BrowserTestUtils.browserLoaded(contextTab.linkedBrowser),
+      BrowserTestUtils.browserLoaded(contextTab.linkedBrowser, {
+        wantLoad: "about:blank",
+      }),
     ]);
 
     await lazy.TabGroupTestUtils.saveAndCloseTabGroup(savedGroup);
@@ -1004,7 +1044,9 @@ add_task(
     await Promise.allSettled([
       BrowserTestUtils.browserLoaded(openTab.linkedBrowser),
       BrowserTestUtils.browserLoaded(savedTab.linkedBrowser),
-      BrowserTestUtils.browserLoaded(contextTab.linkedBrowser),
+      BrowserTestUtils.browserLoaded(contextTab.linkedBrowser, {
+        wantLoad: "about:blank",
+      }),
     ]);
 
     await lazy.TabGroupTestUtils.saveAndCloseTabGroup(savedGroup);
@@ -1142,14 +1184,17 @@ add_task(
       "There is one tab in the group"
     );
 
-    let tabsToAdd = [
-      BrowserTestUtils.addTab(gBrowser, "https://example.com"),
-      BrowserTestUtils.addTab(gBrowser, "https://example.com"),
-      BrowserTestUtils.addTab(gBrowser, "about:blank"),
-      BrowserTestUtils.addTab(gBrowser, "about:blank"),
+    const urls = [
+      "https://example.com/",
+      "https://example.com/",
+      "about:blank",
+      "about:blank",
     ];
+    const tabsToAdd = urls.map(url => BrowserTestUtils.addTab(gBrowser, url));
     await Promise.allSettled(
-      tabsToAdd.map(tab => BrowserTestUtils.browserLoaded(tab.linkedBrowser))
+      tabsToAdd.map((tab, i) =>
+        BrowserTestUtils.browserLoaded(tab.linkedBrowser, { wantLoad: urls[i] })
+      )
     );
 
     gBrowser.selectedTabs = tabsToAdd;
@@ -1307,6 +1352,106 @@ add_task(async function test_removeFromGroupForMultipleTabs() {
     BrowserTestUtils.removeTab(t);
   });
 });
+
+/*
+ * Tests that using "Add split view to group" on a split view containing an
+ * about:newtab tab correctly adds all split view tabs to the saved group, and
+ * that restoring the group afterwards succeeds. Regression test for bug 2019900.
+ */
+add_task(
+  async function test_tabGroupSaveGroupRestoreAfterAddSplitViewWithNewTab() {
+    let savedTab = BrowserTestUtils.addTab(gBrowser, "https://example.com");
+    let savedGroup = gBrowser.addTabGroup([savedTab], {
+      label: "Test group",
+    });
+    let savedGroupId = savedGroup.id;
+
+    await BrowserTestUtils.browserLoaded(savedTab.linkedBrowser);
+    await lazy.TabGroupTestUtils.saveAndCloseTabGroup(savedGroup);
+
+    let sessionStoreGroups = SessionStore.getSavedTabGroups();
+    Assert.equal(sessionStoreGroups.length, 1, "The group was saved");
+
+    // Add a split view (one real tab + one about:newtab) to the saved group via
+    // the context menu, exercising the "Add split view to group" UI path.
+    let splitRealTab = BrowserTestUtils.addTab(gBrowser, "https://example.com");
+    let splitNewTab = BrowserTestUtils.addTab(gBrowser, "about:newtab");
+    await BrowserTestUtils.browserLoaded(splitRealTab.linkedBrowser);
+    gBrowser.addTabSplitView([splitRealTab, splitNewTab]);
+
+    // Pre-flush before opening the context menu (see bug 1973996).
+    await lazy.TabStateFlusher.flush(splitRealTab.linkedBrowser);
+    await lazy.TabStateFlusher.flush(splitNewTab.linkedBrowser);
+
+    await withTabMenu(splitRealTab, async (_, moveTabToGroupItem) => {
+      const savedGroupsMenu = moveTabToGroupItem.querySelector(
+        "#context_moveTabToSavedGroup"
+      );
+      const savedGroupMenuItem = savedGroupsMenu.querySelector(
+        `[tab-group-id="${savedGroupId}"]`
+      );
+      let tabClosePromises = [splitRealTab, splitNewTab].map(tab =>
+        BrowserTestUtils.waitForEvent(tab, "TabClose")
+      );
+      savedGroupMenuItem.click();
+      await Promise.all(tabClosePromises);
+    });
+
+    // Add another regular tab to the saved group
+    let extraTab = BrowserTestUtils.addTab(gBrowser, "https://example.com");
+    await BrowserTestUtils.browserLoaded(extraTab.linkedBrowser);
+    await lazy.TabStateFlusher.flush(extraTab.linkedBrowser);
+
+    let extraTabClosePromise = BrowserTestUtils.waitForEvent(
+      extraTab,
+      "TabClose"
+    );
+    SessionStore.addTabsToSavedGroup(savedGroupId, [extraTab]);
+    gBrowser.removeTab(extraTab);
+    await extraTabClosePromise;
+
+    sessionStoreGroups = SessionStore.getSavedTabGroups();
+    Assert.equal(sessionStoreGroups.length, 1, "Only one group exists");
+    // The about:newtab from the split view is saveable when it has a splitViewId,
+    // so the split view should be stored.
+    Assert.equal(
+      sessionStoreGroups[0].splitViews.length,
+      1,
+      "Split view data stored for the group"
+    );
+    // The original tab + the 2 split view tabs + the extra tab should be saved.
+    Assert.equal(
+      sessionStoreGroups[0].tabs.length,
+      4,
+      "Four tabs saved in the group"
+    );
+
+    // Restore the group; if the fix is absent the restoreTab error aborts the
+    // restore loop and SSWindowStateReady never fires (test times out).
+    let restorePromise = BrowserTestUtils.waitForEvent(
+      window,
+      "SSWindowStateReady"
+    );
+    SessionStore.openSavedTabGroup(savedGroupId, window);
+    await restorePromise;
+
+    Assert.equal(
+      gBrowser.tabGroups.length,
+      1,
+      "One tab group exists on the tab strip"
+    );
+    let restoredGroup = gBrowser.tabGroups[0];
+    Assert.equal(
+      restoredGroup.id,
+      savedGroupId,
+      "The restored group has the correct id"
+    );
+    Assert.equal(restoredGroup.tabs.length, 4, "Four tabs were restored");
+
+    await lazy.TabGroupTestUtils.removeTabGroup(restoredGroup);
+    lazy.TabGroupTestUtils.forgetSavedTabGroups();
+  }
+);
 
 // Context menu tests: "new tab to right" option
 // ---

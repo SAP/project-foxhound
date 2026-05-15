@@ -56,6 +56,65 @@ memory_watcher:
         type: string
     telemetry_mirror: Memory_watcher_OnHighMemory_Stats
 
+  process_oom_killed:
+    type: event
+    description: >
+      Recorded when a content process is killed by the Linux OOM killer (SIGKILL).
+      PSI (Pressure Stall Information) metrics are included to understand memory
+      pressure context at the time of the kill. This helps analyze memory pressure
+      patterns and OOM kill correlation.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995907
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995907
+    notification_emails:
+      - tli@mozilla.com
+    expires: never
+    extra_keys:
+      psi_some_avg10:
+        description: PSI some avg10 value (10-second average partial stall percentage)
+        type: string
+      psi_some_avg60:
+        description: PSI some avg60 value (60-second average partial stall percentage)
+        type: string
+      psi_full_avg10:
+        description: PSI full avg10 value (10-second average complete stall percentage)
+        type: string
+      psi_full_avg60:
+        description: PSI full avg60 value (60-second average complete stall percentage)
+        type: string
+      psi_available:
+        description:  PSI values are available.
+        type: boolean
+
+  non_oom_sample:
+    type: event
+    description: >
+      Records PSI (Pressure Stall Information) metrics sampled 120 seconds
+      after an OOM-killed content process. By capturing memory pressure
+      values that did not trigger further OOM kills, this helps establish
+      the boundary between recoverable memory pressure and OOM conditions.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010734
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2010734
+    notification_emails:
+      - tli@mozilla.com
+    expires: never
+    extra_keys:
+      psi_some_avg10:
+        description: PSI some avg10 value (10-second average partial stall percentage)
+        type: string
+      psi_some_avg60:
+        description: PSI some avg60 value (60-second average partial stall percentage)
+        type: string
+      psi_full_avg10:
+        description: PSI full avg10 value (10-second average complete stall percentage)
+        type: string
+      psi_full_avg60:
+        description: PSI full avg60 value (60-second average complete stall percentage)
+        type: string
+
 memory_phc:
   slop:
     type: memory_distribution
@@ -492,9 +551,9 @@ cycle_collector:
 
 memory:
   resident_fast:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Resident memory size (KB)
+      Resident memory size (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_RESIDENT_FAST.
@@ -508,12 +567,11 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_RESIDENT_FAST
 
   resident_peak:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Peak resident memory size (KB)
+      Peak resident memory size (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_RESIDENT_PEAK.
@@ -528,7 +586,6 @@ memory:
       - memshrink-telemetry-alerts@mozilla.com
       - amccreight@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_RESIDENT_PEAK
 
   total:
     type: memory_distribution
@@ -579,9 +636,9 @@ memory:
     telemetry_mirror: MEMORY_DISTRIBUTION_AMONG_CONTENT
 
   unique:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Unique Set Size (KB)
+      Unique Set Size (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_UNIQUE.
@@ -595,7 +652,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_UNIQUE
 
   vsize:
     type: memory_distribution
@@ -718,9 +774,9 @@ memory:
     telemetry_mirror: MEMORY_JS_REALMS_USER
 
   js_gc_heap:
-    type: memory_distribution
+    type: labeled_memory_distribution
     description: >
-      Memory used by the garbage-collected JavaScript heap (KB)
+      Memory used by the garbage-collected JavaScript heap (KB) by process type
 
       This metric was generated to correspond to the Legacy Telemetry
       exponential histogram MEMORY_JS_GC_HEAP.
@@ -732,7 +788,6 @@ memory:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     expires: never
-    telemetry_mirror: MEMORY_JS_GC_HEAP
 
   storage_sqlite:
     type: memory_distribution
@@ -1396,6 +1451,28 @@ system.os:
       - update
       - third-party-modules
 
+  libstdcxx_version:
+    type: string
+    lifetime: application
+    description: |
+      The Operating System's libstdc++ highest GLIBCXX version.
+      Linux only.
+      e.g. "3.4.33"
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016621
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016621
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - mhommey@mozilla.com
+    expires: never
+    send_in_pings:
+      - metrics
+      - sync
+      - update
+      - third-party-modules
+
   service_pack_major:
     type: quantity
     unit: version
@@ -1630,20 +1707,3 @@ system:
     notification_emails:
       - gijs@mozilla.com
     expires: never
-
-  special_directory_appdata_fallback:
-    type: labeled_boolean
-    lifetime: ping
-    description: |
-      Success status of using SpecialSystemDirectory's fallback path to retrieve
-      either %AppData% or %LocalAppData%.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1974357
-    data_reviews:
-      - https://phabricator.services.mozilla.com/D255241
-    notification_emails:
-      - nrishel@mozilla.com
-    expires: 145
-    labels:
-      - appdata
-      - localappdata

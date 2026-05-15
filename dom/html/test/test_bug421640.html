@@ -18,11 +18,9 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=421640
 <pre id="test">
 <script class="testbody" type="text/javascript">
 
-/** Test for Bug 421640 **/
+/** Test for Bug 421640 */
 
 function test(click, focus, nextFocus) {
-  var wu = SpecialPowers.getDOMWindowUtils(window);
-
   var selection = window.getSelection();
   var edit = document.getElementById("edit");
   var text = edit.firstChild;
@@ -30,15 +28,13 @@ function test(click, focus, nextFocus) {
   selection.removeAllRanges();
 
   var rect = edit.getBoundingClientRect();
-  wu.sendMouseEvent("mousedown", rect.left + 1, rect.top + 1, 0, 1, 0);
-  wu.sendMouseEvent("mousemove", rect.right - 1, rect.top + 1, 0, 1, 0);
-  wu.sendMouseEvent("mouseup", rect.right - 1, rect.top + 1, 0, 1, 0);
+  synthesizeMouseAtPoint(rect.left + 1, rect.top + 1, { type: "mousedown" });
+  synthesizeMouseAtPoint(rect.right - 1, rect.top + 1, { type: "mousemove" });
+  synthesizeMouseAtPoint(rect.right - 1, rect.top + 1, { type: "mouseup" });
 
   is(selection.anchorNode, text, "");
 
-  rect = document.getElementById("button").getBoundingClientRect();
-  wu.sendMouseEvent("mousedown", rect.left + 10, rect.top + 1, 0, 1, 0);
-  wu.sendMouseEvent("mouseup", rect.left + 10, rect.top + 1, 0, 1, 0);
+  synthesizeMouse(document.getElementById("button"), 10, 1, {});
 
   is(selection.anchorNode, text, "");
 

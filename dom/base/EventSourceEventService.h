@@ -9,10 +9,10 @@
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Atomics.h"
-#include "nsIEventSourceEventService.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
+#include "nsIEventSourceEventService.h"
 #include "nsIObserver.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"

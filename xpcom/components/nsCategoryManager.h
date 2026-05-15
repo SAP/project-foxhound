@@ -14,7 +14,6 @@
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/Attributes.h"
 
 class nsIMemoryReporter;
 

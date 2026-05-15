@@ -6,20 +6,17 @@
 
 #include "mozilla/dom/DOMException.h"
 
-#include "mozilla/ArrayUtils.h"
+#include "js/StructuredClone.h"
+#include "js/TypeDecls.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/dom/Exceptions.h"
-#include "nsContentUtils.h"
-#include "nsCOMPtr.h"
+#include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/Exceptions.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsIException.h"
 #include "xpcprivate.h"
-
-#include "mozilla/dom/DOMExceptionBinding.h"
-#include "mozilla/ErrorResult.h"
-
-#include "js/TypeDecls.h"
-#include "js/StructuredClone.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -292,7 +289,13 @@ uint32_t Exception::LineNumber(JSContext* aCx) const {
   return 0;
 }
 
-uint32_t Exception::ColumnNumber() const { return 0; }
+uint32_t Exception::ColumnNumber(JSContext* aCx) const {
+  if (mLocation) {
+    return mLocation->GetColumnNumber(aCx);
+  }
+
+  return 0;
+}
 
 already_AddRefed<nsIStackFrame> Exception::GetLocation() const {
   nsCOMPtr<nsIStackFrame> location = mLocation;

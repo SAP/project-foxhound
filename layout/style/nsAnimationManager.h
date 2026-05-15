@@ -7,9 +7,7 @@
 #define nsAnimationManager_h_
 
 #include "AnimationCommon.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Keyframe.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/CSSAnimation.h"
 #include "nsISupportsImpl.h"
 #include "nsTHashSet.h"

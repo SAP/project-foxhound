@@ -56,7 +56,7 @@
 #include "media/base/rid_description.h"
 #include "rtc_base/unique_id_generator.h"
 
-namespace cricket {
+namespace webrtc {
 
 extern const char kFecSsrcGroupSemantics[];
 extern const char kFecFrSsrcGroupSemantics[];
@@ -160,7 +160,7 @@ struct StreamParams {
   void GenerateSsrcs(int num_layers,
                      bool generate_fid,
                      bool generate_fec_fr,
-                     rtc::UniqueRandomIdGenerator* ssrc_generator);
+                     UniqueRandomIdGenerator* ssrc_generator);
 
   // Convenience to get all the SIM SSRCs if there are SIM ssrcs, or
   // the first SSRC otherwise.
@@ -316,6 +316,7 @@ inline bool RemoveStreamByIds(StreamParamsVec* streams, const std::string& id) {
                       [&id](const StreamParams& sp) { return sp.id == id; });
 }
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // MEDIA_BASE_STREAM_PARAMS_H_

@@ -3,6 +3,7 @@
 set -ex
 
 SNAP_TO_INSTALL=$1
+SNAP_URL=$2
 
 if [ -z "${SNAP_TO_INSTALL}" ]; then
   echo "Please give a snap name"
@@ -13,11 +14,12 @@ fi
 # place (the 'Snap-CDN: none' header allows building in restricted network
 # environments such as Launchpad builders)
 
+if [ -z "${SNAP_URL}" ]; then
+  SNAP_URL=$(curl -H 'X-Ubuntu-Series: 16' "https://api.snapcraft.io/api/v1/snaps/details/${SNAP_TO_INSTALL}?channel=stable" | jq '.download_url' -r)
+fi
+
 # shellcheck disable=SC2046
-curl -L \
-	-H 'Snap-CDN: none' \
-	$(curl -H 'X-Ubuntu-Series: 16' "https://api.snapcraft.io/api/v1/snaps/details/${SNAP_TO_INSTALL}?channel=stable" | jq '.download_url' -r) \
-	--output "${SNAP_TO_INSTALL}.snap"
+curl -L -H 'Snap-CDN: none' "$SNAP_URL" --output "${SNAP_TO_INSTALL}.snap"
 
 mkdir -p "/snap/${SNAP_TO_INSTALL}"
 

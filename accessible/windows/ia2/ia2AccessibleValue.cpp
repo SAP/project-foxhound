@@ -14,8 +14,6 @@
 #include "IUnknownImpl.h"
 #include "MsaaAccessible.h"
 
-#include "mozilla/FloatingPoint.h"
-
 using namespace mozilla::a11y;
 
 AccessibleWrap* ia2AccessibleValue::LocalAcc() {

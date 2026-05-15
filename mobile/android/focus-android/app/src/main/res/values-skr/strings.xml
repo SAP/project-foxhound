@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -148,7 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s تہاکوں کنٹرول ݙیندی ہے </p> <p> ایں کوں نجی براؤزر وانگوں ورتو: <ul> <li> ایپ وچ لبھو تے براؤز کرو </li> <li>ٹریکراں کوں بلاک کرو (یا ترتیباں دی تازہ کاری کر تے ٹریکراں کوں اجازت ݙیوو)۔ </li> <li> کوکیاں دے نال نال ڳولݨ تے براؤزنگ تاریخ کوں وی مٹاؤ </li> </ul> </p> <p>%1$s موزلّا دی پیداوار ہے۔ ساݙی مہم ہک صحت مند کھلے انٹرنیٹ کوں فروعٰ ݙیوݨ ہے۔ <br/> <a href=\"%2$s\"> ٻیا سِکھو </a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s تہاکوں کنٹرول ݙیندی ہے </p>\n<p> ایں کوں نجی براؤزر وانگوں ورتو:\n<ul>\n<li> ایپ وچ لبھو تے براؤز کرو </li>\n<li>ٹریکراں کوں بلاک کرو (یا ترتیباں دی تازہ کاری کر تے ٹریکراں کوں اجازت ݙیوو)۔ </li>\n<li> کوکیاں دے نال نال ڳولݨ تے براؤزنگ تاریخ کوں وی مٹاؤ </li>\n</ul> </p>\n<p>%1$s موزلّا دی پیداوار ہے۔ ساݙی مہم ہک صحت مند کھلے انٹرنیٹ کوں فروعٰ ݙیوݨ ہے۔ <br/>\n<a href=\"%2$s\"> ٻیا سِکھو </a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">رازداری تے سلامتی</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -842,7 +849,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[ایہ سرور دی کنفیگریشن وِچ مسئلہ تھی سڳدا ہے، یا ایہ تھی سڳدا ہے جو کوئی سرور دی نقل کرݨ دی کوشش کریندا پیا ہووے۔ <br/><br/> جے تساں پچھوکڑ وِچ ایں سرور نال کامیابی دے نال جڑ چکے او، تاں غلطی عارضی تھی سڳدی ہے، تے تساں بعد اِچ دوبارہ کوشش کر سڳدے او۔]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>تھی سڳدا ہے جو کوئی سائٹ دی نقل بݨاوݨ دی کوشش کریندا پیا ہووے تے جاری رکھݨ نال خدشہ تھی سڳدے۔</label> <br><br> <label> %1$s، ایں <b>%2$s</b> تے بھروسہ کائنی کریندا کیوں جو سرٹیفکیٹ جاری کرݨ آلا نامعلوم ہے، سرٹیفکیٹ تے خود آپ دستخط کیتے ہوئے ہن یا سرور صحیح درمیانی سرٹیفیکیٹ کائنی پٹھیندا پیا۔</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>تھی سڳدا ہے جو کوئی سائٹ دی نقل بݨاوݨ دی کوشش کریندا پیا ہووے تے جاری رکھݨ نال خدشہ تھی سڳدے۔</label> <br><br>\n<label> %1$s، ایں <b>%2$s</b> تے بھروسہ کائنی کریندا کیوں جو سرٹیفکیٹ جاری کرݨ آلا نامعلوم ہے، سرٹیفکیٹ تے خود آپ دستخط کیتے ہوئے ہن یا سرور صحیح درمیانی سرٹیفیکیٹ کائنی پٹھیندا پیا۔</label>]]></string>
   <!--
     Sessions List
 

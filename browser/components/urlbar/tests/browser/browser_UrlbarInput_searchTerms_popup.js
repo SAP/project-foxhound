@@ -66,7 +66,7 @@ add_task(async function generic_popup_no_revert_when_persist_is_disabled() {
   let { tab } = await searchWithTab(
     SEARCH_TERM,
     null,
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     false
   );
 

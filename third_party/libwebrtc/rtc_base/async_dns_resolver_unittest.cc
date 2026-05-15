@@ -28,8 +28,8 @@ namespace {
 
 using ::testing::IsTrue;
 
-const webrtc::TimeDelta kDefaultTimeout = webrtc::TimeDelta::Millis(1000);
-const int kPortNumber = 3027;
+constexpr TimeDelta kDefaultTimeout = TimeDelta::Millis(1000);
+constexpr int kPortNumber = 3027;
 
 TEST(AsyncDnsResolver, ConstructorWorks) {
   AsyncDnsResolver resolver;

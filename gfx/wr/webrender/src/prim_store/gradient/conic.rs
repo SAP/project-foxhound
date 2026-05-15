@@ -11,19 +11,21 @@
 use euclid::vec2;
 use api::{ColorF, ExtendMode, GradientStop, PremultipliedColorF};
 use api::units::*;
-use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState, PatternKind, PatternShaderInput, PatternTextureInput};
+use crate::gpu_types::ImageBrushPrimitiveData;
+use crate::pattern::gradient::{conic_gradient_pattern};
+use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState};
 use crate::scene_building::IsVisible;
 use crate::frame_builder::FrameBuildingState;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
-use crate::prim_store::{BrushSegment, GradientTileRange};
+use crate::prim_store::{BrushSegment, GradientTileRange, VECS_PER_SEGMENT};
 use crate::prim_store::{PrimitiveInstanceKind, PrimitiveOpacity, FloatKey};
 use crate::prim_store::{PrimKeyCommonData, PrimTemplateCommonData, PrimitiveStore};
 use crate::prim_store::{NinePatchDescriptor, PointKey, SizeKey, InternablePrimitive};
 use crate::render_task::{RenderTask, RenderTaskKind};
 use crate::render_task_graph::RenderTaskId;
 use crate::render_task_cache::{RenderTaskCacheKeyKind, RenderTaskCacheKey, RenderTaskParent};
-use crate::renderer::{GpuBufferAddress, GpuBufferBuilder};
+use crate::renderer::GpuBufferAddress;
 
 use std::{hash, ops::{Deref, DerefMut}};
 use super::{stops_and_min_alpha, GradientStopKey, GradientGpuBlockBuilder};
@@ -89,7 +91,7 @@ impl InternDebug for ConicGradientKey {}
 pub struct ConicGradientTemplate {
     pub common: PrimTemplateCommonData,
     pub extend_mode: ExtendMode,
-    pub center: DevicePoint,
+    pub center: LayoutPoint,
     pub params: ConicGradientParams,
     pub task_size: DeviceIntSize,
     pub scale: DeviceVector2D,
@@ -112,10 +114,17 @@ impl PatternBuilder for ConicGradientTemplate {
         // of the render task for cached gradients. Here we aren't applying any.
         let no_scale = DeviceVector2D::one();
 
+        // ConicGradientTemplate stores the center point relative to the primitive
+        // origin, but the shader works with start/end points in "proper" layout
+        // coordinates (relative to the primitive's spatial node).
+        let center = self.center + self.common.prim_rect.min.to_vector();
+
         conic_gradient_pattern(
-            self.center,
+            center,
             no_scale,
-            &self.params,
+            self.params.angle,
+            self.params.start_offset,
+            self.params.end_offset,
             self.extend_mode,
             &self.stops,
             state.frame_gpu_data,
@@ -225,7 +234,7 @@ impl From<ConicGradientKey> for ConicGradientTemplate {
 
         ConicGradientTemplate {
             common,
-            center: DevicePoint::new(item.center.x, item.center.y),
+            center: item.center.into(),
             extend_mode: item.extend_mode,
             params: item.params,
             stretch_size,
@@ -249,27 +258,18 @@ impl ConicGradientTemplate {
         &mut self,
         frame_state: &mut FrameBuildingState,
     ) {
-        if let Some(mut request) =
-            frame_state.gpu_cache.request(&mut self.common.gpu_cache_handle) {
-            // write_prim_gpu_blocks
-            request.push(PremultipliedColorF::WHITE);
-            request.push(PremultipliedColorF::WHITE);
-            request.push([
-                self.stretch_size.width,
-                self.stretch_size.height,
-                0.0,
-                0.0,
-            ]);
-
-            // write_segment_gpu_blocks
-            for segment in &self.brush_segments {
-                // has to match VECS_PER_SEGMENT
-                request.write_segment(
-                    segment.local_rect,
-                    segment.extra_data,
-                );
-            }
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3 + self.brush_segments.len() * VECS_PER_SEGMENT);
+        // write_prim_gpu_blocks
+        writer.push(&ImageBrushPrimitiveData {
+            color: PremultipliedColorF::WHITE,
+            background_color: PremultipliedColorF::WHITE,
+            stretch_size: self.stretch_size,
+        });
+        // write_segment_gpu_blocks
+        for segment in &self.brush_segments {
+            segment.write_gpu_blocks(&mut writer);
         }
+        self.common.gpu_buffer_address = writer.finish();
 
         let cache_key = ConicGradientCacheKey {
             size: self.task_size,
@@ -289,11 +289,10 @@ impl ConicGradientTemplate {
             }),
             false,
             RenderTaskParent::Surface,
-            frame_state.gpu_cache,
             &mut frame_state.frame_gpu_data.f32,
             frame_state.rg_builder,
             &mut frame_state.surface_builder,
-            &mut |rg_builder, gpu_buffer_builder, _| {
+            &mut |rg_builder, gpu_buffer_builder| {
                 let stops = GradientGpuBlockBuilder::build(
                     false,
                     gpu_buffer_builder,
@@ -305,7 +304,10 @@ impl ConicGradientTemplate {
                     RenderTaskKind::ConicGradient(ConicGradientTask {
                         extend_mode: self.extend_mode,
                         scale: self.scale,
-                        center: self.center,
+                        // In this code path we chose to render the gradient as if
+                        // layout coordinates were equivalent to device coordinates.
+                        // This can lead to loss of precision.
+                        center: self.center.cast_unit(),
                         params: self.params.clone(),
                         stops,
                     }),
@@ -361,7 +363,7 @@ impl InternablePrimitive for ConicGradient {
         PrimitiveInstanceKind::ConicGradient {
             data_handle,
             visible_tiles_range: GradientTileRange::empty(),
-            cached: true,
+            use_legacy_path: true,
         }
     }
 }
@@ -428,47 +430,4 @@ pub struct ConicGradientCacheKey {
     pub angle: FloatKey,
     pub extend_mode: ExtendMode,
     pub stops: Vec<GradientStopKey>,
-}
-
-pub fn conic_gradient_pattern(
-    center: DevicePoint,
-    scale: DeviceVector2D,
-    params: &ConicGradientParams,
-    extend_mode: ExtendMode,
-    stops: &[GradientStop],
-    gpu_buffer_builder: &mut GpuBufferBuilder
-) -> Pattern {
-    let mut writer = gpu_buffer_builder.f32.write_blocks(2);
-    writer.push_one([
-        center.x,
-        center.y,
-        scale.x,
-        scale.y,
-    ]);
-    writer.push_one([
-        params.start_offset,
-        params.end_offset,
-        params.angle,
-        if extend_mode == ExtendMode::Repeat { 1.0 } else { 0.0 }
-    ]);
-    let gradient_address = writer.finish();
-
-    let stops_address = GradientGpuBlockBuilder::build(
-        false,
-        &mut gpu_buffer_builder.f32,
-        &stops,
-    );
-
-    let is_opaque = stops.iter().all(|stop| stop.color.a >= 1.0);
-
-    Pattern {
-        kind: PatternKind::ConicGradient,
-        shader_input: PatternShaderInput(
-            gradient_address.as_int(),
-            stops_address.as_int(),
-        ),
-        texture_input: PatternTextureInput::default(),
-        base_color: ColorF::WHITE,
-        is_opaque,
-    }
 }

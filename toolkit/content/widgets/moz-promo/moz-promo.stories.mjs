@@ -4,6 +4,8 @@
 
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 import "./moz-promo.mjs";
+import "../moz-button/moz-button.mjs";
+import "../moz-support-link/moz-support-link.mjs";
 
 const fluentStrings = [
   "moz-promo-message",
@@ -64,6 +66,8 @@ const Template = ({
   width,
   imageSrc,
   imageAlignment,
+  hasActionButton,
+  hasSupportLink,
 }) => html`
   <div style="width: ${width}px">
     <moz-promo
@@ -73,7 +77,14 @@ const Template = ({
       data-l10n-id=${ifDefined(l10nId)}
       imageSrc=${ifDefined(imageSrc)}
       imageAlignment=${ifDefined(imageAlignment)}
-    ></moz-promo>
+    >
+      ${hasActionButton
+        ? html` <moz-button slot="actions">Actions button</moz-button>`
+        : ""}
+      ${hasSupportLink
+        ? html` <a is="moz-support-link" slot="support-link" href="#"></a>`
+        : ""}
+    </moz-promo>
   </div>
 `;
 
@@ -82,6 +93,8 @@ Default.args = {
   width: 600,
   type: "default",
   l10nId: "moz-promo-message",
+  hasActionButton: false,
+  hasSupportLink: false,
 };
 
 export const Vibrant = Template.bind({});
@@ -131,4 +144,16 @@ export const RectangleImage = Template.bind({});
 RectangleImage.args = {
   ...ImageAtStart.args,
   imageSrc: "chrome://global/content/aboutconfig/background.svg",
+};
+
+export const SlottedAction = Template.bind({});
+SlottedAction.args = {
+  ...Default.args,
+  hasActionButton: true,
+};
+
+export const SlottedSupportLink = Template.bind({});
+SlottedSupportLink.args = {
+  ...Default.args,
+  hasSupportLink: true,
 };

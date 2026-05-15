@@ -91,7 +91,7 @@ var DefaultLoopbackTone = null;
  * This class provides helpers around analysing the audio content in a stream
  * using WebAudio AnalyserNodes.
  *
- * @constructor
+ * @class
  * @param {object} stream
  *                 A MediaStream object whose audio track we shall analyse.
  */
@@ -120,7 +120,7 @@ AudioStreamAnalyser.prototype = {
   /**
    * Get an array of frequency domain data for our stream's audio track.
    *
-   * @returns {array} A Uint8Array containing the frequency domain data.
+   * @returns {Array} A Uint8Array containing the frequency domain data.
    */
   getByteFrequencyData() {
     this.analyser.getByteFrequencyData(this.data);
@@ -491,9 +491,9 @@ ${e.stack ? e.stack : ""}`
  * Checks that the media stream tracks have the expected amount of tracks
  * with the correct attributes based on the type and constraints given.
  *
- * @param {Object} constraints specifies whether the stream should have
+ * @param {object} constraints specifies whether the stream should have
  *                             audio, video, or both
- * @param {String} type the type of media stream tracks being checked
+ * @param {string} type the type of media stream tracks being checked
  * @param {sequence<MediaStreamTrack>} mediaStreamTracks the media stream
  *                                     tracks being checked
  */
@@ -515,7 +515,7 @@ function checkMediaStreamTracksByType(constraints, type, mediaStreamTracks) {
  * Check that the given media stream contains the expected media stream
  * tracks given the associated audio & video constraints provided.
  *
- * @param {Object} constraints specifies whether the stream should have
+ * @param {object} constraints specifies whether the stream should have
  *                             audio, video, or both
  * @param {MediaStream} mediaStream the media stream being checked
  */
@@ -537,7 +537,7 @@ function checkMediaStreamTracks(constraints, mediaStream) {
  *
  * @param {MediaStream} mediaStream the media stream being checked
  * @param {Array} tracks the tracks that should exist in mediaStream
- * @param {String} [message] an optional message to pass to asserts
+ * @param {string} [message] an optional message to pass to asserts
  */
 function checkMediaStreamContains(mediaStream, tracks, message) {
   message = message ? message + ": " : "";
@@ -636,8 +636,10 @@ var timeout = (promise, time, msg) =>
     wait(time).then(() => Promise.reject(new Error(msg))),
   ]);
 
-/** Adds a |finally| function to a promise whose argument is invoked whether the
- * promise is resolved or rejected, and that does not interfere with chaining.*/
+/**
+ * Adds a |finally| function to a promise whose argument is invoked whether the
+ * promise is resolved or rejected, and that does not interfere with chaining.
+ */
 var addFinallyToPromise = promise => {
   promise.finally = func => {
     return promise.then(
@@ -703,7 +705,7 @@ function getBlackTrack({ width = 640, height = 480 } = {}) {
  * while running the tests. The generated function kills off the test as well
  * gracefully.
  *
- * @param {String} [message]
+ * @param {string} [message]
  *        An optional message to show if no object gets passed into the
  *        generated callback method.
  */
@@ -757,9 +759,9 @@ var rejectOnUnexpectedEvent = new Promise((x, reject) => {
 /**
  * Generates a callback function fired only for unexpected events happening.
  *
- * @param {String} description
+ * @param {string} description
           Description of the object for which the event has been fired
- * @param {String} eventName
+ * @param {string} eventName
           Name of the unexpected event
  */
 function unexpectedEvent(message, eventName) {
@@ -1036,11 +1038,11 @@ const GleanTest = new Proxy(
  * This class executes a series of functions in a continuous sequence.
  * Promise-bearing functions are executed after the previous promise completes.
  *
- * @constructor
+ * @class
  * @param {object} framework
  *        A back reference to the framework which makes use of the class. It is
  *        passed to each command callback.
- * @param {function[]} commandList
+ * @param {Function[]} commandList
  *        Commands to set during initialization
  */
 function CommandChain(framework, commandList) {
@@ -1086,6 +1088,7 @@ CommandChain.prototype = {
 
   /**
    * Returns the index of the specified command in the chain.
+   *
    * @param {occurrence} Optional param specifying which occurrence to match,
    * with 0 representing the first occurrence.
    */

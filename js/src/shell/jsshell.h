@@ -121,14 +121,12 @@ extern bool enableWeakRefs;
 extern bool enableToSource;
 extern bool enablePropertyErrorMessageFix;
 extern bool enableIteratorHelpers;
-extern bool enableShadowRealms;
 extern bool enableArrayGrouping;
 extern bool enableWellFormedUnicodeStrings;
 extern bool enableArrayBufferTransfer;
 extern bool enableArrayBufferResizable;
 extern bool enableSymbolsAsWeakMapKeys;
 extern bool enableNewSetMethods;
-extern bool enableImportAttributes;
 extern bool enableDestructuringFuse;
 #ifdef JS_GC_ZEAL
 extern uint32_t gZealBits;
@@ -163,18 +161,25 @@ extern UniqueChars processWideModuleLoadPath;
 bool CreateAlias(JSContext* cx, const char* dstName,
                  JS::HandleObject namespaceObj, const char* srcName);
 
-class NonshrinkingGCObjectVector
-    : public GCVector<HeapPtr<JSObject*>, 0, SystemAllocPolicy> {
+class NonShrinkingValueVector
+    : public GCVector<HeapPtr<Value>, 0, SystemAllocPolicy> {
+  using Base = GCVector<HeapPtr<Value>, 0, SystemAllocPolicy>;
+
  public:
   bool traceWeak(JSTracer* trc) {
-    for (HeapPtr<JSObject*>& obj : *this) {
-      TraceWeakEdge(trc, &obj, "NonshrinkingGCObjectVector element");
+    for (HeapPtr<Value>& value : *this) {
+      if (value.isGCThing()) {
+        Zone* zone = value.toGCThing()->zoneFromAnyThread();
+        if (zone->isGCSweeping() || zone->isGCCompacting()) {
+          TraceWeakEdge(trc, &value, "NonShrinkingValueVector element");
+        }
+      }
     }
     return true;
   }
 };
 
-using MarkBitObservers = JS::WeakCache<NonshrinkingGCObjectVector>;
+using MarkBitObservers = JS::WeakCache<NonShrinkingValueVector>;
 
 #ifdef SINGLESTEP_PROFILING
 using StackChars = Vector<char16_t, 0, SystemAllocPolicy>;

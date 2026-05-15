@@ -10,15 +10,21 @@
 
 #include "rtc_base/server_socket_adapters.h"
 
-#include <string>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
-#include "rtc_base/byte_buffer.h"
+#include "api/array_view.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_adapters.h"
 
 namespace webrtc {
 
 AsyncProxyServerSocket::AsyncProxyServerSocket(Socket* socket,
                                                size_t buffer_size)
-    : BufferedReadAdapter(socket, buffer_size) {}
+    : BufferedReadAdapter(socket, buffer_size),
+      connect_request_trampoline_(this) {}
 
 AsyncProxyServerSocket::~AsyncProxyServerSocket() = default;
 
@@ -29,7 +35,7 @@ AsyncSSLServerSocket::AsyncSSLServerSocket(Socket* socket)
 
 void AsyncSSLServerSocket::ProcessInput(char* data, size_t* len) {
   // We only accept client hello messages.
-  const rtc::ArrayView<const uint8_t> client_hello =
+  const ArrayView<const uint8_t> client_hello =
       AsyncSSLSocket::SslClientHello();
   if (*len < client_hello.size()) {
     return;
@@ -37,7 +43,7 @@ void AsyncSSLServerSocket::ProcessInput(char* data, size_t* len) {
 
   if (memcmp(client_hello.data(), data, client_hello.size()) != 0) {
     Close();
-    SignalCloseEvent(this, 0);
+    NotifyCloseEvent(this, 0);
     return;
   }
 
@@ -46,7 +52,7 @@ void AsyncSSLServerSocket::ProcessInput(char* data, size_t* len) {
   // Clients should not send more data until the handshake is completed.
   RTC_DCHECK(*len == 0);
 
-  const rtc::ArrayView<const uint8_t> server_hello =
+  const ArrayView<const uint8_t> server_hello =
       AsyncSSLSocket::SslServerHello();
   // Send a server hello back to the client.
   DirectSend(server_hello.data(), server_hello.size());

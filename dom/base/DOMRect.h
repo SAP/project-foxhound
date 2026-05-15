@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <new>
 #include <utility>
+
 #include "js/TypeDecls.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"

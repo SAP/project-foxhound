@@ -27,7 +27,7 @@
 #  define LOG(...)
 #endif
 
-#ifdef XP_UNIX  // {
+#if defined(XP_UNIX) && !defined(XP_IOS)  // {
 
 /**
  * Abstract base class for something which watches an fd and takes action when
@@ -163,7 +163,7 @@ class SignalPipeWatcher : public FdWatcher {
   SignalInfoArray mSignalInfo MOZ_GUARDED_BY(mSignalInfoLock);
 };
 
-#endif  // XP_UNIX }
+#endif  // XP_UNIX && !XP_IOS }
 
 class nsDumpUtils {
  public:

@@ -1,7 +1,6 @@
 "use strict";
 
 add_setup(() => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.feedback", true);
 
@@ -219,7 +218,7 @@ add_task(async function url_validation() {
         // about:-URI with system principal:
         "about:config",
         // Unprivileged about:-URL:
-        "about:logo",
+        "about:mozilla",
         "chrome://extensions/content/dummy.xhtml",
         "resource://pdf.js/web/viewer.html",
         // Extensions cannot see "view-source", only the result: bug 1683646.

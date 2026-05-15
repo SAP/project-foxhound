@@ -22,7 +22,7 @@ module.exports = {
    * Show the box model highlighter for the currently selected node front.
    * The selected node is obtained from the Selection instance on the Inspector.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Optional configuration options passed to the box model highlighter
    */
   highlightSelectedNode(options = {}) {
@@ -50,7 +50,7 @@ module.exports = {
    *
    * @param {NodeFront} nodeFront
    *        Node that should be highlighted.
-   * @param {Object} options
+   * @param {object} options
    *        Optional configuration options passed to the box model highlighter
    */
   highlightNode(nodeFront, options = {}) {

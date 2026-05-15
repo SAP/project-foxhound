@@ -27,7 +27,7 @@ add_task(async function testSteps() {
   // - webappsstore.sqlite
   //
   // The file test_create_db.js in the package was run locally by
-  // adding it temporarily to xpcshell.ini and then executed with
+  // adding it temporarily to xpcshell.toml and then executed with
   //   mach xpcshell-test --headless dom/localstorage/test/unit/test_create_db.js
   // Note: to make it become the profile in the test, additional manual steps
   // are needed.

@@ -31,6 +31,7 @@
             "properties": {
               "addonId": { "type": "string" },
               "addonVersion": { "type": "string" },
+              "origin": { "type": "string" },
               "paramChanged": { "type": "boolean" }
             }
           }

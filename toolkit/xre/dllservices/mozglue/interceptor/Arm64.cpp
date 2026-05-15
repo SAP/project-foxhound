@@ -43,7 +43,7 @@ static LoadOrBranch ADRPDecode(const uintptr_t aPC, const uint32_t aInst) {
 
 MFBT_API LoadOrBranch BUncondImmDecode(const uintptr_t aPC,
                                        const uint32_t aInst) {
-  int32_t offset = SignExtend<int32_t>(aInst & 0x03FFFFFFU, 26);
+  intptr_t offset = SignExtend<intptr_t>((aInst & 0x03FFFFFFU) << 2, 28);
   return LoadOrBranch(aPC + offset);
 }
 
@@ -54,11 +54,13 @@ static const PCRelativeLoadTest gPCRelTests[] = {
     {0x9F000000, 0x90000000, &ADRPDecode},  // ADRP
     {0xFF000000, 0x58000000, nullptr},      // LDR (literal) 64-bit GPR
     {0x3B000000, 0x18000000, nullptr},      // LDR (literal) (remaining forms)
-    {0x7C000000, 0x14000000, nullptr},      // B (unconditional immediate)
-    {0xFE000000, 0x54000000, nullptr},      // B.Cond
-    {0x7E000000, 0x34000000, nullptr},      // Compare and branch (imm)
-    {0x7E000000, 0x36000000, nullptr},      // Test and branch (imm)
-    {0xFE000000, 0xD6000000, nullptr}       // Unconditional branch (reg)
+    {0xFC000000, 0x94000000, nullptr},      // BL (unconditional immediate)
+    {0xFC000000, 0x14000000, &BUncondImmDecode},  // B (unconditional immediate)
+    {0xFE000000, 0x54000000, nullptr},            // B.Cond
+    {0x7E000000, 0x34000000, nullptr},            // Compare and branch (imm)
+    {0x7E000000, 0x36000000, nullptr},            // Test and branch (imm)
+    {0xFE000000, 0xD6000000,
+     nullptr},  // Unconditional branch (reg) - see bug 2010042
 };
 
 /**

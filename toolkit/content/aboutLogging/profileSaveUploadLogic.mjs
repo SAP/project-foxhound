@@ -15,6 +15,7 @@ const $ = document.querySelector.bind(document);
  * The pref "toolkit.aboutlogging.uploadProfileUrl" can change it in case it is
  * needed. It is commented out in modules/libpref/init/all.js so that users
  * don't see it, because this is mostly only useful for tests.
+ *
  * @returns {string}
  */
 function uploadProfileUrl() {
@@ -27,8 +28,9 @@ function uploadProfileUrl() {
 /**
  * A handy function to return a string version of a date and time looking like
  * YYYYMMDDHHMMSS, that can be used in a file name.
+ *
  * @param {Date} date
- * @reurns {string}
+ * @returns {string}
  */
 function getStringifiedDateAndTime(date) {
   const pad = val => String(val).padStart(2, "0");
@@ -73,11 +75,13 @@ export class ProfileSaveOrUploadDialog {
   #errorElement = $("#save-upload-error");
   /**
    * The gzipped profile data
+   *
    * @type {Uint8Array | null}
    */
   #profileData = null;
   /**
    * This controls which elements are displayed. See #updateVisibilities.
+   *
    * @type {"idle" | "uploading" | "uploaded" | "saved" | "error"}
    */
   #state = "idle";
@@ -93,6 +97,7 @@ export class ProfileSaveOrUploadDialog {
 
   /**
    * This is called to start the upload or save process.
+   *
    * @param {Uint8Array} profileData
    */
   init(profileData) {
@@ -109,6 +114,7 @@ export class ProfileSaveOrUploadDialog {
 
   /**
    * Set the state and update the visibility of the various elements.
+   *
    * @param {"idle" | "uploading" | "uploaded" | "saved" | "error"} state
    */
   #setState(state) {
@@ -155,7 +161,7 @@ export class ProfileSaveOrUploadDialog {
    * The progress is reported with the callback onProgress. The parameter to
    * this function is a number between 0 and 1.
    *
-   * @param {Object} options
+   * @param {object} options
    * @param {(progress: number) => unknown} options.onProgress
    * @returns {Promise<string>} The JWT token returned by the server
    */
@@ -219,6 +225,7 @@ export class ProfileSaveOrUploadDialog {
   /**
    * This functions sets the text and the value to the progress element while
    * uploading a profile.
+   *
    * @param {number} val A number between 0 and 1.
    */
   #setProgressValue(val) {
@@ -229,6 +236,7 @@ export class ProfileSaveOrUploadDialog {
   /**
    * This saves the profile to a local file, in the preferred downloads
    * directory.
+   *
    * @returns {Promise<void>}
    */
   #saveProfileLocally = async () => {
@@ -256,6 +264,7 @@ export class ProfileSaveOrUploadDialog {
 
   /**
    * This uploads the profile, handling all the messages displayed to the user.
+   *
    * @returns {Promise<void>}
    */
   #uploadProfileData = async () => {
@@ -270,15 +279,50 @@ export class ProfileSaveOrUploadDialog {
         },
       });
 
-      const { extractProfileTokenFromJwt } = await import(
-        "chrome://global/content/aboutLogging/jwt.mjs"
-      );
+      const { extractProfileTokenFromJwt } =
+        await import("chrome://global/content/aboutLogging/jwt.mjs");
       const hash = extractProfileTokenFromJwt(uploadResult);
       const profileUrl = "https://profiler.firefox.com/public/" + hash;
       document.l10n.setArgs(this.#uploadedMessageText, {
         url: profileUrl,
       });
       this.#uploadedUrl.href = profileUrl;
+
+      // Save the uploaded profile information to IndexedDB
+      try {
+        const { saveUploadedProfile } =
+          await import("chrome://global/content/aboutLogging/profileStorage.mjs");
+
+        const uploadDate = new Date();
+        const profileName = await document.l10n.formatValue(
+          "about-logging-uploaded-profile-name",
+          { date: uploadDate.getTime() }
+        );
+
+        await saveUploadedProfile({
+          jwtToken: uploadResult,
+          profileToken: hash,
+          profileUrl,
+          uploadDate,
+          profileName,
+        });
+
+        // Refresh the uploaded profiles list if it's visible
+        this.#refreshUploadedProfilesList();
+      } catch (storageError) {
+        console.error(
+          "Error saving uploaded profile to storage:",
+          storageError
+        );
+        this.#setState("error");
+        document.l10n.setAttributes(
+          this.#errorElement,
+          "about-logging-profile-storage-error",
+          { errorText: String(storageError) }
+        );
+        return;
+      }
+
       this.#setState("uploaded");
     } catch (e) {
       console.error("Error while uploading", e);
@@ -294,10 +338,22 @@ export class ProfileSaveOrUploadDialog {
   /**
    * This uses the Web Share API to share the URL using various ways.
    * Note that this doesn't work on Desktop (Bug 1958347).
+   *
    * @returns {Promise<void>}
    */
   #shareUploadedUrl = async () => {
     const url = this.#uploadedUrl.href;
     await navigator.share({ url });
   };
+
+  /**
+   * Refresh the uploaded profiles list if it exists.
+   */
+  #refreshUploadedProfilesList() {
+    // This method will be called from the main aboutLogging.mjs
+    // when the UploadedProfilesManager is available
+    if (window.gUploadedProfilesManager) {
+      window.gUploadedProfilesManager.refresh();
+    }
+  }
 }

@@ -218,7 +218,7 @@ body.loaded {
 }
 
 a {
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
 }
 
 a::selection {
@@ -329,7 +329,7 @@ blockquote {
 .toolbar {
   padding-block: 16px;
   border: 1px solid var(--toolbar-border);
-  border-radius: 6px;
+  border-radius: var(--border-radius-small);
   box-shadow: 0 2px 8px var(--toolbar-box-shadow);
 
   width: 32px; /* basic width, without padding/border */
@@ -418,7 +418,7 @@ button:disabled {
   height: 32px;
   padding: 0;
   border: 1px solid var(--toolbar-button-border);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   margin: 4px 0;
   background-color: var(--toolbar-button-background);
   background-size: 16px 16px;
@@ -454,7 +454,7 @@ button:disabled {
   color: var(--tooltip-foreground);
   padding: 4px 8px;
   border: 1px solid var(--tooltip-border);
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   visibility: hidden;
   pointer-events: none;
   /* Put above .dropdown .dropdown-popup, which has z-index: 1000. */
@@ -492,14 +492,14 @@ button:disabled {
   z-index: 1000;
   background-color: var(--popup-background);
   visibility: hidden;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   border: 1px solid var(--popup-border);
   box-shadow: 0 0 10px 0 var(--popup-shadow);
   top: var(--space-xsmall);
 
   h2 {
     font-size: var(--font-size-large);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     color: var(--popup-foreground);
     margin-block: var(--space-small);
   }
@@ -590,16 +590,8 @@ body.hcm .color-scheme-buttons {
   justify-content: center;
   /* We want 10px between items, but there's no margin collapsing in flexbox. */
   margin: 10px 5px;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   border-color: var(--popup-border);
-}
-
-.color-scheme-buttons > input:first-child + label {
-  margin-inline-start: 10px;
-}
-
-.color-scheme-buttons > label:last-child {
-  margin-inline-end: 10px;
 }
 
 /* Improved text and layout menu popup */
@@ -676,7 +668,7 @@ body.hcm .color-scheme-buttons {
     background-color: var(--popup-button-background);
     color: var(--popup-button-foreground);
     font-size: inherit;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     padding-inline: var(--space-large) var(--space-xxlarge);
     text-overflow: ellipsis;
     background-image: url("chrome://global/skin/icons/arrow-down.svg");
@@ -875,7 +867,7 @@ div[name="customtheme"] {
 }
 
 .color-scheme-buttons > label {
-  height: 48px;
+  height: var(--size-item-xlarge);
   width: calc(50% - 21px);
   font-size: 15px;
   color: var(--popup-button-foreground);
@@ -916,7 +908,7 @@ div[name="customtheme"] {
   }
 
   .contrast-button:before {
-    background-color: #000000;
+    background-color: black;
   }
 
   .gray-button:before {
@@ -972,6 +964,7 @@ div[name="customtheme"] {
  * must be added to CLASSES_TO_PRESERVE in ReaderMode.sys.mjs, so that
  * Readability.js doesn't strip them out */
 
+/* Variables in .container are for user customization and should not be replaced with design tokens */
 .container {
   margin: 0 auto;
   font-size: var(--font-size);
@@ -980,6 +973,7 @@ div[name="customtheme"] {
   text-align: var(--text-alignment);
   word-spacing: var(--word-spacing);
   letter-spacing: var(--letter-spacing);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-font-weight-tokens */
   font-weight: var(--font-weight);
 
   .header {
@@ -988,7 +982,11 @@ div[name="customtheme"] {
 }
 
 pre {
-  font-family: inherit;
+  font-family: monospace;
+
+  .plain-text-doc & {
+    font-family: inherit;
+  }
 }
 
 .moz-reader-content {
@@ -1014,7 +1012,7 @@ pre {
 .moz-reader-content h1,
 .moz-reader-content h2,
 .moz-reader-content h3 {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .moz-reader-content h1 {
@@ -1064,7 +1062,7 @@ pre {
 .moz-reader-content .wp-caption {
   margin: -10px -10px calc(8px + var(--line-height) * 0.4);
   padding: 10px;
-  border-radius: 5px;
+  border-radius: var(--border-radius-small);
 }
 
 .moz-reader-content li {

@@ -90,7 +90,7 @@ internal class Safelist {
          * @param reader a JsonReader
          * @return the safe list.
          */
-        @Suppress("NestedBlockDepth")
+        @Suppress("NestedBlockDepth", "CognitiveComplexMethod")
         fun fromJson(reader: JsonReader): Safelist {
             val safelist = Safelist()
             reader.beginObject()

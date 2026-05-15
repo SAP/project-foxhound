@@ -13,9 +13,12 @@
 #include "mozilla/PowerOfTwo.h"
 #include "mozilla/ProfileBufferChunkManagerSingle.h"
 #include "mozilla/ProfileChunkedBuffer.h"
+#include "nsTHashMap.h"
 
 class ProcessStreamingContext;
 class RunningTimes;
+
+struct ProfilerJSSourceData;
 
 // Class storing most profiling data in a ProfileChunkedBuffer.
 //
@@ -43,19 +46,22 @@ class ProfileBuffer final {
 
   void CollectCodeLocation(
       const char* aLabel, const char* aStr, uint32_t aFrameFlags,
-      uint64_t aInnerWindowID, const mozilla::Maybe<uint32_t>& aLineNumber,
+      uint64_t aInnerWindowID, uint32_t aSourceId,
+      const mozilla::Maybe<uint32_t>& aLineNumber,
       const mozilla::Maybe<uint32_t>& aColumnNumber,
       const mozilla::Maybe<JS::ProfilingCategoryPair>& aCategoryPair);
 
   // Maximum size of a frameKey string that we'll handle.
-  static const size_t kMaxFrameKeyLength = 512;
+  static constexpr size_t kMaxFrameKeyLength = 512;
 
   // Add JIT frame information to aJITFrameInfo for any JitReturnAddr entries
   // that are currently in the buffer at or after aRangeStart, in samples
   // for the given thread.
   void AddJITInfoForRange(uint64_t aRangeStart, ProfilerThreadId aThreadId,
                           JSContext* aContext, JITFrameInfo& aJITFrameInfo,
-                          mozilla::ProgressLogger aProgressLogger) const;
+                          mozilla::ProgressLogger aProgressLogger,
+                          const nsTHashMap<SourceId, IndexIntoSourceTable>*
+                              aSourceIdToIndexMap = nullptr) const;
 
   // Stream JSON for samples in the buffer to aWriter, using the supplied
   // UniqueStacks object.
@@ -95,6 +101,12 @@ class ProfileBuffer final {
                             const mozilla::TimeStamp& aProcessStartTime,
                             double aSinceTime,
                             mozilla::ProgressLogger aProgressLogger) const;
+
+  // Stream JavaScript source table to JSON and return mapping from sourceId
+  // to index into source table.
+  nsTHashMap<SourceId, IndexIntoSourceTable> StreamSourceTableToJSON(
+      SpliceableJSONWriter& aWriter,
+      const nsTArray<mozilla::JSSourceEntry>& aJSSourceEntries) const;
 
   // Find (via |aLastSample|) the most recent sample for the thread denoted by
   // |aThreadId| and clone it, patching in the current time as appropriate.
@@ -255,8 +267,9 @@ class ProfileBufferCollector final : public ProfilerStackCollector {
 
   virtual void CollectNativeLeafAddr(void* aAddr) override;
   virtual void CollectJitReturnAddr(void* aAddr) override;
-  virtual void CollectWasmFrame(JS::ProfilingCategoryPair aCategory,
-                                const char* aLabel) override;
+  virtual void CollectWasmOrSyncJITFrame(JS::ProfilingCategoryPair aCategory,
+                                         const char* aLabel,
+                                         uint32_t aSourceId) override;
   virtual void CollectProfilingStackFrame(
       const js::ProfilingStackFrame& aFrame) override;
 

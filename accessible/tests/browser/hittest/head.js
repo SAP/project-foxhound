@@ -12,11 +12,14 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+/* import-globals-from ../../mochitest/role.js */
+
 // Loading and common.js from accessible/tests/mochitest/ for all tests, as
-// well as promisified-events.js.
+// well as promisified-events.js and role.js.
 loadScripts(
   { name: "common.js", dir: MOCHITESTS_DIR },
-  { name: "promisified-events.js", dir: MOCHITESTS_DIR }
+  { name: "promisified-events.js", dir: MOCHITESTS_DIR },
+  { name: "role.js", dir: MOCHITESTS_DIR }
 );
 
 const { CommonUtils } = ChromeUtils.importESModule(
@@ -78,10 +81,18 @@ async function testChildAtPoint(dpr, x, y, container, child, grandChild) {
  * at coordinates of child accessible (direct and deep hit test).
  */
 async function hitTest(browser, container, child, grandChild) {
-  const [childX, childY] = await getContentBoundsForDOMElm(
-    browser,
-    getAccessibleDOMNodeID(child)
-  );
+  let domEl = getAccessibleDOMNodeID(child);
+  if (!domEl) {
+    // It is possible this accessible has died, but it is also
+    // possible we are dealing with an accessible constructed
+    // from a pseudoelement, like ::details-content
+    if (child.parent.role == ROLE_DETAILS) {
+      // In the ::details-content case, attempt to use the
+      // inner content to construct our hittesting point.
+      domEl = getAccessibleDOMNodeID(child.firstChild);
+    }
+  }
+  const [childX, childY] = await getContentBoundsForDOMElm(browser, domEl);
   const x = childX + 1;
   const y = childY + 1;
 

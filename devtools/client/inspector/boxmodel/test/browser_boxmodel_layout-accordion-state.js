@@ -58,16 +58,16 @@ function testAccordionStateAfterClickingHeader(doc) {
   );
 }
 
-function testAccordionStateAfterSwitchingSidebars(inspector, doc) {
+async function testAccordionStateAfterSwitchingSidebars(inspector, doc) {
   info(
     "Checking the box model accordion state is persistent after switching sidebars."
   );
 
   info("Selecting the computed view.");
-  inspector.sidebar.select("computedview");
+  await inspector.sidebar.select("computedview");
 
   info("Selecting the layout view.");
-  inspector.sidebar.select("layoutview");
+  await inspector.sidebar.select("layoutview");
 
   info("Checking the state of the box model panel.");
   const item = doc.querySelector("#layout-section-boxmodel");

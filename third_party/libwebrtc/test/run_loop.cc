@@ -9,6 +9,11 @@
  */
 #include "test/run_loop.h"
 
+#include "api/task_queue/task_queue_base.h"
+#include "api/units/time_delta.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_server.h"
+#include "rtc_base/thread.h"
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
@@ -51,7 +56,7 @@ void RunLoop::FakeSocketServer::FailNextWait() {
   fail_next_wait_ = true;
 }
 
-bool RunLoop::FakeSocketServer::Wait(webrtc::TimeDelta max_wait_duration,
+bool RunLoop::FakeSocketServer::Wait(TimeDelta max_wait_duration,
                                      bool process_io) {
   if (fail_next_wait_) {
     fail_next_wait_ = false;

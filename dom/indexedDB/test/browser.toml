@@ -1,6 +1,8 @@
 [DEFAULT]
 tags = "inc-origin-init"
-skip-if = ["buildapp != 'browser'"]
+skip-if = [
+  "buildapp != 'browser'",
+]
 support-files = [
   "head.js",
   "browser_forgetThisSiteAdd.html",
@@ -12,12 +14,16 @@ support-files = [
 ]
 
 ["browser_bug839193.js"]
-skip-if = ["win11_2009 && bits == 32"] # Bug 1607975
 
 ["browser_forgetThisSite.js"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_private_idb.js"]
 skip-if = [
-  "os == 'mac' && debug", # Bug 1456325
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1456325
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1456325
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1456325
   "os == 'win' && debug", # Bug 1456325
 ]

@@ -50,7 +50,7 @@
     }
 
     .title {
-      font-weight: var(--font-weight-bold);
+      font-weight: var(--heading-font-weight);
       margin-block: var(--space-medium);
     }
 
@@ -71,18 +71,23 @@
       pointer-events: none;
     }
 
-    // The "Dismiss" button in the top right corner of the highlight needs to be
-    // in the corner of the wallpaper image
+    // The "Dismiss" button in the top right corner of the highlight needs to be in front of the image
     > moz-button {
-      margin-inline-start: calc(-1 * var(--space-xlarge));
+      position: absolute;
+      inset-inline-end: var(--space-large);
+      inset-block-start: var(--space-large);
     }
+  }
 
-    @media (prefers-color-scheme: dark) {
-      // override colour so that it is visible on the image
-      > moz-button {
-        --dark-icon-color: var(--color-gray-70);
+  // Custom override for dismiss-contrast
+  &.is-inverted-dark-dismiss-button {
+    .feature-highlight-modal {
+      @media (prefers-color-scheme: dark) {
 
-        background-color: var(--dark-icon-color);
+        // override color so that it is visible on the image
+        > moz-button {
+          --button-icon-fill: var(--color-gray-70);
+        }
       }
     }
   }

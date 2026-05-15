@@ -1,8 +1,8 @@
 /*
  * THIS FILE IS AUTO-GENERATED. DO NOT EDIT!
  */
-#ifndef mozilla__net__Http2HuffmanIncoming_h
-#define mozilla__net__Http2HuffmanIncoming_h
+#ifndef mozilla_net_Http2HuffmanIncoming_h
+#define mozilla_net_Http2HuffmanIncoming_h
 
 namespace mozilla {
 namespace net {
@@ -706,4 +706,4 @@ static const HuffmanIncomingTable HuffmanIncomingRoot = {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // mozilla__net__Http2HuffmanIncoming_h
+#endif  // mozilla_net_Http2HuffmanIncoming_h

@@ -163,9 +163,7 @@ add_task(async function () {
 });
 
 async function _selectSidebarPanel(inspector, toolId) {
-  const onSelected = inspector.sidebar.once(`${toolId}-selected`);
-  inspector.sidebar.select(toolId);
-  await onSelected;
+  await inspector.sidebar.select(toolId);
 }
 
 function _toDataURL(content) {

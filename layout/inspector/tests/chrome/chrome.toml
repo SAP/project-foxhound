@@ -1,7 +1,16 @@
 [DEFAULT]
+prefs = [
+  "layout.css.at-scope.enabled=true",
+]
 support-files = ["GentiumPlus-R.woff"]
 
+["test_CSSStyleDeclaration_hasLonghandProperty.html"]
+
+["test_CSSStyleRule_getScopeRootFor.html"]
+
 ["test_CSSStyleRule_querySelectorAll.html"]
+
+["test_CSSStyleRule_querySelectorAll_scope.html"]
 
 ["test_bug467669.xhtml"]
 support-files = ["test_bug467669.css"]

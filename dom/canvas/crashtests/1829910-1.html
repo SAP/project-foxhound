@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<script>
+window.onload = () => {
+  const c = document.createElement("canvas")
+  document.documentElement.appendChild(c)
+  const cx = c.getContext("2d")
+  c.width = window.innerWidth
+  c.height = window.innerHeight
+  const w = 16
+  const cols = new Array(c.width / w).fill(0)
+  cx.fillStyle = "rgba(0, 0, 0, 0.05)"
+  cx.fillRect(0, 0, c.width, c.height)
+  cx.fillStyle = "#0F0"
+  cols.forEach((col, i) => {
+    cx.fillText(".", i * w, col * w)
+    cols[i]++
+    if (col * w > c.height && Math.random() > 0.975)
+    cols[i] = 0
+  });
+}
+</script>
+</head>
+</html>
+

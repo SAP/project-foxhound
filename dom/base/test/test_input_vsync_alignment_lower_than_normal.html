@@ -12,6 +12,7 @@
   let runOrder = [];
   function checkResult() {
     if (runOrder.length == 3) {
+      info(`Checking run: ${JSON.stringify(runOrder)}`);
       if (runOrder[0] === "Normal") {
         isDeeply(
             runOrder,
@@ -45,7 +46,7 @@
 
   SpecialPowers.pushPrefEnv({
       set: [["dom.input_events.strict_input_vsync_alignment", true]]
-  }, runTest());
+  }).then(runTest);
   </script>
 </body>
 </html>

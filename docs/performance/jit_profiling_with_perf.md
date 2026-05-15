@@ -37,6 +37,7 @@ Environment variables that must be defined for perf JIT profiling:
 `IONPERF=func` will disable all annotation and only function names will be available. It is the fastest option.\
 `IONPERF=ir` will enable IR annotation.\
 `IONPERF=ir-ops` will enable IR annotation with operand support.  **Requires --enable-jitspew** and adds additional overhead to "ir".\
+`IONPERF=ir-graph` will output the full IR for interactive visualization.  **Requires --enable-jitspew** and adds additional overhead to "ir".\
 `IONPERF=src` will enable source code annotation **only if** perf can read the source file locally.  Only really works well in the JS shell.
 
 ## Profiling the JS shell

@@ -6,8 +6,8 @@
 
 /* Private forward declarations. */
 
-#ifndef xpcforwards_h___
-#define xpcforwards_h___
+#ifndef xpcforwards_h_
+#define xpcforwards_h_
 
 // forward declarations of internally used classes...
 
@@ -48,4 +48,4 @@ class nsXPCComponents_Utils;
 
 class AutoMarkingPtr;
 
-#endif /* xpcforwards_h___ */
+#endif /* xpcforwards_h_ */

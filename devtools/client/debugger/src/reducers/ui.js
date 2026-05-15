@@ -6,6 +6,7 @@
 
 /**
  * UI reducer
+ *
  * @module reducers/ui
  */
 
@@ -144,10 +145,10 @@ function update(state = initialUIState(), action) {
       return { ...state, highlightedLineRange: null };
     }
 
-    case "REMOVE_THREAD": {
+    case "REMOVE_SOURCES": {
       // Reset the highlighted range if the related source has been removed
-      const sourceId = state.highlightedLineRange?.sourceId;
-      if (sourceId && action.sources.some(s => s.id == sourceId)) {
+      const source = state.highlightedLineRange?.source;
+      if (source && action.sources.includes(source)) {
         return { ...state, highlightedLineRange: null };
       }
       return state;

@@ -8,7 +8,7 @@ import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertNotNull
 import junit.framework.TestCase.assertNull
 import junit.framework.TestCase.assertTrue
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.telemetry.glean.testing.GleanTestRule
@@ -144,9 +144,9 @@ class SetupChecklistTelemetryMiddlewareTest {
             isCompleted = false,
         )
 
-        val context = mock<MiddlewareContext<AppState, AppAction>>()
+        val store = mock<Store<AppState, AppAction>>()
         middleware.invoke(
-            context = context,
+            store = store,
             next = {},
             action = AppAction.SetupChecklistAction.ChecklistItemClicked(task),
         )

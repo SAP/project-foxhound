@@ -1,6 +1,10 @@
 // SKIP test262 export
 // Behavior is not currently specified.
 
+if (typeof supportDifferentialTesting !== "function") {
+    var {supportDifferentialTesting} = SpecialPowers.Cu.getJSTestingFunctions();
+}
+
 // Copies bytes bit-wise if source and target type are the same.
 // Only detectable when using floating point typed arrays.
 const float32Constructors = anyTypedArrayConstructors.filter(isFloatConstructor)
@@ -77,9 +81,11 @@ for (let [sourceConstructor, targetConstructor] of p(float32Constructors, float6
     assertEq(rf64.length, len);
     assertEq(ri32.length, 2 * len);
 
-    // NaN bits canonicalized.
-    for (let i = 0; i < len; ++i) {
-        assertEqArray(geti64(ri32, i), cNaN.Float64);
+    // NaN bits canonicalized when differential testing is enabled.
+    if (supportDifferentialTesting()) {
+        for (let i = 0; i < len; ++i) {
+            assertEqArray(geti64(ri32, i), cNaN.Float64);
+        }
     }
 }
 
@@ -100,9 +106,11 @@ for (let [sourceConstructor, targetConstructor] of p(float64Constructors, float3
     assertEq(rf32.length, len);
     assertEq(ri32.length, len);
 
-    // NaN bits canonicalized.
-    for (let i = 0; i < len; ++i) {
-        assertEqArray(ri32[i], cNaN.Float32);
+    // NaN bits canonicalized when differential testing is enabled.
+    if (supportDifferentialTesting()) {
+        for (let i = 0; i < len; ++i) {
+            assertEqArray(ri32[i], cNaN.Float32);
+        }
     }
 }
 

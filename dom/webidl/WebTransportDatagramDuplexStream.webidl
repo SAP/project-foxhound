@@ -5,7 +5,7 @@
 
 /* https://w3c.github.io/webtransport/#duplex-stream */
 
-[Exposed=(Window,Worker), SecureContext, Pref="network.webtransport.datagrams.enabled"]
+[Exposed=(Window,Worker), SecureContext]
 interface WebTransportDatagramDuplexStream {
   readonly attribute ReadableStream readable;
   readonly attribute WritableStream writable;

@@ -15,22 +15,14 @@ const IMG_FILE =
   "browser/devtools/client/webconsole/test/browser/test-image.png";
 const CONTENT_BLOCKED_BY_ETP_URL = TRACKER_URL + IMG_FILE;
 
-const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
-);
-UrlClassifierTestUtils.addTestTrackers();
-registerCleanupFunction(function () {
-  UrlClassifierTestUtils.cleanupTestTrackers();
-});
-
-pushPref("privacy.trackingprotection.enabled", true);
-pushPref("devtools.webconsole.groupWarningMessages", true);
-
 const ENHANCED_TRACKING_PROTECTION_GROUP_LABEL =
   "The resource at “<URL>” was blocked because Enhanced Tracking Protection is enabled.";
 
 add_task(async function testEnhancedTrackingProtectionMessage() {
+  await setupUrlClassifierTest();
+
   // Enable groupWarning and persist log
+  await pushPref("devtools.webconsole.groupSimilarMessages", true);
   await pushPref("devtools.webconsole.persistlog", true);
 
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -324,7 +316,7 @@ function emitEnhancedTrackingProtectionMessage() {
  * ordering still works fine).
  *
  * @param {WebConsole} hud
- * @param {String} str
+ * @param {string} str
  */
 function logStrings(hud, str) {
   const onFirstMessage = waitForMessageByType(hud, `${str} #1`, ".console-api");

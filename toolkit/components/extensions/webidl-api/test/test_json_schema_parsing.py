@@ -22,10 +22,9 @@ def test_parse_simple_single_api_namespace(write_jsonschema_fixtures):
     - parse a simple namespace that includes one permission, type,
       function and event
     """
-    schema_dir = write_jsonschema_fixtures(
-        {
-            "test_api.json": dedent(
-                """
+    schema_dir = write_jsonschema_fixtures({
+        "test_api.json": dedent(
+            """
           // Single line comments added before the JSON data are tolerated
           // and ignored.
           [
@@ -62,9 +61,8 @@ def test_parse_simple_single_api_namespace(write_jsonschema_fixtures):
             }
           ]
         """
-            ),
-        }
-    )
+        ),
+    })
 
     schemas = Schemas()
     schemas.load_schemas(schema_dir, "toolkit")
@@ -107,23 +105,19 @@ def test_parse_error_on_types_without_id_or_extend(
     """
     Test parsing types without id or $extend raise an error while parsing.
     """
-    schema_dir = write_jsonschema_fixtures(
-        {
-            "test_broken_types.json": json.dumps(
-                [
+    schema_dir = write_jsonschema_fixtures({
+        "test_broken_types.json": json.dumps([
+            {
+                **base_schema(),
+                "namespace": "testBrokenTypeAPI",
+                "types": [
                     {
-                        **base_schema(),
-                        "namespace": "testBrokenTypeAPI",
-                        "types": [
-                            {
-                                # type with no "id2 or "$ref" properties
-                            }
-                        ],
+                        # type with no "id2 or "$ref" properties
                     }
-                ]
-            )
-        }
-    )
+                ],
+            }
+        ])
+    })
 
     schemas = Schemas()
     schemas.load_schemas(schema_dir, "toolkit")
@@ -139,31 +133,27 @@ def test_parse_ignores_unsupported_types(base_schema, write_jsonschema_fixtures)
     """
     Test parsing types without id or $extend raise an error while parsing.
     """
-    schema_dir = write_jsonschema_fixtures(
-        {
-            "test_broken_types.json": json.dumps(
-                [
+    schema_dir = write_jsonschema_fixtures({
+        "test_broken_types.json": json.dumps([
+            {
+                **base_schema(),
+                "namespace": "testUnsupportedTypesAPI",
+                "types": [
                     {
-                        **base_schema(),
-                        "namespace": "testUnsupportedTypesAPI",
-                        "types": [
-                            {
-                                "id": "AnUnsupportedType",
-                                "type": "string",
-                                "unsupported": True,
-                            },
-                            {
-                                # missing id or $ref shouldn't matter
-                                # no parsing error expected.
-                                "unsupported": True,
-                            },
-                            {"id": "ASupportedType", "type": "string"},
-                        ],
-                    }
-                ]
-            )
-        }
-    )
+                        "id": "AnUnsupportedType",
+                        "type": "string",
+                        "unsupported": True,
+                    },
+                    {
+                        # missing id or $ref shouldn't matter
+                        # no parsing error expected.
+                        "unsupported": True,
+                    },
+                    {"id": "ASupportedType", "type": "string"},
+                ],
+            }
+        ])
+    })
 
     schemas = Schemas()
     schemas.load_schemas(schema_dir, "toolkit")

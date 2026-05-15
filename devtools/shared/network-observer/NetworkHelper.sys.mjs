@@ -123,10 +123,13 @@ export var NetworkHelper = {
    *        Text to convert.
    * @param string charset
    *        Charset to convert the text to.
+   * @param boolean throwOnFailure
+   *        Whether exceptions should be bubbled up or swallowed. Defaults to
+   *        false.
    * @returns string
    *          Converted text.
    */
-  convertToUnicode(text, charset) {
+  convertToUnicode(text, charset, throwOnFailure) {
     // FIXME: We need to throw when text can't be converted e.g. the contents of
     // an image. Until we have a way to do so with TextEncoder and TextDecoder
     // we need to use nsIScriptableUnicodeConverter instead.
@@ -137,6 +140,9 @@ export var NetworkHelper = {
       conv.charset = charset || "UTF-8";
       return conv.ConvertToUnicode(text);
     } catch (ex) {
+      if (throwOnFailure) {
+        throw ex;
+      }
       return text;
     }
   },
@@ -160,42 +166,65 @@ export var NetworkHelper = {
   },
 
   /**
-   * Reads the posted text from request.
+   * Reads the post data from request.
    *
    * @param nsIHttpChannel request
    * @param string charset
    *        The content document charset, used when reading the POSTed data.
-   * @returns string or null
-   *          Returns the posted string if it was possible to read from request
-   *          otherwise null.
+   *
+   * @returns object or null
+   *          Returns an object with the following properties:
+   *            - {string|null} data: post data as string if it was possible to
+   *              read from request, otherwise null.
+   *            - {boolean} isDecodedAsText: if the data could be successfully read with
+   *              the specified charset.
+   *          Returns null if the channel does not implement nsIUploadChannel,
+   *          and therefore cannot upload a data stream.
    */
-  readPostTextFromRequest(request, charset) {
-    if (request instanceof Ci.nsIUploadChannel) {
-      const iStream = request.uploadStream;
-
-      let isSeekableStream = false;
-      if (iStream instanceof Ci.nsISeekableStream) {
-        isSeekableStream = true;
-      }
-
-      let prevOffset;
-      if (isSeekableStream) {
-        prevOffset = iStream.tell();
-        iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
-      }
-
-      // Read data from the stream.
-      const text = this.readAndConvertFromStream(iStream, charset);
-
-      // Seek locks the file, so seek to the beginning only if necko hasn't
-      // read it yet, since necko doesn't seek to 0 before reading (at lest
-      // not till 459384 is fixed).
-      if (isSeekableStream && prevOffset == 0) {
-        iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
-      }
-      return text;
+  readPostDataFromRequest(request, charset) {
+    if (!(request instanceof Ci.nsIUploadChannel)) {
+      return null;
     }
-    return null;
+    const iStream = request.uploadStream;
+
+    let isSeekableStream = false;
+    if (iStream instanceof Ci.nsISeekableStream) {
+      isSeekableStream = true;
+    }
+
+    let prevOffset;
+    if (isSeekableStream) {
+      prevOffset = iStream.tell();
+      iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
+    }
+
+    let data = null;
+    let isDecodedAsText = true;
+
+    // Read data from the stream.
+    try {
+      data = lazy.NetUtil.readInputStreamToString(iStream, iStream.available());
+    } catch {
+      // If we failed to read the stream, assume there is no valid request post
+      // data to display.
+      return null;
+    }
+
+    // Decode the data as text with the provided charset.
+    try {
+      data = this.convertToUnicode(data, charset, true);
+    } catch (err) {
+      isDecodedAsText = false;
+    }
+
+    // Seek locks the file, so seek to the beginning only if necko hasn't
+    // read it yet, since necko doesn't seek to 0 before reading (at lest
+    // not till 459384 is fixed).
+    if (isSeekableStream && prevOffset == 0) {
+      iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
+    }
+
+    return { data, isDecodedAsText };
   },
 
   /**

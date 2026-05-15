@@ -12,7 +12,6 @@
 #include "nsINode.h"
 #include "nsIFrame.h"
 #include "nsIFormControl.h"
-#include "nsTextFragment.h"
 #include "nsString.h"
 #include "nsAtom.h"
 #include "nsServiceManagerUtils.h"
@@ -22,8 +21,8 @@
 #include "nsRange.h"
 #include "nsReadableUtils.h"
 #include "nsContentUtils.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/TreeIterator.h"
 #include "mozilla/dom/Element.h"
@@ -205,7 +204,7 @@ static bool SkipNode(const nsIContent* aContent) {
     // Skip option nodes if their select is a combo box, or if they
     // have no select (somehow).
     if (const auto* option = HTMLOptionElement::FromNode(content)) {
-      auto* select = HTMLSelectElement::FromNodeOrNull(option->GetParent());
+      const auto* select = option->GetSelect();
       if (!select || select->IsCombobox()) {
         DEBUG_FIND_PRINTF("Skipping node: ");
         DumpNode(content);
@@ -517,7 +516,7 @@ nsFind::SetMatchDiacritics(bool aMatchDiacritics) {
 // iterator to go back to a previously visited node, so we always save the
 // "match anchor" node and offset.
 //
-// Text nodes store their text in an nsTextFragment, which is effectively a
+// Text nodes store their text in an CharacterDataBuffer, which is effectively a
 // union of a one-byte string or a two-byte string. Single and double strings
 // are intermixed in the dom. We don't have string classes which can deal with
 // intermixed strings, so all the handling is done explicitly here.
@@ -558,8 +557,8 @@ char32_t nsFind::PeekNextChar(State& aState, bool aAlreadyMatching) const {
       return L'\0';
     }
 
-    const nsTextFragment& frag = text->TextFragment();
-    uint32_t len = frag.GetLength();
+    const CharacterDataBuffer& characterDataBuffer = text->DataBuffer();
+    uint32_t len = characterDataBuffer.GetLength();
     if (!len) {
       continue;
     }
@@ -567,10 +566,10 @@ char32_t nsFind::PeekNextChar(State& aState, bool aAlreadyMatching) const {
     const char16_t* t2b = nullptr;
     const char* t1b = nullptr;
 
-    if (frag.Is2b()) {
-      t2b = frag.Get2b();
+    if (characterDataBuffer.Is2b()) {
+      t2b = characterDataBuffer.Get2b();
     } else {
-      t1b = frag.Get1b();
+      t1b = characterDataBuffer.Get1b();
     }
 
     int32_t index = mFindBackward ? len - 1 : 0;
@@ -682,7 +681,7 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
   // Direction to move pindex and ptr*
   const int incr = mFindBackward ? -1 : 1;
 
-  const nsTextFragment* frag = nullptr;
+  const CharacterDataBuffer* characterDataBuffer = nullptr;
   int32_t fragLen = 0;
 
   // Pointers into the current fragment:
@@ -724,7 +723,7 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
 
       // Are we going back to a previous node?
       if (matchAnchorNode != state.GetCurrentNode()) {
-        frag = nullptr;
+        characterDataBuffer = nullptr;
         state.PositionAt(*matchAnchorNode);
         DEBUG_FIND_PRINTF("Repositioned anchor node\n");
       }
@@ -747,7 +746,7 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
     DEBUG_FIND_PRINTF("Loop (pindex = %d)...\n", pindex);
 
     // If this is our first time on a new node, reset the pointers:
-    if (!frag) {
+    if (!characterDataBuffer) {
       current = state.GetNextNode(!!matchAnchorNode);
       if (!current) {
         DEBUG_FIND_PRINTF("Reached the end, matching: %d\n", !!matchAnchorNode);
@@ -769,8 +768,8 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
         c = 0;
       }
 
-      frag = &current->TextFragment();
-      fragLen = int32_t(frag->GetLength());
+      characterDataBuffer = &current->DataBuffer();
+      fragLen = int32_t(characterDataBuffer->GetLength());
 
       // Set our starting point in this node. If we're going back to the anchor
       // node, which means that we just ended a partial match, use the saved
@@ -795,12 +794,12 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
       if (findex < 0 || findex > fragLen - 1) {
         DEBUG_FIND_PRINTF(
             "At the end of a text node -- skipping to the next\n");
-        frag = nullptr;
+        characterDataBuffer = nullptr;
         continue;
       }
 
-      if (frag->Is2b()) {
-        t2b = frag->Get2b();
+      if (characterDataBuffer->Is2b()) {
+        t2b = characterDataBuffer->Get2b();
         t1b = nullptr;
 #ifdef DEBUG_FIND
         nsAutoString str2(t2b, fragLen);
@@ -808,7 +807,7 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
                           NS_LossyConvertUTF16toASCII(str2).get());
 #endif
       } else {
-        t1b = frag->Get1b();
+        t1b = characterDataBuffer->Get1b();
         t2b = nullptr;
 #ifdef DEBUG_FIND
         nsAutoCString str1(t1b, fragLen);
@@ -825,7 +824,7 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
             "Will need to pull a new node: mAO = %d, frag len=%d\n",
             matchAnchorOffset, fragLen);
         // Done with this node.  Pull a new one.
-        frag = nullptr;
+        characterDataBuffer = nullptr;
         continue;
       }
     }
@@ -1010,15 +1009,6 @@ already_AddRefed<nsRange> nsFind::FindFromRangeBoundaries(
           if (!rv.Failed()) {
             range->SetEnd(*endParent, matchEndOffset, rv);
           }
-          // https://html.spec.whatwg.org/#interaction-with-details-and-hidden=until-found
-          NS_DispatchToMainThread(NS_NewRunnableFunction(
-              "RevealHiddenUntilFound",
-              [node = RefPtr(startParent)]()
-                  MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
-                    node->RevealAncestorClosedDetails();
-                    node->RevealAncestorHiddenUntilFoundAndFireBeforematchEvent(
-                        IgnoreErrors());
-                  }));
           if (!rv.Failed()) {
             return range.forget();
           }

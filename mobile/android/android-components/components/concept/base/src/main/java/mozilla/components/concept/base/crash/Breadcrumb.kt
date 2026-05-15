@@ -23,27 +23,22 @@ data class Breadcrumb(
      * Message of the crash breadcrumb.
      */
     val message: String = "",
-
     /**
      * Data related to the crash breadcrumb.
      */
     val data: Map<String, String> = emptyMap(),
-
     /**
      * Category of the crash breadcrumb.
      */
     val category: String = "",
-
     /**
      * Level of the crash breadcrumb.
      */
     val level: Level = Level.DEBUG,
-
     /**
      * Type of the crash breadcrumb.
      */
     val type: Type = Type.DEFAULT,
-
     /**
      * Date of the crash breadcrumb.
      */

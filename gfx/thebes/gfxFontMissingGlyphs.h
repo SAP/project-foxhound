@@ -6,7 +6,6 @@
 #ifndef GFX_FONTMISSINGGLYPHS_H
 #define GFX_FONTMISSINGGLYPHS_H
 
-#include "mozilla/Attributes.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/gfx/Rect.h"
 

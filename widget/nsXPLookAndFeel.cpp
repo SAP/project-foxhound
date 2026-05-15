@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/RWLock.h"
 #include "nscore.h"
@@ -121,8 +119,7 @@ static const char sIntPrefs[][45] = {
     "ui.windowsMica",
     "ui.windowsMicaPopups",
     "ui.macBigSurTheme",
-    "ui.macRTL",
-    "ui.macTitlebarHeight",
+    "ui.macTahoeTheme",
     "ui.alertNotificationOrigin",
     "ui.scrollToClick",
     "ui.IMERawInputUnderlineStyle",
@@ -165,6 +162,7 @@ static const char sIntPrefs[][45] = {
     "ui.fullKeyboardAccess",
     "ui.pointingDeviceKinds",
     "ui.nativeMenubar",
+    "ui.hourCycle",
 };
 
 static_assert(std::size(sIntPrefs) == size_t(LookAndFeel::IntID::End),
@@ -530,6 +528,7 @@ static constexpr struct {
     // need to re-layout.
     {"browser.theme.toolbar-theme"_ns, widget::ThemeChangeKind::AllBits},
     {"browser.theme.content-theme"_ns},
+    {"browser.theme.native-theme"_ns},
     // Affects PreferenceSheet, and thus styling.
     {"browser.anchor_color"_ns, widget::ThemeChangeKind::Style},
     {"browser.anchor_color.dark"_ns, widget::ThemeChangeKind::Style},
@@ -712,7 +711,7 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(Activetext, 0xee, 0x00, 0x00)
       COLOR(Visitedtext, 0x55, 0x1A, 0x8B)
       COLOR(MozAutofillBackground, 0xff, 0xfc, 0xc8)
-      COLOR(TargetTextBackground, 0xff, 0xeb, 0xcd)
+      COLOR(TargetTextBackground, 0xf5, 0xcc, 0x58)  // --yellow-20
       COLOR(TargetTextForeground, 0x00, 0x00, 0x00)
     default:
       break;
@@ -729,7 +728,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
   static constexpr nscolor kWindowBackground = NS_RGB(28, 27, 34);
   static constexpr nscolor kWindowText = NS_RGB(251, 251, 254);
   switch (aID) {
-    case ColorID::Window:  // --in-content-page-background
+    case ColorID::Window:  // --background-color-canvas
     case ColorID::Background:
     case ColorID::Appworkspace:
     case ColorID::Scrollbar:
@@ -759,13 +758,12 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::MozDialog:  // --background-color-box
       color = NS_RGB(35, 34, 43);
       break;
-    case ColorID::Windowtext:  // --in-content-page-color
+    case ColorID::Windowtext:  // --text-color
     case ColorID::MozDialogtext:
     case ColorID::MozSidebartext:
     case ColorID::Fieldtext:
     case ColorID::Infotext:
-    case ColorID::Buttontext:  // --in-content-button-text-color (via
-                               // --in-content-page-color)
+    case ColorID::Buttontext:  // --button-text-color
     case ColorID::MozComboboxtext:
     case ColorID::MozButtonhovertext:
     case ColorID::MozButtonactivetext:
@@ -780,7 +778,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       color = kWindowText;
       break;
     case ColorID::MozSidebarborder:
-    case ColorID::Windowframe:  // --in-content-box-border-color computed
+    case ColorID::Windowframe:  // --border-color computed
                                 // with kWindowText above
                                 // kWindowBackground.
     case ColorID::Graytext:     // opacity: 0.4 of kWindowText blended over the
@@ -802,21 +800,19 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       color = NS_RGB(0xb1, 0xb1, 0xb1);
       break;
     case ColorID::MozCellhighlight:
-    case ColorID::Selecteditem:  // --in-content-primary-button-background /
-                                 // --in-content-item-selected
+    case ColorID::Selecteditem:  // --color-accent-primary-selected
       color = NS_RGB(0, 221, 255);
       break;
     case ColorID::MozSidebar:
     case ColorID::Field:
-    case ColorID::Buttonface:  // --in-content-button-background
+    case ColorID::Buttonface:  // --button-background-color
     case ColorID::Buttonshadow:
     case ColorID::Buttonhighlight:
     case ColorID::MozColheader:
     case ColorID::Threedface:
     case ColorID::MozCombobox:
     case ColorID::MozCellhighlighttext:
-    case ColorID::Selecteditemtext:  // --in-content-primary-button-text-color /
-                                     // --in-content-item-selected-text
+    case ColorID::Selecteditemtext:  // --text-color-accent-primary-selected
       color = NS_RGB(43, 42, 51);
       break;
     case ColorID::Threeddarkshadow:  // Same as Threedlightshadow but with the
@@ -826,11 +822,11 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::MozButtondisabledface:
       color = NS_ComposeColors(kWindowBackground, NS_RGBA(43, 42, 51, 102));
       break;
-    case ColorID::MozButtonhoverface:  // --in-content-button-background-hover
+    case ColorID::MozButtonhoverface:  // --button-background-color-hover
     case ColorID::MozColheaderhover:
       color = NS_RGB(82, 82, 94);
       break;
-    case ColorID::MozButtonactiveface:  // --in-content-button-background-active
+    case ColorID::MozButtonactiveface:  // --button-background-color-active
     case ColorID::MozColheaderactive:
       color = NS_RGB(91, 91, 102);
       break;
@@ -843,7 +839,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::Linktext:
       // If you change this color, you probably also want to change the default
       // value of browser.anchor_color.dark.
-      color = NS_RGB(0x8c, 0x8c, 0xff);
+      color = NS_RGB(0x00, 0xca, 0xdb);
       break;
     case ColorID::Activetext:
     case ColorID::SpellCheckerUnderline:
@@ -871,6 +867,12 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       // This is the light version of this color, but darkened to have good
       // contrast with our white-ish FieldText.
       color = NS_RGB(0x72, 0x6c, 0x00);
+      break;
+    case ColorID::TargetTextBackground:
+      color = NS_RGB(0xff, 0xf4, 0xd0);  // --yellow-0
+      break;
+    case ColorID::TargetTextForeground:
+      color = NS_RGB(0x00, 0x00, 0x00);
       break;
     default:
       return Nothing();
@@ -1488,7 +1490,7 @@ Modifiers LookAndFeel::GetMenuAccessKeyModifiers() {
   }
 }
 
-void LookAndFeel::EnsureInit() { Unused << nsXPLookAndFeel::GetInstance(); }
+void LookAndFeel::EnsureInit() { (void)nsXPLookAndFeel::GetInstance(); }
 
 // static
 void LookAndFeel::Refresh() {

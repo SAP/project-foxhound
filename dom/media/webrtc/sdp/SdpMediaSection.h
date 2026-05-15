@@ -4,15 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _SDPMEDIASECTION_H_
-#define _SDPMEDIASECTION_H_
+#ifndef SDPMEDIASECTION_H_
+#define SDPMEDIASECTION_H_
 
-#include "mozilla/Maybe.h"
-#include "sdp/SdpEnum.h"
-#include "sdp/SdpAttributeList.h"
+#include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
+
+#include "sdp/SdpAttributeList.h"
+#include "sdp/SdpEnum.h"
 
 namespace mozilla {
 

@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <locale.h>
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/intl/Locale.h"
 #include "OSPreferences.h"
 
 #include "nsServiceManagerUtils.h"
-#include "nsIGSettingsService.h"
 
 using namespace mozilla;
 using namespace mozilla::intl;
@@ -43,39 +43,6 @@ bool OSPreferences::ReadRegionalPrefsLocales(nsTArray<nsCString>& aLocaleList) {
   return false;
 }
 
-/*
- * This looks up into gtk settings for hourCycle format.
- *
- * This works for all GUIs that use gtk settings like Gnome, Elementary etc.
- *
- * We're taking the current 12/24h settings irrelevant of the locale, because
- * in the UI user selects this setting for all locales.
- */
-static int HourCycle() {
-  nsCOMPtr<nsIGSettingsService> gsettings =
-      do_GetService(NS_GSETTINGSSERVICE_CONTRACTID);
-  if (!gsettings) {
-    return 0;
-  }
-
-  nsCOMPtr<nsIGSettingsCollection> desktop_settings;
-  gsettings->GetCollectionForSchema("org.gnome.desktop.interface"_ns,
-                                    getter_AddRefs(desktop_settings));
-  if (!desktop_settings) {
-    return 0;
-  }
-
-  nsAutoCString result;
-  desktop_settings->GetString("clock-format"_ns, result);
-  if (result == "12h") {
-    return 12;
-  }
-  if (result == "24h") {
-    return 24;
-  }
-  return 0;
-}
-
 /**
  * Since Gtk does not provide a way to customize or format date/time patterns,
  * we're reusing ICU data here, but we do modify it according to the only
@@ -105,7 +72,7 @@ bool OSPreferences::ReadDateTimePattern(DateTimeFormatStyle aDateStyle,
   }
 
   // Customize the skeleton if necessary to reflect user's 12/24hr pref
-  int hourCycle = HourCycle();
+  int hourCycle = LookAndFeel::GetInt(LookAndFeel::IntID::HourCycle);
   if (hourCycle == 12 || hourCycle == 24) {
     OverrideSkeletonHourCycle(hourCycle == 24, skeleton);
   }

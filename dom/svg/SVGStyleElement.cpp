@@ -73,7 +73,7 @@ void SVGStyleElement::UnbindFromTree(UnbindContext& aContext) {
   nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
   ShadowRoot* oldShadow = GetContainingShadow();
   SVGStyleElementBase::UnbindFromTree(aContext);
-  Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
+  (void)UpdateStyleSheetInternal(oldDoc, oldShadow);
 }
 
 void SVGStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -84,7 +84,7 @@ void SVGStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
         aName == nsGkAtoms::type) {
-      Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+      (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
     }
   }
 
@@ -140,7 +140,7 @@ void SVGStyleElement::ContentWillBeRemoved(nsIContent* aChild,
 
 void SVGStyleElement::ContentChanged(nsIContent* aContent) {
   if (nsContentUtils::IsInSameAnonymousTree(this, aContent)) {
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr);
   }
 }
 

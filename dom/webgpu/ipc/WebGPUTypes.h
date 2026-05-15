@@ -7,9 +7,13 @@
 #define WEBGPU_TYPES_H_
 
 #include <cstdint>
+
+#include "mozilla/GfxMessageUtils.h"
 #include "mozilla/Maybe.h"
-#include "nsString.h"
+#include "mozilla/ParamTraits_STL.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/layers/LayersSurfaces.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 enum class GPUErrorFilter : uint8_t;
@@ -77,6 +81,42 @@ class StringHelper {
   Maybe<NS_ConvertUTF16toUTF8> mNarrow;
 };
 
+// Used to create an ExternalTextureSourceHost.
+struct ExternalTextureSourceDescriptor {
+  std::array<RawId, 3> mTextureIds;
+  std::array<RawId, 3> mViewIds;
+  layers::SurfaceDescriptor mSurfaceDescriptor;
+  gfx::IntSize mSize;
+  std::array<float, 6> mSampleTransform;
+  std::array<float, 6> mLoadTransform;
+};
+
 }  // namespace mozilla::webgpu
+
+namespace IPC {
+template <>
+struct ParamTraits<mozilla::webgpu::ExternalTextureSourceDescriptor> {
+  using ParamType = mozilla::webgpu::ExternalTextureSourceDescriptor;
+
+  static void Write(MessageWriter* aWriter, const ParamType& aParam) {
+    WriteParam(aWriter, aParam.mTextureIds);
+    WriteParam(aWriter, aParam.mViewIds);
+    WriteParam(aWriter, aParam.mSurfaceDescriptor);
+    WriteParam(aWriter, aParam.mSize);
+    WriteParam(aWriter, aParam.mSampleTransform);
+    WriteParam(aWriter, aParam.mLoadTransform);
+  }
+
+  static bool Read(MessageReader* aReader, ParamType* aResult) {
+    return ReadParam(aReader, &aResult->mTextureIds) &&
+           ReadParam(aReader, &aResult->mViewIds) &&
+           ReadParam(aReader, &aResult->mSurfaceDescriptor) &&
+           ReadParam(aReader, &aResult->mSize) &&
+           ReadParam(aReader, &aResult->mSampleTransform) &&
+           ReadParam(aReader, &aResult->mLoadTransform);
+  }
+};
+
+}  // namespace IPC
 
 #endif  // WEBGPU_TYPES_H_

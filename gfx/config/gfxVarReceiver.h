@@ -6,6 +6,8 @@
 #ifndef mozilla_gfx_config_gfxVarReceiver_h
 #define mozilla_gfx_config_gfxVarReceiver_h
 
+#include "nsTArrayForwardDeclare.h"
+
 namespace mozilla {
 namespace gfx {
 
@@ -15,7 +17,7 @@ class GfxVarUpdate;
 // updates on gfxVarReceiver.
 class gfxVarReceiver {
  public:
-  virtual void OnVarChanged(const GfxVarUpdate& aVar) = 0;
+  virtual void OnVarChanged(const nsTArray<GfxVarUpdate>& aVar) = 0;
 };
 
 }  // namespace gfx

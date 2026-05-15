@@ -2,7 +2,7 @@
 support-files = [
   "head.js",
   "shared-head.js",
-  "translations-bencher-es.html",
+  "translations-bencher-en.html",
   "translations-test.mjs",
   "translations-tester-blank.html",
   "translations-tester-pdf-file.pdf",
@@ -24,8 +24,14 @@ support-files = [
   "translations-text-cleaning.html",
 ]
 
+["browser_about_translations_copy_button_enabled_states.js"]
+
+["browser_about_translations_copy_button_functionality.js"]
+
 ["browser_about_translations_debounce.js"]
-skip-if = ["os == 'linux'"]  # Bug 1821461
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1821461
+]
 
 ["browser_about_translations_directions.js"]
 
@@ -35,15 +41,25 @@ skip-if = ["os == 'linux'"]  # Bug 1821461
 
 ["browser_about_translations_flip_lexical_shortlist.js"]
 
-["browser_about_translations_language_swap.js"]
+["browser_about_translations_resize_sections_by_input.js"]
 
-["browser_about_translations_message_bar.js"]
+["browser_about_translations_resize_sections_by_window.js"]
+
+["browser_about_translations_resize_sections_by_zoom.js"]
+
+["browser_about_translations_source_clear_button_functionality.js"]
+
+["browser_about_translations_source_clear_button_visibility.js"]
+
+["browser_about_translations_swap_languages_button_detected.js"]
+
+["browser_about_translations_swap_languages_button_explicit.js"]
 
 ["browser_about_translations_telemetry_open.js"]
 
-["browser_about_translations_translations.js"]
+["browser_about_translations_url_load.js"]
 
-["browser_about_translations_url.js"]
+["browser_about_translations_url_update.js"]
 
 ["browser_translations_actor.js"]
 
@@ -65,6 +81,8 @@ skip-if = ["os == 'linux'"]  # Bug 1821461
 
 ["browser_translations_actor_versioning.js"]
 
+["browser_translations_ai_feature.js"]
+
 ["browser_translations_full_page.js"]
 
 ["browser_translations_lang_tags.js"]
@@ -82,3 +100,5 @@ skip-if = ["os == 'linux'"]  # Bug 1821461
 ["browser_translations_translation_document.js"]
 
 ["browser_translations_translation_document_mutations.js"]
+
+["browser_translations_translation_document_script_direction.js"]

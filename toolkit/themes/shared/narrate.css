@@ -225,7 +225,7 @@ body.hcm .narrate-word-highlight {
     padding-inline: var(--space-medium);
     border-radius: var(--border-radius-small);
     background-color: var(--popup-button-background);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     -moz-context-properties: fill;
     fill: currentColor;
 
@@ -240,9 +240,9 @@ body.hcm .narrate-word-highlight {
   > button.select-toggle::after {
     content: "";
     width: 24px;
-    height: var(--icon-size-default);
+    height: var(--icon-size);
     background-repeat: no-repeat;
-    background-size: var(--icon-size-default) auto;
+    background-size: var(--icon-size) auto;
   }
 
   > button.select-toggle::before {

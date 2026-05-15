@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteObjectProxy.h"
+
 #include "AccessCheck.h"
-#include "jsfriendapi.h"
 #include "js/Object.h"  // JS::GetClass
+#include "jsfriendapi.h"
 #include "xpcprivate.h"
 
 namespace mozilla::dom {

@@ -20,7 +20,7 @@ add_task(async function () {
 
   // Reload the page to get the font request
   const waitForRequests = waitForNetworkEvents(monitor, 3);
-  await reloadBrowser();
+  await reloadSelectedTab();
   await waitForRequests;
 
   const wait = waitForDOMIfNeeded(

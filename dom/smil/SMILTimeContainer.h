@@ -7,11 +7,12 @@
 #ifndef DOM_SMIL_SMILTIMECONTAINER_H_
 #define DOM_SMIL_SMILTIMECONTAINER_H_
 
-#include "mozilla/dom/SVGAnimationElement.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/SMILMilestone.h"
 #include "mozilla/SMILTypes.h"
-#include "nscore.h"
+#include "mozilla/dom/SVGAnimationElement.h"
 #include "nsTPriorityQueue.h"
+#include "nscore.h"
 
 namespace mozilla {
 
@@ -24,19 +25,20 @@ class SMILTimeValue;
 //
 class SMILTimeContainer {
  public:
-  SMILTimeContainer();
+  SMILTimeContainer() = default;
   virtual ~SMILTimeContainer();
 
   /*
    * Pause request types.
    */
-  enum {
-    PAUSE_BEGIN = 1,     // Paused because timeline has yet to begin.
-    PAUSE_SCRIPT = 2,    // Paused by script.
-    PAUSE_PAGEHIDE = 4,  // Paused because our doc is hidden.
-    PAUSE_USERPREF = 8,  // Paused because animations are disabled in prefs.
-    PAUSE_IMAGE = 16     // Paused becuase we're in an image that's suspended.
+  enum class PauseType : uint8_t {
+    Begin,     // Paused because timeline has yet to begin.
+    Script,    // Paused by script.
+    PageHide,  // Paused because our doc is hidden.
+    UserPref,  // Paused because animations are disabled in prefs.
+    Image      // Paused becuase we're in an image that's suspended.
   };
+  using PauseTypes = EnumSet<PauseType>;
 
   /*
    * Cause the time container to record its begin time.
@@ -51,7 +53,13 @@ class SMILTimeContainer {
    * each call to Pause of a given aType has been matched by at least one call
    * to Resume with the same aType.
    */
-  virtual void Pause(uint32_t aType);
+  virtual void Pause(PauseType aType);
+
+  /*
+   * Pause this time container when it reaches the specified time.
+   *
+   */
+  void PauseAt(SMILTime aTime);
 
   /*
    * Resume this time container
@@ -60,7 +68,7 @@ class SMILTimeContainer {
    * this particular type of pause request. When all pause flags have been
    * cleared the time container will be resumed.
    */
-  virtual void Resume(uint32_t aType);
+  virtual void Resume(PauseType aType);
 
   /**
    * Returns true if this time container is paused by the specified type.
@@ -70,7 +78,9 @@ class SMILTimeContainer {
    * @param @aType The pause source to test for.
    * @return true if this container is paused by aType.
    */
-  bool IsPausedByType(uint32_t aType) const { return mPauseState & aType; }
+  bool IsPausedByType(PauseTypes aType) const {
+    return !(mPauseTypes & aType).isEmpty();
+  }
 
   /**
    * Returns true if this time container is paused.
@@ -79,7 +89,7 @@ class SMILTimeContainer {
    *
    * @return true if this container is paused, false otherwise.
    */
-  bool IsPaused() const { return mPauseState != 0; }
+  bool IsPaused() const { return !mPauseTypes.isEmpty(); }
 
   /*
    * Return the time elapsed since this time container's begin time (expressed
@@ -138,7 +148,7 @@ class SMILTimeContainer {
    * This is most useful as an optimisation for skipping time containers that
    * don't require a sample.
    */
-  bool NeedsSample() const { return !mPauseState || mNeedsPauseSample; }
+  bool NeedsSample() const { return !IsPaused() || mNeedsPauseSample; }
 
   /*
    * Indicates if the elements of this time container need to be rewound.
@@ -243,10 +253,10 @@ class SMILTimeContainer {
   void NotifyTimeChange();
 
   // The parent time container, if any
-  SMILTimeContainer* mParent;
+  SMILTimeContainer* mParent = nullptr;
 
   // The current time established at the last call to Sample()
-  SMILTime mCurrentTime;
+  SMILTime mCurrentTime = 0L;
 
   // The number of milliseconds for which the container has been paused
   // (excluding the current pause interval if the container is currently
@@ -254,24 +264,13 @@ class SMILTimeContainer {
   //
   //  Current time = parent time - mParentOffset
   //
-  SMILTime mParentOffset;
+  SMILTime mParentOffset = 0L;
+
+  // The time the time container will pause when it reaches this point.
+  Maybe<SMILTime> mPauseTime;
 
   // The timestamp in parent time when the container was paused
-  SMILTime mPauseStart;
-
-  // Whether or not a pause sample is required
-  bool mNeedsPauseSample;
-
-  bool mNeedsRewind;  // Backwards seek performed
-  bool mIsSeeking;    // Currently in the middle of a seek operation
-
-#ifdef DEBUG
-  bool mHoldingEntries;  // True if there's a raw pointer to mMilestoneEntries
-                         // on the stack.
-#endif
-
-  // A bitfield of the pause state for all pause requests
-  uint32_t mPauseState;
+  SMILTime mPauseStart = 0L;
 
   struct MilestoneEntry {
     MilestoneEntry(const SMILMilestone& aMilestone,
@@ -292,6 +291,23 @@ class SMILTimeContainer {
   // taken care of the milestones before the current sample time but before we
   // actually do the full sample.
   nsTPriorityQueue<MilestoneEntry> mMilestoneEntries;
+
+  // A bitfield of the pause type for all pause requests
+  PauseTypes mPauseTypes = PauseType::Begin;
+
+  // Whether or not a pause sample is required
+  bool mNeedsPauseSample = false;
+
+  // Backwards seek performed
+  bool mNeedsRewind = false;
+  // Currently in the middle of a seek operation
+  bool mIsSeeking = false;
+
+#ifdef DEBUG
+  // True if there's a raw pointer to mMilestoneEntries
+  // on the stack.
+  bool mHoldingEntries = false;
+#endif
 };
 
 }  // namespace mozilla

@@ -4,6 +4,7 @@
 
 /**
  * Utils for working with Source URLs
+ *
  * @module utils/source
  */
 
@@ -67,11 +68,11 @@ export function shouldBlackbox(source) {
  * Checks if the frame is within a line ranges which are blackboxed
  * in the source.
  *
- * @param {Object}  frame
+ * @param {object}  frame
  *                  The current frame
- * @param {Object}  blackboxedRanges
+ * @param {object}  blackboxedRanges
  *                  The currently blackboxedRanges for all the sources.
- * @param {Boolean} isFrameBlackBoxed
+ * @param {boolean} isFrameBlackBoxed
  *                  If the frame is within the blackboxed range
  *                  or not.
  */
@@ -92,13 +93,13 @@ export function isFrameBlackBoxed(frame, blackboxedRanges) {
  * That is if any start and end lines overlap any of the
  * blackbox ranges
  *
- * @param {Object}  source
+ * @param {object}  source
  *                  The current selected source
- * @param {Object}  blackboxedRanges
+ * @param {object}  blackboxedRanges
  *                  The store of blackboxedRanges
- * @param {Object}  lineRange
+ * @param {object}  lineRange
  *                  The start/end line range `{ start: <Number>, end: <Number> }`
- * @return {Object} blackboxRange
+ * @return {object} blackboxRange
  *                  The first matching blackbox range that all or part of the
  *                  specified lineRange sits within.
  */
@@ -118,9 +119,10 @@ export function findBlackBoxRange(source, blackboxedRanges, lineRange) {
 
 /**
  * Checks if a source line is blackboxed
+ *
  * @param {Array} ranges - Line ranges that are blackboxed
- * @param {Number} line
- * @param {Boolean} isSourceOnIgnoreList - is the line in a source that is on
+ * @param {number} line
+ * @param {boolean} isSourceOnIgnoreList - is the line in a source that is on
  *                                         the sourcemap ignore lists then the line is blackboxed.
  * @returns boolean
  */
@@ -159,14 +161,6 @@ export function isJavaScript(source, content) {
     javascriptLikeExtensions.has(extension) ||
     !!(contentType && contentType.includes("javascript"))
   );
-}
-
-/**
- * @memberof utils/source
- * @static
- */
-export function isPretty(source) {
-  return isPrettyURL(source.url);
 }
 
 export function isPrettyURL(url) {
@@ -227,7 +221,8 @@ export function getTruncatedFileName(source) {
   return truncateMiddleText(source.longName, 30);
 }
 
-/* Gets path for files with same filename for editor tabs, breakpoints, etc.
+/**
+ * Gets path for files with same filename for editor tabs, breakpoints, etc.
  * Pass the source, and list of other sources
  *
  * @memberof utils/source
@@ -343,33 +338,20 @@ export function getTextAtPosition(sourceId, asyncContent, location) {
 /**
  * Compute the CSS classname string to use for the icon of a given source.
  *
- * @param {Object} source
+ * @param {object} source
  *        The reducer source object.
- * @param {Boolean} isBlackBoxed
+ * @param {boolean} isBlackBoxed
  *        To be set to true, when the given source is blackboxed.
- * @param {Boolean} hasPrettyTab
- *        To be set to true, if the given source isn't the pretty printed one,
  *        but another tab for that source is opened pretty printed.
  * @return String
  *        The classname to use.
  */
-export function getSourceClassnames(
-  source,
-  isBlackBoxed,
-  hasPrettyTab = false
-) {
+export function getSourceClassnames(source, isBlackBoxed) {
   // Conditionals should be ordered by priority of icon!
   const defaultClassName = "file";
 
   if (!source || !source.url) {
     return defaultClassName;
-  }
-
-  // In the SourceTree, we don't show the pretty printed sources,
-  // but still want to show the pretty print icon when a pretty printed tab
-  // for the current source is opened.
-  if (isPretty(source) || hasPrettyTab) {
-    return "prettyPrint";
   }
 
   if (isBlackBoxed) {
@@ -401,8 +383,8 @@ export function isUrlExtension(url) {
 /**
 * Checks that source url matches one of the glob patterns
 *
-* @param {Object} source
-* @param {String} excludePatterns
+* @param {object} source
+* @param {string} excludePatterns
                   String of comma-seperated glob patterns
 * @return {return} Boolean value specifies if the string matches any
                  of the patterns.

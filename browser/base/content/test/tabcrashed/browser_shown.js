@@ -173,6 +173,7 @@ add_task(async function test_send_all() {
 add_task(async function test_send_error() {
   let successBefore = Glean.crashSubmission.success.testGetValue();
   let failureBefore = Glean.crashSubmission.failure.testGetValue();
+  const eventsBefore = Glean.crashSubmission.failureEvent.testGetValue() ?? [];
 
   Assert.equal(
     null,
@@ -203,6 +204,14 @@ add_task(async function test_send_error() {
     invalidAnnotation + 1,
     Glean.crashSubmission.collectorErrors.malformed_invalid_annotation_value_400.testGetValue()
   );
+
+  const events = Glean.crashSubmission.failureEvent.testGetValue();
+  Assert.equal(eventsBefore.length + 1, events.length);
+  Assert.equal(
+    "received bad response: 400 Discarded=malformed_invalid_annotation_value",
+    events[events.length - 1].extra.reason
+  );
+  Assert.greater(events[events.length - 1].extra.id.length, 0, "id not set");
 });
 
 add_task(async function test_send_error_server() {
@@ -210,6 +219,7 @@ add_task(async function test_send_error_server() {
   let failureBefore = Glean.crashSubmission.failure.testGetValue();
   let unknownError503 =
     Glean.crashSubmission.collectorErrors.unknown_error_503.testGetValue();
+  const eventsBefore = Glean.crashSubmission.failureEvent.testGetValue() ?? [];
 
   await crashTabTestHelper(
     {
@@ -228,5 +238,12 @@ add_task(async function test_send_error_server() {
   Assert.equal(
     unknownError503 + 1,
     Glean.crashSubmission.collectorErrors.unknown_error_503.testGetValue()
+  );
+
+  const events = Glean.crashSubmission.failureEvent.testGetValue();
+  Assert.equal(eventsBefore.length + 1, events.length);
+  Assert.equal(
+    "received bad response: 503 Discarded=unknown_error",
+    events[events.length - 1].extra.reason
   );
 });

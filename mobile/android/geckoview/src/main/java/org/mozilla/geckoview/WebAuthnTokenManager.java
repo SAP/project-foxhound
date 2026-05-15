@@ -9,6 +9,7 @@ import android.app.PendingIntent;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
+import androidx.annotation.UiThread;
 import com.google.android.gms.fido.Fido;
 import com.google.android.gms.fido.fido2.Fido2ApiClient;
 import com.google.android.gms.fido.fido2.Fido2PrivilegedApiClient;
@@ -16,6 +17,8 @@ import com.google.android.gms.fido.fido2.api.common.Algorithm;
 import com.google.android.gms.fido.fido2.api.common.Attachment;
 import com.google.android.gms.fido.fido2.api.common.AttestationConveyancePreference;
 import com.google.android.gms.fido.fido2.api.common.AuthenticationExtensions;
+import com.google.android.gms.fido.fido2.api.common.AuthenticationExtensionsClientOutputs;
+import com.google.android.gms.fido.fido2.api.common.AuthenticationExtensionsCredPropsOutputs;
 import com.google.android.gms.fido.fido2.api.common.AuthenticatorAssertionResponse;
 import com.google.android.gms.fido.fido2.api.common.AuthenticatorAttestationResponse;
 import com.google.android.gms.fido.fido2.api.common.AuthenticatorErrorResponse;
@@ -45,6 +48,7 @@ import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.WebAuthnCredentialManager;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.WebAuthnUtils;
 
 /* package */ class WebAuthnTokenManager {
@@ -133,7 +137,7 @@ import org.mozilla.gecko.util.WebAuthnUtils;
     }
     final AuthenticationExtensions ext = extBuilder.build();
 
-    // requireUserVerification are not yet consumed by Android's API
+    // userVerification are not yet consumed by Android's FIDO API
 
     final List<PublicKeyCredentialDescriptor> excludedList =
         new ArrayList<PublicKeyCredentialDescriptor>();
@@ -165,13 +169,16 @@ import org.mozilla.gecko.util.WebAuthnUtils;
         .build();
   }
 
-  public static GeckoResult<WebAuthnUtils.MakeCredentialResponse> makeCredential(
+  @UiThread
+  private static GeckoResult<WebAuthnUtils.MakeCredentialResponse> makeCredential(
       final GeckoBundle credentialBundle,
       final byte[] userId,
       final byte[] challenge,
       final WebAuthnUtils.WebAuthnPublicCredential[] excludeList,
       final GeckoBundle authenticatorSelection,
       final GeckoBundle extensions) {
+    ThreadUtils.assertOnUiThread();
+
     if (!credentialBundle.containsKey("isWebAuthn")) {
       // FIDO U2F not supported by Android (for us anyway) at this time
       return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
@@ -244,10 +251,24 @@ import org.mozilla.gecko.util.WebAuthnUtils;
                         return;
                       }
 
+                      final WebAuthnUtils.MakeCredentialResponse.Builder builder =
+                          new WebAuthnUtils.MakeCredentialResponse.Builder();
+
+                      // credProps is optional.
+                      final AuthenticationExtensionsClientOutputs extensionsClientOutputsData =
+                          publicKeyCredentialData.getClientExtensionResults();
+                      if (extensionsClientOutputsData != null) {
+                        final AuthenticationExtensionsCredPropsOutputs credPropsOutput =
+                            extensionsClientOutputsData.getCredProps();
+                        if (credPropsOutput != null) {
+                          builder.setCredProps(credPropsOutput.getIsDiscoverableCredential());
+                        }
+                      }
+
                       final AuthenticatorAttestationResponse responseData =
                           (AuthenticatorAttestationResponse) response;
                       final WebAuthnUtils.MakeCredentialResponse credentialResponse =
-                          new WebAuthnUtils.MakeCredentialResponse.Builder()
+                          builder
                               .setKeyHandle(publicKeyCredentialData.getRawId())
                               .setAuthenticatorAttachment(
                                   publicKeyCredentialData.getAuthenticatorAttachment())
@@ -291,7 +312,8 @@ import org.mozilla.gecko.util.WebAuthnUtils;
       final GeckoBundle authenticatorSelection,
       final GeckoBundle extensions,
       final int[] algs,
-      final ByteBuffer clientDataHash) {
+      final ByteBuffer clientDataHash,
+      final String requestJSON) {
     final ArrayList<WebAuthnUtils.WebAuthnPublicCredential> excludeArrayList;
 
     final byte[] challBytes = new byte[challenge.remaining()];
@@ -314,33 +336,34 @@ import org.mozilla.gecko.util.WebAuthnUtils;
     excludeArrayList.toArray(excludeList);
 
     final GeckoResult<WebAuthnUtils.MakeCredentialResponse> result = new GeckoResult<>();
-    WebAuthnCredentialManager.makeCredential(
-            credentialBundle,
-            userBytes,
-            challBytes,
-            algs,
-            excludeList,
-            authenticatorSelection,
-            clientDataHashBytes)
-        .accept(
-            response -> result.complete(response),
-            exceptionInCredManager -> {
-              if (!exceptionInCredManager.getMessage().equals("NOT_SUPPORTED_ERR")) {
-                result.completeExceptionally(exceptionInCredManager);
-                return;
-              }
-              // If supported error, we try to use GMS FIDO2.
-              makeCredential(
-                      credentialBundle,
-                      userBytes,
-                      challBytes,
-                      excludeList,
-                      authenticatorSelection,
-                      extensions)
-                  .accept(
-                      response -> result.complete(response),
-                      exceptionInGMS -> result.completeExceptionally(exceptionInGMS));
-            });
+
+    ThreadUtils.runOnUiThread(
+        () -> {
+          WebAuthnCredentialManager.makeCredential(
+                  credentialBundle.getString("origin"), clientDataHashBytes, requestJSON)
+              .accept(
+                  response -> result.complete(response),
+                  exceptionInCredManager -> {
+                    if (!exceptionInCredManager.getMessage().equals("NOT_SUPPORTED_ERR")) {
+                      result.completeExceptionally(exceptionInCredManager);
+                      return;
+                    }
+                    ThreadUtils.runOnUiThread(
+                        () -> {
+                          // If supported error, we try to use GMS FIDO2.
+                          makeCredential(
+                                  credentialBundle,
+                                  userBytes,
+                                  challBytes,
+                                  excludeList,
+                                  authenticatorSelection,
+                                  extensions)
+                              .accept(
+                                  response -> result.complete(response),
+                                  exceptionInGMS -> result.completeExceptionally(exceptionInGMS));
+                        });
+                  });
+        });
     return result;
   }
 
@@ -387,11 +410,13 @@ import org.mozilla.gecko.util.WebAuthnUtils;
         .build();
   }
 
+  @UiThread
   private static GeckoResult<WebAuthnUtils.GetAssertionResponse> getAssertion(
       final byte[] challenge,
       final WebAuthnUtils.WebAuthnPublicCredential[] allowList,
       final GeckoBundle assertionBundle,
       final GeckoBundle extensions) {
+    ThreadUtils.assertOnUiThread();
 
     if (!assertionBundle.containsKey("isWebAuthn")) {
       // FIDO U2F not supported by Android (for us anyway) at this time
@@ -493,7 +518,8 @@ import org.mozilla.gecko.util.WebAuthnUtils;
       final ByteBuffer transportList,
       final GeckoBundle assertionBundle,
       final GeckoBundle extensions,
-      final ByteBuffer clientDataHash) {
+      final ByteBuffer clientDataHash,
+      final String requestJSON) {
     final ArrayList<WebAuthnUtils.WebAuthnPublicCredential> allowArrayList;
 
     final byte[] challBytes = new byte[challenge.remaining()];
@@ -519,38 +545,54 @@ import org.mozilla.gecko.util.WebAuthnUtils;
     //    If credential manager doesn't support passkeys, step 3.
     // 3. Try play service to get credential.
     final GeckoResult<WebAuthnUtils.GetAssertionResponse> result = new GeckoResult<>();
-    hasCredentialInGMS(assertionBundle.getString("rpId"), allowList)
-        .accept(
-            found -> {
-              if (found) {
-                // Use GMS API due to having credential, or older Android
-                getAssertion(challBytes, allowList, assertionBundle, extensions)
-                    .accept(
-                        response -> result.complete(response),
-                        e -> result.completeExceptionally(e));
-                return;
-              }
 
-              WebAuthnCredentialManager.prepareGetAssertion(
-                      challBytes, allowList, assertionBundle, extensions, clientDataHashBytes)
-                  .accept(
-                      pendingHandle -> {
-                        if (pendingHandle != null) {
-                          WebAuthnCredentialManager.getAssertion(pendingHandle)
+    ThreadUtils.runOnUiThread(
+        () -> {
+          hasCredentialInGMS(assertionBundle.getString("rpId"), allowList)
+              .accept(
+                  found -> {
+                    ThreadUtils.runOnUiThread(
+                        () -> {
+                          if (found) {
+                            // Use GMS API due to having credential, or older Android
+                            getAssertion(challBytes, allowList, assertionBundle, extensions)
+                                .accept(
+                                    response -> result.complete(response),
+                                    e -> result.completeExceptionally(e));
+                            return;
+                          }
+
+                          WebAuthnCredentialManager.prepareGetAssertion(
+                                  assertionBundle.getString("origin"),
+                                  clientDataHashBytes,
+                                  requestJSON)
                               .accept(
-                                  response -> result.complete(response),
+                                  pendingHandle -> {
+                                    ThreadUtils.runOnUiThread(
+                                        () -> {
+                                          if (pendingHandle != null) {
+                                            WebAuthnCredentialManager.getAssertion(pendingHandle)
+                                                .accept(
+                                                    response -> result.complete(response),
+                                                    e -> result.completeExceptionally(e));
+                                            return;
+                                          }
+                                          // Maybe credential manager has no credentials
+                                          getAssertion(
+                                                  challBytes,
+                                                  allowList,
+                                                  assertionBundle,
+                                                  extensions)
+                                              .accept(
+                                                  response -> result.complete(response),
+                                                  e -> result.completeExceptionally(e));
+                                        });
+                                  },
                                   e -> result.completeExceptionally(e));
                           return;
-                        }
-                        // Maybe credential manager has no credentials
-                        getAssertion(challBytes, allowList, assertionBundle, extensions)
-                            .accept(
-                                response -> result.complete(response),
-                                e -> result.completeExceptionally(e));
-                      },
-                      e -> result.completeExceptionally(e));
-              return;
-            });
+                        });
+                  });
+        });
     return result;
   }
 

@@ -7,7 +7,6 @@
 #include "nsCRT.h"
 #include "nsString.h"
 #include "plstr.h"
-#include <stdlib.h>
 #include "gtest/gtest.h"
 
 namespace TestCRT {

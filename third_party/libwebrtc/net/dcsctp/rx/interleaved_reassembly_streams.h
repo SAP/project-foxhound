@@ -10,16 +10,19 @@
 #ifndef NET_DCSCTP_RX_INTERLEAVED_REASSEMBLY_STREAMS_H_
 #define NET_DCSCTP_RX_INTERLEAVED_REASSEMBLY_STREAMS_H_
 
-#include <cstdint>
+#include <cstddef>
 #include <map>
-#include <string>
+#include <tuple>
 #include <utility>
 
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
+#include "net/dcsctp/common/internal_types.h"
 #include "net/dcsctp/common/sequence_numbers.h"
 #include "net/dcsctp/packet/chunk/forward_tsn_common.h"
 #include "net/dcsctp/packet/data.h"
+#include "net/dcsctp/public/dcsctp_handover_state.h"
+#include "net/dcsctp/public/types.h"
 #include "net/dcsctp/rx/reassembly_streams.h"
 
 namespace dcsctp {
@@ -35,10 +38,10 @@ class InterleavedReassemblyStreams : public ReassemblyStreams {
 
   size_t HandleForwardTsn(
       UnwrappedTSN new_cumulative_ack_tsn,
-      rtc::ArrayView<const AnyForwardTsnChunk::SkippedStream> skipped_streams)
-      override;
+      webrtc::ArrayView<const AnyForwardTsnChunk::SkippedStream>
+          skipped_streams) override;
 
-  void ResetStreams(rtc::ArrayView<const StreamID> stream_ids) override;
+  void ResetStreams(webrtc::ArrayView<const StreamID> stream_ids) override;
 
   HandoverReadinessStatus GetHandoverReadiness() const override;
   void AddHandoverState(DcSctpSocketHandoverState& state) override;
@@ -53,8 +56,8 @@ class InterleavedReassemblyStreams : public ReassemblyStreams {
         : unordered(unordered), stream_id(stream_id) {}
 
     friend bool operator<(FullStreamId a, FullStreamId b) {
-      return a.unordered < b.unordered ||
-             (!(a.unordered < b.unordered) && (a.stream_id < b.stream_id));
+      return std::tie(a.unordered, a.stream_id) <
+             std::tie(b.unordered, b.stream_id);
     }
   };
 

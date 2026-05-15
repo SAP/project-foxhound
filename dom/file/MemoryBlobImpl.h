@@ -7,15 +7,15 @@
 #ifndef mozilla_dom_MemoryBlobImpl_h
 #define mozilla_dom_MemoryBlobImpl_h
 
-#include "mozilla/dom/BaseBlobImpl.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StreamBufferSource.h"
+#include "mozilla/dom/BaseBlobImpl.h"
 #include "nsCOMPtr.h"
 #include "nsICloneableInputStream.h"
-#include "nsIInputStream.h"
 #include "nsIIPCSerializableInputStream.h"
+#include "nsIInputStream.h"
 #include "nsISeekableStream.h"
 
 namespace mozilla::dom {

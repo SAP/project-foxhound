@@ -26,35 +26,47 @@ support-files = [
 ["browser_computed_browser-styles.js"]
 
 ["browser_computed_custom_properties.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_computed_cycle_color.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_computed_default_tab.js"]
 
 ["browser_computed_getNodeInfo.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks", # Bugs 1849028 and 1858041 to investigate intermittent a11y_checks results
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1849028 and 1858041 to investigate intermittent a11y_checks results
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1849028 and 1858041 to investigate intermittent a11y_checks results
 ]
 
 ["browser_computed_inherited-element-backed-pseudo-elements.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_computed_keybindings_01.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_computed_keybindings_02.js"]
+
+["browser_computed_matched-selectors-jump-to-declaration.js"]
 
 ["browser_computed_matched-selectors-order.js"]
 
 ["browser_computed_matched-selectors-toggle.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_computed_matched-selectors_01.js"]
 
 ["browser_computed_matched-selectors_02.js"]
+
 
 ["browser_computed_media-queries.js"]
 
@@ -62,11 +74,10 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_computed_original-source-link.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks", # Bug 1858037 to investigate intermittent a11y_checks results (fails on Autoland, passes on Try)
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1858037
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1858037
 ]
 
-["browser_computed_pseudo-element_01.js"]
+["browser_computed_pseudo-element.js"]
 
 ["browser_computed_refresh-on-ruleview-change.js"]
 
@@ -85,14 +96,13 @@ skip-if = [
 ["browser_computed_select-and-copy-styles-01.js"]
 
 ["browser_computed_select-and-copy-styles-02.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_computed_shadow_host.js"]
 
 ["browser_computed_style-editor-link.js"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1307846
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11'", # Bug 1307846
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1307846
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1307846
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
 ]

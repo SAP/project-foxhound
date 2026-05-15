@@ -10,9 +10,9 @@
 #include "nsIObserver.h"
 #include "nsRefPtrHashtable.h"
 // Needed for GamepadMappingType
+
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadHandle.h"
-#include <utility>
 
 class nsGlobalWindowInner;
 class nsIGlobalObject;

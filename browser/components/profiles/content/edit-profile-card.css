@@ -4,23 +4,14 @@
 
 @import url("chrome://browser/content/profiles/profiles-pages.css");
 
-#profile-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xlarge);
+:host(:not([iscopy])) {
+  #profile-content {
+    gap: var(--space-xlarge);
+  }
 }
 
 #profile-content h1[data-l10n-id="edit-profile-page-header"] {
   margin-block: 0;
-}
-
-#header-avatar {
-  -moz-context-properties: fill, stroke;
-
-  width: var(--header-avatar-size);
-  height: var(--header-avatar-size);
-  border-radius: var(--border-radius-circle);
-  border: var(--card-border);
 }
 
 .avatar-header-content {

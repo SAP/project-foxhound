@@ -28,7 +28,9 @@ val Fragment.requireComponents: Components
  * Get the preference key.
  * @param preferenceId Resource ID from preference_keys
  */
-fun Fragment.getPreferenceKey(@StringRes preferenceId: Int): String = getString(preferenceId)
+fun Fragment.getPreferenceKey(
+    @StringRes preferenceId: Int,
+): String = getString(preferenceId)
 
 /**
  * Displays the toolbar with the given [title] if the parent activity

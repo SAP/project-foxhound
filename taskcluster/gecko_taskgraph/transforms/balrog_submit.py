@@ -7,33 +7,32 @@ Transform the per-locale balrog task into an actual task description.
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
+from taskgraph.util.schema import LegacySchema, optionally_keyed_by, resolve_keyed_by
 from taskgraph.util.treeherder import replace_group
 from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 
-balrog_description_schema = Schema(
-    {
-        # unique label to describe this balrog task, defaults to balrog-{dep.label}
-        Required("label"): str,
-        Optional(
-            "update-no-wnp",
-            description="Whether the parallel `-No-WNP` blob should be updated as well.",
-        ): optionally_keyed_by("release-type", bool),
-        # treeherder is allowed here to override any defaults we use for beetmover.  See
-        # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
-        # below transforms for defaults of various values.
-        Optional("treeherder"): task_description_schema["treeherder"],
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("dependencies"): task_description_schema["dependencies"],
-        Optional("task-from"): task_description_schema["task-from"],
-        # Shipping product / phase
-        Optional("shipping-product"): task_description_schema["shipping-product"],
-        Optional("shipping-phase"): task_description_schema["shipping-phase"],
-    }
-)
+balrog_description_schema = LegacySchema({
+    # unique label to describe this balrog task, defaults to balrog-{dep.label}
+    Required("label"): str,
+    Optional(
+        "update-no-wnp",
+        description="Whether the parallel `-No-WNP` blob should be updated as well.",
+    ): optionally_keyed_by("release-type", bool),
+    # treeherder is allowed here to override any defaults we use for beetmover.  See
+    # taskcluster/gecko_taskgraph/transforms/task.py for the schema details, and the
+    # below transforms for defaults of various values.
+    Optional("treeherder"): task_description_schema["treeherder"],
+    Optional("attributes"): task_description_schema["attributes"],
+    Optional("dependencies"): task_description_schema["dependencies"],
+    Optional("task-from"): task_description_schema["task-from"],
+    # Shipping product / phase
+    Optional("shipping-product"): task_description_schema["shipping-product"],
+    Optional("shipping-phase"): task_description_schema["shipping-phase"],
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 
 transforms = TransformSequence()
@@ -121,7 +120,7 @@ def make_task_description(config, jobs):
 
         dependencies = {"beetmover": dep_job.label}
         # don't block on startup-test for release/esr, they block on manual testing anyway
-        if config.params["release_type"] in ("nightly", "beta", "release-rc"):
+        if config.params["release_type"] in ("nightly", "beta"):
             for kind_dep in config.kind_dependencies_tasks.values():
                 if (
                     kind_dep.kind == "startup-test"
@@ -155,6 +154,7 @@ def make_task_description(config, jobs):
             "soft-dependencies": soft_dependencies,
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
             "shipping-phase": job.get("shipping-phase", "promote"),
             "shipping-product": job.get("shipping-product"),

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ExplicitImplicitChecker_h__
-#define ExplicitImplicitChecker_h__
+#ifndef ExplicitImplicitChecker_h_
+#define ExplicitImplicitChecker_h_
 
 #include "plugin.h"
 

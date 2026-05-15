@@ -190,6 +190,10 @@ security.ui.certerror:
         description: >
           If trusting the CCA India roots would fix this error.
         type: boolean
+      hyphen_compat:
+        description: >
+          If the error is due to wildcard trying to match reference ID label with hyphen at begin/end
+        type: boolean
     telemetry_mirror: SecurityUiCerterror_Load_Aboutcerterror
 
   click_advanced_button:

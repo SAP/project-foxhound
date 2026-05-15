@@ -19,13 +19,13 @@ Naming of NSPR types, functions, and macros follows the following
 conventions:
 
 -  Types exported by NSPR begin with ``PR`` and are followed by
-   intercap-style declarations, like this: :ref:`PRInt`, :ref:`PRFileDesc`
+   intercap-style declarations, like this: ``PRInt``, ``PRFileDesc``
 -  Function definitions begin with ``PR_`` and are followed by
-   intercap-style declarations, like this: :ref:`PR_Read``,
-   :ref:`PR_JoinThread``
+   intercap-style declarations, like this: ``PR_Read``,
+   ``PR_JoinThread``
 -  Preprocessor macros begin with the letters ``PR`` and are followed by
    all uppercase characters separated with the underscore character
-   (``_``), like this: :ref:`PR_BYTES_PER_SHORT`, :ref:`PR_EXTERN`
+   (``_``), like this: ``PR_BYTES_PER_SHORT``, :ref:`PR_EXTERN`
 
 .. _NSPR_Threads:
 
@@ -39,7 +39,7 @@ has a limited number of resources that it truly owns. These resources
 include the thread stack and the CPU register set (including PC).
 
 To an NSPR client, a thread is represented by a pointer to an opaque
-structure of type :ref:`PRThread``. A thread is created by an explicit
+structure of type ``PRThread``. A thread is created by an explicit
 client request and remains a valid, independent execution entity until
 it returns from its root function or the process abnormally terminates.
 (:ref:`PRThread` and functions for creating and manipulating threads are

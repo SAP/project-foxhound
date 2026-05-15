@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html class="reftest-wait">
+<head>
+  <meta charset="utf-8">
+  <title>Bug 2014868 - Reject SDP when MID changes at existing m-line index</title>
+</head>
+<body>
+<script>
+async function run() {
+  try {
+    const pc1 = new RTCPeerConnection();
+    const pc2 = new RTCPeerConnection();
+
+    pc1.addTransceiver("audio", { direction: "sendrecv" });
+    pc1.addTransceiver("video", { direction: "recvonly" });
+    pc1.createDataChannel("test");
+
+    let offer = await pc1.createOffer();
+    await pc1.setLocalDescription(offer);
+    await pc2.setRemoteDescription(offer);
+    let answer = await pc2.createAnswer();
+    await pc2.setLocalDescription(answer);
+    await pc1.setRemoteDescription(answer);
+
+    // Stop video transceiver to trigger recycling logic
+    for (const t of pc1.getTransceivers()) {
+      if (t.receiver.track.kind === "video") {
+        t.stop();
+      }
+    }
+
+    offer = await pc1.createOffer();
+    await pc1.setLocalDescription(offer);
+    await pc2.setRemoteDescription(offer);
+    answer = await pc2.createAnswer();
+    await pc2.setLocalDescription(answer);
+    await pc1.setRemoteDescription(answer);
+
+    // Munge the offer: insert a duplicate video m-line at the application m-line
+    // position. This displaces the application section and creates a media type
+    // mismatch at that index, testing that we reject invalid type changes.
+    const sdpLines = offer.sdp.split("\r\n");
+    let mLineCount = 0;
+    let insertIndex = -1;
+    for (let i = 0; i < sdpLines.length; i++) {
+      if (sdpLines[i].startsWith("m=")) {
+        mLineCount++;
+        if (mLineCount === 2) {
+          insertIndex = i;
+        }
+      }
+    }
+
+    // Duplicate the second m-line section with a changed MID
+    if (insertIndex !== -1) {
+      let endIndex = insertIndex + 1;
+      for (let i = insertIndex + 1; i < sdpLines.length; i++) {
+        if (sdpLines[i].startsWith("m=")) {
+          endIndex = i;
+          break;
+        }
+      }
+      if (endIndex === sdpLines.length) endIndex = sdpLines.length;
+
+      const mlineSection = sdpLines.slice(insertIndex, endIndex);
+      // Change the MID in the copied section
+      for (let i = 0; i < mlineSection.length; i++) {
+        if (mlineSection[i].startsWith("a=mid:")) {
+          mlineSection[i] = "a=mid:changed-mid";
+          break;
+        }
+      }
+      sdpLines.splice(endIndex, 0, ...mlineSection);
+    }
+
+    const modifiedAnswer = { type: "offer", sdp: sdpLines.join("\r\n") };
+    await pc1.setRemoteDescription(modifiedAnswer);
+
+    pc1.close();
+    pc2.close();
+  } catch (e) {
+  }
+
+  document.documentElement.removeAttribute("class");
+}
+
+run();
+</script>
+</body>
+</html>

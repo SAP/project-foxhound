@@ -37,12 +37,12 @@ add_task(async function () {
     2,
     "There are 2 sources before pretty printing"
   );
-  await prettyPrint(dbg);
+  await togglePrettyPrint(dbg);
 
   info("Wait for the pretty printed source to be selected on a different line");
   await waitForSelectedLocation(dbg, 11);
 
-  is(countTabs(dbg), 3, "A new tab was opened for the prettified source");
+  is(countTabs(dbg), 2, "Pretty printing did not open any new tab");
   is(
     dbg.selectors.getSourceCount(),
     3,
@@ -51,25 +51,27 @@ add_task(async function () {
 
   info("Navigate to previous frame in call stack");
   clickElement(dbg, "frame", 2);
-  await waitForSelectedSource(dbg, scriptSource);
+  await waitForPaused(dbg, scriptSource);
 
   info("Navigate back to `funcWithMultipleBreakableColumns` frame");
   clickElement(dbg, "frame", 1);
-  await waitForSelectedLocation(dbg, 11);
-  await waitForSelectedSource(dbg, "pretty.js:formatted");
+  await waitForPaused(dbg, "pretty.js:formatted");
+  await waitForSelectedLocation(dbg, 11, 17);
   ok(true, "pretty-printed source was selected");
 
   await resume(dbg);
 
   info("Re select the minified version");
-  await selectSource(dbg, "pretty.js", 4, 8);
+  await togglePrettyPrint(dbg);
+  await waitForSelectedLocation(dbg, 9, 17);
+
   info("Re toggle pretty print from the minified source");
-  await prettyPrint(dbg);
-  is(countTabs(dbg), 3, "There are stil three tabs");
+  await togglePrettyPrint(dbg);
+  is(countTabs(dbg), 2, "There are still two tabs");
   info(
     "Wait for re-selecting the mapped location in the pretty printed source"
   );
-  await waitForSelectedLocation(dbg, 5);
+  await waitForSelectedLocation(dbg, 11, 17);
   is(
     dbg.selectors.getSourceCount(),
     3,

@@ -10,33 +10,22 @@
 
 #include "pc/sdp_utils.h"
 
-#include <utility>
-#include <vector>
+#include <memory>
 
-#include "api/jsep_session_description.h"
+#include "api/jsep.h"
+#include "p2p/base/transport_info.h"
+#include "pc/session_description.h"
 #include "rtc_base/checks.h"
 
 namespace webrtc {
-
-std::unique_ptr<SessionDescriptionInterface> CloneSessionDescription(
-    const SessionDescriptionInterface* sdesc) {
-  RTC_DCHECK(sdesc);
-  return CloneSessionDescriptionAsType(sdesc, sdesc->GetType());
-}
 
 std::unique_ptr<SessionDescriptionInterface> CloneSessionDescriptionAsType(
     const SessionDescriptionInterface* sdesc,
     SdpType type) {
   RTC_DCHECK(sdesc);
-  auto clone = std::make_unique<JsepSessionDescription>(type);
-  if (sdesc->description()) {
-    clone->Initialize(sdesc->description()->Clone(), sdesc->session_id(),
-                      sdesc->session_version());
-  }
-  // As of writing, our version of GCC does not allow returning a unique_ptr of
-  // a subclass as a unique_ptr of a base class. To get around this, we need to
-  // std::move the return value.
-  return std::move(clone);
+  return SessionDescriptionInterface::Create(
+      type, sdesc->description() ? sdesc->description()->Clone() : nullptr,
+      sdesc->session_id(), sdesc->session_version());
 }
 
 bool SdpContentsAll(SdpContentPredicate pred, const SessionDescription* desc) {
@@ -52,8 +41,8 @@ bool SdpContentsAll(SdpContentPredicate pred, const SessionDescription* desc) {
 
 bool SdpContentsNone(SdpContentPredicate pred, const SessionDescription* desc) {
   return SdpContentsAll(
-      [pred](const cricket::ContentInfo* content_info,
-             const cricket::TransportInfo* transport_info) {
+      [pred](const ContentInfo* content_info,
+             const TransportInfo* transport_info) {
         return !pred(content_info, transport_info);
       },
       desc);

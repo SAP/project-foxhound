@@ -48,284 +48,585 @@
 #   }
 ---
 version: 1
+reporting: checks-v1
+policy:
+    pullRequests: collaborators
 tasks:
     # NOTE: support for actions in ci-admin requires that the `tasks` property be an array *before* JSON-e rendering
-    # takes place.
-    - $if: 'tasks_for in ["hg-push", "action", "cron"]'
-      then:
-          $let:
-              # sometimes the push user is just `ffxbld` or the like, but we want an email-like field..
-              ownerEmail: {$if: '"@" in push.owner', then: '${push.owner}', else: '${push.owner}@noreply.mozilla.org'}
-              # ensure there's no trailing `/` on the repo URL
-              repoUrl: {$if: 'repository.url[-1] == "/"', then: {$eval: 'repository.url[:-1]'}, else: {$eval: 'repository.url'}}
-              # expire try earlier than other branches
-              expires:
-                  $if: 'repository.project == "try"'
-                  then: {$fromNow: '28 days'}
-                  else: {$fromNow: '1 year'}
-              trustDomain: gecko
-              treeherder_link: '[Treeherder job](https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}&selectedTaskRun=${ownTaskId})'
-          in:
-              taskId: {$if: 'tasks_for != "action"', then: '${ownTaskId}'}
-              taskGroupId:
-                  $if: 'tasks_for == "action"'
-                  then:
-                      '${action.taskGroupId}'
-                  else:
-                      '${ownTaskId}'  # same as taskId; this is how automation identifies a decision task
-              schedulerId: '${trustDomain}-level-${repository.level}'
-
-              created: {$fromNow: ''}
-              deadline: {$fromNow: '1 day'}
-              expires: {$eval: 'expires'}
-              metadata:
-                  $merge:
-                      - owner: "${ownerEmail}"
-                        source: "${repoUrl}/raw-file/${push.revision}/.taskcluster.yml"
-                      - $if: 'tasks_for == "hg-push"'
-                        then:
-                            name: "Gecko Decision Task"
-                            description: 'The task that creates all of the other tasks in the task graph (${treeherder_link})'
-                        else:
-                            $if: 'tasks_for == "action"'
-                            then:
-                                name: "Action: ${action.title}"
-                                description: |
-                                    ${action.description}
-
-                                    ${treeherder_link}
-
-                                    Action triggered by clientID `${clientId}`
-                            else:
-                                name: "Decision Task for cron job ${cron.job_name}"
-                                description: 'Created by a [cron task](https://firefox-ci-tc.services.mozilla.com/tasks/${cron.task_id}) (${treeherder_link})'
-
-              provisionerId: "${trustDomain}-${repository.level}"
-              workerType: "decision-gcp"
-
-              tags:
-                  $if: 'tasks_for == "hg-push"'
-                  then:
-                      createdForUser: "${ownerEmail}"
-                      kind: decision-task
-                  else:
+    # takes place, and only the first task is included in the `in_tree_action` hook.
+    - $switch:
+          # Decision task for events originating from hg.mozilla.org
+          'tasks_for == "hg-push" || (tasks_for == "action" && parameters["repository_type"] == "hg") || (tasks_for == "cron" && repository["type"] == "hg")':
+              $let:
+                  # sometimes the push user is just `ffxbld` or the like, but we want an email-like field..
+                  ownerEmail: {$if: '"@" in push.owner', then: '${push.owner}', else: '${push.owner}@noreply.mozilla.org'}
+                  # ensure there's no trailing `/` on the repo URL
+                  repoUrl: {$if: 'repository.url[-1] == "/"', then: {$eval: 'repository.url[:-1]'}, else: {$eval: 'repository.url'}}
+                  # expire try earlier than other branches
+                  expires:
+                      $if: 'repository.project == "try"'
+                      then: {$fromNow: '28 days'}
+                      else: {$fromNow: '1 year'}
+                  trustDomain: gecko
+                  treeherder_link: '[Treeherder job](https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}&selectedTaskRun=${ownTaskId})'
+              in:
+                  taskId: {$if: 'tasks_for != "action"', then: '${ownTaskId}'}
+                  taskGroupId:
                       $if: 'tasks_for == "action"'
                       then:
-                          createdForUser: '${ownerEmail}'
-                          kind: 'action-callback'
+                          '${action.taskGroupId}'
                       else:
-                          $if: 'tasks_for == "cron"'
-                          then:
-                              kind: cron-task
+                          '${ownTaskId}'  # same as taskId; this is how automation identifies a decision task
+                  schedulerId: '${trustDomain}-level-${repository.level}'
 
-              routes:
-                  $flattenDeep:
-                      - "tc-treeherder.v2.${repository.project}.${push.revision}"
-                      - $if: 'tasks_for == "hg-push"'
-                        then:
-                            - "index.${trustDomain}.v2.${repository.project}.latest.taskgraph.decision"
-                            - "index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.taskgraph.decision"
-                            - "index.${trustDomain}.v2.${repository.project}.pushlog-id.${push.pushlog_id}.decision"
-                            - "notify.email.${ownerEmail}.on-failed"
-                            - "notify.email.${ownerEmail}.on-exception"
-                            # Send a notification email if the push comes from try
-                            - $if: 'repository.project == "try"'
-                              then:
-                                  - "notify.email.${ownerEmail}.on-completed"
-                            - $if: 'repository.project == "mozilla-central"'
-                              then:
-                                  # Notify #thunderbird-ci
-                                  - "notify.matrix-room.!TWztIhgqLawNpRBZTC:mozilla.org.on-completed"
-                        else:
-                            $if: 'tasks_for == "action"'
-                            then:
-                                - "index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.taskgraph.actions.${ownTaskId}"
-                                - "index.${trustDomain}.v2.${repository.project}.pushlog-id.${push.pushlog_id}.actions.${ownTaskId}"
-                            else:  # cron
-                                - "index.${trustDomain}.v2.${repository.project}.latest.taskgraph.decision-${cron.job_name}"
-                                - "index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.taskgraph.decision-${cron.job_name}"
-                                - "index.${trustDomain}.v2.${repository.project}.pushlog-id.${push.pushlog_id}.decision-${cron.job_name}"
-                                # list each cron task on this revision, so actions can find them
-                                - 'index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.cron.${ownTaskId}'
-                                # BUG 1500166 Notify ciduty by email if a nightly hook fails
-                                - $if: 'repository.project != "try"'
-                                  then:
-                                      - "notify.email.ciduty+failedcron@mozilla.com.on-failed"
-                                      - "notify.email.ciduty+exceptioncron@mozilla.com.on-exception"
-                                      - "notify.email.sheriffs+failedcron@mozilla.org.on-failed"
-                                      - "notify.email.sheriffs+exceptioncron@mozilla.org.on-exception"
-
-              scopes:
-                  $if: 'tasks_for == "hg-push"'
-                  then:
-                      - 'assume:repo:${repoUrl[8:]}:branch:default'
-                      - 'queue:route:notify.email.${ownerEmail}.*'
-                      - 'in-tree:hook-action:project-${trustDomain}/in-tree-action-${repository.level}-*'
-                      - 'index:insert-task:${trustDomain}.v2.${repository.project}.*'
-                  else:
-                      $if: 'tasks_for == "action"'
-                      then:
-                          # when all actions are hooks, we can calculate this directly rather than using a variable
-                          - '${action.repo_scope}'
-                      else:
-                          - 'assume:repo:${repoUrl[8:]}:cron:${cron.job_name}'
-
-              dependencies: []
-              requires: all-completed
-
-              priority:
-                  # Most times, there is plenty of worker capacity so everything runs
-                  # quickly, but sometimes a storm of action tasks lands.  Then we
-                  # want, from highest to lowest:
-                  # - cron tasks (time-sensitive) (low)
-                  # - action tasks (avoid interfering with the other two) (very-low)
-                  # - decision tasks (minimize user-visible delay) (lowest)
-                  # SCM levels all use different workerTypes, so there is no need for priority
-                  # between levels; "low" is the highest priority available at all levels, and
-                  # nothing runs at any higher priority on these workerTypes.
-                  $if: "tasks_for == 'cron'"
-                  then: low
-                  else:
-                      $if: "tasks_for == 'action'"
-                      then: very-low
-                      else: lowest  # tasks_for == 'hg-push'
-              retries:
-                  $if: "tasks_for == 'hg-push' && repository.level != '1'"
-                  then: 0
-                  else: 5
-
-              payload:
-                  env:
-                      # run-task uses these to check out the source; the inputs
-                      # to `mach taskgraph decision` are all on the command line.
+                  created: {$fromNow: ''}
+                  deadline: {$fromNow: '1 day'}
+                  expires: {$eval: 'expires'}
+                  metadata:
                       $merge:
-                          - GECKO_BASE_REPOSITORY: 'https://hg.mozilla.org/mozilla-unified'
-                            GECKO_BASE_REV: '${push.base_revision}'
-                            GECKO_HEAD_REPOSITORY: '${repoUrl}'
-                            GECKO_HEAD_REF: '${push.revision}'
-                            GECKO_HEAD_REV: '${push.revision}'
-                            HG_STORE_PATH: /builds/worker/checkouts/hg-store
-                            TASKCLUSTER_CACHES: /builds/worker/checkouts
-                            TASKCLUSTER_VOLUMES: /builds/worker/artifacts
-                            MOZ_AUTOMATION: '1'
-                            # mach generates pyc files when reading `mach_commands.py`
-                            # This causes cached_task digest generation to be random for
-                            # some tasks. Disable bytecode generation to work around that.
-                            PYTHONDONTWRITEBYTECODE: '1'
-                            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: 'system'
+                          - owner: "${ownerEmail}"
+                            source: "${repoUrl}/raw-file/${push.revision}/.taskcluster.yml"
+                          - $if: 'tasks_for == "hg-push"'
+                            then:
+                                name: "Gecko Decision Task"
+                                description: 'The task that creates all of the other tasks in the task graph (${treeherder_link})'
+                            else:
+                                $if: 'tasks_for == "action"'
+                                then:
+                                    name: "Action: ${action.title}"
+                                    description: |
+                                        ${action.description}
+
+                                        ${treeherder_link}
+
+                                        Action triggered by clientID `${clientId}`
+                                else:
+                                    name: "Decision Task for cron job ${cron.job_name}"
+                                    description: 'Created by a [cron task](https://firefox-ci-tc.services.mozilla.com/tasks/${cron.task_id}) (${treeherder_link})'
+
+                  provisionerId: "${trustDomain}-${repository.level}"
+                  workerType: "decision"
+
+                  tags:
+                      $merge:
+                          - project: ${repository.project}
+                            trust-domain: ${trustDomain}
+                            worker-implementation: docker-worker
+                          - $if: 'tasks_for == "hg-push"'
+                            then:
+                                createdForUser: "${ownerEmail}"
+                                kind: decision-task
+                            else:
+                                $if: 'tasks_for == "action"'
+                                then:
+                                    createdForUser: '${ownerEmail}'
+                                    kind: 'action-callback'
+                                else:
+                                    $if: 'tasks_for == "cron"'
+                                    then:
+                                        kind: cron-task
+
+                  routes:
+                      $flattenDeep:
+                          - "tc-treeherder.v2.${repository.project}.${push.revision}"
+                          - $if: 'tasks_for == "hg-push"'
+                            then:
+                                - "index.${trustDomain}.v2.${repository.project}.latest.taskgraph.decision"
+                                - "index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.taskgraph.decision"
+                                - "index.${trustDomain}.v2.${repository.project}.pushlog-id.${push.pushlog_id}.decision"
+                                - "notify.email.${ownerEmail}.on-failed"
+                                - "notify.email.${ownerEmail}.on-exception"
+                                # Send a notification email if the push comes from try
+                                - $if: 'repository.project == "try"'
+                                  then:
+                                      - "notify.email.${ownerEmail}.on-completed"
+                                - $if: 'repository.project == "mozilla-central"'
+                                  then:
+                                      # Notify #thunderbird-ci
+                                      - "notify.matrix-room.!TWztIhgqLawNpRBZTC:mozilla.org.on-completed"
+                            else:
+                                $if: 'tasks_for == "action"'
+                                then:
+                                    - "index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.taskgraph.actions.${ownTaskId}"
+                                    - "index.${trustDomain}.v2.${repository.project}.pushlog-id.${push.pushlog_id}.actions.${ownTaskId}"
+                                else:  # cron
+                                    - "index.${trustDomain}.v2.${repository.project}.latest.taskgraph.decision-${cron.job_name}"
+                                    - "index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.taskgraph.decision-${cron.job_name}"
+                                    - "index.${trustDomain}.v2.${repository.project}.pushlog-id.${push.pushlog_id}.decision-${cron.job_name}"
+                                    # list each cron task on this revision, so actions can find them
+                                    - 'index.${trustDomain}.v2.${repository.project}.revision.${push.revision}.cron.${ownTaskId}'
+                                    # BUG 1500166 Notify ciduty by email if a nightly hook fails
+                                    - $if: 'repository.project != "try"'
+                                      then:
+                                          - "notify.email.ciduty+failedcron@mozilla.com.on-failed"
+                                          - "notify.email.ciduty+exceptioncron@mozilla.com.on-exception"
+                                          - "notify.email.sheriffs+failedcron@mozilla.org.on-failed"
+                                          - "notify.email.sheriffs+exceptioncron@mozilla.org.on-exception"
+
+                  scopes:
+                      $if: 'tasks_for == "hg-push"'
+                      then:
+                          - 'assume:repo:${repoUrl[8:]}:branch:default'
+                          - 'queue:route:notify.email.${ownerEmail}.*'
+                          - 'in-tree:hook-action:project-${trustDomain}/in-tree-action-${repository.level}-*'
+                          - 'index:insert-task:${trustDomain}.v2.${repository.project}.*'
+                      else:
+                          $if: 'tasks_for == "action"'
+                          then:
+                              # when all actions are hooks, we can calculate this directly rather than using a variable
+                              - '${action.repo_scope}'
+                          else:
+                              - 'assume:repo:${repoUrl[8:]}:cron:${cron.job_name}'
+
+                  dependencies: []
+                  requires: all-completed
+
+                  priority:
+                      # There are (typically) 3 types of decision tasks that can run:
+                      # cron, action, and on-push. We always treat cron as highest priority
+                      # because it schedules things like nightlies, releases, etc. and are
+                      # fairly few and far between.
+                      #
+                      # After that comes on-push decision tasks. These are in the critical
+                      # path of all tasks the push will run, and are critical to run quickly
+                      # to get quick results.
+                      #
+                      # Finally, action tasks are used to add tasks to a push, rerun tasks,
+                      # start release automation, and other things. They are sometimes
+                      # very numerous, and are treated as lowest priority to avoid interfering
+                      # with fast scheduling of regular push tasks.
+                      #
+                      # SCM levels all use different workerTypes, so there is no need for priority
+                      # between levels; "low" is the highest priority available at all levels, and
+                      # nothing runs at any higher priority on these workerTypes.
+                      $if: "tasks_for == 'cron'"
+                      then: low
+                      else:
+                          $if: "tasks_for == 'hg-push'"
+                          then: very-low
+                          else: lowest  # tasks_for == 'action'
+                  retries:
+                      $if: "tasks_for == 'hg-push' && repository.level != '1'"
+                      then: 0
+                      else: 5
+
+                  payload:
+                      env:
+                          # run-task uses these to check out the source; the inputs
+                          # to `mach taskgraph decision` are all on the command line.
+                          $merge:
+                              - GECKO_BASE_REPOSITORY: 'https://hg.mozilla.org/mozilla-unified'
+                                GECKO_BASE_REV: '${push.base_revision}'
+                                GECKO_HEAD_REPOSITORY: '${repoUrl}'
+                                GECKO_HEAD_REF: '${push.revision}'
+                                GECKO_HEAD_REV: '${push.revision}'
+                                HG_STORE_PATH: /builds/worker/checkouts/hg-store
+                                TASKCLUSTER_CACHES: /builds/worker/checkouts
+                                TASKCLUSTER_VOLUMES: /builds/worker/artifacts
+                                MOZ_UPLOAD_DIR: /builds/worker/artifacts
+                                MOZ_AUTOMATION: '1'
+                                # mach generates pyc files when reading `mach_commands.py`
+                                # This causes cached_task digest generation to be random for
+                                # some tasks. Disable bytecode generation to work around that.
+                                PYTHONDONTWRITEBYTECODE: '1'
+                              - $if: 'tasks_for == "action"'
+                                then:
+                                    ACTION_TASK_GROUP_ID: '${action.taskGroupId}'  # taskGroupId of the target task
+                                    ACTION_TASK_ID: {$json: {$eval: 'taskId'}}  # taskId of the target task (JSON-encoded)
+                                    ACTION_INPUT: {$json: {$eval: 'input'}}
+                                    ACTION_CALLBACK: '${action.cb_name}'
+
+                      cache:
+                          "${trustDomain}-level-${repository.level}-checkouts-sparse-v4": /builds/worker/checkouts
+
+                      features:
+                          taskclusterProxy: true
+                          chainOfTrust: true
+
+                      # Note: This task is built server side without the context or tooling that
+                      # exist in tree so we must hard code the hash
+                      image: 'mozillareleases/gecko_decision:5.1.0@sha256:8879ecb7f859e1001b0aa67de440a18c3a896446bfd0e2e87688bb367e590667'
+
+                      maxRunTime: 3600
+
+                      command:
+                          - /builds/worker/bin/run-task-hg
+                          - '--gecko-checkout=/builds/worker/checkouts/gecko'
+                          - '--gecko-sparse-profile=build/sparse-profiles/taskgraph'
+                          - '--'
+                          - bash
+                          - -cx
+                          - $let:
+                                extraArgs:
+                                    $if: 'tasks_for == "cron"'
+                                    then: '${cron.quoted_args}'
+                                    else:
+                                        $if: 'repository.project in ["autoland", "try"]'
+                                        then: '--no-verify'
+                                        else: ''
+                            in:
+                                $if: 'tasks_for == "action"'
+                                then: >
+                                    cd /builds/worker/checkouts/gecko &&
+                                    ln -s /builds/worker/artifacts artifacts &&
+                                    ./mach --log-no-times taskgraph action-callback
+                                else: >
+                                    cd /builds/worker/checkouts/gecko &&
+                                    ln -s /builds/worker/artifacts artifacts &&
+                                    ./mach --log-no-times taskgraph decision
+                                    --pushlog-id='${push.pushlog_id}'
+                                    --pushdate='${push.pushdate}'
+                                    --project='${repository.project}'
+                                    --owner='${ownerEmail}'
+                                    --level='${repository.level}'
+                                    --tasks-for='${tasks_for}'
+                                    --repository-type=hg
+                                    --base-repository="$GECKO_BASE_REPOSITORY"
+                                    --base-rev="$GECKO_BASE_REV"
+                                    --head-repository="$GECKO_HEAD_REPOSITORY"
+                                    --head-ref="$GECKO_HEAD_REF"
+                                    --head-rev="$GECKO_HEAD_REV"
+                                    ${extraArgs}
+
+                      artifacts:
+                          'public':
+                              type: 'directory'
+                              path: '/builds/worker/artifacts'
+                              expires: {$eval: expires}
+                          'public/docker-contexts':
+                              type: 'directory'
+                              path: '/builds/worker/checkouts/gecko/docker-contexts'
+                              # This needs to be at least the deadline of the
+                              # decision task + the docker-image task deadlines.
+                              # It is set to a week to allow for some time for
+                              # debugging, but they are not useful long-term.
+                              expires: {$fromNow: '7 day'}
+
+                  extra:
+                      $merge:
+                          - treeherder:
+                                $merge:
+                                    - machine:
+                                          platform: gecko-decision
+                                    - $if: 'tasks_for == "hg-push"'
+                                      then:
+                                          symbol: D
+                                      else:
+                                          $if: 'tasks_for == "action"'
+                                          then:
+                                              groupName: 'action-callback'
+                                              groupSymbol: AC
+                                              symbol: "${action.symbol}"
+                                          else:
+                                              groupSymbol: cron
+                                              symbol: "${cron.job_symbol}"
                           - $if: 'tasks_for == "action"'
                             then:
-                                ACTION_TASK_GROUP_ID: '${action.taskGroupId}'  # taskGroupId of the target task
-                                ACTION_TASK_ID: {$json: {$eval: 'taskId'}}  # taskId of the target task (JSON-encoded)
-                                ACTION_INPUT: {$json: {$eval: 'input'}}
-                                ACTION_CALLBACK: '${action.cb_name}'
-
-                  cache:
-                      "${trustDomain}-level-${repository.level}-checkouts-sparse-v4": /builds/worker/checkouts
-
-                  features:
-                      taskclusterProxy: true
-                      chainOfTrust: true
-
-                  # Note: This task is built server side without the context or tooling that
-                  # exist in tree so we must hard code the hash
-                  image: 'mozillareleases/gecko_decision:5.0.0@sha256:9e000c9fd31ee1723927aeea2b82b95ff2ecf32ebdb7a5d893300281a1452670'
-
-                  maxRunTime: 3600
-
-                  command:
-                      - /builds/worker/bin/run-task
-                      - '--gecko-checkout=/builds/worker/checkouts/gecko'
-                      - '--gecko-sparse-profile=build/sparse-profiles/taskgraph'
-                      - '--'
-                      - bash
-                      - -cx
-                      - $let:
-                            extraArgs: {$if: 'tasks_for == "cron"', then: '${cron.quoted_args}', else: ''}
-                        in:
-                            $if: 'tasks_for == "action"'
-                            then: >
-                                cd /builds/worker/checkouts/gecko &&
-                                ln -s /builds/worker/artifacts artifacts &&
-                                ./mach --log-no-times taskgraph action-callback
-                            else: >
-                                cd /builds/worker/checkouts/gecko &&
-                                ln -s /builds/worker/artifacts artifacts &&
-                                ./mach --log-no-times taskgraph decision
-                                --pushlog-id='${push.pushlog_id}'
-                                --pushdate='${push.pushdate}'
-                                --project='${repository.project}'
-                                --owner='${ownerEmail}'
-                                --level='${repository.level}'
-                                --tasks-for='${tasks_for}'
-                                --repository-type=hg
-                                --base-repository="$GECKO_BASE_REPOSITORY"
-                                --base-rev="$GECKO_BASE_REV"
-                                --head-repository="$GECKO_HEAD_REPOSITORY"
-                                --head-ref="$GECKO_HEAD_REF"
-                                --head-rev="$GECKO_HEAD_REV"
-                                ${extraArgs}
-
-                  artifacts:
-                      'public':
-                          type: 'directory'
-                          path: '/builds/worker/artifacts'
-                          expires: {$eval: expires}
-                      'public/docker-contexts':
-                          type: 'directory'
-                          path: '/builds/worker/checkouts/gecko/docker-contexts'
-                          # This needs to be at least the deadline of the
-                          # decision task + the docker-image task deadlines.
-                          # It is set to a week to allow for some time for
-                          # debugging, but they are not useful long-term.
-                          expires: {$fromNow: '7 day'}
-
-              extra:
+                                parent: '${action.taskGroupId}'
+                                action:
+                                    name: '${action.name}'
+                                    context:
+                                        taskGroupId: '${action.taskGroupId}'
+                                        taskId: {$eval: 'taskId'}
+                                        input: {$eval: 'input'}
+                                        clientId: {$eval: 'clientId'}
+                          - $if: 'tasks_for == "cron"'
+                            then:
+                                cron: {$json: {$eval: 'cron'}}
+                          - tasks_for: '${tasks_for}'
+                          # Email for all pushes should link to treeherder
+                          - $if: 'tasks_for == "hg-push"'
+                            then:
+                                notify:
+                                    $merge:
+                                        - email:
+                                              $merge:
+                                                  - link:
+                                                        text: "Treeherder Jobs"
+                                                        href: "https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}"
+                                                  - $if: 'repository.project == "try"'
+                                                    then:
+                                                        subject: "Thank you for your try submission of ${push.revision}. It's the best!"
+                                                        content: "Your try push has been submitted. It's the best! Use the link to view the status of your jobs."
+                                        - $if: 'repository.project == "mozilla-central"'
+                                          then:
+                                              matrixBody: "${repository.project} push notification: https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}"
+          # Decision task for events originating from Github
+          'tasks_for[:6] == "github" || (tasks_for in ["action", "pr-action"] && parameters["repository_type"] == "git") || (tasks_for == "cron" && repository["type"] == "git")':
+              $let:
                   $merge:
-                      - treeherder:
-                            $merge:
-                                - machine:
-                                      platform: gecko-decision
-                                - $if: 'tasks_for == "hg-push"'
-                                  then:
-                                      symbol: D
-                                  else:
-                                      $if: 'tasks_for == "action"'
-                                      then:
-                                          groupName: 'action-callback'
-                                          groupSymbol: AC
-                                          symbol: "${action.symbol}"
-                                      else:
-                                          groupSymbol: cron
-                                          symbol: "${cron.job_symbol}"
-                      - $if: 'tasks_for == "action"'
-                        then:
-                            parent: '${action.taskGroupId}'
-                            action:
-                                name: '${action.name}'
-                                context:
-                                    taskGroupId: '${action.taskGroupId}'
-                                    taskId: {$eval: 'taskId'}
-                                    input: {$eval: 'input'}
-                                    clientId: {$eval: 'clientId'}
-                      - $if: 'tasks_for == "cron"'
-                        then:
-                            cron: {$json: {$eval: 'cron'}}
-                      - tasks_for: '${tasks_for}'
-                      # Email for all pushes should link to treeherder
-                      - $if: 'tasks_for == "hg-push"'
-                        then:
-                            notify:
-                                $merge:
-                                    - email:
-                                          $merge:
-                                              - link:
-                                                    text: "Treeherder Jobs"
-                                                    href: "https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}"
-                                              - $if: 'repository.project == "try"'
-                                                then:
-                                                    subject: "Thank you for your try submission of ${push.revision}. It's the best!"
-                                                    content: "Your try push has been submitted. It's the best! Use the link to view the status of your jobs."
-                                    - $if: 'repository.project == "mozilla-central"'
-                                      then:
-                                          matrixBody: "${repository.project} push notification: https://treeherder.mozilla.org/#/jobs?repo=${repository.project}&revision=${push.revision}"
+                      - trustDomain: gecko
+                        isPullRequest: false
+                        eventType: '${tasks_for}'
+                        eventAction: null
+                      - $switch:
+                            'tasks_for[:6] == "github"':
+                                ownTaskId: {$eval: as_slugid("decision_task")}
+                                eventType: '${tasks_for[7:]}'  # strip out 'github-'
+                                eventAction: '${event["action"]}'  # empty string if 'action' doesn't exist
+                            'tasks_for in ["action", "cron", "pr-action"]':
+                                ownTaskId: '${ownTaskId}'
+                                ownerEmail: '${tasks_for}@noreply.mozilla.org'
+                                baseRepoUrl: '${repository.url}'
+                                repoUrl: '${repository.url}'
+                                project: '${repository.project}'
+                                ref:
+                                    $if: 'push.branch[:11] == "refs/heads/"'
+                                    then: ${push.branch}
+                                    # Prepending 'refs/heads' ensures `run-task` won't attempt to fetch tags.
+                                    else: 'refs/heads/${push.branch}'
+                                baseRev: '${push.revision}'
+                                headRev: '${push.revision}'
+                      - $switch:
+                            'tasks_for == "github-push"':
+                                ownerEmail: '${event.pusher.email}'
+                                baseRepoUrl: '${event.repository.html_url}'
+                                repoUrl: '${event.repository.html_url}'
+                                project: '${event.repository.name}'
+                                ref: '${event.ref}'
+                                baseRev: '${event.before}'
+                                headRev: '${event.after}'
+                            'tasks_for[:19] == "github-pull-request"':
+                                ownerEmail: '${event.pull_request.user.login}@users.noreply.github.com'
+                                baseRepoUrl: '${event.pull_request.base.repo.html_url}'
+                                repoUrl: '${event.pull_request.head.repo.html_url}'
+                                project: '${event.pull_request.base.repo.name}'
+                                # Normalize 'ref' to include 'refs/heads' as pull-requests must be associated
+                                # with a head ref. The benefit of doing this is that `run-task` won't attempt
+                                # to fetch all tags from the repo just on the off-chance it is a tag.
+                                ref: 'refs/heads/${event.pull_request.head.ref}'
+                                baseRev: '${event.pull_request.base.sha}'
+                                headRev: '${event.pull_request.head.sha}'
+                                isPullRequest: true
+                            'tasks_for == "pr-action"':
+                                baseRepoUrl: '${repository.base_url}'
+                                eventType: action
+
+              in:
+                  $let:
+                      shortRef:
+                          $if: 'ref[:11] == "refs/heads/"'
+                          then: {$eval: 'ref[11:]'}
+                          else: ${ref}
+                  in:
+                      $if: >
+                        eventType in ["action", "cron"]
+                        || (eventType == "push" && shortRef == "main")
+                        || (isPullRequest && eventAction in ["opened", "reopened", "synchronize"])
+                      then:
+                          $let:
+                              level:
+                                  $if: '(tasks_for == "action" || eventType in ["cron", "push"]) && repoUrl == "https://github.com/mozilla-firefox/firefox" && shortRef == "main"'
+                                  then: 3
+                                  else: 1
+                          in:
+                              taskId: {$if: 'eventType != "action"', then: '${ownTaskId}'}
+                              taskGroupId: {$if: 'eventType == "action"', then: '${action.taskGroupId}', else: '${ownTaskId}'}
+                              schedulerId: '${trustDomain}-level-${level}'
+                              created: {$fromNow: ''}
+                              deadline: {$fromNow: '1 day'}
+                              expires: {$fromNow: '1 year 1 second'}  # 1 second so artifacts expire first
+                              metadata:
+                                  $merge:
+                                      - owner: "${ownerEmail}"
+                                        source: "${repoUrl}/raw/${headRev}/.taskcluster.yml"
+                                      - $switch:
+                                            'tasks_for == "action"':
+                                                name: "Action: ${action.title}"
+                                                description: |
+                                                    ${action.description}
+
+                                                    Action triggered by clientID `${clientId}`
+                                            'tasks_for == "pr-action"':
+                                                name: "PR action: ${action.title}"
+                                                description: |
+                                                    ${action.description}
+
+                                                    PR action triggered by clientID `${clientId}`
+                                            'eventType == "cron"':
+                                                name: "Decision Task (cron: ${cron.job_name})"
+                                                description: 'Created by a [cron task](https://firefox-ci-tc.services.mozilla.com/tasks/${cron.task_id})'
+                                            $default:
+                                                name: "Decision Task (${eventType})"
+                                                description: 'The task that creates all of the other tasks in the task graph'
+
+                              provisionerId: "${trustDomain}-${level}"
+                              workerType: "decision"
+
+                              tags:
+                                  $merge:
+                                      - createdForUser: "${ownerEmail}"
+                                        project: ${project}
+                                        trust-domain: ${trustDomain}
+                                        worker-implementation: docker-worker
+                                      - $switch:
+                                            'eventType == "action"':
+                                                kind: action-callback
+                                            'eventType == "cron"':
+                                                kind: cron-task
+                                            $default:
+                                                kind: decision-task
+
+                              routes:
+                                  $flattenDeep:
+                                      - checks
+                                      - $switch:
+                                            'eventType == "push"':
+                                                - "tc-treeherder.v2.${project}.${headRev}"
+                                                - "index.${trustDomain}.v2.${project}.latest.taskgraph.decision"
+                                                - "index.${trustDomain}.v2.${project}.revision.${headRev}.taskgraph.decision"
+                                            'tasks_for == "action"':
+                                                - "tc-treeherder.v2.${project}.${headRev}"
+                                                - "index.${trustDomain}.v2.${project}.revision.${headRev}.taskgraph.actions.${ownTaskId}"
+                                            'eventType == "cron"':
+                                                - "index.${trustDomain}.v2.${project}.latest.taskgraph.decision-${cron.job_name}"
+                                                - "index.${trustDomain}.v2.${project}.revision.${headRev}.taskgraph.decision-${cron.job_name}"
+                                                # list each cron task on this revision, so actions can find them
+                                                - 'index.${trustDomain}.v2.${project}.revision.${headRev}.cron.${ownTaskId}'
+                              scopes:
+                                  $switch:
+                                      isPullRequest:
+                                          - 'assume:repo:${baseRepoUrl[8:]}:${eventType}'
+                                      'eventType == "push"':
+                                          - 'assume:repo:${repoUrl[8:]}:branch:${shortRef}'
+                                      'eventType == "action"':
+                                          - 'assume:repo:${baseRepoUrl[8:]}:${tasks_for}:${action.action_perm}'
+                                      'eventType == "cron"':
+                                          - 'assume:repo:${repoUrl[8:]}:cron:${cron.job_name}'
+                              dependencies: []
+                              requires: all-completed
+                              priority:
+                                  # There are (typically) 3 types of decision tasks that can run:
+                                  # cron, action, and on-push. We always treat cron as highest priority
+                                  # because it schedules things like nightlies, releases, etc. and are
+                                  # fairly few and far between.
+                                  #
+                                  # After that comes on-push decision tasks. These are in the critical
+                                  # path of all tasks the push will run, and are critical to run quickly
+                                  # to get quick results.
+                                  #
+                                  # Finally, action tasks are used to add tasks to a push, rerun tasks,
+                                  # start release automation, and other things. They are sometimes
+                                  # very numerous, and are treated as lowest priority to avoid interfering
+                                  # with fast scheduling of regular push tasks.
+                                  #
+                                  # SCM levels all use different workerTypes, so there is no need for priority
+                                  # between levels; "low" is the highest priority available at all levels, and
+                                  # nothing runs at any higher priority on these workerTypes.
+                                  $switch:
+                                      'eventType == "cron"': "low"
+                                      'eventType == "action"': "lowest"
+                                      $default: "very-low"
+                              retries: 5
+
+                              payload:
+                                  env:
+                                      $merge:
+                                          - GECKO_BASE_REPOSITORY: '${baseRepoUrl}'
+                                            GECKO_BASE_REV: '${baseRev}'
+                                            GECKO_HEAD_REPOSITORY: '${repoUrl}'
+                                            GECKO_HEAD_REF: '${ref}'
+                                            GECKO_HEAD_REV: '${headRev}'
+                                            GECKO_REPOSITORY_TYPE: git
+                                            REPOSITORIES: {$json: {gecko: "Mozilla Firefox"}}
+                                            TASKCLUSTER_CACHES: /builds/worker/checkouts
+                                            TASKCLUSTER_VOLUMES: /builds/worker/artifacts
+                                            MOZ_UPLOAD_DIR: /builds/worker/artifacts
+                                            MOZ_AUTOMATION: '1'
+                                            # mach generates pyc files when reading `mach_commands.py`
+                                            # This causes cached_task digest generation to be random for
+                                            # some tasks. Disable bytecode generation to work around that.
+                                            PYTHONDONTWRITEBYTECODE: '1'
+                                            MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: 'system'
+                                          - $if: 'eventType == "action"'
+                                            then:
+                                                ACTION_TASK_GROUP_ID: '${action.taskGroupId}'
+                                                ACTION_TASK_ID: {$json: {$eval: 'taskId'}}
+                                                ACTION_INPUT: {$json: {$eval: 'input'}}
+                                                ACTION_CALLBACK: '${action.cb_name}'
+                                  cache:
+                                      "${trustDomain}-level-${level}-${project}-checkouts-git-shallow-v1": /builds/worker/checkouts
+
+                                  features:
+                                      taskclusterProxy: true
+                                      chainOfTrust: true
+
+                                  image: mozillareleases/taskgraph:run-task-latest
+                                  maxRunTime: 1800
+                                  command:
+                                      - run-task
+                                      - '--gecko-checkout=/builds/worker/checkouts/gecko'
+                                      - '--gecko-shallow-clone'
+                                      - '--'
+                                      - bash
+                                      - -cx
+                                      - $let:
+                                            extraArgs: {$if: 'tasks_for == "cron"', then: '${cron.quoted_args}', else: ''}
+                                        in:
+                                            $if: 'eventType == "action"'
+                                            then: >
+                                              cd /builds/worker/checkouts/gecko &&
+                                              ln -s /builds/worker/artifacts artifacts &&
+                                              ./mach --log-no-times taskgraph action-callback
+                                            else: >
+                                              cd /builds/worker/checkouts/gecko &&
+                                              ln -s /builds/worker/artifacts artifacts &&
+                                              ./mach --log-no-times taskgraph decision \
+                                               --pushlog-id='0' \
+                                               --pushdate='0' \
+                                               --project='${project}' \
+                                               --owner='${ownerEmail}' \
+                                               --level='${level}' \
+                                               --repository-type=git \
+                                               --tasks-for='${tasks_for}' \
+                                               --base-repository='${baseRepoUrl}' \
+                                               --base-rev='${baseRev}' \
+                                               --head-repository='${repoUrl}' \
+                                               --head-ref='${ref}' \
+                                               --head-rev='${headRev}' \
+                                               ${extraArgs}
+
+                                  artifacts:
+                                      'public':
+                                          type: 'directory'
+                                          path: '/builds/worker/artifacts'
+                                          expires: {$fromNow: '1 year'}
+                                      'public/docker-contexts':
+                                          type: 'directory'
+                                          path: '/builds/worker/checkouts/gecko/docker-contexts'
+                                          # This needs to be at least the deadline of the
+                                          # decision task + the docker-image task deadlines.
+                                          # It is set to a week to allow for some time for
+                                          # debugging, but they are not useful long-term.
+                                          expires: {$fromNow: '7 day'}
+
+                              extra:
+                                  $merge:
+                                      - treeherder:
+                                            $merge:
+                                                - machine:
+                                                      platform: gecko-decision
+                                                - $switch:
+                                                      'eventType == "action"':
+                                                          groupName: 'action-callback'
+                                                          groupSymbol: AC
+                                                          symbol: '${action.symbol}'
+                                                      'eventType == "cron"':
+                                                          groupSymbol: cron
+                                                          symbol: "${cron.job_symbol}"
+                                                      $default:
+                                                          symbol: D
+                                      - $if: 'eventType == "action"'
+                                        then:
+                                            parent: '${action.taskGroupId}'
+                                            action:
+                                                name: '${action.name}'
+                                                context:
+                                                    taskGroupId: '${action.taskGroupId}'
+                                                    taskId: {$eval: 'taskId'}
+                                                    input: {$eval: 'input'}
+                                                    clientId: {$eval: 'clientId'}
+                                      - $if: 'tasks_for == "cron"'
+                                        then:
+                                            cron: {$json: {$eval: 'cron'}}
+                                      - tasks_for: '${tasks_for}'

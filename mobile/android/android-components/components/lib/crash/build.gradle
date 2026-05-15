@@ -4,23 +4,17 @@
 
 buildscript {
     repositories {
-        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
-            maven {
-                url = repository
-                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
-                    allowInsecureProtocol = true
-                }
-            }
-        }
+        gradle.configureMavenRepositories(delegate)
     }
 
     dependencies {
-        classpath libs.glean.gradle.plugin
-        classpath libs.plugin.serialization
+        classpath libs.kotlin.serialization
+        classpath libs.mozilla.glean.gradle.plugin
     }
 }
 
 plugins {
+    alias(libs.plugins.dependency.analysis)
     alias(libs.plugins.python.envs.plugin)
 }
 
@@ -31,28 +25,34 @@ apply plugin: 'kotlinx-serialization'
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
         javaCompileOptions {
             annotationProcessorOptions {
                 arguments += ["room.incremental": "true"]
+            }
+        }
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        debug {
+            // We use this in androidTest to disable tests which will fail without the crashreporter
+            // enabled (since they rely on the crashtools binary).
+            buildConfigField 'boolean', 'MOZ_CRASHREPORTER', gradle.mozconfig.substs.MOZ_CRASHREPORTER ? 'true' : 'false';
+        }
+    }
+
+    sourceSets {
+        main {
+            java {
+                // Generated files are output in the objdir
+                srcDir "${gradle.mozconfig.topobjdir}/mobile/android/android-components/components/lib/crash/src/main/java"
             }
         }
     }
 
     ksp {
         arg("room.schemaLocation", "$projectDir/schemas".toString())
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
     }
 
     buildFeatures {
@@ -64,34 +64,41 @@ android {
 }
 
 dependencies {
-    implementation libs.kotlin.coroutines
-    implementation libs.kotlin.json
-
-    implementation libs.androidx.appcompat
-    implementation libs.androidx.constraintlayout
-    implementation libs.androidx.core.ktx
-    implementation libs.androidx.recyclerview
+    // We only compile against GeckoView and Glean. It's up to the app to add those dependencies if it wants to
+    // send crash reports to Socorro (GV).
+    compileOnly libs.mozilla.glean
 
     implementation project(':components:support-base')
     implementation project(':components:support-ktx')
     implementation project(':components:support-utils')
 
+    implementation libs.androidx.appcompat
+    implementation libs.androidx.constraintlayout
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.recyclerview
     implementation libs.androidx.room.runtime
     ksp libs.androidx.room.compiler
-
-    // We only compile against GeckoView and Glean. It's up to the app to add those dependencies if it wants to
-    // send crash reports to Socorro (GV).
-    compileOnly libs.mozilla.glean
-    testImplementation libs.mozilla.glean
-    testImplementation libs.androidx.work.testing
+    implementation libs.kotlinx.coroutines
+    implementation libs.kotlinx.serialization.json
 
     testImplementation project(':components:support-test')
+
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.mockwebserver
+    testImplementation libs.androidx.work.testing
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.mockwebserver
+    testImplementation libs.mozilla.glean
     testImplementation libs.mozilla.glean.forUnitTests
+    testImplementation libs.robolectric
+
+    androidTestImplementation project(':components:support-android-test')
+    androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.mozilla.glean
+
+    // Depend on browser-engine-gecko to get the libcrashtools.so binary for tests. We don't use jniLibs because it
+    // is only available as part of the geckoview APK artifact in CI.
+    androidTestRuntimeOnly project(':components:browser-engine-gecko')
 }
 
 ext {
@@ -99,6 +106,6 @@ ext {
     gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
 }
 apply plugin: "org.mozilla.telemetry.glean-gradle-plugin"
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

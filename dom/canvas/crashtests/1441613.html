@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html class="reftest-wait">
-<iframe id="iframe" src="about:blank"></iframe>
 <script>
-iframe.onload = function() {
+function runTest() {
   let doc = iframe.contentDocument;
   let canvas = doc.createElement('canvas');
   doc.body.appendChild(canvas);
@@ -16,4 +15,5 @@ iframe.onload = function() {
   }
 };
 </script>
+<iframe id="iframe" src="about:blank" onload="runTest();"></iframe>
 </html>

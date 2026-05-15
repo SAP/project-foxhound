@@ -18,6 +18,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     shipping-phase: build
     treeherder:
         symbol: Bpgo(instr)
@@ -26,6 +27,7 @@ task-defaults:
         max-run-time: 7200
         env:
             PERFHERDER_EXTRA_OPTIONS: instrumented
+            DISABLE_CLANG_PLUGIN: "1"
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
     use-python: default
     run:
@@ -40,38 +42,9 @@ task-defaults:
     fetches:
         toolchain:
             - linux64-sccache
+            - terser
 
 tasks:
-    linux-shippable/opt:
-        description: "Linux Instrumented"
-        index:
-            product: firefox
-            job-name: instrumented-linux
-        shipping-product: firefox
-        treeherder:
-            platform: linux32-shippable/opt
-        worker-type: b-linux-amd
-        run:
-            config:
-                - builds/releng_base_firefox.py
-                - builds/releng_base_linux_32_builds.py
-            mozconfig-variant: profile-generate
-            tooltool-downloads: public
-        run-on-projects: ['release']
-        fetches:
-            toolchain:
-                - linux64-clang
-                - linux64-rust
-                - linux64-rust-size
-                - linux64-cbindgen
-                - linux64-dump_syms
-                - linux64-nasm
-                - linux64-node
-                - linux64-pkgconf
-                - sysroot-i686-linux-gnu
-                - sysroot-x86_64-linux-gnu
-                - sysroot-wasm32-wasi
-
     linux64-shippable/opt:
         description: "Linux64 Instrumented"
         index:
@@ -80,7 +53,7 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: linux64-shippable/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         run:
             config:
                 - builds/releng_base_firefox.py
@@ -109,7 +82,7 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: linux64-aarch64-shippable/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         run:
             config:
                 - builds/releng_base_firefox.py
@@ -140,11 +113,24 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: osx-shippable/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         worker:
             max-run-time: 7200
             env:
                 PERFHERDER_EXTRA_OPTIONS: instrumented
+            artifacts:
+                - name: public/build/security/{browser_entitlement}.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/{browser_entitlement}.xml
+                  type: file
+                - name: public/build/security/media-plugin-helper.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/media-plugin-helper.xml
+                  type: file
+                - name: public/build/security/plugin-container.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/plugin-container.xml
+                  type: file
+                - name: public/build/security/security-module-helper.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/security-module-helper.xml
+                  type: file
         run:
             using: mozharness
             actions: [get-secrets, build]
@@ -176,11 +162,24 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: osx-aarch64-shippable/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         worker:
             max-run-time: 7200
             env:
                 PERFHERDER_EXTRA_OPTIONS: instrumented
+            artifacts:
+                - name: public/build/security/{browser_entitlement}.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/{browser_entitlement}.xml
+                  type: file
+                - name: public/build/security/media-plugin-helper.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/media-plugin-helper.xml
+                  type: file
+                - name: public/build/security/plugin-container.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/plugin-container.xml
+                  type: file
+                - name: public/build/security/security-module-helper.xml
+                  path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/security-module-helper.xml
+                  type: file
         run:
             using: mozharness
             actions: [get-secrets, build]
@@ -208,61 +207,6 @@ tasks:
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
 
-    android-x86-shippable/opt:
-        description: "Android 5.0 x86 PGO instrumented"
-        index:
-            product: mobile
-            job-name: instrumented-android-x86
-        shipping-product: fennec
-        treeherder:
-            platform: android-5-0-x86-shippable/opt
-        worker-type: b-linux-xlarge-amd
-        worker:
-            docker-image: {in-tree: android-build}
-            env:
-                GRADLE_USER_HOME: "/builds/worker/checkouts/gecko/mobile/android/gradle/dotgradle-offline"
-                TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
-            artifacts:
-                - name: public/build
-                  path: /builds/worker/artifacts/
-                  type: directory
-                - name: public/build/geckoview-androidTest.apk
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/geckoview/outputs/apk/androidTest/debug/geckoview-debug-androidTest.apk
-                  type: file
-                - name: public/build/geckoview-test_runner.apk
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/test_runner/outputs/apk/debug/test_runner-debug.apk
-                  type: file
-                - name: public/build/geckoview-test_runner.aab
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/test_runner/outputs/bundle/debug/test_runner-debug.aab
-                  type: file
-                - name: public/build/geckoview_example.apk
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/geckoview_example/outputs/apk/debug/geckoview_example-debug.apk
-                  type: file
-                - name: public/build/geckoview_example.aab
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/geckoview_example/outputs/bundle/debug/geckoview_example-debug.aab
-                  type: file
-        run:
-            config:
-                - builds/releng_base_android_64_builds.py
-            custom-build-variant-cfg: x86-profile-generate
-            tooltool-downloads: internal
-        run-on-projects: ['release']
-        fetches:
-            toolchain:
-                - android-gradle-dependencies
-                - android-ndk-linux
-                - android-sdk-linux
-                - linux64-jdk
-                - linux64-clang
-                - linux64-rust-android
-                - linux64-rust-size
-                - linux64-cbindgen
-                - linux64-dump_syms
-                - linux64-nasm
-                - linux64-node
-                - sysroot-x86_64-linux-gnu
-                - sysroot-wasm32-wasi
-
     android-x86_64-shippable/opt:
         description: "Android 5.0 x86_64 PGO instrumented"
         index:
@@ -271,7 +215,7 @@ tasks:
         shipping-product: fennec
         treeherder:
             platform: android-5-0-x86_64-shippable/opt
-        worker-type: b-linux-xlarge-amd
+        worker-type: b-linux-docker-xlarge-amd
         worker:
             docker-image: {in-tree: android-build}
             env:
@@ -307,6 +251,8 @@ tasks:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
                 - linux64-jdk
                 - linux64-clang
                 - linux64-rust-android
@@ -326,7 +272,7 @@ tasks:
         shipping-product: fennec
         treeherder:
             platform: android-5-0-aarch64-shippable/opt
-        worker-type: b-linux-xlarge-amd
+        worker-type: b-linux-docker-xlarge-amd
         worker:
             docker-image: {in-tree: android-build}
             env:
@@ -362,6 +308,8 @@ tasks:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
                 - linux64-jdk
                 - linux64-clang
                 - linux64-rust-android
@@ -381,7 +329,7 @@ tasks:
         shipping-product: fennec
         treeherder:
             platform: android-5-0-armv7-shippable/opt
-        worker-type: b-linux-xlarge-amd
+        worker-type: b-linux-docker-xlarge-amd
         worker:
             docker-image: {in-tree: android-build}
             env:
@@ -417,6 +365,8 @@ tasks:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
                 - linux64-jdk
                 - linux64-clang
                 - linux64-rust-android
@@ -436,7 +386,7 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: windows2012-32-shippable/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         run:
             options: [append-env-variables-from-configs]
             mozconfig-variant: profile-generate
@@ -462,9 +412,10 @@ tasks:
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
                 - vs
-                - windows-rs
+                - winappsdk-x86-pc-windows-msvc
             fetch:
                 - upx-3.95-win
+                - windows-rs
 
     win64-nightlyasrelease/opt:
         description: "Win64 Shippable PGO Instrumented"
@@ -474,7 +425,7 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: win64-nightlyasrelease/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         run:
             options: [append-env-variables-from-configs]
             mozconfig-variant: profile-generate
@@ -502,10 +453,11 @@ tasks:
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
                 - vs
-                - windows-rs
                 - dxc-x86_64-pc-windows-msvc
+                - winappsdk-x86_64-pc-windows-msvc
             fetch:
                 - upx-3.95-win
+                - windows-rs
 
     win64-shippable/opt:
         description: "Win64 Shippable PGO Instrumented"
@@ -515,7 +467,7 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: windows2012-64-shippable/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         run:
             options: [append-env-variables-from-configs]
             mozconfig-variant: profile-generate
@@ -541,10 +493,11 @@ tasks:
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
                 - vs
-                - windows-rs
                 - dxc-x86_64-pc-windows-msvc
+                - winappsdk-x86_64-pc-windows-msvc
             fetch:
                 - upx-3.95-win
+                - windows-rs
 
     win64-aarch64-shippable/opt:
         description: "Win64 AArch64 Shippable PGO Instrumented"
@@ -554,7 +507,7 @@ tasks:
         shipping-product: firefox
         treeherder:
             platform: windows2012-aarch64-shippable/opt
-        worker-type: b-linux-amd
+        worker-type: b-linux-docker-amd
         run:
             options: [append-env-variables-from-configs]
             mozconfig-variant: profile-generate
@@ -580,7 +533,8 @@ tasks:
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
                 - vs
-                - windows-rs
                 - dxc-aarch64-pc-windows-msvc
+                - winappsdk-aarch64-pc-windows-msvc
             fetch:
                 - upx-3.95-win
+                - windows-rs

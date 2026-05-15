@@ -10,6 +10,8 @@ toolkit.jar:
    content/global/aboutLogging/aboutLogging.mjs (aboutLogging/aboutLogging.mjs)
    content/global/aboutLogging/jwt.mjs (aboutLogging/jwt.mjs)
    content/global/aboutLogging/profileSaveUploadLogic.mjs (aboutLogging/profileSaveUploadLogic.mjs)
+   content/global/aboutLogging/profileStorage.mjs (aboutLogging/profileStorage.mjs)
+   content/global/aboutLogging/uploadedProfilesManager.mjs (aboutLogging/uploadedProfilesManager.mjs)
    content/global/aboutNetError.mjs
    content/global/aboutNetError.html
    content/global/aboutNetErrorHelpers.mjs
@@ -30,6 +32,9 @@ toolkit.jar:
    content/global/aboutwebrtc/disclosure.mjs (aboutwebrtc/disclosure.mjs)
    content/global/aboutwebrtc/copyButton.mjs (aboutwebrtc/copyButton.mjs)
    content/global/aboutwebrtc/aboutWebrtc.html (aboutwebrtc/aboutWebrtc.html)
+   content/global/aboutRestricted/aboutRestricted.mjs (aboutRestricted/aboutRestricted.mjs)
+   content/global/aboutRestricted/aboutRestricted.html (aboutRestricted/aboutRestricted.html)
+   content/global/aboutRestricted/aboutRestricted.css (aboutRestricted/aboutRestricted.css)
    content/global/aboutSupport.js
 *  content/global/aboutSupport.xhtml
 #ifndef MOZ_GLEAN_ANDROID
@@ -45,9 +50,9 @@ toolkit.jar:
    content/global/aboutUrlClassifier.css
 *   content/global/buildconfig.html
    content/global/buildconfig.css
+   content/global/colorpicker.html
    content/global/contentAreaUtils.js
-   content/global/datepicker.xhtml
-#ifndef MOZ_FENNEC
+#ifndef MOZ_GECKOVIEW
    content/global/editMenuOverlay.js
 #endif
    content/global/filepicker.properties
@@ -56,19 +61,25 @@ toolkit.jar:
    content/global/mozilla.html
    content/global/aboutMozilla.css
    content/global/preferencesBindings.js
+   content/global/preferences/AsyncSetting.mjs  (preferences/AsyncSetting.mjs)
+   content/global/preferences/Preference.mjs    (preferences/Preference.mjs)
+   content/global/preferences/Preferences.mjs   (preferences/Preferences.mjs)
+   content/global/preferences/Setting.mjs       (preferences/Setting.mjs)
    content/global/process-content.js
    content/global/resetProfile.css
    content/global/resetProfile.js
    content/global/resetProfile.xhtml
    content/global/resetProfileProgress.xhtml
    content/global/TopLevelVideoDocument.js
-   content/global/timepicker.xhtml
+   content/global/datetimepicker.xhtml
    content/global/treeUtils.js
-#ifndef MOZ_FENNEC
+#ifndef MOZ_GECKOVIEW
    content/global/viewZoomOverlay.js
 #endif
    content/global/widgets.css
    content/global/bindings/calendar.js         (widgets/calendar.js)
+   content/global/bindings/colorpicker-common.mjs             (widgets/colorpicker-common.mjs)
+   content/global/bindings/colorpicker.mjs     (widgets/colorpicker.mjs)
    content/global/bindings/datekeeper.js       (widgets/datekeeper.js)
    content/global/bindings/datepicker.js       (widgets/datepicker.js)
    content/global/bindings/datetimebox.css     (widgets/datetimebox.css)
@@ -115,12 +126,18 @@ toolkit.jar:
    content/global/elements/moz-fieldset.css    (widgets/moz-fieldset/moz-fieldset.css)
    content/global/elements/moz-fieldset.mjs    (widgets/moz-fieldset/moz-fieldset.mjs)
    content/global/elements/moz-input-common.css       (widgets/moz-input-common.css)
+   content/global/elements/moz-input-email.mjs    (widgets/moz-input-email/moz-input-email.mjs)
    content/global/elements/moz-input-folder.css    (widgets/moz-input-folder/moz-input-folder.css)
    content/global/elements/moz-input-folder.mjs    (widgets/moz-input-folder/moz-input-folder.mjs)
+   content/global/elements/moz-input-number.mjs    (widgets/moz-input-number/moz-input-number.mjs)
    content/global/elements/moz-input-password.mjs    (widgets/moz-input-password/moz-input-password.mjs)
    content/global/elements/moz-input-search.mjs    (widgets/moz-input-search/moz-input-search.mjs)
+   content/global/elements/moz-input-tel.mjs    (widgets/moz-input-tel/moz-input-tel.mjs)
    content/global/elements/moz-input-text.css    (widgets/moz-input-text/moz-input-text.css)
    content/global/elements/moz-input-text.mjs    (widgets/moz-input-text/moz-input-text.mjs)
+   content/global/elements/moz-input-url.mjs    (widgets/moz-input-url/moz-input-url.mjs)
+   content/global/elements/moz-page-header.css    (widgets/moz-page-header/moz-page-header.css)
+   content/global/elements/moz-page-header.mjs    (widgets/moz-page-header/moz-page-header.mjs)
    content/global/elements/moz-page-nav.css    (widgets/moz-page-nav/moz-page-nav.css)
    content/global/elements/moz-page-nav-button.css    (widgets/moz-page-nav/moz-page-nav-button.css)
    content/global/elements/moz-page-nav.mjs    (widgets/moz-page-nav/moz-page-nav.mjs)
@@ -171,6 +188,12 @@ toolkit.jar:
    content/global/neterror/aboutNetErrorCodes.js                    (neterror/aboutNetErrorCodes.js)
    content/global/neterror/supportpages/connection-not-secure.html  (neterror/supportpages/connection-not-secure.html)
    content/global/neterror/supportpages/time-errors.html            (neterror/supportpages/time-errors.html)
+   content/global/errors/error-registry.mjs                         (errors/error-registry.mjs)
+   content/global/errors/error-lookup.mjs                           (errors/error-lookup.mjs)
+   content/global/errors/cert-errors.mjs                            (errors/cert-errors.mjs)
+   content/global/errors/pkix-errors.mjs                            (errors/pkix-errors.mjs)
+   content/global/errors/ssl-errors.mjs                             (errors/ssl-errors.mjs)
+   content/global/errors/net-errors.mjs                             (errors/net-errors.mjs)
 #ifdef XP_MACOSX
    content/global/macWindowMenu.js
 #endif

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsID_h__
-#define nsID_h__
+#ifndef nsID_h_
+#define nsID_h_
 
 #include <string.h>
 

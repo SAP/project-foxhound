@@ -6,6 +6,7 @@
 #include "DeleteNodeTransaction.h"
 
 #include "EditorBase.h"
+#include "EditorDOMAPIWrapper.h"
 #include "EditorDOMPoint.h"
 #include "HTMLEditUtils.h"
 #include "SelectionState.h"  // RangeUpdater
@@ -103,14 +104,21 @@ NS_IMETHODIMP DeleteNodeTransaction::DoTransaction() {
   // give range updater a chance.  SelAdjDeleteNode() needs to be called
   // *before* we do the action, unlike some of the other RangeItem update
   // methods.
-  mEditorBase->RangeUpdaterRef().SelAdjDeleteNode(*mContentToDelete);
+  const OwningNonNull<EditorBase> editorBase = *mEditorBase;
+  editorBase->RangeUpdaterRef().SelAdjDeleteNode(*mContentToDelete);
 
-  OwningNonNull<nsINode> parentNode = *mParentNode;
-  OwningNonNull<nsIContent> contentToDelete = *mContentToDelete;
-  ErrorResult error;
-  parentNode->RemoveChild(contentToDelete, error);
-  NS_WARNING_ASSERTION(!error.Failed(), "nsINode::RemoveChild() failed");
-  return error.StealNSResult();
+  const OwningNonNull<nsINode> parentNode = *mParentNode;
+  const OwningNonNull<nsIContent> contentToDelete = *mContentToDelete;
+  AutoNodeAPIWrapper nodeWrapper(editorBase, parentNode);
+  nsresult rv = nodeWrapper.RemoveChild(contentToDelete);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("AutoNodeAPIWrapper::RemoveChild() failed");
+    return rv;
+  }
+  NS_WARNING_ASSERTION(
+      nodeWrapper.IsExpectedResult(),
+      "Removing a content node caused other mutations, but ignored");
+  return NS_OK;
 }
 
 EditorDOMPoint DeleteNodeTransaction::SuggestPointToPutCaret() const {
@@ -126,21 +134,20 @@ NS_IMETHODIMP DeleteNodeTransaction::UndoTransaction() {
     // This is a legal state, the transaction is a no-op.
     return NS_OK;
   }
-  ErrorResult error;
-  OwningNonNull<EditorBase> editorBase = *mEditorBase;
-  OwningNonNull<nsINode> parentNode = *mParentNode;
-  OwningNonNull<nsIContent> contentToDelete = *mContentToDelete;
-  nsCOMPtr<nsIContent> refContent = mRefContent;
+  const OwningNonNull<EditorBase> editorBase = *mEditorBase;
+  const OwningNonNull<nsINode> parentNode = *mParentNode;
+  const OwningNonNull<nsIContent> contentToDelete = *mContentToDelete;
+  const nsCOMPtr<nsIContent> refContent = mRefContent;
   // XXX Perhaps, we should check `refContent` is a child of `parentNode`,
   //     and if it's not, we should stop undoing or something.
-  parentNode->InsertBefore(contentToDelete, refContent, error);
-  // InsertBefore() may call MightThrowJSException() even if there is no error.
-  // We don't need the flag here.
-  error.WouldReportJSException();
-  if (error.Failed()) {
-    NS_WARNING("nsINode::InsertBefore() failed");
-    return error.StealNSResult();
+  AutoNodeAPIWrapper nodeWrapper(editorBase, parentNode);
+  nsresult rv = nodeWrapper.InsertBefore(contentToDelete, refContent);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("AutoNodeAPIWrapper::InsertBefore() failed");
+    return rv;
   }
+  NS_WARNING_ASSERTION(nodeWrapper.IsExpectedResult(),
+                       "Inserting a node caused other mutations, but ignored");
   return NS_OK;
 }
 
@@ -154,14 +161,21 @@ NS_IMETHODIMP DeleteNodeTransaction::RedoTransaction() {
     return NS_OK;
   }
 
-  mEditorBase->RangeUpdaterRef().SelAdjDeleteNode(*mContentToDelete);
+  const OwningNonNull<EditorBase> editorBase = *mEditorBase;
+  editorBase->RangeUpdaterRef().SelAdjDeleteNode(*mContentToDelete);
 
-  OwningNonNull<nsINode> parentNode = *mParentNode;
-  OwningNonNull<nsIContent> contentToDelete = *mContentToDelete;
-  ErrorResult error;
-  parentNode->RemoveChild(contentToDelete, error);
-  NS_WARNING_ASSERTION(!error.Failed(), "nsINode::RemoveChild() failed");
-  return error.StealNSResult();
+  const OwningNonNull<nsINode> parentNode = *mParentNode;
+  const OwningNonNull<nsIContent> contentToDelete = *mContentToDelete;
+  AutoNodeAPIWrapper nodeWrapper(editorBase, parentNode);
+  nsresult rv = nodeWrapper.RemoveChild(contentToDelete);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("AutoNodeAPIWrapper::RemoveChild() failed");
+    return rv;
+  }
+  NS_WARNING_ASSERTION(
+      nodeWrapper.IsExpectedResult(),
+      "Removing a content node caused other mutations, but ignored");
+  return NS_OK;
 }
 
 }  // namespace mozilla

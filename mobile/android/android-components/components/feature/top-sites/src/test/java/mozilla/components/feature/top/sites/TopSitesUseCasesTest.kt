@@ -4,13 +4,10 @@
 
 package mozilla.components.feature.top.sites
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.support.test.mock
 import org.junit.Test
 import org.mockito.Mockito.verify
-
-@ExperimentalCoroutinesApi // for runTest
 
 class TopSitesUseCasesTest {
 

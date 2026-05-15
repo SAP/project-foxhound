@@ -18,6 +18,7 @@ import org.hamcrest.Matchers.lessThanOrEqualTo
 import org.hamcrest.Matchers.notNullValue
 import org.json.JSONObject
 import org.junit.Assume.assumeThat
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoSession
@@ -121,6 +122,7 @@ class ProgressDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     fun multipleLoads() {
         mainSession.loadUri(UNKNOWN_HOST_URI)
@@ -177,6 +179,7 @@ class ProgressDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun goBackAndForward() {
         mainSession.loadTestPath(HELLO_HTML_PATH)
         sessionRule.waitForPageStop()
@@ -454,6 +457,7 @@ class ProgressDelegateTest : BaseSessionTest() {
         }
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @WithDisplay(width = 400, height = 400)
     @Test
     fun saveAndRestoreStateNewSession() {
@@ -712,5 +716,29 @@ class ProgressDelegateTest : BaseSessionTest() {
             lastProgressBeforeCompletion,
             lessThan(80),
         )
+    }
+
+    @Test fun flushSessionStateTriggersSessionStateChange() {
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        var oldState: GeckoSession.SessionState? = null
+
+        sessionRule.waitUntilCalled(object : ProgressDelegate {
+            @AssertCalled(count = 1)
+            override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
+                oldState = sessionState
+            }
+        })
+
+        assertThat("State should not be null", oldState, notNullValue())
+
+        mainSession.flushSessionState()
+
+        sessionRule.waitUntilCalled(object : ProgressDelegate {
+            @AssertCalled(count = 1)
+            override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
+            }
+        })
     }
 }

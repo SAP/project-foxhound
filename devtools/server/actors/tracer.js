@@ -107,10 +107,10 @@ class TracerActor extends Actor {
    * Meant for the WebConsole command in order to pass advanced
    * configuration directly to JavaScriptTracer class.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Options used to configure JavaScriptTracer.
    *        See `JavaScriptTracer.startTracing`.
-   * @return {Boolean}
+   * @return {boolean}
    *         True if the tracer starts, or false if it was stopped.
    */
   toggleTracing(options) {
@@ -125,7 +125,7 @@ class TracerActor extends Actor {
   /**
    * Start tracing.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Options used to configure JavaScriptTracer.
    *        See `JavaScriptTracer.startTracing`.
    */
@@ -250,7 +250,7 @@ class TracerActor extends Actor {
    * Queried by THREAD_STATE watcher to send the gecko profiler data
    * as part of THREAD STATE "stop" resource.
    *
-   * @return {Object} Gecko profiler profile object.
+   * @return {object} Gecko profiler profile object.
    */
   async getProfile() {
     // #stopResult is a promise

@@ -155,23 +155,19 @@ XULStore.prototype = {
       throw new Error("Node without ID passed into persist()");
     }
 
-    const uri = node.ownerDocument.documentURI;
-    const value = node.getAttribute(attr) || "";
-
     if (node.localName == "window") {
+      // TODO(emilio): This doesn't deal with <html>, and it probably should.
       this.log("Persisting attributes to windows is handled by AppWindow.");
       return;
     }
 
-    // See Bug 1476680 - we could drop the `hasValue` check so that
-    // any time there's an empty attribute it gets removed from the
-    // store. Since this is copying behavior from document.persist,
-    // callers would need to be updated with that change.
-    if (!value && this.hasValue(uri, node.id, attr)) {
-      this.removeValue(uri, node.id, attr);
-    } else {
-      this.setValue(uri, node.id, attr, value);
-    }
+    const uri = node.ownerDocument.documentURI;
+    const value = node.getAttribute(attr);
+
+    // This matches XULPersist::Persist.
+    // FIXME(emilio): Somehow expose that to script rather than copying it here?
+    const persistedValue = value === null ? "-moz-missing\n" : value;
+    this.setValue(uri, node.id, attr, persistedValue);
   },
 
   setValue(docURI, id, attr, value) {

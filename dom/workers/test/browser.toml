@@ -11,7 +11,9 @@ support-files = [
   "WorkerDebugger.initialize_debugger_es_worker.js",
   "WorkerDebugger.initialize_es_worker.js",
 ]
-skip-if = ["!nightly_build"] # to be enabled once ES module in workers is enabled (bug 1812591)
+skip-if = [
+  "!nightly_build", # to be enabled once ES module in workers is enabled (bug 1812591)
+]
 
 ["browser_WorkerDebugger_waiting.initialize.js"]
 support-files = [
@@ -22,10 +24,14 @@ support-files = [
 ["browser_bug1047663.js"]
 
 ["browser_bug1104623.js"]
-run-if = ["buildapp == 'browser'"]
+run-if = [
+  "buildapp == 'browser'",
+]
 
 ["browser_consoleSharedWorkers.js"]
-skip-if = ["release_or_beta"] # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+run-if = [
+  "!release_or_beta", # requires dom.postMessage.sharedArrayBuffer.bypassCOOP_COEP.insecure.enabled
+]
 support-files = [
   "sharedWorker_console.js",
   "empty.html",

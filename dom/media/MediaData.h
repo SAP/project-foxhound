@@ -3,29 +3,29 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#if !defined(MediaData_h)
-#  define MediaData_h
+#ifndef MediaData_h
+#define MediaData_h
 
-#  include "AudioConfig.h"
-#  include "AudioSampleFormat.h"
-#  include "EncoderConfig.h"
-#  include "ImageTypes.h"
-#  include "MediaResult.h"
-#  include "SharedBuffer.h"
-#  include "TimeUnits.h"
-#  include "mozilla/CheckedInt.h"
-#  include "mozilla/DefineEnum.h"
-#  include "mozilla/EnumSet.h"
-#  include "mozilla/Maybe.h"
-#  include "mozilla/PodOperations.h"
-#  include "mozilla/RefPtr.h"
-#  include "mozilla/Result.h"
-#  include "mozilla/Span.h"
-#  include "mozilla/UniquePtr.h"
-#  include "mozilla/UniquePtrExtensions.h"
-#  include "mozilla/gfx/Rect.h"
-#  include "nsString.h"
-#  include "nsTArray.h"
+#include "AudioConfig.h"
+#include "AudioSampleFormat.h"
+#include "EncoderConfig.h"
+#include "ImageTypes.h"
+#include "MediaResult.h"
+#include "SharedBuffer.h"
+#include "TimeUnits.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/DefineEnum.h"
+#include "mozilla/EnumSet.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
+#include "mozilla/Span.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/gfx/Rect.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 
@@ -703,7 +703,7 @@ class MediaRawData final : public MediaData {
            mAlphaBuffer.ComputedSizeOfExcludingThis();
   }
   // Access the buffer as a Span.
-  operator Span<const uint8_t>() { return Span{Data(), Size()}; }
+  operator Span<const uint8_t>() const { return Span{Data(), Size()}; }
 
   const CryptoSample& mCrypto;
   RefPtr<MediaByteBuffer> mExtraData;

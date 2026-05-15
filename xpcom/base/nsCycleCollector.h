@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsCycleCollector_h__
-#define nsCycleCollector_h__
+#ifndef nsCycleCollector_h_
+#define nsCycleCollector_h_
 
 class nsICycleCollectorListener;
 class nsICycleCollectorLogSink;
@@ -76,4 +76,4 @@ void nsCycleCollector_shutdown(bool aDoCollect = true);
 void nsCycleCollector_registerJSContext(mozilla::CycleCollectedJSContext* aCx);
 void nsCycleCollector_forgetJSContext();
 
-#endif  // nsCycleCollector_h__
+#endif  // nsCycleCollector_h_

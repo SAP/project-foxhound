@@ -2,7 +2,15 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-let max_round_trip_time_ms = 90;
+// This test verifies that NativeMessaging is reasonably fast.
+// Subprocess is the backend to NativeMessaging and has a similar test at:
+// toolkit/modules/subprocess/test/xpcshell/test_subprocess_perf.js
+//
+// NOTE: This test has fundamental issues that may cause timeouts or longer runs
+// on slow, resource-constrained devices. See
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1951522#c31
+
+let max_round_trip_time_ms = 30;
 
 const MAX_ROUND_TRIP_TIME_MS = max_round_trip_time_ms;
 

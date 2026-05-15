@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaKeyError.h"
+
 #include "mozilla/dom/MediaKeyErrorBinding.h"
 #include "nsContentUtils.h"
 

@@ -27,22 +27,22 @@ android-geckoview:
         # Lint
         - "^source-test-mozlint android-lints$ | eslint$ | rejected-words$ | file-perm$ | file-whitespace$"
         # Miscellaneous Tests
-        - "^test-android !shippable '64 'gtest | 'cpp | junit-fis"
+        - "^test-android !shippable '64 'em-14 'gtest | 'cpp | junit-fis"
         # Mochitests
-        - "^test-android !shippable !cf !gli !iso      'em 'media | 'plain"
+        - "^test-android !shippable !cf !gli !iso      'em-14 'media | 'plain"
         - "^test-android !shippable !cf !gli !iso !swr 'hw 'media 'debug"
         - "^test-android !shippable !cf !gli !iso !swr 'hw 'mochitest-webgl 'nofis"
         # Reftests
-        - "^test-android !shippable !iso 'geckoview-crashtest | 'geckoview-reftest 'nofis"
+        - "^test-android !shippable !iso 'em-14 'geckoview-crashtest | 'geckoview-reftest 'nofis"
         # Web Platform Tests
-        - "^test-android !shippable !headless 'wdspec"
-        - "^test-android !shippable       !cf !iso            'web-platform-tests-crashtest 'debug"
-        - "^test-android !shippable       !cf !iso       !swr 'web-platform-tests-crashtest"
-        - "^test-android !shippable !back !cf !iso !ship !swr 'web-platform-tests-nofis"
-        - "^test-android !shippable !back !cf !iso            'web-platform-tests-reftest 'nofis 'debug"
-        - "^test-android !shippable !back !cf !iso       !swr 'web-platform-tests-reftest 'nofis"
+        - "^test-android !shippable !headless 'em-14 'wdspec"
+        - "^test-android !shippable       !cf !iso            'em-14 'web-platform-tests-crashtest 'debug"
+        - "^test-android !shippable       !cf !iso       !swr 'em-14 'web-platform-tests-crashtest"
+        - "^test-android !shippable !back !cf !iso !ship !swr 'em-14 'web-platform-tests-nofis"
+        - "^test-android !shippable !back !cf !iso            'em-14 'web-platform-tests-reftest 'nofis 'debug"
+        - "^test-android !shippable !back !cf !iso       !swr 'em-14 'web-platform-tests-reftest 'nofis"
         # XPCShell
-        - "^test-android !shippable !iso 'xpcshell"
+        - "^test-android !shippable !iso 'em-14 'xpcshell"
 
 builds:
     selector: fuzzy
@@ -92,6 +92,22 @@ desktop-frontend:
         - "'browser-a11y | 'mochitest-a11y !spi !asan !tsan !no-cache   !swr"
         - "'marionette                          !asan       !source !headless !swr"
         - "'firefox-ui-functional               !asan !tsan"
+
+desktop-newtab-trainhop:
+    description: >-
+        Run mochitest-browser newtab trainhop tests on compatible release
+        channels. Excludes non-shipped configurations, since we really just
+        need the platforms to build in order to grab their test packages and
+        test running infrastructure. The actual builds under test here are
+        the latest beta and release builds, running the try pushes' generated
+        newtab XPI and tests.
+        Use with --artifact to speed up your trypush.
+        If these jobs are green, then the pushed revision is ready to be
+        manually tested for a potential trainhop to the green channels.
+    selector: fuzzy
+    full: true
+    query:
+        - "'mochitest trainhop !cf !tsan !ccov !asan !shippable !debug !devedition !wayland !-32"
 
 devtools:
     selector: fuzzy
@@ -184,7 +200,7 @@ fpush-linux-android:
         codebase, while the builds on other platforms catch compilation problems
         that might result from only building locally on one platform.
     query:
-        - "'test-linux1804 'debug- !-shippable !-asan"
+        - "'test-linux2404 'debug- !-shippable !-asan"
         - "'test-android-em 'debug"
         - "^build !-shippable !-signing !-asan !-fuzzing !-rusttests !-base-toolchain !-aar- !components !apk !bundle"
 
@@ -200,18 +216,69 @@ geckodriver:
         - "'platform 'wdspec 'debug 'nofis"
         - "'browsertime 'amazon 'shippable 'firefox 'nofis"
 
-layout:
+layout-all-platforms:
     selector: fuzzy
     description: >-
-        Runs the tests most relevant to layout.
+        Runs the tests most relevant to layout, in all platforms.
+        Consider using layout-linux, layout-linux-debug, or layout-linux-opt
+        for faster results and less resource consumption.
         This preset can be filtered down further to limit it to
-        a specific platform or build configuration. For example:
-        |mach try --preset layout -xq "linux64 'opt"|
-    query:
+        other platforms or build configurations. For example:
+        |mach try --preset layout-all-platforms -xq "windows 'opt"|
+    query: &layout-all-platforms-query
         # Most mochitest + reftest + crashtest + wpt
-        - "!asan !tsan !jsreftest !shippable !webgl !condprof !media !webgpu 'mochitest | 'web-platform | 'crashtest | 'reftest"
+        - "!asan !tsan !jsreftest !shippable !webgl !condprof !media !webgpu !a11y-checks 'mochitest | 'web-platform | 'crashtest | 'reftest"
         # Style system unit tests
         - "'rusttests"
+
+layout-linux:
+    selector: fuzzy
+    description: >-
+        Like the layout-all-platforms preset, but runs only linux tests.
+    query: *layout-all-platforms-query
+    intersect_query: ["linux64"]
+
+layout-linux-debug:
+    selector: fuzzy
+    description: Like layout-all-platforms, but runs only linux debug tests.
+    query: *layout-all-platforms-query
+    intersect_query: ["linux64 'debug"]
+
+layout-linux-opt:
+    selector: fuzzy
+    description: Like layout-all-platforms, but runs only linux opt tests.
+    query: *layout-all-platforms-query
+    intersect_query: ["linux64 'opt"]
+
+wpt-all-platforms:
+    selector: fuzzy
+    description: >-
+        Runs web platform tests in all platforms.
+        Consider using wpt-linux, wpt-linux-debug, or wpt-linux-opt
+        for faster results and less resource consumption.
+        This preset can be filtered down further to limit it to
+        other platforms or build configurations. For example:
+        |mach try --preset wpt-all-platforms -xq "windows 'opt"|
+    query: &wpt-all-platforms-query
+        - "'web-platform !asan !tsan"
+
+wpt-linux:
+    selector: fuzzy
+    description: Like wpt-all-platforms, but runs only linux tests.
+    query: *wpt-all-platforms-query
+    intersect_query: ["linux64"]
+
+wpt-linux-debug:
+    selector: fuzzy
+    description: Like wpt-all-platforms, but runs only linux debug tests.
+    query: *wpt-all-platforms-query
+    intersect_query: ["linux64 'debug"]
+
+wpt-linux-opt:
+    selector: fuzzy
+    description: Like wpt-all-platforms, but runs only linux opt tests.
+    query: *wpt-all-platforms-query
+    intersect_query: ["linux64 'opt"]
 
 media-full:
     selector: fuzzy

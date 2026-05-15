@@ -1,0 +1,61 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "doc_inspector_search.html",
+  "doc_inspector_search-iframes.html",
+  "doc_inspector_search-reserved.html",
+  "doc_inspector_search-suggestions.html",
+  "doc_inspector_search-svg.html",
+  "head.js",
+  "!/devtools/client/inspector/test/head.js",
+  "!/devtools/client/inspector/test/shared-head.js",
+  "!/devtools/client/shared/test/shared-head.js",
+  "!/devtools/client/shared/test/telemetry-test-helpers.js",
+  "!/devtools/client/shared/test/highlighter-test-actor.js",
+]
+
+["browser_inspector_search-01.js"]
+
+["browser_inspector_search-02.js"]
+
+["browser_inspector_search-03.js"]
+
+["browser_inspector_search-04.js"]
+
+["browser_inspector_search-05.js"]
+
+["browser_inspector_search-06.js"]
+
+["browser_inspector_search-07.js"]
+
+["browser_inspector_search-08.js"]
+
+["browser_inspector_search-09.js"]
+
+["browser_inspector_search-10.js"]
+
+["browser_inspector_search-clear.js"]
+
+["browser_inspector_search-filter_context-menu.js"]
+
+["browser_inspector_search-label.js"]
+
+["browser_inspector_search-navigation.js"]
+
+["browser_inspector_search-reserved.js"]
+
+["browser_inspector_search-selection.js"]
+
+["browser_inspector_search-sidebar.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_inspector_search-suggests-ids-and-classes.js"]
+
+["browser_inspector_search-suggests-pseudo.js"]
+
+["browser_inspector_search_keyboard_shortcut_conflict.js"]
+
+["browser_inspector_search_keyboard_trap.js"]

@@ -25,24 +25,31 @@
   async function fireLotsOfSingleTouchMoves() {
     var ret = new Promise(function(resolve) {
       SpecialPowers.loadChromeScript(function() {
-        /* eslint-env mozilla/chrome-script */
+        const kAllowToCoalesceTouchMovesOption = { isAsyncEnabled: true, isDOMEventSynthesized: false };
         var element = this.actorParent.rootFrameLoader.ownerElement;
         var rect = element.getBoundingClientRect();
         var win = element.ownerDocument.defaultView;
-        var utils = win.windowUtils;
         var x = rect.x + (rect.width / 2);
         var y = Math.floor(rect.y + (rect.height / 4));
         var endY = Math.floor(rect.y + ((rect.height / 4) * 2));
-        utils.sendTouchEvent("touchstart", [0], [x], [y], [1], [1], [0], [1],
-                             [0], [0], [0], 0);
+        win.synthesizeTouchEvent("touchstart", [{
+          identifier: 0,
+          offsetX: x,
+          offsetY: y,
+        }], 0, kAllowToCoalesceTouchMovesOption);
         while (y != endY) {
-          utils.sendTouchEvent("touchmove", [0], [x], [y], [1], [1], [0], [1],
-                               [0], [0], [0], 0);
+          win.synthesizeTouchEvent("touchmove", [{
+            identifier: 0,
+            offsetX: x,
+            offsetY: y,
+          }], 0, kAllowToCoalesceTouchMovesOption);
           ++y;
         }
-        utils.sendTouchEvent("touchend", [0], [x], [y], [1], [1], [0], [1],
-                             [0], [0], [0], 0);
-
+        win.synthesizeTouchEvent("touchend", [{
+          identifier: 0,
+          offsetX: x,
+          offsetY: y,
+        }], 0, kAllowToCoalesceTouchMovesOption);
       });
 
       touchmoveEvents = [];
@@ -59,7 +66,7 @@
   async function fireTwoSingleTouches() {
     var ret = new Promise(function(resolve) {
       SpecialPowers.loadChromeScript(function() {
-        /* eslint-env mozilla/chrome-script */
+        const kAllowToCoalesceTouchMovesOption = { isAsyncEnabled: true, isDOMEventSynthesized: false };
         var element = this.actorParent.rootFrameLoader.ownerElement;
         var rect = element.getBoundingClientRect();
         var win = element.ownerDocument.defaultView;
@@ -67,14 +74,26 @@
         var x = rect.x + (rect.width / 2);
         var startY = Math.floor(rect.y + (rect.height / 4));
         var endY = Math.floor(rect.y + ((rect.height / 4) * 2));
-        utils.sendTouchEvent("touchstart", [0], [x], [startY], [1], [1], [0],
-                             [1], [0], [0], [0], 0);
-        utils.sendTouchEvent("touchmove", [0], [x], [startY], [1], [1], [0],
-                             [1], [0], [0], [0], 0);
-        utils.sendTouchEvent("touchmove", [0], [x], [startY + 1], [1], [1], [0],
-                             [1], [0], [0], [0], 0);
-        utils.sendTouchEvent("touchend", [0], [x], [endY], [1], [1], [0],
-                             [1], [0], [0], [0], 0);
+        win.synthesizeTouchEvent("touchstart", [{
+          identifier: 0,
+          offsetX: x,
+          offsetY: startY,
+        }], 0, kAllowToCoalesceTouchMovesOption);
+        win.synthesizeTouchEvent("touchmove", [{
+          identifier: 0,
+          offsetX: x,
+          offsetY: startY + 10,
+        }], 0, kAllowToCoalesceTouchMovesOption);
+        win.synthesizeTouchEvent("touchmove", [{
+          identifier: 0,
+          offsetX: x,
+          offsetY: startY + 20,
+        }], 0, kAllowToCoalesceTouchMovesOption);
+        win.synthesizeTouchEvent("touchend", [{
+          identifier: 0,
+          offsetX: x,
+          offsetY: endY,
+        }], 0, kAllowToCoalesceTouchMovesOption);
       });
 
       touchmoveEvents = [];
@@ -91,7 +110,7 @@
   async function fireLotsOfMultiTouchMoves() {
     var ret = new Promise(function(resolve) {
       SpecialPowers.loadChromeScript(function() {
-        /* eslint-env mozilla/chrome-script */
+        const kAllowToCoalesceTouchMovesOption = { isAsyncEnabled: true, isDOMEventSynthesized: false };
         var element = this.actorParent.rootFrameLoader.ownerElement;
         var rect = element.getBoundingClientRect();
         var win = element.ownerDocument.defaultView;
@@ -99,19 +118,47 @@
         var x = rect.x + (rect.width / 2);
         var startY = Math.floor(rect.y + (rect.height / 4));
         var endY = Math.floor(rect.y + ((rect.height / 4) * 2));
-        utils.sendTouchEvent("touchstart", [0, 1], [x, x + 1],
-                             [startY, startY + 1], [1, 1], [1, 1], [0, 0],
-                             [1, 1], [0, 0], [0, 0], [0, 0], 0);
+        win.synthesizeTouchEvent("touchstart", [
+          {
+            identifier: 0,
+            offsetX: x,
+            offsetY: startY,
+          },
+          {
+            identifier: 1,
+            offsetX: x + 1,
+            offsetY: startY + 1,
+          },
+        ], 0, kAllowToCoalesceTouchMovesOption);
+
         while (startY != endY) {
-          utils.sendTouchEvent("touchmove", [0, 1], [x, x + 1],
-                               [startY, startY + 1], [1, 1], [1, 1], [0, 0],
-                               [1, 1], [0, 0], [0, 0], [0, 0], 0);
+          win.synthesizeTouchEvent("touchmove", [
+            {
+              identifier: 0,
+              offsetX: x,
+              offsetY: startY,
+            },
+            {
+              identifier: 1,
+              offsetX: x + 1,
+              offsetY: startY + 1,
+            },
+          ], 0, kAllowToCoalesceTouchMovesOption);
           ++startY;
         }
-        utils.sendTouchEvent("touchend", [0, 1], [x, x + 1], [endY, endY + 1],
-                             [1, 1], [1, 1], [0, 0], [1, 1], [0, 0], [0, 0],
-                             [0, 0], 0);
 
+        win.synthesizeTouchEvent("touchend", [
+          {
+            identifier: 0,
+            offsetX: x,
+            offsetY: endY,
+          },
+          {
+            identifier: 1,
+            offsetX: x + 1,
+            offsetY: endY + 1,
+          },
+        ], 0, kAllowToCoalesceTouchMovesOption);
       });
 
       touchmoveEvents = [];
@@ -183,7 +230,8 @@
   }
 
   function init() {
-    SpecialPowers.pushPrefEnv({"set": [["dom.w3c_touch_events.enabled", true]]},
+    SpecialPowers.pushPrefEnv({"set": [["dom.w3c_touch_events.enabled", true],
+                                       ["apz.touch_move_tolerance", 0.0]]},
                               runTests);
   }
   </script>

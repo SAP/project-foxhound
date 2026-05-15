@@ -8,10 +8,10 @@
 #define mozilla_dom_URLSearchParams_h
 
 #include <cstdint>
+
 #include "ErrorList.h"
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"

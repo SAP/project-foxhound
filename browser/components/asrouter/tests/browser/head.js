@@ -22,6 +22,9 @@ const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
 
+const BROWSER_GLUE =
+  Cc["@mozilla.org/browser/browserglue;1"].getService().wrappedJSObject;
+
 // Feature callout constants
 const calloutId = "feature-callout";
 const calloutSelector = `#${calloutId}.featureCallout`;
@@ -93,7 +96,10 @@ class TelemetrySpy {
    * @param {object} expectedData
    */
   assertCalledWith(expectedData) {
-    let match = this.spy.calledWith("AWPage:TELEMETRY_EVENT", expectedData);
+    let match = this.spy.calledWith(
+      "AWPage:TELEMETRY_EVENT",
+      sinon.match(expectedData)
+    );
     if (match) {
       ok(true, "Expected telemetry sent");
     } else if (this.spy.called) {

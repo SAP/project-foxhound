@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "L10nOverlays.h"
+
+#include "HTMLSplitOnSpacesTokenizer.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "HTMLSplitOnSpacesTokenizer.h"
 #include "nsHtml5StringParser.h"
-#include "nsTextNode.h"
-#include "nsIParserUtils.h"
 #include "nsINodeList.h"
+#include "nsIParserUtils.h"
+#include "nsTextNode.h"
 
 using namespace mozilla::dom;
 using namespace mozilla;
@@ -522,9 +523,8 @@ void L10nOverlays::TranslateElement(Element& aElement,
     } else {
       // Else parse the translation's HTML into a DocumentFragment,
       // sanitize it and replace the element's content.
-      RefPtr<DocumentFragment> fragment =
-          new (aElement.OwnerDoc()->NodeInfoManager())
-              DocumentFragment(aElement.OwnerDoc()->NodeInfoManager());
+      auto* nim = aElement.NodeInfoManager();
+      RefPtr<DocumentFragment> fragment = new (nim) DocumentFragment(nim);
       // Note: these flags should be no less restrictive than the ones in
       // nsContentUtils::ParseFragmentHTML .
       // We supply the flags here because otherwise the parsing of HTML can

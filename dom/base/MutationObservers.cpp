@@ -6,33 +6,33 @@
 
 #include "MutationObservers.h"
 
-#include "nsContentUtils.h"
-#include "nsCSSPseudoElements.h"
-#include "nsINode.h"
-#include "nsIContent.h"
-#include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/Element.h"
-#include "nsIMutationObserver.h"
-#include "mozilla/EventListenerManager.h"
 #include "PLDHashTable.h"
-#include "nsCOMArray.h"
-#include "nsPIDOMWindow.h"
-#include "nsXULElement.h"
-#include "nsGenericHTMLElement.h"
+#include "PseudoStyleType.h"
 #include "mozilla/AnimationTarget.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/EventListenerManager.h"
 #include "mozilla/PresShell.h"
-#include "nsWrapperCacheInlines.h"
-#include "nsDOMMutationObserver.h"
+#include "mozilla/dom/Animation.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
+#include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "nsCOMArray.h"
+#include "nsContentUtils.h"
+#include "nsDOMMutationObserver.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
+#include "nsIMutationObserver.h"
+#include "nsINode.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCacheInlines.h"
+#include "nsXULElement.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -132,7 +132,7 @@ void MutationObservers::NotifyCharacterDataChanged(
 void MutationObservers::NotifyAttributeWillChange(Element* aElement,
                                                   int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType) {
+                                                  AttrModType aModType) {
   Notify(aElement,
          NOTIFIER(AttributeWillChange, aElement, aNameSpaceID, aAttribute,
                   aModType),
@@ -142,7 +142,7 @@ void MutationObservers::NotifyAttributeWillChange(Element* aElement,
 void MutationObservers::NotifyAttributeChanged(Element* aElement,
                                                int32_t aNameSpaceID,
                                                nsAtom* aAttribute,
-                                               int32_t aModType,
+                                               AttrModType aModType,
                                                const nsAttrValue* aOldValue) {
   aElement->OwnerDoc()->Changed();
   Notify(aElement,
@@ -191,7 +191,7 @@ void MutationObservers::NotifyContentWillBeRemoved(
 }
 
 void MutationObservers::NotifyARIAAttributeDefaultWillChange(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, AttrModType aModType) {
   Notify<NotifyPresShell::No>(
       aElement,
       NOTIFIER(ARIAAttributeDefaultWillChange, aElement, aAttribute, aModType),
@@ -199,7 +199,7 @@ void MutationObservers::NotifyARIAAttributeDefaultWillChange(
 }
 
 void MutationObservers::NotifyARIAAttributeDefaultChanged(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, AttrModType aModType) {
   Notify<NotifyPresShell::No>(
       aElement,
       NOTIFIER(ARIAAttributeDefaultChanged, aElement, aAttribute, aModType),

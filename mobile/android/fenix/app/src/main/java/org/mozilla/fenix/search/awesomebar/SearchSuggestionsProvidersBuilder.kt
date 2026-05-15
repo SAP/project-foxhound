@@ -20,7 +20,6 @@ import mozilla.components.feature.awesomebar.provider.SearchEngineSuggestionProv
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.SearchTermSuggestionsProvider
 import mozilla.components.feature.awesomebar.provider.SessionSuggestionProvider
-import mozilla.components.feature.awesomebar.provider.TopSitesSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.TrendingSearchProvider
 import mozilla.components.feature.fxsuggest.FxSuggestSuggestionProvider
 import mozilla.components.feature.search.SearchUseCases
@@ -37,7 +36,6 @@ import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.Core.Companion.METADATA_HISTORY_SUGGESTION_LIMIT
 import org.mozilla.fenix.components.Core.Companion.METADATA_SHORTCUT_SUGGESTION_LIMIT
 import org.mozilla.fenix.ext.containsQueryParameters
-import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.search.SearchEngineSource
 
 /**
@@ -62,7 +60,6 @@ class SearchSuggestionsProvidersBuilder(
     val defaultCombinedHistoryProvider: CombinedHistorySuggestionProvider
     val shortcutsEnginePickerProvider: ShortcutsSuggestionProvider
     val defaultSearchSuggestionProvider: SearchSuggestionProvider
-    val defaultTopSitesSuggestionProvider: TopSitesSuggestionProvider
     val defaultTrendingSearchProvider: TrendingSearchProvider
     val defaultSearchActionProvider: SearchActionProvider
     var searchEngineSuggestionProvider: SearchEngineSuggestionProvider?
@@ -114,21 +111,11 @@ class SearchSuggestionsProvidersBuilder(
                 suggestionsHeader = suggestionsStringsProvider.forSearchEngineSuggestion(),
             )
 
-        defaultTopSitesSuggestionProvider =
-            TopSitesSuggestionProvider(
-                topSitesStorage = components.core.topSitesStorage,
-                loadUrlUseCase = loadUrlUseCase,
-                icons = components.core.icons,
-                engine = engineForSpeculativeConnects,
-                maxNumberOfSuggestions = FxNimbus.features.topSitesSuggestions.value().maxSuggestions,
-            )
-
         defaultTrendingSearchProvider =
             TrendingSearchProvider(
                 fetchClient = components.core.client,
                 privateMode = browsingModeManager.mode.isPrivate,
                 searchUseCase = searchUseCase,
-                limit = FxNimbus.features.trendingSearches.value().maxSuggestions,
                 icon = searchBitmap,
             )
 
@@ -164,7 +151,7 @@ class SearchSuggestionsProvidersBuilder(
         searchSuggestionProviderMap = HashMap()
     }
 
-    @Suppress("ComplexMethod", "LongMethod")
+    @Suppress("CognitiveComplexMethod", "LongMethod", "CyclomaticComplexMethod")
     internal fun getProvidersToAdd(
         state: SearchProviderState,
     ): Set<AwesomeBar.SuggestionProvider> {
@@ -190,7 +177,6 @@ class SearchSuggestionsProvidersBuilder(
         if (state.showRecentSearches) {
             getRecentSearchSuggestionsProvider(
                 searchEngineSource = state.searchEngineSource,
-                maxNumberOfSuggestions = FxNimbus.features.recentSearches.value().maxSuggestions,
             )?.let { providersToAdd.add(it) }
         }
 
@@ -277,10 +263,6 @@ class SearchSuggestionsProvidersBuilder(
         }
 
         providersToAdd.add(requireNotNull(searchEngineSuggestionProvider))
-
-        if (state.showShortcutsSuggestions) {
-            providersToAdd.add(defaultTopSitesSuggestionProvider)
-        }
 
         if (state.showTrendingSearches) {
             val suggestionHeader = state.searchEngineSource.searchEngine?.let { searchEngine ->
@@ -537,7 +519,6 @@ class SearchSuggestionsProvidersBuilder(
      * @property showNonSponsoredSuggestions Whether to show non-sponsored suggestions.
      * @property showTrendingSearches Whether to show trending searches.
      * @property showRecentSearches Whether to show recent searches.
-     * @property showShortcutsSuggestions Whether to show shortcuts suggestions.
      * @property searchEngineSource Hoe the current search engine was selected.
      */
     data class SearchProviderState(
@@ -556,7 +537,6 @@ class SearchSuggestionsProvidersBuilder(
         val showNonSponsoredSuggestions: Boolean,
         val showTrendingSearches: Boolean,
         val showRecentSearches: Boolean,
-        val showShortcutsSuggestions: Boolean,
         val searchEngineSource: SearchEngineSource,
     )
 

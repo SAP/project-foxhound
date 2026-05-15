@@ -4,7 +4,8 @@
 <script>
 function boom()
 {
-  document.getElementById("a").mozCaptureStream();
+  const a = document.getElementById("a");
+  a.captureStream?.() || a.mozCaptureStream();
 }
 </script>
 </head>

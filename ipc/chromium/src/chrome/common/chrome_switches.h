@@ -6,11 +6,10 @@
 
 // Defines all the command-line switches used by Chrome.
 
-#ifndef CHROME_COMMON_CHROME_SWITCHES_H__
-#define CHROME_COMMON_CHROME_SWITCHES_H__
+#ifndef CHROME_COMMON_CHROME_SWITCHES_H_
+#define CHROME_COMMON_CHROME_SWITCHES_H_
 
 #if defined(_MSC_VER)
-#  include <string.h>
 #endif
 
 namespace switches {
@@ -19,4 +18,4 @@ extern const wchar_t kProcessChannelID[];
 
 }  // namespace switches
 
-#endif  // CHROME_COMMON_CHROME_SWITCHES_H__
+#endif  // CHROME_COMMON_CHROME_SWITCHES_H_

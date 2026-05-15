@@ -10,9 +10,8 @@
 
 #include "api/audio/audio_frame.h"
 
-#include <string.h>
-
 #include <cstdint>
+#include <cstring>
 #include <optional>
 
 #include "api/array_view.h"
@@ -20,7 +19,6 @@
 #include "api/audio/channel_layout.h"
 #include "api/rtp_packet_infos.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/time_utils.h"
 
 namespace webrtc {
 
@@ -38,7 +36,7 @@ AudioFrame::AudioFrame(int sample_rate_hz,
       channel_layout_(layout == CHANNEL_LAYOUT_UNSUPPORTED
                           ? GuessChannelLayout(num_channels)
                           : layout) {
-  RTC_DCHECK_LE(num_channels_, kMaxConcurrentChannels);
+  RTC_DCHECK_LE(num_channels_, kMaxNumberOfAudioChannels);
   RTC_DCHECK_GT(sample_rate_hz_, 0);
   RTC_DCHECK_GT(samples_per_channel_, 0u);
 }
@@ -60,7 +58,6 @@ void AudioFrame::ResetWithoutMuting() {
   channel_layout_ = CHANNEL_LAYOUT_NONE;
   speech_type_ = kUndefined;
   vad_activity_ = kVadUnknown;
-  profile_timestamp_ms_ = 0;
   packet_infos_ = RtpPacketInfos();
   absolute_capture_timestamp_ms_ = std::nullopt;
 }
@@ -72,7 +69,7 @@ void AudioFrame::UpdateFrame(uint32_t timestamp,
                              SpeechType speech_type,
                              VADActivity vad_activity,
                              size_t num_channels) {
-  RTC_CHECK_LE(num_channels, kMaxConcurrentChannels);
+  RTC_CHECK_LE(num_channels, kMaxNumberOfAudioChannels);
   timestamp_ = timestamp;
   samples_per_channel_ = samples_per_channel;
   sample_rate_hz_ = sample_rate_hz;
@@ -128,18 +125,6 @@ void AudioFrame::CopyFrom(const AudioFrame& src) {
   }
 }
 
-void AudioFrame::UpdateProfileTimeStamp() {
-  profile_timestamp_ms_ = TimeMillis();
-}
-
-int64_t AudioFrame::ElapsedProfileTimeMs() const {
-  if (profile_timestamp_ms_ == 0) {
-    // Profiling has not been activated.
-    return -1;
-  }
-  return TimeSince(profile_timestamp_ms_);
-}
-
 const int16_t* AudioFrame::data() const {
   return muted_ ? zeroed_data().begin() : data_.data();
 }
@@ -148,9 +133,9 @@ InterleavedView<const int16_t> AudioFrame::data_view() const {
   // If you get a nullptr from `data_view()`, it's likely because the
   // samples_per_channel_ and/or num_channels_ members haven't been properly
   // set. Since `data_view()` returns an InterleavedView<> (which internally
-  // uses rtc::ArrayView<>), we inherit the behavior in InterleavedView when the
-  // view size is 0 that ArrayView<>::data() returns nullptr. So, even when an
-  // AudioFrame is muted and we want to return `zeroed_data()`, if
+  // uses ArrayView<>), we inherit the behavior in InterleavedView when
+  // the view size is 0 that ArrayView<>::data() returns nullptr. So, even when
+  // an AudioFrame is muted and we want to return `zeroed_data()`, if
   // samples_per_channel_ or  num_channels_ is 0, the view will point to
   // nullptr.
   return InterleavedView<const int16_t>(muted_ ? &zeroed_data()[0] : &data_[0],
@@ -172,7 +157,7 @@ InterleavedView<int16_t> AudioFrame::mutable_data(size_t samples_per_channel,
                                                   size_t num_channels) {
   const size_t total_samples = samples_per_channel * num_channels;
   RTC_CHECK_LE(total_samples, data_.size());
-  RTC_CHECK_LE(num_channels, kMaxConcurrentChannels);
+  RTC_CHECK_LE(num_channels, kMaxNumberOfAudioChannels);
   // Sanity check for valid argument values during development.
   // If `samples_per_channel` is < `num_channels` but larger than 0,
   // then chances are the order of arguments is incorrect.
@@ -227,9 +212,9 @@ void AudioFrame::SetSampleRateAndChannelSize(int sample_rate) {
 }
 
 // static
-rtc::ArrayView<const int16_t> AudioFrame::zeroed_data() {
+ArrayView<const int16_t> AudioFrame::zeroed_data() {
   static int16_t* null_data = new int16_t[kMaxDataSizeSamples]();
-  return rtc::ArrayView<const int16_t>(null_data, kMaxDataSizeSamples);
+  return ArrayView<const int16_t>(null_data, kMaxDataSizeSamples);
 }
 
 }  // namespace webrtc

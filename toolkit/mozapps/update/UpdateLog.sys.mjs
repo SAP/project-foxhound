@@ -170,6 +170,7 @@ deactivateUpdateLogFile();
 
 /**
  * Logs a string to the error console.
+ *
  * @param string
  *        The string to write to the error console.
  */

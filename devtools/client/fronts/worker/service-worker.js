@@ -62,5 +62,4 @@ class ServiceWorkerFront extends FrontClassWithSpec(serviceWorkerSpec) {
   }
 }
 
-exports.ServiceWorkerFront = ServiceWorkerFront;
 registerFront(ServiceWorkerFront);

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpAuthManager_h__
-#define nsHttpAuthManager_h__
+#ifndef nsHttpAuthManager_h_
+#define nsHttpAuthManager_h_
 
 #include "nsIHttpAuthManager.h"
 
@@ -18,17 +18,19 @@ class nsHttpAuthManager : public nsIHttpAuthManager {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIHTTPAUTHMANAGER
 
+  static already_AddRefed<nsIHttpAuthCache> GetHttpAuthCacheSingleton();
+
   nsHttpAuthManager() = default;
   [[nodiscard]] nsresult Init();
 
  protected:
   virtual ~nsHttpAuthManager() = default;
 
-  nsHttpAuthCache* mAuthCache{nullptr};
-  nsHttpAuthCache* mPrivateAuthCache{nullptr};
+  RefPtr<nsHttpAuthCache> mAuthCache;
+  RefPtr<nsHttpAuthCache> mPrivateAuthCache;
 };
 
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsHttpAuthManager_h__
+#endif  // nsHttpAuthManager_h_

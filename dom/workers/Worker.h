@@ -8,10 +8,10 @@
 #define mozilla_dom_Worker_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/DebuggerNotificationBinding.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/dom/DebuggerNotificationBinding.h"
 
 #ifdef XP_WIN
 #  undef PostMessage

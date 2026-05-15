@@ -7,7 +7,6 @@
 #include "ReportInternalError.h"
 
 #include "mozilla/IntegerPrintfMacros.h"
-
 #include "nsContentUtils.h"
 #include "nsPrintfCString.h"
 

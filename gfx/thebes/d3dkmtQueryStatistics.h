@@ -12,6 +12,9 @@
  * gfxWindowsPlatform.cpp.]
  */
 
+#ifndef GFX_THEBES_D3DKMTQUERYSTATISTICS_H_
+#define GFX_THEBES_D3DKMTQUERYSTATISTICS_H_
+
 typedef struct _D3DKMTQS_COUNTER {
   ULONG Count;
   ULONGLONG Bytes;
@@ -148,3 +151,5 @@ typedef struct _D3DKMTQS {
 extern "C" {
 typedef __checkReturn NTSTATUS(APIENTRY* PFND3DKMTQS)(const D3DKMTQS*);
 }
+
+#endif  // GFX_THEBES_D3DKMTQUERYSTATISTICS_H_

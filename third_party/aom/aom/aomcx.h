@@ -219,7 +219,7 @@ enum aome_enc_control_id {
    */
   AOME_SET_CPUUSED = 13,
 
-  /*!\brief Codec control function to enable automatic set and use alf frames,
+  /*!\brief Codec control function to enable automatic set and use arf frames,
    * unsigned int parameter
    *
    * - 0 = disable
@@ -1407,7 +1407,8 @@ enum aome_enc_control_id {
    */
   AV1E_SET_SVC_REF_FRAME_COMP_PRED = 147,
 
-  /*!\brief Set --deltaq-mode strength.
+  /*!\brief Set --deltaq-mode strength, where the value is a percentage,
+   * unsigned int parameter.
    *
    * Valid range: [0, 1000]
    */
@@ -1600,6 +1601,22 @@ enum aome_enc_control_id {
    */
   AV1E_SET_SCREEN_CONTENT_DETECTION_MODE = 171,
 
+  /*!\brief Codec control to enable adaptive sharpness, which modulates
+   * sharpness based on frame QP, unsigned int parameter.
+   *
+   * Adaptive sharpness helps mitigate blocking artifacts in the low to medium
+   * quality range.
+   *
+   * - 0 = disable (default)
+   * - 1 = enable
+   *
+   * \note When adaptive sharpness is enabled, AOME_SET_SHARPNESS acts as a
+   * "maximum sharpness" value. Adaptive sharpness can still modulate effective
+   * sharpness between 0 and the maximum sharpness. As a consequence, adaptive
+   * sharpness only has effects when sharpness is greater than 0.
+   */
+  AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS = 172,
+
   // Any new encoder control IDs should be added above.
   // Maximum allowed encoder control ID is 229.
   // No encoder control ID should be added below.
@@ -1633,9 +1650,6 @@ typedef enum aom_scaling_mode_1d {
 /*!\brief  aom region of interest map
  *
  * These defines the data structures for the region of interest map
- *
- * TODO(yaowu): create a unit test for ROI map related APIs
- *
  */
 typedef struct aom_roi_map {
   /*! If ROI is enabled. */
@@ -1716,6 +1730,9 @@ typedef enum {
  *   * --enable-cdef=3
  *   * --enable-chroma-deltaq=1
  *   * --deltaq-mode=6
+ *   * --screen-detection-mode=2
+ * AOM_TUNE_IQ additionally sets the following options:
+ *   * --enable-adaptive-sharpness=1
  */
 typedef enum {
   AOM_TUNE_PSNR = 0,
@@ -2339,6 +2356,9 @@ AOM_CTRL_USE_TYPE(AV1E_SET_ENABLE_LOW_COMPLEXITY_DECODE, unsigned int)
 AOM_CTRL_USE_TYPE(AV1E_SET_SCREEN_CONTENT_DETECTION_MODE,
                   int) /* aom_screen_detection_mode */
 #define AOM_CTRL_SET_SCREEN_CONTENT_DETECTION_MODE
+
+AOM_CTRL_USE_TYPE(AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS, unsigned int)
+#define AOM_CTRL_AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS
 
 /*!\endcond */
 /*! @} - end defgroup aom_encoder */

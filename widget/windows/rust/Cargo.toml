@@ -13,8 +13,10 @@ thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
 xpcom = { path = "../../../xpcom/rust/xpcom" }
 
 [dependencies.windows]
-version = "0.58.0"
+version = "0.62.0"
 features = [
-  "Foundation_Collections",
   "UI_Notifications",
 ]
+
+[dependencies.windows-collections]
+version = "0.3.0"

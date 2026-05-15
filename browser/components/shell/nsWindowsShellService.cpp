@@ -20,7 +20,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/Localization.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/widget/WinTaskbar.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
@@ -133,7 +132,6 @@ static nsresult PinCurrentAppToTaskbarWin10(bool aCheckOnly,
                                             const nsAString& aAppUserModelId,
                                             const nsAString& aShortcutPath);
 static nsresult WriteBitmap(nsIFile* aFile, imgIContainer* aImage);
-static nsresult WriteIcon(nsIFile* aIcoFile, gfx::DataSourceSurface* aSurface);
 
 static nsresult OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName,
                                   HKEY* aKey) {
@@ -455,123 +453,12 @@ nsWindowsShellService::SetDefaultBrowser(bool aForAllUsers) {
   return rv;
 }
 
-/*
- * Asynchronous function to Write an ico file to the disk / in a nsIFile.
- * Limitation: Only square images are supported as of now.
- */
-NS_IMETHODIMP
-nsWindowsShellService::CreateWindowsIcon(nsIFile* aIcoFile,
-                                         imgIContainer* aImage, JSContext* aCx,
-                                         dom::Promise** aPromise) {
-  NS_ENSURE_ARG_POINTER(aIcoFile);
-  NS_ENSURE_ARG_POINTER(aImage);
-  NS_ENSURE_ARG_POINTER(aCx);
-  NS_ENSURE_ARG_POINTER(aPromise);
-
-  if (!NS_IsMainThread()) {
-    return NS_ERROR_NOT_SAME_THREAD;
-  }
-
-  ErrorResult rv;
-  RefPtr<dom::Promise> promise =
-      dom::Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
-
-  if (MOZ_UNLIKELY(rv.Failed())) {
-    return rv.StealNSResult();
-  }
-
-  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
-      "CreateWindowsIcon promise", promise);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Reading input image...\n", __FILE__, __LINE__));
-
-  RefPtr<gfx::SourceSurface> surface = aImage->GetFrame(
-      imgIContainer::FRAME_FIRST, imgIContainer::FLAG_SYNC_DECODE);
-  NS_ENSURE_TRUE(surface, NS_ERROR_FAILURE);
-
-  // At time of writing only `DataSourceSurface` was guaranteed thread safe. We
-  // need this guarantee to write the icon file off the main thread.
-  RefPtr<gfx::DataSourceSurface> dataSurface = surface->GetDataSurface();
-  NS_ENSURE_TRUE(dataSurface, NS_ERROR_FAILURE);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Surface found, writing icon... \n", __FILE__, __LINE__));
-
-  NS_DispatchBackgroundTask(
-      NS_NewRunnableFunction(
-          "CreateWindowsIcon",
-          [icoFile = nsCOMPtr<nsIFile>(aIcoFile), dataSurface, promiseHolder] {
-            nsresult rv = WriteIcon(icoFile, dataSurface);
-
-            NS_DispatchToMainThread(NS_NewRunnableFunction(
-                "CreateWindowsIcon callback", [rv, promiseHolder] {
-                  dom::Promise* promise = promiseHolder.get()->get();
-
-                  if (NS_SUCCEEDED(rv)) {
-                    promise->MaybeResolveWithUndefined();
-                  } else {
-                    promise->MaybeReject(rv);
-                  }
-                }));
-          }),
-      NS_DISPATCH_EVENT_MAY_BLOCK);
-
-  promise.forget(aPromise);
-  return NS_OK;
-}
-
-static nsresult WriteIcon(nsIFile* aIcoFile, gfx::DataSourceSurface* aSurface) {
-  NS_ENSURE_ARG(aIcoFile);
-  NS_ENSURE_ARG(aSurface);
-
-  const gfx::IntSize size = aSurface->GetSize();
-  if (size.IsEmpty()) {
-    MOZ_LOG(sLog, LogLevel::Debug,
-            ("%s:%d - The input image looks empty :(\n", __FILE__, __LINE__));
-    return NS_ERROR_FAILURE;
-  }
-
-  int32_t width = aSurface->GetSize().width;
-  int32_t height = aSurface->GetSize().height;
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Input image dimensions are: %dx%d pixels\n", __FILE__,
-           __LINE__, width, height));
-
-  NS_ENSURE_TRUE(height > 0, NS_ERROR_FAILURE);
-  NS_ENSURE_TRUE(width > 0, NS_ERROR_FAILURE);
-  NS_ENSURE_TRUE(width == height, NS_ERROR_FAILURE);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Opening file for writing...\n", __FILE__, __LINE__));
-
-  ScopedCloseFile file;
-  nsresult rv = aIcoFile->OpenANSIFileDesc("wb", getter_Transfers(file));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Writing icon...\n", __FILE__, __LINE__));
-
-  rv = gfxUtils::EncodeSourceSurface(aSurface, ImageType::ICO, u""_ns,
-                                     gfxUtils::eBinaryEncode, file.get());
-
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(sLog, LogLevel::Debug,
-            ("%s:%d - Could not write the icon!\n", __FILE__, __LINE__));
-    return rv;
-  }
-
-  MOZ_LOG(sLog, LogLevel::Debug,
-          ("%s:%d - Icon written!\n", __FILE__, __LINE__));
-  return NS_OK;
-}
-
 static nsresult WriteBitmap(nsIFile* aFile, imgIContainer* aImage) {
   nsresult rv;
 
   RefPtr<gfx::SourceSurface> surface = aImage->GetFrame(
-      imgIContainer::FRAME_FIRST, imgIContainer::FLAG_SYNC_DECODE);
+      imgIContainer::FRAME_FIRST,
+      imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY);
   NS_ENSURE_TRUE(surface, NS_ERROR_FAILURE);
 
   // For either of the following formats we want to set the biBitCount member
@@ -1368,7 +1255,7 @@ static nsresult GetMatchingShortcut(int aCSIDL, const nsAString& aAUMID,
   WIN32_FIND_DATAW findData = {};
   HANDLE hFindFile = FindFirstFileW(pattern.get(), &findData);
   if (hFindFile == INVALID_HANDLE_VALUE) {
-    Unused << NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
+    (void)NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
     return NS_ERROR_FILE_NOT_FOUND;
   }
   // Past this point we don't return until the end of the function,
@@ -1631,7 +1518,7 @@ static bool IsCurrentAppPinnedToTaskbarSync(const nsAString& aumid) {
   WIN32_FIND_DATAW findData = {};
   HANDLE hFindFile = FindFirstFileW(pattern.get(), &findData);
   if (hFindFile == INVALID_HANDLE_VALUE) {
-    Unused << NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
+    (void)NS_WARN_IF(GetLastError() != ERROR_FILE_NOT_FOUND);
     return false;
   }
   // Past this point we don't return until the end of the function,

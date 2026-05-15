@@ -10,10 +10,10 @@
 #include "CloneableWithRangeMediaResource.h"
 #include "FileMediaResource.h"
 #include "MediaContainerType.h"
+#include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/HTMLMediaElement.h"
-#include "mozilla/InputStreamLengthHelper.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsICloneableInputStream.h"
@@ -136,7 +136,7 @@ void BaseMediaResource::SetLoadInBackground(bool aLoadInBackground) {
     } else {
       loadFlags &= ~nsIRequest::LOAD_BACKGROUND;
     }
-    Unused << NS_WARN_IF(NS_FAILED(ModifyLoadFlags(loadFlags)));
+    (void)NS_WARN_IF(NS_FAILED(ModifyLoadFlags(loadFlags)));
   }
 }
 

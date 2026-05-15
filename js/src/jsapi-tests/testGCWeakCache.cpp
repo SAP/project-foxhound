@@ -17,63 +17,33 @@ using namespace js;
 
 // Exercise WeakCache<GCHashSet>.
 BEGIN_TEST(testWeakCacheSet) {
-  // Create two objects tenured and two in the nursery. If zeal is on,
-  // this may fail and we'll get more tenured objects. That's fine:
-  // the test will continue to work, it will just not test as much.
+  AutoLeaveZeal leaveZeal(cx);
+
+  // Test using internal APIs.
+  CHECK(test<HeapPtr<JSObject*>>(cx));
+
+  // Test using APIs available to embedders.
+  CHECK(test<JS::Heap<JSObject*>>(cx));
+
+  return true;
+}
+
+template <typename T>
+bool test(JSContext* cx) {
   JS::RootedObject tenured1(cx, JS_NewPlainObject(cx));
   JS::RootedObject tenured2(cx, JS_NewPlainObject(cx));
   JS_GC(cx);
   JS::RootedObject nursery1(cx, JS_NewPlainObject(cx));
   JS::RootedObject nursery2(cx, JS_NewPlainObject(cx));
 
-  using ObjectSet =
-      GCHashSet<HeapPtr<JSObject*>, StableCellHasher<HeapPtr<JSObject*>>,
-                SystemAllocPolicy>;
-  using Cache = JS::WeakCache<ObjectSet>;
+  using Set = GCHashSet<T, StableCellHasher<T>, SystemAllocPolicy>;
+  using Cache = JS::WeakCache<Set>;
   Cache cache(JS::GetObjectZone(tenured1));
 
-  cache.put(tenured1);
-  cache.put(tenured2);
-  cache.put(nursery1);
-  cache.put(nursery2);
-
-  // Verify relocation and that we don't sweep too aggressively.
-  JS_GC(cx);
-  CHECK(cache.has(tenured1));
-  CHECK(cache.has(tenured2));
-  CHECK(cache.has(nursery1));
-  CHECK(cache.has(nursery2));
-
-  // Unroot two entries and verify that they get removed.
-  tenured2 = nursery2 = nullptr;
-  JS_GC(cx);
-  CHECK(cache.has(tenured1));
-  CHECK(cache.has(nursery1));
-  CHECK(cache.count() == 2);
-
-  return true;
-}
-END_TEST(testWeakCacheSet)
-
-BEGIN_TEST(testWeakCacheSetWithJSHeap) {
-  // Tests basically the same thing as testWeakCacheSet, but only using APIs
-  // available to embedders.
-  JS::RootedObject tenured1{cx, JS_NewPlainObject(cx)};
-  JS::RootedObject tenured2{cx, JS_NewPlainObject(cx)};
-  JS_GC(cx);
-  JS::RootedObject nursery1{cx, JS_NewPlainObject(cx)};
-  JS::RootedObject nursery2{cx, JS_NewPlainObject(cx)};
-
-  using ObjectSet = JS::GCHashSet<JS::Heap<JSObject*>,
-                                  js::StableCellHasher<JS::Heap<JSObject*>>,
-                                  js::SystemAllocPolicy>;
-  using Cache = JS::WeakCache<ObjectSet>;
-  Cache cache{JS::GetObjectZone(tenured1)};
-
-  cache.put(tenured1);
-  cache.put(tenured2);
-  cache.put(nursery1);
-  cache.put(nursery2);
+  CHECK(cache.put(tenured1));
+  CHECK(cache.put(tenured2));
+  CHECK(cache.put(nursery1));
+  CHECK(cache.put(nursery2));
   cache.put(nullptr);  // nullptr entries should not be swept.
 
   // Verify relocation and that we don't sweep too aggressively.
@@ -83,6 +53,7 @@ BEGIN_TEST(testWeakCacheSetWithJSHeap) {
   CHECK(cache.has(nursery1));
   CHECK(cache.has(nursery2));
   CHECK(cache.has(nullptr));
+  CHECK_EQUAL(cache.count(), size_t(5));
 
   // Unroot two entries and verify that they get removed.
   tenured2 = nursery2 = nullptr;
@@ -90,96 +61,83 @@ BEGIN_TEST(testWeakCacheSetWithJSHeap) {
   CHECK(cache.has(tenured1));
   CHECK(cache.has(nursery1));
   CHECK(cache.has(nullptr));
-  CHECK_EQUAL(cache.count(), unsigned{3});
+  CHECK_EQUAL(cache.count(), size_t(3));
 
   return true;
 }
-END_TEST(testWeakCacheSetWithJSHeap)
+END_TEST(testWeakCacheSet)
 
-// Exercise WeakCache<GCHashMap>.
-BEGIN_TEST(testWeakCacheMap) {
-  // Create two objects tenured and two in the nursery. If zeal is on,
-  // this may fail and we'll get more tenured objects. That's fine:
-  // the test will continue to work, it will just not test as much.
+// Exercise WeakCache<GCHashMap> where the value is not a GC thing.
+BEGIN_TEST(testWeakCacheMapToNonGCThing) {
+  AutoLeaveZeal leaveZeal(cx);
+
+  uint32_t x = 0;
+  CHECK((test<HeapPtr<JSObject*>, uint32_t>(cx, [&x]() { return x++; })));
+
+  CHECK((test<HeapPtr<JSObject*>, UniquePtr<uint32_t>>(
+      cx, [&x]() { return MakeUnique<uint32_t>(x++); })));
+
+  return true;
+}
+
+template <typename Key, typename Value, typename ValueFunc>
+bool test(JSContext* cx, ValueFunc&& valueFunc) {
   JS::RootedObject tenured1(cx, JS_NewPlainObject(cx));
   JS::RootedObject tenured2(cx, JS_NewPlainObject(cx));
   JS_GC(cx);
   JS::RootedObject nursery1(cx, JS_NewPlainObject(cx));
   JS::RootedObject nursery2(cx, JS_NewPlainObject(cx));
 
-  using ObjectMap = js::GCHashMap<HeapPtr<JSObject*>, uint32_t,
-                                  js::StableCellHasher<HeapPtr<JSObject*>>>;
-  using Cache = JS::WeakCache<ObjectMap>;
-  Cache cache(JS::GetObjectZone(tenured1), cx);
+  using Map = GCHashMap<Key, Value, StableCellHasher<Key>, SystemAllocPolicy>;
+  using Cache = JS::WeakCache<Map>;
+  Cache cache(JS::GetObjectZone(tenured1));
 
-  cache.put(tenured1, 1);
-  cache.put(tenured2, 2);
-  cache.put(nursery1, 3);
-  cache.put(nursery2, 4);
-
-  JS_GC(cx);
-  CHECK(cache.has(tenured1));
-  CHECK(cache.has(tenured2));
-  CHECK(cache.has(nursery1));
-  CHECK(cache.has(nursery2));
-
-  tenured2 = nursery2 = nullptr;
-  JS_GC(cx);
-  CHECK(cache.has(tenured1));
-  CHECK(cache.has(nursery1));
-  CHECK(cache.count() == 2);
-
-  return true;
-}
-END_TEST(testWeakCacheMap)
-
-BEGIN_TEST(testWeakCacheMapWithUniquePtr) {
-  JS::RootedObject tenured1(cx, JS_NewPlainObject(cx));
-  JS::RootedObject tenured2(cx, JS_NewPlainObject(cx));
-  JS_GC(cx);
-  JS::RootedObject nursery1(cx, JS_NewPlainObject(cx));
-  JS::RootedObject nursery2(cx, JS_NewPlainObject(cx));
-
-  using ObjectMap = js::GCHashMap<HeapPtr<JSObject*>, UniquePtr<uint32_t>,
-                                  js::StableCellHasher<HeapPtr<JSObject*>>>;
-  using Cache = JS::WeakCache<ObjectMap>;
-  Cache cache(JS::GetObjectZone(tenured1), cx);
-
-  cache.put(tenured1, MakeUnique<uint32_t>(1));
-  cache.put(tenured2, MakeUnique<uint32_t>(2));
-  cache.put(nursery1, MakeUnique<uint32_t>(3));
-  cache.put(nursery2, MakeUnique<uint32_t>(4));
+  cache.put(tenured1, valueFunc());
+  cache.put(tenured2, valueFunc());
+  cache.put(nursery1, valueFunc());
+  cache.put(nursery2, valueFunc());
+  cache.put(nullptr, valueFunc());  // nullptr entries should not be swept.
 
   JS_GC(cx);
   CHECK(cache.has(tenured1));
   CHECK(cache.has(tenured2));
   CHECK(cache.has(nursery1));
   CHECK(cache.has(nursery2));
+  CHECK(cache.has(nullptr));
+  CHECK_EQUAL(cache.count(), size_t(5));
 
   tenured2 = nursery2 = nullptr;
   JS_GC(cx);
   CHECK(cache.has(tenured1));
   CHECK(cache.has(nursery1));
-  CHECK(cache.count() == 2);
+  CHECK(cache.has(nullptr));
+  CHECK_EQUAL(cache.count(), size_t(3));
 
   return true;
 }
-END_TEST(testWeakCacheMapWithUniquePtr)
+END_TEST(testWeakCacheMapToNonGCThing)
 
-BEGIN_TEST(testWeakCacheMapWithJSHeap) {
-  // Tests basically the same thing as testWeakCacheMap, but only using APIs
-  // available to embedders, and with JS::Heap as both keys and values.
+// Exercise WeakCache<GCHashMap> where the value is JSObject pointer.
+BEGIN_TEST(testWeakCacheMapToObject) {
+  AutoLeaveZeal leaveZeal(cx);
+  AutoGCParameter enableIncremental(cx, JSGC_INCREMENTAL_GC_ENABLED, true);
+
+  CHECK((test<HeapPtr<JSObject*>, HeapPtr<JSObject*>>(cx)));
+  CHECK((test<JS::Heap<JSObject*>, JS::Heap<JSObject*>>(cx)));
+  return true;
+}
+
+template <typename Key, typename Value>
+bool test(JSContext* cx) {
   JS::RootedObject tenured1{cx, JS_NewPlainObject(cx)};
   JS::RootedObject tenured2{cx, JS_NewPlainObject(cx)};
   JS_GC(cx);
   JS::RootedObject nursery1{cx, JS_NewPlainObject(cx)};
   JS::RootedObject nursery2{cx, JS_NewPlainObject(cx)};
 
-  using ObjectMap = JS::GCHashMap<JS::Heap<JSObject*>, JS::Heap<JSObject*>,
-                                  js::StableCellHasher<JS::Heap<JSObject*>>,
-                                  js::SystemAllocPolicy>;
-  using Cache = JS::WeakCache<ObjectMap>;
-  Cache cache{JS::GetObjectZone(tenured1)};
+  using Map = GCHashMap<Key, Value, StableCellHasher<Key>, SystemAllocPolicy>;
+  using Cache = JS::WeakCache<Map>;
+  Cache cache(JS::GetObjectZone(tenured1));
 
   cache.put(tenured1, tenured1);
   cache.put(tenured2, tenured2);
@@ -193,20 +151,47 @@ BEGIN_TEST(testWeakCacheMapWithJSHeap) {
   CHECK(cache.has(nursery1));
   CHECK(cache.has(nursery2));
   CHECK(cache.has(nullptr));
+  CHECK_EQUAL(cache.count(), size_t(5));
 
   tenured2 = nursery2 = nullptr;
   JS_GC(cx);
   CHECK(cache.has(tenured1));
   // nursery1 is gone because value is dead.
   CHECK(cache.has(nullptr));
-  CHECK_EQUAL(cache.count(), unsigned{2});
+  CHECK_EQUAL(cache.count(), size_t(2));
+
+#ifdef JS_GC_ZEAL
+  // Test nursery objects are handled correctly if they are present during
+  // sweeping. For this to happen they must get added during an incremental GC.
+  JS::SetGCZeal(cx, 10, 100);
+  for (size_t i = 0; i < 1000; i++) {
+    Rooted<JSObject*> key(cx);
+    Rooted<JSObject*> value(cx);
+    key = JS_NewPlainObject(cx);
+    CHECK(key);
+    value = JS_NewPlainObject(cx);
+    CHECK(value);
+    CHECK(cache.put(key, value));
+  }
+  JS::SetGCZeal(cx, 0, 0);
+  JS_GC(cx);
+  CHECK_EQUAL(cache.count(), size_t(2));
+#endif  // JS_GC_ZEAL
 
   return true;
 }
-END_TEST(testWeakCacheMapWithJSHeap)
+END_TEST(testWeakCacheMapToObject)
 
 // Exercise WeakCache<GCVector>.
 BEGIN_TEST(testWeakCacheGCVector) {
+  AutoLeaveZeal leaveZeal(cx);
+  CHECK(test<HeapPtr<JSObject*>>(cx));
+  CHECK(test<JS::Heap<JSObject*>>(cx));
+  return true;
+}
+
+template <typename Element>
+bool test(JSContext* cx) {
   // Create two objects tenured and two in the nursery. If zeal is on,
   // this may fail and we'll get more tenured objects. That's fine:
   // the test will continue to work, it will just not test as much.
@@ -216,8 +201,8 @@ BEGIN_TEST(testWeakCacheGCVector) {
   JS::RootedObject nursery1(cx, JS_NewPlainObject(cx));
   JS::RootedObject nursery2(cx, JS_NewPlainObject(cx));
 
-  using ObjectVector = JS::WeakCache<GCVector<HeapPtr<JSObject*>>>;
-  ObjectVector cache(JS::GetObjectZone(tenured1), cx);
+  using Vector = JS::WeakCache<GCVector<Element, 0, SystemAllocPolicy>>;
+  Vector cache(JS::GetObjectZone(tenured1));
 
   CHECK(cache.append(tenured1));
   CHECK(cache.append(tenured2));
@@ -240,45 +225,6 @@ BEGIN_TEST(testWeakCacheGCVector) {
   return true;
 }
 END_TEST(testWeakCacheGCVector)
-
-BEGIN_TEST(testWeakCacheGCVectorWithJSHeap) {
-  // Tests basically the same thing as testWeakCacheGCVector, but only using
-  // APIs available to embedders.
-  JS::RootedObject tenured1{cx, JS_NewPlainObject(cx)};
-  JS::RootedObject tenured2{cx, JS_NewPlainObject(cx)};
-  JS_GC(cx);
-  JS::RootedObject nursery1{cx, JS_NewPlainObject(cx)};
-  JS::RootedObject nursery2{cx, JS_NewPlainObject(cx)};
-
-  using ObjectVector = JS::WeakCache<
-      JS::GCVector<JS::Heap<JSObject*>, 0, js::SystemAllocPolicy>>;
-  ObjectVector cache{JS::GetObjectZone(tenured1)};
-
-  CHECK(cache.append(tenured1));
-  CHECK(cache.append(tenured2));
-  CHECK(cache.append(nursery1));
-  CHECK(cache.append(nursery2));
-  CHECK(cache.append(nullptr));  // nullptr entries should not be swept.
-  CHECK_EQUAL(cache.get().length(), unsigned{5});
-
-  JS_GC(cx);
-  CHECK_EQUAL(cache.get().length(), unsigned{5});
-  CHECK_EQUAL(cache.get()[0], tenured1);
-  CHECK_EQUAL(cache.get()[1], tenured2);
-  CHECK_EQUAL(cache.get()[2], nursery1);
-  CHECK_EQUAL(cache.get()[3], nursery2);
-  CHECK_NULL(cache.get()[4].get());
-
-  tenured2 = nursery2 = nullptr;
-  JS_GC(cx);
-  CHECK_EQUAL(cache.get().length(), unsigned{3});
-  CHECK_EQUAL(cache.get()[0], tenured1);
-  CHECK_EQUAL(cache.get()[1], nursery1);
-  CHECK_NULL(cache.get()[2].get());
-
-  return true;
-}
-END_TEST(testWeakCacheGCVectorWithJSHeap)
 
 #ifdef JS_GC_ZEAL
 
@@ -408,7 +354,7 @@ bool GCUntilCacheSweep(JSContext* cx, const Cache& cache) {
 
   CHECK(IsIncrementalGCInProgress(cx));
   CHECK(zone->isGCSweeping());
-  CHECK(cache.needsIncrementalBarrier());
+  CHECK(cache.needsMarkingBarrier());
 
   return true;
 }
@@ -423,7 +369,7 @@ bool SweepCacheAndFinishGC(JSContext* cx, const Cache& cache) {
   JS::Zone* zone = JS::GetObjectZone(global);
   CHECK(!IsIncrementalGCInProgress(cx));
   CHECK(!zone->isCollecting());
-  CHECK(!cache.needsIncrementalBarrier());
+  CHECK(!cache.needsMarkingBarrier());
 
   return true;
 }
@@ -588,7 +534,7 @@ bool TestMap() {
   CHECK(cache.lookup(obj1)->key() == obj1);
 
   CHECK(GCUntilCacheSweep(cx, cache));
-  CHECK(cache.needsIncrementalBarrier());
+  CHECK(cache.needsMarkingBarrier());
 
   CHECK(!cache.has(obj2));
   CHECK(cache.put(obj2, 2));
@@ -596,7 +542,7 @@ bool TestMap() {
   CHECK(cache.lookup(obj2)->key() == obj2);
 
   CHECK(SweepCacheAndFinishGC(cx, cache));
-  CHECK(!cache.needsIncrementalBarrier());
+  CHECK(!cache.needsMarkingBarrier());
 
   CHECK(cache.count() == 2);
   CHECK(cache.has(obj1));

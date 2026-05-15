@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_GamepadTestChannelChild_h_
 #define mozilla_dom_GamepadTestChannelChild_h_
 
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/PGamepadTestChannelChild.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/WeakPtr.h"
 #include "nsRefPtrHashtable.h"
 
 namespace mozilla::dom {

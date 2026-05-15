@@ -2,28 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import { MLTelemetry } from "chrome://global/content/ml/MLTelemetry.sys.mjs";
 
 /**
- * @typedef {object} Lazy
- * @typedef {import("../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
- * @property {typeof console} console
- * @property {typeof import("../content/Utils.sys.mjs").getRuntimeWasmFilename} getRuntimeWasmFilename
- * @property {typeof import("../../../../services/settings/remote-settings.sys.mjs").RemoteSettings} RemoteSettings
- * @property {typeof import("../../translations/actors/TranslationsParent.sys.mjs").TranslationsParent} TranslationsParent
- * @typedef {import("../../translations").WasmRecord} WasmRecord
+ * @import { MLEngineChild } from "./MLEngineChild.sys.mjs"
+ * @import { RemoteSettingsClient } from "resource://services-settings/RemoteSettingsClient.sys.mjs"
+ * @import {
+ *   ChunkResponse,
+ *   EngineFeatureIds,
+ *   EngineResponses,
+ *   EngineRequests,
+ *   ParsedModelHubUrl,
+ *   RecordsML,
+ *   RemoteSettingsInferenceOptions,
+ *   StatusByEngineId,
+ *   SyncEvent,
+ * } from "../ml.d.ts"
+ * @import { WasmRecord } from "../../translations/translations.d.ts"
+ * @import { ModelHub } from "chrome://global/content/ml/ModelHub.sys.mjs"
+ * @import { ProgressAndStatusCallbackParams } from "chrome://global/content/ml/Utils.sys.mjs"
+ * @import { PipelineOptions } from "chrome://global/content/ml/EngineProcess.sys.mjs";
  */
 
-/** @type {Lazy} */
-const lazy = {};
-
-ChromeUtils.defineLazyGetter(lazy, "console", () => {
-  return console.createInstance({
-    maxLogLevelPref: "browser.ml.logLevel",
-    prefix: "GeckoMLEngineParent",
-  });
-});
-
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   Utils: "resource://services-settings/Utils.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
@@ -31,28 +32,18 @@ ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   ModelHub: "chrome://global/content/ml/ModelHub.sys.mjs",
   Progress: "chrome://global/content/ml/Utils.sys.mjs",
-  isAddonEngineId: "chrome://global/content/ml/Utils.sys.mjs",
   OPFS: "chrome://global/content/ml/OPFS.sys.mjs",
+  BACKENDS: "chrome://global/content/ml/EngineProcess.sys.mjs",
+  stringifyForLog: "chrome://global/content/ml/Utils.sys.mjs",
+  console: () =>
+    console.createInstance({
+      maxLogLevelPref: "browser.ml.logLevel",
+      prefix: "GeckoMLEngineParent",
+    }),
+  mlUtils: { service: "@mozilla.org/ml-utils;1", iid: Ci.nsIMLUtils },
+  CHECK_FOR_MEMORY: { pref: "browser.ml.checkForMemory" },
+  MINIMUM_PHYSICAL_MEMORY: { pref: "browser.ml.minimumPhysicalMemory" },
 });
-
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
-  "mlUtils",
-  "@mozilla.org/ml-utils;1",
-  "nsIMLUtils"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "CHECK_FOR_MEMORY",
-  "browser.ml.checkForMemory"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "MINIMUM_PHYSICAL_MEMORY",
-  "browser.ml.minimumPhysicalMemory"
-);
 
 const ONE_GiB = 1024 * 1024 * 1024;
 const RS_RUNTIME_COLLECTION = "ml-onnx-runtime";
@@ -87,6 +78,8 @@ export class NotEnoughMemoryError extends Error {
     this.name = "NotEnoughMemoryError";
     this.requiredMemory = requiredMemory;
     this.availableMemory = availableMemory;
+    // TypeScript doesn't support this yet.
+    // @ts-expect-error - Property 'captureStackTrace' does not exist on type 'ErrorConstructor'.ts(2339)
     Error.captureStackTrace(this, this.constructor);
   }
 
@@ -118,9 +111,35 @@ export class MLEngineParent extends JSProcessActorParent {
   /**
    * Locks to prevent race conditions when creating engines.
    *
-   * @type {Map<string, Promise>}
+   * @type {Map<string, Promise<void>>}
    */
   static engineLocks = new Map();
+
+  /**
+   * AbortSignal to potentially cancel the engine creation.
+   *
+   * @type {Map<string, ?AbortSignal>}
+   */
+  static engineCreationAbortSignal = new Map();
+
+  /**
+   * AbortControllers used to cancel ongoing operations initiated by the engine worker
+   * but not owned by it (e.g. operations executed in the parent process such as
+   * model downloads). This ensures that when the engine is terminated, any related
+   * in-flight work started on its behalf can also be aborted.
+   *
+   * Key: engineId
+   *
+   * @type {Map<string, AbortController>}
+   */
+  static engineCreationAbortControllers = new Map();
+
+  /**
+   * The ChildID gets set by EngineProcess.sys.mjs
+   *
+   * @type {null | number}
+   */
+  childID = null;
 
   /**
    * The following constant controls the major and minor version for onnx wasm downloaded from
@@ -138,10 +157,12 @@ export class MLEngineParent extends JSProcessActorParent {
    * wllama:
    * - 3 => wllama 2.2.x
    * - 4 => wllama 2.3.x
+   *
+   * @type {Record<string, number>}
    */
   static WASM_MAJOR_VERSION = {
-    onnx: 5,
-    wllama: 4,
+    [lazy.BACKENDS.onnx]: 5,
+    [lazy.BACKENDS.wllama]: 4,
   };
 
   /**
@@ -149,21 +170,23 @@ export class MLEngineParent extends JSProcessActorParent {
    *
    * Since SIMD is supported by all major JavaScript engines, non-SIMD build is no longer provided.
    * We also serve the threaded build since we can simply set numThreads to 1 to disable multi-threading.
+   *
+   * @type {Record<string, string>}
    */
   static WASM_FILENAME = {
-    onnx: "ort-wasm-simd-threaded.jsep.wasm",
-    wllama: "wllama.wasm",
+    [lazy.BACKENDS.onnx]: "ort-wasm-simd-threaded.jsep.wasm",
+    [lazy.BACKENDS.wllama]: "wllama.wasm",
   };
 
   /**
    * This default backend to use when none is specified.
    */
-  static DEFAULT_BACKEND = "onnx";
+  static DEFAULT_BACKEND = lazy.BACKENDS.onnx;
 
   /**
    * The modelhub used to retrieve files.
    *
-   * @type {ModelHub}
+   * @type {ModelHub | null}
    */
   modelHub = null;
 
@@ -171,7 +194,7 @@ export class MLEngineParent extends JSProcessActorParent {
    * Tracks the most recent revision for each task and model pair that are marked for deletion.
    * Keys are task names and model names. Values contain their respective revisions.
    *
-   * @type {Map<string, object>}
+   * @type {Map<string, ParsedModelHubUrl & { taskName: string }>}
    */
   #modelFilesInUse = new Map();
 
@@ -197,7 +220,7 @@ export class MLEngineParent extends JSProcessActorParent {
   /**
    * Remote settings isn't available in tests, so provide mocked responses.
    *
-   * @param {RemoteSettingsClient} remoteClients
+   * @param {Record<string, RemoteSettingsClient>} remoteClients
    */
   static mockRemoteSettings(remoteClients) {
     lazy.console.log("Mocking remote settings in MLEngineParent.");
@@ -217,13 +240,17 @@ export class MLEngineParent extends JSProcessActorParent {
   /**
    * Creates a new MLEngine.
    *
+   * @template {EngineFeatureIds} FeatureId
+   *
    * If there's an existing engine with the same pipelineOptions, it will be reused.
    *
-   * @param {PipelineOptions} pipelineOptions
-   * @param {?function(ProgressAndStatusCallbackParams):void} notificationsCallback A function to call to indicate progress status.
-   * @returns {Promise<MLEngine>}
+   * @param {object} params Parameters object.
+   * @param {PipelineOptions} params.pipelineOptions
+   * @param {?function(ProgressAndStatusCallbackParams):void} params.notificationsCallback A function to call to indicate progress status.
+   * @param {?AbortSignal} params.abortSignal - AbortSignal to cancel the download.
+   * @returns {Promise<MLEngine<FeatureId>>}
    */
-  async getEngine(pipelineOptions, notificationsCallback = null) {
+  async getEngine({ pipelineOptions, notificationsCallback, abortSignal }) {
     if (
       lazy.CHECK_FOR_MEMORY &&
       lazy.mlUtils.totalPhysicalMemory < lazy.MINIMUM_PHYSICAL_MEMORY * ONE_GiB
@@ -234,7 +261,10 @@ export class MLEngineParent extends JSProcessActorParent {
       });
     }
 
-    const engineId = pipelineOptions.engineId;
+    const { featureId, engineId } = pipelineOptions;
+    if (!engineId) {
+      throw new Error("Expected to receive an engineId in the PipelineOptions");
+    }
 
     // Allow notifications callback changes even when reusing engine.
     this.notificationsCallback = notificationsCallback;
@@ -243,18 +273,34 @@ export class MLEngineParent extends JSProcessActorParent {
       // Wait for the existing lock to resolve
       await MLEngineParent.engineLocks.get(engineId);
     }
-    let resolveLock;
-    const lockPromise = new Promise(resolve => {
-      resolveLock = resolve;
-    });
+    /** @type {PromiseWithResolvers<void>} */
+    const { promise: lockPromise, resolve: resolveLock } =
+      Promise.withResolvers();
     MLEngineParent.engineLocks.set(engineId, lockPromise);
+
+    /** @type {?AbortController} */
+    // Parent-owned controller used to cancel engine-related operations
+    // (e.g. model downloads) when the engine is terminated.
+    let abortController = null;
+
     try {
       const currentEngine = MLEngine.getInstance(engineId);
-
       if (currentEngine) {
-        if (currentEngine.pipelineOptions.equals(pipelineOptions)) {
-          return currentEngine;
+        if (
+          currentEngine.pipelineOptions.equals(pipelineOptions) &&
+          currentEngine.engineStatus === "ready"
+        ) {
+          lazy.console.debug(`Reusing existing engine for ${engineId}`);
+          // Coerce the return type since we can't key off of the engineId here.
+          return /** @type {MLEngine<FeatureId>} */ (currentEngine);
         }
+        lazy.console.debug(`Replacing existing engine for ${engineId}`);
+        try {
+          Services.obs.removeObserver(currentEngine, "ipc:content-shutdown");
+        } catch (e) {
+          lazy.console.error("Failed to remove observer", e);
+        }
+
         await MLEngine.removeInstance(
           engineId,
           /* shutdown */ false,
@@ -262,22 +308,62 @@ export class MLEngineParent extends JSProcessActorParent {
         );
       }
 
-      var engine;
-      const start = Cu.now();
+      const start = ChromeUtils.now();
 
-      engine = await MLEngine.initialize({
+      // Parent-owned controller used to cancel engine-related operations
+      // (e.g. model downloads) if the engine is terminated during creation.
+      abortController = new AbortController();
+
+      // Allow cancellation from either the parent or an optional caller-provided signal.
+      const signals = [abortController.signal, abortSignal].filter(s =>
+        AbortSignal.isInstance(s)
+      );
+
+      // Signal passed to operations initiated by the engine.
+      MLEngineParent.engineCreationAbortSignal.set(
+        engineId,
+        AbortSignal.any(signals)
+      );
+
+      // Keep the controller so the parent can trigger cancellation.
+      MLEngineParent.engineCreationAbortControllers.set(
+        engineId,
+        abortController
+      );
+
+      /** @type {MLEngine<any>} */
+      const engine = await MLEngine.initialize({
         mlEngineParent: this,
         pipelineOptions,
         notificationsCallback,
       });
-      const creationTime = Cu.now() - start;
 
-      Glean.firefoxAiRuntime.engineCreationSuccess[
-        engine.getGleanLabel()
-      ].accumulateSingleSample(creationTime);
+      // engine will observe ipc:content-shutdown to get notified if the inference process crashes
+      Services.obs.addObserver(engine, "ipc:content-shutdown");
+
+      const creationTime = ChromeUtils.now() - start;
+
+      engine.telemetry.recordEngineCreationSuccessFlow({
+        engineId,
+        duration: creationTime,
+      });
 
       // TODO - What happens if the engine is already killed here?
       return engine;
+    } catch (error) {
+      // Abort any pending operations as the engine creating failed
+      abortController?.abort();
+      const { modelId, taskName, flowId } = pipelineOptions;
+      const telemetry = new MLTelemetry({ featureId, flowId });
+      telemetry.recordEngineCreationFailure({
+        modelId,
+        featureId,
+        taskName,
+        engineId,
+        error,
+      });
+
+      throw error;
     } finally {
       MLEngineParent.engineLocks.delete(engineId);
       resolveLock();
@@ -304,6 +390,10 @@ export class MLEngineParent extends JSProcessActorParent {
     }
   }
 
+  /**
+   * @see {MLEngineChild#sendQuery} for the message shapes.
+   * @param {any} message
+   */
   // eslint-disable-next-line consistent-return
   async receiveMessage(message) {
     switch (message.name) {
@@ -319,6 +409,9 @@ export class MLEngineParent extends JSProcessActorParent {
       case "MLEngine:GetWorkerConfig":
         return MLEngineParent.getWorkerConfig();
 
+      case "MLEngine:ChooseBestBackend":
+        return MLEngineParent.chooseBestBackend(message.data);
+
       case "MLEngine:DestroyEngineProcess":
         if (this.processKeepAlive) {
           ChromeUtils.addProfilerMarker(
@@ -329,7 +422,7 @@ export class MLEngineParent extends JSProcessActorParent {
           this.processKeepAlive.invalidateKeepAlive();
           this.processKeepAlive = null;
         }
-        break;
+        return null;
       case "MLEngine:GetInferenceOptions":
         this.checkTaskName(message.json.taskName);
         return MLEngineParent.getInferenceOptions(
@@ -339,14 +432,18 @@ export class MLEngineParent extends JSProcessActorParent {
         );
       case "MLEngine:Removed":
         if (!message.json.replacement) {
-          // when receiving this message from the child, we know it's not a replacement.
-          await MLEngine.removeInstance(
-            message.json.engineId,
-            message.json.shutdown,
-            /* replacement */ false
-          );
+          try {
+            // when receiving this message from the child, we know it's not a replacement.
+            await MLEngine.removeInstance(
+              message.json.engineId,
+              message.json.shutdown,
+              /* replacement */ false
+            );
+          } catch (e) {
+            lazy.console.error("Failed to remove instance", e);
+          }
         }
-        break;
+        return null;
     }
   }
 
@@ -356,19 +453,20 @@ export class MLEngineParent extends JSProcessActorParent {
    * @returns {Promise<void>}
    */
   async deletePreviousModelRevisions() {
-    if (!this.modelHub) {
+    if (this.modelHub === null) {
       lazy.console.debug(
         "Ignored attempt to delete previous models when the engine is not fully initialized."
       );
       return;
     }
+    const modelHub = this.modelHub;
     await Promise.all(
       [...this.#modelFilesInUse].map(async ([key, entry]) => {
-        await this.modelHub.deleteNonMatchingModelRevisions({
-          modelWithHostname: entry.modelWithHostname,
-          taskName: entry.taskName,
-          targetRevision: entry.revision,
-        });
+        await modelHub.deleteNonMatchingModelRevisions(
+          entry.modelWithHostname,
+          entry.taskName,
+          entry.revision
+        );
         this.#modelFilesInUse.delete(key);
       })
     );
@@ -402,8 +500,10 @@ export class MLEngineParent extends JSProcessActorParent {
     featureId,
     sessionId,
   }) {
+    let downloadStart = ChromeUtils.now();
+
     // Create the model hub instance if needed
-    if (!this.modelHub) {
+    if (this.modelHub === null) {
       lazy.console.debug("Creating model hub instance");
       this.modelHub = new lazy.ModelHub({
         rootUrl,
@@ -433,6 +533,7 @@ export class MLEngineParent extends JSProcessActorParent {
       modelHubRootUrl: rootUrl,
       modelHubUrlTemplate: urlTemplate,
       progressCallback: this.notificationsCallback?.bind(this),
+      abortSignal: MLEngineParent.engineCreationAbortSignal.get(engineId),
       featureId,
       sessionId,
     });
@@ -443,10 +544,15 @@ export class MLEngineParent extends JSProcessActorParent {
       ...parsedUrl,
     });
 
+    const sizeMB = Math.round(headers.fileSize / (1024 * 1024));
     lazy.console.debug(
-      `Model ${parsedUrl.model} was fetched from ${url}, size ${Math.round(
-        headers.fileSize / (1024 * 1024)
-      )}MiB`
+      `Model ${parsedUrl.model} was fetched from ${url}, size ${sizeMB}MiB`
+    );
+
+    ChromeUtils.addProfilerMarker(
+      "MLEngineParent",
+      { startTime: downloadStart },
+      `Downloaded model ${parsedUrl.file}: ${sizeMB}MB`
     );
 
     return [data, headers];
@@ -461,7 +567,7 @@ export class MLEngineParent extends JSProcessActorParent {
    * @param {string} config.revision - The model revision.
    * @param {string} config.featureId - The engine id.
    * @param {string} config.sessionId - Shared across the same model download session.
-   * @returns {Promise<[string, object]>} The file local path and headers
+   * @returns {Promise<void>}
    */
   async notifyModelDownloadComplete({
     engineId,
@@ -470,7 +576,13 @@ export class MLEngineParent extends JSProcessActorParent {
     featureId,
     sessionId,
   }) {
-    return this.modelHub.notifyModelDownloadComplete({
+    if (this.modelHub === null) {
+      lazy.console.debug(
+        "Model hub instance not created, skipping notifyModelDownloadComplete"
+      );
+      return;
+    }
+    await this.modelHub.notifyModelDownloadComplete({
       engineId,
       sessionId,
       featureId,
@@ -479,14 +591,14 @@ export class MLEngineParent extends JSProcessActorParent {
     });
   }
 
-  /** Gets the wasm file from remote settings.
+  /**
+   * Gets the wasm file from remote settings.
    *
    * @param {RemoteSettingsClient} client
    * @param {string} backend - The ML engine for which the WASM buffer is requested.
    */
   static async #getWasmArrayRecord(client, backend) {
-    /** @type {WasmRecord[]} */
-    const wasmRecords =
+    const wasmRecords = /** @type {WasmRecord[]} */ (
       await lazy.TranslationsParent.getMaxSupportedVersionRecords(client, {
         filters: {
           name: MLEngineParent.WASM_FILENAME[
@@ -501,7 +613,8 @@ export class MLEngineParent extends JSProcessActorParent {
           MLEngineParent.WASM_MAJOR_VERSION[
             backend || MLEngineParent.DEFAULT_BACKEND
           ],
-      });
+      })
+    );
 
     if (wasmRecords.length === 0) {
       // The remote settings client provides an empty list of records when there is
@@ -510,10 +623,8 @@ export class MLEngineParent extends JSProcessActorParent {
     }
 
     if (wasmRecords.length > 1) {
-      MLEngineParent.reportError(
-        new Error("Expected the ml engine to only have 1 record."),
-        wasmRecords
-      );
+      lazy.console.error(wasmRecords);
+      throw new Error("Expected the ml engine to only have 1 record.");
     }
     const [record] = wasmRecords;
     lazy.console.debug(
@@ -525,8 +636,6 @@ export class MLEngineParent extends JSProcessActorParent {
 
   /**
    * Gets the configuration of the worker
-   *
-   * @returns {Promise<object>}
    */
   static getWorkerConfig() {
     return {
@@ -536,11 +645,43 @@ export class MLEngineParent extends JSProcessActorParent {
   }
 
   /**
+   * Selects the most appropriate backend for the current environment.
+   *
+   * @static
+   * @param {string} backend - Requested backend or an auto-select sentinel.
+   * @returns {string} Resolved backend identifier.
+   */
+  static chooseBestBackend(backend) {
+    let bestBackend = backend;
+    if (backend === lazy.BACKENDS.bestLlama) {
+      bestBackend = lazy.BACKENDS.wllama;
+      if (lazy.mlUtils?.canUseLlamaCpp()) {
+        bestBackend = lazy.BACKENDS.llamaCpp;
+      }
+
+      lazy.console.debug(
+        `The best available llama backend detected for this machine is ${bestBackend}`
+      );
+    }
+
+    ChromeUtils.addProfilerMarker(
+      "MLEngineParent",
+      null,
+      `Backend selected: ${bestBackend} (requested: ${backend})`
+    );
+
+    return bestBackend;
+  }
+
+  /**
    * Gets the allow/deny list from remote settings
    *
+   * @returns {Promise<RecordsML["ml-model-allow-deny-list"][]>}
    */
   static async getAllowDenyList() {
-    return MLEngineParent.#getRemoteClient(RS_ALLOW_DENY_COLLECTION).get();
+    return /** @type {Promise<RecordsML["ml-model-allow-deny-list"][]>} */ (
+      MLEngineParent.#getRemoteClient(RS_ALLOW_DENY_COLLECTION).get()
+    );
   }
 
   /**
@@ -553,7 +694,7 @@ export class MLEngineParent extends JSProcessActorParent {
    * @param {string} featureId - id of the feature
    * @param {string} taskName - name of the inference task
    * @param {string|null} modelId - name of the model id
-   * @returns {Promise<ModelRevisionRecord>}
+   * @returns {Promise<RemoteSettingsInferenceOptions | { runtimeFilename: string }>}
    */
 
   static async getInferenceOptions(featureId, taskName, modelId) {
@@ -561,21 +702,26 @@ export class MLEngineParent extends JSProcessActorParent {
       RS_INFERENCE_OPTIONS_COLLECTION
     );
 
+    /** @type {Record<string, string>} */
     const filters = featureId ? { featureId } : { taskName };
     if (modelId) {
       filters.modelId = modelId;
     }
 
-    let records = await client.get({ filters });
+    /** @type {Array<RecordsML["ml-inference-options"]>} */
+    let records = /** @type {any[]} */ (await client.get({ filters }));
 
     // If no records found and we searched by featureId, retry with taskName
     if (records.length === 0 && featureId) {
       lazy.console.debug(`No record for feature id "${featureId}"`);
+      /** @type {Record<string, string>} */
       const fallbackFilters = { taskName };
       if (modelId) {
         fallbackFilters.modelId = modelId;
       }
-      records = await client.get({ filters: fallbackFilters });
+      records = /** @type {any} */ (
+        await client.get({ filters: fallbackFilters })
+      );
       lazy.console.debug(`fallbackFilters: "${fallbackFilters}"`);
     }
 
@@ -619,7 +765,7 @@ export class MLEngineParent extends JSProcessActorParent {
    *
    * @param {object} options - The input options.
    * @param {WasmRecord} options.wasmRecord - wasm records
-   * @param {localRoot} options.localRoot - The root where to save the attachment.
+   * @param {string} options.localRoot - The root where to save the attachment.
    *
    * @returns {Promise<ArrayBuffer>} A promise that resolves to the downloaded file's binary content as an ArrayBuffer.
    *
@@ -687,7 +833,7 @@ export class MLEngineParent extends JSProcessActorParent {
       throw error;
     }
 
-    /** @type {{buffer: ArrayBuffer}} */
+    /** @type {ArrayBuffer} */
     let buffer;
 
     if (wasmRecord.attachment) {
@@ -697,6 +843,7 @@ export class MLEngineParent extends JSProcessActorParent {
       });
     } else {
       // fallback for mocked unit tests.
+      // @ts-expect-error - This API is not well-typed.
       buffer = (await client.attachments.download(wasmRecord)).buffer;
     }
 
@@ -721,34 +868,47 @@ export class MLEngineParent extends JSProcessActorParent {
 
     MLEngineParent.#remoteClients[collectionName] = client;
 
-    client.on("sync", async ({ data: { created, updated, deleted } }) => {
-      lazy.console.debug(`"sync" event for ${collectionName}`, {
-        created,
-        updated,
-        deleted,
-      });
+    client.on(
+      "sync",
+      /**
+       * @param {object} param
+       * @param {SyncEvent} param.data
+       */
+      async ({ data }) => {
+        const { created, updated, deleted } = data;
+        lazy.console.debug(`"sync" event for ${collectionName}`, {
+          created,
+          updated,
+          deleted,
+        });
 
-      // Remove all the deleted records.
-      for (const record of deleted) {
-        await client.attachments.deleteDownloaded(record);
+        // Remove all the deleted records.
+        for (const record of deleted) {
+          await client.attachments.deleteDownloaded(record);
+        }
+
+        // Remove any updated records, and download the new ones.
+        for (const { old: oldRecord } of updated) {
+          await client.attachments.deleteDownloaded(oldRecord);
+        }
+
+        // Do nothing for the created records.
       }
-
-      // Remove any updated records, and download the new ones.
-      for (const { old: oldRecord } of updated) {
-        await client.attachments.deleteDownloaded(oldRecord);
-      }
-
-      // Do nothing for the created records.
-    });
+    );
 
     return client;
   }
 
   /**
-   * Gets a status
+   * Goes through the engines and determines their status. This is used by about:inference
+   * to display debug information about the engines.
+   *
+   * @see MLEngineChild#getStatusByEngineId
+   *
+   * @returns {Promise<StatusByEngineId>}
    */
-  getStatus() {
-    return this.sendQuery("MLEngine:GetStatus");
+  getStatusByEngineId() {
+    return this.sendQuery("MLEngine:GetStatusByEngineId");
   }
 
   /**
@@ -756,6 +916,7 @@ export class MLEngineParent extends JSProcessActorParent {
    * This mostly exists for testing the shutdown paths of the code.
    */
   forceShutdown() {
+    lazy.console.debug("MLEngine:ForceShutdown called");
     return this.sendQuery("MLEngine:ForceShutdown");
   }
 }
@@ -764,19 +925,20 @@ export class MLEngineParent extends JSProcessActorParent {
  * A utility class that manages a main promise for the full response
  * and a sequence of chunk promises for incremental parts of the response.
  *
+ * @template T
  */
 class ResponseOrChunkResolvers {
   /**
    * Resolver for the main promise (full response).
    *
-   * @type {object}
+   * @type {PromiseWithResolvers<T>}
    */
   mainResolvers;
 
   /**
    * The main promise for the full response.
    *
-   * @type {Promise}
+   * @type {Promise<T>}
    */
   promise;
 
@@ -790,7 +952,7 @@ class ResponseOrChunkResolvers {
   /**
    * Array of resolvers for incremental chunk promises.
    *
-   * @type {Array<object>}
+   * @type {Array<PromiseWithResolvers<ProgressAndStatusCallbackParams>>}
    */
   chunkResolvers = [];
 
@@ -829,7 +991,7 @@ class ResponseOrChunkResolvers {
    * Returns the promise for the next chunk of the response and advances the internal index.
    * Each call retrieves the promise for the next incremental part of the response.
    *
-   * @returns {Promise} The promise for the next chunk of data.
+   * @returns {Promise<ProgressAndStatusCallbackParams>} The promise for the next chunk of data.
    */
   getAndAdvanceChunkPromise() {
     this.nextchunkResolverIdx += 1;
@@ -840,7 +1002,7 @@ class ResponseOrChunkResolvers {
    * Resolves the current chunk promise with the provided value
    * and prepares a new chunk resolver for the next incremental part of the response.
    *
-   * @param {*} value - The value to resolve the current chunk promise with (e.g., a part of the response data).
+   * @param {ProgressAndStatusCallbackParams} value - The value to resolve the current chunk promise with (e.g., a part of the response data).
    */
   resolveChunk(value) {
     // Create a new chunk resolver for future chunks
@@ -871,19 +1033,13 @@ class ResponseOrChunkResolvers {
  * potentially large amounts of memory to run models, with the speed and ease of running
  * the engine.
  *
- * @typedef {object} Request
- * @property {?string} [id] - The identifier for tracking this request. If not provided, an id will be auto-generated. Each inference callback will reference this id.
- * @property {any[]} args - The arguments to pass to the pipeline. The required arguments depend on your model. See [Hugging Face Transformers documentation](https://huggingface.co/docs/transformers.js/en/api/models) for more details.
- * @property {?object} options - The generation options to pass to the model. Refer to the [GenerationConfigType documentation](https://huggingface.co/docs/transformers.js/en/api/utils/generation#module_utils/generation..GenerationConfigType) for available options.
- * @property {?Uint8Array} [data] - For the imagetoText model, this is the array containing the image data.
- *
- * @template Response
+ * @template {EngineFeatureIds} FeatureID
  */
-class MLEngine {
+export class MLEngine {
   /**
    * The cached engines.
    *
-   * @type {Map<string, MLEngine>}
+   * @type {Map<string, MLEngine<any>>}
    */
   static #instances = new Map();
 
@@ -892,17 +1048,20 @@ class MLEngine {
    */
   #port = null;
 
+  /**
+   * A monotonically increasing ID to track requests.
+   */
   #nextRequestId = 0;
 
   /**
    * Tie together a message id to a resolved response.
    *
-   * @type {Map<number, PromiseWithResolvers<Request>>}
+   * @type {Map<number, PromiseWithResolvers<EngineResponses[FeatureID]> | ResponseOrChunkResolvers<EngineResponses[keyof EngineResponses]>>}
    */
   #requests = new Map();
 
   /**
-   * @type {"uninitialized" | "ready" | "error" | "closed"}
+   * @type {"uninitialized" | "ready" | "error" | "closed" | "crashed"}
    */
   engineStatus = "uninitialized";
 
@@ -921,18 +1080,6 @@ class MLEngine {
   notificationsCallback = null;
 
   /**
-   * Returns the label used in telemetry for that engine id
-   *
-   * @returns {string}
-   */
-  getGleanLabel() {
-    if (lazy.isAddonEngineId(this.engineId)) {
-      return "webextension";
-    }
-    return this.engineId;
-  }
-
-  /**
    * Removes an instance of the MLEngine with the given engineId.
    *
    * @param {string} engineId - The ID of the engine instance to be removed.
@@ -943,8 +1090,12 @@ class MLEngine {
   static async removeInstance(engineId, shutdown, replacement) {
     for (const [id, engine] of MLEngine.#instances.entries()) {
       if (engine.engineId == engineId) {
+        lazy.console.debug(`Removing engine ${engineId}`);
         await engine.terminate(shutdown, replacement);
+        // Abort any pending operations for the engine
+        MLEngineParent.engineCreationAbortControllers.get(engineId)?.abort();
         MLEngine.#instances.delete(id);
+        lazy.console.debug(`Removed engine ${engineId}`);
       }
     }
   }
@@ -953,7 +1104,7 @@ class MLEngine {
    * Retrieves an instance of the MLEngine with the given engineId.
    *
    * @param {string} engineId - The ID of the engine instance to retrieve.
-   * @returns {MLEngine|null} The engine instance with the given ID, or null if not found.
+   * @returns {MLEngine<unknown> | null} The engine instance with the given ID, or null if not found.
    */
   static getInstance(engineId) {
     return MLEngine.#instances.get(engineId) || null;
@@ -963,52 +1114,157 @@ class MLEngine {
    * Private constructor for an ML Engine.
    *
    * @param {object} config - The configuration object for the instance.
-   * @param {object} config.mlEngineParent - The parent machine learning engine associated with this instance.
-   * @param {object} config.pipelineOptions - The options for configuring the pipeline associated with this instance.
+   * @param {MLEngineParent} config.mlEngineParent - The parent machine learning engine associated with this instance.
+   * @param {PipelineOptions} config.pipelineOptions - The options for configuring the pipeline associated with this instance.
    * @param {?function(ProgressAndStatusCallbackParams):void} config.notificationsCallback - The initialization progress callback function to call.
    */
   constructor({ mlEngineParent, pipelineOptions, notificationsCallback }) {
     const engineId = pipelineOptions.engineId;
+    if (!engineId) {
+      throw new Error("Expected to have an engineId on PipelineOptions");
+    }
+    /** @type {Record<string, Array<(data: unknown) => void>>} */
     this.events = {};
     this.engineId = engineId;
     MLEngine.#instances.set(engineId, this);
+    /** @type {MLEngineParent} */
     this.mlEngineParent = mlEngineParent;
+    /** @type {PipelineOptions} */
     this.pipelineOptions = pipelineOptions;
     this.notificationsCallback = notificationsCallback;
+    this.telemetry = new MLTelemetry({
+      featureId: pipelineOptions.featureId,
+      flowId: pipelineOptions.flowId,
+    });
+  }
+
+  /**
+   * Validates an inference request before sending to child process.
+   *
+   * @param {object} request - The request to validate
+   * @returns {object|null} The validated request, or null if blocked
+   */
+  #validateRequest(request) {
+    lazy.console.debug("[MLSecurity] Validating request:", request);
+    return request;
+  }
+
+  /**
+   * Validates an inference response after receiving from child process.
+   *
+   * @param {object} response - The response to validate
+   * @returns {object|null} The validated response, or null if blocked
+   */
+  #validateResponse(response) {
+    lazy.console.debug("[MLSecurity] Validating response:", response);
+    return response;
+  }
+
+  /**
+   * Observes shutdown events from the child process.
+   *
+   * When the inference process is shutdown, we want to set the port to null and throw an error.
+   *
+   * @param {any} aSubject
+   * @param {string} aTopic
+   */
+  observe(aSubject, aTopic) {
+    aSubject.QueryInterface(Ci.nsIPropertyBag2);
+
+    if (!aSubject.get("abnormal")) {
+      // ignoring normal events
+      return;
+    }
+
+    const childID = aSubject.get("childID");
+
+    if (
+      aTopic === "ipc:content-shutdown" &&
+      childID === this.mlEngineParent.childID
+    ) {
+      const pid = aSubject.get("osPid");
+      lazy.console.error(
+        `Got abnormal shutdown of the inference process (pid=${pid})`
+      );
+      this.#port = null;
+      const err = new Error(
+        `The inference process was shutdown (pid=${pid}), childId=${childID}`
+      );
+      this.setEngineStatus("crashed");
+      throw err;
+    }
   }
 
   /**
    * Initialize the MLEngine.
    *
+   * @template {EngineFeatureIds} FeatureId
+   *
    * @param {object} config - The configuration object for the instance.
-   * @param {object} config.mlEngineParent - The parent machine learning engine associated with this instance.
-   * @param {object} config.pipelineOptions - The options for configuring the pipeline associated with this instance.
+   * @param {MLEngineParent} config.mlEngineParent - The parent machine learning engine associated with this instance.
+   * @param {PipelineOptions} config.pipelineOptions - The options for configuring the pipeline associated with this instance.
    * @param {?function(ProgressAndStatusCallbackParams):void} config.notificationsCallback - The initialization progress callback function to call.
+   * @returns {Promise<MLEngine<FeatureId>>}
    */
   static async initialize({
     mlEngineParent,
     pipelineOptions,
     notificationsCallback,
   }) {
+    lazy.console.debug("Initializing ML engine", pipelineOptions);
+
+    /** @type {MLEngine<FeatureId>} */
     const mlEngine = new MLEngine({
       mlEngineParent,
       pipelineOptions,
       notificationsCallback,
     });
 
-    await mlEngine.setupPortCommunication();
+    /**
+     * Helper to ensure we never leave resources dangling if something fails.
+     *
+     * @param {unknown} err
+     */
+    const hardTeardown = err => {
+      try {
+        mlEngine.setEngineStatus?.("error");
+      } catch {}
+      try {
+        mlEngine.#port?.close?.();
+      } catch {}
+      // If you also keep a child port reference inside the instance, close it here too.
+      // try { mlEngine.#childPort?.close?.(); } catch {}
+      mlEngine.#port = null;
+      return err;
+    };
+    try {
+      await mlEngine.setupPortCommunication();
 
-    // Delete previous model revisions.
-    await mlEngine.mlEngineParent.deletePreviousModelRevisions();
-
-    return mlEngine;
+      try {
+        // Only attempt this after comms are up.
+        await mlEngine.mlEngineParent.deletePreviousModelRevisions();
+      } catch (err) {
+        // Treat model cleanup failure as fatal for a clean init.
+        let message = err;
+        if (err && typeof err === "object" && "message" in err && err.message) {
+          message = err.message;
+        }
+        throw hardTeardown(
+          new Error(`Failed to delete previous model revisions: ${message}`)
+        );
+      }
+      return mlEngine;
+    } catch (err) {
+      // setupPortCommunication already tries to clean up, but make this idempotent.
+      throw hardTeardown(err);
+    }
   }
 
   /**
    * Registers an event listener for the specified event.
    *
    * @param {string} event - The name of the event.
-   * @param {Function} listener - The callback function to execute when the event is triggered.
+   * @param {(...args: any[]) => void} listener - The callback function to execute when the event is triggered.
    */
   on(event, listener) {
     if (!this.events[event]) {
@@ -1021,7 +1277,7 @@ class MLEngine {
    * Removes an event listener for the specified event.
    *
    * @param {string} event - The name of the event.
-   * @param {Function} listenerToRemove - The callback function to remove.
+   * @param {(...args: any) => void} listenerToRemove - The callback function to remove.
    */
   off(event, listenerToRemove) {
     if (!this.events[event]) {
@@ -1037,7 +1293,7 @@ class MLEngine {
    * Emits the specified event, invoking all registered listeners with the provided data.
    *
    * @param {string} event - The name of the event.
-   * @param {*} data - The data to pass to the event listeners.
+   * @param {any} data - The data to pass to the event listeners.
    */
   emit(event, data) {
     if (!this.events[event]) {
@@ -1049,7 +1305,7 @@ class MLEngine {
   /**
    * Sets the engine status and emits a statusChanged event.
    *
-   * @param {"uninitialized" | "ready" | "error" | "closed"} status - The new status of the engine.
+   * @param {"uninitialized" | "ready" | "error" | "closed" | "crashed"} status - The new status of the engine.
    */
   setEngineStatus(status) {
     this.engineStatus = status;
@@ -1061,33 +1317,87 @@ class MLEngine {
    * And ensure the engine is fully initialized with all required files for the current model version downloaded.
    */
   async setupPortCommunication() {
+    if (this.#port !== null) {
+      throw new Error("Port already exists");
+    }
+    lazy.console.debug("Creating ML engine port");
     const { port1: childPort, port2: parentPort } = new MessageChannel();
     const transferables = [childPort];
     this.#port = parentPort;
     const newPortResolvers = Promise.withResolvers();
-    this.#port.onmessage = message =>
-      this.handlePortMessage(message, newPortResolvers);
-    this.mlEngineParent.sendAsyncMessage(
-      "MLEngine:NewPort",
-      {
-        port: childPort,
-        pipelineOptions: this.pipelineOptions.getOptions(),
-      },
-      transferables
-    );
-    await newPortResolvers.promise;
 
-    this.setEngineStatus("ready");
+    // Wire messages before attempting to send the port
+
+    // @ts-expect-error - The onmessage event isn't particularly well typed at this time.
+    this.#port.onmessage =
+      /**
+       * @param {MessageEvent} message
+       */
+      message => this.handlePortMessage(message, newPortResolvers);
+
+    /**
+     * Helper to clean up on failure
+     *
+     * @param {unknown} err
+     */
+    const cleanupOnError = err => {
+      try {
+        if (this.#port && this.#port.onmessage) {
+          this.#port.removeEventListener("message", this.#port.onmessage);
+        }
+      } catch {}
+      try {
+        this.#port?.close?.();
+      } catch {}
+      try {
+        childPort.close();
+      } catch {}
+      this.#port = null;
+
+      // Make sure the awaiting code is released
+      try {
+        newPortResolvers.reject(err);
+      } catch {}
+    };
+
+    try {
+      this.mlEngineParent.sendAsyncMessage(
+        "MLEngine:NewPort",
+        {
+          port: childPort,
+          pipelineOptions: this.pipelineOptions.getOptions(),
+        },
+        transferables
+      );
+    } catch (error) {
+      this.setEngineStatus("error");
+      cleanupOnError(error);
+      try {
+        await newPortResolvers.promise;
+      } catch {
+        // Avoid unhandledrejection noise in some runtimes
+      }
+      throw error;
+    }
+    try {
+      await newPortResolvers.promise;
+      this.setEngineStatus("ready");
+    } catch (error) {
+      // If the resolver rejected for any other reason, still tidy up
+      this.setEngineStatus("error");
+      cleanupOnError(error);
+      throw error;
+    }
   }
 
   /**
    * Handles messages received from the port.
    *
-   * @param {object} event - The message event.
-   * @param {object} event.data - The data of the message event.
-   * @param {object} newPortResolvers - An object containing a promise for mlEngine new port setup, along with two functions to resolve or reject it.
+   * @param {MessageEvent} event - The message event.
+   * @param {PromiseWithResolvers<void>} newPortResolvers - An object containing a promise for mlEngine new port setup, along with two functions to resolve or reject it.
    */
-  handlePortMessage = ({ data }, newPortResolvers) => {
+  handlePortMessage = (event, newPortResolvers) => {
+    const { data } = event;
     switch (data.type) {
       case "EnginePort:EngineReady": {
         if (data.error) {
@@ -1098,57 +1408,30 @@ class MLEngine {
 
         break;
       }
-      case "EnginePort:ModelRequest": {
-        if (this.#port) {
-          this.getModel().then(
-            model => {
-              this.#port.postMessage({
-                type: "EnginePort:ModelResponse",
-                model,
-                error: null,
-              });
-            },
-            error => {
-              this.#port.postMessage({
-                type: "EnginePort:ModelResponse",
-                model: null,
-                error,
-              });
-              if (
-                // Ignore intentional errors in tests.
-                !error?.message.startsWith("Intentionally")
-              ) {
-                lazy.console.error("Failed to get the model", error);
-              }
-            }
-          );
-        } else {
-          lazy.console.error(
-            "Expected a port to exist during the EnginePort:GetModel event"
-          );
-        }
-        break;
-      }
       case "EnginePort:RunResponse": {
-        const { response, error, requestId } = data;
+        const { response, error, requestId, resourcesBefore, resourcesAfter } =
+          data;
         const request = this.#requests.get(requestId);
         if (request) {
           if (error) {
-            Glean.firefoxAiRuntime.runInferenceFailure.record({
-              engineId: this.engineId,
-              modelId: this.pipelineOptions.modelId,
-              featureId: this.pipelineOptions.featureId,
-            });
-          }
-          if (response) {
-            const totalTime =
-              response.metrics.tokenizingTime + response.metrics.inferenceTime;
-            Glean.firefoxAiRuntime.runInferenceSuccess[
-              this.getGleanLabel()
-            ].accumulateSingleSample(totalTime);
-            request.resolve(response);
-          } else {
+            this.telemetry.recordRunInferenceFailure(error);
             request.reject(error);
+          } else if (response) {
+            // Validate response before returning to caller
+            /** @type {any} */
+            const validatedResponse = this.#validateResponse(response);
+            if (!validatedResponse) {
+              request.reject(new Error("Response failed security validation"));
+            } else {
+              this.telemetry.recordRunInferenceSuccessFlow(
+                this.engineId,
+                validatedResponse.metrics
+              );
+              // Attach resource metrics from the child process
+              validatedResponse.resourcesBefore = resourcesBefore;
+              validatedResponse.resourcesAfter = resourcesAfter;
+              request.resolve(validatedResponse);
+            }
           }
         } else {
           lazy.console.error(
@@ -1164,19 +1447,27 @@ class MLEngine {
         // The engine was terminated, and if a new run is needed a new port
         // will need to be requested.
         this.setEngineStatus("closed");
+        newPortResolvers?.reject(
+          new Error("Engine was terminated before initialization completed.")
+        );
+
         this.discardPort();
         break;
       }
       case "EnginePort:InitProgress": {
+        /** @type {ProgressAndStatusCallbackParams} */
+        const statusResponse = data.statusResponse;
         if (data.statusResponse.type === lazy.Progress.ProgressType.INFERENCE) {
           const requestId = data.statusResponse.metadata.requestId;
           const request = this.#requests.get(requestId);
 
           if (request) {
             if (data.statusResponse.ok) {
-              request.resolveChunk?.(data.statusResponse);
-            } else {
-              request.rejectChunk?.(data.statusResponse);
+              if ("resolveChunk" in request) {
+                request.resolveChunk(statusResponse);
+              }
+            } else if ("rejectChunk" in request) {
+              request.rejectChunk(statusResponse);
             }
           } else {
             lazy.console.error(
@@ -1200,7 +1491,7 @@ class MLEngine {
    * Discards the current port and closes the connection.
    */
   discardPort() {
-    if (this.#port) {
+    if (this.#port !== null) {
       this.#port.postMessage({ type: "EnginePort:Discard" });
       this.#port.close();
       this.#port = null;
@@ -1215,14 +1506,15 @@ class MLEngine {
    * @returns {Promise<void>} A promise that resolves once the engine is terminated.
    */
   async terminate(shutdown, replacement) {
-    if (this.#port) {
+    if (this.#port !== null) {
+      lazy.console.debug(`Terminating engine ${this.engineId}`);
       this.#port.postMessage({
         type: "EnginePort:Terminate",
         shutdown,
         replacement,
       });
+      await this.#waitForStatus("closed");
     }
-    await this.#waitForStatus("closed");
   }
 
   /**
@@ -1239,7 +1531,16 @@ class MLEngine {
         resolve(`Engine status is now ${desiredStatus} `);
       }
 
-      let onStatusChanged;
+      /**
+       * @param {string} status
+       */
+      const onStatusChanged = status => {
+        if (status === desiredStatus) {
+          this.off("statusChanged", onStatusChanged);
+          lazy.clearTimeout(timeoutId);
+          resolve(`Engine status is now ${desiredStatus} `);
+        }
+      };
 
       // Set a timeout to reject the promise if the status doesn't change in time
       const timeoutId = lazy.setTimeout(() => {
@@ -1249,14 +1550,6 @@ class MLEngine {
         );
       }, TERMINATE_TIMEOUT);
 
-      onStatusChanged = status => {
-        if (status === desiredStatus) {
-          this.off("statusChanged", onStatusChanged);
-          lazy.clearTimeout(timeoutId);
-          resolve(`Engine status is now ${desiredStatus} `);
-        }
-      };
-
       this.on("statusChanged", onStatusChanged);
     });
   }
@@ -1264,37 +1557,71 @@ class MLEngine {
   /**
    * Run the inference request
    *
-   * @param {Request} request
-   * @returns {Promise<Response>}
+   * @param {EngineRequests[FeatureID]} request
+   * @returns {Promise<EngineResponses[FeatureID]>}
    */
-  run(request) {
+  async run(request) {
+    /** @type {PromiseWithResolvers<EngineResponses[FeatureID]>} */
     const resolvers = Promise.withResolvers();
     const requestId = this.#nextRequestId++;
     this.#requests.set(requestId, resolvers);
     let transferables = [];
-    if (request.data instanceof ArrayBuffer) {
+    if (
+      request &&
+      typeof request === "object" &&
+      "data" in request &&
+      request.data instanceof ArrayBuffer
+    ) {
       transferables.push(request.data);
     }
+
+    // If the port is null maybe the inference process has shut down
+    if (this.#port === null) {
+      throw new Error("Port does not exist");
+    }
+
+    // Validate request before sending to child process
+    const validatedRequest = this.#validateRequest(request);
+    if (!validatedRequest) {
+      throw new Error("Request failed security validation");
+    }
+
+    const beforeRun = ChromeUtils.now();
 
     this.#port.postMessage(
       {
         type: "EnginePort:Run",
         requestId,
-        request,
+        request: validatedRequest,
         engineRunOptions: { enableInferenceProgress: false },
       },
       transferables
     );
-    return resolvers.promise;
+
+    const result = await resolvers.promise;
+
+    this.telemetry.recordEngineRun({
+      beforeRun,
+      resourcesBefore: result.resourcesBefore,
+      resourcesAfter: result.resourcesAfter,
+      engineId: this.engineId,
+      modelId: this.pipelineOptions.modelId,
+      backend: this.pipelineOptions.backend,
+    });
+
+    return result;
   }
 
   /**
    * Run the inference request using an async generator function.
    *
-   * @param {Request} request - The inference request containing the input data.
-   * @returns {AsyncGenerator<Response, Response, unknown>} An async generator yielding chunks of generated responses.
+   * @param {EngineRequests[FeatureID]} request - The inference request containing the input data.
+   * @returns {AsyncGenerator<ChunkResponse>} An async generator yielding chunks of generated responses.
    */
-  runWithGenerator = async function* (request) {
+  async *runWithGenerator(request) {
+    lazy.console.debug(`runWithGenerator called for request ${request}`);
+    const startTime = ChromeUtils.now();
+
     // Create a promise to track when the engine has fully completed all runs
     const responseChunkResolvers = new ResponseOrChunkResolvers();
 
@@ -1304,17 +1631,30 @@ class MLEngine {
     let completed = false;
 
     // Track when the engine is fully completed
-    const completionPromise = responseChunkResolvers.promise.finally(
-      results => {
-        completed = true;
-        return results;
-      }
-    );
+    const completionPromise = responseChunkResolvers.promise.finally(() => {
+      completed = true;
+    });
 
     // Handle transferables for performance optimization
     const transferables = [];
-    if (request.data instanceof ArrayBuffer) {
+    if (
+      request &&
+      typeof request === "object" &&
+      "data" in request &&
+      request.data instanceof ArrayBuffer
+    ) {
       transferables.push(request.data);
+    }
+
+    // If the port is null maybe the inference process has shut down
+    if (this.#port === null) {
+      throw new Error("The port is null");
+    }
+
+    // Validate request before sending to child process
+    const validatedRequest = this.#validateRequest(request);
+    if (!validatedRequest) {
+      throw new Error("Request failed security validation");
     }
 
     // Send the request to the engine via postMessage with optional transferables
@@ -1322,18 +1662,27 @@ class MLEngine {
       {
         type: "EnginePort:Run",
         requestId,
-        request,
+        request: validatedRequest,
         engineRunOptions: { enableInferenceProgress: true },
       },
       transferables
     );
 
+    /**
+     * @param {number} delay
+     */
     const timeoutPromise = delay =>
       new Promise(resolve =>
         lazy.setTimeout(() => resolve({ timeout: true, ok: true }), delay)
       );
 
+    // Collect both the token and text counts, as the tokens aren't always available.
+    let tokenCount = 0;
+    let characterCount = 0;
+
     let chunkPromise = responseChunkResolvers.getAndAdvanceChunkPromise();
+    let chunkStartTime = ChromeUtils.now();
+
     // Loop to yield chunks as they arrive
     while (true) {
       // Wait for the chunk with a timeout
@@ -1341,12 +1690,48 @@ class MLEngine {
 
       // If there was no timeout we can yield the chunk and move to the next
       if (!chunk.timeout) {
+        lazy.console.debug(
+          `Chunk received ${lazy.stringifyForLog(chunk.metadata)}`
+        );
+        tokenCount += chunk.metadata.tokens?.length ?? 0;
+        characterCount += chunk.metadata.text?.length ?? 0;
         yield {
           text: chunk.metadata.text,
           tokens: chunk.metadata.tokens,
           isPrompt: chunk.metadata.isPrompt,
+          toolCalls: chunk.metadata.toolCalls,
         };
+
+        // Be a bit defensive here in getting the metadata, as different engines may
+        // report different things back.
+        let markerText;
+        if (chunk.metadata.tokens?.length) {
+          markerText = `${chunk.metadata.tokens?.length} tokens`;
+        } else if (chunk.metadata.text?.length) {
+          markerText = `${chunk.metadata.text?.length} characters`;
+        } else {
+          markerText = "empty response";
+        }
+
+        ChromeUtils.addProfilerMarker(
+          "MLEngineParent",
+          { startTime: chunkStartTime },
+          `chunk generated ${markerText}` +
+            ` (${this.pipelineOptions.backend} ${this.pipelineOptions.modelId})`
+        );
+
+        chunkStartTime = ChromeUtils.now();
         chunkPromise = responseChunkResolvers.getAndAdvanceChunkPromise();
+      } else if (this.#port === null) {
+        // in case of a timeout check if the inference process is still alive
+        lazy.console.error("The port was closed.");
+        if (this.engineStatus === "crashed") {
+          throw new Error(
+            "The inference process has crashed, the port is null. This was for the following request: " +
+              lazy.stringifyForLog(request)
+          );
+        }
+        break;
       }
 
       // Warn if the engine completed before receiving all chunks
@@ -1367,6 +1752,36 @@ class MLEngine {
     }
 
     // Wait for the engine to fully complete before exiting
-    return completionPromise;
-  };
+    const result = await completionPromise;
+
+    // Tokens may not be available.
+    let markerText;
+    if (tokenCount) {
+      markerText = `${tokenCount} tokens`;
+    } else if (characterCount) {
+      markerText = `${characterCount} characters`;
+    } else {
+      markerText = "an empty response";
+    }
+
+    ChromeUtils.addProfilerMarker(
+      "MLEngineParent",
+      { startTime },
+      `runWithGenerator generated ${markerText}` +
+        ` (${this.pipelineOptions.backend} ${this.pipelineOptions.modelId})`
+    );
+
+    this.telemetry.recordEngineRun({
+      beforeRun: startTime,
+      resourcesBefore: result.resourcesBefore,
+      resourcesAfter: result.resourcesAfter,
+      engineId: this.engineId,
+      modelId: this.pipelineOptions.modelId,
+      backend: this.pipelineOptions.backend,
+      tokenCount,
+      characterCount,
+    });
+
+    return result;
+  }
 }

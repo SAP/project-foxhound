@@ -291,10 +291,12 @@ function generateDocumentation() {
     DisableSetDesktopBackground: "DisableSetAsDesktopBackground",
     FirefoxHome: "FirefoxHome2",
     Permissions: "Permissions2",
+    PopupBlocking: "PopupBlocking2",
     SanitizeOnShutdown: "SanitizeOnShutdown2",
     SecurityDevices: "SecurityDevices2",
     SkipTermsOfUse: "SkipTermsOfUse2",
     WindowsSSO: "Windows10SSO",
+    BrowserDataBackup: "Backup",
   };
   let deprecated_policies = ["DisablePocket"];
 

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/JSValidatorUtils.h"
+
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/Shmem.h"
 #include "nsStringFwd.h"

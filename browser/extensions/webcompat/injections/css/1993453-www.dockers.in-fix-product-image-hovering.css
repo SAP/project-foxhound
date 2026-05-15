@@ -1,0 +1,12 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/**
+ * www.dockers.in - product image hover-zoom is broken
+ * Bug #1993453 - https://bugzilla.mozilla.org/show_bug.cgi?id=1993453
+ * WebCompat issue #182024 - https://webcompat.com/issues/182024
+ */
+.pdpImgContainer * .zoomEffect {
+  pointer-events: none;
+}

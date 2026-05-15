@@ -10,9 +10,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   dom: "chrome://remote/content/shared/DOM.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
   ShadowRoot: "chrome://remote/content/marionette/web-reference.sys.mjs",
-  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   WebElement: "chrome://remote/content/marionette/web-reference.sys.mjs",
   WebFrame: "chrome://remote/content/marionette/web-reference.sys.mjs",
   WebReference: "chrome://remote/content/marionette/web-reference.sys.mjs",
@@ -178,15 +178,18 @@ json.clone = function (value, nodeCache) {
     }
 
     if (isWindow) {
-      // Convert window instances to WebReference references.
       let reference;
 
+      // Convert window instances to serialized WebWindow or WebFrame references.
+      // Because the NavigableManager is only available in the parent process,
+      // we need to pass the actual id of the browsing context.
       if (value.browsingContext.parent == null) {
-        reference = new WebWindow(value.browsingContext.browserId.toString());
-        hasSerializedWindows = true;
+        reference = new WebWindow(value.browsingContext.id.toString());
       } else {
         reference = new WebFrame(value.browsingContext.id.toString());
       }
+
+      hasSerializedWindows = true;
 
       return reference.toJSON();
     }
@@ -230,6 +233,10 @@ json.clone = function (value, nodeCache) {
  *
  * @throws {NoSuchElementError}
  *     If the WebElement reference has not been seen before.
+ * @throws {NoSuchFrameError}
+ *     Child browsing context has been discarded.
+ * @throws {NoSuchWindowError}
+ *     Top-level browsing context has been discarded.
  * @throws {StaleElementReferenceError}
  *     If the element is stale, indicating it is no longer attached to the DOM.
  */
@@ -264,29 +271,27 @@ json.deserialize = function (value, nodeCache, browsingContext) {
           }
 
           if (webRef instanceof lazy.WebFrame) {
-            const browsingContext = BrowsingContext.get(webRef.uuid);
+            const frameContext = BrowsingContext.get(webRef.uuid);
 
-            if (browsingContext === null || browsingContext.parent === null) {
-              throw new lazy.error.NoSuchWindowError(
+            if (frameContext === null || frameContext.parent === null) {
+              throw new lazy.error.NoSuchFrameError(
                 `Unable to locate frame with id: ${webRef.uuid}`
               );
             }
 
-            return browsingContext.window;
+            return frameContext.window;
           }
 
           if (webRef instanceof lazy.WebWindow) {
-            const browsingContext = BrowsingContext.getCurrentTopByBrowserId(
-              webRef.uuid
-            );
+            const windowContext = BrowsingContext.get(webRef.uuid);
 
-            if (browsingContext === null) {
+            if (windowContext === null || windowContext.parent !== null) {
               throw new lazy.error.NoSuchWindowError(
                 `Unable to locate window with id: ${webRef.uuid}`
               );
             }
 
-            return browsingContext.window;
+            return windowContext.window;
           }
         }
 
@@ -298,7 +303,7 @@ json.deserialize = function (value, nodeCache, browsingContext) {
 };
 
 /**
- * Convert unique navigable ids to internal browser ids.
+ * Convert unique navigable ids for windows and frames to browsing context ids.
  *
  * @param {object} serializedData
  *     The data to process.
@@ -311,10 +316,13 @@ json.mapFromNavigableIds = function (serializedData) {
     if (lazy.WebReference.isReference(data)) {
       const webRef = lazy.WebReference.fromJSON(data);
 
-      if (webRef instanceof lazy.WebWindow) {
-        const browser = lazy.TabManager.getBrowserById(webRef.uuid);
-        if (browser) {
-          webRef.uuid = browser?.browserId.toString();
+      if (webRef instanceof lazy.WebFrame || webRef instanceof lazy.WebWindow) {
+        const context = lazy.NavigableManager.getBrowsingContextById(
+          webRef.uuid
+        );
+
+        if (context) {
+          webRef.uuid = context.id.toString();
           data = webRef.toJSON();
         }
       }
@@ -331,7 +339,7 @@ json.mapFromNavigableIds = function (serializedData) {
 };
 
 /**
- * Convert browser ids to unique navigable ids.
+ * Convert browsing context ids for windows and frames to unique navigable ids.
  *
  * @param {object} serializedData
  *     The data to process.
@@ -343,12 +351,11 @@ json.mapToNavigableIds = function (serializedData) {
   function _processData(data) {
     if (lazy.WebReference.isReference(data)) {
       const webRef = lazy.WebReference.fromJSON(data);
-      if (webRef instanceof lazy.WebWindow) {
-        const browsingContext = BrowsingContext.getCurrentTopByBrowserId(
-          webRef.uuid
-        );
+      if (webRef instanceof lazy.WebWindow || webRef instanceof lazy.WebFrame) {
+        const browsingContext = BrowsingContext.get(webRef.uuid);
 
-        webRef.uuid = lazy.TabManager.getIdForBrowsingContext(browsingContext);
+        webRef.uuid =
+          lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
         data = webRef.toJSON();
       }
     } else if (typeof data == "object") {

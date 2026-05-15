@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
@@ -55,6 +62,7 @@
   <string name="menu_settings">Nagi\'iaj</string>
   <string name="menu_about">Doj rayi\'î</string>
   <string name="menu_help">Sa ruguñu\'unj un</string>
+  <string name="menu_terms_of_use">Chrēj gānikò’t da’ gā’hue gārasunt</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -83,6 +91,12 @@
     sharing an URL.
   -->
   <string name="share_dialog_title">Ga\'nïnj gan\'an ngà</string>
+  <string name="notification_erase_title_android_14">Nārè\' nej nuguan\' garâjsunt nga ganana\'huî\'t raj?</string>
+  <!--
+    Text shown in the notification description that pops up to remind the user that a browsing session is active
+    for Android 14+.
+  -->
+  <string name="notification_erase_text_android_14_1">Gūru’man ra’a asi dūguaché nuguan’ nan da’ gā’hue nārè’ hue’ê sa gini’hiājt ngà gaché nunt.</string>
   <string name="notification_erase_text">Narè\' nej nuguan\' garajsunt nga ganana\'uî\'t</string>
   <!-- Notification action to open Focus and resume the current browsing session. -->
   <string name="notification_action_open">Na\'nïn</string>
@@ -142,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s sò\' \'nïnj rā\'a daran\' sa \'iát.</p> <p>Nāgi\'iaj \'ngō nabegado huìi man: <ul> <li>Nānà\'uì\' nī gāchē nu āsìj riña aplikasiun dan</li> <li>Nārán riña nej sa naga\'nāj a (asi nāgi\'iaj nākàt man sisī dādan achín man)</li> <li>Nādure\' nej koki nī nej sa atāj na\'ānj danè\' gaché nunt</li> </ul> </p> <p>%1$s si rāsūn Mozilla huin man. Nù huin ñunj da\' gā ni\'nïnj internter riñant.<br/> <a href=\"%2$s\">Gāhuin chrūn doj</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s sò\' \'nïnj rā\'a daran\' sa \'iát.</p>\n<p>Nāgi\'iaj \'ngō nabegado huìi man:\n<ul>\n<li>Nānà\'uì\' nī gāchē nu āsìj riña aplikasiun dan</li>\n<li>Nārán riña nej sa naga\'nāj a (asi nāgi\'iaj nākàt man sisī dādan achín man)</li>\n<li>Nādure\' nej koki nī nej sa atāj na\'ānj danè\' gaché nunt</li>\n</ul> </p>\n<p>%1$s si rāsūn Mozilla huin man. Nù huin ñunj da\' gā ni\'nïnj internter riñant.<br/>\n<a href=\"%2$s\">Gāhuin chrūn doj</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Gāhuin chrūn doj</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Sa huìi nī sa dugumin</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -313,12 +329,18 @@
   <string name="preference_mozilla_telemetry_summary">Gini\'in doj rayi\'î na</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
   <string name="preference_mozilla_telemetry_summary2">Ûta ‘iaj nukuaj Mozilla man’an da’ gā hue’ê nej sa narikïj %1$s da’ garasun daran’ nê’.</string>
+  <!-- Preference switch for daily usage ping data collection -->
+  <string name="preference_daily_usage_ping_title">Ping arâjsun nīgànt</string>
+  <string name="preference_daily_usage_ping_description">Nan rugûñūn’ūnj Mozilla da’ gīni’in andaj duguî’ atûj yītïnj riñanj.</string>
+  <string name="preference_daily_usage_ping_learn_more">Gāhuin chrūn doj</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Noticia huìi</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
   <string name="preference_licensing_info">Si nùguàn\' līsênsia</string>
   <!-- Link to Focus licensing information from other libraries that we use. -->
   <string name="preference_libraries_we_use">Nej dukuâ ñanj arâj sun ñûnj</string>
+  <!-- Link to Focus Crash reports list. -->
+  <string name="preference_crashes">Sa yichra\'a</string>
   <!-- Open Source Licenses page title. %s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="open_source_licenses_title">%s Dukuâ ñanj OSS</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
@@ -445,6 +467,30 @@
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Hìo, huā hûij. Nitāj sa dukuu ‘na’ riñanj.</string>
   <!--
+    New Onboarding flow first screen 'terms of use' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Si gān’ānjt ne’ ñāa, nī arâjyinat %1$s.</string>
+  <!--
+    New Onboarding flow first screen 'terms of use link'
+
+    Text for the link used in onboarding_first_screen_terms_of_use_text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Chrēj da’huît gānikò’t sisī gārāsunt Firefox</string>
+  <!--
+    New Onboarding flow first screen 'privacy notice' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
+  -->
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Riñun ruhuâ Firefox da’ gā huì gāchēt. Gīnī’in doj dàj hua nuguan’ nan riña %1$s.</string>
+  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
+  <string name="onboarding_first_screen_privacy_notice_link_2">Notisiâ Huìi</string>
+  <!-- New Onboarding flow first screen button label -->
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Gun\' ne\' ñāa</string>
+  <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
+  <string name="a11y_link_available">Link huā yūgui</string>
+  <!--
     Onboarding second screen: Title
 
     %1$s will be replaced by the app short name(Focus)
@@ -461,7 +507,7 @@
   <!-- New Onboarding flow second screen make Focus default browser button label -->
   <string name="onboarding_second_screen_default_browser_button_text">Dūnâj gāhuin man riña sa nānà\'uì\' yītïnjt</string>
   <!-- New Onboarding flow second screen skip onboarding button label -->
-  <string name="onboarding_second_screen_skip_button_text">Si gi\'iaj guendât</string>
+  <string name="onboarding_second_screen_skip_button_text">Sī gi\'hiaj guendât</string>
   <!-- First run tour (Default browser): Title -->
   <string name="firstrun_defaultbrowser_title">Nagi\'iaj nukuaj riña gache nun \'ngorïnt</string>
   <!-- First run tour (Default browser): Text. -->
@@ -514,6 +560,8 @@
   <string name="notification_browsing_session_channel_description">Nej notificación nī rugûñun’un da’ nadurê´t %1$s sesión ngà ‘ngō toke. Sê da guezâ na’nïnt riña app asi ni’iāj nùhuin si ‘iaj sun riña navegador hua ‘iát.</string>
   <!-- Label for a button in the "tabs tray" to erase the browsing history (closes all tabs and removes associated data). -->
   <string name="tabs_tray_action_erase">Narè\' nej nuguan\' garajsunt nga ganana\'uî\'t</string>
+  <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
+  <string name="tabs_tray_action_erase_other">Nārán riña a’ngô dā’āj nej rakïj ñanj</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -892,4 +940,18 @@
     to the home screen.
   -->
   <string name="promote_search_widget_snackbar_message">Ngà nanûn widget riña pāntayâ ayì’ìt</string>
+  <!--
+    Messages explaining how to exit fullscreen mode
+
+    Message shown to explain how to exit fullscreen mode when gesture navigation is enabled.
+
+    This text should be as short as possible, max 68 chars
+  -->
+  <string name="exit_fullscreen_with_gesture_short">Gānukuāj nānïnjt nī gūrū’man ra’a da’nga’ ne’ rūkùu da’ gāhuīt</string>
+  <!--
+    Message shown to explain how to exit fullscreen mode when using back button navigation.
+
+    This text should be as short as possible, max 68 chars
+  -->
+  <string name="exit_fullscreen_with_back_button_short">Gānukuāj nānïnjt nī gūru’man ra’a ne’ rūkùu da’ gāhuīt</string>
 </resources>

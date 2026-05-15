@@ -6,135 +6,133 @@
 
 #include "nsDOMWindowUtils.h"
 
+#include <algorithm>
+
+#include "CubebDeviceEnumerator.h"
 #include "LayoutConstants.h"
 #include "MobileViewportManager.h"
-#include "mozilla/layers/CompositorBridgeChild.h"
-#include "nsPresContext.h"
-#include "nsCaret.h"
-#include "nsContentList.h"
-#include "nsError.h"
-#include "nsQueryContentEventResult.h"
-#include "nsGlobalWindowOuter.h"
-#include "nsFocusManager.h"
-#include "nsFrameManager.h"
-#include "nsRefreshDriver.h"
-#include "nsStyleUtil.h"
-#include "mozilla/Base64.h"
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/BlobBinding.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/DocumentTimeline.h"
-#include "mozilla/dom/DOMCollectedFramesBinding.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/Touch.h"
-#include "mozilla/dom/UserActivation.h"
-#include "mozilla/EventStateManager.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/ServoStyleSet.h"
-#include "mozilla/css/Loader.h"
-#include "mozilla/StaticPrefs_test.h"
-#include "mozilla/InputTaskManager.h"
-#include "nsIObjectLoadingContent.h"
-#include "nsIFrame.h"
-#include "mozilla/layers/APZCCallbackHelper.h"
-#include "mozilla/layers/PCompositorBridgeTypes.h"
-#include "mozilla/layers/TouchActionHelper.h"
-#include "mozilla/media/MediaUtils.h"
-#include "nsQueryObject.h"
-#include "CubebDeviceEnumerator.h"
-
-#include "nsContentUtils.h"
-
-#include "nsIWidget.h"
-#include "nsCharsetSource.h"
-#include "nsJSEnvironment.h"
-#include "nsJSUtils.h"
-#include "js/experimental/PCCountProfiling.h"  // JS::{Start,Stop}PCCountProfiling, JS::PurgePCCounts, JS::GetPCCountScript{Count,Summary,Contents}
 #include "js/Object.h"                         // JS::GetClass
-
+#include "js/experimental/PCCountProfiling.h"  // JS::{Start,Stop}PCCountProfiling, JS::PurgePCCounts, JS::GetPCCountScript{Count,Summary,Contents}
+#include "mozilla/Base64.h"
 #include "mozilla/ChaosMode.h"
-#include "mozilla/CheckedInt.h"
+#include "mozilla/EventStateManager.h"
+#include "mozilla/InputTaskManager.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
-#include "mozilla/Span.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/TextEventDispatcher.h"
-#include "mozilla/TouchEvents.h"
-
-#include "nsViewManager.h"
-
-#include "nsLayoutUtils.h"
-#include "nsComputedDOMStyle.h"
-#include "nsCSSProps.h"
-#include "nsIDocShell.h"
+#include "mozilla/StaticPrefs_test.h"
 #include "mozilla/StyleAnimationValue.h"
+#include "mozilla/TextEventDispatcher.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/TouchEvents.h"
+#include "mozilla/css/Loader.h"
+#include "mozilla/dom/Animation.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/DOMCollectedFramesBinding.h"
+#include "mozilla/dom/DOMRect.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/DocumentTimeline.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileBinding.h"
-#include "mozilla/dom/DOMRect.h"
-#include <algorithm>
+#include "mozilla/dom/FunctionBinding.h"
+#include "mozilla/dom/MouseEventBinding.h"
+#include "mozilla/dom/Touch.h"
+#include "mozilla/dom/UserActivation.h"
+#include "mozilla/layers/APZCCallbackHelper.h"
+#include "mozilla/layers/CompositorBridgeChild.h"
+#include "mozilla/layers/PCompositorBridgeTypes.h"
+#include "mozilla/layers/TouchActionHelper.h"
+#include "mozilla/media/MediaUtils.h"
+#include "nsCSSProps.h"
+#include "nsCaret.h"
+#include "nsCharsetSource.h"
+#include "nsComputedDOMStyle.h"
+#include "nsContentList.h"
+#include "nsContentUtils.h"
+#include "nsDeviceContext.h"
+#include "nsError.h"
+#include "nsFocusManager.h"
+#include "nsFrameManager.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsIDocShell.h"
+#include "nsIFrame.h"
+#include "nsIObjectLoadingContent.h"
+#include "nsIWidget.h"
+#include "nsJSEnvironment.h"
+#include "nsJSUtils.h"
+#include "nsLayoutUtils.h"
+#include "nsMenuPopupFrame.h"
+#include "nsPresContext.h"
+#include "nsQueryContentEventResult.h"
+#include "nsQueryObject.h"
+#include "nsRefreshDriver.h"
+#include "nsStyleUtil.h"
 
 #if defined(MOZ_WIDGET_GTK)
 #  include <gdk/gdk.h>
 #  if defined(MOZ_X11)
 #    include <gdk/gdkx.h>
+
 #    include "X11UndefineNone.h"
 #  endif
 #endif
 
 #include "mozilla/dom/AudioDeviceInfo.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/IDBFactoryBinding.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/PrincipalUtils.h"
-#include "mozilla/dom/ContentChild.h"
 #include "mozilla/layers/FrameUniformityData.h"
+#include "nsIFormControl.h"
 #include "nsPrintfCString.h"
 #include "nsViewportInfo.h"
-#include "nsIFormControl.h"
 // #include "nsWidgetsCID.h"
-#include "nsDisplayList.h"
-#include "nsROCSSPrimitiveValue.h"
-#include "nsIBaseWindow.h"
-#include "nsIDocShellTreeOwner.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/Preferences.h"
-#include "nsContentPermissionHelper.h"
-#include "nsCSSPseudoElements.h"  // for PseudoStyleType
-#include "nsNetUtil.h"
-#include "HTMLImageElement.h"
 #include "HTMLCanvasElement.h"
-#include "mozilla/css/ImageLoader.h"
-#include "mozilla/layers/IAPZCTreeManager.h"  // for layers::ZoomToRectBehavior
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/RDDProcessManager.h"
-#include "mozilla/ServoBindings.h"
-#include "mozilla/StyleSheetInlines.h"
-#include "mozilla/gfx/gfxVars.h"
-#include "mozilla/gfx/GPUProcessManager.h"
-#include "mozilla/dom/TimeoutManager.h"
+#include "HTMLImageElement.h"
+#include "PseudoStyleType.h"  // for PseudoStyleType
+#include "mozilla/CSSPropertyId.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/DisplayPortUtils.h"
+#include "mozilla/IMEContentObserver.h"
+#include "mozilla/IMEStateManager.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PreloadedStyleSheet.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/RDDProcessManager.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/StyleSheetInlines.h"
+#include "mozilla/ViewportUtils.h"
+#include "mozilla/WheelHandlingHelper.h"
+#include "mozilla/css/ImageLoader.h"
+#include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/layers/IAPZCTreeManager.h"  // for layers::ZoomToRectBehavior
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/DisplayPortUtils.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/ViewportUtils.h"
-#include "mozilla/dom/BrowsingContextGroup.h"
-#include "mozilla/IMEStateManager.h"
-#include "mozilla/IMEContentObserver.h"
-#include "mozilla/WheelHandlingHelper.h"
-#include "mozilla/AnimatedPropertyID.h"
+#include "nsContentPermissionHelper.h"
+#include "nsDisplayList.h"
+#include "nsIBaseWindow.h"
+#include "nsIDocShellTreeOwner.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsNetUtil.h"
+#include "nsROCSSPrimitiveValue.h"
 
 #ifdef XP_WIN
 #  include <direct.h>
@@ -152,6 +150,10 @@ using namespace mozilla::ipc;
 using namespace mozilla::layers;
 using namespace mozilla::widget;
 using namespace mozilla::gfx;
+
+static LazyLogModule sApzZoomToFocusedInputLog("apz.zoomtofocusedinput");
+#define APZZTFI_LOG(...) \
+  MOZ_LOG(sApzZoomToFocusedInputLog, LogLevel::Debug, (__VA_ARGS__))
 
 class gfxContext;
 
@@ -420,14 +422,12 @@ nsDOMWindowUtils::GetDocumentMetadata(const nsAString& aName,
 NS_IMETHODIMP
 nsDOMWindowUtils::UpdateLayerTree() {
   FlushLayoutWithoutThrottledAnimations();
-  if (RefPtr<PresShell> presShell = GetPresShell()) {
-    RefPtr<nsViewManager> vm = presShell->GetViewManager();
-    if (nsView* view = vm->GetRootView()) {
-      nsAutoScriptBlocker scriptBlocker;
-      presShell->PaintAndRequestComposite(view,
-                                          PaintFlags::PaintSyncDecodeImages);
-      presShell->GetWindowRenderer()->WaitOnTransactionProcessed();
-    }
+  if (RefPtr<PresShell> ps = GetPresShell()) {
+    nsAutoScriptBlocker scriptBlocker;
+    RefPtr renderer = ps->GetWindowRenderer();
+    ps->PaintAndRequestComposite(ps->GetRootFrame(), renderer,
+                                 PaintFlags::PaintSyncDecodeImages);
+    renderer->WaitOnTransactionProcessed();
   }
   return NS_OK;
 }
@@ -708,67 +708,6 @@ nsDOMWindowUtils::GetPresShellId(uint32_t* aPresShellId) {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::SendMouseEvent(
-    const nsAString& aType, float aX, float aY, int32_t aButton,
-    int32_t aClickCount, int32_t aModifiers, bool aIgnoreRootScrollFrame,
-    float aPressure, unsigned short aInputSourceArg,
-    bool aIsDOMEventSynthesized, bool aIsWidgetEventSynthesized,
-    int32_t aButtons, uint32_t aIdentifier, uint8_t aOptionalArgCount,
-    bool* aPreventDefault) {
-  return SendMouseEventCommon(
-      aType, aX, aY, aButton, aClickCount, aModifiers, aIgnoreRootScrollFrame,
-      aPressure, aInputSourceArg,
-      aOptionalArgCount >= 7 ? aIdentifier : DEFAULT_MOUSE_POINTER_ID, false,
-      aPreventDefault, aOptionalArgCount >= 4 ? aIsDOMEventSynthesized : true,
-      aOptionalArgCount >= 5 ? aIsWidgetEventSynthesized : false,
-      aOptionalArgCount >= 6 ? aButtons : MOUSE_BUTTONS_NOT_SPECIFIED);
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SendMouseEventToWindow(
-    const nsAString& aType, float aX, float aY, int32_t aButton,
-    int32_t aClickCount, int32_t aModifiers, bool aIgnoreRootScrollFrame,
-    float aPressure, unsigned short aInputSourceArg,
-    bool aIsDOMEventSynthesized, bool aIsWidgetEventSynthesized,
-    int32_t aButtons, uint32_t aIdentifier, uint8_t aOptionalArgCount) {
-  AUTO_PROFILER_LABEL("nsDOMWindowUtils::SendMouseEventToWindow", OTHER);
-
-  return SendMouseEventCommon(
-      aType, aX, aY, aButton, aClickCount, aModifiers, aIgnoreRootScrollFrame,
-      aPressure, aInputSourceArg,
-      aOptionalArgCount >= 7 ? aIdentifier : DEFAULT_MOUSE_POINTER_ID, true,
-      nullptr, aOptionalArgCount >= 4 ? aIsDOMEventSynthesized : true,
-      aOptionalArgCount >= 5 ? aIsWidgetEventSynthesized : false,
-      aOptionalArgCount >= 6 ? aButtons : MOUSE_BUTTONS_NOT_SPECIFIED);
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SendMouseEventCommon(
-    const nsAString& aType, float aX, float aY, int32_t aButton,
-    int32_t aClickCount, int32_t aModifiers, bool aIgnoreRootScrollFrame,
-    float aPressure, unsigned short aInputSourceArg, uint32_t aPointerId,
-    bool aToWindow, bool* aPreventDefault, bool aIsDOMEventSynthesized,
-    bool aIsWidgetEventSynthesized, int32_t aButtons) {
-  RefPtr<PresShell> presShell = GetPresShell();
-  if (!presShell) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsPoint offset;
-  nsCOMPtr<nsIWidget> widget = GetWidget(&offset);
-  if (!widget) {
-    return NS_ERROR_FAILURE;
-  }
-  LayoutDeviceIntPoint refPoint = nsContentUtils::ToWidgetPoint(
-      CSSPoint(aX, aY), offset, presShell->GetPresContext());
-  return nsContentUtils::SendMouseEvent(
-      presShell, widget, aType, refPoint, aButton, aButtons, aClickCount,
-      aModifiers, aIgnoreRootScrollFrame, aPressure, aInputSourceArg,
-      aPointerId, aToWindow, aPreventDefault, aIsDOMEventSynthesized,
-      aIsWidgetEventSynthesized);
-}
-
-NS_IMETHODIMP
 nsDOMWindowUtils::IsCORSSafelistedRequestHeader(const nsACString& aName,
                                                 const nsACString& aValue,
                                                 bool* aRetVal) {
@@ -827,9 +766,7 @@ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
       StaticPrefs::test_events_async_enabled()) {
     widget->DispatchInputEvent(&wheelEvent);
   } else {
-    nsEventStatus status = nsEventStatus_eIgnore;
-    nsresult rv = widget->DispatchEvent(&wheelEvent, status);
-    NS_ENSURE_SUCCESS(rv, rv);
+    widget->DispatchEvent(&wheelEvent);
   }
 
   // The callback ID may be cleared when the event also needs to be dispatched
@@ -887,133 +824,6 @@ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
 #endif
 
   return (!failedX && !failedY) ? NS_OK : NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SendTouchEvent(
-    const nsAString& aType, const nsTArray<uint32_t>& aIdentifiers,
-    const nsTArray<int32_t>& aXs, const nsTArray<int32_t>& aYs,
-    const nsTArray<uint32_t>& aRxs, const nsTArray<uint32_t>& aRys,
-    const nsTArray<float>& aRotationAngles, const nsTArray<float>& aForces,
-    const nsTArray<int32_t>& aTiltXs, const nsTArray<int32_t>& aTiltYs,
-    const nsTArray<int32_t>& aTwists, int32_t aModifiers,
-    AsyncEnabledOption aAsyncEnabled, bool* aPreventDefault) {
-  return SendTouchEventCommon(
-      aType, aIdentifiers, aXs, aYs, aRxs, aRys, aRotationAngles, aForces,
-      aTiltXs, aTiltYs, aTwists, aModifiers, /* aIsPen */ false,
-      /* aToWindow */ false, aAsyncEnabled, aPreventDefault);
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SendTouchEventAsPen(
-    const nsAString& aType, uint32_t aIdentifier, int32_t aX, int32_t aY,
-    uint32_t aRx, uint32_t aRy, float aRotationAngle, float aForce,
-    int32_t aTiltX, int32_t aTiltY, int32_t aTwist, int32_t aModifier,
-    AsyncEnabledOption aAsyncEnabled, bool* aPreventDefault) {
-  return SendTouchEventCommon(
-      aType, nsTArray{aIdentifier}, nsTArray{aX}, nsTArray{aY}, nsTArray{aRx},
-      nsTArray{aRy}, nsTArray{aRotationAngle}, nsTArray{aForce},
-      nsTArray{aTiltX}, nsTArray{aTiltY}, nsTArray{aTwist}, aModifier,
-      /* aIsPen */ true, /* aToWindow */ false, aAsyncEnabled, aPreventDefault);
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SendTouchEventToWindow(
-    const nsAString& aType, const nsTArray<uint32_t>& aIdentifiers,
-    const nsTArray<int32_t>& aXs, const nsTArray<int32_t>& aYs,
-    const nsTArray<uint32_t>& aRxs, const nsTArray<uint32_t>& aRys,
-    const nsTArray<float>& aRotationAngles, const nsTArray<float>& aForces,
-    const nsTArray<int32_t>& aTiltXs, const nsTArray<int32_t>& aTiltYs,
-    const nsTArray<int32_t>& aTwists, int32_t aModifiers,
-    bool* aPreventDefault) {
-  return SendTouchEventCommon(
-      aType, aIdentifiers, aXs, aYs, aRxs, aRys, aRotationAngles, aForces,
-      aTiltXs, aTiltYs, aTwists, aModifiers, /* aIsPen */ false,
-      /* aToWindow */ true, AsyncEnabledOption::ASYNC_DISABLED,
-      aPreventDefault);
-}
-
-nsresult nsDOMWindowUtils::SendTouchEventCommon(
-    const nsAString& aType, const nsTArray<uint32_t>& aIdentifiers,
-    const nsTArray<int32_t>& aXs, const nsTArray<int32_t>& aYs,
-    const nsTArray<uint32_t>& aRxs, const nsTArray<uint32_t>& aRys,
-    const nsTArray<float>& aRotationAngles, const nsTArray<float>& aForces,
-    const nsTArray<int32_t>& aTiltXs, const nsTArray<int32_t>& aTiltYs,
-    const nsTArray<int32_t>& aTwists, int32_t aModifiers, bool aIsPen,
-    bool aToWindow, AsyncEnabledOption aAsyncEnabled, bool* aPreventDefault) {
-  // get the widget to send the event to
-  nsPoint offset;
-  nsCOMPtr<nsIWidget> widget = GetWidget(&offset);
-  if (!widget) {
-    return NS_ERROR_NULL_POINTER;
-  }
-  EventMessage msg;
-  if (aType.EqualsLiteral("touchstart")) {
-    msg = eTouchStart;
-  } else if (aType.EqualsLiteral("touchmove")) {
-    msg = eTouchMove;
-  } else if (aType.EqualsLiteral("touchend")) {
-    msg = eTouchEnd;
-  } else if (aType.EqualsLiteral("touchcancel")) {
-    msg = eTouchCancel;
-  } else {
-    return NS_ERROR_UNEXPECTED;
-  }
-  WidgetTouchEvent event(true, msg, widget);
-  event.mFlags.mIsSynthesizedForTests = true;
-  event.mModifiers = nsContentUtils::GetWidgetModifiers(aModifiers);
-  if (aIsPen) {
-    event.mInputSource = MouseEvent_Binding::MOZ_SOURCE_PEN;
-  }
-
-  nsPresContext* presContext = GetPresContext();
-  if (!presContext) {
-    return NS_ERROR_FAILURE;
-  }
-  uint32_t count = aIdentifiers.Length();
-  if (aXs.Length() != count || aYs.Length() != count ||
-      aRxs.Length() != count || aRys.Length() != count ||
-      aRotationAngles.Length() != count || aForces.Length() != count) {
-    return NS_ERROR_INVALID_ARG;
-  }
-  event.mTouches.SetCapacity(count);
-  for (uint32_t i = 0; i < count; ++i) {
-    LayoutDeviceIntPoint pt = nsContentUtils::ToWidgetPoint(
-        CSSPoint(aXs[i], aYs[i]), offset, presContext);
-    LayoutDeviceIntPoint radius = LayoutDeviceIntPoint::FromAppUnitsRounded(
-        CSSPoint::ToAppUnits(CSSPoint(aRxs[i], aRys[i])),
-        presContext->AppUnitsPerDevPixel());
-
-    RefPtr<Touch> t = new Touch(aIdentifiers[i], pt, radius, aRotationAngles[i],
-                                aForces[i], aTiltXs[i], aTiltYs[i], aTwists[i]);
-
-    event.mTouches.AppendElement(t);
-  }
-
-  nsEventStatus status = nsEventStatus_eIgnore;
-  if (aToWindow) {
-    RefPtr<PresShell> presShell;
-    nsView* view = nsContentUtils::GetViewToDispatchEvent(
-        presContext, getter_AddRefs(presShell));
-    if (!presShell || !view) {
-      return NS_ERROR_FAILURE;
-    }
-    *aPreventDefault = (status == nsEventStatus_eConsumeNoDefault);
-    return presShell->HandleEvent(view->GetFrame(), &event, false, &status);
-  }
-
-  if (aAsyncEnabled == AsyncEnabledOption::ASYNC_ENABLED ||
-      StaticPrefs::test_events_async_enabled()) {
-    status = widget->DispatchInputEvent(&event).mContentStatus;
-  } else {
-    nsresult rv = widget->DispatchEvent(&event, status);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  if (aPreventDefault) {
-    *aPreventDefault = (status == nsEventStatus_eConsumeNoDefault);
-  }
-  return NS_OK;
 }
 
 static_assert(
@@ -1346,8 +1156,12 @@ nsDOMWindowUtils::GetParsedStyleSheets(uint32_t* aSheets) {
   if (!doc) {
     return NS_ERROR_UNEXPECTED;
   }
-
-  *aSheets = doc->CSSLoader()->ParsedSheetCount();
+  css::Loader* cssLoader = doc->GetExistingCSSLoader();
+  if (cssLoader) {
+    *aSheets = cssLoader->ParsedSheetCount();
+  } else {
+    *aSheets = 0;
+  }
   return NS_OK;
 }
 
@@ -1531,8 +1345,8 @@ nsDOMWindowUtils::SendSimpleGestureEvent(const nsAString& aType, float aX,
   event.mRefPoint =
       nsContentUtils::ToWidgetPoint(CSSPoint(aX, aY), offset, presContext);
 
-  nsEventStatus status;
-  return widget->DispatchEvent(&event, status);
+  widget->DispatchEvent(&event);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1579,81 +1393,15 @@ nsDOMWindowUtils::NodesFromRect(float aX, float aY, float aTopSize,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDOMWindowUtils::GetTranslationNodes(nsINode* aRoot,
-                                      nsITranslationNodeList** aRetVal) {
-  NS_ENSURE_ARG_POINTER(aRetVal);
-  nsCOMPtr<nsIContent> root = do_QueryInterface(aRoot);
-  NS_ENSURE_STATE(root);
-  nsCOMPtr<Document> doc = GetDocument();
-  NS_ENSURE_STATE(doc);
-
-  if (root->OwnerDoc() != doc) {
-    return NS_ERROR_DOM_WRONG_DOCUMENT_ERR;
-  }
-
-  nsTHashSet<nsIContent*> translationNodesHash(500);
-  RefPtr<nsTranslationNodeList> list = new nsTranslationNodeList;
-
-  uint32_t limit = 15000;
-
-  // We begin iteration with content->GetNextNode because we want to explicitly
-  // skip the root tag from being a translation node.
-  nsIContent* content = root;
-  while ((limit > 0) && (content = content->GetNextNode(root))) {
-    if (!content->IsHTMLElement()) {
-      continue;
-    }
-
-    // Skip elements that usually contain non-translatable text content.
-    if (content->IsAnyOfHTMLElements(nsGkAtoms::script, nsGkAtoms::iframe,
-                                     nsGkAtoms::frameset, nsGkAtoms::frame,
-                                     nsGkAtoms::code, nsGkAtoms::noscript,
-                                     nsGkAtoms::style)) {
-      continue;
-    }
-
-    // An element is a translation node if it contains
-    // at least one text node that has meaningful data
-    // for translation
-    for (nsIContent* child = content->GetFirstChild(); child;
-         child = child->GetNextSibling()) {
-      if (child->IsText() && child->GetAsText()->HasTextForTranslation()) {
-        translationNodesHash.Insert(content);
-
-        nsIFrame* frame = content->GetPrimaryFrame();
-        bool isTranslationRoot = frame && frame->IsBlockFrameOrSubclass();
-        if (!isTranslationRoot) {
-          // If an element is not a block element, it still
-          // can be considered a translation root if the parent
-          // of this element didn't make into the list of nodes
-          // to be translated.
-          bool parentInList = false;
-          nsIContent* parent = content->GetParent();
-          if (parent) {
-            parentInList = translationNodesHash.Contains(parent);
-          }
-          isTranslationRoot = !parentInList;
-        }
-
-        list->AppendElement(content, isTranslationRoot);
-        --limit;
-        break;
-      }
-    }
-  }
-
-  *aRetVal = list.forget().take();
-  return NS_OK;
-}
-
 static already_AddRefed<DataSourceSurface> CanvasToDataSourceSurface(
     HTMLCanvasElement* aCanvas) {
   MOZ_ASSERT(aCanvas);
   SurfaceFromElementResult result = nsLayoutUtils::SurfaceFromElement(aCanvas);
-
-  MOZ_ASSERT(result.GetSourceSurface());
-  return result.GetSourceSurface()->GetDataSurface();
+  const RefPtr<SourceSurface> surf = result.GetSourceSurface();
+  if (!surf) {
+    return nullptr;
+  }
+  return surf->GetDataSurface();
 }
 
 NS_IMETHODIMP
@@ -1853,6 +1601,10 @@ nsDOMWindowUtils::ScrollToVisual(float aOffsetX, float aOffsetY,
   NS_ENSURE_TRUE(presContext->IsRootContentDocumentCrossProcess(),
                  NS_ERROR_INVALID_ARG);
 
+  ScrollContainerFrame* sf =
+      presContext->PresShell()->GetRootScrollContainerFrame();
+  NS_ENSURE_TRUE(sf, NS_ERROR_NOT_AVAILABLE);
+
   FrameMetrics::ScrollOffsetUpdateType updateType;
   switch (aUpdateType) {
     case UPDATE_TYPE_RESTORE:
@@ -1865,13 +1617,13 @@ nsDOMWindowUtils::ScrollToVisual(float aOffsetX, float aOffsetY,
       return NS_ERROR_INVALID_ARG;
   }
 
-  ScrollMode scrollMode;
+  ScrollBehavior scrollBehavior;
   switch (aScrollMode) {
     case SCROLL_MODE_INSTANT:
-      scrollMode = ScrollMode::Instant;
+      scrollBehavior = ScrollBehavior::Instant;
       break;
     case SCROLL_MODE_SMOOTH:
-      scrollMode = ScrollMode::SmoothMsd;
+      scrollBehavior = ScrollBehavior::Smooth;
       break;
     default:
       return NS_ERROR_INVALID_ARG;
@@ -1879,7 +1631,7 @@ nsDOMWindowUtils::ScrollToVisual(float aOffsetX, float aOffsetY,
 
   presContext->PresShell()->ScrollToVisual(
       CSSPoint::ToAppUnits(CSSPoint(aOffsetX, aOffsetY)), updateType,
-      scrollMode);
+      sf->ScrollModeForScrollBehavior(scrollBehavior));
 
   return NS_OK;
 }
@@ -1995,8 +1747,8 @@ Result<mozilla::LayoutDeviceRect, nsresult> nsDOMWindowUtils::ConvertTo(
 NS_IMETHODIMP
 nsDOMWindowUtils::ToScreenRectInCSSUnits(float aX, float aY, float aWidth,
                                          float aHeight, DOMRect** aResult) {
-  LayoutDeviceRect devRect;
-  MOZ_TRY_VAR(devRect, ConvertTo(aX, aY, aWidth, aHeight, CoordsType::Screen));
+  LayoutDeviceRect devRect =
+      MOZ_TRY(ConvertTo(aX, aY, aWidth, aHeight, CoordsType::Screen));
 
   nsPresContext* presContext = GetPresContext();
   MOZ_ASSERT(presContext);
@@ -2019,9 +1771,8 @@ nsDOMWindowUtils::ToScreenRectInCSSUnits(float aX, float aY, float aWidth,
 NS_IMETHODIMP
 nsDOMWindowUtils::ToScreenRect(float aX, float aY, float aWidth, float aHeight,
                                DOMRect** aResult) {
-  LayoutDeviceRect devPixelsRect;
-  MOZ_TRY_VAR(devPixelsRect,
-              ConvertTo(aX, aY, aWidth, aHeight, CoordsType::Screen));
+  LayoutDeviceRect devPixelsRect =
+      MOZ_TRY(ConvertTo(aX, aY, aWidth, aHeight, CoordsType::Screen));
 
   ScreenRect rect = ViewAs<ScreenPixel>(
       devPixelsRect, PixelCastJustification::ScreenIsParentLayerForRoot);
@@ -2035,9 +1786,8 @@ nsDOMWindowUtils::ToScreenRect(float aX, float aY, float aWidth, float aHeight,
 NS_IMETHODIMP
 nsDOMWindowUtils::ToTopLevelWidgetRect(float aX, float aY, float aWidth,
                                        float aHeight, DOMRect** aResult) {
-  LayoutDeviceRect rect;
-  MOZ_TRY_VAR(rect,
-              ConvertTo(aX, aY, aWidth, aHeight, CoordsType::TopLevelWidget));
+  LayoutDeviceRect rect =
+      MOZ_TRY(ConvertTo(aX, aY, aWidth, aHeight, CoordsType::TopLevelWidget));
 
   RefPtr<DOMRect> outRect = new DOMRect(mWindow);
   outRect->SetRect(rect.x, rect.y, rect.width, rect.height);
@@ -2590,9 +2340,7 @@ nsDOMWindowUtils::SendQueryContentEvent(uint32_t aType, int64_t aOffset,
       break;
   }
 
-  nsEventStatus status;
-  nsresult rv = targetWidget->DispatchEvent(&queryEvent, status);
-  NS_ENSURE_SUCCESS(rv, rv);
+  targetWidget->DispatchEvent(&queryEvent);
 
   auto* result = new nsQueryContentEventResult(std::move(queryEvent));
   result->SetEventResult(widget);
@@ -2621,9 +2369,7 @@ nsDOMWindowUtils::SendSelectionSetEvent(uint32_t aOffset, uint32_t aLength,
   selectionEvent.mUseNativeLineBreak =
       !(aAdditionalFlags & SELECTION_SET_FLAG_USE_XP_LINE_BREAK);
 
-  nsEventStatus status;
-  nsresult rv = widget->DispatchEvent(&selectionEvent, status);
-  NS_ENSURE_SUCCESS(rv, rv);
+  widget->DispatchEvent(&selectionEvent);
 
   *aResult = selectionEvent.mSucceeded;
   return NS_OK;
@@ -2676,8 +2422,8 @@ nsDOMWindowUtils::SendContentCommandEvent(const nsAString& aType,
     event.mTransferable = aTransferable;
   }
 
-  nsEventStatus status;
-  return widget->DispatchEvent(&event, status);
+  widget->DispatchEvent(&event);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -3115,6 +2861,12 @@ nsDOMWindowUtils::DisableApzForElement(Element* aElement) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsDOMWindowUtils::IsApzDisabledForElement(Element* aElement, bool* aOutResult) {
+  *aOutResult = nsLayoutUtils::ShouldDisableApzForElement(aElement);
+  return NS_OK;
+}
+
 static nsTArray<ScrollContainerFrame*> CollectScrollableAncestors(
     nsIFrame* aStart) {
   nsTArray<ScrollContainerFrame*> result;
@@ -3142,6 +2894,8 @@ struct CaretInfo {
   CSSRect textFrameBoundsRelativeToRootScroller;
   /* the caret rect relative to the text frame */
   Maybe<nsRect> caretRectRelativeToTextFrame;
+  /* the primary frame or the text frame for the caret */
+  nsIFrame* frame;
 };
 
 static CaretInfo GetCaretContentAndBounds(
@@ -3150,7 +2904,7 @@ static CaretInfo GetCaretContentAndBounds(
   CSSRect bounds;
 
   if (!aRootScrollContainerFrame) {
-    return CaretInfo{content, bounds, Nothing()};
+    return CaretInfo{content, bounds, Nothing(), content->GetPrimaryFrame()};
   }
 
   Maybe<nsRect> caretRect;
@@ -3161,14 +2915,16 @@ static CaretInfo GetCaretContentAndBounds(
     RefPtr<nsCaret> caret = frame->PresShell()->GetCaret();
     if (caret && caret->IsVisible()) {
       nsRect rect;
-      if (nsIFrame* frame = caret->GetGeometry(&rect)) {
-        // This |frame| is a text frame and the returned rectangle represents
-        // the caret position relative to the text frame, so we need to pass the
-        // rectangle to ScrollFrameIntoView along with the text frame.
+      if (nsIFrame* textFrame = caret->GetGeometry(&rect)) {
+        // This |textFrame| is a text frame and the returned rectangle
+        // represents the caret position relative to the text frame, so we need
+        // to pass the rectangle to ScrollFrameIntoView along with the text
+        // frame.
         bounds = nsLayoutUtils::GetBoundingFrameRect(frame,
                                                      aRootScrollContainerFrame);
         content = frame->GetContent();
         caretRect = Some(rect);
+        frame = textFrame;
       }
     }
   }
@@ -3178,12 +2934,13 @@ static CaretInfo GetCaretContentAndBounds(
                                                    aRootScrollContainerFrame);
   }
 
-  return CaretInfo{content, bounds, caretRect};
+  return CaretInfo{content, bounds, caretRect, frame};
 }
 
 NS_IMETHODIMP
 nsDOMWindowUtils::ZoomToFocusedInput() {
   if (!Preferences::GetBool("apz.zoom-to-focused-input.enabled")) {
+    APZZTFI_LOG("disabled by pref");
     return NS_OK;
   }
 
@@ -3202,6 +2959,7 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
 
   const RefPtr<Element> element = nsFocusManager::GetFocusedElementStatic();
   if (!element) {
+    APZZTFI_LOG("no focused element");
     return NS_OK;
   }
 
@@ -3214,19 +2972,20 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
   ScrollContainerFrame* rootScrollContainerFrame =
       presShell->GetRootScrollContainerFrame();
   auto caretInfo = GetCaretContentAndBounds(rootScrollContainerFrame, element);
+  APZZTFI_LOG("calculated rect %s (caret rect %s)",
+              ToString(caretInfo.textFrameBoundsRelativeToRootScroller).c_str(),
+              ToString(caretInfo.caretRectRelativeToTextFrame).c_str());
 
-  // Hold a strong reference of the target content.
-  RefPtr<nsIContent> refContent = caretInfo.textContent;
   // The content may be inside a scrollable subframe inside a non-scrollable
   // root content document. In this scenario, we want to ensure that the
   // main-thread side knows to scroll the content into view before we get
   // the bounding content rect and ask APZ to zoom in to the target content.
-  if (nsIFrame* frame = refContent->GetPrimaryFrame()) {
+  if (caretInfo.frame) {
     presShell->ScrollFrameIntoView(
-        frame, caretInfo.caretRectRelativeToTextFrame,
+        caretInfo.frame, caretInfo.caretRectRelativeToTextFrame,
         ScrollAxis(WhereToScroll::Center, WhenToScroll::IfNotVisible),
         ScrollAxis(WhereToScroll::Center, WhenToScroll::IfNotVisible),
-        ScrollFlags::ScrollOverflowHidden);
+        ScrollFlags::ForZoomToFocusedInput);
   }
 
   RefPtr<Document> document = presShell->GetDocument();
@@ -3271,6 +3030,9 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
       break;
     }
   }
+  APZZTFI_LOG("zooming to rect %s with flags %d, waitForRefresh=%d",
+              ToString(caretInfo.textFrameBoundsRelativeToRootScroller).c_str(),
+              flags, waitForRefresh);
   if (waitForRefresh) {
     waitForRefresh = false;
     if (nsPresContext* presContext = presShell->GetPresContext()) {
@@ -3304,16 +3066,15 @@ nsDOMWindowUtils::ComputeAnimationDistance(Element* aElement,
                                            double* aResult) {
   NS_ENSURE_ARG_POINTER(aElement);
 
-  nsCSSPropertyID propertyID =
-      nsCSSProps::LookupProperty(NS_ConvertUTF16toUTF8(aProperty));
-  if (propertyID == eCSSProperty_UNKNOWN ||
-      nsCSSProps::IsShorthand(propertyID)) {
+  NS_ConvertUTF16toUTF8 prop(aProperty);
+
+  NonCustomCSSPropertyId propertyId = nsCSSProps::LookupProperty(prop);
+  if (propertyId == eCSSProperty_UNKNOWN ||
+      nsCSSProps::IsShorthand(propertyId)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  AnimatedPropertyID property = propertyID == eCSSPropertyExtra_variable
-                                    ? AnimatedPropertyID(NS_Atomize(aProperty))
-                                    : AnimatedPropertyID(propertyID);
+  auto property = CSSPropertyId::FromIdOrCustomProperty(propertyId, prop);
 
   AnimationValue v1 = AnimationValue::FromString(
       property, NS_ConvertUTF16toUTF8(aValue1), aElement);
@@ -3337,17 +3098,15 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsCSSPropertyID propertyID =
-      nsCSSProps::LookupProperty(NS_ConvertUTF16toUTF8(aProperty));
-  if (propertyID == eCSSProperty_UNKNOWN ||
-      nsCSSProps::IsShorthand(propertyID)) {
+  NS_ConvertUTF16toUTF8 prop(aProperty);
+
+  NonCustomCSSPropertyId propertyId = nsCSSProps::LookupProperty(prop);
+  if (propertyId == eCSSProperty_UNKNOWN ||
+      nsCSSProps::IsShorthand(propertyId)) {
     return NS_ERROR_INVALID_ARG;
   }
-  AnimatedPropertyID property =
-      propertyID == eCSSPropertyExtra_variable
-          ? AnimatedPropertyID(
-                NS_Atomize(Substring(aProperty, 2, aProperty.Length() - 2)))
-          : AnimatedPropertyID(propertyID);
+
+  auto property = CSSPropertyId::FromIdOrCustomProperty(propertyId, prop);
 
   switch (aFlushType) {
     case FLUSH_NONE:
@@ -3367,8 +3126,7 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
     return NS_ERROR_FAILURE;
   }
 
-  Maybe<PseudoStyleRequest> pseudo =
-      nsCSSPseudoElements::ParsePseudoElement(aPseudoElement);
+  Maybe<PseudoStyleRequest> pseudo = PseudoStyleRequest::Parse(aPseudoElement);
   if (!pseudo) {
     return NS_ERROR_FAILURE;
   }
@@ -3476,6 +3234,24 @@ nsDOMWindowUtils::CheckAndClearDisplayListState(Element* aElement,
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::CheckAndClearWRDidRasterize(bool* aResult) {
+  *aResult = false;
+
+  nsIWidget* widget = GetWidget();
+  if (!widget) {
+    return NS_OK;
+  }
+
+  CompositorBridgeChild* cbc = GetCompositorBridge();
+  if (!cbc) {
+    return NS_OK;
+  }
+
+  cbc->SendCheckAndClearWRDidRasterize(widget->GetLayersId(), aResult);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::EnableDialogs() {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
@@ -3567,8 +3343,8 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
-  quota::PrincipalMetadata principalMetadata;
-  MOZ_TRY_VAR(principalMetadata, quota::GetInfoFromWindow(window));
+  quota::PrincipalMetadata principalMetadata =
+      MOZ_TRY(quota::GetInfoFromWindow(window));
 
   RefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
   if (mgr) {
@@ -3839,9 +3615,8 @@ nsDOMWindowUtils::SelectAtPoint(float aX, float aY, uint32_t aSelectBehavior,
   nsPoint relPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(
       widget, pt, RelativeTo{targetFrame});
 
-  const RefPtr<nsPresContext> pinnedPresContext{GetPresContext()};
-  nsresult rv = targetFrame->SelectByTypeAtPoint(
-      pinnedPresContext, relPoint, amount, amount, nsIFrame::SELECT_ACCUMULATE);
+  nsresult rv = targetFrame->SelectByTypeAtPoint(relPoint, amount, amount,
+                                                 nsIFrame::SELECT_ACCUMULATE);
   *_retval = !NS_FAILED(rv);
   return NS_OK;
 }
@@ -3895,8 +3670,8 @@ nsDOMWindowUtils::AddSheet(nsIPreloadedStyleSheet* aSheet,
   nsCOMPtr<Document> doc = GetDocument();
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
-  StyleSheet* sheet = nullptr;
-  MOZ_TRY_VAR(sheet, static_cast<PreloadedStyleSheet*>(aSheet)->GetSheet());
+  StyleSheet* sheet =
+      MOZ_TRY(static_cast<PreloadedStyleSheet*>(aSheet)->GetSheet());
 
   Document::additionalSheetType type = convertSheetType(aSheetType);
   return doc->AddAdditionalStyleSheet(type, sheet);
@@ -3975,7 +3750,7 @@ nsDOMWindowUtils::GetIsParentWindowMainWidgetVisible(bool* aIsVisible) {
     docShell->GetTreeOwner(getter_AddRefs(parentTreeOwner));
     nsCOMPtr<nsIBaseWindow> parentWindow(do_GetInterface(parentTreeOwner));
     if (parentWindow) {
-      parentWindow->GetMainWidget(getter_AddRefs(parentWidget));
+      parentWidget = parentWindow->GetMainWidget();
     }
   }
   if (!parentWidget) {
@@ -4240,9 +4015,7 @@ nsDOMWindowUtils::SetCustomTitlebar(bool aCustomTitlebar) {
   if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow)) {
     if (nsCOMPtr<nsIBaseWindow> baseWindow =
             do_QueryInterface(window->GetDocShell())) {
-      nsCOMPtr<nsIWidget> widget;
-      baseWindow->GetMainWidget(getter_AddRefs(widget));
-      if (widget) {
+      if (nsCOMPtr<nsIWidget> widget = baseWindow->GetMainWidget()) {
         widget->SetCustomTitlebar(aCustomTitlebar);
       }
     }
@@ -4256,9 +4029,7 @@ nsDOMWindowUtils::SetResizeMargin(int32_t aResizeMargin) {
   if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow)) {
     if (nsCOMPtr<nsIBaseWindow> baseWindow =
             do_QueryInterface(window->GetDocShell())) {
-      nsCOMPtr<nsIWidget> widget;
-      baseWindow->GetMainWidget(getter_AddRefs(widget));
-      if (widget) {
+      if (nsCOMPtr<nsIWidget> widget = baseWindow->GetMainWidget()) {
         CSSToLayoutDeviceScale scaleFactor = widget->GetDefaultScale();
         widget->SetResizeMargin(
             (CSSCoord(float(aResizeMargin)) * scaleFactor).Rounded());
@@ -4498,41 +4269,6 @@ nsDOMWindowUtils::EnsureDirtyRootFrame() {
 
   presShell->FrameNeedsReflow(
       frame, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
-  return NS_OK;
-}
-
-NS_INTERFACE_MAP_BEGIN(nsTranslationNodeList)
-  NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY(nsITranslationNodeList)
-NS_INTERFACE_MAP_END
-
-NS_IMPL_ADDREF(nsTranslationNodeList)
-NS_IMPL_RELEASE(nsTranslationNodeList)
-
-NS_IMETHODIMP
-nsTranslationNodeList::Item(uint32_t aIndex, nsINode** aRetVal) {
-  NS_ENSURE_ARG_POINTER(aRetVal);
-  NS_IF_ADDREF(*aRetVal = mNodes.SafeElementAt(aIndex));
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsTranslationNodeList::IsTranslationRootAtIndex(uint32_t aIndex,
-                                                bool* aRetVal) {
-  NS_ENSURE_ARG_POINTER(aRetVal);
-  if (aIndex >= mLength) {
-    *aRetVal = false;
-    return NS_OK;
-  }
-
-  *aRetVal = mNodeIsRoot.ElementAt(aIndex);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsTranslationNodeList::GetLength(uint32_t* aRetVal) {
-  NS_ENSURE_ARG_POINTER(aRetVal);
-  *aRetVal = mLength;
   return NS_OK;
 }
 
@@ -4991,13 +4727,17 @@ nsDOMWindowUtils::SendMozMouseHitTestEvent(float aX, float aY,
   LayoutDeviceIntPoint refPoint = nsContentUtils::ToWidgetPoint(
       CSSPoint(aX, aY), offset, presShell->GetPresContext());
 
-  return nsContentUtils::SendMouseEvent(
-      presShell, widget, u"MozMouseHittest"_ns, refPoint, 0 /* aButton */,
-      MOUSE_BUTTONS_NOT_SPECIFIED /* aButtons */, 0 /* aClickCount */,
-      0 /* aModifiers */, true /* aIgnoreRootScrollFrame */, 0 /* aPressure */,
-      0 /* aInputSourceArg */, DEFAULT_MOUSE_POINTER_ID /* aIdentifier */,
-      false /* aToWindow */, nullptr /* aPreventDefault */,
-      true /* aIsDOMEventSynthesized */, true /* aIsWidgetEventSynthesized */);
+  SynthesizeMouseEventOptions options;
+  options.mIgnoreRootScrollFrame = true;
+  options.mIsDOMEventSynthesized = true;
+  options.mIsWidgetEventSynthesized = true;
+  options.mIsAsyncEnabled = false;
+
+  auto result = nsContentUtils::SynthesizeMouseEvent(
+      presShell, widget, u"MozMouseHittest"_ns, refPoint,
+      SynthesizeMouseEventData{}, options,
+      Optional<OwningNonNull<VoidFunction>>{});
+  return result.isOk() ? NS_OK : result.unwrapErr();
 }
 
 NS_IMETHODIMP

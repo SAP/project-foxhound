@@ -71,15 +71,6 @@ extern mozilla::LazyLogModule gHttpLog;
 class OpaqueResponseBlocker;
 class PreferredAlternativeDataTypeParams;
 
-enum CacheDisposition : uint8_t {
-  kCacheUnresolved = 0,
-  kCacheHit = 1,
-  kCacheHitViaReval = 2,
-  kCacheMissedViaReval = 3,
-  kCacheMissed = 4,
-  kCacheUnknown = 5
-};
-
 // These need to be kept in sync with
 // "browser.opaqueResponseBlocking.filterFetchResponse"
 enum class OpaqueResponseFilterFetch { Never, AllowedByORB, BlockedByORB, All };
@@ -128,7 +119,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
                                       nsProxyInfo* aProxyInfo,
                                       uint32_t aProxyResolveFlags,
                                       nsIURI* aProxyURI, uint64_t aChannelId,
-                                      ExtContentPolicyType aContentPolicyType,
                                       nsILoadInfo* aLoadInfo);
 
   // nsIRequest
@@ -179,6 +169,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetApplyConversion(bool* value) override;
   NS_IMETHOD SetApplyConversion(bool value) override;
   NS_IMETHOD GetContentEncodings(nsIUTF8StringEnumerator** aEncodings) override;
+  // Note: Doesn't modify the Content-Encoding
   NS_IMETHOD DoApplyContentConversions(nsIStreamListener* aNextListener,
                                        nsIStreamListener** aNewNextListener,
                                        nsISupports* aCtxt) override;
@@ -220,7 +211,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetRedirectionLimit(uint32_t value) override;
   NS_IMETHOD IsNoStoreResponse(bool* value) override;
   NS_IMETHOD IsNoCacheResponse(bool* value) override;
-  NS_IMETHOD IsPrivateResponse(bool* value) override;
   NS_IMETHOD GetResponseStatus(uint32_t* aValue) override;
   NS_IMETHOD GetResponseStatusText(nsACString& aValue) override;
   NS_IMETHOD GetRequestSucceeded(bool* aValue) override;
@@ -239,6 +229,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetRequestContextID(uint64_t aRCID) override;
   NS_IMETHOD GetIsMainDocumentChannel(bool* aValue) override;
   NS_IMETHOD SetIsMainDocumentChannel(bool aValue) override;
+  NS_IMETHOD GetIsUserAgentHeaderOutdated(bool* aValue) override;
+  NS_IMETHOD SetIsUserAgentHeaderOutdated(bool aValue) override;
   NS_IMETHOD GetProtocolVersion(nsACString& aProtocolVersion) override;
   NS_IMETHOD GetChannelId(uint64_t* aChannelId) override;
   NS_IMETHOD SetChannelId(uint64_t aChannelId) override;
@@ -515,6 +507,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // request method should be rewritten to GET.
   static bool ShouldRewriteRedirectToGET(
       uint32_t httpStatus, nsHttpRequestHead::ParsedMethodType method);
+
+  [[nodiscard]] nsresult DoApplyContentConversionsInternal(
+      nsIStreamListener* aNextListener, nsIStreamListener** aNewNextListener,
+      bool aRemoveEncodings, nsISupports* aCtxt);
 
   // Like nsIEncodedChannel::DoApplyConversions except context is set to
   // mListenerContext.
@@ -995,7 +991,11 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
     // Indicates whether the user-agent header has been modifed since the channel
     // was created.
-    (uint32_t, IsUserAgentHeaderModified, 1)
+    (uint32_t, IsUserAgentHeaderModified, 1),
+
+    // Indicates whether the user-agent header is outdated and can not be used as
+    // a user agent value.
+    (uint32_t, IsUserAgentHeaderOutdated, 1)
   ))
   // clang-format on
 

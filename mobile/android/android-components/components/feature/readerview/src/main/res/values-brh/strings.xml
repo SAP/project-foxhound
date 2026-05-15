@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  ~ This Source Code Form is subject to the terms of the Mozilla Public
+  ~  License, v. 2.0. If a copy of the MPL was not distributed with this
+  ~  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources>
+  <!-- Accessible description for increasing the font size -->
+  <string name="mozac_feature_readerview_font_size_increase_desc">لوز کچ اے ودینگ</string>
+  <!-- Color option for the background -->
+  <string name="mozac_feature_readerview_dark">تہار</string>
+  <!-- Color option for the background -->
+  <string name="mozac_feature_readerview_sephia">بور</string>
+  <!-- Color option for the background -->
+  <string name="mozac_feature_readerview_light">رژنا</string>
+</resources>

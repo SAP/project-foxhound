@@ -62,8 +62,9 @@ class AndroidSharedBlitGL final {
 
     // Setting overide also makes conext and surface current.
     sContext->SetEGLSurfaceOverride(mTargetSurface);
-    DebugOnly<bool> rv = sContext->BlitHelper()->Blit(surfaceTexture, imageSize,
-                                                      OriginPos::TopLeft);
+    DebugOnly<bool> rv = sContext->BlitHelper()->Blit(
+        surfaceTexture, imageSize, gfx::IntRect(gfx::IntPoint(0, 0), imageSize),
+        OriginPos::TopLeft);
     MOZ_ASSERT(rv);
     sContext->SwapBuffers();
     // This method is called through binder IPC and could run on any thread in

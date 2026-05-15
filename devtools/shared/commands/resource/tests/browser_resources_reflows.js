@@ -54,13 +54,11 @@ add_task(async function () {
     [],
     async () => {
       const el = content.document.createElement("iframe");
-      const onIframeLoaded = new Promise(resolve =>
-        el.addEventListener("load", resolve, { once: true })
-      );
-      content.document.body.appendChild(el);
+      const onLoaded = ContentTaskUtils.waitForEvent(el, "load");
       el.src =
         "https://example.org/document-builder.sjs?html=<h2>remote iframe</h2>";
-      await onIframeLoaded;
+      content.document.body.appendChild(el);
+      await onLoaded;
       return el.browsingContext;
     }
   );
@@ -78,12 +76,10 @@ add_task(async function () {
   });
 
   await waitFor(() => resources.length === 4);
-  if (isFissionEnabled()) {
-    ok(
-      resources.at(-1).targetFront.url.includes("example.org"),
-      "The reflow resource is linked to the remote target"
-    );
-  }
+  ok(
+    resources.at(-1).targetFront.url.includes("example.org"),
+    "The reflow resource is linked to the remote target"
+  );
   checkReflowResource(resources.at(-1));
 
   targetCommand.destroy();

@@ -9,7 +9,7 @@
 requestLongerTimeout(5);
 
 ChromeUtils.defineESModuleGetters(this, {
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 let tab;
@@ -28,7 +28,7 @@ add_setup(async function () {
 async function checkSearchString(searchString, isIpv6) {
   info("Search for term:", searchString);
   let [searchUrl] = UrlbarUtils.getSearchQueryUrl(
-    Services.search.defaultEngine,
+    SearchService.defaultEngine,
     searchString
   );
   let browserLoadedPromise = BrowserTestUtils.browserLoaded(

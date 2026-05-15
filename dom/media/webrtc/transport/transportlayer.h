@@ -6,16 +6,14 @@
 
 // Original author: ekr@rtfm.com
 
-#ifndef transportlayer_h__
-#define transportlayer_h__
-
-#include "sigslot.h"
-
-#include "nsCOMPtr.h"
-#include "nsIEventTarget.h"
+#ifndef transportlayer_h_
+#define transportlayer_h_
 
 #include "m_cpp_utils.h"
 #include "mediapacket.h"
+#include "nsCOMPtr.h"
+#include "nsIEventTarget.h"
+#include "sigslot.h"
 
 namespace mozilla {
 

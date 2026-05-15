@@ -4,6 +4,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod aead;
 #[cfg(feature = "disable-encryption")]
 pub mod aead_null;
@@ -37,6 +39,7 @@ pub use self::aead::RealAead;
 #[cfg(feature = "disable-encryption")]
 pub use self::aead_null::AeadNull as Aead;
 pub use self::{
+    aead::Aead as AeadTrait,
     agent::{
         Agent, AllowZeroRtt, Client, HandshakeState, Record, RecordList, ResumptionToken,
         SecretAgent, SecretAgentInfo, SecretAgentPreInfo, Server, ZeroRttCheckResult,
@@ -105,7 +108,7 @@ fn version_check() -> Res<()> {
 fn enable_ssl_trace() -> Res<()> {
     let opt = Opt::Locking.as_int();
     let mut v: ::std::os::raw::c_int = 0;
-    secstatus_to_res(unsafe { ssl::SSL_OptionGetDefault(opt, &mut v) })
+    secstatus_to_res(unsafe { ssl::SSL_OptionGetDefault(opt, &raw mut v) })
 }
 
 fn init_once(db: Option<PathBuf>) -> Res<NssLoaded> {

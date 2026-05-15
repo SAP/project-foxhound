@@ -1,0 +1,119 @@
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_recordable_utils.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_recordable_utils.h
+index 0651abc2b9f8..94be2933aab8 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_recordable_utils.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_recordable_utils.h
+@@ -6,7 +6,6 @@
+ #include <memory>
+
+ #include "opentelemetry/nostd/span.h"
+-#include "opentelemetry/sdk/logs/recordable.h"
+ #include "opentelemetry/sdk/trace/recordable.h"
+ #include "opentelemetry/version.h"
+
+@@ -50,10 +49,6 @@ public:
+   static void PopulateRequest(
+       const nostd::span<std::unique_ptr<opentelemetry::sdk::trace::Recordable>> &spans,
+       proto::collector::trace::v1::ExportTraceServiceRequest *request) noexcept;
+-
+-  static void PopulateRequest(
+-      const nostd::span<std::unique_ptr<opentelemetry::sdk::logs::Recordable>> &logs,
+-      proto::collector::logs::v1::ExportLogsServiceRequest *request) noexcept;
+ };
+ }  // namespace otlp
+ }  // namespace exporter
+diff --git a/exporters/otlp/src/otlp_recordable_utils.cc b/exporters/otlp/src/otlp_recordable_utils.cc
+index 8901fbc8ef5e..876317c8bb33 100644
+--- a/exporters/otlp/src/otlp_recordable_utils.cc
++++ b/exporters/otlp/src/otlp_recordable_utils.cc
+@@ -8,23 +8,19 @@
+ #include <utility>
+ #include <vector>
+
+-#include "opentelemetry/exporters/otlp/otlp_log_recordable.h"
+ #include "opentelemetry/exporters/otlp/otlp_populate_attribute_utils.h"
+ #include "opentelemetry/exporters/otlp/otlp_recordable.h"
+ #include "opentelemetry/exporters/otlp/otlp_recordable_utils.h"
+ #include "opentelemetry/nostd/span.h"
+ #include "opentelemetry/sdk/instrumentationscope/instrumentation_scope.h"
+-#include "opentelemetry/sdk/logs/recordable.h"
+ #include "opentelemetry/sdk/resource/resource.h"
+ #include "opentelemetry/sdk/trace/recordable.h"
+ #include "opentelemetry/version.h"
+
+ // clang-format off
+ #include "opentelemetry/exporters/otlp/protobuf_include_prefix.h"  // IWYU pragma: keep
+-#include "opentelemetry/proto/collector/logs/v1/logs_service.pb.h"
+ #include "opentelemetry/proto/collector/trace/v1/trace_service.pb.h"
+ #include "opentelemetry/proto/common/v1/common.pb.h"
+-#include "opentelemetry/proto/logs/v1/logs.pb.h"
+ #include "opentelemetry/proto/resource/v1/resource.pb.h"
+ #include "opentelemetry/proto/trace/v1/trace.pb.h"
+ #include "opentelemetry/exporters/otlp/protobuf_include_suffix.h"  // IWYU pragma: keep
+@@ -120,67 +116,6 @@ void OtlpRecordableUtils::PopulateRequest(
+     }
+   }
+ }
+-
+-void OtlpRecordableUtils::PopulateRequest(
+-    const opentelemetry::nostd::span<std::unique_ptr<opentelemetry::sdk::logs::Recordable>> &logs,
+-    proto::collector::logs::v1::ExportLogsServiceRequest *request) noexcept
+-{
+-  if (nullptr == request)
+-  {
+-    return;
+-  }
+-
+-  using logs_index_by_instrumentation_type =
+-      std::unordered_map<const opentelemetry::sdk::instrumentationscope::InstrumentationScope *,
+-                         std::list<std::unique_ptr<OtlpLogRecordable>>,
+-                         InstrumentationScopePointerHasher, InstrumentationScopePointerEqual>;
+-  std::unordered_map<const opentelemetry::sdk::resource::Resource *,
+-                     logs_index_by_instrumentation_type>
+-      logs_index_by_resource;
+-
+-  for (auto &recordable : logs)
+-  {
+-    auto rec =
+-        std::unique_ptr<OtlpLogRecordable>(static_cast<OtlpLogRecordable *>(recordable.release()));
+-    auto instrumentation = &rec->GetInstrumentationScope();
+-    auto resource        = &rec->GetResource();
+-
+-    logs_index_by_resource[resource][instrumentation].emplace_back(std::move(rec));
+-  }
+-
+-  for (auto &input_resource_log : logs_index_by_resource)
+-  {
+-    auto output_resource_log = request->add_resource_logs();
+-    for (auto &input_scope_log : input_resource_log.second)
+-    {
+-      auto output_scope_log = output_resource_log->add_scope_logs();
+-      for (auto &input_log_record : input_scope_log.second)
+-      {
+-        if (!output_resource_log->has_resource())
+-        {
+-          OtlpPopulateAttributeUtils::PopulateAttribute(output_resource_log->mutable_resource(),
+-                                                        *input_resource_log.first);
+-          output_resource_log->set_schema_url(input_resource_log.first->GetSchemaURL());
+-        }
+-
+-        if (!output_scope_log->has_scope())
+-        {
+-          auto proto_scope = output_scope_log->mutable_scope();
+-          if (proto_scope != nullptr)
+-          {
+-            proto_scope->set_name(input_scope_log.first->GetName());
+-            proto_scope->set_version(input_scope_log.first->GetVersion());
+-
+-            OtlpPopulateAttributeUtils::PopulateAttribute(proto_scope, *input_scope_log.first);
+-          }
+-          output_scope_log->set_schema_url(input_scope_log.first->GetSchemaURL());
+-        }
+-
+-        *output_scope_log->add_log_records() = std::move(input_log_record->log_record());
+-      }
+-    }
+-  }
+-}
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE

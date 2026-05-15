@@ -6,9 +6,8 @@
 
 #include "mozilla/dom/GeolocationCoordinates.h"
 
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/dom/GeolocationPosition.h"
 #include "mozilla/dom/GeolocationCoordinatesBinding.h"
+#include "mozilla/dom/GeolocationPosition.h"
 
 namespace mozilla::dom {
 

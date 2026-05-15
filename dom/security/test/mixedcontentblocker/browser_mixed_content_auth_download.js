@@ -5,7 +5,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
-  DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
+  DownloadsCommon:
+    "moz-src:///browser/components/downloads/DownloadsCommon.sys.mjs",
 });
 
 const { PromptTestUtils } = ChromeUtils.importESModule(
@@ -35,6 +36,7 @@ let SECURE_BASE_URL =
  * Waits until a download is triggered.
  * It waits until a prompt is shown,
  * saves and then accepts the dialog.
+ *
  * @returns {Promise} Resolved once done.
  */
 

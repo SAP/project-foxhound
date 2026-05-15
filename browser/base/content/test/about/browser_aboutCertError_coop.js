@@ -29,6 +29,7 @@ function waitForNewTabAndErrorPage() {
 }
 
 add_task(async function test_coopError() {
+  await setSecurityCertErrorsFeltPrivacyToFalse();
   let iframeTab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     `${AUTH_ROUTE}?error=coop`
@@ -69,4 +70,56 @@ add_task(async function test_coopError() {
 
   BrowserTestUtils.removeTab(iframeTab);
   BrowserTestUtils.removeTab(popUpTab);
+});
+
+add_task(async function test_coopError_feltPrivacyToTrue() {
+  await setSecurityCertErrorsFeltPrivacyToTrue();
+  let iframeTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    `${AUTH_ROUTE}?error=coop`
+  );
+  let popupTabLoaded = waitForNewTabAndErrorPage();
+
+  await SpecialPowers.spawn(iframeTab.linkedBrowser, [], async () => {
+    let button = content.document
+      .querySelector("iframe")
+      .contentDocument.querySelector("#openPopupButton");
+    if (!button) {
+      Assert.ok(false, "Popup button not found!");
+    }
+    EventUtils.synthesizeMouseAtCenter(button, {}, content);
+  });
+
+  let popUpTab = await popupTabLoaded;
+  let popUpBrowser = popUpTab.linkedBrowser;
+
+  await SpecialPowers.spawn(popUpBrowser, [], async function () {
+    const doc = content.document;
+
+    const netErrorCard = doc.querySelector("net-error-card").wrappedJSObject;
+    await netErrorCard.getUpdateComplete();
+
+    Assert.strictEqual(
+      netErrorCard.netErrorTitleText.dataset.l10nId,
+      "fp-certerror-body-title",
+      "Correct error link title (CORP) is set"
+    );
+
+    await ContentTaskUtils.waitForCondition(() => {
+      return (
+        netErrorCard.netErrorLearnMoreLink &&
+        netErrorCard.netErrorLearnMoreLink.textContent != "" &&
+        netErrorCard.netErrorLearnMoreLink.tagName.toLowerCase() === "a"
+      );
+    }, "learn more link is visible and is a link");
+
+    Assert.strictEqual(
+      netErrorCard.netErrorLearnMoreLink.dataset.l10nId,
+      "certerror-coop-learn-more",
+      "Learn more element is a link and has COOP text"
+    );
+  });
+  BrowserTestUtils.removeTab(iframeTab);
+  BrowserTestUtils.removeTab(popUpTab);
+  await SpecialPowers.popPrefEnv();
 });

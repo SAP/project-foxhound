@@ -126,8 +126,8 @@ support-files = [
   "abort_on_reload.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_add_put.html"]
@@ -142,8 +142,8 @@ skip-if = [
 
 ["test_bfcache.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_blob_file_backed.html"]
@@ -154,15 +154,15 @@ skip-if = [
 
 ["test_blob_worker_xhr_post.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
   "socketprocess_networking", # Bug 1827221: test is toggled off here rather than in private.ini
 ]
 
 ["test_blob_worker_xhr_post_multifile.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
   "socketprocess_networking", # Bug 1827221: test is toggled off here rather than in private.ini
 ]
 
@@ -207,7 +207,10 @@ skip-if = [
 ["test_error_events_abort_transactions.html"]
 
 ["test_event_listener_leaks.html"]
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt"] # Bug 1930730
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730
+]
 
 ["test_event_propagation.html"]
 
@@ -221,7 +224,7 @@ skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt
 
 ["test_file_delete.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
 ]
 
 ["test_file_filelist.html"]
@@ -234,26 +237,26 @@ skip-if = [
 
 ["test_file_replace.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
 ]
 
 ["test_file_resurrection_delete.html"]
 skip-if = [
   "os == 'android'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
 ]
 
 ["test_file_resurrection_transaction_abort.html"]
 skip-if = [
   "os == 'android'",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
 ]
 
 ["test_file_sharing.html"]
 
 ["test_file_transaction_abort.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
 ]
 
 ["test_getAll.html"]
@@ -285,7 +288,9 @@ skip-if = [
 ["test_invalid_version.html"]
 
 ["test_invalidate.html"]
-skip-if = ["true"] # disabled for the moment
+skip-if = [
+  "true", # disabled for the moment
+]
 
 ["test_key_requirements.html"]
 
@@ -303,8 +308,7 @@ skip-if = ["true"] # disabled for the moment
 
 ["test_names_sorted.html"]
 skip-if = [
-  "xorigin && opt", # Hangs
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1602927
+  "opt && xorigin", # Hangs
 ]
 
 ["test_objectCursors.html"]
@@ -346,7 +350,6 @@ skip-if = [
 ["test_remove_objectStore.html"]
 
 ["test_rename_index.html"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64'"] #Bug 1601601
 
 ["test_rename_index_errors.html"]
 
@@ -358,7 +361,7 @@ skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64'"] #B
 
 ["test_sandbox.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
 ]
 
 ["test_setVersion.html"]
@@ -384,8 +387,8 @@ support-files = [
   "third_party_iframe2.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_traffic_jam.html"]
@@ -409,20 +412,20 @@ skip-if = [
 ["test_upgrade_add_index.html"]
 scheme = "https"
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt",
-  "os == 'linux' && os_version == '24.04' && processor == 'x86_64' && display == 'x11' && opt",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt",
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && opt",
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
   "os == 'win'", # Bug 1637715
 ]
 
 ["test_view_put_get_values.html"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1930730 (secondary)
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1930730 (secondary)
 ]
 
 ["test_wasm_put_get_values.html"]
 
 ["test_writer_starvation.html"]
-skip-if = ["true"] #Bug 595368
+skip-if = [
+  "true", # Bug 595368
+]

@@ -27,9 +27,9 @@
 
 #include "jit/riscv64/disasm/Disasm-riscv64.h"
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <string_view>
 
 #include "jit/riscv64/Assembler-riscv64.h"
 
@@ -843,7 +843,7 @@ void Decoder::PrintAcquireRelease(Instruction* instr) {
 
 void Decoder::PrintCSRReg(Instruction* instr) {
   int32_t csr_reg = instr->CsrValue();
-  std::string s;
+  std::string_view s;
   switch (csr_reg) {
     case csr_fflags:  // Floating-Point Accrued Exceptions (RW)
       s = "csr_fflags";
@@ -875,12 +875,12 @@ void Decoder::PrintCSRReg(Instruction* instr) {
     default:
       MOZ_CRASH();
   }
-  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%s", s.c_str());
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%s", s.data());
 }
 
 void Decoder::PrintRoundingMode(Instruction* instr) {
   int frm = instr->RoundMode();
-  std::string s;
+  std::string_view s;
   switch (frm) {
     case RNE:
       s = "RNE";
@@ -903,25 +903,26 @@ void Decoder::PrintRoundingMode(Instruction* instr) {
     default:
       MOZ_CRASH();
   }
-  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%s", s.c_str());
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%s", s.data());
 }
 
 void Decoder::PrintMemoryOrder(Instruction* instr, bool is_pred) {
   int memOrder = instr->MemoryOrder(is_pred);
-  std::string s;
+  char s[5] = {};
+  char* ps = s;
   if ((memOrder & PSI) == PSI) {
-    s += "i";
+    *ps++ = 'i';
   }
   if ((memOrder & PSO) == PSO) {
-    s += "o";
+    *ps++ = 'o';
   }
   if ((memOrder & PSR) == PSR) {
-    s += "r";
+    *ps++ = 'r';
   }
   if ((memOrder & PSW) == PSW) {
-    s += "w";
+    *ps++ = 'w';
   }
-  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%s", s.c_str());
+  out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%s", s);
 }
 
 // Printing of instruction name.
@@ -971,9 +972,25 @@ void Decoder::DecodeRType(Instruction* instr) {
     case RO_AND:
       Format(instr, "and       'rd, 'rs1, 'rs2");
       break;
+    case RO_ANDN:
+      Format(instr, "andn      'rd, 'rs1, 'rs2");
+      break;
+    case RO_ORN:
+      Format(instr, "orn       'rd, 'rs1, 'rs2");
+      break;
+    case RO_XNOR:
+      Format(instr, "xnor      'rd, 'rs1, 'rs2");
+      break;
 #ifdef JS_CODEGEN_RISCV64
     case RO_ADDW:
       Format(instr, "addw      'rd, 'rs1, 'rs2");
+      break;
+    case RO_ADDUW:
+      if (instr->Rs2Value() == zero_reg.code()) {
+        Format(instr, "zext.w    'rd, 'rs1");
+      } else {
+        Format(instr, "add.uw    'rd, 'rs1, 'rs2");
+      }
       break;
     case RO_SUBW:
       if (instr->Rs1Value() == zero.code())
@@ -1032,7 +1049,64 @@ void Decoder::DecodeRType(Instruction* instr) {
     case RO_REMUW:
       Format(instr, "remuw     'rd, 'rs1, 'rs2");
       break;
+    case RO_SH1ADDUW:
+      Format(instr, "sh1add.uw 'rd, 'rs1, 'rs2");
+      break;
+    case RO_SH2ADDUW:
+      Format(instr, "sh2add.uw 'rd, 'rs1, 'rs2");
+      break;
+    case RO_SH3ADDUW:
+      Format(instr, "sh3add.uw 'rd, 'rs1, 'rs2");
+      break;
+    case RO_ROLW:
+      Format(instr, "rolw     'rd, 'rs1, 'rs2");
+      break;
+    case RO_RORW:
+      Format(instr, "rorw     'rd, 'rs1, 'rs2");
+      break;
 #endif /*JS_CODEGEN_RISCV64*/
+    case RO_SH1ADD:
+      Format(instr, "sh1add    'rd, 'rs1, 'rs2");
+      break;
+    case RO_SH2ADD:
+      Format(instr, "sh2add    'rd, 'rs1, 'rs2");
+      break;
+    case RO_SH3ADD:
+      Format(instr, "sh3add    'rd, 'rs1, 'rs2");
+      break;
+    case RO_MAX:
+      Format(instr, "max       'rd, 'rs1, 'rs2");
+      break;
+    case RO_MAXU:
+      Format(instr, "maxu      'rd, 'rs1, 'rs2");
+      break;
+    case RO_MIN:
+      Format(instr, "min       'rd, 'rs1, 'rs2");
+      break;
+    case RO_MINU:
+      Format(instr, "minu      'rd, 'rs1, 'rs2");
+      break;
+    case RO_ZEXTH:
+      Format(instr, "zext.h    'rd, 'rs1");
+      break;
+    case RO_ROL:
+      Format(instr, "rol      'rd, 'rs1, 'rs2");
+      break;
+    case RO_ROR:
+      Format(instr, "ror      'rd, 'rs1, 'rs2");
+      break;
+    case RO_BCLR:
+      Format(instr, "bclr      'rd, 'rs1, 'rs2");
+      break;
+    case RO_BEXT:
+      Format(instr, "bext      'rd, 'rs1, 'rs2");
+      break;
+    case RO_BINV:
+      Format(instr, "binv      'rd, 'rs1, 'rs2");
+      break;
+    case RO_BSET:
+      Format(instr, "bset      'rd, 'rs1, 'rs2");
+      break;
     // TODO(riscv): End Add RISCV M extension macro
     default: {
       switch (instr->BaseOpcode()) {
@@ -1542,14 +1616,77 @@ void Decoder::DecodeIType(Instruction* instr) {
     case RO_ANDI:
       Format(instr, "andi      'rd, 'rs1, 'imm12x");
       break;
-    case RO_SLLI:
-      Format(instr, "slli      'rd, 'rs1, 's64");
+    case OP_SHL:
+      switch (instr->Funct6FieldRaw() | OP_SHL) {
+        case RO_SLLI:
+          Format(instr, "slli      'rd, 'rs1, 's64");
+          break;
+        case RO_BCLRI:
+          Format(instr, "bclri     'rd, 'rs1, 's64");
+          break;
+        case RO_BINVI:
+          Format(instr, "binvi     'rd, 'rs1, 's64");
+          break;
+        case RO_BSETI:
+          Format(instr, "bseti     'rd, 'rs1, 's64");
+          break;
+        case OP_COUNT:
+          switch (instr->Shamt()) {
+            case 0:
+              Format(instr, "clz       'rd, 'rs1");
+              break;
+            case 1:
+              Format(instr, "ctz       'rd, 'rs1");
+              break;
+            case 2:
+              Format(instr, "cpop      'rd, 'rs1");
+              break;
+            case 4:
+              Format(instr, "sext.b    'rd, 'rs1");
+              break;
+            case 5:
+              Format(instr, "sext.h    'rd, 'rs1");
+              break;
+            default:
+              UNSUPPORTED_RISCV();
+          }
+          break;
+        default:
+          UNSUPPORTED_RISCV();
+      }
       break;
-    case RO_SRLI: {  //  RO_SRAI
-      if (!instr->IsArithShift()) {
-        Format(instr, "srli      'rd, 'rs1, 's64");
-      } else {
-        Format(instr, "srai      'rd, 'rs1, 's64");
+    case OP_SHR: {  //  RO_SRAI
+      switch (instr->Funct6FieldRaw() | OP_SHR) {
+        case RO_SRLI:
+          Format(instr, "srli      'rd, 'rs1, 's64");
+          break;
+        case RO_SRAI:
+          Format(instr, "srai      'rd, 'rs1, 's64");
+          break;
+        case RO_BEXTI:
+          Format(instr, "bexti     'rd, 'rs1, 's64");
+          break;
+        case RO_ORCB&(kFunct6Mask | OP_SHR):
+          Format(instr, "orc.b     'rd, 'rs1");
+          break;
+        case RO_RORI:
+#ifdef JS_CODEGEN_RISCV64
+          Format(instr, "rori      'rd, 'rs1, 's64");
+          break;
+#else
+          Format(instr, "rori      'rd, 'rs1, 's32");
+          break;
+#endif
+        case RO_REV8: {
+          if (instr->Imm12Value() == RO_REV8_IMM12) {
+            Format(instr, "rev8      'rd, 'rs1");
+            break;
+          }
+          UNSUPPORTED_RISCV();
+          break;
+        }
+        default:
+          UNSUPPORTED_RISCV();
       }
       break;
     }
@@ -1560,14 +1697,47 @@ void Decoder::DecodeIType(Instruction* instr) {
       else
         Format(instr, "addiw     'rd, 'rs1, 'imm12");
       break;
-    case RO_SLLIW:
-      Format(instr, "slliw     'rd, 'rs1, 's32");
+    case OP_SHLW:
+      switch (instr->Funct7FieldRaw() | OP_SHLW) {
+        case RO_SLLIW:
+          Format(instr, "slliw     'rd, 'rs1, 's32");
+          break;
+        case RO_SLLIUW:
+          Format(instr, "slli.uw   'rd, 'rs1, 's32");
+          break;
+        case OP_COUNTW: {
+          switch (instr->Shamt()) {
+            case 0:
+              Format(instr, "clzw      'rd, 'rs1");
+              break;
+            case 1:
+              Format(instr, "ctzw      'rd, 'rs1");
+              break;
+            case 2:
+              Format(instr, "cpopw     'rd, 'rs1");
+              break;
+            default:
+              UNSUPPORTED_RISCV();
+          }
+          break;
+        }
+        default:
+          UNSUPPORTED_RISCV();
+      }
       break;
-    case RO_SRLIW: {  //  RO_SRAIW
-      if (!instr->IsArithShift()) {
-        Format(instr, "srliw     'rd, 'rs1, 's32");
-      } else {
-        Format(instr, "sraiw     'rd, 'rs1, 's32");
+    case OP_SHRW: {  //  RO_SRAI
+      switch (instr->Funct7FieldRaw() | OP_SHRW) {
+        case RO_SRLIW:
+          Format(instr, "srliw     'rd, 'rs1, 's32");
+          break;
+        case RO_SRAIW:
+          Format(instr, "sraiw     'rd, 'rs1, 's32");
+          break;
+        case RO_RORIW:
+          Format(instr, "roriw     'rd, 'rs1, 's32");
+          break;
+        default:
+          UNSUPPORTED_RISCV();
       }
       break;
     }

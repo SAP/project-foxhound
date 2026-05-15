@@ -77,7 +77,7 @@ pref(intl.icu4x.segmenter.enabled,false) == wordbreak-1.html wordbreak-1-ref.htm
 == wordbreak-3.html wordbreak-3-ref.html
 == wordbreak-4b.html wordbreak-4b-ref.html
 == wordbreak-5.html wordbreak-5-ref.html
-fails-if(winWidget) == wordbreak-6.html wordbreak-6-ref.html # Bug 1258239
+fails == wordbreak-6.html wordbreak-6-ref.html # Bug 1258239
 == wordbreak-7a.html wordbreak-7a-ref.html
 fails == wordbreak-7b.html wordbreak-7b-ref.html # bug 479829
 == wordbreak-8.html wordbreak-8-ref.html
@@ -182,12 +182,12 @@ pref(gfx.font_rendering.graphite.enabled,false) != graphite-02.html graphite-02-
 pref(gfx.font_rendering.graphite.enabled,false) != graphite-03a.html graphite-03-notref.html
 pref(gfx.font_rendering.graphite.enabled,false) == graphite-03b.html graphite-03-notref.html
 
-# tests for graphite rendering with valid and invalid lang tags
+# tests for graphite rendering with canonical and non-canonical lang tags
 pref(gfx.font_rendering.graphite.enabled,true) == graphite-04-fa.html graphite-04-ref.html
 pref(gfx.font_rendering.graphite.enabled,true) != graphite-04-sd.html graphite-04-ref.html
-pref(gfx.font_rendering.graphite.enabled,true) == graphite-04-snd.html graphite-04-ref.html
+pref(gfx.font_rendering.graphite.enabled,true) == graphite-04-snd.html graphite-04-sd.html
 pref(gfx.font_rendering.graphite.enabled,true) != graphite-04-ur.html graphite-04-ref.html
-pref(gfx.font_rendering.graphite.enabled,true) == graphite-04-urd.html graphite-04-ref.html
+pref(gfx.font_rendering.graphite.enabled,true) == graphite-04-urd.html graphite-04-ur.html
 pref(gfx.font_rendering.graphite.enabled,true) != graphite-04-sd.html graphite-04-ur.html
 
 # tests to compare graphite to opentype (will trivially pass when graphite not enabled)
@@ -367,6 +367,9 @@ pref(intl.icu4x.segmenter.enabled,false) == ethiopic-wordspace.html ethiopic-wor
 == utf16-bom.txt utf16-bom-ref.txt
 pref(layout.css.prefers-color-scheme.content-override,0) == utf16-bom.txt utf16-bom-ref.txt
 test-pref(layout.css.prefers-color-scheme.content-override,0) ref-pref(layout.css.prefers-color-scheme.content-override,1) != utf16-bom.txt utf16-bom-ref.txt
+
+# Test for Kannada AAT shaping bug 1994921
+!= kannada-1.html kannada-1-notref.html
 
 # Reset default prefs.
 defaults

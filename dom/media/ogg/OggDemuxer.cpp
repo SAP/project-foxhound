@@ -5,25 +5,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "OggDemuxer.h"
-#include "OggRLBox.h"
+
+#include <algorithm>
+
 #include "MediaDataDemuxer.h"
 #include "OggCodecState.h"
+#include "OggRLBox.h"
 #include "TimeUnits.h"
 #include "XiphExtradata.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/TimeStamp.h"
-#include "nsDebug.h"
 #include "nsAutoRef.h"
+#include "nsDebug.h"
 #include "nsError.h"
 
-#include <algorithm>
-
-extern mozilla::LazyLogModule gMediaDemuxerLog;
 #define OGG_DEBUG(arg, ...)                                           \
   DDMOZ_LOG(gMediaDemuxerLog, mozilla::LogLevel::Debug, "::%s: " arg, \
             __func__, ##__VA_ARGS__)
@@ -820,7 +819,7 @@ ogg_packet* OggDemuxer::GetNextPacket(TrackInfo::TrackType aType) {
 
   while (true) {
     if (packet) {
-      Unused << state->PacketOut();
+      (void)state->PacketOut();
     }
     DemuxUntilPacketAvailable(aType, state);
 
@@ -1136,7 +1135,7 @@ nsresult OggDemuxer::SeekInternal(TrackInfo::TrackType aType,
       tempPackets.Append(state->PacketOut());
     } else {
       // Discard media packets before the first keyframe.
-      Unused << state->PacketOut();
+      (void)state->PacketOut();
     }
   }
   // Re-add all packet into the codec state in order.

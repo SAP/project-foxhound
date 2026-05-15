@@ -5,4 +5,6 @@ environment = [
 ]
 
 ["browser_ua_snap_ubuntu.js"]
-run-if = ["os == 'linux' && is_ubuntu"]
+run-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'",
+]

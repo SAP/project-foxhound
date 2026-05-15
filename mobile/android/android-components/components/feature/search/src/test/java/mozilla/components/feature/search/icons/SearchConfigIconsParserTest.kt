@@ -10,48 +10,44 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.mock
-import org.mockito.Mockito.`when`
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class SearchConfigIconsParserTest {
 
     private lateinit var parser: SearchConfigIconsParser
-    private lateinit var mockRecord: RemoteSettingsRecord
-    private lateinit var mockFields: JSONObject
-    private lateinit var mockAttachment: Attachment
 
     @Before
     fun setUp() {
         parser = SearchConfigIconsParser()
-        mockRecord = mock(RemoteSettingsRecord::class.java)
-        mockFields = mock(JSONObject::class.java)
-        mockAttachment = mock(Attachment::class.java)
-
-        `when`(mockRecord.fields).thenReturn(mockFields)
-        `when`(mockRecord.attachment).thenReturn(null)
     }
 
     @Test
     fun `Given record with all fields and attachment When parseRecord is called Then valid model is returned`() {
-        val mockJsonArray = mock(JSONArray::class.java)
-        `when`(mockJsonArray.length()).thenReturn(2)
-        `when`(mockJsonArray.get(0)).thenReturn("google")
-        `when`(mockJsonArray.get(1)).thenReturn("bing")
+        val fields = JSONObject()
+            .put("schema", 1L)
+            .put("imageSize", 64)
+            .put("engineIdentifiers", JSONArray().put("google").put("bing"))
+            .put("filter_expression", "test-filter")
 
-        `when`(mockFields.getLong("schema")).thenReturn(1L)
-        `when`(mockFields.getInt("imageSize")).thenReturn(64)
-        `when`(mockFields.getJSONArray("engineIdentifiers")).thenReturn(mockJsonArray)
-        `when`(mockFields.optString("filter_expression")).thenReturn("test-filter")
+        val attachment = Attachment(
+            filename = "icon.png",
+            mimetype = "image/png",
+            location = "location/path",
+            hash = "abc123hash",
+            size = 1024u,
+        )
 
-        `when`(mockAttachment.filename).thenReturn("icon.png")
-        `when`(mockAttachment.mimetype).thenReturn("image/png")
-        `when`(mockAttachment.location).thenReturn("location/path")
-        `when`(mockAttachment.hash).thenReturn("abc123hash")
-        `when`(mockAttachment.size).thenReturn(1024u)
+        val record = RemoteSettingsRecord(
+            id = "test-id",
+            lastModified = 123u,
+            deleted = false,
+            attachment = attachment,
+            fields = fields,
+        )
 
-        `when`(mockRecord.attachment).thenReturn(mockAttachment)
-
-        val result = parser.parseRecord(mockRecord)
+        val result = parser.parseRecord(record)
 
         assertNotNull(result)
         assertEquals(1L, result!!.schema)
@@ -61,24 +57,29 @@ class SearchConfigIconsParserTest {
 
         assertNotNull(result.attachment)
         assertEquals("icon.png", result.attachment!!.filename)
-        assertEquals("image/png", result.attachment!!.mimetype)
-        assertEquals("location/path", result.attachment!!.location)
-        assertEquals("abc123hash", result.attachment!!.hash)
-        assertEquals(1024u, result.attachment!!.size)
+        assertEquals("image/png", result.attachment.mimetype)
+        assertEquals("location/path", result.attachment.location)
+        assertEquals("abc123hash", result.attachment.hash)
+        assertEquals(1024u, result.attachment.size)
     }
 
     @Test
     fun `Given record with missing optional fields When parseRecord is called Then valid model with null attachment is returned`() {
-        val mockJsonArray = mock(JSONArray::class.java)
-        `when`(mockJsonArray.length()).thenReturn(1)
-        `when`(mockJsonArray.get(0)).thenReturn("duckduckgo")
+        val fields = JSONObject()
+            .put("schema", 2L)
+            .put("imageSize", 32)
+            .put("engineIdentifiers", JSONArray().put("duckduckgo"))
+            .put("filter_expression", "")
 
-        `when`(mockFields.getLong("schema")).thenReturn(2L)
-        `when`(mockFields.getInt("imageSize")).thenReturn(32)
-        `when`(mockFields.getJSONArray("engineIdentifiers")).thenReturn(mockJsonArray)
-        `when`(mockFields.optString("filter_expression")).thenReturn("")
+        val record = RemoteSettingsRecord(
+            id = "test-id",
+            lastModified = 123u,
+            deleted = false,
+            attachment = null,
+            fields = fields,
+        )
 
-        val result = parser.parseRecord(mockRecord)
+        val result = parser.parseRecord(record)
 
         assertNotNull(result)
         assertEquals(2L, result!!.schema)
@@ -90,9 +91,19 @@ class SearchConfigIconsParserTest {
 
     @Test
     fun `Given record that causes JSONException during field parsing When parseRecord is called Then null is returned`() {
-        `when`(mockFields.getLong("schema")).thenThrow(JSONException("Test exception on schema"))
+        val fields = JSONObject()
+            .put("schema", "NOT_AN_INTEGER")
+            .put("imageSize", "NOT_AN_INTEGER")
 
-        val result = parser.parseRecord(mockRecord)
+        val record = RemoteSettingsRecord(
+            id = "test-id",
+            lastModified = 123u,
+            deleted = false,
+            attachment = null,
+            fields = fields,
+        )
+
+        val result = parser.parseRecord(record)
 
         assertNull(result)
     }

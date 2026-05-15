@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef ArrayAlgorithm_h___
-#define ArrayAlgorithm_h___
+#ifndef ArrayAlgorithm_h_
+#define ArrayAlgorithm_h_
 
 #include "nsTArray.h"
 
@@ -106,4 +106,4 @@ auto TransformIntoNewArray(SrcRange& aRange, Transform aTransform) {
 
 }  // namespace mozilla
 
-#endif  // !defined(ArrayAlgorithm_h___)
+#endif  // !defined(ArrayAlgorithm_h_)

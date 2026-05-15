@@ -1,0 +1,5 @@
+package test {
+  public class TestClass {
+    field public static final java.lang.String TEST_FIELD = "3";
+  }
+}

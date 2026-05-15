@@ -12,7 +12,6 @@
   background-color: var(--theme-toolbar-background);
   overflow: hidden;
   font-weight: 300;
-  z-index: 10;
   user-select: none;
 }
 

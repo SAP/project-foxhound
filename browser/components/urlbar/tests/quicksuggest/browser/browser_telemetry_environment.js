@@ -13,19 +13,9 @@ add_setup(async function () {
   await QuickSuggestTestUtils.ensureQuickSuggestInit();
 });
 
-// Toggles the `suggest.quicksuggest.nonsponsored` pref.
-add_task(function nonsponsoredToggled() {
-  doToggleTest("suggest.quicksuggest.nonsponsored");
-});
-
 // Toggles the `suggest.quicksuggest.sponsored` pref.
 add_task(async function sponsoredToggled() {
   doToggleTest("suggest.quicksuggest.sponsored");
-});
-
-// Toggles the `quicksuggest.dataCollection.enabled` pref.
-add_task(async function dataCollectionToggled() {
-  doToggleTest("quicksuggest.dataCollection.enabled");
 });
 
 function doToggleTest(pref) {
@@ -55,7 +45,8 @@ function doToggleTest(pref) {
 // and initialization of default Suggest prefs. After startup is done, telemetry
 // environment should record the correct values for the prefs.
 add_task(async function telemetryEnvironmentOnStartup() {
-  await QuickSuggest._test_reinit();
+  await TelemetryEnvironment.onInitialized();
+  await QuickSuggest._test_reset();
 
   // Restart telemetry environment so we know it's watching its default set of
   // prefs.
@@ -81,11 +72,7 @@ add_task(async function telemetryEnvironmentOnStartup() {
   // array here.
   Assert.deepEqual(
     prefs.sort(),
-    [
-      "quicksuggest.dataCollection.enabled",
-      "suggest.quicksuggest.nonsponsored",
-      "suggest.quicksuggest.sponsored",
-    ],
+    ["suggest.quicksuggest.sponsored"],
     "Expected startup prefs"
   );
 
@@ -108,7 +95,8 @@ add_task(async function telemetryEnvironmentOnStartup() {
 
   // Reinit and force the startup prefs to take on values that are the inverse
   // of what they are now.
-  await QuickSuggest._test_reinit({
+  await TelemetryEnvironment.onInitialized();
+  await QuickSuggest._test_reset({
     defaultPrefs: Object.fromEntries(
       Object.entries(defaultValues).map(([p, value]) => [p, !value])
     ),
@@ -135,7 +123,8 @@ add_task(async function telemetryEnvironmentOnStartup() {
   environmentInitPromise =
     TelemetryEnvironment.testCleanRestart().onInitialized();
 
-  await QuickSuggest._test_reinit();
+  await TelemetryEnvironment.onInitialized();
+  await QuickSuggest._test_reset();
 
   await environmentInitPromise;
 

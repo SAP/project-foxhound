@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MIDIManagerChild.h"
+
 #include "mozilla/dom/MIDIAccessManager.h"
 
 using namespace mozilla::dom;

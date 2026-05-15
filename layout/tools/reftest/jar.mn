@@ -43,7 +43,6 @@ reftest.jar:
   content/crashtests/layout/style/crashtests (../../../layout/style/crashtests/*)
   content/crashtests/gfx/tests/crashtests (../../../gfx/tests/crashtests/*)
   content/crashtests/accessible/tests/crashtests (../../../accessible/tests/crashtests/*)
-  content/crashtests/view/crashtests (../../../view/crashtests/*)
   content/crashtests/widget/cocoa/crashtests (../../../widget/cocoa/crashtests/*)
 
   res/globals.sys.mjs (globals.sys.mjs)

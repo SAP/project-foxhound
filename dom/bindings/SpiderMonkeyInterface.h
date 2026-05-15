@@ -7,9 +7,9 @@
 #ifndef mozilla_dom_SpiderMonkeyInterface_h
 #define mozilla_dom_SpiderMonkeyInterface_h
 
-#include "jsapi.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
+#include "jsapi.h"
 
 namespace mozilla::dom {
 

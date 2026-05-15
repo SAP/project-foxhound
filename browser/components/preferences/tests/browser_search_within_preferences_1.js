@@ -310,14 +310,10 @@ add_task(async function changing_tabs_after_searching() {
   await searchCompletedPromise;
 
   // Search header should be shown for the permissions group
-  let permissionsSearchHeader = gBrowser.contentDocument.querySelector(
-    "#permissionsGroup .search-header"
+  let permissionsGroup = gBrowser.contentDocument.querySelector(
+    "moz-fieldset#permissions"
   );
-  is(
-    permissionsSearchHeader.hidden,
-    false,
-    "Permissions search-header should be visible"
-  );
+  is(permissionsGroup.hidden, false, "Permissions group should be visible");
 
   let privacyCategory =
     gBrowser.contentDocument.getElementById("category-privacy");
@@ -332,13 +328,6 @@ add_task(async function changing_tabs_after_searching() {
       is(child.selected, false, "No other panel should be selected");
     }
   }
-
-  // Search header should now be hidden when viewing the permissions group not through a search
-  is(
-    permissionsSearchHeader.hidden,
-    true,
-    "Permissions search-header should be hidden"
-  );
 
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

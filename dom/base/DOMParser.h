@@ -7,12 +7,12 @@
 #ifndef mozilla_dom_DOMParser_h_
 #define mozilla_dom_DOMParser_h_
 
-#include "nsCOMPtr.h"
-#include "mozilla/dom/Document.h"
-#include "nsWrapperCache.h"
 #include "mozilla/Span.h"
 #include "mozilla/dom/DOMParserBinding.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/TypedArray.h"
+#include "nsCOMPtr.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
 class nsIPrincipal;

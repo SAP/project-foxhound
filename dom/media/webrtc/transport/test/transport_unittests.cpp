@@ -6,10 +6,10 @@
 
 // Original author: ekr@rtfm.com
 
-#include <iostream>
-#include <string>
 #include <algorithm>
 #include <functional>
+#include <iostream>
+#include <string>
 
 #ifdef XP_MACOSX
 // ensure that Apple Security kit enum goes before "sslproto.h"
@@ -17,29 +17,24 @@
 #  include <Security/CipherSuite.h>
 #endif
 
-#include "mozilla/UniquePtr.h"
-
-#include "sigslot.h"
-
+#include "dtlsidentity.h"
 #include "logging.h"
+#include "mediapacket.h"
+#include "mozilla/UniquePtr.h"
+#include "nricectx.h"
+#include "nricemediastream.h"
+#include "nsThreadUtils.h"
+#include "runnable_utils.h"
+#include "sigslot.h"
 #include "ssl.h"
 #include "sslexp.h"
 #include "sslproto.h"
-
-#include "nsThreadUtils.h"
-
-#include "mediapacket.h"
-#include "dtlsidentity.h"
-#include "nricectx.h"
-#include "nricemediastream.h"
 #include "transportflow.h"
 #include "transportlayer.h"
 #include "transportlayerdtls.h"
 #include "transportlayerice.h"
 #include "transportlayerlog.h"
 #include "transportlayerloopback.h"
-
-#include "runnable_utils.h"
 
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
@@ -642,7 +637,7 @@ class TransportTestPeer : public sigslot::has_slots<> {
                             NrIceMediaStream::GatheringState state) {
     // We only use one stream, no need to check whether all streams are done
     // gathering.
-    Unused << aTransportId;
+    (void)aTransportId;
     if (state == NrIceMediaStream::ICE_STREAM_GATHER_COMPLETE) {
       GatheringComplete();
     }

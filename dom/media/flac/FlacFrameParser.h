@@ -7,11 +7,11 @@
 #ifndef FLAC_FRAME_PARSER_H_
 #define FLAC_FRAME_PARSER_H_
 
-#include "mozilla/Maybe.h"
-#include "mozilla/Result.h"
 #include "MediaDecoder.h"  // For MetadataTags
 #include "MediaInfo.h"
 #include "MediaResource.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Result.h"
 
 namespace mozilla {
 

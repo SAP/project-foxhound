@@ -31,7 +31,7 @@ add_task(async function () {
   ok(offlineEventFired, "The offline event on the page fired");
 
   // As the browser is offline, load event won't fire
-  await reloadBrowser({ waitForLoad: false });
+  await reloadSelectedTab({ waitForLoad: false });
 
   await assertNavigatorOnlineInConsole(toolbox, "false");
   await assertPageIsOffline();
@@ -39,7 +39,7 @@ add_task(async function () {
   await selectThrottle(monitor, PROFILE_CONSTANTS.REGULAR_4G_LTE);
   assertCurrentThrottleSelected(monitor, PROFILE_CONSTANTS.REGULAR_4G_LTE);
 
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   await assertNavigatorOnlineInConsole(toolbox, "true");
   await assertPageIsOnline();

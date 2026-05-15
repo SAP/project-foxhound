@@ -182,13 +182,10 @@ async function testScript() {
       throw new Error("Sub2");
     },
     () => {
-      // This task will not run because previous task throws.
-      browser.test.assertTrue(false, "Never runs.");
+      // This task will run even if previous task throws.
+      browser.test.assertTrue(true, "Still runs.");
     },
-  ]).catch(e => {
-    // We could use assertRejects, but the flow would be harder to follow.
-    browser.test.assertEq(e.message, "Sub2", "Expected exception.");
-  });
+  ]);
 
   browser.test.sendMessage("Ran test at", location.protocol);
   browser.test.sendMessage("This is the last browser.test call");
@@ -201,8 +198,8 @@ function verifyTestResults(results, shortName, expectedProtocol, useServiceWorke
     ["test-log", true, "dot log"],
     ["test-result", false, "dot fail"],
     ["test-result", true, "dot succeed"],
-    ["test-result", true, "undefined"],
-    ["test-result", true, "undefined"],
+    ["test-result", true, "Assertion PASS"],
+    ["test-result", true, "Assertion PASS"],
     ["test-eq", true, "undefined", "", ""],
 
     ["test-result", true, "Object truthy"],
@@ -303,7 +300,7 @@ function verifyTestResults(results, shortName, expectedProtocol, useServiceWorke
   expectations.push(
     ["test-task-start", "unnamed_test_1"],
     ["test-result", true, "After await."],
-    ["test-task-done", 2, "unnamed_test_1"],
+    ["test-task-done", 2, "unnamed_test_1", true, "unnamed_test_1 PASS"],
   );
 
   if (wptMode) {
@@ -311,8 +308,7 @@ function verifyTestResults(results, shortName, expectedProtocol, useServiceWorke
       ["test-task-start", "subTest2"],
       ["test-result", false, "Function did not throw, expected error '/.*/'"],
       ["test-result", false, "Function did not throw, expected error '/Missing required expectedError/'"],
-      ["test-result", false, "Exception running subTest2: Sub2"],
-      ["test-task-done", 1, "subTest2"],
+      ["test-task-done", 1, "subTest2", false, "Exception running subTest2: Sub2"],
     );
   } else {
     expectations.push(
@@ -321,11 +317,15 @@ function verifyTestResults(results, shortName, expectedProtocol, useServiceWorke
         "test-result", true,
         "Function threw, expecting error to match '/Missing required expectedError/', got 'Error: Missing required expectedError'"
       ],
-      ["test-result", false, "Exception running subTest2: Sub2"],
-      ["test-task-done", 1, "subTest2"],
+      ["test-task-done", 1, "subTest2", false, "Exception running subTest2: Sub2"],
     );
   }
-  expectations.push(["test-eq", true, "Expected exception.", "Sub2", "Sub2"]);
+
+  expectations.push(
+    ["test-task-start", "unnamed_test_2"],
+    ["test-result", true, "Still runs."],
+    ["test-task-done", 0, "unnamed_test_2", true, "unnamed_test_2 PASS"],
+  );
 
   expectations.push(...[
     ["test-message", "Ran test at", expectedProtocol],

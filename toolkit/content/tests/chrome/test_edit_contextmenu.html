@@ -76,7 +76,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=1513343
       let popuphidden = new Promise(r => win.addEventListener("popuphidden", r, { once: true }));
       if (isPassword) {
         let isRevealed = element.revealPassword;
-        is(revealPassword.getAttribute("checked"), isRevealed ? "true" : null, "reveal password checked");
+        is(revealPassword.hasAttribute("checked"), isRevealed, "reveal password checked");
         contextmenu.activateItem(revealPassword);
         await popuphidden;
         is(element.revealPassword, !isRevealed, "Password was revealed / unrevealed");

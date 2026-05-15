@@ -4,7 +4,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-import { SearchWidgetTracker } from "resource:///modules/SearchWidgetTracker.sys.mjs";
+import { SearchWidgetTracker } from "moz-src:///browser/components/customizableui/SearchWidgetTracker.sys.mjs";
 
 const lazy = {};
 
@@ -12,9 +12,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  CustomizableWidgets: "resource:///modules/CustomizableWidgets.sys.mjs",
+  CustomizableWidgets:
+    "moz-src:///browser/components/customizableui/CustomizableWidgets.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
 });
@@ -231,6 +233,9 @@ XPCOMUtils.defineLazyPreferenceGetter(
           : undefined // Adds to the end of navbar if position_start is false.
       );
     }
+    // Ensure CUI knows to not restore this button if the user later removes it
+    let prefId = "browser.toolbarbuttons.introduced.sidebar-button";
+    Services.prefs.setBoolPref(prefId, true);
   }
 );
 
@@ -259,6 +264,28 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "verticalPlacementsPref",
   kPrefCustomizationNavBarWhenVerticalTabs,
   ""
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "ippEnabled",
+  "browser.ipProtection.enabled",
+  false,
+  (_pref, _oldVal, newVal) => {
+    if (!newVal) {
+      return;
+    }
+    let navbarPlacements = gAreas
+      .get(CustomizableUI.AREA_NAVBAR)
+      .get("defaultPlacements");
+
+    // If IPP wasn't available when the navbar area was registered,
+    // we need to add the buttons default placement now.
+    if (navbarPlacements && !navbarPlacements.includes("ipprotection-button")) {
+      let index = navbarPlacements.indexOf("fxa-toolbar-menu-button");
+      navbarPlacements.splice(index, 0, "ipprotection-button");
+    }
+  }
 );
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -340,6 +367,7 @@ var CustomizableUIInternal = {
       "spring",
       "downloads-button",
       AppConstants.MOZ_DEV_EDITION ? "developer-button" : null,
+      lazy.ippEnabled ? "ipprotection-button" : null,
       "fxa-toolbar-menu-button",
       lazy.resetPBMToolbarButtonEnabled ? "reset-pbm-toolbar-button" : null,
     ].filter(name => name);
@@ -587,14 +615,6 @@ var CustomizableUIInternal = {
 
       if (!AppConstants.MOZ_DEV_EDITION) {
         defaultPlacements.splice(-1, 0, "developer-button");
-      }
-
-      let showCharacterEncoding = Services.prefs.getComplexValue(
-        "browser.menu.showCharacterEncoding",
-        Ci.nsIPrefLocalizedString
-      ).data;
-      if (showCharacterEncoding == "true") {
-        defaultPlacements.push("characterencoding-button");
       }
 
       savedPanelPlacements = savedPanelPlacements.filter(
@@ -2575,9 +2595,7 @@ var CustomizableUIInternal = {
       node.setAttribute("id", aWidget.id);
       node.setAttribute("widget-id", aWidget.id);
       node.setAttribute("widget-type", aWidget.type);
-      if (aWidget.disabled) {
-        node.setAttribute("disabled", true);
-      }
+      node.toggleAttribute("disabled", !!aWidget.disabled);
       node.setAttribute("removable", aWidget.removable);
       node.setAttribute("overflows", aWidget.overflows);
       if (aWidget.tabSpecific) {
@@ -3015,12 +3033,12 @@ var CustomizableUIInternal = {
 
       // Break out of the loop immediately for disabled items, as we need to
       // keep the menu open in that case.
-      if (target.getAttribute("disabled") == "true") {
+      if (target.hasAttribute("disabled")) {
         return true;
       }
 
       let tagName = target.localName;
-      if (tagName == "input" || tagName == "searchbar") {
+      if (tagName == "input" || target.closest("#search-container")) {
         return true;
       }
       if (tagName == "toolbaritem" || tagName == "toolbarbutton") {
@@ -4876,7 +4894,7 @@ var CustomizableUIInternal = {
               container.getAttribute("type") == "menubar"
                 ? "autohide"
                 : "collapsed";
-            collapsed = container.getAttribute(attribute) == "true";
+            collapsed = container.hasAttribute(attribute);
             nondefaultState = collapsed != defaultCollapsed;
           }
           if (defaultCollapsed !== null && nondefaultState) {
@@ -4970,7 +4988,7 @@ var CustomizableUIInternal = {
       let hidingAttribute =
         toolbar.getAttribute("type") == "menubar" ? "autohide" : "collapsed";
 
-      if (toolbar.getAttribute(hidingAttribute) == "true") {
+      if (toolbar.hasAttribute(hidingAttribute)) {
         collapsedToolbars.add(toolbarId);
       }
     }
@@ -6881,7 +6899,7 @@ export var CustomizableUI = {
       }
       for (let attr of attrs) {
         let attrVal = menuChild.getAttribute(attr);
-        if (attrVal) {
+        if (attrVal !== null) {
           subviewItem.setAttribute(attr, attrVal);
         }
       }
@@ -7898,8 +7916,13 @@ class OverflowableToolbar {
 
     // If the target has min-width: 0, their children might actually overflow
     // it, so check for both cases explicitly.
-    let targetContentWidth = Math.max(targetWidth, targetChildrenWidth);
-    let isOverflowing = Math.floor(targetContentWidth) > totalAvailWidth;
+    // We don't care about <1px differences, so ceil the avail width and floor
+    // the content width to deal with it.
+    let targetContentWidth = Math.floor(
+      Math.max(targetWidth, targetChildrenWidth)
+    );
+    totalAvailWidth = Math.ceil(totalAvailWidth);
+    let isOverflowing = targetContentWidth > totalAvailWidth;
     return { isOverflowing, targetContentWidth, totalAvailWidth };
   }
 

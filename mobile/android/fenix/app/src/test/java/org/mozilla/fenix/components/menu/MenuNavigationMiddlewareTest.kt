@@ -54,9 +54,7 @@ import org.mozilla.fenix.components.menu.store.BrowserMenuState
 import org.mozilla.fenix.components.menu.store.MenuAction
 import org.mozilla.fenix.components.menu.store.MenuState
 import org.mozilla.fenix.components.menu.store.MenuStore
-import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.SupportUtils.AMO_HOMEPAGE_FOR_ANDROID
-import org.mozilla.fenix.settings.SupportUtils.SumoTopic
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.webcompat.WEB_COMPAT_REPORTER_URL
 import org.mozilla.fenix.webcompat.WebCompatReporterMoreInfoSender
@@ -91,7 +89,7 @@ class MenuNavigationMiddlewareTest {
                 accountState = accountState,
                 accesspoint = accessPoint,
             ),
-        ).join()
+        )
 
         verify {
             navController.navigate(
@@ -113,7 +111,7 @@ class MenuNavigationMiddlewareTest {
                 accountState = accountState,
                 accesspoint = accesspoint,
             ),
-        ).join()
+        )
 
         verify {
             navController.navigate(
@@ -143,7 +141,7 @@ class MenuNavigationMiddlewareTest {
                 accountState = accountState,
                 accesspoint = accesspoint,
             ),
-        ).join()
+        )
 
         verify {
             navController.navigate(
@@ -158,7 +156,7 @@ class MenuNavigationMiddlewareTest {
     @Test
     fun `WHEN navigate to settings action is dispatched THEN navigate to settings`() = runTest {
         val store = createStore()
-        store.dispatch(MenuAction.Navigate.Settings).join()
+        store.dispatch(MenuAction.Navigate.Settings)
 
         verify {
             navController.navigate(
@@ -171,7 +169,7 @@ class MenuNavigationMiddlewareTest {
     @Test
     fun `WHEN navigate to bookmarks action is dispatched THEN navigate to bookmarks`() = runTest {
         val store = createStore()
-        store.dispatch(MenuAction.Navigate.Bookmarks).join()
+        store.dispatch(MenuAction.Navigate.Bookmarks)
 
         verify {
             navController.navigate(
@@ -190,7 +188,7 @@ class MenuNavigationMiddlewareTest {
             MenuAction.Navigate.InstalledAddonDetails(
                 addon = addon,
             ),
-        ).join()
+        )
 
         verify {
             navController.navigate(
@@ -203,7 +201,7 @@ class MenuNavigationMiddlewareTest {
     @Test
     fun `WHEN navigate to history action is dispatched THEN navigate to history`() = runTest {
         val store = createStore()
-        store.dispatch(MenuAction.Navigate.History).join()
+        store.dispatch(MenuAction.Navigate.History)
 
         verify {
             navController.navigate(
@@ -216,7 +214,7 @@ class MenuNavigationMiddlewareTest {
     @Test
     fun `WHEN navigate to downloads action is dispatched THEN navigate to downloads`() = runTest {
         val store = createStore()
-        store.dispatch(MenuAction.Navigate.Downloads).join()
+        store.dispatch(MenuAction.Navigate.Downloads)
 
         verify {
             navController.navigate(
@@ -229,7 +227,7 @@ class MenuNavigationMiddlewareTest {
     @Test
     fun `WHEN navigate to passwords action is dispatched THEN navigate to passwords`() = runTest {
         val store = createStore()
-        store.dispatch(MenuAction.Navigate.Passwords).join()
+        store.dispatch(MenuAction.Navigate.Passwords)
 
         verify {
             navController.navigate(
@@ -237,20 +235,6 @@ class MenuNavigationMiddlewareTest {
                 null,
             )
         }
-    }
-
-    @Test
-    fun `WHEN navigate to release notes action is dispatched THEN navigate to SUMO topic`() = runTest {
-        var params: BrowserNavigationParams? = null
-        val store = createStore(
-            openToBrowser = {
-                params = it
-            },
-        )
-
-        store.dispatch(MenuAction.Navigate.ReleaseNotes).join()
-
-        assertEquals(SupportUtils.WHATS_NEW_URL, params?.url)
     }
 
     @Test
@@ -268,7 +252,7 @@ class MenuNavigationMiddlewareTest {
 
         every { webAppUseCases.isInstallable() } returns true
 
-        store.dispatch(MenuAction.Navigate.AddToHomeScreen).join()
+        store.dispatch(MenuAction.Navigate.AddToHomeScreen)
 
         coVerify(exactly = 1) { webAppUseCases.addToHomescreen() }
         assertTrue(dismissWasCalled)
@@ -287,7 +271,7 @@ class MenuNavigationMiddlewareTest {
 
         every { webAppUseCases.isInstallable() } returns false
 
-        store.dispatch(MenuAction.Navigate.AddToHomeScreen).join()
+        store.dispatch(MenuAction.Navigate.AddToHomeScreen)
 
         verify {
             navController.navigate(
@@ -312,7 +296,7 @@ class MenuNavigationMiddlewareTest {
 
         val directionsSlot = slot<NavDirections>()
         val optionsSlot = slot<NavOptions>()
-        store.dispatch(MenuAction.Navigate.SaveToCollection(hasCollection = true)).join()
+        store.dispatch(MenuAction.Navigate.SaveToCollection(hasCollection = true))
 
         verify {
             navController.navigate(
@@ -351,7 +335,7 @@ class MenuNavigationMiddlewareTest {
         val directionsSlot = slot<NavDirections>()
         val optionsSlot = slot<NavOptions>()
 
-        store.dispatch(MenuAction.Navigate.SaveToCollection(hasCollection = false)).join()
+        store.dispatch(MenuAction.Navigate.SaveToCollection(hasCollection = false))
 
         verify {
             navController.navigate(
@@ -402,7 +386,7 @@ class MenuNavigationMiddlewareTest {
             ),
         )
 
-        store.dispatch(MenuAction.Navigate.EditBookmark).join()
+        store.dispatch(MenuAction.Navigate.EditBookmark)
 
         verify {
             navController.navigate(
@@ -426,7 +410,7 @@ class MenuNavigationMiddlewareTest {
             ),
         )
 
-        store.dispatch(MenuAction.Navigate.Translate).join()
+        store.dispatch(MenuAction.Navigate.Translate)
 
         verify {
             navController.navigate(
@@ -458,7 +442,7 @@ class MenuNavigationMiddlewareTest {
 
         val directionsSlot = slot<NavDirections>()
         val optionsSlot = slot<NavOptions>()
-        store.dispatch(MenuAction.Navigate.Share).join()
+        store.dispatch(MenuAction.Navigate.Share)
 
         verify {
             navController.navigate(
@@ -502,7 +486,7 @@ class MenuNavigationMiddlewareTest {
         val directionsSlot = slot<NavDirections>()
         val optionsSlot = slot<NavOptions>()
 
-        store.dispatch(MenuAction.Navigate.Share).join()
+        store.dispatch(MenuAction.Navigate.Share)
 
         verify {
             navController.navigate(
@@ -546,7 +530,7 @@ class MenuNavigationMiddlewareTest {
             ),
         )
 
-        store.dispatch(MenuAction.Navigate.Share).join()
+        store.dispatch(MenuAction.Navigate.Share)
 
         verify {
             browserStore.dispatch(
@@ -576,7 +560,7 @@ class MenuNavigationMiddlewareTest {
 
         val directionsSlot = slot<NavDirections>()
         val optionsSlot = slot<NavOptions>()
-        store.dispatch(MenuAction.Navigate.Share).join()
+        store.dispatch(MenuAction.Navigate.Share)
 
         verify {
             navController.navigate(
@@ -604,7 +588,7 @@ class MenuNavigationMiddlewareTest {
     @Test
     fun `WHEN navigate to manage extensions action is dispatched THEN navigate to the extensions management`() = runTest {
         val store = createStore()
-        store.dispatch(MenuAction.Navigate.ManageExtensions).join()
+        store.dispatch(MenuAction.Navigate.ManageExtensions)
 
         verify {
             navController.navigate(
@@ -623,30 +607,16 @@ class MenuNavigationMiddlewareTest {
             },
         )
 
-        store.dispatch(MenuAction.Navigate.DiscoverMoreExtensions).join()
+        store.dispatch(MenuAction.Navigate.DiscoverMoreExtensions)
 
         assertEquals(AMO_HOMEPAGE_FOR_ANDROID, params?.url)
-    }
-
-    @Test
-    fun `WHEN navigate to extensions learn more action is dispatched THEN navigate to the SUMO page for installing add-ons`() = runTest {
-        var params: BrowserNavigationParams? = null
-        val store = createStore(
-            openToBrowser = {
-                params = it
-            },
-        )
-
-        store.dispatch(MenuAction.Navigate.ExtensionsLearnMore).join()
-
-        assertEquals(SumoTopic.FIND_INSTALL_ADDONS, params?.sumoTopic)
     }
 
     @Test
     fun `WHEN navigate to addon details is dispatched THEN navigate to the addon details`() = runTest {
         val addon = Addon(id = "ext1")
         val store = createStore()
-        store.dispatch(MenuAction.Navigate.AddonDetails(addon = addon)).join()
+        store.dispatch(MenuAction.Navigate.AddonDetails(addon = addon))
 
         verify {
             navController.navigate(
@@ -668,7 +638,7 @@ class MenuNavigationMiddlewareTest {
                     ),
                 ),
             ),
-        ).dispatch(MenuAction.Navigate.WebCompatReporter).join()
+        ).dispatch(MenuAction.Navigate.WebCompatReporter)
 
         verify {
             navController.navigate(
@@ -708,7 +678,7 @@ class MenuNavigationMiddlewareTest {
             },
         )
 
-        store.dispatch(MenuAction.Navigate.WebCompatReporter).join()
+        store.dispatch(MenuAction.Navigate.WebCompatReporter)
 
         assertTrue(sendMoreWebCompatInfoCalled)
 
@@ -741,7 +711,7 @@ class MenuNavigationMiddlewareTest {
             ),
         )
 
-        store.dispatch(MenuAction.Navigate.Back(viewHistory = true)).join()
+        store.dispatch(MenuAction.Navigate.Back(viewHistory = true))
 
         verify {
             navController.navigate(
@@ -769,7 +739,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Back(viewHistory = false)).join()
+        store.dispatch(MenuAction.Navigate.Back(viewHistory = false))
 
         verify {
             sessionUseCases.goBack.invoke(tab.id)
@@ -786,7 +756,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Back(viewHistory = false)).join()
+        store.dispatch(MenuAction.Navigate.Back(viewHistory = false))
 
         verify {
             sessionUseCases.goBack.invoke(customTab.id)
@@ -802,7 +772,7 @@ class MenuNavigationMiddlewareTest {
             ),
         )
 
-        store.dispatch(MenuAction.Navigate.Forward(viewHistory = true)).join()
+        store.dispatch(MenuAction.Navigate.Forward(viewHistory = true))
 
         verify {
             navController.navigate(
@@ -830,7 +800,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Forward(viewHistory = false)).join()
+        store.dispatch(MenuAction.Navigate.Forward(viewHistory = false))
 
         verify {
             sessionUseCases.goForward.invoke(tab.id)
@@ -847,7 +817,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Forward(viewHistory = false)).join()
+        store.dispatch(MenuAction.Navigate.Forward(viewHistory = false))
 
         verify {
             sessionUseCases.goForward.invoke(customTab.id)
@@ -869,7 +839,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Reload(bypassCache = true)).join()
+        store.dispatch(MenuAction.Navigate.Reload(bypassCache = true))
 
         verify {
             sessionUseCases.reload.invoke(
@@ -894,7 +864,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Reload(bypassCache = false)).join()
+        store.dispatch(MenuAction.Navigate.Reload(bypassCache = false))
 
         verify {
             sessionUseCases.reload.invoke(
@@ -914,7 +884,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Reload(bypassCache = false)).join()
+        store.dispatch(MenuAction.Navigate.Reload(bypassCache = false))
 
         verify {
             sessionUseCases.reload.invoke(
@@ -939,7 +909,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Stop).join()
+        store.dispatch(MenuAction.Navigate.Stop)
 
         verify {
             sessionUseCases.stopLoading.invoke(tab.id)
@@ -956,7 +926,7 @@ class MenuNavigationMiddlewareTest {
             onDismiss = { dismissWasCalled = true },
         )
 
-        store.dispatch(MenuAction.Navigate.Stop).join()
+        store.dispatch(MenuAction.Navigate.Stop)
 
         verify {
             sessionUseCases.stopLoading.invoke(customTab.id)

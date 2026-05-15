@@ -65,7 +65,7 @@
         android:layout_gravity="bottom|center"
         android:alpha="0"
         android:autofillHints="false"
-        android:background="?attr/layer1"
+        android:background="?attr/colorSurface"
         android:focusedByDefault="true"
         android:hint="@string/collection_name_hint"
         android:imeOptions="actionDone"
@@ -79,8 +79,7 @@
         android:textColor="?attr/textPrimary"
         android:textSize="16sp"
         android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="parent"
-        tools:targetApi="o" />
+        app:layout_constraintBottom_toBottomOf="parent" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/tab_list"
@@ -132,7 +131,7 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
-            app:srcCompat="@drawable/ic_new"
+            app:srcCompat="@drawable/mozac_ic_plus_24"
             app:tint="?iconOnColor" />
 
         <TextView

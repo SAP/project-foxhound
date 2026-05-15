@@ -16,9 +16,8 @@
       let html, render, renderTarget;
 
       add_setup(async function setup() {
-        ({ html, render } = await import(
-          "chrome://global/content/vendor/lit.all.mjs"
-        ));
+        ({ html, render } =
+          await import("chrome://global/content/vendor/lit.all.mjs"));
         renderTarget = document.getElementById("render");
       });
 
@@ -39,9 +38,7 @@
 
         let fieldsetEl = fieldset.shadowRoot.querySelector("fieldset");
         let legend = fieldset.shadowRoot.querySelector("fieldset > legend");
-        let description = fieldset.shadowRoot.querySelector(
-          "fieldset > #description"
-        );
+        let description = fieldset.shadowRoot.querySelector("#description");
 
         is(
           legend.childElementCount,
@@ -50,10 +47,6 @@
         );
         is(legend.innerText, "Test label", "legend is set");
         is(description.innerText, "Test description", "description is set");
-        ok(
-          description.classList.contains("text-deemphasized"),
-          "description is styled"
-        );
         is(
           fieldset.shadowRoot.getElementById(
             fieldsetEl.getAttribute("aria-describedby")
@@ -77,6 +70,21 @@
         ok(
           !fieldsetEl.hasAttribute("aria-describedby"),
           "aria-describedby removed when no description"
+        );
+
+        // Validate that adding iconSrc displays an image
+        let icon = fieldset.shadowRoot.querySelector(".icon");
+        ok(!icon, "Icon is not rendered when iconSrc is not present.");
+
+        fieldset.iconSrc = "chrome://global/skin/icons/info.svg";
+        await fieldset.updateComplete;
+
+        icon = fieldset.shadowRoot.querySelector(".icon");
+        ok(icon, "Icon is rendered after iconSrc is supplied.");
+        is(
+          icon.src,
+          "chrome://global/skin/icons/info.svg",
+          "Icon src is set to the expected value."
         );
       });
 
@@ -214,6 +222,10 @@
         fieldset.headingLevel = 7;
         await fieldset.updateComplete;
 
+        ok(
+          !fieldset.hasAttribute("hasheading"),
+          "hasheading attribute isn't set when headingLevel is invalid"
+        );
         is(legendEl.childElementCount, 0, "The legend has no child elements");
         is(legendEl.innerText, "Test label", "The legend text is correct");
 
@@ -228,12 +240,101 @@
           fieldset.headingLevel = i;
           await fieldset.updateComplete;
 
+          ok(
+            fieldset.hasAttribute("hasheading"),
+            "hasheading attribute is set when headingLevel is valid"
+          );
+
           is(legendEl.childElementCount, 1, "The legend has a child");
           is(legendEl.innerText, "Test label", "The legend text is correct");
           headingEl = legendEl.firstElementChild;
           is(headingEl.localName, `h${i}`, `The legend has an h${i}`);
           is(headingEl.innerText, "Test label", "The heading has the text");
         }
+      });
+
+      add_task(async function testMozFieldsetDisabled() {
+        render(
+          html`
+            <moz-fieldset label="Test label" description="Test description">
+              <input type="text" />
+              <select>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+              </select>
+              <textarea></textarea>
+              <button>Click me!</button>
+              <moz-toggle
+                pressed
+                label="First setting"
+                description="These could have descriptions too."
+              ></moz-toggle>
+              <moz-checkbox label="Second setting"></moz-checkbox>
+              <moz-select label="Make a choice">
+                <moz-option label="Option One" value="1"></moz-option>
+                <moz-option label="Option A" value="a"></moz-option>
+              </moz-select>
+              <moz-radio-group label="Radio group setting">
+                <moz-radio label="Option 1" value="1"></moz-radio>
+                <moz-radio label="Option 2" value="2"></moz-radio>
+                <moz-radio label="Option 3" value="3"></moz-radio>
+              </moz-radio-group>
+              <moz-button label="Button"></moz-button>
+            </moz-fieldset>
+          `,
+          renderTarget
+        );
+
+        let fieldset = renderTarget.querySelector("moz-fieldset");
+        await fieldset.updateComplete;
+
+        let fieldsetEl = fieldset.shadowRoot.querySelector("fieldset");
+
+        ok(
+          !fieldsetEl.hasAttribute("disabled"),
+          "Fieldset should not be disabled initially"
+        );
+
+        let allFormElements = fieldset.querySelectorAll(
+          "input, button, select, textarea, moz-toggle, moz-checkbox, moz-select, moz-button, moz-radio-group"
+        );
+        allFormElements.forEach(el => {
+          ok(
+            !el.hasAttribute("disabled"),
+            `${el.tagName} should not be disabled initially`
+          );
+        });
+
+        fieldset.disabled = true;
+        await fieldset.updateComplete;
+
+        ok(
+          fieldsetEl.hasAttribute("disabled"),
+          "Fieldset should be disabled when disabled=true"
+        );
+
+        allFormElements.forEach(el => {
+          ok(
+            el.hasAttribute("disabled"),
+            `${el.tagName} should be disabled when fieldset is disabled`
+          );
+        });
+
+        fieldset.disabled = false;
+        await fieldset.updateComplete;
+
+        ok(
+          !fieldsetEl.hasAttribute("disabled"),
+          "Fieldset should not be disabled when disabled=false"
+        );
+
+        allFormElements.forEach(el => {
+          ok(
+            !el.hasAttribute("disabled"),
+            `${el.tagName} should be enabled when fieldset is re-enabled`
+          );
+        });
       });
     </script>
   </head>

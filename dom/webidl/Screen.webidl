@@ -25,9 +25,10 @@ interface Screen : EventTarget {
    * Can be: landscape-primary, landscape-secondary,
    *         portrait-primary or portrait-secondary.
    */
-  [NeedsCallerType]
+  [NeedsCallerType, Deprecated="MozorientationDeprecated"]
   readonly attribute DOMString mozOrientation;
 
+  [Deprecated="MozorientationchangeDeprecated"]
   attribute EventHandler onmozorientationchange;
 
   /**
@@ -37,8 +38,13 @@ interface Screen : EventTarget {
    * FIXME(emilio): These do literally nothing, we should
    * try to remove these.
    */
+  [Deprecated="MozlockorientationDeprecated"]
   boolean mozLockOrientation(DOMString orientation);
+
+  [Deprecated="MozlockorientationDeprecated"]
   boolean mozLockOrientation(sequence<DOMString> orientation);
+
+  [Deprecated="MozunlockorientationDeprecated"]
   undefined mozUnlockOrientation();
 };
 

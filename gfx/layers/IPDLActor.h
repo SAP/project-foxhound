@@ -9,7 +9,6 @@
 
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/CompositableForwarder.h"
-#include "mozilla/Unused.h"
 #include "gfxPlatform.h"
 
 namespace mozilla {
@@ -33,7 +32,7 @@ class ParentActor : public Protocol {
 
   mozilla::ipc::IPCResult RecvDestroy() final {
     DestroyIfNeeded();
-    Unused << Protocol::Send__delete__(this);
+    (void)Protocol::Send__delete__(this);
     return IPC_OK();
   }
 

@@ -12,7 +12,7 @@
 #include "js/Class.h"
 #include "vm/NativeObject.h"
 
-namespace js {
+namespace js::intl {
 
 class LocaleObject : public NativeObject {
  public:
@@ -46,16 +46,6 @@ class LocaleObject : public NativeObject {
   static const ClassSpec classSpec_;
 };
 
-[[nodiscard]] extern bool intl_ValidateAndCanonicalizeLanguageTag(JSContext* cx,
-                                                                  unsigned argc,
-                                                                  Value* vp);
-
-[[nodiscard]] extern bool intl_TryValidateAndCanonicalizeLanguageTag(
-    JSContext* cx, unsigned argc, Value* vp);
-
-[[nodiscard]] extern bool intl_ValidateAndCanonicalizeUnicodeExtensionType(
-    JSContext* cx, unsigned argc, Value* vp);
-
-}  // namespace js
+}  // namespace js::intl
 
 #endif /* builtin_intl_Locale_h */

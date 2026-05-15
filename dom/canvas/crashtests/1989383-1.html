@@ -1,0 +1,12 @@
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const cnv = document.getElementById("a")
+  const ctx = cnv.getContext("2d")
+  ctx.shadowBlur = 169
+  ctx.globalCompositeOperation = "multiply"
+  ctx.shadowColor = "currentColor"
+  ctx.strokeText("&#xDB;", -204.661, -513, 237)
+})
+</script>
+<canvas id="a" height="800" width="800"></canvas>
+

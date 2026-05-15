@@ -4,13 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txXSLTProcessor.h"
-#include "txInstructions.h"
+
 #include "nsGkAtoms.h"
+#include "txExecutionState.h"
+#include "txExprResult.h"
+#include "txInstructions.h"
 #include "txLog.h"
 #include "txStylesheetCompileHandlers.h"
 #include "txStylesheetCompiler.h"
-#include "txExecutionState.h"
-#include "txExprResult.h"
 
 TX_LG_IMPL
 

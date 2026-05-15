@@ -15,7 +15,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   XreDirProvider: [
     "@mozilla.org/xre/directory-provider;1",
-    "nsIXREDirProvider",
+    Ci.nsIXREDirProvider,
   ],
 });
 

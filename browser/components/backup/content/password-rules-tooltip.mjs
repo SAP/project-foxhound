@@ -11,10 +11,9 @@ import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
  */
 export default class PasswordRulesTooltip extends MozLitElement {
   static properties = {
-    hasCommon: { type: Boolean },
     hasEmail: { type: Boolean },
     tooShort: { type: Boolean },
-    supportBaseLink: { type: String },
+    open: { type: Boolean },
   };
 
   static get queries() {
@@ -25,89 +24,97 @@ export default class PasswordRulesTooltip extends MozLitElement {
 
   constructor() {
     super();
-    this.hasCommon = false;
     this.hasEmail = false;
     this.tooShort = false;
-    this.supportBaseLink = "";
+    this._onResize = null;
   }
 
-  getRuleStateConstants(hasInvalidCondition) {
-    if (hasInvalidCondition) {
-      return {
-        class: "warning",
-        icon: "chrome://global/skin/icons/warning.svg",
-        l10nId: "password-rules-a11y-warning",
-      };
-    }
-
-    return {
-      class: "success",
-      icon: "chrome://global/skin/icons/check-filled.svg",
-      l10nId: "password-rules-a11y-success",
+  _debounce(fn, delay) {
+    let timeout;
+    return (...args) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn(...args), delay);
     };
   }
 
-  render() {
-    let lengthConstants = this.getRuleStateConstants(this.tooShort);
-    let emailConstants = this.getRuleStateConstants(this.hasEmail);
-    // TODO: (bug 1905140) read list of common passwords - default to success state for now
-    let commonConstants = this.getRuleStateConstants(this.hasCommon);
+  _handleResize() {
+    if (this.open) {
+      this.positionPopover();
+    }
+  }
 
+  connectedCallback() {
+    super.connectedCallback();
+    this._onResize = this._debounce(() => this._handleResize(), 200);
+    window.addEventListener("resize", this._onResize);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._onResize) {
+      window.removeEventListener("resize", this._onResize);
+    }
+  }
+
+  show() {
+    this.passwordRulesEl.showPopover();
+    this.positionPopover();
+  }
+
+  hide() {
+    this.passwordRulesEl.hidePopover();
+  }
+
+  positionPopover() {
+    const anchorRect = this.getBoundingClientRect();
+    const popover = this.passwordRulesEl;
+    const isWideViewport = window.innerWidth >= 1200;
+    const isRTL = document.dir === "rtl";
+
+    // Calculate top position
+    const topPos = isWideViewport
+      ? anchorRect.top + anchorRect.height / 2
+      : anchorRect.bottom;
+
+    popover.style.top = `${topPos}px`;
+    popover.style.right = isRTL ? "auto" : "inherit";
+    popover.style.left = isRTL ? "inherit" : "auto";
+  }
+
+  _onBeforeToggle(e) {
+    this.open = e.newState == "open";
+  }
+
+  render() {
     return html`
       <link
         rel="stylesheet"
         href="chrome://browser/content/backup/password-rules-tooltip.css"
       />
-      <div id="password-rules-wrapper" aria-live="polite">
+      <div
+        id="password-rules-wrapper"
+        role="tooltip"
+        aria-describedby="password-rules-header"
+        popover="manual"
+        @beforetoggle=${this._onBeforeToggle}
+      >
         <h2
           id="password-rules-header"
           data-l10n-id="password-rules-header"
         ></h2>
         <ul>
-          <li>
-            <img
-              data-l10n-id=${lengthConstants.l10nId}
-              class="icon ${lengthConstants.class}"
-              src=${lengthConstants.icon}
-            />
+          <li class=${this.tooShort && "warning"}>
             <span
               data-l10n-id="password-rules-length-description"
               class="rule-description"
+              aria-labelledby="password-rules-header"
             ></span>
           </li>
-          <li>
-            <img
-              data-l10n-id=${emailConstants.l10nId}
-              class="icon ${emailConstants.class}"
-              src=${emailConstants.icon}
-            />
+          <li class=${this.hasEmail && "warning"}>
             <span
               data-l10n-id="password-rules-email-description"
               class="rule-description"
-            ></span>
-          </li>
-          <li>
-            <img
-              data-l10n-id=${commonConstants.l10nId}
-              class="icon ${commonConstants.class}"
-              src=${commonConstants.icon}
-            />
-            <span
-              data-l10n-id="password-rules-common-description"
-              class="rule-description"
-            ></span>
-          </li>
-          <li>
-            <img
-              class="icon"
-              src="chrome://browser/skin/preferences/category-privacy-security.svg"
-            />
-            <span data-l10n-id="password-rules-disclaimer"
-              ><a
-                data-l10n-name="password-support-link"
-                target="_blank"
-                href=${`${this.supportBaseLink}password-strength`}
-              ></a
+              aria-labelledby="password-rules-header"
             ></span>
           </li>
         </ul>

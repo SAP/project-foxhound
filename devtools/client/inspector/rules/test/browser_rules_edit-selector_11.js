@@ -45,7 +45,7 @@ async function testEditSelector(view) {
   ruleEditor = getRuleViewRuleEditor(view, 1);
 
   info("Check that the correct rules are visible");
-  is(view._elementStyle.rules.length, 4, "Should have 4 rules.");
+  is(view.elementStyle.rules.length, 4, "Should have 4 rules.");
   is(
     ruleEditor.element.getAttribute("unmatched"),
     "false",

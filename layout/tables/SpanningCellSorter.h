@@ -11,10 +11,10 @@
  * Code to sort cells by their colspan, used by BasicTableLayoutStrategy.
  */
 
-#include "PLDHashTable.h"
 #include "StackArena.h"
 #include "nsDebug.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 
 /**
  * The SpanningCellSorter is responsible for accumulating lists of cells
@@ -48,14 +48,14 @@ class MOZ_STACK_CLASS SpanningCellSorter {
 
  private:
   enum State { ADDING, ENUMERATING_ARRAY, ENUMERATING_HASH, DONE };
-  State mState;
+  State mState = ADDING;
 
   // store small colspans in an array for fast sorting and
   // enumeration, and large colspans in a hash table
 
   enum { ARRAY_BASE = 2 };
   enum { ARRAY_SIZE = 8 };
-  Item* mArray[ARRAY_SIZE];
+  Item* mArray[ARRAY_SIZE] = {};
   int32_t SpanToIndex(int32_t aSpan) { return aSpan - ARRAY_BASE; }
   int32_t IndexToSpan(int32_t aIndex) { return aIndex + ARRAY_BASE; }
   bool UseArrayForSpan(int32_t aSpan) {
@@ -63,29 +63,15 @@ class MOZ_STACK_CLASS SpanningCellSorter {
     return SpanToIndex(aSpan) < ARRAY_SIZE;
   }
 
-  PLDHashTable mHashTable;
-  struct HashTableEntry : public PLDHashEntryHdr {
-    int32_t mColSpan;
-    Item* mItems;
-  };
+  using HashTableType = nsTHashMap<int32_t, Item*>;
+  using HashTableEntry = typename HashTableType::EntryType;
 
-  static const PLDHashTableOps HashTableOps;
-
-  static PLDHashNumber HashTableHashKey(const void* key);
-  static bool HashTableMatchEntry(const PLDHashEntryHdr* hdr, const void* key);
-
-  static int CompareHashTableEntry(HashTableEntry* a, HashTableEntry* b);
+  // Map from colSpan -> items
+  HashTableType mHashTable;
 
   /* state used only during enumeration */
-  uint32_t mEnumerationIndex;  // into mArray or mSortedHashTable
+  uint32_t mEnumerationIndex = 0;  // into mArray or mSortedHashTable
   nsTArray<HashTableEntry*> mSortedHashTable;
-
-  /*
-   * operator new is forbidden since we use the pres shell's stack
-   * memory, which much be pushed and popped at points matching a
-   * push/pop on the C++ stack.
-   */
-  void* operator new(size_t sz) noexcept(true) { return nullptr; }
 };
 
 #endif

@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_GeolocationSystem_h
 #define mozilla_dom_GeolocationSystem_h
 
-#include "mozilla/dom/PContentParent.h"
 #include "GeolocationIPCUtils.h"
+#include "mozilla/dom/PContentParent.h"
 
 namespace mozilla::dom {
 

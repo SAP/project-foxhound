@@ -2,24 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+plugins {
+    alias(libs.plugins.dependency.analysis)
+}
+
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-parcelize'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.concept.storage'
 }
 
@@ -27,18 +18,23 @@ dependencies {
     // Necessary because we use 'suspend'. Fun fact: this module will compile just fine without this
     // dependency, but it will crash at runtime.
     // Included via 'api' because this module is unusable without coroutines.
-    api libs.kotlin.coroutines
+    api libs.kotlinx.coroutines
 
+    implementation project(':components:support-base')
     implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
+
     implementation libs.androidx.annotation
+    implementation libs.androidx.work.runtime
 
     testImplementation project(':components:support-test')
+
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4
-    testRuntimeOnly libs.junit.vintage
     testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.junit.vintage
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

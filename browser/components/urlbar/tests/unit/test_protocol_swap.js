@@ -82,7 +82,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -98,7 +98,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -116,7 +116,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -132,7 +132,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -181,7 +181,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -199,7 +199,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -228,7 +228,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -245,7 +245,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -274,7 +274,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),
@@ -291,7 +291,7 @@ add_task(async function test_swap_protocol() {
     matches: [
       makeVisitResult(context, {
         uri: `${searchString}/`,
-        fallbackTitle: `${searchString}/`,
+        title: `${searchString}/`,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
       }),

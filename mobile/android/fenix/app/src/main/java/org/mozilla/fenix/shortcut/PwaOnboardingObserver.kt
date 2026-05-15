@@ -7,7 +7,9 @@ package org.mozilla.fenix.shortcut
 import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavController
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.mapNotNull
@@ -31,12 +33,13 @@ class PwaOnboardingObserver(
     private val navController: NavController,
     private val settings: Settings,
     private val webAppUseCases: WebAppUseCases,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) {
 
     private var scope: CoroutineScope? = null
 
     fun start() {
-        scope = store.flowScoped(lifecycleOwner) { flow ->
+        scope = store.flowScoped(lifecycleOwner, dispatcher) { flow ->
             flow.mapNotNull { state ->
                 state.selectedTab
             }

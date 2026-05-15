@@ -76,6 +76,22 @@ however there is a history of ``commits`` recorded for each ``change``
 (see ``jj evolog``, for example). You can specify either ``change``
 hashes *or* ``commit`` hashes in revsets.
 
+Co-located Jujutsu and Git
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A `co-located repository
+<https://jj-vcs.github.io/jj/latest/git-compatibility/#co-located-jujutsugit-repos>`__
+allows running ``jj`` and ``git`` commands in the same repository rather than
+syncing changes between ``jj`` and ``git`` repositories to switch between the
+different tools.
+
+Git commands can be useful because some features are not yet implemented in
+Jujutsu, such as ``git log`` and ``git rebase`` for `interactions with file
+renames <https://github.com/jj-vcs/jj/issues/6940>`__ and ``git am`` for
+`importing patches <https://github.com/jj-vcs/jj/issues/2702>`__.  See also
+:ref:`Transplanting Patches To and From Mercurial Repositories
+<git-mercurial-transplant>`.
+
 Firefox Main Tips
 -----------------
 
@@ -216,8 +232,8 @@ and add the following:
 
 ::
 
-   [core]
-   fsmonitor = "watchman"
+   [fsmonitor]
+   backend = "watchman"
 
 Instead of scanning the file system, ``jj`` will (much like ``hg``\ ’s
 ``fsmonitor`` extension) use file system events to be notified about

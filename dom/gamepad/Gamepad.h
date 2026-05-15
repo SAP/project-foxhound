@@ -7,19 +7,20 @@
 #ifndef mozilla_dom_gamepad_Gamepad_h
 #define mozilla_dom_gamepad_Gamepad_h
 
+#include <stdint.h>
+
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadButton.h"
 #include "mozilla/dom/GamepadHandle.h"
-#include "mozilla/dom/GamepadPose.h"
 #include "mozilla/dom/GamepadHapticActuator.h"
 #include "mozilla/dom/GamepadLightIndicator.h"
+#include "mozilla/dom/GamepadPose.h"
 #include "mozilla/dom/GamepadTouch.h"
 #include "mozilla/dom/Performance.h"
-#include <stdint.h>
 #include "nsCOMPtr.h"
-#include "nsTHashMap.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla::dom {

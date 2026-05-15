@@ -23,7 +23,12 @@ void GTestBench(const char* aSuite, const char* aName,
   bool shouldAlert = bool(getenv("PERFHERDER_ALERTING_ENABLED"));
   std::vector<int> durations;
 
-  for (int i = 0; i < MOZ_GTEST_NUM_ITERATIONS; i++) {
+  int iterations;
+  if (!getenv("MOZ_GTEST_NUM_ITERATIONS") ||
+      (iterations = atoi(getenv("MOZ_GTEST_NUM_ITERATIONS"))) == 0)
+    iterations = MOZ_GTEST_NUM_ITERATIONS;
+
+  for (int i = 0; i < iterations; i++) {
     mozilla::TimeStamp start = TimeStamp::Now();
 
     aTest();
@@ -32,7 +37,7 @@ void GTestBench(const char* aSuite, const char* aName,
   }
 
   std::string replicatesStr = "[" + std::to_string(durations[0]);
-  for (int i = 1; i < MOZ_GTEST_NUM_ITERATIONS; i++) {
+  for (int i = 1; i < iterations; i++) {
     replicatesStr += "," + std::to_string(durations[i]);
   }
   replicatesStr += "]";
@@ -40,8 +45,7 @@ void GTestBench(const char* aSuite, const char* aName,
   // median is at index floor(i/2) if number of replicates is odd,
   // (i/2-1) if even
   std::sort(durations.begin(), durations.end());
-  int medianIndex =
-      (MOZ_GTEST_NUM_ITERATIONS / 2) + ((durations.size() % 2 == 0) ? (-1) : 0);
+  int medianIndex = (iterations / 2) + ((iterations % 2 == 0) ? (-1) : 0);
 
   // Print the result for each test. Let perfherder aggregate for us
   printf(

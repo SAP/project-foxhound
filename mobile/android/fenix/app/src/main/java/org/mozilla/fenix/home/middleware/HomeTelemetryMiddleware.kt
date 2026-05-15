@@ -5,7 +5,7 @@
 package org.mozilla.fenix.home.middleware
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import org.mozilla.fenix.GleanMetrics.HomeContentArticle
 import org.mozilla.fenix.GleanMetrics.Pings
@@ -20,7 +20,7 @@ import org.mozilla.fenix.components.appstate.AppState
  */
 class HomeTelemetryMiddleware : Middleware<AppState, AppAction> {
     override fun invoke(
-        context: MiddlewareContext<AppState, AppAction>,
+        store: Store<AppState, AppAction>,
         next: (AppAction) -> Unit,
         action: AppAction,
     ) {

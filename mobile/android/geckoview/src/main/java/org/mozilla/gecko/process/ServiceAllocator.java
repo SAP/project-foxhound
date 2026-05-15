@@ -4,7 +4,6 @@
 
 package org.mozilla.gecko.process;
 
-import android.annotation.TargetApi;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -13,7 +12,9 @@ import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
+import androidx.annotation.ChecksSdkIntAtLeast;
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 import java.security.SecureRandom;
 import java.util.BitSet;
 import java.util.EnumMap;
@@ -30,6 +31,7 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
   private static final int MAX_NUM_ISOLATED_CONTENT_SERVICES =
       GeckoChildProcessServices.MAX_NUM_ISOLATED_CONTENT_SERVICES;
 
+  @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.Q)
   private static boolean hasQApis() {
     return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
   }
@@ -73,6 +75,8 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
    * per-service connection objects.
    */
   public abstract static class InstanceInfo {
+    abstract int getPid() throws Exception;
+
     private class Binding implements ServiceConnection {
       /**
        * This implementation of ServiceConnection.onServiceConnected simply bounces the connection
@@ -115,6 +119,7 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
       }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private class IsolatedBindDelegate implements BindServiceDelegate {
       @Override
       public boolean bindService(
@@ -159,7 +164,7 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
     }
 
     private BindServiceDelegate getBindServiceDelegate() {
-      if (mType != GeckoProcessType.CONTENT) {
+      if (!isContent()) {
         // Non-content services just use default binding
         return this.new DefaultBindDelegate();
       }
@@ -210,7 +215,9 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
     }
 
     public boolean isContent() {
-      return mType == GeckoProcessType.CONTENT;
+      return mType == GeckoProcessType.CONTENT
+          || mType == GeckoProcessType.CONTENT_ISOLATED
+          || mType == GeckoProcessType.CONTENT_ISOLATED_WITH_ZYGOTE;
     }
 
     public GeckoProcessType getType() {
@@ -307,7 +314,6 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
      * priority levels whose ordinals are greater than or equal to the current priority level
      * ordinal must be bound.
      */
-    @TargetApi(29)
     private boolean updateBindings() {
       XPCOMEventTarget.assertOnLauncherThread();
       int numBindSuccesses = 0;
@@ -370,6 +376,13 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
       }
 
       final String svcName = mBindDelegate.getServiceName();
+      String pid;
+      try {
+        pid = String.valueOf(getPid());
+      } catch (final Exception e) {
+        pid = "not connected";
+      }
+
       final StringBuilder builder = new StringBuilder(svcName);
       builder
           .append(" updateBindings: ")
@@ -377,6 +390,8 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
           .append(" priority, ")
           .append(mRelativeImportance)
           .append(" importance, ")
+          .append(pid)
+          .append(" pid, ")
           .append(numBindSuccesses)
           .append(" successful binds, ")
           .append(numBindFailures)
@@ -462,6 +477,9 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
     }
 
     /**
+     * Get the number of content (isolated content) services defined in our manifest. This isn't sum
+     * of content + isolated content.
+     *
      * @return The number of content services defined in our manifest.
      */
     private static int getContentServiceCount() {
@@ -477,6 +495,7 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
    * processes that may be started. We simply use a monotonically-increasing counter to generate
    * unique instance IDs in this case.
    */
+  @RequiresApi(Build.VERSION_CODES.Q)
   private static final class IsolatedContentPolicy implements ContentAllocationPolicy {
     private final Set<String> mRunningServiceIds = new HashSet<>();
 
@@ -522,7 +541,7 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
    */
   private String allocate(@NonNull final GeckoProcessType type) {
     XPCOMEventTarget.assertOnLauncherThread();
-    if (type != GeckoProcessType.CONTENT) {
+    if (!GeckoProcessManager.isContent(type)) {
       // No unique id necessary
       return null;
     }
@@ -530,7 +549,9 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
     // Lazy initialization of mContentAllocPolicy to ensure that it is constructed on the
     // launcher thread.
     if (mContentAllocPolicy == null) {
-      if (canBindIsolated(GeckoProcessType.CONTENT)) {
+      if (hasQApis()
+          && (type == GeckoProcessType.CONTENT_ISOLATED
+              || type == GeckoProcessType.CONTENT_ISOLATED_WITH_ZYGOTE)) {
         mContentAllocPolicy = new IsolatedContentPolicy();
       } else {
         mContentAllocPolicy = new DefaultContentPolicy();
@@ -586,7 +607,6 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
    * Wrapper for bindService() that utilizes the Context.bindService() overload that accepts an
    * Executor argument, when available. Otherwise it falls back to the legacy overload.
    */
-  @TargetApi(29)
   private static boolean bindServiceDefault(
       @NonNull final Context context,
       @NonNull final Intent intent,
@@ -600,7 +620,7 @@ import org.mozilla.gecko.util.XPCOMEventTarget;
     return context.bindService(intent, conn, flags);
   }
 
-  @TargetApi(29)
+  @RequiresApi(Build.VERSION_CODES.Q)
   private static boolean bindServiceIsolated(
       @NonNull final Context context,
       @NonNull final Intent intent,

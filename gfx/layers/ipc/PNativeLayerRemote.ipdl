@@ -1,0 +1,90 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include "mozilla/GfxMessageUtils.h";
+
+using struct mozilla::gfx::DeviceColor from "mozilla/gfx/2D.h";
+using mozilla::gfx::IntPoint from "mozilla/gfx/Point.h";
+using mozilla::gfx::IntRect from "mozilla/gfx/Point.h";
+using mozilla::gfx::RoundedRect from "mozilla/gfx/Point.h";
+using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
+using mozilla::gfx::Matrix4x4 from "mozilla/gfx/Matrix.h";
+[MoveOnly] using mozilla::layers::IOSurfacePort from "mozilla/layers/IOSurfacePort.h";
+
+namespace mozilla {
+namespace layers {
+
+union NativeLayerCommand {
+  CommandCreateLayer;
+  CommandCreateLayerForExternalTexture;
+  CommandCreateLayerForColor;
+  CommandLayerDestroyed;
+  CommandSetLayers;
+  CommandLayerInfo;
+  CommandChangedSurface;
+};
+
+struct CommandCreateLayer {
+  uint64_t ID;
+  IntSize Size;
+  bool Opaque;
+};
+
+struct CommandCreateLayerForExternalTexture {
+  uint64_t ID;
+  bool Opaque;
+};
+
+struct CommandCreateLayerForColor {
+  uint64_t ID;
+  DeviceColor Color;
+};
+
+struct CommandLayerDestroyed {
+  uint64_t ID;
+};
+
+struct CommandSetLayers {
+  uint64_t[] IDs;
+};
+
+struct CommandLayerInfo {
+  uint64_t ID;
+  IntPoint Position;
+  IntRect DisplayRect;
+  IntRect? ClipRect;
+  RoundedRect? RoundedClipRect;
+  Matrix4x4 Transform;
+  int8_t SamplingFilter;
+  bool SurfaceIsFlipped;
+};
+
+struct CommandChangedSurface {
+  uint64_t ID;
+  IOSurfacePort Surface;
+  bool IsDRM;
+  bool IsHDR;
+  IntSize Size;
+};
+
+// This protocol allows a NativeLayerRoot implementation on the GPU
+// to send layer commands to the parent process. It also allows the
+// GPU to request readback, which the parent will send as a Shmem.
+[NeedsOtherPid, ParentProc=Parent, ChildProc=GPU]
+sync protocol PNativeLayerRemote
+{
+parent:
+  async CommitNativeLayerCommands(NativeLayerCommand[] commands);
+  sync RequestReadback(IntSize size) returns (Shmem pixels);
+
+  // A synchronous no-op message, to make sure that any preceding
+  // CommitNativeLayerCommands messages have been processed.
+  // Used for synchronous widget-initiated paints, most importantly
+  // during window resize or when a new window is opened.
+  sync Flush();
+};
+
+} // layers
+} // mozilla

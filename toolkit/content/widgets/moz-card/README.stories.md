@@ -34,18 +34,18 @@ Provide a heading for the moz-card component for emphasis on what the card is ab
 >The content under the heading</moz-card>
 ```
 
-You can also set an icon along with the heading by providing an `icon` attribute.
+You can also set an icon along with the heading by providing an image path for the `iconSrc` attribute.
 
 
 ```html
-<moz-card heading="The heading" icon="">The content under the heading</moz-card>
+<moz-card heading="The heading" iconSrc="chrome://browser/skin/preferences/category-general.svg">The content under the heading</moz-card>
 ```
 
 ```html story
 <moz-card
     style={{width: '500px'}}
     heading="The heading"
-    icon=""
+    iconSrc="chrome://browser/skin/preferences/category-general.svg"
 >The content under the heading</moz-card>
 ```
 

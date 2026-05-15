@@ -57,6 +57,9 @@ export class UserCharacteristicsWindowInfoChild extends JSWindowActorChild {
       return;
     }
 
+    result.set("availTop", this.contentWindow.screen.availTop);
+    result.set("availLeft", this.contentWindow.screen.availLeft);
+
     this.sendMessage("ScreenInfo:Populated", result);
     this.propertyCollected("ScreenInfo");
   }

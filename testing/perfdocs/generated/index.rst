@@ -7,9 +7,9 @@ Performance Testing
   :hidden:
   :glob:
 
+  awsy
   DAMP
   IndexedDB
-  awsy
   mach-try-perf
   mozperftest
   perf-sheriffing
@@ -18,6 +18,7 @@ Performance Testing
   perftest-in-a-nutshell
   raptor
   talos
+  telemetry-alerting
 
 Performance tests are designed to catch performance regressions before they reach our
 end users. At this time, there is no unified approach for these types of tests,
@@ -25,9 +26,9 @@ but `mozperftest </testing/perfdocs/mozperftest.html>`_ aims to provide this in 
 
 For more detailed information about each test suite and project, see their documentation:
 
+  * :doc:`awsy`
   * :doc:`DAMP`
   * :doc:`IndexedDB`
-  * :doc:`awsy`
   * :doc:`mach-try-perf`
   * :doc:`mozperftest`
   * :doc:`perf-sheriffing`
@@ -36,6 +37,7 @@ For more detailed information about each test suite and project, see their docum
   * :doc:`perftest-in-a-nutshell`
   * :doc:`raptor`
   * :doc:`talos`
+  * :doc:`telemetry-alerting`
 
 
 Here are the active PerfTest components/modules and their respective owners:

@@ -1,0 +1,203 @@
+diff --git a/ggml/src/gguf.cpp b/ggml/src/gguf.cpp
+index 5ffd12b8b2..c2ae0db107 100644
+--- a/ggml/src/gguf.cpp
++++ b/ggml/src/gguf.cpp
+@@ -15,6 +15,8 @@
+ #include <string>
+ #include <vector>
+ 
++#include "moz-overrides.h"
++
+ template <typename T>
+ struct type_to_gguf_type;
+ 
+diff --git a/src/llama-adapter.cpp b/src/llama-adapter.cpp
+index 8d94034aed..995c5fa41d 100644
+--- a/src/llama-adapter.cpp
++++ b/src/llama-adapter.cpp
+@@ -8,6 +8,8 @@
+ #include <cassert>
+ #include <stdexcept>
+ 
++#include "moz-overrides.h"
++
+ // vec
+ 
+ ggml_tensor * llama_adapter_cvec::tensor_for(int il) const {
+diff --git a/src/llama-chat.cpp b/src/llama-chat.cpp
+index 5d317f4ee6..6a7bed5305 100644
+--- a/src/llama-chat.cpp
++++ b/src/llama-chat.cpp
+@@ -6,6 +6,8 @@
+ #include <sstream>
+ #include <algorithm>
+ 
++#include "moz-overrides.h"
++
+ #if __cplusplus >= 202000L
+     #define LU8(x) (const char*)(u8##x)
+ #else
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 06e93b19cb..e932b11ac1 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -12,6 +12,8 @@
+ #include <limits>
+ #include <stdexcept>
+ 
++#include "moz-overrides.h"
++
+ //
+ // llama_context
+ //
+diff --git a/src/llama-grammar.cpp b/src/llama-grammar.cpp
+index bed706bb24..04f4b484e5 100644
+--- a/src/llama-grammar.cpp
++++ b/src/llama-grammar.cpp
+@@ -8,6 +8,8 @@
+ #include <algorithm>
+ #include <stdexcept>
+ 
++#include "moz-overrides.h"
++
+ //
+ // helpers
+ //
+diff --git a/src/llama-kv-cache-unified.cpp b/src/llama-kv-cache-unified.cpp
+index 8517b722a9..c0e6d05c35 100644
+--- a/src/llama-kv-cache-unified.cpp
++++ b/src/llama-kv-cache-unified.cpp
+@@ -12,6 +12,8 @@
+ #include <map>
+ #include <stdexcept>
+ 
++#include "moz-overrides.h"
++
+ //
+ // llama_kv_cache_unified
+ //
+diff --git a/src/llama-memory-recurrent.cpp b/src/llama-memory-recurrent.cpp
+index 1b1e95d567..b6624a3864 100644
+--- a/src/llama-memory-recurrent.cpp
++++ b/src/llama-memory-recurrent.cpp
+@@ -11,6 +11,8 @@
+ #include <map>
+ #include <stdexcept>
+ 
++#include "moz-overrides.h"
++
+ //
+ // llama_memory_recurrent
+ //
+diff --git a/src/llama-mmap.cpp b/src/llama-mmap.cpp
+index 47497cf953..c5f8a28bb3 100644
+--- a/src/llama-mmap.cpp
++++ b/src/llama-mmap.cpp
+@@ -39,6 +39,8 @@
+ #include <TargetConditionals.h>
+ #endif
+ 
++#include "moz-overrides.h"
++
+ // TODO: consider moving to llama-impl.h if needed in more places
+ #if defined(_WIN32)
+ static std::string llama_format_win_err(DWORD err) {
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index bd9e6da883..1a90a1eb88 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -7,6 +7,8 @@
+ #include <cstring>
+ #include <future>
+ 
++#include "moz-overrides.h"
++
+ static const size_t kiB = 1024;
+ static const size_t MiB = 1024*kiB;
+ static const size_t GiB = 1024*MiB;
+diff --git a/src/llama-model-loader.h b/src/llama-model-loader.h
+index 0f52b011b6..ded54f544a 100644
+--- a/src/llama-model-loader.h
++++ b/src/llama-model-loader.h
+@@ -34,12 +34,14 @@
+         llama_tensor_weight(const llama_file * file, uint16_t idx, const struct gguf_context * gguf_ctx, ggml_tensor * tensor) : idx(idx), tensor(tensor) {
+             const int tensor_idx = gguf_find_tensor(gguf_ctx,  ggml_get_name(tensor));
+             if (tensor_idx < 0) {
+-                throw std::runtime_error(format("tensor '%s' not found in the model", ggml_get_name(tensor)));
++                // throw std::runtime_error(format("tensor '%s' not found in the model", ggml_get_name(tensor)));
++              std::abort();
+             }
+ 
+             offs = gguf_get_data_offset(gguf_ctx) + gguf_get_tensor_offset(gguf_ctx, tensor_idx);
+             if (offs + ggml_nbytes(tensor) < offs || offs + ggml_nbytes(tensor) > file->size()) {
+-                throw std::runtime_error(format("tensor '%s' data is not within the file bounds, model is corrupted or incomplete", ggml_get_name(tensor)));
++              //throw std::runtime_error(format("tensor '%s' data is not within the file bounds, model is corrupted or incomplete", ggml_get_name(tensor)));
++              std::abort();
+             }
+         }
+     };
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index fc39195ed5..e041f7e1a6 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -25,6 +25,8 @@
+ #include <sstream>
+ #include <stdexcept>
+ 
++#include "moz-overrides.h"
++
+ const char * llm_type_name(llm_type type) {
+     switch (type) {
+         case LLM_TYPE_14M:           return "14M";
+diff --git a/src/llama-sampling.cpp b/src/llama-sampling.cpp
+index bfbf5fa230..dd1d9eee52 100644
+--- a/src/llama-sampling.cpp
++++ b/src/llama-sampling.cpp
+@@ -17,6 +17,8 @@
+ #include <unordered_map>
+ #include <stdexcept>
+ 
++#include "moz-overrides.h"
++
+ // the ring buffer works similarly to std::deque, but with a fixed capacity
+ template<typename T>
+ struct ring_buffer {
+diff --git a/src/llama-vocab.cpp b/src/llama-vocab.cpp
+index 5c9eb87566..334f862100 100644
+--- a/src/llama-vocab.cpp
++++ b/src/llama-vocab.cpp
+@@ -20,6 +20,8 @@
+ #include <set>
+ #include <unordered_map>
+ 
++#include "moz-overrides.h"
++
+ //
+ // helpers
+ //
+diff --git a/src/llama.cpp b/src/llama.cpp
+index 34906cdb62..0adb16598e 100644
+--- a/src/llama.cpp
++++ b/src/llama.cpp
+@@ -17,6 +17,8 @@
+ #include <cstring>
+ #include <ctime>
+ 
++#include "moz-overrides.h"
++
+ #if defined(_MSC_VER)
+ #pragma warning(disable: 4244 4267) // possible loss of data
+ #endif
+diff --git a/src/unicode.cpp b/src/unicode.cpp
+index 43a4581b96..6b3b2dbe7d 100644
+--- a/src/unicode.cpp
++++ b/src/unicode.cpp
+@@ -19,6 +19,8 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "moz-overrides.h"
++
+ size_t unicode_len_utf8(char src) {
+     const size_t lookup[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 4 };
+     uint8_t highbits = static_cast<uint8_t>(src) >> 4;

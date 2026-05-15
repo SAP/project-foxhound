@@ -5,9 +5,10 @@
 const URL_HOST = "http://localhost";
 const PR_USEC_PER_MSEC = 1000;
 
-const { GMPExtractor, GMPInstallManager } = ChromeUtils.importESModule(
-  "resource://gre/modules/GMPInstallManager.sys.mjs"
-);
+const { GMPAddon, GMPExtractor, GMPInstallManager } =
+  ChromeUtils.importESModule(
+    "resource://gre/modules/GMPInstallManager.sys.mjs"
+  );
 const { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
 );
@@ -38,9 +39,6 @@ registerCleanupFunction(() => {
     "toolkit.telemetry.testing.overrideProductsCheck"
   );
 });
-// Most tests do no handle the machinery for content signatures, so let
-// specific tests that need it turn it on as needed.
-Preferences.set("media.gmp-manager.checkContentSignature", false);
 
 do_get_profile();
 
@@ -149,12 +147,11 @@ add_test(function test_checkForAddons_noResponse() {
  * Tests that no addons element returned resolves with no addons
  */
 add_task(async function test_checkForAddons_noAddonsElement() {
-  let myRequest = new mockRequest(200, "<updates></updates>");
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.noAddonsUri);
+
   let installManager = new GMPInstallManager();
-  let res = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.checkForAddons()
-  );
+  let res = await installManager.checkForAddons();
   Assert.equal(res.addons.length, 0);
   installManager.uninit();
 });
@@ -163,12 +160,11 @@ add_task(async function test_checkForAddons_noAddonsElement() {
  * Tests that empty addons element returned resolves with no addons
  */
 add_task(async function test_checkForAddons_emptyAddonsElement() {
-  let myRequest = new mockRequest(200, "<updates><addons/></updates>");
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.emptyAddonsUri);
+
   let installManager = new GMPInstallManager();
-  let res = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.checkForAddons()
-  );
+  let res = await installManager.checkForAddons();
   Assert.equal(res.addons.length, 0);
   installManager.uninit();
 });
@@ -338,23 +334,11 @@ add_test(function test_checkForAddons_notXML() {
  * Tests that getting a response with a single addon works as expected
  */
 add_task(async function test_checkForAddons_singleAddon() {
-  let responseXML =
-    '<?xml version="1.0"?>' +
-    "<updates>" +
-    "    <addons>" +
-    '        <addon id="gmp-gmpopenh264"' +
-    '               URL="http://127.0.0.1:8011/gmp-gmpopenh264-1.1.zip"' +
-    '               hashFunction="sha256"' +
-    '               hashValue="1118b90d6f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-    '               version="1.1"/>' +
-    "  </addons>" +
-    "</updates>";
-  let myRequest = new mockRequest(200, responseXML);
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.singleAddonUri);
+
   let installManager = new GMPInstallManager();
-  let res = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.checkForAddons()
-  );
+  let res = await installManager.checkForAddons();
   Assert.equal(res.addons.length, 1);
   let gmpAddon = res.addons[0];
   Assert.equal(gmpAddon.id, "gmp-gmpopenh264");
@@ -375,24 +359,11 @@ add_task(async function test_checkForAddons_singleAddon() {
  * attribute parses as expected.
  */
 add_task(async function test_checkForAddons_singleAddonWithSize() {
-  let responseXML =
-    '<?xml version="1.0"?>' +
-    "<updates>" +
-    "    <addons>" +
-    '        <addon id="openh264-plugin-no-at-symbol"' +
-    '               URL="http://127.0.0.1:8011/gmp-gmpopenh264-1.1.zip"' +
-    '               hashFunction="sha256"' +
-    '               size="42"' +
-    '               hashValue="1118b90d6f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-    '               version="1.1"/>' +
-    "  </addons>" +
-    "</updates>";
-  let myRequest = new mockRequest(200, responseXML);
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.sizedAddonUri);
+
   let installManager = new GMPInstallManager();
-  let res = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.checkForAddons()
-  );
+  let res = await installManager.checkForAddons();
   Assert.equal(res.addons.length, 1);
   let gmpAddon = res.addons[0];
   Assert.equal(gmpAddon.id, "openh264-plugin-no-at-symbol");
@@ -415,60 +386,11 @@ add_task(async function test_checkForAddons_singleAddonWithSize() {
  */
 add_task(
   async function test_checkForAddons_multipleAddonNoUpdatesSomeInvalid() {
-    let responseXML =
-      '<?xml version="1.0"?>' +
-      "<updates>" +
-      "    <addons>" +
-      // valid openh264
-      '        <addon id="gmp-gmpopenh264"' +
-      '               URL="http://127.0.0.1:8011/gmp-gmpopenh264-1.1.zip"' +
-      '               hashFunction="sha256"' +
-      '               hashValue="1118b90d6f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-      '               version="1.1"/>' +
-      // valid not openh264
-      '        <addon id="NOT-gmp-gmpopenh264"' +
-      '               URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip"' +
-      '               hashFunction="sha512"' +
-      '               hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-      '               version="9.1"/>' +
-      // noid
-      '        <addon notid="NOT-gmp-gmpopenh264"' +
-      '               URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip"' +
-      '               hashFunction="sha512"' +
-      '               hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-      '               version="9.1"/>' +
-      // no URL
-      '        <addon id="NOT-gmp-gmpopenh264"' +
-      '               notURL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip"' +
-      '               hashFunction="sha512"' +
-      '               hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-      '               version="9.1"/>' +
-      // no hash function
-      '        <addon id="NOT-gmp-gmpopenh264"' +
-      '               URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip"' +
-      '               nothashFunction="sha512"' +
-      '               hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-      '               version="9.1"/>' +
-      // no hash function
-      '        <addon id="NOT-gmp-gmpopenh264"' +
-      '               URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip"' +
-      '               hashFunction="sha512"' +
-      '               nothashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-      '               version="9.1"/>' +
-      // not version
-      '        <addon id="NOT-gmp-gmpopenh264"' +
-      '               URL="http://127.0.0.1:8011/NOT-gmp-gmpopenh264-1.1.zip"' +
-      '               hashFunction="sha512"' +
-      '               hashValue="141592656f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-      '               notversion="9.1"/>' +
-      "  </addons>" +
-      "</updates>";
-    let myRequest = new mockRequest(200, responseXML);
+    const testServerInfo = getTestServerForContentSignatureTests();
+    Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.invalidAddonsUri);
+
     let installManager = new GMPInstallManager();
-    let res = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-      myRequest,
-      () => installManager.checkForAddons()
-    );
+    let res = await installManager.checkForAddons();
     Assert.equal(res.addons.length, 7);
     let gmpAddon = res.addons[0];
     Assert.equal(gmpAddon.id, "gmp-gmpopenh264");
@@ -510,26 +432,10 @@ add_task(
  * works as expected.
  */
 add_task(async function test_checkForAddons_updatesWithAddons() {
-  let responseXML =
-    '<?xml version="1.0"?>' +
-    "    <updates>" +
-    '        <update type="minor" displayVersion="33.0a1" appVersion="33.0a1" platformVersion="33.0a1" buildID="20140628030201">' +
-    '        <patch type="complete" URL="http://ftp.mozilla.org/pub/mozilla.org/firefox/nightly/2014/06/2014-06-28-03-02-01-mozilla-central/firefox-33.0a1.en-US.mac.complete.mar" hashFunction="sha512" hashValue="f3f90d71dff03ae81def80e64bba3e4569da99c9e15269f731c2b167c4fc30b3aed9f5fee81c19614120230ca333e73a5e7def1b8e45d03135b2069c26736219" size="85249896"/>' +
-    "    </update>" +
-    "    <addons>" +
-    '        <addon id="gmp-gmpopenh264"' +
-    '               URL="http://127.0.0.1:8011/gmp-gmpopenh264-1.1.zip"' +
-    '               hashFunction="sha256"' +
-    '               hashValue="1118b90d6f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-    '               version="1.1"/>' +
-    "  </addons>" +
-    "</updates>";
-  let myRequest = new mockRequest(200, responseXML);
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.updatesAddonsUri);
   let installManager = new GMPInstallManager();
-  let res = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.checkForAddons()
-  );
+  let res = await installManager.checkForAddons();
   Assert.equal(res.addons.length, 1);
   let gmpAddon = res.addons[0];
   Assert.equal(gmpAddon.id, "gmp-gmpopenh264");
@@ -550,8 +456,6 @@ add_task(async function test_checkForAddons_updatesWithAddons() {
  * checking is enabled and the signature check passes.
  */
 add_task(async function test_checkForAddons_contentSignatureSuccess() {
-  const previousUrlOverride = setupContentSigTestPrefs();
-
   Services.fog.testResetFOG();
 
   const testServerInfo = getTestServerForContentSignatureTests();
@@ -599,14 +503,6 @@ add_task(async function test_checkForAddons_contentSignatureSuccess() {
 
   // Test that glean has 1 success for content sig and no other metrics.
   const expectedGleanValues = {
-    cert_pin_success: 0,
-    cert_pin_net_request_error: 0,
-    cert_pin_net_timeout: 0,
-    cert_pin_abort: 0,
-    cert_pin_missing_data: 0,
-    cert_pin_failed: 0,
-    cert_pin_invalid: 0,
-    cert_pin_unknown_error: 0,
     content_sig_success: 1,
     content_sig_net_request_error: 0,
     content_sig_net_timeout: 0,
@@ -617,8 +513,6 @@ add_task(async function test_checkForAddons_contentSignatureSuccess() {
     content_sig_unknown_error: 0,
   };
   checkGleanMetricCounts(expectedGleanValues);
-
-  revertContentSigTestPrefs(previousUrlOverride);
 });
 
 /**
@@ -626,8 +520,6 @@ add_task(async function test_checkForAddons_contentSignatureSuccess() {
  * checking is enabled and the check fails.
  */
 add_task(async function test_checkForAddons_contentSignatureFailure() {
-  const previousUrlOverride = setupContentSigTestPrefs();
-
   Services.fog.testResetFOG();
 
   const testServerInfo = getTestServerForContentSignatureTests();
@@ -659,7 +551,7 @@ add_task(async function test_checkForAddons_contentSignatureFailure() {
       Assert.equal(res.addons[0].id, "gmp-gmpopenh264");
       Assert.equal(res.addons[0].usedFallback, true);
       Assert.ok(
-        res.addons[0].URL.startsWith("http://ciscobinary.openh264.org")
+        res.addons[0].URL.startsWith("https://ciscobinary.openh264.org")
       );
       Assert.deepEqual(res.addons[0].mirrorURLs, []);
       Assert.equal(res.addons[1].id, "gmp-widevinecdm");
@@ -817,15 +709,6 @@ add_task(async function test_checkForAddons_contentSignatureFailure() {
 
   // Check all glean metrics have expected values at test end.
   const expectedGleanValues = {
-    cert_pin_success: 0,
-    cert_pin_net_request_error: 0,
-    cert_pin_net_timeout: 0,
-    cert_pin_abort: 0,
-    cert_pin_missing_data: 0,
-    cert_pin_failed: 0,
-    cert_pin_invalid: 0,
-    cert_pin_xml_parse_error: 0,
-    cert_pin_unknown_error: 0,
     content_sig_success: 0,
     content_sig_net_request_error: 2,
     content_sig_net_timeout: 2,
@@ -837,16 +720,12 @@ add_task(async function test_checkForAddons_contentSignatureFailure() {
     content_sig_unknown_error: 0,
   };
   checkGleanMetricCounts(expectedGleanValues);
-
-  revertContentSigTestPrefs(previousUrlOverride);
 });
 
 /**
  * Tests that the signature verification URL is as expected.
  */
 add_task(async function test_checkForAddons_get_verifier_url() {
-  const previousUrlOverride = setupContentSigTestPrefs();
-
   let installManager = new GMPInstallManager();
   // checkForAddons() calls _getContentSignatureRootForURL() with the return
   // value of _getURL(), which is effectively KEY_URL_OVERRIDE or KEY_URL
@@ -891,121 +770,6 @@ add_task(async function test_checkForAddons_get_verifier_url() {
   );
 
   installManager.uninit();
-
-  revertContentSigTestPrefs(previousUrlOverride);
-});
-
-/**
- * Tests that checkForAddons() works as expected when certificate pinning
- * checking is enabled. We plan to move away from cert pinning in favor of
- * content signature checks, but part of doing this is comparing the telemetry
- * from both methods. We want test coverage to ensure the telemetry is being
- * gathered for cert pinning failures correctly before we remove the code.
- */
-add_task(async function test_checkForAddons_telemetry_certPinning() {
-  // Grab state so we can restore it at the end of the test.
-  const previousUrlOverride = Preferences.get(GMPPrefs.KEY_URL_OVERRIDE, "");
-
-  Services.fog.testResetFOG();
-
-  // Re-use the content-sig test server config. We're not going to need any of
-  // the content signature specific config but this gives us a server to get
-  // update.xml files from, and also tests that cert pinning doesn't break even
-  // if we're getting content sig headers sent.
-  const testServerInfo = getTestServerForContentSignatureTests();
-
-  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.validUpdateUri);
-
-  let installManager = new GMPInstallManager();
-  try {
-    // This should work because once we override the GMP URL, no cert pin
-    // checks are actually done. I.e. we don't need to do any pinning in
-    // the test, just use a valid URL.
-    await installManager.checkForAddons();
-    Assert.ok(true, "checkForAddons should succeed");
-  } catch (e) {
-    Assert.ok(false, "checkForAddons should succeed");
-  }
-
-  // Glean values should reflect 1 successful pin fetch.
-  Assert.equal(
-    Glean.gmp.updateXmlFetchResult.cert_pin_success.testGetValue(),
-    1
-  );
-
-  // Fail by pointing to a bad URL.
-  Preferences.set(
-    GMPPrefs.KEY_URL_OVERRIDE,
-    "https://this.url.doesnt/go/anywhere"
-  );
-  await installManager.checkForAddons();
-  // Should have another failure and it should be due to a bad request.
-  Assert.equal(
-    Glean.gmp.updateXmlFetchResult.cert_pin_net_request_error.testGetValue(),
-    1
-  );
-
-  // Fail via timeout. This case uses our mock machinery in order to abort the
-  // request, as I (:bryce) couldn't figure out a nice way to do it with the
-  // HttpServer.
-  let overriddenServiceRequest = new mockRequest(200, "", {
-    dropRequest: true,
-    timeout: true,
-  });
-  await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    overriddenServiceRequest,
-    () => installManager.checkForAddons()
-  );
-  // Should have another failure and it should be due to a timeout.
-  Assert.equal(
-    Glean.gmp.updateXmlFetchResult.cert_pin_net_timeout.testGetValue(),
-    1
-  );
-
-  // Fail via abort. This case uses our mock machinery in order to abort the
-  // request, as I (:bryce) couldn't figure out a nice way to do it with the
-  // HttpServer.
-  overriddenServiceRequest = new mockRequest(200, "", {
-    dropRequest: true,
-  });
-  let promise = ProductAddonCheckerTestUtils.overrideServiceRequest(
-    overriddenServiceRequest,
-    () => installManager.checkForAddons()
-  );
-  setTimeout(() => {
-    overriddenServiceRequest.abort();
-  }, 100);
-  await promise;
-  // Should have another failure and it should be due to an abort.
-  Assert.equal(Glean.gmp.updateXmlFetchResult.cert_pin_abort.testGetValue(), 1);
-
-  // Check all glean metrics have expected values at test end.
-  const expectedGleanValues = {
-    cert_pin_success: 1,
-    cert_pin_net_request_error: 1,
-    cert_pin_net_timeout: 1,
-    cert_pin_abort: 1,
-    cert_pin_missing_data: 0,
-    cert_pin_failed: 0,
-    cert_pin_invalid: 0,
-    cert_pin_unknown_error: 0,
-    content_sig_success: 0,
-    content_sig_net_request_error: 0,
-    content_sig_net_timeout: 0,
-    content_sig_abort: 0,
-    content_sig_missing_data: 0,
-    content_sig_failed: 0,
-    content_sig_invalid: 0,
-    content_sig_unknown_error: 0,
-  };
-  checkGleanMetricCounts(expectedGleanValues);
-
-  // Restore the URL override now that we're done.
-  if (previousUrlOverride) {
-    Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, previousUrlOverride);
-  } else {
-    Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
-  }
 });
 
 /**
@@ -1088,38 +852,28 @@ async function test_checkForAddons_installAddon(
   let mirrorURL = selectUrl(mirrorConfig);
   let secondMirrorURL = selectUrl(secondMirrorConfig);
 
-  let responseXML =
-    '<?xml version="1.0"?>' +
-    "<updates>" +
-    "    <addons>" +
-    '        <addon id="' +
-    id +
-    '-gmp-gmpopenh264"' +
-    (defaultURL ? ' URL="' + defaultURL + '"' : "") +
-    '               hashFunction="' +
-    hashFunc +
-    '"' +
-    '               hashValue="' +
-    expectedDigest +
-    '"' +
-    (sizeConfig !== "none" ? ' size="' + fileSize + '"' : "") +
-    '               version="1.1">' +
-    (mirrorURL ? '          <mirror URL="' + mirrorURL + '"/>' : "") +
-    (secondMirrorURL
-      ? '          <mirror URL="' + secondMirrorURL + '"/>'
-      : "") +
-    "        </addon>" +
-    "  </addons>" +
-    "</updates>";
-
-  let myRequest = new mockRequest(200, responseXML);
+  // Construct the addon directly instead of going through checkForAddons,
+  // since checkForAddons now requires valid content signatures.
+  let mirrorURLs = [];
+  if (mirrorURL) {
+    mirrorURLs.push(mirrorURL);
+  }
+  if (secondMirrorURL) {
+    mirrorURLs.push(secondMirrorURL);
+  }
+  let addonData = {
+    id: id + "-gmp-gmpopenh264",
+    URL: defaultURL,
+    hashFunction: hashFunc,
+    hashValue: expectedDigest,
+    version: "1.1",
+    mirrorURLs,
+  };
+  if (sizeConfig !== "none") {
+    addonData.size = fileSize;
+  }
+  let gmpAddon = new GMPAddon(addonData);
   let installManager = new GMPInstallManager();
-  let res = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.checkForAddons()
-  );
-  Assert.equal(res.addons.length, 1);
-  let gmpAddon = res.addons[0];
   Assert.ok(!gmpAddon.isInstalled);
 
   try {
@@ -1495,26 +1249,17 @@ add_task(
  */
 add_task(async function test_simpleCheckAndInstall_autoUpdateDisabled() {
   GMPPrefs.setBool(GMPPrefs.KEY_PLUGIN_AUTOUPDATE, false, OPEN_H264_ID);
-  let responseXML =
-    '<?xml version="1.0"?>' +
-    "<updates>" +
-    "    <addons>" +
-    // valid openh264
-    '        <addon id="gmp-gmpopenh264"' +
-    '               URL="http://127.0.0.1:8011/gmp-gmpopenh264-1.1.zip"' +
-    '               hashFunction="sha256"' +
-    '               hashValue="1118b90d6f645eefc2b99af17bae396636ace1e33d079c88de715177584e2aee"' +
-    '               version="1.1"/>' +
-    "  </addons>" +
-    "</updates>";
 
-  let myRequest = new mockRequest(200, responseXML);
+  // Use content signature test server to provide valid signed response
+  // with a single openh264 addon (singleaddon.xml)
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.singleAddonUri);
+
   let installManager = new GMPInstallManager();
-  let result = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.simpleCheckAndInstall()
-  );
+  let result = await installManager.simpleCheckAndInstall();
   Assert.equal(result.status, "nothing-new-to-install");
+
+  Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
   Preferences.reset(GMPPrefs.KEY_UPDATE_LAST_CHECK);
   GMPPrefs.setBool(GMPPrefs.KEY_PLUGIN_AUTOUPDATE, true, OPEN_H264_ID);
 });
@@ -1523,81 +1268,61 @@ add_task(async function test_simpleCheckAndInstall_autoUpdateDisabled() {
  * Tests simpleCheckAndInstall nothing to install
  */
 add_task(async function test_simpleCheckAndInstall_nothingToInstall() {
-  let responseXML = '<?xml version="1.0"?><updates></updates>';
+  // Use content signature test server to provide valid signed response
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.emptyAddonsUri);
 
-  let myRequest = new mockRequest(200, responseXML);
   let installManager = new GMPInstallManager();
-  let result = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.simpleCheckAndInstall()
-  );
+  let result = await installManager.simpleCheckAndInstall();
   Assert.equal(result.status, "nothing-new-to-install");
+
+  Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
 });
 
 /**
  * Tests simpleCheckAndInstall too frequent
  */
 add_task(async function test_simpleCheckAndInstall_tooFrequent() {
-  let responseXML = '<?xml version="1.0"?><updates></updates>';
+  // This test relies on the previous test having set KEY_UPDATE_LAST_CHECK
+  // recently, so the check is skipped as "too frequent".
+  // Use content signature test server in case it does check.
+  const testServerInfo = getTestServerForContentSignatureTests();
+  Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, testServerInfo.emptyAddonsUri);
 
-  let myRequest = new mockRequest(200, responseXML);
   let installManager = new GMPInstallManager();
-  let result = await ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.simpleCheckAndInstall()
-  );
+  let result = await installManager.simpleCheckAndInstall();
   Assert.equal(result.status, "too-frequent-no-check");
+
+  Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
 });
 
 /**
  * Tests that installing addons when there is no server works as expected
  */
-add_test(function test_installAddon_noServer() {
+add_task(async function test_installAddon_noServer() {
   let zipFileName = "test_GMP.zip";
   let zipURL = URL_HOST + ":0/" + zipFileName;
 
-  let responseXML =
-    '<?xml version="1.0"?>' +
-    "<updates>" +
-    "    <addons>" +
-    '        <addon id="gmp-gmpopenh264"' +
-    '               URL="' +
-    zipURL +
-    '"' +
-    '               hashFunction="sha256"' +
-    '               hashValue="11221cbda000347b054028b527a60e578f919cb10f322ef8077d3491c6fcb474"' +
-    '               version="1.1"/>' +
-    "  </addons>" +
-    "</updates>";
+  // Construct the addon directly instead of going through checkForAddons,
+  // since checkForAddons now requires valid content signatures.
+  let gmpAddon = new GMPAddon({
+    id: "gmp-gmpopenh264",
+    URL: zipURL,
+    hashFunction: "sha256",
+    hashValue:
+      "11221cbda000347b054028b527a60e578f919cb10f322ef8077d3491c6fcb474",
+    version: "1.1",
+  });
 
-  let myRequest = new mockRequest(200, responseXML);
   let installManager = new GMPInstallManager();
-  let checkPromise = ProductAddonCheckerTestUtils.overrideServiceRequest(
-    myRequest,
-    () => installManager.checkForAddons()
-  );
-  checkPromise.then(
-    res => {
-      Assert.equal(res.addons.length, 1);
-      let gmpAddon = res.addons[0];
-
-      GMPInstallManager.overrideLeaveDownloadedZip = true;
-      let installPromise = installManager.installAddon(gmpAddon);
-      installPromise.then(
-        () => {
-          do_throw("No server for install should reject");
-        },
-        err => {
-          Assert.ok(!!err);
-          installManager.uninit();
-          run_next_test();
-        }
-      );
-    },
-    () => {
-      do_throw("check should not reject for install no server");
-    }
-  );
+  GMPInstallManager.overrideLeaveDownloadedZip = true;
+  try {
+    await installManager.installAddon(gmpAddon);
+    Assert.ok(false, "No server for install should reject");
+  } catch (err) {
+    Assert.ok(!!err, "Install should fail when server is unreachable");
+  }
+  installManager.uninit();
 });
 
 /***
@@ -1846,6 +1571,7 @@ mockRequest.prototype = {
 
 /**
  * Creates a new zip file containing a file with the specified data
+ *
  * @param zipName The name of the zip file
  * @param data The data to go inside the zip for the filename entry1.info
  */
@@ -1880,39 +1606,11 @@ function createNewZipFile(zipName, data) {
   return zipFile;
 }
 
-/***
- * Set up pref(s) as appropriate for content sig tests. Return the value of our
- * current GMP url override so it can be restored at test teardown.
- */
-
-function setupContentSigTestPrefs() {
-  Preferences.set("media.gmp-manager.checkContentSignature", true);
-
-  // Return the URL override so tests can restore it to its previous value
-  // once they're done.
-  return Preferences.get(GMPPrefs.KEY_URL_OVERRIDE, "");
-}
-
-/***
- * Revert prefs used for content signature tests.
- *
- * @param previousUrlOverride - The GMP URL override value prior to test being
- * run. The function will revert the URL back to this, or reset the URL if no
- * value is passed.
- */
-function revertContentSigTestPrefs(previousUrlOverride) {
-  if (previousUrlOverride) {
-    Preferences.set(GMPPrefs.KEY_URL_OVERRIDE, previousUrlOverride);
-  } else {
-    Preferences.reset(GMPPrefs.KEY_URL_OVERRIDE);
-  }
-  Preferences.set("media.gmp-manager.checkContentSignature", false);
-}
-
-/***
+/**
  * A helper to check that glean metrics have expected counts.
+ *
  * @param expectedGleanValues a object that has properties with names set to glean metrics to be checked
- * and the values are the expected count. Eg { cert_pin_success: 1 }.
+ * and the values are the expected count. Eg { content_sig_success: 1 }.
  */
 function checkGleanMetricCounts(expectedGleanValues) {
   for (const property in expectedGleanValues) {
@@ -1932,7 +1630,7 @@ function checkGleanMetricCounts(expectedGleanValues) {
   }
 }
 
-/***
+/**
  * Sets up a `HttpServer` for use in content singature checking tests. This
  * server will expose different endpoints that can be used to simulate different
  * pass and failure scenarios when fetching an update.xml file.
@@ -1984,6 +1682,7 @@ function getTestServerForContentSignatureTests() {
     readStringFromFile(do_get_file("content_signing_int.pem")),
   ];
   testServer.registerPathHandler(validX5uPath, (req, res) => {
+    res.setHeader("content-type", "binary/octet-stream");
     res.write(validCertChain.join("\n"));
   });
   const validX5uUrl = baseUri + validX5uPath;
@@ -1994,6 +1693,66 @@ function getTestServerForContentSignatureTests() {
     const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${goodXmlContentSignature}`;
     res.setHeader("content-signature", validContentSignatureHeader);
     res.write(goodXml);
+  });
+
+  const noAddonsXml = readStringFromFile(do_get_file("missing.xml"));
+  const noAddonsXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDz2EMNR8LNyCCjisGPnSRoDbxUFBIm8gCxRwt_woTIXxYLnAo5uC1dBeqpAVyAzlTv";
+  const noAddonsPath = "/no_addons.xml";
+  testServer.registerPathHandler(noAddonsPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${noAddonsXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(noAddonsXml);
+  });
+
+  const emptyAddonsXml = readStringFromFile(do_get_file("empty.xml"));
+  const emptyAddonsXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDzfMitUV1j2A-nIg8s-yDce9Cxw45wCFgwmSbPfMYnAlhX2s0PWMZAOCxj8MxA7dfP";
+  const emptyAddonsPath = "/empty_addons.xml";
+  testServer.registerPathHandler(emptyAddonsPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${emptyAddonsXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(emptyAddonsXml);
+  });
+
+  const singleAddonXml = readStringFromFile(do_get_file("singleaddon.xml"));
+  const singleAddonXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDznM_CXGzHNytmrq8dsrHzw_cHS5y_zxPhka8ie3Yp23f9NVtcQ3fTdHukH9IftKTA";
+  const singleAddonPath = "/singleaddon.xml";
+  testServer.registerPathHandler(singleAddonPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${singleAddonXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(singleAddonXml);
+  });
+
+  const sizedAddonXml = readStringFromFile(do_get_file("sizedaddon.xml"));
+  const sizedAddonXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDzHzZsuKkTWV59yDdBLgvVgJdT20_GyvlOLCTxJFAUTapITxEV4qnDoCzlilANhmYw";
+  const sizedAddonPath = "/sizedaddon.xml";
+  testServer.registerPathHandler(sizedAddonPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${sizedAddonXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(sizedAddonXml);
+  });
+
+  const invalidAddonsXml = readStringFromFile(do_get_file("invalidaddons.xml"));
+  const invalidAddonsXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDzG96vhdQhonrcT0WhEbJEhcj3ZFHw6_s_FUyC2vzgIicGkjqDo1UoH3-IuZ1hW851";
+  const invalidAddonsPath = "/invalidaddons.xml";
+  testServer.registerPathHandler(invalidAddonsPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${invalidAddonsXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(invalidAddonsXml);
+  });
+
+  const updatesAddonsXml = readStringFromFile(do_get_file("updatesaddons.xml"));
+  const updatesAddonsXmlContentSignature =
+    "7QYnPqFoOlS02BpDdIRIljzmPr6BFwPs1z1y8KJUBlnU7EVG6FbnXmVVt5Op9wDzr9curyPbWNBvg_1UDikMeaLK0FWS57aLsOKSvhM0gQkjhXTE_TExyAWSo4tibsoW";
+  const updatesAddonsPath = "/updatesaddons.xml";
+  testServer.registerPathHandler(updatesAddonsPath, (req, res) => {
+    const validContentSignatureHeader = `x5u=${validX5uUrl}; p384ecdsa=${updatesAddonsXmlContentSignature}`;
+    res.setHeader("content-signature", validContentSignatureHeader);
+    res.write(updatesAddonsXml);
   });
 
   const missingContentSigPath = "/update_missing_content_sig.xml";
@@ -2092,6 +1851,12 @@ function getTestServerForContentSignatureTests() {
     testServer,
     promiseHolder,
     validUpdateUri: baseUri + validUpdatePath,
+    noAddonsUri: baseUri + noAddonsPath,
+    emptyAddonsUri: baseUri + emptyAddonsPath,
+    singleAddonUri: baseUri + singleAddonPath,
+    sizedAddonUri: baseUri + sizedAddonPath,
+    invalidAddonsUri: baseUri + invalidAddonsPath,
+    updatesAddonsUri: baseUri + updatesAddonsPath,
     missingContentSigUri: baseUri + missingContentSigPath,
     badContentSigUri: baseUri + badContentSigPath,
     invalidContentSigUri: baseUri + invalidContentSigPath,

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozSpellChecker_h__
-#define mozSpellChecker_h__
+#ifndef mozSpellChecker_h_
+#define mozSpellChecker_h_
 
 #include "mozilla/MozPromise.h"
 #include "nsCOMPtr.h"
@@ -187,4 +187,4 @@ class mozSpellChecker final {
 
   friend class mozilla::RemoteSpellcheckEngineChild;
 };
-#endif  // mozSpellChecker_h__
+#endif  // mozSpellChecker_h_

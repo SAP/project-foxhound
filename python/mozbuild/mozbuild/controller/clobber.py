@@ -13,10 +13,9 @@ from textwrap import TextWrapper
 from mozfile.mozfile import remove as mozfileremove
 from mozpack import path as mozpath
 
-CLOBBER_MESSAGE = "".join(
-    [
-        TextWrapper().fill(line) + "\n"
-        for line in """
+CLOBBER_MESSAGE = "".join([
+    TextWrapper().fill(line) + "\n"
+    for line in """
 The CLOBBER file has been updated, indicating that an incremental build since \
 your last build will probably not work. A full/clobber build is required.
 
@@ -38,8 +37,7 @@ Well, are ya? -- you can ignore this clobber requirement by running:
 
  $ touch {clobber_file}
 """.splitlines()
-    ]
-)
+])
 
 
 class Clobberer:
@@ -141,9 +139,9 @@ class Clobberer:
         """
         # Determine where cargo build artifacts are stored
         RUST_TARGET_VARS = ("RUST_HOST_TARGET", "RUST_TARGET")
-        rust_targets = set(
-            [self.substs[x] for x in RUST_TARGET_VARS if x in self.substs]
-        )
+        rust_targets = set([
+            self.substs[x] for x in RUST_TARGET_VARS if x in self.substs
+        ])
         rust_build_kind = "release"
         if self.substs.get("MOZ_DEBUG_RUST"):
             rust_build_kind = "debug"

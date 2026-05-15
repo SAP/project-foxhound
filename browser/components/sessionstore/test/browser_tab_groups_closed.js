@@ -53,14 +53,14 @@ add_task(async function test_closingTabGroupAddsClosedGroup() {
 add_task(async function test_closedTabGroupSkipsNotWorthSavingTabs() {
   let win = await promiseNewWindowLoaded();
 
-  let tabs = [
-    BrowserTestUtils.addTab(win.gBrowser, "https://example.com"),
-    BrowserTestUtils.addTab(win.gBrowser, "about:blank"),
-  ];
+  const urls = ["https://example.com/", "about:blank"];
+  const tabs = urls.map(url => BrowserTestUtils.addTab(win.gBrowser, url));
   let group = win.gBrowser.addTabGroup(tabs);
   await Promise.all(
-    tabs.map(async t => {
-      await BrowserTestUtils.browserLoaded(t.linkedBrowser);
+    tabs.map(async (t, i) => {
+      await BrowserTestUtils.browserLoaded(t.linkedBrowser, {
+        wantLoad: urls[i],
+      });
       await TabStateFlusher.flush(t.linkedBrowser);
     })
   );

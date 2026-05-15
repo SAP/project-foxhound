@@ -6,13 +6,12 @@
 
 #include "PolicyContainer.h"
 
-#include "nsIClassInfoImpl.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-
 #include "mozilla/dom/IntegrityPolicy.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -183,14 +182,14 @@ void PolicyContainer::SetCSP(nsIContentSecurityPolicy* aPolicy) {
   mCSP = aPolicy;
 }
 
-nsIContentSecurityPolicy* PolicyContainer::CSP() const { return mCSP; }
+nsIContentSecurityPolicy* PolicyContainer::GetCSP() const { return mCSP; }
 
 nsIContentSecurityPolicy* PolicyContainer::GetCSP(
     const nsIPolicyContainer* aPolicyContainer) {
   if (!aPolicyContainer) {
     return nullptr;
   }
-  return PolicyContainer::Cast(aPolicyContainer)->CSP();
+  return PolicyContainer::Cast(aPolicyContainer)->GetCSP();
 }
 
 // == Integrity Policy ==
@@ -198,7 +197,7 @@ void PolicyContainer::SetIntegrityPolicy(nsIIntegrityPolicy* aPolicy) {
   mIntegrityPolicy = aPolicy;
 }
 
-nsIIntegrityPolicy* PolicyContainer::IntegrityPolicy() const {
+nsIIntegrityPolicy* PolicyContainer::GetIntegrityPolicy() const {
   return mIntegrityPolicy;
 }
 
@@ -207,7 +206,7 @@ nsIIntegrityPolicy* PolicyContainer::GetIntegrityPolicy(
   if (!aPolicyContainer) {
     return nullptr;
   }
-  return PolicyContainer::Cast(aPolicyContainer)->IntegrityPolicy();
+  return PolicyContainer::Cast(aPolicyContainer)->GetIntegrityPolicy();
 }
 
 NS_IMETHODIMP PolicyContainer::GetCsp(nsIContentSecurityPolicy** aCsp) {

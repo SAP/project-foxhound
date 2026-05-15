@@ -11,8 +11,10 @@
  * (eg for copy/paste as plaintext).
  */
 
-#ifndef nsPlainTextSerializer_h__
-#define nsPlainTextSerializer_h__
+#ifndef nsPlainTextSerializer_h_
+#define nsPlainTextSerializer_h_
+
+#include <stack>
 
 #include "mozilla/Maybe.h"
 #include "nsAtom.h"
@@ -21,8 +23,6 @@
 #include "nsIDocumentEncoder.h"
 #include "nsString.h"
 #include "nsTArray.h"
-
-#include <stack>
 
 class nsIContent;
 
@@ -44,9 +44,10 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
                   bool aIsWholeDocument, bool* aNeedsPreformatScanning,
                   nsAString& aOutput) override;
 
-  NS_IMETHOD AppendText(nsIContent* aText, int32_t aStartOffset,
+  NS_IMETHOD AppendText(mozilla::dom::Text* aText, int32_t aStartOffset,
                         int32_t aEndOffset) override;
-  NS_IMETHOD AppendCDATASection(nsIContent* aCDATASection, int32_t aStartOffset,
+  NS_IMETHOD AppendCDATASection(mozilla::dom::Text* aCDATASection,
+                                int32_t aStartOffset,
                                 int32_t aEndOffset) override;
   NS_IMETHOD AppendProcessingInstruction(
       mozilla::dom::ProcessingInstruction* aPI, int32_t aStartOffset,
@@ -78,17 +79,24 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
   NS_IMETHOD ForgetElementForPreformat(
       mozilla::dom::Element* aElement) override;
 
+  static void HardWrapString(nsAString& aString, uint32_t aWrapCols,
+                             int32_t flags);
+
  private:
   ~nsPlainTextSerializer();
 
-  nsresult GetAttributeValue(const nsAtom* aName, nsString& aValueRet) const;
+  nsresult GetAttributeValue(mozilla::dom::Element* aElement,
+                             const nsAtom* aName, nsString& aValueRet) const;
   void AddToLine(const char16_t* aStringToAdd, int32_t aLength);
 
   void MaybeWrapAndOutputCompleteLines();
 
-  // @param aSoftLineBreak A soft line break is a space followed by a linebreak
-  // (cf. https://www.ietf.org/rfc/rfc3676.txt, section 4.2).
-  void EndLine(bool aSoftLineBreak, bool aBreakBySpace = false);
+  void EndHardBreakLine();
+  void ResetStateAfterLine() {
+    mInWhitespace = true;
+    mLineBreakDue = false;
+    mFloatingLines = -1;
+  }
 
   void EnsureVerticalSpace(int32_t noOfRows);
 
@@ -102,7 +110,7 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
   bool IsElementPreformatted() const;
   bool IsInOL() const;
   bool IsInOlOrUl() const;
-  bool IsCurrentNodeConverted() const;
+  bool IsCurrentNodeConverted(mozilla::dom::Element* aElement) const;
   bool MustSuppressLeaf() const;
 
   /**
@@ -110,15 +118,17 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
    * HTML element and the atom is a static atom. Otherwise, nullptr is returned.
    */
   static nsAtom* GetIdForContent(nsIContent* aContent);
-  nsresult DoOpenContainer(const nsAtom* aTag);
-  void OpenContainerForOutputFormatted(const nsAtom* aTag);
-  nsresult DoCloseContainer(const nsAtom* aTag);
-  void CloseContainerForOutputFormatted(const nsAtom* aTag);
-  nsresult DoAddLeaf(const nsAtom* aTag);
+  nsresult DoOpenContainer(mozilla::dom::Element* aElement, const nsAtom* aTag);
+  void OpenContainerForOutputFormatted(mozilla::dom::Element* aElement,
+                                       const nsAtom* aTag);
+  nsresult DoCloseContainer(mozilla::dom::Element* aElement,
+                            const nsAtom* aTag);
+  void CloseContainerForOutputFormatted(mozilla::dom::Element* aElement,
+                                        const nsAtom* aTag);
+  nsresult DoAddLeaf(mozilla::dom::Element* aElement, const nsAtom* aTag);
 
-  void DoAddText();
-  // @param aText Ignored if aIsLineBreak is true.
-  void DoAddText(bool aIsLineBreak, const nsAString& aText);
+  void DoAddText(const nsAString& aText);
+  void DoAddLineBreak();
 
   inline bool DoOutput() const { return mHeadLevel == 0; }
 
@@ -143,7 +153,7 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
   static bool IsCssBlockLevelElement(mozilla::dom::Element* aElement);
 
  private:
-  uint32_t mHeadLevel;
+  uint32_t mHeadLevel = 0;
 
   class Settings {
    public:
@@ -273,7 +283,12 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
     void Append(const CurrentLine& aCurrentLine,
                 StripTrailingWhitespaces aStripTrailingWhitespaces);
 
-    void AppendLineBreak();
+    /**
+     * @param aString Last character is expected to not be a line break.
+     */
+    void Append(const nsAString& aString);
+
+    void AppendLineBreak(bool aForceCRLF = false);
 
     /**
      * This empties the current line cache without adding a NEWLINE.
@@ -290,11 +305,6 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
     uint32_t GetOutputLength() const;
 
    private:
-    /**
-     * @param aString Last character is expected to not be a line break.
-     */
-    void Append(const nsAString& aString);
-
     // As defined in nsIDocumentEncoder.idl.
     const int32_t mFlags;
 
@@ -305,12 +315,19 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
     nsString mLineBreak;
   };
 
+  static void PerformWrapAndOutputCompleteLines(
+      const Settings& aSettings, CurrentLine& aLine, OutputManager& aOutput,
+      bool aUseLineBreaker, bool aAllowBonusWidth,
+      nsPlainTextSerializer* aSerializer);
+  static void AppendLineToOutput(const Settings& aSettings, CurrentLine& aLine,
+                                 OutputManager& aOutput);
+
   mozilla::Maybe<OutputManager> mOutputManager;
 
   // If we've just written out a cite blockquote, we need to remember it
   // so we don't duplicate spaces before a <pre wrap> (which mail uses to quote
   // old messages).
-  bool mHasWrittenCiteBlockquote;
+  bool mHasWrittenCiteBlockquote = false;
 
   int32_t mFloatingLines;  // To store the number of lazy line breaks
 
@@ -330,7 +347,7 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
   // is due because of a closing tag. Setting it to "TRUE" while closing the
   // tags. Hence opening tags are guaranteed to start with appropriate line
   // breaks.
-  bool mLineBreakDue;
+  bool mLineBreakDue = false;
 
   bool mPreformattedBlockBoundary;
 
@@ -339,8 +356,6 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
                                 the same depth and in the same
                                 section.
                                 mHeaderCounter[1] for <h1> etc. */
-
-  RefPtr<mozilla::dom::Element> mElement;
 
   // For handling table rows
   AutoTArray<bool, 8> mHasWrittenCellsForRow;
@@ -378,7 +393,7 @@ class nsPlainTextSerializer final : public nsIContentSerializer {
   // serializer enters those specific nodes, mIgnoredChildNodeLevel increases
   // and is greater than 0. Otherwise when serializer leaves those nodes,
   // mIgnoredChildNodeLevel decreases.
-  uint32_t mIgnoredChildNodeLevel;
+  uint32_t mIgnoredChildNodeLevel = 0;
 };
 
 nsresult NS_NewPlainTextSerializer(nsIContentSerializer** aSerializer);

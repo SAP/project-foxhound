@@ -3,6 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const { CustomKeys } = ChromeUtils.importESModule(
+  "resource:///modules/CustomKeys.sys.mjs"
+);
+
 let _resolveDelayedStartup;
 var delayedStartupPromise = new Promise(resolve => {
   _resolveDelayedStartup = resolve;
@@ -15,6 +19,49 @@ var gBrowserInit = {
   _tabToAdopt: undefined,
   _firstContentWindowPaintDeferred: Promise.withResolvers(),
   idleTasksFinished: Promise.withResolvers(),
+
+  /**
+   * Handles considerations when the enabled state of the Translations feature
+   * changes during runtime, such as being blocked or re-enabled in the AI Settings.
+   */
+  _translationsEnabledStateObserver: {
+    observe(_subject, topic, data) {
+      if (topic !== "translations:enabled-state-changed") {
+        console.warn(`received unexpected topic: ${topic}`);
+        return;
+      }
+
+      // Ensures that the Application Menu correctly includes or omits the translate-page menu item.
+      XULBrowserWindow._updateElementsForContentType();
+
+      if (data === "enabled") {
+        // When the feature is re-enabled, ensure that actor instances exist for all tabs.
+        // This loop is synchronous, but should be lightweight to instantiate only the actor objects.
+        // Any expensive work is scheduled asynchronously to the event loop by the actor itself after construction.
+        for (const tab of gBrowser.tabs) {
+          try {
+            const windowGlobal =
+              tab.linkedBrowser?.browsingContext?.currentWindowGlobal;
+
+            if (
+              !windowGlobal ||
+              windowGlobal.isClosed ||
+              !windowGlobal.isCurrentGlobal
+            ) {
+              // This tab's windowGlobal is not relevant to create a Translations actor.
+              continue;
+            }
+
+            // Ensure that a Translations actor instance is (re)created for each open tab that is allowed to have one.
+            windowGlobal.getActor("Translations");
+          } catch {
+            // Not every tab is allowed to have a Translations actor, which is okay.
+            // See ActorManagerParent for the official allow list of URLs.
+          }
+        }
+      }
+    },
+  },
 
   _setupFirstContentWindowPaintPromise() {
     let lastTransactionId = window.windowUtils.lastTransactionId;
@@ -89,30 +136,37 @@ var gBrowserInit = {
         document.documentElement.setAttribute("sizemode", "maximized");
       }
     }
-    if (!Services.appinfo.nativeMenubar) {
+    {
       const toolbarMenubar = document.getElementById("toolbar-menubar");
-      // set a default value
-      if (!toolbarMenubar.hasAttribute("autohide")) {
-        toolbarMenubar.setAttribute("autohide", true);
+      const nativeMenubar = Services.appinfo.nativeMenubar;
+      toolbarMenubar.collapsed = nativeMenubar;
+      if (nativeMenubar) {
+        toolbarMenubar.removeAttribute("autohide");
+      } else {
+        document.l10n.setAttributes(
+          toolbarMenubar,
+          "toolbar-context-menu-menu-bar-cmd"
+        );
+        toolbarMenubar.setAttribute("data-l10n-attrs", "toolbarname");
       }
-      document.l10n.setAttributes(
-        toolbarMenubar,
-        "toolbar-context-menu-menu-bar-cmd"
-      );
-      toolbarMenubar.setAttribute("data-l10n-attrs", "toolbarname");
     }
-    // If opening a Taskbar Tab window, add an attribute to the top-level element
+    // If opening a Taskbar Tab or AI window, add an attribute to the top-level element
     // to inform window styling.
-    if (window.arguments && window.arguments[1]) {
+    if (window.arguments?.[1] instanceof Ci.nsIPropertyBag2) {
       let extraOptions = window.arguments[1];
-      if (
-        extraOptions instanceof Ci.nsIWritablePropertyBag2 &&
-        extraOptions.hasKey("taskbartab")
-      ) {
+      if (extraOptions.hasKey("taskbartab")) {
+        let taskbarTabId = extraOptions.getPropertyAsAString("taskbartab");
         window.document.documentElement.setAttribute(
           "taskbartab",
-          extraOptions.getPropertyAsAString("taskbartab")
+          taskbarTabId
         );
+        window.document.documentElement.id = "taskbartab-" + taskbarTabId;
+      }
+      if (extraOptions.hasKey("ai-window")) {
+        document.documentElement.setAttribute("ai-window", true);
+      }
+      if (extraOptions.hasKey("aiwindow-immersive-view")) {
+        document.documentElement.setAttribute("aiwindow-immersive-view", true);
       }
     }
 
@@ -152,6 +206,10 @@ var gBrowserInit = {
 
     gBrowser = new window.Tabbrowser();
     gBrowser.init();
+    gURLBar.addGBrowserListeners();
+    if (Services.prefs.getBoolPref("browser.search.widget.new", false)) {
+      document.getElementById("searchbar-new")?.addGBrowserListeners();
+    }
 
     BrowserUtils.callModulesFromCategory(
       { categoryName: "browser-window-domcontentloaded" },
@@ -190,7 +248,10 @@ var gBrowserInit = {
 
   onLoad() {
     gBrowser.addEventListener("DOMUpdateBlockedPopups", e =>
-      PopupBlockerObserver.handleEvent(e)
+      PopupAndRedirectBlockerObserver.handleEvent(e)
+    );
+    gBrowser.addEventListener("DOMUpdateBlockedRedirect", e =>
+      PopupAndRedirectBlockerObserver.handleEvent(e)
     );
     gBrowser.addEventListener(
       "TranslationsParent:LanguageState",
@@ -200,6 +261,14 @@ var gBrowserInit = {
       "TranslationsParent:OfferTranslation",
       FullPageTranslationsPanel
     );
+    gBrowser.tabContainer.addEventListener("TabSelect", () => {
+      // This ensures that the Translations URL-bar button becomes hidden when
+      // the feature becomes disabled, even when switching from tabs such as
+      // about:newtab that do not have an actor instance available to them.
+      if (!TranslationsParent.AIFeature.isEnabled) {
+        FullPageTranslationsPanel.buttonElements.button.hidden = true;
+      }
+    });
     gBrowser.addTabsProgressListener(FullPageTranslationsPanel);
 
     window.addEventListener("AppCommand", HandleAppCommandEvent, true);
@@ -247,12 +316,16 @@ var gBrowserInit = {
     gUIDensity.init();
     Win10TabletModeUpdater.init();
     CombinedStopReload.ensureInitialized();
-    gPrivateBrowsingUI.init();
+    // Initialize private browsing UI only if window is private
+    if (PrivateBrowsingUtils.isWindowPrivate(window)) {
+      PrivateBrowsingUI.init(window);
+    }
     TaskbarTabsChrome.init(window);
     BrowserPageActions.init();
     if (gToolbarKeyNavEnabled) {
       ToolbarKeyboardNavigator.init();
     }
+    CustomKeys.initWindow(window);
 
     // Update UI if browser is under remote control.
     gRemoteControl.updateVisualCue();
@@ -283,6 +356,20 @@ var gBrowserInit = {
           gBrowser.adoptTabGroup(tabToAdopt, { tabIndex: 0, selectTab: true });
           gBrowser.removeTab(tempBlankTab);
           Glean.tabgroup.groupInteractions.move_window.add(1);
+        } else if (gBrowser.isSplitViewWrapper(tabToAdopt)) {
+          let tempBlankTab = gBrowser.selectedTab;
+          let splitview = gBrowser.adoptSplitView(tabToAdopt, {
+            elementIndex: 0,
+            selectTab: true,
+          });
+          // If tabs are multiselected, add the newly adopted splitview back into the selection
+          if (gBrowser.selectedTabs.length > 1) {
+            gBrowser.addRangeToMultiSelectedTabs(
+              splitview.tabs[0],
+              splitview.tabs[splitview.tabs.length - 1]
+            );
+          }
+          gBrowser.removeTab(tempBlankTab);
         } else {
           if (tabToAdopt.group) {
             Glean.tabgroup.tabInteractions.remove_new_window.add();
@@ -340,6 +427,9 @@ var gBrowserInit = {
       "resource://gre/modules/TelemetryTimestamps.sys.mjs"
     );
     TelemetryTimestamps.add("delayedStartupStarted");
+    Glean.browserTimings.startupTimeline.delayedStartupStarted.set(
+      Services.telemetry.msSinceProcessStart()
+    );
 
     this._cancelDelayedStartup();
 
@@ -389,10 +479,13 @@ var gBrowserInit = {
     Services.obs.addObserver(gXPInstallObserver, "addon-install-confirmation");
     Services.obs.addObserver(gKeywordURIFixup, "keyword-uri-fixup");
     Services.obs.addObserver(gLocaleChangeObserver, "intl:app-locales-changed");
+    TranslationsParent.ensurePrefObservers();
+    Services.obs.addObserver(
+      this._translationsEnabledStateObserver,
+      "translations:enabled-state-changed"
+    );
 
     BrowserOffline.init();
-    CanvasPermissionPromptHelper.init();
-    WebAuthnPromptHelper.init();
 
     BrowserUtils.callModulesFromCategory(
       {
@@ -412,6 +505,9 @@ var gBrowserInit = {
 
     BookmarkingUI.init();
     gURLBar.delayedStartupInit();
+    if (Services.prefs.getBoolPref("browser.search.widget.new", false)) {
+      document.getElementById("searchbar-new")?.delayedStartupInit();
+    }
     gProtectionsHandler.init();
     gTrustPanelHandler.init();
 
@@ -605,6 +701,7 @@ var gBrowserInit = {
             PlacesToolbarHelper.populateManagedBookmarks(event.currentTarget)
           );
           managedBookmarksPopup.setAttribute("placespopup", "true");
+          managedBookmarksPopup.setAttribute("native", "false");
           managedBookmarksPopup.setAttribute("is", "places-popup");
           managedBookmarksPopup.classList.add("toolbar-menupopup");
           managedBookmarksButton.appendChild(managedBookmarksPopup);
@@ -639,6 +736,9 @@ var gBrowserInit = {
     _resolveDelayedStartup();
     Services.obs.notifyObservers(window, "browser-delayed-startup-finished");
     TelemetryTimestamps.add("delayedStartupFinished");
+    Glean.browserTimings.startupTimeline.delayedStartupFinished.set(
+      Services.telemetry.msSinceProcessStart()
+    );
     // We've announced that delayed startup has finished. Do not add code past this point.
   },
 
@@ -748,6 +848,7 @@ var gBrowserInit = {
             : Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
 
         let hasValidUserGestureActivation = undefined;
+        let textDirectiveUserActivation = undefined;
         let fromExternal = undefined;
         let globalHistoryOptions = undefined;
         let triggeringRemoteType = undefined;
@@ -766,6 +867,11 @@ var gBrowserInit = {
               "hasValidUserGestureActivation"
             );
           }
+          if (extraOptions.hasKey("textDirectiveUserActivation")) {
+            textDirectiveUserActivation = extraOptions.getPropertyAsBool(
+              "textDirectiveUserActivation"
+            );
+          }
           if (extraOptions.hasKey("fromExternal")) {
             fromExternal = extraOptions.getPropertyAsBool("fromExternal");
           }
@@ -780,6 +886,10 @@ var gBrowserInit = {
                 extraOptions.getPropertyAsUint64(
                   "triggeringSponsoredURLVisitTimeMS"
                 );
+            }
+            if (extraOptions.hasKey("triggeringSource")) {
+              globalHistoryOptions.triggeringSource =
+                extraOptions.getPropertyAsACString("triggeringSource");
             }
           }
           if (extraOptions.hasKey("triggeringRemoteType")) {
@@ -815,6 +925,7 @@ var gBrowserInit = {
             forceAboutBlankViewerInCurrent: !!window.arguments[6],
             forceAllowDataURI,
             hasValidUserGestureActivation,
+            textDirectiveUserActivation,
             fromExternal,
             globalHistoryOptions,
             triggeringRemoteType,
@@ -900,11 +1011,15 @@ var gBrowserInit = {
         try {
           DownloadsCommon.initializeAllDataLinks();
           ChromeUtils.importESModule(
-            "resource:///modules/DownloadsTaskbar.sys.mjs"
-          ).DownloadsTaskbar.registerIndicator(window);
+            "moz-src:///browser/components/downloads/DownloadsTaskbar.sys.mjs"
+          )
+            .DownloadsTaskbar.registerIndicator(window)
+            .catch(ex => {
+              console.error(ex);
+            });
           if (AppConstants.platform == "macosx") {
             ChromeUtils.importESModule(
-              "resource:///modules/DownloadsMacFinderProgress.sys.mjs"
+              "moz-src:///browser/components/downloads/DownloadsMacFinderProgress.sys.mjs"
             ).DownloadsMacFinderProgress.register();
           }
         } catch (ex) {
@@ -1049,6 +1164,7 @@ var gBrowserInit = {
     if (gToolbarKeyNavEnabled) {
       ToolbarKeyboardNavigator.uninit();
     }
+    CustomKeys.uninitWindow(window);
 
     // Bug 1952900 to allow switching to unload category without leaking
     ChromeUtils.importESModule(
@@ -1113,10 +1229,12 @@ var gBrowserInit = {
         gLocaleChangeObserver,
         "intl:app-locales-changed"
       );
+      Services.obs.removeObserver(
+        this._translationsEnabledStateObserver,
+        "translations:enabled-state-changed"
+      );
 
       BrowserOffline.uninit();
-      CanvasPermissionPromptHelper.uninit();
-      WebAuthnPromptHelper.uninit();
       PanelUI.uninit();
     }
 

@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { reloadPageAndLog } = require("damp-test/tests/head");
+const {
+  reloadPageAndLog,
+  waitForPendingPaints,
+} = require("damp-test/tests/head");
 
 exports.reloadInspectorAndLog = async function (label, toolbox) {
   let onReload = async function () {
@@ -19,10 +22,12 @@ exports.reloadInspectorAndLog = async function (label, toolbox) {
 };
 
 /*
- * Helper to select a node front and wait for the ruleview to be refreshed.
+ * Helper to select a node front and wait for the ruleview to be updated and for any
+ * pending paint task to be done.
  */
-exports.selectNodeFront = function (inspector, nodeFront) {
-  let onRuleViewRefreshed = inspector.once("rule-view-refreshed");
+exports.selectNodeFront = async function (inspector, nodeFront) {
+  const onInspectorUpdated = inspector.once("inspector-updated");
   inspector.selection.setNodeFront(nodeFront);
-  return onRuleViewRefreshed;
+  await onInspectorUpdated;
+  await waitForPendingPaints(inspector.toolbox);
 };

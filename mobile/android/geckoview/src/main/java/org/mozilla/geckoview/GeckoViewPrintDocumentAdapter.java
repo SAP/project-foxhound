@@ -26,6 +26,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Print document adapter for GeckoView content. */
 public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
   private static final String LOGTAG = "GVPrintDocumentAdapter";
   private static final String PRINT_NAME_DEFAULT = "Document";
@@ -136,6 +137,7 @@ public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
       final Bundle bundle) {
     if (cancellationSignal.isCanceled()) {
       layoutResultCallback.onLayoutCancelled();
+      deleteTempPdf();
       return;
     }
     final PrintDocumentInfo pdi =
@@ -208,7 +210,19 @@ public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
 
   @Override
   public void onFinish() {
-    // Remove the temporary file when the printing system is finished.
+    deleteTempPdf();
+    if (this.mPrintDialogFinish != null) {
+      mPrintDialogFinish.complete(true);
+    }
+  }
+
+  /**
+   * Handles deletion of the temporary (ephemeral) PDF created during PrintDocumentAdapter
+   * operations.
+   */
+  @AnyThread
+  private void deleteTempPdf() {
+    // Remove the temporary file when we finish printing, or on abort or cancellation.
     try {
       if (mDoDeleteTmpPdf) {
         if (mPdfFile != null) {
@@ -225,9 +239,6 @@ public class GeckoViewPrintDocumentAdapter extends PrintDocumentAdapter {
     } catch (final NullPointerException npe) {
       // Silence the exception. We only want to delete a real file. We don't
       // care if the file doesn't exist.
-    }
-    if (this.mPrintDialogFinish != null) {
-      mPrintDialogFinish.complete(true);
     }
   }
 }

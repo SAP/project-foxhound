@@ -278,6 +278,10 @@ void MacroAssembler::subPtr(Register src, const Address& dest) {
 
 void MacroAssembler::subPtr(Imm32 imm, Register dest) { subl(imm, dest); }
 
+void MacroAssembler::subPtr(ImmWord imm, Register dest) {
+  subl(Imm32(imm.value), dest);
+}
+
 void MacroAssembler::subPtr(const Address& addr, Register dest) {
   subl(Operand(addr), dest);
 }
@@ -331,6 +335,10 @@ void MacroAssembler::mulHighUnsigned32(Imm32 imm, Register src, Register dest) {
 
 void MacroAssembler::mulPtr(Register rhs, Register srcDest) {
   imull(rhs, srcDest);
+}
+
+void MacroAssembler::mulPtr(ImmWord rhs, Register srcDest) {
+  imull(Imm32(rhs.value), srcDest);
 }
 
 // Note: this function clobbers eax and edx.
@@ -1340,6 +1348,38 @@ void MacroAssembler::fallibleUnboxPtr(const Address& src, Register dest,
 void MacroAssembler::fallibleUnboxPtr(const BaseIndex& src, Register dest,
                                       JSValueType type, Label* fail) {
   fallibleUnboxPtrImpl(src, dest, type, fail);
+}
+
+void MacroAssembler::min32(Register lhs, Register rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ false);
+}
+
+void MacroAssembler::min32(Register lhs, Imm32 rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ false);
+}
+
+void MacroAssembler::max32(Register lhs, Register rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ true);
+}
+
+void MacroAssembler::max32(Register lhs, Imm32 rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ true);
+}
+
+void MacroAssembler::minPtr(Register lhs, Register rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ false);
+}
+
+void MacroAssembler::minPtr(Register lhs, ImmWord rhs, Register dest) {
+  minMax32(lhs, Imm32(rhs.value), dest, /* isMax = */ false);
+}
+
+void MacroAssembler::maxPtr(Register lhs, Register rhs, Register dest) {
+  minMax32(lhs, rhs, dest, /* isMax = */ true);
+}
+
+void MacroAssembler::maxPtr(Register lhs, ImmWord rhs, Register dest) {
+  minMax32(lhs, Imm32(rhs.value), dest, /* isMax = */ true);
 }
 
 //}}} check_macroassembler_style

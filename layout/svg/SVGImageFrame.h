@@ -63,7 +63,7 @@ class SVGImageFrame final : public nsIFrame,
                 imgDrawingParams& aImgParams) override;
   nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
   void ReflowSVG() override;
-  void NotifySVGChanged(uint32_t aFlags) override;
+  void NotifySVGChanged(ChangeFlags aFlags) override;
   SVGBBox GetBBoxContribution(const Matrix& aToBBoxUserspace,
                               uint32_t aFlags) override;
   bool IsDisplayContainer() override { return false; }
@@ -73,7 +73,7 @@ class SVGImageFrame final : public nsIFrame,
                         const nsDisplayListSet& aLists) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void OnVisibilityChange(
       Visibility aNewVisibility,

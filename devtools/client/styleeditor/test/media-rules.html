@@ -39,11 +39,40 @@
         }
       }
     }
+    @container --my-container (height > 42px) {}
+    /* query-less container */
+    @container --my-container {}
 
     @property --my-property {
       syntax: "<color>";
       inherits: true;
       initial-value: #f06;
+    }
+
+    @position-try --pt-custom-bottom {
+      top: anchor(bottom);
+      bottom: unset;
+      margin-top: 10px;
+    }
+
+    @custom-media --mobile-breakpoint (width < 320px) and (height < 1420px), not print;
+    @custom-media --enabled true;
+    @custom-media --disabled false;
+
+    div {
+      color: chocolate;
+
+      @media (--mobile-breakpoint) {
+        color: peachpuff;
+      }
+
+      @media (--enabled) {
+        color: green;
+      }
+
+      @media (--disabled) {
+        color: red;
+      }
     }
   </style>
 </head>

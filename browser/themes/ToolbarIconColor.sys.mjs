@@ -98,7 +98,7 @@ export const ToolbarIconColor = {
         break;
     }
 
-    let toolbarSelector = ".browser-toolbar:not([collapsed=true])";
+    let toolbarSelector = ".browser-toolbar:not([collapsed])";
     if (Services.appinfo.nativeMenubar) {
       toolbarSelector += ":not([type=menubar])";
     }

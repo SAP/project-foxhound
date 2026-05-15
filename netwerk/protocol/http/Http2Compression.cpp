@@ -271,9 +271,6 @@ size_t Http2BaseCompressor::SizeOfExcludingThis(
 }
 
 void Http2BaseCompressor::MakeRoom(uint32_t amount, const char* direction) {
-  uint32_t countEvicted = 0;
-  uint32_t bytesEvicted = 0;
-
   // make room in the header table
   while (mHeaderTable.VariableLength() &&
          ((mHeaderTable.ByteCount() + amount) > mMaxBuffer)) {
@@ -282,23 +279,7 @@ void Http2BaseCompressor::MakeRoom(uint32_t amount, const char* direction) {
     LOG(("HTTP %s header table index %u %s %s removed for size.\n", direction,
          index, mHeaderTable[index]->mName.get(),
          mHeaderTable[index]->mValue.get()));
-    ++countEvicted;
-    bytesEvicted += mHeaderTable[index]->Size();
     mHeaderTable.RemoveElement();
-  }
-
-  if (!strcmp(direction, "decompressor")) {
-    glean::hpack::elements_evicted_decompressor.AccumulateSingleSample(
-        countEvicted);
-    glean::hpack::bytes_evicted_decompressor.Accumulate(bytesEvicted);
-    glean::hpack::bytes_evicted_ratio_decompressor.AccumulateSingleSample(
-        (uint32_t)((100.0 * (double)bytesEvicted) / (double)amount));
-  } else {
-    glean::hpack::elements_evicted_compressor.AccumulateSingleSample(
-        countEvicted);
-    glean::hpack::bytes_evicted_compressor.Accumulate(bytesEvicted);
-    glean::hpack::bytes_evicted_ratio_compressor.AccumulateSingleSample(
-        (uint32_t)((100.0 * (double)bytesEvicted) / (double)amount));
   }
 }
 
@@ -355,14 +336,7 @@ void Http2BaseCompressor::SetDumpTables(bool dumpTables) {
   mDumpTables = dumpTables;
 }
 
-Http2Decompressor::~Http2Decompressor() {
-  if (mPeakSize) {
-    glean::hpack::peak_size_decompressor.Accumulate(mPeakSize);
-  }
-  if (mPeakCount) {
-    glean::hpack::peak_count_decompressor.AccumulateSingleSample(mPeakCount);
-  }
-}
+Http2Decompressor::~Http2Decompressor() {}
 
 nsresult Http2Decompressor::DecodeHeaderBlock(const uint8_t* data,
                                               uint32_t datalen,
@@ -1053,14 +1027,7 @@ nsresult Http2Decompressor::DoContextUpdate() {
 
 /////////////////////////////////////////////////////////////////
 
-Http2Compressor::~Http2Compressor() {
-  if (mPeakSize) {
-    glean::hpack::peak_size_compressor.Accumulate(mPeakSize);
-  }
-  if (mPeakCount) {
-    glean::hpack::peak_count_compressor.AccumulateSingleSample(mPeakCount);
-  }
-}
+Http2Compressor::~Http2Compressor() = default;
 
 nsresult Http2Compressor::EncodeHeaderBlock(
     const nsCString& nvInput, const nsACString& method, const nsACString& path,

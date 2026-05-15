@@ -10,18 +10,17 @@
 #  include "CubebUtils.h"
 #  include "MediaInfo.h"
 #  include "MediaSink.h"
+#  include "WavDumper.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/Monitor.h"
 #  include "mozilla/MozPromise.h"
 #  include "mozilla/ProfilerUtils.h"
 #  include "mozilla/RefPtr.h"
-#  include "mozilla/Result.h"
+#  include "mozilla/SPSCQueue.h"
 #  include "mozilla/TimeStamp.h"
 #  include "mozilla/UniquePtr.h"
-#  include "mozilla/SPSCQueue.h"
 #  include "nsCOMPtr.h"
 #  include "nsThreadUtils.h"
-#  include "WavDumper.h"
 
 namespace mozilla {
 

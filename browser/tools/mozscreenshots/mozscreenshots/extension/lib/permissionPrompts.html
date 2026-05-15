@@ -15,31 +15,31 @@
     >
       Geolocation
     </button>
-    <button id="xr" onclick="content.navigator.getVRDisplays();">WebXR</button>
+    <button id="xr" onclick="content.navigator.getVRDisplays()">WebXR</button>
     <button id="persistent-storage" onclick="navigator.storage.persist()">
       Persistent Storage
     </button>
     <button
       id="webRTC-shareDevices"
-      onclick="shareDevice({video: true, fake: true});"
+      onclick="shareDevice({ video: true, fake: true })"
     >
       Video
     </button>
     <button
       id="webRTC-shareMicrophone"
-      onclick="shareDevice({audio: true, fake: true});"
+      onclick="shareDevice({ audio: true, fake: true })"
     >
       Audio
     </button>
     <button
       id="webRTC-shareDevices2"
-      onclick="shareDevice({audio: true, video: true, fake: true});"
+      onclick="shareDevice({ audio: true, video: true, fake: true })"
     >
       Audio and Video
     </button>
     <button
       id="webRTC-shareScreen"
-      onclick="shareDevice({video: {mediaSource: 'screen'}});"
+      onclick="shareDevice({ video: { mediaSource: 'screen' } })"
     >
       Screen
     </button>

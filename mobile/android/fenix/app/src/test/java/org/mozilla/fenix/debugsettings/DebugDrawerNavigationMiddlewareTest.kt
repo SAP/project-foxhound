@@ -8,10 +8,10 @@ import androidx.navigation.NavHostController
 import io.mockk.called
 import io.mockk.mockk
 import io.mockk.verify
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.rule.MainCoroutineRule
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.debugsettings.navigation.DebugDrawerRoute
 import org.mozilla.fenix.debugsettings.store.DebugDrawerAction
@@ -21,15 +21,14 @@ import org.mozilla.fenix.debugsettings.ui.DEBUG_DRAWER_HOME_ROUTE
 
 class DebugDrawerNavigationMiddlewareTest {
 
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-    private val testCoroutineScope = coroutinesTestRule.scope
+    private val testDispatcher = StandardTestDispatcher()
+    private val testCoroutineScope = TestScope(testDispatcher)
 
     private val navController: NavHostController = mockk(relaxed = true)
     private lateinit var store: DebugDrawerStore
 
     @Before
-    fun setup() {
+    fun setup() = runTest(testDispatcher) {
         store = DebugDrawerStore(
             middlewares = listOf(
                 DebugDrawerNavigationMiddleware(
@@ -41,66 +40,98 @@ class DebugDrawerNavigationMiddlewareTest {
     }
 
     @Test
-    fun `WHEN home is the next destination THEN the back stack is cleared and the user is returned to home`() {
-        store.dispatch(DebugDrawerAction.NavigateTo.Home).joinBlocking()
+    fun `WHEN home is the next destination THEN the back stack is cleared and the user is returned to home`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.NavigateTo.Home)
 
-        verify { navController.popBackStack(route = DEBUG_DRAWER_HOME_ROUTE, inclusive = false) }
-    }
+            testDispatcher.scheduler.advanceUntilIdle()
 
-    @Test
-    fun `WHEN the tab tools screen is the next destination THEN the tab tools screen is navigated to`() {
-        store.dispatch(DebugDrawerAction.NavigateTo.TabTools).joinBlocking()
-
-        verify { navController.navigate(DebugDrawerRoute.TabTools.route) }
-    }
-
-    @Test
-    fun `WHEN the logins screen is the next destination THEN the logins screen is navigated to`() {
-        store.dispatch(DebugDrawerAction.NavigateTo.Logins).joinBlocking()
-
-        verify { navController.navigate(DebugDrawerRoute.Logins.route) }
-    }
+            verify {
+                navController.popBackStack(
+                    route = DEBUG_DRAWER_HOME_ROUTE,
+                    inclusive = false,
+                )
+            }
+        }
 
     @Test
-    fun `WHEN the CFR tools screen is the next destination THEN the CFR tools screen is navigated to`() {
-        store.dispatch(DebugDrawerAction.NavigateTo.CfrTools).joinBlocking()
+    fun `WHEN the tab tools screen is the next destination THEN the tab tools screen is navigated to`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.NavigateTo.TabTools)
 
-        verify { navController.navigate(DebugDrawerRoute.CfrTools.route) }
-    }
+            testDispatcher.scheduler.advanceUntilIdle()
 
-    @Test
-    fun `WHEN the glean debug tools screen is the next destination THEN the glean debug tools screen is navigated to`() {
-        store.dispatch(DebugDrawerAction.NavigateTo.GleanDebugTools).joinBlocking()
-
-        verify { navController.navigate(DebugDrawerRoute.GleanDebugTools.route) }
-    }
+            verify { navController.navigate(DebugDrawerRoute.TabTools.route) }
+        }
 
     @Test
-    fun `WHEN the region tools screen is the next destination THEN the region tools screen is navigated to`() {
-        store.dispatch(DebugDrawerAction.NavigateTo.RegionDebugTools).joinBlocking()
+    fun `WHEN the logins screen is the next destination THEN the logins screen is navigated to`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.NavigateTo.Logins)
 
-        verify { navController.navigate(DebugDrawerRoute.RegionDebugTools.route) }
-    }
+            testDispatcher.scheduler.advanceUntilIdle()
 
-    @Test
-    fun `WHEN the add-ons tools screen is the next destination THEN the add-ons tools screen is navigated to`() {
-        store.dispatch(DebugDrawerAction.NavigateTo.AddonsDebugTools).joinBlocking()
-
-        verify { navController.navigate(DebugDrawerRoute.AddonsDebugTools.route) }
-    }
+            verify { navController.navigate(DebugDrawerRoute.Logins.route) }
+        }
 
     @Test
-    fun `WHEN the back button is pressed THEN the drawer should go back one screen`() {
-        store.dispatch(DebugDrawerAction.OnBackPressed).joinBlocking()
+    fun `WHEN the CFR tools screen is the next destination THEN the CFR tools screen is navigated to`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.NavigateTo.CfrTools)
 
-        verify { navController.popBackStack() }
-    }
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            verify { navController.navigate(DebugDrawerRoute.CfrTools.route) }
+        }
 
     @Test
-    fun `WHEN a non-navigation action is dispatched THEN the drawer should not navigate`() {
-        store.dispatch(DebugDrawerAction.DrawerOpened).joinBlocking()
-        store.dispatch(DebugDrawerAction.DrawerClosed).joinBlocking()
+    fun `WHEN the glean debug tools screen is the next destination THEN the glean debug tools screen is navigated to`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.NavigateTo.GleanDebugTools)
 
-        verify { navController wasNot called }
-    }
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            verify { navController.navigate(DebugDrawerRoute.GleanDebugTools.route) }
+        }
+
+    @Test
+    fun `WHEN the region tools screen is the next destination THEN the region tools screen is navigated to`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.NavigateTo.RegionDebugTools)
+
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            verify { navController.navigate(DebugDrawerRoute.RegionDebugTools.route) }
+        }
+
+    @Test
+    fun `WHEN the add-ons tools screen is the next destination THEN the add-ons tools screen is navigated to`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.NavigateTo.AddonsDebugTools)
+
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            verify { navController.navigate(DebugDrawerRoute.AddonsDebugTools.route) }
+        }
+
+    @Test
+    fun `WHEN the back button is pressed THEN the drawer should go back one screen`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.OnBackPressed)
+
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            verify { navController.popBackStack() }
+        }
+
+    @Test
+    fun `WHEN a non-navigation action is dispatched THEN the drawer should not navigate`() =
+        runTest(testDispatcher) {
+            store.dispatch(DebugDrawerAction.DrawerOpened)
+            store.dispatch(DebugDrawerAction.DrawerClosed)
+
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            verify { navController wasNot called }
+        }
 }

@@ -209,8 +209,13 @@ bool CheckAndGetFilePathParams(const base::CommandLine& command_line,
 
 // Prints main Zucchini usage text.
 void PrintUsage(std::ostream& err) {
+#if !defined(MOZ_ZUCCHINI)
   err << "Version: " << zucchini::kMajorVersion << "."
       << zucchini::kMinorVersion << std::endl;
+#else
+  err << "Version: " << static_cast<uint16_t>(zucchini::kMajorVersion) << "."
+      << static_cast<uint16_t>(zucchini::kMinorVersion) << std::endl;
+#endif
   err << "Usage:" << std::endl;
   for (const Command& command : kCommands)
     err << "  zucchini " << command.usage << std::endl;

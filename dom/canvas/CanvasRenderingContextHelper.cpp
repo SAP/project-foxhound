@@ -4,21 +4,22 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasRenderingContextHelper.h"
+
+#include "ClientWebGLContext.h"
 #include "GLContext.h"
 #include "ImageBitmapRenderingContext.h"
 #include "ImageEncoder.h"
+#include "MozFramebuffer.h"
+#include "mozilla/GfxMessageUtils.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/dom/OffscreenCanvasRenderingContext2D.h"
-#include "mozilla/GfxMessageUtils.h"
 #include "mozilla/glean/DomCanvasMetrics.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/webgpu/CanvasContext.h"
-#include "MozFramebuffer.h"
 #include "nsContentUtils.h"
 #include "nsDOMJSUtils.h"
 #include "nsIScriptContext.h"
 #include "nsJSUtils.h"
-#include "ClientWebGLContext.h"
 
 namespace mozilla::dom {
 
@@ -27,7 +28,8 @@ CanvasRenderingContextHelper::CanvasRenderingContextHelper()
 
 void CanvasRenderingContextHelper::ToBlob(
     JSContext* aCx, EncodeCompleteCallback* aCallback, const nsAString& aType,
-    JS::Handle<JS::Value> aParams, bool aUsePlaceholder, ErrorResult& aRv) {
+    JS::Handle<JS::Value> aParams,
+    CanvasUtils::ImageExtraction aExtractionBehavior, ErrorResult& aRv) {
   nsAutoString type;
   nsContentUtils::ASCIIToLower(aType, type);
 
@@ -38,16 +40,14 @@ void CanvasRenderingContextHelper::ToBlob(
     return;
   }
 
-  ToBlob(aCallback, type, params, usingCustomParseOptions, aUsePlaceholder,
+  ToBlob(aCallback, type, params, usingCustomParseOptions, aExtractionBehavior,
          aRv);
 }
 
-void CanvasRenderingContextHelper::ToBlob(EncodeCompleteCallback* aCallback,
-                                          nsAString& aType,
-                                          const nsAString& aEncodeOptions,
-                                          bool aUsingCustomOptions,
-                                          bool aUsePlaceholder,
-                                          ErrorResult& aRv) {
+void CanvasRenderingContextHelper::ToBlob(
+    EncodeCompleteCallback* aCallback, nsAString& aType,
+    const nsAString& aEncodeOptions, bool aUsingCustomOptions,
+    CanvasUtils::ImageExtraction aExtractionBehavior, ErrorResult& aRv) {
   const CSSIntSize elementSize = GetWidthHeight();
   if (mCurrentContext) {
     // We disallow canvases of width or height zero, and set them to 1, so
@@ -62,21 +62,38 @@ void CanvasRenderingContextHelper::ToBlob(EncodeCompleteCallback* aCallback,
     }
   }
 
+  nsCString randomizationKeyStr = VoidCString();
+  if (aExtractionBehavior == CanvasUtils::ImageExtraction::EfficientRandomize) {
+    nsRFPService::GetFingerprintingRandomizationKeyAsString(
+        GetCookieJarSettings(), randomizationKeyStr);
+  }
+
   int32_t format = 0;
   auto imageSize = gfx::IntSize{elementSize.width, elementSize.height};
-  UniquePtr<uint8_t[]> imageBuffer = GetImageBuffer(&format, &imageSize);
+  UniquePtr<uint8_t[]> imageBuffer =
+      GetImageBuffer(aExtractionBehavior, &format, &imageSize);
   RefPtr<EncodeCompleteCallback> callback = aCallback;
 
   aRv = ImageEncoder::ExtractDataAsync(
       aType, aEncodeOptions, aUsingCustomOptions, std::move(imageBuffer),
-      format, CSSIntSize::FromUnknownSize(imageSize), aUsePlaceholder,
-      callback);
+      format, CSSIntSize::FromUnknownSize(imageSize), aExtractionBehavior,
+      randomizationKeyStr, callback);
 }
 
 UniquePtr<uint8_t[]> CanvasRenderingContextHelper::GetImageBuffer(
-    int32_t* aOutFormat, gfx::IntSize* aOutImageSize) {
+    CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
+    gfx::IntSize* aOutImageSize) {
   if (mCurrentContext) {
-    return mCurrentContext->GetImageBuffer(aOutFormat, aOutImageSize);
+    return mCurrentContext->GetImageBuffer(aExtractionBehavior, aOutFormat,
+                                           aOutImageSize);
+  }
+  return nullptr;
+}
+
+nsICookieJarSettings* CanvasRenderingContextHelper::GetCookieJarSettings()
+    const {
+  if (mCurrentContext) {
+    return mCurrentContext->GetCookieJarSettings();
   }
   return nullptr;
 }

@@ -4,13 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _JESPTRACKENCODING_H_
-#define _JESPTRACKENCODING_H_
-
-#include "jsep/JsepCodecDescription.h"
-#include "common/EncodingConstraints.h"
+#ifndef JESPTRACKENCODING_H_
+#define JESPTRACKENCODING_H_
 
 #include <vector>
+
+#include "common/EncodingConstraints.h"
+#include "jsep/JsepCodecDescription.h"
 
 namespace mozilla {
 // Represents a single encoding of a media track. When simulcast is used, there
@@ -59,4 +59,4 @@ class JsepTrackEncoding {
 };
 }  // namespace mozilla
 
-#endif  // _JESPTRACKENCODING_H_
+#endif  // JESPTRACKENCODING_H_

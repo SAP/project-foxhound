@@ -75,7 +75,18 @@ class NetworkEventContentWatcher {
     this.networkEvents.clear();
   }
 
-  httpFailedOpeningRequest = subject => {
+  httpFailedOpeningRequest = (subject, topic) => {
+    if (
+      topic != "http-on-failed-opening-request" ||
+      !(subject instanceof Ci.nsIHttpChannel)
+    ) {
+      const channel = subject.QueryInterface(Ci.nsIChannel);
+      console.warn(
+        `httpFailedOpeningRequest triggered on non-nsIHttpChannel for uri: ${channel.URI.spec}`
+      );
+      return;
+    }
+
     const channel = subject.QueryInterface(Ci.nsIHttpChannel);
 
     // Ignore preload requests to avoid duplicity request entries in
@@ -231,15 +242,13 @@ class NetworkEventContentWatcher {
         {} /* offsets */
       );
       networkEventActor.addServerTimings({});
-      networkEventActor.addResponseContent(
-        {
-          mimeType: channel.contentType,
-          size: channel.contentLength,
-          text: "",
-          transferredSize: 0,
-        },
-        {}
-      );
+      networkEventActor.addResponseContent({
+        mimeType: channel.contentType,
+        size: channel.contentLength,
+        text: "",
+        transferredSize: 0,
+      });
+      networkEventActor.addResponseContentComplete({});
     } else if (type == RESOURCE_TYPES.DATA_CHANNEL) {
       lazy.NetworkUtils.handleDataChannel(channel, networkEventActor);
     }
@@ -260,7 +269,7 @@ class NetworkEventContentWatcher {
         resourceUpdates.fromCache = updateResource.fromCache;
         resourceUpdates.fromServiceWorker = updateResource.fromServiceWorker;
         break;
-      case NETWORK_EVENT_TYPES.RESPONSE_START:
+      case NETWORK_EVENT_TYPES.RESPONSE_START: {
         // For cached image requests channel.responseStatus is set to 200 as
         // expected. However responseStatusText is empty. In this case fallback
         // to the expected statusText "OK".
@@ -280,6 +289,7 @@ class NetworkEventContentWatcher {
           NETWORK_EVENT_TYPES.RESPONSE_HEADERS,
         ]);
         break;
+      }
       case NETWORK_EVENT_TYPES.RESPONSE_CONTENT:
         resourceUpdates.contentSize = updateResource.contentSize;
         resourceUpdates.mimeType = updateResource.mimeType;
@@ -301,7 +311,7 @@ class NetworkEventContentWatcher {
     // responseContent.
     const isResponseComplete =
       receivedUpdates.includes(NETWORK_EVENT_TYPES.RESPONSE_START) &&
-      receivedUpdates.includes(NETWORK_EVENT_TYPES.RESPONSE_CONTENT) &&
+      receivedUpdates.includes(NETWORK_EVENT_TYPES.RESPONSE_CONTENT_COMPLETE) &&
       receivedUpdates.includes(NETWORK_EVENT_TYPES.EVENT_TIMINGS);
 
     if (isResponseComplete) {
@@ -314,6 +324,7 @@ class NetworkEventContentWatcher {
 
     if (
       updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_START ||
+      updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_CONTENT ||
       isResponseComplete
     ) {
       this._emitUpdate(networkEvent);

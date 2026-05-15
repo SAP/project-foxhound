@@ -9,15 +9,17 @@
  */
 #include "net/dcsctp/timer/timer.h"
 
+#include <cmath>
 #include <memory>
 #include <optional>
 
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
-#include "net/dcsctp/public/timeout.h"
+#include "api/units/timestamp.h"
+#include "net/dcsctp/public/types.h"
 #include "net/dcsctp/timer/fake_timeout.h"
-#include "rtc_base/gunit.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
 
 namespace dcsctp {
 namespace {
@@ -117,7 +119,7 @@ TEST_F(TimerTest, TimerWithNoRestarts) {
   std::unique_ptr<Timer> t1 = manager_.CreateTimer(
       "t1", on_expired_.AsStdFunction(),
       TimerOptions(TimeDelta::Seconds(5), TimerBackoffAlgorithm::kFixed,
-                   /*max_restart=*/0));
+                   /*max_restarts=*/0));
 
   EXPECT_CALL(on_expired_, Call).Times(0);
   t1->Start();
@@ -139,7 +141,7 @@ TEST_F(TimerTest, TimerWithOneRestart) {
   std::unique_ptr<Timer> t1 = manager_.CreateTimer(
       "t1", on_expired_.AsStdFunction(),
       TimerOptions(TimeDelta::Seconds(5), TimerBackoffAlgorithm::kFixed,
-                   /*max_restart=*/1));
+                   /*max_restarts=*/1));
 
   EXPECT_CALL(on_expired_, Call).Times(0);
   t1->Start();
@@ -168,7 +170,7 @@ TEST_F(TimerTest, TimerWithTwoRestart) {
   std::unique_ptr<Timer> t1 = manager_.CreateTimer(
       "t1", on_expired_.AsStdFunction(),
       TimerOptions(TimeDelta::Seconds(5), TimerBackoffAlgorithm::kFixed,
-                   /*max_restart=*/2));
+                   /*max_restarts=*/2));
 
   EXPECT_CALL(on_expired_, Call).Times(0);
   t1->Start();

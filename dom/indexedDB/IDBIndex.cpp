@@ -15,10 +15,10 @@
 #include "IDBTransaction.h"
 #include "IndexedDatabase.h"
 #include "IndexedDatabaseInlines.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "ProfilerHelpers.h"
 #include "ReportInternalError.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"

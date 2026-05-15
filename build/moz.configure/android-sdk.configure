@@ -127,20 +127,13 @@ def android_sdk_root(value, android_os_info, want_bootstrap):
 
 @dependable
 def android_sdk_version():
-    # We support Android SDK version 21 and up by default.
-    # See the --enable-android-min-sdk option below.
-    #
-    # Warning: Before increasing the with-android-min-sdk value, please note several places in
-    # and out of tree have to be changed. Otherwise, places like Treeherder or archive.mozilla.org
-    # will advertise a bad API level. This may confuse people. As an example, please look at
-    # bug 1384482.
-    # If you think you can't handle the whole set of changes, please reach out to the Release
-    # Engineering team.
+    major, minor, patch = "36", "1", "0"
     return namespace(
-        build_tools_version="36.0.0",
-        compile_sdk_version="36",
+        build_tools_version=f"{major}.{minor}.{patch}",
+        compile_sdk_major_version=major,
+        compile_sdk_minor_version=minor,
         target_sdk_version="36",
-        min_sdk_version="21",
+        min_sdk_version="26",
     )
 
 
@@ -208,7 +201,13 @@ def android_platform_tools(sdk_root, android_os_info, want_bootstrap):
 @imports(_from="mozboot.android", _import="AndroidPackageList")
 def android_platforms(sdk_root, sdk_version, android_os_info, want_bootstrap):
     prefix = "platforms"
-    platforms_path = os.path.join(prefix, "android-" + sdk_version.compile_sdk_version)
+
+    version = sdk_version.compile_sdk_major_version
+    if int(sdk_version.compile_sdk_minor_version) != 0:
+        version = f"{version}.{sdk_version.compile_sdk_minor_version}"
+
+    platforms_path = os.path.join(prefix, f"android-{version}")
+
     return _ensure_android_package(
         package_relative_path=platforms_path,
         sdk_root=sdk_root,
@@ -358,4 +357,5 @@ check_file("android.jar", android_platforms)
 
 set_config("ANDROID_BUILD_TOOLS_VERSION", android_sdk_version.build_tools_version)
 set_config("ANDROID_TARGET_SDK", android_sdk_version.target_sdk_version)
-set_config("ANDROID_COMPILE_SDK", android_sdk_version.compile_sdk_version)
+set_config("ANDROID_COMPILE_SDK_MAJOR", android_sdk_version.compile_sdk_major_version)
+set_config("ANDROID_COMPILE_SDK_MINOR", android_sdk_version.compile_sdk_minor_version)

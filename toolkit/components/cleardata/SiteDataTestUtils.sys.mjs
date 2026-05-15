@@ -12,7 +12,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "swm",
   "@mozilla.org/serviceworkers/manager;1",
-  "nsIServiceWorkerManager"
+  Ci.nsIServiceWorkerManager
 );
 
 /**
@@ -26,7 +26,7 @@ export var SiteDataTestUtils = {
   /**
    * Makes an origin have persistent data storage.
    *
-   * @param {String} origin - the origin of the site to give persistent storage
+   * @param {string} origin - the origin of the site to give persistent storage
    *
    * @returns a Promise that resolves when storage was persisted
    */
@@ -42,8 +42,8 @@ export var SiteDataTestUtils = {
   /**
    * Adds a new blob entry to a dummy indexedDB database for the specified origin.
    *
-   * @param {String} origin - the origin of the site to add test data for
-   * @param {Number} size [optional] - the size of the entry in bytes
+   * @param {string} origin - the origin of the site to add test data for
+   * @param {number} size [optional] - the size of the entry in bytes
    *
    * @returns a Promise that resolves when the data was added successfully.
    */
@@ -63,7 +63,7 @@ export var SiteDataTestUtils = {
         tx.oncomplete = resolve;
         let buffer = new ArrayBuffer(size);
         let blob = new Blob([buffer]);
-        store.add(blob, Cu.now());
+        store.add(blob, ChromeUtils.now());
       };
     });
   },
@@ -71,15 +71,16 @@ export var SiteDataTestUtils = {
   /**
    * Adds a new cookie for the specified origin or host + path + oa, with the
    * specified contents. The cookie will be valid for one day.
+   *
    * @param {object} options
-   * @param {String} [options.origin] - Origin of the site to add test data for.
+   * @param {string} [options.origin] - Origin of the site to add test data for.
    * If set, overrides host, path and originAttributes args.
-   * @param {String} [options.host] - Host of the site to add test data for.
-   * @param {String} [options.path] - Path to set cookie for.
-   * @param {Object} [options.originAttributes] - Object of origin attributes to
+   * @param {string} [options.host] - Host of the site to add test data for.
+   * @param {string} [options.path] - Path to set cookie for.
+   * @param {object} [options.originAttributes] - Object of origin attributes to
    * set cookie for.
-   * @param {String} [options.name] - Cookie name
-   * @param {String} [options.value] - Cookie value
+   * @param {string} [options.name] - Cookie name
+   * @param {string} [options.value] - Cookie value
    */
   addToCookies({
     origin,
@@ -124,9 +125,9 @@ export var SiteDataTestUtils = {
    * This method requires the pref dom.storage.client_validation=false in order
    * to access LS without a window.
    *
-   * @param {String} origin - the origin of the site to add test data for
-   * @param {String} [key] - the localStorage key
-   * @param {String} [value] - the localStorage value
+   * @param {string} origin - the origin of the site to add test data for
+   * @param {string} [key] - the localStorage key
+   * @param {string} [value] - the localStorage value
    */
   addToLocalStorage(origin, key = "foo", value = "bar") {
     let principal =
@@ -143,14 +144,14 @@ export var SiteDataTestUtils = {
   /**
    * Checks whether the given origin is storing data in localStorage
    *
-   * @param {String} origin - the origin of the site to check
-   * @param {{key: String, value: String}[]} [testEntries] - An array of entries
+   * @param {string} origin - the origin of the site to check
+   * @param {{key: string, value: string}[]} [testEntries] - An array of entries
    * to test for.
    *
    * This method requires the pref dom.storage.client_validation=false in order
    * to access LS without a window.
    *
-   * @returns {Boolean} whether the origin has localStorage data
+   * @returns {boolean} whether the origin has localStorage data
    */
   hasLocalStorage(origin, testEntries) {
     let principal =
@@ -177,15 +178,15 @@ export var SiteDataTestUtils = {
    * Adds a new serviceworker with the specified path. Note that this method
    * will open a new tab at the domain of the SW path to that effect.
    *
-   * @param {Object} options
+   * @param {object} options
    * @param {Window} options.win - The window to open the tab in where the SW is
    * registered.
-   * @param {String} options.path - the path to the service worker to add.
-   * @param {String} [options.topLevelPath] - If specified this path will be
+   * @param {string} options.path - the path to the service worker to add.
+   * @param {string} [options.topLevelPath] - If specified this path will be
    * used for the top level and the service worker will be registered in a frame
    * with 'path'. If omitted the service worker gets registered in the top level
    * (tab).
-   * @param {Number} [options.userContextId] - User context to register the
+   * @param {number} [options.userContextId] - User context to register the
    * service worker in. By default this targets the default user context (no
    * container).
    *
@@ -365,10 +366,10 @@ export var SiteDataTestUtils = {
   /**
    * Checks whether the specified origin has registered ServiceWorkers.
    *
-   * @param {String} origin - the origin of the site to check, excluding the
+   * @param {string} origin - the origin of the site to check, excluding the
    * OriginAttributes suffix.
    *
-   * @returns {Boolean} whether or not the site has ServiceWorkers.
+   * @returns {boolean} whether or not the site has ServiceWorkers.
    */
   hasServiceWorkers(origin) {
     let serviceWorkers = lazy.swm.getAllRegistrations();
@@ -387,7 +388,7 @@ export var SiteDataTestUtils = {
   /**
    * Waits for a ServiceWorker to be registered.
    *
-   * @param {String} the url of the ServiceWorker to wait for
+   * @param {string} the url of the ServiceWorker to wait for
    *
    * @returns a Promise that resolves when a ServiceWorker at the
    *          specified location has been registered.
@@ -414,7 +415,7 @@ export var SiteDataTestUtils = {
   /**
    * Waits for a ServiceWorker to be unregistered.
    *
-   * @param {String} the url of the ServiceWorker to wait for
+   * @param {string} the url of the ServiceWorker to wait for
    *
    * @returns a Promise that resolves when a ServiceWorker at the
    *          specified location has been unregistered.
@@ -464,7 +465,6 @@ export var SiteDataTestUtils = {
           Ci.nsIClearDataService.CLEAR_ALL_CACHES |
           Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES |
           Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-          Ci.nsIClearDataService.CLEAR_PREDICTOR_NETWORK_DATA |
           Ci.nsIClearDataService.CLEAR_CLIENT_AUTH_REMEMBER_SERVICE |
           Ci.nsIClearDataService.CLEAR_EME |
           Ci.nsIClearDataService.CLEAR_STORAGE_ACCESS |

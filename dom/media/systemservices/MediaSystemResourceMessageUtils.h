@@ -7,8 +7,8 @@
 #if !defined(MediaSystemResourceMessageUtils_h_)
 #  define MediaSystemResourceMessageUtils_h_
 
-#  include "ipc/EnumSerializer.h"
 #  include "MediaSystemResourceTypes.h"
+#  include "ipc/EnumSerializer.h"
 
 namespace IPC {
 

@@ -8,10 +8,9 @@
 #ifndef mozilla_dom_WebTaskController_h
 #define mozilla_dom_WebTaskController_h
 
-#include "nsWrapperCache.h"
-
-#include "mozilla/dom/WebTaskSchedulingBinding.h"
 #include "mozilla/dom/AbortController.h"
+#include "mozilla/dom/WebTaskSchedulingBinding.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 class WebTaskController : public AbortController {

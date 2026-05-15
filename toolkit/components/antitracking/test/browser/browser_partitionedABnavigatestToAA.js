@@ -34,8 +34,8 @@ add_task(async function runTest() {
       ifr.id = "iframe";
 
       let loading = ContentTaskUtils.waitForEvent(ifr, "load");
-      content.document.body.appendChild(ifr);
       ifr.src = page;
+      content.document.body.appendChild(ifr);
       await loading;
 
       return ifr.browsingContext;

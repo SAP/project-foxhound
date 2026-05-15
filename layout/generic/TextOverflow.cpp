@@ -11,13 +11,10 @@
 // Please maintain alphabetical order below
 #include "TextDrawTarget.h"
 #include "gfxContext.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/dom/Selection.h"
 #include "nsBlockFrame.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsCaret.h"
 #include "nsContentUtils.h"
 #include "nsFontMetrics.h"

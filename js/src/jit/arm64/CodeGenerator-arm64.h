@@ -31,29 +31,59 @@ class CodeGeneratorARM64 : public CodeGeneratorShared {
   MoveOperand toMoveOperand(const LAllocation a) const;
 
   void bailoutIf(Assembler::Condition condition, LSnapshot* snapshot);
+  void bailoutIfZero(Assembler::Condition condition, ARMRegister rt,
+                     LSnapshot* snapshot);
   void bailoutFrom(Label* label, LSnapshot* snapshot);
   void bailout(LSnapshot* snapshot);
 
   template <typename T1, typename T2>
   void bailoutCmpPtr(Assembler::Condition c, T1 lhs, T2 rhs,
                      LSnapshot* snapshot) {
+    if constexpr (std::is_same_v<T1, Register> &&
+                  (std::is_same_v<T2, Imm32> || std::is_same_v<T2, Imm64> ||
+                   std::is_same_v<T2, ImmWord> || std::is_same_v<T2, ImmPtr>)) {
+      if (rhs.value == 0) {
+        if (c == Assembler::Equal) {
+          bailoutIfZero(Assembler::Zero, ARMRegister(lhs, 64), snapshot);
+          return;
+        }
+        if (c == Assembler::NotEqual) {
+          bailoutIfZero(Assembler::NonZero, ARMRegister(lhs, 64), snapshot);
+          return;
+        }
+      }
+    }
     masm.cmpPtr(lhs, rhs);
-    return bailoutIf(c, snapshot);
-  }
-  void bailoutTestPtr(Assembler::Condition c, Register lhs, Register rhs,
-                      LSnapshot* snapshot) {
-    masm.testPtr(lhs, rhs);
     return bailoutIf(c, snapshot);
   }
   template <typename T1, typename T2>
   void bailoutCmp32(Assembler::Condition c, T1 lhs, T2 rhs,
                     LSnapshot* snapshot) {
+    if constexpr (std::is_same_v<T1, Register> && std::is_same_v<T2, Imm32>) {
+      if (rhs.value == 0) {
+        if (c == Assembler::Equal) {
+          bailoutIfZero(Assembler::Zero, ARMRegister(lhs, 32), snapshot);
+          return;
+        }
+        if (c == Assembler::NotEqual) {
+          bailoutIfZero(Assembler::NonZero, ARMRegister(lhs, 32), snapshot);
+          return;
+        }
+      }
+    }
     masm.cmp32(lhs, rhs);
     return bailoutIf(c, snapshot);
   }
   template <typename T1, typename T2>
   void bailoutTest32(Assembler::Condition c, T1 lhs, T2 rhs,
                      LSnapshot* snapshot) {
+    if constexpr (std::is_same_v<T1, Register> &&
+                  std::is_same_v<T2, Register>) {
+      if (lhs == rhs && (c == Assembler::Zero || c == Assembler::NonZero)) {
+        bailoutIfZero(c, ARMRegister(lhs, 32), snapshot);
+        return;
+      }
+    }
     masm.test32(lhs, rhs);
     return bailoutIf(c, snapshot);
   }

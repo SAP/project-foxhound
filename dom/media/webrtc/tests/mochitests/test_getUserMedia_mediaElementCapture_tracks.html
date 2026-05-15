@@ -22,6 +22,10 @@ let streamUntilEnded;
 const tracks = [];
 runTest(async () => {
   try {
+    await pushPrefs(
+      ["media.getusermedia.camera.fake.force", true],
+      ["media.video_loopback_dev", ""],
+    );
     let stream = await getUserMedia({audio: true, video: true});
     // We need to test with multiple tracks. We add an extra of each kind.
     for (const track of stream.getTracks()) {
@@ -34,7 +38,7 @@ runTest(async () => {
     await haveEvent(audioElement, "loadedmetadata", wait(50000, new Error("Timeout")));
 
     info("Capturing audio element (loadedmetadata -> captureStream)");
-    audioCaptureStream = audioElement.mozCaptureStream();
+    audioCaptureStream = audioElement.captureStream?.() || audioElement.mozCaptureStream();
 
     is(audioCaptureStream.getAudioTracks().length, 2,
       "audio element should capture two audio tracks");
@@ -46,7 +50,7 @@ runTest(async () => {
     videoElement = createMediaElement("video", "gUMVideo");
 
     info("Capturing video element (captureStream -> loadedmetadata)");
-    videoCaptureStream = videoElement.mozCaptureStream();
+    videoCaptureStream = videoElement.captureStream?.() || videoElement.mozCaptureStream();
     videoElement.srcObject = audioElement.srcObject.clone();
 
     is(videoCaptureStream.getTracks().length, 0,

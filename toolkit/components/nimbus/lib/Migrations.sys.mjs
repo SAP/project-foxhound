@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -12,6 +14,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusTelemetry: "resource://nimbus/lib/Telemetry.sys.mjs",
   ProfilesDatastoreService:
     "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs",
+  RemoteSettingsSyncError:
+    "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs",
+  UnenrollmentCause: "resource://nimbus/lib/ExperimentManager.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -21,6 +26,14 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
   return new Logger("NimbusMigrations");
 });
 
+function isBackgroundTaskMode() {
+  const bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
+    Ci.nsIBackgroundTasks
+  );
+
+  return bts?.isBackgroundTaskMode ?? false;
+}
+
 /**
  * A named migration.
  *
@@ -29,14 +42,14 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
  * @property {string} name The name of the migration. This will be reported in
  * telemetry.
  *
- * @property {function(): void} fn The migration implementation.
+ * @property {function(string): void} fn The migration implementation.
  */
 
 /**
  * Construct a {@link Migration} with a specific name.
  *
  * @param {string} name The name of the migration.
- * @param {function(): void} fn The migration function.
+ * @param {function(name: string): void} fn The migration function.
  *
  * @returns {Migration} The migration.
  */
@@ -63,11 +76,20 @@ export const NIMBUS_MIGRATION_PREFS = Object.fromEntries(
   Object.entries(Phase).map(([, v]) => [v, `nimbus.migrations.${v}`])
 );
 
-export const LABS_MIGRATION_FEATURE_MAP = Object.freeze({
-  "auto-pip": "firefox-labs-auto-pip",
-  "urlbar-ime-search": "firefox-labs-urlbar-ime-search",
-  "jpeg-xl": "firefox-labs-jpeg-xl",
-});
+export const LABS_MIGRATION_FEATURE_MAP = (function () {
+  const featureMap = {
+    "auto-pip": "firefox-labs-auto-pip",
+    "urlbar-ime-search": "firefox-labs-urlbar-ime-search",
+  };
+
+  // The jpeg-xl feature is Nightly-only and the relevant prefs do not exist
+  // outside Nightly.
+  if (AppConstants.MOZ_JXL) {
+    featureMap["jpeg-xl"] = "firefox-labs-jpeg-xl";
+  }
+
+  return Object.freeze(featureMap);
+})();
 
 /**
  * Migrate from the legacy migration state to multi-phase migration state.
@@ -86,6 +108,15 @@ function migrateMultiphase() {
       latestMigration
     );
     Services.prefs.clearUserPref(LEGACY_NIMBUS_MIGRATION_PREF);
+  }
+}
+
+/**
+ * Disable rollouts if the user has previously opted out of studies.
+ */
+function migrateSeparateRolloutOptOut() {
+  if (!Services.prefs.getBoolPref("app.shield.optoutstudies.enabled")) {
+    Services.prefs.setBoolPref("nimbus.rollouts.enabled", false);
   }
 }
 
@@ -124,11 +155,23 @@ async function migrateEnrollmentsToSql() {
     lazy.ExperimentAPI.manager.store._jsonFile.data
   );
 
-  // Likewise, the set of all recipes is
-  const { recipes } =
-    await lazy.ExperimentAPI._rsLoader.getRecipesFromAllCollections({
+  // If there are no enrollments we can skip the rest of the migration.
+  if (enrollments.length === 0) {
+    return;
+  }
+
+  let recipes;
+  try {
+    recipes = await lazy.ExperimentAPI._rsLoader.getRecipesFromAllCollections({
       trigger: "migration",
     });
+  } catch (e) {
+    if (e instanceof lazy.RemoteSettingsSyncError) {
+      throw new MigrationError(e.reason);
+    }
+
+    throw e;
+  }
 
   const recipesBySlug = new Map(recipes.map(r => [r.slug, r]));
 
@@ -232,6 +275,39 @@ async function migrateEnrollmentsToSql() {
 }
 
 /**
+ * Migrate enrollment from the firefox-labs-auto-pip rolloutl.
+ *
+ * This feature is becoming a regular setting in about:preferences in Firefox
+ * 147. We need to unenroll users without resetting the prefs controlled by the
+ * feature.
+ *
+ * This migration must run before the `ExperimentManager.onStartup` has run
+ * because this feature might be removed and we cannot guarantee that users will
+ * update to exactly 145.
+ */
+function migrateGraduateFirefoxLabsAutoPip(migration) {
+  if (isBackgroundTaskMode()) {
+    // This migration does not apply to background task mode.
+    lazy.log.debug(`${migration}: skipping (is background task mode)`);
+    return;
+  }
+
+  const enrollment = lazy.ExperimentAPI.manager.store.get(
+    "firefox-labs-auto-pip"
+  );
+  if (!enrollment?.active) {
+    lazy.log.debug(`${migration}: skipping (no or inactive enrollment)`);
+    return;
+  }
+
+  lazy.ExperimentAPI.manager._unenroll(
+    enrollment,
+    lazy.UnenrollmentCause.Migration(migration),
+    { unsetEnrollmentPrefs: false }
+  );
+}
+
+/**
  * Migrate the pre-Nimbus Firefox Labs experiences into Nimbus enrollments.
  *
  * Previously Firefox Labs had a one-to-one correlation between Labs Experiments
@@ -244,11 +320,7 @@ async function migrateEnrollmentsToSql() {
  * replaced with a no-op.
  */
 async function migrateFirefoxLabsEnrollments() {
-  const bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
-    Ci.nsIBackgroundTasks
-  );
-
-  if (bts?.isBackgroundTaskMode) {
+  if (isBackgroundTaskMode()) {
     // This migration does not apply to background task mode.
     return;
   }
@@ -316,6 +388,7 @@ async function migrateFirefoxLabsEnrollments() {
     { mode: "shared" }
   );
 }
+
 export class MigrationError extends Error {
   static Reason = Object.freeze({
     UNKNOWN: "unknown",
@@ -340,7 +413,6 @@ export const NimbusMigrations = {
    * application of further migrations in the phase.
    *
    * @param {Phase} phase The phase of migrations to apply.
-   *
    */
   async applyMigrations(phase) {
     const phasePref = NIMBUS_MIGRATION_PREFS[phase];
@@ -359,7 +431,7 @@ export const NimbusMigrations = {
       );
 
       try {
-        await migration.fn();
+        await migration.fn(migration.name);
       } catch (e) {
         lazy.log.error(
           `applyMigrations: error running migration ${i} (${migration.name}): ${e}`
@@ -425,6 +497,7 @@ export const NimbusMigrations = {
   MIGRATIONS: {
     [Phase.INIT_STARTED]: [
       migration("multi-phase-migrations", migrateMultiphase),
+      migration("separate-rollout-opt-out", migrateSeparateRolloutOptOut),
     ],
 
     [Phase.AFTER_STORE_INITIALIZED]: [
@@ -437,6 +510,10 @@ export const NimbusMigrations = {
       // the migration to ensure recipe was never null.
       migration("noop", migrateNoop),
       migration("import-enrollments-to-sql", migrateEnrollmentsToSql),
+      migration(
+        "graduate-firefox-labs-auto-pip",
+        migrateGraduateFirefoxLabsAutoPip
+      ),
     ],
 
     [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: [

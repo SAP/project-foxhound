@@ -10,9 +10,8 @@
 #include "GLContextTypes.h"  // for SharedTextureHandle, etc
 #include "GLImages.h"
 #include "gfxTypes.h"
-#include "mozilla/Attributes.h"  // for override
-#include "mozilla/gfx/Point.h"   // for IntSize
-#include "mozilla/gfx/Types.h"   // for SurfaceFormat
+#include "mozilla/gfx/Point.h"  // for IntSize
+#include "mozilla/gfx/Types.h"  // for SurfaceFormat
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
 #include "mozilla/layers/TextureClient.h"   // for TextureClient, etc

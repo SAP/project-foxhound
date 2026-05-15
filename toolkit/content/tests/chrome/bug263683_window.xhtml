@@ -47,12 +47,6 @@
     }
 
     async function startTestWithBrowser(browserId) {
-      // We're bailing out when testing a remote browser on OSX 10.6, because it
-      // fails permanently.
-      if (browserId.endsWith("remote") && AppConstants.isPlatformAndVersionAtMost("macosx", 11)) {
-        return;
-      }
-
       info("Starting test with browser '" + browserId + "'");
       gBrowser = document.getElementById(browserId);
       gFindBar.browser = gBrowser;

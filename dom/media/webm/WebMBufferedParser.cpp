@@ -8,10 +8,10 @@
 
 #include <algorithm>
 
+#include "MediaDataDemuxer.h"
 #include "mozilla/CheckedInt.h"
 #include "nsThreadUtils.h"
 
-extern mozilla::LazyLogModule gMediaDemuxerLog;
 #define WEBM_DEBUG(arg, ...)                          \
   MOZ_LOG(gMediaDemuxerLog, mozilla::LogLevel::Debug, \
           ("WebMBufferedParser(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
@@ -300,22 +300,32 @@ MediaResult WebMBufferedParser::Append(const unsigned char* aBuffer,
                   return MediaResult(NS_ERROR_FAILURE,
                                      "Timecode appeared before SegmentInfo");
                 }
-                uint64_t absTimecode = mClusterTimecode + mBlockTimecode;
-                absTimecode *= mTimecodeScale;
-                // Avoid creating an entry if the timecode is out of order
-                // (invalid according to the WebM specification) so that
-                // ordering invariants of aMapping are not violated.
-                if (idx == 0 || aMapping[idx - 1].mTimecode <= absTimecode ||
-                    (idx + 1 < aMapping.Length() &&
-                     aMapping[idx + 1].mTimecode >= absTimecode)) {
-                  WebMTimeDataOffset entry(endOffset, absTimecode,
-                                           mLastInitStartOffset, mClusterOffset,
-                                           mClusterEndOffset);
-                  aMapping.InsertElementAt(idx, entry);
-                } else {
-                  WEBM_DEBUG("Out of order timecode %" PRIu64
+                CheckedInt<uint64_t> checkedTimecode =
+                    CheckedInt<uint64_t>(mClusterTimecode + mBlockTimecode) *
+                    mTimecodeScale;
+                if (!checkedTimecode.isValid() ||
+                    checkedTimecode.value() >
+                        static_cast<uint64_t>(INT64_MAX)) {
+                  WEBM_DEBUG("Timecode overflow: %" PRIu64
                              " in Cluster at %" PRId64 " ignored",
-                             absTimecode, mClusterOffset);
+                             checkedTimecode.isValid() ? checkedTimecode.value()
+                                                       : UINT64_MAX,
+                             mClusterOffset);
+                } else {
+                  uint64_t absTimecode = checkedTimecode.value();
+                  if ((idx == 0 ||
+                       aMapping[idx - 1].mTimecode <= absTimecode) &&
+                      (idx == aMapping.Length() ||
+                       aMapping[idx].mTimecode >= absTimecode)) {
+                    WebMTimeDataOffset entry(endOffset, absTimecode,
+                                             mLastInitStartOffset,
+                                             mClusterOffset, mClusterEndOffset);
+                    aMapping.InsertElementAt(idx, entry);
+                  } else {
+                    WEBM_DEBUG("Out of order timecode %" PRIu64
+                               " in Cluster at %" PRId64 " ignored",
+                               absTimecode, mClusterOffset);
+                  }
                 }
               }
             }
@@ -567,13 +577,6 @@ void WebMBufferedState::NotifyDataArrived(const unsigned char* aBuffer,
       i += 1;
     }
   }
-
-  if (mRangeParsers.IsEmpty()) {
-    return;
-  }
-
-  MutexAutoLock lock(mMutex);
-  mLastBlockOffset = mRangeParsers.LastElement().mBlockEndOffset;
 }
 
 void WebMBufferedState::Reset() {
@@ -637,12 +640,6 @@ int64_t WebMBufferedState::GetInitEndOffset() {
     return -1;
   }
   return mRangeParsers[0].mInitEndOffset;
-}
-
-int64_t WebMBufferedState::GetLastBlockOffset() {
-  MutexAutoLock lock(mMutex);
-
-  return mLastBlockOffset;
 }
 
 bool WebMBufferedState::GetStartTime(uint64_t* aTime) {

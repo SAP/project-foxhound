@@ -7,9 +7,9 @@
 
 #include <vector>
 
+#include "BufferReader.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
-#include "BufferReader.h"
 
 namespace mozilla {
 

@@ -6,23 +6,22 @@
 
 #include "DOMSVGLength.h"
 
-#include "DOMSVGLengthList.h"
 #include "DOMSVGAnimatedLengthList.h"
-#include "nsError.h"
-#include "nsMathUtils.h"
+#include "DOMSVGLengthList.h"
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedLengthList.h"
 #include "SVGAttrTearoffTable.h"
 #include "SVGLength.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
-#include "mozilla/FloatingPoint.h"
+#include "nsError.h"
+#include "nsMathUtils.h"
 
 // See the architecture comment in DOMSVGAnimatedLengthList.h.
 
 namespace mozilla::dom {
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedLength, DOMSVGLength>
+constinit static SVGAttrTearoffTable<SVGAnimatedLength, DOMSVGLength>
     sBaseSVGLengthTearOffTable, sAnimSVGLengthTearOffTable;
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
@@ -190,7 +189,8 @@ float DOMSVGLength::GetValue(ErrorResult& aRv) {
   }
 
   if (SVGLength::IsAbsoluteUnit(mUnit)) {
-    return SVGLength(mValue, mUnit).GetValueInPixels(nullptr, 0);
+    return SVGLength(mValue, mUnit)
+        .GetValueInPixels(nullptr, SVGLength::Axis::XY);
   }
 
   // else [SVGWG issue] Can't convert this length's value to user units
@@ -361,7 +361,7 @@ void DOMSVGLength::NewValueSpecifiedUnits(uint16_t aUnit, float aValue,
       return;
     }
     AutoChangeLengthListNotifier notifier(this);
-    internalItem.SetValueAndUnit(aValue, uint8_t(aUnit));
+    internalItem.SetValueAndUnit(aValue, aUnit);
     return;
   }
   mUnit = uint8_t(aUnit);
@@ -396,7 +396,8 @@ void DOMSVGLength::ConvertToSpecifiedUnits(uint16_t aUnit, ErrorResult& aRv) {
     if (mUnit == aUnit) {
       return;
     }
-    val = SVGLength(mValue, mUnit).GetValueInSpecifiedUnit(aUnit, nullptr, 0);
+    val = SVGLength(mValue, mUnit)
+              .GetValueInSpecifiedUnit(aUnit, nullptr, SVGLength::Axis::XY);
   }
   if (!std::isfinite(val)) {
     aRv.ThrowTypeError<MSG_NOT_FINITE>("value");

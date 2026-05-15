@@ -154,11 +154,11 @@ async function openMenuAndClick(monitor, store, document, itemSelector) {
 async function reloadPage(monitor, { isRequestBlocked = false } = {}) {
   const wait = waitForNetworkEvents(monitor, 1);
   if (isRequestBlocked) {
-    // Note: Do not use navigateTo or reloadBrowser here as the request will
+    // Note: Do not use navigateTo or reloadSelectedTab here as the request will
     // be blocked and no navigation happens
     gBrowser.selectedBrowser.reload();
   } else {
-    await reloadBrowser();
+    await reloadSelectedTab();
   }
   await wait;
 }

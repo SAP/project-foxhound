@@ -11,7 +11,6 @@ import android.os.Parcel
 import android.service.autofill.FillResponse
 import android.view.autofill.AutofillManager
 import android.widget.inline.InlinePresentationSpec
-import androidx.annotation.RequiresApi
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Deferred
@@ -31,7 +30,6 @@ import mozilla.components.support.utils.ext.getParcelableExtraCompat
  * Activity responsible for unlocking the autofill service by asking the user to verify with a
  * fingerprint or alternative device unlocking mechanism.
  */
-@RequiresApi(Build.VERSION_CODES.O)
 abstract class AbstractAutofillUnlockActivity : FragmentActivity() {
     abstract val configuration: AutofillConfiguration
 

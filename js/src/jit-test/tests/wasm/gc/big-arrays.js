@@ -10,7 +10,6 @@ const MaxArrayPayloadBytes = 1987654321;
 function maxNumElementsForSize(bytes, elemSize) {
   let n = bytes;
   n = bytes & ~0b111; // round down to nearest multiple of gc::CellAlignSize
-  n -= getBuildConfiguration()['pointer-byte-size']; // subtract size of data header
   n = Math.floor(n / elemSize); // divide by elemSize and round down
   return n;
 }

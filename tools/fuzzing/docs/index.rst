@@ -426,6 +426,8 @@ supposed to be invoked, which options are safe, etc. might be hard to
 figure out for the person doing the testing, just as you are reading
 this manual right now to find out what is important in fuzzing.
 
+.. _Fuzzing#contact-us:
+
 Contact Us
 ~~~~~~~~~~
 

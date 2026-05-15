@@ -5,7 +5,7 @@
 package org.mozilla.fenix.components.menu.middleware
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.AppMenu
 import org.mozilla.fenix.GleanMetrics.Events
@@ -28,14 +28,12 @@ class MenuTelemetryMiddleware(
     private val accessPoint: MenuAccessPoint,
 ) : Middleware<MenuState, MenuAction> {
 
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
+    @Suppress("CyclomaticComplexMethod", "LongMethod", "CognitiveComplexMethod")
     override fun invoke(
-        context: MiddlewareContext<MenuState, MenuAction>,
+        store: Store<MenuState, MenuAction>,
         next: (MenuAction) -> Unit,
         action: MenuAction,
     ) {
-        val currentState = context.state
-
         next(action)
 
         when (action) {
@@ -107,12 +105,6 @@ class MenuTelemetryMiddleware(
             MenuAction.Navigate.Passwords -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = "passwords",
-                ),
-            )
-
-            MenuAction.Navigate.ReleaseNotes -> Events.whatsNewTapped.record(
-                Events.WhatsNewTappedExtra(
-                    source = "MENU",
                 ),
             )
 
@@ -220,16 +212,6 @@ class MenuTelemetryMiddleware(
 
             MenuAction.CustomizeReaderView -> ReaderMode.appearance.record(NoExtras())
 
-            MenuAction.ToggleReaderView -> {
-                val readerState = currentState.browserMenuState?.selectedTab?.readerState ?: return
-
-                if (readerState.active) {
-                    ReaderMode.closed.record(NoExtras())
-                } else {
-                    ReaderMode.opened.record(NoExtras())
-                }
-            }
-
             is MenuAction.RequestDesktopSite -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = when (accessPoint) {
@@ -258,14 +240,6 @@ class MenuTelemetryMiddleware(
                 Events.browserMenuAction.record(
                     Events.BrowserMenuActionExtra(
                         item = "discover_more_extensions",
-                    ),
-                )
-            }
-
-            MenuAction.Navigate.ExtensionsLearnMore -> {
-                Events.browserMenuAction.record(
-                    Events.BrowserMenuActionExtra(
-                        item = "extensions_learn_more",
                     ),
                 )
             }
@@ -302,18 +276,11 @@ class MenuTelemetryMiddleware(
                 )
             }
 
-            MenuAction.OpenInRegularTab -> {
-                Events.browserMenuAction.record(
-                    Events.BrowserMenuActionExtra(
-                        item = "open_in_regular_tab",
-                    ),
-                )
-            }
-
             MenuAction.OnCFRShown -> Menu.showCfr.record(NoExtras())
 
             MenuAction.OnCFRDismiss -> Menu.dismissCfr.record(NoExtras())
 
+            MenuAction.Navigate.Summarizer,
             MenuAction.InitAction,
             is MenuAction.CustomMenuItemAction,
             is MenuAction.UpdateBookmarkState,
@@ -323,9 +290,6 @@ class MenuTelemetryMiddleware(
             is MenuAction.InstallAddonFailed,
             is MenuAction.InstallAddonSuccess,
             is MenuAction.UpdateInstallAddonInProgress,
-            is MenuAction.UpdateShowExtensionsOnboarding,
-            is MenuAction.UpdateShowDisabledExtensionsOnboarding,
-            is MenuAction.UpdateManageExtensionsMenuItemVisibility,
             is MenuAction.UpdateAvailableAddons,
             -> Unit
         }

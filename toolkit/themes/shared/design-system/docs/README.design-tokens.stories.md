@@ -328,7 +328,8 @@ Any semantic tokens within a scale, such as the `--font-size-root` example below
 --font-size-small: 0.867rem;  /* 13px */
 --font-size-large: 1.133rem;  /* 17px */
 --font-size-xlarge: 1.467rem; /* 22px */
---font-size-xxlarge: 2.2rem;  /* 33px */
+--font-size-xxlarge: 1.6rem;  /* 24px */
+--font-size-xxxlarge: 2.2rem; /* 33px */
 ```
 
 ## Theming
@@ -344,7 +345,7 @@ We rely on the [light-dark()](https://developer.mozilla.org/en-US/docs/Web/CSS/c
 ```
 
 ### High contrast mode
-We rely on two queries for assigning HCM counterpart variables, @media (prefers-contrast) and @media (forced-colors). They are found at the bottom of [tokens-shared.css](https://searchfox.org/mozilla-central/rev/6eb2ebcafb1b4a8576eb513e6cd2c61e3f3ae6dc/toolkit/themes/shared/design-system/tokens-shared.css#109).
+We rely on two queries for assigning HCM counterpart variables, @media (prefers-contrast) and @media (forced-colors). They are found within @layer tokens-prefers-contrast and @layer tokens-forced-colors at the bottom of [tokens-shared.css](https://searchfox.org/firefox-main/source/toolkit/themes/shared/design-system/dist/tokens-shared.css#314-432).
 
 To learn more about the HCM media queries, please consult [these docs](https://firefox-source-docs.mozilla.org/accessible/HCMMediaQueries.html).
 

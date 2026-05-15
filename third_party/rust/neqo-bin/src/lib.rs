@@ -4,18 +4,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 use std::{
-    fmt::{self, Display},
     net::{SocketAddr, ToSocketAddrs as _},
     path::PathBuf,
     time::Duration,
 };
 
-use clap::Parser;
+use clap::{builder::TypedValueParser as _, Parser};
 use neqo_transport::{
     tparams::PreferredAddress, CongestionControlAlgorithm, ConnectionParameters, StreamType,
-    Version,
+    Version, DEFAULT_INITIAL_RTT,
 };
+use strum::VariantNames as _;
+use thiserror::Error;
 
 pub mod client;
 mod send_data;
@@ -27,7 +30,7 @@ pub mod udp;
 /// See `network.buffer.cache.size` pref <https://searchfox.org/mozilla-central/rev/f6e3b81aac49e602f06c204f9278da30993cdc8a/modules/libpref/init/all.js#3212>
 const STREAM_IO_BUFFER_SIZE: usize = 32 * 1024;
 
-#[derive(Debug, Parser)]
+#[derive(Clone, Debug, Parser)]
 pub struct SharedArgs {
     #[command(flatten)]
     verbose: Option<clap_verbosity_flag::Verbosity>,
@@ -81,7 +84,14 @@ impl Default for SharedArgs {
     }
 }
 
-#[derive(Debug, Parser)]
+impl SharedArgs {
+    #[must_use]
+    pub fn get_alpn(&self) -> &str {
+        &self.alpn
+    }
+}
+
+#[derive(Clone, Debug, Parser)]
 pub struct QuicParameters {
     #[arg(
         short = 'Q',
@@ -109,7 +119,13 @@ pub struct QuicParameters {
     /// The idle timeout for connections, in seconds.
     pub idle_timeout: u64,
 
-    #[arg(long = "cc", default_value = "cubic")]
+    #[arg(long = "init_rtt", default_value_t = DEFAULT_INITIAL_RTT.as_millis() as u64)]
+    /// The initial round-trip time, in milliseconds.
+    pub initial_rtt_ms: u64,
+
+    #[arg(long = "cc", default_value = "cubic",
+        value_parser = clap::builder::PossibleValuesParser::new(CongestionControlAlgorithm::VARIANTS)
+            .map(|s| s.parse::<CongestionControlAlgorithm>().unwrap()))]
     /// The congestion controller to use.
     pub congestion_control: CongestionControlAlgorithm,
 
@@ -142,6 +158,8 @@ impl Default for QuicParameters {
             max_streams_bidi: 16,
             max_streams_uni: 16,
             idle_timeout: 30,
+            initial_rtt_ms: u64::try_from(DEFAULT_INITIAL_RTT.as_millis())
+                .expect("this value will always be less than u64::MAX"),
             congestion_control: CongestionControlAlgorithm::Cubic,
             no_pacing: false,
             no_pmtud: false,
@@ -218,6 +236,7 @@ impl QuicParameters {
             .max_streams(StreamType::BiDi, self.max_streams_bidi)
             .max_streams(StreamType::UniDi, self.max_streams_uni)
             .idle_timeout(Duration::from_secs(self.idle_timeout))
+            .initial_rtt(Duration::from_millis(self.initial_rtt_ms))
             .cc_algorithm(self.congestion_control)
             .pacing(!self.no_pacing)
             .pmtud(!self.no_pmtud)
@@ -252,21 +271,15 @@ fn from_str(s: &str) -> Result<Version, Error> {
     Version::try_from(v).map_err(|_| Error::Argument("unknown version"))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
+    #[error("Error: {0}")]
     Argument(&'static str),
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Error: {self:?}")?;
-        Ok(())
-    }
-}
-
-impl std::error::Error for Error {}
-
+#[cfg(not(target_os = "netbsd"))] // FIXME: Test fails on NetBSD.
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use std::{fs, path::PathBuf, str::FromStr as _, time::SystemTime};
 
@@ -314,7 +327,7 @@ mod tests {
         server_args.set_qlog_dir(temp_dir.path());
 
         let client = client::client(client_args);
-        let server = Box::pin(server::server(server_args).unwrap().run());
+        let (server, _local_addrs) = server::run(server_args).unwrap();
         tokio::select! {
             _ = client => {}
             res = server  => panic!("expect server not to terminate: {res:?}"),

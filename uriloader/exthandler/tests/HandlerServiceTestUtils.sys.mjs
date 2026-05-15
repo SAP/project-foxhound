@@ -16,19 +16,19 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gExternalProtocolService",
   "@mozilla.org/uriloader/external-protocol-service;1",
-  "nsIExternalProtocolService"
+  Ci.nsIExternalProtocolService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gMIMEService",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gHandlerService",
   "@mozilla.org/uriloader/handler-service;1",
-  "nsIHandlerService"
+  Ci.nsIHandlerService
 );
 
 export var HandlerServiceTestUtils = {
@@ -49,7 +49,7 @@ export var HandlerServiceTestUtils = {
   /**
    * Retrieves all the configured handlers for MIME types and protocols.
    *
-   * @note The nsIHandlerInfo instances returned by the "enumerate" method
+   * Note: The nsIHandlerInfo instances returned by the "enumerate" method
    *       cannot be used for testing because they incorporate information from
    *       the operating system and also from the default nsIHandlerService
    *       instance, independently from what instance is under testing.
@@ -65,7 +65,7 @@ export var HandlerServiceTestUtils = {
    * incorporates information from the operating system and also from the
    * handler service instance currently under testing.
    *
-   * @note If the handler service instance currently under testing is not the
+   * Note: If the handler service instance currently under testing is not the
    *       default one and the requested type is a MIME type, the returned
    *       nsIHandlerInfo will include information from the default
    *       nsIHandlerService instance. This cannot be avoided easily because the
@@ -123,7 +123,7 @@ export var HandlerServiceTestUtils = {
    * Creates an nsIHandlerInfo for the given MIME type or protocol, initialized
    * to the default values for the current platform.
    *
-   * @note For this method to work, the specified MIME type or protocol must not
+   * Note: For this method to work, the specified MIME type or protocol must not
    *       be configured in the default handler service instance or the one
    *       under testing, and must not be registered in the operating system.
    *

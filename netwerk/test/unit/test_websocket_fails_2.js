@@ -7,8 +7,10 @@
 /* import-globals-from head_cache.js */
 /* import-globals-from head_cookies.js */
 /* import-globals-from head_channels.js */
-/* import-globals-from head_servers.js */
 /* import-globals-from head_websocket.js */
+
+const { NodeHTTPSProxyServer, NodeWebSocketServer } =
+  ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
 
 // We don't normally allow localhost channels to be proxied, but this
 // is easier than updating all the certs and/or domains.
@@ -16,10 +18,6 @@ Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.proxy.allow_hijacking_localhost");
 });
-
-let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-  Ci.nsIX509CertDB
-);
 
 add_setup(() => {
   Services.prefs.setBoolPref("network.http.http2.websockets", true);
@@ -34,13 +32,12 @@ async function test_tls_fail_on_ws_server_over_proxy() {
   // we are expecting a timeout, so lets shorten how long we must wait
   Services.prefs.setIntPref("network.websocket.timeout.open", 1);
 
-  // no cert to ws server
-  addCertFromFile(certdb, "proxy-ca.pem", "CTu,u,u");
-
   let proxy = new NodeHTTPSProxyServer();
   await proxy.start();
 
   let wss = new NodeWebSocketServer();
+  // no cert to ws server
+  wss._skipCert = true;
   await wss.start();
 
   registerCleanupFunction(async () => {

@@ -10,6 +10,12 @@ pub fn pass(root: &mut Root) -> Result<()> {
     root.visit_mut(|node: &mut FfiTypeNode| {
         node.type_name = ffi_type_name(&node.ty);
     });
+    root.visit_mut(|return_handler: &mut CallbackReturnHandlerClass| {
+        return_handler.return_type_name = match &return_handler.return_ty {
+            Some(return_ty) => return_ty.ty.type_name.clone(),
+            None => "void".to_string(),
+        };
+    });
     root.visit_mut(|return_ty: &mut FfiReturnType| {
         return_ty.type_name = match &return_ty.ty {
             Some(type_node) => type_node.type_name.clone(),
@@ -41,7 +47,6 @@ fn ffi_type_name(ty: &FfiType) -> String {
         FfiType::Float32 => "float".to_owned(),
         FfiType::Float64 => "double".to_owned(),
         FfiType::RustBuffer(_) => "RustBuffer".to_owned(),
-        FfiType::RustArcPtr { .. } => "void*".to_owned(),
         FfiType::ForeignBytes => "ForeignBytes".to_owned(),
         FfiType::Handle(_) => "uint64_t".to_owned(),
         FfiType::RustCallStatus => "RustCallStatus".to_owned(),
@@ -54,18 +59,8 @@ fn ffi_type_name(ty: &FfiType) -> String {
     }
 }
 
-pub fn ffi_value_class(node: &FfiTypeNode) -> Result<String> {
+fn ffi_value_class(node: &FfiTypeNode) -> Result<String> {
     Ok(match &node.ty {
-        FfiType::RustArcPtr {
-            module_name,
-            object_name,
-        } => {
-            format!(
-                "FfiValueObjectHandle{}{}",
-                module_name.to_upper_camel_case(),
-                object_name.to_upper_camel_case(),
-            )
-        }
         FfiType::UInt8
         | FfiType::Int8
         | FfiType::UInt16
@@ -78,11 +73,19 @@ pub fn ffi_value_class(node: &FfiTypeNode) -> Result<String> {
             format!("FfiValueFloat<{}>", node.type_name)
         }
         FfiType::RustBuffer(_) => "FfiValueRustBuffer".to_owned(),
-        FfiType::Handle(HandleKind::CallbackInterface {
-            module_name,
+        FfiType::Handle(HandleKind::StructInterface {
+            namespace,
+            interface_name,
+        })
+        | FfiType::Handle(HandleKind::TraitInterface {
+            namespace,
             interface_name,
         }) => {
-            format!("FfiValueCallbackInterface{module_name}_{interface_name}")
+            format!(
+                "FfiValueObjectHandle{}{}",
+                namespace.to_upper_camel_case(),
+                interface_name.to_upper_camel_case(),
+            )
         }
         ty => bail!("No FfiValue class for: {ty:?}"),
     })

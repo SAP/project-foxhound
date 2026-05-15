@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GeckoViewContentProtocolHandler_h__
-#define GeckoViewContentProtocolHandler_h__
+#ifndef GeckoViewContentProtocolHandler_h_
+#define GeckoViewContentProtocolHandler_h_
 
 #include "nsIProtocolHandler.h"
 #include "nsWeakReference.h"
@@ -24,4 +24,4 @@ class GeckoViewContentProtocolHandler : public nsIProtocolHandler,
   [[nodiscard]] nsresult Init();
 };
 
-#endif  // !GeckoViewContentProtocolHandler_h__
+#endif  // !GeckoViewContentProtocolHandler_h_

@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_RadioNodeList_h
 #define mozilla_dom_RadioNodeList_h
 
-#include "nsContentList.h"
-#include "nsCOMPtr.h"
 #include "HTMLFormElement.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "nsCOMPtr.h"
+#include "nsContentList.h"
 
 #define MOZILLA_DOM_RADIONODELIST_IMPLEMENTATION_IID \
   {0xbba7f3e8, 0xf3b5, 0x42e5, {0x82, 0x08, 0xa6, 0x8b, 0xe0, 0xbc, 0x22, 0x19}}

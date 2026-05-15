@@ -11,7 +11,6 @@
 #include "nsString.h"
 #include "nspr.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ChromeUtilsBinding.h"

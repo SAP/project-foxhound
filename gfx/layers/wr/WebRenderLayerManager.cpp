@@ -12,12 +12,12 @@
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
+#include "mozilla/layers/APZTestData.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TransactionIdAllocator.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
-#include "mozilla/layers/UpdateImageHelper.h"
 #include "mozilla/PerfStats.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
@@ -47,6 +47,7 @@ WebRenderLayerManager::WebRenderLayerManager(nsIWidget* aWidget)
       mDestroyed(false),
       mTarget(nullptr),
       mPaintSequenceNumber(0),
+      mApzTestData(new APZTestData),
       mWebRenderCommandBuilder(this) {
   MOZ_COUNT_CTOR(WebRenderLayerManager);
   mStateManager.mLayerManager = this;
@@ -249,7 +250,7 @@ bool WebRenderLayerManager::BeginTransaction(const nsCString& aURL) {
   // and the parent process expects unique sequence numbers.
   ++mPaintSequenceNumber;
   if (StaticPrefs::apz_test_logging_enabled()) {
-    mApzTestData.StartNewPaint(mPaintSequenceNumber);
+    mApzTestData->StartNewPaint(mPaintSequenceNumber);
   }
   return true;
 }
@@ -267,9 +268,8 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
 
   mDisplayItemCache.SkipWaitingForPartialDisplayList();
 
-  // Don't block on hidden windows on Linux as it may block all rendering.
-  const bool throttle = mWidget->IsMapped();
-  mLatestTransactionId = mTransactionIdAllocator->GetTransactionId(throttle);
+  mLatestTransactionId =
+      mTransactionIdAllocator->GetTransactionId(/*aThrottle*/ true);
 
   if (aFlags & EndTransactionFlags::END_NO_COMPOSITE &&
       !mWebRenderCommandBuilder.NeedsEmptyTransaction()) {
@@ -339,7 +339,7 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     nsDisplayList* aDisplayList, nsDisplayListBuilder* aDisplayListBuilder,
     WrFiltersHolder&& aFilters, WebRenderBackgroundData* aBackground,
     const double aGeckoDLBuildTime, bool aRenderOffscreen) {
-  AUTO_PROFILER_TRACING_MARKER("Paint", "WrDisplayList", GRAPHICS);
+  AUTO_PROFILER_MARKER("WrDisplayList", GRAPHICS);
 
   auto clearTarget = MakeScopeExit([&] { mTarget = nullptr; });
 
@@ -418,14 +418,10 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
   // Since we're sending a full mScrollData that will include the new scroll
   // offsets, and we can throw away the pending scroll updates we had kept for
   // an empty transaction.
-  auto scrollIdsUpdated = ClearPendingScrollInfoUpdate();
-  for (ScrollableLayerGuid::ViewID update : scrollIdsUpdated) {
-    nsLayoutUtils::NotifyPaintSkipTransaction(update);
-  }
+  ClearAndNotifyOfFullTransactionPendingScrollInfoUpdate();
 
-  // Don't block on hidden windows on Linux as it may block all rendering.
-  const bool throttle = mWidget->IsMapped() && !aRenderOffscreen;
-  mLatestTransactionId = mTransactionIdAllocator->GetTransactionId(throttle);
+  mLatestTransactionId = mTransactionIdAllocator->GetTransactionId(
+      /*aThrottle*/ !aRenderOffscreen);
 
   // Get the time of when the refresh driver start its tick (if available),
   // otherwise use the time of when LayerManager::BeginTransaction was called.
@@ -471,7 +467,7 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
   GetCompositorBridgeChild()->EndCanvasTransaction();
 
   {
-    AUTO_PROFILER_TRACING_MARKER("Paint", "ForwardDPTransaction", GRAPHICS);
+    AUTO_PROFILER_MARKER("ForwardDPTransaction", GRAPHICS);
     DisplayListData dlData;
     diplayListBuilder->End(dlData);
     resourceUpdates.Flush(dlData.mResourceUpdates, dlData.mSmallShmems,
@@ -821,13 +817,12 @@ UniquePtr<LayerUserData> WebRenderLayerManager::RemoveUserData(void* aKey) {
   return d;
 }
 
-std::unordered_set<ScrollableLayerGuid::ViewID>
-WebRenderLayerManager::ClearPendingScrollInfoUpdate() {
-  std::unordered_set<ScrollableLayerGuid::ViewID> scrollIds(
-      mPendingScrollUpdates.Keys().cbegin(),
-      mPendingScrollUpdates.Keys().cend());
+void WebRenderLayerManager::
+    ClearAndNotifyOfFullTransactionPendingScrollInfoUpdate() {
+  for (ScrollableLayerGuid::ViewID update : mPendingScrollUpdates.Keys()) {
+    nsLayoutUtils::NotifyApzTransaction(update);
+  }
   mPendingScrollUpdates.Clear();
-  return scrollIds;
 }
 
 bool WebRenderLayerManager::AddPendingScrollUpdateForNextTransaction(
@@ -835,6 +830,20 @@ bool WebRenderLayerManager::AddPendingScrollUpdateForNextTransaction(
     const ScrollPositionUpdate& aUpdateInfo) {
   mPendingScrollUpdates.LookupOrInsert(aScrollId).AppendElement(aUpdateInfo);
   return true;
+}
+
+// See equivalent function in ClientLayerManager
+void WebRenderLayerManager::LogTestDataForCurrentPaint(
+    ScrollableLayerGuid::ViewID aScrollId, const std::string& aKey,
+    const std::string& aValue) {
+  MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
+  mApzTestData->LogTestDataForPaint(mPaintSequenceNumber, aScrollId, aKey,
+                                    aValue);
+}
+void WebRenderLayerManager::LogAdditionalTestData(const std::string& aKey,
+                                                  const std::string& aValue) {
+  MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
+  mApzTestData->RecordAdditionalData(aKey, aValue);
 }
 
 }  // namespace layers

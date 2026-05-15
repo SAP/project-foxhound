@@ -140,11 +140,13 @@ ExtensionManager = {
         id: extension.id,
         mozExtensionHostname: extension.uuid,
         name: extension.name,
+        version: extension.version,
         type: extension.type,
         baseURL: extension.resourceURL,
 
         isPrivileged: extension.isPrivileged,
         ignoreQuarantine: extension.ignoreQuarantine,
+        hasRecommendedState: extension.hasRecommendedState,
         temporarilyInstalled: extension.temporarilyInstalled,
         permissions: extension.permissions,
         allowedOrigins: extension.allowedOrigins,

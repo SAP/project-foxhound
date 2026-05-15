@@ -142,19 +142,29 @@
         });
       });
 
-      add_task(async function testVisualPickerItemLabel() {
+      add_task(async function testVisualPickerItemText() {
+        let itemData = [
+          { value: "first", label: "first", description: "one" },
+          { value: "second", label: "second", description: "two" },
+          { value: "third", label: "third", description: "three" },
+        ];
+
         let labelledItemsTemplate = html`
           <moz-visual-picker
             type="listbox"
             label="Testing labels"
             value="first"
           >
-            <moz-visual-picker-item value="first" label="first">
-            </moz-visual-picker-item>
-            <moz-visual-picker-item value="second" label="second">
-            </moz-visual-picker-item>
-            <moz-visual-picker-item value="third" label="third">
-            </moz-visual-picker-item>
+            ${itemData.map(
+              data => html`
+                <moz-visual-picker-item
+                  value=${data.value}
+                  label=${data.label}
+                  description=${data.description}
+                >
+                </moz-visual-picker-item>
+              `
+            )}
           </moz-visual-picker>
         `;
         let renderTarget = await testHelpers.renderTemplate(
@@ -163,24 +173,33 @@
         let items = [
           ...renderTarget.querySelectorAll("moz-visual-picker-item"),
         ];
-        let labels = ["first", "second", "third"];
 
-        labels.forEach((label, i) => {
+        itemData.forEach((data, i) => {
           is(
-            items[i].shadowRoot.textContent.trim(),
-            label,
+            items[i].labelEl.textContent.trim(),
+            data.label,
             "Visual picker items support a visible label."
+          );
+          is(
+            items[i].descriptionEl.textContent.trim(),
+            data.description,
+            "Visual picker items support a visible description."
           );
         });
 
         items.forEach(async (item, i) => {
-          let itemLabel = labels[i];
+          let { label: itemLabel, description: itemDescription } = itemData[i];
 
-          // Verify that label is set via markup.
+          // Verify that label and description are set via markup.
           is(
-            items.shadowRoot.textContent.trim(),
+            item.labelEl.textContent.trim(),
             itemLabel,
             "Visual picker items support a visible label."
+          );
+          is(
+            item.descriptionEl.textContent.trim(),
+            itemDescription,
+            "Visual picker items support a visible description."
           );
 
           // Clear the visible label and set an aria label instead
@@ -189,7 +208,7 @@
           await item.updateComplete;
 
           ok(
-            !item.shadowRoot.textContent.trim(),
+            !item.labelEl,
             "Visual picker item no longer has a visible label."
           );
           is(
@@ -205,9 +224,9 @@
           item.append(textEl);
           await item.updateComplete;
 
-          is(
-            item.shadowRoot.textContent.trim(),
-            "Visual picker has a visible label again."
+          ok(
+            !item.labelEl,
+            "Visual picker item still has no visible label element."
           );
           ok(
             item.ariaLabelledByElements.includes(textEl),
@@ -600,9 +619,27 @@
             is(picker.value, secondItem.value, "picker value is updated.");
             verifyEvents([
               {
+                type: "click",
+                value: "second",
+                localName: "moz-visual-picker-item",
+                checked: true,
+              },
+              {
+                type: "input",
+                value: "second",
+                localName: "moz-visual-picker-item",
+                checked: true,
+              },
+              {
                 type: "input",
                 value: "second",
                 localName: "moz-visual-picker",
+              },
+              {
+                type: "change",
+                value: "second",
+                localName: "moz-visual-picker-item",
+                checked: true,
               },
               {
                 type: "change",

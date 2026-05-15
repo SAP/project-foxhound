@@ -12,9 +12,6 @@ with Files("docs/**"):
 if CONFIG["MOZ_BUILD_APP"] == "browser":
     DEFINES["MOZ_BUILD_APP_IS_BROWSER"] = True
 
-if CONFIG["MOZ_BUILD_APP"] == "mobile/android":
-    DEFINES["MOZ_FENNEC"] = True
-
 DIRS += [
     "internal",
 ]
@@ -67,7 +64,6 @@ EXTRA_JS_MODULES += [
     "AbuseReporter.sys.mjs",
     "AddonManager.sys.mjs",
     "amContentHandler.sys.mjs",
-    "amInstallTrigger.sys.mjs",
     "amManager.sys.mjs",
     "amWebAPI.sys.mjs",
     "Blocklist.sys.mjs",

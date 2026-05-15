@@ -5,9 +5,8 @@
 
 async function require_module(id) {
   if (!require_module.moduleLoader) {
-    const { ModuleLoader } = await import(
-      "/tests/dom/quota/test/modules/ModuleLoader.mjs"
-    );
+    const { ModuleLoader } =
+      await import("/tests/dom/quota/test/modules/ModuleLoader.mjs");
 
     const base = window.location.href;
 
@@ -32,9 +31,8 @@ async function require_module(id) {
 }
 
 async function run_test_in_worker(script) {
-  const { runTestInWorker } = await import(
-    "/tests/dom/quota/test/modules/WorkerDriver.mjs"
-  );
+  const { runTestInWorker } =
+    await import("/tests/dom/quota/test/modules/WorkerDriver.mjs");
 
   const base = window.location.href;
 
@@ -62,9 +60,8 @@ async function removeAllEntries() {
 }
 
 add_setup(async function () {
-  const { setStoragePrefs, clearStoragesForOrigin } = await import(
-    "/tests/dom/quota/test/modules/StorageUtils.mjs"
-  );
+  const { setStoragePrefs, clearStoragesForOrigin } =
+    await import("/tests/dom/quota/test/modules/StorageUtils.mjs");
 
   const optionalPrefsToSet = [
     ["dom.fs.enabled", true],

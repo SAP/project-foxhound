@@ -108,7 +108,7 @@ add_task(async function () {
     monitor,
     1 + Object.keys(TEST_PAGES).length
   );
-  await reloadBrowser();
+  await reloadSelectedTab();
   await onNetworkEvent;
 
   // The new lines are stripped when using outerHTML to retrieve HTML content of the preview iframe

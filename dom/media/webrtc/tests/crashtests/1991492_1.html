@@ -1,0 +1,26 @@
+<html class="reftest-wait">
+<head>
+<script>
+    document.addEventListener("DOMContentLoaded", async () => {
+      SpecialPowers.wrap(document).notifyUserGestureActivation();
+      const request = new Promise((res, rej) => navigator.mozGetUserMedia({
+          "video": {
+            "frameRate": {
+              "min": 100,
+              "max": -1
+            },
+            "mediaSource": "screen"
+          }
+        },
+        stream => res(stream),
+        err => rej(err)
+      ));
+      try {
+        const stream = await request;
+      } finally {
+        document.documentElement.removeAttribute("class");
+      }
+    })
+  </script>
+</head>
+</html>

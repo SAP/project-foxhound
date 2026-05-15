@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">ପୁଣିଥରେ ଚେଷ୍ଟା କରନ୍ତୁ</string>
@@ -9,11 +16,11 @@
   <!-- The document title and heading of the error page shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
   <string name="mozac_browser_errorpages_security_ssl_title">ସୁରକ୍ଷିତ ସଂଯୋଗ ବିଫଳ ହେଲା</string>
   <!-- The error message shown when a website sends back unusual and incorrect credentials for an SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul> <li>ଆପଣ ଦେଖିବାକୁ ଚାହୁଁଥିବା ପୃଷ୍ଠାକୁ ଦର୍ଶାଯାଇ ପାରିବ ନାହିଁ କାରଣ ଗ୍ରହଣ କରାଯାଇଥିବା ତଥ୍ୟର ବୈଧିକରଣକୁ ଯାଞ୍ଚ କରାଯାଇନାହିଁ।</li> <li>ଏହି ସମସ୍ୟା ବିଷୟରେ ଅଗଚର କରାଇବା ପାଇଁ ଦୟାକରି ୱେବସାଇଟ ମାଲିକଙ୍କ ସହିତ ସମ୍ପର୍କ କରନ୍ତୁ।</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_ssl_message"><![CDATA[<ul>\n<li>ଆପଣ ଦେଖିବାକୁ ଚାହୁଁଥିବା ପୃଷ୍ଠାକୁ ଦର୍ଶାଯାଇ ପାରିବ ନାହିଁ କାରଣ ଗ୍ରହଣ କରାଯାଇଥିବା ତଥ୍ୟର ବୈଧିକରଣକୁ ଯାଞ୍ଚ କରାଯାଇନାହିଁ।</li>\n<li>ଏହି ସମସ୍ୟା ବିଷୟରେ ଅଗଚର କରାଇବା ପାଇଁ ଦୟାକରି ୱେବସାଇଟ ମାଲିକଙ୍କ ସହିତ ସମ୍ପର୍କ କରନ୍ତୁ।</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a website sends has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">ସୁରକ୍ଷିତ ସଂଯୋଗ ବିଫଳ ହେଲା</string>
   <!-- The error message shown when a website sends has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul> <li>ଏହା ହୁଏତଃ ସର୍ଭର ସଂରଚନା ସମସ୍ୟା ହୋଇପାରେ, କିମ୍ବା ଏହି ସର୍ଭରର କେହି ପରିଚୟ ଚୋରି କରିଥାଇପାରେ।</li> <li>ଯଦି ଆପଣ ଅତୀତରେ ଏହି ସର୍ଭର ସହିତ ସଫଳତାର ସହିତ ସଂଯୁକ୍ତ କରିଛନ୍ତି, ତେବେ ଏହି ତ୍ରୁଟିଟି ଅସ୍ଥାୟୀ ହୋଇପାରେ, ଏବଂ ଆପଣ ପରେ ପୁଣିଥରେ ଚେଷ୍ଟା କରିପାରିବେ।</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[<ul>\n<li>ଏହା ହୁଏତଃ ସର୍ଭର ସଂରଚନା ସମସ୍ୟା ହୋଇପାରେ, କିମ୍ବା ଏହି ସର୍ଭରର କେହି ପରିଚୟ ଚୋରି କରିଥାଇପାରେ।</li>\n<li>ଯଦି ଆପଣ ଅତୀତରେ ଏହି ସର୍ଭର ସହିତ ସଫଳତାର ସହିତ ସଂଯୁକ୍ତ କରିଛନ୍ତି, ତେବେ ଏହି ତ୍ରୁଟିଟି ଅସ୍ଥାୟୀ ହୋଇପାରେ, ଏବଂ ଆପଣ ପରେ ପୁଣିଥରେ ଚେଷ୍ଟା କରିପାରିବେ।</li>\n</ul>]]></string>
   <!-- The text shown inside the advanced button used to expand the advanced options. It's only shown when a website has an invalid SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_advanced">ଉନ୍ନତ…</string>
   <!-- The text shown inside the advanced options button used to go back. It's only shown if the user has expanded the advanced options. -->
@@ -51,7 +58,7 @@
   <!-- The document title and heading of the error page shown when the browser refuses to load a type of file that is considered unsafe. -->
   <string name="mozac_browser_errorpages_unsafe_content_type_title">ଅସୁରକ୍ଷିତ ଫାଇଲ ପ୍ରକାର</string>
   <!-- The error message shown when the browser refuses to load a type of file that is considered unsafe. -->
-  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul> <li>ଦୟାକରି ଏହି ସମସ୍ୟା ବିଷୟରେ ସୂଚନା ଦେବାକୁ ୱେବସାଇଟ୍ ମାଲିକଙ୍କ ସହ ଯୋଗାଯୋଗ କରନ୍ତୁ।</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_unsafe_content_type_message"><![CDATA[<ul>\n<li>ଦୟାକରି ଏହି ସମସ୍ୟା ବିଷୟରେ ସୂଚନା ଦେବାକୁ ୱେବସାଇଟ୍ ମାଲିକଙ୍କ ସହ ଯୋଗାଯୋଗ କରନ୍ତୁ।</li>\n</ul>]]></string>
   <!-- The document title and heading of the error page shown when a file cannot be loaded because of a detected data corruption. -->
   <string name="mozac_browser_errorpages_corrupted_content_title">ତ୍ରୁଟିଯୁକ୍ତ ବିଷୟବସ୍ତୁ ତ୍ରୁଟି</string>
   <!-- The error message shown when shown when a file cannot be loaded because of a detected data corruption. -->
@@ -70,7 +77,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_malformed_uri_title_alternative">ଏହି ଠିକଣାଟି ବୈଧ ନୁହେଁ</string>
   <!-- This string contains markup. The URL should not be localized. -->
-  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul> <li>ୱେବ ଠିକଣାଗୁଡ଼ିକ ସାଧାରଣତଃ ଏହି ପ୍ରକାରେ ଲେଖାଯାଇଥାଏ <strong>http://www.example.com/</strong></li> <li>ନିଶ୍ଚିତ କରନ୍ତୁ ଯେ ଆପଣ ତୀର୍ଯକ ରେଖା ବ୍ୟବହାର କରୁଛନ୍ତି (i.e. <strong>/</strong>).</li> </ul>]]></string>
+  <string name="mozac_browser_errorpages_malformed_uri_message_alternative"><![CDATA[<ul>\n<li>ୱେବ ଠିକଣାଗୁଡ଼ିକ ସାଧାରଣତଃ ଏହି ପ୍ରକାରେ ଲେଖାଯାଇଥାଏ <strong>http://www.example.com/</strong></li>\n<li>ନିଶ୍ଚିତ କରନ୍ତୁ ଯେ ଆପଣ ତୀର୍ଯକ ରେଖା ବ୍ୟବହାର କରୁଛନ୍ତି (i.e. <strong>/</strong>).</li>\n</ul>]]></string>
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_unknown_protocol_title">ଅଜଣା ପ୍ରୋଟୋକଲ</string>
   <string name="mozac_browser_errorpages_unknown_protocol_message"><![CDATA[<p>ଏହି ଠିକଣାଟି ଏକ ପ୍ରଟୋକଲକୁ ଉଲ୍ଲେଖ କରିଥାଏ (ଯେପରିକି <q>wxyz://</q>) ବ୍ରାଉଜର ଟିହ୍ନିପାରୁ ନାହିଁ, ତେଣୁ ବ୍ରାଉଜର ସେହି ସାଇଟ ସହିତ ସଠିକ ଭାବରେ ସଂଯୋଗ ସ୍ଥାପନ କରିପାରିବ ନାହିଁ।</p><ul><li>ଆପଣ ମଲଟିମେଡିଆ କିମ୍ବା ଅନ୍ୟାନ୍ୟ ପାଠ୍ୟ-ବିହୀନ ସର୍ଭରଗୁଡ଼ିକ ପାଇଁ ଚେଷ୍ଟା କରୁଛନ୍ତି କି? ଅଧିକ ଆବଶ୍ୟକତା ପାଇଁ ସାଇଟକୁ ଯାଞ୍ଚ କରନ୍ତୁ।</li><li>କିଛି ପ୍ରଟୋକଲଗୁଡ଼ିକ ବ୍ରାଉଜର ସେମାନଙ୍କୁ ଚିହ୍ନିବା ପୂର୍ବରୁ ହୁଏତଃ ତୃତୀୟ ପକ୍ଷ ସଫ୍ଟୱେର କିମ୍ବା ପ୍ଲଗଇନଗୁଡ଼ିକୁ ଆବଶ୍ୟକ କରିପାରନ୍ତି।</li></ul>]]></string>

@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIOService_h__
-#define nsIOService_h__
+#ifndef nsIOService_h_
+#define nsIOService_h_
 
 #include "nsStringFwd.h"
 #include "nsIIOService.h"
@@ -19,7 +19,6 @@
 #include "nsISpeculativeConnect.h"
 #include "nsWeakReference.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/net/ProtocolHandlerInfo.h"
 #include "prtime.h"
@@ -158,6 +157,8 @@ class nsIOService final : public nsIIOService,
   NS_IMETHODIMP GetOverridenIpAddressSpace(
       nsILoadInfo::IPAddressSpace* aIpAddressSpace, const NetAddr& aAddr);
 
+  bool ShouldSkipDomainForLNA(const nsACString& aDomain);
+
  private:
   // These shouldn't be called directly:
   // - construct using GetInstance
@@ -213,6 +214,7 @@ class nsIOService final : public nsIIOService,
 
   void UpdateAddressSpaceOverrideList(const char* aPrefName,
                                       nsTArray<nsCString>& aTargetList);
+  void UpdateSkipDomainsList();
 
  private:
   mozilla::Atomic<bool, mozilla::Relaxed> mOffline{true};
@@ -247,6 +249,7 @@ class nsIOService final : public nsIIOService,
   nsTArray<nsCString> mPublicAddressSpaceOverridesList MOZ_GUARDED_BY(mLock);
   nsTArray<nsCString> mPrivateAddressSpaceOverridesList MOZ_GUARDED_BY(mLock);
   nsTArray<nsCString> mLocalAddressSpaceOverrideList MOZ_GUARDED_BY(mLock);
+  nsTArray<nsCString> mLNASkipDomainsList MOZ_GUARDED_BY(mLock);
 
   nsTHashMap<nsCString, RuntimeProtocolHandler> mRuntimeProtocolHandlers
       MOZ_GUARDED_BY(mLock);
@@ -305,4 +308,4 @@ extern nsIOService* gIOService;
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsIOService_h__
+#endif  // nsIOService_h_

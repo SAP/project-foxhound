@@ -50,10 +50,10 @@
  *
  * Indicate success with `return Ok();`.
  *
- * If the function returns a value on success, use `MOZ_TRY_VAR` to get it:
+ * If the function returns a value on success, use `MOZ_TRY` to get it:
  *
  *     RootedValue thrug(cx);
- *     MOZ_TRY_VAR(thrug, GetObjectThrug(cx, obj));
+ *     thrug = MOZ_TRY(GetObjectThrug(cx, obj));
  *
  * This behaves the same as `MOZ_TRY` on error. On success, the success
  * value of `GetObjectThrug(cx, obj)` is assigned to the variable `thrug`.
@@ -65,7 +65,7 @@
  * responsibility to check for errors and root the object before continuing:
  *
  *     RootedObject wrapper(cx);
- *     MOZ_TRY_VAR(wrapper, Enwrapify(cx, thing));
+ *     wrapper = MOZ_TRY(Enwrapify(cx, thing));
  *
  * This is ideal. On error, there is no object to root; on success, the
  * assignment to wrapper roots it. GC safety is ensured.

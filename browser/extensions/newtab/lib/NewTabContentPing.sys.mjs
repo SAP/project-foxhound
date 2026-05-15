@@ -8,6 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  PersistentCache: "resource://newtab/lib/PersistentCache.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -17,10 +18,58 @@ XPCOMUtils.defineLazyPreferenceGetter(
   5000
 );
 
+const EVENT_STATS_KEY = "event_stats";
+const CACHE_KEY = "newtab_content_event_stats";
+
+const CLICK_EVENT_ID = "click";
+
+const EVENT_STATS_DAILY_PERIOD_MS = 60 * 60 * 24 * 1000;
+const EVENT_STATS_WEEKLY_PERIOD_MS = 7 * 60 * 60 * 24 * 1000;
+
+const MAX_UINT32 = 0xffffffff;
+
 export class NewTabContentPing {
   #eventBuffer = [];
   #deferredTask = null;
   #lastDelaySelection = 0;
+  #maxDailyEvents = 0;
+  #maxDailyClickEvents = 0;
+  #maxWeeklyClickEvents = 0;
+  #curInstanceEventsSent = 0; // Used for tests
+
+  constructor() {
+    this.#maxDailyEvents = 0;
+    this.#maxDailyClickEvents = 0;
+    this.#maxWeeklyClickEvents = 0;
+    this.cache = this.PersistentCache(CACHE_KEY, true);
+  }
+
+  /**
+   * Set the maximum number of events to send in a 24 hour period
+   *
+   * @param {int} maxEvents
+   */
+  setMaxEventsPerDay(maxEvents) {
+    this.#maxDailyEvents = maxEvents || 0;
+  }
+
+  /**
+   * Set the maximum number of events to send in a 24 hour period
+   *
+   * @param {int} maxEvents
+   */
+  setMaxClickEventsPerDay(maxEvents) {
+    this.#maxDailyClickEvents = maxEvents || 0;
+  }
+
+  /**
+   * Set the maximum number of events to send in a 24 hour period
+   *
+   * @param {int} maxEvents
+   */
+  setMaxClickEventsPerWeek(maxEvents) {
+    this.#maxWeeklyClickEvents = maxEvents || 0;
+  }
 
   /**
    * Adds a event recording for Glean.newtabContent to the internal buffer.
@@ -54,8 +103,8 @@ export class NewTabContentPing {
 
     if (!this.#deferredTask) {
       this.#lastDelaySelection = this.#generateRandomSubmissionDelayMs();
-      this.#deferredTask = new lazy.DeferredTask(() => {
-        this.#flushEventsAndSubmit();
+      this.#deferredTask = new lazy.DeferredTask(async () => {
+        await this.#flushEventsAndSubmit();
       }, this.#lastDelaySelection);
       this.#deferredTask.arm();
     }
@@ -71,24 +120,142 @@ export class NewTabContentPing {
   }
 
   /**
+   * Resets the impression stats object of the Newtab_content ping and returns it.
+   */
+  async resetDailyStats(eventStats = {}) {
+    const stats = {
+      ...eventStats,
+      dailyCount: 0,
+      lastUpdatedDaily: this.Date().now(),
+      dailyClickCount: 0,
+    };
+    await this.cache.set(EVENT_STATS_KEY, stats);
+    return stats;
+  }
+
+  async resetWeeklyStats(eventStats = {}) {
+    const stats = {
+      ...eventStats,
+      lastUpdatedWeekly: this.Date().now(),
+      weeklyClickCount: 0,
+    };
+    await this.cache.set(EVENT_STATS_KEY, stats);
+    return stats;
+  }
+
+  /**
+   * Resets all stats for testing purposes.
+   */
+  async test_only_resetAllStats() {
+    let eventStats = await this.resetDailyStats();
+    await this.resetWeeklyStats(eventStats);
+  }
+
+  /**
+   * Randomly shuffles the elements of an array in place using the Fisher–Yates algorithm.
+   *
+   * @param {Array} array - The array to shuffle. This array will be modified.
+   * @returns {Array} The same array instance, shuffled randomly.
+   */
+  static shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const temp = array[i];
+      array[i] = array[j];
+      array[j] = temp;
+    }
+    return array;
+  }
+  /**
    * Called by the DeferredTask when the randomly selected delay has elapsed
    * after calling scheduleSubmission.
    */
-  #flushEventsAndSubmit() {
+  async #flushEventsAndSubmit() {
+    const isOrganicClickEvent = (event, data) => {
+      return event === CLICK_EVENT_ID && !data.is_sponsored;
+    };
+
     this.#deferredTask = null;
+
+    // See if we have no event stats or the stats period has cycled
+    let eventStats = await this.cache.get(EVENT_STATS_KEY, {});
+
+    if (
+      !eventStats?.lastUpdatedDaily ||
+      !(
+        this.Date().now() - eventStats.lastUpdatedDaily <
+        EVENT_STATS_DAILY_PERIOD_MS
+      )
+    ) {
+      eventStats = await this.resetDailyStats(eventStats);
+    }
+
+    if (
+      !eventStats?.lastUpdatedWeekly ||
+      !(
+        this.Date().now() - eventStats.lastUpdatedWeekly <
+        EVENT_STATS_WEEKLY_PERIOD_MS
+      )
+    ) {
+      eventStats = await this.resetWeeklyStats(eventStats);
+    }
 
     let events = this.#eventBuffer;
     this.#eventBuffer = [];
+    if (this.#maxDailyEvents > 0) {
+      if (eventStats?.dailyCount >= this.#maxDailyEvents) {
+        // Drop all events. Don't send
+        return;
+      }
+    }
+    let clickEvents = events.filter(([eventName, data]) =>
+      isOrganicClickEvent(eventName, data)
+    );
+    let numOriginalClickEvents = clickEvents.length;
+    // Check if we need to cap organic click events
+    if (
+      numOriginalClickEvents > 0 &&
+      (this.#maxDailyClickEvents > 0 || this.#maxWeeklyClickEvents > 0)
+    ) {
+      if (this.#maxDailyClickEvents > 0) {
+        clickEvents = clickEvents.slice(
+          0,
+          Math.max(0, this.#maxDailyClickEvents - eventStats?.dailyClickCount)
+        );
+      }
+      if (this.#maxWeeklyClickEvents > 0) {
+        clickEvents = clickEvents.slice(
+          0,
+          Math.max(0, this.#maxWeeklyClickEvents - eventStats?.weeklyClickCount)
+        );
+      }
+      events = events
+        .filter(([eventName, data]) => !isOrganicClickEvent(eventName, data))
+        .concat(clickEvents);
+    }
 
-    for (let [eventName, data] of events) {
+    eventStats.dailyCount += events.length;
+    eventStats.weeklyClickCount += clickEvents.length;
+    eventStats.dailyClickCount += clickEvents.length;
+
+    await this.cache.set(EVENT_STATS_KEY, eventStats);
+
+    for (let [eventName, data] of NewTabContentPing.shuffleArray(events)) {
       try {
         Glean.newtabContent[eventName].record(data);
       } catch (e) {
         console.error(e);
       }
     }
-
     GleanPings.newtabContent.submit();
+    this.#curInstanceEventsSent += events.length;
+  }
+
+  /**
+   * Returns number of events sent through Glean in this instance of the class.
+   */
+  get testOnlyCurInstanceEventCount() {
+    return this.#curInstanceEventsSent;
   }
 
   /**
@@ -116,6 +283,10 @@ export class NewTabContentPing {
       received_rank,
       // eslint-disable-next-line no-unused-vars
       event_source,
+      // eslint-disable-next-line no-unused-vars
+      recommendation_id,
+      // eslint-disable-next-line no-unused-vars
+      layout_name,
       ...result
     } = eventDataDict;
     return result;
@@ -147,24 +318,52 @@ export class NewTabContentPing {
         : 5000;
 
     const RANGE = MAX_SUBMISSION_DELAY - MIN_SUBMISSION_DELAY + 1;
-    const MAX_UINT32 = 0xffffffff;
+    const selection = NewTabContentPing.secureRandIntInRange(RANGE);
+    return MIN_SUBMISSION_DELAY + (selection % RANGE);
+  }
 
+  /**
+   * Returns a secure random number between 0 and range
+   *
+   * @param {int} range Integer value range
+   * @returns {int} Random value between 0 and range non-inclusive
+   */
+  static secureRandIntInRange(range) {
     // To ensure a uniform distribution, we discard values that could introduce
     // modulo bias. We divide the 2^32 range into equal-sized "buckets" and only
     // accept random values that fall entirely within one of these buckets.
     // This ensures each possible output in the target range is equally likely.
-    const BUCKET_SIZE = Math.floor(MAX_UINT32 / RANGE);
-    const MAX_ACCEPTABLE = BUCKET_SIZE * RANGE;
+
+    const BUCKET_SIZE = Math.floor(MAX_UINT32 / range);
+    const MAX_ACCEPTABLE = BUCKET_SIZE * range;
 
     let selection;
     let randomValues = new Uint32Array(1);
-
     do {
       crypto.getRandomValues(randomValues);
       [selection] = randomValues;
     } while (selection >= MAX_ACCEPTABLE);
+    return selection % range;
+  }
 
-    return MIN_SUBMISSION_DELAY + (selection % RANGE);
+  /**
+   * Returns true or false with a certain proability specified
+   *
+   * @param {number} prob Probability
+   * @returns {boolean} Random boolean result of probability prob. A higher prob
+   *   increases the chance of true being returned.
+   */
+  static decideWithProbability(prob) {
+    if (prob <= 0) {
+      return false;
+    }
+    if (prob >= 1) {
+      return true;
+    }
+    const randomValues = new Uint32Array(1);
+    crypto.getRandomValues(randomValues);
+    const random = randomValues[0] / MAX_UINT32;
+    return random < prob;
   }
 
   /**
@@ -178,9 +377,9 @@ export class NewTabContentPing {
    *   The originally selected random delay for submitting the newtab-content
    *   ping.
    * @throws {Error}
-   *   Throws if this is called when no submission has been scheduled yet.
+   *   Function throws an exception if this is called when no submission has been scheduled yet.
    */
-  testOnlyForceFlush() {
+  async testOnlyForceFlush() {
     if (!Cu.isInAutomation) {
       return 0;
     }
@@ -188,9 +387,21 @@ export class NewTabContentPing {
     if (this.#deferredTask) {
       this.#deferredTask.disarm();
       this.#deferredTask = null;
-      this.#flushEventsAndSubmit();
+      await this.#flushEventsAndSubmit();
       return this.#lastDelaySelection;
     }
     throw new Error("No submission was scheduled.");
   }
 }
+
+/**
+ * Creating a thin wrapper around PersistentCache, and Date.
+ * This makes it easier for us to write automated tests
+ */
+NewTabContentPing.prototype.PersistentCache = (...args) => {
+  return new lazy.PersistentCache(...args);
+};
+
+NewTabContentPing.prototype.Date = () => {
+  return Date;
+};

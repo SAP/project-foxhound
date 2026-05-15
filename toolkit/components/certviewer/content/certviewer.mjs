@@ -2,9 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
-import { normalizeToKebabCase } from "./components/utils.mjs";
+import { normalizeToKebabCase, getLogName } from "./components/utils.mjs";
 import {
   parse,
   pemToDER,
@@ -78,9 +76,9 @@ const getElementByPathOrFalse = (obj, pathString) => {
 
 export const adjustCertInformation = cert => {
   let certItems = [];
-  let tabName = cert?.subject?.cn || "";
+  let tabName = cert?.subject?.cn || cert?.ext?.san?.altNames?.[0]?.[1] || "";
   if (cert && !tabName) {
-    // No common name, use the value of the last item in the cert's entries.
+    // No common name or subject alt name, use the value of the last item in the cert's entries.
     tabName = cert.subject?.entries?.slice(-1)[0]?.[1] || "";
   }
 
@@ -395,15 +393,19 @@ export const adjustCertInformation = cert => {
           for (let key of Object.keys(entry)) {
             if (key.includes("timestamp")) {
               timestamps[key.includes("UTC") ? "utc" : "local"] = entry[key];
-            } else {
-              let isHex = false;
-              if (key == "logId") {
-                isHex = true;
-              }
-              items.push(
-                createEntryItem(normalizeToKebabCase(key), entry[key], isHex)
-              );
+              continue;
             }
+            let isHex = false;
+            if (key == "logId") {
+              isHex = true;
+              let logName = getLogName(entry[key]);
+              if (logName) {
+                items.push(createEntryItem("log-name", logName, false));
+              }
+            }
+            items.push(
+              createEntryItem(normalizeToKebabCase(key), entry[key], isHex)
+            );
           }
           items.push(createEntryItem("timestamp", timestamps));
         });
@@ -414,6 +416,20 @@ export const adjustCertInformation = cert => {
     "embedded-scts",
     getElementByPathOrFalse(cert, "ext.scts.critical")
   );
+
+  // Uncomment the following to generate the expected test results in
+  // toolkit/components/certviewer/tests/browser/adjustedCerts.js
+  //
+  // function download(filename, text) {
+  //   var element = document.createElement('a');
+  //   element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+  //   element.setAttribute('download', filename);
+  //   element.style.display = 'none';
+  //   document.body.appendChild(element);
+  //   element.click();
+  //   document.body.removeChild(element);
+  // }
+  // download("out.txt",JSON.stringify({certItems, tabName}));
 
   return {
     certItems,
@@ -460,13 +476,13 @@ const buildChain = async chain => {
       if (certs.length === 0) {
         return Promise.reject();
       }
+      let adjustedCerts = certs.map(cert => adjustCertInformation(cert));
       let certTitle = document.querySelector("#certTitle");
-      let firstCertCommonName = certs[0].subject.cn;
+      let firstCertLabel = adjustedCerts[0].tabName;
       document.l10n.setAttributes(certTitle, "certificate-viewer-tab-title", {
-        firstCertName: firstCertCommonName,
+        firstCertName: firstCertLabel,
       });
 
-      let adjustedCerts = certs.map(cert => adjustCertInformation(cert));
       return render(adjustedCerts, false);
     })
     .catch(() => {

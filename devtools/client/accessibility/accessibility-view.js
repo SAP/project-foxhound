@@ -50,17 +50,20 @@ const {
  * for rendering the content. It renders the top level ReactJS
  * component: the MainFrame.
  */
-function AccessibilityView(localStore) {
-  addEventListener("devtools/chrome/message", this.onMessage.bind(this), true);
-  this.store = localStore;
-}
-
-AccessibilityView.prototype = {
+class AccessibilityView {
+  constructor(localStore) {
+    addEventListener(
+      "devtools/chrome/message",
+      this.onMessage.bind(this),
+      true
+    );
+    this.store = localStore;
+  }
   /**
    * Initialize accessibility view, create its top level component and set the
    * data store.
    *
-   * @param {Object}
+   * @param {object}
    *        Object that contains the following properties:
    * - supports                               {JSON}
    *                                          a collection of flags indicating
@@ -160,26 +163,33 @@ AccessibilityView.prototype = {
     thunkOptions.options.toggleDisplayTabbingOrder = toggleDisplayTabbingOrder;
     // Render top level component
     const provider = createElement(Provider, { store: this.store }, mainFrame);
-    window.once(EVENTS.PROPERTIES_UPDATED).then(() => {
+
+    // If the AccessibilityService can not be turned on, directly emit the INITIALIZED event
+    // so the panel can be rendered (with the Description element).
+    if (!this.store.getState().ui.canBeEnabled) {
       window.emit(EVENTS.INITIALIZED);
-    });
+    } else {
+      window.once(EVENTS.PROPERTIES_UPDATED).then(() => {
+        window.emit(EVENTS.INITIALIZED);
+      });
+    }
     this.mainFrame = ReactDOM.render(provider, container);
-  },
+  }
 
   destroy() {
     const container = document.getElementById("content");
     ReactDOM.unmountComponentAtNode(container);
-  },
+  }
 
   async selectAccessible(accessible) {
     await this.store.dispatch(select(accessible));
     window.emit(EVENTS.NEW_ACCESSIBLE_FRONT_INSPECTED);
-  },
+  }
 
   async highlightAccessible(accessible) {
     await this.store.dispatch(highlight(accessible));
     window.emit(EVENTS.NEW_ACCESSIBLE_FRONT_HIGHLIGHTED);
-  },
+  }
 
   async selectNodeAccessible(node) {
     if (!node) {
@@ -240,12 +250,12 @@ AccessibilityView.prototype = {
 
     await this.store.dispatch(select(accessible));
     window.emit(EVENTS.NEW_ACCESSIBLE_FRONT_INSPECTED);
-  },
+  }
 
   /**
    * Process message from accessibility panel.
    *
-   * @param {Object} event  message type and data.
+   * @param {object} event  message type and data.
    */
   onMessage(event) {
     const data = event.data;
@@ -254,7 +264,7 @@ AccessibilityView.prototype = {
     if (typeof this[method] === "function") {
       this[method](...data.args);
     }
-  },
-};
+  }
+}
 
 window.view = new AccessibilityView(store);

@@ -11,10 +11,10 @@
 #include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/StaticPrefs_media.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 #include "nsIObserverService.h"
@@ -418,9 +418,9 @@ static void ReportToConsole(dom::Document* aDocument,
           : NS_ConvertUTF16toUTF8(aParams[0]).get(),
       aParams.Length() < 2 ? "" : ", ...");
   if (StaticPrefs::media_decoder_doctor_testing()) {
-    Unused << nsContentUtils::DispatchTrustedEvent(
-        aDocument, aDocument, u"mozreportmediaerror"_ns, CanBubble::eNo,
-        Cancelable::eNo);
+    (void)nsContentUtils::DispatchTrustedEvent(aDocument, aDocument,
+                                               u"mozreportmediaerror"_ns,
+                                               CanBubble::eNo, Cancelable::eNo);
   }
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Media"_ns,
                                   aDocument, nsContentUtils::eDOM_PROPERTIES,

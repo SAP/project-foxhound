@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_ImageTrackList_h
 #define mozilla_dom_ImageTrackList_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/ImageDecoderBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"

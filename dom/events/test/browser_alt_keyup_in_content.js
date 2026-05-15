@@ -101,7 +101,7 @@ add_task(async function runTests() {
           return false;
         }, `${aTest.description}: Waiting the window is activated`);
       });
-      let startTime = performance.now();
+      let startTime = ChromeUtils.now();
       info(`Start to test: ${aTest.description}...`);
 
       async function ensureMenubarInactive() {

@@ -1,0 +1,29 @@
+# iOS Port Prototype
+
+The current iOS port prototype is built in 2 parts. The core libraries such as
+XUL are built as-normal, and then an xcode project is used to bundle these
+libraries into an iOS application, which can be deployed to a device or
+simulator.
+
+Currently there is no support for running automated iOS tests, though this is
+being investigated.
+
+## Simulator
+
+### Building
+
+1. Update your .mozconfig as described below:
+
+```
+# Enable the iOS application target.
+ac_add_options --enable-application=mobile/ios
+```
+
+2. Build the main core of XUL with `./mach build` as normal.
+
+### Running
+
+Currently the in-tree wrapper for Gecko on iOS is the minimal "GeckoTestBrowser"
+application. To run this application, open the xcode project at
+`mobile/ios/GeckoTestBrowser/GeckoTestBrowser.xcodeproj`, and build/run it from
+there.

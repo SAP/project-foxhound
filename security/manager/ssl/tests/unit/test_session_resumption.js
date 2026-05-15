@@ -52,9 +52,9 @@ function add_resume_non_ev_with_override_test() {
         "expired.example.com should not have succeededCertChain set"
       );
       equal(
-        transportSecurityInfo.failedCertChain.length,
+        transportSecurityInfo.handshakeCertificates.length,
         2,
-        "expired.example.com should have failedCertChain set"
+        "expired.example.com should have handshakeCertificates set"
       );
       equal(
         transportSecurityInfo.overridableErrorCategory,
@@ -106,9 +106,9 @@ function add_one_ev_test(resumed) {
         "ev-test.example.com should have succeededCertChain set"
       );
       equal(
-        transportSecurityInfo.failedCertChain.length,
-        0,
-        "ev-test.example.com should not have failedCertChain set"
+        transportSecurityInfo.handshakeCertificates.length,
+        2,
+        "ev-test.example.com should have handshakeCertificates set"
       );
       equal(
         transportSecurityInfo.overridableErrorCategory,

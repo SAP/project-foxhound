@@ -371,3 +371,84 @@ Each privileged API is exposed as an `ordinary Java API
 and the test framework doesn't offer a way to run arbitrary chrome code to
 discourage developers from relying too much on implementation-dependent
 privileged code.
+
+Running activity-bound GeckoView tests
+======================================
+
+By default, GeckoSession tests are run headless, i.e. they don't necessarily run
+within an Android Activity UI.
+
+For most tests, this is probably fine. However, there may be specific cases where
+an activity is required. One example we have seen in the past is with
+`PrintDelegateTest <https://searchfox.org/firefox-main/rev/a1a18390a28e813dbd98189ee23e7ee4447541b0/mobile/android/geckoview/src/androidTest/java/org/mozilla/geckoview/test/PrintDelegateTest.kt#43>`_. The behaviors that the tests
+are verifying depend on the GeckoSession being rendered in a GeckoView view.
+
+To add activity-bound tests, you need to follow these steps:
+
+Define the activity test rule
+-----------------------------
+
+We need both the ``GeckoSessionTestRule`` and the
+``ActivityTestRule`` to play with each other. The simplest way is to use
+a Junit `RuleChain <https://junit.org/junit4/javadoc/4.12/org/junit/rules/RuleChain.html>`_ as shown below:
+
+.. code-block:: kotlin
+
+   // define the activity rule for GeckoViewTestActivity
+   private val activityRule =
+       ActivityScenarioRule(GeckoViewTestActivity::class.java)
+
+   // define the order of the rules (this matters for orderly cleanup)
+   @get:Rule
+   override val rules: RuleChain =
+       RuleChain.outerRule(activityRule).around(sessionRule)
+
+Bind the Activity's GeckoView to the test session rule's mainSession
+--------------------------------------------------------------------
+
+The next step is to connect the activity's GeckoView instance to the
+``GeckoSessionTestRule``'s ``mainSession`` and properly clean up the
+binding after each test run.
+
+.. code-block:: kotlin
+
+   @Before
+   fun setup() {
+       activityRule.scenario.onActivity { activity ->
+           // connect the view to the test session
+           activity.view.setSession(mainSession)
+       }
+   }
+
+   @After
+   fun cleanup() {
+       try {
+           activityRule.scenario.onActivity { activity ->
+               // release the session
+               activity.view.releaseSession()
+           }
+       } catch (_: Exception) {
+       }
+   }
+
+Proceed with your test
+----------------------
+
+Now, you can proceed with your test as usual and you can be sure that this
+session will be bound to the activity.
+
+Troubleshooting
+===============
+
+Using ``dump`` to add logs while troubleshooting
+------------------------------------------------
+
+Sometimes, you may need to troubleshoot your tests, and this may require
+observing what debug logs are happening in the JavaScript layer of GeckoView
+or Toolkit. The typical ``debug`` does not always work reliably in the test
+environment for GeckoView.
+
+It is recommended that you temporarily use `dump <https://developer.mozilla.org/en-US/docs/Web/API/Window/dump>`_ to add logs. This ensures
+that those logs show up in the Android ``logcat`` while running the GeckoView
+JUnit tests. This can be of great help in diagnosing issues with your tests, but
+be sure to remove the logs after you are done troubleshooting.

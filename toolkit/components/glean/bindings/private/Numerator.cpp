@@ -19,7 +19,7 @@ namespace mozilla::glean {
 
 namespace impl {
 
-void NumeratorMetric::AddToNumerator(int32_t aAmount) const {
+void NumeratorStandalone::AddToNumerator(int32_t aAmount) const {
   auto scalarId = ScalarIdForMetric(mId);
   if (scalarId && aAmount >= 0) {
     TelemetryScalar::Add(scalarId.extract(), u"numerator"_ns, aAmount);

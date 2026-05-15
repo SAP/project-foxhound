@@ -18,18 +18,17 @@ var guid = 0;
  * https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/HAR/Overview.html
  * http://www.softwareishard.com/blog/har-12-spec/
  */
-var HarImporter = function (actions) {
-  this.actions = actions;
-};
-
-HarImporter.prototype = {
+class HarImporter {
+  constructor(actions) {
+    this.actions = actions;
+  }
   /**
    * This is the main method used to import HAR data.
    */
   import(har) {
     const json = JSON.parse(har);
     this.doImport(json);
-  },
+  }
 
   doImport(har) {
     this.actions.clearRequests({ isExplicitClear: true });
@@ -159,8 +158,8 @@ HarImporter.prototype = {
         });
       }
     });
-  },
-};
+  }
+}
 
 // Exports from this module
 exports.HarImporter = HarImporter;

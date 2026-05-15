@@ -42,6 +42,7 @@
 @APPNAME@/Contents/PkgInfo
 @RESPATH@/firefox.icns
 @RESPATH@/document.icns
+@RESPATH@/Assets.car
 @RESPATH@/@LPROJ_ROOT@.lproj/*
 #endif
 
@@ -53,7 +54,6 @@
 @RESPATH@/fonts/*
 #endif
 @RESPATH@/hyphenation/*
-@RESPATH@/browser/@PREF_DIR@/firefox-l10n.js
 #ifdef HAVE_MAKENSISU
 @BINPATH@/uninstall/helper.exe
 #endif
@@ -85,6 +85,12 @@
 #ifdef XP_MACOSX
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@.app/
 @BINPATH@/@MOZ_EME_PROCESS_NAME@.app/
+@BINPATH@/@MOZ_GPU_PROCESS_NAME@.app/
+#ifdef NIGHTLY_BUILD
+#ifndef MOZ_NO_SMART_CARDS
+@BINPATH@/@MOZ_PKCS11_PROCESS_NAME@.app/
+#endif
+#endif
 #endif
 #ifdef XP_WIN
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
@@ -96,7 +102,17 @@
 @BINPATH@/@MSVC_C_RUNTIME_1_DLL@
 #endif
 @BINPATH@/@MSVC_CXX_RUNTIME_DLL@
+@BINPATH@/@MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL@
 #endif
+; Windows App SDK DLLs
+@BINPATH@/@DLL_PREFIX@CoreMessagingXP@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@marshal@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@Microsoft.InputStateManager@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@Microsoft.Internal.FrameworkUdk@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@Microsoft.UI.Composition.OSSupport@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@Microsoft.UI.Input@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@Microsoft.UI.Windowing.Core@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@Microsoft.UI.Windowing@DLL_SUFFIX@
 #endif
 #ifdef MOZ_GTK
 ; This is a standalone binary launched by Firefox on Linux to verify
@@ -165,6 +181,7 @@
 @BINPATH@/@DLL_PREFIX@gkcodecs@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozavutil@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozavcodec@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@mozinference@DLL_SUFFIX@
 
 ; [Components]
 #ifdef ACCESSIBILITY
@@ -426,4 +443,12 @@ bin/libfreebl_64int_3.so
 #ifdef MOZ_ARTIFACT_BUILDS
 ; Test workers unpack artifact build packages and need `jogfile.json`
 @RESPATH@/jogfile.json
+#endif
+
+#if defined(DESKTOP_LAUNCHER_ENABLED)
+@BINPATH@/desktop-launcher/desktop-launcher@BIN_SUFFIX@
+#endif
+
+#if defined(BUILT_BY_MOZILLA)
+@RESPATH@/distribution/*
 #endif

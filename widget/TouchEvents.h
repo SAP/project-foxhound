@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_TouchEvents_h__
-#define mozilla_TouchEvents_h__
+#ifndef mozilla_TouchEvents_h_
+#define mozilla_TouchEvents_h_
 
 #include <stdint.h>
 
@@ -215,6 +215,13 @@ class WidgetTouchEvent final : public WidgetInputEvent {
   int16_t mButton = eNotPressed;
   int16_t mButtons = 0;
 
+  /**
+   * An optional identifier for the callback associated with this touch event.
+   * This ID is used to reference a specific callback for a synthesized event,
+   * if one is present. If no callback is associated, this value will be empty.
+   */
+  Maybe<uint64_t> mCallbackId;
+
   void AssignTouchEventData(const WidgetTouchEvent& aEvent, bool aCopyTargets) {
     AssignInputEventData(aEvent, aCopyTargets);
 
@@ -222,6 +229,8 @@ class WidgetTouchEvent final : public WidgetInputEvent {
     MOZ_ASSERT(mTouches.IsEmpty());
     mTouches.AppendElements(aEvent.mTouches);
     mInputSource = aEvent.mInputSource;
+    // NOTE: Intentionally not copying mCallbackId, it should only be tracked by
+    //       the original event or propagated to the cross-process event.
   }
 
   void SetConvertToPointerRawUpdate(bool aConvert) {
@@ -241,4 +250,4 @@ class WidgetTouchEvent final : public WidgetInputEvent {
 
 }  // namespace mozilla
 
-#endif  // mozilla_TouchEvents_h__
+#endif  // mozilla_TouchEvents_h_

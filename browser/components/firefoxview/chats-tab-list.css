@@ -1,0 +1,14 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/firefoxview/fxview-tab-list.css");
+
+.fxview-tab-row-favicon.chat-overlay {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  background-size: 50%, 100%;
+  background-position:
+    center calc(50% - 2px),
+    center;
+  background-repeat: no-repeat, no-repeat;
+}

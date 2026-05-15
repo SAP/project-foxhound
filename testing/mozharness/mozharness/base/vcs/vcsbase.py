@@ -2,8 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-"""Generic VCS support.
-"""
+"""Generic VCS support."""
 
 import os
 import sys
@@ -117,7 +116,7 @@ class VCSMixin:
 
 class VCSScript(VCSMixin, BaseScript):
     def __init__(self, **kwargs):
-        super(VCSScript, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def pull(self, repos=None, parent_dir=None):
         repos = repos or self.config.get("repos")

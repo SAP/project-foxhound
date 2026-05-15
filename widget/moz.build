@@ -164,7 +164,6 @@ EXPORTS += [
     "nsBaseColorPicker.h",
     "nsBaseDragService.h",
     "nsBaseFilePicker.h",
-    "nsBaseWidget.h",
     "nsDragServiceProxy.h",
     "nsIDeviceContextSpec.h",
     "nsIRollupListener.h",
@@ -186,12 +185,12 @@ EXPORTS.mozilla += [
     "ClipboardWriteRequestChild.h",
     "ClipboardWriteRequestParent.h",
     "ColorScheme.h",
-    "CommandList.h",
+    "CommandList.inc",
     "ContentCache.h",
     "ContentData.h",
     "ContentEvents.h",
     "DimensionRequest.h",
-    "EventClassList.h",
+    "EventClassList.inc",
     "EventForwards.h",
     "EventMessageList.h",
     "FontRange.h",
@@ -212,14 +211,14 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.widget += [
     "CompositorWidget.h",
-    "GfxInfoDeviceVendorDefs.h",
-    "GfxInfoDriverVendorDefs.h",
-    "GfxInfoDriverVersionCmpDefs.h",
-    "GfxInfoFeatureDefs.h",
-    "GfxInfoFeatureStatusDefs.h",
-    "GfxInfoOperatingSystemDefs.h",
-    "GfxInfoRefreshRateStatusDefs.h",
-    "GfxInfoWindowProtocolDefs.h",
+    "GfxInfoDeviceVendorDefs.inc",
+    "GfxInfoDriverVendorDefs.inc",
+    "GfxInfoDriverVersionCmpDefs.inc",
+    "GfxInfoFeatureDefs.inc",
+    "GfxInfoFeatureStatusDefs.inc",
+    "GfxInfoOperatingSystemDefs.inc",
+    "GfxInfoRefreshRateStatusDefs.inc",
+    "GfxInfoWindowProtocolDefs.inc",
     "IconLoader.h",
     "IMEData.h",
     "InitData.h",
@@ -235,6 +234,8 @@ EXPORTS.mozilla.widget += [
     "ScreenManager.h",
     "TextRecognition.h",
     "ThemeChangeKind.h",
+    "ThemeDrawing.h",
+    "WidgetLogging.h",
     "WidgetMessageUtils.h",
     "WindowOcclusionState.h",
 ]
@@ -256,6 +257,7 @@ UNIFIED_SOURCES += [
     "IMEData.cpp",
     "InProcessCompositorWidget.cpp",
     "InputData.cpp",
+    "NativeMenu.cpp",
     "nsAutoRollup.cpp",
     "nsBaseAppShell.cpp",
     "nsBaseClipboard.cpp",
@@ -321,11 +323,11 @@ if CONFIG["NS_PRINTING"]:
             "nsPrinterListCUPS.cpp",
         ]
 
-# nsBaseWidget.cpp needs to be built separately because of name clashes in the OS X headers
+# nsIWidget.cpp needs to be built separately because of name clashes in the OS X headers
 # nsBaseDragService.cpp moved out of UNIFIED to fix xgill crash (bug 1259850) after moving widget/ContentHelper -> apz/util/TouchActionHelper
 SOURCES += [
     "nsBaseDragService.cpp",
-    "nsBaseWidget.cpp",
+    "nsIWidget.cpp",
     "ScreenManager.cpp",
 ]
 
@@ -365,7 +367,6 @@ LOCAL_INCLUDES += [
     "/layout/painting",
     "/layout/xul",
     "/layout/xul/tree/",
-    "/view",
     "/widget",
     "/widget/headless",
 ]
@@ -390,6 +391,12 @@ elif toolkit == "android":
     IPDL_SOURCES = [
         "android/PCompositorWidget.ipdl",
         "android/PlatformWidgetTypes.ipdlh",
+        "headless/HeadlessWidgetTypes.ipdlh",
+    ]
+elif toolkit == "cocoa":
+    IPDL_SOURCES = [
+        "cocoa/PCompositorWidget.ipdl",
+        "cocoa/PlatformWidgetTypes.ipdlh",
         "headless/HeadlessWidgetTypes.ipdlh",
     ]
 else:

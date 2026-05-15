@@ -76,4 +76,20 @@ add_task(async function test_create_profile() {
   profiles = await SelectableProfileService.getAllProfiles();
 
   Assert.equal(profiles.length, 2, "Two selectable profiles exist");
+
+  let db = await openDatabase();
+  let rows = await db.execute("SELECT path FROM Profiles WHERE id=:id;", {
+    id: newProfile.id,
+  });
+  await db.close();
+
+  Assert.equal(rows.length, 1, "There should be one row for the profile");
+  let path = rows[0].getResultByName("path");
+
+  // Non-unix and mac prefix the profile path with "Profiles/"
+  if (!AppConstants.XP_UNIX || AppConstants.platform == "macosx") {
+    path = path.substring("Profiles".length + 1);
+  }
+
+  Assert.equal(path, leafName, "The profile path should be relative");
 });

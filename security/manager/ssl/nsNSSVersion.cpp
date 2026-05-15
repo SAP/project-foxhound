@@ -13,10 +13,6 @@
 
 NS_IMPL_ISUPPORTS(nsNSSVersion, nsINSSVersion)
 
-nsNSSVersion::nsNSSVersion() = default;
-
-nsNSSVersion::~nsNSSVersion() = default;
-
 NS_IMETHODIMP
 nsNSSVersion::GetNSPR_Version(nsAString& v) {
   v.AssignASCII(PR_GetVersion());

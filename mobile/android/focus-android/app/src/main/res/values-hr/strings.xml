@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p> <p>Koristi ga kao privatni pretraživač: <ul> <li>traži i pretražuj direktno u aplikaciji</li> <li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li> <li>izbriši sve kolačiće kao i povijest pretraživanja i pregledavanja</li> </ul> </p> <p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/> <a href=\"%2$s\">Saznaj više</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p>\n<p>Koristi ga kao privatni pretraživač:\n<ul>\n<li>traži i pretražuj direktno u aplikaciji</li>\n<li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li>\n<li>izbriši sve kolačiće kao i povijest pretraživanja i pregledavanja</li>\n</ul> </p>\n<p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/>\n<a href=\"%2$s\">Saznaj više</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Saznaj više</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privatnost i sigurnost</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -228,7 +237,7 @@
   <!-- Label for the button to quick add the current URL to the custom autocomplete list -->
   <string name="add_custom_autocomplete_label">Dodaj poveznicu u automatsko ispunjavanje</string>
   <!-- Preference category for settings about cookies and site data -->
-  <string name="preference_category_cookies">Kolačići i podatci stranica</string>
+  <string name="preference_category_cookies">Kolačići i podaci stranica</string>
   <!-- Preference category for settings about data choices -->
   <string name="preference_category_data_choices">Izbori podataka</string>
   <!-- Title of the screen for removing custom autocomplete URLs. -->
@@ -325,7 +334,7 @@
   <string name="preference_daily_usage_ping_description">Ovo pomaže Mozilli procijeniti broj aktivnih korisnika.</string>
   <string name="preference_daily_usage_ping_learn_more">Saznaj više</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
-  <string name="preference_privacy_notice">Napomena o privatnosti</string>
+  <string name="preference_privacy_notice">Napomene o privatnosti</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
   <string name="preference_licensing_info">Informacije o licenciranju</string>
   <!-- Link to Focus licensing information from other libraries that we use. -->
@@ -462,29 +471,21 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Nastavljanjem prihvaćaš %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Nastavljanjem prihvaćaš %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Firefoxove uvjete korištenja.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Firefox uvjeti korištenja</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox brine o tvojoj privatnosti. Saznaj više na stranici %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox brine o tvojoj privatnosti. Saznaj više na stranici %1$s.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Napomena o privatnosti.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link_2">Napomena o privatnosti</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Napomene o privatnosti</string>
   <!-- New Onboarding flow first screen button label -->
   <string name="onboarding_first_screen_button_agree_and_continue_2">Nastavi</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
@@ -561,6 +562,8 @@
   <string name="tabs_tray_action_erase">Obriši povijest pretraživanja</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Zatvori ostale kartice</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Dodaj novu karticu</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -879,9 +882,9 @@
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Veza nije sigurna</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Možda se radi o problemu s postavkama na poslužitelju ili možda netko pokušava oponašati ovaj poslužitelj.. <br/><br/> Ako si se na ovaj poslužitelj u prošlosti bez problema spajao/la, moguće je da se radi o\u00a0privremenoj grešci.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Možda se radi o problemu s postavkama na poslužitelju ili možda netko pokušava oponašati ovaj poslužitelj.. <br/><br/>\nAko si se na ovaj poslužitelj u prošlosti bez problema spajao/la, moguće je da se radi o\u00a0privremenoj grešci.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Netko možda pokušava imitirati web stranicu i nastavljanje može biti rizično.</label> <br><br> <label>%1$s ne vjeruje web stranici <b>%2$s</b> jer je izdavatelj certifikata nepoznat, certifikat je samopotpisan ili poslužitelj ne šalje ispravne međucertifikate.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Netko možda pokušava imitirati web stranicu i nastavljanje može biti rizično.</label> <br><br>\n<label>%1$s ne vjeruje web stranici <b>%2$s</b> jer je izdavatelj certifikata nepoznat, certifikat je samopotpisan ili poslužitelj ne šalje ispravne međucertifikate.</label>]]></string>
   <!--
     Sessions List
 

@@ -608,7 +608,7 @@ static PRBool IsRootDirectory(char* fn, size_t buflen) {
     return PR_TRUE;
   }
 
-  if (isalpha(fn[0]) && fn[1] == ':' && _PR_IS_SLASH(fn[2]) && fn[3] == '\0') {
+  if (isalpha((unsigned char)fn[0]) && fn[1] == ':' && _PR_IS_SLASH(fn[2]) && fn[3] == '\0') {
     rv = GetDriveType(fn) > 1 ? PR_TRUE : PR_FALSE;
     return rv;
   }

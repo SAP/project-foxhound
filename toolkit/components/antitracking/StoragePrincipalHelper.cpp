@@ -59,14 +59,14 @@ bool ChooseOriginAttributes(nsIChannel* aChannel, OriginAttributes& aAttrs,
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsICookieJarSettings> cjs;
-  Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+  (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
 
   if (!aForcePartitionedPrincipal && !ShouldPartitionChannel(aChannel, cjs)) {
     return false;
   }
 
   nsAutoString partitionKey;
-  Unused << cjs->GetPartitionKey(partitionKey);
+  (void)cjs->GetPartitionKey(partitionKey);
 
   if (!partitionKey.IsEmpty()) {
     aAttrs.SetPartitionKey(partitionKey);
@@ -211,7 +211,7 @@ nsresult StoragePrincipalHelper::CreatePartitionedPrincipalForServiceWorker(
   OriginAttributes attrs = aPrincipal->OriginAttributesRef();
 
   nsAutoString partitionKey;
-  Unused << aCookieJarSettings->GetPartitionKey(partitionKey);
+  (void)aCookieJarSettings->GetPartitionKey(partitionKey);
 
   if (!partitionKey.IsEmpty()) {
     attrs.SetPartitionKey(partitionKey);
@@ -263,7 +263,7 @@ nsresult StoragePrincipalHelper::GetPrincipal(nsIChannel* aChannel,
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsICookieJarSettings> cjs;
-  Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+  (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
 
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
   MOZ_DIAGNOSTIC_ASSERT(ssm);
@@ -479,7 +479,7 @@ bool StoragePrincipalHelper::GetOriginAttributes(
       break;
 
     case eForeignPartitionedPrincipal:
-      Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+      (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
 
       // We only support foreign partitioned principal when dFPI is enabled.
       // Otherwise, we will use the regular principal.

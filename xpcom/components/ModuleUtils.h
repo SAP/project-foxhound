@@ -10,7 +10,6 @@
 #include <type_traits>
 
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Module.h"
 
 #define NS_GENERIC_FACTORY_CONSTRUCTOR(_InstanceClass)                         \

@@ -23,8 +23,8 @@ const EMAIL_TP_PREF = "privacy.trackingprotection.emailtracking.enabled";
 /**
  * A helper function to check whether or not an element has "notFound" class.
  *
- * @param {String} id The id of the testing element.
- * @returns {Boolean} true when the element has "notFound" class.
+ * @param {string} id The id of the testing element.
+ * @returns {boolean} true when the element has "notFound" class.
  */
 function notFound(id) {
   return document.getElementById(id).classList.contains("notFound");
@@ -33,7 +33,7 @@ function notFound(id) {
 /**
  * A helper function to test the protection UI tracker category.
  *
- * @param {Boolean} blocked - true if the email tracking protection is enabled.
+ * @param {boolean} blocked - true if the email tracking protection is enabled.
  */
 async function assertSitesListed(blocked) {
   let tab = await BrowserTestUtils.openNewForegroundTab({

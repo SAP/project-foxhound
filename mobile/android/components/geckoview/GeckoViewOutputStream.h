@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef GeckoViewOutputStream_h__
-#define GeckoViewOutputStream_h__
+#ifndef GeckoViewOutputStream_h_
+#define GeckoViewOutputStream_h_
 
 #include "mozilla/java/GeckoInputStreamNatives.h"
 #include "mozilla/java/GeckoInputStreamWrappers.h"
@@ -26,4 +26,4 @@ class GeckoViewOutputStream : public nsIOutputStream {
   virtual ~GeckoViewOutputStream() = default;
 };
 
-#endif  // GeckoViewOutputStream_h__
+#endif  // GeckoViewOutputStream_h_

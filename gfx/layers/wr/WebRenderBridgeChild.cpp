@@ -76,6 +76,16 @@ void WebRenderBridgeChild::AddWebRenderParentCommand(
   mParentCommands.AppendElement(aCmd);
 }
 
+void WebRenderBridgeChild::AddWebRenderParentDestroyCommand(
+    const WebRenderParentCommand& aCmd) {
+  mParentDestroyCommands.AppendElement(aCmd);
+}
+
+void WebRenderBridgeChild::MergeWebRenderParentCommands() {
+  mParentCommands.AppendElements(std::move(mParentDestroyCommands));
+  mParentDestroyCommands.Clear();
+}
+
 void WebRenderBridgeChild::BeginTransaction() {
   MOZ_ASSERT(!mDestroyed);
 
@@ -114,6 +124,9 @@ bool WebRenderBridgeChild::EndTransaction(
 
   TimeStamp fwdTime = TimeStamp::Now();
 
+  if (!aRenderOffscreen) {
+    MergeWebRenderParentCommands();
+  }
   aDisplayListData.mCommands = std::move(mParentCommands);
   aDisplayListData.mIdNamespace = mIdNamespace;
 
@@ -151,6 +164,7 @@ void WebRenderBridgeChild::EndEmptyTransaction(
   TimeStamp fwdTime = TimeStamp::Now();
 
   if (aTransactionData) {
+    MergeWebRenderParentCommands();
     aTransactionData->mCommands = std::move(mParentCommands);
   }
 
@@ -175,7 +189,8 @@ void WebRenderBridgeChild::EndEmptyTransaction(
 void WebRenderBridgeChild::ProcessWebRenderParentCommands() {
   MOZ_ASSERT(!mDestroyed);
 
-  if (!mParentCommands.IsEmpty()) {
+  if (HasWebRenderParentCommands()) {
+    MergeWebRenderParentCommands();
     this->SendParentCommands(mIdNamespace, mParentCommands);
     mParentCommands.Clear();
   }
@@ -190,7 +205,8 @@ void WebRenderBridgeChild::AddPipelineIdForCompositable(
 
 void WebRenderBridgeChild::RemovePipelineIdForCompositable(
     const wr::PipelineId& aPipelineId) {
-  AddWebRenderParentCommand(OpRemovePipelineIdForCompositable(aPipelineId));
+  AddWebRenderParentDestroyCommand(
+      OpRemovePipelineIdForCompositable(aPipelineId));
 }
 
 wr::ExternalImageId WebRenderBridgeChild::GetNextExternalImageId() {
@@ -201,7 +217,7 @@ wr::ExternalImageId WebRenderBridgeChild::GetNextExternalImageId() {
 }
 
 void WebRenderBridgeChild::ReleaseTextureOfImage(const wr::ImageKey& aKey) {
-  AddWebRenderParentCommand(OpReleaseTextureOfImage(aKey));
+  AddWebRenderParentDestroyCommand(OpReleaseTextureOfImage(aKey));
 }
 
 struct FontFileDataSink {
@@ -412,7 +428,7 @@ void WebRenderBridgeChild::RemoveTextureFromCompositable(
     return;
   }
 
-  AddWebRenderParentCommand(CompositableOperation(
+  AddWebRenderParentDestroyCommand(CompositableOperation(
       aCompositable->GetIPCHandle(),
       OpRemoveTexture(WrapNotNull(aTexture->GetIPDLActor()))));
 }

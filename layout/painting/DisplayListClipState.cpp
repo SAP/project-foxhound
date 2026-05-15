@@ -6,6 +6,7 @@
 
 #include "DisplayListClipState.h"
 
+#include "DisplayItemClipChain.h"
 #include "nsDisplayList.h"
 
 namespace mozilla {
@@ -33,8 +34,11 @@ static void ApplyClip(nsDisplayListBuilder* aBuilder,
                       const ActiveScrolledRoot* aASR,
                       DisplayItemClipChain& aClipChainOnStack) {
   aClipChainOnStack.mASR = aASR;
-  if (aClipToModify && aClipToModify->mASR == aASR) {
+  if (aClipToModify && aClipToModify->mASR == aASR &&
+      !aClipChainOnStack.IsDisplayportClip()) {
     // Intersect with aClipToModify and replace the clip chain item.
+    // Do not apply this optimization to displayport clips, because it would
+    // break our ability to skip them in MaybeRemoveDisplayportClip().
     aClipChainOnStack.mClip.IntersectWith(aClipToModify->mClip);
     aClipChainOnStack.mParent = aClipToModify->mParent;
     aClipToModify = &aClipChainOnStack;
@@ -63,8 +67,8 @@ static void ApplyClip(nsDisplayListBuilder* aBuilder,
 }
 
 void DisplayListClipState::ClipContainingBlockDescendants(
-    nsDisplayListBuilder* aBuilder, const nsRect& aRect, const nscoord* aRadii,
-    DisplayItemClipChain& aClipChainOnStack) {
+    nsDisplayListBuilder* aBuilder, const nsRect& aRect,
+    const nsRectCornerRadii* aRadii, DisplayItemClipChain& aClipChainOnStack) {
   if (aRadii) {
     aClipChainOnStack.mClip.SetTo(aRect, aRadii);
   } else {
@@ -76,9 +80,20 @@ void DisplayListClipState::ClipContainingBlockDescendants(
   InvalidateCurrentCombinedClipChain(asr);
 }
 
-void DisplayListClipState::ClipContentDescendants(
-    nsDisplayListBuilder* aBuilder, const nsRect& aRect, const nscoord* aRadii,
+void DisplayListClipState::ClipToDisplayPort(
+    nsDisplayListBuilder* aBuilder, const nsRect& aRect,
     DisplayItemClipChain& aClipChainOnStack) {
+  aClipChainOnStack.mClip.SetTo(aRect);
+  aClipChainOnStack.mKind = DisplayItemClipChain::ClipKind::Displayport;
+  const ActiveScrolledRoot* asr = aBuilder->CurrentActiveScrolledRoot();
+  ApplyClip(aBuilder, mClipChainContainingBlockDescendants, asr,
+            aClipChainOnStack);
+  InvalidateCurrentCombinedClipChain(asr);
+}
+
+void DisplayListClipState::ClipContentDescendants(
+    nsDisplayListBuilder* aBuilder, const nsRect& aRect,
+    const nsRectCornerRadii* aRadii, DisplayItemClipChain& aClipChainOnStack) {
   if (aRadii) {
     aClipChainOnStack.mClip.SetTo(aRect, aRadii);
   } else {
@@ -91,7 +106,7 @@ void DisplayListClipState::ClipContentDescendants(
 
 void DisplayListClipState::ClipContentDescendants(
     nsDisplayListBuilder* aBuilder, const nsRect& aRect,
-    const nsRect& aRoundedRect, const nscoord* aRadii,
+    const nsRect& aRoundedRect, const nsRectCornerRadii* aRadii,
     DisplayItemClipChain& aClipChainOnStack) {
   if (aRadii) {
     aClipChainOnStack.mClip.SetTo(aRect, aRoundedRect, aRadii);
@@ -106,7 +121,6 @@ void DisplayListClipState::ClipContentDescendants(
 
 void DisplayListClipState::InvalidateCurrentCombinedClipChain(
     const ActiveScrolledRoot* aInvalidateUpTo) {
-  mClippedToDisplayPort = false;
   mCurrentCombinedClipChainIsValid = false;
   while (mCurrentCombinedClipChain &&
          ActiveScrolledRoot::IsAncestor(aInvalidateUpTo,
@@ -118,7 +132,7 @@ void DisplayListClipState::InvalidateCurrentCombinedClipChain(
 void DisplayListClipState::ClipContainingBlockDescendantsToContentBox(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
     DisplayItemClipChain& aClipChainOnStack, uint32_t aFlags) {
-  nscoord radii[8];
+  nsRectCornerRadii radii;
   bool hasBorderRadius = aFrame->GetContentBoxBorderRadii(radii);
   if (!hasBorderRadius &&
       (aFlags & ASSUME_DRAWING_RESTRICTED_TO_CONTENT_RECT)) {
@@ -129,8 +143,9 @@ void DisplayListClipState::ClipContainingBlockDescendantsToContentBox(
                     aBuilder->ToReferenceFrame(aFrame);
   // If we have a border-radius, we have to clip our content to that
   // radius.
-  ClipContainingBlockDescendants(
-      aBuilder, clipRect, hasBorderRadius ? radii : nullptr, aClipChainOnStack);
+  ClipContainingBlockDescendants(aBuilder, clipRect,
+                                 hasBorderRadius ? &radii : nullptr,
+                                 aClipChainOnStack);
 }
 
 DisplayListClipState::AutoSaveRestore::AutoSaveRestore(

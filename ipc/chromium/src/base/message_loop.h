@@ -10,8 +10,6 @@
 #include <deque>
 #include <queue>
 #include <string>
-#include <vector>
-#include <map>
 
 #include "base/message_pump.h"
 #include "base/observer_list.h"
@@ -22,6 +20,8 @@
 // We need this to declare base::MessagePumpWin::Dispatcher, which we should
 // really just eliminate.
 #  include "base/message_pump_win.h"
+#elif defined(XP_DARWIN)
+#  include "base/message_pump_kqueue.h"
 #else
 #  include "base/message_pump_libevent.h"
 #endif
@@ -329,6 +329,10 @@ class MessageLoop : public base::MessagePump::Delegate {
   base::MessagePumpWin* pump_win() {
     return static_cast<base::MessagePumpWin*>(pump_.get());
   }
+#elif defined(XP_DARWIN)
+  base::MessagePumpKqueue* pump_kqueue() {
+    return static_cast<base::MessagePumpKqueue*>(pump_.get());
+  }
 #else
   base::MessagePumpLibevent* pump_libevent() {
     return static_cast<base::MessagePumpLibevent*>(pump_.get());
@@ -526,6 +530,28 @@ class MessageLoopForIO : public MessageLoop {
   base::MessagePumpForIO* pump_io() {
     return static_cast<base::MessagePumpForIO*>(pump_.get());
   }
+
+#elif defined(XP_DARWIN)
+
+  typedef base::MessagePumpKqueue::Watcher Watcher;
+  typedef base::MessagePumpKqueue::FileDescriptorWatcher FileDescriptorWatcher;
+  typedef base::MessagePumpKqueue::MachPortWatcher MachPortWatcher;
+  typedef base::MessagePumpKqueue::MachPortWatchController
+      MachPortWatchController;
+
+  enum Mode {
+    WATCH_READ = base::MessagePumpKqueue::WATCH_READ,
+    WATCH_WRITE = base::MessagePumpKqueue::WATCH_WRITE,
+    WATCH_READ_WRITE = base::MessagePumpKqueue::WATCH_READ_WRITE
+  };
+
+  // Please see MessagePumpKqueue for definition.
+  bool WatchFileDescriptor(int fd, bool persistent, Mode mode,
+                           FileDescriptorWatcher* controller,
+                           Watcher* delegate);
+  bool WatchMachReceivePort(mach_port_t port,
+                            MachPortWatchController* controller,
+                            MachPortWatcher* delegate);
 
 #else
   typedef base::MessagePumpLibevent::Watcher Watcher;

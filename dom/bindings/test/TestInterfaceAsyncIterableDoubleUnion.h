@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_TestInterfaceAsyncIterableDoubleUnion_h
 #define mozilla_dom_TestInterfaceAsyncIterableDoubleUnion_h
 
-#include "mozilla/dom/TestInterfaceJSMaplikeSetlikeIterableBinding.h"
 #include "IterableIterator.h"
+#include "mozilla/dom/TestInterfaceJSMaplikeSetlikeIterableBinding.h"
 #include "nsCOMPtr.h"
 #include "nsWrapperCache.h"
 

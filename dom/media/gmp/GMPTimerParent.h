@@ -6,11 +6,11 @@
 #ifndef GMPTimerParent_h_
 #define GMPTimerParent_h_
 
-#include "mozilla/gmp/PGMPTimerParent.h"
-#include "nsITimer.h"
-#include "nsCOMPtr.h"
-#include "nsTHashSet.h"
 #include "mozilla/Monitor.h"
+#include "mozilla/gmp/PGMPTimerParent.h"
+#include "nsCOMPtr.h"
+#include "nsITimer.h"
+#include "nsTHashSet.h"
 
 namespace mozilla::gmp {
 

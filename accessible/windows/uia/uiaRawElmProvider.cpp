@@ -23,6 +23,7 @@
 #include "MsaaRootAccessible.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
+#include "nsIAccessibleAnnouncementEvent.h"
 #include "nsIAccessiblePivot.h"
 #include "nsTextEquivUtils.h"
 #include "Pivot.h"
@@ -280,6 +281,34 @@ void uiaRawElmProvider::RaiseUiaEventForStateChange(Accessible* aAcc,
   ::UiaRaiseAutomationPropertyChangedEvent(uia, property, oldVal, newVal);
 }
 
+/* static */
+void uiaRawElmProvider::RaiseUiaNotificationEvent(
+    Accessible* aAcc, const nsAString& aAnnouncement, uint16_t aPriority) {
+  if (!Compatibility::IsUiaEnabled() || !::UiaClientsAreListening()) {
+    return;
+  }
+  // Find the nearest Accessible that is in the UIA control view.
+  uiaRawElmProvider* uia = nullptr;
+  for (Accessible* acc = aAcc; acc; acc = acc->Parent()) {
+    auto* maybeUia = MsaaAccessible::GetFrom(acc);
+    if (!maybeUia) {
+      break;
+    }
+    if (maybeUia->IsControl()) {
+      uia = maybeUia;
+      break;
+    }
+  }
+  if (uia) {
+    ::UiaRaiseNotificationEvent(
+        uia, NotificationKind_ActionCompleted,
+        aPriority == nsIAccessibleAnnouncementEvent::ASSERTIVE
+            ? NotificationProcessing_ImportantAll
+            : NotificationProcessing_All,
+        _bstr_t(PromiseFlatString(aAnnouncement).get()), _bstr_t(L""));
+  }
+}
+
 // IUnknown
 
 STDMETHODIMP
@@ -495,6 +524,13 @@ uiaRawElmProvider::GetPatternProvider(
         text.forget(aPatternProvider);
       }
       return S_OK;
+    case UIA_TextPattern2Id:
+      if (HasTextPattern(acc)) {
+        RefPtr<ITextProvider2> text =
+            new UiaText(static_cast<MsaaAccessible*>(this));
+        text.forget(aPatternProvider);
+      }
+      return S_OK;
     case UIA_TogglePatternId:
       if (HasTogglePattern()) {
         RefPtr<IToggleProvider> toggle = this;
@@ -595,6 +631,20 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
           // correct default (false) even if the attribute isn't specified.
           ariaProperties.AppendLiteral("atomic=false");
         }
+      }
+      if (acc->HasCustomActions()) {
+        if (!ariaProperties.IsEmpty()) {
+          ariaProperties += ';';
+        }
+        ariaProperties.AppendLiteral("hasactions=true");
+      }
+      nsAutoString current;
+      if (acc->GetStringARIAAttr(nsGkAtoms::aria_current, current)) {
+        if (!ariaProperties.IsEmpty()) {
+          ariaProperties += ';';
+        }
+        ariaProperties.AppendLiteral("current=");
+        ariaProperties.Append(current);
       }
       if (!ariaProperties.IsEmpty()) {
         aPropertyValue->vt = VT_BSTR;
@@ -711,6 +761,12 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
           (acc->State() & states::OFFSCREEN) ? VARIANT_TRUE : VARIANT_FALSE;
       return S_OK;
 
+    case UIA_IsPasswordPropertyId:
+      aPropertyValue->vt = VT_BOOL;
+      aPropertyValue->boolVal =
+          (acc->State() & states::PROTECTED) ? VARIANT_TRUE : VARIANT_FALSE;
+      return S_OK;
+
     case UIA_LabeledByPropertyId:
       if (Accessible* target = GetLabeledBy()) {
         aPropertyValue->vt = VT_UNKNOWN;
@@ -769,6 +825,17 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
       aPropertyValue->vt = VT_I4;
       aPropertyValue->lVal = acc->GroupPosition().setSize;
       return S_OK;
+
+    default: {
+      // These can't be included as case statements because they are not
+      // constant expressions.
+      const UiaRegistrations& registrations = GetUiaRegistrations();
+      if (aPropertyId == registrations.mAccessibleActions) {
+        aPropertyValue->vt = VT_UNKNOWN | VT_ARRAY;
+        aPropertyValue->parray = AccRelationsToUiaArray({RelationType::ACTION});
+        return S_OK;
+      }
+    }
   }
 
   return S_OK;
@@ -1392,7 +1459,7 @@ long uiaRawElmProvider::GetControlType() const {
     return uiaControlType;                                                   \
     break;
   switch (acc->Role()) {
-#include "RoleMap.h"
+#include "RoleMap.inc"
   }
 #undef ROLE
   MOZ_CRASH("Unknown role.");
@@ -1563,4 +1630,30 @@ SAFEARRAY* a11y::AccessibleArrayToUiaArray(const nsTArray<Accessible*>& aAccs) {
     ++indices[0];
   }
   return uias;
+}
+
+const UiaRegistrations& a11y::GetUiaRegistrations() {
+  static UiaRegistrations sRegistrations = {};
+  static bool sRegistered = false;
+  if (sRegistered) {
+    return sRegistrations;
+  }
+  RefPtr<IUIAutomationRegistrar> registrar;
+  if (FAILED(CoCreateInstance(CLSID_CUIAutomationRegistrar, nullptr,
+                              CLSCTX_INPROC_SERVER, IID_IUIAutomationRegistrar,
+                              getter_AddRefs(registrar)))) {
+    return sRegistrations;
+  }
+  UIAutomationPropertyInfo actionsInfo = {
+      // https://w3c.github.io/core-aam/#ariaActions
+      // {8C787AC3-0405-4C94-AC09-7A56A173F7EF}
+      {0x8C787AC3,
+       0x0405,
+       0x4C94,
+       {0xAC, 0x09, 0x7A, 0x56, 0xA1, 0x73, 0xF7, 0xEF}},
+      L"AccessibleActions",
+      UIAutomationType_ElementArray};
+  registrar->RegisterProperty(&actionsInfo, &sRegistrations.mAccessibleActions);
+  sRegistered = true;
+  return sRegistrations;
 }

@@ -6,9 +6,9 @@
 
 #include "IntlUtils.h"
 
+#include "mozIMozIntl.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/intl/LocaleService.h"
-#include "mozIMozIntl.h"
 #include "nsContentUtils.h"
 
 namespace mozilla::dom {

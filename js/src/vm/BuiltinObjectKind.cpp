@@ -33,11 +33,6 @@ static JSProtoKey ToProtoKey(BuiltinObjectKind kind) {
     case BuiltinObjectKind::IteratorPrototype:
       return JSProto_Iterator;
 
-    case BuiltinObjectKind::DateTimeFormatPrototype:
-      return JSProto_DateTimeFormat;
-    case BuiltinObjectKind::NumberFormatPrototype:
-      return JSProto_NumberFormat;
-
     case BuiltinObjectKind::None:
       break;
   }
@@ -56,10 +51,6 @@ static bool IsPrototype(BuiltinObjectKind kind) {
 
     case BuiltinObjectKind::FunctionPrototype:
     case BuiltinObjectKind::IteratorPrototype:
-      return true;
-
-    case BuiltinObjectKind::DateTimeFormatPrototype:
-    case BuiltinObjectKind::NumberFormatPrototype:
       return true;
 
     case BuiltinObjectKind::None:
@@ -98,12 +89,6 @@ BuiltinObjectKind js::BuiltinPrototypeForName(
   }
   if (name == frontend::TaggedParserAtomIndex::WellKnown::Iterator()) {
     return BuiltinObjectKind::IteratorPrototype;
-  }
-  if (name == frontend::TaggedParserAtomIndex::WellKnown::DateTimeFormat()) {
-    return BuiltinObjectKind::DateTimeFormatPrototype;
-  }
-  if (name == frontend::TaggedParserAtomIndex::WellKnown::NumberFormat()) {
-    return BuiltinObjectKind::NumberFormatPrototype;
   }
   return BuiltinObjectKind::None;
 }
@@ -144,11 +129,6 @@ const char* js::BuiltinObjectName(BuiltinObjectKind kind) {
       return "Function.prototype";
     case BuiltinObjectKind::IteratorPrototype:
       return "Iterator.prototype";
-
-    case BuiltinObjectKind::DateTimeFormatPrototype:
-      return "DateTimeFormat.prototype";
-    case BuiltinObjectKind::NumberFormatPrototype:
-      return "NumberFormat.prototype";
 
     case BuiltinObjectKind::None:
       break;

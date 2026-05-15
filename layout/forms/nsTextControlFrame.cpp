@@ -8,10 +8,9 @@
 
 #include <algorithm>
 
+#include "PseudoStyleType.h"
 #include "gfxContext.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresState.h"
 #include "mozilla/ScrollContainerFrame.h"
@@ -25,7 +24,6 @@
 #include "mozilla/dom/Text.h"
 #include "nsAttrValueInlines.h"
 #include "nsCOMPtr.h"
-#include "nsCSSPseudoElements.h"
 #include "nsCaret.h"
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
@@ -44,7 +42,6 @@
 #include "nsPresContext.h"
 #include "nsQueryObject.h"
 #include "nsRange.h"  //for selection setting helper func
-#include "nsTextFragment.h"
 #include "nsTextNode.h"
 
 using namespace mozilla;
@@ -336,13 +333,13 @@ already_AddRefed<Element> nsTextControlFrame::MakeAnonElement(
   Document* doc = PresContext()->Document();
   RefPtr<Element> element = doc->CreateHTMLElement(aTag);
   element->SetPseudoElementType(aPseudoType);
-  if (aPseudoType == PseudoStyleType::mozTextControlEditingRoot) {
+  if (aPseudoType == PseudoStyleType::MozTextControlEditingRoot) {
     // Make our root node editable
     element->SetFlags(NODE_IS_EDITABLE);
   }
 
-  if (aPseudoType == PseudoStyleType::mozNumberSpinDown ||
-      aPseudoType == PseudoStyleType::mozNumberSpinUp) {
+  if (aPseudoType == PseudoStyleType::MozNumberSpinDown ||
+      aPseudoType == PseudoStyleType::MozNumberSpinUp) {
     element->SetAttr(kNameSpaceID_None, nsGkAtoms::aria_hidden, u"true"_ns,
                      false);
   }
@@ -359,12 +356,12 @@ already_AddRefed<Element> nsTextControlFrame::MakeAnonDivWithTextNode(
   RefPtr<Element> div = MakeAnonElement(aPseudoType);
 
   // Create the text node for the anonymous <div> element.
-  nsNodeInfoManager* nim = div->OwnerDoc()->NodeInfoManager();
+  nsNodeInfoManager* nim = div->NodeInfoManager();
   RefPtr<nsTextNode> textNode = new (nim) nsTextNode(nim);
   // If the anonymous div element is not for the placeholder, we should
   // mark the text node as "maybe modified frequently" for avoiding ASCII
   // range checks at every input.
-  if (aPseudoType != PseudoStyleType::placeholder) {
+  if (aPseudoType != PseudoStyleType::Placeholder) {
     textNode->MarkAsMaybeModifiedFrequently();
     // Additionally, this is a password field, the text node needs to be
     // marked as "maybe masked" unless it's in placeholder.
@@ -381,10 +378,8 @@ nsresult nsTextControlFrame::CreateAnonymousContent(
   MOZ_ASSERT(!nsContentUtils::IsSafeToRunScript());
   MOZ_ASSERT(mContent, "We should have a content!");
 
-  AddStateBits(NS_FRAME_INDEPENDENT_SELECTION);
-
   RefPtr<TextControlElement> textControlElement = ControlElement();
-  mRootNode = MakeAnonElement(PseudoStyleType::mozTextControlEditingRoot);
+  mRootNode = MakeAnonElement(PseudoStyleType::MozTextControlEditingRoot);
   if (NS_WARN_IF(!mRootNode)) {
     return NS_ERROR_FAILURE;
   }
@@ -426,7 +421,7 @@ nsresult nsTextControlFrame::CreateAnonymousContent(
       IsPasswordTextControl() &&
       StyleDisplay()->EffectiveAppearance() != StyleAppearance::Textfield) {
     mButton =
-        MakeAnonElement(PseudoStyleType::mozReveal, nullptr, nsGkAtoms::button);
+        MakeAnonElement(PseudoStyleType::MozReveal, nullptr, nsGkAtoms::button);
     mButton->SetAttr(kNameSpaceID_None, nsGkAtoms::aria_hidden, u"true"_ns,
                      false);
     mButton->SetAttr(kNameSpaceID_None, nsGkAtoms::tabindex, u"-1"_ns, false);
@@ -438,12 +433,7 @@ nsresult nsTextControlFrame::CreateAnonymousContent(
 }
 
 bool nsTextControlFrame::ShouldInitializeEagerly() const {
-  // textareas are eagerly initialized.
-  if (!IsSingleLineTextControl()) {
-    return true;
-  }
-
-  // Also, input elements which have a cached selection should get eager
+  // Input elements which have a cached selection should get eager
   // editor initialization.
   TextControlElement* textControlElement = ControlElement();
   if (textControlElement->HasCachedSelection()) {
@@ -454,21 +444,6 @@ bool nsTextControlFrame::ShouldInitializeEagerly() const {
   if (auto* htmlElement = nsGenericHTMLElement::FromNode(mContent)) {
     if (htmlElement->Spellcheck()) {
       return true;
-    }
-  }
-
-  // If text in the editor is being dragged, we need the editor to create
-  // new source node for the drag session (TextEditor creates the text node
-  // in the anonymous <div> element.
-  if (nsCOMPtr<nsIDragSession> dragSession =
-          nsContentUtils::GetDragSession(PresContext())) {
-    if (dragSession->IsDraggingTextInTextControl()) {
-      nsCOMPtr<nsINode> sourceNode;
-      if (NS_SUCCEEDED(
-              dragSession->GetSourceNode(getter_AddRefs(sourceNode))) &&
-          sourceNode == textControlElement) {
-        return true;
-      }
     }
   }
 
@@ -496,7 +471,7 @@ void nsTextControlFrame::CreatePlaceholderIfNeeded() {
     return;
   }
 
-  mPlaceholderDiv = MakeAnonDivWithTextNode(PseudoStyleType::placeholder);
+  mPlaceholderDiv = MakeAnonDivWithTextNode(PseudoStyleType::Placeholder);
   UpdatePlaceholderText(placeholder, false);
 }
 
@@ -535,7 +510,7 @@ void nsTextControlFrame::CreatePreviewIfNeeded() {
   if (!ControlElement()->IsPreviewEnabled()) {
     return;
   }
-  mPreviewDiv = MakeAnonDivWithTextNode(PseudoStyleType::mozTextControlPreview);
+  mPreviewDiv = MakeAnonDivWithTextNode(PseudoStyleType::MozTextControlPreview);
 }
 
 void nsTextControlFrame::AppendAnonymousContentTo(
@@ -661,20 +636,22 @@ void nsTextControlFrame::ReflowTextControlChild(
   const LogicalSize paddingBoxSize = contentBoxSize + parentPadding.Size(wm);
   const LogicalSize borderBoxSize =
       paddingBoxSize + aReflowInput.ComputedLogicalBorder(wm).Size(wm);
-  LogicalSize availSize = paddingBoxSize;
-  availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
-
+  const bool singleLine = IsSingleLineTextControl();
   const bool isButtonBox = IsButtonBox(aKid);
-
+  LogicalSize availSize =
+      !isButtonBox && singleLine ? contentBoxSize : paddingBoxSize;
+  availSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
   ReflowInput kidReflowInput(aPresContext, aReflowInput, aKid, availSize,
                              Nothing(), ReflowInput::InitFlag::CallerWillInit);
 
   // Override padding with our computed padding in case we got it from theming
   // or percentage, if we're not the button box.
   auto overridePadding = isButtonBox ? Nothing() : Some(parentPadding);
-  if (!isButtonBox && aButtonBoxISize) {
+  if (!isButtonBox && singleLine) {
     // Button box respects inline-end-padding, so we don't need to.
-    overridePadding->IEnd(outerWM) = 0;
+    // inline-padding is not propagated to the scroller for single-line text
+    // controls.
+    overridePadding->IStart(wm) = overridePadding->IEnd(wm) = 0;
   }
 
   // We want to let our button box fill the frame in the block axis, up to the
@@ -685,7 +662,7 @@ void nsTextControlFrame::ReflowTextControlChild(
 
   LogicalPoint position(wm);
   if (!isButtonBox) {
-    MOZ_ASSERT(wm == outerWM,
+    MOZ_ASSERT(wm == outerWM || aKid->IsPlaceholderFrame(),
                "Shouldn't have to care about orthogonal "
                "writing-modes and such inside the control, "
                "except for the number spin-box which forces "
@@ -698,6 +675,9 @@ void nsTextControlFrame::ReflowTextControlChild(
     // actually "inherits" that padding and manages it on behalf of the parent.
     position.B(wm) = border.BStart(wm);
     position.I(wm) = border.IStart(wm);
+    if (singleLine) {
+      position.I(wm) += parentPadding.IStart(wm);
+    }
 
     // Set computed width and computed height for the child (the button box is
     // the only exception, which has an auto size).
@@ -949,9 +929,11 @@ nsresult nsTextControlFrame::OffsetToDOMPoint(uint32_t aOffset,
 ////NSIFRAME
 nsresult nsTextControlFrame::AttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType) {
+                                              AttrModType aModType) {
   if (aAttribute == nsGkAtoms::value && !mEditorHasBeenInitialized) {
-    UpdateValueDisplay(true);
+    if (IsSingleLineTextControl()) {
+      UpdateValueDisplay(true);
+    }
     return NS_OK;
   }
 
@@ -1048,13 +1030,7 @@ void nsTextControlFrame::SetInitialChildList(ChildListID aListID,
   }
 }
 
-nsresult nsTextControlFrame::UpdateValueDisplay(bool aNotify,
-                                                bool aBeforeEditorInit,
-                                                const nsAString* aValue) {
-  if (!IsSingleLineTextControl()) {  // textareas don't use this
-    return NS_OK;
-  }
-
+nsresult nsTextControlFrame::UpdateValueDisplay(bool aNotify) {
   MOZ_ASSERT(mRootNode, "Must have a div content\n");
   MOZ_ASSERT(!mEditorHasBeenInitialized,
              "Do not call this after editor has been initialized");
@@ -1079,12 +1055,7 @@ nsresult nsTextControlFrame::UpdateValueDisplay(bool aNotify,
 
   // Get the current value of the textfield from the content.
   nsAutoString value;
-  if (aValue) {
-    value = *aValue;
-  } else {
-    ControlElement()->GetTextEditorValue(value);
-  }
-
+  ControlElement()->GetTextEditorValue(value);
   return textContent->SetText(value, aNotify);
 }
 
@@ -1128,6 +1099,10 @@ void nsTextControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   DO_GLOBAL_REFLOW_COUNT_DSP("nsTextControlFrame");
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
+
+  if (HidesContent()) {
+    return;
+  }
 
   // Redirect all lists to the Content list so that nothing can escape, ie
   // opacity creating stacking contexts that then get sorted with stacking

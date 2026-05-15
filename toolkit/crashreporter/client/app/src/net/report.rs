@@ -52,7 +52,17 @@ impl CrashReport<'_> {
 
         let extra_json_data;
         if request.is_none() {
-            extra_json_data = serde_json::to_string(self.extra)?;
+            let mut extra = self.extra.clone();
+            // Bug 2021130: If ProcessType is main (it always should be, because we only send
+            // reports for main process crashes), remove the annotation. Socorro expects main
+            // processes to not have the ProcessType annotation.
+            //
+            // This is mostly a workaround; ideally Socorro would change to accept a ProcessType of
+            // "main" (see bug 2021204).
+            if extra["ProcessType"].as_str() == Some("main") {
+                extra.as_object_mut().unwrap().remove("ProcessType");
+            }
+            extra_json_data = serde_json::to_string(&extra)?;
 
             let mut parts = vec![
                 http::MimePart {

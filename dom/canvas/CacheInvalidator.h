@@ -7,13 +7,13 @@
 #ifndef MOZILLA_CACHE_INVALIDATOR_H_
 #define MOZILLA_CACHE_INVALIDATOR_H_
 
-#include "DmdStdContainers.h"
-#include "mozilla/Assertions.h"
-
 #include <cstddef>  // nullptr_t
 #include <memory>
 #include <optional>
 #include <vector>
+
+#include "DmdStdContainers.h"
+#include "mozilla/Assertions.h"
 
 // -
 

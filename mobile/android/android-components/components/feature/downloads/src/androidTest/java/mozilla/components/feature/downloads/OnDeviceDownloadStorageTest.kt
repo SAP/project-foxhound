@@ -10,7 +10,6 @@ import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.feature.downloads.db.DownloadsDatabase
@@ -27,7 +26,6 @@ import org.junit.Test
 
 private const val MIGRATION_TEST_DB = "migration-test"
 
-@ExperimentalCoroutinesApi
 class OnDeviceDownloadStorageTest {
     private lateinit var context: Context
     private lateinit var storage: DownloadStorage

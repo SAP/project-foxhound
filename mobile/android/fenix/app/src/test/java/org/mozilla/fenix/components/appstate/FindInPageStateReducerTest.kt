@@ -4,39 +4,37 @@
 
 package org.mozilla.fenix.components.appstate
 
-import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.FindInPageAction
 
 class FindInPageStateReducerTest {
 
     @Test
     fun `WHEN find in page started action is dispatched THEN state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(FindInPageAction.FindInPageStarted).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, FindInPageAction.FindInPageStarted)
 
-        assertTrue(appStore.state.showFindInPage)
+        assertTrue(finalState.showFindInPage)
     }
 
     @Test
     fun `WHEN find in page dismissed action is dispatched THEN state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(FindInPageAction.FindInPageDismissed).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, FindInPageAction.FindInPageDismissed)
 
-        assertFalse(appStore.state.showFindInPage)
+        assertFalse(finalState.showFindInPage)
     }
 
     @Test
     fun `WHEN find in page shown action is dispatched THEN state is updated`() {
-        val appStore = AppStore()
+        val initialState = AppState()
 
-        appStore.dispatch(FindInPageAction.FindInPageShown).joinBlocking()
+        val finalState = AppStoreReducer.reduce(initialState, FindInPageAction.FindInPageShown)
 
-        assertFalse(appStore.state.showFindInPage)
+        assertFalse(finalState.showFindInPage)
     }
 }

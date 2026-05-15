@@ -58,8 +58,9 @@ class AbstractThread : public nsISerialEventTarget {
   NS_IMETHOD_(bool) IsOnCurrentThreadInfallible(void) override;
   NS_IMETHOD IsOnCurrentThread(bool* _retval) override;
   NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> event,
-                      uint32_t flags) override;
-  NS_IMETHOD DispatchFromScript(nsIRunnable* event, uint32_t flags) override;
+                      DispatchFlags flags) override;
+  NS_IMETHOD DispatchFromScript(nsIRunnable* event,
+                                DispatchFlags flags) override;
   NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable> event,
                              uint32_t delay) override;
 

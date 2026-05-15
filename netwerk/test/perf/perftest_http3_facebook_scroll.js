@@ -1,7 +1,6 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-/* eslint-env node */
 
 /*
 Ensure the `--firefox.preference=network.http.http3.enable:true` is
@@ -33,8 +32,8 @@ async function waitForScrollRequestsEnd(
   let stableCount = 0;
 
   while (
-    ((await commands.js.run(`return performance.now();`)) - starttime <
-      timeout) &
+    (await commands.js.run(`return performance.now();`)) - starttime <
+      timeout &&
     changing
   ) {
     // Wait a bit before making another round

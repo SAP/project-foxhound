@@ -6,6 +6,7 @@
 
 BROWSER_CHROME_MANIFESTS += [
     "browser_allocations_browser_console.toml",
+    "browser_allocations_inspector_selections.toml",
     "browser_allocations_reload_debugger.toml",
     "browser_allocations_reload_inspector.toml",
     "browser_allocations_reload_netmonitor.toml",

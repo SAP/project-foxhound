@@ -31,16 +31,10 @@ const COOKIE_BEHAVIORS = {
   REJECT_TRACKER: 4,
 };
 
-const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
-);
-UrlClassifierTestUtils.addTestTrackers();
-registerCleanupFunction(function () {
-  UrlClassifierTestUtils.cleanupTestTrackers();
+add_setup(async function () {
+  await setupUrlClassifierTest();
+  await pushPref("devtools.webconsole.groupSimilarMessages", true);
 });
-
-pushPref("privacy.trackingprotection.enabled", true);
-pushPref("devtools.webconsole.groupWarningMessages", true);
 
 async function cleanUp() {
   await new Promise(resolve => {
@@ -49,7 +43,6 @@ async function cleanUp() {
     );
   });
 }
-
 add_task(cleanUp);
 
 add_task(async function testEnhancedTrackingProtectionMessage() {
@@ -176,7 +169,7 @@ add_task(cleanUp);
 /**
  * Test that storage access blocked messages are grouped by emitting 2 messages.
  *
- * @param {String} groupLabel: The warning group label that should be created.
+ * @param {string} groupLabel: The warning group label that should be created.
  *                             It should contain "<URL>".
  */
 async function testStorageAccessBlockedGrouping(groupLabel) {

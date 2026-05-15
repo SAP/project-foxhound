@@ -52,7 +52,7 @@ async function testNewWindow(client, win) {
 
   win.focus();
 
-  const topWindow = Services.wm.getMostRecentWindow("navigator:browser");
+  const topWindow = Services.wm.getMostRecentBrowserWindow();
   is(topWindow, win, "The second window is on top.");
 
   if (Services.focus.activeWindow != win) {

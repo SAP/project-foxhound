@@ -337,7 +337,7 @@ add_task(async function () {
  *      expected.
  *   10. Verify the storage state on the writeThenRead tab.
  *   11. Close tabs and clear origin storage.
- **/
+ */
 add_task(async function () {
   if (!Services.domStorageManager.nextGenLocalStorageEnabled) {
     ok(true, "Test ignored when the next gen local storage is not enabled.");

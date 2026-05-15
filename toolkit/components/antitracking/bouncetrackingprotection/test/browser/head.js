@@ -31,6 +31,7 @@ const ROOT_DIR = getRootDirectory(gTestPath);
 
 /**
  * Get the base url for the current test directory using the given origin.
+ *
  * @param {string} origin - Origin to use in URL.
  * @returns {string} - Generated URL as a string.
  */
@@ -40,6 +41,7 @@ function getBaseUrl(origin) {
 
 /**
  * Constructs a url for an intermediate "bounce" hop which represents a tracker.
+ *
  * @param {*} options - URL generation options.
  * @param {('server'|'client')} options.bounceType - Redirect type to use for
  * the bounce.
@@ -160,9 +162,10 @@ function getBounceURL({
 /**
  * Insert an <a href/> element with the given target and perform a synthesized
  * click on it.
+ *
  * @param {MozBrowser} browser - Browser to insert the link in.
  * @param {URL} targetURL - Destination for navigation.
- * @param {Object} options - Additional options.
+ * @param {object} options - Additional options.
  * @param {string} [options.spawnWindow] - If set to "newTab" or "popup" the
  * link will be opened in a new tab or popup window respectively. If unset the
  * link is opened in the given browser.
@@ -218,6 +221,7 @@ async function navigateLinkClick(
 
 /**
  * Wait for the record-bounces method to run for the given tab / browser.
+ *
  * @param {browser} browser - Browser element which represents the tab we want
  * to observe.
  * @returns {Promise} Promise which resolves once the record-bounces method has
@@ -245,6 +249,7 @@ async function waitForRecordBounces(browser) {
  * Test helper which loads an initial blank page, then navigates to a url which
  * performs a bounce. Checks that the bounce hosts are properly identified as
  * trackers.
+ *
  * @param {object} options - Test Options.
  * @param {('server'|'client')} options.bounceType - Whether to perform a client
  * or server side redirect.

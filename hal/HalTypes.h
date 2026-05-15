@@ -10,7 +10,6 @@
 #include "mozilla/BitSet.h"
 #include "mozilla/Observer.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 namespace hal {

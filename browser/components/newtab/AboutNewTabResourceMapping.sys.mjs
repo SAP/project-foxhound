@@ -9,6 +9,8 @@ export const BUILTIN_ADDON_ID = "newtab@mozilla.org";
 export const DISABLE_NEWTAB_AS_ADDON_PREF =
   "browser.newtabpage.disableNewTabAsAddon";
 export const TRAINHOP_NIMBUS_FEATURE_ID = "newtabTrainhopAddon";
+export const TRAINHOP_NIMBUS_FIRST_STARTUP_FEATURE_ID =
+  "newtabTrainhopFirstStartup";
 export const TRAINHOP_XPI_BASE_URL_PREF =
   "browser.newtabpage.trainhopAddon.xpiBaseURL";
 export const TRAINHOP_XPI_VERSION_PREF =
@@ -18,12 +20,17 @@ export const TRAINHOP_SCHEDULED_UPDATE_STATE_DELAY_PREF =
 export const TRAINHOP_SCHEDULED_UPDATE_STATE_TIMEOUT_PREF =
   "browser.newtabpage.trainhopAddon.scheduledUpdateState.timeout";
 
+const FLUENT_SOURCE_NAME = "newtab";
+const TOPIC_LOCALES_CHANGED = "intl:app-locales-changed";
+const TOPIC_SHUTDOWN = "profile-before-change";
+
 const lazy = XPCOMUtils.declareLazy({
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.sys.mjs",
   AboutHomeStartupCache: "resource:///modules/AboutHomeStartupCache.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   NewTabGleanUtils: "resource://newtab/lib/NewTabGleanUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
 
@@ -82,6 +89,34 @@ export var AboutNewTabResourceMapping = {
   _addonListener: null,
   _builtinVersion: null,
   _updateAddonStateDeferredTask: null,
+  _supportedLocales: null,
+
+  /**
+   * Returns the version string for whichever version of New Tab is currently
+   * being used. This is exposed to Nimbus / Experimenter for advanced targeting
+   * based on the currently used newtab version.
+   *
+   * The reason that we expose this specially and cannot simply use
+   * addonsInfo.addons["newtab@mozilla.org"] to do this kind of advanced
+   * targeting is documented in bug 1983928 (essentially, the addonsInfo
+   * route doesn't take into account that the addon might be disabled or
+   * bypassed via the `DISABLE_NEWTAB_AS_ADDON_PREF` pref).
+   *
+   * @type {string}
+   */
+  get addonVersion() {
+    return this._addonVersion;
+  },
+
+  /**
+   * Returns true if an train-hopped XPI is in use, or false if we're using
+   * the built-in instance of newtab.
+   *
+   * @type {string}
+   */
+  get addonIsXPI() {
+    return this._addonIsXPI;
+  },
 
   /**
    * This should be called early on in the lifetime of the browser, before any
@@ -94,16 +129,7 @@ export var AboutNewTabResourceMapping = {
       return;
     }
 
-    this.logger = console.createInstance({
-      prefix: "AboutNewTabResourceMapping",
-      maxLogLevel: Services.prefs.getBoolPref(
-        "browser.newtabpage.resource-mapping.log",
-        false
-      )
-        ? "Debug"
-        : "Warn",
-    });
-    this.logger.debug("Initializing");
+    this.logger.debug("Initializing:");
 
     // NOTE: this pref is read only once per session on purpose
     // (and it is expected to be used by the resource mapping logic
@@ -168,6 +194,53 @@ export var AboutNewTabResourceMapping = {
     }
   },
 
+  isXPIInCurrentProfile(rootURI) {
+    try {
+      const { file: xpiFile } = rootURI
+        .QueryInterface(Ci.nsIJARURI)
+        .JARFile.QueryInterface(Ci.nsIFileURL);
+      // NOTE: this logic is expecting the XPI file to be located
+      // in PROFILE_DIR/extensions/newtab@mozilla.org and so for
+      // xpiFile.parent.parent.path to be matching the path
+      // returned by PathUtils.profileDir.
+      const xpiIsInsideProfile =
+        PathUtils.profileDir === xpiFile.parent.parent.path;
+      if (!xpiIsInsideProfile) {
+        this.logger.warn(
+          "Detected newtab XPI as located outside of the current Firefox profile"
+        );
+      }
+      return xpiIsInsideProfile;
+    } catch (err) {
+      this.logger.error(
+        "Unexpected error on verifying newtab XPI path is inside the current Firefox profile",
+        err
+      );
+    }
+    // If we failed to confirm the XPIFile is located inside the current Firefox
+    // profile, then let's fallback to built-in add-on resources.
+    return false;
+  },
+
+  /**
+   * Gather details from the newtab active addon, used by getPreferredMapping
+   * as part of determining if the newtab resource to be mapped should be the
+   * one from the built-in or from the train-hop version (and it is stubbed
+   * in tests that verify fallback to built-in resources under edge cases like
+   * relocated Firefox profiles, see Bug 2007810).
+   *
+   * @returns {{ version: ?string, rootURI: ?nsIURI, isPrivileged: ?boolean}}
+   *   Returns version, rootURI and isPrivileged properties from the newtab
+   *   WebExtensionPolicy instance that is currently active.
+   */
+  getActiveAddonInfo() {
+    const policy = WebExtensionPolicy.getByID(BUILTIN_ADDON_ID);
+    // Retrieve the mapping url (but fallback to the known url for the
+    // newtab resources bundled in the Desktop omni jar if that fails).
+    let { version, rootURI, isPrivileged } = policy?.extension ?? {};
+    return { version, rootURI, isPrivileged };
+  },
+
   /**
    * Gets the preferred mapping for newtab resources. This method tries to retrieve
    * the rootURI from the WebExtensionPolicy instance of the newtab add-on, or falling
@@ -183,10 +256,9 @@ export var AboutNewTabResourceMapping = {
    */
   getPreferredMapping() {
     const { inSafeMode, newTabAsAddonDisabled } = this;
-    const policy = WebExtensionPolicy.getByID(BUILTIN_ADDON_ID);
     // Retrieve the mapping url (but fallback to the known url for the
     // newtab resources bundled in the Desktop omni jar if that fails).
-    let { version, rootURI } = policy?.extension ?? {};
+    let { version, rootURI, isPrivileged } = this.getActiveAddonInfo();
     let isXPI = rootURI?.spec.endsWith(".xpi!/");
 
     // If we failed to retrieve the builtin add-on version, avoid mapping
@@ -194,6 +266,13 @@ export var AboutNewTabResourceMapping = {
     // wouldn't be possible to check if the builtin version is more recent
     // than the train-hop add-on version that may be already installed.
     if (isXPI && this._builtinVersion === null) {
+      rootURI = null;
+      isXPI = false;
+    }
+
+    // If the XPI path is not inside the current Firefox instance profile,
+    // fallback to use the resources bundled with Firefox itself (see Bug 2007810)
+    if (isXPI && !this.isXPIInCurrentProfile(rootURI)) {
       rootURI = null;
       isXPI = false;
     }
@@ -213,13 +292,13 @@ export var AboutNewTabResourceMapping = {
     const shouldUninstallXPI = isXPI
       ? lazy.trainhopAddonXPIVersion === "" ||
         Services.vc.compare(this._builtinVersion, version) >= 0 ||
-        (lazy.AddonSettings.REQUIRE_SIGNING && !policy.isPrivileged)
+        (lazy.AddonSettings.REQUIRE_SIGNING && !isPrivileged)
       : false;
 
     if (!rootURI || inSafeMode || newTabAsAddonDisabled || shouldUninstallXPI) {
       const builtinAddonsURI = lazy.resProto.getSubstitution("builtin-addons");
       rootURI = Services.io.newURI("newtab/", null, builtinAddonsURI);
-      version = null;
+      version = this._builtinVersion;
       isXPI = false;
     }
     return { isXPI, version, rootURI };
@@ -238,8 +317,8 @@ export var AboutNewTabResourceMapping = {
       this._addonVersion = version;
       this._addonIsXPI = isXPI;
       this.logger.log(
-        this.newTabAsAddonDisabled || !version
-          ? `Mapping newtab resources from ${rootURI.spec}`
+        this.newTabAsAddonDisabled
+          ? `Train-hopping disabled - mapping newtab resources from ${rootURI.spec}`
           : `Mapping newtab resources from ${isXPI ? "XPI" : "built-in add-on"} version ${version} ` +
               `on application version ${AppConstants.MOZ_APP_VERSION_DISPLAY}`
       );
@@ -281,23 +360,73 @@ export var AboutNewTabResourceMapping = {
    */
   async registerFluentSources(rootURI) {
     try {
-      const SUPPORTED_LOCALES = await fetch(
-        rootURI.resolve("/locales/supported-locales.json")
-      ).then(r => r.json());
-      const newtabFileSource = new L10nFileSource(
-        "newtab",
-        "app",
-        SUPPORTED_LOCALES,
-        `resource://newtab/locales/{locale}/`
+      // Read in the list of locales included with the XPI. This will prevent
+      // us from accidentally registering a L10nFileSource that wasn't included.
+      this._supportedLocales = new Set(
+        await fetch(rootURI.resolve("/locales/supported-locales.json")).then(
+          r => r.json()
+        )
       );
-      this._l10nFileSource = newtabFileSource;
-      L10nRegistry.getInstance().registerSources([newtabFileSource]);
+
+      // Set up observers so that if the user changes the list of available
+      // locales, we'll re-register.
+      Services.obs.addObserver(this, TOPIC_LOCALES_CHANGED);
+      Services.obs.addObserver(this, TOPIC_SHUTDOWN);
+      // Now actually do the registration.
+      this._updateFluentSourcesRegistration();
     } catch (e) {
       // TODO: consider if we should collect this in telemetry.
       this.logger.error(
         `Error on registering fluent files from ${rootURI.spec}:`,
         e
       );
+    }
+  },
+
+  /**
+   * Sets up the L10nFileSource for the newtab Fluent files included in the
+   * XPI that are in the available locales for the app. If a pre-existing
+   * registration exists, it will be updated.
+   */
+  _updateFluentSourcesRegistration() {
+    let availableLocales = new Set(Services.locale.availableLocales);
+    let availableSupportedLocales =
+      this._supportedLocales.intersection(availableLocales);
+
+    const newtabFileSource = new L10nFileSource(
+      FLUENT_SOURCE_NAME,
+      "app",
+      [...availableSupportedLocales],
+      `resource://newtab/locales/{locale}/`
+    );
+
+    let registry = L10nRegistry.getInstance();
+    if (registry.hasSource(FLUENT_SOURCE_NAME)) {
+      registry.updateSources([newtabFileSource]);
+      this.logger.debug(
+        "Newtab strings updated for ",
+        Array.from(availableSupportedLocales)
+      );
+    } else {
+      registry.registerSources([newtabFileSource]);
+      this.logger.debug(
+        "Newtab strings registered for ",
+        Array.from(availableSupportedLocales)
+      );
+    }
+  },
+
+  observe(_subject, topic, _data) {
+    switch (topic) {
+      case TOPIC_LOCALES_CHANGED: {
+        this._updateFluentSourcesRegistration();
+        break;
+      }
+      case TOPIC_SHUTDOWN: {
+        Services.obs.removeObserver(this, TOPIC_LOCALES_CHANGED);
+        Services.obs.removeObserver(this, TOPIC_SHUTDOWN);
+        break;
+      }
     }
   },
 
@@ -363,7 +492,7 @@ export var AboutNewTabResourceMapping = {
    *   installed or pending to be installed). Rejects on failures or unexpected cancellations
    *   during installation or uninstallation process.
    */
-  async updateTrainhopAddonState() {
+  async updateTrainhopAddonState(forceRestartlessInstall = false) {
     if (this.inSafeMode) {
       this.logger.debug(
         "train-hop add-on update state disabled while running in SafeMode"
@@ -376,6 +505,10 @@ export var AboutNewTabResourceMapping = {
     const { addon_version, xpi_download_path } = nimbusFeature.getAllVariables({
       defaultValues: { addon_version: null, xpi_download_path: null },
     });
+
+    this.logger.debug("Force restartless install: ", forceRestartlessInstall);
+    this.logger.debug("Received addon version:", addon_version);
+    this.logger.debug("Received XPI download path:", xpi_download_path);
 
     let addon = await lazy.AddonManager.getAddonByID(BUILTIN_ADDON_ID);
 
@@ -414,6 +547,11 @@ export var AboutNewTabResourceMapping = {
       // Retrieve the new add-on wrapper if the xpi version has been uninstalled.
       if (changed) {
         addon = await lazy.AddonManager.getAddonByID(BUILTIN_ADDON_ID);
+
+        this.logger.debug(
+          "Invalidating AboutHomeStartupCache after train-hop uninstall"
+        );
+        lazy.AboutHomeStartupCache.clearCacheAndUninit();
       }
     }
 
@@ -465,6 +603,7 @@ export var AboutNewTabResourceMapping = {
     await this._installTrainhopAddon({
       trainhopAddonVersion: addon_version,
       xpiDownloadURL,
+      forceRestartlessInstall,
     });
   },
 
@@ -475,12 +614,21 @@ export var AboutNewTabResourceMapping = {
    * @param {object} params
    * @param {string} params.trainhopAddonVersion - The version of the train-hop add-on to install.
    * @param {string} params.xpiDownloadURL - The URL from which to download the XPI file.
+   * @param {boolean} params.forceRestartlessInstall
+   *   After the XPI is downloaded, attempt to complete a restartless install. Note that if
+   *   AboutNewTabResourceMapping.init has been called by the time the XPI has finished
+   *   downloading, this directive is ignored, and we fallback to installing on the next
+   *   restart.
    *
    * @returns {Promise<void>}
    *   Resolves when the train-hop add-on installation is completed or not needed, or rejects
    *   on failures or unexpected cancellations hit during the installation process.
    */
-  async _installTrainhopAddon({ trainhopAddonVersion, xpiDownloadURL }) {
+  async _installTrainhopAddon({
+    trainhopAddonVersion,
+    xpiDownloadURL,
+    forceRestartlessInstall,
+  }) {
     if (
       this._builtinVersion &&
       Services.vc.compare(this._builtinVersion, trainhopAddonVersion) >= 0
@@ -533,7 +681,7 @@ export var AboutNewTabResourceMapping = {
       );
       const deferred = Promise.withResolvers();
       newInstall.addListener({
-        onDownloadEnded() {
+        onDownloadEnded: () => {
           if (
             newInstall.addon.id !== BUILTIN_ADDON_ID ||
             newInstall.addon.version !== trainhopAddonVersion
@@ -560,30 +708,51 @@ export var AboutNewTabResourceMapping = {
             );
             newInstall.cancel();
           }
+
+          this.logger.debug("Train-hop download ended");
         },
-        onInstallPostponed() {
-          deferred.resolve();
+        onInstallPostponed: () => {
+          this.logger.debug("Train-hop install postponed, as expected");
+          if (forceRestartlessInstall && !this.initialized) {
+            this.logger.debug("Forcing restartless install of train-hop");
+            newInstall.continuePostponedInstall();
+          } else {
+            this.logger.debug("Not forcing restartless install");
+            if (forceRestartlessInstall) {
+              this.logger.debug(
+                "We must have initialized before the XPI finished downloading."
+              );
+            }
+            deferred.resolve();
+          }
         },
-        onDownloadCancelled() {
+        onInstallEnded: () => {
+          this.logger.debug("Train-hop restartless install ended");
+          if (forceRestartlessInstall) {
+            this.logger.debug("Resolving train-hop install promise");
+            deferred.resolve();
+          }
+        },
+        onDownloadCancelled: () => {
           deferred.reject(
             new Error(
               `Unexpected download cancelled while downloading xpi from ${xpiDownloadURL}`
             )
           );
         },
-        onDownloadFailed() {
+        onDownloadFailed: () => {
           deferred.reject(
             new Error(`Failed to download xpi from ${xpiDownloadURL}`)
           );
         },
-        onInstallCancelled() {
+        onInstallCancelled: () => {
           deferred.reject(
             new Error(
               `Unexpected install cancelled while installing xpi from ${xpiDownloadURL}`
             )
           );
         },
-        onInstallFailed() {
+        onInstallFailed: () => {
           deferred.reject(
             new Error(`Failed to install xpi from ${xpiDownloadURL}`)
           );
@@ -591,9 +760,16 @@ export var AboutNewTabResourceMapping = {
       });
       newInstall.install();
       await deferred.promise;
-      this.logger.debug(
-        `train-hop add-on ${trainhopAddonVersion} downloaded and pending install on next startup`
-      );
+
+      if (forceRestartlessInstall) {
+        this.logger.debug(
+          `train-hop add-on ${trainhopAddonVersion} downloaded and we will attempt a restartless install`
+        );
+      } else {
+        this.logger.debug(
+          `train-hop add-on ${trainhopAddonVersion} downloaded and pending install on next startup`
+        );
+      }
     } catch (e) {
       this.logger.error(`train-hop add-on install failure: ${e}`);
     }
@@ -624,4 +800,54 @@ export var AboutNewTabResourceMapping = {
     }
     return false;
   },
+
+  /**
+   * This is registered to be called on first startup for new profiles on
+   * Windows. It is expected to be called very early on in the lifetime of
+   * new profiles, such that the AboutNewTabResourceMapping.init routine has
+   * not yet had a chance to run.
+   *
+   * @returns {Promise<void>}
+   */
+  async firstStartupNewProfile() {
+    if (this.initialized) {
+      this.logger.error(
+        "firstStartupNewProfile is being run after AboutNewTabResourceMapping initializes, so we're too late."
+      );
+      return;
+    }
+    this.logger.debug(
+      "First startup with a new profile. Checking for any train-hops to perform restartless install."
+    );
+    await lazy.ExperimentAPI.ready();
+
+    const nimbusFeature =
+      lazy.NimbusFeatures[TRAINHOP_NIMBUS_FIRST_STARTUP_FEATURE_ID];
+    await nimbusFeature.ready();
+    const { enabled } = nimbusFeature.getAllVariables({
+      defaultValues: { enabled: true },
+    });
+    if (!enabled) {
+      // We've been configured to bypass the FirstStartup install for
+      // train-hops, so exit now.
+      this.logger.debug(
+        "Not forcing install of any newtab XPIs, as we're currently configured not to."
+      );
+      return;
+    }
+
+    await lazy.AddonManager.readyPromise;
+    await this.updateTrainhopAddonState(true /* forceRestartlessInstall */);
+    this.logger.debug("First startup - new profile done");
+  },
 };
+
+AboutNewTabResourceMapping.logger = console.createInstance({
+  prefix: "AboutNewTabResourceMapping",
+  maxLogLevel: Services.prefs.getBoolPref(
+    "browser.newtabpage.resource-mapping.log",
+    false
+  )
+    ? "Debug"
+    : "Warn",
+});

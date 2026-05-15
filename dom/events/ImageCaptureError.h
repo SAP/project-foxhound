@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_ImageCaptureError_h
 #define mozilla_dom_ImageCaptureError_h
 
-#include "mozilla/Attributes.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsWrapperCache.h"

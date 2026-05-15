@@ -64,4 +64,8 @@ enum class GlobalDirections(val navDirections: NavDirections, val destinationId:
         NavGraphDirections.actionGlobalPrivateBrowsingFragment(),
         R.id.privateBrowsingFragment,
     ),
+    SettingsAppIcon(
+        NavGraphDirections.actionGlobalAppIconSelectionFragment(),
+        R.id.appIconSelectionFragment,
+    ),
 }

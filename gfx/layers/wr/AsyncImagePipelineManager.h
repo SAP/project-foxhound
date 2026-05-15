@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "CompositableHost.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/TextureHost.h"
@@ -261,6 +260,7 @@ class AsyncImagePipelineManager final {
 #ifdef XP_WIN
   bool mUseWebRenderDCompVideoHwOverlayWin;
   bool mUseWebRenderDCompVideoSwOverlayWin;
+  bool mUseWebRenderDCompositionTextureOverlayWin;
 #endif
 
   // Render time for the current composition.
@@ -293,7 +293,7 @@ class AsyncImagePipelineManager final {
   std::vector<std::pair<wr::RenderedFrameId,
                         std::vector<UniquePtr<ForwardingTextureHost>>>>
       mTexturesInUseByGPU;
-  RefPtr<Fence> mReleaseFence;
+  RefPtr<Fence> mReadFence;
 };
 
 }  // namespace layers

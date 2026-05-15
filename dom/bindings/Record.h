@@ -13,7 +13,6 @@
 
 #include <utility>
 
-#include "mozilla/Attributes.h"
 #include "nsHashKeys.h"
 #include "nsString.h"
 #include "nsTArray.h"

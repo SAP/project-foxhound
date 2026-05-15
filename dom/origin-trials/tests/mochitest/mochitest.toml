@@ -13,7 +13,10 @@ support-files = [
 #  * xorigin tests run in example.org rather than example.com, so token
 #    verification fails, expectedly.
 skip-if = [
-  "!debug",
+  "asan",
+  "ccov",
+  "opt",
+  "tsan",
   "xorigin",
 ]
 
@@ -33,8 +36,8 @@ support-files = [
   "file_subdomain_bad_frame.html",
 ]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 
 ["test_trial_hidden.html"]

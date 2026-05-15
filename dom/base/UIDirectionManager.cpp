@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/UIDirectionManager.h"
+
 #include "mozilla/Preferences.h"
-#include "nsIObserverService.h"
-#include "nsIWindowMediator.h"
-#include "nsDocShell.h"
-#include "nsServiceManagerUtils.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/Services.h"
 #include "mozilla/SimpleEnumerator.h"
+#include "mozilla/dom/Document.h"
+#include "nsDocShell.h"
+#include "nsIObserverService.h"
+#include "nsIWindowMediator.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
 

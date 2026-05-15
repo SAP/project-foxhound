@@ -6,26 +6,25 @@
 #ifndef GPU_SAMPLER_H_
 #define GPU_SAMPLER_H_
 
+#include "ObjectModel.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
 #include "nsWrapperCache.h"
-#include "ObjectModel.h"
 
 namespace mozilla::webgpu {
 
 class Device;
 
-class Sampler final : public ObjectBase, public ChildOf<Device> {
+class Sampler final : public nsWrapperCache,
+                      public ObjectBase,
+                      public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(Sampler)
   GPU_DECL_JS_WRAP(Sampler)
 
   Sampler(Device* const aParent, RawId aId);
 
-  const RawId mId;
-
  private:
   virtual ~Sampler();
-  void Cleanup();
 };
 
 }  // namespace mozilla::webgpu

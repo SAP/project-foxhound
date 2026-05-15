@@ -15,7 +15,7 @@ const testState = {
 };
 
 function test() {
-  /** Test for Bug 618151 - Overwriting state can lead to unrestored tabs **/
+  /** Test for Bug 618151 - Overwriting state can lead to unrestored tabs */
   waitForExplicitFinish();
   runNextTest();
 }

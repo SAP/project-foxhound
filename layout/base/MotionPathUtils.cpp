@@ -128,11 +128,14 @@ nsTArray<nscoord> MotionPathUtils::ComputeBorderRadii(
   const nsRect insetRect = ShapeUtils::ComputeInsetRect(
       StyleRect<LengthPercentage>::WithAllSides(LengthPercentage::Zero()),
       aCoordBox);
-  nsTArray<nscoord> result(8);
-  result.SetLength(8);
-  if (!ShapeUtils::ComputeRectRadii(aBorderRadius, aCoordBox, insetRect,
-                                    result.Elements())) {
-    result.Clear();
+  nsTArray<nscoord> result;
+  nsRectCornerRadii radii;
+  if (ShapeUtils::ComputeRectRadii(aBorderRadius, aCoordBox, insetRect,
+                                   radii)) {
+    result.SetCapacity(8);
+    for (auto hc : AllPhysicalHalfCorners()) {
+      result.AppendElement(radii[hc]);
+    }
   }
   return result;
 }
@@ -455,10 +458,10 @@ static already_AddRefed<gfx::Path> BuildSimpleInsetPath(
   const nsRect insetRect = ShapeUtils::ComputeInsetRect(
       StyleRect<LengthPercentage>::WithAllSides(LengthPercentage::Zero()),
       aCoordBox);
-  nscoord radii[8];
+  nsRectCornerRadii radii;
   const bool hasRadii =
       ShapeUtils::ComputeRectRadii(aBorderRadius, aCoordBox, insetRect, radii);
-  return ShapeUtils::BuildRectPath(insetRect, hasRadii ? radii : nullptr,
+  return ShapeUtils::BuildRectPath(insetRect, hasRadii ? &radii : nullptr,
                                    aCoordBox, AppUnitsPerCSSPixel(),
                                    aPathBuilder);
 }
@@ -472,8 +475,10 @@ static already_AddRefed<gfx::Path> BuildDefaultPathForURL(
     return nullptr;
   }
 
-  Array<const StylePathCommand, 1> array(StylePathCommand::Move(
-      StyleByTo::By, StyleCoordinatePair<StyleCSSFloat>{0.0, 0.0}));
+  using CommandEndPoint =
+      StyleCommandEndPoint<StyleShapePosition<StyleCSSFloat>, StyleCSSFloat>;
+  Array<const StylePathCommand, 1> array(
+      StylePathCommand::Move(CommandEndPoint::ByCoordinate({0.0, 0.0})));
   return SVGPathData::BuildPath(array, aBuilder, StyleStrokeLinecap::Butt, 0.0);
 }
 
@@ -646,9 +651,15 @@ static OffsetPathData GenerateOffsetPathData(
         StyleRect<LengthPercentage>::WithAllSides(LengthPercentage::Zero()),
         coordBox);
     const nsTArray<nscoord>& radii = aMotionPathData.coordBoxInsetRadii();
-    path = ShapeUtils::BuildRectPath(
-        insetRect, radii.IsEmpty() ? nullptr : radii.Elements(), coordBox,
-        AppUnitsPerCSSPixel(), builder);
+    nsRectCornerRadii rectRadii;
+    if (!radii.IsEmpty()) {
+      for (auto hc : AllPhysicalHalfCorners()) {
+        rectRadii[hc] = radii[hc];
+      }
+    }
+    path = ShapeUtils::BuildRectPath(insetRect,
+                                     radii.IsEmpty() ? nullptr : &rectRadii,
+                                     coordBox, AppUnitsPerCSSPixel(), builder);
   } else {
     path = MotionPathUtils::BuildPath(
         aOffsetPath.AsOffsetPath().path->AsShape(), aOffsetPosition, coordBox,

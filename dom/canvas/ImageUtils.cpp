@@ -37,6 +37,9 @@ static Maybe<ImageBitmapFormat> GetImageBitmapFormatFromSurfaceFromat(
     case SurfaceFormat::A8:
       return Some(ImageBitmapFormat::GRAY8);
     case SurfaceFormat::R5G6B5_UINT16:
+    case SurfaceFormat::R10G10B10A2_UINT32:
+    case SurfaceFormat::R10G10B10X2_UINT32:
+    case SurfaceFormat::R16G16B16A16F:
     case SurfaceFormat::YUV420:
     case SurfaceFormat::NV12:
     case SurfaceFormat::P010:

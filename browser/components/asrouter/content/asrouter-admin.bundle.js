@@ -604,6 +604,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
       collapsedMessages: [],
       modifiedMessages: [],
       messageBlockList: [],
+      multiProfileMessageBlocklist: [],
       evaluationStatus: {},
       stringTargetingParameters: null,
       newStringTargetingParameters: null,
@@ -919,7 +920,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
     const isBlockedByGroup = this.state.groups.filter(group => msg.groups.includes(group.id)).some(group => !group.enabled);
     const msgProvider = this.state.providers.find(provider => provider.id === msg.provider) || {};
     const isProviderExcluded = msgProvider.exclude && msgProvider.exclude.includes(msg.id);
-    const isMessageBlocked = this.state.messageBlockList.includes(msg.id) || this.state.messageBlockList.includes(msg.campaign);
+    const isMessageBlocked = this.state.messageBlockList.includes(msg.id) || this.state.messageBlockList.includes(msg.campaign) || this.state.multiProfileMessageBlocklist.includes(msg.id);
     const isBlocked = isMessageBlocked || isBlockedByGroup || isProviderExcluded;
     const impressions = this.state.messageImpressions[msg.id] ? this.state.messageImpressions[msg.id].length : 0;
     const isCollapsed = this.state.collapsedMessages.includes(msg.id);

@@ -3,7 +3,9 @@ dupe-manifest = ""
 firefox-appdir = "browser"
 head = "head_search.js"
 prefs = ["browser.search.removeEngineInfobar.enabled=true"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = [
   "icons/bigIcon.ico",
   "icons/multipleSizes.ico",
@@ -24,16 +26,13 @@ tags = "searchmain"
 ["test_appDefaultEngine.js"]
 
 ["test_appProvided_engine.js"]
-prefs = ["browser.search.newSearchConfig.enabled=true"]
 support-files = [
   "../../schema/search-config-v2-schema.json",
 ]
 
 ["test_appProvided_icons.js"]
-prefs = ["browser.search.newSearchConfig.enabled=true"]
 
 ["test_appProvided_icons_updates.js"]
-prefs = ["browser.search.newSearchConfig.enabled=true"]
 tags = "remote-settings"
 
 ["test_async.js"]
@@ -56,6 +55,8 @@ support-files = [
 ["test_defaultPrivateEngine.js"]
 
 ["test_engine_alias.js"]
+
+["test_engine_has_been_used.js"]
 
 ["test_engine_ids.js"]
 
@@ -102,6 +103,8 @@ support-files = ["settings/ignorelist.json"]
 ["test_maybereloadengine_order.js"]
 
 ["test_migrateWebExtensionEngine.js"]
+
+["test_move_engine.js"]
 
 ["test_no_excess_default_engine_changed_notifications.js"]
 
@@ -193,8 +196,6 @@ support-files = [
 
 ["test_searchSuggest_private.js"]
 
-["test_searchSuggestionCountTelemetry.js"]
-
 ["test_searchTermFromResult.js"]
 
 ["test_searchUrlDomain.js"]
@@ -229,6 +230,8 @@ support-files = [
   "icons/remoteIcon.ico",
 ]
 
+["test_settings_migrate_13.js"]
+
 ["test_settings_migrate_id_format.js"]
 
 ["test_settings_migration_hideOneOffs.js"]
@@ -240,7 +243,6 @@ support-files = ["settings/v6-ids-upgrade.json"]
 support-files = ["settings/v7-loadPath-migration.json"]
 
 ["test_settings_migration_renames.js"]
-prefs = ["browser.search.newSearchConfig.enabled=true"]
 support-files = ["settings/v6-migration-renames.json"]
 
 ["test_settings_none.js"]
@@ -262,7 +264,7 @@ support-files = [
 
 ["test_userEngine.js"]
 
-["test_userInstalledAppEngine.js"]
+["test_userInstalledConfigEngine.js"]
 
 ["test_validate_engines.js"]
 

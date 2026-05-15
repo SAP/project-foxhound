@@ -1,11 +1,15 @@
 [DEFAULT]
 support-files = [
   "head.js",
-  "dummy.html"]
+  "dummy.html",
+  "empty.html"]
 
 ["browser_BrowserTestUtils.js"]
 
 ["browser_EventUtils.js"]
+skip-if = [
+  "opt", # Bug 1993222
+]
 
 ["browser_SpecialPowersForProcessSpawn.js"]
 support-files = ["../Harness_sanity/file_xorigin_frames.html"]
@@ -20,26 +24,71 @@ https_first_disabled = true
 ["browser_document_builder_sjs.js"]
 
 ["browser_fail.js"]
+fail-if = [
+  "true",
+]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_fail_add_task.js"]
+fail-if = [
+  "true",
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
+]
 
 ["browser_fail_add_task_uncaught_rejection.js"]
+fail-if = [
+  "true",
+]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug && verify-standalone",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone",
+]
 
 ["browser_fail_async.js"]
+fail-if = [
+  "true",
+]
 
 ["browser_fail_if.js"]
-fail-if = ["true"]
+fail-if = [
+  "true",
+]
 
 ["browser_fail_throw.js"]
+fail-if = [
+  "true",
+]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && socketprocess_networking && verify-standalone",
+]
 
 ["browser_fail_timeout.js"]
 disabled = "Disabled beacuse it takes too long (bug 1178959)"
 
 ["browser_fail_uncaught_rejection.js"]
+fail-if = [
+  "true",
+]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_fail_uncaught_rejection_expected.js"]
+fail-if = [
+  "true",
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && debug && swgl && verify-standalone",
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
+]
 
 ["browser_fail_uncaught_rejection_expected_multi.js"]
+fail-if = ["true"]
 
 ["browser_fail_unexpectedTimeout.js"]
 disabled = "Disabled beacuse it takes too long (bug 1178959)"

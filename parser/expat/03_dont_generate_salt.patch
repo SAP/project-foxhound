@@ -1,7 +1,7 @@
 diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
 --- a/expat/lib/xmlparse.c
 +++ b/expat/lib/xmlparse.c
-@@ -796,6 +796,8 @@ static const XML_Char implicitContext[]
+@@ -1046,6 +1046,8 @@ static const XML_Char implicitContext[]
         ASCII_s,     ASCII_p,     ASCII_a,      ASCII_c,      ASCII_e,
         '\0'};
  
@@ -10,7 +10,7 @@ diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
  /* To avoid warnings about unused functions: */
  #if ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)
  
-@@ -957,9 +959,13 @@ ENTROPY_DEBUG(const char *label, unsigne
+@@ -1210,9 +1212,13 @@ ENTROPY_DEBUG(const char *label, unsigned long entropy) {
    }
    return entropy;
  }
@@ -24,7 +24,7 @@ diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
    unsigned long entropy;
    (void)parser;
  
-@@ -999,6 +1005,10 @@ generate_hash_secret_salt(XML_Parser par
+@@ -1252,6 +1258,10 @@ generate_hash_secret_salt(XML_Parser parser) {
                           entropy * (unsigned long)2305843009213693951ULL);
    }
  #endif

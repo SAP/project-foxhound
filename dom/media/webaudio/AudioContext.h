@@ -7,25 +7,24 @@
 #ifndef AudioContext_h_
 #define AudioContext_h_
 
-#include "X11UndefineNone.h"
 #include "AudioParamDescriptorMap.h"
-#include "mozilla/dom/OfflineAudioContextBinding.h"
-#include "mozilla/dom/AudioContextBinding.h"
 #include "MediaBufferDecoder.h"
-#include "mozilla/Attributes.h"
+#include "X11UndefineNone.h"
+#include "js/TypeDecls.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/dom/TypedArray.h"
 #include "mozilla/RelativeTimeline.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/AudioContextBinding.h"
+#include "mozilla/dom/OfflineAudioContextBinding.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsTHashMap.h"
 #include "nsHashKeys.h"
-#include "nsTHashSet.h"
-#include "js/TypeDecls.h"
 #include "nsIMemoryReporter.h"
+#include "nsTHashMap.h"
+#include "nsTHashSet.h"
 
 namespace WebCore {
 class PeriodicWave;

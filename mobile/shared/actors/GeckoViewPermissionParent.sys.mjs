@@ -56,6 +56,24 @@ export class GeckoViewPermissionParent extends GeckoViewActorParent {
       case "AddCameraPermission": {
         return this.addCameraPermission();
       }
+      case "GeckoView:MediaPermission": {
+        return this.eventDispatcher.sendRequestForResult({
+          ...aMessage.data,
+          type: "GeckoView:MediaPermission",
+        });
+      }
+      case "GeckoView:MediaRecordingStatusChanged": {
+        return this.eventDispatcher.sendRequest({
+          ...aMessage.data,
+          type: "GeckoView:MediaRecordingStatusChanged",
+        });
+      }
+      case "GeckoView:ContentPermission": {
+        return this.eventDispatcher.sendRequestForResult({
+          ...aMessage.data,
+          type: "GeckoView:ContentPermission",
+        });
+      }
     }
 
     return super.receiveMessage(aMessage);

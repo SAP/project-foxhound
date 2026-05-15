@@ -5,27 +5,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/VideoEncoder.h"
-#include "mozilla/dom/VideoEncoderBinding.h"
-#include "mozilla/dom/VideoColorSpaceBinding.h"
-#include "mozilla/dom/VideoColorSpace.h"
-#include "mozilla/dom/VideoFrame.h"
 
+#include "EncoderConfig.h"
 #include "EncoderTraits.h"
 #include "ImageContainer.h"
 #include "VideoUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/EncodedVideoChunk.h"
 #include "mozilla/dom/EncodedVideoChunkBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/VideoColorSpace.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
+#include "mozilla/dom/VideoEncoderBinding.h"
+#include "mozilla/dom/VideoFrame.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/dom/WebCodecsUtils.h"
+#include "nsIGlobalObject.h"
 #include "nsPrintfCString.h"
-#include "nsReadableUtils.h"
+#include "nsRFPService.h"
 
 extern mozilla::LazyLogModule gWebCodecsLog;
 
@@ -156,7 +156,7 @@ nsCString VideoEncoderConfigInternal::ToString() const {
 }
 
 template <typename T>
-bool MaybeAreEqual(const Maybe<T>& aLHS, const Maybe<T> aRHS) {
+bool MaybeAreEqual(const Maybe<T>& aLHS, const Maybe<T>& aRHS) {
   if (aLHS.isSome() && aRHS.isSome()) {
     return aLHS.value() == aRHS.value();
   }
@@ -278,12 +278,11 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
   // For real-time usage, typically used in web conferencing, YUV420 is the most
   // common format and is set as the default. Otherwise, Gecko's preferred
   // format, BGRA, is assumed.
-  EncoderConfig::SampleFormat format;
+  EncoderConfig::SampleFormat format(usage == Usage::Realtime
+                                         ? dom::ImageBitmapFormat::YUV420P
+                                         : dom::ImageBitmapFormat::BGRA32);
   if (usage == Usage::Realtime) {
-    format.mPixelFormat = ImageBitmapFormat::YUV420P;
     format.mColorSpace.mRange.emplace(gfx::ColorRange::LIMITED);
-  } else {
-    format.mPixelFormat = ImageBitmapFormat::BGRA32;
   }
   return EncoderConfig(codecType, {mWidth, mHeight}, usage, format,
                        SaturatingCast<uint32_t>(mFramerate.refOr(0.f)), 0,
@@ -344,7 +343,8 @@ VideoEncoderConfigInternal::Diff(
 }
 
 // https://w3c.github.io/webcodecs/#check-configuration-support
-static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig) {
+static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig,
+                      nsIGlobalObject* aGlobal) {
   // TODO: Enable WebCodecs on Android (Bug 1840508)
   if (IsOnAndroid()) {
     return false;
@@ -362,6 +362,9 @@ static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig) {
       return false;
     }
   }
+
+  ApplyResistFingerprintingIfNeeded(aConfig, aGlobal);
+
   return EncoderSupport::Supports(aConfig);
 }
 
@@ -408,7 +411,7 @@ static Result<Ok, nsresult> CloneConfiguration(
 /* static */
 bool VideoEncoderTraits::IsSupported(
     const VideoEncoderConfigInternal& aConfig) {
-  return CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(aConfig));
+  return CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(aConfig), nullptr);
 }
 
 // https://w3c.github.io/webcodecs/#valid-videoencoderconfig
@@ -496,7 +499,7 @@ VideoEncoder::VideoEncoder(
 
 VideoEncoder::~VideoEncoder() {
   LOG("VideoEncoder %p dtor", this);
-  Unused << ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+  (void)ResetInternal(NS_ERROR_DOM_ABORT_ERR);
 }
 
 JSObject* VideoEncoder::WrapObject(JSContext* aCx,
@@ -562,7 +565,8 @@ already_AddRefed<Promise> VideoEncoder::IsConfigSupported(
     return p.forget();
   }
 
-  bool canEncode = CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(config));
+  bool canEncode =
+      CanEncode(MakeRefPtr<VideoEncoderConfigInternal>(config), global);
   VideoEncoderSupport s;
   s.mConfig.Construct(std::move(config));
   s.mSupported.Construct(canEncode);

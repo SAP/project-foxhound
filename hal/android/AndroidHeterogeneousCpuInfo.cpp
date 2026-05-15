@@ -8,12 +8,13 @@
 #include "HalLog.h"
 #include "HalTypes.h"
 
-#include "mozilla/BitSet.h"
 #include "mozilla/CheckedInt.h"
 #include "prsystem.h"
 #include <fstream>
 
 namespace mozilla::hal_impl {
+
+using HeterogeneousCpuInfo = hal::HeterogeneousCpuInfo;
 
 mozilla::Maybe<HeterogeneousCpuInfo> CreateHeterogeneousCpuInfo() {
   CheckedInt<size_t> cpuCount = PR_GetNumberOfProcessors();

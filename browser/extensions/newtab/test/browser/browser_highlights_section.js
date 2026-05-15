@@ -8,6 +8,7 @@ add_setup(async function () {
 
 /**
  * Helper for setup and cleanup of Highlights section tests.
+ *
  * @param bookmarkCount Number of bookmark higlights to add
  * @param test The test case
  */
@@ -31,6 +32,7 @@ function test_highlights(bookmarkCount, test) {
     test,
     async after() {
       await clearHistoryAndBookmarks();
+      await clearHighlightsBookmarks();
     },
   });
 }

@@ -139,7 +139,7 @@ const tests = [
     {
         date: new Date("2019-01-01T00:00:00Z"),
         options: {},
-        calendar: "islamic",
+        calendar: "islamic-umalqura",
         locales: {
             "en": [Month("4"), Literal("/"), Day("25"), Literal("/"), Year("1440"), Literal(" "), Era("AH")],
             "ar-EG": [Day("٢٥"), Literal("\u200F/"), Month("٤"), Literal("\u200F/"), Year("١٤٤٠"), Literal(" "), Era("هـ")],

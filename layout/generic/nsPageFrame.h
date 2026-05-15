@@ -3,10 +3,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#ifndef nsPageFrame_h___
-#define nsPageFrame_h___
+#ifndef nsPageFrame_h_
+#define nsPageFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 #include "nsLeafFrame.h"
 
@@ -168,4 +167,4 @@ class nsPageBreakFrame final : public nsLeafFrame {
                                         ComputedStyle* aStyle);
 };
 
-#endif /* nsPageFrame_h___ */
+#endif /* nsPageFrame_h_ */

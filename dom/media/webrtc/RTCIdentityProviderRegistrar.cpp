@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RTCIdentityProviderRegistrar.h"
-#include "mozilla/Attributes.h"
+
 #include "nsCycleCollectionParticipant.h"
 
 namespace mozilla::dom {

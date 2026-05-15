@@ -13,6 +13,7 @@ $tags:
 addons:
   active_addons:
     type: object
+    lifetime: application
     description: |
       The list of currently enabled addons.
 
@@ -26,10 +27,19 @@ addons:
       addons.activeAddons. Like its counterpart, it will only have data in
       Firefox Desktop and at times and on platforms where the environment would
       have values.
+
+      NOTE: this metric is available in both `metrics` and `addons` pings. However
+      the `addons` ping is the preferred source of data for add-ons related analyses,
+      whereas the `metrics` ping is better suited for analyses that correlates other
+      metrics with the add-ons listed in the `active_addons` metric.
     bugs:
       - https://bugzilla.mozilla.org/1950416
+      - https://bugzilla.mozilla.org/1991924
+      - https://bugzilla.mozilla.org/2000866
     data_reviews:
       - https://bugzilla.mozilla.org/1950416
+      - https://bugzilla.mozilla.org/1991924
+      - https://bugzilla.mozilla.org/2000866
     data_sensitivity:
       - technical
       - interaction
@@ -86,9 +96,11 @@ addons:
     send_in_pings:
       - metrics
       - heartbeat
+      - addons
 
   theme:
     type: object
+    lifetime: application
     description: |
       The currently active theme.
 
@@ -101,10 +113,19 @@ addons:
       addons.theme. Like its counterpart, it will only have data in Firefox
       Desktop and at times and on platforms where the environment would have
       values.
+
+      NOTE: this metric is available in both `metrics` and `addons` pings. However
+      the `addons` ping is the preferred source of data for add-ons related analyses,
+      whereas the `metrics` ping is better suited for analyses that correlates other
+      metrics with the add-ons listed in the `theme` metric.
     bugs:
       - https://bugzilla.mozilla.org/1950416
+      - https://bugzilla.mozilla.org/1991924
+      - https://bugzilla.mozilla.org/2000866
     data_reviews:
       - https://bugzilla.mozilla.org/1950416
+      - https://bugzilla.mozilla.org/1991924
+      - https://bugzilla.mozilla.org/2000866
     data_sensitivity:
       - technical
       - interaction
@@ -142,9 +163,13 @@ addons:
            type: number
          signedTypes:
            type: string
+    send_in_pings:
+      - metrics
+      - addons
 
   active_g_m_plugins:
     type: object
+    lifetime: application
     description: |
       The list of currently enabled Gecko Media Plugins.
 
@@ -159,8 +184,12 @@ addons:
       have values.
     bugs:
       - https://bugzilla.mozilla.org/1950416
+      - https://bugzilla.mozilla.org/1991924
+      - https://bugzilla.mozilla.org/2000866
     data_reviews:
       - https://bugzilla.mozilla.org/1950416
+      - https://bugzilla.mozilla.org/1991924
+      - https://bugzilla.mozilla.org/2000866
     data_sensitivity:
       - technical
       - interaction
@@ -182,7 +211,9 @@ addons:
             type: boolean
           applyBackgroundUpdates:
             type: number
-
+    send_in_pings:
+      - metrics
+      - addons
 
 addons_manager:
   install: &install_update_event
@@ -205,6 +236,7 @@ addons_manager:
       - https://bugzilla.mozilla.org/1820153
       - https://bugzilla.mozilla.org/1912166
       - https://bugzilla.mozilla.org/1958151
+      - https://bugzilla.mozilla.org/1994595
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1433335#c8
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820153#c3
@@ -282,7 +314,7 @@ addons_manager:
           site_warning, site_blocked,install_disabled_warning,
           download_started, download_completed, download_failed
         type: string
-    expires: 147
+    expires: 154
 
   update: *install_update_event
 
@@ -296,19 +328,24 @@ addons_manager:
       - https://bugzilla.mozilla.org/1653020
       - https://bugzilla.mozilla.org/1699225
       - https://bugzilla.mozilla.org/1820153
+      - https://bugzilla.mozilla.org/1982913
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1653020#c6
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820153#c3
+      - https://bugzilla.mozilla.org/1982913
     data_sensitivity:
       - interaction
     notification_emails:
       - addons-dev-internal@mozilla.com
     extra_keys:
       addon_id:
-        description: Id of the addon.
+        description: Full id of the addon.
         type: string
       addon_type:
         description: Type of the add-on.
+        type: string
+      hashed_addon_id:
+        description: The hashed addon id.
         type: string
       taar_based:
         description: |
@@ -360,6 +397,7 @@ addons_manager:
       - https://bugzilla.mozilla.org/1912166
       - https://bugzilla.mozilla.org/1917859
       - https://bugzilla.mozilla.org/1958149
+      - https://bugzilla.mozilla.org/1994595
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1433335#c8
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820153#c3
@@ -401,7 +439,7 @@ addons_manager:
           The add-on blocklistState (0 not-blocked, 1 soft-blocked, 2
           hard-blocked) at the time the manage event was being collected.
         type: string
-    expires: 147
+    expires: 154
 
   report_suspicious_site:
     type: event
@@ -414,6 +452,7 @@ addons_manager:
       - https://bugzilla.mozilla.org/1820153
       - https://bugzilla.mozilla.org/1912166
       - https://bugzilla.mozilla.org/1958151
+      - https://bugzilla.mozilla.org/1994595
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1806056#c3
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1820153#c3
@@ -425,7 +464,7 @@ addons_manager:
       suspicious_site:
         description: The domain of the site that was reported.
         type: string
-    expires: 147
+    expires: 154
 
   compatibility_check_enabled:
     type: boolean
@@ -448,6 +487,7 @@ addons_manager:
       Sent when saving addonStartup.json.lz4 data back to disk fails.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966154
+      - https://bugzilla.mozilla.org/1994595
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1966154
     data_sensitivity:
@@ -470,7 +510,71 @@ addons_manager:
           and if the application version was changing, while the write error was hit.
           The expected values are: "new", "existing" "existingWithVersionChanged"
         type: string
-    expires: 147
+    expires: 154
+
+  startup_timeline:
+    type: labeled_quantity
+    unit: milliseconds since process creation
+    lifetime: application
+    description: |
+      Events on the startup timeline, in millis since process creation.
+      Previously carried in Legacy "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+    labels:
+      - AMI_startup_begin
+      - AMI_startup_end
+      - XPI_startup_begin
+      - XPI_bootstrap_addons_begin
+      - XPI_bootstrap_addons_end
+      - XPI_finalUIStartup
+      - XPI_startup_end
+
+  exception:
+    type: object
+    lifetime: application
+    description: |
+      Most recent exception reported by the Addons Manager this app session.
+      Previously reported in the "main" ping `simpleMeasurements`.
+      ```text
+      {
+        module: string module name,
+        context: string context, like the method name,
+        message: string message of the exception,
+        file: the file that the exception occured in,
+        line: the line number the exception was thrown from,
+      }
+      ```
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+    structure:
+      type: object
+      properties:
+        module:
+          type: string
+        context:
+          type: string
+        message:
+          type: string
+        file:
+          type: string
+        line:
+          type: number
+
 
 blocklist:
   last_modified_rs_addons_mblf:
@@ -787,3 +891,126 @@ blocklist:
     notification_emails:
       - addons-dev-internal@mozilla.com
     expires: never
+
+xpi.database:
+  late_stack:
+    type: text
+    lifetime: application
+    description: |
+      Stack of XPI Database `saveChanges` call happening while the XPI provider
+      is closing.
+      Previously reported in "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - stored_content
+
+  sync_stack:
+    type: text
+    lifetime: application
+    description: |
+      Stack of XPI Database `syncLoadDB` call.
+      Previously reported in "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - stored_content
+
+  late_load:
+    type: text
+    lifetime: application
+    description: |
+      Stack of XPI Database `asyncLoadDB` call happening while the XPI provider
+      is closing.
+      Previously reported in "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - stored_content
+
+  startup_load_reasons:
+    type: string_list
+    lifetime: application
+    description: |
+      List of reasons the XPI Database was updated.
+      Examples include "appChanged", "directoryState".
+      Previously reported in "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+
+  startup_error:
+    type: string
+    lifetime: application
+    description: |
+      Reason for XPI Database startup error.
+      Previously reported in "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+
+  parses:
+    type: timing_distribution
+    time_unit: millisecond
+    lifetime: ping
+    description: |
+      How long it took to parse the XPI Database.
+      Previously reported in "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+
+  rebuilds:
+    type: labeled_timing_distribution
+    time_unit: millisecond
+    lifetime: ping
+    description: |
+      How long it took to rebuild the XPI Database
+      per reason it was rebuilt.
+      Previously reported in "main" ping `simpleMeasurements`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972836
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    expires: never
+    data_sensitivity:
+      - technical
+    labels:
+      - XPIDB_rebuildReadFailed_MS
+      - XPIDB_rebuildBadJSON_MS
+      - XPIDB_rebuildUnreadableDB_MS

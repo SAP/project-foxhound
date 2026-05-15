@@ -31,6 +31,8 @@
  *  The title associated with the page, if any.
  * @property {string} [description]
  *  The description of the page, if any.
+ * @property {number} [placeId]
+ *  The machine-local (internal) id of the place.
  * @property {string|URL|nsIURI} [previewImageURL]
  *  The preview image URL of the page, if any.
  * @property {string} [siteName]
@@ -65,6 +67,10 @@
  *  values.
  */
 
+/**
+ * @import {OpenedConnection} from "resource://gre/modules/Sqlite.sys.mjs"
+ */
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -77,7 +83,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "asyncHistory",
   "@mozilla.org/browser/history;1",
-  "mozIAsyncHistory"
+  Ci.mozIAsyncHistory
 );
 
 /**
@@ -101,30 +107,32 @@ export var History = Object.freeze({
   /**
    * Fetch the available information for one page.
    *
-   * @param {URL|nsIURI|string} guidOrURI: (string) or (URL, nsIURI or href)
-   *      Either the full URI of the page or the GUID of the page.
+   * @param {URL|nsIURI|string} guidOrURI
+   *   Either the full URI of the page or the GUID of the page.
    * @param {object} [options]
-   *      An optional object whose properties describe options:
-   *        - `includeVisits` (boolean) set this to true if `visits` in the
-   *           PageInfo needs to contain VisitInfo in a reverse chronological order.
-   *           By default, `visits` is undefined inside the returned `PageInfo`.
-   *        - `includeMeta` (boolean) set this to true to fetch page meta fields,
-   *           i.e. `description`, `site_name` and `preview_image_url`.
-   *        - `includeAnnotations` (boolean) set this to true to fetch any
-   *           annotations that are associated with the page.
+   * @param {boolean} [options.includeVisits]
+   *   Set this to true if `visits` in the PageInfo needs to contain VisitInfo
+   *   in a reverse chronological order. By default, `visits` is undefined
+   *   inside the returned `PageInfo`.
+   * @param {boolean} [options.includeMeta]
+   *   Set this to true to fetch page meta fields, i.e. `description`,
+   *   `site_name` and `preview_image_url`.
+   * @param {boolean} [options.includeAnnotations]
+   *   Set this to true to fetch any annotations that are associated with the
+   *   page.
    *
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
-   * @resolves (PageInfo | null) If the page could be found, the information
-   *      on that page.
-   * @note the VisitInfo objects returned while fetching visits do not
-   *       contain the property `referrer`.
-   *       TODO: Add `referrer` to VisitInfo. See Bug #1365913.
-   * @note the visits returned will not contain `TRANSITION_EMBED` visits.
+   * @returns {Promise<?PageInfo>}
+   *   Resolve with the page information if found.
+   *
+   *   Note: the VisitInfo objects returned while fetching visits do not
+   *   contain the property `referrer`.
+   *   TODO: Add `referrer` to VisitInfo. See Bug #1365913.
+   *
+   *   Note: the visits returned will not contain `TRANSITION_EMBED` visits.
    *
    * @throws (Error)
-   *      If `guidOrURI` does not have the expected type or if it is a string
-   *      that may be parsed neither as a valid URL nor as a valid GUID.
+   *   If `guidOrURI` does not have the expected type or if it is a string that
+   *   may be parsed neither as a valid URL nor as a valid GUID.
    */
   fetch(guidOrURI, options = {}) {
     // First, normalize to guid or string, and throw if not possible
@@ -161,15 +169,11 @@ export var History = Object.freeze({
   /**
    * Fetches all pages which have one or more of the specified annotations.
    *
-   * @param annotations: An array of strings containing the annotation names to
-   *                     find.
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
-   * @resolves (Map)
-   *      A Map containing the annotations, pages and their contents, e.g.
+   * @param {string[]} annotations
+   *   An array of strings containing the annotation names to find.
+   * @returns {Promise<Map<string, object[]>>}
+   *   A Map containing the annotations, pages and their contents, e.g.
    *      Map("anno1" => [{page, content}, {page, content}]), "anno2" => ....);
-   * @rejects (Error) XXX
-   *      Rejects if the insert was unsuccessful.
    */
   fetchAnnotatedPages(annotations) {
     // See if options exists and make sense
@@ -188,13 +192,13 @@ export var History = Object.freeze({
   /**
    * Fetch multiple pages.
    *
-   * @param {string[]|nsIURI[]|URL[]} guidOrURIs: Array of href or URLs to fetch.
-   * @returns {Promise}
-   *   A promise resolved once the operation is complete.
-   * @resolves {Map<string, string>} Map of PageInfos, keyed by the input info,
-   *   either guid or href. We don't use nsIURI or URL as keys to avoid
-   *   complexity, in all the cases the caller knows which objects is handling,
-   *   and can unwrap them. Unknown input pages will have no entry in the Map.
+   * @param {string[]|nsIURI[]|URL[]} guidOrURIs
+   *   The GUIDs or URLs to fetch pages for.
+   * @returns {Promise<Map<string, PageInfo>>}
+   *   A map of PageInfos, keyed by the input info, either guid or href. We don't
+   *   use nsIURI or URL as keys to avoid complexity, in all the cases the caller
+   *   knows which objects is handling, and can unwrap them. Unknown input pages
+   *   will have no entry in the Map.
    * @throws (Error)
    *   If input is invalid, for example not a valid GUID or URL.
    */
@@ -214,24 +218,18 @@ export var History = Object.freeze({
    *
    * Any change may be observed through PlacesObservers.
    *
-   * @param pageInfo: (PageInfo)
-   *      Information on a page. This `PageInfo` MUST contain
-   *        - a property `url`, as specified by the definition of `PageInfo`.
-   *        - a property `visits`, as specified by the definition of
-   *          `PageInfo`, which MUST contain at least one visit.
-   *      If a property `title` is provided, the title of the page
-   *      is updated.
-   *      If the `date` of a visit is not provided, it defaults
-   *      to now.
-   *      If the `transition` of a visit is not provided, it defaults to
-   *      TRANSITION_LINK.
+   * @param {PageInfo} pageInfo
+   *   Information on a page. This `PageInfo` MUST contain
+   *   - a property `url`, as specified by the definition of `PageInfo`.
+   *   - a property `visits`, as specified by the definition of `PageInfo`,
+   *     which MUST contain at least one visit.
+   *   If a property `title` is provided, the title of the page is updated.
+   *   If the `date` of a visit is not provided, it defaults to now.
+   *   If the `transition` of a visit is not provided, it defaults to TRANSITION_LINK.
    *
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
-   * @resolves (PageInfo)
-   *      A PageInfo object populated with data after the insert is complete.
-   * @rejects (Error)
-   *      Rejects if the insert was unsuccessful.
+   * @returns {Promise<PageInfo>}
+   *   A PageInfo object populated with data after the insert is complete. Rejects
+   *   if the insert was unsuccessful.
    *
    * @throws (Error)
    *      If the `url` specified was for a protocol that should not be
@@ -262,28 +260,23 @@ export var History = Object.freeze({
    *
    * Any change may be observed through PlacesObservers.
    *
-   * @param pageInfos: (Array<PageInfo>)
-   *      Information on a page. This `PageInfo` MUST contain
-   *        - a property `url`, as specified by the definition of `PageInfo`.
-   *        - a property `visits`, as specified by the definition of
-   *          `PageInfo`, which MUST contain at least one visit.
-   *      If a property `title` is provided, the title of the page
-   *      is updated.
-   *      If the `date` of a visit is not provided, it defaults
-   *      to now.
-   *      If the `transition` of a visit is not provided, it defaults to
-   *      TRANSITION_LINK.
-   * @param onResult: (function(PageInfo))
-   *      A callback invoked for each page inserted.
-   * @param onError: (function(PageInfo))
-   *      A callback invoked for each page which generated an error
-   *      when an insert was attempted.
+   * @param {Array<PageInfo>} pageInfos
+   *   Information on a page. This `PageInfo` MUST contain
+   *   - a property `url`, as specified by the definition of `PageInfo`.
+   *   - a property `visits`, as specified by the definition of `PageInfo`,
+   *     which MUST contain at least one visit.
+   *   If a property `title` is provided, the title of the page is updated.
+   *   If the `date` of a visit is not provided, it defaults to now.
+   *   If the `transition` of a visit is not provided, it defaults to TRANSITION_LINK.
+   * @param {(info: PageInfo) => void} [onResult]
+   *   A callback invoked for each page inserted.
+   * @param {(info: PageInfo) => void} [onError]
+   *   A callback invoked for each page which generated an error when an insert
+   *   was attempted.
    *
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
-   * @resolves (null)
-   * @rejects (Error)
-   *      Rejects if all of the inserts were unsuccessful.
+   * @returns {Promise<void>}
+   *   A promise resolved once the operation is complete. Rejects only if all of
+   *   the inserts were unsuccessful.
    *
    * @throws (Error)
    *      If the `url` specified was for a protocol that should not be
@@ -333,37 +326,32 @@ export var History = Object.freeze({
    *
    * Any change may be observed through PlacesObservers.
    *
-   * @param page: (URL or nsIURI)
-   *      The full URI of the page.
-   *             or (string)
-   *      Either the full URI of the page or the GUID of the page.
-   *             or (Array<URL|nsIURI|string>)
-   *      An array of the above, to batch requests.
-   * @param onResult: (function(PageInfo))
-   *      A callback invoked for each page found.
+   * @param {string|nsIURI|URL|string[]|nsIURI[]|URL[]} guidOrURIs
+   *   The GUIDs or URLs to remove from the database.
+   * @param {(info: PageInfo) => void} [onResult]
+   *   A callback invoked for each page found.
    *
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
-   * @resolve (bool)
-   *      `true` if at least one page was removed, `false` otherwise.
+   * @returns {Promise<boolean>}
+   *   `true` if at least one page was removed, `false` otherwise.
    * @throws (TypeError)
-   *       If `pages` has an unexpected type or if a string provided
-   *       is neither a valid GUID nor a valid URI or if `pages`
-   *       is an empty array.
+   *   If `pages` has an unexpected type or if a string provided is neither a
+   *   valid GUID nor a valid URI or if `pages` is an empty array.
    */
-  remove(pages, onResult = null) {
+  remove(guidOrURIs, onResult = null) {
     // Normalize and type-check arguments
-    if (Array.isArray(pages)) {
-      if (!pages.length) {
+    let guidOrURIsArray;
+    if (Array.isArray(guidOrURIs)) {
+      if (!guidOrURIs.length) {
         throw new TypeError("Expected at least one page");
       }
+      guidOrURIsArray = guidOrURIs;
     } else {
-      pages = [pages];
+      guidOrURIsArray = [guidOrURIs];
     }
 
     let guids = [];
     let urls = [];
-    for (let page of pages) {
+    for (let page of guidOrURIsArray) {
       // Normalize to URL or GUID, or throw if `page` cannot
       // be normalized.
       let normalized = lazy.PlacesUtils.normalizeToURLOrGUID(page);
@@ -415,34 +403,28 @@ export var History = Object.freeze({
    *
    * Any change may be observed through PlacesObservers.
    *
-   * @param filter: (object)
-   *      The `object` may contain some of the following
-   *      properties:
-   *          - beginDate: (Date) Remove visits that have
-   *                been added since this date (inclusive).
-   *          - endDate: (Date) Remove visits that have
-   *                been added before this date (inclusive).
-   *          - limit: (Number) Limit the number of visits
-   *                we remove to this number
-   *          - url: (URL) Only remove visits to this URL
-   *          - transition: (Integer)
-   *                The type of the transition (see TRANSITIONS below)
-   *      If both `beginDate` and `endDate` are specified,
-   *      visits between `beginDate` (inclusive) and `end`
-   *      (inclusive) are removed.
-   *
-   * @param onResult: (function(VisitInfo), [optional])
-   *     A callback invoked for each visit found and removed.
-   *     Note that the referrer property of `VisitInfo`
-   *     is NOT populated.
-   *
-   * @returns (Promise)
-   * @resolve (bool)
-   *      `true` if at least one visit was removed, `false`
-   *      otherwise.
+   * @param {object} filter
+   *   A filter with details on how to remove the visits. If both `beginDate` and
+   *   `endDate` are specified, visits between `beginDate` (inclusive) and `end`
+   *   (inclusive) are removed.
+   * @param {Date} filter.beginDate
+   *   Remove visits that have been added since this date (inclusive).
+   * @param {Date} filter.endDate
+   *   Remove visits that have been added before this date (inclusive).
+   * @param {number} filter.limit
+   *   Limit the number of visits we remove to this number.
+   * @param {string|nsIURI|URL} filter.url
+   *   Only remove visits to this URL.
+   * @param {nsINavHistoryService.TransitionType} filter.transition
+   *   The type of the transition (see TRANSITIONS below).
+   * @param {(visit: VisitInfo) => void} [onResult]
+   *   A callback invoked for each visit found and removed. Note that the
+   *   referrer property of `VisitInfo` is NOT populated.
+   * @returns {Promise<boolean>}
+   *   `true` if at least one visit was removed, `false` otherwise.
    * @throws (TypeError)
-   *      If `filter` does not have the expected type, in
-   *      particular if the `object` is empty.
+   *   If `filter` does not have the expected type, in particular if the `object`
+   *   is empty.
    */
   removeVisitsByFilter(filter, onResult = null) {
     if (!filter || typeof filter != "object") {
@@ -509,30 +491,27 @@ export var History = Object.freeze({
    *
    * Any change may be observed through PlacesObservers
    *
-   * @param filter: An object containing a non empty subset of the following
-   * properties:
-   * - host: (string)
-   *     Hostname with or without subhost. Examples:
-   *       "mozilla.org" removes pages from mozilla.org but not its subdomains
-   *       ".mozilla.org" removes pages from mozilla.org and its subdomains
-   *       "." removes local files
-   * - beginDate: (Date)
-   *     The first time the page was visited (inclusive)
-   * - endDate: (Date)
-   *     The last time the page was visited (inclusive)
-   * @param [optional] onResult: (function(PageInfo))
-   *      A callback invoked for each page found.
+   * Note: This removes pages with at least one visit inside the timeframe.
+   * Any visits outside the timeframe will also be removed with the page.
    *
-   * @note This removes pages with at least one visit inside the timeframe.
-   *       Any visits outside the timeframe will also be removed with the page.
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
-   * @resolve (bool)
-   *      `true` if at least one page was removed, `false` otherwise.
+   * @param {object} filter
+   *   An object containing details of the filter wen removing pages.
+   * @param {string} filter.host
+   *   A hostname with or without subhost. Examples:
+   *   - "mozilla.org" removes pages from mozilla.org but not its subdomains
+   *   - ".mozilla.org" removes pages from mozilla.org and its subdomains
+   *   - "." removes local files
+   * @param {Date} filter.beginDate
+   *   The first time the page was visited (inclusive).
+   * @param {Date} filter.endDate
+   *   The last time the page was visited (inclusive)
+   * @param {(info: PageInfo) => void} [onResult]
+   *   A callback invoked for each page found.
+   * @returns {Promise<boolean>}
+   *  `true` if at least one page was removed, `false` otherwise.
    * @throws (TypeError)
-   *       if `filter` does not have the expected type, in particular
-   *       if the `object` is empty, or its components do not satisfy the
-   *       criteria given above
+   *   If `filter` does not have the expected type, in particular if the `object`
+   *   is empty, or its components do not satisfy the criteria given above.
    */
   removeByFilter(filter, onResult) {
     if (!filter || typeof filter !== "object") {
@@ -599,15 +578,13 @@ export var History = Object.freeze({
   /**
    * Determine if a page has been visited.
    *
-   * @param guidOrURI: (string) or (URL, nsIURI or href)
-   *      Either the full URI of the page or the GUID of the page.
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
-   * @resolve (bool)
-   *      `true` if the page has been visited, `false` otherwise.
+   * @param {string|nsIURI|URL} guidOrURI
+   *   Either the full URI of the page or the GUID of the page.
+   * @returns {Promise<boolean>}
+   *   `true` if the page has been visited, `false` otherwise.
    * @throws (Error)
-   *      If `guidOrURI` has an unexpected type or if a string provided
-   *      is neither not a valid GUID nor a valid URI.
+   *   If `guidOrURI` has an unexpected type or if a string provided is neither
+   *   not a valid GUID nor a valid URI.
    */
   hasVisits(guidOrURI) {
     // Quick fallback to the cpp version.
@@ -619,8 +596,8 @@ export var History = Object.freeze({
       });
     }
 
-    guidOrURI = lazy.PlacesUtils.normalizeToURLOrGUID(guidOrURI);
-    let isGuid = typeof guidOrURI == "string";
+    let guidOrURL = lazy.PlacesUtils.normalizeToURLOrGUID(guidOrURI);
+    let isGuid = typeof guidOrURL == "string";
     let sqlFragment = isGuid
       ? "guid = :val"
       : "url_hash = hash(:val) AND url = :val ";
@@ -630,7 +607,7 @@ export var History = Object.freeze({
         `SELECT 1 FROM moz_places
                                          WHERE ${sqlFragment}
                                          AND last_visit_date NOTNULL`,
-        { val: isGuid ? guidOrURI : guidOrURI.href }
+        { val: isGuid ? guidOrURL : guidOrURL.href }
       );
       return !!rows.length;
     });
@@ -639,8 +616,8 @@ export var History = Object.freeze({
   /**
    * Clear all history.
    *
-   * @returns (Promise)
-   *      A promise resolved once the operation is complete.
+   * @returns {Promise<void>}
+   *   A promise resolved once the operation is complete.
    */
   clear() {
     return lazy.PlacesUtils.withConnectionWrapper(
@@ -652,8 +629,8 @@ export var History = Object.freeze({
   /**
    * Is a value a valid transition type?
    *
-   * @param transition: (String)
-   * @returns (Boolean)
+   * @param {nsINavHistoryService.TransitionType} transition
+   * @returns {boolean}
    */
   isValidTransition(transition) {
     return Object.values(History.TRANSITIONS).includes(transition);
@@ -661,6 +638,8 @@ export var History = Object.freeze({
 
   /**
    * Throw if an object is not a Date object.
+   *
+   * @param {any} arg
    */
   ensureDate(arg) {
     if (
@@ -684,53 +663,52 @@ export var History = Object.freeze({
    * whether the page and its meta information exist or not. Beware that
    * fetch&update might fail as they are not executed in a single transaction.
    *
-   * @param pageInfo: (PageInfo)
-   *      pageInfo must contain a URL of the target page. It will be ignored
-   *      if a valid page `guid` is also provided.
+   * @param {PageInfo} pageInfo
+   *   pageInfo must contain a URL of the target page. It will be ignored if a
+   *   valid page `guid` is also provided.
    *
-   *      If a property `description` is provided, the description of the
-   *      page is updated. Note that:
-   *      1). An empty string or null `description` will clear the existing
-   *          value in the database.
-   *      2). Descriptions longer than DB_DESCRIPTION_LENGTH_MAX will be
-   *          truncated.
+   *   If a property `description` is provided, the description of the page is
+   *   updated. Note that:
+   *     1). An empty string or null `description` will clear the existing
+   *         value in the database.
+   *     2). Descriptions longer than DB_DESCRIPTION_LENGTH_MAX will be
+   *         truncated.
    *
-   *      If a property `siteName` is provided, the site name of the
-   *      page is updated. Note that:
-   *      1). An empty string or null `siteName` will clear the existing
-   *          value in the database.
-   *      2). Descriptions longer than DB_SITENAME_LENGTH_MAX will be
-   *          truncated.
+   *   If a property `siteName` is provided, the site name of the page is
+   *   updated. Note that:
+   *     1). An empty string or null `siteName` will clear the existing
+   *         value in the database.
+   *     2). Descriptions longer than DB_SITENAME_LENGTH_MAX will be
+   *         truncated.
    *
-   *      If a property `previewImageURL` is provided, the preview image
-   *      URL of the page is updated. Note that:
-   *      1). A null `previewImageURL` will clear the existing value in the
-   *          database.
-   *      2). It throws if its length is greater than DB_URL_LENGTH_MAX
-   *          defined in PlacesUtils.sys.mjs.
+   *   If a property `previewImageURL` is provided, the preview imaged URL of
+   *   the page is updated. Note that:
+   *     1). A null `previewImageURL` will clear the existing value in the
+   *         database.
+   *     2). It throws if its length is greater than DB_URL_LENGTH_MAX
+   *         defined in PlacesUtils.sys.mjs.
    *
-   *      If a property `annotations` is provided, the annotations will be
-   *      updated. Note that:
-   *      1). It should be a Map containing key/value pairs to be updated.
-   *      2). If the value is falsy, the annotation will be removed.
-   *      3). If the value is non-falsy, the annotation will be added or updated.
-   *      For `annotations` the keys must all be strings, the values should be
-   *      Boolean, Number or Strings. null and undefined are supported as falsy values.
+   *   If a property `annotations` is provided, the annotations will be updated.
+   *   Note that:
+   *     1). It should be a Map containing key/value pairs to be updated.
+   *     2). If the value is falsy, the annotation will be removed.
+   *     3). If the value is non-falsy, the annotation will be added or updated.
+   *     For `annotations` the keys must all be strings, the values should be
+   *     Boolean, Number or Strings. null and undefined are supported as falsy values.
    *
-   * @returns (Promise)
-   *      A promise resolved once the update is complete.
-   * @rejects (Error)
-   *      Rejects if the update was unsuccessful.
+   * @returns {Promise<void>}
+   *   A promise resolved once the update is complete. Rejects if the update was
+   *   unsuccessful.
    *
    * @throws (Error)
-   *      If `pageInfo` has an unexpected type.
+   *   If `pageInfo` has an unexpected type.
    * @throws (Error)
-   *      If `pageInfo` has an invalid `url` or an invalid `guid`.
+   *   If `pageInfo` has an invalid `url` or an invalid `guid`.
    * @throws (Error)
-   *      If `pageInfo` has neither `description` nor `previewImageURL`.
+   *   If `pageInfo` has neither `description` nor `previewImageURL`.
    * @throws (Error)
-   *      If the length of `pageInfo.previewImageURL` is greater than
-   *      DB_URL_LENGTH_MAX defined in PlacesUtils.sys.mjs.
+   *   If the length of `pageInfo.previewImageURL` is greater than
+   *   DB_URL_LENGTH_MAX defined in PlacesUtils.sys.mjs.
    */
   update(pageInfo) {
     let info = lazy.PlacesUtils.validatePageInfo(pageInfo, false);
@@ -757,7 +735,7 @@ export var History = Object.freeze({
    * objects.
    */
 
-  TRANSITIONS: {
+  TRANSITIONS: Object.freeze({
     /**
      * The user followed a link and got a new toplevel window.
      */
@@ -808,7 +786,7 @@ export var History = Object.freeze({
      * The user reloaded a page.
      */
     RELOAD: Ci.nsINavHistoryService.TRANSITION_RELOAD,
-  },
+  }),
 });
 
 /**
@@ -817,8 +795,9 @@ export var History = Object.freeze({
  * Note: this assumes that the PageInfo object has already been validated
  * via PlacesUtils.validatePageInfo.
  *
- * @param pageInfo: (PageInfo)
- * @returns (info)
+ * @param {PageInfo} pageInfo
+ *   The pageInfo to be converted.
+ * @returns {object}
  */
 function convertForUpdatePlaces(pageInfo) {
   let info = {
@@ -883,19 +862,19 @@ var clear = async function (db) {
  * are no more foreign keys such as bookmarks) or updating
  * their frecency (otherwise).
  *
- * @param db: (Sqlite connection)
- *      The database.
- * @param pages: (Array of objects)
- *      Pages that have been touched and that need cleaning up.
- *      Each object should have the following properties:
- *          - id: (number) The `moz_places` identifier for the place.
- *          - hasVisits: (boolean) If `true`, there remains at least one
- *              visit to this page, so the page should be kept and its
- *              frecency updated.
- *          - hasForeign: (boolean) If `true`, the page has at least
- *              one foreign reference (i.e. a bookmark), so the page should
- *              be kept and its frecency updated.
- * @returns (Promise)
+ * @param {OpenedConnection} db
+ *   The database.
+ * @param {object[]} pages
+ *   Pages that have been touched and that need cleaning up.
+ * @param {number} pages.id
+ *   The `moz_places` identifier for the place.
+ * @param {boolean} pages.hasVisits
+ *   If `true`, there remains at least one visit to this page, so the page
+ *   should be kept and its frecency updated.
+ * @param {boolean} pages.hasForeign
+ *   If `true`, the page has at least one foreign reference (i.e. a bookmark),
+ *   so the page should be kept and its frecency updated.
+ * @returns {Promise<void>}
  */
 var cleanupPages = async function (db, pages) {
   let pagesToRemove = pages.filter(p => !p.hasForeign && !p.hasVisits);
@@ -953,8 +932,8 @@ var cleanupPages = async function (db, pages) {
 /**
  * Remove icons whose origin is not in moz_origins, unless referenced.
  *
- * @param db: (Sqlite connection)
- *      The database.
+ * @param {OpenedConnection} db
+ *   The database.
  */
 function removeOrphanIcons(db) {
   return db.executeCached(`
@@ -973,22 +952,26 @@ function removeOrphanIcons(db) {
 /**
  * Notify observers that pages have been removed/updated.
  *
- * @param db: (Sqlite connection)
- *      The database.
- * @param pages: (Array of objects)
- *      Pages that have been touched and that need cleaning up.
- *      Each object should have the following properties:
- *          - id: (number) The `moz_places` identifier for the place.
- *          - hasVisits: (boolean) If `true`, there remains at least one
- *              visit to this page, so the page should be kept and its
- *              frecency updated.
- *          - hasForeign: (boolean) If `true`, the page has at least
- *              one foreign reference (i.e. a bookmark), so the page should
- *              be kept and its frecency updated.
- * @param transitionType: (Number)
- *      Set to a valid TRANSITIONS value to indicate all transitions of a
- *      certain type have been removed, otherwise defaults to 0 (unknown value).
- * @returns (Promise)
+ * @param {OpenedConnection} db
+ *   The database.
+ * @param {object[]} pages
+ *   Pages that have been touched and that need cleaning up.
+ * @param {number} pages.id
+ *   The `moz_places` identifier for the place.
+ * @param {string} pages.guid
+ *   The guid of the page.
+ * @param {URL} pages.url
+ *   The URL of the page.
+ * @param {boolean} pages.hasVisits
+ *   If `true`, there remains at least one visit to this page, so the page
+ *   should be kept and its frecency updated.
+ * @param {boolean} pages.hasForeign
+ *   If `true`, the page has at least one foreign reference (i.e. a bookmark),
+ *   so the page should be kept and its frecency updated.
+ * @param {nsINavHistoryService.TransitionType|0} transitionType
+ *   Set to a valid TRANSITIONS value to indicate all transitions of a certain
+ *   type have been removed, otherwise defaults to 0 (unknown value).
+ * @returns {Promise<void>}
  */
 var notifyCleanup = async function (db, pages, transitionType = 0) {
   const notifications = [];
@@ -1002,7 +985,7 @@ var notifyCleanup = async function (db, pages, transitionType = 0) {
         reason: PlacesVisitRemoved.REASON_DELETED,
         transitionType,
         isRemovedFromStore,
-        isPartialVisistsRemoval: !isRemovedFromStore && page.hasVisits > 0,
+        isPartialVisistsRemoval: !isRemovedFromStore && !!page.hasVisits,
       })
     );
   }
@@ -1014,11 +997,12 @@ var notifyCleanup = async function (db, pages, transitionType = 0) {
  * Notify an `onResult` callback of a set of operations
  * that just took place.
  *
- * @param data: (Array)
- *      The data to send to the callback.
- * @param onResult: (function [optional])
- *      If provided, call `onResult` with `data[0]`, `data[1]`, etc.
- *      Otherwise, do nothing.
+ * @template T
+ * @param {T[]} data
+ *   The data to send to the callback.
+ * @param {(info: T) => void} onResult
+ *   If provided, call `onResult` with `data[0]`, `data[1]`, etc. Otherwise,
+ *   do nothing.
  */
 var notifyOnResult = async function (data, onResult) {
   if (!onResult) {
@@ -1529,16 +1513,15 @@ var remove = async function (db, { guids, urls }, onResult = null) {
  * Merges an updateInfo object, as returned by asyncHistory.updatePlaces
  * into a PageInfo object as defined in this file.
  *
- * @param updateInfo: (Object)
- *      An object that represents a page that is generated by
- *      asyncHistory.updatePlaces.
- * @param pageInfo: (PageInfo)
- *      An PageInfo object into which to merge the data from updateInfo.
- *      Defaults to an empty object so that this method can be used
- *      to simply convert an updateInfo object into a PageInfo object.
- *
- * @returns (PageInfo)
- *      A PageInfo object populated with data from updateInfo.
+ * @param {mozIPlaceInfo} updateInfo
+ *   An object that represents a page that is generated by
+ *   asyncHistory.updatePlaces.
+ * @param {PageInfo} pageInfo
+ *   An PageInfo object into which to merge the data from updateInfo. Defaults
+ *   to an empty object so that this method can be used to simply convert an
+ *   updateInfo object into a PageInfo object.
+ * @returns {PageInfo}
+ *   A PageInfo object populated with data from updateInfo.
  */
 function mergeUpdateInfoIntoPageInfo(updateInfo, pageInfo = {}) {
   pageInfo.guid = updateInfo.guid;

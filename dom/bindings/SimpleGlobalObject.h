@@ -10,17 +10,17 @@
  * is safe to use on both mainthread and worker threads.
  */
 
-#ifndef mozilla_dom_SimpleGlobalObject_h__
-#define mozilla_dom_SimpleGlobalObject_h__
+#ifndef mozilla_dom_SimpleGlobalObject_h_
+#define mozilla_dom_SimpleGlobalObject_h_
 
-#include "nsThreadUtils.h"
+#include "js/TypeDecls.h"
+#include "js/Value.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsISupportsImpl.h"
+#include "nsThreadUtils.h"
 #include "nsWrapperCache.h"
-#include "js/TypeDecls.h"
-#include "js/Value.h"
 
 namespace mozilla::dom {
 
@@ -100,4 +100,4 @@ class SimpleGlobalObject final : public nsIGlobalObject, public nsWrapperCache {
 
 }  // namespace mozilla::dom
 
-#endif /* mozilla_dom_SimpleGlobalObject_h__ */
+#endif /* mozilla_dom_SimpleGlobalObject_h_ */

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIWeakReferenceUtils_h__
-#define nsIWeakReferenceUtils_h__
+#ifndef nsIWeakReferenceUtils_h_
+#define nsIWeakReferenceUtils_h_
 
 #include "nsCOMPtr.h"
 #include "nsIWeakReference.h"

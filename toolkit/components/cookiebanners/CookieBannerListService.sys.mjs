@@ -321,6 +321,7 @@ export class CookieBannerListService {
 
   /**
    * Converts runContext string field to nsIClickRule::RunContext
+   *
    * @param {('top'|'child'|'all')} runContextStr - Run context as string.
    * @returns nsIClickRule::RunContext representation.
    */

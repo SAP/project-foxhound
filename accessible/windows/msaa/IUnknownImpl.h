@@ -20,12 +20,6 @@
 #  pragma warning(disable : 4509)
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-#  define ATTRIBUTE_UNUSED __attribute__((unused))
-#else
-#  define ATTRIBUTE_UNUSED
-#endif
-
 namespace mozilla {
 namespace a11y {
 
@@ -79,7 +73,7 @@ class AutoRefCnt {
     if (!aInstancePtr) return E_INVALIDARG;                 \
     *aInstancePtr = nullptr;                                \
                                                             \
-    HRESULT hr ATTRIBUTE_UNUSED = E_NOINTERFACE;
+    [[maybe_unused]] HRESULT hr = E_NOINTERFACE;
 
 #define IMPL_IUNKNOWN_QUERY_TAIL \
   return hr;                     \

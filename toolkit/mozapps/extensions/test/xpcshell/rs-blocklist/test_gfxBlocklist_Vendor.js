@@ -49,7 +49,7 @@ async function run_test() {
   await promiseStartupManager();
 
   function checkBlocklist() {
-    var status = gfxInfo.getFeatureStatusStr("DIRECT2D");
+    var status = gfxInfo.getFeatureStatusStr("DX_NV12");
     Assert.equal(status, "STATUS_OK");
 
     status = gfxInfo.getFeatureStatusStr("DIRECT3D_9_LAYERS");

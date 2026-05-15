@@ -16,9 +16,10 @@ function baseCopyFormatter({ name, value, hasChildren }) {
 }
 
 /**
- * The default format for the content copied to the
- *  clipboard when the `Copy All` option is selected.
- * @param {Object} object The whole data object
+ * The default format for the content copied to the clipboard when the `Copy All`
+ * option is selected.
+ *
+ * @param {object} object The whole data object
  */
 function baseCopyAllFormatter(object) {
   return JSON.stringify(object, null, "\t");

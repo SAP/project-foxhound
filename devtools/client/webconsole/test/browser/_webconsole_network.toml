@@ -1,0 +1,58 @@
+[DEFAULT]
+tags = "devtools"
+subsuite = "devtools"
+support-files = [
+  "sjs_slow-response-test-server.sjs",
+  "test-console.html",
+  "test-image.png",
+  "test-image.png^headers^",
+  "test-network-exceptions.html",
+  "test-network-request.html",
+  "test-network.html",
+  "testscript.js",
+  # head.js dependencies:
+  "head.js",
+  "shared-head.js", # Required by head.js
+  "!/devtools/client/shared/test/shared-head.js", # Required by head.js
+  "!/devtools/client/debugger/test/mochitest/shared-head.js", # Required by head.js
+  "!/devtools/client/shared/test/telemetry-test-helpers.js", # Required by /devtools/client/shared/test/shared-head.js
+  "!/devtools/client/shared/test/highlighter-test-actor.js", # Required by /devtools/client/shared/test/shared-head.js
+]
+
+["browser_webconsole_network_attach.js"]
+
+["browser_webconsole_network_exceptions.js"]
+
+["browser_webconsole_network_file_uri.js"]
+
+["browser_webconsole_network_message_close_on_escape.js"]
+
+["browser_webconsole_network_message_ctrl_click.js"]
+
+["browser_webconsole_network_messages_after_target_switching.js"]
+
+["browser_webconsole_network_messages_expand.js"]
+
+["browser_webconsole_network_messages_expand_before_updates.js"]
+
+["browser_webconsole_network_messages_html_preview.js"]
+
+["browser_webconsole_network_messages_openinnet.js"]
+
+["browser_webconsole_network_messages_resend_request.js"]
+
+["browser_webconsole_network_messages_stacktrace_console_initiated_request.js"]
+
+["browser_webconsole_network_messages_status_code.js"]
+fail-if = [
+  "a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
+
+["browser_webconsole_network_requests_from_chrome.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && http3", # Bug 1829298
+]
+
+["browser_webconsole_network_reset_filter.js"]
+
+["browser_webconsole_network_unicode.js"]

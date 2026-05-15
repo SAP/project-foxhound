@@ -9,6 +9,7 @@ import android.util.AttributeSet
 import android.widget.ImageView
 import android.widget.RadioButton
 import android.widget.TextView
+import androidx.core.content.edit
 import androidx.core.content.withStyledAttributes
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
@@ -34,6 +35,15 @@ class ToggleRadioButtonPreference @JvmOverloads constructor(
     private var trueOptionIconRes: Int = 0
     private var falseOptionIconRes: Int = 0
 
+    private var onToggleChanged: ((Boolean) -> Unit)? = null
+
+    /**
+     * Registers a listener that is invoked whenever the toggle selection changes.
+     */
+    fun setOnToggleChanged(listener: (Boolean) -> Unit) {
+        onToggleChanged = listener
+    }
+
     init {
         layoutResource = R.layout.preference_widget_toggle_radio_button
         isSelectable = false
@@ -58,6 +68,8 @@ class ToggleRadioButtonPreference @JvmOverloads constructor(
 
         val optionTrueRadio = optionTrueView.findViewById<RadioButton>(R.id.radio_button)
         val optionFalseRadio = optionFalseView.findViewById<RadioButton>(R.id.radio_button)
+        optionTrueRadio.setStartCheckedIndicator()
+        optionFalseRadio.setStartCheckedIndicator()
 
         val optionTrueTitle = optionTrueView.findViewById<TextView>(R.id.title)
         val optionFalseTitle = optionFalseView.findViewById<TextView>(R.id.title)
@@ -77,15 +89,29 @@ class ToggleRadioButtonPreference @JvmOverloads constructor(
         optionTrueView.setOnClickListener {
             optionTrueIconView.isSelected = true
             optionFalseIconView.isSelected = false
-            preferences.edit().putBoolean(sharedKey, true).apply()
+            preferences.edit { putBoolean(sharedKey, true) }
             notifyChanged()
+            onToggleChanged?.invoke(true)
         }
 
         optionFalseView.setOnClickListener {
             optionTrueIconView.isSelected = false
             optionFalseIconView.isSelected = true
-            preferences.edit().putBoolean(sharedKey, false).apply()
+            preferences.edit { putBoolean(sharedKey, false) }
             notifyChanged()
+            onToggleChanged?.invoke(false)
         }
+    }
+
+    /**
+     * Updates the icon resources for the true and false states of the preference and refreshes the UI.
+     *
+     * @param trueOptionIconRes Resource ID for the icon shown when the preference is checked (true).
+     * @param falseOptionIconRes Resource ID for the icon shown when the preference is unchecked (false).
+     */
+    fun updateIcon(trueOptionIconRes: Int, falseOptionIconRes: Int) {
+        this.trueOptionIconRes = trueOptionIconRes
+        this.falseOptionIconRes = falseOptionIconRes
+        notifyChanged()
     }
 }

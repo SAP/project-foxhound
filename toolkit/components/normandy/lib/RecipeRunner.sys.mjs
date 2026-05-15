@@ -11,7 +11,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "timerManager",
   "@mozilla.org/updates/timer-manager;1",
-  "nsIUpdateTimerManager"
+  Ci.nsIUpdateTimerManager
 );
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -388,7 +388,7 @@ export var RecipeRunner = {
    *
    * This is used to pre-filter recipes that aren't compatible with this client.
    *
-   * @returns {Set<String>} The capabilities supported by this client.
+   * @returns {Set<string>} The capabilities supported by this client.
    */
   getCapabilities() {
     let capabilities = new Set([
@@ -464,7 +464,7 @@ export var RecipeRunner = {
    * @param {object} recipe
    * @param {object} signature
    * @param {string} recipe.filter_expression The expression to evaluate against the environment.
-   * @param {Set<String>} runnerCapabilities The capabilities provided by this runner.
+   * @param {Set<string>} runnerCapabilities The capabilities provided by this runner.
    * @return {Promise<BaseAction.suitability>} The recipe's suitability
    */
   async getRecipeSuitability(recipe, signature) {

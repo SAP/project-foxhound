@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsPrinterCUPS_h___
-#define nsPrinterCUPS_h___
+#ifndef nsPrinterCUPS_h_
+#define nsPrinterCUPS_h_
 
 #include "nsPrinterBase.h"
 #include "nsPrintSettingsImpl.h"
@@ -178,4 +178,4 @@ class nsPrinterCUPS final : public nsPrinterBase {
       macro_("BLW", "TrueM")                      /* Lexmark */                \
       macro_("EPRendering", "None")               /* Epson */
 
-#endif /* nsPrinterCUPS_h___ */
+#endif /* nsPrinterCUPS_h_ */

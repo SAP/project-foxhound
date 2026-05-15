@@ -16,6 +16,7 @@ kind-dependencies:
 
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         build_platform: android
         build-type: regular
@@ -26,10 +27,12 @@ task-defaults:
     fetches:
         toolchain:
             - android-sdk-linux
+            - linux64-embedded-uniffi-bindgen
+            - linux64-nimbus-fml
             - android-gradle-dependencies
             - linux64-jdk
         build-fat-aar:
-            - target.maven.tar.xz
+            - target.maven.zip
     include-coverage: true
     run:
         pre-gradlew:
@@ -40,7 +43,7 @@ task-defaults:
         platform: AC-android-all/opt
         tier: 1
         symbol: 'samples-browser(B)'
-    worker-type: b-linux-medium-gcp
+    worker-type: b-linux-medium
     worker:
         chain-of-trust: true
         docker-image: {in-tree: android-components}

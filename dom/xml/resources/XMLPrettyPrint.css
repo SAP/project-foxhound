@@ -9,6 +9,10 @@
   color-scheme: light dark;
 }
 
+#top {
+  font-family: monospace;
+}
+
 #header {
   background-color: #ccc;
   border-bottom: 3px solid black;
@@ -53,7 +57,6 @@
 }
 
 .comment {
-  font-family: monospace;
   white-space: pre;
 }
 

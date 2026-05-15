@@ -43,6 +43,8 @@ int SandboxOpenedFile::GetDesc() const {
   if (mDup) {
     fd = mMaybeFd;
     if (fd >= 0) {
+      // This runs in a sandboxed process that can't exec, so the use
+      // of dup instead of F_DUPFD_CLOEXEC doesn't matter.
       fd = dup(fd);
       if (fd < 0) {
         SANDBOX_LOG_ERRNO("dup");

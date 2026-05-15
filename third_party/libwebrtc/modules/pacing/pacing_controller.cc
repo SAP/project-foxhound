@@ -20,7 +20,6 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"
-#include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/field_trials_view.h"
@@ -43,15 +42,6 @@ constexpr TimeDelta kCongestedPacketInterval = TimeDelta::Millis(500);
 // The maximum debt level, in terms of time, capped when sending packets.
 constexpr TimeDelta kMaxDebtInTime = TimeDelta::Millis(500);
 constexpr TimeDelta kMaxElapsedTime = TimeDelta::Seconds(2);
-
-bool IsDisabled(const FieldTrialsView& field_trials, absl::string_view key) {
-  return absl::StartsWith(field_trials.Lookup(key), "Disabled");
-}
-
-bool IsEnabled(const FieldTrialsView& field_trials, absl::string_view key) {
-  return absl::StartsWith(field_trials.Lookup(key), "Enabled");
-}
-
 }  // namespace
 
 const TimeDelta PacingController::kPausedProcessInterval =
@@ -69,20 +59,18 @@ PacingController::PacingController(Clock* clock,
                                    Configuration configuration)
     : clock_(clock),
       packet_sender_(packet_sender),
-      field_trials_(field_trials),
-      drain_large_queues_(
-          configuration.drain_large_queues &&
-          !IsDisabled(field_trials_, "WebRTC-Pacer-DrainQueue")),
+      drain_large_queues_(configuration.drain_large_queues &&
+                          !field_trials.IsDisabled("WebRTC-Pacer-DrainQueue")),
       send_padding_if_silent_(
-          IsEnabled(field_trials_, "WebRTC-Pacer-PadInSilence")),
-      pace_audio_(IsEnabled(field_trials_, "WebRTC-Pacer-BlockAudio")),
+          field_trials.IsEnabled("WebRTC-Pacer-PadInSilence")),
+      pace_audio_(field_trials.IsEnabled("WebRTC-Pacer-BlockAudio")),
       ignore_transport_overhead_(
-          IsEnabled(field_trials_, "WebRTC-Pacer-IgnoreTransportOverhead")),
+          field_trials.IsEnabled("WebRTC-Pacer-IgnoreTransportOverhead")),
       fast_retransmissions_(
-          IsEnabled(field_trials_, "WebRTC-Pacer-FastRetransmissions")),
+          field_trials.IsEnabled("WebRTC-Pacer-FastRetransmissions")),
       keyframe_flushing_(
           configuration.keyframe_flushing ||
-          IsEnabled(field_trials_, "WebRTC-Pacer-KeyframeFlushing")),
+          field_trials.IsEnabled("WebRTC-Pacer-KeyframeFlushing")),
       transport_overhead_per_packet_(DataSize::Zero()),
       send_burst_interval_(configuration.send_burst_interval),
       last_timestamp_(clock_->CurrentTime()),
@@ -92,7 +80,7 @@ PacingController::PacingController(Clock* clock,
       pacing_rate_(DataRate::Zero()),
       adjusted_media_rate_(DataRate::Zero()),
       padding_rate_(DataRate::Zero()),
-      prober_(field_trials_),
+      prober_(field_trials),
       probing_send_failure_(false),
       last_process_time_(clock->CurrentTime()),
       last_send_time_(last_process_time_),
@@ -114,7 +102,7 @@ PacingController::PacingController(Clock* clock,
 PacingController::~PacingController() = default;
 
 void PacingController::CreateProbeClusters(
-    rtc::ArrayView<const ProbeClusterConfig> probe_cluster_configs) {
+    ArrayView<const ProbeClusterConfig> probe_cluster_configs) {
   for (const ProbeClusterConfig probe_cluster_config : probe_cluster_configs) {
     prober_.CreateProbeCluster(probe_cluster_config);
   }
@@ -177,28 +165,28 @@ void PacingController::SetProbingEnabled(bool enabled) {
 
 void PacingController::SetPacingRates(DataRate pacing_rate,
                                       DataRate padding_rate) {
-  RTC_CHECK_GT(pacing_rate, DataRate::Zero());
-  RTC_CHECK_GE(padding_rate, DataRate::Zero());
-  if (padding_rate > pacing_rate) {
-    RTC_LOG(LS_WARNING) << "Padding rate " << padding_rate.kbps()
+  SetPacerConfig(PacerConfig::Create(Timestamp::Zero(), pacing_rate,
+                                     padding_rate, send_burst_interval_));
+}
+
+void PacingController::SetPacerConfig(PacerConfig pacer_config) {
+  RTC_DCHECK(pacer_config.time_window.IsFinite());
+  if (pacer_config.pad_rate() > pacer_config.data_rate()) {
+    RTC_LOG(LS_WARNING) << "Padding rate " << pacer_config.pad_rate().kbps()
                         << "kbps is higher than the pacing rate "
-                        << pacing_rate.kbps() << "kbps, capping.";
-    padding_rate = pacing_rate;
+                        << padding_rate_.kbps() << "kbps, capping.";
+    padding_rate_ = pacer_config.data_rate();
+  } else {
+    padding_rate_ = pacer_config.pad_rate();
   }
 
-  if (pacing_rate > max_rate || padding_rate > max_rate) {
-    RTC_LOG(LS_WARNING) << "Very high pacing rates ( > " << max_rate.kbps()
-                        << " kbps) configured: pacing = " << pacing_rate.kbps()
-                        << " kbps, padding = " << padding_rate.kbps()
-                        << " kbps.";
-    max_rate = std::max(pacing_rate, padding_rate) * 1.1;
-  }
-  pacing_rate_ = pacing_rate;
-  padding_rate_ = padding_rate;
+  pacing_rate_ = pacer_config.data_rate();
+  send_burst_interval_ = pacer_config.time_window;
+
   MaybeUpdateMediaRateDueToLongQueue(CurrentTime());
 
   RTC_LOG(LS_VERBOSE) << "bwe:pacer_updated pacing_kbps=" << pacing_rate_.kbps()
-                      << " padding_budget_kbps=" << padding_rate.kbps();
+                      << " padding_budget_kbps=" << padding_rate_.kbps();
 }
 
 void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
@@ -221,7 +209,7 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
     }
   }
 
-  prober_.OnIncomingPacket(DataSize::Bytes(packet->payload_size()));
+  prober_.OnIncomingPacket(DataSize::Bytes(packet->size()));
 
   const Timestamp now = CurrentTime();
   if (packet_queue_.Empty()) {

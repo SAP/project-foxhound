@@ -12,7 +12,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObserverBinding.h"
 #include "mozilla/dom/Nullable.h"
 #include "nsCOMArray.h"
@@ -21,6 +20,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIAnimationObserver.h"
+#include "nsIMutationObserver.h"
 #include "nsPIDOMWindow.h"
 #include "nsStubAnimationObserver.h"
 #include "nsTArray.h"
@@ -338,7 +338,7 @@ class nsMutationReceiver : public nsMutationReceiverBase {
                                           nsAtom* aAttribute) override {
     // We can reuse AttributeWillChange implementation.
     AttributeWillChange(aElement, aNameSpaceID, aAttribute,
-                        mozilla::dom::MutationEvent_Binding::MODIFICATION);
+                        AttrModType::Modification);
   }
 
  protected:

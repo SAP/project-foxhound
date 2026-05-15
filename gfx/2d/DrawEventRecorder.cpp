@@ -6,7 +6,6 @@
 
 #include "DrawEventRecorder.h"
 
-#include "mozilla/UniquePtrExtensions.h"
 #include "PathRecording.h"
 #include "RecordingTypes.h"
 #include "RecordedEventImpl.h"
@@ -44,43 +43,34 @@ void DrawEventRecorderPrivate::StoreSourceSurfaceRecording(
     SourceSurface* aSurface, const char* aReason) {
   NS_ASSERT_OWNINGTHREAD(DrawEventRecorderPrivate);
 
-  RefPtr<DataSourceSurface> dataSurf = aSurface->GetDataSurface();
+  RefPtr<DataSourceSurface> dataSurf;
   IntSize surfaceSize = aSurface->GetSize();
-  Maybe<DataSourceSurface::ScopedMap> map;
-  if (dataSurf) {
-    map.emplace(dataSurf, DataSourceSurface::READ);
+  if (Factory::AllowedSurfaceSize(surfaceSize)) {
+    dataSurf = aSurface->GetDataSurface();
   }
-  if (!dataSurf || !map->IsMapped() ||
-      !Factory::AllowedSurfaceSize(surfaceSize)) {
+  if (!dataSurf) {
     gfxWarning() << "Recording failed to record SourceSurface for " << aReason;
 
     // If surface size is not allowed, replace with reasonable size.
-    if (!Factory::AllowedSurfaceSize(surfaceSize)) {
-      surfaceSize.width = std::min(surfaceSize.width, kReasonableSurfaceSize);
-      surfaceSize.height = std::min(surfaceSize.height, kReasonableSurfaceSize);
-    }
+    surfaceSize.width = std::min(surfaceSize.width, kReasonableSurfaceSize);
+    surfaceSize.height = std::min(surfaceSize.height, kReasonableSurfaceSize);
 
     // Insert a dummy source surface.
-    int32_t stride = surfaceSize.width * BytesPerPixel(aSurface->GetFormat());
-    UniquePtr<uint8_t[]> sourceData =
-        MakeUniqueFallible<uint8_t[]>(stride * surfaceSize.height);
-    if (!sourceData) {
-      // If the surface is too big just create a 1 x 1 dummy.
-      surfaceSize.width = 1;
-      surfaceSize.height = 1;
-      stride = surfaceSize.width * BytesPerPixel(aSurface->GetFormat());
-      sourceData = MakeUnique<uint8_t[]>(stride * surfaceSize.height);
+    if (Factory::AllowedSurfaceSize(surfaceSize)) {
+      dataSurf = Factory::CreateDataSourceSurface(surfaceSize,
+                                                  aSurface->GetFormat(), true);
     }
-
-    RecordEvent(RecordedSourceSurfaceCreation(aSurface, sourceData.get(),
-                                              stride, surfaceSize,
-                                              aSurface->GetFormat()));
-    return;
+    if (!dataSurf) {
+      // If the surface is too big just create a 1 x 1 dummy.
+      dataSurf = Factory::CreateDataSourceSurface(IntSize(1, 1),
+                                                  aSurface->GetFormat(), true);
+      if (!dataSurf) {
+        return;
+      }
+    }
   }
 
-  RecordEvent(RecordedSourceSurfaceCreation(
-      aSurface, map->GetData(), map->GetStride(), dataSurf->GetSize(),
-      dataSurf->GetFormat()));
+  RecordEvent(RecordedSourceSurfaceCreation(aSurface, dataSurf));
 }
 
 void DrawEventRecorderPrivate::RecordSourceSurfaceDestruction(void* aSurface) {

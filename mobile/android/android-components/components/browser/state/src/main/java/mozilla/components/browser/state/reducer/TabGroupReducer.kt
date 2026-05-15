@@ -31,10 +31,10 @@ internal object TabGroupReducer {
                 state.assertTabExists(action.tabId)
 
                 if (!state.groupExists(action.partition, action.group)) {
-                    state.addTabGroup(action.partition, TabGroup(action.group, tabIds = listOf(action.tabId)))
+                    state.addTabGroup(action.partition, TabGroup(action.group, tabIds = setOf(action.tabId)))
                 } else {
                     state.updateTabGroup(action.partition, action.group) {
-                        it.copy(tabIds = (it.tabIds + action.tabId).distinct())
+                        it.copy(tabIds = it.tabIds + action.tabId)
                     }
                 }
             }
@@ -43,10 +43,10 @@ internal object TabGroupReducer {
                 action.tabIds.forEach { state.assertTabExists(it) }
 
                 if (!state.groupExists(action.partition, action.group)) {
-                    state.addTabGroup(action.partition, TabGroup(action.group, tabIds = action.tabIds.distinct()))
+                    state.addTabGroup(action.partition, TabGroup(action.group, tabIds = action.tabIds))
                 } else {
                     state.updateTabGroup(action.partition, action.group) {
-                        it.copy(tabIds = (it.tabIds + action.tabIds).distinct())
+                        it.copy(tabIds = it.tabIds + action.tabIds)
                     }
                 }
             }

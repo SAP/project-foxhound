@@ -1,5 +1,5 @@
 import pytest
-from webdriver.error import NoSuchElementException, UnexpectedAlertOpenException
+from webdriver.error import NoSuchElementException
 
 URL = "https://www.fdj.fr/jeux-illiko/instant-euromillions"
 COOKIES_ACCEPT_BUTTON_CSS = """button[title="J'accepte"]"""
@@ -23,10 +23,5 @@ async def start_playing(client):
 @pytest.mark.asyncio
 @pytest.mark.without_interventions
 async def test_disabled(client):
-    saw_msg = False
-    try:
-        await start_playing(client)
-    except UnexpectedAlertOpenException as e:
-        if UNSUPPORTED_ALERT_MSG in str(e):
-            saw_msg = True
-    assert not saw_msg
+    await start_playing(client)
+    assert not await client.find_alert()

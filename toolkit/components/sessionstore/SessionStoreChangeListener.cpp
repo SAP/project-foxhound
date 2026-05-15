@@ -321,7 +321,7 @@ void SessionStoreChangeListener::RecordChange(WindowContext* aWindowContext,
                                               EnumSet<Change> aChange) {
   EnsureTimer();
 
-  Unused << mSessionStoreChanges.WithEntryHandle(
+  (void)mSessionStoreChanges.WithEntryHandle(
       aWindowContext, [&](auto entryHandle) -> EnumSet<Change>& {
         if (entryHandle) {
           *entryHandle += aChange;

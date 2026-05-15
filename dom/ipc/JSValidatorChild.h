@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_JSValidatorChild
 #define mozilla_dom_JSValidatorChild
 
-#include "mozilla/Result.h"
 #include "mozilla/ProcInfo.h"
-#include "mozilla/dom/PJSValidatorChild.h"
+#include "mozilla/Result.h"
 #include "mozilla/dom/JSValidatorUtils.h"
+#include "mozilla/dom/PJSValidatorChild.h"
 #include "mozilla/net/OpaqueResponseUtils.h"
 
 template <typename T>

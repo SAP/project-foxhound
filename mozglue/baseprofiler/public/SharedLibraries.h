@@ -7,11 +7,10 @@
 #ifndef SHARED_LIBRARIES_H_
 #define SHARED_LIBRARIES_H_
 
-#include "BaseProfiler.h"
+#include "mozilla/BaseProfiler.h"
 
 #include <algorithm>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string>
 #include <vector>
 #include <tuple>

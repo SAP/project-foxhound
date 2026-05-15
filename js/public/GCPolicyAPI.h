@@ -81,12 +81,19 @@
 
 namespace JS {
 
+// Base class for GCPolicy<T> that provides some defaults.
+template <typename T>
+struct GCPolicyBase {
+  static bool isValid(const T& tp) { return true; /* Unchecked. */ }
+  static constexpr bool mightBeInNursery() { return true; /* Unknown. */ }
+};
+
 // Defines a policy for container types with non-GC, i.e. C storage. This
 // policy dispatches to the underlying struct for GC interactions. Note that
 // currently a type can define only the subset of the methods (trace and/or
 // traceWeak) if it is never used in a context that requires the other.
 template <typename T>
-struct StructGCPolicy {
+struct StructGCPolicy : public GCPolicyBase<T> {
   static_assert(
       !std::is_pointer_v<T>,
       "Pointer types must have a GCPolicy<> specialization.\n"
@@ -106,8 +113,6 @@ struct StructGCPolicy {
   static bool needsSweep(JSTracer* trc, const T* tp) {
     return tp->needsSweep(trc);
   }
-
-  static bool isValid(const T& tp) { return true; }
 };
 
 // The default GC policy attempts to defer to methods on the underlying type.
@@ -119,12 +124,13 @@ struct GCPolicy : public StructGCPolicy<T> {};
 
 // This policy ignores any GC interaction, e.g. for non-GC types.
 template <typename T>
-struct IgnoreGCPolicy {
+struct IgnoreGCPolicy : public GCPolicyBase<T> {
   static void trace(JSTracer* trc, T* t, const char* name) {}
   static bool traceWeak(JSTracer*, T* v) { return true; }
   static bool needsSweep(JSTracer* trc, const T* v) { return false; }
-  static bool isValid(const T& v) { return true; }
 };
+template <>
+struct GCPolicy<uint8_t> : public IgnoreGCPolicy<uint8_t> {};
 template <>
 struct GCPolicy<uint32_t> : public IgnoreGCPolicy<uint32_t> {};
 template <>
@@ -133,7 +139,7 @@ template <>
 struct GCPolicy<bool> : public IgnoreGCPolicy<bool> {};
 
 template <typename T>
-struct GCPointerPolicy {
+struct GCPointerPolicy : public GCPolicyBase<T> {
   static_assert(std::is_pointer_v<T>,
                 "Non-pointer type not allowed for GCPointerPolicy");
 
@@ -155,7 +161,7 @@ JS_FOR_EACH_PUBLIC_GC_POINTER_TYPE(EXPAND_SPECIALIZE_GCPOLICY)
 #undef EXPAND_SPECIALIZE_GCPOLICY
 
 template <typename T>
-struct NonGCPointerPolicy {
+struct NonGCPointerPolicy : public GCPolicyBase<T> {
   static void trace(JSTracer* trc, T* vp, const char* name) {
     if (*vp) {
       (*vp)->trace(trc);
@@ -164,11 +170,10 @@ struct NonGCPointerPolicy {
   static bool traceWeak(JSTracer* trc, T* vp) {
     return !*vp || (*vp)->traceWeak(trc);
   }
-  static bool isValid(T v) { return true; }
 };
 
 template <typename T>
-struct GCPolicy<JS::Heap<T>> {
+struct GCPolicy<JS::Heap<T>> : public GCPolicyBase<JS::Heap<T>> {
   static void trace(JSTracer* trc, JS::Heap<T>* thingp, const char* name) {
     TraceEdge(trc, thingp, name);
   }
@@ -183,7 +188,8 @@ struct GCPolicy<JS::Heap<T>> {
 
 // GCPolicy<UniquePtr<T>> forwards the contained pointer to GCPolicy<T>.
 template <typename T, typename D>
-struct GCPolicy<mozilla::UniquePtr<T, D>> {
+struct GCPolicy<mozilla::UniquePtr<T, D>>
+    : public GCPolicyBase<mozilla::UniquePtr<T, D>> {
   static void trace(JSTracer* trc, mozilla::UniquePtr<T, D>* tp,
                     const char* name) {
     if (tp->get()) {
@@ -207,7 +213,7 @@ struct GCPolicy<mozilla::Nothing> : public IgnoreGCPolicy<mozilla::Nothing> {};
 // GCPolicy<Maybe<T>> forwards tracing/sweeping to GCPolicy<T*> if
 // the Maybe<T> is filled and T* can be traced via GCPolicy<T*>.
 template <typename T>
-struct GCPolicy<mozilla::Maybe<T>> {
+struct GCPolicy<mozilla::Maybe<T>> : public GCPolicyBase<mozilla::Maybe<T>> {
   static void trace(JSTracer* trc, mozilla::Maybe<T>* tp, const char* name) {
     if (tp->isSome()) {
       GCPolicy<T>::trace(trc, tp->ptr(), name);
@@ -225,7 +231,7 @@ struct GCPolicy<mozilla::Maybe<T>> {
 };
 
 template <typename T1, typename T2>
-struct GCPolicy<std::pair<T1, T2>> {
+struct GCPolicy<std::pair<T1, T2>> : public GCPolicyBase<std::pair<T1, T2>> {
   static void trace(JSTracer* trc, std::pair<T1, T2>* tp, const char* name) {
     GCPolicy<T1>::trace(trc, &tp->first, name);
     GCPolicy<T2>::trace(trc, &tp->second, name);
@@ -250,7 +256,8 @@ template <>
 struct GCPolicy<mozilla::Ok> : public IgnoreGCPolicy<mozilla::Ok> {};
 
 template <typename V, typename E>
-struct GCPolicy<mozilla::Result<V, E>> {
+struct GCPolicy<mozilla::Result<V, E>>
+    : public GCPolicyBase<mozilla::Result<V, E>> {
   static void trace(JSTracer* trc, mozilla::Result<V, E>* tp,
                     const char* name) {
     if (tp->isOk()) {
@@ -270,7 +277,7 @@ struct GCPolicy<mozilla::Result<V, E>> {
 };
 
 template <typename... Fs>
-struct GCPolicy<std::tuple<Fs...>> {
+struct GCPolicy<std::tuple<Fs...>> : public GCPolicyBase<std::tuple<Fs...>> {
   using T = std::tuple<Fs...>;
   static void trace(JSTracer* trc, T* tp, const char* name) {
     traceFieldsFrom<0>(trc, *tp, name);

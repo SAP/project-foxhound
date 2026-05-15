@@ -30,8 +30,8 @@
 #define HRTFElevation_h
 
 #include "HRTFKernel.h"
-#include "nsAutoRef.h"
 #include "mozilla/MemoryReporting.h"
+#include "nsAutoRef.h"
 
 struct SpeexResamplerState_;
 typedef struct SpeexResamplerState_ SpeexResamplerState;

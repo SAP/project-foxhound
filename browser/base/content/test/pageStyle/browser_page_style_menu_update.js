@@ -24,7 +24,7 @@ add_task(async function () {
 
   // page_style_sample.html should default us to selecting the stylesheet
   // with the title "6" first.
-  let selected = menupopup.querySelector("menuitem[checked='true']");
+  let selected = menupopup.querySelector("menuitem[checked]");
   is(
     selected.getAttribute("label"),
     "6",
@@ -38,7 +38,7 @@ add_task(async function () {
   gPageStyleMenu.fillPopup(menupopup);
   // gPageStyleMenu empties out the menu between opens, so we need
   // to get a new reference to the selected menuitem
-  selected = menupopup.querySelector("menuitem[checked='true']");
+  selected = menupopup.querySelector("menuitem[checked]");
   is(
     selected.getAttribute("label"),
     "1",

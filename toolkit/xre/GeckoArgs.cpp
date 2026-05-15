@@ -55,10 +55,22 @@ void AddToFdsToRemap(const ChildProcessArgs& aArgs,
 // Table of mach send rights which have been sent by the parent process.
 static mach_port_t gMachSendRights[kMaxPassedMachSendRights] = {MACH_PORT_NULL};
 
+// Table of mach receive rights which have been sent by the parent process.
+static mach_port_t gMachReceiveRights[kMaxPassedMachReceiveRights] = {
+    MACH_PORT_NULL};
+
 void SetPassedMachSendRights(std::vector<UniqueMachSendRight>&& aSendRights) {
   MOZ_RELEASE_ASSERT(aSendRights.size() <= std::size(gMachSendRights));
   for (size_t i = 0; i < aSendRights.size(); ++i) {
     gMachSendRights[i] = aSendRights[i].release();
+  }
+}
+
+void SetPassedMachReceiveRights(
+    std::vector<UniqueMachReceiveRight>&& aReceiveRights) {
+  MOZ_RELEASE_ASSERT(aReceiveRights.size() <= std::size(gMachReceiveRights));
+  for (size_t i = 0; i < aReceiveRights.size(); ++i) {
+    gMachReceiveRights[i] = aReceiveRights[i].release();
   }
 }
 #endif
@@ -154,7 +166,43 @@ void CommandLineArg<UniqueMachSendRight>::PutCommon(const char* aName,
     CommandLineArg<uint32_t>::PutCommon(aName, *arg, aArgs);
   }
 }
-#endif
+
+static void ParseHandleArgument(uint32_t aArg,
+                                UniqueMachReceiveRight& aOutHandle) {
+  MOZ_RELEASE_ASSERT(aArg < std::size(gMachReceiveRights));
+  aOutHandle = UniqueMachReceiveRight{
+      std::exchange(gMachReceiveRights[aArg], MACH_PORT_NULL)};
+}
+
+static Maybe<uint32_t> SerializeHandleArgument(UniqueMachReceiveRight&& aValue,
+                                               ChildProcessArgs& aArgs) {
+  if (aValue) {
+    aArgs.mReceiveRights.push_back(std::move(aValue));
+    return Some(static_cast<uint32_t>(aArgs.mReceiveRights.size() - 1));
+  }
+  return Nothing();
+}
+
+template <>
+Maybe<UniqueMachReceiveRight> CommandLineArg<UniqueMachReceiveRight>::GetCommon(
+    const char* aMatch, int& aArgc, char** aArgv, const CheckArgFlag aFlags) {
+  if (Maybe<uint32_t> arg =
+          CommandLineArg<uint32_t>::GetCommon(aMatch, aArgc, aArgv, aFlags)) {
+    UniqueMachReceiveRight h;
+    ParseHandleArgument(*arg, h);
+    return Some(std::move(h));
+  }
+  return Nothing();
+}
+
+template <>
+void CommandLineArg<UniqueMachReceiveRight>::PutCommon(
+    const char* aName, UniqueMachReceiveRight aValue, ChildProcessArgs& aArgs) {
+  if (auto arg = SerializeHandleArgument(std::move(aValue), aArgs)) {
+    CommandLineArg<uint32_t>::PutCommon(aName, *arg, aArgs);
+  }
+}
+#endif  // XP_DARWIN
 
 // Shared memory handles are passed as a (handle, size) pair, which both turn
 // into numeric CLI arguments, so it's safe to use ":" as a separator.

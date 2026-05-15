@@ -173,6 +173,8 @@ const UPDATED_REQ_ITEM_PROPS = [
   "waitingTime",
   "isEventStream",
   "priority",
+  "blockedReason",
+  "extension",
 ];
 
 const UPDATED_REQ_PROPS = [

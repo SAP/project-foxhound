@@ -11,6 +11,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.browserScreen
@@ -29,9 +30,9 @@ class DownloadFileTypesTest(fileName: String) : TestSetup() {
     private var downloadFile: String = fileName
 
     @get:Rule
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
-            HomeActivityTestRule.withDefaultSettingsOverrides(),
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
     companion object {
@@ -55,15 +56,16 @@ class DownloadFileTypesTest(fileName: String) : TestSetup() {
     @SmokeTest
     @Test
     fun allFilesAppearInDownloadsMenuTest() {
-        downloadRobot {
+        downloadRobot(composeTestRule) {
             openPageAndDownloadFile(url = downloadTestPage.toUri(), downloadFile = downloadFile)
             verifyDownloadCompleteSnackbar(fileName = downloadFile)
         }
 
-        browserScreen {
+        browserScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openDownloadsManager {
-            verifyDownloadedFileExistsInDownloadsList(activityTestRule, downloadFile)
-        }.exitDownloadsManagerToBrowser(activityTestRule) { }
+        }.clickDownloadsButton {
+            verifyDownloadedFileExistsInDownloadsList(downloadFile)
+        }.exitDownloadsManagerToBrowser {
+        }
     }
     }

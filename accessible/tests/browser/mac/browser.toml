@@ -1,6 +1,8 @@
 [DEFAULT]
 subsuite = "a11y"
-skip-if = ["os != 'mac'"]
+run-if = [
+  "os == 'mac'",
+]
 support-files = [
   "head.js",
   "doc_aria_tabs.html",
@@ -14,10 +16,13 @@ support-files = [
   "!/accessible/tests/mochitest/moz.png",
 ]
 prefs = [
+  "accessibility.ariaNotify.enabled=true",
   "dom.text_fragments.enabled=true",
   # Required for the eval in invokeContentTask in shared-head.js
   "security.allow_eval_with_system_principal=true"
 ]
+
+["browser_announcement.js"]
 
 ["browser_app.js"]
 https_first_disabled = true
@@ -27,7 +32,9 @@ https_first_disabled = true
 ["browser_aria_controls_flowto.js"]
 
 ["browser_aria_current.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] # Bug 1802555
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1802555
+]
 
 ["browser_aria_errormessage.js"]
 
@@ -46,6 +53,10 @@ skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] #
 ["browser_bounds.js"]
 
 ["browser_combobox.js"]
+
+["browser_custom_actions.js"]
+
+["browser_description.js"]
 
 ["browser_details_summary.js"]
 
@@ -98,7 +109,11 @@ skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt"] #
 ["browser_text_basics.js"]
 
 ["browser_text_input.js"]
-skip-if = ["os == 'mac'"] # Bug 1778821
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1778821
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1778821
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1778821
+]
 
 ["browser_text_leaf.js"]
 

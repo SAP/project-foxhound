@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -23,6 +23,8 @@ const tests = [
   [Symbol(), "symbol"],
   [42, "number"],
   [42n, "bigint"],
+  [NaN, "NaN"],
+  [Infinity, "Infinity"],
 
   // Step 4.
   //   RejectObjectWithCalendarOrTimeZone step 2.
@@ -37,10 +39,10 @@ const tests = [
   //   RejectObjectWithCalendarOrTimeZone step 5-6.
   [{ year: 2021, timeZone: "UTC" }, "timeZone"],
 
-  // Step 7.
+  // Step 6.
   [{}, "empty object"],
+  [[], "array"],
   [{ months: 12 }, "only plural property"],
-
 ];
 
 for (const [value, message = String(value)] of tests) {

@@ -8,7 +8,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -154,6 +153,7 @@ class ListReorderState internal constructor(
         draggingItemInitialOffset = 0f
     }
 
+    @Suppress("CognitiveComplexMethod")
     internal fun onDrag(offset: Float) {
         draggingItemCumulatedOffset += offset
 
@@ -211,7 +211,6 @@ class ListReorderState internal constructor(
  * @param position Position in the list of the item to be displayed.
  * @param content Content of the item to be displayed.
  */
-@ExperimentalFoundationApi
 @Composable
 fun LazyItemScope.DragItemContainer(
     state: ListReorderState,

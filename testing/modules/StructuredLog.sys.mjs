@@ -2,6 +2,136 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+let gSchemaRegistered = false;
+
+function ensureSchemaRegistered() {
+  if (gSchemaRegistered) {
+    return;
+  }
+  gSchemaRegistered = true;
+
+  /**
+   * @backward-compat { version 149 }
+   *
+   * Bug 2011308: Remove the following typeof / early return check
+   */
+  if (!ChromeUtils.registerMarkerSchema) {
+    return;
+  }
+
+  ChromeUtils.registerMarkerSchema({
+    name: "TestStatus",
+    tableLabel: "{marker.data.message}",
+    display: ["marker-chart", "marker-table"],
+    colorField: "color",
+    data: [
+      {
+        key: "message",
+        label: "Message",
+        format: "string",
+      },
+      {
+        key: "test",
+        label: "Test Name",
+        format: "string",
+      },
+      {
+        key: "subtest",
+        label: "Subtest",
+        format: "string",
+      },
+      {
+        key: "status",
+        label: "Status",
+        format: "string",
+      },
+      {
+        key: "expected",
+        label: "Expected",
+        format: "string",
+      },
+      {
+        key: "color",
+        hidden: true,
+      },
+    ],
+  });
+
+  ChromeUtils.registerMarkerSchema({
+    name: "Test",
+    tooltipLabel: "{marker.data.name}",
+    tableLabel: "{marker.data.status} — {marker.data.test}",
+    chartLabel: "{marker.data.name}",
+    display: ["marker-chart", "marker-table"],
+    colorField: "color",
+    data: [
+      {
+        key: "test",
+        label: "Test Name",
+        format: "string",
+      },
+      {
+        key: "name",
+        label: "Short Name",
+        format: "string",
+        hidden: true,
+      },
+      {
+        key: "status",
+        label: "Status",
+        format: "string",
+      },
+      {
+        key: "expected",
+        label: "Expected",
+        format: "string",
+      },
+      {
+        key: "message",
+        label: "Message",
+        format: "string",
+      },
+      {
+        key: "color",
+        hidden: true,
+      },
+    ],
+  });
+
+  ChromeUtils.registerMarkerSchema({
+    name: "Log",
+    tableLabel: "{marker.data.message}",
+    display: ["marker-chart", "marker-table"],
+    colorField: "color",
+    data: [
+      {
+        key: "message",
+        label: "Message",
+        format: "string",
+      },
+      {
+        key: "level",
+        label: "Level",
+        format: "string",
+      },
+      {
+        key: "test",
+        label: "Test Name",
+        format: "string",
+      },
+      {
+        key: "subtest",
+        label: "Subtest",
+        format: "string",
+      },
+      {
+        key: "color",
+        hidden: true,
+      },
+    ],
+  });
+}
+
 /**
  * TestLogger: Logger class generating messages compliant with the
  * structured logging protocol for tests exposed by mozlog
@@ -19,6 +149,14 @@ export class StructuredLogger {
   name = null;
   #dumpFun = null;
   #dumpScope = null;
+  #testStartTimes = new Map();
+
+  // Regexes that normalize test paths, matching MessageLogger.TEST_PATH_PREFIXES
+  static #TEST_PATH_PREFIXES = [
+    /^\/tests\//,
+    /^\w+:\/\/[\w.]+(:\d+)?(\/\w+)?\/(tests?|a11y|chrome)\//,
+    /^\w+:\/\/[\w.]+(:\d+)?(\/\w+)?\/(tests?|browser)\//,
+  ];
 
   constructor(name, dumpFun = dump, scope = null) {
     this.name = name;
@@ -26,9 +164,26 @@ export class StructuredLogger {
     this.#dumpScope = scope;
   }
 
+  /**
+   * Normalize a test path to match the relative path from the sourcedir.
+   * Matches the behavior of MessageLogger._fix_test_name in runtests.py.
+   */
+  #normalizeTestPath(testPath) {
+    for (const pattern of StructuredLogger.#TEST_PATH_PREFIXES) {
+      const normalized = testPath.replace(pattern, "");
+      if (normalized !== testPath) {
+        return normalized;
+      }
+    }
+    return testPath;
+  }
+
   testStart(test) {
     var data = { test: this.#testId(test) };
     this.logData("test_start", data);
+
+    const testId = this.#testId(test);
+    this.#testStartTimes.set(testId, ChromeUtils.now());
   }
 
   testStatus(
@@ -40,21 +195,12 @@ export class StructuredLogger {
     stack = null,
     extra = null
   ) {
-    if (subtest === null || subtest === undefined) {
-      // Fix for assertions that don't pass in a name
-      subtest = "undefined assertion name";
-    }
-
     var data = {
       test: this.#testId(test),
       subtest,
       status,
     };
 
-    // handle case: known fail
-    if (expected === status && status != "SKIP") {
-      data.status = "PASS";
-    }
     if (expected != status && status != "SKIP") {
       data.expected = expected;
     }
@@ -69,22 +215,69 @@ export class StructuredLogger {
     }
 
     this.logData("test_status", data);
+
+    ensureSchemaRegistered();
+
+    // Determine marker name following mochitest conventions
+    let markerName;
+    if (status === expected) {
+      // Expected result
+      if (status === "FAIL") {
+        markerName = "TEST-KNOWN-FAIL";
+      } else {
+        markerName = "TEST-" + status;
+      }
+    } else {
+      // Unexpected result
+      markerName = "TEST-UNEXPECTED-" + status;
+    }
+
+    // Prepare marker data with normalized test path
+    const markerData = {
+      type: "TestStatus",
+      test: this.#normalizeTestPath(data.test),
+      status,
+      expected,
+    };
+
+    if (subtest) {
+      markerData.subtest = subtest;
+    }
+
+    if (message !== null) {
+      markerData.message = String(message);
+    }
+
+    // Determine color
+    if (status === "ERROR" && status !== expected) {
+      markerData.color = "red";
+    } else if (status === expected) {
+      markerData.color = "green";
+    } else {
+      markerData.color = "orange";
+    }
+
+    const options = { category: "Test" };
+
+    // Capture stack for failures and errors
+    if (status === "FAIL" || status === "ERROR") {
+      options.captureStack = true;
+    }
+
+    ChromeUtils.addProfilerMarker(markerName, options, markerData);
   }
 
   testEnd(
     test,
     status,
-    expected = "OK",
+    expected = "PASS",
     message = null,
     stack = null,
     extra = null
   ) {
-    var data = { test: this.#testId(test), status };
+    const testId = this.#testId(test);
+    var data = { test: testId, status };
 
-    // handle case: known fail
-    if (expected === status && status != "SKIP") {
-      data.status = "OK";
-    }
     if (expected != status && status != "SKIP") {
       data.expected = expected;
     }
@@ -99,6 +292,54 @@ export class StructuredLogger {
     }
 
     this.logData("test_end", data);
+
+    const startTime = this.#testStartTimes.get(testId);
+    if (!startTime) {
+      return;
+    }
+    this.#testStartTimes.delete(testId);
+
+    ensureSchemaRegistered();
+
+    // Normalize test path
+    const testPath = this.#normalizeTestPath(testId);
+
+    const markerData = {
+      type: "Test",
+      test: testPath,
+      name: testPath.split("/").pop(),
+      status,
+    };
+
+    if (data.expected) {
+      markerData.expected = data.expected;
+    }
+
+    if (data.message) {
+      markerData.message = data.message;
+    }
+
+    if (status) {
+      // Determine color based on status and expectations
+      if (status === "SKIP" || status === "TIMEOUT") {
+        markerData.color = "yellow";
+      } else if (status === "CRASH" || status === "ERROR") {
+        markerData.color = "red";
+      } else if (expected === status) {
+        markerData.color = "green";
+      } else {
+        markerData.color = "orange";
+      }
+    }
+
+    ChromeUtils.addProfilerMarker(
+      "test",
+      {
+        category: "Test",
+        startTime,
+      },
+      markerData
+    );
   }
 
   assertionCount(test, count, minExpected = 0, maxExpected = 0) {
@@ -177,6 +418,42 @@ export class StructuredLogger {
     }
 
     this.logData("log", data);
+
+    ensureSchemaRegistered();
+
+    // Add marker type
+    data.type = "Log";
+
+    // Copy test/subtest from extra if present, normalizing test path
+    if (extra) {
+      if (extra.test) {
+        data.test = this.#normalizeTestPath(extra.test);
+      }
+      if (extra.subtest) {
+        data.subtest = extra.subtest;
+      }
+    }
+
+    // Determine color based on log level
+    if (level === "CRITICAL" || level === "ERROR") {
+      data.color = "red";
+    } else if (level === "WARNING") {
+      data.color = "orange";
+    } else if (level === "DEBUG") {
+      data.color = "grey";
+    }
+
+    // Remove fields we don't want in the marker
+    delete data.extra;
+
+    const options = { category: "Test" };
+
+    // Capture stack for errors and critical
+    if (level === "CRITICAL" || level === "ERROR") {
+      options.captureStack = true;
+    }
+
+    ChromeUtils.addProfilerMarker(level, options, data);
   }
 
   debug(message, extra = null) {
@@ -220,10 +497,18 @@ export class StructuredLogger {
     }
 
     if (this.#dumpScope) {
-      this.#dumpFun(Cu.cloneInto(allData, this.#dumpScope));
-    } else {
-      this.#dumpFun(allData);
+      try {
+        allData = Cu.cloneInto(allData, this.#dumpScope);
+      } catch (e) {
+        try {
+          this.error(`Failed to cloneInto: ${e}`);
+          this.warning(`Tried to clone: ${uneval(allData)}`);
+        } catch (e2) {
+          console.error("Failed to handle clone error", e, e2);
+        }
+      }
     }
+    this.#dumpFun(allData);
   }
 
   #testId(test) {

@@ -5,14 +5,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "EffectSet.h"
-#include "mozilla/dom/Element.h"      // For Element
+
+#include "ElementAnimationData.h"
+#include "mozilla/LayerAnimationInfo.h"
 #include "mozilla/PseudoStyleType.h"  // For PseudoStyleRequest
 #include "mozilla/RestyleManager.h"
-#include "mozilla/LayerAnimationInfo.h"
+#include "mozilla/dom/Element.h"         // For Element
 #include "nsCycleCollectionNoteChild.h"  // For CycleCollectionNoteChild
-#include "nsPresContext.h"
 #include "nsLayoutUtils.h"
-#include "ElementAnimationData.h"
+#include "nsPresContext.h"
 
 namespace mozilla {
 

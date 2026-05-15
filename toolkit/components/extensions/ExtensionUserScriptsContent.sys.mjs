@@ -258,6 +258,10 @@ class WorldCollection {
       wantXrays: true,
       isWebExtensionContentScript: true,
       wantExportHelpers: true,
+      // The 'structuredClone' method in content scripts should clone within the
+      // content script global by default, rather than cloning into the target
+      // contentWindow.
+      wantGlobalProperties: ["structuredClone"],
       originAttributes: docPrincipal.originAttributes,
     });
 

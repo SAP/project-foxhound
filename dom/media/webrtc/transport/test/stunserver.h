@@ -6,13 +6,14 @@
 
 // Original author: ekr@rtfm.com
 
-#ifndef stunserver_h__
-#define stunserver_h__
+#ifndef stunserver_h_
+#define stunserver_h_
 
 #include <map>
 #include <string>
-#include "nsError.h"
+
 #include "mozilla/UniquePtr.h"
+#include "nsError.h"
 
 typedef struct nr_stun_server_ctx_ nr_stun_server_ctx;
 typedef struct nr_socket_ nr_socket;

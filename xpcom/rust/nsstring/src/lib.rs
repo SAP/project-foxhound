@@ -112,6 +112,7 @@
 //! can be useful when implementing FFI types which contain `ns[C]String` members
 //! which invoke their member's destructors through C++ code.
 
+#![allow(unknown_lints, mismatched_lifetime_syntaxes)]
 #![allow(non_camel_case_types)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::new_without_default)]

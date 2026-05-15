@@ -612,7 +612,25 @@
         await TestUtils.waitForTick();
 
         verifyEvents([
+          {
+            type: "click",
+            value: "second",
+            localName: "moz-radio",
+            checked: true,
+          },
+          {
+            type: "input",
+            value: "second",
+            localName: "moz-radio",
+            checked: true,
+          },
           { type: "input", value: "second", localName: "moz-radio-group" },
+          {
+            type: "change",
+            value: "second",
+            localName: "moz-radio",
+            checked: true,
+          },
           { type: "change", value: "second", localName: "moz-radio-group" },
         ]);
 
@@ -725,6 +743,107 @@
         firstButton.disabled = false;
         await firstButton.updateComplete;
         verifyElementStates("enabled");
+      });
+
+      // Verify that keyboard events from nested focusable elements don't trigger
+      // radio group navigation (Bug 2000343).
+      add_task(async function testNestedElementKeyboardEvents() {
+        let template = html`
+          <moz-radio-group
+            name="test-name"
+            label="Radio group with nested button"
+          >
+            <moz-radio checked value="first" label="First"></moz-radio>
+            <moz-radio value="second" label="Second">
+              <button id="nested-button" slot="nested">Nested Button</button>
+            </moz-radio>
+            <moz-radio value="third" label="Third"></moz-radio>
+          </moz-radio-group>
+        `;
+        let renderTarget = await testHelpers.renderTemplate(template);
+        let radioGroup = renderTarget.querySelector("moz-radio-group");
+        let [firstRadio, secondRadio, thirdRadio] =
+          renderTarget.querySelectorAll("moz-radio");
+        let nestedButton = renderTarget.querySelector("#nested-button");
+
+        // Focus the first radio and verify it's selected.
+        firstRadio.focus();
+        is(document.activeElement, firstRadio, "First radio has focus.");
+        is(radioGroup.value, "first", "First radio is selected.");
+
+        // Press arrow down to navigate to second radio.
+        synthesizeKey("KEY_ArrowDown", {});
+        await radioGroup.updateComplete;
+        is(
+          radioGroup.value,
+          "second",
+          "Radio group navigated to second radio."
+        );
+        is(document.activeElement, secondRadio, "Second radio has focus.");
+
+        // Tab to focus the nested button.
+        synthesizeKey("KEY_Tab", {});
+        is(
+          document.activeElement,
+          nestedButton,
+          "Nested button has focus after tab."
+        );
+
+        // Press arrow down key - this should NOT navigate the radio group.
+        synthesizeKey("KEY_ArrowDown", {});
+        await radioGroup.updateComplete;
+        is(
+          radioGroup.value,
+          "second",
+          "Radio group value unchanged after down arrow on nested button."
+        );
+        is(
+          document.activeElement,
+          nestedButton,
+          "Focus remains on nested button."
+        );
+
+        // Press arrow up key - this should NOT navigate the radio group.
+        synthesizeKey("KEY_ArrowUp", {});
+        await radioGroup.updateComplete;
+        is(
+          radioGroup.value,
+          "second",
+          "Radio group value unchanged after up arrow on nested button."
+        );
+        is(
+          document.activeElement,
+          nestedButton,
+          "Focus remains on nested button."
+        );
+
+        // Shift+Tab to go back to the second radio.
+        synthesizeKey("KEY_Tab", { shiftKey: true });
+        is(
+          document.activeElement,
+          secondRadio,
+          "Focus moved back to second radio with shift+tab."
+        );
+
+        // Arrow down should navigate to third radio.
+        synthesizeKey("KEY_ArrowDown", {});
+        await radioGroup.updateComplete;
+        is(radioGroup.value, "third", "Radio group navigates to third radio.");
+        is(document.activeElement, thirdRadio, "Focus moved to third radio.");
+
+        // Arrow up should navigate back to second radio.
+        synthesizeKey("KEY_ArrowUp", {});
+        await radioGroup.updateComplete;
+        is(
+          radioGroup.value,
+          "second",
+          "Radio group navigates back to second radio."
+        );
+        is(
+          document.activeElement,
+          secondRadio,
+          "Focus moved back to second radio."
+        );
       });
     </script>
   </head>

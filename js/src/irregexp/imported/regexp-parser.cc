@@ -1638,7 +1638,7 @@ bool RegExpParserImpl<CharT>::CreateNamedCaptureAtIndex(
         DCHECK_NOT_NULL(named_capture_indices);
         DCHECK(!named_capture_indices->is_empty());
         for (int named_index : *named_capture_indices) {
-          if (named_index < non_participating_capture_group_interval.first ||
+          if (named_index <= non_participating_capture_group_interval.first ||
               named_index > non_participating_capture_group_interval.second) {
             ReportError(RegExpError::kDuplicateCaptureGroupName);
             return false;
@@ -1648,6 +1648,15 @@ bool RegExpParserImpl<CharT>::CreateNamedCaptureAtIndex(
         ReportError(RegExpError::kDuplicateCaptureGroupName);
         return false;
       }
+    }
+  }
+  if (v8_flags.js_regexp_duplicate_named_groups) {
+    // Check for nested named captures. This is necessary to find duplicate
+    // named captures within the same disjunct.
+    RegExpParserState* parent_state = state->previous_state();
+    if (parent_state && parent_state->IsInsideCaptureGroup(name)) {
+      ReportError(RegExpError::kDuplicateCaptureGroupName);
+      return false;
     }
   }
 

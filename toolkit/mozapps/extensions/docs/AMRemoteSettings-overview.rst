@@ -46,9 +46,8 @@ ones that older Firefox version will just ignore):
     about:config preferences related to the InstallTrigger deprecation
 
   * is set to an array of string, which lists the about:config preferences names that can actually be controlled by the
-    related group of settings (e.g. ``"installTriggerDeprecation"`` can only control two preferences,
-    ``"extensions.InstallTrigger.enabled"`` and ``"extensions.InstallTriggerImpl.enabled"``, that are controlling the
-    InstallTrigger and InstallTrigger's methods availability).
+    related group of settings (e.g. ``"installTriggerDeprecation"`` can only control one preference,
+    ``"extensions.InstallTrigger.enabled"``, which controls the visibility of window.InstallTrigger).
 
 .. warning::
   Any other about:config preference names that are not listed explicitly in the ``AMRemoteSettings.RS_ENTRIES_MAP`` config
@@ -78,11 +77,6 @@ Group of settings to control InstallTrigger deprecation (Bug 1754441)
       Firefox. The WebCompat team should be consulted before setting this to `false` by default in
       Nightly or across all Firefox >= 100 versions through the ``"addons-manager-settings"``
       RemoteSettings collection).
-
-- **extensions.InstallTriggerImpl.enabled** (boolean): controls the availability of the InstallTrigger methods:
-
-  - Turning this to false will hide all the InstallTrigger implementation, preventing using it to
-    trigger the addon install flow, while the InstallTrigger global will still exists but be set to null.
 
 quarantinedDomains
 ------------------
@@ -162,6 +156,8 @@ The entries part of the ``"addons-manager-settings"`` collection are validated u
 
 .. literalinclude :: ./AMRemoteSettings-JSONSchema.json
    :language: json
+
+.. _UI Schema:
 
 UI Schema
 ---------

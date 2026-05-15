@@ -534,6 +534,15 @@ class TabBase {
   }
 
   /**
+   * @property {integer} splitViewId
+   *        @readonly
+   *        @abstract
+   */
+  get splitViewId() {
+    throw new Error("Not implemented");
+  }
+
+  /**
    * Returns true if this tab matches the the given query info object. Omitted
    * or null have no effect on the match.
    *
@@ -576,6 +585,8 @@ class TabBase {
    *        Requires the tab's URL to match the given MatchPattern object.
    * @param {integer} [queryInfo.groupId]
    *        Matches against the exact value of the tab's `groupId` attribute.
+   * @param {integer} [queryInfo.splitViewId]
+   *        Matches against the exact value of the tab's `splitViewId` attribute.
    *
    * @returns {boolean}
    *        True if the tab matches the query.
@@ -593,6 +604,7 @@ class TabBase {
       "pinned",
       "status",
       "groupId",
+      "splitViewId",
     ];
 
     function checkProperty(prop, obj) {
@@ -678,6 +690,7 @@ class TabBase {
       sharingState: this.sharingState,
       successorTabId: this.successorTabId,
       groupId: this.groupId,
+      splitViewId: this.splitViewId,
       cookieStoreId: this.cookieStoreId,
     };
 
@@ -1498,6 +1511,16 @@ class WindowTrackerBase extends EventEmitter {
     });
   }
 
+  // Whether the window is sufficiently initialized for isBrowserWindow to
+  // return a meaningful result. If false, wait for the window's "load" event.
+  isBrowserWindowInitialized(window) {
+    const { readyState, isUncommittedInitialDocument } = window.document;
+    return readyState === "complete" && !isUncommittedInitialDocument;
+  }
+
+  // Only returns a meaningful result for initialized browser windows. If the
+  // correctness of the result is important, check isBrowserWindowInitialized,
+  // and wait for the "load" event if it is false.
   isBrowserWindow(window) {
     let { documentElement } = window.document;
 
@@ -1525,7 +1548,7 @@ class WindowTrackerBase extends EventEmitter {
 
     for (let window of Services.wm.getEnumerator("")) {
       let ok = includeIncomplete;
-      if (window.document.readyState === "complete") {
+      if (this.isBrowserWindowInitialized(window)) {
         ok = this.isBrowserWindow(window);
       }
 
@@ -1621,12 +1644,11 @@ class WindowTrackerBase extends EventEmitter {
     if (
       window &&
       !window.closed &&
-      (window.document.readyState !== "complete" ||
-        this.isBrowserWindow(window))
+      // Tolerate incomplete windows because isBrowserWindow is only reliable
+      // once the window is fully loaded.
+      (!this.isBrowserWindowInitialized(window) || this.isBrowserWindow(window))
     ) {
       if (!context || context.canAccessWindow(window)) {
-        // Tolerate incomplete windows because isBrowserWindow is only reliable
-        // once the window is fully loaded.
         return window;
       }
     }
@@ -1661,7 +1683,7 @@ class WindowTrackerBase extends EventEmitter {
     this._openListeners.add(listener);
 
     for (let window of this.browserWindows(true)) {
-      if (window.document.readyState !== "complete") {
+      if (!this.isBrowserWindowInitialized(window)) {
         window.addEventListener("load", this);
       }
     }

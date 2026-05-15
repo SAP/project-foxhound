@@ -45,19 +45,42 @@ add_task(async function () {
   await selectSource(debuggerContext, SCRIPT_FILE);
   await addBreakpoint(debuggerContext, SCRIPT_FILE, 10);
 
-  info("Invoke testMethod, expect the script to pause on line 10");
-  const onContentTaskDone = ContentTask.spawn(
-    testTab.linkedBrowser,
-    {},
-    function () {
-      content.wrappedJSObject.testMethod();
-    }
+  is(
+    gBrowser.selectedTab,
+    devtoolsTab,
+    "Selected tab should already be the devtools tab"
   );
+
+  info("Invoke testMethod, expect the script to pause on line 10");
+  let onContentTaskDone = invokeTestMethod(testTab);
 
   info("Wait for the debugger to pause");
   await waitForPaused(debuggerContext);
   const script = findSource(debuggerContext, SCRIPT_FILE);
   await assertPausedAtSourceAndLine(debuggerContext, script.id, 10);
+  is(
+    gBrowser.selectedTab,
+    devtoolsTab,
+    "Selected tab should still be the devtools tab"
+  );
+
+  info("Resume");
+  await resume(debuggerContext);
+
+  info("Wait for the paused content task to also resolve");
+  await onContentTaskDone;
+
+  info("Select another tab, and check that breaking focuses the toolbox tab");
+  gBrowser.selectedTab = testTab;
+  onContentTaskDone = invokeTestMethod(testTab);
+
+  info("Wait for the debugger to pause, and check the selected tab");
+  await waitForPaused(debuggerContext);
+  is(
+    gBrowser.selectedTab,
+    devtoolsTab,
+    "Selected tab should be back to the devtools tab"
+  );
 
   info("Resume");
   await resume(debuggerContext);
@@ -72,3 +95,9 @@ add_task(async function () {
   await removeTab(testTab);
   await removeTab(tab);
 });
+
+function invokeTestMethod(tab) {
+  return ContentTask.spawn(tab.linkedBrowser, {}, function () {
+    content.wrappedJSObject.testMethod();
+  });
+}

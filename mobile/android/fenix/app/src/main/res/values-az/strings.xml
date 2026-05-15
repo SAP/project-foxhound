@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!--
     Home Fragment
@@ -6,15 +13,14 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">Digər seçimlər</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Məxfi səyahəti aktivləşdir</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Məxfi səyahəti söndür</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Ünvanı daxil et və ya axtar</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">Açıq vərəqləriniz burada göstəriləcək.</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Açıq vərəqləriniz burada göstəriləcək.</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Məxfi səyahət haqqında olan əfsanələr</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!--
     Home screen icons - Long press shortcuts
 
@@ -36,9 +42,9 @@
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">Dayandır</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">Kömək</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Kömək</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">Yeniliklər</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Yeniliklər</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Tənzimləmələr</string>
   <!-- Browser menu button that opens a user's library -->
@@ -62,7 +68,7 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by">%1$s TƏRƏFİNDƏN</string>
+  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">%1$s TƏRƏFİNDƏN</string>
   <!--
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
@@ -94,6 +100,10 @@
   <string name="search_suggestions_onboarding_title">Məxfi sessiyada axtarış təkliflərinə icazə verilsin?</string>
   <!-- Search suggestion onboarding hint description text, %s is the name of the app (for example "Firefox"). -->
   <string name="search_suggestions_onboarding_text">%s ünvan sətrində yazdığınız hər şeyi əsas axtarış mühərriyiniz ilə paylaşacaq.</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!-- Text preview for smaller sized widgets -->
   <string name="search_widget_text_short">Axtar</string>
   <!-- Text preview for larger sized widgets -->
@@ -143,8 +153,6 @@
   <string name="preferences_account_sync_error">Sinxronlaşdırmaya qayıtmaq üçün təkrar qoşul</string>
   <!-- Preference for language -->
   <string name="preferences_language">Dil</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">Məlumat seçimi</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">Məlumat yığma</string>
   <!-- Preference for developers -->
@@ -299,7 +307,7 @@
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Düzəlt</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">Köçür</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Köçür</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Paylaş</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -308,8 +316,6 @@
   <string name="bookmark_menu_open_in_private_tab_button">Məxvi vərəqdə aç</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">Sil</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">Saxla</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -319,31 +325,23 @@
   <string name="edit_bookmark_fragment_title">Əlfəcini düzəlt</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">Qovluğu düzəlt</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button" tools:ignore="UnusedResources" moz:removedIn="143">Sinxronlaşdırılmış əlfəcinlərinizi görmək üçün daxil olun</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">QOVLUQ</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">AD</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label" tools:ignore="UnusedResources" moz:removedIn="143">Qovluq əlavə et</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Qovluq seç</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error" tools:ignore="UnusedResources" moz:removedIn="143">Başlığı olmalıdır</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">Səhv URL</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message" tools:ignore="UnusedResources" moz:removedIn="143">Əlfəcinlər yoxdur</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">%1$s silindi</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">GERİ AL</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">GERİ AL</string>
   <!--
     Site Permissions
 
@@ -418,10 +416,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d vərəq seçildi</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved" tools:ignore="UnusedResources" moz:removedIn="142">Vərəqlər saxlandı!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">Vərəq saxlandı!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">Qapat</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -474,27 +468,17 @@
   <!--
     Snackbar
 
-    Text shown in snackbar when user deletes a collection
+    Text shown in snackbar when user closes a tab
   -->
-  <string name="snackbar_collection_deleted" tools:ignore="UnusedResources" moz:removedIn="143">Kolleksiya silindi</string>
-  <!-- Text shown in snackbar when user renames a collection -->
-  <string name="snackbar_collection_renamed" moz:removedIn="141" tools:ignore="UnusedResources">Kolleksiyanın adı dəyişdirildi</string>
-  <!-- Text shown in snackbar when user closes a tab -->
   <string name="snackbar_tab_closed">Vərəq qapatıldı</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">Vərəqlər qapatıldı</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">GERİ AL</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed">Sayt silindi</string>
   <!-- QR code scanner prompt dialog positive option to allow navigation to scanned link -->
   <string name="qr_scanner_dialog_positive">İCAZƏ VER</string>
   <!-- QR code scanner prompt dialog positive option to deny navigation to scanned link -->
   <string name="qr_scanner_dialog_negative">RƏDD ET</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive" tools:ignore="UnusedResources" moz:removedIn="143">Sil</string>
-  <!-- Message for copying the URL via long press on the toolbar -->
-  <string name="url_copied" tools:ignore="UnusedResources" moz:removedIn="142">URL köçürüldü</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_font_size_title">Şrift ölçüsü</string>
   <!-- Subtitle for the tabs item in Delete browsing data, %d is the number of open tabs -->
@@ -513,7 +497,7 @@
   <!-- Title for the site permissions item in Delete browsing data -->
   <string name="preferences_delete_browsing_data_site_permissions">Sayt icazələri</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">Çıx</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Çıx</string>
   <!-- Text for the cancel button for the data deletion dialog -->
   <string name="delete_browsing_data_prompt_cancel">Ləğv et</string>
   <!-- Text for the allow button for the data deletion dialog -->
@@ -524,14 +508,6 @@
     text to display in the snackbar once account is signed-in
   -->
   <string name="onboarding_firefox_account_sync_is_on">Sync aktivdir</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar">Vərəqlər göndərildi!</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">Vərəq göndərildi!</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">Göndərilə bilmədi</string>
   <!-- Title of QR Pairing Fragment -->
@@ -678,12 +654,6 @@
   <string name="search_add_custom_engine_error_empty_name">Axtarış mühərriyi adını daxil edin</string>
   <!-- Text shown when a user leaves the search string field empty -->
   <string name="search_add_custom_engine_error_empty_search_string">Axtarış mətnini daxil edin</string>
-  <!-- Text shown when a user creates a new search engine. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s yaradıldı</string>
-  <!-- Text shown when a user successfully edits a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_edit_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s saxlandı</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s silindi</string>
   <!-- label shown when there are not site exceptions to show in the site exception settings -->
   <string name="no_site_exceptions">İstisna sayt yoxdur</string>
   <!--
@@ -692,10 +662,16 @@
   -->
   <string name="certificate_info_verified_by">Təsdiqləyən: %1$s</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">Sil</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Sil</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Sil</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

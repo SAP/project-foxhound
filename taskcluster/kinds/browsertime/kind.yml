@@ -1,0 +1,74 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: gecko_taskgraph.loader.test:loader
+
+kind-dependencies:
+    - build
+    - signing-apk
+    - fetch
+    - toolchain
+
+transforms:
+    - gecko_taskgraph.transforms.test:transforms
+    - gecko_taskgraph.transforms.job:transforms
+    - gecko_taskgraph.transforms.task:transforms
+
+# Adding a new test type or running tests on a new platform? Be sure to review
+# https://wiki.mozilla.org/Sheriffing/Job_Visibility_Policy
+
+task-defaults:
+    run-on-repo-type: [hg]
+    attributes:
+        retrigger: true
+    use-python: default
+    use-uv: true
+    require-signed-extensions:
+        by-release-type:
+            release|esr.*: true
+            beta:
+                by-test-platform:
+                    .*-devedition/.*: false
+                    default: true
+            default: false
+    mozharness:
+        requires-signed-builds:
+            by-test-platform:
+                windows1.*:
+                    by-variant:
+                        msix: true
+                        default: false
+                default: false
+    docker-image:
+        in-tree: ubuntu2404-test
+    fetches:
+        toolchain:
+            by-test-platform:
+                win.*:
+                    - win32-minidump-stackwalk
+                    - win32-fix-stacks
+                macosx.*-64.*:
+                    - macosx64-minidump-stackwalk
+                    - macosx64-fix-stacks
+                macosx.*-aarch64.*:
+                    - macosx64-aarch64-minidump-stackwalk
+                    - macosx64-aarch64-fix-stacks
+                android-em-14.*:
+                    - android34-system-image-x86_64-linux
+                    - android34-avd-x86_64-linux
+                    - android-emulator-linux
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux64-hostutils
+                android-hw.*:
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux64-hostutils
+                default:
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+
+tasks-from:
+    - desktop.yml
+    - mobile.yml

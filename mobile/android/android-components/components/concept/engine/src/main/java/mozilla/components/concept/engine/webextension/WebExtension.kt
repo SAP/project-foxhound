@@ -351,165 +351,136 @@ data class Metadata(
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version
      */
     val version: String,
-
     /**
      * Required API permissions:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/permissions#API_permissions
      */
     val requiredPermissions: List<String>,
-
     /**
      * Required origin permissions:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/permissions#Host_permissions
      */
     val requiredOrigins: List<String>,
-
     /**
      * Required data collection permissions.
      */
     val requiredDataCollectionPermissions: List<String>,
-
     /**
      * Optional API permissions for this extension:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_permissions
      */
     val optionalPermissions: List<String>,
-
     /**
      * Optional API permissions granted to this extension:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_permissions
      */
     val grantedOptionalPermissions: List<String>,
-
     /**
      * Optional origin permissions for this extension:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_permissions
      */
     val optionalOrigins: List<String>,
-
     /**
      * Optional origin permissions granted to this extension:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/optional_permissions
      */
     val grantedOptionalOrigins: List<String>,
-
     /**
      * Optional data collection permissions.
      */
     val optionalDataCollectionPermissions: List<String>,
-
     /**
      * Optional data collection granted to this extension.
      */
     val grantedOptionalDataCollectionPermissions: List<String>,
-
     /**
      * Name of the extension:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/name
      */
     val name: String?,
-
     /**
      * Description of the extension:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/description
      */
     val description: String?,
-
     /**
      * Name of the extension developer:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/developer
      */
     val developerName: String?,
-
     /**
      * Url of the developer:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/developer
      */
     val developerUrl: String?,
-
     /**
      * Url of extension's homepage:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/homepage_url
      */
     val homepageUrl: String?,
-
     /**
      * Options page:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/options_ui
      */
     val optionsPageUrl: String?,
-
     /**
      * Whether or not the options page should be opened in a new tab:
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/options_ui#syntax
      */
     val openOptionsPageInTab: Boolean,
-
     /**
      * Describes the reason (or reasons) why an extension is disabled.
      */
     val disabledFlags: DisabledFlags,
-
     /**
      * Base URL for pages of this extension. Can be used to determine if a page
      * is from / belongs to this extension.
      */
     val baseUrl: String,
-
     /**
      * The full description of this extension.
      */
     val fullDescription: String?,
-
     /**
      * The URL used to install this extension.
      */
     val downloadUrl: String?,
-
     /**
      * The string representation of the date that this extension was most recently updated
      * (simplified ISO 8601 format).
      */
     val updateDate: String?,
-
     /**
      * The average rating of this extension.
      */
     val averageRating: Float,
-
     /**
      * The link to the review page for this extension.
      */
     val reviewUrl: String?,
-
     /**
      * The average rating of this extension.
      */
     val reviewCount: Int,
-
     /**
      * The creator name of this extension.
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/developer
      */
     val creatorName: String?,
-
     /**
      * The creator url of this extension.
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/developer
      */
     val creatorUrl: String?,
-
     /**
      * Whether or not this extension is temporary i.e. installed using a debug tool
      * such as web-ext, and won't be retained when the application exits.
      */
     val temporary: Boolean = false,
-
     /**
      * The URL to the detail page of this extension.
      */
     val detailUrl: String?,
-
     /**
      * Indicates how this extension works with private browsing windows.
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/incognito
@@ -520,7 +491,6 @@ data class Metadata(
 /**
  * Provides additional information about why an extension is being enabled or disabled.
  */
-@Suppress("MagicNumber")
 enum class EnableSource(val id: Int) {
     /**
      * The extension is enabled or disabled by the user.

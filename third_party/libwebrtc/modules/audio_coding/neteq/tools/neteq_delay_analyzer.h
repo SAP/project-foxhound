@@ -11,15 +11,19 @@
 #ifndef MODULES_AUDIO_CODING_NETEQ_TOOLS_NETEQ_DELAY_ANALYZER_H_
 #define MODULES_AUDIO_CODING_NETEQ_TOOLS_NETEQ_DELAY_ANALYZER_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
-#include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "modules/audio_coding/neteq/tools/neteq_input.h"
+#include "api/audio/audio_frame.h"
+#include "api/neteq/neteq.h"
 #include "modules/audio_coding/neteq/tools/neteq_test.h"
+#include "modules/rtp_rtcp/source/rtp_packet_received.h"
 
 namespace webrtc {
 namespace test {
@@ -27,7 +31,7 @@ namespace test {
 class NetEqDelayAnalyzer : public test::NetEqPostInsertPacket,
                            public test::NetEqGetAudioCallback {
  public:
-  void AfterInsertPacket(const test::NetEqInput::PacketData& packet,
+  void AfterInsertPacket(const RtpPacketReceived& packet,
                          NetEq* neteq) override;
 
   void BeforeGetAudio(NetEq* neteq) override;

@@ -2,19 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const SCOTCH_BONNET_PREF = "browser.urlbar.scotchBonnet.enableOverride";
-
 function test() {
   waitForExplicitFinish();
-  Services.prefs.setBoolPref(SCOTCH_BONNET_PREF, false);
 
   ok(PopupNotifications, "PopupNotifications object exists");
   ok(PopupNotifications.panel, "PopupNotifications panel exists");
 
   setup();
-  registerCleanupFunction(() => {
-    Services.prefs.clearUserPref(SCOTCH_BONNET_PREF);
-  });
 }
 
 var tests = [
@@ -67,7 +61,10 @@ var tests = [
       this.notification = showNotification(this.notifyObj);
     },
     async onShown(popup) {
-      await promiseTabLoadEvent(gBrowser.selectedTab, "about:blank");
+      await BrowserTestUtils.loadURIString({
+        browser: gBrowser.selectedTab.linkedBrowser,
+        uriString: "about:blank",
+      });
 
       checkPopup(popup, this.notifyObj);
       is(
@@ -109,7 +106,11 @@ var tests = [
       );
 
       // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      await promiseTabLoadEvent(gBrowser.selectedTab, "http://example.com/");
+      await BrowserTestUtils.loadURIString({
+        browser: gBrowser.selectedTab.linkedBrowser,
+        // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+        uriString: "http://example.com/",
+      });
 
       isnot(
         document.getElementById("geo-notification-icon").getBoundingClientRect()
@@ -278,14 +279,12 @@ var tests = [
 ];
 
 function assertFallbackAnchorNode(anchorNode) {
-  if (anchorNode.id == "searchmode-switcher-icon") {
+  if (anchorNode.classList.contains("searchmode-switcher-icon")) {
     Assert.ok(true, "The anchor is searchmode-switcher-icon");
   } else if (anchorNode.id == "identity-icon") {
     Assert.ok(true, "The anchor is identity-icon");
   } else if (anchorNode.id == "remote-control-icon") {
     Assert.ok(true, "The anchor is remote-control-icon");
-  } else if (anchorNode.classList.contains("urlbar-search-button")) {
-    Assert.ok(true, "The anchor is urlbar-search-button");
   } else {
     Assert.ok(false, "The anchor is unexpected element");
   }

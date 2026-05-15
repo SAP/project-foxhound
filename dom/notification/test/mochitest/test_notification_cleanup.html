@@ -44,16 +44,19 @@
     });
   });
 
-  add_task(async function test_notification_cleanup() {
+  let registration;
+  add_setup(async () => {
     // Force storage cleanup, otherwise the cleanup won't happen as other tests
     // may already have made notification requests
     await SpecialPowers.pushPrefEnv({
       set: [["dom.webnotifications.testing.force_storage_cleanup.enabled", true]]
     });
-
-    // Now pretend that bar and baz is still alive in the notification backend
     /** @type {ServiceWorkerRegistration} */
-    const registration = await setupServiceWorker("notification_empty_sw.js", ".")
+    registration = await setupServiceWorker("notification_empty_sw.js", ".")
+  })
+
+  add_task(async function test_notification_cleanup() {
+    // Now pretend that bar and baz is still alive in the notification backend
     await MockAlertsService.setHistory(["bar", "baz"]);
 
     // First use of PNotification
@@ -63,5 +66,17 @@
     const notifications = await registration.getNotifications();
     is(notifications.length, 3, "Should get three notifications")
     isDeeply(notifications.map(n => n.title).sort(), ["bar", "baz", "hello"], "Should get three different notifications");
+  });
+
+  add_task(async function test_notification_cleanup_nosupport() {
+    // Pretend the system doesn't support notification history retrieval
+    await MockAlertsService.setThrowHistory(true);
+
+    // First use of PNotification
+    await registration.showNotification("doom");
+
+    // everything existing should go away
+    const notifications = await registration.getNotifications();
+    isDeeply(notifications.map(n => n.title).sort(), ["doom"], "Should get one notification");
   });
 </script>

@@ -4,14 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_remoteworkercontrollerchild_h__
-#define mozilla_dom_remoteworkercontrollerchild_h__
-
-#include "nsISupportsImpl.h"
+#ifndef mozilla_dom_remoteworkercontrollerchild_h_
+#define mozilla_dom_remoteworkercontrollerchild_h_
 
 #include "RemoteWorkerController.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/PRemoteWorkerControllerChild.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
 
@@ -67,4 +66,4 @@ class RemoteWorkerControllerChild final : public PRemoteWorkerControllerChild {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_remoteworkercontrollerchild_h__
+#endif  // mozilla_dom_remoteworkercontrollerchild_h_

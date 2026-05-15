@@ -14,15 +14,20 @@ support-files = [
   "browser_autoplay_muted.html",
   "../general/audio.ogg",
 ]
-skip-if = ["true"] # Bug 1538602
+skip-if = [
+  "true", # Bug 1538602
+]
 
 ["browser_canvas_fingerprinting_resistance.js"]
 skip-if = [
   "debug",
-  "os == 'linux' && asan", # Bug 1522069
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # Bug 1522069
 ]
 
 ["browser_canvas_rfp_exclusion.js"]
+
+["browser_notification_permission_telemetry.js"]
+support-files = ["empty.html"]
 
 ["browser_permission_delegate_geo.js"]
 
@@ -48,7 +53,7 @@ support-files = ["../webrtc/get_user_media.html"]
 
 ["browser_temporary_permissions_navigation.js"]
 skip-if = [
-  "os == 'mac' && os_version == '15.00' && arch == 'aarch64'", # Bug 1898701
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1898701
 ]
 
 ["browser_temporary_permissions_tabs.js"]

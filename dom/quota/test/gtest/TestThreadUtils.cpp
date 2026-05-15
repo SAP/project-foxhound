@@ -4,10 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "QuotaManagerDependencyFixture.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/ThreadUtils.h"
 #include "mozilla/gtest/MozAssertions.h"
-#include "QuotaManagerDependencyFixture.h"
 
 namespace mozilla::dom::quota::test {
 

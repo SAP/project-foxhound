@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_HTMLFieldSetElement_h
 #define mozilla_dom_HTMLFieldSetElement_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/ValidityState.h"
 #include "nsGenericHTMLElement.h"
@@ -41,10 +40,16 @@ class HTMLFieldSetElement final : public nsGenericHTMLFormControlElement,
                     const nsAttrValue* aValue, const nsAttrValue* aOldValue,
                     nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
 
-  void InsertChildBefore(nsIContent* aChild, nsIContent* aBeforeThis,
-                         bool aNotify, ErrorResult& aRv) override;
-  void RemoveChildNode(nsIContent* aKid, bool aNotify,
-                       const BatchRemovalState*) override;
+  void InsertChildBefore(
+      nsIContent* aChild, nsIContent* aBeforeThis, bool aNotify,
+      ErrorResult& aRv, nsINode* aOldParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
+  void RemoveChildNode(
+      nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
+      nsINode* aNewParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
 
   // nsGenericHTMLElement
   bool IsDisabledForEvents(WidgetEvent* aEvent) override;

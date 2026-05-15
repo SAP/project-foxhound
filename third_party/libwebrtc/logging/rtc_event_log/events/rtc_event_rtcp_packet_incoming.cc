@@ -20,20 +20,18 @@
 namespace webrtc {
 
 RtcEventRtcpPacketIncoming::RtcEventRtcpPacketIncoming(
-    rtc::ArrayView<const uint8_t> packet)
+    ArrayView<const uint8_t> packet)
     : packet_(packet.data(), packet.size()) {}
 
 RtcEventRtcpPacketIncoming::RtcEventRtcpPacketIncoming(
     const RtcEventRtcpPacketIncoming& other)
-    : RtcEvent(other.timestamp_us_),
-      packet_(other.packet_.data(), other.packet_.size()) {}
+    : RtcEvent(other), packet_(other.packet_.data(), other.packet_.size()) {}
 
 RtcEventRtcpPacketIncoming::~RtcEventRtcpPacketIncoming() = default;
 
 std::unique_ptr<RtcEventRtcpPacketIncoming> RtcEventRtcpPacketIncoming::Copy()
     const {
-  return absl::WrapUnique<RtcEventRtcpPacketIncoming>(
-      new RtcEventRtcpPacketIncoming(*this));
+  return absl::WrapUnique(new RtcEventRtcpPacketIncoming(*this));
 }
 
 }  // namespace webrtc

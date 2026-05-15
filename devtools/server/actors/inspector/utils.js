@@ -28,7 +28,7 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  ["isNativeAnonymous", "getAdjustedQuads"],
+  "getAdjustedQuads",
   "resource://devtools/shared/layout/utils.js",
   true
 );
@@ -67,10 +67,22 @@ const IMAGE_FETCHING_TIMEOUT = 500;
  *
  * @param  {Node} rawNode
  *         Node for which we want the display name
- * @return {String}
+ * @return {string}
  *         Properly cased version of the node tag name
  */
 const getNodeDisplayName = function (rawNode) {
+  const { implementedPseudoElement } = rawNode;
+  if (implementedPseudoElement) {
+    if (
+      implementedPseudoElement.startsWith("::view-transition") &&
+      rawNode.hasAttribute("name")
+    ) {
+      return `${implementedPseudoElement}(${rawNode.getAttribute("name")})`;
+    }
+
+    return implementedPseudoElement;
+  }
+
   if (rawNode.nodeName && !rawNode.localName) {
     // The localName & prefix APIs have been moved from the Node interface to the Element
     // interface. Use Node.nodeName as a fallback.
@@ -85,7 +97,7 @@ const getNodeDisplayName = function (rawNode) {
  *
  * @param  {DOMNode} node
  *         The node for which then information is required
- * @return {Object}
+ * @return {object}
  *         An object like { grid: { isContainer, isItem }, flex: { isContainer, isItem } }
  */
 function getNodeGridFlexType(node) {
@@ -128,17 +140,17 @@ function isInXULDocument(el) {
 }
 
 /**
- * This DeepTreeWalker filter skips whitespace text nodes and anonymous
- * content with the exception of ::marker, ::before, and ::after, plus anonymous
- * content in XUL document (needed to show all elements in the browser toolbox).
+ * This DeepTreeWalker filter skips whitespace text nodes and anonymous content (unless
+ * we want them visible in the markup view, e.g. ::before, ::after, ::marker, …),
+ * plus anonymous content in XUL document (needed to show all elements in the browser toolbox).
  */
 function standardTreeWalkerFilter(node) {
-  // ::marker, ::before, and ::after are native anonymous content, but we always
-  // want to show them
+  // There are a few native anonymous content that we want to show in markup
   if (
     node.nodeName === "_moz_generated_content_marker" ||
     node.nodeName === "_moz_generated_content_before" ||
-    node.nodeName === "_moz_generated_content_after"
+    node.nodeName === "_moz_generated_content_after" ||
+    node.nodeName === "_moz_generated_content_backdrop"
   ) {
     return nodeFilterConstants.FILTER_ACCEPT;
   }
@@ -150,10 +162,25 @@ function standardTreeWalkerFilter(node) {
       : nodeFilterConstants.FILTER_SKIP;
   }
 
-  // Ignore all native anonymous roots inside a non-XUL document.
-  // We need to do this to skip things like form controls, scrollbars,
-  // video controls, etc (see bug 1187482).
-  if (isNativeAnonymous(node) && !isInXULDocument(node)) {
+  if (node.isNativeAnonymous && !isInXULDocument(node)) {
+    const nodeTypeAttribute = node.getAttribute && node.getAttribute("type");
+    // The ::view-transition pseudo element node has a <div type=":-moz-snapshot-containing-block">
+    // parent element that we don't want to display in the markup view.
+    // Instead, we want to directly display the ::view-transition pseudo-element.
+    if (nodeTypeAttribute === ":-moz-snapshot-containing-block") {
+      // FILTER_ACCEPT_CHILDREN means that the node won't be returned, but its children
+      // will be instead
+      return nodeFilterConstants.FILTER_ACCEPT_CHILDREN;
+    }
+
+    // Display all the ::view-transition* nodes
+    if (nodeTypeAttribute && nodeTypeAttribute.startsWith(":view-transition")) {
+      return nodeFilterConstants.FILTER_ACCEPT;
+    }
+
+    // Ignore all other native anonymous roots inside a non-XUL document.
+    // We need to do this to skip things like form controls, scrollbars,
+    // video controls, etc (see bug 1187482).
     return nodeFilterConstants.FILTER_SKIP;
   }
 
@@ -167,7 +194,7 @@ function noAnonymousContentTreeWalkerFilter(node) {
   // Ignore all native anonymous content inside a non-XUL document.
   // We need to do this to skip things like form controls, scrollbars,
   // video controls, etc (see bug 1187482).
-  if (!isInXULDocument(node) && isNativeAnonymous(node)) {
+  if (!isInXULDocument(node) && node.isNativeAnonymous) {
     return nodeFilterConstants.FILTER_SKIP;
   }
 
@@ -189,8 +216,9 @@ function allAnonymousContentTreeWalkerFilter(node) {
 
 /**
  * Is the given node a text node composed of whitespace only?
+ *
  * @param {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function isWhitespaceTextNode(node) {
   return node.nodeType == Node.TEXT_NODE && !/[^\s]/.exec(node.nodeValue);
@@ -198,8 +226,9 @@ function isWhitespaceTextNode(node) {
 
 /**
  * Does the given node have non-0 width and height?
+ *
  * @param {DOMNode} node
- * @return {Boolean}
+ * @return {boolean}
  */
 function nodeHasSize(node) {
   if (!node.getBoxQuads) {
@@ -220,7 +249,7 @@ function nodeHasSize(node) {
  * finished loading.
  *
  * @param {HTMLImageElement} image - The image element.
- * @param {Number} timeout - Maximum amount of time the image is allowed to load
+ * @param {number} timeout - Maximum amount of time the image is allowed to load
  * before the waiting is aborted. Ignored if flags.testing is set.
  *
  * @return {Promise} that is fulfilled once the image has loaded. If the image
@@ -267,7 +296,7 @@ function ensureImageLoaded(image, timeout) {
  *
  * @param {HTMLImageElement|HTMLCanvasElement} node - The <img> or <canvas>
  * element, or Image() object. Other types cause the method to reject.
- * @param {Number} maxDim - Optionally pass a maximum size you want the longest
+ * @param {number} maxDim - Optionally pass a maximum size you want the longest
  * side of the image to be resized to before getting the image data.
 
  * @return {Promise} A promise that is fulfilled with an object containing the
@@ -339,7 +368,7 @@ const imageToImageData = async function (node, maxDim) {
  *
  * @param  {DOMNode}  node
  *         Node for which we want to find closest background color.
- * @return {String}
+ * @return {string}
  *         String with the background color of the form rgba(r, g, b, a). Defaults to
  *         rgba(255, 255, 255, 1) if no background color is found.
  */
@@ -369,7 +398,7 @@ function getClosestBackgroundColor(node) {
  *
  * @param  {DOMNode}  node
  *         Node for which we want to find the background image.
- * @return {String}
+ * @return {string}
  *         String with the value of the background iamge property. Defaults to "none" if
  *         no background image is found.
  */
@@ -427,13 +456,13 @@ function findGridParentContainerForNode(node) {
  * background color for single-colored backgrounds. Defaults to the closest
  * background color if an error is encountered.
  *
- * @param  {Object}
+ * @param  {object}
  *         Node actor containing the following properties:
  *         {DOMNode} rawNode
  *         Node for which we want to calculate the color contrast.
  *         {WalkerActor} walker
  *         Walker actor used to check whether the node is the parent elm of a single text node.
- * @return {Object}
+ * @return {object}
  *         Object with one or more of the following properties:
  *         {Array|null} value
  *         RGBA array for single-colored background. Null for multi-colored backgrounds.
@@ -531,7 +560,7 @@ function getClosestBackgroundColorInRGBA(node) {
  * Indicates if a document is ready (i.e. if it's not loading anymore)
  *
  * @param {HTMLDocument} document: The document we want to check
- * @returns {Boolean}
+ * @returns {boolean}
  */
 function isDocumentReady(document) {
   if (!document) {

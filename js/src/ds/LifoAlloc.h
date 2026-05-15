@@ -8,11 +8,9 @@
 #define ds_LifoAlloc_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/MathAlgorithms.h"
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/TemplateLib.h"
 
 #include <algorithm>
 #include <new>
@@ -980,10 +978,8 @@ class LifoAlloc {
 
   void release(Mark mark);
 
- private:
   void cancelMark(Mark mark) { markCount--; }
 
- public:
   void releaseAll() {
     MOZ_ASSERT(!markCount);
 
@@ -1183,7 +1179,7 @@ class MOZ_NON_TEMPORARY_CLASS LifoAllocScope {
 enum Fallibility { Fallible, Infallible };
 
 template <Fallibility fb>
-class LifoAllocPolicy {
+class LifoAllocPolicy : public AllocPolicyBase {
   LifoAlloc& alloc_;
 
  public:
@@ -1213,8 +1209,11 @@ class LifoAllocPolicy {
     if (MOZ_UNLIKELY(!n)) {
       return nullptr;
     }
-    MOZ_ASSERT(!(oldSize & mozilla::tl::MulOverflowMask<sizeof(T)>::value));
-    memcpy(n, p, std::min(oldSize * sizeof(T), newSize * sizeof(T)));
+    size_t oldLength;
+    [[maybe_unused]] bool nooverflow =
+        mozilla::SafeMul(oldSize, sizeof(T), &oldLength);
+    MOZ_ASSERT(nooverflow);
+    memcpy(n, p, std::min(oldLength, newSize * sizeof(T)));
     return n;
   }
   template <typename T>
@@ -1231,7 +1230,6 @@ class LifoAllocPolicy {
   }
   template <typename T>
   void free_(T* p, size_t numElems) {}
-  void reportAllocOverflow() const {}
   [[nodiscard]] bool checkSimulatedOOM() const {
     return fb == Infallible || !js::oom::ShouldFailWithOOM();
   }

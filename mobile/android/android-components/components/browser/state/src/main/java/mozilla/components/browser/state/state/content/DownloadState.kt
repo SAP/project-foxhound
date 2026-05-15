@@ -93,7 +93,7 @@ data class DownloadState(
         PAUSED(PAUSED_ID),
 
         /**
-         * Indicates that the download that has been [DOWNLOADING] has been cancelled.
+         * Indicates that the download has been cancelled.
          */
         CANCELLED(CANCELLED_ID),
 

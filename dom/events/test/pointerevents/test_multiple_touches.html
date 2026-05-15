@@ -12,10 +12,7 @@
 <div id="target0" style="width: 100px; height: 100px; background: green"></div>
 <div id="target1" style="width: 100px; height: 100px; background: red"></div>
 <script type="text/javascript">
-// TODO: We should probably make EventUtils.js to support multiple touch.
-// Currently the use case is simple, so we just add support here.
-// Once we have more use cases, we could come out a more generic way to
-// support it.
+
 var touches = {
   ids: [],
   lefts: [],
@@ -30,16 +27,18 @@ var touches = {
 };
 
 function synthesizeTouchEvent(aType, aTouches) {
-  var utils = _getDOMWindowUtils(window);
-  if (!utils) {
-    ok(false, "unable to get nsIDOMWindowUtils");
-    return;
-  }
-
-  utils.sendTouchEvent(aType, aTouches.ids, aTouches.lefts, aTouches.tops,
-                       aTouches.rxs, aTouches.rys, aTouches.angles,
-                       aTouches.forces, aTouches.tiltXs, aTouches.tiltYs,
-                       aTouches.twists, 0 /* modifiers */);
+  synthesizeTouchAtPoint(aTouches.lefts, aTouches.tops, {
+    type: aType,
+    id: aTouches.ids,
+    rx: aTouches.rxs,
+    ry: aTouches.rys,
+    angle: aTouches.angles,
+    force: aTouches.forces,
+    tiltX: aTouches.tiltXs,
+    tiltY: aTouches.tiltYs,
+    twist: aTouches.twists,
+    modifiers: 0,
+  });
 }
 
 function synthesizeTouchStart(aTarget, aId, aOffsetX, aOffsetY) {

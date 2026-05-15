@@ -58,9 +58,11 @@ def test_output_file(run_main, tmpdir):
 
     run_main(["full", f"--output-file={output_file.strpath}"])
     assert output_file.check()
-    assert output_file.read_text("utf-8").strip() == "\n".join(
-        ["_fake-t-0", "_fake-t-1", "_fake-t-2"]
-    )
+    assert output_file.read_text("utf-8").strip() == "\n".join([
+        "_fake-t-0",
+        "_fake-t-1",
+        "_fake-t-2",
+    ])
 
 
 if __name__ == "__main__":

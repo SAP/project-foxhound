@@ -13,15 +13,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.benchmark.utils.HtmlAsset
+import org.mozilla.fenix.benchmark.utils.MockWebServerRule
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
+import org.mozilla.fenix.benchmark.utils.uri
 
 /**
  * This test class generates a basic baseline profile for launching an intent for the target package.
  *
  * Refer to the [baseline profile documentation](https://d.android.com/topic/performance/baselineprofiles)
  * for more information.
- *
- * Make sure `autosignReleaseWithDebugKey=true` is present in local.properties.
  *
  * Generate the baseline profile using this gradle task:
  * ```
@@ -47,13 +48,16 @@ class LaunchIntentBaselineProfileGenerator {
     @get:Rule
     val rule = BaselineProfileRule()
 
+    @get:Rule
+    val mockRule = MockWebServerRule()
+
     @Test
     fun generateBaselineProfile() {
         rule.collect(
             packageName = TARGET_PACKAGE,
         ) {
             val intent = Intent(Intent.ACTION_VIEW)
-            intent.data = Uri.parse("https://www.mozilla.org/")
+            intent.data = mockRule.uri(HtmlAsset.SIMPLE)
             intent.setPackage(packageName)
 
             startActivityAndWait(intent = intent)

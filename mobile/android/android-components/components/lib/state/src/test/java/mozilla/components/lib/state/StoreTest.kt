@@ -4,13 +4,19 @@
 
 package mozilla.components.lib.state
 
-import mozilla.components.support.test.ext.joinBlocking
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.util.concurrent.Executors
 
 class StoreTest {
     @Test
@@ -20,12 +26,12 @@ class StoreTest {
             ::reducer,
         )
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
 
         assertEquals(24, store.state.counter)
 
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
+        store.dispatch(TestAction.DecrementAction)
+        store.dispatch(TestAction.DecrementAction)
 
         assertEquals(22, store.state.counter)
     }
@@ -43,7 +49,7 @@ class StoreTest {
             it.resume()
         }
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
 
         assertEquals(24, observedValue)
     }
@@ -81,7 +87,7 @@ class StoreTest {
         assertTrue(stateChangeObserved)
         stateChangeObserved = false
 
-        store.dispatch(TestAction.DoNothingAction).joinBlocking()
+        store.dispatch(TestAction.DoNothingAction)
 
         assertFalse(stateChangeObserved)
     }
@@ -101,17 +107,17 @@ class StoreTest {
             it.resume()
         }
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
 
         assertEquals(24, observedValue)
 
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
+        store.dispatch(TestAction.DecrementAction)
 
         assertEquals(23, observedValue)
 
         subscription.unsubscribe()
 
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
+        store.dispatch(TestAction.DecrementAction)
 
         assertEquals(23, observedValue)
         assertEquals(22, store.state.counter)
@@ -144,19 +150,19 @@ class StoreTest {
             ),
         )
 
-        store.dispatch(TestAction.DoNothingAction).joinBlocking()
+        store.dispatch(TestAction.DoNothingAction)
 
         assertEquals(2, store.state.counter)
 
-        store.dispatch(TestAction.DoNothingAction).joinBlocking()
+        store.dispatch(TestAction.DoNothingAction)
 
         assertEquals(6, store.state.counter)
 
-        store.dispatch(TestAction.DoNothingAction).joinBlocking()
+        store.dispatch(TestAction.DoNothingAction)
 
         assertEquals(14, store.state.counter)
 
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
+        store.dispatch(TestAction.DecrementAction)
 
         assertEquals(13, store.state.counter)
     }
@@ -173,13 +179,13 @@ class StoreTest {
             listOf(interceptingMiddleware),
         )
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(0, store.state.counter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(0, store.state.counter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(0, store.state.counter)
     }
 
@@ -195,13 +201,13 @@ class StoreTest {
             listOf(rewritingMiddleware),
         )
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(-1, store.state.counter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(-2, store.state.counter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(-3, store.state.counter)
     }
 
@@ -221,13 +227,13 @@ class StoreTest {
             listOf(rewritingMiddleware),
         )
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(-1, store.state.counter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(-2, store.state.counter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(-3, store.state.counter)
     }
 
@@ -248,19 +254,19 @@ class StoreTest {
             listOf(observingMiddleware),
         )
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(0, countBefore)
         assertEquals(1, countAfter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(1, countBefore)
         assertEquals(2, countAfter)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(2, countBefore)
         assertEquals(3, countAfter)
 
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
+        store.dispatch(TestAction.DecrementAction)
         assertEquals(3, countBefore)
         assertEquals(2, countAfter)
     }
@@ -283,9 +289,48 @@ class StoreTest {
             listOf(catchingMiddleware),
         )
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
 
         assertNotNull(caughtException)
         assertTrue(caughtException is IOException)
+    }
+
+    @Test
+    fun `Dispatching Actions from a different thread from middleware does not create concurrent write problems`() = runTest {
+        val middlewareJobs = mutableListOf<Job>()
+        val middlewareDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val storeDispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+        val middleware = object : Middleware<TestState, TestAction> {
+            override fun invoke(
+                store: Store<TestState, TestAction>,
+                next: (TestAction) -> Unit,
+                action: TestAction,
+            ) {
+                if (action is TestAction.DecrementAction) {
+                    middlewareJobs += this@runTest.launch(middlewareDispatcher) {
+                        delay(5)
+                        store.dispatch(TestAction.IncrementAction)
+                    }
+                }
+                next(action)
+            }
+        }
+        val store = Store(
+            TestState(counter = 23),
+            ::reducer,
+            listOf(middleware),
+        )
+
+        val storeJobs = mutableListOf<Job>()
+        for (i in 0..10_000) {
+            storeJobs += this.launch(storeDispatcher) { store.dispatch(TestAction.DecrementAction) }
+        }
+        storeJobs.joinAll()
+        assertEquals(10_001 * 2, storeJobs.size + middlewareJobs.size)
+        middlewareJobs.joinAll()
+        middlewareDispatcher.close()
+        storeDispatcher.close()
+
+        assertEquals(23, store.state.counter)
     }
 }

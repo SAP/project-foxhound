@@ -8,11 +8,8 @@
 
 #include <algorithm>
 
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/IntegerRange.h"
-#include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
-
-#include "BaseProfiler.h"
 
 namespace mozilla {
 namespace baseprofiler {

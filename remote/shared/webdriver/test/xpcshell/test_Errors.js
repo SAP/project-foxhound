@@ -27,6 +27,8 @@ const errors = [
   error.NoSuchFrameError,
   error.NoSuchHandleError,
   error.NoSuchInterceptError,
+  error.NoSuchNetworkCollectorError,
+  error.NoSuchNetworkDataError,
   error.NoSuchNodeError,
   error.NoSuchRequestError,
   error.NoSuchScriptError,
@@ -38,6 +40,7 @@ const errors = [
   error.TimeoutError,
   error.UnableToSetCookieError,
   error.UnableToSetFileInputError,
+  error.UnavailableNetworkDataError,
   error.UnexpectedAlertOpenError,
   error.UnknownCommandError,
   error.UnknownError,
@@ -434,6 +437,22 @@ add_task(function test_NoSuchInterceptError() {
   ok(err instanceof error.WebDriverError);
 });
 
+add_task(function test_NoSuchNetworkCollectorError() {
+  let err = new error.NoSuchNetworkCollectorError("foo");
+  equal("NoSuchNetworkCollectorError", err.name);
+  equal("foo", err.message);
+  equal("no such network collector", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
+add_task(function test_NoSuchNetworkDataError() {
+  let err = new error.NoSuchNetworkDataError("foo");
+  equal("NoSuchNetworkDataError", err.name);
+  equal("foo", err.message);
+  equal("no such network data", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
 add_task(function test_NoSuchNodeError() {
   let err = new error.NoSuchNodeError("foo");
   equal("NoSuchNodeError", err.name);
@@ -535,6 +554,14 @@ add_task(function test_UnableToSetFileInputError() {
   equal("UnableToSetFileInputError", err.name);
   equal("foo", err.message);
   equal("unable to set file input", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
+add_task(function test_UnavailableNetworkDataError() {
+  let err = new error.UnavailableNetworkDataError("foo");
+  equal("UnavailableNetworkDataError", err.name);
+  equal("foo", err.message);
+  equal("unavailable network data", err.status);
   ok(err instanceof error.WebDriverError);
 });
 

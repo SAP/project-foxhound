@@ -92,6 +92,21 @@ void HostRecordQueue::AddToEvictionQ(
   }
 }
 
+void HostRecordQueue::MoveToEvictionQueueTail(
+    nsHostRecord* aRec, const MutexAutoLock& aProofOfLock) {
+  bool inEvictionQ = mEvictionQ.contains(aRec);
+  if (!inEvictionQ) {
+    // Note: this function can be called when the record isn’t in the
+    // mEvictionQ. For example, if we immediately start a TTL lookup (see
+    // nsHostResolver::CompleteLookupLocked), the record may not be in
+    // mEvictionQ.
+    return;
+  }
+
+  aRec->remove();
+  mEvictionQ.insertBack(aRec);
+}
+
 void HostRecordQueue::MaybeRenewHostRecord(nsHostRecord* aRec,
                                            const MutexAutoLock& aProofOfLock) {
   if (!aRec->isInList()) {

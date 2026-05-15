@@ -9,6 +9,7 @@
  */
 
 #include "ThreeDPoint.h"
+
 #include "WebAudioUtils.h"
 
 namespace mozilla::dom {

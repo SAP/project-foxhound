@@ -13,8 +13,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
+#include "api/environment/environment.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/transport/stun.h"
 #include "api/units/time_delta.h"
@@ -22,12 +25,12 @@
 #include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/thread.h"
-#include "rtc_base/time_utils.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/wait_until.h"
 
-namespace cricket {
+namespace webrtc {
 namespace {
 
 using ::testing::Ne;
@@ -47,18 +50,23 @@ int TotalDelay(int sends) {
 }
 }  // namespace
 
+class StunRequestThunker;
+
 class StunRequestTest : public ::testing::Test {
  public:
   StunRequestTest()
-      : manager_(webrtc::Thread::Current(),
+      : env_(CreateTestEnvironment()),
+        manager_(Thread::Current(),
                  [this](const void* data, size_t size, StunRequest* request) {
                    OnSendPacket(data, size, request);
                  }),
         request_count_(0),
-        response_(NULL),
+        response_(nullptr),
         success_(false),
         failure_(false),
         timeout_(false) {}
+
+  std::unique_ptr<StunRequestThunker> CreateStunRequest();
 
   void OnSendPacket(const void* data, size_t size, StunRequest* req) {
     request_count_++;
@@ -75,7 +83,8 @@ class StunRequestTest : public ::testing::Test {
   virtual void OnTimeout() { timeout_ = true; }
 
  protected:
-  webrtc::AutoThread main_thread_;
+  AutoThread main_thread_;
+  const Environment env_;
   StunRequestManager manager_;
   int request_count_;
   StunMessage* response_;
@@ -87,8 +96,10 @@ class StunRequestTest : public ::testing::Test {
 // Forwards results to the test class.
 class StunRequestThunker : public StunRequest {
  public:
-  StunRequestThunker(StunRequestManager& manager, StunRequestTest* test)
-      : StunRequest(manager, CreateStunMessage(STUN_BINDING_REQUEST)),
+  StunRequestThunker(const Environment& env,
+                     StunRequestManager& manager,
+                     StunRequestTest* test)
+      : StunRequest(env, manager, CreateStunMessage(STUN_BINDING_REQUEST)),
         test_(test) {
     SetAuthenticationRequired(false);
   }
@@ -98,21 +109,25 @@ class StunRequestThunker : public StunRequest {
   }
 
  private:
-  virtual void OnResponse(StunMessage* res) { test_->OnResponse(res); }
-  virtual void OnErrorResponse(StunMessage* res) {
+  void OnResponse(StunMessage* res) override { test_->OnResponse(res); }
+  void OnErrorResponse(StunMessage* res) override {
     test_->OnErrorResponse(res);
   }
-  virtual void OnTimeout() { test_->OnTimeout(); }
+  void OnTimeout() override { test_->OnTimeout(); }
 
   StunRequestTest* test_;
 };
 
+std::unique_ptr<StunRequestThunker> StunRequestTest::CreateStunRequest() {
+  return std::make_unique<StunRequestThunker>(env_, manager_, this);
+}
+
 // Test handling of a normal binding response.
 TEST_F(StunRequestTest, TestSuccess) {
-  auto* request = new StunRequestThunker(manager_, this);
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res =
       request->CreateResponseMessage(STUN_BINDING_RESPONSE);
-  manager_.Send(request);
+  manager_.Send(std::move(request));
   EXPECT_TRUE(manager_.CheckResponse(res.get()));
 
   EXPECT_TRUE(response_ == res.get());
@@ -123,10 +138,10 @@ TEST_F(StunRequestTest, TestSuccess) {
 
 // Test handling of an error binding response.
 TEST_F(StunRequestTest, TestError) {
-  auto* request = new StunRequestThunker(manager_, this);
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res =
       request->CreateResponseMessage(STUN_BINDING_ERROR_RESPONSE);
-  manager_.Send(request);
+  manager_.Send(std::move(request));
   EXPECT_TRUE(manager_.CheckResponse(res.get()));
 
   EXPECT_TRUE(response_ == res.get());
@@ -137,13 +152,13 @@ TEST_F(StunRequestTest, TestError) {
 
 // Test handling of a binding response with the wrong transaction id.
 TEST_F(StunRequestTest, TestUnexpected) {
-  auto* request = new StunRequestThunker(manager_, this);
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res = CreateStunMessage(STUN_BINDING_RESPONSE);
 
-  manager_.Send(request);
+  manager_.Send(std::move(request));
   EXPECT_FALSE(manager_.CheckResponse(res.get()));
 
-  EXPECT_TRUE(response_ == NULL);
+  EXPECT_TRUE(response_ == nullptr);
   EXPECT_FALSE(success_);
   EXPECT_FALSE(failure_);
   EXPECT_FALSE(timeout_);
@@ -151,20 +166,19 @@ TEST_F(StunRequestTest, TestUnexpected) {
 
 // Test that requests are sent at the right times.
 TEST_F(StunRequestTest, TestBackoff) {
-  webrtc::ScopedFakeClock fake_clock;
-  auto* request = new StunRequestThunker(manager_, this);
+  ScopedFakeClock fake_clock;
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res =
       request->CreateResponseMessage(STUN_BINDING_RESPONSE);
 
-  int64_t start = webrtc::TimeMillis();
-  manager_.Send(request);
+  int64_t start = env_.clock().TimeInMilliseconds();
+  manager_.Send(std::move(request));
   for (int i = 0; i < 9; ++i) {
-    EXPECT_THAT(webrtc::WaitUntil(
-                    [&] { return request_count_; }, Ne(i),
-                    {.timeout = webrtc::TimeDelta::Millis(STUN_TOTAL_TIMEOUT),
-                     .clock = &fake_clock}),
-                webrtc::IsRtcOk());
-    int64_t elapsed = webrtc::TimeMillis() - start;
+    EXPECT_THAT(WaitUntil([&] { return request_count_; }, Ne(i),
+                          {.timeout = TimeDelta::Millis(STUN_TOTAL_TIMEOUT),
+                           .clock = &fake_clock}),
+                IsRtcOk());
+    int64_t elapsed = env_.clock().TimeInMilliseconds() - start;
     RTC_DLOG(LS_INFO) << "STUN request #" << (i + 1) << " sent at " << elapsed
                       << " ms";
     EXPECT_EQ(TotalDelay(i), elapsed);
@@ -179,16 +193,16 @@ TEST_F(StunRequestTest, TestBackoff) {
 
 // Test that we timeout properly if no response is received.
 TEST_F(StunRequestTest, TestTimeout) {
-  webrtc::ScopedFakeClock fake_clock;
-  auto* request = new StunRequestThunker(manager_, this);
+  ScopedFakeClock fake_clock;
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res =
       request->CreateResponseMessage(STUN_BINDING_RESPONSE);
 
-  manager_.Send(request);
-  SIMULATED_WAIT(false, cricket::STUN_TOTAL_TIMEOUT, fake_clock);
+  manager_.Send(std::move(request));
+  SIMULATED_WAIT(false, STUN_TOTAL_TIMEOUT, fake_clock);
 
   EXPECT_FALSE(manager_.CheckResponse(res.get()));
-  EXPECT_TRUE(response_ == NULL);
+  EXPECT_TRUE(response_ == nullptr);
   EXPECT_FALSE(success_);
   EXPECT_FALSE(failure_);
   EXPECT_TRUE(timeout_);
@@ -197,11 +211,12 @@ TEST_F(StunRequestTest, TestTimeout) {
 // Regression test for specific crash where we receive a response with the
 // same id as a request that doesn't have an underlying StunMessage yet.
 TEST_F(StunRequestTest, TestNoEmptyRequest) {
-  StunRequestThunker* request = new StunRequestThunker(manager_, this);
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
+  std::string request_id = request->id();
 
-  manager_.SendDelayed(request, 100);
+  manager_.Send(std::move(request), /*delay=*/TimeDelta::Millis(100));
 
-  StunMessage dummy_req(0, request->id());
+  StunMessage dummy_req(0, request_id);
   std::unique_ptr<StunMessage> res =
       CreateStunMessage(STUN_BINDING_RESPONSE, &dummy_req);
 
@@ -217,11 +232,11 @@ TEST_F(StunRequestTest, TestNoEmptyRequest) {
 // which is not recognized, the transaction should be considered a failure and
 // the response should be ignored.
 TEST_F(StunRequestTest, TestUnrecognizedComprehensionRequiredAttribute) {
-  auto* request = new StunRequestThunker(manager_, this);
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res =
       request->CreateResponseMessage(STUN_BINDING_ERROR_RESPONSE);
 
-  manager_.Send(request);
+  manager_.Send(std::move(request));
   res->AddAttribute(StunAttribute::CreateUInt32(0x7777));
   EXPECT_FALSE(manager_.CheckResponse(res.get()));
 
@@ -244,10 +259,10 @@ class StunRequestReentranceTest : public StunRequestTest {
 };
 
 TEST_F(StunRequestReentranceTest, TestSuccess) {
-  auto* request = new StunRequestThunker(manager_, this);
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res =
       request->CreateResponseMessage(STUN_BINDING_RESPONSE);
-  manager_.Send(request);
+  manager_.Send(std::move(request));
   EXPECT_TRUE(manager_.CheckResponse(res.get()));
 
   EXPECT_TRUE(response_ == res.get());
@@ -257,10 +272,10 @@ TEST_F(StunRequestReentranceTest, TestSuccess) {
 }
 
 TEST_F(StunRequestReentranceTest, TestError) {
-  auto* request = new StunRequestThunker(manager_, this);
+  std::unique_ptr<StunRequestThunker> request = CreateStunRequest();
   std::unique_ptr<StunMessage> res =
       request->CreateResponseMessage(STUN_BINDING_ERROR_RESPONSE);
-  manager_.Send(request);
+  manager_.Send(std::move(request));
   EXPECT_TRUE(manager_.CheckResponse(res.get()));
 
   EXPECT_TRUE(response_ == res.get());
@@ -269,4 +284,4 @@ TEST_F(StunRequestReentranceTest, TestError) {
   EXPECT_FALSE(timeout_);
 }
 
-}  // namespace cricket
+}  // namespace webrtc

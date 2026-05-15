@@ -8,7 +8,6 @@ import android.util.Log
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
 import leakcanary.AppWatcher
-import leakcanary.LeakAssertions
 import leakcanary.LeakCanary
 import leakcanary.TestDescriptionHolder
 import org.junit.rules.TestRule
@@ -69,7 +68,11 @@ class DetectMemoryLeaksRule(
                                 referenceMatchers = AndroidReferenceMatchers.appDefaults + knownLeaks,
                             )
                             base.evaluate()
-                            LeakAssertions.assertNoLeaks(tag)
+
+                            FenixDetectLeaksAssert.assertNoLeaks(
+                                tag = tag,
+                                filename = "${description.className}_${description.methodName}",
+                            )
                         } finally {
                             AppWatcher.objectWatcher.clearWatchedObjects()
                         }

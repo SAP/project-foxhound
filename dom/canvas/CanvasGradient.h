@@ -5,12 +5,12 @@
 #ifndef mozilla_dom_CanvasGradient_h
 #define mozilla_dom_CanvasGradient_h
 
-#include "nsTArray.h"
+#include "gfxGradientCache.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/CanvasRenderingContext2DBinding.h"
 #include "mozilla/gfx/2D.h"
+#include "nsTArray.h"
 #include "nsWrapperCache.h"
-#include "gfxGradientCache.h"
 
 namespace mozilla::dom {
 

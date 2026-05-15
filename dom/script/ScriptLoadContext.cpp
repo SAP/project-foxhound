@@ -4,20 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ScriptLoadContext.h"
+
 #include "GeckoProfiler.h"
-
-#include "mozilla/dom/Document.h"
-#include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Unused.h"
-#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
-
+#include "ModuleLoadRequest.h"
 #include "js/SourceText.h"
 #include "js/loader/LoadContextBase.h"
 #include "js/loader/ModuleLoadRequest.h"
-
-#include "ScriptLoadContext.h"
-#include "ModuleLoadRequest.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIClassOfService.h"
@@ -51,7 +48,8 @@ NS_IMPL_ADDREF_INHERITED(ScriptLoadContext, JS::loader::LoadContextBase)
 NS_IMPL_RELEASE_INHERITED(ScriptLoadContext, JS::loader::LoadContextBase)
 
 ScriptLoadContext::ScriptLoadContext(
-    nsIScriptElement* aScriptElement /* = nullptr */)
+    nsIScriptElement* aScriptElement /* = nullptr */,
+    const nsAString& aSourceText /* = VoidString() */)
     : JS::loader::LoadContextBase(JS::loader::ContextKind::Window),
       mScriptMode(ScriptMode::eBlocking),
       mScriptFromHead(false),
@@ -61,13 +59,14 @@ ScriptLoadContext::ScriptLoadContext(
       mIsNonAsyncScriptInserted(false),
       mIsXSLT(false),
       mInCompilingList(false),
-      mClassificationFlags({0, 0}),
       mWasCompiledOMT(false),
+      mIsPreload(false),
+      mUnreportedPreloadError(NS_OK),
       mLineNo(1),
       mColumnNo(0),
-      mIsPreload(false),
+      mClassificationFlags({0, 0}),
       mScriptElement(aScriptElement),
-      mUnreportedPreloadError(NS_OK) {}
+      mSourceText(aSourceText) {}
 
 ScriptLoadContext::~ScriptLoadContext() {
   MOZ_ASSERT(NS_IsMainThread());
@@ -131,7 +130,8 @@ void ScriptLoadContext::PrioritizeAsPreload(nsIChannel* aChannel) {
 }
 
 bool ScriptLoadContext::IsPreload() const {
-  if (mRequest->IsModuleRequest() && !mRequest->IsTopLevel()) {
+  if (mRequest->IsModuleRequest() &&
+      mRequest->AsModuleRequest()->IsStaticImport()) {
     JS::loader::ModuleLoadRequest* root =
         mRequest->AsModuleRequest()->GetRootModule();
     return root->GetScriptLoadContext()->IsPreload();
@@ -149,7 +149,12 @@ bool ScriptLoadContext::HasScriptElement() const { return !!mScriptElement; }
 
 void ScriptLoadContext::GetInlineScriptText(nsAString& aText) const {
   MOZ_ASSERT(mIsInline);
-  mScriptElement->GetScriptText(aText);
+  if (mSourceText.IsVoid()) {
+    // Lazily retrieve the text of inline script, see bug 1376651.
+    mScriptElement->GetScriptText(aText);
+  } else {
+    aText.Append(mSourceText);
+  }
 }
 
 void ScriptLoadContext::GetHintCharset(nsAString& aCharset) const {
@@ -221,8 +226,8 @@ void ScriptLoadContext::GetProfilerLabel(nsACString& aOutString) {
   }
 
   nsAutoCString url;
-  if (mRequest->mURI) {
-    mRequest->mURI->GetAsciiSpec(url);
+  if (mRequest->URI()) {
+    mRequest->URI()->GetAsciiSpec(url);
   } else {
     url = "<unknown>";
   }

@@ -5,16 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FormData.h"
-#include "nsIInputStream.h"
-#include "mozilla/dom/CustomElementTypes.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/Directory.h"
-#include "mozilla/dom/HTMLFormElement.h"
-#include "mozilla/Encoding.h"
-#include "nsGenericHTMLElement.h"
-#include "nsQueryObject.h"
 
 #include "MultipartBlobImpl.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/dom/CustomElementTypes.h"
+#include "mozilla/dom/Directory.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/HTMLFormElement.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIInputStream.h"
+#include "nsQueryObject.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -331,7 +331,7 @@ already_AddRefed<FormData> FormData::Constructor(
 
       // 1.1.2. If submitter's form owner is not this form element, then throw a
       //      "NotFoundError" DOMException.
-      if (fc->GetForm() != aFormElement) {
+      if (fc->GetFormInternal() != aFormElement) {
         aRv.ThrowNotFoundError("The submitter is not owned by this form.");
         return nullptr;
       }

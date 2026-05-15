@@ -22,6 +22,7 @@ dependencies = [
     "pynose",
     "pylint",
     "pyflakes",
+    "pyyaml",
     "toml",
     "tomlkit",
 ]

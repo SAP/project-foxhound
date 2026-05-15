@@ -7,7 +7,6 @@
 package org.mozilla.gecko;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.credentials.CreateCredentialException;
@@ -22,16 +21,16 @@ import android.credentials.PrepareGetCredentialResponse;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.OutcomeReceiver;
-import android.util.Base64;
 import android.util.Log;
+import androidx.annotation.UiThread;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.WebAuthnUtils;
 import org.mozilla.geckoview.GeckoResult;
 
 // Credential Manager implementation that is introduced from Android 14.
-@TargetApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class WebAuthnCredentialManager {
   private static final String LOGTAG = "WebAuthnCredMan";
   private static final boolean DEBUG = false;
@@ -71,83 +70,64 @@ public class WebAuthnCredentialManager {
   }
 
   private static Bundle getRequestBundleForMakeCredential(
-      final GeckoBundle credentialBundle,
-      final byte[] userId,
-      final byte[] challenge,
-      final int[] algs,
-      final WebAuthnUtils.WebAuthnPublicCredential[] excludeList,
-      final GeckoBundle authenticatorSelection,
-      final byte[] clientDataHash) {
-    try {
-      final JSONObject requestJSON =
-          WebAuthnUtils.getJSONObjectForMakeCredential(
-              credentialBundle, userId, challenge, algs, excludeList, authenticatorSelection);
-      final Bundle bundle = getRequestBundle(requestJSON.toString(), clientDataHash);
-      if (bundle == null) {
-        return null;
-      }
-
-      final Bundle displayInfoBundle = new Bundle();
-      displayInfoBundle.putCharSequence(
-          BUNDLE_KEY_USER_ID,
-          Base64.encodeToString(userId, Base64.URL_SAFE | Base64.NO_PADDING | Base64.NO_WRAP));
-      final GeckoBundle userBundle = credentialBundle.getBundle("user");
-      displayInfoBundle.putString(
-          BUNDLE_KEY_USER_DISPLAY_NAME, userBundle.getString("displayName", ""));
-      bundle.putBundle(BUNDLE_KEY_REQUEST_DISPLAY_INFO, displayInfoBundle);
-
-      bundle.putString(
-          BUNDLE_KEY_SUBTYPE, BUNDLE_VALUE_SUBTYPE_CREATE_PUBLIC_KEY_CREDENTIAL_REQUEST);
-      return bundle;
-    } catch (final JSONException e) {
-      Log.e(LOGTAG, "Couldn't generate JSON object for request", e);
+      final byte[] clientDataHash, final String requestJSON) {
+    final Bundle bundle = getRequestBundle(requestJSON, clientDataHash);
+    if (bundle == null) {
+      return null;
     }
-    return null;
+
+    final JSONObject json;
+    try {
+      json = new JSONObject(requestJSON);
+    } catch (final JSONException e) {
+      return null;
+    }
+
+    final JSONObject userField = json.optJSONObject("user");
+    if (userField == null) {
+      return null;
+    }
+
+    final Bundle displayInfoBundle = new Bundle();
+    displayInfoBundle.putCharSequence(BUNDLE_KEY_USER_ID, userField.optString("id"));
+    displayInfoBundle.putString(BUNDLE_KEY_USER_DISPLAY_NAME, userField.optString("displayName"));
+    bundle.putBundle(BUNDLE_KEY_REQUEST_DISPLAY_INFO, displayInfoBundle);
+
+    bundle.putString(BUNDLE_KEY_SUBTYPE, BUNDLE_VALUE_SUBTYPE_CREATE_PUBLIC_KEY_CREDENTIAL_REQUEST);
+    return bundle;
   }
 
   private static Bundle getRequestBundleForGetAssertion(
-      final byte[] challenge,
-      final WebAuthnUtils.WebAuthnPublicCredential[] allowList,
-      final GeckoBundle assertionBundle,
-      final GeckoBundle extensionsBundle,
-      final byte[] clientDataHash) {
-    try {
-      final JSONObject requestJSON =
-          WebAuthnUtils.getJSONObjectForGetAssertion(
-              challenge, allowList, assertionBundle, extensionsBundle);
-      final Bundle bundle = getRequestBundle(requestJSON.toString(), clientDataHash);
-      if (bundle == null) {
-        return null;
-      }
-      bundle.putString(BUNDLE_KEY_SUBTYPE, BUNDLE_VALUE_SUBTYPE_GET_PUBLIC_KEY_CREDENTIAL_OPTION);
-      return bundle;
-    } catch (final JSONException e) {
-      Log.e(LOGTAG, "Couldn't generate JSON object for request", e);
+      final byte[] clientDataHash, final String requestJSON) {
+    final Bundle bundle = getRequestBundle(requestJSON, clientDataHash);
+    if (bundle == null) {
+      return null;
     }
-    return null;
+
+    final JSONObject json;
+    try {
+      json = new JSONObject(requestJSON);
+    } catch (final JSONException e) {
+      return null;
+    }
+    final JSONArray allowList = json.optJSONArray("allowCredentials");
+    bundle.putBoolean(
+        BUNDLE_KEY_IS_AUTO_SELECT_ALLOWED, allowList != null && allowList.length() > 0);
+
+    bundle.putString(BUNDLE_KEY_SUBTYPE, BUNDLE_VALUE_SUBTYPE_GET_PUBLIC_KEY_CREDENTIAL_OPTION);
+    return bundle;
   }
 
+  @UiThread
   @SuppressLint("MissingPermission")
   public static GeckoResult<WebAuthnUtils.MakeCredentialResponse> makeCredential(
-      final GeckoBundle credentialBundle,
-      final byte[] userId,
-      final byte[] challenge,
-      final int[] algs,
-      final WebAuthnUtils.WebAuthnPublicCredential[] excludeList,
-      final GeckoBundle authenticatorSelection,
-      final byte[] clientDataHash) {
-    final Boolean requireResidentKey =
-        authenticatorSelection.getBoolean("requireResidentKey", false);
+      final String origin, final byte[] clientDataHash, final String requestJSON) {
+    ThreadUtils.assertOnUiThread();
 
-    final Boolean residentKeyDiscouraged =
-        authenticatorSelection
-            .getString("residentKey", requireResidentKey ? "required" : "discouraged")
-            .equals("discouraged");
-
-    // We only use Credential Manager for Passkeys. If residentKey is discouraged, use GMS FIDO2.
-    if (residentKeyDiscouraged) {
-      return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
-    }
+    // We use Credential Manager first. If it doesn't work, we use GMS FIDO2.
+    // Credential manager may support non-discoverable keys,
+    // Else, following the specifications, `residentKey=discouraged` allows discoverable keys too
+    // but prefer non-discoverable keys
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
     }
@@ -159,15 +139,7 @@ public class WebAuthnCredentialManager {
       return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
     }
 
-    final Bundle requestBundle =
-        getRequestBundleForMakeCredential(
-            credentialBundle,
-            userId,
-            challenge,
-            algs,
-            excludeList,
-            authenticatorSelection,
-            clientDataHash);
+    final Bundle requestBundle = getRequestBundleForMakeCredential(clientDataHash, requestJSON);
     if (requestBundle == null) {
       return GeckoResult.fromException(new WebAuthnUtils.Exception("UNKNOWN_ERR"));
     }
@@ -179,7 +151,7 @@ public class WebAuthnCredentialManager {
         new CreateCredentialRequest.Builder(
                 TYPE_PUBLIC_KEY_CREDENTIAL, requestBundle, requestBundle)
             .setAlwaysSendAppInfoToProvider(true)
-            .setOrigin(credentialBundle.getString("origin"))
+            .setOrigin(origin)
             .build();
 
     final CredentialManager manager =
@@ -244,22 +216,21 @@ public class WebAuthnCredentialManager {
     return result;
   }
 
+  @UiThread
   @SuppressLint("MissingPermission")
   public static GeckoResult<PrepareGetCredentialResponse.PendingGetCredentialHandle>
       prepareGetAssertion(
-          final byte[] challenge,
-          final WebAuthnUtils.WebAuthnPublicCredential[] allowList,
-          final GeckoBundle assertionBundle,
-          final GeckoBundle extensions,
-          final byte[] clientDataHash) {
-    final Bundle requestBundle =
-        getRequestBundleForGetAssertion(
-            challenge, allowList, assertionBundle, extensions, clientDataHash);
+          final String origin, final byte[] clientDataHash, final String requestJSON) {
+    ThreadUtils.assertOnUiThread();
+
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      // No credential manager. Relay to GMS FIDO2
+      return GeckoResult.fromValue(null);
+    }
+    final Bundle requestBundle = getRequestBundleForGetAssertion(clientDataHash, requestJSON);
     if (requestBundle == null) {
       return GeckoResult.fromValue(null);
     }
-
-    requestBundle.putBoolean(BUNDLE_KEY_IS_AUTO_SELECT_ALLOWED, allowList.length > 0);
 
     final CredentialOption credentialOption =
         new CredentialOption.Builder(TYPE_PUBLIC_KEY_CREDENTIAL, requestBundle, requestBundle)
@@ -269,7 +240,7 @@ public class WebAuthnCredentialManager {
         new GetCredentialRequest.Builder(requestBundle)
             .addCredentialOption(credentialOption)
             .setAlwaysSendAppInfoToProvider(true)
-            .setOrigin(assertionBundle.getString("origin"))
+            .setOrigin(origin)
             .build();
 
     final Context context = GeckoAppShell.getApplicationContext();
@@ -331,8 +302,14 @@ public class WebAuthnCredentialManager {
     return result;
   }
 
+  @UiThread
   public static GeckoResult<WebAuthnUtils.GetAssertionResponse> getAssertion(
       final PrepareGetCredentialResponse.PendingGetCredentialHandle pendingHandle) {
+    ThreadUtils.assertOnUiThread();
+
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
+    }
     final GeckoResult<WebAuthnUtils.GetAssertionResponse> result = new GeckoResult<>();
     final Context context = GeckoAppShell.getApplicationContext();
     final CredentialManager manager =

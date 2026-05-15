@@ -61,6 +61,18 @@ bool nsHtml5Tokenizer::EnsureBufferSpace(int32_t aLength) {
   return true;
 }
 
+MOZ_COLD MOZ_NEVER_INLINE void
+nsHtml5Tokenizer::EnsureBufferSpaceShouldNeverHappen(int32_t aLength) {
+  MOZ_DIAGNOSTIC_ASSERT(false,
+                        "This is never supposed to happen. Please file a bug "
+                        "with steps to reproduce!");
+  if (!EnsureBufferSpace(aLength)) {
+    MOZ_CRASH(
+        "Unrecovable allocation failure in situation that should never happen. "
+        "Please file a bug with steps to reproduce!");
+  }
+}
+
 bool nsHtml5Tokenizer::TemplatePushedOrHeadPopped() {
   if (encodingDeclarationHandler) {
     return encodingDeclarationHandler->TemplatePushedOrHeadPopped();
@@ -107,6 +119,21 @@ void nsHtml5Tokenizer::SetViewSourceOpSink(nsAHtml5TreeOpSink* aOpSink) {
 }
 
 void nsHtml5Tokenizer::RewindViewSource() { mViewSource->Rewind(); }
+
+nsHtml5String nsHtml5Tokenizer::TryAtomizeForSingleDigit() {
+  if (!newAttributesEachTime && strBufLen == 1 && strBuf[0] >= '0' &&
+      strBuf[0] <= '9') {
+    static nsStaticAtom* const digitAtoms[10] = {
+        nsGkAtoms::_0, nsGkAtoms::_1, nsGkAtoms::_2, nsGkAtoms::_3,
+        nsGkAtoms::_4, nsGkAtoms::_5, nsGkAtoms::_6, nsGkAtoms::_7,
+        nsGkAtoms::_8, nsGkAtoms::_9};
+    nsAtom* atom = digitAtoms[strBuf[0] - '0'];
+    nsHtml5String result = nsHtml5String::FromAtom(do_AddRef(atom));
+    clearStrBufAfterUse();
+    return result;
+  }
+  return nullptr;
+}
 
 void nsHtml5Tokenizer::errWarnLtSlashInRcdata() {}
 

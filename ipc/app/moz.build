@@ -53,6 +53,7 @@ if CONFIG["OS_ARCH"] == "WINNT":
         DELAYLOAD_DLLS += [
             "winmm.dll",
             "user32.dll",
+            "userenv.dll",
         ]
 
     OS_LIBS += [

@@ -17,7 +17,7 @@ import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.Microsurv
 import org.mozilla.fenix.settings.SupportUtils
 
 private val PRIVACY_POLICY_URL =
-    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE) +
+    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE) +
         "?utm_medium=firefox-mobile&utm_source=modal&utm_campaign=microsurvey"
 
 /**

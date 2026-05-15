@@ -75,6 +75,7 @@ var gUpdateHistory = {
 
   /**
    * Formats a date into human readable form
+   *
    * @param   seconds
    *          A date in seconds since 1970 epoch
    * @returns A human readable date string

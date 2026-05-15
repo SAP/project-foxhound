@@ -8,8 +8,6 @@
 #define mozilla_dom_IdleDeadline_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"

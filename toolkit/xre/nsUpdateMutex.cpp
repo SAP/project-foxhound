@@ -7,7 +7,6 @@
 #include "nsUpdateMutex.h"
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/StaticMutex.h"
 #include "nsIFile.h"
 #include "nsProfileLock.h"

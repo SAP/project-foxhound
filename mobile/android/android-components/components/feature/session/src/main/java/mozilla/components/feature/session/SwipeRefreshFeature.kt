@@ -6,7 +6,9 @@ package mozilla.components.feature.session
 
 import android.view.View
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.action.ContentAction.UpdateRefreshCanceledStateAction
@@ -18,9 +20,17 @@ import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 
 /**
- * Feature implementation to add pull to refresh functionality to browsers.
+ * A feature that adds pull-to-refresh functionality to a browser session.
  *
- * @param swipeRefreshLayout Reference to SwipeRefreshLayout that has an [EngineView] as its child.
+ * This feature coordinates between a [SwipeRefreshLayout] and the browser's state,
+ * ensuring that the refresh animation is synchronized with the actual loading state
+ * of the session.
+ *
+ * @property store The [BrowserStore] instance for accessing and observing session state.
+ * @property reloadUrlUseCase Use case for triggering a page reload.
+ * @property swipeRefreshLayout The [SwipeRefreshLayout] UI component containing the [EngineView].
+ * @property onRefreshCallback An optional callback invoked when a refresh is triggered.
+ * @property tabId The ID of the tab this feature should observe. If null, the currently selected tab is used.
  */
 class SwipeRefreshFeature(
     private val store: BrowserStore,
@@ -28,6 +38,7 @@ class SwipeRefreshFeature(
     private val swipeRefreshLayout: SwipeRefreshLayout,
     private val onRefreshCallback: (() -> Unit)? = null,
     private val tabId: String? = null,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : LifecycleAwareFeature,
     SwipeRefreshLayout.OnChildScrollUpCallback,
     SwipeRefreshLayout.OnRefreshListener {
@@ -42,7 +53,7 @@ class SwipeRefreshFeature(
      * Start feature: Starts adding pull to refresh behavior for the active session.
      */
     override fun start() {
-        scope = store.flowScoped { flow ->
+        scope = store.flowScoped(dispatcher = mainDispatcher) { flow ->
             flow.map { state -> state.findTabOrCustomTabOrSelectedTab(tabId) }
                 .ifAnyChanged {
                     arrayOf(it?.content?.loading, it?.content?.refreshCanceled)

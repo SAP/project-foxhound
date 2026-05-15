@@ -2,22 +2,58 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-::slotted(*:first-child) {
+:host {
+  --box-group-border: var(--border-width) solid var(--border-color);
+  --box-group-border-radius-inner: calc(var(--border-radius-medium) - var(--border-width));
+
+  display: block;
+  outline: var(--box-group-border);
+  border-radius: var(--border-radius-medium);
+  overflow: hidden;
+}
+
+::slotted(*) {
+  --box-border-inline-end: none;
+  --box-border-inline-start: none;
+}
+
+::slotted(*:not(.last)) {
   --box-border-radius-end: 0;
-  --box-border-width-end: 0;
+  --box-border-block-end: 0;
 }
 
-::slotted(*:not(:first-child, :last-child)) {
-  --box-border-radius: 0;
-  --box-border-width-end: 0;
-}
-
-::slotted(*:last-child) {
+::slotted(*:not(.first, [position="0"])) {
   --box-border-radius-start: 0;
+}
+
+/* targets the first element when we have a header, since the element at
+position 0 won't have the .first class */
+::slotted([position="0"]:not(.first)) {
+  --box-border-radius-start: 0;
+  --box-border-block-start: none;
+}
+
+::slotted(.first) {
+  --box-border-radius-start: var(--box-group-border-radius-inner);
+  --box-border-block-start: none;
+}
+
+::slotted(.last) {
+  --box-border-radius-end: var(--box-group-border-radius-inner);
+  --box-border-block-end: none;
+}
+
+slot[name="header"]::slotted(:first-child) {
+  --box-border-block-end: var(--box-group-border);
 }
 
 .list {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+
+.scroll-container {
+  max-height: var(--box-group-max-height);
+  overflow-y: auto;
 }

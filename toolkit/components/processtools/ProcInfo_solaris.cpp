@@ -7,7 +7,6 @@
 #include "mozilla/ProcInfo.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Logging.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "nsMemoryReporterManager.h"
 #include "nsWhitespaceTokenizer.h"
@@ -28,6 +27,10 @@
 #define FNMAX_PROCFS "/proc/999999/lwp/999999/lwpsinfo"
 
 namespace mozilla {
+
+nsresult GetCurrentProcessMemoryUsage(uint64_t* aResult) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 int GetCycleTimeFrequencyMHz() { return 0; }
 

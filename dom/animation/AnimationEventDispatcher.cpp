@@ -7,11 +7,11 @@
 #include "mozilla/AnimationEventDispatcher.h"
 
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/dom/AnimationEffect.h"
+#include "nsCSSProps.h"
+#include "nsGlobalWindowInner.h"
 #include "nsPresContext.h"
 #include "nsRefreshDriver.h"
-#include "nsCSSProps.h"
-#include "mozilla/dom/AnimationEffect.h"
-#include "nsGlobalWindowInner.h"
 
 using namespace mozilla;
 
@@ -34,16 +34,14 @@ struct CSSAnimationMarker {
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyFormatSearchable("Name", MS::Format::String,
-                                  MS::Searchable::Searchable);
+    schema.AddKeyFormat("Name", MS::Format::String);
     schema.AddKeyLabelFormat("properties", "Animated Properties",
                              MS::Format::String);
     schema.AddKeyLabelFormat("oncompositor", "Can Run on Compositor",
                              MS::Format::String);
     schema.AddKeyFormat("Target", MS::Format::String);
     schema.SetChartLabel("{marker.data.Name}");
-    schema.SetTableLabel(
-        "{marker.name} - {marker.data.Name}: {marker.data.properties}");
+    schema.SetTableLabel("{marker.data.Name}: {marker.data.properties}");
     return schema;
   }
 };
@@ -73,7 +71,7 @@ struct CSSTransitionMarker {
     schema.AddKeyFormat("Canceled", MS::Format::String);
     schema.AddKeyFormat("Target", MS::Format::String);
     schema.SetChartLabel("{marker.data.property}");
-    schema.SetTableLabel("{marker.name} - {marker.data.property}");
+    schema.SetTableLabel("{marker.data.property}");
     return schema;
   }
 };
@@ -165,7 +163,7 @@ void AnimationEventInfo::MaybeAddMarker() const {
     }
     nsAutoCString properties;
     nsAutoCString oncompositor;
-    for (const AnimatedPropertyID& property : propertySet) {
+    for (const CSSPropertyId& property : propertySet) {
       if (!properties.IsEmpty()) {
         properties.AppendLiteral(", ");
         oncompositor.AppendLiteral(", ");
@@ -175,7 +173,7 @@ void AnimationEventInfo::MaybeAddMarker() const {
       properties.Append(prop);
       oncompositor.Append(
           !property.IsCustom() &&
-                  nsCSSProps::PropHasFlags(property.mID,
+                  nsCSSProps::PropHasFlags(property.mId,
                                            CSSPropFlags::CanAnimateOnCompositor)
               ? "true"
               : "false");
@@ -219,7 +217,7 @@ void AnimationEventInfo::MaybeAddMarker() const {
   // probably.
   const bool onCompositor =
       !data.mProperty.IsCustom() &&
-      nsCSSProps::PropHasFlags(data.mProperty.mID,
+      nsCSSProps::PropHasFlags(data.mProperty.mId,
                                CSSPropFlags::CanAnimateOnCompositor);
   PROFILER_MARKER(
       "CSS transition", DOM,

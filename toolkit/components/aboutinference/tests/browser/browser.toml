@@ -2,6 +2,9 @@
 support-files = [
   "head.js"
 ]
+prefs = [
+  "browser.ml.logLevel=Debug",
+]
 
 ["browser_aboutinference.js"]
 https_first_disabled = true

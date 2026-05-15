@@ -70,8 +70,7 @@ def get_max_wait(tasks, timeout):
         timeout_delta = timedelta(seconds=timeout)
         for task in tasks:
             remaining = task.start + timeout_delta - now
-            if remaining < wait:
-                wait = remaining
+            wait = min(wait, remaining)
 
     # Return the wait time in seconds, clamped between zero and max_wait.
     return max(wait.total_seconds(), 0)

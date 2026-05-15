@@ -1,0 +1,9 @@
+import android.support.annotation.Nullable;
+import android.support.annotation.MainThread;
+
+package test {
+  public class TestClass {
+    method public not_allowed.TestReturnType @Nullable @MainThread testMethod();
+  }
+}
+

@@ -14,11 +14,13 @@ include "mozilla/ipc/URIUtils.h";
 include protocol PBrowser;
 include protocol PInProcess;
 include protocol PBrowserBridge;
+include protocol PDigitalCredential;
 include protocol PWebAuthnTransaction;
 include protocol PWebIdentity;
 
 include DOMTypes;
 include ClientIPCTypes;
+include JSIPCValue;
 include NeckoChannelParams;
 include SessionStoreTypes;
 
@@ -66,6 +68,7 @@ struct IPCWebShareData
 async protocol PWindowGlobal
 {
   manager PBrowser or PInProcess;
+  manages PDigitalCredential;
   manages PWebAuthnTransaction;
   manages PWebIdentity;
 
@@ -81,7 +84,8 @@ child:
   async DrawSnapshot(IntRect? aRect, float aScale, nscolor aBackgroundColor,
                      uint32_t aFlags) returns (PaintFragment retval);
 
-  async DispatchSecurityPolicyViolation(nsString aViolationEventJSON);
+  async DispatchSecurityPolicyViolation(nsString aViolationEventJSON,
+                                        nsString aReportGroupName);
 
   async SaveStorageAccessPermissionGranted();
 
@@ -98,8 +102,8 @@ child:
   async RestoreTabContent(nullable SessionStoreRestoreData aData) returns (bool success);
 
 both:
-  async RawMessage(JSActorMessageMeta aMetadata, ClonedMessageData? aData,
-                   ClonedMessageData? aStack);
+  async RawMessage(JSActorMessageMeta aMetadata, JSIPCValue aData,
+                   nullable StructuredCloneData aStack);
 
 parent:
   // Load the given URI load state into the current owner process of the given
@@ -145,6 +149,9 @@ parent:
 
   /// Send down initial document bit to the parent.
   [LazySend] async SetIsInitialDocument(bool aIsInitialDocument);
+
+  /// Indicate that the initial document is being navigated to.
+  [LazySend] async CommitToInitialDocument();
 
   // Attempts to perform a "Web Share".
   async Share(IPCWebShareData aData) returns (nsresult rv);
@@ -221,6 +228,7 @@ parent:
   // User activation notifications for BounceTrackingProtection.
   async RecordUserActivationForBTP();
 
+  async PDigitalCredential();
   async PWebAuthnTransaction();
   async PWebIdentity();
 

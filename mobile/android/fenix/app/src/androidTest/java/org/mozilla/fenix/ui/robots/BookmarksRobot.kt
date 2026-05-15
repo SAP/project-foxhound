@@ -4,8 +4,9 @@ import android.util.Log
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
-import androidx.compose.ui.test.hasAnySibling
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.longClick
@@ -18,24 +19,28 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import org.mozilla.fenix.R
+import org.mozilla.fenix.bookmarks.BookmarksTestTag.ADD_BOOKMARK_FOLDER_NAME_TEXT_FIELD
+import org.mozilla.fenix.bookmarks.BookmarksTestTag.BOOKMARK_TOOLBAR
+import org.mozilla.fenix.bookmarks.BookmarksTestTag.EDIT_BOOKMARK_ITEM_TITLE_TEXT_FIELD
+import org.mozilla.fenix.bookmarks.BookmarksTestTag.EDIT_BOOKMARK_ITEM_URL_TEXT_FIELD
 import org.mozilla.fenix.helpers.Constants.LONG_CLICK_DURATION
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
-import org.mozilla.fenix.library.bookmarks.BookmarksTestTag.ADD_BOOKMARK_FOLDER_NAME_TEXT_FIELD
-import org.mozilla.fenix.library.bookmarks.BookmarksTestTag.EDIT_BOOKMARK_ITEM_TITLE_TEXT_FIELD
-import org.mozilla.fenix.library.bookmarks.BookmarksTestTag.EDIT_BOOKMARK_ITEM_URL_TEXT_FIELD
 
 class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
 
     @OptIn(ExperimentalTestApi::class)
     fun verifyEmptyBookmarksMenuView() {
-        Log.i(TAG, "verifyBookmarksMenuView: Waiting for bookmarks header to exist.")
-        composeTestRule.waitUntilExactlyOneExists(
-            hasText("Bookmarks")
-                .and(hasAnySibling(hasContentDescription("Navigate back"))),
+        Log.i(TAG, "verifyBookmarksMenuView: Waiting for bookmarks toolbar elements to exist.")
+        composeTestRule.waitUntilAtLeastOneExists(
+            hasTestTag(BOOKMARK_TOOLBAR)
+                .and(hasAnyDescendant(hasText("Bookmarks")))
+                .and(hasAnyDescendant(hasContentDescription("Navigate back")))
+                .and(hasAnyDescendant(hasContentDescription(getStringResource(R.string.bookmark_sort_menu_content_desc))))
+                .and(hasAnyDescendant(hasContentDescription(getStringResource(R.string.bookmark_add_new_folder_button_content_description)))),
         )
-        Log.i(TAG, "verifyBookmarksMenuView: Waited for bookmarks header to exist.")
+        Log.i(TAG, "verifyBookmarksMenuView: Waited for bookmarks toolbar elements to exist.")
         Log.i(TAG, "verifyBookmarksMenuView: Trying to verify the empty bookmarks list is displayed.")
         composeTestRule.onNodeWithText(
             getStringResource(R.string.bookmark_empty_list_guest_description),
@@ -59,11 +64,18 @@ class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyFolderTitle: Verified bookmarks folder with title: $title is displayed")
     }
 
+    fun verifyBookmarkFolderDescription(numberOfBookmarksInFolder: String) {
+        Log.i(TAG, "verifyBookmarkFolderDescription: Trying to verify the number of bookmarks in folder: $numberOfBookmarksInFolder is displayed")
+        composeTestRule.onNodeWithText(text = getStringResource(R.string.bookmarks_folder_description, numberOfBookmarksInFolder)).assertIsDisplayed()
+        Log.i(TAG, "verifyBookmarkFolderDescription: Verified the number of bookmarks in folder: $numberOfBookmarksInFolder is displayed")
+    }
+
     @OptIn(ExperimentalTestApi::class)
     fun verifyBookmarkTitle(title: String) {
         Log.i(TAG, "verifyBookmarkTitle: Waiting for $waitingTime for bookmark with title: $title to exist.")
         composeTestRule.waitUntilExactlyOneExists(
-            hasText(title), waitingTime,
+            hasText(title),
+            waitingTime,
         )
         Log.i(TAG, "verifyBookmarkTitle: Waited for $waitingTime for bookmark with title: $title to exist.")
         Log.i(TAG, "verifyBookmarkTitle: Waited for bookmarks header to exist.")
@@ -112,7 +124,7 @@ class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
 
     fun cancelFolderDeletion() {
         Log.i(TAG, "cancelFolderDeletion: Trying to click \"Cancel\" bookmarks folder deletion dialog button")
-        composeTestRule.onNodeWithText(getStringResource(R.string.bookmark_delete_negative).uppercase()).performClick()
+        composeTestRule.onNodeWithText(getStringResource(R.string.bookmark_delete_negative)).performClick()
         Log.i(TAG, "cancelFolderDeletion: Clicked \"Cancel\" bookmarks folder deletion dialog button")
     }
 
@@ -197,6 +209,18 @@ class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "clickParentFolderSelector: Clicked folder selector")
     }
 
+    fun expandSelectableFolder(title: String) {
+        Log.i(TAG, "expandSelectableFolder: Trying to click expand select folder selector")
+        composeTestRule.expandBookmarkFolderSelector(title).performClick()
+        Log.i(TAG, "expandSelectableFolder: Clicked expand select folder selector")
+    }
+
+    fun closeSelectableFolder(title: String) {
+        Log.i(TAG, "closeSelectableFolder: Trying to click close select folder selector")
+        composeTestRule.expandBookmarkFolderSelector(title).performClick()
+        Log.i(TAG, "closeSelectableFolder: Clicked close select folder selector")
+    }
+
     fun selectFolder(title: String) {
         Log.i(TAG, "selectFolder: Trying to click folder with title: $title")
         composeTestRule.onNodeWithText(title).performClick()
@@ -217,7 +241,7 @@ class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
 
     fun confirmDeletion() {
         Log.i(TAG, "confirmDeletion: Trying to click \"Delete\" bookmarks deletion button")
-        composeTestRule.onNodeWithText("DELETE").performClick()
+        composeTestRule.onNodeWithText("Delete").performClick()
         Log.i(TAG, "confirmDeletion: Clicked \"Delete\" bookmarks deletion button")
     }
 
@@ -243,8 +267,8 @@ class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.onNodeWithText(bookmarkTitle).performClick()
             Log.i(TAG, "openBookmarkWithTitle: Clicked bookmark with title: $bookmarkTitle")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         @OptIn(ExperimentalTestApi::class)
@@ -256,8 +280,8 @@ class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.onNodeWithContentDescription(getStringResource(R.string.bookmark_search_button_content_description)).performClick()
             Log.i(TAG, "clickSearchButton: Clicked search bookmarks button")
 
-            SearchRobot().interact()
-            return SearchRobot.Transition()
+            SearchRobot(composeTestRule).interact()
+            return SearchRobot.Transition(composeTestRule)
         }
 
         fun goBackToBrowserScreen(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -265,17 +289,17 @@ class BookmarksRobot(private val composeTestRule: ComposeTestRule) {
             composeTestRule.onNodeWithContentDescription(getStringResource(R.string.bookmark_navigate_back_button_content_description)).performClick()
             Log.i(TAG, "goBackToBrowserScreen: Clicked go back button")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun goBackToHomeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
-            Log.i(TAG, "goBackToBrowserScreen: Trying to click go back button")
+            Log.i(TAG, "goBackToHomeScreen: Trying to click go back button")
             composeTestRule.onNodeWithContentDescription(getStringResource(R.string.bookmark_navigate_back_button_content_description)).performClick()
-            Log.i(TAG, "goBackToBrowserScreen: Clicked go back button")
+            Log.i(TAG, "goBackToHomeScreen: Clicked go back button")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
     }
 }
@@ -289,7 +313,7 @@ private fun ComposeTestRule.addFolderButton() =
     onNodeWithContentDescription(getStringResource(R.string.bookmark_add_new_folder_button_content_description))
 
 private fun ComposeTestRule.addFolderTitleField() =
-    onNodeWithTag(ADD_BOOKMARK_FOLDER_NAME_TEXT_FIELD).onChildAt(0)
+    onNodeWithTag(ADD_BOOKMARK_FOLDER_NAME_TEXT_FIELD)
 
 private fun ComposeTestRule.navigateUpButton() =
     onNodeWithContentDescription(getStringResource(R.string.bookmark_navigate_back_button_content_description))
@@ -298,13 +322,19 @@ private fun ComposeTestRule.threeDotMenuButton(bookmarkedItem: String) =
     onNodeWithContentDescription("Item Menu for $bookmarkedItem")
 
 private fun ComposeTestRule.bookmarkNameEditBox() =
-    onNodeWithTag(EDIT_BOOKMARK_ITEM_TITLE_TEXT_FIELD).onChildAt(0)
+    onNodeWithTag(EDIT_BOOKMARK_ITEM_TITLE_TEXT_FIELD)
 
 private fun ComposeTestRule.bookmarkFolderSelector() =
     onNodeWithText("Bookmarks")
 
+private fun ComposeTestRule.expandBookmarkFolderSelector(title: String) =
+    onNodeWithContentDescription(getStringResource(R.string.bookmark_select_folder_expand_folder_content_description, title))
+
+private fun ComposeTestRule.closeBookmarkFolderSelector(title: String) =
+    onNodeWithContentDescription(getStringResource(R.string.bookmark_select_folder_close_folder_content_description, title))
+
 private fun ComposeTestRule.bookmarkURLEditBox() =
-    onNodeWithTag(EDIT_BOOKMARK_ITEM_URL_TEXT_FIELD).onChildAt(0)
+    onNodeWithTag(EDIT_BOOKMARK_ITEM_URL_TEXT_FIELD)
 
 private fun ComposeTestRule.selectFolderNewFolderButton() =
     onNodeWithText(getStringResource(R.string.bookmark_select_folder_new_folder_button_title))

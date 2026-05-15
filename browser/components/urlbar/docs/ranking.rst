@@ -8,103 +8,98 @@ Each `UrlbarProvider <https://firefox-source-docs.mozilla.org/browser/urlbar/ove
 implements its own internal ranking and returns sorted results.
 
 Externally all the results are ranked by the `UrlbarMuxer <https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarMuxerStandard.sys.mjs>`_
-according to an hardcoded list of groups and sub-grups.
+according to an hardcoded list of groups and sub-groups.
 
 .. NOTE:: Preferences can influence the groups order, for example by putting
   Firefox Suggest before Search Suggestions.
 
-The Places provider, responsible to return history and bookmark results, uses
-an internal ranking algorithm called Frecency.
+The Places provider returns history and bookmark results using an internal
+ranking algorithm called **Frecency**.
+
 
 Frecency implementation
 =======================
 
-Frecency is a term derived from `frequency` and `recency`, its scope is to provide a
-ranking algorithm that gives importance both to how often a page is accessed and
-when it was last visited.
-Additionally, it accounts for the type of each visit through a bonus system.
+Frecency is a term derived from `frequency` and `recency`, its scope is to
+provide a ranking algorithm that gives importance both to how often a page is
+accessed and when it was last visited. Additionally, it accounts for the type of
+each visit through a bonus system.
 
-To account for `recency`, a bucketing system is implemented.
-If a page has been visited later than the bucket cutoff, it gets the weight
-associated with that bucket:
+Frecency uses a double exponential decay.
 
-- Up to 4 days old - weight 100 - ``places.frecency.firstBucketCutoff/Weight``
-- Up to 14 days old - weight 70 - ``places.frecency.secondBucketCutoff/Weight``
-- Up to 31 days old - weight 50 - ``places.frecency.thirdBucketCutoff/Weight``
-- Up to 90 days old - weight 30 - ``places.frecency.fourthBucketCutoff/Weight``
-- Anything else - weight 10 - ``places.frecency.defaultBucketWeight``
+Given a url, we identify a reference time, t\ :sub:`ref`, that will be either
+the last visit date, or the last bookmark addition date (for pages not having
+visits).
 
-To account for `frequency`, the total number of visits to a page is used to
-calculate the final score.
+All the dates we use will be expressed as the number of days from the epoch.
 
-The type of each visit is taken into account using specific bonuses:
+Since calculating a score from all of the visits every time a new visit is added
+would be expensive, a sample of the last
+``places.frecency.pages.numSampledVisits`` visits is used.
 
-Default bonus
-  Any unknown type gets a default bonus. This is expected to be unused.
-  Pref ``places.frecency.defaultVisitBonus`` current value: 0.
-Embed
-  Used for embedded/framed visits not due to user actions. These visits today
-  are stored in memory and never participate to frecency calculation.
-  Thus this is currently unused.
-  Pref ``places.frecency.embedVisitBonus`` current value: 0.
-Framed Link
-  Used for cross-frame visits due to user action.
-  Pref ``places.frecency.framedLinkVisitBonus`` current value: 0.
-Download
-  Used for download visits. It’s important to support link coloring for these
-  visits, but they are not necessarily useful address bar results (the Downloads
-  view can do a better job with  these), so their frecency can be low.
-  Pref ``places.frecency.downloadVisitBonus`` current value: 0.
-Reload
-  Used for reload visits (refresh same page). Low because it should not be
-  possible to influence frecency by multiple reloads.
-  Pref ``places.frecency.reloadVisitBonus`` current value: 0.
-Redirect Source
-  Used when the page redirects to another one.
-  It’s a low value because we give more importance to the final destination,
-  that is what the user actually visits, especially for permanent redirects.
-  Pref ``places.frecency.redirectSourceVisitBonus`` current value: 25.
-Temporary Redirect
-  Used for visits resulting from a temporary redirect (HTTP 307).
-  Pref ``places.frecency.tempRedirectVisitBonus`` current value: 40.
-Permanent Redirect
-  Used for visits resulting from a permanent redirect (HTTP 301). This is the
-  new supposed destination for a url, thus the bonus is higher than temporary.
-  In this case it may be advisable to just pick the bonus for the source visit.
-  Pref ``places.frecency.permRedirectVisitBonus`` current value: 50.
-Bookmark
-  Used for visits generated from bookmark views.
-  Pref ``places.frecency.bookmarkVisitBonus`` current value: 75.
-Link
-  Used for normal visits, for example when clicking on a link.
-  Pref ``places.frecency.linkVisitBonus`` current value: 100.
-Typed
-  Intended to be used for pages typed by the user, in reality it is used when
-  the user picks a url from the UI (history views or the Address Bar).
-  Pref ``places.frecency.typedVisitBonus`` current value: 2000.
+For each visit a *weight* is determined out of four buckets:
 
-The above bonuses are applied to visits, in addition to that there are also a
-few bonuses applied in case a page is not visited at all, both of these bonuses
-can be applied at the same time:
+1. Very High (``places.frecency.pages.veryHighWeight``): This is used when a
+   page is in the high bucket and has interesting interaction data.
+2. High (``places.frecency.pages.highWeight``): This is for bookmarked or typed
+   pages. Due to the current definition of typed, this includes URLs clicked on
+   the Firefox UI (not the web), except searches.
+3. Medium (``places.frecency.pages.mediumWeight``): This is for normal browsing,
+   like clicking links on pages or downloads.
+4. Low (``places.frecency.pages.lowWeight``): This is for non-typed redirect
+   sources, visits across HTML frames (non top level) or reloads.
 
-Unvisited bookmarked page
-  Used for pages that are bookmarked but unvisited.
-  Pref ``places.frecency.unvisitedBookmarkBonus`` current value: 140.
-Unvisited typed page
-  Used for pages that were typed and now are bookmarked (otherwise they would
-  be orphans).
-  Pref ``places.frecency.unvisitedTypedBonus`` current value: 200.
+The score for the single visit is then calculated as:
 
-Two special frecency values are also defined:
+.. math::
+   score_{visit} = weight_{visit} * e^{-\lambda(t_{ref}-t_{visit})}
 
-- ``-1`` represents a just inserted entry in the database, whose score has not
-  been calculated yet.
-- ``0`` represents an entry for which a new value should not be calculated,
-  because it has a poor user value (e.g. place: queries) among search results.
+With half-life defined as:
 
-Finally, because calculating a score from all of the visits every time a new
-visit is added would be expensive, only a sample of the last 10
-(pref ``places.frecency.numVisits``) visits is used.
+.. math::
+   \lambda = \frac{\ln 2}{30}
+
+The total score is the average score, multiplied by the total number of visits:
+
+.. math::
+   score_{total} = \frac{\sum score_{visit}}{samplecount} * visitcount
+
+To keep into account recent, this score is decayed daily using the already
+defined half-life. To avoid having to multiply each score daily by an
+exponential, we instead store in the database (`moz_places`) the number of days
+from epoch after which the calculated score would become 1, by decaying it every
+day.
+
+.. math::
+   frecency = t_{ref} + \frac{\ln(score)}{\lambda}
+
+Interactions
+------------
+
+Page view duration, keypress count, and scroll distance are tracked when a page
+loads. All data is stored locally and never transmitted.
+
+A page visit is classified as **interesting** if either criterion is met:
+
+- Page view time ≥ ``places.frecency.pages.interactions.viewTimeSeconds``.
+- Page view time ≥ ``places.frecency.pages.interactions.viewTimeIfManyKeypressesSeconds``
+  AND keypress count ≥ ``places.frecency.pages.interactions.manyKeypresses``.
+
+When a visit is classified as interesting, its scoring bucket is promoted. For
+example, a visit initially categorized in the medium bucket is promoted to the
+high bucket if it has an interesting interaction.
+
+Interactions are stored separately from visits. To associate them, the query
+checks whether a visit was recorded within ``places.frecency.pages.interactions.maxVisitGapSeconds``
+of a recorded interaction. If a matching visit exists within this time window,
+the interaction is paired with it. Otherwise, the interaction becomes a
+**virtual visit**.
+
+A single visit can generate multiple interactions. When a user switches away
+from a tab, the current interaction ends if the user does not return within
+``browser.places.interactions.breakupIfNoUpdatesForSeconds``. Returning to the
+tab after this threshold creates a new interaction, even though the original
+visit remains the same.
 
 How frecency for a page is calculated
 -------------------------------------
@@ -114,52 +109,92 @@ How frecency for a page is calculated
     :caption: Frecency calculation flow
 
     flowchart TD
-        start[URL]
-        a0{Has visits?}
-        a1[Get last 10 visit]
-        a2[bonus = unvisited_bonus + bookmarked + typed]
-        a3{bonus > 0?}
-        end0[Frecency = 0]
-        end1["frecency = age_bucket_weight * (bonus / 100)"]
-        a4[Sum points of all sampled visits]
-        a5{points > 0?}
-        end2[frecency = -1]
-        end3["Frecency = visit_count * (points / sample_size)"]
-        subgraph sub [Per each visit]
-            sub0[bonus = visit_type_bonus]
-            sub1{bookmarked?}
-            sub2[add bookmark bonus]
-            sub3["score = age_bucket_weight * (bonus / 100)"]
-            sub0 --> sub1
-            sub1 -- yes --> sub2
-            sub1 -- no --> sub3
-            sub2 --> sub3;
+        start([Page URL Input])
+        subgraph gather ["Gather"]
+            visits[Gather recent visits<br/>up to sample limit]
+            interactions[Gather interesting<br/>interactions]
+            pair[Match interactions<br/>with visits by timestamp]
+            virtual{Unpaired<br/>interaction?}
+            generate[Create virtual visit<br/>from interaction]
+            combine[Combine visits<br/>with virtual visits]
+            hasVisits{Any visits<br/>collected?}
+            isBookmarked{Is URL<br/>bookmarked?}
+            bookmarkFallback[High<br/>Bucket]
+            noData[frecency = 0]
         end
-        start --> a0
-        a0 -- no --> a2
-        a2 --> a3
-        a3 -- no --> end0
-        a3 -- yes --> end1
-        a0 -- yes --> a1
-        a1 --> sub
-        sub --> a4
-        a4 --> a5
-        a5 -- no --> end2
-        a5 -- yes --> end3
+        subgraph classify ["Classify"]
+            visitType{Visit<br/>Type?}
+            bookmark_typed[Bookmark/Typed]
+            regular_click[Regular Link]
+            redirect_auto[Redirect/Sponsored]
+            bookmarkInteraction{Interesting<br/>interaction?}
+            regularInteraction{Interesting<br/>interaction?}
+            score1[Very High<br/>Bucket]
+            score2[High<br/>Bucket]
+            score3[Medium<br/>Bucket]
+            score4[Low<br/>Bucket]
+        end
+        calcDecay[Apply exponential decay<br/>based on visit age]
+        aggregate[Sum decayed scores and<br/> normalize by visit count]
+        project[frecency = days until<br/>score decays to 1]
+        %% Main
+        start --> visits & interactions
+        visits --> pair
+        interactions --> pair
+        pair --> virtual
+        virtual -->|Yes| generate
+        virtual -->|No| combine
+        generate --> combine
+        combine --> hasVisits
+        hasVisits -->|Yes| visitType
+        hasVisits -->|No| isBookmarked
+        isBookmarked -->|Yes| bookmarkFallback
+        isBookmarked -->|No| noData
+        bookmarkFallback --> calcDecay
+        %% Classification
+        visitType -->|Bookmark/Typed| bookmark_typed
+        visitType -->|Regular| regular_click
+        visitType -->|Redirect| redirect_auto
+        bookmark_typed --> bookmarkInteraction
+        regular_click --> regularInteraction
+        redirect_auto --> score4
+        bookmarkInteraction -->|Yes| score1
+        bookmarkInteraction -->|No| score2
+        regularInteraction -->|Yes| score2
+        regularInteraction -->|No| score3
+        %% Decay
+        score1 & score2 & score3 & score4 --> calcDecay
+        calcDecay --> aggregate
+        %% Final
+        aggregate --> project
+        %% Styling
+        style score1 fill:#4caf50,stroke:#2e7d32,stroke-width:3px,color:#fff
+        style score2 fill:#8bc34a,stroke:#558b2f,stroke-width:2px
+        style score3 fill:#ffc107,stroke:#f57f17,stroke-width:2px
+        style bookmarkFallback fill:#8bc34a,stroke:#558b2f,stroke-width:2px
+        style score4 fill:#ff9800,stroke:#e65100,stroke-width:2px
+        style project fill:#2196f3,stroke:#0d47a1,stroke-width:3px,color:#fff
+        style noData fill:#2196f3,stroke:#0d47a1,stroke-width:3px,color:#fff
 
-1. If the page is visited, get a sample of ``NUM_VISITS`` most recent visits.
-2. For each visit get a transition bonus, depending on the visit type.
-3. If the page is bookmarked, add to the bonus an additional bookmark bonus.
-4. If the bonus is positive, get a bucket weight depending on the visit date.
-5. Calculate points for the visit as ``age_bucket_weight * (bonus / 100)``.
-6. Sum points for all the sampled visits.
-7. If the points sum is zero, return a ``-1`` frecency, it will still appear in the UI.
-   Otherwise, frecency is ``visitCount * points / NUM_VISITS``.
-8. If the page is unvisited and not bookmarked, or it’s a bookmarked place-query,
-   return a ``0`` frecency, to hide it from the UI.
-9. If it’s bookmarked, add the bookmark bonus.
-10. If it’s also a typed page, add the typed bonus.
-11. Frecency is ``age_bucket_weight * (bonus / 100)``
+1. **Gather visits and interactions:** For a given URL, collect recent visits
+   (up to the sample limit) and any interesting interactions.
+2. **Match and create virtual visits:** Pair each interesting interaction with
+   its corresponding visit by timestamp. If an interaction has no paired visit,
+   create a "virtual visit" from that interaction. Combine all actual visits
+   with these virtual visits for scoring.
+3. **Check visits exist:** If no virtual or non-virtual visits were collected,
+   check whether the URL is bookmarked. If bookmarked, assign it to the High
+   bucket, otherwise set frecency to 0.
+4. **Classify visits into buckets:** Categorize each visit based on its type and
+   whether it has an interesting interaction.
+5. **Apply exponential decay:** Reduce each visit's score based on its age
+   using the time difference between the most recent visit in the sample vs.
+   the visit timestamp.
+6. **Aggregate scores:** Sum all decayed scores and normalize by dividing by the
+   total visit count to get an average decayed score.
+7. **Project to frecency value:** Convert the aggregated score into a timestamp
+   representing the number of days from the Unix epoch until the score would
+   decay to 1. This final value is the store frecency value.
 
 When frecency for a page is calculated
 --------------------------------------
@@ -171,6 +206,7 @@ Operations that may influence the frecency score are:
 * Adding bookmarks
 * Removing bookmarks
 * Changing the url of a bookmark
+* An interesting interaction is recorded
 
 Frecency is recalculated:
 
@@ -198,11 +234,6 @@ When the task is executed, it recalculates frecency of a chunk of pages. If
 there are more pages left to recalculate, the task is re-armed. After frecency
 of a page is recalculated, its ``recalc_frecency`` field is set back to ``0``.
 
-Frecency is also decayed daily during the ``idle-daily`` notification, by
-multiplying all the scores by a decay rate  of ``0.975`` (half-life of 28 days).
-This guarantees entries not receiving new visits or bookmarks lose relevancy.
-
-
 Adaptive Input History
 ======================
 
@@ -227,3 +258,19 @@ On daily idles, when frecency is decayed, also input history gets decayed, in
 particular the use_count field is multiplied by a decay rate  of ``0.975``.
 After decaying, any entry that has a ``use_count < 0.975^90 (= 0.1)`` is removed,
 thus entries are removed if unused for 90 days.
+
+Why legacy frecency scoring was replaced
+========================================
+
+:doc:`ranking-legacy` had the following issues:
+
+1. The score depended on the time at which it is calculated, making the user
+   experience more unstable. For example removing a bookmark (affects the score
+   negatively) will recalculate the score to a value higher than another
+   untouched bookmarked url, just because it was recalculated later.
+2. All the scores must be decayed every day to keep recency into account. It is
+   an expensive operation.
+3. It has far too many coefficients, making it impossible to study for
+   optimizing those coefficients.
+4. Changing the coefficients doesn't recalculate all the scores, making
+   experimentation more complicated.

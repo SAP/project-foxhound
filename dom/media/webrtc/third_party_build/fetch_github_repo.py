@@ -3,12 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import argparse
 import os
-import re
 import shutil
 
 from run_operations import run_git, run_shell
 
-# This script fetches the moz-libwebrtc github repro with the expected
+# This script fetches the libwebrtc repro with the expected
 # upstream remote and branch-heads setup.  This is used by both the
 # prep_repo.sh script as well as the restore_patch_stack.py script.
 #
@@ -24,7 +23,7 @@ def fetch_repo(github_path, force_fetch, tar_path):
         print(f"Removing existing repo: {github_path}")
         shutil.rmtree(github_path)
 
-    # clone https://github.com/mozilla/libwebrtc
+    # clone https://webrtc.googlesource.com/src
     if not os.path.exists(github_path):
         # check for pre-existing tar, use it if we have it
         if os.path.exists(tar_path):
@@ -34,43 +33,24 @@ def fetch_repo(github_path, force_fetch, tar_path):
         else:
             print("Cloning github repo")
             run_shell(
-                f"git clone https://github.com/mozilla/libwebrtc {github_path}",
+                f"git clone https://webrtc.googlesource.com/src {github_path}",
                 capture_output,
             )
 
-    # setup upstream (https://webrtc.googlesource.com/src)
-    stdout_lines = run_git("git config --local --list", github_path)
-    stdout_lines = [
-        path for path in stdout_lines if re.findall("^remote.upstream.url.*", path)
-    ]
-    if len(stdout_lines) == 0:
-        print("Fetching upstream")
-        run_git("git checkout master", github_path)
-        run_git(
-            "git remote add upstream https://webrtc.googlesource.com/src", github_path
-        )
-        run_git("git fetch upstream", github_path)
-    else:
-        print(
-            "Upstream remote (https://webrtc.googlesource.com/src) already configured"
-        )
-
     # for sanity, ensure we're on master
     run_git("git checkout master", github_path)
-    # make sure we successfully fetched upstream
-    run_git("git merge upstream/master", github_path)
 
     # setup upstream branch-heads
     stdout_lines = run_git(
-        "git config --local --get-all remote.upstream.fetch", github_path
+        "git config --local --get-all remote.origin.fetch", github_path
     )
     if len(stdout_lines) == 1:
         print("Fetching upstream branch-heads")
         run_git(
-            "git config --local --add remote.upstream.fetch +refs/branch-heads/*:refs/remotes/branch-heads/*",
+            "git config --local --add remote.origin.fetch +refs/branch-heads/*:refs/remotes/branch-heads/*",
             github_path,
         )
-        run_git("git fetch upstream", github_path)
+        run_git("git fetch", github_path)
     else:
         print("Upstream remote branch-heads already configured")
 
@@ -82,7 +62,7 @@ def fetch_repo(github_path, force_fetch, tar_path):
     run_git("git config --local core.autocrlf false", github_path)
 
     # do a sanity fetch in case this was not a freshly cloned copy of the
-    # repo, meaning it may not have all the mozilla branches present.
+    # repo.
     run_git("git fetch --all", github_path)
 
     # create tar to avoid time refetching

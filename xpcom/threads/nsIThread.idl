@@ -8,8 +8,6 @@
 #include "nsIThreadShutdown.idl"
 
 %{C++
-#include "mozilla/AlreadyAddRefed.h"
-
 namespace mozilla {
 class TimeStamp;
 class TimeDurationValueCalculator;
@@ -159,7 +157,7 @@ interface nsIThread : nsISerialEventTarget
    *
    * @param event
    *   The alreadyAddRefed<> event to dispatch.
-   *   NOTE that the event will be leaked if it fails to dispatch.
+   *   NOTE: unlike `dispatch`, this runnable will _NOT_ be leaked on failure.
    * @param queue
    *   Which event priority queue this should be added to
    *
@@ -167,7 +165,7 @@ interface nsIThread : nsISerialEventTarget
    *   Indicates that event is null.
    * @throws NS_ERROR_UNEXPECTED
    *   Indicates that the thread is shutting down and has finished processing
-   * events, so this event would never run and has not been dispatched.
+   *   events, so this event would never run and has not been dispatched.
    */
   [noscript] void dispatchToQueue(in alreadyAddRefed_nsIRunnable event,
                                   in EventQueuePriority queue);

@@ -6,7 +6,6 @@ use ffi::DecimalSignedRoundingMode;
 
 #[diplomat::bridge]
 #[diplomat::abi_rename = "icu4x_{0}_mv1"]
-#[diplomat::attr(auto, namespace = "icu4x")]
 pub mod ffi {
     use alloc::boxed::Box;
 
@@ -21,8 +20,10 @@ pub mod ffi {
     /// The sign of a Decimal, as shown in formatting.
     #[diplomat::rust_link(fixed_decimal::Sign, Enum)]
     #[diplomat::enum_convert(fixed_decimal::Sign, needs_wildcard)]
+    #[non_exhaustive]
     pub enum DecimalSign {
         /// No sign (implicitly positive, e.g., 1729).
+        #[diplomat::attr(auto, default)]
         None,
         /// A negative sign, e.g., -1729.
         Negative,
@@ -33,7 +34,9 @@ pub mod ffi {
     /// ECMA-402 compatible sign display preference.
     #[diplomat::rust_link(fixed_decimal::SignDisplay, Enum)]
     #[diplomat::enum_convert(fixed_decimal::SignDisplay, needs_wildcard)]
+    #[non_exhaustive]
     pub enum DecimalSignDisplay {
+        #[diplomat::attr(auto, default)]
         Auto,
         Never,
         Always,
@@ -44,7 +47,9 @@ pub mod ffi {
     /// Increment used in a rounding operation.
     #[diplomat::rust_link(fixed_decimal::RoundingIncrement, Enum)]
     #[diplomat::enum_convert(fixed_decimal::RoundingIncrement, needs_wildcard)]
+    #[non_exhaustive]
     pub enum DecimalRoundingIncrement {
+        #[diplomat::attr(auto, default)]
         MultiplesOf1,
         MultiplesOf2,
         MultiplesOf5,
@@ -53,6 +58,7 @@ pub mod ffi {
 
     /// Mode used in a rounding operation for signed numbers.
     #[diplomat::rust_link(fixed_decimal::SignedRoundingMode, Enum)]
+    #[non_exhaustive]
     pub enum DecimalSignedRoundingMode {
         Expand,
         Trunc,
@@ -67,7 +73,7 @@ pub mod ffi {
 
     impl Decimal {
         /// Construct an [`Decimal`] from an integer.
-        #[diplomat::rust_link(fixed_decimal::Decimal, Struct)]
+        #[diplomat::rust_link(fixed_decimal::Decimal, Typedef)]
         #[diplomat::attr(dart, disable)]
         #[diplomat::attr(js, rename = "from_number")]
         #[diplomat::attr(supports = method_overloading, rename = "from")]
@@ -77,7 +83,7 @@ pub mod ffi {
         }
 
         /// Construct an [`Decimal`] from an integer.
-        #[diplomat::rust_link(fixed_decimal::Decimal, Struct)]
+        #[diplomat::rust_link(fixed_decimal::Decimal, Typedef)]
         #[diplomat::attr(dart, disable)]
         #[diplomat::attr(js, disable)]
         #[diplomat::attr(supports = method_overloading, rename = "from")]
@@ -87,7 +93,7 @@ pub mod ffi {
         }
 
         /// Construct an [`Decimal`] from an integer.
-        #[diplomat::rust_link(fixed_decimal::Decimal, Struct)]
+        #[diplomat::rust_link(fixed_decimal::Decimal, Typedef)]
         #[diplomat::attr(dart, rename = "from_int")]
         #[diplomat::attr(js, rename = "from_big_int")]
         #[diplomat::attr(supports = method_overloading, rename = "from")]
@@ -97,7 +103,7 @@ pub mod ffi {
         }
 
         /// Construct an [`Decimal`] from an integer.
-        #[diplomat::rust_link(fixed_decimal::Decimal, Struct)]
+        #[diplomat::rust_link(fixed_decimal::Decimal, Typedef)]
         #[diplomat::attr(any(dart, js), disable)]
         #[diplomat::attr(supports = method_overloading, rename = "from")]
         #[diplomat::attr(auto, named_constructor)]
@@ -159,7 +165,6 @@ pub mod ffi {
         #[diplomat::rust_link(fixed_decimal::DoublePrecision, Enum, hidden)]
         #[diplomat::attr(js, rename = "from_number_with_round_trip_precision")]
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor)]
-        #[diplomat::demo(default_constructor)]
         pub fn from_double_with_round_trip_precision(
             f: f64,
         ) -> Result<Box<Decimal>, DecimalLimitError> {
@@ -174,6 +179,7 @@ pub mod ffi {
         #[diplomat::rust_link(fixed_decimal::Decimal::try_from_utf8, FnInTypedef, hidden)]
         #[diplomat::rust_link(fixed_decimal::Decimal::from_str, FnInTypedef, hidden)]
         #[diplomat::attr(all(supports = fallible_constructors, supports = named_constructors), named_constructor)]
+        #[diplomat::demo(default_constructor)]
         pub fn from_string(v: &DiplomatStr) -> Result<Box<Decimal>, DecimalParseError> {
             Ok(Box::new(Decimal(fixed_decimal::Decimal::try_from_utf8(v)?)))
         }
@@ -354,6 +360,7 @@ pub mod ffi {
         #[diplomat::rust_link(fixed_decimal::Decimal::write_to, FnInTypedef)]
         #[diplomat::rust_link(fixed_decimal::Decimal::to_string, FnInTypedef, hidden)]
         #[diplomat::attr(auto, stringifier)]
+        #[diplomat::attr(demo_gen, disable)] // this just returns the single constructor argument
         pub fn to_string(&self, to: &mut diplomat_runtime::DiplomatWrite) {
             let _ = self.0.write_to(to);
         }

@@ -182,6 +182,16 @@ add_task(async function test_disableEscClose() {
     "Spotlight does not close with ESC key with 'disableEscClose' set to true"
   );
 
+  // Test Escape when focus is on dialog frame
+  const browserFrame = win.docShell.chromeEventHandler;
+  const parentWindow = browserFrame.ownerGlobal;
+  browserFrame.focus();
+  EventUtils.synthesizeKey("KEY_Escape", {}, parentWindow);
+  Assert.ok(
+    browser?.ownerGlobal.gDialogBox.isOpen,
+    "Spotlight does not close when ESC key is pressed while focus is on dialog frame"
+  );
+
   win.document.querySelector("button.dismiss-button").click();
 
   await dialogClosed(browser);

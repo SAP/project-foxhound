@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-// ./test/core/table_copy_mixed.wast
+// ./test/core/memory64/table_copy_mixed.wast
 
-// ./test/core/table_copy_mixed.wast:2
+// ./test/core/memory64/table_copy_mixed.wast:2
 let $0 = instantiate(`(module
   (table \$t32 30 30 funcref)
   (table \$t64 i64 30 30 funcref)
@@ -33,7 +33,7 @@ let $0 = instantiate(`(module
     (table.copy \$t64 \$t32 (i64.const 13) (i32.const 2) (i32.const 3)))
 )`);
 
-// ./test/core/table_copy_mixed.wast:20
+// ./test/core/memory64/table_copy_mixed.wast:20
 assert_invalid(
   () => instantiate(`(module
   (table \$t32 30 30 funcref)
@@ -45,7 +45,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/table_copy_mixed.wast:30
+// ./test/core/memory64/table_copy_mixed.wast:30
 assert_invalid(
   () => instantiate(`(module
   (table \$t32 30 30 funcref)
@@ -57,7 +57,7 @@ assert_invalid(
   `type mismatch`,
 );
 
-// ./test/core/table_copy_mixed.wast:40
+// ./test/core/memory64/table_copy_mixed.wast:40
 assert_invalid(
   () => instantiate(`(module
   (table \$t32 30 30 funcref)

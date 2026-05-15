@@ -71,7 +71,6 @@ function commonCheck(ch) {
   Assert.greater(ch.contentLength, -1);
   Assert.equal(ch.getResponseHeader("connection"), "close");
   Assert.ok(!ch.isNoStoreResponse());
-  Assert.ok(!ch.isPrivateResponse());
 }
 
 function start_objHandler(ch) {

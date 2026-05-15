@@ -11,7 +11,7 @@
 namespace mozilla {
 
 already_AddRefed<IdleTaskRunner> IdleTaskRunner::Create(
-    const CallbackType& aCallback, const char* aRunnableName,
+    const CallbackType& aCallback, const nsACString& aRunnableName,
     TimeDuration aStartDelay, TimeDuration aMaxDelay,
     TimeDuration aMinimumUsefulBudget, bool aRepeating,
     const MayStopProcessingCallbackType& aMayStopProcessing,
@@ -59,7 +59,7 @@ class IdleTaskRunnerTask : public Task {
     if (mRunner) {
       aName.Assign(mRunner->GetName());
     } else {
-      aName.Assign("ExpiredIdleTaskRunner");
+      aName = "ExpiredIdleTaskRunner"_ns;
     }
     return true;
   }
@@ -79,7 +79,7 @@ class IdleTaskRunnerTask : public Task {
 };
 
 IdleTaskRunner::IdleTaskRunner(
-    const CallbackType& aCallback, const char* aRunnableName,
+    const CallbackType& aCallback, const nsACString& aRunnableName,
     TimeDuration aStartDelay, TimeDuration aMaxDelay,
     TimeDuration aMinimumUsefulBudget, bool aRepeating,
     const MayStopProcessingCallbackType& aMayStopProcessing,
@@ -172,6 +172,7 @@ static void ScheduleTimedOut(nsITimer* aTimer, void* aClosure) {
 }
 
 void IdleTaskRunner::Schedule(bool aAllowIdleDispatch) {
+  MOZ_ASSERT(NS_IsMainThread());
   if (!mCallback) {
     return;
   }
@@ -232,9 +233,18 @@ void IdleTaskRunner::Schedule(bool aAllowIdleDispatch) {
       // mStartTime.
       waitToSchedule = (mStartTime - now).ToMilliseconds() + 1;
     }
-    mScheduleTimer->InitWithNamedFuncCallback(
+    // We rely on timers that target the main thread to be infallible (except
+    // for very late shutdown edge cases that should not occur, normally).
+    DebugOnly<nsresult> rv = mScheduleTimer->InitWithNamedFuncCallback(
         ScheduleTimedOut, this, waitToSchedule,
         nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, mName);
+#ifdef DEBUG
+    if (NS_FAILED(rv)) {
+      NS_WARNING(nsCString("Failed to set IdleTaskRunner timer for:"_ns + mName)
+                     .get());
+    }
+#endif
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 }
 
@@ -263,6 +273,7 @@ void IdleTaskRunner::SetTimerInternal(TimeDuration aDelay) {
 }
 
 void IdleTaskRunner::ResetTimer(TimeDuration aDelay) {
+  MOZ_ASSERT(NS_IsMainThread());
   mTimerActive = false;
 
   if (!mTimer) {
@@ -272,8 +283,18 @@ void IdleTaskRunner::ResetTimer(TimeDuration aDelay) {
   }
 
   if (mTimer) {
-    mTimer->InitWithNamedFuncCallback(TimedOut, this, aDelay.ToMilliseconds(),
-                                      nsITimer::TYPE_ONE_SHOT, mName);
+    // We rely on timers that target the main thread to be infallible (except
+    // for very late shutdown edge cases that should not occur, normally).
+    DebugOnly<nsresult> rv = mTimer->InitWithNamedFuncCallback(
+        TimedOut, this, aDelay.ToMilliseconds(), nsITimer::TYPE_ONE_SHOT,
+        mName);
+#ifdef DEBUG
+    if (NS_FAILED(rv)) {
+      NS_WARNING(nsCString("Failed to set IdleTaskRunner timer for:"_ns + mName)
+                     .get());
+    }
+#endif
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
     mTimerActive = true;
   }
 }

@@ -26,11 +26,23 @@ interface nsIQuotaFullOriginMetadataResult : nsISupports
 
   readonly attribute ACString storageOrigin;
 
+  readonly attribute boolean private;
+
   readonly attribute ACString persistenceType;
+
+  readonly attribute long long lastAccessTime;
+
+  readonly attribute long lastMaintenanceDate;
+
+  readonly attribute boolean accessed;
 
   readonly attribute boolean persisted;
 
-  readonly attribute long long lastAccessTime;
+  readonly attribute ACString clientUsages;
+
+  readonly attribute unsigned long long originUsage;
+
+  readonly attribute unsigned long quotaVersion;
 };
 
 [scriptable, uuid(d8c9328b-9aa8-4f5d-90e6-482de4a6d5b8)]

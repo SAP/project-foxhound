@@ -10,6 +10,7 @@ If you are interested in extending data collection by adding new probes have a l
    :glob:
 
    adding-a-new-probe
+   remove-telemetry
    report-gecko-telemetry-in-glean
 
 If you want to work with the telemetry code itself, for example to fix a bug, it is often helpful to start with these steps:

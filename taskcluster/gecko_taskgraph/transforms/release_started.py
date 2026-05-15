@@ -4,6 +4,7 @@
 """
 Add notifications via taskcluster-notify for release tasks
 """
+
 from shlex import quote as shell_quote
 
 from taskgraph.transforms.base import TransformSequence

@@ -3,9 +3,16 @@ subsuite = "mozlint"
 
 ["test_android_format.py"]
 
-["test_black.py"]
+["test_cargo-audit.py"]
+# testing it on linux is enough
+skip-if = [
+  "os == 'win'",
+  "os == 'mac'",
+]
 
 ["test_clang_format.py"]
+
+["test_clippy.py"]
 
 ["test_codespell.py"]
 
@@ -25,11 +32,17 @@ skip-if = ["os == 'win'"]
 
 ["test_fluent_lint.py"]
 
+["test_gecko_trace.py"]
+
+["test_glean_parser.py"]
+
+["test_header_guards.py"]
+
 ["test_ignorefile.py"]
 
-["test_lintpref.py"]
+["test_includes.py"]
 
-["test_manifest_alpha.py"]
+["test_lintpref.py"]
 
 ["test_manifest_toml.py"]
 
@@ -49,14 +62,9 @@ skip-if = ["os == 'win'"]
 
 ["test_ruff.py"]
 
-["test_rustfmt.py"]
+["test_ruff_format.py"]
 
-["test_cargo-audit.py"]
-# testing it on linux is enough
-skip-if = [
-  "os == 'win'",
-  "os == 'mac'",
-]
+["test_rustfmt.py"]
 
 ["test_shellcheck.py"]
 

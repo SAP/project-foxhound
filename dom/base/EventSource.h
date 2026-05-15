@@ -15,7 +15,6 @@
 #define mozilla_dom_EventSource_h
 
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "nsDeque.h"
 #include "nsICookieJarSettings.h"

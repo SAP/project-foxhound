@@ -6,8 +6,8 @@
 #ifndef mozilla_dom_ImageDocument_h
 #define mozilla_dom_ImageDocument_h
 
-#include "mozilla/Attributes.h"
 #include "imgINotificationObserver.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/dom/MediaDocument.h"
 #include "nsIDOMEventListener.h"
 

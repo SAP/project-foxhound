@@ -10,6 +10,14 @@
  * W3C liability, trademark and document use rules apply.
  */
 
+enum MediaKeySessionClosedReason {
+  "internal-error",
+  "closed-by-application",
+  "release-acknowledged",
+  "hardware-context-reset",
+  "resource-evicted"
+};
+
 [Exposed=Window]
 interface MediaKeySession : EventTarget {
   // error state
@@ -20,7 +28,7 @@ interface MediaKeySession : EventTarget {
 
   readonly attribute unrestricted double expiration;
 
-  readonly attribute Promise<undefined> closed;
+  readonly attribute Promise<MediaKeySessionClosedReason> closed;
 
   readonly attribute MediaKeyStatusMap keyStatuses;
 

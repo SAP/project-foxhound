@@ -43,7 +43,7 @@ exports.getExtensionUuid = function (extension) {
  *         Note: We cannot use the global window object here because it is undefined if
  *         this module is loaded from a file outside of devtools/client/aboutdebugging/.
  *         See browser-loader.sys.mjs `uri.startsWith(baseURI)` for more details.
- * @param  {String} message
+ * @param  {string} message
  *         The help message that should be displayed to the user in the filepicker.
  * @return {Promise} returns a promise that resolves a File object corresponding to the
  *         file selected by the user.

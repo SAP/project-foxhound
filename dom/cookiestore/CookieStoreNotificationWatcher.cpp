@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CookieStoreNotificationWatcher.h"
+
 #include "mozilla/Services.h"
-#include "mozilla/Unused.h"
 #include "nsICookie.h"
 #include "nsICookieNotification.h"
 #include "nsIObserverService.h"
@@ -115,7 +115,7 @@ void CookieStoreNotificationWatcher::ReleaseOnMainThread(
     ~ReleaseWatcher() {
       // If we still have to release the watcher, better to leak it.
       if (mDoomed) {
-        Unused << mDoomed.forget().take();
+        mDoomed.forget().leak();
       }
     }
 

@@ -4,7 +4,11 @@
       let o1;
       let p1, p2;
       window.addEventListener("MozReftestInvalidate", finish);
-      try { o1 = window.open("") } catch(e) { }
+      // Synchronously call reload while an async load away from the initial about:blank is ongoing.
+      // This causes the window to be reused and a navigation event to mess with the gUM request.
+      try { o1 = window.open("/") } catch(e) { }
+      // Note: window.open can fail here in some configurations, so o1 might be null.
+      // But the try/catch silence that (bug 2002313).
       try { o1.location.reload() } catch(e) { }
       try { o2 = o1.navigator } catch(e) { }
       try { o3 = o2.mediaDevices } catch(e) { }

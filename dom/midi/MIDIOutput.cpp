@@ -5,15 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIOutput.h"
-#include "mozilla/dom/MIDIPortChild.h"
-#include "mozilla/dom/MIDITypes.h"
-#include "mozilla/dom/MIDIOutputBinding.h"
-#include "mozilla/dom/MIDIUtils.h"
-#include "nsDOMNavigationTiming.h"
+
 #include "mozilla/ErrorResult.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/MIDIOutputBinding.h"
+#include "mozilla/dom/MIDIPortChild.h"
+#include "mozilla/dom/MIDITypes.h"
+#include "mozilla/dom/MIDIUtils.h"
 #include "mozilla/dom/Performance.h"
+#include "nsDOMNavigationTiming.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {

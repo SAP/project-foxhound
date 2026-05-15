@@ -8,7 +8,6 @@
 #define mozilla_dom_XRNativeOrigin_h_
 
 #include "gfxVR.h"
-#include "mozilla/RefPtr.h"
 
 namespace mozilla::dom {
 

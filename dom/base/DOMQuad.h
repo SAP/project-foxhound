@@ -8,10 +8,10 @@
 #define MOZILLA_DOMQUAD_H_
 
 #include <cstdint>
+
 #include "Units.h"
 #include "js/TypeDecls.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"

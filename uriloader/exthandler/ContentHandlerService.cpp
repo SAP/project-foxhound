@@ -105,9 +105,9 @@ void ContentHandlerService::nsIHandlerInfoToHandlerInfo(
 
   nsHandlerInfoAction action;
   aInfo->GetPreferredAction(&action);
-  HandlerInfo info(type, isMIMEInfo, description, alwaysAskBeforeHandling,
-                   std::move(extensions), happ, happs, action);
-  *aHandlerInfo = info;
+  *aHandlerInfo =
+      HandlerInfo(type, isMIMEInfo, description, alwaysAskBeforeHandling,
+                  std::move(extensions), happ, happs, action);
 }
 
 NS_IMETHODIMP RemoteHandlerApp::GetName(nsAString& aName) {

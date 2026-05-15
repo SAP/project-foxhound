@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_cache_DBSchema_h
 #define mozilla_dom_cache_DBSchema_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/cache/Types.h"
 #include "nsError.h"
 #include "nsString.h"

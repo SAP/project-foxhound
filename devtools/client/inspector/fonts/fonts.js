@@ -191,16 +191,16 @@ class FontInspector {
    * Conversion is done via pixels. If neither of the two given unit types is "px",
    * recursively get the value in pixels, then convert that result to the desired unit.
    *
-   * @param  {String} property
+   * @param  {string} property
    *         Property name for the converted value.
    *         Assumed to be "font-size", but special case for "line-height".
-   * @param  {Number} value
+   * @param  {number} value
    *         Numeric value to convert.
-   * @param  {String} fromUnit
+   * @param  {string} fromUnit
    *         CSS unit to convert from.
-   * @param  {String} toUnit
+   * @param  {string} toUnit
    *         CSS unit to convert to.
-   * @return {Number}
+   * @return {number}
    *         Converted numeric value.
    */
   async convertUnits(property, value, fromUnit, toUnit) {
@@ -338,7 +338,7 @@ class FontInspector {
    * Get all expected CSS font properties and values from the node's matching rules and
    * fallback to computed style. Skip CSS Custom Properties, `calc()` and keyword values.
    *
-   * @return {Object}
+   * @return {object}
    */
   async getFontProperties() {
     const properties = {};
@@ -410,9 +410,9 @@ class FontInspector {
    * Get the box dimensions used for unit conversion according to the CSS property and
    * target CSS unit.
    *
-   * @param  {String} property
+   * @param  {string} property
    *         CSS property
-   * @param  {String} unit
+   * @param  {string} unit
    *         Target CSS unit
    * @return {Promise}
    *         Promise that resolves with an object with box dimensions in pixels.
@@ -431,15 +431,15 @@ class FontInspector {
       case "vh":
       case "vw":
       case "vmin":
-      case "vmax":
+      case "vmax": {
         const dim = await node.getOwnerGlobalDimensions().catch(console.error);
         if (dim) {
           box.width = dim.innerWidth;
           box.height = dim.innerHeight;
         }
         break;
-
-      case "%":
+      }
+      case "%": {
         const style = await this.pageStyle
           .getComputed(node)
           .catch(console.error);
@@ -448,6 +448,7 @@ class FontInspector {
           box.height = style.height.value;
         }
         break;
+      }
     }
 
     return box;
@@ -457,9 +458,9 @@ class FontInspector {
    * Get the refernece font size value used for unit conversion according to the
    * CSS property and target CSS unit.
    *
-   * @param {String} property
+   * @param {string} property
    *        CSS property
-   * @param {String} unit
+   * @param {string} unit
    *        Target CSS unit
    * @return {Promise}
    *         Promise that resolves with the reference font size value or null if there
@@ -485,9 +486,9 @@ class FontInspector {
    * Get the reference node used in measurements for unit conversion according to the
    * the CSS property and target CSS unit type.
    *
-   * @param  {String} property
+   * @param  {string} property
    *         CSS property
-   * @param  {String} unit
+   * @param  {string} unit
    *         Target CSS unit
    * @return {Promise}
    *          Promise that resolves with the reference node used in measurements for unit
@@ -519,7 +520,7 @@ class FontInspector {
    * Get a reference to a TextProperty instance from the current selected rule for a
    * given property name.
    *
-   * @param {String} name
+   * @param {string} name
    *        CSS property name
    * @return {TextProperty|null}
    */
@@ -554,7 +555,7 @@ class FontInspector {
    *  - slnt -> font-style
    *  - ital -> font-style
    *
-   * @param {String} axis
+   * @param {string} axis
    *        Name of registered axis.
    * @return {Function}
    *         Method to call which updates the corresponding CSS font property.
@@ -622,7 +623,7 @@ class FontInspector {
    * considered to be custom axes names and will be written to the
    * "font-variation-settings" CSS property.
    *
-   * @param {String} name
+   * @param {string} name
    *        CSS property name or axis name.
    * @return {Function}
    *         Method which updates the rule view and page style.
@@ -648,7 +649,7 @@ class FontInspector {
   /**
    * Check if the font inspector panel is visible.
    *
-   * @return {Boolean}
+   * @return {boolean}
    */
   isPanelVisible() {
     return (
@@ -685,9 +686,9 @@ class FontInspector {
    * on the page circumventing direct TextProperty.setValue() which triggers expensive DOM
    * operations in TextPropertyEditor.update().
    *
-   * @param  {String} name
+   * @param  {string} name
    *         CSS property name
-   * @param  {String} value
+   * @param  {string} value
    *         CSS property value
    */
   async syncChanges(name, value) {
@@ -712,9 +713,9 @@ class FontInspector {
   /**
    * Handler for changes of a font axis value coming from the FontEditor.
    *
-   * @param  {String} tag
+   * @param  {string} tag
    *         Tag name of the font axis.
-   * @param  {Number} value
+   * @param  {number} value
    *         Value of the font axis.
    */
   onAxisUpdate(tag, value) {
@@ -726,11 +727,11 @@ class FontInspector {
   /**
    * Handler for changes of a CSS font property value coming from the FontEditor.
    *
-   * @param  {String} property
+   * @param  {string} property
    *         CSS font property name.
-   * @param  {Number} value
+   * @param  {number} value
    *         CSS font property numeric value.
-   * @param  {String|null} unit
+   * @param  {string | null} unit
    *         CSS unit or null
    */
   onFontPropertyUpdate(property, value, unit) {
@@ -744,7 +745,7 @@ class FontInspector {
    * Handler for selecting a font variation instance. Dispatches an action which updates
    * the axes and their values as defined by that variation instance.
    *
-   * @param {String} name
+   * @param {string} name
    *        Name of variation instance. (ex: Light, Regular, Ultrabold, etc.)
    * @param {Array} values
    *        Array of objects with axes and values defined by the variation instance.
@@ -811,13 +812,13 @@ class FontInspector {
    * If the property parameter is not a recognized CSS font property name, assume it's a
    * variable font axis name.
    *
-   * @param  {String} property
+   * @param  {string} property
    *         CSS font property name or axis name
-   * @param  {Number} value
+   * @param  {number} value
    *         CSS font property value or axis value
-   * @param  {String|undefined} fromUnit
+   * @param  {string | undefined} fromUnit
    *         Optional CSS unit to convert from
-   * @param  {String|undefined} toUnit
+   * @param  {string | undefined} toUnit
    *         Optional CSS unit to convert to
    */
   async onPropertyChange(property, value, fromUnit, toUnit) {
@@ -840,7 +841,7 @@ class FontInspector {
    * Handler for "property-value-updated" event emitted from the rule view whenever a
    * property value changes. Ignore changes to properties unrelated to the font editor.
    *
-   * @param {Object} eventData
+   * @param {object} eventData
    *        Object with the property name and value and origin rule.
    *        Example: { name: "font-size", value: "1em", rule: Object }
    */
@@ -857,11 +858,11 @@ class FontInspector {
   /**
    * Reveal a font's usage in the page.
    *
-   * @param  {String} font
+   * @param  {string} font
    *         The name of the font to be revealed in the page.
-   * @param  {Boolean} show
+   * @param  {boolean} show
    *         Whether or not to reveal the font.
-   * @param  {Boolean} isForCurrentElement
+   * @param  {boolean} isForCurrentElement
    *         Optional. Default `true`. Whether or not to restrict revealing the font
    *         just to the current element selection.
    */
@@ -1050,9 +1051,9 @@ class FontInspector {
    * TextProperty.setValue() which performs other actions, including marking the property
    * as "changed" in the Rule view with a green indicator.
    *
-   * @param {String} name
+   * @param {string} name
    *        CSS property name
-   * @param {String}value
+   * @param {string}value
    *        CSS property value
    */
   updatePropertyValue(name, value) {

@@ -51,37 +51,39 @@ const Quotes* QuotesForLang(const nsAtom* aLang) {
     return entry;
   }
 
-  // Try parsing lang as a Locale and canonicalizing the subtags, then see if
-  // we can match it with region or script subtags, if present, or just the
-  // primary language tag.
+  // Try parsing lang as a Locale, then see if we can match it with region or
+  // script subtags, if present, or just the primary language tag.
+  // Note that the locale code (if well-formed) will have been canonicalized by
+  // the attribute-mapping code, so we can rely on the expected casing for each
+  // type of subtag.
   Locale loc;
   auto result = LocaleParser::TryParse(langStr, loc);
   if (result.isErr()) {
     return nullptr;
   }
-  if (loc.Canonicalize().isErr()) {
-    return nullptr;
-  }
-  if (loc.Region().Present()) {
-    nsAutoCString langAndRegion;
-    langAndRegion.Append(loc.Language().Span());
-    langAndRegion.Append('-');
-    langAndRegion.Append(loc.Region().Span());
-    if ((entry = sQuotesForLang->Lookup(langAndRegion).DataPtrOrNull())) {
-      return entry;
-    }
-  }
-  if (loc.Script().Present()) {
-    nsAutoCString langAndScript;
-    langAndScript.Append(loc.Language().Span());
-    langAndScript.Append('-');
-    langAndScript.Append(loc.Script().Span());
-    if ((entry = sQuotesForLang->Lookup(langAndScript).DataPtrOrNull())) {
-      return entry;
-    }
-  }
-  Span<const char> langAsSpan = loc.Language().Span();
+  // Extract the primary language tag.
+  const Span<const char> langAsSpan = loc.Language().Span();
   nsAutoCString lang(langAsSpan.data(), langAsSpan.size());
+  const auto langLen = lang.Length();
+  // See if we can match language + region.
+  if (loc.Region().Present()) {
+    lang.Append('-');
+    lang.Append(loc.Region().Span());
+    if ((entry = sQuotesForLang->Lookup(lang).DataPtrOrNull())) {
+      return entry;
+    }
+    lang.Truncate(langLen);
+  }
+  // See if we can match language + script.
+  if (loc.Script().Present()) {
+    lang.Append('-');
+    lang.Append(loc.Script().Span());
+    if ((entry = sQuotesForLang->Lookup(lang).DataPtrOrNull())) {
+      return entry;
+    }
+    lang.Truncate(langLen);
+  }
+  // OK, just try the primary language tag alone.
   if ((entry = sQuotesForLang->Lookup(lang).DataPtrOrNull())) {
     return entry;
   }

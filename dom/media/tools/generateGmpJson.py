@@ -4,12 +4,12 @@
 
 import argparse
 import hashlib
-import json
 import logging
 import re
 from urllib.parse import urlparse, urlunparse
 
 import requests
+from mozfile import json
 
 
 def fetch_url_for_cdms(cdms, urlParams):
@@ -32,9 +32,14 @@ def fetch_url_for_cdms(cdms, urlParams):
                     "{} expected https scheme '{}'".format(cdm["target"], redirectUrl)
                 )
 
-            sanitizedUrl = urlunparse(
-                (parsedUrl.scheme, parsedUrl.netloc, parsedUrl.path, None, None, None)
-            )
+            sanitizedUrl = urlunparse((
+                parsedUrl.scheme,
+                parsedUrl.netloc,
+                parsedUrl.path,
+                None,
+                None,
+                None,
+            ))
 
             # Note that here we modify the returned URL from the
             # component update service because it returns a preferred
@@ -313,7 +318,7 @@ def main():
     args = parser.parse_args()
 
     if args.plugin == "openh264":
-        url_base = "http://ciscobinary.openh264.org"
+        url_base = "https://ciscobinary.openh264.org"
         if args.version is None or args.revision is None:
             parser.error("openh264 requires version and revision")
     elif args.plugin == "widevine":

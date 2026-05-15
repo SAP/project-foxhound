@@ -7,9 +7,9 @@
 #ifndef DOM_QUOTA_ORIGINDIRECTORYLOCK_H_
 #define DOM_QUOTA_ORIGINDIRECTORYLOCK_H_
 
-#include "nsStringFwd.h"
 #include "mozilla/dom/quota/DirectoryLockImpl.h"
 #include "mozilla/dom/quota/PersistenceType.h"
+#include "nsStringFwd.h"
 
 template <class T>
 class RefPtr;

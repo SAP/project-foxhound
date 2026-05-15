@@ -15,11 +15,6 @@ reduce the wait, while simultaneously allowing reviewers to do a good
 chunk of hacking themselves. We don't have a perfect system, and we
 never will. It's still evolving, so let us know if you have suggestions.
 
-Mozilla used to have the concept of "super-review", but `a consensus was
-reached in
-2018 <https://groups.google.com/forum/#!topic/mozilla.governance/HHU0h-44NDo>`__
-to retire this process.
-
 Who must review my code?
 ------------------------
 
@@ -76,7 +71,11 @@ Reviewers will probably look at the following areas of the code:
 -  Performance review. Has this code been profiled? Are you sure it's
    not negatively affecting performance of other code?
 -  License review. Does the code follow the `code licensing
-   rules <http://www.mozilla.org/hacking/committer/committers-agreement.pdf>`__?
+   rules <https://www.mozilla.org/hacking/committer/committers-agreement.pdf>`__?
+-  AI-assisted code review. If the patch was authored with the assistance
+   of AI tools, does the contributor understand and can they explain every change?
+   Does the code meet the same standards as any human-written patch?
+   See the :doc:`AI Coding Policy <ai-coding>` for more details.
 
 
 How can I tell the status of reviews?

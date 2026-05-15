@@ -265,8 +265,8 @@ add_task(async function setup() {
     });
   }
 
-  registerCleanupFunction(() => {
-    Services.logins.removeAllUserFacingLogins();
+  registerCleanupFunction(async () => {
+    await Services.logins.removeAllUserFacingLoginsAsync();
     if (loginCrypto.finalize) {
       loginCrypto.finalize();
     }
@@ -321,7 +321,7 @@ add_task(async function test_importExistingLogins() {
     "Sanity check the source exists"
   );
 
-  Services.logins.removeAllUserFacingLogins();
+  await Services.logins.removeAllUserFacingLoginsAsync();
   let logins = await Services.logins.getAllLogins();
   Assert.equal(
     logins.length,

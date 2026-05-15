@@ -174,7 +174,7 @@ bool IonGetPropertyIC::update(JSContext* cx, HandleScript outerScript,
   MOZ_ASSERT(!val.isMagic());
 
   TryAttachIonStub<GetPropIRGenerator>(cx, ic, ionScript, ic->kind(), val,
-                                       idVal);
+                                       idVal, val);
 
   if (ic->kind() == CacheKind::GetProp) {
     Rooted<PropertyName*> name(cx, idVal.toString()->asAtom().asPropertyName());
@@ -219,7 +219,7 @@ bool IonGetPropSuperIC::update(JSContext* cx, HandleScript outerScript,
   RootedValue val(cx, ObjectValue(*obj));
 
   TryAttachIonStub<GetPropIRGenerator>(cx, ic, ionScript, ic->kind(), val,
-                                       idVal);
+                                       idVal, receiver);
 
   if (ic->kind() == CacheKind::GetPropSuper) {
     Rooted<PropertyName*> name(cx, idVal.toString()->asAtom().asPropertyName());

@@ -6,8 +6,8 @@
 
 #include "DragEvent.h"
 
-#include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/dom/MouseEventBinding.h"
 #include "nsContentUtils.h"
 
 namespace mozilla::dom {

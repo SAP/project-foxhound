@@ -10,6 +10,7 @@
  * It corresponds to the tracking of a single property value change (background-color)
  * within a deeply nested CSS at-rule structure from an inline stylesheet:
  *
+ * ```
  * @media (min-width: 50em) {
  *   @supports (display: grid) {
  *     body {
@@ -18,6 +19,7 @@
  *     }
  *   }
  * }
+ * ```
  */
 module.exports.CHANGES_STATE = {
   source1: {

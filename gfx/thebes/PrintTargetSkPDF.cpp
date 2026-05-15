@@ -5,9 +5,9 @@
 
 #include "PrintTargetSkPDF.h"
 
+#include "include/core/SkStream.h"
 #include "mozilla/gfx/2D.h"
 #include "nsString.h"
-#include <vector>
 
 #include "skia/src/pdf/SkPDFUtils.h"
 
@@ -35,6 +35,38 @@ already_AddRefed<PrintTargetSkPDF> PrintTargetSkPDF::CreateOrNull(
   return do_AddRef(new PrintTargetSkPDF(aSizeInPoints, std::move(aStream)));
 }
 
+class GkSkWStream final : public SkWStream {
+ public:
+  explicit GkSkWStream(nsIOutputStream* aStream) : mStream(aStream) {
+    MOZ_ASSERT(mStream);
+  }
+  bool write(const void* aBuf, size_t aSize) override {
+    const auto* data = reinterpret_cast<const char*>(aBuf);
+    do {
+      uint32_t wrote = 0;
+      if (NS_WARN_IF(NS_FAILED(mStream->Write(data, aSize, &wrote)))) {
+        return false;
+      }
+      mWritten += wrote;
+      data += wrote;
+      aSize -= wrote;
+    } while (aSize);
+    NS_ASSERTION(aSize == 0, "not everything was written to the file");
+    return true;
+  }
+  void flush() override { (void)NS_WARN_IF(NS_FAILED(mStream->Flush())); }
+  size_t bytesWritten() const override { return mWritten; }
+
+ private:
+  nsCOMPtr<nsIOutputStream> mStream;
+  size_t mWritten = 0;
+};
+
+already_AddRefed<PrintTargetSkPDF> PrintTargetSkPDF::CreateOrNull(
+    nsIOutputStream* aStream, const IntSize& aSizeInPoints) {
+  return CreateOrNull(MakeUnique<GkSkWStream>(aStream), aSizeInPoints);
+}
+
 nsresult PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
                                          const nsAString& aPrintToFileName,
                                          int32_t aStartPage, int32_t aEndPage) {
@@ -42,13 +74,17 @@ nsresult PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
   // because it's only now that we are given aTitle which we want for the
   // PDF metadata.
 
+  NS_ConvertUTF16toUTF8 title(aTitle);
   SkPDF::Metadata metadata;
-  metadata.fTitle = NS_ConvertUTF16toUTF8(aTitle).get();
+  metadata.fTitle = SkString(title.get(), title.Length());
   metadata.fCreator = "Firefox";
   SkPDF::DateTime now = {0};
   SkPDFUtils::GetDateTime(&now);
   metadata.fCreation = now;
   metadata.fModified = now;
+
+  // TODO(emilio, bug 2001912): Provide jpeg decoder / encoders for SkPdf?
+  metadata.allowNoJpegs = true;
 
   // SkDocument stores a non-owning raw pointer to aStream
   mPDFDoc = SkPDF::MakeDocument(mOStream.get(), metadata);
@@ -107,6 +143,7 @@ already_AddRefed<DrawTarget> PrintTargetSkPDF::MakeDrawTarget(
 already_AddRefed<DrawTarget> PrintTargetSkPDF::GetReferenceDrawTarget() {
   if (!mRefDT) {
     SkPDF::Metadata metadata;
+    metadata.allowNoJpegs = true;
     // SkDocument stores a non-owning raw pointer to aStream
     mRefPDFDoc = SkPDF::MakeDocument(&mRefOStream, metadata);
     if (!mRefPDFDoc) {

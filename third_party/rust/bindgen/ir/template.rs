@@ -4,7 +4,7 @@
 //! brief definitions:
 //!
 //! * "Template definition": a class/struct/alias/function definition that takes
-//! generic template parameters. For example:
+//!   generic template parameters. For example:
 //!
 //! ```c++
 //! template<typename T>
@@ -14,11 +14,11 @@
 //! ```
 //!
 //! * "Template instantiation": an instantiation is a use of a template with
-//! concrete template arguments. For example, `List<int>`.
+//!   concrete template arguments. For example, `List<int>`.
 //!
 //! * "Template specialization": an alternative template definition providing a
-//! custom definition for instantiations with the matching template
-//! arguments. This C++ feature is unsupported by bindgen. For example:
+//!   custom definition for instantiations with the matching template
+//!   arguments. This C++ feature is unsupported by bindgen. For example:
 //!
 //! ```c++
 //! template<>
@@ -77,27 +77,23 @@ use crate::clang;
 /// The following table depicts the results of each trait method when invoked on
 /// each of the declarations above:
 ///
-/// +------+----------------------+--------------------------+-------------------------+----
-/// |Decl. | self_template_params | num_self_template_params | all_template_parameters | ...
-/// +------+----------------------+--------------------------+-------------------------+----
-/// |Foo   | T, U                 | 2                        | T, U                    | ...
-/// |Bar   | V                    | 1                        | T, U, V                 | ...
-/// |Inner |                      | 0                        | T, U                    | ...
-/// |Lol   | W                    | 1                        | T, U, W                 | ...
-/// |Wtf   | X                    | 1                        | T, U, X                 | ...
-/// |Qux   |                      | 0                        |                         | ...
-/// +------+----------------------+--------------------------+------------------------+----
+/// |Decl. | self_template_params | num_self_template_params | all_template_parameters |
+/// |------|----------------------|--------------------------|-------------------------|
+/// |Foo   | T, U                 | 2                        | T, U                    |
+/// |Bar   | V                    | 1                        | T, U, V                 |
+/// |Inner |                      | 0                        | T, U                    |
+/// |Lol   | W                    | 1                        | T, U, W                 |
+/// |Wtf   | X                    | 1                        | T, U, X                 |
+/// |Qux   |                      | 0                        |                         |
 ///
-/// ----+------+-----+----------------------+
-/// ... |Decl. | ... | used_template_params |
-/// ----+------+-----+----------------------+
-/// ... |Foo   | ... | T, U                 |
-/// ... |Bar   | ... | V                    |
-/// ... |Inner | ... |                      |
-/// ... |Lol   | ... | T                    |
-/// ... |Wtf   | ... | T                    |
-/// ... |Qux   | ... |                      |
-/// ----+------+-----+----------------------+
+/// | Decl. | used_template_params |
+/// |-------|----------------------|
+/// | Foo   | T, U                 |
+/// | Bar   | V                    |
+/// | Inner |                      |
+/// | Lol   | T                    |
+/// | Wtf   | T                    |
+/// | Qux   |                      |
 pub(crate) trait TemplateParameters: Sized {
     /// Get the set of `ItemId`s that make up this template declaration's free
     /// template parameters.
@@ -266,17 +262,14 @@ impl TemplateInstantiation {
             })
         };
 
-        let definition = match definition {
-            Some(def) => def,
-            None => {
-                if !ty.declaration().is_builtin() {
-                    warn!(
-                        "Could not find template definition for template \
+        let Some(definition) = definition else {
+            if !ty.declaration().is_builtin() {
+                warn!(
+                    "Could not find template definition for template \
                          instantiation"
-                    );
-                }
-                return None;
+                );
             }
+            return None;
         };
 
         let template_definition =

@@ -2,20 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef _WEBRTC_IPC_TRAITS_H_
-#define _WEBRTC_IPC_TRAITS_H_
+#ifndef WEBRTC_IPC_TRAITS_H_
+#define WEBRTC_IPC_TRAITS_H_
+
+#include <vector>
 
 #include "ipc/EnumSerializer.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingIPCUtils.h"
+#include "mozilla/dom/CandidateInfo.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "mozilla/media/webrtc/WebrtcGlobal.h"
-#include "mozilla/dom/CandidateInfo.h"
-#include "mozilla/MacroForEach.h"
 #include "transport/dtlsidentity.h"
-#include <vector>
 
 namespace mozilla {
 typedef std::vector<std::string> StringVector;
@@ -85,4 +85,4 @@ DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::DtlsDigest, algorithm_, value_)
 
 }  // namespace IPC
 
-#endif  // _WEBRTC_IPC_TRAITS_H_
+#endif  // WEBRTC_IPC_TRAITS_H_

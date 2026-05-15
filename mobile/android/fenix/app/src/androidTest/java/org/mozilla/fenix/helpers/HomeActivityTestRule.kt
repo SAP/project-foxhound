@@ -59,14 +59,19 @@ class HomeActivityTestRule(
         isWallpaperOnboardingEnabled: Boolean = settings.showWallpaperOnboarding,
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
+        isUnifiedTrustPanelEnabled: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
-        isMenuRedesignEnabled: Boolean = false,
+        isComposableToolbarEnabled: Boolean = true,
         isMenuRedesignCFREnabled: Boolean = false,
         isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
-        isUseNewCrashReporterDialog: Boolean = false,
+        isUseNewCrashReporterFlow: Boolean = false,
+        isTabSwipeCFREnabled: Boolean = false,
+        isTermsOfServiceAccepted: Boolean = true,
+        openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
+        hasSeenBrowserToolbarCFR: Boolean = true,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomepageHeaderEnabled = isHomepageHeaderEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -76,14 +81,19 @@ class HomeActivityTestRule(
         this.isWallpaperOnboardingEnabled = isWallpaperOnboardingEnabled
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
+        this.isUnifiedTrustPanelEnabled = isUnifiedTrustPanelEnabled
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
-        this.isMenuRedesignEnabled = isMenuRedesignEnabled
+        this.isComposableToolbarEnabled = isComposableToolbarEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
         this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.shouldUseBottomToolbar = shouldUseBottomToolbar
-        this.isUseNewCrashReporterDialog = isUseNewCrashReporterDialog
+        this.isUseNewCrashReporterFlow = isUseNewCrashReporterFlow
+        this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
+        this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
+        this.openLinksInExternalApp = openLinksInExternalApp
+        this.hasSeenBrowserToolbarCFR = hasSeenBrowserToolbarCFR
     }
 
     /**
@@ -130,7 +140,7 @@ class HomeActivityTestRule(
             initialTouchMode: Boolean = false,
             launchActivity: Boolean = true,
             skipOnboarding: Boolean = false,
-            useNewCrashReporterDialog: Boolean = false,
+            useNewCrashReporterFlow: Boolean = false,
         ) = HomeActivityTestRule(
             initialTouchMode = initialTouchMode,
             launchActivity = launchActivity,
@@ -144,7 +154,9 @@ class HomeActivityTestRule(
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
             isPageLoadTranslationsPromptEnabled = false,
-            isUseNewCrashReporterDialog = useNewCrashReporterDialog,
+            isUseNewCrashReporterFlow = useNewCrashReporterFlow,
+            isTabSwipeCFREnabled = true,
+            isTermsOfServiceAccepted = true,
         )
     }
 }
@@ -178,14 +190,20 @@ class HomeActivityIntentTestRule internal constructor(
         isWallpaperOnboardingEnabled: Boolean = settings.showWallpaperOnboarding,
         isDeleteSitePermissionsEnabled: Boolean = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled: Boolean = settings.shouldShowOpenInAppBanner,
+        isUnifiedTrustPanelEnabled: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
-        isMenuRedesignEnabled: Boolean = false,
+        isComposableToolbarEnabled: Boolean = true,
         isMenuRedesignCFREnabled: Boolean = false,
         isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
         onboardingFeatureEnabled: Boolean = true,
+        isTabSwipeCFREnabled: Boolean = false,
+        isTermsOfServiceAccepted: Boolean = true,
+        openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
+        tabManagerOpeningAnimationEnabled: Boolean = false,
+        hasSeenBrowserToolbarCFR: Boolean = true,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomepageHeaderEnabled = isHomepageHeaderEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -195,14 +213,20 @@ class HomeActivityIntentTestRule internal constructor(
         this.isWallpaperOnboardingEnabled = isWallpaperOnboardingEnabled
         this.isDeleteSitePermissionsEnabled = isDeleteSitePermissionsEnabled
         this.isOpenInAppBannerEnabled = isOpenInAppBannerEnabled
+        this.isUnifiedTrustPanelEnabled = isUnifiedTrustPanelEnabled
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
-        this.isMenuRedesignEnabled = isMenuRedesignEnabled
+        this.isComposableToolbarEnabled = isComposableToolbarEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
         this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.shouldUseBottomToolbar = shouldUseBottomToolbar
         this.onboardingFeatureEnabled = onboardingFeatureEnabled
+        this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
+        this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
+        this.openLinksInExternalApp = openLinksInExternalApp
+        this.tabManagerOpeningAnimationEnabled = tabManagerOpeningAnimationEnabled
+        this.hasSeenBrowserToolbarCFR = hasSeenBrowserToolbarCFR
     }
 
     private val longTapUserPreference = getLongPressTimeout()
@@ -266,12 +290,18 @@ class HomeActivityIntentTestRule internal constructor(
         isWallpaperOnboardingEnabled = settings.showWallpaperOnboarding
         isDeleteSitePermissionsEnabled = settings.deleteSitePermissions
         isOpenInAppBannerEnabled = settings.shouldShowOpenInAppBanner
+        isUnifiedTrustPanelEnabled = settings.enableUnifiedTrustPanel
         etpPolicy = getETPPolicy(settings)
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings)
-        isMenuRedesignEnabled = settings.enableMenuRedesign
+        isComposableToolbarEnabled = settings.shouldUseComposableToolbar
         isMenuRedesignCFREnabled = settings.shouldShowMenuCFR
         isMicrosurveyEnabled = settings.microsurveyFeatureEnabled
         shouldUseBottomToolbar = settings.shouldUseBottomToolbar
+        isTabSwipeCFREnabled = !settings.hasShownTabSwipeCFR
+        isTermsOfServiceAccepted = settings.hasAcceptedTermsOfService
+        openLinksInExternalApp = getOpenLinksInApp(settings)
+        tabManagerOpeningAnimationEnabled = settings.tabManagerOpeningAnimationEnabled
+        hasSeenBrowserToolbarCFR = settings.hasSeenBrowserToolbarCFR
     }
 
     companion object {
@@ -299,6 +329,9 @@ class HomeActivityIntentTestRule internal constructor(
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
             isPageLoadTranslationsPromptEnabled = false,
+            isTabSwipeCFREnabled = true,
+            isTermsOfServiceAccepted = true,
+            tabManagerOpeningAnimationEnabled = false,
         )
     }
 }
@@ -328,7 +361,7 @@ private fun skipOnboardingBeforeLaunch() {
     // As we are disabling the onboarding we need to initialize glean manually,
     // as it runs after the onboarding finishes
     Handler(Looper.getMainLooper()).post {
-        appContext.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        appContext.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             initializeGlean(
                 applicationContext = appContext,
                 logger = Logger(),

@@ -29,7 +29,7 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(BuiltInStyleSheetFlags);
 
 enum class BuiltInStyleSheet : uint8_t {
 #define STYLE_SHEET(identifier_, url_, flags_) identifier_,
-#include "mozilla/BuiltInStyleSheetList.h"
+#include "mozilla/BuiltInStyleSheetList.inc"
 #undef STYLE_SHEET
   Count
 };

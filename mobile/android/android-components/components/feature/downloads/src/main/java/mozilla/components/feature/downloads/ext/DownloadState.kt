@@ -13,7 +13,7 @@ import mozilla.components.concept.fetch.Headers.Names.CONTENT_TYPE
 import mozilla.components.concept.fetch.Headers.Names.E_TAG
 import mozilla.components.support.ktx.kotlin.decode
 import mozilla.components.support.ktx.kotlin.sanitizeFileName
-import mozilla.components.support.utils.DownloadUtils
+import mozilla.components.support.utils.DownloadFileUtils
 import java.io.InputStream
 import java.net.URLConnection
 
@@ -26,9 +26,14 @@ internal fun DownloadState.isScheme(protocols: Iterable<String>): Boolean {
  * Returns a copy of the download with some fields filled in based on values from a response.
  *
  * @param headers Headers from the response.
+ * @param downloadFileUtils [DownloadFileUtils] helper for handling download file operations.
  * @param stream Stream of the response body.
  */
-internal fun DownloadState.withResponse(headers: Headers, stream: InputStream?): DownloadState {
+internal fun DownloadState.withResponse(
+    headers: Headers,
+    downloadFileUtils: DownloadFileUtils,
+    stream: InputStream?,
+): DownloadState {
     val contentDisposition = headers[CONTENT_DISPOSITION]
     var contentType = this.contentType
     if (contentType == null && stream != null) {
@@ -39,7 +44,11 @@ internal fun DownloadState.withResponse(headers: Headers, stream: InputStream?):
     }
 
     val newFileName = if (fileName.isNullOrBlank()) {
-        DownloadUtils.guessFileName(contentDisposition, destinationDirectory, url, contentType)
+        downloadFileUtils.guessFileName(
+            contentDisposition = contentDisposition,
+            url = url,
+            mimeType = contentType,
+        )
     } else {
         fileName
     }
@@ -51,5 +60,12 @@ internal fun DownloadState.withResponse(headers: Headers, stream: InputStream?):
     )
 }
 
-internal val DownloadState.realFilenameOrGuessed
-    get() = fileName ?: DownloadUtils.guessFileName(null, destinationDirectory, url, contentType)
+internal fun DownloadState.getRealFilenameOrGuessed(
+    downloadFileUtils: DownloadFileUtils,
+): String {
+    return fileName ?: downloadFileUtils.guessFileName(
+        contentDisposition = null,
+        url = url,
+        mimeType = contentType,
+    )
+}

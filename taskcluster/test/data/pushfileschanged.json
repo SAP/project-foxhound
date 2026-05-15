@@ -19,7 +19,7 @@
     "security/manager/ssl/nsSecureBrowserUI.cpp",
     "tools/lint/eslint/modules.json",
     "toolkit/content/widgets/browser-custom-element.js",
-    "toolkit/modules/RemoteWebProgress.jsm",
+    "toolkit/modules/RemoteWebProgress.sys.mjs",
     "toolkit/modules/moz.build"
   ]
 }

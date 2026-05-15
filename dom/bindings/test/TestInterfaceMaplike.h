@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_TestInterfaceMaplike_h
 #define mozilla_dom_TestInterfaceMaplike_h
 
-#include "nsWrapperCache.h"
 #include "nsCOMPtr.h"
+#include "nsWrapperCache.h"
 
 class nsPIDOMWindowInner;
 

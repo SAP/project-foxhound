@@ -106,21 +106,22 @@ add_task(async function engagement_type_help() {
   let provider = new UrlbarTestUtils.TestProvider({
     priority: Infinity,
     results: [
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        payload: {
           url,
           isBlockable: true,
           helpUrl,
           helpL10n: {
-            id: "urlbar-result-menu-learn-more-about-firefox-suggest",
+            id: "urlbar-result-menu-learn-more",
           },
-        }
-      ),
+        },
+      }),
     ],
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   await doTest(async () => {
     await openPopup("test");
@@ -134,7 +135,7 @@ add_task(async function engagement_type_help() {
     assertEngagementTelemetry([{ engagement_type: "help" }]);
   });
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
 });
 
 add_task(async function engagement_type_manage() {

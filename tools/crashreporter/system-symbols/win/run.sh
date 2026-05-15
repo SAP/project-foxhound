@@ -21,7 +21,7 @@ done
 # Fetch the raw JSON for each crash.
 CRASHES_DIR=$(mktemp -d -p "/builds/worker/")
 cd "${CRASHES_DIR}"
-wget --no-verbose --waitretry=100 --retry-on-http-error=429 --compression=auto -i ../crashes.list
+wget --no-verbose --waitretry=100 --retry-on-http-error=429,502,503,504 --compression=auto -i ../crashes.list
 cd ..
 
 # Find the missing modules entries, in the crash modules list, and extract the

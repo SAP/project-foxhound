@@ -7,7 +7,7 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 // We definitely do need to manually import CustomizableUI.
 // eslint-disable-next-line mozilla/no-redeclare-with-import-autofix
 const { CustomizableUI } = ChromeUtils.importESModule(
-  "resource:///modules/CustomizableUI.sys.mjs"
+  "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
 );
 
 do_get_profile();

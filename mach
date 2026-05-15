@@ -143,14 +143,6 @@ def main(args):
             )
         sys.exit(1)
 
-    # XCode python sets __PYVENV_LAUNCHER__, which overrides the executable
-    # used when a python subprocess is created. This is an issue when we want
-    # to run using our virtualenv python executables.
-    # In future Python relases, __PYVENV_LAUNCHER__ will be cleared before
-    # application code (mach) is started.
-    # https://github.com/python/cpython/pull/9516
-    os.environ.pop("__PYVENV_LAUNCHER__", None)
-
     try:
         mach = check_and_get_mach(os.path.dirname(os.path.realpath(__file__)), args)
         if not mach:

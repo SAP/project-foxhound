@@ -14,6 +14,7 @@
         android:id="@+id/button_search_widget_new_tab_icon"
         android:layout_width="40dp"
         android:layout_height="40dp"
+        android:padding="12dp"
         android:layout_gravity="center"
         android:contentDescription="@string/search_widget_content_description_2" />
 </FrameLayout>

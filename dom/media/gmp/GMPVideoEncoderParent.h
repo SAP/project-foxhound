@@ -6,15 +6,15 @@
 #ifndef GMPVideoEncoderParent_h_
 #define GMPVideoEncoderParent_h_
 
-#include "mozilla/RefPtr.h"
-#include "gmp-video-encode.h"
-#include "mozilla/gmp/PGMPVideoEncoderParent.h"
+#include "GMPCrashHelperHolder.h"
 #include "GMPMessageUtils.h"
 #include "GMPSharedMemManager.h"
 #include "GMPUtils.h"
-#include "GMPVideoHost.h"
 #include "GMPVideoEncoderProxy.h"
-#include "GMPCrashHelperHolder.h"
+#include "GMPVideoHost.h"
+#include "gmp-video-encode.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/gmp/PGMPVideoEncoderParent.h"
 
 namespace mozilla::gmp {
 
@@ -73,6 +73,7 @@ class GMPVideoEncoderParent final : public GMPVideoEncoderProxy,
       const GMPVideoEncodedFrameData& aEncodedFrame,
       nsTArray<uint8_t>&& aEncodedData,
       nsTArray<uint8_t>&& aCodecSpecificInfo) override;
+  mozilla::ipc::IPCResult RecvDroppedFrame(const uint64_t& aTimestamp) override;
   mozilla::ipc::IPCResult RecvError(const GMPErr& aError) override;
   mozilla::ipc::IPCResult RecvShutdown() override;
 

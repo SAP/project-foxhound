@@ -1,0 +1,24 @@
+<!doctype html>
+<html class="reftest-wait">
+<style>
+input, textarea {
+    appearance: none;
+
+    &:focus-visible {
+        outline: 1px solid blue;
+    }
+}
+</style>
+<input value="foo"><textarea></textarea>
+<script>
+onload = () => {
+  document.querySelector("input").select();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.querySelector("textarea").focus();
+      document.documentElement.classList.remove("reftest-wait");
+    })
+  })
+}
+</script>
+</html>

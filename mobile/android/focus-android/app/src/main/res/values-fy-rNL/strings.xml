@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s jout jo de kontrôle.</p> <p>Gebrûk as in priveebrowser: <ul> <li>Streekrjocht fan de app út sykje en navigearje</li> <li>Trackers blokkearje (of ynstellingen bywurkje om se ta te stean)</li> <li>Wiskjen smyt sawol cookies as syk- en navigaasjeskiednis fuort</li> </ul> </p> <p>%1$s wurdt makke troch Mozilla. Us missy is it fersoargjen fan in sûn en iepen ynternet.<br/> <a href=\"%2$s\">Mear ynfo</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s jout jo de kontrôle.</p>\n<p>Gebrûk as in priveebrowser:\n<ul>\n<li>Streekrjocht fan de app út sykje en navigearje</li>\n<li>Trackers blokkearje (of ynstellingen bywurkje om se ta te stean)</li>\n<li>Wiskjen smyt sawol cookies as syk- en navigaasjeskiednis fuort</li>\n</ul> </p>\n<p>%1$s wurdt makke troch Mozilla. Us missy is it fersoargjen fan in sûn en iepen ynternet.<br/>\n<a href=\"%2$s\">Mear ynfo</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Mear ynfo</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">Troch fierder te gean, geane jo akkoard mei de %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Troch fierder te gean, geane jo akkoard mei de %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Gebrûksbetingsten fan Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Gebrûksbetingsten fan Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox jout om jo privacy. Mear ynfo yn ús %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox jout om jo privacy. Mear ynfo yn ús %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Privacyferklearring.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Privacyferklearring</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Navigaasjeskiednis wiskje</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Oare ljepblêden slute</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Nije ljepblêd tafoegje</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Dit kin in probleem wêze mei de konfiguraasje fan de server, of it kin ien wêze dy’t probearret harren foar te dwaan as de server.<br/><br/> As jo earder al mei súkses ferbining hân hawwe mei dizze server, kin de flater mooglik tydlik wêze.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Ien kin probearje de website nei te dwaan en trochgean kin risikofol wêze.</label> <br><br> <label>%1$s fertrout <b>%2$s</b> net, omdat de sertifikaatútjouwer ûnbekend is, it sertifikaat selsûndertekene is, of de server net de krekte yntermediêre sertifikaten ferstjoert.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Ien kin probearje de website nei te dwaan en trochgean kin risikofol wêze.</label> <br><br>\n<label>%1$s fertrout <b>%2$s</b> net, omdat de sertifikaatútjouwer ûnbekend is, it sertifikaat selsûndertekene is, of de server net de krekte yntermediêre sertifikaten ferstjoert.</label>]]></string>
   <!--
     Sessions List
 

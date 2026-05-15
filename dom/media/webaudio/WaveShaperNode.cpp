@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WaveShaperNode.h"
-#include "mozilla/dom/WaveShaperNodeBinding.h"
+
 #include "AlignmentUtils.h"
 #include "AudioNode.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
-#include "mozilla/PodOperations.h"
 #include "Tracing.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/dom/WaveShaperNodeBinding.h"
 
 namespace mozilla::dom {
 

@@ -20,16 +20,6 @@
 namespace mozilla {
 namespace a11y {
 
-inline mozilla::a11y::role LocalAccessible::Role() const {
-  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
-  mozilla::a11y::role r =
-      (!roleMapEntry || roleMapEntry->roleRule != kUseMapRole)
-          ? NativeRole()
-          : roleMapEntry->role;
-  r = ARIATransformRole(r);
-  return GetMinimumRole(r);
-}
-
 inline mozilla::a11y::role LocalAccessible::ARIARole() {
   const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
   if (!roleMapEntry || roleMapEntry->roleRule != kUseMapRole) {

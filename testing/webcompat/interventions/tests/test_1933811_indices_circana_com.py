@@ -9,7 +9,7 @@ BAD_CSS = ".hiddPage"
 
 async def does_unsupported_banner_appear(client, url):
     await client.navigate(url, wait="complete")
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(2)
     return client.find_css(BAD_CSS)
 
 

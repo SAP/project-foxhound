@@ -7,7 +7,9 @@ support-files = [
 ]
 
 ["test_backspace_delete.xhtml"]
-skip-if = ["true"] # Bug 1163311
+skip-if = [
+  "true", # Bug 1163311
+]
 
 ["test_bug469613.xhtml"]
 

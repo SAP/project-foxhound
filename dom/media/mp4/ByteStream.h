@@ -16,10 +16,10 @@ class ByteStream : public DecoderDoctorLifeLogger<ByteStream> {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ByteStream);
 
-  virtual bool ReadAt(int64_t offset, void* data, size_t size,
-                      size_t* bytes_read) = 0;
-  virtual bool CachedReadAt(int64_t offset, void* data, size_t size,
-                            size_t* bytes_read) = 0;
+  virtual nsresult ReadAt(int64_t offset, void* data, size_t size,
+                          size_t* bytes_read) = 0;
+  virtual nsresult CachedReadAt(int64_t offset, void* data, size_t size,
+                                size_t* bytes_read) = 0;
   virtual bool Length(int64_t* size) = 0;
 
   virtual void DiscardBefore(int64_t offset) {}

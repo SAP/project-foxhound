@@ -37,14 +37,11 @@
 namespace {
 
 HWND GetHWNDFromDocShell(nsIDocShell* aShell) {
-  nsCOMPtr<nsIBaseWindow> baseWindow(
-      do_QueryInterface(reinterpret_cast<nsISupports*>(aShell)));
-
-  if (!baseWindow) return nullptr;
-
-  nsCOMPtr<nsIWidget> widget;
-  baseWindow->GetMainWidget(getter_AddRefs(widget));
-
+  nsCOMPtr<nsIBaseWindow> baseWindow(do_QueryInterface(ToSupports(aShell)));
+  if (!baseWindow) {
+    return nullptr;
+  }
+  nsCOMPtr<nsIWidget> widget = baseWindow->GetMainWidget();
   return widget ? (HWND)widget->GetNativeData(NS_NATIVE_WINDOW) : nullptr;
 }
 

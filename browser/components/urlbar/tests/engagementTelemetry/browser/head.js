@@ -9,7 +9,9 @@ Services.scriptloader.loadSubScript(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  CustomizableUITestUtils:
+    "resource://testing-common/CustomizableUITestUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
@@ -26,6 +28,14 @@ ChromeUtils.defineLazyGetter(lazy, "QuickSuggestTestUtils", () => {
 ChromeUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
   const { MerinoTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/MerinoTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
+});
+
+ChromeUtils.defineLazyGetter(this, "GeolocationTestUtils", () => {
+  const { GeolocationTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/GeolocationTestUtils.sys.mjs"
   );
   module.init(this);
   return module;
@@ -139,14 +149,37 @@ async function ensureQuickSuggestInit({ ...args } = {}) {
           },
         ],
       },
+      {
+        type: "dynamic-suggestions",
+        suggestion_type: "important_dates",
+        score: 1.0,
+        attachment: [
+          {
+            keywords: ["important dates"],
+            data: {
+              result: {
+                payload: {
+                  dates: [
+                    // These dates are always in the future, so that we will
+                    // always get a match in the test when we expect one.
+                    Temporal.Now.plainDateISO().add({ months: 1 }).toString(),
+                    Temporal.Now.plainDateISO().add({ years: 1 }).toString(),
+                  ],
+                  name: "Event 1",
+                },
+              },
+            },
+          },
+        ],
+      },
     ],
     ...args,
   });
 }
 
-async function doBlur() {
-  await UrlbarTestUtils.promisePopupClose(window, () => {
-    gURLBar.blur();
+async function doBlur(testUtils = UrlbarTestUtils) {
+  await testUtils.promisePopupClose(window, () => {
+    testUtils.getUrlbar(window).blur();
   });
 }
 
@@ -376,11 +409,11 @@ async function loadRemoteTab(url) {
   };
 }
 
-async function openPopup(input) {
-  await UrlbarTestUtils.promisePopupOpen(window, async () => {
-    await UrlbarTestUtils.inputIntoURLBar(window, input);
+async function openPopup(input, testUtils = UrlbarTestUtils) {
+  await testUtils.promisePopupOpen(window, async () => {
+    await testUtils.inputIntoURLBar(window, input);
   });
-  await UrlbarTestUtils.promiseSearchComplete(window);
+  await testUtils.promiseSearchComplete(window);
 }
 
 async function selectRowByURL(url) {
@@ -426,12 +459,9 @@ async function setup() {
   const engine = await SearchTestUtils.installOpenSearchEngine({
     url: "chrome://mochitests/content/browser/browser/components/urlbar/tests/browser/searchSuggestionEngine.xml",
   });
-  const originalDefaultEngine = await Services.search.getDefault();
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
-  await Services.search.moveEngine(engine, 0);
+  const originalDefaultEngine = await SearchService.getDefault();
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
+  await SearchService.moveEngine(engine, 0);
 
   registerCleanupFunction(async function () {
     // Tests verify that no prefs have been changed so clear any
@@ -447,9 +477,9 @@ async function setup() {
     ];
     prefs.forEach(pref => Services.prefs.clearUserPref(pref));
     await SpecialPowers.popPrefEnv();
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       originalDefaultEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
   });
 }
@@ -495,6 +525,9 @@ async function expectNoConsoleErrors(task) {
  * @param {number} [embeddingSize] size of embeddings
  */
 async function doTestWithSemantic(results, task, embeddingSize = 16) {
+  /**
+   * A mock object that pretends to be an MLEngine.
+   */
   class MockMLEngine {
     async run(request) {
       const texts = request.args[0];

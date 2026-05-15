@@ -131,6 +131,9 @@ private fun List<CustomizationToolbarData>.toOnboardingToolbarOptions() = map { 
 
 private fun TermsOfServiceData.toOnboardingTermsOfService() = with(this) {
     OnboardingTermsOfService(
+        subheaderOneText = subheaderOneText,
+        subheaderTwoText = subheaderTwoText,
+        subheaderThreeText = subheaderThreeText,
         lineOneText = lineOneText,
         lineOneLinkText = lineOneLinkText,
         lineOneLinkUrl = lineOneLinkUrl,
@@ -184,16 +187,17 @@ private fun ThemeType.toThemeOptionType() = when (this) {
 @Suppress("LongParameterList")
 internal fun mapToOnboardingPageState(
     onboardingPageUiData: OnboardingPageUiData,
+    shouldShowElevation: Boolean,
     onMakeFirefoxDefaultClick: () -> Unit,
     onMakeFirefoxDefaultSkipClick: () -> Unit,
     onSignInButtonClick: () -> Unit,
     onSignInSkipClick: () -> Unit,
-    onNotificationPermissionButtonClick: () -> Unit,
-    onNotificationPermissionSkipClick: () -> Unit,
+    onNotificationPermissionButtonClick: () -> Unit = {},
+    onNotificationPermissionSkipClick: () -> Unit = {},
     onAddFirefoxWidgetClick: () -> Unit,
     onAddFirefoxWidgetSkipClick: () -> Unit,
     onCustomizeToolbarButtonClick: () -> Unit,
-    onCustomizeThemeClick: () -> Unit,
+    onCustomizeThemeClick: () -> Unit = {},
     onTermsOfServiceButtonClick: () -> Unit,
     onMarketingDataContinueClick: () -> Unit = {},
 ): OnboardingPageState = when (onboardingPageUiData.type) {
@@ -201,53 +205,62 @@ internal fun mapToOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onMakeFirefoxDefaultClick,
         onNegativeButtonClick = onMakeFirefoxDefaultSkipClick,
+        shouldShowElevation = shouldShowElevation,
     )
 
     OnboardingPageUiData.Type.ADD_SEARCH_WIDGET -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onAddFirefoxWidgetClick,
         onNegativeButtonClick = onAddFirefoxWidgetSkipClick,
+        shouldShowElevation = shouldShowElevation,
     )
 
     OnboardingPageUiData.Type.SYNC_SIGN_IN -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onSignInButtonClick,
         onNegativeButtonClick = onSignInSkipClick,
+        shouldShowElevation = shouldShowElevation,
     )
 
     OnboardingPageUiData.Type.NOTIFICATION_PERMISSION -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onNotificationPermissionButtonClick,
         onNegativeButtonClick = onNotificationPermissionSkipClick,
+        shouldShowElevation = shouldShowElevation,
     )
 
     OnboardingPageUiData.Type.TOOLBAR_PLACEMENT -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onCustomizeToolbarButtonClick,
         onNegativeButtonClick = {}, // No negative button option for toolbar placement.
+        shouldShowElevation = shouldShowElevation,
     )
 
     OnboardingPageUiData.Type.THEME_SELECTION -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onCustomizeThemeClick,
         onNegativeButtonClick = {}, // No negative button option for theme selection.
+        shouldShowElevation = shouldShowElevation,
     )
 
     OnboardingPageUiData.Type.TERMS_OF_SERVICE -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onTermsOfServiceButtonClick,
         onNegativeButtonClick = {}, // No negative button option for terms of service.
+        shouldShowElevation = shouldShowElevation,
     )
 
     OnboardingPageUiData.Type.MARKETING_DATA -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
         onPositiveButtonClick = onMarketingDataContinueClick,
         onNegativeButtonClick = {}, // No negative button option for marketing data.
+        shouldShowElevation = shouldShowElevation,
     )
 }
 
 private fun createOnboardingPageState(
     onboardingPageUiData: OnboardingPageUiData,
+    shouldShowElevation: Boolean,
     onPositiveButtonClick: () -> Unit,
     onNegativeButtonClick: () -> Unit,
 ): OnboardingPageState = OnboardingPageState(
@@ -263,4 +276,5 @@ private fun createOnboardingPageState(
     toolbarOptions = onboardingPageUiData.toolbarOptions,
     termsOfService = onboardingPageUiData.termsOfService,
     marketingData = onboardingPageUiData.marketingData,
+    shouldShowElevation = shouldShowElevation,
 )

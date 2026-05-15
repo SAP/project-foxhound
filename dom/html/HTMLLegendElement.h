@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_HTMLLegendElement_h
 #define mozilla_dom_HTMLLegendElement_h
 
-#include "mozilla/Attributes.h"
-#include "nsGenericHTMLElement.h"
 #include "mozilla/dom/HTMLFormElement.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
 
@@ -36,8 +35,8 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
                               const nsAString& aValue,
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult) override;
-  virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                              int32_t aModType) const override;
+  virtual nsChangeHint GetAttributeChangeHint(
+      const nsAtom* aAttribute, AttrModType aModType) const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
@@ -63,8 +62,8 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
   /**
    * WebIDL Interface
    */
-
-  HTMLFormElement* GetForm() const;
+  Element* GetFormForBindings() const;
+  HTMLFormElement* GetFormInternal() const;
 
   void GetAlign(DOMString& aAlign) { GetHTMLAttr(nsGkAtoms::align, aAlign); }
 
@@ -73,7 +72,7 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
   }
 
   nsINode* GetScopeChainParent() const override {
-    Element* form = GetForm();
+    Element* form = GetFormInternal();
     return form ? form : nsGenericHTMLElement::GetScopeChainParent();
   }
 

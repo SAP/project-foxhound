@@ -7,8 +7,8 @@
 #ifndef AudioParamMap_h_
 #define AudioParamMap_h_
 
-#include "nsWrapperCache.h"
 #include "AudioWorkletNode.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 

@@ -8,26 +8,26 @@
 #define mozilla_dom_ContentChild_h
 
 #include "mozilla/Atomics.h"
+#include "mozilla/Hal.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/GetFilesHelper.h"
-#include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/PContentChild.h"
 #include "mozilla/dom/ProcessActor.h"
 #include "mozilla/dom/RemoteType.h"
-#include "mozilla/Hal.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "nsClassHashtable.h"
-#include "nscore.h"
 #include "nsHashKeys.h"
 #include "nsIDOMProcessChild.h"
 #include "nsRefPtrHashtable.h"
 #include "nsString.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsTHashSet.h"
+#include "nscore.h"
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "nsIFile.h"
@@ -69,7 +69,6 @@ class SharedMap;
 }
 
 class ConsoleListener;
-class ClonedMessageData;
 class BrowserChild;
 class TabContext;
 enum class CallerType : uint32_t;
@@ -78,7 +77,6 @@ class ContentChild final : public PContentChild,
                            public nsIDOMProcessChild,
                            public mozilla::ipc::IShmemAllocator,
                            public ProcessActor {
-  using ClonedMessageData = mozilla::dom::ClonedMessageData;
   using FileDescriptor = mozilla::ipc::FileDescriptor;
 
   friend class PContentChild;
@@ -116,7 +114,7 @@ class ContentChild final : public PContentChild,
             const char* aParentBuildID, bool aIsForBrowser);
 
   void InitXPCOM(XPCOMInitData&& aXPCOMInit,
-                 const mozilla::dom::ipc::StructuredCloneData& aInitialData,
+                 NotNull<StructuredCloneData*> aInitialData,
                  bool aIsReadyForBackgroundProcessing);
 
   void InitSharedUASheets(
@@ -253,6 +251,8 @@ class ContentChild final : public PContentChild,
       const Maybe<OriginAttributesPattern>& aPattern,
       const Maybe<nsCString>& aURL);
 
+  mozilla::ipc::IPCResult RecvInvalidateScriptCache();
+
   mozilla::ipc::IPCResult RecvClearImageCache(
       const Maybe<bool>& aPrivateLoader, const Maybe<bool>& aChrome,
       const Maybe<RefPtr<nsIPrincipal>>& aPrincipal,
@@ -281,7 +281,7 @@ class ContentChild final : public PContentChild,
                                            widget::ThemeChangeKind);
 
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& aPref);
-  mozilla::ipc::IPCResult RecvVarUpdate(const GfxVarUpdate& pref);
+  mozilla::ipc::IPCResult RecvVarUpdate(const nsTArray<GfxVarUpdate>& var);
 
   mozilla::ipc::IPCResult RecvUpdatePerfStatsCollectionMask(
       const uint64_t& aMask);
@@ -295,7 +295,7 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvLoadProcessScript(const nsString& aURL);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMsg,
-                                           const ClonedMessageData& aData);
+                                           NotNull<StructuredCloneData*> aData);
 
   mozilla::ipc::IPCResult RecvRegisterStringBundles(
       nsTArray<StringBundleDescriptor>&& stringBundles);
@@ -340,7 +340,12 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvRemoveAllPermissions();
 
-  mozilla::ipc::IPCResult RecvFlushMemory(const nsString& reason);
+ private:
+  void NotifyMemoryPressure(const char* aTopic, const char16_t* aReason);
+
+ public:
+  mozilla::ipc::IPCResult RecvMemoryPressure(const nsString& reason);
+  mozilla::ipc::IPCResult RecvMemoryPressureStop();
 
   mozilla::ipc::IPCResult RecvActivateA11y(uint64_t aCacheDomains);
   mozilla::ipc::IPCResult RecvShutdownA11y();
@@ -491,6 +496,11 @@ class ContentChild final : public PContentChild,
       const bool& minimizeMemoryUsage, const Maybe<FileDescriptor>& DMDFile,
       const RequestMemoryReportResolver& aResolver);
 
+  mozilla::ipc::IPCResult RecvDecodeImage(NotNull<nsIURI*> aURI,
+                                          const ImageIntSize& aSize,
+                                          const ColorScheme& aColoScheme,
+                                          DecodeImageResolver&& aResolver);
+
 #if defined(XP_WIN)
   mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
       GetUntrustedModulesDataResolver&& aResolver);
@@ -498,7 +508,7 @@ class ContentChild final : public PContentChild,
 #endif  // defined(XP_WIN)
 
   mozilla::ipc::IPCResult RecvSetXPCOMProcessAttributes(
-      XPCOMInitData&& aXPCOMInit, const StructuredCloneData& aInitialData,
+      XPCOMInitData&& aXPCOMInit, NotNull<StructuredCloneData*> aInitialData,
       FullLookAndFeel&& aLookAndFeelData, SystemFontList&& aFontList,
       Maybe<mozilla::ipc::ReadOnlySharedMemoryHandle>&& aSharedUASheetHandle,
       const uintptr_t& aSharedUASheetAddress,
@@ -701,7 +711,7 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvWindowPostMessage(
       const MaybeDiscarded<BrowsingContext>& aContext,
-      const ClonedOrErrorMessageData& aMessage, const PostMessageData& aData);
+      StructuredCloneData* aMessage, const PostMessageData& aData);
 
   mozilla::ipc::IPCResult RecvCommitBrowsingContextTransaction(
       const MaybeDiscarded<BrowsingContext>& aContext,
@@ -759,9 +769,9 @@ class ContentChild final : public PContentChild,
       const MaybeDiscarded<BrowsingContext>& aContext,
       const uint32_t aStopFlags);
 
-  mozilla::ipc::IPCResult RecvRawMessage(
-      const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
-      const Maybe<ClonedMessageData>& aStack);
+  mozilla::ipc::IPCResult RecvRawMessage(const JSActorMessageMeta& aMeta,
+                                         JSIPCValue&& aData,
+                                         StructuredCloneData* aStack);
 
   already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
@@ -786,6 +796,12 @@ class ContentChild final : public PContentChild,
       const MaybeDiscarded<BrowsingContext>& aStartingAt,
       const mozilla::Maybe<SessionHistoryInfo>& aInfo,
       DispatchBeforeUnloadToSubtreeResolver&& aResolver);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvDispatchNavigateToTraversable(
+      const MaybeDiscarded<BrowsingContext>& aTraversable,
+      const mozilla::Maybe<SessionHistoryInfo>& aInfo,
+      DispatchNavigateToTraversableResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvInitNextGenLocalStorageEnabled(
       const bool& aEnabled);

@@ -8,6 +8,9 @@ const {
   refresh,
 } = require("resource://devtools/client/memory/actions/refresh.js");
 const { debounce } = require("resource://devtools/shared/debounce.js");
+const {
+  isIgnoringActions,
+} = require("resource://devtools/client/shared/redux/middleware/ignore.js");
 
 const setFilterString = (exports.setFilterString = function (filterString) {
   return {
@@ -21,13 +24,21 @@ const setFilterString = (exports.setFilterString = function (filterString) {
 // the user is still typing.
 const FILTER_INPUT_DEBOUNCE_MS = 250;
 const debouncedRefreshDispatcher = debounce(
-  (dispatch, heapWorker) => dispatch(refresh(heapWorker)),
+  (dispatch, getState, heapWorker) => {
+    // Prevent dispatching the action if the panel is already being destroying.
+    // For some reason, throwing the ignore middle exception introduce a leak.
+    if (isIgnoringActions(getState())) {
+      return;
+    }
+
+    dispatch(refresh(heapWorker));
+  },
   FILTER_INPUT_DEBOUNCE_MS
 );
 
 exports.setFilterStringAndRefresh = function (filterString, heapWorker) {
-  return ({ dispatch }) => {
+  return ({ dispatch, getState }) => {
     dispatch(setFilterString(filterString));
-    debouncedRefreshDispatcher(dispatch, heapWorker);
+    debouncedRefreshDispatcher(dispatch, getState, heapWorker);
   };
 };

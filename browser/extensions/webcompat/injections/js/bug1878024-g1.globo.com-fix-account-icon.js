@@ -11,23 +11,26 @@
  * This works around the issue by adding CSS to the relevant web component.
  */
 
-/* globals exportFunction */
+if (!window.__firefoxWebCompatFixBug1878024) {
+  Object.defineProperty(window, "__firefoxWebCompatFixBug1878024", {
+    configurable: false,
+    value: true,
+  });
 
-const ENABLED_MESSAGE =
-  "Extra CSS to fix account icons is being applied to the nova-barra-globocom web component. See https://bugzilla.mozilla.org/show_bug.cgi?id=1878024 for details.";
+  const ENABLED_MESSAGE =
+    "Extra CSS to fix account icons is being applied to the nova-barra-globocom web component. See https://bugzilla.mozilla.org/show_bug.cgi?id=1878024 for details.";
 
-const { appendChild } = DocumentFragment.prototype.wrappedJSObject;
+  const { appendChild } = DocumentFragment.prototype;
 
-ShadowRoot.wrappedJSObject.prototype.appendChild = exportFunction(function (
-  child
-) {
-  if (this.host?.localName === "nova-barra-globocom") {
-    const style = child.querySelector("style");
-    if (style) {
-      console.info(ENABLED_MESSAGE);
-      style.textContent = `${style.textContent} .base-container .button-login-icon img { flex-shrink: 0; }`;
+  ShadowRoot.prototype.appendChild = function (child) {
+    if (this.host?.localName === "nova-barra-globocom") {
+      const style = child.querySelector("style");
+      if (style) {
+        console.info(ENABLED_MESSAGE);
+        style.textContent = `${style.textContent} .base-container .button-login-icon img { flex-shrink: 0; }`;
+      }
+      delete ShadowRoot.prototype.appendChild;
     }
-    delete ShadowRoot.wrappedJSObject.prototype.appendChild;
-  }
-  return appendChild.call(this, child);
-}, window);
+    return appendChild.call(this, child);
+  };
+}

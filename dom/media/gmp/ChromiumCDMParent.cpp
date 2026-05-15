@@ -19,7 +19,6 @@
 #include "content_decryption_module.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"
 #include "mozilla/gmp/GMPTypes.h"
 
@@ -272,8 +271,8 @@ void ChromiumCDMParent::CompleteQueryOutputProtectionStatus(
   if (mIsShutdown) {
     return;
   }
-  Unused << SendCompleteQueryOutputProtectionStatus(aSuccess, aLinkMask,
-                                                    aProtectionMask);
+  (void)SendCompleteQueryOutputProtectionStatus(aSuccess, aLinkMask,
+                                                aProtectionMask);
 }
 
 static cdm::HdcpVersion ToCDMHdcpVersion(
@@ -1391,7 +1390,7 @@ void ChromiumCDMParent::Shutdown() {
   mDecrypts.Clear();
 
   if (mVideoDecoderInitialized && !mActorDestroyed) {
-    Unused << SendDeinitializeVideoDecoder();
+    (void)SendDeinitializeVideoDecoder();
     mVideoDecoderInitialized = false;
   }
 
@@ -1418,7 +1417,7 @@ void ChromiumCDMParent::Shutdown() {
       __func__);
 
   if (!mActorDestroyed) {
-    Unused << SendDestroy();
+    (void)SendDestroy();
   }
 }
 

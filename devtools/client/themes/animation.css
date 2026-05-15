@@ -371,11 +371,11 @@ select.playback-rate-selector.devtools-button:not(:empty, :disabled, .checked):h
 
 .animation-name text {
   dominant-baseline: middle;
-  fill: var(--theme-focus-outline-color);
+  fill: var(--theme-body-color);
   paint-order: stroke;
   stroke: var(--theme-body-background);
   stroke-linejoin: round;
-  stroke-opacity: 0.5;
+  stroke-opacity: 0.7;
   stroke-width: 4;
   text-anchor: end;
 }

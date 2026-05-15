@@ -399,7 +399,7 @@ async function createDummyDataForHost(host) {
 /**
  * Helper function to create file URL to open
  *
- * @returns {Object} a file URL
+ * @returns {object} a file URL
  */
 function createFileURL() {
   if (!fileURL) {
@@ -499,6 +499,15 @@ function promiseSanitizationComplete() {
   return TestUtils.topicObserved("sanitizer-sanitization-complete");
 }
 
+function settingsRedesignHistoryEnabled() {
+  return (
+    Services.prefs.getBoolPref(
+      "browser.settings-redesign.history2.enabled",
+      false
+    ) || Services.prefs.getBoolPref("browser.settings-redesign.enabled", false)
+  );
+}
+
 /**
  * This wraps the dialog and provides some convenience methods for interacting
  * with it.
@@ -506,7 +515,7 @@ function promiseSanitizationComplete() {
  * @param {Window} browserWin (optional)
  *        The browser window that the dialog is expected to open in. If not
  *        supplied, the initial browser window of the test run is used.
- * @param {Object} {mode, checkingDataSizes}
+ * @param {object} {mode, checkingDataSizes}
  *        mode: context to open the dialog in
  *          One of
  *            clear on shutdown settings context ("clearOnShutdown"),
@@ -516,7 +525,6 @@ function promiseSanitizationComplete() {
  *          "browser" by default
  *        checkingDataSizes: boolean check if we should wait for the data sizes
  *          to load
- *
  */
 function ClearHistoryDialogHelper({
   mode = "browser",
@@ -572,9 +580,9 @@ ClearHistoryDialogHelper.prototype = {
   },
 
   /**
-   * @param {String} aCheckboxId
+   * @param {string} aCheckboxId
    *        The checkbox id name
-   * @param {Boolean} aCheckState
+   * @param {boolean} aCheckState
    *        True if the checkbox should be checked, false otherwise
    */
   validateCheckbox(aCheckboxId, aCheckState) {
@@ -652,9 +660,15 @@ ClearHistoryDialogHelper.prototype = {
     // We want to simulate opening the dialog inside preferences for clear history
     // and clear site data
     if (this._mode != "browser") {
-      await openPreferencesViaOpenPreferencesAPI("privacy", {
-        leaveOpen: true,
-      });
+      if (this._mode == "clearOnShutdown" && settingsRedesignHistoryEnabled()) {
+        await openPreferencesViaOpenPreferencesAPI("history", {
+          leaveOpen: true,
+        });
+      } else {
+        await openPreferencesViaOpenPreferencesAPI("privacy", {
+          leaveOpen: true,
+        });
+      }
       let tabWindow = gBrowser.selectedBrowser.contentWindow;
       let clearDialogOpenButtonId = this._mode + "Button";
       // the id for clear on shutdown is of a different format
@@ -668,6 +682,8 @@ ClearHistoryDialogHelper.prototype = {
         clearDialogOpenButtonId = "clearDataSettings";
       }
       // open dialog
+      // Wait a tick for the button to be initialized.œ
+      await new Promise(resolve => requestAnimationFrame(resolve));
       tabWindow.document.getElementById(clearDialogOpenButtonId).click();
     }
     // We open the dialog in the chrome context in other cases

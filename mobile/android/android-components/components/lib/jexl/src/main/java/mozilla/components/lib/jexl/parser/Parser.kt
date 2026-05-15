@@ -65,7 +65,7 @@ internal class Parser(
         tokens.forEach { parseToken(it) }
     }
 
-    @Suppress("ComplexMethod", "LongMethod", "ThrowsCount")
+    @Suppress("ThrowsCount", "CognitiveComplexMethod")
     private fun parseToken(token: Token): State? {
         if (state == State.COMPLETE) {
             throw ParserException("Token after parsing completed")
@@ -189,7 +189,6 @@ internal val handlers: Map<Token.Type, (Parser, Token) -> Unit> = mapOf(
             Literal(token.value),
         )
     },
-
     Token.Type.BINARY_OP to { parser, token ->
         val precedence = parser.grammar.elements[token.value]?.precedence ?: 0
         var parent = parser.cursor!!.parent
@@ -213,7 +212,6 @@ internal val handlers: Map<Token.Type, (Parser, Token) -> Unit> = mapOf(
         parser.cursor = parent
         parser.placeAtCursor(node)
     },
-
     Token.Type.IDENTIFIER to { parser, token ->
         val node = Identifier(token.value)
 
@@ -228,14 +226,12 @@ internal val handlers: Map<Token.Type, (Parser, Token) -> Unit> = mapOf(
             parser.placeAtCursor(node)
         }
     },
-
     Token.Type.UNARY_OP to { parser, token ->
         val node = UnaryExpression(
             operator = token.value.toString(),
         )
         parser.placeAtCursor(node)
     },
-
     Token.Type.DOT to { parser, _ ->
         val cursor = parser.cursor
 

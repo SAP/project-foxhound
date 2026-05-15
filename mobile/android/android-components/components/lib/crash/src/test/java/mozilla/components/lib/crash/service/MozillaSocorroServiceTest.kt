@@ -9,8 +9,10 @@ import com.google.common.io.Resources.getResource
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.lib.crash.Crash
 import mozilla.components.lib.crash.CrashReporter
+import mozilla.components.lib.crash.RuntimeTag
 import mozilla.components.support.ktx.kotlin.toDate
 import mozilla.components.support.test.any
+import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.robolectric.testContext
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -20,8 +22,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyBoolean
-import org.mockito.Mockito.doNothing
+import org.mockito.Mockito.doCallRealMethod
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
@@ -34,6 +37,12 @@ import java.util.zip.GZIPInputStream
 
 @RunWith(AndroidJUnit4::class)
 class MozillaSocorroServiceTest {
+    private fun mockFormDataWriter(service: MozillaSocorroService): MozillaSocorroService.FormDataWriter {
+        val mockFormDataWriter = mock(MozillaSocorroService.FormDataWriter::class.java)
+        doCallRealMethod().`when`(mockFormDataWriter).sendAndDeleteFileAtPath(any(), any())
+        doReturn(mockFormDataWriter).`when`(service).createFormDataWriter(any(), any(), any())
+        return mockFormDataWriter
+    }
 
     @Test
     fun `MozillaSocorroService sends native code crashes to GeckoView crash reporter`() {
@@ -196,12 +205,12 @@ class MozillaSocorroServiceTest {
             )
 
             doReturn(HashMap<String, String>()).`when`(service).readExtrasFromFile(any())
-            doNothing().`when`(service).sendFile(any(), any(), any(), any(), any())
+            val formDataWriter = mockFormDataWriter(service)
             service.report(crash)
 
             verify(service).report(crash)
             verify(service, times(0)).readExtrasFromFile(any())
-            verify(service, times(0)).sendFile(any(), any(), any(), any(), any())
+            verify(formDataWriter, times(0)).sendFile(any(), any())
         } finally {
             mockWebServer.shutdown()
         }
@@ -238,12 +247,12 @@ class MozillaSocorroServiceTest {
             )
 
             doReturn(HashMap<String, String>()).`when`(service).readExtrasFromFile(any())
-            doNothing().`when`(service).sendFile(any(), any(), any(), any(), any())
+            val formDataWriter = mockFormDataWriter(service)
             service.report(crash)
 
             verify(service).report(crash)
             verify(service, times(0)).readExtrasFromFile(any())
-            verify(service, times(0)).sendFile(any(), any(), any(), any(), any())
+            verify(formDataWriter, times(0)).sendFile(any(), any())
         } finally {
             mockWebServer.shutdown()
         }
@@ -280,12 +289,65 @@ class MozillaSocorroServiceTest {
             )
 
             doReturn(HashMap<String, String>()).`when`(service).readExtrasFromFile(any())
-            doNothing().`when`(service).sendFile(any(), any(), any(), any(), any())
+            val formDataWriter = mockFormDataWriter(service)
             service.report(crash)
 
             verify(service).report(crash)
             verify(service).readExtrasFromFile(any())
-            verify(service).sendFile(any(), any(), any(), any(), any())
+            verify(formDataWriter).sendFile(any(), any())
+        } finally {
+            mockWebServer.shutdown()
+        }
+    }
+
+    @Test
+    fun `additional minidumps are sent in requests`() {
+        val mockWebServer = MockWebServer()
+        val nameCaptor = argumentCaptor<String>()
+        val fileCaptor = argumentCaptor<File>()
+
+        try {
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(200)
+                    .setBody("CrashID=bp-924121d3-4de3-4b32-ab12-026fc0190928"),
+            )
+            mockWebServer.start()
+            val serverUrl = mockWebServer.url("/")
+            val service = spy(
+                MozillaSocorroService(
+                    testContext,
+                    "Test App",
+                    appId = "{aa3c5121-dab2-40e2-81ca-7ea25febc110}",
+                    serverUrl = serverUrl.toString(),
+                ),
+            )
+
+            val crash = Crash.NativeCodeCrash(
+                123456,
+                "test/minidumps/3fa772dc-dc89-c08d-c03e-7f441c50821e.dmp",
+                "test/file/66dd8af2-643c-ca11-5178-e61c6819f827.extra",
+                processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+                processType = "main",
+                breadcrumbs = arrayListOf(),
+                remoteType = null,
+            )
+
+            doReturn(hashMapOf("additional_minidumps" to "browser,content")).`when`(service).readExtrasFromFile(any())
+            val formDataWriter = mockFormDataWriter(service)
+            service.report(crash)
+
+            verify(service).report(crash)
+            verify(service).readExtrasFromFile(any())
+            verify(formDataWriter, times(3)).sendFile(
+                nameCaptor.capture(),
+                fileCaptor.capture(),
+            )
+
+            assertEquals(listOf("upload_file_minidump", "upload_file_minidump_browser", "upload_file_minidump_content"), nameCaptor.allValues)
+            val files = fileCaptor.allValues
+            assertEquals("test/minidumps/3fa772dc-dc89-c08d-c03e-7f441c50821e.dmp", files.get(0).path)
+            assertEquals("test/minidumps/3fa772dc-dc89-c08d-c03e-7f441c50821e-browser.dmp", files.get(1).path)
+            assertEquals("test/minidumps/3fa772dc-dc89-c08d-c03e-7f441c50821e-content.dmp", files.get(2).path)
         } finally {
             mockWebServer.shutdown()
         }
@@ -730,7 +792,7 @@ class MozillaSocorroServiceTest {
                 processType = "main",
                 breadcrumbs = arrayListOf(),
                 remoteType = null,
-                runtimeTags = mapOf(CrashReporter.RELEASE_RUNTIME_TAG to version),
+                runtimeTags = mapOf(RuntimeTag.RELEASE to version),
             )
             service.report(crash)
 

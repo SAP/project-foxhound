@@ -4,7 +4,7 @@
 
 package mozilla.components.compose.base.button
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,206 +12,177 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonDefaults.outlinedButtonBorder
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.theme.AcornTheme
-import mozilla.components.ui.icons.R
+import mozilla.components.compose.base.theme.acornPrivateColorScheme
+import mozilla.components.compose.base.theme.privateColorPalette
+import androidx.compose.material3.Button as M3Button
+import androidx.compose.material3.OutlinedButton as M3OutlinedButton
+import mozilla.components.ui.icons.R as iconsR
 
 const val DEFAULT_MAX_LINES = 2
 
-/**
- * Base component for buttons.
- *
- * @param text The button text to be displayed.
- * @param textColor [Color] to apply to the button text.
- * @param backgroundColor The background [Color] of the button.
- * @param modifier [Modifier] to be applied to the layout.
- * @param enabled Controls the enabled state of the button.
- * When false, this button will not be clickable.
- * @param icon Optional [Painter] used to display a [Icon] before the button text.
- * @param iconModifier [Modifier] to be applied to the icon.
- * @param tint Tint [Color] to be applied to the icon.
- * @param onClick Invoked when the user clicks on the button.
- */
 @Composable
-private fun Button(
+@ReadOnlyComposable
+private fun AcornTheme.buttonContentPadding(): PaddingValues {
+    return PaddingValues(
+        horizontal = this.layout.space.static300,
+        vertical = this.layout.space.static150,
+    )
+}
+
+@Composable
+private fun ButtonContent(
     text: String,
-    textColor: Color,
-    backgroundColor: Color,
+    icon: Painter?,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    icon: Painter? = null,
-    iconModifier: Modifier = Modifier,
-    tint: Color,
-    onClick: () -> Unit,
 ) {
-    // Required to detect if font increased due to accessibility.
     val fontScale: Float = LocalConfiguration.current.fontScale
 
-    androidx.compose.material3.Button(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = backgroundColor,
-        ),
-    ) {
-        icon?.let { painter ->
-            Icon(
-                painter = painter,
-                contentDescription = null,
-                modifier = iconModifier,
-                tint = tint,
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-
-        Text(
-            text = text,
-            textAlign = TextAlign.Center,
-            color = textColor,
-            style = AcornTheme.typography.button,
-            maxLines = if (fontScale > 1.0f) Int.MAX_VALUE else DEFAULT_MAX_LINES,
+    icon?.let { painter ->
+        Icon(
+            painter = painter,
+            contentDescription = null,
+            modifier = modifier,
         )
+        Spacer(modifier = Modifier.width(AcornTheme.layout.space.static100))
     }
+
+    Text(
+        text = text,
+        textAlign = TextAlign.Center,
+        style = AcornTheme.typography.button,
+        maxLines = if (fontScale > 1.0f) Int.MAX_VALUE else DEFAULT_MAX_LINES,
+    )
 }
 
 /**
- * Primary button.
+ * Filled button.
  *
  * @param text The button text to be displayed.
  * @param modifier [Modifier] to be applied to the layout.
  * @param enabled Controls the enabled state of the button.
  * When false, this button will not be clickable.
- * Whenever [textColor] and [backgroundColor] are not defaults, and [enabled] is false,
- * then the default color state for a disabled button will be presented.
- * @param textColor [Color] to apply to the button text.
- * @param backgroundColor The background [Color] of the button.
+ * @param contentColor The color to be used for the button's text and icon when enabled.
+ * @param containerColor The background color of the button when enabled.
  * @param icon Optional [Painter] used to display an [Icon] before the button text.
  * @param iconModifier [Modifier] to be applied to the icon.
- * @param iconTint [Color] to be applied to the icon tint.
  * @param onClick Invoked when the user clicks on the button.
  */
 @Composable
-fun PrimaryButton(
+fun FilledButton(
     text: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    textColor: Color = AcornTheme.colors.textActionPrimary,
-    backgroundColor: Color = AcornTheme.colors.actionPrimary,
+    contentColor: Color = ButtonDefaults.buttonColors().contentColor,
+    containerColor: Color = ButtonDefaults.buttonColors().containerColor,
     icon: Painter? = null,
     iconModifier: Modifier = Modifier,
-    iconTint: Color = AcornTheme.colors.iconActionPrimary,
     onClick: () -> Unit,
 ) {
-    var buttonTextColor = textColor
-    var buttonBackgroundColor = backgroundColor
-
-    // If not enabled and using default colors, then use the disabled button color defaults.
-    if (!enabled &&
-        textColor == AcornTheme.colors.textActionPrimary &&
-        backgroundColor == AcornTheme.colors.actionPrimary
+    M3Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        contentPadding = AcornTheme.buttonContentPadding(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
     ) {
-        buttonTextColor = AcornTheme.colors.textActionPrimaryDisabled
-        buttonBackgroundColor = AcornTheme.colors.actionPrimaryDisabled
+        ButtonContent(text = text, icon = icon, modifier = iconModifier)
     }
-
-    Button(
-        text = text,
-        textColor = buttonTextColor,
-        backgroundColor = buttonBackgroundColor,
-        modifier = modifier,
-        enabled = enabled,
-        icon = icon,
-        iconModifier = iconModifier,
-        tint = iconTint,
-        onClick = onClick,
-    )
 }
 
 /**
- * Secondary button.
+ * Filled button.
+ *
+ * @param onClick Invoked when the user clicks on the button.
+ * @param modifier [Modifier] to be applied to the layout.
+ * @param enabled Controls the enabled state of the button.
+ * When false, this button will not be clickable.
+ * @param contentColor The color to be used for the button's text and icon when enabled.
+ * @param containerColor The background color of the button when enabled.
+ * @param content [Composable] content to be displayed in the button.
+ */
+@Composable
+fun FilledButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentColor: Color = ButtonDefaults.buttonColors().contentColor,
+    containerColor: Color = ButtonDefaults.buttonColors().containerColor,
+    content: @Composable () -> Unit,
+) {
+    M3Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        contentPadding = AcornTheme.buttonContentPadding(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
+    ) {
+        content()
+    }
+}
+
+/**
+ * Outlined button.
  *
  * @param text The button text to be displayed.
  * @param modifier [Modifier] to be applied to the layout.
  * @param enabled Controls the enabled state of the button.
  * When false, this button will not be clickable
- * @param textColor [Color] to apply to the button text.
- * @param backgroundColor The background [Color] of the button.
+ * @param contentColor The [Color] to be used for the button's text and icon when enabled.
+ * @param containerColor The background fill [Color] of the button when enabled.
+ * @param outlineColor The [Color] to be used for the button's outline when enabled.
  * @param icon Optional [Painter] used to display an [Icon] before the button text.
  * @param iconModifier [Modifier] to be applied to the icon.
  * @param onClick Invoked when the user clicks on the button.
  */
 @Composable
-fun SecondaryButton(
+fun OutlinedButton(
     text: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    textColor: Color = AcornTheme.colors.textActionSecondary,
-    backgroundColor: Color = AcornTheme.colors.actionSecondary,
+    contentColor: Color = MaterialTheme.colorScheme.primary,
+    containerColor: Color = ButtonDefaults.outlinedButtonColors().containerColor,
+    outlineColor: Color = MaterialTheme.colorScheme.outline,
     icon: Painter? = null,
     iconModifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Button(
-        text = text,
-        textColor = textColor,
-        backgroundColor = backgroundColor,
+    M3OutlinedButton(
+        onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        icon = icon,
-        iconModifier = iconModifier,
-        tint = AcornTheme.colors.iconActionSecondary,
-        onClick = onClick,
-    )
-}
-
-/**
- * Tertiary button.
- *
- * @param text The button text to be displayed.
- * @param modifier [Modifier] to be applied to the layout.
- * @param enabled Controls the enabled state of the button.
- * When false, this button will not be clickable
- * @param textColor [Color] to apply to the button text.
- * @param backgroundColor The background [Color] of the button.
- * @param icon Optional [Painter] used to display an [Icon] before the button text.
- * @param iconModifier [Modifier] to be applied to the icon.
- * @param onClick Invoked when the user clicks on the button.
- */
-@Composable
-fun TertiaryButton(
-    text: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    textColor: Color = AcornTheme.colors.textActionTertiary,
-    backgroundColor: Color = AcornTheme.colors.actionTertiary,
-    icon: Painter? = null,
-    iconModifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Button(
-        text = text,
-        textColor = textColor,
-        backgroundColor = backgroundColor,
-        modifier = modifier,
-        enabled = enabled,
-        icon = icon,
-        iconModifier = iconModifier,
-        tint = AcornTheme.colors.iconActionTertiary,
-        onClick = onClick,
-    )
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = contentColor,
+            containerColor = containerColor,
+        ),
+        contentPadding = AcornTheme.buttonContentPadding(),
+        border = enabled.getBorderColor(outlineColor),
+    ) {
+        ButtonContent(text = text, icon = icon, modifier = iconModifier)
+    }
 }
 
 /**
@@ -221,8 +192,8 @@ fun TertiaryButton(
  * @param modifier [Modifier] to be applied to the layout.
  * @param enabled Controls the enabled state of the button.
  * When false, this button will not be clickable
- * @param textColor [Color] to apply to the button text.
- * @param backgroundColor The background [Color] of the button.
+ * @param contentColor The color to be used for the button's text, icon, and border when enabled.
+ * @param containerColor The background color of the button when enabled.
  * @param icon Optional [Painter] used to display an [Icon] before the button text.
  * @param iconModifier [Modifier] to be applied to the icon.
  * @param onClick Invoked when the user clicks on the button.
@@ -232,58 +203,131 @@ fun DestructiveButton(
     text: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    textColor: Color = AcornTheme.colors.textCriticalButton,
-    backgroundColor: Color = AcornTheme.colors.actionSecondary,
+    contentColor: Color = MaterialTheme.colorScheme.error,
+    containerColor: Color = ButtonDefaults.outlinedButtonColors().containerColor,
     icon: Painter? = null,
     iconModifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Button(
-        text = text,
-        textColor = textColor,
-        backgroundColor = backgroundColor,
+    M3OutlinedButton(
+        onClick = onClick,
         modifier = modifier,
         enabled = enabled,
-        icon = icon,
-        iconModifier = iconModifier,
-        tint = AcornTheme.colors.iconCriticalButton,
-        onClick = onClick,
-    )
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = contentColor,
+            containerColor = containerColor,
+        ),
+        contentPadding = AcornTheme.buttonContentPadding(),
+        border = enabled.getBorderColor(contentColor),
+    ) {
+        ButtonContent(text = text, icon = icon, modifier = iconModifier)
+    }
+}
+
+/**
+ * Extension function to return the appropriate border color based on the enabled state.
+ *
+ * @param this [Boolean] indicating whether the button is enabled or not.
+ * @param borderOutline The [Color] to be used for the button's border when enabled.
+ * @return [BorderStroke] representing the border of the button.
+ */
+@Composable
+private fun Boolean.getBorderColor(borderOutline: Color): BorderStroke {
+    return if (this) {
+        BorderStroke(
+            width = 1.dp,
+            color = borderOutline,
+        )
+    } else {
+        outlinedButtonBorder(enabled = false)
+    }
+}
+
+@Composable
+private fun ButtonPreviewContent() {
+    Surface {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            FilledButton(
+                text = "Label",
+                onClick = {},
+            )
+
+            FilledButton(
+                text = "Label",
+                icon = painterResource(iconsR.drawable.mozac_ic_collection_24),
+                onClick = {},
+            )
+
+            FilledButton(
+                text = "Label",
+                enabled = false,
+                icon = painterResource(iconsR.drawable.mozac_ic_collection_24),
+                onClick = {},
+            )
+
+            FilledButton(
+                onClick = {},
+            ) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary)
+            }
+
+            OutlinedButton(
+                text = "Label",
+                onClick = {},
+            )
+
+            OutlinedButton(
+                text = "Label",
+                icon = painterResource(iconsR.drawable.mozac_ic_collection_24),
+                onClick = {},
+            )
+
+            OutlinedButton(
+                text = "Label",
+                enabled = false,
+                icon = painterResource(iconsR.drawable.mozac_ic_collection_24),
+                onClick = {},
+            )
+
+            DestructiveButton(
+                text = "Label",
+                onClick = {},
+            )
+
+            DestructiveButton(
+                text = "Label",
+                icon = painterResource(iconsR.drawable.mozac_ic_collection_24),
+                onClick = {},
+            )
+
+            DestructiveButton(
+                text = "Label",
+                enabled = false,
+                icon = painterResource(iconsR.drawable.mozac_ic_collection_24),
+                onClick = {},
+            )
+        }
+    }
 }
 
 @Composable
 @PreviewLightDark
 private fun ButtonPreview() {
     AcornTheme {
-        Column(
-            modifier = Modifier
-                .background(AcornTheme.colors.layer1)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            PrimaryButton(
-                text = "Label",
-                icon = painterResource(R.drawable.mozac_ic_collection_24),
-                onClick = {},
-            )
+        ButtonPreviewContent()
+    }
+}
 
-            SecondaryButton(
-                text = "Label",
-                icon = painterResource(R.drawable.mozac_ic_collection_24),
-                onClick = {},
-            )
-
-            TertiaryButton(
-                text = "Label",
-                icon = painterResource(R.drawable.mozac_ic_collection_24),
-                onClick = {},
-            )
-
-            DestructiveButton(
-                text = "Label",
-                icon = painterResource(R.drawable.mozac_ic_collection_24),
-                onClick = {},
-            )
-        }
+@Composable
+@Preview
+private fun ButtonPrivatePreview() {
+    AcornTheme(
+        colors = privateColorPalette,
+        colorScheme = acornPrivateColorScheme(),
+    ) {
+        ButtonPreviewContent()
     }
 }

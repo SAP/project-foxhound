@@ -584,7 +584,7 @@ public final class ElementName
 //     * Regenerate self
 //     *
 //     * The args should be the paths to m-c files
-//     * parser/htmlparser/nsHTMLTagList.h and dom/svg/SVGTagList.h.
+//     * parser/htmlparser/nsHTMLTagList.inc and dom/svg/SVGTagList.inc.
 //     */
 //    public static void main(String[] args) {
 //        File htmlList = new File(args[0]);

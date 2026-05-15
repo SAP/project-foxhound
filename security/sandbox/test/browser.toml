@@ -1,7 +1,8 @@
 [DEFAULT]
 skip-if = [
   "ccov",
-  "os == 'linux' && (asan || tsan)", # bug 1784517
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && asan", # bug 1784517
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # bug 1784517
 ]
 tags = "contentsandbox"
 support-files = [
@@ -13,19 +14,23 @@ support-files = [
 
 ["browser_bug1393259.js"]
 support-files = ["bug1393259.html"]
-run-if = ["os == 'mac'"] # This is a Mac-specific test
-skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64'"] # Bug 1929424
+run-if = [
+  "os == 'mac'", # This is a Mac-specific test
+]
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929424
+]
 tags = "os_integration"
 
 ["browser_content_sandbox_fs.js"]
 skip-if = [
-  "os == 'win' && os_version == '11.2009' && processor == 'x86' && debug", # bug 1379635
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && debug", # bug 1379635
-  "os == 'win' && os_version == '11.26100' && processor == 'x86' && debug", # bug 1379635
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug", # bug 1379635
+  "os == 'win' && os_version == '11.26100' && arch == 'x86' && debug", # bug 1379635
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # bug 1379635
 ]
 
 ["browser_content_sandbox_syscalls.js"]
 
 ["browser_sandbox_test.js"]
-run-if = ["debug"]
+run-if = [
+  "debug",
+]

@@ -57,6 +57,13 @@ class DefaultTopSitesStorage(
         }
     }
 
+    override fun addTopSites(topSites: List<Pair<String, String>>, isDefault: Boolean) {
+        scope.launch {
+            pinnedSitesStorage.addAllPinnedSites(topSites = topSites, isDefault = isDefault)
+            notifyObservers { onStorageUpdated() }
+        }
+    }
+
     override fun removeTopSite(topSite: TopSite) {
         scope.launch {
             if (topSite is TopSite.Default || topSite is TopSite.Pinned) {

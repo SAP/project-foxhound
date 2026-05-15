@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef PROGRESSUI_H__
-#define PROGRESSUI_H__
+#ifndef PROGRESSUI_H_
+#define PROGRESSUI_H_
 
 #include "updatedefines.h"
 
@@ -37,4 +37,4 @@ void QuitProgressUI();
 // May be called from any thread: progress is a number between 0 and 100
 void UpdateProgressUI(float progress);
 
-#endif  // PROGRESSUI_H__
+#endif  // PROGRESSUI_H_

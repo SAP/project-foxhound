@@ -98,23 +98,23 @@ export class Attachment {
             throw e;
         }
         /**
-         * filename
+         * @type {string}
          */
         this.filename = filename;
         /**
-         * mimetype
+         * @type {string}
          */
         this.mimetype = mimetype;
         /**
-         * location
+         * @type {string}
          */
         this.location = location;
         /**
-         * hash
+         * @type {string}
          */
         this.hash = hash;
         /**
-         * size
+         * @type {number}
          */
         this.size = size;
     }
@@ -447,19 +447,19 @@ export class RemoteSettingsConfig {
             throw e;
         }
         /**
-         * collectionName
+         * @type {string}
          */
         this.collectionName = collectionName;
         /**
-         * bucketName
+         * @type {?string}
          */
         this.bucketName = bucketName;
         /**
-         * serverUrl
+         * @type {?string}
          */
         this.serverUrl = serverUrl;
         /**
-         * server
+         * @type {?RemoteSettingsServer[keyof RemoteSettingsServer]}
          */
         this.server = server;
     }
@@ -737,30 +737,37 @@ export class RemoteSettingsContext {
         }
         /**
          * The delivery channel of the application (e.g "nightly")
+         * @type {?string}
          */
         this.channel = channel;
         /**
          * User visible version string (e.g. "1.0.3")
+         * @type {?string}
          */
         this.appVersion = appVersion;
         /**
          * String containing the XUL application app_id
+         * @type {?string}
          */
         this.appId = appId;
         /**
          * The locale of the application during initialization (e.g. "es-ES")
+         * @type {?string}
          */
         this.locale = locale;
         /**
          * The name of the operating system (e.g. "Android", "iOS", "Darwin", "WINNT")
+         * @type {?string}
          */
         this.os = os;
         /**
          * The user-visible version of the operating system (e.g. "1.2.3")
+         * @type {?string}
          */
         this.osVersion = osVersion;
         /**
          * Form-factor of the device ("phone", "tablet", or "desktop")
+         * @type {?string}
          */
         this.formFactor = formFactor;
         /**
@@ -771,6 +778,7 @@ export class RemoteSettingsContext {
          * - By using a geolocation service, which determines country via the user's IP.
          * Firefox apps usually have a module that integrates with these services,
          * for example `Region` on Desktop and `RegionMiddleware` on Android.
+         * @type {?string}
          */
         this.country = country;
         /**
@@ -778,6 +786,7 @@ export class RemoteSettingsContext {
          * 
          * Use this for prototyping / testing new features.  In the long-term, new fields should be
          * added to the official list and supported by both the Rust and Gecko clients.
+         * @type {?object}
          */
         this.customTargettingAttributes = customTargettingAttributes;
     }
@@ -998,14 +1007,17 @@ export class RemoteSettingsConfig2 {
         }
         /**
          * The Remote Settings server to use. Defaults to [RemoteSettingsServer::Prod],
+         * @type {?RemoteSettingsServer[keyof RemoteSettingsServer]}
          */
         this.server = server;
         /**
          * Bucket name to use, defaults to "main".  Use "main-preview" for a preview bucket
+         * @type {?string}
          */
         this.bucketName = bucketName;
         /**
          * App context to use for JEXL filtering (when the `jexl` feature is present).
+         * @type {?RemoteSettingsContext}
          */
         this.appContext = appContext;
     }
@@ -1200,23 +1212,24 @@ export class RemoteSettingsRecord {
             throw e;
         }
         /**
-         * id
+         * @type {string}
          */
         this.id = id;
         /**
-         * lastModified
+         * @type {number}
          */
         this.lastModified = lastModified;
         /**
          * Tombstone flag (see https://remote-settings.readthedocs.io/en/latest/client-specifications.html#local-state)
+         * @type {boolean}
          */
         this.deleted = deleted;
         /**
-         * attachment
+         * @type {?Attachment}
          */
         this.attachment = attachment;
         /**
-         * fields
+         * @type {RsJsonObject}
          */
         this.fields = fields;
     }
@@ -1382,11 +1395,11 @@ export class RemoteSettingsResponse {
             throw e;
         }
         /**
-         * records
+         * @type {Array.<RemoteSettingsRecord>}
          */
         this.records = records;
         /**
-         * lastModified
+         * @type {number}
          */
         this.lastModified = lastModified;
     }
@@ -1623,7 +1636,7 @@ export class RemoteSettings extends RemoteSettingsInterface {
        
         FfiConverterTypeRemoteSettingsConfig.checkType(remoteSettingsConfig);
         const result = UniFFIScaffolding.callSync(
-            20, // uniffi_remote_settings_fn_constructor_remotesettings_new
+            72, // uniffi_remote_settings_fn_constructor_remotesettings_new
             FfiConverterTypeRemoteSettingsConfig.lower(remoteSettingsConfig),
         )
         return handleRustResult(
@@ -1645,7 +1658,7 @@ export class RemoteSettings extends RemoteSettingsInterface {
         FfiConverterString.checkType(attachmentId);
         FfiConverterString.checkType(path);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            21, // uniffi_remote_settings_fn_method_remotesettings_download_attachment_to_path
+            73, // uniffi_remote_settings_fn_method_remotesettings_download_attachment_to_path
             FfiConverterTypeRemoteSettings.lowerReceiver(this),
             FfiConverterString.lower(attachmentId),
             FfiConverterString.lower(path),
@@ -1664,7 +1677,7 @@ export class RemoteSettings extends RemoteSettingsInterface {
     async getRecords() {
        
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            22, // uniffi_remote_settings_fn_method_remotesettings_get_records
+            74, // uniffi_remote_settings_fn_method_remotesettings_get_records
             FfiConverterTypeRemoteSettings.lowerReceiver(this),
         )
         return handleRustResult(
@@ -1685,7 +1698,7 @@ export class RemoteSettings extends RemoteSettingsInterface {
        
         FfiConverterUInt64.checkType(timestamp);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            23, // uniffi_remote_settings_fn_method_remotesettings_get_records_since
+            75, // uniffi_remote_settings_fn_method_remotesettings_get_records_since
             FfiConverterTypeRemoteSettings.lowerReceiver(this),
             FfiConverterUInt64.lower(timestamp),
         )
@@ -1720,11 +1733,11 @@ export class FfiConverterTypeRemoteSettings extends FfiConverter {
     }
 
     static read(dataStream) {
-        return this.lift(dataStream.readPointer(4));
+        return this.lift(dataStream.readPointer(11));
     }
 
     static write(dataStream, value) {
-        dataStream.writePointer(4, this.lower(value));
+        dataStream.writePointer(11, this.lower(value));
     }
 
     static computeSize(value) {
@@ -1969,7 +1982,7 @@ export class RemoteSettingsClient extends RemoteSettingsClientInterface {
     async collectionName() {
        
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            24, // uniffi_remote_settings_fn_method_remotesettingsclient_collection_name
+            76, // uniffi_remote_settings_fn_method_remotesettingsclient_collection_name
             FfiConverterTypeRemoteSettingsClient.lowerReceiver(this),
         )
         return handleRustResult(
@@ -1997,7 +2010,7 @@ export class RemoteSettingsClient extends RemoteSettingsClientInterface {
        
         FfiConverterTypeRemoteSettingsRecord.checkType(record);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            25, // uniffi_remote_settings_fn_method_remotesettingsclient_get_attachment
+            77, // uniffi_remote_settings_fn_method_remotesettingsclient_get_attachment
             FfiConverterTypeRemoteSettingsClient.lowerReceiver(this),
             FfiConverterTypeRemoteSettingsRecord.lower(record),
         )
@@ -2033,7 +2046,7 @@ export class RemoteSettingsClient extends RemoteSettingsClientInterface {
        
         FfiConverterBoolean.checkType(syncIfEmpty);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            26, // uniffi_remote_settings_fn_method_remotesettingsclient_get_records
+            78, // uniffi_remote_settings_fn_method_remotesettingsclient_get_records
             FfiConverterTypeRemoteSettingsClient.lowerReceiver(this),
             FfiConverterBoolean.lower(syncIfEmpty),
         )
@@ -2057,7 +2070,7 @@ export class RemoteSettingsClient extends RemoteSettingsClientInterface {
        
         FfiConverterBoolean.checkType(syncIfEmpty);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            27, // uniffi_remote_settings_fn_method_remotesettingsclient_get_records_map
+            79, // uniffi_remote_settings_fn_method_remotesettingsclient_get_records_map
             FfiConverterTypeRemoteSettingsClient.lowerReceiver(this),
             FfiConverterBoolean.lower(syncIfEmpty),
         )
@@ -2074,7 +2087,7 @@ export class RemoteSettingsClient extends RemoteSettingsClientInterface {
     async shutdown() {
        
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            28, // uniffi_remote_settings_fn_method_remotesettingsclient_shutdown
+            80, // uniffi_remote_settings_fn_method_remotesettingsclient_shutdown
             FfiConverterTypeRemoteSettingsClient.lowerReceiver(this),
         )
         return handleRustResult(
@@ -2090,7 +2103,7 @@ export class RemoteSettingsClient extends RemoteSettingsClientInterface {
     async sync() {
        
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            29, // uniffi_remote_settings_fn_method_remotesettingsclient_sync
+            81, // uniffi_remote_settings_fn_method_remotesettingsclient_sync
             FfiConverterTypeRemoteSettingsClient.lowerReceiver(this),
         )
         return handleRustResult(
@@ -2124,11 +2137,11 @@ export class FfiConverterTypeRemoteSettingsClient extends FfiConverter {
     }
 
     static read(dataStream) {
-        return this.lift(dataStream.readPointer(5));
+        return this.lift(dataStream.readPointer(12));
     }
 
     static write(dataStream, value) {
-        dataStream.writePointer(5, this.lower(value));
+        dataStream.writePointer(12, this.lower(value));
     }
 
     static computeSize(value) {
@@ -2188,6 +2201,13 @@ export class FfiConverterSequenceString extends FfiConverterArrayBuffer {
  */
 export class RemoteSettingsServiceInterface {
     /**
+     * clientUrl
+     * @returns {string}
+     */
+    clientUrl() {
+      throw Error("clientUrl not implemented");
+    }
+    /**
      * Create a new Remote Settings client
      * 
      * This method performs no IO or network requests and is safe to run in a main thread that can't be blocked.
@@ -2200,6 +2220,9 @@ export class RemoteSettingsServiceInterface {
     }
     /**
      * Sync collections for all active clients
+     * 
+     * The returned list is the list of collections for which updates were seen
+     * and then synced.
      * @returns {Promise<Array.<string>>}}
      */
     async sync() {
@@ -2215,7 +2238,7 @@ export class RemoteSettingsServiceInterface {
      * execution can cause weird effects.
      * @param {RemoteSettingsConfig2} config
      */
-    updateConfig(
+    async updateConfig(
         config) {
       throw Error("updateConfig not implemented");
     }
@@ -2264,13 +2287,30 @@ export class RemoteSettingsService extends RemoteSettingsServiceInterface {
         FfiConverterString.checkType(storageDir);
         FfiConverterTypeRemoteSettingsConfig2.checkType(config);
         const result = UniFFIScaffolding.callSync(
-            30, // uniffi_remote_settings_fn_constructor_remotesettingsservice_new
+            82, // uniffi_remote_settings_fn_constructor_remotesettingsservice_new
             FfiConverterString.lower(storageDir),
             FfiConverterTypeRemoteSettingsConfig2.lower(config),
         )
         return handleRustResult(
             result,
             FfiConverterTypeRemoteSettingsService.lift.bind(FfiConverterTypeRemoteSettingsService),
+            null,
+        )
+    }
+
+    /**
+     * clientUrl
+     * @returns {string}
+     */
+    clientUrl() {
+       
+        const result = UniFFIScaffolding.callSync(
+            83, // uniffi_remote_settings_fn_method_remotesettingsservice_client_url
+            FfiConverterTypeRemoteSettingsService.lowerReceiver(this),
+        )
+        return handleRustResult(
+            result,
+            FfiConverterString.lift.bind(FfiConverterString),
             null,
         )
     }
@@ -2287,7 +2327,7 @@ export class RemoteSettingsService extends RemoteSettingsServiceInterface {
        
         FfiConverterString.checkType(collectionName);
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            31, // uniffi_remote_settings_fn_method_remotesettingsservice_make_client
+            84, // uniffi_remote_settings_fn_method_remotesettingsservice_make_client
             FfiConverterTypeRemoteSettingsService.lowerReceiver(this),
             FfiConverterString.lower(collectionName),
         )
@@ -2300,12 +2340,15 @@ export class RemoteSettingsService extends RemoteSettingsServiceInterface {
 
     /**
      * Sync collections for all active clients
+     * 
+     * The returned list is the list of collections for which updates were seen
+     * and then synced.
      * @returns {Promise<Array.<string>>}}
      */
     async sync() {
        
         const result = await UniFFIScaffolding.callAsyncWrapper(
-            32, // uniffi_remote_settings_fn_method_remotesettingsservice_sync
+            85, // uniffi_remote_settings_fn_method_remotesettingsservice_sync
             FfiConverterTypeRemoteSettingsService.lowerReceiver(this),
         )
         return handleRustResult(
@@ -2325,12 +2368,12 @@ export class RemoteSettingsService extends RemoteSettingsServiceInterface {
      * execution can cause weird effects.
      * @param {RemoteSettingsConfig2} config
      */
-    updateConfig(
+    async updateConfig(
         config) {
        
         FfiConverterTypeRemoteSettingsConfig2.checkType(config);
-        const result = UniFFIScaffolding.callSync(
-            33, // uniffi_remote_settings_fn_method_remotesettingsservice_update_config
+        const result = await UniFFIScaffolding.callAsyncWrapper(
+            86, // uniffi_remote_settings_fn_method_remotesettingsservice_update_config
             FfiConverterTypeRemoteSettingsService.lowerReceiver(this),
             FfiConverterTypeRemoteSettingsConfig2.lower(config),
         )
@@ -2365,11 +2408,11 @@ export class FfiConverterTypeRemoteSettingsService extends FfiConverter {
     }
 
     static read(dataStream) {
-        return this.lift(dataStream.readPointer(6));
+        return this.lift(dataStream.readPointer(13));
     }
 
     static write(dataStream, value) {
-        dataStream.writePointer(6, this.lower(value));
+        dataStream.writePointer(13, this.lower(value));
     }
 
     static computeSize(value) {

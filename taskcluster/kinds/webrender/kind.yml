@@ -13,6 +13,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         retrigger: true
     run-on-projects: ['integration', 'release']
@@ -31,7 +32,7 @@ task-defaults:
 tasks:
     lint-tidy:
         description: Runs linting checks on WebRender code
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: webrender}
         run:
@@ -52,7 +53,7 @@ tasks:
 
     linux64-release:
         description: Runs release-mode WebRender CI tests on a Linux worker
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: webrender}
         fetches:
@@ -76,7 +77,7 @@ tasks:
 
     linux64-debug:
         description: Runs debug-mode WebRender CI tests on a Linux worker
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: webrender}
         fetches:
@@ -100,7 +101,7 @@ tasks:
 
     wrench-macos-build:
         description: Cross compilation of wrench for macOS on Linux
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: webrender}
             chain-of-trust: true
@@ -112,11 +113,12 @@ tasks:
                   name: public/build/wrench-macos-headless.tar.bz2
                   path: /builds/worker/artifacts/wrench-macos-headless.tar.bz2
         dependencies:
+            # Using libLLVM and headers for gallium, which require an older version
             macosx64-clang-14: toolchain-macosx64-clang-14-raw
         fetches:
             toolchain:
                 - linux64-rust-macos
-                - linux64-clang-14
+                - linux64-clang
                 - macosx64-sdk-13.3
                 - wrench-deps
             macosx64-clang-14:
@@ -164,7 +166,7 @@ tasks:
 
     cargotest-macos-build:
         description: Cross compilation of cargo tests for macOS on Linux
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             docker-image: {in-tree: webrender}
             chain-of-trust: true
@@ -238,7 +240,6 @@ tasks:
             symbol: WR(wrench)
         when:
             files-changed:
-                - 'build/win64/mozconfig.vs2022'
                 - 'gfx/wr/**'
                 - 'taskcluster/scripts/misc/wrench-windows-tests.sh'
 
@@ -246,7 +247,7 @@ tasks:
         description: Debug build of wrench for Android
         attributes:
             build_platform: android
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             docker-image: {in-tree: webrender}
@@ -255,8 +256,8 @@ tasks:
                   name: public/build/wrench-debug.apk
                   path: /builds/worker/checkouts/gecko/gfx/wr/target/debug/apk/wrench.apk
                 - type: file
-                  name: public/build/reftests.tar.gz
-                  path: /builds/worker/checkouts/gecko/gfx/wr/wrench/reftests.tar.gz
+                  name: public/build/reftests.tar.zst
+                  path: /builds/worker/checkouts/gecko/gfx/wr/wrench/reftests.tar.zst
                 - type: file
                   name: public/build/mozdevice.tar.gz
                   path: /builds/worker/checkouts/gecko/testing/mozbase/mozdevice.tar.gz
@@ -268,7 +269,7 @@ tasks:
             cwd: '{checkout}/gfx/wr/wrench'
             command: >-
                 $GECKO_PATH/taskcluster/scripts/misc/wrench-android-build.sh debug &&
-                tar czf reftests.tar.gz reftests/ &&
+                tar -c --zstd -f reftests.tar.zst reftests/ &&
                 cd $GECKO_PATH/testing/mozbase &&
                 tar czf mozdevice.tar.gz mozdevice/ &&
                 cd $GECKO_PATH/third_party/python &&
@@ -278,8 +279,9 @@ tasks:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
-                - android-system-image-x86_64-linux
-                - android-avd-x86_64-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
+                - android34-avd-x86_64-linux
                 - linux64-cargo-apk
                 - linux64-jdk
                 - linux64-rust-android
@@ -297,7 +299,7 @@ tasks:
         description: Release build of wrench for Android
         attributes:
             build_platform: android
-        worker-type: b-linux-gcp
+        worker-type: b-linux
         worker:
             max-run-time: 1800
             docker-image: {in-tree: webrender}
@@ -306,8 +308,8 @@ tasks:
                   name: public/build/wrench-release.apk
                   path: /builds/worker/checkouts/gecko/gfx/wr/target/release/apk/wrench.apk
                 - type: file
-                  name: public/build/reftests.tar.gz
-                  path: /builds/worker/checkouts/gecko/gfx/wr/wrench/reftests.tar.gz
+                  name: public/build/reftests.tar.zst
+                  path: /builds/worker/checkouts/gecko/gfx/wr/wrench/reftests.tar.zst
                 - type: file
                   name: public/build/mozdevice.tar.gz
                   path: /builds/worker/checkouts/gecko/testing/mozbase/mozdevice.tar.gz
@@ -319,7 +321,7 @@ tasks:
             cwd: '{checkout}/gfx/wr/wrench'
             command: >-
                 $GECKO_PATH/taskcluster/scripts/misc/wrench-android-build.sh release &&
-                tar czf reftests.tar.gz reftests/ &&
+                tar -c --zstd -f reftests.tar.zst reftests/ &&
                 cd $GECKO_PATH/testing/mozbase &&
                 tar czf mozdevice.tar.gz mozdevice/ &&
                 cd $GECKO_PATH/third_party/python &&
@@ -329,8 +331,9 @@ tasks:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
-                - android-system-image-x86_64-linux
-                - android-avd-x86_64-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
+                - android34-avd-x86_64-linux
                 - linux64-cargo-apk
                 - linux64-jdk
                 - linux64-rust-android
@@ -370,8 +373,10 @@ tasks:
                   extract: false
             toolchain:
                 - android-sdk-linux
-                - android-system-image-x86_64-linux
-                - android-avd-x86_64-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
+                - android34-system-image-x86_64-linux
+                - android34-avd-x86_64-linux
                 - linux64-jdk
         run:
             using: run-task
@@ -416,8 +421,10 @@ tasks:
                   extract: false
             toolchain:
                 - android-sdk-linux
-                - android-system-image-x86_64-linux
-                - android-avd-x86_64-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
+                - android34-system-image-x86_64-linux
+                - android34-avd-x86_64-linux
                 - linux64-jdk
         run:
             using: run-task
@@ -459,7 +466,7 @@ tasks:
             webrender-wrench-android-debug:
                 - artifact: 'wrench-debug.apk'
                   extract: false
-                - 'reftests.tar.gz'
+                - 'reftests.tar.zst'
                 - 'mozdevice.tar.gz'
                 - 'six.tar.gz'
             android-build:
@@ -507,7 +514,7 @@ tasks:
             webrender-wrench-android-release:
                 - artifact: 'wrench-release.apk'
                   extract: false
-                - 'reftests.tar.gz'
+                - 'reftests.tar.zst'
                 - 'mozdevice.tar.gz'
                 - 'six.tar.gz'
             android-build:
@@ -555,7 +562,7 @@ tasks:
             webrender-wrench-android-debug:
                 - artifact: 'wrench-debug.apk'
                   extract: false
-                - 'reftests.tar.gz'
+                - 'reftests.tar.zst'
                 - 'mozdevice.tar.gz'
                 - 'six.tar.gz'
             android-build:
@@ -603,7 +610,7 @@ tasks:
             webrender-wrench-android-release:
                 - artifact: 'wrench-release.apk'
                   extract: false
-                - 'reftests.tar.gz'
+                - 'reftests.tar.zst'
                 - 'mozdevice.tar.gz'
                 - 'six.tar.gz'
             android-build:
@@ -651,7 +658,7 @@ tasks:
             webrender-wrench-android-debug:
                 - artifact: 'wrench-debug.apk'
                   extract: false
-                - 'reftests.tar.gz'
+                - 'reftests.tar.zst'
                 - 'mozdevice.tar.gz'
                 - 'six.tar.gz'
             android-build:
@@ -699,7 +706,7 @@ tasks:
             webrender-wrench-android-release:
                 - artifact: 'wrench-release.apk'
                   extract: false
-                - 'reftests.tar.gz'
+                - 'reftests.tar.zst'
                 - 'mozdevice.tar.gz'
                 - 'six.tar.gz'
             android-build:

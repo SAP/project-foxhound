@@ -53,13 +53,11 @@ def _get(graph_config, alias, level, release_level, project):
         worker_config["provisioner"],
         f"worker-type alias {alias} field provisioner",
         {"level": level},
-    ).format(
-        **{
-            "trust-domain": graph_config["trust-domain"],
-            "level": level,
-            "alias": alias,
-        }
-    )
+    ).format(**{
+        "trust-domain": graph_config["trust-domain"],
+        "level": level,
+        "alias": alias,
+    })
     attrs = {"level": level, "release-level": release_level}
     if project:
         attrs["project"] = project
@@ -67,13 +65,11 @@ def _get(graph_config, alias, level, release_level, project):
         worker_config["worker-type"],
         f"worker-type alias {alias} field worker-type",
         attrs,
-    ).format(
-        **{
-            "trust-domain": graph_config["trust-domain"],
-            "level": level,
-            "alias": alias,
-        }
-    )
+    ).format(**{
+        "trust-domain": graph_config["trust-domain"],
+        "level": level,
+        "alias": alias,
+    })
 
     return worker_config
 
@@ -97,7 +93,7 @@ def get_worker_type(graph_config, parameters, worker_type):
         graph_config,
         worker_type,
         parameters["level"],
-        _release_level(parameters.get("project")),
+        _release_level(parameters),
         parameters.get("project"),
     )
     return worker_config["provisioner"], worker_config["worker-type"]

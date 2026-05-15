@@ -3,10 +3,9 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-from copy import deepcopy
-
 from taskgraph import MAX_DEPENDENCIES
 from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.copy import deepcopy
 from taskgraph.util.treeherder import add_suffix
 
 # XXX Docker images may be added after this transform, so we allow one more dep to be added

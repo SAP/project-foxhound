@@ -6,10 +6,10 @@
 
 #include "mozilla/dom/CrashReport.h"
 
-#include "mozilla/dom/Navigator.h"
-#include "mozilla/dom/ReportingHeader.h"
-#include "mozilla/dom/ReportDeliver.h"
 #include "mozilla/JSONStringWriteFuncs.h"
+#include "mozilla/dom/Navigator.h"
+#include "mozilla/dom/ReportDeliver.h"
+#include "mozilla/dom/ReportingHeader.h"
 #include "nsIPrincipal.h"
 #include "nsIURIMutator.h"
 #include "nsString.h"
@@ -21,6 +21,10 @@ bool CrashReport::Deliver(nsIPrincipal* aPrincipal, bool aIsOOM) {
   MOZ_ASSERT(aPrincipal);
 
   nsAutoCString endpoint_url;
+  // GetEndpointForReport is Gecko's legacy Reporting API mechanism. It parses
+  // endpoints in the parent process using both Reporting-Endpoints and
+  // Report-To headers and maps origins to a list of endpoints which suits
+  // crashes better, as they take down the whole process.
   ReportingHeader::GetEndpointForReport(u"default"_ns, aPrincipal,
                                         endpoint_url);
   if (endpoint_url.IsEmpty()) {
@@ -40,6 +44,9 @@ bool CrashReport::Deliver(nsIPrincipal* aPrincipal, bool aIsOOM) {
   data.mPrincipal = aPrincipal;
   data.mFailures = 0;
   data.mEndpointURL = endpoint_url;
+  // We are not dealing with a WindowOrWorkerGlobalScope when crashing, but
+  // potentially multiple.
+  data.mGlobalKey = 0;
 
   JSONStringWriteFunc<nsCString> body;
   JSONWriter writer{body};

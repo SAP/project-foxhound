@@ -32,21 +32,11 @@ add_task(async function test_load_settings() {
       this.getRow(PREF_BOOLEAN_USERVALUE_TRUE).hasClass("has-user-value")
     );
 
-    // Test to see if values are localized, sampling from different files. If
-    // any of these are removed or their value changes, just update the value
-    // here or point to a different preference in the same file.
-    Assert.equal(this.getRow("font.language.group").value, "x-western");
-    Assert.equal(this.getRow("intl.ellipsis").value, "\u2026");
-
     // Test to see if user created value is not empty string when it matches
     // /^chrome:\/\/.+\/locale\/.+\.properties/.
     Assert.equal(
       this.getRow("test.aboutconfig.userValueLikeLocalized").value,
       "chrome://test/locale/testing.properties"
     );
-
-    // Test to see if empty string when value matches
-    // /^chrome:\/\/.+\/locale\/.+\.properties/ and an exception is thrown.
-    Assert.equal(this.getRow(PREF_STRING_LOCALIZED_MISSING).value, "");
   });
 });

@@ -166,11 +166,7 @@ let gMode = -1;
 // test runs.
 async function doInit(aMode) {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["network.predictor.enabled", false],
-      ["network.predictor.enable-prefetch", false],
-      ["dom.security.https_first", false],
-    ],
+    set: [["dom.security.https_first", false]],
   });
   clearAllImageCaches();
 

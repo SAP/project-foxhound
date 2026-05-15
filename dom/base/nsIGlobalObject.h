@@ -4,15 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsIGlobalObject_h__
-#define nsIGlobalObject_h__
+#ifndef nsIGlobalObject_h_
+#define nsIGlobalObject_h_
 
+#include "js/TypeDecls.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/OriginTrials.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
-#include "mozilla/OriginTrials.h"
 #include "nsContentUtils.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
@@ -20,7 +21,6 @@
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
-#include "js/TypeDecls.h"
 
 // Must be kept in sync with xpcom/rust/xpcom/src/interfaces/nonidl.rs
 #define NS_IGLOBALOBJECT_IID \
@@ -295,6 +295,9 @@ class nsIGlobalObject : public nsISupports {
 
   RTPCallerType GetRTPCallerType() const;
 
+  bool IsRFPTargetActive(const nsAString& aTargetName,
+                         mozilla::ErrorResult& aRv);
+
   /**
    * Get the module loader to use for this global, if any. By default this
    * returns null.
@@ -403,9 +406,14 @@ class nsIGlobalObject : public nsISupports {
   size_t ShallowSizeOfExcludingThis(mozilla::MallocSizeOf aSizeOf) const;
 
  private:
+  void ClearReports();
+
+ private:
   // List of Report objects for ReportingObservers.
   nsTArray<RefPtr<mozilla::dom::ReportingObserver>> mReportingObservers;
-  nsTArray<RefPtr<mozilla::dom::Report>> mReportRecords;
+  // https://w3c.github.io/reporting/#windoworworkerglobalscope-report-buffer
+  nsTArray<RefPtr<mozilla::dom::Report>> mReportBuffer;
+  nsTHashMap<nsString, uint32_t> mReportPerTypeCount;
 
   // https://streams.spec.whatwg.org/#count-queuing-strategy-size-function
   RefPtr<mozilla::dom::Function> mCountQueuingStrategySizeFunction;
@@ -414,4 +422,4 @@ class nsIGlobalObject : public nsISupports {
   RefPtr<mozilla::dom::Function> mByteLengthQueuingStrategySizeFunction;
 };
 
-#endif  // nsIGlobalObject_h__
+#endif  // nsIGlobalObject_h_

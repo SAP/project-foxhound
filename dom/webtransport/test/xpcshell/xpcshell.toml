@@ -3,26 +3,30 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 [DEFAULT]
-run-if = ["!socketprocess_networking"]
+run-if = [
+  "!socketprocess_networking",
+]
 # XXX figure out why android doesn't get MOZHTTP3_PORT
 skip-if = [
-  "os == 'android' && android_version == '24' && processor == 'x86_64'",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && msix", # https://bugzilla.mozilla.org/show_bug.cgi?id=1807925
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64' && msix && appname == 'thunderbird'", # https://bugzilla.mozilla.org/show_bug.cgi?id=1960463
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && msix", # https://bugzilla.mozilla.org/show_bug.cgi?id=1807925
 ]
 
 ["test_close.js"]
+skip-if = [
+  "os == 'android' && os_version == '14' && arch == 'x86_64' && debug", # Bug 1982953
+  "os == 'android' && os_version == '14' && arch == 'x86_64' && opt", # Bug 1982953
+]
 
 ["test_simple_conn.js"]
-run-sequentially = "http3server"
+run-sequentially = ["true"] # http3server
 skip-if = [
-  "os == 'win' && os_version == '10.2009' && processor == 'x86_64'", # Bug TBD
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'", # Bug TBD
+  "os == 'android' && os_version == '14' && arch == 'x86_64' && debug", # Bug 1982953
+  "os == 'android' && os_version == '14' && arch == 'x86_64' && opt", # Bug 1982953
 ]
 
 ["test_simple_stream.js"]
-run-sequentially = "http3server"
+run-sequentially = ["true"] # http3server
 skip-if = [
-  "os == 'win' && os_version == '10.2009' && processor == 'x86_64'", # Bug TBD
-  "os == 'win' && os_version == '11.26100' && processor == 'x86'", # Bug TBD
+  "os == 'android' && os_version == '14' && arch == 'x86_64' && debug", # Bug 1982953
+  "os == 'android' && os_version == '14' && arch == 'x86_64' && opt", # Bug 1982953
 ]

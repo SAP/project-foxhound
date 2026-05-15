@@ -7,6 +7,9 @@ with Files("**"):
 
 BROWSER_CHROME_MANIFESTS += [
     "tests/browser/browser.toml",
+    "tests/browser/browser_full.toml",
+    "tests/browser/browser_select.toml",
+    "tests/browser/browser_telemetry.toml",
     "tests/browser/perftest.toml",
 ]
 

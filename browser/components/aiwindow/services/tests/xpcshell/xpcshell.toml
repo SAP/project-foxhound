@@ -1,0 +1,7 @@
+[DEFAULT]
+run-if = ["os != 'android'"]
+head = "head.js"
+firefox-appdir = "browser"
+support-files = []
+
+["test_MemoryStore.js"]

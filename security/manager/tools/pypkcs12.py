@@ -37,7 +37,7 @@ class OpenSSLError(Error):
     """Class for handling errors when calling OpenSSL."""
 
     def __init__(self, status):
-        super(OpenSSLError, self).__init__()
+        super().__init__()
         self.status = status
 
     def __str__(self):
@@ -55,6 +55,7 @@ def runUtil(util, args):
             env[pathvar] = app_path
     proc = subprocess.run(
         [util] + args,
+        check=False,
         env=env,
         text=True,
     )

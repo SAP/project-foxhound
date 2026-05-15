@@ -10,6 +10,8 @@
 [GenerateToJSON]
 dictionary HTMLContent {
   DOMString parserID;
+  unsigned long long browserId;
+  unsigned long long browsingContextID;
   DOMString uri;
   DOMString contents;
   boolean complete;

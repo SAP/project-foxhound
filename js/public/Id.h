@@ -234,7 +234,7 @@ namespace JS {
 extern JS_PUBLIC_DATA const JS::HandleId VoidHandlePropertyKey;
 
 template <>
-struct GCPolicy<jsid> {
+struct GCPolicy<jsid> : public GCPolicyBase<jsid> {
   static void trace(JSTracer* trc, jsid* idp, const char* name) {
     // This should only be called as part of root marking since that's the only
     // time we should trace unbarriered GC thing pointers. This will assert if
@@ -246,6 +246,7 @@ struct GCPolicy<jsid> {
            js::gc::IsCellPointerValid(id.toGCCellPtr().asCell());
   }
 
+  static constexpr bool mightBeInNursery() { return false; }
   static bool isTenured(jsid id) {
     MOZ_ASSERT_IF(id.isGCThing(),
                   !js::gc::IsInsideNursery(id.toGCCellPtr().asCell()));

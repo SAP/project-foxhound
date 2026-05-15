@@ -1,1 +1,1 @@
-window.testResult = "fail-script-was-loaded";
+window.ran += "externalHTTPS";

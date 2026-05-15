@@ -105,7 +105,7 @@ export class LoginCSVImport {
    * Existing logins may be updated in the process.
    *
    * @param {string} filePath
-   * @returns {Object[]} An array of rows where each is mapped to a row in the CSV and it's import information.
+   * @returns {object[]} An array of rows where each is mapped to a row in the CSV and it's import information.
    */
   static async importFromCSV(filePath) {
     let csvColumnToFieldMap = LoginCSVImport._getCSVColumnToFieldMap();

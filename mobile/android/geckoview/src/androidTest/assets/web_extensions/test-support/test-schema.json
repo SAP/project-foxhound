@@ -356,6 +356,27 @@
             "name": "typeNames"
           }
         ]
+      },
+
+      {
+        "name": "teardownAlertsService",
+        "type": "function",
+        "async": true,
+        "description": "Triggers teardown on Alerts Service so that it can clear all notification information.",
+        "parameters": []
+      },
+
+      {
+        "name": "notifyUserGestureActivation",
+        "type": "function",
+        "async": true,
+        "description": "Invokes document.notifyUserGestureActivation to simulate user gesture activation.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
+          }
+        ]
       }
     ]
   }

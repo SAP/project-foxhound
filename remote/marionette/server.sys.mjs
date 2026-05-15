@@ -286,13 +286,13 @@ export class TCPConnection {
     let sendResponse = () => resp.sendConditionally(resp => !resp.sent);
     let sendError = resp.sendError.bind(resp);
 
-    await this.despatch(cmd, resp)
+    await this.dispatch(cmd, resp)
       .then(sendResponse, sendError)
       .catch(lazy.error.report);
   }
 
   /**
-   * Despatches command to appropriate Marionette service.
+   * Dispatches command to appropriate Marionette service.
    *
    * @param {Command} cmd
    *     Command to run.
@@ -303,8 +303,8 @@ export class TCPConnection {
    * @throws {Error}
    *     A command's implementation may throw at any time.
    */
-  async despatch(cmd, resp) {
-    const startTime = Cu.now();
+  async dispatch(cmd, resp) {
+    const startTime = ChromeUtils.now();
 
     let fn = this.driver.commands[cmd.name];
     if (typeof fn == "undefined") {
@@ -398,7 +398,7 @@ export class TCPConnection {
   }
 
   /**
-   * Delegates message to client based on the provided  {@code cmdID}.
+   * Delegates message to client based on the provided `cmdID`.
    * The message is sent over the debugger transport socket.
    *
    * The command ID is a unique identifier assigned to the client's request

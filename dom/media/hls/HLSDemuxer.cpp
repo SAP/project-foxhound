@@ -6,16 +6,15 @@
 
 #include "HLSDemuxer.h"
 
-#include <algorithm>
-#include <limits>
 #include <stdint.h>
+
+#include <algorithm>
 
 #include "HLSUtils.h"
 #include "MediaCodec.h"
 #include "mozilla/java/GeckoAudioInfoWrappers.h"
 #include "mozilla/java/GeckoHLSDemuxerWrapperNatives.h"
 #include "mozilla/java/GeckoVideoInfoWrappers.h"
-#include "mozilla/Unused.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla {
@@ -92,7 +91,7 @@ class HLSDemuxer::HLSDemuxerCallbacksSupport
           }
         }));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 
   void OnError(int aErrorCode) {
@@ -111,7 +110,7 @@ class HLSDemuxer::HLSDemuxerCallbacksSupport
           }
         }));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 
   void Detach() {
@@ -620,7 +619,7 @@ void HLSTrackDemuxer::BreakCycles() {
       "HLSTrackDemuxer::BreakCycles", [self]() { self->mParent = nullptr; });
   nsresult rv = mParent->GetTaskQueue()->Dispatch(task.forget());
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 HLSTrackDemuxer::~HLSTrackDemuxer() {}

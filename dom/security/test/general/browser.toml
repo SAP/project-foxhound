@@ -13,7 +13,9 @@ support-files = [
 
 ["browser_restrict_privileged_about_script.js"]
 # This test intentionally asserts when in debug builds. Let's rely on opt builds when in CI.
-skip-if = ["debug"]
+skip-if = [
+  "debug",
+]
 support-files = [
   "file_about_child.html",
   "file_1767581.js",
@@ -22,15 +24,21 @@ support-files = [
 ["browser_same_site_cookies_bug1748693.js"]
 support-files = ["file_same_site_cookies_bug1748693.sjs"]
 
+["browser_test_allow_setHTML.js"]
+
 ["browser_test_assert_systemprincipal_documents.js"]
-skip-if = ["!nightly_build"]
+skip-if = [
+  "!nightly_build",
+]
 support-files = [
   "file_assert_systemprincipal_documents.html",
   "file_assert_systemprincipal_documents_iframe.html",
 ]
 
 ["browser_test_clobbered_property.js"]
-skip-if = ["true"] # Keeps failing on CI
+skip-if = [
+  "true", # Keeps failing on CI
+]
 support-files = [
   "file_clobbered_property.html"
 ]
@@ -62,7 +70,13 @@ support-files = [
 ["browser_test_referrer_loadInOtherProcess.js"]
 
 ["browser_test_toplevel_data_navigations.js"]
-skip-if = ["debug && (os == 'mac' || os == 'linux')"] # Bug 1403815
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland' && debug", # Bug 1403815
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1403815
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && debug", # Bug 1403815
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && debug", # Bug 1403815
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # Bug 1403815
+]
 support-files = [
   "file_toplevel_data_navigations.sjs",
   "file_toplevel_data_meta_redirect.html",

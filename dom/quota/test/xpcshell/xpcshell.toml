@@ -25,21 +25,35 @@ support-files = [
   "persistentStorageDirectory_shared.zip",
   "removeLocalStorage1_profile.zip",
   "removeLocalStorage2_profile.zip",
+  "secondaryCacheValidity_profile.zip",
   "tempMetadataCleanup_profile.zip",
   "unknownFiles_profile.zip",
 ]
 
 ["make_getCachedUsageForPrincipal.js"]
-run-if = ["false"] # Only used for recreating getCachedUsageForPrincipal_profile.zip
+run-if = [
+  "false", # Only used for recreating getCachedUsageForPrincipal_profile.zip
+]
 
 ["make_getUsageForPrincipal.js"]
-run-if = ["false"] # Only used for recreating getCachedUsageForPrincipal_profile.zip
+run-if = [
+  "false", # Only used for recreating getCachedUsageForPrincipal_profile.zip
+]
+
+["make_secondaryCacheValidity.js"]
+run-if = [
+  "false", # Only used for recreating secondaryCacheValidity_profile.zip
+]
 
 ["make_unknownFiles.js"]
-run-if = ["false"] # Only used for recreating unknownFiles_profile.zip
+run-if = [
+  "false", # Only used for recreating unknownFiles_profile.zip
+]
 
 ["make_unsetLastAccessTime.js"]
-run-if = ["false"] # Only used for recreating unsetLastAccessTime_profile.zip
+run-if = [
+  "false", # Only used for recreating unsetLastAccessTime_profile.zip
+]
 
 ["test_allowListFiles.js"]
 
@@ -74,7 +88,9 @@ run-if = ["false"] # Only used for recreating unsetLastAccessTime_profile.zip
 ["test_groupInitializationStarted.js"]
 
 ["test_groupMismatch.js"]
-run-if = ["false"] # The group is now always empty, so metadata can't differ anymore.
+run-if = [
+  "false", # The group is now always empty, so metadata can't differ anymore.
+]
 
 ["test_idle_maintenance.js"]
 
@@ -85,7 +101,9 @@ run-if = ["false"] # The group is now always empty, so metadata can't differ any
 # enabled  because incremental origin initialization automatically triggers
 # lazy initialization of all temporary origins after temporary storage
 # initialization is complete.
-skip-if = ["inc_origin_init"]
+skip-if = [
+  "inc_origin_init",
+]
 
 ["test_initializePersistentClient.js"]
 
@@ -99,7 +117,9 @@ skip-if = ["inc_origin_init"]
 
 ["test_initializeTemporaryOrigin_failure.js"]
 # bug 1942791
-skip-if = ["inc_origin_init"]
+skip-if = [
+  "inc_origin_init",
+]
 
 ["test_listCachedOrigins.js"]
 
@@ -111,7 +131,9 @@ skip-if = ["inc_origin_init"]
 
 ["test_originMismatch.js"]
 # bug 1942793
-skip-if = ["inc_origin_init"]
+skip-if = [
+  "inc_origin_init",
+]
 
 ["test_originWithCaret.js"]
 
@@ -131,36 +153,55 @@ skip-if = ["inc_origin_init"]
 
 ["test_removeLocalStorage.js"]
 
+["test_secondaryCacheValidity.js"]
+
 ["test_shutdownDuringAllTemporaryOriginsInitialization.js"]
 # The test cannot function correctly with incremental origin initialization
 # enabled  because incremental origin initialization automatically triggers
 # lazy initialization of all temporary origins after temporary storage
 # initialization is complete.
-skip-if = ["inc_origin_init"]
+skip-if = [
+  "inc_origin_init",
+]
 
 ["test_shutdownDuringAllTemporaryOriginsInitialization2.js"]
 # The test cannot function correctly with incremental origin initialization
 # enabled  because incremental origin initialization automatically triggers
 # lazy initialization of all temporary origins after temporary storage
 # initialization is complete.
-skip-if = ["inc_origin_init"]
+skip-if = [
+  "inc_origin_init",
+]
 
 ["test_simpledb.js"]
 
 ["test_specialOrigins.js"]
 
 ["test_storagePressure.js"]
-run-if = ["!condprof"] # Bug 1960788
-skip-if = ["inc_origin_init"]
+run-if = [
+  "!condprof", # Bug 1960788
+]
+skip-if = [
+  "inc_origin_init",
+]
 
 ["test_tempMetadataCleanup.js"]
+
+["test_temporaryStorageCleanup.js"]
+# This test requires precise control over the storage repository contents,
+# including exact origin metadata (usage, persistence, and access time).
+# Conditioned profiles contain pre-existing data that would invalidate these
+# assumptions, so the test must run only on a clean profile.
+run-if = ["!condprof"]
 
 ["test_temporaryStorageEviction.js"]
 # This test requires precise control over storage size, which isn't compatible
 # with conditioned profiles that use a much larger default size. While the test
 # could clear storage at the start, doing so would defeat the purpose of using
 # a conditioned profile in the first place.
-run-if = ["!condprof"]
+run-if = [
+  "!condprof",
+]
 
 ["test_temporaryStorageRFP.js"]
 

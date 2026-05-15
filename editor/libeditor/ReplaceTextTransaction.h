@@ -12,7 +12,6 @@
 #include "EditTransactionBase.h"
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Text.h"
 #include "nsDebug.h"

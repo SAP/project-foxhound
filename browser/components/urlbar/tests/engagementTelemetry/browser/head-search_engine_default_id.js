@@ -8,7 +8,7 @@
 async function doSearchEngineDefaultIdTest({ trigger, assert }) {
   await doTest(async () => {
     info("Test with current engine");
-    const defaultEngine = await Services.search.getDefault();
+    const defaultEngine = await SearchService.getDefault();
 
     await openPopup("x");
     await trigger();
@@ -17,27 +17,27 @@ async function doSearchEngineDefaultIdTest({ trigger, assert }) {
 
   await doTest(async () => {
     info("Test with new engine");
-    const defaultEngine = await Services.search.getDefault();
+    const defaultEngine = await SearchService.getDefault();
     const newEngineName = "NewDummyEngine";
     await SearchTestUtils.installSearchExtension({
       name: newEngineName,
       search_url: "https://example.com/",
       search_url_get_params: "q={searchTerms}",
     });
-    const newEngine = await Services.search.getEngineByName(newEngineName);
+    const newEngine = await SearchService.getEngineByName(newEngineName);
     Assert.notEqual(defaultEngine.telemetryId, newEngine.telemetryId);
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       newEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
 
     await openPopup("x");
     await trigger();
     await assert(newEngine.telemetryId);
 
-    await Services.search.setDefault(
+    await SearchService.setDefault(
       defaultEngine,
-      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      SearchService.CHANGE_REASON.UNKNOWN
     );
   });
 }

@@ -170,7 +170,7 @@ function wrapPrivileged(obj, win) {
     case "AnonymousContent":
       // Caching anonymous content will cause crashes (bug 1636015).
       break;
-    case "CSS2Properties":
+    case "CSSStyleProperties":
     case "CSSStyleRule":
     case "CSSStyleSheet":
       // Caching these classes will cause memory leaks.

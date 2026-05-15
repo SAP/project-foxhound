@@ -9,7 +9,6 @@
 
 #include "d3d11.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
-#include "mozilla/Maybe.h"
 #include "ImageContainer.h"
 
 namespace mozilla {

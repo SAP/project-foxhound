@@ -7,16 +7,13 @@
 // Original author: ekr@rtfm.com
 
 // This is a wrapper around the nICEr ICE stack
-#ifndef transportlayerice_h__
-#define transportlayerice_h__
-
-#include "sigslot.h"
-
-#include "mozilla/RefPtr.h"
+#ifndef transportlayerice_h_
+#define transportlayerice_h_
 
 #include "m_cpp_utils.h"
-
+#include "mozilla/RefPtr.h"
 #include "nricemediastream.h"
+#include "sigslot.h"
 #include "transportlayer.h"
 
 // An ICE transport layer -- corresponds to a single ICE

@@ -12,7 +12,7 @@
 /// we might want to add a function to handle this.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "servo", derive(MallocSizeOf))]
+#[cfg_attr(feature = "servo", derive(crate::derives::MallocSizeOf))]
 pub struct ComputedValueFlags(u32);
 
 bitflags! {
@@ -91,9 +91,6 @@ bitflags! {
         /// https://github.com/w3c/csswg-drafts/issues/4777#issuecomment-604424845
         const HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND = 1 << 14;
 
-        /// Whether we have author-specified font-size or margin, for <h1> purposes.
-        const HAS_AUTHOR_SPECIFIED_MARGIN_AND_FONT_SIZE = 1 << 15;
-
         /// Whether there are author-specified rules for `font-family`.
         const HAS_AUTHOR_SPECIFIED_FONT_FAMILY = 1 << 16;
 
@@ -135,6 +132,15 @@ bitflags! {
 
         /// Whether this style considered a scope style rule.
         const CONSIDERED_NONTRIVIAL_SCOPED_STYLE = 1 << 26;
+
+        /// Whether this style is that of a `display: contents` element that is either a direct
+        /// child of an item container or another `display: contents` element, the style of which
+        /// has this flag set, marked in order to cascade beyond them to the descendants of the
+        /// the item container that do generate a box.
+        const DISPLAY_CONTENTS_IN_ITEM_CONTAINER = 1 << 27;
+
+        /// Whether there are author-specific rules for `text-shadow`.
+        const HAS_AUTHOR_SPECIFIED_TEXT_SHADOW = 1 << 28;
     }
 }
 
@@ -149,26 +155,27 @@ impl ComputedValueFlags {
     /// Flags that are unconditionally propagated to descendants.
     #[inline]
     fn inherited_flags() -> Self {
-        Self::IS_RELEVANT_LINK_VISITED |
-            Self::CAN_BE_FRAGMENTED |
-            Self::IS_IN_FIRST_LINE_SUBTREE |
-            Self::HAS_TEXT_DECORATION_LINES |
-            Self::IS_IN_OPACITY_ZERO_SUBTREE |
-            Self::SELF_OR_ANCESTOR_HAS_CONTAIN_STYLE |
-            Self::SELF_OR_ANCESTOR_HAS_SIZE_CONTAINER_TYPE
+        Self::IS_RELEVANT_LINK_VISITED
+            | Self::CAN_BE_FRAGMENTED
+            | Self::IS_IN_FIRST_LINE_SUBTREE
+            | Self::HAS_TEXT_DECORATION_LINES
+            | Self::IS_IN_OPACITY_ZERO_SUBTREE
+            | Self::SELF_OR_ANCESTOR_HAS_CONTAIN_STYLE
+            | Self::SELF_OR_ANCESTOR_HAS_SIZE_CONTAINER_TYPE
     }
 
     /// Flags that may be propagated to descendants.
     #[inline]
     fn maybe_inherited_flags() -> Self {
-        Self::inherited_flags() | Self::SHOULD_SUPPRESS_LINEBREAK
+        Self::inherited_flags()
+            | Self::SHOULD_SUPPRESS_LINEBREAK
+            | Self::DISPLAY_CONTENTS_IN_ITEM_CONTAINER
     }
 
     /// Flags that are an input to the cascade.
     #[inline]
     fn cascade_input_flags() -> Self {
-        Self::USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES |
-        Self::CONSIDERED_NONTRIVIAL_SCOPED_STYLE
+        Self::USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES | Self::CONSIDERED_NONTRIVIAL_SCOPED_STYLE
     }
 
     /// Returns the flags that are always propagated to descendants.

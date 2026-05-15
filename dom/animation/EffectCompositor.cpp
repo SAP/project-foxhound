@@ -6,9 +6,6 @@
 
 #include "EffectCompositor.h"
 
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/AnimationComparator.h"
 #include "mozilla/AnimationPerformanceWarning.h"
 #include "mozilla/AnimationTarget.h"
@@ -20,15 +17,18 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/RestyleManager.h"
+#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/ServoBindings.h"  // Servo_GetProperties_Overriding_Animation
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StyleAnimationValue.h"
-#include "mozilla/SVGObserverUtils.h"
-#include "nsComputedDOMStyle.h"
-#include "nsContentUtils.h"
+#include "mozilla/dom/Animation.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/KeyframeEffect.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsCSSProps.h"
+#include "nsComputedDOMStyle.h"
+#include "nsContentUtils.h"
 #include "nsDisplayItemTypes.h"
 #include "nsLayoutUtils.h"
 #include "nsTArray.h"
@@ -564,9 +564,10 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
 
   Element* element = content->AsElement();
   switch (request.mType) {
-    case PseudoStyleType::before:
-    case PseudoStyleType::after:
-    case PseudoStyleType::marker: {
+    case PseudoStyleType::Before:
+    case PseudoStyleType::After:
+    case PseudoStyleType::Marker:
+    case PseudoStyleType::Backdrop: {
       nsIContent* parent = element->GetParent();
       if (!parent || !parent->IsElement()) {
         return result;
@@ -574,11 +575,11 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
       element = parent->AsElement();
       break;
     }
-    case PseudoStyleType::viewTransition:
-    case PseudoStyleType::viewTransitionGroup:
-    case PseudoStyleType::viewTransitionImagePair:
-    case PseudoStyleType::viewTransitionOld:
-    case PseudoStyleType::viewTransitionNew: {
+    case PseudoStyleType::ViewTransition:
+    case PseudoStyleType::ViewTransitionGroup:
+    case PseudoStyleType::ViewTransitionImagePair:
+    case PseudoStyleType::ViewTransitionOld:
+    case PseudoStyleType::ViewTransitionNew: {
       request.mIdentifier =
           element->HasName()
               ? element->GetParsedAttr(nsGkAtoms::name)->GetAtomValue()
@@ -611,7 +612,8 @@ nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
 
   static constexpr size_t compositorAnimatableCount =
       nsCSSPropertyIDSet::CompositorAnimatableCount();
-  AutoTArray<nsCSSPropertyID, compositorAnimatableCount> propertiesToTrack;
+  AutoTArray<NonCustomCSSPropertyId, compositorAnimatableCount>
+      propertiesToTrack;
   {
     nsCSSPropertyIDSet propertiesToTrackAsSet;
     for (KeyframeEffect* effect : aEffectSet) {
@@ -621,11 +623,11 @@ nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
           continue;
         }
 
-        if (nsCSSProps::PropHasFlags(property.mProperty.mID,
+        if (nsCSSProps::PropHasFlags(property.mProperty.mId,
                                      CSSPropFlags::CanAnimateOnCompositor) &&
-            !propertiesToTrackAsSet.HasProperty(property.mProperty.mID)) {
-          propertiesToTrackAsSet.AddProperty(property.mProperty.mID);
-          propertiesToTrack.AppendElement(property.mProperty.mID);
+            !propertiesToTrackAsSet.HasProperty(property.mProperty.mId)) {
+          propertiesToTrackAsSet.AddProperty(property.mProperty.mId);
+          propertiesToTrack.AppendElement(property.mProperty.mId);
         }
       }
       // Skip iterating over the rest of the effects if we've already
@@ -698,7 +700,7 @@ void EffectCompositor::UpdateCascadeResults(
       // properties.
       // TODO: Bug 1869475. Support custom properties for compositor animations.
       if (overriddenProperties.HasProperty(prop.mProperty)) {
-        propertiesWithImportantRules.AddProperty(prop.mProperty.mID);
+        propertiesWithImportantRules.AddProperty(prop.mProperty.mId);
       }
 
       switch (cascadeLevel) {
@@ -789,6 +791,7 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
   // element in mElementsToRestyle is the parent of the pseudo.
   if (aRoot && (aRoot->IsGeneratedContentContainerForBefore() ||
                 aRoot->IsGeneratedContentContainerForAfter() ||
+                aRoot->IsGeneratedContentContainerForBackdrop() ||
                 aRoot->IsGeneratedContentContainerForMarker())) {
     aRoot = aRoot->GetParentElement();
   }
@@ -923,7 +926,7 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
 
 void EffectCompositor::NoteElementForReducing(
     const NonOwningAnimationTarget& aTarget) {
-  Unused << mElementsToReduce.put(
+  (void)mElementsToReduce.put(
       OwningAnimationTarget{aTarget.mElement, aTarget.mPseudoRequest});
 }
 

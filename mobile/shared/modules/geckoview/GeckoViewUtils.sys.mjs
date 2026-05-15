@@ -461,6 +461,7 @@ export var GeckoViewUtils = {
 
   /**
    * Checks whether we support managing permissions for a specific scheme.
+   *
    * @param {string} scheme - Scheme to test.
    * @returns {boolean} Whether the scheme is supported.
    */

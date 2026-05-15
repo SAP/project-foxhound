@@ -1,29 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Title of the crash reporter dialog. %1$s will be replaced with the name of the app (e.g. Firefox Focus). -->
   <string name="mozac_lib_crash_dialog_title">متأسفیم؛ %1$s مشکلی داشته و فروپاشیده است.</string>
   <!-- Label of the checkbox for sending crash reports in the crash reporter dialog. %1$s is the name of the organization (for example "Mozilla"). -->
-  <string name="mozac_lib_crash_dialog_checkbox">ارسال گزارش فروپاشی‌ها به %1$s</string>
+  <string name="mozac_lib_crash_dialog_checkbox">ارسال گزارش ازکارافتادگی‌ها به %1$s</string>
   <!-- Label of the button closing the crash reporter dialog. -->
   <string name="mozac_lib_crash_dialog_button_close">بستن</string>
   <!-- Label of the button closing the crash reporter dialog and restarting the app. %1$s is the name of the app (for example "Firefox"). -->
   <string name="mozac_lib_crash_dialog_button_restart">شروع دوبارهٔ %1$s</string>
   <!-- Name of the "notification channel" used for displaying a notification when the app crashed and we can't show a prompt. See https://developer.android.com/training/notify-user/channels -->
-  <string name="mozac_lib_crash_channel">فروپاشی‌ها</string>
+  <string name="mozac_lib_crash_channel">ازکارافتادگی‌ها</string>
   <!-- Title of the crash reporter notification for background process crashes. %1$s is the name of the app (for example "Firefox"). -->
   <string name="mozac_lib_crash_background_process_notification_title">متأسفیم؛ مشکلی در %1$s رخ داد.</string>
   <!-- Label of a notification action/button that will send the crash report to Mozilla. -->
   <string name="mozac_lib_crash_notification_action_report">گزارش</string>
   <!-- Label of notification showing that the crash report service is running. %1$s is the name of the organization (for example "Mozilla"). -->
-  <string name="mozac_lib_send_crash_report_in_progress">در حال ارسال گزارش فروپاشی به %1$s</string>
+  <string name="mozac_lib_send_crash_report_in_progress">در حال ارسال گزارش ازکارافتادگی به %1$s</string>
   <!-- Label of notification showing that the crash handling service is gathering the crash data. -->
-  <string name="mozac_lib_gathering_crash_data_in_progress">جمع‌آوری داده‌های فروپاشی</string>
+  <string name="mozac_lib_gathering_crash_data_in_progress">جمع‌آوری داده‌های ازکارافتادگی</string>
   <!-- Label of notification showing that the telemetry service is gathering the crash data. -->
-  <string name="mozac_lib_gathering_crash_telemetry_in_progress">جمع‌آوری داده‌های دورسنجی فروپاشی</string>
+  <string name="mozac_lib_gathering_crash_telemetry_in_progress">جمع‌آوری داده‌های دورسنجی ازکارافتادگی</string>
   <!-- Title of the activity that shows the list of past crashes (similar to about:crashes) -->
-  <string name="mozac_lib_crash_activity_title">گزارش‌های فروپاشی</string>
+  <string name="mozac_lib_crash_activity_title">گزارش‌های ازکارافتادگی</string>
   <!-- Text shown instead of crash list if no crashes have been submitted yet -->
-  <string name="mozac_lib_crash_no_crashes">هیچ گزارش فروپاشی‌ای ارسال نشده است.</string>
+  <string name="mozac_lib_crash_no_crashes">هیچ گزارش ازکارافتادگی‌ای ارسال نشده است.</string>
   <!-- Text link that will show an app chooser to share a crash report with a third-party app (e.g. gmail) -->
   <string name="mozac_lib_crash_share">هم‌رسانی</string>
+  <!-- String for Ask before sending crash reports radio button in Data Collection Screen -->
+  <string name="crash_reporting_ask">قبل از ارسال بپرس</string>
+  <!-- String for Send crash reports automatically radio button in Data Collection Screen -->
+  <string name="crash_reporting_auto">به‌صورت خودکار ارسال کن</string>
+  <!-- String for Never sending crash reports radio button in Data Collection Screen -->
+  <string name="crash_reporting_never">هرگز ارسال نکن</string>
 </resources>

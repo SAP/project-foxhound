@@ -39,6 +39,7 @@ async function performTest() {
   testParseColorVariable(doc, parser);
   testParseFontFamily(doc, parser);
   testParseLightDark(doc, parser);
+  testParseAttr(doc, parser);
 
   host.destroy();
 }
@@ -246,7 +247,7 @@ function testParseCssProperty(doc, parser) {
 
     makeColorTest(
       "background-image",
-      "linear-gradient(to top, color-mix(in srgb, #008000, rgba(255, 255, 0, 0.9)), blue)",
+      "linear-gradient(to top, color-mix(in srgb, #008000, rgba(255, 255, 0, 0.9)), blue, contrast-color(#abc))",
       [
         "linear-gradient(to top, ",
         "color-mix(in srgb, ",
@@ -255,6 +256,10 @@ function testParseCssProperty(doc, parser) {
         { name: "rgba(255, 255, 0, 0.9)", colorFunction: "color-mix" },
         "), ",
         { name: "blue", colorFunction: "linear-gradient" },
+        ", ",
+        "contrast-color(",
+        { name: "#abc", colorFunction: "contrast-color" },
+        ")",
         ")",
       ]
     ),
@@ -354,6 +359,26 @@ function testParseCssProperty(doc, parser) {
         colorSwatchReadOnly: true,
       },
     },
+
+    makeColorTest("color", "contrast-color(red)", [
+      "contrast-color(",
+      { name: "red", colorFunction: "contrast-color" },
+      ")",
+    ]),
+
+    makeColorTest(
+      "color",
+      "color-mix(in srgb, red, contrast-color(hsl(0 100 200)))",
+      [
+        "color-mix(in srgb, ",
+        { name: "red", colorFunction: "color-mix" },
+        ", ",
+        "contrast-color(",
+        { name: "hsl(0 100 200)", colorFunction: "contrast-color" },
+        ")",
+        ")",
+      ]
+    ),
   ];
 
   const target = doc.querySelector("div");
@@ -662,6 +687,10 @@ function testParseShape(doc, parser) {
   }
 }
 
+function getJumpToVariableButton(varName) {
+  return `<button class="ruleview-variable-link jump-definition" data-variable-name="${varName}" title="Jump to variable definition"></button>`;
+}
+
 function testParseVariable(doc, parser) {
   const TESTS = [
     {
@@ -671,7 +700,7 @@ function testParseVariable(doc, parser) {
         // prettier-ignore
         '<span data-color="chartreuse">' +
           "<span>var(" +
-            '<span data-variable="chartreuse">--seen</span>)' +
+            `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>)` +
           "</span>" +
         "</span>",
     },
@@ -683,7 +712,7 @@ function testParseVariable(doc, parser) {
       expected:
         // prettier-ignore
         "<span>var(" +
-          '<span data-variable="var(--base)" data-variable-computed="1em">--seen</span>)' +
+          `<span data-variable="var(--base)" data-variable-computed="1em">--seen${getJumpToVariableButton("--seen")}</span>)` +
         "</span>",
     },
     {
@@ -702,7 +731,7 @@ function testParseVariable(doc, parser) {
         // prettier-ignore
         '<span data-color="chartreuse">' +
           "<span>var(" +
-            '<span data-variable="chartreuse">--seen</span>,' +
+            `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>,` +
             '<span class="unmatched-class"> ' +
               '<span data-color="seagreen">' +
                 "<span>seagreen</span>" +
@@ -721,7 +750,7 @@ function testParseVariable(doc, parser) {
           "<span> " +
             '<span data-color="chartreuse">' +
               "<span>var(" +
-                '<span data-variable="chartreuse">--seen</span>)' +
+                `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>)` +
               "</span>" +
             "</span>" +
           "</span>)" +
@@ -736,7 +765,7 @@ function testParseVariable(doc, parser) {
         `<span data-color="yellow" class="color-swatch-container">` +
           `<span class="test-class" style="background-color:yellow" tabindex="0" role="button" data-color-function="color-mix">` +
           `</span>` +
-          `<span>var(<span data-variable="yellow">--x</span>)</span>` +
+          `<span>var(<span data-variable="yellow">--x${getJumpToVariableButton("--x")}</span>)</span>` +
         `</span>` +
         `, ` +
         `<span data-color="purple" class="color-swatch-container">` +
@@ -758,13 +787,13 @@ function testParseVariable(doc, parser) {
         `<span data-color="yellow" class="color-swatch-container">` +
           `<span class="test-class" style="background-color:yellow" tabindex="0" role="button" data-color-function="light-dark">` +
           `</span>` +
-          `<span>var(<span data-variable="yellow">--light</span>)</span>` +
+          `<span>var(<span data-variable="yellow">--light${getJumpToVariableButton("--light")}</span>)</span>` +
         `</span>` +
         `, ` +
         `<span data-color="gold" class="color-swatch-container">` +
           `<span class="test-class" style="background-color:gold" tabindex="0" role="button" data-color-function="light-dark">` +
           `</span>` +
-          `<span>var(<span data-variable="gold">--dark</span>)</span>` +
+          `<span>var(<span data-variable="gold">--dark${getJumpToVariableButton("--dark")}</span>)</span>` +
         `</span>` +
         `)`,
       parserExtraOptions: {
@@ -781,7 +810,7 @@ function testParseVariable(doc, parser) {
         '1px solid ' +
         '<span data-color="chartreuse">' +
           "<span>var(" +
-            '<span data-variable="chartreuse">--seen</span>,' +
+            `<span data-variable="chartreuse">--seen${getJumpToVariableButton("--seen")}</span>,` +
             '<span class="unmatched-class"> ' +
               '<span data-color="seagreen">' +
                 "<span>seagreen</span>" +
@@ -815,10 +844,10 @@ function testParseVariable(doc, parser) {
         '<span data-color="rgba(255, 0, 0, 0.5)">' +
           "<span>rgba("+
             "<span>" +
-              'var(<span data-variable="255">--r</span>)' +
+              `var(<span data-variable="255">--r${getJumpToVariableButton("--r")}</span>)` +
             "</span>, 0, 0, " +
             "<span>" +
-              'var(<span data-variable="0.5">--a</span>)' +
+              `var(<span data-variable="0.5">--a${getJumpToVariableButton("--a")}</span>)` +
             "</span>" +
           ")</span>" +
         "</span>",
@@ -832,11 +861,11 @@ function testParseVariable(doc, parser) {
           "<span>rgba("+
             "from " +
             "<span>" +
-              'var(<span data-variable="red">--base</span>)' +
+              `var(<span data-variable="red">--base${getJumpToVariableButton("--base")}</span>)` +
             "</span> r g 0 / " +
             "calc(" +
             "<span>" +
-              'var(<span data-variable="0.8">--a</span>)' +
+              `var(<span data-variable="0.8">--a${getJumpToVariableButton("--a")}</span>)` +
             "</span>" +
             " * 0.5)" +
           ")</span>" +
@@ -893,7 +922,7 @@ function testParseVariable(doc, parser) {
               'data-registered-property-initial-value="hotpink" ' +
               'data-registered-property-syntax="&lt;color&gt;" ' +
               'data-registered-property-inherits="true"' +
-            '>--registered</span>)' +
+            `>--registered${getJumpToVariableButton("--registered")}</span>)` +
           "</span>" +
         "</span>",
     },
@@ -916,7 +945,7 @@ function testParseVariable(doc, parser) {
               'data-variable="chartreuse" ' +
               'data-registered-property-syntax="*" ' +
               'data-registered-property-inherits="false"' +
-            '>--registered-universal</span>)' +
+            `>--registered-universal${getJumpToVariableButton("--registered-universal")}</span>)` +
           "</span>" +
         "</span>",
     },
@@ -928,8 +957,7 @@ function testParseVariable(doc, parser) {
       parserExtraOptions: {
         isDarkColorScheme: false,
       },
-      expected:
-        '<span>var(<span data-variable="light-dark(red, blue)">--x</span>)</span>',
+      expected: `<span>var(<span data-variable="light-dark(red, blue)">--x${getJumpToVariableButton("--x")}</span>)</span>`,
     },
     {
       text: "var(--x)",
@@ -943,7 +971,23 @@ function testParseVariable(doc, parser) {
         // prettier-ignore
         '<span data-color="color-mix(in srgb, red 50%, blue)">' +
           '<span>var(' +
-            '<span data-variable="color-mix(in srgb, red 50%, blue)">--x</span>' +
+            `<span data-variable="color-mix(in srgb, red 50%, blue)">--x${getJumpToVariableButton("--x")}</span>` +
+          ')</span>' +
+        '</span>',
+    },
+    {
+      text: "var(--x)",
+      variables: {
+        "--x": "contrast-color(blue)",
+      },
+      parserExtraOptions: {
+        isDarkColorScheme: false,
+      },
+      expected:
+        // prettier-ignore
+        '<span data-color="contrast-color(blue)">' +
+          '<span>var(' +
+            `<span data-variable="contrast-color(blue)">--x${getJumpToVariableButton("--x")}</span>` +
           ')</span>' +
         '</span>',
     },
@@ -955,7 +999,7 @@ function testParseVariable(doc, parser) {
       expected:
         // prettier-ignore
         "<span>var(" +
-          '<span data-variable="var(--empty)" data-variable-computed="">--refers-empty</span>)' +
+          `<span data-variable="var(--empty)" data-variable-computed="">--refers-empty${getJumpToVariableButton("--refers-empty")}</span>)` +
         "</span>",
     },
     {
@@ -970,7 +1014,7 @@ function testParseVariable(doc, parser) {
             `hsl(50, 70%, ` +
             `<span>` +
               `var(` +
-                `<span data-variable="40%">--foo</span>` +
+                `<span data-variable="40%">--foo${getJumpToVariableButton("--foo")}</span>` +
               `)` +
             `</span>)` +
           `</span>` +
@@ -987,7 +1031,7 @@ function testParseVariable(doc, parser) {
         `<span data-color="hsl(50, 70%, 40%)">` +
           `<span>` +
             `var(` +
-              `<span data-variable="hsl(50, 70%, var(--foo))" data-variable-computed="hsl(50, 70%, 40%)">--bar</span>` +
+              `<span data-variable="hsl(50, 70%, var(--foo))" data-variable-computed="hsl(50, 70%, 40%)">--bar${getJumpToVariableButton("--bar")}</span>` +
             `)` +
           `</span>` +
         `</span>`,
@@ -1005,7 +1049,7 @@ function testParseVariable(doc, parser) {
         `<span data-color="hsl(10, 100%, 50%)">` +
           `<span>` +
             `var(` +
-              `<span data-variable="hsl(10, 100%, var(--fur))" data-variable-computed="hsl(10, 100%, 50%)">--primary</span>` +
+              `<span data-variable="hsl(10, 100%, var(--fur))" data-variable-computed="hsl(10, 100%, 50%)">--primary${getJumpToVariableButton("--primary")}</span>` +
             `)` +
           `</span>` +
         `</span>`,
@@ -1024,17 +1068,28 @@ function testParseVariable(doc, parser) {
           `<span>oklch(` +
             `<span>` +
               `var(` +
-                `<span data-variable="var(--baz)" data-variable-computed="10">--fur</span>` +
+                `<span data-variable="var(--baz)" data-variable-computed="10">--fur${getJumpToVariableButton("--fur")}</span>` +
               `)` +
             `</span>` +
             ` 20 ` +
             `<span>` +
               `var(` +
-                `<span data-variable="30">--boo</span>` +
+                `<span data-variable="30">--boo${getJumpToVariableButton("--boo")}</span>` +
               `)` +
             `</span>` +
           `)</span>` +
         `</span>`,
+    },
+    {
+      text: "var(--x)",
+      variables: {
+        "--x": "10px",
+      },
+      parserExtraOptions: {
+        showJumpToVariableButton: false,
+      },
+      // This shouldn't have a Jump to variable button
+      expected: `<span>var(<span data-variable="10px">--x</span>)</span>`,
     },
   ];
 
@@ -1453,13 +1508,13 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>var(` +
-              `<span data-variable="red">--x</span>` +
+              `<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>` +
             `)</span>` +
           `</span>, ` +
           `<span data-color="blue" class="color-swatch-container unmatched-class">` +
             `<span class="test-class" style="background-color:blue" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>var(` +
-              `<span data-variable="blue">--y</span>` +
+              `<span data-variable="blue">--y${getJumpToVariableButton("--y")}</span>` +
             `)</span>` +
           `</span>` +
         `)`,
@@ -1480,7 +1535,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>,` +
           `<span class="unmatched-class">notacolor</span>` +
@@ -1503,7 +1558,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>` +
         `)`,
@@ -1522,7 +1577,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>  ,  ` +
           `<span class="unmatched-class">notacolor</span>  ` +
@@ -1543,7 +1598,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>  ` +
         `)`,
@@ -1561,7 +1616,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>` +
         `)`,
@@ -1579,7 +1634,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>` +
         `)`,
@@ -1597,7 +1652,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>,a,b` +
         `)`,
@@ -1615,7 +1670,7 @@ function testParseLightDark(doc, parser) {
           `<span data-color="red" class="color-swatch-container">` +
             `<span class="test-class" style="background-color:red" tabindex="0" role="button" data-color-function="light-dark"></span>` +
             `<span>` +
-              `var(<span data-variable="red">--x</span>)` +
+              `var(<span data-variable="red">--x${getJumpToVariableButton("--x")}</span>)` +
             `</span>` +
           `</span>,a,b` +
         `)`,
@@ -1639,6 +1694,62 @@ function testParseLightDark(doc, parser) {
         },
       }
     );
+
+    const target = doc.querySelector("div");
+    target.appendChild(frag);
+
+    is(target.innerHTML, test.expected, test.message);
+    target.innerHTML = "";
+  }
+}
+
+function testParseAttr(doc, parser) {
+  const TESTS = [
+    {
+      message:
+        "Not passing getAttributeValue doesn't add unmatched classes to attribute name",
+      propertyValue: "attr(unknown)",
+      attributes: {},
+      getAttributeValue: null,
+      expected: `attr(unknown)`,
+    },
+    {
+      message:
+        "Passing known attribute doesn't add unmatched classes to attribute name",
+      propertyValue: "attr(data-x)",
+      attributes: { "data-x": "" },
+      expected: `attr(<span class="inspector-attribute" data-attribute="&quot;&quot;">data-x</span>)`,
+    },
+    {
+      message:
+        "Passing unknown attribute adds unmatched classes to attribute name",
+      propertyValue: "attr(data-x)",
+      attributes: {},
+      expected: `attr(<span class="inspector-attribute unmatched-class" data-attribute="Attribute data-x is not set">data-x</span>)`,
+    },
+    {
+      message:
+        "Passing unknown attribute adds unmatched classes to attribute name, not to fallback",
+      propertyValue: `attr(data-x, "fallback")`,
+      attributes: {},
+      expected: `attr(<span class="inspector-attribute unmatched-class" data-attribute="Attribute data-x is not set">data-x</span>, <span class="inspector-attr-fallback">"fallback"</span>)`,
+    },
+    {
+      message: "Passing known attribute adds unmatched classes to fallback",
+      propertyValue: `attr(data-x, "fallback")`,
+      attributes: { "data-x": "" },
+      expected: `attr(<span class="inspector-attribute" data-attribute="&quot;&quot;">data-x</span>, <span class="inspector-attr-fallback unmatched-class">"fallback"</span>)`,
+    },
+  ];
+
+  for (const test of TESTS) {
+    const frag = parser.parseCssProperty("content", test.propertyValue, {
+      unmatchedClass: "unmatched-class",
+      getAttributeValue:
+        "getAttributeValue" in test
+          ? test.getAttributeValue
+          : attrName => test.attributes[attrName] ?? null,
+    });
 
     const target = doc.querySelector("div");
     target.appendChild(frag);

@@ -2,16 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import six
-
-# pylint --py3k: W1648
-if six.PY2:
-    from ConfigParser import ConfigParser
-else:
-    from configparser import ConfigParser
-
 import json
 import os
+from configparser import ConfigParser
 
 from mozharness.base.errors import HgErrorList
 from mozharness.base.log import FATAL, INFO

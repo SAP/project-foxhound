@@ -8,9 +8,10 @@
 #define mozilla_dom_XULBroadcastManager_h
 
 #include "nsAtom.h"
+#include "nsIWeakReferenceUtils.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 
-class PLDHashTable;
 class nsXULElement;
 
 namespace mozilla {
@@ -70,10 +71,15 @@ class XULBroadcastManager final {
   // DropDocumentReference().
   Document* MOZ_NON_OWNING_REF mDocument;
 
+  struct BroadcastListener {
+    nsWeakPtr mListener;
+    RefPtr<nsAtom> mAttribute;
+  };
+
   /**
    * A map from a broadcaster element to a list of listener elements.
    */
-  PLDHashTable* mBroadcasterMap;
+  nsTHashMap<Element*, nsTArray<BroadcastListener>> mBroadcasterMap;
 
   class nsDelayedBroadcastUpdate;
   nsTArray<nsDelayedBroadcastUpdate> mDelayedBroadcasters;

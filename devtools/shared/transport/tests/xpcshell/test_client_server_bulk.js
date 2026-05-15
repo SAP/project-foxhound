@@ -31,7 +31,7 @@ add_task(async function () {
   DevToolsServer.destroy();
 });
 
-/** * Sample Bulk Actor ***/
+/*** Sample Bulk Actor ***/
 const protocol = require("resource://devtools/shared/protocol.js");
 const { Arg, RetVal } = protocol;
 const { Actor } = require("resource://devtools/shared/protocol/Actor.js");
@@ -144,7 +144,7 @@ function add_test_bulk_actor() {
   );
 }
 
-/** * Reply Handlers ***/
+/*** Reply Handlers ***/
 
 var replyHandlers = {
   async json(reply) {
@@ -168,7 +168,7 @@ var replyHandlers = {
   },
 };
 
-/** * Tests ***/
+/*** Tests ***/
 
 var test_bulk_request_cs = async function (
   transportFactory,
@@ -270,7 +270,7 @@ var test_json_request_cs = async function (
   return serverDeferred;
 };
 
-/** * Test Utils ***/
+/*** Test Utils ***/
 
 function verify_files() {
   const reallyLong = really_long();

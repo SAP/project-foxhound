@@ -110,11 +110,15 @@ function setUpWaitForUiaPropEvent(propName, id) {
 }
 
 /**
- * Wait for the event requested in setUpWaitForUia*Event.
+ * Wait for the event requested in setUpWaitForUia*Event. The data for the
+ * matching event will be placed in a Python global named `event`. We do this
+ * rather than just returning the data because some event data can't be
+ * serialized to JSON.
  */
 function waitForUiaEvent() {
   return runPython(`
-    onEvent.wait()
+    global event
+    event = onEvent.wait()
   `);
 }
 

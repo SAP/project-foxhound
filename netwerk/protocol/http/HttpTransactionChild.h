@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef HttpTransactionChild_h__
-#define HttpTransactionChild_h__
+#ifndef HttpTransactionChild_h_
+#define HttpTransactionChild_h_
 
 #include "mozilla/Atomics.h"
 #include "mozilla/net/NeckoChannelParams.h"
@@ -127,4 +127,4 @@ inline nsISupports* ToSupports(mozilla::net::HttpTransactionChild* p) {
   return static_cast<nsIStreamListener*>(p);
 }
 
-#endif  // nsHttpTransactionChild_h__
+#endif  // nsHttpTransactionChild_h_

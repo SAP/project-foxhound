@@ -251,19 +251,19 @@ exports.evalWithDebugger = evalWithDebugger;
  * This focuses on calling Debugger.Frame or Debugger.Object eval methods.
  *
  * @param {Debugger} dbg
- * @param {String} string
+ * @param {string} string
  *        The string to evaluate.
- * @param {Object} evalOptions
+ * @param {object} evalOptions
  *        Spidermonkey options to pass to eval methods.
- * @param {Object} bindings
+ * @param {object} bindings
  *        Dictionary object with symbols to override in the evaluation.
  * @param {Debugger.Frame} frame
  *        If paused, the paused frame.
  * @param {Debugger.Object} dbgGlobal
  *        The target's global.
- * @param {Boolean} eager
+ * @param {boolean} eager
  *        Is this an eager evaluation?
- * @return {Object}
+ * @return {object}
  *        The evaluation result object.
  *        See `Debugger.Ojbect.executeInGlobalWithBindings` definition.
  */
@@ -342,7 +342,7 @@ function getEvalResult(
  * to undefined, making it possible for them to be redeclared.
  *
  * @param {DebuggerObject} dbgGlobal
- * @param {String} string: The expression that was evaluated and threw
+ * @param {string} string: The expression that was evaluated and threw
  * @returns
  */
 function forceLexicalInitForVariableDeclarationsInThrowingExpression(
@@ -451,12 +451,21 @@ function makeSideeffectFreeDebugger(targetActorDbg) {
   // made via this debugger will be ignored by all debuggers except this one.
   dbg.exclusiveDebuggerOnEval = true;
 
-  // We need to register all target actor's globals.
-  // In most cases, this will be only one global, except for the browser toolbox,
-  // where process target actors may interact with many.
-  // On the browser toolbox, we may have many debuggees and this is important to register
-  // them in order to detect native call made from/to these others globals.
-  for (const global of targetActorDbg.findDebuggees()) {
+  // We need to register all JS globals that the evaluation may use.
+  // By default WindowGlobalTarget (with "EFT" mode enabled by default) is specific to
+  // only one JS global, related to the WindowGlobal it relates to.
+  // But there is two edgecases:
+  //  - the browser toolbox WindowGlobalTarget still have EFT turned off and each target
+  //    may involve many WindowGlobal and so many JS globals.
+  //  - if the current target's document has some iframes (or is an iframe) running in the
+  //    same process, the evaluation may use `globalThis.contentWindow` or
+  //   `iframeElement.(top|parent)` and so involve any of these same-process JS globals.
+  //
+  // While we don't have to do this for regular evaluations, it is important for
+  // side-effect-free one as onNativeCall is only called for these registered globals.
+  // If we miss one, we would prevent detecting side-effect calls in the missed global.
+  const globals = targetActorDbg.findDebuggees(true);
+  for (const global of globals) {
     try {
       dbg.addDebuggee(global);
     } catch (e) {

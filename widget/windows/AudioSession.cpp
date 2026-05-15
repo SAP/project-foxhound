@@ -23,12 +23,10 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/mscom/AgileReference.h"
 #include "mozilla/Logging.h"
 #include "mozilla/mscom/Utils.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/WindowsVersion.h"
 
 #ifdef MOZ_BACKGROUNDTASKS
 #  include "mozilla/BackgroundTasks.h"

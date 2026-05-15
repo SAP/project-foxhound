@@ -70,7 +70,7 @@ function getOuterWindowID(aWindow) {
 }
 
 function test() {
-  /** Test for Bug 615394 - Session Restore should notify when it is beginning and ending a restore **/
+  /** Test for Bug 615394 - Session Restore should notify when it is beginning and ending a restore */
   waitForExplicitFinish();
 
   // We'll track events per window so we are sure that they are each happening once

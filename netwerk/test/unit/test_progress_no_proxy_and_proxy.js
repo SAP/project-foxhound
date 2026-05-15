@@ -3,6 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+const {
+  NodeHTTPServer,
+  NodeHTTPSServer,
+  NodeHTTP2Server,
+  NodeHTTPProxyServer,
+  NodeHTTPSProxyServer,
+  NodeHTTP2ProxyServer,
+  with_node_servers,
+} = ChromeUtils.importESModule("resource://testing-common/NodeServer.sys.mjs");
+
 // We don't normally allow localhost channels to be proxied, but this
 // is easier than updating all the certs and/or domains.
 Services.prefs.setBoolPref("network.proxy.allow_hijacking_localhost", true);

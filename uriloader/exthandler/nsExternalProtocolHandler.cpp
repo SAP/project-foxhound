@@ -232,7 +232,7 @@ NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener* aListener) {
   NS_ENSURE_TRUE(!mWasOpened, NS_ERROR_ALREADY_OPENED);
 
   mWasOpened = true;
-  mListener = listener;
+  mListener = std::move(listener);
 
   return OpenURL();
 }

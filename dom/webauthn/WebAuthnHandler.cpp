@@ -4,25 +4,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "hasht.h"
-#include "nsHTMLDocument.h"
-#include "nsIURIMutator.h"
-#include "nsThreadUtils.h"
+#include "mozilla/dom/WebAuthnHandler.h"
+
 #include "WebAuthnCoseIdentifiers.h"
 #include "WebAuthnEnumStrings.h"
 #include "WebAuthnTransportIdentifiers.h"
+#include "hasht.h"
 #include "mozilla/Base64.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/BounceTrackingProtection.h"
-#include "mozilla/glean/DomWebauthnMetrics.h"
 #include "mozilla/dom/AuthenticatorAssertionResponse.h"
 #include "mozilla/dom/AuthenticatorAttestationResponse.h"
-#include "mozilla/dom/PublicKeyCredential.h"
 #include "mozilla/dom/PWebAuthnTransaction.h"
-#include "mozilla/dom/WebAuthnHandler.h"
+#include "mozilla/dom/PublicKeyCredential.h"
+#include "mozilla/dom/WebAuthenticationBinding.h"
 #include "mozilla/dom/WebAuthnTransactionChild.h"
 #include "mozilla/dom/WebAuthnUtil.h"
 #include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/glean/DomWebauthnMetrics.h"
+#include "nsContentUtils.h"
+#include "nsHTMLDocument.h"
+#include "nsIURIMutator.h"
+#include "nsThreadUtils.h"
 
 #ifdef XP_WIN
 #  include "WinWebAuthnService.h"
@@ -114,17 +117,11 @@ void WebAuthnHandler::ActorDestroyed() {
   mActor = nullptr;
 }
 
-already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
-    const PublicKeyCredentialCreationOptions& aOptions,
-    const Optional<OwningNonNull<AbortSignal>>& aSignal, ErrorResult& aError) {
+void WebAuthnHandler::MakeCredential(
+    JSContext* aCx, const PublicKeyCredentialCreationOptions& aOptions,
+    const Optional<OwningNonNull<AbortSignal>>& aSignal,
+    const RefPtr<Promise>& aPromise) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);
-
-  RefPtr<Promise> promise = Promise::Create(global, aError);
-  if (aError.Failed()) {
-    return nullptr;
-  }
 
   if (mTransaction.isSome()) {
     // abort the old transaction and take over control from here.
@@ -132,21 +129,17 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
   }
 
   if (!MaybeCreateActor()) {
-    promise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
+    return;
   }
 
   nsCOMPtr<Document> doc = mWindow->GetDoc();
   if (!IsWebAuthnAllowedInDocument(doc)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
-  if (!IsWebAuthnAllowedForPrincipal(principal)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
-  }
 
   nsCString rpId;
   if (aOptions.mRp.mId.WasPassed()) {
@@ -154,13 +147,13 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
   } else {
     nsresult rv = DefaultRpId(principal, rpId);
     if (NS_FAILED(rv)) {
-      promise->MaybeReject(NS_ERROR_FAILURE);
-      return promise.forget();
+      aPromise->MaybeReject(NS_ERROR_FAILURE);
+      return;
     }
   }
   if (!IsValidRpId(principal, rpId)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   // Enforce 5.4.3 User Account Parameters for Credential Generation
@@ -169,25 +162,19 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
   CryptoBuffer userId;
   userId.Assign(aOptions.mUser.mId);
   if (userId.Length() > 64) {
-    promise->MaybeRejectWithTypeError("user.id is too long");
-    return promise.forget();
+    aPromise->MaybeRejectWithTypeError("user.id is too long");
+    return;
   }
 
   // If timeoutSeconds was specified, check if its value lies within a
   // reasonable range as defined by the platform and if not, correct it to the
   // closest value lying within that range.
-
-  uint32_t adjustedTimeout = 30000;
-  if (aOptions.mTimeout.WasPassed()) {
-    adjustedTimeout = aOptions.mTimeout.Value();
-    adjustedTimeout = std::max(15000u, adjustedTimeout);
-    adjustedTimeout = std::min(120000u, adjustedTimeout);
-  }
+  uint32_t adjustedTimeout = WebAuthnTimeout(aOptions.mTimeout);
 
   // <https://w3c.github.io/webauthn/#sctn-appid-extension>
   if (aOptions.mExtensions.mAppid.WasPassed()) {
-    promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return;
   }
 
   // Process each element of mPubKeyCredParams using the following steps, to
@@ -214,8 +201,8 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
   // If there are algorithms specified, but none are Public_key algorithms,
   // reject the promise.
   if (coseAlgos.IsEmpty() && !aOptions.mPubKeyCredParams.IsEmpty()) {
-    promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return;
   }
 
   // If excludeList is undefined, set it to the empty list.
@@ -230,8 +217,8 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
 
   CryptoBuffer challenge;
   if (!challenge.Assign(aOptions.mChallenge)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   nsTArray<WebAuthnScopedCredential> excludeList;
@@ -286,8 +273,8 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
   if (aOptions.mExtensions.mLargeBlob.WasPassed()) {
     if (aOptions.mExtensions.mLargeBlob.Value().mRead.WasPassed() ||
         aOptions.mExtensions.mLargeBlob.Value().mWrite.WasPassed()) {
-      promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return promise.forget();
+      aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      return;
     }
     Maybe<bool> supportRequired;
     const Optional<nsString>& largeBlobSupport =
@@ -322,8 +309,8 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
     if (evalByCredentialMaybe) {
       // evalByCredential is only allowed in GetAssertion.
       // https://w3c.github.io/webauthn/#prf-extension
-      promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return promise.forget();
+      aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      return;
     }
 
     extensions.AppendElement(
@@ -378,21 +365,23 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
 
   // Abort the request if aborted flag is already set.
   if (aSignal.WasPassed() && aSignal.Value().Aborted()) {
-    AutoJSAPI jsapi;
-    if (!jsapi.Init(global)) {
-      promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
-      return promise.forget();
-    }
-    JSContext* cx = jsapi.cx();
-    JS::Rooted<JS::Value> reason(cx);
-    aSignal.Value().GetReason(cx, &reason);
-    promise->MaybeReject(reason);
-    return promise.forget();
+    JS::Rooted<JS::Value> reason(aCx);
+    aSignal.Value().GetReason(aCx, &reason);
+    aPromise->MaybeReject(reason);
+    return;
   }
 
-  WebAuthnMakeCredentialInfo info(rpId, challenge, adjustedTimeout, excludeList,
-                                  rpInfo, userInfo, coseAlgos, extensions,
-                                  authSelection, attestation);
+  nsString json;
+  nsresult rv = SerializeWebAuthnCreationOptions(
+      aCx, NS_ConvertUTF8toUTF16(rpId), aOptions, json);
+  if (NS_FAILED(rv)) {
+    aPromise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
+    return;
+  }
+
+  WebAuthnMakeCredentialInfo info(
+      rpId, challenge, adjustedTimeout, excludeList, rpInfo, userInfo,
+      coseAlgos, extensions, authSelection, attestation, aOptions.mHints, json);
 
   // Set up the transaction state. Fallible operations should not be performed
   // below this line, as we must not leave the transaction state partially
@@ -407,7 +396,7 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
 
   MOZ_ASSERT(mTransaction.isNothing());
   mTransaction =
-      Some(WebAuthnTransaction(promise, WebAuthnTransactionType::Create));
+      Some(WebAuthnTransaction(aPromise, WebAuthnTransactionType::Create));
   mActor->SendRequestRegister(info)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
@@ -426,24 +415,16 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
             }
           })
       ->Track(mTransaction.ref().mRegisterHolder);
-
-  return promise.forget();
 }
 
 const size_t MAX_ALLOWED_CREDENTIALS = 20;
 
-already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
-    const PublicKeyCredentialRequestOptions& aOptions,
+void WebAuthnHandler::GetAssertion(
+    JSContext* aCx, const PublicKeyCredentialRequestOptions& aOptions,
     const bool aConditionallyMediated,
-    const Optional<OwningNonNull<AbortSignal>>& aSignal, ErrorResult& aError) {
+    const Optional<OwningNonNull<AbortSignal>>& aSignal,
+    const RefPtr<Promise>& aPromise) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);
-
-  RefPtr<Promise> promise = Promise::Create(global, aError);
-  if (aError.Failed()) {
-    return nullptr;
-  }
 
   if (mTransaction.isSome()) {
     // abort the old transaction and take over control from here.
@@ -451,21 +432,17 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
   }
 
   if (!MaybeCreateActor()) {
-    promise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
+    return;
   }
 
   nsCOMPtr<Document> doc = mWindow->GetDoc();
   if (!IsWebAuthnAllowedInDocument(doc)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
-  if (!IsWebAuthnAllowedForPrincipal(principal)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
-  }
 
   nsCString rpId;
   if (aOptions.mRpId.WasPassed()) {
@@ -473,36 +450,30 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
   } else {
     nsresult rv = DefaultRpId(principal, rpId);
     if (NS_FAILED(rv)) {
-      promise->MaybeReject(NS_ERROR_FAILURE);
-      return promise.forget();
+      aPromise->MaybeReject(NS_ERROR_FAILURE);
+      return;
     }
   }
   if (!IsValidRpId(principal, rpId)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   // If timeoutSeconds was specified, check if its value lies within a
   // reasonable range as defined by the platform and if not, correct it to the
   // closest value lying within that range.
-
-  uint32_t adjustedTimeout = 30000;
-  if (aOptions.mTimeout.WasPassed()) {
-    adjustedTimeout = aOptions.mTimeout.Value();
-    adjustedTimeout = std::max(15000u, adjustedTimeout);
-    adjustedTimeout = std::min(120000u, adjustedTimeout);
-  }
+  uint32_t adjustedTimeout = WebAuthnTimeout(aOptions.mTimeout);
 
   // Abort the request if the allowCredentials set is too large
   if (aOptions.mAllowCredentials.Length() > MAX_ALLOWED_CREDENTIALS) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   CryptoBuffer challenge;
   if (!challenge.Assign(aOptions.mChallenge)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+    return;
   }
 
   nsTArray<WebAuthnScopedCredential> allowList;
@@ -520,8 +491,8 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
     }
   }
   if (allowList.Length() == 0 && aOptions.mAllowCredentials.Length() != 0) {
-    promise->MaybeReject(NS_ERROR_DOM_NOT_ALLOWED_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_NOT_ALLOWED_ERR);
+    return;
   }
 
   // If extensions were specified, process any extensions supported by this
@@ -533,14 +504,14 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
 
   // credProps is only supported in MakeCredentials
   if (aOptions.mExtensions.mCredProps.WasPassed()) {
-    promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return;
   }
 
   // minPinLength is only supported in MakeCredentials
   if (aOptions.mExtensions.mMinPinLength.WasPassed()) {
-    promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return;
   }
 
   // <https://w3c.github.io/webauthn/#sctn-appid-extension>
@@ -554,8 +525,8 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
       auto* basePrin = BasePrincipal::Cast(principal);
       nsresult rv = basePrin->GetWebExposedOriginSerialization(appId);
       if (NS_FAILED(rv)) {
-        promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-        return promise.forget();
+        aPromise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
+        return;
       }
     }
 
@@ -570,8 +541,8 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
         (extLargeBlob.mRead.WasPassed() && extLargeBlob.mWrite.WasPassed()) ||
         (extLargeBlob.mWrite.WasPassed() &&
          aOptions.mAllowCredentials.Length() != 1)) {
-      promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-      return promise.forget();
+      aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      return;
     }
     Maybe<bool> read = Nothing();
     if (extLargeBlob.mRead.WasPassed() && extLargeBlob.mRead.Value()) {
@@ -607,8 +578,8 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
     nsTArray<WebAuthnExtensionPrfEvalByCredentialEntry> evalByCredential;
     if (evalByCredentialMaybe) {
       if (allowList.Length() == 0) {
-        promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-        return promise.forget();
+        aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+        return;
       }
 
       for (const auto& entry : prf.mEvalByCredential.Value().Entries()) {
@@ -617,8 +588,8 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
                                       Base64URLDecodePaddingPolicy::Ignore,
                                       evalByCredentialEntryId);
         if (NS_FAILED(rv)) {
-          promise->MaybeReject(NS_ERROR_DOM_SYNTAX_ERR);
-          return promise.forget();
+          aPromise->MaybeReject(NS_ERROR_DOM_SYNTAX_ERR);
+          return;
         }
 
         bool foundMatchingAllowListEntry = false;
@@ -628,8 +599,8 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
           }
         }
         if (!foundMatchingAllowListEntry) {
-          promise->MaybeReject(NS_ERROR_DOM_SYNTAX_ERR);
-          return promise.forget();
+          aPromise->MaybeReject(NS_ERROR_DOM_SYNTAX_ERR);
+          return;
         }
 
         CryptoBuffer first;
@@ -652,21 +623,24 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
 
   // Abort the request if aborted flag is already set.
   if (aSignal.WasPassed() && aSignal.Value().Aborted()) {
-    AutoJSAPI jsapi;
-    if (!jsapi.Init(global)) {
-      promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
-      return promise.forget();
-    }
-    JSContext* cx = jsapi.cx();
-    JS::Rooted<JS::Value> reason(cx);
-    aSignal.Value().GetReason(cx, &reason);
-    promise->MaybeReject(reason);
-    return promise.forget();
+    JS::Rooted<JS::Value> reason(aCx);
+    aSignal.Value().GetReason(aCx, &reason);
+    aPromise->MaybeReject(reason);
+    return;
   }
 
-  WebAuthnGetAssertionInfo info(
-      rpId, maybeAppId, challenge, adjustedTimeout, allowList, extensions,
-      aOptions.mUserVerification, aConditionallyMediated);
+  nsString json;
+  nsresult rv = SerializeWebAuthnRequestOptions(
+      aCx, NS_ConvertUTF8toUTF16(rpId), aOptions, json);
+  if (NS_FAILED(rv)) {
+    aPromise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
+    return;
+  }
+
+  WebAuthnGetAssertionInfo info(rpId, maybeAppId, challenge, adjustedTimeout,
+                                allowList, extensions,
+                                aOptions.mUserVerification,
+                                aConditionallyMediated, aOptions.mHints, json);
 
   // Set up the transaction state. Fallible operations should not be performed
   // below this line, as we must not leave the transaction state partially
@@ -681,7 +655,7 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
 
   MOZ_ASSERT(mTransaction.isNothing());
   mTransaction =
-      Some(WebAuthnTransaction(promise, WebAuthnTransactionType::Get));
+      Some(WebAuthnTransaction(aPromise, WebAuthnTransactionType::Get));
   mActor->SendRequestSign(info)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
@@ -700,54 +674,37 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
             }
           })
       ->Track(mTransaction.ref().mSignHolder);
-
-  return promise.forget();
 }
 
-already_AddRefed<Promise> WebAuthnHandler::Store(const Credential& aCredential,
-                                                 ErrorResult& aError) {
+void WebAuthnHandler::Store(const Credential& aCredential,
+                            const RefPtr<Promise>& aPromise) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);
-
-  RefPtr<Promise> promise = Promise::Create(global, aError);
-  if (aError.Failed()) {
-    return nullptr;
-  }
 
   if (mTransaction.isSome()) {
     // abort the old transaction and take over control from here.
     CancelTransaction(NS_ERROR_DOM_ABORT_ERR);
   }
 
-  promise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-  return promise.forget();
+  aPromise->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
 }
 
-already_AddRefed<Promise> WebAuthnHandler::IsUVPAA(GlobalObject& aGlobal,
-                                                   ErrorResult& aError) {
-  RefPtr<Promise> promise =
-      Promise::Create(xpc::CurrentNativeGlobal(aGlobal.Context()), aError);
-  if (aError.Failed()) {
-    return nullptr;
-  }
-
+void WebAuthnHandler::IsUVPAA(const RefPtr<Promise>& aPromise) {
   if (!MaybeCreateActor()) {
-    promise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
-    return promise.forget();
+    aPromise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
+    return;
   }
 
   mActor->SendRequestIsUVPAA()->Then(
       GetCurrentSerialEventTarget(), __func__,
-      [promise](const PWebAuthnTransactionChild::RequestIsUVPAAPromise::
-                    ResolveOrRejectValue& aValue) {
+      [promise = RefPtr{aPromise}](
+          const PWebAuthnTransactionChild::RequestIsUVPAAPromise::
+              ResolveOrRejectValue& aValue) {
         if (aValue.IsResolve()) {
           promise->MaybeResolve(aValue.ResolveValue());
         } else {
           promise->MaybeReject(NS_ERROR_DOM_NOT_ALLOWED_ERR);
         }
       });
-  return promise.forget();
 }
 
 void WebAuthnHandler::FinishMakeCredential(
@@ -920,7 +877,7 @@ void WebAuthnHandler::FinishGetAssertion(
   if (global) {
     nsPIDOMWindowInner* window = global->GetAsInnerWindow();
     if (window) {
-      Unused << BounceTrackingProtection::RecordUserActivation(
+      (void)BounceTrackingProtection::RecordUserActivation(
           window->GetWindowContext());
     }
   }

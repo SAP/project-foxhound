@@ -4,11 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_PerformanceNavigationTiming_h___
-#define mozilla_dom_PerformanceNavigationTiming_h___
+#ifndef mozilla_dom_PerformanceNavigationTiming_h_
+#define mozilla_dom_PerformanceNavigationTiming_h_
 
 #include <stdint.h>
+
 #include <utility>
+
 #include "js/RootingAPI.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/PerformanceNavigationTimingBinding.h"
@@ -44,7 +46,7 @@ class PerformanceNavigationTiming final : public PerformanceResourceTiming {
       Performance* aPerformance, const nsAString& aName)
       : PerformanceResourceTiming(std::move(aPerformanceTiming), aPerformance,
                                   aName) {
-    SetEntryType(u"navigation"_ns);
+    SetEntryType(nsGkAtoms::navigation);
     SetInitiatorType(u"navigation"_ns);
   }
 
@@ -90,4 +92,4 @@ class PerformanceNavigationTiming final : public PerformanceResourceTiming {
 
 }  // namespace mozilla::dom
 
-#endif  // mozilla_dom_PerformanceNavigationTiming_h___
+#endif  // mozilla_dom_PerformanceNavigationTiming_h_

@@ -75,9 +75,9 @@ MOZ_XML_SetReturnNSTriplet(XML_Parser parser, int do_nst) {
   XML_SetReturnNSTriplet(parser, do_nst);
 }
 
-enum XML_Status
+void
 MOZ_XML_SetBase(XML_Parser parser, const XML_Char *base) {
-  return XML_SetBase(parser, base);
+  XML_SetBase(parser, base);
 }
 
 const XML_Char *
@@ -90,17 +90,17 @@ MOZ_XML_GetSpecifiedAttributeCount(XML_Parser parser) {
   return XML_GetSpecifiedAttributeCount(parser);
 }
 
-enum XML_Status
+int
 MOZ_XML_Parse(XML_Parser parser, const char *s, int len, int isFinal) {
   return XML_Parse(parser, s, len, isFinal);
 }
 
-enum XML_Status
+void
 MOZ_XML_StopParser(XML_Parser parser, int resumable) {
-  return XML_StopParser(parser, resumable);
+  XML_StopParser(parser, resumable);
 }
 
-enum XML_Status
+int
 MOZ_XML_ResumeParser(XML_Parser parser) {
   return XML_ResumeParser(parser);
 }
@@ -123,7 +123,7 @@ MOZ_XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt) {
   return XML_SetHashSalt(parser, hash_salt);
 }
 
-enum XML_Error
+int
 MOZ_XML_GetErrorCode(XML_Parser parser)
 {
   return XML_GetErrorCode(parser);
@@ -148,4 +148,15 @@ MOZ_XML_ParserFree(XML_Parser parser) {
 
 XML_Bool MOZ_XML_SetReparseDeferralEnabled(XML_Parser parser, int enabled) {
   return XML_SetReparseDeferralEnabled(parser, enabled);
+}
+
+const XML_Char * XMLCALL
+MOZ_XML_GetMismatchedTag(XML_Parser parser)
+{
+  return parser->m_mismatch;
+}
+
+XML_Bool XMLCALL
+MOZ_XML_ProcessingEntityValue(XML_Parser parser) {
+  return parser->m_openInternalEntities != NULL;
 }

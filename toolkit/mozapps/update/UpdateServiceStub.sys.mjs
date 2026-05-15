@@ -18,14 +18,14 @@ if (AppConstants.ENABLE_WEBDRIVER) {
     lazy,
     "Marionette",
     "@mozilla.org/remote/marionette;1",
-    "nsIMarionette"
+    Ci.nsIMarionette
   );
 
   XPCOMUtils.defineLazyServiceGetter(
     lazy,
     "RemoteAgent",
     "@mozilla.org/remote/agent;1",
-    "nsIRemoteAgent"
+    Ci.nsIRemoteAgent
   );
 } else {
   lazy.Marionette = { running: false };
@@ -511,6 +511,7 @@ function cleanupDir(dir, recurse) {
 
 /**
  * Logs a string to the error console.
+ *
  * @param   string
  *          The string to write to the error console.
  */

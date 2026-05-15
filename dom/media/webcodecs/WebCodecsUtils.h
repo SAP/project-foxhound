@@ -23,13 +23,19 @@
 #include "mozilla/dom/VideoColorSpaceBinding.h"
 #include "mozilla/dom/VideoEncoderBinding.h"
 #include "mozilla/dom/VideoFrameBinding.h"
+#include "nsIGlobalObject.h"
 
 namespace mozilla {
+
+namespace dom {
+class VideoEncoderConfigInternal;
+class VideoDecoderConfigInternal;
+}  // namespace dom
 
 #define WEBCODECS_MARKER(codecType, desc, options, markerType, ...)    \
   do {                                                                 \
     if (profiler_is_collecting_markers()) {                            \
-      nsFmtCString marker(FMT_STRING("{}{}"), codecType, desc);        \
+      nsFmtCString marker("{}{}", codecType, desc);                    \
       PROFILER_MARKER(                                                 \
           ProfilerString8View::WrapNullTerminatedString(marker.get()), \
           MEDIA_RT, options, markerType, __VA_ARGS__);                 \
@@ -85,6 +91,52 @@ class AutoWebCodecsMarker {
   const char* mType;
   const char* mDesc;
   bool mEnded = false;
+};
+
+// Use this macro only when you do not need to call `AutoWebCodecsMarker::End()`
+// manually; it will automatically end the marker when the object goes out of
+// scope.
+#define AUTO_WEBCODECS_MARKER(type, desc) \
+  AutoWebCodecsMarker PROFILER_RAII(type, desc)
+
+class AsyncDurationTracker {
+ public:
+  AsyncDurationTracker() : mOwningThread(GetCurrentSerialEventTarget()) {}
+  ~AsyncDurationTracker() { Clear(); }
+
+  void Start(int64_t aTimestamp, AutoWebCodecsMarker&& aMarker) {
+    MOZ_ASSERT(mOwningThread->IsOnCurrentThread());
+    mEntries.push_back(
+        Entry{.mTimestamp = aTimestamp, .mMarker = std::move(aMarker)});
+  }
+
+  size_t End(int64_t aTimestamp) {
+    MOZ_ASSERT(mOwningThread->IsOnCurrentThread());
+    size_t popped = 0;
+    while (!mEntries.empty() && mEntries.front().mTimestamp <= aTimestamp) {
+      mEntries.front().mMarker.End();
+      popped += 1;
+      mEntries.pop_front();
+    }
+    return popped;
+  }
+
+  void Clear() {
+    MOZ_ASSERT(mOwningThread->IsOnCurrentThread());
+    while (!mEntries.empty()) {
+      mEntries.front().mMarker.End();
+      mEntries.pop_front();
+    }
+  }
+
+ private:
+  struct Entry {
+    int64_t mTimestamp;
+    AutoWebCodecsMarker mMarker;
+  };
+
+  std::deque<Entry> mEntries;
+  const nsCOMPtr<nsISerialEventTarget> mOwningThread;
 };
 
 namespace gfx {
@@ -349,6 +401,14 @@ nsCString ConvertCodecName(const nsCString& aContainer,
                            const nsCString& aCodec);
 
 uint32_t BytesPerSamples(const mozilla::dom::AudioSampleFormat& aFormat);
+
+// If resisting fingerprinting, remove all hardware/software preference.
+void ApplyResistFingerprintingIfNeeded(
+    const RefPtr<VideoEncoderConfigInternal>& aConfig,
+    nsIGlobalObject* aGlobal);
+void ApplyResistFingerprintingIfNeeded(
+    const RefPtr<VideoDecoderConfigInternal>& aConfig,
+    nsIGlobalObject* aGlobal);
 }  // namespace dom
 }  // namespace mozilla
 

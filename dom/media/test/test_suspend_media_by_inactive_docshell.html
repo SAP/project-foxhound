@@ -43,19 +43,29 @@ function mediaSuspendedStateShouldEqualTo(expected) {
   is(result, expected, `media's suspended state is correct`);
 }
 
-function setDocShellActive(isActive) {
+function waitForEvent(target, name, condition) {
+  return new Promise(r => {
+    const listener = function(event) {
+      if (condition(event)) {
+        target.removeEventListener(name, listener);
+        r();
+      }
+    };
+    target.addEventListener(name, listener);
+  });
+}
+
+async function setDocShellActive(isActive) {
   const win = SpecialPowers.wrap(window);
   const docShell = win.docShell;
-  let p = new Promise(r => {
-    docShell.chromeEventHandler.addEventListener("MozMediaSuspendChanged",
-      () => {
-        mediaSuspendedStateShouldEqualTo(!isActive);
-        r();
-      }, {once : true}
-    );
-  });
 
-  SpecialPowers.spawnChrome([isActive], active => {
+  const video = document.getElementById("testVideo");
+  let mediaSuspendChangedPromise = waitForEvent(
+    docShell.chromeEventHandler, "MozMediaSuspendChanged",
+    event => event.target === video
+  );
+
+  await SpecialPowers.spawnChrome([isActive], active => {
     // This flag is used to prevent media from playing when docShell is
     // inactive. After updating `docshell.isActive`, it would suspend/resume
     // media and we // wait suspending/resuming finishing by listening to
@@ -64,7 +74,9 @@ function setDocShellActive(isActive) {
     this.browsingContext.top.isActive = active;
   });
 
-  return p;
+  await mediaSuspendChangedPromise;
+
+  mediaSuspendedStateShouldEqualTo(!isActive);
 }
 
 </script>

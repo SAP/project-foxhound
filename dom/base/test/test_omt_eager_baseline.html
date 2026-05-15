@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test for eager omt baseline compilation</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+  <script type="application/javascript">
+    SimpleTest.requestLongerTimeout(2);
+    SimpleTest.waitForExplicitFinish();
+
+    // - A value of 4 for offthread_compilation_strategy will aggressively
+    //   compile all JS functions omt with bytecode eagerly.
+    // - 255 for delazification strategy will full parse all functions.
+    SpecialPowers.pushPrefEnv({set: [
+      ["dom.expose_test_interfaces", true],
+      ["javascript.options.baselinejit", true],
+      ["javascript.options.baselinejit.offthread_compilation_strategy", 4],
+      ["dom.script_loader.delazification.strategy", 255],
+      ["dom.script_loader.delazification.max_size", -1],
+      ["dom.script_loader.delazification.min_mem", 0]
+    ]});
+
+    async function doTest() {
+      var iframe = document.getElementById("ifr");
+      
+      var dispatchReceived = false;
+      var compiledFunctions = new Set();
+      
+      window.addEventListener("message", function(event) {
+        if (event.data && event.data.type) {
+          // Check for function-specific events
+          if (event.data.type.startsWith("omt_eager_baseline_function: ")) {
+            const functionName = event.data.type.substring("omt_eager_baseline_function: ".length);
+            compiledFunctions.add(functionName);
+          } else if (event.data.type === "omt_eager_baseline_dispatch") {
+            dispatchReceived = true;
+          }
+        }
+      });
+      
+      // Load iframe
+      iframe.src = "file_omt_eager_baseline.html";
+
+      // Need a long timeout here since this test can take a long time
+      // on some platforms.
+      await SimpleTest.promiseWaitForCondition(
+        () => compiledFunctions.has("fun1") && compiledFunctions.has("fun2") && compiledFunctions.has("fun3"),
+        "Failed to eagerly compile functions.",
+        100,
+        100
+      );
+      await SimpleTest.promiseWaitForCondition(
+        () => dispatchReceived,
+        "Did not recieve eager baseline compilation dispatch.",
+        100,
+        10
+      );
+
+      ok(true, "All functions were eagerly compiled successfully.");
+      SimpleTest.finish();
+    }
+  </script>
+</head>
+<body onload="doTest()">
+  <iframe id="ifr" allowfullscreen></iframe>
+</body>
+</html>

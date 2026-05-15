@@ -34,7 +34,7 @@ promise_test(async t => {
   });
   video.play();
   await new Promise(r => video.onloadedmetadata = r);
-  const stream = video.mozCaptureStream();
+  const stream = video.captureStream?.() || video.mozCaptureStream();
   const [track] = stream.getTracks();
 
   assert_equals(track.getSettings().width, 166, "Track width setting initially set");
@@ -55,7 +55,7 @@ promise_test(async t => {
   video.src = getVideoURI("/media/2x2-green");
   t.add_cleanup(async () => video.src = "");
   await new Promise(r => video.onloadedmetadata = r);
-  const stream = video.mozCaptureStream();
+  const stream = video.captureStream?.() || video.mozCaptureStream();
   const [track] = stream.getVideoTracks();
 
   assert_equals(track.getSettings().width, 2, "Track width setting");

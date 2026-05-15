@@ -30,6 +30,7 @@ import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.concept.sync.Device
 import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.components.concept.sync.TabData
+import mozilla.components.concept.sync.TabPrivacy
 import mozilla.components.feature.accounts.push.SendTabUseCases
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.share.RecentAppsStorage
@@ -80,6 +81,7 @@ interface ShareController {
  * @param appStore Instance of [AppStore] for interacting with application wide state.
  * @param shareSubject Desired message subject used when sharing through 3rd party apps, like email clients.
  * @param shareData The list of [ShareData]s that can be shared.
+ * @param isPrivate Whether the tab(s) being shared are from private browsing mode.
  * @param sendTabUseCases Instance of [SendTabUseCases] which allows sending tabs to account devices.
  * @param saveToPdfUseCase Instance of [SessionUseCases.SaveToPdfUseCase] to generate a PDF of a given tab.
  * @param printUseCase Instance of [SessionUseCases.PrintContentUseCase] to print content of a given tab.
@@ -87,7 +89,8 @@ interface ShareController {
  * @param navController [NavController] used for navigation.
  * @param recentAppsStorage Instance of [RecentAppsStorage] for storing and retrieving the most recent apps.
  * @param viewLifecycleScope [CoroutineScope] used for retrieving the most recent apps in the background.
- * @param dispatcher Dispatcher used to execute suspending functions.
+ * @param mainDispatcher Dispatcher for executing tasks on the Main thread.
+ * @param ioDispatcher Dispatcher for executing I/O-bound tasks, like updating local storage.
  * @param fxaEntrypoint The entrypoint if we need to authenticate, it will be reported in telemetry.
  * @param dismiss Callback signalling sharing can be closed.
  */
@@ -97,6 +100,7 @@ class DefaultShareController(
     private val appStore: AppStore,
     private val shareSubject: String?,
     private val shareData: List<ShareData>,
+    private val isPrivate: Boolean,
     private val sendTabUseCases: SendTabUseCases,
     private val saveToPdfUseCase: SessionUseCases.SaveToPdfUseCase,
     private val printUseCase: SessionUseCases.PrintContentUseCase,
@@ -104,7 +108,8 @@ class DefaultShareController(
     private val navController: NavController,
     private val recentAppsStorage: RecentAppsStorage,
     private val viewLifecycleScope: CoroutineScope,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val fxaEntrypoint: FxAEntryPoint = FenixFxAEntryPoint.ShareMenu,
     private val dismiss: (ShareController.Result) -> Unit,
 ) : ShareController {
@@ -135,7 +140,7 @@ class DefaultShareController(
             return
         }
 
-        viewLifecycleScope.launch(dispatcher) {
+        viewLifecycleScope.launch(ioDispatcher) {
             recentAppsStorage.updateRecentApp(app.activityName)
         }
 
@@ -218,7 +223,7 @@ class DefaultShareController(
         shareOperation: () -> Deferred<Boolean>,
     ) {
         // Use GlobalScope to allow the continuation of this method even if the share fragment is closed.
-        GlobalScope.launch(Dispatchers.Main) {
+        GlobalScope.launch(mainDispatcher) {
             val result = if (shareOperation.invoke().await()) {
                 showSuccess(destination)
                 ShareController.Result.SUCCESS
@@ -280,7 +285,11 @@ class DefaultShareController(
     // Navigation between app fragments uses ShareTab as arguments. SendTabUseCases uses TabData.
     @VisibleForTesting
     internal fun List<ShareData>.toTabData() = map { data ->
-        TabData(title = data.title.orEmpty(), url = data.url ?: data.text?.toDataUri().orEmpty())
+        TabData(
+            title = data.title.orEmpty(),
+            url = data.url ?: data.text?.toDataUri().orEmpty(),
+            privacy = if (isPrivate) TabPrivacy.Private else TabPrivacy.Normal,
+        )
     }
 
     private fun String.toDataUri(): String {

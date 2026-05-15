@@ -11,5 +11,7 @@
 ["test_bug738440.html"]
 
 ["test_bug1453190.html"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 support-files = ["file_bug1453190.html"]

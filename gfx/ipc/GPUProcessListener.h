@@ -6,15 +6,23 @@
 #ifndef _include_mozilla_gfx_ipc_GPUProcessListener_h_
 #define _include_mozilla_gfx_ipc_GPUProcessListener_h_
 
+#include "nsISupportsImpl.h"
+
 namespace mozilla {
 namespace gfx {
 
 class GPUProcessListener {
+  NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
+
  public:
   virtual ~GPUProcessListener() = default;
 
   // Called when the compositor has died and the rendering stack must be
-  // recreated.
+  // recreated. Before OnCompositorUnexpectedShutdown.
+  virtual void OnCompositorDestroyBackgrounded() {}
+
+  // Called when the compositor has died and the rendering stack must be
+  // recreated. After OnCompositorDestroyBackgrounded.
   virtual void OnCompositorUnexpectedShutdown() {}
 
   // Called when devices have been reset and tabs must throw away their

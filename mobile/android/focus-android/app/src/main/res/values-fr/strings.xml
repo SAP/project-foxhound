@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -149,7 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vous aide à rester aux commandes.</p> <p>Utilisez-le comme un navigateur privé\u00a0: <ul> <li>Effectuez des recherches et naviguez depuis l’application</li> <li>Bloquez les traqueurs (ou modifiez les paramètres pour les autoriser)</li> <li>Effacez les cookies, ainsi que les historiques de navigation et de recherche</li> </ul> </p> <p>%1$s est réalisé par Mozilla. Notre mission est de défendre l’ouverture et la bonne santé d’Internet.<br/> <a href=\"%2$s\">En savoir plus</a></p>]]></string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s vous aide à rester aux commandes.</p>\n<p>Utilisez-le comme un navigateur privé\u00a0:\n<ul>\n<li>Effectuez des recherches et naviguez depuis l’application</li>\n<li>Bloquez les traqueurs (ou modifiez les paramètres pour les autoriser)</li>\n<li>Effacez les cookies, ainsi que les historiques de navigation et de recherche</li>\n</ul> </p>\n<p>%1$s est réalisé par Mozilla. Notre mission est de défendre l’ouverture et la bonne santé d’Internet.<br/>\n<a href=\"%2$s\">En savoir plus</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">En savoir plus</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -464,27 +471,19 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" moz:removedIn="141" tools:ignore="UnusedResources">En continuant, vous acceptez les %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text -->
   <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">En continuant, vous acceptez les %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" moz:removedIn="141" tools:ignore="BrandUsage">Conditions d’utilisation de Firefox.</string>
-  <!-- Text for the link used in onboarding_first_screen_terms_of_use_text -->
   <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Conditions d’utilisation de Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" moz:removedIn="141" tools:ignore="BrandUsage">Firefox se soucie de votre vie privée. Pour en savoir plus, consultez notre %1$s</string>
-  <!-- %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text -->
   <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox se soucie de votre vie privée. Pour en savoir plus, consultez notre %1$s.</string>
-  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link" moz:removedIn="141" tools:ignore="UnusedResources">Politique de confidentialité.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
   <string name="onboarding_first_screen_privacy_notice_link_2">Politique de confidentialité</string>
   <!-- New Onboarding flow first screen button label -->
@@ -563,6 +562,8 @@
   <string name="tabs_tray_action_erase">Effacer l’historique de navigation</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Fermer les autres onglets</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Ajouter un nouvel onglet</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -883,7 +884,7 @@
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ceci peut être dû à un problème de configuration du serveur ou à une personne essayant d’usurper l’identité du serveur. <br/><br/> Si vous vous êtes déjà connecté·e avec succès à ce serveur, l’erreur est peut-être temporaire.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Quelqu’un pourrait essayer de se faire passer pour le site et continuer pourrait être risqué.</label> <br><br> <label>%1$s ne fait pas confiance à <b>%2$s</b> car l’émetteur de son certificat est inconnu, le certificat est auto-signé ou le serveur n’envoie pas les bons certificats intermédiaires.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Quelqu’un pourrait essayer de se faire passer pour le site et continuer pourrait être risqué.</label> <br><br>\n<label>%1$s ne fait pas confiance à <b>%2$s</b> car l’émetteur de son certificat est inconnu, le certificat est auto-signé ou le serveur n’envoie pas les bons certificats intermédiaires.</label>]]></string>
   <!--
     Sessions List
 

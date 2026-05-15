@@ -44,7 +44,7 @@ $ds-width: 936px;
 .ds-layout .section-title span {
   color: var(--newtab-contextual-text-primary-color);
   font-size: $section-title-font-size;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 
   // Contrast fix for users who have wallpapers set
   @include wallpaper-contrast-fix;
@@ -63,7 +63,7 @@ $ds-width: 936px;
 
     a {
       color: var(--newtab-primary-action-background);
-      font-weight: var(--font-weight-bold);
+      font-weight: var(--font-weight-semibold);
 
       &:is(:focus, :hover) {
         text-decoration: none;

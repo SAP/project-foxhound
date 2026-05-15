@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*
+/**
  * Implements a service used to access storage and communicate with content.
  *
  * A "fields" array is used to communicate with FormAutofillChild. Each item
  * represents a single input field in the content page as well as its
- * @autocomplete properties. The schema is as below. Please refer to
+ * `@autocomplete` properties. The schema is as below. Please refer to
  * FormAutofillChild.js for more details.
  *
  * [
@@ -35,8 +35,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddressComponent: "resource://gre/modules/shared/AddressComponent.sys.mjs",
-  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   FormAutofillAddressSection:
     "resource://gre/modules/shared/FormAutofillSection.sys.mjs",
   FormAutofillCreditCardSection:
@@ -50,7 +48,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FormAutofillPrompter: "resource://autofill/FormAutofillPrompter.sys.mjs",
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  MLAutofill: "resource://autofill/MLAutofill.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
@@ -113,6 +110,7 @@ export let FormAutofillStatus = {
 
     Services.obs.removeObserver(this, "privacy-pane-loaded");
     Services.prefs.removeObserver(ENABLED_AUTOFILL_ADDRESSES_PREF, this);
+    Services.obs.removeObserver(this, "formautofill-storage-changed");
     Services.wm.removeListener(this);
 
     if (FormAutofill.isAutofillCreditCardsAvailable) {
@@ -205,11 +203,7 @@ export let FormAutofillStatus = {
       case "privacy-pane-loaded": {
         let formAutofillPreferences = new lazy.FormAutofillPreferences();
         let document = subject.document;
-        let prefFragment = formAutofillPreferences.init(document);
-        let formAutofillGroupBox = document.getElementById(
-          "formAutofillGroupBox"
-        );
-        formAutofillGroupBox.appendChild(prefFragment);
+        formAutofillPreferences.init(document);
         break;
       }
 
@@ -544,10 +538,6 @@ export class FormAutofillParent extends JSWindowActorParent {
     // in a form are changed, we treat the "updated" section as a new detected section.
     sections.forEach(section => section.onDetected());
 
-    if (FormAutofill.isMLExperimentEnabled) {
-      sections.forEach(section => lazy.MLAutofill.runInference(section));
-    }
-
     // Inform all the child actors of the updated 'fieldDetails'
     const detailsByBC =
       lazy.FormAutofillSection.groupFieldDetailsByBrowsingContext(fieldDetails);
@@ -875,10 +865,6 @@ export class FormAutofillParent extends JSWindowActorParent {
     // from the new address.
     let newRecord = {};
     if (mergeableFields.length) {
-      // TODO: This is only temporarily, should be removed after Bug 1836438 is fixed
-      if (mergeableFields.includes("name")) {
-        mergeableFields.push("given-name", "additional-name", "family-name");
-      }
       mergeableFields.forEach(f => {
         if (f in newAddress.record) {
           newRecord[f] = newAddress.record[f];
@@ -1041,9 +1027,13 @@ export class FormAutofillParent extends JSWindowActorParent {
    */
   async onAutoCompleteEntrySelected(message, data) {
     switch (message) {
-      case "FormAutofill:OpenPreferences": {
-        const win = lazy.BrowserWindowTracker.getTopWindow();
-        win.openPreferences("privacy-form-autofill");
+      case "FormAutofill:OpenPaymentPreferences": {
+        lazy.FormAutofillPreferences.openPaymentPreference();
+        break;
+      }
+
+      case "FormAutofill:OpenAddressPreferences": {
+        lazy.FormAutofillPreferences.openAddressPreference();
         break;
       }
 
@@ -1088,7 +1078,13 @@ export class FormAutofillParent extends JSWindowActorParent {
   #FIELDS_FILLED_WHEN_SAME_ORIGIN = ["cc-number"];
 
   /**
-   * Determines if the field should be autofilled based on its origin.
+   * Determines whether a field is eligible for autofill based on its origin.
+   *
+   * The rules for autofill eligibility are as follows:
+   * 1. Autofill is permitted if the field resides in a frame that shares the same origin
+   *    as the field that triggered the autofill action.
+   * 2. Autofill is also allowed if the field is same-origin with the top-level frame
+   *    and is not designated as a credit card number field.
    *
    * @param {BorwsingContext} bc
    *        The browsing context the field is in.

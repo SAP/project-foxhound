@@ -53,30 +53,33 @@ function log(msg) {
 
 /**
  * Each Transport instance owns a single UDPSocket.
- * @param port integer
- *        The port to listen on for incoming UDP multicast packets.
  */
-function Transport(port) {
-  EventEmitter.decorate(this);
-  try {
-    this.socket = new UDPSocket(
-      port,
-      false,
-      Services.scriptSecurityManager.getSystemPrincipal()
-    );
-    this.socket.joinMulticast(ADDRESS);
-    this.socket.asyncListen(this);
-  } catch (e) {
-    log("Failed to start new socket: " + e);
-  }
-}
+class Transport extends EventEmitter {
+  /**
+   * @param {Integer} port
+   *        The port to listen on for incoming UDP multicast packets.
+   */
+  constructor(port) {
+    super();
 
-Transport.prototype = {
+    try {
+      this.socket = new UDPSocket(
+        port,
+        false,
+        Services.scriptSecurityManager.getSystemPrincipal()
+      );
+      this.socket.joinMulticast(ADDRESS);
+      this.socket.asyncListen(this);
+    } catch (e) {
+      log("Failed to start new socket: " + e);
+    }
+  }
   /**
    * Send a object to some UDP port.
-   * @param object object
+   *
+   * @param {object} object
    *        Object which is the message to send
-   * @param port integer
+   * @param {Integer} port
    *        UDP port to send the message to
    */
   send(object, port) {
@@ -90,14 +93,13 @@ Transport.prototype = {
     } catch (e) {
       log("Failed to send message: " + e);
     }
-  },
+  }
 
   destroy() {
     this.socket.close();
-  },
+  }
 
   // nsIUDPSocketListener
-
   onPacketReceived(socket, message) {
     const messageData = message.data;
     const object = JSON.parse(messageData);
@@ -113,30 +115,28 @@ Transport.prototype = {
       );
     }
     this.emit("message", object);
-  },
+  }
 
-  onStopListening() {},
-};
+  onStopListening() {}
+}
 
 /**
  * Manages the local device's name.  The name can be generated in serveral
  * platform-specific ways (see |_generate|).  The aim is for each device on the
  * same local network to have a unique name.
  */
-function LocalDevice() {
-  this._name = LocalDevice.UNKNOWN;
-  // Trigger |_get| to load name eagerly
-  this._get();
-}
-
-LocalDevice.UNKNOWN = "unknown";
-
-LocalDevice.prototype = {
+class LocalDevice {
+  static UNKNOWN = "unknown";
+  constructor() {
+    this._name = LocalDevice.UNKNOWN;
+    // Trigger |_get| to load name eagerly
+    this._get();
+  }
   _get() {
     // Without Settings API, just generate a name and stop, since the value
     // can't be persisted.
     this._generate();
-  },
+  }
 
   /**
    * Generate a new device name from various platform-specific properties.
@@ -150,48 +150,48 @@ LocalDevice.prototype = {
     } else {
       this.name = Services.dns.myHostName;
     }
-  },
+  }
 
   get name() {
     return this._name;
-  },
+  }
 
   set name(name) {
     this._name = name;
     log("Device: " + this._name);
-  },
-};
-
-function Discovery() {
-  EventEmitter.decorate(this);
-
-  this.localServices = {};
-  this.remoteServices = {};
-  this.device = new LocalDevice();
-  this.replyTimeout = REPLY_TIMEOUT;
-
-  // Defaulted to Transport, but can be altered by tests
-  this._factories = { Transport };
-
-  this._transports = {
-    scan: null,
-    update: null,
-  };
-  this._expectingReplies = {
-    from: new Set(),
-  };
-
-  this._onRemoteScan = this._onRemoteScan.bind(this);
-  this._onRemoteUpdate = this._onRemoteUpdate.bind(this);
-  this._purgeMissingDevices = this._purgeMissingDevices.bind(this);
+  }
 }
 
-Discovery.prototype = {
+class Discovery extends EventEmitter {
+  constructor() {
+    super();
+
+    this.localServices = {};
+    this.remoteServices = {};
+    this.device = new LocalDevice();
+    this.replyTimeout = REPLY_TIMEOUT;
+
+    // Defaulted to Transport, but can be altered by tests
+    this._factories = { Transport };
+
+    this._transports = {
+      scan: null,
+      update: null,
+    };
+    this._expectingReplies = {
+      from: new Set(),
+    };
+
+    this._onRemoteScan = this._onRemoteScan.bind(this);
+    this._onRemoteUpdate = this._onRemoteUpdate.bind(this);
+    this._purgeMissingDevices = this._purgeMissingDevices.bind(this);
+  }
   /**
    * Add a new service offered by this device.
-   * @param service string
+   *
+   * @param {string} service
    *        Name of the service
-   * @param info object
+   * @param {object} info
    *        Arbitrary data about the service to announce to scanning devices
    */
   addService(service, info) {
@@ -200,11 +200,12 @@ Discovery.prototype = {
       this._startListeningForScan();
     }
     this.localServices[service] = info;
-  },
+  }
 
   /**
    * Remove a service offered by this device.
-   * @param service string
+   *
+   * @param {string} service
    *        Name of the service
    */
   removeService(service) {
@@ -212,7 +213,7 @@ Discovery.prototype = {
     if (Object.keys(this.localServices).length === 0) {
       this._stopListeningForScan();
     }
-  },
+  }
 
   /**
    * Scan for service updates from other devices.
@@ -222,7 +223,7 @@ Discovery.prototype = {
     this._waitForReplies();
     // TODO Bug 1027457: Use timer to debounce
     this._sendStatusTo(SCAN_PORT);
-  },
+  }
 
   /**
    * Get a list of all remote devices currently offering some service.
@@ -235,7 +236,7 @@ Discovery.prototype = {
       }
     }
     return [...devices];
-  },
+  }
 
   /**
    * Get a list of all remote devices currently offering a particular service.
@@ -243,7 +244,7 @@ Discovery.prototype = {
   getRemoteDevicesWithService(service) {
     const devicesWithService = this.remoteServices[service] || {};
     return Object.keys(devicesWithService);
-  },
+  }
 
   /**
    * Get service info (any details registered by the remote device) for a given
@@ -252,7 +253,7 @@ Discovery.prototype = {
   getRemoteService(service, device) {
     const devicesWithService = this.remoteServices[service] || {};
     return devicesWithService[device];
-  },
+  }
 
   _waitForReplies() {
     clearTimeout(this._expectingReplies.timer);
@@ -261,11 +262,11 @@ Discovery.prototype = {
       this._purgeMissingDevices,
       this.replyTimeout
     );
-  },
+  }
 
   get Transport() {
     return this._factories.Transport;
-  },
+  }
 
   _startListeningForScan() {
     if (this._transports.scan) {
@@ -275,7 +276,7 @@ Discovery.prototype = {
     log("LISTEN FOR SCAN");
     this._transports.scan = new this.Transport(SCAN_PORT);
     this._transports.scan.on("message", this._onRemoteScan);
-  },
+  }
 
   _stopListeningForScan() {
     if (!this._transports.scan) {
@@ -285,7 +286,7 @@ Discovery.prototype = {
     this._transports.scan.off("message", this._onRemoteScan);
     this._transports.scan.destroy();
     this._transports.scan = null;
-  },
+  }
 
   _startListeningForUpdate() {
     if (this._transports.update) {
@@ -295,7 +296,7 @@ Discovery.prototype = {
     log("LISTEN FOR UPDATE");
     this._transports.update = new this.Transport(UPDATE_PORT);
     this._transports.update.on("message", this._onRemoteUpdate);
-  },
+  }
 
   _stopListeningForUpdate() {
     if (!this._transports.update) {
@@ -305,7 +306,7 @@ Discovery.prototype = {
     this._transports.update.off("message", this._onRemoteUpdate);
     this._transports.update.destroy();
     this._transports.update = null;
-  },
+  }
 
   _restartListening() {
     if (this._transports.scan) {
@@ -316,7 +317,7 @@ Discovery.prototype = {
       this._stopListeningForUpdate();
       this._startListeningForUpdate();
     }
-  },
+  }
 
   /**
    * When sending message, we can use either transport, so just pick the first
@@ -330,7 +331,7 @@ Discovery.prototype = {
       return this._transports.update;
     }
     return null;
-  },
+  }
 
   _sendStatusTo(port) {
     const status = {
@@ -338,13 +339,13 @@ Discovery.prototype = {
       services: this.localServices,
     };
     this._outgoingTransport.send(status, port);
-  },
+  }
 
   _onRemoteScan() {
     // Send my own status in response
     log("GOT SCAN REQUEST");
     this._sendStatusTo(UPDATE_PORT);
-  },
+  }
 
   _onRemoteUpdate(update) {
     log("GOT REMOTE UPDATE");
@@ -403,7 +404,7 @@ Discovery.prototype = {
         this.emit(service + "-device-updated", remoteDevice, newDeviceInfo);
       }
     }
-  },
+  }
 
   _purgeMissingDevices() {
     log("PURGING MISSING DEVICES");
@@ -419,8 +420,8 @@ Discovery.prototype = {
         }
       }
     }
-  },
-};
+  }
+}
 
 var discovery = new Discovery();
 

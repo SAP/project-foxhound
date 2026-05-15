@@ -6,13 +6,12 @@
 
 #include "nsPluginArray.h"
 
+#include "mozilla/StaticPrefs_pdfjs.h"
 #include "mozilla/dom/PluginArrayBinding.h"
 #include "mozilla/dom/PluginBinding.h"
-#include "mozilla/StaticPrefs_pdfjs.h"
-
+#include "nsContentUtils.h"
 #include "nsMimeTypeArray.h"
 #include "nsPIDOMWindow.h"
-#include "nsContentUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -97,7 +96,11 @@ void nsPluginArray::GetSupportedNames(nsTArray<nsString>& aRetval) {
   }
 }
 
-bool nsPluginArray::ForceNoPlugins() { return StaticPrefs::pdfjs_disabled(); }
+bool nsPluginArray::ForceNoPlugins() {
+  return StaticPrefs::pdfjs_disabled() &&
+         !nsContentUtils::ShouldResistFingerprinting(
+             mWindow ? mWindow->GetDocShell() : nullptr, RFPTarget::PdfjsSpoof);
+}
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsPluginArray)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsPluginArray)

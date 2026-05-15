@@ -4,10 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsMathMLmrootFrame_h___
-#define nsMathMLmrootFrame_h___
+#ifndef nsMathMLmrootFrame_h_
+#define nsMathMLmrootFrame_h_
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLChar.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -59,8 +58,8 @@ class nsMathMLmrootFrame : public nsMathMLContainerFrame {
  private:
   bool ShouldUseRowFallback();
   bool IsMrowLike() final;
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) final;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) final;
 };
 
-#endif /* nsMathMLmrootFrame_h___ */
+#endif /* nsMathMLmrootFrame_h_ */

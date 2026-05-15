@@ -11,11 +11,6 @@ const { PromiseTestUtils } = ChromeUtils.importESModule(
 PromiseTestUtils.allowMatchingRejectionsGlobally(/Component not initialized/);
 PromiseTestUtils.allowMatchingRejectionsGlobally(/Connection closed/);
 
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/devtools/client/debugger/test/mochitest/shared-head.js",
-  this
-);
-
 /**
  * Tests if on clicking the stack frame, UI switches to the Debugger panel.
  */
@@ -46,35 +41,18 @@ add_task(async function () {
   const waitForPanel = waitForDOM(
     document,
     "#stack-trace-panel .frame-link",
-    6
+    3 // Note: This does not include the chrome frames
   );
   // Open the stack-trace tab for that request
   document.getElementById("stack-trace-tab").click();
   await waitForPanel;
 
   const frameLinkNode = document.querySelector(".frame-link");
-  await checkClickOnNode(toolbox, frameLinkNode);
+  await clickAndAssertFrameLinkNode(toolbox, frameLinkNode, {
+    url: POST_DATA_URL,
+    line: 49,
+    column: 15,
+  });
 
   await teardown(monitor);
 });
-
-/**
- * Helper function for testOpenInDebugger.
- */
-async function checkClickOnNode(toolbox, frameLinkNode) {
-  info("checking click on node location");
-
-  const url = frameLinkNode.getAttribute("data-url");
-  ok(url, `source url found ("${url}")`);
-
-  const line = frameLinkNode.getAttribute("data-line");
-  ok(line, `source line found ("${line}")`);
-
-  // Fire the click event
-  frameLinkNode.querySelector(".frame-link-source").click();
-
-  // Wait for the debugger to have fully processed the opened source
-  await toolbox.getPanelWhenReady("jsdebugger");
-  const dbg = createDebuggerContext(toolbox);
-  await waitForSelectedSource(dbg, url);
-}

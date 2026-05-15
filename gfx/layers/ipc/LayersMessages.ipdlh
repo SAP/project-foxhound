@@ -28,7 +28,7 @@ using struct nsPoint from "nsPoint.h";
 using mozilla::TimeDuration from "mozilla/TimeStamp.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using mozilla::ScreenRotation from "mozilla/WidgetUtils.h";
-using nsCSSPropertyID from "nsCSSPropertyID.h";
+using NonCustomCSSPropertyId from "NonCustomCSSPropertyId.h";
 using mozilla::hal::ScreenOrientation from "mozilla/HalIPCUtils.h";
 using struct mozilla::layers::TextureInfo from "mozilla/layers/CompositorTypes.h";
 using mozilla::CSSCoord from "Units.h";
@@ -210,7 +210,7 @@ struct Animation {
   uint8_t direction;
   // This uses dom::FillMode.
   uint8_t fillMode;
-  nsCSSPropertyID property;
+  NonCustomCSSPropertyId property;
   float playbackRate;
   // When performing an asynchronous update to the playbackRate, |playbackRate|
   // above is the updated playbackRate while |previousPlaybackRate| is the

@@ -7,10 +7,9 @@ package mozilla.components.service.fxa
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.plus
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
 import mozilla.appservices.fxaclient.CloseTabsResult
 import mozilla.appservices.fxaclient.FxaException
 import mozilla.appservices.fxaclient.IncomingDeviceCommand
@@ -29,13 +28,12 @@ import mozilla.components.concept.sync.DeviceConstellationObserver
 import mozilla.components.concept.sync.DevicePushSubscription
 import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.TabData
+import mozilla.components.concept.sync.TabPrivacy
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.expectException
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,9 +41,9 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.anyBoolean
 import org.mockito.Mockito.atLeast
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.never
@@ -60,24 +58,21 @@ import mozilla.appservices.fxaclient.DevicePushSubscription as NativeDevicePushS
 import mozilla.appservices.fxaclient.FxaClient as NativeFirefoxAccount
 import mozilla.appservices.sync15.DeviceType as RustDeviceType
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class FxaDeviceConstellationTest {
     lateinit var account: NativeFirefoxAccount
     lateinit var constellation: FxaDeviceConstellation
-
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
+    private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
         account = mock()
-        val scope = CoroutineScope(coroutinesTestRule.testDispatcher) + SupervisorJob()
+        val scope = TestScope(testDispatcher)
         constellation = FxaDeviceConstellation(account, scope, mock())
     }
 
     @Test
-    fun `finalize device`() = runTestOnMain {
+    fun `finalize device`() = runTest(testDispatcher) {
         fun expectedFinalizeAction(authType: AuthType): FxaDeviceConstellation.DeviceFinalizeAction = when (authType) {
             AuthType.Existing -> FxaDeviceConstellation.DeviceFinalizeAction.EnsureCapabilities
             AuthType.Signin -> FxaDeviceConstellation.DeviceFinalizeAction.Initialize
@@ -118,8 +113,7 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    @ExperimentalCoroutinesApi
-    fun `updating device name`() = runTestOnMain {
+    fun `updating device name`() = runTest(testDispatcher) {
         val currentDevice = testDevice("currentTestDevice", true)
         `when`(account.getDevices()).thenReturn(arrayOf(currentDevice))
 
@@ -161,8 +155,7 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    @ExperimentalCoroutinesApi
-    fun `set device push subscription`() = runTestOnMain {
+    fun `set device push subscription`() = runTest(testDispatcher) {
         val subscription = DevicePushSubscription("http://endpoint.com", "pk", "auth key")
         constellation.setDevicePushSubscription(subscription)
 
@@ -170,8 +163,7 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    @ExperimentalCoroutinesApi
-    fun `process raw device command`() = runTestOnMain {
+    fun `process raw device command`() = runTest(testDispatcher) {
         // No commands, no observer.
         `when`(account.handlePushMessage("raw events payload")).thenReturn(mozilla.appservices.fxaclient.AccountEvent.Unknown)
         assertTrue(constellation.processRawEvent("raw events payload"))
@@ -214,27 +206,27 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    fun `send command to device`() = runTestOnMain {
+    fun `send command to device`() = runTest(testDispatcher) {
         `when`(account.gatherTelemetry()).thenReturn("{}")
         assertTrue(
             constellation.sendCommandToDevice(
                 "targetID",
-                DeviceCommandOutgoing.SendTab("Mozilla", "https://www.mozilla.org"),
+                DeviceCommandOutgoing.SendTab("Mozilla", "https://www.mozilla.org", TabPrivacy.Normal),
             ),
         )
 
-        verify(account).sendSingleTab("targetID", "Mozilla", "https://www.mozilla.org")
+        verify(account).sendSingleTab("targetID", "Mozilla", "https://www.mozilla.org", false)
     }
 
     @Test
-    fun `send command to device will report exceptions`() = runTestOnMain {
+    fun `send command to device will report exceptions`() = runTest(testDispatcher) {
         val exception = FxaException.Other("")
         val exceptionCaptor = argumentCaptor<SendCommandException.Other>()
-        doAnswer { throw exception }.`when`(account).sendSingleTab(any(), any(), any())
+        doAnswer { throw exception }.`when`(account).sendSingleTab(any(), any(), any(), anyBoolean())
 
         val success = constellation.sendCommandToDevice(
             "targetID",
-            DeviceCommandOutgoing.SendTab("Mozilla", "https://www.mozilla.org"),
+            DeviceCommandOutgoing.SendTab("Mozilla", "https://www.mozilla.org", TabPrivacy.Normal),
         )
 
         assertFalse(success)
@@ -243,13 +235,13 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    fun `send command to device won't report network exceptions`() = runTestOnMain {
+    fun `send command to device won't report network exceptions`() = runTest(testDispatcher) {
         val exception = FxaException.Network("timeout!")
-        doAnswer { throw exception }.`when`(account).sendSingleTab(any(), any(), any())
+        doAnswer { throw exception }.`when`(account).sendSingleTab(any(), any(), any(), anyBoolean())
 
         val success = constellation.sendCommandToDevice(
             "targetID",
-            DeviceCommandOutgoing.SendTab("Mozilla", "https://www.mozilla.org"),
+            DeviceCommandOutgoing.SendTab("Mozilla", "https://www.mozilla.org", TabPrivacy.Normal),
         )
 
         assertFalse(success)
@@ -258,7 +250,7 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    fun `send command to device will propagate close tabs-specific exceptions`() = runTestOnMain {
+    fun `send command to device will propagate close tabs-specific exceptions`() = runTest(testDispatcher) {
         `when`(account.gatherTelemetry()).thenReturn("{}")
         `when`(account.closeTabs(any(), any())).thenReturn(CloseTabsResult.TabsNotClosed(listOf("https://example.com")))
 
@@ -275,8 +267,7 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    @ExperimentalCoroutinesApi
-    fun `refreshing constellation`() = runTestOnMain {
+    fun `refreshing constellation`() = runTest(testDispatcher) {
         // No devices, no observers.
         `when`(account.getDevices()).thenReturn(emptyArray())
 
@@ -364,8 +355,7 @@ class FxaDeviceConstellationTest {
     }
 
     @Test
-    @ExperimentalCoroutinesApi
-    fun `polling for commands triggers observers`() = runTestOnMain {
+    fun `polling for commands triggers observers`() = runTest(testDispatcher) {
         // No commands, no observers.
         `when`(account.gatherTelemetry()).thenReturn("{}")
         `when`(account.pollDeviceCommands()).thenReturn(emptyArray())

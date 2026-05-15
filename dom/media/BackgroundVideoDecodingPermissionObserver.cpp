@@ -5,13 +5,13 @@
 
 #include "BackgroundVideoDecodingPermissionObserver.h"
 
-#include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "MediaDecoder.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/Document.h"
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/Document.h"
+#include "nsContentUtils.h"
 #include "nsIObserverService.h"
 
 namespace mozilla {

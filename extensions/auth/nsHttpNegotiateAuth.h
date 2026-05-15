@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsHttpNegotiateAuth_h__
-#define nsHttpNegotiateAuth_h__
+#ifndef nsHttpNegotiateAuth_h_
+#define nsHttpNegotiateAuth_h_
 
 #include "nsIHttpAuthenticator.h"
 #include "nsIURI.h"
@@ -32,4 +32,4 @@ class nsHttpNegotiateAuth final : public nsIHttpAuthenticator {
   // Singleton pointer
   static mozilla::StaticRefPtr<nsHttpNegotiateAuth> gSingleton;
 };
-#endif /* nsHttpNegotiateAuth_h__ */
+#endif /* nsHttpNegotiateAuth_h_ */

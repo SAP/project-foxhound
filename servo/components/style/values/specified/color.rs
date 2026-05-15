@@ -6,20 +6,25 @@
 
 use super::AllowQuirks;
 use crate::color::mix::ColorInterpolationMethod;
-use crate::color::{parsing, AbsoluteColor, ColorFunction, ColorSpace};
+use crate::color::{parsing, AbsoluteColor, ColorFunction, ColorMixItemList, ColorSpace};
+use crate::derives::*;
 use crate::media_queries::Device;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::{Color as ComputedColor, Context, ToComputedValue};
 use crate::values::generics::color::{
-    ColorMixFlags, GenericCaretColor, GenericColorMix, GenericColorOrAuto, GenericLightDark
+    ColorMixFlags, GenericCaretColor, GenericColorMix, GenericColorMixItem, GenericColorOrAuto,
+    GenericLightDark,
 };
+use crate::values::specified::percentage::ToPercentage;
 use crate::values::specified::Percentage;
 use crate::values::{normalize, CustomIdent};
-use cssparser::{BasicParseErrorKind, ParseErrorKind, Parser, Token};
+use cssparser::{match_ignore_ascii_case, BasicParseErrorKind, ParseErrorKind, Parser, Token};
 use std::fmt::{self, Write};
 use std::io::Write as IoWrite;
-use style_traits::{CssType, CssWriter, KeywordsCollectFn, ParseError, StyleParseErrorKind};
-use style_traits::{SpecifiedValueInfo, ToCss, ValueParseErrorKind};
+use style_traits::{
+    owned_slice::OwnedSlice, CssType, CssWriter, KeywordsCollectFn, ParseError, SpecifiedValueInfo,
+    StyleParseErrorKind, ToCss, ValueParseErrorKind,
+};
 
 /// A specified color-mix().
 pub type ColorMix = GenericColorMix<Color, Percentage>;
@@ -33,8 +38,15 @@ impl ColorMix {
         input.expect_function_matching("color-mix")?;
 
         input.parse_nested_block(|input| {
-            let interpolation = ColorInterpolationMethod::parse(context, input)?;
-            input.expect_comma()?;
+            // If the color interpolation method is omitted, default to "in oklab".
+            // See: https://github.com/web-platform-tests/interop/issues/1166
+            let interpolation = input
+                .try_parse(|input| -> Result<_, ParseError<'i>> {
+                    let interpolation = ColorInterpolationMethod::parse(context, input)?;
+                    input.expect_comma()?;
+                    Ok(interpolation)
+                })
+                .unwrap_or_default();
 
             let try_parse_percentage = |input: &mut Parser| -> Option<Percentage> {
                 input
@@ -42,31 +54,70 @@ impl ColorMix {
                     .ok()
             };
 
-            let mut left_percentage = try_parse_percentage(input);
+            let mut items = ColorMixItemList::default();
 
-            let left = Color::parse_internal(context, input, preserve_authored)?;
-            if left_percentage.is_none() {
-                left_percentage = try_parse_percentage(input);
+            loop {
+                let mut percentage = try_parse_percentage(input);
+
+                let color = Color::parse_internal(context, input, preserve_authored)?;
+
+                if percentage.is_none() {
+                    percentage = try_parse_percentage(input);
+                }
+
+                items.push((color, percentage));
+
+                if input.try_parse(|i| i.expect_comma()).is_err() {
+                    break;
+                }
+
+                if items.len() == 2
+                    && !static_prefs::pref!("layout.css.color-mix-multi-color.enabled")
+                {
+                    break;
+                }
             }
 
-            input.expect_comma()?;
-
-            let mut right_percentage = try_parse_percentage(input);
-
-            let right = Color::parse_internal(context, input, preserve_authored)?;
-
-            if right_percentage.is_none() {
-                right_percentage = try_parse_percentage(input);
+            if items.len() < 2 {
+                return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
             }
 
-            let right_percentage = right_percentage
-                .unwrap_or_else(|| Percentage::new(1.0 - left_percentage.map_or(0.5, |p| p.get())));
+            // Normalize percentages per:
+            // https://drafts.csswg.org/css-values-5/#normalize-mix-percentages
+            let (mut sum_specified, mut missing) = (0.0, 0);
+            for (_, percentage) in items.iter() {
+                if let Some(p) = percentage {
+                    sum_specified += p.to_percentage();
+                } else {
+                    missing += 1;
+                }
+            }
 
-            let left_percentage =
-                left_percentage.unwrap_or_else(|| Percentage::new(1.0 - right_percentage.get()));
+            let default_for_missing_items = match missing {
+                0 => None,
+                m if m == items.len() => Some(Percentage::new(1.0 / items.len() as f32)),
+                m => Some(Percentage::new((1.0 - sum_specified) / m as f32)),
+            };
 
-            if left_percentage.get() + right_percentage.get() <= 0.0 {
-                // If the percentages sum to zero, the function is invalid.
+            if let Some(default) = default_for_missing_items {
+                for (_, percentage) in items.iter_mut() {
+                    if percentage.is_none() {
+                        *percentage = Some(default);
+                    }
+                }
+            }
+
+            let mut total = 0.0;
+            let finalized = items
+                .into_iter()
+                .map(|(color, percentage)| {
+                    let percentage = percentage.expect("percentage filled above");
+                    total += percentage.to_percentage();
+                    GenericColorMixItem { color, percentage }
+                })
+                .collect::<ColorMixItemList<_>>();
+
+            if total <= 0.0 {
                 return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
             }
 
@@ -75,10 +126,7 @@ impl ColorMix {
             // to preserve floating point precision.
             Ok(ColorMix {
                 interpolation,
-                left,
-                left_percentage,
-                right,
-                right_percentage,
+                items: OwnedSlice::from_slice(&finalized),
                 flags: ColorMixFlags::NORMALIZE_WEIGHTS | ColorMixFlags::RESULT_IN_MODERN_SYNTAX,
             })
         })
@@ -108,7 +156,7 @@ impl ToCss for Absolute {
 }
 
 /// Specified color value
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem, ToTyped)]
 pub enum Color {
     /// The 'currentColor' keyword
     CurrentColor,
@@ -125,6 +173,8 @@ pub enum Color {
     ColorMix(Box<ColorMix>),
     /// A light-dark() color.
     LightDark(Box<GenericLightDark<Self>>),
+    /// The contrast-color function.
+    ContrastColor(Box<Color>),
     /// Quirksmode-only rule for inheriting color from the body
     #[cfg(feature = "gecko")]
     InheritFromBodyQuirk,
@@ -447,9 +497,23 @@ impl Color {
                     return Ok(Color::ColorMix(Box::new(mix)));
                 }
 
-                if let Ok(ld) = input.try_parse(|i| GenericLightDark::parse_with(i, |i| Self::parse_internal(context, i, preserve_authored)))
-                {
+                if let Ok(ld) = input.try_parse(|i| {
+                    GenericLightDark::parse_with(i, |i| {
+                        Self::parse_internal(context, i, preserve_authored)
+                    })
+                }) {
                     return Ok(Color::LightDark(Box::new(ld)));
+                }
+
+                if static_prefs::pref!("layout.css.contrast-color.enabled") {
+                    if let Ok(c) = input.try_parse(|i| {
+                        i.expect_function_matching("contrast-color")?;
+                        i.parse_nested_block(|i| {
+                            Self::parse_internal(context, i, preserve_authored)
+                        })
+                    }) {
+                        return Ok(Color::ContrastColor(Box::new(c)));
+                    }
                 }
 
                 match e.kind {
@@ -526,6 +590,11 @@ impl ToCss for Color {
             Color::ColorFunction(ref color_function) => color_function.to_css(dest),
             Color::ColorMix(ref mix) => mix.to_css(dest),
             Color::LightDark(ref ld) => ld.to_css(dest),
+            Color::ContrastColor(ref c) => {
+                dest.write_str("contrast-color(")?;
+                c.to_css(dest)?;
+                dest.write_char(')')
+            },
             #[cfg(feature = "gecko")]
             Color::System(system) => system.to_css(dest),
             #[cfg(feature = "gecko")]
@@ -553,13 +622,14 @@ impl Color {
                     .unwrap_or(false)
             },
             Self::LightDark(ref ld) => {
-                ld.light.honored_in_forced_colors_mode(allow_transparent) &&
-                    ld.dark.honored_in_forced_colors_mode(allow_transparent)
+                ld.light.honored_in_forced_colors_mode(allow_transparent)
+                    && ld.dark.honored_in_forced_colors_mode(allow_transparent)
             },
-            Self::ColorMix(ref mix) => {
-                mix.left.honored_in_forced_colors_mode(allow_transparent) &&
-                    mix.right.honored_in_forced_colors_mode(allow_transparent)
-            },
+            Self::ColorMix(ref mix) => mix
+                .items
+                .iter()
+                .all(|item| item.color.honored_in_forced_colors_mode(allow_transparent)),
+            Self::ContrastColor(ref c) => c.honored_in_forced_colors_mode(allow_transparent),
         }
     }
 
@@ -595,16 +665,17 @@ impl Color {
             Self::Absolute(c) => Some(c.color),
             Self::ColorFunction(ref color_function) => color_function.resolve_to_absolute().ok(),
             Self::ColorMix(ref mix) => {
-                let left = mix.left.resolve_to_absolute()?;
-                let right = mix.right.resolve_to_absolute()?;
-                Some(crate::color::mix::mix(
-                    mix.interpolation,
-                    &left,
-                    mix.left_percentage.to_percentage(),
-                    &right,
-                    mix.right_percentage.to_percentage(),
-                    mix.flags,
-                ))
+                use crate::color::mix;
+
+                let mut items = ColorMixItemList::with_capacity(mix.items.len());
+                for item in mix.items.iter() {
+                    items.push(mix::ColorMixItem::new(
+                        item.color.resolve_to_absolute()?,
+                        item.percentage.to_percentage(),
+                    ))
+                }
+
+                Some(mix::mix_many(mix.interpolation, items, mix.flags))
             },
             _ => None,
         }
@@ -753,17 +824,22 @@ impl Color {
             Color::ColorMix(ref mix) => {
                 use crate::values::computed::percentage::Percentage;
 
-                let left = mix.left.to_computed_color(context)?;
-                let right = mix.right.to_computed_color(context)?;
+                let mut items = ColorMixItemList::with_capacity(mix.items.len());
+                for item in mix.items.iter() {
+                    items.push(GenericColorMixItem {
+                        color: item.color.to_computed_color(context)?,
+                        percentage: Percentage(item.percentage.get()),
+                    });
+                }
 
                 ComputedColor::from_color_mix(GenericColorMix {
                     interpolation: mix.interpolation,
-                    left,
-                    left_percentage: Percentage(mix.left_percentage.get()),
-                    right,
-                    right_percentage: Percentage(mix.right_percentage.get()),
+                    items: OwnedSlice::from_slice(items.as_slice()),
                     flags: mix.flags,
                 })
+            },
+            Color::ContrastColor(ref c) => {
+                ComputedColor::ContrastColor(Box::new(c.to_computed_color(context)?))
             },
             #[cfg(feature = "gecko")]
             Color::System(system) => system.compute(context?),
@@ -800,6 +876,9 @@ impl ToComputedValue for Color {
             ComputedColor::ColorMix(ref mix) => {
                 Color::ColorMix(Box::new(ToComputedValue::from_computed_value(&**mix)))
             },
+            ComputedColor::ContrastColor(ref c) => {
+                Self::ContrastColor(Box::new(ToComputedValue::from_computed_value(&**c)))
+            },
         }
     }
 }
@@ -827,6 +906,7 @@ impl SpecifiedValueInfo for Color {
             "oklab",
             "oklch",
             "color-mix",
+            "contrast-color",
             "light-dark",
         ]);
     }
@@ -835,7 +915,7 @@ impl SpecifiedValueInfo for Color {
 /// Specified value for the "color" property, which resolves the `currentcolor`
 /// keyword to the parent color instead of self's color.
 #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-#[derive(Clone, Debug, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
 pub struct ColorPropertyValue(pub Color);
 
 impl ToComputedValue for ColorPropertyValue {
@@ -919,6 +999,7 @@ bitflags! {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 #[value_info(other_values = "normal")]
@@ -1034,6 +1115,7 @@ impl ToCss for ColorScheme {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum PrintColorAdjust {
@@ -1056,6 +1138,7 @@ pub enum PrintColorAdjust {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum ForcedColorAdjust {

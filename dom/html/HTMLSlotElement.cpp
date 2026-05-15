@@ -4,15 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/HTMLSlotElement.h"
+
+#include "mozilla/AppShutdown.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/HTMLSlotElementBinding.h"
 #include "mozilla/dom/HTMLUnknownElement.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Text.h"
-#include "mozilla/AppShutdown.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 
@@ -112,7 +113,7 @@ static void FlattenAssignedNodes(HTMLSlotElement* aSlot,
     return;
   }
 
-  const nsTArray<RefPtr<nsINode>>& assignedNodes = aSlot->AssignedNodes();
+  const Span<const RefPtr<nsINode>> assignedNodes = aSlot->AssignedNodes();
 
   // If assignedNodes is empty, use children of slot as fallback content.
   if (assignedNodes.IsEmpty()) {
@@ -147,7 +148,7 @@ void HTMLSlotElement::AssignedNodes(const AssignedNodesOptions& aOptions,
     return FlattenAssignedNodes(this, aNodes);
   }
 
-  aNodes = mAssignedNodes.Clone();
+  aNodes.AppendElements(mAssignedNodes.AsSpan());
 }
 
 void HTMLSlotElement::AssignedElements(const AssignedNodesOptions& aOptions,
@@ -159,10 +160,6 @@ void HTMLSlotElement::AssignedElements(const AssignedNodesOptions& aOptions,
       aElements.AppendElement(assignedNode->AsElement());
     }
   }
-}
-
-const nsTArray<RefPtr<nsINode>>& HTMLSlotElement::AssignedNodes() const {
-  return mAssignedNodes;
 }
 
 const nsTArray<nsINode*>& HTMLSlotElement::ManuallyAssignedNodes() const {
@@ -318,7 +315,7 @@ void HTMLSlotElement::AppendAssignedNode(nsIContent& aNode) {
 void HTMLSlotElement::RecalculateHasSlottedState() {
   bool hasSlotted = false;
   // Find the first node that makes this a slotted element.
-  for (const RefPtr<nsINode>& assignedNode : mAssignedNodes) {
+  for (const RefPtr<nsINode>& assignedNode : mAssignedNodes.AsSpan()) {
     if (auto* slot = HTMLSlotElement::FromNode(assignedNode)) {
       if (slot->IsInShadowTree() &&
           !slot->State().HasState(ElementState::HAS_SLOTTED)) {
@@ -351,7 +348,7 @@ void HTMLSlotElement::RemoveAssignedNode(nsIContent& aNode) {
 }
 
 void HTMLSlotElement::ClearAssignedNodes() {
-  for (RefPtr<nsINode>& node : mAssignedNodes) {
+  for (RefPtr<nsINode>& node : mAssignedNodes.AsSpan()) {
     MOZ_ASSERT(!node->AsContent()->GetAssignedSlot() ||
                    node->AsContent()->GetAssignedSlot() == this,
                "How exactly?");
@@ -389,7 +386,9 @@ void HTMLSlotElement::FireSlotChangeEvent() {
 
 void HTMLSlotElement::RemoveManuallyAssignedNode(nsIContent& aNode) {
   mManuallyAssignedNodes.RemoveElement(&aNode);
-  RemoveAssignedNode(aNode);
+  if (aNode.GetAssignedSlot() == this) {
+    RemoveAssignedNode(aNode);
+  }
 }
 
 JSObject* HTMLSlotElement::WrapNode(JSContext* aCx,

@@ -25,19 +25,31 @@ add_task(async function test_empty_search() {
   let uri6 = Services.io.newURI("http://t.foo/6");
   let uri7 = Services.io.newURI("http://t.foo/7");
 
-  await PlacesTestUtils.addVisits([
-    { uri: uri7, title: "title" },
-    { uri: uri6, title: "title" },
-    { uri: uri4, title: "title" },
-    { uri: uri3, title: "title" },
-    { uri: uri2, title: "title" },
-    { uri: uri1, title: "title" },
-  ]);
-
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri6, title: "title" });
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri5, title: "title" });
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri4, title: "title" });
   await PlacesTestUtils.addBookmarkWithDetails({ uri: uri2, title: "title" });
+
+  await PlacesTestUtils.addVisits([
+    {
+      uri: uri7,
+      title: "title",
+    },
+    {
+      uri: uri6,
+      title: "title",
+    },
+    {
+      uri: uri4,
+      title: "title",
+    },
+    { uri: uri3, title: "title" },
+    {
+      uri: uri2,
+      title: "title",
+    },
+    { uri: uri1, title: "title" },
+  ]);
 
   await addOpenPages(uri7, 1);
 
@@ -45,6 +57,10 @@ add_task(async function test_empty_search() {
   await PlacesUtils.history.remove(uri6);
 
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+
+  // With the changes above, the sites have the same frecency:
+  // Group 1: http://t.foo/6, http://t.foo/5, http://t.foo/4, http://t.foo/2
+  // Group 2: http://t.foo/7, http://t.foo/3, http://t.foo/1
 
   // With the changes above, the sites in descending order of frecency are:
   // uri2

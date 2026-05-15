@@ -102,8 +102,15 @@ void BaseCompiler::bceCheckLocal(MemoryAccessDesc* access, AccessCheck* check,
     return;
   }
 
-  uint64_t offsetGuardLimit =
-      GetMaxOffsetGuardLimit(codeMeta_.hugeMemoryEnabled(0));
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  if (codeMeta_.memories[0].pageSize() != PageSize::Standard) {
+    // We do not have guard pages, so we cannot perform this optimization.
+    return;
+  }
+#endif
+
+  uint64_t offsetGuardLimit = GetMaxOffsetGuardLimit(
+      codeMeta_.hugeMemoryEnabled(0), codeMeta_.memories[0].pageSize());
 
   if ((bceSafe_ & (BCESet(1) << local)) &&
       access->offset64() < offsetGuardLimit) {
@@ -142,19 +149,21 @@ RegI32 BaseCompiler::popConstMemoryAccess<RegI32>(MemoryAccessDesc* access,
   uint32_t addr = addrTemp;
 
   uint64_t offsetGuardLimit = GetMaxOffsetGuardLimit(
-      codeMeta_.hugeMemoryEnabled(access->memoryIndex()));
+      codeMeta_.hugeMemoryEnabled(access->memoryIndex()),
+      codeMeta_.memories[access->memoryIndex()].pageSize());
 
   // Validation ensures that the offset is in 32-bit range, and the calculation
   // of the limit cannot overflow due to our choice of HugeOffsetGuardLimit.
 #ifdef WASM_SUPPORTS_HUGE_MEMORY
-  static_assert(MaxMemory32PagesValidation * PageSize <=
+  static_assert(MaxMemory32StandardPagesValidation * StandardPageSizeBytes <=
                 UINT64_MAX - HugeOffsetGuardLimit);
 #endif
   uint64_t ea = uint64_t(addr) + uint64_t(access->offset32());
-  uint64_t limit = codeMeta_.memories[access->memoryIndex()].initialLength32() +
+  uint64_t finalAddress = ea + access->byteSize();
+  uint64_t limit = codeMeta_.memories[access->memoryIndex()].initialLength() +
                    offsetGuardLimit;
 
-  check->omitBoundsCheck = ea < limit;
+  check->omitBoundsCheck = finalAddress < limit;
   check->omitAlignmentCheck = (ea & (access->byteSize() - 1)) == 0;
 
   // Fold the offset into the pointer if we can, as this is always
@@ -179,16 +188,19 @@ RegI64 BaseCompiler::popConstMemoryAccess<RegI64>(MemoryAccessDesc* access,
   uint64_t addr = addrTemp;
 
   uint64_t offsetGuardLimit = GetMaxOffsetGuardLimit(
-      codeMeta_.hugeMemoryEnabled(access->memoryIndex()));
+      codeMeta_.hugeMemoryEnabled(access->memoryIndex()),
+      codeMeta_.memories[access->memoryIndex()].pageSize());
 
   mozilla::CheckedUint64 ea(addr);
   ea += access->offset64();
+  mozilla::CheckedUint64 finalAddress(ea);
+  finalAddress += access->byteSize();
   mozilla::CheckedUint64 limit(
-      codeMeta_.memories[access->memoryIndex()].initialLength64());
+      codeMeta_.memories[access->memoryIndex()].initialLength());
   limit += offsetGuardLimit;
 
-  if (ea.isValid() && limit.isValid()) {
-    check->omitBoundsCheck = ea.value() < limit.value();
+  if (ea.isValid() && finalAddress.isValid() && limit.isValid()) {
+    check->omitBoundsCheck = finalAddress.value() < limit.value();
     check->omitAlignmentCheck = (ea.value() & (access->byteSize() - 1)) == 0;
 
     // Fold the offset into the pointer if we can, as this is always
@@ -290,6 +302,7 @@ void BaseCompiler::branchTestLowZero(RegI64 ptr, Imm32 mask, Label* ok) {
 }
 
 void BaseCompiler::boundsCheck4GBOrLargerAccess(uint32_t memoryIndex,
+                                                unsigned byteSize,
                                                 RegPtr instance, RegI32 ptr,
                                                 Label* ok) {
 #ifdef JS_64BIT
@@ -309,7 +322,7 @@ void BaseCompiler::boundsCheck4GBOrLargerAccess(uint32_t memoryIndex,
   masm.move32To64ZeroExtend(ptr, ptr64);
 #  endif
 
-  boundsCheck4GBOrLargerAccess(memoryIndex, instance, ptr64, ok);
+  boundsCheck4GBOrLargerAccess(memoryIndex, byteSize, instance, ptr64, ok);
 
   // Restore the value to the canonical form for a 32-bit value in a
   // 64-bit register and/or the appropriate form for further use in the
@@ -326,31 +339,34 @@ void BaseCompiler::boundsCheck4GBOrLargerAccess(uint32_t memoryIndex,
 }
 
 void BaseCompiler::boundsCheckBelow4GBAccess(uint32_t memoryIndex,
-                                             RegPtr instance, RegI32 ptr,
-                                             Label* ok) {
+                                             unsigned byteSize, RegPtr instance,
+                                             RegI32 ptr, Label* ok) {
   // If the memory's max size is known to be smaller than 64K pages exactly,
   // we can use a 32-bit check and avoid extension and wrapping.
-  masm.wasmBoundsCheck32(
-      Assembler::Below, ptr,
-      Address(instance, instanceOffsetOfBoundsCheckLimit(memoryIndex)), ok);
+  masm.wasmBoundsCheck32(Assembler::Below, ptr,
+                         Address(instance, instanceOffsetOfBoundsCheckLimit(
+                                               memoryIndex, byteSize)),
+                         ok);
 }
 
 void BaseCompiler::boundsCheck4GBOrLargerAccess(uint32_t memoryIndex,
+                                                unsigned byteSize,
                                                 RegPtr instance, RegI64 ptr,
                                                 Label* ok) {
   // Any Spectre mitigation will appear to update the ptr64 register.
-  masm.wasmBoundsCheck64(
-      Assembler::Below, ptr,
-      Address(instance, instanceOffsetOfBoundsCheckLimit(memoryIndex)), ok);
+  masm.wasmBoundsCheck64(Assembler::Below, ptr,
+                         Address(instance, instanceOffsetOfBoundsCheckLimit(
+                                               memoryIndex, byteSize)),
+                         ok);
 }
 
 void BaseCompiler::boundsCheckBelow4GBAccess(uint32_t memoryIndex,
-                                             RegPtr instance, RegI64 ptr,
-                                             Label* ok) {
+                                             unsigned byteSize, RegPtr instance,
+                                             RegI64 ptr, Label* ok) {
   // The bounds check limit is valid to 64 bits, so there's no sense in doing
   // anything complicated here.  There may be optimization paths here in the
   // future and they may differ on 32-bit and 64-bit.
-  boundsCheck4GBOrLargerAccess(memoryIndex, instance, ptr, ok);
+  boundsCheck4GBOrLargerAccess(memoryIndex, byteSize, instance, ptr, ok);
 }
 
 // Make sure the ptr could be used as an index register.
@@ -371,8 +387,14 @@ template <typename RegAddressType>
 void BaseCompiler::prepareMemoryAccess(MemoryAccessDesc* access,
                                        AccessCheck* check, RegPtr instance,
                                        RegAddressType ptr) {
+#ifndef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  MOZ_ASSERT(codeMeta_.memories[access->memoryIndex()].pageSize() ==
+             PageSize::Standard);
+#endif
+
   uint64_t offsetGuardLimit = GetMaxOffsetGuardLimit(
-      codeMeta_.hugeMemoryEnabled(access->memoryIndex()));
+      codeMeta_.hugeMemoryEnabled(access->memoryIndex()),
+      codeMeta_.memories[access->memoryIndex()].pageSize());
 
   // Fold offset if necessary for further computations.
   if (access->offset64() >= offsetGuardLimit ||
@@ -414,23 +436,32 @@ void BaseCompiler::prepareMemoryAccess(MemoryAccessDesc* access,
 
   // Bounds check if required.
 
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  MOZ_ASSERT_IF(codeMeta_.memories[access->memoryIndex()].pageSize() !=
+                    PageSize::Standard,
+                !codeMeta_.hugeMemoryEnabled(access->memoryIndex()));
+#endif
+
   if (!codeMeta_.hugeMemoryEnabled(access->memoryIndex()) &&
       !check->omitBoundsCheck) {
     Label ok;
 #ifdef JS_64BIT
     // The checking depends on how many bits are in the pointer and how many
     // bits are in the bound.
-    static_assert(0x100000000 % PageSize == 0);
-    if (!codeMeta_.memories[access->memoryIndex()].boundsCheckLimitIs32Bits() &&
-        MaxMemoryPages(
-            codeMeta_.memories[access->memoryIndex()].addressType()) >=
-            Pages(0x100000000 / PageSize)) {
-      boundsCheck4GBOrLargerAccess(access->memoryIndex(), instance, ptr, &ok);
+    if (!codeMeta_.memories[access->memoryIndex()]
+             .boundsCheckLimitIsAlways32Bits() &&
+        MaxMemoryBytes(codeMeta_.memories[access->memoryIndex()].addressType(),
+                       codeMeta_.memories[access->memoryIndex()].pageSize()) >=
+            0x100000000) {
+      boundsCheck4GBOrLargerAccess(access->memoryIndex(), access->byteSize(),
+                                   instance, ptr, &ok);
     } else {
-      boundsCheckBelow4GBAccess(access->memoryIndex(), instance, ptr, &ok);
+      boundsCheckBelow4GBAccess(access->memoryIndex(), access->byteSize(),
+                                instance, ptr, &ok);
     }
 #else
-    boundsCheckBelow4GBAccess(access->memoryIndex(), instance, ptr, &ok);
+    boundsCheckBelow4GBAccess(access->memoryIndex(), access->byteSize(),
+                              instance, ptr, &ok);
 #endif
     trap(Trap::OutOfBounds);
     masm.bind(&ok);
@@ -1274,6 +1305,10 @@ static void PopAndAllocate(BaseCompiler* bc, ValType type,
                            Scalar::Type viewType, AtomicOp op, RegI32* rd,
                            RegI32* rv, Temps* temps) {
   *rv = type == ValType::I64 ? bc->popI64ToI32() : bc->popI32();
+  if (type == ValType::I64) {
+    // Architecture-specific i64-to-i32.
+    bc->masm.move64To32(Register64(*rv), *rv);
+  }
   if (Scalar::byteSize(viewType) < 4) {
     temps->t0 = bc->needI32();
     temps->t1 = bc->needI32();
@@ -1653,6 +1688,10 @@ static void PopAndAllocate(BaseCompiler* bc, ValType type,
                            Scalar::Type viewType, RegI32* rd, RegI32* rv,
                            Temps* temps) {
   *rv = (type == ValType::I64) ? bc->popI64ToI32() : bc->popI32();
+  if (type == ValType::I64) {
+    // Architecture-specific i64-to-i32.
+    bc->masm.move64To32(Register64(*rv), *rv);
+  }
   if (Scalar::byteSize(viewType) < 4) {
     temps->t0 = bc->needI32();
     temps->t1 = bc->needI32();
@@ -1990,6 +2029,8 @@ static void PopAndAllocate(BaseCompiler* bc, ValType type,
   if (type == ValType::I64) {
     *rnew = bc->popI64ToI32();
     *rexpect = bc->popI64ToI32();
+    // Architecture-specific i64-to-i32.
+    bc->masm.move64To32(Register64(*rexpect), *rexpect);
   } else {
     *rnew = bc->popI32();
     *rexpect = bc->popI32();

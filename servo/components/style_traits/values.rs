@@ -7,10 +7,9 @@
 use app_units::Au;
 use cssparser::ToCss as CssparserToCss;
 use cssparser::{serialize_string, ParseError, Parser, Token, UnicodeRange};
-#[cfg(feature = "gecko")]
-use nsstring::nsCString;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
+use thin_vec::ThinVec;
 
 /// Serialises a value according to its CSS representation.
 ///
@@ -96,13 +95,12 @@ pub trait ToCss {
         s
     }
 
-    /// Serialize `self` in CSS syntax and return a nsCString.
+    /// Serialize `self` in CSS syntax and return a CssString.
     ///
     /// (This is a convenience wrapper for `to_css` and probably should not be overridden.)
     #[inline]
-    #[cfg(feature = "gecko")]
-    fn to_css_nscstring(&self) -> nsCString {
-        let mut s = nsCString::new();
+    fn to_css_cssstring(&self) -> CssString {
+        let mut s = CssString::new();
         self.to_css(&mut CssWriter::new(&mut s)).unwrap();
         s
     }
@@ -227,6 +225,29 @@ where
     }
 }
 
+/// To avoid accidentally instantiating multiple monomorphizations of large
+/// serialization routines, we define explicit concrete types and require
+/// them in those routines. This avoids accidental mixing of String and
+/// nsACString arguments in Gecko, which would cause code size to blow up.
+#[cfg(feature = "gecko")]
+pub type CssStringWriter = ::nsstring::nsACString;
+
+/// String type that coerces to CssStringWriter, used when serialization code
+/// needs to allocate a temporary string. In Gecko, this is backed by
+/// nsCString, which allows the result to be passed directly to C++ without
+/// conversion or copying. This makes it suitable not only for temporary
+/// serialization but also for values that need to cross the Rust/C++ boundary.
+#[cfg(feature = "gecko")]
+pub type CssString = ::nsstring::nsCString;
+
+/// String. The comments for the Gecko types explain the need for this abstraction.
+#[cfg(feature = "servo")]
+pub type CssStringWriter = String;
+
+/// String. The comments for the Gecko types explain the need for this abstraction.
+#[cfg(feature = "servo")]
+pub type CssString = String;
+
 /// Convenience wrapper to serialise CSS values separated by a given string.
 pub struct SequenceWriter<'a, 'b: 'a, W: 'b> {
     inner: &'a mut CssWriter<'b, W>,
@@ -237,6 +258,12 @@ impl<'a, 'b, W> SequenceWriter<'a, 'b, W>
 where
     W: Write + 'b,
 {
+    /// Returns whether this writer has written any item.
+    pub fn has_written(&self) -> bool {
+        // See comment in item()
+        self.inner.prefix.is_none()
+    }
+
     /// Create a new sequence writer.
     #[inline]
     pub fn new(inner: &'a mut CssWriter<'b, W>, separator: &'static str) -> Self {
@@ -573,3 +600,160 @@ pub mod specified {
         }
     }
 }
+
+/// A single numeric value with an associated unit.
+///
+/// This corresponds to `CSSUnitValue` in the Typed OM specification. The
+/// numeric component is stored separately from the textual unit identifier.
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub struct UnitValue {
+    /// The numeric component of the value.
+    pub value: f32,
+
+    /// The textual unit string (e.g. `"px"`, `"em"`, `"%"`, `"deg"`).
+    pub unit: CssString,
+}
+
+/// A sum of numeric values.
+///
+/// This corresponds to `CSSMathSum` in the Typed OM specification. A sum
+/// value represents an expression such as `10px + 2em`. Each entry is itself
+/// a `NumericValue`, allowing nested sums if needed.
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub struct MathSum {
+    /// The list of numeric terms that make up the sum.
+    pub values: ThinVec<NumericValue>,
+}
+
+/// A numeric value used by the Typed OM.
+///
+/// This corresponds to `CSSNumericValue` and its subclasses in the Typed OM
+/// specification. It represents numbers that can appear in CSS values,
+/// including both simple unit quantities and composite expressions..
+///
+/// Unlike the parser-level representation, `NumericValue` is property-agnostic
+/// and suitable for conversion to or from the `CSSNumericValue` family of DOM
+/// objects.
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub enum NumericValue {
+    /// A single numeric value with a concrete unit.
+    ///
+    /// This corresponds to `CSSUnitValue`.
+    Unit(UnitValue),
+
+    /// A sum of numeric values.
+    ///
+    /// This corresponds to `CSSMathSum`.
+    Sum(MathSum),
+}
+
+/// A property-agnostic representation of a value, used by Typed OM.
+///
+/// `TypedValue` is the internal counterpart of the various `CSSStyleValue`
+/// subclasses defined by the Typed OM specification. It captures values that
+/// can be represented independently of any particular property.
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub enum TypedValue {
+    /// A keyword value (e.g. `"block"`, `"none"`, `"thin"`).
+    ///
+    /// Keywords are stored as a `CssString` so they can be represented and
+    /// transferred independently of any specific property. This corresponds
+    /// to `CSSKeywordValue` in the Typed OM specification.
+    Keyword(CssString),
+
+    /// A numeric value such as a length, angle, time, or a sum thereof.
+    ///
+    /// This corresponds to the `CSSNumericValue` hierarchy in the Typed OM
+    /// specification, including `CSSUnitValue` and `CSSMathSum`.
+    Numeric(NumericValue),
+}
+
+/// Reifies a value into its Typed OM representation.
+///
+/// This trait is the Typed OM analogue of [`ToCss`]. Instead of serializing
+/// values into CSS syntax, it converts them into [`TypedValue`]s that can be
+/// exposed to the DOM as `CSSStyleValue` subclasses.
+///
+/// This trait is derivable with `#[derive(ToTyped)]`. The derived
+/// implementation currently supports:
+///
+/// * Keyword enums: Enums whose variants are all unit variants are
+///   automatically reified as [`TypedValue::Keyword`], using the same
+///   serialization logic as [`ToCss`].
+///
+/// * Structs and data-carrying variants: When the
+///   `#[typed_value(derive_fields)]` attribute is present, the derive attempts
+///   to call `.to_typed()` recursively on inner fields or variant payloads,
+///   producing a nested [`TypedValue`] representation when possible.
+///
+/// * Other cases: If no automatic mapping is defined or recursion is not
+///   enabled, the derived implementation falls back to the default method,
+///   returning `None`.
+///
+/// The `derive_fields` attribute is intentionally opt-in for now to avoid
+/// forcing types that do not participate in reification to implement
+/// [`ToTyped`]. Once Typed OM coverage stabilizes, this behavior is expected
+/// to become the default (see the corresponding follow-up bug).
+///
+/// Over time, the derive may be extended to handle additional CSS value
+/// categories such as numeric, color, and transform types.
+pub trait ToTyped {
+    /// Attempt to convert `self` into a [`TypedValue`].
+    ///
+    /// Returns `Some(TypedValue)` if the value can be reified into a
+    /// property-agnostic CSSStyleValue subclass. Returns `None` if the value
+    /// is unrepresentable, in which case reification produces a property-tied
+    /// CSSStyleValue instead.
+    fn to_typed(&self) -> Option<TypedValue> {
+        None
+    }
+}
+
+impl<'a, T> ToTyped for &'a T
+where
+    T: ToTyped + ?Sized,
+{
+    fn to_typed(&self) -> Option<TypedValue> {
+        (*self).to_typed()
+    }
+}
+
+impl<T> ToTyped for Box<T>
+where
+    T: ?Sized + ToTyped,
+{
+    fn to_typed(&self) -> Option<TypedValue> {
+        (**self).to_typed()
+    }
+}
+
+impl ToTyped for Au {
+    fn to_typed(&self) -> Option<TypedValue> {
+        let value = self.to_f32_px();
+        let unit = CssString::from("px");
+        Some(TypedValue::Numeric(NumericValue::Unit(UnitValue {
+            value,
+            unit,
+        })))
+    }
+}
+
+macro_rules! impl_to_typed_for_predefined_type {
+    ($name: ty) => {
+        impl<'a> ToTyped for $name {
+            fn to_typed(&self) -> Option<TypedValue> {
+                // XXX Should return TypedValue::Numeric with unit "number"
+                // once that variant is available. Tracked in bug 1990419.
+                None
+            }
+        }
+    };
+}
+
+impl_to_typed_for_predefined_type!(f32);
+impl_to_typed_for_predefined_type!(i8);
+impl_to_typed_for_predefined_type!(i32);

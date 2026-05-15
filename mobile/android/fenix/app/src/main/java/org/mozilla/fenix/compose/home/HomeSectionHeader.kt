@@ -5,73 +5,80 @@
 package org.mozilla.fenix.compose.home
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import mozilla.components.compose.base.utils.inComposePreview
 import mozilla.components.lib.state.ext.observeAsComposableState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
+import org.mozilla.fenix.theme.Theme
 import org.mozilla.fenix.wallpapers.Wallpaper
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Homepage header.
  *
  * @param headerText The header string.
  * @param modifier Modifier to apply.
- * @param description The content description for the "Show all" button.
- * @param onShowAllClick Invoked when "Show all" button is clicked.
+ * @param description The content description for the button.
+ * @param buttonText The text to show for the button.
+ * @param onButtonClick Invoked when the button is clicked.
  */
 @Composable
 fun HomeSectionHeader(
     headerText: String,
     modifier: Modifier = Modifier,
     description: String = "",
-    onShowAllClick: (() -> Unit)? = null,
+    buttonText: String = stringResource(id = R.string.recent_tabs_show_all),
+    onButtonClick: (() -> Unit)? = null,
 ) {
     if (inComposePreview) {
         HomeSectionHeaderContent(
             headerText = headerText,
             modifier = modifier,
             description = description,
-            onShowAllClick = onShowAllClick,
+            onButtonClick = onButtonClick,
         )
     } else {
         val wallpaperState = components.appStore
             .observeAsComposableState { state -> state.wallpaperState }.value
-
-        val wallpaperAdaptedTextColor = wallpaperState?.currentWallpaper?.textColor?.let { Color(it) }
-
-        val isWallpaperDefault =
-            (wallpaperState?.currentWallpaper ?: Wallpaper.Default) == Wallpaper.Default
+        val isWallpaperDefault = wallpaperState.currentWallpaper == Wallpaper.Default
 
         HomeSectionHeaderContent(
             headerText = headerText,
             modifier = modifier,
-            textColor = wallpaperAdaptedTextColor ?: FirefoxTheme.colors.textPrimary,
+            textColor = wallpaperState.textColor,
             description = description,
-            showAllTextColor = if (isWallpaperDefault) {
-                FirefoxTheme.colors.textAccent
+            buttonColor = if (isWallpaperDefault) {
+                MaterialTheme.colorScheme.onSurface
             } else {
-                wallpaperAdaptedTextColor ?: FirefoxTheme.colors.textAccent
+                wallpaperState.textColor
             },
-            onShowAllClick = onShowAllClick,
+            buttonText = buttonText,
+            onButtonClick = onButtonClick,
         )
     }
 }
@@ -82,21 +89,23 @@ fun HomeSectionHeader(
  * @param headerText The header string.
  * @param modifier Modifier to apply.
  * @param textColor [Color] to apply to the text.
- * @param description The content description for the "Show all" button.
- * @param showAllTextColor [Color] for the "Show all" button.
- * @param onShowAllClick Invoked when "Show all" button is clicked.
+ * @param description The content description for the button.
+ * @param buttonColor [Color] for the button contents.
+ * @param buttonText The text to show for the button.
+ * @param onButtonClick Invoked when the button is clicked.
  */
 @Composable
 private fun HomeSectionHeaderContent(
     headerText: String,
     modifier: Modifier = Modifier,
-    textColor: Color = FirefoxTheme.colors.textPrimary,
+    textColor: Color = MaterialTheme.colorScheme.onSurface,
     description: String = "",
-    showAllTextColor: Color = FirefoxTheme.colors.textAccent,
-    onShowAllClick: (() -> Unit)? = null,
+    buttonColor: Color = MaterialTheme.colorScheme.onSurface,
+    buttonText: String = stringResource(id = R.string.recent_tabs_show_all),
+    onButtonClick: (() -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().then(modifier),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -108,36 +117,51 @@ private fun HomeSectionHeaderContent(
             color = textColor,
             overflow = TextOverflow.Ellipsis,
             maxLines = 2,
-            style = FirefoxTheme.typography.headline6,
+            style = FirefoxTheme.typography.subtitle1,
         )
 
-        onShowAllClick?.let {
-            TextButton(onClick = { onShowAllClick() }) {
+        Spacer(modifier = Modifier.width(FirefoxTheme.layout.space.dynamic100))
+
+        onButtonClick?.let {
+            TextButton(
+                onClick = { onButtonClick() },
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = buttonColor,
+                ),
+            ) {
                 Text(
-                    text = stringResource(id = R.string.recent_tabs_show_all),
+                    text = buttonText,
                     modifier = Modifier
-                        .padding(start = 16.dp)
                         .semantics {
                             contentDescription = description
                         },
-                    style = TextStyle(
-                        color = showAllTextColor,
-                        fontSize = 14.sp,
-                    ),
+                    style = FirefoxTheme.typography.subtitle1,
+                )
+
+                Spacer(modifier = Modifier.width(FirefoxTheme.layout.size.static50))
+
+                Icon(
+                    painter = painterResource(id = iconsR.drawable.mozac_ic_chevron_right_16),
+                    contentDescription = null,
                 )
             }
         }
     }
 }
 
-@Composable
 @Preview
-private fun HomeSectionsHeaderPreview() {
-    FirefoxTheme {
-        HomeSectionHeader(
-            headerText = stringResource(R.string.home_bookmarks_title),
-            description = stringResource(R.string.home_bookmarks_show_all_content_description),
-            onShowAllClick = {},
-        )
+@Composable
+private fun HomeSectionsHeaderPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
+        Surface {
+            HomeSectionHeader(
+                headerText = stringResource(R.string.home_bookmarks_title),
+                modifier = Modifier.padding(horizontal = FirefoxTheme.layout.size.static300),
+                description = stringResource(R.string.home_bookmarks_show_all_content_description),
+                onButtonClick = {},
+            )
+        }
     }
 }

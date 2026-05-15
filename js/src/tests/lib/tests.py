@@ -76,7 +76,6 @@ JITFLAGS = {
         [
             "--no-blinterp",
             "--no-baseline",
-            "--no-asmjs",
             "--wasm-compiler=none",
             "--no-native-regexp",
         ]

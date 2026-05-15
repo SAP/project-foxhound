@@ -5,9 +5,7 @@
 
 #include "gfxFontEntry.h"
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/MathAlgorithms.h"
 
 #include "mozilla/Logging.h"
 
@@ -27,12 +25,10 @@
 #include "nsBidiUtils.h"
 #include "nsStyleConsts.h"
 #include "mozilla/AppUnits.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "gfxSVGGlyphs.h"
@@ -220,9 +216,9 @@ bool gfxFontEntry::SupportsScriptInGSUB(const hb_tag_t* aScriptTags,
 
 nsresult gfxFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
   MOZ_ASSERT(false, "using default no-op implementation of ReadCMAP");
-  RefPtr<gfxCharacterMap> cmap = new gfxCharacterMap();
+  RefPtr<gfxCharacterMap> cmap = new gfxCharacterMap(0);
   if (mCharacterMap.compareExchange(nullptr, cmap.get())) {
-    Unused << cmap.forget();  // mCharacterMap now owns the reference
+    cmap.forget().leak();  // mCharacterMap now owns the reference
   }
   return NS_OK;
 }
@@ -826,7 +822,8 @@ bool gfxFontEntry::SupportsOpenTypeFeature(Script aScript,
                    aFeatureTag == HB_TAG('c', '2', 'p', 'c') ||
                    aFeatureTag == HB_TAG('s', 'u', 'p', 's') ||
                    aFeatureTag == HB_TAG('s', 'u', 'b', 's') ||
-                   aFeatureTag == HB_TAG('v', 'e', 'r', 't'),
+                   aFeatureTag == HB_TAG('v', 'e', 'r', 't') ||
+                   aFeatureTag == HB_TAG('r', 't', 'l', 'm'),
                "use of unknown feature tag");
 
   // note: graphite feature support uses the last script index
@@ -881,7 +878,8 @@ const hb_set_t* gfxFontEntry::InputsForOpenTypeFeature(Script aScript,
 
   NS_ASSERTION(aFeatureTag == HB_TAG('s', 'u', 'p', 's') ||
                    aFeatureTag == HB_TAG('s', 'u', 'b', 's') ||
-                   aFeatureTag == HB_TAG('v', 'e', 'r', 't'),
+                   aFeatureTag == HB_TAG('v', 'e', 'r', 't') ||
+                   aFeatureTag == HB_TAG('r', 't', 'l', 'm'),
                "use of unknown feature tag");
 
   uint32_t scriptFeature = SCRIPT_FEATURE(aScript, aFeatureTag);
@@ -1477,25 +1475,17 @@ void gfxFontEntry::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
 // user font cache. (Fonts that are part of the platform font list accumulate
 // their sizes to the font list's reporter using the AddSizeOf... methods
 // above.)
-size_t gfxFontEntry::ComputedSizeOfExcludingThis(
-    MallocSizeOf aMallocSizeOf) const {
+size_t gfxFontEntry::ComputedSizeOfExcludingThis(MallocSizeOf aMallocSizeOf) {
   FontListSizes s = {0};
   AddSizeOfExcludingThis(aMallocSizeOf, &s);
 
   // When reporting memory used for the main platform font list,
   // where we're typically summing the totals for a few hundred font faces,
   // we report the fields of FontListSizes separately.
-  // But for downloaded user fonts, the actual resource data (added below)
-  // will dominate, and the minor overhead of these pieces isn't worth
-  // splitting out for an individual font.
-  size_t result = s.mFontListSize + s.mFontTableCacheSize + s.mCharMapsSize;
-
-  if (mIsDataUserFont) {
-    MOZ_ASSERT(mComputedSizeOfUserFont > 0, "user font with no data?");
-    result += mComputedSizeOfUserFont;
-  }
-
-  return result;
+  // But for downloaded user fonts, the actual resource data (added by the
+  // subclass) will dominate, and the minor overhead of these pieces isn't
+  // worth splitting out for an individual font.
+  return s.mFontListSize + s.mFontTableCacheSize + s.mCharMapsSize;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1504,8 +1494,8 @@ size_t gfxFontEntry::ComputedSizeOfExcludingThis(
 //
 //////////////////////////////////////////////////////////////////////////////
 
-// we consider faces with mStandardFace == true to be "less than" those with
-// false, because during style matching, earlier entries are tried first
+// We consider faces with mStandardFace == true to be "greater than" those with
+// false, because during style matching, later entries are preferred.
 class FontEntryStandardFaceComparator {
  public:
   bool Equals(const RefPtr<gfxFontEntry>& a,
@@ -1514,7 +1504,7 @@ class FontEntryStandardFaceComparator {
   }
   bool LessThan(const RefPtr<gfxFontEntry>& a,
                 const RefPtr<gfxFontEntry>& b) const {
-    return (a->mStandardFace == true && b->mStandardFace == false);
+    return (a->mStandardFace == false && b->mStandardFace == true);
   }
 };
 
@@ -1651,10 +1641,11 @@ void gfxFontFamily::FindAllFontsForStyle(
 
   double minDistance = INFINITY;
   gfxFontEntry* matched = nullptr;
-  // iterate in forward order so that faces like 'Bold' are matched before
-  // matching style distance faces such as 'Bold Outline' (see bug 1185812)
-  for (uint32_t i = 0; i < count; i++) {
-    fe = mAvailableFonts[i];
+  // Iterate in reverse order so that faces like 'Bold' are matched before
+  // matching style-distance faces such as 'Bold Outline' (see bug 1185812;
+  // note that faces are sorted with "standard" faces later in the list.
+  for (uint32_t i = count; i > 0;) {
+    fe = mAvailableFonts[--i];
     // weight/style/stretch priority: stretch >> style >> weight
     double distance = WeightStyleStretchDistance(fe, aFontStyle);
     if (distance < minDistance) {
@@ -1664,7 +1655,7 @@ void gfxFontFamily::FindAllFontsForStyle(
       }
       minDistance = distance;
     } else if (distance == minDistance) {
-      if (matched) {
+      if (matched && matched != fe) {
         aFontEntryList.AppendElement(matched);
       }
       matched = fe;
@@ -1861,9 +1852,9 @@ void gfxFontFamily::SearchAllFontsForChar(GlobalFontMatch* aMatchData) {
   if (!mFamilyCharacterMap.test(aMatchData->mCh)) {
     return;
   }
-  uint32_t i, numFonts = mAvailableFonts.Length();
-  for (i = 0; i < numFonts; i++) {
-    gfxFontEntry* fe = mAvailableFonts[i];
+  uint32_t numFonts = mAvailableFonts.Length();
+  for (uint32_t i = numFonts; i > 0;) {
+    gfxFontEntry* fe = mAvailableFonts[--i];
     if (fe && fe->HasCharacter(aMatchData->mCh)) {
       float distance = WeightStyleStretchDistance(fe, aMatchData->mStyle);
       if (aMatchData->mPresentation != FontPresentation::Any) {
@@ -2157,8 +2148,8 @@ gfxFontEntry* gfxFontFamily::FindFont(const nsACString& aFontName,
   // find the font using a simple linear search
   AutoReadLock lock(mLock);
   uint32_t numFonts = mAvailableFonts.Length();
-  for (uint32_t i = 0; i < numFonts; i++) {
-    gfxFontEntry* fe = mAvailableFonts[i].get();
+  for (uint32_t i = numFonts; i > 0;) {
+    gfxFontEntry* fe = mAvailableFonts[--i].get();
     if (fe && fe->Name().Equals(aFontName, aCmp)) {
       return fe;
     }

@@ -158,6 +158,7 @@ enum class WebRenderCompositor : int8_t {
   D3D11,
   OPENGL,
   WAYLAND,
+  Unknown,
   LAST
 };
 

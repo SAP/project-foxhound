@@ -1,0 +1,13 @@
+[DEFAULT]
+subsuite = "ml"
+support-files = [
+  "head.js",
+  "example_page_es.html",
+  # "../browser/head.js",
+  "!/toolkit/components/translations/tests/browser/shared-head.js",
+  "!/toolkit/components/translations/tests/browser/translations-test.mjs",
+]
+
+["browser_eval_synthetic_translation.js"]
+
+["browser_eval_translations_full_page_e2e.js"]

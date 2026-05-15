@@ -18,7 +18,7 @@ webidl Node;
 
 class nsIWidget;
 class nsPresContext;
-class nsView;
+class nsSubDocumentFrame;
 class nsDOMNavigationTiming;
 namespace mozilla {
 class Encoding;
@@ -35,7 +35,7 @@ class RemotePrintJobChild;
 [ptr] native nsIWidgetPtr(nsIWidget);
 [ref] native LayoutDeviceIntRectRef(mozilla::LayoutDeviceIntRect);
 [ptr] native nsPresContextPtr(nsPresContext);
-[ptr] native nsViewPtr(nsView);
+[ptr] native nsSubDocumentFramePtr(nsSubDocumentFrame);
 [ptr] native nsDOMNavigationTimingPtr(nsDOMNavigationTiming);
 [ptr] native Encoding(const mozilla::Encoding);
 [ptr] native PresShellPtr(mozilla::PresShell);
@@ -81,13 +81,16 @@ interface nsIDocumentViewer : nsISupports
    * to block the navigation, and the user should be prompted.
    */
   cenum PermitUnloadResult : 8 {
-    eAllowNavigation = 0,
-    eRequestBlockNavigation = 1,
+    eContinue = 0,
+    eCanceledByBeforeUnload = 1,
+    eCanceledByNavigate = 2,
   };
 
   /**
    * Overload PermitUnload method for C++ consumers with no aPermitUnloadFlags
    * argument.
+   *
+   * ATTENTION: This call may destroy the docshell that owns this viewer.
    */
   %{C++
     nsresult PermitUnload(bool* canUnload) {
@@ -99,6 +102,8 @@ interface nsIDocumentViewer : nsISupports
    * Checks if the document wants to prevent unloading by firing beforeunload on
    * the document.
    * The result is returned.
+   *
+   * ATTENTION: This call may destroy the docshell that owns this viewer.
    */
   boolean permitUnload([optional] in nsIDocumentViewer_PermitUnloadAction aAction);
 
@@ -250,7 +255,7 @@ interface nsIDocumentViewer : nsISupports
    * case, if mParentWidget is null then this document should not even
    * be displayed.
    */
-  [noscript,notxpcom,nostdcall] nsViewPtr findContainerView();
+  [noscript,notxpcom,nostdcall] nsSubDocumentFramePtr findContainerFrame();
   /**
    * Set collector for navigation timing data (load, unload events).
    */

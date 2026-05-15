@@ -18,13 +18,14 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/environment/environment.h"
 #include "api/sequence_checker.h"
 #include "api/transport/stun.h"
 #include "p2p/base/basic_packet_socket_factory.h"
-#include "p2p/base/port_interface.h"
 #include "p2p/test/turn_server.h"
 #include "rtc_base/async_udp_socket.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/net_helper.h"
 #include "rtc_base/net_helpers.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
@@ -60,14 +61,15 @@ class TestTurnRedirector : public TurnRedirectInterface {
 
 class TestTurnServer : public TurnAuthInterface {
  public:
-  TestTurnServer(Thread* thread,
+  TestTurnServer(const Environment& env,
+                 Thread* thread,
                  SocketFactory* socket_factory,
                  const SocketAddress& int_addr,
                  const SocketAddress& udp_ext_addr,
-                 ProtocolType int_protocol = webrtc::PROTO_UDP,
+                 ProtocolType int_protocol = PROTO_UDP,
                  bool ignore_bad_cert = true,
                  absl::string_view common_name = "test turn server")
-      : server_(thread), socket_factory_(socket_factory) {
+      : env_(env), server_(env, thread), socket_factory_(socket_factory) {
     AddInternalSocket(int_addr, int_protocol, ignore_bad_cert, common_name);
     server_.SetExternalSocketFactory(
         new BasicPacketSocketFactory(socket_factory), udp_ext_addr);
@@ -103,30 +105,33 @@ class TestTurnServer : public TurnAuthInterface {
                          bool ignore_bad_cert = true,
                          absl::string_view common_name = "test turn server") {
     RTC_DCHECK(thread_checker_.IsCurrent());
-    if (proto == webrtc::PROTO_UDP) {
-      server_.AddInternalSocket(
-          rtc::AsyncUDPSocket::Create(socket_factory_, int_addr), proto);
-    } else if (proto == webrtc::PROTO_TCP || proto == webrtc::PROTO_TLS) {
+    if (proto == PROTO_UDP) {
+      std::unique_ptr<AsyncUDPSocket> socket =
+          AsyncUDPSocket::Create(env_, int_addr, *socket_factory_);
+      socket->SetOption(Socket::OPT_RECV_ECN, 1);
+      server_.AddInternalSocket(std::move(socket), proto);
+    } else if (proto == PROTO_TCP || proto == PROTO_TLS) {
       // For TCP we need to create a server socket which can listen for incoming
       // new connections.
-      Socket* socket = socket_factory_->CreateSocket(AF_INET, SOCK_STREAM);
+      std::unique_ptr<Socket> socket =
+          socket_factory_->Create(AF_INET, SOCK_STREAM);
       socket->Bind(int_addr);
       socket->Listen(5);
-      if (proto == webrtc::PROTO_TLS) {
+      if (proto == PROTO_TLS) {
         // For TLS, wrap the TCP socket with an SSL adapter. The adapter must
         // be configured with a self-signed certificate for testing.
         // Additionally, the client will not present a valid certificate, so we
         // must not fail when checking the peer's identity.
-        std::unique_ptr<rtc::SSLAdapterFactory> ssl_adapter_factory =
-            rtc::SSLAdapterFactory::Create();
-        ssl_adapter_factory->SetRole(webrtc::SSL_SERVER);
+        std::unique_ptr<SSLAdapterFactory> ssl_adapter_factory =
+            SSLAdapterFactory::Create();
+        ssl_adapter_factory->SetRole(SSL_SERVER);
         ssl_adapter_factory->SetIdentity(
-            rtc::SSLIdentity::Create(common_name, rtc::KeyParams()));
+            SSLIdentity::Create(common_name, KeyParams()));
         ssl_adapter_factory->SetIgnoreBadCert(ignore_bad_cert);
-        server_.AddInternalServerSocket(socket, proto,
+        server_.AddInternalServerSocket(std::move(socket), proto,
                                         std::move(ssl_adapter_factory));
       } else {
-        server_.AddInternalServerSocket(socket, proto);
+        server_.AddInternalServerSocket(std::move(socket), proto);
       }
     } else {
       RTC_DCHECK_NOTREACHED() << "Unknown protocol type: " << proto;
@@ -154,10 +159,11 @@ class TestTurnServer : public TurnAuthInterface {
                       absl::string_view realm,
                       std::string* key) {
     RTC_DCHECK(thread_checker_.IsCurrent());
-    return cricket::ComputeStunCredentialHash(
-        std::string(username), std::string(realm), std::string(username), key);
+    return ComputeStunCredentialHash(std::string(username), std::string(realm),
+                                     std::string(username), key);
   }
 
+  const Environment env_;
   TurnServer server_;
   SocketFactory* socket_factory_;
   SequenceChecker thread_checker_;
@@ -165,13 +171,5 @@ class TestTurnServer : public TurnAuthInterface {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace cricket {
-using ::webrtc::kTestRealm;
-using ::webrtc::kTestSoftware;
-using ::webrtc::TestTurnRedirector;
-using ::webrtc::TestTurnServer;
-}  // namespace cricket
 
 #endif  // P2P_TEST_TEST_TURN_SERVER_H_

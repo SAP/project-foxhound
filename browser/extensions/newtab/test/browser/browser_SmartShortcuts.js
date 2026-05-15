@@ -23,8 +23,13 @@ add_task(async function test_nimbus_experiment_enabled() {
   // Setup the experiment.
   await ExperimentAPI.ready();
   let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
-    featureId: "newtabSmartShortcuts",
-    value: { enabled: true },
+    featureId: "newtabTrainhop",
+    value: {
+      type: "smartShortcuts",
+      payload: {
+        enabled: true,
+      },
+    },
   });
 
   ok(smartshortcutsfeed?.loaded, "Should now be loaded.");

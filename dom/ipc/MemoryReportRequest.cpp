@@ -4,10 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsMemoryReporterManager.h"
 #include "MemoryReportRequest.h"
+
 #include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/ipc/FileDescriptorUtils.h"
+#include "nsMemoryReporterManager.h"
 
 using namespace mozilla::ipc;
 

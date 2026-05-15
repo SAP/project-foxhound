@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MacPreferencesReader_h__
-#define MacPreferencesReader_h__
+#ifndef MacPreferencesReader_h_
+#define MacPreferencesReader_h_
 
 //-----------------------------------------------------------------------------
 
@@ -27,4 +27,4 @@ class nsMacPreferencesReader : public nsIMacPreferencesReader {
   virtual ~nsMacPreferencesReader() = default;
 };
 
-#endif  // MacPreferencesReader_h__
+#endif  // MacPreferencesReader_h_

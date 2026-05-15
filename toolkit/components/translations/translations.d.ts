@@ -15,7 +15,7 @@ export interface Attachment {
   // e.g. "2f7c0f7bbc...ca79f0850c4de",
   hash: string;
   // e.g. 5047568,
-  size: string;
+  size: number;
   // e.g. "lex.50.50.deen.s2t.bin",
   filename: string;
   // e.g. "main-workspace/translations-models/316ebb3a-0682-42cc-8e73-a3ba4bbb280f.bin",
@@ -33,9 +33,11 @@ export interface TranslationModelRecord {
   // The full model name, e.g. "lex.50.50.deen.s2t.bin"
   name: string;
   // The BCP 47 language tag, e.g. "de"
-  fromLang: string;
+  sourceLanguage: string;
   // The BCP 47 language tag, e.g. "en"
-  toLang: string;
+  targetLanguage: string;
+  // The architecture of the model, e.g "base", "base-memory", "tiny"
+  architecture: string;
   // A model variant. This is a developer-only property that can be used in Nightly or
   // local builds to test different types of models.
   variant?: string;
@@ -43,6 +45,10 @@ export interface TranslationModelRecord {
   version: string;
   // e.g. "lex"
   fileType: string;
+  // The sha256 hash of the decompressed file
+  decompressedHash: string;
+  // The size of the decompressed file (bytes)
+  decompressedSize: number;
   // The file attachment for this record
   attachment: Attachment;
   // e.g. 1673023100578
@@ -70,6 +76,10 @@ export interface WasmRecord {
   license: string;
   // The semver number, used for handling future format changes. e.g. 1.0
   version: string;
+  // The sha256 hash of the decompressed file
+  decompressedHash: string;
+  // The size of the decompressed wasm file (bytes)
+  decompressedSize: number;
   // The file attachment for this record
   attachment: Attachment;
   // e.g. 1673455932527
@@ -202,7 +212,8 @@ interface RemoteSettingsClient {
  * A single language model file.
  */
 interface LanguageTranslationModelFile {
-  buffer: ArrayBuffer;
+  blob: Blob | null;
+  buffer?: ArrayBuffer;
   record: TranslationModelRecord;
 }
 
@@ -225,8 +236,6 @@ interface LanguageTranslationModelFiles {
   // The lexical shortlist that limits possible output of the decoder and makes
   // inference faster.
   lex?: LanguageTranslationModelFile;
-  // A model that can generate a translation quality estimation.
-  qualityModel?: LanguageTranslationModelFile;
 
   // There is either a single vocab file:
   vocab?: LanguageTranslationModelFile;
@@ -249,7 +258,8 @@ type LanguageTranslationModelFilesAligned = {
  * and so the engine will be mocked.
  */
 interface TranslationsEnginePayload {
-  bergamotWasmArrayBuffer: ArrayBuffer;
+  bergamotWasmBlob: Blob | null;
+  bergamotWasmArrayBuffer?: ArrayBuffer;
   translationModelPayloads: TranslationModelPayload[];
   isMocked: boolean;
 }
@@ -267,8 +277,7 @@ export interface LangTags {
   docLangTag: string | null;
   userLangTag: string | null;
   htmlLangAttribute: string | null;
-  identifiedLangTag: string | null;
-  identifiedLangConfident?: boolean;
+  identified: null | DetectionResult;
 }
 
 /**
@@ -535,3 +544,30 @@ export interface TranslationRequest {
  * A convenience type describing a function that executes a translation.
  */
 export type TranslationFunction = (message: string) => Promise<string>;
+
+/**
+ * A larger web document can be composed of multiple languages. This object details the
+ * breakdown of what languages are present in the document, and at what percentages.
+ * For instance a document could be 70% English and 30% French:
+ *
+ *   [
+ *      { language: "en", percentage: 70 },
+ *      { language: "fr", percentage: 30 },
+ *   ]
+ */
+interface MultilingualSection {
+  // BCP 47 language tag, or "un" for unknown.
+  language: string;
+  // The integral percentage ranged 0-100.
+  percent: number;
+}
+
+interface DetectionResult {
+  // The language code.
+  language: string;
+  // Whether the detector is confident of the result.
+  confident: boolean;
+  // The list of languages detected in multilingual content. This is between 0 and 3
+  // languages.
+  languages: MultilingualSection[];
+}

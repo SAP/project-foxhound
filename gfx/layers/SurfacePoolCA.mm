@@ -21,6 +21,7 @@
 #  include "GLContextCGL.h"
 #else
 #  include "GLContextEAGL.h"
+#  include <OpenGLES/EAGLIOSurface.h>
 #endif
 
 #include "MozFramebuffer.h"
@@ -38,6 +39,14 @@ using gl::GLContext;
 using gl::GLContextCGL;
 #else
 using gl::GLContextEAGL;
+#endif
+
+// GL_TEXTURE_RECTANGLE_ARB does not exist in OpenGL ES (which is used on iOS).
+// Instead GL_TEXTURE_2D supports arbitrary dimensions.
+#ifdef XP_MACOSX
+static constexpr GLenum kTextureRectTarget = LOCAL_GL_TEXTURE_RECTANGLE_ARB;
+#else
+static constexpr GLenum kTextureRectTarget = LOCAL_GL_TEXTURE_2D;
 #endif
 
 /* static */ RefPtr<SurfacePool> SurfacePool::Create(size_t aPoolSizeLimit) {
@@ -331,15 +340,24 @@ Maybe<GLuint> SurfacePoolCA::LockedPool::GetFramebufferForSurface(
 
   GLuint tex = aGL->CreateTexture();
   {
-    const gl::ScopedBindTexture bindTex(aGL, tex,
-                                        LOCAL_GL_TEXTURE_RECTANGLE_ARB);
+    const gl::ScopedBindTexture bindTex(aGL, tex, kTextureRectTarget);
 #ifdef XP_MACOSX
-    CGLTexImageIOSurface2D(cgl->GetCGLContext(), LOCAL_GL_TEXTURE_RECTANGLE_ARB,
+    CGLTexImageIOSurface2D(cgl->GetCGLContext(), kTextureRectTarget,
                            LOCAL_GL_RGBA, entry.mSize.width, entry.mSize.height,
                            LOCAL_GL_BGRA, LOCAL_GL_UNSIGNED_INT_8_8_8_8_REV,
                            entry.mIOSurface.get(), 0);
-#else
+#elif TARGET_OS_SIMULATOR
+    // texImageIOSurface is unavailable in simulator.
     MOZ_CRASH("unimplemented");
+#else
+    [eagl->GetEAGLContext() texImageIOSurface:entry.mIOSurface.get()
+                                       target:kTextureRectTarget
+                               internalFormat:LOCAL_GL_RGBA
+                                        width:entry.mSize.width
+                                       height:entry.mSize.height
+                                       format:LOCAL_GL_BGRA
+                                         type:LOCAL_GL_UNSIGNED_INT_8_8_8_8_REV
+                                        plane:0];
 #endif
   }
 
@@ -380,7 +398,7 @@ SurfacePoolCA::LockedPool::CreateFramebufferForTexture(GLContext* aGL,
     // framebuffer that shares it.
     if (auto buffer = GetDepthBufferForSharing(aGL, aSize)) {
       return gl::MozFramebuffer::CreateForBackingWithSharedDepthAndStencil(
-          aSize, 0, LOCAL_GL_TEXTURE_RECTANGLE_ARB, aTexture, buffer);
+          aSize, 0, kTextureRectTarget, aTexture, buffer);
     }
   }
 
@@ -388,8 +406,7 @@ SurfacePoolCA::LockedPool::CreateFramebufferForTexture(GLContext* aGL,
   // new depth buffer and store a weak pointer to the new depth buffer in
   // mDepthBuffers.
   UniquePtr<gl::MozFramebuffer> fb = gl::MozFramebuffer::CreateForBacking(
-      aGL, aSize, 0, aNeedsDepthBuffer, LOCAL_GL_TEXTURE_RECTANGLE_ARB,
-      aTexture);
+      aGL, aSize, 0, aNeedsDepthBuffer, kTextureRectTarget, aTexture);
   if (fb && fb->GetDepthAndStencilBuffer()) {
     mDepthBuffers.AppendElement(
         DepthBufferEntry{aGL, aSize, fb->GetDepthAndStencilBuffer().get()});

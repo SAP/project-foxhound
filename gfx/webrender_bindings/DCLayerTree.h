@@ -7,6 +7,7 @@
 #ifndef MOZILLA_GFX_DCLAYER_TREE_H
 #define MOZILLA_GFX_DCLAYER_TREE_H
 
+#include <deque>
 #include <dxgiformat.h>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +25,7 @@
 
 struct ID3D11Device;
 struct ID3D11DeviceContext;
+struct ID3D11Texture2D;
 struct ID3D11VideoDevice;
 struct ID3D11VideoContext;
 struct ID3D11VideoProcessor;
@@ -32,6 +34,7 @@ struct ID3D11VideoProcessorOutputView;
 struct IDCompositionColorMatrixEffect;
 struct IDCompositionFilterEffect;
 struct IDCompositionTableTransferEffect;
+struct IDCompositionTexture;
 struct IDCompositionDevice2;
 struct IDCompositionDevice3;
 struct IDCompositionSurface;
@@ -61,8 +64,10 @@ namespace wr {
 
 class DCLayerSurface;
 class DCTile;
+class DCLayerDCompositionTexture;
 class DCSurface;
 class DCSwapChain;
+class DCSurfaceDCompositionTextureOverlay;
 class DCSurfaceVideo;
 class DCSurfaceHandle;
 class RenderTextureHost;
@@ -73,14 +78,16 @@ struct GpuOverlayInfo {
   bool mSupportsOverlays = false;
   bool mSupportsHardwareOverlays = false;
   DXGI_FORMAT mOverlayFormatUsed = DXGI_FORMAT_B8G8R8A8_UNORM;
-  DXGI_FORMAT mOverlayFormatUsedHdr = DXGI_FORMAT_R10G10B10A2_UNORM;
+  DXGI_FORMAT mOverlayFormatUsedHdr = DXGI_FORMAT_R16G16B16A16_FLOAT;
   UINT mNv12OverlaySupportFlags = 0;
   UINT mYuy2OverlaySupportFlags = 0;
   UINT mBgra8OverlaySupportFlags = 0;
   UINT mRgb10a2OverlaySupportFlags = 0;
+  UINT mRgba16fOverlaySupportFlags = 0;
 
   bool mSupportsVpSuperResolution = false;
   bool mSupportsVpAutoHDR = false;
+  bool mSupportsHDR = false;
 };
 
 // -
@@ -132,10 +139,11 @@ class DCLayerTree {
   void MaybeCommit();
   void WaitForCommitCompletion();
 
+  bool UseCompositor() const;
   bool UseNativeCompositor() const;
   bool UseLayerCompositor() const;
   void DisableNativeCompositor();
-  void EnableAsyncScreenshot();
+  bool EnableAsyncScreenshot();
   bool GetAsyncScreenshotEnabled() const { return mEnableAsyncScreenshot; }
 
   // Interface for wr::Compositor
@@ -195,10 +203,13 @@ class DCLayerTree {
   DXGI_FORMAT GetOverlayFormatForSDR();
 
   bool SupportsSwapChainTearing();
+  bool UseDCLayerDCompositionTexture();
 
   void SetUsedOverlayTypeInFrame(DCompOverlayTypes aTypes);
 
   int GetFrameId() { return mCurrentFrame; }
+
+  void SetPendingCommit() { mPendingCommit = true; }
 
  protected:
   bool Initialize(HWND aHwnd, nsACString& aError);
@@ -213,8 +224,14 @@ class DCLayerTree {
   void ReleaseNativeCompositorResources();
   layers::OverlayInfo GetOverlayInfo();
 
-  bool mUseNativeCompositor = true;
+  enum class WebRenderOsCompositorKind {
+    NativeCompositor,
+    LayerCompositor,
+  };
+
+  Maybe<WebRenderOsCompositorKind> mCompositorKind;
   bool mEnableAsyncScreenshot = false;
+  bool mEnableAsyncScreenshotInNextFrame = false;
   int mAsyncScreenshotLastFrameUsed = 0;
 
   RefPtr<gl::GLContext> mGL;
@@ -351,6 +368,19 @@ class DCSurface {
   virtual DCSurfaceHandle* AsDCSurfaceHandle() { return nullptr; }
   virtual DCLayerSurface* AsDCLayerSurface() { return nullptr; }
   virtual DCSwapChain* AsDCSwapChain() { return nullptr; }
+  virtual DCLayerDCompositionTexture* AsDCLayerDCompositionTexture() {
+    return nullptr;
+  }
+  virtual DCSurfaceDCompositionTextureOverlay*
+  AsDCSurfaceDCompositionTextureOverlay() {
+    return nullptr;
+  }
+
+  bool IsUpdated(const wr::CompositorSurfaceTransform& aTransform,
+                 const wr::DeviceIntRect& aClipRect,
+                 const wr::ImageRendering aImageRendering,
+                 const wr::DeviceIntRect& aRoundedClipRect,
+                 const wr::ClipRadius& aClipRadius);
 
  protected:
   DCLayerTree* mDCLayerTree;
@@ -359,6 +389,25 @@ class DCSurface {
     std::size_t operator()(const TileKey& aId) const {
       return HashGeneric(aId.mX, aId.mY);
     }
+  };
+
+  struct DCSurfaceData {
+    DCSurfaceData(const wr::CompositorSurfaceTransform& aTransform,
+                  const wr::DeviceIntRect& aClipRect,
+                  const wr::ImageRendering aImageRendering,
+                  const wr::DeviceIntRect& aRoundedClipRect,
+                  const wr::ClipRadius& aClipRadius)
+        : mTransform(aTransform),
+          mClipRect(aClipRect),
+          mImageRendering(aImageRendering),
+          mRoundedClipRect(aRoundedClipRect),
+          mClipRadius(aClipRadius) {}
+
+    wr::CompositorSurfaceTransform mTransform;
+    wr::DeviceIntRect mClipRect;
+    wr::ImageRendering mImageRendering;
+    wr::DeviceIntRect mRoundedClipRect;
+    wr::ClipRadius mClipRadius;
   };
 
   // Each surface creates two visuals. The root is where it gets attached
@@ -384,6 +433,7 @@ class DCSurface {
   std::unordered_map<TileKey, UniquePtr<DCTile>, TileKeyHashFn> mDCTiles;
   wr::DeviceIntPoint mVirtualOffset;
   RefPtr<IDCompositionVirtualSurface> mVirtualSurface;
+  Maybe<DCSurfaceData> mDCSurfaceData;
 };
 
 class DCLayerSurface : public DCSurface {
@@ -400,6 +450,50 @@ class DCLayerSurface : public DCSurface {
                        size_t aNumDirtyRects) = 0;
 
   DCLayerSurface* AsDCLayerSurface() override { return this; }
+};
+
+class DCLayerDCompositionTexture : public DCLayerSurface {
+ public:
+  DCLayerDCompositionTexture(wr::DeviceIntSize aSize, bool aIsOpaque,
+                             DCLayerTree* aDCLayerTree);
+  virtual ~DCLayerDCompositionTexture();
+
+  bool Initialize() override;
+
+  void Bind(const wr::DeviceIntRect* aDirtyRects,
+            size_t aNumDirtyRects) override;
+  bool Resize(wr::DeviceIntSize aSize) override;
+  void Present(const wr::DeviceIntRect* aDirtyRects,
+               size_t aNumDirtyRects) override;
+
+  DCLayerDCompositionTexture* AsDCLayerDCompositionTexture() override {
+    return this;
+  }
+
+  const size_t mSwapChainBufferCount;
+
+ private:
+  struct TextureHolder {
+    TextureHolder(ID3D11Texture2D* aTexture,
+                  IDCompositionTexture* aDCompositionTexture,
+                  EGLSurface aEGLSurface);
+    TextureHolder() = default;
+
+    RefPtr<ID3D11Texture2D> mTexture;
+    RefPtr<IDCompositionTexture> mDCompositionTexture;
+    EGLSurface mEGLSurface;
+  };
+
+  bool AllocateTextures();
+  void DestroyTextures();
+  UniquePtr<TextureHolder> GetNextTexture();
+  void UpdateCurrentTexture();
+
+  wr::DeviceIntSize mSize;
+  std::deque<UniquePtr<TextureHolder>> mAvailableTextureHolders;
+
+  UniquePtr<TextureHolder> mCurrentTextureHolder;
+  UniquePtr<TextureHolder> mPresentingTextureHolder;
 };
 
 class DCSwapChain : public DCLayerSurface {
@@ -472,12 +566,38 @@ class DCExternalSurfaceWrapper : public DCSurface {
     return mSurface ? mSurface->AsDCSurfaceHandle() : nullptr;
   }
 
+  DCSurfaceDCompositionTextureOverlay* AsDCSurfaceDCompositionTextureOverlay()
+      override {
+    return mSurface ? mSurface->AsDCSurfaceDCompositionTextureOverlay()
+                    : nullptr;
+  }
+
  private:
   DCSurface* EnsureSurfaceForExternalImage(wr::ExternalImageId aExternalImage);
 
   UniquePtr<DCSurface> mSurface;
   const bool mIsOpaque;
   Maybe<ColorManagementChain> mCManageChain;
+};
+
+class DCSurfaceDCompositionTextureOverlay : public DCSurface {
+ public:
+  DCSurfaceDCompositionTextureOverlay(bool aIsOpaque,
+                                      DCLayerTree* aDCLayerTree);
+
+  void AttachExternalImage(wr::ExternalImageId aExternalImage) override;
+  void Present();
+
+  DCSurfaceDCompositionTextureOverlay* AsDCSurfaceDCompositionTextureOverlay()
+      override {
+    return this;
+  }
+
+ protected:
+  virtual ~DCSurfaceDCompositionTextureOverlay();
+
+  RefPtr<RenderTextureHost> mRenderTextureHost;
+  RefPtr<RenderTextureHost> mPrevRenderTextureHost;
 };
 
 class DCSurfaceVideo : public DCSurface {
@@ -494,7 +614,7 @@ class DCSurfaceVideo : public DCSurface {
  protected:
   virtual ~DCSurfaceVideo();
 
-  DXGI_FORMAT GetSwapChainFormat(bool aUseVpAutoHDR);
+  DXGI_FORMAT GetSwapChainFormat(bool aUseVpAutoHDR, bool aUseHDR);
   bool CreateVideoSwapChain(DXGI_FORMAT aFormat);
   bool CallVideoProcessorBlt();
   void ReleaseDecodeSwapChainResources();
@@ -517,6 +637,8 @@ class DCSurfaceVideo : public DCSurface {
   bool mUseVpAutoHDR = false;
   bool mVpAutoHDRFailed = false;
   bool mVpSuperResolutionFailed = false;
+  bool mContentIsHDR = false;
+  bool mUseHDR = false;
 };
 
 /**

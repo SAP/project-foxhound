@@ -7,7 +7,7 @@
 #ifndef ProfileBufferChunkManagerWithLocalLimit_h
 #define ProfileBufferChunkManagerWithLocalLimit_h
 
-#include "BaseProfiler.h"
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/BaseProfilerDetail.h"
 #include "mozilla/ProfileBufferChunkManager.h"
 #include "mozilla/ProfileBufferControlledChunkManager.h"

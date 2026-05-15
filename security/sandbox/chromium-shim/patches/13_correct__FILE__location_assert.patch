@@ -1,0 +1,25 @@
+# HG changeset patch
+# User Bob Owen <bobowencode@gmail.com>
+Correct __FILE__ location assert for mozilla build.
+diff --git a/base/location.cc b/base/location.cc
+--- a/base/location.cc
++++ b/base/location.cc
+@@ -58,17 +58,17 @@ constexpr bool StrEndsWith(const char* n
+     return false;
+   for (size_t i = 0; i < expected_len; ++i) {
+     if (name[i + prefix_len] != expected[i])
+       return false;
+   }
+   return true;
+ }
+ 
+-#if defined(__clang__) && defined(_MSC_VER)
++#if defined(__clang__) && defined(_MSC_VER) && !defined(MOZ_SANDBOX)
+ static_assert(StrEndsWith(__FILE__, kStrippedPrefixLength, "base\\location.cc"),
+               "The file name does not match the expected prefix format.");
+ #else
+ static_assert(StrEndsWith(__FILE__, kStrippedPrefixLength, "base/location.cc"),
+               "The file name does not match the expected prefix format.");
+ #endif
+ 
+ }  // namespace

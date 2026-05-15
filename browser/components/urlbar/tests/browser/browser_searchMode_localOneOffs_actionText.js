@@ -24,7 +24,7 @@ add_setup(async function () {
     url: getRootDirectory(gTestPath) + SUGGESTIONS_ENGINE_NAME,
     setAsDefault: true,
   });
-  await Services.search.moveEngine(engine, 0);
+  await SearchService.moveEngine(engine, 0);
 
   await PlacesUtils.history.clear();
 
@@ -289,7 +289,8 @@ add_task(async function localOneOff_withVisit() {
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.URL);
   Assert.equal(
     result.displayed.url,
-    result.result.payload.displayUrl,
+    result.result.getDisplayableValueAndHighlights("url", { isURL: true })
+      .value,
     "Check the heuristic action"
   );
   Assert.notEqual(

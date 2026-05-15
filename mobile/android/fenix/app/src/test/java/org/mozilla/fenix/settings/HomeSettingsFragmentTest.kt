@@ -4,19 +4,13 @@
 
 package org.mozilla.fenix.settings
 
-import android.content.Context
 import android.content.SharedPreferences
 import androidx.fragment.app.FragmentActivity
 import androidx.preference.CheckBoxPreference
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
-import io.mockk.mockkStatic
-import io.mockk.unmockkStatic
 import io.mockk.verify
 import mozilla.components.service.pocket.PocketStoriesService
-import mozilla.components.support.test.robolectric.testContext
-import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -24,10 +18,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.Components
+import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.components.appstate.AppAction.ContentRecommendationsAction
-import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.pocket.ContentRecommendationsFeatureHelper
 import org.mozilla.fenix.utils.Settings
 import org.robolectric.Robolectric
@@ -41,11 +35,10 @@ internal class HomeSettingsFragmentTest {
     private lateinit var appPrefsEditor: SharedPreferences.Editor
     private lateinit var pocketService: PocketStoriesService
     private lateinit var appStore: AppStore
+    private lateinit var contentRecommendationsHelper: ContentRecommendationsFeatureHelper
 
     @Before
     fun setup() {
-        mockkStatic("org.mozilla.fenix.ext.FragmentKt")
-        mockkStatic("org.mozilla.fenix.ext.ContextKt")
         appPrefsEditor = mockk(relaxed = true)
         appPrefs = mockk(relaxed = true) {
             every { edit() } returns appPrefsEditor
@@ -53,43 +46,27 @@ internal class HomeSettingsFragmentTest {
         appSettings = mockk(relaxed = true) {
             every { preferences } returns appPrefs
         }
-        every { any<Context>().settings() } returns appSettings
         appStore = mockk(relaxed = true)
         pocketService = mockk(relaxed = true)
-        every { any<Context>().components } returns mockk {
-            every { appStore } returns this@HomeSettingsFragmentTest.appStore
-            every { core.pocketStoriesService } returns pocketService
-        }
-
-        homeSettingsFragment = HomeSettingsFragment()
-    }
-
-    @After
-    fun teardown() {
-        unmockkStatic("org.mozilla.fenix.ext.ContextKt")
-        unmockkStatic("org.mozilla.fenix.ext.FragmentKt")
+        contentRecommendationsHelper = mockk(relaxed = true)
     }
 
     @Test
     fun `GIVEN the Pocket sponsored stories feature is disabled for the app WHEN accessing settings THEN the settings for it are not visible`() {
-        mockkObject(ContentRecommendationsFeatureHelper) {
-            every { ContentRecommendationsFeatureHelper.isPocketSponsoredStoriesFeatureEnabled(any()) } returns false
+        every { contentRecommendationsHelper.isPocketSponsoredStoriesFeatureEnabled(any()) } returns false
 
-            activateFragment()
+        activateFragment()
 
-            assertFalse(getSponsoredStoriesPreference().isVisible)
-        }
+        assertFalse(getSponsoredStoriesPreference().isVisible)
     }
 
     @Test
     fun `GIVEN the Pocket sponsored stories feature is enabled for the app WHEN accessing settings THEN the settings for it are visible`() {
-        mockkObject(ContentRecommendationsFeatureHelper) {
-            every { ContentRecommendationsFeatureHelper.isPocketSponsoredStoriesFeatureEnabled(any()) } returns true
+        every { contentRecommendationsHelper.isPocketSponsoredStoriesFeatureEnabled(any()) } returns true
 
-            activateFragment()
+        activateFragment()
 
-            assertTrue(getSponsoredStoriesPreference().isVisible)
-        }
+        assertTrue(getSponsoredStoriesPreference().isVisible)
     }
 
     @Test
@@ -113,12 +90,11 @@ internal class HomeSettingsFragmentTest {
     @Test
     fun `GIVEN sponsored stories is disabled WHEN toggling the sponsored setting to enabled THEN start downloading sponsored stories`() {
         activateFragment()
-
         val result = getSponsoredStoriesPreference().callChangeListener(true)
 
         assertTrue(result)
         verify {
-            appPrefsEditor.putBoolean(testContext.getString(R.string.pref_key_pocket_sponsored_stories), true)
+            appPrefsEditor.putBoolean(homeSettingsFragment.getString(R.string.pref_key_pocket_sponsored_stories), true)
             pocketService.startPeriodicSponsoredContentsRefresh()
         }
     }
@@ -126,12 +102,11 @@ internal class HomeSettingsFragmentTest {
     @Test
     fun `GIVEN sponsored stories is enabled WHEN toggling the sponsored stories setting to disabled THEN delete Pocket profile and remove sponsored contents from showing`() {
         activateFragment()
-
         val result = getSponsoredStoriesPreference().callChangeListener(false)
 
         assertTrue(result)
         verify {
-            appPrefsEditor.putBoolean(testContext.getString(R.string.pref_key_pocket_sponsored_stories), false)
+            appPrefsEditor.putBoolean(homeSettingsFragment.getString(R.string.pref_key_pocket_sponsored_stories), false)
             pocketService.deleteUser()
             appStore.dispatch(
                 ContentRecommendationsAction.SponsoredContentsChange(
@@ -143,6 +118,21 @@ internal class HomeSettingsFragmentTest {
 
     private fun activateFragment() {
         val activity = Robolectric.buildActivity(FragmentActivity::class.java).create().get()
+        homeSettingsFragment = HomeSettingsFragment()
+
+        val mockCore: Core = mockk {
+            every { pocketStoriesService } returns this@HomeSettingsFragmentTest.pocketService
+        }
+        val mockComponents: Components = mockk(relaxed = true) {
+            every { appStore } returns this@HomeSettingsFragmentTest.appStore
+            every { core } returns mockCore
+            every { settings } returns this@HomeSettingsFragmentTest.appSettings
+        }
+
+        homeSettingsFragment.fenixSettings = appSettings
+        homeSettingsFragment.fenixComponents = mockComponents
+        homeSettingsFragment.contentRecommendationsHelper = contentRecommendationsHelper
+
         activity.supportFragmentManager.beginTransaction()
             .add(homeSettingsFragment, "HomeSettingFragmentTest")
             .commitNow()

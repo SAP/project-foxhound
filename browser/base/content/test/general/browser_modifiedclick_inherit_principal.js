@@ -11,7 +11,10 @@ const kURL =
  */
 add_task(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.link.alternative_click.block_javascript", false]],
+    set: [
+      ["browser.link.alternative_click.block_javascript", false],
+      ["dom.navigation.webidl.enabled", false],
+    ],
   });
 
   await BrowserTestUtils.withNewTab(kURL, async function (browser) {

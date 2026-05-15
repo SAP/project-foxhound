@@ -11,13 +11,13 @@
 #ifndef MODULES_AUDIO_PROCESSING_AUDIO_PROCESSING_IMPL_H_
 #define MODULES_AUDIO_PROCESSING_AUDIO_PROCESSING_IMPL_H_
 
-#include <stdio.h>
-
+#include <array>
 #include <atomic>
-#include <list>
+#include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <optional>
-#include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"
@@ -25,12 +25,13 @@
 #include "api/array_view.h"
 #include "api/audio/audio_processing.h"
 #include "api/audio/audio_processing_statistics.h"
+#include "api/audio/echo_canceller3_config.h"
+#include "api/audio/echo_control.h"
+#include "api/audio/neural_residual_echo_estimator.h"
 #include "api/environment/environment.h"
-#include "api/function_view.h"
+#include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_base.h"
-#include "modules/audio_processing/aec3/echo_canceller3.h"
 #include "modules/audio_processing/agc/agc_manager_direct.h"
-#include "modules/audio_processing/agc/gain_control.h"
 #include "modules/audio_processing/agc2/input_volume_stats_reporter.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/capture_levels_adjuster/capture_levels_adjuster.h"
@@ -41,6 +42,7 @@
 #include "modules/audio_processing/include/aec_dump.h"
 #include "modules/audio_processing/include/audio_frame_proxies.h"
 #include "modules/audio_processing/ns/noise_suppressor.h"
+#include "modules/audio_processing/post_filter.h"
 #include "modules/audio_processing/render_queue_item_verifier.h"
 #include "modules/audio_processing/rms_level.h"
 #include "rtc_base/gtest_prod_util.h"
@@ -62,25 +64,30 @@ class AudioProcessingImpl : public AudioProcessing {
   // Methods forcing APM to run in a single-threaded manner.
   // Acquires both the render and capture locks.
   explicit AudioProcessingImpl(const Environment& env);
-  AudioProcessingImpl(const Environment& env,
-                      const AudioProcessing::Config& config,
-                      std::unique_ptr<CustomProcessing> capture_post_processor,
-                      std::unique_ptr<CustomProcessing> render_pre_processor,
-                      std::unique_ptr<EchoControlFactory> echo_control_factory,
-                      rtc::scoped_refptr<EchoDetector> echo_detector,
-                      std::unique_ptr<CustomAudioAnalyzer> capture_analyzer);
+  AudioProcessingImpl(
+      const Environment& env,
+      const AudioProcessing::Config& config,
+      std::optional<EchoCanceller3Config> echo_canceller_config,
+      std::optional<EchoCanceller3Config> echo_canceller_multichannel_config,
+      std::unique_ptr<CustomProcessing> capture_post_processor,
+      std::unique_ptr<CustomProcessing> render_pre_processor,
+      std::unique_ptr<EchoControlFactory> echo_control_factory,
+      scoped_refptr<EchoDetector> echo_detector,
+      std::unique_ptr<CustomAudioAnalyzer> capture_analyzer,
+      std::unique_ptr<NeuralResidualEchoEstimator>
+          neural_residual_echo_estimator);
   ~AudioProcessingImpl() override;
   int Initialize() override;
   int Initialize(const ProcessingConfig& processing_config) override;
   void ApplyConfig(const AudioProcessing::Config& config) override;
-  bool CreateAndAttachAecDump(
-      absl::string_view file_name,
-      int64_t max_log_size_bytes,
-      absl::Nonnull<TaskQueueBase*> worker_queue) override;
-  bool CreateAndAttachAecDump(
-      FILE* handle,
-      int64_t max_log_size_bytes,
-      absl::Nonnull<TaskQueueBase*> worker_queue) override;
+  bool CreateAndAttachAecDump(absl::string_view file_name,
+                              int64_t max_log_size_bytes,
+                              TaskQueueBase* absl_nonnull
+                                  worker_queue) override;
+  bool CreateAndAttachAecDump(FILE* handle,
+                              int64_t max_log_size_bytes,
+                              TaskQueueBase* absl_nonnull
+                                  worker_queue) override;
   // TODO(webrtc:5298) Deprecated variant.
   void AttachAecDump(std::unique_ptr<AecDump> aec_dump) override;
   void DetachAecDump() override;
@@ -98,7 +105,7 @@ class AudioProcessingImpl : public AudioProcessing {
                     const StreamConfig& output_config,
                     float* const* dest) override;
   bool GetLinearAecOutput(
-      rtc::ArrayView<std::array<float, 160>> linear_output) const override;
+      ArrayView<std::array<float, 160>> linear_output) const override;
   void set_output_will_be_muted(bool muted) override;
   void HandleCaptureOutputUsedSetting(bool capture_output_used)
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_capture_);
@@ -181,7 +188,6 @@ class AudioProcessingImpl : public AudioProcessing {
   const Environment env_;
   const std::unique_ptr<ApmDataDumper> data_dumper_;
   static std::atomic<int> instance_count_;
-  const bool use_setup_specific_default_aec3_config_;
 
   SwapQueue<RuntimeSetting> capture_runtime_settings_;
   SwapQueue<RuntimeSetting> render_runtime_settings_;
@@ -214,6 +220,7 @@ class AudioProcessingImpl : public AudioProcessing {
     bool RenderFullBandProcessingActive() const;
     bool RenderMultiBandProcessingActive() const;
     bool HighPassFilteringRequired() const;
+    bool EchoControllerEnabled() const;
 
    private:
     const bool capture_post_processor_enabled_ = false;
@@ -359,6 +366,10 @@ class AudioProcessingImpl : public AudioProcessing {
   // Struct containing the Config specifying the behavior of APM.
   AudioProcessing::Config config_;
 
+  // AEC3 settings used when an EchoControlFactory is not present.
+  const std::optional<EchoCanceller3Config> echo_canceller_config_;
+  const std::optional<EchoCanceller3Config> echo_canceller_multichannel_config_;
+
   // Class containing information about what submodules are active.
   SubmoduleStates submodule_states_;
 
@@ -366,14 +377,18 @@ class AudioProcessingImpl : public AudioProcessing {
   struct Submodules {
     Submodules(std::unique_ptr<CustomProcessing> capture_post_processor,
                std::unique_ptr<CustomProcessing> render_pre_processor,
-               rtc::scoped_refptr<EchoDetector> echo_detector,
-               std::unique_ptr<CustomAudioAnalyzer> capture_analyzer)
+               scoped_refptr<EchoDetector> echo_detector,
+               std::unique_ptr<CustomAudioAnalyzer> capture_analyzer,
+               std::unique_ptr<NeuralResidualEchoEstimator>
+                   neural_residual_echo_estimator)
         : echo_detector(std::move(echo_detector)),
           capture_post_processor(std::move(capture_post_processor)),
           render_pre_processor(std::move(render_pre_processor)),
-          capture_analyzer(std::move(capture_analyzer)) {}
+          capture_analyzer(std::move(capture_analyzer)),
+          neural_residual_echo_estimator(
+              std::move(neural_residual_echo_estimator)) {}
     // Accessed internally from capture or during initialization.
-    const rtc::scoped_refptr<EchoDetector> echo_detector;
+    const scoped_refptr<EchoDetector> echo_detector;
     const std::unique_ptr<CustomProcessing> capture_post_processor;
     const std::unique_ptr<CustomProcessing> render_pre_processor;
     const std::unique_ptr<CustomAudioAnalyzer> capture_analyzer;
@@ -384,7 +399,9 @@ class AudioProcessingImpl : public AudioProcessing {
     std::unique_ptr<EchoControl> echo_controller;
     std::unique_ptr<EchoControlMobileImpl> echo_control_mobile;
     std::unique_ptr<NoiseSuppressor> noise_suppressor;
+    std::unique_ptr<PostFilter> post_filter;
     std::unique_ptr<CaptureLevelsAdjuster> capture_levels_adjuster;
+    std::unique_ptr<NeuralResidualEchoEstimator> neural_residual_echo_estimator;
   } submodules_;
 
   // State that is written to while holding both the render and capture locks
@@ -409,16 +426,20 @@ class AudioProcessingImpl : public AudioProcessing {
     ApmConstants(bool multi_channel_render_support,
                  bool multi_channel_capture_support,
                  bool enforce_split_band_hpf,
-                 bool minimize_processing_for_unused_output)
+                 bool minimize_processing_for_unused_output,
+                 bool enforce_48_khz_max_internal_processing_rate)
         : multi_channel_render_support(multi_channel_render_support),
           multi_channel_capture_support(multi_channel_capture_support),
           enforce_split_band_hpf(enforce_split_band_hpf),
           minimize_processing_for_unused_output(
-              minimize_processing_for_unused_output) {}
+              minimize_processing_for_unused_output),
+          enforce_48_khz_max_internal_processing_rate(
+              enforce_48_khz_max_internal_processing_rate) {}
     bool multi_channel_render_support;
     bool multi_channel_capture_support;
     bool enforce_split_band_hpf;
     bool minimize_processing_for_unused_output;
+    bool enforce_48_khz_max_internal_processing_rate;
   } constants_;
 
   struct ApmCaptureState {
@@ -435,7 +456,6 @@ class AudioProcessingImpl : public AudioProcessing {
     // because the capture processing number of channels is mutable and is
     // tracked by the capture_audio_.
     StreamConfig capture_processing_format;
-    int split_rate;
     bool echo_path_gain_change;
     float prev_pre_adjustment_gain;
     int playout_volume;
@@ -454,15 +474,12 @@ class AudioProcessingImpl : public AudioProcessing {
   struct ApmCaptureNonLockedState {
     ApmCaptureNonLockedState()
         : capture_processing_format(kSampleRate16kHz),
-          split_rate(kSampleRate16kHz),
           stream_delay_ms(0) {}
     // Only the rate and samples fields of capture_processing_format_ are used
     // because the forward processing number of channels is mutable and is
     // tracked by the capture_audio_.
     StreamConfig capture_processing_format;
-    int split_rate;
     int stream_delay_ms;
-    bool echo_controller_enabled = false;
   } capture_nonlocked_;
 
   struct ApmRenderState {

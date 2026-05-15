@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDashboard_h__
-#define nsDashboard_h__
+#ifndef nsDashboard_h_
+#define nsDashboard_h_
 
 #include "mozilla/Mutex.h"
 #include "mozilla/net/DashboardTypes.h"
@@ -91,4 +91,4 @@ class Dashboard final : public nsIDashboard, public nsIDashboardEventNotifier {
 }  // namespace net
 }  // namespace mozilla
 
-#endif  // nsDashboard_h__
+#endif  // nsDashboard_h_

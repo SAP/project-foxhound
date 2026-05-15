@@ -9,13 +9,16 @@ import { PrivateBrowsingUtils } from "resource://gre/modules/PrivateBrowsingUtil
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   RecentlyClosedTabsAndWindowsMenuUtils:
     "resource:///modules/sessionstore/RecentlyClosedTabsAndWindowsMenuUtils.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  SharingUtils: "resource:///modules/SharingUtils.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
 });
 
@@ -483,6 +486,50 @@ export const CustomizableWidgets = [
     },
   },
 ];
+
+if (
+  Services.prefs.getBoolPref("browser.toolbars.share-button.enabled", false)
+) {
+  CustomizableWidgets.push({
+    id: "share-tab-button",
+    type: "custom",
+    onBuild(aDocument) {
+      let node = aDocument.createXULElement("toolbarbutton");
+      node.setAttribute("id", "share-tab-button");
+      aDocument.l10n.setAttributes(node, "toolbar-button-share-tab");
+
+      node.classList.add("toolbarbutton-1");
+
+      if (AppConstants.platform == "macosx") {
+        node.setAttribute("type", "menu");
+
+        let popup = aDocument.createXULElement("menupopup");
+        popup.setAttribute("id", "share-tab-popup");
+        popup.addEventListener("popupshowing", () => {
+          let browser = aDocument.defaultView.gBrowser.selectedBrowser;
+          node.browserToShare = Cu.getWeakReference(browser);
+
+          lazy.SharingUtils.populateShareMenu(popup);
+        });
+
+        node.appendChild(popup);
+      } else {
+        node.addEventListener("command", () => {
+          let browser = aDocument.defaultView.gBrowser.selectedBrowser;
+          node.browserToShare = Cu.getWeakReference(browser);
+
+          if (AppConstants.platform == "win") {
+            lazy.SharingUtils.shareOnWindows(node);
+          } else {
+            lazy.SharingUtils.copyLink(node);
+          }
+        });
+      }
+
+      return node;
+    },
+  });
+}
 
 if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
   CustomizableWidgets.push({

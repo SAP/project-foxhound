@@ -47,8 +47,8 @@ const day = 864e5;
  * Allows for defining a cached getter to perform
  * calculations only once.
  *
- * @param {Object} obj - Object to place the getter on.
- * @param {String} prop - Name of the property.
+ * @param {object} obj - Object to place the getter on.
+ * @param {string} prop - Name of the property.
  * @param {Function} get - Function that will be used as a getter.
  */
 function defineCachedGetter(obj, prop, get) {
@@ -65,8 +65,8 @@ function defineCachedGetter(obj, prop, get) {
  *
  * Defines a getter on an object
  *
- * @param {Object} obj - Object to place the getter on.
- * @param {String} prop - Name of the property.
+ * @param {object} obj - Object to place the getter on.
+ * @param {string} prop - Name of the property.
  * @param {Function} get - Function that will be used as a getter.
  */
 function defineGetter(obj, prop, get) {
@@ -80,7 +80,7 @@ function defineGetter(obj, prop, get) {
  * a period for discrete distances.
  *
  * @param {Date} date - Date of which we're looking to find a start of.
- * @param {String} unit - Period to calculate the start of.
+ * @param {string} unit - Period to calculate the start of.
  *
  * @returns {Date}
  */
@@ -114,9 +114,9 @@ function startOf(date, unit) {
  * Calculates the best fit unit to use for an absolute diff distance based
  * on thresholds.
  *
- * @param {Object} absDiff - Object with absolute diff per unit calculated.
+ * @param {object} absDiff - Object with absolute diff per unit calculated.
  *
- * @returns {String}
+ * @returns {string}
  */
 function bestFit(absDiff) {
   switch (true) {

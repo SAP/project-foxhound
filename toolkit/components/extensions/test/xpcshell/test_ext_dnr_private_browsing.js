@@ -7,7 +7,6 @@ server.registerPathHandler("/", (req, res) => {
 });
 
 add_setup(() => {
-  Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
   Services.prefs.setBoolPref("extensions.dnr.enabled", true);
 });
 

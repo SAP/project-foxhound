@@ -120,6 +120,10 @@ static void SendPing(void* aClosure, nsIContent* aContent, nsIURI* aURI,
     return;
   }
 
+  if (nsCOMPtr<nsITimedChannel> timedChan = do_QueryInterface(chan)) {
+    timedChan->SetInitiatorType(u"ping"_ns);
+  }
+
   // This is needed in order for 3rd-party cookie blocking to work.
   nsCOMPtr<nsIHttpChannelInternal> httpInternal = do_QueryInterface(httpChan);
   nsresult rv;
@@ -247,8 +251,9 @@ static void ForEachPing(nsIContent* aContent, ForEachPingCallback aCallback,
   //       implemented an interface that exposed an enumeration of nsIURIs.
 
   // Make sure we are dealing with either an <A> or <AREA> element in the HTML
-  // or XHTML namespace.
-  if (!aContent->IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area)) {
+  // or XHTML namespace, or an <a> element in the SVG namespace.
+  if (!aContent->IsAnyOfHTMLElements(nsGkAtoms::a, nsGkAtoms::area) &&
+      !aContent->IsSVGElement(nsGkAtoms::a)) {
     return;
   }
 
@@ -318,7 +323,7 @@ nsresult nsPingListener::StartTimeout(DocGroup* aDocGroup) {
 
   return NS_NewTimerWithFuncCallback(
       getter_AddRefs(mTimer), OnPingTimeout, mLoadGroup, PING_TIMEOUT,
-      nsITimer::TYPE_ONE_SHOT, "nsPingListener::StartTimeout",
+      nsITimer::TYPE_ONE_SHOT, "nsPingListener::StartTimeout"_ns,
       GetMainThreadSerialEventTarget());
 }
 

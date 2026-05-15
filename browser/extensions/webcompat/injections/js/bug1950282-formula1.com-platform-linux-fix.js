@@ -12,13 +12,13 @@
  * Overriding navigator.platform to Win64 on Linux works around this issue.
  */
 
-/* globals exportFunction */
+if (!navigator.platform.includes("Win64")) {
+  console.info(
+    "navigator.platform has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1950282 for details."
+  );
 
-console.info(
-  "navigator.platform has been overridden for compatibility reasons. See https://bugzilla.mozilla.org/show_bug.cgi?id=1950282 for details."
-);
-
-const nav = Object.getPrototypeOf(navigator.wrappedJSObject);
-const platform = Object.getOwnPropertyDescriptor(nav, "platform");
-platform.get = exportFunction(() => "Win64", window);
-Object.defineProperty(nav, "platform", platform);
+  const nav = Object.getPrototypeOf(navigator);
+  const platform = Object.getOwnPropertyDescriptor(nav, "platform");
+  platform.get = () => "Win64";
+  Object.defineProperty(nav, "platform", platform);
+}

@@ -7,10 +7,8 @@
 #ifndef SharedThreadPool_h_
 #define SharedThreadPool_h_
 
-#include <utility>
-#include <type_traits>
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/RefCountType.h"
+#include "mozilla/MaybeLeakRefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsID.h"
 #include "nsIThreadPool.h"
@@ -24,12 +22,11 @@ namespace mozilla {
 // Wrapper that makes an nsIThreadPool a singleton, and provides a
 // consistent threadsafe interface to get instances. Callers simply get a
 // SharedThreadPool by the name of its nsIThreadPool. All get requests of
-// the same name get the same SharedThreadPool. Users must store a reference
-// to the pool, and when the last reference to a SharedThreadPool is dropped
-// the pool is shutdown and deleted. Users aren't required to manually
-// shutdown the pool, and can release references on any thread. This can make
-// it significantly easier to use thread pools, because the caller doesn't need
-// to worry about joining and tearing it down.
+// the same name get the same SharedThreadPool.
+//
+// The SharedThreadPool is threadsafe and will be automatically shut down
+// during xpcom-shutdown-threads. It should not be manually shut down.
+// Idle threads will be cleaned up after a short timeout.
 //
 // On Windows all threads in the pool have MSCOM initialized with
 // COINIT_MULTITHREADED. Note that not all users of MSCOM use this mode see [1],
@@ -39,23 +36,17 @@ namespace mozilla {
 //
 // [1]
 // https://searchfox.org/mozilla-central/search?q=coinitialize&redirect=false
-class SharedThreadPool : public nsIThreadPool {
+class SharedThreadPool final : public nsIThreadPool {
  public:
   // Gets (possibly creating) the shared thread pool singleton instance with
   // thread pool named aName.
-  static already_AddRefed<SharedThreadPool> Get(const nsCString& aName,
+  // Infallible, but may return a defunct SharedThreadPool during shutdown.
+  static already_AddRefed<SharedThreadPool> Get(StaticString aName,
                                                 uint32_t aThreadLimit = 4);
 
-  // We implement custom threadsafe AddRef/Release pair, that destroys the
-  // the shared pool singleton when the refcount drops to 0. The addref/release
-  // are implemented using locking, so it's not recommended that you use them
-  // in a tight loop.
-  NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
-  NS_IMETHOD_(MozExternalRefCountType) AddRef(void) override;
-  NS_IMETHOD_(MozExternalRefCountType) Release(void) override;
-  using HasThreadSafeRefCnt = std::true_type;
+  NS_DECL_THREADSAFE_ISUPPORTS
 
-  // Forward behaviour to wrapped thread pool implementation.
+  // Forward behaviour to the wrapped thread pool implementation.
   NS_FORWARD_SAFE_NSITHREADPOOL(mPool);
 
   // Call this when dispatching from an event on the same
@@ -65,14 +56,18 @@ class SharedThreadPool : public nsIThreadPool {
     return Dispatch(event, NS_DISPATCH_AT_END);
   }
 
-  NS_IMETHOD DispatchFromScript(nsIRunnable* event, uint32_t flags) override {
+  NS_IMETHOD DispatchFromScript(nsIRunnable* event,
+                                DispatchFlags flags) override {
     return Dispatch(event, flags);
   }
 
   NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> event,
-                      uint32_t flags = NS_DISPATCH_NORMAL) override {
-    return !mPool ? NS_ERROR_NULL_POINTER
-                  : mPool->Dispatch(std::move(event), flags);
+                      DispatchFlags flags = NS_DISPATCH_NORMAL) override {
+    // NOTE: Like `nsThreadPool`, this method never leaks `event` on failure,
+    // whether or not NS_DISPATCH_FALLIBLE is specified.
+    nsCOMPtr<nsIRunnable> runnable(event);
+    return NS_WARN_IF(!mPool) ? NS_ERROR_NULL_POINTER
+                              : mPool->Dispatch(runnable.forget(), flags);
   }
 
   NS_IMETHOD DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) override {
@@ -82,15 +77,15 @@ class SharedThreadPool : public nsIThreadPool {
   using nsIEventTarget::Dispatch;
 
   NS_IMETHOD RegisterShutdownTask(nsITargetShutdownTask* task) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
+    return !mPool ? NS_ERROR_UNEXPECTED : mPool->RegisterShutdownTask(task);
   }
 
   NS_IMETHOD UnregisterShutdownTask(nsITargetShutdownTask* task) override {
-    return NS_ERROR_NOT_IMPLEMENTED;
+    return !mPool ? NS_ERROR_UNEXPECTED : mPool->UnregisterShutdownTask(task);
   }
 
   NS_IMETHOD IsOnCurrentThread(bool* _retval) override {
-    return !mPool ? NS_ERROR_NULL_POINTER : mPool->IsOnCurrentThread(_retval);
+    return !mPool ? NS_ERROR_UNEXPECTED : mPool->IsOnCurrentThread(_retval);
   }
 
   NS_IMETHOD_(bool) IsOnCurrentThreadInfallible() override {
@@ -100,31 +95,19 @@ class SharedThreadPool : public nsIThreadPool {
   // Creates necessary statics. Called once at startup.
   static void InitStatics();
 
-  // Spins the event loop until all thread pools are shutdown.
-  // *Must* be called on the main thread.
-  static void SpinUntilEmpty();
+  NS_IMETHOD_(FeatureFlags) GetFeatures() override {
+    return SUPPORTS_SHUTDOWN_TASKS | SUPPORTS_SHUTDOWN_TASK_DISPATCH;
+  }
 
  private:
-  // Returns whether there are no pools in existence at the moment.
-  static bool IsEmpty();
-
-  // Creates a singleton SharedThreadPool wrapper around aPool.
-  // aName is the name of the aPool, and is used to lookup the
-  // SharedThreadPool in the hash table of all created pools.
-  SharedThreadPool(const nsCString& aName, nsIThreadPool* aPool);
-  virtual ~SharedThreadPool();
+  explicit SharedThreadPool(nsIThreadPool* aPool);
+  ~SharedThreadPool();
 
   nsresult EnsureThreadLimitIsAtLeast(uint32_t aThreadLimit);
 
-  // Name of mPool.
-  const nsCString mName;
-
-  // Thread pool being wrapped.
-  nsCOMPtr<nsIThreadPool> mPool;
-
-  // Refcount. We implement custom ref counting so that the thread pool is
-  // shutdown in a threadsafe manner and singletonness is preserved.
-  nsrefcnt mRefCnt;
+  // Thread pool being wrapped. May be null if the SharedThreadPool was created
+  // during shutdown.
+  const nsCOMPtr<nsIThreadPool> mPool;
 };
 
 }  // namespace mozilla

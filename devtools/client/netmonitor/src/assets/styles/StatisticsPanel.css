@@ -41,6 +41,7 @@
 .statistics-panel .pie-table-chart-container {
   width: 100%;
   height: 100%;
+  margin-top: 1rem;
   margin-bottom: 1rem;
 }
 
@@ -56,7 +57,7 @@
 .pie-table-chart-container {
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: safe center;
 }
 
 .statistics-panel .pie-chart-container {

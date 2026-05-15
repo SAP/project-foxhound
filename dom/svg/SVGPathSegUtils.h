@@ -7,24 +7,43 @@
 #ifndef DOM_SVG_SVGPATHSEGUTILS_H_
 #define DOM_SVG_SVGPATHSEGUTILS_H_
 
+#include "mozilla/Span.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Rect.h"
-#include "mozilla/Span.h"
 
 namespace mozilla {
-template <typename Angle, typename LP>
+
+// Position
+template <typename H, typename V>
+struct StyleGenericPosition;
+
+// Command Endpoint
+template <typename Position, typename LP>
+struct StyleCommandEndPoint;
+template <typename T>
+using StyleEndPoint = StyleCommandEndPoint<StyleGenericPosition<T, T>, T>;
+
+// Control Point
+template <typename Position, typename LP>
+struct StyleControlPoint;
+template <typename T>
+using StyleCurveControlPoint = StyleControlPoint<StyleGenericPosition<T, T>, T>;
+
+// Shape Command
+template <typename Angle, typename Position, typename LP>
 struct StyleGenericShapeCommand;
-using StylePathCommand = StyleGenericShapeCommand<float, float>;
+using StylePathCommand =
+    StyleGenericShapeCommand<float, StyleGenericPosition<float, float>, float>;
 
 /**
  * Code that works with path segments can use an instance of this class to
  * store/provide information about the start of the current subpath and the
  * last path segment (if any).
  */
-struct SVGPathTraversalState {
+struct MOZ_STACK_CLASS SVGPathTraversalState {
   using Point = gfx::Point;
 
-  enum TraversalMode { eUpdateAll, eUpdateOnlyStartAndCurrentPos };
+  enum class TraversalMode { UpdateAll, UpdateOnlyStartAndCurrentPos };
 
   SVGPathTraversalState()
       : start(0.0, 0.0),
@@ -32,9 +51,11 @@ struct SVGPathTraversalState {
         cp1(0.0, 0.0),
         cp2(0.0, 0.0),
         length(0.0),
-        mode(eUpdateAll) {}
+        mode(TraversalMode::UpdateAll) {}
 
-  bool ShouldUpdateLengthAndControlPoints() { return mode == eUpdateAll; }
+  bool ShouldUpdateLengthAndControlPoints() const {
+    return mode == TraversalMode::UpdateAll;
+  }
 
   Point start;  // start point of current sub path (reset each moveto)
 

@@ -7,15 +7,11 @@ const {
   Property,
 } = require("resource://devtools/client/dom/content/reducers/grips.js");
 
-// Implementation
-
-function DomDecorator() {}
-
 /**
  * Decorator for DOM panel tree component. It's responsible for
  * appending an icon to read only properties.
  */
-DomDecorator.prototype = {
+class DomDecorator {
   getRowClass(object) {
     if (object instanceof Property) {
       const value = object.value;
@@ -35,14 +31,14 @@ DomDecorator.prototype = {
     }
 
     return null;
-  },
+  }
 
   /**
    * Return custom React template for specified object. The template
    * might depend on specified column.
    */
-  getValueRep() {},
-};
+  getValueRep() {}
+}
 
 // Exports from this module
 exports.DomDecorator = DomDecorator;

@@ -3,7 +3,7 @@ from webdriver.error import NoSuchElementException
 
 URL = "https://tza.red/"
 
-UNSUPPORTED_TEXT = "Partially supported browser"
+UNSUPPORTED_TEXT = "browser is partially supported"
 
 
 @pytest.mark.asyncio

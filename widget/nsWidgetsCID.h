@@ -4,6 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* bd57cee8-1dd1-11b2-9fe7-95cf4709aea3 */
+#ifndef WIDGET_NSWIDGETSCID_H_
+#define WIDGET_NSWIDGETSCID_H_
+
 #define NS_FILEPICKER_CID \
   {0xbd57cee8, 0x1dd1, 0x11b2, {0x9f, 0xe7, 0x95, 0xcf, 0x47, 0x09, 0xae, 0xa3}}
 
@@ -150,3 +153,5 @@
 
 #define NS_WINDOWS_UIUTILS_CID \
   {0xe04a55e8, 0xfee3, 0x4ea2, {0xa9, 0x8b, 0x41, 0xd2, 0x62, 0x1a, 0xdc, 0x3c}}
+
+#endif  // WIDGET_NSWIDGETSCID_H_

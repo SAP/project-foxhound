@@ -19,7 +19,7 @@ import java.util.Locale
 /**
  * An interface which defines read/write methods for credit card and address data.
  */
-interface CreditCardsAddressesStorage {
+interface CreditCardsAddressesStorage : Storage, StorageMaintenanceRegistry {
 
     /**
      * Inserts the provided credit card into the database, and returns
@@ -52,6 +52,13 @@ interface CreditCardsAddressesStorage {
      * @return A list of all [CreditCard].
      */
     suspend fun getAllCreditCards(): List<CreditCard>
+
+    /**
+     * Counts all of the credit cards.
+     *
+     * @return A count of all [CreditCard].
+     */
+    suspend fun countAllCreditCards(): Long
 
     /**
      * Deletes the credit card with the given [guid].
@@ -93,6 +100,13 @@ interface CreditCardsAddressesStorage {
     suspend fun getAllAddresses(): List<Address>
 
     /**
+     * Counts all of the addresses.
+     *
+     * @return A count of all [Address].
+     */
+    suspend fun countAllAddresses(): Long
+
+    /**
      * Updates the fields in the provided address.
      *
      * @param guid Unique identifier for the desired address.
@@ -126,6 +140,22 @@ interface CreditCardsAddressesStorage {
      * Removes any encrypted data from this storage. Useful after encountering key loss.
      */
     suspend fun scrubEncryptedData()
+
+    override suspend fun runMaintenance(dbSizeLimit: UInt) {
+        // Implemented by concrete implementation of `CreditCardsAddressesStorage`
+    }
+
+    override suspend fun warmUp() {
+        // Implemented by concrete implementation of `CreditCardsAddressesStorage`
+    }
+
+    override fun registerStorageMaintenanceWorker() {
+        // Implemented by concrete implementation of `CreditCardsAddressesStorage`
+    }
+
+    override fun unregisterStorageMaintenanceWorker(uniqueWorkName: String) {
+        // Implemented by concrete implementation of `CreditCardsAddressesStorage`
+    }
 }
 
 /**
@@ -374,6 +404,7 @@ data class Address(
      */
     val addressLabel: String
         get() = listOf(
+            name,
             streetAddress.toOneLineAddress(),
             addressLevel3,
             addressLevel2,

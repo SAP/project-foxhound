@@ -11,10 +11,16 @@ prefs = [
 ]
 
 ["test_cross_origin_iframe.html"]
-fail-if = ["xorigin"]
+fail-if = [
+  "xorigin",
+]
 
 ["test_permissions_api.html"]
-skip-if = ["xorigin"] # Hangs
+skip-if = [
+  "xorigin", # Hangs
+]
 
 ["test_storage_access_notification.html"]
-skip-if = ["xorigin"] # Hangs
+skip-if = [
+  "xorigin", # Hangs
+]

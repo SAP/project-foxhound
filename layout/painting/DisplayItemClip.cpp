@@ -24,25 +24,24 @@ namespace mozilla {
 
 void DisplayItemClip::SetTo(const nsRect& aRect) { SetTo(aRect, nullptr); }
 
-void DisplayItemClip::SetTo(const nsRect& aRect, const nscoord* aRadii) {
+void DisplayItemClip::SetTo(const nsRect& aRect,
+                            const nsRectCornerRadii* aRadii) {
   mHaveClipRect = true;
   mClipRect = aRect;
   if (aRadii) {
-    mRoundedClipRects.SetLength(1);
-    mRoundedClipRects[0].mRect = aRect;
-    memcpy(mRoundedClipRects[0].mRadii, aRadii, sizeof(nscoord) * 8);
+    mRoundedClipRects.Clear();
+    mRoundedClipRects.AppendElement(RoundedRect{aRect, *aRadii});
   } else {
     mRoundedClipRects.Clear();
   }
 }
 
 void DisplayItemClip::SetTo(const nsRect& aRect, const nsRect& aRoundedRect,
-                            const nscoord* aRadii) {
+                            const nsRectCornerRadii* aRadii) {
   mHaveClipRect = true;
   mClipRect = aRect;
-  mRoundedClipRects.SetLength(1);
-  mRoundedClipRects[0].mRect = aRoundedRect;
-  memcpy(mRoundedClipRects[0].mRadii, aRadii, sizeof(nscoord) * 8);
+  mRoundedClipRects.Clear();
+  mRoundedClipRects.AppendElement(RoundedRect{aRoundedRect, *aRadii});
 }
 
 bool DisplayItemClip::MayIntersect(const nsRect& aRect) const {
@@ -53,8 +52,7 @@ bool DisplayItemClip::MayIntersect(const nsRect& aRect) const {
   if (r.IsEmpty()) {
     return false;
   }
-  for (uint32_t i = 0; i < mRoundedClipRects.Length(); ++i) {
-    const RoundedRect& rr = mRoundedClipRects[i];
+  for (const RoundedRect& rr : mRoundedClipRects) {
     if (!nsLayoutUtils::RoundedRectIntersectsRect(rr.mRect, rr.mRadii, r)) {
       return false;
     }
@@ -142,8 +140,7 @@ nsRect DisplayItemClip::ApproximateIntersectInward(const nsRect& aRect) const {
   if (mHaveClipRect) {
     r.IntersectRect(r, mClipRect);
   }
-  for (uint32_t i = 0, iEnd = mRoundedClipRects.Length(); i < iEnd; ++i) {
-    const RoundedRect& rr = mRoundedClipRects[i];
+  for (const RoundedRect& rr : mRoundedClipRects) {
     nsRegion rgn =
         nsLayoutUtils::RoundedRectIntersectRect(rr.mRect, rr.mRadii, r);
     r = rgn.GetLargestRectangle();
@@ -314,8 +311,7 @@ static void AccumulateRoundedRectDifference(
 
   // If the two rectangles are totally disjoint, just add them both - otherwise
   // we'd end up adding one big enclosing rect
-  if (!rect1.Intersects(rect2) ||
-      memcmp(aR1.mRadii, aR2.mRadii, sizeof(aR1.mRadii))) {
+  if (!rect1.Intersects(rect2) || aR1.mRadii != aR2.mRadii) {
     aOut->Or(*aOut, rect1.Intersect(aBounds));
     aOut->Or(*aOut, rect2.Intersect(aOtherBounds));
     return;
@@ -469,12 +465,14 @@ nsCString DisplayItemClip::ToString() const {
   if (mHaveClipRect) {
     str.AppendPrintf("%d,%d,%d,%d", mClipRect.x, mClipRect.y, mClipRect.width,
                      mClipRect.height);
-    for (uint32_t i = 0; i < mRoundedClipRects.Length(); ++i) {
-      const RoundedRect& r = mRoundedClipRects[i];
-      str.AppendPrintf(" [%d,%d,%d,%d corners %d,%d,%d,%d,%d,%d,%d,%d]",
-                       r.mRect.x, r.mRect.y, r.mRect.width, r.mRect.height,
-                       r.mRadii[0], r.mRadii[1], r.mRadii[2], r.mRadii[3],
-                       r.mRadii[4], r.mRadii[5], r.mRadii[6], r.mRadii[7]);
+    for (const RoundedRect& r : mRoundedClipRects) {
+      str.AppendPrintf(
+          " [%d,%d,%d,%d corners %d,%d,%d,%d,%d,%d,%d,%d]", r.mRect.x,
+          r.mRect.y, r.mRect.width, r.mRect.height, r.mRadii.TopLeft().width,
+          r.mRadii.TopLeft().height, r.mRadii.TopRight().width,
+          r.mRadii.TopRight().height, r.mRadii.BottomLeft().width,
+          r.mRadii.BottomLeft().height, r.mRadii.BottomRight().width,
+          r.mRadii.BottomRight().height);
     }
   }
   return std::move(str);

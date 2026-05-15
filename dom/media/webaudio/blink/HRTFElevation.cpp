@@ -29,10 +29,10 @@
 #include "HRTFElevation.h"
 
 #include <speex/speex_resampler.h>
-#include "mozilla/PodOperations.h"
-#include "AudioSampleFormat.h"
 
+#include "AudioSampleFormat.h"
 #include "IRC_Composite_C_R0195-incl.cpp"
+#include "mozilla/PodOperations.h"
 
 using namespace mozilla;
 

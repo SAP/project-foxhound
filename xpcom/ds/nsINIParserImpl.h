@@ -4,11 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsINIParserImpl_h__
-#define nsINIParserImpl_h__
+#ifndef nsINIParserImpl_h_
+#define nsINIParserImpl_h_
 
 #include "nsIINIParser.h"
-#include "mozilla/Attributes.h"
 
 #define NS_INIPARSERFACTORY_CONTRACTID "@mozilla.org/xpcom/ini-parser-factory;1"
 
@@ -20,4 +19,4 @@ class nsINIParserFactory final : public nsIINIParserFactory {
   NS_DECL_NSIINIPARSERFACTORY
 };
 
-#endif  // nsINIParserImpl_h__
+#endif  // nsINIParserImpl_h_

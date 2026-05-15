@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsOSHelperAppService_h__
-#define nsOSHelperAppService_h__
+#ifndef nsOSHelperAppService_h_
+#define nsOSHelperAppService_h_
 
 // The OS helper app service is a subclass of nsExternalHelperAppService and is
 // implemented on each platform. It contains platform specific code for finding
@@ -119,4 +119,4 @@ class nsOSHelperAppService : public nsExternalHelperAppService {
       nsAString& aMozillaFlags);
 };
 
-#endif  // nsOSHelperAppService_h__
+#endif  // nsOSHelperAppService_h_

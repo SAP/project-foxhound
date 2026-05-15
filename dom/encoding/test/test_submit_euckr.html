@@ -14,20 +14,17 @@
 </form>
 <script>
 
-runTest();
+async_test((t) => {
+  const form = document.forms[0];
+  const iframe = document.querySelector('iframe');
 
-function runTest() {
-  var t = async_test("Test for euc-kr encoded form submission");
-  var f = document.forms[0];
-  var ifr = frames.ifr;
-  ifr.onload = function() {
-    t.step(function() {
-      assert_equals("".split.call(ifr.location, "?")[1], "a=%81A");
-    });
-    t.done();
-  };
-  f.submit();
-}
+  // note: listener must be on the iframe, not the window that will be replaced
+  iframe.onload = t.step_func_done(() =>
+    assert_equals("".split.call(iframe.contentWindow.location, "?")[1], "a=%81A")
+  );
+
+  form.submit();
+}, "Test for euc-kr encoded form submission");
 
 </script>
 </body>

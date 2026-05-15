@@ -11,7 +11,7 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("camera permissions", "permissionsGroup");
+  await evaluateSearchResults("camera permissions", "permissions");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -22,7 +22,7 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("microphone permissions", "permissionsGroup");
+  await evaluateSearchResults("microphone permissions", "permissions");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
@@ -33,6 +33,6 @@ add_task(async function () {
   await openPreferencesViaOpenPreferencesAPI("paneGeneral", {
     leaveOpen: true,
   });
-  await evaluateSearchResults("notification permissions", "permissionsGroup");
+  await evaluateSearchResults("notification permissions", "permissions");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });

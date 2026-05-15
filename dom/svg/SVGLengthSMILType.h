@@ -7,7 +7,6 @@
 #ifndef DOM_SVG_SVGLENGTHSMILTYPE_H_
 #define DOM_SVG_SVGLENGTHSMILTYPE_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILType.h"
 
 namespace mozilla {

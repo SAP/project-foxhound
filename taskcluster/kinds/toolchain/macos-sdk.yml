@@ -5,7 +5,7 @@
 task-defaults:
     attributes:
         local-toolchain: true
-    worker-type: b-linux-amd
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 1800
         env:
@@ -29,36 +29,21 @@ macosx64-sdk-13.3:
             - 8de3306508dca31040b3b49ff370e96c94f4546bcf22cb4069abbb18e2d6bce8e20d40a6903f00ae75558175b624a979ea0444f54bc6d9d67e841f2000b0d863
             - Library/Developer/CommandLineTools/SDKs/MacOSX13.3.sdk
         toolchain-artifact: project/gecko/mac-sdk/MacOSX13.3.sdk.tar.zst
-        toolchain-alias:
-            - MacOSX13.3.sdk
 
-macosx64-sdk-15.4:
-    description: "MacOSX15.4 SDK"
+macosx64-sdk-26.2:
+    description: "macOS 26.2 SDK"
     treeherder:
-        symbol: TM(sdk15.4)
+        symbol: TM(sdk26.2)
     run:
         arguments:
-            - https://swcdn.apple.com/content/downloads/10/32/082-12052-A_AHPGDY76PT/1a419zaf3vh8o9t3c0usblyr8eystpnsh5/CLTools_macOSNMOS_SDK.pkg
-            - fd01c70038dbef48bd23fb8b7d18f234910733635f1b44518e71a66d2db92a70180e6a595c6bdd837fa8df7e9b297e570560842e9a6db863840bd051fe69fea5
-            - Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
-        toolchain-artifact: project/gecko/mac-sdk/MacOSX15.4.sdk.tar.zst
-        toolchain-alias:
-            - macosx64-sdk-toolchain
-            - MacOSX15.4.sdk
-
-macosx64-sdk-15.5:
-    description: "MacOSX15.5 SDK"
-    treeherder:
-        symbol: TM(sdk15.5)
-    run:
-        arguments:
-            - https://swcdn.apple.com/content/downloads/52/01/082-41241-A_0747ZN8FHV/dectd075r63pppkkzsb75qk61s0lfee22j/CLTools_macOSNMOS_SDK.pkg
-            - fb7c555e823b830279394e52c7d439bd287a9d8b007883fa0595962a240d488b5613f8cc8d1cc9657909de9367417652564f3df66e238a47bbc87244f5205056
-            - Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk
-        toolchain-artifact: project/gecko/mac-sdk/MacOSX15.5.sdk.tar.zst
+            - https://swcdn.apple.com/content/downloads/60/22/089-71960-A_W8BL1RUJJ6/5zkyplomhk1cm7z6xja2ktgapnhhti6wwd/CLTools_macOSNMOS_SDK.pkg
+            - f3785f1bbc3b8323121b66fc28ef59083b4f508c7bdabb9d8d916f142ee89b01cb8030eba469eb9107b416d1c9d523a1d2e009cddb83536a819a3704a5d3ce17
+            - Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk
+        toolchain-artifact: project/gecko/mac-sdk/MacOSX26.2.sdk.tar.zst
         toolchain-alias:
             - macosx64-sdk
-            - MacOSX15.5.sdk
+            - macosx64-sdk-toolchain
+            - MacOSX26.2.sdk
 
 ios-sdk-18.4:
     description: "iPhoneOS18.4 SDK"

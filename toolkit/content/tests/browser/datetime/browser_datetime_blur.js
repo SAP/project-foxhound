@@ -116,7 +116,7 @@ add_task(async function test_parent_blur() {
   );
   Assert.equal(
     helper.panel
-      .querySelector("#dateTimePopupFrame")
+      .querySelector("#DateTimePickerPanelPopupFrame")
       .contentDocument.activeElement.getAttribute("role"),
     "gridcell",
     "The picker is opened and a calendar day is focused"

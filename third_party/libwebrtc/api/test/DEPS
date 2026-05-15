@@ -44,13 +44,22 @@ specific_include_rules = {
   "mock_async_dns_resolver\.h": [
     "+rtc_base/socket_address.h",
   ],
+  "mock_local_network_access_permission\.h": [
+    "+rtc_base/socket_address.h",
+  ],
   "mock_packet_socket_factory\.h": [
     "+rtc_base/async_packet_socket.h",
     "+rtc_base/socket_address.h",
   ],
+  "mock_peerconnectioninterface\.h": [
+    "+rtc_base/thread.h",
+  ],
   "mock_peer_connection_factory_interface\.h": [
     "+p2p/base/port_allocator.h",
     "+rtc_base/rtc_certificate_generator.h",
+  ],
+  "mock_peerconnectioninterface\.h": [
+    "+rtc_base/thread.h",
   ],
   "videocodec_test_fixture\.h": [
     "+modules/video_coding/codecs/h264/include/h264_globals.h",

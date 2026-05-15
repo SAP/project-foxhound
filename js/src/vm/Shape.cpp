@@ -6,11 +6,10 @@
 
 #include "vm/Shape-inl.h"
 
-#include "mozilla/MathAlgorithms.h"
-
 #include "gc/HashUtil.h"
 #include "js/friend/WindowProxy.h"  // js::IsWindow
 #include "js/HashTable.h"
+#include "js/Prefs.h"
 #include "js/Printer.h"  // js::GenericPrinter, js::Fprinter
 #include "js/UniquePtr.h"
 #include "vm/JSObject.h"
@@ -800,7 +799,13 @@ void NativeObject::maybeFreeDictionaryPropSlots(JSContext* cx,
 
   // Trigger write barriers on the old slots before reallocating.
   prepareSlotRangeForOverwrite(newSpan, oldSpan);
+
+#ifdef JS_GC_CONCURRENT_MARKING
+  // Clear previously used slots on shrink, including fixed slots.
+  initializeSlotRange(newSpan, oldSpan);
+#else
   invalidateSlotRange(newSpan, oldSpan);
+#endif
 
   uint32_t oldCapacity = numDynamicSlots();
   uint32_t newCapacity =
@@ -858,11 +863,12 @@ bool NativeObject::removeProperty(JSContext* cx, Handle<NativeObject*> obj,
     return true;
   }
 
-  if (!Watchtower::watchPropertyRemove(cx, obj, id)) {
+  PropertyInfo prop = propMap->getPropertyInfo(propIndex);
+  bool wasTrackedObjectFuseProp = false;
+  if (!Watchtower::watchPropertyRemove(cx, obj, id, prop,
+                                       &wasTrackedObjectFuseProp)) {
     return false;
   }
-
-  PropertyInfo prop = propMap->getPropertyInfo(propIndex);
 
   // If we're removing an accessor property, ensure the HadGetterSetterChange
   // object flag is set. This is necessary because the slot holding the
@@ -878,7 +884,19 @@ bool NativeObject::removeProperty(JSContext* cx, Handle<NativeObject*> obj,
     // Fast path for removing the last property from a SharedPropMap. In this
     // case we can just call getPrevious and then look up a shape for the
     // resulting map/mapLength.
-    if (propMap == map && propIndex == mapLength - 1) {
+    //
+    // Don't reuse a previously-used Shape if the object has an ObjectFuse and
+    // we are removing a tracked property, to avoid the following bug:
+    //
+    // 1) The object has Shape S1 and a property P that was marked NotConstant.
+    // 2) We attach a SetSlot IC stub that guards on the object + S1 and stores
+    //    a new value for this property.
+    // 3) We remove property P (we are here now).
+    // 4) We add a new property P, reuse Shape S1, and mark P Constant.
+    // 5) We use the SetSlot IC stub again but this is invalid because P is
+    //    still marked Constant.
+    if (propMap == map && propIndex == mapLength - 1 &&
+        !wasTrackedObjectFuseProp) {
       MOZ_ASSERT(obj->getLastProperty().key() == id);
 
       Rooted<SharedPropMap*> sharedMap(cx, map->asShared());
@@ -1055,16 +1073,35 @@ bool NativeObject::generateNewDictionaryShape(JSContext* cx,
   return true;
 }
 
-/* static */
-bool JSObject::setFlag(JSContext* cx, HandleObject obj, ObjectFlag flag) {
-  MOZ_ASSERT(cx->compartment() == obj->compartment());
+static bool ShouldUseObjectFuseForPrototype(JSObject* obj) {
+  if (!obj->is<NativeObject>()) {
+    return false;
+  }
+  return ShouldUseObjectFuses() && JS::Prefs::objectfuse_for_all_protos();
+}
 
-  if (obj->hasFlag(flag)) {
+// static
+bool JSObject::setIsUsedAsPrototype(JSContext* cx, JS::HandleObject obj) {
+  js::ObjectFlags flags = {js::ObjectFlag::IsUsedAsPrototype};
+  if (ShouldUseObjectFuseForPrototype(obj)) {
+    flags.setFlag(js::ObjectFlag::HasObjectFuse);
+  }
+  return setFlags(cx, obj, flags);
+}
+
+/* static */
+bool JSObject::setFlags(JSContext* cx, HandleObject obj, ObjectFlags flags) {
+  MOZ_ASSERT(cx->compartment() == obj->compartment());
+  MOZ_ASSERT_IF(flags.hasFlag(ObjectFlag::IsUsedAsPrototype) &&
+                    ShouldUseObjectFuseForPrototype(obj),
+                flags.hasFlag(ObjectFlag::HasObjectFuse));
+
+  if (obj->hasAllFlags(flags)) {
     return true;
   }
 
   ObjectFlags objectFlags = obj->shape()->objectFlags();
-  objectFlags.setFlag(flag);
+  objectFlags.setFlags(flags);
 
   uint32_t numFixed =
       obj->is<NativeObject>() ? obj->as<NativeObject>().numFixedSlots() : 0;
@@ -1137,7 +1174,8 @@ BaseShape::BaseShape(JSContext* cx, const JSClass* clasp, JS::Realm* realm,
   MOZ_ASSERT_IF(proto.isObject(), !IsWindow(proto.toObject()));
 
   if (MOZ_UNLIKELY(clasp->emulatesUndefined())) {
-    cx->runtime()->hasSeenObjectEmulateUndefinedFuse.ref().popFuse(cx);
+    cx->runtime()->runtimeFuses.ref().hasSeenObjectEmulateUndefinedFuse.popFuse(
+        cx);
   }
 
 #ifdef DEBUG
@@ -1329,11 +1367,14 @@ void ForEachObjectFlag(ObjectFlags flags, KnownF known, UnknownF unknown) {
       case ObjectFlag::NeedsProxyGetSetResultValidation:
         known("NeedsProxyGetSetResultValidation");
         break;
-      case ObjectFlag::HasFuseProperty:
-        known("HasFuseProperty");
+      case ObjectFlag::HasRealmFuseProperty:
+        known("HasRealmFuseProperty");
         break;
-      case ObjectFlag::HasPreservedWrapperDummy:
-        known("HasPreservedWrapperDummy");
+      case ObjectFlag::HasObjectFuse:
+        known("HasObjectFuse");
+        break;
+      case ObjectFlag::HasPreservedWrapper:
+        known("HasPreservedWrapper");
         break;
       case ObjectFlag::HasNonFunctionAccessor:
         known("HasNonFunctionAccessor");

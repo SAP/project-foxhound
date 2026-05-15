@@ -5,7 +5,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ModuleUtils.h"
-#include "mozilla/Unused.h"
 #include "mozilla/chrome/RegistryMessageUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -169,6 +168,11 @@ void SubstitutingJARURI::Serialize(mozilla::ipc::URIParams& aParams) {
   params.resolved() = resolved;
   aParams = params;
 }
+
+size_t SubstitutingJARURI::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
+  // We don't need to calcaulte this unless it shows up in DMD.
+  return 0;
+};
 
 // SubstitutingJARURI::nsISerializable
 
@@ -366,7 +370,7 @@ nsresult SubstitutingProtocolHandler::SendSubstitution(const nsACString& aRoot,
   mapping.flags = aFlags;
 
   for (uint32_t i = 0; i < parents.Length(); i++) {
-    Unused << parents[i]->SendRegisterChromeItem(mapping);
+    (void)parents[i]->SendRegisterChromeItem(mapping);
   }
 
   return NS_OK;

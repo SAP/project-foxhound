@@ -4,7 +4,7 @@
 
 use crate::api::TileSize;
 use crate::api::units::*;
-use crate::segment::EdgeAaSegmentMask;
+use crate::segment::EdgeMask;
 use euclid::{point2, size2};
 use std::i32;
 use std::ops::Range;
@@ -33,7 +33,7 @@ pub fn simplify_repeated_primitive(
 
 pub struct Repetition {
     pub origin: LayoutPoint,
-    pub edge_flags: EdgeAaSegmentMask,
+    pub edge_flags: EdgeMask,
 }
 
 pub struct RepetitionIterator {
@@ -41,7 +41,7 @@ pub struct RepetitionIterator {
     x_count: i32,
     current_y: i32,
     y_count: i32,
-    row_flags: EdgeAaSegmentMask,
+    row_flags: EdgeMask,
     current_origin: LayoutPoint,
     initial_origin: LayoutPoint,
     stride: LayoutSize,
@@ -64,9 +64,9 @@ impl Iterator for RepetitionIterator {
             }
             self.current_x = 0;
 
-            self.row_flags = EdgeAaSegmentMask::empty();
+            self.row_flags = EdgeMask::empty();
             if self.current_y == self.y_count - 1 {
-                self.row_flags |= EdgeAaSegmentMask::BOTTOM;
+                self.row_flags |= EdgeMask::BOTTOM;
             }
 
             self.current_origin.x = self.initial_origin.x;
@@ -75,11 +75,11 @@ impl Iterator for RepetitionIterator {
 
         let mut edge_flags = self.row_flags;
         if self.current_x == 0 {
-            edge_flags |= EdgeAaSegmentMask::LEFT;
+            edge_flags |= EdgeMask::LEFT;
         }
 
         if self.current_x == self.x_count - 1 {
-            edge_flags |= EdgeAaSegmentMask::RIGHT;
+            edge_flags |= EdgeMask::RIGHT;
         }
 
         let repetition = Repetition {
@@ -110,7 +110,7 @@ pub fn repetitions(
                 x_count: 0,
                 y_count: 0,
                 stride,
-                row_flags: EdgeAaSegmentMask::empty(),
+                row_flags: EdgeMask::empty(),
             }
         }
     };
@@ -139,9 +139,9 @@ pub fn repetitions(
     let x_count = f32::ceil((x_most - x0) / stride.width) as i32;
     let y_count = f32::ceil((y_most - y0) / stride.height) as i32;
 
-    let mut row_flags = EdgeAaSegmentMask::TOP;
+    let mut row_flags = EdgeMask::TOP;
     if y_count == 1 {
-        row_flags |= EdgeAaSegmentMask::BOTTOM;
+        row_flags |= EdgeMask::BOTTOM;
     }
 
     RepetitionIterator {
@@ -160,7 +160,7 @@ pub fn repetitions(
 pub struct Tile {
     pub rect: LayoutRect,
     pub offset: TileOffset,
-    pub edge_flags: EdgeAaSegmentMask,
+    pub edge_flags: EdgeMask,
 }
 
 #[derive(Debug)]
@@ -213,27 +213,27 @@ impl Iterator for TileIterator {
             self.regular_tile_size,
         );
 
-        let mut edge_flags = EdgeAaSegmentMask::empty();
+        let mut edge_flags = EdgeMask::empty();
 
         if tile_offset.x == self.x.image_tiles.start {
-            edge_flags |= EdgeAaSegmentMask::LEFT;
+            edge_flags |= EdgeMask::LEFT;
             segment_rect.min.x = self.x.layout_prim_start;
             // TODO(nical) we may not need to do this.
             segment_rect.max.x = segment_rect.min.x + self.x.first_tile_layout_size;
         }
         if tile_offset.x == self.x.image_tiles.end - 1 {
-            edge_flags |= EdgeAaSegmentMask::RIGHT;
+            edge_flags |= EdgeMask::RIGHT;
             segment_rect.max.x = segment_rect.min.x + self.x.last_tile_layout_size;
         }
 
         if tile_offset.y == self.y.image_tiles.start {
             segment_rect.min.y = self.y.layout_prim_start;
             segment_rect.max.y = segment_rect.min.y + self.y.first_tile_layout_size;
-            edge_flags |= EdgeAaSegmentMask::TOP;
+            edge_flags |= EdgeMask::TOP;
         }
         if tile_offset.y == self.y.image_tiles.end - 1 {
             segment_rect.max.y = segment_rect.min.y + self.y.last_tile_layout_size;
-            edge_flags |= EdgeAaSegmentMask::BOTTOM;
+            edge_flags |= EdgeMask::BOTTOM;
         }
 
         assert!(tile_offset.y < self.y.tile_range.end);
@@ -647,7 +647,7 @@ mod tests {
         visible_rect: &LayoutRect,
         device_image_rect: &DeviceIntRect,
         device_tile_size: i32,
-        callback: &mut dyn FnMut(&LayoutRect, TileOffset, EdgeAaSegmentMask),
+        callback: &mut dyn FnMut(&LayoutRect, TileOffset, EdgeMask),
     ) {
         let mut coverage = LayoutRect::zero();
         let mut seen_tiles = HashSet::new();

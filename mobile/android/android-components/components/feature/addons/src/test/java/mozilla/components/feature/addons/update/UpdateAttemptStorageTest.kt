@@ -4,9 +4,7 @@
 
 package mozilla.components.feature.addons.update
 
-import androidx.room.DatabaseConfiguration
 import androidx.room.InvalidationTracker
-import androidx.sqlite.db.SupportSQLiteOpenHelper
 import mozilla.components.feature.addons.update.AddonUpdater.Status.SuccessfullyUpdated
 import mozilla.components.feature.addons.update.DefaultAddonUpdater.UpdateAttemptStorage
 import mozilla.components.feature.addons.update.db.UpdateAttemptDao
@@ -65,7 +63,6 @@ class UpdateAttemptStorageTest {
 
     private fun mockDatabase(dao: UpdateAttemptDao) = object : UpdateAttemptsDatabase() {
         override fun updateAttemptDao() = dao
-        override fun createOpenHelper(config: DatabaseConfiguration): SupportSQLiteOpenHelper = mock()
         override fun createInvalidationTracker(): InvalidationTracker = mock()
         override fun clearAllTables() = Unit
     }

@@ -10,11 +10,10 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/HighlightBinding.h"
-
-#include "nsCycleCollectionParticipant.h"
 #include "nsAtomHashKeys.h"
-#include "nsTHashSet.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
+#include "nsTHashSet.h"
 #include "nsWrapperCache.h"
 
 class nsFrameSelection;

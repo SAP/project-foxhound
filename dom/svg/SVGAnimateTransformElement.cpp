@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGAnimateTransformElement.h"
+
 #include "mozilla/dom/SVGAnimateTransformElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(AnimateTransform)

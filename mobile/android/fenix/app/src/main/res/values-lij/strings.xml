@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Privou %s</string>
@@ -10,26 +17,18 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">Ciù inpostaçioin</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Abilita Navegaçion privâ</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button" moz:removedIn="142" tools:ignore="UnusedResources">Dizabilita Navegaçion privâ</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Scrivi ò çerca indirisso</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">I feuggi averti saian mostræ chi.</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">I feuggi averti saian mostræ chi.</string>
   <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description">I feuggi privæ saian mostræ chi.</string>
+  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">I feuggi privæ saian mostræ chi.</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
   <string name="about_content">%1$s o l\'é svilupou da Mozilla.</string>
-  <!--
-    Private Browsing
-
-    Explanation for private browsing displayed to users on home view when they first enable private mode.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="private_browsing_placeholder_description_2" moz:removedIn="141" tools:ignore="UnusedResources">%1$s o scancella a teu stöia de navegaçion e riçerche quande særi i feuggi e-i barcoin de navegaçion privâ. Sciben che questo o no te fa deventâ anònimo co-i sciti ò co-o fornitô de Internet, o l\'agiutta in a mantegnî privòu cöse ti fæ in linea a-i atri utenti de sto computer.</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Miti comuin in sciâ navegaçion privâ</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!--
     Home screen icons - Long press shortcuts
 
@@ -51,9 +50,9 @@
   <!-- Content description (not visible, for screen readers etc.): Stop loading current website -->
   <string name="browser_menu_stop">Ferma</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">Agiutto</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Agiutto</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">Cöse gh\'é de neuvo</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Cöse gh\'é de neuvo</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Inpostaçioin</string>
   <!-- Browser menu button that opens a user's library -->
@@ -77,7 +76,7 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by">FÆTO CON %1$s</string>
+  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">FÆTO CON %1$s</string>
   <!--
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
@@ -111,6 +110,10 @@
   <string name="search_suggestions_onboarding_title">Permette i conseggi de riçerca inte sescioin privæ?</string>
   <!-- Search suggestion onboarding hint description text, %s is the name of the app (for example "Firefox"). -->
   <string name="search_suggestions_onboarding_text">Tutto quello che scrivi inta bara di indirissi de %s saiâ condivizo co-o motô de riçerca predefinio.</string>
+  <!-- ==== Project "Nova" onboarding strings ==== -->
+
+  <!-- ==== End of Project "Nova" onboarding strings ==== -->
+
   <!-- Text preview for smaller sized widgets -->
   <string name="search_widget_text_short">Çerca</string>
   <!-- Text preview for larger sized widgets -->
@@ -166,8 +169,6 @@
   <string name="preferences_account_sync_error">Conetite torna pe repigiâ a scioncronizaçion</string>
   <!-- Preference for language -->
   <string name="preferences_language">Lengoa</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices" tools:ignore="UnusedResources" moz:removedIn="141">Condivixon dæti</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">Arecugeita dæti</string>
   <!-- Preference for developers -->
@@ -301,9 +302,9 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Azonzi feuggio privou</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">Privou</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Privou</string>
   <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share">Condividdi tutti i feuggi</string>
+  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Condividdi tutti i feuggi</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Særa tutti i feuggi</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -329,9 +330,9 @@
   <!-- Text for the button to clear all history -->
   <string name="history_delete_all">Scancella stöia</string>
   <!-- Text for the snackbar to confirm that multiple browsing history items has been deleted -->
-  <string name="history_delete_multiple_items_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">Stöia scancelâ</string>
+  <string name="history_delete_multiple_items_snackbar">Stöia scancelâ</string>
   <!-- Text for the snackbar to confirm that a single browsing history item has been deleted. %1$s is the shortened URL of the deleted history item. -->
-  <string name="history_delete_single_item_snackbar" tools:ignore="UnusedResources" moz:removedIn="143">%1$s scancelou</string>
+  <string name="history_delete_single_item_snackbar">%1$s scancelou</string>
   <!-- Context description text for the button to delete a single history item -->
   <string name="history_delete_item">Scancella</string>
   <!--
@@ -359,12 +360,6 @@
   <string name="tab_crash_close">Særa feuggio</string>
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">Repiggia feuggio</string>
-  <!--
-    Bookmarks
-
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
-  -->
-  <string name="bookmark_delete_folder_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">T\'ê seguo de voei scancelâ sta cartella?</string>
   <!-- Screen title for adding a bookmarks folder -->
   <string name="bookmark_add_folder">Azonzi cartella</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
@@ -372,7 +367,7 @@
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Cangia</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">Còpia</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Còpia</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Condividdi</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -381,8 +376,6 @@
   <string name="bookmark_menu_open_in_private_tab_button">Arvi in feuggio privou</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">Scancella</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">Sarva</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -392,33 +385,23 @@
   <string name="edit_bookmark_fragment_title">Cangia segnalibbro</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">Cangia cartella</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button" tools:ignore="UnusedResources" moz:removedIn="143">Intra pe vedde i seganlibbri scincronizæ</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">INDIRISSO</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">CARTELLA</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">NOMME</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label" tools:ignore="UnusedResources" moz:removedIn="143">Azonzi cartella</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Seleçionn-a cartella</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error" tools:ignore="UnusedResources" moz:removedIn="143">Ti devi mette \'n titolo</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">Indirisso grammo</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message" tools:ignore="UnusedResources" moz:removedIn="143">Nisciun segnalibbro chi</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Scancelou %1$s</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks not including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_2" tools:ignore="UnusedResources" moz:removedIn="143">Segnalibbri scancelæ</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">ANULLA</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">ANULLA</string>
   <!--
     Site Permissions
 
@@ -507,10 +490,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d feuggio seleçionou</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved" tools:ignore="UnusedResources" moz:removedIn="142">Feuggi sarvæ!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">Feuggio sarvou!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">Særa</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -569,23 +548,15 @@
   <!--
     Snackbar
 
-    Text shown in snackbar when user deletes a collection
+    Text shown in snackbar when user closes a tab
   -->
-  <string name="snackbar_collection_deleted" tools:ignore="UnusedResources" moz:removedIn="143">Coleçion scancelâ</string>
-  <!-- Text shown in snackbar when user renames a collection -->
-  <string name="snackbar_collection_renamed" moz:removedIn="141" tools:ignore="UnusedResources">Coleçion rinominâ</string>
-  <!-- Text shown in snackbar when user closes a tab -->
   <string name="snackbar_tab_closed">Feuggio serou</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">Feuggi seræ</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Feuggio privou serou</string>
-  <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed" moz:removedIn="141" tools:ignore="UnusedResources">Feuggi privou seræ</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">ANULLA</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed">Scito scancelâ</string>
   <!--
     QR code scanner prompt which appears after scanning a code, but before navigating to it
     %1$s is the name of the app (for example "Firefox"), %2$s is the URL or text scanned
@@ -597,10 +568,6 @@
   <string name="qr_scanner_dialog_negative">NO PERMETTE</string>
   <!-- Tab collection deletion prompt dialog message. %1$s is the collection name. -->
   <string name="tab_collection_dialog_message">T\'ê seguo de voei scancelâ %1$s?</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive" tools:ignore="UnusedResources" moz:removedIn="143">Scancella</string>
-  <!-- Message for copying the URL via long press on the toolbar -->
-  <string name="url_copied" tools:ignore="UnusedResources" moz:removedIn="142">Indirisso copiou</string>
   <!-- Sample text for accessibility font size -->
   <string name="accessibility_text_size_sample_text_1">Sto chi o l\'é \'n testo d\'ezenpio. Serve pe fa vedde comme saiâ o testo quande ti t\'aomenti o ti diminoisci o testo con sta inpostaçion.</string>
   <!-- Summary for Accessibility Text Size Scaling Preference -->
@@ -637,7 +604,7 @@
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Scancella in aotomatico i dæti de navegaçion quande ti seleçionn-i \"Sciòrti\" da-o menû prinçipâ</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">Sciòrti</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Sciòrti</string>
   <!-- Dialog message to the user asking to delete browsing data. %s is the name of the app (for example "Firefox"). -->
   <string name="delete_browsing_data_prompt_message_3">%s o scanceliâ i dæti de navegaçion seleçionæ.</string>
   <!-- Text for the cancel button for the data deletion dialog -->
@@ -654,14 +621,6 @@
     text to display in the snackbar once account is signed-in
   -->
   <string name="onboarding_firefox_account_sync_is_on">Sincronizaçion ativa</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar">Feuggi mandæ!</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">Feuggio mandou!</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">No son ariesciou a mandâ</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -864,12 +823,6 @@
   <string name="search_add_custom_engine_error_empty_search_string">Scrivi \'na stringa de riçerca</string>
   <!-- Text shown when a user leaves out the required template string -->
   <string name="search_add_custom_engine_error_missing_template">Contròlla che a stringa de riçerca a segge into formou d\'ezenpio.</string>
-  <!-- Text shown when a user creates a new search engine. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s creou</string>
-  <!-- Text shown when a user successfully edits a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_edit_custom_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s sarvou</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message" tools:ignore="UnusedResources" moz:removedIn="142">%s scancelou</string>
   <!-- Heading for the instructions to allow a permission -->
   <string name="phone_feature_blocked_intro">Pe permetilo:</string>
   <!-- First step for the allowing a permission -->
@@ -886,17 +839,15 @@
   <string name="confirm_clear_permission_site">Te seguo de scancelâ sto permisso pe sto scito?</string>
   <!-- label shown when there are not site exceptions to show in the site exception settings -->
   <string name="no_site_exceptions">Nisciunn-a eceçion pe-i sciti</string>
-  <!-- Bookmark deletion confirmation -->
-  <string name="bookmark_deletion_confirmation" tools:ignore="UnusedResources" moz:removedIn="143">T\'ê seguo de voei scancelâ sto segnalibbro?</string>
   <!--
     text shown before the issuer name to indicate who its verified by, %1$s is the name of
     the certificate authority that verified the ticket
   -->
   <string name="certificate_info_verified_by">Verificou da: %1$s</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">Scancella</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Scancella</string>
   <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button">Cangia</string>
+  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Cangia</string>
   <!-- Positive action of a dialog asking to delete -->
   <string name="dialog_delete_positive">Scancella</string>
   <!-- Voice search button content description -->
@@ -924,4 +875,10 @@
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->
+
+  <!-- ==== Terms of use pop up prompt ==== -->
+
+  <!-- ==== Experiment strings. ==== -->
+
+  <!-- ==== End of Terms of use popup prompt. ==== -->
 </resources>

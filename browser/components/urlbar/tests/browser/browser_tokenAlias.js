@@ -356,7 +356,7 @@ add_task(async function nonHeuristicAliases() {
   // Get the list of token alias engines (those with aliases that start with
   // "@").
   let tokenEngines = [];
-  for (let engine of await Services.search.getEngines()) {
+  for (let engine of await SearchService.getEngines()) {
     let aliases = [];
     if (engine.alias) {
       aliases.push(engine.alias);
@@ -396,7 +396,7 @@ add_task(async function nonHeuristicAliases() {
       entry: "keywordoffer",
       isPreview: true,
     };
-    if (Services.search.getEngineByName(engineName).isGeneralPurposeEngine) {
+    if (SearchService.getEngineByName(engineName).isGeneralPurposeEngine) {
       expectedSearchMode.source = UrlbarUtils.RESULT_SOURCE.SEARCH;
     }
     await UrlbarTestUtils.assertSearchMode(window, expectedSearchMode);
@@ -623,7 +623,7 @@ add_task(async function hiddenEngine() {
     fireInputEvent: true,
   });
 
-  const defaultEngine = await Services.search.getDefault();
+  const defaultEngine = await SearchService.getDefault();
 
   let foundDefaultEngineInPopup = false;
 

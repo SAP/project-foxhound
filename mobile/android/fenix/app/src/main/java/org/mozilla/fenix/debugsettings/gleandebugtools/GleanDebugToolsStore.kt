@@ -7,7 +7,7 @@ package org.mozilla.fenix.debugsettings.gleandebugtools
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
-import mozilla.components.lib.state.UiStore
+import mozilla.components.lib.state.Store
 
 /**
  * Value type that represents the state of the Glean Debug Tools.
@@ -101,13 +101,13 @@ internal object GleanDebugToolsReducer {
 }
 
 /**
- * A [UiStore] that holds the [GleanDebugToolsState] for the Glean Debug Tools and reduces
+ * A [Store] that holds the [GleanDebugToolsState] for the Glean Debug Tools and reduces
  * [GleanDebugToolsAction]s dispatched to the store.
  */
 class GleanDebugToolsStore(
     initialState: GleanDebugToolsState,
     middlewares: List<Middleware<GleanDebugToolsState, GleanDebugToolsAction>> = emptyList(),
-) : UiStore<GleanDebugToolsState, GleanDebugToolsAction>(
+) : Store<GleanDebugToolsState, GleanDebugToolsAction>(
     initialState,
     GleanDebugToolsReducer::reduce,
     middlewares,

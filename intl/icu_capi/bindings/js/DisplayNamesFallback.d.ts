@@ -2,17 +2,20 @@
 import type { pointer, codepoint } from "./diplomat-runtime.d.ts";
 
 
+
 /**
- * See the [Rust documentation for `Fallback`](https://docs.rs/icu/latest/icu/experimental/displaynames/options/enum.Fallback.html) for more information.
+ * 🚧 This API is experimental and may experience breaking changes outside major releases.
+ *
+ * See the [Rust documentation for `Fallback`](https://docs.rs/icu/2.1.1/icu/experimental/displaynames/enum.Fallback.html) for more information.
  */
-
-
 export class DisplayNamesFallback {
 
+    /** @internal */
     static fromValue(value: DisplayNamesFallback | string): DisplayNamesFallback;
 
     get value(): string;
 
+    /** @internal */
     get ffiValue(): number;
 
     static Code : DisplayNamesFallback;

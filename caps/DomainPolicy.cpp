@@ -7,7 +7,6 @@
 #include "DomainPolicy.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "mozilla/Unused.h"
 #include "nsIURIMutator.h"
 #include "nsScriptSecurityManager.h"
 
@@ -31,7 +30,7 @@ static nsresult BroadcastDomainSetChange(DomainSetType aSetType,
   }
 
   for (uint32_t i = 0; i < parents.Length(); i++) {
-    Unused << parents[i]->SendDomainSetChanged(aSetType, aChangeType, aDomain);
+    (void)parents[i]->SendDomainSetChanged(aSetType, aChangeType, aDomain);
   }
   return NS_OK;
 }

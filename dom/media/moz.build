@@ -41,6 +41,7 @@ DIRS += [
     "ipc",
     "mediacapabilities",
     "mediacontrol",
+    "mediaelement",
     "mediasink",
     "mediasource",
     "mediasession",
@@ -80,6 +81,17 @@ if CONFIG["FUZZING_INTERFACES"]:
 if CONFIG["MOZ_WEBRTC_SIGNALING"]:
     if CONFIG["FUZZING_INTERFACES"]:
         TEST_DIRS += ["webrtc/tests/fuzztests"]
+
+if CONFIG["FUZZING_INTERFACES"] and CONFIG["LIBFUZZER"]:
+    include("/tools/fuzzing/libfuzzer-flags.mozbuild")
+    SOURCES += [
+        "MediaFragmentURIParser.cpp",
+    ]
+    SOURCES["MediaFragmentURIParser.cpp"].flags += libfuzzer_flags
+else:
+    UNIFIED_SOURCES += [
+        "MediaFragmentURIParser.cpp",
+    ]
 
 MOCHITEST_MANIFESTS += [
     "test/mochitest.toml",
@@ -212,6 +224,7 @@ EXPORTS += [
 ]
 
 EXPORTS.mozilla += [
+    "MediaFragmentURIParser.h",
     "MediaManager.h",
     "UnderrunHandler.h",
 ]
@@ -237,7 +250,7 @@ EXPORTS.mozilla.dom += [
     "MediaDevices.h",
     "MediaStreamError.h",
     "MediaStreamTrack.h",
-    "MPSCQueue.h",
+    "UnboundedMPSCQueue.h",
     "VideoPlaybackQuality.h",
     "VideoStreamTrack.h",
     "VideoTrack.h",
@@ -273,6 +286,8 @@ UNIFIED_SOURCES += [
     "CloneableWithRangeMediaResource.cpp",
     "CrossGraphPort.cpp",
     "CubebInputStream.cpp",
+    "CubebUtils.cpp",
+    "DecoderTraits.cpp",
     "DeviceInputTrack.cpp",
     "DOMMediaStream.cpp",
     "ExternalEngineStateMachine.cpp",
@@ -328,19 +343,13 @@ if CONFIG["OS_TARGET"] == "Linux":
 else:
     UNIFIED_SOURCES += ["UnderrunHandlerNoop.cpp"]
 
-# CubebUtils.cpp needs to be built separately due to what appears to be some kind
-# of compiler bug on Android 4.2 x86 opt. See bug 1408459.
-# DecoderTraits.cpp needs to be built separately because of Mac OS X headers.
+if CONFIG["ENABLE_TESTS"] or CONFIG["FUZZING"]:
+    UNIFIED_SOURCES += ["MockCubeb.cpp"]
+
 # MediaData.cpp : ambiguous compilation error caused by Mac OS X headers.
 SOURCES += [
-    "CubebUtils.cpp",
-    "DecoderTraits.cpp",
     "MediaData.cpp",
 ]
-
-# Some codec-related code uses multi-character constants, which GCC and clang
-# warn about. Suppress turning this warning into an error.
-SOURCES["DecoderTraits.cpp"].flags += ["-Wno-error=multichar"]
 
 if CONFIG["MOZ_WEBRTC"]:
     XPCOM_MANIFESTS += [
@@ -371,6 +380,7 @@ LOCAL_INCLUDES += [
 
 if CONFIG["MOZ_WEBRTC"]:
     LOCAL_INCLUDES += [
+        "!/dist/include/libwebrtc_overrides",
         "/dom/media/webrtc/common",
         "/third_party/abseil-cpp",
         "/third_party/libwebrtc",
@@ -397,10 +407,9 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         inputs=["/third_party/rust/audioipc2-server"],
     )
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += [
-        "test/rdd_process_xpcom",
-    ]
+TEST_DIRS += [
+    "test/rdd_process_xpcom",
+]
 
 if CONFIG["MOZ_SYSTEM_AV1"]:
     CXXFLAGS += CONFIG["MOZ_SYSTEM_LIBAOM_CFLAGS"]

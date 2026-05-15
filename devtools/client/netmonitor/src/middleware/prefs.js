@@ -28,7 +28,7 @@ function prefsMiddleware(store) {
     const res = next(action);
     switch (action.type) {
       case ENABLE_REQUEST_FILTER_TYPE_ONLY:
-      case TOGGLE_REQUEST_FILTER_TYPE:
+      case TOGGLE_REQUEST_FILTER_TYPE: {
         const filters = Object.entries(
           store.getState().filters.requestFilterTypes
         )
@@ -39,16 +39,18 @@ function prefsMiddleware(store) {
           JSON.stringify(filters)
         );
         break;
+      }
       case SET_REQUEST_FILTER_TEXT:
         Services.prefs.setCharPref(
           "devtools.netmonitor.requestfilter",
           store.getState().filters.requestFilterText
         );
         break;
-      case ENABLE_PERSISTENT_LOGS:
+      case ENABLE_PERSISTENT_LOGS: {
         const enabled = store.getState().ui.persistentLogsEnabled;
         Services.prefs.setBoolPref("devtools.netmonitor.persistlog", enabled);
         break;
+      }
       case DISABLE_BROWSER_CACHE:
         Services.prefs.setBoolPref(
           "devtools.cache.disabled",

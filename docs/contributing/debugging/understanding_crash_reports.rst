@@ -209,8 +209,7 @@ Stack frame entries take on a variety of forms.
    followed by many numbers then many underscores) are in Flash.
 -  Addresses such as ``@0xe1a850ac`` may indicate an address that wasn't
    part of any legitimate code. If an address such as this occurs in the
-   first stack frame, the crash may be
-   `exploitable <https://developer.mozilla.org/en-US/docs/Mozilla/Security/Exploitable_crashes>`__.
+   first stack frame, the crash may be exploitable.
 
 Stack traces for other threads can be viewed by clicking on the small
 "Show other threads" link.

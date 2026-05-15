@@ -8,14 +8,14 @@
 #define mozilla_RemoteLazyInputStream_h
 
 #include "chrome/common/ipc_message_utils.h"
-#include "mozilla/Mutex.h"
 #include "mozIRemoteLazyInputStream.h"
+#include "mozilla/Mutex.h"
+#include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
 #include "nsICloneableInputStream.h"
 #include "nsIFileStreams.h"
 #include "nsIIPCSerializableInputStream.h"
 #include "nsIInputStreamLength.h"
-#include "nsCOMPtr.h"
 
 namespace mozilla {
 

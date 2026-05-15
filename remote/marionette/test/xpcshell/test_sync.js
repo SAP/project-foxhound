@@ -243,7 +243,7 @@ add_task(async function test_waitForMessage_checkFnTypes() {
     );
   }
 
-  let data1 = { fo: "bar" };
+  let data1 = { notFoo: "bar" };
   let data2 = { foo: "bar" };
 
   for (let checkFn of [null, undefined, msg => "foo" in msg.data]) {
@@ -278,7 +278,7 @@ add_task(async function test_waitForObserverTopic_checkFnTypes() {
     );
   }
 
-  let data1 = { fo: "bar" };
+  let data1 = { notFoo: "bar" };
   let data2 = { foo: "bar" };
 
   for (let checkFn of [null, undefined, (subject, data) => data == data2]) {

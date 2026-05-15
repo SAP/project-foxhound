@@ -15,11 +15,13 @@ import {
   isTopFrameSelected,
   getIsCurrentThreadPaused,
 } from "../../selectors/index";
-import { formatKeyShortcut } from "../../utils/text";
 import actions from "../../actions/index";
 import { debugBtn } from "../shared/Button/CommandBarButton";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 
+const {
+  stringifyFromElectronKey,
+} = require("resource://devtools/client/shared/key-shortcuts.js");
 const classnames = require("resource://devtools/client/shared/classnames.js");
 const MenuButton = require("resource://devtools/client/shared/components/menu/MenuButton.js");
 const MenuItem = require("resource://devtools/client/shared/components/menu/MenuItem.js");
@@ -74,10 +76,10 @@ function formatKey(action) {
     const winKey =
       getKeyForOS("WINNT", `${action}Display`) || getKeyForOS("WINNT", action);
     if (key != winKey) {
-      return formatKeyShortcut([key, winKey].join(" "));
+      return stringifyFromElectronKey([key, winKey].join(" "));
     }
   }
-  return formatKeyShortcut(key);
+  return stringifyFromElectronKey(key);
 }
 
 class CommandBar extends Component {
@@ -229,8 +231,8 @@ class CommandBar extends Component {
           : L10N.getStr("skipPausingTooltip.label"),
         onClick: toggleSkipPausing,
       },
-      React.createElement(AccessibleImage, {
-        className: skipPausing ? "enable-pausing" : "disable-pausing",
+      React.createElement(DebuggerImage, {
+        name: skipPausing ? "enable-pausing" : "disable-pausing",
       })
     );
   }
@@ -317,6 +319,17 @@ class CommandBar extends Component {
         tooltip: L10N.getStr("settings.showPausedOverlay.tooltip"),
         onClick: () =>
           this.props.togglePausedOverlay(!prefs.pausedOverlayEnabled),
+      }),
+      React.createElement(MenuItem, {
+        key: "debugger-settings-menu-item-toggle-auto-pretty-print",
+        className:
+          "menu-item debugger-settings-menu-item-toggle-auto-pretty-print",
+        checked: prefs.autoPrettyPrint,
+        label: L10N.getStr("settings.autoPrettyPrint.label"),
+        tooltip: L10N.getStr("settings.autoPrettyPrint.tooltip"),
+        onClick: () => {
+          prefs.autoPrettyPrint = !prefs.autoPrettyPrint;
+        },
       })
     );
   }

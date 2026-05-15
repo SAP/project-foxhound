@@ -27,9 +27,10 @@
  */
 
 #include "PeriodicWave.h"
+
 #include <algorithm>
 #include <cmath>
-#include <limits>
+
 #include "mozilla/FFTBlock.h"
 
 const unsigned MinPeriodicWaveSize = 4096;  // This must be a power of two.

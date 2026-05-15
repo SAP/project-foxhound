@@ -134,6 +134,11 @@ TrackingDBService.prototype = {
   },
 
   async _initialize() {
+    if (Services.startup.shuttingDown) {
+      // Skip initialization once shutdown has begun
+      return;
+    }
+
     let db = await Sqlite.openConnection({ path: lazy.DB_PATH });
 
     try {
@@ -240,7 +245,9 @@ TrackingDBService.prototype = {
           // If a tracking cookie was blocked attribute it to tracking cookies.
           // This includes social tracking cookies since STP is not enabled.
           state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER ||
-          state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_SOCIALTRACKER
+          state &
+            Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_SOCIALTRACKER ||
+          state & Ci.nsIWebProgressListener.STATE_COOKIES_PARTITIONED_TRACKER
         ) {
           result = Ci.nsITrackingDBService.TRACKING_COOKIES_ID;
         } else if (
@@ -275,6 +282,7 @@ TrackingDBService.prototype = {
 
   /**
    * Saves data rows to the DB.
+   *
    * @param data
    *        An array of JS objects representing row items to save.
    */

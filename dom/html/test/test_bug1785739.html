@@ -23,21 +23,13 @@
 
   finder.init(SpecialPowers.wrap(window).docShell);
 
-  function find() {
-    return finder.find(
-      "abc",
-      false,
-      SpecialPowers.Ci.nsITypeAheadFind.FIND_NEXT,
-      true);
-  }
-
   async function runTests() {
-    finder.find("abc", false, SpecialPowers.Ci.nsITypeAheadFind.FIND_FIRST, true);
-    // Wait until layout flush as the bug repro needs it
-    await new Promise(requestAnimationFrame);
-
     for (let i = 0; i < 9; i++) {
-      find();
+      let which = i == 0
+        ? SpecialPowers.Ci.nsITypeAheadFind.FIND_FIRST
+        : SpecialPowers.Ci.nsITypeAheadFind.FIND_NEXT;
+      finder.find("abc", false, which, true);
+      // Wait until layout flush as the bug repro needs it
       await new Promise(requestAnimationFrame);
       is(input.selectionStart, (i * 19) + 1);
     }

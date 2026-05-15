@@ -16,6 +16,7 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const l10nMap = new Map([
   ["viewGenaiChatSidebar", "sidebar-menu-genai-chat-label"],
+  ["viewGenaiPageAssistSidebar", "sidebar-menu-genai-page-assist-label"],
   ["viewHistorySidebar", "sidebar-menu-history-label"],
   ["viewTabsSidebar", "sidebar-menu-synced-tabs-label"],
   ["viewBookmarksSidebar", "sidebar-menu-bookmarks-label"],
@@ -215,103 +216,105 @@ export class SidebarCustomize extends SidebarPage {
       <div class="sidebar-panel">
         <sidebar-panel-header data-l10n-id="sidebar-menu-customize-header" data-l10n-attrs="heading" view="viewCustomizeSidebar">
         </sidebar-panel-header>
-        <moz-fieldset class="customize-group no-end-margin" data-l10n-id="sidebar-settings">
-          <moz-checkbox
-            type="checkbox"
-            id="vertical-tabs"
-            name="verticalTabs"
-            iconsrc="chrome://browser/skin/sidebar-collapsed.svg"
-            data-l10n-id="sidebar-vertical-tabs"
-            @change=${this.#handleTabDirectionChange}
-            ?checked=${this.verticalTabsEnabled}
-          >
-          ${when(
-            this.verticalTabsEnabled,
-            () => html`
-              ${when(
-                this.expandOnHoverEnabled,
-                () => html`
-                  <moz-checkbox
-                    slot="nested"
-                    type="checkbox"
-                    id="expand-on-hover"
-                    name="expand-on-hover"
-                    data-l10n-id="expand-sidebar-on-hover"
-                    @change=${this.#toggleExpandOnHover}
-                    ?checked=${this.getWindow().SidebarController._state
-                      .revampVisibility === "expand-on-hover"}
-                    ?disabled=${this.visibility == "hide-sidebar"}
-                  ></moz-checkbox>
-                `
-              )}
-              <moz-checkbox
-                slot="nested"
-                type="checkbox"
-                id="hide-sidebar"
-                name="hideSidebar"
-                data-l10n-id="sidebar-hide-tabs-and-sidebar"
-                @change=${this.#handleVisibilityChange}
-                ?checked=${this.visibility == "hide-sidebar"}
-                ?disabled=${this.getWindow().SidebarController._state
-                  .revampVisibility === "expand-on-hover"}
-              ></moz-checkbox>
-            `
-          )}
-          </moz-checkbox>
-        </moz-fieldset>
-        <moz-fieldset class="customize-group medium-top-margin no-label">
-          <moz-checkbox
-            type="checkbox"
-            id="position"
-            name="position"
-            data-l10n-id=${document.dir == "rtl" ? "sidebar-show-on-the-left" : "sidebar-show-on-the-right"}
-            @change=${this.reversePosition}
-            ?checked=${!this.isPositionStart}
-        ></moz-checkbox>
-        </moz-fieldset>
-        <moz-fieldset class="customize-group tools" data-l10n-id="sidebar-customize-firefox-tools-header">
-          ${this.getWindow()
-            .SidebarController.getTools()
-            .map(tool => this.toolInputTemplate(tool))}
-        </moz-fieldset>
-        ${when(
-          extensions.length,
-          () =>
-            html`<div class="customize-group">
-              <h4
-                class="customize-extensions-heading"
-                data-l10n-id="sidebar-customize-extensions-header"
-              ></h4>
-              <div role="list" class="extensions">
-                ${extensions.map(extension =>
-                  this.toolInputTemplate(extension)
+        <div class="sidebar-panel-scrollable-content">
+          <moz-fieldset class="customize-group no-end-margin" data-l10n-id="sidebar-settings">
+            <moz-checkbox
+              type="checkbox"
+              id="vertical-tabs"
+              name="verticalTabs"
+              iconsrc="chrome://browser/skin/sidebar-collapsed.svg"
+              data-l10n-id="sidebar-vertical-tabs"
+              @change=${this.#handleTabDirectionChange}
+              ?checked=${this.verticalTabsEnabled}
+            >
+            ${when(
+              this.verticalTabsEnabled,
+              () => html`
+                ${when(
+                  this.expandOnHoverEnabled,
+                  () => html`
+                    <moz-checkbox
+                      slot="nested"
+                      type="checkbox"
+                      id="expand-on-hover"
+                      name="expand-on-hover"
+                      data-l10n-id="expand-sidebar-on-hover"
+                      @change=${this.#toggleExpandOnHover}
+                      ?checked=${this.getWindow().SidebarController._state
+                        .revampVisibility === "expand-on-hover"}
+                      ?disabled=${this.visibility == "hide-sidebar"}
+                    ></moz-checkbox>
+                  `
                 )}
-                <div class="extension-item">
-                  <img
-                    src="chrome://mozapps/skin/extensions/category-extensions.svg"
-                    class="icon"
-                    role="presentation"
-                  />
-                  <a
-                    href="about:addons"
-                    @click=${this.manageAddons}
-                    @keydown=${this.manageAddons}
-                    data-l10n-id="sidebar-manage-extensions"
-                  >
-                  </a>
+                <moz-checkbox
+                  slot="nested"
+                  type="checkbox"
+                  id="hide-sidebar"
+                  name="hideSidebar"
+                  data-l10n-id="sidebar-hide-tabs-and-sidebar"
+                  @change=${this.#handleVisibilityChange}
+                  ?checked=${this.visibility == "hide-sidebar"}
+                  ?disabled=${this.getWindow().SidebarController._state
+                    .revampVisibility === "expand-on-hover"}
+                ></moz-checkbox>
+              `
+            )}
+            </moz-checkbox>
+          </moz-fieldset>
+          <moz-fieldset class="customize-group medium-top-margin no-label">
+            <moz-checkbox
+              type="checkbox"
+              id="position"
+              name="position"
+              data-l10n-id=${document.dir == "rtl" ? "sidebar-show-on-the-left" : "sidebar-show-on-the-right"}
+              @change=${this.reversePosition}
+              ?checked=${!this.isPositionStart}
+          ></moz-checkbox>
+          </moz-fieldset>
+          <moz-fieldset class="customize-group tools" data-l10n-id="sidebar-customize-firefox-tools-header">
+            ${this.getWindow()
+              .SidebarController.getTools()
+              .map(tool => this.toolInputTemplate(tool))}
+          </moz-fieldset>
+          ${when(
+            extensions.length,
+            () =>
+              html`<div class="customize-group">
+                <h4
+                  class="customize-extensions-heading"
+                  data-l10n-id="sidebar-customize-extensions-header"
+                ></h4>
+                <div role="list" class="extensions">
+                  ${extensions.map(extension =>
+                    this.toolInputTemplate(extension)
+                  )}
+                  <div class="extension-item">
+                    <img
+                      src="chrome://mozapps/skin/extensions/category-extensions.svg"
+                      class="icon"
+                      role="presentation"
+                    />
+                    <a
+                      href="about:addons"
+                      @click=${this.manageAddons}
+                      @keydown=${this.manageAddons}
+                      data-l10n-id="sidebar-manage-extensions"
+                    >
+                    </a>
+                  </div>
                 </div>
-              </div>
-            </div>`
-        )}
-        <div id="manage-settings">
-          <img src="chrome://browser/skin/preferences/category-general.svg" class="icon" role="presentation" />
-          <a
-            href="about:preferences"
-            @click=${this.openFirefoxSettings}
-            @keydown=${this.openFirefoxSettings}
-            data-l10n-id="sidebar-customize-firefox-settings"
-          >
-          </a>
+              </div>`
+          )}
+          <div id="manage-settings">
+            <img src="chrome://browser/skin/preferences/category-general.svg" class="icon" role="presentation" />
+            <a
+              href="about:preferences"
+              @click=${this.openFirefoxSettings}
+              @keydown=${this.openFirefoxSettings}
+              data-l10n-id="sidebar-customize-firefox-settings"
+            >
+            </a>
+          </div>
         </div>
       </div>
     `;

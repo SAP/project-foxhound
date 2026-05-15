@@ -17,19 +17,16 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.findViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.runTest
 import mozilla.components.compose.cfr.CFRPopup.PopupAlignment
 import mozilla.components.support.test.argumentCaptor
 import mozilla.components.support.test.eq
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.doReturn
@@ -38,12 +35,11 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.time.Duration.Companion.milliseconds
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class CFRPopupFullscreenLayoutTest {
-    @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
 
     @Test
     fun `GIVEN not attached to window WHEN the popup is shown THEN setup lifecycle owners`() {
@@ -590,27 +586,36 @@ class CFRPopupFullscreenLayoutTest {
         assertEquals(300, result.endCoord.value)
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun `GIVEN there is a CFR Popup showing WHEN the orientation of the device changes THEN the CFR will be dismissed and shown again after a delay`() = runTestOnMain {
+    fun `GIVEN there is a CFR Popup showing WHEN the orientation of the device changes THEN the CFR will be dismissed and shown again after a delay`() = runTest {
         val context = spy(testContext)
         val anchor = View(context).apply {
             setViewTreeLifecycleOwner(mock())
             this.setViewTreeSavedStateRegistryOwner(mock())
         }
-        val popupView = spy(CFRPopupFullscreenLayout(anchor, mock(), mock(), { }, { }))
+        val popupView = spy(
+            CFRPopupFullscreenLayout(
+                anchor,
+                mock(),
+                mock(),
+                { },
+                { },
+                mainDispatcher = coroutineContext[ContinuationInterceptor] as CoroutineDispatcher,
+            ),
+        )
         `when`(popupView.isAttachedToWindow).thenReturn(false)
         popupView.show()
+        testScheduler.advanceUntilIdle()
 
         `when`(popupView.isAttachedToWindow).thenReturn(true)
         testContext.resources.configuration.orientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         popupView.orientationChangeListener.onDisplayChanged(1)
 
-        advanceTimeBy(SHOW_AFTER_SCREEN_ORIENTATION_CHANGE_DELAY)
+        testScheduler.advanceTimeBy((SHOW_AFTER_SCREEN_ORIENTATION_CHANGE_DELAY).milliseconds)
         verify(popupView, times(1)).dismiss()
         verify(popupView, times(1)).show()
         // Test that show() is called the second time after exactly the expected delay.
-        advanceTimeBy(1)
+        testScheduler.advanceTimeBy(1.milliseconds)
         verify(popupView, times(2)).show()
     }
 }

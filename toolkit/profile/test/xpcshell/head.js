@@ -104,12 +104,14 @@ const BACKGROUNDTASKS_PROFILE_DATA = (() => {
       {
         name: "Profile1",
         path: "Path1",
+        isRelative: true,
         storeID: null,
         default: false,
       },
       {
         name: "Profile3",
         path: "Path3",
+        isRelative: true,
         storeID: null,
         default: false,
       },
@@ -274,7 +276,8 @@ function writeProfilesIni(profileData) {
     let section = `Profile${i}`;
 
     ini.setString(section, "Name", profile.name);
-    ini.setString(section, "IsRelative", 1);
+    let isRelative = profile.isRelative ?? true;
+    ini.setString(section, "IsRelative", isRelative ? "1" : "0");
     ini.setString(section, "Path", profile.path);
     if ("storeID" in profile) {
       ini.setString(section, "StoreID", profile.storeID);
@@ -364,15 +367,11 @@ function readProfilesIni() {
       if (isRelative === null) {
         break;
       }
-      Assert.equal(
-        isRelative,
-        "1",
-        "Paths should always be relative in these tests."
-      );
 
       let profile = {
         name: safeGet(ini, section, "Name"),
         path: safeGet(ini, section, "Path"),
+        isRelative: isRelative == "1",
         // TODO: currently, if there's a StoreID key but no value, this gets
         // translated into JS as an empty string, while if there's no StoreID
         // in the file at all, then it gets translated into JS as null.

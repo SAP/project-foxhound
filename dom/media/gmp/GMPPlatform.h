@@ -6,9 +6,10 @@
 #ifndef GMPPlatform_h_
 #define GMPPlatform_h_
 
-#include "mozilla/RefPtr.h"
-#include "gmp-platform.h"
 #include <functional>
+
+#include "gmp-platform.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/gmp/PGMPChild.h"
 
 namespace mozilla {

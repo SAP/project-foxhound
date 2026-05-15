@@ -14,9 +14,10 @@ use crate::{
         Device, Texture, TextureFilter, TextureUploader, UploadPBOPool, VertexUsageHint, VAO,
     },
     frame_builder::Frame,
-    gpu_types::{PrimitiveHeaderI, PrimitiveHeaderF, TransformData},
+    gpu_types::{PrimitiveHeaderI, PrimitiveHeaderF},
     internal_types::Swizzle,
     render_task::RenderTaskData,
+    transform::TransformData,
 };
 
 use crate::internal_types::FrameVec;
@@ -29,11 +30,7 @@ pub mod desc {
     use crate::device::{VertexAttribute, VertexAttributeKind, VertexDescriptor};
 
     pub const PRIM_INSTANCES: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[VertexAttribute {
             name: "aData",
             count: 4,
@@ -42,800 +39,193 @@ pub mod desc {
     };
 
     pub const BLUR: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aBlurRenderTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aBlurSourceTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aBlurDirection",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aBlurEdgeMode",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aBlurParams",
-                count: 3,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::gpu_buffer_address("aBlurRenderTaskAddress"),
+            VertexAttribute::gpu_buffer_address("aBlurSourceTaskAddress"),
+            VertexAttribute::i32("aBlurDirection"),
+            VertexAttribute::i32("aBlurEdgeMode"),
+            VertexAttribute::f32x3("aBlurParams"),
         ],
     };
 
     pub const LINE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aLocalSize",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aWavyLineThickness",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aStyle",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aAxisSelect",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x4("aTaskRect"),
+            VertexAttribute::f32x2("aLocalSize"),
+            VertexAttribute::f32("aWavyLineThickness"),
+            VertexAttribute::i32("aStyle"),
+            VertexAttribute::f32("aAxisSelect"),
         ],
     };
 
     pub const FAST_LINEAR_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor0",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor1",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aAxisSelect",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x4("aTaskRect"),
+            VertexAttribute::f32x4("aColor0"),
+            VertexAttribute::f32x4("aColor1"),
+            VertexAttribute::f32("aAxisSelect"),
         ],
     };
 
     pub const LINEAR_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aStartPoint",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aEndPoint",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aScale",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aExtendMode",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aGradientStopsAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
+            VertexAttribute::f32x4("aTaskRect"),
+            VertexAttribute::f32x2("aStartPoint"),
+            VertexAttribute::f32x2("aEndPoint"),
+            VertexAttribute::f32x2("aScale"),
+            VertexAttribute::i32("aExtendMode"),
+            VertexAttribute::gpu_buffer_address("aGradientStopsAddress"),
         ],
     };
 
     pub const RADIAL_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aCenter",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aScale",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aStartRadius",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aEndRadius",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aXYRatio",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aExtendMode",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aGradientStopsAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
+            VertexAttribute::f32x4("aTaskRect"),
+            VertexAttribute::f32x2("aCenter"),
+            VertexAttribute::f32x2("aScale"),
+            VertexAttribute::f32("aStartRadius"),
+            VertexAttribute::f32("aEndRadius"),
+            VertexAttribute::f32("aXYRatio"),
+            VertexAttribute::i32("aExtendMode"),
+            VertexAttribute::i32("aGradientStopsAddress"),
         ],
     };
 
     pub const CONIC_GRADIENT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aCenter",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aScale",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aStartOffset",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aEndOffset",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aAngle",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aExtendMode",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aGradientStopsAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
+            VertexAttribute::f32x4("aTaskRect"),
+            VertexAttribute::f32x2("aCenter"),
+            VertexAttribute::f32x2("aScale"),
+            VertexAttribute::f32("aStartOffset"),
+            VertexAttribute::f32("aEndOffset"),
+            VertexAttribute::f32("aAngle"),
+            VertexAttribute::i32("aExtendMode"),
+            VertexAttribute::gpu_buffer_address("aGradientStopsAddress"),
         ],
     };
 
     pub const BORDER: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aTaskOrigin",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor0",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor1",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFlags",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aWidths",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aRadii",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipParams1",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipParams2",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x2("aTaskOrigin"),
+            VertexAttribute::f32x4("aRect"),
+            VertexAttribute::f32x4("aColor0"),
+            VertexAttribute::f32x4("aColor1"),
+            VertexAttribute::i32("aFlags"),
+            VertexAttribute::f32x2("aWidths"),
+            VertexAttribute::f32x2("aRadii"),
+            VertexAttribute::f32x4("aClipParams1"),
+            VertexAttribute::f32x4("aClipParams2"),
         ],
     };
 
     pub const SCALE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aScaleTargetRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aScaleSourceRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aSourceRectType",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x4("aScaleTargetRect"),
+            VertexAttribute::f32x4("aScaleSourceRect"),
+            VertexAttribute::f32("aSourceRectType"),
         ],
     };
 
     pub const CLIP_RECT: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
             // common clip attributes
-            VertexAttribute {
-                name: "aClipDeviceArea",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipOrigins",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aDevicePixelScale",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aTransformIds",
-                count: 2,
-                kind: VertexAttributeKind::I32,
-            },
+            VertexAttribute::f32x4("aClipDeviceArea"),
+            VertexAttribute::f32x4("aClipOrigins"),
+            VertexAttribute::f32("aDevicePixelScale"),
+            VertexAttribute::i32x2("aTransformIds"),
             // specific clip attributes
-            VertexAttribute {
-                name: "aClipLocalPos",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipLocalRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipMode",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRect_TL",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRadii_TL",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRect_TR",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRadii_TR",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRect_BL",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRadii_BL",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRect_BR",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipRadii_BR",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x2("aClipLocalPos"),
+            VertexAttribute::f32x4("aClipLocalRect"),
+            VertexAttribute::f32("aClipMode"),
+            VertexAttribute::f32x4("aClipRect_TL"),
+            VertexAttribute::f32x4("aClipRadii_TL"),
+            VertexAttribute::f32x4("aClipRect_TR"),
+            VertexAttribute::f32x4("aClipRadii_TR"),
+            VertexAttribute::f32x4("aClipRect_BL"),
+            VertexAttribute::f32x4("aClipRadii_BL"),
+            VertexAttribute::f32x4("aClipRect_BR"),
+            VertexAttribute::f32x4("aClipRadii_BR"),
         ],
     };
 
     pub const CLIP_BOX_SHADOW: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
             // common clip attributes
-            VertexAttribute {
-                name: "aClipDeviceArea",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipOrigins",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aDevicePixelScale",
-                count: 1,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aTransformIds",
-                count: 2,
-                kind: VertexAttributeKind::I32,
-            },
+            VertexAttribute::f32x4("aClipDeviceArea"),
+            VertexAttribute::f32x4("aClipOrigins"),
+            VertexAttribute::f32("aDevicePixelScale"),
+            VertexAttribute::i32x2("aTransformIds"),
             // specific clip attributes
-            VertexAttribute {
-                name: "aClipDataResourceAddress",
-                count: 2,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aClipSrcRectSize",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipMode",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aStretchMode",
-                count: 2,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aClipDestRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-    };
-
-    pub const GPU_CACHE_UPDATE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[
-            VertexAttribute {
-                name: "aPosition",
-                count: 2,
-                kind: VertexAttributeKind::U16Norm,
-            },
-            VertexAttribute {
-                name: "aValue",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-        ],
-        instance_attributes: &[],
-    };
-
-    pub const RESOLVE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
-        instance_attributes: &[VertexAttribute {
-            name: "aRect",
-            count: 4,
-            kind: VertexAttributeKind::F32,
-        }],
-    };
-
-    pub const SVG_FILTER: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aFilterRenderTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aFilterInput1TaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aFilterInput2TaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aFilterKind",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aFilterInputCount",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aFilterGenericInt",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aUnused",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aFilterExtraDataAddress",
-                count: 2,
-                kind: VertexAttributeKind::U16,
-            },
+            VertexAttribute::gpu_buffer_address("aClipDataResourceAddress"),
+            VertexAttribute::f32x2("aClipSrcRectSize"),
+            VertexAttribute::i32("aClipMode"),
+            VertexAttribute::i32x2("aStretchMode"),
+            VertexAttribute::f32x4("aClipDestRect"),
         ],
     };
 
     pub const SVG_FILTER_NODE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aFilterTargetRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFilterInput1ContentScaleAndOffset",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFilterInput2ContentScaleAndOffset",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFilterInput1TaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aFilterInput2TaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aFilterKind",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aFilterInputCount",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aFilterExtraDataAddress",
-                count: 2,
-                kind: VertexAttributeKind::U16,
-            },
+            VertexAttribute::f32x4("aFilterTargetRect"),
+            VertexAttribute::f32x4("aFilterInput1ContentScaleAndOffset"),
+            VertexAttribute::f32x4("aFilterInput2ContentScaleAndOffset"),
+            VertexAttribute::gpu_buffer_address("aFilterInput1TaskAddress"),
+            VertexAttribute::gpu_buffer_address("aFilterInput2TaskAddress"),
+            VertexAttribute::u16("aFilterKind"),
+            VertexAttribute::u16("aFilterInputCount"),
+            VertexAttribute::gpu_buffer_address("aFilterExtraDataAddress"),
         ],
     };
 
     pub const MASK: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aData",
-                count: 4,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aClipData",
-                count: 4,
-                kind: VertexAttributeKind::I32,
-            },
-        ],
-    };
-
-    pub const VECTOR_STENCIL: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aFromPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aCtrlPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aToPosition",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFromNormal",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aCtrlNormal",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aToNormal",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aPathID",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aPad",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-        ],
-    };
-
-    pub const VECTOR_COVER: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
-        instance_attributes: &[
-            VertexAttribute {
-                name: "aTargetRect",
-                count: 4,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aStencilOrigin",
-                count: 2,
-                kind: VertexAttributeKind::I32,
-            },
-            VertexAttribute {
-                name: "aSubpixel",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
-            VertexAttribute {
-                name: "aPad",
-                count: 1,
-                kind: VertexAttributeKind::U16,
-            },
+            VertexAttribute::i32x4("aData"),
+            VertexAttribute::i32x4("aClipData"),
         ],
     };
 
     pub const COMPOSITE: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aDeviceRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aDeviceClipRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aParams",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aUvRect0",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aUvRect1",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aUvRect2",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aFlip",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aDeviceRoundedClipRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aDeviceRoundedClipRadii",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x4("aDeviceRect"),
+            VertexAttribute::f32x4("aDeviceClipRect"),
+            VertexAttribute::f32x4("aColor"),
+            VertexAttribute::f32x4("aParams"),
+            VertexAttribute::f32x4("aUvRect0"),
+            VertexAttribute::f32x4("aUvRect1"),
+            VertexAttribute::f32x4("aUvRect2"),
+            VertexAttribute::f32x2("aFlip"),
+            VertexAttribute::f32x4("aDeviceRoundedClipRect"),
+            VertexAttribute::f32x4("aDeviceRoundedClipRadii"),
         ],
     };
 
     pub const CLEAR: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "aRect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aColor",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x4("aRect"),
+            VertexAttribute::f32x4("aColor"),
         ],
     };
 
     pub const COPY: VertexDescriptor = VertexDescriptor {
-        vertex_attributes: &[VertexAttribute {
-            name: "aPosition",
-            count: 2,
-            kind: VertexAttributeKind::U8Norm,
-        }],
+        vertex_attributes: &[VertexAttribute::quad_instance_vertex()],
         instance_attributes: &[
-            VertexAttribute {
-                name: "a_src_rect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "a_dst_rect",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "a_dst_texture_size",
-                count: 2,
-                kind: VertexAttributeKind::F32,
-            },
+            VertexAttribute::f32x4("a_src_rect"),
+            VertexAttribute::f32x4("a_dst_rect"),
+            VertexAttribute::f32x2("a_dst_texture_size"),
         ],
     };
 }
@@ -846,8 +236,6 @@ pub enum VertexArrayKind {
     Blur,
     ClipRect,
     ClipBoxShadow,
-    VectorStencil,
-    VectorCover,
     Border,
     Scale,
     LineDecoration,
@@ -855,8 +243,6 @@ pub enum VertexArrayKind {
     LinearGradient,
     RadialGradient,
     ConicGradient,
-    Resolve,
-    SvgFilter,
     SvgFilterNode,
     Composite,
     Clear,
@@ -1080,8 +466,6 @@ pub struct RendererVAOs {
     linear_gradient_vao: VAO,
     radial_gradient_vao: VAO,
     conic_gradient_vao: VAO,
-    resolve_vao: VAO,
-    svg_filter_vao: VAO,
     svg_filter_node_vao: VAO,
     composite_vao: VAO,
     clear_vao: VAO,
@@ -1128,8 +512,6 @@ impl RendererVAOs {
             linear_gradient_vao: device.create_vao_with_new_instances(&desc::LINEAR_GRADIENT, &prim_vao),
             radial_gradient_vao: device.create_vao_with_new_instances(&desc::RADIAL_GRADIENT, &prim_vao),
             conic_gradient_vao: device.create_vao_with_new_instances(&desc::CONIC_GRADIENT, &prim_vao),
-            resolve_vao: device.create_vao_with_new_instances(&desc::RESOLVE, &prim_vao),
-            svg_filter_vao: device.create_vao_with_new_instances(&desc::SVG_FILTER, &prim_vao),
             svg_filter_node_vao: device.create_vao_with_new_instances(&desc::SVG_FILTER_NODE, &prim_vao),
             composite_vao: device.create_vao_with_new_instances(&desc::COMPOSITE, &prim_vao),
             clear_vao: device.create_vao_with_new_instances(&desc::CLEAR, &prim_vao),
@@ -1141,7 +523,6 @@ impl RendererVAOs {
 
     pub fn deinit(self, device: &mut Device) {
         device.delete_vao(self.prim_vao);
-        device.delete_vao(self.resolve_vao);
         device.delete_vao(self.clip_rect_vao);
         device.delete_vao(self.clip_box_shadow_vao);
         device.delete_vao(self.fast_linear_gradient_vao);
@@ -1152,7 +533,6 @@ impl RendererVAOs {
         device.delete_vao(self.line_vao);
         device.delete_vao(self.border_vao);
         device.delete_vao(self.scale_vao);
-        device.delete_vao(self.svg_filter_vao);
         device.delete_vao(self.svg_filter_node_vao);
         device.delete_vao(self.composite_vao);
         device.delete_vao(self.clear_vao);
@@ -1169,7 +549,6 @@ impl ops::Index<VertexArrayKind> for RendererVAOs {
             VertexArrayKind::ClipRect => &self.clip_rect_vao,
             VertexArrayKind::ClipBoxShadow => &self.clip_box_shadow_vao,
             VertexArrayKind::Blur => &self.blur_vao,
-            VertexArrayKind::VectorStencil | VertexArrayKind::VectorCover => unreachable!(),
             VertexArrayKind::Border => &self.border_vao,
             VertexArrayKind::Scale => &self.scale_vao,
             VertexArrayKind::LineDecoration => &self.line_vao,
@@ -1177,8 +556,6 @@ impl ops::Index<VertexArrayKind> for RendererVAOs {
             VertexArrayKind::LinearGradient => &self.linear_gradient_vao,
             VertexArrayKind::RadialGradient => &self.radial_gradient_vao,
             VertexArrayKind::ConicGradient => &self.conic_gradient_vao,
-            VertexArrayKind::Resolve => &self.resolve_vao,
-            VertexArrayKind::SvgFilter => &self.svg_filter_vao,
             VertexArrayKind::SvgFilterNode => &self.svg_filter_node_vao,
             VertexArrayKind::Composite => &self.composite_vao,
             VertexArrayKind::Clear => &self.clear_vao,

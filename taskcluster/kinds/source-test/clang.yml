@@ -3,9 +3,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
+    run-on-repo-type: [hg]
     run-on-projects: ["trunk"]
     platform: linux64/debug
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     attributes:
         code-review: true
     worker:

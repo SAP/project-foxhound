@@ -9,9 +9,8 @@
 #include "AudioSampleFormat.h"
 #include "AudioSegment.h"
 #include "AudioStream.h"
-#include "nsTArray.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/PodOperations.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 
